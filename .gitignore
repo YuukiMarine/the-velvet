@@ -1,0 +1,50 @@
+# Dependencies
+node_modules
+
+# Build outputs
+dist
+dist-ssr
+
+# Local env files
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Android build artifacts
+app-debug.apk
+app-release.apk
+*.apk
+*.aab
+
+# Android Gradle cache (local build state, not needed in repo)
+android/.gradle/
+android/app/build/
+android/build/
+android/capacitor-cordova-android-plugins/
+
+# Android Studio workspace/caches (machine-specific)
+android/.idea/workspace.xml
+android/.idea/caches/
+android/.idea/gradle.xml
+android/.idea/navEditor.xml
+
+# Capacitor generated assets (rebuilt by `npx cap sync`)
+android/app/src/main/assets/public/
+android/app/src/main/assets/capacitor.config.json
+android/app/src/main/assets/capacitor.plugins.json
+android/app/src/main/res/xml/config.xml
+
+# Scripts compiled output
+scripts/*.class
+
+# Misc local files
+*.log
