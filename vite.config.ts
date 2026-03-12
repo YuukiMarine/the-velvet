@@ -13,8 +13,8 @@ export default defineConfig({
       },
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'masked-icon.svg'],
       manifest: {
-        name: '天鹅绒房间',
-        short_name: '天鹅绒房间',
+        name: '靛蓝色房间',
+        short_name: '靛蓝色房间',
         description: '个人成长追踪器',
           theme_color: '#3B82F6',
           background_color: '#ffffff',

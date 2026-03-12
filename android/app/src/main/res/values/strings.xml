@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">天鹅绒房间</string>
-    <string name="title_activity_main">天鹅绒房间</string>
+    <string name="app_name">靛蓝色房间</string>
+    <string name="title_activity_main">靛蓝色房间</string>
     <string name="package_name">com.pgt.app</string>
     <string name="custom_url_scheme">com.pgt.app</string>
 </resources>

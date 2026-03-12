@@ -319,7 +319,7 @@ function StreamingContent({ streamedText, isStreaming, reqData, followUpUsed, on
   );
 }
 
-// ── VELVET ROOM 水印 ──────────────────────────────────────
+// ── THE VELVET 水印 ──────────────────────────────────────
 function VelvetWatermark() {
   return (
     <div
@@ -330,7 +330,7 @@ function VelvetWatermark() {
         className="text-5xl font-black tracking-[0.3em] text-gray-900 dark:text-white opacity-[0.04] dark:opacity-[0.06] rotate-[-12deg] whitespace-nowrap"
         style={{ fontFamily: 'sans-serif' }}
       >
-        VELVET ROOM
+        THE VELVET
       </span>
     </div>
   );
@@ -498,20 +498,28 @@ export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week' }
     }
   };
 
-  const handleSave = async () => {
-    if (!generatedSummary) return;
-    await saveSummary(generatedSummary);
-    setSaved(true);
-  };
+   const handleSave = async () => {
+     if (!generatedSummary) return;
+     await saveSummary(generatedSummary);
+     setSaved(true);
+   };
 
-  return (
-    <AnimatePresence>
-      {isOpen && (
-        <motion.div
-          initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-          className="fixed inset-0 z-50 flex items-end justify-center"
-          onClick={onClose}
-        >
+   // 在关闭时自动保存已生成完毕的总结
+   const handleClose = async () => {
+     if (generatedSummary && !saved && !isStreaming) {
+       await saveSummary(generatedSummary);
+     }
+     onClose();
+   };
+
+   return (
+     <AnimatePresence>
+       {isOpen && (
+         <motion.div
+           initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+           className="fixed inset-0 z-50 flex items-end justify-center"
+           onClick={handleClose}
+         >
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
           <motion.div
             initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
@@ -552,7 +560,7 @@ export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week' }
                 {view === 'generate' && (
                   <button onClick={() => setView('archive')} className="text-xs text-primary font-semibold px-2 py-1 rounded-lg bg-primary/10 hover:bg-primary/20 transition-colors">归档</button>
                 )}
-                <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-black/5 dark:hover:bg-white/5 text-gray-400 text-lg">×</button>
+                 <button onClick={handleClose} className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-black/5 dark:hover:bg-white/5 text-gray-400 text-lg">×</button>
               </div>
             </div>
 

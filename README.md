@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="icon.png" width="96" height="96" alt="天鹅绒房间" />
+  <img src="icon.png" width="96" height="96" alt="靛蓝色房间" />
 </p>
 
 <h1 align="center">靛蓝色房间</h1>

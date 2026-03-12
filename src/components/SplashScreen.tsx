@@ -67,12 +67,12 @@ export const SplashScreen = ({ isVisible, onComplete }: SplashScreenProps) => {
 
       {/* 上方大字 — 从左到右 */}
       <div className="absolute top-[8%] left-0 right-0 overflow-hidden pointer-events-none select-none">
-        <div className="vr-marquee-top">VELVET ROOM</div>
+        <div className="vr-marquee-top">THE VELVET</div>
       </div>
 
       {/* 下方大字 — 从右到左 */}
       <div className="absolute bottom-[8%] left-0 right-0 overflow-hidden pointer-events-none select-none">
-        <div className="vr-marquee-btm">VELVET ROOM</div>
+        <div className="vr-marquee-btm">THE VELVET</div>
       </div>
 
       {/* 背景动画粒子 */}
@@ -130,7 +130,7 @@ export const SplashScreen = ({ isVisible, onComplete }: SplashScreenProps) => {
             }}
             className="text-6xl font-bold text-white"
           >
-            天鹅绒房间
+            靛蓝色房间
           </motion.div>
         </motion.div>
 

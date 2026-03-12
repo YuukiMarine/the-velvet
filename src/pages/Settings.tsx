@@ -39,9 +39,9 @@ export const Settings = () => {
     { value: 'yellow', label: '黄色', color: '#F59E0B' },
     { value: 'red', label: '红色', color: '#EF4444' },
     { value: 'pink', label: '粉色', color: '#EC4899' },
-    { value: 'custom', label: '自定义', color: settings.customThemeColor || '#6366F1' }
+    { value: 'custom', label: '自定义', color: settings.customThemeColor || '#1c1c1c' }
   ];
-  const [customColorDraft, setCustomColorDraft] = useState(settings.customThemeColor || '#6366F1');
+  const [customColorDraft, setCustomColorDraft] = useState(settings.customThemeColor || '#1c1c1c');
 
   const sizeOf = (s: string) => {
     const bytes = new Blob([s]).size;
@@ -305,26 +305,24 @@ export const Settings = () => {
                         </div>
                         <div className="space-y-2">
                           <p className="text-sm font-medium text-gray-800 dark:text-white">音效方案</p>
-                          <div className="grid grid-cols-2 gap-2">
+                          <div className="grid grid-cols-3 gap-2">
                             {([
-                              { value: 'blue',   label: '蓝色', hint: 'P3 风格' },
-                              { value: 'yellow', label: '黄色', hint: 'P4 风格' },
-                              { value: 'red',    label: '红色', hint: 'P5 风格' },
-                              { value: 'pink',   label: '粉色', hint: 'P3 柔和' },
+                              { value: 'blue',   label: '清亮', hint: 'P3 风格' },
+                              { value: 'yellow', label: '复古', hint: 'P4 风格' },
+                              { value: 'red',    label: '霓虹', hint: 'P5 风格' },
                             ] as { value: import('@/types').ThemeType; label: string; hint: string }[]).map(opt => {
                               const active = (settings.customSoundScheme ?? 'blue') === opt.value;
                               return (
                                 <button
                                   key={opt.value}
                                   onClick={() => updateSettings({ customSoundScheme: opt.value })}
-                                  className={`text-left px-3 py-2 rounded-xl border-2 transition-all ${
+                                  className={`text-center px-3 py-2 rounded-xl border-2 transition-all ${
                                     active
                                       ? 'border-primary bg-primary/10 dark:bg-primary/20'
                                       : 'border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800'
                                   }`}
                                 >
                                   <div className={`text-xs font-bold ${active ? 'text-primary' : 'text-gray-700 dark:text-gray-300'}`}>{opt.label}</div>
-                                  <div className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">{opt.hint}</div>
                                 </button>
                               );
                             })}
@@ -1048,7 +1046,7 @@ export const Settings = () => {
                   <div className="space-y-4">
                     <div className="text-center py-4">
                       <div className="text-5xl mb-4">🦋</div>
-                      <h3 className="text-xl font-bold text-gray-800 dark:text-white mb-1">天鹅绒房间</h3>
+                      <h3 className="text-xl font-bold text-gray-800 dark:text-white mb-1">靛蓝色房间</h3>
                       <p className="text-sm text-gray-500 dark:text-gray-400">Persona Growth Tracker</p>
                       <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">v{import.meta.env.PACKAGE_VERSION || '0.0.1'}</p>
                     </div>
