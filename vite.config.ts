@@ -2,6 +2,7 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
 import { VitePWA } from 'vite-plugin-pwa'
+import pkg from './package.json'
 
 export default defineConfig({
   plugins: [
@@ -13,8 +14,8 @@ export default defineConfig({
       },
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'masked-icon.svg'],
       manifest: {
-        name: '天鹅绒房间',
-        short_name: '天鹅绒房间',
+        name: '靛蓝色房间',
+        short_name: '靛蓝色房间',
         description: '个人成长追踪器',
           theme_color: '#3B82F6',
           background_color: '#ffffff',
@@ -43,6 +44,9 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  define: {
+    'import.meta.env.PACKAGE_VERSION': JSON.stringify(pkg.version),
+  },
   build: {
     outDir: 'dist',
     assetsDir: 'assets',
@@ -53,7 +57,7 @@ export default defineConfig({
         manualChunks: {
           vendor: ['react', 'react-dom'],
           motion: ['framer-motion'],
-          charts: ['recharts'],
+          charts: ['recharts'],  // Dashboard 也依赖 recharts，需保留独立 chunk 以优化缓存
           db: ['dexie', 'dexie-react-hooks']
         }
       }

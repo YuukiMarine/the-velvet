@@ -13,6 +13,7 @@ const ActiveTodoCard = ({
   todo,
   progress,
   attrName,
+  allAttrNames,
   pct,
   onEdit,
   onArchive,
@@ -21,6 +22,7 @@ const ActiveTodoCard = ({
   todo: ReturnType<typeof useAppStore.getState>['todos'][number];
   progress: { count: number; target: number; isComplete: boolean };
   attrName: string;
+  allAttrNames: Record<string, string>;
   pct: number;
   onEdit: (id: string) => void;
   onArchive: (id: string) => void;
@@ -68,7 +70,14 @@ const ActiveTodoCard = ({
             <h4 className="font-semibold text-sm text-gray-800 dark:text-white truncate">{todo.title}</h4>
           </div>
           <div className="flex items-center gap-1.5 flex-wrap">
+            {/* 主属性 */}
             <span className="text-[10px] text-gray-400 dark:text-gray-500">{attrName} +{todo.points}</span>
+            {/* 额外属性加成 */}
+            {todo.extraBoosts && todo.extraBoosts.map((b, i) => (
+              <span key={i} className="text-[10px] text-gray-400 dark:text-gray-500">
+                {allAttrNames[b.attribute] ?? b.attribute} +{b.points}
+              </span>
+            ))}
             <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary">
               {renderFrequencyBadge(todo.frequency, todo.targetCount, todo.isLongTerm)}
             </span>
@@ -107,6 +116,107 @@ const ActiveTodoCard = ({
             animate={{ width: `${pct}%` }}
             transition={{ duration: 0.5, ease: 'easeOut' }}
           />
+        </div>
+      </div>
+      {pressing && (
+        <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-1.5 text-center">长按编辑…</p>
+      )}
+    </motion.div>
+  );
+};
+
+// ── PendingWeekdayTodoCard（日期未到，在归档区显示） ───────────
+const PendingWeekdayTodoCard = ({
+  todo,
+  attrName,
+  onEdit,
+  onArchive,
+  onDelete,
+  renderFrequencyBadge,
+}: {
+  todo: ReturnType<typeof useAppStore.getState>['todos'][number];
+  attrName: string;
+  onEdit: (id: string) => void;
+  onArchive: (id: string) => void;
+  onDelete: (id: string) => void;
+  renderFrequencyBadge: (frequency: import('@/types').TodoFrequency, targetCount?: number, isLongTerm?: boolean) => string;
+}) => {
+  const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [pressing, setPressing] = useState(false);
+
+  const startPress = () => {
+    setPressing(true);
+    pressTimer.current = setTimeout(() => {
+      setPressing(false);
+      onEdit(todo.id);
+    }, 500);
+  };
+
+  const cancelPress = () => {
+    if (pressTimer.current) {
+      clearTimeout(pressTimer.current);
+      pressTimer.current = null;
+    }
+    setPressing(false);
+  };
+
+  return (
+    <motion.div
+      animate={{ scale: pressing ? 0.97 : 1 }}
+      transition={{ duration: 0.15 }}
+      onPointerDown={startPress}
+      onPointerUp={cancelPress}
+      onPointerCancel={cancelPress}
+      onPointerLeave={cancelPress}
+      className="rounded-xl px-4 py-3 border border-gray-100 dark:border-gray-700/60 bg-gray-50/60 dark:bg-gray-800/40 opacity-75 select-none cursor-default"
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5 flex-wrap mb-1">
+            {/* 未到日期标签 */}
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400 font-medium">
+              📅 未到日期
+            </span>
+            {todo.important && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-400/20 text-amber-700 dark:text-amber-300">⭐</span>
+            )}
+            <h4 className="font-semibold text-sm text-gray-500 dark:text-gray-400 truncate">{todo.title}</h4>
+          </div>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-[10px] text-gray-400 dark:text-gray-500">{attrName} +{todo.points}</span>
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-200/60 dark:bg-gray-700/60 text-gray-400 dark:text-gray-500">
+              {renderFrequencyBadge(todo.frequency, todo.targetCount, todo.isLongTerm)}
+            </span>
+            {todo.weekdays && todo.weekdays.length > 0 && (
+              <span className="text-[10px] text-gray-400 dark:text-gray-500">
+                {todo.weekdays.map((d: number) => weekdayLabels[d]).join(' ')}
+              </span>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center gap-1 flex-shrink-0">
+          {/* 归档（禁用）按钮 */}
+          <button
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={() => onArchive(todo.id)}
+            className="w-7 h-7 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-gray-400 dark:text-gray-500 hover:bg-orange-100 dark:hover:bg-orange-900/30 hover:text-orange-500 transition-colors"
+            title="归档"
+          >
+            <svg viewBox="0 0 16 16" className="w-3.5 h-3.5" fill="currentColor">
+              <path d="M2 3a1 1 0 011-1h10a1 1 0 011 1v1.5a1 1 0 01-.4.8L9 8.5V13a1 1 0 01-1.447.894l-2-1A1 1 0 015 12V8.5L2.4 5.3A1 1 0 012 4.5V3zm1 0v1.5l3 3.75V12l2 1V8.25L11 4.5V3H3z" />
+            </svg>
+          </button>
+          {/* 彻底删除 */}
+          <button
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={() => onDelete(todo.id)}
+            className="w-7 h-7 rounded-full bg-red-50 dark:bg-red-900/20 flex items-center justify-center text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors"
+            title="删除"
+          >
+            <svg viewBox="0 0 16 16" className="w-3.5 h-3.5" fill="currentColor">
+              <path d="M5 2h6l1 1H3L5 2zm-2 2h10l-1 9H4L3 4zm3 2v6h1V6H6zm3 0v6h1V6H9z" />
+            </svg>
+          </button>
         </div>
       </div>
       {pressing && (
@@ -878,6 +988,7 @@ export const Todos = () => {
     title: '',
     attribute: 'knowledge' as AttributeId,
     points: 2,
+    extraBoosts: [] as Array<{ attribute: AttributeId; points: number }>,
     frequency: 'single' as TodoFrequency,
     targetCount: 1,
     repeatDaily: false,
@@ -900,6 +1011,16 @@ export const Todos = () => {
       return 0;
     });
   }, [todos, todayWeekday]);
+
+  /** 日期未到的待办：isActive 为 true 但今天不是指定的星期几 */
+  const pendingWeekdayTodos = useMemo(() =>
+    todos.filter(t =>
+      t.isActive &&
+      t.weekdays && t.weekdays.length > 0 &&
+      !t.weekdays.includes(todayWeekday)
+    ),
+  [todos, todayWeekday]);
+
   const archivedTodos = useMemo(() => todos.filter(t => !t.isActive), [todos]);
 
   const resetForm = () => {
@@ -907,6 +1028,7 @@ export const Todos = () => {
       title: '',
       attribute: 'knowledge',
       points: 2,
+      extraBoosts: [],
       frequency: 'single',
       targetCount: 1,
       repeatDaily: false,
@@ -921,10 +1043,14 @@ export const Todos = () => {
 
   const handleSave = async () => {
     if (!form.title.trim()) return;
+    const validExtraBoosts = form.extraBoosts
+      .filter(b => b.points >= 1)
+      .map(b => ({ attribute: b.attribute, points: Math.max(1, Math.min(5, b.points)) }));
     const payload = {
       title: form.title.trim(),
       attribute: form.attribute,
       points: Math.max(1, Math.min(5, form.points)),
+      extraBoosts: validExtraBoosts.length > 0 ? validExtraBoosts : undefined,
       frequency: form.frequency,
       targetCount: form.frequency === 'count' ? Math.max(1, form.targetCount) : undefined,
       repeatDaily: form.repeatDaily,
@@ -952,6 +1078,7 @@ export const Todos = () => {
       title: todo.title,
       attribute: todo.attribute,
       points: todo.points,
+      extraBoosts: todo.extraBoosts ? [...todo.extraBoosts] : [],
       frequency: todo.frequency,
       targetCount: todo.targetCount || 1,
       repeatDaily: !!todo.repeatDaily,
@@ -1057,6 +1184,7 @@ export const Todos = () => {
                   todo={todo}
                   progress={progress}
                   attrName={attrName}
+                  allAttrNames={settings.attributeNames}
                   pct={pct}
                   onEdit={handleEdit}
                   onArchive={(id) => updateTodo(id, { isActive: false })}
@@ -1077,10 +1205,32 @@ export const Todos = () => {
           <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-gray-100 dark:border-gray-800">
             <h3 className="font-bold text-gray-900 dark:text-white">已归档</h3>
             <span className="text-xs text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-800 px-2.5 py-1 rounded-full">
-              {archivedTodos.length} 项
+              {archivedTodos.length + pendingWeekdayTodos.length} 项
             </span>
           </div>
           <div className="p-3 space-y-2">
+
+            {/* ── 未到日期待办（isActive 但今日不在指定星期内）── */}
+            {pendingWeekdayTodos.map(todo => {
+              // 长按编辑
+              return (
+                <PendingWeekdayTodoCard
+                  key={todo.id}
+                  todo={todo}
+                  attrName={settings.attributeNames[todo.attribute]}
+                  onEdit={handleEdit}
+                  onArchive={(id) => updateTodo(id, { isActive: false })}
+                  onDelete={(id) => deleteTodo(id)}
+                  renderFrequencyBadge={renderFrequencyBadge}
+                />
+              );
+            })}
+
+            {/* 分割线：两类都有内容时才显示 */}
+            {pendingWeekdayTodos.length > 0 && archivedTodos.length > 0 && (
+              <div className="border-t border-gray-100 dark:border-gray-800 my-1" />
+            )}
+
             {archivedTodos.map(todo => {
               const archivedProgress = getTodayTodoProgress(todo.id);
               const wasCompleted = archivedProgress.isComplete;
@@ -1119,6 +1269,11 @@ export const Todos = () => {
                         <span className="text-[10px] text-gray-400 dark:text-gray-500">
                           {settings.attributeNames[todo.attribute]} +{todo.points}
                         </span>
+                        {todo.extraBoosts && todo.extraBoosts.map((b, i) => (
+                          <span key={i} className="text-[10px] text-gray-400 dark:text-gray-500">
+                            {settings.attributeNames[b.attribute] ?? b.attribute} +{b.points}
+                          </span>
+                        ))}
                         {todo.weekdays && todo.weekdays.length > 0 && (
                           <span className="text-[10px] text-gray-400 dark:text-gray-500">{todo.weekdays.map(d => weekdayLabels[d]).join(' ')}</span>
                         )}
@@ -1160,7 +1315,7 @@ export const Todos = () => {
                 </motion.div>
               );
             })}
-            {archivedTodos.length === 0 && (
+            {archivedTodos.length === 0 && pendingWeekdayTodos.length === 0 && (
               <div className="text-center text-sm text-gray-400 dark:text-gray-500 py-8">
                 归档区暂无内容
               </div>
@@ -1210,27 +1365,109 @@ export const Todos = () => {
                   </div>
                 </label>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-sm font-medium mb-1.5 text-gray-700 dark:text-gray-300">增长属性</label>
-                    <select
-                      value={form.attribute}
-                      onChange={(e) => setForm(prev => ({ ...prev, attribute: e.target.value as AttributeId }))}
-                      className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-xl bg-gray-50 dark:bg-gray-800 dark:text-white"
-                    >
-                      {Object.entries(settings.attributeNames).map(([key, name]) => (
-                        <option key={key} value={key}>{name}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1.5 text-gray-700 dark:text-gray-300">增长点数（1–5）</label>
-                    <PointsControl
-                      value={form.points}
-                      onChange={(v) => setForm(prev => ({ ...prev, points: v }))}
-                    />
-                  </div>
-                </div>
+                {/* ── 多属性增长区域 ── */}
+                {(() => {
+                  // 当前已使用的属性集合
+                  const usedAttrs = new Set<string>([
+                    form.attribute,
+                    ...form.extraBoosts.map(b => b.attribute),
+                  ]);
+                  // 还未被选中的第一个属性，用于点"+"时默认填入
+                  const firstUnused = (ATTR_IDS.find(id => !usedAttrs.has(id)) ?? 'knowledge') as AttributeId;
+                  const canAddMore = form.extraBoosts.length < 2 && usedAttrs.size < ATTR_IDS.length;
+
+                  return (
+                    <div className="space-y-2">
+                      {/* 标签行：左边"增长属性"，右边"+"按钮 */}
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium text-gray-700 dark:text-gray-300">增长属性</label>
+                        {canAddMore && (
+                          <motion.button
+                            whileTap={{ scale: 0.88 }}
+                            type="button"
+                            onClick={() => setForm(prev => ({
+                              ...prev,
+                              extraBoosts: [...prev.extraBoosts, { attribute: firstUnused, points: 1 }],
+                            }))}
+                            className="w-6 h-6 rounded-full bg-primary text-white flex items-center justify-center text-base font-bold leading-none"
+                            title="添加增长属性"
+                          >
+                            +
+                          </motion.button>
+                        )}
+                      </div>
+
+                      {/* 主属性行 */}
+                      <div className="flex items-center gap-2 p-2.5 rounded-xl bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-600">
+                        <select
+                          value={form.attribute}
+                          onChange={(e) => setForm(prev => ({ ...prev, attribute: e.target.value as AttributeId }))}
+                          className="flex-1 px-2 py-1.5 text-sm border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 dark:text-white focus:outline-none focus:border-primary"
+                        >
+                          {Object.entries(settings.attributeNames).map(([key, name]) => (
+                            // 主属性：排除已被 extraBoosts 占用的选项
+                            (!form.extraBoosts.some(b => b.attribute === key) || form.attribute === key) && (
+                              <option key={key} value={key}>{name}</option>
+                            )
+                          ))}
+                        </select>
+                        <PointsControl
+                          value={form.points}
+                          onChange={(v) => setForm(prev => ({ ...prev, points: v }))}
+                        />
+                        {/* 主属性无法删除，占位对齐 */}
+                        <div className="w-7 h-7 flex-shrink-0" />
+                      </div>
+
+                      {/* 额外加成行 */}
+                      {form.extraBoosts.map((boost, idx) => {
+                        // 该行可选的属性：排除主属性和其他额外行已选的属性（保留自身当前值）
+                        const otherUsed = new Set<string>([
+                          form.attribute,
+                          ...form.extraBoosts.filter((_, i) => i !== idx).map(b => b.attribute),
+                        ]);
+                        return (
+                          <div key={idx} className="flex items-center gap-2 p-2.5 rounded-xl bg-primary/5 dark:bg-primary/10 border border-primary/20 dark:border-primary/30">
+                            <select
+                              value={boost.attribute}
+                              onChange={(e) => setForm(prev => {
+                                const next = [...prev.extraBoosts];
+                                next[idx] = { ...next[idx], attribute: e.target.value as AttributeId };
+                                return { ...prev, extraBoosts: next };
+                              })}
+                              className="flex-1 px-2 py-1.5 text-sm border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 dark:text-white focus:outline-none focus:border-primary"
+                            >
+                              {Object.entries(settings.attributeNames).map(([key, name]) =>
+                                (!otherUsed.has(key) || boost.attribute === key) && (
+                                  <option key={key} value={key}>{name}</option>
+                                )
+                              )}
+                            </select>
+                            <PointsControl
+                              value={boost.points}
+                              onChange={(v) => setForm(prev => {
+                                const next = [...prev.extraBoosts];
+                                next[idx] = { ...next[idx], points: v };
+                                return { ...prev, extraBoosts: next };
+                              })}
+                            />
+                            <motion.button
+                              whileTap={{ scale: 0.9 }}
+                              type="button"
+                              onClick={() => setForm(prev => ({
+                                ...prev,
+                                extraBoosts: prev.extraBoosts.filter((_, i) => i !== idx),
+                              }))}
+                              className="w-7 h-7 flex-shrink-0 rounded-full bg-red-100 dark:bg-red-900/30 text-red-500 flex items-center justify-center text-base font-bold"
+                            >
+                              −
+                            </motion.button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
 
                 <div>
                   <label className="block text-sm font-medium mb-1.5 text-gray-700 dark:text-gray-300">完成频率</label>

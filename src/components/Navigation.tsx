@@ -75,10 +75,10 @@ export const Sidebar = () => {
       <div className="px-6 pt-8 pb-6">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-xl overflow-hidden flex-shrink-0">
-            <img src="/icon.png" alt="天鹅绒房间" className="w-full h-full object-cover" />
+            <img src="/icon.png" alt="靛蓝色房间" className="w-full h-full object-cover" />
           </div>
           <div>
-            <h1 className="text-base font-bold text-gray-900 dark:text-white leading-none">天鹅绒房间</h1>
+            <h1 className="text-base font-bold text-gray-900 dark:text-white leading-none">靛蓝色房间</h1>
             <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-0.5">成长追踪器</p>
           </div>
         </div>

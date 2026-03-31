@@ -1,5 +1,5 @@
-import { useEffect, useState, useRef } from 'react';
-import { AnimatePresence } from 'framer-motion';
+import { useEffect, useState, useRef, lazy, Suspense } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { useAppStore, toLocalDateKey } from '@/store';
 import { Sidebar, BottomNav } from '@/components/Navigation';
 import { WelcomeModal } from '@/components/WelcomeModal';
@@ -10,11 +10,12 @@ import { SkillUnlockModal } from '@/components/SkillUnlockModal';
 import { Dashboard } from '@/pages/Dashboard';
 import { Activities } from '@/pages/Activities';
 import { Achievements } from '@/pages/Achievements';
-import { Statistics } from '@/pages/Statistics';
+const Statistics = lazy(() => import('@/pages/Statistics').then(m => ({ default: m.Statistics })));
 import { Settings } from '@/pages/Settings';
 import { Todos } from '@/pages/Todos';
 import { primeCurrentTheme } from '@/utils/feedback';
 import { BackgroundAnimation } from '@/components/BackgroundAnimation';
+import { isNative } from '@/utils/native';
 
 function App() {
   const { currentPage, initializeApp, user, levelUpNotification, setLevelUpNotification, achievementNotification, setAchievementNotification, skillNotification, setSkillNotification, settings, modalBlocker } = useAppStore();
@@ -24,6 +25,10 @@ function App() {
   const primedRef = useRef(false);
   // 记录上次打开时的日期，用于检测隔天回来
   const lastDateRef = useRef(toLocalDateKey());
+  // Android 返回键：双击退出提示
+  const [showBackToast, setShowBackToast] = useState(false);
+  const lastBackPressRef = useRef(0);
+  const backToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const init = async () => {
@@ -60,6 +65,44 @@ function App() {
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, []);
 
+  // ── Android 返回键：双击退出 ───────────────────────────────
+  useEffect(() => {
+    if (!isNative()) return; // 仅在原生平台生效
+
+    let pluginListener: { remove: () => void } | null = null;
+
+    const setup = async () => {
+      const { App: CapApp } = await import('@capacitor/app');
+      pluginListener = await CapApp.addListener('backButton', () => {
+        const now = Date.now();
+        const DOUBLE_PRESS_MS = 2000; // 2 秒内双击退出
+
+        if (now - lastBackPressRef.current < DOUBLE_PRESS_MS) {
+          // 第二次点击：退出 App
+          if (backToastTimerRef.current) clearTimeout(backToastTimerRef.current);
+          setShowBackToast(false);
+          CapApp.exitApp();
+        } else {
+          // 第一次点击：显示 Toast 提示
+          lastBackPressRef.current = now;
+          setShowBackToast(true);
+          if (backToastTimerRef.current) clearTimeout(backToastTimerRef.current);
+          backToastTimerRef.current = setTimeout(() => {
+            setShowBackToast(false);
+            lastBackPressRef.current = 0;
+          }, DOUBLE_PRESS_MS);
+        }
+      });
+    };
+
+    setup();
+
+    return () => {
+      pluginListener?.remove();
+      if (backToastTimerRef.current) clearTimeout(backToastTimerRef.current);
+    };
+  }, []);
+
   // 在首次用户交互时预加载当前主题音效，之后所有点击都是零延迟播放
   useEffect(() => {
     const handleFirstInteraction = () => {
@@ -78,7 +121,7 @@ function App() {
   }, []);
 
   if (showSplash) {
-    return <SplashScreen isVisible={showSplash} onComplete={() => setShowSplash(false)} />;
+    return <SplashScreen isVisible={showSplash} onComplete={() => setShowSplash(false)} splashStyle={settings.splashStyle} splashSpeed={settings.splashSpeed} />;
   }
 
   if (isLoading) {
@@ -120,7 +163,7 @@ function App() {
       case 'todos':
         return <Todos />;
       case 'statistics':
-        return <Statistics />;
+        return <Suspense fallback={<div className="flex items-center justify-center h-64 text-gray-400">加载中…</div>}><Statistics /></Suspense>;
       case 'settings':
         return <Settings />;
       default:
@@ -130,6 +173,22 @@ function App() {
 
   return (
     <div className={`min-h-screen ${settings.darkMode ? 'dark' : ''}`}>
+      {/* Android 返回键双击退出 Toast */}
+      <AnimatePresence>
+        {showBackToast && (
+          <motion.div
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 12 }}
+            transition={{ duration: 0.22 }}
+            className="fixed bottom-32 left-1/2 -translate-x-1/2 z-[200] pointer-events-none"
+          >
+            <div className="bg-gray-900/90 dark:bg-gray-100/90 text-white dark:text-gray-900 text-sm font-semibold px-5 py-3 rounded-2xl shadow-xl backdrop-blur-sm whitespace-nowrap">
+              再次点击回到现实
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
         <div className="min-h-screen bg-gray-50 dark:bg-gray-900 relative">
           {/* 背景图片 */}
           {settings.backgroundImage && (

@@ -45,13 +45,15 @@ const CAL_KEY = 'activities-calendar-open';
 
 interface CalendarViewProps {
   activities: ReturnType<typeof useAppStore.getState>['activities'];
+  /** 外部受控的选中日期 key（YYYY-MM-DD） */
+  selectedDay: string | null;
+  onDaySelect: (day: string | null) => void;
 }
 
-const CalendarView = ({ activities }: CalendarViewProps) => {
+const CalendarView = ({ activities, selectedDay, onDaySelect }: CalendarViewProps) => {
   const today = new Date();
   const [viewYear, setViewYear]   = useState(today.getFullYear());
   const [viewMonth, setViewMonth] = useState(today.getMonth()); // 0-based
-  const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [primaryColor, setPrimaryColor] = useState('#3B82F6');
 
   useEffect(() => {
@@ -99,12 +101,12 @@ const CalendarView = ({ activities }: CalendarViewProps) => {
   const prevMonth = () => {
     if (viewMonth === 0) { setViewYear(y => y - 1); setViewMonth(11); }
     else setViewMonth(m => m - 1);
-    setSelectedDay(null);
+    onDaySelect(null);
   };
   const nextMonth = () => {
     if (viewMonth === 11) { setViewYear(y => y + 1); setViewMonth(0); }
     else setViewMonth(m => m + 1);
-    setSelectedDay(null);
+    onDaySelect(null);
   };
 
   const todayKey = toLocalDateKey(today);
@@ -132,7 +134,7 @@ const CalendarView = ({ activities }: CalendarViewProps) => {
   const applyPicker = () => {
     setViewYear(pickerYear);
     setViewMonth(pickerMonth);
-    setSelectedDay(null);
+    onDaySelect(null);
     setShowPicker(false);
   };
 
@@ -279,7 +281,7 @@ const CalendarView = ({ activities }: CalendarViewProps) => {
               <motion.button
                 key={key}
                 whileTap={{ scale: 0.82 }}
-                onClick={() => setSelectedDay(prev => prev === key ? null : key)}
+                onClick={() => onDaySelect(selectedDay === key ? null : key)}
                 className={`relative flex flex-col items-center justify-center rounded-xl py-2 transition-all ${
                   isSelected
                     ? 'bg-primary/15 dark:bg-primary/20'
@@ -460,6 +462,11 @@ export const Activities = () => {
   const [openYears, setOpenYears] = useState<Record<string, boolean>>({});
   const [openMonths, setOpenMonths] = useState<Record<string, boolean>>({});
 
+  // ---- 日历选中日期（提升状态，支持补录） ----
+  const [calendarSelectedDay, setCalendarSelectedDay] = useState<string | null>(null);
+  // ---- 补录目标日期（非今天的过去日期） ----
+  const [backdateTarget, setBackdateTarget] = useState<string | null>(null);
+
   // ---- 保存成功弹窗 ----
   const [showSaveSuccess, setShowSaveSuccess] = useState(false);
   const [unlockHint, setUnlockHint] = useState<{ achievements: number; skills: number }>({ achievements: 0, skills: 0 });
@@ -561,7 +568,14 @@ export const Activities = () => {
     setLastSavedDescription(description);
     setLastSavedPoints(manualPoints);
     setLastSavedImportant(importantOnly);
-    const result = await addActivity(description, manualPoints, 'local', { important: importantOnly });
+    // 补录：若选中了过去日期，将时间设为当天中午 12:00，避免时区偏移
+    const backdateDate = backdateTarget
+      ? new Date(`${backdateTarget}T12:00:00`)
+      : undefined;
+    const result = await addActivity(description, manualPoints, 'local', {
+      important: importantOnly,
+      date: backdateDate,
+    });
     setUnlockHint(result.unlockHints);
     setModalBlocker(true);
     setShowSaveSuccess(true);
@@ -570,6 +584,7 @@ export const Activities = () => {
     setManualPoints({ knowledge: 0, guts: 0, dexterity: 0, kindness: 0, charm: 0 });
     setImportantOnly(false);
     setShowInput(false);
+    setBackdateTarget(null);
   };
 
   const adjustPoints = (attr: string, delta: number) => {
@@ -769,7 +784,11 @@ export const Activities = () => {
       {/* 日历视图 */}
       <AnimatePresence>
         {showCalendar && (
-          <CalendarView activities={activities} />
+          <CalendarView
+            activities={activities}
+            selectedDay={calendarSelectedDay}
+            onDaySelect={setCalendarSelectedDay}
+          />
         )}
       </AnimatePresence>
 
@@ -1078,15 +1097,45 @@ export const Activities = () => {
         )}
       </div>
 
-      {/* FAB 悬浮按钮 */}
-      <motion.button
-        whileHover={{ scale: 1.08 }}
-        whileTap={{ scale: 0.92 }}
-        onClick={() => { triggerNavFeedback(); setShowInput(true); }}
-        className="fixed bottom-24 right-5 md:bottom-8 md:right-8 w-14 h-14 bg-primary text-white rounded-2xl shadow-lg shadow-primary/30 flex items-center justify-center z-40 cursor-pointer"
-      >
-        <PlusIcon />
-      </motion.button>
+      {/* FAB 悬浮按钮：选中过去七天内日期时变为"补"录模式 */}
+      {(() => {
+        const sevenDaysAgo = (() => {
+          const d = new Date();
+          d.setDate(d.getDate() - 7);
+          return toLocalDateKey(d);
+        })();
+        const isPastDaySelected =
+          showCalendar &&
+          calendarSelectedDay !== null &&
+          calendarSelectedDay < todayKey &&
+          calendarSelectedDay >= sevenDaysAgo;
+        return (
+          <motion.button
+            whileHover={{ scale: 1.08 }}
+            whileTap={{ scale: 0.92 }}
+            onClick={() => {
+              triggerNavFeedback();
+              if (isPastDaySelected) {
+                setBackdateTarget(calendarSelectedDay);
+              } else {
+                setBackdateTarget(null);
+              }
+              setShowInput(true);
+            }}
+            className={`fixed bottom-24 right-5 md:bottom-8 md:right-8 w-14 h-14 text-white rounded-2xl shadow-lg flex items-center justify-center z-40 cursor-pointer transition-colors ${
+              isPastDaySelected
+                ? 'bg-amber-500 shadow-amber-500/30'
+                : 'bg-primary shadow-primary/30'
+            }`}
+          >
+            {isPastDaySelected ? (
+              <span className="text-xl font-black leading-none">补</span>
+            ) : (
+              <PlusIcon />
+            )}
+          </motion.button>
+        );
+      })()}
 
       {/* 输入抽屉弹窗 */}
       <AnimatePresence>
@@ -1097,7 +1146,7 @@ export const Activities = () => {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               className="fixed inset-0 bg-black/40 z-50"
-              onClick={() => { setShowInput(false); setAnalyzedPoints(null); }}
+              onClick={() => { setShowInput(false); setAnalyzedPoints(null); setBackdateTarget(null); }}
             />
             <motion.div
               initial={{ y: '100%' }}
@@ -1110,7 +1159,17 @@ export const Activities = () => {
               {/* 拖拽指示条 */}
               <div className="w-10 h-1 bg-gray-200 dark:bg-gray-700 rounded-full mx-auto mb-5" />
 
-              <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">记录一件事</h3>
+              {backdateTarget ? (
+                <div className="mb-4">
+                  <h3 className="text-lg font-bold text-gray-900 dark:text-white">补录历史记录</h3>
+                  <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5 flex items-center gap-1">
+                    <span>📅</span>
+                    <span>记录日期：{backdateTarget.replace(/-/g, '/')}</span>
+                  </p>
+                </div>
+              ) : (
+                <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">记录一件事</h3>
+              )}
 
               <textarea
                 value={description}

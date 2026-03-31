@@ -1,10 +1,11 @@
 import { motion } from 'framer-motion';
 import { useRef, useState, useCallback } from 'react';
-import { useAppStore, DEFAULT_SUMMARY_PROMPT_PRESETS, toLocalDateKey, applyCustomThemeColor } from '@/store';
+import { useAppStore, DEFAULT_SUMMARY_PROMPT_PRESETS, FAMILIAR_FACE_PRESETS, toLocalDateKey, applyCustomThemeColor } from '@/store';
 import { triggerThemeSwitchFeedback } from '@/utils/feedback';
 import { ThemeType, AttributeId, SummaryPromptPreset } from '@/types';
 import { db } from '@/db';
 import { PageTitle } from '@/components/PageTitle';
+import { exportBackup, isNative } from '@/utils/native';
 
 
 export const Settings = () => {
@@ -39,9 +40,9 @@ export const Settings = () => {
     { value: 'yellow', label: '黄色', color: '#F59E0B' },
     { value: 'red', label: '红色', color: '#EF4444' },
     { value: 'pink', label: '粉色', color: '#EC4899' },
-    { value: 'custom', label: '自定义', color: settings.customThemeColor || '#6366F1' }
+    { value: 'custom', label: '自定义', color: settings.customThemeColor || '#1c1c1c' }
   ];
-  const [customColorDraft, setCustomColorDraft] = useState(settings.customThemeColor || '#6366F1');
+  const [customColorDraft, setCustomColorDraft] = useState(settings.customThemeColor || '#1c1c1c');
 
   const sizeOf = (s: string) => {
     const bytes = new Blob([s]).size;
@@ -52,22 +53,23 @@ export const Settings = () => {
 
   const handleDownload = async () => {
     const jsonString = await buildExportJson();
-    const blob = new Blob([jsonString], { type: 'application/json' });
-    // Revoke previous URL
-    if (downloadLinkUrlRef.current) URL.revokeObjectURL(downloadLinkUrlRef.current);
-    const url = URL.createObjectURL(blob);
-    downloadLinkUrlRef.current = url;
     const filename = `velvet-room-backup-${toLocalDateKey()}.json`;
-    // Trigger download
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    const size = sizeOf(jsonString);
-    setDownloadLink({ url, filename, size });
-    setExportMessage(null);
+    try {
+      const result = await exportBackup(filename, jsonString);
+      if (result) {
+        // Web 端：返回 Blob 下载链接
+        if (downloadLinkUrlRef.current) URL.revokeObjectURL(downloadLinkUrlRef.current);
+        downloadLinkUrlRef.current = result.url;
+        setDownloadLink(result);
+        setExportMessage(null);
+      } else {
+        // 原生端：分享面板已弹出，给一个友好提示
+        setExportMessage('分享面板已打开，请选择保存位置（文件管理 / 云盘 / 邮件 等）');
+        setDownloadLink(null);
+      }
+    } catch (err) {
+      setExportMessage(`导出失败：${err instanceof Error ? err.message : String(err)}`);
+    }
   };
 
   const handleCopy = async () => {
@@ -305,26 +307,24 @@ export const Settings = () => {
                         </div>
                         <div className="space-y-2">
                           <p className="text-sm font-medium text-gray-800 dark:text-white">音效方案</p>
-                          <div className="grid grid-cols-2 gap-2">
+                          <div className="grid grid-cols-3 gap-2">
                             {([
-                              { value: 'blue',   label: '蓝色', hint: 'P3 风格' },
-                              { value: 'yellow', label: '黄色', hint: 'P4 风格' },
-                              { value: 'red',    label: '红色', hint: 'P5 风格' },
-                              { value: 'pink',   label: '粉色', hint: 'P3 柔和' },
+                              { value: 'blue',   label: '清亮', hint: 'P3 风格' },
+                              { value: 'yellow', label: '复古', hint: 'P4 风格' },
+                              { value: 'red',    label: '霓虹', hint: 'P5 风格' },
                             ] as { value: import('@/types').ThemeType; label: string; hint: string }[]).map(opt => {
                               const active = (settings.customSoundScheme ?? 'blue') === opt.value;
                               return (
                                 <button
                                   key={opt.value}
                                   onClick={() => updateSettings({ customSoundScheme: opt.value })}
-                                  className={`text-left px-3 py-2 rounded-xl border-2 transition-all ${
+                                  className={`text-center px-3 py-2 rounded-xl border-2 transition-all ${
                                     active
                                       ? 'border-primary bg-primary/10 dark:bg-primary/20'
                                       : 'border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800'
                                   }`}
                                 >
                                   <div className={`text-xs font-bold ${active ? 'text-primary' : 'text-gray-700 dark:text-gray-300'}`}>{opt.label}</div>
-                                  <div className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">{opt.hint}</div>
                                 </button>
                               );
                             })}
@@ -349,6 +349,31 @@ export const Settings = () => {
                         <div className="absolute left-1 top-1 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-5"></div>
                       </label>
                     </div>
+
+                    {/* 音量大小滑块：仅非静音时显示 */}
+                    {!settings.soundMuted && (
+                      <div className="bg-gray-50 dark:bg-gray-700 rounded-lg px-4 py-3 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <div className="text-sm font-medium text-gray-800 dark:text-white">音量大小</div>
+                          <span className="text-xs font-semibold tabular-nums text-primary">
+                            {settings.soundVolume ?? 80}%
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="text-base select-none">🔈</span>
+                          <input
+                            type="range"
+                            min={0}
+                            max={100}
+                            step={5}
+                            value={settings.soundVolume ?? 80}
+                            onChange={(e) => updateSettings({ soundVolume: Number(e.target.value) })}
+                            className="flex-1 h-1.5 appearance-none rounded-full bg-gray-200 dark:bg-gray-600 accent-primary cursor-pointer"
+                          />
+                          <span className="text-base select-none">🔊</span>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -643,6 +668,66 @@ export const Settings = () => {
                       </div>
                     )}
 
+                    {/* 开屏动画 */}
+                    <div className="space-y-3 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                      <div>
+                        <h4 className="font-medium text-gray-800 dark:text-white">开屏动画</h4>
+                        <p className="text-sm text-gray-600 dark:text-gray-400">启动时的过场风格与速率</p>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        {([
+                          { value: 'velvet', label: '靛蓝色房间', desc: '深邃马戏团' },
+                          { value: 'p5',     label: 'Persona 5',  desc: '红黑剪报风' },
+                          { value: 'p3',     label: 'Persona 3',  desc: '深夜月光录' },
+                          { value: 'p4',     label: 'Persona 4',  desc: '黄色警戒线' },
+                        ] as { value: 'velvet'|'p5'|'p3'|'p4'; label: string; desc: string }[]).map(opt => {
+                          const active = (settings.splashStyle ?? 'velvet') === opt.value;
+                          return (
+                            <button
+                              key={opt.value}
+                              onClick={() => updateSettings({ splashStyle: opt.value })}
+                              className={`text-left px-3 py-2.5 rounded-xl border-2 transition-all ${
+                                active
+                                  ? 'border-primary bg-primary/10 dark:bg-primary/20'
+                                  : 'border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800'
+                              }`}
+                            >
+                              <div className={`text-sm font-bold flex items-center gap-1.5 ${active ? 'text-primary' : 'text-gray-800 dark:text-white'}`}>
+                                <span className={`w-3 h-3 rounded-full border flex-shrink-0 transition-colors ${active ? 'bg-primary border-primary' : 'border-gray-300 dark:border-gray-500'}`} />
+                                {opt.label}
+                              </div>
+                              <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 pl-4">{opt.desc}</div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <div className="flex items-center gap-2 pt-1">
+                        <span className="text-sm text-gray-600 dark:text-gray-400 flex-shrink-0">速率</span>
+                        <div className="flex gap-2">
+                          {([
+                            { value: 'fast',   label: '快' },
+                            { value: 'normal', label: '正常' },
+                            { value: 'slow',   label: '慢' },
+                          ] as { value: 'fast'|'normal'|'slow'; label: string }[]).map(opt => {
+                            const active = (settings.splashSpeed ?? 'normal') === opt.value;
+                            return (
+                              <button
+                                key={opt.value}
+                                onClick={() => updateSettings({ splashSpeed: opt.value })}
+                                className={`px-4 py-1.5 rounded-lg text-sm font-medium border-2 transition-all ${
+                                  active
+                                    ? 'border-primary bg-primary text-white'
+                                    : 'border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300'
+                                }`}
+                              >
+                                {opt.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+
                     {/* 背景图片上传 */}
                     <div className="space-y-3">
                       <h4 className="font-medium text-gray-800 dark:text-white">背景图片</h4>
@@ -721,195 +806,239 @@ export const Settings = () => {
                   </div>
                 )}
 
-                {section.id === 'summary' && (
-                  <div className="space-y-5">
-                    {/* API 提供商 */}
-                    <div className="space-y-2">
-                      <p className="text-[11px] font-semibold tracking-widest uppercase text-gray-400 dark:text-gray-500">API 提供商</p>
-                      <div className="grid grid-cols-3 gap-2">
-                        {([
-                          { value: 'openai', label: 'OpenAI', hint: 'gpt-4o-mini' },
-                          { value: 'deepseek', label: 'DeepSeek', hint: 'deepseek-chat' },
-                          { value: 'kimi', label: 'Kimi', hint: 'moonshot-v1-8k' },
-                        ] as const).map(p => (
-                          <button
-                            key={p.value}
-                            onClick={() => updateSettings({ summaryApiProvider: p.value })}
-                            className={`py-2.5 rounded-xl text-xs font-bold transition-all border ${
-                              (settings.summaryApiProvider ?? 'openai') === p.value
-                                ? 'bg-primary text-white border-primary shadow-md'
-                                : 'bg-gray-50 dark:bg-gray-700 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-600'
-                            }`}
-                          >
-                            <div>{p.label}</div>
-                            <div className="opacity-60 font-normal mt-0.5">{p.hint}</div>
-                          </button>
-                        ))}
+                {section.id === 'summary' && (() => {
+                  const provider = settings.summaryApiProvider ?? 'openai';
+                  const activePresetId = settings.summaryActivePresetId ?? 'igor';
+                  const activeFamiliar = FAMILIAR_FACE_PRESETS.find(p => p.id === activePresetId);
+                  const familiarTaglines: Record<string, string> = {
+                    'elizabeth': '好奇探索，郑重记录',
+                    'theodore': '恭谨诚挚，深情服侍',
+                    'margaret': '典雅沉思，潜能鉴证',
+                    'caroline-justine': '卡萝莉娜 · 芮丝汀娜',
+                  };
+                  return (
+                  <div className="space-y-3 pb-1">
+
+                    {/* ── API 配置卡片 ── */}
+                    <div className="rounded-2xl border border-gray-100 dark:border-gray-700/60 overflow-hidden">
+                      <div className="px-4 py-3 bg-gray-50 dark:bg-gray-800/60 border-b border-gray-100 dark:border-gray-700/60">
+                        <span className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">API 配置</span>
                       </div>
-                    </div>
+                      <div className="p-4 space-y-4 dark:bg-gray-800/20">
 
-                    {/* API Key */}
-                    <div className="space-y-2">
-                      <p className="text-[11px] font-semibold tracking-widest uppercase text-gray-400 dark:text-gray-500">API 密钥</p>
-                      <div className="flex gap-2">
-                        <input
-                          type="password"
-                          value={summaryApiKeyDraft}
-                          onChange={e => { setSummaryApiKeyDraft(e.target.value); setSummaryApiKeySaved(false); }}
-                          placeholder="sk-..."
-                          className="flex-1 px-3 py-2.5 text-sm border border-gray-200 dark:border-gray-600 rounded-xl dark:bg-gray-700 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-primary"
-                        />
-                        <button
-                          onClick={() => { updateSettings({ summaryApiKey: summaryApiKeyDraft }); setSummaryApiKeySaved(true); }}
-                          className={`px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${
-                            summaryApiKeySaved
-                              ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400'
-                              : 'bg-primary text-white'
-                          }`}
-                        >
-                          {summaryApiKeySaved ? '✓' : '保存'}
-                        </button>
-                      </div>
-                      <p className="text-xs text-gray-400 dark:text-gray-500">API Key 仅保存在本地，不会上传。</p>
-                    </div>
-
-                    {/* 自定义 Base URL */}
-                    <div className="space-y-2">
-                      <p className="text-[11px] font-semibold tracking-widest uppercase text-gray-400 dark:text-gray-500">自定义 API 地址（可选）</p>
-                      <input
-                        type="text"
-                        value={settings.summaryApiBaseUrl ?? ''}
-                        onChange={e => updateSettings({ summaryApiBaseUrl: e.target.value || undefined })}
-                        placeholder={
-                          (settings.summaryApiProvider ?? 'openai') === 'deepseek' ? 'https://api.deepseek.com/v1' :
-                          (settings.summaryApiProvider ?? 'openai') === 'kimi' ? 'https://api.moonshot.cn/v1' :
-                          'https://api.openai.com/v1'
-                        }
-                        className="w-full px-3 py-2.5 text-sm border border-gray-200 dark:border-gray-600 rounded-xl dark:bg-gray-700 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-primary"
-                      />
-                    </div>
-
-                    {/* 自定义模型名 */}
-                    <div className="space-y-2">
-                      <p className="text-[11px] font-semibold tracking-widest uppercase text-gray-400 dark:text-gray-500">模型名称（可选）</p>
-                      <input
-                        type="text"
-                        value={settings.summaryModel ?? ''}
-                        onChange={e => updateSettings({ summaryModel: e.target.value || undefined })}
-                        placeholder={
-                          (settings.summaryApiProvider ?? 'openai') === 'deepseek' ? 'deepseek-chat' :
-                          (settings.summaryApiProvider ?? 'openai') === 'kimi' ? 'moonshot-v1-8k' :
-                          'gpt-4o-mini'
-                        }
-                        className="w-full px-3 py-2.5 text-sm border border-gray-200 dark:border-gray-600 rounded-xl dark:bg-gray-700 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-primary"
-                      />
-                    </div>
-
-                    {/* 风格预设 */}
-                    <div className="space-y-2 pt-1 border-t border-gray-100 dark:border-gray-800">
-                      <div className="flex items-center justify-between">
-                        <p className="text-[11px] font-semibold tracking-widest uppercase text-gray-400 dark:text-gray-500">沟通风格预设</p>
-                        <button
-                          onClick={handleAddCustomPreset}
-                          className="text-xs font-bold text-primary bg-primary/10 px-3 py-1 rounded-lg hover:bg-primary/20 transition-colors"
-                        >
-                          + 添加
-                        </button>
-                      </div>
-
-                      <div className="space-y-2">
-                        {effectivePresets.map(preset => (
-                          <div
-                            key={preset.id}
-                            className={`rounded-2xl border transition-all ${
-                              (settings.summaryActivePresetId ?? 'igor') === preset.id
-                                ? 'border-primary/50 bg-primary/5 dark:bg-primary/10'
-                                : 'border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-700/50'
-                            }`}
-                          >
-                            {editingPresetId === preset.id && presetDraft ? (
-                              /* 编辑模式 */
-                              <div className="p-4 space-y-3">
-                                <input
-                                  type="text"
-                                  value={presetDraft.name}
-                                  onChange={e => setPresetDraft({ ...presetDraft, name: e.target.value })}
-                                  placeholder="风格名称"
-                                  className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-xl dark:bg-gray-700 dark:text-white focus:outline-none focus:border-primary"
-                                />
-                                <textarea
-                                  value={presetDraft.systemPrompt}
-                                  onChange={e => setPresetDraft({ ...presetDraft, systemPrompt: e.target.value })}
-                                  placeholder="输入 system prompt…"
-                                  rows={6}
-                                  className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-xl dark:bg-gray-700 dark:text-white resize-none focus:outline-none focus:border-primary"
-                                />
-                                <div className="flex gap-2">
-                                  <button
-                                    onClick={() => handleSavePreset(presetDraft)}
-                                    className="flex-1 py-2 rounded-xl text-sm font-bold bg-primary text-white"
-                                  >
-                                    保存
-                                  </button>
-                                  <button
-                                    onClick={() => { setEditingPresetId(null); setPresetDraft(null); }}
-                                    className="flex-1 py-2 rounded-xl text-sm font-bold bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200"
-                                  >
-                                    取消
-                                  </button>
-                                </div>
-                              </div>
-                            ) : (
-                              /* 展示模式 */
-                              <div className="p-4">
-                                <div className="flex items-center justify-between">
-                                  <div className="flex items-center gap-2">
-                                    <button
-                                      onClick={() => updateSettings({ summaryActivePresetId: preset.id })}
-                                      className={`w-4 h-4 rounded-full border-2 flex-shrink-0 transition-all ${
-                                        (settings.summaryActivePresetId ?? 'igor') === preset.id
-                                          ? 'bg-primary border-primary'
-                                          : 'border-gray-300 dark:border-gray-500'
-                                      }`}
-                                    />
-                                    <span className="text-sm font-bold text-gray-800 dark:text-white">{preset.name}</span>
-                                    {preset.isBuiltin && (
-                                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500">内置</span>
-                                    )}
-                                  </div>
-                                  <div className="flex items-center gap-1">
-                                    <button
-                                      onClick={() => { setPresetDraft({ ...preset }); setEditingPresetId(preset.id); }}
-                                      className="text-xs text-gray-400 dark:text-gray-500 px-2 py-1 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
-                                    >
-                                      编辑
-                                    </button>
-                                    {!preset.isBuiltin && (
-                                      <button
-                                        onClick={() => handleDeleteCustomPreset(preset.id)}
-                                        className="text-xs text-red-400 px-2 py-1 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-                                      >
-                                        删除
-                                      </button>
-                                    )}
-                                  </div>
-                                </div>
-                                {preset.systemPrompt && (
-                                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 leading-relaxed line-clamp-2">
-                                    {preset.systemPrompt}
-                                  </p>
-                                )}
-                                {!preset.systemPrompt && (
-                                  <p className="text-xs text-gray-400 dark:text-gray-500 mt-2 italic">（暂无 prompt，请编辑）</p>
-                                )}
-                              </div>
-                            )}
+                        {/* 提供商 */}
+                        <div className="space-y-1.5">
+                          <p className="text-xs font-medium text-gray-500 dark:text-gray-400">提供商</p>
+                          <div className="grid grid-cols-3 gap-1.5">
+                            {([
+                              { value: 'openai', label: 'OpenAI', hint: 'gpt-4o-mini' },
+                              { value: 'deepseek', label: 'DeepSeek', hint: 'deepseek-chat' },
+                              { value: 'kimi', label: 'Kimi', hint: 'moonshot-v1-8k' },
+                            ] as const).map(p => (
+                              <button
+                                key={p.value}
+                                onClick={() => updateSettings({ summaryApiProvider: p.value })}
+                                className={`py-2.5 rounded-xl text-xs font-bold transition-all border ${
+                                  provider === p.value
+                                    ? 'bg-primary text-white border-primary shadow-sm'
+                                    : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-600'
+                                }`}
+                              >
+                                <div>{p.label}</div>
+                                <div className="opacity-55 font-normal mt-0.5">{p.hint}</div>
+                              </button>
+                            ))}
                           </div>
-                        ))}
+                        </div>
+
+                        {/* API Key */}
+                        <div className="space-y-1.5">
+                          <p className="text-xs font-medium text-gray-500 dark:text-gray-400">API 密钥</p>
+                          <div className="flex gap-2">
+                            <input
+                              type="password"
+                              value={summaryApiKeyDraft}
+                              onChange={e => { setSummaryApiKeyDraft(e.target.value); setSummaryApiKeySaved(false); }}
+                              placeholder="sk-..."
+                              className="flex-1 px-3 py-2.5 text-sm border border-gray-200 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-primary"
+                            />
+                            <button
+                              onClick={() => { updateSettings({ summaryApiKey: summaryApiKeyDraft }); setSummaryApiKeySaved(true); }}
+                              className={`px-4 py-2.5 rounded-xl text-sm font-bold transition-all flex-shrink-0 ${
+                                summaryApiKeySaved
+                                  ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400'
+                                  : 'bg-primary text-white'
+                              }`}
+                            >
+                              {summaryApiKeySaved ? '✓ 已保存' : '保存'}
+                            </button>
+                          </div>
+                          <p className="text-[11px] text-gray-400 dark:text-gray-500">Key 仅保存在本地设备，不会上传。</p>
+                        </div>
+
+                        {/* 高级：URL + 模型 */}
+                        <div className="space-y-3 pt-1 border-t border-gray-100 dark:border-gray-700/50">
+                          <p className="text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">高级选项（可选）</p>
+                          <div className="space-y-1.5">
+                            <p className="text-xs text-gray-500 dark:text-gray-400">自定义 API 地址</p>
+                            <input
+                              type="text"
+                              value={settings.summaryApiBaseUrl ?? ''}
+                              onChange={e => updateSettings({ summaryApiBaseUrl: e.target.value || undefined })}
+                              placeholder={
+                                provider === 'deepseek' ? 'https://api.deepseek.com/v1' :
+                                provider === 'kimi' ? 'https://api.moonshot.cn/v1' :
+                                'https://api.openai.com/v1'
+                              }
+                              className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-primary"
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <p className="text-xs text-gray-500 dark:text-gray-400">模型名称</p>
+                            <input
+                              type="text"
+                              value={settings.summaryModel ?? ''}
+                              onChange={e => updateSettings({ summaryModel: e.target.value || undefined })}
+                              placeholder={
+                                provider === 'deepseek' ? 'deepseek-chat' :
+                                provider === 'kimi' ? 'moonshot-v1-8k' :
+                                'gpt-4o-mini'
+                              }
+                              className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-primary"
+                            />
+                          </div>
+                        </div>
+
                       </div>
                     </div>
+
+                    {/* ── 沟通风格卡片 ── */}
+                    <div className="rounded-2xl border border-gray-100 dark:border-gray-700/60 overflow-hidden">
+                      <div className="px-4 py-3 bg-gray-50 dark:bg-gray-800/60 border-b border-gray-100 dark:border-gray-700/60">
+                        <span className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">沟通风格</span>
+                      </div>
+                      <div className="p-4 space-y-4 dark:bg-gray-800/20">
+
+                        {/* 熟悉的人 */}
+                        <div className="space-y-2">
+                          <p className="text-xs font-medium text-gray-500 dark:text-gray-400">熟悉的人</p>
+                          <div className="grid grid-cols-4 gap-2">
+                            {([
+                              { id: 'elizabeth', icon: '🦋', name: '伊丽莎白' },
+                              { id: 'theodore',  icon: '🌿', name: '西奥多'   },
+                              { id: 'margaret',  icon: '📖', name: '玛格丽特' },
+                              { id: 'caroline-justine', icon: '⚔️', name: '双子狱卒' },
+                            ] as const).map(face => {
+                              const isActive = activePresetId === face.id;
+                              return (
+                                <button
+                                  key={face.id}
+                                  onClick={() => updateSettings({ summaryActivePresetId: face.id })}
+                                  className={`flex flex-col items-center gap-1 py-2.5 px-1 rounded-xl border-2 transition-all ${
+                                    isActive
+                                      ? 'border-primary bg-primary/8 dark:bg-primary/15'
+                                      : 'border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-700/50 hover:border-gray-200 dark:hover:border-gray-600'
+                                  }`}
+                                >
+                                  <span className="text-[22px] leading-none">{face.icon}</span>
+                                  <span className={`text-[11px] font-bold leading-tight text-center ${isActive ? 'text-primary' : 'text-gray-600 dark:text-gray-300'}`}>
+                                    {face.name}
+                                  </span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                          {activeFamiliar && (
+                            <p className="text-[11px] text-gray-400 dark:text-gray-500 px-1">
+                              {familiarTaglines[activeFamiliar.id] ?? ''}
+                            </p>
+                          )}
+                        </div>
+
+                        {/* 内置 / 自定义预设列表 */}
+                        <div className="space-y-1.5 pt-1 border-t border-gray-100 dark:border-gray-700/50">
+                          <div className="flex items-center justify-between mb-2">
+                            <p className="text-xs font-medium text-gray-500 dark:text-gray-400">内置 / 自定义</p>
+                            <button
+                              onClick={handleAddCustomPreset}
+                              className="text-xs font-bold text-primary bg-primary/10 px-2.5 py-1 rounded-lg hover:bg-primary/20 transition-colors"
+                            >
+                              + 新增
+                            </button>
+                          </div>
+                          <div className="space-y-1.5">
+                            {effectivePresets.map(preset => (
+                              <div key={preset.id}>
+                                {editingPresetId === preset.id && presetDraft ? (
+                                  /* 编辑模式 */
+                                  <div className="rounded-xl border border-primary/40 bg-primary/5 dark:bg-primary/10 p-3 space-y-2.5">
+                                    <input
+                                      type="text"
+                                      value={presetDraft.name}
+                                      onChange={e => setPresetDraft({ ...presetDraft, name: e.target.value })}
+                                      placeholder="风格名称"
+                                      className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 dark:text-white focus:outline-none focus:border-primary"
+                                    />
+                                    <textarea
+                                      value={presetDraft.systemPrompt}
+                                      onChange={e => setPresetDraft({ ...presetDraft, systemPrompt: e.target.value })}
+                                      placeholder="输入 system prompt…"
+                                      rows={5}
+                                      className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 dark:text-white resize-none focus:outline-none focus:border-primary"
+                                    />
+                                    <div className="flex gap-2">
+                                      <button onClick={() => handleSavePreset(presetDraft)} className="flex-1 py-2 rounded-lg text-sm font-bold bg-primary text-white">保存</button>
+                                      <button onClick={() => { setEditingPresetId(null); setPresetDraft(null); }} className="flex-1 py-2 rounded-lg text-sm font-bold bg-gray-100 dark:bg-gray-600 text-gray-600 dark:text-gray-200">取消</button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  /* 展示模式 */
+                                  <div
+                                    className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-all cursor-pointer ${
+                                      activePresetId === preset.id
+                                        ? 'border-primary/40 bg-primary/5 dark:bg-primary/10'
+                                        : 'border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-700/40 hover:border-gray-200 dark:hover:border-gray-600'
+                                    }`}
+                                    onClick={() => updateSettings({ summaryActivePresetId: preset.id })}
+                                  >
+                                    <div className={`w-3.5 h-3.5 rounded-full border-2 flex-shrink-0 transition-all ${
+                                      activePresetId === preset.id ? 'bg-primary border-primary' : 'border-gray-300 dark:border-gray-500'
+                                    }`} />
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="text-sm font-semibold text-gray-800 dark:text-white">{preset.name}</span>
+                                        {preset.isBuiltin && <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-gray-100 dark:bg-gray-600 text-gray-400 dark:text-gray-400 font-medium">内置</span>}
+                                      </div>
+                                      {preset.systemPrompt
+                                        ? <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-0.5 truncate">{preset.systemPrompt.split('\n')[0]}</p>
+                                        : <p className="text-[11px] text-gray-300 dark:text-gray-600 mt-0.5 italic">暂无 prompt，点击编辑</p>
+                                      }
+                                    </div>
+                                    <div className="flex items-center gap-0.5 flex-shrink-0" onClick={e => e.stopPropagation()}>
+                                      <button
+                                        onClick={() => { setPresetDraft({ ...preset }); setEditingPresetId(preset.id); }}
+                                        className="text-xs text-gray-400 px-2 py-1 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                                      >编辑</button>
+                                      {!preset.isBuiltin && (
+                                        <button
+                                          onClick={() => handleDeleteCustomPreset(preset.id)}
+                                          className="text-xs text-red-400 px-2 py-1 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                                        >删除</button>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                      </div>
+                    </div>
+
                   </div>
-                )}
+                  );
+                })()}
 
                 {section.id === 'data' && (
                   <div className="space-y-5">
@@ -946,8 +1075,8 @@ export const Settings = () => {
                           onClick={handleDownload}
                           className="bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 py-3 rounded-xl font-semibold text-sm flex flex-col items-center gap-0.5"
                         >
-                          <span>💾</span>
-                          <span>下载备份</span>
+                          <span>{isNative() ? '📤' : '💾'}</span>
+                          <span>{isNative() ? '分享备份' : '下载备份'}</span>
                         </motion.button>
                       </div>
 
@@ -1006,6 +1135,8 @@ export const Settings = () => {
                       >
                         {importJson ? (
                           <span className="text-emerald-600 dark:text-emerald-400 font-medium">✓ 文件已加载</span>
+                        ) : isNative() ? (
+                          <span>📁 从文件管理器选择备份文件</span>
                         ) : (
                           <span>📁 选择备份文件 <span className="opacity-60">或拖拽</span></span>
                         )}
@@ -1048,7 +1179,7 @@ export const Settings = () => {
                   <div className="space-y-4">
                     <div className="text-center py-4">
                       <div className="text-5xl mb-4">🦋</div>
-                      <h3 className="text-xl font-bold text-gray-800 dark:text-white mb-1">天鹅绒房间</h3>
+                      <h3 className="text-xl font-bold text-gray-800 dark:text-white mb-1">靛蓝色房间</h3>
                       <p className="text-sm text-gray-500 dark:text-gray-400">Persona Growth Tracker</p>
                       <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">v{import.meta.env.PACKAGE_VERSION || '0.0.1'}</p>
                     </div>

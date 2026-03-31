@@ -598,21 +598,21 @@ export const Dashboard = () => {
           欢迎来到
         </span>
 
-        {/* 主标题容器：relative 供 Velvet Room 绝对定位 */}
+        {/* 主标题容器：relative 供 The Velvet 绝对定位 */}
         <div className="relative inline-block">
           <h1
             className={`text-[3.25rem] font-black leading-none ${settings.darkMode ? 'vr-title-dark' : 'vr-title-light'}`}
             style={{ letterSpacing: '-0.04em' }}
           >
-            天鹅绒房间
+            靛蓝色房间
           </h1>
 
-          {/* Velvet Room — 叠加在标题右下角 */}
+          {/* The Velvet — 叠加在标题右下角 */}
           <span
             className="absolute -bottom-1.5 -right-1 text-lg leading-none text-primary opacity-75 pointer-events-none"
             style={{ fontFamily: "'Caveat', cursive", fontWeight: 600 }}
           >
-            Velvet Room
+            The Velvet
           </span>
         </div>
 

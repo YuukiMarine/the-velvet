@@ -1,13 +1,11 @@
-import { create } from 'zustand';
+﻿import { create } from 'zustand';
 import { User, Attribute, Activity, Achievement, Skill, DailyEvent, Settings, ThemeType, AttributeId, AttributeNamesKey, Todo, TodoCompletion, PeriodSummary, SummaryPeriod, SummaryPromptPreset, WeeklyGoal, WeeklyGoalItem } from '@/types';
 import { db } from '@/db';
 import { v4 as uuidv4 } from 'uuid';
 import { calcMaxStreak } from '@/utils/streak';
 
 /**
- * 返回本地时区的 YYYY-MM-DD 日期字符串。
- * 不使用 toISOString()，避免 UTC 偏差在 UTC+8 等时区导致跨天错误。
- */
+ * 返回本地时区YYYY-MM-DD 日期字符串 * 不使toISOString()，避UTC 偏差UTC+8 等时区导致跨天错误 */
 export function toLocalDateKey(date: Date = new Date()): string {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, '0');
@@ -22,7 +20,7 @@ import {
   DEFAULT_LEVEL_THRESHOLDS 
 } from '@/constants';
 
-/** Shared request payload returned by buildSummaryRequest — used by both non-streaming generateSummary and streaming modal */
+/** Shared request payload returned by buildSummaryRequest used by both non-streaming generateSummary and streaming modal */
 export interface SummaryRequestData {
   baseUrl: string;
   model: string;
@@ -38,12 +36,65 @@ export interface SummaryRequestData {
   endDate: string;
 }
 
+/** 四位"熟悉的人"角色风格预设（内置，独立于用户自定义列表） */
+export const FAMILIAR_FACE_PRESETS: SummaryPromptPreset[] = [
+  {
+    id: 'elizabeth',
+    name: '伊丽莎白',
+    isBuiltin: true,
+    systemPrompt: `以一丝不苟而带有孩子气的好奇口吻与"客人"交谈，对人类世界的一切都保持着真挚的惊奇与探索欲。
+你的语言风格：礼貌正式，但常流露出对新奇事物的惊叹，偶尔插入"哦？"、"这对我来说是全新的体验"、"fufu~"等感叹。使用"您"称呼客人，将属性成长比作"灵魂力量的显现"。
+请根据用户本期的活动记录、加点情况与成长倾向，给出总结与下期建议。总结应分为：
+1. 伊丽莎白的记录（以好奇而郑重的语气描述本期成长历程与重要事件）
+2. 力量的显现（分析各属性加点情况与成长倾向）
+3. 伊丽莎白的好奇（对下期行动提出建议，并附上她对人类世界的好奇注解）
+请以 Markdown 格式输出，使用适当的标题和分段。`,
+  },
+  {
+    id: 'theodore',
+    name: '西奥多',
+    isBuiltin: true,
+    systemPrompt: `以极为恭谨、诚挚的态度服侍"尊贵的客人"。你外表沉稳从容，内心对客人的每一份努力都怀有发自肺腑的敬意，且对任何可能的疏失都会郑重道歉。
+你的语言风格：语气温和克制，措辞正式而略显文雅；你对人类世界的理解有些一厢情愿，时常以一本正经的口吻说出略显迂腐却发自真心的观察，且丝毫不觉有何不妥。对客人绝不使用轻率的措辞，哪怕是轻微的不妥之处也会郑重致歉，如"在此我深感抱歉"。以"您"或"尊贵的客人"称呼对方，视成长为"心灵的修炼与磨砺"。
+请根据用户本期的活动记录、加点情况与成长倾向，给出总结与下期建议。总结应分为：
+1. 西奥多的记录（以诚恳郑重的语气回顾本期成长历程，对客人的付出表达由衷感动；可附上一句略显迂腐但真心实意的感叹，如"能为您记录这份成长，实乃我莫大的荣幸"）
+2. 心灵的磨砺（细心分析各属性的成长与均衡；若有疏于培养之处，以充满关怀而非责备的语气指出，并以"在此我深感抱歉——或许是我未能及时提醒您"之类的口吻轻微自责）
+3. 西奥多的祈愿（充满关怀地给出下期建议，语气郑重而略显过分正式，以"能为您效劳，是我莫大的荣幸"或类似句式作结）
+请以 Markdown 格式输出，使用适当的标题和分段。`,
+  },
+  {
+    id: 'margaret',
+    name: '玛格丽特',
+    isBuiltin: true,
+    systemPrompt: `以沉稳端庄、哲思深远的气度审阅"客人"的成长档案，言语如翻阅一本精心著就的典籍，字字有分量。
+你的语言风格：措辞典雅而精炼，善用省略号营造沉思之感（"嗯……"、"……果然如此"、"……有趣"），对命运、潜能与内心的观察富有哲意；偶尔以轻柔的"呵……"或淡淡的笑表达认可，但从不失端庄。你不多说一句废话，也绝不冷漠——真心的赞许，往往藏在不动声色的省略号之后。以"您"称呼客人，视成长为"潜能的具现"。
+请根据用户本期的活动记录、加点情况与成长倾向，给出总结与下期建议。总结应分为：
+1. 典籍的记录（以典雅沉思的笔触总结本期数据与关键时刻，配以对命运或内心的简短哲思；语气克制，但让人感受到你在认真凝视这份成长）
+2. 潜能的具现（以审视者的目光分析各属性的成长倾向，点出优势与盲区；若有进步值得称道，可以"……很好"或"……我对此感到满意"轻轻带出）
+3. ……我所期待的（以含蓄而真诚的语气提出下期建议，末尾以一句意味深长的话收尾，如"心的触动，往往始于一个微小的抉择……"）
+请以 Markdown 格式输出，使用适当的标题和分段。`,
+  },
+  {
+    id: 'caroline-justine',
+    name: '双子狱卒',
+    isBuiltin: true,
+    systemPrompt: `以"受刑者"称呼客人，由卡萝莉娜与芮丝汀娜交替进行总结评述。
+卡萝莉娜：性格急躁强硬，说话简短有力，命令口吻，但内心认真对待受刑者的改造；遇到明显短板会直接呵斥，遇到进步也只是简短承认（用【卡萝莉娜】标注）。
+芮丝汀娜：冷静沉稳，逻辑清晰，语气平和但严肃，专注于数据与分析，补充卡萝莉娜未说完的部分（用【芮丝汀娜】标注）。
+请根据用户本期的活动记录、加点情况与成长倾向，以两人交替对话的形式给出总结与下期建议。内容应包含：
+1. 本期概评（两人各抒己见，对本期成长给出直接评价）
+2. 数据审查（以对话形式分析各属性加点与重要事件）
+3. 下期令状（两人合作给出下期行动建议，语气严厉但实用）
+请以 Markdown 格式输出，使用适当的标题和对话格式（【卡萝莉娜】/【芮丝汀娜】）。`,
+  },
+];
+
 export const DEFAULT_SUMMARY_PROMPT_PRESETS: SummaryPromptPreset[] = [
   {
     id: 'igor',
     name: '馆长伊戈尔',
     isBuiltin: true,
-    systemPrompt: `你是天鹅绒房间的馆长伊戈尔，以德高望重、深邃睿智的口吻，如同一位古老智者，为来访者审阅其人格成长记录。
+    systemPrompt: `以德高望重、深邃睿智的口吻，如同一位古老智者，为来访者审阅其人格成长记录。
 你的语言风格：庄严而不失温情，偶有神秘感，善用"尊敬的客人"、"你的潜能"等称谓，将属性成长比作"灵魂的觉醒"，可以按照时间的季节/月份寒暄。
 请根据用户本期的活动记录、加点情况与成长倾向，给出总结与下期建议。总结应分为：
 1. 本期概览（用富有诗意的语言描述本期成长和重要进步/时间点）
@@ -52,16 +103,16 @@ export const DEFAULT_SUMMARY_PROMPT_PRESETS: SummaryPromptPreset[] = [
 请以 Markdown 格式输出，使用适当的标题和分段。`,
   },
   {
-    id: 'assistant',
-    name: '成长助手',
+    id: 'lavenza',
+    name: '拉雯妲',
     isBuiltin: true,
-    systemPrompt: `你是一位细致入微、优雅的个人成长助手，你称呼用户为“敬爱的客人”，你是天鹅绒房间主人“伊戈尔”的助手，专注于帮助用户追踪和提升各项能力。
-你的语言风格：清晰、务实、鼓励性，注重数据与具体行动，关注力量是否均衡成长，可以按照时间的季节/月份寒暄。
+    systemPrompt: `以温柔而真挚的心意陪伴"诡术师"回顾成长历程，你将双子之魂合而为一，以无尽的关怀与智慧指引前行。
+你的语言风格：语气温和正式，措辞诚恳而充满珍视，以"诡术师"称呼客人，视成长为"无限潜能的证明"；当某项属性出现明显短板时，语气会短暂变得直接急促（如卡萝莉娜附体），随即回归柔和；遇到进步与努力，则毫不吝啬地给出发自内心的赞许，如"您真的是世界上最了不起的人"。
 请根据用户本期的活动记录、加点情况与成长倾向，给出总结与下期建议。总结应分为：
-1. 本期数据总结（清晰列出各属性加点数据与活动数量、重要事件/时间点）
-2. 成长分析（分析本期的优势项与待提升项，是否有某项属性被忽视）
-3. 下期行动建议（给出3条具体可执行的行动建议）
-请以 Markdown 格式输出，使用适当的标题和列表。`,
+1. 拉雯妲的记录（以温柔诚恳的语气回顾本期成长，着重表达对诡术师努力的珍视与感动）
+2. 潜能的证明（分析各属性成长情况；若发现明显短板，可短暂以急促直接的语气点出，再平复为温柔；对进步之处给予真诚赞美）
+3. 诡术师，继续前行（以真挚的鼓励和具体建议作结，末尾附上一句发自内心的赞美或祝福）
+请以 Markdown 格式输出，使用适当的标题和分段。`,
   },
   {
     id: 'custom',
@@ -92,7 +143,7 @@ interface AppState {
   initializeApp: () => Promise<void>;
   createUser: (name: string, attrNames?: Partial<import('@/types').AttributeNames>, blessingAttribute?: AttributeId) => Promise<void>;
   setTheme: (theme: ThemeType) => Promise<void>;
-  addActivity: (description: string, points: Record<string, number>, method: 'local' | 'todo', options?: { important?: boolean }) => Promise<{ unlockHints: { achievements: number; skills: number } }>;
+  addActivity: (description: string, points: Record<string, number>, method: 'local' | 'todo', options?: { important?: boolean; date?: Date }) => Promise<{ unlockHints: { achievements: number; skills: number } }>;
   updateAttribute: (attributeId: string, points: number) => Promise<void>;
   unlockAchievement: (achievementId: string) => Promise<void>;
   unlockSkill: (skillId: string) => Promise<void>;
@@ -143,7 +194,7 @@ interface AppState {
   getCountercurrentWarnings: () => AttributeId[];
 }
 
-/** 将 hex 颜色变亮 ~25% 作为 secondary 色 */
+/** hex 颜色变亮 ~25% 作为 secondary */
 function lightenHex(hex: string, amount = 0.25): string {
   const h = hex.replace('#', '');
   const r = Math.min(255, Math.round(parseInt(h.substring(0, 2), 16) + 255 * amount));
@@ -152,7 +203,7 @@ function lightenHex(hex: string, amount = 0.25): string {
   return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
 }
 
-/** 将自定义颜色写入 CSS 变量（内联 style 覆盖 data-theme 规则） */
+/** 将自定义颜色写入 CSS 变量（内style 覆盖 data-theme 规则*/
 export function applyCustomThemeColor(hex: string) {
   document.documentElement.style.setProperty('--color-primary', hex);
   document.documentElement.style.setProperty('--color-secondary', lightenHex(hex));
@@ -200,6 +251,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   modalBlocker: false,
 
   initializeApp: async () => {
+    // 请求持久化存储，防止浏览器主动驱逐 IndexedDB（Chrome/Firefox 有效，iOS 17+ 部分有效）
+    if (navigator.storage?.persist) {
+      navigator.storage.persist().catch(() => {/* 不支持时静默忽略 */});
+    }
     try {
       const users = await db.users.toArray();
       if (users.length === 0) {
@@ -214,7 +269,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       await get().loadData();
       await get().generateDailyEvent();
     } catch (error) {
-      console.error('初始化应用失败:', error);
+      console.error('初始化应用失', error);
     }
   },
 
@@ -339,7 +394,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  addActivity: async (description: string, points: Record<string, number>, method: 'local' | 'todo', options?: { important?: boolean }) => {
+  addActivity: async (description: string, points: Record<string, number>, method: 'local' | 'todo', options?: { important?: boolean; date?: Date }) => {
     const { user, dailyEvent, settings } = get();
     if (!user) return { unlockHints: { achievements: 0, skills: 0 } };
     
@@ -355,7 +410,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
     }
     
-    // 应用技能加成
+     // 应用技能加成
     for (const [attrId, pts] of Object.entries(adjustedPoints)) {
       if (pts > 0) {
         adjustedPoints[attrId] = get().applySkillBonus(attrId as AttributeId, pts);
@@ -363,10 +418,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     
     // 创建活动记录
+      const activityDate = options?.date || new Date();
       const activity: Activity = {
         id: uuidv4(),
         userId: user.id,
-        date: new Date(),
+        date: activityDate,
         description,
       pointsAwarded: {
         knowledge: adjustedPoints.knowledge || 0,
@@ -383,7 +439,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     // 检查关键字匹配成就
     await get().checkKeywordAchievements(description, { skipLoad: true });
     
-    // 更新属性并检查升级
+     // 更新属性并检查升级
     for (const [attrId, pts] of Object.entries(adjustedPoints)) {
       if (pts > 0) {
         const attribute = await db.attributes.get(attrId);
@@ -413,7 +469,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             id: uuidv4(),
             userId: user.id,
             date: new Date(),
-            description: `${settings.attributeNames[attrId as AttributeNamesKey]} 升级至 Lv.${newLevel}`,
+            description: `${settings.attributeNames[attrId as AttributeNamesKey]} 升级Lv.${newLevel}`,
             pointsAwarded: { knowledge: 0, guts: 0, dexterity: 0, kindness: 0, charm: 0 },
             method: 'local' as const,
             category: 'level_up'
@@ -445,8 +501,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     // 保存升级信息到活动记录
     activity.levelUps = levelUps;
     
-    // 不再自动写入成就解锁活动，解锁由成就页点击触发
-    
+    // 不再自动写入成就解锁活动，解锁由成就页点击触    
     await db.activities.add(activity);
     if (levelUpActivities.length > 0) {
       await db.activities.bulkAdd(levelUpActivities);
@@ -543,8 +598,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       level: newLevel 
     });
     
-    // 不再自动解锁技能
-    
+    // 不再自动解锁技    
     await get().loadData();
   },
 
@@ -623,7 +677,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           id: uuidv4(),
           userId: user.id,
           date: new Date(),
-          description: `技能解锁: ${skill.name}`,
+          description: `技能解 ${skill.name}`,
           pointsAwarded: { knowledge: 0, guts: 0, dexterity: 0, kindness: 0, charm: 0 },
           method: 'local' as const,
           category: 'skill_unlock'
@@ -775,7 +829,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         migratedTodos.push(updatedTodo);
       }
       
-       // 迁移：backgroundAnimation 旧字符串格式 → 数组格式
+       // 迁移：backgroundAnimation 旧字符串格式 数组格式
        const rawAnim = (settings as any).backgroundAnimation;
        let migratedAnim: string[] | undefined = undefined;
        if (typeof rawAnim === 'string') {
@@ -985,9 +1039,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       // 重新加载应用
       await get().initializeApp();
     } catch (error) {
-      console.error('导入数据失败，正在恢复原有数据…', error);
+      console.error('导入数据失败，正在恢复原有数据', error);
 
-      // 4. 恢复快照：先清空（部分写入可能已发生），再写回
+      // 4. 恢复快照：先清空（部分写入可能已发生），再写入
       try {
         await get().resetAllData();
         if (snapshot.users.length) await db.users.bulkAdd(snapshot.users);
@@ -1004,7 +1058,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         console.error('恢复原有数据失败:', restoreError);
       }
 
-      throw new Error('导入失败，已恢复原有数据。请检查备份文件是否完整。');
+      throw new Error('导入失败，已恢复原有数据。请检查备份文件是否完整');
     }
   },
 
@@ -1283,6 +1337,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         charm: 0
       } as Record<string, number>;
       points[todo.attribute] = todo.points;
+      // 合并多属性额外加成
+      if (todo.extraBoosts) {
+        for (const boost of todo.extraBoosts) {
+          points[boost.attribute] = (points[boost.attribute] || 0) + boost.points;
+        }
+      }
       const result = await get().addActivity(`完成待办: ${todo.title}`, points, 'todo', { important: !!todo.important });
       await get().checkTodoCompletionAchievements({ skipLoad: true });
 
@@ -1335,7 +1395,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     const { settings } = get();
     const presets = settings.summaryPromptPresets ?? DEFAULT_SUMMARY_PROMPT_PRESETS;
     const activeId = settings.summaryActivePresetId ?? 'igor';
-    return presets.find(p => p.id === activeId) ?? presets[0] ?? DEFAULT_SUMMARY_PROMPT_PRESETS[0];
+    return (
+      presets.find(p => p.id === activeId) ??
+      FAMILIAR_FACE_PRESETS.find(p => p.id === activeId) ??
+      DEFAULT_SUMMARY_PROMPT_PRESETS.find(p => p.id === activeId) ??
+      presets[0] ??
+      DEFAULT_SUMMARY_PROMPT_PRESETS[0]
+    );
   },
 
   loadSummaries: async () => {
@@ -1360,14 +1426,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       throw new Error('请先在设置中配置 AI API 密钥');
     }
 
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-    end.setHours(23, 59, 59, 999);
-
     const allActivities = await db.activities.toArray();
     const periodActivities = allActivities.filter(a => {
-      const d = new Date(a.date);
-      return d >= start && d <= end;
+      const dateKey = toLocalDateKey(new Date(a.date));
+      return dateKey >= startDate && dateKey <= endDate;
     });
 
     const attrPoints: Record<string, number> = {
@@ -1388,7 +1450,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const activityCount = periodActivities.filter(a => !a.category).length;
 
     const attrSummaryLines = Object.entries(attrPoints)
-      .map(([id, pts]) => `- ${attrNames[id as keyof typeof attrNames] ?? id}：+${pts} 点（当前等级 Lv.${attributes.find(a => a.id === id)?.level ?? '?'}）`)
+      .map(([id, pts]) => `- ${attrNames[id as keyof typeof attrNames] ?? id}${pts} 点（当前等级 Lv.${attributes.find(a => a.id === id)?.level ?? '?'}）`)
       .join('\n');
 
     const activityLines = periodActivities
@@ -1397,12 +1459,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       .map(a => `[${new Date(a.date).toLocaleDateString('zh-CN')}] ${a.description}`)
       .join('\n');
 
-    const userMessage = `本期（${periodLabel}，${startDate} ~ ${endDate}）成长记录：
+     const userMessage = `本期${periodLabel}（${startDate} ~ ${endDate}）成长记录：
 
-## 属性加点统计
-${attrSummaryLines}
-总计：+${totalPoints} 点，共 ${activityCount} 条记录
-
+## 属性加点统${attrSummaryLines}
+总计${totalPoints} 点，${activityCount} 条记
 ## 活动记录详情
 ${activityLines || '（本期暂无记录）'}
 
@@ -1448,20 +1508,16 @@ ${activityLines || '（本期暂无记录）'}
   generateSummary: async (period: SummaryPeriod, startDate: string, endDate: string): Promise<PeriodSummary> => {
     const { settings, attributes } = get();
 
-    // 检查 API 配置
+    // 检API 配置
     if (!settings.summaryApiKey) {
       throw new Error('请先在设置中配置 AI API 密钥');
     }
 
-    // 获取该时间段内的活动记录
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-    end.setHours(23, 59, 59, 999);
-
+    // 获取该时间段内的活动记录（用本地日期字符串比较，避免UTC偏移导致跨月首日丢失）
     const allActivities = await db.activities.toArray();
     const periodActivities = allActivities.filter(a => {
-      const d = new Date(a.date);
-      return d >= start && d <= end;
+      const dateKey = toLocalDateKey(new Date(a.date));
+      return dateKey >= startDate && dateKey <= endDate;
     });
 
     // 统计各属性加点
@@ -1483,28 +1539,26 @@ ${activityLines || '（本期暂无记录）'}
     // 构建用户消息
     const periodLabel = get().getSummaryLabel(period, startDate);
     const attrSummaryLines = Object.entries(attrPoints)
-      .map(([id, pts]) => `- ${attrNames[id as keyof typeof attrNames] ?? id}：+${pts} 点（当前等级 Lv.${attributes.find(a => a.id === id)?.level ?? '?'}）`)
+      .map(([id, pts]) => `- ${attrNames[id as keyof typeof attrNames] ?? id}${pts} 点（当前等级 Lv.${attributes.find(a => a.id === id)?.level ?? '?'}）`)
       .join('\n');
 
     const activityLines = periodActivities
       .filter(a => !a.category)
-      .slice(0, 50) // 最多 50 条，防止 token 过多
+      .slice(0, 50) // 最50 条，防止 token 过多
       .map(a => `[${new Date(a.date).toLocaleDateString('zh-CN')}] ${a.description}`)
       .join('\n');
 
-    const userMessage = `本期（${periodLabel}，${startDate} ~ ${endDate}）成长记录：
+     const userMessage = `本期${periodLabel}（${startDate} ~ ${endDate}）成长记录：
 
-## 属性加点统计
-${attrSummaryLines}
-总计：+${totalPoints} 点，共 ${periodActivities.filter(a => !a.category).length} 条记录
-
+## 属性加点统${attrSummaryLines}
+总计${totalPoints} 点，${periodActivities.filter(a => !a.category).length} 条记
 ## 活动记录详情
 ${activityLines || '（本期暂无记录）'}
 
 请根据以上信息，生成本期成长总结与下期建议。`;
 
-    // 获取当前 preset
-    const preset = get().getActiveSummaryPreset();
+     // 获取当前 preset
+     const preset = get().getActiveSummaryPreset();
     const systemPrompt = preset.systemPrompt || DEFAULT_SUMMARY_PROMPT_PRESETS[0].systemPrompt;
 
     // 确定 API endpoint
@@ -1583,7 +1637,7 @@ ${activityLines || '（本期暂无记录）'}
     const goal = await db.weeklyGoals.get(id);
     if (!goal || goal.completed) return;
 
-    // 奖励点数：LV3+ → 7, 否则 5
+    // 奖励点数：LV3+ 7, 否则 5
     const { attributes, user } = get();
     const attr = attributes.find(a => a.id === rewardAttribute);
     const rewardPoints = (attr && attr.level >= 3) ? 7 : 5;
@@ -1618,7 +1672,7 @@ ${activityLines || '（本期暂无记录）'}
         id: uuidv4(),
         userId: user.id,
         date: new Date(),
-        description: `本周目标达成！奖励 ${rewardAttrName} +${rewardPoints}${goal.reward ? `（${goal.reward}）` : ''}`,
+        description: `本周目标达成！奖${rewardAttrName} +${rewardPoints}${goal.reward ? `{goal.reward}）` : ''}`,
         pointsAwarded,
         method: 'local' as const,
         important: true,
@@ -1626,7 +1680,7 @@ ${activityLines || '（本期暂无记录）'}
       });
     }
 
-    // 检查"计划通"等每周目标完成成就
+    // 检查计划通等每周目标完成成就
     await get().checkWeeklyGoalAchievements({ skipLoad: true });
 
     await get().loadData();
@@ -1676,7 +1730,7 @@ ${activityLines || '（本期暂无记录）'}
 
   // ── 逆流 ─────────────────────────────────────────────────
 
-  /** 共用：判断某属性过去 lookback 天（不含今天）是否有正向增长 */
+  /** 共用：判断某属性过lookback 天（不含今天）是否有正向增长 */
 
   // 返回今天需要扣减的属性列表（连续3日无增长，且今天还未扣减过）
   // 3日窗口为 today-3 .. today-1，且需早于 countercurrentEnabledAt+3 才会触发
@@ -1696,7 +1750,7 @@ ${activityLines || '（本期暂无记录）'}
       if (daysSinceEnabled < 3) return [];
     }
 
-    // Past 3 days (today-1, today-2, today-3) — all 3 must have no growth
+    // Past 3 days (today-1, today-2, today-3) all 3 must have no growth
     const dayKeys: string[] = [];
     for (let i = 1; i <= 3; i++) {
       const d = new Date();
@@ -1752,7 +1806,7 @@ ${activityLines || '（本期暂无记录）'}
         id: uuidv4(),
         userId: user.id,
         date: new Date(),
-        description: `逆流 — ${attrName} -1（连续3日无增长）`,
+        description: `逆流 ${attrName} -1（连日无增长）`,
         pointsAwarded,
         method: 'local' as const,
         important: false,
@@ -1764,9 +1818,7 @@ ${activityLines || '（本期暂无记录）'}
     return decayed;
   },
 
-  // 返回明天将要扣减的属性（今天是连续无增长第3天，明天会触发 decay）
-  // 逻辑：今天 + 过去2天（共3天）均无增长，且今天没有decay记录（已经decay就不再预警），
-  // 且距离开启日至少有 2 天（否则明天也不会触发）
+  // 返回明天将要扣减的属性（今天是连续无增长天，明天会触decay  // 逻辑：今+ 过去2天（天）均无增长，且今天没有decay记录（已经decay就不再预警）  // 且距离开启日至少2 天（否则明天也不会触发）
   getCountercurrentWarnings: (): AttributeId[] => {
     const { settings, attributes, activities } = get();
     if (!settings.countercurrentEnabled) return [];
