@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAppStore, SummaryRequestData, toLocalDateKey } from '@/store';
 import { PeriodSummary, SummaryPeriod } from '@/types';
 import { v4 as uuidv4 } from 'uuid';
+import DOMPurify from 'dompurify';
 
 // ── 简单 Markdown 渲染 ────────────────────────────────────
 function renderMarkdown(text: string): string {
@@ -16,6 +17,16 @@ function renderMarkdown(text: string): string {
     .replace(/^(\d+)\. (.+)$/gm, '<li class="ml-4 list-decimal">$2</li>')
     .replace(/\n\n/g, '</p><p class="mb-2">')
     .replace(/\n/g, '<br/>');
+}
+
+// ── 错误信息格式化（识别 CORS / 网络类错误）────────────────
+function formatApiError(e: unknown): string {
+  if (!(e instanceof Error)) return '生成失败，请重试';
+  // CORS 或网络中断时浏览器抛出 TypeError: Failed to fetch
+  if (e instanceof TypeError && /failed to fetch|network/i.test(e.message)) {
+    return '网络请求失败：无法连接到 API 服务。\n若在浏览器中使用，部分 API 可能因跨域（CORS）限制无法直接访问，建议在 Android 客户端或支持 CORS 的接口下使用此功能。';
+  }
+  return e.message;
 }
 
 // ── SSE 流式读取工具 ──────────────────────────────────────
@@ -252,7 +263,7 @@ function StreamingContent({ streamedText, isStreaming, reqData, followUpUsed, on
       }
     } catch (e: unknown) {
       if (e instanceof Error && e.name !== 'AbortError') {
-        setFollowError(e.message);
+        setFollowError(formatApiError(e));
       }
     } finally {
       setFollowStreaming(false);
@@ -264,7 +275,7 @@ function StreamingContent({ streamedText, isStreaming, reqData, followUpUsed, on
       {/* 主总结内容 */}
       <div className="relative bg-black/3 dark:bg-white/3 rounded-2xl p-4 text-sm text-gray-700 dark:text-gray-200 leading-relaxed overflow-hidden">
         <VelvetWatermark />
-        <div className="relative" dangerouslySetInnerHTML={{ __html: `<p class="mb-2">${renderMarkdown(streamedText)}</p>` }} />
+        <div className="relative" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(`<p class="mb-2">${renderMarkdown(streamedText)}</p>`) }} />
         {isStreaming && <Cursor />}
       </div>
 
@@ -304,7 +315,7 @@ function StreamingContent({ streamedText, isStreaming, reqData, followUpUsed, on
                 <div className="text-xs text-gray-400 dark:text-gray-500 bg-amber-50 dark:bg-amber-900/20 px-2 py-0.5 rounded-full">已使用追问机会</div>
               </div>
               <div className="bg-primary/5 dark:bg-primary/10 border border-primary/20 rounded-2xl p-4 text-sm text-gray-700 dark:text-gray-200 leading-relaxed">
-                <div dangerouslySetInnerHTML={{ __html: `<p class="mb-2">${renderMarkdown(followAnswer)}</p>` }} />
+                <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(`<p class="mb-2">${renderMarkdown(followAnswer)}</p>`) }} />
                 {followStreaming && <Cursor />}
               </div>
             </div>
@@ -319,7 +330,7 @@ function StreamingContent({ streamedText, isStreaming, reqData, followUpUsed, on
   );
 }
 
-// ── VELVET ROOM 水印 ──────────────────────────────────────
+// ── THE VELVET 水印 ──────────────────────────────────────
 function VelvetWatermark() {
   return (
     <div
@@ -330,7 +341,7 @@ function VelvetWatermark() {
         className="text-5xl font-black tracking-[0.3em] text-gray-900 dark:text-white opacity-[0.04] dark:opacity-[0.06] rotate-[-12deg] whitespace-nowrap"
         style={{ fontFamily: 'sans-serif' }}
       >
-        VELVET ROOM
+        THE VELVET
       </span>
     </div>
   );
@@ -472,7 +483,7 @@ export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week' }
       }
     } catch (e: unknown) {
       if (e instanceof Error && e.name !== 'AbortError') {
-        setError(e.message);
+        setError(formatApiError(e));
         setView('generate');
       }
     } finally {
@@ -498,20 +509,28 @@ export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week' }
     }
   };
 
-  const handleSave = async () => {
-    if (!generatedSummary) return;
-    await saveSummary(generatedSummary);
-    setSaved(true);
-  };
+   const handleSave = async () => {
+     if (!generatedSummary) return;
+     await saveSummary(generatedSummary);
+     setSaved(true);
+   };
 
-  return (
-    <AnimatePresence>
-      {isOpen && (
-        <motion.div
-          initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-          className="fixed inset-0 z-50 flex items-end justify-center"
-          onClick={onClose}
-        >
+   // 在关闭时自动保存已生成完毕的总结
+   const handleClose = async () => {
+     if (generatedSummary && !saved && !isStreaming) {
+       await saveSummary(generatedSummary);
+     }
+     onClose();
+   };
+
+   return (
+     <AnimatePresence>
+       {isOpen && (
+         <motion.div
+           initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+           className="fixed inset-0 z-50 flex items-end justify-center"
+           onClick={handleClose}
+         >
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
           <motion.div
             initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
@@ -552,7 +571,7 @@ export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week' }
                 {view === 'generate' && (
                   <button onClick={() => setView('archive')} className="text-xs text-primary font-semibold px-2 py-1 rounded-lg bg-primary/10 hover:bg-primary/20 transition-colors">归档</button>
                 )}
-                <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-black/5 dark:hover:bg-white/5 text-gray-400 text-lg">×</button>
+                 <button onClick={handleClose} className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-black/5 dark:hover:bg-white/5 text-gray-400 text-lg">×</button>
               </div>
             </div>
 
@@ -614,12 +633,10 @@ export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week' }
                   </div>
                   <div>
                     <div className="text-xs font-bold text-gray-400 dark:text-gray-500 mb-2 uppercase tracking-wider">当前风格</div>
-                    <div className="flex flex-wrap gap-2">
-                      {(presets.length ? presets : [activePreset]).map(p => (
-                        <div key={p.id} className={`text-xs px-3 py-1.5 rounded-xl font-semibold ${activePreset.id === p.id ? 'bg-primary text-white' : 'bg-black/5 dark:bg-white/10 text-gray-500 dark:text-gray-400'}`}>
-                          {p.name}{activePreset.id === p.id && ' ✓'}
-                        </div>
-                      ))}
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs px-3 py-1.5 rounded-xl font-semibold bg-primary text-white">
+                        {activePreset.name} ✓
+                      </span>
                     </div>
                     <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">在设置中可切换或自定义风格</p>
                   </div>
@@ -684,7 +701,7 @@ export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week' }
                   </div>
                   <div className="relative bg-black/3 dark:bg-white/3 rounded-2xl p-4 text-sm text-gray-700 dark:text-gray-200 leading-relaxed overflow-hidden">
                     <VelvetWatermark />
-                    <div className="relative" dangerouslySetInnerHTML={{ __html: `<p class="mb-2">${renderMarkdown(selectedSummary.content)}</p>` }} />
+                    <div className="relative" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(`<p class="mb-2">${renderMarkdown(selectedSummary.content)}</p>`) }} />
                   </div>
                 </div>
               )}

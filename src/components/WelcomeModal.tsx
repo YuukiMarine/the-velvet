@@ -329,7 +329,7 @@ export const WelcomeModal = () => {
                   className="text-center"
                 >
                   <div className="text-6xl mb-6">🦋</div>
-                  <h2 className="text-3xl font-bold mb-3 text-primary">天鹅绒房间</h2>
+                  <h2 className="text-3xl font-bold mb-3 text-primary">靛蓝色房间</h2>
                   <p className="text-gray-600 dark:text-gray-400 mb-2 text-lg">欢迎来到你的成长空间</p>
                   <p className="text-gray-500 dark:text-gray-500 text-sm mb-8 leading-relaxed">
                     在这里，你可以追踪日常行为、提升属性、解锁技能与成就。<br />
@@ -355,7 +355,7 @@ export const WelcomeModal = () => {
                   exit={{ opacity: 0 }}
                 >
                   <h2 className="text-2xl font-bold mb-2 text-gray-800 dark:text-white">你叫什么名字？</h2>
-                  <p className="text-gray-500 dark:text-gray-400 text-sm mb-6">这将是你在天鹅绒房间中的称呼</p>
+                   <p className="text-gray-500 dark:text-gray-400 text-sm mb-6">这将是你在靛蓝色房间中的称呼</p>
                   <input
                     type="text"
                     value={name}
@@ -603,7 +603,7 @@ export const WelcomeModal = () => {
                       馆长的赐福
                     </h2>
                     <p className="text-gray-500 dark:text-gray-400 text-sm leading-relaxed">
-                      尊敬的客人，既然你踏入了天鹅绒房间，<br/>
+                      尊敬的客人，既然你踏入了靛蓝色房间，<br/>
                       说明你并非等闲之辈。
                     </p>
                     <p className="text-gray-600 dark:text-gray-300 text-sm mt-2 leading-relaxed">

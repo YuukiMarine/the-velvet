@@ -57,6 +57,8 @@ export interface Todo {
   title: string;
   attribute: AttributeId;
   points: number;
+  /** 额外加成属性（最多再添加 2 个，与 attribute+points 共 3 个） */
+  extraBoosts?: Array<{ attribute: AttributeId; points: number }>;
   frequency: TodoFrequency;
   repeatDaily?: boolean;
   isLongTerm?: boolean;
@@ -131,6 +133,7 @@ export interface Settings {
   backgroundOrientation?: 'landscape' | 'portrait';
   backgroundOpacity?: number;
   soundMuted?: boolean;
+  soundVolume?: number;     // 音量大小 0–100，默认 80
   customAchievements?: Achievement[];
   customSkills?: Skill[];
   customLevelThresholds?: number[];
@@ -147,6 +150,9 @@ export interface Settings {
   summaryModel?: string;
   summaryPromptPresets?: SummaryPromptPreset[];
   summaryActivePresetId?: string;
+  // 开屏动画
+  splashStyle?: 'velvet' | 'p5' | 'p3' | 'p4';
+  splashSpeed?: 'fast' | 'normal' | 'slow';
 }
 
 export type SummaryPeriod = 'week' | 'month';

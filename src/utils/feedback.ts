@@ -4,18 +4,18 @@ import type { ThemeType } from '@/types';
 type FeedbackKind = 'theme_switch' | 'nav' | 'success' | 'level';
 
 const THEME_SOUNDS: Record<ThemeType, Record<FeedbackKind, string>> = {
-  blue:   { theme_switch: '/p3se.wav', nav: '/p3tap.wav', success: '/p3up.wav', level: '/p3lv.wav' },
-  pink:   { theme_switch: '/p3se.wav', nav: '/p3tap.wav', success: '/p3up.wav', level: '/p3lv.wav' },
-  yellow: { theme_switch: '/p4se.wav', nav: '/p4tap.wav', success: '/p4up.wav', level: '/p4lv.wav' },
-  red:    { theme_switch: '/p5se.wav', nav: '/dd.wav',    success: '/ok.wav',   level: '/p5lv.wav' },
-  custom: { theme_switch: '/p3se.wav', nav: '/p3tap.wav', success: '/p3up.wav', level: '/p3lv.wav' },
+  blue:   { theme_switch: '/p3se.mp3', nav: '/p3tap.mp3', success: '/p3up.mp3', level: '/p3lv.mp3' },
+  pink:   { theme_switch: '/p3se.mp3', nav: '/p3tap.mp3', success: '/p3up.mp3', level: '/p3lv.mp3' },
+  yellow: { theme_switch: '/p4se.mp3', nav: '/p4tap.mp3', success: '/p4up.mp3', level: '/p4lv.mp3' },
+  red:    { theme_switch: '/p5se.mp3', nav: '/dd.mp3',    success: '/ok.mp3',   level: '/p5lv.mp3' },
+  custom: { theme_switch: '/p3se.mp3', nav: '/p3tap.mp3', success: '/p3up.mp3', level: '/p3lv.mp3' },
 };
 
 // ── Web Audio API 引擎 ────────────────────────────────────
 //
 // 策略：
 //   1. 懒初始化 AudioContext（必须在用户手势内或之后创建）
-//   2. 所有 WAV 文件在首次使用时 fetch + decodeAudioData，解码后缓存为 AudioBuffer
+//   2. 所有 MP3 文件在首次使用时 fetch + decodeAudioData，解码后缓存为 AudioBuffer
 //   3. 播放时 createBufferSource().start() — 完全在内存中，延迟 < 1ms
 //   4. AudioContext 若因长时间不活动被浏览器 suspend，在播放前 resume()
 //   5. 降级：若 Web Audio API 不可用，回退到 new Audio()
@@ -36,7 +36,7 @@ function getContext(): AudioContext | null {
 }
 
 /**
- * 预解码并缓存指定路径的 WAV 文件。
+ * 预解码并缓存指定路径的音频文件。
  * 幂等：同一路径只 fetch + decode 一次。
  */
 async function primeBuffer(src: string): Promise<AudioBuffer | null> {
@@ -132,6 +132,16 @@ const isMuted = (): boolean => {
   }
 };
 
+/** 读取用户设置的音量比例（0–1），未设置时默认 0.8 */
+const getVolume = (): number => {
+  try {
+    const vol = useAppStore.getState().settings.soundVolume;
+    return (vol === undefined || vol === null ? 80 : vol) / 100;
+  } catch {
+    return 0.8;
+  }
+};
+
 // ── 公开 API ─────────────────────────────────────────────
 
 /**
@@ -139,7 +149,7 @@ const isMuted = (): boolean => {
  */
 export const playSound = (src: string, volume = 0.5): void => {
   if (isMuted()) return;
-  void playBuffered(src, volume);
+  void playBuffered(src, volume * getVolume());
 };
 
 export const triggerLightHaptic = (): void => {
@@ -152,8 +162,8 @@ const playThemeSound = (kind: FeedbackKind, themeOverride?: ThemeType): void => 
   if (isMuted()) return;
   const theme = themeOverride || getActiveTheme();
   const src = THEME_SOUNDS[theme][kind];
-  const volume = kind === 'nav' || kind === 'theme_switch' ? 0.4 : 0.45;
-  void playBuffered(src, volume);
+  const baseVolume = kind === 'nav' || kind === 'theme_switch' ? 0.4 : 0.45;
+  void playBuffered(src, baseVolume * getVolume());
 };
 
 export const triggerThemeSwitchFeedback = (theme: ThemeType): void => {
