@@ -22,6 +22,15 @@
   --color-secondary: #F472B6;
 }
 
+/* iOS PWA 安全区背景色 — 防止顶部/底部出现白色/黑色条带
+   html.dark 由 App.tsx 在 darkMode 变化时同步写入 */
+html, body {
+  background-color: #f9fafb; /* 亮色：gray-50 */
+}
+html.dark, html.dark body {
+  background-color: #111827; /* 暗色：gray-900 */
+}
+
 body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
@@ -51,7 +60,8 @@ body {
   }
   
   main {
-    padding-bottom: 5rem;
+    /* 底部留出 BottomNav 高度(4rem) + Home Bar 安全区，防止内容被遮挡 */
+    padding-bottom: calc(4rem + env(safe-area-inset-bottom));
   }
 }
 
@@ -84,8 +94,15 @@ html, body {
     padding-top: env(safe-area-inset-top);
     padding-left: env(safe-area-inset-left);
     padding-right: env(safe-area-inset-right);
-    padding-bottom: env(safe-area-inset-bottom);
+    /* 底部安全区由 BottomNav 自行处理，body 不加 padding-bottom
+       否则 body(fixed+height:100%) 的 padding 区域会显示白色背景条 */
   }
+}
+
+@keyframes splashRipple {
+  0%   { transform: scale(0);  opacity: 0.5; }
+  60%  { transform: scale(18); opacity: 0.15; }
+  100% { transform: scale(24); opacity: 0; }
 }
 
 @layer utilities {

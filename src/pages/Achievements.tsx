@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAppStore } from '@/store';
 import { Achievement, AttributeId } from '@/types';
 import { triggerNavFeedback } from '@/utils/feedback';
@@ -622,6 +622,7 @@ const AchievementsTab = () => {
     attributes,
     settings,
     todoCompletions,
+    battleState,
     updateCustomAchievement,
     deleteCustomAchievement,
     addCustomAchievement,
@@ -684,6 +685,8 @@ const AchievementsTab = () => {
         return Math.min(attributes.filter(a => a.level >= achievement.condition.value).length, attributes.length);
       case 'todo_completions':
         return Math.min(todoCompletions.reduce((sum, item) => sum + item.count, 0), achievement.condition.value);
+      case 'shadow_defeats':
+        return Math.min(battleState?.defeatedShadowLog?.length ?? 0, achievement.condition.value);
       default:
         return 0;
     }
@@ -755,11 +758,65 @@ const AchievementsTab = () => {
     setEditForm(defaultEditForm);
   };
 
-  const filtered = achievements.filter(a => {
-    if (filterStatus === 'locked') return !a.unlocked;
-    if (filterStatus === 'unlocked') return a.unlocked;
-    return true;
-  });
+  const filtered = useMemo(() => {
+    const f = achievements.filter(a => {
+      if (filterStatus === 'locked') return !a.unlocked;
+      if (filterStatus === 'unlocked') return a.unlocked;
+      return true;
+    });
+    if (filterStatus === 'all') {
+      return [...f].sort((a, b) => (a.unlocked ? 1 : 0) - (b.unlocked ? 1 : 0));
+    }
+    return f;
+  }, [achievements, filterStatus]);
+
+  // Group attribute_level achievements by attribute for card switching
+  const { attrGroups, otherAchievements } = useMemo(() => {
+    const groups: Record<string, typeof filtered> = {};
+    const others: typeof filtered = [];
+    let wildHeart: typeof filtered[0] | undefined;
+    filtered.forEach(a => {
+      if (a.condition.type === 'attribute_level' && a.condition.attribute && !a.id.startsWith('custom_')) {
+        const attr = a.condition.attribute;
+        if (!groups[attr]) groups[attr] = [];
+        groups[attr].push(a);
+      } else if (a.id === 'wild_heart') {
+        wildHeart = a;
+      } else {
+        others.push(a);
+      }
+    });
+    // Sort each group by value ascending
+    Object.values(groups).forEach(g => g.sort((a, b) => a.condition.value - b.condition.value));
+    // 不羁之心为终极成就，始终置于列表末尾
+    if (wildHeart) others.push(wildHeart);
+    return { attrGroups: groups, otherAchievements: others };
+  }, [filtered]);
+
+  // Track which index is shown per attribute group; default to highest unlocked
+  const [attrGroupIdx, setAttrGroupIdx] = useState<Record<string, number>>({});
+  const [attrGroupDir, setAttrGroupDir] = useState<Record<string, 1 | -1>>({});
+  const cardSwipeRef = useRef<Record<string, { x: number; y: number } | null>>({});
+  const attrGroupKeys = Object.keys(attrGroups);
+  // Initialize indices when groups change
+  useEffect(() => {
+    setAttrGroupIdx(prev => {
+      const next: Record<string, number> = {};
+      attrGroupKeys.forEach(attr => {
+        if (prev[attr] !== undefined && prev[attr] < (attrGroups[attr]?.length ?? 0)) {
+          next[attr] = prev[attr];
+        } else {
+          // Default to highest unlocked
+          const group = attrGroups[attr] ?? [];
+          let highest = 0;
+          group.forEach((a, i) => { if (a.unlocked) highest = i; });
+          next[attr] = highest;
+        }
+      });
+      return next;
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [attrGroupKeys.join(',')]);
 
   return (
     <div className="space-y-4">
@@ -786,7 +843,149 @@ const AchievementsTab = () => {
 
       {/* Achievement cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-        {filtered.map((achievement) => {
+        {/* ── Attribute level grouped cards ── */}
+        {attrGroupKeys.map(attr => {
+          const group = attrGroups[attr];
+          if (!group || group.length === 0) return null;
+          const idx = attrGroupIdx[attr] ?? 0;
+          const achievement = group[idx];
+          if (!achievement) return null;
+          const progress = getProgress(achievement);
+          const percentage = (progress / achievement.condition.value) * 100;
+          const canUnlock = !achievement.unlocked && percentage >= 100;
+          const attrDisplayName = settings.attributeNames[attr as keyof typeof settings.attributeNames] ?? attr;
+
+          return (
+            <motion.div
+              key={`group-${attr}`}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              className={`rounded-2xl border relative transition-all ${
+                achievement.unlocked
+                  ? 'bg-gradient-to-br from-amber-400 to-orange-500 border-transparent text-white shadow-md shadow-amber-200/50 dark:shadow-amber-900/30'
+                  : canUnlock
+                  ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-300 dark:border-amber-600'
+                  : 'bg-white dark:bg-gray-900 border-gray-100 dark:border-gray-800 shadow-sm'
+              }`}
+            >
+              {/* Attribute label */}
+              <div className={`text-[10px] font-semibold text-center pt-3 pb-0.5 tracking-wider ${
+                achievement.unlocked ? 'text-white/60' : 'text-gray-400 dark:text-gray-500'
+              }`}>
+                {attrDisplayName}
+              </div>
+
+              {/* Edit button */}
+              <div className="absolute top-2.5 right-2.5 flex gap-1">
+                <motion.button
+                  whileTap={{ scale: 0.9 }}
+                  onClick={(e) => { e.stopPropagation(); handleEdit(achievement); }}
+                  className={`w-6 h-6 rounded-full flex items-center justify-center ${
+                    achievement.unlocked ? 'bg-white/20 text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400'
+                  }`}
+                >
+                  <svg viewBox="0 0 16 16" className="w-3 h-3" fill="currentColor">
+                    <path d="M11.5 2.5a1.5 1.5 0 012.121 2.121L5.561 12.682l-2.829.707.707-2.829L11.5 2.5z" />
+                  </svg>
+                </motion.button>
+              </div>
+
+              {/* Card body — swipe left/right to switch within group */}
+              <div
+                className="px-3 pb-1 text-center overflow-hidden"
+                style={{ touchAction: group.length > 1 ? 'pan-y' : undefined }}
+                onPointerDown={(e) => {
+                  if (group.length <= 1) return;
+                  cardSwipeRef.current[attr] = { x: e.clientX, y: e.clientY };
+                  try { (e.currentTarget as Element).setPointerCapture(e.pointerId); } catch { /* ignore */ }
+                }}
+                onPointerUp={(e) => {
+                  const start = cardSwipeRef.current[attr];
+                  if (!start) return;
+                  cardSwipeRef.current[attr] = null;
+                  const dx = e.clientX - start.x;
+                  const dy = e.clientY - start.y;
+                  if (group.length > 1 && Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 35) {
+                    if (dx < 0) {
+                      setAttrGroupDir(prev => ({ ...prev, [attr]: 1 }));
+                      setAttrGroupIdx(prev => ({ ...prev, [attr]: (idx + 1) % group.length }));
+                    } else {
+                      setAttrGroupDir(prev => ({ ...prev, [attr]: -1 }));
+                      setAttrGroupIdx(prev => ({ ...prev, [attr]: (idx - 1 + group.length) % group.length }));
+                    }
+                  } else if (Math.hypot(dx, dy) < 8 && canUnlock) {
+                    unlockAchievement(achievement.id);
+                  }
+                }}
+                onPointerCancel={() => { cardSwipeRef.current[attr] = null; }}
+              >
+                <AnimatePresence mode="wait" initial={false}>
+                  <motion.div
+                    key={`${attr}-${idx}`}
+                    initial={{ x: (attrGroupDir[attr] ?? 1) * 30, opacity: 0 }}
+                    animate={{ x: 0, opacity: 1 }}
+                    exit={{ x: (attrGroupDir[attr] ?? 1) * -30, opacity: 0 }}
+                    transition={{ duration: 0.18, ease: 'easeOut' }}
+                    className="py-2"
+                  >
+                    <div className="text-2xl mb-1">{achievement.icon}</div>
+                    <h3 className={`font-bold text-sm mb-0.5 ${achievement.unlocked ? 'text-white' : 'text-gray-800 dark:text-white'}`}>
+                      {achievement.title}
+                    </h3>
+                    <p className={`text-xs mb-2 leading-snug ${achievement.unlocked ? 'text-white/90' : 'text-gray-500 dark:text-gray-400'}`}>
+                      {achievement.description}
+                    </p>
+
+                    {!achievement.unlocked && (
+                      <>
+                        <div className="w-full bg-gray-100 dark:bg-gray-800 rounded-full h-1.5 mb-1.5 overflow-hidden">
+                          <motion.div
+                            className={`h-full rounded-full ${canUnlock ? 'bg-amber-500' : 'bg-primary'}`}
+                            initial={{ width: 0 }}
+                            animate={{ width: `${Math.min(100, percentage)}%` }}
+                            transition={{ duration: 0.7, ease: 'easeOut' }}
+                          />
+                        </div>
+                        <div className={`text-[10px] ${canUnlock ? 'text-amber-600 dark:text-amber-400 font-semibold' : 'text-gray-400 dark:text-gray-500'}`}>
+                          {canUnlock ? '已达成，点击解锁 ✨' : `${progress} / ${achievement.condition.value}`}
+                        </div>
+                      </>
+                    )}
+
+                    {achievement.unlocked && achievement.unlockedDate && (
+                      <div className="text-[10px] text-white/75 mt-1">
+                        解锁于 {new Date(achievement.unlockedDate).toLocaleDateString('zh-CN')}
+                      </div>
+                    )}
+                  </motion.div>
+                </AnimatePresence>
+              </div>
+
+              {/* Dot indicators */}
+              {group.length > 1 && (
+                <div className="flex justify-center gap-1.5 pb-3">
+                  {group.map((_, i) => (
+                    <button
+                      key={i}
+                      onClick={() => setAttrGroupIdx(prev => ({ ...prev, [attr]: i }))}
+                      className="rounded-full transition-all"
+                      style={{
+                        width: i === idx ? 14 : 5,
+                        height: 5,
+                        background: i === idx
+                          ? (achievement.unlocked ? 'rgba(255,255,255,0.8)' : 'var(--color-primary)')
+                          : (achievement.unlocked ? 'rgba(255,255,255,0.3)' : 'rgba(156,163,175,0.3)'),
+                      }}
+                    />
+                  ))}
+                </div>
+              )}
+            </motion.div>
+          );
+        })}
+
+        {/* ── Other (non-attribute-level) achievements ── */}
+        {otherAchievements.map((achievement) => {
           const progress = getProgress(achievement);
           const percentage = (progress / achievement.condition.value) * 100;
           const isCustom = isCustomAchievement(achievement);
@@ -806,7 +1005,7 @@ const AchievementsTab = () => {
               onTouchEnd={cancelPress}
               onTouchCancel={cancelPress}
               onClick={() => { if (canUnlock) unlockAchievement(achievement.id); }}
-              className={`rounded-2xl p-4 border cursor-pointer relative transition-all ${
+              className={`rounded-2xl p-3 border cursor-pointer relative transition-all ${
                 achievement.unlocked
                   ? 'bg-gradient-to-br from-amber-400 to-orange-500 border-transparent text-white shadow-md shadow-amber-200/50 dark:shadow-amber-900/30'
                   : canUnlock
@@ -844,11 +1043,11 @@ const AchievementsTab = () => {
                 )}
               </div>
 
-              <div className="text-3xl mb-2 text-center">{achievement.icon}</div>
-              <h3 className={`font-bold text-base mb-1 text-center ${achievement.unlocked ? 'text-white' : 'text-gray-800 dark:text-white'}`}>
+              <div className="text-2xl mb-1 text-center">{achievement.icon}</div>
+              <h3 className={`font-bold text-sm mb-0.5 text-center ${achievement.unlocked ? 'text-white' : 'text-gray-800 dark:text-white'}`}>
                 {achievement.title}
               </h3>
-              <p className={`text-xs mb-3 text-center leading-relaxed ${achievement.unlocked ? 'text-white/90' : 'text-gray-500 dark:text-gray-400'}`}>
+              <p className={`text-xs mb-2 text-center leading-snug ${achievement.unlocked ? 'text-white/90' : 'text-gray-500 dark:text-gray-400'}`}>
                 {achievement.description}
               </p>
 
@@ -1001,7 +1200,6 @@ const AchievementsTab = () => {
 ───────────────────────────────────────────── */
 export const Achievements = () => {
   const [activeTab, setActiveTab] = useState<'achievements' | 'skills'>('achievements');
-
   return (
     <motion.div
       initial={{ opacity: 0 }}

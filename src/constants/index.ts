@@ -167,20 +167,28 @@ export const ACHIEVEMENTS = [
     condition: { type: 'attribute_level' as const, value: 5, attribute: 'charm' as AttributeId }
   },
   {
-    id: 'wild_heart',
-    title: '不羁之心',
-    description: '所有属性全部达到5级',
-    icon: '🦋',
-    unlocked: false,
-    condition: { type: 'all_attributes_max' as const, value: 5 }
-  },
-  {
     id: 'weekly_planner',
     title: '计划通',
     description: '完成8次每周目标',
     icon: '📅',
     unlocked: false,
     condition: { type: 'weekly_goal_completions' as const, value: 8 }
+  },
+  {
+    id: 'shadow_slayer_5',
+    title: '华丽征服',
+    description: '在逆影战场中累计击败5次Shadow',
+    icon: '⚔️',
+    unlocked: false,
+    condition: { type: 'shadow_defeats' as const, value: 5 }
+  },
+  {
+    id: 'wild_heart',
+    title: '不羁之心',
+    description: '所有属性全部达到5级',
+    icon: '🦋',
+    unlocked: false,
+    condition: { type: 'all_attributes_max' as const, value: 5 }
   }
 ];
 
@@ -328,4 +336,45 @@ export const EVENT_POOL = [
     description: '魅力提升效果翻倍',
     effect: { attribute: 'charm' as AttributeId, multiplier: 2 }
   }
+];
+
+// ── 逆影战场常量 ──────────────────────────────────────────
+
+export const SHADOW_LEVEL_CONFIG = [
+  { level: 1, maxHp: 80,  maxHp2: undefined as number | undefined, label: '之阴影' },
+  { level: 2, maxHp: 120, maxHp2: undefined as number | undefined, label: '之深渊' },
+  { level: 3, maxHp: 190, maxHp2: 120,                             label: '之执念' },
+  { level: 4, maxHp: 250, maxHp2: 180,                             label: '之噩梦' },
+  { level: 5, maxHp: 310, maxHp2: 250,                             label: '之深渊王' },
+];
+
+/** Shadow每日HP恢复量（按等级） */
+export const SHADOW_REGEN_PER_LEVEL = [2, 3, 4, 5, 5];
+
+/** 击败Shadow后玩家最大HP提升量（按等级） */
+export const HP_BONUS_PER_DEFEAT = [2, 3, 4, 5, 5];
+
+export function isInShadowTime(days: number[] = [5, 6, 0], startHour = 20, endHour = 7): boolean {
+  const now = new Date();
+  const weekday = now.getDay();
+  const hour = now.getHours();
+  if (hour >= startHour && days.includes(weekday)) return true;
+  if (hour < endHour) {
+    const yesterday = (weekday + 6) % 7;
+    if (days.includes(yesterday)) return true;
+  }
+  return false;
+}
+
+export const SHADOW_RESPONSE_LINES = [
+  '你以为这就能击败我？',
+  '这点伤害……不过如此。',
+  '有趣……继续吧。',
+  '你的力量……来自何处？',
+  '不要以为你真的了解自己！',
+  '我是你内心深处的一部分！',
+  '就这点实力，还妄想战胜我？',
+  '你越来越强了……但还不够。',
+  '我感受到你的成长……令我不安。',
+  '小心……我也在变强。',
 ];

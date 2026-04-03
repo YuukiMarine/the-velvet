@@ -1,20 +1,24 @@
-import { useEffect, useState, useRef, lazy, Suspense } from 'react';
+import { useEffect, useState, useRef, useCallback, lazy, Suspense } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useAppStore, toLocalDateKey } from '@/store';
 import { Sidebar, BottomNav } from '@/components/Navigation';
 import { WelcomeModal } from '@/components/WelcomeModal';
 import { LevelUpModal } from '@/components/LevelUpModal';
 import { SplashScreen } from '@/components/SplashScreen';
+import type { SplashScreenProps } from '@/components/SplashScreen';
 import { AchievementUnlockModal } from '@/components/AchievementUnlockModal';
 import { SkillUnlockModal } from '@/components/SkillUnlockModal';
+import { db } from '@/db';
 import { Dashboard } from '@/pages/Dashboard';
 import { Activities } from '@/pages/Activities';
 import { Achievements } from '@/pages/Achievements';
 const Statistics = lazy(() => import('@/pages/Statistics').then(m => ({ default: m.Statistics })));
 import { Settings } from '@/pages/Settings';
 import { Todos } from '@/pages/Todos';
+import { BattleArena } from '@/components/battle/BattleArena';
 import { primeCurrentTheme } from '@/utils/feedback';
 import { BackgroundAnimation } from '@/components/BackgroundAnimation';
+import { PWAUpdateToast } from '@/components/PWAUpdateToast';
 import { isNative } from '@/utils/native';
 
 function App() {
@@ -22,6 +26,7 @@ function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showSplash, setShowSplash] = useState(true);
+  const [splashPrefs, setSplashPrefs] = useState<Pick<SplashScreenProps, 'splashStyle' | 'splashSpeed'> | null>(null);
   const primedRef = useRef(false);
   // 记录上次打开时的日期，用于检测隔天回来
   const lastDateRef = useRef(toLocalDateKey());
@@ -29,6 +34,14 @@ function App() {
   const [showBackToast, setShowBackToast] = useState(false);
   const lastBackPressRef = useRef(0);
   const backToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 快速预加载开屏动画设置，确保 splash 使用用户选中的样式
+  useEffect(() => {
+    db.settings.get('default').then(s => {
+      if (s) setSplashPrefs({ splashStyle: s.splashStyle, splashSpeed: s.splashSpeed });
+      else setSplashPrefs({});
+    }).catch(() => setSplashPrefs({}));
+  }, []);
 
   useEffect(() => {
     const init = async () => {
@@ -43,7 +56,7 @@ function App() {
         setIsLoading(false);
       }
     };
-    
+
     init();
   }, [initializeApp]);
 
@@ -103,6 +116,16 @@ function App() {
     };
   }, []);
 
+  // 同步 dark class 到 <html> 元素，使 index.css 中 html.dark 选择器可控制
+  // body 的背景色 —— 修复 iOS PWA standalone 模式下安全区白色条带
+  useEffect(() => {
+    if (settings.darkMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [settings.darkMode]);
+
   // 在首次用户交互时预加载当前主题音效，之后所有点击都是零延迟播放
   useEffect(() => {
     const handleFirstInteraction = () => {
@@ -120,8 +143,12 @@ function App() {
     };
   }, []);
 
+  // 稳定的回调引用，防止 Android 返回键等触发的 re-render 导致开屏动画定时器重启
+  const handleSplashComplete = useCallback(() => setShowSplash(false), []);
+
   if (showSplash) {
-    return <SplashScreen isVisible={showSplash} onComplete={() => setShowSplash(false)} splashStyle={settings.splashStyle} splashSpeed={settings.splashSpeed} />;
+    if (!splashPrefs) return null; // 等待开屏设置加载
+    return <SplashScreen isVisible={showSplash} onComplete={handleSplashComplete} splashStyle={splashPrefs.splashStyle} splashSpeed={splashPrefs.splashSpeed} />;
   }
 
   if (isLoading) {
@@ -166,6 +193,8 @@ function App() {
         return <Suspense fallback={<div className="flex items-center justify-center h-64 text-gray-400">加载中…</div>}><Statistics /></Suspense>;
       case 'settings':
         return <Settings />;
+      case 'battle':
+        return <BattleArena />;
       default:
         return <Dashboard />;
     }
@@ -270,6 +299,9 @@ function App() {
                    onClose={() => setSkillNotification(null)}
                  />
                )}
+
+               {/* PWA 新版本更新提示 */}
+               <PWAUpdateToast />
             </>
           )}
         </div>
