@@ -1,5 +1,5 @@
 import Dexie, { Table } from 'dexie';
-import { User, Attribute, Activity, Achievement, Skill, DailyEvent, Settings, Todo, TodoCompletion, PeriodSummary, WeeklyGoal } from '@/types';
+import { User, Attribute, Activity, Achievement, Skill, DailyEvent, Settings, Todo, TodoCompletion, PeriodSummary, WeeklyGoal, Persona, Shadow, BattleState } from '@/types';
 
 export class PGTDatabase extends Dexie {
   users!: Table<User>;
@@ -13,6 +13,9 @@ export class PGTDatabase extends Dexie {
   todoCompletions!: Table<TodoCompletion>;
   summaries!: Table<PeriodSummary>;
   weeklyGoals!: Table<WeeklyGoal>;
+  personas!: Table<Persona>;
+  shadows!: Table<Shadow>;
+  battleStates!: Table<BattleState>;
 
   constructor() {
     super('PGTDatabase');
@@ -60,6 +63,22 @@ export class PGTDatabase extends Dexie {
       todoCompletions: 'id, todoId, date',
       summaries: 'id, period, startDate, endDate, createdAt',
       weeklyGoals: 'id, weekStart, weekEnd, completed, createdAt'
+    });
+    this.version(5).stores({
+      users: 'id, name, createdAt, theme',
+      attributes: 'id, displayName, points, level, unlocked',
+      activities: 'id, userId, date, description, method',
+      achievements: 'id, unlocked, unlockedDate',
+      skills: 'id, requiredAttribute, requiredLevel, unlocked',
+      dailyEvents: 'id, date',
+      settings: 'id',
+      todos: 'id, attribute, frequency, isActive, createdAt',
+      todoCompletions: 'id, todoId, date',
+      summaries: 'id, period, startDate, endDate, createdAt',
+      weeklyGoals: 'id, weekStart, weekEnd, completed, createdAt',
+      personas: 'id, name, createdAt',
+      shadows: 'id, level, createdAt',
+      battleStates: 'id'
     });
   }
 }

@@ -1,0 +1,6 @@
+# 允许所有搜索引擎爬取
+User-agent: *
+Allow: /
+
+# 告诉搜索引擎网站地图位置
+Sitemap: https://the-velvet.com/sitemap.xml

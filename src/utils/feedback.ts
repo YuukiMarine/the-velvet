@@ -162,7 +162,7 @@ const playThemeSound = (kind: FeedbackKind, themeOverride?: ThemeType): void => 
   if (isMuted()) return;
   const theme = themeOverride || getActiveTheme();
   const src = THEME_SOUNDS[theme][kind];
-  const baseVolume = kind === 'nav' || kind === 'theme_switch' ? 0.4 : 0.45;
+  const baseVolume = kind === 'nav' || kind === 'theme_switch' ? 0.48 : 0.54;
   void playBuffered(src, baseVolume * getVolume());
 };
 

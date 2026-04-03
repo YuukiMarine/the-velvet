@@ -1,18 +1,20 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useEffect, useRef, useState } from 'react';
 import { triggerSuccessFeedback } from '@/utils/feedback';
+import { MusicalNotes } from '@/components/MusicalNotes';
 
 interface TodoCompleteModalProps {
   isOpen: boolean;
   onClose: () => void;
   title: string;
+  totalPoints?: number;
   unlockHint?: {
     achievements: number;
     skills: number;
   };
 }
 
-export const TodoCompleteModal = ({ isOpen, onClose, title, unlockHint }: TodoCompleteModalProps) => {
+export const TodoCompleteModal = ({ isOpen, onClose, title, totalPoints, unlockHint }: TodoCompleteModalProps) => {
   const [ribbons, setRibbons] = useState<Array<{ id: number; x: number; y: number; delay: number }>>([]);
   const playedRef = useRef(false);
 
@@ -32,7 +34,7 @@ export const TodoCompleteModal = ({ isOpen, onClose, title, unlockHint }: TodoCo
 
       const timer = setTimeout(() => {
         onClose();
-      }, 2200);
+      }, 3000);
 
       return () => clearTimeout(timer);
     }
@@ -96,6 +98,7 @@ export const TodoCompleteModal = ({ isOpen, onClose, title, unlockHint }: TodoCo
               </div>
             </div>
           </motion.div>
+          {(totalPoints ?? 0) > 0 && <MusicalNotes count={totalPoints!} delay={0.3} />}
         </motion.div>
       )}
     </AnimatePresence>

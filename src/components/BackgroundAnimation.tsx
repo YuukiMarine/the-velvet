@@ -53,18 +53,18 @@ function ensureKeyframes() {
       100% { transform: translate3d(0%,  0%,  0) scale(1);    }
     }
 
-    /* particles */
+    /* particles — drift wrapper uses translateX, rise inner uses translateY
+       拆成父子两层各控制一个轴，避免 margin-left 触发 layout */
+    @keyframes particle-drift {
+      0%   { transform: translate3d(0,   0, 0); }
+      50%  { transform: translate3d(30px,0, 0); }
+      100% { transform: translate3d(0,   0, 0); }
+    }
     @keyframes particle-rise {
-      0%   { transform: translateY(0)      scale(1);   opacity: 0;   }
+      0%   { transform: translate3d(0, 0, 0)      scale(1);   opacity: 0;   }
       10%  { opacity: 1; }
       85%  { opacity: 0.7; }
-      100% { transform: translateY(-110vh) scale(0.6); opacity: 0;   }
-    }
-    /* drift 用 margin-left 而非 transform，避免与 particle-rise 的 transform 互相覆盖 */
-    @keyframes particle-drift {
-      0%   { margin-left: 0;    }
-      50%  { margin-left: 30px; }
-      100% { margin-left: 0;    }
+      100% { transform: translate3d(0, -110vh, 0)  scale(0.6); opacity: 0;   }
     }
 
     /* wave — 用 translate3d 在独立层上平移，避免 background-position 重绘 */
@@ -115,13 +115,12 @@ function Aurora({ darkMode }: { darkMode?: boolean }) {
             width: b.size,
             height: b.size,
             borderRadius: '50%',
-            background: 'radial-gradient(circle, var(--color-primary) 0%, transparent 70%)',
-            // 移动端降低 blur 值（60px→40px）减轻 GPU 纹理带宽压力
-            filter: 'blur(40px)',
+            // 用更大的 radial-gradient 中间段模拟 blur，避免实时 filter: blur
+            // 比 blur(40px) 性能高一个数量级，视觉上几乎等效
+            background: 'radial-gradient(circle, var(--color-primary) 0%, var(--color-primary) 15%, transparent 65%)',
             opacity: b.opacity,
             animation: b.anim,
             willChange: 'transform',
-            // 强制提升为独立合成层，避免与页面内容共享层导致闪烁
             transform: 'translateZ(0)',
             backfaceVisibility: 'hidden',
           }}
@@ -154,31 +153,38 @@ function Particles({ darkMode }: { darkMode?: boolean }) {
       style={{
         position: 'absolute',
         inset: 0,
-        // contain: strict 会裁掉超出容器的绘制内容，导致粒子升出顶部时消失。
-        // 改用 layout style：保留布局隔离，但不限制 paint 区域。
         contain: 'layout style',
       }}
     >
       {PARTICLE_CONFIG.map((p, i) => (
+        /* 外层: drift（translateX），独立合成层 */
         <div
           key={i}
           style={{
             position: 'absolute',
             bottom: '-10px',
             left: p.left,
-            width: p.size,
-            height: p.size,
-            borderRadius: '50%',
-            background: 'var(--color-primary)',
-            opacity: op,
-            // particle-rise 和 particle-drift 都改为 translate3d，
-            // 合并为单一 transform 动画避免多个 will-change 竞争
-            animation: `particle-rise ${p.dur}s ease-in ${p.delay}s infinite, particle-drift ${p.dur * 0.6}s ease-in-out ${p.delay}s infinite`,
-            willChange: 'transform, opacity',
+            animation: `particle-drift ${p.dur * 0.6}s ease-in-out ${p.delay}s infinite`,
+            willChange: 'transform',
             transform: 'translateZ(0)',
             backfaceVisibility: 'hidden',
           }}
-        />
+        >
+          {/* 内层: rise（translateY + scale + opacity） */}
+          <div
+            style={{
+              width: p.size,
+              height: p.size,
+              borderRadius: '50%',
+              background: 'var(--color-primary)',
+              opacity: op,
+              animation: `particle-rise ${p.dur}s ease-in ${p.delay}s infinite`,
+              willChange: 'transform, opacity',
+              transform: 'translateZ(0)',
+              backfaceVisibility: 'hidden',
+            }}
+          />
+        </div>
       ))}
     </div>
   );

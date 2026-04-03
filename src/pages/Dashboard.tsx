@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useAppStore, toLocalDateKey } from '@/store';
 import { TodoCompleteModal } from '@/components/TodoCompleteModal';
 import { PageTitle } from '@/components/PageTitle';
+import { BattleDashboardWidget } from '@/components/BattleDashboardWidget';
 import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer } from 'recharts';
 
 // Seeded random: picks a stable index per session (changes on every page open)
@@ -166,6 +167,8 @@ const AttributeGrid = ({ attributes, settings }: {
   const [overId, setOverId]   = useState<string | null>(null);
   // for the last-row ghost drop zone
   const [lastRowDrop, setLastRowDrop] = useState<LastRowDrop>(null);
+  // for the first-row ghost drop zone
+  const [firstRowDrop, setFirstRowDrop] = useState<LastRowDrop>(null);
 
   const isDragging = dragId !== null;
   const gridRef    = useRef<HTMLDivElement>(null);
@@ -222,15 +225,31 @@ const AttributeGrid = ({ attributes, settings }: {
     });
     setOverId(foundId);
 
-    // detect if we're hovering the last-row ghost zone
+    // detect if we're hovering the first-row or last-row ghost zone
     if (gridRef.current) {
       const gridRect = gridRef.current.getBoundingClientRect();
+
+      // check first-row ghost
+      const firstGhostEl = gridRef.current.querySelector('[data-first-ghost]') as HTMLElement | null;
+      if (firstGhostEl) {
+        const gr = firstGhostEl.getBoundingClientRect();
+        if (x >= gr.left && x <= gr.right && y >= gr.top && y <= gr.bottom) {
+          const relX = x - gr.left;
+          setFirstRowDrop(relX < gr.width * 0.35 ? 'half' : 'wide');
+          setLastRowDrop(null);
+          setOverId(null);
+          return;
+        }
+      }
+
+      // check last-row ghost
       const ghostEl  = gridRef.current.querySelector('[data-ghost]') as HTMLElement | null;
       if (ghostEl) {
         const gr = ghostEl.getBoundingClientRect();
         if (x >= gr.left && x <= gr.right && y >= gr.top && y <= gr.bottom) {
           const relX = x - gr.left;
           setLastRowDrop(relX < gr.width * 0.35 ? 'half' : 'wide');
+          setFirstRowDrop(null);
           setOverId(null);
           return;
         }
@@ -241,11 +260,13 @@ const AttributeGrid = ({ attributes, settings }: {
       if (y > lastRow && x >= gridRect.left && x <= gridRect.right) {
         const relX = x - gridRect.left;
         setLastRowDrop(relX < gridRect.width * 0.35 ? 'half' : 'wide');
+        setFirstRowDrop(null);
         setOverId(null);
         return;
       }
     }
     setLastRowDrop(null);
+    setFirstRowDrop(null);
   };
 
   const onPointerUp = (id: string, _e: React.PointerEvent) => {
@@ -256,7 +277,14 @@ const AttributeGrid = ({ attributes, settings }: {
       setWideId(null);
     } else if (dragMoved.current) {
       // commit the drop
-      if (lastRowDrop !== null && dragId) {
+      if (firstRowDrop !== null && dragId) {
+        setOrder(prev => {
+          const next = prev.filter(i => i !== dragId);
+          next.unshift(dragId);
+          return next;
+        });
+        setWideId(firstRowDrop === 'wide' ? dragId : null);
+      } else if (lastRowDrop !== null && dragId) {
         setOrder(prev => {
           const next = prev.filter(i => i !== dragId);
           next.push(dragId);
@@ -279,6 +307,7 @@ const AttributeGrid = ({ attributes, settings }: {
     setDragId(null);
     setOverId(null);
     setLastRowDrop(null);
+    setFirstRowDrop(null);
     activePointerId.current = null;
   };
 
@@ -286,19 +315,23 @@ const AttributeGrid = ({ attributes, settings }: {
     setDragId(null);
     setOverId(null);
     setLastRowDrop(null);
+    setFirstRowDrop(null);
     activePointerId.current = null;
   };
 
   // sorted attrs
   const sortedAttrs = order.map(id => attributes.find(a => a.id === id)!).filter(Boolean);
 
-  // figure out last position — the card that would be alone in its row
+  // figure out last/first positions — the card that would be alone in its row
   const lastIdxInOddRow = sortedAttrs.length % 2 !== 0 ? sortedAttrs.length - 1 : -1;
   const lastId          = lastIdxInOddRow >= 0 ? sortedAttrs[lastIdxInOddRow].id : null;
-  const effectiveWideId = lastId === wideId ? wideId : null; // only valid if it's actually last
+  const firstId         = sortedAttrs.length > 0 ? sortedAttrs[0].id : null;
+  // effectiveWideId: only valid if wideId is actually first or last (mutually exclusive)
+  const effectiveWideId = (wideId === firstId || wideId === lastId) ? wideId : null;
 
-  // show ghost zone when dragging AND dragged card is not already last
-  const showGhost = isDragging && dragId !== lastId;
+  // show ghost zones when dragging
+  const showGhost      = isDragging && dragId !== lastId;
+  const showFirstGhost = isDragging && dragId !== firstId;
 
   return (
     <div
@@ -309,7 +342,7 @@ const AttributeGrid = ({ attributes, settings }: {
       <div className="flex items-center justify-between mb-3 px-0.5">
         <PageTitle title="人格指数" en="parameter" />
         <button
-          onClick={() => { setEditMode(v => !v); setDragId(null); setOverId(null); setLastRowDrop(null); }}
+          onClick={() => { setEditMode(v => !v); setDragId(null); setOverId(null); setLastRowDrop(null); setFirstRowDrop(null); }}
           className={`text-[11px] font-semibold px-3 py-1.5 rounded-lg transition-colors select-none ${
             editMode
               ? 'bg-primary text-white'
@@ -321,6 +354,28 @@ const AttributeGrid = ({ attributes, settings }: {
       </div>
 
       <div className="grid grid-cols-2 gap-3">
+        {/* First-row ghost drop zone — shown when dragging a non-first card */}
+        {showFirstGhost && (
+          <motion.div
+            data-first-ghost
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.12 }}
+            className={`rounded-2xl border-2 border-dashed flex items-center justify-center h-24 transition-all ${
+              firstRowDrop === 'wide'
+                ? 'col-span-2 border-primary bg-primary/5'
+                : firstRowDrop === 'half'
+                ? 'col-span-1 border-primary bg-primary/5'
+                : 'col-span-2 border-gray-200 dark:border-gray-700'
+            }`}
+          >
+            <span className="text-xs text-gray-400 dark:text-gray-500 pointer-events-none select-none">
+              {firstRowDrop === 'wide' ? '放开 → 占满一行' : firstRowDrop === 'half' ? '放开 → 等宽' : '拖到最前'}
+            </span>
+          </motion.div>
+        )}
+
         {sortedAttrs.map((attr) => {
           const isWide     = attr.id === effectiveWideId;
           const isDragCard = attr.id === dragId;
@@ -456,7 +511,19 @@ const isLightColor = (hex: string): boolean => {
 export const Dashboard = () => {
   const { attributes, dailyEvent, user, settings, todos, activities, achievements, skills, completeTodo, getTodayTodoProgress, setModalBlocker, setCurrentPage, applyCountercurrentDecay, getCountercurrentWarnings } = useAppStore();
   const [completedTitle, setCompletedTitle] = useState<string | null>(null);
+  const [completedPoints, setCompletedPoints] = useState(1);
   const [unlockHint, setUnlockHint] = useState<{ achievements: number; skills: number }>({ achievements: 0, skills: 0 });
+  // 涟漪反馈（待办按钮列表）
+  const [todoRipples, setTodoRipples] = useState<Record<string, Array<{id: number; x: number; y: number}>>>({});
+  const todoRippleId = useRef(0);
+  const spawnTodoRipple = (todoId: string, e: React.MouseEvent<HTMLElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const id = todoRippleId.current++;
+    setTodoRipples(prev => ({ ...prev, [todoId]: [...(prev[todoId] ?? []), { id, x, y }] }));
+    setTimeout(() => setTodoRipples(prev => ({ ...prev, [todoId]: (prev[todoId] ?? []).filter(r => r.id !== id) })), 600);
+  };
   // 逆流衰减弹窗
   const [decayedAttrs, setDecayedAttrs] = useState<import('@/types').AttributeId[]>([]);
 
@@ -517,6 +584,8 @@ export const Dashboard = () => {
 
   const todayTodos = [...todos.filter(todo => {
     const matchesWeekday = !todo.weekdays || todo.weekdays.length === 0 || todo.weekdays.includes(todayWeekday);
+    // 未来启用日期的待办今天不显示
+    if (todo.startDate && todo.startDate > todayKey) return false;
     if (todo.isActive && matchesWeekday) return true;
     if (!todo.isActive && todo.archivedAt) {
       const archivedKey = toLocalDateKey(new Date(todo.archivedAt));
@@ -694,16 +763,19 @@ export const Dashboard = () => {
                   transition={{ delay: i * 0.04 }}
                   whileTap={progress.isComplete ? undefined : { scale: 0.985 }}
                   disabled={progress.isComplete}
-                  onClick={async () => {
+                  onClick={async (e) => {
+                    if (!progress.isComplete) spawnTodoRipple(todo.id, e);
                     const result = await completeTodo(todo.id);
                     const updated = getTodayTodoProgress(todo.id);
                     if (updated.isComplete) {
                       setCompletedTitle(todo.title);
+                      const pts = todo.points + (todo.extraBoosts?.reduce((s, b) => s + b.points, 0) ?? 0);
+                      setCompletedPoints(pts);
                       setUnlockHint(result?.unlockHints ?? { achievements: 0, skills: 0 });
                       setModalBlocker(true);
                     }
                   }}
-                  className={`w-full text-left rounded-xl px-4 py-3.5 transition-all duration-150 cursor-pointer ${
+                  className={`relative overflow-hidden w-full text-left rounded-xl px-4 py-3.5 transition-all duration-150 cursor-pointer ${
                     progress.isComplete
                       ? 'bg-gray-50 dark:bg-gray-800/50 opacity-60 cursor-not-allowed'
                       : todo.important
@@ -711,6 +783,9 @@ export const Dashboard = () => {
                       : 'bg-gray-50 dark:bg-gray-800/60 border border-transparent hover:border-primary/20 hover:bg-primary/5 dark:hover:bg-primary/10'
                   }`}
                 >
+                  {(todoRipples[todo.id] ?? []).map(rp => (
+                    <span key={rp.id} className="pointer-events-none absolute rounded-full" style={{ left: rp.x, top: rp.y, width: 8, height: 8, marginLeft: -4, marginTop: -4, background: 'var(--color-primary)', opacity: 0, transform: 'scale(0)', animation: 'splashRipple 0.55s ease-out forwards' }} />
+                  ))}
                   <div className="flex items-center gap-3">
                     {/* 完成圆圈 */}
                     <div className={`flex-shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${
@@ -736,10 +811,15 @@ export const Dashboard = () => {
                           {todo.title}
                         </span>
                       </div>
-                      <div className="flex items-center gap-2 mt-1">
+                      <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                         <span className="text-xs text-gray-400 dark:text-gray-500">
                           {attrName} +{todo.points}
                         </span>
+                        {todo.extraBoosts?.map((boost, bi) => (
+                          <span key={bi} className="text-xs text-gray-400 dark:text-gray-500">
+                            · {settings.attributeNames[boost.attribute as keyof typeof settings.attributeNames]} +{boost.points}
+                          </span>
+                        ))}
                         <span className="text-xs text-gray-400 dark:text-gray-500">
                           · {progress.count}/{progress.target}
                         </span>
@@ -784,6 +864,8 @@ export const Dashboard = () => {
           </div>
         </motion.div>
       )}
+
+      <BattleDashboardWidget />
 
       {/* 逆流预警 */}
       {countercurrentWarnings.length > 0 && (
@@ -854,6 +936,7 @@ export const Dashboard = () => {
           setModalBlocker(false);
         }}
         title={completedTitle || ''}
+        totalPoints={completedPoints}
         unlockHint={unlockHint}
       />
 

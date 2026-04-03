@@ -1,6 +1,7 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useEffect, useRef, useState } from 'react';
 import { triggerSuccessFeedback } from '@/utils/feedback';
+import { MusicalNotes } from '@/components/MusicalNotes';
 
 interface SaveSuccessModalProps {
   isOpen: boolean;
@@ -34,7 +35,7 @@ export const SaveSuccessModal = ({ isOpen, onClose, description, pointsAwarded, 
 
       const timer = setTimeout(() => {
         onClose();
-      }, 2000);
+      }, 3000);
 
       return () => clearTimeout(timer);
     }
@@ -157,6 +158,7 @@ export const SaveSuccessModal = ({ isOpen, onClose, description, pointsAwarded, 
               className="absolute inset-0 bg-gradient-radial from-white/20 to-transparent"
             />
           </motion.div>
+          {totalPoints > 0 && <MusicalNotes count={totalPoints} delay={0.3} />}
         </motion.div>
       )}
     </AnimatePresence>
