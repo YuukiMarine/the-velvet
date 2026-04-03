@@ -48,3 +48,6 @@ scripts/*.class
 
 # Misc local files
 *.log
+
+# Claude Code local files
+.claude/

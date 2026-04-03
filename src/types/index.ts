@@ -40,9 +40,9 @@ export interface Activity {
     kindness: number;
     charm: number;
   };
-  method: 'local' | 'todo';
+  method: 'local' | 'todo' | 'battle';
   important?: boolean;
-  category?: 'skill_unlock' | 'achievement_unlock' | 'level_up' | 'weekly_goal' | 'countercurrent';
+  category?: 'skill_unlock' | 'achievement_unlock' | 'level_up' | 'weekly_goal' | 'countercurrent' | 'shadow_defeat';
   levelUps?: Array<{
     attribute: AttributeId;
     fromLevel: number;
@@ -66,8 +66,12 @@ export interface Todo {
   weekdays?: number[];
   isActive: boolean;
   important?: boolean;
+  /** 指定未来某日启用，格式 YYYY-MM-DD；日期未到时不会出现在今日待办 */
+  startDate?: string;
   createdAt: Date;
   archivedAt?: Date;
+  /** 待办被完成（达标）时的时间戳，用于区分"已完成"和"手动归档" */
+  completedAt?: Date;
 }
 
 export interface TodoCompletion {
@@ -85,7 +89,7 @@ export interface Achievement {
   unlocked: boolean;
   unlockedDate?: Date;
   condition: {
-    type: 'consecutive_days' | 'total_points' | 'attribute_level' | 'keyword_match' | 'all_attributes_max' | 'todo_completions' | 'weekly_goal_completions';
+    type: 'consecutive_days' | 'total_points' | 'attribute_level' | 'keyword_match' | 'all_attributes_max' | 'todo_completions' | 'weekly_goal_completions' | 'shadow_defeats';
     value: number;
     attribute?: AttributeId;
     keywords?: string[];
@@ -153,6 +157,19 @@ export interface Settings {
   // 开屏动画
   splashStyle?: 'velvet' | 'p5' | 'p3' | 'p4';
   splashSpeed?: 'fast' | 'normal' | 'slow';
+  // 逆影战场
+  battleEnabled?: boolean;
+  battleShadowTimeStart?: number;
+  battleShadowTimeEnd?: number;
+  battleShadowTimeDays?: number[];
+  battlePlayerMaxHp?: number;
+  battleSpMultiplier?: number;
+  battleShadowAttack?: number;
+  battleShadowHpRegenPerDay?: number;
+  // 可自定义 Prompt
+  battlePersonaQuestions?: string[];        // Persona 创建3问
+  battleShadowPromptTemplate?: string;      // Shadow AI生成提示模板
+  battleVictoryPromptTemplate?: string;     // 胜利叙事提示模板
 }
 
 export type SummaryPeriod = 'week' | 'month';
@@ -200,4 +217,91 @@ export interface WeeklyGoal {
   rewardAttribute?: AttributeId;  // 完成后用户选择的奖励属性
   rewardPoints?: number;          // 实际发放的奖励点数
   createdAt: Date;
+}
+
+// ── 逆影战场 ─────────────────────────────────────────────
+
+export interface PersonaSkill {
+  level: number;
+  name: string;
+  description: string;
+  /** damage=直接伤害 | crit=暴击型伤害(10-30%双倍+失衡) | buff=提升下次伤害 | debuff=施加易伤 | charge=蓄力(下回合双倍) | heal=回复HP | attack_boost=攻击增益(伤害+3回合增伤) */
+  type: 'damage' | 'buff' | 'debuff' | 'crit' | 'charge' | 'heal' | 'attack_boost';
+  power: number;
+  spCost: number;
+}
+
+export interface Persona {
+  id: string;
+  name: string;
+  description?: string;
+  attributePersonas?: Record<AttributeId, { name: string; description: string }>;
+  equippedMaskAttribute?: AttributeId | null;
+  createdViaAI: boolean;
+  skills: Record<AttributeId, PersonaSkill[]>;
+  createdAt: Date;
+}
+
+export interface Shadow {
+  id: string;
+  level: number;
+  name: string;
+  description: string;
+  invertedAttributes: Record<AttributeId, string>;
+  weakAttribute: AttributeId; // 弱点属性，对应技能伤害×1.5
+  maxHp: number;
+  currentHp: number;
+  maxHp2?: number;
+  currentHp2?: number;
+  responseLines: string[];
+  attackPower: number;
+  lastHpRegenDate?: string;
+  createdAt: Date;
+}
+
+export interface DefeatedShadowRecord {
+  shadowName: string;
+  level: number;
+  breachDate: string;   // 识破日期 (ISO date string)
+  defeatDate: string;   // 击败日期 (ISO date string)
+  daysElapsed: number;  // 历时天数
+}
+
+export interface BattleState {
+  id: 'current';
+  shadowId: string;
+  personaId: string;
+  playerHp: number;
+  playerMaxHp: number;
+  lastBattleDate?: string;
+  lastChallengeDate?: string;   // 本次挑战日期（每天只能挑战一次）
+  sp: number;
+  totalSpEarned: number;
+  battleLog: BattleLogEntry[];
+  status: 'idle' | 'in_battle' | 'shadow_phase2' | 'victory' | 'session_end';
+  shadowsDefeated: number;
+  lastDefeatedWeakAttribute?: AttributeId;
+  defeatedShadowLog?: DefeatedShadowRecord[]; // 已击败阴影历史
+  hpBonusFromDefeats?: number; // 击败Shadow累计获得的HP上限加成
+}
+
+export interface BattleLogEntry {
+  id: string;
+  date: string;
+  playerActions: BattleAction[];
+  shadowResponse: string;
+  playerHpBefore: number;
+  playerHpAfter: number;
+  shadowHpBefore: number;
+  shadowHpAfter: number;
+}
+
+export interface BattleAction {
+  skillName: string;
+  skillAttribute?: AttributeId; // 技能所属属性，用于判断弱点
+  type: 'damage' | 'buff' | 'debuff' | 'crit' | 'charge' | 'heal' | 'attack_boost';
+  value: number;
+  spCost: number;
+  isCrit?: boolean;      // 是否触发暴击
+  isOffBalance?: boolean; // 是否造成失衡
 }

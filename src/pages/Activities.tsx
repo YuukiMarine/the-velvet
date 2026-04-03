@@ -6,7 +6,8 @@ import { SaveSuccessModal } from '@/components/SaveSuccessModal';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { PageTitle } from '@/components/PageTitle';
 import SummaryModal from '@/components/SummaryModal';
-import { triggerNavFeedback } from '@/utils/feedback';
+import { triggerNavFeedback, triggerLightHaptic } from '@/utils/feedback';
+import { useRipple } from '@/components/RippleEffect';
 
 // ---- 小组件 ----
 const ChevronDown = ({ open }: { open: boolean }) => (
@@ -422,6 +423,10 @@ export const Activities = () => {
   const [showSummary, setShowSummary] = useState(false);
   const { showDot, defaultPeriod: summaryDefaultPeriod } = useSummaryReminder();
 
+  // ---- 涟漪反馈 ----
+  const { spawn: spawnAnalyze, ripples: analyzeRipples } = useRipple();
+  const { spawn: spawnSave, ripples: saveRipples } = useRipple();
+
   // ---- 输入状态 ----
   const [showInput, setShowInput] = useState(false);
   const [description, setDescription] = useState('');
@@ -599,6 +604,7 @@ export const Activities = () => {
     if (pressTimerRef.current) clearTimeout(pressTimerRef.current);
     setPressedId(id);
     pressTimerRef.current = setTimeout(() => {
+      triggerLightHaptic();
       setDeleteTargetId(id);
       setPressedId(null);
     }, 620);
@@ -839,7 +845,7 @@ export const Activities = () => {
               <div className="px-4 py-3 border-b border-gray-50 dark:border-gray-800">
                 <p className="text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-2">来源</p>
                 <div className="flex gap-1.5">
-                  {[{ key: 'all', label: '全部' }, { key: 'local', label: '手动记录' }, { key: 'todo', label: '待办完成' }].map(({ key, label }) => (
+                  {[{ key: 'all', label: '全部' }, { key: 'local', label: '手动记录' }, { key: 'todo', label: '待办完成' }, { key: 'battle', label: '战斗奖励' }].map(({ key, label }) => (
                     <button
                       key={key}
                       onClick={() => setFilterMethod(key)}
@@ -972,6 +978,7 @@ export const Activities = () => {
                                           const isImportant = activity.important;
                                           const isTodo = activity.method === 'todo';
                                           const isWeeklyGoal = activity.category === 'weekly_goal';
+                                          const isShadowDefeat = activity.category === 'shadow_defeat' || activity.method === 'battle';
                                           const isSpecial = isAchievement || isSkill || isLevelUp;
 
                                           // accent bar color based on type
@@ -981,6 +988,8 @@ export const Activities = () => {
                                             ? 'bg-violet-400'
                                             : isLevelUp
                                             ? 'bg-orange-400'
+                                            : isShadowDefeat
+                                            ? 'bg-red-500'
                                             : isTodo
                                             ? 'bg-sky-400'
                                             : isImportant
@@ -994,17 +1003,32 @@ export const Activities = () => {
                                               key={activity.id}
                                               animate={pressedId === activity.id ? { scale: 0.98 } : { scale: 1 }}
                                               transition={{ duration: 0.15 }}
-                                              className={`rounded-2xl border overflow-hidden cursor-pointer select-none transition-shadow ${
+                                              className={`rounded-2xl overflow-hidden cursor-pointer select-none backdrop-blur-sm ${
                                                 isAchievement
-                                                  ? 'bg-gradient-to-br from-amber-50 to-yellow-50/60 dark:from-amber-900/20 dark:to-yellow-900/10 border-amber-200/60 dark:border-amber-700/50'
+                                                  ? 'border-2 border-amber-400/60 dark:border-amber-500/40'
                                                   : isSkill
-                                                  ? 'bg-gradient-to-br from-violet-50 to-fuchsia-50/60 dark:from-violet-900/20 dark:to-fuchsia-900/10 border-violet-200/60 dark:border-violet-700/50'
+                                                  ? 'border-2 border-violet-400/60 dark:border-violet-500/40'
                                                   : isLevelUp
-                                                  ? 'bg-gradient-to-br from-orange-50 to-amber-50/60 dark:from-orange-900/20 dark:to-amber-900/10 border-orange-200/60 dark:border-orange-700/50'
+                                                  ? 'border-2 border-orange-400/60 dark:border-orange-500/40'
+                                                  : isShadowDefeat
+                                                  ? 'border-2 border-red-500/60 dark:border-red-500/40'
                                                   : isImportant
-                                                  ? 'bg-amber-50/70 dark:bg-amber-900/10 border-amber-200/60 dark:border-amber-700/40'
-                                                  : 'bg-white dark:bg-gray-900 border-gray-100 dark:border-gray-800'
+                                                  ? 'border border-amber-300/60 dark:border-amber-600/40'
+                                                  : 'border border-gray-100 dark:border-gray-800 bg-white/80 dark:bg-gray-900/80'
                                               } ${pressedId === activity.id ? 'shadow-md' : 'shadow-sm'}`}
+                                              style={{
+                                                background: isAchievement
+                                                  ? 'rgba(251,191,36,0.10)'
+                                                  : isSkill
+                                                  ? 'rgba(167,139,250,0.10)'
+                                                  : isLevelUp
+                                                  ? 'rgba(251,146,60,0.10)'
+                                                  : isShadowDefeat
+                                                  ? 'rgba(239,68,68,0.10)'
+                                                  : isImportant
+                                                  ? 'rgba(251,191,36,0.06)'
+                                                  : undefined,
+                                              }}
                                               onMouseDown={() => startPress(activity.id)}
                                               onMouseUp={cancelPress}
                                               onMouseLeave={cancelPress}
@@ -1012,71 +1036,73 @@ export const Activities = () => {
                                               onTouchEnd={cancelPress}
                                               onTouchCancel={cancelPress}
                                             >
-                                              <div className="flex">
-                                                {/* 左侧彩色竖条 */}
-                                                <div className={`w-1 flex-shrink-0 ${accentColor}`} />
+                                                <div className="flex">
+                                                  {/* 左侧彩色竖条 */}
+                                                  <div className={`w-1 flex-shrink-0 ${accentColor}`} />
 
-                                                {/* 主内容区 */}
-                                                <div className="flex-1 min-w-0 px-4 py-3.5">
-                                                  {/* 描述 — 主角，最大字号 */}
-                                                  <p className={`text-[15px] font-medium leading-snug ${
-                                                    isAchievement || isSkill || isLevelUp
-                                                      ? 'text-gray-900 dark:text-white'
-                                                      : 'text-gray-800 dark:text-gray-100'
-                                                  }`}>
-                                                    {activity.description}
-                                                  </p>
+                                                  {/* 主内容区 */}
+                                                  <div className="flex-1 min-w-0 px-4 py-3.5">
+                                                    {/* 描述 — 主角，最大字号 */}
+                                                    <p className={`text-[15px] font-medium leading-snug ${
+                                                      isAchievement || isSkill || isLevelUp
+                                                        ? 'text-gray-900 dark:text-white'
+                                                        : 'text-gray-800 dark:text-gray-100'
+                                                    }`}>
+                                                      {activity.description}
+                                                    </p>
 
-                                                  {/* 点数 + 时间 — 次要信息行 */}
-                                                  <div className="flex items-center gap-2 mt-2 flex-wrap">
-                                                    {hasPoints && Object.entries(activity.pointsAwarded).map(([attr, pts]) =>
-                                                      pts > 0 ? (
-                                                        <span key={attr} className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold bg-primary/10 text-primary dark:bg-primary/20 tabular-nums">
-                                                          {settings.attributeNames[attr as AttributeId]} +{pts}
-                                                        </span>
-                                                      ) : null
-                                                    )}
-                                                    <span className="text-[11px] text-gray-400 dark:text-gray-500 tabular-nums ml-auto">
-                                                      {new Date(activity.date).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
-                                                      {pressedId === activity.id && (
-                                                        <span className="ml-2 text-red-500 font-semibold">松手删除</span>
+                                                    {/* 点数 + 时间 — 次要信息行 */}
+                                                    <div className="flex items-center gap-2 mt-2 flex-wrap">
+                                                      {hasPoints && Object.entries(activity.pointsAwarded).map(([attr, pts]) =>
+                                                        pts > 0 ? (
+                                                          <span key={attr} className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold bg-primary/10 text-primary dark:bg-primary/20 tabular-nums">
+                                                            {settings.attributeNames[attr as AttributeId]} +{pts}
+                                                          </span>
+                                                        ) : null
                                                       )}
-                                                    </span>
-                                                  </div>
-
-                                                  {/* 特殊 / 来源标签 */}
-                                                  {(isSpecial || isTodo || isWeeklyGoal) && (
-                                                    <div className="mt-2.5 flex flex-wrap gap-1.5">
-                                                      {isTodo && (
-                                                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-sky-600 dark:text-sky-300 bg-sky-100/80 dark:bg-sky-900/30 px-2 py-0.5 rounded-md">
-                                                          ✓ 待办
-                                                        </span>
-                                                      )}
-                                                      {isWeeklyGoal && (
-                                                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-100/80 dark:bg-emerald-900/30 px-2 py-0.5 rounded-md">
-                                                          🏆 本周目标
-                                                        </span>
-                                                      )}
-                                                      {isLevelUp && activity.levelUps?.map((lu, idx) => (
-                                                        <span key={idx} className="inline-flex items-center gap-1 text-[11px] font-semibold text-orange-600 dark:text-orange-300 bg-orange-100/80 dark:bg-orange-900/30 px-2 py-0.5 rounded-md">
-                                                          🎉 {settings.attributeNames[lu.attribute]} {lu.fromLevel}→{lu.toLevel}
-                                                        </span>
-                                                      ))}
-                                                      {isSkill && (
-                                                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-violet-600 dark:text-violet-300 bg-violet-100/80 dark:bg-violet-900/30 px-2 py-0.5 rounded-md">
-                                                          ✨ 技能解锁
-                                                        </span>
-                                                      )}
-                                                      {isAchievement && (
-                                                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-100/80 dark:bg-amber-900/30 px-2 py-0.5 rounded-md">
-                                                          🏆 成就解锁
-                                                        </span>
-                                                      )}
+                                                      <span className="text-[11px] text-gray-400 dark:text-gray-500 tabular-nums ml-auto">
+                                                        {new Date(activity.date).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
+                                                      </span>
                                                     </div>
-                                                  )}
+
+                                                    {/* 特殊 / 来源标签 */}
+                                                    {(isSpecial || isTodo || isWeeklyGoal || isShadowDefeat) && (
+                                                      <div className="mt-2.5 flex flex-wrap gap-1.5">
+                                                        {isShadowDefeat && (
+                                                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-red-700 dark:text-red-300 bg-red-100/80 dark:bg-red-900/30 px-2 py-0.5 rounded-md">
+                                                            👁 Shadow击破{isImportant ? ' ★首杀' : ''}
+                                                          </span>
+                                                        )}
+                                                        {isTodo && (
+                                                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-sky-600 dark:text-sky-300 bg-sky-100/80 dark:bg-sky-900/30 px-2 py-0.5 rounded-md">
+                                                            ✓ 待办
+                                                          </span>
+                                                        )}
+                                                        {isWeeklyGoal && (
+                                                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-100/80 dark:bg-emerald-900/30 px-2 py-0.5 rounded-md">
+                                                            🏆 本周目标
+                                                          </span>
+                                                        )}
+                                                        {isLevelUp && activity.levelUps?.map((lu, idx) => (
+                                                          <span key={idx} className="inline-flex items-center gap-1 text-[11px] font-semibold text-orange-600 dark:text-orange-300 bg-orange-100/80 dark:bg-orange-900/30 px-2 py-0.5 rounded-md">
+                                                            🎉 {settings.attributeNames[lu.attribute]} {lu.fromLevel}→{lu.toLevel}
+                                                          </span>
+                                                        ))}
+                                                        {isSkill && (
+                                                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-violet-600 dark:text-violet-300 bg-violet-100/80 dark:bg-violet-900/30 px-2 py-0.5 rounded-md">
+                                                            ✨ 技能解锁
+                                                          </span>
+                                                        )}
+                                                        {isAchievement && (
+                                                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-100/80 dark:bg-amber-900/30 px-2 py-0.5 rounded-md">
+                                                            🏆 成就解锁
+                                                          </span>
+                                                        )}
+                                                      </div>
+                                                    )}
+                                                  </div>
                                                 </div>
-                                              </div>
-                                            </motion.div>
+                                              </motion.div>
                                           );
                                         })}
                                       </div>
@@ -1182,10 +1208,11 @@ export const Activities = () => {
 
               <motion.button
                 whileTap={{ scale: 0.97 }}
-                onClick={analyzeActivity}
+                onClick={(e) => { spawnAnalyze(e); analyzeActivity(); }}
                 disabled={!description.trim()}
-                className="w-full mt-3 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 py-2.5 rounded-xl text-sm font-medium disabled:opacity-40 cursor-pointer"
+                className="relative overflow-hidden w-full mt-3 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 py-2.5 rounded-xl text-sm font-medium disabled:opacity-40 cursor-pointer"
               >
+                {analyzeRipples}
                 分析关键词
               </motion.button>
 
@@ -1221,9 +1248,10 @@ export const Activities = () => {
                     </label>
                     <motion.button
                       whileTap={{ scale: 0.96 }}
-                      onClick={handleSave}
-                      className="px-6 py-2.5 bg-primary text-white rounded-xl text-sm font-semibold shadow-sm shadow-primary/20 cursor-pointer"
+                      onClick={(e) => { spawnSave(e); handleSave(); }}
+                      className="relative overflow-hidden px-6 py-2.5 bg-primary text-white rounded-xl text-sm font-semibold shadow-sm shadow-primary/20 cursor-pointer"
                     >
+                      {saveRipples}
                       保存
                     </motion.button>
                   </div>

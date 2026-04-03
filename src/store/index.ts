@@ -1,5 +1,5 @@
 ﻿import { create } from 'zustand';
-import { User, Attribute, Activity, Achievement, Skill, DailyEvent, Settings, ThemeType, AttributeId, AttributeNamesKey, Todo, TodoCompletion, PeriodSummary, SummaryPeriod, SummaryPromptPreset, WeeklyGoal, WeeklyGoalItem } from '@/types';
+import { User, Attribute, Activity, Achievement, Skill, DailyEvent, Settings, ThemeType, AttributeId, AttributeNamesKey, Todo, TodoCompletion, PeriodSummary, SummaryPeriod, SummaryPromptPreset, WeeklyGoal, WeeklyGoalItem, Persona, Shadow, BattleState, BattleLogEntry, BattleAction } from '@/types';
 import { db } from '@/db';
 import { v4 as uuidv4 } from 'uuid';
 import { calcMaxStreak } from '@/utils/streak';
@@ -12,12 +12,15 @@ export function toLocalDateKey(date: Date = new Date()): string {
   const d = String(date.getDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
 }
-import { 
-  INITIAL_ATTRIBUTES, 
-  ACHIEVEMENTS, 
-  SKILLS, 
+import {
+  INITIAL_ATTRIBUTES,
+  ACHIEVEMENTS,
+  SKILLS,
   DEFAULT_KEYWORD_RULES,
-  DEFAULT_LEVEL_THRESHOLDS 
+  DEFAULT_LEVEL_THRESHOLDS,
+  SHADOW_RESPONSE_LINES,
+  SHADOW_REGEN_PER_LEVEL,
+  HP_BONUS_PER_DEFEAT,
 } from '@/constants';
 
 /** Shared request payload returned by buildSummaryRequest used by both non-streaming generateSummary and streaming modal */
@@ -143,7 +146,7 @@ interface AppState {
   initializeApp: () => Promise<void>;
   createUser: (name: string, attrNames?: Partial<import('@/types').AttributeNames>, blessingAttribute?: AttributeId) => Promise<void>;
   setTheme: (theme: ThemeType) => Promise<void>;
-  addActivity: (description: string, points: Record<string, number>, method: 'local' | 'todo', options?: { important?: boolean; date?: Date }) => Promise<{ unlockHints: { achievements: number; skills: number } }>;
+  addActivity: (description: string, points: Record<string, number>, method: 'local' | 'todo' | 'battle', options?: { important?: boolean; date?: Date; category?: Activity['category'] }) => Promise<{ unlockHints: { achievements: number; skills: number } }>;
   updateAttribute: (attributeId: string, points: number) => Promise<void>;
   unlockAchievement: (achievementId: string) => Promise<void>;
   unlockSkill: (skillId: string) => Promise<void>;
@@ -192,6 +195,22 @@ interface AppState {
   // 逆流
   applyCountercurrentDecay: () => Promise<AttributeId[]>;
   getCountercurrentWarnings: () => AttributeId[];
+  // 逆影战场
+  persona: Persona | null;
+  shadow: Shadow | null;
+  battleState: BattleState | null;
+  loadBattleData: () => Promise<void>;
+  savePersona: (persona: Persona) => Promise<void>;
+  saveShadow: (shadow: Shadow) => Promise<void>;
+  saveBattleState: (state: BattleState) => Promise<void>;
+  earnSP: (amount: number) => Promise<void>;
+  performBattleAction: (action: BattleAction, shadowHpType: 'hp1' | 'hp2', allowShadowAttack?: boolean) => Promise<{ shadowDefeated: boolean; playerDefeated: boolean; phase2Triggered: boolean; isWeakness: boolean; actualDamage: number; shadowCrit: boolean; shadowAtkValue: number; healAmount: number }>;
+  checkShadowHpRegen: () => Promise<void>;
+  startBattleSession: () => void;
+  endBattleSession: () => void;
+  defeatShadow: () => Promise<void>;
+  resetBattle: () => Promise<void>;
+  equipMask: (attr: AttributeId | null) => Promise<void>;
 }
 
 /** hex 颜色变亮 ~25% 作为 secondary */
@@ -230,6 +249,7 @@ const DEFAULT_SETTINGS: Settings = {
   backgroundAnimation: ['aurora'],
   soundMuted: false,
   customLevelThresholds: undefined,
+  battleEnabled: true,
 };
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -249,6 +269,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   achievementNotification: null,
   skillNotification: null,
   modalBlocker: false,
+  persona: null,
+  shadow: null,
+  battleState: null,
 
   initializeApp: async () => {
     // 请求持久化存储，防止浏览器主动驱逐 IndexedDB（Chrome/Firefox 有效，iOS 17+ 部分有效）
@@ -394,7 +417,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  addActivity: async (description: string, points: Record<string, number>, method: 'local' | 'todo', options?: { important?: boolean; date?: Date }) => {
+  addActivity: async (description: string, points: Record<string, number>, method: 'local' | 'todo' | 'battle', options?: { important?: boolean; date?: Date; category?: Activity['category'] }) => {
     const { user, dailyEvent, settings } = get();
     if (!user) return { unlockHints: { achievements: 0, skills: 0 } };
     
@@ -416,7 +439,13 @@ export const useAppStore = create<AppState>((set, get) => ({
         adjustedPoints[attrId] = get().applySkillBonus(attrId as AttributeId, pts);
       }
     }
-    
+
+    // 应用装备面具的日常 +1 加成（仅在本次活动已对该属性加分时触发，不吃倍率和技能加成）
+    const equippedMask = get().persona?.equippedMaskAttribute;
+    if (equippedMask && (adjustedPoints[equippedMask] || 0) > 0) {
+      adjustedPoints[equippedMask] = adjustedPoints[equippedMask] + 1;
+    }
+
     // 创建活动记录
       const activityDate = options?.date || new Date();
       const activity: Activity = {
@@ -433,16 +462,20 @@ export const useAppStore = create<AppState>((set, get) => ({
       },
         method,
         levelUps: [],
-        important: options?.important
+        important: options?.important,
+        category: options?.category,
       };
     
     // 检查关键字匹配成就
     await get().checkKeywordAchievements(description, { skipLoad: true });
     
-     // 更新属性并检查升级
+     // 更新属性并检查升级（一次性加载所有属性，避免循环内 N+1 查询）
+    const currentAttrs = await db.attributes.toArray();
+    const attrMap = new Map(currentAttrs.map(a => [a.id, a]));
+
     for (const [attrId, pts] of Object.entries(adjustedPoints)) {
       if (pts > 0) {
-        const attribute = await db.attributes.get(attrId);
+        const attribute = attrMap.get(attrId as AttributeId);
         if (!attribute) continue;
         
         const oldLevel = attribute.level;
@@ -571,6 +604,12 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     await get().loadData();
 
+    // 为战场 SP 奖励：活动获得的总点数即为 SP
+    const totalPts = Object.values(adjustedPoints).reduce((s, v) => s + (v || 0), 0);
+    if (totalPts > 0 && get().battleState) {
+      await get().earnSP(totalPts);
+    }
+
     return {
       unlockHints: {
         achievements: matchedAchievements.length,
@@ -677,7 +716,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           id: uuidv4(),
           userId: user.id,
           date: new Date(),
-          description: `技能解 ${skill.name}`,
+          description: `技能解锁：${skill.name}`,
           pointsAwarded: { knowledge: 0, guts: 0, dexterity: 0, kindness: 0, charm: 0 },
           method: 'local' as const,
           category: 'skill_unlock'
@@ -774,17 +813,38 @@ export const useAppStore = create<AppState>((set, get) => ({
         /所有行为额外\+(\d+)%/
       ];
       const attrNames = settings?.attributeNames || { knowledge: '知识', guts: '胆量', dexterity: '灵巧', kindness: '温柔', charm: '魅力' };
-      for (const skill of skills) {
-        const needsMigration = oldDescPatterns.some(p => p.test(skill.description));
-        if (needsMigration && skill.bonusMultiplier) {
-          const pct = Math.round((skill.bonusMultiplier - 1) * 100);
-          const attrName = attrNames[skill.requiredAttribute as keyof typeof attrNames] || skill.requiredAttribute;
-          const newDesc = `${attrName}积累额外提升 ${pct}%`;
-          await db.skills.update(skill.id, { description: newDesc });
-          skill.description = newDesc;
-        }
+
+      // 补种老用户缺失的系统预设成就（新版本新增成就时自动同步）
+      const existingAchievementIds = new Set(achievements.map(a => a.id));
+      const missingSystemAchievements = ACHIEVEMENTS.filter(a => !existingAchievementIds.has(a.id));
+      if (missingSystemAchievements.length > 0) {
+        const defaultAttrNames: Record<string, string> = { knowledge: '知识', guts: '胆量', dexterity: '灵巧', kindness: '温柔', charm: '魅力' };
+        const adaptedMissing = missingSystemAchievements.map(ach => {
+          if (ach.condition.type === 'attribute_level' && ach.condition.attribute) {
+            const oldName = defaultAttrNames[ach.condition.attribute] || ach.condition.attribute;
+            const newName = attrNames[ach.condition.attribute as keyof typeof attrNames] || oldName;
+            return { ...ach, description: ach.description.replace(oldName, newName) };
+          }
+          return { ...ach };
+        });
+        await db.achievements.bulkAdd(adaptedMissing);
+        achievements.push(...adaptedMissing);
       }
-      skills = await db.skills.toArray();
+
+      const skillsNeedMigration = skills.some(s => s.bonusMultiplier && oldDescPatterns.some(p => p.test(s.description)));
+      if (skillsNeedMigration) {
+        for (const skill of skills) {
+          const needsMigration = oldDescPatterns.some(p => p.test(skill.description));
+          if (needsMigration && skill.bonusMultiplier) {
+            const pct = Math.round((skill.bonusMultiplier - 1) * 100);
+            const attrName = attrNames[skill.requiredAttribute as keyof typeof attrNames] || skill.requiredAttribute;
+            const newDesc = `${attrName}积累额外提升 ${pct}%`;
+            await db.skills.update(skill.id, { description: newDesc });
+            skill.description = newDesc;
+          }
+        }
+        skills = await db.skills.toArray();
+      }
       const todos = await db.todos.toArray();
       const todoCompletions = await db.todoCompletions.toArray();
 
@@ -795,18 +855,21 @@ export const useAppStore = create<AppState>((set, get) => ({
       const yesterdayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
       const yesterdayKey = toLocalDateKey(yesterdayDate);
 
+      const todosNeedFormatMigration = todos.some(t => (t.frequency as any) === 'weekdays' || (t.frequency as any) === 'long');
       for (const todo of todos) {
         let updatedTodo = todo;
         const updates: Partial<Todo> = {};
 
-        if ((todo.frequency as any) === 'weekdays') {
-          updates.frequency = 'count';
-          updates.repeatDaily = true;
-        }
+        if (todosNeedFormatMigration) {
+          if ((todo.frequency as any) === 'weekdays') {
+            updates.frequency = 'count';
+            updates.repeatDaily = true;
+          }
 
-        if ((todo.frequency as any) === 'long') {
-          updates.frequency = 'count';
-          updates.isLongTerm = true;
+          if ((todo.frequency as any) === 'long') {
+            updates.frequency = 'count';
+            updates.isLongTerm = true;
+          }
         }
 
         if (todo.isActive && !todo.repeatDaily && !todo.isLongTerm) {
@@ -818,6 +881,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           if (shouldArchive) {
             updates.isActive = false;
             updates.archivedAt = todo.archivedAt || new Date();
+            updates.completedAt = todo.completedAt || new Date();
           }
         }
 
@@ -895,6 +959,9 @@ export const useAppStore = create<AppState>((set, get) => ({
        if (currentTheme === 'custom' && normalizedSettings.customThemeColor) {
          applyCustomThemeColor(normalizedSettings.customThemeColor);
        }
+
+       // 加载战场数据
+       await get().loadBattleData();
     } catch (error) {
       console.error('加载数据失败:', error);
     }
@@ -928,7 +995,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     await db.todoCompletions.clear();
     await db.summaries.clear();
     await db.weeklyGoals.clear();
-    
+    await db.personas.clear();
+    await db.shadows.clear();
+    await db.battleStates.clear();
+
     set({
       user: null,
       attributes: [],
@@ -944,7 +1014,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       currentPage: 'dashboard',
       levelUpNotification: null,
       achievementNotification: null,
-      skillNotification: null
+      skillNotification: null,
+      persona: null,
+      shadow: null,
+      battleState: null,
     });
   },
 
@@ -973,6 +1046,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       todos: await db.todos.toArray(),
       todoCompletions: await db.todoCompletions.toArray(),
       summaries: await db.summaries.toArray(),
+      personas: await db.personas.toArray(),
+      shadows: await db.shadows.toArray(),
+      battleStates: await db.battleStates.toArray(),
     };
 
     // 3. 写入新数据；若失败则从快照恢复
@@ -1036,6 +1112,23 @@ export const useAppStore = create<AppState>((set, get) => ({
         }
       }
 
+      // 导入逆影战场数据（v3 新增，v2 备份不含这些字段，跳过即可）
+      if (data.personas && Array.isArray(data.personas)) {
+        for (const p of data.personas as unknown[]) {
+          const persona = p as Persona;
+          await db.personas.put({ ...persona, createdAt: new Date(persona.createdAt) });
+        }
+      }
+      if (data.shadows && Array.isArray(data.shadows)) {
+        for (const s of data.shadows as unknown[]) {
+          const shadow = s as Shadow;
+          await db.shadows.put({ ...shadow, createdAt: new Date(shadow.createdAt) });
+        }
+      }
+      if (data.battleStates && Array.isArray(data.battleStates)) {
+        await db.battleStates.bulkPut(data.battleStates as unknown as BattleState[]);
+      }
+
       // 重新加载应用
       await get().initializeApp();
     } catch (error) {
@@ -1053,6 +1146,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         if (snapshot.todos.length) await db.todos.bulkAdd(snapshot.todos);
         if (snapshot.todoCompletions.length) await db.todoCompletions.bulkAdd(snapshot.todoCompletions);
         if (snapshot.summaries.length) await db.summaries.bulkAdd(snapshot.summaries);
+        if (snapshot.personas.length) await db.personas.bulkAdd(snapshot.personas);
+        if (snapshot.shadows.length) await db.shadows.bulkAdd(snapshot.shadows);
+        if (snapshot.battleStates.length) await db.battleStates.bulkAdd(snapshot.battleStates);
         await get().initializeApp();
       } catch (restoreError) {
         console.error('恢复原有数据失败:', restoreError);
@@ -1265,6 +1361,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (updates.isActive === true && !existing.isActive) {
       const todayKey = toLocalDateKey();
       await db.todoCompletions.where('todoId').equals(id).filter(c => c.date === todayKey).delete();
+      nextUpdates.completedAt = undefined;
     }
 
     await db.todos.update(id, nextUpdates);
@@ -1347,7 +1444,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       await get().checkTodoCompletionAchievements({ skipLoad: true });
 
       if (!todo.repeatDaily && !todo.isLongTerm) {
-        await db.todos.update(todo.id, { archivedAt: new Date(), isActive: false });
+        await db.todos.update(todo.id, { archivedAt: new Date(), completedAt: new Date(), isActive: false });
       }
 
       return result;
@@ -1867,5 +1964,196 @@ ${activityLines || '（本期暂无记录）'}
       warnings.push(attrId);
     }
     return warnings;
+  },
+
+  // ── 逆影战场 ─────────────────────────────────────────────
+
+  loadBattleData: async () => {
+    try {
+      const [personas, shadows, battleStates] = await Promise.all([
+        db.personas.toArray(),
+        db.shadows.toArray(),
+        db.battleStates.toArray(),
+      ]);
+      set({ persona: personas[0] || null, shadow: shadows[0] || null, battleState: battleStates[0] || null });
+    } catch { /* ignore */ }
+  },
+
+  savePersona: async (persona: Persona) => {
+    await db.personas.clear();
+    await db.personas.put(persona);
+    set({ persona });
+  },
+
+  saveShadow: async (shadow: Shadow) => {
+    await db.shadows.clear();
+    await db.shadows.put(shadow);
+    set({ shadow });
+  },
+
+  saveBattleState: async (state: BattleState) => {
+    await db.battleStates.put(state);
+    set({ battleState: state });
+  },
+
+  earnSP: async (amount: number) => {
+    const { battleState, settings } = get();
+    if (!battleState) return;
+    const multiplier = settings.battleSpMultiplier ?? 1.0;
+    const earned = Math.round(amount * multiplier);
+    const updated = { ...battleState, sp: battleState.sp + earned, totalSpEarned: battleState.totalSpEarned + earned };
+    await get().saveBattleState(updated);
+  },
+
+  performBattleAction: async (action: BattleAction, shadowHpType: 'hp1' | 'hp2', allowShadowAttack = true) => {
+    const { battleState, shadow } = get();
+    if (!battleState || !shadow) return { shadowDefeated: false, playerDefeated: false, phase2Triggered: false, isWeakness: false, actualDamage: 0, shadowCrit: false, shadowAtkValue: 0, healAmount: 0 };
+    const newSp = Math.max(0, battleState.sp - action.spCost);
+    // 弱点判断：damage/crit 类型命中弱点时伤害×1.5
+    const isDamageType = action.type === 'damage' || action.type === 'crit' || action.type === 'attack_boost';
+    const isWeakness = isDamageType && action.skillAttribute !== undefined && action.skillAttribute === shadow.weakAttribute;
+    const actualDamage = isDamageType ? (isWeakness ? Math.round(action.value * 1.5) : action.value) : 0;
+    // heal 类型：回复玩家HP
+    const healAmount = action.type === 'heal' ? action.value : 0;
+    let newHp1 = shadow.currentHp;
+    let newHp2 = shadow.currentHp2 ?? 0;
+    if (isDamageType) {
+      if (shadowHpType === 'hp1') newHp1 = Math.max(0, shadow.currentHp - actualDamage);
+      else newHp2 = Math.max(0, (shadow.currentHp2 ?? 0) - actualDamage);
+    }
+    const isPhase2 = battleState.status === 'shadow_phase2';
+    const baseShadowAtk = (shadow.attackPower ?? 2) + (isPhase2 ? 1 : 0);
+    // Shadow 逐级暴击：Lv1=0%, Lv2=10%, Lv3=15%, Lv4=20%, Lv5=30%
+    const shadowCritChances = [0, 0.1, 0.15, 0.2, 0.3];
+    const shadowCritChance = shadowCritChances[Math.min((shadow.level ?? 1) - 1, 4)];
+    const shadowCrit = allowShadowAttack && Math.random() < shadowCritChance;
+    const shadowAtkValue = allowShadowAttack ? (shadowCrit ? baseShadowAtk * 2 : baseShadowAtk) : 0;
+    const newPlayerHp = Math.max(0, Math.min(battleState.playerMaxHp, battleState.playerHp + healAmount - shadowAtkValue));
+    const phase2Triggered = shadowHpType === 'hp1' && newHp1 <= 0 && shadow.maxHp2 !== undefined && !isPhase2;
+    const shadowDefeated = (shadowHpType === 'hp1' && newHp1 <= 0 && shadow.maxHp2 === undefined) || (shadowHpType === 'hp2' && newHp2 <= 0);
+    const playerDefeated = newPlayerHp <= 0;
+    const logEntry: BattleLogEntry = {
+      id: uuidv4(),
+      date: toLocalDateKey(),
+      playerActions: [action],
+      shadowResponse: SHADOW_RESPONSE_LINES[Math.floor(Math.random() * SHADOW_RESPONSE_LINES.length)],
+      playerHpBefore: battleState.playerHp, playerHpAfter: newPlayerHp,
+      shadowHpBefore: shadowHpType === 'hp1' ? shadow.currentHp : (shadow.currentHp2 ?? 0),
+      shadowHpAfter: shadowHpType === 'hp1' ? newHp1 : newHp2,
+    };
+    let newStatus = battleState.status;
+    if (shadowDefeated) newStatus = 'victory';
+    else if (playerDefeated) newStatus = 'session_end';
+    else if (phase2Triggered) newStatus = 'shadow_phase2';
+    await get().saveShadow({ ...shadow, currentHp: newHp1, currentHp2: newHp2 });
+    await get().saveBattleState({ ...battleState, sp: newSp, playerHp: newPlayerHp, status: newStatus, battleLog: [...battleState.battleLog.slice(-50), logEntry], lastBattleDate: toLocalDateKey() });
+    return { shadowDefeated, playerDefeated, phase2Triggered, isWeakness, actualDamage, shadowCrit, shadowAtkValue, healAmount };
+  },
+
+  checkShadowHpRegen: async () => {
+    const { shadow } = get();
+    if (!shadow) return;
+    const today = toLocalDateKey();
+    if (shadow.lastHpRegenDate === today) return;
+    const regenPerDay = SHADOW_REGEN_PER_LEVEL[Math.min(shadow.level - 1, 4)] ?? 2;
+    const lastRegen = shadow.lastHpRegenDate;
+    let daysElapsed = 1;
+    if (lastRegen) {
+      const lastDate = new Date(lastRegen + 'T00:00:00');
+      const todayDate = new Date(today + 'T00:00:00');
+      daysElapsed = Math.max(1, Math.floor((todayDate.getTime() - lastDate.getTime()) / 86400000));
+    }
+    const totalRegen = regenPerDay * daysElapsed;
+    const newHp1 = Math.min(shadow.maxHp, shadow.currentHp + totalRegen);
+    const newHp2 = shadow.maxHp2 !== undefined
+      ? Math.min(shadow.maxHp2, (shadow.currentHp2 ?? shadow.maxHp2) + totalRegen)
+      : undefined;
+    await get().saveShadow({ ...shadow, currentHp: newHp1, currentHp2: newHp2, lastHpRegenDate: today });
+  },
+
+  startBattleSession: () => {
+    const { battleState, shadow, settings } = get();
+    if (!battleState) return;
+    const baseHp = settings.battlePlayerMaxHp ?? 8;
+    const maxHp = baseHp + (battleState.hpBonusFromDefeats ?? 0);
+    const alreadyPhase2 = shadow !== null && shadow.maxHp2 !== undefined &&
+      shadow.currentHp <= 0 && (shadow.currentHp2 ?? shadow.maxHp2) > 0;
+    const newStatus = alreadyPhase2 ? 'shadow_phase2' as const : 'in_battle' as const;
+    const updated = { ...battleState, playerHp: maxHp, playerMaxHp: maxHp, status: newStatus, lastChallengeDate: toLocalDateKey() };
+    set({ battleState: updated });
+    get().saveBattleState(updated);
+  },
+
+  endBattleSession: () => {
+    const { battleState } = get();
+    if (!battleState) return;
+    // Preserve shadow_phase2 across sessions so re-entry detects it via shadow HP
+    const newStatus = battleState.status === 'shadow_phase2' ? 'idle' as const : 'idle' as const;
+    const updated = { ...battleState, status: newStatus };
+    set({ battleState: updated });
+    get().saveBattleState(updated);
+  },
+
+  defeatShadow: async () => {
+    const { battleState, shadow } = get();
+    if (!battleState) return;
+    const newRecord = shadow ? {
+      shadowName: shadow.name,
+      level: shadow.level,
+      breachDate: new Date(shadow.createdAt).toISOString().slice(0, 10),
+      defeatDate: new Date().toISOString().slice(0, 10),
+      daysElapsed: Math.max(1, Math.floor((Date.now() - new Date(shadow.createdAt).getTime()) / 86400000)),
+    } : null;
+    // HP bonus from defeating this shadow
+    const hpGain = shadow ? (HP_BONUS_PER_DEFEAT[Math.min(shadow.level - 1, 4)] ?? 2) : 0;
+    const newHpBonus = (battleState.hpBonusFromDefeats ?? 0) + hpGain;
+    const updated: BattleState = {
+      ...battleState,
+      status: 'idle',
+      shadowsDefeated: battleState.shadowsDefeated + 1,
+      shadowId: '',
+      lastDefeatedWeakAttribute: shadow?.weakAttribute,
+      defeatedShadowLog: newRecord
+        ? [...(battleState.defeatedShadowLog ?? []), newRecord]
+        : battleState.defeatedShadowLog,
+      hpBonusFromDefeats: newHpBonus,
+    };
+    await get().saveBattleState(updated);
+  },
+
+  resetBattle: async () => {
+    // 保留未使用的 SP
+    const { battleState: prev } = get();
+    const preservedSp = prev?.sp ?? 0;
+    const preservedTotalSp = prev?.totalSpEarned ?? 0;
+    await db.personas.clear();
+    await db.shadows.clear();
+    await db.battleStates.clear();
+    if (preservedSp > 0) {
+      const freshState: BattleState = {
+        id: 'current',
+        shadowId: '',
+        personaId: '',
+        playerHp: 10,
+        playerMaxHp: 10,
+        sp: preservedSp,
+        totalSpEarned: preservedTotalSp,
+        battleLog: [],
+        status: 'idle',
+        shadowsDefeated: 0,
+      };
+      await db.battleStates.put(freshState);
+      set({ persona: null, shadow: null, battleState: freshState });
+    } else {
+      set({ persona: null, shadow: null, battleState: null });
+    }
+  },
+
+  equipMask: async (attr: AttributeId | null) => {
+    const { persona } = get();
+    if (!persona) return;
+    const updated = { ...persona, equippedMaskAttribute: attr };
+    await db.personas.put(updated);
+    set({ persona: updated });
   },
 }));

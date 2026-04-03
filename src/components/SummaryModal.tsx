@@ -392,7 +392,7 @@ export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week' }
   const abortRef = useRef<AbortController | null>(null);
 
   const activePreset = getActiveSummaryPreset();
-  const presets = settings.summaryPromptPresets ?? [];
+
   const noApiKey = !settings.summaryApiKey;
 
   useEffect(() => {

@@ -1,12 +1,115 @@
 import { motion } from 'framer-motion';
 import { useRef, useState, useCallback } from 'react';
 import { useAppStore, DEFAULT_SUMMARY_PROMPT_PRESETS, FAMILIAR_FACE_PRESETS, toLocalDateKey, applyCustomThemeColor } from '@/store';
-import { triggerThemeSwitchFeedback } from '@/utils/feedback';
+import { triggerThemeSwitchFeedback, playSound } from '@/utils/feedback';
 import { ThemeType, AttributeId, SummaryPromptPreset } from '@/types';
 import { db } from '@/db';
 import { PageTitle } from '@/components/PageTitle';
 import { exportBackup, isNative } from '@/utils/native';
+import { useRipple } from '@/components/RippleEffect';
 
+
+// ── 主题颜色按钮（带涟漪点击反馈） ───────────────────────────
+const ThemeColorButton = ({
+  theme,
+  active,
+  onSelect,
+}: {
+  theme: { value: string; label: string; color: string };
+  active: boolean;
+  onSelect: () => void;
+}) => {
+  const { spawn, ripples } = useRipple(theme.color);
+
+  return (
+    <motion.button
+      whileHover={{ scale: 1.05 }}
+      whileTap={{ scale: 0.93 }}
+      transition={{ type: 'spring', stiffness: 400, damping: 22 }}
+      onClick={(e) => { spawn(e); onSelect(); }}
+      className="relative flex-1 flex flex-col items-center gap-1.5 py-2.5 rounded-xl border-2 overflow-hidden transition-colors border-gray-200 dark:border-gray-700"
+      style={{
+        borderColor: active ? theme.color : undefined,
+        background: active ? `${theme.color}10` : undefined,
+      }}
+    >
+      {ripples}
+      <div className="w-7 h-7 rounded-full shadow-sm" style={{ backgroundColor: theme.color }} />
+      <div className="text-xs font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap">
+        {theme.label}
+      </div>
+    </motion.button>
+  );
+};
+
+// ── 开屏动画选项卡（带涟漪点击反馈） ─────────────────────────
+const SplashStyleButton = ({
+  opt,
+  active,
+  onSelect,
+}: {
+  opt: { value: string; label: string; sub: string; color: string; bg: string; border: string; icon: string };
+  active: boolean;
+  onSelect: () => void;
+}) => {
+  const { spawn, ripples } = useRipple(opt.color);
+
+  return (
+    <motion.button
+      whileTap={{ scale: 0.94 }}
+      transition={{ type: 'spring', stiffness: 400, damping: 22 }}
+      onClick={(e) => { spawn(e); onSelect(); }}
+      className="relative text-left rounded-2xl border-2 overflow-hidden select-none"
+      style={{
+        borderColor: active ? opt.color : 'transparent',
+        background: active ? opt.bg : 'rgba(128,128,128,0.06)',
+        outline: active ? `0 0 0 1px ${opt.color}22` : undefined,
+        boxShadow: active ? `0 0 16px ${opt.color}22, inset 0 0 0 1px ${opt.border}` : 'none',
+        transition: 'border-color 0.2s, box-shadow 0.25s, background 0.2s',
+      }}
+    >
+      {ripples}
+
+      <div className="px-3 py-3">
+        {/* 顶部图标行 */}
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-xl leading-none">{opt.icon}</span>
+          {active && (
+            <motion.span
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              className="w-4 h-4 rounded-full flex items-center justify-center"
+              style={{ background: opt.color }}
+            >
+              <svg viewBox="0 0 10 10" className="w-2.5 h-2.5" fill="white">
+                <path d="M1.5 5l2.5 2.5 4.5-4.5" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+              </svg>
+            </motion.span>
+          )}
+        </div>
+        {/* 名称 */}
+        <div
+          className="text-xs font-bold leading-tight"
+          style={{ color: active ? opt.color : undefined }}
+        >
+          <span className={active ? '' : 'text-gray-800 dark:text-white'}>{opt.label}</span>
+        </div>
+        {/* 英文副标题 */}
+        <div className="text-[10px] mt-0.5 font-medium tracking-wide uppercase"
+          style={{ color: active ? `${opt.color}99` : undefined }}
+        >
+          <span className={active ? '' : 'text-gray-400 dark:text-gray-500'}>{opt.sub}</span>
+        </div>
+      </div>
+
+      {/* 底部色条 */}
+      <div
+        className="h-0.5 w-full transition-opacity duration-200"
+        style={{ background: `linear-gradient(90deg, transparent, ${opt.color}, transparent)`, opacity: active ? 1 : 0 }}
+      />
+    </motion.button>
+  );
+};
 
 export const Settings = () => {
   const { 
@@ -110,8 +213,12 @@ export const Settings = () => {
       settings: sanitizedSettings,
       todos: await db.todos.toArray(),
       todoCompletions: await db.todoCompletions.toArray(),
+      // 逆影战场数据（v3 新增，导入时向后兼容）
+      personas: await db.personas.toArray(),
+      shadows: await db.shadows.toArray(),
+      battleStates: await db.battleStates.toArray(),
       _exportedAt: new Date().toISOString(),
-      _version: 2,
+      _version: 3,
     };
     return JSON.stringify(data);
   }, []);
@@ -236,11 +343,11 @@ export const Settings = () => {
                     <p className="text-gray-600 dark:text-gray-400 mb-4">选择你喜欢的主题颜色</p>
                     <div className="flex gap-2">
                       {themes.map(theme => (
-                        <motion.button
+                        <ThemeColorButton
                           key={theme.value}
-                          whileHover={{ scale: 1.05 }}
-                          whileTap={{ scale: 0.95 }}
-                          onClick={() => {
+                          theme={theme}
+                          active={user?.theme === theme.value}
+                          onSelect={() => {
                             triggerThemeSwitchFeedback(theme.value);
                             setTheme(theme.value);
                             if (theme.value === 'custom') {
@@ -249,20 +356,7 @@ export const Settings = () => {
                               if (!settings.customThemeColor) updateSettings({ customThemeColor: color });
                             }
                           }}
-                          className={`flex-1 flex flex-col items-center gap-1.5 py-2.5 rounded-xl border-2 transition-all ${
-                            user?.theme === theme.value
-                              ? 'border-primary bg-primary/5 dark:bg-primary/10'
-                              : 'border-gray-200 dark:border-gray-700'
-                          }`}
-                        >
-                          <div
-                            className="w-7 h-7 rounded-full shadow-sm"
-                            style={{ backgroundColor: theme.color }}
-                          />
-                          <div className="text-xs font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap">
-                            {theme.label}
-                          </div>
-                        </motion.button>
+                        />
                       ))}
                     </div>
 
@@ -374,6 +468,27 @@ export const Settings = () => {
                         </div>
                       </div>
                     )}
+
+                    {/* 夜间模式 */}
+                    <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                      <div>
+                        <h4 className="font-medium text-gray-800 dark:text-white">夜间模式</h4>
+                        <p className="text-sm text-gray-600 dark:text-gray-400">降低屏幕亮度，保护眼睛</p>
+                      </div>
+                      <motion.button
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        onClick={() => updateSettings({ darkMode: !settings.darkMode })}
+                        className={`w-14 h-8 rounded-full transition-colors ${
+                          settings.darkMode ? 'bg-blue-500' : 'bg-gray-300'
+                        }`}
+                      >
+                        <motion.div
+                          animate={{ x: settings.darkMode ? 24 : 4 }}
+                          className="w-6 h-6 bg-white rounded-full shadow-md"
+                        />
+                      </motion.button>
+                    </div>
                   </div>
                 )}
 
@@ -479,6 +594,7 @@ export const Settings = () => {
                         </div>
                       ))}
                     </div>
+
                   </div>
                 )}
 
@@ -576,32 +692,36 @@ export const Settings = () => {
                         )}
                       </div>
                     ))}
+
+                    {/* 逆影战场开关 — 关闭后在此重新开启 */}
+                    {!settings.battleEnabled && (
+                      <div className="rounded-xl border-2 border-purple-200 dark:border-purple-800/50 bg-purple-50 dark:bg-purple-900/15 p-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className="text-base">⚔️</span>
+                              <h4 className="text-sm font-bold text-gray-800 dark:text-white">逆影战场</h4>
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400 font-semibold">已关闭</span>
+                            </div>
+                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 leading-relaxed">
+                              召唤 Persona，识破并击败内心的暗影。
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => updateSettings({ battleEnabled: true })}
+                            className="flex-shrink-0 mt-0.5 px-3 py-1.5 rounded-xl text-xs font-bold text-white transition-colors"
+                            style={{ background: 'linear-gradient(135deg, #7c3aed, #4f46e5)' }}
+                          >
+                            开启
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
                 {section.id === 'display' && (
                   <div className="space-y-4">
-                    {/* 夜间模式切换 */}
-                    <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                      <div>
-                        <h4 className="font-medium text-gray-800 dark:text-white">夜间模式</h4>
-                        <p className="text-sm text-gray-600 dark:text-gray-400">降低屏幕亮度，保护眼睛</p>
-                      </div>
-                      <motion.button
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                        onClick={() => updateSettings({ darkMode: !settings.darkMode })}
-                        className={`w-14 h-8 rounded-full transition-colors ${
-                          settings.darkMode ? 'bg-blue-500' : 'bg-gray-300'
-                        }`}
-                      >
-                        <motion.div
-                          animate={{ x: settings.darkMode ? 24 : 4 }}
-                          className="w-6 h-6 bg-white rounded-full shadow-md"
-                        />
-                      </motion.button>
-                    </div>
-
                     {/* 背景动画 — 多选 toggle */}
                     {!settings.backgroundImage && (
                       <div className="space-y-3 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
@@ -676,28 +796,58 @@ export const Settings = () => {
                       </div>
                       <div className="grid grid-cols-2 gap-2">
                         {([
-                          { value: 'velvet', label: '靛蓝色房间', desc: '深邃马戏团' },
-                          { value: 'p5',     label: 'Persona 5',  desc: '红黑剪报风' },
-                          { value: 'p3',     label: 'Persona 3',  desc: '深夜月光录' },
-                          { value: 'p4',     label: 'Persona 4',  desc: '黄色警戒线' },
-                        ] as { value: 'velvet'|'p5'|'p3'|'p4'; label: string; desc: string }[]).map(opt => {
+                          {
+                            value: 'velvet',
+                            label: '靛蓝色房间',
+                            sub: 'The Velvet',
+                            sound: '/p3se.mp3',
+                            color: '#7C3AED',
+                            bg: 'rgba(124,58,237,0.08)',
+                            border: 'rgba(124,58,237,0.5)',
+                            icon: '🌌',
+                          },
+                          {
+                            value: 'p5',
+                            label: '红黑剪报风',
+                            sub: 'Phantom Thief',
+                            sound: '/p5se.mp3',
+                            color: '#DC2626',
+                            bg: 'rgba(220,38,38,0.08)',
+                            border: 'rgba(220,38,38,0.5)',
+                            icon: '🃏',
+                          },
+                          {
+                            value: 'p3',
+                            label: '深夜月光录',
+                            sub: 'Memento Mori',
+                            sound: '/p3se.mp3',
+                            color: '#2563EB',
+                            bg: 'rgba(37,99,235,0.08)',
+                            border: 'rgba(37,99,235,0.5)',
+                            icon: '🕐',
+                          },
+                          {
+                            value: 'p4',
+                            label: '黄色警戒线',
+                            sub: 'Midnight Channel',
+                            sound: '/p4se.mp3',
+                            color: '#D97706',
+                            bg: 'rgba(217,119,6,0.08)',
+                            border: 'rgba(217,119,6,0.5)',
+                            icon: '📺',
+                          },
+                        ] as { value: 'velvet'|'p5'|'p3'|'p4'; label: string; sub: string; sound: string; color: string; bg: string; border: string; icon: string }[]).map(opt => {
                           const active = (settings.splashStyle ?? 'velvet') === opt.value;
                           return (
-                            <button
+                            <SplashStyleButton
                               key={opt.value}
-                              onClick={() => updateSettings({ splashStyle: opt.value })}
-                              className={`text-left px-3 py-2.5 rounded-xl border-2 transition-all ${
-                                active
-                                  ? 'border-primary bg-primary/10 dark:bg-primary/20'
-                                  : 'border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800'
-                              }`}
-                            >
-                              <div className={`text-sm font-bold flex items-center gap-1.5 ${active ? 'text-primary' : 'text-gray-800 dark:text-white'}`}>
-                                <span className={`w-3 h-3 rounded-full border flex-shrink-0 transition-colors ${active ? 'bg-primary border-primary' : 'border-gray-300 dark:border-gray-500'}`} />
-                                {opt.label}
-                              </div>
-                              <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 pl-4">{opt.desc}</div>
-                            </button>
+                              opt={opt}
+                              active={active}
+                              onSelect={() => {
+                                playSound(opt.sound, 0.55);
+                                updateSettings({ splashStyle: opt.value });
+                              }}
+                            />
                           );
                         })}
                       </div>
@@ -818,99 +968,6 @@ export const Settings = () => {
                   };
                   return (
                   <div className="space-y-3 pb-1">
-
-                    {/* ── API 配置卡片 ── */}
-                    <div className="rounded-2xl border border-gray-100 dark:border-gray-700/60 overflow-hidden">
-                      <div className="px-4 py-3 bg-gray-50 dark:bg-gray-800/60 border-b border-gray-100 dark:border-gray-700/60">
-                        <span className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">API 配置</span>
-                      </div>
-                      <div className="p-4 space-y-4 dark:bg-gray-800/20">
-
-                        {/* 提供商 */}
-                        <div className="space-y-1.5">
-                          <p className="text-xs font-medium text-gray-500 dark:text-gray-400">提供商</p>
-                          <div className="grid grid-cols-3 gap-1.5">
-                            {([
-                              { value: 'openai', label: 'OpenAI', hint: 'gpt-4o-mini' },
-                              { value: 'deepseek', label: 'DeepSeek', hint: 'deepseek-chat' },
-                              { value: 'kimi', label: 'Kimi', hint: 'moonshot-v1-8k' },
-                            ] as const).map(p => (
-                              <button
-                                key={p.value}
-                                onClick={() => updateSettings({ summaryApiProvider: p.value })}
-                                className={`py-2.5 rounded-xl text-xs font-bold transition-all border ${
-                                  provider === p.value
-                                    ? 'bg-primary text-white border-primary shadow-sm'
-                                    : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-600'
-                                }`}
-                              >
-                                <div>{p.label}</div>
-                                <div className="opacity-55 font-normal mt-0.5">{p.hint}</div>
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* API Key */}
-                        <div className="space-y-1.5">
-                          <p className="text-xs font-medium text-gray-500 dark:text-gray-400">API 密钥</p>
-                          <div className="flex gap-2">
-                            <input
-                              type="password"
-                              value={summaryApiKeyDraft}
-                              onChange={e => { setSummaryApiKeyDraft(e.target.value); setSummaryApiKeySaved(false); }}
-                              placeholder="sk-..."
-                              className="flex-1 px-3 py-2.5 text-sm border border-gray-200 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-primary"
-                            />
-                            <button
-                              onClick={() => { updateSettings({ summaryApiKey: summaryApiKeyDraft }); setSummaryApiKeySaved(true); }}
-                              className={`px-4 py-2.5 rounded-xl text-sm font-bold transition-all flex-shrink-0 ${
-                                summaryApiKeySaved
-                                  ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400'
-                                  : 'bg-primary text-white'
-                              }`}
-                            >
-                              {summaryApiKeySaved ? '✓ 已保存' : '保存'}
-                            </button>
-                          </div>
-                          <p className="text-[11px] text-gray-400 dark:text-gray-500">Key 仅保存在本地设备，不会上传。</p>
-                        </div>
-
-                        {/* 高级：URL + 模型 */}
-                        <div className="space-y-3 pt-1 border-t border-gray-100 dark:border-gray-700/50">
-                          <p className="text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">高级选项（可选）</p>
-                          <div className="space-y-1.5">
-                            <p className="text-xs text-gray-500 dark:text-gray-400">自定义 API 地址</p>
-                            <input
-                              type="text"
-                              value={settings.summaryApiBaseUrl ?? ''}
-                              onChange={e => updateSettings({ summaryApiBaseUrl: e.target.value || undefined })}
-                              placeholder={
-                                provider === 'deepseek' ? 'https://api.deepseek.com/v1' :
-                                provider === 'kimi' ? 'https://api.moonshot.cn/v1' :
-                                'https://api.openai.com/v1'
-                              }
-                              className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-primary"
-                            />
-                          </div>
-                          <div className="space-y-1.5">
-                            <p className="text-xs text-gray-500 dark:text-gray-400">模型名称</p>
-                            <input
-                              type="text"
-                              value={settings.summaryModel ?? ''}
-                              onChange={e => updateSettings({ summaryModel: e.target.value || undefined })}
-                              placeholder={
-                                provider === 'deepseek' ? 'deepseek-chat' :
-                                provider === 'kimi' ? 'moonshot-v1-8k' :
-                                'gpt-4o-mini'
-                              }
-                              className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-primary"
-                            />
-                          </div>
-                        </div>
-
-                      </div>
-                    </div>
 
                     {/* ── 沟通风格卡片 ── */}
                     <div className="rounded-2xl border border-gray-100 dark:border-gray-700/60 overflow-hidden">
@@ -1036,6 +1093,99 @@ export const Settings = () => {
                       </div>
                     </div>
 
+                    {/* ── API 配置卡片 ── */}
+                    <div className="rounded-2xl border border-gray-100 dark:border-gray-700/60 overflow-hidden">
+                      <div className="px-4 py-3 bg-gray-50 dark:bg-gray-800/60 border-b border-gray-100 dark:border-gray-700/60">
+                        <span className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">API 配置</span>
+                      </div>
+                      <div className="p-4 space-y-4 dark:bg-gray-800/20">
+
+                        {/* 提供商 */}
+                        <div className="space-y-1.5">
+                          <p className="text-xs font-medium text-gray-500 dark:text-gray-400">提供商</p>
+                          <div className="grid grid-cols-3 gap-1.5">
+                            {([
+                              { value: 'openai', label: 'OpenAI', hint: 'gpt-4o-mini' },
+                              { value: 'deepseek', label: 'DeepSeek', hint: 'deepseek-chat' },
+                              { value: 'kimi', label: 'Kimi', hint: 'moonshot-v1-8k' },
+                            ] as const).map(p => (
+                              <button
+                                key={p.value}
+                                onClick={() => updateSettings({ summaryApiProvider: p.value })}
+                                className={`py-2.5 rounded-xl text-xs font-bold transition-all border ${
+                                  provider === p.value
+                                    ? 'bg-primary text-white border-primary shadow-sm'
+                                    : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-600'
+                                }`}
+                              >
+                                <div>{p.label}</div>
+                                <div className="opacity-55 font-normal mt-0.5">{p.hint}</div>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* API Key */}
+                        <div className="space-y-1.5">
+                          <p className="text-xs font-medium text-gray-500 dark:text-gray-400">API 密钥</p>
+                          <div className="flex gap-2">
+                            <input
+                              type="password"
+                              value={summaryApiKeyDraft}
+                              onChange={e => { setSummaryApiKeyDraft(e.target.value); setSummaryApiKeySaved(false); }}
+                              placeholder="sk-..."
+                              className="flex-1 min-w-0 px-3 py-2.5 text-sm border border-gray-200 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-primary"
+                            />
+                            <button
+                              onClick={() => { updateSettings({ summaryApiKey: summaryApiKeyDraft }); setSummaryApiKeySaved(true); }}
+                              className={`px-4 py-2.5 rounded-xl text-sm font-bold transition-all flex-shrink-0 whitespace-nowrap ${
+                                summaryApiKeySaved
+                                  ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400'
+                                  : 'bg-primary text-white'
+                              }`}
+                            >
+                              {summaryApiKeySaved ? '✓ 已保存' : '保存'}
+                            </button>
+                          </div>
+                          <p className="text-[11px] text-gray-400 dark:text-gray-500">Key 仅保存在本地设备，不会上传。</p>
+                        </div>
+
+                        {/* 高级：URL + 模型 */}
+                        <div className="space-y-3 pt-1 border-t border-gray-100 dark:border-gray-700/50">
+                          <p className="text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">高级选项（可选）</p>
+                          <div className="space-y-1.5">
+                            <p className="text-xs text-gray-500 dark:text-gray-400">自定义 API 地址</p>
+                            <input
+                              type="text"
+                              value={settings.summaryApiBaseUrl ?? ''}
+                              onChange={e => updateSettings({ summaryApiBaseUrl: e.target.value || undefined })}
+                              placeholder={
+                                provider === 'deepseek' ? 'https://api.deepseek.com/v1' :
+                                provider === 'kimi' ? 'https://api.moonshot.cn/v1' :
+                                'https://api.openai.com/v1'
+                              }
+                              className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-primary"
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <p className="text-xs text-gray-500 dark:text-gray-400">模型名称</p>
+                            <input
+                              type="text"
+                              value={settings.summaryModel ?? ''}
+                              onChange={e => updateSettings({ summaryModel: e.target.value || undefined })}
+                              placeholder={
+                                provider === 'deepseek' ? 'deepseek-chat' :
+                                provider === 'kimi' ? 'moonshot-v1-8k' :
+                                'gpt-4o-mini'
+                              }
+                              className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-primary"
+                            />
+                          </div>
+                        </div>
+
+                      </div>
+                    </div>
+
                   </div>
                   );
                 })()}
@@ -1050,6 +1200,13 @@ export const Settings = () => {
                           <button onClick={() => setExportMessage(null)} className="text-gray-400 flex-shrink-0 mt-0.5">✕</button>
                         </div>
                       </div>
+                    )}
+
+                    {/* 非安卓端提示 */}
+                    {!isNative() && (
+                      <p className="text-xs text-gray-400 dark:text-gray-500 leading-relaxed">
+                        数据保存在本地，已构建防护但以防万一如需清理浏览器缓存请注意备份数据哦
+                      </p>
                     )}
 
                     {/* 导出 */}
@@ -1200,7 +1357,22 @@ export const Settings = () => {
                           @YuukiMarine
                         </a>
                       </div>
+                      <div className="border-t border-gray-200 dark:border-gray-600"></div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-gray-600 dark:text-gray-400">Bilibili</span>
+                        <a
+                          href="https://space.bilibili.com/15727079"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sm font-medium text-primary hover:underline"
+                        >
+                          @IIInk
+                        </a>
+                      </div>
                     </div>
+                    <p className="text-xs text-center text-gray-400 dark:text-gray-500 leading-relaxed">
+                      100%用爱发电，用得习惯欢迎点个star或者关注b站获取更新动态喵
+                    </p>
                     <p className="text-xs text-center text-gray-400 dark:text-gray-500">
                       I am thou, thou art I...
                     </p>

@@ -4,6 +4,7 @@ import { useAppStore, toLocalDateKey } from '@/store';
 import { AttributeId, TodoFrequency, WeeklyGoal, WeeklyGoalItem, WeeklyGoalType } from '@/types';
 import { triggerNavFeedback, triggerSuccessFeedback } from '@/utils/feedback';
 import { PageTitle } from '@/components/PageTitle';
+import { useRipple } from '@/components/RippleEffect';
 import { v4 as uuidv4 } from 'uuid';
 
 const weekdayLabels = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
@@ -175,7 +176,7 @@ const PendingWeekdayTodoCard = ({
           <div className="flex items-center gap-1.5 flex-wrap mb-1">
             {/* 未到日期标签 */}
             <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400 font-medium">
-              📅 未到日期
+              {todo.startDate ? `📅 ${todo.startDate} 启用` : '📅 未到日期'}
             </span>
             {todo.important && (
               <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-400/20 text-amber-700 dark:text-amber-300">⭐</span>
@@ -995,14 +996,21 @@ export const Todos = () => {
     isLongTerm: false,
     weekdays: [] as number[],
     isActive: true,
-    important: false
+    important: false,
+    startDate: '' as string,
   });
 
+  const { spawn: spawnAddRipple, ripples: addRipples } = useRipple();
+
   const todayWeekday = new Date().getDay();
+  const todayDateKey = toLocalDateKey();
   const activeTodos = useMemo(() => {
     const active = todos.filter(t => {
+      if (!t.isActive) return false;
+      // 未来启用日期的待办不出现在今日待办
+      if (t.startDate && t.startDate > todayDateKey) return false;
       const matchesWeekday = !t.weekdays || t.weekdays.length === 0 || t.weekdays.includes(todayWeekday);
-      return t.isActive && matchesWeekday;
+      return matchesWeekday;
     });
     // 重要任务置顶
     return [...active].sort((a, b) => {
@@ -1010,18 +1018,26 @@ export const Todos = () => {
       if (!a.important && b.important) return 1;
       return 0;
     });
-  }, [todos, todayWeekday]);
+  }, [todos, todayWeekday, todayDateKey]);
 
-  /** 日期未到的待办：isActive 为 true 但今天不是指定的星期几 */
-  const pendingWeekdayTodos = useMemo(() =>
+  /** 未到日期的待办：startDate 在未来，或 isActive 但今天不是指定的星期几 */
+  const pendingDateTodos = useMemo(() =>
     todos.filter(t =>
-      t.isActive &&
-      t.weekdays && t.weekdays.length > 0 &&
-      !t.weekdays.includes(todayWeekday)
+      t.isActive && (
+        (t.startDate && t.startDate > todayDateKey) ||
+        (t.weekdays && t.weekdays.length > 0 && !t.weekdays.includes(todayWeekday))
+      )
     ),
-  [todos, todayWeekday]);
+  [todos, todayWeekday, todayDateKey]);
 
-  const archivedTodos = useMemo(() => todos.filter(t => !t.isActive), [todos]);
+  /** 已完成的归档待办（按完成时间倒序） */
+  const completedArchivedTodos = useMemo(() =>
+    todos.filter(t => !t.isActive && t.completedAt)
+      .sort((a, b) => new Date(b.completedAt!).getTime() - new Date(a.completedAt!).getTime()),
+  [todos]);
+  /** 手动归档（未启用）的待办 */
+  const inactiveArchivedTodos = useMemo(() => todos.filter(t => !t.isActive && !t.completedAt), [todos]);
+  const [expandCompleted, setExpandCompleted] = useState(false);
 
   const resetForm = () => {
     setForm({
@@ -1035,7 +1051,8 @@ export const Todos = () => {
       isLongTerm: false,
       weekdays: [],
       isActive: true,
-      important: false
+      important: false,
+      startDate: '',
     });
   };
 
@@ -1057,7 +1074,8 @@ export const Todos = () => {
       isLongTerm: form.frequency === 'count' ? form.isLongTerm : false,
       weekdays: form.weekdays.sort(),
       isActive: form.isActive,
-      important: form.important
+      important: form.important,
+      startDate: form.startDate || undefined,
     };
 
     if (editingTodoId) {
@@ -1085,7 +1103,8 @@ export const Todos = () => {
       isLongTerm: !!todo.isLongTerm,
       weekdays: todo.weekdays || [],
       isActive: todo.isActive,
-      important: !!todo.important
+      important: !!todo.important,
+      startDate: todo.startDate || '',
     });
     setShowAdd(true);
   };
@@ -1141,14 +1160,16 @@ export const Todos = () => {
         <PageTitle title="待办清单" en="To-do" />
         <motion.button
           whileTap={{ scale: 0.95 }}
-          onClick={() => {
+          onClick={(e) => {
+            spawnAddRipple(e);
             triggerNavFeedback();
             setEditingTodoId(null);
             resetForm();
             setShowAdd(true);
           }}
-          className="px-4 py-2 bg-primary text-white rounded-xl text-sm font-semibold shadow-sm shadow-primary/20"
+          className="relative overflow-hidden px-4 py-2 bg-primary text-white rounded-xl text-sm font-semibold shadow-sm shadow-primary/20"
         >
+          {addRipples}
           + 添加待办
         </motion.button>
       </div>
@@ -1205,63 +1226,139 @@ export const Todos = () => {
           <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-gray-100 dark:border-gray-800">
             <h3 className="font-bold text-gray-900 dark:text-white">已归档</h3>
             <span className="text-xs text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-800 px-2.5 py-1 rounded-full">
-              {archivedTodos.length + pendingWeekdayTodos.length} 项
+              {completedArchivedTodos.length + inactiveArchivedTodos.length + pendingDateTodos.length} 项
             </span>
           </div>
           <div className="p-3 space-y-2">
 
-            {/* ── 未到日期待办（isActive 但今日不在指定星期内）── */}
-            {pendingWeekdayTodos.map(todo => {
-              // 长按编辑
-              return (
-                <PendingWeekdayTodoCard
-                  key={todo.id}
-                  todo={todo}
-                  attrName={settings.attributeNames[todo.attribute]}
-                  onEdit={handleEdit}
-                  onArchive={(id) => updateTodo(id, { isActive: false })}
-                  onDelete={(id) => deleteTodo(id)}
-                  renderFrequencyBadge={renderFrequencyBadge}
-                />
-              );
-            })}
-
-            {/* 分割线：两类都有内容时才显示 */}
-            {pendingWeekdayTodos.length > 0 && archivedTodos.length > 0 && (
-              <div className="border-t border-gray-100 dark:border-gray-800 my-1" />
+            {/* ── 未到日期（startDate 在未来 / 今日不在指定星期内）── */}
+            {pendingDateTodos.length > 0 && (
+              <div className="text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider px-1 pt-1 pb-0.5">未到日期</div>
             )}
+            {pendingDateTodos.map(todo => (
+              <PendingWeekdayTodoCard
+                key={todo.id}
+                todo={todo}
+                attrName={settings.attributeNames[todo.attribute]}
+                onEdit={handleEdit}
+                onArchive={(id) => updateTodo(id, { isActive: false })}
+                onDelete={(id) => deleteTodo(id)}
+                renderFrequencyBadge={renderFrequencyBadge}
+              />
+            ))}
 
-            {archivedTodos.map(todo => {
+            {/* ── 未启用（手动归档）── */}
+            {inactiveArchivedTodos.length > 0 && (
+              <>
+                {pendingDateTodos.length > 0 && <div className="border-t border-gray-100 dark:border-gray-800 my-1" />}
+                <div className="text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider px-1 pt-1 pb-0.5">未启用</div>
+              </>
+            )}
+            {inactiveArchivedTodos.map(todo => (
+              <motion.div
+                key={todo.id}
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="rounded-xl px-4 py-3 border bg-gray-50 dark:bg-gray-800/60 border-gray-100 dark:border-gray-700/60"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                      {todo.archivedAt && getTodoDateLabel(new Date(todo.archivedAt)) && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
+                          {getTodoDateLabel(new Date(todo.archivedAt))}
+                        </span>
+                      )}
+                      {todo.important && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-400/20 text-amber-700 dark:text-amber-300">⭐</span>
+                      )}
+                      <span className="font-semibold text-sm truncate text-gray-700 dark:text-gray-200">
+                        {todo.title}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-[10px] text-gray-400 dark:text-gray-500">
+                        {settings.attributeNames[todo.attribute]} +{todo.points}
+                      </span>
+                      {todo.extraBoosts && todo.extraBoosts.map((b, i) => (
+                        <span key={i} className="text-[10px] text-gray-400 dark:text-gray-500">
+                          {settings.attributeNames[b.attribute] ?? b.attribute} +{b.points}
+                        </span>
+                      ))}
+                      {todo.weekdays && todo.weekdays.length > 0 && (
+                        <span className="text-[10px] text-gray-400 dark:text-gray-500">{todo.weekdays.map(d => weekdayLabels[d]).join(' ')}</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <button
+                      onClick={() => handleEdit(todo.id)}
+                      className="w-7 h-7 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                      title="编辑"
+                    >
+                      <svg viewBox="0 0 16 16" className="w-3.5 h-3.5" fill="currentColor">
+                        <path d="M11.5 2.5a1.5 1.5 0 012.121 2.121L5.561 12.682l-2.829.707.707-2.829L11.5 2.5z" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={() => deleteTodo(todo.id)}
+                      className="w-7 h-7 rounded-full bg-red-50 dark:bg-red-900/20 flex items-center justify-center text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors"
+                      title="删除"
+                    >
+                      <svg viewBox="0 0 16 16" className="w-3.5 h-3.5" fill="currentColor">
+                        <path d="M5 2h6l1 1H3L5 2zm-2 2h10l-1 9H4L3 4zm3 2v6h1V6H6zm3 0v6h1V6H9z" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={() => updateTodo(todo.id, { isActive: true, archivedAt: undefined })}
+                      className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-primary hover:bg-primary/20 transition-colors"
+                      title="恢复（重置为未完成）"
+                    >
+                      <svg viewBox="0 0 16 16" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="1.5">
+                        <g transform="rotate(110 8 8)">
+                          <path d="M13.5 8A5.5 5.5 0 103 5.5" strokeLinecap="round" />
+                          <path d="M3 2.5v3h3" strokeLinecap="round" strokeLinejoin="round" />
+                        </g>
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            ))}
+
+            {/* ── 已完成 ── */}
+            {completedArchivedTodos.length > 0 && (
+              <>
+                {(pendingDateTodos.length > 0 || inactiveArchivedTodos.length > 0) && <div className="border-t border-gray-100 dark:border-gray-800 my-1" />}
+                <div className="text-[10px] font-semibold text-emerald-500 dark:text-emerald-400 uppercase tracking-wider px-1 pt-1 pb-0.5">已完成</div>
+              </>
+            )}
+            {(expandCompleted ? completedArchivedTodos : completedArchivedTodos.slice(0, 5)).map(todo => {
               const archivedProgress = getTodayTodoProgress(todo.id);
-              const wasCompleted = archivedProgress.isComplete;
+              const wasCompletedToday = archivedProgress.isComplete;
               return (
                 <motion.div
                   key={todo.id}
                   initial={{ opacity: 0, y: 4 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className={`rounded-xl px-4 py-3 border ${
-                    wasCompleted
-                      ? 'bg-emerald-50/60 dark:bg-emerald-900/10 border-emerald-200/50 dark:border-emerald-800/40'
-                      : 'bg-gray-50 dark:bg-gray-800/60 border-gray-100 dark:border-gray-700/60'
-                  }`}
+                  className="rounded-xl px-4 py-3 border bg-emerald-50/60 dark:bg-emerald-900/10 border-emerald-200/50 dark:border-emerald-800/40"
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5 flex-wrap mb-1">
-                        {/* 完成状态 badge */}
-                        {wasCompleted ? (
+                        {wasCompletedToday ? (
                           <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-semibold">✓ 今日已完成</span>
                         ) : (
-                          todo.archivedAt && getTodoDateLabel(new Date(todo.archivedAt)) && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
-                              {getTodoDateLabel(new Date(todo.archivedAt))}
+                          todo.completedAt && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                              ✓ {new Date(todo.completedAt).toLocaleDateString('zh-CN', { month: 'long', day: 'numeric' })}完成
                             </span>
                           )
                         )}
                         {todo.important && (
                           <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-400/20 text-amber-700 dark:text-amber-300">⭐</span>
                         )}
-                        <span className={`font-semibold text-sm truncate ${wasCompleted ? 'line-through text-gray-400 dark:text-gray-500' : 'text-gray-700 dark:text-gray-200'}`}>
+                        <span className="font-semibold text-sm truncate line-through text-gray-400 dark:text-gray-500">
                           {todo.title}
                         </span>
                       </div>
@@ -1274,22 +1371,9 @@ export const Todos = () => {
                             {settings.attributeNames[b.attribute] ?? b.attribute} +{b.points}
                           </span>
                         ))}
-                        {todo.weekdays && todo.weekdays.length > 0 && (
-                          <span className="text-[10px] text-gray-400 dark:text-gray-500">{todo.weekdays.map(d => weekdayLabels[d]).join(' ')}</span>
-                        )}
                       </div>
                     </div>
                     <div className="flex items-center gap-1 flex-shrink-0">
-                      <button
-                        onClick={() => handleEdit(todo.id)}
-                        className="w-7 h-7 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
-                        title="编辑"
-                      >
-                        <svg viewBox="0 0 16 16" className="w-3.5 h-3.5" fill="currentColor">
-                          <path d="M11.5 2.5a1.5 1.5 0 012.121 2.121L5.561 12.682l-2.829.707.707-2.829L11.5 2.5z" />
-                        </svg>
-                      </button>
-                      {/* 彻底删除 */}
                       <button
                         onClick={() => deleteTodo(todo.id)}
                         className="w-7 h-7 rounded-full bg-red-50 dark:bg-red-900/20 flex items-center justify-center text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors"
@@ -1299,23 +1383,60 @@ export const Todos = () => {
                           <path d="M5 2h6l1 1H3L5 2zm-2 2h10l-1 9H4L3 4zm3 2v6h1V6H6zm3 0v6h1V6H9z" />
                         </svg>
                       </button>
-                      {/* 恢复为未完成状态 */}
-                      <button
-                        onClick={() => updateTodo(todo.id, { isActive: true, archivedAt: undefined })}
-                        className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-primary hover:bg-primary/20 transition-colors"
-                        title="恢复（重置为未完成）"
-                      >
-                        <svg viewBox="0 0 16 16" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="1.5">
-                          <path d="M13.5 8A5.5 5.5 0 113 5.5" strokeLinecap="round" />
-                          <path d="M3 2.5v3h3" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
-                      </button>
+                      {wasCompletedToday ? (
+                        <button
+                          onClick={() => updateTodo(todo.id, { isActive: true, completedAt: undefined, archivedAt: undefined })}
+                          className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-primary hover:bg-primary/20 transition-colors"
+                          title="恢复"
+                        >
+                          <svg viewBox="0 0 16 16" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="1.5">
+                            <g transform="rotate(110 8 8)">
+                              <path d="M13.5 8A5.5 5.5 0 103 5.5" strokeLinecap="round" />
+                              <path d="M3 2.5v3h3" strokeLinecap="round" strokeLinejoin="round" />
+                            </g>
+                          </svg>
+                        </button>
+                      ) : (
+                        <button
+                          onClick={async () => {
+                            await addTodo({
+                              title: todo.title,
+                              attribute: todo.attribute,
+                              points: todo.points,
+                              extraBoosts: todo.extraBoosts,
+                              frequency: todo.frequency,
+                              repeatDaily: todo.repeatDaily,
+                              isLongTerm: todo.isLongTerm,
+                              targetCount: todo.targetCount,
+                              weekdays: todo.weekdays,
+                              important: todo.important,
+                              isActive: true,
+                            });
+                          }}
+                          className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-primary hover:bg-primary/20 transition-colors"
+                          title="按此配置新建待办"
+                        >
+                          <svg viewBox="0 0 16 16" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="1.5">
+                            <path d="M2.5 8A5.5 5.5 0 1 1 13 5.5" strokeLinecap="round" />
+                            <path d="M13 2.5v3h-3" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                        </button>
+                      )}
                     </div>
                   </div>
                 </motion.div>
               );
             })}
-            {archivedTodos.length === 0 && pendingWeekdayTodos.length === 0 && (
+            {completedArchivedTodos.length > 5 && (
+              <button
+                onClick={() => setExpandCompleted(v => !v)}
+                className="w-full py-1.5 text-center text-[11px] font-semibold text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors border-t border-dashed border-gray-200 dark:border-gray-700"
+              >
+                {expandCompleted ? '收起' : `展开全部（共 ${completedArchivedTodos.length} 项）`}
+              </button>
+            )}
+
+            {completedArchivedTodos.length === 0 && inactiveArchivedTodos.length === 0 && pendingDateTodos.length === 0 && (
               <div className="text-center text-sm text-gray-400 dark:text-gray-500 py-8">
                 归档区暂无内容
               </div>
@@ -1609,6 +1730,29 @@ export const Todos = () => {
                       }`}
                     />
                   </button>
+                </div>
+
+                {/* ── 未来启用日期 ── */}
+                <div>
+                  <label className="block text-sm font-medium mb-1.5 text-gray-700 dark:text-gray-300">指定启用日期（可选）</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="date"
+                      value={form.startDate}
+                      min={todayDateKey}
+                      onChange={(e) => setForm(prev => ({ ...prev, startDate: e.target.value }))}
+                      className="flex-1 px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-xl bg-gray-50 dark:bg-gray-800 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    />
+                    {form.startDate && (
+                      <button
+                        onClick={() => setForm(prev => ({ ...prev, startDate: '' }))}
+                        className="text-xs text-gray-400 dark:text-gray-500 underline whitespace-nowrap"
+                      >
+                        清除
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">设定后，该待办在指定日期前不会出现在今日待办中</p>
                 </div>
               </div>
 
