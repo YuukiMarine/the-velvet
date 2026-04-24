@@ -1,4 +1,4 @@
-import { AttributeId, KeywordRule } from '@/types';
+import { AttributeId, KeywordRule, PersonaSkill, StatusKind } from '@/types';
 
 export const DEFAULT_KEYWORD_RULES: KeywordRule[] = [
   { keywords: ['阅读', '读书', '学习', '课程'], attribute: 'knowledge', points: 2 },
@@ -17,6 +17,24 @@ export const DEFAULT_ATTRIBUTE_NAMES = {
 };
 
 export const DEFAULT_LEVEL_THRESHOLDS = [0, 40, 90, 150, 240];
+
+/** 属性主色 — 与 Statistics 页保持一致，供雷达图、Shadow 染色、UI 标识复用 */
+export const ATTR_COLORS: Record<AttributeId, string> = {
+  knowledge: '#3B82F6', // 蓝
+  guts:      '#EF4444', // 红
+  dexterity: '#10B981', // 绿
+  kindness:  '#F59E0B', // 琥珀
+  charm:     '#8B5CF6', // 紫
+};
+
+/** Shadow 按弱点属性染色时使用的一组派生色（眼睛/发光/glitch），更深的主题以保留"阴影"质感 */
+export const SHADOW_ACCENT_BY_WEAKNESS: Record<AttributeId, { eye: string; glow: string; glitch: string }> = {
+  knowledge: { eye: '#60A5FA', glow: 'rgba(59,130,246,0.55)',  glitch: 'rgba(96,165,250,0.65)' },
+  guts:      { eye: '#F87171', glow: 'rgba(239,68,68,0.55)',   glitch: 'rgba(248,113,113,0.65)' },
+  dexterity: { eye: '#34D399', glow: 'rgba(16,185,129,0.55)',  glitch: 'rgba(52,211,153,0.65)' },
+  kindness:  { eye: '#FBBF24', glow: 'rgba(245,158,11,0.55)',  glitch: 'rgba(251,191,36,0.65)' },
+  charm:     { eye: '#C084FC', glow: 'rgba(139,92,246,0.55)',  glitch: 'rgba(192,132,252,0.65)' },
+};
 
 export const INITIAL_ATTRIBUTES = [
   {
@@ -73,7 +91,7 @@ export const ACHIEVEMENTS = [
   {
     id: 'todo_10',
     title: '任务达人',
-    description: '完成10次待办事项',
+    description: '完成10次任务',
     icon: '✅',
     unlocked: false,
     condition: { type: 'todo_completions' as const, value: 10 }
@@ -181,6 +199,22 @@ export const ACHIEVEMENTS = [
     icon: '⚔️',
     unlocked: false,
     condition: { type: 'shadow_defeats' as const, value: 5 }
+  },
+  {
+    id: 'confidants_web_5',
+    title: '彼此托付',
+    description: '与 5 位同伴建立联系，且每位亲密度都达到 Lv.4',
+    icon: '🌼',
+    unlocked: false,
+    condition: { type: 'confidants_at_level' as const, value: 5, minLevel: 4 }
+  },
+  {
+    id: 'confidants_trio_max',
+    title: '三重圆满',
+    description: '拥有 3 位亲密度达到 Lv.10 的同伴',
+    icon: '✦',
+    unlocked: false,
+    condition: { type: 'confidants_at_level' as const, value: 3, minLevel: 10 }
   },
   {
     id: 'wild_heart',
@@ -341,11 +375,11 @@ export const EVENT_POOL = [
 // ── 逆影战场常量 ──────────────────────────────────────────
 
 export const SHADOW_LEVEL_CONFIG = [
-  { level: 1, maxHp: 80,  maxHp2: undefined as number | undefined, label: '之阴影' },
-  { level: 2, maxHp: 120, maxHp2: undefined as number | undefined, label: '之深渊' },
-  { level: 3, maxHp: 190, maxHp2: 120,                             label: '之执念' },
-  { level: 4, maxHp: 250, maxHp2: 180,                             label: '之噩梦' },
-  { level: 5, maxHp: 310, maxHp2: 250,                             label: '之深渊王' },
+  { level: 1, maxHp: 150, maxHp2: undefined as number | undefined, label: '之阴影' },
+  { level: 2, maxHp: 200, maxHp2: undefined as number | undefined, label: '之深渊' },
+  { level: 3, maxHp: 250, maxHp2: 120,                             label: '之执念' },
+  { level: 4, maxHp: 400, maxHp2: 240,                             label: '之噩梦' },
+  { level: 5, maxHp: 450, maxHp2: 260,                             label: '之深渊王' },
 ];
 
 /** Shadow每日HP恢复量（按等级） */
@@ -365,6 +399,72 @@ export function isInShadowTime(days: number[] = [5, 6, 0], startHour = 20, endHo
   }
   return false;
 }
+
+// ── 技能效果映射：属性 × type → StatusEffect ─────────────────
+
+export interface SkillEffectDef {
+  kind: StatusKind;
+  target: 'player' | 'shadow';
+  turns: number;
+  value: number;
+  stackable?: boolean;
+  /** 显示在技能卡上的效果提示 */
+  hint: string;
+  /** 显示在状态栏的简短标签 */
+  label: string;
+  /** 状态栏 icon */
+  icon: string;
+}
+
+/**
+ * 属性 × type 的状态效果映射。未列入的组合沿用 v1.8.5 旧行为。
+ * - damage / crit / charge / buff 在所有属性下行为基本一致（buff 沿用"下次×1.5"）
+ * - debuff 与 attack_boost 按属性分化
+ */
+export const SKILL_EFFECT_MAP: Partial<Record<AttributeId, Partial<Record<PersonaSkill['type'], SkillEffectDef>>>> = {
+  knowledge: {
+    debuff: { kind: 'mark', target: 'shadow', turns: 2, value: 1.2, hint: '猎手标记×1.2 (2回合)', label: '标记', icon: '🎯' },
+    attack_boost: { kind: 'crit_debuff', target: 'shadow', turns: 2, value: 0.5, hint: 'Shadow 暴击率−50% (2回合)', label: '洞悉', icon: '🔭' },
+  },
+  guts: {
+    debuff: { kind: 'fear', target: 'shadow', turns: 1, value: 0.5, hint: 'Shadow 50% 概率跳过', label: '恐惧', icon: '😱' },
+    // attack_boost 保留旧行为（+15 3回合）
+  },
+  dexterity: {
+    debuff: { kind: 'poison', target: 'shadow', turns: 3, value: 3, stackable: true, hint: '中毒-3HP (3回合/可叠3层)', label: '中毒', icon: '☠️' },
+    attack_boost: { kind: 'crit_buff', target: 'player', turns: 3, value: 0.25, hint: '玩家暴击率+25% (3回合)', label: '连击', icon: '⚡' },
+  },
+  kindness: {
+    debuff: { kind: 'calm', target: 'shadow', turns: 2, value: 0.7, hint: 'Shadow 攻击×0.7 (2回合)', label: '镇静', icon: '🌿' },
+    attack_boost: { kind: 'shield', target: 'player', turns: 1, value: 0.6, hint: '护盾：吸收下次伤害60%', label: '护盾', icon: '🛡️' },
+  },
+  charm: {
+    debuff: { kind: 'beguile', target: 'shadow', turns: 1, value: 0.5, hint: 'Shadow 50% 概率自伤', label: '魅惑', icon: '💋' },
+    attack_boost: { kind: 'resonance', target: 'player', turns: 1, value: 1.8, hint: '共鸣：下次伤害×1.8', label: '共鸣', icon: '🎵' },
+  },
+};
+
+/** 按属性返回 heal 的实际回复量（统一 2 点） */
+export const HEAL_VALUE_BY_ATTR: Record<AttributeId, number> = {
+  knowledge: 2,
+  guts: 2,
+  dexterity: 2,
+  kindness: 2,
+  charm: 2,
+};
+
+/** 状态类型到展示信息（无 skill 映射时兜底使用） */
+export const STATUS_LABELS: Record<StatusKind, { label: string; icon: string }> = {
+  poison:      { label: '中毒', icon: '☠️' },
+  mark:        { label: '标记', icon: '🎯' },
+  fear:        { label: '恐惧', icon: '😱' },
+  calm:        { label: '镇静', icon: '🌿' },
+  beguile:     { label: '魅惑', icon: '💋' },
+  shield:      { label: '护盾', icon: '🛡️' },
+  crit_buff:   { label: '连击', icon: '⚡' },
+  crit_debuff: { label: '洞悉', icon: '🔭' },
+  resonance:   { label: '共鸣', icon: '🎵' },
+};
 
 export const SHADOW_RESPONSE_LINES = [
   '你以为这就能击败我？',

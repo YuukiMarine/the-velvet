@@ -5,6 +5,7 @@ import { AttributeId, TodoFrequency, WeeklyGoal, WeeklyGoalItem, WeeklyGoalType 
 import { triggerNavFeedback, triggerSuccessFeedback } from '@/utils/feedback';
 import { PageTitle } from '@/components/PageTitle';
 import { useRipple } from '@/components/RippleEffect';
+import { useLongPress } from '@/utils/useLongPress';
 import { v4 as uuidv4 } from 'uuid';
 
 const weekdayLabels = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
@@ -29,33 +30,13 @@ const ActiveTodoCard = ({
   onArchive: (id: string) => void;
   renderFrequencyBadge: (frequency: import('@/types').TodoFrequency, targetCount?: number, isLongTerm?: boolean) => string;
 }) => {
-  const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [pressing, setPressing] = useState(false);
-
-  const startPress = () => {
-    setPressing(true);
-    pressTimer.current = setTimeout(() => {
-      setPressing(false);
-      onEdit(todo.id);
-    }, 500);
-  };
-
-  const cancelPress = () => {
-    if (pressTimer.current) {
-      clearTimeout(pressTimer.current);
-      pressTimer.current = null;
-    }
-    setPressing(false);
-  };
+  const { pressing, bindings } = useLongPress(() => onEdit(todo.id));
 
   return (
     <motion.div
       animate={{ scale: pressing ? 0.97 : 1 }}
       transition={{ duration: 0.15 }}
-      onPointerDown={startPress}
-      onPointerUp={cancelPress}
-      onPointerCancel={cancelPress}
-      onPointerLeave={cancelPress}
+      {...bindings}
       className={`rounded-xl px-4 py-3 border select-none cursor-default ${
         todo.important
           ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-200/70 dark:border-amber-700/40'
@@ -142,33 +123,13 @@ const PendingWeekdayTodoCard = ({
   onDelete: (id: string) => void;
   renderFrequencyBadge: (frequency: import('@/types').TodoFrequency, targetCount?: number, isLongTerm?: boolean) => string;
 }) => {
-  const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [pressing, setPressing] = useState(false);
-
-  const startPress = () => {
-    setPressing(true);
-    pressTimer.current = setTimeout(() => {
-      setPressing(false);
-      onEdit(todo.id);
-    }, 500);
-  };
-
-  const cancelPress = () => {
-    if (pressTimer.current) {
-      clearTimeout(pressTimer.current);
-      pressTimer.current = null;
-    }
-    setPressing(false);
-  };
+  const { pressing, bindings } = useLongPress(() => onEdit(todo.id));
 
   return (
     <motion.div
       animate={{ scale: pressing ? 0.97 : 1 }}
       transition={{ duration: 0.15 }}
-      onPointerDown={startPress}
-      onPointerUp={cancelPress}
-      onPointerCancel={cancelPress}
-      onPointerLeave={cancelPress}
+      {...bindings}
       className="rounded-xl px-4 py-3 border border-gray-100 dark:border-gray-700/60 bg-gray-50/60 dark:bg-gray-800/40 opacity-75 select-none cursor-default"
     >
       <div className="flex items-start justify-between gap-2">
@@ -240,13 +201,13 @@ function getCurrentWeekRange() {
 const ATTR_IDS: AttributeId[] = ['knowledge', 'guts', 'dexterity', 'kindness', 'charm'];
 const GOAL_TYPE_LABELS: Record<WeeklyGoalType, string> = {
   activity_count: '活动次数',
-  todo_count: '待办完成',
+  todo_count: '任务完成',
   attr_points: '属性点数',
   total_points: '全属性点数',
 };
 const GOAL_TYPE_DESCS: Record<WeeklyGoalType, string> = {
   activity_count: '完成指定属性的记录次数',
-  todo_count: '完成待办任务的次数',
+  todo_count: '完成任务任务的次数',
   attr_points: '获得指定属性的点数',
   total_points: '所有属性的总获得点数',
 };
@@ -735,21 +696,8 @@ const WeeklyGoalSection = ({
   const [showClaimed, setShowClaimed] = useState<{ attrName: string; pts: number } | null>(null);
 
   // long-press state
-  const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [pressing, setPressing] = useState(false);
   const [showEditMenu, setShowEditMenu] = useState(false);
-
-  const startPress = () => {
-    setPressing(true);
-    pressTimer.current = setTimeout(() => {
-      setPressing(false);
-      setShowEditMenu(true);
-    }, 500);
-  };
-  const cancelPress = () => {
-    if (pressTimer.current) { clearTimeout(pressTimer.current); pressTimer.current = null; }
-    setPressing(false);
-  };
+  const { pressing, bindings: pressBindings } = useLongPress(() => setShowEditMenu(true));
 
   const handleCreate = async (items: WeeklyGoalItem[], reward: string) => {
     const goal: WeeklyGoal = {
@@ -800,7 +748,7 @@ const WeeklyGoalSection = ({
     const attrName = g.attribute ? (settings.attributeNames[g.attribute as keyof typeof settings.attributeNames] || g.attribute) : '';
     switch (g.type) {
       case 'activity_count': return `完成 ${g.target} 次${attrName}活动`;
-      case 'todo_count': return `完成 ${g.target} 次待办`;
+      case 'todo_count': return `完成 ${g.target} 次任务`;
       case 'attr_points': return `获得 ${g.target} 点${attrName}`;
       case 'total_points': return `获得 ${g.target} 点总点数`;
     }
@@ -865,10 +813,7 @@ const WeeklyGoalSection = ({
             ? 'border-amber-300 dark:border-amber-700'
             : 'border-gray-100 dark:border-gray-800'
         }`}
-        onPointerDown={startPress}
-        onPointerUp={cancelPress}
-        onPointerCancel={cancelPress}
-        onPointerLeave={cancelPress}
+        {...pressBindings}
       >
         <div className="flex items-center justify-between px-5 pt-4 pb-2">
           <div className="flex items-center gap-2">
@@ -1007,7 +952,7 @@ export const Todos = () => {
   const activeTodos = useMemo(() => {
     const active = todos.filter(t => {
       if (!t.isActive) return false;
-      // 未来启用日期的待办不出现在今日待办
+      // 未来启用日期的任务不出现在今日任务
       if (t.startDate && t.startDate > todayDateKey) return false;
       const matchesWeekday = !t.weekdays || t.weekdays.length === 0 || t.weekdays.includes(todayWeekday);
       return matchesWeekday;
@@ -1020,7 +965,7 @@ export const Todos = () => {
     });
   }, [todos, todayWeekday, todayDateKey]);
 
-  /** 未到日期的待办：startDate 在未来，或 isActive 但今天不是指定的星期几 */
+  /** 未到日期的任务：startDate 在未来，或 isActive 但今天不是指定的星期几 */
   const pendingDateTodos = useMemo(() =>
     todos.filter(t =>
       t.isActive && (
@@ -1030,12 +975,12 @@ export const Todos = () => {
     ),
   [todos, todayWeekday, todayDateKey]);
 
-  /** 已完成的归档待办（按完成时间倒序） */
+  /** 已完成的归档任务（按完成时间倒序） */
   const completedArchivedTodos = useMemo(() =>
     todos.filter(t => !t.isActive && t.completedAt)
       .sort((a, b) => new Date(b.completedAt!).getTime() - new Date(a.completedAt!).getTime()),
   [todos]);
-  /** 手动归档（未启用）的待办 */
+  /** 手动归档（未启用）的任务 */
   const inactiveArchivedTodos = useMemo(() => todos.filter(t => !t.isActive && !t.completedAt), [todos]);
   const [expandCompleted, setExpandCompleted] = useState(false);
 
@@ -1157,7 +1102,7 @@ export const Todos = () => {
       className="space-y-6"
     >
       <div className="flex items-center justify-between">
-        <PageTitle title="待办清单" en="To-do" />
+        <PageTitle title="任务清单" en="To-do" />
         <motion.button
           whileTap={{ scale: 0.95 }}
           onClick={(e) => {
@@ -1170,7 +1115,7 @@ export const Todos = () => {
           className="relative overflow-hidden px-4 py-2 bg-primary text-white rounded-xl text-sm font-semibold shadow-sm shadow-primary/20"
         >
           {addRipples}
-          + 添加待办
+          + 添加任务
         </motion.button>
       </div>
 
@@ -1186,10 +1131,10 @@ export const Todos = () => {
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* 今日待办 */}
+        {/* 今日任务 */}
         <div className="rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden">
           <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-gray-100 dark:border-gray-800">
-            <h3 className="font-bold text-gray-900 dark:text-white">今日待办</h3>
+            <h3 className="font-bold text-gray-900 dark:text-white">今日任务</h3>
             <span className="text-xs text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-800 px-2.5 py-1 rounded-full">
               {activeTodos.length} 项
             </span>
@@ -1215,7 +1160,7 @@ export const Todos = () => {
             })}
             {activeTodos.length === 0 && (
               <div className="text-center text-sm text-gray-400 dark:text-gray-500 py-8">
-                还没有待办，添加一个开始吧
+                还没有任务，添加一个开始吧
               </div>
             )}
           </div>
@@ -1414,7 +1359,7 @@ export const Todos = () => {
                             });
                           }}
                           className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-primary hover:bg-primary/20 transition-colors"
-                          title="按此配置新建待办"
+                          title="按此配置新建任务"
                         >
                           <svg viewBox="0 0 16 16" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="1.5">
                             <path d="M2.5 8A5.5 5.5 0 1 1 13 5.5" strokeLinecap="round" />
@@ -1460,7 +1405,7 @@ export const Todos = () => {
               className="bg-white dark:bg-gray-900 rounded-2xl p-6 max-w-lg w-full shadow-2xl max-h-[90vh] overflow-y-auto"
             >
               <h3 className="text-lg font-bold mb-5 text-gray-900 dark:text-white">
-                {editingTodoId ? '编辑待办' : '添加待办'}
+                {editingTodoId ? '编辑任务' : '添加任务'}
               </h3>
 
               <div className="space-y-4">
@@ -1482,7 +1427,7 @@ export const Todos = () => {
                   />
                   <div>
                     <span className="text-sm font-medium text-amber-700 dark:text-amber-300">⭐ 标记为重要</span>
-                    <p className="text-xs text-amber-600/70 dark:text-amber-400/70 mt-0.5">重要待办将在首页置顶显示，并记录在历史中</p>
+                    <p className="text-xs text-amber-600/70 dark:text-amber-400/70 mt-0.5">重要任务将在首页置顶显示，并记录在历史中</p>
                   </div>
                 </label>
 
@@ -1752,7 +1697,7 @@ export const Todos = () => {
                       </button>
                     )}
                   </div>
-                  <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">设定后，该待办在指定日期前不会出现在今日待办中</p>
+                  <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">设定后，该任务在指定日期前不会出现在今日任务中</p>
                 </div>
               </div>
 

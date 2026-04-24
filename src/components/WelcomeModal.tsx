@@ -1,8 +1,11 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAppStore } from '@/store';
+import { useCloudStore } from '@/store/cloud';
 import { useState, useRef } from 'react';
 import { AttributeId, AttributeNames } from '@/types';
 import { isNative } from '@/utils/native';
+import { LoginModal } from '@/components/auth/LoginModal';
+import { syncOnLogin } from '@/services/sync';
 
 // ── Constants ─────────────────────────────────────────────────────────
 
@@ -71,16 +74,16 @@ const GUIDE_SLIDES = [
   },
   {
     icon: '✅',
-    title: '待办事项',
-    subtitle: 'Todos — 待办',
+    title: '任务',
+    subtitle: 'Todos — 任务',
     gradient: 'linear-gradient(135deg, rgba(16,185,129,0.14) 0%, rgba(20,184,166,0.07) 100%)',
     border: 'rgba(16,185,129,0.22)',
     accent: '#6ee7b7',
     points: [
-      { icon: '🎯', text: '创建待办时绑定属性与奖励点数，完成即自动加点' },
+      { icon: '🎯', text: '创建任务时绑定属性与奖励点数，完成即自动加点' },
       { icon: '🔁', text: '支持「每日重复」与「长期目标」两种模式，养成习惯' },
       { icon: '📊', text: '可设置目标次数，记录每日累计进度' },
-      { icon: '📌', text: '标记为重要的待办完成时会在历史记录中特别标注' },
+      { icon: '📌', text: '标记为重要的任务完成时会在历史记录中特别标注' },
     ],
   },
   {
@@ -95,6 +98,21 @@ const GUIDE_SLIDES = [
       { icon: '⚡', text: '技能与属性等级绑定，当等级达标后可在「技能」页解锁' },
       { icon: '✨', text: '解锁技能后，对应属性的加点会获得额外百分比加成（技能 Buff）' },
       { icon: '📈', text: '「统计」页查看成长曲线、属性分布与连续打卡天数' },
+    ],
+  },
+  {
+    icon: '🤝',
+    title: '同伴',
+    subtitle: 'Confidant — 羁绊系统',
+    gradient: 'linear-gradient(135deg, rgba(236,72,153,0.14) 0%, rgba(168,85,247,0.07) 100%)',
+    border: 'rgba(236,72,153,0.25)',
+    accent: '#f9a8d4',
+    points: [
+      { icon: '🃏', text: '用 22 张大阿卡纳塔罗代表你身边的重要的人或关系，在「同伴」页创建羁绊' },
+      { icon: '💬', text: '记录与同伴的互动后亲密度增长，等级提升解锁羁绊战斗道具与日常 Buff' },
+      { icon: '✦', text: '每天可向同伴发起祈愿（4AM 重置），获得 SP；互相祈愿额外 +1 SP 反射' },
+      { icon: '☁', text: '登录后输入对方 UserID 可邀请在线好友缔结 COOP；亲密度与历史双向同步' },
+      { icon: '🌟', text: '在线同伴可在 GUEST PROFILE 中查看对方的等级、属性、总点数与已解锁数' },
     ],
   },
   {
@@ -379,8 +397,10 @@ const PRIMARY_BTN_STYLE = {
 
 export const WelcomeModal = () => {
   const { user, createUser, importData } = useAppStore();
+  const cloudEnabled = useCloudStore(s => s.cloudEnabled);
 
   const [step, setStep] = useState<Step>('welcome');
+  const [showLoginModal, setShowLoginModal] = useState(false);
   const [name, setName] = useState('');
   const [selectedPreset, setSelectedPreset] = useState<number | null>(null);
   const [attrNames, setAttrNames] = useState<AttributeNames>({
@@ -573,7 +593,7 @@ export const WelcomeModal = () => {
                   开始设定 →
                 </motion.button>
 
-                {/* Import link */}
+                {/* Guest entry — 进入数据管理（云登录 + 本地备份导入合并一屏） */}
                 <button
                   onClick={() => setStep('import')}
                   className="text-xs transition-colors"
@@ -599,17 +619,71 @@ export const WelcomeModal = () => {
                 exit={{ opacity: 0, y: -16 }}
                 transition={{ duration: 0.3 }}
               >
+                {/* 云端登录入口（醒目，放在最上方） */}
+                {cloudEnabled && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.1 }}
+                    className="mb-6"
+                  >
+                    <motion.button
+                      whileHover={{
+                        scale: 1.02,
+                        boxShadow: '0 10px 40px rgba(124,58,237,0.5)',
+                      }}
+                      whileTap={{ scale: 0.98 }}
+                      onClick={() => setShowLoginModal(true)}
+                      className="w-full p-4 rounded-2xl text-left transition-shadow relative overflow-hidden"
+                      style={{
+                        background: 'linear-gradient(135deg, #7c3aed, #6d28d9, #4f46e5)',
+                        boxShadow: '0 6px 24px rgba(124,58,237,0.4)',
+                        color: '#fff',
+                      }}
+                    >
+                      {/* 装饰光晕 */}
+                      <div
+                        className="absolute -top-6 -right-6 w-24 h-24 rounded-full pointer-events-none"
+                        style={{
+                          background:
+                            'radial-gradient(circle, rgba(255,255,255,0.25), transparent 70%)',
+                        }}
+                      />
+                      <div className="flex items-center gap-3 relative">
+                        <div className="text-3xl">☁️</div>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-bold text-base mb-0.5">登录云端同步</div>
+                          <div className="text-xs" style={{ color: 'rgba(255,255,255,0.78)' }}>
+                            邮箱验证码登录，自动拉取你的所有数据
+                          </div>
+                        </div>
+                        <div className="text-xl opacity-70">→</div>
+                      </div>
+                    </motion.button>
+                  </motion.div>
+                )}
+
+                {/* 分隔：本地备份导入区 */}
                 <div className="text-center mb-6">
+                  {cloudEnabled && (
+                    <div className="flex items-center gap-3 mb-5">
+                      <div className="flex-1 h-px" style={{ background: 'rgba(255,255,255,0.08)' }} />
+                      <span className="text-[10px] tracking-[0.3em]" style={{ color: 'rgba(255,255,255,0.3)' }}>
+                        OR
+                      </span>
+                      <div className="flex-1 h-px" style={{ background: 'rgba(255,255,255,0.08)' }} />
+                    </div>
+                  )}
                   <motion.div
                     animate={{ rotate: [0, -8, 8, 0] }}
                     transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
-                    className="text-5xl mb-3"
+                    className="text-4xl mb-2"
                   >
                     🗝️
                   </motion.div>
-                  <h2 className="text-2xl font-bold text-white mb-1">导入备份</h2>
-                  <p className="text-sm" style={{ color: 'rgba(255,255,255,0.35)' }}>
-                    粘贴备份内容或选择备份文件，恢复你的数据
+                  <h2 className="text-lg font-bold text-white mb-1">从本地备份导入</h2>
+                  <p className="text-xs" style={{ color: 'rgba(255,255,255,0.35)' }}>
+                    粘贴备份内容或选择备份文件
                   </p>
                 </div>
 
@@ -1178,6 +1252,23 @@ export const WelcomeModal = () => {
           </AnimatePresence>
         </div>
       </div>
+
+      {/* 云端登录弹窗 —— 首屏"我已经是客人了"入口 */}
+      <LoginModal
+        isOpen={showLoginModal}
+        onClose={() => setShowLoginModal(false)}
+        origin="welcome"
+        onSuccess={async () => {
+          try {
+            const result = await syncOnLogin();
+            if (result === 'conflict') {
+              useCloudStore.getState().setConflictPending(true);
+            }
+          } catch {
+            /* 错误已由 sync 内部记录到 cloudStore.lastError */
+          }
+        }}
+      />
     </div>
   );
 };

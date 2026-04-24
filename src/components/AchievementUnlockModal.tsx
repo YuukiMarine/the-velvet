@@ -1,6 +1,7 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useEffect, useRef, useState } from 'react';
 import { triggerLevelFeedback } from '@/utils/feedback';
+import { useBackHandler } from '@/utils/useBackHandler';
 
 interface AchievementUnlockModalProps {
   isOpen: boolean;
@@ -9,6 +10,7 @@ interface AchievementUnlockModalProps {
 }
 
 export const AchievementUnlockModal = ({ isOpen, onClose, achievementTitle }: AchievementUnlockModalProps) => {
+  useBackHandler(isOpen, onClose);
   // 粒子只生成一次，避免每次 isOpen 变化重新计算
   const [particles] = useState(() =>
     Array.from({ length: 16 }, (_, i) => ({

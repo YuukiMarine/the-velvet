@@ -760,7 +760,7 @@ export const Activities = () => {
           ))}
           {filterMethod !== 'all' && (
             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs bg-primary/10 text-primary font-medium">
-              {filterMethod === 'local' ? '手动' : '待办'}
+              {filterMethod === 'local' ? '手动' : '任务'}
               <button onClick={() => setFilterMethod('all')} className="ml-0.5 opacity-60 hover:opacity-100">✕</button>
             </span>
           )}
@@ -845,7 +845,7 @@ export const Activities = () => {
               <div className="px-4 py-3 border-b border-gray-50 dark:border-gray-800">
                 <p className="text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-2">来源</p>
                 <div className="flex gap-1.5">
-                  {[{ key: 'all', label: '全部' }, { key: 'local', label: '手动记录' }, { key: 'todo', label: '待办完成' }, { key: 'battle', label: '战斗奖励' }].map(({ key, label }) => (
+                  {[{ key: 'all', label: '全部' }, { key: 'local', label: '手动记录' }, { key: 'todo', label: '任务完成' }, { key: 'battle', label: '战斗奖励' }].map(({ key, label }) => (
                     <button
                       key={key}
                       onClick={() => setFilterMethod(key)}
@@ -958,7 +958,14 @@ export const Activities = () => {
                                   className="space-y-4 overflow-hidden"
                                 >
                                   {monthGroup.days.map(dayGroup => (
-                                    <div key={dayGroup.dayKey}>
+                                    <div
+                                      key={dayGroup.dayKey}
+                                      // content-visibility:auto 让浏览器在该日块滚出视口时跳过渲染/布局；
+                                      // contain-intrinsic-size 给出占位尺寸，防止滚动条跳动。
+                                      // 单月展开后含大量活动时，可显著降低首屏工作量（支持度：Chrome/Edge/Safari 17.2+；
+                                      // 不支持的浏览器会忽略这两条属性，视觉与功能完全一致）。
+                                      style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 220px' }}
+                                    >
                                       {/* 日期标签 */}
                                       <div className={`text-xs font-semibold mb-2 px-1 ${
                                         dayGroup.dayKey === todayKey
@@ -979,7 +986,8 @@ export const Activities = () => {
                                           const isTodo = activity.method === 'todo';
                                           const isWeeklyGoal = activity.category === 'weekly_goal';
                                           const isShadowDefeat = activity.category === 'shadow_defeat' || activity.method === 'battle';
-                                          const isSpecial = isAchievement || isSkill || isLevelUp;
+                                          const isConfidant = activity.category === 'confidant';
+                                          const isSpecial = isAchievement || isSkill || isLevelUp || isConfidant;
 
                                           // accent bar color based on type
                                           const accentColor = isAchievement
@@ -990,6 +998,8 @@ export const Activities = () => {
                                             ? 'bg-orange-400'
                                             : isShadowDefeat
                                             ? 'bg-red-500'
+                                            : isConfidant
+                                            ? 'bg-indigo-400'
                                             : isTodo
                                             ? 'bg-sky-400'
                                             : isImportant
@@ -1068,6 +1078,11 @@ export const Activities = () => {
                                                     {/* 特殊 / 来源标签 */}
                                                     {(isSpecial || isTodo || isWeeklyGoal || isShadowDefeat) && (
                                                       <div className="mt-2.5 flex flex-wrap gap-1.5">
+                                                        {isConfidant && (
+                                                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-600 dark:text-indigo-300 bg-indigo-100/80 dark:bg-indigo-900/30 px-2 py-0.5 rounded-md">
+                                                            ✧ 同伴
+                                                          </span>
+                                                        )}
                                                         {isShadowDefeat && (
                                                           <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-red-700 dark:text-red-300 bg-red-100/80 dark:bg-red-900/30 px-2 py-0.5 rounded-md">
                                                             👁 Shadow击破{isImportant ? ' ★首杀' : ''}
@@ -1075,7 +1090,7 @@ export const Activities = () => {
                                                         )}
                                                         {isTodo && (
                                                           <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-sky-600 dark:text-sky-300 bg-sky-100/80 dark:bg-sky-900/30 px-2 py-0.5 rounded-md">
-                                                            ✓ 待办
+                                                            ✓ 任务
                                                           </span>
                                                         )}
                                                         {isWeeklyGoal && (

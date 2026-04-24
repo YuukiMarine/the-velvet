@@ -1,4 +1,6 @@
 import { motion, AnimatePresence } from 'framer-motion';
+import { AttributeId } from '@/types';
+import { SHADOW_ACCENT_BY_WEAKNESS } from '@/constants';
 
 interface DamageNumber {
   id: number;
@@ -12,9 +14,17 @@ interface Props {
   isWeak: boolean;
   offBalance: boolean;
   damageNumbers: DamageNumber[];
+  /** 弱点属性 — 用于眼睛与发光的染色，保留原红色为后备 */
+  weakAttribute?: AttributeId;
 }
 
-function Lv1Path() {
+interface AccentProps {
+  eye: string;
+  eyeSecondary: string;
+  eyeTertiary: string;
+}
+
+function Lv1Path({ eye }: AccentProps) {
   return (
     <g>
       {/* head */}
@@ -32,14 +42,14 @@ function Lv1Path() {
       {/* legs */}
       <rect x="80" y="134" width="16" height="35" rx="6" fill="#111"/>
       <rect x="104" y="134" width="16" height="35" rx="6" fill="#111"/>
-      {/* eyes (glowing red) */}
-      <circle cx="91" cy="52" r="5" fill="#ef4444" opacity="0.9"/>
-      <circle cx="109" cy="52" r="5" fill="#ef4444" opacity="0.9"/>
+      {/* eyes (accent-colored glow) */}
+      <circle cx="91" cy="52" r="5" fill={eye} opacity="0.9"/>
+      <circle cx="109" cy="52" r="5" fill={eye} opacity="0.9"/>
     </g>
   );
 }
 
-function Lv3Path() {
+function Lv3Path({ eye, eyeSecondary }: AccentProps) {
   return (
     <g>
       {/* wings */}
@@ -57,9 +67,9 @@ function Lv3Path() {
       <polygon points="90,34 84,12 95,32" fill="#0d0010"/>
       <polygon points="110,34 116,12 105,32" fill="#0d0010"/>
       {/* 3 eyes */}
-      <circle cx="89" cy="54" r="6" fill="#ef4444" opacity="0.95"/>
-      <circle cx="111" cy="54" r="6" fill="#ef4444" opacity="0.95"/>
-      <circle cx="100" cy="68" r="4" fill="#dc2626" opacity="0.7"/>
+      <circle cx="89" cy="54" r="6" fill={eye} opacity="0.95"/>
+      <circle cx="111" cy="54" r="6" fill={eye} opacity="0.95"/>
+      <circle cx="100" cy="68" r="4" fill={eyeSecondary} opacity="0.7"/>
       {/* claws on body sides */}
       <path d="M70,120 Q55,115 50,130 Q60,125 70,135Z" fill="#111"/>
       <path d="M130,120 Q145,115 150,130 Q140,125 130,135Z" fill="#111"/>
@@ -69,7 +79,7 @@ function Lv3Path() {
   );
 }
 
-function Lv5Path() {
+function Lv5Path({ eye, eyeSecondary, eyeTertiary }: AccentProps) {
   return (
     <g>
       {/* outer aura/tentacles */}
@@ -92,11 +102,11 @@ function Lv5Path() {
       {/* head (large, merged with body) */}
       <ellipse cx="100" cy="68" rx="32" ry="34" fill="#111"/>
       {/* 5 eyes */}
-      <circle cx="86" cy="60" r="7" fill="#ef4444"/>
-      <circle cx="114" cy="60" r="7" fill="#ef4444"/>
-      <circle cx="100" cy="75" r="5" fill="#dc2626"/>
-      <circle cx="80" cy="80" r="3" fill="#991b1b" opacity="0.6"/>
-      <circle cx="120" cy="80" r="3" fill="#991b1b" opacity="0.6"/>
+      <circle cx="86" cy="60" r="7" fill={eye}/>
+      <circle cx="114" cy="60" r="7" fill={eye}/>
+      <circle cx="100" cy="75" r="5" fill={eyeSecondary}/>
+      <circle cx="80" cy="80" r="3" fill={eyeTertiary} opacity="0.6"/>
+      <circle cx="120" cy="80" r="3" fill={eyeTertiary} opacity="0.6"/>
       {/* armor plating */}
       <path d="M80,90 Q100,82 120,90 Q115,100 100,97 Q85,100 80,90Z" fill="#0d0010"/>
       {/* lower body with spikes */}
@@ -108,14 +118,39 @@ function Lv5Path() {
   );
 }
 
-export function ShadowSVG({ level, isHurt, isWeak, offBalance, damageNumbers }: Props) {
+/** 将 "#RRGGBB" 转为 rgba 字符串；若已是 rgba 则原样返回 */
+function hexToRgba(hex: string, alpha: number): string {
+  if (hex.startsWith('rgba')) return hex;
+  const h = hex.replace('#', '');
+  const r = parseInt(h.substring(0, 2), 16);
+  const g = parseInt(h.substring(2, 4), 16);
+  const b = parseInt(h.substring(4, 6), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+export function ShadowSVG({ level, isHurt, isWeak, offBalance, damageNumbers, weakAttribute }: Props) {
   const svgSize = level >= 5 ? 180 : level >= 3 ? 160 : 140;
 
+  // 未指定弱点时保留原红色外观
+  const accent = weakAttribute
+    ? SHADOW_ACCENT_BY_WEAKNESS[weakAttribute]
+    : { eye: '#ef4444', glow: 'rgba(239,68,68,0.55)', glitch: 'rgba(239,68,68,0.65)' };
+
+  const accentProps: AccentProps = {
+    eye: accent.eye,
+    eyeSecondary: hexToRgba(accent.eye, 0.82),
+    eyeTertiary: hexToRgba(accent.eye, 0.55),
+  };
+
   const svgPaths = level <= 2
-    ? <Lv1Path />
+    ? <Lv1Path {...accentProps} />
     : level <= 4
-    ? <Lv3Path />
-    : <Lv5Path />;
+    ? <Lv3Path {...accentProps} />
+    : <Lv5Path {...accentProps} />;
+
+  // 悬浮发光 / 暴伤数字颜色均跟随弱点属性
+  const normalGlow = `drop-shadow(0 0 8px ${accent.glow})`;
+  const hurtGlow = `drop-shadow(0 0 8px ${accent.glow}) brightness(2.5) saturate(0.3)`;
 
   return (
     <div className="relative flex flex-col items-center justify-center h-full">
@@ -174,9 +209,7 @@ export function ShadowSVG({ level, isHurt, isWeak, offBalance, damageNumbers }: 
             width={svgSize}
             height={svgSize}
             style={{
-              filter: isHurt
-                ? 'drop-shadow(0 0 8px rgba(239,68,68,0.4)) brightness(2.5) saturate(0.3)'
-                : 'drop-shadow(0 0 8px rgba(239,68,68,0.4))',
+              filter: isHurt ? hurtGlow : normalGlow,
               transition: 'filter 0.08s ease-out',
             }}
           >
@@ -184,10 +217,10 @@ export function ShadowSVG({ level, isHurt, isWeak, offBalance, damageNumbers }: 
           </svg>
         </div>
 
-        {/* Glitch duplicate (red-shifted) */}
+        {/* Glitch duplicate (accent-shifted) */}
         <div style={{
           position: 'absolute', inset: 0, animation: 'glitch-2 4s infinite',
-          zIndex: 1, filter: 'drop-shadow(2px 0 0 rgba(239,68,68,0.6)) hue-rotate(180deg)',
+          zIndex: 1, filter: `drop-shadow(2px 0 0 ${accent.glitch}) hue-rotate(180deg)`,
         }}>
           <svg
             viewBox="0 0 200 200"
@@ -226,7 +259,7 @@ export function ShadowSVG({ level, isHurt, isWeak, offBalance, damageNumbers }: 
         )}
       </AnimatePresence>
 
-      {/* WEAK!! flash */}
+      {/* WEAK!! flash — 跟随弱点色 */}
       <AnimatePresence>
         {isWeak && (
           <motion.div
@@ -237,8 +270,8 @@ export function ShadowSVG({ level, isHurt, isWeak, offBalance, damageNumbers }: 
             style={{
               position: 'absolute', top: '50%', left: '50%',
               transform: 'translate(-50%, -50%)',
-              color: '#ef4444', fontWeight: 900, fontSize: 28,
-              textShadow: '0 0 20px #ef4444, 0 0 40px #ef4444',
+              color: accent.eye, fontWeight: 900, fontSize: 28,
+              textShadow: `0 0 20px ${accent.eye}, 0 0 40px ${accent.eye}`,
               zIndex: 10, pointerEvents: 'none', whiteSpace: 'nowrap',
             }}
           >
@@ -259,10 +292,10 @@ export function ShadowSVG({ level, isHurt, isWeak, offBalance, damageNumbers }: 
             style={{
               position: 'absolute',
               top: '40%', left: `${45 + (Math.random() - 0.5) * 20}%`,
-              color: dn.isWeak ? '#ef4444' : '#fbbf24',
+              color: dn.isWeak ? accent.eye : '#fbbf24',
               fontWeight: 900,
               fontSize: dn.isWeak ? 28 : 22,
-              textShadow: dn.isWeak ? '0 0 12px #ef4444' : '0 0 8px #f59e0b',
+              textShadow: dn.isWeak ? `0 0 12px ${accent.eye}` : '0 0 8px #f59e0b',
               pointerEvents: 'none', zIndex: 10,
               letterSpacing: '-0.02em',
             }}

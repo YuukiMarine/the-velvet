@@ -56,14 +56,32 @@ const SettingsIcon = ({ filled }: { filled?: boolean }) => (
   </svg>
 );
 
-// 5个核心导航项（统计并入首页，技能并入成就）
+const ConfidantIcon = ({ filled }: { filled?: boolean }) => (
+  <svg viewBox="0 0 24 24" fill="none" strokeWidth={filled ? 0 : 1.8} stroke="currentColor" className="w-6 h-6">
+    {filled ? (
+      <path
+        fillRule="evenodd"
+        clipRule="evenodd"
+        d="M11.645 20.91l-.007-.003-.022-.012a15.247 15.247 0 01-.383-.218 25.18 25.18 0 01-4.244-3.17C4.688 15.36 2.25 12.174 2.25 8.25 2.25 5.322 4.714 3 7.688 3A5.5 5.5 0 0112 5.052 5.5 5.5 0 0116.313 3c2.973 0 5.437 2.322 5.437 5.25 0 3.925-2.438 7.111-4.739 9.256a25.175 25.175 0 01-4.244 3.17 15.247 15.247 0 01-.383.219l-.022.012-.007.003-.003.001a.752.752 0 01-.704 0l-.003-.001z"
+        fill="currentColor"
+      />
+    ) : (
+      <path strokeLinecap="round" strokeLinejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z" />
+    )}
+  </svg>
+);
+
+// 5 个核心导航项（成就已收纳到「设置」中作为入口行；技能并入成就）
 const navItems = [
   { id: 'dashboard', label: '首页', Icon: HomeIcon },
-  { id: 'todos', label: '待办', Icon: CheckIcon },
+  { id: 'todos', label: '任务', Icon: CheckIcon },
   { id: 'activities', label: '记录', Icon: PenIcon },
-  { id: 'achievements', label: '成就', Icon: TrophyIcon },
+  { id: 'cooperation', label: '同伴', Icon: ConfidantIcon },
   { id: 'settings', label: '设置', Icon: SettingsIcon },
 ];
+
+// 导出供 Settings 页面复用图标（成就入口行）
+export { TrophyIcon };
 
 export const Sidebar = () => {
   const { currentPage, setCurrentPage } = useAppStore();
@@ -129,45 +147,57 @@ export const BottomNav = () => {
       initial={{ y: 100 }}
       animate={{ y: 0 }}
       transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-      className="md:hidden fixed bottom-0 left-0 right-0 bg-white/95 dark:bg-gray-900/95 backdrop-blur-md border-t border-gray-100 dark:border-gray-800 z-50"
-      style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+      // 拆成两层：
+      //   · 上层：图标区 —— 保留 backdrop-blur + 半透明（原有视觉）
+      //   · 下层：iOS Home Bar 安全区 —— 纯色、无 blur，规避 iOS Safari 在
+      //     `backdrop-filter + padding-bottom:env(safe-area-inset-bottom)` 组合下
+      //     对 padding 区渲染不一致的已知 bug（之前那条"色调不同的空档"）
+      className="md:hidden fixed bottom-0 left-0 right-0 z-50 flex flex-col"
     >
-      <div className="flex items-center h-16">
-        {navItems.map((item) => {
-          const active = currentPage === item.id;
-          return (
-            <motion.button
-              key={item.id}
-              whileTap={{ scale: 0.88 }}
-              onClick={() => {
-                triggerNavFeedback();
-                setCurrentPage(item.id);
-              }}
-              className={`relative flex flex-col items-center justify-center flex-1 h-full gap-1 cursor-pointer transition-colors duration-150 ${
-                active ? 'text-primary' : 'text-gray-400 dark:text-gray-500'
-              }`}
-            >
-              <AnimatePresence>
-                {active && (
-                  <motion.div
-                    key={item.id}
-                    initial={{ opacity: 0, scaleX: 0 }}
-                    animate={{ opacity: 1, scaleX: 1 }}
-                    exit={{ opacity: 0, scaleX: 0 }}
-                    transition={{ duration: 0.18 }}
-                    className="absolute top-0 w-10 h-0.5 bg-primary rounded-full"
-                    style={{ left: '50%', marginLeft: '-20px', transformOrigin: 'center' }}
-                  />
-                )}
-              </AnimatePresence>
-              <item.Icon filled={active} />
-              <span className={`text-[10px] leading-none ${active ? 'font-semibold' : 'font-normal'}`}>
-                {item.label}
-              </span>
-            </motion.button>
-          );
-        })}
+      <div className="bg-white/95 dark:bg-gray-900/95 backdrop-blur-md border-t border-gray-100 dark:border-gray-800">
+        <div className="flex items-center h-16">
+          {navItems.map((item) => {
+            const active = currentPage === item.id;
+            return (
+              <motion.button
+                key={item.id}
+                whileTap={{ scale: 0.88 }}
+                onClick={() => {
+                  triggerNavFeedback();
+                  setCurrentPage(item.id);
+                }}
+                className={`relative flex flex-col items-center justify-center flex-1 h-full gap-1 cursor-pointer transition-colors duration-150 ${
+                  active ? 'text-primary' : 'text-gray-400 dark:text-gray-500'
+                }`}
+              >
+                <AnimatePresence>
+                  {active && (
+                    <motion.div
+                      key={item.id}
+                      initial={{ opacity: 0, scaleX: 0 }}
+                      animate={{ opacity: 1, scaleX: 1 }}
+                      exit={{ opacity: 0, scaleX: 0 }}
+                      transition={{ duration: 0.18 }}
+                      className="absolute top-0 w-10 h-0.5 bg-primary rounded-full"
+                      style={{ left: '50%', marginLeft: '-20px', transformOrigin: 'center' }}
+                    />
+                  )}
+                </AnimatePresence>
+                <item.Icon filled={active} />
+                <span className={`text-[10px] leading-none ${active ? 'font-semibold' : 'font-normal'}`}>
+                  {item.label}
+                </span>
+              </motion.button>
+            );
+          })}
+        </div>
       </div>
+      {/* Home Bar 安全区垫底：无 Home Bar 的设备 env() 为 0，此 div 高 0px，不影响布局 */}
+      <div
+        aria-hidden
+        className="bg-white dark:bg-gray-900"
+        style={{ height: 'env(safe-area-inset-bottom)' }}
+      />
     </motion.nav>
   );
 };

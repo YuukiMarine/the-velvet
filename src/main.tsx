@@ -38,7 +38,7 @@ class ErrorBoundary extends React.Component<
                 {this.state.error?.stack}
               </pre>
             </details>
-            <button 
+            <button
               onClick={() => window.location.reload()}
               className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
             >
@@ -53,11 +53,31 @@ class ErrorBoundary extends React.Component<
   }
 }
 
+// ── 路径分叉：/reset-password 走独立的轻量页面，不加载主 App ────────────────
+// 从 PB 邮件点进来的场景：token 在 ?token= 中，前端调用 pb 的 confirmPasswordReset。
+// 独立路径可以跳过 initializeApp / IndexedDB / 背景动画等一整套主 App 初始化，
+// 避免"邮箱点进来 → 先触发一次完整登录态加载 → 再渲染重置表单"的连锁副作用。
+const rootEl = document.getElementById('root')!;
+const isResetPasswordPath = typeof window !== 'undefined'
+  && window.location.pathname === '/reset-password';
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <ErrorBoundary>
-      <App />
-    </ErrorBoundary>
-  </React.StrictMode>,
-)
+if (isResetPasswordPath) {
+  // 动态引入：正常场景不会被加载，拆分成独立 chunk
+  import('./pages/ResetPasswordPage').then(({ ResetPasswordPage }) => {
+    ReactDOM.createRoot(rootEl).render(
+      <React.StrictMode>
+        <ErrorBoundary>
+          <ResetPasswordPage />
+        </ErrorBoundary>
+      </React.StrictMode>,
+    );
+  });
+} else {
+  ReactDOM.createRoot(rootEl).render(
+    <React.StrictMode>
+      <ErrorBoundary>
+        <App />
+      </ErrorBoundary>
+    </React.StrictMode>,
+  );
+}

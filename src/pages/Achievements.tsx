@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAppStore } from '@/store';
 import { Achievement, AttributeId } from '@/types';
 import { triggerNavFeedback } from '@/utils/feedback';
+import { PageTitle } from '@/components/PageTitle';
 
 type ConditionType = Achievement['condition']['type'];
 
@@ -83,7 +84,7 @@ const AchievementFormFields = ({
             <option value="consecutive_days">连续天数</option>
             <option value="attribute_level">属性等级</option>
             <option value="keyword_match">关键字匹配</option>
-            <option value="todo_completions">完成待办次数</option>
+            <option value="todo_completions">完成任务次数</option>
           </select>
 
           {isAttrLevel ? (
@@ -1200,6 +1201,7 @@ const AchievementsTab = () => {
 ───────────────────────────────────────────── */
 export const Achievements = () => {
   const [activeTab, setActiveTab] = useState<'achievements' | 'skills'>('achievements');
+  const setCurrentPage = useAppStore(s => s.setCurrentPage);
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -1207,6 +1209,22 @@ export const Achievements = () => {
       exit={{ opacity: 0 }}
       className="space-y-4"
     >
+      {/* 顶部标题 + 返回按钮（与其他子页保持一致的视觉） */}
+      <div className="flex items-start justify-between gap-3">
+        <button
+          onClick={() => { triggerNavFeedback(); setCurrentPage('settings'); }}
+          className="flex-shrink-0 mt-1 w-9 h-9 -ml-1 rounded-xl flex items-center justify-center text-gray-600 dark:text-gray-300 hover:bg-black/5 dark:hover:bg-white/10 active:scale-95 transition"
+          aria-label="返回"
+        >
+          <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
+            <path d="M15 18l-6-6 6-6" />
+          </svg>
+        </button>
+        <div className="flex-1">
+          <PageTitle title="成就" en="Achievements" enOffset={{ right: -28 }} />
+        </div>
+      </div>
+
       {/* Tab bar */}
       <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-800 rounded-2xl p-1">
         {([
