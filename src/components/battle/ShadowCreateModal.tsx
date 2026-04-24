@@ -5,6 +5,8 @@ import { Shadow, AttributeId } from '@/types';
 import { generateShadow } from '@/utils/battleAI';
 import { SHADOW_LEVEL_CONFIG } from '@/constants';
 import { playSound } from '@/utils/feedback';
+import { ShadowWarningOverlay } from '@/components/battle/ShadowWarningOverlay';
+import { useBackHandler } from '@/utils/useBackHandler';
 import { v4 as uuidv4 } from 'uuid';
 
 interface Props {
@@ -20,6 +22,17 @@ export function ShadowCreateModal({ isOpen, onClose }: Props) {
   const [manualName, setManualName] = useState('');
   const [manualWeak, setManualWeak] = useState<AttributeId>('knowledge');
   const [error, setError] = useState('');
+  const [warnShadow, setWarnShadow] = useState<{ name: string; level: number; weakAttribute: AttributeId } | null>(null);
+
+  // Android 返回键：
+  //   - warnShadow 面板打开中 → 关掉警告（让玩家回到 Shadow 生成界面）
+  //   - generating 中 → 点遮罩已被阻止，back 同样 no-op
+  //   - 其他 → 关闭整个 Modal（匹配点遮罩）
+  useBackHandler(isOpen, () => {
+    if (warnShadow) { setWarnShadow(null); return; }
+    if (generating) return;
+    onClose();
+  });
 
   const attrValues = Object.fromEntries(attributes.map(a => [a.id, a.points])) as Record<AttributeId, number>;
   const attrNames = settings.attributeNames as Record<AttributeId, string>;
@@ -66,10 +79,16 @@ export function ShadowCreateModal({ isOpen, onClose }: Props) {
     if (battleState) {
       await saveBattleState({ ...battleState, shadowId: shadow.id, status: 'idle' });
     }
-    playSound('/battle-shadow-stop.mp3');
+    playSound('/battle-seal.mp3');
     setMode('choose');
     setManualName('');
     setError('');
+    // 先显示 WARNING 动画，用户看完后统一关闭弹窗
+    setWarnShadow({ name: shadow.name, level: shadow.level, weakAttribute: shadow.weakAttribute });
+  };
+
+  const handleWarnDone = () => {
+    setWarnShadow(null);
     onClose();
   };
 
@@ -108,15 +127,24 @@ export function ShadowCreateModal({ isOpen, onClose }: Props) {
   };
 
   return (
+    <>
+    <ShadowWarningOverlay
+      isOpen={!!warnShadow}
+      shadowName={warnShadow?.name ?? ''}
+      level={warnShadow?.level ?? 1}
+      weakAttribute={warnShadow?.weakAttribute}
+      weakAttributeName={warnShadow ? attrNames[warnShadow.weakAttribute] : undefined}
+      onDone={handleWarnDone}
+    />
     <AnimatePresence>
-      {isOpen && (
+      {isOpen && !warnShadow && (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4"
           style={{ background: 'rgba(0,0,0,0.85)' }}
-          onClick={e => e.target === e.currentTarget && onClose()}
+          onClick={e => { if (generating || warnShadow) return; if (e.target === e.currentTarget) onClose(); }}
         >
           <motion.div
             initial={{ scale: 0.9, opacity: 0, y: 20 }}
@@ -183,9 +211,9 @@ export function ShadowCreateModal({ isOpen, onClose }: Props) {
                     <button
                       onClick={handleAIGenerate}
                       className="flex-1 py-3 rounded-xl text-white text-sm font-semibold"
-                      style={{ background: 'linear-gradient(90deg, #dc2626, #7c3aed)' }}
+                      style={{ background: error ? 'linear-gradient(90deg, #ef4444, #b91c1c)' : 'linear-gradient(90deg, #dc2626, #7c3aed)' }}
                     >
-                      ✨ 识破暗影
+                      {error ? '🔄 重试识破' : '✨ 识破暗影'}
                     </button>
                     <button
                       onClick={() => setMode('manual')}
@@ -195,7 +223,12 @@ export function ShadowCreateModal({ isOpen, onClose }: Props) {
                       ✏️ 手动
                     </button>
                   </div>
-                  {error && <p className="text-red-400 text-xs">{error}</p>}
+                  {error && (
+                    <div className="rounded-xl px-3 py-2 space-y-1" style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.35)' }}>
+                      <p className="text-red-300 text-xs leading-relaxed">{error}</p>
+                      <p className="text-red-400/60 text-[10px]">请确认 API 配置可用后重试，也可选「手动」模式自行设定。</p>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -251,5 +284,6 @@ export function ShadowCreateModal({ isOpen, onClose }: Props) {
         </motion.div>
       )}
     </AnimatePresence>
+    </>
   );
 }

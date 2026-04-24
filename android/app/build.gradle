@@ -7,8 +7,10 @@ android {
         applicationId "com.pgt.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        // ⚠️ 每次发布 release 必须把 versionCode 往上加（Google Play 要求严格递增），
+        //    versionName 保持与 package.json 同步即可
+        versionCode 2
+        versionName "2.0.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,10 +18,26 @@ android {
             ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    // Release 签名配置 —— 从 gradle.properties / 环境变量读 keystore，
+    // 未配置时签名块为空（assembleRelease 会报错，符合预期 —— 强制你提供 keystore）
+    signingConfigs {
+        release {
+            if (project.hasProperty('VELVET_STORE_FILE')) {
+                storeFile file(project.property('VELVET_STORE_FILE'))
+                storePassword project.property('VELVET_STORE_PASSWORD')
+                keyAlias project.property('VELVET_KEY_ALIAS')
+                keyPassword project.property('VELVET_KEY_PASSWORD')
+            }
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            // 只有在 keystore 配置齐全时才挂上签名配置（否则 debug 构建仍然可跑）
+            if (project.hasProperty('VELVET_STORE_FILE')) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 }

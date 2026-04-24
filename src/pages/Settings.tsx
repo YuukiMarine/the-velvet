@@ -1,12 +1,117 @@
 import { motion } from 'framer-motion';
-import { useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { useAppStore, DEFAULT_SUMMARY_PROMPT_PRESETS, FAMILIAR_FACE_PRESETS, toLocalDateKey, applyCustomThemeColor } from '@/store';
 import { triggerThemeSwitchFeedback, playSound } from '@/utils/feedback';
 import { ThemeType, AttributeId, SummaryPromptPreset } from '@/types';
+import { DEFAULT_LEVEL_THRESHOLDS } from '@/constants';
 import { db } from '@/db';
 import { PageTitle } from '@/components/PageTitle';
 import { exportBackup, isNative } from '@/utils/native';
 import { useRipple } from '@/components/RippleEffect';
+import { AI_PROVIDERS, getProviderConfig, testAIConnection, type TestResult } from '@/utils/aiProviders';
+import { useCloudStore } from '@/store/cloud';
+import { logout as cloudLogout } from '@/services/auth';
+import { LoginModal } from '@/components/auth/LoginModal';
+import { pushAll, pullAll, syncOnLogin, computeSyncDiff } from '@/services/sync';
+import { LVTag } from '@/components/LVTag';
+import { computeTotalLv } from '@/utils/lvTiers';
+import { UserProfileCard } from '@/components/UserProfileCard';
+import { TrophyIcon } from '@/components/Navigation';
+import { SyncPrivacyPanel } from '@/components/auth/SyncPrivacyPanel';
+import { AccountManagePanel } from '@/components/auth/AccountManagePanel';
+
+/** 五维属性的展示元数据（图标 + 主色 + 默认中文名），仅用于设置页 UI */
+const ATTRIBUTE_META: Array<{
+  id: AttributeId;
+  icon: string;
+  color: string;
+  defaultLabel: string;
+}> = [
+  { id: 'knowledge', icon: '📘', color: '#3B82F6', defaultLabel: '知识' },
+  { id: 'guts',      icon: '🔥', color: '#EF4444', defaultLabel: '胆量' },
+  { id: 'dexterity', icon: '🎯', color: '#F59E0B', defaultLabel: '灵巧' },
+  { id: 'kindness',  icon: '🌿', color: '#10B981', defaultLabel: '温柔' },
+  { id: 'charm',     icon: '✨', color: '#EC4899', defaultLabel: '魅力' },
+];
+
+/**
+ * 属性名输入框（兼容中文输入法）
+ *
+ * 中文输入法（拼音）在未上屏时也会触发 input 的 onChange，
+ * 直接回写 store 会导致拼音字母被永久"吃进"持久状态——表现为"拼音重复出现"的经典 bug。
+ * 对策：用 onCompositionStart/End 跟踪正在组词的状态；
+ *   · 组词中只改本地 draft，**不**写 store
+ *   · 组词结束（或非组词直接输入）时才一次性提交
+ * 外部 value 变化时，如果当前没在组词，把 draft 同步过来；在组词中则按下不表，避免打断输入
+ */
+const AttributeNameField = ({
+  id, icon, color, defaultLabel, value, onCommit,
+}: {
+  id: AttributeId;
+  icon: string;
+  color: string;
+  defaultLabel: string;
+  value: string;
+  onCommit: (v: string) => void;
+}) => {
+  const [draft, setDraft] = useState(value);
+  const composingRef = useRef(false);
+
+  useEffect(() => {
+    if (!composingRef.current) setDraft(value);
+  }, [value]);
+
+  return (
+    <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-gray-50 dark:bg-gray-900/40 border border-gray-200/60 dark:border-gray-700/40">
+      <div
+        className="w-10 h-10 rounded-xl flex items-center justify-center text-lg flex-shrink-0"
+        style={{ background: `${color}1f`, color }}
+      >
+        {icon}
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="text-[9px] font-bold tracking-[0.2em] text-gray-400 uppercase">
+          {id}
+        </div>
+        <input
+          type="text"
+          value={draft}
+          onChange={(e) => {
+            const next = e.target.value;
+            setDraft(next);
+            if (!composingRef.current) onCommit(next);
+          }}
+          onCompositionStart={() => { composingRef.current = true; }}
+          onCompositionEnd={(e) => {
+            composingRef.current = false;
+            const next = (e.target as HTMLInputElement).value;
+            setDraft(next);
+            onCommit(next);
+          }}
+          onBlur={() => {
+            // 兜底：极少数浏览器/IME 不触发 compositionEnd，用 blur 再提交一次
+            if (draft !== value) onCommit(draft);
+          }}
+          className="w-full mt-0.5 px-0 py-0.5 bg-transparent text-sm font-bold text-gray-800 dark:text-white focus:outline-none border-b border-transparent focus:border-primary transition-colors"
+          placeholder={defaultLabel}
+        />
+      </div>
+    </div>
+  );
+};
+
+/** 将一个过去的时间格式化为 "刚刚 / N 分钟前 / N 小时前 / N 天前" */
+const formatRelative = (date: Date): string => {
+  const diff = Date.now() - date.getTime();
+  if (diff < 60_000) return '刚刚';
+  if (diff < 3600_000) return `${Math.floor(diff / 60_000)} 分钟前`;
+  if (diff < 86400_000) return `${Math.floor(diff / 3600_000)} 小时前`;
+  if (diff < 7 * 86400_000) return `${Math.floor(diff / 86400_000)} 天前`;
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+};
 
 
 // ── 主题颜色按钮（带涟漪点击反馈） ───────────────────────────
@@ -112,23 +217,65 @@ const SplashStyleButton = ({
 };
 
 export const Settings = () => {
-  const { 
-    user, 
-    settings, 
-    updateSettings, 
-    setTheme, 
-    resetAllData, 
+  const {
+    user,
+    settings,
+    updateSettings,
+    setTheme,
+    resetAllData,
     importData
   } = useAppStore();
+  const attributes = useAppStore(s => s.attributes);
+  const achievements = useAppStore(s => s.achievements);
+  const skills = useAppStore(s => s.skills);
+  const setCurrentPage = useAppStore(s => s.setCurrentPage);
+  const totalLv = computeTotalLv(attributes);
   const [activeSection, setActiveSection] = useState<string | null>('theme');
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showLevelWarning, setShowLevelWarning] = useState(false);
+  // 等级阈值：恢复默认 / 删除高等级 的确认弹窗
+  const [showResetThresholdsConfirm, setShowResetThresholdsConfirm] = useState(false);
+  const [deleteLevelIndex, setDeleteLevelIndex] = useState<number | null>(null);
+  // LV 徽章点击展开总点数明细
+  const [showPointsBreakdown, setShowPointsBreakdown] = useState(false);
+  // UserID 复制到剪贴板的轻提示
+  const [userIdCopied, setUserIdCopied] = useState(false);
+  // 账号管理面板
+  const [accountPanelOpen, setAccountPanelOpen] = useState(false);
   const [importJson, setImportJson] = useState('');
   const [exportMessage, setExportMessage] = useState<string | null>(null);
   const [importLoading, setImportLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [keywordDrafts, setKeywordDrafts] = useState<Record<number, string>>({});
   const opacityDraftRef = useRef(settings.backgroundOpacity ?? 0.3);
+
+  // 读取当前主题主色（用于成就入口行的辉光），并跟随 data-theme / 自定义色变化
+  const [primaryColor, setPrimaryColor] = useState('#3B82F6');
+  useEffect(() => {
+    const readColor = () => {
+      const raw = getComputedStyle(document.documentElement)
+        .getPropertyValue('--color-primary')
+        .trim();
+      if (raw) setPrimaryColor(raw);
+    };
+    readColor();
+    const obs = new MutationObserver(readColor);
+    obs.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-theme', 'style'],
+    });
+    return () => obs.disconnect();
+  }, []);
+
+  // 云同步
+  const cloudEnabled = useCloudStore(s => s.cloudEnabled);
+  const cloudUser = useCloudStore(s => s.cloudUser);
+  const syncStatus = useCloudStore(s => s.syncStatus);
+  const lastSyncAt = useCloudStore(s => s.lastSyncAt);
+  const lastCloudError = useCloudStore(s => s.lastError);
+  const [showLoginModal, setShowLoginModal] = useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [syncChoiceOpen, setSyncChoiceOpen] = useState(false);
 
   // 复制到剪贴板状态
   const [copyState, setCopyState] = useState<'idle' | 'ok' | 'err'>('idle');
@@ -204,8 +351,20 @@ export const Settings = () => {
       const { backgroundImage: _bg, openaiApiKey: _key, summaryApiKey: _sk, ...rest } = s as typeof s & { backgroundImage?: string; openaiApiKey?: string; summaryApiKey?: string };
       return rest;
     });
+    // 用户表：剔除 base64 头像（体积太大；导入后可重新上传）
+    const sanitizedUsers = (await db.users.toArray()).map(u => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { avatarDataUrl: _av, ...rest } = u as typeof u & { avatarDataUrl?: string };
+      return rest;
+    });
+    // 同伴表：剔除长按上传的自定义头像（同理体积较大，且语义上属于本地私有）
+    const sanitizedConfidants = (await db.confidants.toArray()).map(c => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { customAvatarDataUrl: _av, ...rest } = c as typeof c & { customAvatarDataUrl?: string };
+      return rest;
+    });
     const data = {
-      user: await db.users.toArray(),
+      user: sanitizedUsers,
       attributes: await db.attributes.toArray(),
       activities: await db.activities.toArray(),
       achievements: await db.achievements.toArray(),
@@ -217,10 +376,30 @@ export const Settings = () => {
       personas: await db.personas.toArray(),
       shadows: await db.shadows.toArray(),
       battleStates: await db.battleStates.toArray(),
+      // 星象 / 塔罗（v4 新增）
+      dailyDivinations: await db.dailyDivinations.toArray(),
+      longReadings: await db.longReadings.toArray(),
+      summaries: await db.summaries.toArray(),
+      weeklyGoals: await db.weeklyGoals.toArray(),
+      // 同伴（v5 新增）
+      confidants: sanitizedConfidants,
+      confidantEvents: await db.confidantEvents.toArray(),
+      // 谏言归档摘要（v6 新增；聊天原文永不落盘，所以此处不包含 counselSessions）
+      counselArchives: await db.counselArchives.toArray(),
       _exportedAt: new Date().toISOString(),
-      _version: 3,
+      _version: 6,
     };
-    return JSON.stringify(data);
+    const json = JSON.stringify(data);
+    // 出口校验：确保产生的 JSON 字符串可被原样解析回来。
+    // 这能捕获 Invalid Date、非 finite 数字等极少数能让 JSON.stringify 产出"坏行"的场景，
+    // 避免用户导出的备份到了导入端才发现解析失败。
+    try {
+      JSON.parse(json);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      throw new Error(`导出 JSON 生成失败：${msg}。请反馈给开发者（此问题需要定位具体哪条记录异常）`);
+    }
+    return json;
   }, []);
 
 
@@ -259,6 +438,32 @@ export const Settings = () => {
   const [presetDraft, setPresetDraft] = useState<SummaryPromptPreset | null>(null);
   const [summaryApiKeySaved, setSummaryApiKeySaved] = useState(false);
   const [summaryApiKeyDraft, setSummaryApiKeyDraft] = useState(settings.summaryApiKey ?? '');
+  const [apiTestStatus, setApiTestStatus] = useState<'idle' | 'testing' | 'ok' | 'error'>('idle');
+  const [apiTestMessage, setApiTestMessage] = useState<string>('');
+
+  const handleTestApi = async () => {
+    const keyToTest = summaryApiKeyDraft.trim() || (settings.summaryApiKey ?? '');
+    if (!keyToTest) {
+      setApiTestStatus('error');
+      setApiTestMessage('请先填写 API 密钥');
+      return;
+    }
+    setApiTestStatus('testing');
+    setApiTestMessage('');
+    const result: TestResult = await testAIConnection({
+      provider: settings.summaryApiProvider ?? 'openai',
+      apiKey: keyToTest,
+      baseUrl: settings.summaryApiBaseUrl,
+      model: settings.summaryModel,
+    });
+    if (result.ok) {
+      setApiTestStatus('ok');
+      setApiTestMessage(`连接成功 · ${result.model} · ${result.latencyMs} ms`);
+    } else {
+      setApiTestStatus('error');
+      setApiTestMessage(result.error);
+    }
+  };
 
   const effectivePresets: SummaryPromptPreset[] = settings.summaryPromptPresets?.length
     ? settings.summaryPromptPresets
@@ -297,14 +502,40 @@ export const Settings = () => {
   };
 
   const sections = [
-    { id: 'theme', label: '主题设置', icon: '🎨' },
-    { id: 'attributes', label: '属性自定义', icon: '⚙️' },
-    { id: 'keywords', label: '关键词规则', icon: '🔑' },
-    { id: 'display', label: '显示设置', icon: '🖼️' },
+    { id: 'theme', label: '主题', icon: '🎨' },
+    { id: 'personalize', label: '体验个性化', icon: '⚙️' },
     { id: 'summary', label: 'AI 总结', icon: '✨' },
     { id: 'data', label: '数据管理', icon: '💾' },
+    { id: 'cloud', label: '云同步', icon: '☁️' },
     { id: 'about', label: '关于', icon: '💡' }
   ];
+
+  // ── 成就入口的"待解锁"高亮判定 ─────────────────────────
+  // 简化逻辑：只统计"基础属性条件已满足、但尚未解锁"的成就/技能；
+  // 复杂条件（连续天数、关键字命中数、暗影击败等）需要更重的计算，
+  // 此处只做轻量提示，详细进度仍以成就页为准。
+  const pendingSkillsCount = skills.filter(s => {
+    // 馆长的赐福（blessing_*）由用户手动开/关，不算"待解锁"
+    if (s.id.startsWith('blessing_')) return false;
+    const attr = attributes.find(a => a.id === s.requiredAttribute);
+    return !!attr && attr.level >= s.requiredLevel && !s.unlocked;
+  }).length;
+  const pendingAchievementsCount = achievements.filter(a => {
+    if (a.unlocked) return false;
+    switch (a.condition.type) {
+      case 'attribute_level': {
+        const attr = attributes.find(x => x.id === a.condition.attribute);
+        return !!attr && attr.level >= a.condition.value;
+      }
+      case 'total_points':
+        return attributes.reduce((s, x) => s + (x.points ?? 0), 0) >= a.condition.value;
+      case 'all_attributes_max':
+        return attributes.filter(x => x.level >= a.condition.value).length >= attributes.length;
+      default:
+        return false;
+    }
+  }).length;
+  const totalPendingUnlocks = pendingSkillsCount + pendingAchievementsCount;
 
   return (
     <motion.div
@@ -314,6 +545,106 @@ export const Settings = () => {
       className="space-y-6"
     >
       <PageTitle title="设置" en="Settings" />
+
+      {/* 用户资料卡（头像 / 用户名 / LV / 五维） */}
+      <UserProfileCard />
+
+      {/* ── 成就入口行（取代 dock 中的成就 tab） ─────────────────── */}
+      <motion.button
+        whileTap={{ scale: 0.985 }}
+        onClick={() => { triggerThemeSwitchFeedback(user?.theme ?? 'blue'); setCurrentPage('achievements'); }}
+        className="group relative w-full overflow-hidden rounded-2xl px-5 py-4 flex items-center gap-4 text-left transition-all border bg-white dark:bg-gray-800"
+        style={{
+          // 高亮态用更强的主题色辉光；常态用 ~15% 透明度
+          background: totalPendingUnlocks > 0
+            ? `linear-gradient(90deg, ${primaryColor}26 0%, ${primaryColor}14 35%, transparent 100%)`
+            : undefined,
+          borderColor: totalPendingUnlocks > 0 ? `${primaryColor}80` : `${primaryColor}33`,
+          boxShadow: totalPendingUnlocks > 0
+            ? `0 0 26px -6px ${primaryColor}8c, 0 0 0 1px ${primaryColor}2e`
+            : `0 0 22px -6px ${primaryColor}26, 0 0 0 1px ${primaryColor}0a`,
+        }}
+      >
+        {/* 高亮态下的扫光：从全屏左侧扫到全屏右侧 */}
+        {/* 元素自身宽度为父容器的 40% → 用 translateX 走 -100% → +250% 才能完整跨过父容器 */}
+        {totalPendingUnlocks > 0 && (
+          <motion.div
+            aria-hidden
+            className="absolute inset-y-0 left-0 pointer-events-none"
+            initial={{ x: '-100%' }}
+            animate={{ x: '250%' }}
+            transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut', repeatDelay: 1.6 }}
+            style={{
+              background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.22), transparent)',
+              width: '40%',
+            }}
+          />
+        )}
+
+        {/* 图标 */}
+        <div
+          className="relative flex-shrink-0 w-11 h-11 rounded-2xl flex items-center justify-center"
+          style={{
+            background: totalPendingUnlocks > 0
+              ? `linear-gradient(135deg, ${primaryColor}, ${primaryColor}d9)`
+              : `${primaryColor}1a`,
+            color: totalPendingUnlocks > 0 ? '#fff' : primaryColor,
+            boxShadow: totalPendingUnlocks > 0
+              ? `0 4px 14px -2px ${primaryColor}66`
+              : undefined,
+          }}
+        >
+          <TrophyIcon filled={totalPendingUnlocks > 0} />
+          {totalPendingUnlocks > 0 && (
+            <motion.span
+              aria-hidden
+              className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[10px] font-black flex items-center justify-center shadow"
+              initial={{ scale: 0 }}
+              animate={{ scale: [0, 1.15, 1] }}
+              transition={{ duration: 0.4 }}
+            >
+              {totalPendingUnlocks > 99 ? '99+' : totalPendingUnlocks}
+            </motion.span>
+          )}
+        </div>
+
+        {/* 文案 */}
+        <div className="relative flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span
+              className={`text-base font-bold ${
+                totalPendingUnlocks > 0 ? '' : 'text-gray-800 dark:text-white'
+              }`}
+              style={totalPendingUnlocks > 0 ? { color: primaryColor } : undefined}
+            >成就 / 技能</span>
+            <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-gray-400 dark:text-gray-500">
+              Achievements
+            </span>
+          </div>
+          <div
+            className={`text-[11px] mt-0.5 ${
+              totalPendingUnlocks > 0
+                ? 'font-semibold'
+                : 'text-gray-500 dark:text-gray-400'
+            }`}
+            style={totalPendingUnlocks > 0 ? { color: primaryColor } : undefined}
+          >
+            {totalPendingUnlocks > 0
+              ? `有 ${totalPendingUnlocks} 项已达成 · 点击前往领取`
+              : '查看进度 / 解锁里程碑 / 切换赐福'}
+          </div>
+        </div>
+
+        {/* 右侧箭头 */}
+        <span
+          className={`relative flex-shrink-0 text-lg leading-none transition-transform group-hover:translate-x-0.5 ${
+            totalPendingUnlocks > 0 ? '' : 'text-gray-400 dark:text-gray-500'
+          }`}
+          style={totalPendingUnlocks > 0 ? { color: primaryColor } : undefined}
+        >
+          ›
+        </span>
+      </motion.button>
 
       <div className="space-y-4">
         {sections.map(section => (
@@ -339,8 +670,13 @@ export const Settings = () => {
                 className="px-6 pb-6"
               >
                 {section.id === 'theme' && (
-                  <div className="space-y-4">
-                    <p className="text-gray-600 dark:text-gray-400 mb-4">选择你喜欢的主题颜色</p>
+                  <div className="space-y-5">
+                    {/* ── 子板块：颜色与声音 ─────────────────────────── */}
+                    <div className="flex items-center gap-2 pb-2 border-b border-gray-200 dark:border-gray-700/80">
+                      <span className="text-base">🎨</span>
+                      <h4 className="text-sm font-bold text-gray-800 dark:text-white tracking-wide">颜色与声音</h4>
+                    </div>
+                    <p className="text-gray-600 dark:text-gray-400 -mt-2 mb-1 text-sm">选择你喜欢的主题颜色</p>
                     <div className="flex gap-2">
                       {themes.map(theme => (
                         <ThemeColorButton
@@ -489,239 +825,13 @@ export const Settings = () => {
                         />
                       </motion.button>
                     </div>
-                  </div>
-                )}
 
-                {section.id === 'attributes' && (
-                  <div className="space-y-4">
-                    {/* 逆流开关 */}
-                    <div className={`rounded-xl border-2 p-4 transition-all ${
-                      settings.countercurrentEnabled
-                        ? 'border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/20'
-                        : 'border-gray-200 dark:border-gray-700'
-                    }`}>
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="text-base">🌊</span>
-                            <h4 className="text-sm font-bold text-gray-800 dark:text-white">逆流</h4>
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 font-semibold">实验性</span>
-                          </div>
-                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 leading-relaxed">
-                            连续3日某属性无增长，次日起每天该属性自动 −1，并在首页提前一天预警。
-                          </p>
-                        </div>
-                        <button
-                          onClick={() => {
-                            const enabling = !settings.countercurrentEnabled;
-                            updateSettings({
-                              countercurrentEnabled: enabling,
-                              // Record the date it was enabled so the 3-day window starts from tomorrow
-                              countercurrentEnabledAt: enabling ? toLocalDateKey() : settings.countercurrentEnabledAt,
-                            });
-                          }}
-                          className={`relative w-11 h-6 rounded-full flex-shrink-0 transition-colors mt-0.5 ${
-                            settings.countercurrentEnabled ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'
-                          }`}
-                        >
-                          <span
-                            className={`absolute left-1 top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${
-                              settings.countercurrentEnabled ? 'translate-x-5' : 'translate-x-0'
-                            }`}
-                          />
-                        </button>
-                      </div>
+                    {/* ── 子板块：显示 ────────────────────────────── */}
+                    <div className="flex items-center gap-2 pt-3 pb-2 border-b border-gray-200 dark:border-gray-700/80">
+                      <span className="text-base">🖼️</span>
+                      <h4 className="text-sm font-bold text-gray-800 dark:text-white tracking-wide">显示</h4>
                     </div>
 
-                    <p className="text-gray-600 dark:text-gray-400 mb-4">自定义属性名称</p>
-                    {(['knowledge', 'guts', 'dexterity', 'kindness', 'charm'] as AttributeId[]).map(attr => (
-                      <div key={attr} className="flex items-center gap-3">
-                        <label className="w-24 text-gray-700 dark:text-gray-300">
-                          {attr}
-                        </label>
-                        <input
-                          type="text"
-                          value={settings.attributeNames[attr]}
-                          onChange={(e) => updateSettings({
-                            attributeNames: {
-                              ...settings.attributeNames,
-                              [attr]: e.target.value
-                            }
-                          })}
-                          className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white"
-                        />
-                      </div>
-                    ))}
-                    
-                    <p className="text-gray-600 dark:text-gray-400 mb-4 mt-6">升级需求点数设置</p>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">添加等级</span>
-                        <motion.button
-                          whileHover={{ scale: 1.02 }}
-                          whileTap={{ scale: 0.98 }}
-                          onClick={() => {
-                            if (settings.levelThresholds.length >= 10) return;
-                            setShowLevelWarning(true);
-                          }}
-                        className={`px-3 py-1 rounded-lg text-sm font-medium ${
-                          settings.levelThresholds.length >= 10
-                            ? 'bg-gray-200 dark:bg-gray-700 text-gray-400 cursor-not-allowed'
-                            : 'bg-primary text-white'
-                        }`}
-                        disabled={settings.levelThresholds.length >= 10}
-                      >
-                        + 添加等级
-                      </motion.button>
-                    </div>
-                    <div className="space-y-2">
-                      {settings.levelThresholds.map((threshold, index) => (
-                        <div key={index} className="flex items-center gap-3">
-                          <label className="w-32 text-sm font-medium text-gray-700 dark:text-gray-300">
-                            Lv.{index + 1} 需求
-                          </label>
-                          <input
-                            type="number"
-                            value={threshold}
-                            onChange={(e) => {
-                              const newThresholds = [...settings.levelThresholds];
-                              newThresholds[index] = parseInt(e.target.value) || 0;
-                              updateSettings({ levelThresholds: newThresholds });
-                            }}
-                            min="0"
-                            placeholder="需求点数"
-                            className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white"
-                          />
-                        </div>
-                      ))}
-                    </div>
-
-                  </div>
-                )}
-
-                {section.id === 'keywords' && (
-                  <div className="space-y-4">
-                    <p className="text-gray-600 dark:text-gray-400 mb-4">
-                      关键词规则（点击 + 添加标签）
-                    </p>
-                    {settings.keywordRules.map((rule, index) => (
-                      <div key={index} className="space-y-3">
-                        <div className="font-medium text-gray-700 dark:text-gray-300">
-                          {settings.attributeNames[rule.attribute]} (+{rule.points}点)
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          {rule.keywords.map((keyword, keywordIndex) => (
-                            <button
-                              key={`${keyword}-${keywordIndex}`}
-                              onClick={() => {
-                                const newRules = [...settings.keywordRules];
-                                newRules[index] = {
-                                  ...rule,
-                                  keywords: rule.keywords.filter((_, i) => i !== keywordIndex)
-                                };
-                                updateSettings({ keywordRules: newRules });
-                              }}
-                              className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200"
-                            >
-                              <span>{keyword}</span>
-                              <span className="text-xs">×</span>
-                            </button>
-                          ))}
-                          <button
-                            onClick={() => {
-                              setKeywordDrafts(prev => ({ ...prev, [index]: '' }));
-                            }}
-                            className="inline-flex items-center justify-center w-7 h-7 rounded-full text-xs bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300"
-                          >
-                            +
-                          </button>
-                        </div>
-                        {Object.prototype.hasOwnProperty.call(keywordDrafts, index) && (
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="text"
-                              value={keywordDrafts[index]}
-                              onChange={(e) => {
-                                const value = e.target.value;
-                                setKeywordDrafts(prev => ({ ...prev, [index]: value }));
-                              }}
-                              placeholder="输入关键词"
-                              className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white"
-                            />
-                            <button
-                              onClick={() => {
-                                const trimmed = (keywordDrafts[index] || '').trim();
-                                if (!trimmed) return;
-                                const existing = new Set(rule.keywords.map(k => k.toLowerCase()));
-                                if (existing.has(trimmed.toLowerCase())) {
-                                  setKeywordDrafts(prev => {
-                                    const next = { ...prev };
-                                    delete next[index];
-                                    return next;
-                                  });
-                                  return;
-                                }
-                                const newRules = [...settings.keywordRules];
-                                newRules[index] = {
-                                  ...rule,
-                                  keywords: [...rule.keywords, trimmed]
-                                };
-                                updateSettings({ keywordRules: newRules });
-                                setKeywordDrafts(prev => {
-                                  const next = { ...prev };
-                                  delete next[index];
-                                  return next;
-                                });
-                              }}
-                              className="px-3 py-2 bg-primary text-white rounded-lg text-sm"
-                            >
-                              添加
-                            </button>
-                            <button
-                              onClick={() => {
-                                setKeywordDrafts(prev => {
-                                  const next = { ...prev };
-                                  delete next[index];
-                                  return next;
-                                });
-                              }}
-                              className="px-3 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg text-sm"
-                            >
-                              取消
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-
-                    {/* 逆影战场开关 — 关闭后在此重新开启 */}
-                    {!settings.battleEnabled && (
-                      <div className="rounded-xl border-2 border-purple-200 dark:border-purple-800/50 bg-purple-50 dark:bg-purple-900/15 p-4">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2">
-                              <span className="text-base">⚔️</span>
-                              <h4 className="text-sm font-bold text-gray-800 dark:text-white">逆影战场</h4>
-                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400 font-semibold">已关闭</span>
-                            </div>
-                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 leading-relaxed">
-                              召唤 Persona，识破并击败内心的暗影。
-                            </p>
-                          </div>
-                          <button
-                            onClick={() => updateSettings({ battleEnabled: true })}
-                            className="flex-shrink-0 mt-0.5 px-3 py-1.5 rounded-xl text-xs font-bold text-white transition-colors"
-                            style={{ background: 'linear-gradient(135deg, #7c3aed, #4f46e5)' }}
-                          >
-                            开启
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {section.id === 'display' && (
-                  <div className="space-y-4">
                     {/* 背景动画 — 多选 toggle */}
                     {!settings.backgroundImage && (
                       <div className="space-y-3 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
@@ -800,7 +910,7 @@ export const Settings = () => {
                             value: 'velvet',
                             label: '靛蓝色房间',
                             sub: 'The Velvet',
-                            sound: '/p3se.mp3',
+                            sound: '/themea-switch.mp3',
                             color: '#7C3AED',
                             bg: 'rgba(124,58,237,0.08)',
                             border: 'rgba(124,58,237,0.5)',
@@ -810,7 +920,7 @@ export const Settings = () => {
                             value: 'p5',
                             label: '红黑剪报风',
                             sub: 'Phantom Thief',
-                            sound: '/p5se.mp3',
+                            sound: '/themec-switch.mp3',
                             color: '#DC2626',
                             bg: 'rgba(220,38,38,0.08)',
                             border: 'rgba(220,38,38,0.5)',
@@ -820,7 +930,7 @@ export const Settings = () => {
                             value: 'p3',
                             label: '深夜月光录',
                             sub: 'Memento Mori',
-                            sound: '/p3se.mp3',
+                            sound: '/themea-switch.mp3',
                             color: '#2563EB',
                             bg: 'rgba(37,99,235,0.08)',
                             border: 'rgba(37,99,235,0.5)',
@@ -830,7 +940,7 @@ export const Settings = () => {
                             value: 'p4',
                             label: '黄色警戒线',
                             sub: 'Midnight Channel',
-                            sound: '/p4se.mp3',
+                            sound: '/themeb-switch.mp3',
                             color: '#D97706',
                             bg: 'rgba(217,119,6,0.08)',
                             border: 'rgba(217,119,6,0.5)',
@@ -897,13 +1007,13 @@ export const Settings = () => {
                           }}
                           className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white"
                         />
-                        
+
                         {settings.backgroundImage && (
                           <div className="space-y-2">
                             <div className="relative h-32 bg-gray-100 dark:bg-gray-700 rounded-lg overflow-hidden">
-                              <img 
-                                src={settings.backgroundImage} 
-                                alt="背景预览" 
+                              <img
+                                src={settings.backgroundImage}
+                                alt="背景预览"
                                 className="w-full h-full object-cover"
                               />
                             </div>
@@ -956,6 +1066,354 @@ export const Settings = () => {
                   </div>
                 )}
 
+                {section.id === 'personalize' && (
+                  <div className="space-y-5">
+                    {/* ── 子板块：属性 ────────────────────────────── */}
+                    <div className="flex items-center gap-2 pb-2 border-b border-gray-200 dark:border-gray-700/80">
+                      <span className="text-base">⚙️</span>
+                      <h4 className="text-sm font-bold text-gray-800 dark:text-white tracking-wide">属性</h4>
+                    </div>
+
+                    {/* 逆流开关 */}
+                    <div className={`rounded-xl border-2 p-4 transition-all ${
+                      settings.countercurrentEnabled
+                        ? 'border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/20'
+                        : 'border-gray-200 dark:border-gray-700'
+                    }`}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-base">🌊</span>
+                            <h4 className="text-sm font-bold text-gray-800 dark:text-white">逆流</h4>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 font-semibold">实验性</span>
+                          </div>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 leading-relaxed">
+                            连续3日某属性无增长，次日起每天该属性自动 −1，并在首页提前一天预警。
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => {
+                            const enabling = !settings.countercurrentEnabled;
+                            updateSettings({
+                              countercurrentEnabled: enabling,
+                              // Record the date it was enabled so the 3-day window starts from tomorrow
+                              countercurrentEnabledAt: enabling ? toLocalDateKey() : settings.countercurrentEnabledAt,
+                            });
+                          }}
+                          className={`relative w-11 h-6 rounded-full flex-shrink-0 transition-colors mt-0.5 ${
+                            settings.countercurrentEnabled ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'
+                          }`}
+                        >
+                          <span
+                            className={`absolute left-1 top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${
+                              settings.countercurrentEnabled ? 'translate-x-5' : 'translate-x-0'
+                            }`}
+                          />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* ── 属性名称 ───────────────────────────── */}
+                    <div className="rounded-2xl border border-gray-200 dark:border-gray-700 bg-white/60 dark:bg-gray-800/30 overflow-hidden">
+                      <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-800/60 flex items-center gap-2">
+                        <span className="text-base">🌈</span>
+                        <h4 className="text-sm font-bold text-gray-800 dark:text-white">属性名称</h4>
+                        <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 font-semibold">
+                          5 维
+                        </span>
+                      </div>
+                      <p className="px-4 pt-3 pb-1 text-[11px] text-gray-500 dark:text-gray-400 leading-relaxed">
+                        给五个维度取个贴合你的名字，命名会立刻在整个房间里生效。
+                      </p>
+                      <div className="p-3 space-y-2">
+                        {ATTRIBUTE_META.map(meta => (
+                          <AttributeNameField
+                            key={meta.id}
+                            id={meta.id}
+                            icon={meta.icon}
+                            color={meta.color}
+                            defaultLabel={meta.defaultLabel}
+                            value={settings.attributeNames[meta.id]}
+                            onCommit={(v) => updateSettings({
+                              attributeNames: {
+                                ...settings.attributeNames,
+                                [meta.id]: v,
+                              },
+                            })}
+                          />
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* ── 等级需求 ───────────────────────────── */}
+                    <div className="rounded-2xl border border-gray-200 dark:border-gray-700 bg-white/60 dark:bg-gray-800/30 overflow-hidden">
+                      <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-800/60 flex items-center gap-2">
+                        <span className="text-base">📶</span>
+                        <h4 className="text-sm font-bold text-gray-800 dark:text-white">等级需求</h4>
+                        <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 font-semibold tabular-nums">
+                          {settings.levelThresholds.length} / 10 级
+                        </span>
+                      </div>
+                      <p className="px-4 pt-3 pb-2 text-[11px] text-gray-500 dark:text-gray-400 leading-relaxed">
+                        达到对应等级所需的累计点数（数值可随时调整；建议保持单调递增）。
+                      </p>
+                      <div className="p-3 space-y-1.5">
+                        {settings.levelThresholds.map((threshold, index) => {
+                          const isLast = index === settings.levelThresholds.length - 1;
+                          // Lv.1–5 受保护，不可删除；只有最高级且 index ≥ 5（即 Lv.6+）才允许移除
+                          const canRemove = isLast && index >= 5;
+                          return (
+                            <div
+                              key={index}
+                              className="flex items-center gap-2 p-2 rounded-xl bg-gray-50 dark:bg-gray-900/40 border border-gray-200/60 dark:border-gray-700/40"
+                            >
+                              <div className="w-12 text-center flex-shrink-0 px-1">
+                                <div className="text-[9px] font-bold tracking-widest text-gray-400">LV</div>
+                                <div className="text-base font-black text-primary leading-tight">{index + 1}</div>
+                              </div>
+                              <div className="flex-1 min-w-0 relative">
+                                <input
+                                  type="number"
+                                  value={threshold}
+                                  onChange={(e) => {
+                                    const newThresholds = [...settings.levelThresholds];
+                                    newThresholds[index] = parseInt(e.target.value) || 0;
+                                    updateSettings({ levelThresholds: newThresholds });
+                                  }}
+                                  min="0"
+                                  placeholder="需求点数"
+                                  className="w-full pl-3 pr-10 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm font-semibold text-gray-900 dark:text-white focus:outline-none focus:border-primary transition-colors tabular-nums"
+                                />
+                                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-gray-400 pointer-events-none">点</span>
+                              </div>
+                              {canRemove ? (
+                                <button
+                                  onClick={() => setDeleteLevelIndex(index)}
+                                  className="w-8 h-8 rounded-lg flex items-center justify-center text-rose-400 hover:bg-rose-500/10 flex-shrink-0 transition-colors"
+                                  aria-label="移除最高等级"
+                                  title="移除最高等级"
+                                >
+                                  <span className="text-base leading-none">−</span>
+                                </button>
+                              ) : (
+                                <div
+                                  className="w-8 h-8 flex-shrink-0 flex items-center justify-center text-gray-300 dark:text-gray-600"
+                                  title={index < 5 ? 'Lv.1–5 不可删除' : ''}
+                                >
+                                  {index < 5 ? <span className="text-[10px] opacity-60">🔒</span> : null}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <div className="p-3 pt-1 flex gap-2">
+                        <motion.button
+                          whileTap={{ scale: 0.97 }}
+                          onClick={() => {
+                            if (settings.levelThresholds.length >= 10) return;
+                            setShowLevelWarning(true);
+                          }}
+                          disabled={settings.levelThresholds.length >= 10}
+                          className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-colors ${
+                            settings.levelThresholds.length >= 10
+                              ? 'bg-gray-100 dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-400 cursor-not-allowed'
+                              : 'bg-primary/10 border-primary/30 text-primary hover:bg-primary/15'
+                          }`}
+                        >
+                          + 添加一级
+                        </motion.button>
+                        <motion.button
+                          whileTap={{ scale: 0.97 }}
+                          onClick={() => setShowResetThresholdsConfirm(true)}
+                          className="py-2 px-4 rounded-xl text-xs font-bold bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                          title="恢复默认阈值"
+                        >
+                          ↺ 默认
+                        </motion.button>
+                      </div>
+                    </div>
+
+                    {/* ── 子板块：关键词规则 ─────────────────────── */}
+                    <div className="flex items-center gap-2 pt-3 pb-2 border-b border-gray-200 dark:border-gray-700/80">
+                      <span className="text-base">🔑</span>
+                      <h4 className="text-sm font-bold text-gray-800 dark:text-white tracking-wide">关键词规则</h4>
+                      <span className="ml-auto text-[10px] text-gray-400 dark:text-gray-500">命中即加分</span>
+                    </div>
+                    <p className="text-[11px] text-gray-500 dark:text-gray-400 leading-relaxed -mt-2">
+                      记录中出现某属性的关键词时，自动为该属性 +1 点。回车或点 <span className="font-mono font-bold">+</span> 添加，点击标签可移除。
+                    </p>
+                    <div className="space-y-3">
+                      {settings.keywordRules.map((rule, index) => {
+                        const meta = ATTRIBUTE_META.find(m => m.id === rule.attribute);
+                        const accent = meta?.color ?? '#6B7280';
+                        const attrName = settings.attributeNames[rule.attribute] || meta?.defaultLabel || rule.attribute;
+                        const isEditing = Object.prototype.hasOwnProperty.call(keywordDrafts, index);
+                        const draft = keywordDrafts[index] ?? '';
+
+                        const commitDraft = () => {
+                          const trimmed = draft.trim();
+                          if (!trimmed) return;
+                          const existing = new Set(rule.keywords.map(k => k.toLowerCase()));
+                          if (existing.has(trimmed.toLowerCase())) {
+                            // 去重：清空 draft 但保持输入框开启
+                            setKeywordDrafts(prev => ({ ...prev, [index]: '' }));
+                            return;
+                          }
+                          const newRules = [...settings.keywordRules];
+                          newRules[index] = { ...rule, keywords: [...rule.keywords, trimmed] };
+                          updateSettings({ keywordRules: newRules });
+                          // 添加成功后清空 draft，让用户可以连续输入
+                          setKeywordDrafts(prev => ({ ...prev, [index]: '' }));
+                        };
+
+                        return (
+                          <div
+                            key={index}
+                            className="rounded-2xl border overflow-hidden"
+                            style={{
+                              borderColor: `${accent}40`,
+                              background: `linear-gradient(180deg, ${accent}0a 0%, transparent 60%)`,
+                            }}
+                          >
+                            {/* 头部：图标 + 名字 + 计数 */}
+                            <div className="px-3.5 py-2.5 flex items-center gap-2.5">
+                              <div
+                                className="w-9 h-9 rounded-xl flex items-center justify-center text-base flex-shrink-0"
+                                style={{ background: `${accent}1f`, color: accent }}
+                              >
+                                {meta?.icon ?? '🏷️'}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm font-bold text-gray-800 dark:text-white truncate">
+                                  {attrName}
+                                </div>
+                                <div className="text-[10px] text-gray-500 dark:text-gray-400">
+                                  命中后 <span className="font-bold tabular-nums" style={{ color: accent }}>+{rule.points}</span> 点
+                                </div>
+                              </div>
+                              <span
+                                className="text-[10px] font-bold px-2 py-0.5 rounded-full tabular-nums"
+                                style={{ background: `${accent}1a`, color: accent }}
+                              >
+                                {rule.keywords.length} 词
+                              </span>
+                            </div>
+
+                            {/* 正文：标签 + 内联输入 */}
+                            <div className="px-3.5 pb-3 space-y-2">
+                              {rule.keywords.length === 0 ? (
+                                <div className="text-[11px] text-gray-400 italic px-1">暂无关键词，下方输入回车添加</div>
+                              ) : (
+                                <div className="flex flex-wrap gap-1.5">
+                                  {rule.keywords.map((keyword, kIdx) => (
+                                    <button
+                                      key={`${keyword}-${kIdx}`}
+                                      onClick={() => {
+                                        const newRules = [...settings.keywordRules];
+                                        newRules[index] = {
+                                          ...rule,
+                                          keywords: rule.keywords.filter((_, i) => i !== kIdx),
+                                        };
+                                        updateSettings({ keywordRules: newRules });
+                                      }}
+                                      className="group inline-flex items-center gap-1 pl-2.5 pr-1 py-1 rounded-full text-xs font-medium transition-all hover:scale-[1.03] active:scale-95"
+                                      style={{
+                                        background: `${accent}1a`,
+                                        color: accent,
+                                        border: `1px solid ${accent}33`,
+                                      }}
+                                      title="点击移除"
+                                    >
+                                      <span className="max-w-[120px] truncate">{keyword}</span>
+                                      <span className="w-4 h-4 rounded-full inline-flex items-center justify-center text-[11px] leading-none opacity-50 group-hover:opacity-100 group-hover:bg-rose-500/15 group-hover:text-rose-500 transition">
+                                        ×
+                                      </span>
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+
+                              {/* 始终可见的内联输入 */}
+                              <div className="flex items-center gap-1.5 pt-0.5">
+                                <input
+                                  type="text"
+                                  value={draft}
+                                  onChange={(e) => setKeywordDrafts(prev => ({ ...prev, [index]: e.target.value }))}
+                                  onFocus={() => {
+                                    if (!isEditing) setKeywordDrafts(prev => ({ ...prev, [index]: '' }));
+                                  }}
+                                  onBlur={() => {
+                                    // 失焦且无内容则关闭，避免到处都是空 draft 占位
+                                    if (!draft.trim()) {
+                                      setKeywordDrafts(prev => {
+                                        const n = { ...prev };
+                                        delete n[index];
+                                        return n;
+                                      });
+                                    }
+                                  }}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') { e.preventDefault(); commitDraft(); }
+                                    if (e.key === 'Escape') {
+                                      setKeywordDrafts(prev => {
+                                        const n = { ...prev };
+                                        delete n[index];
+                                        return n;
+                                      });
+                                      (e.target as HTMLInputElement).blur();
+                                    }
+                                  }}
+                                  placeholder="输入关键词后回车 / 点 +"
+                                  className="flex-1 min-w-0 px-3 py-1.5 text-xs border rounded-lg bg-white dark:bg-gray-900/60 text-gray-800 dark:text-white focus:outline-none transition-colors"
+                                  style={{
+                                    borderColor: isEditing && draft ? accent : 'rgba(148,163,184,0.35)',
+                                  }}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={commitDraft}
+                                  disabled={!draft.trim()}
+                                  className="w-8 h-8 rounded-lg flex items-center justify-center text-base font-black text-white disabled:opacity-30 disabled:cursor-not-allowed transition-opacity active:scale-95"
+                                  style={{ background: accent }}
+                                  aria-label="添加关键词"
+                                >
+                                  +
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* 逆影战场开关 — 关闭后在此重新开启 */}
+                    {!settings.battleEnabled && (
+                      <div className="rounded-xl border-2 border-purple-200 dark:border-purple-800/50 bg-purple-50 dark:bg-purple-900/15 p-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className="text-base">⚔️</span>
+                              <h4 className="text-sm font-bold text-gray-800 dark:text-white">逆影战场</h4>
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400 font-semibold">已关闭</span>
+                            </div>
+                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 leading-relaxed">
+                              召唤 Persona，识破并击败内心的暗影。
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => updateSettings({ battleEnabled: true })}
+                            className="flex-shrink-0 mt-0.5 px-3 py-1.5 rounded-xl text-xs font-bold text-white transition-colors"
+                            style={{ background: 'linear-gradient(135deg, #7c3aed, #4f46e5)' }}
+                          >
+                            开启
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {section.id === 'summary' && (() => {
                   const provider = settings.summaryApiProvider ?? 'openai';
                   const activePresetId = settings.summaryActivePresetId ?? 'igor';
@@ -964,7 +1422,7 @@ export const Settings = () => {
                     'elizabeth': '好奇探索，郑重记录',
                     'theodore': '恭谨诚挚，深情服侍',
                     'margaret': '典雅沉思，潜能鉴证',
-                    'caroline-justine': '卡萝莉娜 · 芮丝汀娜',
+                    'caroline-justine': '急峻与冷静，双声问讯',
                   };
                   return (
                   <div className="space-y-3 pb-1">
@@ -981,10 +1439,10 @@ export const Settings = () => {
                           <p className="text-xs font-medium text-gray-500 dark:text-gray-400">熟悉的人</p>
                           <div className="grid grid-cols-4 gap-2">
                             {([
-                              { id: 'elizabeth', icon: '🦋', name: '伊丽莎白' },
-                              { id: 'theodore',  icon: '🌿', name: '西奥多'   },
-                              { id: 'margaret',  icon: '📖', name: '玛格丽特' },
-                              { id: 'caroline-justine', icon: '⚔️', name: '双子狱卒' },
+                              { id: 'elizabeth', icon: '🦋', name: '蓝蝶' },
+                              { id: 'theodore',  icon: '🌿', name: '青侍' },
+                              { id: 'margaret',  icon: '📖', name: '典藏' },
+                              { id: 'caroline-justine', icon: '⚔️', name: '双子审官' },
                             ] as const).map(face => {
                               const isActive = activePresetId === face.id;
                               return (
@@ -1104,16 +1562,12 @@ export const Settings = () => {
                         <div className="space-y-1.5">
                           <p className="text-xs font-medium text-gray-500 dark:text-gray-400">提供商</p>
                           <div className="grid grid-cols-3 gap-1.5">
-                            {([
-                              { value: 'openai', label: 'OpenAI', hint: 'gpt-4o-mini' },
-                              { value: 'deepseek', label: 'DeepSeek', hint: 'deepseek-chat' },
-                              { value: 'kimi', label: 'Kimi', hint: 'moonshot-v1-8k' },
-                            ] as const).map(p => (
+                            {AI_PROVIDERS.map(p => (
                               <button
-                                key={p.value}
-                                onClick={() => updateSettings({ summaryApiProvider: p.value })}
+                                key={p.id}
+                                onClick={() => { updateSettings({ summaryApiProvider: p.id }); setApiTestStatus('idle'); setApiTestMessage(''); }}
                                 className={`py-2.5 rounded-xl text-xs font-bold transition-all border ${
-                                  provider === p.value
+                                  provider === p.id
                                     ? 'bg-primary text-white border-primary shadow-sm'
                                     : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-600'
                                 }`}
@@ -1132,7 +1586,7 @@ export const Settings = () => {
                             <input
                               type="password"
                               value={summaryApiKeyDraft}
-                              onChange={e => { setSummaryApiKeyDraft(e.target.value); setSummaryApiKeySaved(false); }}
+                              onChange={e => { setSummaryApiKeyDraft(e.target.value); setSummaryApiKeySaved(false); setApiTestStatus('idle'); setApiTestMessage(''); }}
                               placeholder="sk-..."
                               className="flex-1 min-w-0 px-3 py-2.5 text-sm border border-gray-200 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-primary"
                             />
@@ -1147,7 +1601,29 @@ export const Settings = () => {
                               {summaryApiKeySaved ? '✓ 已保存' : '保存'}
                             </button>
                           </div>
-                          <p className="text-[11px] text-gray-400 dark:text-gray-500">Key 仅保存在本地设备，不会上传。</p>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={handleTestApi}
+                              disabled={apiTestStatus === 'testing'}
+                              className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-all ${
+                                apiTestStatus === 'testing'
+                                  ? 'bg-gray-100 dark:bg-gray-700 text-gray-400'
+                                  : apiTestStatus === 'ok'
+                                  ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400'
+                                  : apiTestStatus === 'error'
+                                  ? 'bg-red-100 dark:bg-red-900/30 text-red-500 dark:text-red-400'
+                                  : 'bg-primary/10 text-primary hover:bg-primary/20'
+                              }`}
+                            >
+                              {apiTestStatus === 'testing' ? '测试中…' : apiTestStatus === 'ok' ? '✓ 连接正常' : apiTestStatus === 'error' ? '× 连接失败' : '测试连接'}
+                            </button>
+                            {apiTestMessage && (
+                              <span className={`text-[11px] flex-1 min-w-0 truncate ${apiTestStatus === 'ok' ? 'text-green-600 dark:text-green-400' : 'text-red-500 dark:text-red-400'}`} title={apiTestMessage}>
+                                {apiTestMessage}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-gray-400 dark:text-gray-500">Key 仅保存在本地设备，不会上传。测试前请先保存 Key。</p>
                         </div>
 
                         {/* 高级：URL + 模型 */}
@@ -1158,12 +1634,8 @@ export const Settings = () => {
                             <input
                               type="text"
                               value={settings.summaryApiBaseUrl ?? ''}
-                              onChange={e => updateSettings({ summaryApiBaseUrl: e.target.value || undefined })}
-                              placeholder={
-                                provider === 'deepseek' ? 'https://api.deepseek.com/v1' :
-                                provider === 'kimi' ? 'https://api.moonshot.cn/v1' :
-                                'https://api.openai.com/v1'
-                              }
+                              onChange={e => { updateSettings({ summaryApiBaseUrl: e.target.value || undefined }); setApiTestStatus('idle'); setApiTestMessage(''); }}
+                              placeholder={getProviderConfig(provider).defaultBaseUrl}
                               className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-primary"
                             />
                           </div>
@@ -1172,12 +1644,8 @@ export const Settings = () => {
                             <input
                               type="text"
                               value={settings.summaryModel ?? ''}
-                              onChange={e => updateSettings({ summaryModel: e.target.value || undefined })}
-                              placeholder={
-                                provider === 'deepseek' ? 'deepseek-chat' :
-                                provider === 'kimi' ? 'moonshot-v1-8k' :
-                                'gpt-4o-mini'
-                              }
+                              onChange={e => { updateSettings({ summaryModel: e.target.value || undefined }); setApiTestStatus('idle'); setApiTestMessage(''); }}
+                              placeholder={getProviderConfig(provider).defaultModel}
                               className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-primary"
                             />
                           </div>
@@ -1215,6 +1683,14 @@ export const Settings = () => {
                       <div className="grid grid-cols-2 gap-2">
                         <motion.button
                           whileTap={{ scale: 0.97 }}
+                          onClick={handleDownload}
+                          className="bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 py-3 rounded-xl font-semibold text-sm flex flex-col items-center gap-0.5"
+                        >
+                          <span>{isNative() ? '📤' : '💾'}</span>
+                          <span>{isNative() ? '分享备份' : '下载备份'}</span>
+                        </motion.button>
+                        <motion.button
+                          whileTap={{ scale: 0.97 }}
                           onClick={handleCopy}
                           className={`py-3 rounded-xl font-semibold text-sm flex flex-col items-center gap-0.5 transition-colors ${
                             copyState === 'ok'
@@ -1226,14 +1702,6 @@ export const Settings = () => {
                         >
                           <span>{copyState === 'ok' ? '✓' : '📋'}</span>
                           <span>{copyState === 'ok' ? '已复制' : '复制 JSON'}</span>
-                        </motion.button>
-                        <motion.button
-                          whileTap={{ scale: 0.97 }}
-                          onClick={handleDownload}
-                          className="bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 py-3 rounded-xl font-semibold text-sm flex flex-col items-center gap-0.5"
-                        >
-                          <span>{isNative() ? '📤' : '💾'}</span>
-                          <span>{isNative() ? '分享备份' : '下载备份'}</span>
                         </motion.button>
                       </div>
 
@@ -1332,13 +1800,241 @@ export const Settings = () => {
                   </div>
                 )}
 
+                {section.id === 'cloud' && (
+                  <div className="space-y-4">
+                    {!cloudEnabled ? (
+                      <div className="p-4 rounded-lg bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600">
+                        <p className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed">
+                          云同步功能未配置。如需启用，请在 <code className="px-1.5 py-0.5 rounded bg-gray-200 dark:bg-gray-600 font-mono text-xs">.env.local</code> 中设置 <code className="px-1.5 py-0.5 rounded bg-gray-200 dark:bg-gray-600 font-mono text-xs">VITE_PB_URL</code>。
+                        </p>
+                      </div>
+                    ) : !cloudUser ? (
+                      <>
+                        <div className="p-4 rounded-lg bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-800">
+                          <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
+                            登录后，您在本机的数据可以同步到云端，让多台设备共享同一份成长记录。
+                          </p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                            — 登录仅需邮箱验证码，不需要密码 —
+                          </p>
+                        </div>
+                        <motion.button
+                          whileHover={{ scale: 1.01 }}
+                          whileTap={{ scale: 0.99 }}
+                          onClick={() => setShowLoginModal(true)}
+                          className="w-full py-3 rounded-lg font-medium text-white"
+                          style={{
+                            background: 'linear-gradient(135deg, #7c3aed, #6d28d9, #4f46e5)',
+                            boxShadow: '0 4px 16px rgba(124,58,237,0.3)',
+                          }}
+                        >
+                          登录云端
+                        </motion.button>
+                      </>
+                    ) : (
+                      <>
+                        <div className="p-4 rounded-lg bg-gradient-to-br from-violet-50 to-indigo-50 dark:from-violet-900/20 dark:to-indigo-900/20 border border-violet-200 dark:border-violet-800">
+                          <div className="flex items-center gap-3 mb-3">
+                            {/* 与顶部 UserProfileCard 保持一致：本地用户头像 */}
+                            <div
+                              className="w-12 h-12 rounded-xl overflow-hidden flex items-center justify-center text-xl font-bold text-white flex-shrink-0 ring-2 ring-white/60 dark:ring-white/10"
+                              style={{ background: 'linear-gradient(135deg, #7c3aed, #4f46e5)' }}
+                            >
+                              {user?.avatarDataUrl ? (
+                                <img src={user.avatarDataUrl} alt={user.name} className="w-full h-full object-cover" />
+                              ) : (
+                                (user?.name || (cloudUser.nickname as string) || (cloudUser.email as string) || '?')[0].toUpperCase()
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="font-semibold text-gray-800 dark:text-white truncate">
+                                {user?.name || (cloudUser.nickname as string) || '未命名的客人'}
+                              </div>
+                              {cloudUser.username ? (
+                                <button
+                                  onClick={() => {
+                                    const uid = cloudUser.username as string;
+                                    navigator.clipboard?.writeText(uid).catch(() => {});
+                                    setUserIdCopied(true);
+                                    setTimeout(() => setUserIdCopied(false), 1500);
+                                  }}
+                                  className="inline-flex items-center gap-1 text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 truncate max-w-full"
+                                  title="点击复制"
+                                >
+                                  <span className="opacity-70">@</span>
+                                  <span className="font-mono font-semibold truncate">{cloudUser.username as string}</span>
+                                  <span className="text-[10px] opacity-70">
+                                    {userIdCopied ? '✓ 已复制' : '· 点击复制'}
+                                  </span>
+                                </button>
+                              ) : null}
+                              <div className="text-[11px] text-gray-500 dark:text-gray-400 truncate mt-0.5">
+                                ☁ {cloudUser.email as string}
+                              </div>
+                            </div>
+                            {/* 齿轮：账号管理入口（UserID 未设置时打红点） */}
+                            <button
+                              onClick={() => setAccountPanelOpen(true)}
+                              className="relative w-8 h-8 rounded-full flex items-center justify-center text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-black/5 dark:hover:bg-white/5 transition-colors flex-shrink-0"
+                              aria-label="账号管理"
+                              title="账号管理"
+                            >
+                              <span className="text-sm">⚙</span>
+                              {!cloudUser.username && (
+                                <span className="absolute top-0.5 right-0.5 w-2 h-2 rounded-full bg-rose-500 ring-2 ring-white dark:ring-gray-900" />
+                              )}
+                            </button>
+                          </div>
+
+                          {/* 未设置 UserID 的横幅提示 */}
+                          {!cloudUser.username && (
+                            <div className="mb-3 p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-start gap-2">
+                              <span className="text-sm leading-none mt-0.5">⚠</span>
+                              <div className="flex-1 min-w-0">
+                                <div className="text-[11px] font-semibold text-amber-700 dark:text-amber-300 leading-relaxed">
+                                  你还没设置 UserID，好友系统无法找到你。
+                                </div>
+                                <button
+                                  onClick={() => setAccountPanelOpen(true)}
+                                  className="mt-1 text-[11px] font-bold text-amber-700 dark:text-amber-300 underline hover:opacity-80"
+                                >
+                                  现在就设一个 →
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                          <div className="flex items-center justify-between gap-2 relative">
+                            <button
+                              onClick={() => setShowPointsBreakdown(v => !v)}
+                              className="focus:outline-none"
+                              aria-label="查看总点数"
+                            >
+                              <LVTag level={totalLv} size="md" subdued />
+                            </button>
+                            <span className="text-xs text-gray-600 dark:text-gray-400 truncate">
+                              {syncStatus === 'syncing' ? '同步中…' : lastSyncAt ? `最近同步：${formatRelative(lastSyncAt)}` : '尚未同步'}
+                            </span>
+                            {showPointsBreakdown && (
+                              <motion.div
+                                initial={{ opacity: 0, y: -4, scale: 0.98 }}
+                                animate={{ opacity: 1, y: 0, scale: 1 }}
+                                exit={{ opacity: 0 }}
+                                transition={{ duration: 0.15 }}
+                                className="absolute left-0 top-full mt-2 z-30 w-64 p-3 rounded-xl shadow-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800"
+                              >
+                                <div className="flex items-center justify-between mb-2">
+                                  <div>
+                                    <div className="text-[9px] font-bold tracking-widest text-gray-400 dark:text-gray-500 uppercase">总点数</div>
+                                    <div className="text-xl font-black text-primary tabular-nums leading-tight">
+                                      {attributes.reduce((sum, a) => sum + (a.points ?? 0), 0)}
+                                    </div>
+                                  </div>
+                                  <button
+                                    onClick={() => setShowPointsBreakdown(false)}
+                                    className="w-6 h-6 rounded-md text-gray-400 dark:text-gray-500 hover:bg-black/5 dark:hover:bg-white/5 flex items-center justify-center"
+                                  >✕</button>
+                                </div>
+                                <div className="space-y-1 pt-1.5 border-t border-gray-100 dark:border-gray-700">
+                                  {attributes.map(a => (
+                                    <div key={a.id} className="flex items-center justify-between text-[11px]">
+                                      <span className="text-gray-600 dark:text-gray-300 font-medium">{a.displayName}</span>
+                                      <span className="text-gray-800 dark:text-gray-100 font-bold tabular-nums">
+                                        {a.points}
+                                        <span className="text-[9px] text-gray-400 dark:text-gray-500 ml-1">· Lv.{a.level}</span>
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </motion.div>
+                            )}
+                          </div>
+                        </div>
+
+                        {lastCloudError && syncStatus === 'error' && (
+                          <div className="p-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-xs text-red-700 dark:text-red-300">
+                            同步失败：{lastCloudError}
+                          </div>
+                        )}
+
+                        {/* 同步 / 拉取 两个主按钮一行排列 */}
+                        <div className="grid grid-cols-[1fr_auto] gap-2">
+                          <motion.button
+                            whileHover={{ scale: 1.01 }}
+                            whileTap={{ scale: 0.99 }}
+                            disabled={syncStatus === 'syncing'}
+                            onClick={async () => {
+                              console.log('[velvet-sync] push clicked');
+                              try {
+                                await pushAll();
+                                console.log('[velvet-sync] push done');
+                              } catch (err) {
+                                console.error('[velvet-sync] push failed:', err);
+                              }
+                            }}
+                            className="py-2.5 rounded-lg font-medium text-sm text-white disabled:opacity-50"
+                            style={{
+                              background: 'linear-gradient(135deg, #7c3aed, #6d28d9, #4f46e5)',
+                              boxShadow: '0 2px 10px rgba(124,58,237,0.25)',
+                            }}
+                          >
+                            {syncStatus === 'syncing' ? '同步中…' : '立即同步到云端'}
+                          </motion.button>
+                          <motion.button
+                            whileHover={{ scale: 1.01 }}
+                            whileTap={{ scale: 0.99 }}
+                            disabled={syncStatus === 'syncing'}
+                            onClick={() => setSyncChoiceOpen(true)}
+                            className="px-4 py-2.5 rounded-lg text-sm font-semibold bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors disabled:opacity-50 whitespace-nowrap"
+                          >
+                            ↓ 拉取
+                          </motion.button>
+                        </div>
+
+                        <button
+                          disabled={syncStatus === 'syncing'}
+                          onClick={async () => {
+                            try {
+                              const diff = await computeSyncDiff();
+                              if (diff) {
+                                useCloudStore.getState().setDiffWarning(diff);
+                              }
+                            } catch (err) {
+                              console.error('[velvet-sync] diff check failed:', err);
+                            }
+                          }}
+                          className="w-full py-2 rounded-lg text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors disabled:opacity-50 border border-dashed border-gray-200 dark:border-gray-700"
+                        >
+                          检查条目差异（避免误覆盖）
+                        </button>
+
+                        {/* 同步隐私：按类目选择上传哪些数据 */}
+                        <SyncPrivacyPanel
+                          excluded={settings.syncExcludedTables ?? []}
+                          syncConfidantsToCloud={settings.syncConfidantsToCloud}
+                          syncCloudApiKey={settings.syncCloudApiKey}
+                          onChange={(patch) => updateSettings(patch)}
+                        />
+
+                        <motion.button
+                          whileHover={{ scale: 1.01 }}
+                          whileTap={{ scale: 0.99 }}
+                          onClick={() => setShowLogoutConfirm(true)}
+                          className="w-full py-2.5 rounded-lg font-medium text-sm bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                        >
+                          退出登录
+                        </motion.button>
+                      </>
+                    )}
+                  </div>
+                )}
+
                 {section.id === 'about' && (
                   <div className="space-y-4">
                     <div className="text-center py-4">
                       <div className="text-5xl mb-4">🦋</div>
                       <h3 className="text-xl font-bold text-gray-800 dark:text-white mb-1">靛蓝色房间</h3>
                       <p className="text-sm text-gray-500 dark:text-gray-400">Persona Growth Tracker</p>
-                      <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">v{import.meta.env.PACKAGE_VERSION || '0.0.1'}</p>
+                      <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">V2.0</p>
                     </div>
                     <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4 space-y-3">
                       <div className="flex items-center justify-between">
@@ -1432,6 +2128,126 @@ export const Settings = () => {
         </motion.div>
       )}
 
+      {/* 恢复默认阈值确认 */}
+      {showResetThresholdsConfirm && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+          onClick={() => setShowResetThresholdsConfirm(false)}
+        >
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="bg-white dark:bg-gray-800 rounded-2xl p-6 max-w-sm w-full shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="text-center">
+              <div className="text-3xl mb-2">↺</div>
+              <h3 className="text-base font-bold text-gray-800 dark:text-white mb-2">恢复默认等级阈值？</h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
+                将等级阈值恢复为系统默认的 5 级配置。
+              </p>
+              <div className="mt-3 mx-auto inline-flex flex-wrap gap-1.5 justify-center">
+                {DEFAULT_LEVEL_THRESHOLDS.map((v, i) => (
+                  <span
+                    key={i}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-primary/10 text-primary tabular-nums"
+                  >
+                    <span className="opacity-60">LV{i + 1}</span>
+                    {v}
+                  </span>
+                ))}
+              </div>
+              <p className="text-[10px] text-rose-500 mt-3">
+                若你当前有 Lv.6 及以上自定义等级，它们会一并被清除。
+              </p>
+            </div>
+            <div className="flex gap-2 mt-5">
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={() => setShowResetThresholdsConfirm(false)}
+                className="flex-1 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 py-2 rounded-xl text-sm font-semibold"
+              >
+                取消
+              </motion.button>
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={() => {
+                  updateSettings({ levelThresholds: [...DEFAULT_LEVEL_THRESHOLDS] });
+                  setShowResetThresholdsConfirm(false);
+                }}
+                className="flex-1 bg-primary text-white py-2 rounded-xl text-sm font-bold"
+              >
+                恢复默认
+              </motion.button>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+
+      {/* 删除高等级确认 */}
+      {deleteLevelIndex !== null && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+          onClick={() => setDeleteLevelIndex(null)}
+        >
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="bg-white dark:bg-gray-800 rounded-2xl p-6 max-w-sm w-full shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="text-center">
+              <div className="text-3xl mb-2">⚠️</div>
+              <h3 className="text-base font-bold text-gray-800 dark:text-white mb-1.5">
+                移除 Lv.{deleteLevelIndex + 1}？
+              </h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
+                这是当前的最高等级，所需点数 <b className="text-primary tabular-nums">{settings.levelThresholds[deleteLevelIndex] ?? 0}</b>。移除后，已达到此等级的属性会回落到上一级。
+              </p>
+              <p className="text-[10px] text-gray-400 mt-2">
+                （Lv.1–5 为系统保护等级，无法删除。）
+              </p>
+            </div>
+            <div className="flex gap-2 mt-5">
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={() => setDeleteLevelIndex(null)}
+                className="flex-1 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 py-2 rounded-xl text-sm font-semibold"
+              >
+                再想想
+              </motion.button>
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={() => {
+                  const idx = deleteLevelIndex;
+                  if (idx === null) return;
+                  // 安全兜底：仅允许移除最后一级，并且 index ≥ 5
+                  if (idx !== settings.levelThresholds.length - 1 || idx < 5) {
+                    setDeleteLevelIndex(null);
+                    return;
+                  }
+                  updateSettings({ levelThresholds: settings.levelThresholds.slice(0, -1) });
+                  setDeleteLevelIndex(null);
+                }}
+                className="flex-1 bg-rose-500 text-white py-2 rounded-xl text-sm font-bold shadow-md"
+              >
+                确认移除
+              </motion.button>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+
       {showLevelWarning && (
         <motion.div
           initial={{ opacity: 0 }}
@@ -1486,6 +2302,120 @@ export const Settings = () => {
         </motion.div>
       )}
 
+      {/* 云同步登录弹窗 */}
+      <LoginModal
+        isOpen={showLoginModal}
+        onClose={() => setShowLoginModal(false)}
+        origin="settings"
+        onSuccess={async () => {
+          try {
+            const result = await syncOnLogin();
+            if (result === 'conflict') {
+              useCloudStore.getState().setConflictPending(true);
+            }
+          } catch {
+            /* already recorded to cloudStore.lastError */
+          }
+        }}
+      />
+
+      {/* 账号管理面板（齿轮入口） */}
+      <AccountManagePanel
+        isOpen={accountPanelOpen}
+        onClose={() => setAccountPanelOpen(false)}
+      />
+
+      {/* 从云端拉取确认（会覆盖本机数据） */}
+      {syncChoiceOpen && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-[140] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          onClick={() => setSyncChoiceOpen(false)}
+        >
+          <motion.div
+            initial={{ scale: 0.95, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.95, opacity: 0 }}
+            onClick={e => e.stopPropagation()}
+            className="bg-white dark:bg-gray-800 rounded-xl p-6 max-w-sm w-full shadow-2xl"
+          >
+            <h3 className="text-lg font-semibold text-gray-800 dark:text-white mb-2">
+              从云端拉取数据？
+            </h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-5 leading-relaxed">
+              会用云端数据**覆盖本机**。如果本机有未同步的改动，请先点"立即同步到云端"。
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setSyncChoiceOpen(false)}
+                className="flex-1 py-2.5 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 font-medium text-sm hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+              >
+                取消
+              </button>
+              <button
+                onClick={async () => {
+                  setSyncChoiceOpen(false);
+                  console.log('[velvet-sync] pull clicked');
+                  try {
+                    await pullAll();
+                    console.log('[velvet-sync] pull done');
+                  } catch (err) {
+                    console.error('[velvet-sync] pull failed:', err);
+                  }
+                }}
+                className="flex-1 py-2.5 rounded-lg bg-red-500 text-white font-medium text-sm hover:bg-red-600 transition-colors"
+              >
+                确认拉取
+              </button>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+
+      {/* 退出登录确认 */}
+      {showLogoutConfirm && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-[140] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          onClick={() => setShowLogoutConfirm(false)}
+        >
+          <motion.div
+            initial={{ scale: 0.95, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.95, opacity: 0 }}
+            onClick={e => e.stopPropagation()}
+            className="bg-white dark:bg-gray-800 rounded-xl p-6 max-w-sm w-full shadow-2xl"
+          >
+            <h3 className="text-lg font-semibold text-gray-800 dark:text-white mb-2">
+              退出登录？
+            </h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-5 leading-relaxed">
+              退出后此设备将停止同步，但本机数据不会被删除。下次登录同一账号可继续。
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowLogoutConfirm(false)}
+                className="flex-1 py-2.5 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 font-medium text-sm hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+              >
+                取消
+              </button>
+              <button
+                onClick={() => {
+                  cloudLogout();
+                  setShowLogoutConfirm(false);
+                }}
+                className="flex-1 py-2.5 rounded-lg bg-red-500 text-white font-medium text-sm hover:bg-red-600 transition-colors"
+              >
+                确认退出
+              </button>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
 
     </motion.div>
   );

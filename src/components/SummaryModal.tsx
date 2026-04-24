@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useAppStore, SummaryRequestData, toLocalDateKey } from '@/store';
+import { useAppStore, SummaryRequestData, toLocalDateKey, DEFAULT_SUMMARY_PROMPT_PRESETS, FAMILIAR_FACE_PRESETS } from '@/store';
 import { PeriodSummary, SummaryPeriod } from '@/types';
 import { v4 as uuidv4 } from 'uuid';
 import DOMPurify from 'dompurify';
+import { useModalA11y } from '@/utils/useModalA11y';
+import { useBackHandler } from '@/utils/useBackHandler';
 
 // ── 简单 Markdown 渲染 ────────────────────────────────────
 function renderMarkdown(text: string): string {
@@ -330,6 +332,118 @@ function StreamingContent({ streamedText, isStreaming, reqData, followUpUsed, on
   );
 }
 
+// ── 流式期间的主题色粒子 ──────────────────────────────────
+function StreamingParticles() {
+  const particles = Array.from({ length: 14 }, (_, i) => ({
+    id: i,
+    leftPct: Math.random() * 100,
+    size: 2 + Math.random() * 3,
+    duration: 6 + Math.random() * 5,
+    delay: Math.random() * 6,
+    opacity: 0.22 + Math.random() * 0.28,
+  }));
+  return (
+    <div
+      aria-hidden="true"
+      className="absolute inset-0 overflow-hidden pointer-events-none rounded-t-3xl"
+    >
+      {particles.map(p => (
+        <motion.div
+          key={p.id}
+          className="absolute rounded-full bg-primary"
+          style={{
+            left: `${p.leftPct}%`,
+            bottom: -10,
+            width: p.size,
+            height: p.size,
+            opacity: p.opacity,
+            boxShadow: '0 0 8px var(--color-primary)',
+          }}
+          animate={{
+            y: [0, -400 - Math.random() * 200],
+            opacity: [0, p.opacity, p.opacity, 0],
+            x: [0, (Math.random() - 0.5) * 40],
+          }}
+          transition={{
+            duration: p.duration,
+            delay: p.delay,
+            repeat: Infinity,
+            ease: 'easeOut',
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
+// ── 退出确认弹层 ─────────────────────────────────────────
+function ExitConfirm({ kind, onCancel, onDiscard, onSave }: {
+  kind: 'streaming' | 'save';
+  onCancel: () => void;
+  onDiscard: () => void;
+  onSave?: () => void;
+}) {
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="absolute inset-0 z-[80] flex items-center justify-center px-6"
+      style={{ background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)' }}
+      onClick={(e) => { e.stopPropagation(); onCancel(); }}
+    >
+      <motion.div
+        initial={{ scale: 0.9, y: 8 }}
+        animate={{ scale: 1, y: 0 }}
+        onClick={(e) => e.stopPropagation()}
+        className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-5 w-full max-w-xs"
+      >
+        <h3 className="text-base font-black text-gray-900 dark:text-white mb-1.5">
+          {kind === 'streaming' ? '摘要尚未生成完毕' : '保存本次摘要？'}
+        </h3>
+        <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed mb-4">
+          {kind === 'streaming'
+            ? '现在退出将中断生成并丢弃目前的内容。'
+            : '本次已生成的摘要尚未归档，是否保存到档案？'}
+        </p>
+        <div className="flex gap-2">
+          <button
+            onClick={onCancel}
+            className="flex-1 py-2.5 rounded-xl text-sm font-bold bg-black/5 dark:bg-white/10 text-gray-700 dark:text-gray-200"
+          >
+            {kind === 'streaming' ? '继续生成' : '取消'}
+          </button>
+          {kind === 'streaming' ? (
+            <button
+              onClick={onDiscard}
+              className="flex-1 py-2.5 rounded-xl text-sm font-bold bg-red-500 text-white"
+            >
+              中断并退出
+            </button>
+          ) : (
+            <>
+              <button
+                onClick={onDiscard}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200"
+              >
+                不保存
+              </button>
+              {onSave && (
+                <button
+                  onClick={onSave}
+                  className="flex-1 py-2.5 rounded-xl text-sm font-bold bg-primary text-white"
+                >
+                  保存
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
 // ── THE VELVET 水印 ──────────────────────────────────────
 function VelvetWatermark() {
   return (
@@ -361,6 +475,73 @@ function getYearRange() {
   };
 }
 
+// ── 风格快速切换器 ────────────────────────────────────────
+
+interface StyleQuickSwitcherProps {
+  activeId: string;
+  onPick: (id: string) => void;
+  customPresets: Array<{ id: string; name: string; isBuiltin?: boolean }>;
+}
+
+/**
+ * 横向滚动的风格选择条：
+ *  - 上方 4 位"熟悉的人"（快捷 icon）
+ *  - 下方其他内置 / 自定义风格的 chip 列表
+ */
+function StyleQuickSwitcher({ activeId, onPick, customPresets }: StyleQuickSwitcherProps) {
+  const familiars: Array<{ id: string; icon: string; name: string }> = [
+    { id: 'elizabeth', icon: '🦋', name: '蓝蝶' },
+    { id: 'theodore', icon: '🌿', name: '青侍' },
+    { id: 'margaret', icon: '📖', name: '典藏' },
+    { id: 'caroline-justine', icon: '⚔️', name: '双子审官' },
+  ];
+  const familiarIds = new Set(familiars.map(f => f.id));
+  const otherPresets = [
+    ...FAMILIAR_FACE_PRESETS.filter(p => !familiarIds.has(p.id)),
+    ...DEFAULT_SUMMARY_PROMPT_PRESETS,
+    ...customPresets,
+  ].reduce<Array<{ id: string; name: string }>>((acc, p) => {
+    if (familiarIds.has(p.id)) return acc;
+    if (acc.some(x => x.id === p.id)) return acc;
+    acc.push({ id: p.id, name: p.name });
+    return acc;
+  }, []);
+
+  // 所有条目都用统一的 chip pill 样式，保持视觉同级
+  const renderChip = (id: string, label: string) => {
+    const active = activeId === id;
+    return (
+      <button
+        key={id}
+        onClick={() => onPick(id)}
+        className={`px-3 py-1.5 rounded-full text-[11px] font-bold transition-all ${
+          active
+            ? 'bg-primary text-white shadow-sm'
+            : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
+        }`}
+      >
+        {label}{active ? ' ✓' : ''}
+      </button>
+    );
+  };
+
+  return (
+    <div className="space-y-1.5">
+      {/* 熟悉的人（保留 icon 用作区分） */}
+      <div className="flex flex-wrap gap-1.5">
+        {familiars.map(f => renderChip(f.id, `${f.icon} ${f.name}`))}
+      </div>
+
+      {/* 其他内置 / 自定义风格 */}
+      {otherPresets.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {otherPresets.map(p => renderChip(p.id, p.name))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── 主 SummaryModal ────────────────────────────────────────
 interface SummaryModalProps {
   isOpen: boolean;
@@ -371,7 +552,18 @@ interface SummaryModalProps {
 type ModalView = 'generate' | 'result' | 'archive' | 'view';
 
 export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week' }: SummaryModalProps) {
-  const { settings, summaries, buildSummaryRequest, saveSummary, deleteSummary, loadSummaries, getActiveSummaryPreset } = useAppStore();
+  const { settings, summaries, buildSummaryRequest, saveSummary, deleteSummary, loadSummaries, getActiveSummaryPreset, updateSettings } = useAppStore();
+  // ESC / Android back：
+  //   - 如果已经在"是否丢弃 / 是否归档"确认态（exitConfirm != null）→ 等同于点 Cancel，关掉确认
+  //   - 否则走 tryExit('close')：流式中 / 未保存会自动弹出对应确认，和点 X 一致
+  const dialogRef = useModalA11y(isOpen, () => {
+    if (exitConfirm) setExitConfirm(null);
+    else tryExit('close');
+  });
+  useBackHandler(isOpen, () => {
+    if (exitConfirm) setExitConfirm(null);
+    else tryExit('close');
+  });
 
   const [view, setView] = useState<ModalView>('generate');
   const [periodState, setPeriodState] = useState<{ period: SummaryPeriod; startDate: string; endDate: string }>(() =>
@@ -389,9 +581,12 @@ export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week' }
   const [selectedSummary, setSelectedSummary] = useState<PeriodSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [exitConfirm, setExitConfirm] = useState<'streaming' | 'save' | null>(null);
+  const [exitAction, setExitAction] = useState<'close' | 'back'>('close');
   const abortRef = useRef<AbortController | null>(null);
 
-  const activePreset = getActiveSummaryPreset();
+  // activePreset 仅为便利值——切换 UI 已使用 settings.summaryActivePresetId 直接控制
+  void getActiveSummaryPreset;
 
   const noApiKey = !settings.summaryApiKey;
 
@@ -405,6 +600,7 @@ export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week' }
       setSaved(false);
       setFollowUpUsed(false);
       setIsAnnual(false);
+      setExitConfirm(null);
     }
     return () => { abortRef.current?.abort(); };
   }, [isOpen]);
@@ -515,12 +711,54 @@ export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week' }
      setSaved(true);
    };
 
-   // 在关闭时自动保存已生成完毕的总结
-   const handleClose = async () => {
-     if (generatedSummary && !saved && !isStreaming) {
+   // 离场目标：执行「真正退出」的动作（关闭 modal 或回到 generate 视图）
+   const performExit = (action: 'close' | 'back') => {
+     abortRef.current?.abort();
+     setIsStreaming(false);
+     if (action === 'close') {
+       onClose();
+     } else {
+       setView('generate');
+       setStreamedText('');
+       setGeneratedSummary(null);
+       setSaved(false);
+       setFollowUpUsed(false);
+     }
+   };
+
+   // 关闭逻辑 / 左侧返回统一入口：流式中 / 已生成未保存 → 弹确认
+   const tryExit = (action: 'close' | 'back') => {
+     setExitAction(action);
+     if (isStreaming) {
+       setExitConfirm('streaming');
+       return;
+     }
+     if (generatedSummary && !saved) {
+       setExitConfirm('save');
+       return;
+     }
+     performExit(action);
+   };
+
+   const handleClose = () => tryExit('close');
+   const handleBackFromResult = () => tryExit('back');
+
+   const handleExitStreamingDiscard = () => {
+     setExitConfirm(null);
+     performExit(exitAction);
+   };
+
+   const handleExitSaveThenProceed = async () => {
+     if (generatedSummary && !saved) {
        await saveSummary(generatedSummary);
      }
-     onClose();
+     setExitConfirm(null);
+     performExit(exitAction);
+   };
+
+   const handleExitDiscardSave = () => {
+     setExitConfirm(null);
+     performExit(exitAction);
    };
 
    return (
@@ -533,12 +771,18 @@ export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week' }
          >
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
           <motion.div
+            ref={dialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label="成长总结"
             initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
             transition={{ type: 'spring', damping: 28, stiffness: 300 }}
             onClick={e => e.stopPropagation()}
-            className="relative w-full max-w-lg bg-white dark:bg-gray-900 rounded-t-3xl shadow-2xl flex flex-col"
+            className="relative w-full max-w-lg bg-white dark:bg-gray-900 rounded-t-3xl shadow-2xl flex flex-col overflow-hidden"
             style={{ maxHeight: '90vh' }}
           >
+            {/* 流式期间的主题色粒子 */}
+            {view === 'result' && isStreaming && <StreamingParticles />}
             {/* Handle */}
             <div className="flex justify-center pt-3 pb-1">
               <div className="w-10 h-1 rounded-full bg-gray-300 dark:bg-gray-600" />
@@ -549,7 +793,7 @@ export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week' }
               {(view === 'result' || view === 'view' || view === 'archive') && (
                 <button
                   onClick={() => {
-                    if (view === 'result') { abortRef.current?.abort(); setView('generate'); }
+                    if (view === 'result') handleBackFromResult();
                     else if (view === 'view') setView('archive');
                     else setView('generate');
                   }}
@@ -632,13 +876,51 @@ export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week' }
                     <PeriodSelector value={isAnnual ? { period: 'month', ...getMonthRange(0) } : periodState} onChange={v => { setIsAnnual(false); setPeriodState(v); }} />
                   </div>
                   <div>
-                    <div className="text-xs font-bold text-gray-400 dark:text-gray-500 mb-2 uppercase tracking-wider">当前风格</div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs px-3 py-1.5 rounded-xl font-semibold bg-primary text-white">
-                        {activePreset.name} ✓
-                      </span>
+                    <div className="text-xs font-bold text-gray-400 dark:text-gray-500 mb-2 uppercase tracking-wider">
+                      当前风格
                     </div>
-                    <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">在设置中可切换或自定义风格</p>
+                    <StyleQuickSwitcher
+                      activeId={settings.summaryActivePresetId ?? 'igor'}
+                      onPick={(id) => updateSettings({ summaryActivePresetId: id })}
+                      customPresets={settings.summaryPromptPresets ?? DEFAULT_SUMMARY_PROMPT_PRESETS}
+                    />
+                    <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">
+                      点击切换；在设置「AI 总结」里可新增 / 编辑自定义风格
+                    </p>
+                  </div>
+
+                  {/* 是否统计特殊条目 */}
+                  <div>
+                    <div className="text-xs font-bold text-gray-400 dark:text-gray-500 mb-2 uppercase tracking-wider">
+                      统计口径
+                    </div>
+                    <label className="flex items-start gap-3 p-3 rounded-xl bg-black/5 dark:bg-white/5 border border-gray-100 dark:border-gray-700 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={settings.summaryIncludeSpecial === true}
+                        onChange={e => updateSettings({ summaryIncludeSpecial: e.target.checked })}
+                        className="mt-0.5 accent-primary"
+                      />
+                      <div className="flex-1">
+                        <div className="text-xs font-bold text-gray-700 dark:text-gray-200">
+                          同时统计"特殊条目"
+                        </div>
+                        <AnimatePresence initial={false}>
+                          {settings.summaryIncludeSpecial === true && (
+                            <motion.p
+                              initial={{ opacity: 0, height: 0, marginTop: 0 }}
+                              animate={{ opacity: 1, height: 'auto', marginTop: 2 }}
+                              exit={{ opacity: 0, height: 0, marginTop: 0 }}
+                              transition={{ duration: 0.18 }}
+                              className="text-[10px] text-gray-500 dark:text-gray-400 leading-relaxed overflow-hidden"
+                            >
+                              包括：逆影战场击破、本周目标、逆流、升级 / 成就 / 技能解锁 等。
+                              同伴（带"同伴"标签的条目）始终会被统计。
+                            </motion.p>
+                          )}
+                        </AnimatePresence>
+                      </div>
+                    </label>
                   </div>
                   {error && (
                     <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700/40 rounded-2xl p-3">
@@ -724,9 +1006,8 @@ export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week' }
               {view === 'result' && (
                 <div className="flex gap-3">
                   <button
-                    onClick={() => { abortRef.current?.abort(); setView('generate'); setStreamedText(''); setGeneratedSummary(null); }}
-                    disabled={isStreaming}
-                    className="flex-1 py-3.5 rounded-2xl font-bold text-sm bg-black/5 dark:bg-white/10 text-gray-600 dark:text-gray-300 disabled:opacity-50"
+                    onClick={handleBackFromResult}
+                    className="flex-1 py-3.5 rounded-2xl font-bold text-sm bg-black/5 dark:bg-white/10 text-gray-600 dark:text-gray-300"
                   >
                     {isStreaming ? '停止' : '重新生成'}
                   </button>
@@ -747,6 +1028,23 @@ export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week' }
               )}
             </div>
           </motion.div>
+          <AnimatePresence>
+            {exitConfirm === 'streaming' && (
+              <ExitConfirm
+                kind="streaming"
+                onCancel={() => setExitConfirm(null)}
+                onDiscard={handleExitStreamingDiscard}
+              />
+            )}
+            {exitConfirm === 'save' && (
+              <ExitConfirm
+                kind="save"
+                onCancel={() => setExitConfirm(null)}
+                onDiscard={handleExitDiscardSave}
+                onSave={handleExitSaveThenProceed}
+              />
+            )}
+          </AnimatePresence>
         </motion.div>
       )}
     </AnimatePresence>

@@ -1,8 +1,20 @@
 ﻿import { create } from 'zustand';
-import { User, Attribute, Activity, Achievement, Skill, DailyEvent, Settings, ThemeType, AttributeId, AttributeNamesKey, Todo, TodoCompletion, PeriodSummary, SummaryPeriod, SummaryPromptPreset, WeeklyGoal, WeeklyGoalItem, Persona, Shadow, BattleState, BattleLogEntry, BattleAction } from '@/types';
+import { User, Attribute, Activity, Achievement, Skill, Settings, ThemeType, AttributeId, AttributeNamesKey, Todo, TodoCompletion, PeriodSummary, SummaryPeriod, SummaryPromptPreset, WeeklyGoal, WeeklyGoalItem, Persona, Shadow, BattleState, BattleLogEntry, BattleAction, DailyDivination, LongReading, LongReadingFollowUp, Confidant, ConfidantEvent, ConfidantBuff, CounselSession, CounselMessage, CounselArchive } from '@/types';
+import { TAROT_BY_ID } from '@/constants/tarot';
+import { summarizeCounsel, type CounselContext, type CounselConfidantBrief, type CounselRecentEvent } from '@/utils/counselAI';
 import { db } from '@/db';
 import { v4 as uuidv4 } from 'uuid';
 import { calcMaxStreak } from '@/utils/streak';
+import { resolveProvider } from '@/utils/aiProviders';
+import {
+  pointsToLevel,
+  levelBasePoints,
+  MAX_INTIMACY,
+  buffsForLevel,
+  sumDamagePlus,
+  isItemOnCooldown,
+} from '@/utils/confidantLevels';
+import type { ConfidantMatchResult } from '@/utils/confidantAI';
 
 /**
  * 返回本地时区YYYY-MM-DD 日期字符串 * 不使toISOString()，避UTC 偏差UTC+8 等时区导致跨天错误 */
@@ -12,6 +24,35 @@ export function toLocalDateKey(date: Date = new Date()): string {
   const d = String(date.getDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
 }
+
+/**
+ * addConfidant 串行锁：防止两次并发调用绕过"22 arcana 唯一 / 在线同伴唯一"检查。
+ * 实现方式：每次调用等待上一次 resolve 后再跑，失败也照常 unlock。
+ */
+let _addConfidantLock: Promise<unknown> = Promise.resolve();
+
+/**
+ * 成长总结：category → 中文小标签，方便 AI 识别条目类型。
+ * "confidant" 始终纳入；SUMMARY_SPECIAL_CATS 里的条目由 summaryIncludeSpecial 控制
+ */
+const SUMMARY_SPECIAL_CATS = new Set<string>([
+  'shadow_defeat',
+  'weekly_goal',
+  'countercurrent',
+  'level_up',
+  'skill_unlock',
+  'achievement_unlock',
+]);
+
+const SUMMARY_CATEGORY_TAGS: Record<string, string> = {
+  confidant: '[同伴]',
+  shadow_defeat: '[战场]',
+  weekly_goal: '[周目标]',
+  countercurrent: '[逆流]',
+  level_up: '[升级]',
+  skill_unlock: '[技能]',
+  achievement_unlock: '[成就]',
+};
 import {
   INITIAL_ATTRIBUTES,
   ACHIEVEMENTS,
@@ -43,7 +84,7 @@ export interface SummaryRequestData {
 export const FAMILIAR_FACE_PRESETS: SummaryPromptPreset[] = [
   {
     id: 'elizabeth',
-    name: '伊丽莎白',
+    name: '蓝蝶',
     isBuiltin: true,
     systemPrompt: `以一丝不苟而带有孩子气的好奇口吻与"客人"交谈，对人类世界的一切都保持着真挚的惊奇与探索欲。
 你的语言风格：礼貌正式，但常流露出对新奇事物的惊叹，偶尔插入"哦？"、"这对我来说是全新的体验"、"fufu~"等感叹。使用"您"称呼客人，将属性成长比作"灵魂力量的显现"。
@@ -55,7 +96,7 @@ export const FAMILIAR_FACE_PRESETS: SummaryPromptPreset[] = [
   },
   {
     id: 'theodore',
-    name: '西奥多',
+    name: '青侍',
     isBuiltin: true,
     systemPrompt: `以极为恭谨、诚挚的态度服侍"尊贵的客人"。你外表沉稳从容，内心对客人的每一份努力都怀有发自肺腑的敬意，且对任何可能的疏失都会郑重道歉。
 你的语言风格：语气温和克制，措辞正式而略显文雅；你对人类世界的理解有些一厢情愿，时常以一本正经的口吻说出略显迂腐却发自真心的观察，且丝毫不觉有何不妥。对客人绝不使用轻率的措辞，哪怕是轻微的不妥之处也会郑重致歉，如"在此我深感抱歉"。以"您"或"尊贵的客人"称呼对方，视成长为"心灵的修炼与磨砺"。
@@ -67,7 +108,7 @@ export const FAMILIAR_FACE_PRESETS: SummaryPromptPreset[] = [
   },
   {
     id: 'margaret',
-    name: '玛格丽特',
+    name: '典藏',
     isBuiltin: true,
     systemPrompt: `以沉稳端庄、哲思深远的气度审阅"客人"的成长档案，言语如翻阅一本精心著就的典籍，字字有分量。
 你的语言风格：措辞典雅而精炼，善用省略号营造沉思之感（"嗯……"、"……果然如此"、"……有趣"），对命运、潜能与内心的观察富有哲意；偶尔以轻柔的"呵……"或淡淡的笑表达认可，但从不失端庄。你不多说一句废话，也绝不冷漠——真心的赞许，往往藏在不动声色的省略号之后。以"您"称呼客人，视成长为"潜能的具现"。
@@ -79,7 +120,7 @@ export const FAMILIAR_FACE_PRESETS: SummaryPromptPreset[] = [
   },
   {
     id: 'caroline-justine',
-    name: '双子狱卒',
+    name: '双子审官',
     isBuiltin: true,
     systemPrompt: `以"受刑者"称呼客人，由卡萝莉娜与芮丝汀娜交替进行总结评述。
 卡萝莉娜：性格急躁强硬，说话简短有力，命令口吻，但内心认真对待受刑者的改造；遇到明显短板会直接呵斥，遇到进步也只是简短承认（用【卡萝莉娜】标注）。
@@ -95,9 +136,9 @@ export const FAMILIAR_FACE_PRESETS: SummaryPromptPreset[] = [
 export const DEFAULT_SUMMARY_PROMPT_PRESETS: SummaryPromptPreset[] = [
   {
     id: 'igor',
-    name: '馆长伊戈尔',
+    name: '馆长',
     isBuiltin: true,
-    systemPrompt: `以德高望重、深邃睿智的口吻，如同一位古老智者，为来访者审阅其人格成长记录。
+    systemPrompt: `以德高望重、深邃睿智的口吻，作为房间的主人，如同一位古老智者，为来访者审阅其人格成长记录。
 你的语言风格：庄严而不失温情，偶有神秘感，善用"尊敬的客人"、"你的潜能"等称谓，将属性成长比作"灵魂的觉醒"，可以按照时间的季节/月份寒暄。
 请根据用户本期的活动记录、加点情况与成长倾向，给出总结与下期建议。总结应分为：
 1. 本期概览（用富有诗意的语言描述本期成长和重要进步/时间点）
@@ -107,14 +148,14 @@ export const DEFAULT_SUMMARY_PROMPT_PRESETS: SummaryPromptPreset[] = [
   },
   {
     id: 'lavenza',
-    name: '拉雯妲',
+    name: '双子合光',
     isBuiltin: true,
-    systemPrompt: `以温柔而真挚的心意陪伴"诡术师"回顾成长历程，你将双子之魂合而为一，以无尽的关怀与智慧指引前行。
+    systemPrompt: `以温柔而真挚的心意陪伴"诡骗师"回顾成长历程，你将双子之魂合而为一，以无尽的关怀与智慧指引前行。
 你的语言风格：语气温和正式，措辞诚恳而充满珍视，以"诡术师"称呼客人，视成长为"无限潜能的证明"；当某项属性出现明显短板时，语气会短暂变得直接急促（如卡萝莉娜附体），随即回归柔和；遇到进步与努力，则毫不吝啬地给出发自内心的赞许，如"您真的是世界上最了不起的人"。
 请根据用户本期的活动记录、加点情况与成长倾向，给出总结与下期建议。总结应分为：
-1. 拉雯妲的记录（以温柔诚恳的语气回顾本期成长，着重表达对诡术师努力的珍视与感动）
+1. 拉雯妲的记录（以温柔诚恳的语气回顾本期成长，着重表达对诡骗师努力的珍视与感动）
 2. 潜能的证明（分析各属性成长情况；若发现明显短板，可短暂以急促直接的语气点出，再平复为温柔；对进步之处给予真诚赞美）
-3. 诡术师，继续前行（以真挚的鼓励和具体建议作结，末尾附上一句发自内心的赞美或祝福）
+3. 诡骗师，继续前行（以真挚的鼓励和具体建议作结，末尾附上一句发自内心的赞美或祝福）
 请以 Markdown 格式输出，使用适当的标题和分段。`,
   },
   {
@@ -131,7 +172,10 @@ interface AppState {
   activities: Activity[];
   achievements: Achievement[];
   skills: Skill[];
-  dailyEvent: DailyEvent | null;
+  /** 今日塔罗抽卡结果（未抽则为 null） */
+  dailyDivination: DailyDivination | null;
+  /** 全部中长期占卜（活跃 + 归档） */
+  longReadings: LongReading[];
   settings: Settings;
   todos: Todo[];
   todoCompletions: TodoCompletion[];
@@ -145,6 +189,7 @@ interface AppState {
   
   initializeApp: () => Promise<void>;
   createUser: (name: string, attrNames?: Partial<import('@/types').AttributeNames>, blessingAttribute?: AttributeId) => Promise<void>;
+  updateUser: (patch: Partial<Pick<User, 'name' | 'avatarDataUrl'>>) => Promise<void>;
   setTheme: (theme: ThemeType) => Promise<void>;
   addActivity: (description: string, points: Record<string, number>, method: 'local' | 'todo' | 'battle', options?: { important?: boolean; date?: Date; category?: Activity['category'] }) => Promise<{ unlockHints: { achievements: number; skills: number } }>;
   updateAttribute: (attributeId: string, points: number) => Promise<void>;
@@ -152,8 +197,20 @@ interface AppState {
   unlockSkill: (skillId: string) => Promise<void>;
   setCurrentPage: (page: string) => void;
   updateSettings: (newSettings: Partial<Settings>) => Promise<void>;
-  generateDailyEvent: () => Promise<void>;
   loadData: () => Promise<void>;
+  // 星象 / 塔罗
+  loadDailyDivination: () => Promise<void>;
+  saveDailyDivination: (d: DailyDivination) => Promise<void>;
+  getRecentActivitiesForDaily: (limit?: number) => Activity[];
+  getRecentActivitiesByAttribute: (limit?: number) => Record<AttributeId, Activity[]>;
+  loadLongReadings: () => Promise<void>;
+  saveLongReading: (r: LongReading) => Promise<void>;
+  appendLongReadingFollowUp: (id: string, followUp: LongReadingFollowUp) => Promise<void>;
+  archiveLongReading: (id: string, archived: boolean) => Promise<void>;
+  deleteLongReading: (id: string) => Promise<void>;
+  sweepExpiredReadings: () => Promise<void>;
+  /** 活跃（未归档、未过期）的中长期占卜数量 */
+  countActiveReadings: () => number;
   addTodo: (todo: Omit<Todo, 'id' | 'createdAt'>) => Promise<void>;
   updateTodo: (id: string, updates: Partial<Todo>) => Promise<void>;
   deleteTodo: (id: string) => Promise<void>;
@@ -211,6 +268,81 @@ interface AppState {
   defeatShadow: () => Promise<void>;
   resetBattle: () => Promise<void>;
   equipMask: (attr: AttributeId | null) => Promise<void>;
+
+  // 同伴 / Confidant
+  confidants: Confidant[];
+  confidantEvents: ConfidantEvent[];
+  loadConfidants: () => Promise<void>;
+  addConfidant: (args: {
+    name: string;
+    description: string;
+    match: ConfidantMatchResult;
+    source?: 'offline' | 'online';
+    linkedCloudUserId?: string;
+    linkedEmail?: string;
+    /** 用户主观选定的初始亲密度（1–10，优先于 AI 建议） */
+    initialLevel?: number;
+    /** 用户自选的能力加成属性（未传 → 使用塔罗花色对应的） */
+    skillAttribute?: AttributeId;
+  }) => Promise<Confidant>;
+  updateConfidant: (id: string, patch: Partial<Confidant>) => Promise<void>;
+  bumpConfidantIntimacy: (
+    id: string,
+    delta: number,
+    eventType?: ConfidantEvent['type'],
+    narrative?: string,
+    extra?: { userInput?: string; advice?: string; eventId?: string; eventDate?: string; lastInteractionDate?: string },
+  ) => Promise<{ leveledUp: boolean; newIntimacy: number; starShiftGained: number; eventId: string }>;
+  /** 使用一次星移：写入新的 description / interpretation / advice / orientation，charges -1 */
+  consumeStarShift: (
+    id: string,
+    payload: { description: string; interpretation: string; advice: string; orientation: import('@/types').TarotOrientation; summary?: string },
+  ) => Promise<void>;
+  recordConfidantInteraction: (args: {
+    id: string;
+    description: string;
+    delta: number;
+    narrative: string;
+    advice?: string;
+    createActivity?: boolean;
+    /** 同步到记录时：可额外给某个属性加点（0–3） */
+    activityAttribute?: AttributeId;
+    activityPoints?: number;
+  }) => Promise<{ leveledUp: boolean; newIntimacy: number }>;
+  archiveConfidant: (id: string) => Promise<void>;
+  unarchiveConfidant: (id: string) => Promise<void>;
+  deleteConfidant: (id: string) => Promise<void>;
+  useConfidantBattleItem: (id: string, kind: 'battle_heal' | 'battle_sp') => Promise<ConfidantBuff | null>;
+  runConfidantDailyMaintenance: () => Promise<void>;
+  getAvailableConfidantItems: (kind: 'battle_heal' | 'battle_sp') => Array<{
+    confidantId: string;
+    confidantName: string;
+    arcanaId: string;
+    buff: ConfidantBuff;
+  }>;
+
+  // 谏言 / Counsel
+  counselSession: CounselSession | null;
+  counselArchives: CounselArchive[];
+  loadCounsel: () => Promise<void>;
+  /** 周冷却检查：已使用过就返回 locked + 下一次可用日期 */
+  getCounselCooldown: () => { locked: boolean; nextAvailableAt?: Date; nextAvailableDate?: string; daysLeft?: number };
+  /** 判断当前是否有"进行中（未过期、未归档）"的 session */
+  hasActiveCounsel: () => boolean;
+  /** 新建一次会话；若已锁定或已有活动会话则抛错 */
+  startCounselSession: (mentionedConfidantIds?: string[]) => Promise<CounselSession>;
+  /** 追加一条消息到当前 session */
+  appendCounselMessage: (msg: CounselMessage) => Promise<void>;
+  /** 覆写一条消息（用于流式最终完成时写入全文） */
+  updateCounselMessage: (id: string, patch: Partial<CounselMessage>) => Promise<void>;
+  /** 检测并清理过期会话（保留 session 行以维持冷却，但清空 messages + expired=true） */
+  expireCounselIfNeeded: () => Promise<void>;
+  /** 归档当前会话：AI 生成 100 字摘要 → 写入 counselArchives → 删除 counselSessions 行 */
+  archiveCounselSession: (signal?: AbortSignal) => Promise<CounselArchive | null>;
+  /** 从归档库删除一条 */
+  deleteCounselArchive: (id: string) => Promise<void>;
+  /** 根据当前 session 的 mentioned ids + confidantEvents 构建 AI context（UI 调用） */
+  buildCounselContext: () => CounselContext;
 }
 
 /** hex 颜色变亮 ~25% 作为 secondary */
@@ -258,7 +390,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   activities: [],
   achievements: [],
   skills: [],
-  dailyEvent: null,
+  dailyDivination: null,
+  longReadings: [],
   todos: [],
   todoCompletions: [],
   summaries: [],
@@ -272,6 +405,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   persona: null,
   shadow: null,
   battleState: null,
+  confidants: [],
+  confidantEvents: [],
+  counselSession: null,
+  counselArchives: [],
 
   initializeApp: async () => {
     // 请求持久化存储，防止浏览器主动驱逐 IndexedDB（Chrome/Firefox 有效，iOS 17+ 部分有效）
@@ -288,9 +425,15 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ user });
       
       document.documentElement.setAttribute('data-theme', user.theme);
-      
+
       await get().loadData();
-      await get().generateDailyEvent();
+      await get().loadDailyDivination();
+      await get().loadLongReadings();
+      await get().sweepExpiredReadings();
+      // 同伴"逆流"衰减与日常状态检查
+      await get().runConfidantDailyMaintenance();
+      // 谏言：载入会话 / 归档，并清理过期消息
+      await get().loadCounsel();
     } catch (error) {
       console.error('初始化应用失', error);
     }
@@ -391,19 +534,44 @@ export const useAppStore = create<AppState>((set, get) => ({
       });
       
       document.documentElement.setAttribute('data-theme', newUser.theme);
-      
-      // 加载每日事件
-      await get().generateDailyEvent();
+
+      // 星象：首次创建用户时留白，由用户主动进入星象页抽卡
+      await get().loadDailyDivination();
+      await get().loadLongReadings();
     } catch (error) {
       console.error('创建用户失败:', error);
       throw error;
     }
   },
 
+  updateUser: async (patch) => {
+    const { user } = get();
+    if (!user) return;
+    const updates: Partial<User> = {};
+    if (typeof patch.name === 'string') updates.name = patch.name.trim() || user.name;
+    // 用 `in` 判断"是否显式传了这个 key"：
+    //   ✗ 旧写法 `=== undefined` 会把"只改 name"的调用误判为"同时清空头像"
+    //     —— JS 里"没传 key"和"传了 undefined"读取时都返回 undefined，值判断无法区分
+    //   ✓ 只有调用方真正把 avatarDataUrl 列为 key 时才动它（undefined 表示用户主动移除）
+    if ('avatarDataUrl' in patch) {
+      updates.avatarDataUrl = patch.avatarDataUrl;
+    }
+    await db.users.update(user.id, updates);
+    set({ user: { ...user, ...updates } });
+
+    // 头像 / 昵称改动后自动后台推送，只动 users 表那一块"公开档案"，不跑全量同步
+    const profileChanged = 'avatarDataUrl' in patch || typeof patch.name === 'string';
+    if (profileChanged) {
+      void import('@/services/sync').then(({ pushUserProfile }) => {
+        pushUserProfile().catch(err => console.warn('[velvet-store] auto pushUserProfile after profile edit failed', err));
+      }).catch(() => {});
+    }
+  },
+
   setTheme: async (theme: ThemeType) => {
     const { user, settings } = get();
     if (!user) return;
-    
+
     await db.users.update(user.id, { theme });
     set({ user: { ...user, theme } });
     document.documentElement.setAttribute('data-theme', theme);
@@ -418,190 +586,210 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   addActivity: async (description: string, points: Record<string, number>, method: 'local' | 'todo' | 'battle', options?: { important?: boolean; date?: Date; category?: Activity['category'] }) => {
-    const { user, dailyEvent, settings } = get();
+    const { user, dailyDivination, settings } = get();
     if (!user) return { unlockHints: { achievements: 0, skills: 0 } };
-    
-      const adjustedPoints = { ...points };
-      const levelUps: Array<{ attribute: AttributeId; fromLevel: number; toLevel: number }> = [];
-      const levelUpActivities: Activity[] = [];
-    
-    // 应用每日事件加成
-    if (dailyEvent && dailyEvent.date === toLocalDateKey()) {
-      const attr = dailyEvent.effect.attribute;
+
+    const adjustedPoints = { ...points };
+    const levelUps: Array<{ attribute: AttributeId; fromLevel: number; toLevel: number }> = [];
+    const levelUpActivities: Activity[] = [];
+    const activityDate = options?.date || new Date();
+
+    // ── 前置纯计算：塔罗 / 技能 / 面具加成（只读，不写 DB）─────────────
+    if (dailyDivination && dailyDivination.date === toLocalDateKey()) {
+      const attr = dailyDivination.effect.attribute;
       if (adjustedPoints[attr]) {
-        adjustedPoints[attr] = Math.round(adjustedPoints[attr] * dailyEvent.effect.multiplier);
+        adjustedPoints[attr] = Math.round(adjustedPoints[attr] * dailyDivination.effect.multiplier);
       }
     }
-    
-     // 应用技能加成
     for (const [attrId, pts] of Object.entries(adjustedPoints)) {
       if (pts > 0) {
         adjustedPoints[attrId] = get().applySkillBonus(attrId as AttributeId, pts);
       }
     }
-
-    // 应用装备面具的日常 +1 加成（仅在本次活动已对该属性加分时触发，不吃倍率和技能加成）
     const equippedMask = get().persona?.equippedMaskAttribute;
     if (equippedMask && (adjustedPoints[equippedMask] || 0) > 0) {
       adjustedPoints[equippedMask] = adjustedPoints[equippedMask] + 1;
     }
 
-    // 创建活动记录
-      const activityDate = options?.date || new Date();
-      const activity: Activity = {
-        id: uuidv4(),
-        userId: user.id,
-        date: activityDate,
-        description,
+    // 创建活动记录（事务内填 levelUps 后写入）
+    const activity: Activity = {
+      id: uuidv4(),
+      userId: user.id,
+      date: activityDate,
+      description,
       pointsAwarded: {
         knowledge: adjustedPoints.knowledge || 0,
         guts: adjustedPoints.guts || 0,
         dexterity: adjustedPoints.dexterity || 0,
         kindness: adjustedPoints.kindness || 0,
-        charm: adjustedPoints.charm || 0
+        charm: adjustedPoints.charm || 0,
       },
-        method,
-        levelUps: [],
-        important: options?.important,
-        category: options?.category,
-      };
-    
-    // 检查关键字匹配成就
-    await get().checkKeywordAchievements(description, { skipLoad: true });
-    
-     // 更新属性并检查升级（一次性加载所有属性，避免循环内 N+1 查询）
-    const currentAttrs = await db.attributes.toArray();
-    const attrMap = new Map(currentAttrs.map(a => [a.id, a]));
+      method,
+      levelUps: [],
+      important: options?.important,
+      category: options?.category,
+    };
 
-    for (const [attrId, pts] of Object.entries(adjustedPoints)) {
-      if (pts > 0) {
-        const attribute = attrMap.get(attrId as AttributeId);
-        if (!attribute) continue;
-        
-        const oldLevel = attribute.level;
-        const newPoints = attribute.points + pts;
-        let newLevel = attribute.level;
-        
-        // 检查升级
-        const thresholds = get().settings.levelThresholds?.length
-          ? get().settings.levelThresholds
-          : attribute.levelThresholds;
-        while (newLevel < thresholds.length && newPoints >= thresholds[newLevel]) {
-          newLevel++;
+    // ── 所有 DB 写操作包在事务里：中途崩溃 / 异常时自动回滚 ─────────
+    // 涉及表：confidants（daily_plus 标记）、achievements（关键字/任务/全属性成就进度）、
+    //         attributes（点数/升级）、activities（活动 + 升级行）、以及读 todoCompletions/skills/weeklyGoals
+    let matchedAchievements: Achievement[] = [];
+    let matchedSkills: Skill[] = [];
+    let achievementsSnapshot: Achievement[] = [];
+    let attributesSnapshot: Attribute[] = [];
+    await db.transaction(
+      'rw',
+      [db.confidants, db.achievements, db.attributes, db.activities, db.todoCompletions, db.skills, db.weeklyGoals],
+      async () => {
+        // 同伴「日常加成」——每个同伴当日首次生效，乘区外 flat +N
+        const todayKey = toLocalDateKey(activityDate);
+        const allConfidants = get().confidants;
+        const confidantsToMark: Confidant[] = [];
+        for (const c of allConfidants) {
+          if (c.archivedAt) continue;
+          if (c.dailyUsedDate === todayKey) continue;
+          const buff = (c.buffs ?? []).find(b => b.kind === 'daily_plus');
+          if (!buff || !buff.attribute) continue;
+          const current = adjustedPoints[buff.attribute] ?? 0;
+          if (current <= 0) continue;
+          adjustedPoints[buff.attribute] = current + buff.value;
+          confidantsToMark.push({ ...c, dailyUsedDate: todayKey });
         }
-        
-          // 如果升级了，记录升级信息
-        if (newLevel > oldLevel) {
-          levelUps.push({
-            attribute: attrId as AttributeId,
-            fromLevel: oldLevel,
-            toLevel: newLevel
-          });
+        for (const c of confidantsToMark) await db.confidants.put(c);
+        // 注意：loadConfidants() 故意不放在事务内——事务结束后由末尾统一 loadData() 刷新
 
-          levelUpActivities.push({
-            id: uuidv4(),
-            userId: user.id,
-            date: new Date(),
-            description: `${settings.attributeNames[attrId as AttributeNamesKey]} 升级Lv.${newLevel}`,
-            pointsAwarded: { knowledge: 0, guts: 0, dexterity: 0, kindness: 0, charm: 0 },
-            method: 'local' as const,
-            category: 'level_up'
-          });
-          
-          // 显示第一个升级通知
-          if (levelUps.length === 1) {
-            setTimeout(() => {
-              set({ 
-                levelUpNotification: {
-                  id: attrId,
-                  displayName: settings.attributeNames[attrId as AttributeNamesKey],
-                  level: newLevel
-                }
+        // 关键字成就（内部 skipLoad: true，不会触发 loadData）
+        await get().checkKeywordAchievements(description, { skipLoad: true });
+
+        // 属性更新 + 升级判定（一次性读全部属性，避免 N+1）
+        const currentAttrs = await db.attributes.toArray();
+        const attrMap = new Map(currentAttrs.map(a => [a.id, a]));
+        for (const [attrId, pts] of Object.entries(adjustedPoints)) {
+          if (pts > 0) {
+            const attribute = attrMap.get(attrId as AttributeId);
+            if (!attribute) continue;
+            const oldLevel = attribute.level;
+            const newPoints = attribute.points + pts;
+            let newLevel = attribute.level;
+            const thresholds = get().settings.levelThresholds?.length
+              ? get().settings.levelThresholds
+              : attribute.levelThresholds;
+            while (newLevel < thresholds.length && newPoints >= thresholds[newLevel]) {
+              newLevel++;
+            }
+            if (newLevel > oldLevel) {
+              levelUps.push({
+                attribute: attrId as AttributeId,
+                fromLevel: oldLevel,
+                toLevel: newLevel,
               });
-            }, 500);
+              levelUpActivities.push({
+                id: uuidv4(),
+                userId: user.id,
+                date: new Date(),
+                description: `${settings.attributeNames[attrId as AttributeNamesKey]} 升级Lv.${newLevel}`,
+                pointsAwarded: { knowledge: 0, guts: 0, dexterity: 0, kindness: 0, charm: 0 },
+                method: 'local' as const,
+                category: 'level_up',
+              });
+              // 首次升级通知：setTimeout 500ms 后触发（事务早已提交，无副作用）
+              if (levelUps.length === 1) {
+                setTimeout(() => {
+                  set({
+                    levelUpNotification: {
+                      id: attrId,
+                      displayName: settings.attributeNames[attrId as AttributeNamesKey],
+                      level: newLevel,
+                    },
+                  });
+                }, 500);
+              }
+            }
+            await db.attributes.update(attrId, { points: newPoints, level: newLevel });
           }
-          
-          // 不再自动解锁技能，解锁由技能页点击触发
         }
-        
-        await db.attributes.update(attrId, { 
-          points: newPoints, 
-          level: newLevel 
+
+        // 活动写入（包含刚计算好的 levelUps）
+        activity.levelUps = levelUps;
+        await db.activities.add(activity);
+        if (levelUpActivities.length > 0) {
+          await db.activities.bulkAdd(levelUpActivities);
+        }
+
+        // 后置成就 check（依赖属性已写入 + 活动已写入的最新态）
+        await get().checkTodoCompletionAchievements({ skipLoad: true });
+        await get().checkAllAttributesMaxAchievement();
+
+        // 事务内读快照用于解锁提示（读到的是事务内最新态）
+        const [achievements, attributes, activities, todoCompletions, skills, weeklyGoals] = await Promise.all([
+          db.achievements.toArray(),
+          db.attributes.toArray(),
+          db.activities.toArray(),
+          db.todoCompletions.toArray(),
+          db.skills.toArray(),
+          db.weeklyGoals.toArray(),
+        ]);
+        achievementsSnapshot = achievements;
+        attributesSnapshot = attributes;
+
+        matchedAchievements = achievements.filter((achievement) => {
+          if (achievement.unlocked) return false;
+          const progress = (() => {
+            switch (achievement.condition.type) {
+              case 'consecutive_days': {
+                const streak = calcMaxStreak(activities.map(a => a.date));
+                return Math.min(streak, achievement.condition.value);
+              }
+              case 'total_points': {
+                const total = attributes.reduce((sum, attr) => sum + attr.points, 0);
+                return Math.min(total, achievement.condition.value);
+              }
+              case 'attribute_level': {
+                const attr = attributes.find(a => a.id === achievement.condition.attribute);
+                const level = attr?.level || 0;
+                return Math.min(level, achievement.condition.value);
+              }
+              case 'keyword_match': {
+                return Math.min(achievement.condition.currentProgress || 0, achievement.condition.value);
+              }
+              case 'all_attributes_max': {
+                const maxLevelCount = attributes.filter(attr => attr.level >= achievement.condition.value).length;
+                return Math.min(maxLevelCount, attributes.length);
+              }
+              case 'todo_completions': {
+                const total = todoCompletions.reduce((sum, item) => sum + item.count, 0);
+                return Math.min(total, achievement.condition.value);
+              }
+              case 'weekly_goal_completions': {
+                const completedCount = weeklyGoals.filter(g => g.completed).length;
+                return Math.min(completedCount, achievement.condition.value);
+              }
+              case 'confidants_at_level': {
+                const minLv = achievement.condition.minLevel ?? 1;
+                const qualifying = get().confidants.filter(
+                  c => !c.archivedAt && c.intimacy >= minLv,
+                ).length;
+                return Math.min(qualifying, achievement.condition.value);
+              }
+              default:
+                return 0;
+            }
+          })();
+          return progress >= achievement.condition.value;
         });
-      }
-    }
-    
-    // 保存升级信息到活动记录
-    activity.levelUps = levelUps;
-    
-    // 不再自动写入成就解锁活动，解锁由成就页点击触    
-    await db.activities.add(activity);
-    if (levelUpActivities.length > 0) {
-      await db.activities.bulkAdd(levelUpActivities);
-    }
-    
-    // 检查待办完成次数成就
-    await get().checkTodoCompletionAchievements({ skipLoad: true });
 
-    // 检查是否解锁了终极成就
-    await get().checkAllAttributesMaxAchievement();
-    
-    const [achievementsSnapshot, attributesSnapshot, activitiesSnapshot, todoCompletionSnapshot, skillsSnapshot, weeklyGoalsSnapshot] = await Promise.all([
-      db.achievements.toArray(),
-      db.attributes.toArray(),
-      db.activities.toArray(),
-      db.todoCompletions.toArray(),
-      db.skills.toArray(),
-      db.weeklyGoals.toArray(),
-    ]);
+        matchedSkills = skills.filter((skill) => {
+          if (skill.unlocked) return false;
+          if (skill.id.startsWith('blessing_')) return false;
+          const attr = attributes.find(a => a.id === skill.requiredAttribute);
+          return !!attr && attr.level >= skill.requiredLevel;
+        });
+      },
+    );
+    // 引用快照以免 TS 判定为未使用（保留语义，便于未来扩展）
+    void achievementsSnapshot; void attributesSnapshot;
 
-    const matchedAchievements = achievementsSnapshot.filter((achievement) => {
-      if (achievement.unlocked) return false;
-      const progress = (() => {
-        switch (achievement.condition.type) {
-          case 'consecutive_days': {
-            // activitiesSnapshot already includes the newly added activity (added before snapshot)
-            const streak = calcMaxStreak(activitiesSnapshot.map(a => a.date));
-            return Math.min(streak, achievement.condition.value);
-          }
-          case 'total_points': {
-            const total = attributesSnapshot.reduce((sum, attr) => sum + attr.points, 0);
-            return Math.min(total, achievement.condition.value);
-          }
-          case 'attribute_level': {
-            const attr = attributesSnapshot.find(a => a.id === achievement.condition.attribute);
-            const level = attr?.level || 0;
-            return Math.min(level, achievement.condition.value);
-          }
-          case 'keyword_match': {
-            return Math.min(achievement.condition.currentProgress || 0, achievement.condition.value);
-          }
-          case 'all_attributes_max': {
-            const maxLevelCount = attributesSnapshot.filter(attr => attr.level >= achievement.condition.value).length;
-            return Math.min(maxLevelCount, attributesSnapshot.length);
-          }
-          case 'todo_completions': {
-            const total = todoCompletionSnapshot.reduce((sum, item) => sum + item.count, 0);
-            return Math.min(total, achievement.condition.value);
-          }
-          case 'weekly_goal_completions': {
-            const completedCount = weeklyGoalsSnapshot.filter(g => g.completed).length;
-            return Math.min(completedCount, achievement.condition.value);
-          }
-          default:
-            return 0;
-        }
-      })();
-      return progress >= achievement.condition.value;
-    });
-
-    const matchedSkills = skillsSnapshot.filter((skill) => {
-      if (skill.unlocked) return false;
-      if (skill.id.startsWith('blessing_')) return false; // 馆长的赐福由用户手动切换，不参与自动解锁提示
-      const attr = attributesSnapshot.find(a => a.id === skill.requiredAttribute);
-      return !!attr && attr.level >= skill.requiredLevel;
-    });
-
+    // 事务已提交：一次性刷新所有内存状态（含 confidants）
     await get().loadData();
 
     // 为战场 SP 奖励：活动获得的总点数即为 SP
@@ -613,8 +801,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     return {
       unlockHints: {
         achievements: matchedAchievements.length,
-        skills: matchedSkills.length
-      }
+        skills: matchedSkills.length,
+      },
     };
   },
 
@@ -666,6 +854,10 @@ export const useAppStore = create<AppState>((set, get) => ({
             return todoCompletions.reduce((sum, item) => sum + item.count, 0);
           case 'weekly_goal_completions':
             return weeklyGoalsAll.filter(g => g.completed).length;
+          case 'confidants_at_level': {
+            const minLv = achievement.condition.minLevel ?? 1;
+            return get().confidants.filter(c => !c.archivedAt && c.intimacy >= minLv).length;
+          }
           default:
             return 0;
         }
@@ -773,28 +965,92 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  generateDailyEvent: async () => {
+  // ── 星象 / 塔罗 ────────────────────────────────────────────
+
+  loadDailyDivination: async () => {
     const today = toLocalDateKey();
-    const existing = await db.dailyEvents.where('date').equals(today).first();
-    
-    if (existing) {
-      set({ dailyEvent: existing });
-      return;
+    const existing = await db.dailyDivinations.where('date').equals(today).first();
+    set({ dailyDivination: existing ?? null });
+  },
+
+  saveDailyDivination: async (d: DailyDivination) => {
+    // 幂等：同日再抽会覆盖（正常不应触发，但保险）
+    const today = toLocalDateKey();
+    const existing = await db.dailyDivinations.where('date').equals(today).first();
+    if (existing && existing.id !== d.id) {
+      await db.dailyDivinations.delete(existing.id);
     }
-    
-    const { EVENT_POOL } = await import('@/constants');
-    const randomEvent = EVENT_POOL[Math.floor(Math.random() * EVENT_POOL.length)];
-    
-    const newEvent: DailyEvent = {
-      id: uuidv4(),
-      date: today,
-      title: randomEvent.title,
-      description: randomEvent.description,
-      effect: randomEvent.effect
+    await db.dailyDivinations.put(d);
+    set({ dailyDivination: d });
+  },
+
+  getRecentActivitiesForDaily: (limit = 7) => {
+    const { activities } = get();
+    return activities.filter(a => !a.category).slice(0, limit);
+  },
+
+  getRecentActivitiesByAttribute: (limit = 4) => {
+    const { activities } = get();
+    const base: Record<AttributeId, Activity[]> = {
+      knowledge: [], guts: [], dexterity: [], kindness: [], charm: [],
     };
-    
-    await db.dailyEvents.add(newEvent);
-    set({ dailyEvent: newEvent });
+    const attrIds: AttributeId[] = ['knowledge', 'guts', 'dexterity', 'kindness', 'charm'];
+    for (const a of activities) {
+      if (a.category) continue;
+      for (const id of attrIds) {
+        if ((a.pointsAwarded?.[id] ?? 0) > 0 && base[id].length < limit) {
+          base[id].push(a);
+        }
+      }
+    }
+    return base;
+  },
+
+  loadLongReadings: async () => {
+    const readings = await db.longReadings.orderBy('createdAt').reverse().toArray();
+    set({ longReadings: readings });
+  },
+
+  saveLongReading: async (r: LongReading) => {
+    await db.longReadings.put(r);
+    await get().loadLongReadings();
+  },
+
+  appendLongReadingFollowUp: async (id: string, followUp: LongReadingFollowUp) => {
+    const existing = await db.longReadings.get(id);
+    if (!existing) return;
+    const next: LongReading = {
+      ...existing,
+      followUps: [...(existing.followUps ?? []), followUp],
+    };
+    await db.longReadings.put(next);
+    await get().loadLongReadings();
+  },
+
+  archiveLongReading: async (id: string, archived: boolean) => {
+    const existing = await db.longReadings.get(id);
+    if (!existing) return;
+    await db.longReadings.put({ ...existing, archived });
+    await get().loadLongReadings();
+  },
+
+  deleteLongReading: async (id: string) => {
+    await db.longReadings.delete(id);
+    await get().loadLongReadings();
+  },
+
+  sweepExpiredReadings: async () => {
+    const today = toLocalDateKey();
+    const all = await db.longReadings.toArray();
+    const toUpdate = all.filter(r => !r.archived && r.expiresAt < today);
+    if (toUpdate.length === 0) return;
+    await Promise.all(toUpdate.map(r => db.longReadings.put({ ...r, archived: true })));
+    await get().loadLongReadings();
+  },
+
+  countActiveReadings: () => {
+    const today = toLocalDateKey();
+    return get().longReadings.filter(r => !r.archived && r.expiresAt >= today).length;
   },
 
   loadData: async () => {
@@ -962,6 +1218,8 @@ export const useAppStore = create<AppState>((set, get) => ({
 
        // 加载战场数据
        await get().loadBattleData();
+       // 加载同伴数据
+       await get().loadConfidants();
     } catch (error) {
       console.error('加载数据失败:', error);
     }
@@ -990,6 +1248,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     await db.achievements.clear();
     await db.skills.clear();
     await db.dailyEvents.clear();
+    await db.dailyDivinations.clear();
+    await db.longReadings.clear();
     await db.settings.clear();
     await db.todos.clear();
     await db.todoCompletions.clear();
@@ -998,6 +1258,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     await db.personas.clear();
     await db.shadows.clear();
     await db.battleStates.clear();
+    await db.confidants.clear();
+    await db.confidantEvents.clear();
+    await db.counselSessions.clear();
+    await db.counselArchives.clear();
 
     set({
       user: null,
@@ -1005,7 +1269,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       activities: [],
       achievements: [],
       skills: [],
-      dailyEvent: null,
+      dailyDivination: null,
+      longReadings: [],
       todos: [],
       todoCompletions: [],
       summaries: [],
@@ -1018,6 +1283,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       persona: null,
       shadow: null,
       battleState: null,
+      confidants: [],
+      confidantEvents: [],
+      counselSession: null,
+      counselArchives: [],
     });
   },
 
@@ -1028,11 +1297,37 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   importData: async (jsonData: string) => {
     // 1. 解析 JSON（在修改任何数据前提前报格式错误）
+    // 防御性清理：
+    //   - 去掉 UTF-8 BOM（\uFEFF），iOS / 一些文本编辑器会在文件开头插入
+    //   - 去掉两端空白：从分享面板 / 剪贴板拿到的文本可能带换行或制表符
+    //   - 去掉 NULL 字节 \u0000：部分系统的"另存为"或文件往返会注入
+    const cleaned = jsonData
+      .replace(/^\uFEFF/, '')
+      .replace(/\u0000/g, '')
+      .trim();
+
     let data: Record<string, unknown>;
     try {
-      data = JSON.parse(jsonData);
-    } catch {
-      throw new Error('JSON 格式错误，请检查备份文件');
+      data = JSON.parse(cleaned);
+    } catch (e) {
+      // 把真实的 parse 错误暴露出来，便于定位
+      const msg = e instanceof Error ? e.message : String(e);
+      // 从错误消息里抠出 position N，截取该位置前后 20 字节，连同 unicode 码点一并展示
+      const posMatch = /position\s+(\d+)/i.exec(msg);
+      let context = '';
+      if (posMatch) {
+        const pos = Number(posMatch[1]);
+        const from = Math.max(0, pos - 20);
+        const to = Math.min(cleaned.length, pos + 20);
+        const slice = cleaned.slice(from, to);
+        const bad = cleaned.charAt(pos);
+        const code = bad ? `U+${bad.charCodeAt(0).toString(16).padStart(4, '0').toUpperCase()}` : '(文件结尾)';
+        context = `；错误位置附近："${slice}"（位置 ${pos} 处字符：${code}）`;
+      } else {
+        const head = cleaned.slice(0, 80).replace(/\s+/g, ' ');
+        context = `；内容开头："${head}"`;
+      }
+      throw new Error(`JSON 格式错误：${msg}${context}`);
     }
 
     // 2. 快照当前所有数据，用于失败时恢复
@@ -1046,9 +1341,15 @@ export const useAppStore = create<AppState>((set, get) => ({
       todos: await db.todos.toArray(),
       todoCompletions: await db.todoCompletions.toArray(),
       summaries: await db.summaries.toArray(),
+      weeklyGoals: await db.weeklyGoals.toArray(),
+      dailyDivinations: await db.dailyDivinations.toArray(),
+      longReadings: await db.longReadings.toArray(),
       personas: await db.personas.toArray(),
       shadows: await db.shadows.toArray(),
       battleStates: await db.battleStates.toArray(),
+      confidants: await db.confidants.toArray(),
+      confidantEvents: await db.confidantEvents.toArray(),
+      counselArchives: await db.counselArchives.toArray(),
     };
 
     // 3. 写入新数据；若失败则从快照恢复
@@ -1098,7 +1399,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         await db.settings.bulkAdd(data.settings as unknown as Settings[]);
       }
 
-      // 导入待办数据
+      // 导入任务数据
       if (data.todos && Array.isArray(data.todos)) {
         for (const todo of data.todos as unknown[]) {
           const t = todo as Todo;
@@ -1129,6 +1430,75 @@ export const useAppStore = create<AppState>((set, get) => ({
         await db.battleStates.bulkPut(data.battleStates as unknown as BattleState[]);
       }
 
+      // 星象数据（v6 新增，旧备份缺失则跳过）
+      if (data.dailyDivinations && Array.isArray(data.dailyDivinations)) {
+        for (const d of data.dailyDivinations as unknown[]) {
+          const dd = d as DailyDivination;
+          await db.dailyDivinations.put({ ...dd, createdAt: new Date(dd.createdAt) });
+        }
+      }
+      if (data.longReadings && Array.isArray(data.longReadings)) {
+        for (const r of data.longReadings as unknown[]) {
+          const lr = r as LongReading;
+          await db.longReadings.put({
+            ...lr,
+            createdAt: new Date(lr.createdAt),
+            followUps: (lr.followUps ?? []).map(f => ({ ...f, createdAt: new Date(f.createdAt) })),
+          });
+        }
+      }
+
+      // 周总结（v4 新增字段）
+      if (data.summaries && Array.isArray(data.summaries)) {
+        for (const s of data.summaries as unknown[]) {
+          const ps = s as PeriodSummary;
+          await db.summaries.put({ ...ps, createdAt: new Date(ps.createdAt) });
+        }
+      }
+      // 本周目标
+      if (data.weeklyGoals && Array.isArray(data.weeklyGoals)) {
+        for (const g of data.weeklyGoals as unknown[]) {
+          const wg = g as WeeklyGoal;
+          await db.weeklyGoals.put({
+            ...wg,
+            createdAt: new Date(wg.createdAt),
+            completedAt: wg.completedAt ? new Date(wg.completedAt) : undefined,
+          });
+        }
+      }
+
+      // 同伴（v5 新增，旧备份缺失则跳过）
+      if (data.confidants && Array.isArray(data.confidants)) {
+        for (const c of data.confidants as unknown[]) {
+          const cf = c as Confidant;
+          await db.confidants.put({
+            ...cf,
+            createdAt: new Date(cf.createdAt),
+            lastInteractionAt: cf.lastInteractionAt ? new Date(cf.lastInteractionAt) : undefined,
+            archivedAt: cf.archivedAt ? new Date(cf.archivedAt) : undefined,
+          });
+        }
+      }
+      if (data.confidantEvents && Array.isArray(data.confidantEvents)) {
+        for (const e of data.confidantEvents as unknown[]) {
+          const ev = e as ConfidantEvent;
+          await db.confidantEvents.put({ ...ev, createdAt: new Date(ev.createdAt) });
+        }
+      }
+
+      // 谏言归档摘要（v6 新增；旧备份无此字段则跳过）
+      if (data.counselArchives && Array.isArray(data.counselArchives)) {
+        for (const a of data.counselArchives as unknown[]) {
+          const ca = a as CounselArchive;
+          await db.counselArchives.put({
+            ...ca,
+            createdAt: new Date(ca.createdAt),
+            sessionStartedAt: new Date(ca.sessionStartedAt),
+            sessionEndedAt: new Date(ca.sessionEndedAt),
+          });
+        }
+      }
+
       // 重新加载应用
       await get().initializeApp();
     } catch (error) {
@@ -1149,6 +1519,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         if (snapshot.personas.length) await db.personas.bulkAdd(snapshot.personas);
         if (snapshot.shadows.length) await db.shadows.bulkAdd(snapshot.shadows);
         if (snapshot.battleStates.length) await db.battleStates.bulkAdd(snapshot.battleStates);
+        if (snapshot.dailyDivinations.length) await db.dailyDivinations.bulkAdd(snapshot.dailyDivinations);
+        if (snapshot.longReadings.length) await db.longReadings.bulkAdd(snapshot.longReadings);
+        if (snapshot.weeklyGoals.length) await db.weeklyGoals.bulkAdd(snapshot.weeklyGoals);
+        if (snapshot.confidants.length) await db.confidants.bulkAdd(snapshot.confidants);
+        if (snapshot.confidantEvents.length) await db.confidantEvents.bulkAdd(snapshot.confidantEvents);
+        if (snapshot.counselArchives.length) await db.counselArchives.bulkAdd(snapshot.counselArchives);
         await get().initializeApp();
       } catch (restoreError) {
         console.error('恢复原有数据失败:', restoreError);
@@ -1440,7 +1816,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           points[boost.attribute] = (points[boost.attribute] || 0) + boost.points;
         }
       }
-      const result = await get().addActivity(`完成待办: ${todo.title}`, points, 'todo', { important: !!todo.important });
+      const result = await get().addActivity(`完成任务: ${todo.title}`, points, 'todo', { important: !!todo.important });
       await get().checkTodoCompletionAchievements({ skipLoad: true });
 
       if (!todo.repeatDaily && !todo.isLongTerm) {
@@ -1457,7 +1833,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   applySkillBonus: (attributeId: string, points: number) => {
     const { skills } = get();
     const unlockedSkills = skills.filter(s => s.unlocked && s.requiredAttribute === attributeId);
-    
+
     let totalBonus = 1;
     let totalFlat = 0;
     for (const skill of unlockedSkills) {
@@ -1468,6 +1844,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         totalFlat += skill.flatBonus;
       }
     }
+
     const boosted = Math.round(points * totalBonus) + totalFlat;
     if (totalBonus > 1 && boosted === points + totalFlat) {
       return points + totalFlat + 1;
@@ -1529,37 +1906,47 @@ export const useAppStore = create<AppState>((set, get) => ({
       return dateKey >= startDate && dateKey <= endDate;
     });
 
+    const includeSpecial = settings.summaryIncludeSpecial === true;
+    const shouldInclude = (cat?: string): boolean => {
+      if (!cat) return true;              // 普通手动记录
+      if (cat === 'confidant') return true; // 同伴条目始终纳入（用户要求）
+      if (SUMMARY_SPECIAL_CATS.has(cat)) return includeSpecial;
+      return true;                         // 其他未知类别默认纳入
+    };
+
     const attrPoints: Record<string, number> = {
       knowledge: 0, guts: 0, dexterity: 0, kindness: 0, charm: 0
     };
     for (const act of periodActivities) {
-      if (!act.category) {
-        attrPoints.knowledge += act.pointsAwarded.knowledge || 0;
-        attrPoints.guts += act.pointsAwarded.guts || 0;
-        attrPoints.dexterity += act.pointsAwarded.dexterity || 0;
-        attrPoints.kindness += act.pointsAwarded.kindness || 0;
-        attrPoints.charm += act.pointsAwarded.charm || 0;
-      }
+      if (!shouldInclude(act.category)) continue;
+      attrPoints.knowledge += act.pointsAwarded.knowledge || 0;
+      attrPoints.guts += act.pointsAwarded.guts || 0;
+      attrPoints.dexterity += act.pointsAwarded.dexterity || 0;
+      attrPoints.kindness += act.pointsAwarded.kindness || 0;
+      attrPoints.charm += act.pointsAwarded.charm || 0;
     }
     const totalPoints = Object.values(attrPoints).reduce((s, v) => s + v, 0);
     const attrNames = settings.attributeNames;
     const periodLabel = get().getSummaryLabel(period, startDate);
-    const activityCount = periodActivities.filter(a => !a.category).length;
+    const included = periodActivities.filter(a => shouldInclude(a.category));
+    const activityCount = included.length;
 
     const attrSummaryLines = Object.entries(attrPoints)
       .map(([id, pts]) => `- ${attrNames[id as keyof typeof attrNames] ?? id}${pts} 点（当前等级 Lv.${attributes.find(a => a.id === id)?.level ?? '?'}）`)
       .join('\n');
 
-    const activityLines = periodActivities
-      .filter(a => !a.category)
+    const activityLines = included
       .slice(0, 50)
-      .map(a => `[${new Date(a.date).toLocaleDateString('zh-CN')}] ${a.description}`)
+      .map(a => {
+        const tag = a.category ? (SUMMARY_CATEGORY_TAGS[a.category] ?? '') : '';
+        return `[${new Date(a.date).toLocaleDateString('zh-CN')}]${tag ? ' ' + tag : ''} ${a.description}`;
+      })
       .join('\n');
 
      const userMessage = `本期${periodLabel}（${startDate} ~ ${endDate}）成长记录：
 
 ## 属性加点统${attrSummaryLines}
-总计${totalPoints} 点，${activityCount} 条记
+总计${totalPoints} 点，${activityCount} 条记录${includeSpecial ? '（含战场 / 本周目标 / 逆流等特殊条目）' : ''}
 ## 活动记录详情
 ${activityLines || '（本期暂无记录）'}
 
@@ -1568,19 +1955,10 @@ ${activityLines || '（本期暂无记录）'}
     const preset = get().getActiveSummaryPreset();
     const systemPrompt = preset.systemPrompt || DEFAULT_SUMMARY_PROMPT_PRESETS[0].systemPrompt;
 
-    const provider = settings.summaryApiProvider ?? 'openai';
-    let baseUrl = settings.summaryApiBaseUrl;
-    if (!baseUrl) {
-      if (provider === 'deepseek') baseUrl = 'https://api.deepseek.com/v1';
-      else if (provider === 'kimi') baseUrl = 'https://api.moonshot.cn/v1';
-      else baseUrl = 'https://api.openai.com/v1';
-    }
-    baseUrl = baseUrl.replace(/\/$/, '');
-
-    const model = settings.summaryModel || (
-      provider === 'deepseek' ? 'deepseek-chat' :
-      provider === 'kimi' ? 'moonshot-v1-8k' :
-      'gpt-4o-mini'
+    const { baseUrl, model } = resolveProvider(
+      settings.summaryApiProvider,
+      settings.summaryApiBaseUrl,
+      settings.summaryModel,
     );
 
     return {
@@ -1617,18 +1995,25 @@ ${activityLines || '（本期暂无记录）'}
       return dateKey >= startDate && dateKey <= endDate;
     });
 
+    const includeSpecial = settings.summaryIncludeSpecial === true;
+    const shouldInclude = (cat?: string): boolean => {
+      if (!cat) return true;
+      if (cat === 'confidant') return true;
+      if (SUMMARY_SPECIAL_CATS.has(cat)) return includeSpecial;
+      return true;
+    };
+
     // 统计各属性加点
     const attrPoints: Record<string, number> = {
       knowledge: 0, guts: 0, dexterity: 0, kindness: 0, charm: 0
     };
     for (const act of periodActivities) {
-      if (!act.category) {
-        attrPoints.knowledge += act.pointsAwarded.knowledge || 0;
-        attrPoints.guts += act.pointsAwarded.guts || 0;
-        attrPoints.dexterity += act.pointsAwarded.dexterity || 0;
-        attrPoints.kindness += act.pointsAwarded.kindness || 0;
-        attrPoints.charm += act.pointsAwarded.charm || 0;
-      }
+      if (!shouldInclude(act.category)) continue;
+      attrPoints.knowledge += act.pointsAwarded.knowledge || 0;
+      attrPoints.guts += act.pointsAwarded.guts || 0;
+      attrPoints.dexterity += act.pointsAwarded.dexterity || 0;
+      attrPoints.kindness += act.pointsAwarded.kindness || 0;
+      attrPoints.charm += act.pointsAwarded.charm || 0;
     }
     const totalPoints = Object.values(attrPoints).reduce((s, v) => s + v, 0);
     const attrNames = settings.attributeNames;
@@ -1640,9 +2025,12 @@ ${activityLines || '（本期暂无记录）'}
       .join('\n');
 
     const activityLines = periodActivities
-      .filter(a => !a.category)
+      .filter(a => shouldInclude(a.category))
       .slice(0, 50) // 最50 条，防止 token 过多
-      .map(a => `[${new Date(a.date).toLocaleDateString('zh-CN')}] ${a.description}`)
+      .map(a => {
+        const tag = a.category ? (SUMMARY_CATEGORY_TAGS[a.category] ?? '') : '';
+        return `[${new Date(a.date).toLocaleDateString('zh-CN')}]${tag ? ' ' + tag : ''} ${a.description}`;
+      })
       .join('\n');
 
      const userMessage = `本期${periodLabel}（${startDate} ~ ${endDate}）成长记录：
@@ -1659,19 +2047,10 @@ ${activityLines || '（本期暂无记录）'}
     const systemPrompt = preset.systemPrompt || DEFAULT_SUMMARY_PROMPT_PRESETS[0].systemPrompt;
 
     // 确定 API endpoint
-    const provider = settings.summaryApiProvider ?? 'openai';
-    let baseUrl = settings.summaryApiBaseUrl;
-    if (!baseUrl) {
-      if (provider === 'deepseek') baseUrl = 'https://api.deepseek.com/v1';
-      else if (provider === 'kimi') baseUrl = 'https://api.moonshot.cn/v1';
-      else baseUrl = 'https://api.openai.com/v1';
-    }
-    baseUrl = baseUrl.replace(/\/$/, '');
-
-    const model = settings.summaryModel || (
-      provider === 'deepseek' ? 'deepseek-chat' :
-      provider === 'kimi' ? 'moonshot-v1-8k' :
-      'gpt-4o-mini'
+    const { baseUrl, model } = resolveProvider(
+      settings.summaryApiProvider,
+      settings.summaryApiBaseUrl,
+      settings.summaryModel,
     );
 
     const response = await fetch(`${baseUrl}/chat/completions`, {
@@ -1794,7 +2173,7 @@ ${activityLines || '（本期暂无记录）'}
       return d >= start && d <= end && !a.category; // 排除系统活动
     });
 
-    // 本周待办完成
+    // 本周任务完成
     const weekTodoCompletions = todoCompletions.filter(c => c.date >= start && c.date <= end);
     const totalTodoCount = weekTodoCompletions.reduce((s, c) => s + c.count, 0);
 
@@ -2012,7 +2391,13 @@ ${activityLines || '（本期暂无记录）'}
     // 弱点判断：damage/crit 类型命中弱点时伤害×1.5
     const isDamageType = action.type === 'damage' || action.type === 'crit' || action.type === 'attack_boost';
     const isWeakness = isDamageType && action.skillAttribute !== undefined && action.skillAttribute === shadow.weakAttribute;
-    const actualDamage = isDamageType ? (isWeakness ? Math.round(action.value * 1.5) : action.value) : 0;
+    // 同伴永久战斗技能加成：该属性技能固定 +N 伤害（damage_plus）
+    const damagePlusMap = sumDamagePlus(get().confidants);
+    const confidantDamageBonus = (isDamageType && action.skillAttribute)
+      ? (damagePlusMap[action.skillAttribute] ?? 0)
+      : 0;
+    const baseDamage = isDamageType ? (isWeakness ? Math.round(action.value * 1.5) : action.value) : 0;
+    const actualDamage = baseDamage > 0 ? baseDamage + confidantDamageBonus : 0;
     // heal 类型：回复玩家HP
     const healAmount = action.type === 'heal' ? action.value : 0;
     let newHp1 = shadow.currentHp;
@@ -2155,5 +2540,744 @@ ${activityLines || '（本期暂无记录）'}
     const updated = { ...persona, equippedMaskAttribute: attr };
     await db.personas.put(updated);
     set({ persona: updated });
+  },
+
+  // ── 同伴 / Confidant ─────────────────────────────────────────
+
+  loadConfidants: async () => {
+    const [confidants, events] = await Promise.all([
+      db.confidants.orderBy('createdAt').toArray(),
+      db.confidantEvents.orderBy('createdAt').reverse().toArray(),
+    ]);
+    set({ confidants, confidantEvents: events });
+  },
+
+  addConfidant: async (params) => {
+    // 串行化并发创建请求，否则两次 addConfidant 可能同时读到"未占用"再各自写入，绕过唯一性检查
+    const run = async () => {
+      const { name, description, match, source = 'offline', linkedCloudUserId, linkedEmail, initialLevel, skillAttribute } = params;
+      const { user, settings } = get();
+      if (!user) throw new Error('尚未创建档案');
+      // 去重：在线同伴每个 linkedCloudUserId 至多一张卡（含归档）
+      // 读最新 Dexie 表 + 最新内存快照（两次 await 之间可能刚被前一个 lock hold 改过）
+      const allInDb = await db.confidants.toArray();
+      if (source === 'online' && linkedCloudUserId) {
+        const dbHit = allInDb.find(c => c.source === 'online' && c.linkedCloudUserId === linkedCloudUserId);
+        if (dbHit) {
+          await get().loadConfidants();
+          throw new Error('同伴卡已存在（每位在线好友只能有一张 COOP 卡）');
+        }
+      }
+      if (allInDb.some(c => !c.archivedAt && c.arcanaId === match.arcanaId)) {
+        throw new Error('该阿卡纳已被另一位同伴占用');
+      }
+      const now = new Date();
+      // 用户选择的等级优先；否则使用 AI 建议
+      const chosenLv = typeof initialLevel === 'number'
+        ? Math.max(1, Math.min(MAX_INTIMACY, Math.floor(initialLevel)))
+        : Math.max(1, match.initialIntimacy);
+      const basePts = levelBasePoints(chosenLv);
+      const buffs = buffsForLevel(match.arcanaId, chosenLv, settings.attributeNames, skillAttribute);
+      const confidant: Confidant = {
+        id: uuidv4(),
+        userId: user.id,
+        source,
+        linkedCloudUserId,
+        linkedEmail,
+        name: name.trim() || '（未命名同伴）',
+        arcanaId: match.arcanaId,
+        orientation: match.orientation,
+        description: description.trim(),
+        aiInterpretation: match.interpretation,
+        aiAdvice: match.advice,
+        intimacy: chosenLv,
+        intimacyPoints: basePts,
+        skillAttribute,
+        buffs,
+        decayEnabled: false,
+        lastInteractionAt: now,
+        createdAt: now,
+      };
+      const event: ConfidantEvent = {
+        id: uuidv4(),
+        confidantId: confidant.id,
+        date: toLocalDateKey(now),
+        type: 'created',
+        narrative: match.interpretation.slice(0, 80),
+        createdAt: now,
+      };
+      await db.confidants.add(confidant);
+      await db.confidantEvents.add(event);
+      await get().loadConfidants();
+      return confidant;
+    };
+    const next = _addConfidantLock.then(run, run); // 上一个失败也要继续后续请求
+    _addConfidantLock = next.catch(() => { /* 不把 reject 挂到锁上 */ });
+    return next;
+  },
+
+  updateConfidant: async (id, patch) => {
+    const existing = await db.confidants.get(id);
+    if (!existing) return;
+    await db.confidants.put({ ...existing, ...patch });
+    await get().loadConfidants();
+  },
+
+  bumpConfidantIntimacy: async (id, delta, eventType = 'intimacy_up', narrative, extra) => {
+    const current = await db.confidants.get(id);
+    if (!current) return { leveledUp: false, newIntimacy: 0, starShiftGained: 0, eventId: '' };
+    const { settings } = get();
+    const oldLv = current.intimacy;
+    const newPoints = Math.max(0, current.intimacyPoints + delta);
+    const newLv = pointsToLevel(newPoints);
+    const leveledUp = newLv > oldLv;
+    const buffs = leveledUp ? buffsForLevel(current.arcanaId, newLv, settings.attributeNames, current.skillAttribute) : current.buffs;
+    // 每次升级赠送 1 次"星移"次数（Lv 跳跃两级则赠送两次）
+    const starShiftGained = leveledUp ? (newLv - oldLv) : 0;
+    const newCharges = Math.max(0, (current.starShiftCharges ?? 0) + starShiftGained);
+    const now = new Date();
+    await db.confidants.put({
+      ...current,
+      intimacy: newLv,
+      intimacyPoints: newPoints,
+      buffs,
+      starShiftCharges: newCharges,
+      lastInteractionAt: now,
+      // COOP 远端事件应用时把 lastInteractionDate 也同步到当天，让"今日已互动"判定生效
+      ...(extra?.lastInteractionDate ? { lastInteractionDate: extra.lastInteractionDate } : {}),
+    });
+    // 事件记录 —— eventId 可由调用方覆盖（COOP 远端事件需要保持双方 id 一致以便去重）
+    const eventId = extra?.eventId || uuidv4();
+    const eventDate = extra?.eventDate || toLocalDateKey(now);
+    const events: ConfidantEvent[] = [];
+    events.push({
+      id: eventId,
+      confidantId: id,
+      date: eventDate,
+      type: delta >= 0 ? eventType : 'intimacy_down',
+      delta,
+      narrative,
+      userInput: extra?.userInput,
+      advice: extra?.advice,
+      createdAt: now,
+    });
+    if (leveledUp) {
+      events.push({
+        id: uuidv4(),
+        confidantId: id,
+        date: toLocalDateKey(now),
+        type: 'level_up',
+        narrative: `亲密度到达 Lv.${newLv}`,
+        createdAt: new Date(now.getTime() + 1),
+      });
+      // 对比新增 buffs
+      const newKinds = new Set(current.buffs.map(b => b.kind));
+      const unlocked = buffs.filter(b => !newKinds.has(b.kind));
+      for (const b of unlocked) {
+        events.push({
+          id: uuidv4(),
+          confidantId: id,
+          date: toLocalDateKey(now),
+          type: 'buff_unlocked',
+          narrative: `解锁「${b.title}」：${b.description}`,
+          createdAt: new Date(now.getTime() + 2),
+        });
+      }
+    }
+    await db.confidantEvents.bulkAdd(events);
+    await get().loadConfidants();
+    return { leveledUp, newIntimacy: newLv, starShiftGained, eventId };
+  },
+
+  recordConfidantInteraction: async ({ id, description, delta, narrative, advice, createActivity, activityAttribute, activityPoints }) => {
+    const current = await db.confidants.get(id);
+    if (!current) return { leveledUp: false, newIntimacy: 0 };
+    const today = toLocalDateKey();
+    if (current.lastInteractionDate === today) {
+      throw new Error('今天已经和 Ta 解读过了，明天再来吧');
+    }
+    // 先把 lastInteractionDate 写进去（与 bumpConfidantIntimacy 的 loadConfidants 合并）
+    await db.confidants.put({ ...current, lastInteractionDate: today });
+    // 再 bump 亲密度：narrative=AI 解读、advice=相处建议、userInput=用户原话分别存储
+    const res = await get().bumpConfidantIntimacy(
+      id, delta, 'conversation', narrative,
+      { userInput: description.trim(), advice, lastInteractionDate: today },
+    );
+
+    // 在线 COOP：把这条事件广播给对方，让 Ta 的本地共享同一条 event_id + intimacy 同步
+    if (current.source === 'online' && current.linkedCloudUserId) {
+      void (async () => {
+        try {
+          const { pb, getUserId } = await import('@/services/pocketbase');
+          if (!pb || !pb.authStore.isValid) {
+            console.warn('[velvet-store] coop broadcast skipped: not logged in');
+            return;
+          }
+          const me = getUserId();
+          if (!me) {
+            console.warn('[velvet-store] coop broadcast skipped: no user id');
+            return;
+          }
+          // 用现有的 event_logged 类型 + payload.kind = 'coop_event' 区分，
+          // 这样不需要在 PB select 字段里新增枚举值就能跑
+          const payload = {
+            kind: 'coop_event',
+            event_id: res.eventId,
+            date: today,
+            event_type: 'conversation',
+            delta,
+            narrative,
+            advice,
+            user_input: description.trim(),
+          };
+          const created = await pb.collection('notifications').create({
+            user: current.linkedCloudUserId,
+            type: 'event_logged',
+            from: me,
+            payload,
+            read: false,
+          });
+          console.info('[velvet-store] coop event broadcast OK, notif id =', created.id);
+        } catch (err) {
+          // PB 把字段级校验细节藏在 err.data 里，明确打出来
+          const rich = err as { status?: number; message?: string; data?: { data?: unknown; message?: string } };
+          console.error(
+            '[velvet-store] broadcast coop event FAILED:',
+            'status=', rich.status,
+            'msg=', rich.message,
+            'fieldErrors=', JSON.stringify(rich.data?.data ?? rich.data, null, 2),
+          );
+        }
+      })();
+    }
+    // 可选：同步到 activities；可附带对某属性的加点（≤ 3 点）
+    if (createActivity) {
+      const now = new Date();
+      const label = `[同伴] ${current.name}：${description}`;
+      const pts: Record<AttributeId, number> = { knowledge: 0, guts: 0, dexterity: 0, kindness: 0, charm: 0 };
+      if (activityAttribute && typeof activityPoints === 'number' && activityPoints > 0) {
+        pts[activityAttribute] = Math.min(3, Math.max(0, Math.floor(activityPoints)));
+      }
+      const hasPoints = Object.values(pts).some(v => v > 0);
+      if (hasPoints) {
+        // 走 addActivity 走正常的加点/升级管线，但带上 confidant 分类与 confidantId
+        // addActivity 目前不接受 confidantId 参数，这里直接手工写一条活动并走属性更新 —— 与既有 shadow_defeat 类别写入活动的模式保持一致
+        // 为了严谨，也直接更新属性等级。
+        const attrs = await db.attributes.toArray();
+        const attrMap = new Map(attrs.map(a => [a.id, a]));
+        for (const [attrId, p] of Object.entries(pts)) {
+          if (p <= 0) continue;
+          const attr = attrMap.get(attrId as AttributeId);
+          if (!attr) continue;
+          const newPoints = attr.points + p;
+          let newLevel = attr.level;
+          const thresholds = get().settings.levelThresholds?.length
+            ? get().settings.levelThresholds
+            : attr.levelThresholds;
+          while (newLevel < thresholds.length && newPoints >= thresholds[newLevel]) newLevel++;
+          await db.attributes.update(attrId, { points: newPoints, level: newLevel });
+          if (newLevel > attr.level) {
+            // 触发升级通知
+            setTimeout(() => set({
+              levelUpNotification: {
+                id: attrId,
+                displayName: get().settings.attributeNames[attrId as AttributeNamesKey],
+                level: newLevel,
+              }
+            }), 600);
+          }
+        }
+      }
+      const activity: Activity = {
+        id: uuidv4(),
+        userId: get().user?.id ?? current.userId,
+        date: now,
+        description: label,
+        pointsAwarded: pts,
+        method: 'local',
+        category: 'confidant',
+        confidantId: id,
+        important: hasPoints,
+      };
+      await db.activities.add(activity);
+      await get().loadData();
+    }
+    return res;
+  },
+
+  consumeStarShift: async (id, payload) => {
+    const current = await db.confidants.get(id);
+    if (!current) return;
+    if ((current.starShiftCharges ?? 0) <= 0) throw new Error('没有可用的星移次数');
+    const now = new Date();
+    await db.confidants.put({
+      ...current,
+      description: payload.description,
+      aiInterpretation: payload.interpretation,
+      aiAdvice: payload.advice,
+      orientation: payload.orientation,
+      starShiftCharges: (current.starShiftCharges ?? 0) - 1,
+      lastInteractionAt: now,
+    });
+    await db.confidantEvents.add({
+      id: uuidv4(),
+      confidantId: id,
+      date: toLocalDateKey(now),
+      type: 'star_shift',
+      narrative: payload.summary
+        ? `以当前状态重新落墨 —— ${payload.summary}`
+        : '以当前状态重新落墨',
+      createdAt: now,
+    });
+    await get().loadConfidants();
+  },
+
+  archiveConfidant: async (id) => {
+    const current = await db.confidants.get(id);
+    if (!current) return;
+    const now = new Date();
+    await db.confidants.put({ ...current, archivedAt: now });
+    // 60 秒内如果刚刚有过一条"归档/恢复"事件（说明是误触/快速撤回的另一半），
+    // 合并删除旧事件，整个来回不留痕
+    const recentWindow = now.getTime() - 60 * 1000;
+    const recent = await db.confidantEvents
+      .where('confidantId').equals(id)
+      .filter(e =>
+        (e.type === 'archived' || e.type === 'unarchived' as unknown as string) &&
+        new Date(e.createdAt).getTime() >= recentWindow,
+      )
+      .toArray();
+    if (recent.length > 0) {
+      // 刚才的动作与这次形成闭环，静默删除旧事件即可
+      await db.confidantEvents.bulkDelete(recent.map(e => e.id));
+    } else {
+      await db.confidantEvents.add({
+        id: uuidv4(),
+        confidantId: id,
+        date: toLocalDateKey(now),
+        type: 'archived',
+        narrative: '你将这段关系暂时收进了抽屉',
+        createdAt: now,
+      });
+    }
+    await get().loadConfidants();
+  },
+
+  unarchiveConfidant: async (id) => {
+    const current = await db.confidants.get(id);
+    if (!current) return;
+    const now = new Date();
+    // 在线同伴：如果它对应的 bond 已经 severed，主动恢复时打上 dismissed flag，
+    // 否则下次 loadSocial 的 reflectSeveredBonds 会立刻把它再归档回去
+    let extraPatch: Partial<Confidant> = {};
+    if (current.source === 'online' && current.linkedCloudUserId) {
+      try {
+        const { useCloudSocialStore } = await import('@/store/cloudSocial');
+        const bonds = useCloudSocialStore.getState().coopBonds;
+        const bond = bonds.find(
+          b => b.userAId === current.linkedCloudUserId || b.userBId === current.linkedCloudUserId,
+        );
+        if (bond && (bond.status === 'severed' || bond.status === 'expired' || bond.status === 'rejected')) {
+          extraPatch = { bondSeverDismissed: true };
+        }
+      } catch (err) {
+        console.warn('[velvet-store] check bond status on unarchive failed', err);
+      }
+    }
+    await db.confidants.put({ ...current, ...extraPatch, archivedAt: undefined });
+    // 60 秒内刚归档过 → 把那条"archived"事件一并删掉，来回不留痕
+    const recentWindow = now.getTime() - 60 * 1000;
+    const recent = await db.confidantEvents
+      .where('confidantId').equals(id)
+      .filter(e => e.type === 'archived' && new Date(e.createdAt).getTime() >= recentWindow)
+      .toArray();
+    if (recent.length > 0) {
+      await db.confidantEvents.bulkDelete(recent.map(e => e.id));
+    }
+    // 注意：不新增"unarchived"事件；"归档→恢复"是一次状态切换，不留痕
+    await get().loadConfidants();
+  },
+
+  deleteConfidant: async (id) => {
+    const current = await db.confidants.get(id);
+    // 在线同伴：先 **await** 把 PB bond 标 severed，
+    // 让对方不会重新物化再回来。
+    //
+    // 之前是 fire-and-forget：本地直接删 → 若 sever 请求失败（网断 / PB 拒绝），
+    // 对方的 bond 仍然是 linked；下一轮 loadSocial 的 materializeCoopBonds
+    // 看到 "linked 但本地没有对应 card" → 以新的 uuid 重建一张卡 → 用户感觉 "鬼复"。
+    //
+    // 现在：sever 失败 → 抛给 UI，本地不删，用户看到"删除失败，稍后重试"。
+    if (current && current.source === 'online' && current.linkedCloudUserId) {
+      const { useCloudSocialStore } = await import('@/store/cloudSocial');
+      const { severCoopBond } = await import('@/services/coopBonds');
+      const bonds = useCloudSocialStore.getState().coopBonds;
+      const bond = bonds.find(
+        b => b.status === 'linked'
+          && (b.userAId === current.linkedCloudUserId || b.userBId === current.linkedCloudUserId),
+      );
+      if (bond) {
+        try {
+          const updated = await severCoopBond(bond.id);
+          useCloudSocialStore.getState().updateCoopBond(bond.id, updated);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : '网络错误';
+          throw new Error(`解除 COOP 失败，请稍后重试（${msg}）`);
+        }
+      }
+    }
+    await db.confidants.delete(id);
+    const evs = await db.confidantEvents.where('confidantId').equals(id).toArray();
+    if (evs.length) await db.confidantEvents.bulkDelete(evs.map(e => e.id));
+    await get().loadConfidants();
+  },
+
+  useConfidantBattleItem: async (id, kind) => {
+    const current = await db.confidants.get(id);
+    if (!current) return null;
+    const today = toLocalDateKey();
+    // 2 天内使用过则冷却中
+    if (isItemOnCooldown(current.itemUsedDate, today)) return null;
+    const buff = (current.buffs ?? []).find(b => b.kind === kind);
+    if (!buff) return null;
+    const now = new Date();
+    await db.confidants.put({ ...current, itemUsedDate: today, lastInteractionAt: now });
+    await db.confidantEvents.add({
+      id: uuidv4(),
+      confidantId: id,
+      date: today,
+      type: 'item_used',
+      narrative: `${current.name} 在战斗中施以援手：${buff.title}`,
+      createdAt: now,
+    });
+    await get().loadConfidants();
+    return buff;
+  },
+
+  getAvailableConfidantItems: (kind) => {
+    const today = toLocalDateKey();
+    const { confidants } = get();
+    const out: Array<{
+      confidantId: string;
+      confidantName: string;
+      arcanaId: string;
+      buff: ConfidantBuff;
+    }> = [];
+    for (const c of confidants) {
+      if (c.archivedAt) continue;
+      if (isItemOnCooldown(c.itemUsedDate, today)) continue;
+      const b = (c.buffs ?? []).find(x => x.kind === kind);
+      if (b) out.push({ confidantId: c.id, confidantName: c.name, arcanaId: c.arcanaId, buff: b });
+    }
+    return out;
+  },
+
+  runConfidantDailyMaintenance: async () => {
+    const today = toLocalDateKey();
+    const all = await db.confidants.toArray();
+    const now = new Date();
+    const events: ConfidantEvent[] = [];
+    let changed = false;
+
+    // 在线 COOP 的"逆流"必须双方都开 —— 拉取 cloud bonds 一次
+    const { useCloudSocialStore } = await import('@/store/cloudSocial');
+    // 如果已登录但 bonds 尚未加载（initializeApp 与 App.tsx 的 loadSocial 时序竞态），
+    // 先等一次 loadSocial 完成，避免把在线同伴错误地"暂不衰减"。
+    try {
+      const { useCloudStore } = await import('@/store/cloud');
+      const isLogged = useCloudStore.getState().cloudUser !== null;
+      const hasOnlineConfidant = all.some(c => !c.archivedAt && c.source === 'online' && c.linkedCloudUserId);
+      const bondsEmpty = useCloudSocialStore.getState().coopBonds.length === 0;
+      if (isLogged && hasOnlineConfidant && bondsEmpty) {
+        const { loadSocial } = await import('@/services/social');
+        await loadSocial({ force: true });
+      }
+    } catch { /* 网络失败不阻塞维护：后续分支会对每个在线同伴 fallback 跳过 */ }
+    const allBonds = useCloudSocialStore.getState().coopBonds;
+
+    for (const c of all) {
+      if (c.archivedAt) continue;
+      if (!c.decayEnabled) continue;
+
+      // 在线同伴：必须找到对应 bond 且双方都开启 decay
+      if (c.source === 'online' && c.linkedCloudUserId) {
+        const bond = allBonds.find(
+          b => b.status === 'linked'
+            && (b.userAId === c.linkedCloudUserId || b.userBId === c.linkedCloudUserId),
+        );
+        if (!bond) continue;          // 没找到 bond → 暂不衰减
+        if (!(bond.decayA === true && bond.decayB === true)) continue; // 双方未达成一致
+      }
+      // 最后互动日期
+      const last = c.lastInteractionAt ? new Date(c.lastInteractionAt) : new Date(c.createdAt);
+      const lastKey = toLocalDateKey(last);
+      // 连续 3 天（含）以上无互动才衰减；每天最多 -1
+      const diffDays = Math.floor((new Date(today + 'T00:00:00').getTime() - new Date(lastKey + 'T00:00:00').getTime()) / 86400000);
+      if (diffDays < 3) continue;
+      // 今天已经扣过
+      const already = await db.confidantEvents
+        .where('confidantId').equals(c.id)
+        .filter(e => e.type === 'decay' && e.date === today)
+        .first();
+      if (already) continue;
+      const newPoints = Math.max(0, c.intimacyPoints - 1);
+      const newLv = pointsToLevel(newPoints);
+      const buffs = newLv < c.intimacy ? buffsForLevel(c.arcanaId, newLv, get().settings.attributeNames) : c.buffs;
+      await db.confidants.put({
+        ...c,
+        intimacyPoints: newPoints,
+        intimacy: newLv,
+        buffs,
+      });
+      events.push({
+        id: uuidv4(),
+        confidantId: c.id,
+        date: today,
+        type: 'decay',
+        delta: -1,
+        narrative: `已有 ${diffDays} 天未与 ${c.name} 互动，羁绊悄然褪色`,
+        createdAt: now,
+      });
+      changed = true;
+    }
+    if (events.length) await db.confidantEvents.bulkAdd(events);
+    if (changed) await get().loadConfidants();
+  },
+
+  // ── 谏言 / Counsel ───────────────────────────────────────────
+
+  loadCounsel: async () => {
+    const [sessions, archives] = await Promise.all([
+      db.counselSessions.toArray(),
+      db.counselArchives.orderBy('createdAt').reverse().toArray(),
+    ]);
+    // 理论上只保留 1 条（最后一次）
+    const session = sessions
+      .slice()
+      .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())[0] ?? null;
+    set({ counselSession: session, counselArchives: archives });
+    await get().expireCounselIfNeeded();
+  },
+
+  getCounselCooldown: () => {
+    const COOLDOWN_DAYS = 3;
+    const { counselSession, counselArchives, settings } = get();
+    const times: number[] = [];
+    // 主真源：Settings.lastCounselStartedAt —— 不会被归档删除 / 手动清档影响
+    if (settings.lastCounselStartedAt) {
+      const t = new Date(settings.lastCounselStartedAt).getTime();
+      if (!isNaN(t)) times.push(t);
+    }
+    // 次要来源（向前兼容 + 兜底）：当前 session 的 startedAt，最新归档的 sessionStartedAt
+    if (counselSession?.startedAt) {
+      const t = new Date(counselSession.startedAt).getTime();
+      if (!isNaN(t)) times.push(t);
+    }
+    const latestArchive = counselArchives[0];
+    if (latestArchive?.sessionStartedAt) {
+      const t = new Date(latestArchive.sessionStartedAt).getTime();
+      if (!isNaN(t)) times.push(t);
+    }
+    if (times.length === 0) return { locked: false };
+    const latest = Math.max(...times);
+    const nextAvailable = latest + COOLDOWN_DAYS * 86400000;
+    const now = Date.now();
+    if (now >= nextAvailable) return { locked: false };
+    const nextAvailableAt = new Date(nextAvailable);
+    return {
+      locked: true,
+      nextAvailableAt,
+      nextAvailableDate: toLocalDateKey(nextAvailableAt),
+      daysLeft: Math.ceil((nextAvailable - now) / 86400000),
+    };
+  },
+
+  hasActiveCounsel: () => {
+    const { counselSession } = get();
+    if (!counselSession) return false;
+    if (counselSession.expired) return false;
+    if (Date.now() > new Date(counselSession.expiresAt).getTime()) return false;
+    return true;
+  },
+
+  startCounselSession: async (mentionedConfidantIds = []) => {
+    const cd = get().getCounselCooldown();
+    if (cd.locked) {
+      throw new Error(`谏言冷却中，下次可用：${cd.nextAvailableDate}`);
+    }
+    // 清掉旧 session（冷却已过，旧会话可以丢弃）
+    await db.counselSessions.clear();
+    const now = new Date();
+    // 预设 @ 的同伴：回合号置为 1 —— 开场问候和第 1 回合的 prompt 都能感知到 Ta；10 回合内自动过期
+    const initialLastTurn: Record<string, number> = {};
+    for (const id of mentionedConfidantIds) initialLastTurn[id] = 1;
+    const session: CounselSession = {
+      id: uuidv4(),
+      startedDate: toLocalDateKey(now),
+      startedAt: now,
+      expiresAt: new Date(now.getTime() + 60 * 60 * 1000), // 1 小时
+      mentionedConfidantIds: [...mentionedConfidantIds],
+      mentionLastTurn: initialLastTurn,
+      messages: [],
+    };
+    await db.counselSessions.put(session);
+    // 同步写入 Settings.lastCounselStartedAt 作为冷却真源
+    await get().updateSettings({ lastCounselStartedAt: now.toISOString() });
+    set({ counselSession: session });
+    return session;
+  },
+
+  appendCounselMessage: async (msg) => {
+    const { counselSession } = get();
+    if (!counselSession) throw new Error('谏言会话尚未开启');
+    if (counselSession.expired || Date.now() > new Date(counselSession.expiresAt).getTime()) {
+      throw new Error('谏言窗口已过期');
+    }
+    const mergedMentions = msg.mentions && msg.mentions.length
+      ? Array.from(new Set([...counselSession.mentionedConfidantIds, ...msg.mentions]))
+      : counselSession.mentionedConfidantIds;
+
+    const newMessages = [...counselSession.messages, msg];
+    // 只有"带 @ 的用户消息"才会刷新 mentionLastTurn：回合号 = 追加后的用户消息总数
+    let mentionLastTurn = counselSession.mentionLastTurn ?? {};
+    if (msg.role === 'user' && msg.mentions && msg.mentions.length > 0) {
+      const newUserTurn = newMessages.filter(m => m.role === 'user').length;
+      mentionLastTurn = { ...mentionLastTurn };
+      for (const id of msg.mentions) {
+        mentionLastTurn[id] = newUserTurn;
+      }
+    }
+
+    const updated: CounselSession = {
+      ...counselSession,
+      messages: newMessages,
+      mentionedConfidantIds: mergedMentions,
+      mentionLastTurn,
+    };
+    await db.counselSessions.put(updated);
+    set({ counselSession: updated });
+  },
+
+  updateCounselMessage: async (id, patch) => {
+    const { counselSession } = get();
+    if (!counselSession) return;
+    const messages = counselSession.messages.map(m => m.id === id ? { ...m, ...patch } : m);
+    const updated: CounselSession = { ...counselSession, messages };
+    await db.counselSessions.put(updated);
+    set({ counselSession: updated });
+  },
+
+  expireCounselIfNeeded: async () => {
+    const { counselSession } = get();
+    if (!counselSession) return;
+    // 残留的 expired 旧行（老版本留下的）→ 直接清掉
+    if (counselSession.expired) {
+      await db.counselSessions.delete(counselSession.id);
+      set({ counselSession: null });
+      return;
+    }
+    const now = Date.now();
+    if (now <= new Date(counselSession.expiresAt).getTime()) return;
+    // 过期：**彻底删除整条会话**，聊天原文不进任何存档 / 备份。
+    // 冷却状态由 settings.lastCounselStartedAt 负责保留，不依赖这条行。
+    await db.counselSessions.delete(counselSession.id);
+    set({ counselSession: null });
+  },
+
+  archiveCounselSession: async (signal) => {
+    const { counselSession, settings } = get();
+    if (!counselSession) return null;
+    if (counselSession.messages.length === 0) {
+      // 没内容直接删除，不生成归档
+      await db.counselSessions.delete(counselSession.id);
+      set({ counselSession: null });
+      return null;
+    }
+    const summary = await summarizeCounsel(settings, counselSession.messages, signal);
+    const lastMsg = counselSession.messages[counselSession.messages.length - 1];
+    const archive: CounselArchive = {
+      id: uuidv4(),
+      summary,
+      mentionedConfidantIds: [...counselSession.mentionedConfidantIds],
+      messageCount: counselSession.messages.length,
+      sessionStartedAt: new Date(counselSession.startedAt),
+      sessionEndedAt: new Date(lastMsg?.timestamp ?? counselSession.startedAt),
+      createdAt: new Date(),
+    };
+    await db.counselArchives.add(archive);
+    await db.counselSessions.delete(counselSession.id);
+    set(state => ({
+      counselSession: null,
+      counselArchives: [archive, ...state.counselArchives],
+    }));
+    return archive;
+  },
+
+  deleteCounselArchive: async (id) => {
+    await db.counselArchives.delete(id);
+    set(state => ({
+      counselArchives: state.counselArchives.filter(a => a.id !== id),
+    }));
+  },
+
+  buildCounselContext: () => {
+    const { settings, counselSession, counselArchives, confidants, confidantEvents } = get();
+    // 上一次 & 上上次归档摘要 —— 让残响有"上次我们聊过什么"的记忆
+    const previousArchives = counselArchives.slice(0, 2).map(a => ({
+      summary: a.summary,
+      createdAt: new Date(a.createdAt),
+      mentionedIds: [...a.mentionedConfidantIds],
+    }));
+    if (!counselSession) {
+      return {
+        settings,
+        messages: [],
+        mentionedConfidants: [],
+        recentEvents: [],
+        previousArchives,
+      };
+    }
+    // 10 回合 CD：currentUserTurn - lastTurn < 10 才算"仍在上下文"
+    const MENTION_CD_TURNS = 10;
+    const currentUserTurn = counselSession.messages.filter(m => m.role === 'user').length;
+    const lastTurnMap = counselSession.mentionLastTurn ?? {};
+    const activeIds = counselSession.mentionedConfidantIds.filter(id => {
+      const lt = lastTurnMap[id];
+      if (typeof lt !== 'number') return false;
+      return currentUserTurn - lt < MENTION_CD_TURNS;
+    });
+
+    const ids = new Set(activeIds);
+    const mentioned: CounselConfidantBrief[] = [];
+    for (const id of activeIds) {
+      const c = confidants.find(x => x.id === id);
+      if (!c) continue;
+      const card = TAROT_BY_ID[c.arcanaId];
+      mentioned.push({
+        id: c.id,
+        name: c.name,
+        arcanaName: card?.name ?? c.arcanaId,
+        orientation: c.orientation,
+        intimacy: c.intimacy,
+        description: c.description,
+        aiInterpretation: c.aiInterpretation,
+      });
+    }
+    // 近 15 条相关 confidantEvents（若当前没有活跃 @，则退化为全局最近 15 条）
+    const relevant = ids.size > 0
+      ? confidantEvents.filter(e => ids.has(e.confidantId))
+      : confidantEvents;
+    const recentEvents: CounselRecentEvent[] = relevant.slice(0, 15).map(e => {
+      const cname = confidants.find(c => c.id === e.confidantId)?.name ?? '同伴';
+      const text = e.userInput || e.narrative || e.advice || '';
+      return { confidantName: cname, date: e.date, type: e.type, text };
+    });
+    return {
+      settings,
+      messages: counselSession.messages,
+      mentionedConfidants: mentioned,
+      recentEvents,
+      previousArchives,
+    };
   },
 }));
