@@ -49,5 +49,9 @@ scripts/*.class
 # Misc local files
 *.log
 
+# Audio files (served externally, not tracked in repo)
+*.mp3
+*.wav
+
 # Claude Code local files
 .claude/

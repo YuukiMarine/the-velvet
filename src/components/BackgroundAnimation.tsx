@@ -234,6 +234,8 @@ function Wave({ darkMode }: { darkMode?: boolean }) {
 // ── Pulse ─────────────────────────────────────────────────
 function Pulse({ darkMode }: { darkMode?: boolean }) {
   const animName = darkMode ? 'grid-breathe-dark' : 'grid-breathe';
+  // 与 keyframes 0% 帧对齐的初始 opacity，避免动画启动前/延迟期间出现"满亮度闪烁"
+  const initialOpacity = darkMode ? 0.08 : 0.06;
   return (
     <div
       style={{
@@ -249,7 +251,9 @@ function Pulse({ darkMode }: { darkMode?: boolean }) {
           inset: 0,
           backgroundImage: 'linear-gradient(0deg, var(--color-primary) 1px, transparent 1px)',
           backgroundSize: '100% 48px',
+          opacity: initialOpacity,                              // 初始帧锁定，防止首帧拉满
           animation: `${animName} 4s ease-in-out infinite`,
+          animationFillMode: 'both',                            // 0% 帧立即生效（含延迟期）
           willChange: 'opacity',
           transform: 'translateZ(0)',
           backfaceVisibility: 'hidden',
@@ -262,7 +266,9 @@ function Pulse({ darkMode }: { darkMode?: boolean }) {
           inset: 0,
           backgroundImage: 'linear-gradient(90deg, var(--color-primary) 1px, transparent 1px)',
           backgroundSize: '48px 100%',
+          opacity: initialOpacity,                              // 同上：与 2s 延迟期间保持一致
           animation: `${animName} 4s ease-in-out infinite 2s`,
+          animationFillMode: 'both',                            // backwards 让 0% 帧在 2s 延迟期就锁定
           willChange: 'opacity',
           transform: 'translateZ(0)',
           backfaceVisibility: 'hidden',

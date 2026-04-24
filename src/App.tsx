@@ -1,6 +1,12 @@
 import { useEffect, useState, useRef, useCallback, lazy, Suspense } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useAppStore, toLocalDateKey } from '@/store';
+import { useCloudStore } from '@/store/cloud';
+import { readLastSync, trySyncInBackground, resolveConflictKeepLocal, resolveConflictKeepCloud, acceptDiffKeepLocal, acceptDiffKeepCloud } from '@/services/sync';
+import { pb as pbClient } from '@/services/pocketbase';
+import { SyncStatusBadge } from '@/components/auth/SyncStatusBadge';
+import { ConflictDialog } from '@/components/auth/ConflictDialog';
+import { SyncDiffDialog } from '@/components/auth/SyncDiffDialog';
 import { Sidebar, BottomNav } from '@/components/Navigation';
 import { WelcomeModal } from '@/components/WelcomeModal';
 import { LevelUpModal } from '@/components/LevelUpModal';
@@ -15,11 +21,14 @@ import { Achievements } from '@/pages/Achievements';
 const Statistics = lazy(() => import('@/pages/Statistics').then(m => ({ default: m.Statistics })));
 import { Settings } from '@/pages/Settings';
 import { Todos } from '@/pages/Todos';
+const Astrology = lazy(() => import('@/pages/Astrology').then(m => ({ default: m.Astrology })));
+const Cooperation = lazy(() => import('@/pages/Cooperation').then(m => ({ default: m.Cooperation })));
 import { BattleArena } from '@/components/battle/BattleArena';
 import { primeCurrentTheme } from '@/utils/feedback';
 import { BackgroundAnimation } from '@/components/BackgroundAnimation';
 import { PWAUpdateToast } from '@/components/PWAUpdateToast';
 import { isNative } from '@/utils/native';
+import { tryHandleBack } from '@/utils/useBackHandler';
 
 function App() {
   const { currentPage, initializeApp, user, levelUpNotification, setLevelUpNotification, achievementNotification, setAchievementNotification, skillNotification, setSkillNotification, settings, modalBlocker } = useAppStore();
@@ -34,6 +43,24 @@ function App() {
   const [showBackToast, setShowBackToast] = useState(false);
   const lastBackPressRef = useRef(0);
   const backToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 旧版密码重置邮件兜底：过去的 PB 默认模板会生成
+  // `https://the-velvet.com/_/#/auth/confirm-password-reset/TOKEN` 形式的链接。
+  // 迁移到 /reset-password 之后这些旧邮件点进来会落到 SPA fallback，
+  // 进入主 App 看起来"啥也没发生"。这里做一次启动检测 → 显示顶部横幅提示。
+  // token 在 hash 里，nginx 看不见无法重定向，所以兜底只能做到"告知并引导"。
+  const [staleResetNotice, setStaleResetNotice] = useState(false);
+  useEffect(() => {
+    try {
+      const path = window.location.pathname;
+      const hash = window.location.hash;
+      if (path.startsWith('/_/') && /confirm-password-reset/i.test(hash)) {
+        setStaleResetNotice(true);
+        // 清理 URL，避免用户刷新后再次看到同一条提示
+        window.history.replaceState(null, '', '/');
+      }
+    } catch { /* SSR / 异常环境直接忽略 */ }
+  }, []);
 
   // 快速预加载开屏动画设置，确保 splash 使用用户选中的样式
   useEffect(() => {
@@ -60,17 +87,82 @@ function App() {
     init();
   }, [initializeApp]);
 
+  // 订阅云端登录状态变化（PocketBase token 刷新 / 登出）
+  useEffect(() => {
+    const unsub = useCloudStore.getState().initAuthListener();
+    return unsub;
+  }, []);
+
+  // 登录状态切换时拉 / 清 social 数据（好友 + 通知）
+  useEffect(() => {
+    import('@/services/social').then(({ loadSocial, resetSocial }) => {
+      let isLogged = useCloudStore.getState().cloudUser !== null;
+      if (isLogged) void loadSocial({ force: true });
+      const unsub = useCloudStore.subscribe((state) => {
+        const nowLogged = state.cloudUser !== null;
+        if (nowLogged === isLogged) return;
+        isLogged = nowLogged;
+        if (nowLogged) {
+          void loadSocial({ force: true });
+        } else {
+          resetSocial();
+        }
+      });
+      return unsub;
+    });
+  }, []);
+
+  // 启动时若已有有效 token，静默刷新一次以延长有效期（避免每次进入都要重登）
+  // 刷新失败（token 过期 / 服务端拒绝）→ 清除本地 token，用户下次再登录
+  useEffect(() => {
+    const client = pbClient;
+    if (!client || !client.authStore.isValid) return;
+    client
+      .collection('users')
+      .authRefresh()
+      .catch(() => {
+        client.authStore.clear();
+      });
+  }, []);
+
+  // 恢复上次同步时间 + 监听切到后台时静默推送到云端
+  useEffect(() => {
+    const last = readLastSync();
+    if (last) useCloudStore.getState().setLastSyncAt(last);
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') {
+        // 切到后台：静默推送本地最新数据（失败不扰民）
+        void trySyncInBackground();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    // 页面关闭前尝试一次（best-effort，浏览器可能不会等待异步完成）
+    window.addEventListener('pagehide', onVisibility);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('pagehide', onVisibility);
+    };
+  }, []);
+
   // 切回前台时检查日期是否推进，若推进则重载数据（修复隔天打开不刷新）
   useEffect(() => {
-    const { loadData, generateDailyEvent } = useAppStore.getState();
+    const { loadData, loadDailyDivination, sweepExpiredReadings } = useAppStore.getState();
 
     const handleVisibilityChange = async () => {
       if (document.visibilityState !== 'visible') return;
+      // 切回前台顺手刷新 social（好友 + 通知）；30 秒节流在 loadSocial 内部已做
+      if (useCloudStore.getState().cloudUser) {
+        import('@/services/social').then(({ loadSocial }) => {
+          void loadSocial();
+        });
+      }
       const today = toLocalDateKey();
       if (today !== lastDateRef.current) {
         lastDateRef.current = today;
         await loadData();
-        await generateDailyEvent();
+        await loadDailyDivination(); // 换日后重置今日塔罗状态
+        await sweepExpiredReadings();
       }
     };
 
@@ -78,7 +170,11 @@ function App() {
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, []);
 
-  // ── Android 返回键：双击退出 ───────────────────────────────
+  // ── Android 返回键：分层处理 ───────────────────────────────
+  // 优先级：
+  //   1. 有注册的 back handler（Modal / 临时页）→ 关闭最顶层
+  //   2. 当前 currentPage 不是 dashboard → 回到 dashboard
+  //   3. 已经在 dashboard → "再次点击回到现实"，2 秒内再按则退出
   useEffect(() => {
     if (!isNative()) return; // 仅在原生平台生效
 
@@ -87,16 +183,24 @@ function App() {
     const setup = async () => {
       const { App: CapApp } = await import('@capacitor/app');
       pluginListener = await CapApp.addListener('backButton', () => {
-        const now = Date.now();
-        const DOUBLE_PRESS_MS = 2000; // 2 秒内双击退出
+        // 步骤 1：交给栈顶注册的 back handler（BattleModal / VictoryModal 等）
+        if (tryHandleBack()) return;
 
+        // 步骤 2：非 dashboard 页 → 返回 dashboard
+        const store = useAppStore.getState();
+        if (store.currentPage !== 'dashboard') {
+          store.setCurrentPage('dashboard');
+          return;
+        }
+
+        // 步骤 3：dashboard 上执行双击退出
+        const now = Date.now();
+        const DOUBLE_PRESS_MS = 2000;
         if (now - lastBackPressRef.current < DOUBLE_PRESS_MS) {
-          // 第二次点击：退出 App
           if (backToastTimerRef.current) clearTimeout(backToastTimerRef.current);
           setShowBackToast(false);
           CapApp.exitApp();
         } else {
-          // 第一次点击：显示 Toast 提示
           lastBackPressRef.current = now;
           setShowBackToast(true);
           if (backToastTimerRef.current) clearTimeout(backToastTimerRef.current);
@@ -195,6 +299,10 @@ function App() {
         return <Settings />;
       case 'battle':
         return <BattleArena />;
+      case 'astrology':
+        return <Suspense fallback={<div className="flex items-center justify-center h-64 text-gray-400">加载中…</div>}><Astrology /></Suspense>;
+      case 'cooperation':
+        return <Suspense fallback={<div className="flex items-center justify-center h-64 text-gray-400">加载中…</div>}><Cooperation /></Suspense>;
       default:
         return <Dashboard />;
     }
@@ -214,6 +322,37 @@ function App() {
           >
             <div className="bg-gray-900/90 dark:bg-gray-100/90 text-white dark:text-gray-900 text-sm font-semibold px-5 py-3 rounded-2xl shadow-xl backdrop-blur-sm whitespace-nowrap">
               再次点击回到现实
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* 旧版重置密码邮件链接的兜底提示（PB 模板迁移前发出、未点击的链接会落到这里） */}
+      <AnimatePresence>
+        {staleResetNotice && (
+          <motion.div
+            initial={{ opacity: 0, y: -16 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -12 }}
+            transition={{ duration: 0.22 }}
+            className="fixed top-4 left-1/2 -translate-x-1/2 z-[210] max-w-md w-[calc(100%-2rem)]"
+            role="alert"
+          >
+            <div className="flex items-start gap-3 px-4 py-3 rounded-2xl bg-amber-500/95 text-white shadow-xl backdrop-blur-sm">
+              <span className="text-lg flex-shrink-0">⚠</span>
+              <div className="flex-1 text-xs leading-relaxed">
+                <div className="font-semibold mb-0.5">这条密码重置链接已不再支持</div>
+                <div className="opacity-90">
+                  重置密码的入口已迁移到新的页面。请到登录弹窗点"忘记密码"重新申请一份邮件，直接点击新邮件里的按钮即可完成重置。
+                </div>
+              </div>
+              <button
+                onClick={() => setStaleResetNotice(false)}
+                aria-label="关闭提示"
+                className="w-7 h-7 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center text-sm flex-shrink-0"
+              >
+                ✕
+              </button>
             </div>
           </motion.div>
         )}
@@ -304,10 +443,56 @@ function App() {
                <PWAUpdateToast />
             </>
           )}
+
+          {/* 云同步：浮动状态徽章 + 冲突解决弹窗（全局，无论 WelcomeModal 或主界面都可见） */}
+          <SyncStatusBadge />
+          <GlobalConflictDialog />
+          <GlobalDiffDialog />
         </div>
       </div>
     </div>
   );
 }
+
+/** 订阅 cloudStore.conflictPending 全局呈现冲突解决弹窗 */
+const GlobalConflictDialog = () => {
+  const pending = useCloudStore(s => s.conflictPending);
+  const setPending = useCloudStore(s => s.setConflictPending);
+  return (
+    <ConflictDialog
+      isOpen={pending}
+      onClose={() => setPending(false)}
+      onKeepLocal={async () => {
+        await resolveConflictKeepLocal();
+        setPending(false);
+      }}
+      onKeepCloud={async () => {
+        await resolveConflictKeepCloud();
+        setPending(false);
+      }}
+    />
+  );
+};
+
+/** 订阅 cloudStore.diffWarning 全局呈现条目差异提示 */
+const GlobalDiffDialog = () => {
+  const diff = useCloudStore(s => s.diffWarning);
+  const setDiff = useCloudStore(s => s.setDiffWarning);
+  return (
+    <SyncDiffDialog
+      isOpen={!!diff}
+      diff={diff}
+      onKeepLocal={async () => {
+        await acceptDiffKeepLocal();
+        setDiff(null);
+      }}
+      onKeepCloud={async () => {
+        await acceptDiffKeepCloud();
+        setDiff(null);
+      }}
+      onDismiss={() => setDiff(null)}
+    />
+  );
+};
 
 export default App;

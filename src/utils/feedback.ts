@@ -4,11 +4,11 @@ import type { ThemeType } from '@/types';
 type FeedbackKind = 'theme_switch' | 'nav' | 'success' | 'level';
 
 const THEME_SOUNDS: Record<ThemeType, Record<FeedbackKind, string>> = {
-  blue:   { theme_switch: '/p3se.mp3', nav: '/p3tap.mp3', success: '/p3up.mp3', level: '/p3lv.mp3' },
-  pink:   { theme_switch: '/p3se.mp3', nav: '/p3tap.mp3', success: '/p3up.mp3', level: '/p3lv.mp3' },
-  yellow: { theme_switch: '/p4se.mp3', nav: '/p4tap.mp3', success: '/p4up.mp3', level: '/p4lv.mp3' },
-  red:    { theme_switch: '/p5se.mp3', nav: '/dd.mp3',    success: '/ok.mp3',   level: '/p5lv.mp3' },
-  custom: { theme_switch: '/p3se.mp3', nav: '/p3tap.mp3', success: '/p3up.mp3', level: '/p3lv.mp3' },
+  blue:   { theme_switch: '/themea-switch.mp3', nav: '/themea-nav.mp3', success: '/themea-success.mp3', level: '/themea-level.mp3' },
+  pink:   { theme_switch: '/themea-switch.mp3', nav: '/themea-nav.mp3', success: '/themea-success.mp3', level: '/themea-level.mp3' },
+  yellow: { theme_switch: '/themeb-switch.mp3', nav: '/themeb-nav.mp3', success: '/themeb-success.mp3', level: '/themeb-level.mp3' },
+  red:    { theme_switch: '/themec-switch.mp3', nav: '/dd.mp3',    success: '/ok.mp3',   level: '/themec-level.mp3' },
+  custom: { theme_switch: '/themea-switch.mp3', nav: '/themea-nav.mp3', success: '/themea-success.mp3', level: '/themea-level.mp3' },
 };
 
 // ── Web Audio API 引擎 ────────────────────────────────────
@@ -21,9 +21,24 @@ const THEME_SOUNDS: Record<ThemeType, Record<FeedbackKind, string>> = {
 //   5. 降级：若 Web Audio API 不可用，回退到 new Audio()
 
 let _ctx: AudioContext | null = null;
+// LRU 缓存：Map 按插入顺序保序，命中时移到队尾；超出上限时从队首淘汰。
+// 上限 48 够覆盖"4 主题 × 4 feedback + 战斗/同伴 所有音效"，且单文件约 100KB，最多占用 ~5MB。
+const _BUFFER_CACHE_MAX = 48;
 const _bufferCache = new Map<string, AudioBuffer>();
 // fetch 正在进行中的 Promise，避免同一文件并发 fetch
 const _fetchPromise = new Map<string, Promise<AudioBuffer | null>>();
+
+function touchLRU(src: string, buffer: AudioBuffer): void {
+  // 重新插入使其位于 Map 队尾（最近使用）
+  if (_bufferCache.has(src)) _bufferCache.delete(src);
+  _bufferCache.set(src, buffer);
+  // 超限时淘汰最久未使用项
+  while (_bufferCache.size > _BUFFER_CACHE_MAX) {
+    const firstKey = _bufferCache.keys().next().value;
+    if (firstKey === undefined) break;
+    _bufferCache.delete(firstKey);
+  }
+}
 
 function getContext(): AudioContext | null {
   if (_ctx) return _ctx;
@@ -54,7 +69,7 @@ async function primeBuffer(src: string): Promise<AudioBuffer | null> {
       if (!resp.ok) return null;
       const arrayBuffer = await resp.arrayBuffer();
       const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
-      _bufferCache.set(src, audioBuffer);
+      touchLRU(src, audioBuffer);
       return audioBuffer;
     } catch {
       return null;
@@ -87,7 +102,10 @@ async function playBuffered(src: string, volume: number): Promise<void> {
   }
 
   let buffer = _bufferCache.get(src);
-  if (!buffer) {
+  if (buffer) {
+    // 命中时刷新 LRU 顺序
+    touchLRU(src, buffer);
+  } else {
     buffer = (await primeBuffer(src)) ?? undefined;
     if (!buffer) return;
   }
@@ -101,6 +119,12 @@ async function playBuffered(src: string, volume: number): Promise<void> {
     gainNode.gain.value = volume;
     source.connect(gainNode);
     gainNode.connect(ctx.destination);
+
+    // 播放结束后断开节点，避免 AudioNode 泄漏（长会话下累计可至数百个）
+    source.onended = () => {
+      try { source.disconnect(); } catch { /* ignore */ }
+      try { gainNode.disconnect(); } catch { /* ignore */ }
+    };
 
     source.start(0);
   } catch {

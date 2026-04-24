@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAppStore } from '@/store';
 import { toLocalDateKey } from '@/store';
-import { isInShadowTime } from '@/constants';
+import { isInShadowTime, SKILL_EFFECT_MAP, HEAL_VALUE_BY_ATTR } from '@/constants';
 import { AttributeId } from '@/types';
 import { playSound } from '@/utils/feedback';
 import { PersonaCreateModal } from '@/components/battle/PersonaCreateModal';
@@ -376,7 +376,7 @@ export const BattleArena = () => {
                         {/* Navigation header */}
                         <div className="flex items-center justify-between">
                           <button
-                            onClick={() => { playSound('/battle-menu-flip.mp3', 0.5); setPersonaCardIdx(i => (i - 1 + ATTR_IDS.length) % ATTR_IDS.length); }}
+                            onClick={() => { playSound('/ui-menu.mp3', 0.5); setPersonaCardIdx(i => (i - 1 + ATTR_IDS.length) % ATTR_IDS.length); }}
                             className="w-9 h-9 flex items-center justify-center rounded-xl text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-lg"
                           >
                             ‹
@@ -390,7 +390,7 @@ export const BattleArena = () => {
                             </p>
                           </div>
                           <button
-                            onClick={() => { playSound('/battle-menu-flip.mp3', 0.5); setPersonaCardIdx(i => (i + 1) % ATTR_IDS.length); }}
+                            onClick={() => { playSound('/ui-menu.mp3', 0.5); setPersonaCardIdx(i => (i + 1) % ATTR_IDS.length); }}
                             className="w-9 h-9 flex items-center justify-center rounded-xl text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-lg"
                           >
                             ›
@@ -426,7 +426,7 @@ export const BattleArena = () => {
                           const handleEquip = () => {
                             equipMask(isEquipped ? null : currentAttr);
                             if (!isEquipped) {
-                              playSound('/battle-persona-change.mp3');
+                              playSound('/battle-mask-swap.mp3');
                               setMaskEquipAnim(currentAttr);
                               setTimeout(() => setMaskEquipAnim(null), 2200);
                             }
@@ -442,34 +442,42 @@ export const BattleArena = () => {
                                 className="rounded-2xl overflow-hidden relative bg-white dark:bg-gray-800/40"
                                 style={{ borderColor: isEquipped ? 'rgba(139,92,246,0.6)' : 'rgba(139,92,246,0.25)', borderWidth: 1 }}
                               >
-                                {/* Equip animation overlay */}
+                                {/* Equip animation overlay — 居中的毛玻璃小卡片，不遮挡整张卡片 */}
                                 <AnimatePresence>
                                   {maskEquipAnim === currentAttr && (
-                                    <motion.div
-                                      initial={{ opacity: 0, scale: 0.8 }}
-                                      animate={{ opacity: 1, scale: 1 }}
-                                      exit={{ opacity: 0, scale: 1.1 }}
-                                      transition={{ duration: 0.3 }}
-                                      className="absolute inset-0 z-10 flex flex-col items-center justify-center rounded-2xl pointer-events-none"
-                                      style={{ background: 'rgba(139,92,246,0.85)', backdropFilter: 'blur(4px)' }}
-                                    >
-                                      <motion.p
-                                        initial={{ y: 10, opacity: 0 }}
-                                        animate={{ y: 0, opacity: 1 }}
-                                        transition={{ delay: 0.1 }}
-                                        className="text-white font-black text-lg mb-2"
+                                    <div className="absolute inset-0 z-10 flex items-center justify-center rounded-2xl pointer-events-none p-4">
+                                      <motion.div
+                                        initial={{ opacity: 0, scale: 0.85, y: 8 }}
+                                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                                        exit={{ opacity: 0, scale: 1.05 }}
+                                        transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+                                        className="rounded-2xl px-5 py-3 text-center shadow-xl max-w-[85%]"
+                                        style={{
+                                          background: 'rgba(139,92,246,0.78)',
+                                          backdropFilter: 'blur(8px) saturate(140%)',
+                                          WebkitBackdropFilter: 'blur(8px) saturate(140%)',
+                                          border: '1px solid rgba(233,213,255,0.4)',
+                                          boxShadow: '0 6px 24px rgba(88,28,135,0.35), 0 0 18px rgba(139,92,246,0.35)',
+                                        }}
                                       >
-                                        🎭 Persona 已佩戴
-                                      </motion.p>
-                                      <motion.p
-                                        initial={{ y: 10, opacity: 0 }}
-                                        animate={{ y: 0, opacity: 1 }}
-                                        transition={{ delay: 0.25 }}
-                                        className="text-purple-200 text-xs text-center px-6 leading-relaxed"
-                                      >
-                                        {MASK_BUFFS[currentAttr]}
-                                      </motion.p>
-                                    </motion.div>
+                                        <motion.p
+                                          initial={{ y: 6, opacity: 0 }}
+                                          animate={{ y: 0, opacity: 1 }}
+                                          transition={{ delay: 0.08 }}
+                                          className="text-white font-black text-sm"
+                                        >
+                                          🎭 Persona 已佩戴
+                                        </motion.p>
+                                        <motion.p
+                                          initial={{ y: 6, opacity: 0 }}
+                                          animate={{ y: 0, opacity: 1 }}
+                                          transition={{ delay: 0.2 }}
+                                          className="text-purple-100 text-[11px] leading-snug mt-1"
+                                        >
+                                          {MASK_BUFFS[currentAttr]}
+                                        </motion.p>
+                                      </motion.div>
+                                    </div>
                                   )}
                                 </AnimatePresence>
 
@@ -529,7 +537,15 @@ export const BattleArena = () => {
                                   ) : (
                                     currentSkills.map((skill, i) => {
                                       const isDmg = skill.type === 'damage' || skill.type === 'crit' || skill.type === 'attack_boost';
-                                      const tag = SKILL_TYPE_TAG[skill.type];
+                                      const baseTag = SKILL_TYPE_TAG[skill.type];
+                                      // 特化效果（按当前属性）—— 优先展示"共鸣/护盾/洞悉"这种风味 label 和 hint
+                                      const mapped = SKILL_EFFECT_MAP[currentAttr]?.[skill.type];
+                                      const tagLabel = mapped?.label ?? baseTag?.label;
+                                      const tagIcon = mapped?.icon;
+                                      // 右侧 hint：优先特化，回落到静态；heal 用真实回血值
+                                      const effectHint = mapped?.hint
+                                        ?? SKILL_EFFECT_HINT[skill.type]
+                                        ?? (skill.type === 'heal' ? `+${HEAL_VALUE_BY_ATTR[currentAttr] ?? 5}HP` : '');
                                       return (
                                       <div
                                         key={i}
@@ -547,12 +563,13 @@ export const BattleArena = () => {
                                               <p className="text-gray-900 dark:text-white text-sm font-semibold truncate">
                                                 {SKILL_TYPE_ICON[skill.type]} {skill.name}
                                               </p>
-                                              {!isDmg && tag && (
+                                              {/* 只要不是纯 damage 就挂 tag 徽章 —— 特化 label 优先（比如灵巧 attack_boost 显示"⚡ 连击"而非"攻击增益"） */}
+                                              {skill.type !== 'damage' && baseTag && tagLabel && (
                                                 <span
                                                   className="flex-shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full"
-                                                  style={{ color: tag.color, background: tag.bg }}
+                                                  style={{ color: baseTag.color, background: baseTag.bg }}
                                                 >
-                                                  {tag.label}
+                                                  {tagIcon ? `${tagIcon} ${tagLabel}` : tagLabel}
                                                 </span>
                                               )}
                                             </div>
@@ -563,8 +580,8 @@ export const BattleArena = () => {
                                           {isDmg ? (
                                             <p className="text-purple-600 dark:text-purple-300 text-xs font-bold">{skill.power}</p>
                                           ) : (
-                                            <p className="text-xs font-bold" style={{ color: tag?.color }}>
-                                              {SKILL_EFFECT_HINT[skill.type] ?? (skill.type === 'heal' ? '+5HP' : '')}
+                                            <p className="text-xs font-bold" style={{ color: baseTag?.color }}>
+                                              {effectHint}
                                             </p>
                                           )}
                                           <p className="text-yellow-600 dark:text-yellow-400/70 text-xs">SP {skill.spCost}</p>

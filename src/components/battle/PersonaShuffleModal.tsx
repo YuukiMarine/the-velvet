@@ -61,7 +61,7 @@ export function PersonaShuffleModal({ isOpen, onClose }: Props) {
       await savePersona({ ...persona, attributePersonas: newAttrPersonas, skills: newSkills });
       setResultName(result.name);
       triggerLightHaptic();
-      playSound('/battle-evoker-summon.mp3');
+      playSound('/battle-summon.mp3');
       setMode('done');
     } catch {
       setError('洗牌失败，请重试');
@@ -78,7 +78,13 @@ export function PersonaShuffleModal({ isOpen, onClose }: Props) {
     if (useAISkills) {
       setMode('generating');
       setError('');
-      const aiSkills = await generateAISkillsForPersona(settings, name, attrNamesMap[selectedAttr]);
+      const aiSkills = await generateAISkillsForPersona(
+        settings,
+        name,
+        selectedAttr,
+        attrNamesMap[selectedAttr],
+        manualDesc.trim() || undefined,
+      );
       if (aiSkills) {
         skills = aiSkills;
       } else {
@@ -94,7 +100,7 @@ export function PersonaShuffleModal({ isOpen, onClose }: Props) {
     await savePersona({ ...persona, attributePersonas: newAttrPersonas, skills: newSkills });
     setResultName(name);
     triggerLightHaptic();
-    playSound('/battle-evoker-summon.mp3');
+    playSound('/battle-summon.mp3');
     setMode('done');
   };
 
@@ -108,7 +114,7 @@ export function PersonaShuffleModal({ isOpen, onClose }: Props) {
         exit={{ opacity: 0 }}
         className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4"
         style={{ background: 'rgba(0,0,0,0.85)' }}
-        onClick={(e) => e.target === e.currentTarget && handleClose()}
+        onClick={(e) => { if (mode === 'generating') return; if (e.target === e.currentTarget) handleClose(); }}
       >
         <motion.div
           initial={{ scale: 0.9, opacity: 0, y: 20 }}

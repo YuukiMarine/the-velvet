@@ -1457,7 +1457,7 @@ function P4Splash({ onComplete, s }: { onComplete: () => void; s: number }) {
           <div className="inline-block bg-[#1a1a1a]/90 py-1.5 px-1"
             style={{ fontSize: 'clamp(0.5rem,1.6vw,0.7rem)' }}>
             <span className="font-black tracking-[0.3em] uppercase" style={{ color: '#f4cc0a' }}>
-              {'THE VELVET ROOM ▪ THE VELVET ROOM ▪ THE VELVET ROOM ▪ THE VELVET ROOM ▪ THE VELVET ROOM ▪ THE VELVET ROOM ▪ THE VELVET ROOM ▪ THE VELVET ROOM ▪ '}
+              {'THE VELVET ▪ THE VELVET ▪ THE VELVET ▪ THE VELVET ▪ THE VELVET ▪ THE VELVET ▪ THE VELVET ▪ THE VELVET ▪ '}
             </span>
           </div>
         </div>

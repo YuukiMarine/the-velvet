@@ -5,6 +5,7 @@ import { TodoCompleteModal } from '@/components/TodoCompleteModal';
 import { PageTitle } from '@/components/PageTitle';
 import { BattleDashboardWidget } from '@/components/BattleDashboardWidget';
 import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer } from 'recharts';
+import { TAROT_BY_ID } from '@/constants/tarot';
 
 // Seeded random: picks a stable index per session (changes on every page open)
 const sessionSeed = Math.random();
@@ -509,11 +510,11 @@ const isLightColor = (hex: string): boolean => {
 };
 
 export const Dashboard = () => {
-  const { attributes, dailyEvent, user, settings, todos, activities, achievements, skills, completeTodo, getTodayTodoProgress, setModalBlocker, setCurrentPage, applyCountercurrentDecay, getCountercurrentWarnings } = useAppStore();
+  const { attributes, user, settings, todos, activities, achievements, skills, completeTodo, getTodayTodoProgress, setModalBlocker, setCurrentPage, applyCountercurrentDecay, getCountercurrentWarnings } = useAppStore();
   const [completedTitle, setCompletedTitle] = useState<string | null>(null);
   const [completedPoints, setCompletedPoints] = useState(1);
   const [unlockHint, setUnlockHint] = useState<{ achievements: number; skills: number }>({ achievements: 0, skills: 0 });
-  // 涟漪反馈（待办按钮列表）
+  // 涟漪反馈（任务按钮列表）
   const [todoRipples, setTodoRipples] = useState<Record<string, Array<{id: number; x: number; y: number}>>>({});
   const todoRippleId = useRef(0);
   const spawnTodoRipple = (todoId: string, e: React.MouseEvent<HTMLElement>) => {
@@ -584,7 +585,7 @@ export const Dashboard = () => {
 
   const todayTodos = [...todos.filter(todo => {
     const matchesWeekday = !todo.weekdays || todo.weekdays.length === 0 || todo.weekdays.includes(todayWeekday);
-    // 未来启用日期的待办今天不显示
+    // 未来启用日期的任务今天不显示
     if (todo.startDate && todo.startDate > todayKey) return false;
     if (todo.isActive && matchesWeekday) return true;
     if (!todo.isActive && todo.archivedAt) {
@@ -732,12 +733,12 @@ export const Dashboard = () => {
         )}
       </motion.div>
 
-      {/* 今日待办 */}
+      {/* 今日任务 */}
       <div className="rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden">
         <div className="flex items-center justify-between px-5 pt-5 pb-3">
           <div>
             <p className="text-[10px] font-semibold tracking-widest text-gray-400 dark:text-gray-500 uppercase mb-0.5">Today</p>
-            <h3 className="font-extrabold text-gray-900 dark:text-white">今日待办</h3>
+            <h3 className="font-extrabold text-gray-900 dark:text-white">今日任务</h3>
           </div>
           <span className="text-xs text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-800 px-2.5 py-1 rounded-full">
             {totalCount === 0 ? '暂无' : `${completedCount}/${totalCount}`}
@@ -746,7 +747,7 @@ export const Dashboard = () => {
 
         {todayTodos.length === 0 ? (
           <div className="px-5 pb-5 text-center text-sm text-gray-400 dark:text-gray-500 py-8">
-            今日暂无待办，去「待办」页添加吧
+            今日暂无任务，去「任务」页添加吧
           </div>
         ) : (
           <div className="px-3 pb-3 space-y-2">
@@ -844,26 +845,8 @@ export const Dashboard = () => {
         )}
       </div>
 
-      {/* 每日事件（移到今日待办下面） */}
-      {dailyEvent && (
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="rounded-2xl border border-amber-200 dark:border-amber-700/50 bg-amber-50 dark:bg-amber-900/20 p-4"
-        >
-          <div className="flex items-start gap-3">
-            <div className="text-2xl flex-shrink-0">⚡</div>
-            <div>
-              <p className="font-semibold text-amber-800 dark:text-amber-300 text-sm">{dailyEvent.title}</p>
-              <p className="text-amber-700/80 dark:text-amber-400/80 text-xs mt-0.5">
-                {dailyEvent.description.replace(/\*\*/g, settings.attributeNames[dailyEvent.effect.attribute as keyof typeof settings.attributeNames])}
-                &nbsp;·&nbsp;
-                {settings.attributeNames[dailyEvent.effect.attribute as keyof typeof settings.attributeNames]} × {dailyEvent.effect.multiplier}
-              </p>
-            </div>
-          </div>
-        </motion.div>
-      )}
+      {/* 星象入口卡 */}
+      <AstrologyEntryCard onOpen={() => setCurrentPage('astrology')} />
 
       <BattleDashboardWidget />
 
@@ -987,3 +970,67 @@ export const Dashboard = () => {
     </motion.div>
   );
 };
+
+// ── 星象入口卡 ─────────────────────────────────────────────
+// 未抽：邀请进入星象页抽卡
+// 已抽：展示牌名 + 属性加成 + 一行建议，仍可点击进入查看详情
+
+function AstrologyEntryCard({ onOpen }: { onOpen: () => void }) {
+  const { dailyDivination, settings } = useAppStore();
+  const drawn = dailyDivination && dailyDivination.date === toLocalDateKey() ? dailyDivination : null;
+
+  if (!drawn) {
+    return (
+      <motion.button
+        onClick={onOpen}
+        whileTap={{ scale: 0.98 }}
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="w-full text-left rounded-2xl border border-indigo-200 dark:border-indigo-700/40 bg-gradient-to-br from-indigo-50 to-violet-50 dark:from-indigo-950/40 dark:to-violet-950/30 p-4 overflow-hidden relative"
+      >
+        <div className="absolute -right-4 -top-4 text-6xl opacity-10 select-none">🔮</div>
+        <div className="flex items-center gap-3">
+          <div className="text-2xl flex-shrink-0">🌙</div>
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-black text-indigo-800 dark:text-indigo-200">今日星象尚未展开</div>
+            <div className="text-[11px] text-indigo-600/80 dark:text-indigo-300/70 mt-0.5">
+              点击进入星象，从三张塔罗中抽取一张
+            </div>
+          </div>
+          <div className="text-indigo-400 dark:text-indigo-500 text-xl flex-shrink-0">›</div>
+        </div>
+      </motion.button>
+    );
+  }
+
+  const card = TAROT_BY_ID[drawn.cardId];
+  const attrName = settings.attributeNames[drawn.effect.attribute];
+
+  return (
+    <motion.button
+      onClick={onOpen}
+      whileTap={{ scale: 0.98 }}
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="w-full text-left rounded-2xl border border-amber-200 dark:border-amber-700/40 bg-gradient-to-br from-amber-50 to-yellow-50 dark:from-amber-900/20 dark:to-yellow-900/10 p-4 overflow-hidden relative"
+    >
+      <div className="flex items-center gap-3">
+        <div className="text-2xl flex-shrink-0">🔮</div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-sm font-black text-amber-800 dark:text-amber-200 truncate">
+              {card?.name ?? '?'} · {drawn.orientation === 'upright' ? '正位' : '逆位'}
+            </span>
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-200/70 dark:bg-amber-800/40 text-amber-800 dark:text-amber-200 font-bold">
+              {attrName} × {drawn.effect.multiplier}
+            </span>
+          </div>
+          <div className="text-[11px] text-amber-700/90 dark:text-amber-300/90 mt-1 line-clamp-2 leading-snug">
+            {drawn.advice}
+          </div>
+        </div>
+        <div className="text-amber-400 dark:text-amber-500 text-xl flex-shrink-0">›</div>
+      </div>
+    </motion.button>
+  );
+}

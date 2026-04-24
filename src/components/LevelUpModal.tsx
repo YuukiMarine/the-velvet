@@ -1,6 +1,7 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useEffect, useRef, useState } from 'react';
 import { triggerLevelFeedback } from '@/utils/feedback';
+import { useBackHandler } from '@/utils/useBackHandler';
 
 interface LevelUpModalProps {
   attributeName: string;
@@ -12,6 +13,7 @@ interface LevelUpModalProps {
 export const LevelUpModal = ({ attributeName, newLevel, isOpen, onClose }: LevelUpModalProps) => {
   const [particles, setParticles] = useState<Array<{ id: number; x: number; y: number; delay: number }>>([]);
   const playedRef = useRef(false);
+  useBackHandler(isOpen, onClose);
 
   useEffect(() => {
     if (isOpen) {

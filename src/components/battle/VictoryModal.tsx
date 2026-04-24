@@ -6,6 +6,7 @@ import { generateVictoryNarrative } from '@/utils/battleAI';
 import { triggerSuccessFeedback, playSound } from '@/utils/feedback';
 import { HP_BONUS_PER_DEFEAT } from '@/constants';
 import { db } from '@/db';
+import { useBackHandler } from '@/utils/useBackHandler';
 
 interface Props {
   isOpen: boolean;
@@ -14,6 +15,9 @@ interface Props {
 
 export function VictoryModal({ isOpen, onClose }: Props) {
   const { persona, shadow, settings, battleState, defeatShadow, addActivity } = useAppStore();
+  // VictoryModal 没有 X 按钮、点遮罩也不关 —— 原本就强制让用户点"领取奖励"完成结算。
+  // 为保持语义一致，Android 返回键在此阶段也做 no-op（消费事件但不关闭，防止误触跳过结算）。
+  useBackHandler(isOpen, () => { /* no-op */ });
   const [narrative, setNarrative] = useState('');
   const [selectedAttr, setSelectedAttr] = useState<AttributeId>('knowledge');
   const [claimed, setClaimed] = useState(false);
@@ -59,7 +63,7 @@ export function VictoryModal({ isOpen, onClose }: Props) {
     // Clear shadow from store and DB
     await db.shadows.clear();
     useAppStore.setState({ shadow: null });
-    playSound('/battle-critical-cut-in.mp3');
+    playSound('/battle-critical.mp3');
     setClaimed(true);
     setTimeout(onClose, 1500);
   };

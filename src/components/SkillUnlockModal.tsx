@@ -1,6 +1,7 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useEffect, useRef, useState } from 'react';
 import { triggerLevelFeedback } from '@/utils/feedback';
+import { useBackHandler } from '@/utils/useBackHandler';
 
 interface SkillUnlockModalProps {
   isOpen: boolean;
@@ -11,6 +12,7 @@ interface SkillUnlockModalProps {
 export const SkillUnlockModal = ({ isOpen, onClose, skillName }: SkillUnlockModalProps) => {
   const [particles, setParticles] = useState<Array<{ id: number; x: number; y: number; delay: number }>>([]);
   const playedRef = useRef(false);
+  useBackHandler(isOpen, onClose);
 
   useEffect(() => {
     if (isOpen) {
