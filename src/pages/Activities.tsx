@@ -3,7 +3,6 @@ import { useState, useMemo, useRef, useEffect } from 'react';
 import { useAppStore, toLocalDateKey } from '@/store';
 import { AttributeId, SummaryPeriod } from '@/types';
 import { SaveSuccessModal } from '@/components/SaveSuccessModal';
-import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { PageTitle } from '@/components/PageTitle';
 import SummaryModal from '@/components/SummaryModal';
 import { triggerNavFeedback, triggerLightHaptic } from '@/utils/feedback';
@@ -417,7 +416,7 @@ function useSummaryReminder() {
 }
 
 export const Activities = () => {
-  const { activities, addActivity, settings, setModalBlocker, deleteActivity } = useAppStore();
+  const { activities, addActivity, settings, setModalBlocker, deleteActivity, deleteActivityRecordOnly } = useAppStore();
 
   // ---- 总结弹窗 ----
   const [showSummary, setShowSummary] = useState(false);
@@ -435,6 +434,13 @@ export const Activities = () => {
     knowledge: 0, guts: 0, dexterity: 0, kindness: 0, charm: 0
   });
   const [importantOnly, setImportantOnly] = useState(false);
+
+  // ---- AI 二次分析 ----
+  // analyzedPoints 非 null 时（说明已经做过本地关键词分析），按钮文案切到 "AI 分析"
+  const [aiAnalyzing, setAiAnalyzing] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [aiReason, setAiReason] = useState<string | null>(null);
+  const aiAbortRef = useRef<AbortController | null>(null);
 
   // ---- 视图模式（localStorage 记忆，默认开启）----
   const [showCalendar, setShowCalendar] = useState<boolean>(() => {
@@ -459,7 +465,11 @@ export const Activities = () => {
   const [searchQuery, setSearchQuery] = useState('');
 
   // ---- 删除 ----
+  // 两阶段弹窗：
+  //   stage='confirm' → 第一层"是否删除"，按钮 [取消] [删除]
+  //   stage='choose'  → 第二层"删除方式"，← 返回箭头 + [仅删除条目] [删除并回档]
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+  const [deleteStage, setDeleteStage] = useState<'confirm' | 'choose'>('confirm');
   const [pressedId, setPressedId] = useState<string | null>(null);
   const pressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -566,6 +576,35 @@ export const Activities = () => {
     }
     setAnalyzedPoints(points);
     setManualPoints(points);
+    setAiError(null);
+    setAiReason(null);
+  };
+
+  const analyzeWithAI = async () => {
+    if (!description.trim()) return;
+    if (aiAnalyzing) return;
+    setAiAnalyzing(true);
+    setAiError(null);
+    aiAbortRef.current?.abort();
+    const ctrl = new AbortController();
+    aiAbortRef.current = ctrl;
+    try {
+      const { analyzeActivityAI } = await import('@/utils/activityAI');
+      const { points, reason } = await analyzeActivityAI(
+        description,
+        settings.attributeNames,
+        settings,
+        ctrl.signal,
+      );
+      setManualPoints(points);
+      setAnalyzedPoints(points);
+      setAiReason(reason || null);
+    } catch (e) {
+      if (e instanceof Error && e.name === 'AbortError') return;
+      setAiError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setAiAnalyzing(false);
+    }
   };
 
   const handleSave = async () => {
@@ -590,14 +629,23 @@ export const Activities = () => {
     setImportantOnly(false);
     setShowInput(false);
     setBackdateTarget(null);
+    setAiError(null);
+    setAiReason(null);
   };
 
   const adjustPoints = (attr: string, delta: number) => {
     setManualPoints(prev => ({ ...prev, [attr]: Math.max(0, Math.min(5, prev[attr] + delta)) }));
   };
 
-  const handleDelete = async (id: string) => {
+  const handleDeleteAndRollback = async (id: string) => {
     await deleteActivity(id);
+  };
+  const handleDeleteRecordOnly = async (id: string) => {
+    await deleteActivityRecordOnly(id);
+  };
+  const closeDeleteDialog = () => {
+    setDeleteTargetId(null);
+    setDeleteStage('confirm');
   };
 
   const startPress = (id: string) => {
@@ -606,6 +654,7 @@ export const Activities = () => {
     pressTimerRef.current = setTimeout(() => {
       triggerLightHaptic();
       setDeleteTargetId(id);
+      setDeleteStage('confirm'); // 每次重新开始都从第一层
       setPressedId(null);
     }, 620);
   };
@@ -987,7 +1036,10 @@ export const Activities = () => {
                                           const isWeeklyGoal = activity.category === 'weekly_goal';
                                           const isShadowDefeat = activity.category === 'shadow_defeat' || activity.method === 'battle';
                                           const isConfidant = activity.category === 'confidant';
-                                          const isSpecial = isAchievement || isSkill || isLevelUp || isConfidant;
+                                          // v2.1：倒计时达成（calling_card_clear）—— 用主题 primary 强调，
+                                          // 表达"用户跨越的里程碑"，与 LevelUp / Achievement 同等重要的视觉权重
+                                          const isCallingCardClear = activity.category === 'calling_card_clear';
+                                          const isSpecial = isAchievement || isSkill || isLevelUp || isConfidant || isWeeklyGoal || isCallingCardClear;
 
                                           // accent bar color based on type
                                           const accentColor = isAchievement
@@ -1000,6 +1052,10 @@ export const Activities = () => {
                                             ? 'bg-red-500'
                                             : isConfidant
                                             ? 'bg-indigo-400'
+                                            : isWeeklyGoal
+                                            ? 'bg-emerald-500'
+                                            : isCallingCardClear
+                                            ? 'bg-primary'
                                             : isTodo
                                             ? 'bg-sky-400'
                                             : isImportant
@@ -1022,6 +1078,11 @@ export const Activities = () => {
                                                   ? 'border-2 border-orange-400/60 dark:border-orange-500/40'
                                                   : isShadowDefeat
                                                   ? 'border-2 border-red-500/60 dark:border-red-500/40'
+                                                  : isWeeklyGoal
+                                                  ? 'border-2 border-emerald-300/70 dark:border-emerald-700/70 bg-emerald-50/80 dark:bg-emerald-900/20'
+                                                  : isCallingCardClear
+                                                  // 倒计时条目：暗色模式下边框使用中性描边，避免浅色主题色看起来像白边。
+                                                  ? 'border-2 border-primary/50 dark:border-gray-700/80 bg-primary/5 dark:bg-gray-900/90'
                                                   : isImportant
                                                   ? 'border border-amber-300/60 dark:border-amber-600/40'
                                                   : 'border border-gray-100 dark:border-gray-800 bg-white/80 dark:bg-gray-900/80'
@@ -1037,6 +1098,11 @@ export const Activities = () => {
                                                   ? 'rgba(239,68,68,0.10)'
                                                   : isImportant
                                                   ? 'rgba(251,191,36,0.06)'
+                                                  : undefined,
+                                                // 倒计时单独走 backgroundImage：跟 className 的暗色 base 共存，
+                                                // 不会被 inline background 整体覆盖。两层 stop 相同 → 形成均匀色片。
+                                                backgroundImage: isCallingCardClear
+                                                  ? 'linear-gradient(color-mix(in srgb, var(--color-primary) 14%, transparent), color-mix(in srgb, var(--color-primary) 14%, transparent))'
                                                   : undefined,
                                               }}
                                               onMouseDown={() => startPress(activity.id)}
@@ -1111,6 +1177,14 @@ export const Activities = () => {
                                                         {isAchievement && (
                                                           <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-100/80 dark:bg-amber-900/30 px-2 py-0.5 rounded-md">
                                                             🏆 成就解锁
+                                                          </span>
+                                                        )}
+                                                        {isCallingCardClear && (
+                                                          <span
+                                                            className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-md text-primary"
+                                                            style={{ background: 'color-mix(in srgb, var(--color-primary) 15%, transparent)' }}
+                                                          >
+                                                            ✦ 倒计时
                                                           </span>
                                                         )}
                                                       </div>
@@ -1221,15 +1295,46 @@ export const Activities = () => {
                 autoFocus
               />
 
-              <motion.button
-                whileTap={{ scale: 0.97 }}
-                onClick={(e) => { spawnAnalyze(e); analyzeActivity(); }}
-                disabled={!description.trim()}
-                className="relative overflow-hidden w-full mt-3 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 py-2.5 rounded-xl text-sm font-medium disabled:opacity-40 cursor-pointer"
-              >
-                {analyzeRipples}
-                分析关键词
-              </motion.button>
+              {/*
+                ── 分析按钮：双形态 ─────────────────────────────────────
+                1) 首次点击 → "分析关键词"：本地 keywordRules 命中规则，立即生效
+                2) 之后 → "AI 分析"：把同一段描述交给 AI 给出五维评分，覆写 调整点数
+                AI 失败 / 描述太短时按钮仍可重复点（错误提示在下面单独显示）。
+              */}
+              {!analyzedPoints ? (
+                <motion.button
+                  whileTap={{ scale: 0.97 }}
+                  onClick={(e) => { spawnAnalyze(e); analyzeActivity(); }}
+                  disabled={!description.trim()}
+                  className="relative overflow-hidden w-full mt-3 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 py-2.5 rounded-xl text-sm font-medium disabled:opacity-40 cursor-pointer"
+                >
+                  {analyzeRipples}
+                  分析关键词
+                </motion.button>
+              ) : (
+                <motion.button
+                  whileTap={{ scale: 0.97 }}
+                  onClick={(e) => { spawnAnalyze(e); void analyzeWithAI(); }}
+                  disabled={!description.trim() || aiAnalyzing}
+                  className="relative overflow-hidden w-full mt-3 bg-gradient-to-r from-primary/15 to-purple-500/15 text-primary dark:text-primary border border-primary/30 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 cursor-pointer"
+                >
+                  {analyzeRipples}
+                  {aiAnalyzing ? '⋯ AI 思考中' : '✦ AI 分析'}
+                </motion.button>
+              )}
+
+              {/* AI 错误 / 解释提示 */}
+              {aiError && (
+                <div className="mt-2 text-xs text-red-500 dark:text-red-400 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-lg">
+                  AI 分析失败：{aiError}
+                </div>
+              )}
+              {!aiError && aiReason && (
+                <div className="mt-2 text-[11px] text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800/50 px-3 py-2 rounded-lg leading-relaxed">
+                  <span className="text-primary font-semibold mr-1">AI:</span>
+                  {aiReason}
+                </div>
+              )}
 
               {analyzedPoints && (
                 <motion.div
@@ -1286,16 +1391,98 @@ export const Activities = () => {
         unlockHint={unlockHint}
         tone={lastSavedImportant ? 'important' : 'default'}
       />
-      <ConfirmDialog
-        isOpen={!!deleteTargetId}
-        title="确认删除这条记录？"
-        description="删除后无法恢复。"
-        confirmText="删除"
-        cancelText="取消"
-        tone="danger"
-        onConfirm={async () => { if (deleteTargetId) await handleDelete(deleteTargetId); setDeleteTargetId(null); }}
-        onCancel={() => setDeleteTargetId(null)}
-      />
+      {/*
+        ── 两阶段删除弹窗 ─────────────────────────────────────
+        Layer 1：确认是否要删除（[取消][删除]）
+        Layer 2：选择删除方式（← 返回 / 仅删除条目 / 删除并回档）
+        外层 onClick 点遮罩 = 取消（与 cancel 按钮等价）
+        Esc / 安卓返回 → 在 Layer 2 时回到 Layer 1，在 Layer 1 时关闭
+      */}
+      <AnimatePresence>
+        {deleteTargetId && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+            onClick={closeDeleteDialog}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0, y: 10 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 10 }}
+              transition={{ type: 'spring', duration: 0.4 }}
+              className="bg-white dark:bg-gray-800 rounded-2xl p-6 max-w-sm w-full shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {deleteStage === 'confirm' && (
+                <>
+                  <div className="text-center">
+                    <div className="text-4xl mb-3 text-red-500">⚠️</div>
+                    <h3 className="text-lg font-bold text-gray-800 dark:text-white mb-2">
+                      确认删除这条记录？
+                    </h3>
+                    <p className="text-sm text-gray-600 dark:text-gray-400 whitespace-pre-line">
+                      下一步可选"仅删除条目"或"删除并回档"。
+                    </p>
+                  </div>
+                  <div className="flex gap-3 mt-6">
+                    <button
+                      onClick={closeDeleteDialog}
+                      className="flex-1 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 py-2 rounded-lg font-medium"
+                    >
+                      取消
+                    </button>
+                    <button
+                      onClick={() => setDeleteStage('choose')}
+                      className="flex-1 py-2 rounded-lg font-medium text-white bg-red-500"
+                    >
+                      删除
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {deleteStage === 'choose' && (
+                <>
+                  <div className="flex items-center gap-2 mb-4">
+                    <button
+                      onClick={() => setDeleteStage('confirm')}
+                      aria-label="返回"
+                      className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-black/5 dark:hover:bg-white/10 text-gray-500 text-lg"
+                    >
+                      ‹
+                    </button>
+                    <h3 className="text-base font-bold text-gray-800 dark:text-white flex-1">
+                      删除方式
+                    </h3>
+                  </div>
+                  <div className="space-y-2">
+                    <button
+                      onClick={async () => {
+                        if (deleteTargetId) await handleDeleteRecordOnly(deleteTargetId);
+                        closeDeleteDialog();
+                      }}
+                      className="w-full py-3 rounded-xl text-sm font-semibold bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-100"
+                    >
+                      仅删除条目
+                    </button>
+                    <button
+                      onClick={async () => {
+                        if (deleteTargetId) await handleDeleteAndRollback(deleteTargetId);
+                        closeDeleteDialog();
+                      }}
+                      className="w-full py-3 rounded-xl text-sm font-semibold bg-red-500 text-white"
+                    >
+                      删除并回档
+                    </button>
+                  </div>
+                </>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* 滚动到底部的波浪反馈 */}
       <AnimatePresence>

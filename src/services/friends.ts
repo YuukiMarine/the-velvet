@@ -47,6 +47,7 @@ const profileFromExpand = (r: RecordModel | undefined | null): CloudProfile | un
     totalLv: typeof r.total_lv === 'number' ? (r.total_lv as number) : undefined,
     attributeNames: (r.attribute_names as Record<string, string> | undefined) || undefined,
     attributeLevels: (r.attribute_levels as Record<string, number> | undefined) || undefined,
+    attributeLevelTitles: (r.attribute_level_titles as Record<string, string[]> | undefined) || undefined,
     attributePoints: (r.attribute_points as Record<string, number> | undefined) || undefined,
     totalPoints: typeof r.total_points === 'number' ? (r.total_points as number) : undefined,
     unlockedCount: typeof r.unlocked_count === 'number' ? (r.unlocked_count as number) : undefined,

@@ -6,6 +6,7 @@ import { triggerNavFeedback, triggerSuccessFeedback } from '@/utils/feedback';
 import { PageTitle } from '@/components/PageTitle';
 import { useRipple } from '@/components/RippleEffect';
 import { useLongPress } from '@/utils/useLongPress';
+import { CallingCardSection } from '@/components/callingCard/CallingCardSection';
 import { v4 as uuidv4 } from 'uuid';
 
 const weekdayLabels = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
@@ -303,8 +304,8 @@ const GoalSetupForm = ({
   };
 
   return (
-    <div className="rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden">
-      <div className="px-5 pt-4 pb-3 border-b border-gray-100 dark:border-gray-800">
+    <div className="rounded-2xl bg-white dark:bg-gray-900 border border-gray-200/80 dark:border-gray-700/80 shadow-sm overflow-hidden">
+      <div className="px-5 pt-4 pb-3 border-b border-gray-100 dark:border-gray-800/80">
         <h3 className="font-bold text-gray-900 dark:text-white text-sm">设定本周目标</h3>
         <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{weekStart} ~ {weekEnd}　· 至少选择 2 项</p>
       </div>
@@ -318,7 +319,7 @@ const GoalSetupForm = ({
               key={type}
               className={`rounded-xl border-2 transition-all overflow-hidden ${
                 isSelected
-                  ? 'border-primary/60 bg-primary/5 dark:bg-primary/10'
+                  ? 'border-primary/60 bg-primary/5 dark:border-gray-600 dark:bg-primary/10'
                   : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/40'
               }`}
             >
@@ -360,7 +361,7 @@ const GoalSetupForm = ({
                     transition={{ duration: 0.2 }}
                     className="overflow-hidden"
                   >
-                    <div className="px-4 pb-3 flex items-center justify-between gap-3 border-t border-primary/10">
+                    <div className="px-4 pb-3 flex items-center justify-between gap-3 border-t border-primary/10 dark:border-gray-700/70">
                       <div className="flex items-center gap-2 pt-2.5 flex-wrap">
                         <span className="text-xs text-gray-500 dark:text-gray-400">目标</span>
                         {needsAttr && (
@@ -808,10 +809,10 @@ const WeeklyGoalSection = ({
         transition={{ duration: 0.15 }}
         className={`rounded-2xl bg-white dark:bg-gray-900 border shadow-sm overflow-hidden select-none cursor-default ${
           currentGoal.completed
-            ? 'border-emerald-200 dark:border-emerald-800'
+            ? 'border-emerald-300/70 dark:border-emerald-700/70'
             : allMet
-            ? 'border-amber-300 dark:border-amber-700'
-            : 'border-gray-100 dark:border-gray-800'
+            ? 'border-amber-300/80 dark:border-amber-600/70'
+            : 'border-gray-200/80 dark:border-gray-700/80'
         }`}
         {...pressBindings}
       >
@@ -926,8 +927,122 @@ const WeeklyGoalSection = ({
   );
 };
 
+type GoalPanel = 'weekly' | 'countdown';
+
+type GoalDeckProps = {
+  settings: ReturnType<typeof useAppStore.getState>['settings'];
+  attributes: ReturnType<typeof useAppStore.getState>['attributes'];
+  weeklyGoals: WeeklyGoal[];
+  saveWeeklyGoal: (g: WeeklyGoal) => Promise<void>;
+  deleteWeeklyGoal: (id: string) => Promise<void>;
+  completeWeeklyGoal: (id: string, attr: AttributeId) => Promise<void>;
+  getWeeklyGoalProgress: (g: WeeklyGoal) => WeeklyGoalItem[];
+};
+
+const goalPanelTabs: Array<{ id: GoalPanel; label: string }> = [
+  { id: 'weekly', label: '本周目标' },
+  { id: 'countdown', label: '倒计时' },
+];
+
+const goalPanelVariants = {
+  enter: (direction: number) => ({ opacity: 0, x: direction > 0 ? 18 : -18 }),
+  center: { opacity: 1, x: 0 },
+  exit: (direction: number) => ({ opacity: 0, x: direction > 0 ? -18 : 18 }),
+};
+
+const GoalDeck = (props: GoalDeckProps) => {
+  const [activePanel, setActivePanel] = useState<GoalPanel>(() => {
+    try {
+      const requestedPanel = sessionStorage.getItem('velvet:todos-goal-panel');
+      if (requestedPanel === 'countdown') {
+        sessionStorage.removeItem('velvet:todos-goal-panel');
+        return 'countdown';
+      }
+    } catch { /* ignore unavailable sessionStorage */ }
+    return 'weekly';
+  });
+  const [direction, setDirection] = useState(1);
+
+  const openPanel = (next: GoalPanel) => {
+    if (next === activePanel) return;
+    setDirection(next === 'countdown' ? 1 : -1);
+    setActivePanel(next);
+  };
+
+  useEffect(() => {
+    const openCountdown = () => openPanel('countdown');
+    window.addEventListener('velvet:open-calling-card-panel', openCountdown);
+    return () => window.removeEventListener('velvet:open-calling-card-panel', openCountdown);
+  }, [activePanel]);
+
+  const handleDragEnd = (_: MouseEvent | TouchEvent | PointerEvent, info: { offset: { x: number }; velocity: { x: number } }) => {
+    if (info.offset.x < -48 || info.velocity.x < -420) openPanel('countdown');
+    if (info.offset.x > 48 || info.velocity.x > 420) openPanel('weekly');
+  };
+
+  return (
+    <section id="calling-card-section" className="space-y-3">
+      <div className="flex items-center justify-between gap-3 px-1">
+        <div>
+          <h3 className="font-bold text-gray-900 dark:text-white text-sm">目标</h3>
+          <p className="text-[10px] text-gray-400 dark:text-gray-500">本周推进和重要倒计时</p>
+        </div>
+        <div className="grid grid-cols-2 p-1 rounded-xl bg-gray-100 dark:bg-gray-800 border border-gray-200/70 dark:border-gray-700/70">
+          {goalPanelTabs.map(tab => {
+            const selected = activePanel === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => openPanel(tab.id)}
+                className={`relative z-0 px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-colors ${
+                  selected
+                    ? 'text-gray-900 dark:text-white'
+                    : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300'
+                }`}
+              >
+                {selected && (
+                  <motion.span
+                    layoutId="goal-panel-tab"
+                    className="absolute inset-0 -z-10 rounded-lg bg-white dark:bg-gray-700 shadow-sm"
+                    transition={{ type: 'spring', stiffness: 420, damping: 34 }}
+                  />
+                )}
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <AnimatePresence mode="wait" custom={direction}>
+        <motion.div
+          key={activePanel}
+          custom={direction}
+          variants={goalPanelVariants}
+          initial="enter"
+          animate="center"
+          exit="exit"
+          transition={{ duration: 0.2, ease: 'easeOut' }}
+          drag="x"
+          dragConstraints={{ left: 0, right: 0 }}
+          dragElastic={0.16}
+          onDragEnd={handleDragEnd}
+          className="touch-pan-y"
+        >
+          {activePanel === 'weekly' ? (
+            <WeeklyGoalSection {...props} />
+          ) : (
+            <CallingCardSection sectionId="calling-card-panel" />
+          )}
+        </motion.div>
+      </AnimatePresence>
+    </section>
+  );
+};
+
 export const Todos = () => {
-  const { todos, settings, attributes, addTodo, updateTodo, deleteTodo, getTodayTodoProgress, getTodoDateLabel, weeklyGoals, saveWeeklyGoal, deleteWeeklyGoal, completeWeeklyGoal, getWeeklyGoalProgress } = useAppStore();
+  const { todos, settings, attributes, addTodo, updateTodo, deleteTodo, getTodayTodoProgress, getTodoDateLabel, weeklyGoals, saveWeeklyGoal, deleteWeeklyGoal, completeWeeklyGoal, getWeeklyGoalProgress, undoTodayTodoCompletion } = useAppStore();
   const [showAdd, setShowAdd] = useState(false);
   const [editingTodoId, setEditingTodoId] = useState<string | null>(null);
   const [form, setForm] = useState({
@@ -1119,8 +1234,8 @@ export const Todos = () => {
         </motion.button>
       </div>
 
-      {/* ── 本周目标 ───────────────────────────────────── */}
-      <WeeklyGoalSection
+      {/* ── 目标区：本周目标 / 倒计时 ───────────────────── */}
+      <GoalDeck
         settings={settings}
         attributes={attributes}
         weeklyGoals={weeklyGoals}
@@ -1330,9 +1445,10 @@ export const Todos = () => {
                       </button>
                       {wasCompletedToday ? (
                         <button
-                          onClick={() => updateTodo(todo.id, { isActive: true, completedAt: undefined, archivedAt: undefined })}
+                          // 当天的"恢复" = "撤销"：连点数 + 历史记录 + todoCompletion 一并回滚
+                          onClick={() => undoTodayTodoCompletion(todo.id)}
                           className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-primary hover:bg-primary/20 transition-colors"
-                          title="恢复"
+                          title="撤销今日完成（同时回退点数和记录）"
                         >
                           <svg viewBox="0 0 16 16" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="1.5">
                             <g transform="rotate(110 8 8)">

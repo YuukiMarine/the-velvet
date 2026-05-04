@@ -238,10 +238,17 @@ export const signUpWithOTP = async (input: SignupWithOTPInput): Promise<{ otpId:
 /**
  * 一步式"登录或登记"：把登录/注册合一。
  *
- *  · 输入邮箱：先 requestOTP；若邮箱未注册（404）→ 自动 signUpWithOTP 建账号 → 返回 { wasSignup: true }
+ *  · 输入邮箱：先尝试 signUpWithOTP 建新账号；若邮箱已存在（validation_not_unique）
+ *              则回落到 requestOTP 给老用户发码。
  *  · 输入 UserID：必须解析为已存在的邮箱（否则抛"没找到这个 UserID"）
  *
- * 这是 UI 侧的首选入口；老的 `requestLoginOTP` 保留给不需要自动登记的路径。
+ * ⚠️ 历史坑：之前版本依赖 `requestOTP` 对不存在邮箱返回 404 来触发 signUp，
+ *    但 PB 为了防止邮箱枚举攻击，对不存在邮箱**返回 200**（假装成功），
+ *    导致新用户流程完全断了（0 个新 user 记录）。
+ *    现在用 `create` 的 `validation_not_unique` 作为"邮箱是否已存在"的判据
+ *    —— 这是 PB 的确定性行为，可靠得多。
+ *
+ * 老的 `requestLoginOTP` 保留给不需要自动登记的路径。
  */
 export const requestLoginOrSignupOTP = async (
   identity: string,
@@ -258,19 +265,23 @@ export const requestLoginOrSignupOTP = async (
     throw new Error('邮箱格式不正确');
   }
 
-  // UserID 输入：必须先解析到邮箱（不存在就是不存在，不自动为它登记——因为我们不知道它对应什么邮箱）
-  const email = isEmailInput ? normalized : await resolveIdentityToEmail(normalized);
-
-  // 直接尝试发送 OTP
-  try {
+  // UserID 输入：只可能是老用户，解析到邮箱后直接走 requestOTP
+  if (!isEmailInput) {
+    const email = await resolveIdentityToEmail(normalized);
     const otpId = await callRequestOTP(email);
     return { otpId, wasSignup: false };
+  }
+
+  // 邮箱输入：先试注册；邮箱已存在 → 回落给老用户发 OTP
+  try {
+    const { otpId } = await signUpWithOTP({ email: normalized });
+    return { otpId, wasSignup: true };
   } catch (err) {
-    const status = (err as { status?: number })?.status;
-    if (status === 404 && isEmailInput) {
-      // 邮箱未注册 → 自动登记一条无 UserID 的账号，再发 OTP
-      const { otpId } = await signUpWithOTP({ email });
-      return { otpId, wasSignup: true };
+    // signUpWithOTP 在邮箱重复时会抛 Error('邮箱或 UserID 已被占用')（见其内部实现）
+    if (err instanceof Error && /已被占用|not.?unique/i.test(err.message)) {
+      // 邮箱已注册 → 老用户登录
+      const otpId = await callRequestOTP(normalized);
+      return { otpId, wasSignup: false };
     }
     throw err;
   }
@@ -422,6 +433,7 @@ export const updateProfile = async (
     total_lv: number;
     attribute_names: Record<string, string>;
     attribute_levels: Record<string, number>;
+    attribute_level_titles: Record<string, string[]>;
     attribute_points: Record<string, number>;
   }>,
 ): Promise<RecordModel | null> => {

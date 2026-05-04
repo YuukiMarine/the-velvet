@@ -49,8 +49,8 @@ const GROUPS: Group[] = [
   {
     id: 'todo',
     label: '任务与总结',
-    hint: '待办 / 完成记录 / 周月总结 / 本周目标',
-    tables: ['todos', 'todoCompletions', 'summaries', 'weeklyGoals'],
+    hint: '待办 / 完成记录 / 周月总结 / 本周目标 / 倒计时',
+    tables: ['todos', 'todoCompletions', 'summaries', 'weeklyGoals', 'callingCards'],
   },
   {
     id: 'battle',

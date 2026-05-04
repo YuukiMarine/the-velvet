@@ -3,6 +3,7 @@ import { pb, getUserId } from './pocketbase';
 import { useCloudStore } from '@/store/cloud';
 import { useAppStore } from '@/store';
 import { computeTotalLv } from '@/utils/lvTiers';
+import { normalizeAttributeLevelTitles } from '@/utils/attributeLevelTitles';
 
 /**
  * 哪些表受"同伴"分组开关（syncConfidantsToCloud）管辖——
@@ -116,6 +117,10 @@ export const pushUserProfile = async (): Promise<void> => {
     total_lv: totalLv,
     attribute_names: appState.settings.attributeNames,
     attribute_levels: attrLevels,
+    attribute_level_titles: normalizeAttributeLevelTitles(
+      appState.settings.attributeLevelTitles,
+      appState.settings.levelThresholds?.length || 5,
+    ),
     attribute_points: attrPoints,
     total_points: totalPoints,
     unlocked_count: unlockedCount,
@@ -178,6 +183,8 @@ const SYNC_TABLES = [
   'confidantEvents',
   // 谏言归档摘要（≤100 字第三人称小结），受"同伴"分组开关约束
   'counselArchives',
+  // 宣告卡 / 倒计时（v2.1+），按 id 双向同步，pinned 互斥由本地 saveCallingCard 保障
+  'callingCards',
 ] as const;
 
 type SyncKey = (typeof SYNC_TABLES)[number];
@@ -337,6 +344,7 @@ export const pushAll = async (): Promise<void> => {
     //   nickname        —— 来自本地 user.name（可编辑的展示名）
     //   attribute_names —— 自定义的五维名字
     //   attribute_levels —— 五维当前等级
+    //   attribute_level_titles —— 五维每级的四字称号
     //   attribute_points —— 五维当前累计点数
     //   total_points    —— 五维 points 之和
     //   unlocked_count  —— 已解锁成就 + 已解锁技能（不含 blessing_*）
@@ -361,6 +369,10 @@ export const pushAll = async (): Promise<void> => {
         total_lv: totalLv,
         attribute_names: attrNames,
         attribute_levels: attrLevels,
+        attribute_level_titles: normalizeAttributeLevelTitles(
+          appState.settings.attributeLevelTitles,
+          appState.settings.levelThresholds?.length || 5,
+        ),
         attribute_points: attrPoints,
         total_points: totalPoints,
         unlocked_count: unlockedCount,
@@ -745,7 +757,10 @@ export const deleteAllCloudData = async (): Promise<{ deleted: number }> => {
     }
     // 清除云端 total_lv（users 表本身不动，避免 RLS 问题）
     try {
-      const updated = await pb.collection('users').update(userId, { total_lv: 0 });
+      const updated = await pb.collection('users').update(userId, {
+        total_lv: 0,
+        attribute_level_titles: {},
+      });
       pb.authStore.save(pb.authStore.token, updated);
     } catch (e) {
       console.warn('[velvet-sync] deleteAllCloudData: failed to reset total_lv', e);

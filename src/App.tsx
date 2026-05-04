@@ -27,6 +27,7 @@ import { BattleArena } from '@/components/battle/BattleArena';
 import { primeCurrentTheme } from '@/utils/feedback';
 import { BackgroundAnimation } from '@/components/BackgroundAnimation';
 import { PWAUpdateToast } from '@/components/PWAUpdateToast';
+import { CallingCardCutIn } from '@/components/callingCard/CallingCardCutIn';
 import { isNative } from '@/utils/native';
 import { tryHandleBack } from '@/utils/useBackHandler';
 
@@ -147,7 +148,7 @@ function App() {
 
   // 切回前台时检查日期是否推进，若推进则重载数据（修复隔天打开不刷新）
   useEffect(() => {
-    const { loadData, loadDailyDivination, sweepExpiredReadings } = useAppStore.getState();
+    const { loadData, loadDailyDivination, sweepExpiredReadings, sweepCallingCards } = useAppStore.getState();
 
     const handleVisibilityChange = async () => {
       if (document.visibilityState !== 'visible') return;
@@ -163,6 +164,8 @@ function App() {
         await loadData();
         await loadDailyDivination(); // 换日后重置今日塔罗状态
         await sweepExpiredReadings();
+        // 跨日：扫一遍宣告卡，把跨过 targetDate 的自动归档（→ Dashboard 会触发 cut-in）
+        await sweepCallingCards();
       }
     };
 
@@ -229,6 +232,28 @@ function App() {
       document.documentElement.classList.remove('dark');
     }
   }, [settings.darkMode]);
+
+  // 同步主题色到三个地方：
+  //   1. <meta name="theme-color"> —— 旧版 iOS / Android Chrome 顶部状态栏 tint
+  //   2. <html> 和 <body> 的 background-color —— iOS 26 Safari 双指缩放时
+  //      暴露的 HTML 区域；以及当 fixed sampler 取色不到时的 fallback
+  //   3. iOS PWA standalone 模式下的安全区背景
+  //
+  // 双指缩放白条的解释：
+  //   · 缩放时，"左右白边" = 浏览器 chrome（视口外），iOS 26 从最近 fixed 元素采样 → 我们的 1px sampler 起作用 ✓
+  //   · "上下白边" = HTML/Body 自身的 background-color（属于内容缩放范围内的部分）
+  //   · index.css 里 html/body 的 bg-color 是写死的 #f9fafb / #111827，不会跟自定义主题色变
+  //   · 所以这里用 JS 在运行时动态覆盖，让上下也响应主题
+  useEffect(() => {
+    let color = settings.darkMode ? '#111827' : '#f9fafb';
+    if (user?.theme === 'custom' && settings.customThemeColor) {
+      color = settings.customThemeColor;
+    }
+    const meta = document.querySelector('meta[name="theme-color"]') as HTMLMetaElement | null;
+    if (meta) meta.content = color;
+    document.documentElement.style.backgroundColor = color;
+    document.body.style.backgroundColor = color;
+  }, [settings.darkMode, settings.customThemeColor, user?.theme]);
 
   // 在首次用户交互时预加载当前主题音效，之后所有点击都是零延迟播放
   useEffect(() => {
@@ -335,7 +360,8 @@ function App() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -12 }}
             transition={{ duration: 0.22 }}
-            className="fixed top-4 left-1/2 -translate-x-1/2 z-[210] max-w-md w-[calc(100%-2rem)]"
+            className="fixed left-1/2 -translate-x-1/2 z-[210] max-w-md w-[calc(100%-2rem)]"
+            style={{ top: 'calc(1rem + env(safe-area-inset-top))' }}
             role="alert"
           >
             <div className="flex items-start gap-3 px-4 py-3 rounded-2xl bg-amber-500/95 text-white shadow-xl backdrop-blur-sm">
@@ -357,6 +383,41 @@ function App() {
           </motion.div>
         )}
       </AnimatePresence>
+
+        {/* iOS 26 Safari "Liquid Glass" 工具栏取色源 ────────────────────────
+            Apple 在 iOS 26 移除了 <meta name="theme-color"> 的支持，改成
+            "采集页面顶部最近 fixed/sticky 元素的 background-color" 作为
+            浏览器顶部状态栏 / 底部地址栏的 tint。这里挂一个 1px 高度的
+            fixed top-0 元素专门当采样源，背景色跟随 darkMode 和 custom
+            主题色变化。z-index 介于 BackgroundAnimation(0) 和内容(10) 之间，
+            视觉上几乎不可见，仅供 Safari 取色。 */}
+        <div
+          aria-hidden
+          className="fixed left-0 right-0 pointer-events-none"
+          style={{
+            top: 0,
+            height: '1px',
+            zIndex: 1,
+            backgroundColor: settings.darkMode
+              ? '#111827'
+              : ((user?.theme === 'custom' && settings.customThemeColor) || '#f9fafb'),
+          }}
+        />
+        {/* 同样为底部地址栏 / Tab 栏 tint 提供一个采样源（兜底，防止 Safari
+            优先采到 BottomNav 的半透明色后产生灰条）。位置紧贴底部。 */}
+        <div
+          aria-hidden
+          className="fixed left-0 right-0 pointer-events-none"
+          style={{
+            bottom: 0,
+            height: '1px',
+            zIndex: 1,
+            backgroundColor: settings.darkMode
+              ? '#111827'
+              : ((user?.theme === 'custom' && settings.customThemeColor) || '#f9fafb'),
+          }}
+        />
+
         <div className="min-h-screen bg-gray-50 dark:bg-gray-900 relative">
           {/* 背景图片 */}
           {settings.backgroundImage && (
@@ -405,7 +466,16 @@ function App() {
               <Sidebar />
               <BottomNav />
               
-              <main className="md:ml-60 p-4 md:p-8 pb-24 md:pb-8">
+              <main
+                // 顶部 padding 用 calc(1rem + env(safe-area-inset-top)) 保证：
+                //   - 桌面 / Android：env() 为 0，退化为 1rem（=原 p-4 行为）
+                //   - iOS PWA / viewport-fit=cover：自动加上状态栏 / Dynamic Island 的高度，
+                //     防止页面标题钻到"12:25 信号 电池"这条原生 UI 下面。
+                //   - 桌面断点（md+）用 Tailwind 的 md:pt-8 覆盖为 2rem，安全区为 0 时无副作用。
+                // 底部 padding 精确匹配 BottomNav 高度（4rem 图标区 + home-indicator 安全区），
+                // 避免 iPhone home bar 设备上出现多余的灰色空白条。
+                className="md:ml-60 px-4 md:px-8 pt-[calc(1rem+env(safe-area-inset-top))] md:pt-8 pb-[calc(4rem+env(safe-area-inset-bottom)+0.5rem)] md:pb-8"
+              >
                 <AnimatePresence mode="wait">
                   {renderPage()}
                 </AnimatePresence>
@@ -448,11 +518,50 @@ function App() {
           <SyncStatusBadge />
           <GlobalConflictDialog />
           <GlobalDiffDialog />
+          {/* 宣告 · 达成 全屏结算屏：放在 App 顶层是为了"完成最后一项 todo 时立即弹出"，
+              即便用户当时不在 Dashboard 也能看到 */}
+          <GlobalCallingCardCutIn />
         </div>
       </div>
     </div>
   );
 }
+
+/**
+ * 全局宣告·达成结算屏：渲染在 App 顶层，确保用户在任何页面完成最后一项关联待办时
+ * 都能立即看到 cut-in，不需要先回到 Dashboard。
+ *
+ * 选择策略：
+ *   - 取最早 archivedAt 的"已归档但 cutInShown=false"那张卡
+ *   - 关闭时调 markCallingCardCutInShown，下一张自然顶上来
+ */
+const GlobalCallingCardCutIn = () => {
+  const callingCards = useAppStore(s => s.callingCards);
+  const pending = callingCards
+    .filter(c => c.archived && c.cutInShown === false)
+    .sort((a, b) => {
+      const ta = a.archivedAt ? new Date(a.archivedAt).getTime() : 0;
+      const tb = b.archivedAt ? new Date(b.archivedAt).getTime() : 0;
+      return ta - tb;
+    })[0] ?? null;
+
+  const [activeId, setActiveId] = useState<string | null>(null);
+  // 当队首切换时（新归档进入 / 当前一张关闭）把 activeId 同步到队首
+  useEffect(() => {
+    if (pending && pending.id !== activeId) setActiveId(pending.id);
+    if (!pending && activeId) setActiveId(null);
+  }, [pending, activeId]);
+
+  return (
+    <CallingCardCutIn
+      card={pending}
+      onClose={() => {
+        // markCallingCardCutInShown 在 CutIn 内部已调用；这里只是触发 state 切换
+        setActiveId(null);
+      }}
+    />
+  );
+};
 
 /** 订阅 cloudStore.conflictPending 全局呈现冲突解决弹窗 */
 const GlobalConflictDialog = () => {
