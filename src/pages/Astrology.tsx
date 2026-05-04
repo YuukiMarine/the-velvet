@@ -23,7 +23,7 @@ export function Astrology() {
 
   const tabs: Array<{ id: Tab; label: string; hint: string }> = [
     { id: 'daily',   label: '今日塔罗', hint: '每日一抽' },
-    { id: 'long',    label: '中长期占卜', hint: '14 天' },
+    { id: 'long',    label: '中长期占卜', hint: '14 天效力' },
     { id: 'archive', label: '档案',     hint: `${longReadings.length}` },
   ];
 
@@ -92,9 +92,14 @@ export function Astrology() {
           </motion.div>
         )}
 
-        {tab === 'long' && detailReading && (
+        {/*
+          归档详情：保持在 archive tab 下渲染，详情 onBack 退回到归档列表。
+          以前 onOpen 把 tab 切到 'long' → 用户 back 后会落到"新建中长期占卜"的表单，
+          不符合"看完归档应回到归档"。这里把详情挂回 archive tab。
+        */}
+        {tab === 'archive' && detailReading && (
           <motion.div
-            key="long-detail"
+            key="archive-detail"
             initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
@@ -115,7 +120,7 @@ export function Astrology() {
             exit={{ opacity: 0 }}
             className="pb-8"
           >
-            <ReadingArchive onOpen={r => { setDetailReading(r); setTab('long'); }} />
+            <ReadingArchive onOpen={r => { setDetailReading(r); /* 不切 tab：保留在 archive */ }} />
           </motion.div>
         )}
       </AnimatePresence>

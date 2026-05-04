@@ -40,6 +40,16 @@ export function Cooperation() {
   const [createOpen, setCreateOpen] = useState(false);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  // 菜单触发按钮上的红点：unreadCount>0 时点亮；用户**打开**菜单后置 ack=true 暂时熄灭。
+  // 当 unreadCount 再次上涨（来了新通知），自动复燃。
+  // 注意：菜单内"通知"项的红点不受这个 ack 影响（那个由真实 unreadCount 控制）。
+  const [menuDotAck, setMenuDotAck] = useState(false);
+  const lastUnreadRef = useRef(0);
+  useEffect(() => {
+    if (unreadCount > lastUnreadRef.current) setMenuDotAck(false);
+    lastUnreadRef.current = unreadCount;
+  }, [unreadCount]);
+  const showMenuTriggerDot = unreadCount > 0 && !menuDotAck;
   const [infoOpen, setInfoOpen] = useState(false);
   const [counselOpen, setCounselOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
@@ -243,15 +253,25 @@ export function Cooperation() {
           {/* ✧ 菜单按钮：关于系统 / 谏言 / 归档 */}
           <div className="relative" ref={menuAnchorRef}>
             <button
-              onClick={() => setMenuOpen(v => !v)}
-              className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-all ${
+              onClick={() => {
+                setMenuOpen(v => !v);
+                // 仅在 "打开" 这个动作上熄灭红点；关闭操作不动 ack
+                if (!menuOpen) setMenuDotAck(true);
+              }}
+              className={`relative w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-all ${
                 menuOpen
                   ? 'bg-indigo-500 text-white shadow-md shadow-indigo-500/30'
                   : 'bg-indigo-500/10 text-indigo-500 border border-indigo-500/30 hover:bg-indigo-500/20'
               }`}
-              aria-label="同伴系统菜单"
+              aria-label={showMenuTriggerDot ? `同伴系统菜单（${unreadCount} 条新通知）` : '同伴系统菜单'}
             >
               ✧
+              {showMenuTriggerDot && (
+                <span
+                  aria-hidden
+                  className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-rose-500 ring-2 ring-white dark:ring-gray-900 shadow"
+                />
+              )}
             </button>
             <AnimatePresence>
               {menuOpen && (

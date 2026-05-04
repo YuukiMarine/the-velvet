@@ -8,6 +8,8 @@ export type AttributeNames = {
   charm: string;
 };
 
+export type AttributeLevelTitles = Record<AttributeId, string[]>;
+
 export type AttributeNamesKey = keyof AttributeNames;
 
 export type ThemeType = 'blue' | 'yellow' | 'red' | 'pink' | 'custom';
@@ -44,7 +46,7 @@ export interface Activity {
   };
   method: 'local' | 'todo' | 'battle';
   important?: boolean;
-  category?: 'skill_unlock' | 'achievement_unlock' | 'level_up' | 'weekly_goal' | 'countercurrent' | 'shadow_defeat' | 'confidant';
+  category?: 'skill_unlock' | 'achievement_unlock' | 'level_up' | 'weekly_goal' | 'countercurrent' | 'shadow_defeat' | 'confidant' | 'calling_card_clear';
   /** 同伴互动记录的关联同伴 id（category === 'confidant' 时填充） */
   confidantId?: string;
   levelUps?: Array<{
@@ -193,6 +195,15 @@ export interface Settings {
   id?: string;
   attributeNames: AttributeNames;
   levelThresholds: number[];
+  /** 五维各等级的四字称号；下标 0 对应 Lv.1。缺失时使用默认兜底。 */
+  attributeLevelTitles?: AttributeLevelTitles;
+  /** 是否正在使用 AI 按当前属性名匹配过的系统成就/技能名称。 */
+  aiMatchedPresetNames?: boolean;
+  /** AI 覆写系统成就/技能名称前的本地快照；用于只撤回 AI 覆写，不覆盖用户自己的改名。 */
+  aiPresetNameBackup?: {
+    achievements: Record<string, string>;
+    skills: Record<string, string>;
+  };
   openaiEnabled: boolean;
   openaiApiKey: string;
   keywordRules: KeywordRule[];
@@ -291,6 +302,17 @@ export interface SummaryPromptPreset {
   isBuiltin?: boolean;
 }
 
+/**
+ * 归档总结里的"追问 Q&A"对：
+ * - 用户在生成完总结后追问一次；问答内容随总结一起持久化到 db.summaries
+ * - 旧记录里没有这两个字段是合法的（undefined），打开时按"未追问"渲染并保留追问入口
+ */
+export interface PeriodSummaryFollowUp {
+  question: string;
+  answer: string;
+  createdAt: Date;
+}
+
 export interface PeriodSummary {
   id: string;
   period: SummaryPeriod;
@@ -303,6 +325,94 @@ export interface PeriodSummary {
   totalPoints: number;
   attributePoints: Record<string, number>;
   activityCount: number;
+  createdAt: Date;
+  /** v2.1+：归档时把追问问答一并存下；老记录此字段为 undefined */
+  followUp?: PeriodSummaryFollowUp;
+  /**
+   * 重建追问所需的"原始 prompt 上下文"：
+   * 不存就没法在归档里再次追问（要重新组 prompt 太麻烦），所以一同存下。
+   * 老记录无此字段时，归档详情里"追问"按钮置灰并显示提示。
+   */
+  reqContext?: {
+    baseUrl: string;
+    model: string;
+    /** system + user 原始消息（不含 assistant），重新追问时再 push 上次 streamedText 与新 question */
+    messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
+  };
+}
+
+// ── CallingCard / 宣告卡（倒计时） ───────────────────────────
+//
+// 设计契机：参考 P5 的"预告函"——玩家"宣告"要拿下某件事，把它从抽象目标
+// 拍打成一张带日期 / 任务清单的实体卡片。本系统支持三种模式：
+//   - deadline：纯日期倒计时（高考 / 婚礼 / 截稿日）
+//   - todos：完成一组手选的待办（最多 7 条）
+//   - both：两者皆有，先达成的一头先关掉这张卡
+//
+// 上限语义（todos / both）：
+//   - 关联的 repeatDaily todo → 当日是否完成 算一格
+//   - 关联的单次 todo → 是否最终 completed (!isActive && completedAt) 算一格
+//   - 进度 = 满足格子 / linkedTodoIds.length
+//   - both 模式下：日期到了 OR 任务全清，先到的一方触发归档
+//
+// pinned 互斥：保存时 pinned=true 会把其它 unpin（store 层处理）
+
+export type CallingCardMode = 'deadline' | 'todos' | 'both';
+/**
+ * 纹理类型（v2.1 起 tone 字段语义改为"纹理"，颜色全部跟随当前主题 primary）：
+ *   - lines / grid / dots / plain：新值，纹理形态
+ *   - red / blue / gold：legacy 兼容值（旧用户的卡片仍能正常展示，渲染时映射为 lines/grid/dots）
+ */
+export type CallingCardTone = 'lines' | 'grid' | 'dots' | 'plain' | 'red' | 'blue' | 'gold';
+
+export interface CallingCard {
+  id: string;
+  /** 主标题：宣告"要做什么" */
+  title: string;
+  /** 副标题 / 宣告台词，可空。占位 placeholder 鼓励但不强制 */
+  subtitle?: string;
+
+  mode: CallingCardMode;
+
+  /** deadline / both 模式：目标日期 (YYYY-MM-DD)，避 UTC 偏移用本地 key */
+  targetDate?: string;
+  /** 起算日期：默认创建日，用于算"已征途 X / 共 N 天"百分比 */
+  startDate: string;
+
+  /** todos / both 模式：关联的 todoId 顺序数组，最多 7 条 */
+  linkedTodoIds?: string[];
+
+  /** 视觉调性 —— 背景情绪色（红 / 蓝 / 金）；强调色随当前主题 primary */
+  tone: CallingCardTone;
+  /** 卡片图标 emoji，默认 ✦ */
+  icon?: string;
+
+  /** 钉到首页 HERO 卡（互斥，仅 1 张） */
+  pinned: boolean;
+
+  /** 归档 / 完成态 */
+  archived: boolean;
+  archivedAt?: Date;
+  /**
+   * 归档原因：
+   *   - auto_date：targetDate 已过 → 自动归档（cut-in 文案"宣告 · 时之至"）
+   *   - auto_todos：linked todos 全部满足 → 自动归档（cut-in 文案"宣告 · 达成"）
+   *   - manual：用户在 ⋯ 菜单里手动归档
+   */
+  archiveReason?: 'auto_date' | 'auto_todos' | 'manual';
+
+  /**
+   * 完成结算屏是否已展示过。避免每次进 Dashboard 都重弹，
+   * sweep 自动归档时第一次设 false → CutIn 渲染后置 true。
+   */
+  cutInShown?: boolean;
+
+  /**
+   * 是否已"留下记录"——cut-in 上点了"留下记录"会写一条 Activity，
+   * 同一张卡片只允许写一次，避免重复刷成长记录。
+   */
+  ledgerWritten?: boolean;
+
   createdAt: Date;
 }
 
@@ -498,6 +608,8 @@ export interface ConfidantEvent {
     | 'unbound'
     | 'star_shift';
   delta?: number;              // 亲密点变化
+  /** level_up 事件到达的等级；旧数据可从 narrative 的 Lv.X 兼容解析 */
+  toLevel?: number;
   narrative?: string;          // AI / 系统生成的叙事描述（conversation 时为馆长解读）
   /** 用户在"今日互动"里原本输入的事件（仅 conversation 事件写入） */
   userInput?: string;
@@ -667,6 +779,8 @@ export interface CloudProfile {
   attributeNames?: Partial<Record<AttributeId, string>>;
   /** 对方五维各自的 level */
   attributeLevels?: Partial<Record<AttributeId, number>>;
+  /** 对方五维各等级的四字称号；下标 0 对应 Lv.1。 */
+  attributeLevelTitles?: Partial<Record<AttributeId, string[]>>;
   /** 对方五维各自的 points */
   attributePoints?: Partial<Record<AttributeId, number>>;
   /** 五维 points 之和（冗余字段，避免每次都重新求和；对方推上来时已算好） */

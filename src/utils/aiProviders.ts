@@ -81,7 +81,7 @@ export type TestResult =
 /**
  * 用最小 payload 探测 API 连接是否可用
  * - 超时 15 s，防止界面卡死
- * - 对 401 / 403 / 429 / 网络错误 / CORS 给出可读提示
+ * - 对 401 / 402 / 403 / 429 / 网络错误 / CORS 给出可读提示
  */
 export async function testAIConnection(opts: {
   provider: ApiProvider;
@@ -118,13 +118,10 @@ export async function testAIConnection(opts: {
 
     if (!resp.ok) {
       const body = await resp.text().catch(() => '');
-      const snippet = body.slice(0, 200).trim();
-      let hint = '';
-      if (resp.status === 401) hint = '密钥无效或已过期';
-      else if (resp.status === 403) hint = '无访问权限（Key 可能未开通该模型）';
-      else if (resp.status === 404) hint = '接口地址或模型名不存在';
-      else if (resp.status === 429) hint = '请求过于频繁或余额不足';
-      return { ok: false, error: hint ? `${hint} (HTTP ${resp.status})` : `HTTP ${resp.status}: ${snippet || resp.statusText}` };
+      const detail = extractProviderErrorMessage(body).slice(0, 240).trim();
+      const hint = getHttpStatusHint(resp.status, opts.provider);
+      const prefix = hint ? `${hint} (HTTP ${resp.status})` : `HTTP ${resp.status}`;
+      return { ok: false, error: detail ? `${prefix}: ${detail}` : `${prefix}: ${resp.statusText}` };
     }
 
     const data = await resp.json().catch(() => null);
@@ -142,4 +139,52 @@ export async function testAIConnection(opts: {
     }
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
+}
+
+function getHttpStatusHint(status: number, provider: ApiProvider): string {
+  if (status === 400) return '请求格式有误';
+  if (status === 401) return '密钥无效或已过期';
+  if (status === 402) {
+    return provider === 'deepseek'
+      ? '余额不足，请检查 DeepSeek 账户余额或充值'
+      : '余额不足或账户额度不可用';
+  }
+  if (status === 403) return '无访问权限（Key 可能未开通该模型）';
+  if (status === 404) return '接口地址或模型名不存在';
+  if (status === 422) return '请求参数无效';
+  if (status === 429) return '请求过于频繁';
+  if (status === 500) return '服务端错误';
+  if (status === 503) return '服务繁忙或过载';
+  return '';
+}
+
+function extractProviderErrorMessage(body: string): string {
+  const text = body.trim();
+  if (!text) return '';
+
+  try {
+    const data = JSON.parse(text) as unknown;
+    const candidates = [
+      getNestedString(data, ['error', 'message']),
+      getNestedString(data, ['message']),
+      getNestedString(data, ['detail']),
+      getNestedString(data, ['error_description']),
+      getNestedString(data, ['error']),
+    ];
+    const message = candidates.find(Boolean);
+    if (message) return message;
+  } catch {
+    /* Fall back to the raw response text below. */
+  }
+
+  return text;
+}
+
+function getNestedString(value: unknown, path: string[]): string {
+  let current: unknown = value;
+  for (const key of path) {
+    if (!current || typeof current !== 'object' || !(key in current)) return '';
+    current = (current as Record<string, unknown>)[key];
+  }
+  return typeof current === 'string' ? current.trim() : '';
 }

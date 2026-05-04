@@ -166,14 +166,28 @@ const getVolume = (): number => {
   }
 };
 
+// ── 音量调档（v2.1）─────────────────────────────────────
+// 用户反馈现有音量普遍偏低，此处统一上调：
+//   · playThemeSound（主页/导航 / 主题切换 / 通用 success / level）：×1.5（+50%）
+//   · playSound（战斗、塔罗、Coop 等直接调用方）：×1.3（+30%）
+// 这两个倍率独立于用户在「设置 → 体验个性化 → 音效音量」滑条里设的总比例（getVolume()），
+// 也不绕过 isMuted() 静音；仅作为"基础响度"的修正系数。
+const THEME_SOUND_BOOST = 1.5;
+const SOUND_BOOST       = 1.3;
+
+// 浏览器对 AudioBufferSourceNode 的 gain 没有上限（>1 会失真），
+// 这里 clamp 到 1.0，超出部分由用户自行降总音量来取舍。
+const clampVolume = (v: number) => Math.max(0, Math.min(1, v));
+
 // ── 公开 API ─────────────────────────────────────────────
 
 /**
  * 直接播放任意路径的音效（供外部使用）。
+ * 战斗 / 塔罗 / 合作模块均走这里，统一吃 SOUND_BOOST（×1.3）。
  */
 export const playSound = (src: string, volume = 0.5): void => {
   if (isMuted()) return;
-  void playBuffered(src, volume * getVolume());
+  void playBuffered(src, clampVolume(volume * getVolume() * SOUND_BOOST));
 };
 
 export const triggerLightHaptic = (): void => {
@@ -187,7 +201,7 @@ const playThemeSound = (kind: FeedbackKind, themeOverride?: ThemeType): void => 
   const theme = themeOverride || getActiveTheme();
   const src = THEME_SOUNDS[theme][kind];
   const baseVolume = kind === 'nav' || kind === 'theme_switch' ? 0.48 : 0.54;
-  void playBuffered(src, baseVolume * getVolume());
+  void playBuffered(src, clampVolume(baseVolume * getVolume() * THEME_SOUND_BOOST));
 };
 
 export const triggerThemeSwitchFeedback = (theme: ThemeType): void => {

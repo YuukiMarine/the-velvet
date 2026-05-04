@@ -3,6 +3,37 @@ import ReactDOM from 'react-dom/client'
 import App from './App.tsx'
 import './index.css'
 
+// ── 开发调试：按需加载 eruda（手机上的元素检查器 + 控制台） ───────────────
+// 使用方式：
+//   · 启用：访问 https://the-velvet.com/?debug=1（URL 里带 ?debug=1）
+//     启用后会写入 localStorage，之后即使 URL 不带参数，打开 app 也会自动注入
+//   · 关闭：访问 https://the-velvet.com/?debug=0 清除持久化标记
+// 保护：
+//   · 动态 import，不带 ?debug=1 / 无持久化标记时，eruda chunk 完全不下载
+//   · 主 bundle 0 增量；普通用户完全无感
+//   · 安装 PWA 前先在 Safari 里 ?debug=1 激活，之后装到主屏的 PWA 也会带上 eruda
+(() => {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const urlFlag = params.get('debug');
+    if (urlFlag === '1') {
+      localStorage.setItem('velvet_debug', '1');
+    } else if (urlFlag === '0') {
+      localStorage.removeItem('velvet_debug');
+      return;
+    }
+    if (localStorage.getItem('velvet_debug') === '1') {
+      // eruda 的导出形态因版本而异：3.x 是 `{ default: { init } }`，旧版可能是 default export
+      // 这里都做一次 fallback，尽量兼容
+      import('eruda').then(mod => {
+        const m = mod as unknown as { default?: { init: () => void }; init?: () => void };
+        const eruda = m.default ?? m;
+        eruda.init?.();
+      }).catch(() => { /* 加载失败静默，不影响主应用 */ });
+    }
+  } catch { /* 异常环境（SSR / 隐私模式）直接忽略 */ }
+})();
+
 // 添加错误边界
 class ErrorBoundary extends React.Component<
   { children: React.ReactNode },

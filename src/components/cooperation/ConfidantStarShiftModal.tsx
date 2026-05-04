@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { useAppStore } from '@/store';
 import { useBackHandler } from '@/utils/useBackHandler';
 import type { Confidant } from '@/types';
@@ -23,6 +23,7 @@ interface Props {
 
 export function ConfidantStarShiftModal({ isOpen, confidant, initialMode, onClose }: Props) {
   const { settings, consumeStarShift, confidantEvents, activities } = useAppStore();
+  const shouldReduceMotion = useReducedMotion();
 
   const [stage, setStage] = useState<Stage>('celebrate');
   const [changeNote, setChangeNote] = useState('');
@@ -131,7 +132,9 @@ export function ConfidantStarShiftModal({ isOpen, confidant, initialMode, onClos
   };
 
   // 升级时新解锁的能力（按当前 buffs 对比）
-  const latestLevelUpEvent = confidantEvents.find(e => e.confidantId === confidant.id && e.type === 'level_up');
+  const latestLevelUpEvent = [...confidantEvents]
+    .filter(e => e.confidantId === confidant.id && e.type === 'level_up')
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
   const recentUnlocks = confidant.buffs.filter(b => b.unlockAtLevel === confidant.intimacy);
 
   return (
@@ -140,7 +143,7 @@ export function ConfidantStarShiftModal({ isOpen, confidant, initialMode, onClos
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 z-[180] flex items-center justify-center p-4 bg-black/70 backdrop-blur-md"
+        className="fixed inset-0 z-[180] flex items-center justify-center p-4 bg-black/75"
         onClick={stage === 'thinking' ? undefined : onClose}
       >
         <motion.div
@@ -174,7 +177,7 @@ export function ConfidantStarShiftModal({ isOpen, confidant, initialMode, onClos
                   }}
                 />
                 {/* 星星粒子 */}
-                <Sparkles accent={accent} />
+                <Sparkles accent={accent} reduceMotion={shouldReduceMotion} />
 
                 <div className="relative text-center space-y-4">
                   <motion.div
@@ -497,20 +500,26 @@ function DiffBlock({ title, prev, next, accent }: { title: string; prev: string;
   );
 }
 
-function Sparkles({ accent }: { accent: string }) {
-  // 随机散布的小星星
-  const sparkles = Array.from({ length: 14 }, (_, i) => ({
-    id: i,
-    top: Math.random() * 80 + 5,
-    left: Math.random() * 85 + 5,
-    size: Math.random() * 8 + 6,
-    delay: Math.random() * 0.8,
-  }));
+const LEVEL_UP_SPARKLES = [
+  { id: 0, top: 11, left: 18, size: 12, delay: 0.04 },
+  { id: 1, top: 16, left: 75, size: 9, delay: 0.18 },
+  { id: 2, top: 31, left: 10, size: 8, delay: 0.32 },
+  { id: 3, top: 38, left: 86, size: 13, delay: 0.12 },
+  { id: 4, top: 55, left: 20, size: 7, delay: 0.46 },
+  { id: 5, top: 63, left: 78, size: 10, delay: 0.28 },
+  { id: 6, top: 75, left: 36, size: 8, delay: 0.58 },
+  { id: 7, top: 82, left: 66, size: 11, delay: 0.4 },
+] as const;
+
+function Sparkles({ accent, reduceMotion }: { accent: string; reduceMotion: boolean | null }) {
+  if (reduceMotion) return null;
+
   return (
     <>
-      {sparkles.map(s => (
+      {LEVEL_UP_SPARKLES.map(s => (
         <motion.span
           key={s.id}
+          aria-hidden
           className="absolute pointer-events-none select-none"
           style={{
             top: `${s.top}%`,
@@ -519,9 +528,9 @@ function Sparkles({ accent }: { accent: string }) {
             color: accent,
             textShadow: `0 0 6px ${accent}cc`,
           }}
-          initial={{ opacity: 0, scale: 0, rotate: 0 }}
-          animate={{ opacity: [0, 1, 0], scale: [0, 1.2, 0], rotate: 180 }}
-          transition={{ duration: 2.2, delay: s.delay, repeat: Infinity, repeatDelay: 1.5 }}
+          initial={{ opacity: 0, scale: 0.6, rotate: 0 }}
+          animate={{ opacity: [0, 0.95, 0], scale: [0.65, 1.15, 0.9], rotate: 90 }}
+          transition={{ duration: 1.9, delay: s.delay, ease: 'easeOut' }}
         >✦</motion.span>
       ))}
     </>

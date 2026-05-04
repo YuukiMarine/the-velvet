@@ -6,6 +6,11 @@ import { PageTitle } from '@/components/PageTitle';
 import { BattleDashboardWidget } from '@/components/BattleDashboardWidget';
 import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer } from 'recharts';
 import { TAROT_BY_ID } from '@/constants/tarot';
+import { CallingCardCard } from '@/components/callingCard/CallingCardCard';
+import { CallingCardEmptyHint } from '@/components/callingCard/CallingCardEmptyHint';
+import { playSound } from '@/utils/feedback';
+import { getAttributeLevelTitle } from '@/utils/attributeLevelTitles';
+import type { AttributeId, CallingCard } from '@/types';
 
 // Seeded random: picks a stable index per session (changes on every page open)
 const sessionSeed = Math.random();
@@ -388,7 +393,9 @@ const AttributeGrid = ({ attributes, settings }: {
           const curThreshold  = attr.level > 1 ? attrThresholds[attr.level - 1] : 0;
           const nextThreshold = !isMax ? attrThresholds[attr.level] : attrThresholds[lvlMax - 1];
           const pct = isMax ? 100 : Math.min(100, ((attr.points - curThreshold) / (nextThreshold - curThreshold)) * 100);
-          const attrName   = settings.attributeNames[attr.id as keyof typeof settings.attributeNames];
+          const attrId     = attr.id as AttributeId;
+          const attrName   = settings.attributeNames[attrId];
+          const levelTitle = getAttributeLevelTitle(settings.attributeLevelTitles, attrId, attr.level);
           const colorTier  = LV_COLORS[Math.min(attr.level - 1, LV_COLORS.length - 1)];
 
           return (
@@ -423,7 +430,7 @@ const AttributeGrid = ({ attributes, settings }: {
 
               {/* Card body */}
               <div className="flex items-start justify-between px-4 pt-4 pb-3">
-                <div>
+                <div className="min-w-0">
                   <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">{attrName}</p>
                   <div className="flex items-baseline gap-1">
                     <span className={`text-[10px] font-black uppercase tracking-widest ${colorTier.text} opacity-70`}>LV</span>
@@ -435,13 +442,10 @@ const AttributeGrid = ({ attributes, settings }: {
                     </span>
                   </div>
                 </div>
-                <div className="text-right mt-1">
-                  <span className="text-[11px] text-gray-400 dark:text-gray-500 tabular-nums">
-                    {isMax ? '满级' : `${attr.points}`}
+                <div className="text-right mt-1 flex-shrink-0">
+                  <span className="text-[11px] text-gray-400 dark:text-gray-500 tabular-nums whitespace-nowrap">
+                    {isMax ? '满级' : `${attr.points}/${nextThreshold}`}
                   </span>
-                  {!isMax && (
-                    <p className="text-[10px] text-gray-300 dark:text-gray-600 tabular-nums">/{nextThreshold}</p>
-                  )}
                 </div>
               </div>
 
@@ -456,11 +460,21 @@ const AttributeGrid = ({ attributes, settings }: {
                     transition={{ duration: 0.8, ease: 'easeOut' }}
                   />
                 </div>
-                {!isMax && (
-                  <p className="mt-1 text-[10px] text-gray-400 dark:text-gray-500">
-                    差 <span className="font-semibold">{nextThreshold - attr.points}</span> 升 Lv.{attr.level + 1}
-                  </p>
-                )}
+                <div className="mt-2 flex items-center justify-between gap-2 min-h-[18px]">
+                  <div className={`inline-flex items-center rounded-md px-2 py-0.5 text-[10px] font-black tabular-nums whitespace-nowrap ${colorTier.bg} ${colorTier.text}`}>
+                    {levelTitle}
+                  </div>
+                  {!isMax && (
+                    <p className="text-[10px] text-gray-400 dark:text-gray-500 text-right whitespace-nowrap tabular-nums">
+                      差 <span className="font-semibold">{nextThreshold - attr.points}</span> 升 Lv.{attr.level + 1}
+                    </p>
+                  )}
+                  {isMax && (
+                    <p className="text-[10px] text-gray-400 dark:text-gray-500 text-right whitespace-nowrap">
+                      已达满级
+                    </p>
+                  )}
+                </div>
               </div>
 
               {/* Bottom accent strip */}
@@ -510,7 +524,7 @@ const isLightColor = (hex: string): boolean => {
 };
 
 export const Dashboard = () => {
-  const { attributes, user, settings, todos, activities, achievements, skills, completeTodo, getTodayTodoProgress, setModalBlocker, setCurrentPage, applyCountercurrentDecay, getCountercurrentWarnings } = useAppStore();
+  const { attributes, user, settings, todos, activities, achievements, skills, completeTodo, getTodayTodoProgress, setModalBlocker, setCurrentPage, applyCountercurrentDecay, getCountercurrentWarnings, callingCards } = useAppStore();
   const [completedTitle, setCompletedTitle] = useState<string | null>(null);
   const [completedPoints, setCompletedPoints] = useState(1);
   const [unlockHint, setUnlockHint] = useState<{ achievements: number; skills: number }>({ achievements: 0, skills: 0 });
@@ -527,6 +541,46 @@ export const Dashboard = () => {
   };
   // 逆流衰减弹窗
   const [decayedAttrs, setDecayedAttrs] = useState<import('@/types').AttributeId[]>([]);
+
+  // ── 宣告卡 / 倒计时 ─────────────────────────────────────────
+  const pinnedCallingCard: CallingCard | null = callingCards.find(c => c.pinned && !c.archived) ?? null;
+  // 注：CutIn 已经移到 App.tsx 顶层（GlobalCallingCardCutIn），这里只关心"钉选展示"
+
+  // 临期 Toast（D1）：≤ 3 天且当日首次见到时弹一次（localStorage 防骚扰）
+  const [urgentToast, setUrgentToast] = useState<string | null>(null);
+  useEffect(() => {
+    if (!pinnedCallingCard || !pinnedCallingCard.targetDate) return;
+    const today = new Date(toLocalDateKey() + 'T00:00:00');
+    const target = new Date(pinnedCallingCard.targetDate + 'T00:00:00');
+    const daysLeft = Math.max(0, Math.round((target.getTime() - today.getTime()) / 86400000));
+    if (daysLeft > 3 || daysLeft <= 0) return;
+    const storageKey = `velvet_cc_urgent_${pinnedCallingCard.id}_${toLocalDateKey()}`;
+    try {
+      if (localStorage.getItem(storageKey) === '1') return;
+      localStorage.setItem(storageKey, '1');
+    } catch { /* 隐私模式 → 跳过节流 */ }
+    setUrgentToast(`「${pinnedCallingCard.title}」还剩 ${daysLeft} 天`);
+    // 红主题切换音，仪式感
+    playSound('/themec-switch.mp3', 0.6);
+    const t = setTimeout(() => setUrgentToast(null), 3600);
+    return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pinnedCallingCard?.id, pinnedCallingCard?.targetDate]);
+
+  // 跳转 Tasks 页 + 滚到 calling card 区
+  const jumpToCallingCardSection = () => {
+    try {
+      sessionStorage.setItem('velvet:todos-goal-panel', 'countdown');
+    } catch { /* ignore unavailable sessionStorage */ }
+    setCurrentPage('todos');
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        window.dispatchEvent(new CustomEvent('velvet:open-calling-card-panel'));
+        const el = document.getElementById('calling-card-section');
+        el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    });
+  };
 
   // Detect primary color luminance for banner text contrast
   const [bannerLight, setBannerLight] = useState(false);
@@ -714,6 +768,36 @@ export const Dashboard = () => {
             </div>
           </div>
         </div>
+        {/* 钉选的宣告卡 / 倒计时 —— 极简横条嵌在问候卡中，今日进度上方 */}
+        {pinnedCallingCard && (
+          <div className={`mt-4 ${textClass}`}>
+            <CallingCardCard
+              card={pinnedCallingCard}
+              variant="inline"
+              onProgressClick={jumpToCallingCardSection}
+            />
+          </div>
+        )}
+
+        {/* 占位符：从未建 / 有但未钉选时分别给两种 hint */}
+        {!pinnedCallingCard && callingCards.length === 0 && (
+          <div className="mt-4">
+            <CallingCardEmptyHint onJump={jumpToCallingCardSection} />
+          </div>
+        )}
+        {!pinnedCallingCard && callingCards.filter(c => !c.archived).length > 0 && (
+          <button
+            onClick={jumpToCallingCardSection}
+            className={`mt-4 w-full text-left px-3 py-2 rounded-xl text-[11px] flex items-center gap-2 ${useLightText ? 'bg-white/12 text-white/80 hover:bg-white/20' : 'bg-black/8 text-black/65 hover:bg-black/15'} transition-colors`}
+          >
+            <span>📌</span>
+            <span className="flex-1">
+              你有 {callingCards.filter(c => !c.archived).length} 张倒计时未钉到主页
+            </span>
+            <span className="opacity-60">›</span>
+          </button>
+        )}
+
         {totalCount > 0 && (
           <div className="mt-4">
             <div className={`flex items-center justify-between text-sm mb-1.5 ${textSecondaryClass}`}>
@@ -922,6 +1006,28 @@ export const Dashboard = () => {
         totalPoints={completedPoints}
         unlockHint={unlockHint}
       />
+
+      {/* CutIn 已移到 App.tsx 全局渲染（GlobalCallingCardCutIn），不在此页处理 */}
+
+      {/* 临期 Toast（D1）：≤ 3 天，每张卡每天最多弹一次 */}
+      <AnimatePresence>
+        {urgentToast && (
+          <motion.div
+            key={urgentToast}
+            initial={{ opacity: 0, y: -16 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.3 }}
+            className="fixed left-1/2 -translate-x-1/2 z-[140] pointer-events-none"
+            style={{ top: 'calc(env(safe-area-inset-top) + 12px)' }}
+          >
+            <div className="px-4 py-2.5 rounded-2xl bg-gray-900/95 dark:bg-gray-100/95 text-white dark:text-gray-900 text-sm font-bold shadow-2xl backdrop-blur-sm flex items-center gap-2 whitespace-nowrap">
+              <span className="text-base">⏳</span>
+              <span>{urgentToast}</span>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* 逆流衰减通知 */}
       <AnimatePresence>

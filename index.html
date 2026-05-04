@@ -25,9 +25,11 @@
     <meta name="twitter:description" content="个人成长追踪器" />
     <meta name="twitter:image" content="/pwa-512x512.png" />
 
-    <!-- Android Chrome 沉浸式状态栏 -->
-    <meta name="theme-color" content="#3B82F6" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#1e1b4b" media="(prefers-color-scheme: dark)" />
+    <!-- iOS Safari 底部地址栏 / Android Chrome 顶部状态栏的着色。
+         这里只设一个中性默认值（和 body bg 的浅色版本同色），
+         真正的值在 App.tsx 里根据 settings.darkMode 动态写入，
+         这样：(1) App 内手动切夜间模式能联动；(2) 不再被系统 prefers-color-scheme 裹挟。 -->
+    <meta name="theme-color" content="#f9fafb" />
     <meta name="mobile-web-app-capable" content="yes" />
     <!-- iOS 全屏 -->
     <meta name="apple-mobile-web-app-capable" content="yes" />

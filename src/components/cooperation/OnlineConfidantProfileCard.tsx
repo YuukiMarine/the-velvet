@@ -28,6 +28,7 @@ import {
   hasBeenPrayedByToday,
   getNextResetTime,
 } from '@/services/prayers';
+import { getAttributeLevelTitle } from '@/utils/attributeLevelTitles';
 import type { AttributeId, CloudProfile, Friendship } from '@/types';
 
 const ATTR_ORDER: AttributeId[] = ['knowledge', 'guts', 'dexterity', 'kindness', 'charm'];
@@ -92,6 +93,7 @@ export function OnlineConfidantProfileCard({
   const [severing, setSevering] = useState(false);
   const [severConfirm, setSeverConfirm] = useState(false);
   const [severError, setSeverError] = useState('');
+  const [selectedAttr, setSelectedAttr] = useState<AttributeId>('knowledge');
 
   // ── 衍生状态 ───────────────────────────────────────────
   const alreadyPrayed = profile ? hasPrayedToday(profile.id, todayPrayers) : false;
@@ -107,6 +109,9 @@ export function OnlineConfidantProfileCard({
     [profile],
   );
   const totalLv = profile?.totalLv ?? levelsSum;
+  const selectedLevel = profile?.attributeLevels?.[selectedAttr] ?? 0;
+  const selectedName = profile?.attributeNames?.[selectedAttr] || DEFAULT_ATTR_LABELS[selectedAttr];
+  const selectedTitle = getAttributeLevelTitle(profile?.attributeLevelTitles, selectedAttr, selectedLevel);
 
   // ── 操作 ───────────────────────────────────────────────
   const handlePray = async () => {
@@ -256,7 +261,10 @@ export function OnlineConfidantProfileCard({
                       fontSize: 11,
                       color: '#f5e6ff',
                     }}
-                    formatter={(v: number) => [`LV ${v}`, '']}
+                    formatter={(v: number, _name: string, props: { payload?: { title?: string } }) => [
+                      `LV ${v}: ${props.payload?.title ?? ''}`,
+                      '',
+                    ]}
                   />
                   <Radar
                     dataKey="value"
@@ -267,6 +275,41 @@ export function OnlineConfidantProfileCard({
                   />
                 </RadarChart>
               </ResponsiveContainer>
+            </div>
+            <div className="grid grid-cols-5 gap-1.5 mt-1">
+              {radarData.map(axis => {
+                const active = axis.id === selectedAttr;
+                return (
+                  <button
+                    key={axis.id}
+                    type="button"
+                    onClick={() => setSelectedAttr(axis.id)}
+                    className="min-w-0 rounded-lg px-1.5 py-1.5 text-center border transition-colors"
+                    style={{
+                      background: active ? 'rgba(124,58,237,0.26)' : 'rgba(255,255,255,0.04)',
+                      borderColor: active ? 'rgba(196,181,253,0.5)' : 'rgba(196,181,253,0.14)',
+                      color: active ? '#f5e6ff' : '#a89dc0',
+                    }}
+                  >
+                    <div className="text-[9px] font-bold truncate">{axis.axis}</div>
+                    <div className="text-[9px] tabular-nums opacity-75">LV{axis.value}</div>
+                  </button>
+                );
+              })}
+            </div>
+            <div
+              className="mt-2 rounded-xl px-3 py-2 text-center border"
+              style={{
+                background: 'linear-gradient(135deg, rgba(196,181,253,0.14), rgba(124,58,237,0.06))',
+                borderColor: 'rgba(196,181,253,0.25)',
+              }}
+            >
+              <div className="text-[9px] tracking-[0.18em] font-bold uppercase" style={{ color: '#8b84a8' }}>
+                {selectedName}
+              </div>
+              <div className="mt-0.5 text-sm font-black tabular-nums" style={{ color: '#f5e6ff' }}>
+                LV{selectedLevel}: {selectedTitle}
+              </div>
             </div>
             {/* 两枚迷你统计：总点数 / 已解锁 */}
             <div className="grid grid-cols-2 gap-2 mt-2">
@@ -509,12 +552,18 @@ export function OnlineConfidantProfileCard({
 
 /** radar 数据 + 当前刻度上限。max 跟着对方"最高那维 LV"走（至少 5、至多 10）。 */
 function buildRadarData(profile: CloudProfile | null): {
-  axes: Array<{ axis: string; value: number; fullMark: number }>;
+  axes: Array<{ id: AttributeId; axis: string; value: number; fullMark: number; title: string }>;
   domainMax: number;
 } {
   if (!profile) {
     return {
-      axes: ATTR_ORDER.map(id => ({ axis: DEFAULT_ATTR_LABELS[id], value: 0, fullMark: 5 })),
+      axes: ATTR_ORDER.map(id => ({
+        id,
+        axis: DEFAULT_ATTR_LABELS[id],
+        value: 0,
+        fullMark: 5,
+        title: getAttributeLevelTitle(undefined, id, 0),
+      })),
       domainMax: 5,
     };
   }
@@ -526,9 +575,11 @@ function buildRadarData(profile: CloudProfile | null): {
   const domainMax = Math.max(5, Math.min(10, peak));
   return {
     axes: ATTR_ORDER.map((id, i) => ({
+      id,
       axis: (names[id] || DEFAULT_ATTR_LABELS[id]).slice(0, 4),
       value: numericLevels[i],
       fullMark: domainMax,
+      title: getAttributeLevelTitle(profile.attributeLevelTitles, id, numericLevels[i]),
     })),
     domainMax,
   };

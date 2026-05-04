@@ -21,6 +21,7 @@ import { triggerLightHaptic } from '@/utils/feedback';
 import { ImageCropDialog } from '@/components/ImageCropDialog';
 import { useModalA11y } from '@/utils/useModalA11y';
 import { useBackHandler } from '@/utils/useBackHandler';
+import type { Confidant, ConfidantEvent } from '@/types';
 
 type Tab = 'info' | 'abilities' | 'history';
 
@@ -34,7 +35,63 @@ interface Props {
   onOpenCoopShadow?: (shadow: import('@/types').CoopShadow, partnerName: string) => void;
 }
 
-export function ConfidantDetailModal({ isOpen, onClose, confidantId, onViewOnlineProfile, onOpenCoopShadow }: Props) {
+const LEVEL_UP_CELEBRATED_PREFIX = 'velvet_confidant_level_celebrated';
+
+const levelCelebrationKey = (confidantId: string, level: number) =>
+  `${LEVEL_UP_CELEBRATED_PREFIX}_${confidantId}_${level}`;
+
+const parseLevelUpLevel = (event: ConfidantEvent): number | null => {
+  if (typeof event.toLevel === 'number' && Number.isFinite(event.toLevel)) return event.toLevel;
+  const match = event.narrative?.match(/Lv\.?\s*(\d+)/i);
+  if (!match) return null;
+  const parsed = Number(match[1]);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const wasLevelCelebrated = (confidantId: string, level: number) => {
+  try {
+    return localStorage.getItem(levelCelebrationKey(confidantId, level)) === '1';
+  } catch {
+    return false;
+  }
+};
+
+const markLevelCelebrated = (confidantId: string, level: number) => {
+  try {
+    localStorage.setItem(levelCelebrationKey(confidantId, level), '1');
+  } catch { /* ignore unavailable localStorage */ }
+};
+
+const findUncelebratedLevelUps = (confidant: Confidant, events: ConfidantEvent[]) => {
+  const seen = new Set<number>();
+  return events
+    .filter(e => e.confidantId === confidant.id && e.type === 'level_up')
+    .map(event => ({ event, level: parseLevelUpLevel(event) }))
+    .filter((item): item is { event: ConfidantEvent; level: number } =>
+      item.level !== null
+      && item.level > 1
+      && item.level <= confidant.intimacy
+      && !seen.has(item.level)
+      && !wasLevelCelebrated(confidant.id, item.level),
+    )
+    .sort((a, b) => {
+      if (a.level !== b.level) return a.level - b.level;
+      return new Date(a.event.createdAt).getTime() - new Date(b.event.createdAt).getTime();
+    })
+    .filter(item => {
+      if (seen.has(item.level)) return false;
+      seen.add(item.level);
+      return true;
+    });
+};
+
+export function ConfidantDetailModal({
+  isOpen,
+  onClose,
+  confidantId,
+  onViewOnlineProfile,
+  onOpenCoopShadow,
+}: Props) {
   const dialogRef = useModalA11y(isOpen, onClose);
   const {
     settings,
@@ -156,30 +213,15 @@ export function ConfidantDetailModal({ isOpen, onClose, confidantId, onViewOnlin
     window.addEventListener('pointerdown', onDown);
     return () => window.removeEventListener('pointerdown', onDown);
   }, [avatarMenuOpen]);
-  // 跟踪亲密度，升级时自动弹出恭喜
-  const prevIntimacyRef = useRef<number | null>(null);
+  // 以 level_up 事件为事实来源：首次达到某等级后，打开详情时补弹升级祝贺。
   useEffect(() => {
-    if (!confidant) {
-      prevIntimacyRef.current = null;
-      return;
-    }
-    // 打开时记录初始值
-    if (prevIntimacyRef.current === null) {
-      prevIntimacyRef.current = confidant.intimacy;
-      return;
-    }
-    // 之后只要 intimacy 提升就弹出升级恭喜
-    if (confidant.intimacy > prevIntimacyRef.current) {
-      prevIntimacyRef.current = confidant.intimacy;
-      setStarShiftMode('celebrate');
-      setStarShiftOpen(true);
-    }
-  }, [confidant?.intimacy, confidant]);
-
-  // 重置 prevIntimacy 当切换同伴 / 关闭弹窗时
-  useEffect(() => {
-    if (!isOpen) prevIntimacyRef.current = null;
-  }, [isOpen, confidantId]);
+    if (!isOpen || !confidant || starShiftOpen) return;
+    const pendingLevelUps = findUncelebratedLevelUps(confidant, confidantEvents);
+    if (pendingLevelUps.length === 0) return;
+    pendingLevelUps.forEach(item => markLevelCelebrated(confidant.id, item.level));
+    setStarShiftMode('celebrate');
+    setStarShiftOpen(true);
+  }, [isOpen, confidant, confidantEvents, starShiftOpen]);
 
   if (!isOpen || !confidant) return null;
 

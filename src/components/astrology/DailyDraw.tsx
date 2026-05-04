@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import DOMPurify from 'dompurify';
 import { v4 as uuidv4 } from 'uuid';
 import { useAppStore, toLocalDateKey } from '@/store';
+import { db } from '@/db';
 import {
   MAJOR_ARCANA,
   TAROT_BY_ID,
@@ -57,6 +58,8 @@ export function DailyDraw() {
   };
 
   // 初始化：若今日已抽直接 done，否则进入 intro
+  // 依赖项里加 dailyDivination?.date：跨日时即便 id 没变，date 不再等于 today 也会触发重置；
+  // App 入口的 visibilitychange 已经在跨日时调 loadDailyDivination()，这里是双保险。
   useEffect(() => {
     if (dailyDivination && dailyDivination.date === toLocalDateKey()) {
       setPhase('done');
@@ -64,7 +67,7 @@ export function DailyDraw() {
     }
     rollCandidates();
     setPhase('intro');
-  }, [dailyDivination?.id]);
+  }, [dailyDivination?.id, dailyDivination?.date]);
 
   useEffect(() => {
     return () => { abortRef.current?.abort(); };
@@ -99,12 +102,19 @@ export function DailyDraw() {
         fortune = offline.fortune;
         source = 'offline';
       } else {
+        const previousDailyCandidates = await db.dailyDivinations
+          .where('date')
+          .below(toLocalDateKey())
+          .toArray();
+        const previousDaily = previousDailyCandidates
+          .sort((a, b) => b.date.localeCompare(a.date))[0] ?? null;
         const req = buildDailyRequest({
           settings,
           attributes,
           card: picked.card,
           orientation,
           recentActivities: getRecentActivitiesForDaily(7),
+          previousDaily,
         });
         const abortCtrl = new AbortController();
         abortRef.current = abortCtrl;
