@@ -147,57 +147,53 @@ export const BottomNav = () => {
       initial={{ y: 100 }}
       animate={{ y: 0 }}
       transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-      // 拆成两层：
-      //   · 上层：图标区 —— 保留 backdrop-blur + 半透明（原有视觉）
-      //   · 下层：iOS Home Bar 安全区 —— 纯色、无 blur，规避 iOS Safari 在
-      //     `backdrop-filter + padding-bottom:env(safe-area-inset-bottom)` 组合下
-      //     对 padding 区渲染不一致的已知 bug（之前那条"色调不同的空档"）
-      className="md:hidden fixed bottom-0 left-0 right-0 z-50 flex flex-col"
+      // iOS PWA 完整覆盖方案：
+      //   · 使用**不透明 bg**（不再 /95），消除 iOS Safari 在 backdrop-filter + padding 区的
+      //     渲染不一致（这是之前所有"灰条"的根源）
+      //   · padding-bottom: env(safe-area-inset-bottom) → 让 BottomNav 物理延伸到 home bar 区
+      //     iOS 的 home indicator pill 会半透明地叠加在 Tab 栏 bg 上，视觉融为一体
+      //   · 牺牲：失去原本的毛玻璃半透明感。换来：iOS PWA 上 100% 无分隔条
+      //   · 如果要恢复毛玻璃，把下面 bg-white → bg-white/95，加 backdrop-blur-md，
+      //     接受 iOS PWA home bar 区可能再次出现轻微色差
+      className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white dark:bg-gray-900 border-t border-gray-100 dark:border-gray-800"
+      style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
     >
-      <div className="bg-white/95 dark:bg-gray-900/95 backdrop-blur-md border-t border-gray-100 dark:border-gray-800">
-        <div className="flex items-center h-16">
-          {navItems.map((item) => {
-            const active = currentPage === item.id;
-            return (
-              <motion.button
-                key={item.id}
-                whileTap={{ scale: 0.88 }}
-                onClick={() => {
-                  triggerNavFeedback();
-                  setCurrentPage(item.id);
-                }}
-                className={`relative flex flex-col items-center justify-center flex-1 h-full gap-1 cursor-pointer transition-colors duration-150 ${
-                  active ? 'text-primary' : 'text-gray-400 dark:text-gray-500'
-                }`}
-              >
-                <AnimatePresence>
-                  {active && (
-                    <motion.div
-                      key={item.id}
-                      initial={{ opacity: 0, scaleX: 0 }}
-                      animate={{ opacity: 1, scaleX: 1 }}
-                      exit={{ opacity: 0, scaleX: 0 }}
-                      transition={{ duration: 0.18 }}
-                      className="absolute top-0 w-10 h-0.5 bg-primary rounded-full"
-                      style={{ left: '50%', marginLeft: '-20px', transformOrigin: 'center' }}
-                    />
-                  )}
-                </AnimatePresence>
-                <item.Icon filled={active} />
-                <span className={`text-[10px] leading-none ${active ? 'font-semibold' : 'font-normal'}`}>
-                  {item.label}
-                </span>
-              </motion.button>
-            );
-          })}
-        </div>
+      <div className="flex items-center h-16">
+        {navItems.map((item) => {
+          const active = currentPage === item.id;
+          return (
+            <motion.button
+              key={item.id}
+              whileTap={{ scale: 0.88 }}
+              onClick={() => {
+                triggerNavFeedback();
+                setCurrentPage(item.id);
+              }}
+              className={`relative flex flex-col items-center justify-center flex-1 h-full gap-1 cursor-pointer transition-colors duration-150 ${
+                active ? 'text-primary' : 'text-gray-400 dark:text-gray-500'
+              }`}
+            >
+              <AnimatePresence>
+                {active && (
+                  <motion.div
+                    key={item.id}
+                    initial={{ opacity: 0, scaleX: 0 }}
+                    animate={{ opacity: 1, scaleX: 1 }}
+                    exit={{ opacity: 0, scaleX: 0 }}
+                    transition={{ duration: 0.18 }}
+                    className="absolute top-0 w-10 h-0.5 bg-primary rounded-full"
+                    style={{ left: '50%', marginLeft: '-20px', transformOrigin: 'center' }}
+                  />
+                )}
+              </AnimatePresence>
+              <item.Icon filled={active} />
+              <span className={`text-[10px] leading-none ${active ? 'font-semibold' : 'font-normal'}`}>
+                {item.label}
+              </span>
+            </motion.button>
+          );
+        })}
       </div>
-      {/* Home Bar 安全区垫底：无 Home Bar 的设备 env() 为 0，此 div 高 0px，不影响布局 */}
-      <div
-        aria-hidden
-        className="bg-white dark:bg-gray-900"
-        style={{ height: 'env(safe-area-inset-bottom)' }}
-      />
     </motion.nav>
   );
 };

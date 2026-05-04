@@ -1,5 +1,5 @@
 import Dexie, { Table } from 'dexie';
-import { User, Attribute, Activity, Achievement, Skill, DailyEvent, DailyDivination, LongReading, Settings, Todo, TodoCompletion, PeriodSummary, WeeklyGoal, Persona, Shadow, BattleState, Confidant, ConfidantEvent, CounselSession, CounselArchive } from '@/types';
+import { User, Attribute, Activity, Achievement, Skill, DailyEvent, DailyDivination, LongReading, Settings, Todo, TodoCompletion, PeriodSummary, WeeklyGoal, Persona, Shadow, BattleState, Confidant, ConfidantEvent, CounselSession, CounselArchive, CallingCard } from '@/types';
 
 export class PGTDatabase extends Dexie {
   users!: Table<User>;
@@ -22,6 +22,7 @@ export class PGTDatabase extends Dexie {
   confidantEvents!: Table<ConfidantEvent>;
   counselSessions!: Table<CounselSession>;
   counselArchives!: Table<CounselArchive>;
+  callingCards!: Table<CallingCard>;
 
   constructor() {
     super('PGTDatabase');
@@ -148,6 +149,30 @@ export class PGTDatabase extends Dexie {
       confidantEvents: 'id, confidantId, date, type, createdAt',
       counselSessions: 'id, startedDate, startedAt',
       counselArchives: 'id, createdAt'
+    });
+    // v9: CallingCard / 宣告卡（倒计时）
+    this.version(9).stores({
+      users: 'id, name, createdAt, theme',
+      attributes: 'id, displayName, points, level, unlocked',
+      activities: 'id, userId, date, description, method',
+      achievements: 'id, unlocked, unlockedDate',
+      skills: 'id, requiredAttribute, requiredLevel, unlocked',
+      dailyEvents: 'id, date',
+      dailyDivinations: 'id, date',
+      longReadings: 'id, createdAt, archived, expiresAt',
+      settings: 'id',
+      todos: 'id, attribute, frequency, isActive, createdAt',
+      todoCompletions: 'id, todoId, date',
+      summaries: 'id, period, startDate, endDate, createdAt',
+      weeklyGoals: 'id, weekStart, weekEnd, completed, createdAt',
+      personas: 'id, name, createdAt',
+      shadows: 'id, level, createdAt',
+      battleStates: 'id',
+      confidants: 'id, userId, arcanaId, source, intimacy, createdAt, archivedAt',
+      confidantEvents: 'id, confidantId, date, type, createdAt',
+      counselSessions: 'id, startedDate, startedAt',
+      counselArchives: 'id, createdAt',
+      callingCards: 'id, pinned, archived, createdAt, targetDate'
     });
   }
 }

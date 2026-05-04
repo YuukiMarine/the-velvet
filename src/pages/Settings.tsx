@@ -1,8 +1,8 @@
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useAppStore, DEFAULT_SUMMARY_PROMPT_PRESETS, FAMILIAR_FACE_PRESETS, toLocalDateKey, applyCustomThemeColor } from '@/store';
 import { triggerThemeSwitchFeedback, playSound } from '@/utils/feedback';
-import { ThemeType, AttributeId, SummaryPromptPreset } from '@/types';
+import { ThemeType, AttributeId, SummaryPromptPreset, AttributeLevelTitles } from '@/types';
 import { DEFAULT_LEVEL_THRESHOLDS } from '@/constants';
 import { db } from '@/db';
 import { PageTitle } from '@/components/PageTitle';
@@ -19,6 +19,12 @@ import { UserProfileCard } from '@/components/UserProfileCard';
 import { TrophyIcon } from '@/components/Navigation';
 import { SyncPrivacyPanel } from '@/components/auth/SyncPrivacyPanel';
 import { AccountManagePanel } from '@/components/auth/AccountManagePanel';
+import {
+  generateAttributeLevelTitles,
+  normalizeAttributeLevelTitles,
+  patchAttributeLevelTitle,
+} from '@/utils/attributeLevelTitles';
+import { generatePresetNameMatches, type PresetNameMatchResult } from '@/utils/presetNameMatcher';
 
 /** 五维属性的展示元数据（图标 + 主色 + 默认中文名），仅用于设置页 UI */
 const ATTRIBUTE_META: Array<{
@@ -33,6 +39,23 @@ const ATTRIBUTE_META: Array<{
   { id: 'kindness',  icon: '🌿', color: '#10B981', defaultLabel: '温柔' },
   { id: 'charm',     icon: '✨', color: '#EC4899', defaultLabel: '魅力' },
 ];
+
+type PresetNameSelection = {
+  achievements: Record<string, boolean>;
+  skills: Record<string, boolean>;
+};
+
+type LevelTitleSelection = Record<AttributeId, boolean>;
+
+const createLevelTitleSelection = (selected: boolean): LevelTitleSelection => ({
+  knowledge: selected,
+  guts: selected,
+  dexterity: selected,
+  kindness: selected,
+  charm: selected,
+});
+
+const emptyPresetNameSelection = (): PresetNameSelection => ({ achievements: {}, skills: {} });
 
 /**
  * 属性名输入框（兼容中文输入法）
@@ -97,6 +120,50 @@ const AttributeNameField = ({
         />
       </div>
     </div>
+  );
+};
+
+const LevelTitleField = ({
+  level,
+  value,
+  onCommit,
+}: {
+  level: number;
+  value: string;
+  onCommit: (v: string) => void;
+}) => {
+  const [draft, setDraft] = useState(value);
+  const composingRef = useRef(false);
+
+  useEffect(() => {
+    if (!composingRef.current) setDraft(value);
+  }, [value]);
+
+  const commit = (next = draft) => {
+    onCommit(next);
+  };
+
+  return (
+    <label className="min-w-0">
+      <span className="block mb-1 text-[9px] font-bold text-gray-400 tabular-nums">
+        LV{level}
+      </span>
+      <input
+        type="text"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onCompositionStart={() => { composingRef.current = true; }}
+        onCompositionEnd={(e) => {
+          composingRef.current = false;
+          const next = (e.target as HTMLInputElement).value;
+          setDraft(next);
+          commit(next);
+        }}
+        onBlur={() => commit()}
+        className="w-full px-2.5 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-xs font-bold text-gray-800 dark:text-white focus:outline-none focus:border-primary transition-colors"
+        placeholder="四字称号"
+      />
+    </label>
   );
 };
 
@@ -223,7 +290,8 @@ export const Settings = () => {
     updateSettings,
     setTheme,
     resetAllData,
-    importData
+    importData,
+    loadData
   } = useAppStore();
   const attributes = useAppStore(s => s.attributes);
   const achievements = useAppStore(s => s.achievements);
@@ -236,6 +304,19 @@ export const Settings = () => {
   // 等级阈值：恢复默认 / 删除高等级 的确认弹窗
   const [showResetThresholdsConfirm, setShowResetThresholdsConfirm] = useState(false);
   const [deleteLevelIndex, setDeleteLevelIndex] = useState<number | null>(null);
+  const [levelTitleRefreshing, setLevelTitleRefreshing] = useState(false);
+  const [levelTitleMessage, setLevelTitleMessage] = useState<string | null>(null);
+  const [levelTitleAttrIndex, setLevelTitleAttrIndex] = useState(0);
+  const [levelTitleSuggestions, setLevelTitleSuggestions] = useState<AttributeLevelTitles | null>(null);
+  const [levelTitleSelection, setLevelTitleSelection] = useState<LevelTitleSelection>(() => createLevelTitleSelection(false));
+  const [levelTitleModalOpen, setLevelTitleModalOpen] = useState(false);
+  const [levelTitleConfirmAttrIndex, setLevelTitleConfirmAttrIndex] = useState(0);
+  const [presetNameRefreshing, setPresetNameRefreshing] = useState(false);
+  const [presetNameMessage, setPresetNameMessage] = useState<string | null>(null);
+  const [presetNameSuggestions, setPresetNameSuggestions] = useState<PresetNameMatchResult | null>(null);
+  const [presetNameSelection, setPresetNameSelection] = useState<PresetNameSelection>(() => emptyPresetNameSelection());
+  const [presetNameModalOpen, setPresetNameModalOpen] = useState(false);
+  const [presetNameAttrIndex, setPresetNameAttrIndex] = useState(0);
   // LV 徽章点击展开总点数明细
   const [showPointsBreakdown, setShowPointsBreakdown] = useState(false);
   // UserID 复制到剪贴板的轻提示
@@ -247,7 +328,231 @@ export const Settings = () => {
   const [importLoading, setImportLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [keywordDrafts, setKeywordDrafts] = useState<Record<number, string>>({});
+  // 关键词规则折叠状态：默认收起，点击标题展开
+  const [keywordRulesExpanded, setKeywordRulesExpanded] = useState(false);
   const opacityDraftRef = useRef(settings.backgroundOpacity ?? 0.3);
+  const currentLevelTitles = normalizeAttributeLevelTitles(settings.attributeLevelTitles, settings.levelThresholds.length);
+  const activeLevelTitleMeta = ATTRIBUTE_META[levelTitleAttrIndex] ?? ATTRIBUTE_META[0];
+  const activeLevelTitleConfirmMeta = ATTRIBUTE_META[levelTitleConfirmAttrIndex] ?? ATTRIBUTE_META[0];
+  const activePresetNameMeta = ATTRIBUTE_META[presetNameAttrIndex] ?? ATTRIBUTE_META[0];
+  const hasPresetNameBackup = Boolean(
+    settings.aiPresetNameBackup &&
+    (
+      Object.keys(settings.aiPresetNameBackup.achievements ?? {}).length > 0 ||
+      Object.keys(settings.aiPresetNameBackup.skills ?? {}).length > 0
+    ),
+  );
+
+  const handleRefreshLevelTitles = useCallback(async () => {
+    if (levelTitleRefreshing) return;
+    setLevelTitleRefreshing(true);
+    setLevelTitleMessage(null);
+    try {
+      const titles = await generateAttributeLevelTitles(settings, settings.levelThresholds.length);
+      setLevelTitleSuggestions(titles);
+      setLevelTitleSelection(createLevelTitleSelection(true));
+      setLevelTitleConfirmAttrIndex(levelTitleAttrIndex);
+      setLevelTitleModalOpen(true);
+      setLevelTitleMessage('已生成建议，请选择要刷新的属性');
+    } catch (err) {
+      setLevelTitleMessage(err instanceof Error ? err.message : '刷新等级称号失败');
+    } finally {
+      setLevelTitleRefreshing(false);
+    }
+  }, [levelTitleAttrIndex, levelTitleRefreshing, settings]);
+
+  const handleToggleLevelTitleAttribute = useCallback((id: AttributeId) => {
+    setLevelTitleSelection(prev => ({ ...prev, [id]: !prev[id] }));
+  }, []);
+
+  const handleCloseLevelTitleModal = useCallback(() => {
+    if (levelTitleRefreshing) return;
+    setLevelTitleModalOpen(false);
+    setLevelTitleSuggestions(null);
+    setLevelTitleSelection(createLevelTitleSelection(false));
+  }, [levelTitleRefreshing]);
+
+  const handleApplyLevelTitleSuggestions = useCallback(async () => {
+    if (!levelTitleSuggestions || levelTitleRefreshing) return;
+    const selectedIds = ATTRIBUTE_META.map(meta => meta.id).filter(id => levelTitleSelection[id]);
+    if (selectedIds.length === 0) {
+      setLevelTitleMessage('请至少选择一个需要刷新的属性');
+      return;
+    }
+
+    setLevelTitleRefreshing(true);
+    setLevelTitleMessage(null);
+    try {
+      const levelCount = settings.levelThresholds.length;
+      const nextTitles = normalizeAttributeLevelTitles(settings.attributeLevelTitles, levelCount);
+      const normalizedSuggestions = normalizeAttributeLevelTitles(levelTitleSuggestions, levelCount);
+      for (const id of selectedIds) {
+        nextTitles[id] = [...normalizedSuggestions[id]];
+      }
+      await updateSettings({ attributeLevelTitles: nextTitles });
+      setLevelTitleModalOpen(false);
+      setLevelTitleSuggestions(null);
+      setLevelTitleSelection(createLevelTitleSelection(false));
+      setLevelTitleMessage(`已刷新 ${selectedIds.length} 个属性的等级称号`);
+    } catch (err) {
+      setLevelTitleMessage(err instanceof Error ? err.message : '应用等级称号失败');
+    } finally {
+      setLevelTitleRefreshing(false);
+    }
+  }, [
+    levelTitleRefreshing,
+    levelTitleSelection,
+    levelTitleSuggestions,
+    settings.attributeLevelTitles,
+    settings.levelThresholds.length,
+    updateSettings,
+  ]);
+
+  const handleRefreshPresetNames = useCallback(async () => {
+    if (presetNameRefreshing) return;
+    setPresetNameRefreshing(true);
+    setPresetNameMessage(null);
+    try {
+      const result = await generatePresetNameMatches(settings);
+      const nextSelection = emptyPresetNameSelection();
+      for (const id of Object.keys(result.achievements)) nextSelection.achievements[id] = true;
+      for (const id of Object.keys(result.skills)) nextSelection.skills[id] = true;
+      setPresetNameSuggestions(result);
+      setPresetNameSelection(nextSelection);
+      setPresetNameAttrIndex(0);
+      setPresetNameModalOpen(true);
+      setPresetNameMessage('已生成建议，请选择要覆写的名称');
+    } catch (err) {
+      setPresetNameMessage(err instanceof Error ? err.message : 'AI 匹配成就/技能名称失败');
+    } finally {
+      setPresetNameRefreshing(false);
+    }
+  }, [presetNameRefreshing, settings]);
+
+  const handleTogglePresetNameItem = useCallback((kind: keyof PresetNameSelection, id: string) => {
+    setPresetNameSelection(prev => ({
+      ...prev,
+      [kind]: {
+        ...prev[kind],
+        [id]: !prev[kind][id],
+      },
+    }));
+  }, []);
+
+  const handleClosePresetNameModal = useCallback(() => {
+    if (presetNameRefreshing) return;
+    setPresetNameModalOpen(false);
+    setPresetNameSuggestions(null);
+    setPresetNameSelection(emptyPresetNameSelection());
+  }, [presetNameRefreshing]);
+
+  const handleApplyPresetNameSuggestions = useCallback(async () => {
+    if (!presetNameSuggestions || presetNameRefreshing) return;
+
+    const selectedAchievements: Record<string, string> = {};
+    const selectedSkills: Record<string, string> = {};
+    for (const [id, name] of Object.entries(presetNameSuggestions.achievements)) {
+      if (presetNameSelection.achievements[id]) selectedAchievements[id] = name;
+    }
+    for (const [id, name] of Object.entries(presetNameSuggestions.skills)) {
+      if (presetNameSelection.skills[id]) selectedSkills[id] = name;
+    }
+
+    const selectedTotal = Object.keys(selectedAchievements).length + Object.keys(selectedSkills).length;
+    if (selectedTotal === 0) {
+      setPresetNameMessage('请至少选择一项需要覆写的名称');
+      return;
+    }
+
+    setPresetNameRefreshing(true);
+    setPresetNameMessage(null);
+    try {
+      const currentAchievements = await db.achievements.toArray();
+      const currentSkills = await db.skills.toArray();
+      const backup = {
+        achievements: { ...(settings.aiPresetNameBackup?.achievements ?? {}) },
+        skills: { ...(settings.aiPresetNameBackup?.skills ?? {}) },
+      };
+
+      for (const item of currentAchievements) {
+        if (selectedAchievements[item.id] && backup.achievements[item.id] === undefined) {
+          backup.achievements[item.id] = item.title;
+        }
+      }
+      for (const item of currentSkills) {
+        if (selectedSkills[item.id] && backup.skills[item.id] === undefined) {
+          backup.skills[item.id] = item.name;
+        }
+      }
+
+      const nextAchievements = currentAchievements.map(item => (
+        selectedAchievements[item.id] ? { ...item, title: selectedAchievements[item.id] } : item
+      ));
+      const nextSkills = currentSkills.map(item => (
+        selectedSkills[item.id] ? { ...item, name: selectedSkills[item.id] } : item
+      ));
+
+      await db.achievements.bulkPut(nextAchievements);
+      await db.skills.bulkPut(nextSkills);
+      await updateSettings({ aiMatchedPresetNames: true, aiPresetNameBackup: backup });
+      await loadData();
+      setPresetNameModalOpen(false);
+      setPresetNameSuggestions(null);
+      setPresetNameSelection(emptyPresetNameSelection());
+      setPresetNameMessage('已覆写所选成就/技能名称，可还原到覆写前版本');
+    } catch (err) {
+      setPresetNameMessage(err instanceof Error ? err.message : '应用成就/技能名称失败');
+    } finally {
+      setPresetNameRefreshing(false);
+    }
+  }, [
+    loadData,
+    presetNameRefreshing,
+    presetNameSelection,
+    presetNameSuggestions,
+    settings.aiPresetNameBackup,
+    updateSettings,
+  ]);
+
+  const handleRestorePresetNames = useCallback(async () => {
+    setPresetNameMessage(null);
+    const backup = settings.aiPresetNameBackup;
+    const hasBackup = Boolean(
+      backup &&
+      (
+        Object.keys(backup.achievements ?? {}).length > 0 ||
+        Object.keys(backup.skills ?? {}).length > 0
+      ),
+    );
+    if (!backup || !hasBackup) {
+      setPresetNameMessage('没有可还原的 AI 覆写记录');
+      return;
+    }
+
+    setPresetNameRefreshing(true);
+    try {
+      const currentAchievements = await db.achievements.toArray();
+      const currentSkills = await db.skills.toArray();
+      const restoredAchievements = currentAchievements.map(item => (
+        backup.achievements[item.id] !== undefined ? { ...item, title: backup.achievements[item.id] } : item
+      ));
+      const restoredSkills = currentSkills.map(item => (
+        backup.skills[item.id] !== undefined ? { ...item, name: backup.skills[item.id] } : item
+      ));
+      await db.achievements.bulkPut(restoredAchievements);
+      await db.skills.bulkPut(restoredSkills);
+      await updateSettings({ aiMatchedPresetNames: false, aiPresetNameBackup: undefined });
+      await loadData();
+      setPresetNameSuggestions(null);
+      setPresetNameSelection(emptyPresetNameSelection());
+      setPresetNameModalOpen(false);
+      setPresetNameMessage('已还原到 AI 覆写前的成就/技能名称');
+    } catch (err) {
+      setPresetNameMessage(err instanceof Error ? err.message : '还原系统成就/技能名称失败');
+    } finally {
+      setPresetNameRefreshing(false);
+    }
+  }, [loadData, settings.aiPresetNameBackup, updateSettings]);
 
   // 读取当前主题主色（用于成就入口行的辉光），并跟随 data-theme / 自定义色变化
   const [primaryColor, setPrimaryColor] = useState('#3B82F6');
@@ -1142,6 +1447,34 @@ export const Settings = () => {
                             })}
                           />
                         ))}
+                        <div className="pt-1 flex gap-2">
+                          <button
+                            type="button"
+                            onClick={handleRefreshPresetNames}
+                            disabled={presetNameRefreshing}
+                            className="flex-1 py-2 rounded-xl text-xs font-bold bg-primary/10 border border-primary/30 text-primary hover:bg-primary/15 disabled:opacity-60 transition-colors"
+                          >
+                            {presetNameRefreshing ? '匹配中' : 'AI 匹配成就/技能名称'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleRestorePresetNames}
+                            disabled={presetNameRefreshing || !hasPresetNameBackup}
+                            className="px-3 py-2 rounded-xl text-xs font-bold bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-45 disabled:cursor-not-allowed transition-colors"
+                          >
+                            还原
+                          </button>
+                        </div>
+                        {presetNameMessage && (
+                          <p className="text-[10px] text-gray-500 dark:text-gray-400 leading-relaxed">
+                            {presetNameMessage}
+                          </p>
+                        )}
+                        {hasPresetNameBackup && !presetNameMessage && (
+                          <p className="text-[10px] text-primary leading-relaxed">
+                            当前有 AI 覆写记录，可还原到覆写前版本。
+                          </p>
+                        )}
                       </div>
                     </div>
 
@@ -1232,18 +1565,152 @@ export const Settings = () => {
                           ↺ 默认
                         </motion.button>
                       </div>
+                      <div className="mx-3 mb-3 rounded-2xl border border-gray-200/70 dark:border-gray-700/60 bg-gray-50/80 dark:bg-gray-900/35 overflow-hidden">
+                        <div className="px-3 py-3 border-b border-gray-200/70 dark:border-gray-700/60 flex items-start gap-3">
+                          <div className="flex-1 min-w-0">
+                            <div className="text-xs font-black text-gray-800 dark:text-white">
+                              等级称号
+                            </div>
+                            <p className="mt-1 text-[10px] leading-relaxed text-gray-500 dark:text-gray-400">
+                              每个属性的 Lv 会显示一个四字称号；点击 AI 刷新会先生成建议，再选择要应用的属性。
+                            </p>
+                          </div>
+                          <div className="flex gap-1.5 flex-shrink-0">
+                            <button
+                              type="button"
+                              onClick={handleRefreshLevelTitles}
+                              disabled={levelTitleRefreshing}
+                              className="px-2.5 py-1.5 rounded-lg bg-primary text-white text-[10px] font-bold disabled:opacity-60"
+                            >
+                              {levelTitleRefreshing ? '刷新中' : 'AI 刷新'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                updateSettings({
+                                  attributeLevelTitles: normalizeAttributeLevelTitles(undefined, settings.levelThresholds.length),
+                                });
+                                setLevelTitleMessage('已填入默认等级称号');
+                              }}
+                              className="px-2.5 py-1.5 rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 text-[10px] font-bold"
+                            >
+                              默认
+                            </button>
+                          </div>
+                        </div>
+                        {levelTitleMessage && (
+                          <div className="px-3 pt-2 text-[10px] leading-relaxed text-gray-500 dark:text-gray-400">
+                            {levelTitleMessage}
+                          </div>
+                        )}
+                        <div className="p-3">
+                          <div className="rounded-xl border border-gray-200/70 dark:border-gray-700/60 bg-white dark:bg-gray-900/50 overflow-hidden">
+                            <div className="px-3 py-2.5 flex items-center gap-2 border-b border-gray-100 dark:border-gray-800">
+                              <button
+                                type="button"
+                                onClick={() => setLevelTitleAttrIndex(i => (i + ATTRIBUTE_META.length - 1) % ATTRIBUTE_META.length)}
+                                className="w-8 h-8 rounded-lg flex items-center justify-center bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-300"
+                                aria-label="上一个属性"
+                              >
+                                ‹
+                              </button>
+                              <div
+                                className="w-9 h-9 rounded-xl flex items-center justify-center text-lg flex-shrink-0"
+                                style={{ background: `${activeLevelTitleMeta.color}1f`, color: activeLevelTitleMeta.color }}
+                              >
+                                {activeLevelTitleMeta.icon}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="text-xs font-bold text-gray-800 dark:text-white truncate">
+                                  {settings.attributeNames[activeLevelTitleMeta.id] || activeLevelTitleMeta.defaultLabel}
+                                </div>
+                                <div className="text-[9px] font-bold tracking-[0.18em] text-gray-400 uppercase">
+                                  {activeLevelTitleMeta.id}
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setLevelTitleAttrIndex(i => (i + 1) % ATTRIBUTE_META.length)}
+                                className="w-8 h-8 rounded-lg flex items-center justify-center bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-300"
+                                aria-label="下一个属性"
+                              >
+                                ›
+                              </button>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2 p-3">
+                              {settings.levelThresholds.map((_, levelIndex) => (
+                                <LevelTitleField
+                                  key={`${activeLevelTitleMeta.id}-${levelIndex}`}
+                                  level={levelIndex + 1}
+                                  value={currentLevelTitles[activeLevelTitleMeta.id][levelIndex]}
+                                  onCommit={(value) => {
+                                    updateSettings({
+                                      attributeLevelTitles: patchAttributeLevelTitle(
+                                        settings.attributeLevelTitles,
+                                        activeLevelTitleMeta.id,
+                                        levelIndex,
+                                        value,
+                                        settings.levelThresholds.length,
+                                      ),
+                                    });
+                                  }}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                          <div className="mt-2 flex justify-center gap-1.5">
+                            {ATTRIBUTE_META.map((meta, index) => (
+                              <button
+                                key={meta.id}
+                                type="button"
+                                onClick={() => setLevelTitleAttrIndex(index)}
+                                className={`h-1.5 rounded-full transition-all ${
+                                  index === levelTitleAttrIndex
+                                    ? 'w-5 bg-primary'
+                                    : 'w-1.5 bg-gray-300 dark:bg-gray-600'
+                                }`}
+                                aria-label={`切换到${settings.attributeNames[meta.id] || meta.defaultLabel}`}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      </div>
                     </div>
 
-                    {/* ── 子板块：关键词规则 ─────────────────────── */}
-                    <div className="flex items-center gap-2 pt-3 pb-2 border-b border-gray-200 dark:border-gray-700/80">
+                    {/* ── 子板块：关键词规则（默认收起，点击展开） ─────────────────────── */}
+                    <button
+                      type="button"
+                      onClick={() => setKeywordRulesExpanded(v => !v)}
+                      className="w-full flex items-center gap-2 pt-3 pb-2 border-b border-gray-200 dark:border-gray-700/80 cursor-pointer text-left"
+                      aria-expanded={keywordRulesExpanded}
+                    >
                       <span className="text-base">🔑</span>
                       <h4 className="text-sm font-bold text-gray-800 dark:text-white tracking-wide">关键词规则</h4>
                       <span className="ml-auto text-[10px] text-gray-400 dark:text-gray-500">命中即加分</span>
-                    </div>
-                    <p className="text-[11px] text-gray-500 dark:text-gray-400 leading-relaxed -mt-2">
+                      <motion.svg
+                        animate={{ rotate: keywordRulesExpanded ? 180 : 0 }}
+                        transition={{ duration: 0.2 }}
+                        viewBox="0 0 20 20"
+                        fill="currentColor"
+                        className="w-4 h-4 text-gray-400 dark:text-gray-500 ml-1"
+                      >
+                        <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+                      </motion.svg>
+                    </button>
+                    <AnimatePresence initial={false}>
+                    {keywordRulesExpanded && (
+                    <motion.div
+                      key="keyword-rules-body"
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      transition={{ duration: 0.22 }}
+                      className="overflow-hidden"
+                    >
+                    <p className="text-[11px] text-gray-500 dark:text-gray-400 leading-relaxed pt-2">
                       记录中出现某属性的关键词时，自动为该属性 +1 点。回车或点 <span className="font-mono font-bold">+</span> 添加，点击标签可移除。
                     </p>
-                    <div className="space-y-3">
+                    <div className="space-y-3 pt-3">
                       {settings.keywordRules.map((rule, index) => {
                         const meta = ATTRIBUTE_META.find(m => m.id === rule.attribute);
                         const accent = meta?.color ?? '#6B7280';
@@ -1386,6 +1853,9 @@ export const Settings = () => {
                         );
                       })}
                     </div>
+                    </motion.div>
+                    )}
+                    </AnimatePresence>
 
                     {/* 逆影战场开关 — 关闭后在此重新开启 */}
                     {!settings.battleEnabled && (
@@ -1618,7 +2088,7 @@ export const Settings = () => {
                               {apiTestStatus === 'testing' ? '测试中…' : apiTestStatus === 'ok' ? '✓ 连接正常' : apiTestStatus === 'error' ? '× 连接失败' : '测试连接'}
                             </button>
                             {apiTestMessage && (
-                              <span className={`text-[11px] flex-1 min-w-0 truncate ${apiTestStatus === 'ok' ? 'text-green-600 dark:text-green-400' : 'text-red-500 dark:text-red-400'}`} title={apiTestMessage}>
+                              <span className={`text-[11px] flex-1 min-w-0 leading-relaxed whitespace-pre-wrap break-words ${apiTestStatus === 'ok' ? 'text-green-600 dark:text-green-400' : 'text-red-500 dark:text-red-400'}`} title={apiTestMessage}>
                                 {apiTestMessage}
                               </span>
                             )}
@@ -2034,7 +2504,7 @@ export const Settings = () => {
                       <div className="text-5xl mb-4">🦋</div>
                       <h3 className="text-xl font-bold text-gray-800 dark:text-white mb-1">靛蓝色房间</h3>
                       <p className="text-sm text-gray-500 dark:text-gray-400">Persona Growth Tracker</p>
-                      <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">V2.0</p>
+                      <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">v2.1</p>
                     </div>
                     <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4 space-y-3">
                       <div className="flex items-center justify-between">
@@ -2080,6 +2550,386 @@ export const Settings = () => {
           </div>
         ))}
       </div>
+
+      <AnimatePresence>
+        {levelTitleModalOpen && levelTitleSuggestions && (() => {
+          const attrName = settings.attributeNames[activeLevelTitleConfirmMeta.id] || activeLevelTitleConfirmMeta.defaultLabel;
+          const normalizedSuggestions = normalizeAttributeLevelTitles(levelTitleSuggestions, settings.levelThresholds.length);
+          const currentTitles = currentLevelTitles[activeLevelTitleConfirmMeta.id];
+          const suggestionTitles = normalizedSuggestions[activeLevelTitleConfirmMeta.id];
+          const selectedCount = ATTRIBUTE_META.filter(meta => levelTitleSelection[meta.id]).length;
+          const activeSelected = Boolean(levelTitleSelection[activeLevelTitleConfirmMeta.id]);
+
+          return (
+            <motion.div
+              key="level-title-confirm"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/55 backdrop-blur-sm"
+              onClick={handleCloseLevelTitleModal}
+            >
+              <motion.div
+                initial={{ scale: 0.94, opacity: 0, y: 12 }}
+                animate={{ scale: 1, opacity: 1, y: 0 }}
+                exit={{ scale: 0.94, opacity: 0, y: 12 }}
+                onClick={(e) => e.stopPropagation()}
+                className="w-full max-w-md max-h-[86vh] overflow-hidden rounded-2xl bg-white dark:bg-gray-800 shadow-2xl border border-gray-200/80 dark:border-gray-700"
+              >
+                <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-700/70 flex items-center gap-3">
+                  <div
+                    className="w-10 h-10 rounded-xl flex items-center justify-center text-lg flex-shrink-0"
+                    style={{ background: `${activeLevelTitleConfirmMeta.color}1f`, color: activeLevelTitleConfirmMeta.color }}
+                  >
+                    {activeLevelTitleConfirmMeta.icon}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-sm font-black text-gray-900 dark:text-white truncate">
+                      确认刷新：{attrName}
+                    </h3>
+                    <p className="mt-0.5 text-[10px] text-gray-500 dark:text-gray-400">
+                      {levelTitleConfirmAttrIndex + 1} / {ATTRIBUTE_META.length} · 已选 {selectedCount} 个属性
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleCloseLevelTitleModal}
+                    disabled={levelTitleRefreshing}
+                    className="w-8 h-8 rounded-lg flex items-center justify-center bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-300 disabled:opacity-50"
+                    aria-label="关闭"
+                  >
+                    ×
+                  </button>
+                </div>
+
+                <div className="px-4 py-3 flex items-center gap-2 border-b border-gray-100 dark:border-gray-700/60">
+                  <button
+                    type="button"
+                    onClick={() => setLevelTitleConfirmAttrIndex(i => (i + ATTRIBUTE_META.length - 1) % ATTRIBUTE_META.length)}
+                    className="w-9 h-9 rounded-xl flex items-center justify-center bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-300"
+                    aria-label="上一个属性"
+                  >
+                    ‹
+                  </button>
+                  <div className="flex-1 flex justify-center gap-1.5">
+                    {ATTRIBUTE_META.map((meta, index) => (
+                      <button
+                        key={meta.id}
+                        type="button"
+                        onClick={() => setLevelTitleConfirmAttrIndex(index)}
+                        className={`h-1.5 rounded-full transition-all ${
+                          index === levelTitleConfirmAttrIndex
+                            ? 'w-5 bg-primary'
+                            : levelTitleSelection[meta.id]
+                              ? 'w-2.5 bg-primary/45'
+                              : 'w-1.5 bg-gray-300 dark:bg-gray-600'
+                        }`}
+                        aria-label={`切换到${settings.attributeNames[meta.id] || meta.defaultLabel}`}
+                      />
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setLevelTitleConfirmAttrIndex(i => (i + 1) % ATTRIBUTE_META.length)}
+                    className="w-9 h-9 rounded-xl flex items-center justify-center bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-300"
+                    aria-label="下一个属性"
+                  >
+                    ›
+                  </button>
+                </div>
+
+                <div className="p-4 space-y-3 overflow-y-auto max-h-[56vh]">
+                  <button
+                    type="button"
+                    onClick={() => handleToggleLevelTitleAttribute(activeLevelTitleConfirmMeta.id)}
+                    className={`w-full rounded-xl border px-3 py-2.5 flex items-center gap-2.5 text-left transition-colors ${
+                      activeSelected
+                        ? 'border-primary/45 bg-primary/5 dark:bg-primary/10'
+                        : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/35'
+                    }`}
+                  >
+                    <span className={`w-5 h-5 rounded-md border flex items-center justify-center text-[11px] font-black ${
+                      activeSelected
+                        ? 'bg-primary border-primary text-white'
+                        : 'border-gray-300 dark:border-gray-600 text-transparent'
+                    }`}>
+                      ✓
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-xs font-black text-gray-800 dark:text-white">
+                        刷新这个属性
+                      </div>
+                      <div className="text-[10px] text-gray-500 dark:text-gray-400 truncate">
+                        {attrName} · LV1-LV{settings.levelThresholds.length}
+                      </div>
+                    </div>
+                  </button>
+
+                  <div className="rounded-xl border border-gray-200/70 dark:border-gray-700/60 overflow-hidden">
+                    <div className="grid grid-cols-[42px_1fr_1fr] px-3 py-2 bg-gray-50 dark:bg-gray-900/45 text-[10px] font-black text-gray-400">
+                      <span>等级</span>
+                      <span>当前</span>
+                      <span>建议</span>
+                    </div>
+                    <div className="divide-y divide-gray-100 dark:divide-gray-700/60">
+                      {settings.levelThresholds.map((_, index) => (
+                        <div
+                          key={`${activeLevelTitleConfirmMeta.id}-${index}`}
+                          className="grid grid-cols-[42px_1fr_1fr] gap-2 px-3 py-2 text-[11px] items-center"
+                        >
+                          <span className="text-gray-400 font-bold tabular-nums">LV{index + 1}</span>
+                          <span className="min-w-0 truncate font-semibold text-gray-700 dark:text-gray-200">
+                            {currentTitles[index]}
+                          </span>
+                          <span className="min-w-0 truncate font-black text-primary">
+                            {suggestionTitles[index]}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-4 border-t border-gray-100 dark:border-gray-700/70 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={handleCloseLevelTitleModal}
+                    disabled={levelTitleRefreshing}
+                    className="flex-1 py-2.5 rounded-xl text-sm font-bold bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 disabled:opacity-50"
+                  >
+                    取消
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleApplyLevelTitleSuggestions}
+                    disabled={levelTitleRefreshing || selectedCount === 0}
+                    className="flex-1 py-2.5 rounded-xl text-sm font-bold bg-primary text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {levelTitleRefreshing ? '应用中' : `应用 ${selectedCount} 个`}
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
+          );
+        })()}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {presetNameModalOpen && presetNameSuggestions && (() => {
+          const attrName = settings.attributeNames[activePresetNameMeta.id] || activePresetNameMeta.defaultLabel;
+          const attrAchievements = achievements.filter(item => (
+            item.condition.type === 'attribute_level' &&
+            item.condition.attribute === activePresetNameMeta.id &&
+            Boolean(presetNameSuggestions.achievements[item.id])
+          ));
+          const attrSkills = skills.filter(item => (
+            item.requiredAttribute === activePresetNameMeta.id &&
+            Boolean(presetNameSuggestions.skills[item.id])
+          ));
+          const selectedCount =
+            Object.values(presetNameSelection.achievements).filter(Boolean).length +
+            Object.values(presetNameSelection.skills).filter(Boolean).length;
+
+          return (
+            <motion.div
+              key="preset-name-confirm"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/55 backdrop-blur-sm"
+              onClick={handleClosePresetNameModal}
+            >
+              <motion.div
+                initial={{ scale: 0.94, opacity: 0, y: 12 }}
+                animate={{ scale: 1, opacity: 1, y: 0 }}
+                exit={{ scale: 0.94, opacity: 0, y: 12 }}
+                onClick={(e) => e.stopPropagation()}
+                className="w-full max-w-md max-h-[86vh] overflow-hidden rounded-2xl bg-white dark:bg-gray-800 shadow-2xl border border-gray-200/80 dark:border-gray-700"
+              >
+                <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-700/70 flex items-center gap-3">
+                  <div
+                    className="w-10 h-10 rounded-xl flex items-center justify-center text-lg flex-shrink-0"
+                    style={{ background: `${activePresetNameMeta.color}1f`, color: activePresetNameMeta.color }}
+                  >
+                    {activePresetNameMeta.icon}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-sm font-black text-gray-900 dark:text-white truncate">
+                      确认覆写：{attrName}
+                    </h3>
+                    <p className="mt-0.5 text-[10px] text-gray-500 dark:text-gray-400">
+                      {presetNameAttrIndex + 1} / {ATTRIBUTE_META.length} · 已选 {selectedCount} 项
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleClosePresetNameModal}
+                    disabled={presetNameRefreshing}
+                    className="w-8 h-8 rounded-lg flex items-center justify-center bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-300 disabled:opacity-50"
+                    aria-label="关闭"
+                  >
+                    ×
+                  </button>
+                </div>
+
+                <div className="px-4 py-3 flex items-center gap-2 border-b border-gray-100 dark:border-gray-700/60">
+                  <button
+                    type="button"
+                    onClick={() => setPresetNameAttrIndex(i => (i + ATTRIBUTE_META.length - 1) % ATTRIBUTE_META.length)}
+                    className="w-9 h-9 rounded-xl flex items-center justify-center bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-300"
+                    aria-label="上一个属性"
+                  >
+                    ‹
+                  </button>
+                  <div className="flex-1 flex justify-center gap-1.5">
+                    {ATTRIBUTE_META.map((meta, index) => (
+                      <button
+                        key={meta.id}
+                        type="button"
+                        onClick={() => setPresetNameAttrIndex(index)}
+                        className={`h-1.5 rounded-full transition-all ${
+                          index === presetNameAttrIndex ? 'w-5 bg-primary' : 'w-1.5 bg-gray-300 dark:bg-gray-600'
+                        }`}
+                        aria-label={`切换到${settings.attributeNames[meta.id] || meta.defaultLabel}`}
+                      />
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setPresetNameAttrIndex(i => (i + 1) % ATTRIBUTE_META.length)}
+                    className="w-9 h-9 rounded-xl flex items-center justify-center bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-300"
+                    aria-label="下一个属性"
+                  >
+                    ›
+                  </button>
+                </div>
+
+                <div className="p-4 space-y-3 overflow-y-auto max-h-[56vh]">
+                  {attrAchievements.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="text-[10px] font-black tracking-[0.18em] text-gray-400 uppercase">
+                        Achievements
+                      </div>
+                      {attrAchievements.map(item => {
+                        const suggestion = presetNameSuggestions.achievements[item.id];
+                        const selected = Boolean(presetNameSelection.achievements[item.id]);
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => handleTogglePresetNameItem('achievements', item.id)}
+                            className={`w-full rounded-xl border p-3 text-left transition-colors ${
+                              selected
+                                ? 'border-primary/45 bg-primary/5 dark:bg-primary/10'
+                                : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/35'
+                            }`}
+                          >
+                            <div className="flex items-start gap-2.5">
+                              <span className={`mt-0.5 w-5 h-5 rounded-md border flex items-center justify-center text-[11px] font-black ${
+                                selected
+                                  ? 'bg-primary border-primary text-white'
+                                  : 'border-gray-300 dark:border-gray-600 text-transparent'
+                              }`}>
+                                ✓
+                              </span>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-sm leading-none">{item.icon}</span>
+                                  <span className="text-xs font-bold text-gray-800 dark:text-white truncate">
+                                    {item.description}
+                                  </span>
+                                </div>
+                                <div className="mt-2 grid grid-cols-[42px_1fr] gap-x-2 gap-y-1 text-[11px] leading-relaxed">
+                                  <span className="text-gray-400">当前</span>
+                                  <span className="font-semibold text-gray-700 dark:text-gray-200 truncate">{item.title}</span>
+                                  <span className="text-gray-400">建议</span>
+                                  <span className="font-black text-primary truncate">{suggestion}</span>
+                                </div>
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {attrSkills.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="text-[10px] font-black tracking-[0.18em] text-gray-400 uppercase">
+                        Skills
+                      </div>
+                      {attrSkills.map(item => {
+                        const suggestion = presetNameSuggestions.skills[item.id];
+                        const selected = Boolean(presetNameSelection.skills[item.id]);
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => handleTogglePresetNameItem('skills', item.id)}
+                            className={`w-full rounded-xl border p-3 text-left transition-colors ${
+                              selected
+                                ? 'border-primary/45 bg-primary/5 dark:bg-primary/10'
+                                : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/35'
+                            }`}
+                          >
+                            <div className="flex items-start gap-2.5">
+                              <span className={`mt-0.5 w-5 h-5 rounded-md border flex items-center justify-center text-[11px] font-black ${
+                                selected
+                                  ? 'bg-primary border-primary text-white'
+                                  : 'border-gray-300 dark:border-gray-600 text-transparent'
+                              }`}>
+                                ✓
+                              </span>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="text-xs font-bold text-gray-800 dark:text-white truncate">
+                                    Lv.{item.requiredLevel} · {item.description}
+                                  </span>
+                                </div>
+                                <div className="mt-2 grid grid-cols-[42px_1fr] gap-x-2 gap-y-1 text-[11px] leading-relaxed">
+                                  <span className="text-gray-400">当前</span>
+                                  <span className="font-semibold text-gray-700 dark:text-gray-200 truncate">{item.name}</span>
+                                  <span className="text-gray-400">建议</span>
+                                  <span className="font-black text-primary truncate">{suggestion}</span>
+                                </div>
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {attrAchievements.length === 0 && attrSkills.length === 0 && (
+                    <div className="py-8 text-center text-xs text-gray-400 dark:text-gray-500">
+                      这一维没有可覆写的建议。
+                    </div>
+                  )}
+                </div>
+
+                <div className="p-4 border-t border-gray-100 dark:border-gray-700/70 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={handleClosePresetNameModal}
+                    disabled={presetNameRefreshing}
+                    className="flex-1 py-2.5 rounded-xl text-sm font-bold bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 disabled:opacity-50"
+                  >
+                    取消
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleApplyPresetNameSuggestions}
+                    disabled={presetNameRefreshing || selectedCount === 0}
+                    className="flex-1 py-2.5 rounded-xl text-sm font-bold bg-primary text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {presetNameRefreshing ? '应用中' : `应用 ${selectedCount} 项`}
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
+          );
+        })()}
+      </AnimatePresence>
 
       {/* 重置确认弹窗 */}
       {showResetConfirm && (

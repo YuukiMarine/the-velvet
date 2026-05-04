@@ -31,6 +31,9 @@ const RECIPROCAL_REFLECTION_SP = 1;
 /** 最短拉取间隔：避免切前台 / 登录订阅等多处触发时短时间重复请求 */
 const MIN_REFRESH_INTERVAL_MS = 30 * 1000;
 
+const sameJson = (a: unknown, b: unknown): boolean =>
+  JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+
 export const loadSocial = async (options: { force?: boolean } = {}): Promise<void> => {
   if (!pb || !pb.authStore.isValid) return;
 
@@ -67,11 +70,6 @@ export const loadSocial = async (options: { force?: boolean } = {}): Promise<voi
       console.warn('[velvet-social] syncLinkedProfiles failed', err);
     });
 
-    // 自动消费 prayer_received / prayer_reciprocal 通知：+SP 到本地 battleState，标记已读
-    void consumePrayerNotifications(notifications).catch(err => {
-      console.warn('[velvet-social] consumePrayerNotifications failed', err);
-    });
-
     // COOP 契约过期兜底
     void expireOutdatedCoopPending(coopBonds).catch(err => {
       console.warn('[velvet-social] expireOutdatedCoopPending failed', err);
@@ -85,6 +83,7 @@ export const loadSocial = async (options: { force?: boolean } = {}): Promise<voi
     // 下一轮 loadSocial 会以新 uuid 重建 —— 历史断裂、bondSeverDismissed / linkedProfile 都丢。
     try {
       await materializeCoopBonds(coopBonds);
+      await consumePrayerNotifications(notifications);
       await reflectSeveredBonds(coopBonds);
       await consumeCoopEventNotifications(notifications);
       // 羁绊之影：先过期撤退 → 再尝试降临 → 最后做奖励结算
@@ -131,7 +130,13 @@ const syncLinkedProfiles = async (friendships: Friendship[]): Promise<void> => {
       && snapshot.id === other.id
       && snapshot.nickname === other.nickname
       && snapshot.totalLv === other.totalLv
-      && snapshot.avatarUrl === other.avatarUrl;
+      && snapshot.avatarUrl === other.avatarUrl
+      && sameJson(snapshot.attributeNames, other.attributeNames)
+      && sameJson(snapshot.attributeLevels, other.attributeLevels)
+      && sameJson(snapshot.attributeLevelTitles, other.attributeLevelTitles)
+      && sameJson(snapshot.attributePoints, other.attributePoints)
+      && snapshot.totalPoints === other.totalPoints
+      && snapshot.unlockedCount === other.unlockedCount;
     const nameSame = existing.name === newName;
     if (profileSame && nameSame) continue;
 
@@ -324,7 +329,6 @@ const consumeCoopEventNotifications = async (notifications: NotificationEntry[])
   });
   if (unread.length === 0) return;
 
-  const appStore = useAppStore.getState();
   const social = useCloudSocialStore.getState();
 
   for (const n of unread) {
@@ -335,7 +339,8 @@ const consumeCoopEventNotifications = async (notifications: NotificationEntry[])
       continue;
     }
 
-    const localConfidant = appStore.confidants.find(
+    const currentStore = useAppStore.getState();
+    const localConfidant = currentStore.confidants.find(
       c => c.source === 'online' && !c.archivedAt && c.linkedCloudUserId === n.fromId,
     );
     if (!localConfidant) {
@@ -345,12 +350,12 @@ const consumeCoopEventNotifications = async (notifications: NotificationEntry[])
     }
 
     // 已经存在同 id 的事件 → 不重复 bump
-    const dup = appStore.confidantEvents.some(e => e.id === eventId);
+    const dup = currentStore.confidantEvents.some(e => e.id === eventId);
     if (!dup) {
       const delta = typeof n.payload?.delta === 'number' ? (n.payload.delta as number) : 0;
       const date = (n.payload?.date as string | undefined) || undefined;
       try {
-        await appStore.bumpConfidantIntimacy(
+        await currentStore.bumpConfidantIntimacy(
           localConfidant.id,
           delta,
           'conversation',
@@ -384,9 +389,10 @@ const consumeCoopEventNotifications = async (notifications: NotificationEntry[])
  *   - prayer_received   → +PRAYER_SP_GRANT (2) SP；本地若有 COOP 在线同伴 → intimacy +1
  *   - prayer_reciprocal → +RECIPROCAL_REFLECTION_SP (1) 反射 SP
  *
- * 必须有 battleState 才会兑换 SP；没有则保留通知，下次战场就绪后再消费。
+ * 亲密度不依赖 battleState；SP 必须有 battleState 才会兑换。
+ * 没有 battleState 时会先应用亲密度并保留通知，下次战场就绪后再消费 SP。
  *
- * **at-most-once 保证**：先 markRead 成功，再给奖励。
+ * **SP at-most-once 保证**：先 markRead 成功，再给 SP。
  *   - 如果 markRead 抛错（网断 / PB 拒绝），这条通知本轮不处理；下次 loadSocial 会再来
  *   - 如果 markRead 成功但 saveBattleState 失败，这笔 SP 丢失 —— 可接受
  *     （vs 上一版设计：成功/失败都给 SP，markRead 失败后下一轮再给一遍）
@@ -399,18 +405,59 @@ const consumePrayerNotifications = async (notifications: NotificationEntry[]): P
   const unreadReciprocal = notifications.filter(n => n.type === 'prayer_reciprocal' && !n.read);
   if (unreadReceived.length === 0 && unreadReciprocal.length === 0) return;
 
-  const appStore = useAppStore.getState();
   const social = useCloudSocialStore.getState();
-  const battleState = appStore.battleState;
+  const receivedReadyForSp: NotificationEntry[] = [];
 
-  // 没有 battleState 则先不消费（等用户手动在通知面板收下 / 开启战场）
-  // NOTE: 这同时也会把 intimacy 的 bump 一并延后；修 #18 时再拆开
+  // 第一步：亲密度先独立结算，不再被 battleState 阻塞。
+  // 通知暂时保持 unread；这样没有战斗状态时不会丢 SP，下一轮仍可继续结算。
+  for (const n of unreadReceived) {
+    const fromId = n.fromId;
+    if (!fromId) {
+      receivedReadyForSp.push(n);
+      continue;
+    }
+
+    const freshStore = useAppStore.getState();
+    const localConfidant = freshStore.confidants.find(
+      c => c.source === 'online' && !c.archivedAt && c.linkedCloudUserId === fromId,
+    );
+    const hasLinkedCoop = social.coopBonds.some(
+      b => b.status === 'linked' && (b.userAId === fromId || b.userBId === fromId),
+    );
+
+    // 有 COOP 但本地同伴尚未物化时先不 markRead，避免这次 +1 被读掉后再也补不回来。
+    if (!localConfidant) {
+      if (hasLinkedCoop) continue;
+      receivedReadyForSp.push(n);
+      continue;
+    }
+
+    const eventId = `prayer-${n.id}`;
+    const alreadyApplied = freshStore.confidantEvents.some(e => e.id === eventId);
+    if (!alreadyApplied) {
+      try {
+        await freshStore.bumpConfidantIntimacy(
+          localConfidant.id,
+          1,
+          'conversation',
+          '收到 Ta 送来的祈愿',
+          { eventId },
+        );
+      } catch (err) {
+        console.warn('[velvet-social] bump intimacy on received prayer failed', err);
+        continue;
+      }
+    }
+    receivedReadyForSp.push(n);
+  }
+
+  const battleState = useAppStore.getState().battleState;
   if (!battleState) return;
 
-  // 第一步：逐条先试 markRead；成功的才纳入"可结算"集合
+  // 第二步：有 battleState 时再 markRead；成功的才纳入 SP 结算集合。
   const receivedMarked: NotificationEntry[] = [];
   const reciprocalMarked: NotificationEntry[] = [];
-  for (const n of unreadReceived) {
+  for (const n of receivedReadyForSp) {
     try {
       await markNotificationRead(n.id);
       social.markNotificationRead(n.id);
@@ -429,13 +476,13 @@ const consumePrayerNotifications = async (notifications: NotificationEntry[]): P
     }
   }
 
-  // 第二步：SP 一次性结算
+  // 第三步：SP 一次性结算
   const grant =
     PRAYER_SP_GRANT * receivedMarked.length
     + RECIPROCAL_REFLECTION_SP * reciprocalMarked.length;
   if (grant > 0) {
     try {
-      await appStore.saveBattleState({
+      await useAppStore.getState().saveBattleState({
         ...battleState,
         sp: battleState.sp + grant,
         totalSpEarned: battleState.totalSpEarned + grant,
@@ -443,30 +490,6 @@ const consumePrayerNotifications = async (notifications: NotificationEntry[]): P
     } catch (err) {
       console.warn('[velvet-social] award prayer SP failed', err);
       // 通知已标记已读，但 SP 写失败 —— 丢一次，不再补。可观察性交给日志。
-    }
-  }
-
-  // 第三步：intimacy bump（带 eventId 幂等）
-  for (const n of receivedMarked) {
-    if (!n.fromId) continue;
-    const match = appStore.confidants.find(
-      c => c.source === 'online' && !c.archivedAt && c.linkedCloudUserId === n.fromId,
-    );
-    if (!match) continue;
-    const eventId = `prayer-${n.id}`;
-    // 已经应用过这条祈愿的 intimacy → 跳过（极端竞态下的兜底）
-    const dup = appStore.confidantEvents.some(e => e.id === eventId);
-    if (dup) continue;
-    try {
-      await appStore.bumpConfidantIntimacy(
-        match.id,
-        1,
-        'conversation',
-        '收到 Ta 送来的祈愿',
-        { eventId },
-      );
-    } catch (err) {
-      console.warn('[velvet-social] bump intimacy on received prayer failed', err);
     }
   }
 };

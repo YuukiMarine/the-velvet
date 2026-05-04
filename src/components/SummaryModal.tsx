@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAppStore, SummaryRequestData, toLocalDateKey, DEFAULT_SUMMARY_PROMPT_PRESETS, FAMILIAR_FACE_PRESETS } from '@/store';
-import { PeriodSummary, SummaryPeriod } from '@/types';
+import { PeriodSummary, PeriodSummaryFollowUp, SummaryPeriod } from '@/types';
 import { v4 as uuidv4 } from 'uuid';
 import DOMPurify from 'dompurify';
 import { useModalA11y } from '@/utils/useModalA11y';
@@ -196,17 +196,26 @@ function ArchiveList({ summaries, onSelect, onDelete }: {
 }
 
 // ── 流式内容展示 + 追问区 ──────────────────────────────────
+//
+// v2.1 重构要点：
+//   1. 接受 initialFollowUp（来自归档），如果存在就直接渲染问答只读形态
+//   2. 没有 initialFollowUp 但有 reqData → 允许新发起一次追问
+//   3. 追问完成时把 (q, a) 通过 onFollowUpComplete 抛给父组件，父组件负责持久化到 summary 上
+//   4. max_tokens 从 1000 提到 2400，避免长追问中段截断
+//   5. 没有 reqData 也没有 initialFollowUp（老归档无 reqContext）→ 显示一行说明，按钮置灰
 interface StreamingContentProps {
   streamedText: string;
   isStreaming: boolean;
   reqData: SummaryRequestData | null;
-  /** 追问仅允许一次 */
-  followUpUsed: boolean;
-  onFollowUpUsed: () => void;
+  /** 已存在的追问问答（来自归档）。提供时显示只读问答；不再允许新发起。 */
+  initialFollowUp?: PeriodSummaryFollowUp;
+  /** 追问完成（流式结束 + 文本非空）后回调，父组件用来落库 */
+  onFollowUpComplete?: (followUp: PeriodSummaryFollowUp) => void;
 }
 
-function StreamingContent({ streamedText, isStreaming, reqData, followUpUsed, onFollowUpUsed }: StreamingContentProps) {
+function StreamingContent({ streamedText, isStreaming, reqData, initialFollowUp, onFollowUpComplete }: StreamingContentProps) {
   const [followInput, setFollowInput] = useState('');
+  const [followQuestion, setFollowQuestion] = useState('');
   const [followAnswer, setFollowAnswer] = useState('');
   const [followStreaming, setFollowStreaming] = useState(false);
   const [followError, setFollowError] = useState<string | null>(null);
@@ -218,23 +227,41 @@ function StreamingContent({ streamedText, isStreaming, reqData, followUpUsed, on
     if (bodyRef.current) {
       bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
     }
-  }, [streamedText, followAnswer]);
+  }, [streamedText, followAnswer, initialFollowUp]);
+
+  // 切换归档条目时（initialFollowUp 切换）重置本地草稿
+  useEffect(() => {
+    setFollowInput('');
+    setFollowQuestion('');
+    setFollowAnswer('');
+    setFollowError(null);
+    setFollowStreaming(false);
+  }, [initialFollowUp?.createdAt]);
+
+  // 一旦有"已落库"的追问，把它视为终点态：不允许再追问
+  const lockedByExistingFollowUp = !!initialFollowUp;
+  const lockedByMissingContext = !reqData; // 没原始上下文（老归档）→ 无法重组 prompt
+  // 新 followAnswer 落库后也锁住（防止用户连点）
+  const lockedByJustAsked = !!followAnswer && !followStreaming;
+  const inputLocked = lockedByExistingFollowUp || lockedByMissingContext || lockedByJustAsked;
 
   const handleFollowUp = useCallback(async () => {
-    if (!followInput.trim() || !reqData || followStreaming) return;
+    const q = followInput.trim();
+    if (!q || !reqData || followStreaming) return;
     setFollowError(null);
     setFollowStreaming(true);
     setFollowAnswer('');
-    onFollowUpUsed();
+    setFollowQuestion(q);
 
     const abortCtrl = new AbortController();
     followAbortRef.current = abortCtrl;
 
+    let answer = '';
     try {
       const messages = [
         ...reqData.messages,
         { role: 'assistant' as const, content: streamedText },
-        { role: 'user' as const, content: followInput.trim() },
+        { role: 'user' as const, content: q },
       ];
 
       const resp = await fetch(`${reqData.baseUrl}/chat/completions`, {
@@ -248,7 +275,8 @@ function StreamingContent({ streamedText, isStreaming, reqData, followUpUsed, on
           messages,
           stream: true,
           temperature: 0.7,
-          max_tokens: 1000,
+          // v2.1：1000 → 2400，避免追问中长答案被截
+          max_tokens: 2400,
         }),
         signal: abortCtrl.signal,
       });
@@ -258,7 +286,6 @@ function StreamingContent({ streamedText, isStreaming, reqData, followUpUsed, on
         throw new Error(`API 请求失败 (${resp.status}): ${errBody || resp.statusText}`);
       }
 
-      let answer = '';
       for await (const chunk of readSSEStream(resp)) {
         answer += chunk;
         setFollowAnswer(answer);
@@ -270,7 +297,21 @@ function StreamingContent({ streamedText, isStreaming, reqData, followUpUsed, on
     } finally {
       setFollowStreaming(false);
     }
-  }, [followInput, reqData, streamedText, followStreaming, onFollowUpUsed]);
+
+    // 流式正常结束 + 有内容 → 抛给父组件落库
+    if (answer.trim() && onFollowUpComplete) {
+      onFollowUpComplete({
+        question: q,
+        answer,
+        createdAt: new Date(),
+      });
+    }
+  }, [followInput, reqData, streamedText, followStreaming, onFollowUpComplete]);
+
+  // ── 决定显示哪份 Q&A：归档已存在的优先；否则用当下流式的 ─────
+  const displayedQuestion = initialFollowUp?.question ?? followQuestion;
+  const displayedAnswer   = initialFollowUp?.answer   ?? followAnswer;
+  const showQAArea = displayedAnswer || followStreaming;
 
   return (
     <div ref={bodyRef} className="space-y-4">
@@ -281,10 +322,10 @@ function StreamingContent({ streamedText, isStreaming, reqData, followUpUsed, on
         {isStreaming && <Cursor />}
       </div>
 
-      {/* 追问区 — 流式完成后才显示，且只能用一次 */}
+      {/* 追问区 — 流式完成后才显示 */}
       {!isStreaming && streamedText && (
         <div className="space-y-3">
-          {!followUpUsed && !followAnswer && (
+          {!showQAArea && !inputLocked && (
             <div>
               <div className="text-xs font-bold text-gray-400 dark:text-gray-500 mb-2 uppercase tracking-wider">
                 还有疑问？向 AI 追问一次
@@ -309,15 +350,29 @@ function StreamingContent({ streamedText, isStreaming, reqData, followUpUsed, on
             </div>
           )}
 
-          {/* 追问回答流式展示 */}
-          {(followAnswer || followStreaming) && (
+          {/* 老归档没存原始 prompt 上下文 → 给个友好说明，不画半灰按钮 */}
+          {!showQAArea && lockedByMissingContext && !lockedByExistingFollowUp && (
+            <div className="text-[11px] text-gray-400 dark:text-gray-500 bg-black/3 dark:bg-white/3 rounded-xl px-3 py-2 leading-relaxed">
+              这条归档生成于较早版本，没有保留追问所需的上下文，无法在此追问。
+              在「生成总结 → 归档保存」的新流程下，归档后仍可继续追问一次。
+            </div>
+          )}
+
+          {/* 追问问答展示（归档已落库的 / 当下流式的 共用） */}
+          {showQAArea && (
             <div className="space-y-2">
+              {displayedQuestion && (
+                <div className="text-sm text-gray-700 dark:text-gray-200 bg-black/3 dark:bg-white/5 rounded-2xl px-3 py-2">
+                  <span className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider mr-1.5">追问</span>
+                  {displayedQuestion}
+                </div>
+              )}
               <div className="flex items-center gap-2">
                 <div className="text-xs font-bold text-primary uppercase tracking-wider">AI 回答</div>
                 <div className="text-xs text-gray-400 dark:text-gray-500 bg-amber-50 dark:bg-amber-900/20 px-2 py-0.5 rounded-full">已使用追问机会</div>
               </div>
               <div className="bg-primary/5 dark:bg-primary/10 border border-primary/20 rounded-2xl p-4 text-sm text-gray-700 dark:text-gray-200 leading-relaxed">
-                <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(`<p class="mb-2">${renderMarkdown(followAnswer)}</p>`) }} />
+                <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(`<p class="mb-2">${renderMarkdown(displayedAnswer)}</p>`) }} />
                 {followStreaming && <Cursor />}
               </div>
             </div>
@@ -577,7 +632,9 @@ export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week' }
   const [isStreaming, setIsStreaming] = useState(false);
   const [reqData, setReqData] = useState<SummaryRequestData | null>(null);
   const [generatedSummary, setGeneratedSummary] = useState<PeriodSummary | null>(null);
-  const [followUpUsed, setFollowUpUsed] = useState(false);
+  // v2.1：本轮追问 Q&A —— 在 'result' 模式下用于一会儿存进归档；'view' 模式下也共用同一变量，
+  // 用户在归档详情里再次追问时立刻持久化到选中的 summary。
+  const [pendingFollowUp, setPendingFollowUp] = useState<PeriodSummaryFollowUp | null>(null);
   const [selectedSummary, setSelectedSummary] = useState<PeriodSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -598,7 +655,7 @@ export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week' }
       setGeneratedSummary(null);
       setError(null);
       setSaved(false);
-      setFollowUpUsed(false);
+      setPendingFollowUp(null);
       setIsAnnual(false);
       setExitConfirm(null);
     }
@@ -610,7 +667,7 @@ export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week' }
     setStreamedText('');
     setGeneratedSummary(null);
     setSaved(false);
-    setFollowUpUsed(false);
+    setPendingFollowUp(null);
     setIsGenerating(true);
 
     let req: SummaryRequestData;
@@ -700,6 +757,13 @@ export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week' }
         attributePoints: req.attributePoints,
         activityCount: req.activityCount,
         createdAt: new Date(),
+        // v2.1：把追问需要的最小上下文一并存下
+        // （不带 apiKey —— 重组追问时由当下 settings.summaryApiKey 注入）
+        reqContext: {
+          baseUrl: req.baseUrl,
+          model: req.model,
+          messages: req.messages,
+        },
       };
       setGeneratedSummary(summary);
     }
@@ -707,8 +771,24 @@ export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week' }
 
    const handleSave = async () => {
      if (!generatedSummary) return;
-     await saveSummary(generatedSummary);
+     // 把"还在内存里"的追问 Q&A 一并保存（如果用户在 result 视图里追问过的话）
+     const toSave: PeriodSummary = pendingFollowUp
+       ? { ...generatedSummary, followUp: pendingFollowUp }
+       : generatedSummary;
+     await saveSummary(toSave);
      setSaved(true);
+   };
+
+   /**
+    * 归档视图里完成一次追问 → 立刻把 followUp 写回该 summary。
+    * 与 'result' 视图区分点：这里 selectedSummary 已经在 db.summaries 里，直接 put 覆盖。
+    */
+   const handleArchivedFollowUpSaved = async (followUp: PeriodSummaryFollowUp) => {
+     if (!selectedSummary) return;
+     setPendingFollowUp(followUp);
+     const updated: PeriodSummary = { ...selectedSummary, followUp };
+     await saveSummary(updated);
+     setSelectedSummary(updated);
    };
 
    // 离场目标：执行「真正退出」的动作（关闭 modal 或回到 generate 视图）
@@ -722,7 +802,7 @@ export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week' }
        setStreamedText('');
        setGeneratedSummary(null);
        setSaved(false);
-       setFollowUpUsed(false);
+       setPendingFollowUp(null);
      }
    };
 
@@ -952,41 +1032,69 @@ export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week' }
                     streamedText={streamedText}
                     isStreaming={isStreaming}
                     reqData={reqData}
-                    followUpUsed={followUpUsed}
-                    onFollowUpUsed={() => setFollowUpUsed(true)}
+                    initialFollowUp={pendingFollowUp ?? undefined}
+                    onFollowUpComplete={(fu) => setPendingFollowUp(fu)}
                   />
                 </div>
               )}
 
               {/* ── 归档列表 ── */}
               {view === 'archive' && (
-                <ArchiveList summaries={summaries} onSelect={s => { setSelectedSummary(s); setView('view'); }} onDelete={id => deleteSummary(id)} />
+                <ArchiveList summaries={summaries} onSelect={s => { setSelectedSummary(s); setPendingFollowUp(null); setView('view'); }} onDelete={id => deleteSummary(id)} />
               )}
 
               {/* ── 单条查看 ── */}
-              {view === 'view' && selectedSummary && (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-3 gap-2">
-                    {[
-                      { label: '总加点', value: `+${selectedSummary.totalPoints}` },
-                      { label: '记录数', value: `${selectedSummary.activityCount}` },
-                      { label: '风格', value: selectedSummary.promptPresetName },
-                    ].map(item => (
-                      <div key={item.label} className="bg-black/5 dark:bg-white/5 rounded-2xl p-3 text-center">
-                        <div className="text-xs text-gray-400 dark:text-gray-500">{item.label}</div>
-                        <div className="text-sm font-bold text-gray-800 dark:text-gray-100 truncate mt-0.5">{item.value}</div>
-                      </div>
-                    ))}
+              {view === 'view' && selectedSummary && (() => {
+                // 复活原始 prompt 上下文：归档里只存了 baseUrl/model/messages（无 apiKey），
+                // 这里把当下 settings.summaryApiKey 注入回去；如果用户 / 项目当前没配 key，
+                // 重新追问会被 fetch 401 挡掉，对应 UI 直接退化为只读展示。
+                const archivedReqData: SummaryRequestData | null = selectedSummary.reqContext && settings.summaryApiKey
+                  ? {
+                      baseUrl: selectedSummary.reqContext.baseUrl,
+                      model: selectedSummary.reqContext.model,
+                      apiKey: settings.summaryApiKey,
+                      messages: selectedSummary.reqContext.messages,
+                      // 下面这些字段 StreamingContent 不读，只是为了类型完整
+                      periodLabel: selectedSummary.label,
+                      preset: { id: selectedSummary.promptPresetId, name: selectedSummary.promptPresetName, systemPrompt: '', isBuiltin: true },
+                      totalPoints: selectedSummary.totalPoints,
+                      attributePoints: selectedSummary.attributePoints,
+                      activityCount: selectedSummary.activityCount,
+                      period: selectedSummary.period,
+                      startDate: selectedSummary.startDate,
+                      endDate: selectedSummary.endDate,
+                    }
+                  : null;
+                return (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-3 gap-2">
+                      {[
+                        { label: '总加点', value: `+${selectedSummary.totalPoints}` },
+                        { label: '记录数', value: `${selectedSummary.activityCount}` },
+                        { label: '风格', value: selectedSummary.promptPresetName },
+                      ].map(item => (
+                        <div key={item.label} className="bg-black/5 dark:bg-white/5 rounded-2xl p-3 text-center">
+                          <div className="text-xs text-gray-400 dark:text-gray-500">{item.label}</div>
+                          <div className="text-sm font-bold text-gray-800 dark:text-gray-100 truncate mt-0.5">{item.value}</div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="text-xs text-gray-400 dark:text-gray-500">
+                      {selectedSummary.startDate} ~ {selectedSummary.endDate} · 生成于 {new Date(selectedSummary.createdAt).toLocaleDateString('zh-CN')}
+                    </div>
+                    {/* 用同一个 StreamingContent 复用追问能力：
+                        - 已落库 followUp → 只读展示
+                        - 没 followUp + 有 reqContext → 显示输入框，发送后立即落库 */}
+                    <StreamingContent
+                      streamedText={selectedSummary.content}
+                      isStreaming={false}
+                      reqData={archivedReqData}
+                      initialFollowUp={selectedSummary.followUp}
+                      onFollowUpComplete={handleArchivedFollowUpSaved}
+                    />
                   </div>
-                  <div className="text-xs text-gray-400 dark:text-gray-500">
-                    {selectedSummary.startDate} ~ {selectedSummary.endDate} · 生成于 {new Date(selectedSummary.createdAt).toLocaleDateString('zh-CN')}
-                  </div>
-                  <div className="relative bg-black/3 dark:bg-white/3 rounded-2xl p-4 text-sm text-gray-700 dark:text-gray-200 leading-relaxed overflow-hidden">
-                    <VelvetWatermark />
-                    <div className="relative" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(`<p class="mb-2">${renderMarkdown(selectedSummary.content)}</p>`) }} />
-                  </div>
-                </div>
-              )}
+                );
+              })()}
             </div>
 
             {/* Footer */}

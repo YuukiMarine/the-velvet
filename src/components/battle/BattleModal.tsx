@@ -804,6 +804,74 @@ export function BattleModal({ isOpen, onClose, onVictory }: Props) {
     }
   };
 
+  // ── 战术按钮：普通攻击（"平A"） ─────────────────────────
+  // 0 SP，伤害 = 当前总等级（五维 level 之和），不带属性 → 永不触发弱点 ×1.5。
+  // 设计意图：在 SP 见底 / 没有合适技能时给玩家一个保底输出按钮，
+  // 但故意不掺合"连续弱点"和 All-Out 解锁，避免成为代替策略的廉价捷径。
+  const handleNormalAttack = async () => {
+    if (isAnimating || phase !== 'waiting') return;
+    setIsAnimating(true);
+    triggerLightHaptic();
+    // 出招音：复用菜单导航音（短促 / 与现有按钮一致）
+    playSound('/themea-nav.mp3', 0.5);
+
+    const userLv = attributes.reduce((s, a) => s + (a.unlocked === false ? 0 : (a.level ?? 1)), 0);
+    const damage = Math.max(1, userLv);
+
+    const action: BattleAction = {
+      skillName: '普通攻击',
+      skillAttribute: undefined, // 无属性：performBattleAction 内不会判定弱点
+      type: 'damage',
+      value: damage,
+      spCost: 0,
+      isCrit: false,
+    };
+
+    // 关闭 store 内置 shadow 反击，由本组件统一走 runShadowCounter
+    const result = await performBattleAction(action, shadowHpType, false);
+
+    const lines: string[] = [];
+    lines.push(`你向 ${shadow.name} 发起了普通攻击！`);
+    lines.push(`造成了 ${result.actualDamage} 点伤害。`);
+
+    if (result.actualDamage > 0) {
+      setIsHurt(true);
+      // 命中音：复用技能命中音
+      playSound('/pi.mp3', 0.6);
+      setTimeout(() => setIsHurt(false), 400);
+      const id = ++damageIdRef.current;
+      setDamageNums(prev => [...prev, { id, value: result.actualDamage, isWeak: false }]);
+      setTimeout(() => setDamageNums(prev => prev.filter(d => d.id !== id)), 1500);
+    }
+
+    // 普通攻击算"非弱点"动作：清空连续弱点（与 防御/洞察 的语义一致）
+    consecutiveWeaknessRef.current = 0;
+
+    if (result.phase2Triggered) {
+      lines.push(`${shadow.name} 的形态……发生了变化！`);
+      lines.push(`${shadow.name}：${pickShadowLine('phase2Open', shadow.name) || pickByLevel(PHASE2_DIALOGUE, shadow.level)}`);
+      lines.push('攻击力提升……小心！');
+      setPhase2Animation(true);
+      playSound('/battle-impact.mp3');
+      setTimeout(() => setPhase2Animation(false), 1500);
+    }
+
+    if (result.shadowDefeated) {
+      lines.push(`${shadow.name} 倒下了！`);
+      lines.push(`${shadow.name}：${pickByLevel(DEFEAT_DIALOGUE, shadow.level)}`);
+      setShowDeathExplosion(true);
+      setPendingVictory(true);
+      finalizeTurn(lines);
+      return;
+    }
+
+    // Shadow 反击（普通攻击不享受失衡跳过 / 强化回合等特权）
+    const playerHasDot = playerStatusEffects.some(e => e.kind === 'poison');
+    const decision = decideShadowAction({ chargeActive, weaknessStreak: consecutiveWeaknessRef.current, playerHasDot });
+    await runShadowCounter({ lines, decision, halveDamage: false });
+    finalizeTurn(lines);
+  };
+
   // ── 战术按钮：洞察 ────────────────────────────────────────
   const handleInsight = async () => {
     if (isAnimating || phase !== 'waiting') return;
@@ -2066,7 +2134,7 @@ export function BattleModal({ isOpen, onClose, onVictory }: Props) {
                     }}
                   >
                     ⚙️ 行动 {actionMenuOpen ? '▴' : '▾'}
-                    <span className="block text-[9px] opacity-60 mt-0.5">防御 / 洞察 / 同伴支援</span>
+                    <span className="block text-[9px] opacity-60 mt-0.5">普通攻击 / 防御 / 洞察 / 同伴支援</span>
                   </motion.button>
 
                   {/* All-Out —— 累计弱点击破 5 次时可见 + 发光 */}
@@ -2115,6 +2183,23 @@ export function BattleModal({ isOpen, onClose, onVictory }: Props) {
                         }}
                       >
                         <div className="flex gap-2">
+                          {/* 普通攻击：0 SP，伤害=用户总等级。SP 见底时的保底打点。 */}
+                          <motion.button
+                            whileTap={{ scale: 0.95 }}
+                            onClick={() => { setActionMenuOpen(false); handleNormalAttack(); }}
+                            disabled={isAnimating}
+                            className="flex-1 py-2 rounded-lg text-xs font-semibold disabled:opacity-50"
+                            style={{
+                              background: 'rgba(244,114,182,0.16)',
+                              border: '1px solid rgba(244,114,182,0.4)',
+                              color: '#fbcfe8',
+                            }}
+                          >
+                            ⚔️ 普通攻击
+                            <span className="block text-[9px] opacity-60 mt-0.5">
+                              0 SP · {Math.max(1, attributes.reduce((s, a) => s + (a.unlocked === false ? 0 : (a.level ?? 1)), 0))} 伤害
+                            </span>
+                          </motion.button>
                           <motion.button
                             whileTap={{ scale: 0.95 }}
                             onClick={() => { setActionMenuOpen(false); handleDefend(); }}

@@ -65,19 +65,51 @@ body {
   }
 }
 
-/* 防止移动端橡皮筋效果 */
-html, body {
-  overflow-x: hidden;
+/*
+ * 防橡皮筋 + 全屏布局。
+ *
+ * ⚠️ 不能在 html/body 上用 `position: fixed + height: 100%` 这个经典 hack：
+ *    在 iOS PWA standalone 下 body 会被错误地 crop 到小 viewport，
+ *    fixed 子元素（如底部 BottomNav）的 bottom:0 会偏离真实屏幕底部，
+ *    在 Home Indicator 上方留出一条空档。
+ *    —— 参考 Apple Developer Forum & StackOverflow iOS PWA viewport bug 讨论
+ *
+ * 正确做法：
+ *    · html 作为固定"锁"容器（防整页滚动／橡皮筋）
+ *    · body 正常文档流，不设 position
+ *    · #root 作为可滚动容器
+ *    · 尺寸用 100dvh（dynamic viewport height, iOS 16+ 原生支持，
+ *      降级到 100vh / 100%——旧版 iOS 会略有 100vh 问题但不会翻车）
+ */
+html {
   position: fixed;
+  top: 0;
+  left: 0;
   width: 100%;
-  height: 100%;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+body {
+  width: 100%;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  overscroll-behavior: none;
 }
 
 #root {
+  width: 100%;
+  height: 100vh;
+  height: 100dvh;
   overflow: auto;
   position: relative;
-  height: 100%;
-  width: 100%;
+  /* 左右 safe-area：避免横屏刘海压盖内容；
+     不加 padding-top/padding-bottom —— 顶部由各页面组件自己加，
+     底部由 BottomNav 的双层结构自己处理 */
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
 }
 
 /* 移动端滚动优化 */
@@ -87,17 +119,12 @@ html, body {
   }
 }
 
-/* PWA 沉浸式安全区域 — standalone 和 fullscreen 模式下延伸到状态栏/刘海区域 */
-@media (display-mode: standalone), (display-mode: fullscreen) {
-  body {
-    /* viewport-fit=cover 使页面延伸到状态栏下方，safe-area-inset 再推回内容 */
-    padding-top: env(safe-area-inset-top);
-    padding-left: env(safe-area-inset-left);
-    padding-right: env(safe-area-inset-right);
-    /* 底部安全区由 BottomNav 自行处理，body 不加 padding-bottom
-       否则 body(fixed+height:100%) 的 padding 区域会显示白色背景条 */
-  }
-}
+/* PWA standalone / fullscreen —— ⚠️ 不要在 body 上再加 padding:env(safe-area-inset-*)。
+ * 原因：viewport-fit=cover 下 iOS PWA 会**隐式**给 body 加 safe-area padding，
+ *       手动再加就是双倍 inset，底部会被推出一条空档，banner 被顶到屏幕中间。
+ * 需要避让刘海/Dynamic Island 的顶部组件（例如 Settings 标题栏），
+ * 请在该组件自己加 `padding-top: env(safe-area-inset-top)`，而不是全局加在 body。
+ */
 
 @keyframes splashRipple {
   0%   { transform: scale(0);  opacity: 0.5; }

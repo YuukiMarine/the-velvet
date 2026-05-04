@@ -1,5 +1,5 @@
 ﻿import { create } from 'zustand';
-import { User, Attribute, Activity, Achievement, Skill, Settings, ThemeType, AttributeId, AttributeNamesKey, Todo, TodoCompletion, PeriodSummary, SummaryPeriod, SummaryPromptPreset, WeeklyGoal, WeeklyGoalItem, Persona, Shadow, BattleState, BattleLogEntry, BattleAction, DailyDivination, LongReading, LongReadingFollowUp, Confidant, ConfidantEvent, ConfidantBuff, CounselSession, CounselMessage, CounselArchive } from '@/types';
+import { User, Attribute, Activity, Achievement, Skill, Settings, ThemeType, AttributeId, AttributeNamesKey, Todo, TodoCompletion, PeriodSummary, SummaryPeriod, SummaryPromptPreset, WeeklyGoal, WeeklyGoalItem, Persona, Shadow, BattleState, BattleLogEntry, BattleAction, DailyDivination, LongReading, LongReadingFollowUp, Confidant, ConfidantEvent, ConfidantBuff, CounselSession, CounselMessage, CounselArchive, CallingCard } from '@/types';
 import { TAROT_BY_ID } from '@/constants/tarot';
 import { summarizeCounsel, type CounselContext, type CounselConfidantBrief, type CounselRecentEvent } from '@/utils/counselAI';
 import { db } from '@/db';
@@ -52,6 +52,9 @@ const SUMMARY_CATEGORY_TAGS: Record<string, string> = {
   level_up: '[升级]',
   skill_unlock: '[技能]',
   achievement_unlock: '[成就]',
+  // v2.1：宣告卡 / 倒计时达成。不放进 SUMMARY_SPECIAL_CATS（默认 include），
+  // 让 AI 始终能看到"用户跨越了哪个里程碑"，作为周月总结的关键叙事节点。
+  calling_card_clear: '[倒计时]',
 };
 import {
   INITIAL_ATTRIBUTES,
@@ -63,6 +66,7 @@ import {
   SHADOW_REGEN_PER_LEVEL,
   HP_BONUS_PER_DEFEAT,
 } from '@/constants';
+import { normalizeAttributeLevelTitles } from '@/utils/attributeLevelTitles';
 
 /** Shared request payload returned by buildSummaryRequest used by both non-streaming generateSummary and streaming modal */
 export interface SummaryRequestData {
@@ -148,7 +152,7 @@ export const DEFAULT_SUMMARY_PROMPT_PRESETS: SummaryPromptPreset[] = [
   },
   {
     id: 'lavenza',
-    name: '双子合光',
+    name: '助手',
     isBuiltin: true,
     systemPrompt: `以温柔而真挚的心意陪伴"诡骗师"回顾成长历程，你将双子之魂合而为一，以无尽的关怀与智慧指引前行。
 你的语言风格：语气温和正式，措辞诚恳而充满珍视，以"诡术师"称呼客人，视成长为"无限潜能的证明"；当某项属性出现明显短板时，语气会短暂变得直接急促（如卡萝莉娜附体），随即回归柔和；遇到进步与努力，则毫不吝啬地给出发自内心的赞许，如"您真的是世界上最了不起的人"。
@@ -176,6 +180,8 @@ interface AppState {
   dailyDivination: DailyDivination | null;
   /** 全部中长期占卜（活跃 + 归档） */
   longReadings: LongReading[];
+  /** 全部宣告卡 / 倒计时（含归档） */
+  callingCards: CallingCard[];
   settings: Settings;
   todos: Todo[];
   todoCompletions: TodoCompletion[];
@@ -211,10 +217,63 @@ interface AppState {
   sweepExpiredReadings: () => Promise<void>;
   /** 活跃（未归档、未过期）的中长期占卜数量 */
   countActiveReadings: () => number;
+
+  // ── CallingCard / 宣告卡（倒计时） ───────────────────────
+  loadCallingCards: () => Promise<void>;
+  /** 新建 / 覆盖一张 CallingCard。pinned=true 时自动 unpin 其它卡（互斥保证） */
+  saveCallingCard: (card: CallingCard) => Promise<void>;
+  deleteCallingCard: (id: string) => Promise<void>;
+  /** 手动归档：archiveReason='manual' */
+  archiveCallingCard: (id: string) => Promise<void>;
+  /** 取消归档（误归档时还原） */
+  unarchiveCallingCard: (id: string) => Promise<void>;
+  /** 把某张卡钉到首页（自动 unpin 其它卡）；id=null 仅做全 unpin */
+  pinCallingCard: (id: string | null) => Promise<void>;
+  /**
+   * 扫一遍所有未归档卡片，把已经满足达成条件的自动归档：
+   *   - mode='deadline'：today > targetDate
+   *   - mode='todos'：linkedTodoIds 全部满足（见 getCallingCardProgress）
+   *   - mode='both'：先到的为准
+   * 返回值：本次新归档的卡片列表（用来给 UI 触发 cut-in 结算屏）
+   */
+  sweepCallingCards: () => Promise<CallingCard[]>;
+  /**
+   * 算一张卡当下进度：
+   *   - daysElapsed / daysTotal / daysLeft：deadline / both 模式有值
+   *   - dateProgress：0–1，到/过期 = 1
+   *   - todosDone / todosTotal：todos / both 模式有值
+   *   - todoProgress：0–1
+   *   - overallProgress：综合（both 取 max；其它取本身）
+   *   - reached：是否已达成（用于判定是否应归档）
+   */
+  getCallingCardProgress: (id: string) => {
+    daysElapsed?: number;
+    daysTotal?: number;
+    daysLeft?: number;
+    dateProgress?: number;
+    todosDone?: number;
+    todosTotal?: number;
+    todoProgress?: number;
+    overallProgress: number;
+    reached: boolean;
+  } | null;
+  /** 标记某张卡的 cut-in 已展示过（避免重弹） */
+  markCallingCardCutInShown: (id: string) => Promise<void>;
+  /**
+   * 在 cut-in 上点击"留下记录"时调用：写一条 category='calling_card_clear' 的 Activity，
+   * description 形如 "跨越了「{title}」"。同一张卡只允许写一次（ledgerWritten flag）。
+   */
+  writeCallingCardLedger: (id: string) => Promise<void>;
   addTodo: (todo: Omit<Todo, 'id' | 'createdAt'>) => Promise<void>;
   updateTodo: (id: string, updates: Partial<Todo>) => Promise<void>;
   deleteTodo: (id: string) => Promise<void>;
   completeTodo: (todoId: string) => Promise<{ unlockHints: { achievements: number; skills: number } } | null>;
+  /**
+   * 撤销今日的 todo 完成：从 activity 历史里抠出当天因这条 todo 触发的活动，
+   * 走 deleteActivity 完整撤销链路（扣回属性点数、回算 level、删 todoCompletion、还原 todo 为 active）。
+   * 仅作用于 today + method='todo' 的活动；非当天已完成的项不应进入这个入口。
+   */
+  undoTodayTodoCompletion: (todoId: string) => Promise<void>;
   getTodayTodoProgress: (todoId: string) => { count: number; isComplete: boolean; target: number };
   getTodoDateLabel: (date: Date) => string;
   setLevelUpNotification: (notification: { id: string; displayName: string; level: number } | null) => void;
@@ -222,6 +281,12 @@ interface AppState {
   setSkillNotification: (notification: { id: string; name: string } | null) => void;
   setModalBlocker: (value: boolean) => void;
   deleteActivity: (id: string) => Promise<void>;
+  /**
+   * 仅删除活动条目本身，不回退属性点 / 等级 / todoCompletion / level_up 副记录。
+   * 使用场景：用户想清除记录但保留这次的成长成果（误录的描述、隐私清理等）。
+   * 与 deleteActivity 互斥两条路径：deleteActivity = "删除并回档"，本方法 = "仅删除条目"。
+   */
+  deleteActivityRecordOnly: (id: string) => Promise<void>;
   resetAllData: () => Promise<void>;
   importData: (jsonData: string) => Promise<void>;
   addCustomAchievement: (achievement: Omit<Achievement, 'unlocked' | 'unlockedDate'>) => Promise<void>;
@@ -370,6 +435,9 @@ const DEFAULT_SETTINGS: Settings = {
     charm: '魅力'
   },
   levelThresholds: DEFAULT_LEVEL_THRESHOLDS,
+  attributeLevelTitles: normalizeAttributeLevelTitles(undefined, DEFAULT_LEVEL_THRESHOLDS.length),
+  aiMatchedPresetNames: false,
+  aiPresetNameBackup: undefined,
   openaiEnabled: false,
   openaiApiKey: '',
   keywordRules: DEFAULT_KEYWORD_RULES,
@@ -392,6 +460,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   skills: [],
   dailyDivination: null,
   longReadings: [],
+  callingCards: [],
   todos: [],
   todoCompletions: [],
   summaries: [],
@@ -430,6 +499,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       await get().loadDailyDivination();
       await get().loadLongReadings();
       await get().sweepExpiredReadings();
+      // 宣告卡：先 load，再 sweep；sweep 内部会再 load 一次刷新已归档项
+      await get().loadCallingCards();
+      await get().sweepCallingCards();
       // 同伴"逆流"衰减与日常状态检查
       await get().runConfidantDailyMaintenance();
       // 谏言：载入会话 / 归档，并清理过期消息
@@ -512,6 +584,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         id: 'default',
         attributeNames: mergedAttrNames,
         levelThresholds: DEFAULT_LEVEL_THRESHOLDS,
+        attributeLevelTitles: normalizeAttributeLevelTitles(undefined, DEFAULT_LEVEL_THRESHOLDS.length),
+        aiMatchedPresetNames: false,
+        aiPresetNameBackup: undefined,
         openaiEnabled: false,
         openaiApiKey: '',
         keywordRules: DEFAULT_KEYWORD_RULES,
@@ -933,7 +1008,14 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   updateSettings: async (newSettings: Partial<Settings>) => {
     const { settings } = get();
+    const nextThresholds = newSettings.levelThresholds ?? settings.levelThresholds;
     const updated = { ...settings, ...newSettings };
+    if (newSettings.attributeLevelTitles || newSettings.levelThresholds) {
+      updated.attributeLevelTitles = normalizeAttributeLevelTitles(
+        newSettings.attributeLevelTitles ?? settings.attributeLevelTitles,
+        nextThresholds.length,
+      );
+    }
     await db.settings.put(updated);
     set({ settings: updated });
 
@@ -1053,6 +1135,239 @@ export const useAppStore = create<AppState>((set, get) => ({
     return get().longReadings.filter(r => !r.archived && r.expiresAt >= today).length;
   },
 
+  // ── CallingCard / 宣告卡（倒计时） ─────────────────────────
+
+  loadCallingCards: async () => {
+    const cards = await db.callingCards.orderBy('createdAt').reverse().toArray();
+    set({ callingCards: cards });
+  },
+
+  saveCallingCard: async (card: CallingCard) => {
+    // pinned=true 时：把其它卡的 pinned 全置 false（互斥）
+    if (card.pinned) {
+      const all = await db.callingCards.toArray();
+      const toUnpin = all.filter(c => c.id !== card.id && c.pinned).map(c => ({ ...c, pinned: false }));
+      if (toUnpin.length) await db.callingCards.bulkPut(toUnpin);
+    }
+    await db.callingCards.put(card);
+    await get().loadCallingCards();
+  },
+
+  deleteCallingCard: async (id: string) => {
+    await db.callingCards.delete(id);
+    await get().loadCallingCards();
+  },
+
+  archiveCallingCard: async (id: string) => {
+    const c = await db.callingCards.get(id);
+    if (!c) return;
+    await db.callingCards.put({
+      ...c,
+      archived: true,
+      archivedAt: c.archivedAt ?? new Date(),
+      archiveReason: c.archiveReason ?? 'manual',
+      // 手动归档不再触发结算屏（视为用户主动放弃 / 提前收）
+      cutInShown: true,
+      pinned: false,
+    });
+    await get().loadCallingCards();
+  },
+
+  unarchiveCallingCard: async (id: string) => {
+    const c = await db.callingCards.get(id);
+    if (!c) return;
+    await db.callingCards.put({
+      ...c,
+      archived: false,
+      archivedAt: undefined,
+      archiveReason: undefined,
+      cutInShown: false,
+      ledgerWritten: false,
+    });
+    await get().loadCallingCards();
+  },
+
+  pinCallingCard: async (id: string | null) => {
+    const all = await db.callingCards.toArray();
+    const updates: CallingCard[] = [];
+    for (const c of all) {
+      if (id !== null && c.id === id) {
+        if (!c.pinned) updates.push({ ...c, pinned: true });
+      } else if (c.pinned) {
+        updates.push({ ...c, pinned: false });
+      }
+    }
+    if (updates.length) await db.callingCards.bulkPut(updates);
+    await get().loadCallingCards();
+  },
+
+  getCallingCardProgress: (id: string) => {
+    const card = get().callingCards.find(c => c.id === id);
+    if (!card) return null;
+
+    const today = toLocalDateKey();
+    const todayDate = new Date(today + 'T00:00:00');
+    const startDate = new Date(card.startDate + 'T00:00:00');
+
+    let dateProgress: number | undefined;
+    let daysElapsed: number | undefined;
+    let daysTotal: number | undefined;
+    let daysLeft: number | undefined;
+    let dateReached = false;
+    if (card.targetDate) {
+      const targetD = new Date(card.targetDate + 'T00:00:00');
+      // 用本地日期 key 差值算，避开 UTC / DST 偶发的 ±1 天偏差
+      daysElapsed = Math.max(0, Math.round((todayDate.getTime() - startDate.getTime()) / 86400000));
+      daysTotal   = Math.max(1, Math.round((targetD.getTime() - startDate.getTime()) / 86400000));
+      daysLeft    = Math.max(0, Math.round((targetD.getTime() - todayDate.getTime()) / 86400000));
+      dateProgress = Math.max(0, Math.min(1, daysElapsed / daysTotal));
+      dateReached = today >= card.targetDate;
+    }
+
+    let todoProgress: number | undefined;
+    let todosDone: number | undefined;
+    let todosTotal: number | undefined;
+    let todosReached = false;
+    if (card.linkedTodoIds && card.linkedTodoIds.length > 0) {
+      todosTotal = card.linkedTodoIds.length;
+      const todosState = get().todos;
+      const completionsState = get().todoCompletions;
+      let done = 0;
+      for (const tid of card.linkedTodoIds) {
+        const t = todosState.find(x => x.id === tid);
+        if (!t) continue;
+        if (t.repeatDaily) {
+          // 重复任务：只看"今日是否完成"
+          const target = t.frequency === 'count' ? (t.targetCount || 1) : 1;
+          const cmp = completionsState.find(c => c.todoId === tid && c.date === today);
+          if ((cmp?.count ?? 0) >= target) done += 1;
+        } else if (t.isLongTerm) {
+          // 长期任务：累计跨天完成次数 ≥ targetCount
+          const target = t.targetCount || 1;
+          const total = completionsState.filter(c => c.todoId === tid).reduce((s, c) => s + c.count, 0);
+          if (total >= target) done += 1;
+        } else {
+          // 单次任务：看是否最终 completed（!isActive 且 completedAt 存在）
+          if (!t.isActive && t.completedAt) done += 1;
+        }
+      }
+      todosDone = done;
+      todoProgress = Math.max(0, Math.min(1, done / todosTotal));
+      todosReached = done >= todosTotal;
+    }
+
+    // 综合进度（HERO 卡的进度条用这个）：
+    //   - both：取两者较大的（贴近"先到为准"语义）
+    //   - 单一模式：本身
+    let overallProgress = 0;
+    if (card.mode === 'both') {
+      overallProgress = Math.max(dateProgress ?? 0, todoProgress ?? 0);
+    } else if (card.mode === 'deadline') {
+      overallProgress = dateProgress ?? 0;
+    } else {
+      overallProgress = todoProgress ?? 0;
+    }
+
+    // reached：达成 / 触发归档的判定
+    let reached = false;
+    if (card.mode === 'both') reached = dateReached || todosReached;
+    else if (card.mode === 'deadline') reached = dateReached;
+    else reached = todosReached;
+
+    return {
+      daysElapsed, daysTotal, daysLeft, dateProgress,
+      todosDone, todosTotal, todoProgress,
+      overallProgress, reached,
+    };
+  },
+
+  sweepCallingCards: async () => {
+    // 扫一遍未归档卡片，把已达成的归档（不动 ledgerWritten / cutInShown，让 UI 后续触发结算屏）
+    const all = await db.callingCards.toArray();
+    const todayKey = toLocalDateKey();
+    const newlyArchived: CallingCard[] = [];
+    for (const card of all) {
+      if (card.archived) continue;
+      const todayDate = new Date(todayKey + 'T00:00:00');
+      let dateReached = false;
+      let todosReached = false;
+      if (card.targetDate) {
+        dateReached = todayKey >= card.targetDate;
+      }
+      if (card.linkedTodoIds && card.linkedTodoIds.length > 0) {
+        // 仿 getCallingCardProgress 简化版，避免循环依赖 set
+        const todosState = get().todos;
+        const completionsState = get().todoCompletions;
+        let done = 0;
+        for (const tid of card.linkedTodoIds) {
+          const t = todosState.find(x => x.id === tid);
+          if (!t) continue;
+          if (t.repeatDaily) {
+            const target = t.frequency === 'count' ? (t.targetCount || 1) : 1;
+            const cmp = completionsState.find(c => c.todoId === tid && c.date === todayKey);
+            if ((cmp?.count ?? 0) >= target) done += 1;
+          } else if (t.isLongTerm) {
+            const target = t.targetCount || 1;
+            const total = completionsState.filter(c => c.todoId === tid).reduce((s, c) => s + c.count, 0);
+            if (total >= target) done += 1;
+          } else {
+            if (!t.isActive && t.completedAt) done += 1;
+          }
+        }
+        todosReached = done >= card.linkedTodoIds.length;
+      }
+      let reached = false;
+      let reason: 'auto_date' | 'auto_todos' | undefined;
+      if (card.mode === 'both') {
+        if (todosReached) { reached = true; reason = 'auto_todos'; }
+        else if (dateReached) { reached = true; reason = 'auto_date'; }
+      } else if (card.mode === 'deadline') {
+        if (dateReached) { reached = true; reason = 'auto_date'; }
+      } else {
+        if (todosReached) { reached = true; reason = 'auto_todos'; }
+      }
+      // 占位：todayDate 仅用作上面的 reached 判定派生（提示 TS 已用过）
+      void todayDate;
+
+      if (reached) {
+        const next: CallingCard = {
+          ...card,
+          archived: true,
+          archivedAt: new Date(),
+          archiveReason: reason,
+          cutInShown: false, // 留给 Dashboard 展示一次结算屏
+          pinned: false,
+        };
+        await db.callingCards.put(next);
+        newlyArchived.push(next);
+      }
+    }
+    if (newlyArchived.length) await get().loadCallingCards();
+    return newlyArchived;
+  },
+
+  markCallingCardCutInShown: async (id: string) => {
+    const c = await db.callingCards.get(id);
+    if (!c) return;
+    await db.callingCards.put({ ...c, cutInShown: true });
+    await get().loadCallingCards();
+  },
+
+  writeCallingCardLedger: async (id: string) => {
+    const c = await db.callingCards.get(id);
+    if (!c || c.ledgerWritten) return;
+    // 写入一条沉浸感"留下记录"——不带具体加点（这是 milestone 而非 grind），
+    // 但仍走 addActivity 让它进 activity 历史 + 计入 streak
+    await get().addActivity(
+      `跨越了「${c.title}」`,
+      { knowledge: 0, guts: 0, dexterity: 0, kindness: 0, charm: 0 },
+      'local',
+      { important: true, category: 'calling_card_clear', date: c.archivedAt ?? new Date() },
+    );
+    await db.callingCards.put({ ...c, ledgerWritten: true });
+    await get().loadCallingCards();
+  },
+
   loadData: async () => {
     try {
       const attributes = await db.attributes.toArray();
@@ -1158,8 +1473,17 @@ export const useAppStore = create<AppState>((set, get) => ({
          migratedAnim = ['aurora']; // 未设置过则默认极光
        }
 
+       const normalizedThresholds = settings.levelThresholds?.length
+         ? settings.levelThresholds
+         : DEFAULT_LEVEL_THRESHOLDS;
+       const normalizedLevelTitles = normalizeAttributeLevelTitles(
+         settings.attributeLevelTitles,
+         normalizedThresholds.length,
+       );
        const normalizedSettings = {
           ...settings,
+          levelThresholds: normalizedThresholds,
+          attributeLevelTitles: normalizedLevelTitles,
           backgroundOpacity: settings.backgroundOpacity ?? 0.3,
           soundMuted: settings.soundMuted ?? false,
           backgroundAnimation: migratedAnim ?? (settings.backgroundAnimation as string[]),
@@ -1174,6 +1498,13 @@ export const useAppStore = create<AppState>((set, get) => ({
        }
        if (migratedAnim !== undefined) {
          settingsPatch.backgroundAnimation = migratedAnim;
+       }
+       if (
+         settings.levelThresholds !== normalizedThresholds ||
+         JSON.stringify(settings.attributeLevelTitles) !== JSON.stringify(normalizedLevelTitles)
+       ) {
+         settingsPatch.levelThresholds = normalizedThresholds;
+         settingsPatch.attributeLevelTitles = normalizedLevelTitles;
        }
        if (Object.keys(settingsPatch).length > 0) {
          await db.settings.update('default', settingsPatch);
@@ -1250,6 +1581,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     await db.dailyEvents.clear();
     await db.dailyDivinations.clear();
     await db.longReadings.clear();
+    await db.callingCards.clear();
     await db.settings.clear();
     await db.todos.clear();
     await db.todoCompletions.clear();
@@ -1271,6 +1603,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       skills: [],
       dailyDivination: null,
       longReadings: [],
+      callingCards: [],
       todos: [],
       todoCompletions: [],
       summaries: [],
@@ -1290,8 +1623,116 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
   },
 
-  deleteActivity: async (id: string) => {
+  deleteActivityRecordOnly: async (id: string) => {
+    // 严格只删除活动条目本身，不动属性点 / level / todoCompletion / level_up 副记录。
+    // 当用户在删除弹窗里选择"仅删除条目"时进入这条路径。
     await db.activities.delete(id);
+    await get().loadData();
+  },
+
+  deleteActivity: async (id: string) => {
+    // ── 撤销语义升级（v2.1）─────────────────────────────────
+    // 旧行为：仅 db.activities.delete(id)，导致：
+    //   1. 加成的属性点数仍保留在 attributes 上（"幽灵点数"）
+    //   2. todo 触发的活动被删，但 todoCompletion 仍计 1 次，今日待办还显示已完成
+    //   3. 对应升级若发生过，level_up 副记录还挂在历史里，看起来像"凭空升级"
+    //
+    // 新行为（事务原子）：
+    //   - 取该活动的 pointsAwarded，从对应属性点数里逐项扣回
+    //   - 扣回后按阈值表回算 level，若跌破则一并下调（最低不低于 1）
+    //   - 删除同 method='todo' 当日的 todoCompletion（或递减计数）
+    //   - 该 todo 若因完成而被自动归档（isActive=false + completedAt），自动恢复成 active
+    //   - 顺手清理掉这次 addActivity 同次写入的 level_up 副记录（同 userId / 同分钟内 / category='level_up'），
+    //     避免历史里出现"幽灵升级"
+    //
+    // 安全边界：
+    //   - 跨日活动也会扣点（这是用户主动按"删除"时的预期）；仅 todo 还原限定为同日，
+    //     因为旧日的 todoCompletion 早已过去，不应回写。
+    //   - 不主动撤销已解锁的 achievement / skill —— 那会引发"得而复失"的复杂态。
+    //     这与"撤销点数"是两个语义层次，留给用户自己在 设置 → 重置 处理。
+    const target = await db.activities.get(id);
+    if (!target) return;
+
+    const todayKey = toLocalDateKey();
+    const targetDateKey = toLocalDateKey(new Date(target.date));
+    const sameDay = targetDateKey === todayKey;
+
+    await db.transaction(
+      'rw',
+      [db.activities, db.attributes, db.todos, db.todoCompletions],
+      async () => {
+        // 1. 删除活动本体（这一行写在事务里、与下面回点等步骤保持原子）
+        await db.activities.delete(id);
+
+        // 2. 扣回属性点数 + 重算 level
+        const attrIds: AttributeId[] = ['knowledge', 'guts', 'dexterity', 'kindness', 'charm'];
+        const settingsThresholds = get().settings.levelThresholds;
+        for (const attrId of attrIds) {
+          const delta = target.pointsAwarded?.[attrId] ?? 0;
+          if (delta <= 0) continue;
+          const attr = await db.attributes.get(attrId);
+          if (!attr) continue;
+          const newPoints = Math.max(0, attr.points - delta);
+          const thresholds = settingsThresholds?.length ? settingsThresholds : attr.levelThresholds;
+          // 从 level 1 起向上累加，直到超过 newPoints
+          let newLevel = 1;
+          for (let lv = 1; lv < thresholds.length; lv++) {
+            if (newPoints >= thresholds[lv]) newLevel = lv + 1;
+            else break;
+          }
+          // 老用户阈值数组可能不含 lv1 入口（thresholds[0]=0），保险起见 clamp
+          if (newLevel < 1) newLevel = 1;
+          await db.attributes.update(attrId, { points: newPoints, level: newLevel });
+        }
+
+        // 3. 清理 level_up 副记录：addActivity 在同事务里把 levelUpActivities push 进 db，
+        //    它们的 date 都是 new Date()，与 target.date 几乎同瞬。
+        //    这里用 ±90s 兜底（兼容跨进程导入时间漂移），并按 attribute 名匹配描述前缀。
+        if ((target.levelUps?.length ?? 0) > 0) {
+          const targetTime = new Date(target.date).getTime();
+          const allActs = await db.activities.toArray();
+          const attrNames = get().settings.attributeNames;
+          for (const lu of target.levelUps ?? []) {
+            const expectedDescPrefix = `${attrNames[lu.attribute as AttributeNamesKey] ?? lu.attribute} 升级Lv.${lu.toLevel}`;
+            const candidate = allActs.find(a =>
+              a.category === 'level_up'
+              && a.description === expectedDescPrefix
+              && Math.abs(new Date(a.date).getTime() - targetTime) < 90_000,
+            );
+            if (candidate) await db.activities.delete(candidate.id);
+          }
+        }
+
+        // 4. todo 联动撤销（仅同日 + method='todo'）
+        if (sameDay && target.method === 'todo') {
+          // 描述形如 "完成任务: <todo.title>"
+          const m = /^完成任务[:：]\s*(.+)$/.exec(target.description.trim());
+          const todoTitle = m?.[1]?.trim();
+          if (todoTitle) {
+            // 先按 title 找 active todo，找不到再尝试已归档的（误触自动归档场景）
+            let todo = await db.todos.toArray().then(arr =>
+              arr.find(t => t.title === todoTitle && t.isActive)
+              ?? arr.find(t => t.title === todoTitle),
+            );
+            if (todo) {
+              const completion = await db.todoCompletions.where('todoId').equals(todo.id)
+                .filter(c => c.date === todayKey).first();
+              if (completion) {
+                if (completion.count > 1) {
+                  await db.todoCompletions.update(completion.id, { count: completion.count - 1 });
+                } else {
+                  await db.todoCompletions.delete(completion.id);
+                }
+              }
+              // 若 todo 因这次完成而被归档（非 repeatDaily / 非 isLongTerm），恢复为 active
+              if (!todo.isActive && !todo.repeatDaily && !todo.isLongTerm) {
+                await db.todos.update(todo.id, { isActive: true, archivedAt: undefined, completedAt: undefined });
+              }
+            }
+          }
+        }
+      },
+    );
     await get().loadData();
   },
 
@@ -1344,6 +1785,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       weeklyGoals: await db.weeklyGoals.toArray(),
       dailyDivinations: await db.dailyDivinations.toArray(),
       longReadings: await db.longReadings.toArray(),
+      callingCards: await db.callingCards.toArray(),
       personas: await db.personas.toArray(),
       shadows: await db.shadows.toArray(),
       battleStates: await db.battleStates.toArray(),
@@ -1447,6 +1889,16 @@ export const useAppStore = create<AppState>((set, get) => ({
           });
         }
       }
+      if (data.callingCards && Array.isArray(data.callingCards)) {
+        for (const c of data.callingCards as unknown[]) {
+          const cc = c as CallingCard;
+          await db.callingCards.put({
+            ...cc,
+            createdAt: new Date(cc.createdAt),
+            archivedAt: cc.archivedAt ? new Date(cc.archivedAt) : undefined,
+          });
+        }
+      }
 
       // 周总结（v4 新增字段）
       if (data.summaries && Array.isArray(data.summaries)) {
@@ -1521,6 +1973,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         if (snapshot.battleStates.length) await db.battleStates.bulkAdd(snapshot.battleStates);
         if (snapshot.dailyDivinations.length) await db.dailyDivinations.bulkAdd(snapshot.dailyDivinations);
         if (snapshot.longReadings.length) await db.longReadings.bulkAdd(snapshot.longReadings);
+        if (snapshot.callingCards.length) await db.callingCards.bulkAdd(snapshot.callingCards);
         if (snapshot.weeklyGoals.length) await db.weeklyGoals.bulkAdd(snapshot.weeklyGoals);
         if (snapshot.confidants.length) await db.confidants.bulkAdd(snapshot.confidants);
         if (snapshot.confidantEvents.length) await db.confidantEvents.bulkAdd(snapshot.confidantEvents);
@@ -1823,11 +2276,68 @@ export const useAppStore = create<AppState>((set, get) => ({
         await db.todos.update(todo.id, { archivedAt: new Date(), completedAt: new Date(), isActive: false });
       }
 
+      // ✦ 倒计时联动：完成 todo 后扫一遍宣告卡，若关联的全部完成会自动归档；
+      //   归档后 cutInShown=false，App.tsx 顶层会立即弹出"宣告 · 达成"结算屏，
+      //   不需要等用户回到 Dashboard。
+      try {
+        await get().sweepCallingCards();
+      } catch (e) {
+        console.warn('[velvet] sweepCallingCards after completeTodo failed', e);
+      }
+
       return result;
     } else {
       await get().loadData();
       return null;
     }
+  },
+
+  undoTodayTodoCompletion: async (todoId: string) => {
+    // ── 设计契约 ─────────────────────────────────────────
+    // "当天误触" 的语义：把这一次 todo 完成当成从未发生过：
+    //   · 属性点数扣回，level 跌破阈值则下调
+    //   · 历史 activity 记录连同 level_up 副记录一起删掉
+    //   · todoCompletion 计数减 1（=0 则整条删）
+    //   · todo 重新 isActive=true、清掉 completedAt/archivedAt
+    // 实现复用 deleteActivity 已有的事务化撤销（v2.1 改造），保证语义统一。
+    const todo = get().todos.find(t => t.id === todoId);
+    if (!todo) return;
+
+    const today = toLocalDateKey();
+    const all = await db.activities.toArray();
+    // 注意：completeTodo 的 description 模板是 `完成任务: ${todo.title}`，这里逐字匹配
+    const expectedDesc = `完成任务: ${todo.title}`;
+    const target = all.find(a =>
+      a.method === 'todo'
+      && toLocalDateKey(new Date(a.date)) === today
+      && a.description === expectedDesc,
+    );
+
+    if (target) {
+      await get().deleteActivity(target.id);
+      return;
+    }
+
+    // 兜底：找不到对应活动（例如老数据没记 method='todo'，或描述被改过）
+    // 至少把 todoCompletion / todo 状态还原成"未完成"，否则按钮形同虚设。
+    await db.transaction('rw', [db.todos, db.todoCompletions], async () => {
+      const completion = await db.todoCompletions
+        .where('todoId').equals(todoId)
+        .filter(c => c.date === today)
+        .first();
+      if (completion) {
+        if (completion.count > 1) {
+          await db.todoCompletions.update(completion.id, { count: completion.count - 1 });
+        } else {
+          await db.todoCompletions.delete(completion.id);
+        }
+      }
+      const t = await db.todos.get(todoId);
+      if (t && !t.isActive) {
+        await db.todos.update(todoId, { isActive: true, completedAt: undefined, archivedAt: undefined });
+      }
+    });
+    await get().loadData();
   },
 
   applySkillBonus: (attributeId: string, points: number) => {
@@ -2667,6 +3177,7 @@ ${activityLines || '（本期暂无记录）'}
         confidantId: id,
         date: toLocalDateKey(now),
         type: 'level_up',
+        toLevel: newLv,
         narrative: `亲密度到达 Lv.${newLv}`,
         createdAt: new Date(now.getTime() + 1),
       });

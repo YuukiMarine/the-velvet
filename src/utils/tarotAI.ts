@@ -1,5 +1,5 @@
-import { Activity, Attribute, AttributeId, DrawnCard, Fortune, LongReadingPeriod, Settings, TarotOrientation } from '@/types';
-import { TarotCardData, TAROT_BY_ID, SPREAD_POSITIONS, PERIOD_LABELS } from '@/constants/tarot';
+import { Activity, Attribute, AttributeId, DailyDivination, DrawnCard, Fortune, LongReadingPeriod, Settings, TarotOrientation } from '@/types';
+import { TarotCardData, TAROT_BY_ID, SPREAD_POSITIONS, PERIOD_LABELS, FORTUNE_META } from '@/constants/tarot';
 import { resolveProvider } from '@/utils/aiProviders';
 
 const ATTRIBUTE_IDS: AttributeId[] = ['knowledge', 'guts', 'dexterity', 'kindness', 'charm'];
@@ -23,6 +23,18 @@ function attrLines(attributes: Attribute[], attrNames: Record<AttributeId, strin
     const a = attributes.find(x => x.id === id);
     return `- ${attrNames[id] ?? id}：Lv.${a?.level ?? 1}  总点数 ${a?.points ?? 0}`;
   }).join('\n');
+}
+
+const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+
+function pad2(n: number): string {
+  return String(n).padStart(2, '0');
+}
+
+function formatLocalDateTime(d: Date): string {
+  const date = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+  const time = `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+  return `${date} ${WEEKDAYS[d.getDay()]} ${time}`;
 }
 
 /**
@@ -55,7 +67,7 @@ function resolveAttributeFromLabel(
 }
 
 function formatActivitySnippet(a: Activity, attrNames: Record<AttributeId, string>): string {
-  const dateStr = new Date(a.date).toLocaleDateString('zh-CN');
+  const dateStr = formatLocalDateTime(new Date(a.date));
   const ptsParts = ATTRIBUTE_IDS
     .filter(k => (a.pointsAwarded?.[k] ?? 0) > 0)
     .map(k => `${attrNames[k] ?? k}+${a.pointsAwarded[k]}`);
@@ -69,6 +81,22 @@ function cardLine(c: TarotCardData, orientation: TarotOrientation): string {
   return `《${c.name} ${c.nameEn}》(${o}) — 关键词：${m.keywords.join('、')}；牌意：${m.meaning}`;
 }
 
+function previousDailyLine(d: DailyDivination | null | undefined, attrNames: Record<AttributeId, string>): string {
+  if (!d) return '（无上一张每日塔罗记录）';
+  const card = TAROT_BY_ID[d.cardId];
+  const cardName = card ? `《${card.name} ${card.nameEn}》` : `《${d.cardId}》`;
+  const orientation = d.orientation === 'upright' ? '正位' : '逆位';
+  const fortune = d.fortune ? FORTUNE_META[d.fortune]?.label ?? d.fortune : '未记录';
+  const attrName = attrNames[d.effect.attribute] ?? d.effect.attribute;
+  const date = d.createdAt ? formatLocalDateTime(new Date(d.createdAt)) : d.date;
+  return [
+    `[${date}] ${cardName}（${orientation}）`,
+    `运势：${fortune}`,
+    `加成：${attrName} × ${d.effect.multiplier}`,
+    `上一条短建议：${d.advice || '（无）'}`,
+  ].join('；');
+}
+
 // ── 每日塔罗：JSON 响应，非流式 ────────────────────────────
 
 const DAILY_SYSTEM_PROMPT = `你是靛蓝色房间的塔罗解读者。你的语气庄严而富有诗意，带着神秘学气息，但从不故弄玄虚。
@@ -76,6 +104,7 @@ const DAILY_SYSTEM_PROMPT = `你是靛蓝色房间的塔罗解读者。你的语
 1. 抽到的塔罗牌（含正/逆位）的意象
 2. 用户的五维属性名称与等级（这些属性代表用户当下的成长状态）
 3. 用户最近 7 条成长记录（体现近况）
+4. 当前本地时间与上一张每日塔罗的轻量上下文
 
 请以紧凑但富有意象的笔触，说明：
 - 今日整体走向（2-3 句）
@@ -89,11 +118,16 @@ const DAILY_SYSTEM_PROMPT = `你是靛蓝色房间的塔罗解读者。你的语
 - "small"（小吉）——走势中性偏好，需留心
 - "bad"（凶）——以警示/考验为主，需格外谨慎
 
+【关于上一张每日塔罗】
+- 上一张牌只是轻量参照，不是今天的主牌。
+- 只有当今天的牌与上一张形成明显的延续、反转或回应时，才自然带一句；否则不要提及。
+- 不要复述上一条解读，也不要让上一张牌覆盖今天这张牌的判断。
+
 【关于五项属性的命名约束（非常重要）】
 - 客人**自己定义了五项属性的名字**，这些名字会随客人喜好变化（例如可能是英文缩写、自创词、领域术语等）。
 - 你接下来收到的"客人的五维属性"列表里给出的名字就是**唯一规范名**。
 - 在 narration / advice 等所有正文中提到属性时，**必须严格使用客人列表中的原文**，
-  不允许翻译、意译，不允许加括号注释，自然地提到即可。
+  不允许翻译、意译，不允许加括号注释，也请自然、不刻意地提到。
 - JSON 中 \`attribute\` 字段的取值，也必须严格写成客人列表里的某一个名字（与列表中完全一致）。
 
 **输出必须是严格的合法 JSON**，结构：
@@ -112,8 +146,10 @@ export function buildDailyRequest(params: {
   card: TarotCardData;
   orientation: TarotOrientation;
   recentActivities: Activity[];
+  previousDaily?: DailyDivination | null;
+  now?: Date;
 }): AIRequestData {
-  const { settings, attributes, card, orientation, recentActivities } = params;
+  const { settings, attributes, card, orientation, recentActivities, previousDaily, now = new Date() } = params;
   const { baseUrl, model } = resolveProvider(
     settings.summaryApiProvider,
     settings.summaryApiBaseUrl,
@@ -123,6 +159,8 @@ export function buildDailyRequest(params: {
   const attrNames = settings.attributeNames as Record<AttributeId, string>;
   const customNameList = ATTRIBUTE_IDS.map(id => attrNames[id] ?? id);
   const userMessage = [
+    `当前本地时间：${formatLocalDateTime(now)}`,
+    ``,
     `今日抽到的塔罗牌：`,
     cardLine(card, orientation),
     ``,
@@ -136,6 +174,9 @@ export function buildDailyRequest(params: {
     recentActivities.length > 0
       ? recentActivities.slice(0, 7).map(a => formatActivitySnippet(a, attrNames)).join('\n')
       : '（暂无记录）',
+    ``,
+    `上一张每日塔罗（轻量上下文，仅在有明显延续/反转时使用）：`,
+    previousDailyLine(previousDaily, attrNames),
     ``,
     `请按要求输出 JSON。`,
   ].join('\n');
@@ -218,19 +259,36 @@ export async function callDailyAI(
 
 // ── 中长期占卜：Markdown 流式 ───────────────────────────────
 
-const LONG_SYSTEM_PROMPT = `你是靛蓝色房间的塔罗解读者。语气庄严、富有意象与哲思，但行文克制不浮夸。
-用户此刻提出一个具体问题，并请你依据三张塔罗牌组成的牌阵为其解读。你将：
+const LONG_SYSTEM_PROMPT = `你是一位经验丰富、观察敏锐的塔罗师。输出文字本身不要出现任何自称，也不要提到"塔罗师"、"解读者"、"AI"、"助手"、"我"、"我们"、"本次解读"等自我指涉。
+用户此刻提出一个具体问题，并请你依据三张塔罗牌组成的牌阵为其解读。
 
-1. 先用 1-2 句概述"三张牌合起来讲述了什么故事"。
-2. 然后按牌阵位置顺序，**逐张**深入解读（每张 3-5 句），并将牌意与用户当下的属性状态、近期行为关联起来。
-3. 最后给出 2-3 条具体而富有意象的行动建议，收束整段解读。
+这不是三张牌的百科解释，也不是工具报告。你要像一位熟练的人类塔罗师翻开牌后自然落笔：先让空气安静下来，再把三张牌之间的关系讲清楚，最后才给出可走的路。
+
+请用 Markdown 输出，并遵守以下顺序：
+1. 先写一段不加标题的简短 intro，1-2 句即可。它应该像牌面刚被翻开后的开场，带一点沉浸感，但不要玄虚堆砌。
+2. 第二段标题固定为 "## 三张牌共讲的故事"。用 2-3 句说清三张牌合起来讲述的故事，必须写出三张牌之间的递进、冲突或转向。
+3. 然后按牌阵位置顺序逐张深入解读。每张使用二级标题，格式为 "## 位置 · 牌名"；每张 3-5 句。
+4. 每张牌的解读必须同时包含：它在该位置上的作用、这张牌本身的牌意、它与前后牌的关系、它与客人当下属性状态或近期行为的一处连接。
+5. 最后一段标题用自然一点的表达，例如 "## 接下来可以怎样走"。给出 2-3 条具体行动建议，建议必须符合本次占卜周期的时间尺度。
+
+风格要求：
+- 像经验丰富的人在桌边说话：判断要准，语气要稳，允许含蓄，但不要装腔，耐心、有同理心地解答问题。
+- 少用"整体来看"、"这张牌提醒你"、"你需要注意的是"、"建议你"、"综上"这类模板句。
+- 禁止自称、禁止解释分析过程、禁止把牌意写成报告或清单式结论。
+- 可以有意象，但每段都要落到一个具体判断或具体动作。
 
 【关于五项属性的命名约束（非常重要）】
 - 客人**自己定义了五项属性的名字**，这些名字可能是英文缩写、自创词或领域术语。
 - 在正文中提到任何属性时，**必须严格使用客人给出的原文**，
   不允许翻译、意译，不允许加括号注释，自然地提到即可。
 
-请用 Markdown 输出，使用二级标题 (##) 分段。语气可以稍长于每日解读，但避免空话套话。`;
+避免空话套话。`;
+
+const LONG_PERIOD_GUIDANCE: Record<LongReadingPeriod, string> = {
+  recent: `这是近景占卜，时间尺度是未来 2-3 天。请把牌阵读成"昨日留下的回声 / 今日正在发生的选择 / 明日可能显现的反馈"，不要写成几周或数月的宏观建议。`,
+  midterm: `这是中期占卜，时间尺度是 2-4 周。请读出阶段推进：现在的惯性、接下来最可能卡住的地方、以及一个可观察的转向信号。`,
+  longterm: `这是长期占卜，时间尺度是数月以上。请避免承诺确定结果，重点写根基、长期惯性、可能累积的风险，以及可以分阶段验证的里程碑。`,
+};
 
 export function buildLongReadingRequest(params: {
   settings: Settings;
@@ -269,6 +327,7 @@ export function buildLongReadingRequest(params: {
   const userMessage = [
     `**客人提出的问题**：${question.trim() || '（未具体描述）'}`,
     `**指向的时间周期**：${periodMeta.label}（${periodMeta.hint}）`,
+    `**本次周期的写法边界**：${LONG_PERIOD_GUIDANCE[period]}`,
     ``,
     `**牌阵（${positions.join(' / ')}）**：`,
     cardBlocks,
@@ -300,7 +359,8 @@ export function buildLongReadingRequest(params: {
 
 const FOLLOW_UP_SYSTEM_ADDITION = `
 客人对先前的解读进行追问，并重新抽出一张塔罗牌作为此问的指引。
-请结合：先前的解读脉络、追问本身、以及这张新抽到的牌，给出紧凑而有力的回应（约 2-4 段）。
+这是追问回应，不需要重复主解读的固定标题结构，也不要把原三张牌重新逐张解释。
+请先直接回应追问，再说明这张新牌如何修正、照亮或收束原牌阵的主线，给出紧凑而有力的回应（约 2-4 段）。
 用 Markdown 输出。`;
 
 export function buildFollowUpRequest(params: {
