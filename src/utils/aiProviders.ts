@@ -17,41 +17,48 @@ export interface ProviderConfig {
   hint: string;
 }
 
+// 默认模型/端点核对于 2026-06（见各 provider 官方 models/pricing/deprecations 页）。
+// 注意：Kimi 与 MiniMax 的默认 baseUrl 是「国内端点」；用国际平台申请的 Key 请在
+// 「高级选项」里改成 https://api.moonshot.ai/v1 / https://api.minimax.io/v1，
+// 否则区域不匹配会返回 401。
 export const AI_PROVIDERS: ProviderConfig[] = [
   {
     id: 'openai',
     label: 'OpenAI',
     defaultBaseUrl: 'https://api.openai.com/v1',
-    defaultModel: 'gpt-4o-mini',
-    hint: 'gpt-4o-mini',
+    // GPT-5 系列为推理模型：aiClient 会自动改用 max_completion_tokens 并省略 temperature
+    defaultModel: 'gpt-5.4-mini',
+    hint: 'gpt-5.4-mini',
   },
   {
     id: 'deepseek',
     label: 'DeepSeek',
     defaultBaseUrl: 'https://api.deepseek.com/v1',
-    defaultModel: 'deepseek-chat',
-    hint: 'deepseek-chat',
+    // 旧的 deepseek-chat 别名将于 2026-07-24 停服；v4-flash 是其廉价档后继
+    defaultModel: 'deepseek-v4-flash',
+    hint: 'deepseek-v4-flash',
   },
   {
     id: 'kimi',
     label: 'Kimi',
-    defaultBaseUrl: 'https://api.moonshot.cn/v1',
-    defaultModel: 'moonshot-v1-8k',
-    hint: 'moonshot-v1-8k',
+    defaultBaseUrl: 'https://api.moonshot.cn/v1', // 国际 Key 改 https://api.moonshot.ai/v1
+    defaultModel: 'kimi-k2.5',
+    hint: 'kimi-k2.5',
   },
   {
     id: 'gemini',
     label: 'Gemini',
     defaultBaseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
-    defaultModel: 'gemini-1.5-flash',
-    hint: 'gemini-1.5-flash',
+    // gemini-1.5-flash 已 EOL（调用 404）；3.1-flash-lite 是当前廉价档且寿命最长
+    defaultModel: 'gemini-3.1-flash-lite',
+    hint: 'gemini-3.1-flash-lite',
   },
   {
     id: 'minimax',
     label: 'MiniMax',
-    defaultBaseUrl: 'https://api.minimaxi.com/v1',
-    defaultModel: 'abab6.5s-chat',
-    hint: 'abab6.5s-chat',
+    defaultBaseUrl: 'https://api.minimaxi.com/v1', // 国际 Key 改 https://api.minimax.io/v1
+    defaultModel: 'MiniMax-M2.5',
+    hint: 'MiniMax-M2.5',
   },
 ];
 
@@ -72,6 +79,16 @@ export function resolveProvider(
   const baseUrl = rawBase.replace(/\/+$/, '');
   const model = overrideModel?.trim() || p.defaultModel;
   return { baseUrl, model };
+}
+
+/**
+ * OpenAI 推理模型族（GPT-5 系列 + o 系列）在 /chat/completions 上的请求结构不同：
+ * 用 max_completion_tokens 代替 max_tokens，且只接受默认 temperature（自定义会 400）。
+ * 按 model id 前缀判断；aiClient 的实际请求与下面的"测试连接"共用此判断，
+ * 这样自定义 baseUrl 代理这些模型时也能命中。
+ */
+export function isReasoningModel(model: string): boolean {
+  return /^(gpt-5|o[1-9])/i.test(model.trim());
 }
 
 export type TestResult =
@@ -98,6 +115,8 @@ export async function testAIConnection(opts: {
   const timeout = setTimeout(() => controller.abort(), 15000);
   const start = Date.now();
 
+  // 推理模型（GPT-5/o 系列）拒绝 max_tokens，且 max_tokens:1 会被推理 token 吃光
+  const reasoning = isReasoningModel(model);
   try {
     const resp = await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
@@ -108,7 +127,9 @@ export async function testAIConnection(opts: {
       body: JSON.stringify({
         model,
         messages: [{ role: 'user', content: 'ping' }],
-        max_tokens: 1,
+        ...(reasoning
+          ? { max_completion_tokens: 16, reasoning_effort: 'minimal' }
+          : { max_tokens: 1 }),
         stream: false,
       }),
       signal: controller.signal,
@@ -141,7 +162,7 @@ export async function testAIConnection(opts: {
   }
 }
 
-function getHttpStatusHint(status: number, provider: ApiProvider): string {
+export function getHttpStatusHint(status: number, provider?: ApiProvider): string {
   if (status === 400) return '请求格式有误';
   if (status === 401) return '密钥无效或已过期';
   if (status === 402) {
@@ -158,7 +179,7 @@ function getHttpStatusHint(status: number, provider: ApiProvider): string {
   return '';
 }
 
-function extractProviderErrorMessage(body: string): string {
+export function extractProviderErrorMessage(body: string): string {
   const text = body.trim();
   if (!text) return '';
 

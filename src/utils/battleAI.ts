@@ -1,5 +1,5 @@
 import { AttributeId, PersonaSkill, Settings } from '@/types';
-import { resolveProvider } from '@/utils/aiProviders';
+import { chatComplete, chatStream, getAIConfig, type AIConfig } from '@/utils/aiClient';
 import { SKILL_EFFECT_MAP } from '@/constants';
 
 interface AIMessage { role: 'system' | 'user' | 'assistant'; content: string; }
@@ -59,118 +59,35 @@ function formatAllAttrsSpecialization(attrNames: Record<AttributeId, string>): s
   ].join('\n');
 }
 
-function getAIConfig(settings: Settings): { apiKey: string; baseUrl: string; model: string } | null {
-  if (!settings.summaryApiKey) return null;
-  const { baseUrl, model } = resolveProvider(
-    settings.summaryApiProvider,
-    settings.summaryApiBaseUrl,
-    settings.summaryModel,
-  );
-  return { apiKey: settings.summaryApiKey, baseUrl, model };
-}
+// getAIConfig / 传输 / SSE 解析 / 超时 现已统一由 @/utils/aiClient 提供。
+// callAI / callAIStream 只剩一层薄封装，保留 battleAI 特有的「失败降温重试」语义。
 
 async function callAI(
-  cfg: { apiKey: string; baseUrl: string; model: string },
+  cfg: AIConfig,
   messages: AIMessage[],
   temperature = 0.8,
   maxTokens = 1500,
 ): Promise<string> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 90000); // 90s 超时
-  try {
-    const resp = await fetch(`${cfg.baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cfg.apiKey}` },
-      body: JSON.stringify({ model: cfg.model, messages, max_tokens: maxTokens, temperature }),
-      signal: controller.signal,
-    });
-    if (!resp.ok) {
-      const detail = await resp.text().catch(() => '');
-      throw new Error(`HTTP ${resp.status}${detail ? `: ${detail.slice(0, 140)}` : ''}`);
-    }
-    const data = await resp.json();
-    const content = data?.choices?.[0]?.message?.content;
-    if (typeof content !== 'string' || !content.trim()) {
-      throw new Error('AI 返回空响应，可能被截断或被内容审查拦截');
-    }
-    return content;
-  } catch (e) {
-    if (e instanceof Error && e.name === 'AbortError') {
-      throw new Error('AI 请求超时（90秒），请检查网络或更换更快的模型');
-    }
-    throw e;
-  } finally {
-    clearTimeout(timer);
-  }
+  return chatComplete(cfg, messages, { temperature, maxTokens });
 }
 
 /**
- * 流式调用：通过 SSE 分块接收，onChunk 每接到一段新文本就回调
- * 兼容 OpenAI 协议（delta.content），超时 90s
+ * 流式调用：onChunk 每接到一段新文本就回调（fullText 为累计文本）。
+ * 传输 / SSE 解析 / 超时全部委托给 aiClient.chatStream。
  */
 async function callAIStream(
-  cfg: { apiKey: string; baseUrl: string; model: string },
+  cfg: AIConfig,
   messages: AIMessage[],
   onChunk: (delta: string, fullText: string) => void,
   temperature = 0.8,
   maxTokens = 1500,
 ): Promise<string> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 90000);
-  try {
-    const resp = await fetch(`${cfg.baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${cfg.apiKey}`,
-        Accept: 'text/event-stream',
-      },
-      body: JSON.stringify({ model: cfg.model, messages, max_tokens: maxTokens, temperature, stream: true }),
-      signal: controller.signal,
-    });
-    if (!resp.ok) {
-      const detail = await resp.text().catch(() => '');
-      throw new Error(`HTTP ${resp.status}${detail ? `: ${detail.slice(0, 140)}` : ''}`);
-    }
-    if (!resp.body) throw new Error('AI 流式响应无 body');
-
-    const reader = resp.body.getReader();
-    const decoder = new TextDecoder('utf-8');
-    let buffer = '';
-    let full = '';
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() ?? '';
-      for (const rawLine of lines) {
-        const line = rawLine.trim();
-        if (!line || !line.startsWith('data:')) continue;
-        const payload = line.slice(5).trim();
-        if (payload === '[DONE]') continue;
-        try {
-          const obj = JSON.parse(payload);
-          const delta: string = obj?.choices?.[0]?.delta?.content ?? obj?.choices?.[0]?.message?.content ?? '';
-          if (delta) {
-            full += delta;
-            onChunk(delta, full);
-          }
-        } catch {
-          // 解析失败的 chunk 忽略，继续
-        }
-      }
-    }
-    if (!full.trim()) throw new Error('AI 流式返回为空，可能被截断或被拦截');
-    return full;
-  } catch (e) {
-    if (e instanceof Error && e.name === 'AbortError') {
-      throw new Error('AI 请求超时（90秒），请检查网络或更换更快的模型');
-    }
-    throw e;
-  } finally {
-    clearTimeout(timer);
+  let full = '';
+  for await (const delta of chatStream(cfg, messages, { temperature, maxTokens })) {
+    full += delta;
+    onChunk(delta, full);
   }
+  return full;
 }
 
 // ── Robust JSON extraction ──────────────────────────────────────────────────
@@ -198,7 +115,7 @@ function extractJSON(text: string): Record<string, unknown> {
 
 /** Call AI with one automatic retry on failure (lower temperature on retry for more stable output) */
 async function callAIWithRetry(
-  cfg: { apiKey: string; baseUrl: string; model: string },
+  cfg: AIConfig,
   messages: AIMessage[],
   temperature = 0.8,
   maxTokens = 1500,
@@ -216,7 +133,7 @@ async function callAIWithRetry(
 
 /** 流式调用 + 一次自动重试（第二次温度降低） */
 async function callAIStreamWithRetry(
-  cfg: { apiKey: string; baseUrl: string; model: string },
+  cfg: AIConfig,
   messages: AIMessage[],
   onChunk: (delta: string, fullText: string) => void,
   temperature = 0.8,

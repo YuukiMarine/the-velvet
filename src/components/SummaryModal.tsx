@@ -6,6 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 import DOMPurify from 'dompurify';
 import { useModalA11y } from '@/utils/useModalA11y';
 import { useBackHandler } from '@/utils/useBackHandler';
+import { chatStream } from '@/utils/aiClient';
 
 // ── 简单 Markdown 渲染 ────────────────────────────────────
 function renderMarkdown(text: string): string {
@@ -31,31 +32,7 @@ function formatApiError(e: unknown): string {
   return e.message;
 }
 
-// ── SSE 流式读取工具 ──────────────────────────────────────
-async function* readSSEStream(response: Response): AsyncGenerator<string> {
-  const reader = response.body!.getReader();
-  const decoder = new TextDecoder();
-  let buf = '';
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buf += decoder.decode(value, { stream: true });
-    const lines = buf.split('\n');
-    buf = lines.pop() ?? '';
-
-    for (const line of lines) {
-      if (!line.startsWith('data:')) continue;
-      const data = line.slice(5).trim();
-      if (data === '[DONE]') return;
-      try {
-        const json = JSON.parse(data);
-        const delta: string = json?.choices?.[0]?.delta?.content ?? '';
-        if (delta) yield delta;
-      } catch { /* malformed chunk, skip */ }
-    }
-  }
-}
+// SSE 流式读取已统一由 @/utils/aiClient 的 chatStream 提供
 
 // ── 打字光标 ─────────────────────────────────────────────
 function Cursor() {
@@ -264,29 +241,12 @@ function StreamingContent({ streamedText, isStreaming, reqData, initialFollowUp,
         { role: 'user' as const, content: q },
       ];
 
-      const resp = await fetch(`${reqData.baseUrl}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${reqData.apiKey}`,
-        },
-        body: JSON.stringify({
-          model: reqData.model,
-          messages,
-          stream: true,
-          temperature: 0.7,
-          // v2.1：1000 → 2400，避免追问中长答案被截
-          max_tokens: 2400,
-        }),
+      // v2.1：max_tokens 2400，避免追问中长答案被截
+      for await (const chunk of chatStream(reqData, messages, {
+        temperature: 0.7,
+        maxTokens: 2400,
         signal: abortCtrl.signal,
-      });
-
-      if (!resp.ok) {
-        const errBody = await resp.text().catch(() => '');
-        throw new Error(`API 请求失败 (${resp.status}): ${errBody || resp.statusText}`);
-      }
-
-      for await (const chunk of readSSEStream(resp)) {
+      })) {
         answer += chunk;
         setFollowAnswer(answer);
       }
@@ -709,28 +669,11 @@ export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week' }
 
     let fullText = '';
     try {
-      const resp = await fetch(`${req.baseUrl}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${req.apiKey}`,
-        },
-        body: JSON.stringify({
-          model: req.model,
-          messages: req.messages,
-          stream: true,
-          temperature: 0.8,
-          max_tokens: 2000,
-        }),
+      for await (const chunk of chatStream(req, req.messages, {
+        temperature: 0.8,
+        maxTokens: 2000,
         signal: abortCtrl.signal,
-      });
-
-      if (!resp.ok) {
-        const errBody = await resp.text().catch(() => '');
-        throw new Error(`API 请求失败 (${resp.status}): ${errBody || resp.statusText}`);
-      }
-
-      for await (const chunk of readSSEStream(resp)) {
+      })) {
         fullText += chunk;
         setStreamedText(fullText);
       }

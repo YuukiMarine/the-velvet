@@ -1,6 +1,6 @@
 import type { AttributeId, AttributeNames, Settings } from '@/types';
 import { ACHIEVEMENTS, SKILLS } from '@/constants';
-import { resolveProvider } from '@/utils/aiProviders';
+import { chatComplete, getAIConfig } from '@/utils/aiClient';
 
 export interface PresetNameMatchResult {
   achievements: Record<string, string>;
@@ -32,46 +32,15 @@ export async function generatePresetNameMatches(
   settings: Settings,
   signal?: AbortSignal,
 ): Promise<PresetNameMatchResult> {
-  const apiKey = settings.summaryApiKey?.trim();
-  if (!apiKey) {
+  const cfg = getAIConfig(settings);
+  if (!cfg) {
     throw new Error('请先在「AI 总结-API 配置」里填写 API Key，再匹配成就/技能名称');
   }
 
-  const { baseUrl, model } = resolveProvider(
-    settings.summaryApiProvider,
-    settings.summaryApiBaseUrl,
-    settings.summaryModel,
-  );
-
-  const response = await fetch(`${baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: buildPrompt(settings.attributeNames) },
-      ],
-      temperature: 0.82,
-      max_tokens: 1200,
-      stream: false,
-    }),
-    signal,
-  });
-
-  if (!response.ok) {
-    const body = await response.text().catch(() => '');
-    throw new Error(`AI 匹配失败 (${response.status}): ${extractProviderError(body) || response.statusText}`);
-  }
-
-  const data = await response.json();
-  const raw = data?.choices?.[0]?.message?.content;
-  if (typeof raw !== 'string' || !raw.trim()) {
-    throw new Error('AI 没有返回可用的成就/技能名称');
-  }
+  const raw = await chatComplete(cfg, [
+    { role: 'system', content: SYSTEM_PROMPT },
+    { role: 'user', content: buildPrompt(settings.attributeNames) },
+  ], { temperature: 0.82, maxTokens: 1200, signal });
 
   return normalizeResult(parseJson(raw));
 }
@@ -153,15 +122,4 @@ function normalizeName(value: string | undefined): string {
     .replace(/[\s:：,，.。;；"'“”‘’`~!！?？、|/\\()[\]{}<>《》【】]/g, '')
     .trim();
   return Array.from(cleaned).slice(0, 8).join('');
-}
-
-function extractProviderError(body: string): string {
-  const text = body.trim();
-  if (!text) return '';
-  try {
-    const data = JSON.parse(text) as { error?: { message?: string }; message?: string };
-    return data.error?.message || data.message || text.slice(0, 200);
-  } catch {
-    return text.slice(0, 200);
-  }
 }

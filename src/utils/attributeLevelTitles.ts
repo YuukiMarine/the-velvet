@@ -1,5 +1,5 @@
 import type { AttributeId, AttributeLevelTitles, AttributeNames, Settings } from '@/types';
-import { resolveProvider } from '@/utils/aiProviders';
+import { chatComplete, getAIConfig } from '@/utils/aiClient';
 
 export const ATTRIBUTE_IDS: AttributeId[] = ['knowledge', 'guts', 'dexterity', 'kindness', 'charm'];
 
@@ -66,46 +66,15 @@ export async function generateAttributeLevelTitles(
   maxLevel: number,
   signal?: AbortSignal,
 ): Promise<AttributeLevelTitles> {
-  const apiKey = settings.summaryApiKey?.trim();
-  if (!apiKey) {
+  const cfg = getAIConfig(settings);
+  if (!cfg) {
     throw new Error('请先在「AI 总结-API 配置」里填写 API Key，再刷新等级称号');
   }
-
-  const { baseUrl, model } = resolveProvider(
-    settings.summaryApiProvider,
-    settings.summaryApiBaseUrl,
-    settings.summaryModel,
-  );
   const levelCount = clampLevelCount(maxLevel);
-  const response = await fetch(`${baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: 'system', content: LEVEL_TITLE_SYSTEM_PROMPT },
-        { role: 'user', content: buildLevelTitlePrompt(settings.attributeNames, levelCount) },
-      ],
-      temperature: 0.85,
-      max_tokens: 900,
-      stream: false,
-    }),
-    signal,
-  });
-
-  if (!response.ok) {
-    const body = await response.text().catch(() => '');
-    throw new Error(`AI 刷新失败 (${response.status}): ${extractProviderError(body) || response.statusText}`);
-  }
-
-  const data = await response.json();
-  const raw = data?.choices?.[0]?.message?.content;
-  if (typeof raw !== 'string' || !raw.trim()) {
-    throw new Error('AI 没有返回可用的等级称号');
-  }
+  const raw = await chatComplete(cfg, [
+    { role: 'system', content: LEVEL_TITLE_SYSTEM_PROMPT },
+    { role: 'user', content: buildLevelTitlePrompt(settings.attributeNames, levelCount) },
+  ], { temperature: 0.85, maxTokens: 900, signal });
 
   const parsed = parseTitleJson(raw);
   if (!hasAnyTitle(parsed)) {
@@ -169,15 +138,4 @@ function fallbackTitle(attributeId: AttributeId, index: number): string {
 
 function clampLevelCount(maxLevel: number): number {
   return Math.max(1, Math.min(10, Math.floor(maxLevel || 5)));
-}
-
-function extractProviderError(body: string): string {
-  const text = body.trim();
-  if (!text) return '';
-  try {
-    const data = JSON.parse(text) as { error?: { message?: string }; message?: string };
-    return data.error?.message || data.message || text.slice(0, 200);
-  } catch {
-    return text.slice(0, 200);
-  }
 }
