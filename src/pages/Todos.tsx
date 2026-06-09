@@ -115,6 +115,7 @@ const PendingWeekdayTodoCard = ({
   onEdit,
   onArchive,
   onDelete,
+  deleteConfirming,
   renderFrequencyBadge,
 }: {
   todo: ReturnType<typeof useAppStore.getState>['todos'][number];
@@ -122,6 +123,8 @@ const PendingWeekdayTodoCard = ({
   onEdit: (id: string) => void;
   onArchive: (id: string) => void;
   onDelete: (id: string) => void;
+  /** 删除按钮处于"再点一次确认"状态 */
+  deleteConfirming: boolean;
   renderFrequencyBadge: (frequency: import('@/types').TodoFrequency, targetCount?: number, isLongTerm?: boolean) => string;
 }) => {
   const { pressing, bindings } = useLongPress(() => onEdit(todo.id));
@@ -169,12 +172,16 @@ const PendingWeekdayTodoCard = ({
               <path d="M2 3a1 1 0 011-1h10a1 1 0 011 1v1.5a1 1 0 01-.4.8L9 8.5V13a1 1 0 01-1.447.894l-2-1A1 1 0 015 12V8.5L2.4 5.3A1 1 0 012 4.5V3zm1 0v1.5l3 3.75V12l2 1V8.25L11 4.5V3H3z" />
             </svg>
           </button>
-          {/* 彻底删除 */}
+          {/* 彻底删除（二次确认） */}
           <button
             onPointerDown={(e) => e.stopPropagation()}
             onClick={() => onDelete(todo.id)}
-            className="w-7 h-7 rounded-full bg-red-50 dark:bg-red-900/20 flex items-center justify-center text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors"
-            title="删除"
+            className={`w-7 h-7 rounded-full flex items-center justify-center transition-colors ${
+              deleteConfirming
+                ? 'bg-red-500 text-white shadow-sm shadow-red-500/40'
+                : 'bg-red-50 dark:bg-red-900/20 text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40'
+            }`}
+            title={deleteConfirming ? '再次点击确认删除' : '删除'}
           >
             <svg viewBox="0 0 16 16" className="w-3.5 h-3.5" fill="currentColor">
               <path d="M5 2h6l1 1H3L5 2zm-2 2h10l-1 9H4L3 4zm3 2v6h1V6H6zm3 0v6h1V6H9z" />
@@ -208,7 +215,7 @@ const GOAL_TYPE_LABELS: Record<WeeklyGoalType, string> = {
 };
 const GOAL_TYPE_DESCS: Record<WeeklyGoalType, string> = {
   activity_count: '完成指定属性的记录次数',
-  todo_count: '完成任务任务的次数',
+  todo_count: '完成任务的次数',
   attr_points: '获得指定属性的点数',
   total_points: '所有属性的总获得点数',
 };
@@ -574,7 +581,7 @@ const CelebrationModal = ({
                 whileTap={{ scale: 0.97 }}
                 onClick={() => selectedAttr && onConfirm(selectedAttr)}
                 disabled={!selectedAttr}
-                className="flex-2 flex-1 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-white text-sm font-bold shadow-md shadow-amber-500/30 disabled:opacity-40 disabled:shadow-none"
+                className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-white text-sm font-bold shadow-md shadow-amber-500/30 disabled:opacity-40 disabled:shadow-none"
               >
                 领取奖励 ✨
               </motion.button>
@@ -1099,6 +1106,28 @@ export const Todos = () => {
   const inactiveArchivedTodos = useMemo(() => todos.filter(t => !t.isActive && !t.completedAt), [todos]);
   const [expandCompleted, setExpandCompleted] = useState(false);
 
+  // 删除二次确认：第一次点击进入确认态（按钮变实色红），3 秒内再点才真正删除
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const confirmDeleteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (confirmDeleteTimer.current) clearTimeout(confirmDeleteTimer.current); }, []);
+  const requestDelete = (id: string) => {
+    if (confirmDeleteTimer.current) clearTimeout(confirmDeleteTimer.current);
+    if (confirmDeleteId === id) {
+      setConfirmDeleteId(null);
+      deleteTodo(id);
+      return;
+    }
+    setConfirmDeleteId(id);
+    confirmDeleteTimer.current = setTimeout(() => setConfirmDeleteId(null), 3000);
+  };
+  /** 删除按钮样式：确认态变实色红提醒"再点一次" */
+  const deleteBtnClass = (confirming: boolean) =>
+    `w-7 h-7 rounded-full flex items-center justify-center transition-colors ${
+      confirming
+        ? 'bg-red-500 text-white shadow-sm shadow-red-500/40'
+        : 'bg-red-50 dark:bg-red-900/20 text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40'
+    }`;
+
   const resetForm = () => {
     setForm({
       title: '',
@@ -1302,7 +1331,8 @@ export const Todos = () => {
                 attrName={settings.attributeNames[todo.attribute]}
                 onEdit={handleEdit}
                 onArchive={(id) => updateTodo(id, { isActive: false })}
-                onDelete={(id) => deleteTodo(id)}
+                onDelete={requestDelete}
+                deleteConfirming={confirmDeleteId === todo.id}
                 renderFrequencyBadge={renderFrequencyBadge}
               />
             ))}
@@ -1361,9 +1391,9 @@ export const Todos = () => {
                       </svg>
                     </button>
                     <button
-                      onClick={() => deleteTodo(todo.id)}
-                      className="w-7 h-7 rounded-full bg-red-50 dark:bg-red-900/20 flex items-center justify-center text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors"
-                      title="删除"
+                      onClick={() => requestDelete(todo.id)}
+                      className={deleteBtnClass(confirmDeleteId === todo.id)}
+                      title={confirmDeleteId === todo.id ? '再次点击确认删除' : '删除'}
                     >
                       <svg viewBox="0 0 16 16" className="w-3.5 h-3.5" fill="currentColor">
                         <path d="M5 2h6l1 1H3L5 2zm-2 2h10l-1 9H4L3 4zm3 2v6h1V6H6zm3 0v6h1V6H9z" />
@@ -1435,9 +1465,9 @@ export const Todos = () => {
                     </div>
                     <div className="flex items-center gap-1 flex-shrink-0">
                       <button
-                        onClick={() => deleteTodo(todo.id)}
-                        className="w-7 h-7 rounded-full bg-red-50 dark:bg-red-900/20 flex items-center justify-center text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors"
-                        title="删除"
+                        onClick={() => requestDelete(todo.id)}
+                        className={deleteBtnClass(confirmDeleteId === todo.id)}
+                        title={confirmDeleteId === todo.id ? '再次点击确认删除' : '删除'}
                       >
                         <svg viewBox="0 0 16 16" className="w-3.5 h-3.5" fill="currentColor">
                           <path d="M5 2h6l1 1H3L5 2zm-2 2h10l-1 9H4L3 4zm3 2v6h1V6H6zm3 0v6h1V6H9z" />

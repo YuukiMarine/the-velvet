@@ -410,7 +410,7 @@ export function CallingCardEditor({ isOpen, initialCard, onClose }: Props) {
 
               {/* 钉到主页 */}
               <Section label="">
-                <label className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-black/3 dark:bg-white/5 cursor-pointer">
+                <label className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-black/[0.03] dark:bg-white/5 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={pinned}
@@ -433,7 +433,7 @@ export function CallingCardEditor({ isOpen, initialCard, onClose }: Props) {
                 onClick={handleSave}
                 disabled={!canSave}
                 className={`w-full py-3.5 rounded-2xl font-bold text-sm transition-all ${
-                  canSave ? 'bg-primary text-white shadow-lg active:scale-98' : 'bg-gray-200 dark:bg-gray-700 text-gray-400 cursor-not-allowed'
+                  canSave ? 'bg-primary text-white shadow-lg active:scale-[0.98]' : 'bg-gray-200 dark:bg-gray-700 text-gray-400 cursor-not-allowed'
                 }`}
               >
                 {initialCard ? '保存修改' : '✦ 立此宣告'}

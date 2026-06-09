@@ -8,6 +8,14 @@ import SummaryModal from '@/components/SummaryModal';
 import { triggerNavFeedback, triggerLightHaptic } from '@/utils/feedback';
 import { useRipple } from '@/components/RippleEffect';
 
+// ---- 来源筛选选项（筛选面板与已选 chip 共用） ----
+const METHOD_FILTER_OPTIONS = [
+  { key: 'all', label: '全部' },
+  { key: 'local', label: '手动记录' },
+  { key: 'todo', label: '任务完成' },
+  { key: 'battle', label: '战斗奖励' },
+] as const;
+
 // ---- 小组件 ----
 const ChevronDown = ({ open }: { open: boolean }) => (
   <motion.svg
@@ -809,7 +817,7 @@ export const Activities = () => {
           ))}
           {filterMethod !== 'all' && (
             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs bg-primary/10 text-primary font-medium">
-              {filterMethod === 'local' ? '手动' : '任务'}
+              {METHOD_FILTER_OPTIONS.find(o => o.key === filterMethod)?.label ?? filterMethod}
               <button onClick={() => setFilterMethod('all')} className="ml-0.5 opacity-60 hover:opacity-100">✕</button>
             </span>
           )}
@@ -894,7 +902,7 @@ export const Activities = () => {
               <div className="px-4 py-3 border-b border-gray-50 dark:border-gray-800">
                 <p className="text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-2">来源</p>
                 <div className="flex gap-1.5">
-                  {[{ key: 'all', label: '全部' }, { key: 'local', label: '手动记录' }, { key: 'todo', label: '任务完成' }, { key: 'battle', label: '战斗奖励' }].map(({ key, label }) => (
+                  {METHOD_FILTER_OPTIONS.map(({ key, label }) => (
                     <button
                       key={key}
                       onClick={() => setFilterMethod(key)}
@@ -942,7 +950,7 @@ export const Activities = () => {
                     onClick={() => setShowImportantOnly(v => !v)}
                     className={`w-10 h-6 rounded-full transition-colors ${showImportantOnly ? 'bg-amber-400' : 'bg-gray-200 dark:bg-gray-700'}`}
                   >
-                    <span className={`block w-5 h-5 bg-white rounded-full shadow-sm transition-transform mt-0.5 ${showImportantOnly ? 'translate-x-4.5' : 'translate-x-0.5'}`} />
+                    <span className={`block w-5 h-5 bg-white rounded-full shadow-sm transition-transform mt-0.5 ${showImportantOnly ? 'translate-x-[18px]' : 'translate-x-0.5'}`} />
                   </div>
                 </label>
               </div>

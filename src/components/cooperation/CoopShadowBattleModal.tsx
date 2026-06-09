@@ -563,7 +563,7 @@ export function CoopShadowBattleModal({ isOpen, shadow: shadowProp, partnerName,
                 </div>
               ) : resonanceMine ? (
                 <div
-                  className="rounded-xl px-3 py-2 flex items-center gap-2 border text-[11px] border-white/5 bg-white/3 text-purple-300/60"
+                  className="rounded-xl px-3 py-2 flex items-center gap-2 border text-[11px] border-white/5 bg-white/[0.03] text-purple-300/60"
                 >
                   <span className="text-base opacity-40">✦</span>
                   <span>印记由你留下 · 等待 @{partnerName} 接力</span>

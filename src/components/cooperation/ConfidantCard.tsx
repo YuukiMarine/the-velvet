@@ -300,12 +300,10 @@ export function ConfidantCard({ confidant, onClick, prayer, activeShadow, onShad
           exit={{ opacity: 0, scale: 0.95 }}
           transition={{ duration: 0.14 }}
           onPointerDown={(e) => e.stopPropagation()}
-          className="fixed z-[170] w-48 rounded-2xl overflow-hidden shadow-2xl border"
+          className="fixed z-[170] w-48 rounded-2xl overflow-hidden shadow-2xl border bg-white/95 dark:bg-gray-800/95 border-slate-400/35 dark:border-white/10"
           style={{
             top: menuPos.y,
             left: Math.max(8, menuPos.x - 192),
-            background: 'rgba(255,255,255,0.96)',
-            borderColor: 'rgba(148,163,184,0.35)',
             backdropFilter: 'blur(14px)',
             WebkitBackdropFilter: 'blur(14px)',
           }}
@@ -337,14 +335,14 @@ function CardMenuItem({ label, sub, active, onClick }: { label: string; sub: str
   return (
     <button
       onClick={onClick}
-      className="w-full px-3.5 py-2.5 text-left text-xs hover:bg-black/5 transition-colors flex items-center gap-2 border-t border-black/5 first:border-t-0"
+      className="w-full px-3.5 py-2.5 text-left text-xs hover:bg-black/5 dark:hover:bg-white/10 transition-colors flex items-center gap-2 border-t border-black/5 dark:border-white/10 first:border-t-0"
     >
       <span className="w-3 text-center text-emerald-500 font-bold">
         {active ? '✓' : ''}
       </span>
       <div className="flex-1">
-        <div className="font-semibold text-gray-800">{label}</div>
-        <div className="text-[10px] text-gray-500 font-normal">{sub}</div>
+        <div className="font-semibold text-gray-800 dark:text-gray-100">{label}</div>
+        <div className="text-[10px] text-gray-500 dark:text-gray-400 font-normal">{sub}</div>
       </div>
     </button>
   );

@@ -2504,7 +2504,7 @@ export const Settings = () => {
                       <div className="text-5xl mb-4">🦋</div>
                       <h3 className="text-xl font-bold text-gray-800 dark:text-white mb-1">靛蓝色房间</h3>
                       <p className="text-sm text-gray-500 dark:text-gray-400">Persona Growth Tracker</p>
-                      <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">v2.1</p>
+                      <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">v{import.meta.env.PACKAGE_VERSION}</p>
                     </div>
                     <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4 space-y-3">
                       <div className="flex items-center justify-between">
