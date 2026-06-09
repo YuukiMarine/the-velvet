@@ -10,6 +10,7 @@
 import type { Settings, TarotOrientation } from '@/types';
 import { MAJOR_ARCANA, TAROT_BY_ID } from '@/constants/tarot';
 import { resolveProvider } from '@/utils/aiProviders';
+import { chatComplete } from '@/utils/aiClient';
 
 export interface ConfidantMatchInput {
   settings: Settings;
@@ -117,28 +118,7 @@ export function buildMatchRequest(input: ConfidantMatchInput): AIRequestData {
 }
 
 export async function callMatchAI(req: AIRequestData, signal?: AbortSignal): Promise<ConfidantMatchResult> {
-  const resp = await fetch(`${req.baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${req.apiKey}`,
-    },
-    body: JSON.stringify({
-      model: req.model,
-      messages: req.messages,
-      temperature: 0.9,
-      max_tokens: 800,
-      stream: false,
-    }),
-    signal,
-  });
-  if (!resp.ok) {
-    const body = await resp.text().catch(() => '');
-    throw new Error(`AI 请求失败 (${resp.status}): ${body.slice(0, 200) || resp.statusText}`);
-  }
-  const data = await resp.json();
-  const raw: string = data?.choices?.[0]?.message?.content ?? '';
-  if (!raw) throw new Error('AI 返回为空');
+  const raw = await chatComplete(req, req.messages, { temperature: 0.9, maxTokens: 800, signal });
 
   const stripped = raw.replace(/```(?:json)?/gi, '').trim();
   const a = stripped.indexOf('{');
@@ -360,15 +340,7 @@ export async function interpretLockedArcana(
   if (!hasKey) return lockedInterpretOffline(input);
   try {
     const req = buildLockedInterpretRequest(input);
-    const resp = await fetch(`${req.baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${req.apiKey}` },
-      body: JSON.stringify({ model: req.model, messages: req.messages, temperature: 0.85, max_tokens: 600, stream: false }),
-      signal,
-    });
-    if (!resp.ok) throw new Error(`AI 请求失败 (${resp.status})`);
-    const data = await resp.json();
-    const raw: string = data?.choices?.[0]?.message?.content ?? '';
+    const raw = await chatComplete(req, req.messages, { temperature: 0.85, maxTokens: 600, signal });
     const stripped = raw.replace(/```(?:json)?/gi, '').trim();
     const a = stripped.indexOf('{');
     const b = stripped.lastIndexOf('}');
@@ -487,28 +459,7 @@ export function buildEvalRequest(input: InteractionEvalInput): AIRequestData {
 }
 
 export async function callEvalAI(req: AIRequestData, signal?: AbortSignal): Promise<InteractionEvalResult> {
-  const resp = await fetch(`${req.baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${req.apiKey}`,
-    },
-    body: JSON.stringify({
-      model: req.model,
-      messages: req.messages,
-      temperature: 0.85,
-      max_tokens: 600,
-      stream: false,
-    }),
-    signal,
-  });
-  if (!resp.ok) {
-    const body = await resp.text().catch(() => '');
-    throw new Error(`AI 请求失败 (${resp.status}): ${body.slice(0, 200) || resp.statusText}`);
-  }
-  const data = await resp.json();
-  const raw: string = data?.choices?.[0]?.message?.content ?? '';
-  if (!raw) throw new Error('AI 返回为空');
+  const raw = await chatComplete(req, req.messages, { temperature: 0.85, maxTokens: 600, signal });
   const stripped = raw.replace(/```(?:json)?/gi, '').trim();
   const a = stripped.indexOf('{');
   const b = stripped.lastIndexOf('}');
@@ -651,19 +602,7 @@ function buildStarShiftRequest(input: StarShiftInput): AIRequestData {
 }
 
 async function callStarShiftAI(req: AIRequestData, signal?: AbortSignal): Promise<StarShiftResult> {
-  const resp = await fetch(`${req.baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${req.apiKey}` },
-    body: JSON.stringify({ model: req.model, messages: req.messages, temperature: 0.85, max_tokens: 900, stream: false }),
-    signal,
-  });
-  if (!resp.ok) {
-    const body = await resp.text().catch(() => '');
-    throw new Error(`AI 请求失败 (${resp.status}): ${body.slice(0, 200) || resp.statusText}`);
-  }
-  const data = await resp.json();
-  const raw: string = data?.choices?.[0]?.message?.content ?? '';
-  if (!raw) throw new Error('AI 返回为空');
+  const raw = await chatComplete(req, req.messages, { temperature: 0.85, maxTokens: 900, signal });
   const stripped = raw.replace(/```(?:json)?/gi, '').trim();
   const a = stripped.indexOf('{');
   const b = stripped.lastIndexOf('}');

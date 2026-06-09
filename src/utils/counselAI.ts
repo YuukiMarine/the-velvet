@@ -10,6 +10,7 @@
 
 import type { CounselMessage, Settings, TarotOrientation } from '@/types';
 import { resolveProvider } from '@/utils/aiProviders';
+import { chatComplete, chatStream, getAIConfig } from '@/utils/aiClient';
 
 export interface CounselConfidantBrief {
   id: string;
@@ -180,48 +181,7 @@ function buildCounselRequest(ctx: CounselContext, opts: { greeting?: boolean } =
 // ── 流式响应 ─────────────────────────────────────────────────────
 
 async function* streamSSE(req: ChatReq, signal?: AbortSignal): AsyncGenerator<string> {
-  const resp = await fetch(`${req.baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${req.apiKey}`,
-    },
-    body: JSON.stringify({
-      model: req.model,
-      messages: req.messages,
-      stream: true,
-      temperature: 0.9,
-      max_tokens: 500,
-    }),
-    signal,
-  });
-
-  if (!resp.ok) {
-    const body = await resp.text().catch(() => '');
-    throw new Error(`API 请求失败 (${resp.status}): ${body.slice(0, 200) || resp.statusText}`);
-  }
-
-  const reader = resp.body!.getReader();
-  const decoder = new TextDecoder();
-  let buf = '';
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buf += decoder.decode(value, { stream: true });
-    const lines = buf.split('\n');
-    buf = lines.pop() ?? '';
-    for (const line of lines) {
-      if (!line.startsWith('data:')) continue;
-      const data = line.slice(5).trim();
-      if (data === '[DONE]') return;
-      try {
-        const json = JSON.parse(data);
-        const delta: string = json?.choices?.[0]?.delta?.content ?? '';
-        if (delta) yield delta;
-      } catch { /* malformed chunk, skip */ }
-    }
-  }
+  yield* chatStream(req, req.messages, { temperature: 0.9, maxTokens: 500, signal });
 }
 
 // ── 离线兜底 ─────────────────────────────────────────────────────
@@ -331,33 +291,12 @@ export async function summarizeCounsel(
   }
 
   try {
-    const { baseUrl, model } = resolveProvider(
-      settings.summaryApiProvider,
-      settings.summaryApiBaseUrl,
-      settings.summaryModel,
-    );
-    const resp = await fetch(`${baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${settings.summaryApiKey}`,
-      },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: 'system', content: SUMMARY_PROMPT },
-          { role: 'user', content: transcript },
-        ],
-        temperature: 0.4,
-        max_tokens: 220,
-        stream: false,
-      }),
-      signal,
-    });
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const data = await resp.json();
-    const raw: string = (data?.choices?.[0]?.message?.content ?? '').trim();
-    if (!raw) throw new Error('empty');
+    const cfg = getAIConfig(settings);
+    if (!cfg) throw new Error('no-key');
+    const raw = await chatComplete(cfg, [
+      { role: 'system', content: SUMMARY_PROMPT },
+      { role: 'user', content: transcript },
+    ], { temperature: 0.4, maxTokens: 220, signal });
     return trimSummary(raw);
   } catch (err) {
     console.warn('[counselAI] summary failed:', err);

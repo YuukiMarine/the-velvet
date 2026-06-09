@@ -1,6 +1,7 @@
 import { Activity, Attribute, AttributeId, DailyDivination, DrawnCard, Fortune, LongReadingPeriod, Settings, TarotOrientation } from '@/types';
 import { TarotCardData, TAROT_BY_ID, SPREAD_POSITIONS, PERIOD_LABELS, FORTUNE_META } from '@/constants/tarot';
 import { resolveProvider } from '@/utils/aiProviders';
+import { chatComplete, chatStream } from '@/utils/aiClient';
 
 const ATTRIBUTE_IDS: AttributeId[] = ['knowledge', 'guts', 'dexterity', 'kindness', 'charm'];
 
@@ -198,30 +199,7 @@ export async function callDailyAI(
   signal?: AbortSignal,
   attrNames?: Record<AttributeId, string>,
 ): Promise<DailyAIResult> {
-  const resp = await fetch(`${req.baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${req.apiKey}`,
-    },
-    body: JSON.stringify({
-      model: req.model,
-      messages: req.messages,
-      temperature: 0.85,
-      max_tokens: 800,
-      stream: false,
-    }),
-    signal,
-  });
-
-  if (!resp.ok) {
-    const body = await resp.text().catch(() => '');
-    throw new Error(`API 请求失败 (${resp.status}): ${body.slice(0, 200) || resp.statusText}`);
-  }
-
-  const data = await resp.json();
-  const raw: string = data?.choices?.[0]?.message?.content ?? '';
-  if (!raw) throw new Error('AI 返回为空');
+  const raw = await chatComplete(req, req.messages, { temperature: 0.85, maxTokens: 800, signal });
 
   // 模型可能包裹代码块或在前后添加解释文字，尽可能提取 { ... } 主体
   const stripped = raw.replace(/```(?:json)?/gi, '').trim();
@@ -404,48 +382,7 @@ export function buildFollowUpRequest(params: {
 // ── 通用流式读取 ────────────────────────────────────────────
 
 export async function* streamChatSSE(req: AIRequestData, signal?: AbortSignal): AsyncGenerator<string> {
-  const resp = await fetch(`${req.baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${req.apiKey}`,
-    },
-    body: JSON.stringify({
-      model: req.model,
-      messages: req.messages,
-      stream: true,
-      temperature: 0.85,
-      max_tokens: 1600,
-    }),
-    signal,
-  });
-
-  if (!resp.ok) {
-    const body = await resp.text().catch(() => '');
-    throw new Error(`API 请求失败 (${resp.status}): ${body.slice(0, 200) || resp.statusText}`);
-  }
-
-  const reader = resp.body!.getReader();
-  const decoder = new TextDecoder();
-  let buf = '';
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buf += decoder.decode(value, { stream: true });
-    const lines = buf.split('\n');
-    buf = lines.pop() ?? '';
-    for (const line of lines) {
-      if (!line.startsWith('data:')) continue;
-      const data = line.slice(5).trim();
-      if (data === '[DONE]') return;
-      try {
-        const json = JSON.parse(data);
-        const delta: string = json?.choices?.[0]?.delta?.content ?? '';
-        if (delta) yield delta;
-      } catch { /* malformed chunk, skip */ }
-    }
-  }
+  yield* chatStream(req, req.messages, { temperature: 0.85, maxTokens: 1600, signal });
 }
 
 /** 格式化常见网络错误 */

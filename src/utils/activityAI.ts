@@ -17,7 +17,7 @@
  */
 
 import { AttributeId, AttributeNames, Settings } from '@/types';
-import { resolveProvider } from '@/utils/aiProviders';
+import { chatComplete, getAIConfig } from '@/utils/aiClient';
 
 const ATTRIBUTE_IDS: AttributeId[] = ['knowledge', 'guts', 'dexterity', 'kindness', 'charm'];
 
@@ -53,15 +53,10 @@ export async function analyzeActivityAI(
   const trimmed = description.trim();
   if (!trimmed) throw new Error('描述为空');
 
-  if (!settings.summaryApiKey) {
+  const cfg = getAIConfig(settings);
+  if (!cfg) {
     throw new Error('请先在「设置 → AI 总结」中配置 API 密钥');
   }
-
-  const { baseUrl, model } = resolveProvider(
-    settings.summaryApiProvider,
-    settings.summaryApiBaseUrl,
-    settings.summaryModel,
-  );
 
   const userMessage = [
     `用户描述：`,
@@ -73,33 +68,11 @@ export async function analyzeActivityAI(
     `请按要求输出 JSON。`,
   ].join('\n');
 
-  const resp = await fetch(`${baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${settings.summaryApiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: userMessage },
-      ],
-      temperature: 0.3, // 偏稳定，少漂
-      max_tokens: 200,
-      stream: false,
-    }),
-    signal,
-  });
-
-  if (!resp.ok) {
-    const body = await resp.text().catch(() => '');
-    throw new Error(`API 请求失败 (${resp.status}): ${body.slice(0, 160) || resp.statusText}`);
-  }
-
-  const data = await resp.json();
-  const raw: string = data?.choices?.[0]?.message?.content ?? '';
-  if (!raw) throw new Error('AI 返回为空');
+  // 偏稳定、少漂：temperature 0.3
+  const raw = await chatComplete(cfg, [
+    { role: 'system', content: SYSTEM_PROMPT },
+    { role: 'user', content: userMessage },
+  ], { temperature: 0.3, maxTokens: 200, signal });
 
   const stripped = raw.replace(/```(?:json)?/gi, '').trim();
   const firstBrace = stripped.indexOf('{');

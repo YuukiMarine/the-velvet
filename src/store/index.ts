@@ -6,6 +6,7 @@ import { db } from '@/db';
 import { v4 as uuidv4 } from 'uuid';
 import { calcMaxStreak } from '@/utils/streak';
 import { resolveProvider } from '@/utils/aiProviders';
+import { chatComplete, getAIConfig } from '@/utils/aiClient';
 import {
   pointsToLevel,
   levelBasePoints,
@@ -2557,37 +2558,12 @@ ${activityLines || '（本期暂无记录）'}
     const systemPrompt = preset.systemPrompt || DEFAULT_SUMMARY_PROMPT_PRESETS[0].systemPrompt;
 
     // 确定 API endpoint
-    const { baseUrl, model } = resolveProvider(
-      settings.summaryApiProvider,
-      settings.summaryApiBaseUrl,
-      settings.summaryModel,
-    );
-
-    const response = await fetch(`${baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${settings.summaryApiKey}`,
-      },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userMessage },
-        ],
-        temperature: 0.8,
-        max_tokens: 2000,
-      }),
-    });
-
-    if (!response.ok) {
-      const errBody = await response.text().catch(() => '');
-      throw new Error(`API 请求失败 (${response.status}): ${errBody || response.statusText}`);
-    }
-
-    const data = await response.json();
-    const content: string = data?.choices?.[0]?.message?.content ?? '';
-    if (!content) throw new Error('AI 返回内容为空，请重试');
+    const cfg = getAIConfig(settings);
+    if (!cfg) throw new Error('请先在「设置 → AI 总结」中配置 API 密钥');
+    const content = await chatComplete(cfg, [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userMessage },
+    ], { temperature: 0.8, maxTokens: 2000 });
 
     const summary: PeriodSummary = {
       id: uuidv4(),
