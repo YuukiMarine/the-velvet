@@ -67,7 +67,7 @@ function ReadingRow({
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
       onClick={() => onOpen(reading)}
-      className="relative rounded-2xl bg-black/5 dark:bg-white/5 p-4 flex items-center gap-3 cursor-pointer hover:bg-black/8 dark:hover:bg-white/8 transition-colors"
+      className="relative rounded-2xl bg-black/5 dark:bg-white/5 p-4 flex items-center gap-3 cursor-pointer hover:bg-black/[0.08] dark:hover:bg-white/[0.08] transition-colors"
     >
       <div className="w-10 h-16 rounded-md bg-gradient-to-b from-[#1A1530] to-[#0F0A1F] border border-[#D4AF37]/40 flex items-center justify-center text-[#F6E5B5] text-xs flex-shrink-0">
         {firstCard ? firstCard.roman ?? firstCard.number : '?'}

@@ -190,7 +190,13 @@ function App() {
         if (tryHandleBack()) return;
 
         // 步骤 2：非 dashboard 页 → 返回 dashboard
+        // 例外：成就页的 UI 返回键指向设置（入口在设置里），硬件返回保持同一去向，
+        // 避免「界面返回去设置、系统返回去首页」的分裂
         const store = useAppStore.getState();
+        if (store.currentPage === 'achievements') {
+          store.setCurrentPage('settings');
+          return;
+        }
         if (store.currentPage !== 'dashboard') {
           store.setCurrentPage('dashboard');
           return;

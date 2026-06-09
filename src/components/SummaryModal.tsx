@@ -276,7 +276,7 @@ function StreamingContent({ streamedText, isStreaming, reqData, initialFollowUp,
   return (
     <div ref={bodyRef} className="space-y-4">
       {/* 主总结内容 */}
-      <div className="relative bg-black/3 dark:bg-white/3 rounded-2xl p-4 text-sm text-gray-700 dark:text-gray-200 leading-relaxed overflow-hidden">
+      <div className="relative bg-black/[0.03] dark:bg-white/[0.03] rounded-2xl p-4 text-sm text-gray-700 dark:text-gray-200 leading-relaxed overflow-hidden">
         <VelvetWatermark />
         <div className="relative" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(`<p class="mb-2">${renderMarkdown(streamedText)}</p>`) }} />
         {isStreaming && <Cursor />}
@@ -312,7 +312,7 @@ function StreamingContent({ streamedText, isStreaming, reqData, initialFollowUp,
 
           {/* 老归档没存原始 prompt 上下文 → 给个友好说明，不画半灰按钮 */}
           {!showQAArea && lockedByMissingContext && !lockedByExistingFollowUp && (
-            <div className="text-[11px] text-gray-400 dark:text-gray-500 bg-black/3 dark:bg-white/3 rounded-xl px-3 py-2 leading-relaxed">
+            <div className="text-[11px] text-gray-400 dark:text-gray-500 bg-black/[0.03] dark:bg-white/[0.03] rounded-xl px-3 py-2 leading-relaxed">
               这条归档生成于较早版本，没有保留追问所需的上下文，无法在此追问。
               在「生成总结 → 归档保存」的新流程下，归档后仍可继续追问一次。
             </div>
@@ -322,7 +322,7 @@ function StreamingContent({ streamedText, isStreaming, reqData, initialFollowUp,
           {showQAArea && (
             <div className="space-y-2">
               {displayedQuestion && (
-                <div className="text-sm text-gray-700 dark:text-gray-200 bg-black/3 dark:bg-white/5 rounded-2xl px-3 py-2">
+                <div className="text-sm text-gray-700 dark:text-gray-200 bg-black/[0.03] dark:bg-white/5 rounded-2xl px-3 py-2">
                   <span className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider mr-1.5">追问</span>
                   {displayedQuestion}
                 </div>
@@ -1046,7 +1046,7 @@ export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week' }
                 <button
                   onClick={handleGenerate}
                   disabled={isGenerating || noApiKey}
-                  className={`w-full py-3.5 rounded-2xl font-bold text-sm transition-all ${isGenerating || noApiKey ? 'bg-gray-200 dark:bg-gray-700 text-gray-400 cursor-not-allowed' : 'bg-primary text-white shadow-lg active:scale-98'}`}
+                  className={`w-full py-3.5 rounded-2xl font-bold text-sm transition-all ${isGenerating || noApiKey ? 'bg-gray-200 dark:bg-gray-700 text-gray-400 cursor-not-allowed' : 'bg-primary text-white shadow-lg active:scale-[0.98]'}`}
                 >
                   {isGenerating
                     ? <span className="flex items-center justify-center gap-2"><motion.span animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: 'linear' }} className="inline-block">◌</motion.span>准备中…</span>
@@ -1065,7 +1065,7 @@ export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week' }
                   <button
                     onClick={handleSave}
                     disabled={isStreaming || !generatedSummary || saved}
-                    className={`flex-1 py-3.5 rounded-2xl font-bold text-sm transition-all ${saved ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400' : 'bg-primary text-white shadow-lg active:scale-98 disabled:opacity-50'}`}
+                    className={`flex-1 py-3.5 rounded-2xl font-bold text-sm transition-all ${saved ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400' : 'bg-primary text-white shadow-lg active:scale-[0.98] disabled:opacity-50'}`}
                   >
                     {saved ? '✓ 已归档' : isStreaming ? '生成中…' : '归档保存'}
                   </button>
@@ -1073,7 +1073,7 @@ export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week' }
               )}
 
               {(view === 'archive' || view === 'view') && (
-                <button onClick={() => setView('generate')} className="w-full py-3.5 rounded-2xl font-bold text-sm bg-primary text-white shadow-lg active:scale-98">
+                <button onClick={() => setView('generate')} className="w-full py-3.5 rounded-2xl font-bold text-sm bg-primary text-white shadow-lg active:scale-[0.98]">
                   生成新总结
                 </button>
               )}

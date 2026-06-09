@@ -23,7 +23,7 @@ import { motion, AnimatePresence } from 'framer-motion';
  */
 export function PWAUpdateToast() {
   const {
-    needRefresh: [needRefresh],
+    needRefresh: [needRefresh, setNeedRefresh],
     updateServiceWorker,
   } = useRegisterSW({
     immediate: true,
@@ -51,6 +51,13 @@ export function PWAUpdateToast() {
               className="bg-white/20 dark:bg-black/15 hover:bg-white/30 dark:hover:bg-black/25 px-3 py-1 rounded-xl text-xs transition-colors"
             >
               立即更新
+            </button>
+            <button
+              onClick={() => setNeedRefresh(false)}
+              aria-label="稍后再说"
+              className="text-white/60 dark:text-gray-900/60 hover:text-white dark:hover:text-gray-900 px-1 text-xs transition-colors"
+            >
+              稍后
             </button>
           </div>
         </motion.div>

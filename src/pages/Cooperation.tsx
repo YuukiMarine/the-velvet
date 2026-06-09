@@ -280,10 +280,8 @@ export function Cooperation() {
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: -4, scale: 0.96 }}
                   transition={{ duration: 0.15 }}
-                  className="absolute right-0 top-10 z-30 w-56 rounded-2xl overflow-hidden shadow-2xl border"
+                  className="absolute right-0 top-10 z-30 w-56 rounded-2xl overflow-hidden shadow-2xl border bg-white/95 dark:bg-gray-800/95 border-slate-400/35 dark:border-white/10"
                   style={{
-                    background: 'rgba(255,255,255,0.96)',
-                    borderColor: 'rgba(148,163,184,0.35)',
                     backdropFilter: 'blur(18px)',
                     WebkitBackdropFilter: 'blur(18px)',
                   }}
@@ -293,12 +291,12 @@ export function Cooperation() {
                       setMenuOpen(false);
                       setInfoOpen(v => !v);
                     }}
-                    className="w-full px-3.5 py-2.5 text-left text-xs font-semibold text-gray-800 hover:bg-black/5 transition-colors flex items-center gap-2"
+                    className="w-full px-3.5 py-2.5 text-left text-xs font-semibold text-gray-800 dark:text-gray-100 hover:bg-black/5 dark:hover:bg-white/10 transition-colors flex items-center gap-2"
                   >
                     <span className="text-base">✦</span>
                     <div className="flex-1">
                       <div>关于同伴系统</div>
-                      <div className="text-[10px] text-gray-500 font-normal">展开 / 收起简介</div>
+                      <div className="text-[10px] text-gray-500 dark:text-gray-400 font-normal">展开 / 收起简介</div>
                     </div>
                   </button>
                   <button
@@ -307,12 +305,12 @@ export function Cooperation() {
                       setCounselOpen(true);
                     }}
                     disabled={!counselAvailable}
-                    className="w-full px-3.5 py-2.5 text-left text-xs font-semibold text-indigo-700 hover:bg-indigo-500/10 transition-colors flex items-center gap-2 border-t border-black/5 disabled:opacity-40 disabled:hover:bg-transparent"
+                    className="w-full px-3.5 py-2.5 text-left text-xs font-semibold text-indigo-700 dark:text-indigo-300 hover:bg-indigo-500/10 transition-colors flex items-center gap-2 border-t border-black/5 dark:border-white/10 disabled:opacity-40 disabled:hover:bg-transparent"
                   >
                     <span className="text-base">✧</span>
                     <div className="flex-1">
                       <div>谏言</div>
-                      <div className="text-[10px] text-gray-500 font-normal">
+                      <div className="text-[10px] text-gray-500 dark:text-gray-400 font-normal">
                         {hasActiveCounsel()
                           ? '当前窗口仍开着'
                           : cooldown.locked
@@ -326,12 +324,12 @@ export function Cooperation() {
                       setMenuOpen(false);
                       setArchiveOpen(true);
                     }}
-                    className="w-full px-3.5 py-2.5 text-left text-xs font-semibold text-gray-800 hover:bg-black/5 transition-colors flex items-center gap-2 border-t border-black/5"
+                    className="w-full px-3.5 py-2.5 text-left text-xs font-semibold text-gray-800 dark:text-gray-100 hover:bg-black/5 dark:hover:bg-white/10 transition-colors flex items-center gap-2 border-t border-black/5 dark:border-white/10"
                   >
                     <span className="text-base">🗂</span>
                     <div className="flex-1">
                       <div>谏言归档库</div>
-                      <div className="text-[10px] text-gray-500 font-normal">
+                      <div className="text-[10px] text-gray-500 dark:text-gray-400 font-normal">
                         {counselArchives.length} 条旧谈话
                       </div>
                     </div>
@@ -344,7 +342,7 @@ export function Cooperation() {
                       setNotificationsOpen(true);
                     }}
                     disabled={!cloudUser}
-                    className="w-full px-3.5 py-2.5 text-left text-xs font-semibold text-gray-800 hover:bg-black/5 transition-colors flex items-center gap-2 border-t border-black/5 disabled:opacity-40 disabled:hover:bg-transparent"
+                    className="w-full px-3.5 py-2.5 text-left text-xs font-semibold text-gray-800 dark:text-gray-100 hover:bg-black/5 dark:hover:bg-white/10 transition-colors flex items-center gap-2 border-t border-black/5 dark:border-white/10 disabled:opacity-40 disabled:hover:bg-transparent"
                   >
                     <span className="text-base relative">
                       🔔
@@ -356,7 +354,7 @@ export function Cooperation() {
                     </span>
                     <div className="flex-1">
                       <div>通知</div>
-                      <div className="text-[10px] text-gray-500 font-normal">
+                      <div className="text-[10px] text-gray-500 dark:text-gray-400 font-normal">
                         {!cloudUser
                           ? '登录后可查看'
                           : unreadCount > 0
@@ -549,7 +547,7 @@ export function Cooperation() {
       </AnimatePresence>
 
       {/* 浮动新增按钮 */}
-      {visible.length > 0 && remaining > 0 && filter !== 'archived' && (
+      {remaining > 0 && filter !== 'archived' && (
         <motion.button
           whileTap={{ scale: 0.95 }}
           onClick={() => setCreateOpen(true)}

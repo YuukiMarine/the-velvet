@@ -788,7 +788,7 @@ export const Dashboard = () => {
         {!pinnedCallingCard && callingCards.filter(c => !c.archived).length > 0 && (
           <button
             onClick={jumpToCallingCardSection}
-            className={`mt-4 w-full text-left px-3 py-2 rounded-xl text-[11px] flex items-center gap-2 ${useLightText ? 'bg-white/12 text-white/80 hover:bg-white/20' : 'bg-black/8 text-black/65 hover:bg-black/15'} transition-colors`}
+            className={`mt-4 w-full text-left px-3 py-2 rounded-xl text-[11px] flex items-center gap-2 ${useLightText ? 'bg-white/[0.12] text-white/80 hover:bg-white/20' : 'bg-black/[0.08] text-black/65 hover:bg-black/15'} transition-colors`}
           >
             <span>📌</span>
             <span className="flex-1">

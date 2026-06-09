@@ -423,7 +423,7 @@ function DoneView({ d }: { d: DailyDivination }) {
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.25 }}
-        className="rounded-2xl bg-black/3 dark:bg-white/3 p-4 text-sm text-gray-700 dark:text-gray-200 leading-relaxed"
+        className="rounded-2xl bg-black/[0.03] dark:bg-white/[0.03] p-4 text-sm text-gray-700 dark:text-gray-200 leading-relaxed"
       >
         <div className="flex items-center gap-2 mb-2">
           <span className="text-[10px] font-bold tracking-[2px] uppercase text-primary/80">

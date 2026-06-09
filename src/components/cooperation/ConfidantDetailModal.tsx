@@ -462,15 +462,13 @@ export function ConfidantDetailModal({
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: -4, scale: 0.95 }}
                       transition={{ duration: 0.14 }}
-                      className="absolute z-30 left-0 top-[150px] w-48 rounded-xl overflow-hidden shadow-2xl border"
+                      className="absolute z-30 left-0 top-[150px] w-48 rounded-xl overflow-hidden shadow-2xl border bg-white/95 dark:bg-gray-800/95 border-slate-400/35 dark:border-white/10"
                       style={{
-                        background: 'rgba(255,255,255,0.96)',
-                        borderColor: 'rgba(148,163,184,0.35)',
                         backdropFilter: 'blur(18px)',
                         WebkitBackdropFilter: 'blur(18px)',
                       }}
                     >
-                      <div className="px-3 py-1.5 text-[10px] font-bold tracking-widest text-gray-500 bg-gray-100/50 border-b border-gray-200/60">
+                      <div className="px-3 py-1.5 text-[10px] font-bold tracking-widest text-gray-500 dark:text-gray-400 bg-gray-100/50 dark:bg-white/5 border-b border-gray-200/60 dark:border-white/10">
                         {confidant.source === 'online' ? '在线同伴' : '离线同伴'}
                       </div>
                       <button
@@ -478,7 +476,7 @@ export function ConfidantDetailModal({
                           setAvatarMenuOpen(false);
                           avatarFileInputRef.current?.click();
                         }}
-                        className="w-full px-3 py-2 text-left text-xs font-semibold text-gray-800 hover:bg-black/5 transition-colors flex items-center gap-2"
+                        className="w-full px-3 py-2 text-left text-xs font-semibold text-gray-800 dark:text-gray-100 hover:bg-black/5 dark:hover:bg-white/10 transition-colors flex items-center gap-2"
                       >
                         <span className="text-base">📷</span>
                         {confidant.customAvatarDataUrl ? '更换头像' : '上传头像替换塔罗'}
@@ -486,13 +484,13 @@ export function ConfidantDetailModal({
                       {confidant.customAvatarDataUrl && (
                         <button
                           onClick={handleRestoreTarot}
-                          className="w-full px-3 py-2 text-left text-xs font-semibold text-indigo-600 hover:bg-indigo-500/10 transition-colors flex items-center gap-2 border-t border-black/5"
+                          className="w-full px-3 py-2 text-left text-xs font-semibold text-indigo-600 dark:text-indigo-300 hover:bg-indigo-500/10 transition-colors flex items-center gap-2 border-t border-black/5 dark:border-white/10"
                         >
                           <span className="text-base">🂠</span>
                           取消头像 · 恢复为塔罗牌
                         </button>
                       )}
-                      <div className="px-3 py-1.5 text-[10px] text-gray-500 bg-gray-50 border-t border-gray-200/60 leading-relaxed">
+                      <div className="px-3 py-1.5 text-[10px] text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-white/5 border-t border-gray-200/60 dark:border-white/10 leading-relaxed">
                         图片仅保留在本地
                       </div>
                     </motion.div>

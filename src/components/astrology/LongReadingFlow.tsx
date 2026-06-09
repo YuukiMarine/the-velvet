@@ -336,7 +336,7 @@ export function LongReadingFlow({ initialReading, onBack }: Props) {
           className={`w-full py-3.5 rounded-2xl font-bold text-sm transition-all ${
             !question.trim() || hitConcurrencyCap || noApiKey
               ? 'bg-gray-200 dark:bg-gray-700 text-gray-400 cursor-not-allowed'
-              : 'bg-primary text-white shadow-lg active:scale-98'
+              : 'bg-primary text-white shadow-lg active:scale-[0.98]'
           }`}
         >
           🂠 开始洗牌
@@ -518,7 +518,7 @@ export function LongReadingFlow({ initialReading, onBack }: Props) {
           ))}
         </div>
 
-        <div className="relative bg-black/3 dark:bg-white/3 rounded-2xl p-4 text-sm text-gray-700 dark:text-gray-200 leading-relaxed min-h-[120px]">
+        <div className="relative bg-black/[0.03] dark:bg-white/[0.03] rounded-2xl p-4 text-sm text-gray-700 dark:text-gray-200 leading-relaxed min-h-[120px]">
           {streamedText ? (
             <div
               dangerouslySetInnerHTML={{
@@ -829,7 +829,7 @@ export function ReadingDetail({
 
       {/* 主解读 */}
       <div
-        className="rounded-2xl bg-black/3 dark:bg-white/3 p-4 text-sm text-gray-700 dark:text-gray-200 leading-relaxed"
+        className="rounded-2xl bg-black/[0.03] dark:bg-white/[0.03] p-4 text-sm text-gray-700 dark:text-gray-200 leading-relaxed"
         dangerouslySetInnerHTML={{
           __html: DOMPurify.sanitize(`<p class="mb-2">${renderMarkdown(reading.content)}</p>`),
         }}
