@@ -30,6 +30,7 @@ import { PWAUpdateToast } from '@/components/PWAUpdateToast';
 import { CallingCardCutIn } from '@/components/callingCard/CallingCardCutIn';
 import { isNative } from '@/utils/native';
 import { tryHandleBack } from '@/utils/useBackHandler';
+import { initBoldnessRuntime, schedulePerfSample, setStraightenMode } from '@/utils/boldness';
 
 function App() {
   const { currentPage, initializeApp, user, levelUpNotification, setLevelUpNotification, achievementNotification, setAchievementNotification, skillNotification, setSkillNotification, settings, modalBlocker } = useAppStore();
@@ -228,6 +229,22 @@ function App() {
       if (backToastTimerRef.current) clearTimeout(backToastTimerRef.current);
     };
   }, []);
+
+  // 斜界系统：大胆度拨盘运行时——恢复低帧率永久降级 flag（幂等）
+  useEffect(() => {
+    initBoldnessRuntime();
+  }, []);
+
+  // 首开帧率采样推迟到开屏动画结束后：采样窗口若撞上 splash 粒子循环
+  // 会把启动期掉帧误判成永久降级（boldness.ts 文件头「采样时机」）
+  useEffect(() => {
+    if (!showSplash) schedulePerfSample();
+  }, [showSplash]);
+
+  // 「校直模式」→ <html data-boldness>；perf 永久降级优先级更高（boldness.ts 内保证）
+  useEffect(() => {
+    setStraightenMode(!!settings.straightenMode);
+  }, [settings.straightenMode]);
 
   // 同步 dark class 到 <html> 元素，使 index.css 中 html.dark 选择器可控制
   // body 的背景色 —— 修复 iOS PWA standalone 模式下安全区白色条带

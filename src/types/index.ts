@@ -291,6 +291,12 @@ export interface Settings {
    * 用户在 ArcanaPickerForm 里勾选"不使用 AI 内容"会写为 false。
    */
   coopUseAIInterpretation?: boolean;
+  /**
+   * 「校直模式」——true 时全站 D0：斜轴归零、装饰动效静默。
+   * 与 prefers-reduced-motion / 低帧率永久降级相互独立，三者任一命中即 D0
+   * （UI_DESIGN_BOLD_V2.5.md §3）。设置 UI 随后续设置页迁移 PR 提供。
+   */
+  straightenMode?: boolean;
 }
 
 export type SummaryPeriod = 'week' | 'month';

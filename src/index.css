@@ -154,3 +154,74 @@ body {
     display: none;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * 「万线归猫」斜界系统 —— 角度同源 token（UI_DESIGN_BOLD_V2.5.md §2 规则3 / §3）
+ *
+ * ⚠️ --ui-skew 是全站唯一总旋钮：所有角度/切角/咬合尺寸只允许从它派生，
+ *    任何组件不得自带角度字面量——P5 皮肤期把 -4deg 拧成 -8deg 即全站同步变陡。
+ * --boldness 是大胆度拨盘（D0=0 / D2 基线=1），同乘所有派生 token：
+ *    归零即整套几何无级退化为水平世界——D0 的下限是一个正常可用的 APP。
+ * 归零通道（任一命中即 D0，三者互相独立，见 utils/boldness.ts）：
+ *    1. prefers-reduced-motion —— 下方媒体查询，纯 CSS、无 JS 也兜底
+ *    2. 设置「校直模式」 / 3. 低帧率永久降级 —— boldness.ts 写 data-boldness="0"
+ */
+:root {
+  --boldness: 1;
+  /* 唯一总旋钮：世界倾角 */
+  --ui-skew: -4deg;
+  /* 布局平面实际旋转角（拨盘加权后；.sl-plane 消费） */
+  --ui-axis: calc(var(--ui-skew) * var(--boldness));
+  /* 装饰块斜切角：比世界更陡（×2.5）制造层次——只作用于装饰，文字层永不倾斜 */
+  --ui-skew-ui: calc(var(--ui-skew) * 2.5 * var(--boldness));
+  /* 卡片切角尺寸 */
+  --ui-cut: calc(10px * var(--boldness));
+  /* 相邻卡咬合深度（§2 规则4：裁切只作用于装饰层，交互层恒为完整矩形） */
+  --bite: calc(12px * var(--boldness));
+  /* 分隔线/渐变走向：垂直线随世界同角倾斜 */
+  --ui-line-angle: calc(90deg + var(--ui-axis));
+  /* 引力线/动线主笔宽度（不乘拨盘——线是信息不是装饰，D0 仍在场） */
+  --ui-accent-w: 4px;
+}
+
+/* D0 通道 1：系统级减少动效偏好 */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --boldness: 0;
+  }
+}
+
+/* D0 通道 2/3：「校直模式」开关与低帧率永久降级（boldness.ts 写入属性） */
+:root[data-boldness="0"] {
+  --boldness: 0;
+}
+
+@layer components {
+  /* 斜轴世界（UI_DESIGN_BOLD_V2.5.md §2 规则1）——"世界斜、字不斜"
+   * · 外层 .sl-plane-clip 只裁旋转出血的横向溢出，自身不转：
+   *   滚动容器留在平面之外，保住原生惯性滚动
+   * · 内层 .sl-plane 旋转 --ui-axis；112% 宽 + 负 margin 出血，旋转后两侧不露底
+   * · :focus-within 校直（D1 录入态）：聚焦平面内任意输入整页弹性回正 0°，
+   *   失焦自动复斜——纯 CSS 实现，录入路径不依赖任何 JS
+   * · .sl-level 反制层等量反转把正文转回水平；校直时同步归零，避免反向残留
+   * · 纯 transform，无颜色——亮/暗模式天然同构，无需 dark: 变体 */
+  .sl-plane-clip {
+    overflow-x: clip;
+  }
+  .sl-plane {
+    transform: rotate(var(--ui-axis));
+    width: 112%;
+    margin-left: -6%;
+    transition: transform 0.5s cubic-bezier(0.3, 1.25, 0.5, 1); /* 上限对齐 motion.ts DUR_RITUAL_MAX（仪式档 ≤500ms） */
+  }
+  .sl-plane:focus-within {
+    transform: rotate(0deg);
+  }
+  .sl-level {
+    transform: rotate(calc(-1 * var(--ui-axis)));
+    transition: transform 0.5s cubic-bezier(0.3, 1.25, 0.5, 1); /* 上限对齐 motion.ts DUR_RITUAL_MAX（仪式档 ≤500ms） */
+  }
+  .sl-plane:focus-within .sl-level {
+    transform: rotate(0deg);
+  }
+}

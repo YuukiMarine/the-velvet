@@ -11,6 +11,11 @@ export default {
         primary: 'var(--color-primary)',
         secondary: 'var(--color-secondary)',
       },
+      fontSize: {
+        // 字号阶梯最低档（UI_AUDIT_V2.5.md §4.1）：eyebrow/徽章/计数专用，
+        // 替换全站 text-[9px]/[10px]/[11px] 任意值
+        '2xs': ['10px', { lineHeight: '14px' }],
+      },
       animation: {
         'pulse-glow': 'pulse-glow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
       },

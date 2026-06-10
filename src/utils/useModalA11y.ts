@@ -8,22 +8,41 @@ import { useEffect, useRef } from 'react';
  *
  * 与其他 Modal 的现有开/关动画完全独立，不改动画、不改 DOM 结构，
  * 只增强键盘可达性与屏幕阅读器语义。
+ *
+ * 叠层语义：模块级栈记录打开顺序，**只有栈顶实例消费 ESC 与 Tab 陷阱**——
+ * 否则二段确认（ConfirmDialog 叠在 SheetModal 上）时一次 ESC 会同时触发
+ * 两层的 document keydown 监听，把两层一起关掉；下层的焦点陷阱也会和
+ * 顶层抢 Tab。onClose / options 经 ref 取最新值，deps 只有 [isOpen]，
+ * 保证栈顺序不被重渲染打乱（与 useBackHandler 同一套约定）。
  */
+
+/** 打开顺序栈：元素是每个打开实例的身份 token */
+const a11yStack: object[] = [];
+
 export function useModalA11y(
   isOpen: boolean,
   onClose: () => void,
   options: { closeOnEscape?: boolean; trapFocus?: boolean } = {},
 ) {
-  const { closeOnEscape = true, trapFocus = true } = options;
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  const optionsRef = useRef(options);
+  optionsRef.current = options;
 
   useEffect(() => {
     if (!isOpen) return;
 
+    const token = {};
+    a11yStack.push(token);
+
     const handleKey = (e: KeyboardEvent) => {
+      // 非栈顶实例不消费：ESC 与焦点陷阱都只属于最上层弹窗
+      if (a11yStack[a11yStack.length - 1] !== token) return;
+      const { closeOnEscape = true, trapFocus = true } = optionsRef.current;
       if (e.key === 'Escape' && closeOnEscape) {
         e.stopPropagation();
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (!trapFocus || e.key !== 'Tab') return;
@@ -50,8 +69,12 @@ export function useModalA11y(
     };
 
     document.addEventListener('keydown', handleKey);
-    return () => document.removeEventListener('keydown', handleKey);
-  }, [isOpen, onClose, closeOnEscape, trapFocus]);
+    return () => {
+      document.removeEventListener('keydown', handleKey);
+      const idx = a11yStack.lastIndexOf(token);
+      if (idx !== -1) a11yStack.splice(idx, 1);
+    };
+  }, [isOpen]);
 
   return containerRef;
 }
