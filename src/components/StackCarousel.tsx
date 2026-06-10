@@ -26,6 +26,11 @@ interface StackCarouselProps {
   onPageChange?: (index: number) => void;
   /** 受控跳页：值变化时平滑滚到对应页 */
   page?: number;
+  /**
+   * 锁定横滑（snap 失效 + 不可滚动）。给 slide 内部自带拖拽手势的内容用——
+   * 如属性卡的排序编辑模式：两套水平手势会互抢 pointer，编辑期间必须锁外层。
+   */
+  locked?: boolean;
 }
 
 /** 取视口中心最近的 slide 下标（snap-center 对齐，按子元素中点算距离） */
@@ -62,6 +67,7 @@ export const StackCarousel = ({
   itemWidthClass = 'w-[86%]',
   onPageChange,
   page,
+  locked = false,
 }: StackCarouselProps) => {
   const storageKey = `sl-stack-${id}`;
   const scrollerRef = useRef<HTMLDivElement>(null);
@@ -149,7 +155,9 @@ export const StackCarousel = ({
     <div className={className}>
       <div
         ref={scrollerRef}
-        className="flex gap-3 items-stretch overflow-x-auto snap-x snap-mandatory no-scrollbar"
+        className={`flex gap-3 items-stretch no-scrollbar ${
+          locked ? 'overflow-x-hidden' : 'overflow-x-auto snap-x snap-mandatory'
+        }`}
       >
         {slides.map((child, i) => (
           <div key={i} className={`flex-none snap-center ${itemWidthClass}`}>
@@ -162,7 +170,7 @@ export const StackCarousel = ({
           className="mt-2"
           count={slides.length}
           activeIndex={shownIndex}
-          onSelect={i => scrollToIndex(i, 'smooth')}
+          onSelect={locked ? undefined : (i => scrollToIndex(i, 'smooth'))}
         />
       )}
     </div>

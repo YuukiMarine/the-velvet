@@ -1,9 +1,11 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useEffect, useRef } from 'react';
+import type { ReactNode } from 'react';
 import { useAppStore, toLocalDateKey } from '@/store';
 import { TodoCompleteModal } from '@/components/TodoCompleteModal';
-import { PageTitle } from '@/components/PageTitle';
 import { BattleDashboardWidget } from '@/components/BattleDashboardWidget';
+import { StackCarousel } from '@/components/StackCarousel';
+import { EyebrowLabel } from '@/components/EyebrowLabel';
 import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer } from 'recharts';
 import { TAROT_BY_ID } from '@/constants/tarot';
 import { CallingCardCard } from '@/components/callingCard/CallingCardCard';
@@ -129,9 +131,15 @@ const ATTR_WIDE_KEY  = 'attr-card-wide';   // which id (if any) is wide (col-spa
 // DropTarget for the last row: 'half' = normal half-width, 'wide' = full-width, null = nothing
 type LastRowDrop = 'half' | 'wide' | null;
 
-const AttributeGrid = ({ attributes, settings }: {
+const AttributeGrid = ({ attributes, settings, onEditingChange }: {
   attributes: ReturnType<typeof useAppStore.getState>['attributes'];
   settings: ReturnType<typeof useAppStore.getState>['settings'];
+  /**
+   * 编辑态（排序模式）切换回调。本组件现挂在 StackCarousel 的 slide 里，
+   * 排序拖拽与外层横滑是两套水平 pointer 手势——父层用该回调维护 locked，
+   * 编辑期间锁死外层横滑，防互抢。除此回调外内部逻辑零改动。
+   */
+  onEditingChange?: (editing: boolean) => void;
 }) => {
   // --- persistent order ---
   const [order, setOrder] = useState<string[]>(() => {
@@ -346,9 +354,16 @@ const AttributeGrid = ({ attributes, settings }: {
       style={{ userSelect: 'none' }}
     >
       <div className="flex items-center justify-between mb-3 px-0.5">
-        <PageTitle title="人格指数" en="parameter" />
+        {/* 审计 S6：PageTitle 是页级标题，曾被误用作区块标题造成双重语义；
+            入叠放后区块标题由外层 EyebrowLabel 承担，这里降级为普通标题行 */}
+        <h3 className="text-sm font-bold text-gray-900 dark:text-white">人格指数</h3>
         <button
-          onClick={() => { setEditMode(v => !v); setDragId(null); setOverId(null); setLastRowDrop(null); setFirstRowDrop(null); }}
+          onClick={() => {
+            const next = !editMode;
+            setEditMode(next);
+            onEditingChange?.(next);
+            setDragId(null); setOverId(null); setLastRowDrop(null); setFirstRowDrop(null);
+          }}
           className={`text-[11px] font-semibold px-3 py-1.5 rounded-lg transition-colors select-none ${
             editMode
               ? 'bg-primary text-white'
@@ -408,7 +423,9 @@ const AttributeGrid = ({ attributes, settings }: {
               onPointerDown={editMode ? (e) => onPointerDown(attr.id, e) : undefined}
               onPointerUp={editMode ? (e) => onPointerUp(attr.id, e) : undefined}
               onPointerCancel={editMode ? () => onPointerCancel() : undefined}
-              style={{ touchAction: editMode ? 'none' : 'pan-y' }}
+              // 非编辑态用 manipulation（双向 pan 放行 + 禁双击缩放）：pan-y 会吃掉横向手势，
+              // 从卡面起手将无法滑动外层「成长」叠放；编辑态 none 交给拖拽排序全权接管
+              style={{ touchAction: editMode ? 'none' : 'manipulation' }}
               className={`relative rounded-2xl bg-white dark:bg-gray-900 border shadow-sm overflow-hidden flex flex-col transition-colors ${
                 editMode
                   ? isDragCard
@@ -606,6 +623,26 @@ export const Dashboard = () => {
 
   // 逆流预警（今天是第3日无增长，明天将扣减）
   const countercurrentWarnings = settings.countercurrentEnabled ? getCountercurrentWarnings() : [];
+  const hasCountercurrentWarning = countercurrentWarnings.length > 0;
+
+  // ──「今日仪式」叠放：预警条件 false→true 的沿触发自动滑到第一页（预警页恒在第 0 页）。
+  // StackCarousel 的 page 语义是"值变化时跳页"而非强受控，所以跳完必须复位回 undefined，
+  // 否则下一次沿到来时 0→0 无变化、不会再触发；复位本身因 page == null 直接 return，不产生滚动。
+  // prevWarningRef 初值取 false：带着预警进入本页也算一次沿——规格 §3.1 要求"有事时自动滑到第一页"，
+  // 不能因为页位记忆停在别页而让预警藏在视野外。
+  const [ritualPage, setRitualPage] = useState<number | undefined>(undefined);
+  const prevWarningRef = useRef(false);
+  useEffect(() => {
+    const prev = prevWarningRef.current;
+    prevWarningRef.current = hasCountercurrentWarning;
+    if (prev || !hasCountercurrentWarning) return;
+    setRitualPage(0);
+    const t = setTimeout(() => setRitualPage(undefined), 600);
+    return () => clearTimeout(t);
+  }, [hasCountercurrentWarning]);
+
+  // 「成长」叠放锁：属性卡排序编辑期间锁死外层横滑（拖拽与横滑同为水平手势，会互抢 pointer）
+  const [attrEditing, setAttrEditing] = useState(false);
 
   // In dark mode the UI background is dark, so light text always reads better on the colored banner
   const useLightText = settings.darkMode || !bannerLight;
@@ -678,6 +715,46 @@ export const Dashboard = () => {
     } else {
       currentStreak = 1;
     }
+  }
+
+  // ──「今日仪式」叠放页组装（规格 §3.1 槽位 4）────────────────────────
+  // 约束：children 必须用数组按条件组入，不能把"内部可能 return null 的组件"直接
+  // 挂进 StackCarousel——它按 children 个数生成 slide 与圆点，null 会变成空白页。
+  // 各 slide 外包 h-full + [&>*]:h-full：carousel 用 items-stretch 把 slide 撑到
+  // 最高页等高，arbitrary variant 穿透一层让卡片根元素（button/div）纵向跟满。
+  const ritualSlides: ReactNode[] = [];
+  if (hasCountercurrentWarning) {
+    // 预警条件成立时才入组、且恒为第一页（规格：条件插入并置顶）；JSX 自原全宽预警条原样搬入，视觉不改
+    ritualSlides.push(
+      <div key="countercurrent" className="h-full [&>*]:h-full">
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="rounded-2xl border border-blue-200 dark:border-blue-700/50 bg-blue-50 dark:bg-blue-900/20 px-4 py-3 flex items-center gap-3"
+        >
+          <span className="text-lg flex-shrink-0">🌊</span>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-semibold text-blue-800 dark:text-blue-300">逆流预警</p>
+            <p className="text-[11px] text-blue-700/80 dark:text-blue-400/80 mt-0.5">
+              {countercurrentWarnings.map(id => settings.attributeNames[id]).join('、')} 已连续3日无增长，明日将{countercurrentWarnings.length > 1 ? '各' : ''}扣减 1 点
+            </p>
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
+  ritualSlides.push(
+    <div key="astrology" className="h-full [&>*]:h-full">
+      <AstrologyEntryCard onOpen={() => setCurrentPage('astrology')} />
+    </div>
+  );
+  if (settings.battleEnabled !== false) {
+    // BattleDashboardWidget 在 battleEnabled === false 时内部 return null，必须在此处就拦下不入数组
+    ritualSlides.push(
+      <div key="battle" className="h-full [&>*]:h-full">
+        <BattleDashboardWidget />
+      </div>
+    );
   }
 
   return (
@@ -929,72 +1006,76 @@ export const Dashboard = () => {
         )}
       </div>
 
-      {/* 星象入口卡 */}
-      <AstrologyEntryCard onOpen={() => setCurrentPage('astrology')} />
+      {/* ──「今日仪式」叠放（规格 §3.1 槽位 4）────────────────────────
+          原 星象入口卡 / 逆影战场 / 逆流预警条 三个全宽区块合并为一个横滑组：
+          信息零删除、各卡点击行为不变，只换挂载位置。后续区块被压缩后，
+          今日任务自然回到首屏——本次重组的核心收益。slides 组装见 ritualSlides。 */}
+      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
+        <EyebrowLabel className="mb-2 px-0.5">今日仪式 · 滑动</EyebrowLabel>
+        <StackCarousel id="ritual" page={ritualPage}>
+          {ritualSlides}
+        </StackCarousel>
+      </motion.div>
 
-      <BattleDashboardWidget />
-
-      {/* 逆流预警 */}
-      {countercurrentWarnings.length > 0 && (
-        <motion.div
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="rounded-2xl border border-blue-200 dark:border-blue-700/50 bg-blue-50 dark:bg-blue-900/20 px-4 py-3 flex items-center gap-3"
-        >
-          <span className="text-lg flex-shrink-0">🌊</span>
-          <div className="flex-1 min-w-0">
-            <p className="text-xs font-semibold text-blue-800 dark:text-blue-300">逆流预警</p>
-            <p className="text-[11px] text-blue-700/80 dark:text-blue-400/80 mt-0.5">
-              {countercurrentWarnings.map(id => settings.attributeNames[id]).join('、')} 已连续3日无增长，明日将{countercurrentWarnings.length > 1 ? '各' : ''}扣减 1 点
-            </p>
-          </div>
-        </motion.div>
-      )}
-
-      {/* 属性面板 — 可拖拽卡片网格 */}
-      <AttributeGrid attributes={attributes} settings={settings} />
-
-      {/* 成长概览 — 雷达图 + 数据合一 */}
-      <div className="rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden">
-        <div className="flex items-center justify-between px-5 pt-4 pb-2">
-          <h3 className="font-bold text-gray-900 dark:text-white text-sm">成长概览</h3>
-          <button
-            onClick={() => setCurrentPage('statistics')}
-            className="text-xs text-primary hover:text-primary/80 transition-colors"
-          >
-            详细统计 →
-          </button>
-        </div>
-        <RadarChartPanel radarData={radarData} maxLevel={maxLevel} />
-        <div className="grid grid-cols-3 divide-x divide-gray-100 dark:divide-gray-800 border-t border-gray-100 dark:border-gray-800">
-          <div className="px-3 py-3 text-center">
-            <div className="text-xl font-bold text-primary tabular-nums">{totalPoints}</div>
-            <div className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">累计点数</div>
-          </div>
-          <div className="px-3 py-3 text-center">
-            <div className="text-xl font-bold text-primary tabular-nums">{maxStreak}</div>
-            <div className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">最长连续天</div>
-          </div>
-          <div className="px-3 py-3 text-center">
-            <div className="text-xl font-bold text-primary tabular-nums">{totalActivitiesCount}</div>
-            <div className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">总记录数</div>
-          </div>
-        </div>
-        <div className="grid grid-cols-3 divide-x divide-gray-100 dark:divide-gray-800 border-t border-gray-100 dark:border-gray-800">
-          <div className="px-3 py-3 text-center">
-            <div className="text-xl font-bold text-amber-500 tabular-nums">{unlockedAchievementsCount}</div>
-            <div className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">成就已解锁</div>
-          </div>
-          <div className="px-3 py-3 text-center">
-            <div className="text-xl font-bold text-violet-500 tabular-nums">{unlockedSkillsCount}</div>
-            <div className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">技能已解锁</div>
-          </div>
-          <div className="px-3 py-3 text-center">
-            <div className="text-xl font-bold text-emerald-500 tabular-nums">{uniqueDays}</div>
-            <div className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">记录天数</div>
-          </div>
-        </div>
-      </div>
+      {/* ──「成长」叠放（规格 §3.1 槽位 5）──────────────────────────
+          人格指数网格与成长概览（雷达+六格统计）本是同一数据的两种视图，合并为横滑两页。
+          有意偏差：规格 §3.1 还列了第 3 页「详细统计摘要」，但成长概览卡内已带
+          「详细统计 →」入口，独立第三页与之信息重复——按 2 页实现，入口零丢失。
+          locked={attrEditing}：排序编辑期间锁死横滑，见 AttributeGrid 的 onEditingChange。 */}
+      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
+        <EyebrowLabel className="mb-2 px-0.5">成长 · 滑动</EyebrowLabel>
+        <StackCarousel id="growth" locked={attrEditing}>
+          {[
+            /* 第 1 页：属性面板 — 可拖拽卡片网格（内部逻辑零改动，只换挂载位置） */
+            <div key="attributes" className="h-full [&>*]:h-full">
+              <AttributeGrid attributes={attributes} settings={settings} onEditingChange={setAttrEditing} />
+            </div>,
+            /* 第 2 页：成长概览 — 雷达图 + 数据合一（原样搬入） */
+            <div key="overview" className="h-full [&>*]:h-full">
+              <div className="rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden">
+                <div className="flex items-center justify-between px-5 pt-4 pb-2">
+                  <h3 className="font-bold text-gray-900 dark:text-white text-sm">成长概览</h3>
+                  <button
+                    onClick={() => setCurrentPage('statistics')}
+                    className="text-xs text-primary hover:text-primary/80 transition-colors"
+                  >
+                    详细统计 →
+                  </button>
+                </div>
+                <RadarChartPanel radarData={radarData} maxLevel={maxLevel} />
+                <div className="grid grid-cols-3 divide-x divide-gray-100 dark:divide-gray-800 border-t border-gray-100 dark:border-gray-800">
+                  <div className="px-3 py-3 text-center">
+                    <div className="text-xl font-bold text-primary tabular-nums">{totalPoints}</div>
+                    <div className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">累计点数</div>
+                  </div>
+                  <div className="px-3 py-3 text-center">
+                    <div className="text-xl font-bold text-primary tabular-nums">{maxStreak}</div>
+                    <div className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">最长连续天</div>
+                  </div>
+                  <div className="px-3 py-3 text-center">
+                    <div className="text-xl font-bold text-primary tabular-nums">{totalActivitiesCount}</div>
+                    <div className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">总记录数</div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 divide-x divide-gray-100 dark:divide-gray-800 border-t border-gray-100 dark:border-gray-800">
+                  <div className="px-3 py-3 text-center">
+                    <div className="text-xl font-bold text-amber-500 tabular-nums">{unlockedAchievementsCount}</div>
+                    <div className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">成就已解锁</div>
+                  </div>
+                  <div className="px-3 py-3 text-center">
+                    <div className="text-xl font-bold text-violet-500 tabular-nums">{unlockedSkillsCount}</div>
+                    <div className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">技能已解锁</div>
+                  </div>
+                  <div className="px-3 py-3 text-center">
+                    <div className="text-xl font-bold text-emerald-500 tabular-nums">{uniqueDays}</div>
+                    <div className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">记录天数</div>
+                  </div>
+                </div>
+              </div>
+            </div>,
+          ]}
+        </StackCarousel>
+      </motion.div>
 
       <TodoCompleteModal
         isOpen={!!completedTitle}
