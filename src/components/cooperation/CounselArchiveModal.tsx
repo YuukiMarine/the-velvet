@@ -3,7 +3,7 @@
  */
 
 import { useMemo, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { createPortal } from 'react-dom';
 import { useAppStore } from '@/store';
 import { TAROT_BY_ID } from '@/constants/tarot';

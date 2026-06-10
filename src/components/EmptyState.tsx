@@ -19,7 +19,7 @@
  *     周围真实内容还重）。
  */
 import type { ReactNode } from 'react';
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import { TAP } from '@/utils/motion';
 
 export interface EmptyStateProps {

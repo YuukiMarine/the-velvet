@@ -28,7 +28,7 @@
  */
 import { useRef } from 'react';
 import type { ReactNode } from 'react';
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import { TAP } from '@/utils/motion';
 import { useLongPress } from '@/utils/useLongPress';
 

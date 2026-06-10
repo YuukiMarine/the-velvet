@@ -7,7 +7,7 @@
  * 发送成功后 bond.status = pending，对方会收到 coop_proposal 通知。
  */
 
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'motion/react';
 import { useMemo, useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useAppStore } from '@/store';

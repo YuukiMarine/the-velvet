@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore } from '@/store';
 import { Persona, BattleState, AttributeId } from '@/types';
 import { generatePersonaSkills } from '@/utils/battleAI';

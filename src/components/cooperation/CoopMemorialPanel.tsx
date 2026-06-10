@@ -6,7 +6,7 @@
  */
 
 import { createPortal } from 'react-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import type { Confidant, CoopMemorialStamp } from '@/types';
 import { archetypeById } from '@/constants/coopShadowPool';
 import { useAppStore } from '@/store';

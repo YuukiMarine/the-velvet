@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore } from '@/store';
 import { useBackHandler } from '@/utils/useBackHandler';
 import { matchConfidant, type ConfidantMatchResult } from '@/utils/confidantAI';

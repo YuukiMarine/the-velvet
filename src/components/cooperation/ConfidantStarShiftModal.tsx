@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
+import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { useAppStore } from '@/store';
 import { useBackHandler } from '@/utils/useBackHandler';
 import type { Confidant } from '@/types';

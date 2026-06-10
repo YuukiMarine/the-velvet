@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useMemo, useImperativeHandle, forwardRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 
 /**
  * Persona 觉醒全屏动画 —— 覆盖在 PersonaCreateModal 之上，防止 AI 生成期间误触背景关闭

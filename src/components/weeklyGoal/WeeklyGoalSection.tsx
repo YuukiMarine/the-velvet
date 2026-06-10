@@ -1,4 +1,4 @@
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { useState } from 'react';
 import { useAppStore } from '@/store';
 import { AttributeId, WeeklyGoal, WeeklyGoalItem } from '@/types';

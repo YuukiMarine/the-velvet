@@ -9,7 +9,7 @@
  * 尺寸：容器自适应 <div>，组件固定用 viewBox="0 0 120 120"。
  */
 
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import { archetypeById } from '@/constants/coopShadowPool';
 
 interface Props {

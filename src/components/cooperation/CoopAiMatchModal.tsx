@@ -9,7 +9,7 @@
  *   4. 结果展示 → "用这个" 把结果返给父组件
  */
 
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useAppStore } from '@/store';

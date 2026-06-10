@@ -1,4 +1,4 @@
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useAppStore, toLocalDateKey } from '@/store';
 import { calcMaxStreak } from '@/utils/streak';

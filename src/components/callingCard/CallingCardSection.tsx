@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore } from '@/store';
 import { useLongPress } from '@/utils/useLongPress';
 import { triggerLightHaptic } from '@/utils/feedback';

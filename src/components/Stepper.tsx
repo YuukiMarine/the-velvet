@@ -15,7 +15,7 @@
  *   - 中间数值 w-8 text-center font-bold tabular-nums（等宽数字防抖动）；
  *   - min/max 不传即无界；onChange 始终输出夹紧后的值，调用方无需再 clamp。
  */
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import { TAP } from '@/utils/motion';
 
 export interface StepperProps {

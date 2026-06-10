@@ -10,7 +10,7 @@
 
 import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import type { CoopShadow } from '@/types';
 import { archetypeById } from '@/constants/coopShadowPool';
 import {

@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback, lazy, Suspense } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'motion/react';
 import { useAppStore, toLocalDateKey } from '@/store';
 import { useCloudStore } from '@/store/cloud';
 import { readLastSync, trySyncInBackground, resolveConflictKeepLocal, resolveConflictKeepCloud, acceptDiffKeepLocal, acceptDiffKeepCloud } from '@/services/sync';

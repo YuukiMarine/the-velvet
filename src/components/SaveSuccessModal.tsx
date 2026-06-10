@@ -1,4 +1,4 @@
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
 import { triggerSuccessFeedback } from '@/utils/feedback';
 import { MusicalNotes } from '@/components/MusicalNotes';

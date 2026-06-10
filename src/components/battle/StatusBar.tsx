@@ -1,4 +1,4 @@
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { StatusEffect } from '@/types';
 import { STATUS_LABELS } from '@/constants';
 

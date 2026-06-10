@@ -11,8 +11,8 @@
  * 子页状态持久在 store（actionsSubTab），自动记忆上次停留。
  */
 import { Fragment, useEffect } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
-import type { PanInfo } from 'framer-motion';
+import { AnimatePresence, motion } from 'motion/react';
+import type { PanInfo } from 'motion/react';
 import { useAppStore } from '@/store';
 import { springSnappy, TAP } from '@/utils/motion';
 import { triggerNavFeedback } from '@/utils/feedback';

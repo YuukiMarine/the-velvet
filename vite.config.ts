@@ -69,7 +69,8 @@ export default defineConfig({
       output: {
         manualChunks: {
           vendor: ['react', 'react-dom'],
-          motion: ['framer-motion'],
+          // motion v12 是薄壳，真实实现在其依赖的 framer-motion，两层归同一 chunk
+          motion: ['motion', 'framer-motion'],
           charts: ['recharts'],  // Dashboard 也依赖 recharts，需保留独立 chunk 以优化缓存
           db: ['dexie', 'dexie-react-hooks']
         }
