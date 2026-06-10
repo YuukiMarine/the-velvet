@@ -25,6 +25,8 @@ const Astrology = lazy(() => import('@/pages/Astrology').then(m => ({ default: m
 const Cooperation = lazy(() => import('@/pages/Cooperation').then(m => ({ default: m.Cooperation })));
 // 菜单宫格页（v2.5 五格 IA）：activities / settings / achievements 等入口收纳于此
 const Menu = lazy(() => import('@/pages/Menu').then(m => ({ default: m.Menu })));
+// 账号与数据页（设置拆解 PR）：「数据管理 + 云同步」从 Settings 迁出，入口在菜单宫格
+const Account = lazy(() => import('@/pages/Account').then(m => ({ default: m.Account })));
 import { BattleArena } from '@/components/battle/BattleArena';
 import { primeCurrentTheme } from '@/utils/feedback';
 import { BackgroundAnimation } from '@/components/BackgroundAnimation';
@@ -193,11 +195,12 @@ function App() {
         if (tryHandleBack()) return;
 
         // 步骤 2：非 dashboard 页 → 返回 dashboard
-        // 例外：成就页的入口已移至「菜单」宫格（v2.5 五格 IA），UI 返回与硬件返回
-        // 必须同走菜单，避免「界面返回去菜单、系统返回去首页」的分裂。
+        // 例外：宫格子页（成就 / 设置 / 账号与数据）的入口都在「菜单」宫格（v2.5 五格 IA），
+        // 系统返回与 UI 返回必须同走菜单，避免「界面返回去菜单、系统返回去首页」的分裂。
         // menu 页本身不设特例：落入下方默认分支回 dashboard
         const store = useAppStore.getState();
-        if (store.currentPage === 'achievements') {
+        const gridSubPages = ['achievements', 'settings', 'account'];
+        if (gridSubPages.includes(store.currentPage)) {
           store.setCurrentPage('menu');
           return;
         }
@@ -358,6 +361,8 @@ function App() {
         return <Suspense fallback={<div className="flex items-center justify-center h-64 text-gray-400">加载中…</div>}><Cooperation /></Suspense>;
       case 'menu':
         return <Suspense fallback={<div className="flex items-center justify-center h-64 text-gray-400">加载中…</div>}><Menu /></Suspense>;
+      case 'account':
+        return <Suspense fallback={<div className="flex items-center justify-center h-64 text-gray-400">加载中…</div>}><Account /></Suspense>;
       default:
         return <Dashboard />;
     }
