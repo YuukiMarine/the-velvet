@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
 /**
  * 全局"返回键"订阅栈。
@@ -51,16 +51,22 @@ export function tryHandleBack(): boolean {
  *
  * 注意：onBack 在函数里重新声明每次渲染会变化。hook 用 ref 持续引用最新的 onBack，
  * 所以你不需要 useCallback 包裹它——效果和 "always latest" 等价。
+ *
+ * ⚠️ deps 必须只有 [isActive]：若把 onBack 放进 deps，调用方传内联箭头时每次重渲染
+ * 都会先出栈再入栈，把自己挪到栈顶——叠层弹窗（如 ConfirmDialog 叠在 SheetModal 上）
+ * 的返回顺序会被下层的任意重渲染打乱。入栈顺序必须严格等于打开顺序。
  */
 export function useBackHandler(isActive: boolean, onBack: BackHandler): void {
+  const onBackRef = useRef(onBack);
+  onBackRef.current = onBack;
   useEffect(() => {
     if (!isActive) return;
-    // 每次 isActive 切到 true 都重新入栈（onBack 的最新引用由闭包捕获）
-    const wrapper: BackHandler = () => onBack();
+    // 只在 isActive 切到 true 时入栈一次；最新 onBack 经 ref 取
+    const wrapper: BackHandler = () => onBackRef.current();
     handlers.push(wrapper);
     return () => {
       const idx = handlers.lastIndexOf(wrapper);
       if (idx !== -1) handlers.splice(idx, 1);
     };
-  }, [isActive, onBack]);
+  }, [isActive]);
 }
