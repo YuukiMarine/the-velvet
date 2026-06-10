@@ -79,15 +79,20 @@ const CatSilhouetteIcon = ({ className = 'w-6 h-6' }: { className?: string }) =>
 );
 
 // 四格常规导航（B+C 混合 IA 定稿）：首页 / 行动 / 羁绊 / 菜单，中央第 3 槽固定为黑猫 ◈（非路由）。
-// activities 与 settings 已撤出导航——过渡期经「菜单」宫格到达（成就 / 统计 / 设置同理）。
+// settings 已撤出导航（经「菜单」宫格到达）；任务+记录已合并为「行动」页。
 const navItems = [
   { id: 'dashboard', label: '首页', Icon: HomeIcon },
-  { id: 'todos', label: '行动', Icon: BoltIcon },
+  { id: 'actions', label: '行动', Icon: BoltIcon },
   { id: 'cooperation', label: '羁绊', Icon: ConfidantIcon },
   { id: 'menu', label: '菜单', Icon: MenuGridIcon },
 ];
 
 type NavItem = (typeof navItems)[number];
+
+/** 行动 tab 的激活判定要兼容旧路由 id（散落的 setCurrentPage('todos'/'activities') 调用点） */
+const isNavActive = (itemId: string, currentPage: string): boolean =>
+  currentPage === itemId ||
+  (itemId === 'actions' && (currentPage === 'todos' || currentPage === 'activities'));
 
 // 导出供 Settings 页面复用图标（成就入口行）
 export { TrophyIcon };
@@ -127,7 +132,7 @@ export const Sidebar = () => {
   const catButtonRef = useRef<HTMLButtonElement>(null);
 
   const renderItem = (item: NavItem) => {
-    const active = currentPage === item.id;
+    const active = isNavActive(item.id, currentPage);
     return (
       <motion.button
         key={item.id}
@@ -244,7 +249,7 @@ export const BottomNav = () => {
     <NavTab
       key={item.id}
       item={item}
-      active={currentPage === item.id}
+      active={isNavActive(item.id, currentPage)}
       onSelect={() => {
         triggerNavFeedback();
         setCurrentPage(item.id);

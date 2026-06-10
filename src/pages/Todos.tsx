@@ -3,8 +3,7 @@ import { useMemo, useState } from 'react';
 import { useAppStore, toLocalDateKey } from '@/store';
 import { AttributeId, TodoFrequency } from '@/types';
 import { triggerNavFeedback } from '@/utils/feedback';
-import { PageTitle } from '@/components/PageTitle';
-import { useRipple } from '@/components/RippleEffect';
+import { TAP } from '@/utils/motion';
 import { GoalDeck } from '@/components/weeklyGoal/GoalDeck';
 // ── 行动域统一基元（UI_AUDIT_V2.5.md §3.2 + §4.6 交互协议）──
 import { Toggle } from '@/components/Toggle';
@@ -219,7 +218,8 @@ const PendingWeekdayTodoCard = ({
 
 const ATTR_IDS: AttributeId[] = ['knowledge', 'guts', 'dexterity', 'kindness', 'charm'];
 
-export const Todos = () => {
+// 行动页子视图（任务）：页头/页级转场由宿主 Actions.tsx 承担，本组件只渲染内容
+export const TodosView = () => {
   const { todos, settings, attributes, addTodo, updateTodo, deleteTodo, getTodayTodoProgress, getTodoDateLabel, weeklyGoals, saveWeeklyGoal, deleteWeeklyGoal, completeWeeklyGoal, getWeeklyGoalProgress, undoTodayTodoCompletion } = useAppStore();
   const [showAdd, setShowAdd] = useState(false);
   const [editingTodoId, setEditingTodoId] = useState<string | null>(null);
@@ -237,8 +237,6 @@ export const Todos = () => {
     important: false,
     startDate: '' as string,
   });
-
-  const { spawn: spawnAddRipple, ripples: addRipples } = useRipple();
 
   const todayWeekday = new Date().getDay();
   const todayDateKey = toLocalDateKey();
@@ -381,30 +379,9 @@ export const Todos = () => {
   };
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="space-y-6"
-    >
-      <div className="flex items-center justify-between">
-        <PageTitle title="任务清单" en="To-do" />
-        <motion.button
-          whileTap={{ scale: 0.95 }}
-          onClick={(e) => {
-            spawnAddRipple(e);
-            triggerNavFeedback();
-            setEditingTodoId(null);
-            resetForm();
-            setShowAdd(true);
-          }}
-          className="relative overflow-hidden px-4 py-2 bg-primary text-white rounded-xl text-sm font-semibold shadow-sm shadow-primary/20"
-        >
-          {addRipples}
-          + 添加任务
-        </motion.button>
-      </div>
-
+    // 子视图化：页级 motion 容器（opacity 进出场）移交宿主 Actions 的 tabpanel 包装层，
+    // 自身退化为纯 div——若保留 exit 会拖长宿主 AnimatePresence mode="wait" 的 180ms 切换预算
+    <div className="space-y-6">
       {/* ── 目标区：本周目标 / 倒计时 ───────────────────── */}
       <GoalDeck
         settings={settings}
@@ -652,6 +629,26 @@ export const Todos = () => {
           </div>
         </div>
       </div>
+
+      {/* 添加任务 FAB：替代原页头「+ 添加任务」按钮。
+          与记录子页 FAB 同制式（fixed bottom-24 right-5 z-40 w-14 h-14 圆形 bg-primary），
+          子页切换时两枚 FAB 静止视觉完全一致、不跳变 */}
+      <motion.button
+        whileTap={TAP}
+        onClick={() => {
+          triggerNavFeedback();
+          setEditingTodoId(null);
+          resetForm();
+          setShowAdd(true);
+        }}
+        aria-label="添加任务"
+        className="fixed bottom-24 right-5 md:bottom-8 md:right-8 z-40 w-14 h-14 rounded-full bg-primary text-white shadow-lg shadow-primary/30 flex items-center justify-center cursor-pointer"
+      >
+        {/* 白色加号（与记录子页 FAB 的 PlusIcon 同款笔画） */}
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="w-6 h-6" aria-hidden="true">
+          <path d="M12 4.5v15m7.5-7.5h-15" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </motion.button>
 
       {/* 添加/编辑任务：SheetModal 底部抽屉——自带 backdrop 点关/ESC/Android back
           （修审计"遮罩不可点关、无返回键处理"问题），exit 动画由其内部 AnimatePresence 承担 */}
@@ -1004,6 +1001,6 @@ export const Todos = () => {
         }}
         onCancel={() => setPendingDeleteId(null)}
       />
-    </motion.div>
+    </div>
   );
 };
