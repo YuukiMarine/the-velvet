@@ -179,14 +179,19 @@ body {
   --boldness: 1;
   /* 唯一总旋钮：世界倾角 */
   --ui-skew: -4deg;
+  /* 派生魔数提取为独立变量，供 dev 调参面板（SlantTuner）实时拖动；
+     默认值令各派生 token 的计算结果与原先逐字一致（×2.5 / 10px / 12px） */
+  --ui-skew-ui-mult: 2.5;  /* 装饰斜切相对世界倾角的倍率 */
+  --ui-cut-base: 10px;     /* 切角基数（×拨盘） */
+  --bite-base: 12px;       /* 咬合基数（×拨盘） */
   /* 布局平面实际旋转角（拨盘加权后；.sl-plane 消费） */
   --ui-axis: calc(var(--ui-skew) * var(--boldness));
-  /* 装饰块斜切角：比世界更陡（×2.5）制造层次——只作用于装饰，文字层永不倾斜 */
-  --ui-skew-ui: calc(var(--ui-skew) * 2.5 * var(--boldness));
+  /* 装饰块斜切角：比世界更陡制造层次——只作用于装饰，文字层永不倾斜 */
+  --ui-skew-ui: calc(var(--ui-skew) * var(--ui-skew-ui-mult) * var(--boldness));
   /* 卡片切角尺寸 */
-  --ui-cut: calc(10px * var(--boldness));
+  --ui-cut: calc(var(--ui-cut-base) * var(--boldness));
   /* 相邻卡咬合深度（§2 规则4：裁切只作用于装饰层，交互层恒为完整矩形） */
-  --bite: calc(12px * var(--boldness));
+  --bite: calc(var(--bite-base) * var(--boldness));
   /* 分隔线/渐变走向：垂直线随世界同角倾斜 */
   --ui-line-angle: calc(90deg + var(--ui-axis));
   /* 引力线/动线主笔宽度（不乘拨盘——线是信息不是装饰，D0 仍在场） */

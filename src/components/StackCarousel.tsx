@@ -2,19 +2,28 @@
  * StackCarousel — 首页「智能叠放」横滑容器（UI_DESIGN_PLAN_V2.5.md §3.2，
  * 斜界方案 UI_DESIGN_BOLD_V2.5.md §9 决议继承该决策）。
  *
- * 约束与取舍：
- *   - 原生 scroll-snap + 惯性滚动，不引手势库；本组件就是基底规则 1 里
- *     「不参与旋转的外层滚动容器」，斜轨甩尾等表现层后续叠在 slide 内部；
- *   - itemWidthClass 默认 86%：下一张探出边缘，「可滑」由几何自己开口说话；
- *   - 页位记忆走 localStorage（key 前缀 sl-stack-），隐私模式写入抛错一律静默；
- *   - activeIndex 由 scroll 事件驱动（passive + rAF 节流取最近卡），程序化
- *     跳页（圆点 / 受控 page）只负责 scrollTo，状态统一从滚动位置回算，
- *     避免双源打架；page 是"跳页指令"而非强受控——用户手势永远可滑走；
- *   - 等高对齐靠 items-stretch 撑开 slide 包裹层，卡片内容自取 h-full。
+ * v2：内脏换成 Embla（embla-carousel-react）。换掉原生 scroll-snap 的理由——
+ * 原生方案只能"留一截"硬暗示可滑，完成度不足；Embla 给出滚动进度值，
+ * 据此把非激活卡 scale + opacity 渐隐（App Store 式"下一张更小更淡"），
+ * 用层次而非裸露边缘表达"还有内容"。tween 逻辑改写自 Embla 官方
+ * Scale / Opacity 示例（非 loop 简化版）。
+ *
+ * 契约不变（与 v1 逐字一致，调用方零改动）：
+ *   - itemWidthClass 默认 86%：下一张探出，配合缩放暗示可滑；
+ *   - 页位记忆 localStorage（key 前缀 sl-stack-），隐私模式写入静默失败；
+ *   - page 是"跳页指令"而非强受控——用户手势永远可滑走；
+ *   - onPageChange 不在挂载/恢复页位时幻触发（Embla select 仅在选中项真变化时发）；
+ *   - locked：锁定横滑（属性卡排序编辑等自带拖拽手势的内容用），reInit 切 watchDrag；
+ *   - 等高对齐靠 items-stretch + 内层 h-full。
+ *
+ * D0（boldness 0 / reduced-motion）：tween 因子乘 0，所有卡回到等大不透明的朴素平铺。
  */
-import { Children, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Children, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
+import useEmblaCarousel from 'embla-carousel-react';
+import type { EmblaCarouselType } from 'embla-carousel';
 import { DotIndicator } from '@/components/DotIndicator';
+import { useBoldness } from '@/utils/boldness';
 
 interface StackCarouselProps {
   /** 页位记忆 key（组件内部加 'sl-stack-' 前缀） */
@@ -27,36 +36,29 @@ interface StackCarouselProps {
   /** 受控跳页：值变化时平滑滚到对应页 */
   page?: number;
   /**
-   * 锁定横滑（snap 失效 + 不可滚动）。给 slide 内部自带拖拽手势的内容用——
-   * 如属性卡的排序编辑模式：两套水平手势会互抢 pointer，编辑期间必须锁外层。
+   * 锁定横滑（拖拽失效）。给 slide 内部自带拖拽手势的内容用——
+   * 如属性卡排序编辑模式：两套水平手势会互抢 pointer，编辑期间必须锁外层。
    */
   locked?: boolean;
 }
 
-/** 取视口中心最近的 slide 下标（snap-center 对齐，按子元素中点算距离） */
-const nearestIndex = (el: HTMLElement): number => {
-  const center = el.scrollLeft + el.clientWidth / 2;
-  let best = 0;
-  let bestDist = Infinity;
-  for (let i = 0; i < el.children.length; i++) {
-    const child = el.children[i] as HTMLElement;
-    const dist = Math.abs(child.offsetLeft + child.offsetWidth / 2 - center);
-    if (dist < bestDist) {
-      bestDist = dist;
-      best = i;
-    }
-  }
-  return best;
-};
+/** 缩放/透明度内插区间：非激活卡缩到 0.84、淡到 0.4（激活卡 1 / 1） */
+const SCALE_MIN = 0.84;
+const OPACITY_MIN = 0.4;
+/** 因子基数：乘 snap 数，让相邻卡的视觉缩放程度与卡数无关（Embla 示例同款思路） */
+const TWEEN_FACTOR_BASE = 0.3;
 
-const readStoredIndex = (key: string): number | null => {
+const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
+
+const readStoredIndex = (key: string, count: number): number => {
   try {
     const raw = localStorage.getItem(key);
-    if (raw == null) return null;
+    if (raw == null) return 0;
     const parsed = Number.parseInt(raw, 10);
-    return Number.isNaN(parsed) ? null : parsed;
+    if (Number.isNaN(parsed)) return 0;
+    return Math.max(0, Math.min(parsed, count - 1));
   } catch {
-    return null;
+    return 0;
   }
 };
 
@@ -70,107 +72,150 @@ export const StackCarousel = ({
   locked = false,
 }: StackCarouselProps) => {
   const storageKey = `sl-stack-${id}`;
-  const scrollerRef = useRef<HTMLDivElement>(null);
-  // 恢复页位在首次渲染就完成（惰性初始化）：若放到挂载 effect 里 setState，
-  // 会多一次渲染，且"跳过挂载首跑"的守卫会被第一次 commit 消耗掉，
-  // 导致带记忆页位进入时 onPageChange 被幻触发一次
-  const [activeIndex, setActiveIndex] = useState(() => {
-    const initial = page ?? readStoredIndex(storageKey);
-    if (initial == null) return 0;
-    return Math.max(0, Math.min(initial, Children.count(children) - 1));
-  });
-  // ref 镜像供事件回调读最新值，避免 scroll 监听随 state 反复重挂
-  const activeIndexRef = useRef(activeIndex);
+  const slides = Children.toArray(children);
+  const bold = useBoldness();
+
+  // 初始页位在首次渲染就定（startIndex），避免挂载后 setState 多一帧 + 幻触发回调
+  const initialIndexRef = useRef(
+    page ?? readStoredIndex(storageKey, slides.length),
+  );
+  const lockedInitRef = useRef(locked);
+
+  // options 必须稳定引用：embla-carousel-react 在 options 变化时会 reInit，
+  // 字面量每次渲染都是新对象——useMemo 锁死，运行期的 locked/页位变化全交给下方
+  // 显式 reInit effect，避免"自动 reInit × 手动 reInit"打架（Embla React 最佳实践）
+  const emblaOptions = useMemo(
+    () => ({
+      align: 'center' as const,
+      containScroll: 'trimSnaps' as const,
+      startIndex: initialIndexRef.current,
+      watchDrag: !lockedInitRef.current,
+    }),
+    [],
+  );
+  const [emblaRef, emblaApi] = useEmblaCarousel(emblaOptions);
+
+  const [activeIndex, setActiveIndex] = useState(initialIndexRef.current);
+
   const onPageChangeRef = useRef(onPageChange);
   onPageChangeRef.current = onPageChange;
+  const boldRef = useRef(bold);
+  boldRef.current = bold;
 
-  const slides = Children.toArray(children);
+  // ── Scale / Opacity tween（Embla 官方示例改写，非 loop） ──────────────────
+  const tweenFactor = useRef(0);
+  const tweenNodes = useRef<HTMLElement[]>([]);
 
-  const scrollToIndex = (index: number, behavior: ScrollBehavior) => {
-    const el = scrollerRef.current;
-    if (!el) return;
-    const child = el.children[index] as HTMLElement | undefined;
-    if (!child) return;
-    el.scrollTo({ left: child.offsetLeft - (el.clientWidth - child.offsetWidth) / 2, behavior });
-  };
-
-  // 挂载时把滚动位置对齐到恢复的页位；'auto' 保证首帧前到位不闪
-  useLayoutEffect(() => {
-    if (activeIndexRef.current > 0) scrollToIndex(activeIndexRef.current, 'auto');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  const setTweenNodes = useCallback((api: EmblaCarouselType) => {
+    tweenNodes.current = api
+      .slideNodes()
+      .map((n) => n.querySelector('.sl-stack-tween') as HTMLElement);
   }, []);
 
-  // scroll 驱动 activeIndex：passive + rAF 节流
-  useEffect(() => {
-    const el = scrollerRef.current;
-    if (!el) return;
-    let raf = 0;
-    const onScroll = () => {
-      if (raf) return;
-      raf = requestAnimationFrame(() => {
-        raf = 0;
-        const next = nearestIndex(el);
-        if (next !== activeIndexRef.current) {
-          activeIndexRef.current = next;
-          setActiveIndex(next);
-        }
+  const setTweenFactor = useCallback((api: EmblaCarouselType) => {
+    tweenFactor.current = TWEEN_FACTOR_BASE * api.scrollSnapList().length;
+  }, []);
+
+  const applyTween = useCallback((api: EmblaCarouselType, eventName?: string) => {
+    const factor = boldRef.current ? 1 : 0; // D0：因子归零 → 所有卡 scale1/opacity1
+    const scrollProgress = api.scrollProgress();
+    const slidesInView = api.slidesInView();
+    const isScroll = eventName === 'scroll';
+    api.scrollSnapList().forEach((snap, snapIndex) => {
+      const diffToTarget = snap - scrollProgress;
+      const slidesInSnap = api.internalEngine().slideRegistry[snapIndex];
+      slidesInSnap.forEach((slideIndex) => {
+        if (isScroll && !slidesInView.includes(slideIndex)) return;
+        const t = clamp01(1 - Math.abs(diffToTarget * tweenFactor.current) * factor);
+        const node = tweenNodes.current[slideIndex];
+        if (!node) return;
+        node.style.transform = `scale(${SCALE_MIN + (1 - SCALE_MIN) * t})`;
+        node.style.opacity = String(OPACITY_MIN + (1 - OPACITY_MIN) * t);
       });
-    };
-    el.addEventListener('scroll', onScroll, { passive: true });
-    return () => {
-      el.removeEventListener('scroll', onScroll);
-      if (raf) cancelAnimationFrame(raf);
-    };
+    });
   }, []);
 
-  // 页位落库 + 对外回调；跳过挂载首跑（恢复页位不算"变化"）
-  const didMountRef = useRef(false);
+  // 初始化 + 事件绑定
   useEffect(() => {
-    if (!didMountRef.current) {
-      didMountRef.current = true;
-      return;
-    }
-    try {
-      localStorage.setItem(storageKey, String(activeIndex));
-    } catch {
-      // 隐私模式下 localStorage 不可写，静默放弃记忆
-    }
-    onPageChangeRef.current?.(activeIndex);
-  }, [activeIndex, storageKey]);
+    if (!emblaApi) return;
+    setTweenNodes(emblaApi);
+    setTweenFactor(emblaApi);
+    applyTween(emblaApi);
+
+    const onSelect = () => {
+      const idx = emblaApi.selectedScrollSnap();
+      setActiveIndex(idx);
+      try {
+        localStorage.setItem(storageKey, String(idx));
+      } catch {
+        /* 隐私模式 localStorage 不可写：静默放弃记忆 */
+      }
+      onPageChangeRef.current?.(idx);
+    };
+
+    const onReInit = (api: EmblaCarouselType) => {
+      setTweenNodes(api);
+      setTweenFactor(api);
+      applyTween(api);
+      setActiveIndex(api.selectedScrollSnap());
+    };
+
+    emblaApi
+      .on('select', onSelect)
+      .on('scroll', applyTween)
+      .on('slideFocus', applyTween)
+      .on('reInit', onReInit);
+
+    return () => {
+      emblaApi.off('select', onSelect).off('scroll', applyTween).off('slideFocus', applyTween).off('reInit', onReInit);
+    };
+  }, [emblaApi, setTweenNodes, setTweenFactor, applyTween, storageKey]);
+
+  // locked 切换：reInit 改 watchDrag，startIndex 取当前位置避免跳页
+  useEffect(() => {
+    if (!emblaApi) return;
+    emblaApi.reInit({ watchDrag: !locked, startIndex: emblaApi.selectedScrollSnap() });
+  }, [emblaApi, locked]);
+
+  // 卡片数量变化（如战场隐藏 → 仪式叠放 3→2）：reInit 让 Embla 重新测量
+  useEffect(() => {
+    if (!emblaApi) return;
+    emblaApi.reInit({ startIndex: Math.min(emblaApi.selectedScrollSnap(), slides.length - 1) });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slides.length, emblaApi]);
+
+  // boldness 变化：tween 因子随之变（D0 → 平铺），手动重算一次（无 scroll 也生效）
+  useEffect(() => {
+    if (emblaApi) applyTween(emblaApi);
+  }, [bold, emblaApi, applyTween]);
 
   // 受控跳页：只响应 page 值变化，不与用户手势抢方向盘
   useEffect(() => {
-    if (page == null) return;
-    const el = scrollerRef.current;
-    if (!el) return;
-    const target = Math.max(0, Math.min(page, el.children.length - 1));
-    if (target !== activeIndexRef.current) scrollToIndex(target, 'smooth');
+    if (page == null || !emblaApi) return;
+    if (page !== emblaApi.selectedScrollSnap()) emblaApi.scrollTo(page);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page]);
 
-  // 卡片数动态减少时夹紧展示值，避免圆点越界
   const shownIndex = Math.min(activeIndex, Math.max(0, slides.length - 1));
 
   return (
     <div className={className}>
-      <div
-        ref={scrollerRef}
-        className={`flex gap-3 items-stretch no-scrollbar ${
-          locked ? 'overflow-x-hidden' : 'overflow-x-auto snap-x snap-mandatory'
-        }`}
-      >
-        {slides.map((child, i) => (
-          <div key={i} className={`flex-none snap-center ${itemWidthClass}`}>
-            {child}
-          </div>
-        ))}
+      <div className="overflow-hidden" ref={emblaRef}>
+        <div className="flex gap-3 items-stretch">
+          {slides.map((child, i) => (
+            <div key={i} className={`min-w-0 flex-none ${itemWidthClass}`}>
+              {/* tween 目标：scale/opacity 作用在内层，不动 flex 布局尺寸 */}
+              <div className="sl-stack-tween h-full will-change-transform">{child}</div>
+            </div>
+          ))}
+        </div>
       </div>
       {slides.length > 1 && (
         <DotIndicator
           className="mt-2"
           count={slides.length}
           activeIndex={shownIndex}
-          onSelect={locked ? undefined : (i => scrollToIndex(i, 'smooth'))}
+          onSelect={locked ? undefined : (i) => emblaApi?.scrollTo(i)}
         />
       )}
     </div>
