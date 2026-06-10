@@ -1212,7 +1212,7 @@ export const Achievements = () => {
       {/* 顶部标题 + 返回按钮（与其他子页保持一致的视觉） */}
       <div className="flex items-start justify-between gap-3">
         <button
-          onClick={() => { triggerNavFeedback(); setCurrentPage('settings'); }}
+          onClick={() => { triggerNavFeedback(); setCurrentPage('menu'); }}
           className="flex-shrink-0 mt-1 w-9 h-9 -ml-1 rounded-xl flex items-center justify-center text-gray-600 dark:text-gray-300 hover:bg-black/5 dark:hover:bg-white/10 active:scale-95 transition"
           aria-label="返回"
         >

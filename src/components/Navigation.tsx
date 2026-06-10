@@ -1,8 +1,15 @@
-import { AnimatePresence, motion } from 'framer-motion';
+import { useRef, useState } from 'react';
+import type { RefObject } from 'react';
+import { motion } from 'framer-motion';
 import { useAppStore } from '@/store';
 import { triggerNavFeedback } from '@/utils/feedback';
+import { SheetModal } from '@/components/SheetModal';
+import { EyebrowLabel } from '@/components/EyebrowLabel';
+import { springSnappy } from '@/utils/motion';
+import { zClass } from '@/utils/zIndex';
 
-// SVG 图标组件
+// ── SVG 图标组件（24px viewBox / stroke 1.8 / filled 双态制式）──────────────
+
 const HomeIcon = ({ filled }: { filled?: boolean }) => (
   <svg viewBox="0 0 24 24" fill="none" strokeWidth={filled ? 0 : 1.8} stroke="currentColor" className="w-6 h-6">
     {filled ? (
@@ -16,22 +23,24 @@ const HomeIcon = ({ filled }: { filled?: boolean }) => (
   </svg>
 );
 
-const CheckIcon = ({ filled }: { filled?: boolean }) => (
+// 「行动」：闪电——任务与记录合并后的统一隐喻（行动即放电）
+const BoltIcon = ({ filled }: { filled?: boolean }) => (
   <svg viewBox="0 0 24 24" fill="none" strokeWidth={filled ? 0 : 1.8} stroke="currentColor" className="w-6 h-6">
     {filled ? (
-      <path fillRule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12zm13.36-1.814a.75.75 0 10-1.22-.872l-3.236 4.53L9.53 12.22a.75.75 0 00-1.06 1.06l2.25 2.25a.75.75 0 001.14-.094l3.75-5.25z" fill="currentColor" clipRule="evenodd" />
+      <path fillRule="evenodd" d="M14.615 1.595a.75.75 0 01.359.852L12.982 9.75h7.268a.75.75 0 01.548 1.262l-10.5 11.25a.75.75 0 01-1.272-.71l1.992-7.302H3.75a.75.75 0 01-.548-1.262l10.5-11.25a.75.75 0 01.913-.143z" fill="currentColor" clipRule="evenodd" />
     ) : (
-      <path d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" strokeLinecap="round" strokeLinejoin="round" />
     )}
   </svg>
 );
 
-const PenIcon = ({ filled }: { filled?: boolean }) => (
+// 「菜单」：2×2 圆角方块宫格——对应菜单页的非均匀宫格
+const MenuGridIcon = ({ filled }: { filled?: boolean }) => (
   <svg viewBox="0 0 24 24" fill="none" strokeWidth={filled ? 0 : 1.8} stroke="currentColor" className="w-6 h-6">
     {filled ? (
-      <path d="M21.731 2.269a2.625 2.625 0 00-3.712 0l-1.157 1.157 3.712 3.712 1.157-1.157a2.625 2.625 0 000-3.712zM19.513 8.199l-3.712-3.712-8.4 8.4a5.25 5.25 0 00-1.32 2.214l-.8 2.685a.75.75 0 00.933.933l2.685-.8a5.25 5.25 0 002.214-1.32l8.4-8.4z" fill="currentColor" />
+      <path fillRule="evenodd" d="M3 6a3 3 0 013-3h2.25a3 3 0 013 3v2.25a3 3 0 01-3 3H6a3 3 0 01-3-3V6zm9.75 0a3 3 0 013-3H18a3 3 0 013 3v2.25a3 3 0 01-3 3h-2.25a3 3 0 01-3-3V6zM3 15.75a3 3 0 013-3h2.25a3 3 0 013 3V18a3 3 0 01-3 3H6a3 3 0 01-3-3v-2.25zm9.75 0a3 3 0 013-3H18a3 3 0 013 3V18a3 3 0 01-3 3h-2.25a3 3 0 01-3-3v-2.25z" fill="currentColor" clipRule="evenodd" />
     ) : (
-      <path d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z" strokeLinecap="round" strokeLinejoin="round" />
     )}
   </svg>
 );
@@ -42,16 +51,6 @@ const TrophyIcon = ({ filled }: { filled?: boolean }) => (
       <path fillRule="evenodd" d="M5.166 2.621v.858c-1.035.148-2.059.33-3.071.543a.75.75 0 00-.584.859 6.753 6.753 0 006.138 5.6 6.73 6.73 0 002.743 1.346A6.707 6.707 0 019.279 15H8.54c-1.036 0-1.875.84-1.875 1.875V19.5h-.75a2.25 2.25 0 00-2.25 2.25c0 .414.336.75.75.75h15a.75.75 0 00.75-.75 2.25 2.25 0 00-2.25-2.25h-.75v-2.625c0-1.036-.84-1.875-1.875-1.875h-.739a6.706 6.706 0 01-1.112-3.173 6.73 6.73 0 002.743-1.347 6.753 6.753 0 006.139-5.6.75.75 0 00-.585-.858 47.077 47.077 0 00-3.07-.543V2.62a.75.75 0 00-.658-.744 49.798 49.798 0 00-6.093-.377c-2.063 0-4.096.128-6.093.377a.75.75 0 00-.657.744zm0 2.629c0 1.196.312 2.32.857 3.294A5.266 5.266 0 013.16 5.337a45.6 45.6 0 012.006-.343v.256zm13.5 0v-.256c.674.1 1.343.214 2.006.343a5.265 5.265 0 01-2.863 3.207 6.72 6.72 0 00.857-3.294z" fill="currentColor" clipRule="evenodd" />
     ) : (
       <path d="M16.5 18.75h-9m9 0a3 3 0 013 3h-15a3 3 0 013-3m9 0v-3.375c0-.621-.503-1.125-1.125-1.125h-.871M7.5 18.75v-3.375c0-.621.504-1.125 1.125-1.125h.872m5.007 0H9.497m5.007 0a7.454 7.454 0 01-.982-3.172M9.497 14.25a7.454 7.454 0 00.981-3.172M5.25 4.236c-.982.143-1.954.317-2.916.52A6.003 6.003 0 007.73 9.728M5.25 4.236V4.5c0 2.108.966 3.99 2.48 5.228M5.25 4.236V2.721C7.456 2.41 9.71 2.25 12 2.25c2.291 0 4.545.16 6.75.47v1.516M7.73 9.728a6.726 6.726 0 002.748 1.35m8.272-6.842V4.5c0 2.108-.966 3.99-2.48 5.228m2.48-5.492a46.32 46.32 0 012.916.52 6.003 6.003 0 01-5.395 4.972m0 0a6.726 6.726 0 01-2.749 1.35m0 0a6.772 6.772 0 01-3.044 0" strokeLinecap="round" strokeLinejoin="round" />
-    )}
-  </svg>
-);
-
-const SettingsIcon = ({ filled }: { filled?: boolean }) => (
-  <svg viewBox="0 0 24 24" fill="none" strokeWidth={filled ? 0 : 1.8} stroke="currentColor" className="w-6 h-6">
-    {filled ? (
-      <path fillRule="evenodd" d="M11.078 2.25c-.917 0-1.699.663-1.85 1.567L9.05 4.889c-.02.12-.115.26-.297.348a7.493 7.493 0 00-.986.57c-.166.115-.334.126-.45.083L6.3 5.508a1.875 1.875 0 00-2.282.819l-.922 1.597a1.875 1.875 0 00.432 2.385l.84.692c.095.078.17.229.154.43a7.598 7.598 0 000 1.139c.015.2-.059.352-.153.43l-.841.692a1.875 1.875 0 00-.432 2.385l.922 1.597a1.875 1.875 0 002.282.818l1.019-.382c.115-.043.283-.031.45.082.312.214.641.405.985.57.182.088.277.228.297.35l.178 1.071c.151.904.933 1.567 1.85 1.567h1.844c.916 0 1.699-.663 1.85-1.567l.178-1.072c.02-.12.114-.26.297-.349.344-.165.673-.356.985-.57.167-.114.335-.125.45-.082l1.02.382a1.875 1.875 0 002.28-.819l.923-1.597a1.875 1.875 0 00-.432-2.385l-.84-.692c-.095-.078-.17-.229-.154-.43a7.614 7.614 0 000-1.139c-.016-.2.059-.352.153-.43l.84-.692c.708-.582.891-1.59.433-2.385l-.922-1.597a1.875 1.875 0 00-2.282-.818l-1.02.382c-.114.043-.282.031-.449-.083a7.49 7.49 0 00-.985-.57c-.183-.087-.277-.227-.297-.348l-.179-1.072a1.875 1.875 0 00-1.85-1.567h-1.843zM12 15.75a3.75 3.75 0 100-7.5 3.75 3.75 0 000 7.5z" fill="currentColor" clipRule="evenodd" />
-    ) : (
-      <path d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z" strokeLinecap="round" strokeLinejoin="round" />
     )}
   </svg>
 );
@@ -71,20 +70,90 @@ const ConfidantIcon = ({ filled }: { filled?: boolean }) => (
   </svg>
 );
 
-// 5 个核心导航项（成就已收纳到「设置」中作为入口行；技能并入成就）
+// 黑猫剪影：猫头轮廓 + 双耳的最小表达（实心 currentColor，颜色交给使用处）。
+// 路径手工绘制：双耳直线锚定头顶，头部用单段椭圆弧合拢——顶点少，缩放到任意尺寸都干净。
+const CatSilhouetteIcon = ({ className = 'w-6 h-6' }: { className?: string }) => (
+  <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden="true">
+    <path d="M6.6 2.3 L10 5.55 Q12 5.1 14 5.55 L17.4 2.3 L18.33 7.3 A8 8.5 0 1 1 5.67 7.3 Z" />
+  </svg>
+);
+
+// 四格常规导航（B+C 混合 IA 定稿）：首页 / 行动 / 羁绊 / 菜单，中央第 3 槽固定为黑猫 ◈（非路由）。
+// activities 与 settings 已撤出导航——过渡期经「菜单」宫格到达（成就 / 统计 / 设置同理）。
 const navItems = [
   { id: 'dashboard', label: '首页', Icon: HomeIcon },
-  { id: 'todos', label: '任务', Icon: CheckIcon },
-  { id: 'activities', label: '记录', Icon: PenIcon },
-  { id: 'cooperation', label: '同伴', Icon: ConfidantIcon },
-  { id: 'settings', label: '设置', Icon: SettingsIcon },
+  { id: 'todos', label: '行动', Icon: BoltIcon },
+  { id: 'cooperation', label: '羁绊', Icon: ConfidantIcon },
+  { id: 'menu', label: '菜单', Icon: MenuGridIcon },
 ];
+
+type NavItem = (typeof navItems)[number];
 
 // 导出供 Settings 页面复用图标（成就入口行）
 export { TrophyIcon };
 
+/**
+ * 黑猫占位 Sheet（F6 万能记录 AI 落位前的临时去处）。
+ * originRef 必传：这是 SheetModal「形状记忆生长」的第一个 dogfood——
+ * 面板必须从触发它的 ◈ 按钮长出来 / 缩回去，验证空间心智模型成立。
+ */
+const CatPlaceholderSheet = ({
+  isOpen,
+  onClose,
+  originRef,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  originRef: RefObject<HTMLButtonElement | null>;
+}) => (
+  <SheetModal isOpen={isOpen} onClose={onClose} position="bottom" originRef={originRef}>
+    <div className="flex flex-col items-center pb-6 text-center">
+      <EyebrowLabel className="self-start">NAVIGATOR</EyebrowLabel>
+      <h2 className="mt-4 text-xl font-bold text-gray-900 dark:text-white">黑猫还在赶来的路上</h2>
+      <p className="mt-2 text-sm leading-relaxed text-gray-500 dark:text-gray-400">
+        F6 万能记录 AI 将入驻此处——对话与菜单双层交互、全部记录能力直达。
+      </p>
+      <span className="mt-6 text-primary/80" aria-hidden="true">
+        <CatSilhouetteIcon className="w-20 h-20" />
+      </span>
+    </div>
+  </SheetModal>
+);
+
 export const Sidebar = () => {
   const { currentPage, setCurrentPage } = useAppStore();
+  // 占位 Sheet 状态收在组件内部：F6 上线前不值得进全局 store
+  const [catOpen, setCatOpen] = useState(false);
+  const catButtonRef = useRef<HTMLButtonElement>(null);
+
+  const renderItem = (item: NavItem) => {
+    const active = currentPage === item.id;
+    return (
+      <motion.button
+        key={item.id}
+        whileTap={{ scale: 0.97 }}
+        onClick={() => {
+          triggerNavFeedback();
+          setCurrentPage(item.id);
+        }}
+        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150 cursor-pointer ${
+          active
+            ? 'bg-primary/10 dark:bg-primary/15 text-primary'
+            : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-200'
+        }`}
+      >
+        <item.Icon filled={active} />
+        <span className={`text-sm font-medium ${active ? 'font-semibold' : ''}`}>{item.label}</span>
+        {active && (
+          <motion.div
+            layoutId="sidebar-active"
+            className="ml-auto w-1 h-5 bg-primary rounded-full"
+            transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+          />
+        )}
+      </motion.button>
+    );
+  };
 
   return (
     <motion.aside
@@ -106,41 +175,82 @@ export const Sidebar = () => {
       </div>
 
       <nav className="flex-1 px-3 pb-4 space-y-0.5">
-        {navItems.map((item) => {
-          const active = currentPage === item.id;
-          return (
-            <motion.button
-              key={item.id}
-              whileTap={{ scale: 0.97 }}
-              onClick={() => {
-                triggerNavFeedback();
-                setCurrentPage(item.id);
-              }}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150 cursor-pointer ${
-                active
-                  ? 'bg-primary/10 dark:bg-primary/15 text-primary'
-                  : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-200'
-              }`}
-            >
-              <item.Icon filled={active} />
-              <span className={`text-sm font-medium ${active ? 'font-semibold' : ''}`}>{item.label}</span>
-              {active && (
-                <motion.div
-                  layoutId="sidebar-active"
-                  className="ml-auto w-1 h-5 bg-primary rounded-full"
-                  transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-                />
-              )}
-            </motion.button>
-          );
-        })}
+        {navItems.slice(0, 2).map(renderItem)}
+
+        {/* 黑猫项：非页面路由，无激活态——点击开占位 Sheet，与 BottomNav 中央 ◈ 同一去处。
+            小号菱形 = rotate-45 圆角方块内嵌 -rotate-45 猫剪影（字恒水平原则同样适用于图标内容） */}
+        <motion.button
+          ref={catButtonRef}
+          whileTap={{ scale: 0.97 }}
+          onClick={() => {
+            triggerNavFeedback();
+            setCatOpen(true);
+          }}
+          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150 cursor-pointer text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-200"
+        >
+          <span className="w-6 h-6 flex items-center justify-center flex-none" aria-hidden="true">
+            <span className="w-[18px] h-[18px] rotate-45 rounded-[5px] bg-primary shadow-sm shadow-primary/40 flex items-center justify-center">
+              <CatSilhouetteIcon className="w-3 h-3 -rotate-45 text-white" />
+            </span>
+          </span>
+          <span className="text-sm font-medium">黑猫</span>
+        </motion.button>
+
+        {navItems.slice(2).map(renderItem)}
       </nav>
+
+      <CatPlaceholderSheet isOpen={catOpen} onClose={() => setCatOpen(false)} originRef={catButtonRef} />
     </motion.aside>
   );
 };
 
+/** 常规 tab（移动端）：激活指示条 = 斜切平行四边形，layoutId 在四格之间滑动 */
+const NavTab = ({ item, active, onSelect }: { item: NavItem; active: boolean; onSelect: () => void }) => (
+  <motion.button
+    whileTap={{ scale: 0.88 }}
+    onClick={onSelect}
+    className={`relative flex flex-col items-center justify-center flex-1 h-full gap-1 cursor-pointer transition-colors duration-150 ${
+      active ? 'text-primary' : 'text-gray-400 dark:text-gray-500'
+    }`}
+  >
+    {active && (
+      // 约束（同 SegmentTabs 已验证做法）：layout 动画期间 Framer 的 projection
+      // 独占本元素 transform——静态 skew 直接写在 layoutId 元素上会被覆盖，
+      // 必须放内层子 div；水平居中也因此只能用负 margin，不能用 -translate-x-1/2
+      <motion.div
+        layoutId="bottomnav-active"
+        transition={springSnappy}
+        aria-hidden="true"
+        className="absolute top-0 w-9 h-1.5"
+        style={{ left: '50%', marginLeft: '-18px' }}
+      >
+        <div className="absolute inset-0 bg-primary" style={{ transform: 'skewX(var(--ui-skew-ui))' }} />
+      </motion.div>
+    )}
+    <item.Icon filled={active} />
+    <span className={`text-[10px] leading-none ${active ? 'font-semibold' : 'font-normal'}`}>
+      {item.label}
+    </span>
+  </motion.button>
+);
+
 export const BottomNav = () => {
   const { currentPage, setCurrentPage } = useAppStore();
+  // 黑猫占位 Sheet：state 收在 BottomNav 内部（F6 上线前不进全局 store）
+  const [catOpen, setCatOpen] = useState(false);
+  const catButtonRef = useRef<HTMLButtonElement>(null);
+
+  const renderTab = (item: NavItem) => (
+    <NavTab
+      key={item.id}
+      item={item}
+      active={currentPage === item.id}
+      onSelect={() => {
+        triggerNavFeedback();
+        setCurrentPage(item.id);
+      }}
+    />
+  );
 
   return (
     <motion.nav
@@ -155,45 +265,45 @@ export const BottomNav = () => {
       //   · 牺牲：失去原本的毛玻璃半透明感。换来：iOS PWA 上 100% 无分隔条
       //   · 如果要恢复毛玻璃，把下面 bg-white → bg-white/95，加 backdrop-blur-md，
       //     接受 iOS PWA home bar 区可能再次出现轻微色差
-      className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white dark:bg-gray-900 border-t border-gray-100 dark:border-gray-800"
+      //
+      // z-index 从 z-50 收编为 zClass.nav（40）：标准弹窗（modal=50）必须能盖住导航。
+      // 前提是旧的树内浮层（PWAUpdateToast / CallingCardCutIn / auth 弹窗）已 portal 到
+      // body——本 PR 的并行任务负责，层级表见 utils/zIndex.ts
+      className={`md:hidden fixed bottom-0 left-0 right-0 ${zClass.nav} bg-white dark:bg-gray-900 border-t border-gray-100 dark:border-gray-800`}
       style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
     >
       <div className="flex items-center h-16">
-        {navItems.map((item) => {
-          const active = currentPage === item.id;
-          return (
-            <motion.button
-              key={item.id}
-              whileTap={{ scale: 0.88 }}
-              onClick={() => {
-                triggerNavFeedback();
-                setCurrentPage(item.id);
-              }}
-              className={`relative flex flex-col items-center justify-center flex-1 h-full gap-1 cursor-pointer transition-colors duration-150 ${
-                active ? 'text-primary' : 'text-gray-400 dark:text-gray-500'
-              }`}
-            >
-              <AnimatePresence>
-                {active && (
-                  <motion.div
-                    key={item.id}
-                    initial={{ opacity: 0, scaleX: 0 }}
-                    animate={{ opacity: 1, scaleX: 1 }}
-                    exit={{ opacity: 0, scaleX: 0 }}
-                    transition={{ duration: 0.18 }}
-                    className="absolute top-0 w-10 h-0.5 bg-primary rounded-full"
-                    style={{ left: '50%', marginLeft: '-20px', transformOrigin: 'center' }}
-                  />
-                )}
-              </AnimatePresence>
-              <item.Icon filled={active} />
-              <span className={`text-[10px] leading-none ${active ? 'font-semibold' : 'font-normal'}`}>
-                {item.label}
-              </span>
-            </motion.button>
-          );
-        })}
+        {navItems.slice(0, 2).map(renderTab)}
+
+        {/* 中央 ◈：黑猫入口（F6 前为占位 Sheet）。
+            凸起约束：按钮 absolute 定位于中槽、-top-3 上浮 12px——脱离 flex 流，
+            h-16 容器高度不被 w-14 按钮撑破，安全区 padding 与四格 tab 布局零跳动 */}
+        <div className="relative flex-1 h-full">
+          <motion.button
+            ref={catButtonRef}
+            aria-label="黑猫"
+            whileTap={{ scale: 0.9 }}
+            onClick={() => {
+              triggerNavFeedback();
+              setCatOpen(true);
+            }}
+            // rotate 走 motion style 而非 Tailwind rotate-45：whileTap 会接管 transform，
+            // class 里的 rotate 在按压瞬间会被覆盖掉；motion 的 rotate / scale 独立合成。
+            // 水平居中用 -ml-7（w-14 的一半）同理——translate 类靠不住
+            style={{ rotate: 45 }}
+            className="absolute left-1/2 -top-3 -ml-7 w-14 h-14 rounded-2xl bg-primary shadow-lg shadow-primary/30 flex items-center justify-center text-white cursor-pointer"
+          >
+            {/* 内层 -rotate-45 回正：菱形是壳，猫保持水平（字恒水平的图形版） */}
+            <span className="-rotate-45 flex items-center justify-center" aria-hidden="true">
+              <CatSilhouetteIcon className="w-7 h-7" />
+            </span>
+          </motion.button>
+        </div>
+
+        {navItems.slice(2).map(renderTab)}
       </div>
+
+      <CatPlaceholderSheet isOpen={catOpen} onClose={() => setCatOpen(false)} originRef={catButtonRef} />
     </motion.nav>
   );
 };

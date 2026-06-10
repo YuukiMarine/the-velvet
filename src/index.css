@@ -2,23 +2,32 @@
 @tailwind components;
 @tailwind utilities;
 
+/* --color-primary-rgb：primary 的 RGB 三元组，专供 Tailwind 透明度修饰符
+   （bg-primary/10、text-primary/20 等）——tailwind.config 的 primary 用
+   rgb(var(--color-primary-rgb) / <alpha-value>) 定义；旧式 var(--color-primary)
+   无法注入 alpha，带修饰符的类压根不会生成（曾是全仓隐性 bug）。
+   自定义主题色由 store 的 applyCustomThemeColor 同步写入两个变量。 */
 :root {
   --color-primary: #3B82F6;
+  --color-primary-rgb: 59 130 246;
   --color-secondary: #60A5FA;
 }
 
 :root[data-theme="yellow"] {
   --color-primary: #F59E0B;
+  --color-primary-rgb: 245 158 11;
   --color-secondary: #FBBF24;
 }
 
 :root[data-theme="red"] {
   --color-primary: #EF4444;
+  --color-primary-rgb: 239 68 68;
   --color-secondary: #F87171;
 }
 
 :root[data-theme="pink"] {
   --color-primary: #EC4899;
+  --color-primary-rgb: 236 72 153;
   --color-secondary: #F472B6;
 }
 
@@ -212,6 +221,11 @@ body {
     transform: rotate(var(--ui-axis));
     width: 112%;
     margin-left: -6%;
+    /* 出血补偿：padding 百分比相对包含块（.sl-plane-clip = 原容器宽），6% 恰好
+       吃掉两侧各 6% 的出血量（border-box 下内容宽回到 100%、起点回到 0）——
+       页面内容永远落在可视列内，出血区只接住旋转后探出的卡片角；
+       否则两侧各 ~6% 的内容（含 button 命中区）会被 clip 裁掉，D0 校直下同样裁 */
+    padding-inline: 6%;
     transition: transform 0.5s cubic-bezier(0.3, 1.25, 0.5, 1); /* 上限对齐 motion.ts DUR_RITUAL_MAX（仪式档 ≤500ms） */
   }
   .sl-plane:focus-within {

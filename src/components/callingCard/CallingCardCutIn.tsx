@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAppStore } from '@/store';
+import { zClass } from '@/utils/zIndex';
 import { useBackHandler } from '@/utils/useBackHandler';
 import { triggerLightHaptic, playSound } from '@/utils/feedback';
 import type { CallingCard } from '@/types';
@@ -119,25 +121,33 @@ export function CallingCardCutIn({ card, onClose }: Props) {
     [card?.id, stampLanded],
   );
 
-  if (!card) return null;
+  // B14 根治（UI_AUDIT_V2.5.md §2）：原先这里有 `if (!card) return null` ——
+  // 它位于 AnimatePresence 外侧，card 变 null 时整个组件（连同 AnimatePresence）
+  // 直接卸载，exit 淡出从不播放。现改为始终渲染 AnimatePresence，把条件留给
+  // 内部的 {card && …}，关闭时 exit 才能真正播完。
+  // 下面的派生值在 card 为 null 时落到兜底分支，但不会被渲染（exit 期间
+  // AnimatePresence 展示的是上一次渲染的快照），仅为通过 TS 空值检查。
   const reasonHeading =
-    card.archiveReason === 'auto_date'
+    card?.archiveReason === 'auto_date'
       ? '宣告 · 时之至'
-      : card.archiveReason === 'auto_todos'
+      : card?.archiveReason === 'auto_todos'
       ? '宣告 · 达成'
       : '宣告 · 已收';
-  const reasonStamp = card.archiveReason === 'auto_date' ? 'EXPIRED' : 'CLEARED';
+  const reasonStamp = card?.archiveReason === 'auto_date' ? 'EXPIRED' : 'CLEARED';
   const reasonHint =
-    card.archiveReason === 'auto_date'
+    card?.archiveReason === 'auto_date'
       ? '约定的那一日已经到来。'
-      : card.archiveReason === 'auto_todos'
+      : card?.archiveReason === 'auto_todos'
       ? '所有任务已被你跨过。'
       : '收存于档案。';
 
   // ── 字符 stagger 用：把"✦ CALLING CARD ✦"切碎 ──
   const headerLetters = ['✦', ' ', 'C', 'A', 'L', 'L', 'I', 'N', 'G', ' ', 'C', 'A', 'R', 'D', ' ', '✦'];
 
-  return (
+  // portal 到 body：脱离 App.tsx `relative z-10` stacking context（见 zIndex.ts 头注释），
+  // 使 zClass.cutin（120，与原 z-[120] 同值，仅统一出处）在 body 级阶梯中真实生效。
+  // createPortal 必须包在 AnimatePresence 外侧，否则 exit 失效（参考 ConfirmDialog）。
+  return createPortal(
     <AnimatePresence>
       {card && (
         <motion.div
@@ -146,7 +156,7 @@ export function CallingCardCutIn({ card, onClose }: Props) {
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.3 }}
-          className="fixed inset-0 z-[120] flex items-center justify-center p-6"
+          className={`fixed inset-0 ${zClass.cutin} flex items-center justify-center p-6`}
           onClick={handleClose}
           role="dialog"
           aria-modal="true"
@@ -444,6 +454,7 @@ export function CallingCardCutIn({ card, onClose }: Props) {
           </motion.div>
         </motion.div>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body,
   );
 }
