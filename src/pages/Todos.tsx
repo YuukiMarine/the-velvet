@@ -1,24 +1,31 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useAppStore, toLocalDateKey } from '@/store';
-import { AttributeId, TodoFrequency, WeeklyGoal, WeeklyGoalItem, WeeklyGoalType } from '@/types';
-import { triggerNavFeedback, triggerSuccessFeedback } from '@/utils/feedback';
+import { AttributeId, TodoFrequency } from '@/types';
+import { triggerNavFeedback } from '@/utils/feedback';
 import { PageTitle } from '@/components/PageTitle';
 import { useRipple } from '@/components/RippleEffect';
-import { useLongPress } from '@/utils/useLongPress';
-import { CallingCardSection } from '@/components/callingCard/CallingCardSection';
-import { v4 as uuidv4 } from 'uuid';
+import { GoalDeck } from '@/components/weeklyGoal/GoalDeck';
+// ── 行动域统一基元（UI_AUDIT_V2.5.md §3.2 + §4.6 交互协议）──
+import { Toggle } from '@/components/Toggle';
+import { Stepper } from '@/components/Stepper';
+import { EmptyState } from '@/components/EmptyState';
+import { ListCard } from '@/components/ListCard';
+import { ActionSheet } from '@/components/ActionSheet';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { SheetModal } from '@/components/SheetModal';
+import { ArchiveIcon, EditIcon, RestoreIcon, TrashIcon } from '@/components/icons';
 
 const weekdayLabels = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 
-// Active todo card with long-press to edit
+// 今日任务卡：长按 = 唤出上下文菜单（§4.6 协议，不再直接进编辑）
 const ActiveTodoCard = ({
   todo,
   progress,
   attrName,
   allAttrNames,
   pct,
-  onEdit,
+  onOpenMenu,
   onArchive,
   renderFrequencyBadge,
 }: {
@@ -27,22 +34,33 @@ const ActiveTodoCard = ({
   attrName: string;
   allAttrNames: Record<string, string>;
   pct: number;
-  onEdit: (id: string) => void;
+  onOpenMenu: (id: string) => void;
   onArchive: (id: string) => void;
   renderFrequencyBadge: (frequency: import('@/types').TodoFrequency, targetCount?: number, isLongTerm?: boolean) => string;
 }) => {
-  const { pressing, bindings } = useLongPress(() => onEdit(todo.id));
+  // 按压期提示：ListCard 不外露 pressing 态，外层 wrapper 旁观指针起落自行维护
+  //（只旁观不拦截，事件照常冒泡给 ListCard 的长按计时；菜单弹出时由回调强制收起，防残留）
+  const [pressHint, setPressHint] = useState(false);
+  const hideHint = () => setPressHint(false);
 
   return (
-    <motion.div
-      animate={{ scale: pressing ? 0.97 : 1 }}
-      transition={{ duration: 0.15 }}
-      {...bindings}
-      className={`rounded-xl px-4 py-3 border select-none cursor-default ${
-        todo.important
-          ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-200/70 dark:border-amber-700/40'
-          : 'bg-gray-50 dark:bg-gray-800/60 border-gray-100 dark:border-gray-700/60'
-      }`}
+    <div
+      onPointerDown={(e) => {
+        // 与 useLongPress 同口径：鼠标右键/中键不算按压
+        if (e.pointerType === 'mouse' && e.button !== 0) return;
+        setPressHint(true);
+      }}
+      onPointerUp={hideHint}
+      onPointerCancel={hideHint}
+      onPointerLeave={hideHint}
+    >
+    {/* 重要性表达 = 左强调条 + 现有 ⭐pill（amber 满底填充取消，向 Activities 的强调条语言看齐） */}
+    <ListCard
+      accent={todo.important ? 'bg-amber-400' : undefined}
+      onLongPress={() => {
+        hideHint();
+        onOpenMenu(todo.id);
+      }}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
@@ -80,9 +98,7 @@ const ActiveTodoCard = ({
             className="w-7 h-7 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-orange-100 dark:hover:bg-orange-900/30 hover:text-orange-500 transition-colors"
             title="归档（不启用）"
           >
-            <svg viewBox="0 0 16 16" className="w-3.5 h-3.5" fill="currentColor">
-              <path d="M2 3a1 1 0 011-1h10a1 1 0 011 1v1.5a1 1 0 01-.4.8L9 8.5V13a1 1 0 01-1.447.894l-2-1A1 1 0 015 12V8.5L2.4 5.3A1 1 0 012 4.5V3zm1 0v1.5l3 3.75V12l2 1V8.25L11 4.5V3H3z" />
-            </svg>
+            <ArchiveIcon />
           </button>
         </div>
       </div>
@@ -101,40 +117,52 @@ const ActiveTodoCard = ({
           />
         </div>
       </div>
-      {pressing && (
-        <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-1.5 text-center">长按编辑…</p>
+      {pressHint && (
+        <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-1.5 text-center">长按打开菜单</p>
       )}
-    </motion.div>
+    </ListCard>
+    </div>
   );
 };
 
-// ── PendingWeekdayTodoCard（日期未到，在归档区显示） ───────────
+// ── PendingWeekdayTodoCard（日期未到，在归档区显示）：长按同款菜单 ───────────
 const PendingWeekdayTodoCard = ({
   todo,
   attrName,
-  onEdit,
+  onOpenMenu,
   onArchive,
   onDelete,
-  deleteConfirming,
   renderFrequencyBadge,
 }: {
   todo: ReturnType<typeof useAppStore.getState>['todos'][number];
   attrName: string;
-  onEdit: (id: string) => void;
+  onOpenMenu: (id: string) => void;
   onArchive: (id: string) => void;
+  /** 快捷删除钮：交给页面级 ConfirmDialog 二段确认（§4.6 删除协议） */
   onDelete: (id: string) => void;
-  /** 删除按钮处于"再点一次确认"状态 */
-  deleteConfirming: boolean;
   renderFrequencyBadge: (frequency: import('@/types').TodoFrequency, targetCount?: number, isLongTerm?: boolean) => string;
 }) => {
-  const { pressing, bindings } = useLongPress(() => onEdit(todo.id));
+  // 同 ActiveTodoCard：wrapper 旁观指针起落，维护"长按打开菜单"提示
+  const [pressHint, setPressHint] = useState(false);
+  const hideHint = () => setPressHint(false);
 
   return (
-    <motion.div
-      animate={{ scale: pressing ? 0.97 : 1 }}
-      transition={{ duration: 0.15 }}
-      {...bindings}
-      className="rounded-xl px-4 py-3 border border-gray-100 dark:border-gray-700/60 bg-gray-50/60 dark:bg-gray-800/40 opacity-75 select-none cursor-default"
+    <div
+      onPointerDown={(e) => {
+        if (e.pointerType === 'mouse' && e.button !== 0) return;
+        setPressHint(true);
+      }}
+      onPointerUp={hideHint}
+      onPointerCancel={hideHint}
+      onPointerLeave={hideHint}
+    >
+    {/* 未到日期 = dimmed 降明度（统一替代旧的灰底 + opacity-75 自绘） */}
+    <ListCard
+      dimmed
+      onLongPress={() => {
+        hideHint();
+        onOpenMenu(todo.id);
+      }}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
@@ -168,885 +196,28 @@ const PendingWeekdayTodoCard = ({
             className="w-7 h-7 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-gray-400 dark:text-gray-500 hover:bg-orange-100 dark:hover:bg-orange-900/30 hover:text-orange-500 transition-colors"
             title="归档"
           >
-            <svg viewBox="0 0 16 16" className="w-3.5 h-3.5" fill="currentColor">
-              <path d="M2 3a1 1 0 011-1h10a1 1 0 011 1v1.5a1 1 0 01-.4.8L9 8.5V13a1 1 0 01-1.447.894l-2-1A1 1 0 015 12V8.5L2.4 5.3A1 1 0 012 4.5V3zm1 0v1.5l3 3.75V12l2 1V8.25L11 4.5V3H3z" />
-            </svg>
+            <ArchiveIcon />
           </button>
-          {/* 彻底删除（二次确认） */}
+          {/* 彻底删除：唤起页面级 ConfirmDialog（旧"二次点按确认"机制已移除） */}
           <button
             onPointerDown={(e) => e.stopPropagation()}
             onClick={() => onDelete(todo.id)}
-            className={`w-7 h-7 rounded-full flex items-center justify-center transition-colors ${
-              deleteConfirming
-                ? 'bg-red-500 text-white shadow-sm shadow-red-500/40'
-                : 'bg-red-50 dark:bg-red-900/20 text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40'
-            }`}
-            title={deleteConfirming ? '再次点击确认删除' : '删除'}
+            className="w-7 h-7 rounded-full flex items-center justify-center transition-colors bg-red-50 dark:bg-red-900/20 text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40"
+            title="删除"
           >
-            <svg viewBox="0 0 16 16" className="w-3.5 h-3.5" fill="currentColor">
-              <path d="M5 2h6l1 1H3L5 2zm-2 2h10l-1 9H4L3 4zm3 2v6h1V6H6zm3 0v6h1V6H9z" />
-            </svg>
+            <TrashIcon />
           </button>
         </div>
       </div>
-      {pressing && (
-        <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-1.5 text-center">长按编辑…</p>
+      {pressHint && (
+        <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-1.5 text-center">长按打开菜单</p>
       )}
-    </motion.div>
+    </ListCard>
+    </div>
   );
 };
-
-// ── Helper: 本周周一/周日 ──────────────────────────────────
-function getCurrentWeekRange() {
-  const now = new Date();
-  const day = now.getDay(); // 0=Sun
-  const diffMon = day === 0 ? -6 : 1 - day;
-  const mon = new Date(now.getFullYear(), now.getMonth(), now.getDate() + diffMon);
-  const sun = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + 6);
-  return { weekStart: toLocalDateKey(mon), weekEnd: toLocalDateKey(sun) };
-}
 
 const ATTR_IDS: AttributeId[] = ['knowledge', 'guts', 'dexterity', 'kindness', 'charm'];
-const GOAL_TYPE_LABELS: Record<WeeklyGoalType, string> = {
-  activity_count: '活动次数',
-  todo_count: '任务完成',
-  attr_points: '属性点数',
-  total_points: '全属性点数',
-};
-const GOAL_TYPE_DESCS: Record<WeeklyGoalType, string> = {
-  activity_count: '完成指定属性的记录次数',
-  todo_count: '完成任务的次数',
-  attr_points: '获得指定属性的点数',
-  total_points: '所有属性的总获得点数',
-};
-const ALL_GOAL_TYPES: WeeklyGoalType[] = ['activity_count', 'todo_count', 'attr_points', 'total_points'];
-const DEFAULT_TARGETS: Record<WeeklyGoalType, number> = {
-  activity_count: 6,
-  todo_count: 10,
-  attr_points: 15,
-  total_points: 36,
-};
-
-// Default goal items template (all 4 types, will be filtered by selection)
-const makeDefaultItem = (type: WeeklyGoalType): WeeklyGoalItem => ({
-  type,
-  attribute: (type === 'activity_count' || type === 'attr_points') ? 'knowledge' : undefined,
-  target: DEFAULT_TARGETS[type],
-  current: 0,
-});
-
-// ── GoalSetupForm (shared between create & edit) ────────────────────────────
-const GoalSetupForm = ({
-  initialItems,
-  initialReward,
-  weekStart,
-  weekEnd,
-  settings,
-  onConfirm,
-  onCancel,
-}: {
-  initialItems: WeeklyGoalItem[];
-  initialReward: string;
-  weekStart: string;
-  weekEnd: string;
-  settings: ReturnType<typeof useAppStore.getState>['settings'];
-  onConfirm: (items: WeeklyGoalItem[], reward: string) => void;
-  onCancel: () => void;
-}) => {
-  // Which types are toggled on
-  const [selectedTypes, setSelectedTypes] = useState<Set<WeeklyGoalType>>(
-    () => new Set(initialItems.map(g => g.type))
-  );
-  // Config per type (target + attribute)
-  const [itemConfigs, setItemConfigs] = useState<Record<WeeklyGoalType, WeeklyGoalItem>>(() => {
-    const base: Record<string, WeeklyGoalItem> = {};
-    ALL_GOAL_TYPES.forEach(t => {
-      const existing = initialItems.find(g => g.type === t);
-      base[t] = existing ?? makeDefaultItem(t);
-    });
-    return base as Record<WeeklyGoalType, WeeklyGoalItem>;
-  });
-  const [reward, setReward] = useState(initialReward);
-
-  const toggleType = (type: WeeklyGoalType) => {
-    setSelectedTypes(prev => {
-      const next = new Set(prev);
-      if (next.has(type)) {
-        if (next.size <= 2) return prev; // min 2
-        next.delete(type);
-      } else {
-        next.add(type);
-      }
-      return next;
-    });
-  };
-
-  const updateConfig = (type: WeeklyGoalType, patch: Partial<WeeklyGoalItem>) => {
-    setItemConfigs(prev => ({ ...prev, [type]: { ...prev[type], ...patch } }));
-  };
-
-  const Stepper = ({ value, onChange, min = 1, max = 999 }: { value: number; onChange: (v: number) => void; min?: number; max?: number }) => (
-    <div className="flex items-center gap-1">
-      <button
-        type="button"
-        onClick={e => { e.stopPropagation(); onChange(Math.max(min, value - 1)); }}
-        className="w-7 h-7 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 font-bold text-sm flex items-center justify-center"
-      >−</button>
-      <span className="w-10 text-center text-sm font-bold tabular-nums text-gray-800 dark:text-white">{value}</span>
-      <button
-        type="button"
-        onClick={e => { e.stopPropagation(); onChange(Math.min(max, value + 1)); }}
-        className="w-7 h-7 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 font-bold text-sm flex items-center justify-center"
-      >+</button>
-    </div>
-  );
-
-  const canConfirm = selectedTypes.size >= 2;
-
-  const handleConfirm = () => {
-    const items = ALL_GOAL_TYPES
-      .filter(t => selectedTypes.has(t))
-      .map(t => itemConfigs[t]);
-    onConfirm(items, reward);
-  };
-
-  return (
-    <div className="rounded-2xl bg-white dark:bg-gray-900 border border-gray-200/80 dark:border-gray-700/80 shadow-sm overflow-hidden">
-      <div className="px-5 pt-4 pb-3 border-b border-gray-100 dark:border-gray-800/80">
-        <h3 className="font-bold text-gray-900 dark:text-white text-sm">设定本周目标</h3>
-        <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{weekStart} ~ {weekEnd}　· 至少选择 2 项</p>
-      </div>
-      <div className="p-4 space-y-2">
-        {ALL_GOAL_TYPES.map(type => {
-          const isSelected = selectedTypes.has(type);
-          const cfg = itemConfigs[type];
-          const needsAttr = type === 'activity_count' || type === 'attr_points';
-          return (
-            <div
-              key={type}
-              className={`rounded-xl border-2 transition-all overflow-hidden ${
-                isSelected
-                  ? 'border-primary/60 bg-primary/5 dark:border-gray-600 dark:bg-primary/10'
-                  : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/40'
-              }`}
-            >
-              {/* Toggle header row */}
-              <button
-                type="button"
-                className="w-full flex items-center justify-between px-4 py-3 text-left"
-                onClick={() => toggleType(type)}
-              >
-                <div className="flex items-center gap-3">
-                  <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all flex-shrink-0 ${
-                    isSelected ? 'border-primary bg-primary' : 'border-gray-300 dark:border-gray-600'
-                  }`}>
-                    {isSelected && (
-                      <svg viewBox="0 0 10 8" className="w-3 h-3" fill="none">
-                        <path d="M1 4l2.5 2.5L9 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
-                    )}
-                  </div>
-                  <div>
-                    <p className={`text-sm font-semibold ${isSelected ? 'text-primary' : 'text-gray-700 dark:text-gray-300'}`}>
-                      {GOAL_TYPE_LABELS[type]}
-                    </p>
-                    <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">{GOAL_TYPE_DESCS[type]}</p>
-                  </div>
-                </div>
-                {!isSelected && (
-                  <span className="text-xs text-gray-400 dark:text-gray-500 flex-shrink-0">点击添加</span>
-                )}
-              </button>
-
-              {/* Expanded config (only when selected) */}
-              <AnimatePresence initial={false}>
-                {isSelected && (
-                  <motion.div
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: 'auto', opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                    transition={{ duration: 0.2 }}
-                    className="overflow-hidden"
-                  >
-                    <div className="px-4 pb-3 flex items-center justify-between gap-3 border-t border-primary/10 dark:border-gray-700/70">
-                      <div className="flex items-center gap-2 pt-2.5 flex-wrap">
-                        <span className="text-xs text-gray-500 dark:text-gray-400">目标</span>
-                        {needsAttr && (
-                          <select
-                            value={cfg.attribute || 'knowledge'}
-                            onChange={e => updateConfig(type, { attribute: e.target.value as AttributeId })}
-                            onClick={e => e.stopPropagation()}
-                            className="text-xs px-2 py-1 rounded-lg bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-600 focus:outline-none"
-                          >
-                            {ATTR_IDS.map(id => (
-                              <option key={id} value={id}>{settings.attributeNames[id]}</option>
-                            ))}
-                          </select>
-                        )}
-                      </div>
-                      <div className="pt-2.5">
-                        <Stepper value={cfg.target} onChange={v => updateConfig(type, { target: v })} />
-                      </div>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-          );
-        })}
-
-        <div className="pt-1">
-          <label className="text-xs font-medium text-gray-700 dark:text-gray-300 mb-1 block">完成奖励（选填）</label>
-          <input
-            type="text"
-            value={reward}
-            onChange={e => setReward(e.target.value)}
-            placeholder="给自己一个奖励吧…"
-            className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-xl dark:bg-gray-800 dark:text-white focus:outline-none focus:border-primary"
-          />
-        </div>
-        <div className="flex gap-2 pt-1">
-          <button type="button" onClick={onCancel} className="flex-1 py-2.5 rounded-xl bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 text-sm font-medium">取消</button>
-          <motion.button
-            type="button"
-            whileTap={{ scale: 0.97 }}
-            onClick={handleConfirm}
-            disabled={!canConfirm}
-            className="flex-1 py-2.5 rounded-xl bg-primary text-white text-sm font-semibold disabled:opacity-40"
-          >
-            确认（{selectedTypes.size} 项）
-          </motion.button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// ── CelebrationModal ────────────────────────────────────────────────────────
-const CelebrationModal = ({
-  isOpen,
-  onClose,
-  settings,
-  attributes,
-  onConfirm,
-}: {
-  isOpen: boolean;
-  onClose: () => void;
-  settings: ReturnType<typeof useAppStore.getState>['settings'];
-  attributes: ReturnType<typeof useAppStore.getState>['attributes'];
-  onConfirm: (attr: AttributeId) => void;
-}) => {
-  const [selectedAttr, setSelectedAttr] = useState<AttributeId | null>(null);
-  const [particles, setParticles] = useState<Array<{ id: number; x: number; y: number; delay: number; color: string }>>([]);
-  const playedRef = useRef(false);
-
-  const CONFETTI_COLORS = ['#fbbf24', '#34d399', '#60a5fa', '#f472b6', '#a78bfa', '#fb923c'];
-
-  useEffect(() => {
-    if (isOpen) {
-      setSelectedAttr(null);
-      if (!playedRef.current) {
-        triggerSuccessFeedback();
-        playedRef.current = true;
-      }
-      setParticles(
-        Array.from({ length: 40 }, (_, i) => ({
-          id: i,
-          x: (Math.random() - 0.5) * 280,
-          y: (Math.random() - 0.5) * 260,
-          delay: Math.random() * 0.6,
-          color: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
-        }))
-      );
-    } else {
-      playedRef.current = false;
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen]);
-
-  return (
-    <AnimatePresence>
-      {isOpen && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4"
-          onClick={onClose}
-        >
-          <motion.div
-            initial={{ scale: 0.8, opacity: 0, y: 20 }}
-            animate={{ scale: 1, opacity: 1, y: 0 }}
-            exit={{ scale: 0.85, opacity: 0, y: 10 }}
-            transition={{ type: 'spring', damping: 18, stiffness: 280 }}
-            className="relative bg-gradient-to-b from-amber-50 via-white to-white dark:from-gray-800 dark:via-gray-900 dark:to-gray-900 rounded-3xl p-6 max-w-sm w-full shadow-2xl overflow-hidden"
-            onClick={e => e.stopPropagation()}
-          >
-            {/* Particle burst */}
-            <div className="absolute inset-0 pointer-events-none overflow-hidden">
-              {particles.map(p => (
-                <motion.div
-                  key={p.id}
-                  initial={{ opacity: 0, scale: 0, x: 0, y: 0 }}
-                  animate={{ opacity: [0, 1, 0], scale: [0, 1.2, 0], x: p.x, y: p.y }}
-                  transition={{ duration: 1.2, delay: p.delay, ease: 'easeOut' }}
-                  className="absolute w-2.5 h-2.5 rounded-full"
-                  style={{ left: '50%', top: '40%', backgroundColor: p.color }}
-                />
-              ))}
-            </div>
-
-            {/* Header */}
-            <div className="relative text-center mb-5">
-              <motion.div
-                initial={{ scale: 0, rotate: -20 }}
-                animate={{ scale: [0, 1.4, 1], rotate: 0 }}
-                transition={{ duration: 0.6, delay: 0.1, type: 'spring' }}
-                className="text-5xl mb-3 inline-block"
-              >
-                🏆
-              </motion.div>
-              <motion.h3
-                initial={{ y: 16, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                transition={{ delay: 0.3, duration: 0.4 }}
-                className="text-xl font-bold text-gray-900 dark:text-white"
-              >
-                本周目标达成！
-              </motion.h3>
-              <motion.p
-                initial={{ y: 10, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                transition={{ delay: 0.45, duration: 0.4 }}
-                className="text-sm text-gray-500 dark:text-gray-400 mt-1"
-              >
-                选择这周最用力的方向，领取奖励
-              </motion.p>
-            </div>
-
-            {/* Attribute selection */}
-            <motion.div
-              initial={{ y: 12, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              transition={{ delay: 0.5, duration: 0.4 }}
-              className="space-y-2 mb-5"
-            >
-              {ATTR_IDS.map(id => {
-                const selected = selectedAttr === id;
-                const attrName = settings.attributeNames[id];
-                const attr = attributes.find(a => a.id === id);
-                const pts = (attr && attr.level >= 3) ? 7 : 5;
-                return (
-                  <motion.button
-                    key={id}
-                    whileTap={{ scale: 0.97 }}
-                    onClick={() => setSelectedAttr(id)}
-                    className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border-2 transition-all ${
-                      selected
-                        ? 'border-amber-400 bg-amber-50 dark:bg-amber-900/20'
-                        : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <div className={`w-4 h-4 rounded-full border-2 flex-shrink-0 transition-all ${
-                        selected ? 'border-amber-400 bg-amber-400' : 'border-gray-300 dark:border-gray-600'
-                      }`} />
-                      <span className={`text-sm font-semibold ${selected ? 'text-amber-700 dark:text-amber-300' : 'text-gray-700 dark:text-gray-300'}`}>
-                        {attrName}
-                      </span>
-                    </div>
-                    <span className={`text-xs font-bold tabular-nums px-2 py-0.5 rounded-lg ${
-                      selected ? 'bg-amber-400/20 text-amber-700 dark:text-amber-300' : 'text-gray-400 dark:text-gray-500'
-                    }`}>
-                      +{pts} 点
-                    </span>
-                  </motion.button>
-                );
-              })}
-            </motion.div>
-
-            <motion.div
-              initial={{ y: 8, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              transition={{ delay: 0.6, duration: 0.4 }}
-              className="flex gap-2"
-            >
-              <button
-                onClick={onClose}
-                className="flex-1 py-2.5 rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 text-sm font-medium"
-              >
-                取消
-              </button>
-              <motion.button
-                whileTap={{ scale: 0.97 }}
-                onClick={() => selectedAttr && onConfirm(selectedAttr)}
-                disabled={!selectedAttr}
-                className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-white text-sm font-bold shadow-md shadow-amber-500/30 disabled:opacity-40 disabled:shadow-none"
-              >
-                领取奖励 ✨
-              </motion.button>
-            </motion.div>
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
-  );
-};
-
-// ── ClaimedModal — reward confirmation ──────────────────────────────────────
-const ClaimedModal = ({
-  data,
-  onClose,
-}: {
-  data: { attrName: string; pts: number } | null;
-  onClose: () => void;
-}) => {
-  const [rings, setRings] = useState<Array<{ id: number; delay: number }>>([]);
-
-  useEffect(() => {
-    if (data) {
-      setRings(Array.from({ length: 5 }, (_, i) => ({ id: i, delay: i * 0.12 })));
-      const t = setTimeout(onClose, 2600);
-      return () => clearTimeout(t);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data]);
-
-  return (
-    <AnimatePresence>
-      {data && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4"
-          onClick={onClose}
-        >
-          <motion.div
-            initial={{ scale: 0.7, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0.8, opacity: 0 }}
-            transition={{ type: 'spring', damping: 15, stiffness: 300 }}
-            className="relative flex flex-col items-center justify-center"
-            onClick={e => e.stopPropagation()}
-          >
-            {/* Expanding rings */}
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              {rings.map(r => (
-                <motion.div
-                  key={r.id}
-                  initial={{ scale: 0.3, opacity: 0.8 }}
-                  animate={{ scale: 3.5, opacity: 0 }}
-                  transition={{ duration: 1.0, delay: r.delay, ease: 'easeOut' }}
-                  className="absolute w-24 h-24 rounded-full border-4 border-amber-400"
-                />
-              ))}
-            </div>
-
-            {/* Center content */}
-            <div className="relative bg-gradient-to-br from-amber-400 to-orange-500 rounded-3xl px-10 py-8 shadow-2xl shadow-amber-500/40 flex flex-col items-center gap-3">
-              <motion.div
-                initial={{ scale: 0, rotate: -30 }}
-                animate={{ scale: [0, 1.3, 1], rotate: 0 }}
-                transition={{ duration: 0.5, type: 'spring', delay: 0.1 }}
-                className="text-5xl"
-              >
-                ✨
-              </motion.div>
-              <motion.p
-                initial={{ y: 10, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                transition={{ delay: 0.3 }}
-                className="text-white font-bold text-xl tracking-wide"
-              >
-                奖励已领取！
-              </motion.p>
-              <motion.p
-                initial={{ y: 8, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                transition={{ delay: 0.45 }}
-                className="text-white/90 text-base font-semibold"
-              >
-                {data.attrName} <span className="text-2xl font-black">+{data.pts}</span>
-              </motion.p>
-            </div>
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
-  );
-};
-
-// ── 本周目标组件 ──────────────────────────────────────────
-const WeeklyGoalSection = ({
-  settings, attributes, weeklyGoals,
-  saveWeeklyGoal, deleteWeeklyGoal, completeWeeklyGoal, getWeeklyGoalProgress,
-}: {
-  settings: ReturnType<typeof useAppStore.getState>['settings'];
-  attributes: ReturnType<typeof useAppStore.getState>['attributes'];
-  weeklyGoals: WeeklyGoal[];
-  saveWeeklyGoal: (g: WeeklyGoal) => Promise<void>;
-  deleteWeeklyGoal: (id: string) => Promise<void>;
-  completeWeeklyGoal: (id: string, attr: AttributeId) => Promise<void>;
-  getWeeklyGoalProgress: (g: WeeklyGoal) => WeeklyGoalItem[];
-}) => {
-  const { weekStart, weekEnd } = getCurrentWeekRange();
-  const currentGoal = weeklyGoals.find(g => g.weekStart === weekStart && g.weekEnd === weekEnd);
-
-  // setup form
-  const [showSetup, setShowSetup] = useState(false);
-  // edit mode — re-open form with existing data
-  const [showEditForm, setShowEditForm] = useState(false);
-
-  // completion modals
-  const [showComplete, setShowComplete] = useState(false);
-  // claimed confirmation (shown after successful reward claim)
-  const [showClaimed, setShowClaimed] = useState<{ attrName: string; pts: number } | null>(null);
-
-  // long-press state
-  const [showEditMenu, setShowEditMenu] = useState(false);
-  const { pressing, bindings: pressBindings } = useLongPress(() => setShowEditMenu(true));
-
-  const handleCreate = async (items: WeeklyGoalItem[], reward: string) => {
-    const goal: WeeklyGoal = {
-      id: uuidv4(),
-      weekStart,
-      weekEnd,
-      goals: items,
-      reward,
-      completed: false,
-      createdAt: new Date(),
-    };
-    await saveWeeklyGoal(goal);
-    setShowSetup(false);
-  };
-
-  const handleEdit = async (items: WeeklyGoalItem[], reward: string) => {
-    if (!currentGoal) return;
-    const updated: WeeklyGoal = { ...currentGoal, goals: items, reward };
-    await saveWeeklyGoal(updated);
-    setShowEditForm(false);
-    setShowEditMenu(false);
-  };
-
-  const handleReset = async () => {
-    if (currentGoal) await deleteWeeklyGoal(currentGoal.id);
-    // Reset all local UI state so nothing stale remains after deletion
-    setShowEditMenu(false);
-    setShowSetup(false);
-    setShowEditForm(false);
-  };
-
-  const handleComplete = async (attr: AttributeId) => {
-    if (!currentGoal) return;
-    // Compute reward pts to show in the claimed modal (mirror store logic)
-    const rewardAttr = attributes.find(a => a.id === attr);
-    const pts = (rewardAttr && rewardAttr.level >= 3) ? 7 : 5;
-    const attrName = settings.attributeNames[attr] || attr;
-    await completeWeeklyGoal(currentGoal.id, attr);
-    setShowComplete(false);
-    setShowClaimed({ attrName, pts });
-  };
-
-  // Progress
-  const progressItems = currentGoal ? getWeeklyGoalProgress(currentGoal) : [];
-  const allMet = currentGoal && !currentGoal.completed && progressItems.length > 0 && progressItems.every(g => g.current >= g.target);
-
-  const goalLabel = (g: WeeklyGoalItem) => {
-    const attrName = g.attribute ? (settings.attributeNames[g.attribute as keyof typeof settings.attributeNames] || g.attribute) : '';
-    switch (g.type) {
-      case 'activity_count': return `完成 ${g.target} 次${attrName}活动`;
-      case 'todo_count': return `完成 ${g.target} 次任务`;
-      case 'attr_points': return `获得 ${g.target} 点${attrName}`;
-      case 'total_points': return `获得 ${g.target} 点总点数`;
-    }
-  };
-
-  // ── Render ──
-  // No goal set yet
-  if (!currentGoal) {
-    if (!showSetup) {
-      return (
-        <motion.button
-          whileTap={{ scale: 0.98 }}
-          onClick={() => setShowSetup(true)}
-          className="w-full rounded-2xl border-2 border-dashed border-gray-200 dark:border-gray-700 py-5 text-center text-sm text-gray-400 dark:text-gray-500 hover:border-primary hover:text-primary transition-colors"
-        >
-          + 设定本周目标
-        </motion.button>
-      );
-    }
-    return (
-      <GoalSetupForm
-        initialItems={ALL_GOAL_TYPES.map(makeDefaultItem)}
-        initialReward=""
-        weekStart={weekStart}
-        weekEnd={weekEnd}
-        settings={settings}
-        onConfirm={handleCreate}
-        onCancel={() => setShowSetup(false)}
-      />
-    );
-  }
-
-  // Edit form (from "修改选项")
-  if (showEditForm) {
-    return (
-      <GoalSetupForm
-        initialItems={currentGoal.goals}
-        initialReward={currentGoal.reward || ''}
-        weekStart={weekStart}
-        weekEnd={weekEnd}
-        settings={settings}
-        onConfirm={handleEdit}
-        onCancel={() => setShowEditForm(false)}
-      />
-    );
-  }
-
-  // Goal exists — show progress
-  const rewardAttr = currentGoal.completed && currentGoal.rewardAttribute
-    ? (settings.attributeNames[currentGoal.rewardAttribute as keyof typeof settings.attributeNames] || currentGoal.rewardAttribute)
-    : null;
-
-  return (
-    <>
-      <motion.div
-        animate={{ scale: pressing ? 0.97 : 1 }}
-        transition={{ duration: 0.15 }}
-        className={`rounded-2xl bg-white dark:bg-gray-900 border shadow-sm overflow-hidden select-none cursor-default ${
-          currentGoal.completed
-            ? 'border-emerald-300/70 dark:border-emerald-700/70'
-            : allMet
-            ? 'border-amber-300/80 dark:border-amber-600/70'
-            : 'border-gray-200/80 dark:border-gray-700/80'
-        }`}
-        {...pressBindings}
-      >
-        <div className="flex items-center justify-between px-5 pt-4 pb-2">
-          <div className="flex items-center gap-2">
-            <h3 className="font-bold text-gray-900 dark:text-white text-sm">本周目标</h3>
-            {currentGoal.completed && (
-              <span className="text-[10px] bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 px-2 py-0.5 rounded-full font-medium">已完成</span>
-            )}
-          </div>
-          <span className="text-[10px] text-gray-400 dark:text-gray-500">{weekStart} ~ {weekEnd}</span>
-        </div>
-        <div className="px-5 pb-4 space-y-2.5">
-          {progressItems.map((g, idx) => {
-            const pct = Math.min(100, g.target > 0 ? (g.current / g.target) * 100 : 0);
-            const done = g.current >= g.target;
-            return (
-              <div key={idx}>
-                <div className="flex items-center justify-between mb-1">
-                  <span className={`text-xs ${done ? 'text-emerald-600 dark:text-emerald-400 font-medium' : 'text-gray-600 dark:text-gray-400'}`}>
-                    {done ? '✓ ' : ''}{goalLabel(g)}
-                  </span>
-                  <span className="text-xs tabular-nums text-gray-400 dark:text-gray-500">{g.current}/{g.target}</span>
-                </div>
-                <div className="h-1.5 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
-                  <div
-                    className={`h-full rounded-full transition-all duration-500 ${done ? 'bg-emerald-500' : 'bg-primary'}`}
-                    style={{ width: `${pct}%` }}
-                  />
-                </div>
-              </div>
-            );
-          })}
-          {currentGoal.reward && (
-            <p className="text-[11px] text-gray-400 dark:text-gray-500 pt-1">
-              🎁 奖励：{currentGoal.reward}
-            </p>
-          )}
-          {currentGoal.completed && rewardAttr && (
-            <p className="text-xs text-emerald-600 dark:text-emerald-400 font-medium pt-1">
-              ✨ 已获得 {rewardAttr} +{currentGoal.rewardPoints}
-            </p>
-          )}
-          {allMet && !currentGoal.completed && (
-            <motion.button
-              whileTap={{ scale: 0.97 }}
-              onPointerDown={e => e.stopPropagation()}
-              onClick={() => setShowComplete(true)}
-              className="w-full mt-1 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-white text-sm font-semibold shadow-md shadow-amber-500/20"
-            >
-              🎉 目标达成！领取奖励
-            </motion.button>
-          )}
-          {pressing && (
-            <p className="text-[10px] text-gray-400 dark:text-gray-500 pt-0.5">
-              {currentGoal.completed ? '松手删除记录…' : '松手打开菜单…'}
-            </p>
-          )}
-        </div>
-      </motion.div>
-
-      {/* 编辑/重置菜单 */}
-      <AnimatePresence>
-        {showEditMenu && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/40 flex items-end justify-center z-50"
-            onClick={() => setShowEditMenu(false)}
-          >
-            <motion.div
-              initial={{ y: 100 }}
-              animate={{ y: 0 }}
-              exit={{ y: 100 }}
-              className="bg-white dark:bg-gray-900 rounded-t-2xl w-full max-w-lg p-5 space-y-2"
-              onClick={e => e.stopPropagation()}
-            >
-              <p className="text-sm font-bold text-gray-800 dark:text-white mb-3">本周目标</p>
-              {!currentGoal.completed && (
-                <button
-                  onClick={() => { setShowEditMenu(false); setShowEditForm(true); }}
-                  className="w-full py-3 rounded-xl bg-primary/10 text-primary dark:text-primary text-sm font-semibold"
-                >
-                  修改选项
-                </button>
-              )}
-              <button onClick={handleReset} className="w-full py-3 rounded-xl bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-sm font-medium">
-                {currentGoal.completed ? '删除本周目标记录' : '重置本周目标'}
-              </button>
-              <button onClick={() => setShowEditMenu(false)} className="w-full py-3 rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 text-sm">取消</button>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* 庆祝完成弹窗 */}
-      <CelebrationModal
-        isOpen={showComplete}
-        onClose={() => setShowComplete(false)}
-        settings={settings}
-        attributes={attributes}
-        onConfirm={handleComplete}
-      />
-
-      {/* 奖励已领取确认动画 */}
-      <ClaimedModal
-        data={showClaimed}
-        onClose={() => setShowClaimed(null)}
-      />
-    </>
-  );
-};
-
-type GoalPanel = 'weekly' | 'countdown';
-
-type GoalDeckProps = {
-  settings: ReturnType<typeof useAppStore.getState>['settings'];
-  attributes: ReturnType<typeof useAppStore.getState>['attributes'];
-  weeklyGoals: WeeklyGoal[];
-  saveWeeklyGoal: (g: WeeklyGoal) => Promise<void>;
-  deleteWeeklyGoal: (id: string) => Promise<void>;
-  completeWeeklyGoal: (id: string, attr: AttributeId) => Promise<void>;
-  getWeeklyGoalProgress: (g: WeeklyGoal) => WeeklyGoalItem[];
-};
-
-const goalPanelTabs: Array<{ id: GoalPanel; label: string }> = [
-  { id: 'weekly', label: '本周目标' },
-  { id: 'countdown', label: '倒计时' },
-];
-
-const goalPanelVariants = {
-  enter: (direction: number) => ({ opacity: 0, x: direction > 0 ? 18 : -18 }),
-  center: { opacity: 1, x: 0 },
-  exit: (direction: number) => ({ opacity: 0, x: direction > 0 ? -18 : 18 }),
-};
-
-const GoalDeck = (props: GoalDeckProps) => {
-  const [activePanel, setActivePanel] = useState<GoalPanel>(() => {
-    try {
-      const requestedPanel = sessionStorage.getItem('velvet:todos-goal-panel');
-      if (requestedPanel === 'countdown') {
-        sessionStorage.removeItem('velvet:todos-goal-panel');
-        return 'countdown';
-      }
-    } catch { /* ignore unavailable sessionStorage */ }
-    return 'weekly';
-  });
-  const [direction, setDirection] = useState(1);
-
-  const openPanel = (next: GoalPanel) => {
-    if (next === activePanel) return;
-    setDirection(next === 'countdown' ? 1 : -1);
-    setActivePanel(next);
-  };
-
-  useEffect(() => {
-    const openCountdown = () => openPanel('countdown');
-    window.addEventListener('velvet:open-calling-card-panel', openCountdown);
-    return () => window.removeEventListener('velvet:open-calling-card-panel', openCountdown);
-  }, [activePanel]);
-
-  const handleDragEnd = (_: MouseEvent | TouchEvent | PointerEvent, info: { offset: { x: number }; velocity: { x: number } }) => {
-    if (info.offset.x < -48 || info.velocity.x < -420) openPanel('countdown');
-    if (info.offset.x > 48 || info.velocity.x > 420) openPanel('weekly');
-  };
-
-  return (
-    <section id="calling-card-section" className="space-y-3">
-      <div className="flex items-center justify-between gap-3 px-1">
-        <div>
-          <h3 className="font-bold text-gray-900 dark:text-white text-sm">目标</h3>
-          <p className="text-[10px] text-gray-400 dark:text-gray-500">本周推进和重要倒计时</p>
-        </div>
-        <div className="grid grid-cols-2 p-1 rounded-xl bg-gray-100 dark:bg-gray-800 border border-gray-200/70 dark:border-gray-700/70">
-          {goalPanelTabs.map(tab => {
-            const selected = activePanel === tab.id;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => openPanel(tab.id)}
-                className={`relative z-0 px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-colors ${
-                  selected
-                    ? 'text-gray-900 dark:text-white'
-                    : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300'
-                }`}
-              >
-                {selected && (
-                  <motion.span
-                    layoutId="goal-panel-tab"
-                    className="absolute inset-0 -z-10 rounded-lg bg-white dark:bg-gray-700 shadow-sm"
-                    transition={{ type: 'spring', stiffness: 420, damping: 34 }}
-                  />
-                )}
-                {tab.label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      <AnimatePresence mode="wait" custom={direction}>
-        <motion.div
-          key={activePanel}
-          custom={direction}
-          variants={goalPanelVariants}
-          initial="enter"
-          animate="center"
-          exit="exit"
-          transition={{ duration: 0.2, ease: 'easeOut' }}
-          drag="x"
-          dragConstraints={{ left: 0, right: 0 }}
-          dragElastic={0.16}
-          onDragEnd={handleDragEnd}
-          className="touch-pan-y"
-        >
-          {activePanel === 'weekly' ? (
-            <WeeklyGoalSection {...props} />
-          ) : (
-            <CallingCardSection sectionId="calling-card-panel" />
-          )}
-        </motion.div>
-      </AnimatePresence>
-    </section>
-  );
-};
 
 export const Todos = () => {
   const { todos, settings, attributes, addTodo, updateTodo, deleteTodo, getTodayTodoProgress, getTodoDateLabel, weeklyGoals, saveWeeklyGoal, deleteWeeklyGoal, completeWeeklyGoal, getWeeklyGoalProgress, undoTodayTodoCompletion } = useAppStore();
@@ -1106,27 +277,14 @@ export const Todos = () => {
   const inactiveArchivedTodos = useMemo(() => todos.filter(t => !t.isActive && !t.completedAt), [todos]);
   const [expandCompleted, setExpandCompleted] = useState(false);
 
-  // 删除二次确认：第一次点击进入确认态（按钮变实色红），3 秒内再点才真正删除
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-  const confirmDeleteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => () => { if (confirmDeleteTimer.current) clearTimeout(confirmDeleteTimer.current); }, []);
-  const requestDelete = (id: string) => {
-    if (confirmDeleteTimer.current) clearTimeout(confirmDeleteTimer.current);
-    if (confirmDeleteId === id) {
-      setConfirmDeleteId(null);
-      deleteTodo(id);
-      return;
-    }
-    setConfirmDeleteId(id);
-    confirmDeleteTimer.current = setTimeout(() => setConfirmDeleteId(null), 3000);
-  };
-  /** 删除按钮样式：确认态变实色红提醒"再点一次" */
-  const deleteBtnClass = (confirming: boolean) =>
-    `w-7 h-7 rounded-full flex items-center justify-center transition-colors ${
-      confirming
-        ? 'bg-red-500 text-white shadow-sm shadow-red-500/40'
-        : 'bg-red-50 dark:bg-red-900/20 text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40'
-    }`;
+  // ── §4.6 交互协议状态 ──
+  //   menuTodoId      长按菜单的目标任务：单个 ActionSheet 按 id 寻址，所有卡共用
+  //   pendingDeleteId 待删除任务：单个 ConfirmDialog 二段确认，
+  //                   替代旧"3 秒内再点一次"机制（confirmDeleteId/Timer 已整体移除）
+  const [menuTodoId, setMenuTodoId] = useState<string | null>(null);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const menuTodo = menuTodoId ? todos.find(t => t.id === menuTodoId) : undefined;
+  const pendingDeleteTodo = pendingDeleteId ? todos.find(t => t.id === pendingDeleteId) : undefined;
 
   const resetForm = () => {
     setForm({
@@ -1143,6 +301,13 @@ export const Todos = () => {
       important: false,
       startDate: '',
     });
+  };
+
+  /** 统一关闭表单弹窗：SheetModal 的 backdrop/ESC/Android back 与"取消"按钮共用同一条路径 */
+  const closeForm = () => {
+    setShowAdd(false);
+    setEditingTodoId(null);
+    resetForm();
   };
 
   const [showWeekdays, setShowWeekdays] = useState(false);
@@ -1215,29 +380,6 @@ export const Todos = () => {
     return '';
   };
 
-  // 点数加减组件
-  const PointsControl = ({ value, onChange }: { value: number; onChange: (v: number) => void }) => (
-    <div className="flex items-center gap-2">
-      <motion.button
-        whileTap={{ scale: 0.9 }}
-        type="button"
-        onClick={() => onChange(Math.max(1, value - 1))}
-        className="w-8 h-8 bg-gray-200 dark:bg-gray-700 rounded-full text-gray-700 dark:text-gray-300 font-bold flex items-center justify-center"
-      >
-        −
-      </motion.button>
-      <span className="w-8 text-center font-bold text-gray-800 dark:text-white">{value}</span>
-      <motion.button
-        whileTap={{ scale: 0.9 }}
-        type="button"
-        onClick={() => onChange(Math.min(5, value + 1))}
-        className="w-8 h-8 bg-gray-200 dark:bg-gray-700 rounded-full text-gray-700 dark:text-gray-300 font-bold flex items-center justify-center"
-      >
-        +
-      </motion.button>
-    </div>
-  );
-
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -1296,16 +438,14 @@ export const Todos = () => {
                   attrName={attrName}
                   allAttrNames={settings.attributeNames}
                   pct={pct}
-                  onEdit={handleEdit}
+                  onOpenMenu={setMenuTodoId}
                   onArchive={(id) => updateTodo(id, { isActive: false })}
                   renderFrequencyBadge={renderFrequencyBadge}
                 />
               );
             })}
             {activeTodos.length === 0 && (
-              <div className="text-center text-sm text-gray-400 dark:text-gray-500 py-8">
-                还没有任务，添加一个开始吧
-              </div>
+              <EmptyState text="还没有任务，添加一个开始吧" />
             )}
           </div>
         </div>
@@ -1329,10 +469,9 @@ export const Todos = () => {
                 key={todo.id}
                 todo={todo}
                 attrName={settings.attributeNames[todo.attribute]}
-                onEdit={handleEdit}
+                onOpenMenu={setMenuTodoId}
                 onArchive={(id) => updateTodo(id, { isActive: false })}
-                onDelete={requestDelete}
-                deleteConfirming={confirmDeleteId === todo.id}
+                onDelete={setPendingDeleteId}
                 renderFrequencyBadge={renderFrequencyBadge}
               />
             ))}
@@ -1345,12 +484,9 @@ export const Todos = () => {
               </>
             )}
             {inactiveArchivedTodos.map(todo => (
-              <motion.div
-                key={todo.id}
-                initial={{ opacity: 0, y: 4 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="rounded-xl px-4 py-3 border bg-gray-50 dark:bg-gray-800/60 border-gray-100 dark:border-gray-700/60"
-              >
+              // 入场微动效留在外层 wrapper（ListCard 不承载动画 props）；未启用 = dimmed
+              <motion.div key={todo.id} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}>
+              <ListCard dimmed>
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5 flex-wrap mb-1">
@@ -1386,33 +522,25 @@ export const Todos = () => {
                       className="w-7 h-7 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
                       title="编辑"
                     >
-                      <svg viewBox="0 0 16 16" className="w-3.5 h-3.5" fill="currentColor">
-                        <path d="M11.5 2.5a1.5 1.5 0 012.121 2.121L5.561 12.682l-2.829.707.707-2.829L11.5 2.5z" />
-                      </svg>
+                      <EditIcon />
                     </button>
                     <button
-                      onClick={() => requestDelete(todo.id)}
-                      className={deleteBtnClass(confirmDeleteId === todo.id)}
-                      title={confirmDeleteId === todo.id ? '再次点击确认删除' : '删除'}
+                      onClick={() => setPendingDeleteId(todo.id)}
+                      className="w-7 h-7 rounded-full flex items-center justify-center transition-colors bg-red-50 dark:bg-red-900/20 text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40"
+                      title="删除"
                     >
-                      <svg viewBox="0 0 16 16" className="w-3.5 h-3.5" fill="currentColor">
-                        <path d="M5 2h6l1 1H3L5 2zm-2 2h10l-1 9H4L3 4zm3 2v6h1V6H6zm3 0v6h1V6H9z" />
-                      </svg>
+                      <TrashIcon />
                     </button>
                     <button
                       onClick={() => updateTodo(todo.id, { isActive: true, archivedAt: undefined })}
                       className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-primary hover:bg-primary/20 transition-colors"
                       title="恢复（重置为未完成）"
                     >
-                      <svg viewBox="0 0 16 16" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="1.5">
-                        <g transform="rotate(110 8 8)">
-                          <path d="M13.5 8A5.5 5.5 0 103 5.5" strokeLinecap="round" />
-                          <path d="M3 2.5v3h3" strokeLinecap="round" strokeLinejoin="round" />
-                        </g>
-                      </svg>
+                      <RestoreIcon />
                     </button>
                   </div>
                 </div>
+              </ListCard>
               </motion.div>
             ))}
 
@@ -1427,12 +555,9 @@ export const Todos = () => {
               const archivedProgress = getTodayTodoProgress(todo.id);
               const wasCompletedToday = archivedProgress.isComplete;
               return (
-                <motion.div
-                  key={todo.id}
-                  initial={{ opacity: 0, y: 4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="rounded-xl px-4 py-3 border bg-emerald-50/60 dark:bg-emerald-900/10 border-emerald-200/50 dark:border-emerald-800/40"
-                >
+                // 已完成 = dimmed（emerald 满底取消，完成态由 ✓ 徽章 + 删除线表达）
+                <motion.div key={todo.id} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}>
+                <ListCard dimmed>
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5 flex-wrap mb-1">
@@ -1465,13 +590,11 @@ export const Todos = () => {
                     </div>
                     <div className="flex items-center gap-1 flex-shrink-0">
                       <button
-                        onClick={() => requestDelete(todo.id)}
-                        className={deleteBtnClass(confirmDeleteId === todo.id)}
-                        title={confirmDeleteId === todo.id ? '再次点击确认删除' : '删除'}
+                        onClick={() => setPendingDeleteId(todo.id)}
+                        className="w-7 h-7 rounded-full flex items-center justify-center transition-colors bg-red-50 dark:bg-red-900/20 text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40"
+                        title="删除"
                       >
-                        <svg viewBox="0 0 16 16" className="w-3.5 h-3.5" fill="currentColor">
-                          <path d="M5 2h6l1 1H3L5 2zm-2 2h10l-1 9H4L3 4zm3 2v6h1V6H6zm3 0v6h1V6H9z" />
-                        </svg>
+                        <TrashIcon />
                       </button>
                       {wasCompletedToday ? (
                         <button
@@ -1480,12 +603,7 @@ export const Todos = () => {
                           className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-primary hover:bg-primary/20 transition-colors"
                           title="撤销今日完成（同时回退点数和记录）"
                         >
-                          <svg viewBox="0 0 16 16" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="1.5">
-                            <g transform="rotate(110 8 8)">
-                              <path d="M13.5 8A5.5 5.5 0 103 5.5" strokeLinecap="round" />
-                              <path d="M3 2.5v3h3" strokeLinecap="round" strokeLinejoin="round" />
-                            </g>
-                          </svg>
+                          <RestoreIcon />
                         </button>
                       ) : (
                         <button
@@ -1515,6 +633,7 @@ export const Todos = () => {
                       )}
                     </div>
                   </div>
+                </ListCard>
                 </motion.div>
               );
             })}
@@ -1528,32 +647,37 @@ export const Todos = () => {
             )}
 
             {completedArchivedTodos.length === 0 && inactiveArchivedTodos.length === 0 && pendingDateTodos.length === 0 && (
-              <div className="text-center text-sm text-gray-400 dark:text-gray-500 py-8">
-                归档区暂无内容
-              </div>
+              <EmptyState text="归档区暂无内容" />
             )}
           </div>
         </div>
       </div>
 
-      <AnimatePresence>
-        {showAdd && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
-          >
-            <motion.div
-              initial={{ scale: 0.92, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.92, opacity: 0 }}
-              className="bg-white dark:bg-gray-900 rounded-2xl p-6 max-w-lg w-full shadow-2xl max-h-[90vh] overflow-y-auto"
+      {/* 添加/编辑任务：SheetModal 底部抽屉——自带 backdrop 点关/ESC/Android back
+          （修审计"遮罩不可点关、无返回键处理"问题），exit 动画由其内部 AnimatePresence 承担 */}
+      <SheetModal
+        isOpen={showAdd}
+        onClose={closeForm}
+        position="bottom"
+        title={editingTodoId ? '编辑任务' : '添加任务'}
+        footer={
+          /* 协议铁律：取消恒在左，主操作（bg-primary）恒在右 */
+          <div className="flex gap-3">
+            <button
+              onClick={closeForm}
+              className="flex-1 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 py-2.5 rounded-xl font-medium"
             >
-              <h3 className="text-lg font-bold mb-5 text-gray-900 dark:text-white">
-                {editingTodoId ? '编辑任务' : '添加任务'}
-              </h3>
-
+              取消
+            </button>
+            <button
+              onClick={handleSave}
+              className="flex-1 bg-primary text-white py-2.5 rounded-xl font-medium"
+            >
+              {editingTodoId ? '保存' : '添加'}
+            </button>
+          </div>
+        }
+      >
               <div className="space-y-4">
                 <input
                   type="text"
@@ -1623,8 +747,11 @@ export const Todos = () => {
                             )
                           ))}
                         </select>
-                        <PointsControl
+                        <Stepper
                           value={form.points}
+                          min={1}
+                          max={5}
+                          aria-label="主属性点数"
                           onChange={(v) => setForm(prev => ({ ...prev, points: v }))}
                         />
                         {/* 主属性无法删除，占位对齐 */}
@@ -1655,8 +782,11 @@ export const Todos = () => {
                                 )
                               )}
                             </select>
-                            <PointsControl
+                            <Stepper
                               value={boost.points}
+                              min={1}
+                              max={5}
+                              aria-label="额外属性点数"
                               onChange={(v) => setForm(prev => {
                                 const next = [...prev.extraBoosts];
                                 next[idx] = { ...next[idx], points: v };
@@ -1809,18 +939,12 @@ export const Todos = () => {
 
                 <div className="flex items-center justify-between py-1">
                   <span className="text-sm text-gray-600 dark:text-gray-400">是否启用</span>
-                  <button
-                    onClick={() => setForm(prev => ({ ...prev, isActive: !prev.isActive }))}
-                    className={`w-12 h-7 rounded-full transition-colors ${
-                      form.isActive ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-gray-600'
-                    }`}
-                  >
-                    <span
-                      className={`block w-6 h-6 bg-white rounded-full shadow-sm transition-transform ${
-                        form.isActive ? 'translate-x-5' : 'translate-x-1'
-                      }`}
-                    />
-                  </button>
+                  {/* 统一开关基元（替代 w-12 h-7 自绘开关） */}
+                  <Toggle
+                    checked={form.isActive}
+                    onChange={(v) => setForm(prev => ({ ...prev, isActive: v }))}
+                    aria-label="是否启用"
+                  />
                 </div>
 
                 {/* ── 未来启用日期 ── */}
@@ -1846,29 +970,40 @@ export const Todos = () => {
                   <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">设定后，该任务在指定日期前不会出现在今日任务中</p>
                 </div>
               </div>
+      </SheetModal>
 
-              <div className="flex gap-3 mt-6">
-                <button
-                  onClick={handleSave}
-                  className="flex-1 bg-primary text-white py-2.5 rounded-xl font-medium"
-                >
-                  {editingTodoId ? '保存' : '添加'}
-                </button>
-                <button
-                  onClick={() => {
-                    setShowAdd(false);
-                    setEditingTodoId(null);
-                    resetForm();
-                  }}
-                  className="flex-1 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 py-2.5 rounded-xl font-medium"
-                >
-                  取消
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* ── §4.6 长按上下文菜单：全页单实例，按 menuTodoId 寻址目标任务。
+          关闭后 SheetModal 的 AnimatePresence 会用上一帧的子树播 exit，
+          所以 menuTodo 为空时传空 actions 也不会让退场内容闪空 ── */}
+      <ActionSheet
+        isOpen={!!menuTodo}
+        onClose={() => setMenuTodoId(null)}
+        title={menuTodo?.title}
+        actions={
+          menuTodo
+            ? [
+                { label: '编辑', icon: <EditIcon />, onClick: () => handleEdit(menuTodo.id) },
+                { label: '归档', icon: <ArchiveIcon />, onClick: () => updateTodo(menuTodo.id, { isActive: false }) },
+                // active 卡此前没有删除入口，按协议补上；真正删除走下方 ConfirmDialog
+                { label: '删除', icon: <TrashIcon />, tone: 'danger', onClick: () => setPendingDeleteId(menuTodo.id) },
+              ]
+            : []
+        }
+      />
+
+      {/* ── 删除协议：所有删除入口（长按菜单 + 归档区快捷钮）汇于此单实例确认 ── */}
+      <ConfirmDialog
+        isOpen={!!pendingDeleteTodo}
+        tone="danger"
+        title="删除任务"
+        description={pendingDeleteTodo ? `任务「${pendingDeleteTodo.title}」将被永久删除，无法撤销。` : undefined}
+        confirmText="删除"
+        onConfirm={() => {
+          if (pendingDeleteTodo) deleteTodo(pendingDeleteTodo.id);
+          setPendingDeleteId(null);
+        }}
+        onCancel={() => setPendingDeleteId(null)}
+      />
     </motion.div>
   );
 };
