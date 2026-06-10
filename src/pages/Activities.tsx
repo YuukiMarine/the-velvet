@@ -7,6 +7,15 @@ import { PageTitle } from '@/components/PageTitle';
 import SummaryModal from '@/components/SummaryModal';
 import { triggerNavFeedback, triggerLightHaptic } from '@/utils/feedback';
 import { useRipple } from '@/components/RippleEffect';
+// ── 行动域统一基元（UI_AUDIT_V2.5.md §3.2 + §4.6 交互协议）──
+import { ActionSheet } from '@/components/ActionSheet';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { EmptyState } from '@/components/EmptyState';
+import { ListCard } from '@/components/ListCard';
+import { SheetModal } from '@/components/SheetModal';
+import { Stepper } from '@/components/Stepper';
+import { Toggle } from '@/components/Toggle';
+import { TrashIcon } from '@/components/icons';
 
 // ---- 来源筛选选项（筛选面板与已选 chip 共用） ----
 const METHOD_FILTER_OPTIONS = [
@@ -15,6 +24,40 @@ const METHOD_FILTER_OPTIONS = [
   { key: 'todo', label: '任务完成' },
   { key: 'battle', label: '战斗奖励' },
 ] as const;
+
+// ---- 列表卡强调条映射（§3.2）----
+// 原卡片的 8 分支三元（边框/内联 rgba 底色/左强调条三套联动）收敛为单一映射：
+// 类型判定（优先级沿用旧三元链原序）→ 完整 bg-* 字面量（Tailwind JIT 不识别拼接类名）。
+// 色相沿用旧 accentColor 现状；卡底/边框不再随类型变化——统一走 ListCard 标准白卡，
+// 顺带修掉审计指出的"内联 rgba 底色绕过暗色 token"。
+type ActivityAccentKey =
+  | 'achievement'      // 成就解锁
+  | 'skill'            // 技能解锁
+  | 'levelUp'          // 属性升级
+  | 'shadowDefeat'     // Shadow 击破 / 战斗奖励
+  | 'confidant'        // 同伴事件
+  | 'weeklyGoal'       // 本周目标达成
+  | 'callingCardClear' // 倒计时达成
+  | 'todo'             // 任务完成
+  | 'important'        // 手动标记重要
+  | 'default';         // 普通记录
+
+const ACTIVITY_ACCENT: Record<ActivityAccentKey, string> = {
+  achievement: 'bg-amber-400',
+  skill: 'bg-violet-400',
+  levelUp: 'bg-orange-400',
+  shadowDefeat: 'bg-red-500',
+  confidant: 'bg-indigo-400',
+  weeklyGoal: 'bg-emerald-500',
+  callingCardClear: 'bg-primary',
+  todo: 'bg-sky-400',
+  important: 'bg-amber-400',
+  default: 'bg-gray-200 dark:bg-gray-700',
+};
+
+/** 描述截断：ActionSheet 标题 / 删除确认文案用，防超长描述撑爆弹层 */
+const truncateText = (text: string, max: number) =>
+  text.length > max ? `${text.slice(0, max)}…` : text;
 
 // ---- 小组件 ----
 const ChevronDown = ({ open }: { open: boolean }) => (
@@ -248,16 +291,12 @@ const CalendarView = ({ activities, selectedDay, onDaySelect }: CalendarViewProp
                   <span className="inline-block w-2 h-2 rounded-full bg-amber-400 flex-shrink-0" />
                   在日历上显示重要事件
                 </span>
-                <button
-                  onClick={toggleImportant}
-                  className={`relative inline-flex items-center rounded-full transition-colors flex-shrink-0 ${showImportant ? 'bg-amber-400' : 'bg-gray-200 dark:bg-gray-700'}`}
-                  style={{ width: 36, height: 20 }}
-                >
-                  <span
-                    className="absolute bg-white rounded-full shadow-sm transition-all"
-                    style={{ width: 16, height: 16, top: 2, left: showImportant ? 18 : 2 }}
-                  />
-                </button>
+                {/* §3.2 统一开关：原 36×20 内联 style 开关收敛为 Toggle（on 色随制式统一为 primary） */}
+                <Toggle
+                  checked={showImportant}
+                  onChange={toggleImportant}
+                  aria-label="在日历上显示重要事件"
+                />
               </div>
             </motion.div>
           )}
@@ -472,14 +511,12 @@ export const Activities = () => {
   const [showFilters, setShowFilters] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
-  // ---- 删除 ----
-  // 两阶段弹窗：
-  //   stage='confirm' → 第一层"是否删除"，按钮 [取消] [删除]
-  //   stage='choose'  → 第二层"删除方式"，← 返回箭头 + [仅删除条目] [删除并回档]
+  // ---- 长按菜单 / 删除确认（§4.6 协议）----
+  // 长按卡片（ListCard 内置 useLongPress：500ms 全站统一 + 位移容差）
+  //   → ActionSheet 上下文菜单（z=50）
+  //   → 「删除」→ ConfirmDialog（z=60，叠在其上）确认后才执行删除。
+  const [menuActivityId, setMenuActivityId] = useState<string | null>(null);
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
-  const [deleteStage, setDeleteStage] = useState<'confirm' | 'choose'>('confirm');
-  const [pressedId, setPressedId] = useState<string | null>(null);
-  const pressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ---- 折叠状态（年/月）---- 日默认全开 ----
   const [openYears, setOpenYears] = useState<Record<string, boolean>>({});
@@ -641,36 +678,18 @@ export const Activities = () => {
     setAiReason(null);
   };
 
-  const adjustPoints = (attr: string, delta: number) => {
-    setManualPoints(prev => ({ ...prev, [attr]: Math.max(0, Math.min(5, prev[attr] + delta)) }));
-  };
-
+  // 原删除逻辑照搬：回档（收回点数）/ 仅删条目两条通路保持不变
   const handleDeleteAndRollback = async (id: string) => {
     await deleteActivity(id);
   };
   const handleDeleteRecordOnly = async (id: string) => {
     await deleteActivityRecordOnly(id);
   };
-  const closeDeleteDialog = () => {
-    setDeleteTargetId(null);
-    setDeleteStage('confirm');
-  };
+  const closeDeleteDialog = () => setDeleteTargetId(null);
 
-  const startPress = (id: string) => {
-    if (pressTimerRef.current) clearTimeout(pressTimerRef.current);
-    setPressedId(id);
-    pressTimerRef.current = setTimeout(() => {
-      triggerLightHaptic();
-      setDeleteTargetId(id);
-      setDeleteStage('confirm'); // 每次重新开始都从第一层
-      setPressedId(null);
-    }, 620);
-  };
-
-  const cancelPress = () => {
-    if (pressTimerRef.current) { clearTimeout(pressTimerRef.current); pressTimerRef.current = null; }
-    setPressedId(null);
-  };
+  // 被长按 / 待删除记录的实体（ActionSheet 标题与确认文案需要描述全文）
+  const menuActivity = menuActivityId ? activities.find(a => a.id === menuActivityId) : undefined;
+  const deleteTarget = deleteTargetId ? activities.find(a => a.id === deleteTargetId) : undefined;
 
   // 判断某年某月是否默认展开：今年今月 or 包含今天/昨天
   const isYearOpen = (yearKey: string) => openYears[yearKey] !== false;
@@ -946,12 +965,12 @@ export const Activities = () => {
               <div className="px-4 py-3">
                 <label className="flex items-center justify-between cursor-pointer">
                   <span className="text-sm text-gray-700 dark:text-gray-300 font-medium">仅显示重要记录</span>
-                  <div
-                    onClick={() => setShowImportantOnly(v => !v)}
-                    className={`w-10 h-6 rounded-full transition-colors ${showImportantOnly ? 'bg-amber-400' : 'bg-gray-200 dark:bg-gray-700'}`}
-                  >
-                    <span className={`block w-5 h-5 bg-white rounded-full shadow-sm transition-transform mt-0.5 ${showImportantOnly ? 'translate-x-[18px]' : 'translate-x-0.5'}`} />
-                  </div>
+                  {/* §3.2 统一开关：原 div 实现无语义无键盘 → Toggle（button role=switch，label 文字可代理激活） */}
+                  <Toggle
+                    checked={showImportantOnly}
+                    onChange={setShowImportantOnly}
+                    aria-label="仅显示重要记录"
+                  />
                 </label>
               </div>
             </div>
@@ -962,9 +981,15 @@ export const Activities = () => {
       {/* 记录列表 */}
       <div className="space-y-3">
         {filteredActivities.length === 0 ? (
-          <div className="rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm p-12 text-center">
-            <div className="text-4xl mb-3">📭</div>
-            <p className="text-gray-500 dark:text-gray-400 text-sm">暂无记录，点击右下角 + 开始记录吧</p>
+          <div className="rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm px-6">
+            {/* §3.2 统一空状态：卡片容器保留、内部收敛为 EmptyState（垂直留白由其 py-10 提供）；
+                文案不再指认 FAB 位置（"右下角 +"一类位置词随布局重排会说谎）；
+                按是否有筛选给出不同主因——空≠没搜到 */}
+            <EmptyState
+              icon="📭"
+              text={hasActiveFilter ? '没有符合条件的记录' : '还没有任何记录'}
+              hint={hasActiveFilter ? '试试调整或清除筛选条件' : '把今天做过的一件小事记下来吧'}
+            />
           </div>
         ) : (
           groupedActivities.map(yearGroup => {
@@ -1049,157 +1074,113 @@ export const Activities = () => {
                                           const isCallingCardClear = activity.category === 'calling_card_clear';
                                           const isSpecial = isAchievement || isSkill || isLevelUp || isConfidant || isWeeklyGoal || isCallingCardClear;
 
-                                          // accent bar color based on type
-                                          const accentColor = isAchievement
-                                            ? 'bg-amber-400'
+                                          // §3.2：原"边框/内联 rgba 底色/强调条"三套联动收敛为
+                                          // accentKey → ACTIVITY_ACCENT 单次查表；类型优先级保持旧三元链原序
+                                          const accentKey: ActivityAccentKey = isAchievement
+                                            ? 'achievement'
                                             : isSkill
-                                            ? 'bg-violet-400'
+                                            ? 'skill'
                                             : isLevelUp
-                                            ? 'bg-orange-400'
+                                            ? 'levelUp'
                                             : isShadowDefeat
-                                            ? 'bg-red-500'
+                                            ? 'shadowDefeat'
                                             : isConfidant
-                                            ? 'bg-indigo-400'
+                                            ? 'confidant'
                                             : isWeeklyGoal
-                                            ? 'bg-emerald-500'
+                                            ? 'weeklyGoal'
                                             : isCallingCardClear
-                                            ? 'bg-primary'
+                                            ? 'callingCardClear'
                                             : isTodo
-                                            ? 'bg-sky-400'
+                                            ? 'todo'
                                             : isImportant
-                                            ? 'bg-amber-400'
-                                            : 'bg-gray-200 dark:bg-gray-700';
+                                            ? 'important'
+                                            : 'default';
 
                                           const hasPoints = Object.values(activity.pointsAwarded).some(v => v > 0);
 
                                           return (
-                                            <motion.div
+                                            <ListCard
                                               key={activity.id}
-                                              animate={pressedId === activity.id ? { scale: 0.98 } : { scale: 1 }}
-                                              transition={{ duration: 0.15 }}
-                                              className={`rounded-2xl overflow-hidden cursor-pointer select-none backdrop-blur-sm ${
-                                                isAchievement
-                                                  ? 'border-2 border-amber-400/60 dark:border-amber-500/40'
-                                                  : isSkill
-                                                  ? 'border-2 border-violet-400/60 dark:border-violet-500/40'
-                                                  : isLevelUp
-                                                  ? 'border-2 border-orange-400/60 dark:border-orange-500/40'
-                                                  : isShadowDefeat
-                                                  ? 'border-2 border-red-500/60 dark:border-red-500/40'
-                                                  : isWeeklyGoal
-                                                  ? 'border-2 border-emerald-300/70 dark:border-emerald-700/70 bg-emerald-50/80 dark:bg-emerald-900/20'
-                                                  : isCallingCardClear
-                                                  // 倒计时条目：暗色模式下边框使用中性描边，避免浅色主题色看起来像白边。
-                                                  ? 'border-2 border-primary/50 dark:border-gray-700/80 bg-primary/5 dark:bg-gray-900/90'
-                                                  : isImportant
-                                                  ? 'border border-amber-300/60 dark:border-amber-600/40'
-                                                  : 'border border-gray-100 dark:border-gray-800 bg-white/80 dark:bg-gray-900/80'
-                                              } ${pressedId === activity.id ? 'shadow-md' : 'shadow-sm'}`}
-                                              style={{
-                                                background: isAchievement
-                                                  ? 'rgba(251,191,36,0.10)'
-                                                  : isSkill
-                                                  ? 'rgba(167,139,250,0.10)'
-                                                  : isLevelUp
-                                                  ? 'rgba(251,146,60,0.10)'
-                                                  : isShadowDefeat
-                                                  ? 'rgba(239,68,68,0.10)'
-                                                  : isImportant
-                                                  ? 'rgba(251,191,36,0.06)'
-                                                  : undefined,
-                                                // 倒计时单独走 backgroundImage：跟 className 的暗色 base 共存，
-                                                // 不会被 inline background 整体覆盖。两层 stop 相同 → 形成均匀色片。
-                                                backgroundImage: isCallingCardClear
-                                                  ? 'linear-gradient(color-mix(in srgb, var(--color-primary) 14%, transparent), color-mix(in srgb, var(--color-primary) 14%, transparent))'
-                                                  : undefined,
+                                              accent={ACTIVITY_ACCENT[accentKey]}
+                                              onLongPress={() => {
+                                                // §4.6 长按统一：ListCard 内置 useLongPress（500ms+位移容差）
+                                                // 替换手写 620ms setTimeout；震感反馈沿用旧实现
+                                                triggerLightHaptic();
+                                                setMenuActivityId(activity.id);
                                               }}
-                                              onMouseDown={() => startPress(activity.id)}
-                                              onMouseUp={cancelPress}
-                                              onMouseLeave={cancelPress}
-                                              onTouchStart={() => startPress(activity.id)}
-                                              onTouchEnd={cancelPress}
-                                              onTouchCancel={cancelPress}
                                             >
-                                                <div className="flex">
-                                                  {/* 左侧彩色竖条 */}
-                                                  <div className={`w-1 flex-shrink-0 ${accentColor}`} />
+                                              {/* 描述 — 主角，最大字号 */}
+                                              <p className={`text-[15px] font-medium leading-snug ${
+                                                isAchievement || isSkill || isLevelUp
+                                                  ? 'text-gray-900 dark:text-white'
+                                                  : 'text-gray-800 dark:text-gray-100'
+                                              }`}>
+                                                {activity.description}
+                                              </p>
 
-                                                  {/* 主内容区 */}
-                                                  <div className="flex-1 min-w-0 px-4 py-3.5">
-                                                    {/* 描述 — 主角，最大字号 */}
-                                                    <p className={`text-[15px] font-medium leading-snug ${
-                                                      isAchievement || isSkill || isLevelUp
-                                                        ? 'text-gray-900 dark:text-white'
-                                                        : 'text-gray-800 dark:text-gray-100'
-                                                    }`}>
-                                                      {activity.description}
-                                                    </p>
+                                              {/* 点数 + 时间 — 次要信息行 */}
+                                              <div className="flex items-center gap-2 mt-2 flex-wrap">
+                                                {hasPoints && Object.entries(activity.pointsAwarded).map(([attr, pts]) =>
+                                                  pts > 0 ? (
+                                                    <span key={attr} className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold bg-primary/10 text-primary dark:bg-primary/20 tabular-nums">
+                                                      {settings.attributeNames[attr as AttributeId]} +{pts}
+                                                    </span>
+                                                  ) : null
+                                                )}
+                                                <span className="text-[11px] text-gray-400 dark:text-gray-500 tabular-nums ml-auto">
+                                                  {new Date(activity.date).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
+                                                </span>
+                                              </div>
 
-                                                    {/* 点数 + 时间 — 次要信息行 */}
-                                                    <div className="flex items-center gap-2 mt-2 flex-wrap">
-                                                      {hasPoints && Object.entries(activity.pointsAwarded).map(([attr, pts]) =>
-                                                        pts > 0 ? (
-                                                          <span key={attr} className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold bg-primary/10 text-primary dark:bg-primary/20 tabular-nums">
-                                                            {settings.attributeNames[attr as AttributeId]} +{pts}
-                                                          </span>
-                                                        ) : null
-                                                      )}
-                                                      <span className="text-[11px] text-gray-400 dark:text-gray-500 tabular-nums ml-auto">
-                                                        {new Date(activity.date).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
-                                                      </span>
-                                                    </div>
-
-                                                    {/* 特殊 / 来源标签 */}
-                                                    {(isSpecial || isTodo || isWeeklyGoal || isShadowDefeat) && (
-                                                      <div className="mt-2.5 flex flex-wrap gap-1.5">
-                                                        {isConfidant && (
-                                                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-600 dark:text-indigo-300 bg-indigo-100/80 dark:bg-indigo-900/30 px-2 py-0.5 rounded-md">
-                                                            ✧ 同伴
-                                                          </span>
-                                                        )}
-                                                        {isShadowDefeat && (
-                                                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-red-700 dark:text-red-300 bg-red-100/80 dark:bg-red-900/30 px-2 py-0.5 rounded-md">
-                                                            👁 Shadow击破{isImportant ? ' ★首杀' : ''}
-                                                          </span>
-                                                        )}
-                                                        {isTodo && (
-                                                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-sky-600 dark:text-sky-300 bg-sky-100/80 dark:bg-sky-900/30 px-2 py-0.5 rounded-md">
-                                                            ✓ 任务
-                                                          </span>
-                                                        )}
-                                                        {isWeeklyGoal && (
-                                                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-100/80 dark:bg-emerald-900/30 px-2 py-0.5 rounded-md">
-                                                            🏆 本周目标
-                                                          </span>
-                                                        )}
-                                                        {isLevelUp && activity.levelUps?.map((lu, idx) => (
-                                                          <span key={idx} className="inline-flex items-center gap-1 text-[11px] font-semibold text-orange-600 dark:text-orange-300 bg-orange-100/80 dark:bg-orange-900/30 px-2 py-0.5 rounded-md">
-                                                            🎉 {settings.attributeNames[lu.attribute]} {lu.fromLevel}→{lu.toLevel}
-                                                          </span>
-                                                        ))}
-                                                        {isSkill && (
-                                                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-violet-600 dark:text-violet-300 bg-violet-100/80 dark:bg-violet-900/30 px-2 py-0.5 rounded-md">
-                                                            ✨ 技能解锁
-                                                          </span>
-                                                        )}
-                                                        {isAchievement && (
-                                                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-100/80 dark:bg-amber-900/30 px-2 py-0.5 rounded-md">
-                                                            🏆 成就解锁
-                                                          </span>
-                                                        )}
-                                                        {isCallingCardClear && (
-                                                          <span
-                                                            className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-md text-primary"
-                                                            style={{ background: 'color-mix(in srgb, var(--color-primary) 15%, transparent)' }}
-                                                          >
-                                                            ✦ 倒计时
-                                                          </span>
-                                                        )}
-                                                      </div>
-                                                    )}
-                                                  </div>
+                                              {/* 特殊 / 来源标签 */}
+                                              {(isSpecial || isTodo || isWeeklyGoal || isShadowDefeat) && (
+                                                <div className="mt-2.5 flex flex-wrap gap-1.5">
+                                                  {isConfidant && (
+                                                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-600 dark:text-indigo-300 bg-indigo-100/80 dark:bg-indigo-900/30 px-2 py-0.5 rounded-md">
+                                                      ✧ 同伴
+                                                    </span>
+                                                  )}
+                                                  {isShadowDefeat && (
+                                                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-red-700 dark:text-red-300 bg-red-100/80 dark:bg-red-900/30 px-2 py-0.5 rounded-md">
+                                                      👁 Shadow击破{isImportant ? ' ★首杀' : ''}
+                                                    </span>
+                                                  )}
+                                                  {isTodo && (
+                                                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-sky-600 dark:text-sky-300 bg-sky-100/80 dark:bg-sky-900/30 px-2 py-0.5 rounded-md">
+                                                      ✓ 任务
+                                                    </span>
+                                                  )}
+                                                  {isWeeklyGoal && (
+                                                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-100/80 dark:bg-emerald-900/30 px-2 py-0.5 rounded-md">
+                                                      🏆 本周目标
+                                                    </span>
+                                                  )}
+                                                  {isLevelUp && activity.levelUps?.map((lu, idx) => (
+                                                    <span key={idx} className="inline-flex items-center gap-1 text-[11px] font-semibold text-orange-600 dark:text-orange-300 bg-orange-100/80 dark:bg-orange-900/30 px-2 py-0.5 rounded-md">
+                                                      🎉 {settings.attributeNames[lu.attribute]} {lu.fromLevel}→{lu.toLevel}
+                                                    </span>
+                                                  ))}
+                                                  {isSkill && (
+                                                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-violet-600 dark:text-violet-300 bg-violet-100/80 dark:bg-violet-900/30 px-2 py-0.5 rounded-md">
+                                                      ✨ 技能解锁
+                                                    </span>
+                                                  )}
+                                                  {isAchievement && (
+                                                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-100/80 dark:bg-amber-900/30 px-2 py-0.5 rounded-md">
+                                                      🏆 成就解锁
+                                                    </span>
+                                                  )}
+                                                  {isCallingCardClear && (
+                                                    <span
+                                                      className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-md text-primary"
+                                                      style={{ background: 'color-mix(in srgb, var(--color-primary) 15%, transparent)' }}
+                                                    >
+                                                      ✦ 倒计时
+                                                    </span>
+                                                  )}
                                                 </div>
-                                              </motion.div>
+                                              )}
+                                            </ListCard>
                                           );
                                         })}
                                       </div>
@@ -1260,135 +1241,121 @@ export const Activities = () => {
         );
       })()}
 
-      {/* 输入抽屉弹窗 */}
-      <AnimatePresence>
-        {showInput && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-black/40 z-50"
-              onClick={() => { setShowInput(false); setAnalyzedPoints(null); setBackdateTarget(null); }}
-            />
-            <motion.div
-              initial={{ y: '100%' }}
-              animate={{ y: 0 }}
-              exit={{ y: '100%' }}
-              transition={{ type: 'spring', stiffness: 320, damping: 32 }}
-              className="fixed bottom-0 left-0 right-0 z-50 bg-white dark:bg-gray-900 rounded-t-3xl shadow-2xl px-5 pt-4 pb-8 md:max-w-lg md:left-1/2 md:-translate-x-1/2 md:rounded-2xl md:bottom-12"
-              style={{ paddingBottom: 'max(2rem, env(safe-area-inset-bottom))' }}
-            >
-              {/* 拖拽指示条 */}
-              <div className="w-10 h-1 bg-gray-200 dark:bg-gray-700 rounded-full mx-auto mb-5" />
-
-              {backdateTarget ? (
-                <div className="mb-4">
-                  <h3 className="text-lg font-bold text-gray-900 dark:text-white">补录历史记录</h3>
-                  <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5 flex items-center gap-1">
-                    <span>📅</span>
-                    <span>记录日期：{backdateTarget.replace(/-/g, '/')}</span>
-                  </p>
-                </div>
-              ) : (
-                <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">记录一件事</h3>
-              )}
-
-              <textarea
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="描述你刚才做了什么..."
-                className="w-full px-4 py-3 text-sm border border-gray-200 dark:border-gray-700 rounded-2xl focus:outline-none focus:border-primary dark:bg-gray-800 dark:text-white resize-none"
-                rows={3}
-                autoFocus
-              />
-
-              {/*
-                ── 分析按钮：双形态 ─────────────────────────────────────
-                1) 首次点击 → "分析关键词"：本地 keywordRules 命中规则，立即生效
-                2) 之后 → "AI 分析"：把同一段描述交给 AI 给出五维评分，覆写 调整点数
-                AI 失败 / 描述太短时按钮仍可重复点（错误提示在下面单独显示）。
-              */}
-              {!analyzedPoints ? (
-                <motion.button
-                  whileTap={{ scale: 0.97 }}
-                  onClick={(e) => { spawnAnalyze(e); analyzeActivity(); }}
-                  disabled={!description.trim()}
-                  className="relative overflow-hidden w-full mt-3 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 py-2.5 rounded-xl text-sm font-medium disabled:opacity-40 cursor-pointer"
-                >
-                  {analyzeRipples}
-                  分析关键词
-                </motion.button>
-              ) : (
-                <motion.button
-                  whileTap={{ scale: 0.97 }}
-                  onClick={(e) => { spawnAnalyze(e); void analyzeWithAI(); }}
-                  disabled={!description.trim() || aiAnalyzing}
-                  className="relative overflow-hidden w-full mt-3 bg-gradient-to-r from-primary/15 to-purple-500/15 text-primary dark:text-primary border border-primary/30 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 cursor-pointer"
-                >
-                  {analyzeRipples}
-                  {aiAnalyzing ? '⋯ AI 思考中' : '✦ AI 分析'}
-                </motion.button>
-              )}
-
-              {/* AI 错误 / 解释提示 */}
-              {aiError && (
-                <div className="mt-2 text-xs text-red-500 dark:text-red-400 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-lg">
-                  AI 分析失败：{aiError}
-                </div>
-              )}
-              {!aiError && aiReason && (
-                <div className="mt-2 text-[11px] text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800/50 px-3 py-2 rounded-lg leading-relaxed">
-                  <span className="text-primary font-semibold mr-1">AI:</span>
-                  {aiReason}
-                </div>
-              )}
-
-              {analyzedPoints && (
-                <motion.div
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="mt-4 space-y-3"
-                >
-                  <p className="text-xs text-gray-500 dark:text-gray-400 font-medium">调整点数</p>
-                  {Object.entries(manualPoints).map(([attr, pts]) => (
-                    <div key={attr} className="flex items-center justify-between">
-                      <span className="text-sm text-gray-700 dark:text-gray-300">
-                        {settings.attributeNames[attr as AttributeId]}
-                      </span>
-                      <div className="flex items-center gap-3">
-                        <button onClick={() => adjustPoints(attr, -1)} className="w-8 h-8 bg-gray-100 dark:bg-gray-800 rounded-full text-lg font-bold text-gray-600 dark:text-gray-300 cursor-pointer flex items-center justify-center">−</button>
-                        <span className="w-5 text-center font-bold text-gray-900 dark:text-white text-sm">{pts}</span>
-                        <button onClick={() => adjustPoints(attr, 1)} className="w-8 h-8 bg-gray-100 dark:bg-gray-800 rounded-full text-lg font-bold text-gray-600 dark:text-gray-300 cursor-pointer flex items-center justify-center">+</button>
-                      </div>
-                    </div>
-                  ))}
-
-                  <div className="flex items-center justify-between pt-1">
-                    <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={importantOnly}
-                        onChange={(e) => setImportantOnly(e.target.checked)}
-                        className="w-4 h-4 text-primary rounded"
-                      />
-                      ⭐ 这很重要
-                    </label>
-                    <motion.button
-                      whileTap={{ scale: 0.96 }}
-                      onClick={(e) => { spawnSave(e); handleSave(); }}
-                      className="relative overflow-hidden px-6 py-2.5 bg-primary text-white rounded-xl text-sm font-semibold shadow-sm shadow-primary/20 cursor-pointer"
-                    >
-                      {saveRipples}
-                      保存
-                    </motion.button>
-                  </div>
-                </motion.div>
-              )}
-            </motion.div>
-          </>
+      {/* 输入抽屉：原 backdrop+sheet 手写兄弟节点 → SheetModal 基座
+          （portal 到 body、内置 AnimatePresence/焦点陷阱/ESC/安卓返回键；FAB 仍是唯一触发入口） */}
+      <SheetModal
+        isOpen={showInput}
+        onClose={() => { setShowInput(false); setAnalyzedPoints(null); setBackdateTarget(null); }}
+        position="bottom"
+        title={backdateTarget ? '补录历史记录' : '记录一件事'}
+        footer={
+          // 主操作区入 footer 槽（内容滚动时恒在视口内）；
+          // "分析关键词→才出现保存"的门控逻辑本次保持原样（审计另案）
+          analyzedPoints ? (
+            <div className="flex items-center justify-between">
+              <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={importantOnly}
+                  onChange={(e) => setImportantOnly(e.target.checked)}
+                  className="w-4 h-4 text-primary rounded"
+                />
+                ⭐ 这很重要
+              </label>
+              <motion.button
+                whileTap={{ scale: 0.96 }}
+                onClick={(e) => { spawnSave(e); handleSave(); }}
+                className="relative overflow-hidden px-6 py-2.5 bg-primary text-white rounded-xl text-sm font-semibold shadow-sm shadow-primary/20 cursor-pointer"
+              >
+                {saveRipples}
+                保存
+              </motion.button>
+            </div>
+          ) : undefined
+        }
+      >
+        {backdateTarget && (
+          <p className="text-xs text-amber-600 dark:text-amber-400 -mt-1 mb-3 flex items-center gap-1">
+            <span>📅</span>
+            <span>记录日期：{backdateTarget.replace(/-/g, '/')}</span>
+          </p>
         )}
-      </AnimatePresence>
+
+        <textarea
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="描述你刚才做了什么..."
+          className="w-full px-4 py-3 text-sm border border-gray-200 dark:border-gray-700 rounded-2xl focus:outline-none focus:border-primary dark:bg-gray-800 dark:text-white resize-none"
+          rows={3}
+          autoFocus
+        />
+
+        {/*
+          ── 分析按钮：双形态 ─────────────────────────────────────
+          1) 首次点击 → "分析关键词"：本地 keywordRules 命中规则，立即生效
+          2) 之后 → "AI 分析"：把同一段描述交给 AI 给出五维评分，覆写 调整点数
+          AI 失败 / 描述太短时按钮仍可重复点（错误提示在下面单独显示）。
+        */}
+        {!analyzedPoints ? (
+          <motion.button
+            whileTap={{ scale: 0.97 }}
+            onClick={(e) => { spawnAnalyze(e); analyzeActivity(); }}
+            disabled={!description.trim()}
+            className="relative overflow-hidden w-full mt-3 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 py-2.5 rounded-xl text-sm font-medium disabled:opacity-40 cursor-pointer"
+          >
+            {analyzeRipples}
+            分析关键词
+          </motion.button>
+        ) : (
+          <motion.button
+            whileTap={{ scale: 0.97 }}
+            onClick={(e) => { spawnAnalyze(e); void analyzeWithAI(); }}
+            disabled={!description.trim() || aiAnalyzing}
+            className="relative overflow-hidden w-full mt-3 bg-gradient-to-r from-primary/15 to-purple-500/15 text-primary dark:text-primary border border-primary/30 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 cursor-pointer"
+          >
+            {analyzeRipples}
+            {aiAnalyzing ? '⋯ AI 思考中' : '✦ AI 分析'}
+          </motion.button>
+        )}
+
+        {/* AI 错误 / 解释提示 */}
+        {aiError && (
+          <div className="mt-2 text-xs text-red-500 dark:text-red-400 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-lg">
+            AI 分析失败：{aiError}
+          </div>
+        )}
+        {!aiError && aiReason && (
+          <div className="mt-2 text-[11px] text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800/50 px-3 py-2 rounded-lg leading-relaxed">
+            <span className="text-primary font-semibold mr-1">AI:</span>
+            {aiReason}
+          </div>
+        )}
+
+        {analyzedPoints && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mt-4 space-y-3"
+          >
+            <p className="text-xs text-gray-500 dark:text-gray-400 font-medium">调整点数</p>
+            {Object.entries(manualPoints).map(([attr, pts]) => (
+              <div key={attr} className="flex items-center justify-between">
+                <span className="text-sm text-gray-700 dark:text-gray-300">
+                  {settings.attributeNames[attr as AttributeId]}
+                </span>
+                {/* §3.2 统一步进器：0–5 区间沿用原 adjustPoints 的夹紧限制 */}
+                <Stepper
+                  value={pts}
+                  min={0}
+                  max={5}
+                  onChange={(v) => setManualPoints(prev => ({ ...prev, [attr]: v }))}
+                  aria-label={`${settings.attributeNames[attr as AttributeId]}点数`}
+                />
+              </div>
+            ))}
+          </motion.div>
+        )}
+      </SheetModal>
 
       {/* 弹窗 */}
       <SaveSuccessModal
@@ -1399,98 +1366,65 @@ export const Activities = () => {
         unlockHint={unlockHint}
         tone={lastSavedImportant ? 'important' : 'default'}
       />
-      {/*
-        ── 两阶段删除弹窗 ─────────────────────────────────────
-        Layer 1：确认是否要删除（[取消][删除]）
-        Layer 2：选择删除方式（← 返回 / 仅删除条目 / 删除并回档）
-        外层 onClick 点遮罩 = 取消（与 cancel 按钮等价）
-        Esc / 安卓返回 → 在 Layer 2 时回到 Layer 1，在 Layer 1 时关闭
-      */}
-      <AnimatePresence>
-        {deleteTargetId && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
-            onClick={closeDeleteDialog}
-          >
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0, y: 10 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.9, opacity: 0, y: 10 }}
-              transition={{ type: 'spring', duration: 0.4 }}
-              className="bg-white dark:bg-gray-800 rounded-2xl p-6 max-w-sm w-full shadow-2xl"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {deleteStage === 'confirm' && (
-                <>
-                  <div className="text-center">
-                    <div className="text-4xl mb-3 text-red-500">⚠️</div>
-                    <h3 className="text-lg font-bold text-gray-800 dark:text-white mb-2">
-                      确认删除这条记录？
-                    </h3>
-                    <p className="text-sm text-gray-600 dark:text-gray-400 whitespace-pre-line">
-                      下一步可选"仅删除条目"或"删除并回档"。
-                    </p>
-                  </div>
-                  <div className="flex gap-3 mt-6">
-                    <button
-                      onClick={closeDeleteDialog}
-                      className="flex-1 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 py-2 rounded-lg font-medium"
-                    >
-                      取消
-                    </button>
-                    <button
-                      onClick={() => setDeleteStage('choose')}
-                      className="flex-1 py-2 rounded-lg font-medium text-white bg-red-500"
-                    >
-                      删除
-                    </button>
-                  </div>
-                </>
-              )}
 
-              {deleteStage === 'choose' && (
-                <>
-                  <div className="flex items-center gap-2 mb-4">
-                    <button
-                      onClick={() => setDeleteStage('confirm')}
-                      aria-label="返回"
-                      className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-black/5 dark:hover:bg-white/10 text-gray-500 text-lg"
-                    >
-                      ‹
-                    </button>
-                    <h3 className="text-base font-bold text-gray-800 dark:text-white flex-1">
-                      删除方式
-                    </h3>
-                  </div>
-                  <div className="space-y-2">
-                    <button
-                      onClick={async () => {
-                        if (deleteTargetId) await handleDeleteRecordOnly(deleteTargetId);
-                        closeDeleteDialog();
-                      }}
-                      className="w-full py-3 rounded-xl text-sm font-semibold bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-100"
-                    >
-                      仅删除条目
-                    </button>
-                    <button
-                      onClick={async () => {
-                        if (deleteTargetId) await handleDeleteAndRollback(deleteTargetId);
-                        closeDeleteDialog();
-                      }}
-                      className="w-full py-3 rounded-xl text-sm font-semibold bg-red-500 text-white"
-                    >
-                      删除并回档
-                    </button>
-                  </div>
-                </>
-              )}
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/*
+        ── 长按 → 菜单 → 删除确认（§4.6 协议统一）─────────────────
+        旧"两段式删除弹窗"（confirm→choose 状态机）整体移除，改为：
+        ActionSheet（z=50）唤出上下文菜单 → ConfirmDialog（z=60）单屏确认。
+        三按钮 [取消][仅删除条目][删除并回档] 完整保留旧弹窗的两种删除语义，
+        "回档 = 收回该记录获得的点数"的提示并入 description。
+      */}
+      <ActionSheet
+        isOpen={menuActivityId !== null}
+        onClose={() => setMenuActivityId(null)}
+        title={menuActivity ? truncateText(menuActivity.description, 24) : undefined}
+        actions={[
+          {
+            label: '删除',
+            icon: <TrashIcon className="w-4 h-4" />,
+            tone: 'danger',
+            // 闭包里的 menuActivityId 取自菜单尚在打开的那次渲染；
+            // ActionSheet 内部先 onClose 再调本回调，state 置空不影响本次取值
+            onClick: () => setDeleteTargetId(menuActivityId),
+          },
+        ]}
+      />
+      <ConfirmDialog
+        isOpen={deleteTargetId !== null}
+        tone="danger"
+        title="确认删除这条记录？"
+        description={
+          deleteTarget
+            ? `「${truncateText(deleteTarget.description, 40)}」\n「删除并回档」会同时收回这条记录获得的点数；「仅删除条目」只移除记录本身。`
+            : undefined
+        }
+        actions={[
+          // 铁律：取消恒在左、危险操作恒在右
+          { label: '取消', onClick: closeDeleteDialog },
+          {
+            label: '仅删除条目',
+            onClick: () => {
+              const id = deleteTargetId;
+              // 先关弹窗再删：删除后实体即从列表消失，避免退场动画期间文案闪空
+              closeDeleteDialog();
+              if (id) void handleDeleteRecordOnly(id);
+            },
+          },
+          {
+            label: '删除并回档',
+            tone: 'danger',
+            onClick: () => {
+              const id = deleteTargetId;
+              closeDeleteDialog();
+              if (id) void handleDeleteAndRollback(id);
+            },
+          },
+        ]}
+        // actions 模式下不渲染默认双按钮，以下两个回调仅满足必填 props，
+        // 并兜底 backdrop / ESC / 安卓返回三条关闭通道
+        onConfirm={closeDeleteDialog}
+        onCancel={closeDeleteDialog}
+      />
 
       {/* 滚动到底部的波浪反馈 */}
       <AnimatePresence>
