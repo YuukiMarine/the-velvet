@@ -16,11 +16,11 @@ import { AchievementUnlockModal } from '@/components/AchievementUnlockModal';
 import { SkillUnlockModal } from '@/components/SkillUnlockModal';
 import { db } from '@/db';
 import { Dashboard } from '@/pages/Dashboard';
-import { Activities } from '@/pages/Activities';
 import { Achievements } from '@/pages/Achievements';
 const Statistics = lazy(() => import('@/pages/Statistics').then(m => ({ default: m.Statistics })));
 import { Settings } from '@/pages/Settings';
-import { Todos } from '@/pages/Todos';
+// 行动页（任务+记录合并，v2.5 五格 IA）；旧 'todos'/'activities' 路由也映射到它（见 renderPage）
+const Actions = lazy(() => import('@/pages/Actions').then(m => ({ default: m.Actions })));
 const Astrology = lazy(() => import('@/pages/Astrology').then(m => ({ default: m.Astrology })));
 const Cooperation = lazy(() => import('@/pages/Cooperation').then(m => ({ default: m.Cooperation })));
 // 菜单宫格页（v2.5 五格 IA）：activities / settings / achievements 等入口收纳于此
@@ -338,12 +338,14 @@ function App() {
     switch (currentPage) {
       case 'dashboard':
         return <Dashboard />;
+      // 'todos'/'activities' 是合并前的旧路由 id：散落的 setCurrentPage('todos') 调用点
+      // （问候卡提示条等）继续可用，Actions 内部会按旧 id 落到对应子页并归一为 'actions'
+      case 'actions':
+      case 'todos':
       case 'activities':
-        return <Activities />;
+        return <Suspense fallback={<div className="flex items-center justify-center h-64 text-gray-400">加载中…</div>}><Actions /></Suspense>;
       case 'achievements':
         return <Achievements />;
-      case 'todos':
-        return <Todos />;
       case 'statistics':
         return <Suspense fallback={<div className="flex items-center justify-center h-64 text-gray-400">加载中…</div>}><Statistics /></Suspense>;
       case 'settings':

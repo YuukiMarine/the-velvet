@@ -189,6 +189,8 @@ interface AppState {
   summaries: PeriodSummary[];
   weeklyGoals: WeeklyGoal[];
   currentPage: string;
+  /** 行动页（任务+记录合并）当前子页；菜单/首页等外部入口可在导航前指定 */
+  actionsSubTab: 'todos' | 'activities';
   levelUpNotification: { id: string; displayName: string; level: number } | null;
   achievementNotification: { id: string; title: string } | null;
   skillNotification: { id: string; name: string } | null;
@@ -203,6 +205,7 @@ interface AppState {
   unlockAchievement: (achievementId: string) => Promise<void>;
   unlockSkill: (skillId: string) => Promise<void>;
   setCurrentPage: (page: string) => void;
+  setActionsSubTab: (tab: 'todos' | 'activities') => void;
   updateSettings: (newSettings: Partial<Settings>) => Promise<void>;
   loadData: () => Promise<void>;
   // 星象 / 塔罗
@@ -478,6 +481,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   weeklyGoals: [],
   settings: DEFAULT_SETTINGS,
   currentPage: 'dashboard',
+  actionsSubTab: 'todos',
   levelUpNotification: null,
   achievementNotification: null,
   skillNotification: null,
@@ -1015,6 +1019,10 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setCurrentPage: (page: string) => {
     set({ currentPage: page });
+  },
+
+  setActionsSubTab: (tab: 'todos' | 'activities') => {
+    set({ actionsSubTab: tab });
   },
 
   updateSettings: async (newSettings: Partial<Settings>) => {

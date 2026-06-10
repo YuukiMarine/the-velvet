@@ -3,7 +3,6 @@ import { useState, useMemo, useRef, useEffect } from 'react';
 import { useAppStore, toLocalDateKey } from '@/store';
 import { AttributeId, SummaryPeriod } from '@/types';
 import { SaveSuccessModal } from '@/components/SaveSuccessModal';
-import { PageTitle } from '@/components/PageTitle';
 import SummaryModal from '@/components/SummaryModal';
 import { triggerNavFeedback, triggerLightHaptic } from '@/utils/feedback';
 import { useRipple } from '@/components/RippleEffect';
@@ -462,7 +461,8 @@ function useSummaryReminder() {
   return { showDot, showWeekDot, showMonthDot, defaultPeriod };
 }
 
-export const Activities = () => {
+// 行动页子视图（记录）：页头/页级转场由宿主 Actions.tsx 承担，本组件只渲染内容
+export const ActivitiesView = () => {
   const { activities, addActivity, settings, setModalBlocker, deleteActivity, deleteActivityRecordOnly } = useAppStore();
 
   // ---- 总结弹窗 ----
@@ -743,12 +743,9 @@ export const Activities = () => {
   }, [groupedActivities, openYears, openMonths, todayKey, yesterdayKey]);
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="space-y-4"
-    >
+    // 子视图化：页级 motion 容器（opacity 进出场）移交宿主 Actions 的 tabpanel 包装层，
+    // 自身退化为纯 div——若保留 exit 会拖长宿主 AnimatePresence mode="wait" 的 180ms 切换预算
+    <div className="space-y-4">
       {/* 总结弹窗 */}
       <SummaryModal
         isOpen={showSummary}
@@ -756,10 +753,10 @@ export const Activities = () => {
         defaultPeriod={summaryDefaultPeriod}
       />
 
-      {/* 页头 + 搜索 */}
+      {/* 页头 + 搜索（PageTitle 移除：标题职责由宿主 Actions 的大字切换头承担；
+          成长总结入口保留并维持右对齐位置） */}
       <div className="space-y-2.5">
-        <div className="flex items-center justify-between">
-          <PageTitle title="历史记录" en="Journal" />
+        <div className="flex items-center justify-end">
           {/* 总结入口按钮 */}
           <button
             onClick={() => setShowSummary(true)}
@@ -1226,7 +1223,10 @@ export const Activities = () => {
               }
               setShowInput(true);
             }}
-            className={`fixed bottom-24 right-5 md:bottom-8 md:right-8 w-14 h-14 text-white rounded-2xl shadow-lg flex items-center justify-center z-40 cursor-pointer transition-colors ${
+            aria-label={isPastDaySelected ? '补录历史记录' : '添加记录'}
+            // 制式统一（rounded-2xl → rounded-full）：与任务子页 FAB 同款圆形 bg-primary，
+            // 子页切换时 FAB 静止视觉不跳变；双态（+/补记）行为与位置保持原样
+            className={`fixed bottom-24 right-5 md:bottom-8 md:right-8 w-14 h-14 text-white rounded-full shadow-lg flex items-center justify-center z-40 cursor-pointer transition-colors ${
               isPastDaySelected
                 ? 'bg-amber-500 shadow-amber-500/30'
                 : 'bg-primary shadow-primary/30'
@@ -1462,6 +1462,6 @@ export const Activities = () => {
           </motion.div>
         )}
       </AnimatePresence>
-    </motion.div>
+    </div>
   );
 };
