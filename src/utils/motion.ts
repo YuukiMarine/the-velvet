@@ -10,7 +10,7 @@
  * 大胆度拨盘（D0）由 utils/boldness.ts 提供运行时；需要在 JS 侧降级动效的组件
  * 用 useBoldness() 判断后改用 fadeIn / 直接渲染终态。
  */
-import type { Transition, Variants } from 'framer-motion';
+import type { Transition, Variants } from 'motion/react';
 import type { ThemeType } from '@/types';
 
 // ── 弹簧预设 ─────────────────────────────────────────────────────────────────

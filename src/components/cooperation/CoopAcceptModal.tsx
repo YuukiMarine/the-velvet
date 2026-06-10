@@ -6,7 +6,7 @@
  * 也可拒绝（3 天冷却）。
  */
 
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'motion/react';
 import { useMemo, useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useAppStore } from '@/store';

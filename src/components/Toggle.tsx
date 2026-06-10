@@ -19,7 +19,7 @@
  *   - 语义：button role="switch" + aria-checked，aria-label 必传（开关旁的
  *     文字 label 往往在调用方布局里，不能指望它被关联上）。
  */
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import { springSnappy } from '@/utils/motion';
 
 export interface ToggleProps {

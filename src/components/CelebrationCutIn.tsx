@@ -1,4 +1,4 @@
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'motion/react';
 import { ReactNode, useId } from 'react';
 import { createPortal } from 'react-dom';
 import { ParticleBurst } from './ParticleBurst';

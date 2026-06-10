@@ -11,7 +11,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { createPortal } from 'react-dom';
 import { useCloudStore } from '@/store/cloud';
 import { searchUserByUserId, sendFriendRequest } from '@/services/friends';

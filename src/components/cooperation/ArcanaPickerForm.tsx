@@ -8,7 +8,7 @@
  *   - 留言（≤200 字）
  */
 
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import { useMemo, useState, useEffect, useRef } from 'react';
 import { MAJOR_ARCANA, TAROT_BY_ID } from '@/constants/tarot';
 import { TarotCardSVG } from '@/components/astrology/TarotCardSVG';

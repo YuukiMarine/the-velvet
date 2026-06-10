@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { AttributeId } from '@/types';
 import { SHADOW_ACCENT_BY_WEAKNESS } from '@/constants';
 

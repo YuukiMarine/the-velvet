@@ -1,4 +1,4 @@
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import { useAppStore, toLocalDateKey } from '@/store';
 import { LongReading } from '@/types';
 import { TAROT_BY_ID, PERIOD_LABELS } from '@/constants/tarot';

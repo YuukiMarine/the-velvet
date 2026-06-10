@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, type Variants } from 'motion/react';
 import { useAppStore, toLocalDateKey } from '@/store';
 import { useCloudSocialStore } from '@/store/cloudSocial';
 import { TAROT_BY_ID } from '@/constants/tarot';
@@ -1130,7 +1130,9 @@ function SeverCoopButton({
   );
 }
 
-const INFO_CONTAINER_VARIANTS = {
+// 显式标注 Variants：motion v12 起 ease 是字面量联合类型，
+// 不标注会被推断宽化为 string 而过不了类型检查
+const INFO_CONTAINER_VARIANTS: Variants = {
   hidden: { opacity: 0 },
   show: {
     opacity: 1,
@@ -1138,7 +1140,7 @@ const INFO_CONTAINER_VARIANTS = {
   },
 };
 
-const INFO_ITEM_VARIANTS = {
+const INFO_ITEM_VARIANTS: Variants = {
   hidden: { opacity: 0, y: 8 },
   show: { opacity: 1, y: 0, transition: { duration: 0.45, ease: 'easeOut' } },
 };

@@ -1,4 +1,4 @@
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 
 /**
  * BATTLE START —— 神秘 / 老式钟表风

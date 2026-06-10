@@ -10,7 +10,7 @@
  * 生命周期：1.8s 后自动 dismiss（reciprocal 拉长到 2.4s）。
  */
 
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'motion/react';
 import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 

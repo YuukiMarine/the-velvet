@@ -11,7 +11,7 @@
  * 同页多实例必须传不同 layoutId（否则指示块跨实例互飞）；不传时用 useId 兜底。
  */
 import { useId } from 'react';
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import { springSnappy, TAP } from '@/utils/motion';
 
 interface SegmentTabItem<K extends string> {

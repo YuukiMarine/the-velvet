@@ -1,4 +1,4 @@
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import { TarotCardData, TarotOrientation, SUIT_META } from '@/constants/tarot';
 
 interface TarotCardSVGProps {

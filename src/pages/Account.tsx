@@ -7,7 +7,7 @@
  *     同时根治原手写弹窗缺 AnimatePresence 的 B14 死 exit；
  *   - 导出 / 复制 / 读备份文件等纯数据逻辑下沉至 @/services/backup，本页只持有 UI 状态。
  */
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import { useRef, useState } from 'react';
 import { useAppStore } from '@/store';
 import { useCloudStore } from '@/store/cloud';

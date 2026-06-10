@@ -1,4 +1,4 @@
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { useAppStore, toLocalDateKey } from '@/store';
 import { AttributeId, SummaryPeriod } from '@/types';

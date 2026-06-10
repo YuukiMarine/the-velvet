@@ -8,7 +8,7 @@
  *   3) Persona 名 + 粒子散出 (0.9–1.3s)
  */
 
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { createPortal } from 'react-dom';
 
 interface Props {

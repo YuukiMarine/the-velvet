@@ -1,4 +1,4 @@
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import { useState, useEffect, useRef } from 'react';
 
 type SplashStyle = 'velvet' | 'p5' | 'p3' | 'p4';
