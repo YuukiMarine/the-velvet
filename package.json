@@ -23,6 +23,7 @@
     "dexie": "^3.2.4",
     "dexie-react-hooks": "^1.1.7",
     "dompurify": "^3.3.3",
+    "embla-carousel-react": "^8.6.0",
     "motion": "^12.40.0",
     "pocketbase": "^0.26.8",
     "react": "^18.2.0",
@@ -41,6 +42,7 @@
     "eruda": "^3.4.3",
     "postcss": "^8.4.32",
     "tailwindcss": "^3.3.6",
+    "tweakpane": "^4.0.5",
     "typescript": "^5.3.3",
     "vite": "^5.0.8",
     "vite-plugin-pwa": "^0.17.4"
