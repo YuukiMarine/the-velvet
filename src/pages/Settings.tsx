@@ -1,24 +1,16 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useAppStore, DEFAULT_SUMMARY_PROMPT_PRESETS, FAMILIAR_FACE_PRESETS, toLocalDateKey, applyCustomThemeColor } from '@/store';
-import { triggerThemeSwitchFeedback, playSound } from '@/utils/feedback';
+import { triggerThemeSwitchFeedback, triggerNavFeedback, playSound } from '@/utils/feedback';
 import { ThemeType, AttributeId, SummaryPromptPreset, AttributeLevelTitles } from '@/types';
 import { DEFAULT_LEVEL_THRESHOLDS } from '@/constants';
 import { db } from '@/db';
 import { PageTitle } from '@/components/PageTitle';
-import { exportBackup, isNative } from '@/utils/native';
 import { useRipple } from '@/components/RippleEffect';
 import { AI_PROVIDERS, getProviderConfig, testAIConnection, type TestResult } from '@/utils/aiProviders';
-import { useCloudStore } from '@/store/cloud';
-import { logout as cloudLogout } from '@/services/auth';
-import { LoginModal } from '@/components/auth/LoginModal';
-import { pushAll, pullAll, syncOnLogin, computeSyncDiff } from '@/services/sync';
-import { LVTag } from '@/components/LVTag';
-import { computeTotalLv } from '@/utils/lvTiers';
 import { UserProfileCard } from '@/components/UserProfileCard';
-import { TrophyIcon } from '@/components/Navigation';
-import { SyncPrivacyPanel } from '@/components/auth/SyncPrivacyPanel';
-import { AccountManagePanel } from '@/components/auth/AccountManagePanel';
+import { Toggle } from '@/components/Toggle';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import {
   generateAttributeLevelTitles,
   normalizeAttributeLevelTitles,
@@ -167,20 +159,6 @@ const LevelTitleField = ({
   );
 };
 
-/** 将一个过去的时间格式化为 "刚刚 / N 分钟前 / N 小时前 / N 天前" */
-const formatRelative = (date: Date): string => {
-  const diff = Date.now() - date.getTime();
-  if (diff < 60_000) return '刚刚';
-  if (diff < 3600_000) return `${Math.floor(diff / 60_000)} 分钟前`;
-  if (diff < 86400_000) return `${Math.floor(diff / 3600_000)} 小时前`;
-  if (diff < 7 * 86400_000) return `${Math.floor(diff / 86400_000)} 天前`;
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
-};
-
-
 // ── 主题颜色按钮（带涟漪点击反馈） ───────────────────────────
 const ThemeColorButton = ({
   theme,
@@ -289,17 +267,12 @@ export const Settings = () => {
     settings,
     updateSettings,
     setTheme,
-    resetAllData,
-    importData,
     loadData
   } = useAppStore();
-  const attributes = useAppStore(s => s.attributes);
   const achievements = useAppStore(s => s.achievements);
   const skills = useAppStore(s => s.skills);
   const setCurrentPage = useAppStore(s => s.setCurrentPage);
-  const totalLv = computeTotalLv(attributes);
   const [activeSection, setActiveSection] = useState<string | null>('theme');
-  const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showLevelWarning, setShowLevelWarning] = useState(false);
   // 等级阈值：恢复默认 / 删除高等级 的确认弹窗
   const [showResetThresholdsConfirm, setShowResetThresholdsConfirm] = useState(false);
@@ -317,16 +290,6 @@ export const Settings = () => {
   const [presetNameSelection, setPresetNameSelection] = useState<PresetNameSelection>(() => emptyPresetNameSelection());
   const [presetNameModalOpen, setPresetNameModalOpen] = useState(false);
   const [presetNameAttrIndex, setPresetNameAttrIndex] = useState(0);
-  // LV 徽章点击展开总点数明细
-  const [showPointsBreakdown, setShowPointsBreakdown] = useState(false);
-  // UserID 复制到剪贴板的轻提示
-  const [userIdCopied, setUserIdCopied] = useState(false);
-  // 账号管理面板
-  const [accountPanelOpen, setAccountPanelOpen] = useState(false);
-  const [importJson, setImportJson] = useState('');
-  const [exportMessage, setExportMessage] = useState<string | null>(null);
-  const [importLoading, setImportLoading] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const [keywordDrafts, setKeywordDrafts] = useState<Record<number, string>>({});
   // 关键词规则折叠状态：默认收起，点击标题展开
   const [keywordRulesExpanded, setKeywordRulesExpanded] = useState(false);
@@ -554,42 +517,6 @@ export const Settings = () => {
     }
   }, [loadData, settings.aiPresetNameBackup, updateSettings]);
 
-  // 读取当前主题主色（用于成就入口行的辉光），并跟随 data-theme / 自定义色变化
-  const [primaryColor, setPrimaryColor] = useState('#3B82F6');
-  useEffect(() => {
-    const readColor = () => {
-      const raw = getComputedStyle(document.documentElement)
-        .getPropertyValue('--color-primary')
-        .trim();
-      if (raw) setPrimaryColor(raw);
-    };
-    readColor();
-    const obs = new MutationObserver(readColor);
-    obs.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ['data-theme', 'style'],
-    });
-    return () => obs.disconnect();
-  }, []);
-
-  // 云同步
-  const cloudEnabled = useCloudStore(s => s.cloudEnabled);
-  const cloudUser = useCloudStore(s => s.cloudUser);
-  const syncStatus = useCloudStore(s => s.syncStatus);
-  const lastSyncAt = useCloudStore(s => s.lastSyncAt);
-  const lastCloudError = useCloudStore(s => s.lastError);
-  const [showLoginModal, setShowLoginModal] = useState(false);
-  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
-  const [syncChoiceOpen, setSyncChoiceOpen] = useState(false);
-
-  // 复制到剪贴板状态
-  const [copyState, setCopyState] = useState<'idle' | 'ok' | 'err'>('idle');
-  // 下载后显示的蓝链
-  const [downloadLink, setDownloadLink] = useState<{ url: string; filename: string; size: string } | null>(null);
-  const downloadLinkUrlRef = useRef<string | null>(null); // keep URL alive until replaced
-  // 导入文本框（用于粘贴 JSON）
-
-
   const themes: { value: ThemeType; label: string; color: string }[] = [
     { value: 'blue', label: '蓝色', color: '#3B82F6' },
     { value: 'yellow', label: '黄色', color: '#F59E0B' },
@@ -598,145 +525,6 @@ export const Settings = () => {
     { value: 'custom', label: '自定义', color: settings.customThemeColor || '#1c1c1c' }
   ];
   const [customColorDraft, setCustomColorDraft] = useState(settings.customThemeColor || '#1c1c1c');
-
-  const sizeOf = (s: string) => {
-    const bytes = new Blob([s]).size;
-    return bytes < 1024 * 1024
-      ? `${(bytes / 1024).toFixed(1)} KB`
-      : `${(bytes / 1024 / 1024).toFixed(2)} MB`;
-  };
-
-  const handleDownload = async () => {
-    const jsonString = await buildExportJson();
-    const filename = `velvet-room-backup-${toLocalDateKey()}.json`;
-    try {
-      const result = await exportBackup(filename, jsonString);
-      if (result) {
-        // Web 端：返回 Blob 下载链接
-        if (downloadLinkUrlRef.current) URL.revokeObjectURL(downloadLinkUrlRef.current);
-        downloadLinkUrlRef.current = result.url;
-        setDownloadLink(result);
-        setExportMessage(null);
-      } else {
-        // 原生端：分享面板已弹出，给一个友好提示
-        setExportMessage('分享面板已打开，请选择保存位置（文件管理 / 云盘 / 邮件 等）');
-        setDownloadLink(null);
-      }
-    } catch (err) {
-      setExportMessage(`导出失败：${err instanceof Error ? err.message : String(err)}`);
-    }
-  };
-
-  const handleCopy = async () => {
-    const jsonString = await buildExportJson();
-    try {
-      await navigator.clipboard.writeText(jsonString);
-      setCopyState('ok');
-      setExportMessage(`已复制到剪贴板（${sizeOf(jsonString)}）`);
-      setTimeout(() => setCopyState('idle'), 2000);
-    } catch {
-      setCopyState('err');
-      setExportMessage('复制失败，请尝试下载');
-      setTimeout(() => setCopyState('idle'), 2000);
-    }
-  };
-
-
-
-  const handleResetData = async () => {
-    await resetAllData();
-    setShowResetConfirm(false);
-  };
-
-  // ── 构建导出数据 JSON 字符串（抽出公共逻辑）────────────────
-  const buildExportJson = useCallback(async (): Promise<string> => {
-    const rawSettings = await db.settings.toArray();
-    const sanitizedSettings = rawSettings.map(s => {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { backgroundImage: _bg, openaiApiKey: _key, summaryApiKey: _sk, ...rest } = s as typeof s & { backgroundImage?: string; openaiApiKey?: string; summaryApiKey?: string };
-      return rest;
-    });
-    // 用户表：剔除 base64 头像（体积太大；导入后可重新上传）
-    const sanitizedUsers = (await db.users.toArray()).map(u => {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { avatarDataUrl: _av, ...rest } = u as typeof u & { avatarDataUrl?: string };
-      return rest;
-    });
-    // 同伴表：剔除长按上传的自定义头像（同理体积较大，且语义上属于本地私有）
-    const sanitizedConfidants = (await db.confidants.toArray()).map(c => {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { customAvatarDataUrl: _av, ...rest } = c as typeof c & { customAvatarDataUrl?: string };
-      return rest;
-    });
-    const data = {
-      user: sanitizedUsers,
-      attributes: await db.attributes.toArray(),
-      activities: await db.activities.toArray(),
-      achievements: await db.achievements.toArray(),
-      skills: await db.skills.toArray(),
-      settings: sanitizedSettings,
-      todos: await db.todos.toArray(),
-      todoCompletions: await db.todoCompletions.toArray(),
-      // 逆影战场数据（v3 新增，导入时向后兼容）
-      personas: await db.personas.toArray(),
-      shadows: await db.shadows.toArray(),
-      battleStates: await db.battleStates.toArray(),
-      // 星象 / 塔罗（v4 新增）
-      dailyDivinations: await db.dailyDivinations.toArray(),
-      longReadings: await db.longReadings.toArray(),
-      summaries: await db.summaries.toArray(),
-      weeklyGoals: await db.weeklyGoals.toArray(),
-      // 同伴（v5 新增）
-      confidants: sanitizedConfidants,
-      confidantEvents: await db.confidantEvents.toArray(),
-      // 谏言归档摘要（v6 新增；聊天原文永不落盘，所以此处不包含 counselSessions）
-      counselArchives: await db.counselArchives.toArray(),
-      _exportedAt: new Date().toISOString(),
-      _version: 6,
-    };
-    const json = JSON.stringify(data);
-    // 出口校验：确保产生的 JSON 字符串可被原样解析回来。
-    // 这能捕获 Invalid Date、非 finite 数字等极少数能让 JSON.stringify 产出"坏行"的场景，
-    // 避免用户导出的备份到了导入端才发现解析失败。
-    try {
-      JSON.parse(json);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      throw new Error(`导出 JSON 生成失败：${msg}。请反馈给开发者（此问题需要定位具体哪条记录异常）`);
-    }
-    return json;
-  }, []);
-
-
-
-  // 处理文件选择或粘贴导入
-  const handleImportData = async () => {
-    if (!importJson.trim()) return;
-    setImportLoading(true);
-    try {
-      await importData(importJson);
-      setImportJson('');
-      setExportMessage('导入成功！数据已恢复。');
-    } catch (error) {
-      setExportMessage(error instanceof Error ? error.message : '导入失败');
-    } finally {
-      setImportLoading(false);
-    }
-  };
-
-  const handleFileSelect = (file: File) => {
-    if (!file.name.endsWith('.json') && file.type !== 'application/json') {
-      setExportMessage('请选择 JSON 格式的备份文件');
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = e => {
-      const text = e.target?.result as string;
-      if (text) setImportJson(text);
-    };
-    reader.readAsText(file, 'utf-8');
-  };
-
 
   // ── AI 总结设置状态 ─────────────────────────────────────
   const [editingPresetId, setEditingPresetId] = useState<string | null>(null);
@@ -806,41 +594,12 @@ export const Settings = () => {
     setEditingPresetId(newPreset.id);
   };
 
+  // 「关于」已迁至菜单宫格的 SheetModal（设置拆解 PR）；「数据管理/云同步」迁至账号与数据页
   const sections = [
     { id: 'theme', label: '主题', icon: '🎨' },
     { id: 'personalize', label: '体验个性化', icon: '⚙️' },
-    { id: 'summary', label: 'AI 总结', icon: '✨' },
-    { id: 'data', label: '数据管理', icon: '💾' },
-    { id: 'cloud', label: '云同步', icon: '☁️' },
-    { id: 'about', label: '关于', icon: '💡' }
+    { id: 'summary', label: 'AI 总结', icon: '✨' }
   ];
-
-  // ── 成就入口的"待解锁"高亮判定 ─────────────────────────
-  // 简化逻辑：只统计"基础属性条件已满足、但尚未解锁"的成就/技能；
-  // 复杂条件（连续天数、关键字命中数、暗影击败等）需要更重的计算，
-  // 此处只做轻量提示，详细进度仍以成就页为准。
-  const pendingSkillsCount = skills.filter(s => {
-    // 馆长的赐福（blessing_*）由用户手动开/关，不算"待解锁"
-    if (s.id.startsWith('blessing_')) return false;
-    const attr = attributes.find(a => a.id === s.requiredAttribute);
-    return !!attr && attr.level >= s.requiredLevel && !s.unlocked;
-  }).length;
-  const pendingAchievementsCount = achievements.filter(a => {
-    if (a.unlocked) return false;
-    switch (a.condition.type) {
-      case 'attribute_level': {
-        const attr = attributes.find(x => x.id === a.condition.attribute);
-        return !!attr && attr.level >= a.condition.value;
-      }
-      case 'total_points':
-        return attributes.reduce((s, x) => s + (x.points ?? 0), 0) >= a.condition.value;
-      case 'all_attributes_max':
-        return attributes.filter(x => x.level >= a.condition.value).length >= attributes.length;
-      default:
-        return false;
-    }
-  }).length;
-  const totalPendingUnlocks = pendingSkillsCount + pendingAchievementsCount;
 
   return (
     <motion.div
@@ -849,107 +608,24 @@ export const Settings = () => {
       exit={{ opacity: 0 }}
       className="space-y-6"
     >
-      <PageTitle title="设置" en="Settings" />
+      {/* 顶部标题 + 返回按钮（设置现在只从菜单宫格进入，与其他子页保持一致的视觉） */}
+      <div className="flex items-start justify-between gap-3">
+        <button
+          onClick={() => { triggerNavFeedback(); setCurrentPage('menu'); }}
+          className="flex-shrink-0 mt-1 w-9 h-9 -ml-1 rounded-xl flex items-center justify-center text-gray-600 dark:text-gray-300 hover:bg-black/5 dark:hover:bg-white/10 active:scale-95 transition"
+          aria-label="返回"
+        >
+          <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
+            <path d="M15 18l-6-6 6-6" />
+          </svg>
+        </button>
+        <div className="flex-1">
+          <PageTitle title="设置" en="Settings" />
+        </div>
+      </div>
 
       {/* 用户资料卡（头像 / 用户名 / LV / 五维） */}
       <UserProfileCard />
-
-      {/* ── 成就入口行（取代 dock 中的成就 tab） ─────────────────── */}
-      <motion.button
-        whileTap={{ scale: 0.985 }}
-        onClick={() => { triggerThemeSwitchFeedback(user?.theme ?? 'blue'); setCurrentPage('achievements'); }}
-        className="group relative w-full overflow-hidden rounded-2xl px-5 py-4 flex items-center gap-4 text-left transition-all border bg-white dark:bg-gray-800"
-        style={{
-          // 高亮态用更强的主题色辉光；常态用 ~15% 透明度
-          background: totalPendingUnlocks > 0
-            ? `linear-gradient(90deg, ${primaryColor}26 0%, ${primaryColor}14 35%, transparent 100%)`
-            : undefined,
-          borderColor: totalPendingUnlocks > 0 ? `${primaryColor}80` : `${primaryColor}33`,
-          boxShadow: totalPendingUnlocks > 0
-            ? `0 0 26px -6px ${primaryColor}8c, 0 0 0 1px ${primaryColor}2e`
-            : `0 0 22px -6px ${primaryColor}26, 0 0 0 1px ${primaryColor}0a`,
-        }}
-      >
-        {/* 高亮态下的扫光：从全屏左侧扫到全屏右侧 */}
-        {/* 元素自身宽度为父容器的 40% → 用 translateX 走 -100% → +250% 才能完整跨过父容器 */}
-        {totalPendingUnlocks > 0 && (
-          <motion.div
-            aria-hidden
-            className="absolute inset-y-0 left-0 pointer-events-none"
-            initial={{ x: '-100%' }}
-            animate={{ x: '250%' }}
-            transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut', repeatDelay: 1.6 }}
-            style={{
-              background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.22), transparent)',
-              width: '40%',
-            }}
-          />
-        )}
-
-        {/* 图标 */}
-        <div
-          className="relative flex-shrink-0 w-11 h-11 rounded-2xl flex items-center justify-center"
-          style={{
-            background: totalPendingUnlocks > 0
-              ? `linear-gradient(135deg, ${primaryColor}, ${primaryColor}d9)`
-              : `${primaryColor}1a`,
-            color: totalPendingUnlocks > 0 ? '#fff' : primaryColor,
-            boxShadow: totalPendingUnlocks > 0
-              ? `0 4px 14px -2px ${primaryColor}66`
-              : undefined,
-          }}
-        >
-          <TrophyIcon filled={totalPendingUnlocks > 0} />
-          {totalPendingUnlocks > 0 && (
-            <motion.span
-              aria-hidden
-              className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[10px] font-black flex items-center justify-center shadow"
-              initial={{ scale: 0 }}
-              animate={{ scale: [0, 1.15, 1] }}
-              transition={{ duration: 0.4 }}
-            >
-              {totalPendingUnlocks > 99 ? '99+' : totalPendingUnlocks}
-            </motion.span>
-          )}
-        </div>
-
-        {/* 文案 */}
-        <div className="relative flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <span
-              className={`text-base font-bold ${
-                totalPendingUnlocks > 0 ? '' : 'text-gray-800 dark:text-white'
-              }`}
-              style={totalPendingUnlocks > 0 ? { color: primaryColor } : undefined}
-            >成就 / 技能</span>
-            <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-gray-400 dark:text-gray-500">
-              Achievements
-            </span>
-          </div>
-          <div
-            className={`text-[11px] mt-0.5 ${
-              totalPendingUnlocks > 0
-                ? 'font-semibold'
-                : 'text-gray-500 dark:text-gray-400'
-            }`}
-            style={totalPendingUnlocks > 0 ? { color: primaryColor } : undefined}
-          >
-            {totalPendingUnlocks > 0
-              ? `有 ${totalPendingUnlocks} 项已达成 · 点击前往领取`
-              : '查看进度 / 解锁里程碑 / 切换赐福'}
-          </div>
-        </div>
-
-        {/* 右侧箭头 */}
-        <span
-          className={`relative flex-shrink-0 text-lg leading-none transition-transform group-hover:translate-x-0.5 ${
-            totalPendingUnlocks > 0 ? '' : 'text-gray-400 dark:text-gray-500'
-          }`}
-          style={totalPendingUnlocks > 0 ? { color: primaryColor } : undefined}
-        >
-          ›
-        </span>
-      </motion.button>
 
       <div className="space-y-4">
         {sections.map(section => (
@@ -1073,16 +749,11 @@ export const Settings = () => {
                         <div className="text-sm font-medium text-gray-800 dark:text-white">静音模式</div>
                         <div className="text-xs text-gray-500 dark:text-gray-400">关闭后将没有声音反馈</div>
                       </div>
-                      <label className="relative inline-flex items-center cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={!!settings.soundMuted}
-                          onChange={(e) => updateSettings({ soundMuted: e.target.checked })}
-                          className="sr-only peer"
-                        />
-                        <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-600 peer-checked:bg-primary"></div>
-                        <div className="absolute left-1 top-1 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-5"></div>
-                      </label>
+                      <Toggle
+                        checked={!!settings.soundMuted}
+                        onChange={(v) => updateSettings({ soundMuted: v })}
+                        aria-label="静音模式"
+                      />
                     </div>
 
                     {/* 音量大小滑块：仅非静音时显示 */}
@@ -1116,19 +787,11 @@ export const Settings = () => {
                         <h4 className="font-medium text-gray-800 dark:text-white">夜间模式</h4>
                         <p className="text-sm text-gray-600 dark:text-gray-400">降低屏幕亮度，保护眼睛</p>
                       </div>
-                      <motion.button
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                        onClick={() => updateSettings({ darkMode: !settings.darkMode })}
-                        className={`w-14 h-8 rounded-full transition-colors ${
-                          settings.darkMode ? 'bg-blue-500' : 'bg-gray-300'
-                        }`}
-                      >
-                        <motion.div
-                          animate={{ x: settings.darkMode ? 24 : 4 }}
-                          className="w-6 h-6 bg-white rounded-full shadow-md"
-                        />
-                      </motion.button>
+                      <Toggle
+                        checked={!!settings.darkMode}
+                        onChange={(v) => updateSettings({ darkMode: v })}
+                        aria-label="夜间模式"
+                      />
                     </div>
 
                     {/* ── 子板块：显示 ────────────────────────────── */}
@@ -1187,19 +850,11 @@ export const Settings = () => {
                           <h4 className="font-medium text-gray-800 dark:text-white">装饰纹理</h4>
                           <p className="text-sm text-gray-600 dark:text-gray-400">无背景图时显示细腻底纹</p>
                         </div>
-                        <motion.button
-                          whileHover={{ scale: 1.05 }}
-                          whileTap={{ scale: 0.95 }}
-                          onClick={() => updateSettings({ backgroundPattern: !(settings.backgroundPattern ?? true) })}
-                          className={`w-14 h-8 rounded-full transition-colors ${
-                            (settings.backgroundPattern ?? true) ? 'bg-primary' : 'bg-gray-300'
-                          }`}
-                        >
-                          <motion.div
-                            animate={{ x: (settings.backgroundPattern ?? true) ? 24 : 4 }}
-                            className="w-6 h-6 bg-white rounded-full shadow-md"
-                          />
-                        </motion.button>
+                        <Toggle
+                          checked={settings.backgroundPattern ?? true}
+                          onChange={(v) => updateSettings({ backgroundPattern: v })}
+                          aria-label="装饰纹理"
+                        />
                       </div>
                     )}
 
@@ -1396,25 +1051,19 @@ export const Settings = () => {
                             连续3日某属性无增长，次日起每天该属性自动 −1，并在首页提前一天预警。
                           </p>
                         </div>
-                        <button
-                          onClick={() => {
-                            const enabling = !settings.countercurrentEnabled;
-                            updateSettings({
-                              countercurrentEnabled: enabling,
-                              // Record the date it was enabled so the 3-day window starts from tomorrow
-                              countercurrentEnabledAt: enabling ? toLocalDateKey() : settings.countercurrentEnabledAt,
-                            });
-                          }}
-                          className={`relative w-11 h-6 rounded-full flex-shrink-0 transition-colors mt-0.5 ${
-                            settings.countercurrentEnabled ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'
-                          }`}
-                        >
-                          <span
-                            className={`absolute left-1 top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${
-                              settings.countercurrentEnabled ? 'translate-x-5' : 'translate-x-0'
-                            }`}
+                        <div className="flex-shrink-0 mt-0.5">
+                          <Toggle
+                            checked={!!settings.countercurrentEnabled}
+                            onChange={(enabling) => {
+                              updateSettings({
+                                countercurrentEnabled: enabling,
+                                // 记录开启日期：3 日无增长窗口从次日开始计算
+                                countercurrentEnabledAt: enabling ? toLocalDateKey() : settings.countercurrentEnabledAt,
+                              });
+                            }}
+                            aria-label="逆流"
                           />
-                        </button>
+                        </div>
                       </div>
                     </div>
 
@@ -2128,423 +1777,6 @@ export const Settings = () => {
                   );
                 })()}
 
-                {section.id === 'data' && (
-                  <div className="space-y-5">
-                    {/* 消息提示 */}
-                    {exportMessage && (
-                      <div className="p-3 rounded-xl bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-sm text-gray-700 dark:text-gray-200">
-                        <div className="flex items-start justify-between gap-2">
-                          <span className="leading-snug">{exportMessage}</span>
-                          <button onClick={() => setExportMessage(null)} className="text-gray-400 flex-shrink-0 mt-0.5">✕</button>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* 非安卓端提示 */}
-                    {!isNative() && (
-                      <p className="text-xs text-gray-400 dark:text-gray-500 leading-relaxed">
-                        数据保存在本地，已构建防护但以防万一如需清理浏览器缓存请注意备份数据哦
-                      </p>
-                    )}
-
-                    {/* 导出 */}
-                    <div className="space-y-2">
-                      <p className="text-[11px] font-semibold tracking-widest uppercase text-gray-400 dark:text-gray-500">备份导出</p>
-                      <div className="grid grid-cols-2 gap-2">
-                        <motion.button
-                          whileTap={{ scale: 0.97 }}
-                          onClick={handleDownload}
-                          className="bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 py-3 rounded-xl font-semibold text-sm flex flex-col items-center gap-0.5"
-                        >
-                          <span>{isNative() ? '📤' : '💾'}</span>
-                          <span>{isNative() ? '分享备份' : '下载备份'}</span>
-                        </motion.button>
-                        <motion.button
-                          whileTap={{ scale: 0.97 }}
-                          onClick={handleCopy}
-                          className={`py-3 rounded-xl font-semibold text-sm flex flex-col items-center gap-0.5 transition-colors ${
-                            copyState === 'ok'
-                              ? 'bg-emerald-500 text-white'
-                              : copyState === 'err'
-                              ? 'bg-red-100 dark:bg-red-900/30 text-red-500'
-                              : 'bg-primary text-white'
-                          }`}
-                        >
-                          <span>{copyState === 'ok' ? '✓' : '📋'}</span>
-                          <span>{copyState === 'ok' ? '已复制' : '复制 JSON'}</span>
-                        </motion.button>
-                      </div>
-
-                      {/* 下载完成后显示可点击蓝链 */}
-                      {downloadLink && (
-                        <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
-                          <span className="text-base">📄</span>
-                          <div className="flex-1 min-w-0">
-                            <a
-                              href={downloadLink.url}
-                              download={downloadLink.filename}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-sm font-semibold text-blue-600 dark:text-blue-400 underline underline-offset-2 truncate block"
-                            >
-                              {downloadLink.filename}
-                            </a>
-                            <span className="text-xs text-gray-400 dark:text-gray-500">{downloadLink.size} · 点击打开或另存为</span>
-                          </div>
-                          <button onClick={() => setDownloadLink(null)} className="text-gray-400 flex-shrink-0 text-sm">✕</button>
-                        </div>
-                      )}
-
-                      <p className="text-xs text-gray-400 dark:text-gray-500 leading-relaxed">
-                        背景图与 API Key 不含在备份中。
-                      </p>
-                    </div>
-
-                    {/* 导入 */}
-                    <div className="space-y-2 pt-1">
-                      <p className="text-[11px] font-semibold tracking-widest uppercase text-gray-400 dark:text-gray-500">从备份恢复</p>
-
-                      {/* 粘贴文本导入 */}
-                      <textarea
-                        rows={4}
-                        placeholder='粘贴备份 JSON 文本（以 {"user":... 开头）'
-                        value={importJson}
-                        onChange={e => setImportJson(e.target.value)}
-                        className="w-full px-3 py-2.5 text-xs border border-gray-200 dark:border-gray-600 rounded-xl dark:bg-gray-800 dark:text-white resize-none focus:outline-none focus:border-primary font-mono"
-                      />
-
-                      {/* 文件上传区 */}
-                      <input
-                        ref={fileInputRef}
-                        type="file"
-                        accept=".json,application/json"
-                        className="hidden"
-                        onChange={e => { const f = e.target.files?.[0]; if (f) handleFileSelect(f); e.target.value = ''; }}
-                      />
-                      <motion.button
-                        whileTap={{ scale: 0.97 }}
-                        onClick={() => fileInputRef.current?.click()}
-                        className="w-full py-3.5 border-2 border-dashed border-gray-200 dark:border-gray-700 rounded-xl text-sm text-gray-500 dark:text-gray-400 hover:border-primary hover:text-primary dark:hover:border-primary dark:hover:text-primary transition-colors"
-                        onDragOver={e => e.preventDefault()}
-                        onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) handleFileSelect(f); }}
-                      >
-                        {importJson ? (
-                          <span className="text-emerald-600 dark:text-emerald-400 font-medium">✓ 文件已加载</span>
-                        ) : isNative() ? (
-                          <span>📁 从文件管理器选择备份文件</span>
-                        ) : (
-                          <span>📁 选择备份文件 <span className="opacity-60">或拖拽</span></span>
-                        )}
-                      </motion.button>
-
-                      {importJson && (
-                        <motion.button
-                          whileTap={{ scale: 0.97 }}
-                          onClick={handleImportData}
-                          disabled={importLoading}
-                          className="w-full bg-emerald-500 text-white py-3 rounded-xl font-semibold text-sm disabled:opacity-60"
-                        >
-                          {importLoading ? '正在导入…' : '确认导入（会覆盖当前数据）'}
-                        </motion.button>
-                      )}
-
-                      <p className="text-xs text-amber-600 dark:text-amber-400 leading-relaxed">
-                        ⚠️ 导入会清空并覆盖当前所有数据，操作前请先导出备份。
-                      </p>
-                    </div>
-
-                    {/* 重置 */}
-                    <div className="pt-3 border-t border-gray-100 dark:border-gray-800">
-                      <p className="text-[11px] font-semibold tracking-widest uppercase text-gray-400 dark:text-gray-500 mb-2">危险区域</p>
-                      <motion.button
-                        whileTap={{ scale: 0.97 }}
-                        onClick={() => setShowResetConfirm(true)}
-                        className="w-full bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 py-3 rounded-xl font-semibold text-sm"
-                      >
-                        重置所有数据
-                      </motion.button>
-                      <p className="text-xs text-red-400 dark:text-red-500 mt-1.5">
-                        删除全部数据，无法恢复。
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                {section.id === 'cloud' && (
-                  <div className="space-y-4">
-                    {!cloudEnabled ? (
-                      <div className="p-4 rounded-lg bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600">
-                        <p className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed">
-                          云同步功能未配置。如需启用，请在 <code className="px-1.5 py-0.5 rounded bg-gray-200 dark:bg-gray-600 font-mono text-xs">.env.local</code> 中设置 <code className="px-1.5 py-0.5 rounded bg-gray-200 dark:bg-gray-600 font-mono text-xs">VITE_PB_URL</code>。
-                        </p>
-                      </div>
-                    ) : !cloudUser ? (
-                      <>
-                        <div className="p-4 rounded-lg bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-800">
-                          <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
-                            登录后，您在本机的数据可以同步到云端，让多台设备共享同一份成长记录。
-                          </p>
-                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-                            — 登录仅需邮箱验证码，不需要密码 —
-                          </p>
-                        </div>
-                        <motion.button
-                          whileHover={{ scale: 1.01 }}
-                          whileTap={{ scale: 0.99 }}
-                          onClick={() => setShowLoginModal(true)}
-                          className="w-full py-3 rounded-lg font-medium text-white"
-                          style={{
-                            background: 'linear-gradient(135deg, #7c3aed, #6d28d9, #4f46e5)',
-                            boxShadow: '0 4px 16px rgba(124,58,237,0.3)',
-                          }}
-                        >
-                          登录云端
-                        </motion.button>
-                      </>
-                    ) : (
-                      <>
-                        <div className="p-4 rounded-lg bg-gradient-to-br from-violet-50 to-indigo-50 dark:from-violet-900/20 dark:to-indigo-900/20 border border-violet-200 dark:border-violet-800">
-                          <div className="flex items-center gap-3 mb-3">
-                            {/* 与顶部 UserProfileCard 保持一致：本地用户头像 */}
-                            <div
-                              className="w-12 h-12 rounded-xl overflow-hidden flex items-center justify-center text-xl font-bold text-white flex-shrink-0 ring-2 ring-white/60 dark:ring-white/10"
-                              style={{ background: 'linear-gradient(135deg, #7c3aed, #4f46e5)' }}
-                            >
-                              {user?.avatarDataUrl ? (
-                                <img src={user.avatarDataUrl} alt={user.name} className="w-full h-full object-cover" />
-                              ) : (
-                                (user?.name || (cloudUser.nickname as string) || (cloudUser.email as string) || '?')[0].toUpperCase()
-                              )}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="font-semibold text-gray-800 dark:text-white truncate">
-                                {user?.name || (cloudUser.nickname as string) || '未命名的客人'}
-                              </div>
-                              {cloudUser.username ? (
-                                <button
-                                  onClick={() => {
-                                    const uid = cloudUser.username as string;
-                                    navigator.clipboard?.writeText(uid).catch(() => {});
-                                    setUserIdCopied(true);
-                                    setTimeout(() => setUserIdCopied(false), 1500);
-                                  }}
-                                  className="inline-flex items-center gap-1 text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 truncate max-w-full"
-                                  title="点击复制"
-                                >
-                                  <span className="opacity-70">@</span>
-                                  <span className="font-mono font-semibold truncate">{cloudUser.username as string}</span>
-                                  <span className="text-[10px] opacity-70">
-                                    {userIdCopied ? '✓ 已复制' : '· 点击复制'}
-                                  </span>
-                                </button>
-                              ) : null}
-                              <div className="text-[11px] text-gray-500 dark:text-gray-400 truncate mt-0.5">
-                                ☁ {cloudUser.email as string}
-                              </div>
-                            </div>
-                            {/* 齿轮：账号管理入口（UserID 未设置时打红点） */}
-                            <button
-                              onClick={() => setAccountPanelOpen(true)}
-                              className="relative w-8 h-8 rounded-full flex items-center justify-center text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-black/5 dark:hover:bg-white/5 transition-colors flex-shrink-0"
-                              aria-label="账号管理"
-                              title="账号管理"
-                            >
-                              <span className="text-sm">⚙</span>
-                              {!cloudUser.username && (
-                                <span className="absolute top-0.5 right-0.5 w-2 h-2 rounded-full bg-rose-500 ring-2 ring-white dark:ring-gray-900" />
-                              )}
-                            </button>
-                          </div>
-
-                          {/* 未设置 UserID 的横幅提示 */}
-                          {!cloudUser.username && (
-                            <div className="mb-3 p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-start gap-2">
-                              <span className="text-sm leading-none mt-0.5">⚠</span>
-                              <div className="flex-1 min-w-0">
-                                <div className="text-[11px] font-semibold text-amber-700 dark:text-amber-300 leading-relaxed">
-                                  你还没设置 UserID，好友系统无法找到你。
-                                </div>
-                                <button
-                                  onClick={() => setAccountPanelOpen(true)}
-                                  className="mt-1 text-[11px] font-bold text-amber-700 dark:text-amber-300 underline hover:opacity-80"
-                                >
-                                  现在就设一个 →
-                                </button>
-                              </div>
-                            </div>
-                          )}
-                          <div className="flex items-center justify-between gap-2 relative">
-                            <button
-                              onClick={() => setShowPointsBreakdown(v => !v)}
-                              className="focus:outline-none"
-                              aria-label="查看总点数"
-                            >
-                              <LVTag level={totalLv} size="md" subdued />
-                            </button>
-                            <span className="text-xs text-gray-600 dark:text-gray-400 truncate">
-                              {syncStatus === 'syncing' ? '同步中…' : lastSyncAt ? `最近同步：${formatRelative(lastSyncAt)}` : '尚未同步'}
-                            </span>
-                            {showPointsBreakdown && (
-                              <motion.div
-                                initial={{ opacity: 0, y: -4, scale: 0.98 }}
-                                animate={{ opacity: 1, y: 0, scale: 1 }}
-                                exit={{ opacity: 0 }}
-                                transition={{ duration: 0.15 }}
-                                className="absolute left-0 top-full mt-2 z-30 w-64 p-3 rounded-xl shadow-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800"
-                              >
-                                <div className="flex items-center justify-between mb-2">
-                                  <div>
-                                    <div className="text-[9px] font-bold tracking-widest text-gray-400 dark:text-gray-500 uppercase">总点数</div>
-                                    <div className="text-xl font-black text-primary tabular-nums leading-tight">
-                                      {attributes.reduce((sum, a) => sum + (a.points ?? 0), 0)}
-                                    </div>
-                                  </div>
-                                  <button
-                                    onClick={() => setShowPointsBreakdown(false)}
-                                    className="w-6 h-6 rounded-md text-gray-400 dark:text-gray-500 hover:bg-black/5 dark:hover:bg-white/5 flex items-center justify-center"
-                                  >✕</button>
-                                </div>
-                                <div className="space-y-1 pt-1.5 border-t border-gray-100 dark:border-gray-700">
-                                  {attributes.map(a => (
-                                    <div key={a.id} className="flex items-center justify-between text-[11px]">
-                                      <span className="text-gray-600 dark:text-gray-300 font-medium">{a.displayName}</span>
-                                      <span className="text-gray-800 dark:text-gray-100 font-bold tabular-nums">
-                                        {a.points}
-                                        <span className="text-[9px] text-gray-400 dark:text-gray-500 ml-1">· Lv.{a.level}</span>
-                                      </span>
-                                    </div>
-                                  ))}
-                                </div>
-                              </motion.div>
-                            )}
-                          </div>
-                        </div>
-
-                        {lastCloudError && syncStatus === 'error' && (
-                          <div className="p-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-xs text-red-700 dark:text-red-300">
-                            同步失败：{lastCloudError}
-                          </div>
-                        )}
-
-                        {/* 同步 / 拉取 两个主按钮一行排列 */}
-                        <div className="grid grid-cols-[1fr_auto] gap-2">
-                          <motion.button
-                            whileHover={{ scale: 1.01 }}
-                            whileTap={{ scale: 0.99 }}
-                            disabled={syncStatus === 'syncing'}
-                            onClick={async () => {
-                              console.log('[velvet-sync] push clicked');
-                              try {
-                                await pushAll();
-                                console.log('[velvet-sync] push done');
-                              } catch (err) {
-                                console.error('[velvet-sync] push failed:', err);
-                              }
-                            }}
-                            className="py-2.5 rounded-lg font-medium text-sm text-white disabled:opacity-50"
-                            style={{
-                              background: 'linear-gradient(135deg, #7c3aed, #6d28d9, #4f46e5)',
-                              boxShadow: '0 2px 10px rgba(124,58,237,0.25)',
-                            }}
-                          >
-                            {syncStatus === 'syncing' ? '同步中…' : '立即同步到云端'}
-                          </motion.button>
-                          <motion.button
-                            whileHover={{ scale: 1.01 }}
-                            whileTap={{ scale: 0.99 }}
-                            disabled={syncStatus === 'syncing'}
-                            onClick={() => setSyncChoiceOpen(true)}
-                            className="px-4 py-2.5 rounded-lg text-sm font-semibold bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors disabled:opacity-50 whitespace-nowrap"
-                          >
-                            ↓ 拉取
-                          </motion.button>
-                        </div>
-
-                        <button
-                          disabled={syncStatus === 'syncing'}
-                          onClick={async () => {
-                            try {
-                              const diff = await computeSyncDiff();
-                              if (diff) {
-                                useCloudStore.getState().setDiffWarning(diff);
-                              }
-                            } catch (err) {
-                              console.error('[velvet-sync] diff check failed:', err);
-                            }
-                          }}
-                          className="w-full py-2 rounded-lg text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors disabled:opacity-50 border border-dashed border-gray-200 dark:border-gray-700"
-                        >
-                          检查条目差异（避免误覆盖）
-                        </button>
-
-                        {/* 同步隐私：按类目选择上传哪些数据 */}
-                        <SyncPrivacyPanel
-                          excluded={settings.syncExcludedTables ?? []}
-                          syncConfidantsToCloud={settings.syncConfidantsToCloud}
-                          syncCloudApiKey={settings.syncCloudApiKey}
-                          onChange={(patch) => updateSettings(patch)}
-                        />
-
-                        <motion.button
-                          whileHover={{ scale: 1.01 }}
-                          whileTap={{ scale: 0.99 }}
-                          onClick={() => setShowLogoutConfirm(true)}
-                          className="w-full py-2.5 rounded-lg font-medium text-sm bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
-                        >
-                          退出登录
-                        </motion.button>
-                      </>
-                    )}
-                  </div>
-                )}
-
-                {section.id === 'about' && (
-                  <div className="space-y-4">
-                    <div className="text-center py-4">
-                      <div className="text-5xl mb-4">🦋</div>
-                      <h3 className="text-xl font-bold text-gray-800 dark:text-white mb-1">靛蓝色房间</h3>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">Persona Growth Tracker</p>
-                      <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">v{import.meta.env.PACKAGE_VERSION}</p>
-                    </div>
-                    <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm text-gray-600 dark:text-gray-400">作者</span>
-                        <span className="text-sm font-medium text-gray-800 dark:text-white">IIInk</span>
-                      </div>
-                      <div className="border-t border-gray-200 dark:border-gray-600"></div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm text-gray-600 dark:text-gray-400">GitHub</span>
-                        <a
-                          href="https://github.com/YuukiMarine"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-sm font-medium text-primary hover:underline"
-                        >
-                          @YuukiMarine
-                        </a>
-                      </div>
-                      <div className="border-t border-gray-200 dark:border-gray-600"></div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm text-gray-600 dark:text-gray-400">Bilibili</span>
-                        <a
-                          href="https://space.bilibili.com/15727079"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-sm font-medium text-primary hover:underline"
-                        >
-                          @IIInk
-                        </a>
-                      </div>
-                    </div>
-                    <p className="text-xs text-center text-gray-400 dark:text-gray-500 leading-relaxed">
-                      100%用爱发电，用得习惯欢迎点个star或者关注b站获取更新动态喵
-                    </p>
-                    <p className="text-xs text-center text-gray-400 dark:text-gray-500">
-                      I am thou, thou art I...
-                    </p>
-                  </div>
-                )}
-
               </motion.div>
             )}
           </div>
@@ -2931,341 +2163,101 @@ export const Settings = () => {
         })()}
       </AnimatePresence>
 
-      {/* 重置确认弹窗 */}
-      {showResetConfirm && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
-        >
-          <motion.div
-            initial={{ scale: 0.8, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            className="bg-white dark:bg-gray-800 rounded-2xl p-6 max-w-md w-full shadow-2xl"
-          >
-            <h3 className="text-xl font-bold mb-4 text-red-600 dark:text-red-400">
-              确认重置数据
-            </h3>
-            <p className="text-gray-600 dark:text-gray-400 mb-6">
-              此操作将删除所有用户数据，包括：
-              <br />• 所有行为记录
-              <br />• 所有成就进度
-              <br />• 所有技能解锁
-              <br />• 所有属性进度
-              <br />
-              <strong className="text-red-500">此操作无法撤销！</strong>
-            </p>
-            <div className="flex gap-3">
-              <motion.button
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                onClick={handleResetData}
-                className="flex-1 bg-red-500 text-white py-3 rounded-lg font-medium"
-              >
-                确认重置
-              </motion.button>
-              <motion.button
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                onClick={() => setShowResetConfirm(false)}
-                className="flex-1 bg-gray-500 text-white py-3 rounded-lg font-medium"
-              >
-                取消
-              </motion.button>
-            </div>
-          </motion.div>
-        </motion.div>
-      )}
-
-      {/* 恢复默认阈值确认 */}
-      {showResetThresholdsConfirm && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
-          onClick={() => setShowResetThresholdsConfirm(false)}
-        >
-          <motion.div
-            initial={{ scale: 0.9, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            className="bg-white dark:bg-gray-800 rounded-2xl p-6 max-w-sm w-full shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="text-center">
-              <div className="text-3xl mb-2">↺</div>
-              <h3 className="text-base font-bold text-gray-800 dark:text-white mb-2">恢复默认等级阈值？</h3>
-              <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
-                将等级阈值恢复为系统默认的 5 级配置。
-              </p>
-              <div className="mt-3 mx-auto inline-flex flex-wrap gap-1.5 justify-center">
-                {DEFAULT_LEVEL_THRESHOLDS.map((v, i) => (
-                  <span
-                    key={i}
-                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-primary/10 text-primary tabular-nums"
-                  >
-                    <span className="opacity-60">LV{i + 1}</span>
-                    {v}
-                  </span>
-                ))}
-              </div>
-              <p className="text-[10px] text-rose-500 mt-3">
-                若你当前有 Lv.6 及以上自定义等级，它们会一并被清除。
-              </p>
-            </div>
-            <div className="flex gap-2 mt-5">
-              <motion.button
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                onClick={() => setShowResetThresholdsConfirm(false)}
-                className="flex-1 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 py-2 rounded-xl text-sm font-semibold"
-              >
-                取消
-              </motion.button>
-              <motion.button
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                onClick={() => {
-                  updateSettings({ levelThresholds: [...DEFAULT_LEVEL_THRESHOLDS] });
-                  setShowResetThresholdsConfirm(false);
-                }}
-                className="flex-1 bg-primary text-white py-2 rounded-xl text-sm font-bold"
-              >
-                恢复默认
-              </motion.button>
-            </div>
-          </motion.div>
-        </motion.div>
-      )}
-
-      {/* 删除高等级确认 */}
-      {deleteLevelIndex !== null && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
-          onClick={() => setDeleteLevelIndex(null)}
-        >
-          <motion.div
-            initial={{ scale: 0.9, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            className="bg-white dark:bg-gray-800 rounded-2xl p-6 max-w-sm w-full shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="text-center">
-              <div className="text-3xl mb-2">⚠️</div>
-              <h3 className="text-base font-bold text-gray-800 dark:text-white mb-1.5">
-                移除 Lv.{deleteLevelIndex + 1}？
-              </h3>
-              <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
-                这是当前的最高等级，所需点数 <b className="text-primary tabular-nums">{settings.levelThresholds[deleteLevelIndex] ?? 0}</b>。移除后，已达到此等级的属性会回落到上一级。
-              </p>
-              <p className="text-[10px] text-gray-400 mt-2">
-                （Lv.1–5 为系统保护等级，无法删除。）
-              </p>
-            </div>
-            <div className="flex gap-2 mt-5">
-              <motion.button
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                onClick={() => setDeleteLevelIndex(null)}
-                className="flex-1 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 py-2 rounded-xl text-sm font-semibold"
-              >
-                再想想
-              </motion.button>
-              <motion.button
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                onClick={() => {
-                  const idx = deleteLevelIndex;
-                  if (idx === null) return;
-                  // 安全兜底：仅允许移除最后一级，并且 index ≥ 5
-                  if (idx !== settings.levelThresholds.length - 1 || idx < 5) {
-                    setDeleteLevelIndex(null);
-                    return;
-                  }
-                  updateSettings({ levelThresholds: settings.levelThresholds.slice(0, -1) });
-                  setDeleteLevelIndex(null);
-                }}
-                className="flex-1 bg-rose-500 text-white py-2 rounded-xl text-sm font-bold shadow-md"
-              >
-                确认移除
-              </motion.button>
-            </div>
-          </motion.div>
-        </motion.div>
-      )}
-
-      {showLevelWarning && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
-        >
-          <motion.div
-            initial={{ scale: 0.9, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            className="bg-white dark:bg-gray-800 rounded-2xl p-6 max-w-md w-full shadow-2xl"
-          >
-            <div className="text-center">
-              <div className="text-4xl mb-3">⚠️</div>
-              <h3 className="text-lg font-bold text-gray-800 dark:text-white mb-2">温馨提示</h3>
-              <p className="text-sm text-gray-600 dark:text-gray-400">
-                该操作不可逆：前方是未曾有人达到过的领域！
-              </p>
-            </div>
-            <div className="flex gap-3 mt-6">
-              <motion.button
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                onClick={() => {
-                  const last = settings.levelThresholds[settings.levelThresholds.length - 1] || 0;
-                  const nextLevel = settings.levelThresholds.length + 1;
-                  const incrementMap: Record<number, number> = {
-                    6: 250,
-                    7: 300,
-                    8: 350,
-                    9: 400,
-                    10: 600
-                  };
-                  const increment = incrementMap[nextLevel] ?? 50;
-                  updateSettings({ levelThresholds: [...settings.levelThresholds, last + increment] });
-                  setShowLevelWarning(false);
-                }}
-                className="flex-1 bg-primary text-white py-2 rounded-lg font-medium"
-              >
-                继续添加
-              </motion.button>
-              <motion.button
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                onClick={() => setShowLevelWarning(false)}
-                className="flex-1 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 py-2 rounded-lg font-medium"
-              >
-                取消
-              </motion.button>
-            </div>
-          </motion.div>
-        </motion.div>
-      )}
-
-      {/* 云同步登录弹窗 */}
-      <LoginModal
-        isOpen={showLoginModal}
-        onClose={() => setShowLoginModal(false)}
-        origin="settings"
-        onSuccess={async () => {
-          try {
-            const result = await syncOnLogin();
-            if (result === 'conflict') {
-              useCloudStore.getState().setConflictPending(true);
-            }
-          } catch {
-            /* already recorded to cloudStore.lastError */
-          }
+      {/* 恢复默认阈值确认 —— 升 ConfirmDialog 基座（AnimatePresence 在基座内，exit 可播，根治 B14） */}
+      <ConfirmDialog
+        isOpen={showResetThresholdsConfirm}
+        icon="↺"
+        title="恢复默认等级阈值？"
+        description="将等级阈值恢复为系统默认的 5 级配置。"
+        confirmText="恢复默认"
+        cancelText="取消"
+        onConfirm={() => {
+          updateSettings({ levelThresholds: [...DEFAULT_LEVEL_THRESHOLDS] });
+          setShowResetThresholdsConfirm(false);
         }}
+        onCancel={() => setShowResetThresholdsConfirm(false)}
+      >
+        {/* 富内容：默认阈值速览 + 不可逆提示 */}
+        <div className="text-center">
+          <div className="mx-auto inline-flex flex-wrap gap-1.5 justify-center">
+            {DEFAULT_LEVEL_THRESHOLDS.map((v, i) => (
+              <span
+                key={i}
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-primary/10 text-primary tabular-nums"
+              >
+                <span className="opacity-60">LV{i + 1}</span>
+                {v}
+              </span>
+            ))}
+          </div>
+          <p className="text-[10px] text-rose-500 mt-3">
+            若你当前有 Lv.6 及以上自定义等级，它们会一并被清除。
+          </p>
+        </div>
+      </ConfirmDialog>
+
+      {/* 删除最高等级确认 —— 升 ConfirmDialog 基座（danger：危险键恒右由基座保证） */}
+      <ConfirmDialog
+        isOpen={deleteLevelIndex !== null}
+        tone="danger"
+        icon="⚠️"
+        title={`移除 Lv.${(deleteLevelIndex ?? 0) + 1}？`}
+        confirmText="确认移除"
+        cancelText="再想想"
+        onConfirm={() => {
+          const idx = deleteLevelIndex;
+          if (idx === null) return;
+          // 安全兜底：仅允许移除最后一级，并且 index ≥ 5
+          if (idx !== settings.levelThresholds.length - 1 || idx < 5) {
+            setDeleteLevelIndex(null);
+            return;
+          }
+          updateSettings({ levelThresholds: settings.levelThresholds.slice(0, -1) });
+          setDeleteLevelIndex(null);
+        }}
+        onCancel={() => setDeleteLevelIndex(null)}
+      >
+        {/* 富内容：点数高亮需要内联样式，故放 children 而非 description */}
+        <div className="text-center">
+          <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
+            这是当前的最高等级，所需点数{' '}
+            <b className="text-primary tabular-nums">
+              {deleteLevelIndex !== null ? settings.levelThresholds[deleteLevelIndex] ?? 0 : 0}
+            </b>
+            。移除后，已达到此等级的属性会回落到上一级。
+          </p>
+          <p className="text-[10px] text-gray-400 mt-2">
+            （Lv.1–5 为系统保护等级，无法删除。）
+          </p>
+        </div>
+      </ConfirmDialog>
+
+      {/* 添加等级警告 —— 升 ConfirmDialog 基座。
+          它实际承载"继续添加"动作（非纯信息），故保留确认/取消双按钮原语义；
+          原实现"继续添加"在左侧，违反"取消恒左、主操作恒右"，由基座纠正排序 */}
+      <ConfirmDialog
+        isOpen={showLevelWarning}
+        icon="⚠️"
+        title="温馨提示"
+        description="该操作不可逆：前方是未曾有人达到过的领域！"
+        confirmText="继续添加"
+        cancelText="取消"
+        onConfirm={() => {
+          const last = settings.levelThresholds[settings.levelThresholds.length - 1] || 0;
+          const nextLevel = settings.levelThresholds.length + 1;
+          const incrementMap: Record<number, number> = {
+            6: 250,
+            7: 300,
+            8: 350,
+            9: 400,
+            10: 600
+          };
+          const increment = incrementMap[nextLevel] ?? 50;
+          updateSettings({ levelThresholds: [...settings.levelThresholds, last + increment] });
+          setShowLevelWarning(false);
+        }}
+        onCancel={() => setShowLevelWarning(false)}
       />
-
-      {/* 账号管理面板（齿轮入口） */}
-      <AccountManagePanel
-        isOpen={accountPanelOpen}
-        onClose={() => setAccountPanelOpen(false)}
-      />
-
-      {/* 从云端拉取确认（会覆盖本机数据） */}
-      {syncChoiceOpen && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="fixed inset-0 z-[140] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
-          onClick={() => setSyncChoiceOpen(false)}
-        >
-          <motion.div
-            initial={{ scale: 0.95, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0.95, opacity: 0 }}
-            onClick={e => e.stopPropagation()}
-            className="bg-white dark:bg-gray-800 rounded-xl p-6 max-w-sm w-full shadow-2xl"
-          >
-            <h3 className="text-lg font-semibold text-gray-800 dark:text-white mb-2">
-              从云端拉取数据？
-            </h3>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mb-5 leading-relaxed">
-              会用云端数据**覆盖本机**。如果本机有未同步的改动，请先点"立即同步到云端"。
-            </p>
-            <div className="flex gap-3">
-              <button
-                onClick={() => setSyncChoiceOpen(false)}
-                className="flex-1 py-2.5 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 font-medium text-sm hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
-              >
-                取消
-              </button>
-              <button
-                onClick={async () => {
-                  setSyncChoiceOpen(false);
-                  console.log('[velvet-sync] pull clicked');
-                  try {
-                    await pullAll();
-                    console.log('[velvet-sync] pull done');
-                  } catch (err) {
-                    console.error('[velvet-sync] pull failed:', err);
-                  }
-                }}
-                className="flex-1 py-2.5 rounded-lg bg-red-500 text-white font-medium text-sm hover:bg-red-600 transition-colors"
-              >
-                确认拉取
-              </button>
-            </div>
-          </motion.div>
-        </motion.div>
-      )}
-
-      {/* 退出登录确认 */}
-      {showLogoutConfirm && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="fixed inset-0 z-[140] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
-          onClick={() => setShowLogoutConfirm(false)}
-        >
-          <motion.div
-            initial={{ scale: 0.95, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0.95, opacity: 0 }}
-            onClick={e => e.stopPropagation()}
-            className="bg-white dark:bg-gray-800 rounded-xl p-6 max-w-sm w-full shadow-2xl"
-          >
-            <h3 className="text-lg font-semibold text-gray-800 dark:text-white mb-2">
-              退出登录？
-            </h3>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mb-5 leading-relaxed">
-              退出后此设备将停止同步，但本机数据不会被删除。下次登录同一账号可继续。
-            </p>
-            <div className="flex gap-3">
-              <button
-                onClick={() => setShowLogoutConfirm(false)}
-                className="flex-1 py-2.5 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 font-medium text-sm hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
-              >
-                取消
-              </button>
-              <button
-                onClick={() => {
-                  cloudLogout();
-                  setShowLogoutConfirm(false);
-                }}
-                className="flex-1 py-2.5 rounded-lg bg-red-500 text-white font-medium text-sm hover:bg-red-600 transition-colors"
-              >
-                确认退出
-              </button>
-            </div>
-          </motion.div>
-        </motion.div>
-      )}
 
     </motion.div>
   );
