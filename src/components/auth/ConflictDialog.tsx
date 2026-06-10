@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { computeSyncDiff } from '@/services/sync';
 import type { SyncDiff } from '@/services/sync';
 import { useAppStore } from '@/store';
@@ -72,13 +73,16 @@ export const ConflictDialog = ({ isOpen, onKeepLocal, onKeepCloud, onClose }: Pr
 
   const byKey = (key: string) => tablesForDisplay.find(t => t.key === key);
 
-  return (
+  // portal 到 body：脱离 App.tsx `relative z-10` stacking context（见 zIndex.ts 头注释）。
+  // createPortal 必须包在 AnimatePresence 外侧，否则 exit 失效（参考 ConfirmDialog）。
+  return createPortal(
     <AnimatePresence>
       {isOpen && (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
+          // z-[160]：system 段（见 zIndex.ts），值沿用
           className="fixed inset-0 z-[160] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
         >
           <motion.div
@@ -224,7 +228,8 @@ export const ConflictDialog = ({ isOpen, onKeepLocal, onKeepCloud, onClose }: Pr
           </motion.div>
         </motion.div>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body,
   );
 };
 

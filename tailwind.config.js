@@ -8,7 +8,9 @@ export default {
   theme: {
     extend: {
       colors: {
-        primary: 'var(--color-primary)',
+        // rgb + <alpha-value> 形式才能让透明度修饰符类（bg-primary/10 等）生成；
+        // 三元组变量见 index.css 主题块与 store 的 applyCustomThemeColor
+        primary: 'rgb(var(--color-primary-rgb, 59 130 246) / <alpha-value>)',
         secondary: 'var(--color-secondary)',
       },
       fontSize: {

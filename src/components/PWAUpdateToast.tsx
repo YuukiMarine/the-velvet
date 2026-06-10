@@ -1,5 +1,7 @@
 import { useRegisterSW } from 'virtual:pwa-register/react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { createPortal } from 'react-dom';
+import { zClass } from '@/utils/zIndex';
 
 /**
  * 当 Service Worker 检测到新版本时显示一条底部 Toast，
@@ -34,7 +36,10 @@ export function PWAUpdateToast() {
     },
   });
 
-  return (
+  // portal 到 body：脱离 App.tsx `relative z-10` stacking context（见 zIndex.ts 头注释），
+  // zClass.toast（230）的「永远最顶」自此对所有 portaled 浮层成立。
+  // createPortal 必须包在 AnimatePresence 外侧，否则 exit 动画失效（参考 ConfirmDialog）。
+  return createPortal(
     <AnimatePresence>
       {needRefresh && (
         <motion.div
@@ -42,7 +47,7 @@ export function PWAUpdateToast() {
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 16 }}
           transition={{ duration: 0.22 }}
-          className="fixed bottom-28 left-1/2 -translate-x-1/2 z-[200] pointer-events-auto"
+          className={`fixed bottom-28 left-1/2 -translate-x-1/2 ${zClass.toast} pointer-events-auto`}
         >
           <div className="flex items-center gap-3 bg-gray-900/95 dark:bg-gray-100/95 text-white dark:text-gray-900 text-sm font-semibold px-4 py-3 rounded-2xl shadow-xl backdrop-blur-sm whitespace-nowrap">
             <span>✦ 有新版本可用</span>
@@ -62,6 +67,7 @@ export function PWAUpdateToast() {
           </div>
         </motion.div>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body,
   );
 }

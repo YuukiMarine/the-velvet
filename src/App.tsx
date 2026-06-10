@@ -23,6 +23,8 @@ import { Settings } from '@/pages/Settings';
 import { Todos } from '@/pages/Todos';
 const Astrology = lazy(() => import('@/pages/Astrology').then(m => ({ default: m.Astrology })));
 const Cooperation = lazy(() => import('@/pages/Cooperation').then(m => ({ default: m.Cooperation })));
+// 菜单宫格页（v2.5 五格 IA）：activities / settings / achievements 等入口收纳于此
+const Menu = lazy(() => import('@/pages/Menu').then(m => ({ default: m.Menu })));
 import { BattleArena } from '@/components/battle/BattleArena';
 import { primeCurrentTheme } from '@/utils/feedback';
 import { BackgroundAnimation } from '@/components/BackgroundAnimation';
@@ -191,11 +193,12 @@ function App() {
         if (tryHandleBack()) return;
 
         // 步骤 2：非 dashboard 页 → 返回 dashboard
-        // 例外：成就页的 UI 返回键指向设置（入口在设置里），硬件返回保持同一去向，
-        // 避免「界面返回去设置、系统返回去首页」的分裂
+        // 例外：成就页的入口已移至「菜单」宫格（v2.5 五格 IA），UI 返回与硬件返回
+        // 必须同走菜单，避免「界面返回去菜单、系统返回去首页」的分裂。
+        // menu 页本身不设特例：落入下方默认分支回 dashboard
         const store = useAppStore.getState();
         if (store.currentPage === 'achievements') {
-          store.setCurrentPage('settings');
+          store.setCurrentPage('menu');
           return;
         }
         if (store.currentPage !== 'dashboard') {
@@ -351,6 +354,8 @@ function App() {
         return <Suspense fallback={<div className="flex items-center justify-center h-64 text-gray-400">加载中…</div>}><Astrology /></Suspense>;
       case 'cooperation':
         return <Suspense fallback={<div className="flex items-center justify-center h-64 text-gray-400">加载中…</div>}><Cooperation /></Suspense>;
+      case 'menu':
+        return <Suspense fallback={<div className="flex items-center justify-center h-64 text-gray-400">加载中…</div>}><Menu /></Suspense>;
       default:
         return <Dashboard />;
     }

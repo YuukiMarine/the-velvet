@@ -420,9 +420,19 @@ function lightenHex(hex: string, amount = 0.25): string {
   return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
 }
 
+/** hex → "r g b" 三元组（供 --color-primary-rgb，Tailwind 透明度修饰符依赖它） */
+function hexToRgbTriplet(hex: string): string {
+  const h = hex.replace('#', '');
+  const r = parseInt(h.substring(0, 2), 16);
+  const g = parseInt(h.substring(2, 4), 16);
+  const b = parseInt(h.substring(4, 6), 16);
+  return `${r} ${g} ${b}`;
+}
+
 /** 将自定义颜色写入 CSS 变量（内style 覆盖 data-theme 规则*/
 export function applyCustomThemeColor(hex: string) {
   document.documentElement.style.setProperty('--color-primary', hex);
+  document.documentElement.style.setProperty('--color-primary-rgb', hexToRgbTriplet(hex));
   document.documentElement.style.setProperty('--color-secondary', lightenHex(hex));
 }
 

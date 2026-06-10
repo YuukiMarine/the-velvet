@@ -1,4 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion';
+import { createPortal } from 'react-dom';
 import type { SyncDiff } from '@/services/sync';
 
 /** 中文表名映射（只展示有差异的条目） */
@@ -43,10 +44,11 @@ function formatTimestamp(d: Date | null): string {
 }
 
 export function SyncDiffDialog({ isOpen, diff, onKeepLocal, onKeepCloud, onDismiss }: Props) {
-  if (!isOpen || !diff) return null;
-  const changed = diff.tables.filter(t => t.diff !== 0);
-  const isConsistent = !diff.hasDiff;
-  const isMinor = diff.hasDiff && !diff.significant;
+  // 不做组件级早退：早退会连 AnimatePresence 一起卸载，exit 动画从不播放（B14 模式）。
+  // 条件渲染放在 AnimatePresence 内部；diff 为空时下面的派生值走空安全默认。
+  const changed = diff ? diff.tables.filter(t => t.diff !== 0) : [];
+  const isConsistent = !!diff && !diff.hasDiff;
+  const isMinor = !!diff && diff.hasDiff && !diff.significant;
 
   const headline = isConsistent
     ? '本地与云端数据一致'
@@ -64,18 +66,22 @@ export function SyncDiffDialog({ isOpen, diff, onKeepLocal, onKeepCloud, onDismi
     ? { bg: 'rgba(59,130,246,0.15)', color: '#2563eb', glyph: 'ⓘ' }
     : { bg: 'rgba(245,158,11,0.15)', color: '#d97706', glyph: '⚠' };
 
-  const recommendLabel = diff.recommend === 'push'
+  const recommendLabel = diff?.recommend === 'push'
     ? '本地记录更多 → 可选择推送到云端'
-    : diff.recommend === 'pull'
+    : diff?.recommend === 'pull'
     ? '云端记录更多 → 可选择拉取到本地'
     : '两侧记录总数相同';
 
-  return (
+  // portal 到 body：脱离 App.tsx `relative z-10` stacking context（见 zIndex.ts 头注释）。
+  // createPortal 必须包在 AnimatePresence 外侧，否则 exit 失效（参考 ConfirmDialog）。
+  return createPortal(
     <AnimatePresence>
+      {isOpen && diff && (
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
+        // z-[170]：system 段（见 zIndex.ts），值沿用
         className="fixed inset-0 z-[170] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
         onClick={onDismiss}
       >
@@ -199,7 +205,9 @@ export function SyncDiffDialog({ isOpen, diff, onKeepLocal, onKeepCloud, onDismi
           </div>
         </motion.div>
       </motion.div>
-    </AnimatePresence>
+      )}
+    </AnimatePresence>,
+    document.body,
   );
 }
 

@@ -1,5 +1,6 @@
 import { forwardRef, useEffect, useRef, useState } from 'react';
 import type { ForwardedRef, KeyboardEvent, ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   loginWithPassword,
@@ -187,7 +188,9 @@ export const LoginModal = ({ isOpen, onClose, onSuccess, origin = 'settings' }: 
       : '登录靛蓝色房间';
   const subtitle = '验证码最省心——没登记过的邮箱也能直接进';
 
-  return (
+  // portal 到 body：脱离 App.tsx `relative z-10` stacking context（见 zIndex.ts 头注释）。
+  // createPortal 必须包在 AnimatePresence 外侧，否则 exit 失效（参考 ConfirmDialog）。
+  return createPortal(
     <AnimatePresence>
       {isOpen && (
         <motion.div
@@ -195,6 +198,7 @@ export const LoginModal = ({ isOpen, onClose, onSuccess, origin = 'settings' }: 
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.2 }}
+          // z-[150]：system 段（见 zIndex.ts），值沿用
           className="fixed inset-0 z-[150] flex items-center justify-center p-4"
           style={{
             background:
@@ -373,7 +377,8 @@ export const LoginModal = ({ isOpen, onClose, onSuccess, origin = 'settings' }: 
           </motion.div>
         </motion.div>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body,
   );
 };
 
