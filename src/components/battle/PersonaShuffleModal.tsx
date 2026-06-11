@@ -123,7 +123,7 @@ export function PersonaShuffleModal({ isOpen, onClose }: Props) {
           className="w-full max-w-md rounded-2xl overflow-hidden"
           style={{
             background: 'linear-gradient(135deg, #0f0c29 0%, #302b63 100%)',
-            border: '1px solid rgba(139,92,246,0.4)',
+            border: '1px solid rgb(var(--color-battle-bright-rgb) / 0.4)',
             maxHeight: '85vh',
             overflowY: 'auto',
           }}
@@ -147,8 +147,8 @@ export function PersonaShuffleModal({ isOpen, onClose }: Props) {
                       onClick={() => { setSelectedAttr(attr); setMode('choose'); }}
                       className="w-full text-left rounded-xl px-4 py-3 transition-all"
                       style={{
-                        background: 'rgba(139,92,246,0.08)',
-                        border: '1px solid rgba(139,92,246,0.2)',
+                        background: 'rgb(var(--color-battle-bright-rgb) / 0.08)',
+                        border: '1px solid rgb(var(--color-battle-bright-rgb) / 0.2)',
                       }}
                     >
                       <p className="text-[10px] font-bold tracking-widest uppercase text-purple-400/60">
@@ -185,7 +185,7 @@ export function PersonaShuffleModal({ isOpen, onClose }: Props) {
                 <button
                   onClick={handleAIReshuffle}
                   className="w-full py-3 rounded-xl text-sm font-semibold text-white transition-all"
-                  style={{ background: 'linear-gradient(90deg, #7c3aed, #6d28d9)', border: '1px solid rgba(139,92,246,0.5)' }}
+                  style={{ background: 'linear-gradient(90deg, rgb(var(--color-battle-rgb)), rgb(var(--color-battle-indigo-rgb)))', border: '1px solid rgb(var(--color-battle-bright-rgb) / 0.5)' }}
                 >
                   AI 重新匹配
                   <span className="block text-[10px] text-purple-200/60 font-normal mt-0.5">由AI根据文化多样性随机匹配新人物</span>
@@ -222,7 +222,7 @@ export function PersonaShuffleModal({ isOpen, onClose }: Props) {
                     placeholder="如：诸葛亮、雅典娜、福尔摩斯……"
                     maxLength={15}
                     className="w-full rounded-xl px-4 py-3 text-sm text-white placeholder-gray-500 outline-none"
-                    style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(139,92,246,0.3)' }}
+                    style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgb(var(--color-battle-bright-rgb) / 0.3)' }}
                     autoFocus
                   />
                 </div>
@@ -235,7 +235,7 @@ export function PersonaShuffleModal({ isOpen, onClose }: Props) {
                     placeholder="一句话说明该人物与此属性的契合点"
                     maxLength={50}
                     className="w-full rounded-xl px-4 py-3 text-sm text-white placeholder-gray-500 outline-none"
-                    style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(139,92,246,0.3)' }}
+                    style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgb(var(--color-battle-bright-rgb) / 0.3)' }}
                   />
                 </div>
                 {/* AI skill generation toggle */}
@@ -243,13 +243,13 @@ export function PersonaShuffleModal({ isOpen, onClose }: Props) {
                   onClick={() => setUseAISkills(v => !v)}
                   className="w-full flex items-center gap-3 rounded-xl px-4 py-3 transition-all"
                   style={{
-                    background: useAISkills ? 'rgba(139,92,246,0.12)' : 'rgba(255,255,255,0.04)',
-                    border: useAISkills ? '1px solid rgba(139,92,246,0.35)' : '1px solid rgba(255,255,255,0.1)',
+                    background: useAISkills ? 'rgb(var(--color-battle-bright-rgb) / 0.12)' : 'rgba(255,255,255,0.04)',
+                    border: useAISkills ? '1px solid rgb(var(--color-battle-bright-rgb) / 0.35)' : '1px solid rgba(255,255,255,0.1)',
                   }}
                 >
                   <div
                     className="relative w-9 h-5 rounded-full flex-shrink-0 transition-colors"
-                    style={{ background: useAISkills ? '#7c3aed' : 'rgba(255,255,255,0.15)' }}
+                    style={{ background: useAISkills ? 'rgb(var(--color-battle-rgb))' : 'rgba(255,255,255,0.15)' }}
                   >
                     <div
                       className="absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all"
@@ -275,7 +275,7 @@ export function PersonaShuffleModal({ isOpen, onClose }: Props) {
                     onClick={handleManualSave}
                     disabled={!manualName.trim()}
                     className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-40"
-                    style={{ background: 'linear-gradient(90deg, #7c3aed, #6d28d9)' }}
+                    style={{ background: 'linear-gradient(90deg, rgb(var(--color-battle-rgb)), rgb(var(--color-battle-indigo-rgb)))' }}
                   >
                     确认
                   </button>
@@ -314,7 +314,7 @@ export function PersonaShuffleModal({ isOpen, onClose }: Props) {
                 <button
                   onClick={handleClose}
                   className="mt-2 px-8 py-2.5 rounded-xl text-sm font-semibold text-white"
-                  style={{ background: 'linear-gradient(90deg, #7c3aed, #6d28d9)' }}
+                  style={{ background: 'linear-gradient(90deg, rgb(var(--color-battle-rgb)), rgb(var(--color-battle-indigo-rgb)))' }}
                 >
                   完成
                 </button>

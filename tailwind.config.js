@@ -12,6 +12,11 @@ export default {
         // 三元组变量见 index.css 主题块与 store 的 applyCustomThemeColor
         primary: 'rgb(var(--color-primary-rgb, 59 130 246) / <alpha-value>)',
         secondary: 'var(--color-secondary)',
+        // 域色（固定身份、不跟主题；三元组见 index.css :root）。透明度修饰符可用，
+        // 如 bg-battle/30。battle 取深紫主色；亮紫 / 渐变末端在内联样式里走 rgb(var(--...-rgb))。
+        battle: 'rgb(var(--color-battle-rgb, 124 58 237) / <alpha-value>)',
+        bond: 'rgb(var(--color-bond-rgb, 99 102 241) / <alpha-value>)',
+        gold: 'rgb(var(--color-gold-rgb, 245 158 11) / <alpha-value>)',
       },
       fontSize: {
         // 字号阶梯最低档（UI_AUDIT_V2.5.md §4.1）：eyebrow/徽章/计数专用，

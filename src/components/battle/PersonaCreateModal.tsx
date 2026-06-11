@@ -211,7 +211,7 @@ export function PersonaCreateModal({ isOpen, onClose }: Props) {
             className="w-full max-w-md rounded-2xl overflow-hidden"
             style={{
               background: 'linear-gradient(135deg, #0f0c29 0%, #302b63 100%)',
-              border: '1px solid rgba(139,92,246,0.4)',
+              border: '1px solid rgb(var(--color-battle-bright-rgb) / 0.4)',
               maxHeight: '90vh',
               overflowY: 'auto',
             }}
@@ -243,8 +243,8 @@ export function PersonaCreateModal({ isOpen, onClose }: Props) {
                         className="absolute w-1.5 h-1.5 rounded-full"
                         style={{
                           left: '50%', top: '30%',
-                          background: 'rgba(167,139,250,0.8)',
-                          boxShadow: '0 0 6px rgba(167,139,250,0.6)',
+                          background: 'rgb(var(--color-battle-bright-rgb) / 0.8)',
+                          boxShadow: '0 0 6px rgb(var(--color-battle-bright-rgb) / 0.6)',
                         }}
                         initial={{ x: 0, y: 0, opacity: 0, scale: 0 }}
                         animate={{
@@ -297,8 +297,8 @@ export function PersonaCreateModal({ isOpen, onClose }: Props) {
                             transition={{ delay: 0.3 + i * 0.15, type: 'spring', stiffness: 200, damping: 20 }}
                             className="rounded-xl px-4 py-3"
                             style={{
-                              background: 'rgba(139,92,246,0.08)',
-                              border: '1px solid rgba(139,92,246,0.2)',
+                              background: 'rgb(var(--color-battle-bright-rgb) / 0.08)',
+                              border: '1px solid rgb(var(--color-battle-bright-rgb) / 0.2)',
                             }}
                           >
                             <div className="flex items-center gap-2 mb-1">
@@ -348,8 +348,8 @@ export function PersonaCreateModal({ isOpen, onClose }: Props) {
                       onClick={() => { reset(); onClose(); }}
                       className="w-full mt-5 py-3 rounded-xl font-bold text-white text-sm"
                       style={{
-                        background: 'linear-gradient(135deg, #7c3aed, #4f46e5)',
-                        boxShadow: '0 4px 15px rgba(124,58,237,0.4)',
+                        background: 'linear-gradient(135deg, rgb(var(--color-battle-rgb)), rgb(var(--color-battle-indigo-rgb)))',
+                        boxShadow: '0 4px 15px rgb(var(--color-battle-rgb) / 0.4)',
                       }}
                     >
                       开始征途
@@ -398,7 +398,7 @@ export function PersonaCreateModal({ isOpen, onClose }: Props) {
                         style={{
                           width: 80,
                           height: 1,
-                          background: 'linear-gradient(90deg, transparent, rgba(139,92,246,0.8), transparent)',
+                          background: 'linear-gradient(90deg, transparent, rgb(var(--color-battle-bright-rgb) / 0.8), transparent)',
                         }}
                       />
                       <p className="text-white/40 text-xs mt-3 leading-relaxed">
@@ -421,7 +421,7 @@ export function PersonaCreateModal({ isOpen, onClose }: Props) {
                       onClick={() => { if (!hasApi) return; playSound('/battle-awaken.mp3'); setStage('choice'); }}
                       disabled={!hasApi}
                       className="w-full py-3 rounded-xl text-white text-sm font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                      style={{ background: 'linear-gradient(90deg, #7c3aed, #4f46e5)' }}
+                      style={{ background: 'linear-gradient(90deg, rgb(var(--color-battle-rgb)), rgb(var(--color-battle-indigo-rgb)))' }}
                     >
                       ✨ 觉醒 Persona
                     </button>
@@ -448,7 +448,7 @@ export function PersonaCreateModal({ isOpen, onClose }: Props) {
                         key={i}
                         className="w-2 h-2 rounded-full transition-all"
                         style={{
-                          background: i <= choiceStep ? '#8b5cf6' : 'rgba(255,255,255,0.2)',
+                          background: i <= choiceStep ? 'rgb(var(--color-battle-bright-rgb))' : 'rgba(255,255,255,0.2)',
                           transform: i === choiceStep ? 'scale(1.3)' : 'scale(1)',
                         }}
                       />
@@ -469,15 +469,15 @@ export function PersonaCreateModal({ isOpen, onClose }: Props) {
                         className="w-full text-left px-4 py-3 rounded-xl text-sm text-gray-200 transition-all"
                         style={{
                           background: 'rgba(255,255,255,0.07)',
-                          border: '1px solid rgba(139,92,246,0.2)',
+                          border: '1px solid rgb(var(--color-battle-bright-rgb) / 0.2)',
                         }}
                         onMouseEnter={e => {
-                          (e.currentTarget as HTMLButtonElement).style.background = 'rgba(139,92,246,0.2)';
-                          (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(139,92,246,0.5)';
+                          (e.currentTarget as HTMLButtonElement).style.background = 'rgb(var(--color-battle-bright-rgb) / 0.2)';
+                          (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgb(var(--color-battle-bright-rgb) / 0.5)';
                         }}
                         onMouseLeave={e => {
                           (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.07)';
-                          (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(139,92,246,0.2)';
+                          (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgb(var(--color-battle-bright-rgb) / 0.2)';
                         }}
                       >
                         {option}
@@ -550,7 +550,7 @@ export function PersonaCreateModal({ isOpen, onClose }: Props) {
                       onClick={handleTextSubmit}
                       disabled={!textAnswer.trim()}
                       className="flex-1 py-2 rounded-xl text-white text-sm font-semibold disabled:opacity-50"
-                      style={{ background: retryMode ? 'linear-gradient(90deg, #dc2626, #7c3aed)' : 'linear-gradient(90deg, #7c3aed, #4f46e5)' }}
+                      style={{ background: retryMode ? 'linear-gradient(90deg, #dc2626, rgb(var(--color-battle-rgb)))' : 'linear-gradient(90deg, rgb(var(--color-battle-rgb)), rgb(var(--color-battle-indigo-rgb)))' }}
                     >
                       {retryMode ? '🔄 重新召唤' : '召唤 Persona'}
                     </button>

@@ -157,7 +157,7 @@ function RomanClockShatter() {
             'radial-gradient(circle, rgba(244,224,180,0.14) 0%, rgba(214,179,120,0.07) 55%, rgba(0,0,0,0.2) 100%)',
           border: '1.5px solid rgba(231,215,167,0.75)',
           boxShadow:
-            'inset 0 0 30px rgba(231,215,167,0.25), 0 0 28px rgba(251,191,36,0.35), 0 0 60px rgba(139,92,246,0.25)',
+            'inset 0 0 30px rgba(231,215,167,0.25), 0 0 28px rgba(251,191,36,0.35), 0 0 60px rgb(var(--color-battle-bright-rgb) / 0.25)',
         }}
       />
       {/* 12 碎片 — 一开始组成完整钟盘，后飞散 */}
@@ -327,7 +327,7 @@ function AuraPulse() {
       transition={{ duration: 0.8, delay: 1.25, times: [0, 0.25, 0.5, 0.75, 1] }}
       style={{
         background:
-          'radial-gradient(circle at center, rgba(255,245,210,0.85) 0%, rgba(251,191,36,0.4) 25%, rgba(139,92,246,0.15) 55%, transparent 78%)',
+          'radial-gradient(circle at center, rgba(255,245,210,0.85) 0%, rgba(251,191,36,0.4) 25%, rgb(var(--color-battle-bright-rgb) / 0.15) 55%, transparent 78%)',
       }}
     />
   );
@@ -434,7 +434,7 @@ export function BattleStartOverlay() {
             color: '#f4e0b4',
             letterSpacing: '0.55em',
             textShadow:
-              '0 0 16px rgba(251,191,36,0.55), 0 0 36px rgba(139,92,246,0.4), 0 2px 0 rgba(0,0,0,0.8)',
+              '0 0 16px rgba(251,191,36,0.55), 0 0 36px rgb(var(--color-battle-bright-rgb) / 0.4), 0 2px 0 rgba(0,0,0,0.8)',
             lineHeight: 1.1,
             marginRight: '-0.55em', // 抵消 letter-spacing 末尾偏移
           }}

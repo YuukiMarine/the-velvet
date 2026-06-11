@@ -13,6 +13,22 @@
   --color-secondary: #60A5FA;
 }
 
+/* 域色 token（UI_AUDIT_V2.5.md §4.5）：战场紫 / 塔罗金 / 羁绊靛是有意的域身份，
+   **固定、不跟随主题色**（故只定义在基础 :root、不进 data-theme 块），收编散落 hex/rgba
+   为变量便于 P5 皮肤期一处改。三元组形式兼容透明度：
+   纯色 rgb(var(--color-battle-rgb))、带透明 rgb(var(--color-battle-rgb) / .3)、
+   Tailwind bg-battle/30 等（见 tailwind.config）。 */
+:root {
+  /* 战场域：深紫主 / 亮紫（rgba 大户）/ 靛（渐变末端） */
+  --color-battle-rgb: 124 58 237;        /* #7c3aed */
+  --color-battle-bright-rgb: 139 92 246; /* #8b5cf6 */
+  --color-battle-indigo-rgb: 79 70 229;  /* #4f46e5 */
+  /* 羁绊域：靛 */
+  --color-bond-rgb: 99 102 241;          /* #6366f1 */
+  /* 塔罗 / 占卜域：琥珀金 */
+  --color-gold-rgb: 245 158 11;          /* #f59e0b */
+}
+
 :root[data-theme="yellow"] {
   --color-primary: #F59E0B;
   --color-primary-rgb: 245 158 11;

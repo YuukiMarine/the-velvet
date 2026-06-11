@@ -10,8 +10,8 @@ interface Props {
 
 export function StatusBar({ effects, side }: Props) {
   if (effects.length === 0) return null;
-  const tint = side === 'player' ? 'rgba(139,92,246,0.3)' : 'rgba(239,68,68,0.3)';
-  const border = side === 'player' ? 'rgba(139,92,246,0.5)' : 'rgba(239,68,68,0.5)';
+  const tint = side === 'player' ? 'rgb(var(--color-battle-bright-rgb) / 0.3)' : 'rgba(239,68,68,0.3)';
+  const border = side === 'player' ? 'rgb(var(--color-battle-bright-rgb) / 0.5)' : 'rgba(239,68,68,0.5)';
   const color = side === 'player' ? '#c4b5fd' : '#fca5a5';
 
   return (

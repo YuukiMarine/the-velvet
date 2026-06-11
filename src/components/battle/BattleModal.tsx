@@ -231,7 +231,7 @@ function NarrationBox({
   return (
     <motion.div
       className="mx-4 mb-3 p-3 rounded-xl cursor-pointer select-none"
-      style={{ background: 'rgba(10,0,30,0.9)', border: '2px solid rgba(139,92,246,0.5)', minHeight: 52 }}
+      style={{ background: 'rgba(10,0,30,0.9)', border: '2px solid rgb(var(--color-battle-bright-rgb) / 0.5)', minHeight: 52 }}
       onClick={canAdvance ? () => { playSound('/dd.mp3', 0.45); onAdvance(); } : undefined}
       whileTap={canAdvance ? { scale: 0.98 } : {}}
     >
@@ -1597,7 +1597,7 @@ export function BattleModal({ isOpen, onClose, onVictory }: Props) {
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.85, opacity: 0 }}
               className="w-full max-w-xs rounded-2xl p-6 text-center space-y-4"
-              style={{ background: 'rgba(10,0,30,0.95)', border: '1px solid rgba(139,92,246,0.4)' }}
+              style={{ background: 'rgba(10,0,30,0.95)', border: '1px solid rgb(var(--color-battle-bright-rgb) / 0.4)' }}
             >
               {skillUsedCount === 0 ? (
                 <>
@@ -1623,7 +1623,7 @@ export function BattleModal({ isOpen, onClose, onVictory }: Props) {
                         onClose();
                       }}
                       className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-purple-300"
-                      style={{ background: 'rgba(139,92,246,0.2)', border: '1px solid rgba(139,92,246,0.4)' }}
+                      style={{ background: 'rgb(var(--color-battle-bright-rgb) / 0.2)', border: '1px solid rgb(var(--color-battle-bright-rgb) / 0.4)' }}
                     >
                       重整旗鼓
                     </button>
@@ -2030,7 +2030,7 @@ export function BattleModal({ isOpen, onClose, onVictory }: Props) {
                         animate={{ opacity: [0.7, 1, 0.7] }}
                         transition={{ duration: 0.8, repeat: Infinity }}
                         className="text-xs font-bold px-2 py-0.5 rounded-full"
-                        style={{ background: 'rgba(139,92,246,0.3)', color: '#c4b5fd', border: '1px solid rgba(139,92,246,0.5)' }}
+                        style={{ background: 'rgb(var(--color-battle-bright-rgb) / 0.3)', color: '#c4b5fd', border: '1px solid rgb(var(--color-battle-bright-rgb) / 0.5)' }}
                       >
                         ✦ 强化回合
                       </motion.span>
@@ -2060,7 +2060,7 @@ export function BattleModal({ isOpen, onClose, onVictory }: Props) {
                         animate={{ opacity: [0.7, 1, 0.7] }}
                         transition={{ duration: 0.7, repeat: Infinity }}
                         className="text-xs font-bold px-2 py-0.5 rounded-full"
-                        style={{ background: 'rgba(167,139,250,0.25)', color: '#a78bfa', border: '1px solid rgba(167,139,250,0.5)' }}
+                        style={{ background: 'rgb(var(--color-battle-bright-rgb) / 0.25)', color: '#a78bfa', border: '1px solid rgb(var(--color-battle-bright-rgb) / 0.5)' }}
                       >
                         🔮 蓄力×2
                       </motion.span>
@@ -2100,8 +2100,8 @@ export function BattleModal({ isOpen, onClose, onVictory }: Props) {
                   <div
                     className="flex-1 px-3 py-2 rounded-xl text-center transition-all"
                     style={{
-                      background: isWeakAttr ? 'rgba(239,68,68,0.2)' : 'rgba(139,92,246,0.2)',
-                      border: isWeakAttr ? '1px solid rgba(239,68,68,0.5)' : '1px solid rgba(139,92,246,0.4)',
+                      background: isWeakAttr ? 'rgba(239,68,68,0.2)' : 'rgb(var(--color-battle-bright-rgb) / 0.2)',
+                      border: isWeakAttr ? '1px solid rgba(239,68,68,0.5)' : '1px solid rgb(var(--color-battle-bright-rgb) / 0.4)',
                     }}
                   >
                     <p className="text-white text-sm font-bold">
@@ -2128,8 +2128,8 @@ export function BattleModal({ isOpen, onClose, onVictory }: Props) {
                     disabled={isAnimating}
                     className="flex-1 py-2 rounded-xl text-xs font-semibold transition-all disabled:opacity-50"
                     style={{
-                      background: actionMenuOpen ? 'rgba(167,139,250,0.3)' : 'rgba(139,92,246,0.18)',
-                      border: `1px solid ${actionMenuOpen ? 'rgba(167,139,250,0.6)' : 'rgba(139,92,246,0.4)'}`,
+                      background: actionMenuOpen ? 'rgb(var(--color-battle-bright-rgb) / 0.3)' : 'rgb(var(--color-battle-bright-rgb) / 0.18)',
+                      border: `1px solid ${actionMenuOpen ? 'rgb(var(--color-battle-bright-rgb) / 0.6)' : 'rgb(var(--color-battle-bright-rgb) / 0.4)'}`,
                       color: '#c4b5fd',
                     }}
                   >
@@ -2179,7 +2179,7 @@ export function BattleModal({ isOpen, onClose, onVictory }: Props) {
                         className="rounded-xl p-2 space-y-2"
                         style={{
                           background: 'rgba(10,0,30,0.55)',
-                          border: '1px solid rgba(139,92,246,0.25)',
+                          border: '1px solid rgb(var(--color-battle-bright-rgb) / 0.25)',
                         }}
                       >
                         <div className="flex gap-2">
@@ -2290,7 +2290,7 @@ export function BattleModal({ isOpen, onClose, onVictory }: Props) {
                       crit:         { label: '暴击',     color: '#fbbf24', bg: 'rgba(245,158,11,0.2)' },
                       buff:         { label: '增伤',     color: '#93c5fd', bg: 'rgba(59,130,246,0.2)' },
                       debuff:       { label: '易伤',     color: '#fdba74', bg: 'rgba(249,115,22,0.2)' },
-                      charge:       { label: '蓄力',     color: '#c4b5fd', bg: 'rgba(139,92,246,0.2)' },
+                      charge:       { label: '蓄力',     color: '#c4b5fd', bg: 'rgb(var(--color-battle-bright-rgb) / 0.2)' },
                       heal:         { label: '回复',     color: '#6ee7b7', bg: 'rgba(16,185,129,0.2)' },
                       attack_boost: { label: '攻击增益', color: '#fda4af', bg: 'rgba(244,63,94,0.2)' },
                     };
@@ -2319,8 +2319,8 @@ export function BattleModal({ isOpen, onClose, onVictory }: Props) {
                         disabled={!canAfford}
                         className="w-full p-3 rounded-xl text-left transition-all disabled:opacity-50"
                         style={{
-                          background: isWeak ? 'rgba(239,68,68,0.15)' : isActive ? 'rgba(250,204,21,0.1)' : 'rgba(139,92,246,0.15)',
-                          border: isWeak ? '1px solid rgba(239,68,68,0.4)' : isActive ? '1px solid rgba(250,204,21,0.35)' : '1px solid rgba(139,92,246,0.3)',
+                          background: isWeak ? 'rgba(239,68,68,0.15)' : isActive ? 'rgba(250,204,21,0.1)' : 'rgb(var(--color-battle-bright-rgb) / 0.15)',
+                          border: isWeak ? '1px solid rgba(239,68,68,0.4)' : isActive ? '1px solid rgba(250,204,21,0.35)' : '1px solid rgb(var(--color-battle-bright-rgb) / 0.3)',
                         }}
                       >
                         <div className="flex items-center justify-between">
