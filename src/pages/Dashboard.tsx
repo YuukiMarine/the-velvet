@@ -6,6 +6,7 @@ import { TodoCompleteModal } from '@/components/TodoCompleteModal';
 import { BattleDashboardWidget } from '@/components/BattleDashboardWidget';
 import { StackCarousel } from '@/components/StackCarousel';
 import { EyebrowLabel } from '@/components/EyebrowLabel';
+import { SlantGuideLine } from '@/components/SlantGuideLine';
 import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer } from 'recharts';
 import { TAROT_BY_ID } from '@/constants/tarot';
 import { CallingCardCard } from '@/components/callingCard/CallingCardCard';
@@ -548,6 +549,10 @@ export const Dashboard = () => {
   // 涟漪反馈（任务按钮列表）
   const [todoRipples, setTodoRipples] = useState<Record<string, Array<{id: number; x: number; y: number}>>>({});
   const todoRippleId = useRef(0);
+  // 斜界引力线锚点：根容器（定位参照）/ 问候卡（起点，含今日日期）/ 今日任务卡（终点）
+  const dashRootRef = useRef<HTMLDivElement>(null);
+  const greetingRef = useRef<HTMLDivElement>(null);
+  const todayTaskRef = useRef<HTMLDivElement>(null);
   const spawnTodoRipple = (todoId: string, e: React.MouseEvent<HTMLElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - rect.left;
@@ -759,11 +764,23 @@ export const Dashboard = () => {
 
   return (
     <motion.div
+      ref={dashRootRef}
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="space-y-5 max-w-2xl mx-auto md:max-w-none"
+      className="relative space-y-5 max-w-2xl mx-auto md:max-w-none"
     >
+      {/* 斜界引力线：问候卡 → 今日任务，串起"从今天 → 今天要做的事"的视线。
+          起点取底部中央、终点取顶部偏左，横移收窄、纵向"先竖后斜"更像引力下坠。 */}
+      <SlantGuideLine
+        containerRef={dashRootRef}
+        fromRef={greetingRef}
+        toRef={todayTaskRef}
+        fromAnchor="bottom-center"
+        toAnchor="top-left"
+        bend={0.55}
+      />
+
       {/* 竖屏炫酷标题 — 仅在非宽屏显示，banner正上方 */}
       <motion.div
         initial={{ opacity: 0, y: -16 }}
@@ -823,9 +840,10 @@ export const Dashboard = () => {
 
       {/* 顶部问候卡 */}
       <motion.div
+        ref={greetingRef}
         initial={{ opacity: 0, y: -12 }}
         animate={{ opacity: 1, y: 0 }}
-        className="rounded-2xl p-5 shadow-lg shadow-primary/20"
+        className="relative rounded-2xl p-5 shadow-lg shadow-primary/20"
         style={{ background: 'color-mix(in srgb, color-mix(in hsl, var(--color-primary) 30%, gray) 92%, transparent)' }}
       >
         <div className="flex items-start justify-between">
@@ -895,7 +913,7 @@ export const Dashboard = () => {
       </motion.div>
 
       {/* 今日任务 */}
-      <div className="rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden">
+      <div ref={todayTaskRef} className="relative rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden">
         <div className="flex items-center justify-between px-5 pt-5 pb-3">
           <div>
             <p className="text-[10px] font-semibold tracking-widest text-gray-400 dark:text-gray-500 uppercase mb-0.5">Today</p>
