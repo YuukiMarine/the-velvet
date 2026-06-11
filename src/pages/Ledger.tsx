@@ -19,10 +19,13 @@ import { getAIConfig } from '@/utils/aiClient';
 import { parseLedgerInput, type LedgerAIResult } from '@/utils/ledgerAI';
 import { SegmentTabs } from '@/components/SegmentTabs';
 import { LedgerStats } from '@/components/ledger/LedgerStats';
+import { AssetBoard } from '@/components/ledger/AssetBoard';
 import { EXPENSE_META, INCOME_META, EXPENSE_TYPES, INCOME_TYPES, sym, fmtMoney, fmtSigned } from '@/utils/ledgerFormat';
-import type { LedgerEntry, LedgerExpenseType, LedgerIncomeType } from '@/types';
+import type { LedgerEntry, LedgerExpenseType, LedgerIncomeType, AttributeId, SpendWorth } from '@/types';
 
 // ── 录入草稿 ──────────────────────────────────────────────
+
+const ATTR_IDS: AttributeId[] = ['knowledge', 'guts', 'dexterity', 'kindness', 'charm'];
 
 interface EntryDraft {
   direction: 'expense' | 'income';
@@ -34,10 +37,14 @@ interface EntryDraft {
   note: string;
   date: string;
   source: 'manual' | 'ai';
+  attribute?: AttributeId;   // 投资类自选加点属性
+  attrPoints: number;        // 1 | 2
+  evalWorth?: SpendWorth;    // 消费评估
+  registerAsset: boolean;    // 流→存：同时登记为固定资产
 }
 const emptyDraft = (): EntryDraft => ({
   direction: 'expense', amount: '', type: 'desire', incomeType: 'labor',
-  category: '', channel: '', note: '', date: toLocalDateKey(), source: 'manual',
+  category: '', channel: '', note: '', date: toLocalDateKey(), source: 'manual', attrPoints: 1, registerAsset: false,
 });
 const draftFromAI = (r: LedgerAIResult, source: 'manual' | 'ai'): EntryDraft => ({
   direction: r.direction,
@@ -49,6 +56,8 @@ const draftFromAI = (r: LedgerAIResult, source: 'manual' | 'ai'): EntryDraft => 
   note: r.note ?? '',
   date: toLocalDateKey(),
   source,
+  attrPoints: 1,
+  registerAsset: false,
 });
 
 // ── 预算环 ────────────────────────────────────────────────
@@ -78,7 +87,7 @@ function BudgetRing({ progress, children }: { progress: number; children: ReactN
 export const Ledger = () => {
   const {
     settings, ledgerEntries, setCurrentPage,
-    addLedgerEntry, deleteLedgerEntry, setBudget, adjustTotalBalance,
+    addLedgerEntry, deleteLedgerEntry, setBudget, adjustTotalBalance, rewardForLedgerEntry, addAsset,
     getTotalBalance, getMonthExpense, getBudget, getAdjustCountThisMonth,
   } = useAppStore();
 
@@ -100,7 +109,7 @@ export const Ledger = () => {
   const [budgetOpen, setBudgetOpen] = useState(false);
   const [adjustOpen, setAdjustOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<LedgerEntry | null>(null);
-  const [view, setView] = useState<'list' | 'stats'>('list');
+  const [view, setView] = useState<'list' | 'stats' | 'assets'>('list');
 
   // 流水按日分组（日期降序、同日按 createdAt 降序）
   const grouped = useMemo(() => {
@@ -133,20 +142,24 @@ export const Ledger = () => {
     if (!draft) return;
     const amount = Math.abs(Number(draft.amount));
     if (!amount || !Number.isFinite(amount)) return;
-    if (draft.direction === 'expense') {
-      await addLedgerEntry({
-        direction: 'expense', amount, date: draft.date, source: draft.source,
-        type: draft.type,
-        category: draft.category.trim() || undefined,
-        channel: draft.channel.trim() || undefined,
-        note: draft.note.trim() || undefined,
-      });
-    } else {
-      await addLedgerEntry({
-        direction: 'income', amount, date: draft.date, source: draft.source,
-        incomeType: draft.incomeType,
-        note: draft.note.trim() || undefined,
-      });
+    const saved = draft.direction === 'expense'
+      ? await addLedgerEntry({
+          direction: 'expense', amount, date: draft.date, source: draft.source,
+          type: draft.type,
+          category: draft.category.trim() || undefined,
+          channel: draft.channel.trim() || undefined,
+          note: draft.note.trim() || undefined,
+          attribute: draft.type === 'investment' ? draft.attribute : undefined,
+          evalWorth: draft.evalWorth,
+        })
+      : await addLedgerEntry({
+          direction: 'income', amount, date: draft.date, source: draft.source,
+          incomeType: draft.incomeType,
+          note: draft.note.trim() || undefined,
+        });
+    await rewardForLedgerEntry(saved, { attribute: draft.attribute, attrPoints: draft.attrPoints, evalWorth: draft.evalWorth });
+    if (saved.direction === 'expense' && draft.registerAsset) {
+      await addAsset({ name: saved.note || '新资产', category: 'other', price: amount, purchaseDate: saved.date, status: 'inuse', linkedEntryId: saved.id });
     }
     setDraft(null);
     setNlText('');
@@ -236,7 +249,7 @@ export const Ledger = () => {
       {/* 流水 / 统计 切换 */}
       <div className="mt-4">
         <SegmentTabs
-          items={[{ key: 'list', label: '流水' }, { key: 'stats', label: '统计' }]}
+          items={[{ key: 'list', label: '流水' }, { key: 'stats', label: '统计' }, { key: 'assets', label: '资产' }]}
           value={view}
           onChange={setView}
           layoutId="ledger-view"
@@ -261,6 +274,8 @@ export const Ledger = () => {
       )}
 
       {view === 'stats' && <div className="mt-4"><LedgerStats /></div>}
+
+      {view === 'assets' && <div className="mt-4"><AssetBoard /></div>}
 
       {/* 录入确认卡 */}
       <SheetModal
@@ -339,6 +354,86 @@ export const Ledger = () => {
                   </button>
                 ))}
               </div>
+            )}
+
+            {/* 投资 → 自选属性加点 */}
+            {draft.direction === 'expense' && draft.type === 'investment' && (
+              <div className="rounded-xl bg-emerald-50 dark:bg-emerald-900/15 border border-emerald-200 dark:border-emerald-800/40 p-3 space-y-2">
+                <div className="text-xs font-semibold text-emerald-700 dark:text-emerald-300">
+                  这笔投资，让哪一维成长？<span className="font-normal text-emerald-600/60"> 选了才加点</span>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {ATTR_IDS.map(id => (
+                    <button
+                      key={id}
+                      onClick={() => setDraft({ ...draft, attribute: draft.attribute === id ? undefined : id })}
+                      className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
+                        draft.attribute === id
+                          ? 'bg-emerald-500 text-white border-emerald-500'
+                          : 'bg-white dark:bg-gray-800 border-emerald-200 dark:border-emerald-800/60 text-gray-500 dark:text-gray-400'
+                      }`}
+                    >
+                      {settings.attributeNames[id]}
+                    </button>
+                  ))}
+                </div>
+                {draft.attribute && (
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="text-gray-500 dark:text-gray-400">加点</span>
+                    {[1, 2].map(p => (
+                      <button
+                        key={p}
+                        onClick={() => setDraft({ ...draft, attrPoints: p })}
+                        className={`w-7 h-7 rounded-lg font-bold transition-colors ${
+                          draft.attrPoints === p ? 'bg-emerald-500 text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-500'
+                        }`}
+                      >+{p}</button>
+                    ))}
+                    <span className="text-gray-400">每日封顶 +2</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 消费评估（spendEvalEnabled 开时显示） */}
+            {draft.direction === 'expense' && settings.spendEvalEnabled && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-500 dark:text-gray-400">这笔值得吗？</span>
+                {(['worth', 'notWorth'] as const).map(w => (
+                  <button
+                    key={w}
+                    onClick={() => setDraft({ ...draft, evalWorth: draft.evalWorth === w ? undefined : w })}
+                    className={`px-3 py-1 rounded-full text-xs font-semibold border transition-colors ${
+                      draft.evalWorth === w
+                        ? (w === 'worth'
+                            ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700'
+                            : 'bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-300 border-rose-300 dark:border-rose-700')
+                        : 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-400'
+                    }`}
+                  >
+                    {w === 'worth' ? '值得' : '不值'}
+                  </button>
+                ))}
+                {draft.evalWorth === 'worth' && <span className="text-xs text-emerald-500 font-semibold">+1 SP</span>}
+              </div>
+            )}
+
+            {/* 流→存桥接：大额支出可登记为固定资产 */}
+            {draft.direction === 'expense' && Number(draft.amount) >= 300 && (
+              <button
+                type="button"
+                onClick={() => setDraft({ ...draft, registerAsset: !draft.registerAsset })}
+                className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl border text-sm font-medium transition-colors ${
+                  draft.registerAsset
+                    ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300'
+                    : 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-500'
+                }`}
+              >
+                <span className={`w-4 h-4 rounded flex items-center justify-center text-[10px] flex-shrink-0 ${draft.registerAsset ? 'bg-amber-500 text-white' : 'border border-gray-300 dark:border-gray-600'}`}>
+                  {draft.registerAsset ? '✓' : ''}
+                </span>
+                同时登记为固定资产
+              </button>
             )}
 
             {/* 备注 + （支出）渠道 + 日期 */}

@@ -1106,6 +1106,19 @@ export const Settings = () => {
                           </select>
                         </div>
                       )}
+                      {settings.ledgerEnabled !== false && (
+                        <div className="mt-2 flex items-center justify-between gap-3">
+                          <div className="flex-1">
+                            <span className="text-xs font-medium text-gray-700 dark:text-gray-300">消费评估</span>
+                            <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-0.5 leading-relaxed">记账时可评「值 / 不值」，值得 +1 SP，比例进月报</p>
+                          </div>
+                          <Toggle
+                            checked={!!settings.spendEvalEnabled}
+                            onChange={(v) => updateSettings({ spendEvalEnabled: v })}
+                            aria-label="消费评估"
+                          />
+                        </div>
+                      )}
                     </div>
 
                     {/* ── 属性名称 ───────────────────────────── */}

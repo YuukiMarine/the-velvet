@@ -8,7 +8,9 @@
  */
 import { useMemo, useState } from 'react';
 import { useAppStore, toLocalDateKey } from '@/store';
+import { SheetModal } from '@/components/SheetModal';
 import { EXPENSE_META, EXPENSE_TYPES, sym, fmtMoney, fmtSigned, shiftMonth } from '@/utils/ledgerFormat';
+import { buildSettlementData, generateSettlement } from '@/utils/ledgerSettlement';
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -34,9 +36,27 @@ function BarRow({ label, amount, max, $ }: { label: string; amount: number; max:
 }
 
 export function LedgerStats() {
-  const { settings, ledgerEntries } = useAppStore();
+  const { settings, ledgerEntries, getBudget, claimLedgerBudgetBonus } = useAppStore();
   const $ = sym(settings.currency);
   const [period, setPeriod] = useState(() => toLocalDateKey().slice(0, 7));
+  const [settleOpen, setSettleOpen] = useState(false);
+  const [settleBusy, setSettleBusy] = useState(false);
+  const [settleText, setSettleText] = useState('');
+  const [bonus, setBonus] = useState(false);
+
+  const openSettle = async () => {
+    setSettleOpen(true);
+    setSettleBusy(true);
+    setSettleText('');
+    setBonus(false);
+    try {
+      setBonus(await claimLedgerBudgetBonus(period));
+      const data = buildSettlementData(ledgerEntries, period, getBudget(period)?.monthlyLimit, settings.currency);
+      setSettleText(await generateSettlement(data, settings));
+    } finally {
+      setSettleBusy(false);
+    }
+  };
 
   const s = useMemo(() => {
     const inMonth = ledgerEntries.filter(e => e.date.slice(0, 7) === period);
@@ -115,6 +135,15 @@ export function LedgerStats() {
         </div>
       </Card>
 
+      {hasAny && (
+        <button
+          onClick={openSettle}
+          className="w-full py-3 rounded-2xl text-sm font-bold bg-gradient-to-r from-indigo-500 to-violet-500 text-white shadow-md active:scale-[0.98]"
+        >
+          🔮 让伊戈尔为「{period}」结算
+        </button>
+      )}
+
       {!hasAny && (
         <div className="text-center text-sm text-gray-400 py-8">这个月还没有记录。</div>
       )}
@@ -190,6 +219,22 @@ export function LedgerStats() {
           </div>
         </Card>
       )}
+
+      {/* 月末 Velvet 结算 */}
+      <SheetModal isOpen={settleOpen} onClose={() => setSettleOpen(false)} title={`${period} · 心相结算`}>
+        <div className="space-y-3">
+          {bonus && (
+            <div className="rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 px-4 py-3 text-sm font-bold text-amber-700 dark:text-amber-300 text-center">
+              🎉 本月不超预算 · +10 SP
+            </div>
+          )}
+          {settleBusy ? (
+            <div className="text-center text-sm text-gray-400 py-8">伊戈尔正凝视着你的账目……</div>
+          ) : (
+            <p className="text-sm text-gray-700 dark:text-gray-200 leading-loose whitespace-pre-wrap">{settleText}</p>
+          )}
+        </div>
+      </SheetModal>
     </div>
   );
 }
