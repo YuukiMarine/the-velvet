@@ -226,11 +226,15 @@ body {
     transform: rotate(var(--ui-axis));
     width: 112%;
     margin-left: -6%;
-    /* 出血补偿：padding 百分比相对包含块（.sl-plane-clip = 原容器宽），6% 恰好
-       吃掉两侧各 6% 的出血量（border-box 下内容宽回到 100%、起点回到 0）——
-       页面内容永远落在可视列内，出血区只接住旋转后探出的卡片角；
-       否则两侧各 ~6% 的内容（含 button 命中区）会被 clip 裁掉，D0 校直下同样裁 */
-    padding-inline: 6%;
+    /* 内边距两段（border-box 下都吃进内容宽，把内容推回可视列）：
+     *  1) 出血补偿 6%：抵消上面 112%/-6% 的两侧出血，使内容起点回到 0、宽回到 100%；
+     *     出血区只接住旋转后探出的卡片角。
+     *  2) 旋转安全边距 calc(var(--boldness) * 18px)：6% 只补平移、不补旋转——
+     *     整个平面 rotate(--ui-axis) 后，离旋转中心越远的内容水平探出越大，
+     *     靠边的高瓷砖角会探出可视列被 clip 切（实测统计 hero 左上角探出约 6px）。
+     *     这段随拨盘缩放：D0(0)=无旋转无需留白；越陡留白越大，内容自适应缩窄
+     *     恒落屏内。皮肤期把 --ui-skew 拧陡时此边距自动跟进，无需手调。 */
+    padding-inline: calc(6% + var(--boldness) * 24px);
     transition: transform 0.5s cubic-bezier(0.3, 1.25, 0.5, 1); /* 上限对齐 motion.ts DUR_RITUAL_MAX（仪式档 ≤500ms） */
   }
   .sl-plane:focus-within {

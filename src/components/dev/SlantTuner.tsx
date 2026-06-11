@@ -26,7 +26,8 @@ interface TpApi {
 
 export const SlantTuner = () => {
   const mountRef = useRef<HTMLDivElement>(null);
-  const [collapsed, setCollapsed] = useState(false);
+  // 默认折叠：调参工具不调时收起，只留可拖 header，不挡页面内容（点 ▢ 展开）
+  const [collapsed, setCollapsed] = useState(true);
   const [pos, setPos] = useState(() => ({
     x: Math.max(8, (typeof window !== 'undefined' ? window.innerWidth : 320) - 256),
     y: 12,
