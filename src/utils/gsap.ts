@@ -7,8 +7,11 @@
  *
  * 当前用途：
  *   - DrawSVGPlugin —— 引导线"描线生长"（SlantGuideLine）；
- *   - SplitText —— 大标题字符级入场（BrandTitleReveal，首页流光品牌标题逐字升起）；
- *   后续 MorphSVG 做星形撕页 / 形状记忆生长。
+ *   - SplitText —— 大标题字符级入场（BrandTitleReveal，首页流光品牌标题逐字升起）。
+ *
+ * MorphSVGPlugin 不在此集中注册：它目前只服务于 dev-only 的星形撕页演示
+ * （StarTearOverlay），就近在该组件里注册，以便整组件被 prod 的 import.meta.env.DEV
+ * 死代码消除时，MorphSVG（~21KB）一并 tree-shake 出生产包。真接入导航转场后再视情上移。
  *
  * headless / 无 rAF 环境（如自动化预览）下 GSAP ticker 不前进，两种约定按场景选用：
  *   - 单元素"描线/生长"用 immediateRender:false，让元素停在终态可见、动画只在真机播；

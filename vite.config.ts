@@ -74,6 +74,8 @@ export default defineConfig({
           // 动线层（DrawSVG 引导线、SplitText 标题逐字）；独立 chunk 优化缓存。
           // 插件是 gsap 的独立子入口（gsap/DrawSVGPlugin 等），不在 'gsap' 主入口的
           // 模块图里——必须逐个列出，否则会漏进体积庞大、改动频繁的 index 主 chunk。
+          // 注：MorphSVGPlugin 暂不列入——它只被 dev-only 的 StarTearOverlay 用，列进
+          // 来会被 manualChunks 强制打包、抵消 tree-shaking。真接入导航转场后再加回。
           gsap: ['gsap', 'gsap/DrawSVGPlugin', 'gsap/SplitText', '@gsap/react'],
           charts: ['recharts'],  // Dashboard 也依赖 recharts，需保留独立 chunk 以优化缓存
           db: ['dexie', 'dexie-react-hooks']
