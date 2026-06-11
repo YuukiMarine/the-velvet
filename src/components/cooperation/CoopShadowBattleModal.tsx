@@ -47,7 +47,7 @@ const ATTR_META: Record<AttributeId, { icon: string; color: string; label: strin
 const SKILL_TYPE_META: Record<PersonaSkill['type'], { label: string; color: string }> = {
   damage:       { label: '伤害',   color: '#f97316' },
   crit:         { label: '暴击',   color: '#dc2626' },
-  charge:       { label: '蓄力',   color: '#8b5cf6' },
+  charge:       { label: '蓄力',   color: 'rgb(var(--color-battle-bright-rgb))' },
   buff:         { label: '强化',   color: '#10b981' },
   debuff:       { label: '弱化',   color: '#64748b' },
   heal:         { label: '治疗',   color: '#22d3ee' },
@@ -483,7 +483,7 @@ export function CoopShadowBattleModal({ isOpen, shadow: shadowProp, partnerName,
                   style={{
                     background: hpPct < 20
                       ? 'linear-gradient(90deg, #dc2626, #f97316)'
-                      : 'linear-gradient(90deg, #7c3aed, #a855f7)',
+                      : 'linear-gradient(90deg, rgb(var(--color-battle-rgb)), rgb(var(--color-bond-bright-rgb)))',
                   }}
                 />
               </div>
@@ -671,7 +671,7 @@ export function CoopShadowBattleModal({ isOpen, shadow: shadowProp, partnerName,
                   disabled={working}
                   className="relative w-full overflow-hidden py-3 rounded-2xl font-black text-white text-sm tracking-[0.3em] border-2 disabled:opacity-40 active:scale-95"
                   style={{
-                    background: 'linear-gradient(135deg, #dc2626 0%, #7c3aed 50%, #2563eb 100%)',
+                    background: 'linear-gradient(135deg, #dc2626 0%, rgb(var(--color-battle-rgb)) 50%, #2563eb 100%)',
                     borderColor: 'rgba(252,211,77,0.6)',
                     boxShadow: '0 0 24px -4px rgba(251,191,36,0.7), inset 0 0 20px rgba(255,255,255,0.1)',
                   }}
@@ -843,7 +843,7 @@ function SkillCard({
       <div
         className="relative rounded-xl border overflow-hidden transition-all"
         style={{
-          background: affordable ? 'rgba(124,58,237,0.12)' : 'rgba(80,80,100,0.12)',
+          background: affordable ? 'rgb(var(--color-battle-rgb) / 0.12)' : 'rgba(80,80,100,0.12)',
           borderColor: affordable ? 'rgba(196,181,253,0.3)' : 'rgba(196,181,253,0.1)',
         }}
       >
@@ -997,7 +997,7 @@ function IdentifyScreen({
           animate={{ opacity: [0.3, 0.6, 0.3] }}
           transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
           style={{
-            background: 'radial-gradient(circle, rgba(124,58,237,0.4) 0%, transparent 60%)',
+            background: 'radial-gradient(circle, rgb(var(--color-battle-rgb) / 0.4) 0%, transparent 60%)',
             mixBlendMode: 'screen',
           }}
         />
@@ -1017,7 +1017,7 @@ function IdentifyScreen({
       <div
         className="rounded-2xl border px-4 py-3"
         style={{
-          background: 'linear-gradient(135deg, rgba(124,58,237,0.12), rgba(168,85,247,0.06))',
+          background: 'linear-gradient(135deg, rgb(var(--color-battle-rgb) / 0.12), rgb(var(--color-bond-bright-rgb) / 0.06))',
           borderColor: 'rgba(196,181,253,0.28)',
         }}
       >
@@ -1047,9 +1047,9 @@ function IdentifyScreen({
             disabled={working}
             className="relative w-full overflow-hidden py-3.5 rounded-2xl font-black text-white text-sm tracking-[0.28em] border-2 disabled:opacity-40 active:scale-95"
             style={{
-              background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 60%, #a855f7 100%)',
+              background: 'linear-gradient(135deg, #4f46e5 0%, rgb(var(--color-battle-rgb)) 60%, rgb(var(--color-bond-bright-rgb)) 100%)',
               borderColor: 'rgba(196,181,253,0.55)',
-              boxShadow: '0 0 22px -4px rgba(168,85,247,0.6), inset 0 0 18px rgba(255,255,255,0.08)',
+              boxShadow: '0 0 22px -4px rgb(var(--color-bond-bright-rgb) / 0.6), inset 0 0 18px rgba(255,255,255,0.08)',
             }}
           >
             <motion.div
@@ -1146,7 +1146,7 @@ function EntranceCutscene({ shadowId, displayName, line }: EntranceCutsceneProps
           className="text-xl font-black tracking-[0.1em]"
           style={{
             color: '#f5e6ff',
-            textShadow: '0 0 14px rgba(168,85,247,0.7)',
+            textShadow: '0 0 14px rgb(var(--color-bond-bright-rgb) / 0.7)',
           }}
         >
           {displayName}

@@ -146,7 +146,7 @@ export function CoopAcceptModal({ isOpen, onClose, bond }: Props) {
   if (!isOpen || !bond) return null;
 
   const proposerName = bond.otherProfile?.nickname || bond.otherProfile?.userId || '对方';
-  const accent = theirSide?.card.accent ?? '#6366f1';
+  const accent = theirSide?.card.accent ?? 'rgb(var(--color-bond-rgb))';
   const bondStillPending = bond.status === 'pending';
   const staleHint = bondStillPending ? null
     : bond.status === 'linked' ? '此 COOP 已缔结，无需再响应。'
@@ -177,7 +177,7 @@ export function CoopAcceptModal({ isOpen, onClose, bond }: Props) {
           <div
             className="px-5 pt-5 pb-3 border-b border-gray-100 dark:border-gray-800 flex items-start gap-3"
             style={{
-              background: 'linear-gradient(135deg, rgba(236,72,153,0.08), rgba(99,102,241,0.04))',
+              background: 'linear-gradient(135deg, rgba(236,72,153,0.08), rgb(var(--color-bond-rgb) / 0.04))',
             }}
           >
             <div className="flex-1 min-w-0">
@@ -280,8 +280,8 @@ export function CoopAcceptModal({ isOpen, onClose, bond }: Props) {
                   onClick={() => setPhase('ai')}
                   className="w-full text-left rounded-2xl px-4 py-4 border-2 transition-all active:scale-95"
                   style={{
-                    background: 'linear-gradient(135deg, rgba(168,85,247,0.12), rgba(99,102,241,0.06))',
-                    borderColor: 'rgba(168,85,247,0.45)',
+                    background: 'linear-gradient(135deg, rgb(var(--color-bond-bright-rgb) / 0.12), rgb(var(--color-bond-rgb) / 0.06))',
+                    borderColor: 'rgb(var(--color-bond-bright-rgb) / 0.45)',
                   }}
                 >
                   <div className="flex items-start gap-3">
@@ -304,8 +304,8 @@ export function CoopAcceptModal({ isOpen, onClose, bond }: Props) {
                   onClick={() => setPhase('manual')}
                   className="w-full text-left rounded-2xl px-4 py-4 border-2 transition-all active:scale-95"
                   style={{
-                    background: 'linear-gradient(135deg, rgba(99,102,241,0.10), rgba(168,85,247,0.05))',
-                    borderColor: 'rgba(99,102,241,0.4)',
+                    background: 'linear-gradient(135deg, rgb(var(--color-bond-rgb) / 0.10), rgb(var(--color-bond-bright-rgb) / 0.05))',
+                    borderColor: 'rgb(var(--color-bond-rgb) / 0.4)',
                   }}
                 >
                   <div className="flex items-start gap-3">
@@ -384,7 +384,7 @@ export function CoopAcceptModal({ isOpen, onClose, bond }: Props) {
                 disabled={!valid || !!submitting}
                 className="py-2.5 rounded-xl text-xs font-bold text-white shadow-md disabled:opacity-40"
                 style={{
-                  background: 'linear-gradient(135deg, #6366f1, #a855f7)',
+                  background: 'linear-gradient(135deg, rgb(var(--color-bond-rgb)), rgb(var(--color-bond-bright-rgb)))',
                 }}
               >
                 {submitting === 'accept' ? '缔结中…' : '接受 & 缔结'}

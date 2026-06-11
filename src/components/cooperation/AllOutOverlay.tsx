@@ -23,7 +23,7 @@ const PARTICLES = Array.from({ length: 24 }, (_, i) => ({
   distance: 140 + (i % 4) * 30,
   size: 3 + (i % 3) * 2,
   delay: (i % 6) * 0.02,
-  color: (['#f59e0b', '#dc2626', '#a855f7', '#ffffff'] as const)[i % 4],
+  color: (['#f59e0b', '#dc2626', 'rgb(var(--color-bond-bright-rgb))', '#ffffff'] as const)[i % 4],
 }));
 
 export function AllOutOverlay({ isFiring, personaName }: Props) {

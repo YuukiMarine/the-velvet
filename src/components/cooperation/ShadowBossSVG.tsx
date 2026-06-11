@@ -23,7 +23,7 @@ const PARTICLE_COUNT = 8;
 
 export function ShadowBossSVG({ shadowId, size = 100, intensity = 1 }: Props) {
   const archetype = archetypeById(shadowId);
-  const accent = archetype?.accent ?? '#a855f7';
+  const accent = archetype?.accent ?? 'rgb(var(--color-bond-bright-rgb))';
 
   return (
     <div

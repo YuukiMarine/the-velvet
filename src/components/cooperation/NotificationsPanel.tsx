@@ -273,7 +273,7 @@ export function NotificationsPanel({ isOpen, onClose, onOpenCoopAccept }: Props)
             style={{
               background: selectionMode
                 ? 'linear-gradient(135deg, rgba(244,63,94,0.1), rgba(248,113,113,0.04))'
-                : 'linear-gradient(135deg, rgba(99,102,241,0.08), rgba(168,85,247,0.04))',
+                : 'linear-gradient(135deg, rgb(var(--color-bond-rgb) / 0.08), rgb(var(--color-bond-bright-rgb) / 0.04))',
             }}
           >
             {selectionMode ? (
@@ -563,7 +563,7 @@ function NotificationItem({
             <span className="text-[10px] text-gray-400 ml-auto">{timeText}</span>
           </div>
           <div className="text-[11px] text-gray-600 dark:text-gray-300 mt-0.5 leading-relaxed">
-            <span className="font-semibold" style={{ color: 'var(--color-primary, #6366f1)' }}>{fromName}</span>
+            <span className="font-semibold" style={{ color: 'var(--color-primary, rgb(var(--color-bond-rgb)))' }}>{fromName}</span>
             {' '}
             {detail}
           </div>
@@ -574,7 +574,7 @@ function NotificationItem({
                 onClick={() => onAccept(n)}
                 disabled={working}
                 className="flex-1 py-1.5 rounded-lg text-[11px] font-bold text-white shadow-sm disabled:opacity-40"
-                style={{ background: 'linear-gradient(135deg, #6366f1, #a855f7)' }}
+                style={{ background: 'linear-gradient(135deg, rgb(var(--color-bond-rgb)), rgb(var(--color-bond-bright-rgb)))' }}
               >
                 {working ? '处理中…' : '接受'}
               </button>

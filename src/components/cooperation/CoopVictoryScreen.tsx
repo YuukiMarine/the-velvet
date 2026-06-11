@@ -197,7 +197,7 @@ export function CoopVictoryScreen({ isOpen, shadow, partnerName, selfPbId, onClo
                 transition={{ delay: 0.6 }}
                 className="mt-4 p-3 rounded-xl border text-center text-[11px]"
                 style={{
-                  background: 'linear-gradient(135deg, rgba(251,191,36,0.08), rgba(168,85,247,0.06))',
+                  background: 'linear-gradient(135deg, rgba(251,191,36,0.08), rgb(var(--color-bond-bright-rgb) / 0.06))',
                   borderColor: 'rgba(251,191,36,0.2)',
                 }}
               >
@@ -221,7 +221,7 @@ export function CoopVictoryScreen({ isOpen, shadow, partnerName, selfPbId, onClo
               className="w-full py-3 rounded-xl font-bold text-white transition-all active:scale-95"
               style={{
                 background: isVictory
-                  ? 'linear-gradient(135deg, #7c3aed, #a855f7)'
+                  ? 'linear-gradient(135deg, rgb(var(--color-battle-rgb)), rgb(var(--color-bond-bright-rgb)))'
                   : 'linear-gradient(135deg, #475569, #334155)',
               }}
             >

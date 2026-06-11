@@ -116,7 +116,7 @@ export function AddOnlineConfidantModal({ isOpen, onClose }: Props) {
           <div
             className="px-5 pt-5 pb-4 border-b border-gray-100 dark:border-gray-800 flex items-center gap-3"
             style={{
-              background: 'linear-gradient(135deg, rgba(16,185,129,0.08), rgba(99,102,241,0.04))',
+              background: 'linear-gradient(135deg, rgba(16,185,129,0.08), rgb(var(--color-bond-rgb) / 0.04))',
             }}
           >
             <div className="flex-1">

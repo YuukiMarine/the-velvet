@@ -233,7 +233,7 @@ export function ConfidantCreateModal({ isOpen, onClose, onCreated, onPickOnline 
   if (!isOpen) return null;
 
   const resultCard = matchResult ? TAROT_BY_ID[matchResult.arcanaId] : null;
-  const accent = resultCard?.accent || '#6366f1';
+  const accent = resultCard?.accent || 'rgb(var(--color-bond-rgb))';
 
   return (
     <AnimatePresence>
@@ -289,9 +289,9 @@ export function ConfidantCreateModal({ isOpen, onClose, onCreated, onPickOnline 
                       className="h-1 flex-1 rounded-full transition-all"
                       style={{
                         background: active
-                          ? 'var(--color-primary, #6366f1)'
+                          ? 'var(--color-primary, rgb(var(--color-bond-rgb)))'
                           : done
-                          ? 'var(--color-primary, #6366f1)'
+                          ? 'var(--color-primary, rgb(var(--color-bond-rgb)))'
                           : 'rgba(148,163,184,0.3)',
                         opacity: active ? 1 : done ? 0.6 : 1,
                       }}
@@ -315,15 +315,15 @@ export function ConfidantCreateModal({ isOpen, onClose, onCreated, onPickOnline 
                       onClick={() => { /* noop: 离线就是本流程，已在这一页 */ }}
                       className="relative rounded-2xl px-3 py-3 text-left border-2 cursor-default transition-all"
                       style={{
-                        background: 'linear-gradient(135deg, rgba(99,102,241,0.12), rgba(168,85,247,0.06))',
-                        borderColor: 'rgba(99,102,241,0.5)',
-                        boxShadow: '0 6px 16px -8px rgba(99,102,241,0.45)',
+                        background: 'linear-gradient(135deg, rgb(var(--color-bond-rgb) / 0.12), rgb(var(--color-bond-bright-rgb) / 0.06))',
+                        borderColor: 'rgb(var(--color-bond-rgb) / 0.5)',
+                        boxShadow: '0 6px 16px -8px rgb(var(--color-bond-rgb) / 0.45)',
                       }}
                     >
                       {/* 选中角标 */}
                       <span
                         className="absolute top-2 right-2 w-5 h-5 rounded-full flex items-center justify-center text-white text-[11px] font-black"
-                        style={{ background: 'linear-gradient(135deg, #6366f1, #a855f7)' }}
+                        style={{ background: 'linear-gradient(135deg, rgb(var(--color-bond-rgb)), rgb(var(--color-bond-bright-rgb)))' }}
                       >✓</span>
                       <div className="text-xl mb-1">📝</div>
                       <div className="text-sm font-black text-indigo-700 dark:text-indigo-300">离线同伴</div>
@@ -464,9 +464,9 @@ export function ConfidantCreateModal({ isOpen, onClose, onCreated, onPickOnline 
                         className="w-2 h-2 rounded-full transition-all"
                         style={{
                           background: traitAnswers[i]
-                            ? 'var(--color-primary, #6366f1)'
+                            ? 'var(--color-primary, rgb(var(--color-bond-rgb)))'
                             : i === traitStep
-                            ? 'var(--color-primary, #6366f1)'
+                            ? 'var(--color-primary, rgb(var(--color-bond-rgb)))'
                             : 'rgba(148,163,184,0.3)',
                           transform: i === traitStep ? 'scale(1.3)' : 'scale(1)',
                         }}
@@ -494,8 +494,8 @@ export function ConfidantCreateModal({ isOpen, onClose, onCreated, onPickOnline 
                               : 'text-gray-700 dark:text-gray-200'
                           }`}
                           style={{
-                            background: active ? 'rgba(99,102,241,0.15)' : 'rgba(148,163,184,0.07)',
-                            border: `1px solid ${active ? 'rgba(99,102,241,0.5)' : 'rgba(148,163,184,0.2)'}`,
+                            background: active ? 'rgb(var(--color-bond-rgb) / 0.15)' : 'rgba(148,163,184,0.07)',
+                            border: `1px solid ${active ? 'rgb(var(--color-bond-rgb) / 0.5)' : 'rgba(148,163,184,0.2)'}`,
                           }}
                         >
                           {option}
@@ -522,7 +522,7 @@ export function ConfidantCreateModal({ isOpen, onClose, onCreated, onPickOnline 
                     animate={{ rotate: 360 }}
                     transition={{ duration: 4, repeat: Infinity, ease: 'linear' }}
                     className="w-16 h-16 rounded-2xl mx-auto flex items-center justify-center text-3xl"
-                    style={{ background: 'linear-gradient(135deg, #6366f1, #a855f7)' }}
+                    style={{ background: 'linear-gradient(135deg, rgb(var(--color-bond-rgb)), rgb(var(--color-bond-bright-rgb)))' }}
                   >
                     <span className="text-white">✦</span>
                   </motion.div>

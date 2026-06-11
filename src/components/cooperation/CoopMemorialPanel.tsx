@@ -58,7 +58,7 @@ export function CoopMemorialPanel({ isOpen, confidant, onClose }: Props) {
           <div
             className="px-5 pt-5 pb-3 border-b border-gray-100 dark:border-gray-800"
             style={{
-              background: 'linear-gradient(135deg, rgba(251,191,36,0.08), rgba(168,85,247,0.06))',
+              background: 'linear-gradient(135deg, rgba(251,191,36,0.08), rgb(var(--color-bond-bright-rgb) / 0.06))',
             }}
           >
             <div className="flex items-center gap-3">
@@ -122,7 +122,7 @@ function MemorialStampCard({
       animate={{ opacity: 1, y: 0 }}
       className="relative rounded-2xl overflow-hidden border"
       style={{
-        background: 'linear-gradient(135deg, rgba(251,191,36,0.06), rgba(168,85,247,0.04))',
+        background: 'linear-gradient(135deg, rgba(251,191,36,0.06), rgb(var(--color-bond-bright-rgb) / 0.04))',
         borderColor: 'rgba(251,191,36,0.25)',
       }}
     >
@@ -131,7 +131,7 @@ function MemorialStampCard({
         <div
           className="flex-shrink-0 w-14 h-14 rounded-xl flex items-center justify-center text-2xl"
           style={{
-            background: 'radial-gradient(circle at 30% 30%, rgba(251,191,36,0.35), rgba(168,85,247,0.2))',
+            background: 'radial-gradient(circle at 30% 30%, rgba(251,191,36,0.35), rgb(var(--color-bond-bright-rgb) / 0.2))',
             border: '1px solid rgba(251,191,36,0.4)',
             boxShadow: '0 0 16px -4px rgba(251,191,36,0.5)',
           }}

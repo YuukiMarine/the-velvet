@@ -26,7 +26,7 @@ interface Props {
 
 export function ConfidantCard({ confidant, onClick, prayer, activeShadow, onShadowClick }: Props) {
   const card = TAROT_BY_ID[confidant.arcanaId];
-  const accent = card?.accent || '#6366f1';
+  const accent = card?.accent || 'rgb(var(--color-bond-rgb))';
   const isReversed = confidant.orientation === 'reversed';
   const archived = !!confidant.archivedAt;
   const isOnline = confidant.source === 'online';
@@ -216,12 +216,12 @@ export function ConfidantCard({ confidant, onClick, prayer, activeShadow, onShad
                     className="group inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black tracking-wider border transition-all active:scale-95"
                     style={{
                       background: identified
-                        ? 'linear-gradient(135deg, rgba(124,58,237,0.2), rgba(168,85,247,0.12))'
-                        : 'linear-gradient(135deg, rgba(220,38,38,0.2), rgba(124,58,237,0.12))',
+                        ? 'linear-gradient(135deg, rgb(var(--color-battle-rgb) / 0.2), rgb(var(--color-bond-bright-rgb) / 0.12))'
+                        : 'linear-gradient(135deg, rgba(220,38,38,0.2), rgb(var(--color-battle-rgb) / 0.12))',
                       borderColor: identified ? 'rgba(196,181,253,0.5)' : 'rgba(248,113,113,0.55)',
                       color: identified ? '#c4b5fd' : '#fca5a5',
                       boxShadow: identified
-                        ? '0 0 12px -3px rgba(168,85,247,0.6)'
+                        ? '0 0 12px -3px rgb(var(--color-bond-bright-rgb) / 0.6)'
                         : '0 0 12px -3px rgba(220,38,38,0.7)',
                     }}
                     title={identified ? `羁绊之影 · HP ${hpPct}%` : '羁绊之影 · 未识破'}
