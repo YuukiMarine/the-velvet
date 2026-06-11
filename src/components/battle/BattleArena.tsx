@@ -608,7 +608,7 @@ export const BattleArena = () => {
                       <div className="flex items-center gap-3 px-4 py-3.5">
                         <div className="flex-1">
                           <p className="text-sm font-semibold text-gray-800 dark:text-gray-100">启用逆影战场</p>
-                          <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">关闭后将隐藏首页入口及所有战斗功能</p>
+                          <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">关闭后将隐藏战斗功能及其全部入口（首页与菜单）</p>
                         </div>
                         <button
                           onClick={() => {

@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore } from '@/store';
 import { LongReading } from '@/types';
 import { PageTitle } from '@/components/PageTitle';
+import { BackButton } from '@/components/BackButton';
 import { DailyDraw } from '@/components/astrology/DailyDraw';
 import { LongReadingFlow } from '@/components/astrology/LongReadingFlow';
 import { ReadingArchive } from '@/components/astrology/ReadingArchive';
@@ -36,11 +37,7 @@ export function Astrology() {
       className="max-w-xl mx-auto space-y-5"
     >
       <div className="flex items-center gap-2">
-        <button
-          onClick={() => setCurrentPage('dashboard')}
-          className="w-9 h-9 rounded-xl bg-black/5 dark:bg-white/10 text-gray-500 flex items-center justify-center text-lg"
-          aria-label="返回首页"
-        >‹</button>
+        <BackButton onClick={() => setCurrentPage('dashboard')} label="返回首页" />
         <PageTitle title="星象" en="Arcana" />
       </div>
 
