@@ -71,7 +71,10 @@ export default defineConfig({
           vendor: ['react', 'react-dom'],
           // motion v12 是薄壳，真实实现在其依赖的 framer-motion，两层归同一 chunk
           motion: ['motion', 'framer-motion'],
-          gsap: ['gsap', '@gsap/react'],  // 动线层（DrawSVG 引导线等）；独立 chunk 优化缓存
+          // 动线层（DrawSVG 引导线、SplitText 标题逐字）；独立 chunk 优化缓存。
+          // 插件是 gsap 的独立子入口（gsap/DrawSVGPlugin 等），不在 'gsap' 主入口的
+          // 模块图里——必须逐个列出，否则会漏进体积庞大、改动频繁的 index 主 chunk。
+          gsap: ['gsap', 'gsap/DrawSVGPlugin', 'gsap/SplitText', '@gsap/react'],
           charts: ['recharts'],  // Dashboard 也依赖 recharts，需保留独立 chunk 以优化缓存
           db: ['dexie', 'dexie-react-hooks']
         }
