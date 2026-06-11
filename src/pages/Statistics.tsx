@@ -2,6 +2,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useAppStore, toLocalDateKey } from '@/store';
 import { calcMaxStreak } from '@/utils/streak';
+import { BackButton } from '@/components/BackButton';
+import { PageTitle } from '@/components/PageTitle';
 import {
   AreaChart, Area, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip,
@@ -275,21 +277,10 @@ export const Statistics = () => {
       exit={{ opacity: 0 }}
       className="space-y-5"
     >
-      {/* header */}
-      <div className="flex items-center gap-3">
-        <motion.button
-          whileTap={{ scale: 0.92 }}
-          onClick={() => setCurrentPage('dashboard')}
-          className="w-9 h-9 rounded-xl bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-gray-300"
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="w-5 h-5">
-            <path d="M15 19l-7-7 7-7" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </motion.button>
-        <div>
-          <p className="text-[10px] font-semibold tracking-widest uppercase text-gray-400 dark:text-gray-500">Overview</p>
-          <h2 className="text-2xl font-black text-gray-900 dark:text-white leading-tight">成长概览</h2>
-        </div>
+      {/* header — 宫格子页页头归一 PageTitle 制式（审计 S6），返回归一 → 菜单 */}
+      <div className="flex items-start gap-3">
+        <BackButton onClick={() => setCurrentPage('menu')} className="mt-1 -ml-1" />
+        <PageTitle title="统计" en="Statistics" enOffset={{ right: -24 }} />
       </div>
 
       {/* stat grid */}
