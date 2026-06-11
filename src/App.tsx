@@ -36,6 +36,7 @@ import { isNative } from '@/utils/native';
 import { tryHandleBack } from '@/utils/useBackHandler';
 import { initBoldnessRuntime, schedulePerfSample, setStraightenMode } from '@/utils/boldness';
 import { SlantTuner } from '@/components/dev/SlantTuner';
+import { StarTearDemo } from '@/components/dev/StarTearDemo';
 
 function App() {
   const { currentPage, initializeApp, user, levelUpNotification, setLevelUpNotification, achievementNotification, setAchievementNotification, skillNotification, setSkillNotification, settings, modalBlocker } = useAppStore();
@@ -556,6 +557,8 @@ function App() {
           <GlobalDiffDialog />
           {/* 斜界 dev 调参面板：仅开发环境，tweakpane 动态 import 不进生产包 */}
           {import.meta.env.DEV && <SlantTuner />}
+          {/* 星形撕页转场 dev 演示触发器：仅开发环境，真机点按钮看实跑 */}
+          {import.meta.env.DEV && <StarTearDemo />}
           {/* 宣告 · 达成 全屏结算屏：放在 App 顶层是为了"完成最后一项 todo 时立即弹出"，
               即便用户当时不在 Dashboard 也能看到 */}
           <GlobalCallingCardCutIn />
