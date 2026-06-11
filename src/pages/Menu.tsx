@@ -76,6 +76,13 @@ const CloudIcon = () => (
   </svg>
 );
 
+// 「心相记账」：钱包（heroicons wallet outline，24px stroke 1.8 制式）
+const WalletIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" strokeWidth={1.8} stroke="currentColor" className="w-6 h-6">
+    <path d="M21 12a2.25 2.25 0 00-2.25-2.25H15a3 3 0 11-6 0H5.25A2.25 2.25 0 003 12m18 0v6a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 18v-6m18 0V9M3 12V9m18 0a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 9m18 0V6a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 6v3" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
 // 「关于」横条：信息圈（heroicons information-circle outline）；横条更矮故取 20px
 const InfoIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" strokeWidth={1.8} stroke="currentColor" className="w-5 h-5">
@@ -256,6 +263,7 @@ export const Menu = () => {
   }, []);
 
   const battleVisible = settings.battleEnabled !== false;
+  const ledgerVisible = settings.ledgerEnabled !== false; // F5 记账总开关（默认开）
   // 对角级联序：左列第 i 块 = 2i，右列第 i 块 = 2i+1（战场隐藏时右列顺位前移）
   const orderOf = (side: 'left' | 'right', i: number) => (side === 'left' ? i * 2 : i * 2 + 1);
 
@@ -375,6 +383,17 @@ export const Menu = () => {
                   }
                   onPress={() => setCurrentPage('achievements')}
                 />
+                {ledgerVisible && (
+                  <Tile
+                    side="left"
+                    order={orderOf('left', 2)}
+                    bold={bold}
+                    label="心相记账"
+                    ariaLabel="心相记账"
+                    icon={<WalletIcon />}
+                    onPress={() => setCurrentPage('ledger')}
+                  />
+                )}
               </div>
 
               {/* 右列：断层下方整体下移 28px 形成砖砌错位（规格"半格"≈50px 的视觉收敛值，

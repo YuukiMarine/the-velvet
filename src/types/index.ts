@@ -255,6 +255,11 @@ export interface Settings {
   notificationSlots?: NotifSlot[];
   /** F2a 一次性回填标记：历史成长总结的 viewedAt 已补齐（视为已读），避免开启通知时旧总结被判未读。 */
   summaryViewedBackfillDone?: boolean;
+  // ── F5 心相记账 ──
+  /** 记账总开关。默认 undefined=开（功能可见、入口可见）；置 false 隐藏入口与数据。 */
+  ledgerEnabled?: boolean;
+  /** 货币代码，默认 'CNY'（¥）。 */
+  currency?: string;
   // AI 总结功能配置
   summaryApiProvider?: 'openai' | 'deepseek' | 'kimi' | 'gemini' | 'minimax';
   summaryApiKey?: string;
@@ -477,6 +482,73 @@ export interface WeeklyGoal {
   completedAt?: Date;
   rewardAttribute?: AttributeId;  // 完成后用户选择的奖励属性
   rewardPoints?: number;          // 实际发放的奖励点数
+  createdAt: Date;
+}
+
+// ── F5 心相记账 ──────────────────────────────────────────
+
+/** 一笔记账的方向：支出 / 收入 / 总余额对账调整 */
+export type LedgerDirection = 'expense' | 'income' | 'adjust';
+/** 支出四轴 */
+export type LedgerExpenseType = 'necessary' | 'investment' | 'desire' | 'impulse';
+/** 收入类 */
+export type LedgerIncomeType = 'labor' | 'other';
+/** 消费评估（可选，默认关）：这笔值不值 */
+export type SpendWorth = 'worth' | 'notWorth';
+
+export interface LedgerEntry {
+  id: string;
+  direction: LedgerDirection;
+  /** 金额，正数；direction='adjust' 时可正可负（对账增减） */
+  amount: number;
+  /** 货币代码，如 'CNY'；默认随 settings.currency */
+  currency: string;
+  note?: string;
+  /** 'YYYY-MM-DD' 本地日期 */
+  date: string;
+  source: 'manual' | 'ai';
+  createdAt: Date;
+  // ── 支出专属 ──
+  type?: LedgerExpenseType;
+  /** 二级类目（餐饮/交通/娱乐…），可选 */
+  category?: string;
+  /** 渠道（支付宝/微信/卡/现金…），可选 */
+  channel?: string;
+  /** 投资类自选加点属性（phase ③ 奖励用） */
+  attribute?: AttributeId;
+  /** 消费评估（phase ③） */
+  evalWorth?: SpendWorth;
+  /** 已登记为资产则回链（phase ②） */
+  assetId?: string;
+  /** 图片导入回链记忆卡（F8a） */
+  sourceMemoId?: string;
+  // ── 收入专属 ──
+  incomeType?: LedgerIncomeType;
+}
+
+/** 月度预算（纪律层，独立于总余额）。一个 period 一条。 */
+export interface Budget {
+  id: string;        // = period
+  period: string;    // 'YYYY-MM'
+  monthlyLimit?: number;
+  /** 每日额定预算；缺省时取 monthlyLimit / 当月天数 */
+  dailyLimit?: number;
+  createdAt: Date;
+}
+
+/** 固定资产登记（phase ② 资产板块用；类型先定、表 v10 已建） */
+export interface LedgerAsset {
+  id: string;
+  name: string;
+  /** 类目 → 绑定开源图标（不存照片） */
+  category: string;
+  price: number;
+  purchaseDate: string;  // 'YYYY-MM-DD'
+  status: 'inuse' | 'idle' | 'soldout';
+  /** 附加费用（如手机壳） */
+  addOns?: Array<{ name: string; amount: number }>;
+  /** 由某笔消费登记则回链 */
+  linkedEntryId?: string;
   createdAt: Date;
 }
 
