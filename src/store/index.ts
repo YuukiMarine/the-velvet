@@ -1,5 +1,5 @@
 ﻿import { create } from 'zustand';
-import { User, Attribute, Activity, Achievement, Skill, Settings, ThemeType, AttributeId, AttributeNamesKey, Todo, TodoCompletion, PeriodSummary, SummaryPeriod, SummaryPromptPreset, WeeklyGoal, WeeklyGoalItem, Persona, Shadow, BattleState, BattleLogEntry, BattleAction, DailyDivination, LongReading, LongReadingFollowUp, Confidant, ConfidantEvent, ConfidantBuff, CounselSession, CounselMessage, CounselArchive, CallingCard, NotifSlot } from '@/types';
+import { User, Attribute, Activity, Achievement, Skill, Settings, ThemeType, AttributeId, AttributeNamesKey, Todo, TodoCompletion, PeriodSummary, SummaryPeriod, SummaryPromptPreset, WeeklyGoal, WeeklyGoalItem, Persona, Shadow, BattleState, BattleLogEntry, BattleAction, DailyDivination, LongReading, LongReadingFollowUp, Confidant, ConfidantEvent, ConfidantBuff, CounselSession, CounselMessage, CounselArchive, CallingCard, NotifSlot, LedgerEntry, Budget } from '@/types';
 import { TAROT_BY_ID } from '@/constants/tarot';
 import { summarizeCounsel, type CounselContext, type CounselConfidantBrief, type CounselRecentEvent } from '@/utils/counselAI';
 import { db } from '@/db';
@@ -325,6 +325,19 @@ interface AppState {
   // F2a 本地通知
   syncNotifications: () => Promise<void>;
   markSummaryViewed: (id: string) => Promise<void>;
+  // F5 心相记账
+  ledgerEntries: LedgerEntry[];
+  budgets: Budget[];
+  loadLedger: () => Promise<void>;
+  addLedgerEntry: (input: Omit<LedgerEntry, 'id' | 'createdAt' | 'currency'> & { currency?: string }) => Promise<LedgerEntry>;
+  deleteLedgerEntry: (id: string) => Promise<void>;
+  setBudget: (period: string, patch: { monthlyLimit?: number; dailyLimit?: number }) => Promise<void>;
+  adjustTotalBalance: (targetTotal: number) => Promise<{ ok: boolean; reason?: string }>;
+  getTotalBalance: () => number;
+  getMonthExpense: (period?: string) => number;
+  getMonthIncome: (period?: string) => number;
+  getBudget: (period?: string) => Budget | undefined;
+  getAdjustCountThisMonth: () => number;
   // 逆影战场
   persona: Persona | null;
   shadow: Shadow | null;
@@ -491,6 +504,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   todos: [],
   todoCompletions: [],
   summaries: [],
+  ledgerEntries: [],
+  budgets: [],
   weeklyGoals: [],
   settings: DEFAULT_SETTINGS,
   currentPage: 'dashboard',
@@ -544,6 +559,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       await get().runConfidantDailyMaintenance();
       // 谏言：载入会话 / 归档，并清理过期消息
       await get().loadCounsel();
+      // F5 心相记账：载入流水与预算
+      await get().loadLedger();
     } catch (error) {
       console.error('初始化应用失', error);
     }
@@ -2866,6 +2883,89 @@ ${activityLines || '（本期暂无记录）'}
   },
 
   // 返回明天将要扣减的属性（今天是连续无增长天，明天会触decay  // 逻辑：今+ 过去2天（天）均无增长，且今天没有decay记录（已经decay就不再预警）  // 且距离开启日至少2 天（否则明天也不会触发）
+  // ── F5 心相记账 ──────────────────────────────────────────
+  loadLedger: async () => {
+    const [ledgerEntries, budgets] = await Promise.all([
+      db.ledgerEntries.toArray(),
+      db.budgets.toArray(),
+    ]);
+    set({ ledgerEntries, budgets });
+  },
+
+  addLedgerEntry: async (input) => {
+    const entry: LedgerEntry = {
+      ...input,
+      id: uuidv4(),
+      currency: input.currency ?? get().settings.currency ?? 'CNY',
+      createdAt: new Date(),
+    };
+    await db.ledgerEntries.put(entry);
+    set({ ledgerEntries: [...get().ledgerEntries, entry] });
+    return entry;
+  },
+
+  deleteLedgerEntry: async (id) => {
+    await db.ledgerEntries.delete(id);
+    set({ ledgerEntries: get().ledgerEntries.filter(e => e.id !== id) });
+  },
+
+  setBudget: async (period, patch) => {
+    const existing = get().budgets.find(b => b.period === period);
+    const budget: Budget = existing
+      ? { ...existing, ...patch }
+      : { id: period, period, createdAt: new Date(), ...patch };
+    await db.budgets.put(budget);
+    set({ budgets: [...get().budgets.filter(b => b.period !== period), budget] });
+  },
+
+  adjustTotalBalance: async (targetTotal) => {
+    if (get().getAdjustCountThisMonth() >= 3) {
+      return { ok: false, reason: '本月对账已用完 3 次' };
+    }
+    const delta = targetTotal - get().getTotalBalance();
+    if (Math.abs(delta) < 0.005) return { ok: true };
+    await get().addLedgerEntry({
+      direction: 'adjust',
+      amount: delta,
+      date: toLocalDateKey(),
+      source: 'manual',
+      note: '余额对账',
+    });
+    return { ok: true };
+  },
+
+  getTotalBalance: () => {
+    return get().ledgerEntries.reduce((sum, e) => {
+      if (e.direction === 'income') return sum + e.amount;
+      if (e.direction === 'expense') return sum - e.amount;
+      return sum + e.amount; // adjust：可正可负
+    }, 0);
+  },
+
+  getMonthExpense: (period) => {
+    const p = period ?? toLocalDateKey().slice(0, 7);
+    return get().ledgerEntries
+      .filter(e => e.direction === 'expense' && e.date.slice(0, 7) === p)
+      .reduce((s, e) => s + e.amount, 0);
+  },
+
+  getMonthIncome: (period) => {
+    const p = period ?? toLocalDateKey().slice(0, 7);
+    return get().ledgerEntries
+      .filter(e => e.direction === 'income' && e.date.slice(0, 7) === p)
+      .reduce((s, e) => s + e.amount, 0);
+  },
+
+  getBudget: (period) => {
+    const p = period ?? toLocalDateKey().slice(0, 7);
+    return get().budgets.find(b => b.period === p);
+  },
+
+  getAdjustCountThisMonth: () => {
+    const p = toLocalDateKey().slice(0, 7);
+    return get().ledgerEntries.filter(e => e.direction === 'adjust' && e.date.slice(0, 7) === p).length;
+  },
+
   getCountercurrentWarnings: (): AttributeId[] => {
     const { settings, attributes, activities } = get();
     if (!settings.countercurrentEnabled) return [];

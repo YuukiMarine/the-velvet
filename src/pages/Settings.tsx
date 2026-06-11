@@ -1062,6 +1062,52 @@ export const Settings = () => {
                       </div>
                     </div>
 
+                    {/* 心相记账开关 + 货币（F5） */}
+                    <div className={`rounded-xl border-2 p-4 transition-all ${
+                      settings.ledgerEnabled !== false
+                        ? 'border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/20'
+                        : 'border-gray-200 dark:border-gray-700'
+                    }`}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-base">💰</span>
+                            <h4 className="text-sm font-bold text-gray-800 dark:text-white">心相记账</h4>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 font-semibold">新</span>
+                          </div>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 leading-relaxed">
+                            低摩擦记账：总余额 / 预算 / 结转 + 四轴觉察。数据始终只存本地、不上云。
+                          </p>
+                        </div>
+                        <div className="flex-shrink-0 mt-0.5">
+                          <Toggle
+                            checked={settings.ledgerEnabled !== false}
+                            onChange={(v) => updateSettings({ ledgerEnabled: v })}
+                            aria-label="心相记账"
+                          />
+                        </div>
+                      </div>
+                      {settings.ledgerEnabled !== false && (
+                        <div className="mt-3 flex items-center justify-between gap-3 pt-3 border-t border-blue-200/60 dark:border-blue-800/40">
+                          <span className="text-xs font-medium text-gray-700 dark:text-gray-300">货币</span>
+                          <select
+                            value={settings.currency ?? 'CNY'}
+                            onChange={(e) => updateSettings({ currency: e.target.value })}
+                            aria-label="货币"
+                            className="text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg px-2 py-1 text-gray-800 dark:text-white outline-none"
+                          >
+                            <option value="CNY">¥ 人民币</option>
+                            <option value="USD">$ 美元</option>
+                            <option value="EUR">€ 欧元</option>
+                            <option value="JPY">¥ 日元</option>
+                            <option value="GBP">£ 英镑</option>
+                            <option value="HKD">HK$ 港币</option>
+                            <option value="KRW">₩ 韩元</option>
+                          </select>
+                        </div>
+                      )}
+                    </div>
+
                     {/* ── 属性名称 ───────────────────────────── */}
                     <div className="rounded-2xl border border-gray-200 dark:border-gray-700 bg-white/60 dark:bg-gray-800/30 overflow-hidden">
                       <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-800/60 flex items-center gap-2">

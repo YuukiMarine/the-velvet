@@ -1,5 +1,5 @@
 import Dexie, { Table } from 'dexie';
-import { User, Attribute, Activity, Achievement, Skill, DailyEvent, DailyDivination, LongReading, Settings, Todo, TodoCompletion, PeriodSummary, WeeklyGoal, Persona, Shadow, BattleState, Confidant, ConfidantEvent, CounselSession, CounselArchive, CallingCard } from '@/types';
+import { User, Attribute, Activity, Achievement, Skill, DailyEvent, DailyDivination, LongReading, Settings, Todo, TodoCompletion, PeriodSummary, WeeklyGoal, Persona, Shadow, BattleState, Confidant, ConfidantEvent, CounselSession, CounselArchive, CallingCard, LedgerEntry, Budget, LedgerAsset } from '@/types';
 
 export class PGTDatabase extends Dexie {
   users!: Table<User>;
@@ -23,6 +23,9 @@ export class PGTDatabase extends Dexie {
   counselSessions!: Table<CounselSession>;
   counselArchives!: Table<CounselArchive>;
   callingCards!: Table<CallingCard>;
+  ledgerEntries!: Table<LedgerEntry>;   // F5 心相记账
+  budgets!: Table<Budget>;              // F5 月度预算
+  assets!: Table<LedgerAsset>;          // F5 固定资产（phase ②）
 
   constructor() {
     super('PGTDatabase');
@@ -173,6 +176,33 @@ export class PGTDatabase extends Dexie {
       counselSessions: 'id, startedDate, startedAt',
       counselArchives: 'id, createdAt',
       callingCards: 'id, pinned, archived, createdAt, targetDate'
+    });
+    // v10: 心相记账（F5）—— ledgerEntries(进/出/调整) + budgets(月度预算) + assets(固定资产)
+    this.version(10).stores({
+      users: 'id, name, createdAt, theme',
+      attributes: 'id, displayName, points, level, unlocked',
+      activities: 'id, userId, date, description, method',
+      achievements: 'id, unlocked, unlockedDate',
+      skills: 'id, requiredAttribute, requiredLevel, unlocked',
+      dailyEvents: 'id, date',
+      dailyDivinations: 'id, date',
+      longReadings: 'id, createdAt, archived, expiresAt',
+      settings: 'id',
+      todos: 'id, attribute, frequency, isActive, createdAt',
+      todoCompletions: 'id, todoId, date',
+      summaries: 'id, period, startDate, endDate, createdAt',
+      weeklyGoals: 'id, weekStart, weekEnd, completed, createdAt',
+      personas: 'id, name, createdAt',
+      shadows: 'id, level, createdAt',
+      battleStates: 'id',
+      confidants: 'id, userId, arcanaId, source, intimacy, createdAt, archivedAt',
+      confidantEvents: 'id, confidantId, date, type, createdAt',
+      counselSessions: 'id, startedDate, startedAt',
+      counselArchives: 'id, createdAt',
+      callingCards: 'id, pinned, archived, createdAt, targetDate',
+      ledgerEntries: 'id, direction, type, channel, date, createdAt',
+      budgets: 'id, period, createdAt',
+      assets: 'id, category, status, createdAt'
     });
   }
 }

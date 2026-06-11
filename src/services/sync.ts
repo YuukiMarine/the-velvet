@@ -185,6 +185,7 @@ const SYNC_TABLES = [
   'counselArchives',
   // 宣告卡 / 倒计时（v2.1+），按 id 双向同步，pinned 互斥由本地 saveCallingCard 保障
   'callingCards',
+  // ⚠️ F5 心相记账（ledgerEntries / budgets / assets）故意不列于此：财务数据始终只存本地、永不上云（PRD §F5.8）。
 ] as const;
 
 type SyncKey = (typeof SYNC_TABLES)[number];

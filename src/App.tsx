@@ -27,6 +27,8 @@ const Cooperation = lazy(() => import('@/pages/Cooperation').then(m => ({ defaul
 const Menu = lazy(() => import('@/pages/Menu').then(m => ({ default: m.Menu })));
 // 账号与数据页（设置拆解 PR）：「数据管理 + 云同步」从 Settings 迁出，入口在菜单宫格
 const Account = lazy(() => import('@/pages/Account').then(m => ({ default: m.Account })));
+// 心相记账页（F5）
+const Ledger = lazy(() => import('@/pages/Ledger').then(m => ({ default: m.Ledger })));
 import { BattleArena } from '@/components/battle/BattleArena';
 import { primeCurrentTheme } from '@/utils/feedback';
 import { BackgroundAnimation } from '@/components/BackgroundAnimation';
@@ -205,7 +207,7 @@ function App() {
         // 去首页」的分裂。即便首页 widget 也能直达战场/统计，宫格化后这些页的归属是菜单。
         // menu 页本身不设特例：落入下方默认分支回 dashboard
         const store = useAppStore.getState();
-        const gridSubPages = ['achievements', 'statistics', 'battle', 'settings', 'account'];
+        const gridSubPages = ['achievements', 'statistics', 'battle', 'settings', 'account', 'ledger'];
         if (gridSubPages.includes(store.currentPage)) {
           store.setCurrentPage('menu');
           return;
@@ -369,6 +371,8 @@ function App() {
         return <Suspense fallback={<div className="flex items-center justify-center h-64 text-gray-400">加载中…</div>}><Menu /></Suspense>;
       case 'account':
         return <Suspense fallback={<div className="flex items-center justify-center h-64 text-gray-400">加载中…</div>}><Account /></Suspense>;
+      case 'ledger':
+        return <Suspense fallback={<div className="flex items-center justify-center h-64 text-gray-400">加载中…</div>}><Ledger /></Suspense>;
       default:
         return <Dashboard />;
     }
