@@ -4,6 +4,7 @@ import { useAppStore } from '@/store';
 import { Achievement, AttributeId } from '@/types';
 import { triggerNavFeedback } from '@/utils/feedback';
 import { PageTitle } from '@/components/PageTitle';
+import { BackButton } from '@/components/BackButton';
 
 type ConditionType = Achievement['condition']['type'];
 
@@ -1211,15 +1212,7 @@ export const Achievements = () => {
     >
       {/* 顶部标题 + 返回按钮（与其他子页保持一致的视觉） */}
       <div className="flex items-start justify-between gap-3">
-        <button
-          onClick={() => { triggerNavFeedback(); setCurrentPage('menu'); }}
-          className="flex-shrink-0 mt-1 w-9 h-9 -ml-1 rounded-xl flex items-center justify-center text-gray-600 dark:text-gray-300 hover:bg-black/5 dark:hover:bg-white/10 active:scale-95 transition"
-          aria-label="返回"
-        >
-          <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
-            <path d="M15 18l-6-6 6-6" />
-          </svg>
-        </button>
+        <BackButton onClick={() => setCurrentPage('menu')} className="mt-1 -ml-1" />
         <div className="flex-1">
           <PageTitle title="成就" en="Achievements" enOffset={{ right: -28 }} />
         </div>

@@ -5,6 +5,8 @@ import { toLocalDateKey } from '@/store';
 import { isInShadowTime, SKILL_EFFECT_MAP, HEAL_VALUE_BY_ATTR } from '@/constants';
 import { AttributeId } from '@/types';
 import { playSound } from '@/utils/feedback';
+import { BackButton } from '@/components/BackButton';
+import { PageTitle } from '@/components/PageTitle';
 import { PersonaCreateModal } from '@/components/battle/PersonaCreateModal';
 import { ShadowCreateModal } from '@/components/battle/ShadowCreateModal';
 import { BattleModal } from '@/components/battle/BattleModal';
@@ -120,26 +122,17 @@ export const BattleArena = () => {
       exit={{ opacity: 0 }}
       className="space-y-5 pb-8"
     >
-      {/* Header — matches Statistics page style */}
-      <div className="flex items-center gap-3">
-        <motion.button
-          whileTap={{ scale: 0.92 }}
-          onClick={() => setCurrentPage('dashboard')}
-          className="w-9 h-9 rounded-xl bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-gray-300 flex-shrink-0"
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="w-5 h-5">
-            <path d="M15 19l-7-7 7-7" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </motion.button>
+      {/* Header — 宫格子页页头归一 PageTitle 制式（审计 S6），返回归一 → 菜单 */}
+      <div className="flex items-start gap-3">
+        <BackButton onClick={() => setCurrentPage('menu')} className="mt-1 -ml-1" />
         <div className="flex-1 min-w-0">
-          <p className="text-[10px] font-semibold tracking-widest uppercase text-gray-400 dark:text-gray-500">Battle</p>
-          <h2 className="text-2xl font-black text-gray-900 dark:text-white leading-tight">逆影战场</h2>
+          <PageTitle title="逆影战场" en="Battle" />
         </div>
         {inShadowTime && (
           <motion.span
             animate={{ opacity: [1, 0.5, 1] }}
             transition={{ repeat: Infinity, duration: 1.5 }}
-            className="flex-shrink-0 text-xs font-black px-2.5 py-1 rounded-lg"
+            className="flex-shrink-0 mt-1 text-xs font-black px-2.5 py-1 rounded-lg"
             style={{ background: 'rgba(139,92,246,0.15)', color: '#7c3aed', border: '1px solid rgba(139,92,246,0.3)' }}
           >
             ✦ 影时间

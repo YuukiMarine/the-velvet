@@ -197,11 +197,12 @@ function App() {
         if (tryHandleBack()) return;
 
         // 步骤 2：非 dashboard 页 → 返回 dashboard
-        // 例外：宫格子页（成就 / 设置 / 账号与数据）的入口都在「菜单」宫格（v2.5 五格 IA），
-        // 系统返回与 UI 返回必须同走菜单，避免「界面返回去菜单、系统返回去首页」的分裂。
+        // 例外：宫格子页（成就 / 统计 / 战场 / 设置 / 账号与数据）的入口都在「菜单」宫格
+        // （v2.5 五格 IA），系统返回与 UI 返回必须同走菜单，避免「界面返回去菜单、系统返回
+        // 去首页」的分裂。即便首页 widget 也能直达战场/统计，宫格化后这些页的归属是菜单。
         // menu 页本身不设特例：落入下方默认分支回 dashboard
         const store = useAppStore.getState();
-        const gridSubPages = ['achievements', 'settings', 'account'];
+        const gridSubPages = ['achievements', 'statistics', 'battle', 'settings', 'account'];
         if (gridSubPages.includes(store.currentPage)) {
           store.setCurrentPage('menu');
           return;
