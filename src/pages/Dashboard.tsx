@@ -7,6 +7,7 @@ import { BattleDashboardWidget } from '@/components/BattleDashboardWidget';
 import { StackCarousel } from '@/components/StackCarousel';
 import { EyebrowLabel } from '@/components/EyebrowLabel';
 import { SlantGuideLine } from '@/components/SlantGuideLine';
+import { BrandTitleReveal } from '@/components/BrandTitleReveal';
 import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer } from 'recharts';
 import { TAROT_BY_ID } from '@/constants/tarot';
 import { CallingCardCard } from '@/components/callingCard/CallingCardCard';
@@ -781,62 +782,9 @@ export const Dashboard = () => {
         bend={0.55}
       />
 
-      {/* 竖屏炫酷标题 — 仅在非宽屏显示，banner正上方 */}
-      <motion.div
-        initial={{ opacity: 0, y: -16 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, ease: 'easeOut' }}
-        className="md:hidden select-none px-1"
-      >
-        <style>{`
-          @keyframes vr-flow {
-            0%   { background-position: 0% 50%; }
-            100% { background-position: 200% 50%; }
-          }
-          .vr-title-light {
-            background: linear-gradient(90deg, #111 0%, #555 20%, #999 40%, #333 60%, #111 80%, #555 100%);
-            background-size: 200% auto;
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-            animation: vr-flow 5s linear infinite;
-          }
-          .dark .vr-title-dark {
-            background: linear-gradient(90deg, #fff 0%, #aaa 20%, #e0e0e0 40%, #bbb 60%, #fff 80%, #aaa 100%);
-            background-size: 200% auto;
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-            animation: vr-flow 5s linear infinite;
-          }
-        `}</style>
-
-        {/* 欢迎来到 — 与标题左边对齐，ml-0.5 微调 */}
-        <span className="block text-[11px] font-semibold tracking-[0.25em] text-gray-400 dark:text-gray-500 mb-1 leading-none ml-0.5">
-          欢迎来到
-        </span>
-
-        {/* 主标题容器：relative 供 The Velvet 绝对定位 */}
-        <div className="relative inline-block">
-          <h1
-            className={`text-[3.25rem] font-black leading-none ${settings.darkMode ? 'vr-title-dark' : 'vr-title-light'}`}
-            style={{ letterSpacing: '-0.04em' }}
-          >
-            靛蓝色房间
-          </h1>
-
-          {/* The Velvet — 叠加在标题右下角 */}
-          <span
-            className="absolute -bottom-1.5 -right-1 text-lg leading-none text-primary opacity-75 pointer-events-none"
-            style={{ fontFamily: "'Caveat', cursive", fontWeight: 600 }}
-          >
-            The Velvet
-          </span>
-        </div>
-
-        {/* 装饰性分隔线 */}
-        <div className="mt-2.5 h-px bg-gradient-to-r from-primary/40 via-primary/10 to-transparent" />
-      </motion.div>
+      {/* 竖屏流光品牌标题 — 仅在非宽屏显示，banner正上方。
+          GSAP 时间线 + SplitText 逐字入场（BrandTitleReveal 内部 D0 守卫 + revert 清理）。 */}
+      <BrandTitleReveal darkMode={settings.darkMode} />
 
       {/* 顶部问候卡 */}
       <motion.div
