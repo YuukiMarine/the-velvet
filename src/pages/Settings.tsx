@@ -11,6 +11,7 @@ import { useRipple } from '@/components/RippleEffect';
 import { AI_PROVIDERS, getProviderConfig, testAIConnection, type TestResult } from '@/utils/aiProviders';
 import { UserProfileCard } from '@/components/UserProfileCard';
 import { Toggle } from '@/components/Toggle';
+import NotificationSettings from '@/components/NotificationSettings';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import {
   generateAttributeLevelTitles,
@@ -599,6 +600,7 @@ export const Settings = () => {
   const sections = [
     { id: 'theme', label: '主题', icon: '🎨' },
     { id: 'personalize', label: '体验个性化', icon: '⚙️' },
+    { id: 'notifications', label: '通知提醒', icon: '🔔' },
     { id: 'summary', label: 'AI 总结', icon: '✨' }
   ];
 
@@ -1525,6 +1527,8 @@ export const Settings = () => {
                     )}
                   </div>
                 )}
+
+                {section.id === 'notifications' && <NotificationSettings />}
 
                 {section.id === 'summary' && (() => {
                   const provider = settings.summaryApiProvider ?? 'openai';

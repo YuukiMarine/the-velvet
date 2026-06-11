@@ -84,6 +84,7 @@ function App() {
         setIsLoading(true);
         setError(null);
         await initializeApp();
+        void useAppStore.getState().syncNotifications(); // F2a：启动后排程本地通知
       } catch (err) {
         console.error('App initialization error:', err);
         setError(err instanceof Error ? err.message : '初始化失败');
@@ -155,7 +156,7 @@ function App() {
 
   // 切回前台时检查日期是否推进，若推进则重载数据（修复隔天打开不刷新）
   useEffect(() => {
-    const { loadData, loadDailyDivination, sweepExpiredReadings, sweepCallingCards } = useAppStore.getState();
+    const { loadData, loadDailyDivination, sweepExpiredReadings, sweepCallingCards, syncNotifications } = useAppStore.getState();
 
     const handleVisibilityChange = async () => {
       if (document.visibilityState !== 'visible') return;
@@ -174,6 +175,8 @@ function App() {
         // 跨日：扫一遍宣告卡，把跨过 targetDate 的自动归档（→ Dashboard 会触发 cut-in）
         await sweepCallingCards();
       }
+      // F2a：每次切回前台重排本地通知，保持「快照」新鲜（条件已满足的提醒自然不再排程）
+      void syncNotifications();
     };
 
     document.addEventListener('visibilitychange', handleVisibilityChange);

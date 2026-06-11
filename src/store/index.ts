@@ -1,10 +1,11 @@
 ﻿import { create } from 'zustand';
-import { User, Attribute, Activity, Achievement, Skill, Settings, ThemeType, AttributeId, AttributeNamesKey, Todo, TodoCompletion, PeriodSummary, SummaryPeriod, SummaryPromptPreset, WeeklyGoal, WeeklyGoalItem, Persona, Shadow, BattleState, BattleLogEntry, BattleAction, DailyDivination, LongReading, LongReadingFollowUp, Confidant, ConfidantEvent, ConfidantBuff, CounselSession, CounselMessage, CounselArchive, CallingCard } from '@/types';
+import { User, Attribute, Activity, Achievement, Skill, Settings, ThemeType, AttributeId, AttributeNamesKey, Todo, TodoCompletion, PeriodSummary, SummaryPeriod, SummaryPromptPreset, WeeklyGoal, WeeklyGoalItem, Persona, Shadow, BattleState, BattleLogEntry, BattleAction, DailyDivination, LongReading, LongReadingFollowUp, Confidant, ConfidantEvent, ConfidantBuff, CounselSession, CounselMessage, CounselArchive, CallingCard, NotifSlot } from '@/types';
 import { TAROT_BY_ID } from '@/constants/tarot';
 import { summarizeCounsel, type CounselContext, type CounselConfidantBrief, type CounselRecentEvent } from '@/utils/counselAI';
 import { db } from '@/db';
 import { v4 as uuidv4 } from 'uuid';
 import { calcMaxStreak } from '@/utils/streak';
+import { computeAndSchedule, type NotifSnapshot } from '@/utils/notifications';
 import { resolveProvider } from '@/utils/aiProviders';
 import { chatComplete, getAIConfig } from '@/utils/aiClient';
 import {
@@ -321,6 +322,9 @@ interface AppState {
   // 逆流
   applyCountercurrentDecay: () => Promise<AttributeId[]>;
   getCountercurrentWarnings: () => AttributeId[];
+  // F2a 本地通知
+  syncNotifications: () => Promise<void>;
+  markSummaryViewed: (id: string) => Promise<void>;
   // 逆影战场
   persona: Persona | null;
   shadow: Shadow | null;
@@ -439,6 +443,12 @@ export function applyCustomThemeColor(hex: string) {
   document.documentElement.style.setProperty('--color-secondary', lightenHex(hex));
 }
 
+/** F2a 默认提醒时段：新用户初始值，且现有用户首次开启通知时（notificationSlots 为 undefined）用它兜底。 */
+export const DEFAULT_NOTIF_SLOTS: NotifSlot[] = [
+  { id: 'morning', time: '08:00', enabled: true, label: '晨间序曲', contents: ['tarot', 'summary'] },
+  { id: 'evening', time: '21:30', enabled: true, label: '夜间结算', contents: ['record', 'todos', 'countercurrent'] },
+];
+
 const DEFAULT_SETTINGS: Settings = {
   id: 'default',
   attributeNames: {
@@ -464,6 +474,9 @@ const DEFAULT_SETTINGS: Settings = {
   soundMuted: false,
   customLevelThresholds: undefined,
   battleEnabled: true,
+  // F2a 本地通知：默认关，开启后用这两槽（晨间抽塔罗 / 晚间结算）
+  notificationsEnabled: false,
+  notificationSlots: DEFAULT_NOTIF_SLOTS,
 };
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -511,6 +524,16 @@ export const useAppStore = create<AppState>((set, get) => ({
       document.documentElement.setAttribute('data-theme', user.theme);
 
       await get().loadData();
+      // F2a：历史成长总结一次性回填 viewedAt（=createdAt，视为已读），避免开启通知时旧总结被判「未读」刷屏。
+      //      仅跑一次（flag 守卫）；此后新总结由保存 / 打开时各自标记已读。
+      if (!get().settings.summaryViewedBackfillDone) {
+        const legacy = (await db.summaries.toArray()).filter(s => !s.viewedAt);
+        if (legacy.length > 0) {
+          await db.summaries.bulkPut(legacy.map(s => ({ ...s, viewedAt: s.createdAt ?? new Date() })));
+          await get().loadSummaries();
+        }
+        await get().updateSettings({ summaryViewedBackfillDone: true });
+      }
       await get().loadDailyDivination();
       await get().loadLongReadings();
       await get().sweepExpiredReadings();
@@ -888,6 +911,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       await get().earnSP(totalPts);
     }
 
+    void get().syncNotifications(); // 已记录 → 重排，撤掉「提醒记录」提醒
+
     return {
       unlockHints: {
         achievements: matchedAchievements.length,
@@ -1064,6 +1089,11 @@ export const useAppStore = create<AppState>((set, get) => ({
         document.documentElement.classList.remove('dark');
       }
     }
+
+    // F2a：仅当通知相关设置变动时重排（避免每次写设置都触发排程）
+    if (newSettings.notificationsEnabled !== undefined || newSettings.notificationSlots !== undefined) {
+      void get().syncNotifications();
+    }
   },
 
   // ── 星象 / 塔罗 ────────────────────────────────────────────
@@ -1083,6 +1113,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     await db.dailyDivinations.put(d);
     set({ dailyDivination: d });
+    void get().syncNotifications(); // 今日塔罗已抽 → 重排，撤掉「塔罗未抽」提醒
   },
 
   getRecentActivitiesForDaily: (limit = 7) => {
@@ -2304,6 +2335,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         console.warn('[velvet] sweepCallingCards after completeTodo failed', e);
       }
 
+      void get().syncNotifications(); // 待办完成 → 重排，撤掉已完成的「今日待办」提醒
       return result;
     } else {
       await get().loadData();
@@ -2415,6 +2447,41 @@ export const useAppStore = create<AppState>((set, get) => ({
   saveSummary: async (summary: PeriodSummary) => {
     await db.summaries.put(summary);
     await get().loadSummaries();
+    void get().syncNotifications(); // 新总结默认未读 → 安排「未读成长总结」提醒
+  },
+
+  markSummaryViewed: async (id: string) => {
+    const { summaries } = get();
+    const target = summaries.find(s => s.id === id);
+    if (!target || target.viewedAt) return; // 不存在或已读 → 跳过
+    const viewedAt = new Date();
+    await db.summaries.update(id, { viewedAt });
+    set({ summaries: summaries.map(s => (s.id === id ? { ...s, viewedAt } : s)) });
+    void get().syncNotifications(); // 已读后撤掉「未读成长总结」提醒
+  },
+
+  syncNotifications: async () => {
+    const { settings, dailyDivination, todos, summaries, activities } = get();
+    const todayKey = toLocalDateKey();
+    const dueTodos = todos.filter(t =>
+      t.isActive && !t.archivedAt && (!t.startDate || t.startDate <= todayKey),
+    );
+    const snapshot: NotifSnapshot = {
+      enabled: !!settings.notificationsEnabled,
+      slots: settings.notificationSlots ?? [],
+      attributeNames: settings.attributeNames,
+      tarotDrawnToday: !!dailyDivination && dailyDivination.date === todayKey,
+      incompleteTodoCount: dueTodos.filter(t => !get().getTodayTodoProgress(t.id).isComplete).length,
+      hasActiveDailyTodos: dueTodos.some(t => t.repeatDaily),
+      countercurrentWarnings: get().getCountercurrentWarnings(),
+      hasUnreadSummary: summaries.some(s => !s.viewedAt),
+      loggedToday: activities.some(a => !a.category && toLocalDateKey(new Date(a.date)) === todayKey),
+    };
+    try {
+      await computeAndSchedule(snapshot);
+    } catch (e) {
+      console.warn('[notifications] sync failed', e);
+    }
   },
 
   deleteSummary: async (id: string) => {

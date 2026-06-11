@@ -567,7 +567,7 @@ interface SummaryModalProps {
 type ModalView = 'generate' | 'result' | 'archive' | 'view';
 
 export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week' }: SummaryModalProps) {
-  const { settings, summaries, buildSummaryRequest, saveSummary, deleteSummary, loadSummaries, getActiveSummaryPreset, updateSettings } = useAppStore();
+  const { settings, summaries, buildSummaryRequest, saveSummary, deleteSummary, loadSummaries, getActiveSummaryPreset, updateSettings, markSummaryViewed } = useAppStore();
   // ESC / Android back：
   //   - 如果已经在"是否丢弃 / 是否归档"确认态（exitConfirm != null）→ 等同于点 Cancel，关掉确认
   //   - 否则走 tryExit('close')：流式中 / 未保存会自动弹出对应确认，和点 X 一致
@@ -715,9 +715,12 @@ export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week' }
    const handleSave = async () => {
      if (!generatedSummary) return;
      // 把"还在内存里"的追问 Q&A 一并保存（如果用户在 result 视图里追问过的话）
-     const toSave: PeriodSummary = pendingFollowUp
-       ? { ...generatedSummary, followUp: pendingFollowUp }
-       : generatedSummary;
+     const toSave: PeriodSummary = {
+       ...generatedSummary,
+       // 生成后用户已在预览里读过 → 标为已读，避免 F2a「未读成长总结」误报
+       viewedAt: generatedSummary.viewedAt ?? new Date(),
+       ...(pendingFollowUp ? { followUp: pendingFollowUp } : {}),
+     };
      await saveSummary(toSave);
      setSaved(true);
    };
@@ -773,7 +776,7 @@ export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week' }
 
    const handleExitSaveThenProceed = async () => {
      if (generatedSummary && !saved) {
-       await saveSummary(generatedSummary);
+       await saveSummary({ ...generatedSummary, viewedAt: generatedSummary.viewedAt ?? new Date() });
      }
      setExitConfirm(null);
      performExit(exitAction);
@@ -983,7 +986,7 @@ export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week' }
 
               {/* ── 归档列表 ── */}
               {view === 'archive' && (
-                <ArchiveList summaries={summaries} onSelect={s => { setSelectedSummary(s); setPendingFollowUp(null); setView('view'); }} onDelete={id => deleteSummary(id)} />
+                <ArchiveList summaries={summaries} onSelect={s => { void markSummaryViewed(s.id); setSelectedSummary(s.viewedAt ? s : { ...s, viewedAt: new Date() }); setPendingFollowUp(null); setView('view'); }} onDelete={id => deleteSummary(id)} />
               )}
 
               {/* ── 单条查看 ── */}
