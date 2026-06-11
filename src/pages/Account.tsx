@@ -16,6 +16,7 @@ import { isNative } from '@/utils/native';
 import { PageTitle } from '@/components/PageTitle';
 import { EyebrowLabel } from '@/components/EyebrowLabel';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { PagePlane, PlaneLevel } from '@/components/PagePlane';
 import { LoginModal } from '@/components/auth/LoginModal';
 import { AccountManagePanel } from '@/components/auth/AccountManagePanel';
 import { SyncPrivacyPanel } from '@/components/auth/SyncPrivacyPanel';
@@ -144,21 +145,24 @@ export const Account = () => {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="space-y-4"
     >
+      {/* 斜轴世界（§2 规则1）：内容平面随世界倾斜，卡片成平行四边形；各卡内容 + 眉标
+          包 PlaneLevel 反制回水平（"世界斜、字不斜"）。ConfirmDialog 走 portal 基座、
+          在平面之外，不受倾斜影响。聚焦输入框时整页 :focus-within 自动校直。 */}
+      <PagePlane className="space-y-4">
       {/* 顶部标题 + 返回按钮（与其他子页保持一致的视觉） */}
-      <div className="flex items-start justify-between gap-3">
+      <PlaneLevel className="flex items-start justify-between gap-3">
         <BackButton onClick={() => setCurrentPage('menu')} className="mt-1 -ml-1" />
         <div className="flex-1">
           <PageTitle title="账号与数据" en="Account" />
         </div>
-      </div>
+      </PlaneLevel>
 
       {/* ── 数据管理 ─────────────────────────────────────── */}
       <section className="space-y-2">
-        <EyebrowLabel className="px-0.5">数据管理 · Data</EyebrowLabel>
+        <EyebrowLabel className="sl-level px-0.5">数据管理 · Data</EyebrowLabel>
         <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-5">
-          <div className="space-y-5">
+          <div className="sl-level space-y-5">
             {/* 消息提示 */}
             {exportMessage && (
               <div className="p-3 rounded-xl bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-sm text-gray-700 dark:text-gray-200">
@@ -302,9 +306,9 @@ export const Account = () => {
 
       {/* ── 云同步 ───────────────────────────────────────── */}
       <section className="space-y-2">
-        <EyebrowLabel className="px-0.5">云同步 · Cloud</EyebrowLabel>
+        <EyebrowLabel className="sl-level px-0.5">云同步 · Cloud</EyebrowLabel>
         <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-5">
-          <div className="space-y-4">
+          <div className="sl-level space-y-4">
             {!cloudEnabled ? (
               <div className="p-4 rounded-lg bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600">
                 <p className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed">
@@ -531,6 +535,7 @@ export const Account = () => {
           </div>
         </div>
       </section>
+      </PagePlane>
 
       {/* 重置数据确认（ConfirmDialog 基座：tone=danger；取消恒左、危险恒右，自带 exit 动画） */}
       <ConfirmDialog
