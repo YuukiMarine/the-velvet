@@ -32,7 +32,7 @@ const SKILL_TYPE_TAG: Record<string, { label: string; color: string; bg: string 
   crit:         { label: '暴击', color: '#f59e0b', bg: 'rgba(245,158,11,0.12)' },
   buff:         { label: '增伤', color: '#3b82f6', bg: 'rgba(59,130,246,0.12)' },
   debuff:       { label: '易伤', color: '#f97316', bg: 'rgba(249,115,22,0.12)' },
-  charge:       { label: '蓄力', color: '#8b5cf6', bg: 'rgba(139,92,246,0.12)' },
+  charge:       { label: '蓄力', color: 'rgb(var(--color-battle-bright-rgb))', bg: 'rgb(var(--color-battle-bright-rgb) / 0.12)' },
   heal:         { label: '回复', color: '#10b981', bg: 'rgba(16,185,129,0.12)' },
   attack_boost: { label: '攻击增益', color: '#f43f5e', bg: 'rgba(244,63,94,0.12)' },
 };
@@ -133,7 +133,7 @@ export const BattleArena = () => {
             animate={{ opacity: [1, 0.5, 1] }}
             transition={{ repeat: Infinity, duration: 1.5 }}
             className="flex-shrink-0 mt-1 text-xs font-black px-2.5 py-1 rounded-lg"
-            style={{ background: 'rgba(139,92,246,0.15)', color: '#7c3aed', border: '1px solid rgba(139,92,246,0.3)' }}
+            style={{ background: 'rgb(var(--color-battle-bright-rgb) / 0.15)', color: 'rgb(var(--color-battle-rgb))', border: '1px solid rgb(var(--color-battle-bright-rgb) / 0.3)' }}
           >
             ✦ 影时间
           </motion.span>
@@ -141,7 +141,7 @@ export const BattleArena = () => {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 p-1 rounded-2xl" style={{ background: 'rgba(139,92,246,0.08)', border: '1px solid rgba(139,92,246,0.15)' }}>
+      <div className="flex gap-1 p-1 rounded-2xl" style={{ background: 'rgb(var(--color-battle-bright-rgb) / 0.08)', border: '1px solid rgb(var(--color-battle-bright-rgb) / 0.15)' }}>
         {([
           { key: 'battle', label: '进入战场' },
           { key: 'persona', label: 'Persona' },
@@ -152,9 +152,9 @@ export const BattleArena = () => {
             onClick={() => setActiveTab(tab.key)}
             className={`flex-1 py-2 text-sm font-semibold rounded-xl transition-all ${activeTab !== tab.key ? 'text-gray-500 dark:text-gray-400' : ''}`}
             style={{
-              background: activeTab === tab.key ? 'linear-gradient(135deg, #7c3aed, #4f46e5)' : 'transparent',
+              background: activeTab === tab.key ? 'linear-gradient(135deg, rgb(var(--color-battle-rgb)), rgb(var(--color-battle-indigo-rgb)))' : 'transparent',
               color: activeTab === tab.key ? 'white' : undefined,
-              boxShadow: activeTab === tab.key ? '0 2px 8px rgba(124,58,237,0.3)' : 'none',
+              boxShadow: activeTab === tab.key ? '0 2px 8px rgb(var(--color-battle-rgb) / 0.3)' : 'none',
             }}
           >
             {tab.label}
@@ -189,7 +189,7 @@ export const BattleArena = () => {
                           <button
                             onClick={() => setShowPersonaCreate(true)}
                             className="px-6 py-3 rounded-xl font-bold text-white transition-colors"
-                            style={{ background: 'linear-gradient(135deg, #7c3aed, #4f46e5)' }}
+                            style={{ background: 'linear-gradient(135deg, rgb(var(--color-battle-rgb)), rgb(var(--color-battle-indigo-rgb)))' }}
                           >
                             召唤 Persona
                           </button>
@@ -206,7 +206,7 @@ export const BattleArena = () => {
                             <p className="text-gray-400 dark:text-gray-500 text-xs">反抗者 · Lv.{attributes.reduce((s, a) => s + a.level, 0)}</p>
                           </div>
                           {battleState && (
-                            <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: 'rgba(139,92,246,0.15)', color: '#7c3aed', border: '1px solid rgba(139,92,246,0.25)' }}>
+                            <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: 'rgb(var(--color-battle-bright-rgb) / 0.15)', color: 'rgb(var(--color-battle-rgb))', border: '1px solid rgb(var(--color-battle-bright-rgb) / 0.25)' }}>
                               SP {battleState.sp}
                             </span>
                           )}
@@ -216,7 +216,7 @@ export const BattleArena = () => {
                           <button
                             onClick={() => setShowShadowCreate(true)}
                             className="px-6 py-3 rounded-xl font-bold text-white transition-colors"
-                            style={{ background: 'linear-gradient(135deg, #dc2626, #7c3aed)' }}
+                            style={{ background: 'linear-gradient(135deg, #dc2626, rgb(var(--color-battle-rgb)))' }}
                           >
                             识破暗影
                           </button>
@@ -237,7 +237,7 @@ export const BattleArena = () => {
                             {persona.equippedMaskAttribute && (
                               <p className="text-purple-500 dark:text-purple-400 text-xs mb-1">🎭 {settings.attributeNames[persona.equippedMaskAttribute]}</p>
                             )}
-                            <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: 'rgba(139,92,246,0.12)', color: '#7c3aed', border: '1px solid rgba(139,92,246,0.25)' }}>
+                            <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: 'rgb(var(--color-battle-bright-rgb) / 0.12)', color: 'rgb(var(--color-battle-rgb))', border: '1px solid rgb(var(--color-battle-bright-rgb) / 0.25)' }}>
                               SP {battleState.sp}
                             </span>
                           </div>
@@ -270,7 +270,7 @@ export const BattleArena = () => {
                                 <span>HP 2</span><span>{shadow.currentHp2}/{shadow.maxHp2}</span>
                               </div>
                               <div className="h-2 rounded-full overflow-hidden bg-gray-100 dark:bg-gray-800">
-                                <motion.div className="h-full rounded-full" style={{ background: 'linear-gradient(to right, #7c3aed, #a855f7)' }} animate={{ width: `${(shadow.currentHp2 / shadow.maxHp2) * 100}%` }} transition={{ duration: 0.4 }} />
+                                <motion.div className="h-full rounded-full" style={{ background: 'linear-gradient(to right, rgb(var(--color-battle-rgb)), rgb(var(--color-battle-bright-rgb)))' }} animate={{ width: `${(shadow.currentHp2 / shadow.maxHp2) * 100}%` }} transition={{ duration: 0.4 }} />
                               </div>
                             </div>
                           )}
@@ -282,7 +282,7 @@ export const BattleArena = () => {
                           disabled={!canBattle}
                           className="w-full py-3.5 rounded-2xl font-black text-white tracking-wide transition-all shadow-sm"
                           style={{
-                            background: canBattle ? 'linear-gradient(135deg, #7c3aed, #dc2626)' : undefined,
+                            background: canBattle ? 'linear-gradient(135deg, rgb(var(--color-battle-rgb)), #dc2626)' : undefined,
                           }}
                         >
                           {canBattle ? '⚔️ 进入战斗' : alreadyChallengedToday ? (
@@ -400,7 +400,7 @@ export const BattleArena = () => {
                               style={{
                                 width: i === personaCardIdx ? 16 : 6,
                                 height: 6,
-                                background: i === personaCardIdx ? '#7c3aed' : 'rgba(139,92,246,0.2)',
+                                background: i === personaCardIdx ? 'rgb(var(--color-battle-rgb))' : 'rgb(var(--color-battle-bright-rgb) / 0.2)',
                               }}
                             />
                           ))}
@@ -433,7 +433,7 @@ export const BattleArena = () => {
                                 exit={{ opacity: 0, x: -20 }}
                                 transition={{ duration: 0.2 }}
                                 className="rounded-2xl overflow-hidden relative bg-white dark:bg-gray-800/40"
-                                style={{ borderColor: isEquipped ? 'rgba(139,92,246,0.6)' : 'rgba(139,92,246,0.25)', borderWidth: 1 }}
+                                style={{ borderColor: isEquipped ? 'rgb(var(--color-battle-bright-rgb) / 0.6)' : 'rgb(var(--color-battle-bright-rgb) / 0.25)', borderWidth: 1 }}
                               >
                                 {/* Equip animation overlay — 居中的毛玻璃小卡片，不遮挡整张卡片 */}
                                 <AnimatePresence>
@@ -446,11 +446,11 @@ export const BattleArena = () => {
                                         transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
                                         className="rounded-2xl px-5 py-3 text-center shadow-xl max-w-[85%]"
                                         style={{
-                                          background: 'rgba(139,92,246,0.78)',
+                                          background: 'rgb(var(--color-battle-bright-rgb) / 0.78)',
                                           backdropFilter: 'blur(8px) saturate(140%)',
                                           WebkitBackdropFilter: 'blur(8px) saturate(140%)',
                                           border: '1px solid rgba(233,213,255,0.4)',
-                                          boxShadow: '0 6px 24px rgba(88,28,135,0.35), 0 0 18px rgba(139,92,246,0.35)',
+                                          boxShadow: '0 6px 24px rgba(88,28,135,0.35), 0 0 18px rgb(var(--color-battle-bright-rgb) / 0.35)',
                                         }}
                                       >
                                         <motion.p
@@ -477,7 +477,7 @@ export const BattleArena = () => {
                                 {/* Card header */}
                                 <div
                                   className="px-5 py-4 bg-purple-50 dark:bg-gray-700/50"
-                                  style={{ borderBottom: isEquipped ? '1px solid rgba(139,92,246,0.3)' : '1px solid rgba(139,92,246,0.15)' }}
+                                  style={{ borderBottom: isEquipped ? '1px solid rgb(var(--color-battle-bright-rgb) / 0.3)' : '1px solid rgb(var(--color-battle-bright-rgb) / 0.15)' }}
                                 >
                                   <div className="flex items-start justify-between gap-3">
                                     <div className="flex-1 min-w-0">
@@ -488,7 +488,7 @@ export const BattleArena = () => {
                                               ✦ {currentAttrPersona.name}
                                             </p>
                                             {isEquipped && (
-                                              <span className="text-xs font-bold px-1.5 py-0.5 rounded-full flex-shrink-0" style={{ background: 'rgba(139,92,246,0.5)', color: '#e9d5ff' }}>
+                                              <span className="text-xs font-bold px-1.5 py-0.5 rounded-full flex-shrink-0" style={{ background: 'rgb(var(--color-battle-bright-rgb) / 0.5)', color: '#e9d5ff' }}>
                                                 佩戴中
                                               </span>
                                             )}
@@ -508,9 +508,9 @@ export const BattleArena = () => {
                                       onClick={handleEquip}
                                       className="flex-shrink-0 px-3 py-1.5 rounded-xl text-xs font-bold transition-all"
                                       style={{
-                                        background: isEquipped ? 'rgba(139,92,246,0.5)' : 'rgba(139,92,246,0.1)',
-                                        color: isEquipped ? '#e9d5ff' : '#7c3aed',
-                                        border: isEquipped ? '1px solid rgba(139,92,246,0.7)' : '1px solid rgba(139,92,246,0.3)',
+                                        background: isEquipped ? 'rgb(var(--color-battle-bright-rgb) / 0.5)' : 'rgb(var(--color-battle-bright-rgb) / 0.1)',
+                                        color: isEquipped ? '#e9d5ff' : 'rgb(var(--color-battle-rgb))',
+                                        border: isEquipped ? '1px solid rgb(var(--color-battle-bright-rgb) / 0.7)' : '1px solid rgb(var(--color-battle-bright-rgb) / 0.3)',
                                       }}
                                     >
                                       {isEquipped ? '已佩戴' : '佩戴'}
@@ -547,7 +547,7 @@ export const BattleArena = () => {
                                         <div className="flex items-center gap-2 flex-1 min-w-0">
                                           <span
                                             className="text-xs font-black flex-shrink-0 px-1.5 py-0.5 rounded text-purple-600 dark:text-purple-300"
-                                            style={{ background: 'rgba(139,92,246,0.1)' }}
+                                            style={{ background: 'rgb(var(--color-battle-bright-rgb) / 0.1)' }}
                                           >
                                             {skill.level}
                                           </span>
@@ -638,7 +638,7 @@ export const BattleArena = () => {
                           <button
                             onClick={() => setShowPersonaShuffle(true)}
                             className="px-4 py-2 rounded-xl text-xs font-bold text-purple-400 transition-all"
-                            style={{ background: 'rgba(139,92,246,0.1)', border: '1px solid rgba(139,92,246,0.3)' }}
+                            style={{ background: 'rgb(var(--color-battle-bright-rgb) / 0.1)', border: '1px solid rgb(var(--color-battle-bright-rgb) / 0.3)' }}
                           >
                             洗牌
                           </button>
@@ -707,7 +707,7 @@ export const BattleArena = () => {
                         <div className="flex items-center gap-2">
                           <div
                             className="w-2 h-2 rounded-full flex-shrink-0"
-                            style={{ background: inShadowTime ? '#7c3aed' : '#9ca3af' }}
+                            style={{ background: inShadowTime ? 'rgb(var(--color-battle-rgb))' : '#9ca3af' }}
                           />
                           <span className="text-xs font-semibold text-gray-500 dark:text-gray-400">
                             {inShadowTime

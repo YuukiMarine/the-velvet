@@ -44,7 +44,7 @@ function RisingParticles() {
         yTop: 110 + Math.random() * 10,  // 稳定：决定每个粒子升到何处
         maxOpacity: 0.35 + Math.random() * 0.45,
         color: tinted ? '#fde68a' : '#c4b5fd',
-        glow: tinted ? 'rgba(251,191,36,0.65)' : 'rgba(167,139,250,0.65)',
+        glow: tinted ? 'rgba(251,191,36,0.65)' : 'rgb(var(--color-battle-bright-rgb) / 0.65)',
       };
     });
   }, []);
@@ -231,7 +231,7 @@ function AwakeningOverlayInner({ isOpen, previewRef }: { isOpen: boolean; previe
             transition={{ duration: 3, repeat: Infinity }}
             style={{
               background:
-                'radial-gradient(circle at 50% 50%, rgba(139,92,246,0.25) 0%, transparent 60%)',
+                'radial-gradient(circle at 50% 50%, rgb(var(--color-battle-bright-rgb) / 0.25) 0%, transparent 60%)',
             }}
           />
 

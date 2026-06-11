@@ -211,7 +211,7 @@ export function ShadowCreateModal({ isOpen, onClose }: Props) {
                     <button
                       onClick={handleAIGenerate}
                       className="flex-1 py-3 rounded-xl text-white text-sm font-semibold"
-                      style={{ background: error ? 'linear-gradient(90deg, #ef4444, #b91c1c)' : 'linear-gradient(90deg, #dc2626, #7c3aed)' }}
+                      style={{ background: error ? 'linear-gradient(90deg, #ef4444, #b91c1c)' : 'linear-gradient(90deg, #dc2626, rgb(var(--color-battle-rgb)))' }}
                     >
                       {error ? '🔄 重试识破' : '✨ 识破暗影'}
                     </button>
@@ -272,7 +272,7 @@ export function ShadowCreateModal({ isOpen, onClose }: Props) {
                     <button
                       onClick={handleManual}
                       className="flex-1 py-2 rounded-xl text-white text-sm font-semibold"
-                      style={{ background: 'linear-gradient(90deg, #dc2626, #7c3aed)' }}
+                      style={{ background: 'linear-gradient(90deg, #dc2626, rgb(var(--color-battle-rgb)))' }}
                     >
                       识破
                     </button>

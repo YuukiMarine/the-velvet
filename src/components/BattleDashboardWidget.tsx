@@ -35,8 +35,8 @@ export const BattleDashboardWidget = () => {
   const subCls    = inShadowTime ? 'text-white/50'            : 'text-gray-500 dark:text-gray-400';
   const dimCls    = inShadowTime ? 'text-white/40'            : 'text-gray-400 dark:text-gray-500';
   const smallCls  = inShadowTime ? 'text-white/60'            : 'text-gray-600 dark:text-gray-300';
-  const spBg      = inShadowTime ? 'rgba(139,92,246,0.3)'     : 'rgba(124,58,237,0.15)';
-  const spColor   = inShadowTime ? '#c4b5fd'                   : '#7c3aed';
+  const spBg      = inShadowTime ? 'rgb(var(--color-battle-bright-rgb) / 0.3)'     : 'rgb(var(--color-battle-rgb) / 0.15)';
+  const spColor   = inShadowTime ? '#c4b5fd'                   : 'rgb(var(--color-battle-rgb))';
   const hpTrack   = inShadowTime ? 'rgba(255,255,255,0.1)'    : 'rgba(0,0,0,0.08)';
 
   return (
@@ -50,8 +50,8 @@ export const BattleDashboardWidget = () => {
       }`}
       style={inShadowTime ? {
         background: 'linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%)',
-        boxShadow: '0 0 20px rgba(139, 92, 246, 0.4)',
-        border: '1px solid rgba(139,92,246,0.4)',
+        boxShadow: '0 0 20px rgb(var(--color-battle-bright-rgb) / 0.4)',
+        border: '1px solid rgb(var(--color-battle-bright-rgb) / 0.4)',
       } : {}}
     >
       {/* Left icon */}
@@ -121,7 +121,7 @@ export const BattleDashboardWidget = () => {
           animate={{ opacity: [1, 0.5, 1] }}
           transition={{ repeat: Infinity, duration: 1.5 }}
           className="flex-shrink-0 text-xs font-black px-2 py-1 rounded-lg"
-          style={{ background: 'rgba(139,92,246,0.4)', color: '#c4b5fd' }}
+          style={{ background: 'rgb(var(--color-battle-bright-rgb) / 0.4)', color: '#c4b5fd' }}
         >
           影
         </motion.span>
