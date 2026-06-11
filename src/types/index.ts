@@ -191,6 +191,32 @@ export interface KeywordRule {
   points: number;
 }
 
+/**
+ * F2a 本地通知——单条提醒的「内容类型」。排程时各自读端上数据判断是否「可操作」：
+ *  - tarot：今日塔罗未抽
+ *  - todos：今日仍有未完成的每日待办
+ *  - countercurrent：有属性明日将逆流扣减（连日无增长）
+ *  - summary：有未读的成长总结
+ *  - record：今天还没有任何记录（提醒回来记录）
+ */
+export type NotifContentType = 'tarot' | 'todos' | 'countercurrent' | 'summary' | 'record';
+
+/**
+ * F2a 本地通知——一个「每日时段」。每个时段在自己的时间点检查 contents 里
+ * 列出的内容类型，挑出最值得提醒的一条以 Velvet 口吻推送。
+ * 注：本地通知由系统提前排程，触发时 App 多半未运行；内容在「排程时」由端上
+ * 快照烤好，靠「切前台必重排 + 条件已满足即撤销」保持新鲜（见 utils/notifications.ts）。
+ */
+export interface NotifSlot {
+  id: string;
+  /** 'HH:MM' 24h 本地时间 */
+  time: string;
+  enabled: boolean;
+  /** 用户可见名，如「晨间序曲」「夜间结算」 */
+  label: string;
+  contents: NotifContentType[];
+}
+
 export interface Settings {
   id?: string;
   attributeNames: AttributeNames;
@@ -222,6 +248,13 @@ export interface Settings {
   customSoundScheme?: ThemeType;   // 自定义音效方案（custom 主题时使用，默认跟随 blue）
   countercurrentEnabled?: boolean; // 逆流：连续3日无增长属性自动 -1/天
   countercurrentEnabledAt?: string; // 逆流开启日期 YYYY-MM-DD，防止开启当天就触发
+  // ── F2a 本地通知 ─────────────────────────────────────────
+  /** 本地通知总开关。默认 false = 关；开启需用户授予系统通知权限（仅原生平台生效）。 */
+  notificationsEnabled?: boolean;
+  /** 每日提醒时段列表；缺省时回退到 DEFAULT_SETTINGS 的两槽（晨/晚）。 */
+  notificationSlots?: NotifSlot[];
+  /** F2a 一次性回填标记：历史成长总结的 viewedAt 已补齐（视为已读），避免开启通知时旧总结被判未读。 */
+  summaryViewedBackfillDone?: boolean;
   // AI 总结功能配置
   summaryApiProvider?: 'openai' | 'deepseek' | 'kimi' | 'gemini' | 'minimax';
   summaryApiKey?: string;
@@ -334,6 +367,8 @@ export interface PeriodSummary {
   createdAt: Date;
   /** v2.1+：归档时把追问问答一并存下；老记录此字段为 undefined */
   followUp?: PeriodSummaryFollowUp;
+  /** v2.5+：用户首次打开该总结的时间；undefined = 未读（F2a「未读成长总结」提醒源）。 */
+  viewedAt?: Date;
   /**
    * 重建追问所需的"原始 prompt 上下文"：
    * 不存就没法在归档里再次追问（要重新组 prompt 太麻烦），所以一同存下。
