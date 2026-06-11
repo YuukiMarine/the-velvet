@@ -283,19 +283,12 @@ export const Statistics = () => {
         <PageTitle title="统计" en="Statistics" enOffset={{ right: -24 }} />
       </div>
 
-      {/* stat grid */}
-      <div className="grid grid-cols-2 gap-3">
-        <StatCard label="累计点数" value={totalPoints} sub="所有属性总和" delay={0} />
-        <StatCard label="记录天数" value={uniqueDays} sub={`共 ${totalRecords} 条记录`} delay={0.05} />
-        <StatCard label="最长连续" value={`${maxStreak}天`} sub={todayStreak > 0 ? `当前连续 ${todayStreak} 天` : '继续加油！'} delay={0.1} />
-        <StatCard label="日均点数" value={avgPerDay} sub={topAttr?.total > 0 ? `最强：${settings.attributeNames[topAttr.id]}` : ''} delay={0.15} />
-      </div>
-
-      {/* growth curve */}
+      {/* growth curve —— 统计页独有的可视化，置顶为 hero（审计 §3.5：此前被首页已有的
+          汇总卡压到下方）。点「详细统计 →」进来第一眼即看到成长轨迹，而非重复的汇总数。 */}
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.2, duration: 0.5 }}
+        transition={{ delay: 0.05, duration: 0.5 }}
         className="rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm p-5"
       >
         <div className="flex items-center justify-between mb-4">
@@ -307,6 +300,15 @@ export const Statistics = () => {
         </div>
         <GrowthCurve activities={activities} />
       </motion.div>
+
+      {/* stat grid —— 汇总数（累计/记录天数/最长连续与首页成长概览同值，但此处附带
+          「共 N 条记录 / 当前连续 N 天」等子上下文；日均点数为本页独有）。作为曲线下的摘要。 */}
+      <div className="grid grid-cols-2 gap-3">
+        <StatCard label="累计点数" value={totalPoints} sub="所有属性总和" delay={0.15} />
+        <StatCard label="记录天数" value={uniqueDays} sub={`共 ${totalRecords} 条记录`} delay={0.2} />
+        <StatCard label="最长连续" value={`${maxStreak}天`} sub={todayStreak > 0 ? `当前连续 ${todayStreak} 天` : '继续加油！'} delay={0.25} />
+        <StatCard label="日均点数" value={avgPerDay} sub={topAttr?.total > 0 ? `最强：${settings.attributeNames[topAttr.id]}` : ''} delay={0.3} />
+      </div>
 
       {/* attribute trend */}
       <motion.div
