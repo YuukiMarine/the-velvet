@@ -226,7 +226,7 @@ export function ConfidantDetailModal({
   if (!isOpen || !confidant) return null;
 
   const card = TAROT_BY_ID[confidant.arcanaId];
-  const accent = card?.accent || '#6366f1';
+  const accent = card?.accent || 'rgb(var(--color-bond-rgb))';
   const isReversed = confidant.orientation === 'reversed';
 
   const isMax = confidant.intimacy >= MAX_INTIMACY;
@@ -546,12 +546,12 @@ export function ConfidantDetailModal({
                       className="mt-1.5 inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-black tracking-wider border transition-all active:scale-95"
                       style={{
                         background: identified
-                          ? 'linear-gradient(135deg, rgba(124,58,237,0.22), rgba(168,85,247,0.12))'
-                          : 'linear-gradient(135deg, rgba(220,38,38,0.22), rgba(124,58,237,0.12))',
+                          ? 'linear-gradient(135deg, rgb(var(--color-battle-rgb) / 0.22), rgb(var(--color-bond-bright-rgb) / 0.12))'
+                          : 'linear-gradient(135deg, rgba(220,38,38,0.22), rgb(var(--color-battle-rgb) / 0.12))',
                         borderColor: identified ? 'rgba(196,181,253,0.55)' : 'rgba(248,113,113,0.55)',
                         color: identified ? '#c4b5fd' : '#fca5a5',
                         boxShadow: identified
-                          ? '0 0 10px -2px rgba(168,85,247,0.5)'
+                          ? '0 0 10px -2px rgb(var(--color-bond-bright-rgb) / 0.5)'
                           : '0 0 10px -2px rgba(220,38,38,0.6)',
                       }}
                       title={identified ? `羁绊之影 · HP ${hpPct}%` : '羁绊之影 · 未识破'}
@@ -670,14 +670,14 @@ export function ConfidantDetailModal({
                       onClick={() => setMemorialOpen(true)}
                       className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl border transition-all active:scale-[0.98]"
                       style={{
-                        background: 'linear-gradient(135deg, rgba(251,191,36,0.08), rgba(168,85,247,0.05))',
+                        background: 'linear-gradient(135deg, rgba(251,191,36,0.08), rgb(var(--color-bond-bright-rgb) / 0.05))',
                         borderColor: 'rgba(251,191,36,0.3)',
                       }}
                     >
                       <div
                         className="w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
                         style={{
-                          background: 'radial-gradient(circle at 30% 30%, rgba(251,191,36,0.3), rgba(168,85,247,0.15))',
+                          background: 'radial-gradient(circle at 30% 30%, rgba(251,191,36,0.3), rgb(var(--color-bond-bright-rgb) / 0.15))',
                           border: '1px solid rgba(251,191,36,0.3)',
                         }}
                       >

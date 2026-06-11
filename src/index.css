@@ -23,8 +23,9 @@
   --color-battle-rgb: 124 58 237;        /* #7c3aed */
   --color-battle-bright-rgb: 139 92 246; /* #8b5cf6 */
   --color-battle-indigo-rgb: 79 70 229;  /* #4f46e5 */
-  /* 羁绊域：靛 */
+  /* 羁绊域：靛主 + 紫（indigo→purple CTA 渐变末端） */
   --color-bond-rgb: 99 102 241;          /* #6366f1 */
+  --color-bond-bright-rgb: 168 85 247;   /* #a855f7 */
   /* 塔罗 / 占卜域：琥珀金 */
   --color-gold-rgb: 245 158 11;          /* #f59e0b */
 }

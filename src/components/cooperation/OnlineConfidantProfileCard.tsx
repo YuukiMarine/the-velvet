@@ -170,7 +170,7 @@ export function OnlineConfidantProfileCard({
           style={{
             background: 'linear-gradient(180deg, #1c1b3a 0%, #0e0e25 100%)',
             border: '1px solid rgba(196,181,253,0.22)',
-            boxShadow: '0 30px 80px rgba(0,0,0,0.5), 0 0 50px rgba(124,58,237,0.22)',
+            boxShadow: '0 30px 80px rgba(0,0,0,0.5), 0 0 50px rgb(var(--color-battle-rgb) / 0.22)',
           }}
         >
           {/* Header */}
@@ -269,7 +269,7 @@ export function OnlineConfidantProfileCard({
                   <Radar
                     dataKey="value"
                     stroke="#a78bfa"
-                    fill="#7c3aed"
+                    fill="rgb(var(--color-battle-rgb))"
                     fillOpacity={0.35}
                     strokeWidth={1.5}
                   />
@@ -286,7 +286,7 @@ export function OnlineConfidantProfileCard({
                     onClick={() => setSelectedAttr(axis.id)}
                     className="min-w-0 rounded-lg px-1.5 py-1.5 text-center border transition-colors"
                     style={{
-                      background: active ? 'rgba(124,58,237,0.26)' : 'rgba(255,255,255,0.04)',
+                      background: active ? 'rgb(var(--color-battle-rgb) / 0.26)' : 'rgba(255,255,255,0.04)',
                       borderColor: active ? 'rgba(196,181,253,0.5)' : 'rgba(196,181,253,0.14)',
                       color: active ? '#f5e6ff' : '#a89dc0',
                     }}
@@ -300,7 +300,7 @@ export function OnlineConfidantProfileCard({
             <div
               className="mt-2 rounded-xl px-3 py-2 text-center border"
               style={{
-                background: 'linear-gradient(135deg, rgba(196,181,253,0.14), rgba(124,58,237,0.06))',
+                background: 'linear-gradient(135deg, rgba(196,181,253,0.14), rgb(var(--color-battle-rgb) / 0.06))',
                 borderColor: 'rgba(196,181,253,0.25)',
               }}
             >
@@ -316,7 +316,7 @@ export function OnlineConfidantProfileCard({
               <div
                 className="rounded-xl px-3 py-2 text-center border"
                 style={{
-                  background: 'linear-gradient(135deg, rgba(124,58,237,0.18), rgba(124,58,237,0.06))',
+                  background: 'linear-gradient(135deg, rgb(var(--color-battle-rgb) / 0.18), rgb(var(--color-battle-rgb) / 0.06))',
                   borderColor: 'rgba(196,181,253,0.25)',
                 }}
               >
@@ -407,7 +407,7 @@ export function OnlineConfidantProfileCard({
                   disabled
                   className="py-3 rounded-xl text-sm font-bold text-gray-200 cursor-default"
                   style={{
-                    background: 'linear-gradient(135deg, rgba(99,102,241,0.6), rgba(79,70,229,0.5))',
+                    background: 'linear-gradient(135deg, rgb(var(--color-bond-rgb) / 0.6), rgba(79,70,229,0.5))',
                   }}
                 >
                   <div className="flex items-center justify-center gap-1.5">
@@ -455,8 +455,8 @@ export function OnlineConfidantProfileCard({
                   onClick={onProposeCoop}
                   className="py-3 rounded-xl text-sm font-bold text-white shadow-md"
                   style={{
-                    background: 'linear-gradient(135deg, #6366f1, #a855f7)',
-                    boxShadow: '0 6px 20px rgba(99,102,241,0.35)',
+                    background: 'linear-gradient(135deg, rgb(var(--color-bond-rgb)), rgb(var(--color-bond-bright-rgb)))',
+                    boxShadow: '0 6px 20px rgb(var(--color-bond-rgb) / 0.35)',
                   }}
                 >
                   <div className="flex items-center justify-center gap-1.5">

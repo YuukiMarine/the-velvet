@@ -81,7 +81,7 @@ export function ConfidantInteractionModal({ isOpen, onClose, confidant }: Props)
   if (!isOpen || !confidant) return null;
 
   const card = TAROT_BY_ID[confidant.arcanaId];
-  const accent = card?.accent || '#6366f1';
+  const accent = card?.accent || 'rgb(var(--color-bond-rgb))';
   const alreadyToday = confidant.lastInteractionDate === toLocalDateKey();
 
   const handleEval = async () => {

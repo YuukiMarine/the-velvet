@@ -404,7 +404,7 @@ export function CounselChatModal({ isOpen, onClose, initialMentionId }: Props) {
           <div
             className="px-4 pt-5 pb-3 border-b border-gray-100 dark:border-gray-800 flex items-center gap-3"
             style={{
-              background: 'linear-gradient(135deg, rgba(99,102,241,0.08), rgba(168,85,247,0.04))',
+              background: 'linear-gradient(135deg, rgb(var(--color-bond-rgb) / 0.08), rgb(var(--color-bond-bright-rgb) / 0.04))',
             }}
           >
             <button
@@ -415,7 +415,7 @@ export function CounselChatModal({ isOpen, onClose, initialMentionId }: Props) {
             >←</button>
             <div className="flex-1">
               <h3 className="text-base font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                <span style={{ color: '#6366f1' }}>✧</span>
+                <span style={{ color: 'rgb(var(--color-bond-rgb))' }}>✧</span>
                 谏言
               </h3>
               <div className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5">
@@ -522,8 +522,8 @@ export function CounselChatModal({ isOpen, onClose, initialMentionId }: Props) {
                       disabled={sending}
                       className="px-7 py-3 rounded-full text-white text-sm font-bold shadow-lg disabled:opacity-50"
                       style={{
-                        background: 'linear-gradient(135deg, #6366f1, #a855f7)',
-                        boxShadow: '0 14px 30px -12px rgba(124,58,237,0.6)',
+                        background: 'linear-gradient(135deg, rgb(var(--color-bond-rgb)), rgb(var(--color-bond-bright-rgb)))',
+                        boxShadow: '0 14px 30px -12px rgb(var(--color-battle-rgb) / 0.6)',
                       }}
                     >
                       开始对话
@@ -622,7 +622,7 @@ export function CounselChatModal({ isOpen, onClose, initialMentionId }: Props) {
                       disabled={!input.trim() || !counselSession || !!sessionExpired}
                       className="flex-shrink-0 h-10 px-4 rounded-xl text-white text-sm font-bold shadow-md disabled:opacity-40 transition-opacity"
                       style={{
-                        background: 'linear-gradient(135deg, #6366f1, #a855f7)',
+                        background: 'linear-gradient(135deg, rgb(var(--color-bond-rgb)), rgb(var(--color-bond-bright-rgb)))',
                       }}
                     >
                       发送
@@ -674,7 +674,7 @@ export function CounselChatModal({ isOpen, onClose, initialMentionId }: Props) {
                       onClick={handleExitStay}
                       disabled={archiving}
                       className="w-full py-2.5 rounded-xl text-sm font-bold text-white shadow-md disabled:opacity-40"
-                      style={{ background: 'linear-gradient(135deg, #6366f1, #a855f7)' }}
+                      style={{ background: 'linear-gradient(135deg, rgb(var(--color-bond-rgb)), rgb(var(--color-bond-bright-rgb)))' }}
                     >
                       暂离 · 一小时内可回来继续
                     </button>
@@ -732,7 +732,7 @@ export function CounselChatModal({ isOpen, onClose, initialMentionId }: Props) {
                       disabled={archiving}
                       className="py-2 rounded-xl text-sm font-bold text-white"
                       style={{
-                        background: 'linear-gradient(135deg, #6366f1, #a855f7)',
+                        background: 'linear-gradient(135deg, rgb(var(--color-bond-rgb)), rgb(var(--color-bond-bright-rgb)))',
                       }}
                     >
                       {archiving ? '正在压缩…' : '归档'}
@@ -791,8 +791,8 @@ function MessageBubble({
                 key={c.id}
                 className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold"
                 style={{
-                  background: `${TAROT_BY_ID[c.arcanaId]?.accent ?? '#6366f1'}22`,
-                  color: TAROT_BY_ID[c.arcanaId]?.accent ?? '#6366f1',
+                  background: `${TAROT_BY_ID[c.arcanaId]?.accent ?? 'rgb(var(--color-bond-rgb))'}22`,
+                  color: TAROT_BY_ID[c.arcanaId]?.accent ?? 'rgb(var(--color-bond-rgb))',
                 }}
               >
                 @{c.name}
@@ -881,7 +881,7 @@ function MentionPicker({
             const picked = selected.includes(c.id);
             // 这位同伴的档案当前是否已在 prompt 上下文里（10 回合 CD 内）
             const inContext = isActive(c.id);
-            const accent = TAROT_BY_ID[c.arcanaId]?.accent ?? '#6366f1';
+            const accent = TAROT_BY_ID[c.arcanaId]?.accent ?? 'rgb(var(--color-bond-rgb))';
             return (
               <button
                 key={c.id}

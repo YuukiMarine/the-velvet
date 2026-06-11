@@ -64,8 +64,8 @@ export function ConfidantSupportRow({ onHealHp, onRestoreSp, disabled }: Props) 
             disabled={disabled}
             className="flex-1 py-2 rounded-xl text-xs font-semibold transition-all disabled:opacity-40"
             style={{
-              background: 'rgba(168,85,247,0.18)',
-              border: '1px solid rgba(168,85,247,0.4)',
+              background: 'rgb(var(--color-bond-bright-rgb) / 0.18)',
+              border: '1px solid rgb(var(--color-bond-bright-rgb) / 0.4)',
               color: '#d8b4fe',
             }}
           >

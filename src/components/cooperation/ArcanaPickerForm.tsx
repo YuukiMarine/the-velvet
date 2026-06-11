@@ -72,7 +72,7 @@ export function ArcanaPickerForm({ takenArcanaIds, initial, recommendedArcanaId,
   }, [arcanaId, orientation, intimacyLevel, skillAttribute, message, onChange, taken]);
 
   const selectedCard = arcanaId ? TAROT_BY_ID[arcanaId] : null;
-  const accent = selectedCard?.accent ?? '#6366f1';
+  const accent = selectedCard?.accent ?? 'rgb(var(--color-bond-rgb))';
 
   return (
     <div className="space-y-4">

@@ -553,8 +553,8 @@ export function Cooperation() {
           onClick={() => setCreateOpen(true)}
           className="fixed bottom-24 md:bottom-8 right-5 md:right-8 z-40 w-14 h-14 rounded-full text-white shadow-2xl flex items-center justify-center text-2xl font-bold"
           style={{
-            background: 'linear-gradient(135deg, #6366f1, #a855f7)',
-            boxShadow: '0 12px 36px -8px rgba(168, 85, 247, 0.5)',
+            background: 'linear-gradient(135deg, rgb(var(--color-bond-rgb)), rgb(var(--color-bond-bright-rgb)))',
+            boxShadow: '0 12px 36px -8px rgb(var(--color-bond-bright-rgb) / 0.5)',
           }}
           aria-label="新增同伴"
         >

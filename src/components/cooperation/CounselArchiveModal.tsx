@@ -56,7 +56,7 @@ export function CounselArchiveModal({ isOpen, onClose }: Props) {
           <div
             className="px-5 pt-5 pb-4 border-b border-gray-100 dark:border-gray-800 flex items-center gap-3"
             style={{
-              background: 'linear-gradient(135deg, rgba(99,102,241,0.08), rgba(168,85,247,0.04))',
+              background: 'linear-gradient(135deg, rgb(var(--color-bond-rgb) / 0.08), rgb(var(--color-bond-bright-rgb) / 0.04))',
             }}
           >
             <div className="flex-1">
@@ -115,8 +115,8 @@ export function CounselArchiveModal({ isOpen, onClose }: Props) {
                             key={c.id}
                             className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold"
                             style={{
-                              background: `${TAROT_BY_ID[c.arcanaId]?.accent ?? '#6366f1'}18`,
-                              color: TAROT_BY_ID[c.arcanaId]?.accent ?? '#6366f1',
+                              background: `${TAROT_BY_ID[c.arcanaId]?.accent ?? 'rgb(var(--color-bond-rgb))'}18`,
+                              color: TAROT_BY_ID[c.arcanaId]?.accent ?? 'rgb(var(--color-bond-rgb))',
                             }}
                           >
                             @{c.name}

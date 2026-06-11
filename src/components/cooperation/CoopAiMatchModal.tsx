@@ -183,7 +183,7 @@ export function CoopAiMatchModal({ isOpen, onClose, targetName, takenArcanaIds, 
   if (!isOpen) return null;
 
   const card = matchResult ? TAROT_BY_ID[matchResult.arcanaId] : null;
-  const accent = card?.accent || '#6366f1';
+  const accent = card?.accent || 'rgb(var(--color-bond-rgb))';
   const descriptionValid = description.trim().length >= 6;
 
   return createPortal(
@@ -209,7 +209,7 @@ export function CoopAiMatchModal({ isOpen, onClose, targetName, takenArcanaIds, 
           <div
             className="px-5 pt-5 pb-3 border-b border-gray-100 dark:border-gray-800 flex items-center gap-3"
             style={{
-              background: 'linear-gradient(135deg, rgba(168,85,247,0.08), rgba(99,102,241,0.04))',
+              background: 'linear-gradient(135deg, rgb(var(--color-bond-bright-rgb) / 0.08), rgb(var(--color-bond-rgb) / 0.04))',
             }}
           >
             <div className="flex-1 min-w-0">
@@ -285,9 +285,9 @@ export function CoopAiMatchModal({ isOpen, onClose, targetName, takenArcanaIds, 
                         className="w-2 h-2 rounded-full transition-all"
                         style={{
                           background: traitAnswers[i]
-                            ? 'var(--color-primary, #6366f1)'
+                            ? 'var(--color-primary, rgb(var(--color-bond-rgb)))'
                             : i === traitStep
-                            ? 'var(--color-primary, #6366f1)'
+                            ? 'var(--color-primary, rgb(var(--color-bond-rgb)))'
                             : 'rgba(148,163,184,0.3)',
                           transform: i === traitStep ? 'scale(1.3)' : 'scale(1)',
                         }}
@@ -315,8 +315,8 @@ export function CoopAiMatchModal({ isOpen, onClose, targetName, takenArcanaIds, 
                               : 'text-gray-700 dark:text-gray-200'
                           }`}
                           style={{
-                            background: active ? 'rgba(99,102,241,0.15)' : 'rgba(148,163,184,0.07)',
-                            border: `1px solid ${active ? 'rgba(99,102,241,0.5)' : 'rgba(148,163,184,0.2)'}`,
+                            background: active ? 'rgb(var(--color-bond-rgb) / 0.15)' : 'rgba(148,163,184,0.07)',
+                            border: `1px solid ${active ? 'rgb(var(--color-bond-rgb) / 0.5)' : 'rgba(148,163,184,0.2)'}`,
                           }}
                         >
                           {option}
@@ -342,7 +342,7 @@ export function CoopAiMatchModal({ isOpen, onClose, targetName, takenArcanaIds, 
                     animate={{ rotate: 360 }}
                     transition={{ duration: 4, repeat: Infinity, ease: 'linear' }}
                     className="w-16 h-16 rounded-2xl mx-auto flex items-center justify-center text-3xl"
-                    style={{ background: 'linear-gradient(135deg, #a855f7, #6366f1)' }}
+                    style={{ background: 'linear-gradient(135deg, rgb(var(--color-bond-bright-rgb)), rgb(var(--color-bond-rgb)))' }}
                   >
                     <span className="text-white">✦</span>
                   </motion.div>
@@ -512,7 +512,7 @@ export function CoopAiMatchModal({ isOpen, onClose, targetName, takenArcanaIds, 
                 whileTap={{ scale: 0.97 }}
                 onClick={handleApply}
                 className="py-2.5 rounded-xl text-xs font-bold text-white shadow-md"
-                style={{ background: 'linear-gradient(135deg, #a855f7, #6366f1)' }}
+                style={{ background: 'linear-gradient(135deg, rgb(var(--color-bond-bright-rgb)), rgb(var(--color-bond-rgb)))' }}
               >
                 就用这份 ✨
               </motion.button>
