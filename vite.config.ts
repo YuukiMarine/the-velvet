@@ -71,6 +71,7 @@ export default defineConfig({
           vendor: ['react', 'react-dom'],
           // motion v12 是薄壳，真实实现在其依赖的 framer-motion，两层归同一 chunk
           motion: ['motion', 'framer-motion'],
+          gsap: ['gsap', '@gsap/react'],  // 动线层（DrawSVG 引导线等）；独立 chunk 优化缓存
           charts: ['recharts'],  // Dashboard 也依赖 recharts，需保留独立 chunk 以优化缓存
           db: ['dexie', 'dexie-react-hooks']
         }
