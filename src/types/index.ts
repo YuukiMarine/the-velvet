@@ -46,7 +46,7 @@ export interface Activity {
   };
   method: 'local' | 'todo' | 'battle';
   important?: boolean;
-  category?: 'skill_unlock' | 'achievement_unlock' | 'level_up' | 'weekly_goal' | 'countercurrent' | 'shadow_defeat' | 'confidant' | 'calling_card_clear';
+  category?: 'skill_unlock' | 'achievement_unlock' | 'level_up' | 'weekly_goal' | 'countercurrent' | 'shadow_defeat' | 'confidant' | 'calling_card_clear' | 'ledger';
   /** 同伴互动记录的关联同伴 id（category === 'confidant' 时填充） */
   confidantId?: string;
   levelUps?: Array<{
@@ -260,6 +260,16 @@ export interface Settings {
   ledgerEnabled?: boolean;
   /** 货币代码，默认 'CNY'（¥）。 */
   currency?: string;
+  /** F5 消费评估开关（默认关）：开后每笔支出可评「值 / 不值」，值得 +1 SP。 */
+  spendEvalEnabled?: boolean;
+  /** F5 记账奖励日封顶计数的锚日（YYYY-MM-DD）。 */
+  ledgerRewardDate?: string;
+  /** F5 今日已发记账 SP（日封顶 20）。 */
+  ledgerSpToday?: number;
+  /** F5 今日已发投资加点（日封顶 2）。 */
+  ledgerAttrToday?: number;
+  /** F5 月度「不超预算」+10SP 已发放的月份（YYYY-MM），防重复发放。 */
+  ledgerBudgetBonusMonths?: string[];
   // AI 总结功能配置
   summaryApiProvider?: 'openai' | 'deepseek' | 'kimi' | 'gemini' | 'minimax';
   summaryApiKey?: string;

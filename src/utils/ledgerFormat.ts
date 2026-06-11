@@ -41,3 +41,26 @@ export function shiftMonth(period: string, delta: number): string {
   const d = new Date(y, m - 1 + delta, 1);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
+
+// ── 资产板块（F5③）：类目绑定 emoji 图标（替代图标库，零依赖、零存储） ──
+export const ASSET_CATEGORIES: { key: string; icon: string; label: string }[] = [
+  { key: 'digital', icon: '📱', label: '数码' },
+  { key: 'computer', icon: '💻', label: '电脑' },
+  { key: 'camera', icon: '📷', label: '影像' },
+  { key: 'instrument', icon: '🎸', label: '乐器' },
+  { key: 'audio', icon: '🎧', label: '音频' },
+  { key: 'game', icon: '🎮', label: '游戏' },
+  { key: 'transport', icon: '🚲', label: '出行' },
+  { key: 'home', icon: '🪑', label: '家居' },
+  { key: 'wearable', icon: '⌚', label: '穿戴' },
+  { key: 'book', icon: '📚', label: '书籍' },
+  { key: 'sport', icon: '🏋️', label: '运动' },
+  { key: 'other', icon: '📦', label: '其它' },
+];
+export const assetIcon = (category: string) => ASSET_CATEGORIES.find(c => c.key === category)?.icon ?? '📦';
+
+export const ASSET_STATUS: Record<'inuse' | 'idle' | 'soldout', { label: string; cls: string }> = {
+  inuse: { label: '在用', cls: 'text-emerald-500' },
+  idle: { label: '闲置', cls: 'text-amber-500' },
+  soldout: { label: '已出', cls: 'text-gray-400' },
+};

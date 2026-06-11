@@ -1,5 +1,5 @@
 ﻿import { create } from 'zustand';
-import { User, Attribute, Activity, Achievement, Skill, Settings, ThemeType, AttributeId, AttributeNamesKey, Todo, TodoCompletion, PeriodSummary, SummaryPeriod, SummaryPromptPreset, WeeklyGoal, WeeklyGoalItem, Persona, Shadow, BattleState, BattleLogEntry, BattleAction, DailyDivination, LongReading, LongReadingFollowUp, Confidant, ConfidantEvent, ConfidantBuff, CounselSession, CounselMessage, CounselArchive, CallingCard, NotifSlot, LedgerEntry, Budget } from '@/types';
+import { User, Attribute, Activity, Achievement, Skill, Settings, ThemeType, AttributeId, AttributeNamesKey, Todo, TodoCompletion, PeriodSummary, SummaryPeriod, SummaryPromptPreset, WeeklyGoal, WeeklyGoalItem, Persona, Shadow, BattleState, BattleLogEntry, BattleAction, DailyDivination, LongReading, LongReadingFollowUp, Confidant, ConfidantEvent, ConfidantBuff, CounselSession, CounselMessage, CounselArchive, CallingCard, NotifSlot, LedgerEntry, Budget, SpendWorth, LedgerAsset } from '@/types';
 import { TAROT_BY_ID } from '@/constants/tarot';
 import { summarizeCounsel, type CounselContext, type CounselConfidantBrief, type CounselRecentEvent } from '@/utils/counselAI';
 import { db } from '@/db';
@@ -338,6 +338,16 @@ interface AppState {
   getMonthIncome: (period?: string) => number;
   getBudget: (period?: string) => Budget | undefined;
   getAdjustCountThisMonth: () => number;
+  earnLedgerSp: (amount: number, bonus?: boolean) => Promise<void>;
+  rewardForLedgerEntry: (entry: LedgerEntry, opts?: { attribute?: AttributeId; attrPoints?: number; evalWorth?: SpendWorth }) => Promise<void>;
+  // F5 资产板块
+  assets: LedgerAsset[];
+  addAsset: (input: Omit<LedgerAsset, 'id' | 'createdAt'>) => Promise<LedgerAsset>;
+  updateAsset: (id: string, patch: Partial<LedgerAsset>) => Promise<void>;
+  deleteAsset: (id: string) => Promise<void>;
+  getFixedAssetTotal: () => number;
+  /** 月度不超预算 → 发 +10 SP（仅完成月、每月一次）；返回本次是否发放。 */
+  claimLedgerBudgetBonus: (period: string) => Promise<boolean>;
   // 逆影战场
   persona: Persona | null;
   shadow: Shadow | null;
@@ -462,6 +472,13 @@ export const DEFAULT_NOTIF_SLOTS: NotifSlot[] = [
   { id: 'evening', time: '21:30', enabled: true, label: '夜间结算', contents: ['record', 'todos', 'countercurrent'] },
 ];
 
+/** F5 记账奖励日封顶状态：锚日不是今天则视作 {0,0}（自然跨日重置）。 */
+function ledgerDailyState(s: Settings, today: string): { sp: number; attr: number } {
+  return s.ledgerRewardDate === today
+    ? { sp: s.ledgerSpToday ?? 0, attr: s.ledgerAttrToday ?? 0 }
+    : { sp: 0, attr: 0 };
+}
+
 const DEFAULT_SETTINGS: Settings = {
   id: 'default',
   attributeNames: {
@@ -506,6 +523,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   summaries: [],
   ledgerEntries: [],
   budgets: [],
+  assets: [],
   weeklyGoals: [],
   settings: DEFAULT_SETTINGS,
   currentPage: 'dashboard',
@@ -2885,11 +2903,12 @@ ${activityLines || '（本期暂无记录）'}
   // 返回明天将要扣减的属性（今天是连续无增长天，明天会触decay  // 逻辑：今+ 过去2天（天）均无增长，且今天没有decay记录（已经decay就不再预警）  // 且距离开启日至少2 天（否则明天也不会触发）
   // ── F5 心相记账 ──────────────────────────────────────────
   loadLedger: async () => {
-    const [ledgerEntries, budgets] = await Promise.all([
+    const [ledgerEntries, budgets, assets] = await Promise.all([
       db.ledgerEntries.toArray(),
       db.budgets.toArray(),
+      db.assets.toArray(),
     ]);
-    set({ ledgerEntries, budgets });
+    set({ ledgerEntries, budgets, assets });
   },
 
   addLedgerEntry: async (input) => {
@@ -2964,6 +2983,80 @@ ${activityLines || '（本期暂无记录）'}
   getAdjustCountThisMonth: () => {
     const p = toLocalDateKey().slice(0, 7);
     return get().ledgerEntries.filter(e => e.direction === 'adjust' && e.date.slice(0, 7) === p).length;
+  },
+
+  // 发放记账 SP：bonus=true（劳动/值得/月末）不占每日封顶；普通每笔受 20/日封顶。
+  // 无 battleState（未启用战场）→ SP 无处可放，静默跳过。
+  earnLedgerSp: async (amount, bonus = false) => {
+    if (!get().battleState || amount <= 0) return;
+    const today = toLocalDateKey();
+    const st = ledgerDailyState(get().settings, today);
+    const grant = bonus ? amount : Math.min(amount, Math.max(0, 20 - st.sp));
+    if (grant <= 0) return;
+    await get().earnSP(grant);
+    await get().updateSettings({
+      ledgerRewardDate: today,
+      ledgerSpToday: st.sp + (bonus ? 0 : grant),
+      ledgerAttrToday: st.attr,
+    });
+  },
+
+  // 一笔记账落账后的奖励编排（saveDraft 调用，仅创建时一次）：
+  //   · 每笔记账 +2 SP（封顶） · 劳动收入 +10 SP · 投资类自选属性 +1~2（封顶 2/日，走 addActivity）
+  //   · 消费评估「值得」+1 SP。adjust（对账）不奖励。守「不奖励花钱」：必要/欲望/冲动只拿记账 SP。
+  rewardForLedgerEntry: async (entry, opts) => {
+    if (entry.direction === 'adjust') return;
+    await get().earnLedgerSp(2, false);
+    if (entry.direction === 'income') {
+      if (entry.incomeType === 'labor') await get().earnLedgerSp(10, true);
+      return;
+    }
+    // expense
+    if (entry.type === 'investment' && opts?.attribute && (opts.attrPoints ?? 0) > 0) {
+      const today = toLocalDateKey();
+      const st = ledgerDailyState(get().settings, today);
+      const grant = Math.min(opts.attrPoints as number, Math.max(0, 2 - st.attr));
+      if (grant > 0) {
+        await get().addActivity(`心相投资 · ${entry.note || '自我投资'}`, { [opts.attribute]: grant }, 'local', { category: 'ledger' });
+        await get().updateSettings({ ledgerRewardDate: today, ledgerSpToday: st.sp, ledgerAttrToday: st.attr + grant });
+      }
+    }
+    if (opts?.evalWorth === 'worth') await get().earnLedgerSp(1, true);
+  },
+
+  // ── F5 资产板块 ──
+  addAsset: async (input) => {
+    const asset: LedgerAsset = { ...input, id: uuidv4(), createdAt: new Date() };
+    await db.assets.put(asset);
+    set({ assets: [...get().assets, asset] });
+    return asset;
+  },
+  updateAsset: async (id, patch) => {
+    const cur = get().assets.find(a => a.id === id);
+    if (!cur) return;
+    const next = { ...cur, ...patch };
+    await db.assets.put(next);
+    set({ assets: get().assets.map(a => (a.id === id ? next : a)) });
+  },
+  deleteAsset: async (id) => {
+    await db.assets.delete(id);
+    set({ assets: get().assets.filter(a => a.id !== id) });
+  },
+  getFixedAssetTotal: () => {
+    return get().assets
+      .filter(a => a.status !== 'soldout')
+      .reduce((s, a) => s + a.price + (a.addOns?.reduce((x, o) => x + o.amount, 0) ?? 0), 0);
+  },
+
+  claimLedgerBudgetBonus: async (period) => {
+    const s = get().settings;
+    if ((s.ledgerBudgetBonusMonths ?? []).includes(period)) return false;
+    if (period >= toLocalDateKey().slice(0, 7)) return false; // 仅已完成的月（过去月）发放
+    const budget = get().getBudget(period)?.monthlyLimit;
+    if (budget == null || get().getMonthExpense(period) > budget) return false;
+    await get().earnLedgerSp(10, true);
+    await get().updateSettings({ ledgerBudgetBonusMonths: [...(s.ledgerBudgetBonusMonths ?? []), period] });
+    return true;
   },
 
   getCountercurrentWarnings: (): AttributeId[] => {
