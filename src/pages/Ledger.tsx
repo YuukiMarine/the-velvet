@@ -17,32 +17,10 @@ import { SheetModal } from '@/components/SheetModal';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { getAIConfig } from '@/utils/aiClient';
 import { parseLedgerInput, type LedgerAIResult } from '@/utils/ledgerAI';
+import { SegmentTabs } from '@/components/SegmentTabs';
+import { LedgerStats } from '@/components/ledger/LedgerStats';
+import { EXPENSE_META, INCOME_META, EXPENSE_TYPES, INCOME_TYPES, sym, fmtMoney, fmtSigned } from '@/utils/ledgerFormat';
 import type { LedgerEntry, LedgerExpenseType, LedgerIncomeType } from '@/types';
-
-// ── 元数据 ────────────────────────────────────────────────
-
-const EXPENSE_META: Record<LedgerExpenseType, { label: string; dot: string; chip: string }> = {
-  necessary: { label: '必要', dot: 'bg-slate-400', chip: 'bg-slate-100 dark:bg-slate-700/40 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-600' },
-  investment: { label: '投资', dot: 'bg-emerald-400', chip: 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700' },
-  desire: { label: '欲望', dot: 'bg-violet-400', chip: 'bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-300 border-violet-300 dark:border-violet-700' },
-  impulse: { label: '冲动', dot: 'bg-rose-400', chip: 'bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-300 border-rose-300 dark:border-rose-700' },
-};
-const INCOME_META: Record<LedgerIncomeType, { label: string }> = {
-  labor: { label: '劳动所得' },
-  other: { label: '其它收入' },
-};
-const EXPENSE_TYPES: LedgerExpenseType[] = ['necessary', 'investment', 'desire', 'impulse'];
-const INCOME_TYPES: LedgerIncomeType[] = ['labor', 'other'];
-
-const CURRENCY_SYMBOLS: Record<string, string> = { CNY: '¥', USD: '$', EUR: '€', JPY: '¥', GBP: '£', HKD: 'HK$', KRW: '₩' };
-const sym = (code?: string) => CURRENCY_SYMBOLS[code ?? 'CNY'] ?? code ?? '¥';
-
-function fmtMoney(n: number): string {
-  const v = Math.abs(n);
-  return Number.isInteger(v)
-    ? v.toLocaleString('en-US')
-    : v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
 
 // ── 录入草稿 ──────────────────────────────────────────────
 
@@ -122,6 +100,7 @@ export const Ledger = () => {
   const [budgetOpen, setBudgetOpen] = useState(false);
   const [adjustOpen, setAdjustOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<LedgerEntry | null>(null);
+  const [view, setView] = useState<'list' | 'stats'>('list');
 
   // 流水按日分组（日期降序、同日按 createdAt 降序）
   const grouped = useMemo(() => {
@@ -199,7 +178,7 @@ export const Ledger = () => {
               {balanceView === 'total' ? '总余额' : '本月余额'} ⇄
             </span>
             <span className="text-3xl font-black text-gray-900 dark:text-white tabular-nums mt-0.5">
-              {heroVal < 0 ? '−' : ''}{$}{fmtMoney(heroVal)}
+              {fmtSigned(heroVal, $)}
             </span>
             <span className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
               {balanceView === 'total'
@@ -254,7 +233,18 @@ export const Ledger = () => {
         </button>
       </section>
 
+      {/* 流水 / 统计 切换 */}
+      <div className="mt-4">
+        <SegmentTabs
+          items={[{ key: 'list', label: '流水' }, { key: 'stats', label: '统计' }]}
+          value={view}
+          onChange={setView}
+          layoutId="ledger-view"
+        />
+      </div>
+
       {/* 流水 */}
+      {view === 'list' && (
       <section className="mt-5 space-y-4">
         {grouped.length === 0 && (
           <div className="text-center text-sm text-gray-400 py-10">还没有记录，记一笔开始吧。</div>
@@ -268,6 +258,9 @@ export const Ledger = () => {
           </div>
         ))}
       </section>
+      )}
+
+      {view === 'stats' && <div className="mt-4"><LedgerStats /></div>}
 
       {/* 录入确认卡 */}
       <SheetModal
@@ -496,7 +489,7 @@ function AdjustSheet({ isOpen, onClose, $, current, remaining, onSave }: {
           把总余额校准到你的真实余额（比如对一下支付宝/钱包）。本月还可对账 <b>{Math.max(0, remaining)}</b> 次。
         </p>
         <div className="text-sm text-gray-500 dark:text-gray-400">
-          当前总余额：<span className="font-bold text-gray-800 dark:text-gray-100 tabular-nums">{current < 0 ? '−' : ''}{$}{fmtMoney(current)}</span>
+          当前总余额：<span className="font-bold text-gray-800 dark:text-gray-100 tabular-nums">{fmtSigned(current, $)}</span>
         </div>
         <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
           <span className="text-xl font-black text-gray-400">{$}</span>
