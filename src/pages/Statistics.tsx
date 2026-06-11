@@ -4,6 +4,7 @@ import { useAppStore, toLocalDateKey } from '@/store';
 import { calcMaxStreak } from '@/utils/streak';
 import { BackButton } from '@/components/BackButton';
 import { PageTitle } from '@/components/PageTitle';
+import { PagePlane, PlaneLevel } from '@/components/PagePlane';
 import {
   AreaChart, Area, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip,
@@ -33,11 +34,13 @@ const StatCard = ({
     initial={{ opacity: 0, y: 12 }}
     animate={{ opacity: 1, y: 0 }}
     transition={{ delay, duration: 0.4 }}
-    className="rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm p-4 flex flex-col gap-1"
+    className="rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm p-4"
   >
-    <span className="text-[10px] font-semibold tracking-widest uppercase text-gray-400 dark:text-gray-500">{label}</span>
-    <span className={`text-3xl font-black leading-none tabular-nums ${accent ?? 'text-primary'}`}>{value}</span>
-    {sub && <span className="text-[11px] text-gray-400 dark:text-gray-500 mt-0.5">{sub}</span>}
+    <PlaneLevel className="flex flex-col gap-1">
+      <span className="text-[10px] font-semibold tracking-widest uppercase text-gray-400 dark:text-gray-500">{label}</span>
+      <span className={`text-3xl font-black leading-none tabular-nums ${accent ?? 'text-primary'}`}>{value}</span>
+      {sub && <span className="text-[11px] text-gray-400 dark:text-gray-500 mt-0.5">{sub}</span>}
+    </PlaneLevel>
   </motion.div>
 );
 
@@ -275,13 +278,15 @@ export const Statistics = () => {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="space-y-5"
     >
+      {/* 斜轴世界（§2 规则1）：整页内容平面随世界倾斜 -4°，卡片成平行四边形；
+          每张卡的内容包 PlaneLevel 反制回水平（"世界斜、字不斜"）。聚焦输入自动校直。 */}
+      <PagePlane className="space-y-5">
       {/* header — 宫格子页页头归一 PageTitle 制式（审计 S6），返回归一 → 菜单 */}
-      <div className="flex items-start gap-3">
+      <PlaneLevel className="flex items-start gap-3">
         <BackButton onClick={() => setCurrentPage('menu')} className="mt-1 -ml-1" />
         <PageTitle title="统计" en="Statistics" enOffset={{ right: -24 }} />
-      </div>
+      </PlaneLevel>
 
       {/* growth curve —— 统计页独有的可视化，置顶为 hero（审计 §3.5：此前被首页已有的
           汇总卡压到下方）。点「详细统计 →」进来第一眼即看到成长轨迹，而非重复的汇总数。 */}
@@ -291,14 +296,16 @@ export const Statistics = () => {
         transition={{ delay: 0.05, duration: 0.5 }}
         className="rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm p-5"
       >
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <p className="text-[10px] font-semibold tracking-widest uppercase text-gray-400 dark:text-gray-500">Progress</p>
-            <h3 className="font-black text-gray-900 dark:text-white">成长轨迹</h3>
+        <PlaneLevel>
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <p className="text-[10px] font-semibold tracking-widest uppercase text-gray-400 dark:text-gray-500">Progress</p>
+              <h3 className="font-black text-gray-900 dark:text-white">成长轨迹</h3>
+            </div>
+            <span className="text-xs text-gray-400 dark:text-gray-500">累计点数</span>
           </div>
-          <span className="text-xs text-gray-400 dark:text-gray-500">累计点数</span>
-        </div>
-        <GrowthCurve activities={activities} />
+          <GrowthCurve activities={activities} />
+        </PlaneLevel>
       </motion.div>
 
       {/* stat grid —— 汇总数（累计/记录天数/最长连续与首页成长概览同值，但此处附带
@@ -317,6 +324,7 @@ export const Statistics = () => {
         transition={{ delay: 0.3, duration: 0.5 }}
         className="rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm p-5"
       >
+        <PlaneLevel>
         <div className="flex items-center justify-between mb-4">
           <div>
             <p className="text-[10px] font-semibold tracking-widest uppercase text-gray-400 dark:text-gray-500">Attributes</p>
@@ -355,6 +363,7 @@ export const Statistics = () => {
             />
           </motion.div>
         </AnimatePresence>
+        </PlaneLevel>
       </motion.div>
 
       {/* per-attribute breakdown */}
@@ -364,6 +373,7 @@ export const Statistics = () => {
         transition={{ delay: 0.4, duration: 0.5 }}
         className="rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm p-5"
       >
+        <PlaneLevel>
         <div className="mb-4">
           <p className="text-[10px] font-semibold tracking-widest uppercase text-gray-400 dark:text-gray-500">Breakdown</p>
           <h3 className="font-black text-gray-900 dark:text-white">属性分布</h3>
@@ -400,7 +410,9 @@ export const Statistics = () => {
             );
           })}
         </div>
+        </PlaneLevel>
       </motion.div>
+      </PagePlane>
     </motion.div>
   );
 };
