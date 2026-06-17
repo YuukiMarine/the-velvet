@@ -6,6 +6,7 @@ import { db } from '@/db';
 import { v4 as uuidv4 } from 'uuid';
 import { calcMaxStreak } from '@/utils/streak';
 import { computeAndSchedule, type NotifSnapshot } from '@/utils/notifications';
+import { isGrowthCategory } from '@/utils/ledgerFormat';
 import { resolveProvider } from '@/utils/aiProviders';
 import { chatComplete, getAIConfig } from '@/utils/aiClient';
 import {
@@ -3012,7 +3013,7 @@ ${activityLines || '（本期暂无记录）'}
       return;
     }
     // expense
-    if (entry.type === 'investment' && opts?.attribute && (opts.attrPoints ?? 0) > 0) {
+    if (isGrowthCategory(entry.type) && opts?.attribute && (opts.attrPoints ?? 0) > 0) {
       const today = toLocalDateKey();
       const st = ledgerDailyState(get().settings, today);
       const grant = Math.min(opts.attrPoints as number, Math.max(0, 2 - st.attr));

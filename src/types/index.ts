@@ -499,8 +499,8 @@ export interface WeeklyGoal {
 
 /** 一笔记账的方向：支出 / 收入 / 总余额对账调整 */
 export type LedgerDirection = 'expense' | 'income' | 'adjust';
-/** 支出四轴 */
-export type LedgerExpenseType = 'necessary' | 'investment' | 'desire' | 'impulse';
+/** 支出类目（生活场景；study=成长项，触发属性加点奖励） */
+export type LedgerExpenseType = 'food' | 'transport' | 'shopping' | 'fun' | 'home' | 'study' | 'other';
 /** 收入类 */
 export type LedgerIncomeType = 'labor' | 'other';
 /** 消费评估（可选，默认关）：这笔值不值 */
