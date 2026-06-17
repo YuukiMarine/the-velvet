@@ -1,27 +1,59 @@
 /**
- * LedgerStats — F5 心相记账「统计」视图（Phase ②）。
+ * LedgerStats — F5 心相记账「统计」视图（按生活场景类目重做）。
  *
- * 看钱去哪：四轴占比、月度趋势、二级类目排行、渠道分布、收入构成。
- * 原则「填了才统计、没填不催」——无数据的板块直接不渲染。
- * 轻量自绘（CSS/SVG 条形），不引 recharts，保持 ledger chunk 轻。
- * 值/不值 计数依赖 phase ③ 的消费评估，待其落地后补。
+ * 收支总览 · 预算对比 · 类目占比（甜甜圈环）· 环比上月 · 月度趋势 · 渠道分布 · 收入构成。
+ * 轻量自绘（CSS/SVG），不引 recharts；无数据板块自动隐藏。
+ * 月末「让伊戈尔结算」入口在此（Markdown 报告 + 不超预算 +10SP）。
  */
 import { useMemo, useState } from 'react';
 import { useAppStore, toLocalDateKey } from '@/store';
 import { SheetModal } from '@/components/SheetModal';
-import { EXPENSE_META, EXPENSE_TYPES, sym, fmtMoney, fmtSigned, shiftMonth } from '@/utils/ledgerFormat';
+import { catMeta, CATEGORY_KEYS, sym, fmtMoney, fmtSigned, shiftMonth } from '@/utils/ledgerFormat';
 import { buildSettlementData, generateSettlement } from '@/utils/ledgerSettlement';
+import { renderMarkdown } from '@/utils/markdown';
+import DOMPurify from 'dompurify';
 
-function Card({ title, children }: { title: string; children: React.ReactNode }) {
+function Card({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm p-4">
-      <h3 className="text-sm font-bold text-gray-800 dark:text-white mb-3">{title}</h3>
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-bold text-gray-800 dark:text-white">{title}</h3>
+        {action}
+      </div>
       {children}
     </div>
   );
 }
 
-/** 横向排行条（类目 / 渠道） */
+/** 甜甜圈环：segments 按比例堆叠描边。 */
+function Donut({ segments, total, $ }: { segments: { hex: string; amount: number }[]; total: number; $: string }) {
+  const R = 56;
+  const C = 2 * Math.PI * R;
+  let acc = 0;
+  return (
+    <div className="relative w-32 h-32 flex-shrink-0">
+      <svg viewBox="0 0 140 140" className="w-full h-full -rotate-90">
+        <circle cx="70" cy="70" r={R} fill="none" strokeWidth="15" className="stroke-gray-100 dark:stroke-gray-800" />
+        {segments.map((s, i) => {
+          const frac = total > 0 ? s.amount / total : 0;
+          const el = (
+            <circle
+              key={i} cx="70" cy="70" r={R} fill="none" stroke={s.hex} strokeWidth="15"
+              strokeDasharray={`${frac * C} ${C}`} strokeDashoffset={-acc * C}
+            />
+          );
+          acc += frac;
+          return el;
+        })}
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <span className="text-[10px] text-gray-400">支出</span>
+        <span className="text-sm font-black text-gray-800 dark:text-white tabular-nums">{$}{fmtMoney(total)}</span>
+      </div>
+    </div>
+  );
+}
+
 function BarRow({ label, amount, max, $ }: { label: string; amount: number; max: number; $: string }) {
   const pct = max > 0 ? Math.max(2, (amount / max) * 100) : 0;
   return (
@@ -59,31 +91,35 @@ export function LedgerStats() {
   };
 
   const s = useMemo(() => {
-    const inMonth = ledgerEntries.filter(e => e.date.slice(0, 7) === period);
-    const expenses = inMonth.filter(e => e.direction === 'expense');
-    const incomes = inMonth.filter(e => e.direction === 'income');
-    const totalExpense = expenses.reduce((a, e) => a + e.amount, 0);
-    const totalIncome = incomes.reduce((a, e) => a + e.amount, 0);
+    const monthOf = (p: string) => ledgerEntries.filter(e => e.date.slice(0, 7) === p);
+    const sum = (rows: typeof ledgerEntries) => rows.reduce((a, e) => a + e.amount, 0);
+    const cur = monthOf(period);
+    const prevExp = monthOf(shiftMonth(period, -1)).filter(e => e.direction === 'expense');
+    const curExp = cur.filter(e => e.direction === 'expense');
+    const curInc = cur.filter(e => e.direction === 'income');
 
-    const byAxis = EXPENSE_TYPES
-      .map(t => ({ type: t, amount: expenses.filter(e => e.type === t).reduce((a, e) => a + e.amount, 0) }))
-      .filter(x => x.amount > 0);
+    const totalExpense = sum(curExp);
+    const totalIncome = sum(curInc);
+    const prevExpense = sum(prevExp);
 
-    const sumBy = (key: 'category' | 'channel') => {
-      const m = new Map<string, number>();
-      for (const e of expenses) {
-        const k = (e[key] ?? '').trim();
-        if (k) m.set(k, (m.get(k) ?? 0) + e.amount);
-      }
-      return [...m.entries()].map(([name, amount]) => ({ name, amount })).sort((a, b) => b.amount - a.amount);
-    };
-    const byCategory = sumBy('category').slice(0, 6);
-    const byChannel = sumBy('channel');
+    const byCat = CATEGORY_KEYS
+      .map(k => ({ key: k, amount: sum(curExp.filter(e => e.type === k)) }))
+      .filter(x => x.amount > 0)
+      .sort((a, b) => b.amount - a.amount);
 
-    const incomeLabor = incomes.filter(e => e.incomeType === 'labor').reduce((a, e) => a + e.amount, 0);
-    const incomeOther = totalIncome - incomeLabor;
+    const movers = CATEGORY_KEYS
+      .map(k => ({ key: k, delta: sum(curExp.filter(e => e.type === k)) - sum(prevExp.filter(e => e.type === k)) }))
+      .filter(x => x.delta !== 0)
+      .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))
+      .slice(0, 3);
 
-    return { totalExpense, totalIncome, byAxis, byCategory, byChannel, incomeLabor, incomeOther };
+    const chMap = new Map<string, number>();
+    for (const e of curExp) { const k = (e.channel ?? '').trim(); if (k) chMap.set(k, (chMap.get(k) ?? 0) + e.amount); }
+    const byChannel = [...chMap.entries()].map(([name, amount]) => ({ name, amount })).sort((a, b) => b.amount - a.amount);
+
+    const incomeLabor = sum(curInc.filter(e => e.incomeType === 'labor'));
+
+    return { totalExpense, totalIncome, prevExpense, byCat, movers, byChannel, incomeLabor, incomeOther: totalIncome - incomeLabor };
   }, [ledgerEntries, period]);
 
   const trend = useMemo(() => {
@@ -91,14 +127,15 @@ export function LedgerStats() {
     for (let i = 5; i >= 0; i--) months.push(shiftMonth(period, -i));
     return months.map(mk => ({
       month: mk,
-      expense: ledgerEntries
-        .filter(e => e.direction === 'expense' && e.date.slice(0, 7) === mk)
-        .reduce((a, e) => a + e.amount, 0),
+      expense: ledgerEntries.filter(e => e.direction === 'expense' && e.date.slice(0, 7) === mk).reduce((a, e) => a + e.amount, 0),
     }));
   }, [ledgerEntries, period]);
 
+  const budget = getBudget(period)?.monthlyLimit;
+  const over = budget != null && s.totalExpense > budget;
+  const progress = budget ? s.totalExpense / budget : 0;
+  const momPct = s.prevExpense > 0 ? ((s.totalExpense - s.prevExpense) / s.prevExpense) * 100 : null;
   const maxTrend = Math.max(1, ...trend.map(t => t.expense));
-  const maxCat = Math.max(1, ...s.byCategory.map(c => c.amount));
   const maxCh = Math.max(1, ...s.byChannel.map(c => c.amount));
   const hasAny = s.totalExpense > 0 || s.totalIncome > 0;
 
@@ -115,8 +152,8 @@ export function LedgerStats() {
         >›</button>
       </div>
 
-      {/* 概览 */}
-      <Card title="本月概览">
+      {/* 收支总览 */}
+      <Card title="本月收支">
         <div className="grid grid-cols-3 gap-2 text-center">
           <div>
             <div className="text-xs text-gray-400">支出</div>
@@ -144,29 +181,67 @@ export function LedgerStats() {
         </button>
       )}
 
-      {!hasAny && (
-        <div className="text-center text-sm text-gray-400 py-8">这个月还没有记录。</div>
+      {!hasAny && <div className="text-center text-sm text-gray-400 py-8">这个月还没有记录。</div>}
+
+      {/* 预算对比 */}
+      {budget != null && (
+        <Card title="本月预算">
+          <div className="flex items-baseline justify-between mb-2 text-sm">
+            <span className="text-gray-500 dark:text-gray-400">已花 <b className="text-gray-800 dark:text-gray-100 tabular-nums">{$}{fmtMoney(s.totalExpense)}</b> / {$}{fmtMoney(budget)}</span>
+            <span className={`font-bold ${over ? 'text-rose-500' : 'text-emerald-500'}`}>
+              {over ? `超 ${$}${fmtMoney(s.totalExpense - budget)}` : `剩 ${$}${fmtMoney(budget - s.totalExpense)}`}
+            </span>
+          </div>
+          <div className="h-2.5 rounded-full bg-gray-100 dark:bg-gray-700 overflow-hidden">
+            <div className={`h-full rounded-full ${over ? 'bg-rose-500' : progress >= 0.8 ? 'bg-amber-400' : 'bg-emerald-500'}`} style={{ width: `${Math.min(100, progress * 100)}%` }} />
+          </div>
+        </Card>
       )}
 
-      {/* 四轴占比 */}
-      {s.byAxis.length > 0 && (
-        <Card title="支出去向（四轴）">
-          <div className="flex h-3 rounded-full overflow-hidden">
-            {s.byAxis.map(x => (
-              <div key={x.type} className={EXPENSE_META[x.type].bar} style={{ width: `${(x.amount / s.totalExpense) * 100}%` }} />
-            ))}
+      {/* 类目占比 甜甜圈 */}
+      {s.byCat.length > 0 && (
+        <Card title="支出类目">
+          <div className="flex items-center gap-4">
+            <Donut segments={s.byCat.map(c => ({ hex: catMeta(c.key).hex, amount: c.amount }))} total={s.totalExpense} $={$} />
+            <div className="flex-1 min-w-0 space-y-1.5">
+              {s.byCat.map(c => (
+                <div key={c.key} className="flex items-center gap-1.5 text-xs">
+                  <span className={`w-2 h-2 rounded-full flex-shrink-0 ${catMeta(c.key).dot}`} />
+                  <span className="text-gray-600 dark:text-gray-300 truncate">{catMeta(c.key).label}</span>
+                  <span className="ml-auto tabular-nums text-gray-400">{Math.round((c.amount / s.totalExpense) * 100)}%</span>
+                  <span className="w-12 text-right tabular-nums text-gray-500 dark:text-gray-400">{$}{fmtMoney(c.amount)}</span>
+                </div>
+              ))}
+            </div>
           </div>
-          <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 mt-3">
-            {s.byAxis.map(x => (
-              <div key={x.type} className="flex items-center gap-1.5 text-xs">
-                <span className={`w-2 h-2 rounded-full flex-shrink-0 ${EXPENSE_META[x.type].dot}`} />
-                <span className="text-gray-600 dark:text-gray-300">{EXPENSE_META[x.type].label}</span>
-                <span className="ml-auto tabular-nums text-gray-500 dark:text-gray-400">
-                  {Math.round((x.amount / s.totalExpense) * 100)}% · {$}{fmtMoney(x.amount)}
-                </span>
-              </div>
-            ))}
+        </Card>
+      )}
+
+      {/* 环比上月 */}
+      {(s.totalExpense > 0 || s.prevExpense > 0) && (
+        <Card title="环比上月">
+          <div className="flex items-baseline gap-2 text-sm">
+            <span className="text-gray-500 dark:text-gray-400">本月支出</span>
+            <span className="text-lg font-black text-gray-800 dark:text-white tabular-nums">{$}{fmtMoney(s.totalExpense)}</span>
+            {momPct != null && (
+              <span className={`text-xs font-bold ${momPct > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>
+                {momPct > 0 ? '↑' : '↓'}{Math.abs(Math.round(momPct))}%
+              </span>
+            )}
+            <span className="text-xs text-gray-400 ml-auto">上月 {$}{fmtMoney(s.prevExpense)}</span>
           </div>
+          {s.movers.length > 0 && (
+            <div className="space-y-1 mt-2 pt-2 border-t border-gray-50 dark:border-gray-700/40">
+              {s.movers.map(m => (
+                <div key={m.key} className="flex items-center gap-1.5 text-xs">
+                  <span className="text-gray-600 dark:text-gray-300">{catMeta(m.key).icon} {catMeta(m.key).label}</span>
+                  <span className={`ml-auto font-semibold tabular-nums ${m.delta > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>
+                    {m.delta > 0 ? '+' : '−'}{$}{fmtMoney(m.delta)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </Card>
       )}
 
@@ -180,23 +255,11 @@ export function LedgerStats() {
               return (
                 <div key={t.month} className="flex-1 flex flex-col items-center justify-end gap-1 h-full">
                   <span className="text-[10px] tabular-nums text-gray-400">{t.expense > 0 ? fmtMoney(t.expense) : ''}</span>
-                  <div
-                    className={`w-full rounded-t ${isCur ? 'bg-primary' : 'bg-primary/35'}`}
-                    style={{ height: `${t.expense > 0 ? Math.max(h, 4) : 0}%` }}
-                  />
+                  <div className={`w-full rounded-t ${isCur ? 'bg-primary' : 'bg-primary/35'}`} style={{ height: `${t.expense > 0 ? Math.max(h, 4) : 0}%` }} />
                   <span className={`text-[10px] ${isCur ? 'text-primary font-bold' : 'text-gray-400'}`}>{Number(t.month.slice(5))}月</span>
                 </div>
               );
             })}
-          </div>
-        </Card>
-      )}
-
-      {/* 类目排行 */}
-      {s.byCategory.length > 0 && (
-        <Card title="二级类目 Top">
-          <div className="space-y-2">
-            {s.byCategory.map(c => <BarRow key={c.name} label={c.name} amount={c.amount} max={maxCat} $={$} />)}
           </div>
         </Card>
       )}
@@ -220,7 +283,7 @@ export function LedgerStats() {
         </Card>
       )}
 
-      {/* 月末 Velvet 结算 */}
+      {/* 月末 Velvet 结算（Markdown 渲染） */}
       <SheetModal isOpen={settleOpen} onClose={() => setSettleOpen(false)} title={`${period} · 心相结算`}>
         <div className="space-y-3">
           {bonus && (
@@ -228,10 +291,19 @@ export function LedgerStats() {
               🎉 本月不超预算 · +10 SP
             </div>
           )}
+          {/* 数据头 */}
+          <div className="grid grid-cols-3 gap-2 text-center bg-gray-50 dark:bg-gray-800/60 rounded-xl py-2.5">
+            <div><div className="text-[10px] text-gray-400">支出</div><div className="text-sm font-black tabular-nums text-gray-800 dark:text-white">{$}{fmtMoney(s.totalExpense)}</div></div>
+            <div><div className="text-[10px] text-gray-400">收入</div><div className="text-sm font-black tabular-nums text-emerald-500">{$}{fmtMoney(s.totalIncome)}</div></div>
+            <div><div className="text-[10px] text-gray-400">结余</div><div className={`text-sm font-black tabular-nums ${s.totalIncome - s.totalExpense < 0 ? 'text-rose-500' : 'text-gray-800 dark:text-white'}`}>{fmtSigned(s.totalIncome - s.totalExpense, $)}</div></div>
+          </div>
           {settleBusy ? (
             <div className="text-center text-sm text-gray-400 py-8">伊戈尔正凝视着你的账目……</div>
           ) : (
-            <p className="text-sm text-gray-700 dark:text-gray-200 leading-loose whitespace-pre-wrap">{settleText}</p>
+            <div
+              className="text-sm text-gray-700 dark:text-gray-200 leading-loose"
+              dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(`<p class="mb-2">${renderMarkdown(settleText)}</p>`) }}
+            />
           )}
         </div>
       </SheetModal>

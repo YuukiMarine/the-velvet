@@ -6,17 +6,25 @@
  */
 import type { LedgerExpenseType, LedgerIncomeType } from '@/types';
 
-export const EXPENSE_META: Record<LedgerExpenseType, { label: string; dot: string; chip: string; bar: string }> = {
-  necessary: { label: '必要', dot: 'bg-slate-400', bar: 'bg-slate-400', chip: 'bg-slate-100 dark:bg-slate-700/40 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-600' },
-  investment: { label: '投资', dot: 'bg-emerald-400', bar: 'bg-emerald-400', chip: 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700' },
-  desire: { label: '欲望', dot: 'bg-violet-400', bar: 'bg-violet-400', chip: 'bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-300 border-violet-300 dark:border-violet-700' },
-  impulse: { label: '冲动', dot: 'bg-rose-400', bar: 'bg-rose-400', chip: 'bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-300 border-rose-300 dark:border-rose-700' },
+export const CATEGORY_META: Record<LedgerExpenseType, { icon: string; label: string; dot: string; bar: string; hex: string }> = {
+  food:      { icon: '🍜', label: '餐饮', dot: 'bg-amber-400',  bar: 'bg-amber-400',  hex: '#fbbf24' },
+  transport: { icon: '🚇', label: '交通', dot: 'bg-sky-400',    bar: 'bg-sky-400',    hex: '#38bdf8' },
+  shopping:  { icon: '🛍️', label: '购物', dot: 'bg-pink-400',   bar: 'bg-pink-400',   hex: '#f472b6' },
+  fun:       { icon: '🎮', label: '娱乐', dot: 'bg-violet-400', bar: 'bg-violet-400', hex: '#a78bfa' },
+  home:      { icon: '🏠', label: '居住', dot: 'bg-teal-400',   bar: 'bg-teal-400',   hex: '#2dd4bf' },
+  study:     { icon: '📚', label: '学习', dot: 'bg-indigo-400', bar: 'bg-indigo-400', hex: '#818cf8' },
+  other:     { icon: '📦', label: '其它', dot: 'bg-slate-400',  bar: 'bg-slate-400',  hex: '#94a3b8' },
 };
+/** 安全取类目元数据（老数据 / 未知值兜底为「其它」）。 */
+export const catMeta = (t?: LedgerExpenseType) => CATEGORY_META[t as LedgerExpenseType] ?? CATEGORY_META.other;
+/** 成长类目：触发投资属性加点奖励。 */
+export const GROWTH_CATEGORIES: LedgerExpenseType[] = ['study'];
+export const isGrowthCategory = (t?: LedgerExpenseType) => !!t && GROWTH_CATEGORIES.includes(t);
 export const INCOME_META: Record<LedgerIncomeType, { label: string }> = {
   labor: { label: '劳动所得' },
   other: { label: '其它收入' },
 };
-export const EXPENSE_TYPES: LedgerExpenseType[] = ['necessary', 'investment', 'desire', 'impulse'];
+export const CATEGORY_KEYS: LedgerExpenseType[] = ['food', 'transport', 'shopping', 'fun', 'home', 'study', 'other'];
 export const INCOME_TYPES: LedgerIncomeType[] = ['labor', 'other'];
 
 const CURRENCY_SYMBOLS: Record<string, string> = { CNY: '¥', USD: '$', EUR: '€', JPY: '¥', GBP: '£', HKD: 'HK$', KRW: '₩' };

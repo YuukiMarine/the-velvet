@@ -1,18 +1,21 @@
 /**
- * ledgerSettlement.ts — F5 月末 Velvet 财务结算（Phase ③C）。
+ * ledgerSettlement.ts — F5 月末 Velvet 财务结算（按生活场景类目）。
  *
- * 不是对账单，是一面镜子：以伊戈尔（Igor）口吻回望「钱流向了成为更好的自己，还是一时的欲望」。
- * 复用 aiClient（与 ledgerAI 同范式）；无 Key / 失败 → 离线模板兜底。
+ * 不是对账单，是一面镜子：以伊戈尔（Igor）口吻回望钱主要流向了哪些场景、其中「学习」
+ * 这类让自己成长的投入有多少。输出 Markdown（renderMarkdown 渲染）。
+ * 复用 aiClient；无 Key / 失败 → 离线模板兜底。
  */
 import { Settings, LedgerEntry, LedgerExpenseType } from '@/types';
 import { chatComplete, getAIConfig } from '@/utils/aiClient';
-import { sym, fmtMoney } from '@/utils/ledgerFormat';
+import { sym, fmtMoney, CATEGORY_KEYS, catMeta, isGrowthCategory } from '@/utils/ledgerFormat';
 
 export interface SettlementData {
   period: string;
   totalExpense: number;
   totalIncome: number;
-  axis: Record<LedgerExpenseType, number>;
+  byCat: { key: LedgerExpenseType; label: string; amount: number }[];
+  /** 成长类目（学习等）支出合计 */
+  growthSpend: number;
   budget?: number;
   underBudget: boolean;
   /** 对账调整净额（adjust 之和）作「未计」提示 */
@@ -32,14 +35,18 @@ export function buildSettlementData(
   const exp = inMonth.filter(e => e.direction === 'expense');
   const inc = inMonth.filter(e => e.direction === 'income');
   const adj = inMonth.filter(e => e.direction === 'adjust');
-  const axis: Record<LedgerExpenseType, number> = { necessary: 0, investment: 0, desire: 0, impulse: 0 };
-  for (const e of exp) if (e.type) axis[e.type] += e.amount;
+  const sumCat = (k: LedgerExpenseType) => exp.filter(e => e.type === k).reduce((s, e) => s + e.amount, 0);
+  const byCat = CATEGORY_KEYS
+    .map(k => ({ key: k, label: catMeta(k).label, amount: sumCat(k) }))
+    .filter(x => x.amount > 0)
+    .sort((a, b) => b.amount - a.amount);
   const totalExpense = exp.reduce((s, e) => s + e.amount, 0);
   return {
     period,
     totalExpense,
     totalIncome: inc.reduce((s, e) => s + e.amount, 0),
-    axis,
+    byCat,
+    growthSpend: exp.filter(e => isGrowthCategory(e.type)).reduce((s, e) => s + e.amount, 0),
     budget,
     underBudget: budget != null && totalExpense <= budget,
     uncounted: adj.reduce((s, e) => s + e.amount, 0),
@@ -50,32 +57,33 @@ export function buildSettlementData(
 }
 
 const SYSTEM_PROMPT = `你是丝绒房间的主人伊戈尔（Igor）。客人会给你他这个月的「心相账目」摘要，
-你要以你独有的、低沉、充满隐喻与宿命感的口吻，为这个月的金钱与欲望之流写一段温柔的回望独白。
-要求：120–220 字；像一段独白，不要列表 / 不要 markdown 标题 / 不要报表腔；
-核心关注「钱流向了成为更好的自己（投资）还是一时的欲望（欲望 / 冲动）」；
+你要以你独有的、低沉、充满隐喻与宿命感的口吻，写一段温柔的回望。
+**用 Markdown 输出**：2–3 段独白，可适度 **加粗** 关键数字与字眼；不要用标题、不要列表、不要代码块、不要报表腔。
+120–220 字。关注钱主要流向了哪些生活场景、其中「学习」这类让自己成长的投入有多少；
 未超预算 / 有盈余则赞许这份克制，超支则温柔提醒而非责备；若有未记的流水，提一句「坦诚即是清醒」。
-直接输出独白正文，不要前后缀。`;
+直接输出正文，不要前后缀。`;
 
 function dataLines(d: SettlementData): string {
   return [
     `月份：${d.period}`,
     `总支出：${d.$}${fmtMoney(d.totalExpense)}；总收入：${d.$}${fmtMoney(d.totalIncome)}`,
-    `必要 ${d.$}${fmtMoney(d.axis.necessary)} / 自我投资 ${d.$}${fmtMoney(d.axis.investment)} / 欲望 ${d.$}${fmtMoney(d.axis.desire)} / 冲动 ${d.$}${fmtMoney(d.axis.impulse)}`,
+    `各类目：${d.byCat.map(c => `${c.label} ${d.$}${fmtMoney(c.amount)}`).join('、') || '无'}`,
+    `其中「学习/成长」投入：${d.$}${fmtMoney(d.growthSpend)}`,
     d.budget != null ? `本月预算 ${d.$}${fmtMoney(d.budget)}，${d.underBudget ? '未超支' : '已超支'}` : '未设预算',
     d.uncounted !== 0 ? `另有未记 / 对账流水 ${d.$}${fmtMoney(Math.abs(d.uncounted))}` : '',
     (d.worthCount + d.notWorthCount) > 0 ? `消费评估：值得 ${d.worthCount} 次 / 不值 ${d.notWorthCount} 次` : '',
   ].filter(Boolean).join('\n');
 }
 
-/** 生成结算独白：有 Key 走 AI、失败或无 Key → 离线模板。 */
+/** 生成结算独白（Markdown）：有 Key 走 AI、失败或无 Key → 离线模板。 */
 export async function generateSettlement(d: SettlementData, settings: Settings, signal?: AbortSignal): Promise<string> {
   const cfg = getAIConfig(settings);
   if (!cfg) return offlineSettlement(d);
   try {
     const raw = await chatComplete(cfg, [
       { role: 'system', content: SYSTEM_PROMPT },
-      { role: 'user', content: `${dataLines(d)}\n\n请写这段回望独白。` },
-    ], { temperature: 0.85, maxTokens: 400, signal });
+      { role: 'user', content: `${dataLines(d)}\n\n请写这段回望独白（Markdown）。` },
+    ], { temperature: 0.85, maxTokens: 500, signal });
     const text = raw.trim();
     return text || offlineSettlement(d);
   } catch {
@@ -83,17 +91,14 @@ export async function generateSettlement(d: SettlementData, settings: Settings, 
   }
 }
 
-/** 离线兜底：把数字填进 Velvet 口吻的模板。 */
+/** 离线兜底：Markdown（加粗 + 分段）。 */
 export function offlineSettlement(d: SettlementData): string {
-  const { $, axis } = d;
-  const growth = axis.investment;
-  const fleeting = axis.desire + axis.impulse;
-  const parts: string[] = [`客人，这个月你共支出 ${$}${fmtMoney(d.totalExpense)}。`];
-  if (growth > 0) {
-    parts.push(`其中 ${$}${fmtMoney(growth)} 流向了「成为更好的自己」——这些不会消失，它们沉淀为你的一部分。`);
-  }
-  if (fleeting > 0) {
-    parts.push(`另有 ${$}${fmtMoney(fleeting)} 献给了一时的欢愉与冲动；欲望本身无罪，但值得你看见它流向了何方。`);
+  const { $ } = d;
+  const top = d.byCat[0];
+  const parts: string[] = [];
+  parts.push(`**这个月，你共支出 ${$}${fmtMoney(d.totalExpense)}。**${top ? `钱走得最多的是「${top.label}」（${$}${fmtMoney(top.amount)}）。` : ''}`);
+  if (d.growthSpend > 0) {
+    parts.push(`你为「成为更好的自己」投入了 **${$}${fmtMoney(d.growthSpend)}**——这些不会随时间消散，它们沉淀为你的一部分。`);
   }
   if (d.budget != null) {
     parts.push(d.underBudget
@@ -104,5 +109,5 @@ export function offlineSettlement(d: SettlementData): string {
     parts.push(`还有些未记的流水悄悄滑过——坦诚地承认它们，也是一种清醒。`);
   }
   parts.push(`愿你与金钱的关系，如与命运的关系一般，渐渐清明。`);
-  return parts.join('');
+  return parts.join('\n\n');
 }

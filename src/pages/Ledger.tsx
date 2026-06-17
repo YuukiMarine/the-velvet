@@ -20,7 +20,7 @@ import { parseLedgerInput, type LedgerAIResult } from '@/utils/ledgerAI';
 import { SegmentTabs } from '@/components/SegmentTabs';
 import { LedgerStats } from '@/components/ledger/LedgerStats';
 import { AssetBoard } from '@/components/ledger/AssetBoard';
-import { EXPENSE_META, INCOME_META, EXPENSE_TYPES, INCOME_TYPES, sym, fmtMoney, fmtSigned } from '@/utils/ledgerFormat';
+import { catMeta, CATEGORY_KEYS, isGrowthCategory, INCOME_META, INCOME_TYPES, sym, fmtMoney, fmtSigned } from '@/utils/ledgerFormat';
 import type { LedgerEntry, LedgerExpenseType, LedgerIncomeType, AttributeId, SpendWorth } from '@/types';
 
 // ── 录入草稿 ──────────────────────────────────────────────
@@ -43,13 +43,13 @@ interface EntryDraft {
   registerAsset: boolean;    // 流→存：同时登记为固定资产
 }
 const emptyDraft = (): EntryDraft => ({
-  direction: 'expense', amount: '', type: 'desire', incomeType: 'labor',
+  direction: 'expense', amount: '', type: 'food', incomeType: 'labor',
   category: '', channel: '', note: '', date: toLocalDateKey(), source: 'manual', attrPoints: 1, registerAsset: false,
 });
 const draftFromAI = (r: LedgerAIResult, source: 'manual' | 'ai'): EntryDraft => ({
   direction: r.direction,
   amount: r.amount ? String(r.amount) : '',
-  type: r.type ?? 'desire',
+  type: r.type ?? 'other',
   incomeType: r.incomeType ?? 'labor',
   category: r.category ?? '',
   channel: '',
@@ -109,7 +109,8 @@ export const Ledger = () => {
   const [budgetOpen, setBudgetOpen] = useState(false);
   const [adjustOpen, setAdjustOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<LedgerEntry | null>(null);
-  const [view, setView] = useState<'list' | 'stats' | 'assets'>('list');
+  const [mode, setMode] = useState<'ledger' | 'assets'>('ledger');
+  const [view, setView] = useState<'list' | 'stats'>('list');
 
   // 流水按日分组（日期降序、同日按 createdAt 降序）
   const grouped = useMemo(() => {
@@ -149,7 +150,7 @@ export const Ledger = () => {
           category: draft.category.trim() || undefined,
           channel: draft.channel.trim() || undefined,
           note: draft.note.trim() || undefined,
-          attribute: draft.type === 'investment' ? draft.attribute : undefined,
+          attribute: isGrowthCategory(draft.type) ? draft.attribute : undefined,
           evalWorth: draft.evalWorth,
         })
       : await addLedgerEntry({
@@ -179,6 +180,18 @@ export const Ledger = () => {
         </div>
       </div>
 
+      {/* 顶层：记账 / 资产（平级） */}
+      <div className="mt-4">
+        <SegmentTabs
+          items={[{ key: 'ledger', label: '记账' }, { key: 'assets', label: '资产' }]}
+          value={mode}
+          onChange={setMode}
+          layoutId="ledger-mode"
+        />
+      </div>
+
+      {mode === 'ledger' && (
+        <>
       {/* 总余额 + 预算环 */}
       <section className="mt-4 bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-5">
         <BudgetRing progress={progress}>
@@ -249,7 +262,7 @@ export const Ledger = () => {
       {/* 流水 / 统计 切换 */}
       <div className="mt-4">
         <SegmentTabs
-          items={[{ key: 'list', label: '流水' }, { key: 'stats', label: '统计' }, { key: 'assets', label: '资产' }]}
+          items={[{ key: 'list', label: '流水' }, { key: 'stats', label: '统计' }]}
           value={view}
           onChange={setView}
           layoutId="ledger-view"
@@ -274,8 +287,10 @@ export const Ledger = () => {
       )}
 
       {view === 'stats' && <div className="mt-4"><LedgerStats /></div>}
+        </>
+      )}
 
-      {view === 'assets' && <div className="mt-4"><AssetBoard /></div>}
+      {mode === 'assets' && <div className="mt-4"><AssetBoard /></div>}
 
       {/* 录入确认卡 */}
       <SheetModal
@@ -326,15 +341,17 @@ export const Ledger = () => {
             {/* 类别 */}
             {draft.direction === 'expense' ? (
               <div className="flex flex-wrap gap-2">
-                {EXPENSE_TYPES.map(t => (
+                {CATEGORY_KEYS.map(t => (
                   <button
                     key={t}
                     onClick={() => setDraft({ ...draft, type: t })}
                     className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
-                      draft.type === t ? EXPENSE_META[t].chip : 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-400'
+                      draft.type === t
+                        ? 'bg-primary/10 border-primary/40 text-primary'
+                        : 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-400'
                     }`}
                   >
-                    {EXPENSE_META[t].label}
+                    {catMeta(t).icon} {catMeta(t).label}
                   </button>
                 ))}
               </div>
@@ -356,11 +373,11 @@ export const Ledger = () => {
               </div>
             )}
 
-            {/* 投资 → 自选属性加点 */}
-            {draft.direction === 'expense' && draft.type === 'investment' && (
+            {/* 学习（成长类目）→ 自选属性加点 */}
+            {draft.direction === 'expense' && isGrowthCategory(draft.type) && (
               <div className="rounded-xl bg-emerald-50 dark:bg-emerald-900/15 border border-emerald-200 dark:border-emerald-800/40 p-3 space-y-2">
                 <div className="text-xs font-semibold text-emerald-700 dark:text-emerald-300">
-                  这笔投资，让哪一维成长？<span className="font-normal text-emerald-600/60"> 选了才加点</span>
+                  这笔学习投入，让哪一维成长？<span className="font-normal text-emerald-600/60"> 选了才加点</span>
                 </div>
                 <div className="flex flex-wrap gap-1.5">
                   {ATTR_IDS.map(id => (
@@ -501,14 +518,14 @@ export const Ledger = () => {
 function LedgerRow({ entry: e, $, onClick }: { entry: LedgerEntry; $: string; onClick: () => void }) {
   const isExpense = e.direction === 'expense';
   const isIncome = e.direction === 'income';
-  const meta = isExpense && e.type ? EXPENSE_META[e.type] : null;
+  const meta = isExpense ? catMeta(e.type) : null;
   const sign = isIncome ? '+' : isExpense ? '−' : (e.amount < 0 ? '−' : '+');
-  const subParts = [meta?.label, e.category, e.channel].filter(Boolean) as string[];
+  const subParts = [meta?.label, e.channel].filter(Boolean) as string[];
   const sub = isIncome ? INCOME_META[e.incomeType ?? 'other'].label : (e.direction === 'adjust' ? '余额对账' : subParts.join(' · '));
   const title = e.note || (isIncome ? INCOME_META[e.incomeType ?? 'other'].label : (meta?.label ?? '记录'));
   return (
     <button onClick={onClick} className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors first:rounded-t-xl last:rounded-b-xl">
-      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${meta?.dot ?? (isIncome ? 'bg-emerald-400' : 'bg-gray-300 dark:bg-gray-600')}`} />
+      <span className="w-6 text-center text-lg flex-shrink-0">{isExpense ? meta!.icon : isIncome ? '💰' : '⚖️'}</span>
       <div className="flex-1 min-w-0">
         <div className="text-sm font-medium text-gray-800 dark:text-gray-100 truncate">{title}</div>
         {sub && <div className="text-xs text-gray-400 dark:text-gray-500 truncate">{sub}</div>}
