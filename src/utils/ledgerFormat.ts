@@ -12,7 +12,7 @@ export const CATEGORY_META: Record<LedgerExpenseType, { icon: string; label: str
   shopping:  { icon: '🛍️', label: '购物', dot: 'bg-pink-400',   bar: 'bg-pink-400',   hex: '#f472b6' },
   fun:       { icon: '🎮', label: '娱乐', dot: 'bg-violet-400', bar: 'bg-violet-400', hex: '#a78bfa' },
   home:      { icon: '🏠', label: '居住', dot: 'bg-teal-400',   bar: 'bg-teal-400',   hex: '#2dd4bf' },
-  study:     { icon: '📚', label: '学习', dot: 'bg-indigo-400', bar: 'bg-indigo-400', hex: '#818cf8' },
+  study:     { icon: '📚', label: '提升', dot: 'bg-indigo-400', bar: 'bg-indigo-400', hex: '#818cf8' },
   other:     { icon: '📦', label: '其它', dot: 'bg-slate-400',  bar: 'bg-slate-400',  hex: '#94a3b8' },
 };
 /** 安全取类目元数据（老数据 / 未知值兜底为「其它」）。 */

@@ -347,6 +347,8 @@ interface AppState {
   updateAsset: (id: string, patch: Partial<LedgerAsset>) => Promise<void>;
   deleteAsset: (id: string) => Promise<void>;
   getFixedAssetTotal: () => number;
+  /** 累计存款：过去每月「没花完的预算」之和 max(0, 月预算 − 当月支出)（自律攒下）。 */
+  getSavings: () => number;
   /** 月度不超预算 → 发 +10 SP（仅完成月、每月一次）；返回本次是否发放。 */
   claimLedgerBudgetBonus: (period: string) => Promise<boolean>;
   // 逆影战场
@@ -3047,6 +3049,13 @@ ${activityLines || '（本期暂无记录）'}
     return get().assets
       .filter(a => a.status !== 'soldout')
       .reduce((s, a) => s + a.price + (a.addOns?.reduce((x, o) => x + o.amount, 0) ?? 0), 0);
+  },
+
+  getSavings: () => {
+    const cur = toLocalDateKey().slice(0, 7);
+    return get().budgets
+      .filter(b => b.period < cur && b.monthlyLimit != null)
+      .reduce((s, b) => s + Math.max(0, (b.monthlyLimit ?? 0) - get().getMonthExpense(b.period)), 0);
   },
 
   claimLedgerBudgetBonus: async (period) => {
