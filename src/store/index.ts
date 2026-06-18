@@ -2973,8 +2973,9 @@ ${activityLines || '（本期暂无记录）'}
 
   getMonthIncome: (period) => {
     const p = period ?? toLocalDateKey().slice(0, 7);
+    // 收入 = 入账 + 本月「对账」转入的正向部分（对账补的钱算当月收入，次月自然结转为余额）
     return get().ledgerEntries
-      .filter(e => e.direction === 'income' && e.date.slice(0, 7) === p)
+      .filter(e => e.date.slice(0, 7) === p && (e.direction === 'income' || (e.direction === 'adjust' && e.amount > 0)))
       .reduce((s, e) => s + e.amount, 0);
   },
 
