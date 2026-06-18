@@ -161,6 +161,7 @@ export function LedgerStats() {
   }, [ledgerEntries, period]);
 
   const budget = getBudget(period)?.monthlyLimit;
+  const savingsGoal = getBudget(period)?.savingsGoal;
   const over = budget != null && s.totalExpense > budget;
   const progress = budget ? s.totalExpense / budget : 0;
   const momPct = s.prevExpense > 0 ? ((s.totalExpense - s.prevExpense) / s.prevExpense) * 100 : null;
@@ -224,6 +225,12 @@ export function LedgerStats() {
           <div className="h-2.5 rounded-full bg-gray-100 dark:bg-gray-700 overflow-hidden">
             <div className={`h-full rounded-full ${over ? 'bg-rose-500' : progress >= 0.8 ? 'bg-amber-400' : 'bg-emerald-500'}`} style={{ width: `${Math.min(100, progress * 100)}%` }} />
           </div>
+          {savingsGoal != null && savingsGoal > 0 && (
+            <div className="mt-2 pt-2 border-t border-gray-50 dark:border-gray-700/40 flex items-baseline justify-between text-xs">
+              <span className="text-gray-500 dark:text-gray-400">🐷 本月想省</span>
+              <span className="font-bold tabular-nums text-emerald-500">{$}{fmtMoney(savingsGoal)}</span>
+            </div>
+          )}
         </Card>
       )}
 

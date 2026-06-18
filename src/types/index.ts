@@ -280,6 +280,10 @@ export interface Settings {
   ledgerLastChannel?: string;
   /** F5 记忆：渠道选择器是否展开（超过折叠数时）。 */
   ledgerChannelsExpanded?: boolean;
+  /** F5 每月预算重置 / 规划日（发薪日，1–28）；默认 1=自然月初。决定「新周期规划窗」何时弹。 */
+  ledgerResetDay?: number;
+  /** F5 已确认 / 略过的「新周期规划窗」周期 id（cycle 起始月 YYYY-MM）。 */
+  ledgerCycleConfirmed?: string;
   // AI 总结功能配置
   summaryApiProvider?: 'openai' | 'deepseek' | 'kimi' | 'gemini' | 'minimax';
   summaryApiKey?: string;
@@ -553,6 +557,8 @@ export interface Budget {
   monthlyLimit?: number;
   /** 每日额定预算；缺省时取 monthlyLimit / 当月天数 */
   dailyLimit?: number;
+  /** 本月「想省下多少」目标（自律储蓄目标，激励用） */
+  savingsGoal?: number;
   createdAt: Date;
 }
 

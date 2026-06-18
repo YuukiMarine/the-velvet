@@ -332,7 +332,7 @@ interface AppState {
   loadLedger: () => Promise<void>;
   addLedgerEntry: (input: Omit<LedgerEntry, 'id' | 'createdAt' | 'currency'> & { currency?: string }) => Promise<LedgerEntry>;
   deleteLedgerEntry: (id: string) => Promise<void>;
-  setBudget: (period: string, patch: { monthlyLimit?: number; dailyLimit?: number }) => Promise<void>;
+  setBudget: (period: string, patch: { monthlyLimit?: number; dailyLimit?: number; savingsGoal?: number }) => Promise<void>;
   adjustTotalBalance: (targetTotal: number) => Promise<{ ok: boolean; reason?: string }>;
   getTotalBalance: () => number;
   getMonthExpense: (period?: string) => number;
