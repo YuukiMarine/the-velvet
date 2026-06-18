@@ -168,7 +168,7 @@ function DateQuickPicker({ value, onChange }: { value: string; onChange: (v: str
   const ago = (n: number) => { const d = new Date(); d.setDate(d.getDate() - n); return toLocalDateKey(d); };
   return (
     <div className="flex flex-wrap items-center gap-2">
-      {([['今天', 0], ['昨天', 1], ['前天', 2]] as const).map(([lbl, n]) => {
+      {([['今天', 0], ['昨天', 1]] as const).map(([lbl, n]) => {
         const dk = ago(n);
         return (
           <button
@@ -197,17 +197,19 @@ interface BatchRow {
   direction: 'expense' | 'income';
   amount: string;
   type: LedgerExpenseType;
-  incomeSource: string;
+  channel: string;        // 支出渠道
+  incomeSource: string;   // 收入来源
   note: string;
 }
 const rowFromResult = (r: LedgerAIResult): BatchRow => ({
   direction: r.direction,
   amount: r.amount ? String(r.amount) : '',
   type: r.type ?? 'other',
+  channel: '',
   incomeSource: r.direction === 'income' ? (r.incomeType === 'labor' ? '工资' : (r.category ?? '')) : '',
   note: r.note ?? '',
 });
-const emptyRow = (): BatchRow => ({ direction: 'expense', amount: '', type: 'food', incomeSource: '', note: '' });
+const emptyRow = (): BatchRow => ({ direction: 'expense', amount: '', type: 'food', channel: '', incomeSource: '', note: '' });
 
 // ── 页面 ──────────────────────────────────────────────────
 
@@ -259,6 +261,7 @@ export const Ledger = () => {
   const [view, setView] = useState<'list' | 'stats'>('list');
   const [batch, setBatch] = useState<BatchRow[] | null>(null);   // 多笔批量卡
   const [batchDate, setBatchDate] = useState(toLocalDateKey());
+  const [subCatOpen, setSubCatOpen] = useState(false);           // 细分类目默认折叠
 
   // ── Batch2 录入选项（可手动增删、持久化）+ 记忆 ──
   const channels = settings.ledgerChannels ?? DEFAULT_CHANNELS;
@@ -267,9 +270,11 @@ export const Ledger = () => {
   const channelsExpanded = settings.ledgerChannelsExpanded ?? false;
   const addOption = (key: 'ledgerChannels' | 'ledgerIncomeSources' | 'ledgerCategories', cur: string[]) =>
     (v: string) => { if (!cur.includes(v)) updateSettings({ [key]: [...cur, v] } as Partial<Settings>); };
-  // 新建草稿：支出预选「上次渠道」
-  const startDraft = (d: EntryDraft) =>
+  // 新建草稿：支出预选「上次渠道」；细分类目重置为折叠（除非草稿已带值）
+  const startDraft = (d: EntryDraft) => {
+    setSubCatOpen(!!d.category);
     setDraft(d.direction === 'expense' && !d.channel ? { ...d, channel: settings.ledgerLastChannel ?? '' } : d);
+  };
 
   // 流水按日分组（日期降序、同日按 createdAt 降序）
   const grouped = useMemo(() => {
@@ -293,9 +298,10 @@ export const Ledger = () => {
       const source: 'manual' | 'ai' = getAIConfig(settings) ? 'ai' : 'manual';
       const results = await parseLedgerBatch(text, settings);
       if (results.length >= 2) {
-        // 多笔 → 批量确认卡
+        // 多笔 → 批量确认卡（支出行预选上次渠道）
+        const last = settings.ledgerLastChannel ?? '';
         setBatchDate(toLocalDateKey());
-        setBatch(results.map(rowFromResult));
+        setBatch(results.map(rowFromResult).map(r => (r.direction === 'expense' && !r.channel ? { ...r, channel: last } : r)));
       } else {
         // 单笔（含 0 笔兜底转手动）
         startDraft(results[0] ? draftFromAI(results[0], source) : { ...emptyDraft(), note: text });
@@ -310,14 +316,17 @@ export const Ledger = () => {
   const saveBatch = async () => {
     if (!batch) return;
     const aiSrc: 'manual' | 'ai' = getAIConfig(settings) ? 'ai' : 'manual';
+    let lastCh = '';
     for (const r of batch) {
       const amount = Math.abs(Number(r.amount));
       if (!amount || !Number.isFinite(amount)) continue;
       const saved = r.direction === 'expense'
-        ? await addLedgerEntry({ direction: 'expense', amount, date: batchDate, source: aiSrc, type: r.type, note: r.note.trim() || undefined })
+        ? await addLedgerEntry({ direction: 'expense', amount, date: batchDate, source: aiSrc, type: r.type, channel: r.channel.trim() || undefined, note: r.note.trim() || undefined })
         : await addLedgerEntry({ direction: 'income', amount, date: batchDate, source: aiSrc, incomeType: incomeTypeFromSource(r.incomeSource), category: r.incomeSource.trim() || undefined, note: r.note.trim() || undefined });
       await rewardForLedgerEntry(saved);
+      if (r.direction === 'expense' && r.channel.trim()) lastCh = r.channel.trim();
     }
+    if (lastCh && settings.ledgerLastChannel !== lastCh) updateSettings({ ledgerLastChannel: lastCh });
     setBatch(null);
     setNlText('');
   };
@@ -682,15 +691,24 @@ export const Ledger = () => {
                     onToggleExpand={() => updateSettings({ ledgerChannelsExpanded: !channelsExpanded })}
                   />
                 </div>
-                <div className="space-y-1.5">
-                  <div className="text-xs text-gray-500 dark:text-gray-400">细分类目 <span className="text-gray-400/70 font-normal">可选</span></div>
-                  <TagPicker
-                    options={subCategories} value={draft.category}
-                    onChange={v => setDraft({ ...draft, category: v })}
-                    onAdd={addOption('ledgerCategories', subCategories)}
-                    addPlaceholder="如：早餐"
-                  />
-                </div>
+                {subCatOpen ? (
+                  <div className="space-y-1.5">
+                    <div className="text-xs text-gray-500 dark:text-gray-400">细分类目 <span className="text-gray-400/70 font-normal">可选</span></div>
+                    <TagPicker
+                      options={subCategories} value={draft.category}
+                      onChange={v => setDraft({ ...draft, category: v })}
+                      onAdd={addOption('ledgerCategories', subCategories)}
+                      addPlaceholder="如：早餐"
+                    />
+                  </div>
+                ) : (
+                  <button
+                    type="button" onClick={() => setSubCatOpen(true)}
+                    className="text-xs font-semibold text-gray-400 hover:text-primary transition-colors"
+                  >
+                    ＋ 细分类目（可选）
+                  </button>
+                )}
               </>
             )}
 
@@ -754,35 +772,47 @@ export const Ledger = () => {
                       ✕
                     </button>
                   </div>
-                  {/* 行 2：类目 / 来源 + 备注 */}
+                  {/* 行 2：(支出)类目 + 渠道 / (收入)来源 */}
                   <div className="flex items-center gap-2">
                     {row.direction === 'expense' ? (
-                      <select
-                        value={row.type} onChange={e => updateRow(i, { type: e.target.value as LedgerExpenseType })}
-                        className="flex-shrink-0 px-2 py-1.5 rounded-lg bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-xs text-gray-700 dark:text-gray-200 outline-none"
-                      >
-                        {CATEGORY_KEYS.map(t => <option key={t} value={t}>{catMeta(t).icon} {catMeta(t).label}</option>)}
-                      </select>
+                      <>
+                        <select
+                          value={row.type} onChange={e => updateRow(i, { type: e.target.value as LedgerExpenseType })}
+                          className="flex-1 min-w-0 px-2 py-1.5 rounded-lg bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-xs text-gray-700 dark:text-gray-200 outline-none"
+                        >
+                          {CATEGORY_KEYS.map(t => <option key={t} value={t}>{catMeta(t).icon} {catMeta(t).label}</option>)}
+                        </select>
+                        <select
+                          value={row.channel} onChange={e => updateRow(i, { channel: e.target.value })}
+                          className="flex-1 min-w-0 px-2 py-1.5 rounded-lg bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-xs text-gray-700 dark:text-gray-200 outline-none"
+                        >
+                          <option value="">渠道…</option>
+                          {[...new Set([...channels, row.channel].filter(Boolean))].map(c => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                      </>
                     ) : (
-                      <input
-                        value={row.incomeSource} placeholder="来源"
-                        onChange={e => updateRow(i, { incomeSource: e.target.value })}
-                        className="flex-shrink-0 w-24 px-2.5 py-1.5 rounded-lg bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-xs text-gray-700 dark:text-gray-200 outline-none"
-                      />
+                      <select
+                        value={row.incomeSource} onChange={e => updateRow(i, { incomeSource: e.target.value })}
+                        className="flex-1 min-w-0 px-2 py-1.5 rounded-lg bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-xs text-gray-700 dark:text-gray-200 outline-none"
+                      >
+                        <option value="">来源…</option>
+                        {[...new Set([...incomeSources, row.incomeSource].filter(Boolean))].map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
                     )}
-                    <input
-                      value={row.note} placeholder="备注"
-                      onChange={e => updateRow(i, { note: e.target.value })}
-                      className="flex-1 min-w-0 px-2.5 py-1.5 rounded-lg bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-xs text-gray-800 dark:text-white placeholder-gray-400 outline-none"
-                    />
                   </div>
+                  {/* 行 3：备注 */}
+                  <input
+                    value={row.note} placeholder="备注"
+                    onChange={e => updateRow(i, { note: e.target.value })}
+                    className="w-full px-2.5 py-1.5 rounded-lg bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-xs text-gray-800 dark:text-white placeholder-gray-400 outline-none"
+                  />
                 </div>
               ))}
             </div>
             {/* 加一行 */}
             <button
               type="button"
-              onClick={() => setBatch(rows => (rows ? [...rows, emptyRow()] : rows))}
+              onClick={() => setBatch(rows => (rows ? [...rows, { ...emptyRow(), channel: settings.ledgerLastChannel ?? '' }] : rows))}
               className="w-full py-2 rounded-xl border border-dashed border-gray-300 dark:border-gray-600 text-xs font-semibold text-gray-400 hover:text-primary hover:border-primary/40 transition-colors"
             >
               ＋ 添加一行
