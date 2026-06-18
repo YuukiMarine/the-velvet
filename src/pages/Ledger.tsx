@@ -82,13 +82,36 @@ function BudgetRing({ ratio, color, children }: { ratio: number; color: string; 
   );
 }
 
+/** 资金类型环：流动(本月预算剩) / 收入(本月) / 余额(结转) 按比例分色。 */
+function FundRing({ liquid, income, carried, children }: { liquid: number; income: number; carried: number; children: ReactNode }) {
+  const R = 84;
+  const C = 2 * Math.PI * R;
+  const segs = [{ v: liquid, c: '#38bdf8' }, { v: income, c: '#34d399' }, { v: carried, c: '#818cf8' }];
+  const tot = segs.reduce((s, x) => s + x.v, 0) || 1;
+  let acc = 0;
+  return (
+    <div className="relative w-56 h-56 mx-auto">
+      <svg viewBox="0 0 200 200" className="w-full h-full -rotate-90">
+        <circle cx="100" cy="100" r={R} fill="none" strokeWidth="12" className="stroke-gray-100 dark:stroke-gray-800" />
+        {segs.map((sg, i) => {
+          const f = sg.v / tot;
+          const el = <circle key={i} cx="100" cy="100" r={R} fill="none" stroke={sg.c} strokeWidth="12" strokeDasharray={`${f * C} ${C}`} strokeDashoffset={-acc * C} />;
+          acc += f;
+          return el;
+        })}
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-6">{children}</div>
+    </div>
+  );
+}
+
 // ── 页面 ──────────────────────────────────────────────────
 
 export const Ledger = () => {
   const {
     settings, ledgerEntries, setCurrentPage,
     addLedgerEntry, deleteLedgerEntry, setBudget, adjustTotalBalance, rewardForLedgerEntry, addAsset,
-    getTotalBalance, getMonthExpense, getBudget, getAdjustCountThisMonth, getSavings,
+    getTotalBalance, getMonthExpense, getMonthIncome, getBudget, getAdjustCountThisMonth, getSavings,
   } = useAppStore();
 
   const currency = settings.currency ?? 'CNY';
@@ -112,6 +135,16 @@ export const Ledger = () => {
   // 开局引导：无任何流水时先提示设初始余额（避免首笔变负）
   const needsSetup = ledgerEntries.length === 0;
 
+  // 月余额（默认显示）= 本月预算 − 本月已花（流动资金，次月重算）
+  const monthBalance = budgetLeft;
+  // 总余额的资金类型构成：流动(本月预算剩) / 本月收入 / 结转余额(本月之前带入)
+  const monthIncome = getMonthIncome();
+  const carried = total - (monthIncome - monthExpense);
+  const fundLiquid = Math.max(0, budgetLeft);
+  const fundIncome = Math.max(0, monthIncome);
+  const fundCarried = Math.max(0, carried);
+
+  const [balanceView, setBalanceView] = useState<'month' | 'total'>('month');
   const [nlText, setNlText] = useState('');
   const [nlBusy, setNlBusy] = useState(false);
   const [draft, setDraft] = useState<EntryDraft | null>(null);
@@ -214,29 +247,43 @@ export const Ledger = () => {
 
       {/* 总余额 + 预算环（环显示本月预算「剩余」，花钱往下消耗） */}
       <section className="mt-4 bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-5">
-        <BudgetRing ratio={remainingRatio} color={ringColor}>
-          <div className="flex flex-col items-center">
-            <span className="text-xs text-gray-400 dark:text-gray-500">总余额</span>
-            <span className="text-3xl font-black text-gray-900 dark:text-white tabular-nums mt-0.5">
-              {fmtSigned(total, $)}
-            </span>
-            {savings > 0 && (
-              <span className="text-xs font-semibold text-indigo-500 dark:text-indigo-400 mt-1">🐷 攒下 {$}{fmtMoney(savings)}</span>
+        {balanceView === 'month' ? (
+          <BudgetRing ratio={remainingRatio} color={ringColor}>
+            <button onClick={() => setBalanceView('total')} className="flex flex-col items-center focus:outline-none" aria-label="切换到总余额">
+              <span className="text-xs text-gray-400 dark:text-gray-500">月余额 ⇄</span>
+              <span className="text-3xl font-black text-gray-900 dark:text-white tabular-nums mt-0.5">{fmtSigned(monthBalance, $)}</span>
+              <span className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{hasBudget ? `预算 ${$}${fmtMoney(lim)}` : '未设预算'}</span>
+            </button>
+          </BudgetRing>
+        ) : (
+          <FundRing liquid={fundLiquid} income={fundIncome} carried={fundCarried}>
+            <button onClick={() => setBalanceView('month')} className="flex flex-col items-center focus:outline-none" aria-label="切换到月余额">
+              <span className="text-xs text-gray-400 dark:text-gray-500">总余额 ⇄</span>
+              <span className="text-3xl font-black text-gray-900 dark:text-white tabular-nums mt-0.5">{fmtSigned(total, $)}</span>
+              {savings > 0 && <span className="text-xs font-semibold text-indigo-500 dark:text-indigo-400 mt-0.5">🐷 攒下 {$}{fmtMoney(savings)}</span>}
+            </button>
+          </FundRing>
+        )}
+
+        {balanceView === 'month' ? (
+          <div className="text-center text-xs text-gray-500 dark:text-gray-400 -mt-1">
+            {hasBudget ? (
+              over ? (
+                <span className="text-rose-500 font-semibold">本月已超 {$}{fmtMoney(-budgetLeft)}</span>
+              ) : (
+                <>本月预算剩 <b className="tabular-nums">{$}{fmtMoney(budgetLeft)}</b> / {$}{fmtMoney(lim)}{todayLeft > 0 && <> · 今日还可花 <b className="tabular-nums text-emerald-600 dark:text-emerald-400">{$}{fmtMoney(todayLeft)}</b></>}</>
+              )
+            ) : (
+              <span>本月还没设预算</span>
             )}
           </div>
-        </BudgetRing>
-
-        <div className="text-center text-xs text-gray-500 dark:text-gray-400 -mt-1">
-          {hasBudget ? (
-            over ? (
-              <span className="text-rose-500 font-semibold">本月已超 {$}{fmtMoney(-budgetLeft)}</span>
-            ) : (
-              <>本月预算剩 <b className="tabular-nums">{$}{fmtMoney(budgetLeft)}</b> / {$}{fmtMoney(lim)}{todayLeft > 0 && <> · 今日还可花 <b className="tabular-nums text-emerald-600 dark:text-emerald-400">{$}{fmtMoney(todayLeft)}</b></>}</>
-            )
-          ) : (
-            <span>本月还没设预算</span>
-          )}
-        </div>
+        ) : (
+          <div className="flex justify-center flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400 -mt-1">
+            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full" style={{ background: '#38bdf8' }} />流动 <b className="tabular-nums">{$}{fmtMoney(fundLiquid)}</b></span>
+            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full" style={{ background: '#34d399' }} />本月收入 <b className="tabular-nums">{$}{fmtMoney(fundIncome)}</b></span>
+            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full" style={{ background: '#818cf8' }} />结转 <b className="tabular-nums">{$}{fmtMoney(fundCarried)}</b></span>
+          </div>
+        )}
 
         <div className="flex gap-2 justify-center mt-4">
           <button
