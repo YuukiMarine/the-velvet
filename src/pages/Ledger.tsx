@@ -62,18 +62,18 @@ const draftFromAI = (r: LedgerAIResult, source: 'manual' | 'ai'): EntryDraft => 
 
 // ── 预算环 ────────────────────────────────────────────────
 
-function BudgetRing({ progress, children }: { progress: number; children: ReactNode }) {
+/** 预算环：ratio=本月预算「剩余」比例（满=未花，花钱往下消耗）；color 由调用方按预算状态给。 */
+function BudgetRing({ ratio, color, children }: { ratio: number; color: string; children: ReactNode }) {
   const R = 84;
   const C = 2 * Math.PI * R;
-  const clamped = Math.max(0, Math.min(1, progress));
-  const color = clamped >= 1 ? '#ef4444' : clamped >= 0.8 ? '#f59e0b' : '#10b981';
+  const r = Math.max(0, Math.min(1, ratio));
   return (
     <div className="relative w-56 h-56 mx-auto">
       <svg viewBox="0 0 200 200" className="w-full h-full -rotate-90">
         <circle cx="100" cy="100" r={R} fill="none" strokeWidth="12" className="stroke-gray-100 dark:stroke-gray-800" />
         <circle
           cx="100" cy="100" r={R} fill="none" stroke={color} strokeWidth="12" strokeLinecap="round"
-          strokeDasharray={C} strokeDashoffset={C * (1 - clamped)}
+          strokeDasharray={C} strokeDashoffset={C * (1 - r)}
           style={{ transition: 'stroke-dashoffset .5s ease, stroke .3s' }}
         />
       </svg>
@@ -88,7 +88,7 @@ export const Ledger = () => {
   const {
     settings, ledgerEntries, setCurrentPage,
     addLedgerEntry, deleteLedgerEntry, setBudget, adjustTotalBalance, rewardForLedgerEntry, addAsset,
-    getTotalBalance, getMonthExpense, getBudget, getAdjustCountThisMonth,
+    getTotalBalance, getMonthExpense, getBudget, getAdjustCountThisMonth, getSavings,
   } = useAppStore();
 
   const currency = settings.currency ?? 'CNY';
@@ -96,13 +96,22 @@ export const Ledger = () => {
 
   const total = getTotalBalance();
   const monthExpense = getMonthExpense();
+  const savings = getSavings();
   const budget = getBudget();
-  const limit = budget?.monthlyLimit;
-  const monthRemain = limit != null ? limit - monthExpense : null;
-  const progress = limit ? monthExpense / limit : 0;
+  const hasBudget = budget?.monthlyLimit != null;
+  const lim = budget?.monthlyLimit ?? 0;
+  const budgetLeft = lim - monthExpense;
+  const over = hasBudget && budgetLeft < 0;
+  const remainingRatio = hasBudget && lim > 0 ? budgetLeft / lim : 1;
+  const ringColor = !hasBudget ? '#cbd5e1' : over ? '#ef4444' : remainingRatio <= 0.2 ? '#f59e0b' : '#10b981';
+  // 今日还可花 =（本月预算剩）/ 当月剩余天数
+  const nowDate = new Date();
+  const daysInMonth = new Date(nowDate.getFullYear(), nowDate.getMonth() + 1, 0).getDate();
+  const daysLeft = Math.max(1, daysInMonth - nowDate.getDate() + 1);
+  const todayLeft = hasBudget && budgetLeft > 0 ? budgetLeft / daysLeft : 0;
+  // 开局引导：无任何流水时先提示设初始余额（避免首笔变负）
+  const needsSetup = ledgerEntries.length === 0;
 
-  const [balanceView, setBalanceView] = useState<'total' | 'month'>('total');
-  const heroVal = balanceView === 'total' ? total : (monthRemain ?? total);
   const [nlText, setNlText] = useState('');
   const [nlBusy, setNlBusy] = useState(false);
   const [draft, setDraft] = useState<EntryDraft | null>(null);
@@ -192,31 +201,41 @@ export const Ledger = () => {
 
       {mode === 'ledger' && (
         <>
-      {/* 总余额 + 预算环 */}
+      {/* 开局引导：无流水时先设初始余额（避免首笔变负） */}
+      {needsSetup && (
+        <button
+          onClick={() => setAdjustOpen(true)}
+          className="mt-4 w-full rounded-2xl border-2 border-dashed border-primary/40 bg-primary/5 px-4 py-3 text-left active:scale-[0.99] transition"
+        >
+          <div className="text-sm font-bold text-primary">👋 先设置你当前的余额</div>
+          <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">告诉我你现在大概有多少钱，记账才准——之后随时可「对账」修正。</div>
+        </button>
+      )}
+
+      {/* 总余额 + 预算环（环显示本月预算「剩余」，花钱往下消耗） */}
       <section className="mt-4 bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-5">
-        <BudgetRing progress={progress}>
-          <button
-            onClick={() => setBalanceView(v => (v === 'total' ? 'month' : 'total'))}
-            className="flex flex-col items-center focus:outline-none"
-            aria-label="切换总余额 / 本月余额"
-          >
-            <span className="text-xs text-gray-400 dark:text-gray-500">
-              {balanceView === 'total' ? '总余额' : '本月余额'} ⇄
-            </span>
+        <BudgetRing ratio={remainingRatio} color={ringColor}>
+          <div className="flex flex-col items-center">
+            <span className="text-xs text-gray-400 dark:text-gray-500">总余额</span>
             <span className="text-3xl font-black text-gray-900 dark:text-white tabular-nums mt-0.5">
-              {fmtSigned(heroVal, $)}
+              {fmtSigned(total, $)}
             </span>
-            <span className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
-              {balanceView === 'total'
-                ? '累计'
-                : (limit != null ? `预算 ${$}${fmtMoney(limit)}` : '未设预算')}
-            </span>
-          </button>
+            {savings > 0 && (
+              <span className="text-xs font-semibold text-indigo-500 dark:text-indigo-400 mt-1">🐷 攒下 {$}{fmtMoney(savings)}</span>
+            )}
+          </div>
         </BudgetRing>
 
         <div className="text-center text-xs text-gray-500 dark:text-gray-400 -mt-1">
-          本月已花 <span className="font-semibold tabular-nums">{$}{fmtMoney(monthExpense)}</span>
-          {limit != null && <> / {$}{fmtMoney(limit)}</>}
+          {hasBudget ? (
+            over ? (
+              <span className="text-rose-500 font-semibold">本月已超 {$}{fmtMoney(-budgetLeft)}</span>
+            ) : (
+              <>本月预算剩 <b className="tabular-nums">{$}{fmtMoney(budgetLeft)}</b> / {$}{fmtMoney(lim)}{todayLeft > 0 && <> · 今日还可花 <b className="tabular-nums text-emerald-600 dark:text-emerald-400">{$}{fmtMoney(todayLeft)}</b></>}</>
+            )
+          ) : (
+            <span>本月还没设预算</span>
+          )}
         </div>
 
         <div className="flex gap-2 justify-center mt-4">
@@ -224,7 +243,7 @@ export const Ledger = () => {
             onClick={() => setBudgetOpen(true)}
             className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
           >
-            {limit != null ? '编辑预算' : '设置预算'}
+            {hasBudget ? '编辑预算' : '设置预算'}
           </button>
           <button
             onClick={() => setAdjustOpen(true)}
@@ -485,7 +504,7 @@ export const Ledger = () => {
         isOpen={budgetOpen}
         onClose={() => setBudgetOpen(false)}
         $={$}
-        current={limit}
+        current={budget?.monthlyLimit}
         onSave={async (v) => { await setBudget(toLocalDateKey().slice(0, 7), { monthlyLimit: v }); setBudgetOpen(false); }}
       />
 
