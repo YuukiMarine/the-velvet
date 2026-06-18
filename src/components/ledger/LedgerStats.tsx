@@ -5,11 +5,12 @@
  * 轻量自绘（CSS/SVG），不引 recharts；无数据板块自动隐藏。
  * 月末「让伊戈尔结算」入口在此（Markdown 报告 + 不超预算 +10SP）。
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useAppStore, toLocalDateKey } from '@/store';
 import { SheetModal } from '@/components/SheetModal';
+import { SegmentTabs } from '@/components/SegmentTabs';
 import { catMeta, CATEGORY_KEYS, sym, fmtMoney, fmtSigned, shiftMonth } from '@/utils/ledgerFormat';
-import { buildSettlementData, generateSettlement } from '@/utils/ledgerSettlement';
+import { buildSettlementData, generateSettlement, settleRange, shiftSettleAnchor, type SettleScope, type SettlementResult } from '@/utils/ledgerSettlement';
 import { renderMarkdown } from '@/utils/markdown';
 import DOMPurify from 'dompurify';
 
@@ -54,6 +55,18 @@ function Donut({ segments, total, $ }: { segments: { hex: string; amount: number
   );
 }
 
+/** 极值小卡（最贵一笔 / 最贵一天 / 日均 等）。 */
+function Stat({ label, main, sub, tone }: { label: string; main: string; sub?: string; tone?: string }) {
+  return (
+    <div className="rounded-xl bg-gray-50 dark:bg-gray-800/60 p-2.5 min-w-0">
+      <div className="text-[10px] text-gray-400">{label}</div>
+      <div className={`text-sm font-black tabular-nums truncate ${tone ?? 'text-gray-800 dark:text-white'}`}>{main}</div>
+      {sub && <div className="text-[10px] text-gray-400 dark:text-gray-500 truncate">{sub}</div>}
+    </div>
+  );
+}
+const mdLabel = (dateKey: string) => { const [, m, d] = dateKey.split('-'); return `${Number(m)}/${Number(d)}`; };
+
 function BarRow({ label, amount, max, $ }: { label: string; amount: number; max: number; $: string }) {
   const pct = max > 0 ? Math.max(2, (amount / max) * 100) : 0;
   return (
@@ -71,24 +84,40 @@ export function LedgerStats() {
   const { settings, ledgerEntries, getBudget, claimLedgerBudgetBonus } = useAppStore();
   const $ = sym(settings.currency);
   const [period, setPeriod] = useState(() => toLocalDateKey().slice(0, 7));
+  // 结算（周/月，独立于上方统计月份）
   const [settleOpen, setSettleOpen] = useState(false);
+  const [settleScope, setSettleScope] = useState<SettleScope>('month');
+  const [settleAnchor, setSettleAnchor] = useState(() => toLocalDateKey());
   const [settleBusy, setSettleBusy] = useState(false);
-  const [settleText, setSettleText] = useState('');
+  const [settleResult, setSettleResult] = useState<SettlementResult | null>(null);
   const [bonus, setBonus] = useState(false);
 
-  const openSettle = async () => {
-    setSettleOpen(true);
-    setSettleBusy(true);
-    setSettleText('');
-    setBonus(false);
-    try {
-      setBonus(await claimLedgerBudgetBonus(period));
-      const data = buildSettlementData(ledgerEntries, period, getBudget(period)?.monthlyLimit, settings.currency);
-      setSettleText(await generateSettlement(data, settings));
-    } finally {
-      setSettleBusy(false);
-    }
-  };
+  const settleData = useMemo(() => {
+    const [, end] = settleRange(settleScope, settleAnchor);
+    return buildSettlementData(ledgerEntries, settleScope, settleAnchor, getBudget(end.slice(0, 7))?.monthlyLimit, settings.currency);
+  }, [ledgerEntries, settleScope, settleAnchor, getBudget, settings.currency]);
+
+  const todayKey = toLocalDateKey();
+  const atCurrentPeriod = settleScope === 'month'
+    ? settleData.rangeStart.slice(0, 7) >= todayKey.slice(0, 7)
+    : settleData.rangeEnd >= todayKey;
+
+  const openSettle = () => { setSettleScope('month'); setSettleAnchor(toLocalDateKey()); setSettleOpen(true); };
+
+  // 打开 / 切换周期时重新生成（含 +10SP 月度奖励，仅月范围）
+  useEffect(() => {
+    if (!settleOpen) return;
+    let cancelled = false;
+    (async () => {
+      setSettleBusy(true);
+      setSettleResult(null);
+      setBonus(settleScope === 'month' ? await claimLedgerBudgetBonus(settleAnchor.slice(0, 7)) : false);
+      const r = await generateSettlement(settleData, settings);
+      if (!cancelled) { setSettleResult(r); setSettleBusy(false); }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settleOpen, settleScope, settleAnchor]);
 
   const s = useMemo(() => {
     const monthOf = (p: string) => ledgerEntries.filter(e => e.date.slice(0, 7) === p);
@@ -177,7 +206,7 @@ export function LedgerStats() {
           onClick={openSettle}
           className="w-full py-3 rounded-2xl text-sm font-bold bg-gradient-to-r from-indigo-500 to-violet-500 text-white shadow-md active:scale-[0.98]"
         >
-          🔮 让伊戈尔为「{period}」结算
+          🔮 让伊戈尔结算（周 / 月）
         </button>
       )}
 
@@ -283,27 +312,94 @@ export function LedgerStats() {
         </Card>
       )}
 
-      {/* 月末 Velvet 结算（Markdown 渲染） */}
-      <SheetModal isOpen={settleOpen} onClose={() => setSettleOpen(false)} title={`${period} · 心相结算`}>
+      {/* 心相结算（周 / 月，图文 + 回望 + 建议） */}
+      <SheetModal isOpen={settleOpen} onClose={() => setSettleOpen(false)} title="心相结算">
         <div className="space-y-3">
+          {/* 周 / 月 切换 */}
+          <SegmentTabs
+            items={[{ key: 'month', label: '按月' }, { key: 'week', label: '按周' }]}
+            value={settleScope}
+            onChange={v => setSettleScope(v as SettleScope)}
+            layoutId="settle-scope"
+          />
+          {/* 周期导航 */}
+          <div className="flex items-center justify-between">
+            <button onClick={() => setSettleAnchor(a => shiftSettleAnchor(settleScope, a, -1))} className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700">‹</button>
+            <span className="text-sm font-bold text-gray-800 dark:text-white tabular-nums">{settleData.label}</span>
+            <button onClick={() => setSettleAnchor(a => shiftSettleAnchor(settleScope, a, 1))} disabled={atCurrentPeriod} className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-30">›</button>
+          </div>
+
           {bonus && (
             <div className="rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 px-4 py-3 text-sm font-bold text-amber-700 dark:text-amber-300 text-center">
               🎉 本月不超预算 · +10 SP
             </div>
           )}
+
           {/* 数据头 */}
           <div className="grid grid-cols-3 gap-2 text-center bg-gray-50 dark:bg-gray-800/60 rounded-xl py-2.5">
-            <div><div className="text-[10px] text-gray-400">支出</div><div className="text-sm font-black tabular-nums text-gray-800 dark:text-white">{$}{fmtMoney(s.totalExpense)}</div></div>
-            <div><div className="text-[10px] text-gray-400">收入</div><div className="text-sm font-black tabular-nums text-emerald-500">{$}{fmtMoney(s.totalIncome)}</div></div>
-            <div><div className="text-[10px] text-gray-400">结余</div><div className={`text-sm font-black tabular-nums ${s.totalIncome - s.totalExpense < 0 ? 'text-rose-500' : 'text-gray-800 dark:text-white'}`}>{fmtSigned(s.totalIncome - s.totalExpense, $)}</div></div>
+            <div><div className="text-[10px] text-gray-400">支出</div><div className="text-sm font-black tabular-nums text-gray-800 dark:text-white">{$}{fmtMoney(settleData.totalExpense)}</div></div>
+            <div><div className="text-[10px] text-gray-400">收入</div><div className="text-sm font-black tabular-nums text-emerald-500">{$}{fmtMoney(settleData.totalIncome)}</div></div>
+            <div><div className="text-[10px] text-gray-400">结余</div><div className={`text-sm font-black tabular-nums ${settleData.totalIncome - settleData.totalExpense < 0 ? 'text-rose-500' : 'text-gray-800 dark:text-white'}`}>{fmtSigned(settleData.totalIncome - settleData.totalExpense, $)}</div></div>
           </div>
-          {settleBusy ? (
-            <div className="text-center text-sm text-gray-400 py-8">伊戈尔正凝视着你的账目……</div>
+
+          {settleData.totalExpense === 0 && settleData.totalIncome === 0 ? (
+            <div className="text-center text-sm text-gray-400 py-8">这段时间还没有记录。</div>
           ) : (
-            <div
-              className="text-sm text-gray-700 dark:text-gray-200 leading-loose"
-              dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(`<p class="mb-2">${renderMarkdown(settleText)}</p>`) }}
-            />
+            <>
+              {/* 极值 */}
+              <div className="grid grid-cols-2 gap-2">
+                {settleData.extremes.priciestEntry && (
+                  <Stat label="最贵一笔" main={`${$}${fmtMoney(settleData.extremes.priciestEntry.amount)}`} sub={settleData.extremes.priciestEntry.note} />
+                )}
+                {settleData.extremes.priciestDay && (
+                  <Stat label="花最多的一天" main={`${$}${fmtMoney(settleData.extremes.priciestDay.amount)}`} sub={mdLabel(settleData.extremes.priciestDay.date)} tone="text-rose-500" />
+                )}
+                {settleData.extremes.cheapestDay && (
+                  <Stat label="花最少的一天" main={`${$}${fmtMoney(settleData.extremes.cheapestDay.amount)}`} sub={mdLabel(settleData.extremes.cheapestDay.date)} tone="text-emerald-500" />
+                )}
+                {(() => {
+                  const a = settleData.actualDailyAvg;
+                  const e = settleData.expectedDailyAvg;
+                  const diff = e != null ? a - e : null;
+                  const sub = e != null
+                    ? `预期 ${$}${fmtMoney(e)} · ${diff! > 0 ? `超 ${$}${fmtMoney(diff!)}` : `省 ${$}${fmtMoney(-diff!)}`}`
+                    : `共 ${settleData.days} 天`;
+                  return <Stat label="日均消费" main={`${$}${fmtMoney(a)}`} sub={sub} tone={diff != null ? (diff > 0 ? 'text-rose-500' : 'text-emerald-500') : undefined} />;
+                })()}
+              </div>
+
+              {/* 类目占比（前几名） */}
+              {settleData.byCat.length > 0 && (
+                <div className="space-y-2">
+                  {settleData.byCat.slice(0, 5).map(c => (
+                    <BarRow key={c.key} label={catMeta(c.key).label} amount={c.amount} max={settleData.byCat[0].amount} $={$} />
+                  ))}
+                </div>
+              )}
+
+              {/* 伊戈尔回望 + 提点 */}
+              {settleBusy ? (
+                <div className="text-center text-sm text-gray-400 py-8">伊戈尔正凝视着你的账目……</div>
+              ) : settleResult && (
+                <>
+                  <div
+                    className="text-sm text-gray-700 dark:text-gray-200 leading-loose"
+                    dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(`<p class="mb-2">${renderMarkdown(settleResult.reflection)}</p>`) }}
+                  />
+                  {settleResult.advice.length > 0 && (
+                    <div className="rounded-xl bg-indigo-50 dark:bg-indigo-900/15 border border-indigo-100 dark:border-indigo-800/40 p-3 space-y-1.5">
+                      <div className="text-xs font-bold text-indigo-600 dark:text-indigo-300">伊戈尔的提点</div>
+                      {settleResult.advice.map((a, i) => (
+                        <div key={i} className="flex gap-2 text-xs text-gray-600 dark:text-gray-300">
+                          <span className="text-indigo-400 flex-shrink-0">✦</span>
+                          <span>{a}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+            </>
           )}
         </div>
       </SheetModal>
