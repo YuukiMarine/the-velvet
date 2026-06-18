@@ -16,7 +16,7 @@ import { BackButton } from '@/components/BackButton';
 import { SheetModal } from '@/components/SheetModal';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { getAIConfig } from '@/utils/aiClient';
-import { parseLedgerInput, type LedgerAIResult } from '@/utils/ledgerAI';
+import { parseLedgerBatch, type LedgerAIResult } from '@/utils/ledgerAI';
 import { SegmentTabs } from '@/components/SegmentTabs';
 import { LedgerStats } from '@/components/ledger/LedgerStats';
 import { AssetBoard } from '@/components/ledger/AssetBoard';
@@ -163,6 +163,52 @@ function TagPicker({
   );
 }
 
+// ── 日期快捷选择（今天/昨天/前天 + 选择器；单笔卡 / 批量卡共用） ──
+function DateQuickPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const ago = (n: number) => { const d = new Date(); d.setDate(d.getDate() - n); return toLocalDateKey(d); };
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {([['今天', 0], ['昨天', 1], ['前天', 2]] as const).map(([lbl, n]) => {
+        const dk = ago(n);
+        return (
+          <button
+            key={lbl} type="button" onClick={() => onChange(dk)}
+            className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
+              value === dk
+                ? 'bg-primary/10 border-primary/40 text-primary'
+                : 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-400'
+            }`}
+          >
+            {lbl}
+          </button>
+        );
+      })}
+      <input
+        type="date" value={value}
+        onChange={e => onChange(e.target.value || toLocalDateKey())}
+        className="px-3 py-1.5 rounded-xl bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-sm text-gray-700 dark:text-gray-200 tabular-nums outline-none focus:border-primary"
+      />
+    </div>
+  );
+}
+
+// ── 多笔录入行（Batch2③：一句多笔 → 可增减的批量卡） ──
+interface BatchRow {
+  direction: 'expense' | 'income';
+  amount: string;
+  type: LedgerExpenseType;
+  incomeSource: string;
+  note: string;
+}
+const rowFromResult = (r: LedgerAIResult): BatchRow => ({
+  direction: r.direction,
+  amount: r.amount ? String(r.amount) : '',
+  type: r.type ?? 'other',
+  incomeSource: r.direction === 'income' ? (r.incomeType === 'labor' ? '工资' : (r.category ?? '')) : '',
+  note: r.note ?? '',
+});
+const emptyRow = (): BatchRow => ({ direction: 'expense', amount: '', type: 'food', incomeSource: '', note: '' });
+
 // ── 页面 ──────────────────────────────────────────────────
 
 export const Ledger = () => {
@@ -211,6 +257,8 @@ export const Ledger = () => {
   const [deleteTarget, setDeleteTarget] = useState<LedgerEntry | null>(null);
   const [mode, setMode] = useState<'ledger' | 'assets'>('ledger');
   const [view, setView] = useState<'list' | 'stats'>('list');
+  const [batch, setBatch] = useState<BatchRow[] | null>(null);   // 多笔批量卡
+  const [batchDate, setBatchDate] = useState(toLocalDateKey());
 
   // ── Batch2 录入选项（可手动增删、持久化）+ 记忆 ──
   const channels = settings.ledgerChannels ?? DEFAULT_CHANNELS;
@@ -219,7 +267,6 @@ export const Ledger = () => {
   const channelsExpanded = settings.ledgerChannelsExpanded ?? false;
   const addOption = (key: 'ledgerChannels' | 'ledgerIncomeSources' | 'ledgerCategories', cur: string[]) =>
     (v: string) => { if (!cur.includes(v)) updateSettings({ [key]: [...cur, v] } as Partial<Settings>); };
-  const dateKeyAgo = (n: number) => { const d = new Date(); d.setDate(d.getDate() - n); return toLocalDateKey(d); };
   // 新建草稿：支出预选「上次渠道」
   const startDraft = (d: EntryDraft) =>
     setDraft(d.direction === 'expense' && !d.channel ? { ...d, channel: settings.ledgerLastChannel ?? '' } : d);
@@ -243,12 +290,36 @@ export const Ledger = () => {
     if (!text || nlBusy) return;
     setNlBusy(true);
     try {
-      const r = await parseLedgerInput(text, settings);
       const source: 'manual' | 'ai' = getAIConfig(settings) ? 'ai' : 'manual';
-      startDraft(r ? draftFromAI(r, source) : { ...emptyDraft(), note: text });
+      const results = await parseLedgerBatch(text, settings);
+      if (results.length >= 2) {
+        // 多笔 → 批量确认卡
+        setBatchDate(toLocalDateKey());
+        setBatch(results.map(rowFromResult));
+      } else {
+        // 单笔（含 0 笔兜底转手动）
+        startDraft(results[0] ? draftFromAI(results[0], source) : { ...emptyDraft(), note: text });
+      }
     } finally {
       setNlBusy(false);
     }
+  };
+
+  const updateRow = (i: number, patch: Partial<BatchRow>) =>
+    setBatch(rows => rows ? rows.map((r, j) => (j === i ? { ...r, ...patch } : r)) : rows);
+  const saveBatch = async () => {
+    if (!batch) return;
+    const aiSrc: 'manual' | 'ai' = getAIConfig(settings) ? 'ai' : 'manual';
+    for (const r of batch) {
+      const amount = Math.abs(Number(r.amount));
+      if (!amount || !Number.isFinite(amount)) continue;
+      const saved = r.direction === 'expense'
+        ? await addLedgerEntry({ direction: 'expense', amount, date: batchDate, source: aiSrc, type: r.type, note: r.note.trim() || undefined })
+        : await addLedgerEntry({ direction: 'income', amount, date: batchDate, source: aiSrc, incomeType: incomeTypeFromSource(r.incomeSource), category: r.incomeSource.trim() || undefined, note: r.note.trim() || undefined });
+      await rewardForLedgerEntry(saved);
+    }
+    setBatch(null);
+    setNlText('');
   };
 
   const saveDraft = async () => {
@@ -626,29 +697,100 @@ export const Ledger = () => {
             {/* 日期：今天/昨天/前天 快捷 + 选择器 */}
             <div className="space-y-1.5">
               <div className="text-xs text-gray-500 dark:text-gray-400">日期</div>
-              <div className="flex flex-wrap items-center gap-2">
-                {([['今天', 0], ['昨天', 1], ['前天', 2]] as const).map(([lbl, ago]) => {
-                  const dk = dateKeyAgo(ago);
-                  return (
+              <DateQuickPicker value={draft.date} onChange={d => setDraft({ ...draft, date: d })} />
+            </div>
+          </div>
+        )}
+      </SheetModal>
+
+      {/* 多笔批量确认卡 */}
+      <SheetModal
+        isOpen={!!batch}
+        onClose={() => setBatch(null)}
+        title={`确认 ${batch?.length ?? 0} 笔`}
+        footer={
+          <button
+            onClick={saveBatch}
+            disabled={!batch?.some(r => Number(r.amount) > 0)}
+            className="w-full py-3.5 rounded-2xl font-bold text-sm bg-primary text-white disabled:opacity-40 active:scale-[0.98]"
+          >
+            全部保存{batch ? `（${batch.filter(r => Number(r.amount) > 0).length}）` : ''}
+          </button>
+        }
+      >
+        {batch && (
+          <div className="space-y-3">
+            <div className="text-xs text-gray-500 dark:text-gray-400">识别到多笔，逐行确认 / 增删后一次保存</div>
+            <div className="space-y-2">
+              {batch.map((row, i) => (
+                <div key={i} className="rounded-xl bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-2.5 space-y-2">
+                  {/* 行 1：支/收 + 金额 + 删除 */}
+                  <div className="flex items-center gap-2">
                     <button
-                      key={lbl} type="button" onClick={() => setDraft({ ...draft, date: dk })}
-                      className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
-                        draft.date === dk
-                          ? 'bg-primary/10 border-primary/40 text-primary'
-                          : 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-400'
+                      type="button"
+                      onClick={() => updateRow(i, { direction: row.direction === 'expense' ? 'income' : 'expense' })}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-bold flex-shrink-0 transition-colors ${
+                        row.direction === 'income'
+                          ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-300'
+                          : 'bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-300'
                       }`}
                     >
-                      {lbl}
+                      {row.direction === 'income' ? '收入' : '支出'}
                     </button>
-                  );
-                })}
-                <input
-                  type="date"
-                  value={draft.date}
-                  onChange={e => setDraft({ ...draft, date: e.target.value || toLocalDateKey() })}
-                  className="px-3 py-1.5 rounded-xl bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-sm text-gray-700 dark:text-gray-200 tabular-nums outline-none focus:border-primary"
-                />
-              </div>
+                    <div className="flex items-center gap-1 flex-1 min-w-0 px-2.5 py-1.5 rounded-lg bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700">
+                      <span className="text-gray-400 text-sm">{$}</span>
+                      <input
+                        type="number" inputMode="decimal" value={row.amount} placeholder="0"
+                        onChange={e => updateRow(i, { amount: e.target.value })}
+                        className="w-full min-w-0 bg-transparent text-base font-bold tabular-nums text-gray-900 dark:text-white outline-none"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setBatch(rows => (rows && rows.length > 1 ? rows.filter((_, j) => j !== i) : rows))}
+                      className="w-7 h-7 flex-shrink-0 flex items-center justify-center rounded-lg text-gray-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-colors"
+                      aria-label="删除此行"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  {/* 行 2：类目 / 来源 + 备注 */}
+                  <div className="flex items-center gap-2">
+                    {row.direction === 'expense' ? (
+                      <select
+                        value={row.type} onChange={e => updateRow(i, { type: e.target.value as LedgerExpenseType })}
+                        className="flex-shrink-0 px-2 py-1.5 rounded-lg bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-xs text-gray-700 dark:text-gray-200 outline-none"
+                      >
+                        {CATEGORY_KEYS.map(t => <option key={t} value={t}>{catMeta(t).icon} {catMeta(t).label}</option>)}
+                      </select>
+                    ) : (
+                      <input
+                        value={row.incomeSource} placeholder="来源"
+                        onChange={e => updateRow(i, { incomeSource: e.target.value })}
+                        className="flex-shrink-0 w-24 px-2.5 py-1.5 rounded-lg bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-xs text-gray-700 dark:text-gray-200 outline-none"
+                      />
+                    )}
+                    <input
+                      value={row.note} placeholder="备注"
+                      onChange={e => updateRow(i, { note: e.target.value })}
+                      className="flex-1 min-w-0 px-2.5 py-1.5 rounded-lg bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-xs text-gray-800 dark:text-white placeholder-gray-400 outline-none"
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+            {/* 加一行 */}
+            <button
+              type="button"
+              onClick={() => setBatch(rows => (rows ? [...rows, emptyRow()] : rows))}
+              className="w-full py-2 rounded-xl border border-dashed border-gray-300 dark:border-gray-600 text-xs font-semibold text-gray-400 hover:text-primary hover:border-primary/40 transition-colors"
+            >
+              ＋ 添加一行
+            </button>
+            {/* 共享日期 */}
+            <div className="space-y-1.5 pt-1">
+              <div className="text-xs text-gray-500 dark:text-gray-400">日期（应用到全部）</div>
+              <DateQuickPicker value={batchDate} onChange={setBatchDate} />
             </div>
           </div>
         )}

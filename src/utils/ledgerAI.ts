@@ -74,11 +74,15 @@ export async function analyzeLedgerAI(
     throw new Error('AI 返回不是合法 JSON');
   }
 
+  return normalizeResult(parsed, trimmed);
+}
+
+/** 把一个 parsed JSON 对象规整为 LedgerAIResult（单笔 / 批量共用）。 */
+function normalizeResult(parsed: Record<string, unknown>, fallbackText = ''): LedgerAIResult {
   const direction = parsed.direction === 'income' ? 'income' : 'expense';
   const amount = Math.max(0, Number(parsed.amount) || 0);
-  const note = (typeof parsed.note === 'string' && parsed.note.trim()) || shortNote(trimmed);
+  const note = (typeof parsed.note === 'string' && parsed.note.trim()) || shortNote(fallbackText);
   const category = typeof parsed.category === 'string' ? parsed.category.trim() : '';
-
   if (direction === 'income') {
     const incomeType: LedgerIncomeType = parsed.incomeType === 'labor' ? 'labor' : 'other';
     return { direction, amount, incomeType, category, note };
@@ -145,6 +149,77 @@ function extractAmount(text: string): number | null {
   if (!matches) return null;
   const nums = matches.map(Number).filter(n => Number.isFinite(n) && n > 0);
   return nums.length ? Math.max(...nums) : null;
+}
+
+// ── 多笔录入（Batch2③） ───────────────────────────────────
+
+const SYSTEM_PROMPT_BATCH = `你是一个记账助手。用户可能一句话报多笔（如"早餐15 地铁4 午饭30""买书59 工资到账8000"）。
+把每一笔解析成数组里的一个对象，每个对象的字段与规则同单笔：
+- direction："expense" 花钱 / "income" 收入（工资/兼职/报销/红包/退款/到账等）
+- amount：金额数字（元，正数，识别不出给 0）
+- 若 expense，type ∈ food/transport/shopping/fun/home/study/other（拿不准用 other）
+- 若 income，incomeType ∈ labor（工资/兼职/劳务）/ other
+- note：≤12 字中文摘要
+
+**只输出严格合法 JSON 数组**，不要代码块、不要多余文字：
+[{ "direction":"expense","amount":0,"type":"food","incomeType":null,"note":"" }]`;
+
+/** 按标点/「和」「还有」切分多笔（无标点的纯空格分隔不切，避免误伤单笔描述）。 */
+export function splitSegments(text: string): string[] {
+  return text
+    .split(/[、，,;；\n]+|\s+和\s+|\s+还有\s+/)
+    .map(s => s.trim())
+    .filter(Boolean);
+}
+
+/**
+ * 多笔解析：有 Key → AI 出数组（能处理空格分隔）；否则/失败 → 按标点切分逐段离线解析。
+ * 返回有效（amount>0）的条目数组，可能仅 1 条或 0 条；页面据长度决定单笔卡 / 批量卡。
+ */
+export async function parseLedgerBatch(
+  text: string,
+  settings: Settings,
+  signal?: AbortSignal,
+): Promise<LedgerAIResult[]> {
+  const trimmed = text.trim();
+  if (!trimmed) return [];
+
+  const cfg = getAIConfig(settings);
+  if (cfg) {
+    try {
+      const raw = await chatComplete(cfg, [
+        { role: 'system', content: SYSTEM_PROMPT_BATCH },
+        { role: 'user', content: `用户输入：${trimmed}\n\n请输出 JSON 数组。` },
+      ], { temperature: 0.2, maxTokens: 700, signal });
+      const arr = extractJsonArray(raw);
+      if (arr.length) {
+        const results = arr.map(o => normalizeResult(o)).filter(r => r.amount > 0);
+        if (results.length) return results;
+      }
+    } catch {
+      /* 退离线切分 */
+    }
+  }
+  // 离线：按标点切分逐段；只有切出 ≥1 段能抽出金额才算
+  const segs = splitSegments(trimmed);
+  const offline = segs
+    .map(s => parseLedgerOffline(s))
+    .filter((r): r is LedgerAIResult => !!r && r.amount > 0);
+  return offline;
+}
+
+/** 从模型输出里抽出 JSON 数组（容错代码块/前后缀文字）。 */
+function extractJsonArray(raw: string): Record<string, unknown>[] {
+  const stripped = raw.replace(/```(?:json)?/gi, '').trim();
+  const fb = stripped.indexOf('[');
+  const lb = stripped.lastIndexOf(']');
+  if (fb < 0 || lb <= fb) return [];
+  try {
+    const parsed = JSON.parse(stripped.slice(fb, lb + 1));
+    return Array.isArray(parsed) ? parsed.filter(x => x && typeof x === 'object') : [];
+  } catch {
+    return [];
+  }
 }
 
 /** 去掉数字与货币词，取前 12 字作摘要。 */
