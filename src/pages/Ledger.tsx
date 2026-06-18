@@ -8,7 +8,7 @@
  *
  * 奖励 / 统计 / 资产 / 月末结算属后续批次，本页先把核心跑通。
  */
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { motion } from 'motion/react';
 import { useAppStore, toLocalDateKey } from '@/store';
 import { PageTitle } from '@/components/PageTitle';
@@ -254,7 +254,7 @@ export const Ledger = () => {
   const [nlText, setNlText] = useState('');
   const [nlBusy, setNlBusy] = useState(false);
   const [draft, setDraft] = useState<EntryDraft | null>(null);
-  const [budgetOpen, setBudgetOpen] = useState(false);
+  const [budgetMode, setBudgetMode] = useState<null | 'edit' | 'newCycle'>(null);
   const [adjustOpen, setAdjustOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<LedgerEntry | null>(null);
   const [mode, setMode] = useState<'ledger' | 'assets'>('ledger');
@@ -302,6 +302,21 @@ export const Ledger = () => {
     return { exp, inc };
   }, [monthGrouped]);
   const curMonth = toLocalDateKey().slice(0, 7);
+
+  // 发薪日 / 重置日 → 当前预算周期 id；进入新周期且未确认时弹「规划窗」
+  const resetDay = settings.ledgerResetDay ?? 1;
+  const currentCycle = useMemo(() => {
+    const d = new Date();
+    const base = new Date(d.getFullYear(), d.getMonth(), 1);
+    if (d.getDate() < resetDay) base.setMonth(base.getMonth() - 1);
+    return `${base.getFullYear()}-${String(base.getMonth() + 1).padStart(2, '0')}`;
+  }, [resetDay]);
+  useEffect(() => {
+    if (settings.ledgerEnabled === false || ledgerEntries.length === 0) return; // 新用户走开局引导
+    if (settings.ledgerCycleConfirmed === currentCycle) return;
+    setBudgetMode('newCycle');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleNL = async () => {
     const text = nlText.trim();
@@ -455,7 +470,7 @@ export const Ledger = () => {
 
         <div className="flex gap-2 justify-center mt-4">
           <button
-            onClick={() => setBudgetOpen(true)}
+            onClick={() => setBudgetMode('edit')}
             className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
           >
             {hasBudget ? '编辑预算' : '设置预算'}
@@ -874,11 +889,23 @@ export const Ledger = () => {
 
       {/* 预算设置 */}
       <BudgetSheet
-        isOpen={budgetOpen}
-        onClose={() => setBudgetOpen(false)}
+        isOpen={budgetMode !== null}
+        newCycle={budgetMode === 'newCycle'}
+        onClose={() => {
+          if (budgetMode === 'newCycle') updateSettings({ ledgerCycleConfirmed: currentCycle });
+          setBudgetMode(null);
+        }}
         $={$}
         current={budget?.monthlyLimit}
-        onSave={async (v) => { await setBudget(toLocalDateKey().slice(0, 7), { monthlyLimit: v }); setBudgetOpen(false); }}
+        savingsCurrent={budget?.savingsGoal}
+        days={daysInMonth}
+        resetDay={resetDay}
+        onResetDay={d => updateSettings({ ledgerResetDay: d })}
+        onSave={async (monthly, savings) => {
+          await setBudget(toLocalDateKey().slice(0, 7), { monthlyLimit: monthly, savingsGoal: savings });
+          if (budgetMode === 'newCycle') await updateSettings({ ledgerCycleConfirmed: currentCycle });
+          setBudgetMode(null);
+        }}
       />
 
       {/* 余额对账 */}
@@ -930,38 +957,104 @@ function LedgerRow({ entry: e, $, onClick }: { entry: LedgerEntry; $: string; on
   );
 }
 
-function BudgetSheet({ isOpen, onClose, $, current, onSave }: {
-  isOpen: boolean; onClose: () => void; $: string; current?: number; onSave: (v: number) => Promise<void>;
+/** 月预算 ⇄ 日均 联动输入：改一个、另一个按当月天数自动算（日均更醒目）。 */
+function BudgetDualInput({ $, days, monthly, setMonthly }: { $: string; days: number; monthly: string; setMonthly: (v: string) => void }) {
+  const [daily, setDaily] = useState(() => { const m = Number(monthly); return m > 0 ? String(Math.round(m / days)) : ''; });
+  useEffect(() => { const m = Number(monthly); setDaily(m > 0 ? String(Math.round(m / days)) : ''); }, [monthly, days]);
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      <label className="rounded-xl bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 px-3 py-2.5 cursor-text">
+        <span className="block text-[11px] text-gray-400 mb-0.5">月预算</span>
+        <span className="flex items-baseline gap-1">
+          <span className="text-sm font-bold text-gray-400">{$}</span>
+          <input
+            type="number" inputMode="decimal" value={monthly} placeholder="3000"
+            onChange={e => setMonthly(e.target.value)}
+            className="w-full min-w-0 bg-transparent text-lg font-black text-gray-900 dark:text-white tabular-nums outline-none"
+          />
+        </span>
+      </label>
+      <label className="rounded-xl bg-primary/5 border border-primary/30 px-3 py-2.5 cursor-text">
+        <span className="block text-[11px] text-primary/70 mb-0.5">日均</span>
+        <span className="flex items-baseline gap-1">
+          <span className="text-sm font-bold text-primary/60">{$}</span>
+          <input
+            type="number" inputMode="decimal" value={daily} placeholder="100"
+            onChange={e => { const v = e.target.value; setDaily(v); const d = Number(v); setMonthly(d > 0 ? String(Math.round(d * days)) : ''); }}
+            className="w-full min-w-0 bg-transparent text-lg font-black text-primary tabular-nums outline-none"
+          />
+        </span>
+      </label>
+    </div>
+  );
+}
+
+function BudgetSheet({ isOpen, onClose, $, current, savingsCurrent, days, resetDay, onResetDay, onSave, newCycle }: {
+  isOpen: boolean; onClose: () => void; $: string;
+  current?: number; savingsCurrent?: number; days: number;
+  resetDay: number; onResetDay: (d: number) => void;
+  onSave: (monthly: number, savings: number | undefined) => void | Promise<void>;
+  newCycle?: boolean;
 }) {
-  const [val, setVal] = useState('');
-  const v = Number(val);
+  const [monthly, setMonthly] = useState('');
+  const [savings, setSavings] = useState('');
+  useEffect(() => {
+    if (isOpen) {
+      setMonthly(current != null ? String(current) : '');
+      setSavings(savingsCurrent != null ? String(savingsCurrent) : '');
+    }
+  }, [isOpen, current, savingsCurrent]);
+  const m = Number(monthly);
+  const sv = Number(savings);
   return (
     <SheetModal
       isOpen={isOpen}
       onClose={onClose}
-      title="本月预算"
+      title={newCycle ? '新的一程 · 立个目标' : '本月预算'}
       footer={
         <button
-          onClick={() => v > 0 && onSave(v)}
-          disabled={!(v > 0)}
+          onClick={() => m > 0 && onSave(m, sv > 0 ? sv : undefined)}
+          disabled={!(m > 0)}
           className="w-full py-3.5 rounded-2xl font-bold text-sm bg-primary text-white disabled:opacity-40 active:scale-[0.98]"
         >
-          保存
+          {newCycle ? '就这么定' : '保存'}
         </button>
       }
     >
-      <div className="space-y-3">
+      <div className="space-y-4">
         <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
-          设一个本月的花费上限——它是你的纪律线，不影响总余额。{current != null && `当前：${$}${fmtMoney(current)}`}
+          {newCycle
+            ? '新的一程开始了——给自己定个花费节奏，和一个想攒下的小目标。'
+            : '设一个本月的花费上限——它是你的纪律线，不影响总余额。'}
         </p>
-        <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
-          <span className="text-xl font-black text-gray-400">{$}</span>
-          <input
-            type="number" inputMode="decimal" autoFocus
-            value={val} onChange={e => setVal(e.target.value)}
-            placeholder={current != null ? String(current) : '3000'}
-            className="flex-1 min-w-0 bg-transparent text-2xl font-black text-gray-900 dark:text-white tabular-nums outline-none"
-          />
+        {/* 月预算 ⇄ 日均 */}
+        <div className="space-y-1.5">
+          <div className="text-xs text-gray-500 dark:text-gray-400">花费目标 <span className="text-gray-400/70 font-normal">改一个，另一个按 {days} 天自动算</span></div>
+          <BudgetDualInput $={$} days={days} monthly={monthly} setMonthly={setMonthly} />
+        </div>
+        {/* 想省 */}
+        <div className="space-y-1.5">
+          <div className="text-xs text-gray-500 dark:text-gray-400">这个月想省下 <span className="text-gray-400/70 font-normal">可选</span></div>
+          <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-900/15 border border-emerald-200 dark:border-emerald-800/40">
+            <span className="text-lg font-black text-emerald-500/70">{$}</span>
+            <input
+              type="number" inputMode="decimal" value={savings} placeholder="500"
+              onChange={e => setSavings(e.target.value)}
+              className="flex-1 min-w-0 bg-transparent text-xl font-black text-emerald-600 dark:text-emerald-300 tabular-nums outline-none"
+            />
+          </div>
+        </div>
+        {/* 重置日（发薪日） */}
+        <div className="space-y-1.5">
+          <div className="text-xs text-gray-500 dark:text-gray-400">每月重置日 <span className="text-gray-400/70 font-normal">发薪日 · 决定何时提醒你规划新一程</span></div>
+          <div className="flex items-center gap-2">
+            <input
+              type="number" min={1} max={28} inputMode="numeric" value={resetDay}
+              onChange={e => onResetDay(Math.max(1, Math.min(28, Math.round(Number(e.target.value) || 1))))}
+              className="w-20 px-3 py-2 rounded-xl bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-sm font-bold text-gray-800 dark:text-white tabular-nums outline-none"
+            />
+            <span className="text-xs text-gray-400">号{resetDay === 1 ? '（自然月初）' : '起算'}</span>
+          </div>
         </div>
       </div>
     </SheetModal>
