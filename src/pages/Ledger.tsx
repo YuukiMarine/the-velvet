@@ -20,7 +20,7 @@ import { parseLedgerBatch, type LedgerAIResult } from '@/utils/ledgerAI';
 import { SegmentTabs } from '@/components/SegmentTabs';
 import { LedgerStats } from '@/components/ledger/LedgerStats';
 import { AssetBoard } from '@/components/ledger/AssetBoard';
-import { catMeta, CATEGORY_KEYS, isGrowthCategory, INCOME_META, sym, fmtMoney, fmtSigned, DEFAULT_CHANNELS, DEFAULT_INCOME_SOURCES, incomeTypeFromSource } from '@/utils/ledgerFormat';
+import { catMeta, CATEGORY_KEYS, isGrowthCategory, INCOME_META, sym, fmtMoney, fmtSigned, DEFAULT_CHANNELS, DEFAULT_INCOME_SOURCES, incomeTypeFromSource, shiftMonth, weekdayCN, monthLabel } from '@/utils/ledgerFormat';
 import type { LedgerEntry, LedgerExpenseType, AttributeId, SpendWorth, Settings } from '@/types';
 
 // ── 录入草稿 ──────────────────────────────────────────────
@@ -262,6 +262,7 @@ export const Ledger = () => {
   const [batch, setBatch] = useState<BatchRow[] | null>(null);   // 多笔批量卡
   const [batchDate, setBatchDate] = useState(toLocalDateKey());
   const [subCatOpen, setSubCatOpen] = useState(false);           // 细分类目默认折叠
+  const [listMonth, setListMonth] = useState(() => toLocalDateKey().slice(0, 7)); // 流水筛选月份
 
   // ── Batch2 录入选项（可手动增删、持久化）+ 记忆 ──
   const channels = settings.ledgerChannels ?? DEFAULT_CHANNELS;
@@ -289,6 +290,18 @@ export const Ledger = () => {
     }
     return [...map.entries()];
   }, [ledgerEntries]);
+
+  // 流水按月筛选 + 当月收支小结
+  const monthGrouped = useMemo(() => grouped.filter(([date]) => date.slice(0, 7) === listMonth), [grouped, listMonth]);
+  const monthSum = useMemo(() => {
+    let exp = 0, inc = 0;
+    for (const [, es] of monthGrouped) for (const e of es) {
+      if (e.direction === 'expense') exp += e.amount;
+      else if (e.direction === 'income') inc += e.amount;
+    }
+    return { exp, inc };
+  }, [monthGrouped]);
+  const curMonth = toLocalDateKey().slice(0, 7);
 
   const handleNL = async () => {
     const text = nlText.trim();
@@ -327,6 +340,7 @@ export const Ledger = () => {
       if (r.direction === 'expense' && r.channel.trim()) lastCh = r.channel.trim();
     }
     if (lastCh && settings.ledgerLastChannel !== lastCh) updateSettings({ ledgerLastChannel: lastCh });
+    setListMonth(batchDate.slice(0, 7));    // 跳到批量记账所在月
     setBatch(null);
     setNlText('');
   };
@@ -358,6 +372,7 @@ export const Ledger = () => {
     // 记忆：支出渠道（下次新建预选）
     const ch = draft.channel.trim();
     if (saved.direction === 'expense' && ch && settings.ledgerLastChannel !== ch) updateSettings({ ledgerLastChannel: ch });
+    setListMonth(saved.date.slice(0, 7));   // 跳到刚记账所在月，确保可见
     setDraft(null);
     setNlText('');
   };
@@ -491,12 +506,43 @@ export const Ledger = () => {
       {/* 流水 */}
       {view === 'list' && (
       <section className="mt-5 space-y-4">
-        {grouped.length === 0 && (
-          <div className="text-center text-sm text-gray-400 py-10">还没有记录，记一笔开始吧。</div>
+        {/* 月份导航 + 当月收支小结 */}
+        <div className="flex items-center justify-between gap-2">
+          <button
+            onClick={() => setListMonth(shiftMonth(listMonth, -1))}
+            className="w-9 h-9 flex items-center justify-center rounded-lg text-gray-500 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+            aria-label="上个月"
+          >
+            ←
+          </button>
+          <div className="text-center">
+            <div className="text-sm font-bold text-gray-800 dark:text-gray-100 tabular-nums">{monthLabel(listMonth)}</div>
+            <div className="text-xs text-gray-400 dark:text-gray-500">
+              支出 <b className="tabular-nums text-gray-500 dark:text-gray-400">{$}{fmtMoney(monthSum.exp)}</b>
+              {monthSum.inc > 0 && <> · 收入 <b className="tabular-nums text-emerald-500">{$}{fmtMoney(monthSum.inc)}</b></>}
+            </div>
+          </div>
+          <button
+            onClick={() => setListMonth(shiftMonth(listMonth, 1))}
+            disabled={listMonth >= curMonth}
+            className="w-9 h-9 flex items-center justify-center rounded-lg text-gray-500 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            aria-label="下个月"
+          >
+            →
+          </button>
+        </div>
+
+        {monthGrouped.length === 0 && (
+          <div className="text-center text-sm text-gray-400 py-10">
+            {ledgerEntries.length === 0 ? '还没有记录，记一笔开始吧。' : '这个月还没有记录。'}
+          </div>
         )}
-        {grouped.map(([date, entries]) => (
+        {monthGrouped.map(([date, entries]) => (
           <div key={date}>
-            <div className="text-xs font-semibold text-gray-400 dark:text-gray-500 mb-1 px-1">{date}</div>
+            <div className="flex items-baseline gap-1.5 mb-1 px-1">
+              <span className="text-xs font-semibold text-gray-400 dark:text-gray-500 tabular-nums">{date}</span>
+              <span className="text-xs text-gray-300 dark:text-gray-600">{weekdayCN(date)}</span>
+            </div>
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm divide-y divide-gray-50 dark:divide-gray-700/40">
               {entries.map(e => <LedgerRow key={e.id} entry={e} $={$} onClick={() => setDeleteTarget(e)} />)}
             </div>

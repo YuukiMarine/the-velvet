@@ -58,6 +58,19 @@ export function shiftMonth(period: string, delta: number): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
+const WEEKDAYS_CN = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+/** 'YYYY-MM-DD' → 周几。 */
+export function weekdayCN(dateKey: string): string {
+  const [y, m, d] = dateKey.split('-').map(Number);
+  return WEEKDAYS_CN[new Date(y, m - 1, d).getDay()] ?? '';
+}
+
+/** 'YYYY-MM' → 'YYYY年M月'。 */
+export function monthLabel(period: string): string {
+  const [y, m] = period.split('-');
+  return `${y}年${Number(m)}月`;
+}
+
 // ── 资产板块（F5③）：类目绑定 emoji 图标（替代图标库，零依赖、零存储） ──
 export const ASSET_CATEGORIES: { key: string; icon: string; label: string }[] = [
   { key: 'digital', icon: '📱', label: '数码' },
