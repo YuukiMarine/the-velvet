@@ -20,8 +20,8 @@ import { parseLedgerInput, type LedgerAIResult } from '@/utils/ledgerAI';
 import { SegmentTabs } from '@/components/SegmentTabs';
 import { LedgerStats } from '@/components/ledger/LedgerStats';
 import { AssetBoard } from '@/components/ledger/AssetBoard';
-import { catMeta, CATEGORY_KEYS, isGrowthCategory, INCOME_META, INCOME_TYPES, sym, fmtMoney, fmtSigned } from '@/utils/ledgerFormat';
-import type { LedgerEntry, LedgerExpenseType, LedgerIncomeType, AttributeId, SpendWorth } from '@/types';
+import { catMeta, CATEGORY_KEYS, isGrowthCategory, INCOME_META, sym, fmtMoney, fmtSigned, DEFAULT_CHANNELS, DEFAULT_INCOME_SOURCES, incomeTypeFromSource } from '@/utils/ledgerFormat';
+import type { LedgerEntry, LedgerExpenseType, AttributeId, SpendWorth, Settings } from '@/types';
 
 // ── 录入草稿 ──────────────────────────────────────────────
 
@@ -31,8 +31,8 @@ interface EntryDraft {
   direction: 'expense' | 'income';
   amount: string;
   type: LedgerExpenseType;
-  incomeType: LedgerIncomeType;
-  category: string;
+  incomeSource: string;      // 收入来源标签（→ entry.category；据此派生 incomeType）
+  category: string;          // 支出细分类目（二级标签，可选）
   channel: string;
   note: string;
   date: string;
@@ -43,14 +43,14 @@ interface EntryDraft {
   registerAsset: boolean;    // 流→存：同时登记为固定资产
 }
 const emptyDraft = (): EntryDraft => ({
-  direction: 'expense', amount: '', type: 'food', incomeType: 'labor',
+  direction: 'expense', amount: '', type: 'food', incomeSource: '',
   category: '', channel: '', note: '', date: toLocalDateKey(), source: 'manual', attrPoints: 1, registerAsset: false,
 });
 const draftFromAI = (r: LedgerAIResult, source: 'manual' | 'ai'): EntryDraft => ({
   direction: r.direction,
   amount: r.amount ? String(r.amount) : '',
   type: r.type ?? 'other',
-  incomeType: r.incomeType ?? 'labor',
+  incomeSource: r.incomeType === 'labor' ? '工资' : '',
   category: r.category ?? '',
   channel: '',
   note: r.note ?? '',
@@ -114,11 +114,60 @@ function FundRing({ income, carried, base, children }: { income: number; carried
   );
 }
 
+// ── 标签选择器（渠道 / 收入来源 / 细分类目共用） ─────────────
+/** chips 单选 + ＋自定义(持久化) + 可折叠；clearable=再点选中项可取消。 */
+function TagPicker({
+  options, value, onChange, onAdd, addPlaceholder = '新类型', accent = 'primary',
+  collapsedCount, expanded, onToggleExpand, clearable = true,
+}: {
+  options: string[]; value: string; onChange: (v: string) => void;
+  onAdd?: (v: string) => void; addPlaceholder?: string; accent?: 'primary' | 'emerald';
+  collapsedCount?: number; expanded?: boolean; onToggleExpand?: () => void; clearable?: boolean;
+}) {
+  const [adding, setAdding] = useState(false);
+  const [text, setText] = useState('');
+  const overflow = collapsedCount != null && options.length > collapsedCount;
+  const collapsed = overflow && !expanded;
+  const shown = collapsed ? options.slice(0, collapsedCount) : options;
+  const sel = accent === 'emerald'
+    ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700'
+    : 'bg-primary/10 border-primary/40 text-primary';
+  const idle = 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-400';
+  const dashed = 'border-dashed border-gray-300 dark:border-gray-600 text-gray-400';
+  const commit = () => { const v = text.trim(); if (v) { onAdd?.(v); onChange(v); } setText(''); setAdding(false); };
+  return (
+    <div className="flex flex-wrap gap-2">
+      {shown.map(o => (
+        <button key={o} type="button" onClick={() => onChange(clearable && value === o ? '' : o)}
+          className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${value === o ? sel : idle}`}>
+          {o}
+        </button>
+      ))}
+      {overflow && (
+        <button type="button" onClick={onToggleExpand} className={`px-3 py-1.5 rounded-full text-xs font-semibold border ${dashed}`}>
+          {collapsed ? `更多 ${options.length - collapsedCount!}` : '收起'}
+        </button>
+      )}
+      {onAdd && (adding ? (
+        <input autoFocus value={text} onChange={e => setText(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') { setText(''); setAdding(false); } }}
+          onBlur={commit} placeholder={addPlaceholder} maxLength={8}
+          className="px-3 py-1.5 w-24 rounded-full text-xs bg-white dark:bg-gray-800 border border-primary/50 text-gray-800 dark:text-white outline-none" />
+      ) : (
+        <button type="button" onClick={() => setAdding(true)}
+          className={`px-3 py-1.5 rounded-full text-xs font-semibold border ${dashed} hover:text-primary hover:border-primary/40 transition-colors`}>
+          ＋自定义
+        </button>
+      ))}
+    </div>
+  );
+}
+
 // ── 页面 ──────────────────────────────────────────────────
 
 export const Ledger = () => {
   const {
-    settings, ledgerEntries, setCurrentPage,
+    settings, ledgerEntries, setCurrentPage, updateSettings,
     addLedgerEntry, deleteLedgerEntry, setBudget, adjustTotalBalance, rewardForLedgerEntry, addAsset,
     getTotalBalance, getMonthExpense, getMonthIncome, getBudget, getAdjustCountThisMonth, getSavings,
   } = useAppStore();
@@ -163,6 +212,18 @@ export const Ledger = () => {
   const [mode, setMode] = useState<'ledger' | 'assets'>('ledger');
   const [view, setView] = useState<'list' | 'stats'>('list');
 
+  // ── Batch2 录入选项（可手动增删、持久化）+ 记忆 ──
+  const channels = settings.ledgerChannels ?? DEFAULT_CHANNELS;
+  const incomeSources = settings.ledgerIncomeSources ?? DEFAULT_INCOME_SOURCES;
+  const subCategories = settings.ledgerCategories ?? [];
+  const channelsExpanded = settings.ledgerChannelsExpanded ?? false;
+  const addOption = (key: 'ledgerChannels' | 'ledgerIncomeSources' | 'ledgerCategories', cur: string[]) =>
+    (v: string) => { if (!cur.includes(v)) updateSettings({ [key]: [...cur, v] } as Partial<Settings>); };
+  const dateKeyAgo = (n: number) => { const d = new Date(); d.setDate(d.getDate() - n); return toLocalDateKey(d); };
+  // 新建草稿：支出预选「上次渠道」
+  const startDraft = (d: EntryDraft) =>
+    setDraft(d.direction === 'expense' && !d.channel ? { ...d, channel: settings.ledgerLastChannel ?? '' } : d);
+
   // 流水按日分组（日期降序、同日按 createdAt 降序）
   const grouped = useMemo(() => {
     const sorted = [...ledgerEntries].sort((a, b) =>
@@ -184,7 +245,7 @@ export const Ledger = () => {
     try {
       const r = await parseLedgerInput(text, settings);
       const source: 'manual' | 'ai' = getAIConfig(settings) ? 'ai' : 'manual';
-      setDraft(r ? draftFromAI(r, source) : { ...emptyDraft(), note: text });
+      startDraft(r ? draftFromAI(r, source) : { ...emptyDraft(), note: text });
     } finally {
       setNlBusy(false);
     }
@@ -206,13 +267,17 @@ export const Ledger = () => {
         })
       : await addLedgerEntry({
           direction: 'income', amount, date: draft.date, source: draft.source,
-          incomeType: draft.incomeType,
+          incomeType: incomeTypeFromSource(draft.incomeSource),
+          category: draft.incomeSource.trim() || undefined,
           note: draft.note.trim() || undefined,
         });
     await rewardForLedgerEntry(saved, { attribute: draft.attribute, attrPoints: draft.attrPoints, evalWorth: draft.evalWorth });
     if (saved.direction === 'expense' && draft.registerAsset) {
       await addAsset({ name: saved.note || '新资产', category: 'other', price: amount, purchaseDate: saved.date, status: 'inuse', linkedEntryId: saved.id });
     }
+    // 记忆：支出渠道（下次新建预选）
+    const ch = draft.channel.trim();
+    if (saved.direction === 'expense' && ch && settings.ledgerLastChannel !== ch) updateSettings({ ledgerLastChannel: ch });
     setDraft(null);
     setNlText('');
   };
@@ -326,7 +391,7 @@ export const Ledger = () => {
           {nlBusy ? '…' : '记一笔'}
         </button>
         <button
-          onClick={() => setDraft(emptyDraft())}
+          onClick={() => startDraft(emptyDraft())}
           className="px-3 py-3 rounded-xl text-sm font-semibold bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors whitespace-nowrap"
         >
           手动
@@ -430,20 +495,17 @@ export const Ledger = () => {
                 ))}
               </div>
             ) : (
-              <div className="flex flex-wrap gap-2">
-                {INCOME_TYPES.map(t => (
-                  <button
-                    key={t}
-                    onClick={() => setDraft({ ...draft, incomeType: t })}
-                    className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
-                      draft.incomeType === t
-                        ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700'
-                        : 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-400'
-                    }`}
-                  >
-                    {INCOME_META[t].label}
-                  </button>
-                ))}
+              <div className="space-y-1.5">
+                <div className="text-xs text-gray-500 dark:text-gray-400">来源</div>
+                <TagPicker
+                  options={incomeSources} value={draft.incomeSource}
+                  onChange={v => setDraft({ ...draft, incomeSource: v })}
+                  onAdd={addOption('ledgerIncomeSources', incomeSources)}
+                  addPlaceholder="新来源" accent="emerald"
+                />
+                {incomeTypeFromSource(draft.incomeSource) === 'labor' && (
+                  <div className="text-xs text-emerald-500 font-semibold">劳动所得 · 记账 +10 SP</div>
+                )}
               </div>
             )}
 
@@ -527,28 +589,66 @@ export const Ledger = () => {
               </button>
             )}
 
-            {/* 备注 + （支出）渠道 + 日期 */}
+            {/* 备注 */}
             <input
               value={draft.note}
               onChange={e => setDraft({ ...draft, note: e.target.value })}
               placeholder="备注（可选）"
               className="w-full px-4 py-2.5 rounded-xl bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-sm text-gray-800 dark:text-white placeholder-gray-400 outline-none focus:border-primary"
             />
-            <div className="flex gap-2">
-              {draft.direction === 'expense' && (
+
+            {/* 支出：渠道 + 细分类目（chips，可手动加） */}
+            {draft.direction === 'expense' && (
+              <>
+                <div className="space-y-1.5">
+                  <div className="text-xs text-gray-500 dark:text-gray-400">支付渠道</div>
+                  <TagPicker
+                    options={channels} value={draft.channel}
+                    onChange={v => setDraft({ ...draft, channel: v })}
+                    onAdd={addOption('ledgerChannels', channels)}
+                    addPlaceholder="新渠道"
+                    collapsedCount={6} expanded={channelsExpanded}
+                    onToggleExpand={() => updateSettings({ ledgerChannelsExpanded: !channelsExpanded })}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <div className="text-xs text-gray-500 dark:text-gray-400">细分类目 <span className="text-gray-400/70 font-normal">可选</span></div>
+                  <TagPicker
+                    options={subCategories} value={draft.category}
+                    onChange={v => setDraft({ ...draft, category: v })}
+                    onAdd={addOption('ledgerCategories', subCategories)}
+                    addPlaceholder="如：早餐"
+                  />
+                </div>
+              </>
+            )}
+
+            {/* 日期：今天/昨天/前天 快捷 + 选择器 */}
+            <div className="space-y-1.5">
+              <div className="text-xs text-gray-500 dark:text-gray-400">日期</div>
+              <div className="flex flex-wrap items-center gap-2">
+                {([['今天', 0], ['昨天', 1], ['前天', 2]] as const).map(([lbl, ago]) => {
+                  const dk = dateKeyAgo(ago);
+                  return (
+                    <button
+                      key={lbl} type="button" onClick={() => setDraft({ ...draft, date: dk })}
+                      className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
+                        draft.date === dk
+                          ? 'bg-primary/10 border-primary/40 text-primary'
+                          : 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-400'
+                      }`}
+                    >
+                      {lbl}
+                    </button>
+                  );
+                })}
                 <input
-                  value={draft.channel}
-                  onChange={e => setDraft({ ...draft, channel: e.target.value })}
-                  placeholder="渠道（支付宝/微信…）"
-                  className="flex-1 min-w-0 px-4 py-2.5 rounded-xl bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-sm text-gray-800 dark:text-white placeholder-gray-400 outline-none focus:border-primary"
+                  type="date"
+                  value={draft.date}
+                  onChange={e => setDraft({ ...draft, date: e.target.value || toLocalDateKey() })}
+                  className="px-3 py-1.5 rounded-xl bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-sm text-gray-700 dark:text-gray-200 tabular-nums outline-none focus:border-primary"
                 />
-              )}
-              <input
-                type="date"
-                value={draft.date}
-                onChange={e => setDraft({ ...draft, date: e.target.value || toLocalDateKey() })}
-                className="px-3 py-2.5 rounded-xl bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-sm text-gray-700 dark:text-gray-200 tabular-nums outline-none focus:border-primary"
-              />
+              </div>
             </div>
           </div>
         )}
@@ -594,9 +694,10 @@ function LedgerRow({ entry: e, $, onClick }: { entry: LedgerEntry; $: string; on
   const isIncome = e.direction === 'income';
   const meta = isExpense ? catMeta(e.type) : null;
   const sign = isIncome ? '+' : isExpense ? '−' : (e.amount < 0 ? '−' : '+');
-  const subParts = [meta?.label, e.channel].filter(Boolean) as string[];
-  const sub = isIncome ? INCOME_META[e.incomeType ?? 'other'].label : (e.direction === 'adjust' ? '余额对账' : subParts.join(' · '));
-  const title = e.note || (isIncome ? INCOME_META[e.incomeType ?? 'other'].label : (meta?.label ?? '记录'));
+  const subParts = [meta?.label, e.category, e.channel].filter(Boolean) as string[];
+  const incomeLabel = e.category || INCOME_META[e.incomeType ?? 'other'].label;
+  const sub = isIncome ? incomeLabel : (e.direction === 'adjust' ? '余额对账' : subParts.join(' · '));
+  const title = e.note || (isIncome ? incomeLabel : (meta?.label ?? '记录'));
   return (
     <button onClick={onClick} className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors first:rounded-t-xl last:rounded-b-xl">
       <span className="w-6 text-center text-lg flex-shrink-0">{isExpense ? meta!.icon : isIncome ? '💰' : '⚖️'}</span>

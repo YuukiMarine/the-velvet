@@ -270,6 +270,16 @@ export interface Settings {
   ledgerAttrToday?: number;
   /** F5 月度「不超预算」+10SP 已发放的月份（YYYY-MM），防重复发放。 */
   ledgerBudgetBonusMonths?: string[];
+  /** F5 渠道选项（支付宝/微信…）；undefined 时回退 DEFAULT_CHANNELS，可手动增删。 */
+  ledgerChannels?: string[];
+  /** F5 收入来源选项（工资/兼职…）；undefined 时回退 DEFAULT_INCOME_SOURCES，可手动增删。 */
+  ledgerIncomeSources?: string[];
+  /** F5 自定义细分类目（用户自建二级标签），默认空。 */
+  ledgerCategories?: string[];
+  /** F5 记忆：上次使用的渠道（新支出草稿预选）。 */
+  ledgerLastChannel?: string;
+  /** F5 记忆：渠道选择器是否展开（超过折叠数时）。 */
+  ledgerChannelsExpanded?: boolean;
   // AI 总结功能配置
   summaryApiProvider?: 'openai' | 'deepseek' | 'kimi' | 'gemini' | 'minimax';
   summaryApiKey?: string;

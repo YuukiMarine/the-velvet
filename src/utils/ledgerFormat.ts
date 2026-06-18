@@ -27,6 +27,14 @@ export const INCOME_META: Record<LedgerIncomeType, { label: string }> = {
 export const CATEGORY_KEYS: LedgerExpenseType[] = ['food', 'transport', 'shopping', 'fun', 'home', 'study', 'other'];
 export const INCOME_TYPES: LedgerIncomeType[] = ['labor', 'other'];
 
+// ── 录入选项（可在确认卡手动增删、持久化到 settings；undefined 时回退以下默认） ──
+export const DEFAULT_CHANNELS = ['支付宝', '微信', '现金', '银行卡', '信用卡'];
+export const DEFAULT_INCOME_SOURCES = ['工资', '兼职', '投资理财', '红包', '报销', '退款'];
+/** 收入来源 → 是否算「劳动所得」（记账 +10SP）；匹配 labor 关键词即算。 */
+const LABOR_SOURCE_RE = /工资|薪|兼职|劳务|奖金|提成|外快|加班/;
+export const incomeTypeFromSource = (src?: string): LedgerIncomeType =>
+  src && LABOR_SOURCE_RE.test(src) ? 'labor' : 'other';
+
 const CURRENCY_SYMBOLS: Record<string, string> = { CNY: '¥', USD: '$', EUR: '€', JPY: '¥', GBP: '£', HKD: 'HK$', KRW: '₩' };
 export const sym = (code?: string) => CURRENCY_SYMBOLS[code ?? 'CNY'] ?? code ?? '¥';
 
