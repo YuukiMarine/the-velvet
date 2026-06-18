@@ -17,11 +17,21 @@ const STATUSES: AssetStatus[] = ['inuse', 'idle', 'soldout'];
 const assetTotal = (a: LedgerAsset) => a.price + (a.addOns?.reduce((s, o) => s + o.amount, 0) ?? 0);
 
 export function AssetBoard() {
-  const { settings, assets, getTotalBalance, getFixedAssetTotal, addAsset } = useAppStore();
+  const { settings, assets, getTotalBalance, getFixedAssetTotal, addAsset, getSavings, updateSettings } = useAppStore();
   const $ = sym(settings.currency);
   const liquid = getTotalBalance();
   const fixed = getFixedAssetTotal();
   const net = liquid + fixed;
+  // 存款 = 自律攒下（历月预算结余累积），是流动资产里被「锁住」的一份，不额外计入总财富（避免双算）
+  const rawSavings = getSavings();
+  const savingsShown = !settings.ledgerSavingsHidden && rawSavings > 0 && liquid > 0;
+  const savingsAmt = savingsShown ? Math.min(rawSavings, liquid) : 0;
+  const liquidFree = liquid - savingsAmt;
+  const segs = [
+    { key: 'liquid', hex: '#818cf8', amt: liquidFree, label: '流动资产' },
+    ...(savingsShown ? [{ key: 'savings', hex: '#34d399', amt: savingsAmt, label: '存款' }] : []),
+    { key: 'fixed', hex: '#fbbf24', amt: fixed, label: '固定资产' },
+  ];
 
   const [addOpen, setAddOpen] = useState(false);
   const [detailId, setDetailId] = useState<string | null>(null);
@@ -35,7 +45,7 @@ export function AssetBoard() {
 
   return (
     <div className="space-y-3">
-      {/* 净值：总财富甜甜圈环（流动 / 固定） */}
+      {/* 净值：总财富甜甜圈环（流动 / 存款 / 固定） */}
       <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm p-4">
         <div className="flex items-center gap-4">
           <div className="relative w-32 h-32 flex-shrink-0">
@@ -44,9 +54,9 @@ export function AssetBoard() {
               {(() => {
                 const C = 2 * Math.PI * 56;
                 let acc = 0;
-                return [{ hex: '#818cf8', amt: liquid }, { hex: '#fbbf24', amt: fixed }].map((sg, i) => {
+                return segs.map(sg => {
                   const frac = net > 0 ? sg.amt / net : 0;
-                  const el = <circle key={i} cx="70" cy="70" r="56" fill="none" stroke={sg.hex} strokeWidth="15" strokeDasharray={`${frac * C} ${C}`} strokeDashoffset={-acc * C} />;
+                  const el = <circle key={sg.key} cx="70" cy="70" r="56" fill="none" stroke={sg.hex} strokeWidth="15" strokeDasharray={`${frac * C} ${C}`} strokeDashoffset={-acc * C} style={{ transition: 'stroke-dasharray .5s ease, stroke-dashoffset .5s ease' }} />;
                   acc += frac;
                   return el;
                 });
@@ -58,22 +68,36 @@ export function AssetBoard() {
             </div>
           </div>
           <div className="flex-1 space-y-2 text-sm">
-            <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: '#818cf8' }} />
-              <span className="text-gray-600 dark:text-gray-300">流动资产</span>
-              <span className="ml-auto font-bold tabular-nums text-gray-800 dark:text-gray-100">{$}{fmtMoney(liquid)}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: '#fbbf24' }} />
-              <span className="text-gray-600 dark:text-gray-300">固定资产</span>
-              <span className="ml-auto font-bold tabular-nums text-gray-800 dark:text-gray-100">{$}{fmtMoney(fixed)}</span>
-            </div>
-            <div className="text-xs text-gray-400 pt-1.5 border-t border-gray-50 dark:border-gray-700/40">
-              固定占比 {net > 0 ? Math.round((fixed / net) * 100) : 0}%
-            </div>
+            {segs.map(sg => (
+              <div key={sg.key} className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: sg.hex }} />
+                <span className="text-gray-600 dark:text-gray-300">{sg.label}</span>
+                <span className="ml-auto font-bold tabular-nums text-gray-800 dark:text-gray-100">{$}{fmtMoney(sg.amt)}</span>
+              </div>
+            ))}
           </div>
         </div>
       </div>
+
+      {/* 存款条目（自律攒下，默认显示，可点关；关后可恢复） */}
+      {savingsShown ? (
+        <div className="flex items-center gap-3 bg-emerald-50 dark:bg-emerald-900/15 border border-emerald-200/70 dark:border-emerald-800/40 rounded-xl px-4 py-3">
+          <span className="text-2xl flex-shrink-0">🐷</span>
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-bold text-emerald-700 dark:text-emerald-300">存款</div>
+            <div className="text-xs text-emerald-600/70 dark:text-emerald-400/70 truncate">自律攒下 · 历月预算结余累积</div>
+          </div>
+          <span className="text-base font-black tabular-nums text-emerald-600 dark:text-emerald-300 flex-shrink-0">{$}{fmtMoney(savingsAmt)}</span>
+          <button onClick={() => updateSettings({ ledgerSavingsHidden: true })} aria-label="收起存款条目" className="text-emerald-400/60 hover:text-emerald-600 dark:hover:text-emerald-300 text-lg leading-none px-1 flex-shrink-0">×</button>
+        </div>
+      ) : (settings.ledgerSavingsHidden && rawSavings > 0 && liquid > 0) ? (
+        <button
+          onClick={() => updateSettings({ ledgerSavingsHidden: false })}
+          className="w-full py-2 rounded-xl border border-dashed border-emerald-300/60 dark:border-emerald-700/50 text-xs font-semibold text-emerald-500/80 hover:text-emerald-600 hover:border-emerald-400 transition-colors"
+        >
+          🐷 显示存款条目（{$}{fmtMoney(Math.min(rawSavings, liquid))}）
+        </button>
+      ) : null}
 
       <button
         onClick={() => setAddOpen(true)}
