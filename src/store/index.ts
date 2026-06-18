@@ -332,7 +332,7 @@ interface AppState {
   loadLedger: () => Promise<void>;
   addLedgerEntry: (input: Omit<LedgerEntry, 'id' | 'createdAt' | 'currency'> & { currency?: string }) => Promise<LedgerEntry>;
   deleteLedgerEntry: (id: string) => Promise<void>;
-  setBudget: (period: string, patch: { monthlyLimit?: number; dailyLimit?: number; savingsGoal?: number }) => Promise<void>;
+  setBudget: (period: string, patch: { monthlyLimit?: number; dailyLimit?: number; savingsGoal?: number; savingsGoalEdits?: number }) => Promise<void>;
   adjustTotalBalance: (targetTotal: number) => Promise<{ ok: boolean; reason?: string }>;
   getTotalBalance: () => number;
   getMonthExpense: (period?: string) => number;
@@ -351,6 +351,8 @@ interface AppState {
   getSavings: () => number;
   /** 月度不超预算 → 发 +10 SP（仅完成月、每月一次）；返回本次是否发放。 */
   claimLedgerBudgetBonus: (period: string) => Promise<boolean>;
+  /** 「省钱挑战」结算：过去月 (预算−支出) ≥ savingsGoal 且未发放 → +10SP，返回省下的金额（未达成/已发返 null）。 */
+  claimLedgerChallengeBonus: (period: string) => Promise<number | null>;
   // 逆影战场
   persona: Persona | null;
   shadow: Shadow | null;
@@ -3068,6 +3070,19 @@ ${activityLines || '（本期暂无记录）'}
     await get().earnLedgerSp(10, true);
     await get().updateSettings({ ledgerBudgetBonusMonths: [...(s.ledgerBudgetBonusMonths ?? []), period] });
     return true;
+  },
+
+  claimLedgerChallengeBonus: async (period) => {
+    const s = get().settings;
+    if ((s.ledgerChallengeWonMonths ?? []).includes(period)) return null;
+    if (period >= toLocalDateKey().slice(0, 7)) return null; // 仅已完成的过去月
+    const b = get().getBudget(period);
+    if (b?.monthlyLimit == null || b.savingsGoal == null || b.savingsGoal <= 0) return null;
+    const saved = b.monthlyLimit - get().getMonthExpense(period);
+    if (saved < b.savingsGoal) return null; // 未达成挑战
+    await get().earnLedgerSp(10, true);
+    await get().updateSettings({ ledgerChallengeWonMonths: [...(s.ledgerChallengeWonMonths ?? []), period] });
+    return saved;
   },
 
   getCountercurrentWarnings: (): AttributeId[] => {

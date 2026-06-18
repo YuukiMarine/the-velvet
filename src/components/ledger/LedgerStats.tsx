@@ -81,7 +81,7 @@ function BarRow({ label, amount, max, $ }: { label: string; amount: number; max:
 }
 
 export function LedgerStats() {
-  const { settings, ledgerEntries, getBudget, claimLedgerBudgetBonus } = useAppStore();
+  const { settings, ledgerEntries, getBudget, claimLedgerBudgetBonus, claimLedgerChallengeBonus } = useAppStore();
   const $ = sym(settings.currency);
   const [period, setPeriod] = useState(() => toLocalDateKey().slice(0, 7));
   // 结算（周/月，独立于上方统计月份）
@@ -91,6 +91,7 @@ export function LedgerStats() {
   const [settleBusy, setSettleBusy] = useState(false);
   const [settleResult, setSettleResult] = useState<SettlementResult | null>(null);
   const [bonus, setBonus] = useState(false);
+  const [challengeWon, setChallengeWon] = useState<number | null>(null);
 
   const settleData = useMemo(() => {
     const [, end] = settleRange(settleScope, settleAnchor);
@@ -112,6 +113,7 @@ export function LedgerStats() {
       setSettleBusy(true);
       setSettleResult(null);
       setBonus(settleScope === 'month' ? await claimLedgerBudgetBonus(settleAnchor.slice(0, 7)) : false);
+      setChallengeWon(settleScope === 'month' ? await claimLedgerChallengeBonus(settleAnchor.slice(0, 7)) : null);
       const r = await generateSettlement(settleData, settings);
       if (!cancelled) { setSettleResult(r); setSettleBusy(false); }
     })();
@@ -227,7 +229,7 @@ export function LedgerStats() {
           </div>
           {savingsGoal != null && savingsGoal > 0 && (
             <div className="mt-2 pt-2 border-t border-gray-50 dark:border-gray-700/40 flex items-baseline justify-between text-xs">
-              <span className="text-gray-500 dark:text-gray-400">🐷 本月想省</span>
+              <span className="text-gray-500 dark:text-gray-400">🏆 省钱挑战 · 想省</span>
               <span className="font-bold tabular-nums text-emerald-500">{$}{fmtMoney(savingsGoal)}</span>
             </div>
           )}
@@ -336,6 +338,11 @@ export function LedgerStats() {
             <button onClick={() => setSettleAnchor(a => shiftSettleAnchor(settleScope, a, 1))} disabled={atCurrentPeriod} className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-30">›</button>
           </div>
 
+          {challengeWon != null && (
+            <div className="rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 px-4 py-3 text-sm font-bold text-white text-center shadow-md">
+              🏆 省钱挑战达成！省下 {$}{fmtMoney(challengeWon)} · +10 SP
+            </div>
+          )}
           {bonus && (
             <div className="rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 px-4 py-3 text-sm font-bold text-amber-700 dark:text-amber-300 text-center">
               🎉 本月不超预算 · +10 SP
