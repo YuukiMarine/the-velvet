@@ -82,20 +82,29 @@ function BudgetRing({ ratio, color, children }: { ratio: number; color: string; 
   );
 }
 
-/** 资金类型环：流动(本月预算剩) / 收入(本月) / 余额(结转) 按比例分色。 */
-function FundRing({ liquid, income, carried, children }: { liquid: number; income: number; carried: number; children: ReactNode }) {
+/**
+ * 资金构成环：收入剩余 + 结转 = 总余额（两段精确占满「已剩」部分）。
+ * base = 总余额 + 本月已花 = 月初结转 + 本月收入；空缺弧长即本月已花，次月归零→环回满。
+ */
+function FundRing({ income, carried, base, children }: { income: number; carried: number; base: number; children: ReactNode }) {
   const R = 84;
   const C = 2 * Math.PI * R;
-  const segs = [{ v: liquid, c: '#38bdf8' }, { v: income, c: '#34d399' }, { v: carried, c: '#818cf8' }];
-  const tot = segs.reduce((s, x) => s + x.v, 0) || 1;
+  const segs = [{ v: income, c: '#34d399' }, { v: carried, c: '#818cf8' }];
+  const b = Math.max(base, income + carried, 1);
   let acc = 0;
   return (
     <div className="relative w-56 h-56 mx-auto">
       <svg viewBox="0 0 200 200" className="w-full h-full -rotate-90">
         <circle cx="100" cy="100" r={R} fill="none" strokeWidth="12" className="stroke-gray-100 dark:stroke-gray-800" />
         {segs.map((sg, i) => {
-          const f = sg.v / tot;
-          const el = <circle key={i} cx="100" cy="100" r={R} fill="none" stroke={sg.c} strokeWidth="12" strokeDasharray={`${f * C} ${C}`} strokeDashoffset={-acc * C} />;
+          const f = sg.v / b;
+          const el = (
+            <circle
+              key={i} cx="100" cy="100" r={R} fill="none" stroke={sg.c} strokeWidth="12"
+              strokeDasharray={`${f * C} ${C}`} strokeDashoffset={-acc * C}
+              style={{ transition: 'stroke-dasharray .5s ease, stroke-dashoffset .5s ease' }}
+            />
+          );
           acc += f;
           return el;
         })}
@@ -137,12 +146,12 @@ export const Ledger = () => {
 
   // 月余额（默认显示）= 本月预算 − 本月已花（流动资金，次月重算）
   const monthBalance = budgetLeft;
-  // 总余额的资金类型构成：流动(本月预算剩) / 本月收入 / 结转余额(本月之前带入)
-  const monthIncome = getMonthIncome();
-  const carried = total - (monthIncome - monthExpense);
-  const fundLiquid = Math.max(0, budgetLeft);
-  const fundIncome = Math.max(0, monthIncome);
-  const fundCarried = Math.max(0, carried);
+  // 总余额资金构成（两段精确等于总余额）：本月支出先扣「本月收入」，花光再扣「结转」
+  const monthIncome = getMonthIncome();                  // 含本月对账转入
+  const opening = total - monthIncome + monthExpense;     // 月初结转（本月之前带入的真钱）
+  const fundIncome = Math.max(0, monthIncome - monthExpense);                  // 收入剩余（先扣）
+  const fundCarried = Math.max(0, opening - Math.max(0, monthExpense - monthIncome)); // 结转（后扣）
+  const fundBase = total + monthExpense;                 // 进度环满刻度（= 月初结转 + 本月收入；空缺=本月已花）
 
   const [balanceView, setBalanceView] = useState<'month' | 'total'>('month');
   const [nlText, setNlText] = useState('');
@@ -256,7 +265,7 @@ export const Ledger = () => {
             </button>
           </BudgetRing>
         ) : (
-          <FundRing liquid={fundLiquid} income={fundIncome} carried={fundCarried}>
+          <FundRing income={fundIncome} carried={fundCarried} base={fundBase}>
             <button onClick={() => setBalanceView('month')} className="flex flex-col items-center focus:outline-none" aria-label="切换到月余额">
               <span className="text-xs text-gray-400 dark:text-gray-500">总余额 ⇄</span>
               <span className="text-3xl font-black text-gray-900 dark:text-white tabular-nums mt-0.5">{fmtSigned(total, $)}</span>
@@ -279,8 +288,7 @@ export const Ledger = () => {
           </div>
         ) : (
           <div className="flex justify-center flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400 -mt-1">
-            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full" style={{ background: '#38bdf8' }} />流动 <b className="tabular-nums">{$}{fmtMoney(fundLiquid)}</b></span>
-            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full" style={{ background: '#34d399' }} />本月收入 <b className="tabular-nums">{$}{fmtMoney(fundIncome)}</b></span>
+            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full" style={{ background: '#34d399' }} />收入剩余 <b className="tabular-nums">{$}{fmtMoney(fundIncome)}</b></span>
             <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full" style={{ background: '#818cf8' }} />结转 <b className="tabular-nums">{$}{fmtMoney(fundCarried)}</b></span>
           </div>
         )}
