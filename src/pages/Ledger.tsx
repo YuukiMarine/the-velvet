@@ -898,11 +898,20 @@ export const Ledger = () => {
         $={$}
         current={budget?.monthlyLimit}
         savingsCurrent={budget?.savingsGoal}
+        savingsEditsLeft={Math.max(0, 2 - (budget?.savingsGoalEdits ?? 0))}
         days={daysInMonth}
         resetDay={resetDay}
         onResetDay={d => updateSettings({ ledgerResetDay: d })}
         onSave={async (monthly, savings) => {
-          await setBudget(toLocalDateKey().slice(0, 7), { monthlyLimit: monthly, savingsGoal: savings });
+          const p = toLocalDateKey().slice(0, 7);
+          const cur = getBudget(p);
+          const patch: { monthlyLimit: number; savingsGoal?: number; savingsGoalEdits?: number } = { monthlyLimit: monthly };
+          // 省钱挑战目标每月限改 2 次：仅当值变化且未超限才写入并计数
+          if (savings !== cur?.savingsGoal && (cur?.savingsGoalEdits ?? 0) < 2) {
+            patch.savingsGoal = savings;
+            patch.savingsGoalEdits = (cur?.savingsGoalEdits ?? 0) + 1;
+          }
+          await setBudget(p, patch);
           if (budgetMode === 'newCycle') await updateSettings({ ledgerCycleConfirmed: currentCycle });
           setBudgetMode(null);
         }}
@@ -989,21 +998,24 @@ function BudgetDualInput({ $, days, monthly, setMonthly }: { $: string; days: nu
   );
 }
 
-function BudgetSheet({ isOpen, onClose, $, current, savingsCurrent, days, resetDay, onResetDay, onSave, newCycle }: {
+function BudgetSheet({ isOpen, onClose, $, current, savingsCurrent, savingsEditsLeft, days, resetDay, onResetDay, onSave, newCycle }: {
   isOpen: boolean; onClose: () => void; $: string;
-  current?: number; savingsCurrent?: number; days: number;
+  current?: number; savingsCurrent?: number; savingsEditsLeft: number; days: number;
   resetDay: number; onResetDay: (d: number) => void;
   onSave: (monthly: number, savings: number | undefined) => void | Promise<void>;
   newCycle?: boolean;
 }) {
   const [monthly, setMonthly] = useState('');
   const [savings, setSavings] = useState('');
+  const [challengeOpen, setChallengeOpen] = useState(false);
   useEffect(() => {
     if (isOpen) {
       setMonthly(current != null ? String(current) : '');
       setSavings(savingsCurrent != null ? String(savingsCurrent) : '');
+      setChallengeOpen(savingsCurrent != null);   // 默认收起，已设过才展开
     }
   }, [isOpen, current, savingsCurrent]);
+  const savingsLocked = savingsEditsLeft <= 0;
   const m = Number(monthly);
   const sv = Number(savings);
   return (
@@ -1032,18 +1044,31 @@ function BudgetSheet({ isOpen, onClose, $, current, savingsCurrent, days, resetD
           <div className="text-xs text-gray-500 dark:text-gray-400">花费目标 <span className="text-gray-400/70 font-normal">改一个，另一个按 {days} 天自动算</span></div>
           <BudgetDualInput $={$} days={days} monthly={monthly} setMonthly={setMonthly} />
         </div>
-        {/* 想省 */}
-        <div className="space-y-1.5">
-          <div className="text-xs text-gray-500 dark:text-gray-400">这个月想省下 <span className="text-gray-400/70 font-normal">可选</span></div>
-          <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-900/15 border border-emerald-200 dark:border-emerald-800/40">
-            <span className="text-lg font-black text-emerald-500/70">{$}</span>
-            <input
-              type="number" inputMode="decimal" value={savings} placeholder="500"
-              onChange={e => setSavings(e.target.value)}
-              className="flex-1 min-w-0 bg-transparent text-xl font-black text-emerald-600 dark:text-emerald-300 tabular-nums outline-none"
-            />
+        {/* 省钱挑战（默认收起） */}
+        {challengeOpen ? (
+          <div className="space-y-1.5">
+            <div className="flex items-baseline justify-between">
+              <div className="text-xs text-gray-500 dark:text-gray-400">🏆 省钱挑战 · 这个月想省下</div>
+              <span className="text-[10px] text-gray-400">{savingsLocked ? '本月修改次数已用完' : `还可改 ${savingsEditsLeft} 次`}</span>
+            </div>
+            <div className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border ${savingsLocked ? 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700 opacity-70' : 'bg-emerald-50 dark:bg-emerald-900/15 border-emerald-200 dark:border-emerald-800/40'}`}>
+              <span className="text-lg font-black text-emerald-500/70">{$}</span>
+              <input
+                type="number" inputMode="decimal" value={savings} placeholder="500" disabled={savingsLocked}
+                onChange={e => setSavings(e.target.value)}
+                className="flex-1 min-w-0 bg-transparent text-xl font-black text-emerald-600 dark:text-emerald-300 tabular-nums outline-none disabled:cursor-not-allowed"
+              />
+            </div>
+            <div className="text-[11px] text-gray-400 dark:text-gray-500">月底「预算 − 实际花费」达到这个数，次月结算 +10 SP 🎉</div>
           </div>
-        </div>
+        ) : (
+          <button
+            type="button" onClick={() => setChallengeOpen(true)}
+            className="text-xs font-semibold text-gray-400 hover:text-emerald-500 transition-colors"
+          >
+            ＋ 立个省钱挑战（可选）
+          </button>
+        )}
         {/* 重置日（发薪日） */}
         <div className="space-y-1.5">
           <div className="text-xs text-gray-500 dark:text-gray-400">每月重置日 <span className="text-gray-400/70 font-normal">发薪日 · 决定何时提醒你规划新一程</span></div>

@@ -284,6 +284,10 @@ export interface Settings {
   ledgerResetDay?: number;
   /** F5 已确认 / 略过的「新周期规划窗」周期 id（cycle 起始月 YYYY-MM）。 */
   ledgerCycleConfirmed?: string;
+  /** F5 已达成「省钱挑战」并发放 +10SP 的月份（防重复发放）。 */
+  ledgerChallengeWonMonths?: string[];
+  /** F5 资产页「存款」条目是否隐藏（默认显示）。 */
+  ledgerSavingsHidden?: boolean;
   // AI 总结功能配置
   summaryApiProvider?: 'openai' | 'deepseek' | 'kimi' | 'gemini' | 'minimax';
   summaryApiKey?: string;
@@ -557,8 +561,10 @@ export interface Budget {
   monthlyLimit?: number;
   /** 每日额定预算；缺省时取 monthlyLimit / 当月天数 */
   dailyLimit?: number;
-  /** 本月「想省下多少」目标（自律储蓄目标，激励用） */
+  /** 「省钱挑战」目标：本月想省下多少（预算−支出 ≥ 此值即达成，次月结算 +10SP） */
   savingsGoal?: number;
+  /** 「省钱挑战」目标已修改次数（每月限 2 次） */
+  savingsGoalEdits?: number;
   createdAt: Date;
 }
 
