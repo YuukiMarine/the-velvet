@@ -65,6 +65,13 @@ export function weekdayCN(dateKey: string): string {
   return WEEKDAYS_CN[new Date(y, m - 1, d).getDay()] ?? '';
 }
 
+/** 流水日期展示：当年只显示「M月D日」，往年才带年份「YYYY年M月D日」。 */
+export function ledgerDateLabel(dateKey: string): string {
+  const [y, m, d] = dateKey.split('-').map(Number);
+  const curY = new Date().getFullYear();
+  return y === curY ? `${m}月${d}日` : `${y}年${m}月${d}日`;
+}
+
 /** 'YYYY-MM' → 'YYYY年M月'。 */
 export function monthLabel(period: string): string {
   const [y, m] = period.split('-');

@@ -20,7 +20,7 @@ import { parseLedgerBatch, type LedgerAIResult } from '@/utils/ledgerAI';
 import { SegmentTabs } from '@/components/SegmentTabs';
 import { LedgerStats } from '@/components/ledger/LedgerStats';
 import { AssetBoard } from '@/components/ledger/AssetBoard';
-import { catMeta, CATEGORY_KEYS, isGrowthCategory, INCOME_META, sym, fmtMoney, fmtSigned, DEFAULT_CHANNELS, DEFAULT_INCOME_SOURCES, incomeTypeFromSource, shiftMonth, weekdayCN, monthLabel } from '@/utils/ledgerFormat';
+import { catMeta, CATEGORY_KEYS, isGrowthCategory, INCOME_META, sym, fmtMoney, fmtSigned, DEFAULT_CHANNELS, DEFAULT_INCOME_SOURCES, incomeTypeFromSource, shiftMonth, weekdayCN, monthLabel, ledgerDateLabel } from '@/utils/ledgerFormat';
 import type { LedgerEntry, LedgerExpenseType, AttributeId, SpendWorth, Settings } from '@/types';
 
 // ── 录入草稿 ──────────────────────────────────────────────
@@ -450,17 +450,29 @@ export const Ledger = () => {
         )}
 
         {balanceView === 'month' ? (
-          <div className="text-center text-xs text-gray-500 dark:text-gray-400 -mt-1">
-            {hasBudget ? (
-              over ? (
-                <span className="text-rose-500 font-semibold">本月已超 {$}{fmtMoney(-budgetLeft)}</span>
-              ) : (
-                <>本月预算剩 <b className="tabular-nums">{$}{fmtMoney(budgetLeft)}</b> / {$}{fmtMoney(lim)}{todayLeft > 0 && <> · 今日还可花 <b className="tabular-nums text-emerald-600 dark:text-emerald-400">{$}{fmtMoney(todayLeft)}</b></>}</>
-              )
+          hasBudget ? (
+            over ? (
+              <div className="-mt-1 flex flex-col items-center gap-1.5">
+                <div className="inline-flex items-baseline gap-1.5 px-3.5 py-1 rounded-full bg-rose-50 dark:bg-rose-900/20 border border-rose-100 dark:border-rose-800/40">
+                  <span className="text-xs text-rose-500/80">本月已超</span>
+                  <span className="text-lg font-black tabular-nums text-rose-500">{$}{fmtMoney(-budgetLeft)}</span>
+                </div>
+                <span className="text-xs text-gray-400 dark:text-gray-500">预算 {$}{fmtMoney(lim)} · 已花 {$}{fmtMoney(monthExpense)}</span>
+              </div>
             ) : (
-              <span>本月还没设预算</span>
-            )}
-          </div>
+              <div className="-mt-1 flex flex-col items-center gap-1.5">
+                {todayLeft > 0 && (
+                  <div className="inline-flex items-baseline gap-1.5 px-3.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800/40">
+                    <span className="text-xs text-emerald-600/80 dark:text-emerald-300/80">今日还可花</span>
+                    <span className="text-lg font-black tabular-nums text-emerald-600 dark:text-emerald-300">{$}{fmtMoney(todayLeft)}</span>
+                  </div>
+                )}
+                <span className="text-xs text-gray-400 dark:text-gray-500">本月预算剩 <b className="tabular-nums text-gray-500 dark:text-gray-400">{$}{fmtMoney(budgetLeft)}</b> / {$}{fmtMoney(lim)}</span>
+              </div>
+            )
+          ) : (
+            <div className="text-center text-xs text-gray-400 -mt-1">本月还没设预算</div>
+          )
         ) : (
           <div className="flex justify-center flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400 -mt-1">
             <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full" style={{ background: '#34d399' }} />收入剩余 <b className="tabular-nums">{$}{fmtMoney(fundIncome)}</b></span>
@@ -555,7 +567,7 @@ export const Ledger = () => {
         {monthGrouped.map(([date, entries]) => (
           <div key={date}>
             <div className="flex items-baseline gap-1.5 mb-1 px-1">
-              <span className="text-xs font-semibold text-gray-400 dark:text-gray-500 tabular-nums">{date}</span>
+              <span className="text-xs font-semibold text-gray-500 dark:text-gray-400">{ledgerDateLabel(date)}</span>
               <span className="text-xs text-gray-300 dark:text-gray-600">{weekdayCN(date)}</span>
             </div>
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm divide-y divide-gray-50 dark:divide-gray-700/40">
