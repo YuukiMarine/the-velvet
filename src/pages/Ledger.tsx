@@ -8,7 +8,7 @@
  *
  * 奖励 / 统计 / 资产 / 月末结算属后续批次，本页先把核心跑通。
  */
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
 import { useAppStore, toLocalDateKey } from '@/store';
 import { PageTitle } from '@/components/PageTitle';
@@ -20,6 +20,7 @@ import { parseLedgerBatch, type LedgerAIResult } from '@/utils/ledgerAI';
 import { SegmentTabs } from '@/components/SegmentTabs';
 import { LedgerStats } from '@/components/ledger/LedgerStats';
 import { AssetBoard } from '@/components/ledger/AssetBoard';
+import { Donut } from '@/components/ledger/Donut';
 import { catMeta, CATEGORY_KEYS, isGrowthCategory, INCOME_META, sym, fmtMoney, fmtSigned, DEFAULT_CHANNELS, DEFAULT_INCOME_SOURCES, incomeTypeFromSource, shiftMonth, weekdayCN, monthLabel, ledgerDateLabel } from '@/utils/ledgerFormat';
 import type { LedgerEntry, LedgerExpenseType, AttributeId, SpendWorth, Settings } from '@/types';
 
@@ -59,60 +60,6 @@ const draftFromAI = (r: LedgerAIResult, source: 'manual' | 'ai'): EntryDraft => 
   attrPoints: 1,
   registerAsset: false,
 });
-
-// ── 预算环 ────────────────────────────────────────────────
-
-/** 预算环：ratio=本月预算「剩余」比例（满=未花，花钱往下消耗）；color 由调用方按预算状态给。 */
-function BudgetRing({ ratio, color, children }: { ratio: number; color: string; children: ReactNode }) {
-  const R = 84;
-  const C = 2 * Math.PI * R;
-  const r = Math.max(0, Math.min(1, ratio));
-  return (
-    <div className="relative w-56 h-56 mx-auto">
-      <svg viewBox="0 0 200 200" className="w-full h-full -rotate-90">
-        <circle cx="100" cy="100" r={R} fill="none" strokeWidth="12" className="stroke-gray-100 dark:stroke-gray-800" />
-        <circle
-          cx="100" cy="100" r={R} fill="none" stroke={color} strokeWidth="12" strokeLinecap="round"
-          strokeDasharray={C} strokeDashoffset={C * (1 - r)}
-          style={{ transition: 'stroke-dashoffset .5s ease, stroke .3s' }}
-        />
-      </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-6">{children}</div>
-    </div>
-  );
-}
-
-/**
- * 资金构成环：收入剩余 + 结转 = 总余额（两段精确占满「已剩」部分）。
- * base = 总余额 + 本月已花 = 月初结转 + 本月收入；空缺弧长即本月已花，次月归零→环回满。
- */
-function FundRing({ income, carried, base, children }: { income: number; carried: number; base: number; children: ReactNode }) {
-  const R = 84;
-  const C = 2 * Math.PI * R;
-  const segs = [{ v: income, c: '#34d399' }, { v: carried, c: '#818cf8' }];
-  const b = Math.max(base, income + carried, 1);
-  let acc = 0;
-  return (
-    <div className="relative w-56 h-56 mx-auto">
-      <svg viewBox="0 0 200 200" className="w-full h-full -rotate-90">
-        <circle cx="100" cy="100" r={R} fill="none" strokeWidth="12" className="stroke-gray-100 dark:stroke-gray-800" />
-        {segs.map((sg, i) => {
-          const f = sg.v / b;
-          const el = (
-            <circle
-              key={i} cx="100" cy="100" r={R} fill="none" stroke={sg.c} strokeWidth="12"
-              strokeDasharray={`${f * C} ${C}`} strokeDashoffset={-acc * C}
-              style={{ transition: 'stroke-dasharray .5s ease, stroke-dashoffset .5s ease' }}
-            />
-          );
-          acc += f;
-          return el;
-        })}
-      </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-6">{children}</div>
-    </div>
-  );
-}
 
 // ── 标签选择器（渠道 / 收入来源 / 细分类目共用） ─────────────
 /** chips 单选 + ＋自定义(持久化) + 可折叠；clearable=再点选中项可取消。 */
@@ -444,21 +391,21 @@ export const Ledger = () => {
       {/* 总余额 + 预算环（环显示本月预算「剩余」，花钱往下消耗） */}
       <motion.section {...popIn(2)} className="mt-4 bg-gradient-to-b from-white to-gray-50/60 dark:from-gray-800 dark:to-gray-800/60 rounded-2xl shadow-lg ring-1 ring-gray-100/80 dark:ring-gray-700/40 p-5">
         {balanceView === 'month' ? (
-          <BudgetRing ratio={remainingRatio} color={ringColor}>
+          <Donut variant="hero" className="mx-auto" segments={[{ value: Math.max(0, Math.min(1, remainingRatio)), color: ringColor }]} total={1}>
             <button onClick={() => setBalanceView('total')} className="flex flex-col items-center focus:outline-none active:scale-95 transition-transform" aria-label="切换到总余额">
               <span className="inline-flex items-center gap-1 text-xs text-gray-400 dark:text-gray-500">月余额 <span className="text-[10px] opacity-70">⇄ 总余额</span></span>
               <span className="text-3xl font-black text-gray-900 dark:text-white tabular-nums mt-0.5">{fmtSigned(monthBalance, $)}</span>
               <span className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{hasBudget ? `预算 ${$}${fmtMoney(lim)}` : '未设预算'}</span>
             </button>
-          </BudgetRing>
+          </Donut>
         ) : (
-          <FundRing income={fundIncome} carried={fundCarried} base={fundBase}>
+          <Donut variant="hero" className="mx-auto" segments={[{ value: fundIncome, color: '#34d399' }, { value: fundCarried, color: '#818cf8' }]} total={fundBase}>
             <button onClick={() => setBalanceView('month')} className="flex flex-col items-center focus:outline-none active:scale-95 transition-transform" aria-label="切换到月余额">
               <span className="inline-flex items-center gap-1 text-xs text-gray-400 dark:text-gray-500">总余额 <span className="text-[10px] opacity-70">⇄ 月余额</span></span>
               <span className="text-3xl font-black text-gray-900 dark:text-white tabular-nums mt-0.5">{fmtSigned(total, $)}</span>
               {savings > 0 && <span className="text-xs font-semibold text-indigo-500 dark:text-indigo-400 mt-0.5">🐷 攒下 {$}{fmtMoney(savings)}</span>}
             </button>
-          </FundRing>
+          </Donut>
         )}
 
         {balanceView === 'month' ? (
