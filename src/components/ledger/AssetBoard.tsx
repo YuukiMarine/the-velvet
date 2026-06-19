@@ -6,10 +6,12 @@
  * （如手机壳）。流→存桥接在录入确认卡里（大额支出勾「登记为资产」）。
  */
 import { useMemo, useState } from 'react';
+import { motion } from 'motion/react';
 import { useAppStore, toLocalDateKey } from '@/store';
 import { SheetModal } from '@/components/SheetModal';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { sym, fmtMoney, ASSET_CATEGORIES, assetIcon, ASSET_STATUS } from '@/utils/ledgerFormat';
+import { Donut } from '@/components/ledger/Donut';
 import type { LedgerAsset } from '@/types';
 
 type AssetStatus = 'inuse' | 'idle' | 'soldout';
@@ -46,27 +48,16 @@ export function AssetBoard() {
   return (
     <div className="space-y-3">
       {/* 净值：总财富甜甜圈环（流动 / 存款 / 固定） */}
-      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm p-4">
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95, y: 12 }} animate={{ opacity: 1, scale: 1, y: 0 }}
+        transition={{ type: 'spring', stiffness: 300, damping: 24 }}
+        className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm p-4"
+      >
         <div className="flex items-center gap-4">
-          <div className="relative w-32 h-32 flex-shrink-0">
-            <svg viewBox="0 0 140 140" className="w-full h-full -rotate-90">
-              <circle cx="70" cy="70" r="56" fill="none" strokeWidth="15" className="stroke-gray-100 dark:stroke-gray-800" />
-              {(() => {
-                const C = 2 * Math.PI * 56;
-                let acc = 0;
-                return segs.map(sg => {
-                  const frac = net > 0 ? sg.amt / net : 0;
-                  const el = <circle key={sg.key} cx="70" cy="70" r="56" fill="none" stroke={sg.hex} strokeWidth="15" strokeDasharray={`${frac * C} ${C}`} strokeDashoffset={-acc * C} style={{ transition: 'stroke-dasharray .5s ease, stroke-dashoffset .5s ease' }} />;
-                  acc += frac;
-                  return el;
-                });
-              })()}
-            </svg>
-            <div className="absolute inset-0 flex flex-col items-center justify-center">
-              <span className="text-[10px] text-gray-400">总财富</span>
-              <span className="text-sm font-black text-gray-800 dark:text-white tabular-nums">{$}{fmtMoney(net)}</span>
-            </div>
-          </div>
+          <Donut segments={segs.map(sg => ({ value: sg.amt, color: sg.hex }))} total={net} variant="card" track={false}>
+            <span className="text-[10px] text-gray-400">总财富</span>
+            <span className="text-sm font-black text-gray-800 dark:text-white tabular-nums">{$}{fmtMoney(net)}</span>
+          </Donut>
           <div className="flex-1 space-y-2 text-sm">
             {segs.map(sg => (
               <div key={sg.key} className="flex items-center gap-2">
@@ -77,11 +68,15 @@ export function AssetBoard() {
             ))}
           </div>
         </div>
-      </div>
+      </motion.div>
 
       {/* 存款条目（自律攒下，默认显示，可点关；关后可恢复） */}
       {savingsShown ? (
-        <div className="flex items-center gap-3 bg-emerald-50 dark:bg-emerald-900/15 border border-emerald-200/70 dark:border-emerald-800/40 rounded-xl px-4 py-3">
+        <motion.div
+          initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.08, type: 'spring', stiffness: 360, damping: 28 }}
+          className="flex items-center gap-3 bg-emerald-50 dark:bg-emerald-900/15 border border-emerald-200/70 dark:border-emerald-800/40 rounded-xl px-4 py-3"
+        >
           <span className="text-2xl flex-shrink-0">🐷</span>
           <div className="flex-1 min-w-0">
             <div className="text-sm font-bold text-emerald-700 dark:text-emerald-300">存款</div>
@@ -89,7 +84,7 @@ export function AssetBoard() {
           </div>
           <span className="text-base font-black tabular-nums text-emerald-600 dark:text-emerald-300 flex-shrink-0">{$}{fmtMoney(savingsAmt)}</span>
           <button onClick={() => updateSettings({ ledgerSavingsHidden: true })} aria-label="收起存款条目" className="text-emerald-400/60 hover:text-emerald-600 dark:hover:text-emerald-300 text-lg leading-none px-1 flex-shrink-0">×</button>
-        </div>
+        </motion.div>
       ) : (settings.ledgerSavingsHidden && rawSavings > 0 && liquid > 0) ? (
         <button
           onClick={() => updateSettings({ ledgerSavingsHidden: false })}

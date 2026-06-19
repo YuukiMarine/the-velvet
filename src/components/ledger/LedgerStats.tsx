@@ -6,52 +6,29 @@
  * 月末「让伊戈尔结算」入口在此（Markdown 报告 + 不超预算 +10SP）。
  */
 import { useEffect, useMemo, useState } from 'react';
+import { motion } from 'motion/react';
 import { useAppStore, toLocalDateKey } from '@/store';
 import { SheetModal } from '@/components/SheetModal';
 import { SegmentTabs } from '@/components/SegmentTabs';
 import { catMeta, CATEGORY_KEYS, sym, fmtMoney, fmtSigned, shiftMonth } from '@/utils/ledgerFormat';
 import { buildSettlementData, generateSettlement, settleRange, shiftSettleAnchor, type SettleScope, type SettlementResult } from '@/utils/ledgerSettlement';
 import { renderMarkdown } from '@/utils/markdown';
+import { Donut } from '@/components/ledger/Donut';
 import DOMPurify from 'dompurify';
 
 function Card({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm p-4">
+    <motion.div
+      initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }}
+      transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+      className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm p-4"
+    >
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-sm font-bold text-gray-800 dark:text-white">{title}</h3>
         {action}
       </div>
       {children}
-    </div>
-  );
-}
-
-/** 甜甜圈环：segments 按比例堆叠描边。 */
-function Donut({ segments, total, $ }: { segments: { hex: string; amount: number }[]; total: number; $: string }) {
-  const R = 56;
-  const C = 2 * Math.PI * R;
-  let acc = 0;
-  return (
-    <div className="relative w-32 h-32 flex-shrink-0">
-      <svg viewBox="0 0 140 140" className="w-full h-full -rotate-90">
-        <circle cx="70" cy="70" r={R} fill="none" strokeWidth="15" className="stroke-gray-100 dark:stroke-gray-800" />
-        {segments.map((s, i) => {
-          const frac = total > 0 ? s.amount / total : 0;
-          const el = (
-            <circle
-              key={i} cx="70" cy="70" r={R} fill="none" stroke={s.hex} strokeWidth="15"
-              strokeDasharray={`${frac * C} ${C}`} strokeDashoffset={-acc * C}
-            />
-          );
-          acc += frac;
-          return el;
-        })}
-      </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className="text-[10px] text-gray-400">支出</span>
-        <span className="text-sm font-black text-gray-800 dark:text-white tabular-nums">{$}{fmtMoney(total)}</span>
-      </div>
-    </div>
+    </motion.div>
   );
 }
 
@@ -240,7 +217,10 @@ export function LedgerStats() {
       {s.byCat.length > 0 && (
         <Card title="支出类目">
           <div className="flex items-center gap-4">
-            <Donut segments={s.byCat.map(c => ({ hex: catMeta(c.key).hex, amount: c.amount }))} total={s.totalExpense} $={$} />
+            <Donut segments={s.byCat.map(c => ({ value: c.amount, color: catMeta(c.key).hex }))} total={s.totalExpense} variant="card" track={false}>
+              <span className="text-[10px] text-gray-400">支出</span>
+              <span className="text-sm font-black text-gray-800 dark:text-white tabular-nums">{$}{fmtMoney(s.totalExpense)}</span>
+            </Donut>
             <div className="flex-1 min-w-0 space-y-1.5">
               {s.byCat.map(c => (
                 <div key={c.key} className="flex items-center gap-1.5 text-xs">
