@@ -2,17 +2,16 @@
  * Donut — F5 记账统一甜甜圈环原语（hero 余额环 / 统计类目环 / 资产财富环 共用）。
  *
  * segments 按比例堆叠，total 作分母（total > Σvalue 时余下显为灰色 track = 「未填满」部分）。
- * 安定态恒为「已填满」（首屏即渲染到位、绝不空环）；数值变化时 CSS transition 平滑补间，
- * 入场缩放由所在卡片的动效承载（hero popIn / 统计·资产卡 rise）。
+ * 入场「填充」生长：各段 strokeDasharray + dashoffset 由 0 按比例同步补到位（gap-free，
+ * 用 framer 声明式 motion.circle 驱动，落定到终态可靠）；数值变化时同一动画平滑补间。
  */
+import { motion } from 'motion/react';
 import { type ReactNode } from 'react';
 
 const SIZES = {
   hero: { vb: 200, r: 84, stroke: 12, cls: 'w-56 h-56' },
   card: { vb: 140, r: 56, stroke: 15, cls: 'w-32 h-32' },
 } as const;
-
-const EASE = 'stroke-dasharray .7s cubic-bezier(.22,1,.36,1), stroke-dashoffset .7s cubic-bezier(.22,1,.36,1), stroke .3s';
 
 export function Donut({ segments, total, variant = 'card', track = true, className = '', children }: {
   segments: { value: number; color: string }[];
@@ -36,9 +35,11 @@ export function Donut({ segments, total, variant = 'card', track = true, classNa
           const off = -acc * C;
           acc += frac;
           return (
-            <circle
+            <motion.circle
               key={i} cx={c} cy={c} r={r} fill="none" stroke={sg.color} strokeWidth={stroke} strokeLinecap="butt"
-              strokeDasharray={`${len} ${C}`} strokeDashoffset={off} style={{ transition: EASE }}
+              initial={{ strokeDasharray: `0 ${C}`, strokeDashoffset: 0 }}
+              animate={{ strokeDasharray: `${len} ${C}`, strokeDashoffset: off }}
+              transition={{ duration: 0.8, delay: 0.05 + i * 0.08, ease: [0.22, 1, 0.36, 1] }}
             />
           );
         })}
