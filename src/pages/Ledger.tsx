@@ -211,6 +211,18 @@ const rowFromResult = (r: LedgerAIResult): BatchRow => ({
 });
 const emptyRow = (): BatchRow => ({ direction: 'expense', amount: '', type: 'food', channel: '', incomeSource: '', note: '' });
 
+// ── 入场动效（明显有设计感：错落 + 弹性上浮 / 主卡缩放） ──
+const riseIn = (i: number) => ({
+  initial: { opacity: 0, y: 20 },
+  animate: { opacity: 1, y: 0 },
+  transition: { delay: 0.03 + i * 0.06, type: 'spring' as const, stiffness: 380, damping: 30 },
+});
+const popIn = (i: number) => ({
+  initial: { opacity: 0, scale: 0.93, y: 14 },
+  animate: { opacity: 1, scale: 1, y: 0 },
+  transition: { delay: 0.03 + i * 0.06, type: 'spring' as const, stiffness: 300, damping: 22 },
+});
+
 // ── 页面 ──────────────────────────────────────────────────
 
 export const Ledger = () => {
@@ -394,27 +406,27 @@ export const Ledger = () => {
 
   return (
     <motion.div
-      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      initial={false} exit={{ opacity: 0 }}
       transition={{ duration: 0.2 }}
       className="max-w-2xl mx-auto pb-8"
     >
       {/* 页头 */}
-      <div className="flex items-start justify-between gap-3">
+      <motion.div {...riseIn(0)} className="flex items-start justify-between gap-3">
         <BackButton onClick={() => setCurrentPage('menu')} className="mt-1 -ml-1" />
         <div className="flex-1">
           <PageTitle title="心相记账" en="Ledger" enOffset={{ right: -20 }} />
         </div>
-      </div>
+      </motion.div>
 
       {/* 顶层：记账 / 资产（平级） */}
-      <div className="mt-4">
+      <motion.div {...riseIn(1)} className="mt-4">
         <SegmentTabs
           items={[{ key: 'ledger', label: '记账' }, { key: 'assets', label: '资产' }]}
           value={mode}
           onChange={setMode}
           layoutId="ledger-mode"
         />
-      </div>
+      </motion.div>
 
       {mode === 'ledger' && (
         <>
@@ -430,19 +442,19 @@ export const Ledger = () => {
       )}
 
       {/* 总余额 + 预算环（环显示本月预算「剩余」，花钱往下消耗） */}
-      <section className="mt-4 bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-5">
+      <motion.section {...popIn(2)} className="mt-4 bg-gradient-to-b from-white to-gray-50/60 dark:from-gray-800 dark:to-gray-800/60 rounded-2xl shadow-lg ring-1 ring-gray-100/80 dark:ring-gray-700/40 p-5">
         {balanceView === 'month' ? (
           <BudgetRing ratio={remainingRatio} color={ringColor}>
-            <button onClick={() => setBalanceView('total')} className="flex flex-col items-center focus:outline-none" aria-label="切换到总余额">
-              <span className="text-xs text-gray-400 dark:text-gray-500">月余额 ⇄</span>
+            <button onClick={() => setBalanceView('total')} className="flex flex-col items-center focus:outline-none active:scale-95 transition-transform" aria-label="切换到总余额">
+              <span className="inline-flex items-center gap-1 text-xs text-gray-400 dark:text-gray-500">月余额 <span className="text-[10px] opacity-70">⇄ 总余额</span></span>
               <span className="text-3xl font-black text-gray-900 dark:text-white tabular-nums mt-0.5">{fmtSigned(monthBalance, $)}</span>
               <span className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{hasBudget ? `预算 ${$}${fmtMoney(lim)}` : '未设预算'}</span>
             </button>
           </BudgetRing>
         ) : (
           <FundRing income={fundIncome} carried={fundCarried} base={fundBase}>
-            <button onClick={() => setBalanceView('month')} className="flex flex-col items-center focus:outline-none" aria-label="切换到月余额">
-              <span className="text-xs text-gray-400 dark:text-gray-500">总余额 ⇄</span>
+            <button onClick={() => setBalanceView('month')} className="flex flex-col items-center focus:outline-none active:scale-95 transition-transform" aria-label="切换到月余额">
+              <span className="inline-flex items-center gap-1 text-xs text-gray-400 dark:text-gray-500">总余额 <span className="text-[10px] opacity-70">⇄ 月余额</span></span>
               <span className="text-3xl font-black text-gray-900 dark:text-white tabular-nums mt-0.5">{fmtSigned(total, $)}</span>
               {savings > 0 && <span className="text-xs font-semibold text-indigo-500 dark:text-indigo-400 mt-0.5">🐷 攒下 {$}{fmtMoney(savings)}</span>}
             </button>
@@ -494,45 +506,46 @@ export const Ledger = () => {
             对账
           </button>
         </div>
-      </section>
+      </motion.section>
 
       {/* 录入条 */}
-      <section className="mt-4 flex gap-2">
+      <motion.section {...riseIn(3)} className="mt-4 flex gap-2">
         <input
           value={nlText}
           onChange={e => setNlText(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter') handleNL(); }}
-          placeholder="记一笔：28 咖啡 / 工资 8000"
-          className="flex-1 min-w-0 px-4 py-3 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-sm text-gray-800 dark:text-white placeholder-gray-400 focus:outline-none focus:border-primary"
+          placeholder="28 咖啡 / 工资 8000（可多笔）"
+          className="flex-1 min-w-0 px-4 py-3 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-sm text-gray-800 dark:text-white placeholder-gray-400 focus:outline-none focus:border-primary transition-colors"
         />
         <button
           onClick={handleNL}
           disabled={nlBusy || !nlText.trim()}
-          className="px-4 py-3 rounded-xl text-sm font-bold bg-primary text-white disabled:opacity-40 active:scale-[0.98] transition"
+          className="px-4 py-3 rounded-xl text-sm font-bold bg-primary text-white disabled:opacity-40 active:scale-[0.96] transition-transform"
         >
           {nlBusy ? '…' : '记一笔'}
         </button>
         <button
           onClick={() => startDraft(emptyDraft())}
-          className="px-3 py-3 rounded-xl text-sm font-semibold bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors whitespace-nowrap"
+          aria-label="手动记一笔"
+          className="px-3 py-3 rounded-xl text-sm font-semibold bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 active:scale-[0.96] transition whitespace-nowrap"
         >
           手动
         </button>
-      </section>
+      </motion.section>
 
       {/* 流水 / 统计 切换 */}
-      <div className="mt-4">
+      <motion.div {...riseIn(4)} className="mt-4">
         <SegmentTabs
           items={[{ key: 'list', label: '流水' }, { key: 'stats', label: '统计' }]}
           value={view}
           onChange={setView}
           layoutId="ledger-view"
         />
-      </div>
+      </motion.div>
 
       {/* 流水 */}
       {view === 'list' && (
-      <section className="mt-5 space-y-4">
+      <motion.section {...riseIn(5)} className="mt-5 space-y-4">
         {/* 月份导航 + 当月收支小结 */}
         <div className="flex items-center justify-between gap-2">
           <button
@@ -564,8 +577,12 @@ export const Ledger = () => {
             {ledgerEntries.length === 0 ? '还没有记录，记一笔开始吧。' : '这个月还没有记录。'}
           </div>
         )}
-        {monthGrouped.map(([date, entries]) => (
-          <div key={date}>
+        {monthGrouped.map(([date, entries], gi) => (
+          <motion.div
+            key={date}
+            initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.04 + gi * 0.05, type: 'spring', stiffness: 380, damping: 30 }}
+          >
             <div className="flex items-baseline gap-1.5 mb-1 px-1">
               <span className="text-xs font-semibold text-gray-500 dark:text-gray-400">{ledgerDateLabel(date)}</span>
               <span className="text-xs text-gray-300 dark:text-gray-600">{weekdayCN(date)}</span>
@@ -573,9 +590,9 @@ export const Ledger = () => {
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm divide-y divide-gray-50 dark:divide-gray-700/40">
               {entries.map(e => <LedgerRow key={e.id} entry={e} $={$} onClick={() => setDeleteTarget(e)} />)}
             </div>
-          </div>
+          </motion.div>
         ))}
-      </section>
+      </motion.section>
       )}
 
       {view === 'stats' && <div className="mt-4"><LedgerStats /></div>}
