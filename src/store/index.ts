@@ -6,7 +6,7 @@ import { db } from '@/db';
 import { v4 as uuidv4 } from 'uuid';
 import { calcMaxStreak } from '@/utils/streak';
 import { computeAndSchedule, type NotifSnapshot } from '@/utils/notifications';
-import { isGrowthCategory } from '@/utils/ledgerFormat';
+import { isGrowthCategory, cycleRangeForKey } from '@/utils/ledgerFormat';
 import { resolveProvider } from '@/utils/aiProviders';
 import { chatComplete, getAIConfig } from '@/utils/aiClient';
 import {
@@ -202,7 +202,7 @@ interface AppState {
   createUser: (name: string, attrNames?: Partial<import('@/types').AttributeNames>, blessingAttribute?: AttributeId) => Promise<void>;
   updateUser: (patch: Partial<Pick<User, 'name' | 'avatarDataUrl'>>) => Promise<void>;
   setTheme: (theme: ThemeType) => Promise<void>;
-  addActivity: (description: string, points: Record<string, number>, method: 'local' | 'todo' | 'battle', options?: { important?: boolean; date?: Date; category?: Activity['category'] }) => Promise<{ unlockHints: { achievements: number; skills: number } }>;
+  addActivity: (description: string, points: Record<string, number>, method: 'local' | 'todo' | 'battle', options?: { important?: boolean; date?: Date; category?: Activity['category'] }) => Promise<{ unlockHints: { achievements: number; skills: number }; activityId: string }>;
   updateAttribute: (attributeId: string, points: number) => Promise<void>;
   unlockAchievement: (achievementId: string) => Promise<void>;
   unlockSkill: (skillId: string) => Promise<void>;
@@ -338,8 +338,10 @@ interface AppState {
   getMonthExpense: (period?: string) => number;
   getMonthIncome: (period?: string) => number;
   getBudget: (period?: string) => Budget | undefined;
+  getPeriodExpense: (periodKey: string) => number;
+  getPeriodIncome: (periodKey: string) => number;
   getAdjustCountThisMonth: () => number;
-  earnLedgerSp: (amount: number, bonus?: boolean) => Promise<void>;
+  earnLedgerSp: (amount: number, tier?: 'regular' | 'bonus' | 'flat') => Promise<number>;
   rewardForLedgerEntry: (entry: LedgerEntry, opts?: { attribute?: AttributeId; attrPoints?: number; evalWorth?: SpendWorth }) => Promise<void>;
   // F5 资产板块
   assets: LedgerAsset[];
@@ -478,10 +480,10 @@ export const DEFAULT_NOTIF_SLOTS: NotifSlot[] = [
 ];
 
 /** F5 记账奖励日封顶状态：锚日不是今天则视作 {0,0}（自然跨日重置）。 */
-function ledgerDailyState(s: Settings, today: string): { sp: number; attr: number } {
+function ledgerDailyState(s: Settings, today: string): { sp: number; attr: number; bonus: number } {
   return s.ledgerRewardDate === today
-    ? { sp: s.ledgerSpToday ?? 0, attr: s.ledgerAttrToday ?? 0 }
-    : { sp: 0, attr: 0 };
+    ? { sp: s.ledgerSpToday ?? 0, attr: s.ledgerAttrToday ?? 0, bonus: s.ledgerBonusSpToday ?? 0 }
+    : { sp: 0, attr: 0, bonus: 0 };
 }
 
 const DEFAULT_SETTINGS: Settings = {
@@ -740,7 +742,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   addActivity: async (description: string, points: Record<string, number>, method: 'local' | 'todo' | 'battle', options?: { important?: boolean; date?: Date; category?: Activity['category'] }) => {
     const { user, dailyDivination, settings } = get();
-    if (!user) return { unlockHints: { achievements: 0, skills: 0 } };
+    if (!user) return { unlockHints: { achievements: 0, skills: 0 }, activityId: '' };
 
     const adjustedPoints = { ...points };
     const levelUps: Array<{ attribute: AttributeId; fromLevel: number; toLevel: number }> = [];
@@ -958,6 +960,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         achievements: matchedAchievements.length,
         skills: matchedSkills.length,
       },
+      activityId: activity.id,
     };
   },
 
@@ -1684,6 +1687,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     await db.confidantEvents.clear();
     await db.counselSessions.clear();
     await db.counselArchives.clear();
+    await db.ledgerEntries.clear();
+    await db.budgets.clear();
+    await db.assets.clear();
 
     set({
       user: null,
@@ -1710,6 +1716,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       confidantEvents: [],
       counselSession: null,
       counselArchives: [],
+      ledgerEntries: [],
+      budgets: [],
+      assets: [],
     });
   },
 
@@ -2929,6 +2938,22 @@ ${activityLines || '（本期暂无记录）'}
   },
 
   deleteLedgerEntry: async (id) => {
+    const entry = get().ledgerEntries.find(e => e.id === id);
+    // 回收落账时发放的奖励，封堵「增→删」刷分（H1/M3）
+    if (entry?.reward) {
+      if (entry.reward.attr) {
+        try { await get().deleteActivity(entry.reward.attr.activityId); } catch { /* 活动可能已被手动删除 */ }
+      }
+      if (entry.reward.sp > 0 && get().battleState) {
+        const bs = get().battleState!;
+        await get().saveBattleState({
+          ...bs,
+          sp: Math.max(0, bs.sp - entry.reward.sp),
+          totalSpEarned: Math.max(0, bs.totalSpEarned - entry.reward.sp),
+        });
+      }
+      // 注意：不回退当日封顶计数（ledgerSpToday 等），使同日反复「增→删」仍被 20/日 上限挡住。
+    }
     await db.ledgerEntries.delete(id);
     set({ ledgerEntries: get().ledgerEntries.filter(e => e.id !== id) });
   },
@@ -2981,6 +3006,22 @@ ${activityLines || '（本期暂无记录）'}
       .reduce((s, e) => s + e.amount, 0);
   },
 
+  // 按「周期」（日历月或发薪日周期，依 settings.ledgerPayCycleEnabled）统计支出/收入（M4）
+  getPeriodExpense: (periodKey) => {
+    const s = get().settings;
+    const [start, end] = cycleRangeForKey(!!s.ledgerPayCycleEnabled, s.ledgerResetDay ?? 1, periodKey);
+    return get().ledgerEntries
+      .filter(e => e.direction === 'expense' && e.date >= start && e.date <= end)
+      .reduce((a, e) => a + e.amount, 0);
+  },
+  getPeriodIncome: (periodKey) => {
+    const s = get().settings;
+    const [start, end] = cycleRangeForKey(!!s.ledgerPayCycleEnabled, s.ledgerResetDay ?? 1, periodKey);
+    return get().ledgerEntries
+      .filter(e => e.date >= start && e.date <= end && (e.direction === 'income' || (e.direction === 'adjust' && e.amount > 0)))
+      .reduce((a, e) => a + e.amount, 0);
+  },
+
   getBudget: (period) => {
     const p = period ?? toLocalDateKey().slice(0, 7);
     return get().budgets.find(b => b.period === p);
@@ -2993,18 +3034,24 @@ ${activityLines || '（本期暂无记录）'}
 
   // 发放记账 SP：bonus=true（劳动/值得/月末）不占每日封顶；普通每笔受 20/日封顶。
   // 无 battleState（未启用战场）→ SP 无处可放，静默跳过。
-  earnLedgerSp: async (amount, bonus = false) => {
-    if (!get().battleState || amount <= 0) return;
+  earnLedgerSp: async (amount, tier = 'regular') => {
+    if (!get().battleState || amount <= 0) return 0;
     const today = toLocalDateKey();
     const st = ledgerDailyState(get().settings, today);
-    const grant = bonus ? amount : Math.min(amount, Math.max(0, 20 - st.sp));
-    if (grant <= 0) return;
+    // regular（每笔 +2）受 20/日；bonus（劳动/值得）另设 20/日封顶；flat（月末奖励）不封顶、不计数
+    const grant = tier === 'regular' ? Math.min(amount, Math.max(0, 20 - st.sp))
+                : tier === 'bonus' ? Math.min(amount, Math.max(0, 20 - st.bonus))
+                : amount;
+    if (grant <= 0) return 0;
+    const before = get().battleState?.sp ?? 0;
     await get().earnSP(grant);
-    await get().updateSettings({
-      ledgerRewardDate: today,
-      ledgerSpToday: st.sp + (bonus ? 0 : grant),
-      ledgerAttrToday: st.attr,
-    });
+    const added = (get().battleState?.sp ?? 0) - before; // 实发（含战场倍率）
+    if (tier === 'regular') {
+      await get().updateSettings({ ledgerRewardDate: today, ledgerSpToday: st.sp + grant, ledgerAttrToday: st.attr, ledgerBonusSpToday: st.bonus });
+    } else if (tier === 'bonus') {
+      await get().updateSettings({ ledgerRewardDate: today, ledgerSpToday: st.sp, ledgerAttrToday: st.attr, ledgerBonusSpToday: st.bonus + grant });
+    }
+    return added;
   },
 
   // 一笔记账落账后的奖励编排（saveDraft 调用，仅创建时一次）：
@@ -3012,22 +3059,30 @@ ${activityLines || '（本期暂无记录）'}
   //   · 消费评估「值得」+1 SP。adjust（对账）不奖励。守「不奖励花钱」：必要/欲望/冲动只拿记账 SP。
   rewardForLedgerEntry: async (entry, opts) => {
     if (entry.direction === 'adjust') return;
-    await get().earnLedgerSp(2, false);
+    let sp = await get().earnLedgerSp(2, 'regular');
+    let attr: NonNullable<LedgerEntry['reward']>['attr'];
     if (entry.direction === 'income') {
-      if (entry.incomeType === 'labor') await get().earnLedgerSp(10, true);
-      return;
-    }
-    // expense
-    if (isGrowthCategory(entry.type) && opts?.attribute && (opts.attrPoints ?? 0) > 0) {
-      const today = toLocalDateKey();
-      const st = ledgerDailyState(get().settings, today);
-      const grant = Math.min(opts.attrPoints as number, Math.max(0, 2 - st.attr));
-      if (grant > 0) {
-        await get().addActivity(`心相投资 · ${entry.note || '自我投资'}`, { [opts.attribute]: grant }, 'local', { category: 'ledger' });
-        await get().updateSettings({ ledgerRewardDate: today, ledgerSpToday: st.sp, ledgerAttrToday: st.attr + grant });
+      if (entry.incomeType === 'labor') sp += await get().earnLedgerSp(10, 'bonus');
+    } else {
+      // expense：成长类目自选属性 +1~2（日封顶 2）
+      if (isGrowthCategory(entry.type) && opts?.attribute && (opts.attrPoints ?? 0) > 0) {
+        const today = toLocalDateKey();
+        const st = ledgerDailyState(get().settings, today);
+        const grant = Math.min(opts.attrPoints as number, Math.max(0, 2 - st.attr));
+        if (grant > 0) {
+          const { activityId } = await get().addActivity(`心相投资 · ${entry.note || '自我投资'}`, { [opts.attribute]: grant }, 'local', { category: 'ledger' });
+          await get().updateSettings({ ledgerRewardDate: today, ledgerSpToday: st.sp, ledgerAttrToday: st.attr + grant, ledgerBonusSpToday: st.bonus });
+          attr = { activityId, attribute: opts.attribute, points: grant };
+        }
       }
+      if (opts?.evalWorth === 'worth') sp += await get().earnLedgerSp(1, 'bonus');
     }
-    if (opts?.evalWorth === 'worth') await get().earnLedgerSp(1, true);
+    // 记录实发奖励，供删除时精确回收（H1/M3）
+    if (sp > 0 || attr) {
+      const reward = { sp, ...(attr ? { attr } : {}) };
+      await db.ledgerEntries.update(entry.id, { reward });
+      set({ ledgerEntries: get().ledgerEntries.map(e => (e.id === entry.id ? { ...e, reward } : e)) });
+    }
   },
 
   // ── F5 资产板块 ──
@@ -3055,19 +3110,22 @@ ${activityLines || '（本期暂无记录）'}
   },
 
   getSavings: () => {
-    const cur = toLocalDateKey().slice(0, 7);
+    const st = get().settings;
+    const todayKey = toLocalDateKey();
+    // 仅统计「已完整结束」的周期（日历月或发薪日周期）；周期内省下 = 预算 − 该周期支出
     return get().budgets
-      .filter(b => b.period < cur && b.monthlyLimit != null)
-      .reduce((s, b) => s + Math.max(0, (b.monthlyLimit ?? 0) - get().getMonthExpense(b.period)), 0);
+      .filter(b => b.monthlyLimit != null && cycleRangeForKey(!!st.ledgerPayCycleEnabled, st.ledgerResetDay ?? 1, b.period)[1] < todayKey)
+      .reduce((acc, b) => acc + Math.max(0, (b.monthlyLimit ?? 0) - get().getPeriodExpense(b.period)), 0);
   },
 
   claimLedgerBudgetBonus: async (period) => {
     const s = get().settings;
     if ((s.ledgerBudgetBonusMonths ?? []).includes(period)) return false;
-    if (period >= toLocalDateKey().slice(0, 7)) return false; // 仅已完成的月（过去月）发放
+    if (cycleRangeForKey(!!s.ledgerPayCycleEnabled, s.ledgerResetDay ?? 1, period)[1] >= toLocalDateKey()) return false; // 仅已完整结束的周期发放
     const budget = get().getBudget(period)?.monthlyLimit;
-    if (budget == null || get().getMonthExpense(period) > budget) return false;
-    await get().earnLedgerSp(10, true);
+    if (budget == null || get().getPeriodExpense(period) > budget) return false;
+    const granted = await get().earnLedgerSp(10, 'flat');
+    if (granted <= 0) return false; // 无战场→SP 没发，不烧名额、不弹横幅（M1）
     await get().updateSettings({ ledgerBudgetBonusMonths: [...(s.ledgerBudgetBonusMonths ?? []), period] });
     return true;
   },
@@ -3075,12 +3133,13 @@ ${activityLines || '（本期暂无记录）'}
   claimLedgerChallengeBonus: async (period) => {
     const s = get().settings;
     if ((s.ledgerChallengeWonMonths ?? []).includes(period)) return null;
-    if (period >= toLocalDateKey().slice(0, 7)) return null; // 仅已完成的过去月
+    if (cycleRangeForKey(!!s.ledgerPayCycleEnabled, s.ledgerResetDay ?? 1, period)[1] >= toLocalDateKey()) return null; // 仅已完整结束的周期
     const b = get().getBudget(period);
     if (b?.monthlyLimit == null || b.savingsGoal == null || b.savingsGoal <= 0) return null;
-    const saved = b.monthlyLimit - get().getMonthExpense(period);
+    const saved = b.monthlyLimit - get().getPeriodExpense(period);
     if (saved < b.savingsGoal) return null; // 未达成挑战
-    await get().earnLedgerSp(10, true);
+    const granted = await get().earnLedgerSp(10, 'flat');
+    if (granted <= 0) return null; // 无战场→不发不烧名额（M1）
     await get().updateSettings({ ledgerChallengeWonMonths: [...(s.ledgerChallengeWonMonths ?? []), period] });
     return saved;
   },
