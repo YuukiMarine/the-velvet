@@ -46,7 +46,7 @@ export interface Activity {
   };
   method: 'local' | 'todo' | 'battle';
   important?: boolean;
-  category?: 'skill_unlock' | 'achievement_unlock' | 'level_up' | 'weekly_goal' | 'countercurrent' | 'shadow_defeat' | 'confidant' | 'calling_card_clear' | 'ledger';
+  category?: 'skill_unlock' | 'achievement_unlock' | 'level_up' | 'weekly_goal' | 'countercurrent' | 'shadow_defeat' | 'confidant' | 'calling_card_clear' | 'ledger' | 'terminal_clear';
   /** 同伴互动记录的关联同伴 id（category === 'confidant' 时填充） */
   confidantId?: string;
   levelUps?: Array<{
@@ -54,6 +54,30 @@ export interface Activity {
     fromLevel: number;
     toLevel: number;
   }>;
+}
+
+// ── F3 无气力症治疗终端 · 愿望清单 ──
+export type WishStatus = 'active' | 'done' | 'archived';
+
+/**
+ * 愿望清单条目。parentId 为空 → 终极目标（最想成为的人 / 最想做到的事）；
+ * 否则为某终极目标下的子愿望（可手动输入，或由 AI 拆分而来）。
+ */
+export interface Wish {
+  id: string;
+  /** 所属终极目标 id；为空表示自身即终极目标 */
+  parentId?: string;
+  title: string;
+  note?: string;
+  /** 轻绑定属性：完成该愿望派生的 24h 终端任务时，加点落到此属性（未绑定则归「勇气」） */
+  attribute?: AttributeId;
+  /** 可选关联的 arcana（同伴）id */
+  arcanaId?: string;
+  status: WishStatus;
+  /** 子愿望来源：手动输入 / AI 拆分 */
+  source: 'manual' | 'ai';
+  createdAt: Date;
+  archivedAt?: Date;
 }
 
 export type TodoFrequency = 'single' | 'count';
@@ -292,6 +316,9 @@ export interface Settings {
   ledgerChallengeWonMonths?: string[];
   /** F5 资产页「存款」条目是否隐藏（默认显示）。 */
   ledgerSavingsHidden?: boolean;
+  // ── F3 无气力症治疗终端 ──
+  /** 治疗终端总开关（默认关）：开后首页出现「终端」入口。常驻应急工具，不 gating。 */
+  terminalEnabled?: boolean;
   // AI 总结功能配置
   summaryApiProvider?: 'openai' | 'deepseek' | 'kimi' | 'gemini' | 'minimax';
   summaryApiKey?: string;

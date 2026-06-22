@@ -1,0 +1,561 @@
+/**
+ * Terminal — F3 无气力症治疗终端（Batch 1：愿望清单 + 仪式入口骨架）。
+ *
+ * 本批范围：
+ *   · 首次进入且愿望为空 → 仪式化引导，建立第一个「终极目标」。
+ *   · 愿望清单管理：终极目标 + 子愿望（手动输入 / AI 拆分），轻绑定属性，完成 / 删除。
+ *   · 主题差分：按当前主题色给出频道名（蓝=匿名讨论板 / 黄=TV 特别节目 / 红·其他=怪盗 channel）。
+ *
+ * 下一批（Batch 2/3）：短路决策 + 拆解为「最小第一步」→ 24h 限时任务（复用 CallingCard）→
+ * 完成叙事 + 弹幕。本页底部以占位卡预告其位置。
+ */
+import { useMemo, useState } from 'react';
+import { motion } from 'motion/react';
+import { useAppStore } from '@/store';
+import { PageTitle } from '@/components/PageTitle';
+import { BackButton } from '@/components/BackButton';
+import { SheetModal } from '@/components/SheetModal';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { getAIConfig } from '@/utils/aiClient';
+import type { AttributeId, ThemeType, Wish } from '@/types';
+
+const ATTR_IDS: AttributeId[] = ['knowledge', 'guts', 'dexterity', 'kindness', 'charm'];
+
+/** 主题差分：终端「频道」皮肤文案（完整皮肤在 Batch 2，此处先给频道名 + 基调）。 */
+const channelByTheme = (t?: ThemeType) =>
+  t === 'blue'
+    ? { label: '匿名讨论板', tagline: '低语 · 匿名 · 彼此扶持' }
+    : t === 'yellow'
+      ? { label: 'TV 特别节目', tagline: '明亮 · 节目化 · 为你打气' }
+      : { label: '怪盗 channel', tagline: '改变心意 · 热血宣言' }; // 红 / 粉 / 自定义
+
+interface EditorState {
+  open: boolean;
+  mode: 'goal' | 'sub';
+  parentId?: string;
+  editId?: string;
+  title: string;
+  note: string;
+  attribute?: AttributeId;
+}
+const closedEditor: EditorState = { open: false, mode: 'goal', title: '', note: '' };
+
+interface AIState {
+  open: boolean;
+  parentId: string;
+  parentTitle: string;
+  loading: boolean;
+  error?: string;
+  suggestions: { text: string; picked: boolean }[];
+}
+const closedAI: AIState = { open: false, parentId: '', parentTitle: '', loading: false, suggestions: [] };
+
+export const Terminal = () => {
+  const { wishes, addWish, saveWish, deleteWish, setWishStatus, decomposeWishAI, settings, user, setCurrentPage } =
+    useAppStore();
+
+  const channel = channelByTheme(user?.theme);
+  const hasAI = !!getAIConfig(settings);
+  const attrName = (id: AttributeId) => settings.attributeNames?.[id] ?? id;
+
+  const goals = useMemo(
+    () => wishes.filter((w) => !w.parentId && w.status !== 'archived'),
+    [wishes],
+  );
+  const subsByParent = useMemo(() => {
+    const m: Record<string, Wish[]> = {};
+    for (const w of wishes) {
+      if (w.parentId && w.status !== 'archived') (m[w.parentId] ??= []).push(w);
+    }
+    return m;
+  }, [wishes]);
+
+  const [editor, setEditor] = useState<EditorState>(closedEditor);
+  const [ai, setAi] = useState<AIState>(closedAI);
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [deleteTarget, setDeleteTarget] = useState<Wish | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  // ── 编辑器（新建 / 编辑，终极目标与子愿望共用） ──
+  const openGoalEditor = () => setEditor({ ...closedEditor, open: true, mode: 'goal' });
+  const openSubEditor = (parentId: string) =>
+    setEditor({ ...closedEditor, open: true, mode: 'sub', parentId });
+  const openEdit = (w: Wish) =>
+    setEditor({
+      open: true,
+      mode: w.parentId ? 'sub' : 'goal',
+      parentId: w.parentId,
+      editId: w.id,
+      title: w.title,
+      note: w.note ?? '',
+      attribute: w.attribute,
+    });
+
+  const saveEditor = async () => {
+    const title = editor.title.trim();
+    if (!title) return;
+    setBusy(true);
+    try {
+      if (editor.editId) {
+        const orig = wishes.find((w) => w.id === editor.editId);
+        if (orig) {
+          await saveWish({
+            ...orig,
+            title,
+            note: editor.note.trim() || undefined,
+            attribute: editor.attribute,
+          });
+        }
+      } else {
+        await addWish({
+          title,
+          parentId: editor.parentId,
+          note: editor.note.trim() || undefined,
+          attribute: editor.attribute,
+          source: 'manual',
+        });
+      }
+      setEditor(closedEditor);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // ── AI 拆分 ──
+  const runAI = async (goal: Wish) => {
+    setAi({ open: true, parentId: goal.id, parentTitle: goal.title, loading: true, suggestions: [] });
+    try {
+      const list = await decomposeWishAI(goal.title, goal.note);
+      if (list.length === 0) {
+        setAi((s) => ({ ...s, loading: false, error: 'AI 没有给出可用的拆分，换个说法或手动添加吧' }));
+        return;
+      }
+      setAi((s) => ({ ...s, loading: false, suggestions: list.map((text) => ({ text, picked: true })) }));
+    } catch (e) {
+      setAi((s) => ({ ...s, loading: false, error: e instanceof Error ? e.message : 'AI 拆分失败' }));
+    }
+  };
+  const addPicked = async () => {
+    const picked = ai.suggestions.filter((s) => s.picked);
+    if (picked.length === 0) {
+      setAi(closedAI);
+      return;
+    }
+    setBusy(true);
+    try {
+      for (const s of picked) {
+        await addWish({ title: s.text, parentId: ai.parentId, source: 'ai' });
+      }
+      setAi(closedAI);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    setBusy(true);
+    try {
+      await deleteWish(deleteTarget.id);
+      setDeleteTarget(null);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const toggleCollapse = (id: string) =>
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+
+  const isEmpty = goals.length === 0;
+
+  return (
+    <div className="mx-auto max-w-2xl px-4 pb-24 pt-3">
+      {/* 顶栏 */}
+      <div className="mb-4 flex items-center gap-2">
+        <BackButton onClick={() => setCurrentPage('dashboard')} />
+        <PageTitle title="治疗终端" en="Terminal" enOffset={{ right: -2 }} />
+      </div>
+
+      {/* 仪式入口带：频道差分 + 振作语 */}
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="mb-5 overflow-hidden rounded-2xl border border-primary/30 bg-primary/5 p-4 dark:bg-primary/10"
+      >
+        <div className="mb-1 flex items-center gap-2">
+          <span className="inline-flex h-2 w-2 animate-pulse rounded-full bg-primary" aria-hidden />
+          <span className="text-xs font-semibold tracking-wide text-primary">{channel.label}</span>
+          <span className="text-[11px] text-gray-400 dark:text-gray-500">{channel.tagline}</span>
+        </div>
+        <p className="text-sm leading-relaxed text-gray-600 dark:text-gray-300">
+          如果你今天很困扰、甚至失去了记录的勇气——可以来这里看看。
+          先把「最想成为的人 / 最想做到的事」放进来，剩下的，让终端替你拆。
+        </p>
+      </motion.div>
+
+      {isEmpty ? (
+        /* 首次仪式引导：愿望清单为空 */
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="rounded-3xl border border-dashed border-primary/40 px-6 py-10 text-center"
+        >
+          <div className="mb-3 text-4xl">✦</div>
+          <h3 className="mb-2 text-lg font-bold text-gray-900 dark:text-white">
+            你最想成为的人，是什么样子？
+          </h3>
+          <p className="mx-auto mb-6 max-w-sm text-sm leading-relaxed text-gray-500 dark:text-gray-400">
+            写下一个「终极目标」——不必宏大，只要是你心里真正向往的方向。
+            之后可以手动、或让 AI 把它拆成够得着的小愿望。
+          </p>
+          <motion.button
+            type="button"
+            whileTap={{ scale: 0.96 }}
+            onClick={openGoalEditor}
+            className="rounded-full bg-primary px-6 py-2.5 text-sm font-semibold text-white shadow-lg shadow-primary/30"
+          >
+            许下第一个愿望
+          </motion.button>
+        </motion.div>
+      ) : (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400">愿望清单</h3>
+            <motion.button
+              type="button"
+              whileTap={{ scale: 0.96 }}
+              onClick={openGoalEditor}
+              className="rounded-full border border-primary/40 px-3 py-1 text-xs font-medium text-primary"
+            >
+              + 新终极目标
+            </motion.button>
+          </div>
+
+          {goals.map((goal) => {
+            const subs = subsByParent[goal.id] ?? [];
+            const isCollapsed = collapsed.has(goal.id);
+            return (
+              <motion.div
+                key={goal.id}
+                layout
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900"
+              >
+                {/* 终极目标头 */}
+                <div className="flex items-start gap-2">
+                  <button
+                    type="button"
+                    onClick={() => toggleCollapse(goal.id)}
+                    className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-gray-400 hover:bg-black/5 dark:hover:bg-white/10"
+                    aria-label={isCollapsed ? '展开' : '收起'}
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      className={`h-4 w-4 transition-transform ${isCollapsed ? '' : 'rotate-90'}`}
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth={2.4}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M9 6l6 6-6 6" />
+                    </svg>
+                  </button>
+                  <div className="min-w-0 flex-1">
+                    <button
+                      type="button"
+                      onClick={() => openEdit(goal)}
+                      className={`block text-left text-base font-bold ${
+                        goal.status === 'done'
+                          ? 'text-gray-400 line-through dark:text-gray-600'
+                          : 'text-gray-900 dark:text-white'
+                      }`}
+                    >
+                      {goal.title}
+                    </button>
+                    {goal.note && (
+                      <p className="mt-0.5 text-xs text-gray-400 dark:text-gray-500">{goal.note}</p>
+                    )}
+                    <div className="mt-0.5 text-[11px] text-gray-400 dark:text-gray-500">
+                      {subs.length > 0 ? `${subs.filter((s) => s.status === 'done').length}/${subs.length} 子愿望` : '尚无子愿望'}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setDeleteTarget(goal)}
+                    className="shrink-0 rounded-md p-1 text-gray-300 hover:bg-black/5 hover:text-red-400 dark:text-gray-600 dark:hover:bg-white/10"
+                    aria-label="删除终极目标"
+                  >
+                    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m2 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6" />
+                    </svg>
+                  </button>
+                </div>
+
+                {!isCollapsed && (
+                  <div className="mt-3 space-y-1.5 pl-8">
+                    {subs.map((sub) => (
+                      <div key={sub.id} className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setWishStatus(sub.id, sub.status === 'done' ? 'active' : 'done')}
+                          className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition ${
+                            sub.status === 'done'
+                              ? 'border-primary bg-primary text-white'
+                              : 'border-gray-300 text-transparent dark:border-gray-600'
+                          }`}
+                          aria-label={sub.status === 'done' ? '标记未完成' : '标记完成'}
+                        >
+                          <svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth={3.2} strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M20 6L9 17l-5-5" />
+                          </svg>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openEdit(sub)}
+                          className={`min-w-0 flex-1 truncate text-left text-sm ${
+                            sub.status === 'done'
+                              ? 'text-gray-400 line-through dark:text-gray-600'
+                              : 'text-gray-700 dark:text-gray-200'
+                          }`}
+                        >
+                          {sub.title}
+                          {sub.attribute && (
+                            <span className="ml-1.5 rounded bg-primary/10 px-1 py-0.5 text-[10px] text-primary">
+                              {attrName(sub.attribute)}
+                            </span>
+                          )}
+                          {sub.source === 'ai' && (
+                            <span className="ml-1 text-[10px] text-gray-300 dark:text-gray-600">AI</span>
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setDeleteTarget(sub)}
+                          className="shrink-0 rounded p-1 text-gray-300 hover:text-red-400 dark:text-gray-600"
+                          aria-label="删除子愿望"
+                        >
+                          <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M18 6L6 18M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </div>
+                    ))}
+
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => openSubEditor(goal.id)}
+                        className="rounded-full border border-gray-200 px-3 py-1 text-xs text-gray-500 hover:border-primary/40 hover:text-primary dark:border-gray-700 dark:text-gray-400"
+                      >
+                        + 子愿望
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => runAI(goal)}
+                        className="rounded-full border border-primary/30 px-3 py-1 text-xs font-medium text-primary disabled:opacity-50"
+                      >
+                        ✦ AI 拆分{hasAI ? '' : '（未配置）'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </motion.div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* 短路决策占位：预告下一批的位置 */}
+      <div className="mt-6 rounded-2xl border border-dashed border-gray-200 px-4 py-5 text-center dark:border-gray-700">
+        <div className="mb-1 text-sm font-semibold text-gray-400 dark:text-gray-500">短路决策 · 即将抵达</div>
+        <p className="text-xs leading-relaxed text-gray-400 dark:text-gray-500">
+          当你被「今天该做什么」压垮时，终端会从愿望清单与未完成待办里替你拣一件，
+          拆到 5 分钟内能迈出的第一步，落成一张 24h 限时任务。
+        </p>
+      </div>
+
+      {/* 愿望编辑器 */}
+      <SheetModal
+        isOpen={editor.open}
+        onClose={() => setEditor(closedEditor)}
+        position="center"
+        busy={busy}
+        title={
+          editor.editId
+            ? editor.mode === 'goal'
+              ? '编辑终极目标'
+              : '编辑子愿望'
+            : editor.mode === 'goal'
+              ? '新的终极目标'
+              : '新的子愿望'
+        }
+        footer={
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setEditor(closedEditor)}
+              className="flex-1 rounded-xl border border-gray-200 py-2.5 text-sm font-medium text-gray-600 dark:border-gray-700 dark:text-gray-300"
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              onClick={saveEditor}
+              disabled={busy || !editor.title.trim()}
+              className="flex-1 rounded-xl bg-primary py-2.5 text-sm font-semibold text-white disabled:opacity-50"
+            >
+              保存
+            </button>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          <input
+            autoFocus
+            value={editor.title}
+            onChange={(e) => setEditor((s) => ({ ...s, title: e.target.value }))}
+            placeholder={editor.mode === 'goal' ? '我最想成为 / 做到的是…' : '一个够得着的小愿望…'}
+            className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm outline-none focus:border-primary dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+          />
+          <textarea
+            value={editor.note}
+            onChange={(e) => setEditor((s) => ({ ...s, note: e.target.value }))}
+            placeholder="补充说明（可选）"
+            rows={2}
+            className="w-full resize-none rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm outline-none focus:border-primary dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+          />
+          <div>
+            <div className="mb-1.5 text-xs text-gray-400 dark:text-gray-500">
+              绑定属性（可选）· 完成它派生的限时任务时加点落到这里
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              <button
+                type="button"
+                onClick={() => setEditor((s) => ({ ...s, attribute: undefined }))}
+                className={`rounded-full px-3 py-1 text-xs ${
+                  !editor.attribute
+                    ? 'bg-primary text-white'
+                    : 'border border-gray-200 text-gray-500 dark:border-gray-700 dark:text-gray-400'
+                }`}
+              >
+                不绑定
+              </button>
+              {ATTR_IDS.map((id) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setEditor((s) => ({ ...s, attribute: id }))}
+                  className={`rounded-full px-3 py-1 text-xs ${
+                    editor.attribute === id
+                      ? 'bg-primary text-white'
+                      : 'border border-gray-200 text-gray-500 dark:border-gray-700 dark:text-gray-400'
+                  }`}
+                >
+                  {attrName(id)}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </SheetModal>
+
+      {/* AI 拆分结果 */}
+      <SheetModal
+        isOpen={ai.open}
+        onClose={() => setAi(closedAI)}
+        position="center"
+        busy={busy}
+        title="AI 拆分子愿望"
+        footer={
+          ai.loading || ai.error ? undefined : (
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setAi(closedAI)}
+                className="flex-1 rounded-xl border border-gray-200 py-2.5 text-sm font-medium text-gray-600 dark:border-gray-700 dark:text-gray-300"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={addPicked}
+                disabled={busy}
+                className="flex-1 rounded-xl bg-primary py-2.5 text-sm font-semibold text-white disabled:opacity-50"
+              >
+                添加选中（{ai.suggestions.filter((s) => s.picked).length}）
+              </button>
+            </div>
+          )
+        }
+      >
+        <div className="mb-2 text-xs text-gray-400 dark:text-gray-500">
+          来自《{ai.parentTitle}》
+        </div>
+        {ai.loading ? (
+          <div className="flex items-center justify-center gap-2 py-8 text-sm text-gray-400">
+            <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+            正在拆分…
+          </div>
+        ) : ai.error ? (
+          <div className="py-6 text-center text-sm text-gray-500 dark:text-gray-400">{ai.error}</div>
+        ) : (
+          <div className="space-y-1.5">
+            {ai.suggestions.map((s, i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() =>
+                  setAi((prev) => ({
+                    ...prev,
+                    suggestions: prev.suggestions.map((x, j) => (j === i ? { ...x, picked: !x.picked } : x)),
+                  }))
+                }
+                className={`flex w-full items-center gap-2 rounded-xl border px-3 py-2.5 text-left text-sm transition ${
+                  s.picked
+                    ? 'border-primary/50 bg-primary/5 text-gray-900 dark:text-white'
+                    : 'border-gray-200 text-gray-400 dark:border-gray-700'
+                }`}
+              >
+                <span
+                  className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border-2 ${
+                    s.picked ? 'border-primary bg-primary text-white' : 'border-gray-300 dark:border-gray-600'
+                  }`}
+                >
+                  {s.picked && (
+                    <svg viewBox="0 0 24 24" className="h-2.5 w-2.5" fill="none" stroke="currentColor" strokeWidth={3.5} strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M20 6L9 17l-5-5" />
+                    </svg>
+                  )}
+                </span>
+                <span className="min-w-0 flex-1">{s.text}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </SheetModal>
+
+      {/* 删除确认 */}
+      <ConfirmDialog
+        isOpen={!!deleteTarget}
+        tone="danger"
+        title={deleteTarget?.parentId ? '删除这个子愿望？' : '删除这个终极目标？'}
+        description={
+          deleteTarget?.parentId
+            ? undefined
+            : '它名下的所有子愿望也会一并删除。'
+        }
+        confirmText="删除"
+        cancelText="取消"
+        busy={busy}
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteTarget(null)}
+      />
+    </div>
+  );
+};

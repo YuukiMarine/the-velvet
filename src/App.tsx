@@ -29,6 +29,8 @@ const Menu = lazy(() => import('@/pages/Menu').then(m => ({ default: m.Menu })))
 const Account = lazy(() => import('@/pages/Account').then(m => ({ default: m.Account })));
 // 心相记账页（F5）
 const Ledger = lazy(() => import('@/pages/Ledger').then(m => ({ default: m.Ledger })));
+// 无气力症治疗终端（F3）
+const Terminal = lazy(() => import('@/pages/Terminal').then(m => ({ default: m.Terminal })));
 import { BattleArena } from '@/components/battle/BattleArena';
 import { primeCurrentTheme } from '@/utils/feedback';
 import { BackgroundAnimation } from '@/components/BackgroundAnimation';
@@ -373,6 +375,8 @@ function App() {
         return <Suspense fallback={<div className="flex items-center justify-center h-64 text-gray-400">加载中…</div>}><Account /></Suspense>;
       case 'ledger':
         return <Suspense fallback={<div className="flex items-center justify-center h-64 text-gray-400">加载中…</div>}><Ledger /></Suspense>;
+      case 'terminal':
+        return <Suspense fallback={<div className="flex items-center justify-center h-64 text-gray-400">加载中…</div>}><Terminal /></Suspense>;
       default:
         return <Dashboard />;
     }

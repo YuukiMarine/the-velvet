@@ -1,5 +1,5 @@
 ﻿import { create } from 'zustand';
-import { User, Attribute, Activity, Achievement, Skill, Settings, ThemeType, AttributeId, AttributeNamesKey, Todo, TodoCompletion, PeriodSummary, SummaryPeriod, SummaryPromptPreset, WeeklyGoal, WeeklyGoalItem, Persona, Shadow, BattleState, BattleLogEntry, BattleAction, DailyDivination, LongReading, LongReadingFollowUp, Confidant, ConfidantEvent, ConfidantBuff, CounselSession, CounselMessage, CounselArchive, CallingCard, NotifSlot, LedgerEntry, Budget, SpendWorth, LedgerAsset } from '@/types';
+import { User, Attribute, Activity, Achievement, Skill, Settings, ThemeType, AttributeId, AttributeNamesKey, Todo, TodoCompletion, PeriodSummary, SummaryPeriod, SummaryPromptPreset, WeeklyGoal, WeeklyGoalItem, Persona, Shadow, BattleState, BattleLogEntry, BattleAction, DailyDivination, LongReading, LongReadingFollowUp, Confidant, ConfidantEvent, ConfidantBuff, CounselSession, CounselMessage, CounselArchive, CallingCard, NotifSlot, LedgerEntry, Budget, SpendWorth, LedgerAsset, Wish } from '@/types';
 import { TAROT_BY_ID } from '@/constants/tarot';
 import { summarizeCounsel, type CounselContext, type CounselConfidantBrief, type CounselRecentEvent } from '@/utils/counselAI';
 import { db } from '@/db';
@@ -270,6 +270,24 @@ interface AppState {
    * description 形如 "跨越了「{title}」"。同一张卡只允许写一次（ledgerWritten flag）。
    */
   writeCallingCardLedger: (id: string) => Promise<void>;
+
+  // ── F3 无气力症治疗终端 · 愿望清单 ──────────────────────
+  wishes: Wish[];
+  loadWishes: () => Promise<void>;
+  /** 新建 / 覆盖一条愿望（终极目标 parentId 空 / 子愿望带 parentId） */
+  saveWish: (wish: Wish) => Promise<void>;
+  /** 创建一条愿望（自动补 id/createdAt/status/source 默认值），返回新建对象 */
+  addWish: (input: { title: string; parentId?: string; note?: string; attribute?: AttributeId; arcanaId?: string; source?: 'manual' | 'ai' }) => Promise<Wish>;
+  /** 删除一条愿望；删除终极目标时连带删除其全部子愿望 */
+  deleteWish: (id: string) => Promise<void>;
+  /** 改愿望状态（active/done/archived）；done/archived 落 archivedAt */
+  setWishStatus: (id: string, status: Wish['status']) => Promise<void>;
+  /**
+   * AI 拆分：把一个终极目标拆成 3–5 个「可执行的子愿望」标题。
+   * 在线走 chatComplete；无 Key 抛错由调用方兜底（手动输入）。返回标题数组，由 UI 确认后再落库。
+   */
+  decomposeWishAI: (parentTitle: string, parentNote?: string) => Promise<string[]>;
+
   addTodo: (todo: Omit<Todo, 'id' | 'createdAt'>) => Promise<void>;
   updateTodo: (id: string, updates: Partial<Todo>) => Promise<void>;
   deleteTodo: (id: string) => Promise<void>;
@@ -525,6 +543,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   dailyDivination: null,
   longReadings: [],
   callingCards: [],
+  wishes: [],
   todos: [],
   todoCompletions: [],
   summaries: [],
@@ -586,6 +605,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       await get().loadCounsel();
       // F5 心相记账：载入流水与预算
       await get().loadLedger();
+      // F3 治疗终端：载入愿望清单
+      await get().loadWishes();
     } catch (error) {
       console.error('初始化应用失', error);
     }
@@ -1461,6 +1482,76 @@ export const useAppStore = create<AppState>((set, get) => ({
     await get().loadCallingCards();
   },
 
+  // ── F3 无气力症治疗终端 · 愿望清单 ──────────────────────
+  loadWishes: async () => {
+    const wishes = await db.wishes.orderBy('createdAt').toArray();
+    set({ wishes });
+  },
+
+  saveWish: async (wish: Wish) => {
+    await db.wishes.put(wish);
+    await get().loadWishes();
+  },
+
+  addWish: async (input) => {
+    const wish: Wish = {
+      id: uuidv4(),
+      parentId: input.parentId,
+      title: input.title.trim(),
+      note: input.note?.trim() || undefined,
+      attribute: input.attribute,
+      arcanaId: input.arcanaId,
+      status: 'active',
+      source: input.source ?? 'manual',
+      createdAt: new Date(),
+    };
+    await db.wishes.put(wish);
+    await get().loadWishes();
+    return wish;
+  },
+
+  deleteWish: async (id: string) => {
+    // 删终极目标 → 连带删其全部子愿望（避免孤儿子愿望）
+    const children = await db.wishes.where('parentId').equals(id).toArray();
+    if (children.length) await db.wishes.bulkDelete(children.map(c => c.id));
+    await db.wishes.delete(id);
+    await get().loadWishes();
+  },
+
+  setWishStatus: async (id: string, status: Wish['status']) => {
+    const w = await db.wishes.get(id);
+    if (!w) return;
+    await db.wishes.put({
+      ...w,
+      status,
+      archivedAt: status === 'active' ? undefined : (w.archivedAt ?? new Date()),
+    });
+    await get().loadWishes();
+  },
+
+  decomposeWishAI: async (parentTitle: string, parentNote?: string) => {
+    const cfg = getAIConfig(get().settings);
+    if (!cfg) throw new Error('未配置 AI，请在「设置 → AI 总结」填入 API 密钥，或手动添加子愿望');
+    const sys =
+      '你是温柔而务实的成长教练。把用户的人生大愿望，拆成 3–5 个「可执行的小目标（子愿望）」。' +
+      '每个子目标要具体、积极、像一件能着手去做的事，而不是空泛口号。' +
+      '只输出子目标本身，每行一个，不要编号、不要解释、不要额外标点。';
+    const usr = parentNote ? `大愿望：${parentTitle}\n补充：${parentNote}` : `大愿望：${parentTitle}`;
+    const content = await chatComplete(
+      cfg,
+      [
+        { role: 'system', content: sys },
+        { role: 'user', content: usr },
+      ],
+      { temperature: 0.8, maxTokens: 400 },
+    );
+    return content
+      .split('\n')
+      .map(l => l.replace(/^[\s\-*·•\d.、,，)）(（]+/, '').trim())
+      .filter(l => l.length > 0 && l.length <= 40)
+      .slice(0, 5);
+  },
+
   loadData: async () => {
     try {
       const attributes = await db.attributes.toArray();
@@ -1690,6 +1781,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     await db.ledgerEntries.clear();
     await db.budgets.clear();
     await db.assets.clear();
+    await db.wishes.clear();
 
     set({
       user: null,
@@ -1700,6 +1792,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       dailyDivination: null,
       longReadings: [],
       callingCards: [],
+      wishes: [],
       todos: [],
       todoCompletions: [],
       summaries: [],
