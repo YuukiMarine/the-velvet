@@ -1119,6 +1119,34 @@ export const Settings = () => {
                           />
                         </div>
                       )}
+                      {settings.ledgerEnabled !== false && (
+                        <div className="mt-2 flex items-center justify-between gap-3">
+                          <div className="flex-1">
+                            <span className="text-xs font-medium text-gray-700 dark:text-gray-300">发薪日周期</span>
+                            <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-0.5 leading-relaxed">预算 / 今日可花 / 规划窗按发薪日切分周期；关则按自然月。</p>
+                          </div>
+                          <Toggle
+                            checked={!!settings.ledgerPayCycleEnabled}
+                            onChange={(v) => updateSettings({ ledgerPayCycleEnabled: v })}
+                            aria-label="发薪日周期"
+                          />
+                        </div>
+                      )}
+                      {settings.ledgerEnabled !== false && settings.ledgerPayCycleEnabled && (
+                        <div className="mt-2 flex items-center justify-between gap-3">
+                          <span className="text-xs font-medium text-gray-700 dark:text-gray-300">发薪日</span>
+                          <select
+                            value={settings.ledgerResetDay ?? 1}
+                            onChange={(e) => updateSettings({ ledgerResetDay: Number(e.target.value) })}
+                            aria-label="发薪日"
+                            className="text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg px-2 py-1 text-gray-800 dark:text-white outline-none"
+                          >
+                            {Array.from({ length: 28 }, (_, i) => i + 1).map(d => (
+                              <option key={d} value={d}>每月 {d} 号</option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
                     </div>
 
                     {/* ── 属性名称 ───────────────────────────── */}

@@ -58,6 +58,41 @@ export function shiftMonth(period: string, delta: number): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
+const pad2 = (n: number) => String(n).padStart(2, '0');
+const dkey = (dt: Date) => `${dt.getFullYear()}-${pad2(dt.getMonth() + 1)}-${pad2(dt.getDate())}`;
+
+/**
+ * 当前记账周期。payCycle 关 / resetDay≤1 → 日历月；开 → 按发薪日(resetDay,2–28)切分的周期。
+ * key 取周期起始月 'YYYY-MM'（与日历月同格式，便于 budget / claims 复用同一键）。
+ */
+export function ledgerCycle(payCycle: boolean, resetDay: number, todayKey: string): { key: string; start: string; end: string; label: string; payCycle: boolean } {
+  const [y, m, d] = todayKey.split('-').map(Number);
+  if (!payCycle || resetDay <= 1) {
+    const key = `${y}-${pad2(m)}`;
+    return { key, start: `${key}-01`, end: `${key}-${pad2(new Date(y, m, 0).getDate())}`, label: monthLabel(key), payCycle: false };
+  }
+  const R = Math.min(28, resetDay);
+  const startD = d >= R ? new Date(y, m - 1, R) : new Date(y, m - 2, R);
+  const endD = new Date(startD.getFullYear(), startD.getMonth() + 1, R - 1);
+  return {
+    key: `${startD.getFullYear()}-${pad2(startD.getMonth() + 1)}`,
+    start: dkey(startD),
+    end: dkey(endD),
+    label: `${startD.getMonth() + 1}/${startD.getDate()} – ${endD.getMonth() + 1}/${endD.getDate()}`,
+    payCycle: true,
+  };
+}
+
+/** 给定周期 key（'YYYY-MM' = 周期起始月）→ 该周期日期区间 [start, end]（含端点）。 */
+export function cycleRangeForKey(payCycle: boolean, resetDay: number, periodKey: string): [string, string] {
+  const [y, m] = periodKey.split('-').map(Number);
+  if (!payCycle || resetDay <= 1) {
+    return [`${periodKey}-01`, `${periodKey}-${pad2(new Date(y, m, 0).getDate())}`];
+  }
+  const R = Math.min(28, resetDay);
+  return [dkey(new Date(y, m - 1, R)), dkey(new Date(y, m, R - 1))];
+}
+
 const WEEKDAYS_CN = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 /** 'YYYY-MM-DD' → 周几。 */
 export function weekdayCN(dateKey: string): string {

@@ -21,7 +21,7 @@ import { SegmentTabs } from '@/components/SegmentTabs';
 import { LedgerStats } from '@/components/ledger/LedgerStats';
 import { AssetBoard } from '@/components/ledger/AssetBoard';
 import { Donut } from '@/components/ledger/Donut';
-import { catMeta, CATEGORY_KEYS, isGrowthCategory, INCOME_META, sym, fmtMoney, fmtSigned, DEFAULT_CHANNELS, DEFAULT_INCOME_SOURCES, incomeTypeFromSource, shiftMonth, weekdayCN, monthLabel, ledgerDateLabel } from '@/utils/ledgerFormat';
+import { catMeta, CATEGORY_KEYS, isGrowthCategory, INCOME_META, sym, fmtMoney, fmtSigned, DEFAULT_CHANNELS, DEFAULT_INCOME_SOURCES, incomeTypeFromSource, shiftMonth, weekdayCN, monthLabel, ledgerDateLabel, ledgerCycle } from '@/utils/ledgerFormat';
 import type { LedgerEntry, LedgerExpenseType, AttributeId, SpendWorth, Settings } from '@/types';
 
 // ── 录入草稿 ──────────────────────────────────────────────
@@ -176,34 +176,40 @@ export const Ledger = () => {
   const {
     settings, ledgerEntries, setCurrentPage, updateSettings,
     addLedgerEntry, deleteLedgerEntry, setBudget, adjustTotalBalance, rewardForLedgerEntry, addAsset,
-    getTotalBalance, getMonthExpense, getMonthIncome, getBudget, getAdjustCountThisMonth, getSavings,
+    getTotalBalance, getPeriodExpense, getPeriodIncome, getBudget, getAdjustCountThisMonth, getSavings,
   } = useAppStore();
 
   const currency = settings.currency ?? 'CNY';
   const $ = sym(currency);
 
   const total = getTotalBalance();
-  const monthExpense = getMonthExpense();
+  // 当前周期：日历月（默认），或开启「发薪日周期」后按 ledgerResetDay 切分（M4）
+  const todayKey = toLocalDateKey();
+  const cycle = useMemo(
+    () => ledgerCycle(settings.ledgerPayCycleEnabled === true, settings.ledgerResetDay ?? 1, todayKey),
+    [settings.ledgerPayCycleEnabled, settings.ledgerResetDay, todayKey],
+  );
+  const monthExpense = getPeriodExpense(cycle.key);
   const savings = getSavings();
-  const budget = getBudget();
+  const budget = getBudget(cycle.key);
   const hasBudget = budget?.monthlyLimit != null;
   const lim = budget?.monthlyLimit ?? 0;
   const budgetLeft = lim - monthExpense;
   const over = hasBudget && budgetLeft < 0;
   const remainingRatio = hasBudget && lim > 0 ? budgetLeft / lim : 1;
   const ringColor = !hasBudget ? '#cbd5e1' : over ? '#ef4444' : remainingRatio <= 0.2 ? '#f59e0b' : '#10b981';
-  // 今日还可花 =（本月预算剩）/ 当月剩余天数
-  const nowDate = new Date();
-  const daysInMonth = new Date(nowDate.getFullYear(), nowDate.getMonth() + 1, 0).getDate();
-  const daysLeft = Math.max(1, daysInMonth - nowDate.getDate() + 1);
+  // 今日还可花 =（本周期预算剩）/ 周期剩余天数
+  const cdt = (k: string) => { const [yy, mm, dd] = k.split('-').map(Number); return new Date(yy, mm - 1, dd); };
+  const daysInMonth = Math.max(1, Math.round((cdt(cycle.end).getTime() - cdt(cycle.start).getTime()) / 86400000) + 1);
+  const daysLeft = Math.max(1, Math.round((cdt(cycle.end).getTime() - cdt(todayKey < cycle.end ? todayKey : cycle.end).getTime()) / 86400000) + 1);
   const todayLeft = hasBudget && budgetLeft > 0 ? budgetLeft / daysLeft : 0;
   // 开局引导：无任何流水时先提示设初始余额（避免首笔变负）
   const needsSetup = ledgerEntries.length === 0;
 
-  // 月余额（默认显示）= 本月预算 − 本月已花（流动资金，次月重算）
+  // 月余额（默认显示）= 本周期预算 − 本周期已花（流动资金，下期重算）
   const monthBalance = budgetLeft;
-  // 总余额资金构成（两段精确等于总余额）：本月支出先扣「本月收入」，花光再扣「结转」
-  const monthIncome = getMonthIncome();                  // 含本月对账转入
+  // 总余额资金构成（两段精确等于总余额）：本期支出先扣「本期收入」，花光再扣「结转」
+  const monthIncome = getPeriodIncome(cycle.key);                  // 含本期对账转入
   const opening = total - monthIncome + monthExpense;     // 月初结转（本月之前带入的真钱）
   const fundIncome = Math.max(0, monthIncome - monthExpense);                  // 收入剩余（先扣）
   const fundCarried = Math.max(0, opening - Math.max(0, monthExpense - monthIncome)); // 结转（后扣）
@@ -262,14 +268,9 @@ export const Ledger = () => {
   }, [monthGrouped]);
   const curMonth = toLocalDateKey().slice(0, 7);
 
-  // 发薪日 / 重置日 → 当前预算周期 id；进入新周期且未确认时弹「规划窗」
+  // 当前预算周期 id = cycle.key（日历月或发薪日周期）；进入新周期且未确认时弹「规划窗」
   const resetDay = settings.ledgerResetDay ?? 1;
-  const currentCycle = useMemo(() => {
-    const d = new Date();
-    const base = new Date(d.getFullYear(), d.getMonth(), 1);
-    if (d.getDate() < resetDay) base.setMonth(base.getMonth() - 1);
-    return `${base.getFullYear()}-${String(base.getMonth() + 1).padStart(2, '0')}`;
-  }, [resetDay]);
+  const currentCycle = cycle.key;
   useEffect(() => {
     if (settings.ledgerEnabled === false || ledgerEntries.length === 0) return; // 新用户走开局引导
     if (settings.ledgerCycleConfirmed === currentCycle) return;
@@ -393,8 +394,8 @@ export const Ledger = () => {
         {balanceView === 'month' ? (
           <Donut variant="hero" className="mx-auto" segments={[{ value: Math.max(0, Math.min(1, remainingRatio)), color: ringColor }]} total={1}>
             <button onClick={() => setBalanceView('total')} className="flex flex-col items-center focus:outline-none active:scale-95 transition-transform" aria-label="切换到总余额">
-              <span className="inline-flex items-center gap-1 text-xs text-gray-400 dark:text-gray-500">月余额 <span className="text-[10px] opacity-70">⇄ 总余额</span></span>
-              <span className="text-3xl font-black text-gray-900 dark:text-white tabular-nums mt-0.5">{fmtSigned(monthBalance, $)}</span>
+              <span className="inline-flex items-center gap-1 text-xs text-gray-400 dark:text-gray-500">{hasBudget ? '月余额' : '本月已花'} <span className="text-[10px] opacity-70">⇄ 总余额</span></span>
+              <span className="text-3xl font-black text-gray-900 dark:text-white tabular-nums mt-0.5">{hasBudget ? fmtSigned(monthBalance, $) : `${$}${fmtMoney(monthExpense)}`}</span>
               <span className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{hasBudget ? `预算 ${$}${fmtMoney(lim)}` : '未设预算'}</span>
             </button>
           </Donut>
@@ -406,6 +407,10 @@ export const Ledger = () => {
               {savings > 0 && <span className="text-xs font-semibold text-indigo-500 dark:text-indigo-400 mt-0.5">🐷 攒下 {$}{fmtMoney(savings)}</span>}
             </button>
           </Donut>
+        )}
+
+        {cycle.payCycle && (
+          <div className="text-center text-[11px] text-gray-400 dark:text-gray-500 -mt-1 mb-1.5">本周期 {cycle.label}</div>
         )}
 
         {balanceView === 'month' ? (
@@ -879,7 +884,7 @@ export const Ledger = () => {
         resetDay={resetDay}
         onResetDay={d => updateSettings({ ledgerResetDay: d })}
         onSave={async (monthly, savings) => {
-          const p = toLocalDateKey().slice(0, 7);
+          const p = cycle.key;
           const cur = getBudget(p);
           const patch: { monthlyLimit: number; savingsGoal?: number; savingsGoalEdits?: number } = { monthlyLimit: monthly };
           // 省钱挑战目标每月限改 2 次：仅当值变化且未超限才写入并计数

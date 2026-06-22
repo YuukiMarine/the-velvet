@@ -268,6 +268,8 @@ export interface Settings {
   ledgerSpToday?: number;
   /** F5 今日已发投资加点（日封顶 2）。 */
   ledgerAttrToday?: number;
+  /** F5 今日已发 bonus SP（劳动/值得；日封顶 20，与普通记账 SP 分开计）。 */
+  ledgerBonusSpToday?: number;
   /** F5 月度「不超预算」+10SP 已发放的月份（YYYY-MM），防重复发放。 */
   ledgerBudgetBonusMonths?: string[];
   /** F5 渠道选项（支付宝/微信…）；undefined 时回退 DEFAULT_CHANNELS，可手动增删。 */
@@ -282,6 +284,8 @@ export interface Settings {
   ledgerChannelsExpanded?: boolean;
   /** F5 每月预算重置 / 规划日（发薪日，1–28）；默认 1=自然月初。决定「新周期规划窗」何时弹。 */
   ledgerResetDay?: number;
+  /** F5 启用「发薪日周期」（默认关）：开后预算/今日可花/规划窗/标签按 ledgerResetDay 切分的日期周期，而非日历月。 */
+  ledgerPayCycleEnabled?: boolean;
   /** F5 已确认 / 略过的「新周期规划窗」周期 id（cycle 起始月 YYYY-MM）。 */
   ledgerCycleConfirmed?: string;
   /** F5 已达成「省钱挑战」并发放 +10SP 的月份（防重复发放）。 */
@@ -552,6 +556,12 @@ export interface LedgerEntry {
   sourceMemoId?: string;
   // ── 收入专属 ──
   incomeType?: LedgerIncomeType;
+  // ── 奖励回收（删除时精确逆转）──
+  /** 落账时实际发放的奖励快照（SP + 投资属性加点的活动 id），删除该条目时据此精确回收。 */
+  reward?: {
+    sp: number;
+    attr?: { activityId: string; attribute: AttributeId; points: number };
+  };
 }
 
 /** 月度预算（纪律层，独立于总余额）。一个 period 一条。 */
