@@ -754,6 +754,14 @@ export const Dashboard = () => {
       <AstrologyEntryCard onOpen={() => setCurrentPage('astrology')} />
     </div>
   );
+  // F3 治疗终端入口（默认关，设置里开启）：常驻应急工具，不 gating
+  if (settings.terminalEnabled) {
+    ritualSlides.push(
+      <div key="terminal" className="h-full [&>*]:h-full">
+        <TerminalEntryCard onOpen={() => setCurrentPage('terminal')} />
+      </div>
+    );
+  }
   if (settings.battleEnabled !== false) {
     // BattleDashboardWidget 在 battleEnabled === false 时内部 return null，必须在此处就拦下不入数组
     ritualSlides.push(
@@ -1183,6 +1191,36 @@ function AstrologyEntryCard({ onOpen }: { onOpen: () => void }) {
           </div>
         </div>
         <div className="text-amber-400 dark:text-amber-500 text-xl flex-shrink-0">›</div>
+      </div>
+    </motion.button>
+  );
+}
+
+// F3 治疗终端入口卡（挂在 ritualSlides 轮播里，与星象 / 战场入口平级）
+function TerminalEntryCard({ onOpen }: { onOpen: () => void }) {
+  const { wishes } = useAppStore();
+  const goals = wishes.filter(w => !w.parentId && w.status !== 'archived');
+  const activeSubs = wishes.filter(w => w.parentId && w.status === 'active');
+  return (
+    <motion.button
+      onClick={onOpen}
+      whileTap={{ scale: 0.98 }}
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="w-full text-left rounded-2xl border border-primary/30 bg-primary/5 dark:bg-primary/10 p-4 overflow-hidden relative"
+    >
+      <div className="absolute -right-3 -top-3 text-6xl opacity-10 select-none">✦</div>
+      <div className="flex items-center gap-3">
+        <div className="text-2xl flex-shrink-0">✦</div>
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-black text-primary">治疗终端</div>
+          <div className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5 leading-snug">
+            {goals.length === 0
+              ? '失去记录的勇气时，来这里许下第一个愿望'
+              : `${goals.length} 个目标 · ${activeSubs.length} 个待迈出的一步`}
+          </div>
+        </div>
+        <div className="text-primary/50 text-xl flex-shrink-0">›</div>
       </div>
     </motion.button>
   );

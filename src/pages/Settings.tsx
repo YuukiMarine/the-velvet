@@ -1149,6 +1149,33 @@ export const Settings = () => {
                       )}
                     </div>
 
+                    {/* 无气力症治疗终端开关（F3，默认关） */}
+                    <div className={`rounded-xl border-2 p-4 transition-all ${
+                      settings.terminalEnabled
+                        ? 'border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/20'
+                        : 'border-gray-200 dark:border-gray-700'
+                    }`}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-base">✦</span>
+                            <h4 className="text-sm font-bold text-gray-800 dark:text-white">治疗终端</h4>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 font-semibold">新</span>
+                          </div>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 leading-relaxed">
+                            启动困难、失去记录勇气时的应急入口：先建愿望清单，再让终端替你拆到「最小第一步」。开启后首页出现入口。
+                          </p>
+                        </div>
+                        <div className="flex-shrink-0 mt-0.5">
+                          <Toggle
+                            checked={!!settings.terminalEnabled}
+                            onChange={(v) => updateSettings({ terminalEnabled: v })}
+                            aria-label="治疗终端"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
                     {/* ── 属性名称 ───────────────────────────── */}
                     <div className="rounded-2xl border border-gray-200 dark:border-gray-700 bg-white/60 dark:bg-gray-800/30 overflow-hidden">
                       <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-800/60 flex items-center gap-2">
