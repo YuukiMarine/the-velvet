@@ -8,6 +8,7 @@
  * 学自开源 P5 菜单的技法（双多边形 screen 混合活高亮），仓库无 license，故只取技法、代码自写。
  */
 import { useEffect, useRef } from 'react';
+import { motion } from 'motion/react';
 import { useBoldness } from '@/utils/boldness';
 
 // ── 倾斜四边形色块 clip（P5 的核心形：简练有力的斜块） ──
@@ -64,12 +65,13 @@ const hlTarget = (): number[] => {
   return [r(0, 16), r(0, 12), r(84, 100), r(0, 14), r(84, 100), r(38, 50), r(0, 16), r(40, 50)];
 };
 const hlPoints = (a: number[]) => `${a[0].toFixed(1)},${a[1].toFixed(1)} ${a[2].toFixed(1)},${a[3].toFixed(1)} ${a[4].toFixed(1)},${a[5].toFixed(1)} ${a[6].toFixed(1)},${a[7].toFixed(1)}`;
-export const P5Highlight = ({ className }: { className?: string }) => {
+export const P5Highlight = ({ className, live = true }: { className?: string; live?: boolean }) => {
   const bold = useBoldness();
   const redRef = useRef<SVGPolygonElement>(null);
   const blueRef = useRef<SVGPolygonElement>(null);
   useEffect(() => {
-    if (!bold) return; // D0：静态高亮，不跑 rAF
+    // D0 或非 live（如首页常驻预告状卡）：静态高亮，不跑 rAF——避免常驻屏幕无限烧帧
+    if (!bold || !live) return;
     const layers = [redRef, blueRef].map((ref) => ({ ref, cur: hlTarget(), tgt: hlTarget(), last: 0 }));
     let raf = 0;
     const loop = (t: number) => {
@@ -82,7 +84,7 @@ export const P5Highlight = ({ className }: { className?: string }) => {
     };
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
-  }, [bold]);
+  }, [bold, live]);
   return (
     <svg viewBox="0 0 100 50" preserveAspectRatio="none" className={className} aria-hidden>
       <polygon ref={redRef} fill="#ff0022" points="2,6 95,5 94,45 5,46" />
@@ -148,4 +150,25 @@ export const SpeedLines = ({ className, lines = [18, 42, 70, 88], angle = -9, op
       <div key={i} className="absolute left-[-10%] h-[3px] w-[120%] bg-white" style={{ top: `${t}%`, transform: `rotate(${angle}deg)` }} />
     ))}
   </div>
+);
+
+/** 怪盗主操作按钮：红斜块色卡 + 面具(可选) + P5 活高亮（怪盗频道通用）。
+ *  live=false（如首页常驻预告状卡）→ 高亮静态、不跑 rAF。 */
+export const StrikeButton = ({ label, onClick, mask = false, disabled = false, live = true, className }: { label: string; onClick: () => void; mask?: boolean; disabled?: boolean; live?: boolean; className?: string }) => (
+  <motion.button type="button" whileTap={disabled ? undefined : { scale: 0.95 }} onClick={onClick} disabled={disabled} aria-label={label} className={`relative disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-[#0d0d0d] ${className ?? ''}`}>
+    {!disabled && <P5Highlight live={live} className="absolute -inset-x-2 -inset-y-1 -z-10" />}
+    <Slab fill="var(--color-primary)" variant={0}>
+      <div className="flex items-center justify-center gap-2 px-5 py-2.5">
+        {mask && <Mask className="h-5 w-9 shrink-0" />}
+        <span className="text-base font-black tracking-wider" style={heavy(2)}>{label}</span>
+      </div>
+    </Slab>
+  </motion.button>
+);
+
+/** 怪盗次操作按钮：红描边幽灵按钮 */
+export const GhostButton = ({ label, onClick, disabled = false, className }: { label: string; onClick: () => void; disabled?: boolean; className?: string }) => (
+  <button type="button" onClick={onClick} disabled={disabled} className={`rounded-[2px] border-2 border-primary/60 px-4 py-2 text-sm font-bold tracking-wide text-primary transition hover:bg-primary/10 focus-visible:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-[#0d0d0d] disabled:opacity-40 ${className ?? ''}`}>
+    {label}
+  </button>
 );
