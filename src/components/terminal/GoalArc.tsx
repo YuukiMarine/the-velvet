@@ -12,9 +12,11 @@ interface Props {
   done: number;
   total: number;
   size?: number;
+  /** 底轨配色；缺省随全局明暗自适配。固定底色场景（如白卡）传死值，避免随 App 明暗漂移 */
+  trackClass?: string;
 }
 
-export const GoalArc = ({ done, total, size = 42 }: Props) => {
+export const GoalArc = ({ done, total, size = 42, trackClass = 'text-gray-200 dark:text-gray-700' }: Props) => {
   const bold = useBoldness();
   const frac = total > 0 ? Math.min(1, done / total) : 0;
   const complete = total > 0 && done >= total;
@@ -36,7 +38,7 @@ export const GoalArc = ({ done, total, size = 42 }: Props) => {
   return (
     <div aria-hidden className="relative shrink-0" style={{ width: size, height: size, transform: 'rotate(-4deg)' }}>
       <svg width={size} height={size} className="overflow-visible">
-        <path d={d} fill="none" className="text-gray-200 dark:text-gray-700" stroke="currentColor" strokeWidth={3} strokeLinecap="round" />
+        <path d={d} fill="none" className={trackClass} stroke="currentColor" strokeWidth={3} strokeLinecap="round" />
         <motion.path
           d={d}
           fill="none"

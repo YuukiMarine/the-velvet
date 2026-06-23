@@ -24,6 +24,8 @@ export interface TreasuryVM {
   subsByParent: Record<string, Wish[]>;
   collapsed: Set<string>;
   celebrateId: string | null;
+  /** 正在播「标题划过 COMPLETE」特效的终极目标 id（全子愿望达成时） */
+  celebrateGoalId: string | null;
   bold: boolean;
   hasAI: boolean;
   attrName: (id: AttributeId) => string;
@@ -76,84 +78,107 @@ export const ThiefEmpty = ({ onCreate }: { onCreate: () => void }) => (
   </div>
 );
 
-// ── 抽屉内单个「心之宝物」目标卡 ──
+// 不规则四边形纸片轮廓（漫画分镜感）
+const CARD_CLIP = 'polygon(0% 4%, 97% 0%, 100% 96%, 3% 100%)';
+
+// ── 抽屉内单个「心之宝物」目标卡（白纸 + 黑描边 + 不规则四边形 + 右上灰半调圆，漫画风） ──
 const TreasureCard = ({ goal, vm }: { goal: Wish; vm: TreasuryVM }) => {
   const subs = vm.subsByParent[goal.id] ?? [];
   const doneCount = subs.filter((s) => s.status === 'done').length;
   const collapsed = vm.collapsed.has(goal.id);
 
   return (
-    <div className="relative overflow-hidden border-2 border-primary/55 bg-black/55 p-3" style={{ boxShadow: '3px 4px 0 rgba(0,0,0,0.5)' }}>
-      <Halftone className="absolute right-0 top-0 h-14 w-14 opacity-35" style={{ clipPath: 'polygon(50% 0,100% 0,100% 50%)' }} />
+    <div className="relative" style={{ filter: 'drop-shadow(4px 5px 0 rgba(0,0,0,0.55))' }}>
+      {/* 黑描边底 + 白纸面（不规则四边形裁切） */}
+      <div aria-hidden className="absolute -inset-[3px] bg-black" style={{ clipPath: CARD_CLIP }} />
+      <div aria-hidden className="absolute inset-0 bg-white" style={{ clipPath: CARD_CLIP }} />
+      {/* 右上灰色半调圆装饰 */}
+      <Halftone className="absolute right-0 top-0 h-16 w-16" style={{ clipPath: 'circle(64% at 100% 0%)', opacity: 0.4 }} dot={1.1} gap={6} />
 
-      <div className="relative flex items-start gap-2">
-        <button
-          type="button"
-          onClick={() => vm.toggleCollapse(goal.id)}
-          className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center text-primary/70 hover:text-primary"
-          aria-label={collapsed ? '展开' : '收起'}
-        >
-          <svg viewBox="0 0 24 24" className={`h-4 w-4 transition-transform ${collapsed ? '' : 'rotate-90'}`} fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round"><path d="M9 6l6 6-6 6" /></svg>
-        </button>
-        {subs.length > 0 && <GoalArc done={doneCount} total={subs.length} />}
-        <div className="min-w-0 flex-1">
-          <button type="button" onClick={() => vm.openEdit(goal)} className={`block text-left text-base font-black ${goal.status === 'done' ? 'text-white/40 line-through' : 'text-white'}`}>
-            {goal.title}
+      <div className="relative px-3.5 py-3">
+        <div className="flex items-start gap-2">
+          <button
+            type="button"
+            onClick={() => vm.toggleCollapse(goal.id)}
+            className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center text-gray-400 hover:text-gray-800"
+            aria-label={collapsed ? '展开' : '收起'}
+          >
+            <svg viewBox="0 0 24 24" className={`h-4 w-4 transition-transform ${collapsed ? '' : 'rotate-90'}`} fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round"><path d="M9 6l6 6-6 6" /></svg>
           </button>
-          {goal.note && <p className="mt-0.5 text-xs text-white/60">{goal.note}</p>}
-          <div className="mt-0.5 flex items-center gap-1.5 text-[11px] font-bold tracking-wide text-primary">
-            <span aria-hidden className="inline-block -rotate-3 border border-primary/70 px-1 text-[9px] tracking-[2px] text-primary/90">TARGET</span>
-            {subs.length > 0 ? `已夺回 ${doneCount} / ${subs.length}` : '尚无潜入步骤'}
-          </div>
-        </div>
-        <button type="button" onClick={() => vm.setDeleteTarget(goal)} className="shrink-0 p-1 text-white/60 hover:text-primary" aria-label="删除终极目标">
-          <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m2 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6" /></svg>
-        </button>
-      </div>
-
-      {!collapsed && (
-        <div className="relative mt-3 space-y-1.5 pl-8">
-          {subs.map((sub) => (
-            <div key={sub.id} className="flex items-center gap-2">
-              <span className="relative shrink-0">
-                <motion.button
-                  type="button"
-                  onClick={() => vm.completeSub(sub)}
-                  whileTap={{ scale: 0.85 }}
-                  animate={vm.celebrateId === sub.id ? { scale: [1, 1.35, 1] } : {}}
-                  transition={{ duration: 0.35, ease: 'easeOut' }}
-                  className={`flex h-5 w-5 items-center justify-center border-2 ${sub.status === 'done' ? 'border-primary bg-primary text-white' : 'border-primary/50 text-transparent'}`}
-                  aria-label={sub.status === 'done' ? '标记未完成' : '标记完成'}
-                >
-                  <svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth={3.2} strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
-                </motion.button>
-                {vm.bold && vm.celebrateId === sub.id && <MicroBurst />}
-              </span>
-              <button type="button" onClick={() => vm.openEdit(sub)} className={`min-w-0 flex-1 truncate text-left text-sm ${sub.status === 'done' ? 'text-white/40 line-through' : 'text-white/85'}`}>
-                {sub.title}
-                {sub.attribute && <span className="ml-1.5 bg-primary/20 px-1 py-0.5 text-[10px] text-primary">{vm.attrName(sub.attribute)}</span>}
-                {sub.source === 'ai' && <span className="ml-1 text-[10px] text-white/35">AI</span>}
+          {subs.length > 0 && <GoalArc done={doneCount} total={subs.length} trackClass="text-gray-300" />}
+          <div className="min-w-0 flex-1">
+            <div className="relative">
+              <button type="button" onClick={() => vm.openEdit(goal)} className={`block w-full truncate text-left text-base font-black ${goal.status === 'done' ? 'text-gray-400 line-through' : 'text-gray-900'}`}>
+                {goal.title}
               </button>
-              <button type="button" onClick={() => vm.setDeleteTarget(sub)} className="shrink-0 p-1 text-white/60 hover:text-primary" aria-label="删除子愿望">
-                <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M18 6L6 18M6 6l12 12" /></svg>
+              {/* 全子愿望达成：COMPLETE 横幅划过标题 */}
+              {vm.bold && vm.celebrateGoalId === goal.id && (
+                <motion.span
+                  aria-hidden
+                  className="pointer-events-none absolute inset-y-0 left-0 flex items-center whitespace-nowrap bg-primary px-1.5 text-sm font-black tracking-wider text-white"
+                  initial={{ clipPath: 'inset(0 100% 0 0)' }}
+                  animate={{ clipPath: ['inset(0 100% 0 0)', 'inset(0 0% 0 0)', 'inset(0 0% 0 100%)'] }}
+                  transition={{ duration: 1.1, times: [0, 0.5, 1], ease: 'easeInOut' }}
+                >
+                  ✓ COMPLETE
+                </motion.span>
+              )}
+            </div>
+            {goal.note && <p className="mt-0.5 text-xs text-gray-500">{goal.note}</p>}
+            <div className="mt-0.5 flex items-center gap-1.5 text-[11px] font-bold tracking-wide text-gray-700">
+              <span aria-hidden className="inline-block -rotate-3 border border-primary/70 px-1 text-[9px] tracking-[2px] text-primary">TARGET</span>
+              {subs.length > 0 ? `已夺回 ${doneCount} / ${subs.length}` : '尚无潜入步骤'}
+            </div>
+          </div>
+          <button type="button" onClick={() => vm.setDeleteTarget(goal)} className="shrink-0 p-1 text-gray-400 hover:text-red-500" aria-label="删除终极目标">
+            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m2 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6" /></svg>
+          </button>
+        </div>
+
+        {!collapsed && (
+          <div className="mt-3 space-y-1.5 pl-8">
+            {subs.map((sub) => (
+              <div key={sub.id} className="flex items-center gap-2">
+                <span className="relative shrink-0">
+                  <motion.button
+                    type="button"
+                    onClick={() => vm.completeSub(sub)}
+                    whileTap={{ scale: 0.85 }}
+                    animate={vm.celebrateId === sub.id ? { scale: [1, 1.35, 1] } : {}}
+                    transition={{ duration: 0.35, ease: 'easeOut' }}
+                    className={`flex h-5 w-5 items-center justify-center border-2 ${sub.status === 'done' ? 'border-primary bg-primary text-white' : 'border-gray-400 text-transparent'}`}
+                    aria-label={sub.status === 'done' ? '标记未完成' : '标记完成'}
+                  >
+                    <svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth={3.2} strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
+                  </motion.button>
+                  {vm.bold && vm.celebrateId === sub.id && <MicroBurst />}
+                </span>
+                <button type="button" onClick={() => vm.openEdit(sub)} className={`min-w-0 flex-1 truncate text-left text-sm ${sub.status === 'done' ? 'text-gray-400 line-through' : 'text-gray-800'}`}>
+                  {sub.title}
+                  {sub.attribute && <span className="ml-1.5 bg-primary/15 px-1 py-0.5 text-[10px] font-medium text-primary">{vm.attrName(sub.attribute)}</span>}
+                  {sub.source === 'ai' && <span className="ml-1 text-[10px] text-gray-400">AI</span>}
+                </button>
+                <button type="button" onClick={() => vm.setDeleteTarget(sub)} className="shrink-0 p-1 text-gray-400 hover:text-red-500" aria-label="删除子愿望">
+                  <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M18 6L6 18M6 6l12 12" /></svg>
+                </button>
+              </div>
+            ))}
+
+            <div className="flex flex-wrap gap-2 pt-1">
+              <button type="button" onClick={() => vm.openSubEditor(goal.id)} className="border-2 border-black px-3 py-1 text-xs font-bold text-gray-800 transition hover:bg-black hover:text-white">+ 潜入步骤</button>
+              <button
+                type="button"
+                onClick={() => vm.runAI(goal)}
+                disabled={!vm.hasAI}
+                title={vm.hasAI ? undefined : '需先在「设置 → AI 总结」配置 API 密钥'}
+                className="border-2 border-black px-3 py-1 text-xs font-bold text-gray-800 transition hover:bg-black hover:text-white disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-gray-800"
+              >
+                ✦ AI 拆分{vm.hasAI ? '' : '（未配置）'}
               </button>
             </div>
-          ))}
-
-          <div className="flex flex-wrap gap-2 pt-1">
-            <button type="button" onClick={() => vm.openSubEditor(goal.id)} className="border border-primary/40 px-3 py-1 text-xs font-bold text-primary/90 hover:bg-primary/10">+ 潜入步骤</button>
-            <button
-              type="button"
-              onClick={() => vm.runAI(goal)}
-              disabled={!vm.hasAI}
-              title={vm.hasAI ? undefined : '需先在「设置 → AI 总结」配置 API 密钥'}
-              className="border border-primary/40 px-3 py-1 text-xs font-bold text-primary/90 hover:bg-primary/10 disabled:opacity-40"
-            >
-              ✦ AI 拆分{vm.hasAI ? '' : '（未配置）'}
-            </button>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 };
@@ -170,7 +195,7 @@ export const TreasuryThief = ({ open, onClose, vm }: { open: boolean; onClose: (
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className={`fixed inset-0 ${zClass.modal} dark flex justify-end bg-black/60 backdrop-blur-sm`}
+          className={`fixed inset-0 ${zClass.modal} flex justify-end bg-black/60 backdrop-blur-sm`}
           onClick={onClose}
         >
           <motion.aside

@@ -88,7 +88,7 @@ export const ClearContentDefault = ({ vm }: { vm: ClearVM }) => {
         onClick={onClose}
         className="mx-auto block w-full max-w-[280px] rounded-2xl bg-primary py-3 text-sm font-bold text-white shadow-lg shadow-primary/40"
       >
-        收下这一步
+        记录这一刻
       </motion.button>
 
       <motion.div
