@@ -28,6 +28,7 @@ import { DanmakuField } from '@/components/terminal/DanmakuField';
 import { DanmakuCompose } from '@/components/terminal/DanmakuCompose';
 import { TerminalAntechamber } from '@/components/terminal/TerminalAntechamber';
 import { AntechamberThief } from '@/components/terminal/AntechamberThief';
+import { AntechamberBoard } from '@/components/terminal/AntechamberBoard';
 import { MicroBurst } from '@/components/terminal/MicroBurst';
 import { GoalArc } from '@/components/terminal/GoalArc';
 import { useBoldness } from '@/utils/boldness';
@@ -210,10 +211,9 @@ export const Terminal = () => {
   // 玄关：点入口先落在这间房间，点「进入」才正式进终端。红=怪盗 P5 皮肤，其余暂用通用玄关
   if (!entered) {
     const enterProps = { onEnter: () => setEntered(true), onBack: () => setCurrentPage('dashboard') };
-    if (skin.channel === 'thief') {
-      return <AntechamberThief skin={skin} {...enterProps} />;
-    }
-    return <TerminalAntechamber {...enterProps} danmakuPool={danmakuPool} />;
+    if (skin.channel === 'thief') return <AntechamberThief skin={skin} {...enterProps} />;
+    if (skin.channel === 'board') return <AntechamberBoard skin={skin} danmakuPool={danmakuPool} {...enterProps} />;
+    return <TerminalAntechamber {...enterProps} danmakuPool={danmakuPool} />; // tv(黄) 暂用通用版
   }
 
   return (
