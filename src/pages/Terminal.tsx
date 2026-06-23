@@ -26,9 +26,9 @@ import { ShortCircuitPanel } from '@/components/terminal/ShortCircuitPanel';
 import { TerminalTaskCard } from '@/components/terminal/TerminalTaskCard';
 import { DanmakuField } from '@/components/terminal/DanmakuField';
 import { DanmakuCompose } from '@/components/terminal/DanmakuCompose';
-import { TerminalAntechamber } from '@/components/terminal/TerminalAntechamber';
 import { AntechamberThief } from '@/components/terminal/AntechamberThief';
 import { AntechamberBoard } from '@/components/terminal/AntechamberBoard';
+import { AntechamberTV } from '@/components/terminal/AntechamberTV';
 import { MicroBurst } from '@/components/terminal/MicroBurst';
 import { GoalArc } from '@/components/terminal/GoalArc';
 import { useBoldness } from '@/utils/boldness';
@@ -208,12 +208,13 @@ export const Terminal = () => {
 
   const isEmpty = goals.length === 0;
 
-  // 玄关：点入口先落在这间房间，点「进入」才正式进终端。红=怪盗 P5 皮肤，其余暂用通用玄关
+  // 玄关：点入口先落在这间房间，点「进入」才正式进终端。三频道各有专属皮肤：
+  // 红=怪盗 P5 剪报 / 蓝·粉=千禧 BBS 论坛 / 黄=P4 综艺 CRT 电视频道。
   if (!entered) {
     const enterProps = { onEnter: () => setEntered(true), onBack: () => setCurrentPage('dashboard') };
     if (skin.channel === 'thief') return <AntechamberThief skin={skin} {...enterProps} />;
     if (skin.channel === 'board') return <AntechamberBoard skin={skin} danmakuPool={danmakuPool} {...enterProps} />;
-    return <TerminalAntechamber {...enterProps} danmakuPool={danmakuPool} />; // tv(黄) 暂用通用版
+    return <AntechamberTV skin={skin} danmakuPool={danmakuPool} {...enterProps} />; // tv(黄)
   }
 
   return (
