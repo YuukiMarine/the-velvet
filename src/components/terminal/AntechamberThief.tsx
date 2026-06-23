@@ -6,7 +6,7 @@
  * 用 4 点 clip-path 斜块、四角 text-shadow 描边、强对角能量线、halftone 红块、怪盗面具 + 旋转星爆。
  * D0/reduced-motion 直接出静态。
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { useAppStore } from '@/store';
 import { useBoldness } from '@/utils/boldness';
@@ -69,6 +69,33 @@ const Mask = ({ className, fill = '#0a0a0a', stroke = '#fff' }: { className?: st
   </svg>
 );
 
+// ── P5「活高亮」：双多边形(红/青)，顶层 screen 混合，每帧抖动顶点 → 红青色差震颤 ──
+const jitter4 = () => {
+  const r = (a: number, b: number) => (a + Math.random() * (b - a)).toFixed(1);
+  return `${r(0, 16)},${r(0, 9)} ${r(84, 100)},${r(0, 13)} ${r(84, 100)},${r(37, 50)} ${r(0, 16)},${r(41, 50)}`;
+};
+const P5Highlight = ({ className }: { className?: string }) => {
+  const bold = useBoldness();
+  const redRef = useRef<SVGPolygonElement>(null);
+  const blueRef = useRef<SVGPolygonElement>(null);
+  useEffect(() => {
+    if (!bold) return; // D0：静态高亮，不抖
+    const tick = () => {
+      redRef.current?.setAttribute('points', jitter4());
+      blueRef.current?.setAttribute('points', jitter4());
+    };
+    tick();
+    const id = setInterval(tick, 110);
+    return () => clearInterval(id);
+  }, [bold]);
+  return (
+    <svg viewBox="0 0 100 50" preserveAspectRatio="none" className={className} aria-hidden>
+      <polygon ref={redRef} fill="#ff0022" points="2,6 95,5 94,45 5,46" />
+      <polygon ref={blueRef} fill="#1cfeff" points="6,9 92,12 88,46 8,42" style={{ mixBlendMode: 'screen' }} />
+    </svg>
+  );
+};
+
 // ── 勒索信剪报拼贴字（每字母独立小纸片：混字体 / 红黑白 / 各自倾角 / 撕角） ──
 const RANSOM_BG = ['#ffffff', 'var(--color-primary)', '#0d0d0d', '#ffffff', '#0d0d0d', 'var(--color-primary)'];
 const RANSOM_FG = ['#0d0d0d', '#ffffff', '#ffffff', '#0d0d0d', '#ffffff', '#ffffff'];
@@ -114,6 +141,7 @@ export const AntechamberThief = ({ skin, onEnter, onBack }: Props) => {
   const user = useAppStore((s) => s.user);
   const bold = useBoldness();
   const [phase, setPhase] = useState<'intro' | 'rest'>(() => (bold && !_thiefIntroSeen ? 'intro' : 'rest'));
+  const [popping, setPopping] = useState(false);
   const intro = phase === 'intro';
 
   useEffect(() => {
@@ -124,9 +152,13 @@ export const AntechamberThief = ({ skin, onEnter, onBack }: Props) => {
   }, [intro]);
 
   const enter = () => {
+    if (popping) return;
     triggerLightHaptic();
     if (user?.theme) triggerThemeSwitchFeedback(user.theme);
-    onEnter();
+    // 选中确认：快速跳一下(缩放 bounce)再进入；D0 直接进
+    if (!bold) { onEnter(); return; }
+    setPopping(true);
+    setTimeout(onEnter, 230);
   };
 
   const slam = (delay: number, rest = 0, fromX = -30) =>
@@ -190,20 +222,19 @@ export const AntechamberThief = ({ skin, onEnter, onBack }: Props) => {
           </Slab>
         </motion.div>
 
-        {/* 潜入按钮 */}
+        {/* 潜入按钮：P5 活高亮(抖动红青色差) + 点击跳一下确认 */}
         <motion.button
           type="button"
           onClick={(e) => { e.stopPropagation(); enter(); }}
           aria-label={skin.enterLabel}
           initial={intro ? { opacity: 0, scale: 0.5, rotate: -3 } : false}
-          animate={{ opacity: 1, scale: 1, rotate: -3 }}
-          transition={{ type: 'spring', damping: 11, stiffness: 360, delay: intro ? 0.95 : 0 }}
-          whileTap={{ scale: 0.93 }}
+          animate={popping ? { scale: [1, 1.22, 0.9, 1.06, 1], rotate: -3, opacity: 1 } : { opacity: 1, scale: 1, rotate: -3 }}
+          transition={popping ? { duration: 0.26, ease: 'easeOut' } : { type: 'spring', damping: 11, stiffness: 360, delay: intro ? 0.95 : 0 }}
+          whileTap={popping ? undefined : { scale: 0.95 }}
           className="relative self-center"
         >
-          <motion.span aria-hidden className="absolute left-1/2 top-1/2 -z-10 h-[150%] w-[150%] -translate-x-1/2 -translate-y-1/2" animate={bold ? { rotate: 360 } : undefined} transition={bold ? { duration: 14, repeat: Infinity, ease: 'linear' } : undefined}>
-            <StarBurst className="h-full w-full" />
-          </motion.span>
+          {/* P5「活高亮」框（抖动红青，screen 混合，环在按钮外缘） */}
+          <P5Highlight className="absolute -inset-2.5 -z-10" />
           <Slab fill="var(--color-primary)" variant={0}>
             <div className="flex items-center gap-3 px-9 py-3">
               <Mask className="h-8 w-14 shrink-0" />
