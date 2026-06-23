@@ -75,32 +75,40 @@ const RANSOM_FG = ['#0d0d0d', '#ffffff', '#ffffff', '#0d0d0d', '#ffffff', '#ffff
 const RANSOM_FONT = ['Georgia, "Times New Roman", serif', 'Arial, Helvetica, sans-serif', 'ui-monospace, monospace', '"Courier New", monospace'];
 const RANSOM_CLIP = ['polygon(3% 5%, 96% 0%, 100% 93%, 4% 100%)', 'polygon(0% 4%, 97% 6%, 94% 100%, 5% 95%)', 'polygon(5% 0%, 100% 8%, 96% 96%, 0% 100%)'];
 
-const Ransom = ({ text }: { text: string }) => (
-  <span className="inline-flex flex-wrap items-center gap-x-1 gap-y-1.5">
-    {[...text].map((ch, i) => {
-      if (ch === ' ') return <span key={i} className="w-2" aria-hidden />;
-      const rot = ((i * 53) % 17) - 8; // -8..8 伪随机倾角
-      const big = i % 3 === 0;
-      return (
-        <span
-          key={i}
-          className={`inline-block px-1.5 py-0.5 font-black leading-none ${big ? 'text-xl' : 'text-base'}`}
-          style={{
-            background: RANSOM_BG[i % RANSOM_BG.length],
-            color: RANSOM_FG[i % RANSOM_FG.length],
-            fontFamily: RANSOM_FONT[i % RANSOM_FONT.length],
-            fontStyle: i % 4 === 0 ? 'italic' : 'normal',
-            transform: `rotate(${rot}deg)`,
-            clipPath: RANSOM_CLIP[i % RANSOM_CLIP.length],
-            filter: 'drop-shadow(1.5px 2px 0 rgba(0,0,0,0.65))',
-          }}
-        >
-          {ch}
+const Ransom = ({ lines }: { lines: string[] }) => {
+  let g = 0; // 跨行连续索引，让字母样式连续变化
+  return (
+    <span className="flex flex-col items-end gap-1.5">
+      {lines.map((line, li) => (
+        <span key={li} className="flex justify-end gap-x-1">
+          {[...line].map((ch, i) => {
+            if (ch === ' ') { g += 1; return <span key={i} className="w-1.5" aria-hidden />; }
+            const k = g++;
+            const rot = ((k * 53) % 17) - 8; // -8..8 伪随机倾角
+            const big = k % 3 === 0;
+            return (
+              <span
+                key={i}
+                className={`inline-block px-1.5 py-0.5 font-black leading-none ${big ? 'text-xl' : 'text-base'}`}
+                style={{
+                  background: RANSOM_BG[k % RANSOM_BG.length],
+                  color: RANSOM_FG[k % RANSOM_FG.length],
+                  fontFamily: RANSOM_FONT[k % RANSOM_FONT.length],
+                  fontStyle: k % 4 === 0 ? 'italic' : 'normal',
+                  transform: `rotate(${rot}deg)`,
+                  clipPath: RANSOM_CLIP[k % RANSOM_CLIP.length],
+                  filter: 'drop-shadow(1.5px 2px 0 rgba(0,0,0,0.65))',
+                }}
+              >
+                {ch}
+              </span>
+            );
+          })}
         </span>
-      );
-    })}
-  </span>
-);
+      ))}
+    </span>
+  );
+};
 
 export const AntechamberThief = ({ skin, onEnter, onBack }: Props) => {
   const user = useAppStore((s) => s.user);
@@ -149,9 +157,9 @@ export const AntechamberThief = ({ skin, onEnter, onBack }: Props) => {
           <div key={i} className="absolute left-[-10%] h-[3px] w-[120%] bg-white" style={{ top: `${t}%`, transform: 'rotate(-9deg)' }} />
         ))}
       </div>
-      {/* 勒索信剪报「TAKE YOUR HEART」（右上，替代面具剪影） */}
-      <motion.div {...slam(intro ? 0.28 : 0, -6, 30)} className="pointer-events-none absolute right-3 top-12 z-10 w-[60%] max-w-[270px]">
-        <Ransom text="TAKE YOUR HEART" />
+      {/* 勒索信剪报「TAKE YOUR / HEART」（右上，两行右对齐，替代面具剪影） */}
+      <motion.div {...slam(intro ? 0.28 : 0, -6, 30)} className="pointer-events-none absolute right-3 top-12 z-10 flex max-w-[85%] flex-col items-end">
+        <Ransom lines={['TAKE YOUR', 'HEART']} />
       </motion.div>
       {/* 角落小星 */}
       <StarBurst className="pointer-events-none absolute left-[8%] top-[10%] h-9 w-9 -rotate-12 opacity-90" />
