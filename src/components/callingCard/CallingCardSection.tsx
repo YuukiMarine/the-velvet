@@ -26,14 +26,15 @@ export function CallingCardSection({ sectionId = 'calling-card-section' }: { sec
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [archivedExpanded, setArchivedExpanded] = useState(false);
 
-  const active = callingCards.filter(c => !c.archived).sort((a, b) => {
+  // F3 终端任务虽存于 callingCards 表，但有专属 TerminalTaskCard 渲染，不应进宣告卡列表
+  const active = callingCards.filter(c => !c.archived && !c.terminal).sort((a, b) => {
     // 钉选的放最前；其次按 createdAt desc
     if (a.pinned && !b.pinned) return -1;
     if (!a.pinned && b.pinned) return 1;
     return (b.createdAt instanceof Date ? b.createdAt.getTime() : new Date(b.createdAt).getTime()) -
            (a.createdAt instanceof Date ? a.createdAt.getTime() : new Date(a.createdAt).getTime());
   });
-  const archived = callingCards.filter(c => c.archived).sort((a, b) =>
+  const archived = callingCards.filter(c => c.archived && !c.terminal).sort((a, b) =>
     (b.archivedAt instanceof Date ? b.archivedAt.getTime() : new Date(b.archivedAt ?? 0).getTime()) -
     (a.archivedAt instanceof Date ? a.archivedAt.getTime() : new Date(a.archivedAt ?? 0).getTime())
   );

@@ -1,5 +1,5 @@
 ﻿import { create } from 'zustand';
-import { User, Attribute, Activity, Achievement, Skill, Settings, ThemeType, AttributeId, AttributeNamesKey, Todo, TodoCompletion, PeriodSummary, SummaryPeriod, SummaryPromptPreset, WeeklyGoal, WeeklyGoalItem, Persona, Shadow, BattleState, BattleLogEntry, BattleAction, DailyDivination, LongReading, LongReadingFollowUp, Confidant, ConfidantEvent, ConfidantBuff, CounselSession, CounselMessage, CounselArchive, CallingCard, NotifSlot, LedgerEntry, Budget, SpendWorth, LedgerAsset, Wish } from '@/types';
+import { User, Attribute, Activity, Achievement, Skill, Settings, ThemeType, AttributeId, AttributeNamesKey, Todo, TodoCompletion, PeriodSummary, SummaryPeriod, SummaryPromptPreset, WeeklyGoal, WeeklyGoalItem, Persona, Shadow, BattleState, BattleLogEntry, BattleAction, DailyDivination, LongReading, LongReadingFollowUp, Confidant, ConfidantEvent, ConfidantBuff, CounselSession, CounselMessage, CounselArchive, CallingCard, NotifSlot, LedgerEntry, Budget, SpendWorth, LedgerAsset, Wish, TerminalClearPayload } from '@/types';
 import { TAROT_BY_ID } from '@/constants/tarot';
 import { summarizeCounsel, type CounselContext, type CounselConfidantBrief, type CounselRecentEvent } from '@/utils/counselAI';
 import { db } from '@/db';
@@ -35,6 +35,13 @@ export function toLocalDateKey(date: Date = new Date()): string {
 let _addConfidantLock: Promise<unknown> = Promise.resolve();
 
 /**
+ * completeTerminalTask 在途锁：防止「我做到了」双击（或首页+终端页同时点）在 addActivity
+ * 的异步窗口内重入，导致重复发点 / 重复弹幕 token / 重复叙事、击穿日封顶防刷。
+ * Set 在第一个 await 前同步占位，第二次调用同步命中即提前返回。
+ */
+const _completingTerminalIds = new Set<string>();
+
+/**
  * 成长总结：category → 中文小标签，方便 AI 识别条目类型。
  * "confidant" 始终纳入；SUMMARY_SPECIAL_CATS 里的条目由 summaryIncludeSpecial 控制
  */
@@ -58,6 +65,8 @@ const SUMMARY_CATEGORY_TAGS: Record<string, string> = {
   // v2.1：宣告卡 / 倒计时达成。不放进 SUMMARY_SPECIAL_CATS（默认 include），
   // 让 AI 始终能看到"用户跨越了哪个里程碑"，作为周月总结的关键叙事节点。
   calling_card_clear: '[倒计时]',
+  // F3：终端短路决策达成（同为里程碑，默认 include），让总结叙事凸显"自救"节点。
+  terminal_clear: '[终端]',
 };
 import {
   INITIAL_ATTRIBUTES,
@@ -287,6 +296,20 @@ interface AppState {
    * 在线走 chatComplete；无 Key 抛错由调用方兜底（手动输入）。返回标题数组，由 UI 确认后再落库。
    */
   decomposeWishAI: (parentTitle: string, parentNote?: string) => Promise<string[]>;
+
+  // ── F3 终端 24h 限时任务（复用 CallingCard） ──
+  /** 完成结算屏载荷；非 null 时 App.tsx 渲染 TerminalClearCutIn */
+  terminalClear: TerminalClearPayload | null;
+  /** 当前活跃的终端任务（最多 1 张）；无则 null */
+  getActiveTerminalTask: () => CallingCard | null;
+  /** 从短路决策结果落成一张 24h 限时任务；已有活跃任务则返回 null（调用方提示） */
+  createTerminalTask: (input: { stepTitle: string; sourceKind: 'wish' | 'todo'; sourceId: string; attribute?: AttributeId; goalTitle?: string }) => Promise<CallingCard | null>;
+  /** 「我做到了」：写叙事 Activity(+1~2 绑定属性，日封顶) + 攒弹幕 token + 归档 + 触发结算屏 */
+  completeTerminalTask: (id: string) => Promise<void>;
+  /** 放弃 / 清掉一张终端任务（删除，不奖励） */
+  dismissTerminalTask: (id: string) => Promise<void>;
+  /** 关闭终端完成结算屏 */
+  clearTerminalClear: () => void;
   /**
    * 短路决策的拆解：把一件事拆成「此刻就能做、5 分钟内完成」的最小第一步（单行）。
    * 在线走 chatComplete；无 Key 抛错，由 UI 走 terminalSkin 的离线模板兜底。
@@ -551,6 +574,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   longReadings: [],
   callingCards: [],
   wishes: [],
+  terminalClear: null,
   todos: [],
   todoCompletions: [],
   summaries: [],
@@ -1297,6 +1321,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   unarchiveCallingCard: async (id: string) => {
     const c = await db.callingCards.get(id);
     if (!c) return;
+    // F3 终端任务不走宣告卡的取消归档（否则会复活成可再次领奖的幽灵任务）
+    if (c.terminal) return;
     await db.callingCards.put({
       ...c,
       archived: false,
@@ -1309,6 +1335,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   pinCallingCard: async (id: string | null) => {
+    // F3 终端任务永不占用首页钉选位（不应被当普通宣告卡 pin）
+    if (id !== null) {
+      const target = await db.callingCards.get(id);
+      if (target?.terminal) return;
+    }
     const all = await db.callingCards.toArray();
     const updates: CallingCard[] = [];
     for (const c of all) {
@@ -1409,6 +1440,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     const newlyArchived: CallingCard[] = [];
     for (const card of all) {
       if (card.archived) continue;
+      // F3 终端任务不走日期自动归档：完成由用户「我做到了」手动触发，过期也不自动结算
+      if (card.terminal) continue;
       const todayDate = new Date(todayKey + 'T00:00:00');
       let dateReached = false;
       let todosReached = false;
@@ -1602,6 +1635,101 @@ export const useAppStore = create<AppState>((set, get) => ({
       (!t.weekdays || t.weekdays.length === 0 || t.weekdays.includes(todayWeekday)),
     );
   },
+
+  // ── F3 终端 24h 限时任务 ──
+  getActiveTerminalTask: () => get().callingCards.find(c => c.terminal && !c.archived) ?? null,
+
+  createTerminalTask: async (input) => {
+    // 最多 1 张活跃终端任务（防止堆积；UI 在有活跃任务时禁用 accept）
+    if (get().callingCards.some(c => c.terminal && !c.archived)) return null;
+    const now = new Date();
+    const expires = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+    const card: CallingCard = {
+      id: uuidv4(),
+      title: input.stepTitle,
+      mode: 'deadline',
+      targetDate: toLocalDateKey(expires),
+      startDate: toLocalDateKey(now),
+      tone: 'lines',
+      icon: '✦',
+      pinned: false,
+      archived: false,
+      createdAt: now,
+      terminal: {
+        sourceKind: input.sourceKind,
+        sourceId: input.sourceId,
+        attribute: input.attribute,
+        goalTitle: input.goalTitle,
+        startedAt: now.toISOString(),
+        expiresAt: expires.toISOString(),
+      },
+    };
+    await db.callingCards.put(card);
+    await get().loadCallingCards();
+    return card;
+  },
+
+  completeTerminalTask: async (id: string) => {
+    // 在途锁：双击 / 双页同时点 → 第二次同步命中即返回，杜绝重入刷点（见 _completingTerminalIds 注释）
+    if (_completingTerminalIds.has(id)) return;
+    _completingTerminalIds.add(id);
+    try {
+      const card = await db.callingCards.get(id);
+      if (!card || !card.terminal || card.archived) return;
+      const today = toLocalDateKey();
+      // 日封顶防刷：每日首次完成才给属性点 + 弹幕机会；其后仍写叙事但 0 点
+      const rewardEligible = get().settings.terminalRewardDate !== today;
+      const attribute: AttributeId = card.terminal.attribute ?? 'guts';
+      const points = rewardEligible ? (card.terminal.attribute ? 2 : 1) : 0;
+      const narrative = card.terminal.goalTitle
+        ? `你又一次接近了《${card.terminal.goalTitle}》的心愿，从虚无中拯救了自己。`
+        : '你迈出了那一步，从虚无中把自己拉了回来。';
+      const pts: Record<AttributeId, number> = { knowledge: 0, guts: 0, dexterity: 0, kindness: 0, charm: 0 };
+      pts[attribute] = points;
+      const { activityId } = await get().addActivity(narrative, pts, 'local', { important: true, category: 'terminal_clear' });
+      // 读回实发点数（addActivity 会叠加塔罗/技能/面具加成，写进 activity.pointsAwarded），结算屏据此显示
+      const act = activityId ? await db.activities.get(activityId) : undefined;
+      const shownPoints = act?.pointsAwarded?.[attribute] ?? points;
+      let danmakuGranted = false;
+      if (rewardEligible) {
+        danmakuGranted = true;
+        await get().updateSettings({
+          terminalRewardDate: today,
+          terminalDanmakuTokens: (get().settings.terminalDanmakuTokens ?? 0) + 1,
+        });
+      }
+      // 归档：cutInShown=true 让 GlobalCallingCardCutIn（宣告卡结算屏）跳过它，改由 TerminalClearCutIn 接管
+      await db.callingCards.put({
+        ...card,
+        archived: true,
+        archivedAt: new Date(),
+        archiveReason: 'manual',
+        cutInShown: true,
+        pinned: false,
+      });
+      await get().loadCallingCards();
+      set({
+        terminalClear: {
+          stepTitle: card.title,
+          goalTitle: card.terminal.goalTitle,
+          rewardAttribute: rewardEligible ? attribute : undefined,
+          rewardPoints: shownPoints,
+          danmakuGranted,
+        },
+      });
+    } finally {
+      _completingTerminalIds.delete(id);
+    }
+  },
+
+  dismissTerminalTask: async (id: string) => {
+    const card = await db.callingCards.get(id);
+    if (!card || !card.terminal) return;
+    await db.callingCards.delete(id);
+    await get().loadCallingCards();
+  },
+
+  clearTerminalClear: () => set({ terminalClear: null }),
 
   loadData: async () => {
     try {
@@ -1844,6 +1972,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       longReadings: [],
       callingCards: [],
       wishes: [],
+      terminalClear: null,
       todos: [],
       todoCompletions: [],
       summaries: [],

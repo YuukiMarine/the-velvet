@@ -12,6 +12,7 @@ import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, Responsi
 import { TAROT_BY_ID } from '@/constants/tarot';
 import { CallingCardCard } from '@/components/callingCard/CallingCardCard';
 import { CallingCardEmptyHint } from '@/components/callingCard/CallingCardEmptyHint';
+import { TerminalTaskCard } from '@/components/terminal/TerminalTaskCard';
 import { playSound } from '@/utils/feedback';
 import { getAttributeLevelTitle } from '@/utils/attributeLevelTitles';
 import type { AttributeId, CallingCard } from '@/types';
@@ -543,7 +544,8 @@ const isLightColor = (hex: string): boolean => {
 };
 
 export const Dashboard = () => {
-  const { attributes, user, settings, todos, activities, achievements, skills, completeTodo, getTodayTodoProgress, setModalBlocker, setCurrentPage, applyCountercurrentDecay, getCountercurrentWarnings, callingCards } = useAppStore();
+  const { attributes, user, settings, todos, activities, achievements, skills, completeTodo, getTodayTodoProgress, setModalBlocker, setCurrentPage, applyCountercurrentDecay, getCountercurrentWarnings, callingCards, getActiveTerminalTask, completeTerminalTask, dismissTerminalTask } = useAppStore();
+  const activeTerminalTask = getActiveTerminalTask();
   const [completedTitle, setCompletedTitle] = useState<string | null>(null);
   const [completedPoints, setCompletedPoints] = useState(1);
   const [unlockHint, setUnlockHint] = useState<{ achievements: number; skills: number }>({ achievements: 0, skills: 0 });
@@ -566,7 +568,9 @@ export const Dashboard = () => {
   const [decayedAttrs, setDecayedAttrs] = useState<import('@/types').AttributeId[]>([]);
 
   // ── 宣告卡 / 倒计时 ─────────────────────────────────────────
-  const pinnedCallingCard: CallingCard | null = callingCards.find(c => c.pinned && !c.archived) ?? null;
+  // F3 终端任务存于 callingCards 表但不是宣告卡：钉选 / 空态 / 计数都按非终端卡口径
+  const realCallingCards = callingCards.filter(c => !c.terminal);
+  const pinnedCallingCard: CallingCard | null = realCallingCards.find(c => c.pinned && !c.archived) ?? null;
   // 注：CutIn 已经移到 App.tsx 顶层（GlobalCallingCardCutIn），这里只关心"钉选展示"
 
   // 临期 Toast（D1）：≤ 3 天且当日首次见到时弹一次（localStorage 防骚扰）
@@ -831,19 +835,19 @@ export const Dashboard = () => {
         )}
 
         {/* 占位符：从未建 / 有但未钉选时分别给两种 hint */}
-        {!pinnedCallingCard && callingCards.length === 0 && (
+        {!pinnedCallingCard && realCallingCards.length === 0 && (
           <div className="mt-4">
             <CallingCardEmptyHint onJump={jumpToCallingCardSection} />
           </div>
         )}
-        {!pinnedCallingCard && callingCards.filter(c => !c.archived).length > 0 && (
+        {!pinnedCallingCard && realCallingCards.filter(c => !c.archived).length > 0 && (
           <button
             onClick={jumpToCallingCardSection}
             className={`mt-4 w-full text-left px-3 py-2 rounded-xl text-[11px] flex items-center gap-2 ${useLightText ? 'bg-white/[0.12] text-white/80 hover:bg-white/20' : 'bg-black/[0.08] text-black/65 hover:bg-black/15'} transition-colors`}
           >
             <span>📌</span>
             <span className="flex-1">
-              你有 {callingCards.filter(c => !c.archived).length} 张倒计时未钉到主页
+              你有 {realCallingCards.filter(c => !c.archived).length} 张倒计时未钉到主页
             </span>
             <span className="opacity-60">›</span>
           </button>
@@ -867,6 +871,16 @@ export const Dashboard = () => {
           </div>
         )}
       </motion.div>
+
+      {/* 进行中的治疗终端 24h 限时任务（特殊风格） */}
+      {settings.terminalEnabled && activeTerminalTask && (
+        <TerminalTaskCard
+          card={activeTerminalTask}
+          onComplete={() => completeTerminalTask(activeTerminalTask.id)}
+          onDismiss={() => dismissTerminalTask(activeTerminalTask.id)}
+          compact
+        />
+      )}
 
       {/* 今日任务 */}
       <div ref={todayTaskRef} className="relative rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden">

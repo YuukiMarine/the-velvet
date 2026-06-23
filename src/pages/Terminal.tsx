@@ -19,6 +19,8 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { getAIConfig } from '@/utils/aiClient';
 import { terminalSkin } from '@/utils/terminalSkin';
 import { ShortCircuitPanel } from '@/components/terminal/ShortCircuitPanel';
+import { TerminalTaskCard } from '@/components/terminal/TerminalTaskCard';
+import { DanmakuField } from '@/components/terminal/DanmakuField';
 import type { AttributeId, Wish } from '@/types';
 
 const ATTR_IDS: AttributeId[] = ['knowledge', 'guts', 'dexterity', 'kindness', 'charm'];
@@ -45,8 +47,9 @@ interface AIState {
 const closedAI: AIState = { open: false, parentId: '', parentTitle: '', loading: false, suggestions: [] };
 
 export const Terminal = () => {
-  const { wishes, addWish, saveWish, deleteWish, setWishStatus, decomposeWishAI, settings, user, setCurrentPage } =
+  const { wishes, addWish, saveWish, deleteWish, setWishStatus, decomposeWishAI, getActiveTerminalTask, completeTerminalTask, dismissTerminalTask, settings, user, setCurrentPage } =
     useAppStore();
+  const activeTask = getActiveTerminalTask();
 
   const skin = terminalSkin(user?.theme);
   const hasAI = !!getAIConfig(settings);
@@ -167,7 +170,10 @@ export const Terminal = () => {
   const isEmpty = goals.length === 0;
 
   return (
-    <div className="mx-auto max-w-2xl px-4 pb-24 pt-3">
+    <div className="relative mx-auto max-w-2xl px-4 pb-24 pt-3">
+      {/* 漂浮弹幕（离线精选池，氛围层，置于内容之下） */}
+      <DanmakuField />
+
       {/* 顶栏 */}
       <div className="mb-4 flex items-center gap-2">
         <BackButton onClick={() => setCurrentPage('dashboard')} />
@@ -190,6 +196,17 @@ export const Terminal = () => {
           先把「最想成为的人 / 最想做到的事」放进来，剩下的，让终端替你拆。
         </p>
       </motion.div>
+
+      {/* 进行中的 24h 限时任务 */}
+      {activeTask && (
+        <div className="mb-5">
+          <TerminalTaskCard
+            card={activeTask}
+            onComplete={() => completeTerminalTask(activeTask.id)}
+            onDismiss={() => dismissTerminalTask(activeTask.id)}
+          />
+        </div>
+      )}
 
       {isEmpty ? (
         /* 首次仪式引导：愿望清单为空 */
