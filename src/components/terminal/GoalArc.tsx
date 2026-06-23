@@ -34,7 +34,7 @@ export const GoalArc = ({ done, total, size = 42 }: Props) => {
   const d = `M ${x1} ${y1} A ${r} ${r} 0 1 1 ${x2} ${y2}`;
 
   return (
-    <div className="relative shrink-0" style={{ width: size, height: size, transform: 'rotate(-4deg)' }}>
+    <div aria-hidden className="relative shrink-0" style={{ width: size, height: size, transform: 'rotate(-4deg)' }}>
       <svg width={size} height={size} className="overflow-visible">
         <path d={d} fill="none" className="text-gray-200 dark:text-gray-700" stroke="currentColor" strokeWidth={3} strokeLinecap="round" />
         <motion.path

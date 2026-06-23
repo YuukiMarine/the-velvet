@@ -30,6 +30,8 @@ import { AntechamberThief } from '@/components/terminal/AntechamberThief';
 import { AntechamberBoard } from '@/components/terminal/AntechamberBoard';
 import { AntechamberTV } from '@/components/terminal/AntechamberTV';
 import { TerminalRoom } from '@/components/terminal/TerminalRoom';
+import { TreasuryThief, TreasuryTrigger, ThiefEmpty } from '@/components/terminal/TreasuryThief';
+import type { TreasuryVM } from '@/components/terminal/TreasuryThief';
 import { MicroBurst } from '@/components/terminal/MicroBurst';
 import { GoalArc } from '@/components/terminal/GoalArc';
 import { useBoldness } from '@/utils/boldness';
@@ -67,6 +69,7 @@ export const Terminal = () => {
   const danmakuTokens = settings.terminalDanmakuTokens ?? 0;
   const [approvedDanmaku, setApprovedDanmaku] = useState<string[]>([]);
   const [composeOpen, setComposeOpen] = useState(false);
+  const [treasuryOpen, setTreasuryOpen] = useState(false); // 心之宝物殿抽屉（thief 正文）
   const [entered, setEntered] = useState(false); // 先经过玄关，点「进入」才正式进终端
   const bold = useBoldness();
   const [celebrateId, setCelebrateId] = useState<string | null>(null); // 刚完成、正在播 juice 的子愿望
@@ -219,66 +222,72 @@ export const Terminal = () => {
     return <AntechamberTV skin={skin} danmakuPool={danmakuPool} {...enterProps} />; // tv(黄)
   }
 
-  // 正文主体（活跃限时卡 / 鼓励机会 / 短路决策 + 愿望清单）——两套外壳共用
-  const body = (
-    <>
-      {/* 进行中的 24h 限时任务 */}
-      {activeTask && (
-        <div className="mb-5">
-          <TerminalTaskCard
-            card={activeTask}
-            onComplete={() => completeTerminalTask(activeTask.id)}
-            onDismiss={() => dismissTerminalTask(activeTask.id)}
-          />
-        </div>
-      )}
+  // ── 共享原子块（两套外壳复用） ──
+  const activeCard = activeTask ? (
+    <div className="mb-5">
+      <TerminalTaskCard
+        card={activeTask}
+        onComplete={() => completeTerminalTask(activeTask.id)}
+        onDismiss={() => dismissTerminalTask(activeTask.id)}
+      />
+    </div>
+  ) : null;
 
-      {/* 攒到鼓励机会 → 写一句送给别人（先审后发）；需登录（与全站在线入口一致） */}
-      {cloudEnabled && cloudUser && danmakuTokens > 0 && (
-        <motion.button
-          type="button"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          whileTap={{ scale: 0.98 }}
-          onClick={() => setComposeOpen(true)}
-          className="mb-5 flex w-full items-center gap-2 rounded-2xl border border-primary/30 bg-primary/5 px-4 py-3 text-left dark:bg-primary/10"
-        >
-          <span className="text-base">✦</span>
-          <span className="flex-1 text-sm font-medium text-primary">
-            你有 {danmakuTokens} 次鼓励机会 · 写一句送给还在低谷的人
-          </span>
-          <span className="text-primary/50">›</span>
-        </motion.button>
-      )}
+  const danmakuBtn =
+    cloudEnabled && cloudUser && danmakuTokens > 0 ? (
+      <motion.button
+        type="button"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        whileTap={{ scale: 0.98 }}
+        onClick={() => setComposeOpen(true)}
+        className="mb-5 flex w-full items-center gap-2 rounded-2xl border border-primary/30 bg-primary/5 px-4 py-3 text-left dark:bg-primary/10"
+      >
+        <span className="text-base">✦</span>
+        <span className="flex-1 text-sm font-medium text-primary">
+          你有 {danmakuTokens} 次鼓励机会 · 写一句送给还在低谷的人
+        </span>
+        <span className="text-primary/50">›</span>
+      </motion.button>
+    ) : null;
 
-      {isEmpty ? (
-        /* 首次仪式引导：愿望清单为空 */
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="rounded-3xl border border-dashed border-primary/40 px-6 py-10 text-center"
-        >
-          <div className="mb-3 text-4xl">✦</div>
-          <h3 className="mb-2 text-lg font-bold text-gray-900 dark:text-white">
-            你最想成为的人，是什么样子？
-          </h3>
-          <p className="mx-auto mb-6 max-w-sm text-sm leading-relaxed text-gray-500 dark:text-gray-400">
-            写下一个「终极目标」——不必宏大，只要是你心里真正向往的方向。
-            之后可以手动、或让 AI 把它拆成够得着的小愿望。
-          </p>
-          <motion.button
-            type="button"
-            whileTap={{ scale: 0.96 }}
-            onClick={openGoalEditor}
-            className="rounded-full bg-primary px-6 py-2.5 text-sm font-semibold text-white shadow-lg shadow-primary/30"
-          >
-            许下第一个愿望
-          </motion.button>
-        </motion.div>
-      ) : (
-        <>
-          <ShortCircuitPanel />
-          <div className="space-y-4">
+  // 心之宝物殿 view-model（thief 抽屉复用全部愿望清单逻辑）
+  const treasuryVM: TreasuryVM = {
+    goals, subsByParent, collapsed, celebrateId, bold, hasAI, attrName,
+    toggleCollapse, completeSub, openEdit, openGoalEditor, openSubEditor, runAI, setDeleteTarget,
+  };
+  const totalSubs = goals.reduce((n, g) => n + (subsByParent[g.id]?.length ?? 0), 0);
+  const totalDone = goals.reduce((n, g) => n + (subsByParent[g.id]?.filter((s) => s.status === 'done').length ?? 0), 0);
+
+  // 首次仪式引导（通用版空状态）
+  const emptyRitual = (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="rounded-3xl border border-dashed border-primary/40 px-6 py-10 text-center"
+    >
+      <div className="mb-3 text-4xl">✦</div>
+      <h3 className="mb-2 text-lg font-bold text-gray-900 dark:text-white">
+        你最想成为的人，是什么样子？
+      </h3>
+      <p className="mx-auto mb-6 max-w-sm text-sm leading-relaxed text-gray-500 dark:text-gray-400">
+        写下一个「终极目标」——不必宏大，只要是你心里真正向往的方向。
+        之后可以手动、或让 AI 把它拆成够得着的小愿望。
+      </p>
+      <motion.button
+        type="button"
+        whileTap={{ scale: 0.96 }}
+        onClick={openGoalEditor}
+        className="rounded-full bg-primary px-6 py-2.5 text-sm font-semibold text-white shadow-lg shadow-primary/30"
+      >
+        许下第一个愿望
+      </motion.button>
+    </motion.div>
+  );
+
+  // 愿望清单（通用外壳内联版；thief 走 TreasuryThief 抽屉）
+  const wishListInline = (
+    <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400">愿望清单</h3>
             <motion.button
@@ -435,6 +444,19 @@ export const Terminal = () => {
             );
           })}
           </div>
+  );
+
+  // 通用外壳正文（board / tv）
+  const body = (
+    <>
+      {activeCard}
+      {danmakuBtn}
+      {isEmpty ? (
+        emptyRitual
+      ) : (
+        <>
+          <ShortCircuitPanel />
+          {wishListInline}
         </>
       )}
     </>
@@ -642,9 +664,19 @@ export const Terminal = () => {
             <div className="mb-5 border-l-2 border-primary/60 pl-3 text-sm italic leading-relaxed text-white/80">
               {skin.velvet}
             </div>
-            {body}
+            {activeCard}
+            {isEmpty ? (
+              <ThiefEmpty onCreate={openGoalEditor} />
+            ) : (
+              <>
+                <ShortCircuitPanel />
+                <TreasuryTrigger goalsCount={goals.length} done={totalDone} total={totalSubs} onOpen={() => setTreasuryOpen(true)} />
+              </>
+            )}
+            {danmakuBtn}
           </div>
         </TerminalRoom>
+        <TreasuryThief open={treasuryOpen} onClose={() => setTreasuryOpen(false)} vm={treasuryVM} />
         {modals}
       </>
     );
