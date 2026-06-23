@@ -319,6 +319,10 @@ export interface Settings {
   // ── F3 无气力症治疗终端 ──
   /** 治疗终端总开关（默认关）：开后首页出现「终端」入口。常驻应急工具，不 gating。 */
   terminalEnabled?: boolean;
+  /** 终端任务奖励日封顶锚日（YYYY-MM-DD）：每日首次完成才给属性点 + 弹幕机会，防刷。 */
+  terminalRewardDate?: string;
+  /** 已累积但未发送的「鼓励弹幕」机会数（在线发送随 F2b 后端批开放）。 */
+  terminalDanmakuTokens?: number;
   // AI 总结功能配置
   summaryApiProvider?: 'openai' | 'deepseek' | 'kimi' | 'gemini' | 'minimax';
   summaryApiKey?: string;
@@ -523,7 +527,36 @@ export interface CallingCard {
    */
   ledgerWritten?: boolean;
 
+  /**
+   * F3 治疗终端任务标记。存在即表示这是「短路决策」落成的 24h 限时任务，
+   * 与普通宣告卡区分：不占 pinned、被 sweepCallingCards 跳过（完成由用户手动
+   * 「我做到了」触发 completeTerminalTask，不靠日期到期自动归档）。
+   */
+  terminal?: {
+    sourceKind: 'wish' | 'todo';
+    sourceId: string;
+    /** 完成奖励落点属性；缺省 → 归「勇气」(guts) */
+    attribute?: AttributeId;
+    /** 叙事用的终极目标标题（wish 来源为父终极目标；todo 来源可空） */
+    goalTitle?: string;
+    /** 起算 / 24h 到期时间（ISO） */
+    startedAt: string;
+    expiresAt: string;
+  };
+
   createdAt: Date;
+}
+
+/** F3 终端任务完成结算屏（TerminalClearCutIn）的载荷 */
+export interface TerminalClearPayload {
+  stepTitle: string;
+  goalTitle?: string;
+  /** 本次实际加点的属性；当日已领过封顶则为 undefined */
+  rewardAttribute?: AttributeId;
+  /** 本次实发属性点（0 = 当日已领过，仅叙事） */
+  rewardPoints: number;
+  /** 是否解锁了一次发弹幕机会 */
+  danmakuGranted: boolean;
 }
 
 // 本周目标

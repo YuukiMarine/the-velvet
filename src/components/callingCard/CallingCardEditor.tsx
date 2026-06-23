@@ -138,6 +138,8 @@ export function CallingCardEditor({ isOpen, initialCard, onClose }: Props) {
       archiveReason: initialCard?.archiveReason,
       cutInShown: initialCard?.cutInShown,
       ledgerWritten: initialCard?.ledgerWritten,
+      // 防御：即便终端卡误入编辑器也不丢 terminal 元数据（正常不会，列表已过滤）
+      terminal: initialCard?.terminal,
       createdAt: initialCard?.createdAt ?? now,
     };
     await saveCallingCard(card);

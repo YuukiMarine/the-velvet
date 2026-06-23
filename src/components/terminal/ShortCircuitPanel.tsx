@@ -27,8 +27,9 @@ interface Candidate {
 type Phase = 'idle' | 'decomposing' | 'result';
 
 export const ShortCircuitPanel = () => {
-  const { wishes, todos, todoCompletions, getDueTodosToday, getTodayTodoProgress, decomposeStepAI, user, settings } = useAppStore();
+  const { wishes, todos, todoCompletions, getDueTodosToday, getTodayTodoProgress, decomposeStepAI, createTerminalTask, getActiveTerminalTask, user, settings } = useAppStore();
   const skin = terminalSkin(user?.theme);
+  const activeTask = getActiveTerminalTask();
   const attrName = (id: AttributeId) => settings.attributeNames?.[id] ?? id;
 
   // 候选池：活跃子愿望 + 今日「应做」且未完成的待办（与全站今日任务口径一致）
@@ -84,6 +85,23 @@ export const ShortCircuitPanel = () => {
   const redo = () => {
     if (chosen) runDecompose(chosen);
   };
+  const accept = async () => {
+    if (!chosen) return;
+    // wish 来源 → 找父终极目标作叙事标题
+    let goalTitle: string | undefined;
+    if (chosen.kind === 'wish') {
+      const sub = wishes.find((w) => w.id === chosen.id);
+      if (sub?.parentId) goalTitle = wishes.find((w) => w.id === sub.parentId)?.title;
+    }
+    const created = await createTerminalTask({
+      stepTitle: step,
+      sourceKind: chosen.kind,
+      sourceId: chosen.id,
+      attribute: chosen.attribute,
+      goalTitle,
+    });
+    if (created) reset(); // 活跃任务卡会在面板外显示
+  };
 
   const empty = pool.length === 0;
 
@@ -103,29 +121,37 @@ export const ShortCircuitPanel = () => {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
           >
-            <p className="mb-3 text-sm leading-relaxed text-gray-600 dark:text-gray-300">
-              {empty ? skin.emptyPool : skin.decideHint}
-            </p>
-            <div className="flex flex-wrap gap-2">
-              <motion.button
-                type="button"
-                whileTap={{ scale: 0.96 }}
-                onClick={decideForMe}
-                disabled={empty}
-                className="flex-1 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-white shadow-lg shadow-primary/30 disabled:opacity-40"
-              >
-                {skin.decideHero}
-              </motion.button>
-              <motion.button
-                type="button"
-                whileTap={{ scale: 0.96 }}
-                onClick={() => setPicking(true)}
-                disabled={empty}
-                className="rounded-xl border border-primary/40 px-4 py-3 text-sm font-medium text-primary disabled:opacity-40"
-              >
-                {skin.decideSelf}
-              </motion.button>
-            </div>
+            {activeTask ? (
+              <p className="text-sm leading-relaxed text-gray-500 dark:text-gray-400">
+                你已经有一个进行中的限时任务，先把它完成吧。
+              </p>
+            ) : (
+              <>
+                <p className="mb-3 text-sm leading-relaxed text-gray-600 dark:text-gray-300">
+                  {empty ? skin.emptyPool : skin.decideHint}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <motion.button
+                    type="button"
+                    whileTap={{ scale: 0.96 }}
+                    onClick={decideForMe}
+                    disabled={empty}
+                    className="flex-1 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-white shadow-lg shadow-primary/30 disabled:opacity-40"
+                  >
+                    {skin.decideHero}
+                  </motion.button>
+                  <motion.button
+                    type="button"
+                    whileTap={{ scale: 0.96 }}
+                    onClick={() => setPicking(true)}
+                    disabled={empty}
+                    className="rounded-xl border border-primary/40 px-4 py-3 text-sm font-medium text-primary disabled:opacity-40"
+                  >
+                    {skin.decideSelf}
+                  </motion.button>
+                </div>
+              </>
+            )}
           </motion.div>
         )}
 
@@ -164,15 +190,15 @@ export const ShortCircuitPanel = () => {
               </span>
             </div>
 
-            {/* 接受 → 落成 24h 限时任务（Batch 3） */}
-            <button
+            {/* 接受 → 落成 24h 限时任务 */}
+            <motion.button
               type="button"
-              disabled
-              title="下一批接入"
-              className="mt-3 w-full cursor-not-allowed rounded-xl bg-primary/30 py-3 text-sm font-bold text-white"
+              whileTap={{ scale: 0.97 }}
+              onClick={accept}
+              className="mt-3 w-full rounded-xl bg-primary py-3 text-sm font-bold text-white shadow-lg shadow-primary/30"
             >
-              {skin.accept} · 下一批
-            </button>
+              {skin.accept}
+            </motion.button>
             <div className="mt-2 flex gap-2">
               <button
                 type="button"

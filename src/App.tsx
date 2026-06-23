@@ -32,6 +32,7 @@ const Ledger = lazy(() => import('@/pages/Ledger').then(m => ({ default: m.Ledge
 // 无气力症治疗终端（F3）
 const Terminal = lazy(() => import('@/pages/Terminal').then(m => ({ default: m.Terminal })));
 import { BattleArena } from '@/components/battle/BattleArena';
+import { TerminalClearCutIn } from '@/components/terminal/TerminalClearCutIn';
 import { primeCurrentTheme } from '@/utils/feedback';
 import { BackgroundAnimation } from '@/components/BackgroundAnimation';
 import { PWAUpdateToast } from '@/components/PWAUpdateToast';
@@ -574,6 +575,8 @@ function App() {
           {/* 宣告 · 达成 全屏结算屏：放在 App 顶层是为了"完成最后一项 todo 时立即弹出"，
               即便用户当时不在 Dashboard 也能看到 */}
           <GlobalCallingCardCutIn />
+          {/* F3 终端任务「我做到了」结算屏（独立于宣告卡 cut-in） */}
+          <TerminalClearCutIn />
         </div>
       </div>
     </div>

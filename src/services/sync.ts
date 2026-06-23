@@ -336,6 +336,11 @@ export const pushAll = async (): Promise<void> => {
           return rest;
         });
       }
+      // F3 终端 24h 任务存在 callingCards 表，但属临时态、且 terminal.goalTitle 复刻了愿望标题。
+      // 愿望(wishes)默认本地优先(opt-in 上云)，故终端卡一律不上云，避免从 callingCards 通道泄漏愿望语义。
+      if (key === 'callingCards') {
+        rows = rows.filter((r: Record<string, unknown>) => !(r && typeof r === 'object' && (r as Record<string, unknown>).terminal));
+      }
       // 直接传数组：SDK 会用 JSON.stringify 序列化请求体（Date → ISO），
       // PocketBase 的 JSON 字段存为原生数组。
       // 不要先 JSON.stringify 成字符串再传 —— 那会被 PB 解析两次，行为不一致。
