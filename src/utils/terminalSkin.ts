@@ -43,6 +43,10 @@ export interface TerminalSkin {
   clearHeading: string;
   /** 完成结算屏印章字 */
   clearStamp: string;
+  /** 玄关觉醒文字（逐行揭幕，Persona 觉醒式） */
+  awaken: string[];
+  /** 玄关进入按钮文案 */
+  enterLabel: string;
   /** 结果页鼓励语（随机取一条） */
   encourage: string[];
   /** 离线拆解模板（按 title 套用，随机取一条） */
@@ -65,6 +69,8 @@ const BOARD: TerminalSkin = {
   redo: '再拆一次',
   clearHeading: '你回来了',
   clearStamp: 'BACK',
+  awaken: ['夜里还醒着的人，', '都在这里低声说话。', '你不是一个人。'],
+  enterLabel: '推门进去',
   encourage: ['有人也这样熬过来。', '迈出去，就已经赢过昨天的自己。', '不必做好，先做一点点。'],
   stepTemplates: [
     (t) => `把「${t}」砍到只剩第一下：现在去打开相关的那样东西——书 / 文件 / 应用，打开就停下，也算数。`,
@@ -89,6 +95,8 @@ const TV: TerminalSkin = {
   redo: '重剪一次',
   clearHeading: '通关！',
   clearStamp: 'CLEAR',
+  awaken: ['本期特别节目，', '就为你一个人播出。', '现在，开始。'],
+  enterLabel: '进入演播厅',
   encourage: ['观众席为你鼓掌！', '这一步稳稳的，下一步更容易。', '开场最难，而你已经开场了。'],
   stepTemplates: [
     (t) => `第一关超简单：把「${t}」相关的第一样东西打开，亮个相就过关。`,
@@ -113,6 +121,8 @@ const THIEF: TerminalSkin = {
   redo: '重定路线',
   clearHeading: '夺回成功',
   clearStamp: 'TAKEN',
+  awaken: ['预告状已经送达。', '今晚，我们改变一颗心——', '你的。'],
+  enterLabel: '潜入',
   encourage: ['Take your heart——先拿下第一步。', '怪盗的字典里没有「做不到」。', '预告已发，行动开始。'],
   stepTemplates: [
     (t) => `潜入第一步：把「${t}」相关的第一样东西「撬开」——翻开书 / 打开文件，门开了就算成功。`,

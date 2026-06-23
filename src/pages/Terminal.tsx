@@ -9,7 +9,7 @@
  * 下一批（Batch 2/3）：短路决策 + 拆解为「最小第一步」→ 24h 限时任务（复用 CallingCard）→
  * 完成叙事 + 弹幕。本页底部以占位卡预告其位置。
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { useAppStore } from '@/store';
 import { useCloudStore } from '@/store/cloud';
@@ -26,6 +26,11 @@ import { ShortCircuitPanel } from '@/components/terminal/ShortCircuitPanel';
 import { TerminalTaskCard } from '@/components/terminal/TerminalTaskCard';
 import { DanmakuField } from '@/components/terminal/DanmakuField';
 import { DanmakuCompose } from '@/components/terminal/DanmakuCompose';
+import { TerminalAntechamber } from '@/components/terminal/TerminalAntechamber';
+import { MicroBurst } from '@/components/terminal/MicroBurst';
+import { GoalArc } from '@/components/terminal/GoalArc';
+import { useBoldness } from '@/utils/boldness';
+import { triggerSuccessFeedback } from '@/utils/feedback';
 import type { AttributeId, Wish } from '@/types';
 
 const ATTR_IDS: AttributeId[] = ['knowledge', 'guts', 'dexterity', 'kindness', 'charm'];
@@ -59,6 +64,24 @@ export const Terminal = () => {
   const danmakuTokens = settings.terminalDanmakuTokens ?? 0;
   const [approvedDanmaku, setApprovedDanmaku] = useState<string[]>([]);
   const [composeOpen, setComposeOpen] = useState(false);
+  const [entered, setEntered] = useState(false); // 先经过玄关，点「进入」才正式进终端
+  const bold = useBoldness();
+  const [celebrateId, setCelebrateId] = useState<string | null>(null); // 刚完成、正在播 juice 的子愿望
+  const celebrateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (celebrateTimer.current) clearTimeout(celebrateTimer.current); }, []);
+
+  // 勾选子愿望：完成→done 时给即时反馈（音+触感+粒子小爆），取消则静默
+  const completeSub = (sub: Wish) => {
+    const next = sub.status === 'done' ? 'active' : 'done';
+    setWishStatus(sub.id, next);
+    if (next === 'done') {
+      triggerSuccessFeedback();
+      setCelebrateId(sub.id);
+      // 复位由本组件计时（不依赖只在 bold 下挂载的 MicroBurst.onDone）：D0 也能清态、可重复触发
+      if (celebrateTimer.current) clearTimeout(celebrateTimer.current);
+      celebrateTimer.current = setTimeout(() => setCelebrateId(null), 600);
+    }
+  };
   useEffect(() => {
     if (cloudEnabled) listApprovedDanmaku().then(setApprovedDanmaku).catch(() => {});
   }, []);
@@ -183,6 +206,17 @@ export const Terminal = () => {
 
   const isEmpty = goals.length === 0;
 
+  // 玄关：点入口先落在这间房间，点「进入」才正式进终端
+  if (!entered) {
+    return (
+      <TerminalAntechamber
+        onEnter={() => setEntered(true)}
+        onBack={() => setCurrentPage('dashboard')}
+        danmakuPool={danmakuPool}
+      />
+    );
+  }
+
   return (
     <div className="relative mx-auto max-w-2xl px-4 pb-24 pt-3">
       {/* 漂浮弹幕（官方精选池 + 云端已过审，氛围层，置于内容之下） */}
@@ -282,6 +316,7 @@ export const Terminal = () => {
 
           {goals.map((goal) => {
             const subs = subsByParent[goal.id] ?? [];
+            const doneCount = subs.filter((s) => s.status === 'done').length;
             const isCollapsed = collapsed.has(goal.id);
             return (
               <motion.div
@@ -311,6 +346,7 @@ export const Terminal = () => {
                       <path d="M9 6l6 6-6 6" />
                     </svg>
                   </button>
+                  {subs.length > 0 && <GoalArc done={doneCount} total={subs.length} />}
                   <div className="min-w-0 flex-1">
                     <button
                       type="button"
@@ -327,7 +363,7 @@ export const Terminal = () => {
                       <p className="mt-0.5 text-xs text-gray-400 dark:text-gray-500">{goal.note}</p>
                     )}
                     <div className="mt-0.5 text-[11px] text-gray-400 dark:text-gray-500">
-                      {subs.length > 0 ? `${subs.filter((s) => s.status === 'done').length}/${subs.length} 子愿望` : '尚无子愿望'}
+                      {subs.length > 0 ? `已夺回 ${doneCount} / ${subs.length}` : '尚无子愿望'}
                     </div>
                   </div>
                   <button
@@ -346,20 +382,26 @@ export const Terminal = () => {
                   <div className="mt-3 space-y-1.5 pl-8">
                     {subs.map((sub) => (
                       <div key={sub.id} className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setWishStatus(sub.id, sub.status === 'done' ? 'active' : 'done')}
-                          className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition ${
-                            sub.status === 'done'
-                              ? 'border-primary bg-primary text-white'
-                              : 'border-gray-300 text-transparent dark:border-gray-600'
-                          }`}
-                          aria-label={sub.status === 'done' ? '标记未完成' : '标记完成'}
-                        >
-                          <svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth={3.2} strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M20 6L9 17l-5-5" />
-                          </svg>
-                        </button>
+                        <span className="relative shrink-0">
+                          <motion.button
+                            type="button"
+                            onClick={() => completeSub(sub)}
+                            whileTap={{ scale: 0.85 }}
+                            animate={celebrateId === sub.id ? { scale: [1, 1.35, 1] } : {}}
+                            transition={{ duration: 0.35, ease: 'easeOut' }}
+                            className={`flex h-5 w-5 items-center justify-center rounded-full border-2 transition-colors ${
+                              sub.status === 'done'
+                                ? 'border-primary bg-primary text-white'
+                                : 'border-gray-300 text-transparent dark:border-gray-600'
+                            }`}
+                            aria-label={sub.status === 'done' ? '标记未完成' : '标记完成'}
+                          >
+                            <svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth={3.2} strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M20 6L9 17l-5-5" />
+                            </svg>
+                          </motion.button>
+                          {bold && celebrateId === sub.id && <MicroBurst />}
+                        </span>
                         <button
                           type="button"
                           onClick={() => openEdit(sub)}

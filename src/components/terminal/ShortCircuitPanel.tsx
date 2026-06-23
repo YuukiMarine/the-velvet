@@ -9,10 +9,12 @@
  *
  * 「接受 · 落成 24h 限时任务」为 Batch 3 接（此处占位）。皮肤随主题切换。
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useAppStore } from '@/store';
 import { SheetModal } from '@/components/SheetModal';
+import { useBoldness } from '@/utils/boldness';
+import { triggerLightHaptic, triggerThemeSwitchFeedback } from '@/utils/feedback';
 import { terminalSkin, minimalStep, pickEncourage } from '@/utils/terminalSkin';
 import type { AttributeId } from '@/types';
 
@@ -24,11 +26,12 @@ interface Candidate {
   note?: string;
 }
 
-type Phase = 'idle' | 'decomposing' | 'result';
+type Phase = 'idle' | 'shuffling' | 'decomposing' | 'result';
 
 export const ShortCircuitPanel = () => {
   const { wishes, todos, todoCompletions, getDueTodosToday, getTodayTodoProgress, decomposeStepAI, createTerminalTask, getActiveTerminalTask, user, settings } = useAppStore();
   const skin = terminalSkin(user?.theme);
+  const bold = useBoldness();
   const activeTask = getActiveTerminalTask();
   const attrName = (id: AttributeId) => settings.attributeNames?.[id] ?? id;
 
@@ -50,6 +53,11 @@ export const ShortCircuitPanel = () => {
   const [step, setStep] = useState('');
   const [usedAI, setUsedAI] = useState(false);
   const [encourage, setEncourage] = useState('');
+  const [shuffleText, setShuffleText] = useState('');
+  const shuffleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 卸载/重置时清掉洗牌定时器，避免泄漏与已卸载 setState
+  useEffect(() => () => { if (shuffleTimer.current) clearTimeout(shuffleTimer.current); }, []);
 
   const runDecompose = async (cand: Candidate) => {
     setChosen(cand);
@@ -70,20 +78,48 @@ export const ShortCircuitPanel = () => {
   };
 
   const decideForMe = () => {
-    if (pool.length === 0) return;
-    runDecompose(pool[Math.floor(Math.random() * pool.length)]);
+    if (phase !== 'idle' || pool.length === 0) return; // 重入守卫：洗牌/拆解中不再受理
+    const cand = pool[Math.floor(Math.random() * pool.length)];
+    // D0 / 候选太少 → 直接拆，不演出
+    if (!bold || pool.length < 2) {
+      runDecompose(cand);
+      return;
+    }
+    // 短路决策演出：候选高速洗牌 → 减速 → 咔地定格在被拣中的一件 → 进入拆解
+    if (shuffleTimer.current) clearTimeout(shuffleTimer.current); // 启动前必清旧链，杜绝并发
+    setChosen(cand);
+    setPhase('shuffling');
+    const titles = pool.map((p) => p.title);
+    setShuffleText(titles[Math.floor(Math.random() * titles.length)]);
+    const delays = [50, 65, 85, 115, 160, 230]; // 递增 = 减速
+    let i = 0;
+    const tick = () => {
+      if (i >= delays.length) {
+        setShuffleText(cand.title); // 定格在被拣中的
+        triggerLightHaptic();
+        triggerThemeSwitchFeedback(user?.theme ?? 'blue'); // 频道锁定声
+        shuffleTimer.current = setTimeout(() => runDecompose(cand), 380); // 聚光停留后拆解
+        return;
+      }
+      setShuffleText(titles[Math.floor(Math.random() * titles.length)]);
+      shuffleTimer.current = setTimeout(tick, delays[i++]);
+    };
+    // 等 shuffling 块挂载（idle 退场 ~0.12s）后再开始循环，避免开场快帧被 exit 吞掉
+    shuffleTimer.current = setTimeout(tick, 150);
   };
   const chooseCandidate = (c: Candidate) => {
     setPicking(false);
     runDecompose(c);
   };
   const reset = () => {
+    if (shuffleTimer.current) clearTimeout(shuffleTimer.current);
     setPhase('idle');
     setChosen(null);
     setStep('');
   };
   const redo = () => {
-    if (chosen) runDecompose(chosen);
+    if (phase !== 'result' || !chosen) return; // 重入守卫：result 退场窗口内防二次拆解
+    runDecompose(chosen);
   };
   const accept = async () => {
     if (!chosen) return;
@@ -119,7 +155,7 @@ export const ShortCircuitPanel = () => {
             key="idle"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+            exit={{ opacity: 0, transition: { duration: 0.12 } }}
           >
             {activeTask ? (
               <p className="text-sm leading-relaxed text-gray-500 dark:text-gray-400">
@@ -152,6 +188,33 @@ export const ShortCircuitPanel = () => {
                 </div>
               </>
             )}
+          </motion.div>
+        )}
+
+        {phase === 'shuffling' && (
+          <motion.div
+            key="shuffling"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="relative flex flex-col items-center justify-center gap-1.5 overflow-hidden py-9 text-center"
+          >
+            {/* 聚光：四周压暗收束到中心 */}
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-0"
+              style={{ background: 'radial-gradient(circle at center, transparent 22%, rgba(0,0,0,0.5) 100%)' }}
+            />
+            <div className="relative z-[1] text-[11px] font-medium tracking-widest text-primary">终端正在替你拣选…</div>
+            <motion.div
+              key={shuffleText}
+              initial={{ opacity: 0.35, scale: 0.96 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.09 }}
+              className="relative z-[1] min-h-[1.9rem] max-w-full truncate text-lg font-black text-gray-900 dark:text-white"
+            >
+              {shuffleText || '…'}
+            </motion.div>
           </motion.div>
         )}
 

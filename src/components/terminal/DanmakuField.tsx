@@ -8,6 +8,7 @@
  */
 import { useMemo } from 'react';
 import { motion } from 'motion/react';
+import { useBoldness } from '@/utils/boldness';
 import { TERMINAL_DANMAKU_SEEDS } from '@/constants/terminalDanmaku';
 
 interface Props {
@@ -18,6 +19,7 @@ interface Props {
 }
 
 export const DanmakuField = ({ messages, count = 7 }: Props) => {
+  const bold = useBoldness();
   const lanes = useMemo(() => {
     const pool = messages && messages.length > 0 ? messages : TERMINAL_DANMAKU_SEEDS;
     return Array.from({ length: count }).map((_, i) => {
@@ -32,6 +34,9 @@ export const DanmakuField = ({ messages, count = 7 }: Props) => {
       };
     });
   }, [messages, count]);
+
+  // 降级红线：reduced-motion / 校直模式 / 低帧永久降级下，氛围层不跑无限动画（静默）
+  if (!bold) return null;
 
   return (
     <div aria-hidden className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
