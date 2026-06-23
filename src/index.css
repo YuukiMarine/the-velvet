@@ -228,6 +228,14 @@ body {
   --boldness: 0;
 }
 
+/* D0：装饰性无限脉动静默。animate-pulse 是纯 CSS keyframe，useBoldness() 的 JS 门控
+   管不到它；三条 D0 通道（reduced-motion / 校直模式 / 低帧降级）下统一停掉，守住
+   「D0 不跑无限装饰动画」红线。spin 属功能性加载指示、短时存在，不在此列。 */
+@media (prefers-reduced-motion: reduce) {
+  .animate-pulse { animation: none; }
+}
+:root[data-boldness="0"] .animate-pulse { animation: none; }
+
 @layer components {
   /* 斜轴世界（UI_DESIGN_BOLD_V2.5.md §2 规则1）——"世界斜、字不斜"
    * · 外层 .sl-plane-clip 只裁旋转出血的横向溢出，自身不转：

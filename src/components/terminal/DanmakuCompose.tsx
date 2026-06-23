@@ -12,9 +12,11 @@ import { submitDanmaku, danmakuThemeOf, validateDanmaku, DANMAKU_MAX_LEN } from 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
+  /** 强制暗色（thief 频道暗房语境，透传给 SheetModal） */
+  forceDark?: boolean;
 }
 
-export const DanmakuCompose = ({ isOpen, onClose }: Props) => {
+export const DanmakuCompose = ({ isOpen, onClose, forceDark }: Props) => {
   const { settings, updateSettings, user } = useAppStore();
   const tokens = settings.terminalDanmakuTokens ?? 0;
   const [text, setText] = useState('');
@@ -57,7 +59,7 @@ export const DanmakuCompose = ({ isOpen, onClose }: Props) => {
   };
 
   return (
-    <SheetModal isOpen={isOpen} onClose={close} position="center" busy={busy} title="写一句鼓励">
+    <SheetModal isOpen={isOpen} onClose={close} position="center" busy={busy} title="写一句鼓励" forceDark={forceDark}>
       {done ? (
         <div className="py-6 text-center">
           <div className="mb-2 text-3xl">✦</div>

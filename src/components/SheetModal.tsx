@@ -41,6 +41,12 @@ export interface SheetModalProps {
   /** 顶部 handle 条，仅 bottom 生效 */
   showHandle?: boolean;
   closeOnBackdrop?: boolean;
+  /**
+   * 强制暗色语境：在 portal 根加 `dark` 类，让面板按 dark: 变体渲染。
+   * 用于把弹窗嵌进一个与全局明暗无关的暗色场景（如 thief 频道的 P5 暗房）——
+   * 局部 `<div className="dark">` 无法染到 portal 出去的子树，必须由基座自己加。
+   */
+  forceDark?: boolean;
 }
 
 export const SheetModal = ({
@@ -55,6 +61,7 @@ export const SheetModal = ({
   maxHeightClass = 'max-h-[90vh]',
   showHandle = true,
   closeOnBackdrop = true,
+  forceDark = false,
 }: SheetModalProps) => {
   const titleId = useId();
   const containerRef = useModalA11y(isOpen, onClose, { closeOnEscape: !busy });
@@ -108,7 +115,7 @@ export const SheetModal = ({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className={`fixed inset-0 ${zClass.modal} flex bg-black/55 backdrop-blur-sm ${
+          className={`fixed inset-0 ${zClass.modal} flex bg-black/55 backdrop-blur-sm ${forceDark ? 'dark' : ''} ${
             isBottom ? 'items-end justify-center' : 'items-center justify-center'
           }`}
           onClick={() => {
