@@ -69,24 +69,30 @@ const Mask = ({ className, fill = '#0a0a0a', stroke = '#fff' }: { className?: st
   </svg>
 );
 
-// ── P5「活高亮」：双多边形(红/青)，顶层 screen 混合，每帧抖动顶点 → 红青色差震颤 ──
-const jitter4 = () => {
-  const r = (a: number, b: number) => (a + Math.random() * (b - a)).toFixed(1);
-  return `${r(0, 16)},${r(0, 9)} ${r(84, 100)},${r(0, 13)} ${r(84, 100)},${r(37, 50)} ${r(0, 16)},${r(41, 50)}`;
+// ── P5「活高亮」：双多边形(红/青)，顶层 screen 混合；rAF 每帧向随机目标插值 → 60fps 平滑红青震颤 ──
+const hlTarget = (): number[] => {
+  const r = (a: number, b: number) => a + Math.random() * (b - a);
+  return [r(0, 16), r(0, 12), r(84, 100), r(0, 14), r(84, 100), r(38, 50), r(0, 16), r(40, 50)];
 };
+const hlPoints = (a: number[]) => `${a[0].toFixed(1)},${a[1].toFixed(1)} ${a[2].toFixed(1)},${a[3].toFixed(1)} ${a[4].toFixed(1)},${a[5].toFixed(1)} ${a[6].toFixed(1)},${a[7].toFixed(1)}`;
 const P5Highlight = ({ className }: { className?: string }) => {
   const bold = useBoldness();
   const redRef = useRef<SVGPolygonElement>(null);
   const blueRef = useRef<SVGPolygonElement>(null);
   useEffect(() => {
-    if (!bold) return; // D0：静态高亮，不抖
-    const tick = () => {
-      redRef.current?.setAttribute('points', jitter4());
-      blueRef.current?.setAttribute('points', jitter4());
+    if (!bold) return; // D0：静态高亮，不跑 rAF
+    const layers = [redRef, blueRef].map((ref) => ({ ref, cur: hlTarget(), tgt: hlTarget(), last: 0 }));
+    let raf = 0;
+    const loop = (t: number) => {
+      for (const L of layers) {
+        if (t - L.last > 130) { L.tgt = hlTarget(); L.last = t; } // 每 ~130ms 换目标，逐帧插值过去
+        for (let i = 0; i < 8; i++) L.cur[i] += (L.tgt[i] - L.cur[i]) * 0.18;
+        L.ref.current?.setAttribute('points', hlPoints(L.cur));
+      }
+      raf = requestAnimationFrame(loop);
     };
-    tick();
-    const id = setInterval(tick, 110);
-    return () => clearInterval(id);
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
   }, [bold]);
   return (
     <svg viewBox="0 0 100 50" preserveAspectRatio="none" className={className} aria-hidden>
@@ -150,6 +156,12 @@ export const AntechamberThief = ({ skin, onEnter, onBack }: Props) => {
     const t = setTimeout(() => setPhase('rest'), 2200);
     return () => clearTimeout(t);
   }, [intro]);
+
+  // 进入红色频道时播一次红主题切换音（"接通怪盗 channel"）
+  useEffect(() => {
+    if (user?.theme) triggerThemeSwitchFeedback(user.theme);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const enter = () => {
     if (popping) return;
@@ -233,8 +245,8 @@ export const AntechamberThief = ({ skin, onEnter, onBack }: Props) => {
           whileTap={popping ? undefined : { scale: 0.95 }}
           className="relative self-center"
         >
-          {/* P5「活高亮」框（抖动红青，screen 混合，环在按钮外缘） */}
-          <P5Highlight className="absolute -inset-2.5 -z-10" />
+          {/* P5「活高亮」框（抖动红青，screen 混合；横向探出、纵向贴按钮高度） */}
+          <P5Highlight className="absolute -inset-x-3 -inset-y-1 -z-10" />
           <Slab fill="var(--color-primary)" variant={0}>
             <div className="flex items-center gap-3 px-9 py-3">
               <Mask className="h-8 w-14 shrink-0" />
