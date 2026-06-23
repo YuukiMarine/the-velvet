@@ -9,13 +9,23 @@ import { AnimatePresence, motion } from 'motion/react';
 import { heavy, Slab, Mask, P5Highlight, Halftone } from './thiefKit';
 import type { ShortCircuitVM } from './ShortCircuitPanel';
 
-/** 十字准星 + 四角锁定括弧 */
+/** 十字准星 + 四角锁定括弧（小图标用：台头 / loading 旋转） */
 const Reticle = ({ className }: { className?: string }) => (
   <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" aria-hidden>
     <path d="M3 8V4a1 1 0 011-1h4M16 3h4a1 1 0 011 1v4M21 16v4a1 1 0 01-1 1h-4M8 21H4a1 1 0 01-1-1v-4" />
     <circle cx="12" cy="12" r="2.4" />
     <path d="M12 6.5v2M12 15.5v2M6.5 12h2M15.5 12h2" />
   </svg>
+);
+
+/** 四角锁定括弧框：只在四角、中央留空——用来框住目标文字而不压字 */
+const ReticleFrame = ({ className }: { className?: string }) => (
+  <span aria-hidden className={`pointer-events-none block ${className ?? ''}`}>
+    <span className="absolute left-0 top-0 h-3.5 w-3.5 border-l-2 border-t-2 border-current" />
+    <span className="absolute right-0 top-0 h-3.5 w-3.5 border-r-2 border-t-2 border-current" />
+    <span className="absolute bottom-0 left-0 h-3.5 w-3.5 border-b-2 border-l-2 border-current" />
+    <span className="absolute bottom-0 right-0 h-3.5 w-3.5 border-b-2 border-r-2 border-current" />
+  </span>
 );
 
 /** 怪盗主操作按钮：红斜块色卡 + 面具 + P5 活高亮 */
@@ -72,17 +82,18 @@ export const ShortCircuitThief = ({ vm }: { vm: ShortCircuitVM }) => {
         )}
 
         {phase === 'shuffling' && (
-          <motion.div key="shuffling" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="relative flex flex-col items-center justify-center gap-2 overflow-hidden py-8 text-center">
+          <motion.div key="shuffling" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="relative flex flex-col items-center justify-center gap-3 overflow-hidden py-8 text-center">
             <div aria-hidden className="pointer-events-none absolute inset-0" style={{ background: 'radial-gradient(circle at center, transparent 18%, rgba(0,0,0,0.72) 100%)' }} />
             <div className="relative z-[1] text-[11px] font-black tracking-[3px] text-primary">锁定目标中…</div>
-            <div className="relative z-[1] flex items-center justify-center">
-              <Reticle className="absolute h-24 w-24 text-primary/70" />
+            {/* 四角锁定括弧框住文字，中央留空——准星不再压字 */}
+            <div className="relative z-[1] flex min-h-[2.6rem] w-full max-w-[16rem] items-center justify-center px-6 text-primary">
+              <ReticleFrame className="absolute inset-0" />
               <motion.div
                 key={shuffleText}
                 initial={{ opacity: 0.4, scale: 0.94 }}
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ duration: 0.09 }}
-                className="max-w-[15rem] truncate px-2 text-lg font-black"
+                className="relative z-[1] max-w-full truncate text-lg font-black text-white"
                 style={heavy(2)}
               >
                 {shuffleText || '…'}

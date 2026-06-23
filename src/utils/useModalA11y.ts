@@ -36,6 +36,20 @@ export function useModalA11y(
     const token = {};
     a11yStack.push(token);
 
+    // 打开前的焦点，关闭时归还（嵌套弹窗逐层退栈逐层交还）
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+
+    // 打开时把焦点移进对话框（WCAG：模态打开焦点应入内）。
+    // 仅当焦点尚未在容器内才移动——保住 autoFocus 输入框（它在挂载时已同步聚焦、落在容器内）。
+    const root = containerRef.current;
+    if (root && !root.contains(document.activeElement)) {
+      const target = root.querySelector<HTMLElement>(
+        'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      );
+      if (target) target.focus();
+      else { root.setAttribute('tabindex', '-1'); root.focus(); }
+    }
+
     const handleKey = (e: KeyboardEvent) => {
       // 非栈顶实例不消费：ESC 与焦点陷阱都只属于最上层弹窗
       if (a11yStack[a11yStack.length - 1] !== token) return;
@@ -73,6 +87,10 @@ export function useModalA11y(
       document.removeEventListener('keydown', handleKey);
       const idx = a11yStack.lastIndexOf(token);
       if (idx !== -1) a11yStack.splice(idx, 1);
+      // 关闭时把焦点交还给打开前的元素（仍在文档内才还）——避免键盘/读屏丢失定位
+      if (previouslyFocused && previouslyFocused.isConnected && typeof previouslyFocused.focus === 'function') {
+        previouslyFocused.focus();
+      }
     };
   }, [isOpen]);
 

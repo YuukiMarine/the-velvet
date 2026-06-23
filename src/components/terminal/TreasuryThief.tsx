@@ -1,0 +1,220 @@
+/**
+ * TreasuryThief — F3 怪盗（红）正文「心之宝物殿」可召唤抽屉（阶段 2 · Round 2）。
+ *
+ * 把愿望清单从首屏主体降为可召唤档案柜：正文里只留一个 TreasuryTrigger 摘要面板，
+ * 点开滑出右侧抽屉，里面是怪盗化的「心之宝物」目标卡（通缉海报感：红黑斜块 + halftone +
+ * 厚描边花字 + GoalArc 关卡进度 + 角章），子愿望为角形锁定勾选行。
+ *
+ * 纯展示：所有逻辑（增删改 / AI 拆分 / 完成 / 折叠）由 Terminal.tsx 经 TreasuryVM 注入。
+ * 用显式深色（不靠 dark: 变体），故与全局明暗无关；抽屉滑动尊重 bold 降级。
+ */
+import { createPortal } from 'react-dom';
+import { AnimatePresence, motion } from 'motion/react';
+import { zClass } from '@/utils/zIndex';
+import { useBackHandler } from '@/utils/useBackHandler';
+import { useModalA11y } from '@/utils/useModalA11y';
+import { springSoft } from '@/utils/motion';
+import { heavy, Halftone } from './thiefKit';
+import { GoalArc } from './GoalArc';
+import { MicroBurst } from './MicroBurst';
+import type { AttributeId, Wish } from '@/types';
+
+export interface TreasuryVM {
+  goals: Wish[];
+  subsByParent: Record<string, Wish[]>;
+  collapsed: Set<string>;
+  celebrateId: string | null;
+  bold: boolean;
+  hasAI: boolean;
+  attrName: (id: AttributeId) => string;
+  toggleCollapse: (id: string) => void;
+  completeSub: (sub: Wish) => void;
+  openEdit: (w: Wish) => void;
+  openGoalEditor: () => void;
+  openSubEditor: (parentId: string) => void;
+  runAI: (goal: Wish) => void;
+  setDeleteTarget: (w: Wish) => void;
+}
+
+// ── 正文内的召唤入口（摘要面板） ──
+export const TreasuryTrigger = ({ goalsCount, done, total, onOpen }: { goalsCount: number; done: number; total: number; onOpen: () => void }) => (
+  <motion.button
+    type="button"
+    whileTap={{ scale: 0.98 }}
+    onClick={onOpen}
+    aria-label="翻开心之宝物殿"
+    className="relative mt-5 flex w-full items-center gap-3 overflow-hidden border-2 border-primary/60 bg-[#0d0d0d] px-4 py-3 text-left"
+    style={{ boxShadow: '4px 5px 0 rgba(0,0,0,0.5)' }}
+  >
+    <Halftone className="absolute right-0 top-0 h-16 w-16 opacity-40" style={{ clipPath: 'polygon(45% 0,100% 0,100% 55%)' }} />
+    <span className="text-2xl" aria-hidden>✦</span>
+    <span className="relative min-w-0 flex-1">
+      <span className="block text-sm font-black tracking-wide" style={heavy(1.5)}>心之宝物殿</span>
+      <span className="block text-[11px] text-white/55">{goalsCount} 件目标 · 已夺回 {done} / {total} 步</span>
+    </span>
+    <span className="relative text-xs font-black tracking-widest text-primary">翻开档案 ›</span>
+  </motion.button>
+);
+
+// ── 怪盗化空状态（无目标时） ──
+export const ThiefEmpty = ({ onCreate }: { onCreate: () => void }) => (
+  <div className="relative overflow-hidden border-2 border-primary/50 bg-[#0d0d0d] px-6 py-10 text-center" style={{ boxShadow: '5px 6px 0 rgba(0,0,0,0.5)' }}>
+    <Halftone className="absolute right-0 top-0 h-24 w-24 opacity-40" style={{ clipPath: 'polygon(45% 0,100% 0,100% 55%)' }} />
+    <div className="relative mb-3 text-4xl" aria-hidden>✦</div>
+    <h3 className="relative mb-2 text-lg font-black" style={heavy(2)}>你最想夺回的，是什么？</h3>
+    <p className="relative mx-auto mb-6 max-w-sm text-sm leading-relaxed text-white/60">
+      先立一个「终极目标」——心之宝物的源头。之后让终端替你拆成够得着的潜入步骤。
+    </p>
+    <button
+      type="button"
+      onClick={onCreate}
+      className="relative border-2 border-black bg-primary px-6 py-2.5 text-sm font-black tracking-wider text-black"
+      style={{ boxShadow: '3px 3px 0 #000' }}
+    >
+      立第一个目标
+    </button>
+  </div>
+);
+
+// ── 抽屉内单个「心之宝物」目标卡 ──
+const TreasureCard = ({ goal, vm }: { goal: Wish; vm: TreasuryVM }) => {
+  const subs = vm.subsByParent[goal.id] ?? [];
+  const doneCount = subs.filter((s) => s.status === 'done').length;
+  const collapsed = vm.collapsed.has(goal.id);
+
+  return (
+    <div className="relative overflow-hidden border-2 border-primary/55 bg-black/55 p-3" style={{ boxShadow: '3px 4px 0 rgba(0,0,0,0.5)' }}>
+      <Halftone className="absolute right-0 top-0 h-14 w-14 opacity-35" style={{ clipPath: 'polygon(50% 0,100% 0,100% 50%)' }} />
+
+      <div className="relative flex items-start gap-2">
+        <button
+          type="button"
+          onClick={() => vm.toggleCollapse(goal.id)}
+          className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center text-primary/70 hover:text-primary"
+          aria-label={collapsed ? '展开' : '收起'}
+        >
+          <svg viewBox="0 0 24 24" className={`h-4 w-4 transition-transform ${collapsed ? '' : 'rotate-90'}`} fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round"><path d="M9 6l6 6-6 6" /></svg>
+        </button>
+        {subs.length > 0 && <GoalArc done={doneCount} total={subs.length} />}
+        <div className="min-w-0 flex-1">
+          <button type="button" onClick={() => vm.openEdit(goal)} className={`block text-left text-base font-black ${goal.status === 'done' ? 'text-white/40 line-through' : 'text-white'}`}>
+            {goal.title}
+          </button>
+          {goal.note && <p className="mt-0.5 text-xs text-white/60">{goal.note}</p>}
+          <div className="mt-0.5 flex items-center gap-1.5 text-[11px] font-bold tracking-wide text-primary">
+            <span aria-hidden className="inline-block -rotate-3 border border-primary/70 px-1 text-[9px] tracking-[2px] text-primary/90">TARGET</span>
+            {subs.length > 0 ? `已夺回 ${doneCount} / ${subs.length}` : '尚无潜入步骤'}
+          </div>
+        </div>
+        <button type="button" onClick={() => vm.setDeleteTarget(goal)} className="shrink-0 p-1 text-white/60 hover:text-primary" aria-label="删除终极目标">
+          <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m2 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6" /></svg>
+        </button>
+      </div>
+
+      {!collapsed && (
+        <div className="relative mt-3 space-y-1.5 pl-8">
+          {subs.map((sub) => (
+            <div key={sub.id} className="flex items-center gap-2">
+              <span className="relative shrink-0">
+                <motion.button
+                  type="button"
+                  onClick={() => vm.completeSub(sub)}
+                  whileTap={{ scale: 0.85 }}
+                  animate={vm.celebrateId === sub.id ? { scale: [1, 1.35, 1] } : {}}
+                  transition={{ duration: 0.35, ease: 'easeOut' }}
+                  className={`flex h-5 w-5 items-center justify-center border-2 ${sub.status === 'done' ? 'border-primary bg-primary text-white' : 'border-primary/50 text-transparent'}`}
+                  aria-label={sub.status === 'done' ? '标记未完成' : '标记完成'}
+                >
+                  <svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth={3.2} strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
+                </motion.button>
+                {vm.bold && vm.celebrateId === sub.id && <MicroBurst />}
+              </span>
+              <button type="button" onClick={() => vm.openEdit(sub)} className={`min-w-0 flex-1 truncate text-left text-sm ${sub.status === 'done' ? 'text-white/40 line-through' : 'text-white/85'}`}>
+                {sub.title}
+                {sub.attribute && <span className="ml-1.5 bg-primary/20 px-1 py-0.5 text-[10px] text-primary">{vm.attrName(sub.attribute)}</span>}
+                {sub.source === 'ai' && <span className="ml-1 text-[10px] text-white/35">AI</span>}
+              </button>
+              <button type="button" onClick={() => vm.setDeleteTarget(sub)} className="shrink-0 p-1 text-white/60 hover:text-primary" aria-label="删除子愿望">
+                <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M18 6L6 18M6 6l12 12" /></svg>
+              </button>
+            </div>
+          ))}
+
+          <div className="flex flex-wrap gap-2 pt-1">
+            <button type="button" onClick={() => vm.openSubEditor(goal.id)} className="border border-primary/40 px-3 py-1 text-xs font-bold text-primary/90 hover:bg-primary/10">+ 潜入步骤</button>
+            <button
+              type="button"
+              onClick={() => vm.runAI(goal)}
+              disabled={!vm.hasAI}
+              title={vm.hasAI ? undefined : '需先在「设置 → AI 总结」配置 API 密钥'}
+              className="border border-primary/40 px-3 py-1 text-xs font-bold text-primary/90 hover:bg-primary/10 disabled:opacity-40"
+            >
+              ✦ AI 拆分{vm.hasAI ? '' : '（未配置）'}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ── 抽屉 ──
+export const TreasuryThief = ({ open, onClose, vm }: { open: boolean; onClose: () => void; vm: TreasuryVM }) => {
+  const containerRef = useModalA11y(open, onClose, { closeOnEscape: true });
+  useBackHandler(open, onClose);
+
+  return createPortal(
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className={`fixed inset-0 ${zClass.modal} dark flex justify-end bg-black/60 backdrop-blur-sm`}
+          onClick={onClose}
+        >
+          <motion.aside
+            ref={containerRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label="心之宝物殿"
+            initial={vm.bold ? { x: '100%' } : { opacity: 0 }}
+            animate={vm.bold ? { x: 0 } : { opacity: 1 }}
+            exit={vm.bold ? { x: '100%' } : { opacity: 0 }}
+            transition={vm.bold ? springSoft : { duration: 0.15 }}
+            onClick={(e) => e.stopPropagation()}
+            className="relative flex h-full w-full max-w-md flex-col overflow-hidden border-l-4 border-primary bg-[#0d0d0d]"
+          >
+            <Halftone className="absolute right-0 top-0 h-28 w-28 opacity-30" style={{ clipPath: 'polygon(45% 0,100% 0,100% 55%)' }} />
+
+            {/* 抽屉头 */}
+            <div className="relative flex items-center gap-2 border-b-2 border-primary/40 px-4 py-3">
+              <span className="shrink-0 text-xl" aria-hidden>✦</span>
+              <h2 className="min-w-0 flex-1 truncate text-lg font-black tracking-wide" style={heavy(2)}>心之宝物殿</h2>
+              <span className="hidden shrink-0 text-[10px] font-black tracking-[3px] text-primary/60 sm:inline">TREASURE</span>
+              <button
+                type="button"
+                onClick={vm.openGoalEditor}
+                className="shrink-0 border-2 border-primary bg-primary px-3 py-1 text-xs font-black tracking-wide text-black"
+                style={{ boxShadow: '2px 2px 0 #000' }}
+              >
+                + 立新目标
+              </button>
+              <button type="button" onClick={onClose} aria-label="关闭" className="flex h-8 w-8 shrink-0 items-center justify-center text-white/70 hover:text-primary">
+                <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round"><path d="M18 6L6 18M6 6l12 12" /></svg>
+              </button>
+            </div>
+
+            {/* 目标卡列表 */}
+            <div className="relative min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-4 py-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+              {vm.goals.map((goal) => (
+                <TreasureCard key={goal.id} goal={goal} vm={vm} />
+              ))}
+            </div>
+          </motion.aside>
+        </motion.div>
+      )}
+    </AnimatePresence>,
+    document.body,
+  );
+};
