@@ -19,9 +19,11 @@
  *   createdBy   relation → users   (cascade delete) ★必须勾 Hidden（否则去匿名）
  *   approvedAt  date     optional（过审时间，可人工或 hook 填）
  *
- *   API 规则（纯规则即可实现「先审后发」，无需 hook）：
+ *   API 规则（纯规则即可实现「先审后发」，无需 hook）。
+ *   ⚠️ 字段引用语法随 PB 版本不同：v0.23+ 用 @request.body.*，v0.22 及更早用 @request.data.*。
+ *      （报错 failed to resolve field "@request.data.status" = 你在 v0.23+，改用 @request.body）
  *     List/View rule : status = "approved"
- *     Create rule    : @request.auth.id != "" && @request.data.status = "pending" && @request.data.createdBy = @request.auth.id
+ *     Create rule    : @request.auth.id != "" && @request.body.status = "pending" && @request.body.createdBy = @request.auth.id
  *     Update/Delete  : （锁定 = 仅 Admin；过审在后台点 approved）
  *   ⚠️ PB 规则三态：锁定(null)=仅 Admin（安全）；空字符串("")=对所有人公开无过滤（会泄漏
  *      pending/rejected + createdBy！）；表达式=按条件。务必让 List/View 是 status="approved" 而非空。
@@ -31,7 +33,7 @@
  *   reason      text
  *   reporterId  relation → users
  *   唯一索引(unique): (danmaku, reporterId) —— ★必须，否则单人可刷多条举报强制下架任意内容
- *   Create rule : @request.auth.id != "" && @request.data.reporterId = @request.auth.id
+ *   Create rule : @request.auth.id != "" && @request.body.reporterId = @request.auth.id  (v0.22-: @request.data)
  */
 
 import { pb, getUserId } from './pocketbase';
