@@ -2,9 +2,13 @@
  * terminalSkin — F3 无气力症治疗终端的「主题差分皮肤」（PRD F3.6）。
  *
  * 终端 UI/文案随当前主题色切换频道皮肤：
- *   · 蓝            → 匿名讨论板（低语、匿名、彼此扶持）
+ *   · 蓝 / 粉 / 自定义 → 匿名讨论板（低语、匿名、彼此扶持；随 App 明暗自适配）
  *   · 黄            → TV 特别节目（综艺/节目化、明亮、口号式打气）
- *   · 红 / 粉 / 自定义 → 怪盗 channel（怪盗团式「改变心意」、热血宣言）
+ *   · 红            → 怪盗 channel（怪盗团式「改变心意」、热血宣言）
+ *
+ * 注：怪盗皮肤是硬编码暗底 P5 房间，强调色直接用 var(--color-primary) 当「黑底上可读的
+ * 高饱和红」。自定义主题的 primary 可为任意（含近黑）色、无明度保证，故**不归怪盗**，
+ * 改走自适配明暗的讨论板兜底，避免 text-primary 落在暗卡上不可读。
  *
  * 同时承载「离线拆解模板」：无 AI Key 时，把一件事砍到「最小第一步」的兜底文案
  * （在线拆解走 store.decomposeStepAI）。
@@ -151,9 +155,9 @@ const THIEF: TerminalSkin = {
   ],
 };
 
-/** 主题 → 频道：蓝·粉=讨论板（论坛风）/ 黄=TV / 红·自定义=怪盗 */
+/** 主题 → 频道：黄=TV / 红=怪盗 / 其余(蓝·粉·自定义)=讨论板（自适配明暗的兜底） */
 export const terminalChannel = (theme?: ThemeType): TerminalChannel =>
-  theme === 'yellow' ? 'tv' : theme === 'red' || theme === 'custom' ? 'thief' : 'board';
+  theme === 'yellow' ? 'tv' : theme === 'red' ? 'thief' : 'board';
 
 export const terminalSkin = (theme?: ThemeType): TerminalSkin => {
   switch (terminalChannel(theme)) {

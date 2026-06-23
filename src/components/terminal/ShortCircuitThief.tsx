@@ -6,7 +6,7 @@
  * 所有装饰动效靠容器的 bold 守卫（shuffling 仅 bold 时进入）；急救 2 秒路径不受阻。
  */
 import { AnimatePresence, motion } from 'motion/react';
-import { heavy, Slab, Mask, P5Highlight, Halftone } from './thiefKit';
+import { heavy, Halftone, StrikeButton, GhostButton } from './thiefKit';
 import type { ShortCircuitVM } from './ShortCircuitPanel';
 
 /** 十字准星 + 四角锁定括弧（小图标用：台头 / loading 旋转） */
@@ -26,25 +26,6 @@ const ReticleFrame = ({ className }: { className?: string }) => (
     <span className="absolute bottom-0 left-0 h-3.5 w-3.5 border-b-2 border-l-2 border-current" />
     <span className="absolute bottom-0 right-0 h-3.5 w-3.5 border-b-2 border-r-2 border-current" />
   </span>
-);
-
-/** 怪盗主操作按钮：红斜块色卡 + 面具 + P5 活高亮 */
-const StrikeButton = ({ label, onClick, mask = false, disabled = false, className }: { label: string; onClick: () => void; mask?: boolean; disabled?: boolean; className?: string }) => (
-  <motion.button type="button" whileTap={disabled ? undefined : { scale: 0.95 }} onClick={onClick} disabled={disabled} aria-label={label} className={`relative disabled:opacity-40 ${className ?? ''}`}>
-    {!disabled && <P5Highlight className="absolute -inset-x-2 -inset-y-1 -z-10" />}
-    <Slab fill="var(--color-primary)" variant={0}>
-      <div className="flex items-center justify-center gap-2 px-5 py-2.5">
-        {mask && <Mask className="h-5 w-9 shrink-0" />}
-        <span className="text-base font-black tracking-wider" style={heavy(2)}>{label}</span>
-      </div>
-    </Slab>
-  </motion.button>
-);
-
-const GhostButton = ({ label, onClick, disabled = false, className }: { label: string; onClick: () => void; disabled?: boolean; className?: string }) => (
-  <button type="button" onClick={onClick} disabled={disabled} className={`rounded-[2px] border-2 border-primary/60 px-4 py-2 text-sm font-bold tracking-wide text-primary transition hover:bg-primary/10 disabled:opacity-40 ${className ?? ''}`}>
-    {label}
-  </button>
 );
 
 export const ShortCircuitThief = ({ vm }: { vm: ShortCircuitVM }) => {
