@@ -155,6 +155,10 @@ function getSkipSet(): Set<string> {
   if (s.syncConfidantsToCloud === false) {
     for (const t of CONFIDANT_TABLES) skip.add(t);
   }
+  // F3 愿望清单 opt-in：默认跳过（只存本地），仅当用户显式开启才上云
+  if (s.syncWishesToCloud !== true) {
+    skip.add('wishes');
+  }
   return skip;
 }
 
@@ -185,6 +189,9 @@ const SYNC_TABLES = [
   'counselArchives',
   // 宣告卡 / 倒计时（v2.1+），按 id 双向同步，pinned 互斥由本地 saveCallingCard 保障
   'callingCards',
+  // F3 治疗终端「愿望清单」：列入 SYNC_TABLES 使其「可」同步，但 opt-in——
+  // getSkipSet 默认把它加入 skip，仅当 settings.syncWishesToCloud === true 才上云（默认不传）。
+  'wishes',
   // ⚠️ F5 心相记账（ledgerEntries / budgets / assets）故意不列于此：财务数据始终只存本地、永不上云（PRD §F5.8）。
 ] as const;
 

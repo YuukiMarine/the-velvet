@@ -355,6 +355,11 @@ export interface Settings {
   // 默认 true；置为 false 时 push/pull 会跳过这两张表（本地依然完整保留）
   syncConfidantsToCloud?: boolean;
   /**
+   * 云同步：是否将治疗终端「愿望清单」(wishes) 上传到云端。
+   * F3 opt-in：默认 undefined / false = 不上云（仅存本地）；仅当用户显式勾选才 push/pull。
+   */
+  syncWishesToCloud?: boolean;
+  /**
    * 云同步黑名单：列出不需要同步的表名。
    * 默认 undefined = 全部同步（except 由 syncConfidantsToCloud 控制的"同伴"两张表）。
    * 这里列出的表在 push/pull 时都会被跳过；本地依然完整保留。

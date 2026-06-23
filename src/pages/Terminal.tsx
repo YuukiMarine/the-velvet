@@ -17,17 +17,11 @@ import { BackButton } from '@/components/BackButton';
 import { SheetModal } from '@/components/SheetModal';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { getAIConfig } from '@/utils/aiClient';
-import type { AttributeId, ThemeType, Wish } from '@/types';
+import { terminalSkin } from '@/utils/terminalSkin';
+import { ShortCircuitPanel } from '@/components/terminal/ShortCircuitPanel';
+import type { AttributeId, Wish } from '@/types';
 
 const ATTR_IDS: AttributeId[] = ['knowledge', 'guts', 'dexterity', 'kindness', 'charm'];
-
-/** 主题差分：终端「频道」皮肤文案（完整皮肤在 Batch 2，此处先给频道名 + 基调）。 */
-const channelByTheme = (t?: ThemeType) =>
-  t === 'blue'
-    ? { label: '匿名讨论板', tagline: '低语 · 匿名 · 彼此扶持' }
-    : t === 'yellow'
-      ? { label: 'TV 特别节目', tagline: '明亮 · 节目化 · 为你打气' }
-      : { label: '怪盗 channel', tagline: '改变心意 · 热血宣言' }; // 红 / 粉 / 自定义
 
 interface EditorState {
   open: boolean;
@@ -54,7 +48,7 @@ export const Terminal = () => {
   const { wishes, addWish, saveWish, deleteWish, setWishStatus, decomposeWishAI, settings, user, setCurrentPage } =
     useAppStore();
 
-  const channel = channelByTheme(user?.theme);
+  const skin = terminalSkin(user?.theme);
   const hasAI = !!getAIConfig(settings);
   const attrName = (id: AttributeId) => settings.attributeNames?.[id] ?? id;
 
@@ -188,8 +182,8 @@ export const Terminal = () => {
       >
         <div className="mb-1 flex items-center gap-2">
           <span className="inline-flex h-2 w-2 animate-pulse rounded-full bg-primary" aria-hidden />
-          <span className="text-xs font-semibold tracking-wide text-primary">{channel.label}</span>
-          <span className="text-[11px] text-gray-400 dark:text-gray-500">{channel.tagline}</span>
+          <span className="text-xs font-semibold tracking-wide text-primary">{skin.label}</span>
+          <span className="text-[11px] text-gray-400 dark:text-gray-500">{skin.tagline}</span>
         </div>
         <p className="text-sm leading-relaxed text-gray-600 dark:text-gray-300">
           如果你今天很困扰、甚至失去了记录的勇气——可以来这里看看。
@@ -222,7 +216,9 @@ export const Terminal = () => {
           </motion.button>
         </motion.div>
       ) : (
-        <div className="space-y-4">
+        <>
+          <ShortCircuitPanel />
+          <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400">愿望清单</h3>
             <motion.button
@@ -358,6 +354,8 @@ export const Terminal = () => {
                       <button
                         type="button"
                         onClick={() => runAI(goal)}
+                        disabled={!hasAI}
+                        title={hasAI ? undefined : '需先在「设置 → AI 总结」配置 API 密钥'}
                         className="rounded-full border border-primary/30 px-3 py-1 text-xs font-medium text-primary disabled:opacity-50"
                       >
                         ✦ AI 拆分{hasAI ? '' : '（未配置）'}
@@ -368,17 +366,9 @@ export const Terminal = () => {
               </motion.div>
             );
           })}
-        </div>
+          </div>
+        </>
       )}
-
-      {/* 短路决策占位：预告下一批的位置 */}
-      <div className="mt-6 rounded-2xl border border-dashed border-gray-200 px-4 py-5 text-center dark:border-gray-700">
-        <div className="mb-1 text-sm font-semibold text-gray-400 dark:text-gray-500">短路决策 · 即将抵达</div>
-        <p className="text-xs leading-relaxed text-gray-400 dark:text-gray-500">
-          当你被「今天该做什么」压垮时，终端会从愿望清单与未完成待办里替你拣一件，
-          拆到 5 分钟内能迈出的第一步，落成一张 24h 限时任务。
-        </p>
-      </div>
 
       {/* 愿望编辑器 */}
       <SheetModal

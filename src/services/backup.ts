@@ -69,8 +69,10 @@ export const buildExportJson = async (): Promise<string> => {
     confidantEvents: await db.confidantEvents.toArray(),
     // 谏言归档摘要（v6 新增；聊天原文永不落盘，所以此处不包含 counselSessions）
     counselArchives: await db.counselArchives.toArray(),
+    // 愿望清单（F3 v7 新增；本地全量备份始终包含，云端是否上传另由 syncWishesToCloud 控制）
+    wishes: await db.wishes.toArray(),
     _exportedAt: new Date().toISOString(),
-    _version: 6,
+    _version: 7,
   };
   const json = JSON.stringify(data);
   // 出口校验：确保产生的 JSON 字符串可被原样解析回来。
