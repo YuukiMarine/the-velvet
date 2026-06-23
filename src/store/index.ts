@@ -9,6 +9,7 @@ import { computeAndSchedule, type NotifSnapshot } from '@/utils/notifications';
 import { isGrowthCategory, cycleRangeForKey } from '@/utils/ledgerFormat';
 import { resolveProvider } from '@/utils/aiProviders';
 import { chatComplete, getAIConfig } from '@/utils/aiClient';
+import { cloudEnabled } from '@/services/pocketbase';
 import {
   pointsToLevel,
   levelBasePoints,
@@ -1692,11 +1693,14 @@ export const useAppStore = create<AppState>((set, get) => ({
       const shownPoints = act?.pointsAwarded?.[attribute] ?? points;
       let danmakuGranted = false;
       if (rewardEligible) {
-        danmakuGranted = true;
-        await get().updateSettings({
-          terminalRewardDate: today,
-          terminalDanmakuTokens: (get().settings.terminalDanmakuTokens ?? 0) + 1,
-        });
+        const patch: Partial<Settings> = { terminalRewardDate: today };
+        // 弹幕机会只在配置了云后端时才发——纯本地用户没有可投稿的去处，
+        // 避免「解锁了却永远用不上」的空头奖励（消费入口同样 gate cloudEnabled）
+        if (cloudEnabled) {
+          danmakuGranted = true;
+          patch.terminalDanmakuTokens = (get().settings.terminalDanmakuTokens ?? 0) + 1;
+        }
+        await get().updateSettings(patch);
       }
       // 归档：cutInShown=true 让 GlobalCallingCardCutIn（宣告卡结算屏）跳过它，改由 TerminalClearCutIn 接管
       await db.callingCards.put({

@@ -9,9 +9,13 @@
  * 下一批（Batch 2/3）：短路决策 + 拆解为「最小第一步」→ 24h 限时任务（复用 CallingCard）→
  * 完成叙事 + 弹幕。本页底部以占位卡预告其位置。
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
 import { useAppStore } from '@/store';
+import { useCloudStore } from '@/store/cloud';
+import { cloudEnabled } from '@/services/pocketbase';
+import { listApprovedDanmaku } from '@/services/danmaku';
+import { TERMINAL_DANMAKU_SEEDS } from '@/constants/terminalDanmaku';
 import { PageTitle } from '@/components/PageTitle';
 import { BackButton } from '@/components/BackButton';
 import { SheetModal } from '@/components/SheetModal';
@@ -21,6 +25,7 @@ import { terminalSkin } from '@/utils/terminalSkin';
 import { ShortCircuitPanel } from '@/components/terminal/ShortCircuitPanel';
 import { TerminalTaskCard } from '@/components/terminal/TerminalTaskCard';
 import { DanmakuField } from '@/components/terminal/DanmakuField';
+import { DanmakuCompose } from '@/components/terminal/DanmakuCompose';
 import type { AttributeId, Wish } from '@/types';
 
 const ATTR_IDS: AttributeId[] = ['knowledge', 'guts', 'dexterity', 'kindness', 'charm'];
@@ -50,6 +55,15 @@ export const Terminal = () => {
   const { wishes, addWish, saveWish, deleteWish, setWishStatus, decomposeWishAI, getActiveTerminalTask, completeTerminalTask, dismissTerminalTask, settings, user, setCurrentPage } =
     useAppStore();
   const activeTask = getActiveTerminalTask();
+  const cloudUser = useCloudStore((s) => s.cloudUser);
+  const danmakuTokens = settings.terminalDanmakuTokens ?? 0;
+  const [approvedDanmaku, setApprovedDanmaku] = useState<string[]>([]);
+  const [composeOpen, setComposeOpen] = useState(false);
+  useEffect(() => {
+    if (cloudEnabled) listApprovedDanmaku().then(setApprovedDanmaku).catch(() => {});
+  }, []);
+  // 稳定弹幕池：只在拉取完成（approvedDanmaku 变化）时重算，避免每次重渲染让漂浮弹幕跳变
+  const danmakuPool = useMemo(() => [...TERMINAL_DANMAKU_SEEDS, ...approvedDanmaku], [approvedDanmaku]);
 
   const skin = terminalSkin(user?.theme);
   const hasAI = !!getAIConfig(settings);
@@ -171,8 +185,8 @@ export const Terminal = () => {
 
   return (
     <div className="relative mx-auto max-w-2xl px-4 pb-24 pt-3">
-      {/* 漂浮弹幕（离线精选池，氛围层，置于内容之下） */}
-      <DanmakuField />
+      {/* 漂浮弹幕（官方精选池 + 云端已过审，氛围层，置于内容之下） */}
+      <DanmakuField messages={danmakuPool} />
 
       {/* 顶栏 */}
       <div className="mb-4 flex items-center gap-2">
@@ -206,6 +220,24 @@ export const Terminal = () => {
             onDismiss={() => dismissTerminalTask(activeTask.id)}
           />
         </div>
+      )}
+
+      {/* 攒到鼓励机会 → 写一句送给别人（先审后发）；需登录（与全站在线入口一致） */}
+      {cloudEnabled && cloudUser && danmakuTokens > 0 && (
+        <motion.button
+          type="button"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          whileTap={{ scale: 0.98 }}
+          onClick={() => setComposeOpen(true)}
+          className="mb-5 flex w-full items-center gap-2 rounded-2xl border border-primary/30 bg-primary/5 px-4 py-3 text-left dark:bg-primary/10"
+        >
+          <span className="text-base">✦</span>
+          <span className="flex-1 text-sm font-medium text-primary">
+            你有 {danmakuTokens} 次鼓励机会 · 写一句送给还在低谷的人
+          </span>
+          <span className="text-primary/50">›</span>
+        </motion.button>
       )}
 
       {isEmpty ? (
@@ -563,6 +595,9 @@ export const Terminal = () => {
         onConfirm={confirmDelete}
         onCancel={() => setDeleteTarget(null)}
       />
+
+      {/* 弹幕投稿（先审后发） */}
+      <DanmakuCompose isOpen={composeOpen} onClose={() => setComposeOpen(false)} />
     </div>
   );
 };

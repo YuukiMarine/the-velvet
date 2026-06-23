@@ -180,7 +180,7 @@ export const TerminalClearCutIn = () => {
               )}
               {terminalClear.danmakuGranted && (
                 <span className="text-xs" style={{ color: 'rgba(255,255,255,0.7)' }}>
-                  ✦ 解锁一次鼓励他人的机会（发送即将开放）
+                  ✦ 解锁一次鼓励他人的机会 · 去终端写一句送出
                 </span>
               )}
               <span className="mt-1 text-xs italic" style={{ color: 'rgba(255,255,255,0.6)' }}>
