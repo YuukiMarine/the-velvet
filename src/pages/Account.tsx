@@ -519,6 +519,7 @@ export const Account = () => {
                   excluded={settings.syncExcludedTables ?? []}
                   syncConfidantsToCloud={settings.syncConfidantsToCloud}
                   syncCloudApiKey={settings.syncCloudApiKey}
+                  syncWishesToCloud={settings.syncWishesToCloud}
                   onChange={(patch) => updateSettings(patch)}
                 />
 

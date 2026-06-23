@@ -9,11 +9,11 @@ interface Group {
   hint: string;
   /** 表级组：列出的所有表都被打开/关闭 */
   tables?: string[];
-  /** 字段级组：开关对应 settings 里的一个布尔字段（用于单字段敏感数据，如 API Key） */
+  /** 字段级组：开关对应 settings 里的一个布尔字段（用于单字段敏感数据，如 API Key；或 opt-in 数据，如愿望清单） */
   field?: {
     /** 要开/关的 settings 字段名 */
-    settingKey: 'syncCloudApiKey';
-    /** settings 值未定义时视为的默认状态（通常 true = 打开）*/
+    settingKey: 'syncCloudApiKey' | 'syncWishesToCloud';
+    /** settings 值未定义时视为的默认状态（true = 默认开；false = 默认关 / opt-in）*/
     defaultWhenUndefined: boolean;
   };
   /** 始终同步，不可关闭 */
@@ -64,6 +64,12 @@ const GROUPS: Group[] = [
     hint: '同伴档案 / 同伴事件历史 / 谏言归档摘要（聊天原文永不上云）',
     tables: ['confidants', 'confidantEvents', 'counselArchives'],
   },
+  {
+    id: 'wishes',
+    label: '治疗终端 · 愿望清单',
+    hint: '终极目标 / 子愿望 —— 默认只存本地；勾选后才随账号上云，换设备可恢复',
+    field: { settingKey: 'syncWishesToCloud', defaultWhenUndefined: false },
+  },
 ];
 
 interface Props {
@@ -72,6 +78,8 @@ interface Props {
   syncConfidantsToCloud?: boolean;
   /** AI 模型 API Key 是否随 settings 上云；undefined = 默认 true */
   syncCloudApiKey?: boolean;
+  /** 愿望清单是否上云（F3 opt-in）；undefined = 默认 false（不上云） */
+  syncWishesToCloud?: boolean;
   onChange: (patch: Partial<Settings>) => void;
 }
 
@@ -84,7 +92,7 @@ interface Props {
  *    · 若"同伴"组被关，`syncConfidantsToCloud = false`（兼容旧逻辑）
  *    · 若被打开，`syncConfidantsToCloud = true`
  */
-export function SyncPrivacyPanel({ excluded, syncConfidantsToCloud, syncCloudApiKey, onChange }: Props) {
+export function SyncPrivacyPanel({ excluded, syncConfidantsToCloud, syncCloudApiKey, syncWishesToCloud, onChange }: Props) {
   const [open, setOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -121,6 +129,9 @@ export function SyncPrivacyPanel({ excluded, syncConfidantsToCloud, syncCloudApi
     if (!g.field) return true;
     if (g.field.settingKey === 'syncCloudApiKey') {
       return syncCloudApiKey === undefined ? g.field.defaultWhenUndefined : syncCloudApiKey;
+    }
+    if (g.field.settingKey === 'syncWishesToCloud') {
+      return syncWishesToCloud === undefined ? g.field.defaultWhenUndefined : syncWishesToCloud;
     }
     return g.field.defaultWhenUndefined;
   };

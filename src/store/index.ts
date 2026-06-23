@@ -287,6 +287,13 @@ interface AppState {
    * 在线走 chatComplete；无 Key 抛错由调用方兜底（手动输入）。返回标题数组，由 UI 确认后再落库。
    */
   decomposeWishAI: (parentTitle: string, parentNote?: string) => Promise<string[]>;
+  /**
+   * 短路决策的拆解：把一件事拆成「此刻就能做、5 分钟内完成」的最小第一步（单行）。
+   * 在线走 chatComplete；无 Key 抛错，由 UI 走 terminalSkin 的离线模板兜底。
+   */
+  decomposeStepAI: (title: string, note?: string) => Promise<string>;
+  /** 今日「应做」的活跃待办（active + 未来启用日排除 + weekdays 不含今天排除）；短路决策候选与入口卡计数共用，统一全站口径。 */
+  getDueTodosToday: () => Todo[];
 
   addTodo: (todo: Omit<Todo, 'id' | 'createdAt'>) => Promise<void>;
   updateTodo: (id: string, updates: Partial<Todo>) => Promise<void>;
@@ -1546,10 +1553,54 @@ export const useAppStore = create<AppState>((set, get) => ({
       { temperature: 0.8, maxTokens: 400 },
     );
     return content
-      .split('\n')
-      .map(l => l.replace(/^[\s\-*·•\d.、,，)）(（]+/, '').trim())
-      .filter(l => l.length > 0 && l.length <= 40)
+      .split(/\n+/)
+      .flatMap(line => line.split(/[；;]+/)) // 同行内分号串接的多条 → 拆开
+      .flatMap(seg => seg.split(/\s+(?=\d+[.、)）])/)) // 同行内空格分隔的「2）…」编号 → 拆开
+      .map(l =>
+        l
+          .replace(/^(?:[\s\-*·•]+|\d+[.、)）]\s*)+/, '') // 去 bullet / 真编号；数字须跟分隔符，不误伤「30天…」正文
+          .trim(),
+      )
+      .filter(l => l.length > 0 && l.length <= 80 && /[\p{L}\p{N}]/u.test(l)) // ≤80 容纳较长子愿望；滤掉纯标点
       .slice(0, 5);
+  },
+
+  decomposeStepAI: async (title: string, note?: string) => {
+    const cfg = getAIConfig(get().settings);
+    if (!cfg) throw new Error('未配置 AI'); // UI 据此走离线模板兜底
+    const sys =
+      '你是温柔而有力的行动教练，专治「启动困难」。把用户给的一件事，拆成此刻就能开始、' +
+      '5 分钟内能完成的「最小第一步」。只输出这一步：一句话、不超过 40 字、是具体的行动指令；' +
+      '不要解释、不要分多步、不要加鼓励语或标点编号。';
+    const usr = note ? `事情：${title}\n备注：${note}` : `事情：${title}`;
+    const content = await chatComplete(
+      cfg,
+      [
+        { role: 'system', content: sys },
+        { role: 'user', content: usr },
+      ],
+      { temperature: 0.7, maxTokens: 120 },
+    );
+    const line = content.split('\n').map(l => l.trim()).filter(Boolean)[0] ?? '';
+    const cleaned = line
+      .replace(/^(?:[\s\-*·•]+|\d+[.、)）]\s*)+/, '') // 去 bullet / 真编号（数字须跟分隔符，不误伤「5分钟…」正文）
+      .replace(/^["'「『（(]+/, '')
+      .replace(/["'」』）)]+$/, '')
+      .trim();
+    // 纯标点 / 无任何字母数字（AI 被审查/截断常返回这种）→ 抛错，由 UI 回落离线模板
+    if (!cleaned || !/[\p{L}\p{N}]/u.test(cleaned)) throw new Error('AI 返回无效');
+    return cleaned;
+  },
+
+  getDueTodosToday: () => {
+    const todayKey = toLocalDateKey();
+    const todayWeekday = new Date().getDay(); // 0=周日…6=周六，与 Todos/Dashboard 同口径
+    return get().todos.filter(t =>
+      t.isActive &&
+      !t.archivedAt &&
+      (!t.startDate || t.startDate <= todayKey) &&
+      (!t.weekdays || t.weekdays.length === 0 || t.weekdays.includes(todayWeekday)),
+    );
   },
 
   loadData: async () => {
@@ -1984,6 +2035,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       confidants: await db.confidants.toArray(),
       confidantEvents: await db.confidantEvents.toArray(),
       counselArchives: await db.counselArchives.toArray(),
+      wishes: await db.wishes.toArray(),
     };
 
     // 3. 写入新数据；若失败则从快照恢复
@@ -2143,6 +2195,18 @@ export const useAppStore = create<AppState>((set, get) => ({
         }
       }
 
+      // 愿望清单（F3 v11 新增；旧备份无此字段则跳过）
+      if (data.wishes && Array.isArray(data.wishes)) {
+        for (const w of data.wishes as unknown[]) {
+          const wi = w as Wish;
+          await db.wishes.put({
+            ...wi,
+            createdAt: new Date(wi.createdAt),
+            archivedAt: wi.archivedAt ? new Date(wi.archivedAt) : undefined,
+          });
+        }
+      }
+
       // 重新加载应用
       await get().initializeApp();
     } catch (error) {
@@ -2170,6 +2234,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         if (snapshot.confidants.length) await db.confidants.bulkAdd(snapshot.confidants);
         if (snapshot.confidantEvents.length) await db.confidantEvents.bulkAdd(snapshot.confidantEvents);
         if (snapshot.counselArchives.length) await db.counselArchives.bulkAdd(snapshot.counselArchives);
+        if (snapshot.wishes.length) await db.wishes.bulkAdd(snapshot.wishes);
         await get().initializeApp();
       } catch (restoreError) {
         console.error('恢复原有数据失败:', restoreError);

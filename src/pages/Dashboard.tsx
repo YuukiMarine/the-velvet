@@ -1198,9 +1198,12 @@ function AstrologyEntryCard({ onOpen }: { onOpen: () => void }) {
 
 // F3 治疗终端入口卡（挂在 ritualSlides 轮播里，与星象 / 战场入口平级）
 function TerminalEntryCard({ onOpen }: { onOpen: () => void }) {
-  const { wishes } = useAppStore();
+  const { wishes, getDueTodosToday, getTodayTodoProgress } = useAppStore();
   const goals = wishes.filter(w => !w.parentId && w.status !== 'archived');
   const activeSubs = wishes.filter(w => w.parentId && w.status === 'active');
+  // 「待迈出的一步」= 短路决策候选池口径：活跃子愿望 + 今日应做未完成待办
+  const dueTodos = getDueTodosToday().filter(t => !getTodayTodoProgress(t.id).isComplete);
+  const stepCount = activeSubs.length + dueTodos.length;
   return (
     <motion.button
       onClick={onOpen}
@@ -1217,7 +1220,7 @@ function TerminalEntryCard({ onOpen }: { onOpen: () => void }) {
           <div className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5 leading-snug">
             {goals.length === 0
               ? '失去记录的勇气时，来这里许下第一个愿望'
-              : `${goals.length} 个目标 · ${activeSubs.length} 个待迈出的一步`}
+              : `${goals.length} 个目标 · ${stepCount} 个待迈出的一步`}
           </div>
         </div>
         <div className="text-primary/50 text-xl flex-shrink-0">›</div>
