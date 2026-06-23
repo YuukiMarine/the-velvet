@@ -29,6 +29,7 @@ import { DanmakuCompose } from '@/components/terminal/DanmakuCompose';
 import { AntechamberThief } from '@/components/terminal/AntechamberThief';
 import { AntechamberBoard } from '@/components/terminal/AntechamberBoard';
 import { AntechamberTV } from '@/components/terminal/AntechamberTV';
+import { TerminalRoom } from '@/components/terminal/TerminalRoom';
 import { MicroBurst } from '@/components/terminal/MicroBurst';
 import { GoalArc } from '@/components/terminal/GoalArc';
 import { useBoldness } from '@/utils/boldness';
@@ -91,6 +92,7 @@ export const Terminal = () => {
   const danmakuPool = useMemo(() => [...TERMINAL_DANMAKU_SEEDS, ...approvedDanmaku], [approvedDanmaku]);
 
   const skin = terminalSkin(user?.theme);
+  const isThief = skin.channel === 'thief'; // 怪盗暗房：portal 弹窗需强制暗色，与房间一致
   const hasAI = !!getAIConfig(settings);
   const attrName = (id: AttributeId) => settings.attributeNames?.[id] ?? id;
 
@@ -217,34 +219,9 @@ export const Terminal = () => {
     return <AntechamberTV skin={skin} danmakuPool={danmakuPool} {...enterProps} />; // tv(黄)
   }
 
-  return (
-    <div className="relative mx-auto max-w-2xl px-4 pb-24 pt-3">
-      {/* 漂浮弹幕（官方精选池 + 云端已过审，氛围层，置于内容之下） */}
-      <DanmakuField messages={danmakuPool} />
-
-      {/* 顶栏 */}
-      <div className="mb-4 flex items-center gap-2">
-        <BackButton onClick={() => setCurrentPage('dashboard')} />
-        <PageTitle title="治疗终端" en="Terminal" enOffset={{ right: -2 }} />
-      </div>
-
-      {/* 仪式入口带：频道差分 + 振作语 */}
-      <motion.div
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="mb-5 overflow-hidden rounded-2xl border border-primary/30 bg-primary/5 p-4 dark:bg-primary/10"
-      >
-        <div className="mb-1 flex items-center gap-2">
-          <span className="inline-flex h-2 w-2 animate-pulse rounded-full bg-primary" aria-hidden />
-          <span className="text-xs font-semibold tracking-wide text-primary">{skin.label}</span>
-          <span className="text-[11px] text-gray-400 dark:text-gray-500">{skin.tagline}</span>
-        </div>
-        <p className="text-sm leading-relaxed text-gray-600 dark:text-gray-300">
-          如果你今天很困扰、甚至失去了记录的勇气——可以来这里看看。
-          先把「最想成为的人 / 最想做到的事」放进来，剩下的，让终端替你拆。
-        </p>
-      </motion.div>
-
+  // 正文主体（活跃限时卡 / 鼓励机会 / 短路决策 + 愿望清单）——两套外壳共用
+  const body = (
+    <>
       {/* 进行中的 24h 限时任务 */}
       {activeTask && (
         <div className="mb-5">
@@ -460,13 +437,19 @@ export const Terminal = () => {
           </div>
         </>
       )}
+    </>
+  );
 
+  // 共享模态（编辑器 / AI 拆分 / 删除确认 / 弹幕投稿）——均 portal，两套外壳共用
+  const modals = (
+    <>
       {/* 愿望编辑器 */}
       <SheetModal
         isOpen={editor.open}
         onClose={() => setEditor(closedEditor)}
         position="center"
         busy={busy}
+        forceDark={isThief}
         title={
           editor.editId
             ? editor.mode === 'goal'
@@ -552,6 +535,7 @@ export const Terminal = () => {
         onClose={() => setAi(closedAI)}
         position="center"
         busy={busy}
+        forceDark={isThief}
         title="AI 拆分子愿望"
         footer={
           ai.loading || ai.error ? undefined : (
@@ -634,12 +618,69 @@ export const Terminal = () => {
         confirmText="删除"
         cancelText="取消"
         busy={busy}
+        forceDark={isThief}
         onConfirm={confirmDelete}
         onCancel={() => setDeleteTarget(null)}
       />
 
       {/* 弹幕投稿（先审后发） */}
-      <DanmakuCompose isOpen={composeOpen} onClose={() => setComposeOpen(false)} />
+      <DanmakuCompose isOpen={composeOpen} onClose={() => setComposeOpen(false)} forceDark={isThief} />
+    </>
+  );
+
+  // 怪盗（红）正文：P5 据点房间外壳 + Velvet 接引；强制 dark 语境，让房内通用件按暗色渲染
+  if (skin.channel === 'thief') {
+    return (
+      <>
+        <TerminalRoom
+          channel="thief"
+          title={skin.roomTitle}
+          channelLabel={skin.label}
+          onBack={() => setCurrentPage('dashboard')}
+        >
+          <div className="dark">
+            <div className="mb-5 border-l-2 border-primary/60 pl-3 text-sm italic leading-relaxed text-white/80">
+              {skin.velvet}
+            </div>
+            {body}
+          </div>
+        </TerminalRoom>
+        {modals}
+      </>
+    );
+  }
+
+  // 其余频道（board / tv）：暂用通用正文外壳（各自轮次再皮肤化）
+  return (
+    <div className="relative mx-auto max-w-2xl px-4 pb-24 pt-3">
+      {/* 漂浮弹幕（官方精选池 + 云端已过审，氛围层，置于内容之下） */}
+      <DanmakuField messages={danmakuPool} />
+
+      {/* 顶栏 */}
+      <div className="mb-4 flex items-center gap-2">
+        <BackButton onClick={() => setCurrentPage('dashboard')} />
+        <PageTitle title="治疗终端" en="Terminal" enOffset={{ right: -2 }} />
+      </div>
+
+      {/* 仪式入口带：频道差分 + 振作语 */}
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="mb-5 overflow-hidden rounded-2xl border border-primary/30 bg-primary/5 p-4 dark:bg-primary/10"
+      >
+        <div className="mb-1 flex items-center gap-2">
+          <span className="inline-flex h-2 w-2 animate-pulse rounded-full bg-primary" aria-hidden />
+          <span className="text-xs font-semibold tracking-wide text-primary">{skin.label}</span>
+          <span className="text-[11px] text-gray-400 dark:text-gray-500">{skin.tagline}</span>
+        </div>
+        <p className="text-sm leading-relaxed text-gray-600 dark:text-gray-300">
+          如果你今天很困扰、甚至失去了记录的勇气——可以来这里看看。
+          先把「最想成为的人 / 最想做到的事」放进来，剩下的，让终端替你拆。
+        </p>
+      </motion.div>
+
+      {body}
+      {modals}
     </div>
   );
 };

@@ -51,6 +51,10 @@ export interface TerminalSkin {
   heroTitle: string;
   /** 玄关副标语 */
   heroSub: string;
+  /** 终端正文房间标题（页头） */
+  roomTitle: string;
+  /** Velvet 在场接引语（正文顶部，引导用户） */
+  velvet: string;
   /** 结果页鼓励语（随机取一条） */
   encourage: string[];
   /** 离线拆解模板（按 title 套用，随机取一条） */
@@ -77,6 +81,8 @@ const BOARD: TerminalSkin = {
   enterLabel: '登入',
   heroTitle: '深夜讨论板 · 在线',
   heroSub: '把你的今天，从停摆里捞回来',
+  roomTitle: '深夜讨论板',
+  velvet: '「夜里还醒着的人，都在这层楼。坐下，慢慢说。」',
   encourage: ['有人也这样熬过来。', '迈出去，就已经赢过昨天的自己。', '不必做好，先做一点点。'],
   stepTemplates: [
     (t) => `把「${t}」砍到只剩第一下：现在去打开相关的那样东西——书 / 文件 / 应用，打开就停下，也算数。`,
@@ -105,6 +111,8 @@ const TV: TerminalSkin = {
   enterLabel: '进入演播厅',
   heroTitle: '本期节目 · 录制中',
   heroSub: '把你的今天，从待机里救回来',
+  roomTitle: '今晚的特别节目',
+  velvet: '「欢迎回到节目现场。这一关，我陪你过。」',
   encourage: ['观众席为你鼓掌！', '这一步稳稳的，下一步更容易。', '开场最难，而你已经开场了。'],
   stepTemplates: [
     (t) => `第一关超简单：把「${t}」相关的第一样东西打开，亮个相就过关。`,
@@ -133,6 +141,8 @@ const THIEF: TerminalSkin = {
   enterLabel: '潜入',
   heroTitle: '开始潜入行动',
   heroSub: '把你的今天，从失控中偷回来',
+  roomTitle: '潜入作战室',
+  velvet: '「又见面了。今晚，想从哪颗心下手？」',
   encourage: ['Take your heart——先拿下第一步。', '怪盗的字典里没有「做不到」。', '预告已发，行动开始。'],
   stepTemplates: [
     (t) => `潜入第一步：把「${t}」相关的第一样东西「撬开」——翻开书 / 打开文件，门开了就算成功。`,

@@ -6,11 +6,12 @@
  * 用 4 点 clip-path 斜块、四角 text-shadow 描边、强对角能量线、halftone 红块、怪盗面具 + 旋转星爆。
  * D0/reduced-motion 直接出静态。
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { useAppStore } from '@/store';
 import { useBoldness } from '@/utils/boldness';
 import { triggerLightHaptic, triggerThemeSwitchFeedback } from '@/utils/feedback';
+import { heavy, Slab, StarBurst, Mask, P5Highlight, Ransom } from './thiefKit';
 import type { TerminalSkin } from '@/utils/terminalSkin';
 
 interface Props {
@@ -20,128 +21,6 @@ interface Props {
 }
 
 let _thiefIntroSeen = false;
-
-// ── 倾斜四边形色块（P5 的核心形：简练有力的斜块，而非碎纸） ──
-const Q = [
-  'polygon(0% 12%, 100% 0%, 98% 82%, 2% 100%)',
-  'polygon(3% 0%, 100% 14%, 96% 100%, 0% 84%)',
-  'polygon(0% 6%, 100% 0%, 100% 92%, 1% 100%)',
-];
-
-/** 厚重四向黑描边白字（P5 sticker 字） */
-const heavy = (px = 3): React.CSSProperties => ({
-  color: '#fff',
-  textShadow: `${-px}px ${-px}px 0 #000, ${px}px ${-px}px 0 #000, ${-px}px ${px}px 0 #000, ${px}px ${px}px 0 #000, 0 ${px + 2}px 0 #000`,
-});
-
-/** 斜块色卡：白描边(底) + 偏移黑影 + 锐利斜裁 */
-const Slab = ({ children, fill, variant = 0, className }: { children: React.ReactNode; fill: string; variant?: number; className?: string }) => {
-  const clip = Q[variant % Q.length];
-  return (
-    <div className={`relative ${className ?? ''}`} style={{ filter: 'drop-shadow(4px 5px 0 rgba(0,0,0,0.75))' }}>
-      <div aria-hidden className="absolute inset-0 bg-white" style={{ clipPath: clip }} />
-      <div aria-hidden className="absolute -inset-[3px]" style={{ clipPath: clip, background: fill }} />
-      <div className="relative">{children}</div>
-    </div>
-  );
-};
-
-const StarBurst = ({ className }: { className?: string }) => {
-  const pts: string[] = [];
-  const spikes = 12;
-  for (let i = 0; i < spikes * 2; i++) {
-    const r = i % 2 === 0 ? 50 : 21;
-    const a = (Math.PI / spikes) * i - Math.PI / 2;
-    pts.push(`${50 + r * Math.cos(a)},${50 + r * Math.sin(a)}`);
-  }
-  return (
-    <svg viewBox="0 0 100 100" className={className} aria-hidden>
-      <polygon points={pts.join(' ')} fill="#fff" stroke="#000" strokeWidth={3.5} strokeLinejoin="round" />
-    </svg>
-  );
-};
-
-const Mask = ({ className, fill = '#0a0a0a', stroke = '#fff' }: { className?: string; fill?: string; stroke?: string }) => (
-  <svg viewBox="0 0 120 64" className={className} aria-hidden>
-    <path d="M6 20 Q2 6 20 9 L40 16 Q50 22 60 22 Q70 22 80 16 L100 9 Q118 6 114 20 Q112 40 86 40 Q70 40 62 30 L60 28 L58 30 Q50 40 34 40 Q8 40 6 20 Z" fill={fill} stroke={stroke} strokeWidth={4} strokeLinejoin="round" />
-    <path d="M22 20 L40 22 Q34 30 26 28 Q18 26 22 20 Z" fill={stroke} />
-    <path d="M98 20 L80 22 Q86 30 94 28 Q102 26 98 20 Z" fill={stroke} />
-  </svg>
-);
-
-// ── P5「活高亮」：双多边形(红/青)，顶层 screen 混合；rAF 每帧向随机目标插值 → 60fps 平滑红青震颤 ──
-const hlTarget = (): number[] => {
-  const r = (a: number, b: number) => a + Math.random() * (b - a);
-  return [r(0, 16), r(0, 12), r(84, 100), r(0, 14), r(84, 100), r(38, 50), r(0, 16), r(40, 50)];
-};
-const hlPoints = (a: number[]) => `${a[0].toFixed(1)},${a[1].toFixed(1)} ${a[2].toFixed(1)},${a[3].toFixed(1)} ${a[4].toFixed(1)},${a[5].toFixed(1)} ${a[6].toFixed(1)},${a[7].toFixed(1)}`;
-const P5Highlight = ({ className }: { className?: string }) => {
-  const bold = useBoldness();
-  const redRef = useRef<SVGPolygonElement>(null);
-  const blueRef = useRef<SVGPolygonElement>(null);
-  useEffect(() => {
-    if (!bold) return; // D0：静态高亮，不跑 rAF
-    const layers = [redRef, blueRef].map((ref) => ({ ref, cur: hlTarget(), tgt: hlTarget(), last: 0 }));
-    let raf = 0;
-    const loop = (t: number) => {
-      for (const L of layers) {
-        if (t - L.last > 130) { L.tgt = hlTarget(); L.last = t; } // 每 ~130ms 换目标，逐帧插值过去
-        for (let i = 0; i < 8; i++) L.cur[i] += (L.tgt[i] - L.cur[i]) * 0.18;
-        L.ref.current?.setAttribute('points', hlPoints(L.cur));
-      }
-      raf = requestAnimationFrame(loop);
-    };
-    raf = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(raf);
-  }, [bold]);
-  return (
-    <svg viewBox="0 0 100 50" preserveAspectRatio="none" className={className} aria-hidden>
-      <polygon ref={redRef} fill="#ff0022" points="2,6 95,5 94,45 5,46" />
-      <polygon ref={blueRef} fill="#1cfeff" points="6,9 92,12 88,46 8,42" style={{ mixBlendMode: 'screen' }} />
-    </svg>
-  );
-};
-
-// ── 勒索信剪报拼贴字（每字母独立小纸片：混字体 / 红黑白 / 各自倾角 / 撕角） ──
-const RANSOM_BG = ['#ffffff', 'var(--color-primary)', '#0d0d0d', '#ffffff', '#0d0d0d', 'var(--color-primary)'];
-const RANSOM_FG = ['#0d0d0d', '#ffffff', '#ffffff', '#0d0d0d', '#ffffff', '#ffffff'];
-const RANSOM_FONT = ['Georgia, "Times New Roman", serif', 'Arial, Helvetica, sans-serif', 'ui-monospace, monospace', '"Courier New", monospace'];
-const RANSOM_CLIP = ['polygon(3% 5%, 96% 0%, 100% 93%, 4% 100%)', 'polygon(0% 4%, 97% 6%, 94% 100%, 5% 95%)', 'polygon(5% 0%, 100% 8%, 96% 96%, 0% 100%)'];
-
-const Ransom = ({ lines }: { lines: string[] }) => {
-  let g = 0; // 跨行连续索引，让字母样式连续变化
-  return (
-    <span className="flex flex-col items-end gap-1.5">
-      {lines.map((line, li) => (
-        <span key={li} className="flex justify-end gap-x-1">
-          {[...line].map((ch, i) => {
-            if (ch === ' ') { g += 1; return <span key={i} className="w-1.5" aria-hidden />; }
-            const k = g++;
-            const rot = ((k * 53) % 17) - 8; // -8..8 伪随机倾角
-            const big = k % 3 === 0;
-            return (
-              <span
-                key={i}
-                className={`inline-block px-1.5 py-0.5 font-black leading-none ${big ? 'text-xl' : 'text-base'}`}
-                style={{
-                  background: RANSOM_BG[k % RANSOM_BG.length],
-                  color: RANSOM_FG[k % RANSOM_FG.length],
-                  fontFamily: RANSOM_FONT[k % RANSOM_FONT.length],
-                  fontStyle: k % 4 === 0 ? 'italic' : 'normal',
-                  transform: `rotate(${rot}deg)`,
-                  clipPath: RANSOM_CLIP[k % RANSOM_CLIP.length],
-                  filter: 'drop-shadow(1.5px 2px 0 rgba(0,0,0,0.65))',
-                }}
-              >
-                {ch}
-              </span>
-            );
-          })}
-        </span>
-      ))}
-    </span>
-  );
-};
 
 export const AntechamberThief = ({ skin, onEnter, onBack }: Props) => {
   const user = useAppStore((s) => s.user);

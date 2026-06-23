@@ -1,24 +1,27 @@
 /**
- * ShortCircuitPanel — F3 短路决策（PRD F3.3，Batch 2）。
+ * ShortCircuitPanel — F3 短路决策（PRD F3.3）的「逻辑容器」。
  *
  * 当用户被「今天该做什么」压垮时：
  *   1. 候选池 = 活跃子愿望 + 未完成待办。
  *   2. 「替我决定」随机替他拣一件（短路）；或「我自己选」从池子里挑。
  *   3. 拆解为「最小第一步」——在线 store.decomposeStepAI，无 Key 走 terminalSkin 离线模板。
- *   4. 输出一句温柔而有力的行动指令。
+ *   4. 输出一句温柔而有力的行动指令 → 接受 · 落成 24h 限时任务。
  *
- * 「接受 · 落成 24h 限时任务」为 Batch 3 接（此处占位）。皮肤随主题切换。
+ * 阶段 2 拆分：本文件只持有状态机 / store 交互 / 洗牌演出，构造 view-model 后委派给
+ * 频道表现层（thief = 怪盗作战台 / 其余 = 通用皮肤）。候选选择器为三频道共用（generic）。
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { AnimatePresence, motion } from 'motion/react';
 import { useAppStore } from '@/store';
 import { SheetModal } from '@/components/SheetModal';
 import { useBoldness } from '@/utils/boldness';
 import { triggerLightHaptic, triggerThemeSwitchFeedback } from '@/utils/feedback';
-import { terminalSkin, minimalStep, pickEncourage } from '@/utils/terminalSkin';
+import { terminalSkin, terminalChannel, minimalStep, pickEncourage } from '@/utils/terminalSkin';
+import type { TerminalSkin } from '@/utils/terminalSkin';
 import type { AttributeId } from '@/types';
+import { ShortCircuitDefault } from './ShortCircuitDefault';
+import { ShortCircuitThief } from './ShortCircuitThief';
 
-interface Candidate {
+export interface Candidate {
   kind: 'wish' | 'todo';
   id: string;
   title: string;
@@ -26,11 +29,31 @@ interface Candidate {
   note?: string;
 }
 
-type Phase = 'idle' | 'shuffling' | 'decomposing' | 'result';
+export type Phase = 'idle' | 'shuffling' | 'decomposing' | 'result';
+
+/** 频道表现层的 view-model：状态机产出 + 操作回调，皮肤组件只读它渲染 */
+export interface ShortCircuitVM {
+  skin: TerminalSkin;
+  bold: boolean;
+  phase: Phase;
+  empty: boolean;
+  hasActiveTask: boolean;
+  chosen: Candidate | null;
+  shuffleText: string;
+  step: string;
+  usedAI: boolean;
+  encourage: string;
+  decideForMe: () => void;
+  openPick: () => void;
+  accept: () => void | Promise<void>;
+  reset: () => void;
+  redo: () => void;
+}
 
 export const ShortCircuitPanel = () => {
   const { wishes, todos, todoCompletions, getDueTodosToday, getTodayTodoProgress, decomposeStepAI, createTerminalTask, getActiveTerminalTask, user, settings } = useAppStore();
   const skin = terminalSkin(user?.theme);
+  const channel = terminalChannel(user?.theme);
   const bold = useBoldness();
   const activeTask = getActiveTerminalTask();
   const attrName = (id: AttributeId) => settings.attributeNames?.[id] ?? id;
@@ -141,149 +164,30 @@ export const ShortCircuitPanel = () => {
 
   const empty = pool.length === 0;
 
+  const vm: ShortCircuitVM = {
+    skin,
+    bold,
+    phase,
+    empty,
+    hasActiveTask: !!activeTask,
+    chosen,
+    shuffleText,
+    step,
+    usedAI,
+    encourage,
+    decideForMe,
+    openPick: () => setPicking(true),
+    accept,
+    reset,
+    redo,
+  };
+
   return (
-    <div className="mb-5 overflow-hidden rounded-2xl border border-primary/30 bg-gradient-to-br from-primary/10 to-primary/[0.03] p-4 dark:from-primary/15">
-      <div className="mb-2 flex items-center gap-2">
-        <span className="inline-flex h-2 w-2 animate-pulse rounded-full bg-primary" aria-hidden />
-        <span className="text-xs font-bold tracking-wide text-primary">短路决策</span>
-        <span className="ml-auto text-[11px] text-gray-400 dark:text-gray-500">{skin.label}</span>
-      </div>
+    <>
+      {channel === 'thief' ? <ShortCircuitThief vm={vm} /> : <ShortCircuitDefault vm={vm} />}
 
-      <AnimatePresence mode="wait">
-        {phase === 'idle' && (
-          <motion.div
-            key="idle"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0, transition: { duration: 0.12 } }}
-          >
-            {activeTask ? (
-              <p className="text-sm leading-relaxed text-gray-500 dark:text-gray-400">
-                你已经有一个进行中的限时任务，先把它完成吧。
-              </p>
-            ) : (
-              <>
-                <p className="mb-3 text-sm leading-relaxed text-gray-600 dark:text-gray-300">
-                  {empty ? skin.emptyPool : skin.decideHint}
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  <motion.button
-                    type="button"
-                    whileTap={{ scale: 0.96 }}
-                    onClick={decideForMe}
-                    disabled={empty}
-                    className="flex-1 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-white shadow-lg shadow-primary/30 disabled:opacity-40"
-                  >
-                    {skin.decideHero}
-                  </motion.button>
-                  <motion.button
-                    type="button"
-                    whileTap={{ scale: 0.96 }}
-                    onClick={() => setPicking(true)}
-                    disabled={empty}
-                    className="rounded-xl border border-primary/40 px-4 py-3 text-sm font-medium text-primary disabled:opacity-40"
-                  >
-                    {skin.decideSelf}
-                  </motion.button>
-                </div>
-              </>
-            )}
-          </motion.div>
-        )}
-
-        {phase === 'shuffling' && (
-          <motion.div
-            key="shuffling"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="relative flex flex-col items-center justify-center gap-1.5 overflow-hidden py-9 text-center"
-          >
-            {/* 聚光：四周压暗收束到中心 */}
-            <div
-              aria-hidden
-              className="pointer-events-none absolute inset-0"
-              style={{ background: 'radial-gradient(circle at center, transparent 22%, rgba(0,0,0,0.5) 100%)' }}
-            />
-            <div className="relative z-[1] text-[11px] font-medium tracking-widest text-primary">终端正在替你拣选…</div>
-            <motion.div
-              key={shuffleText}
-              initial={{ opacity: 0.35, scale: 0.96 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.09 }}
-              className="relative z-[1] min-h-[1.9rem] max-w-full truncate text-lg font-black text-gray-900 dark:text-white"
-            >
-              {shuffleText || '…'}
-            </motion.div>
-          </motion.div>
-        )}
-
-        {phase === 'decomposing' && (
-          <motion.div
-            key="decomposing"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="flex items-center justify-center gap-2 py-8 text-sm text-gray-500 dark:text-gray-400"
-          >
-            <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-            {skin.decomposing}
-          </motion.div>
-        )}
-
-        {phase === 'result' && chosen && (
-          <motion.div
-            key="result"
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0 }}
-          >
-            <div className="mb-1.5 flex items-center gap-1.5 text-[11px] text-gray-400 dark:text-gray-500">
-              <span className="rounded bg-gray-100 px-1.5 py-0.5 dark:bg-gray-800">
-                {chosen.kind === 'wish' ? '子愿望' : '待办'}
-              </span>
-              <span className="min-w-0 truncate">{chosen.title}</span>
-            </div>
-            <div className="text-[11px] font-medium text-primary">{skin.stepLead}</div>
-            <p className="mt-1 text-lg font-bold leading-snug text-gray-900 dark:text-white">{step}</p>
-            <div className="mt-2 flex items-center gap-2">
-              <span className="text-xs text-gray-400 dark:text-gray-500">{encourage}</span>
-              <span className="ml-auto text-[10px] text-gray-300 dark:text-gray-600">
-                {usedAI ? 'AI 拆解' : '离线模板'}
-              </span>
-            </div>
-
-            {/* 接受 → 落成 24h 限时任务 */}
-            <motion.button
-              type="button"
-              whileTap={{ scale: 0.97 }}
-              onClick={accept}
-              className="mt-3 w-full rounded-xl bg-primary py-3 text-sm font-bold text-white shadow-lg shadow-primary/30"
-            >
-              {skin.accept}
-            </motion.button>
-            <div className="mt-2 flex gap-2">
-              <button
-                type="button"
-                onClick={reset}
-                className="flex-1 rounded-xl border border-gray-200 py-2 text-xs font-medium text-gray-500 dark:border-gray-700 dark:text-gray-400"
-              >
-                {skin.again}
-              </button>
-              <button
-                type="button"
-                onClick={redo}
-                className="flex-1 rounded-xl border border-gray-200 py-2 text-xs font-medium text-gray-500 dark:border-gray-700 dark:text-gray-400"
-              >
-                {skin.redo}
-              </button>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* 候选选择器 */}
-      <SheetModal isOpen={picking} onClose={() => setPicking(false)} position="center" title={skin.pickTitle}>
+      {/* 候选选择器（三频道共用） */}
+      <SheetModal isOpen={picking} onClose={() => setPicking(false)} position="center" title={skin.pickTitle} forceDark={channel === 'thief'}>
         {empty ? (
           <div className="py-6 text-center text-sm text-gray-500 dark:text-gray-400">{skin.emptyPool}</div>
         ) : (
@@ -309,6 +213,6 @@ export const ShortCircuitPanel = () => {
           </div>
         )}
       </SheetModal>
-    </div>
+    </>
   );
 };

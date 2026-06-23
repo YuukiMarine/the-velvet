@@ -45,6 +45,8 @@ export interface ConfirmDialogProps {
   /** 提供时取代双按钮（最多 3 个，多余裁掉）；排序须守"取消在左、危险/主操作在右" */
   actions?: ConfirmAction[];
   busy?: boolean;
+  /** 强制暗色语境：portal 根加 `dark` 类，使弹窗按 dark: 变体渲染（嵌入暗色场景用） */
+  forceDark?: boolean;
 }
 
 // 确认键底色按 tone 取——完整字面量，JIT 可见
@@ -73,6 +75,7 @@ export const ConfirmDialog = ({
   onCancel,
   actions,
   busy = false,
+  forceDark = false,
 }: ConfirmDialogProps) => {
   const titleId = useId();
   const descId = useId();
@@ -90,7 +93,7 @@ export const ConfirmDialog = ({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className={`fixed inset-0 ${zClass.confirm} flex items-center justify-center bg-black/55 p-4 backdrop-blur-sm`}
+          className={`fixed inset-0 ${zClass.confirm} flex items-center justify-center bg-black/55 p-4 backdrop-blur-sm ${forceDark ? 'dark' : ''}`}
           onClick={() => {
             if (!busy) onCancel();
           }}
