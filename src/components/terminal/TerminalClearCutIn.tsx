@@ -16,7 +16,7 @@ import { useBoldness } from '@/utils/boldness';
 import { triggerLightHaptic, playSound } from '@/utils/feedback';
 import { terminalSkin, terminalChannel, pickEncourage } from '@/utils/terminalSkin';
 import { ClearContentDefault } from './ClearContentDefault';
-import { ClearContentThief } from './ClearContentThief';
+import { ClearContentThief, ThiefClearBg } from './ClearContentThief';
 import type { ClearVM } from './ClearContentDefault';
 
 const PALETTE = {
@@ -113,6 +113,9 @@ export const TerminalClearCutIn = () => {
               ))}
             </div>
           )}
+
+          {/* 怪盗专属动态背景（仅 bold；D0 退回纯渐变+冲击） */}
+          {channel === 'thief' && bold && <ThiefClearBg />}
 
           {channel === 'thief' ? <ClearContentThief vm={vm} /> : <ClearContentDefault vm={vm} />}
         </motion.div>

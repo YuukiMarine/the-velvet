@@ -5,8 +5,32 @@
  * 纯展示，外层冲击 / 粒子 / portal 在 TerminalClearCutIn。动效尊重 vm.bold 降级。
  */
 import { motion } from 'motion/react';
-import { heavy, Halftone, StarBurst, Slab } from './thiefKit';
+import { MusicalNotes } from '@/components/MusicalNotes';
+import { heavy, Halftone, StarBurst, SpeedLines, Slab } from './thiefKit';
 import type { ClearVM } from './ClearContentDefault';
+
+/** 完成屏怪盗专属动态背景：对角红斜块扫入 + 放射速度线 + halftone + 缓旋大星爆（仅 bold 时挂） */
+export const ThiefClearBg = () => (
+  <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
+    <motion.div
+      className="absolute -left-[10%] top-[28%] h-[44%] w-[120%]"
+      style={{ background: 'var(--color-primary)', clipPath: 'polygon(0 32%,100% 0,100% 68%,0 100%)', transform: 'rotate(-8deg)' }}
+      initial={{ x: '-35%', opacity: 0 }}
+      animate={{ x: 0, opacity: 0.16 }}
+      transition={{ duration: 0.55, ease: 'easeOut' }}
+    />
+    <Halftone className="absolute -right-[12%] -top-[10%] h-[58%] w-[72%]" style={{ opacity: 0.12, transform: 'rotate(6deg)' }} />
+    <SpeedLines lines={[12, 28, 46, 64, 82, 94]} angle={-10} opacity={0.06} />
+    <motion.div
+      className="absolute left-1/2 top-[36%] h-[82vmin] w-[82vmin] opacity-[0.05]"
+      style={{ marginLeft: '-41vmin', marginTop: '-41vmin' }}
+      animate={{ rotate: 360 }}
+      transition={{ duration: 64, repeat: Infinity, ease: 'linear' }}
+    >
+      <StarBurst className="h-full w-full" />
+    </motion.div>
+  </div>
+);
 
 export const ClearContentThief = ({ vm }: { vm: ClearVM }) => {
   const { skin, goalTitle, stepTitle, rewardPoints, attrName, danmakuGranted, encourage, bold, onClose } = vm;
@@ -88,7 +112,11 @@ export const ClearContentThief = ({ vm }: { vm: ClearVM }) => {
         className="mb-5 flex flex-col items-center gap-1.5"
       >
         {rewardPoints > 0 ? (
-          <span className="border-2 border-primary bg-primary/15 px-3 py-1 text-sm font-black text-white">+{rewardPoints} {attrName}</span>
+          <span className="relative border-2 border-primary bg-primary/15 px-3 py-1 text-sm font-black text-white">
+            +{rewardPoints} {attrName}
+            {/* 属性加成音符（复用既有 MusicalNotes，红主题取 m5.svg）；D0 不挂 */}
+            {bold && <MusicalNotes count={rewardPoints} />}
+          </span>
         ) : (
           <span className="text-xs text-white/55">今日的属性奖励已领过，但这一步依然算数</span>
         )}
@@ -105,7 +133,7 @@ export const ClearContentThief = ({ vm }: { vm: ClearVM }) => {
         className="mx-auto block w-full max-w-[280px] border-2 border-black bg-primary py-3 text-sm font-black tracking-wider text-black"
         style={{ boxShadow: '4px 4px 0 #000' }}
       >
-        收下这一步
+        记录这一刻
       </motion.button>
 
       <motion.div

@@ -34,8 +34,9 @@ import { TreasuryThief, TreasuryTrigger, ThiefEmpty } from '@/components/termina
 import type { TreasuryVM } from '@/components/terminal/TreasuryThief';
 import { MicroBurst } from '@/components/terminal/MicroBurst';
 import { GoalArc } from '@/components/terminal/GoalArc';
+import { GoalCompletePop } from '@/components/terminal/GoalCompletePop';
 import { useBoldness } from '@/utils/boldness';
-import { triggerSuccessFeedback } from '@/utils/feedback';
+import { triggerSuccessFeedback, triggerLevelFeedback } from '@/utils/feedback';
 import type { AttributeId, Wish } from '@/types';
 
 const ATTR_IDS: AttributeId[] = ['knowledge', 'guts', 'dexterity', 'kindness', 'charm'];
@@ -74,18 +75,36 @@ export const Terminal = () => {
   const bold = useBoldness();
   const [celebrateId, setCelebrateId] = useState<string | null>(null); // 刚完成、正在播 juice 的子愿望
   const celebrateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => () => { if (celebrateTimer.current) clearTimeout(celebrateTimer.current); }, []);
+  const [goalCelebrate, setGoalCelebrate] = useState<{ title: string } | null>(null); // 终极目标全达成 → 庆祝弹窗
+  const [celebrateGoalId, setCelebrateGoalId] = useState<string | null>(null); // 正在播标题划过特效的目标
+  const goalSlideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (celebrateTimer.current) clearTimeout(celebrateTimer.current);
+    if (goalSlideTimer.current) clearTimeout(goalSlideTimer.current);
+  }, []);
 
   // 勾选子愿望：完成→done 时给即时反馈（音+触感+粒子小爆），取消则静默
   const completeSub = (sub: Wish) => {
     const next = sub.status === 'done' ? 'active' : 'done';
-    setWishStatus(sub.id, next);
+    setWishStatus(sub.id, next); // 自动持久化到 IndexedDB
     if (next === 'done') {
       triggerSuccessFeedback();
       setCelebrateId(sub.id);
       // 复位由本组件计时（不依赖只在 bold 下挂载的 MicroBurst.onDone）：D0 也能清态、可重复触发
       if (celebrateTimer.current) clearTimeout(celebrateTimer.current);
       celebrateTimer.current = setTimeout(() => setCelebrateId(null), 600);
+      // 若这一勾让某终极目标的全部子愿望都达成 → 标题划过 COMPLETE + 庆祝弹窗
+      if (sub.parentId) {
+        const sibs = subsByParent[sub.parentId] ?? [];
+        const allDone = sibs.length > 0 && sibs.every((s) => s.id === sub.id || s.status === 'done');
+        if (allDone) {
+          triggerLevelFeedback();
+          setCelebrateGoalId(sub.parentId);
+          if (goalSlideTimer.current) clearTimeout(goalSlideTimer.current);
+          goalSlideTimer.current = setTimeout(() => setCelebrateGoalId(null), 1300);
+          setGoalCelebrate({ title: goals.find((g) => g.id === sub.parentId)?.title ?? '一个目标' });
+        }
+      }
     }
   };
   useEffect(() => {
@@ -253,7 +272,7 @@ export const Terminal = () => {
 
   // 心之宝物殿 view-model（thief 抽屉复用全部愿望清单逻辑）
   const treasuryVM: TreasuryVM = {
-    goals, subsByParent, collapsed, celebrateId, bold, hasAI, attrName,
+    goals, subsByParent, collapsed, celebrateId, celebrateGoalId, bold, hasAI, attrName,
     toggleCollapse, completeSub, openEdit, openGoalEditor, openSubEditor, runAI, setDeleteTarget,
   };
   const totalSubs = goals.reduce((n, g) => n + (subsByParent[g.id]?.length ?? 0), 0);
@@ -647,6 +666,9 @@ export const Terminal = () => {
 
       {/* 弹幕投稿（先审后发） */}
       <DanmakuCompose isOpen={composeOpen} onClose={() => setComposeOpen(false)} forceDark={isThief} />
+
+      {/* 终极目标全达成庆祝弹窗（主题差分；自动消失） */}
+      <GoalCompletePop pop={goalCelebrate} onClose={() => setGoalCelebrate(null)} />
     </>
   );
 
@@ -660,7 +682,9 @@ export const Terminal = () => {
           channelLabel={skin.label}
           onBack={() => setCurrentPage('dashboard')}
         >
-          <div className="dark">
+          <div className="dark relative">
+            {/* 漂浮弹幕（据点里其他人的声音；氛围层，置于内容之下） */}
+            <DanmakuField messages={danmakuPool} />
             <div className="mb-5 border-l-2 border-primary/60 pl-3 text-sm italic leading-relaxed text-white/80">
               {skin.velvet}
             </div>

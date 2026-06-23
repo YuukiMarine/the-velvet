@@ -156,7 +156,8 @@ export const SpeedLines = ({ className, lines = [18, 42, 70, 88], angle = -9, op
  *  live=false（如首页常驻预告状卡）→ 高亮静态、不跑 rAF。 */
 export const StrikeButton = ({ label, onClick, mask = false, disabled = false, live = true, className }: { label: string; onClick: () => void; mask?: boolean; disabled?: boolean; live?: boolean; className?: string }) => (
   <motion.button type="button" whileTap={disabled ? undefined : { scale: 0.95 }} onClick={onClick} disabled={disabled} aria-label={label} className={`relative disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-[#0d0d0d] ${className ?? ''}`}>
-    {!disabled && <P5Highlight live={live} className="absolute -inset-x-2 -inset-y-1 -z-10" />}
+    {/* 高亮纵向贴齐按钮高度（inset-y-0），只横向探出一点——避免在矮按钮上向下溢出 */}
+    {!disabled && <P5Highlight live={live} className="absolute inset-y-0 -inset-x-2 -z-10" />}
     <Slab fill="var(--color-primary)" variant={0}>
       <div className="flex items-center justify-center gap-2 px-5 py-2.5">
         {mask && <Mask className="h-5 w-9 shrink-0" />}
