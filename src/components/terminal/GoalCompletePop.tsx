@@ -13,6 +13,7 @@ import { useBoldness } from '@/utils/boldness';
 import { zClass } from '@/utils/zIndex';
 import { terminalChannel } from '@/utils/terminalSkin';
 import { Halftone, StarBurst } from './thiefKit';
+import { MONO, PANEL, INK, INK_DIM } from './boardKit';
 
 const POP_CLIP = 'polygon(2% 7%, 98% 0%, 100% 93%, 0% 100%)';
 
@@ -38,11 +39,25 @@ const ThiefBurst = ({ title, bold }: { title: string; bold: boolean }) => (
       <div aria-hidden className="absolute inset-0 bg-white" style={{ clipPath: POP_CLIP }} />
       <Halftone className="absolute bottom-0 left-0 h-20 w-20" style={{ clipPath: 'circle(60% at 0% 100%)', opacity: 0.35 }} dot={1.1} gap={6} />
       <div className="relative px-7 py-5 text-center">
-        <div className="text-[10px] font-black tracking-[4px] text-primary">MISSION COMPLETE</div>
+        <div aria-hidden className="text-[10px] font-black tracking-[4px] text-primary">MISSION COMPLETE</div>
         <div className="mt-1 text-xl font-black text-gray-900">你完成了一个重要的目标</div>
         <div className="mx-auto mt-1 max-w-[15rem] truncate text-sm font-bold text-gray-500">《{title}》</div>
       </div>
     </div>
+  </motion.div>
+);
+
+const BoardClosed = ({ title }: { title: string }) => (
+  <motion.div
+    initial={{ scale: 0.9, y: 12, opacity: 0 }}
+    animate={{ scale: 1, y: 0, opacity: 1 }}
+    exit={{ opacity: 0 }}
+    style={{ fontFamily: MONO, background: PANEL, border: '2px solid', borderColor: '#fff var(--color-primary) var(--color-primary) #fff', boxShadow: '5px 6px 0 #000' }}
+    className="px-6 py-5 text-center"
+  >
+    <div aria-hidden className="text-[10px] font-bold tracking-[4px] text-primary">★ THREAD CLOSED ★</div>
+    <div className="mt-1 text-lg font-bold" style={{ color: INK }}>你完成了一个重要的目标</div>
+    <div className="mx-auto mt-1 max-w-[15rem] truncate text-sm" style={{ color: INK_DIM }}>《{title}》</div>
   </motion.div>
 );
 
@@ -79,7 +94,7 @@ export const GoalCompletePop = ({ pop, onClose }: { pop: { title: string } | nul
           className={`pointer-events-none fixed inset-0 ${zClass.cutin} flex items-center justify-center p-6`}
           aria-live="polite"
         >
-          {channel === 'thief' ? <ThiefBurst title={pop.title} bold={bold} /> : <PlainToast title={pop.title} />}
+          {channel === 'thief' ? <ThiefBurst title={pop.title} bold={bold} /> : channel === 'board' ? <BoardClosed title={pop.title} /> : <PlainToast title={pop.title} />}
         </motion.div>
       )}
     </AnimatePresence>,

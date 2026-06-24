@@ -236,6 +236,15 @@ body {
 }
 :root[data-boldness="0"] .animate-pulse { animation: none; }
 
+/* 讨论板(BBS)正文专用「安全强调色」：把 --color-primary 朝白提亮，保证在固定深底窗体上
+   始终可读（含自定义主题取近黑 primary 的情形）；保留色相，仅抬明度。不影响全站其它页面的
+   text-primary（那些多在浅底，需要保持原深色）。 */
+@layer utilities {
+  .bk-fg { color: color-mix(in srgb, var(--color-primary) 50%, #fff); }
+  .bk-bd { border-color: color-mix(in srgb, var(--color-primary) 50%, #fff); }
+  .bk-bg { background-color: color-mix(in srgb, var(--color-primary) 50%, #fff); }
+}
+
 @layer components {
   /* 斜轴世界（UI_DESIGN_BOLD_V2.5.md §2 规则1）——"世界斜、字不斜"
    * · 外层 .sl-plane-clip 只裁旋转出血的横向溢出，自身不转：

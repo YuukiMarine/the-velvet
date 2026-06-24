@@ -103,7 +103,7 @@ export const AntechamberBoard = ({ skin, onEnter, onBack, danmakuPool }: Props) 
         {/* 窗体 */}
         <div className="bg-[#0a1019] px-3 py-3 text-[13px] leading-relaxed text-[#bcd6f5]">
           <div className="text-primary/70">» 在线 1 人 · {user?.name || '你'}　|　{skin.tagline}</div>
-          <div className="my-1.5 text-primary/40">────────────────────────</div>
+          <div aria-hidden className="my-1.5 text-primary/40">────────────────────────</div>
 
           {/* 打字机觉醒语 */}
           {lines.map((line, i) => {
@@ -123,14 +123,14 @@ export const AntechamberBoard = ({ skin, onEnter, onBack, danmakuPool }: Props) 
           })}
 
           {/* 楼层帖（鼓励弹幕） */}
-          <div className="my-2 text-primary/40">──── 最近回帖 ────</div>
+          <div aria-hidden className="my-2 text-primary/40">──── 最近回帖 ────</div>
           {posts.map((p, i) => (
             <div key={i} className="truncate text-[12px] text-[#8fb3dd]">
               <span className="text-primary/70">#{String(i + 1).padStart(2, '0')}</span> 匿名 » {p}
             </div>
           ))}
 
-          <div className="my-2 text-primary/40">────────────────────────</div>
+          <div aria-hidden className="my-2 text-primary/40">────────────────────────</div>
           <div className="text-[#bcd6f5]">[公告] {skin.heroSub}</div>
 
           {/* 登入按钮 */}
