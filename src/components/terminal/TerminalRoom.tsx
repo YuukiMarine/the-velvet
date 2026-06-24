@@ -4,13 +4,15 @@
  * 把原本「普通滚动列表」升级为一间有频道性格的房间：固定在视口后方的频道背景 +
  * 频道化页头（返回 / 据点台标 / 在线指示），正文内容在房间里滚动。
  *
- * 当前实装 thief（红 · 怪盗 P5 据点）；board/tv 暂用中性暗底占位（各自轮次再补）。
- * 背景纯装饰、pointer-events-none、全部静态（无无限动画）——不与「2 秒急救路径」抢资源。
+ * 已实装 thief（红 · 怪盗 P5 据点）、board（蓝/粉/自定义 · 千禧 BBS / CRT 桌面）；
+ * tv 暂用中性暗底占位（其轮次再补）。背景纯装饰、pointer-events-none、静态（无无限动画）。
+ * 桌面 md:left-60 让出左侧 Sidebar，避免固定背景盖住导航。
  */
 import type { ReactNode } from 'react';
 import { motion } from 'motion/react';
 import type { TerminalChannel } from '@/utils/terminalSkin';
 import { Halftone, SpeedLines, StarBurst, heavy } from './thiefKit';
+import { Scanlines, MONO } from './boardKit';
 
 interface Props {
   channel: TerminalChannel;
@@ -21,8 +23,7 @@ interface Props {
   children: ReactNode;
 }
 
-/** 怪盗据点背景：黑底 + 右上红斜块出血 + halftone + 左下黑对角块 + 速度线 + 暗角。
- *  桌面端 md:left-60 让出左侧 Sidebar（w-60）宽度，避免固定背景盖住导航。 */
+/** 怪盗据点背景：黑底 + 右上红斜块出血 + halftone + 左下黑对角块 + 速度线 + 暗角。 */
 const ThiefRoomBg = () => (
   <div aria-hidden className="pointer-events-none fixed inset-0 z-0 overflow-hidden bg-[#0d0d0d] md:left-60">
     <div className="absolute -right-[18%] -top-[12%] h-[62%] w-[86%]" style={{ background: 'var(--color-primary)', opacity: 0.9, clipPath: 'polygon(30% 0%, 100% 0%, 100% 100%, 0% 55%)', transform: 'rotate(2deg)' }} />
@@ -34,11 +35,21 @@ const ThiefRoomBg = () => (
   </div>
 );
 
+/** 讨论板桌面背景：深 CRT 底 + 点阵桌面 + 扫描线 + 暗角 */
+const BoardRoomBg = () => (
+  <div aria-hidden className="pointer-events-none fixed inset-0 z-0 overflow-hidden bg-[#070b11] md:left-60">
+    <div className="absolute inset-0" style={{ backgroundImage: 'radial-gradient(color-mix(in srgb, var(--color-primary) 24%, transparent) 1px, transparent 1px)', backgroundSize: '22px 22px', opacity: 0.45 }} />
+    <Scanlines opacity={0.7} />
+    <div className="absolute inset-0" style={{ background: 'radial-gradient(circle at 50% 38%, transparent 52%, rgba(0,0,0,0.74) 100%)' }} />
+  </div>
+);
+
 export const TerminalRoom = ({ channel, title, channelLabel, onBack, children }: Props) => {
   const thief = channel === 'thief';
+  const board = channel === 'board';
   return (
     <div className="relative min-h-[100dvh]">
-      {thief ? <ThiefRoomBg /> : <div aria-hidden className="pointer-events-none fixed inset-0 z-0 bg-[#0d0d0f] md:left-60" />}
+      {thief ? <ThiefRoomBg /> : board ? <BoardRoomBg /> : <div aria-hidden className="pointer-events-none fixed inset-0 z-0 bg-[#0d0d0f] md:left-60" />}
 
       <div className="relative z-10 mx-auto max-w-2xl px-4 pb-28 pt-3">
         {/* 页头 */}
@@ -54,14 +65,17 @@ export const TerminalRoom = ({ channel, title, channelLabel, onBack, children }:
           <motion.h1
             initial={{ opacity: 0, x: -8 }}
             animate={{ opacity: 1, x: 0 }}
-            className="text-xl font-black tracking-wide"
-            style={thief ? heavy(2.5) : { color: '#fff' }}
+            className={board ? 'min-w-0 truncate text-lg font-bold tracking-wide text-white' : 'text-xl font-black tracking-wide'}
+            style={thief ? heavy(2.5) : board ? { fontFamily: MONO } : { color: '#fff' }}
           >
-            {title}
+            {board ? `▓ ${title}` : title}
           </motion.h1>
-          <span className="ml-auto flex items-center gap-1.5 text-[11px] font-bold tracking-widest text-primary">
-            <span className="inline-flex h-2 w-2 animate-pulse rounded-full bg-primary" aria-hidden />
-            {channelLabel}
+          <span
+            className={`ml-auto flex shrink-0 items-center gap-1.5 text-[11px] font-bold tracking-widest ${board ? 'bk-fg' : 'text-primary'}`}
+            style={board ? { fontFamily: MONO } : undefined}
+          >
+            <span className={`inline-flex h-2 w-2 animate-pulse rounded-full ${board ? 'bk-bg' : 'bg-primary'}`} aria-hidden />
+            {board ? '在线' : channelLabel}
           </span>
         </div>
 

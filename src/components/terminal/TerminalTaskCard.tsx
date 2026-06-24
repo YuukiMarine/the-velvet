@@ -13,6 +13,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { useAppStore } from '@/store';
 import { terminalChannel } from '@/utils/terminalSkin';
 import { TaskCardThief } from './TaskCardThief';
+import { TaskCardBoard } from './TaskCardBoard';
 import { TaskCardDefault } from './TaskCardDefault';
 import type { CallingCard } from '@/types';
 
@@ -88,12 +89,12 @@ export const TerminalTaskCard = ({ card, onComplete, onDismiss, compact }: Props
 
   return (
     <>
-      {channel === 'thief' ? <TaskCardThief vm={vm} /> : <TaskCardDefault vm={vm} />}
+      {channel === 'thief' ? <TaskCardThief vm={vm} /> : channel === 'board' ? <TaskCardBoard vm={vm} /> : <TaskCardDefault vm={vm} />}
 
       <ConfirmDialog
         isOpen={confirmDismiss}
         tone="warning"
-        forceDark={channel === 'thief'}
+        forceDark={channel === 'thief' || channel === 'board'}
         title="放弃这一步？"
         description="它会被丢掉，但你随时可以再来终端拣一件。"
         confirmText="放弃"

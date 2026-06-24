@@ -31,6 +31,8 @@ import { AntechamberBoard } from '@/components/terminal/AntechamberBoard';
 import { AntechamberTV } from '@/components/terminal/AntechamberTV';
 import { TerminalRoom } from '@/components/terminal/TerminalRoom';
 import { TreasuryThief, TreasuryTrigger, ThiefEmpty } from '@/components/terminal/TreasuryThief';
+import { TreasuryBoard, TreasuryTriggerBoard, BoardEmpty } from '@/components/terminal/TreasuryBoard';
+import { MONO } from '@/components/terminal/boardKit';
 import type { TreasuryVM } from '@/components/terminal/TreasuryThief';
 import { MicroBurst } from '@/components/terminal/MicroBurst';
 import { GoalArc } from '@/components/terminal/GoalArc';
@@ -114,7 +116,7 @@ export const Terminal = () => {
   const danmakuPool = useMemo(() => [...TERMINAL_DANMAKU_SEEDS, ...approvedDanmaku], [approvedDanmaku]);
 
   const skin = terminalSkin(user?.theme);
-  const isThief = skin.channel === 'thief'; // 怪盗暗房：portal 弹窗需强制暗色，与房间一致
+  const isDarkRoom = skin.channel === 'thief' || skin.channel === 'board'; // 暗房频道：portal 弹窗需强制暗色，与房间一致
   const hasAI = !!getAIConfig(settings);
   const attrName = (id: AttributeId) => settings.attributeNames?.[id] ?? id;
 
@@ -490,7 +492,7 @@ export const Terminal = () => {
         onClose={() => setEditor(closedEditor)}
         position="center"
         busy={busy}
-        forceDark={isThief}
+        forceDark={isDarkRoom}
         title={
           editor.editId
             ? editor.mode === 'goal'
@@ -576,7 +578,7 @@ export const Terminal = () => {
         onClose={() => setAi(closedAI)}
         position="center"
         busy={busy}
-        forceDark={isThief}
+        forceDark={isDarkRoom}
         title="AI 拆分子愿望"
         footer={
           ai.loading || ai.error ? undefined : (
@@ -659,54 +661,61 @@ export const Terminal = () => {
         confirmText="删除"
         cancelText="取消"
         busy={busy}
-        forceDark={isThief}
+        forceDark={isDarkRoom}
         onConfirm={confirmDelete}
         onCancel={() => setDeleteTarget(null)}
       />
 
       {/* 弹幕投稿（先审后发） */}
-      <DanmakuCompose isOpen={composeOpen} onClose={() => setComposeOpen(false)} forceDark={isThief} />
+      <DanmakuCompose isOpen={composeOpen} onClose={() => setComposeOpen(false)} forceDark={isDarkRoom} />
 
       {/* 终极目标全达成庆祝弹窗（主题差分；自动消失） */}
       <GoalCompletePop pop={goalCelebrate} onClose={() => setGoalCelebrate(null)} />
     </>
   );
 
-  // 怪盗（红）正文：P5 据点房间外壳 + Velvet 接引；强制 dark 语境，让房内通用件按暗色渲染
-  if (skin.channel === 'thief') {
+  // 暗房频道（红=怪盗 P5 据点 / 蓝·粉·自定义=千禧 BBS 桌面）：房间外壳 + Velvet 接引 + 召唤抽屉。
+  // 强制 dark 语境让房内通用件按暗色渲染；各频道用各自的空状态/召唤入口/抽屉皮肤。
+  if (skin.channel === 'thief' || skin.channel === 'board') {
+    const isBoard = skin.channel === 'board';
+    const EmptyComp = isBoard ? BoardEmpty : ThiefEmpty;
+    const Trigger = isBoard ? TreasuryTriggerBoard : TreasuryTrigger;
+    const Drawer = isBoard ? TreasuryBoard : TreasuryThief;
     return (
       <>
         <TerminalRoom
-          channel="thief"
+          channel={skin.channel}
           title={skin.roomTitle}
           channelLabel={skin.label}
           onBack={() => setCurrentPage('dashboard')}
         >
           <div className="dark relative">
-            {/* 漂浮弹幕（据点里其他人的声音；氛围层，置于内容之下） */}
+            {/* 漂浮弹幕（房里其他人的声音；氛围层，置于内容之下） */}
             <DanmakuField messages={danmakuPool} />
-            <div className="mb-5 border-l-2 border-primary/60 pl-3 text-sm italic leading-relaxed text-white/80">
-              {skin.velvet}
-            </div>
+            {isBoard ? (
+              <div className="mb-5 text-[13px] leading-relaxed" style={{ fontFamily: MONO, color: '#bcd6f5' }}>» {skin.velvet}</div>
+            ) : (
+              <div className="mb-5 border-l-2 border-primary/60 pl-3 text-sm italic leading-relaxed text-white/80">{skin.velvet}</div>
+            )}
             {activeCard}
             {isEmpty ? (
-              <ThiefEmpty onCreate={openGoalEditor} />
+              <EmptyComp onCreate={openGoalEditor} />
             ) : (
               <>
                 <ShortCircuitPanel />
-                <TreasuryTrigger goalsCount={goals.length} done={totalDone} total={totalSubs} onOpen={() => setTreasuryOpen(true)} />
+                <Trigger goalsCount={goals.length} done={totalDone} total={totalSubs} onOpen={() => setTreasuryOpen(true)} />
               </>
             )}
             {danmakuBtn}
           </div>
         </TerminalRoom>
-        <TreasuryThief open={treasuryOpen} onClose={() => setTreasuryOpen(false)} vm={treasuryVM} />
+        <Drawer open={treasuryOpen} onClose={() => setTreasuryOpen(false)} vm={treasuryVM} />
         {modals}
       </>
     );
   }
 
-  // 其余频道（board / tv）：暂用通用正文外壳（各自轮次再皮肤化）
+  // 其余频道（tv）：暂用通用正文外壳（其轮次再皮肤化）
   return (
     <div className="relative mx-auto max-w-2xl px-4 pb-24 pt-3">
       {/* 漂浮弹幕（官方精选池 + 云端已过审，氛围层，置于内容之下） */}
