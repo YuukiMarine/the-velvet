@@ -18,6 +18,7 @@ import { terminalSkin, terminalChannel, pickEncourage } from '@/utils/terminalSk
 import { ClearContentDefault } from './ClearContentDefault';
 import { ClearContentThief, ThiefClearBg } from './ClearContentThief';
 import { ClearContentBoard } from './ClearContentBoard';
+import { ClearContentTV } from './ClearContentTV';
 import type { ClearVM } from './ClearContentDefault';
 
 const PALETTE = {
@@ -118,7 +119,7 @@ export const TerminalClearCutIn = () => {
           {/* 怪盗专属动态背景（仅 bold；D0 退回纯渐变+冲击） */}
           {channel === 'thief' && bold && <ThiefClearBg />}
 
-          {channel === 'thief' ? <ClearContentThief vm={vm} /> : channel === 'board' ? <ClearContentBoard vm={vm} /> : <ClearContentDefault vm={vm} />}
+          {channel === 'thief' ? <ClearContentThief vm={vm} /> : channel === 'board' ? <ClearContentBoard vm={vm} /> : channel === 'tv' ? <ClearContentTV vm={vm} /> : <ClearContentDefault vm={vm} />}
         </motion.div>
       )}
     </AnimatePresence>,

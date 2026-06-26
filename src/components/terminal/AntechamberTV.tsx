@@ -15,6 +15,7 @@ import { useAppStore } from '@/store';
 import { useBoldness } from '@/utils/boldness';
 import { getMotionPersonality } from '@/utils/motion';
 import { triggerLightHaptic, triggerThemeSwitchFeedback } from '@/utils/feedback';
+import { CRT_EASE, fancy, RecDot, Sparkle } from './tvKit';
 import type { TerminalSkin } from '@/utils/terminalSkin';
 
 interface Props {
@@ -26,19 +27,6 @@ interface Props {
 
 let _tvIntroSeen = false;
 
-/** P4 CRT 签名缓动：锐利、不弹（同 motion.ts yellow 性格） */
-const CRT_EASE: [number, number, number, number] = [0.85, 0, 0.15, 1];
-
-/** 综艺粗描边「花字」：白字 + 厚黑描边 + 黄色偏移投影（贴纸感） */
-const fancy = (px = 3): React.CSSProperties => ({
-  color: '#fff',
-  textShadow: [
-    `${-px}px ${-px}px 0 #000`, `${px}px ${-px}px 0 #000`, `${-px}px ${px}px 0 #000`, `${px}px ${px}px 0 #000`,
-    `0 ${px}px 0 #000`, `${px}px 0 0 #000`, `${-px}px 0 0 #000`, `0 ${-px}px 0 #000`,
-    `${px + 3}px ${px + 4}px 0 var(--color-primary)`,
-  ].join(','),
-});
-
 /** CRT 雪花噪点（feTurbulence 灰度），仅调谐时出 */
 const TVStatic = ({ className }: { className?: string }) => (
   <svg className={className} aria-hidden xmlns="http://www.w3.org/2000/svg">
@@ -48,30 +36,6 @@ const TVStatic = ({ className }: { className?: string }) => (
     </filter>
     <rect width="100%" height="100%" filter="url(#tv-static-noise)" />
   </svg>
-);
-
-/** 闪烁红点（LIVE / REC 共用） */
-const RecDot = ({ size = 'h-2 w-2', bold }: { size?: string; bold: boolean }) => (
-  <motion.span
-    aria-hidden
-    className={`inline-block shrink-0 rounded-full bg-[#ff2e2e] ${size}`}
-    style={{ boxShadow: '0 0 6px #ff2e2e' }}
-    animate={bold ? { opacity: [1, 1, 0.15, 1] } : { opacity: 1 }}
-    transition={bold ? { duration: 1.1, repeat: Infinity, ease: 'linear', times: [0, 0.55, 0.6, 1] } : undefined}
-  />
-);
-
-/** 角落闪烁星（综艺花字点缀） */
-const Sparkle = ({ className, delay = 0, bold }: { className?: string; delay?: number; bold: boolean }) => (
-  <motion.span
-    aria-hidden
-    className={`pointer-events-none absolute select-none text-primary ${className ?? ''}`}
-    style={{ textShadow: '0 0 8px color-mix(in srgb, var(--color-primary) 70%, transparent)' }}
-    animate={bold ? { scale: [0.7, 1.1, 0.7], opacity: [0.4, 1, 0.4] } : { opacity: 0.7 }}
-    transition={bold ? { duration: 2.2, delay, repeat: Infinity, ease: 'easeInOut' } : undefined}
-  >
-    ✦
-  </motion.span>
 );
 
 export const AntechamberTV = ({ skin, onEnter, onBack, danmakuPool }: Props) => {

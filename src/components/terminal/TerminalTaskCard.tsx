@@ -11,9 +11,11 @@
 import { useEffect, useState } from 'react';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { useAppStore } from '@/store';
+import { useBoldness } from '@/utils/boldness';
 import { terminalChannel } from '@/utils/terminalSkin';
 import { TaskCardThief } from './TaskCardThief';
 import { TaskCardBoard } from './TaskCardBoard';
+import { TaskCardTV } from './TaskCardTV';
 import { TaskCardDefault } from './TaskCardDefault';
 import type { CallingCard } from '@/types';
 
@@ -33,6 +35,7 @@ export interface TaskCardVM {
   elapsedFrac: number;
   busy: boolean;
   compact: boolean;
+  bold: boolean;
   onComplete: () => void;
   requestDismiss: () => void;
 }
@@ -41,6 +44,7 @@ export const TerminalTaskCard = ({ card, onComplete, onDismiss, compact }: Props
   const t = card.terminal;
   const theme = useAppStore((s) => s.user?.theme);
   const channel = terminalChannel(theme);
+  const bold = useBoldness();
   const [nowTs, setNowTs] = useState(() => Date.now());
   const [busy, setBusy] = useState(false);
   const [confirmDismiss, setConfirmDismiss] = useState(false);
@@ -83,18 +87,19 @@ export const TerminalTaskCard = ({ card, onComplete, onDismiss, compact }: Props
     elapsedFrac,
     busy,
     compact: !!compact,
+    bold,
     onComplete: handleComplete,
     requestDismiss: () => setConfirmDismiss(true),
   };
 
   return (
     <>
-      {channel === 'thief' ? <TaskCardThief vm={vm} /> : channel === 'board' ? <TaskCardBoard vm={vm} /> : <TaskCardDefault vm={vm} />}
+      {channel === 'thief' ? <TaskCardThief vm={vm} /> : channel === 'board' ? <TaskCardBoard vm={vm} /> : channel === 'tv' ? <TaskCardTV vm={vm} /> : <TaskCardDefault vm={vm} />}
 
       <ConfirmDialog
         isOpen={confirmDismiss}
         tone="warning"
-        forceDark={channel === 'thief' || channel === 'board'}
+        forceDark={channel === 'thief' || channel === 'board' || channel === 'tv'}
         title="放弃这一步？"
         description="它会被丢掉，但你随时可以再来终端拣一件。"
         confirmText="放弃"

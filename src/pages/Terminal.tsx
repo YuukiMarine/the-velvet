@@ -32,6 +32,7 @@ import { AntechamberTV } from '@/components/terminal/AntechamberTV';
 import { TerminalRoom } from '@/components/terminal/TerminalRoom';
 import { TreasuryThief, TreasuryTrigger, ThiefEmpty } from '@/components/terminal/TreasuryThief';
 import { TreasuryBoard, TreasuryTriggerBoard, BoardEmpty } from '@/components/terminal/TreasuryBoard';
+import { TreasuryTV, TreasuryTriggerTV, TVEmpty } from '@/components/terminal/TreasuryTV';
 import { MONO } from '@/components/terminal/boardKit';
 import type { TreasuryVM } from '@/components/terminal/TreasuryThief';
 import { MicroBurst } from '@/components/terminal/MicroBurst';
@@ -116,7 +117,7 @@ export const Terminal = () => {
   const danmakuPool = useMemo(() => [...TERMINAL_DANMAKU_SEEDS, ...approvedDanmaku], [approvedDanmaku]);
 
   const skin = terminalSkin(user?.theme);
-  const isDarkRoom = skin.channel === 'thief' || skin.channel === 'board'; // 暗房频道：portal 弹窗需强制暗色，与房间一致
+  const isDarkRoom = skin.channel === 'thief' || skin.channel === 'board' || skin.channel === 'tv'; // 暗房频道：portal 弹窗需强制暗色，与房间一致
   const hasAI = !!getAIConfig(settings);
   const attrName = (id: AttributeId) => settings.attributeNames?.[id] ?? id;
 
@@ -467,7 +468,8 @@ export const Terminal = () => {
           </div>
   );
 
-  // 通用外壳正文（board / tv）
+  // 通用外壳正文（当前三频道均在下方暗房分支接管，此块不可达；保留作频道兜底——
+  // body/wishListInline/emptyRitual 仍被下方兜底 return 引用以满足 noUnusedLocals）
   const body = (
     <>
       {activeCard}
@@ -674,13 +676,13 @@ export const Terminal = () => {
     </>
   );
 
-  // 暗房频道（红=怪盗 P5 据点 / 蓝·粉·自定义=千禧 BBS 桌面）：房间外壳 + Velvet 接引 + 召唤抽屉。
-  // 强制 dark 语境让房内通用件按暗色渲染；各频道用各自的空状态/召唤入口/抽屉皮肤。
-  if (skin.channel === 'thief' || skin.channel === 'board') {
-    const isBoard = skin.channel === 'board';
-    const EmptyComp = isBoard ? BoardEmpty : ThiefEmpty;
-    const Trigger = isBoard ? TreasuryTriggerBoard : TreasuryTrigger;
-    const Drawer = isBoard ? TreasuryBoard : TreasuryThief;
+  // 暗房频道（红=怪盗 P5 据点 / 蓝·粉·自定义=千禧 BBS 桌面 / 黄=P4 综艺 CRT 演播厅）：
+  // 房间外壳 + Velvet 接引 + 召唤抽屉。强制 dark 语境让房内通用件按暗色渲染；各频道用各自皮肤。
+  if (skin.channel === 'thief' || skin.channel === 'board' || skin.channel === 'tv') {
+    const ch = skin.channel;
+    const EmptyComp = ch === 'board' ? BoardEmpty : ch === 'tv' ? TVEmpty : ThiefEmpty;
+    const Trigger = ch === 'board' ? TreasuryTriggerBoard : ch === 'tv' ? TreasuryTriggerTV : TreasuryTrigger;
+    const Drawer = ch === 'board' ? TreasuryBoard : ch === 'tv' ? TreasuryTV : TreasuryThief;
     return (
       <>
         <TerminalRoom
@@ -692,8 +694,10 @@ export const Terminal = () => {
           <div className="dark relative">
             {/* 漂浮弹幕（房里其他人的声音；氛围层，置于内容之下） */}
             <DanmakuField messages={danmakuPool} />
-            {isBoard ? (
+            {ch === 'board' ? (
               <div className="mb-5 text-[13px] leading-relaxed" style={{ fontFamily: MONO, color: '#bcd6f5' }}>» {skin.velvet}</div>
+            ) : ch === 'tv' ? (
+              <div className="mb-5 inline-block bg-black/70 px-3 py-1.5 text-sm font-semibold text-white" style={{ boxShadow: '3px 3px 0 var(--color-primary)' }}>{skin.velvet}</div>
             ) : (
               <div className="mb-5 border-l-2 border-primary/60 pl-3 text-sm italic leading-relaxed text-white/80">{skin.velvet}</div>
             )}
@@ -715,7 +719,7 @@ export const Terminal = () => {
     );
   }
 
-  // 其余频道（tv）：暂用通用正文外壳（其轮次再皮肤化）
+  // 兜底（理论不可达：thief/board/tv 三频道均在上方暗房分支处理）。保留以防未来新增频道。
   return (
     <div className="relative mx-auto max-w-2xl px-4 pb-24 pt-3">
       {/* 漂浮弹幕（官方精选池 + 云端已过审，氛围层，置于内容之下） */}

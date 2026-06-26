@@ -21,6 +21,7 @@ import type { AttributeId } from '@/types';
 import { ShortCircuitDefault } from './ShortCircuitDefault';
 import { ShortCircuitThief } from './ShortCircuitThief';
 import { ShortCircuitBoard } from './ShortCircuitBoard';
+import { ShortCircuitTV } from './ShortCircuitTV';
 
 export interface Candidate {
   kind: 'wish' | 'todo';
@@ -185,10 +186,15 @@ export const ShortCircuitPanel = () => {
 
   return (
     <>
-      {channel === 'thief' ? <ShortCircuitThief vm={vm} /> : channel === 'board' ? <ShortCircuitBoard vm={vm} /> : <ShortCircuitDefault vm={vm} />}
+      {/* 屏幕阅读器播报：拆解中 / 拆出的「最小第一步」——四路频道共用（表现层装饰不可达 SR） */}
+      <div role="status" aria-live="polite" className="sr-only">
+        {phase === 'decomposing' ? skin.decomposing : phase === 'result' && chosen ? `${skin.stepLead}${step}` : ''}
+      </div>
 
-      {/* 候选选择器（三频道共用；暗房频道 thief/board 强制暗色弹窗） */}
-      <SheetModal isOpen={picking} onClose={() => setPicking(false)} position="center" title={skin.pickTitle} forceDark={channel === 'thief' || channel === 'board'}>
+      {channel === 'thief' ? <ShortCircuitThief vm={vm} /> : channel === 'board' ? <ShortCircuitBoard vm={vm} /> : channel === 'tv' ? <ShortCircuitTV vm={vm} /> : <ShortCircuitDefault vm={vm} />}
+
+      {/* 候选选择器（频道共用；终端房间皆暗底 → 强制暗色弹窗） */}
+      <SheetModal isOpen={picking} onClose={() => setPicking(false)} position="center" title={skin.pickTitle} forceDark>
         {empty ? (
           <div className="py-6 text-center text-sm text-gray-500 dark:text-gray-400">{skin.emptyPool}</div>
         ) : (

@@ -44,12 +44,23 @@ const BoardRoomBg = () => (
   </div>
 );
 
+/** TV 演播厅背景：CRT 黑底 + 黄管面辉光 + 扫描线 + 管面内阴影 + 暗角 */
+const TVRoomBg = () => (
+  <div aria-hidden className="pointer-events-none fixed inset-0 z-0 overflow-hidden bg-[#0a0a06] md:left-60">
+    <div className="absolute inset-0" style={{ background: 'radial-gradient(120% 90% at 50% 38%, color-mix(in srgb, var(--color-primary) 12%, transparent) 0%, transparent 55%)' }} />
+    <div className="absolute inset-0 opacity-70" style={{ backgroundImage: 'repeating-linear-gradient(0deg, rgba(0,0,0,0.32) 0px, rgba(0,0,0,0.32) 1px, transparent 1px, transparent 3px)' }} />
+    <div className="absolute inset-0" style={{ boxShadow: 'inset 0 0 160px 40px rgba(0,0,0,0.85)' }} />
+    <div className="absolute inset-0" style={{ background: 'radial-gradient(circle at 50% 40%, transparent 52%, rgba(0,0,0,0.6) 100%)' }} />
+  </div>
+);
+
 export const TerminalRoom = ({ channel, title, channelLabel, onBack, children }: Props) => {
   const thief = channel === 'thief';
   const board = channel === 'board';
+  const tv = channel === 'tv';
   return (
     <div className="relative min-h-[100dvh]">
-      {thief ? <ThiefRoomBg /> : board ? <BoardRoomBg /> : <div aria-hidden className="pointer-events-none fixed inset-0 z-0 bg-[#0d0d0f] md:left-60" />}
+      {thief ? <ThiefRoomBg /> : board ? <BoardRoomBg /> : tv ? <TVRoomBg /> : <div aria-hidden className="pointer-events-none fixed inset-0 z-0 bg-[#0d0d0f] md:left-60" />}
 
       <div className="relative z-10 mx-auto max-w-2xl px-4 pb-28 pt-3">
         {/* 页头 */}
@@ -65,18 +76,25 @@ export const TerminalRoom = ({ channel, title, channelLabel, onBack, children }:
           <motion.h1
             initial={{ opacity: 0, x: -8 }}
             animate={{ opacity: 1, x: 0 }}
-            className={board ? 'min-w-0 truncate text-lg font-bold tracking-wide text-white' : 'text-xl font-black tracking-wide'}
+            className={board || tv ? 'min-w-0 truncate text-lg font-bold tracking-wide text-white' : 'text-xl font-black tracking-wide'}
             style={thief ? heavy(2.5) : board ? { fontFamily: MONO } : { color: '#fff' }}
           >
-            {board ? `▓ ${title}` : title}
+            {board ? `▓ ${title}` : tv ? `▶ ${title}` : title}
           </motion.h1>
-          <span
-            className={`ml-auto flex shrink-0 items-center gap-1.5 text-[11px] font-bold tracking-widest ${board ? 'bk-fg' : 'text-primary'}`}
-            style={board ? { fontFamily: MONO } : undefined}
-          >
-            <span className={`inline-flex h-2 w-2 animate-pulse rounded-full ${board ? 'bk-bg' : 'bg-primary'}`} aria-hidden />
-            {board ? '在线' : channelLabel}
-          </span>
+          {tv ? (
+            <span className="ml-auto flex shrink-0 items-center gap-1.5 text-[11px] font-black tracking-widest text-white/90">
+              <span className="inline-flex h-2 w-2 animate-pulse rounded-full bg-[#ff2e2e]" style={{ boxShadow: '0 0 6px #ff2e2e' }} aria-hidden />
+              LIVE
+            </span>
+          ) : (
+            <span
+              className={`ml-auto flex shrink-0 items-center gap-1.5 text-[11px] font-bold tracking-widest ${board ? 'bk-fg' : 'text-primary'}`}
+              style={board ? { fontFamily: MONO } : undefined}
+            >
+              <span className={`inline-flex h-2 w-2 animate-pulse rounded-full ${board ? 'bk-bg' : 'bg-primary'}`} aria-hidden />
+              {board ? '在线' : channelLabel}
+            </span>
+          )}
         </div>
 
         {children}
