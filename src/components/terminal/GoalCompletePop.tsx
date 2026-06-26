@@ -14,6 +14,7 @@ import { zClass } from '@/utils/zIndex';
 import { terminalChannel } from '@/utils/terminalSkin';
 import { Halftone, StarBurst } from './thiefKit';
 import { MONO, PANEL, INK, INK_DIM } from './boardKit';
+import { fancy, Sparkle } from './tvKit';
 
 const POP_CLIP = 'polygon(2% 7%, 98% 0%, 100% 93%, 0% 100%)';
 
@@ -61,6 +62,22 @@ const BoardClosed = ({ title }: { title: string }) => (
   </motion.div>
 );
 
+const TVCleared = ({ title, bold }: { title: string; bold: boolean }) => (
+  <motion.div
+    initial={bold ? { scale: 0.5, rotate: -10, opacity: 0 } : { opacity: 0 }}
+    animate={{ scale: 1, rotate: -3, opacity: 1 }}
+    transition={bold ? { type: 'spring', damping: 10, stiffness: 260 } : { duration: 0.2 }}
+    className="relative border-2 border-primary bg-[#0a0a06] px-7 py-5 text-center"
+    style={{ boxShadow: '0 5px 0 #000' }}
+  >
+    <Sparkle className="-left-2 top-1 text-lg" delay={0} bold={bold} />
+    <Sparkle className="-right-1 top-3 text-sm" delay={0.6} bold={bold} />
+    <div aria-hidden className="text-[10px] font-black tracking-[4px] text-primary">★ 本期通关 ★</div>
+    <div className="mt-1.5 text-xl font-black" style={fancy(2.5)}>你完成了一个重要的目标</div>
+    <div className="mx-auto mt-1 max-w-[15rem] truncate text-sm text-white/60">《{title}》</div>
+  </motion.div>
+);
+
 const PlainToast = ({ title }: { title: string }) => (
   <motion.div
     initial={{ scale: 0.9, y: 12, opacity: 0 }}
@@ -94,7 +111,7 @@ export const GoalCompletePop = ({ pop, onClose }: { pop: { title: string } | nul
           className={`pointer-events-none fixed inset-0 ${zClass.cutin} flex items-center justify-center p-6`}
           aria-live="polite"
         >
-          {channel === 'thief' ? <ThiefBurst title={pop.title} bold={bold} /> : channel === 'board' ? <BoardClosed title={pop.title} /> : <PlainToast title={pop.title} />}
+          {channel === 'thief' ? <ThiefBurst title={pop.title} bold={bold} /> : channel === 'board' ? <BoardClosed title={pop.title} /> : channel === 'tv' ? <TVCleared title={pop.title} bold={bold} /> : <PlainToast title={pop.title} />}
         </motion.div>
       )}
     </AnimatePresence>,
