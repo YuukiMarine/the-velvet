@@ -46,7 +46,7 @@ export const DanmakuCompose = ({ isOpen, onClose, forceDark }: Props) => {
     setBusy(true);
     try {
       await submitDanmaku(text, danmakuThemeOf(user?.theme));
-      // 成功才消费，且基于最新 store 值原子递减（避免与完成任务的 +1 互相覆盖丢点）
+      // 成功才消费，且基于最新 store 值原子递减（避免与完成小步的 +1 互相覆盖丢点）
       const cur = useAppStore.getState().settings.terminalDanmakuTokens ?? 0;
       await updateSettings({ terminalDanmakuTokens: Math.max(0, cur - 1) });
       setDone(true);
@@ -64,7 +64,7 @@ export const DanmakuCompose = ({ isOpen, onClose, forceDark }: Props) => {
         <div className="py-6 text-center">
           <div className="mb-2 text-3xl">✦</div>
           <p className="text-sm leading-relaxed text-gray-700 dark:text-gray-200">
-            已送出。过审后，它会飘到还困在低谷里的人面前。
+            已送出。过审后，它会出现在同样卡住的人面前。
           </p>
           <button
             type="button"

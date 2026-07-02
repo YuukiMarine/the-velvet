@@ -1,9 +1,8 @@
 /**
- * TreasuryThief — F3 怪盗（红）正文「心之宝物殿」可召唤抽屉（阶段 2 · Round 2）。
+ * TreasuryThief — F3 怪盗（红）正文「启动素材库」可召唤抽屉。
  *
- * 把愿望清单从首屏主体降为可召唤档案柜：正文里只留一个 TreasuryTrigger 摘要面板，
- * 点开滑出右侧抽屉，里面是怪盗化的「心之宝物」目标卡（通缉海报感：红黑斜块 + halftone +
- * 厚描边花字 + GoalArc 关卡进度 + 角章），子愿望为角形锁定勾选行。
+ * 把长期方向 / 卡住事项从首屏主体降为可召唤素材库：正文只留摘要面板，
+ * 点开滑出右侧抽屉；终端从这些素材中抽一件，拆成当前一小步。
  *
  * 纯展示：所有逻辑（增删改 / AI 拆分 / 完成 / 折叠）由 Terminal.tsx 经 TreasuryVM 注入。
  * 用显式深色（不靠 dark: 变体），故与全局明暗无关；抽屉滑动尊重 bold 降级。
@@ -24,7 +23,7 @@ export interface TreasuryVM {
   subsByParent: Record<string, Wish[]>;
   collapsed: Set<string>;
   celebrateId: string | null;
-  /** 正在播「标题划过 COMPLETE」特效的终极目标 id（全子愿望达成时） */
+  /** 正在播「标题划过 COMPLETE」特效的素材 id（全小步骤达成时） */
   celebrateGoalId: string | null;
   bold: boolean;
   hasAI: boolean;
@@ -44,17 +43,17 @@ export const TreasuryTrigger = ({ goalsCount, done, total, onOpen }: { goalsCoun
     type="button"
     whileTap={{ scale: 0.98 }}
     onClick={onOpen}
-    aria-label="翻开心之宝物殿"
+    aria-label="打开作战档案"
     className="relative mt-5 flex w-full items-center gap-3 overflow-hidden border-2 border-primary/60 bg-[#0d0d0d] px-4 py-3 text-left"
     style={{ boxShadow: '4px 5px 0 rgba(0,0,0,0.5)' }}
   >
     <Halftone className="absolute right-0 top-0 h-16 w-16 opacity-40" style={{ clipPath: 'polygon(45% 0,100% 0,100% 55%)' }} />
     <span className="text-2xl" aria-hidden>✦</span>
     <span className="relative min-w-0 flex-1">
-      <span className="block text-sm font-black tracking-wide" style={heavy(1.5)}>心之宝物殿</span>
-      <span className="block text-[11px] text-white/55">{goalsCount} 件目标 · 已夺回 {done} / {total} 步</span>
+      <span className="block text-sm font-black tracking-wide" style={heavy(1.5)}>作战档案</span>
+      <span className="block text-[11px] text-white/55">{goalsCount} 个目标 · 已夺回 {done} / {total} 小步</span>
     </span>
-    <span className="relative text-xs font-black tracking-widest text-primary">翻开档案 ›</span>
+    <span className="relative text-xs font-black tracking-widest text-primary">查看 ›</span>
   </motion.button>
 );
 
@@ -63,9 +62,9 @@ export const ThiefEmpty = ({ onCreate }: { onCreate: () => void }) => (
   <div className="relative overflow-hidden border-2 border-primary/50 bg-[#0d0d0d] px-6 py-10 text-center" style={{ boxShadow: '5px 6px 0 rgba(0,0,0,0.5)' }}>
     <Halftone className="absolute right-0 top-0 h-24 w-24 opacity-40" style={{ clipPath: 'polygon(45% 0,100% 0,100% 55%)' }} />
     <div className="relative mb-3 text-4xl" aria-hidden>✦</div>
-    <h3 className="relative mb-2 text-lg font-black" style={heavy(2)}>你最想夺回的，是什么？</h3>
+    <h3 className="relative mb-2 text-lg font-black" style={heavy(2)}>现在最卡住你的，是什么？</h3>
     <p className="relative mx-auto mb-6 max-w-sm text-sm leading-relaxed text-white/60">
-      先立一个「终极目标」——心之宝物的源头。之后让终端替你拆成够得着的潜入步骤。
+      先放进一件事。它不会变成新的压力，只会被终端拆成当下能做的一小步。
     </p>
     <button
       type="button"
@@ -73,15 +72,16 @@ export const ThiefEmpty = ({ onCreate }: { onCreate: () => void }) => (
       className="relative border-2 border-black bg-primary px-6 py-2.5 text-sm font-black tracking-wider text-black"
       style={{ boxShadow: '3px 3px 0 #000' }}
     >
-      立第一个目标
+      写下第一件事
     </button>
   </div>
 );
 
 // 不规则四边形纸片轮廓（漫画分镜感）
 const CARD_CLIP = 'polygon(0% 4%, 97% 0%, 100% 96%, 3% 100%)';
+const dossierKind = (goal: Wish) => (goal.kind === 'pressure' ? 'PRESSURE' : 'WISH');
 
-// ── 抽屉内单个「心之宝物」目标卡（白纸 + 黑描边 + 不规则四边形 + 右上灰半调圆，漫画风） ──
+// ── 抽屉内单个素材卡（白纸 + 黑描边 + 不规则四边形 + 右上灰半调圆，漫画风） ──
 const TreasureCard = ({ goal, vm }: { goal: Wish; vm: TreasuryVM }) => {
   const subs = vm.subsByParent[goal.id] ?? [];
   const doneCount = subs.filter((s) => s.status === 'done').length;
@@ -111,7 +111,7 @@ const TreasureCard = ({ goal, vm }: { goal: Wish; vm: TreasuryVM }) => {
               <button type="button" onClick={() => vm.openEdit(goal)} className={`block w-full truncate text-left text-base font-black ${goal.status === 'done' ? 'text-gray-400 line-through' : 'text-gray-900'}`}>
                 {goal.title}
               </button>
-              {/* 全子愿望达成：COMPLETE 横幅划过标题 */}
+              {/* 全小步骤达成：COMPLETE 横幅划过标题 */}
               {vm.bold && vm.celebrateGoalId === goal.id && (
                 <motion.span
                   aria-hidden
@@ -124,13 +124,14 @@ const TreasureCard = ({ goal, vm }: { goal: Wish; vm: TreasuryVM }) => {
                 </motion.span>
               )}
             </div>
-            {goal.note && <p className="mt-0.5 text-xs text-gray-500">{goal.note}</p>}
-            <div className="mt-0.5 flex items-center gap-1.5 text-[11px] font-bold tracking-wide text-gray-700">
-              <span aria-hidden className="inline-block -rotate-3 border border-primary/70 px-1 text-[9px] tracking-[2px] text-primary">TARGET</span>
-              {subs.length > 0 ? `已夺回 ${doneCount} / ${subs.length}` : '尚无潜入步骤'}
+            <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] font-bold tracking-wide text-gray-700">
+              <span aria-hidden className="inline-block -rotate-3 border border-primary/70 px-1 text-[9px] tracking-[2px] text-primary">{dossierKind(goal)}</span>
+              {subs.length > 0 ? `完成 ${doneCount} / ${subs.length}` : '还没有小步骤'}
             </div>
+            {goal.currentState && <p className="mt-0.5 truncate text-[11px] font-bold text-gray-600">NOW: {goal.currentState}</p>}
+            {goal.note && <p className="mt-0.5 text-xs text-gray-500">{goal.note}</p>}
           </div>
-          <button type="button" onClick={() => vm.setDeleteTarget(goal)} className="shrink-0 p-1 text-gray-400 hover:text-red-500" aria-label="删除终极目标">
+          <button type="button" onClick={() => vm.setDeleteTarget(goal)} className="shrink-0 p-1 text-gray-400 hover:text-red-500" aria-label="删除素材">
             <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m2 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6" /></svg>
           </button>
         </div>
@@ -158,14 +159,14 @@ const TreasureCard = ({ goal, vm }: { goal: Wish; vm: TreasuryVM }) => {
                   {sub.attribute && <span className="ml-1.5 bg-primary/15 px-1 py-0.5 text-[10px] font-medium text-primary">{vm.attrName(sub.attribute)}</span>}
                   {sub.source === 'ai' && <span className="ml-1 text-[10px] text-gray-400">AI</span>}
                 </button>
-                <button type="button" onClick={() => vm.setDeleteTarget(sub)} className="shrink-0 p-1 text-gray-400 hover:text-red-500" aria-label="删除子愿望">
+                <button type="button" onClick={() => vm.setDeleteTarget(sub)} className="shrink-0 p-1 text-gray-400 hover:text-red-500" aria-label="删除小步骤">
                   <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M18 6L6 18M6 6l12 12" /></svg>
                 </button>
               </div>
             ))}
 
             <div className="flex flex-wrap gap-2 pt-1">
-              <button type="button" onClick={() => vm.openSubEditor(goal.id)} className="border-2 border-black px-3 py-1 text-xs font-bold text-gray-800 transition hover:bg-black hover:text-white">+ 潜入步骤</button>
+              <button type="button" onClick={() => vm.openSubEditor(goal.id)} className="border-2 border-black px-3 py-1 text-xs font-bold text-gray-800 transition hover:bg-black hover:text-white">+ 小步骤</button>
               <button
                 type="button"
                 onClick={() => vm.runAI(goal)}
@@ -202,7 +203,7 @@ export const TreasuryThief = ({ open, onClose, vm }: { open: boolean; onClose: (
             ref={containerRef}
             role="dialog"
             aria-modal="true"
-            aria-label="心之宝物殿"
+            aria-label="作战档案"
             initial={vm.bold ? { x: '100%' } : { opacity: 0 }}
             animate={vm.bold ? { x: 0 } : { opacity: 1 }}
             exit={vm.bold ? { x: '100%' } : { opacity: 0 }}
@@ -215,15 +216,15 @@ export const TreasuryThief = ({ open, onClose, vm }: { open: boolean; onClose: (
             {/* 抽屉头 */}
             <div className="relative flex items-center gap-2 border-b-2 border-primary/40 px-4 py-3">
               <span className="shrink-0 text-xl" aria-hidden>✦</span>
-              <h2 className="min-w-0 flex-1 truncate text-lg font-black tracking-wide" style={heavy(2)}>心之宝物殿</h2>
-              <span className="hidden shrink-0 text-[10px] font-black tracking-[3px] text-primary/60 sm:inline">TREASURE</span>
+              <h2 className="min-w-0 flex-1 truncate text-lg font-black tracking-wide" style={heavy(2)}>作战档案</h2>
+              <span className="hidden shrink-0 text-[10px] font-black tracking-[3px] text-primary/60 sm:inline">TARGET</span>
               <button
                 type="button"
                 onClick={vm.openGoalEditor}
                 className="shrink-0 border-2 border-primary bg-primary px-3 py-1 text-xs font-black tracking-wide text-black"
                 style={{ boxShadow: '2px 2px 0 #000' }}
               >
-                + 立新目标
+                + 登记目标
               </button>
               <button type="button" onClick={onClose} aria-label="关闭" className="flex h-8 w-8 shrink-0 items-center justify-center text-white/70 hover:text-primary">
                 <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round"><path d="M18 6L6 18M6 6l12 12" /></svg>

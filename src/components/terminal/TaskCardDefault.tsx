@@ -1,5 +1,5 @@
 /**
- * TaskCardDefault — 24h 限时任务卡的通用表现层（board / tv / 兜底）。
+ * TaskCardDefault — 24h 当前小步卡的通用表现层（兜底）。
  * 纯展示，保持频道化拆分前的原始观感；逻辑在 TerminalTaskCard 容器。
  */
 import { motion } from 'motion/react';
@@ -16,13 +16,13 @@ export const TaskCardDefault = ({ vm }: { vm: TaskCardVM }) => {
     >
       <div className="mb-1.5 flex items-center gap-2">
         <span className="inline-flex h-2 w-2 animate-pulse rounded-full bg-primary" aria-hidden />
-        <span className="text-[11px] font-bold tracking-wide text-primary">限时任务 · 24h</span>
+        <span className="text-[11px] font-bold tracking-wide text-primary">这一小步 · 24h</span>
         <span className={`ml-auto text-[11px] font-semibold tabular-nums ${expired ? 'text-amber-500' : 'text-gray-500 dark:text-gray-400'}`}>
           {countdown}
         </span>
       </div>
 
-      {goalTitle && <div className="mb-0.5 truncate text-[11px] text-gray-400 dark:text-gray-500">为了《{goalTitle}》</div>}
+      {goalTitle && <div className="mb-0.5 truncate text-[11px] text-gray-400 dark:text-gray-500">来自《{goalTitle}》</div>}
       <p className={`font-bold leading-snug text-gray-900 dark:text-white ${compact ? 'text-sm' : 'text-lg'}`}>{title}</p>
 
       <div className="mt-2.5 h-1 overflow-hidden rounded-full bg-primary/10">
@@ -44,7 +44,7 @@ export const TaskCardDefault = ({ vm }: { vm: TaskCardVM }) => {
           onClick={requestDismiss}
           className="rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-medium text-gray-500 dark:border-gray-700 dark:text-gray-400"
         >
-          放弃
+          先放着
         </button>
       </div>
     </motion.div>

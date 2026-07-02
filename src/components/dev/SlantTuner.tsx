@@ -16,6 +16,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
+import { useAppStore } from '@/store';
 
 interface TpBlade { on(event: string, cb: () => void): TpBlade }
 interface TpApi {
@@ -25,6 +26,7 @@ interface TpApi {
 }
 
 export const SlantTuner = () => {
+  const currentPage = useAppStore((s) => s.currentPage);
   const mountRef = useRef<HTMLDivElement>(null);
   // 默认折叠：调参工具不调时收起，只留可拖 header，不挡页面内容（点 ▢ 展开）
   const [collapsed, setCollapsed] = useState(true);
@@ -111,7 +113,7 @@ export const SlantTuner = () => {
     };
   }, []);
 
-  if (!import.meta.env.DEV) return null;
+  if (!import.meta.env.DEV || currentPage === 'terminal') return null;
 
   return (
     <div

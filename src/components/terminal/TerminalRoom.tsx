@@ -44,13 +44,15 @@ const BoardRoomBg = () => (
   </div>
 );
 
-/** TV 演播厅背景：CRT 黑底 + 黄管面辉光 + 扫描线 + 管面内阴影 + 暗角 */
+/** TV 演播厅背景：低亮老电视管面 + 动态扫描线 / 雪花点噪声 + 暗角 */
 const TVRoomBg = () => (
-  <div aria-hidden className="pointer-events-none fixed inset-0 z-0 overflow-hidden bg-[#0a0a06] md:left-60">
-    <div className="absolute inset-0" style={{ background: 'radial-gradient(120% 90% at 50% 38%, color-mix(in srgb, var(--color-primary) 12%, transparent) 0%, transparent 55%)' }} />
-    <div className="absolute inset-0 opacity-70" style={{ backgroundImage: 'repeating-linear-gradient(0deg, rgba(0,0,0,0.32) 0px, rgba(0,0,0,0.32) 1px, transparent 1px, transparent 3px)' }} />
-    <div className="absolute inset-0" style={{ boxShadow: 'inset 0 0 160px 40px rgba(0,0,0,0.85)' }} />
-    <div className="absolute inset-0" style={{ background: 'radial-gradient(circle at 50% 40%, transparent 52%, rgba(0,0,0,0.6) 100%)' }} />
+  <div aria-hidden className="pointer-events-none fixed inset-0 z-0 overflow-hidden bg-[#11100a] md:left-60">
+    <div className="absolute inset-0" style={{ background: 'radial-gradient(120% 88% at 50% 35%, rgba(255,225,0,0.12) 0%, rgba(255,225,0,0.045) 38%, transparent 62%)' }} />
+    <div className="absolute inset-0 opacity-75 tv-crt-scanlines" />
+    <div className="absolute inset-0 tv-crt-noise" />
+    <div className="absolute inset-0 opacity-35" style={{ backgroundImage: 'radial-gradient(circle, rgba(255,225,0,.12) 1px, transparent 1.8px)', backgroundSize: '18px 18px' }} />
+    <div className="absolute inset-0" style={{ boxShadow: 'inset 0 0 150px 44px rgba(0,0,0,0.86)' }} />
+    <div className="absolute inset-0" style={{ background: 'radial-gradient(circle at 50% 42%, transparent 48%, rgba(0,0,0,0.68) 100%)' }} />
   </div>
 );
 

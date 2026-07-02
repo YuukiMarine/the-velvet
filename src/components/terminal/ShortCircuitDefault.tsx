@@ -12,7 +12,7 @@ export const ShortCircuitDefault = ({ vm }: { vm: ShortCircuitVM }) => {
     <div className="mb-5 overflow-hidden rounded-2xl border border-primary/30 bg-gradient-to-br from-primary/10 to-primary/[0.03] p-4 dark:from-primary/15">
       <div className="mb-2 flex items-center gap-2">
         <span className="inline-flex h-2 w-2 animate-pulse rounded-full bg-primary" aria-hidden />
-        <span className="text-xs font-bold tracking-wide text-primary">短路决策</span>
+        <span className="text-xs font-bold tracking-wide text-primary">一小步启动器</span>
         <span className="ml-auto text-[11px] text-gray-400 dark:text-gray-500">{skin.label}</span>
       </div>
 
@@ -21,7 +21,7 @@ export const ShortCircuitDefault = ({ vm }: { vm: ShortCircuitVM }) => {
           <motion.div key="idle" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, transition: { duration: 0.12 } }}>
             {hasActiveTask ? (
               <p className="text-sm leading-relaxed text-gray-500 dark:text-gray-400">
-                你已经有一个进行中的限时任务，先把它完成吧。
+                你已经有一小步在手上。先把它做掉，再挑下一件。
               </p>
             ) : (
               <>
@@ -62,7 +62,7 @@ export const ShortCircuitDefault = ({ vm }: { vm: ShortCircuitVM }) => {
             className="relative flex flex-col items-center justify-center gap-1.5 overflow-hidden py-9 text-center"
           >
             <div aria-hidden className="pointer-events-none absolute inset-0" style={{ background: 'radial-gradient(circle at center, transparent 22%, rgba(0,0,0,0.5) 100%)' }} />
-            <div className="relative z-[1] text-[11px] font-medium tracking-widest text-primary">终端正在替你拣选…</div>
+            <div className="relative z-[1] text-[11px] font-medium tracking-widest text-primary">终端正在替你挑一件…</div>
             <motion.div
               key={shuffleText}
               initial={{ opacity: 0.35, scale: 0.96 }}
@@ -86,7 +86,7 @@ export const ShortCircuitDefault = ({ vm }: { vm: ShortCircuitVM }) => {
           <motion.div key="result" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
             <div className="mb-1.5 flex items-center gap-1.5 text-[11px] text-gray-400 dark:text-gray-500">
               <span className="rounded bg-gray-100 px-1.5 py-0.5 dark:bg-gray-800">
-                {chosen.kind === 'wish' ? '子愿望' : '待办'}
+                {chosen.kind === 'wish' ? '小步骤' : '待办'}
               </span>
               <span className="min-w-0 truncate">{chosen.title}</span>
             </div>
@@ -94,7 +94,7 @@ export const ShortCircuitDefault = ({ vm }: { vm: ShortCircuitVM }) => {
             <p className="mt-1 text-lg font-bold leading-snug text-gray-900 dark:text-white">{step}</p>
             <div className="mt-2 flex items-center gap-2">
               <span className="text-xs text-gray-400 dark:text-gray-500">{encourage}</span>
-              <span className="ml-auto text-[10px] text-gray-300 dark:text-gray-600">{usedAI ? 'AI 拆解' : '离线模板'}</span>
+              <span className="ml-auto text-[10px] text-gray-300 dark:text-gray-600">{usedAI ? 'AI 拆的' : '本地拆的'}</span>
             </div>
 
             <motion.button

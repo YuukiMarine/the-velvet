@@ -39,7 +39,7 @@ export const ShortCircuitThief = ({ vm }: { vm: ShortCircuitVM }) => {
       {/* 台头 */}
       <div className="relative mb-3 flex items-center gap-2">
         <Reticle className="h-4 w-4 text-primary" />
-        <span className="text-xs font-black tracking-[2px]" style={heavy(1.5)}>短路决策 · 锁定目标</span>
+        <span className="text-xs font-black tracking-[2px]" style={heavy(1.5)}>启动器 · 锁定目标</span>
         <span className="ml-auto flex items-center gap-1 text-[10px] font-bold tracking-widest text-primary">
           <span className="inline-flex h-1.5 w-1.5 animate-pulse rounded-full bg-primary" aria-hidden />{skin.label}
         </span>
@@ -49,7 +49,7 @@ export const ShortCircuitThief = ({ vm }: { vm: ShortCircuitVM }) => {
         {phase === 'idle' && (
           <motion.div key="idle" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, transition: { duration: 0.12 } }}>
             {hasActiveTask ? (
-              <p className="text-sm leading-relaxed text-white/65">预告状已经发出——先把手上这单潜入完成。</p>
+              <p className="text-sm leading-relaxed text-white/65">手上已经有一小步了。先把它做掉，再锁定下一件。</p>
             ) : (
               <>
                 <p className="mb-3 text-sm leading-relaxed text-white/75">{empty ? skin.emptyPool : skin.decideHint}</p>
@@ -92,17 +92,17 @@ export const ShortCircuitThief = ({ vm }: { vm: ShortCircuitVM }) => {
 
         {phase === 'result' && chosen && (
           <motion.div key="result" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
-            {/* 预告状草案 */}
+            {/* 当前小步草案 */}
             <div className="relative border-2 border-primary/50 bg-black/40 p-3" style={{ clipPath: 'polygon(0 0, 100% 0, 100% 92%, 96% 100%, 0 100%)' }}>
               <div className="mb-1.5 flex items-center gap-1.5 text-[11px] text-white/55">
-                <span className="rounded-[2px] bg-primary/20 px-1.5 py-0.5 font-bold text-primary">{chosen.kind === 'wish' ? '心之宝物' : '待办'}</span>
+                <span className="rounded-[2px] bg-primary/20 px-1.5 py-0.5 font-bold text-primary">{chosen.kind === 'wish' ? '小目标' : '待办'}</span>
                 <span className="min-w-0 truncate">{chosen.title}</span>
               </div>
               <div className="text-[11px] font-black tracking-widest text-primary">{skin.stepLead}</div>
               <p className="mt-1 text-lg font-black leading-snug" style={heavy(2)}>{step}</p>
               <div className="mt-2 flex items-center gap-2">
                 <span className="text-xs italic text-white/55">{encourage}</span>
-                <span className="ml-auto text-[10px] tracking-wider text-white/35">{usedAI ? 'AI 拆解' : '离线模板'}</span>
+                <span className="ml-auto text-[10px] tracking-wider text-white/35">{usedAI ? 'AI 拆的' : '本地拆的'}</span>
               </div>
             </div>
 

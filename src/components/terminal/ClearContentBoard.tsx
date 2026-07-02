@@ -1,5 +1,5 @@
 /**
- * ClearContentBoard — 终端完成结算屏的讨论板内容层：BBS「结帖成功」。
+ * ClearContentBoard — 终端完成结算屏的讨论板内容层：BBS「小步记录」。
  * 老式窗口 + 打字机式标题 + 楼层回帖 + [已结帖] 戳。外层冲击/粒子/portal 在 TerminalClearCutIn。
  */
 import { useEffect, useState } from 'react';
@@ -9,7 +9,7 @@ import { BevelWindow, BevelButton, FloorPost, INK, INK_DIM } from './boardKit';
 import type { ClearVM } from './ClearContentDefault';
 
 export const ClearContentBoard = ({ vm }: { vm: ClearVM }) => {
-  const { skin, goalTitle, stepTitle, rewardPoints, attrName, danmakuGranted, encourage, bold, onClose } = vm;
+  const { skin, stepTitle, rewardPoints, attrName, danmakuGranted, comboCount, comboAvailable, encourage, bold, onClose, onCombo } = vm;
 
   // 打字机揭幕标题（D0 直出）
   const heading = skin.clearHeading;
@@ -33,7 +33,7 @@ export const ClearContentBoard = ({ vm }: { vm: ClearVM }) => {
       onClick={(e) => e.stopPropagation()}
       className="relative w-full max-w-md"
     >
-      <BevelWindow title="thread_closed.bbs · 结帖" onClose={onClose}>
+      <BevelWindow title="step_done.bbs · 记录" onClose={onClose}>
         <div className="text-center text-[13px] leading-relaxed">
           <div className="text-[10px] font-bold tracking-[4px] bk-fg">{skin.label.toUpperCase()}</div>
 
@@ -48,14 +48,14 @@ export const ClearContentBoard = ({ vm }: { vm: ClearVM }) => {
           <div aria-hidden className="my-1.5 bk-fg opacity-40">────────────────────────</div>
 
           <p style={{ color: INK }}>
-            {goalTitle ? `你又一次接近了《${goalTitle}》的心愿，从虚无中拯救了自己。` : '你迈出了那一步，从虚无中把自己拉了回来。'}
+            你让停滞的时间再度流动了起来。
           </p>
           <p className="mt-1 text-xs italic" style={{ color: INK_DIM }}>「{stepTitle}」</p>
 
           {/* 楼层回帖 */}
           <div className="my-2.5 space-y-0.5 text-left">
             <FloorPost index={1}>{encourage}</FloorPost>
-            {danmakuGranted && <FloorPost index={2} author="系统">解锁一次鼓励他人的机会 · 去写一句送出</FloorPost>}
+            {danmakuGranted && <FloorPost index={2} author="系统">你可以写一句话，送给同样卡住的人。</FloorPost>}
           </div>
 
           {/* 奖励 */}
@@ -66,11 +66,17 @@ export const ClearContentBoard = ({ vm }: { vm: ClearVM }) => {
                 {bold && <MusicalNotes count={rewardPoints} />}
               </span>
             ) : (
-              <span className="text-xs" style={{ color: INK_DIM }}>今日的属性奖励已领过，但这一步依然算数</span>
+              <span className="text-xs" style={{ color: INK_DIM }}>今天的加成已经领过了，但这一小步照样算数。</span>
             )}
+            {comboCount && comboCount > 1 && <span className="text-xs font-bold bk-fg">combo x{comboCount}</span>}
           </div>
 
-          <BevelButton primary onClick={onClose} className="w-full" ariaLabel="记录这一刻">记录这一刻</BevelButton>
+          <div className="grid gap-2">
+            {comboAvailable && onCombo && (
+              <BevelButton primary onClick={onCombo} className="w-full" ariaLabel="继续连击">继续连击</BevelButton>
+            )}
+            <BevelButton primary={!comboAvailable} onClick={onClose} className="w-full" ariaLabel="记录这一刻">记录这一刻</BevelButton>
+          </div>
 
           <div className="mt-3 text-xs italic" style={{ color: INK_DIM }}>─ Velvet</div>
         </div>

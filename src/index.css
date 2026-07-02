@@ -158,6 +158,18 @@ body {
   100% { transform: scale(24); opacity: 0; }
 }
 
+@keyframes tvNoiseDrift {
+  0% { background-position: 0 0, 12px 8px, 32px 16px; opacity: 0.045; }
+  33% { background-position: -18px 11px, 6px -16px, 18px 24px; opacity: 0.075; }
+  66% { background-position: 14px -9px, -20px 10px, 4px -12px; opacity: 0.055; }
+  100% { background-position: 0 0, 12px 8px, 32px 16px; opacity: 0.045; }
+}
+
+@keyframes tvScanRoll {
+  0% { background-position-y: 0; }
+  100% { background-position-y: 6px; }
+}
+
 @layer utilities {
   .glow-effect {
     box-shadow: 0 0 20px var(--color-primary);
@@ -178,6 +190,27 @@ body {
   
   .no-scrollbar::-webkit-scrollbar {
     display: none;
+  }
+
+  .tv-crt-scanlines {
+    background-image: repeating-linear-gradient(
+      0deg,
+      rgba(255, 238, 112, 0.045) 0px,
+      rgba(255, 238, 112, 0.045) 1px,
+      rgba(0, 0, 0, 0.28) 1px,
+      rgba(0, 0, 0, 0.28) 3px
+    );
+    animation: tvScanRoll 7s linear infinite;
+  }
+
+  .tv-crt-noise {
+    background-image:
+      radial-gradient(circle, rgba(255,255,255,0.2) 0 0.7px, transparent 0.9px),
+      radial-gradient(circle, rgba(255,224,0,0.18) 0 0.6px, transparent 0.8px),
+      radial-gradient(circle, rgba(36,200,242,0.12) 0 0.5px, transparent 0.8px);
+    background-size: 17px 19px, 23px 29px, 31px 37px;
+    mix-blend-mode: screen;
+    animation: tvNoiseDrift 0.78s steps(3, end) infinite;
   }
 }
 
@@ -235,6 +268,16 @@ body {
   .animate-pulse { animation: none; }
 }
 :root[data-boldness="0"] .animate-pulse { animation: none; }
+@media (prefers-reduced-motion: reduce) {
+  .tv-crt-scanlines,
+  .tv-crt-noise {
+    animation: none;
+  }
+}
+:root[data-boldness="0"] .tv-crt-scanlines,
+:root[data-boldness="0"] .tv-crt-noise {
+  animation: none;
+}
 
 /* 讨论板(BBS)正文专用「安全强调色」：把 --color-primary 朝白提亮，保证在固定深底窗体上
    始终可读（含自定义主题取近黑 primary 的情形）；保留色相，仅抬明度。不影响全站其它页面的
