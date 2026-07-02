@@ -10,6 +10,7 @@
  */
 import { useCallback, useState } from 'react';
 import { StarTearOverlay } from '@/components/transition/StarTearOverlay';
+import { useAppStore } from '@/store';
 
 /**
  * 被星形揭示的样板「新页」——用鲜亮渐变底 + 白字，刻意与黑色转场幕布拉满对比，
@@ -56,8 +57,11 @@ const DemoNewPage = ({ onClose }: { onClose: () => void }) => (
 );
 
 export const StarTearDemo = () => {
+  const currentPage = useAppStore((s) => s.currentPage);
   const [phase, setPhase] = useState<'idle' | 'playing' | 'revealed'>('idle');
   const handleComplete = useCallback(() => setPhase('revealed'), []);
+
+  if (currentPage === 'terminal') return null;
 
   return (
     <>

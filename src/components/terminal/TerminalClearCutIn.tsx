@@ -28,7 +28,7 @@ const PALETTE = {
 };
 
 export const TerminalClearCutIn = () => {
-  const { terminalClear, clearTerminalClear, user, settings } = useAppStore();
+  const { terminalClear, clearTerminalClear, createTerminalTask, setCurrentPage, user, settings } = useAppStore();
   const skin = terminalSkin(user?.theme);
   const channel = terminalChannel(user?.theme);
   const bold = useBoldness();
@@ -63,6 +63,13 @@ export const TerminalClearCutIn = () => {
     ? settings.attributeNames?.[terminalClear.rewardAttribute] ?? terminalClear.rewardAttribute
     : '';
 
+  const continueCombo = async () => {
+    if (!terminalClear?.nextComboTask) return;
+    const created = await createTerminalTask(terminalClear.nextComboTask);
+    clearTerminalClear();
+    if (created) setCurrentPage('dashboard');
+  };
+
   const vm: ClearVM | null = terminalClear
     ? {
         skin,
@@ -71,10 +78,13 @@ export const TerminalClearCutIn = () => {
         rewardPoints: terminalClear.rewardPoints,
         attrName,
         danmakuGranted: !!terminalClear.danmakuGranted,
+        comboCount: terminalClear.comboCount,
+        comboAvailable: !!terminalClear.nextComboTask,
         encourage,
         bold,
         flash: PALETTE.flash,
         onClose: clearTerminalClear,
+        onCombo: terminalClear.nextComboTask ? continueCombo : undefined,
       }
     : null;
 
@@ -92,7 +102,21 @@ export const TerminalClearCutIn = () => {
           aria-modal="true"
           aria-label="终端 · 完成"
         >
-          <div className="absolute inset-0 pointer-events-none" style={{ background: PALETTE.bg }} />
+          <div
+            className="absolute inset-0 pointer-events-none"
+            style={{
+              background: channel === 'tv'
+                ? 'radial-gradient(110% 90% at 50% 36%, rgba(255,225,0,0.16) 0%, rgba(255,225,0,0.055) 42%, transparent 66%), linear-gradient(180deg, #18150d 0%, #080806 100%)'
+                : PALETTE.bg,
+            }}
+          />
+          {channel === 'tv' && (
+            <>
+              <div aria-hidden className="absolute inset-0 pointer-events-none opacity-70 tv-crt-scanlines" />
+              <div aria-hidden className="absolute inset-0 pointer-events-none tv-crt-noise" />
+              <div aria-hidden className="absolute inset-0 pointer-events-none" style={{ boxShadow: 'inset 0 0 150px 36px rgba(0,0,0,0.82)' }} />
+            </>
+          )}
           <motion.div
             aria-hidden
             initial={{ opacity: 0, scale: 0.4 }}

@@ -41,6 +41,45 @@ let _addConfidantLock: Promise<unknown> = Promise.resolve();
  * Set 在第一个 await 前同步占位，第二次调用同步命中即提前返回。
  */
 const _completingTerminalIds = new Set<string>();
+const TERMINAL_COMBO_WINDOW_MS = 20 * 60 * 1000;
+let _terminalComboState: { goalKey: string; count: number; lastAt: number } = { goalKey: '', count: 0, lastAt: 0 };
+
+type TerminalStepHistory = NonNullable<Wish['stepHistory']>[number];
+
+const appendWishStepHistory = async (
+  parentId: string,
+  entry: Omit<TerminalStepHistory, 'id' | 'completedAt'> & { completedAt?: string },
+) => {
+  const parent = await db.wishes.get(parentId);
+  if (!parent) return;
+  const history = parent.stepHistory ?? [];
+  const exists = history.some((h) =>
+    entry.sourceStepId ? h.sourceStepId === entry.sourceStepId : h.title.trim() === entry.title.trim(),
+  );
+  if (exists) return;
+  await db.wishes.put({
+    ...parent,
+    stepHistory: [
+      ...history,
+      {
+        id: uuidv4(),
+        title: entry.title.trim(),
+        sourceStepId: entry.sourceStepId,
+        via: entry.via,
+        completedAt: entry.completedAt ?? new Date().toISOString(),
+      },
+    ],
+  });
+};
+
+const removeWishStepHistory = async (parentId: string, sourceStepId: string) => {
+  const parent = await db.wishes.get(parentId);
+  if (!parent?.stepHistory?.length) return;
+  await db.wishes.put({
+    ...parent,
+    stepHistory: parent.stepHistory.filter((h) => h.sourceStepId !== sourceStepId),
+  });
+};
 
 /**
  * 成长总结：category → 中文小标签，方便 AI 识别条目类型。
@@ -281,33 +320,33 @@ interface AppState {
    */
   writeCallingCardLedger: (id: string) => Promise<void>;
 
-  // ── F3 无气力症治疗终端 · 愿望清单 ──────────────────────
+  // ── F3 治疗终端 · 启动素材库 ──────────────────────
   wishes: Wish[];
   loadWishes: () => Promise<void>;
-  /** 新建 / 覆盖一条愿望（终极目标 parentId 空 / 子愿望带 parentId） */
+  /** 新建 / 覆盖一条素材（父级素材 parentId 空 / 小步骤带 parentId） */
   saveWish: (wish: Wish) => Promise<void>;
-  /** 创建一条愿望（自动补 id/createdAt/status/source 默认值），返回新建对象 */
-  addWish: (input: { title: string; parentId?: string; note?: string; attribute?: AttributeId; arcanaId?: string; source?: 'manual' | 'ai' }) => Promise<Wish>;
-  /** 删除一条愿望；删除终极目标时连带删除其全部子愿望 */
+  /** 创建一条素材（自动补 id/createdAt/status/source 默认值），返回新建对象 */
+  addWish: (input: { title: string; parentId?: string; note?: string; kind?: Wish['kind']; currentState?: string; attribute?: AttributeId; arcanaId?: string; source?: 'manual' | 'ai' }) => Promise<Wish>;
+  /** 删除一条素材；删除父级素材时连带删除其全部小步骤 */
   deleteWish: (id: string) => Promise<void>;
-  /** 改愿望状态（active/done/archived）；done/archived 落 archivedAt */
+  /** 改素材状态（active/done/archived）；done/archived 落 archivedAt */
   setWishStatus: (id: string, status: Wish['status']) => Promise<void>;
   /**
-   * AI 拆分：把一个终极目标拆成 3–5 个「可执行的子愿望」标题。
+   * AI 拆分：把一件卡住的事拆成 3–5 个「可执行的小步骤」标题。
    * 在线走 chatComplete；无 Key 抛错由调用方兜底（手动输入）。返回标题数组，由 UI 确认后再落库。
    */
-  decomposeWishAI: (parentTitle: string, parentNote?: string) => Promise<string[]>;
+  decomposeWishAI: (parent: Wish, children?: Wish[]) => Promise<string[]>;
 
-  // ── F3 终端 24h 限时任务（复用 CallingCard） ──
+  // ── F3 终端 24h 当前小步卡（复用 CallingCard） ──
   /** 完成结算屏载荷；非 null 时 App.tsx 渲染 TerminalClearCutIn */
   terminalClear: TerminalClearPayload | null;
-  /** 当前活跃的终端任务（最多 1 张）；无则 null */
+  /** 当前活跃的终端小步卡（最多 1 张）；无则 null */
   getActiveTerminalTask: () => CallingCard | null;
-  /** 从短路决策结果落成一张 24h 限时任务；已有活跃任务则返回 null（调用方提示） */
+  /** 从短路决策结果生成一张 24h 当前小步卡；已有活跃卡则返回 null（调用方提示） */
   createTerminalTask: (input: { stepTitle: string; sourceKind: 'wish' | 'todo'; sourceId: string; attribute?: AttributeId; goalTitle?: string }) => Promise<CallingCard | null>;
   /** 「我做到了」：写叙事 Activity(+1~2 绑定属性，日封顶) + 攒弹幕 token + 归档 + 触发结算屏 */
   completeTerminalTask: (id: string) => Promise<void>;
-  /** 放弃 / 清掉一张终端任务（删除，不奖励） */
+  /** 先放着 / 清掉一张终端小步卡（删除，不奖励） */
   dismissTerminalTask: (id: string) => Promise<void>;
   /** 关闭终端完成结算屏 */
   clearTerminalClear: () => void;
@@ -637,7 +676,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       await get().loadCounsel();
       // F5 心相记账：载入流水与预算
       await get().loadLedger();
-      // F3 治疗终端：载入愿望清单
+      // F3 治疗终端：载入启动素材库
       await get().loadWishes();
     } catch (error) {
       console.error('初始化应用失', error);
@@ -1523,7 +1562,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     await get().loadCallingCards();
   },
 
-  // ── F3 无气力症治疗终端 · 愿望清单 ──────────────────────
+  // ── F3 治疗终端 · 启动素材库 ──────────────────────
   loadWishes: async () => {
     const wishes = await db.wishes.orderBy('createdAt').toArray();
     set({ wishes });
@@ -1540,6 +1579,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       parentId: input.parentId,
       title: input.title.trim(),
       note: input.note?.trim() || undefined,
+      kind: input.parentId ? undefined : input.kind,
+      currentState: input.parentId ? undefined : input.currentState?.trim() || undefined,
       attribute: input.attribute,
       arcanaId: input.arcanaId,
       status: 'active',
@@ -1552,7 +1593,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   deleteWish: async (id: string) => {
-    // 删终极目标 → 连带删其全部子愿望（避免孤儿子愿望）
+    // 删父级素材 → 连带删其全部小步骤（避免孤儿步骤）
     const children = await db.wishes.where('parentId').equals(id).toArray();
     if (children.length) await db.wishes.bulkDelete(children.map(c => c.id));
     await db.wishes.delete(id);
@@ -1567,50 +1608,137 @@ export const useAppStore = create<AppState>((set, get) => ({
       status,
       archivedAt: status === 'active' ? undefined : (w.archivedAt ?? new Date()),
     });
+    if (w.parentId) {
+      if (status === 'done') {
+        await appendWishStepHistory(w.parentId, {
+          title: w.title,
+          sourceStepId: w.id,
+          via: 'manual',
+        });
+      } else if (status === 'active') {
+        await removeWishStepHistory(w.parentId, w.id);
+      }
+    }
     await get().loadWishes();
   },
 
-  decomposeWishAI: async (parentTitle: string, parentNote?: string) => {
+  decomposeWishAI: async (parent: Wish, children: Wish[] = []) => {
     const cfg = getAIConfig(get().settings);
-    if (!cfg) throw new Error('未配置 AI，请在「设置 → AI 总结」填入 API 密钥，或手动添加子愿望');
+    if (!cfg) throw new Error('未配置 AI，请在「设置 → AI 总结」填入 API 密钥，或手动添加小步骤');
+    const compact = (text: string | undefined, max: number) =>
+      (text ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
+    const normalizeStep = (text: string) =>
+      text.replace(/[\s，。,.!！?？、；;：:（）()《》「」『』"'“”‘’]/g, '').toLowerCase();
+    const kind = parent.kind === 'pressure' ? '短期压力' : '长期愿望';
+    const activeSteps = children.filter(c => c.status === 'active').map(c => c.title.trim()).filter(Boolean);
+    const doneChildren = children.filter(c => c.status === 'done').map(c => c.title.trim()).filter(Boolean);
+    const history = (parent.stepHistory ?? []).map(h => h.title.trim()).filter(Boolean);
+    const completed = Array.from(new Set([...history, ...doneChildren])).slice(-6);
+    const visibleActive = activeSteps.slice(0, 5);
+    const maxSuggestions = activeSteps.length >= 3 ? 3 : 5;
+    const existing = new Set([...completed, ...activeSteps].map(normalizeStep).filter(Boolean));
+    const parseSteps = (content: string) => {
+      const raw = content.trim();
+      let candidates: string[] = [];
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) candidates = parsed.map(String);
+      } catch {
+        candidates = [];
+      }
+      if (candidates.length === 0) {
+        candidates = raw
+          .split(/\n+/)
+          .flatMap(line => line.split(/[；;]+/))
+          .flatMap(seg => seg.split(/\s+(?=\d+[.、)）])/));
+      }
+      const seen = new Set<string>();
+      const result: string[] = [];
+      for (const item of candidates) {
+        const cleaned = item
+          .replace(/^(?:[\s\-*·•]+|\d+[.、)）]\s*)+/, '')
+          .replace(/^["'「『（(]+/, '')
+          .replace(/["'」』）),，。.!！?？]+$/, '')
+          .trim();
+        const key = normalizeStep(cleaned);
+        if (!cleaned || cleaned.length > 42 || !/[\p{L}\p{N}]/u.test(cleaned)) continue;
+        if (existing.has(key) || seen.has(key)) continue;
+        seen.add(key);
+        result.push(cleaned);
+        if (result.length >= maxSuggestions) break;
+      }
+      return result;
+    };
     const sys =
-      '你是温柔而务实的成长教练，专治「启动困难」。先判断用户给的是「长期愿望」还是「具体/短期的事」，' +
-      '再拆成 3–5 个「可执行的小目标（子愿望）」：\n' +
-      '· 若是长期愿望（如「成为插画师」「练好英语」）：拆成阶段性、看得见进展、能着手的小目标。\n' +
-      '· 若是具体或短期的一件事（如「看书」「写周报」「打扫房间」）：拆成极细、此刻就能照做的微步骤，' +
-      '细到像「走到桌前坐下、打开书、读完第一页」这种程度，让人几乎无法拒绝开始。\n' +
-      '每条都要具体、积极、是一件能立刻动手的事，不要空泛口号。' +
-      '只输出子目标本身，每行一个，不要编号、不要解释、不要额外标点。';
-    const usr = parentNote ? `大愿望：${parentTitle}\n补充：${parentNote}` : `大愿望：${parentTitle}`;
-    const content = await chatComplete(
-      cfg,
-      [
-        { role: 'system', content: sys },
-        { role: 'user', content: usr },
-      ],
-      { temperature: 0.8, maxTokens: 400 },
-    );
-    return content
-      .split(/\n+/)
-      .flatMap(line => line.split(/[；;]+/)) // 同行内分号串接的多条 → 拆开
-      .flatMap(seg => seg.split(/\s+(?=\d+[.、)）])/)) // 同行内空格分隔的「2）…」编号 → 拆开
-      .map(l =>
-        l
-          .replace(/^(?:[\s\-*·•]+|\d+[.、)）]\s*)+/, '') // 去 bullet / 真编号；数字须跟分隔符，不误伤「30天…」正文
-          .trim(),
-      )
-      .filter(l => l.length > 0 && l.length <= 80 && /[\p{L}\p{N}]/u.test(l)) // ≤80 容纳较长子愿望；滤掉纯标点
-      .slice(0, 5);
+      '你是停滞诊断后的行动启动教练。用户不是来管理任务，而是从卡住里恢复流动。' +
+      '只给一个方向上的下一组行动，不做长计划，不解释背景，不逐条呼应已有步骤。' +
+      '若上下文里有“诊断/处理原则”，必须按它降低门槛；若已有未完成步骤，把它们视为已排队，只补充不重复的新步骤。' +
+      '每条必须是单一动作、可开始、短句，不超过 28 个中文字符；不要冒号、括号、编号、鼓励语、原因说明。' +
+      '只输出小步骤本身，每行一个。';
+    const usr = [
+      `类型：${kind}`,
+      `主题：${compact(parent.title, 60)}`,
+      parent.currentState ? `当前进度：${compact(parent.currentState, 90)}` : '',
+      parent.note ? `补充：${compact(parent.note, 80)}` : '',
+      completed.length ? `最近完成：${completed.map(s => compact(s, 30)).join('；')}` : '',
+      visibleActive.length ? `已排队未完成：${visibleActive.map(s => compact(s, 30)).join('；')}${activeSteps.length > visibleActive.length ? `；另有 ${activeSteps.length - visibleActive.length} 条` : ''}` : '',
+      `请补充 ${maxSuggestions} 条以内的新小步骤。`,
+    ].filter(Boolean).join('\n');
+    let firstError: unknown;
+    let sawEmptyResponse = false;
+    try {
+      const content = await chatComplete(
+        cfg,
+        [
+          { role: 'system', content: sys },
+          { role: 'user', content: usr },
+        ],
+        { temperature: 0.45, maxTokens: 220 },
+      );
+      const steps = parseSteps(content);
+      if (steps.length > 0) return steps;
+    } catch (e) {
+      sawEmptyResponse = e instanceof Error && e.message.includes('AI 返回空响应');
+      firstError = e;
+    }
+
+    try {
+      const content = await chatComplete(
+        cfg,
+        [
+          { role: 'system', content: '只输出 1 到 3 行中文短行动。不要解释，不要编号，不要重复用户已有内容。' },
+          { role: 'user', content: `主题：${compact(parent.title, 50)}\n当前：${compact(parent.currentState || parent.note, 80)}\n已有：${visibleActive.slice(0, 3).map(s => compact(s, 24)).join('；') || '暂无'}\n请给下一步。` },
+        ],
+        { temperature: 0.35, maxTokens: 140 },
+      );
+      const steps = parseSteps(content);
+      if (steps.length > 0) return steps;
+    } catch (e) {
+      sawEmptyResponse = sawEmptyResponse || (e instanceof Error && e.message.includes('AI 返回空响应'));
+      firstError = firstError ?? e;
+    }
+    if (sawEmptyResponse) {
+      throw new Error('AI 这次没有返回可用的小步骤。上下文已经压短过，可以稍后重试，或先手动补一条。');
+    }
+    throw firstError instanceof Error ? firstError : new Error('AI 拆分没成功');
   },
 
   decomposeStepAI: async (title: string, note?: string) => {
     const cfg = getAIConfig(get().settings);
     if (!cfg) throw new Error('未配置 AI'); // UI 据此走离线模板兜底
+    const compactNote = note
+      ?.split('\n')
+      .map(line => line.replace(/\s+/g, ' ').trim())
+      .filter(Boolean)
+      .slice(0, 4)
+      .join('\n')
+      .slice(0, 260);
     const sys =
-      '你是温柔而有力的行动教练，专治「启动困难」。把用户给的一件事，拆成此刻就能开始、' +
+      '你是停滞诊断后的行动启动教练，专治「卡住、没力气开始」。把用户给的一件事，拆成此刻就能开始、' +
       '5 分钟内能完成的「最小第一步」。只输出这一步：一句话、不超过 40 字、是具体的行动指令；' +
-      '不要解释、不要分多步、不要加鼓励语或标点编号。';
-    const usr = note ? `事情：${title}\n备注：${note}` : `事情：${title}`;
+      '如果上下文包含诊断和处理原则，必须优先服从它：压力过载就先止血，连续性中断就接上链条，能量不足就降到最低门槛，选择过载就替用户只保留一个入口。' +
+      '不要解释、不要分多步、不要复述历史、不要加鼓励语或标点编号。它完成后不代表原任务完成，只代表用户启动成功。';
+    const usr = compactNote ? `事情：${title}\n简要上下文：\n${compactNote}` : `事情：${title}`;
     const content = await chatComplete(
       cfg,
       [
@@ -1641,11 +1769,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     );
   },
 
-  // ── F3 终端 24h 限时任务 ──
+  // ── F3 终端 24h 当前小步卡 ──
   getActiveTerminalTask: () => get().callingCards.find(c => c.terminal && !c.archived) ?? null,
 
   createTerminalTask: async (input) => {
-    // 最多 1 张活跃终端任务（防止堆积；UI 在有活跃任务时禁用 accept）
+    // 最多 1 张活跃小步卡（防止堆积；UI 在有活跃卡时禁用 accept）
     if (get().callingCards.some(c => c.terminal && !c.archived)) return null;
     const now = new Date();
     const expires = new Date(now.getTime() + 24 * 60 * 60 * 1000);
@@ -1686,9 +1814,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const rewardEligible = get().settings.terminalRewardDate !== today;
       const attribute: AttributeId = card.terminal.attribute ?? 'guts';
       const points = rewardEligible ? (card.terminal.attribute ? 2 : 1) : 0;
-      const narrative = card.terminal.goalTitle
-        ? `你又一次接近了《${card.terminal.goalTitle}》的心愿，从虚无中拯救了自己。`
-        : '你迈出了那一步，从虚无中把自己拉了回来。';
+      const narrative = '你让停滞的时间再度流动了起来。';
       const pts: Record<AttributeId, number> = { knowledge: 0, guts: 0, dexterity: 0, kindness: 0, charm: 0 };
       pts[attribute] = points;
       const { activityId } = await get().addActivity(narrative, pts, 'local', { important: true, category: 'terminal_clear' });
@@ -1715,6 +1841,44 @@ export const useAppStore = create<AppState>((set, get) => ({
         cutInShown: true,
         pinned: false,
       });
+      const comboGoalKey = card.terminal.goalTitle ?? card.terminal.sourceId;
+      const nowMs = Date.now();
+      const comboCount =
+        _terminalComboState.goalKey === comboGoalKey && nowMs - _terminalComboState.lastAt <= TERMINAL_COMBO_WINDOW_MS
+          ? _terminalComboState.count + 1
+          : 1;
+      _terminalComboState = { goalKey: comboGoalKey, count: comboCount, lastAt: nowMs };
+      let nextComboTask: TerminalClearPayload['nextComboTask'];
+      if (card.terminal.sourceKind === 'wish') {
+        const sourceStep = await db.wishes.get(card.terminal.sourceId);
+        if (sourceStep?.parentId) {
+          const parent = await db.wishes.get(sourceStep.parentId);
+          await db.wishes.put({
+            ...sourceStep,
+            status: 'archived',
+            archivedAt: sourceStep.archivedAt ?? new Date(),
+          });
+          await appendWishStepHistory(sourceStep.parentId, {
+            title: card.title,
+            sourceStepId: sourceStep.id,
+            via: 'terminal',
+          });
+          const siblings = await db.wishes.where('parentId').equals(sourceStep.parentId).toArray();
+          const nextStep = siblings
+            .filter((w) => w.id !== sourceStep.id && w.status === 'active')
+            .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())[0];
+          if (nextStep) {
+            nextComboTask = {
+              stepTitle: nextStep.title,
+              sourceKind: 'wish',
+              sourceId: nextStep.id,
+              attribute: nextStep.attribute ?? parent?.attribute,
+              goalTitle: parent?.title ?? card.terminal.goalTitle,
+            };
+          }
+          await get().loadWishes();
+        }
+      }
       await get().loadCallingCards();
       set({
         terminalClear: {
@@ -1723,6 +1887,8 @@ export const useAppStore = create<AppState>((set, get) => ({
           rewardAttribute: rewardEligible ? attribute : undefined,
           rewardPoints: shownPoints,
           danmakuGranted,
+          comboCount,
+          nextComboTask,
         },
       });
     } finally {
@@ -2332,7 +2498,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         }
       }
 
-      // 愿望清单（F3 v11 新增；旧备份无此字段则跳过）
+      // 启动素材库（F3 v11 新增；旧备份无此字段则跳过）
       if (data.wishes && Array.isArray(data.wishes)) {
         for (const w of data.wishes as unknown[]) {
           const wi = w as Wish;

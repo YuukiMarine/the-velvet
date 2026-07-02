@@ -2,10 +2,10 @@
  * ShortCircuitPanel — F3 短路决策（PRD F3.3）的「逻辑容器」。
  *
  * 当用户被「今天该做什么」压垮时：
- *   1. 候选池 = 活跃子愿望 + 未完成待办。
- *   2. 「替我决定」随机替他拣一件（短路）；或「我自己选」从池子里挑。
+ *   1. 候选池 = 活跃小步骤素材 + 未完成待办。
+ *   2. 随机替用户拣一件，或让用户自己挑。
  *   3. 拆解为「最小第一步」——在线 store.decomposeStepAI，无 Key 走 terminalSkin 离线模板。
- *   4. 输出一句温柔而有力的行动指令 → 接受 · 落成 24h 限时任务。
+ *   4. 输出一句能立刻开始的行动指令 → 生成当前 24h 小步卡。
  *
  * 阶段 2 拆分：本文件只持有状态机 / store 交互 / 洗牌演出，构造 view-model 后委派给
  * 频道表现层（thief = 怪盗作战台 / 其余 = 通用皮肤）。候选选择器为三频道共用（generic）。
@@ -60,11 +60,33 @@ export const ShortCircuitPanel = () => {
   const activeTask = getActiveTerminalTask();
   const attrName = (id: AttributeId) => settings.attributeNames?.[id] ?? id;
 
-  // 候选池：活跃子愿望 + 今日「应做」且未完成的待办（与全站今日任务口径一致）
+  // 候选池：素材库里的活跃小步骤 + 今日「应做」且未完成的待办（与全站今日任务口径一致）。
+  // 待办只作为原料，不会在终端完成时被自动标记为完成。
   const pool = useMemo<Candidate[]>(() => {
+    const activeChildrenByParent = new Map<string, typeof wishes>();
+    for (const w of wishes) {
+      if (!w.parentId || w.status !== 'active') continue;
+      const group = activeChildrenByParent.get(w.parentId) ?? [];
+      group.push(w);
+      activeChildrenByParent.set(w.parentId, group);
+    }
+    activeChildrenByParent.forEach((group) =>
+      group.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()),
+    );
     const fromWishes: Candidate[] = wishes
-      .filter((w) => w.parentId && w.status === 'active')
-      .map((w) => ({ kind: 'wish', id: w.id, title: w.title, attribute: w.attribute, note: w.note }));
+      .filter((w) => !w.parentId && w.status === 'active')
+      .flatMap((parent) => {
+        const w = activeChildrenByParent.get(parent.id)?.[0];
+        if (!w) return [];
+        const completed = parent.stepHistory?.map((h) => h.title.trim()).filter(Boolean).slice(-4) ?? [];
+        const note = [
+          w.note,
+          parent.kind === 'pressure' ? '类型：短期压力' : '类型：长期愿望',
+          parent.currentState ? `当前进度/水平：${parent.currentState}` : '',
+          completed.length ? `已完成记录：${completed.join('；')}` : '',
+        ].filter(Boolean).join('\n');
+        return [{ kind: 'wish' as const, id: w.id, title: w.title, attribute: w.attribute, note: note || undefined }];
+      });
     const fromTodos: Candidate[] = getDueTodosToday()
       .filter((t) => !getTodayTodoProgress(t.id).isComplete)
       .map((t) => ({ kind: 'todo', id: t.id, title: t.title, attribute: t.attribute }));
@@ -148,7 +170,7 @@ export const ShortCircuitPanel = () => {
   };
   const accept = async () => {
     if (!chosen) return;
-    // wish 来源 → 找父终极目标作叙事标题
+    // wish 来源 → 找父级素材作叙事标题
     let goalTitle: string | undefined;
     if (chosen.kind === 'wish') {
       const sub = wishes.find((w) => w.id === chosen.id);
@@ -161,7 +183,7 @@ export const ShortCircuitPanel = () => {
       attribute: chosen.attribute,
       goalTitle,
     });
-    if (created) reset(); // 活跃任务卡会在面板外显示
+    if (created) reset(); // 活跃小步卡会在面板外显示
   };
 
   const empty = pool.length === 0;
@@ -207,7 +229,7 @@ export const ShortCircuitPanel = () => {
                 className="flex w-full items-center gap-2 rounded-xl border border-gray-200 px-3 py-2.5 text-left text-sm text-gray-800 transition hover:border-primary/50 hover:bg-primary/5 dark:border-gray-700 dark:text-gray-100"
               >
                 <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-500 dark:bg-gray-800 dark:text-gray-400">
-                  {c.kind === 'wish' ? '子愿望' : '待办'}
+                  {c.kind === 'wish' ? '小步骤' : '待办'}
                 </span>
                 <span className="min-w-0 flex-1 truncate">{c.title}</span>
                 {c.attribute && (

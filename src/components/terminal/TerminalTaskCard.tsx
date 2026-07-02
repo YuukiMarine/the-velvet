@@ -1,11 +1,11 @@
 /**
- * TerminalTaskCard — F3 短路决策落成的 24h 限时任务卡「逻辑容器」。
+ * TerminalTaskCard — F3 短路决策生成的 24h 当前小步卡「逻辑容器」。
  *
- * 复用 CallingCard 数据（card.terminal 元数据），自带「小时级倒计时 + 我做到了 + 放弃」，
+ * 复用 CallingCard 数据（card.terminal 元数据），自带「小时级倒计时 + 我做到了 + 先放着」，
  * 区别于普通宣告卡（天级、无完成按钮）。首页与终端页共用，首页传 compact。
  *
  * 频道化：本文件持有倒计时 / 在途锁 / 放弃确认，构造 view-model 后按频道委派表现层
- * （thief = 预告状 / 其余 = 通用卡）。24h 是温柔的限时而非硬门——过期后仍可「我做到了」，
+ * （thief = 预告状外观 / 其余 = 通用卡）。24h 是温柔的限时而非硬门——过期后仍可「我做到了」，
  * 仅倒计时显示「时限已过」。完成走 store.completeTerminalTask。
  */
 import { useEffect, useState } from 'react';
@@ -72,7 +72,7 @@ export const TerminalTaskCard = ({ card, onComplete, onDismiss, compact }: Props
   const hours = Math.floor(remaining / 3_600_000);
   const mins = Math.floor((remaining % 3_600_000) / 60_000);
   const countdown = expired
-    ? '时限已过 · 完成永远不晚'
+    ? '过时了也没关系，做完都算'
     : hours > 0
       ? `还剩 ${hours} 小时 ${mins} 分`
       : `还剩 ${mins} 分`;
@@ -100,10 +100,10 @@ export const TerminalTaskCard = ({ card, onComplete, onDismiss, compact }: Props
         isOpen={confirmDismiss}
         tone="warning"
         forceDark={channel === 'thief' || channel === 'board' || channel === 'tv'}
-        title="放弃这一步？"
-        description="它会被丢掉，但你随时可以再来终端拣一件。"
-        confirmText="放弃"
-        cancelText="再想想"
+        title="先放着这一步？"
+        description="它会从当前卡片里移走，但不会影响原待办或素材。你随时可以再来重新拆。"
+        confirmText="先放着"
+        cancelText="继续做"
         onConfirm={() => { setConfirmDismiss(false); onDismiss(); }}
         onCancel={() => setConfirmDismiss(false)}
       />

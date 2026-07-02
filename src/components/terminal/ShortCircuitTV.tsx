@@ -12,12 +12,12 @@ export const ShortCircuitTV = ({ vm }: { vm: ShortCircuitVM }) => {
   const { skin, bold, phase, empty, hasActiveTask, chosen, shuffleText, step, usedAI, encourage, decideForMe, openPick, accept, reset, redo } = vm;
 
   return (
-    <TVPanel className="mb-5" title={<><RecDot size="h-1.5 w-1.5" bold={bold} />本期环节 · {skin.decideHero}</>}>
+    <TVPanel className="mb-5" title={<><RecDot size="h-1.5 w-1.5" bold={bold} />一小步启动器 · {skin.decideHero}</>}>
       <AnimatePresence mode="wait">
         {phase === 'idle' && (
           <motion.div key="idle" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, transition: { duration: 0.12 } }}>
             {hasActiveTask ? (
-              <p className="text-sm leading-relaxed text-white/75">本期任务还在录制中——先把它通关吧。</p>
+              <p className="text-sm leading-relaxed text-white/75">手上还有一小步在录制中。先把它做掉，再开下一场。</p>
             ) : (
               <>
                 <p className="mb-3 text-sm leading-relaxed text-white/85">{empty ? skin.emptyPool : skin.decideHint}</p>
@@ -57,14 +57,16 @@ export const ShortCircuitTV = ({ vm }: { vm: ShortCircuitVM }) => {
         {phase === 'result' && chosen && (
           <motion.div key="result" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
             <div className="mb-1.5 flex items-center gap-1.5 text-[11px] text-white/55">
-              <span className="rounded-sm bg-primary px-1.5 py-0.5 font-bold text-black">{chosen.kind === 'wish' ? '挑战' : '待办'}</span>
+              <span className="rounded-sm bg-primary px-1.5 py-0.5 font-bold text-black">{chosen.kind === 'wish' ? '小步骤' : '待办'}</span>
               <span className="min-w-0 truncate">{chosen.title}</span>
             </div>
-            <div className="text-[11px] font-black tracking-wide text-primary">{skin.stepLead}</div>
-            <p className="mt-1 text-lg font-black leading-snug" style={fancy(2)}>{step}</p>
+            <div className="border-2 border-primary/70 bg-black/45 p-3" style={{ boxShadow: '0 3px 0 #000' }}>
+              <div className="text-[11px] font-black tracking-wide text-primary">{skin.stepLead}</div>
+              <p className="mt-1 break-words text-base font-black leading-relaxed text-white">{step}</p>
+            </div>
             <div className="mt-2 flex items-center gap-2">
               <span className="text-xs italic text-white/60">{encourage}</span>
-              <span className="ml-auto text-[10px] tracking-wider text-white/40">{usedAI ? 'AI 拆解' : '离线模板'}</span>
+              <span className="ml-auto text-[10px] tracking-wider text-white/40">{usedAI ? 'AI 拆的' : '本地拆的'}</span>
             </div>
 
             <div className="mt-3 flex justify-center">

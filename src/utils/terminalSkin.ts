@@ -2,9 +2,9 @@
  * terminalSkin — F3 无气力症治疗终端的「主题差分皮肤」（PRD F3.6）。
  *
  * 终端 UI/文案随当前主题色切换频道皮肤：
- *   · 蓝 / 粉 / 自定义 → 匿名讨论板（低语、匿名、彼此扶持；随 App 明暗自适配）
- *   · 黄            → TV 特别节目（综艺/节目化、明亮、口号式打气）
- *   · 红            → 怪盗 channel（怪盗团式「改变心意」、热血宣言）
+ *   · 蓝 / 粉 / 自定义 → 学园深夜BBS（低语、匿名、彼此扶持；随 App 明暗自适配）
+ *   · 黄            → 深夜TV特别节目（综艺/节目化、明亮、口号式打气）
+ *   · 红            → 怪盗 channel（怪盗团式「夺回今天」）
  *
  * 注：怪盗皮肤是硬编码暗底 P5 房间，强调色直接用 var(--color-primary) 当「黑底上可读的
  * 高饱和红」。自定义主题的 primary 可为任意（含近黑）色、无明度保证，故**不归怪盗**，
@@ -37,7 +37,7 @@ export interface TerminalSkin {
   decomposing: string;
   /** 行动指令前导 */
   stepLead: string;
-  /** 接受按钮（落成 24h 限时任务） */
+  /** 接受按钮（生成当前 24h 小步卡） */
   accept: string;
   /** 换一件 */
   again: string;
@@ -67,91 +67,91 @@ export interface TerminalSkin {
 
 const BOARD: TerminalSkin = {
   channel: 'board',
-  label: '匿名讨论板',
-  tagline: '低语 · 匿名 · 彼此扶持',
+  label: '学园深夜BBS',
+  tagline: '心灵深处，城市的里侧',
   decideHero: '替我决定',
-  decideSelf: '我自己选一件',
-  decideHint: '今天不必想清楚全部。让终端替你挑一件，只迈出一步。',
-  emptyPool: '清单和待办都空着——先去许个愿望，或添一条待办，再回来。',
+  decideSelf: '我自己选',
+  decideHint: '今天不必想清楚全部。挑一件，先迈出一步就好。',
+  emptyPool: '还没有可挑的。先许个愿望、记条待办吧。',
   pickTitle: '选一件此刻困扰你的事',
-  decomposing: '正在把它拆小…',
-  stepLead: '你只需要做这一件——',
-  accept: '接受 · 落成 24h 限时任务',
+  decomposing: '没那么复杂…',
+  stepLead: '你只需要——',
+  accept: '去完成 · 给自己 24 小时',
   again: '换一件',
   redo: '再拆一次',
   clearHeading: '你回来了',
   clearStamp: 'BACK',
-  awaken: ['夜里还醒着的人，', '都在这里低声说话。', '你不是一个人。'],
-  enterLabel: '登入',
+  awaken: ['影时间之外', '混沌中彷徨的心', '你不是一个人。'],
+  enterLabel: '进来坐',
   heroTitle: '深夜讨论板 · 在线',
-  heroSub: '把你的今天，从停摆里捞回来',
-  roomTitle: '深夜讨论板',
-  velvet: '「夜里还醒着的人，都在这层楼。坐下，慢慢说。」',
-  encourage: ['有人也这样熬过来。', '迈出去，就已经赢过昨天的自己。', '不必做好，先做一点点。'],
+  heroSub: '停滞的时针将再度转动',
+  roomTitle: '深夜留言板',
+  velvet: '「自夜间苏醒的人，在此叩问自己的使命。」',
+  encourage: ['我们同在命运洪流之中。', '不积跬步无以至千里。', '不要急于追求完美，先做一点就好。'],
   stepTemplates: [
-    (t) => `把「${t}」砍到只剩第一下：现在去打开相关的那样东西——书 / 文件 / 应用，打开就停下，也算数。`,
-    (t) => `不必做完。为「${t}」写下你要做的第一行字，五分钟就好。`,
-    (t) => `先把「${t}」需要的第一件道具拿到手边，然后开始。`,
+    (t) => `为「${t}」找到一个能动手的位置，停在那里就算开始。`,
+    (t) => `给「${t}」写下一个下一句，半行也可以。`,
+    (t) => `为「${t}」准备第一件材料，准备好就收手。`,
   ],
 };
 
 const TV: TerminalSkin = {
   channel: 'tv',
-  label: 'TV 特别节目',
-  tagline: '明亮 · 节目化 · 为你打气',
+  label: '深夜TV特别节目！',
+  tagline: '欢迎回来，我们的大明星',
   decideHero: '交给转盘！',
-  decideSelf: '我来点单',
-  decideHint: '欢迎回到今天的特别节目——别纠结，转盘一转，任务就来！',
-  emptyPool: '节目单还空着！先添个愿望或待办，咱们才好开场。',
+  decideSelf: '我自己选',
+  decideHint: '风靡小镇的热门节目，找回你的心！',
+  emptyPool: '节目单还空着。先许个愿望、或记条待办吧',
   pickTitle: '今天想挑战哪一关？',
-  decomposing: '导播正在剪辑你的第一步…',
-  stepLead: '本期第一个环节，超简单——',
-  accept: '接受 · 落成 24h 限时任务',
+  decomposing: '节目组正在准备脚本…',
+  stepLead: '本期行动——',
+  accept: '就做这件 · 给自己 24 小时',
   again: '换一关',
   redo: '重剪一次',
   clearHeading: '通关！',
   clearStamp: 'CLEAR',
-  awaken: ['本期特别节目，', '就为你一个人播出。', '现在，开始。'],
+  awaken: ['今晚这档节目，', '来源于你的勇气。', '一起前进吧。'],
   enterLabel: '进入演播厅',
   heroTitle: '本期节目 · 录制中',
-  heroSub: '把你的今天，从待机里救回来',
-  roomTitle: '今晚的特别节目',
-  velvet: '「欢迎回到节目现场。这一关，我陪你过。」',
-  encourage: ['观众席为你鼓掌！', '这一步稳稳的，下一步更容易。', '开场最难，而你已经开场了。'],
+  heroSub: '从待机中唤醒你的今天',
+  roomTitle: '深夜TV特别篇',
+  velvet: '「欢迎回到节目现场。」',
+  encourage: ['我们同在命运洪流之中。', '追求真实的路途会很漫长。', '不要急于追求完美，先做一点就好。'],
   stepTemplates: [
-    (t) => `第一关超简单：把「${t}」相关的第一样东西打开，亮个相就过关。`,
-    (t) => `热身环节——为「${t}」写下第一行 / 迈出第一步，限时 5 分钟！`,
-    (t) => `道具准备：把「${t}」要用的第一件东西摆到手边，预备，开始！`,
+    (t) => `把「${t}」剪成一个开头，停在马上能动手的位置。`,
+    (t) => `为「${t}」写下一句起始句，写完就算这一幕。`,
+    (t) => `把「${t}」需要的第一样东西放到手边。`,
   ],
 };
 
 const THIEF: TerminalSkin = {
   channel: 'thief',
   label: '怪盗 channel',
-  tagline: '改变心意 · 热血宣言',
+  tagline: '夺回你的今天',
   decideHero: '锁定目标',
-  decideSelf: '亲自挑一件',
-  decideHint: '别让无气力偷走今天。锁定一件「心之宝物」，先夺回第一步。',
-  emptyPool: '还没有可下手的目标。先立个愿望、或记条待办作为「宝物」。',
-  pickTitle: '锁定一件要夺回的「心之宝物」',
+  decideSelf: '亲自挑选',
+  decideHint: '不用全想清楚，先锁定一件「心之宝物」。',
+  emptyPool: '还没有可挑的。先许个愿望、或记条待办吧。',
+  pickTitle: '挑一件此刻困扰的事',
   decomposing: '正在制定潜入路线…',
-  stepLead: '潜入的第一步，只此一招——',
+  stepLead: '潜入第一步——',
   accept: '接受 · 发出预告状（24h）',
   again: '换个目标',
   redo: '重定路线',
   clearHeading: '夺回成功',
   clearStamp: 'TAKEN',
-  awaken: ['预告状已经送达。', '今晚，我们改变一颗心——', '你的。'],
+  awaken: ['反抗命运的枷锁吧'],
   enterLabel: '潜入',
   heroTitle: '开始潜入行动',
-  heroSub: '把你的今天，从失控中偷回来',
-  roomTitle: '潜入作战室',
-  velvet: '「又见面了。今晚，想从哪颗心下手？」',
-  encourage: ['Take your heart——先拿下第一步。', '怪盗的字典里没有「做不到」。', '预告已发，行动开始。'],
+  heroSub: '夺回失控的心',
+  roomTitle: '作战室',
+  velvet: '「又见面了。这次打算先做什么？」',
+  encourage: ['Take your heart——先拿下第一步。', '怪盗的字典里没有「做不到」。', '反抗命运的枷锁吧'],
   stepTemplates: [
-    (t) => `潜入第一步：把「${t}」相关的第一样东西「撬开」——翻开书 / 打开文件，门开了就算成功。`,
-    (t) => `先夺回 5 分钟：为「${t}」写下第一行 / 迈出第一步，剩下的交给行动。`,
-    (t) => `备好第一件「道具」：把「${t}」要用的东西拿到手边，然后出手。`,
+    (t) => `锁定「${t}」的入口，停在可以下手的位置。`,
+    (t) => `不必做完。为「${t}」写下第一行字，五分钟就好。`,
+    (t) => `先把「${t}」要用的第一样东西拿到手边。`,
   ],
 };
 
@@ -170,11 +170,18 @@ export const terminalSkin = (theme?: ThemeType): TerminalSkin => {
   }
 };
 
+const ACTION_TITLE_RE = /^(做|写|读|看|查|改|整理|发送|联系|打开|关闭|完成|提交|练习|复习|背|跑|走|呼吸|喝|洗|收拾|准备|确认|列|选择|选|预约|回复|发|听|画|剪|拍|录|算|检查|标记|归档|安装|下载|上传|打印|打包|清理|删除|移动|复制)/;
+const DIRECT_ACTION_HINT_RE = /(呼吸|冥想|拉伸|喝水|关灯|洗澡|睡觉|散步|站起来|坐下|休息)/;
+
 /** 离线兜底：把一件事套用频道模板，拆成「最小第一步」。idx 缺省随机。 */
 export const minimalStep = (skin: TerminalSkin, title: string, idx?: number): string => {
+  const cleanTitle = title.trim();
+  if (ACTION_TITLE_RE.test(cleanTitle) || DIRECT_ACTION_HINT_RE.test(cleanTitle)) {
+    return `现在只执行「${cleanTitle}」的前 2 分钟。做到能停，也算完成。`;
+  }
   const tpls = skin.stepTemplates;
   const i = idx === undefined ? Math.floor(Math.random() * tpls.length) : ((idx % tpls.length) + tpls.length) % tpls.length;
-  return tpls[i](title);
+  return tpls[i](cleanTitle);
 };
 
 /** 随机取一条鼓励语 */

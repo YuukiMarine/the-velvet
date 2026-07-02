@@ -1,13 +1,9 @@
 /**
- * Terminal — F3 无气力症治疗终端（Batch 1：愿望清单 + 仪式入口骨架）。
+ * Terminal — F3 治疗终端。
  *
- * 本批范围：
- *   · 首次进入且愿望为空 → 仪式化引导，建立第一个「终极目标」。
- *   · 愿望清单管理：终极目标 + 子愿望（手动输入 / AI 拆分），轻绑定属性，完成 / 删除。
- *   · 主题差分：按当前主题色给出频道名（蓝=匿名讨论板 / 黄=TV 特别节目 / 红·其他=怪盗 channel）。
- *
- * 下一批（Batch 2/3）：短路决策 + 拆解为「最小第一步」→ 24h 限时任务（复用 CallingCard）→
- * 完成叙事 + 弹幕。本页底部以占位卡预告其位置。
+ * 产品定位：不是另一套任务列表，而是「卡住时的一小步启动器」。
+ * 它从用户已有待办 / 长期方向里抽一件，拆成当前能开始的小动作；
+ * 完成这一步只代表启动成功，不等同于原任务完成。
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'motion/react';
@@ -22,7 +18,7 @@ import { SheetModal } from '@/components/SheetModal';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { getAIConfig } from '@/utils/aiClient';
 import { terminalSkin } from '@/utils/terminalSkin';
-import { ShortCircuitPanel } from '@/components/terminal/ShortCircuitPanel';
+import { StagnationConsole } from '@/components/terminal/StagnationConsole';
 import { TerminalTaskCard } from '@/components/terminal/TerminalTaskCard';
 import { DanmakuField } from '@/components/terminal/DanmakuField';
 import { DanmakuCompose } from '@/components/terminal/DanmakuCompose';
@@ -30,9 +26,9 @@ import { AntechamberThief } from '@/components/terminal/AntechamberThief';
 import { AntechamberBoard } from '@/components/terminal/AntechamberBoard';
 import { AntechamberTV } from '@/components/terminal/AntechamberTV';
 import { TerminalRoom } from '@/components/terminal/TerminalRoom';
-import { TreasuryThief, TreasuryTrigger, ThiefEmpty } from '@/components/terminal/TreasuryThief';
-import { TreasuryBoard, TreasuryTriggerBoard, BoardEmpty } from '@/components/terminal/TreasuryBoard';
-import { TreasuryTV, TreasuryTriggerTV, TVEmpty } from '@/components/terminal/TreasuryTV';
+import { TreasuryThief, TreasuryTrigger } from '@/components/terminal/TreasuryThief';
+import { TreasuryBoard, TreasuryTriggerBoard } from '@/components/terminal/TreasuryBoard';
+import { TreasuryTV, TreasuryTriggerTV } from '@/components/terminal/TreasuryTV';
 import { MONO } from '@/components/terminal/boardKit';
 import type { TreasuryVM } from '@/components/terminal/TreasuryThief';
 import { MicroBurst } from '@/components/terminal/MicroBurst';
@@ -40,9 +36,14 @@ import { GoalArc } from '@/components/terminal/GoalArc';
 import { GoalCompletePop } from '@/components/terminal/GoalCompletePop';
 import { useBoldness } from '@/utils/boldness';
 import { triggerSuccessFeedback, triggerLevelFeedback } from '@/utils/feedback';
-import type { AttributeId, Wish } from '@/types';
+import type { AttributeId, TerminalProblemKind, Wish } from '@/types';
 
 const ATTR_IDS: AttributeId[] = ['knowledge', 'guts', 'dexterity', 'kindness', 'charm'];
+const problemKindLabel = (kind?: TerminalProblemKind) => (kind === 'pressure' ? '短期压力' : '长期愿望');
+const currentStatePlaceholder = (kind: TerminalProblemKind) =>
+  kind === 'pressure'
+    ? '压力来自哪里？最急的点是什么？现在做到哪了？'
+    : '现在到哪一步了？水平如何？卡在哪里？';
 
 interface EditorState {
   open: boolean;
@@ -51,9 +52,11 @@ interface EditorState {
   editId?: string;
   title: string;
   note: string;
+  kind: TerminalProblemKind;
+  currentState: string;
   attribute?: AttributeId;
 }
-const closedEditor: EditorState = { open: false, mode: 'goal', title: '', note: '' };
+const closedEditor: EditorState = { open: false, mode: 'goal', title: '', note: '', kind: 'long_term', currentState: '' };
 
 interface AIState {
   open: boolean;
@@ -73,20 +76,21 @@ export const Terminal = () => {
   const danmakuTokens = settings.terminalDanmakuTokens ?? 0;
   const [approvedDanmaku, setApprovedDanmaku] = useState<string[]>([]);
   const [composeOpen, setComposeOpen] = useState(false);
-  const [treasuryOpen, setTreasuryOpen] = useState(false); // 心之宝物殿抽屉（thief 正文）
+  const [treasuryOpen, setTreasuryOpen] = useState(false); // 启动素材库抽屉
   const [entered, setEntered] = useState(false); // 先经过玄关，点「进入」才正式进终端
   const bold = useBoldness();
-  const [celebrateId, setCelebrateId] = useState<string | null>(null); // 刚完成、正在播 juice 的子愿望
+  const [celebrateId, setCelebrateId] = useState<string | null>(null); // 刚完成、正在播 juice 的小步骤
   const celebrateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [goalCelebrate, setGoalCelebrate] = useState<{ title: string } | null>(null); // 终极目标全达成 → 庆祝弹窗
+  const [goalCelebrate, setGoalCelebrate] = useState<{ id: string; title: string } | null>(null); // 一个方向下的小步骤全达成 → 用户决定完成或继续
   const [celebrateGoalId, setCelebrateGoalId] = useState<string | null>(null); // 正在播标题划过特效的目标
   const goalSlideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const allClearSeenRef = useRef<Set<string>>(new Set());
   useEffect(() => () => {
     if (celebrateTimer.current) clearTimeout(celebrateTimer.current);
     if (goalSlideTimer.current) clearTimeout(goalSlideTimer.current);
   }, []);
 
-  // 勾选子愿望：完成→done 时给即时反馈（音+触感+粒子小爆），取消则静默
+  // 勾选小步骤：完成→done 时给即时反馈（音+触感+粒子小爆），取消则静默
   const completeSub = (sub: Wish) => {
     const next = sub.status === 'done' ? 'active' : 'done';
     setWishStatus(sub.id, next); // 自动持久化到 IndexedDB
@@ -96,18 +100,6 @@ export const Terminal = () => {
       // 复位由本组件计时（不依赖只在 bold 下挂载的 MicroBurst.onDone）：D0 也能清态、可重复触发
       if (celebrateTimer.current) clearTimeout(celebrateTimer.current);
       celebrateTimer.current = setTimeout(() => setCelebrateId(null), 600);
-      // 若这一勾让某终极目标的全部子愿望都达成 → 标题划过 COMPLETE + 庆祝弹窗
-      if (sub.parentId) {
-        const sibs = subsByParent[sub.parentId] ?? [];
-        const allDone = sibs.length > 0 && sibs.every((s) => s.id === sub.id || s.status === 'done');
-        if (allDone) {
-          triggerLevelFeedback();
-          setCelebrateGoalId(sub.parentId);
-          if (goalSlideTimer.current) clearTimeout(goalSlideTimer.current);
-          goalSlideTimer.current = setTimeout(() => setCelebrateGoalId(null), 1300);
-          setGoalCelebrate({ title: goals.find((g) => g.id === sub.parentId)?.title ?? '一个目标' });
-        }
-      }
     }
   };
   useEffect(() => {
@@ -133,13 +125,36 @@ export const Terminal = () => {
     return m;
   }, [wishes]);
 
+  useEffect(() => {
+    if (goalCelebrate) return;
+    const allDoneIds = new Set<string>();
+    for (const goal of goals) {
+      if (goal.status === 'done') continue;
+      const subs = subsByParent[goal.id] ?? [];
+      const allDone = subs.length > 0 && subs.every((s) => s.status === 'done');
+      if (!allDone) continue;
+      allDoneIds.add(goal.id);
+      if (allClearSeenRef.current.has(goal.id)) continue;
+      allClearSeenRef.current.add(goal.id);
+      triggerLevelFeedback();
+      setCelebrateGoalId(goal.id);
+      if (goalSlideTimer.current) clearTimeout(goalSlideTimer.current);
+      goalSlideTimer.current = setTimeout(() => setCelebrateGoalId(null), 1300);
+      setGoalCelebrate({ id: goal.id, title: goal.title });
+      break;
+    }
+    allClearSeenRef.current.forEach((id) => {
+      if (!allDoneIds.has(id)) allClearSeenRef.current.delete(id);
+    });
+  }, [goals, subsByParent, goalCelebrate]);
+
   const [editor, setEditor] = useState<EditorState>(closedEditor);
   const [ai, setAi] = useState<AIState>(closedAI);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [deleteTarget, setDeleteTarget] = useState<Wish | null>(null);
   const [busy, setBusy] = useState(false);
 
-  // ── 编辑器（新建 / 编辑，终极目标与子愿望共用） ──
+  // ── 编辑器（新建 / 编辑，父级素材与小步骤共用） ──
   const openGoalEditor = () => setEditor({ ...closedEditor, open: true, mode: 'goal' });
   const openSubEditor = (parentId: string) =>
     setEditor({ ...closedEditor, open: true, mode: 'sub', parentId });
@@ -151,6 +166,8 @@ export const Terminal = () => {
       editId: w.id,
       title: w.title,
       note: w.note ?? '',
+      kind: w.kind ?? 'long_term',
+      currentState: w.currentState ?? '',
       attribute: w.attribute,
     });
 
@@ -166,6 +183,8 @@ export const Terminal = () => {
             ...orig,
             title,
             note: editor.note.trim() || undefined,
+            kind: editor.mode === 'goal' ? editor.kind : undefined,
+            currentState: editor.mode === 'goal' ? editor.currentState.trim() || undefined : undefined,
             attribute: editor.attribute,
           });
         }
@@ -174,6 +193,8 @@ export const Terminal = () => {
           title,
           parentId: editor.parentId,
           note: editor.note.trim() || undefined,
+          kind: editor.mode === 'goal' ? editor.kind : undefined,
+          currentState: editor.mode === 'goal' ? editor.currentState.trim() || undefined : undefined,
           attribute: editor.attribute,
           source: 'manual',
         });
@@ -188,14 +209,14 @@ export const Terminal = () => {
   const runAI = async (goal: Wish) => {
     setAi({ open: true, parentId: goal.id, parentTitle: goal.title, loading: true, suggestions: [] });
     try {
-      const list = await decomposeWishAI(goal.title, goal.note);
+      const list = await decomposeWishAI(goal, subsByParent[goal.id] ?? []);
       if (list.length === 0) {
-        setAi((s) => ({ ...s, loading: false, error: 'AI 没有给出可用的拆分，换个说法或手动添加吧' }));
+        setAi((s) => ({ ...s, loading: false, error: 'AI 这次没拆出能用的小步骤。换个说法，或自己加一条吧' }));
         return;
       }
       setAi((s) => ({ ...s, loading: false, suggestions: list.map((text) => ({ text, picked: true })) }));
     } catch (e) {
-      setAi((s) => ({ ...s, loading: false, error: e instanceof Error ? e.message : 'AI 拆分失败' }));
+      setAi((s) => ({ ...s, loading: false, error: e instanceof Error ? e.message : 'AI 拆分没成功' }));
     }
   };
   const addPicked = async () => {
@@ -223,6 +244,25 @@ export const Terminal = () => {
       setDeleteTarget(null);
     } finally {
       setBusy(false);
+    }
+  };
+
+  const finishCelebratedGoal = async () => {
+    if (!goalCelebrate) return;
+    const id = goalCelebrate.id;
+    setGoalCelebrate(null);
+    await setWishStatus(id, 'done');
+  };
+
+  const continueCelebratedGoal = () => {
+    if (!goalCelebrate) return;
+    const goal = goals.find((g) => g.id === goalCelebrate.id);
+    setGoalCelebrate(null);
+    if (!goal) return;
+    if (hasAI) {
+      void runAI(goal);
+    } else {
+      openSubEditor(goal.id);
     }
   };
 
@@ -267,13 +307,13 @@ export const Terminal = () => {
       >
         <span className="text-base">✦</span>
         <span className="flex-1 text-sm font-medium text-primary">
-          你有 {danmakuTokens} 次鼓励机会 · 写一句送给还在低谷的人
+          你攒了 {danmakuTokens} 次回应机会 · 写一句话，送给同样卡住的人
         </span>
         <span className="text-primary/50">›</span>
       </motion.button>
     ) : null;
 
-  // 心之宝物殿 view-model（thief 抽屉复用全部愿望清单逻辑）
+  // 停滞记忆 view-model（抽屉复用全部目标逻辑，作为后台记忆入口）
   const treasuryVM: TreasuryVM = {
     goals, subsByParent, collapsed, celebrateId, celebrateGoalId, bold, hasAI, attrName,
     toggleCollapse, completeSub, openEdit, openGoalEditor, openSubEditor, runAI, setDeleteTarget,
@@ -281,44 +321,18 @@ export const Terminal = () => {
   const totalSubs = goals.reduce((n, g) => n + (subsByParent[g.id]?.length ?? 0), 0);
   const totalDone = goals.reduce((n, g) => n + (subsByParent[g.id]?.filter((s) => s.status === 'done').length ?? 0), 0);
 
-  // 首次仪式引导（通用版空状态）
-  const emptyRitual = (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="rounded-3xl border border-dashed border-primary/40 px-6 py-10 text-center"
-    >
-      <div className="mb-3 text-4xl">✦</div>
-      <h3 className="mb-2 text-lg font-bold text-gray-900 dark:text-white">
-        你最想成为的人，是什么样子？
-      </h3>
-      <p className="mx-auto mb-6 max-w-sm text-sm leading-relaxed text-gray-500 dark:text-gray-400">
-        写下一个「终极目标」——不必宏大，只要是你心里真正向往的方向。
-        之后可以手动、或让 AI 把它拆成够得着的小愿望。
-      </p>
-      <motion.button
-        type="button"
-        whileTap={{ scale: 0.96 }}
-        onClick={openGoalEditor}
-        className="rounded-full bg-primary px-6 py-2.5 text-sm font-semibold text-white shadow-lg shadow-primary/30"
-      >
-        许下第一个愿望
-      </motion.button>
-    </motion.div>
-  );
-
-  // 愿望清单（通用外壳内联版；thief 走 TreasuryThief 抽屉）
+  // 启动素材库（通用外壳内联版；暗房频道走抽屉）
   const wishListInline = (
     <div className="space-y-4">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400">愿望清单</h3>
+            <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400">启动素材库</h3>
             <motion.button
               type="button"
               whileTap={{ scale: 0.96 }}
               onClick={openGoalEditor}
               className="rounded-full border border-primary/40 px-3 py-1 text-xs font-medium text-primary"
             >
-              + 新终极目标
+              + 新素材
             </motion.button>
           </div>
 
@@ -334,7 +348,7 @@ export const Terminal = () => {
                 animate={{ opacity: 1, y: 0 }}
                 className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900"
               >
-                {/* 终极目标头 */}
+                {/* 素材头 */}
                 <div className="flex items-start gap-2">
                   <button
                     type="button"
@@ -367,18 +381,28 @@ export const Terminal = () => {
                     >
                       {goal.title}
                     </button>
+                    <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                      <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+                        {problemKindLabel(goal.kind)}
+                      </span>
+                      {goal.currentState && (
+                        <span className="min-w-0 truncate rounded-full bg-gray-100 px-2 py-0.5 text-[10px] text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+                          当前：{goal.currentState}
+                        </span>
+                      )}
+                    </div>
                     {goal.note && (
                       <p className="mt-0.5 text-xs text-gray-400 dark:text-gray-500">{goal.note}</p>
                     )}
                     <div className="mt-0.5 text-[11px] text-gray-400 dark:text-gray-500">
-                      {subs.length > 0 ? `已夺回 ${doneCount} / ${subs.length}` : '尚无子愿望'}
+                      {subs.length > 0 ? `完成 ${doneCount} / ${subs.length}` : '还没有小步骤'}
                     </div>
                   </div>
                   <button
                     type="button"
                     onClick={() => setDeleteTarget(goal)}
                     className="shrink-0 rounded-md p-1 text-gray-300 hover:bg-black/5 hover:text-red-400 dark:text-gray-600 dark:hover:bg-white/10"
-                    aria-label="删除终极目标"
+                    aria-label="删除素材"
                   >
                     <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
                       <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m2 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6" />
@@ -433,7 +457,7 @@ export const Terminal = () => {
                           type="button"
                           onClick={() => setDeleteTarget(sub)}
                           className="shrink-0 rounded p-1 text-gray-300 hover:text-red-400 dark:text-gray-600"
-                          aria-label="删除子愿望"
+                          aria-label="删除小步骤"
                         >
                           <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
                             <path d="M18 6L6 18M6 6l12 12" />
@@ -448,7 +472,7 @@ export const Terminal = () => {
                         onClick={() => openSubEditor(goal.id)}
                         className="rounded-full border border-gray-200 px-3 py-1 text-xs text-gray-500 hover:border-primary/40 hover:text-primary dark:border-gray-700 dark:text-gray-400"
                       >
-                        + 子愿望
+                        + 小步骤
                       </button>
                       <button
                         type="button"
@@ -474,21 +498,15 @@ export const Terminal = () => {
     <>
       {activeCard}
       {danmakuBtn}
-      {isEmpty ? (
-        emptyRitual
-      ) : (
-        <>
-          <ShortCircuitPanel />
-          {wishListInline}
-        </>
-      )}
+      <StagnationConsole onOpenMemory={() => setTreasuryOpen(true)} />
+      {wishListInline}
     </>
   );
 
   // 共享模态（编辑器 / AI 拆分 / 删除确认 / 弹幕投稿）——均 portal，两套外壳共用
   const modals = (
     <>
-      {/* 愿望编辑器 */}
+      {/* 素材编辑器 */}
       <SheetModal
         isOpen={editor.open}
         onClose={() => setEditor(closedEditor)}
@@ -498,11 +516,11 @@ export const Terminal = () => {
         title={
           editor.editId
             ? editor.mode === 'goal'
-              ? '编辑终极目标'
-              : '编辑子愿望'
+              ? '编辑素材'
+              : '编辑小步骤'
             : editor.mode === 'goal'
-              ? '新的终极目标'
-              : '新的子愿望'
+              ? '新素材'
+              : '新小步骤'
         }
         footer={
           <div className="flex gap-2">
@@ -529,19 +547,49 @@ export const Terminal = () => {
             autoFocus
             value={editor.title}
             onChange={(e) => setEditor((s) => ({ ...s, title: e.target.value }))}
-            placeholder={editor.mode === 'goal' ? '我最想成为 / 做到的是…' : '一个够得着的小愿望…'}
+            placeholder={editor.mode === 'goal' ? '现在卡住你的事是…' : '一个够得着的小步骤…'}
             className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm outline-none focus:border-primary dark:border-gray-700 dark:bg-gray-800 dark:text-white"
           />
+          {editor.mode === 'goal' && (
+            <div className="space-y-3 rounded-2xl border border-gray-100 bg-gray-50/70 p-3 dark:border-gray-700 dark:bg-gray-800/60">
+              <div>
+                <div className="mb-1.5 text-xs text-gray-400 dark:text-gray-500">这件事更像</div>
+                <div className="grid grid-cols-2 gap-2">
+                  {(['long_term', 'pressure'] as TerminalProblemKind[]).map((kind) => (
+                    <button
+                      key={kind}
+                      type="button"
+                      onClick={() => setEditor((s) => ({ ...s, kind }))}
+                      className={`rounded-xl px-3 py-2 text-sm font-medium transition ${
+                        editor.kind === kind
+                          ? 'bg-primary text-white shadow-sm shadow-primary/20'
+                          : 'border border-gray-200 bg-white text-gray-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300'
+                      }`}
+                    >
+                      {problemKindLabel(kind)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <textarea
+                value={editor.currentState}
+                onChange={(e) => setEditor((s) => ({ ...s, currentState: e.target.value }))}
+                placeholder={currentStatePlaceholder(editor.kind)}
+                rows={3}
+                className="w-full resize-none rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-primary dark:border-gray-700 dark:bg-gray-900 dark:text-white"
+              />
+            </div>
+          )}
           <textarea
             value={editor.note}
             onChange={(e) => setEditor((s) => ({ ...s, note: e.target.value }))}
-            placeholder="补充说明（可选）"
+            placeholder={editor.mode === 'goal' ? '补充说明（可选）：背景、限制、想避开的压力感' : '补充说明（可选）'}
             rows={2}
             className="w-full resize-none rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm outline-none focus:border-primary dark:border-gray-700 dark:bg-gray-800 dark:text-white"
           />
           <div>
             <div className="mb-1.5 text-xs text-gray-400 dark:text-gray-500">
-              绑定属性（可选）· 完成它派生的限时任务时加点落到这里
+              关联属性（可选）· 完成这一小步时，加点落到这里
             </div>
             <div className="flex flex-wrap gap-1.5">
               <button
@@ -581,7 +629,7 @@ export const Terminal = () => {
         position="center"
         busy={busy}
         forceDark={isDarkRoom}
-        title="AI 拆分子愿望"
+        title="AI 续拆下一组"
         footer={
           ai.loading || ai.error ? undefined : (
             <div className="flex gap-2">
@@ -604,13 +652,13 @@ export const Terminal = () => {
           )
         }
       >
-        <div className="mb-2 text-xs text-gray-400 dark:text-gray-500">
-          来自《{ai.parentTitle}》
+        <div className="mb-2 text-xs leading-relaxed text-gray-400 dark:text-gray-500">
+          来自《{ai.parentTitle}》 · 会避开已完成和已排队的小步骤，只补充同一方向上的下一组。
         </div>
         {ai.loading ? (
           <div className="flex items-center justify-center gap-2 py-8 text-sm text-gray-400">
             <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-            正在拆分…
+            正在拆…
           </div>
         ) : ai.error ? (
           <div className="py-6 text-center text-sm text-gray-500 dark:text-gray-400">{ai.error}</div>
@@ -654,11 +702,11 @@ export const Terminal = () => {
       <ConfirmDialog
         isOpen={!!deleteTarget}
         tone="danger"
-        title={deleteTarget?.parentId ? '删除这个子愿望？' : '删除这个终极目标？'}
+        title={deleteTarget?.parentId ? '删除这个小步骤？' : '删除这件素材？'}
         description={
           deleteTarget?.parentId
             ? undefined
-            : '它名下的所有子愿望也会一并删除。'
+            : '它下面的小步骤也会一起删掉。'
         }
         confirmText="删除"
         cancelText="取消"
@@ -671,8 +719,8 @@ export const Terminal = () => {
       {/* 弹幕投稿（先审后发） */}
       <DanmakuCompose isOpen={composeOpen} onClose={() => setComposeOpen(false)} forceDark={isDarkRoom} />
 
-      {/* 终极目标全达成庆祝弹窗（主题差分；自动消失） */}
-      <GoalCompletePop pop={goalCelebrate} onClose={() => setGoalCelebrate(null)} />
+      {/* 一个方向下的小步骤全达成后，由用户决定完成目标或继续推进 */}
+      <GoalCompletePop pop={goalCelebrate} onCompleteGoal={finishCelebratedGoal} onContinue={continueCelebratedGoal} />
     </>
   );
 
@@ -680,7 +728,6 @@ export const Terminal = () => {
   // 房间外壳 + Velvet 接引 + 召唤抽屉。强制 dark 语境让房内通用件按暗色渲染；各频道用各自皮肤。
   if (skin.channel === 'thief' || skin.channel === 'board' || skin.channel === 'tv') {
     const ch = skin.channel;
-    const EmptyComp = ch === 'board' ? BoardEmpty : ch === 'tv' ? TVEmpty : ThiefEmpty;
     const Trigger = ch === 'board' ? TreasuryTriggerBoard : ch === 'tv' ? TreasuryTriggerTV : TreasuryTrigger;
     const Drawer = ch === 'board' ? TreasuryBoard : ch === 'tv' ? TreasuryTV : TreasuryThief;
     return (
@@ -697,18 +744,14 @@ export const Terminal = () => {
             {ch === 'board' ? (
               <div className="mb-5 text-[13px] leading-relaxed" style={{ fontFamily: MONO, color: '#bcd6f5' }}>» {skin.velvet}</div>
             ) : ch === 'tv' ? (
-              <div className="mb-5 inline-block bg-black/70 px-3 py-1.5 text-sm font-semibold text-white" style={{ boxShadow: '3px 3px 0 var(--color-primary)' }}>{skin.velvet}</div>
+              null
             ) : (
               <div className="mb-5 border-l-2 border-primary/60 pl-3 text-sm italic leading-relaxed text-white/80">{skin.velvet}</div>
             )}
             {activeCard}
-            {isEmpty ? (
-              <EmptyComp onCreate={openGoalEditor} />
-            ) : (
-              <>
-                <ShortCircuitPanel />
-                <Trigger goalsCount={goals.length} done={totalDone} total={totalSubs} onOpen={() => setTreasuryOpen(true)} />
-              </>
+            <StagnationConsole onOpenMemory={() => setTreasuryOpen(true)} />
+            {!isEmpty && (
+              <Trigger goalsCount={goals.length} done={totalDone} total={totalSubs} onOpen={() => setTreasuryOpen(true)} />
             )}
             {danmakuBtn}
           </div>

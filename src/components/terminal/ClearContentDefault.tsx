@@ -12,14 +12,17 @@ export interface ClearVM {
   rewardPoints: number;
   attrName: string;
   danmakuGranted: boolean;
+  comboCount?: number;
+  comboAvailable?: boolean;
   encourage: string;
   bold: boolean;
   flash: string;
   onClose: () => void;
+  onCombo?: () => void;
 }
 
 export const ClearContentDefault = ({ vm }: { vm: ClearVM }) => {
-  const { skin, goalTitle, stepTitle, rewardPoints, attrName, danmakuGranted, encourage, flash, onClose } = vm;
+  const { skin, stepTitle, rewardPoints, attrName, danmakuGranted, comboCount, comboAvailable, encourage, flash, onClose, onCombo } = vm;
   return (
     <motion.div
       initial={{ opacity: 0, y: 24, scale: 0.92 }}
@@ -50,7 +53,7 @@ export const ClearContentDefault = ({ vm }: { vm: ClearVM }) => {
         style={{ maxWidth: 360, background: 'rgba(0,0,0,0.32)', border: '2px solid var(--color-primary)', borderRadius: 12 }}
       >
         <p className="text-sm leading-relaxed" style={{ color: 'rgba(255,255,255,0.9)' }}>
-          {goalTitle ? `你又一次接近了《${goalTitle}》的心愿，从虚无中拯救了自己。` : '你迈出了那一步，从虚无中把自己拉了回来。'}
+          你让停滞的时间再度流动了起来。
         </p>
         <p className="mt-2 text-xs italic" style={{ color: 'rgba(255,255,255,0.55)' }}>「{stepTitle}」</p>
 
@@ -72,24 +75,42 @@ export const ClearContentDefault = ({ vm }: { vm: ClearVM }) => {
         {rewardPoints > 0 ? (
           <span className="rounded-full bg-primary/20 px-3 py-1 text-sm font-bold text-white">+{rewardPoints} {attrName}</span>
         ) : (
-          <span className="text-xs" style={{ color: 'rgba(255,255,255,0.55)' }}>今日的属性奖励已领过，但这一步依然算数</span>
+          <span className="text-xs" style={{ color: 'rgba(255,255,255,0.55)' }}>今天的加成已经领过了，但这一小步照样算数。</span>
         )}
         {danmakuGranted && (
-          <span className="text-xs" style={{ color: 'rgba(255,255,255,0.7)' }}>✦ 解锁一次鼓励他人的机会 · 去终端写一句送出</span>
+          <span className="text-xs" style={{ color: 'rgba(255,255,255,0.7)' }}>✦ 你可以写一句话，送给同样卡住的人。</span>
+        )}
+        {comboCount && comboCount > 1 && (
+          <span className="text-xs font-black" style={{ color: 'var(--color-primary)' }}>COMBO x{comboCount}</span>
         )}
         <span className="mt-1 text-xs italic" style={{ color: 'rgba(255,255,255,0.6)' }}>{encourage}</span>
       </motion.div>
 
-      <motion.button
+      <motion.div
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4, delay: 1.1 }}
-        whileTap={{ scale: 0.96 }}
-        onClick={onClose}
-        className="mx-auto block w-full max-w-[280px] rounded-2xl bg-primary py-3 text-sm font-bold text-white shadow-lg shadow-primary/40"
+        className="mx-auto flex w-full max-w-[280px] flex-col gap-2"
       >
-        记录这一刻
-      </motion.button>
+        {comboAvailable && onCombo && (
+          <motion.button
+            type="button"
+            whileTap={{ scale: 0.96 }}
+            onClick={onCombo}
+            className="w-full rounded-2xl bg-primary py-3 text-sm font-bold text-white shadow-lg shadow-primary/40"
+          >
+            继续连击
+          </motion.button>
+        )}
+        <motion.button
+          type="button"
+          whileTap={{ scale: 0.96 }}
+          onClick={onClose}
+          className="w-full rounded-2xl border border-white/30 bg-white/10 py-3 text-sm font-bold text-white"
+        >
+          记录这一刻
+        </motion.button>
+      </motion.div>
 
       <motion.div
         initial={{ opacity: 0 }}

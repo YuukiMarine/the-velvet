@@ -56,7 +56,6 @@ function App() {
   const [showBackToast, setShowBackToast] = useState(false);
   const lastBackPressRef = useRef(0);
   const backToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
   // 旧版密码重置邮件兜底：过去的 PB 默认模板会生成
   // `https://the-velvet.com/_/#/auth/confirm-password-reset/TOKEN` 形式的链接。
   // 迁移到 /reset-password 之后这些旧邮件点进来会落到 SPA fallback，

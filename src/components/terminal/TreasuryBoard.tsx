@@ -1,7 +1,7 @@
 /**
- * TreasuryBoard — 心之宝物殿的讨论板（蓝/粉/自定义）表现层：BBS「我的主题板」抽屉。
+ * TreasuryBoard — 启动素材库的讨论板（蓝/粉/自定义）表现层。
  *
- * 愿望清单 = 帖子板块：每个终极目标是一个「主题帖」，子愿望是「回复」。从右滑出，
+ * 素材库 = 方向 / 卡住事项 + 小步骤。从右滑出，
  * 老式窗口外观、固定深底 + 浅墨文字（自定义任意 primary 仍可读）。逻辑经 TreasuryVM 注入。
  */
 import { createPortal } from 'react-dom';
@@ -19,20 +19,21 @@ const bar = (done: number, total: number) => {
   const filled = total > 0 ? Math.round((done / total) * 5) : 0;
   return '■'.repeat(filled) + '□'.repeat(Math.max(0, 5 - filled));
 };
+const threadKind = (goal: Wish) => (goal.kind === 'pressure' ? '短期压力' : '长期愿望');
 
 // 正文召唤入口（摘要面板）
 export const TreasuryTriggerBoard = ({ goalsCount, done, total, onOpen }: { goalsCount: number; done: number; total: number; onOpen: () => void }) => (
   <button
     type="button"
     onClick={onOpen}
-    aria-label="打开我的主题板"
+    aria-label="打开启动帖库"
     style={{ fontFamily: MONO, background: PANEL, border: '2px solid', borderColor: 'color-mix(in srgb, var(--color-primary) 70%, #fff) var(--color-primary) var(--color-primary) color-mix(in srgb, var(--color-primary) 70%, #fff)', boxShadow: '4px 5px 0 rgba(0,0,0,0.5)' }}
     className="mt-5 flex w-full items-center gap-2 px-3 py-2.5 text-left"
   >
     <span className="text-base bk-fg" aria-hidden>▣</span>
     <span className="min-w-0 flex-1">
-      <span className="block text-sm font-bold" style={{ color: INK }}>我的主题板</span>
-      <span className="block text-[11px]" style={{ color: INK_DIM }}>{goalsCount} 个主题 · 已夺回 {done} / {total} 楼</span>
+      <span className="block text-sm font-bold" style={{ color: INK }}>启动帖库</span>
+      <span className="block text-[11px]" style={{ color: INK_DIM }}>{goalsCount} 个主题 · 完成 {done} / {total} 小步</span>
     </span>
     <span className="text-xs font-bold tracking-widest bk-fg">打开 »</span>
   </button>
@@ -42,11 +43,11 @@ export const TreasuryTriggerBoard = ({ goalsCount, done, total, onOpen }: { goal
 export const BoardEmpty = ({ onCreate }: { onCreate: () => void }) => (
   <div style={{ fontFamily: MONO, background: PANEL, border: '2px solid', borderColor: 'color-mix(in srgb, var(--color-primary) 70%, #fff) var(--color-primary) var(--color-primary) color-mix(in srgb, var(--color-primary) 70%, #fff)', boxShadow: '5px 6px 0 rgba(0,0,0,0.5)' }} className="px-6 py-9 text-center">
     <div className="mb-2 text-3xl" aria-hidden>▣</div>
-    <h3 className="mb-2 text-base font-bold" style={{ color: INK }}>板块还空着</h3>
+    <h3 className="mb-2 text-base font-bold" style={{ color: INK }}>这里还空着</h3>
     <p className="mx-auto mb-5 max-w-sm text-sm leading-relaxed" style={{ color: INK_DIM }}>
-      先发一个「主题帖」——你最想成为/做到的方向。之后让终端替你拆成够得着的回复。
+      先放进一件卡住你的事。之后让终端替你拆成当下能做的一小步。
     </p>
-    <div className="flex justify-center"><BevelButton primary onClick={onCreate} ariaLabel="立第一个主题">+ 立第一个主题</BevelButton></div>
+    <div className="flex justify-center"><BevelButton primary onClick={onCreate} ariaLabel="写下第一件事">+ 写下第一件事</BevelButton></div>
   </div>
 );
 
@@ -79,12 +80,16 @@ const Thread = ({ goal, vm }: { goal: Wish; vm: TreasuryVM }) => {
               </motion.span>
             )}
           </div>
+          <div className="mt-0.5 truncate text-[11px]" style={{ color: INK_DIM }}>
+            <span className="bk-fg">type:</span> {threadKind(goal)}
+            {goal.currentState ? ` · now: ${goal.currentState}` : ''}
+          </div>
           {goal.note && <p className="mt-0.5 truncate text-[11px]" style={{ color: INK_DIM }}>{goal.note}</p>}
           <div className="mt-0.5 text-[11px] font-bold tracking-wide bk-fg">
-            <span aria-hidden>[{bar(doneCount, subs.length)}]</span> {subs.length > 0 ? `已夺回 ${doneCount}/${subs.length}` : '尚无回复'}
+            <span aria-hidden>[{bar(doneCount, subs.length)}]</span> {subs.length > 0 ? `完成 ${doneCount}/${subs.length}` : '还没有小步骤'}
           </div>
         </div>
-        <button type="button" onClick={() => vm.setDeleteTarget(goal)} className="shrink-0 px-1 text-xs bk-fg" aria-label="删除主题">✕</button>
+        <button type="button" onClick={() => vm.setDeleteTarget(goal)} className="shrink-0 px-1 text-xs bk-fg" aria-label="删除素材">✕</button>
       </div>
 
       {!collapsed && (
@@ -110,12 +115,12 @@ const Thread = ({ goal, vm }: { goal: Wish; vm: TreasuryVM }) => {
                 {sub.attribute && <span className="ml-1 bg-primary/20 px-1 text-[10px] bk-fg">{vm.attrName(sub.attribute)}</span>}
                 {sub.source === 'ai' && <span className="ml-1 text-[10px] bk-fg">AI</span>}
               </button>
-              <button type="button" onClick={() => vm.setDeleteTarget(sub)} className="shrink-0 px-1 text-[11px] bk-fg" aria-label="删除回复">✕</button>
+              <button type="button" onClick={() => vm.setDeleteTarget(sub)} className="shrink-0 px-1 text-[11px] bk-fg" aria-label="删除小步骤">✕</button>
             </div>
           ))}
 
           <div className="flex flex-wrap gap-1.5 pt-0.5">
-            <button type="button" onClick={() => vm.openSubEditor(goal.id)} className="border bk-bd px-2 py-0.5 text-[11px] font-bold bk-fg hover:bg-primary/10">+ 回复</button>
+            <button type="button" onClick={() => vm.openSubEditor(goal.id)} className="border bk-bd px-2 py-0.5 text-[11px] font-bold bk-fg hover:bg-primary/10">+ 小步骤</button>
             <button type="button" onClick={() => vm.runAI(goal)} disabled={!vm.hasAI} title={vm.hasAI ? undefined : '需先在「设置 → AI 总结」配置 API 密钥'} className="border bk-bd px-2 py-0.5 text-[11px] font-bold bk-fg hover:bg-primary/10 disabled:opacity-40">
               ✦ AI 拆分{vm.hasAI ? '' : '（未配置）'}
             </button>
@@ -138,7 +143,7 @@ export const TreasuryBoard = ({ open, onClose, vm }: { open: boolean; onClose: (
             ref={containerRef}
             role="dialog"
             aria-modal="true"
-            aria-label="我的主题板"
+            aria-label="启动帖库"
             initial={vm.bold ? { x: '100%' } : { opacity: 0 }}
             animate={vm.bold ? { x: 0 } : { opacity: 1 }}
             exit={vm.bold ? { x: '100%' } : { opacity: 0 }}
@@ -149,7 +154,7 @@ export const TreasuryBoard = ({ open, onClose, vm }: { open: boolean; onClose: (
           >
             {/* 标题栏 */}
             <div className="flex items-center justify-between px-3 py-1.5 text-xs font-bold text-white" style={{ background: 'var(--color-primary)' }}>
-              <span className="truncate tracking-wide">▓ treasure.bbs · 我的主题板</span>
+              <span className="truncate tracking-wide">▓ starter.bbs · 启动帖库</span>
               <span className="ml-2 flex shrink-0 items-center gap-1 text-white/90">
                 <span aria-hidden className="flex h-3.5 w-3.5 items-center justify-center border border-white/60 leading-none">_</span>
                 <span aria-hidden className="flex h-3.5 w-3.5 items-center justify-center border border-white/60 leading-none">□</span>
@@ -159,7 +164,7 @@ export const TreasuryBoard = ({ open, onClose, vm }: { open: boolean; onClose: (
 
             {/* 工具条 */}
             <div className="flex items-center gap-2 border-b border-primary/30 px-3 py-2">
-              <BevelButton primary onClick={vm.openGoalEditor} ariaLabel="立新主题">+ 立新主题</BevelButton>
+              <BevelButton primary onClick={vm.openGoalEditor} ariaLabel="新主题">+ 新主题</BevelButton>
               <span className="text-[11px]" style={{ color: INK_DIM }}>{vm.goals.length} 个主题</span>
             </div>
 

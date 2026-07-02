@@ -33,7 +33,7 @@ export const ThiefClearBg = () => (
 );
 
 export const ClearContentThief = ({ vm }: { vm: ClearVM }) => {
-  const { skin, goalTitle, stepTitle, rewardPoints, attrName, danmakuGranted, encourage, bold, onClose } = vm;
+  const { skin, goalTitle, stepTitle, rewardPoints, attrName, danmakuGranted, comboCount, comboAvailable, encourage, bold, onClose, onCombo } = vm;
   return (
     <motion.div
       initial={{ opacity: 0, y: 24, scale: 0.92 }}
@@ -64,7 +64,7 @@ export const ClearContentThief = ({ vm }: { vm: ClearVM }) => {
         style={{ maxWidth: 360, boxShadow: '5px 6px 0 rgba(0,0,0,0.5)' }}
       >
         <Halftone className="absolute right-0 top-0 h-16 w-16 opacity-35" style={{ clipPath: 'polygon(45% 0,100% 0,100% 55%)' }} />
-        <div className="relative text-[10px] font-black tracking-[3px] text-primary/80">WANTED · 心之宝物</div>
+        <div className="relative text-[10px] font-black tracking-[3px] text-primary/80">THIS STEP</div>
         <div className="relative mt-1 inline-block">
           <p className="text-base font-black text-white">{goalTitle ?? '今天的自己'}</p>
           <motion.span
@@ -76,6 +76,7 @@ export const ClearContentThief = ({ vm }: { vm: ClearVM }) => {
             transition={{ delay: bold ? 0.9 : 0.3, duration: bold ? 0.35 : 0, ease: 'easeOut' }}
           />
         </div>
+        <p className="relative mt-2 text-sm font-bold leading-relaxed text-white/85">你让停滞的时间再度流动了起来。</p>
         <p className="relative mt-2 text-xs italic text-white/60">「{stepTitle}」</p>
       </motion.div>
 
@@ -118,23 +119,40 @@ export const ClearContentThief = ({ vm }: { vm: ClearVM }) => {
             {bold && <MusicalNotes count={rewardPoints} />}
           </span>
         ) : (
-          <span className="text-xs text-white/55">今日的属性奖励已领过，但这一步依然算数</span>
+          <span className="text-xs text-white/55">今天的加成已经领过了，但这一小步照样算数。</span>
         )}
-        {danmakuGranted && <span className="text-xs text-white/70">✦ 解锁一次鼓励他人的机会 · 去终端写一句送出</span>}
+        {danmakuGranted && <span className="text-xs text-white/70">✦ 你可以写一句话，送给同样卡住的人。</span>}
+        {comboCount && comboCount > 1 && <span className="text-xs font-black tracking-[0.2em] text-primary">COMBO x{comboCount}</span>}
         <span className="mt-1 text-xs italic text-white/60">{encourage}</span>
       </motion.div>
 
-      <motion.button
+      <motion.div
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4, delay: bold ? 1.55 : 0.6 }}
-        whileTap={{ scale: 0.96 }}
-        onClick={onClose}
-        className="mx-auto block w-full max-w-[280px] border-2 border-black bg-primary py-3 text-sm font-black tracking-wider text-black"
-        style={{ boxShadow: '4px 4px 0 #000' }}
+        className="mx-auto grid w-full max-w-[280px] gap-2"
       >
-        记录这一刻
-      </motion.button>
+        {comboAvailable && onCombo && (
+          <motion.button
+            type="button"
+            whileTap={{ scale: 0.96 }}
+            onClick={onCombo}
+            className="w-full border-2 border-black bg-primary py-3 text-sm font-black tracking-wider text-black"
+            style={{ boxShadow: '4px 4px 0 #000' }}
+          >
+            继续连击
+          </motion.button>
+        )}
+        <motion.button
+          type="button"
+          whileTap={{ scale: 0.96 }}
+          onClick={onClose}
+          className="w-full border-2 border-primary bg-black/40 py-3 text-sm font-black tracking-wider text-white"
+          style={{ boxShadow: '4px 4px 0 #000' }}
+        >
+          记录这一刻
+        </motion.button>
+      </motion.div>
 
       <motion.div
         initial={{ opacity: 0 }}

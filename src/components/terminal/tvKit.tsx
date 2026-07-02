@@ -94,18 +94,20 @@ export const TVButton = ({ children, onClick, disabled, primary = true, classNam
 export const Marquee = ({ posts, bold, label = '❯ 观众来信' }: { posts: string[]; bold: boolean; label?: string }) => {
   const ticker = (posts.length ? posts : ['有人也在熬这个夜。']).join('　•　');
   return (
-    <div className="flex items-center gap-2 border-y-2 border-primary/60 bg-black/80 py-1.5">
-      <span className="ml-2 shrink-0 bg-primary px-2 py-0.5 text-[11px] font-black tracking-wider text-black">{label}</span>
+    <div className="relative flex h-16 items-center overflow-hidden rounded-xl border-2 border-[#ffe100] bg-[#fff4b8] text-[#1a1710] shadow-[0_3px_0_#8d6f00]">
+      <div aria-hidden className="pointer-events-none absolute inset-0 opacity-35 tv-crt-scanlines" />
+      <span className="relative flex h-full shrink-0 items-center border-r-2 border-[#1a1710] bg-[#ffe100] px-5 text-base font-black tracking-wide text-[#1a1710]">{label}</span>
       <div className="relative flex-1 overflow-hidden">
         {bold ? (
-          <motion.div className="flex whitespace-nowrap text-xs text-primary/90" animate={{ x: ['0%', '-50%'] }} transition={{ duration: 26, repeat: Infinity, ease: 'linear' }}>
+          <motion.div className="flex whitespace-nowrap text-sm font-black tracking-wide text-[#1a1710]" animate={{ x: ['0%', '-50%'] }} transition={{ duration: 26, repeat: Infinity, ease: 'linear' }}>
             <span className="pr-8">{ticker}</span>
             <span className="pr-8" aria-hidden>{ticker}</span>
           </motion.div>
         ) : (
-          <div className="truncate text-xs text-primary/90">{posts[0] ?? ''}</div>
+          <div className="truncate px-4 text-sm font-black text-[#1a1710]">{posts[0] ?? ''}</div>
         )}
       </div>
+      <span className="relative shrink-0 px-4 text-2xl font-black text-[#1a1710]" aria-hidden>✽</span>
     </div>
   );
 };

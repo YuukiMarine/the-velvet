@@ -1,11 +1,11 @@
 /**
- * GoalCompletePop — 「终极目标全部子愿望达成」的庆祝弹窗。
+ * GoalCompletePop — 一件素材下的全部小步骤达成时的庆祝弹窗。
  *
- * 当完成某个终极目标的最后一个子愿望时弹出，~2.8s 自动消失。主题差分：
- *   红 = 怪盗漫画风（不规则四边形 + 黑描边/阴影 + 半调 + 星爆 + 厚花字）；其余 = 简洁庆祝条。
- * 纯展示、pointer-events-none（不挡下层抽屉/正文）；进场动效尊重 bold 降级。
+ * 当完成某件素材的最后一个小步骤时弹出，让用户决定：
+ *   1. 这件目标已经完成；
+ *   2. 还不够，继续沿着同一目标往下拆。
+ * 主题差分保留，进场动效尊重 bold 降级。
  */
-import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import { useAppStore } from '@/store';
@@ -17,6 +17,11 @@ import { MONO, PANEL, INK, INK_DIM } from './boardKit';
 import { fancy, Sparkle } from './tvKit';
 
 const POP_CLIP = 'polygon(2% 7%, 98% 0%, 100% 93%, 0% 100%)';
+
+export interface GoalCompletePopPayload {
+  id: string;
+  title: string;
+}
 
 const ThiefBurst = ({ title, bold }: { title: string; bold: boolean }) => (
   <motion.div
@@ -41,7 +46,7 @@ const ThiefBurst = ({ title, bold }: { title: string; bold: boolean }) => (
       <Halftone className="absolute bottom-0 left-0 h-20 w-20" style={{ clipPath: 'circle(60% at 0% 100%)', opacity: 0.35 }} dot={1.1} gap={6} />
       <div className="relative px-7 py-5 text-center">
         <div aria-hidden className="text-[10px] font-black tracking-[4px] text-primary">MISSION COMPLETE</div>
-        <div className="mt-1 text-xl font-black text-gray-900">你完成了一个重要的目标</div>
+        <div className="mt-1 text-xl font-black text-gray-900">你完成了一组小步骤</div>
         <div className="mx-auto mt-1 max-w-[15rem] truncate text-sm font-bold text-gray-500">《{title}》</div>
       </div>
     </div>
@@ -57,7 +62,7 @@ const BoardClosed = ({ title }: { title: string }) => (
     className="px-6 py-5 text-center"
   >
     <div aria-hidden className="text-[10px] font-bold tracking-[4px] text-primary">★ THREAD CLOSED ★</div>
-    <div className="mt-1 text-lg font-bold" style={{ color: INK }}>你完成了一个重要的目标</div>
+    <div className="mt-1 text-lg font-bold" style={{ color: INK }}>你完成了一组小步骤</div>
     <div className="mx-auto mt-1 max-w-[15rem] truncate text-sm" style={{ color: INK_DIM }}>《{title}》</div>
   </motion.div>
 );
@@ -73,7 +78,7 @@ const TVCleared = ({ title, bold }: { title: string; bold: boolean }) => (
     <Sparkle className="-left-2 top-1 text-lg" delay={0} bold={bold} />
     <Sparkle className="-right-1 top-3 text-sm" delay={0.6} bold={bold} />
     <div aria-hidden className="text-[10px] font-black tracking-[4px] text-primary">★ 本期通关 ★</div>
-    <div className="mt-1.5 text-xl font-black" style={fancy(2.5)}>你完成了一个重要的目标</div>
+    <div className="mt-1.5 text-xl font-black" style={fancy(2.5)}>你完成了一组小步骤</div>
     <div className="mx-auto mt-1 max-w-[15rem] truncate text-sm text-white/60">《{title}》</div>
   </motion.div>
 );
@@ -85,21 +90,51 @@ const PlainToast = ({ title }: { title: string }) => (
     exit={{ opacity: 0 }}
     className="rounded-2xl border-2 border-primary bg-white px-6 py-4 text-center shadow-2xl dark:bg-gray-900"
   >
-    <div className="text-base font-bold text-gray-900 dark:text-white">🎉 你完成了一个重要的目标</div>
+    <div className="text-base font-bold text-gray-900 dark:text-white">🎉 你完成了一组小步骤</div>
     <div className="mx-auto mt-1 max-w-[15rem] truncate text-sm text-gray-500 dark:text-gray-400">《{title}》</div>
   </motion.div>
 );
 
-export const GoalCompletePop = ({ pop, onClose }: { pop: { title: string } | null; onClose: () => void }) => {
+export const GoalCompletePop = ({
+  pop,
+  onCompleteGoal,
+  onContinue,
+}: {
+  pop: GoalCompletePopPayload | null;
+  onCompleteGoal: () => void | Promise<void>;
+  onContinue: () => void | Promise<void>;
+}) => {
   const theme = useAppStore((s) => s.user?.theme);
   const channel = terminalChannel(theme);
   const bold = useBoldness();
-
-  useEffect(() => {
-    if (!pop) return;
-    const t = setTimeout(onClose, 2800);
-    return () => clearTimeout(t);
-  }, [pop, onClose]);
+  const completeButtonClass = channel === 'thief'
+    ? 'min-h-11 border-2 border-black bg-primary px-4 py-2.5 text-sm font-black tracking-wide text-black transition hover:-translate-x-0.5 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white'
+    : channel === 'tv'
+      ? 'min-h-11 rounded-full border-2 border-black bg-primary px-4 py-2.5 text-sm font-black text-black transition hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white'
+      : channel === 'board'
+        ? 'min-h-11 border px-4 py-2.5 text-sm font-bold text-white transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white'
+        : 'min-h-11 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-white shadow-lg shadow-black/25 transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white';
+  const continueButtonClass = channel === 'thief'
+    ? 'min-h-11 border-2 border-white bg-black px-4 py-2.5 text-sm font-black tracking-wide text-white transition hover:border-primary hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white'
+    : channel === 'tv'
+      ? 'min-h-11 rounded-full border-2 border-primary bg-[#0a0a06] px-4 py-2.5 text-sm font-black text-primary transition hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white'
+      : channel === 'board'
+        ? 'min-h-11 border px-4 py-2.5 text-sm font-bold transition hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white'
+        : 'min-h-11 rounded-xl border border-white/25 bg-white/10 px-4 py-2.5 text-sm font-bold text-white shadow-lg shadow-black/20 transition hover:bg-white/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white';
+  const completeButtonStyle = channel === 'thief'
+    ? { clipPath: POP_CLIP, boxShadow: '3px 3px 0 #000' }
+    : channel === 'tv'
+      ? { boxShadow: '0 4px 0 #000' }
+      : channel === 'board'
+        ? { fontFamily: MONO, background: 'var(--color-primary)', borderColor: '#fff var(--color-primary) var(--color-primary) #fff', boxShadow: '3px 3px 0 #000' }
+        : undefined;
+  const continueButtonStyle = channel === 'thief'
+    ? { clipPath: POP_CLIP, boxShadow: '3px 3px 0 #000' }
+    : channel === 'tv'
+      ? { boxShadow: '0 4px 0 #000' }
+      : channel === 'board'
+        ? { fontFamily: MONO, color: INK, background: PANEL, borderColor: 'color-mix(in srgb, var(--color-primary) 70%, #fff) var(--color-primary) var(--color-primary) color-mix(in srgb, var(--color-primary) 70%, #fff)', boxShadow: '3px 3px 0 #000' }
+        : undefined;
 
   return createPortal(
     <AnimatePresence>
@@ -108,10 +143,37 @@ export const GoalCompletePop = ({ pop, onClose }: { pop: { title: string } | nul
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className={`pointer-events-none fixed inset-0 ${zClass.cutin} flex items-center justify-center p-6`}
-          aria-live="polite"
+          className={`fixed inset-0 ${zClass.cutin} flex items-center justify-center bg-black/55 p-6 backdrop-blur-sm`}
+          role="dialog"
+          aria-modal="true"
+          aria-label="小步骤全部完成"
         >
-          {channel === 'thief' ? <ThiefBurst title={pop.title} bold={bold} /> : channel === 'board' ? <BoardClosed title={pop.title} /> : channel === 'tv' ? <TVCleared title={pop.title} bold={bold} /> : <PlainToast title={pop.title} />}
+          <motion.div
+            initial={bold ? { y: 16, opacity: 0 } : { opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 10, opacity: 0 }}
+            className="w-full max-w-sm"
+          >
+            {channel === 'thief' ? <ThiefBurst title={pop.title} bold={bold} /> : channel === 'board' ? <BoardClosed title={pop.title} /> : channel === 'tv' ? <TVCleared title={pop.title} bold={bold} /> : <PlainToast title={pop.title} />}
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={onCompleteGoal}
+                className={completeButtonClass}
+                style={completeButtonStyle}
+              >
+                我完成了这个目标
+              </button>
+              <button
+                type="button"
+                onClick={onContinue}
+                className={continueButtonClass}
+                style={continueButtonStyle}
+              >
+                但是还不够，我要继续努力
+              </button>
+            </div>
+          </motion.div>
         </motion.div>
       )}
     </AnimatePresence>,

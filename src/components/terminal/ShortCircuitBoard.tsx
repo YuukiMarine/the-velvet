@@ -14,14 +14,14 @@ export const ShortCircuitBoard = ({ vm }: { vm: ShortCircuitVM }) => {
   return (
     <BevelWindow className="mb-5" title={`short_circuit.bbs · ${skin.decideHero}`}>
       <div className="text-[13px] leading-relaxed">
-        <div className="bk-fg">» 深夜抽签 · {skin.label}</div>
+        <div className="bk-fg">» 一小步启动器 · {skin.label}</div>
         <div aria-hidden className="my-1.5 bk-fg opacity-40">────────────────────────</div>
 
         <AnimatePresence mode="wait">
           {phase === 'idle' && (
             <motion.div key="idle" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, transition: { duration: 0.12 } }}>
               {hasActiveTask ? (
-                <p style={{ color: INK_DIM }}>有一个置顶的限时帖还没结——先把它结掉吧。</p>
+                <p style={{ color: INK_DIM }}>手上还有一小步没做完。先把它收掉，再开下一帖。</p>
               ) : (
                 <>
                   <p className="mb-3">{empty ? skin.emptyPool : skin.decideHint}</p>
@@ -36,7 +36,7 @@ export const ShortCircuitBoard = ({ vm }: { vm: ShortCircuitVM }) => {
 
           {phase === 'shuffling' && (
             <motion.div key="shuffling" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="py-6 text-center">
-              <div className="text-[11px] tracking-widest bk-fg">正在抽取楼层…</div>
+              <div className="text-[11px] tracking-widest bk-fg">替你挑一件…</div>
               <motion.div key={shuffleText} initial={{ opacity: 0.4 }} animate={{ opacity: 1 }} transition={{ duration: 0.09 }} className="mt-2 truncate text-base font-bold">
                 » {shuffleText || '…'}
               </motion.div>
@@ -52,14 +52,14 @@ export const ShortCircuitBoard = ({ vm }: { vm: ShortCircuitVM }) => {
           {phase === 'result' && chosen && (
             <motion.div key="result" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
               <div className="mb-1.5 flex items-center gap-1.5 text-[11px]" style={{ color: INK_DIM }}>
-                <span className="bg-primary/20 px-1.5 py-0.5 bk-fg">{chosen.kind === 'wish' ? '子愿望' : '待办'}</span>
+                <span className="bg-primary/20 px-1.5 py-0.5 bk-fg">{chosen.kind === 'wish' ? '小步骤' : '待办'}</span>
                 <span className="min-w-0 truncate">{chosen.title}</span>
               </div>
               <div className="text-[11px] font-bold bk-fg">{skin.stepLead}</div>
               <p className="mt-1 border-l-2 bk-bd pl-2 text-base font-bold leading-snug">{step}</p>
               <div className="mt-2 flex items-center gap-2 text-xs" style={{ color: INK_DIM }}>
                 <span className="italic">{encourage}</span>
-                <span className="ml-auto text-[10px] bk-fg">{usedAI ? 'AI 拆解' : '离线模板'}</span>
+                <span className="ml-auto text-[10px] bk-fg">{usedAI ? 'AI 拆的' : '本地拆的'}</span>
               </div>
 
               <div className="mt-3">

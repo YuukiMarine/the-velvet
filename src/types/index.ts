@@ -56,25 +56,40 @@ export interface Activity {
   }>;
 }
 
-// ── F3 无气力症治疗终端 · 愿望清单 ──
+// ── F3 治疗终端 · 启动素材库 ──
 export type WishStatus = 'active' | 'done' | 'archived';
+export type TerminalProblemKind = 'long_term' | 'pressure';
+
+export interface TerminalStepHistoryEntry {
+  id: string;
+  title: string;
+  completedAt: string;
+  sourceStepId?: string;
+  via: 'manual' | 'terminal';
+}
 
 /**
- * 愿望清单条目。parentId 为空 → 终极目标（最想成为的人 / 最想做到的事）；
- * 否则为某终极目标下的子愿望（可手动输入，或由 AI 拆分而来）。
+ * 启动素材库条目。parentId 为空 → 一件卡住的事 / 想做到的方向；
+ * 否则为该素材下的小步骤（可手动输入，或由 AI 拆分而来）。
  */
 export interface Wish {
   id: string;
-  /** 所属终极目标 id；为空表示自身即终极目标 */
+  /** 所属父级素材 id；为空表示自身即父级素材 */
   parentId?: string;
   title: string;
   note?: string;
-  /** 轻绑定属性：完成该愿望派生的 24h 终端任务时，加点落到此属性（未绑定则归「勇气」） */
+  /** 父级素材类型：长期愿望 / 短期压力。旧数据缺省按长期愿望处理。 */
+  kind?: TerminalProblemKind;
+  /** 用户描述的当前进度、水平、压力位置；AI 续拆时会带入上下文。 */
+  currentState?: string;
+  /** 父级素材下的小步骤完成历史。完成小步时自动追加，供下一次 AI 拆解避重与续接。 */
+  stepHistory?: TerminalStepHistoryEntry[];
+  /** 轻绑定属性：完成该素材派生的 24h 小步卡时，加点落到此属性（未绑定则归「勇气」） */
   attribute?: AttributeId;
   /** 可选关联的 arcana（同伴）id */
   arcanaId?: string;
   status: WishStatus;
-  /** 子愿望来源：手动输入 / AI 拆分 */
+  /** 小步骤来源：手动输入 / AI 拆分 */
   source: 'manual' | 'ai';
   createdAt: Date;
   archivedAt?: Date;
@@ -359,7 +374,7 @@ export interface Settings {
   // 默认 true；置为 false 时 push/pull 会跳过这两张表（本地依然完整保留）
   syncConfidantsToCloud?: boolean;
   /**
-   * 云同步：是否将治疗终端「愿望清单」(wishes) 上传到云端。
+   * 云同步：是否将治疗终端「启动素材库」(wishes) 上传到云端。
    * F3 opt-in：默认 undefined / false = 不上云（仅存本地）；仅当用户显式勾选才 push/pull。
    */
   syncWishesToCloud?: boolean;
@@ -528,7 +543,7 @@ export interface CallingCard {
   ledgerWritten?: boolean;
 
   /**
-   * F3 治疗终端任务标记。存在即表示这是「短路决策」落成的 24h 限时任务，
+   * F3 治疗终端小步卡标记。存在即表示这是「短路决策」生成的 24h 当前小步，
    * 与普通宣告卡区分：不占 pinned、被 sweepCallingCards 跳过（完成由用户手动
    * 「我做到了」触发 completeTerminalTask，不靠日期到期自动归档）。
    */
@@ -537,7 +552,7 @@ export interface CallingCard {
     sourceId: string;
     /** 完成奖励落点属性；缺省 → 归「勇气」(guts) */
     attribute?: AttributeId;
-    /** 叙事用的终极目标标题（wish 来源为父终极目标；todo 来源可空） */
+    /** 叙事用的父级素材标题（wish 来源为父级素材；todo 来源可空） */
     goalTitle?: string;
     /** 起算 / 24h 到期时间（ISO） */
     startedAt: string;
@@ -557,6 +572,16 @@ export interface TerminalClearPayload {
   rewardPoints: number;
   /** 是否解锁了一次发弹幕机会 */
   danmakuGranted: boolean;
+  /** 同一目标在本次会话内连续完成的次数，用于短期压力的连击反馈 */
+  comboCount?: number;
+  /** 同一父目标下还有排队的小步骤时，可从结算屏直接接下一击 */
+  nextComboTask?: {
+    stepTitle: string;
+    sourceKind: 'wish';
+    sourceId: string;
+    attribute?: AttributeId;
+    goalTitle?: string;
+  };
 }
 
 // 本周目标
