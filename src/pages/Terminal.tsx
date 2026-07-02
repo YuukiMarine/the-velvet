@@ -29,7 +29,7 @@ import { TerminalRoom } from '@/components/terminal/TerminalRoom';
 import { TreasuryThief, TreasuryTrigger } from '@/components/terminal/TreasuryThief';
 import { TreasuryBoard, TreasuryTriggerBoard } from '@/components/terminal/TreasuryBoard';
 import { TreasuryTV, TreasuryTriggerTV } from '@/components/terminal/TreasuryTV';
-import { MONO } from '@/components/terminal/boardKit';
+import { P3DanmakuBar } from '@/components/terminal/p3Kit';
 import type { TreasuryVM } from '@/components/terminal/TreasuryThief';
 import { MicroBurst } from '@/components/terminal/MicroBurst';
 import { GoalArc } from '@/components/terminal/GoalArc';
@@ -739,10 +739,23 @@ export const Terminal = () => {
           onBack={() => setCurrentPage('dashboard')}
         >
           <div className="dark relative">
-            {/* 漂浮弹幕（房里其他人的声音；氛围层，置于内容之下） */}
-            <DanmakuField messages={danmakuPool} />
+            {/* 房里其他人的声音：board = 底部弹幕栏（P3R 设计稿），其余频道 = 漂浮弹幕氛围层 */}
             {ch === 'board' ? (
-              <div className="mb-5 text-[13px] leading-relaxed" style={{ fontFamily: MONO, color: '#bcd6f5' }}>» {skin.velvet}</div>
+              <P3DanmakuBar messages={danmakuPool} bold={bold} />
+            ) : (
+              <DanmakuField messages={danmakuPool} />
+            )}
+            {ch === 'board' ? (
+              <div className="mb-6">
+                <div className="flex items-start gap-2.5">
+                  <span aria-hidden className="mt-[5px] h-4 w-1.5 shrink-0" style={{ background: '#2fd2ff' }} />
+                  <p className="text-[15px] font-semibold leading-relaxed text-white">{skin.velvet}</p>
+                </div>
+                <div className="mt-3 flex items-center gap-2" aria-hidden>
+                  <span className="h-px flex-1 bg-white/40" />
+                  <span className="h-[3px] w-6 bg-white/85" />
+                </div>
+              </div>
             ) : ch === 'tv' ? (
               null
             ) : (

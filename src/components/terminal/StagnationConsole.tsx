@@ -12,6 +12,7 @@ import { useAppStore } from '@/store';
 import { minimalStep, terminalChannel, terminalSkin } from '@/utils/terminalSkin';
 import { useBoldness } from '@/utils/boldness';
 import { zClass } from '@/utils/zIndex';
+import { P3, P3_WATER, P3DotGrid } from './p3Kit';
 import type { AttributeId, TerminalProblemKind, Todo, Wish } from '@/types';
 
 type StagnationMode = 'long_term' | 'pressure' | 'lost' | 'exhausted';
@@ -188,37 +189,39 @@ const STAGNATION_STYLES: Record<StagnationStyleKey, StagnationStyle> = {
       transition: { type: 'spring', stiffness: 260, damping: 28 },
     },
   },
+  // P3R 亮蓝水面（对照 artifacts/p3-blue-terminal-reference-v4.png）：白面板 + 深蓝墨字 + 青信号色。
+  // 深蓝字/藏青底经 color-mix 由 --color-primary 派生（Tailwind 任意值下划线代空格），粉/自定义随主色变调。
   p3: {
     key: 'p3',
     pageName: 'TRACE READY',
-    heroShell: 'border border-[#00d8ff]/70 bg-[#001c7a] text-[#f6fbff] shadow-[6px_7px_0_rgba(0,0,0,.45)]',
-    heroBackdrop: 'bg-[#0057ff]/15',
-    heroTitle: 'font-black italic text-[#f6fbff] [font-family:Arial_Narrow,Roboto_Condensed,Noto_Sans_SC,sans-serif]',
-    heroLead: 'max-w-xl border-l-4 border-[#ff3daa] bg-[#05070d]/70 px-3 py-2 text-sm font-bold leading-relaxed text-[#dcecff]',
-    heroVisual: 'border border-[#00d8ff]/65 bg-[#05070d]/78 text-[#f6fbff] shadow-[5px_6px_0_rgba(0,0,0,.35)]',
-    metric: 'border-l-2 border-[#00d8ff] bg-[#05070d]/78 px-3 py-2 text-[#f6fbff]',
-    metricLabel: 'text-[9px] font-black uppercase tracking-[0.16em] text-[#00d8ff]',
-    metricValue: 'mt-1 truncate text-sm font-black text-[#f6fbff]',
-    primaryButton: 'min-h-[52px] border border-[#f6fbff] bg-[#f6fbff] px-5 py-2.5 text-sm font-black italic text-[#05070d] shadow-[inset_0_-4px_0_#00d8ff,4px_4px_0_rgba(0,0,0,.45)] transition hover:translate-x-0.5 hover:shadow-[inset_0_-6px_0_#00d8ff,6px_4px_0_rgba(0,0,0,.45)] active:translate-x-1 disabled:opacity-45',
-    ghostButton: 'min-h-[42px] border border-[#00d8ff]/70 bg-[#05070d]/60 px-4 py-2 text-xs font-black italic text-[#bdefff] transition hover:border-[#ff3daa] hover:text-white',
-    dialogPanel: 'border border-[#00d8ff]/70 bg-[#001c7a] text-[#f6fbff] shadow-[8px_8px_0_rgba(0,0,0,.55)]',
-    dialogHeader: 'border-b border-[#00d8ff]/35 bg-[#05070d]/86 text-[#f6fbff]',
-    inputWrap: 'border border-[#00d8ff]/45 bg-[#05070d]/70 px-3 py-3 text-[#f6fbff]',
-    input: 'w-full resize-none border border-[#00d8ff]/35 bg-[#001141]/75 px-3 py-2.5 text-[16px] leading-relaxed text-[#f6fbff] outline-none placeholder:text-[#8da0b8] focus:border-[#ff3daa]',
-    protocolRow: 'border border-[#00d8ff]/40 bg-[#05070d]/70 px-3 py-2 text-[#dcecff]',
-    selectedMemory: 'border border-[#f6fbff] bg-[#f6fbff] text-[#05070d] shadow-[inset_0_-3px_0_#ff3daa]',
-    idleMemory: 'border border-[#00d8ff]/35 bg-[#05070d]/60 text-[#dcecff]',
-    notePanel: 'border border-[#00d8ff]/35 bg-[#05070d]/70 px-3 py-2 text-xs leading-relaxed text-[#8da0b8]',
-    diagnosisPanel: 'border border-[#00d8ff]/50 bg-[#05070d]/72 px-4 py-4 text-[#f6fbff]',
-    sourcePanel: 'border border-[#f6fbff]/15 bg-[#05070d]/70 px-4 py-3 text-[#dcecff]',
-    actionPanel: 'border border-[#00d8ff]/70 bg-[#f6fbff] px-4 py-5 text-[#05070d] shadow-[inset_0_-6px_0_#00d8ff,6px_7px_0_rgba(0,0,0,.45)]',
-    actionText: 'max-w-full break-words text-[24px] font-black italic leading-tight text-[#05070d] [overflow-wrap:anywhere] [word-break:break-word] sm:text-[30px] [font-family:Arial_Narrow,Roboto_Condensed,Noto_Sans_SC,sans-serif]',
-    badge: 'border border-[#00d8ff] bg-[#05070d] px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.16em] text-[#00d8ff]',
-    clip: 'polygon(0 0, 100% 0, 97% 100%, 0 100%)',
-    actionClip: 'polygon(0 0, 100% 0, 96% 100%, 2% 100%)',
-    backdropPattern: 'linear-gradient(120deg, rgba(0,216,255,.16) 0 1px, transparent 1px 22px)',
-    heroPattern: 'linear-gradient(135deg, rgba(246,251,255,.12) 0 18%, transparent 18%), linear-gradient(110deg, transparent 0 62%, rgba(255,61,170,.18) 62% 64%, transparent 64%)',
-    actionPattern: 'linear-gradient(90deg, rgba(0,216,255,.2), transparent 46%, rgba(255,61,170,.2))',
+    heroShell: 'bg-[#f7fbff] text-[color-mix(in_srgb,var(--color-primary)_45%,#101b8e)] shadow-[0_18px_44px_rgba(7,40,120,.22)]',
+    heroBackdrop: 'bg-transparent',
+    heroTitle: 'font-black text-[color-mix(in_srgb,var(--color-primary)_45%,#101b8e)]',
+    heroLead: 'max-w-xl px-0 py-0 text-sm font-bold leading-relaxed text-[color-mix(in_srgb,var(--color-primary)_32%,#46628f)]',
+    heroVisual: 'bg-white text-[color-mix(in_srgb,var(--color-primary)_45%,#101b8e)] shadow-[0_10px_28px_rgba(10,50,140,.16)]',
+    metric: 'border border-[#cfe4fb] bg-white px-3 py-2 text-[color-mix(in_srgb,var(--color-primary)_45%,#101b8e)]',
+    metricLabel: 'text-[9px] font-black uppercase tracking-[0.16em] text-[color-mix(in_srgb,var(--color-primary)_78%,#0b6cf0)]',
+    metricValue: 'mt-1 truncate text-sm font-black text-[color-mix(in_srgb,var(--color-primary)_45%,#101b8e)]',
+    primaryButton: 'min-h-[52px] bg-[color-mix(in_srgb,var(--color-primary)_30%,#061c50)] px-6 py-2.5 text-sm font-black tracking-wide text-white shadow-[0_10px_24px_rgba(6,28,80,.35)] transition hover:brightness-110 active:translate-y-0.5 disabled:opacity-45',
+    ghostButton: 'min-h-[42px] border-2 border-[#a9cbf2] bg-white px-4 py-2 text-xs font-black text-[color-mix(in_srgb,var(--color-primary)_50%,#1d4ab0)] transition hover:border-[#2fd2ff]',
+    dialogPanel: 'border-2 border-[#bcd9f8] bg-[#f2f9ff] text-[color-mix(in_srgb,var(--color-primary)_45%,#101b8e)] shadow-[0_26px_64px_rgba(6,30,90,.4)]',
+    dialogHeader: 'border-b-2 border-[#cfe4fb] bg-white/85 text-[color-mix(in_srgb,var(--color-primary)_45%,#101b8e)]',
+    inputWrap: 'border border-[#cfe4fb] bg-white px-3 py-3 text-[color-mix(in_srgb,var(--color-primary)_45%,#101b8e)] shadow-[0_10px_24px_rgba(10,50,140,.1)]',
+    input: 'w-full resize-none border-2 border-[#cfe4fb] bg-[#f4faff] px-3 py-2.5 text-[16px] font-bold leading-relaxed text-[color-mix(in_srgb,var(--color-primary)_40%,#0e2a80)] outline-none placeholder:text-[#8fb1dc] focus:border-[#2fd2ff]',
+    protocolRow: 'border border-[#cfe4fb] bg-white px-3 py-2 text-[color-mix(in_srgb,var(--color-primary)_45%,#101b8e)]',
+    selectedMemory: 'bg-[color-mix(in_srgb,var(--color-primary)_30%,#061c50)] text-white shadow-[0_8px_18px_rgba(6,28,80,.35)]',
+    idleMemory: 'border border-[#bcd9f8] bg-white text-[color-mix(in_srgb,var(--color-primary)_50%,#1d4ab0)]',
+    notePanel: 'border border-[#bcd9f8] bg-white/90 px-3 py-2 text-xs font-bold leading-relaxed text-[color-mix(in_srgb,var(--color-primary)_35%,#3d63b8)]',
+    diagnosisPanel: 'border-2 border-[#cfe4fb] bg-white px-4 py-4 text-[color-mix(in_srgb,var(--color-primary)_45%,#101b8e)] shadow-[0_10px_28px_rgba(10,50,140,.14)]',
+    sourcePanel: 'border border-[#cfe4fb] bg-[#eaf4ff] px-4 py-3 text-[color-mix(in_srgb,var(--color-primary)_40%,#25509f)]',
+    actionPanel: 'bg-[#f7fbff] px-4 py-5 text-[color-mix(in_srgb,var(--color-primary)_40%,#0e2a80)] shadow-[0_18px_44px_rgba(7,40,120,.28)]',
+    actionText: 'max-w-full break-words text-[24px] font-black leading-tight text-[color-mix(in_srgb,var(--color-primary)_40%,#0e2a80)] [overflow-wrap:anywhere] [word-break:break-word] sm:text-[30px]',
+    badge: 'bg-[#2fd2ff] px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.16em] text-[color-mix(in_srgb,var(--color-primary)_30%,#0b2d7c)]',
+    clip: 'polygon(0 2.5%, 100% 0, 97.5% 100%, 0 100%)',
+    actionClip: 'polygon(0 3%, 100% 0, 97% 100%, 0 100%)',
+    backdropPattern: 'radial-gradient(circle, rgba(255,255,255,.4) 1.2px, transparent 1.7px)',
+    heroPattern: 'linear-gradient(115deg, rgba(47,210,255,.1) 0 20%, transparent 20%)',
+    actionPattern: 'linear-gradient(90deg, rgba(47,210,255,.14), transparent 42%)',
     lockLabel: '协议运行中',
     readyLabel: '协议待接入',
     timeReady: '待接入',
@@ -994,7 +997,7 @@ export const StagnationConsole = ({ onOpenMemory }: { onOpenMemory: () => void }
         <motion.div key="generating" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className={`flex min-h-[16rem] flex-col items-center justify-center gap-3 text-center ${visual.notePanel}`} style={{ clipPath: visual.key === 'p4' ? undefined : visual.clip }}>
           <motion.div
             aria-hidden
-            className={visual.key === 'p5' ? 'h-16 w-16 border-[4px] border-[#f7f4ea] bg-[#050505]' : visual.key === 'p4' ? 'h-16 w-16 rounded-full border-[4px] border-[#ffe100] bg-[#20bff2]' : 'h-16 w-16 border border-[#00d8ff] bg-[#001141]/75'}
+            className={visual.key === 'p5' ? 'h-16 w-16 border-[4px] border-[#f7f4ea] bg-[#050505]' : visual.key === 'p4' ? 'h-16 w-16 rounded-full border-[4px] border-[#ffe100] bg-[#20bff2]' : 'h-16 w-16 border-2 border-[#2fd2ff] bg-[#dff2ff]'}
             animate={bold ? { rotate: [0, 90, 180, 270, 360], borderRadius: ['16%', '50%', '16%'] } : { opacity: 1 }}
             transition={bold ? { duration: 1.8, repeat: Infinity, ease: 'easeInOut' } : undefined}
           />
@@ -1132,6 +1135,111 @@ export const StagnationConsole = ({ onOpenMemory }: { onOpenMemory: () => void }
               </div>
             </div>
           </motion.button>
+        </section>
+        {modal}
+      </>
+    );
+  }
+
+  // 蓝 · P3R 亮蓝水面（对照设计稿 v4：白斜面板 + 水面斜切板 + STASIS/CLEAR/FLOW + 藏青 CTA）
+  if (channel === 'board') {
+    const [signalA, signalB] = heroCopy.signal.split(' ');
+    return (
+      <>
+        <section className="relative mb-6 mt-1">
+          <div className="relative">
+            {/* 右侧斜切水面板（素材取自设计稿本体，自带左上白雾与点阵） */}
+            <div
+              aria-hidden
+              className="pointer-events-none absolute -right-4 -top-5 bottom-10 w-[62%] overflow-hidden sm:-right-7"
+              style={{ clipPath: 'polygon(30% 0, 100% 0, 100% 74%, 0 100%)' }}
+            >
+              <img src={P3_WATER} alt="" className="h-full w-full object-cover" />
+              <P3DotGrid className="right-2 top-14 h-28 w-24" size={13} dot={1.2} opacity={0.6} />
+            </div>
+
+            {/* 白色主面板 */}
+            <div
+              className="relative z-10 w-[88%] px-6 pb-9 pt-7 sm:px-8"
+              style={{
+                background: P3.panel,
+                clipPath: 'polygon(0 4.5%, 96% 0, 84% 100%, 0 97%)',
+                boxShadow: '0 18px 44px rgba(7,40,120,.2)',
+              }}
+            >
+              <div className="text-[15px] font-black uppercase tracking-[0.34em]">
+                <span style={{ color: P3.blue }}>{signalA}</span>{' '}
+                <span style={{ color: P3.accent }}>{signalB}</span>
+              </div>
+              <div aria-hidden className="mt-3 flex gap-[5px]">
+                {Array.from({ length: 7 }).map((_, i) => (
+                  <span key={i} className="h-2.5 w-[3px]" style={{ background: P3.blue, opacity: 0.45 }} />
+                ))}
+              </div>
+              <h2
+                className="mt-4 max-w-[8ch] text-[3.2rem] font-black leading-[1.08] sm:text-[3.9rem]"
+                style={{ color: P3.ink }}
+              >
+                {heroCopy.title}
+              </h2>
+              <div className="mt-6 flex max-w-[19rem] items-center gap-3">
+                <span aria-hidden className="text-xl leading-none" style={{ color: P3.accent }}>✦</span>
+                <span aria-hidden className="relative h-[3px] flex-1" style={{ background: P3.ink }}>
+                  <span className="absolute right-[6%] top-1/2 h-[7px] w-10 -translate-y-1/2" style={{ background: P3.accent }} />
+                </span>
+              </div>
+              <div className="mt-4 truncate text-[11px] font-black tracking-wide" style={{ color: P3.inkDim }}>
+                {heroStatus}
+              </div>
+            </div>
+
+            {/* 右缘 STASIS / CLEAR / FLOW 信号列 */}
+            <div aria-hidden className="pointer-events-none absolute bottom-2 right-1 z-10 flex flex-col items-end gap-5 sm:right-2">
+              <span className="h-[4px] w-7" style={{ background: P3.accent }} />
+              {['STASIS', 'CLEAR', 'FLOW'].map((w) => (
+                <span key={w} className="text-[13px] font-black tracking-[0.5em] text-white [text-shadow:0_1px_10px_rgba(7,40,120,.35)]">
+                  {w}
+                </span>
+              ))}
+            </div>
+            <span aria-hidden className="pointer-events-none absolute bottom-3 right-0 z-10 h-[8.5rem] w-px bg-white/70" />
+          </div>
+
+          {/* CTA：藏青斜切条 */}
+          <motion.button
+            type="button"
+            onClick={openQuickDecision}
+            whileTap={{ scale: 0.985 }}
+            className="relative z-10 mt-4 flex w-full items-center gap-4 px-4 py-4 pr-6 text-left"
+            style={{
+              background: P3.deep,
+              clipPath: 'polygon(1.8% 0, 100% 0, 98.2% 100%, 0 100%)',
+              boxShadow: '0 14px 32px rgba(6,28,80,.35)',
+            }}
+          >
+            <span
+              aria-hidden
+              className="flex h-12 w-12 shrink-0 items-center justify-center text-xl text-white sm:h-14 sm:w-14 sm:text-2xl"
+              style={{ background: P3.deepSoft }}
+            >
+              ▶
+            </span>
+            <span className="min-w-0 flex-1 text-center text-[1.35rem] font-black tracking-wide text-white sm:text-3xl">
+              {activeTask ? '查看当前小步' : heroCopy.cta}
+            </span>
+            <span aria-hidden className="text-2xl font-black text-white">→</span>
+            <span aria-hidden className="absolute bottom-0 left-[5%] h-[3px] w-[36%]" style={{ background: P3.accent }} />
+          </motion.button>
+
+          <div className="mt-3 flex justify-end">
+            <button
+              type="button"
+              onClick={openManualIntake}
+              className="text-[12px] font-bold text-white/90 underline underline-offset-4 hover:text-white"
+            >
+              我自己说一句
+            </button>
+          </div>
         </section>
         {modal}
       </>
