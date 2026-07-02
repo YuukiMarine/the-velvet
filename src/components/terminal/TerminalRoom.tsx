@@ -12,7 +12,7 @@ import type { ReactNode } from 'react';
 import { motion } from 'motion/react';
 import type { TerminalChannel } from '@/utils/terminalSkin';
 import { Halftone, SpeedLines, StarBurst, heavy } from './thiefKit';
-import { Scanlines, MONO } from './boardKit';
+import { P3, P3_WATER_WIDE, P3DotGrid, P3GhostWord } from './p3Kit';
 
 interface Props {
   channel: TerminalChannel;
@@ -35,12 +35,32 @@ const ThiefRoomBg = () => (
   </div>
 );
 
-/** 讨论板桌面背景：深 CRT 底 + 点阵桌面 + 扫描线 + 暗角 */
+/** 讨论板房间背景（P3R 亮蓝水面）：顶部强蓝渐变 → 底部浅蓝水面，幽灵 TRACE + 白点阵 + 斜向光带 */
 const BoardRoomBg = () => (
-  <div aria-hidden className="pointer-events-none fixed inset-0 z-0 overflow-hidden bg-[#070b11] md:left-60">
-    <div className="absolute inset-0" style={{ backgroundImage: 'radial-gradient(color-mix(in srgb, var(--color-primary) 24%, transparent) 1px, transparent 1px)', backgroundSize: '22px 22px', opacity: 0.45 }} />
-    <Scanlines opacity={0.7} />
-    <div className="absolute inset-0" style={{ background: 'radial-gradient(circle at 50% 38%, transparent 52%, rgba(0,0,0,0.74) 100%)' }} />
+  <div
+    aria-hidden
+    className="pointer-events-none fixed inset-0 z-0 overflow-hidden md:left-60"
+    style={{ background: `linear-gradient(180deg, ${P3.hi} 0%, ${P3.mid} 52%, ${P3.pale} 100%)` }}
+  >
+    {/* 斜向白色光带（设计稿 hero 后方那道亮面） */}
+    <div className="absolute -left-[12%] top-[10%] h-[26%] w-[135%] bg-white/10" style={{ clipPath: 'polygon(0 44%, 100% 0, 100% 56%, 0 100%)' }} />
+    {/* 幽灵 TRACE 水印（顶部，被 hero 面板压住一半） */}
+    <P3GhostWord word="TRACE" className="-left-[3%] top-[10%] text-[8.5rem]" style={{ opacity: 0.15 }} />
+    {/* 白点阵 */}
+    <P3DotGrid className="right-[5%] top-[15%] h-24 w-28" opacity={0.55} />
+    <P3DotGrid className="left-[4%] bottom-[30%] h-16 w-20" size={12} dot={1.1} opacity={0.35} />
+    {/* 底部水面（素材取自设计稿本体，向上渐隐融入背景） */}
+    <div className="absolute inset-x-0 bottom-0 h-[30%]">
+      <img
+        src={P3_WATER_WIDE}
+        alt=""
+        className="h-full w-full object-cover"
+        style={{
+          maskImage: 'linear-gradient(180deg, transparent 0%, #000 62%)',
+          WebkitMaskImage: 'linear-gradient(180deg, transparent 0%, #000 62%)',
+        }}
+      />
+    </div>
   </div>
 );
 
@@ -78,23 +98,25 @@ export const TerminalRoom = ({ channel, title, channelLabel, onBack, children }:
           <motion.h1
             initial={{ opacity: 0, x: -8 }}
             animate={{ opacity: 1, x: 0 }}
-            className={board || tv ? 'min-w-0 truncate text-lg font-bold tracking-wide text-white' : 'text-xl font-black tracking-wide'}
-            style={thief ? heavy(2.5) : board ? { fontFamily: MONO } : { color: '#fff' }}
+            className={board ? 'min-w-0 truncate text-xl font-black tracking-wide text-white' : tv ? 'min-w-0 truncate text-lg font-bold tracking-wide text-white' : 'text-xl font-black tracking-wide'}
+            style={thief ? heavy(2.5) : { color: '#fff' }}
           >
-            {board ? `▓ ${title}` : tv ? `▶ ${title}` : title}
+            {board || tv ? `▶ ${title}` : title}
           </motion.h1>
           {tv ? (
             <span className="ml-auto flex shrink-0 items-center gap-1.5 text-[11px] font-black tracking-widest text-white/90">
               <span className="inline-flex h-2 w-2 animate-pulse rounded-full bg-[#ff2e2e]" style={{ boxShadow: '0 0 6px #ff2e2e' }} aria-hidden />
               LIVE
             </span>
+          ) : board ? (
+            <span className="ml-auto flex shrink-0 items-center gap-2 text-[12px] font-black tracking-[0.3em] text-white">
+              <span className="inline-flex h-2.5 w-2.5 animate-pulse rounded-full" style={{ background: P3.accent, boxShadow: '0 0 8px rgba(47,210,255,.9)' }} aria-hidden />
+              LIVE
+            </span>
           ) : (
-            <span
-              className={`ml-auto flex shrink-0 items-center gap-1.5 text-[11px] font-bold tracking-widest ${board ? 'bk-fg' : 'text-primary'}`}
-              style={board ? { fontFamily: MONO } : undefined}
-            >
-              <span className={`inline-flex h-2 w-2 animate-pulse rounded-full ${board ? 'bk-bg' : 'bg-primary'}`} aria-hidden />
-              {board ? '在线' : channelLabel}
+            <span className="ml-auto flex shrink-0 items-center gap-1.5 text-[11px] font-bold tracking-widest text-primary">
+              <span className="inline-flex h-2 w-2 animate-pulse rounded-full bg-primary" aria-hidden />
+              {channelLabel}
             </span>
           )}
         </div>

@@ -12,6 +12,7 @@ import { useModalA11y } from '@/utils/useModalA11y';
 import { springSoft } from '@/utils/motion';
 import { MicroBurst } from './MicroBurst';
 import { BevelButton, MONO, PANEL, INK, INK_DIM } from './boardKit';
+import { P3 } from './p3Kit';
 import type { TreasuryVM } from './TreasuryThief';
 import type { Wish } from '@/types';
 
@@ -21,23 +22,56 @@ const bar = (done: number, total: number) => {
 };
 const threadKind = (goal: Wish) => (goal.kind === 'pressure' ? '短期压力' : '长期愿望');
 
-// 正文召唤入口（摘要面板）
-export const TreasuryTriggerBoard = ({ goalsCount, done, total, onOpen }: { goalsCount: number; done: number; total: number; onOpen: () => void }) => (
-  <button
-    type="button"
-    onClick={onOpen}
-    aria-label="打开启动帖库"
-    style={{ fontFamily: MONO, background: PANEL, border: '2px solid', borderColor: 'color-mix(in srgb, var(--color-primary) 70%, #fff) var(--color-primary) var(--color-primary) color-mix(in srgb, var(--color-primary) 70%, #fff)', boxShadow: '4px 5px 0 rgba(0,0,0,0.5)' }}
-    className="mt-5 flex w-full items-center gap-2 px-3 py-2.5 text-left"
-  >
-    <span className="text-base bk-fg" aria-hidden>▣</span>
-    <span className="min-w-0 flex-1">
-      <span className="block text-sm font-bold" style={{ color: INK }}>启动帖库</span>
-      <span className="block text-[11px]" style={{ color: INK_DIM }}>{goalsCount} 个主题 · 完成 {done} / {total} 小步</span>
-    </span>
-    <span className="text-xs font-bold tracking-widest bk-fg">打开 »</span>
-  </button>
-);
+// 正文召唤入口「我的帖子」白卡（P3R 设计稿：图标块 + CH 04 章 + 分段进度 + 打开 →）
+export const TreasuryTriggerBoard = ({ goalsCount, done, total, onOpen }: { goalsCount: number; done: number; total: number; onOpen: () => void }) => {
+  const SEGS = 5;
+  const filled = total > 0 ? Math.min(SEGS, Math.max(done > 0 ? 1 : 0, Math.round((done / total) * SEGS))) : 0;
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      aria-label="打开启动帖库"
+      className="relative mt-6 block w-full px-5 pb-5 pt-6 text-left transition hover:brightness-[1.02] active:scale-[.995] sm:px-6"
+      style={{
+        background: P3.panel,
+        clipPath: 'polygon(0 10%, 4% 0, 100% 0, 100% 88%, 96.5% 100%, 0 100%)',
+        boxShadow: '0 16px 38px rgba(7,40,120,.24)',
+      }}
+    >
+      <div className="flex items-center gap-3.5">
+        <span aria-hidden className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-white" style={{ background: P3.blue }}>
+          <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round">
+            <rect x="4" y="4" width="16" height="16" rx="2" />
+            <path d="M8 9h8M8 12.5h8M8 16h5" />
+          </svg>
+        </span>
+        <span className="min-w-0 flex-1 truncate text-[1.55rem] font-black leading-tight" style={{ color: P3.ink }}>我的帖子</span>
+        <span
+          aria-hidden
+          className="shrink-0 px-2.5 py-1 text-[11px] font-black tracking-[0.12em]"
+          style={{ background: P3.accent, color: P3.deep, clipPath: 'polygon(9% 0, 100% 0, 91% 100%, 0 100%)' }}
+        >
+          CH 04
+        </span>
+      </div>
+      <div className="mt-4 text-sm font-bold" style={{ color: P3.inkDim }}>
+        <span className="font-black" style={{ color: P3.blue }}>{goalsCount}</span> 档节目 · 完成{' '}
+        <span className="font-black" style={{ color: P3.blue }}>{done}</span>
+        <span className="font-black" style={{ color: P3.blue }}> / {total}</span> 小步
+      </div>
+      <div className="mt-3 flex items-center gap-4">
+        <div className="flex flex-1 gap-1.5" aria-hidden>
+          {Array.from({ length: SEGS }).map((_, i) => (
+            <span key={i} className="h-2.5 flex-1" style={{ background: i < filled ? P3.blue : 'color-mix(in srgb, var(--color-primary) 14%, #ddedfc)' }} />
+          ))}
+        </div>
+        <span className="flex shrink-0 items-center gap-1.5 text-lg font-black" style={{ color: P3.blue }}>
+          打开 <span aria-hidden>→</span>
+        </span>
+      </div>
+    </button>
+  );
+};
 
 // 空状态
 export const BoardEmpty = ({ onCreate }: { onCreate: () => void }) => (
