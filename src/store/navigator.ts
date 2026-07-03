@@ -40,7 +40,23 @@ export interface NavigatorMessage {
   /** 执行成功后的回执文案（渲染在卡片下方的签章行） */
   receipt?: string;
   createdAt: number;
+  /** 归属会话：上拉加载的历史消息与今日会话共存于 messages，凭它区分（上下文只用今日的） */
+  sessionId?: string;
 }
+
+/** 气泡时间戳（渲染层 + 历史上下文标注共用）：今天 HH:mm / 昨天 HH:mm / M月D日 HH:mm */
+export function formatBubbleTime(ts: number): string {
+  const d = new Date(ts);
+  const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  const today0 = new Date();
+  today0.setHours(0, 0, 0, 0);
+  if (ts >= today0.getTime()) return hm;
+  if (ts >= today0.getTime() - 86400_000) return `昨天 ${hm}`;
+  return `${d.getMonth() + 1}月${d.getDate()}日 ${hm}`;
+}
+
+/** 相邻消息隔 >5 分钟 → 显示新时间戳（UI 与 LLM 历史标注同一规则） */
+export const TIME_GAP_MS = 5 * 60 * 1000;
 
 interface NavigatorState {
   isOpen: boolean;
@@ -49,6 +65,12 @@ interface NavigatorState {
   /** 当前会话 id（hydrate 后非空） */
   sessionId: string | null;
   messages: NavigatorMessage[];
+  /** 已加载历史的最早日期（上拉分页游标；初始=今日） */
+  oldestLoadedDate: string;
+  /** 是否还有更早的历史可拉（7 天保存期内） */
+  hasOlder: boolean;
+  /** 上拉加载更早一天的对话（当前人格线；返回是否加载到内容） */
+  loadOlder: () => Promise<boolean>;
   /** 自定义人格（内置在常量里，不入表） */
   presets: NavigatorPreset[];
   /** 仲裁器相位（UI 据此渲染打字指示等） */
@@ -158,6 +180,7 @@ const fromRow = (r: NavigatorMessageRow): NavigatorMessage => ({
   cardStatus: r.cardStatus,
   receipt: r.receipt,
   createdAt: r.createdAt,
+  sessionId: r.sessionId,
 });
 
 export const useNavigatorStore = create<NavigatorState>((set, get) => {
@@ -204,10 +227,11 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
         const rows = await db.navigatorMessages.where('sessionId').equals(sessionId).sortBy('createdAt');
         swallowed = existing?.swallowed ?? [];
         // hydrate 期间产生的内存消息（如无 Key 秒开就发话）追加在库存消息之后并补写
-        const inMemoryNew = pendingWrites.slice();
+        const inMemoryNew = pendingWrites.slice().map((m) => ({ ...m, sessionId }));
         pendingWrites = [];
-        set({ sessionId, dateKey: today, messages: [...rows.map(fromRow), ...inMemoryNew] });
+        set({ sessionId, dateKey: today, messages: [...rows.map(fromRow), ...inMemoryNew], oldestLoadedDate: today, hasOlder: true });
         for (const m of inMemoryNew) persistMessage(m);
+        void purgeExpired(today);
       } catch (e) {
         console.warn('[navigator] 会话挂载失败（本次退化为内存会话）', e);
       } finally {
@@ -217,9 +241,25 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
     return hydrating;
   };
 
+  /** 7 天保存期：更早会话的消息删除（会话行与摘要保留——记忆已提炼，原文可弃） */
+  const purgeExpired = async (today: string) => {
+    try {
+      const cutoff = new Date(Date.parse(today) - 7 * 86400_000);
+      const cutoffKey = toLocalDateKey(cutoff);
+      const old = (await db.navigatorSessions.toArray()).filter((s) => s.dateKey < cutoffKey);
+      for (const s of old) await db.navigatorMessages.where('sessionId').equals(s.id).delete();
+    } catch { /* 静默 */ }
+  };
+
+  /** 今日会话的消息（上拉加载的历史消息只供浏览，绝不进上下文/收口批） */
+  const currentSessionMessages = (): NavigatorMessage[] => {
+    const sid = get().sessionId;
+    return get().messages.filter((m) => !sid || !m.sessionId || m.sessionId === sid);
+  };
+
   /** 待收口批 = 消息尾部"最后一条非用户消息之后"的连续用户消息（§3.7 可推导性） */
   const pendingBatch = (): string => {
-    const ms = get().messages;
+    const ms = currentSessionMessages();
     const batch: string[] = [];
     for (let i = ms.length - 1; i >= 0; i--) {
       if (ms[i].role === 'user') batch.unshift(ms[i].text ?? '');
@@ -231,20 +271,21 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
   /**
    * 历史投影（不含待收口批）。卡片**不进 assistant 历史**——模型会模仿自己
    * "说过"的折叠标记、在 reply 里手画假卡；卡片状态改走动态块的数据区（cardsDigest）。
+   * createdAt 随行传出：intent 层按「隔 >5 分钟标时间」给模型时间感（与 UI 时间戳同规则）。
    */
   const historyForTurn = (): TurnHistoryItem[] => {
-    const ms = get().messages;
+    const ms = currentSessionMessages();
     let end = ms.length;
     while (end > 0 && ms[end - 1].role === 'user') end--;
     return ms.slice(0, end)
       .filter((m) => m.role !== 'card' && m.role !== 'summary')
-      .map((m): TurnHistoryItem => ({ role: m.role === 'user' ? 'user' : 'cat', text: m.text ?? '' }))
+      .map((m): TurnHistoryItem => ({ role: m.role === 'user' ? 'user' : 'cat', text: m.text ?? '', createdAt: m.createdAt }))
       .filter((h) => h.text);
   };
 
   /** 本会话卡片实录（进动态块数据区）：AI 提议的与用户手建的一视同仁，模型据此读卡 */
   const cardsDigest = (): string[] =>
-    get().messages
+    currentSessionMessages()
       .filter((m) => m.role === 'card' && m.draft)
       .slice(-10)
       .map((m) => {
@@ -324,15 +365,17 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
       const outcome = await maybeCompactLive(sid, rows);
       if (!outcome.summaryText) return;
       const removed = new Set(outcome.removedIds);
-      set((s) => ({
-        messages: [
-          {
-            id: uuidv4(), role: 'summary' as const, text: outcome.summaryText!,
-            createdAt: s.messages.find((m) => !removed.has(m.id))?.createdAt ?? Date.now(),
-          },
-          ...s.messages.filter((m) => !removed.has(m.id)),
-        ],
-      }));
+      set((s) => {
+        const firstRemovedIdx = s.messages.findIndex((m) => removed.has(m.id));
+        const insertAt = firstRemovedIdx < 0 ? 0
+          : s.messages.slice(0, firstRemovedIdx).filter((m) => !removed.has(m.id)).length;
+        const kept = s.messages.filter((m) => !removed.has(m.id));
+        const summaryMsg: NavigatorMessage = {
+          id: uuidv4(), role: 'summary', text: outcome.summaryText!, sessionId: sid,
+          createdAt: s.messages[firstRemovedIdx]?.createdAt ?? Date.now(),
+        };
+        return { messages: [...kept.slice(0, insertAt), summaryMsg, ...kept.slice(insertAt)] };
+      });
     } catch (e) {
       if (import.meta.env.DEV) console.warn('[navigator] 阈值泵失败', e);
     }
@@ -351,9 +394,33 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
     messages: [],
     presets: [],
     phase: 'idle',
+    oldestLoadedDate: toLocalDateKey(),
+    hasOlder: true,
 
     open: () => set({ isOpen: true }),
     close: () => set({ isOpen: false }),
+
+    loadOlder: async () => {
+      const { oldestLoadedDate, hasOlder } = get();
+      if (!hasOlder) return false;
+      const preset = get().activePreset();
+      const floorKey = toLocalDateKey(new Date(Date.now() - 7 * 86400_000));
+      try {
+        // 当前人格线里，比已加载最早日期更早、且在 7 天保存期内的最近一个会话
+        const older = (await db.navigatorSessions.toArray())
+          .filter((s) => s.presetId === preset.id && s.dateKey < oldestLoadedDate && s.dateKey >= floorKey)
+          .sort((a, b) => b.dateKey.localeCompare(a.dateKey))[0];
+        if (!older) { set({ hasOlder: false }); return false; }
+        const rows = await db.navigatorMessages.where('sessionId').equals(older.id).sortBy('createdAt');
+        set((s) => ({
+          oldestLoadedDate: older.dateKey,
+          messages: [...rows.map(fromRow), ...s.messages],
+        }));
+        return rows.length > 0;
+      } catch {
+        return false;
+      }
+    },
 
     activePreset: () => resolveNavigatorPreset(
       useAppStore.getState().settings.navigatorPresetId,
@@ -487,17 +554,17 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
     },
 
     pushCat: (text) => {
-      const m = msg({ role: 'cat', text });
+      const m = msg({ role: 'cat', text, sessionId: get().sessionId ?? undefined });
       set((s) => ({ messages: [...s.messages, m] }));
       persistMessage(m);
     },
     pushUser: (text) => {
-      const m = msg({ role: 'user', text });
+      const m = msg({ role: 'user', text, sessionId: get().sessionId ?? undefined });
       set((s) => ({ messages: [...s.messages, m] }));
       persistMessage(m);
     },
     pushCard: (draft) => {
-      const m = msg({ role: 'card', draft, cardStatus: 'pending' });
+      const m = msg({ role: 'card', draft, cardStatus: 'pending', sessionId: get().sessionId ?? undefined });
       set((s) => ({ messages: [...s.messages, m] }));
       persistMessage(m);
       return m.id;

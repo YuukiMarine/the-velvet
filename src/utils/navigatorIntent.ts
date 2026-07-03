@@ -33,6 +33,8 @@ export interface NavigatorTurnResult {
 export interface TurnHistoryItem {
   role: 'cat' | 'user';
   text: string;
+  /** 消息时间：隔 >5 分钟的消息会带 [HH:mm] 标注进上下文，给模型对话时距感 */
+  createdAt?: number;
 }
 
 // ── 内置默认人格（Batch3 presets 落地前的唯一人格） ──
@@ -53,6 +55,8 @@ actions 元素为下列四种之一：
 {"kind":"completeTodo","todoId":"待办清单里的 id","todoTitle":"任务名"}（用户说做完了某件今日待办；todoId 必须取自清单，没有匹配就不出）
 
 规则：
+- **只响应【最新消息】里的记录意图**：用户此刻在报告做了什么/要做什么/花了钱/求记录，才出卡。
+  闲聊、提问（问时间/问状态/问建议）一律空 actions——即使早前对话提过某件可记的事，最新消息没让你记就不要主动出卡。
 - 「帮我记一下/记上/安排一下」指的是最近对话里提到、且【待确认卡】里还没有的那件事；若那件事已有待确认卡，输出空 actions。
 - 一句话说了几件事就出几张卡（≤3）。信息足够就出卡；确实拿不准或信息不足才空。
 - 修改一张待确认卡 = 出一张修正后的新卡。
@@ -65,6 +69,7 @@ actions 元素为下列四种之一：
 对话提到想学英语、无相关待确认卡，末句：帮我记一下 → {"actions":[{"kind":"todo","title":"学英语","attribute":"knowledge","points":2,"repeatDaily":true}],"query":null}
 待确认卡已有「学英语」，末句：帮我记一下 → {"actions":[],"query":null}
 输入末句：今天好累啊 → {"actions":[],"query":null}
+对话早前提过想背单词，末句：现在几点了？ → {"actions":[],"query":null}
 输入末句：我上周都做了什么？ → {"actions":[],"query":{"kind":"activities","days":7}}`;
 
 // ── 阶段2 · 表演规范（人格侧；输出纯文本，无任何格式负担） ──
@@ -94,9 +99,11 @@ export function buildDynamicContext(snap: NavigatorSnapshot, swallowed: string[]
   const attrs = s.attributes
     .map((a) => `${s.settings.attributeNames?.[a.id] ?? a.displayName} Lv.${a.level}（${a.points} 点）`)
     .join('；');
+  const now = new Date();
+  const weekday = ['日', '一', '二', '三', '四', '五', '六'][now.getDay()];
   const lines = [
     `【今日状态 ${snap.dateKey}】`,
-    `用户：${snap.userName}；当前 ${snap.hour} 点`,
+    `用户：${snap.userName}；现在是 ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}，周${weekday}（历史消息前的 [HH:mm] 是其发生时刻；回答时间一律以本行为准）`,
     attrs ? `【属性面板】${attrs}` : '',
     `今日任务 ${snap.todosDone}/${snap.todosTotal}；今日已记 ${snap.activityCountToday} 条活动`,
     snap.tarotDrawn ? `今日塔罗已抽：「${snap.tarotCardName ?? '?'}」` : '今日塔罗未抽',
@@ -114,14 +121,28 @@ export function buildDynamicContext(snap: NavigatorSnapshot, swallowed: string[]
   return lines.join('\n');
 }
 
-/** 历史转 AIMessage：连续同角色合并（部分兼容端点拒绝连续同角色） */
+/**
+ * 历史转 AIMessage：连续同角色合并（部分兼容端点拒绝连续同角色）。
+ * 时间感修复：隔 >5 分钟的消息前置 [HH:mm]（与 UI 时间戳同一规则）——
+ * 否则模型眼中整段历史像发生在同一瞬间，问"现在几点"会沿用对话开启时的时间。
+ */
+const TIME_GAP_MS = 5 * 60 * 1000;
+const stampOf = (ts: number): string => {
+  const d = new Date(ts);
+  return `[${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}]`;
+};
+
 function historyToMessages(history: TurnHistoryItem[]): AIMessage[] {
   const out: AIMessage[] = [];
+  let prevTs: number | undefined;
   for (const h of history) {
     const role = h.role === 'cat' ? 'assistant' : 'user';
+    const needStamp = h.createdAt !== undefined && (prevTs === undefined || h.createdAt - prevTs > TIME_GAP_MS);
+    const text = needStamp ? `${stampOf(h.createdAt!)} ${h.text}` : h.text;
+    prevTs = h.createdAt ?? prevTs;
     const last = out[out.length - 1];
-    if (last && last.role === role) last.content += `\n${h.text}`;
-    else out.push({ role, content: h.text });
+    if (last && last.role === role) last.content += `\n${text}`;
+    else out.push({ role, content: text });
   }
   return out;
 }

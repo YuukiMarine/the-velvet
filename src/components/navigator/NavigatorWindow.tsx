@@ -13,7 +13,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import { useAppStore } from '@/store';
-import { useNavigatorStore, type NavigatorMessage } from '@/store/navigator';
+import { useNavigatorStore, formatBubbleTime, TIME_GAP_MS, type NavigatorMessage } from '@/store/navigator';
 import { zClass } from '@/utils/zIndex';
 import { useModalA11y } from '@/utils/useModalA11y';
 import { useBackHandler } from '@/utils/useBackHandler';
@@ -130,12 +130,29 @@ export const NavigatorWindow = () => {
     return () => { document.body.style.overflow = prev; };
   }, [nav.isOpen]);
 
-  // 新消息 / 打字指示出现时自动贴底
+  // 新消息 / 打字指示出现时自动贴底（上拉加载历史时跳过，见 loadingOlderRef）
   const msgCount = nav.messages.length;
+  const loadingOlderRef = useRef(false);
   useEffect(() => {
+    if (loadingOlderRef.current) return;
     const el = listRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [msgCount, nav.phase, nav.isOpen]);
+
+  // 上拉到顶：加载更早一天的对话（当前人格线，7 天保存期），并保持滚动位置不跳
+  const onListScroll = async () => {
+    const el = listRef.current;
+    if (!el || el.scrollTop > 30 || loadingOlderRef.current || !nav.hasOlder) return;
+    loadingOlderRef.current = true;
+    const prevHeight = el.scrollHeight;
+    const loaded = await useNavigatorStore.getState().loadOlder();
+    requestAnimationFrame(() => {
+      if (loaded && listRef.current) {
+        listRef.current.scrollTop = listRef.current.scrollHeight - prevHeight;
+      }
+      loadingOlderRef.current = false;
+    });
+  };
 
   const openForm = (kind: NavigatorActionKind) => {
     if (kind === 'completeTodo') { setPickerOpen(true); return; }
@@ -243,13 +260,29 @@ export const NavigatorWindow = () => {
                 </div>
               </div>
 
-              {/* 消息流 */}
-              <div ref={listRef} className="relative flex-1 space-y-3 overflow-y-auto px-4 pb-3 pt-4">
-                {nav.messages.map((m) => (
-                  <MessageRow key={m.id} m={m} sk={sk} bright={bright} busy={busyCardId === m.id}
-                    onConfirm={() => void confirmCard(m)} onEdit={() => editCard(m)}
-                    onCancel={() => nav.updateCard(m.id, { cardStatus: 'cancelled' })} />
-                ))}
+              {/* 消息流（顶部上拉加载更早；隔 >5 分钟插居中时间戳） */}
+              <div ref={listRef} onScroll={() => void onListScroll()} className="relative flex-1 space-y-3 overflow-y-auto px-4 pb-3 pt-4">
+                {nav.hasOlder && (
+                  <div className={`pb-1 text-center text-[10px] font-bold ${bright ? 'text-white/60' : 'text-gray-500'}`}>
+                    上拉查看更早的对话
+                  </div>
+                )}
+                {nav.messages.map((m, i) => {
+                  const prev = nav.messages[i - 1];
+                  const showStamp = !prev || m.createdAt - prev.createdAt > TIME_GAP_MS;
+                  return (
+                    <div key={m.id} className="space-y-3">
+                      {showStamp && (
+                        <div className={`pt-1 text-center text-[10px] font-bold ${bright ? 'text-white/70' : 'text-gray-500'}`}>
+                          {formatBubbleTime(m.createdAt)}
+                        </div>
+                      )}
+                      <MessageRow m={m} sk={sk} bright={bright} busy={busyCardId === m.id}
+                        onConfirm={() => void confirmCard(m)} onEdit={() => editCard(m)}
+                        onCancel={() => nav.updateCard(m.id, { cardStatus: 'cancelled' })} />
+                    </div>
+                  );
+                })}
                 {(nav.phase === 'thinking' || nav.phase === 'replying') && (
                   <TypingRow sk={sk} bright={bright} bold={bold} />
                 )}
