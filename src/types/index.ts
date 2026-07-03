@@ -338,6 +338,9 @@ export interface Settings {
   terminalRewardDate?: string;
   /** 已累积但未发送的「鼓励弹幕」机会数（在线发送随 F2b 后端批开放）。 */
   terminalDanmakuTokens?: number;
+  // ── F6 万能记录 AI「黑猫」（Navigator） ──
+  /** 最近一次「每日首开问候」的本地日期（YYYY-MM-DD）：跨天首开播完整问候，当日重开只简短招呼。 */
+  navigatorLastGreetDate?: string;
   // AI 总结功能配置
   summaryApiProvider?: 'openai' | 'deepseek' | 'kimi' | 'gemini' | 'minimax';
   summaryApiKey?: string;

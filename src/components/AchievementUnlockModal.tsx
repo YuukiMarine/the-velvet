@@ -1,7 +1,9 @@
 import { motion, AnimatePresence } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { triggerLevelFeedback } from '@/utils/feedback';
 import { useBackHandler } from '@/utils/useBackHandler';
+import { zClass } from '@/utils/zIndex';
 
 interface AchievementUnlockModalProps {
   isOpen: boolean;
@@ -35,14 +37,15 @@ export const AchievementUnlockModal = ({ isOpen, onClose, achievementTitle }: Ac
     playedRef.current = false;
   }, [isOpen, onClose]);
 
-  return (
+  // portal 到 body + celebration 层：成就反馈必须能盖住黑猫对话窗等标准弹窗
+  return createPortal(
     <AnimatePresence>
       {isOpen && (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4"
+          className={`fixed inset-0 bg-black/70 flex items-center justify-center ${zClass.celebration} p-4`}
         >
           <motion.div
             initial={{ scale: 0.3, opacity: 0, rotate: -15 }}
@@ -171,6 +174,7 @@ export const AchievementUnlockModal = ({ isOpen, onClose, achievementTitle }: Ac
           </motion.div>
         </motion.div>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body,
   );
 };
