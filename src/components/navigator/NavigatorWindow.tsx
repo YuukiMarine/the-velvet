@@ -22,8 +22,7 @@ import { terminalChannel } from '@/utils/terminalSkin';
 import { P3, P3_WATER_WIDE, P3DotGrid, P3GhostWord } from '@/components/terminal/p3Kit';
 import { NavigatorActionForm } from './NavigatorActionForm';
 import {
-  ACTION_META, buildDailyGreeting, buildFallbackReply, buildPreviewLines, buildShortGreeting,
-  buildSnapshot, emptyDraft, executeDraft, navAttrName,
+  ACTION_META, buildPreviewLines, emptyDraft, executeDraft, navAttrName,
   type NavigatorActionKind, type NavigatorDraft,
 } from '@/utils/navigatorRegistry';
 
@@ -97,7 +96,7 @@ const skinOf = (bright: boolean) => bright
 type Skin = ReturnType<typeof skinOf>;
 
 export const NavigatorWindow = () => {
-  const { user, settings, updateSettings, setCurrentPage, getDueTodosToday, getTodayTodoProgress } = useAppStore();
+  const { user, settings, setCurrentPage, getDueTodosToday, getTodayTodoProgress } = useAppStore();
   const nav = useNavigatorStore();
   const bold = useBoldness();
   const bright = terminalChannel(user?.theme) === 'board';
@@ -113,20 +112,10 @@ export const NavigatorWindow = () => {
   const [input, setInput] = useState('');
   const [busyCardId, setBusyCardId] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
-  const replyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // 打开：跨天清流 + 每日问候（跨天首开 = 完整问候；同日空会话 = 简短招呼）
+  // 打开：跨天清流 + 问候（跨天首开有 Key 走 AI+打字指示+超时落模板；逻辑收在 store.greet）
   useEffect(() => {
-    if (!nav.isOpen) return;
-    const st = useNavigatorStore.getState();
-    st.rolloverIfNewDay();
-    if (useNavigatorStore.getState().messages.length === 0) {
-      const snap = buildSnapshot();
-      const firstToday = useAppStore.getState().settings.navigatorLastGreetDate !== snap.dateKey;
-      st.pushCat(firstToday ? buildDailyGreeting(snap) : buildShortGreeting(snap));
-      if (firstToday) void updateSettings({ navigatorLastGreetDate: snap.dateKey });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (nav.isOpen) useNavigatorStore.getState().greet();
   }, [nav.isOpen]);
 
   // 打开期间锁 body 滚动
@@ -137,14 +126,12 @@ export const NavigatorWindow = () => {
     return () => { document.body.style.overflow = prev; };
   }, [nav.isOpen]);
 
-  useEffect(() => () => { if (replyTimer.current) clearTimeout(replyTimer.current); }, []);
-
-  // 新消息自动贴底
+  // 新消息 / 打字指示出现时自动贴底
   const msgCount = nav.messages.length;
   useEffect(() => {
     const el = listRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [msgCount, nav.isOpen]);
+  }, [msgCount, nav.phase, nav.isOpen]);
 
   const openForm = (kind: NavigatorActionKind) => {
     if (kind === 'completeTodo') { setPickerOpen(true); return; }
@@ -179,10 +166,9 @@ export const NavigatorWindow = () => {
   const send = () => {
     const text = input.trim();
     if (!text) return;
-    nav.pushUser(text);
+    nav.userSend(text); // 进仲裁器：收口/打断由它裁决
     setInput('');
-    if (replyTimer.current) clearTimeout(replyTimer.current);
-    replyTimer.current = setTimeout(() => nav.pushCat(buildFallbackReply()), 450);
+    nav.setInputActive(false);
   };
   const jump = (page: string) => { nav.close(); setCurrentPage(page); };
 
@@ -260,6 +246,9 @@ export const NavigatorWindow = () => {
                     onConfirm={() => void confirmCard(m)} onEdit={() => editCard(m)}
                     onCancel={() => nav.updateCard(m.id, { cardStatus: 'cancelled' })} />
                 ))}
+                {(nav.phase === 'thinking' || nav.phase === 'replying') && (
+                  <TypingRow sk={sk} bright={bright} bold={bold} />
+                )}
               </div>
 
               {/* chips：快捷动作 + 跳转 */}
@@ -285,7 +274,15 @@ export const NavigatorWindow = () => {
                 <div className="flex items-center gap-2">
                   <input
                     value={input}
-                    onChange={(e) => setInput(e.target.value)}
+                    onChange={(e) => {
+                      setInput(e.target.value);
+                      // 输入活动信号：仲裁器的收口窗口据此挂起，等用户把话说完
+                      nav.setInputActive(e.target.value.trim().length > 0);
+                    }}
+                    onFocus={(e) => nav.setInputActive(e.target.value.trim().length > 0)}
+                    onBlur={() => nav.setInputActive(false)}
+                    onCompositionStart={() => nav.setInputActive(true)}
+                    onCompositionEnd={(e) => nav.setInputActive((e.target as HTMLInputElement).value.trim().length > 0)}
                     onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) send(); }}
                     placeholder="跟黑猫说点什么…"
                     aria-label="给黑猫的消息"
@@ -361,6 +358,33 @@ export const NavigatorWindow = () => {
     document.body,
   );
 };
+
+// ── 打字指示（thinking/replying 相位；等待本身就是拟人） ──
+const TypingRow = ({ sk, bright, bold }: { sk: Skin; bright: boolean; bold: boolean }) => (
+  <div className="flex items-start gap-2.5" role="status" aria-label="黑猫正在输入">
+    <span
+      className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center ${sk.avatar}`}
+      style={{ ...sk.avatarStyle, clipPath: bright ? 'polygon(0 8%, 100% 0, 96% 100%, 2% 96%)' : undefined, borderRadius: bright ? undefined : '0.65rem' }}
+      aria-hidden
+    >
+      <CatFace className="h-[18px] w-[18px]" />
+    </span>
+    <div className={`flex items-center gap-1.5 px-4 py-3.5 ${sk.catBubble}`} style={sk.catBubbleStyle} aria-hidden>
+      {[0, 1, 2].map((i) =>
+        bold ? (
+          <motion.span
+            key={i}
+            className="h-1.5 w-1.5 rounded-full bg-current opacity-60"
+            animate={{ y: [0, -3, 0] }}
+            transition={{ duration: 0.9, repeat: Infinity, ease: 'easeInOut', delay: i * 0.15 }}
+          />
+        ) : (
+          <span key={i} className="h-1.5 w-1.5 rounded-full bg-current opacity-60" />
+        ),
+      )}
+    </div>
+  </div>
+);
 
 // ── 单条消息 ──
 const MessageRow = ({ m, sk, bright, busy, onConfirm, onEdit, onCancel }: {
