@@ -343,6 +343,8 @@ export interface Settings {
   navigatorLastGreetDate?: string;
   /** 当前激活的人格 preset id（缺省 = 内置黑猫）。切人格 = 开新会话。 */
   navigatorPresetId?: string;
+  /** 拟真增强：回复走流式 + 按标点切碎气泡（逗号/句号删并断泡，问叹/括号保留断泡），泡间 0.5s。 */
+  navigatorImmersive?: boolean;
   // AI 总结功能配置
   summaryApiProvider?: 'openai' | 'deepseek' | 'kimi' | 'gemini' | 'minimax';
   summaryApiKey?: string;

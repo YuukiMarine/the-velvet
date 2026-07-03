@@ -14,6 +14,7 @@ import { getAIConfig } from '@/utils/aiClient';
 import { generatePersonaPrompt } from '@/utils/navigatorIntent';
 import { finalizeStaleSessions } from '@/utils/navigatorMemory';
 import { mergedNavigatorPresets } from '@/constants/navigatorPresets';
+import { Toggle } from '@/components/Toggle';
 import { PresetAvatar, PRESET_GLYPH_IDS } from './PresetAvatar';
 import { NavigatorNotebook } from './NavigatorNotebook';
 import { ImageCropDialog } from '@/components/ImageCropDialog';
@@ -41,7 +42,7 @@ const closedGenerator: GeneratorState = {
 };
 
 export const NavigatorSettings = () => {
-  const { settings } = useAppStore();
+  const { settings, updateSettings } = useAppStore();
   const nav = useNavigatorStore();
   const hasAI = !!getAIConfig(settings);
   const activeId = nav.activePreset().id;
@@ -116,6 +117,23 @@ export const NavigatorSettings = () => {
 
   return (
     <div className="space-y-5">
+      {/* ── 拟真增强 ── */}
+      <div className="flex items-start justify-between gap-3 rounded-xl border border-gray-200 px-4 py-3 dark:border-gray-700">
+        <div>
+          <div className="text-sm font-semibold text-gray-700 dark:text-gray-200">拟真增强</div>
+          <p className="mt-0.5 text-xs leading-relaxed text-gray-400 dark:text-gray-500">
+            回复像真人打字：流式生成 + 按标点切成碎气泡逐条冒出（0.5s 一条）。低性能模式下自动停用。
+          </p>
+        </div>
+        <div className="mt-0.5 shrink-0">
+          <Toggle
+            checked={!!settings.navigatorImmersive}
+            onChange={(v) => updateSettings({ navigatorImmersive: v })}
+            aria-label="拟真增强"
+          />
+        </div>
+      </div>
+
       {/* ── 人格管理 ── */}
       <div className="flex items-center gap-2 pb-2 border-b border-gray-200 dark:border-gray-700/80">
         <span className="text-base">◈</span>

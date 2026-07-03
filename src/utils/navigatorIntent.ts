@@ -13,7 +13,7 @@
  *   · 缓存友好：两阶段的 system 与历史均为稳定前缀，动态块贴在最新消息前。
  */
 import { useAppStore, toLocalDateKey } from '@/store';
-import { chatComplete, getAIConfig } from '@/utils/aiClient';
+import { chatComplete, chatStream, getAIConfig } from '@/utils/aiClient';
 import { CATEGORY_KEYS } from '@/utils/ledgerFormat';
 import {
   ATTR_IDS, buildSnapshot, navAttrName,
@@ -165,6 +165,51 @@ function extractJson(raw: string): Record<string, unknown> | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * 拟真切泡引擎（体验优化⑤）：扫描流式 buffer，切出可即时发出的气泡。
+ * 规则（用户定稿）：逗号/顿号/句号 → 删标点断泡；问号/感叹号/分号/省略号 → 保留断泡；
+ * 左括号 → 前断（括号内容独立成泡）、右括号 → 后断保留；换行亦断。
+ * 返回 rest 保存跨 chunk 的半句（含可能的半个省略号/小数点歧义），isFinal 时全量清空。
+ */
+export function spliceImmersive(buffer: string, isFinal: boolean): { bubbles: string[]; rest: string } {
+  const bubbles: string[] = [];
+  let cur = '';
+  const flush = () => { const t = cur.trim(); if (t) bubbles.push(t); cur = ''; };
+  for (let i = 0; i < buffer.length; i++) {
+    const ch = buffer[i];
+    if (ch === '，' || ch === '、' || ch === ',') { flush(); continue; }
+    if (ch === '。') { flush(); continue; }
+    if (ch === '.') {
+      // 保护小数/序号（前后都是数字不断）
+      if (/\d/.test(buffer[i - 1] ?? '') && /\d/.test(buffer[i + 1] ?? '')) { cur += ch; continue; }
+      // 句末的 '.' 若是 buffer 最后一位且非 final，可能是省略号/网址开头——留给下个 chunk
+      if (i === buffer.length - 1 && !isFinal) return { bubbles, rest: cur + ch };
+      flush(); continue;
+    }
+    if (ch === '？' || ch === '！' || ch === '?' || ch === '!' || ch === '；' || ch === ';') {
+      cur += ch; flush(); continue;
+    }
+    if (ch === '…') {
+      // 半对省略号跨 chunk：末位单个 … 且非 final → 挂起等下一块
+      if (i === buffer.length - 1 && !isFinal) return { bubbles, rest: cur + ch };
+      cur += ch;
+      if (buffer[i + 1] === '…') { cur += '…'; i++; }
+      flush(); continue;
+    }
+    if (ch === '（' || ch === '(') { flush(); cur = ch; continue; }
+    if (ch === '）' || ch === ')') { cur += ch; flush(); continue; }
+    if (ch === '\n') { flush(); continue; }
+    cur += ch;
+  }
+  if (isFinal) { flush(); return { bubbles, rest: '' }; }
+  return { bubbles, rest: cur };
+}
+
+/** 拟真流式钩子：每切出一泡回调一次；返回 false = 已被打断，停止生成 */
+export interface ImmersiveStreamHooks {
+  onSegment: (seg: string) => boolean;
 }
 
 /** reply 文本 → 分段（空行切，≤4 段，去空） */
@@ -338,6 +383,8 @@ export async function runNavigatorTurn(
   personaPrompt: string = DEFAULT_PERSONA,
   /** 记忆行 + 语气行等附加数据（store 侧检索/计算后传入，本层只负责注入） */
   extraContext: string[] = [],
+  /** 拟真增强：传入即表演层走流式 + 标点切泡（分诊层不变——两阶段红利） */
+  immersive?: ImmersiveStreamHooks,
 ): Promise<NavigatorTurnResult> {
   const cfg = getAIConfig(useAppStore.getState().settings);
   if (!cfg) throw new Error('未配置 AI');
@@ -361,6 +408,40 @@ export async function runNavigatorTurn(
     { role: 'system', content: [buildDynamicContext(snap, swallowed, cards), ...extraContext, turnFacts].filter(Boolean).join('\n') },
     { role: 'user', content: userText },
   ];
+
+  // ── 拟真流式路径：边生成边切泡（吐泡与生成并行，总耗时不因逐泡节奏而变长） ──
+  if (immersive) {
+    const emitted: string[] = [];
+    let buffer = '';
+    let interrupted = false;
+    try {
+      for await (const delta of chatStream(cfg, messages, { temperature: 0.75, maxTokens: 900, signal })) {
+        buffer += delta;
+        const { bubbles, rest } = spliceImmersive(buffer, false);
+        buffer = rest;
+        for (const b of bubbles) {
+          emitted.push(b);
+          if (!immersive.onSegment(b)) { interrupted = true; break; }
+        }
+        if (interrupted) break;
+      }
+    } catch (e) {
+      // 已吐出部分泡时的中途错误：不再抛（用户已看到半截回复），静默收尾
+      if (emitted.length === 0) throw e;
+      if (import.meta.env.DEV) console.warn('[navigator] 拟真流中途异常，按已吐内容收尾', e);
+    }
+    if (!interrupted) {
+      const { bubbles } = spliceImmersive(buffer, true);
+      for (const b of bubbles) {
+        emitted.push(b);
+        if (!immersive.onSegment(b)) break;
+      }
+    }
+    if (import.meta.env.DEV) console.debug('[navigator] 拟真流式输出:', emitted);
+    // 流式已实时呈现，无法撤回——承诺守卫在此路径降级为观测（分诊先行定卡，嘴瓢概率极小）
+    return { segments: emitted, drafts };
+  }
+
   let reply = (await chatComplete(cfg, messages, { temperature: 0.75, maxTokens: 900, signal })).trim();
   if (import.meta.env.DEV) console.debug('[navigator] 表演输出:', reply);
 
