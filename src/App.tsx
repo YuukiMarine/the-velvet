@@ -33,6 +33,8 @@ const Ledger = lazy(() => import('@/pages/Ledger').then(m => ({ default: m.Ledge
 const Terminal = lazy(() => import('@/pages/Terminal').then(m => ({ default: m.Terminal })));
 import { BattleArena } from '@/components/battle/BattleArena';
 import { TerminalClearCutIn } from '@/components/terminal/TerminalClearCutIn';
+// F6 黑猫对话窗（portal 到 body 的全屏 overlay；入口在 Sidebar / BottomNav 中央 ◈）
+import { NavigatorWindow } from '@/components/navigator/NavigatorWindow';
 import { primeCurrentTheme } from '@/utils/feedback';
 import { BackgroundAnimation } from '@/components/BackgroundAnimation';
 import { PWAUpdateToast } from '@/components/PWAUpdateToast';
@@ -514,7 +516,9 @@ function App() {
             <>
               <Sidebar />
               <BottomNav />
-              
+              {/* F6 黑猫：窗口本体挂一次（portal 到 body），Sidebar/BottomNav 只负责 open() */}
+              <NavigatorWindow />
+
               <main
                 // 顶部 padding 用 calc(1rem + env(safe-area-inset-top)) 保证：
                 //   - 桌面 / Android：env() 为 0，退化为 1rem（=原 p-4 行为）

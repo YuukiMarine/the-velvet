@@ -1,10 +1,7 @@
-import { useRef, useState } from 'react';
-import type { RefObject } from 'react';
 import { motion } from 'motion/react';
 import { useAppStore } from '@/store';
+import { useNavigatorStore } from '@/store/navigator';
 import { triggerNavFeedback } from '@/utils/feedback';
-import { SheetModal } from '@/components/SheetModal';
-import { EyebrowLabel } from '@/components/EyebrowLabel';
 import { springSnappy } from '@/utils/motion';
 import { zClass } from '@/utils/zIndex';
 
@@ -97,39 +94,10 @@ const isNavActive = (itemId: string, currentPage: string): boolean =>
 // 导出供 Settings 页面复用图标（成就入口行）
 export { TrophyIcon };
 
-/**
- * 黑猫占位 Sheet（F6 万能记录 AI 落位前的临时去处）。
- * originRef 必传：这是 SheetModal「形状记忆生长」的第一个 dogfood——
- * 面板必须从触发它的 ◈ 按钮长出来 / 缩回去，验证空间心智模型成立。
- */
-const CatPlaceholderSheet = ({
-  isOpen,
-  onClose,
-  originRef,
-}: {
-  isOpen: boolean;
-  onClose: () => void;
-  originRef: RefObject<HTMLButtonElement | null>;
-}) => (
-  <SheetModal isOpen={isOpen} onClose={onClose} position="bottom" originRef={originRef}>
-    <div className="flex flex-col items-center pb-6 text-center">
-      <EyebrowLabel className="self-start">NAVIGATOR</EyebrowLabel>
-      <h2 className="mt-4 text-xl font-bold text-gray-900 dark:text-white">黑猫还在赶来的路上</h2>
-      <p className="mt-2 text-sm leading-relaxed text-gray-500 dark:text-gray-400">
-        F6 万能记录 AI 将入驻此处——对话与菜单双层交互、全部记录能力直达。
-      </p>
-      <span className="mt-6 text-primary/80" aria-hidden="true">
-        <CatSilhouetteIcon className="w-20 h-20" />
-      </span>
-    </div>
-  </SheetModal>
-);
-
 export const Sidebar = () => {
   const { currentPage, setCurrentPage } = useAppStore();
-  // 占位 Sheet 状态收在组件内部：F6 上线前不值得进全局 store
-  const [catOpen, setCatOpen] = useState(false);
-  const catButtonRef = useRef<HTMLButtonElement>(null);
+  // F6：黑猫对话窗（NavigatorWindow 挂在 App 顶层，这里只负责打开）
+  const openNavigator = useNavigatorStore((s) => s.open);
 
   const renderItem = (item: NavItem) => {
     const active = isNavActive(item.id, currentPage);
@@ -182,14 +150,13 @@ export const Sidebar = () => {
       <nav className="flex-1 px-3 pb-4 space-y-0.5">
         {navItems.slice(0, 2).map(renderItem)}
 
-        {/* 黑猫项：非页面路由，无激活态——点击开占位 Sheet，与 BottomNav 中央 ◈ 同一去处。
+        {/* 黑猫项：非页面路由，无激活态——打开 NavigatorWindow，与 BottomNav 中央 ◈ 同一去处。
             小号菱形 = rotate-45 圆角方块内嵌 -rotate-45 猫剪影（字恒水平原则同样适用于图标内容） */}
         <motion.button
-          ref={catButtonRef}
           whileTap={{ scale: 0.97 }}
           onClick={() => {
             triggerNavFeedback();
-            setCatOpen(true);
+            openNavigator();
           }}
           className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150 cursor-pointer text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-200"
         >
@@ -203,8 +170,6 @@ export const Sidebar = () => {
 
         {navItems.slice(2).map(renderItem)}
       </nav>
-
-      <CatPlaceholderSheet isOpen={catOpen} onClose={() => setCatOpen(false)} originRef={catButtonRef} />
     </motion.aside>
   );
 };
@@ -241,9 +206,8 @@ const NavTab = ({ item, active, onSelect }: { item: NavItem; active: boolean; on
 
 export const BottomNav = () => {
   const { currentPage, setCurrentPage } = useAppStore();
-  // 黑猫占位 Sheet：state 收在 BottomNav 内部（F6 上线前不进全局 store）
-  const [catOpen, setCatOpen] = useState(false);
-  const catButtonRef = useRef<HTMLButtonElement>(null);
+  // F6：黑猫对话窗（NavigatorWindow 挂在 App 顶层，这里只负责打开）
+  const openNavigator = useNavigatorStore((s) => s.open);
 
   const renderTab = (item: NavItem) => (
     <NavTab
@@ -280,17 +244,16 @@ export const BottomNav = () => {
       <div className="flex items-center h-16">
         {navItems.slice(0, 2).map(renderTab)}
 
-        {/* 中央 ◈：黑猫入口（F6 前为占位 Sheet）。
+        {/* 中央 ◈：黑猫入口（NavigatorWindow）。
             凸起约束：按钮 absolute 定位于中槽、-top-3 上浮 12px——脱离 flex 流，
             h-16 容器高度不被 w-14 按钮撑破，安全区 padding 与四格 tab 布局零跳动 */}
         <div className="relative flex-1 h-full">
           <motion.button
-            ref={catButtonRef}
             aria-label="黑猫"
             whileTap={{ scale: 0.9 }}
             onClick={() => {
               triggerNavFeedback();
-              setCatOpen(true);
+              openNavigator();
             }}
             // rotate 走 motion style 而非 Tailwind rotate-45：whileTap 会接管 transform，
             // class 里的 rotate 在按压瞬间会被覆盖掉；motion 的 rotate / scale 独立合成。
@@ -307,8 +270,6 @@ export const BottomNav = () => {
 
         {navItems.slice(2).map(renderTab)}
       </div>
-
-      <CatPlaceholderSheet isOpen={catOpen} onClose={() => setCatOpen(false)} originRef={catButtonRef} />
     </motion.nav>
   );
 };
