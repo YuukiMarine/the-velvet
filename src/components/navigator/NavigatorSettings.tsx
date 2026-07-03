@@ -122,7 +122,7 @@ export const NavigatorSettings = () => {
         <div>
           <div className="text-sm font-semibold text-gray-700 dark:text-gray-200">拟真增强</div>
           <p className="mt-0.5 text-xs leading-relaxed text-gray-400 dark:text-gray-500">
-            回复像真人打字：流式生成 + 按标点切成碎气泡逐条冒出（0.5s 一条）。低性能模式下自动停用。
+            回复像真人打字：流式生成 + 按句子切成碎气泡逐条冒出（1.2s 一条）。低性能模式下自动停用。
           </p>
         </div>
         <div className="mt-0.5 shrink-0">

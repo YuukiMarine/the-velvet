@@ -345,7 +345,7 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
           if (queue.length > 0) {
             if (get().phase !== 'replying') set({ phase: 'replying' });
             get().pushCat(queue.shift()!);
-            const alive = await sleepUnlessStale(500, gen);
+            const alive = await sleepUnlessStale(1200, gen);
             if (!alive) { swallowed = queue.splice(0); persistSwallowed(); return; }
           } else if (streamEnded) {
             break;
