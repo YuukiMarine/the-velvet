@@ -362,6 +362,43 @@ export async function runNavigatorTurn(
   return { segments: splitSegments(reply), drafts };
 }
 
+/**
+ * 人格生成器（Batch3，仅有 Key 可见）：偏好 → personaPrompt 文本。
+ * 单任务短上下文（分诊范式），输出纯文本设定；预览可改后才保存。
+ */
+export async function generatePersonaPrompt(input: {
+  name: string;
+  callUser: string;
+  toneWords: string[];
+  coach: 'push' | 'accompany';
+  freeText: string;
+}): Promise<string> {
+  const cfg = getAIConfig(useAppStore.getState().settings);
+  if (!cfg) throw new Error('未配置 AI');
+  const raw = await chatComplete(cfg, [
+    {
+      role: 'system',
+      content:
+        '你是人格设定师。为一款个人成长记录 App 里的陪伴型 AI 写一段第二人称人格设定（persona prompt）。' +
+        '要求：以「你是「名字」——」开头；只写性格、口吻、称呼用户的方式、说话习惯，可含 1~2 句示例台词；' +
+        '**不写任何功能、能力、输出格式相关内容**；140~240 字；具体鲜活，避免空泛形容词堆砌。只输出设定本身。',
+    },
+    {
+      role: 'user',
+      content: [
+        `名字：${input.name}`,
+        `称呼用户的方式：${input.callUser || '随人格自然决定'}`,
+        input.toneWords.length ? `语气关键词：${input.toneWords.join('、')}` : '',
+        `相处方式：${input.coach === 'push' ? '督促型（会盯进度、催行动）' : '陪伴型（多倾听、少施压）'}`,
+        input.freeText ? `补充设定：${input.freeText}` : '',
+      ].filter(Boolean).join('\n'),
+    },
+  ], { temperature: 0.9, maxTokens: 700 });
+  const text = raw.trim();
+  if (!text) throw new Error('生成结果为空，换个说法再试试');
+  return text.slice(0, 600);
+}
+
 /** 有 Key 时的 AI 每日问候（>timeout 由调用方落模板；失败返回 null） */
 export async function generateAIGreeting(
   snap: NavigatorSnapshot,
