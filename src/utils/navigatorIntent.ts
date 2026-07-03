@@ -168,10 +168,10 @@ function extractJson(raw: string): Record<string, unknown> | null {
 }
 
 /**
- * 拟真切泡引擎（体验优化⑤）：扫描流式 buffer，切出可即时发出的气泡。
- * 规则（用户定稿）：逗号/顿号/句号 → 删标点断泡；问号/感叹号/分号/省略号 → 保留断泡；
- * 左括号 → 前断（括号内容独立成泡）、右括号 → 后断保留；换行亦断。
- * 返回 rest 保存跨 chunk 的半句（含可能的半个省略号/小数点歧义），isFinal 时全量清空。
+ * 拟真切泡引擎（体验优化⑤，2026-07-04 二调）：扫描流式 buffer，切出可即时发出的气泡。
+ * 规则（用户定稿）：句号 → 删标点断泡；**逗号/顿号保留不断**；问号/感叹号/分号/省略号 →
+ * 保留断泡；「——」双破折号 → 删除并断泡；左括号前断（括号内容独立成泡）、右括号后断保留；换行亦断。
+ * 返回 rest 保存跨 chunk 的半句（半个省略号/破折号/小数点歧义），isFinal 时全量清空。
  */
 export function spliceImmersive(buffer: string, isFinal: boolean): { bubbles: string[]; rest: string } {
   const bubbles: string[] = [];
@@ -179,8 +179,13 @@ export function spliceImmersive(buffer: string, isFinal: boolean): { bubbles: st
   const flush = () => { const t = cur.trim(); if (t) bubbles.push(t); cur = ''; };
   for (let i = 0; i < buffer.length; i++) {
     const ch = buffer[i];
-    if (ch === '，' || ch === '、' || ch === ',') { flush(); continue; }
     if (ch === '。') { flush(); continue; }
+    if (ch === '—') {
+      // 双破折号「——」：删除并断泡；末位单个 — 非 final → 挂起等下一块拼对
+      if (buffer[i + 1] === '—') { flush(); i++; continue; }
+      if (i === buffer.length - 1 && !isFinal) return { bubbles, rest: cur + ch };
+      cur += ch; continue; // 孤立单破折号原样保留
+    }
     if (ch === '.') {
       // 保护小数/序号（前后都是数字不断）
       if (/\d/.test(buffer[i - 1] ?? '') && /\d/.test(buffer[i + 1] ?? '')) { cur += ch; continue; }
