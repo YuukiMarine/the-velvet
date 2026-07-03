@@ -267,7 +267,17 @@ export async function runNavigatorTurn(
   // 给小了 content 里的 JSON 会被截断（实测 375 tokens 推理 + JSON 正文）。
   let lastRaw = '';
   const callOnce = async (messages: AIMessage[]): Promise<Record<string, unknown> | null> => {
-    lastRaw = await chatComplete(cfg, messages, { temperature: 0.6, maxTokens: 1400, signal, jsonMode: true });
+    try {
+      lastRaw = await chatComplete(cfg, messages, { temperature: 0.6, maxTokens: 1400, signal, jsonMode: true });
+    } catch (e) {
+      // 空响应自愈：个别 provider 的 json_object 会抽风返回纯空白 content（DeepSeek 官方已知），
+      // 关掉 jsonMode 原样重试一次——prompt 约定 + salvage 仍兜底，错误不再糊到用户脸上。
+      if (e instanceof Error && e.message.includes('空响应')) {
+        lastRaw = await chatComplete(cfg, messages, { temperature: 0.6, maxTokens: 1400, signal, jsonMode: false });
+      } else {
+        throw e;
+      }
+    }
     return extractJson(lastRaw);
   };
 
