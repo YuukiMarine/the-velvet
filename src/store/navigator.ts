@@ -13,8 +13,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { useAppStore, toLocalDateKey } from '@/store';
 import { getAIConfig } from '@/utils/aiClient';
 import {
-  buildDailyGreeting, buildFallbackReply, buildShortGreeting, buildSnapshot,
-  type NavigatorDraft,
+  ACTION_META, buildDailyGreeting, buildFallbackReply, buildPreviewLines, buildShortGreeting,
+  buildSnapshot, type NavigatorDraft,
 } from '@/utils/navigatorRegistry';
 import { generateAIGreeting, runNavigatorTurn, splitSegments, type TurnHistoryItem } from '@/utils/navigatorIntent';
 
@@ -125,20 +125,31 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
     return batch.join('\n');
   };
 
-  /** 历史投影（不含待收口批；卡片折叠成一行文本） */
+  /**
+   * 历史投影（不含待收口批）。卡片**不进 assistant 历史**——模型会模仿自己
+   * "说过"的折叠标记、在 reply 里手画假卡；卡片状态改走动态块的数据区（cardsDigest）。
+   */
   const historyForTurn = (): TurnHistoryItem[] => {
     const ms = get().messages;
     // 去掉尾部待收口的用户消息
     let end = ms.length;
     while (end > 0 && ms[end - 1].role === 'user') end--;
-    return ms.slice(0, end).map((m): TurnHistoryItem => {
-      if (m.role === 'card' && m.draft) {
-        const status = m.cardStatus === 'done' ? '已确认' : m.cardStatus === 'cancelled' ? '已取消' : '待确认';
-        return { role: 'cat', text: `[动作卡·${status}]${m.receipt ? ` ${m.receipt}` : ''}` };
-      }
-      return { role: m.role === 'user' ? 'user' : 'cat', text: m.text ?? '' };
-    }).filter((h) => h.text);
+    return ms.slice(0, end)
+      .filter((m) => m.role !== 'card')
+      .map((m): TurnHistoryItem => ({ role: m.role === 'user' ? 'user' : 'cat', text: m.text ?? '' }))
+      .filter((h) => h.text);
   };
+
+  /** 本会话卡片实录（进动态块数据区）：AI 提议的与用户手建的一视同仁，模型据此读卡 */
+  const cardsDigest = (): string[] =>
+    get().messages
+      .filter((m) => m.role === 'card' && m.draft)
+      .slice(-10)
+      .map((m) => {
+        const status = m.cardStatus === 'done' ? '已确认生效' : m.cardStatus === 'cancelled' ? '已取消' : '待用户确认';
+        const head = buildPreviewLines(m.draft!).slice(0, 2).join('；');
+        return `- ${ACTION_META[m.draft!.kind].label}【${status}】${head}${m.receipt ? `（回执：${m.receipt}）` : ''}`;
+      });
 
   /** 收口 → thinking → replying → idle（gen 凭票，全程可被打断作废） */
   const settleNow = async () => {
@@ -167,7 +178,7 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
     const mySwallowed = swallowed;
     swallowed = [];
     try {
-      const result = await runNavigatorTurn(historyForTurn(), batch, mySwallowed, turnAbort.signal);
+      const result = await runNavigatorTurn(historyForTurn(), batch, mySwallowed, turnAbort.signal, cardsDigest());
       if (gen !== generation) return;
       // 分段吐泡（段间隙 = 天然插话点）
       set({ phase: 'replying' });

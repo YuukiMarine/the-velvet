@@ -47,7 +47,15 @@ export interface ChatOptions {
    * 传 0 关闭内部超时（仍受调用方 signal 控制）。
    */
   timeoutMs?: number;
+  /**
+   * 严格 JSON 输出（response_format json_object）。只对确认支持的 provider 生效
+   * （openai/deepseek/kimi），其余 provider 静默忽略——prompt 约定仍是兜底。
+   */
+  jsonMode?: boolean;
 }
+
+/** response_format:{type:'json_object'} 的 provider 白名单（其余发了可能 400） */
+const JSON_MODE_PROVIDERS: ReadonlySet<string> = new Set(['openai', 'deepseek', 'kimi']);
 
 const DEFAULT_TIMEOUT_MS = 90_000;
 const DEFAULT_TEMPERATURE = 0.8;
@@ -145,6 +153,9 @@ function buildRequestBody(
 ): Record<string, unknown> {
   const maxTokens = opts.maxTokens ?? DEFAULT_MAX_TOKENS;
   const body: Record<string, unknown> = { model: cfg.model, messages, stream };
+  if (opts.jsonMode && cfg.provider && JSON_MODE_PROVIDERS.has(cfg.provider)) {
+    body.response_format = { type: 'json_object' };
+  }
   if (isReasoningModel(cfg.model)) {
     // 输出预算 + 一段推理 token 余量，避免极小的 maxTokens（如活动分析的 200）被推理吃光导致空响应
     body.max_completion_tokens = maxTokens + 1024;
