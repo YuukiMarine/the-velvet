@@ -1,0 +1,371 @@
+/**
+ * NavigatorSettings — 设置 → 黑猫区（F6 Batch3 终段，落位已拍板）。
+ *
+ * 三块：人格管理（内置 3 + 自定义，切换=开/恢复该人格今日会话）·
+ * 人格生成器（**仅有 Key 可见**；偏好 chips + 自由描述 → AI 生成 → 预览可改再保存；
+ * 头像 = 剪影集默认 + 可选本地上传裁切，local-only）· 记事本（原子记忆查看/编辑/删除/置顶）。
+ * 另含手动归档（compact 主泵的手动入口备份）。
+ */
+import { useEffect, useRef, useState } from 'react';
+import { useAppStore } from '@/store';
+import { useNavigatorStore } from '@/store/navigator';
+import { db } from '@/db';
+import { v4 as uuidv4 } from 'uuid';
+import { getAIConfig } from '@/utils/aiClient';
+import { generatePersonaPrompt } from '@/utils/navigatorIntent';
+import { finalizeStaleSessions } from '@/utils/navigatorMemory';
+import { BUILTIN_NAVIGATOR_PRESETS } from '@/constants/navigatorPresets';
+import { PresetAvatar, PRESET_GLYPH_IDS } from './PresetAvatar';
+import { ImageCropDialog } from '@/components/ImageCropDialog';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
+import type { NavigatorMemo, NavigatorPreset } from '@/types';
+
+const TONE_WORDS = ['温柔', '毒舌', '元气', '冷淡', '正经', '幽默', '腹黑', '天然'];
+
+interface GeneratorState {
+  open: boolean;
+  editId?: string;
+  name: string;
+  callUser: string;
+  toneWords: string[];
+  coach: 'push' | 'accompany';
+  freeText: string;
+  personaPrompt: string;
+  avatar: string;
+  generating: boolean;
+  error?: string;
+}
+const closedGenerator: GeneratorState = {
+  open: false, name: '', callUser: '', toneWords: [], coach: 'accompany',
+  freeText: '', personaPrompt: '', avatar: 'star', generating: false,
+};
+
+export const NavigatorSettings = () => {
+  const { settings } = useAppStore();
+  const nav = useNavigatorStore();
+  const hasAI = !!getAIConfig(settings);
+  const activeId = nav.activePreset().id;
+
+  const [gen, setGen] = useState<GeneratorState>(closedGenerator);
+  const [memos, setMemos] = useState<NavigatorMemo[]>([]);
+  const [memoEdit, setMemoEdit] = useState<{ id: string; text: string } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ kind: 'preset' | 'memo'; id: string; label: string } | null>(null);
+  const [cropFile, setCropFile] = useState<File | null>(null);
+  const [archiving, setArchiving] = useState(false);
+  const [archiveDone, setArchiveDone] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement | null>(null);
+
+  const loadMemos = async () => {
+    const rows = await db.navigatorMemos.orderBy('createdAt').reverse().toArray();
+    setMemos(rows.filter((m) => m.status === 'active'));
+  };
+  useEffect(() => {
+    void nav.loadPresets();
+    void loadMemos();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── 人格 ──
+
+  const allPresets: NavigatorPreset[] = [...BUILTIN_NAVIGATOR_PRESETS, ...nav.presets];
+
+  const openEditor = (p?: NavigatorPreset) =>
+    setGen(p
+      ? { ...closedGenerator, open: true, editId: p.id, name: p.name, personaPrompt: p.personaPrompt, avatar: p.avatar ?? 'star' }
+      : { ...closedGenerator, open: true });
+
+  const runGenerate = async () => {
+    if (!gen.name.trim()) { setGen((s) => ({ ...s, error: '先给它起个名字' })); return; }
+    setGen((s) => ({ ...s, generating: true, error: undefined }));
+    try {
+      const text = await generatePersonaPrompt({
+        name: gen.name.trim(), callUser: gen.callUser.trim(),
+        toneWords: gen.toneWords, coach: gen.coach, freeText: gen.freeText.trim(),
+      });
+      setGen((s) => ({ ...s, generating: false, personaPrompt: text }));
+    } catch (e) {
+      setGen((s) => ({ ...s, generating: false, error: e instanceof Error ? e.message : '生成失败' }));
+    }
+  };
+
+  const savePreset = async () => {
+    const name = gen.name.trim();
+    const prompt = gen.personaPrompt.trim();
+    if (!name || !prompt) { setGen((s) => ({ ...s, error: '名字和人格设定都不能为空' })); return; }
+    await nav.savePreset({
+      id: gen.editId ?? uuidv4(),
+      name, personaPrompt: prompt, avatar: gen.avatar,
+      isBuiltin: false,
+      createdAt: gen.editId ? nav.presets.find((p) => p.id === gen.editId)?.createdAt ?? new Date() : new Date(),
+    });
+    setGen(closedGenerator);
+  };
+
+  // ── 记事本 ──
+
+  const togglePin = async (m: NavigatorMemo) => {
+    await db.navigatorMemos.update(m.id, { pinned: !m.pinned, importance: !m.pinned ? 5 : m.importance });
+    await loadMemos();
+  };
+  const saveMemoEdit = async () => {
+    if (!memoEdit) return;
+    const text = memoEdit.text.trim();
+    if (text) await db.navigatorMemos.update(memoEdit.id, { text: text.slice(0, 80) });
+    setMemoEdit(null);
+    await loadMemos();
+  };
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    if (deleteTarget.kind === 'preset') await nav.deletePreset(deleteTarget.id);
+    else { await db.navigatorMemos.delete(deleteTarget.id); await loadMemos(); }
+    setDeleteTarget(null);
+  };
+
+  const runArchive = async () => {
+    setArchiving(true);
+    setArchiveDone(null);
+    const summary = await finalizeStaleSessions();
+    setArchiving(false);
+    setArchiveDone(summary ? '已归档，最近摘要：' + summary.slice(0, 40) + '…' : '没有待归档的会话');
+  };
+
+  const chip = (active: boolean) =>
+    `rounded-full px-3 py-1.5 text-xs font-medium transition ${active
+      ? 'bg-primary text-white shadow-sm shadow-primary/20'
+      : 'border border-gray-200 bg-white text-gray-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300'}`;
+
+  return (
+    <div className="space-y-5">
+      {/* ── 人格管理 ── */}
+      <div className="flex items-center gap-2 pb-2 border-b border-gray-200 dark:border-gray-700/80">
+        <span className="text-base">◈</span>
+        <h4 className="text-sm font-bold text-gray-800 dark:text-white tracking-wide">人格</h4>
+      </div>
+      <p className="-mt-2 text-sm text-gray-500 dark:text-gray-400">切换人格会开启（或恢复）它今天的对话。能力不变，变的只是性格和嘴。</p>
+      <div className="space-y-2">
+        {allPresets.map((p) => (
+          <div key={p.id} className={`flex items-center gap-3 rounded-xl border-2 px-3 py-2.5 transition ${activeId === p.id ? 'border-primary/60 bg-primary/5 dark:bg-primary/10' : 'border-gray-200 dark:border-gray-700'}`}>
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/15 text-primary">
+              <PresetAvatar avatar={p.avatar} className="h-5 w-5" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <span className="truncate text-sm font-bold text-gray-800 dark:text-white">{p.name}</span>
+                {p.isBuiltin && <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold text-gray-400 dark:bg-gray-700 dark:text-gray-400">内置</span>}
+                {activeId === p.id && <span className="rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-bold text-primary">当前</span>}
+              </div>
+              <p className="mt-0.5 truncate text-xs text-gray-400 dark:text-gray-500">{p.personaPrompt.replace(/^你是「[^」]*」—*/, '').slice(0, 40)}…</p>
+            </div>
+            {activeId !== p.id && (
+              <button type="button" onClick={() => void nav.switchPreset(p.id)}
+                className="shrink-0 rounded-full border border-primary/40 px-3 py-1 text-xs font-semibold text-primary hover:bg-primary/10">
+                切换
+              </button>
+            )}
+            {!p.isBuiltin && (
+              <>
+                <button type="button" onClick={() => openEditor(p)} aria-label={`编辑 ${p.name}`}
+                  className="shrink-0 rounded p-1 text-xs text-gray-400 hover:text-primary">编辑</button>
+                <button type="button" onClick={() => setDeleteTarget({ kind: 'preset', id: p.id, label: p.name })} aria-label={`删除 ${p.name}`}
+                  className="shrink-0 rounded p-1 text-xs text-gray-400 hover:text-red-400">删除</button>
+              </>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* 生成器入口：仅有 Key 可见（已拍板） */}
+      {hasAI ? (
+        !gen.open && (
+          <button type="button" onClick={() => openEditor()}
+            className="w-full rounded-xl border-2 border-dashed border-gray-300 px-4 py-3 text-sm font-semibold text-gray-500 transition hover:border-primary/50 hover:text-primary dark:border-gray-600 dark:text-gray-400">
+            ＋ 新建人格（AI 生成）
+          </button>
+        )
+      ) : (
+        <p className="text-xs text-gray-400 dark:text-gray-500">配置 AI 密钥后可创建自定义人格。</p>
+      )}
+
+      {/* ── 生成器 ── */}
+      {gen.open && (
+        <div className="space-y-3 rounded-2xl border border-gray-200 bg-gray-50/70 p-4 dark:border-gray-700 dark:bg-gray-800/60">
+          <div className="flex items-center justify-between">
+            <h5 className="text-sm font-bold text-gray-800 dark:text-white">{gen.editId ? '编辑人格' : '新建人格'}</h5>
+            <button type="button" onClick={() => setGen(closedGenerator)} aria-label="关闭" className="text-gray-400 hover:text-gray-600">✕</button>
+          </div>
+          <input
+            value={gen.name}
+            onChange={(e) => setGen((s) => ({ ...s, name: e.target.value }))}
+            placeholder="名字（如：白手套 / 老班长…）"
+            className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-primary dark:border-gray-700 dark:bg-gray-900 dark:text-white"
+          />
+          {/* 头像：剪影集 + 本地上传（local-only） */}
+          <div>
+            <div className="mb-1.5 text-xs text-gray-400 dark:text-gray-500">头像</div>
+            <div className="flex flex-wrap items-center gap-2">
+              {PRESET_GLYPH_IDS.map((g) => (
+                <button key={g} type="button" onClick={() => setGen((s) => ({ ...s, avatar: g }))} aria-label={`剪影 ${g}`}
+                  className={`flex h-9 w-9 items-center justify-center rounded-lg transition ${gen.avatar === g ? 'bg-primary text-white' : 'bg-gray-100 text-gray-400 dark:bg-gray-700'}`}>
+                  <PresetAvatar avatar={g} className="h-5 w-5" />
+                </button>
+              ))}
+              {gen.avatar.startsWith('data:') && (
+                <span className="flex h-9 w-9 items-center justify-center rounded-lg ring-2 ring-primary">
+                  <PresetAvatar avatar={gen.avatar} className="h-8 w-8" />
+                </span>
+              )}
+              <button type="button" onClick={() => fileRef.current?.click()}
+                className="rounded-lg border border-dashed border-gray-300 px-2.5 py-2 text-xs text-gray-400 hover:border-primary/50 hover:text-primary dark:border-gray-600">
+                上传
+              </button>
+              <input ref={fileRef} type="file" accept="image/*" className="hidden"
+                onChange={(e) => { setCropFile(e.target.files?.[0] ?? null); e.target.value = ''; }} />
+            </div>
+            <p className="mt-1 text-[10px] text-gray-400 dark:text-gray-500">上传头像只存本机，永不上云。</p>
+          </div>
+          {!gen.editId && (
+            <>
+              <input
+                value={gen.callUser}
+                onChange={(e) => setGen((s) => ({ ...s, callUser: e.target.value }))}
+                placeholder="它怎么称呼你？（可空，如：老板 / 小朋友）"
+                className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-primary dark:border-gray-700 dark:bg-gray-900 dark:text-white"
+              />
+              <div>
+                <div className="mb-1.5 text-xs text-gray-400 dark:text-gray-500">语气关键词（多选）</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {TONE_WORDS.map((w) => (
+                    <button key={w} type="button" className={chip(gen.toneWords.includes(w))}
+                      onClick={() => setGen((s) => ({ ...s, toneWords: s.toneWords.includes(w) ? s.toneWords.filter((x) => x !== w) : [...s.toneWords, w] }))}>
+                      {w}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="flex gap-1.5">
+                <button type="button" className={chip(gen.coach === 'accompany')} onClick={() => setGen((s) => ({ ...s, coach: 'accompany' }))}>陪伴型</button>
+                <button type="button" className={chip(gen.coach === 'push')} onClick={() => setGen((s) => ({ ...s, coach: 'push' }))}>督促型</button>
+              </div>
+              <textarea
+                value={gen.freeText}
+                onChange={(e) => setGen((s) => ({ ...s, freeText: e.target.value }))}
+                placeholder="自由描述（可空）：口头禅、背景设定、想避免的说话方式…"
+                rows={2}
+                className="w-full resize-none rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-primary dark:border-gray-700 dark:bg-gray-900 dark:text-white"
+              />
+              <button type="button" disabled={gen.generating} onClick={() => void runGenerate()}
+                className="w-full rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-white shadow-sm shadow-primary/30 disabled:opacity-50">
+                {gen.generating ? '生成中…' : gen.personaPrompt ? '换一版' : 'AI 生成人格设定'}
+              </button>
+            </>
+          )}
+          {(gen.personaPrompt || gen.editId) && (
+            <>
+              <div className="text-xs text-gray-400 dark:text-gray-500">人格设定（保存前可随意修改）</div>
+              <textarea
+                value={gen.personaPrompt}
+                onChange={(e) => setGen((s) => ({ ...s, personaPrompt: e.target.value }))}
+                rows={5}
+                className="w-full resize-none rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm leading-relaxed outline-none focus:border-primary dark:border-gray-700 dark:bg-gray-900 dark:text-white"
+              />
+            </>
+          )}
+          {gen.error && <p className="text-xs text-red-400">{gen.error}</p>}
+          <div className="flex gap-2">
+            <button type="button" onClick={() => void savePreset()} disabled={!gen.personaPrompt.trim() || !gen.name.trim()}
+              className="flex-1 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-white disabled:opacity-40">
+              保存
+            </button>
+            <button type="button" onClick={() => setGen(closedGenerator)}
+              className="rounded-xl border border-gray-200 px-4 py-2.5 text-sm text-gray-500 dark:border-gray-700 dark:text-gray-300">
+              取消
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── 记事本 ── */}
+      <div className="flex items-center gap-2 pb-2 pt-2 border-b border-gray-200 dark:border-gray-700/80">
+        <span className="text-base">📔</span>
+        <h4 className="text-sm font-bold text-gray-800 dark:text-white tracking-wide">记事本</h4>
+      </div>
+      <p className="-mt-2 text-sm text-gray-500 dark:text-gray-400">
+        它记住的关于你的事。可改可删；置顶的永不遗忘。所有记忆只存本机。
+      </p>
+      {memos.length === 0 ? (
+        <p className="rounded-xl border border-dashed border-gray-300 px-4 py-5 text-center text-xs text-gray-400 dark:border-gray-600">
+          还没有记忆——多聊几天，它会自己记住重要的事。
+        </p>
+      ) : (
+        <div className="space-y-2">
+          {memos.map((m) => (
+            <div key={m.id} className="rounded-xl border border-gray-200 px-3 py-2.5 dark:border-gray-700">
+              {memoEdit?.id === m.id ? (
+                <div className="flex items-center gap-2">
+                  <input
+                    autoFocus
+                    value={memoEdit.text}
+                    onChange={(e) => setMemoEdit({ id: m.id, text: e.target.value })}
+                    onKeyDown={(e) => { if (e.key === 'Enter') void saveMemoEdit(); }}
+                    className="min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm outline-none focus:border-primary dark:border-gray-700 dark:bg-gray-900 dark:text-white"
+                  />
+                  <button type="button" onClick={() => void saveMemoEdit()} className="shrink-0 text-xs font-bold text-primary">存</button>
+                </div>
+              ) : (
+                <div className="flex items-start gap-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm leading-relaxed text-gray-700 dark:text-gray-200">
+                      {m.pinned && <span className="mr-1 text-primary" aria-hidden>📌</span>}
+                      {m.text}
+                    </p>
+                    <p className="mt-0.5 text-[10px] text-gray-400 dark:text-gray-500">
+                      {new Date(m.createdAt).toLocaleDateString()} · 重要度 {m.importance}{m.followUp ? ' · 有待追问话头' : ''}
+                    </p>
+                  </div>
+                  <button type="button" onClick={() => void togglePin(m)} aria-label={m.pinned ? '取消置顶' : '置顶'}
+                    className={`shrink-0 rounded p-1 text-xs ${m.pinned ? 'text-primary' : 'text-gray-300 hover:text-primary dark:text-gray-600'}`}>📌</button>
+                  <button type="button" onClick={() => setMemoEdit({ id: m.id, text: m.text })} aria-label="编辑记忆"
+                    className="shrink-0 rounded p-1 text-xs text-gray-400 hover:text-primary">改</button>
+                  <button type="button" onClick={() => setDeleteTarget({ kind: 'memo', id: m.id, label: m.text.slice(0, 12) })} aria-label="删除记忆"
+                    className="shrink-0 rounded p-1 text-xs text-gray-400 hover:text-red-400">删</button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── 手动归档（compact 主泵手动入口） ── */}
+      <div className="flex items-center justify-between gap-3 rounded-xl border border-gray-200 px-4 py-3 dark:border-gray-700">
+        <div>
+          <div className="text-sm font-semibold text-gray-700 dark:text-gray-200">整理旧对话</div>
+          <p className="text-xs text-gray-400 dark:text-gray-500">把之前没归档的聊天收进记忆（平时它会自己做）。</p>
+        </div>
+        <button type="button" disabled={archiving} onClick={() => void runArchive()}
+          className="shrink-0 rounded-full border border-primary/40 px-3 py-1.5 text-xs font-semibold text-primary hover:bg-primary/10 disabled:opacity-50">
+          {archiving ? '整理中…' : '整理'}
+        </button>
+      </div>
+      {archiveDone && <p className="text-xs text-gray-400 dark:text-gray-500">{archiveDone}</p>}
+
+      {/* 上传裁切（复用全站头像管线，输出 dataUrl，local-only） */}
+      <ImageCropDialog
+        isOpen={!!cropFile}
+        file={cropFile}
+        title="调整人格头像"
+        onCancel={() => setCropFile(null)}
+        onConfirm={(dataUrl) => { setGen((s) => ({ ...s, avatar: dataUrl })); setCropFile(null); }}
+      />
+      <ConfirmDialog
+        isOpen={!!deleteTarget}
+        tone="danger"
+        title={deleteTarget?.kind === 'preset' ? `删除人格「${deleteTarget.label}」？` : '删除这条记忆？'}
+        description={deleteTarget?.kind === 'preset' ? '它的历史会话仍会保留。' : `「${deleteTarget?.label ?? ''}…」将被移除，它会忘掉这件事。`}
+        confirmText="删除"
+        cancelText="取消"
+        onConfirm={() => void confirmDelete()}
+        onCancel={() => setDeleteTarget(null)}
+      />
+    </div>
+  );
+};

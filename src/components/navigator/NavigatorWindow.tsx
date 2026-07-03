@@ -21,17 +21,17 @@ import { useBoldness } from '@/utils/boldness';
 import { terminalChannel } from '@/utils/terminalSkin';
 import { P3, P3_WATER_WIDE, P3DotGrid, P3GhostWord } from '@/components/terminal/p3Kit';
 import { NavigatorActionForm } from './NavigatorActionForm';
+import { PresetAvatar } from './PresetAvatar';
 import {
   ACTION_META, buildPreviewLines, emptyDraft, executeDraft, navAttrName,
   type NavigatorActionKind, type NavigatorDraft,
 } from '@/utils/navigatorRegistry';
 
-/** 黑猫剪影（与底部导航 ◈ 同源的最小表达） */
-const CatFace = ({ className }: { className?: string }) => (
-  <svg viewBox="0 0 24 24" className={className} fill="currentColor" aria-hidden>
-    <path d="M4.5 9.5 3 3.5l5 3.2a7.6 7.6 0 0 1 8 0l5-3.2-1.5 6a8.4 8.4 0 0 1 1.5 4.9c0 4.6-3.9 7.6-9 7.6s-9-3-9-7.6c0-1.8.55-3.5 1.5-4.9Z" />
-  </svg>
-);
+/** 当前人格的头像（剪影集/上传双轨；订阅 sessionId——切人格必换会话，借它触发重渲染） */
+const CatFace = ({ className }: { className?: string }) => {
+  const avatar = useNavigatorStore((s) => (void s.sessionId, s.activePreset().avatar));
+  return <PresetAvatar avatar={avatar} className={className} />;
+};
 
 // 人格名随 activePreset 动态取（Batch3）；'黑猫' 仅作窗口未初始化时的兜底
 

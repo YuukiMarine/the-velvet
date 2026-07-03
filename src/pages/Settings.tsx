@@ -12,6 +12,7 @@ import { AI_PROVIDERS, getProviderConfig, testAIConnection, type TestResult } fr
 import { UserProfileCard } from '@/components/UserProfileCard';
 import { Toggle } from '@/components/Toggle';
 import NotificationSettings from '@/components/NotificationSettings';
+import { NavigatorSettings } from '@/components/navigator/NavigatorSettings';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import {
   generateAttributeLevelTitles,
@@ -600,6 +601,7 @@ export const Settings = () => {
   const sections = [
     { id: 'theme', label: '主题', icon: '🎨' },
     { id: 'personalize', label: '体验个性化', icon: '⚙️' },
+    { id: 'navigator', label: '黑猫', icon: '◈' },
     { id: 'notifications', label: '通知提醒', icon: '🔔' },
     { id: 'summary', label: 'AI 总结', icon: '✨' }
   ];
@@ -1641,6 +1643,8 @@ export const Settings = () => {
                     )}
                   </div>
                 )}
+
+                {section.id === 'navigator' && <NavigatorSettings />}
 
                 {section.id === 'notifications' && <NotificationSettings />}
 
