@@ -45,6 +45,12 @@ import { initBoldnessRuntime, schedulePerfSample, setStraightenMode } from '@/ut
 import { SlantTuner } from '@/components/dev/SlantTuner';
 import { StarTearDemo } from '@/components/dev/StarTearDemo';
 
+const isStandalonePwa = () => (
+  window.matchMedia('(display-mode: standalone)').matches
+  || window.matchMedia('(display-mode: fullscreen)').matches
+  || ('standalone' in window.navigator && (window.navigator as Navigator & { standalone?: boolean }).standalone === true)
+);
+
 function App() {
   const { currentPage, initializeApp, user, levelUpNotification, setLevelUpNotification, achievementNotification, setAchievementNotification, skillNotification, setSkillNotification, settings, modalBlocker } = useAppStore();
   const [isLoading, setIsLoading] = useState(true);
@@ -274,6 +280,16 @@ function App() {
     }
   }, [settings.darkMode]);
 
+  // iOS PWA standalone has its own safe-area handling. Mark it from JS because
+  // display-mode media queries are not reliable across all iOS 26 PWA launches.
+  useEffect(() => {
+    if (isStandalonePwa()) {
+      document.documentElement.dataset.iosStandalone = 'true';
+    } else {
+      delete document.documentElement.dataset.iosStandalone;
+    }
+  }, []);
+
   // 同步主题色到三个地方：
   //   1. <meta name="theme-color"> —— 旧版 iOS / Android Chrome 顶部状态栏 tint
   //   2. <html> 和 <body> 的 background-color —— iOS 26 Safari 双指缩放时
@@ -290,10 +306,17 @@ function App() {
     if (user?.theme === 'custom' && settings.customThemeColor) {
       color = settings.customThemeColor;
     }
+    // iOS standalone + 移动端：html/body 是系统安全区（状态栏/Home Bar）的着色来源，
+    // 用中性面色而非主题色，避免顶/底被主题色染出「彩条」——用户真机手改口径
+    const isStandalone = isStandalonePwa();
+    const isMobile = window.matchMedia('(max-width: 767px)').matches;
+    const systemAreaColor = isStandalone && isMobile
+      ? (settings.darkMode ? '#111827' : '#ffffff')
+      : color;
     const meta = document.querySelector('meta[name="theme-color"]') as HTMLMetaElement | null;
     if (meta) meta.content = color;
-    document.documentElement.style.backgroundColor = color;
-    document.body.style.backgroundColor = color;
+    document.documentElement.style.backgroundColor = systemAreaColor;
+    document.body.style.backgroundColor = systemAreaColor;
   }, [settings.darkMode, settings.customThemeColor, user?.theme]);
 
   // 在首次用户交互时预加载当前主题音效，之后所有点击都是零延迟播放
@@ -449,9 +472,7 @@ function App() {
             top: 0,
             height: '1px',
             zIndex: 1,
-            backgroundColor: settings.darkMode
-              ? '#111827'
-              : ((user?.theme === 'custom' && settings.customThemeColor) || '#f9fafb'),
+            backgroundColor: settings.darkMode ? '#111827' : '#ffffff',
           }}
         />
         {/* 同样为底部地址栏 / Tab 栏 tint 提供一个采样源（兜底，防止 Safari
@@ -463,9 +484,7 @@ function App() {
             bottom: 0,
             height: '1px',
             zIndex: 1,
-            backgroundColor: settings.darkMode
-              ? '#111827'
-              : ((user?.theme === 'custom' && settings.customThemeColor) || '#f9fafb'),
+            backgroundColor: settings.darkMode ? '#111827' : '#ffffff',
           }}
         />
 
@@ -527,7 +546,7 @@ function App() {
                 //   - 桌面断点（md+）用 Tailwind 的 md:pt-8 覆盖为 2rem，安全区为 0 时无副作用。
                 // 底部 padding 精确匹配 BottomNav 高度（4rem 图标区 + home-indicator 安全区），
                 // 避免 iPhone home bar 设备上出现多余的灰色空白条。
-                className="md:ml-60 px-4 md:px-8 pt-[calc(1rem+env(safe-area-inset-top))] md:pt-8 pb-[calc(4rem+env(safe-area-inset-bottom)+0.5rem)] md:pb-8"
+                className="md:ml-60 px-4 md:px-8 pt-[calc(1rem+env(safe-area-inset-top))] md:pt-8 pb-[calc(4rem+var(--app-bottom-safe-padding,env(safe-area-inset-bottom,0px))+0.5rem)] md:pb-8"
               >
                 <AnimatePresence mode="wait">
                   {renderPage()}
