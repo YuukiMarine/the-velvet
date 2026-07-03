@@ -183,7 +183,6 @@ export const NavigatorWindow = () => {
       <AnimatePresence>
         {nav.isOpen && (
           <motion.div
-            ref={a11yRef}
             role="dialog"
             aria-modal="true"
             aria-label={CAT_NAME}
@@ -210,7 +209,8 @@ export const NavigatorWindow = () => {
               </div>
             )}
 
-            <div className="relative mx-auto flex h-full w-full max-w-2xl flex-col">
+            {/* a11y 焦点陷阱挂内层容器（挂 AnimatePresence 直接子元素会触发 framer PopChild 的 ref 警告） */}
+            <div ref={a11yRef} className="relative mx-auto flex h-full w-full max-w-2xl flex-col">
               {/* 页头：站内信信头 */}
               <div className="px-4 pt-[calc(0.75rem+env(safe-area-inset-top))]">
                 <div className={`flex items-center gap-3 px-4 py-3 ${sk.headerSlab}`} style={sk.headerStyle}>

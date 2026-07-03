@@ -60,6 +60,23 @@ const PROTOCOL = `
   动态上下文已给今日状态，今日的事不用 query。
 - **任何情况下输出都必须是且只是这个 JSON 对象**：想说的话全部放进 reply 字段，绝不把文字写在 JSON 之外。
 
+## 示例（严格模仿输出形态）
+用户：今天跑了五公里
+输出：{"reply":"哦？主动跑步，太阳打西边出来了。卡片给你，确认下。","actions":[{"kind":"activity","text":"跑步五公里","points":{"knowledge":0,"guts":2,"dexterity":1,"kindness":0,"charm":0},"important":false}],"query":null}
+用户：（已有一张待确认的「学习」待办卡）改成每天学英语吧
+输出：{"reply":"行，换成每日的英语卡。旧的那张记得点取消。","actions":[{"kind":"todo","title":"学英语","attribute":"knowledge","points":2,"repeatDaily":true}],"query":null}
+用户：今天好累啊
+输出：{"reply":"累就瘫一会儿，没人催你。\n\n想记点什么再叫我。","actions":[],"query":null}
+
+## reply 与 actions 必须一致（防幻觉，最高优先级）
+- 只有本轮 actions 数组里真的放了动作，reply 才可以说「卡片给你/安排上了/记下了」。
+- actions 为空时，绝不声称已创建/已记录任何东西——要么把缺的信息问清，要么直说这轮没出卡。
+- 信息已经够出卡时就直接出卡，不要只在嘴上答应「稍后记」。
+- 出卡的唯一途径是 actions 字段。**绝不在 reply 文本里手写卡片样式**（如「[卡片·…]」或框线画卡）——那不会生效，只会骗到用户。
+- 卡片的真实状态只看【本会话卡片实录】：待用户确认=还没生效、已确认生效、已取消。用户想改一张待确认的卡时，在 actions 里出一张修正后的新卡，并在 reply 里让用户取消旧卡。
+- 数值纪律：属性点数/等级只能引用动态上下文给出的数字；没给的数值一律说记不清或建议去对应页面看，禁止编造。
+- 【】标记是系统数据区的标签，说话时不要把这些标签名念出来（不要说"属性面板显示"，直接说数字）。
+
 ## 引用数据
 动态上下文里的状态与记录，化进话里自然地说，不要像念报表；没有的信息不要编造。`;
 
@@ -71,21 +88,29 @@ const SECOND_PASS_NOTE =
 const buildStaticSystem = (): string => `${DEFAULT_PERSONA}\n${PROTOCOL}`;
 
 /** 动态上下文块：只含数据不含指令，贴在最新用户消息之前（缓存友好） */
-export function buildDynamicContext(snap: NavigatorSnapshot, swallowed: string[]): string {
+export function buildDynamicContext(snap: NavigatorSnapshot, swallowed: string[], cards: string[] = []): string {
   const s = useAppStore.getState();
   const due = s.getDueTodosToday().filter((t) => !s.getTodayTodoProgress(t.id).isComplete);
+  const attrs = s.attributes
+    .map((a) => `${s.settings.attributeNames?.[a.id] ?? a.displayName} Lv.${a.level}（${a.points} 点）`)
+    .join('；');
   const lines = [
     `【今日状态 ${snap.dateKey}】`,
     `用户：${snap.userName}；当前 ${snap.hour} 点`,
+    attrs ? `【属性面板】${attrs}` : '',
     `今日任务 ${snap.todosDone}/${snap.todosTotal}；今日已记 ${snap.activityCountToday} 条活动`,
     snap.tarotDrawn ? `今日塔罗已抽：「${snap.tarotCardName ?? '?'}」` : '今日塔罗未抽',
     snap.terminalStepTitle ? `进行中的终端小步：「${snap.terminalStepTitle}」` : '',
     due.length
       ? `【今日未完成待办（completeTodo 只能用这些 id）】\n${due.slice(0, 12).map((t) => `- id=${t.id} 「${t.title}」(${navAttrName(t.attribute)}+${t.points})`).join('\n')}`
       : '【今日无未完成待办】',
+    cards.length
+      ? `【本会话卡片实录（真实状态，以此为准）】\n${cards.join('\n')}`
+      : '【本会话尚无卡片】',
     swallowed.length
       ? `【你上一条回复被用户打断，没说出口的是】${swallowed.join(' / ')}（若仍相关可自然续上，不相关就放弃，不要复读原文）`
       : '',
+    '（提醒：输出必须是 {"reply","actions","query"} 这一个 JSON 对象；要出卡/改卡就把动作放进 actions 数组，reply 只负责说话。）',
   ].filter(Boolean);
   return lines.join('\n');
 }
@@ -226,6 +251,7 @@ export async function runNavigatorTurn(
   userText: string,
   swallowed: string[],
   signal: AbortSignal,
+  cards: string[] = [],
 ): Promise<NavigatorTurnResult> {
   const cfg = getAIConfig(useAppStore.getState().settings);
   if (!cfg) throw new Error('未配置 AI');
@@ -233,7 +259,7 @@ export async function runNavigatorTurn(
   const base: AIMessage[] = [
     { role: 'system', content: buildStaticSystem() },
     ...historyToMessages(history).slice(-24),
-    { role: 'system', content: buildDynamicContext(snap, swallowed) },
+    { role: 'system', content: buildDynamicContext(snap, swallowed, cards) },
     { role: 'user', content: userText },
   ];
 
@@ -241,7 +267,7 @@ export async function runNavigatorTurn(
   // 给小了 content 里的 JSON 会被截断（实测 375 tokens 推理 + JSON 正文）。
   let lastRaw = '';
   const callOnce = async (messages: AIMessage[]): Promise<Record<string, unknown> | null> => {
-    lastRaw = await chatComplete(cfg, messages, { temperature: 0.6, maxTokens: 1400, signal });
+    lastRaw = await chatComplete(cfg, messages, { temperature: 0.6, maxTokens: 1400, signal, jsonMode: true });
     return extractJson(lastRaw);
   };
 
@@ -262,14 +288,53 @@ export async function runNavigatorTurn(
     const salvaged = salvageReply(lastRaw);
     return { segments: splitSegments(salvaged ?? '唔……刚才走神了，没听清。再说一遍？'), drafts: [] };
   }
-  const reply = String(parsed.reply ?? '').trim();
-  // actions 数组为准；兼容模型仍按旧约定输出单 action 的情况
-  const rawActions = Array.isArray(parsed.actions)
-    ? (parsed.actions as Array<Record<string, unknown>>)
-    : parsed.action
-      ? [parsed.action as Record<string, unknown>]
-      : [];
-  const drafts = rawActions.slice(0, 3).map(toDraft).filter((d): d is NavigatorDraft => !!d);
+
+  const extract = (p: Record<string, unknown>) => {
+    const reply = String(p.reply ?? '').trim();
+    // actions 数组为准；兼容模型仍按旧约定输出单 action 的情况
+    const rawActions = Array.isArray(p.actions)
+      ? (p.actions as Array<Record<string, unknown>>)
+      : p.action
+        ? [p.action as Record<string, unknown>]
+        : [];
+    const drafts = rawActions.slice(0, 3).map((a) => {
+      const d = toDraft(a);
+      // 提了动作却被校验丢弃 = 模型很可能在 reply 里许了空头支票——dev 下留痕便于调 prompt
+      if (!d && import.meta.env.DEV) console.warn('[navigator] action 校验未通过被丢弃:', a);
+      return d;
+    }).filter((d): d is NavigatorDraft => !!d);
+    return { reply, drafts };
+  };
+
+  let { reply, drafts } = extract(parsed);
+
+  // 承诺-空卡守卫：reply 声称出了卡但 actions 为空 → 定向补救一跳，逼它补卡或改口
+  // （词表兜不住所有说法，few-shot + jsonMode 是主防线，这里是最后一道网）
+  const PROMISE_RE = /卡片?(给你|安排|开|挂|写|已|办)|安排上了?|记下了|给你记|挂上去|开[张好]|换成(这|每)|整个每日|建好了|加进(清单|待办)/;
+  if (drafts.length === 0 && PROMISE_RE.test(reply)) {
+    if (import.meta.env.DEV) console.warn('[navigator] reply 承诺出卡但 actions 为空，触发补救调用');
+    const repaired = await callOnce([
+      ...base,
+      { role: 'assistant', content: lastRaw },
+      { role: 'system', content: '你上一条 reply 声称出了卡片，但 actions 是空的——用户会看到空头支票。重新输出完整 JSON：要么把该出的 actions 补上（reply 保持原意即可），要么改写 reply 不再声称出卡。本轮禁止 query。' },
+    ]);
+    if (repaired) {
+      const fixed = extract(repaired);
+      if (fixed.drafts.length > 0) {
+        // 补上卡了：采纳修复轮
+        drafts = fixed.drafts;
+        reply = fixed.reply || reply;
+      } else if (fixed.reply && !PROMISE_RE.test(fixed.reply)) {
+        // 改口成功（不再承诺）：采纳新说法
+        reply = fixed.reply;
+      }
+    }
+    // 硬兜底：两轮都没卡还在承诺 → 本地强制改口，绝不放行空头支票
+    if (drafts.length === 0 && PROMISE_RE.test(reply)) {
+      reply = '这张卡吾辈没能开出来——你把关键信息再说一遍，或者用下面的快捷项手动建一张，我盯着。';
+    }
+  }
+
   const segments = splitSegments(reply || (drafts.length ? '卡片给你，看一眼没问题就确认。' : '嗯。'));
   return { segments, drafts };
 }
