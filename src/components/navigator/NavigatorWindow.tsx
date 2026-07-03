@@ -22,6 +22,9 @@ import { terminalChannel } from '@/utils/terminalSkin';
 import { P3, P3_WATER_WIDE, P3DotGrid, P3GhostWord } from '@/components/terminal/p3Kit';
 import { NavigatorActionForm } from './NavigatorActionForm';
 import { PresetAvatar } from './PresetAvatar';
+import { NavigatorNotebook } from './NavigatorNotebook';
+import { ImageCropDialog } from '@/components/ImageCropDialog';
+import { mergedNavigatorPresets } from '@/constants/navigatorPresets';
 import {
   ACTION_META, buildPreviewLines, emptyDraft, executeDraft, navAttrName,
   type NavigatorActionKind, type NavigatorDraft,
@@ -112,6 +115,10 @@ export const NavigatorWindow = () => {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [input, setInput] = useState('');
   const [busyCardId, setBusyCardId] = useState<string | null>(null);
+  const [personaMenuOpen, setPersonaMenuOpen] = useState(false);
+  const [notebookOpen, setNotebookOpen] = useState(false);
+  const [avatarCropFile, setAvatarCropFile] = useState<File | null>(null);
+  const avatarFileRef = useRef<HTMLInputElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
 
   // 打开：加载自定义人格 + 挂载当日会话 + 问候（逻辑收在 store.greet，内部先 hydrate）
@@ -232,12 +239,19 @@ export const NavigatorWindow = () => {
 
             {/* a11y 焦点陷阱挂内层容器（挂 AnimatePresence 直接子元素会触发 framer PopChild 的 ref 警告） */}
             <div ref={a11yRef} className="relative mx-auto flex h-full w-full max-w-2xl flex-col">
-              {/* 页头：站内信信头 */}
-              <div className="px-4 pt-[calc(0.75rem+env(safe-area-inset-top))]">
+              {/* 页头：站内信信头（头像可点开人格菜单） */}
+              <div className="relative px-4 pt-[calc(0.75rem+env(safe-area-inset-top))]">
                 <div className={`flex items-center gap-3 px-4 py-3 ${sk.headerSlab}`} style={sk.headerStyle}>
-                  <span className={`flex h-9 w-9 shrink-0 items-center justify-center ${sk.avatar}`} style={{ ...sk.avatarStyle, clipPath: bright ? 'polygon(0 8%, 100% 0, 96% 100%, 2% 96%)' : undefined, borderRadius: bright ? undefined : '0.75rem' }}>
+                  <button
+                    type="button"
+                    aria-label="人格菜单"
+                    aria-expanded={personaMenuOpen}
+                    onClick={() => setPersonaMenuOpen((v) => !v)}
+                    className={`flex h-9 w-9 shrink-0 items-center justify-center transition hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-current ${sk.avatar}`}
+                    style={{ ...sk.avatarStyle, clipPath: bright ? 'polygon(0 8%, 100% 0, 96% 100%, 2% 96%)' : undefined, borderRadius: bright ? undefined : '0.75rem' }}
+                  >
                     <CatFace className="h-5 w-5" />
-                  </span>
+                  </button>
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-base font-black" style={sk.headerText}>{bright ? `▶ 站内信 · ${preset.name}` : preset.name}</div>
                     <div className="text-[11px] font-bold opacity-60" style={sk.headerText}>{bright ? '深夜在线 · 有事直说' : '万能记录 · 有事直说'}</div>
@@ -258,6 +272,57 @@ export const NavigatorWindow = () => {
                     ✕
                   </button>
                 </div>
+
+                {/* 人格快捷菜单（头像下拉浮层） */}
+                <AnimatePresence>
+                  {personaMenuOpen && (
+                    <>
+                      <div className="fixed inset-0 z-10" onClick={() => setPersonaMenuOpen(false)} aria-hidden />
+                      <motion.div
+                        initial={bold ? { opacity: 0, y: -8 } : { opacity: 0 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.16 }}
+                        role="menu"
+                        aria-label="人格菜单"
+                        className={`absolute left-4 top-full z-20 mt-1 w-64 overflow-hidden ${bright ? 'bg-[#f7fbff] shadow-[0_18px_44px_rgba(7,40,120,.35)]' : 'rounded-2xl border border-white/12 bg-[#171c27] shadow-2xl'}`}
+                        style={bright ? { clipPath: 'polygon(0 2%, 100% 0, 99% 100%, 0 98%)', color: P3.ink } : { color: '#e5e7eb' }}
+                      >
+                        <div className="px-4 pb-1 pt-3 text-[10px] font-black uppercase tracking-[0.18em] opacity-55">切换人格</div>
+                        {mergedNavigatorPresets(nav.presets).map((p) => (
+                          <button
+                            key={p.id}
+                            type="button"
+                            role="menuitem"
+                            onClick={() => { setPersonaMenuOpen(false); if (p.id !== preset.id) void nav.switchPreset(p.id); }}
+                            className={`flex w-full items-center gap-2.5 px-4 py-2 text-left text-sm font-bold transition ${bright ? 'hover:bg-[#e3f0fd]' : 'hover:bg-white/8'}`}
+                          >
+                            <span className={`flex h-7 w-7 shrink-0 items-center justify-center ${bright ? 'text-white' : 'text-primary'}`} style={bright ? { background: P3.deep, clipPath: 'polygon(0 8%, 100% 0, 96% 100%, 2% 96%)' } : { background: 'rgba(255,255,255,.08)', borderRadius: '0.5rem' }}>
+                              <PresetAvatar avatar={p.avatar} className="h-4 w-4" />
+                            </span>
+                            <span className="min-w-0 flex-1 truncate">{p.name}</span>
+                            {p.id === preset.id && <span className="text-[10px] font-black opacity-60">当前</span>}
+                          </button>
+                        ))}
+                        <div className={`mx-4 my-1 h-px ${bright ? 'bg-[#d5e7fa]' : 'bg-white/10'}`} aria-hidden />
+                        <button type="button" role="menuitem" onClick={() => { setPersonaMenuOpen(false); avatarFileRef.current?.click(); }}
+                          className={`block w-full px-4 py-2 text-left text-sm font-bold transition ${bright ? 'hover:bg-[#e3f0fd]' : 'hover:bg-white/8'}`}>
+                          上传头像（{preset.name}）
+                        </button>
+                        <button type="button" role="menuitem" onClick={() => { setPersonaMenuOpen(false); setNotebookOpen(true); }}
+                          className={`block w-full px-4 py-2 text-left text-sm font-bold transition ${bright ? 'hover:bg-[#e3f0fd]' : 'hover:bg-white/8'}`}>
+                          记事本
+                        </button>
+                        <button type="button" role="menuitem" onClick={() => { setPersonaMenuOpen(false); nav.close(); setCurrentPage('settings'); }}
+                          className={`block w-full px-4 pb-3 pt-2 text-left text-sm font-bold transition ${bright ? 'hover:bg-[#e3f0fd]' : 'hover:bg-white/8'}`}>
+                          更多设置…
+                        </button>
+                      </motion.div>
+                    </>
+                  )}
+                </AnimatePresence>
+                <input ref={avatarFileRef} type="file" accept="image/*" className="hidden"
+                  onChange={(e) => { setAvatarCropFile(e.target.files?.[0] ?? null); e.target.value = ''; }} />
               </div>
 
               {/* 消息流（顶部上拉加载更早；隔 >5 分钟插居中时间戳） */}
@@ -390,6 +455,19 @@ export const NavigatorWindow = () => {
         bright={bright}
         onSubmit={onFormSubmit}
         onClose={() => { setFormDraft(null); setEditingCardId(null); }}
+      />
+      {/* 记事本（头像菜单入口） */}
+      <NavigatorNotebook isOpen={notebookOpen} onClose={() => setNotebookOpen(false)} />
+      {/* 当前人格头像上传（内置人格 → 同 id 影子行覆盖，删除影子即恢复默认） */}
+      <ImageCropDialog
+        isOpen={!!avatarCropFile}
+        file={avatarCropFile}
+        title={`调整${preset.name}的头像`}
+        onCancel={() => setAvatarCropFile(null)}
+        onConfirm={(dataUrl) => {
+          void nav.savePreset({ ...preset, avatar: dataUrl });
+          setAvatarCropFile(null);
+        }}
       />
     </>,
     document.body,

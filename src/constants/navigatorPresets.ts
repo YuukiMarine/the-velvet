@@ -58,15 +58,26 @@ export const BUILTIN_NAVIGATOR_PRESETS: NavigatorPreset[] = [
   },
 ];
 
-/** 取当前激活 preset：settings.navigatorPresetId → 内置 → 自定义表；缺省/失配回黑猫 */
+/**
+ * 取当前激活 preset：**表内行优先**（同 id 的"影子行"覆盖内置——用于给内置人格换头像等
+ * 个性化：savePreset 同 id 即覆盖，删除影子即恢复默认），其次内置；缺省/失配回黑猫。
+ */
 export function resolveNavigatorPreset(
   presetId: string | undefined,
   customPresets: NavigatorPreset[],
 ): NavigatorPreset {
   if (presetId) {
-    const hit = BUILTIN_NAVIGATOR_PRESETS.find((p) => p.id === presetId)
-      ?? customPresets.find((p) => p.id === presetId);
+    const hit = customPresets.find((p) => p.id === presetId)
+      ?? BUILTIN_NAVIGATOR_PRESETS.find((p) => p.id === presetId);
     if (hit) return hit;
   }
-  return BUILTIN_NAVIGATOR_PRESETS[0];
+  return customPresets.find((p) => p.id === BUILTIN_NAVIGATOR_PRESETS[0].id) ?? BUILTIN_NAVIGATOR_PRESETS[0];
+}
+
+/** 全量人格列表（内置被影子行覆盖后去重 + 纯自定义），供列表 UI 使用 */
+export function mergedNavigatorPresets(customPresets: NavigatorPreset[]): NavigatorPreset[] {
+  const builtinIds = new Set(BUILTIN_NAVIGATOR_PRESETS.map((b) => b.id));
+  const builtins = BUILTIN_NAVIGATOR_PRESETS.map((b) => customPresets.find((c) => c.id === b.id) ?? b);
+  const pure = customPresets.filter((c) => !builtinIds.has(c.id));
+  return [...builtins, ...pure];
 }

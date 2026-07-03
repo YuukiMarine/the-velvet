@@ -43,6 +43,27 @@ interface CompactResult {
   personaSummary: string;
   memories: Array<{ text: string; importance: number; colorHint?: string }>;
   followUp: string | null;
+  /** AI 增量维护的用户画像全文（无变化时为原文） */
+  profile: string | null;
+}
+
+// ── 用户画像（ChatGPT Memory 式总览：常驻注入 + compact 增量维护 + 用户可编辑） ──
+
+const PROFILE_ID = 'navigator-user-profile';
+
+export async function getProfile(): Promise<string> {
+  try {
+    const row = await db.navigatorMemos.get(PROFILE_ID);
+    return row?.status === 'active' ? row.text : '';
+  } catch { return ''; }
+}
+
+export async function saveProfile(text: string): Promise<void> {
+  const t = text.trim().slice(0, 400);
+  await db.navigatorMemos.put({
+    id: PROFILE_ID, source: 'profile', text: t, importance: 5, pinned: true,
+    status: t ? 'active' : 'archived', createdAt: new Date(),
+  });
 }
 
 function extractJson(raw: string): Record<string, unknown> | null {
@@ -60,24 +81,28 @@ function extractJson(raw: string): Record<string, unknown> | null {
 
 const COMPACT_PROTOCOL = `你是对话归档器。把给定的「用户与陪伴 AI 的对话片段」压缩归档。
 只输出这一个 JSON 对象（不要代码块、不要其它文字）：
-{"summary":"","personaSummary":"","memories":[],"followUp":null}
+{"summary":"","personaSummary":"","memories":[],"followUp":null,"profile":null}
 - summary：中性第三人称摘要，≤120 字，保留具体事实（做了什么/提到什么/情绪如何）。
 - personaSummary：同样内容，改用陪伴 AI 的第一人称口吻复述，≤100 字。
 - memories：0~2 条值得长期记住的**关于用户的**原子事实（各 ≤40 字，中性陈述句），
   每条 {"text":"","importance":1..5,"colorHint":"提起时的情绪，可空"}。
   只收会影响未来相处的事（在准备的考试/长期困扰/重要偏好/关系变化）；日常流水不收。
-- followUp：一个值得下次自然追问的话头（≤30 字），没有就 null。`;
+- followUp：一个值得下次自然追问的话头（≤30 字），没有就 null。
+- profile：拿【现有用户画像】与本段对话对照，若有值得并入画像的长期信息（身份/长期目标/
+  稳定偏好/生活状态变化），输出**更新后的画像全文**（≤200 字，中性第三人称，合并去重）；
+  画像无需变化则 null。不要把短期琐事写进画像。`;
 
 async function compactViaAI(
   cfg: AIConfig,
   lines: string[],
   personaName: string,
+  oldProfile: string,
 ): Promise<CompactResult | null> {
   try {
     let raw: string;
     const messages: AIMessage[] = [
       { role: 'system', content: COMPACT_PROTOCOL },
-      { role: 'user', content: `陪伴 AI 的名字：${personaName}\n【对话片段】\n${lines.join('\n')}` },
+      { role: 'user', content: `陪伴 AI 的名字：${personaName}\n【现有用户画像】${oldProfile || '（暂无）'}\n【对话片段】\n${lines.join('\n')}` },
     ];
     try {
       raw = await chatComplete(cfg, messages, { temperature: 0.3, maxTokens: 900, jsonMode: true });
@@ -109,6 +134,7 @@ async function compactViaAI(
       personaSummary: String(parsed.personaSummary ?? '').trim().slice(0, 180) || summary,
       memories,
       followUp: String(parsed.followUp ?? '').trim().slice(0, 40) || null,
+      profile: String(parsed.profile ?? '').trim().slice(0, 400) || null,
     };
   } catch (e) {
     if (import.meta.env.DEV) console.warn('[navigator] compact 调用失败', e);
@@ -131,6 +157,8 @@ function rowsToLines(rows: NavigatorMessageRow[]): string[] {
 }
 
 async function persistMemories(result: CompactResult): Promise<void> {
+  // AI 更新了画像 → 落库（用户手动编辑的版本会在下次 compact 时作为"现有画像"喂回，形成闭环）
+  if (result.profile) void saveProfile(result.profile);
   const now = new Date();
   const memos: NavigatorMemo[] = result.memories.map((m, i) => ({
     id: uuidv4(),
@@ -177,7 +205,7 @@ export async function finalizeStaleSessions(): Promise<string | null> {
       let summary: string;
       let personaSummary: string | undefined;
       if (cfg && (userMsgs.length >= FINALIZE_MIN_USER_MSGS || userChars >= FINALIZE_MIN_USER_CHARS)) {
-        const result = await compactViaAI(cfg, rowsToLines(rows).slice(-80), '黑猫');
+        const result = await compactViaAI(cfg, rowsToLines(rows).slice(-80), '黑猫', await getProfile());
         if (result) {
           summary = result.summary;
           personaSummary = result.personaSummary;
@@ -239,7 +267,7 @@ export async function maybeCompactLive(
   let summaryText: string;
   const cfg = getAIConfig(useAppStore.getState().settings);
   if (cfg && total <= HARD_CAP_TOKENS) {
-    const result = await compactViaAI(cfg, rowsToLines(squash).slice(-100), '黑猫');
+    const result = await compactViaAI(cfg, rowsToLines(squash).slice(-100), '黑猫', await getProfile());
     if (result) {
       await persistMemories(result);
       summaryText = result.summary;
@@ -284,7 +312,8 @@ const cjkBigrams = (text: string): Set<string> => {
  */
 export async function recallMemories(queryText: string): Promise<RecallResult> {
   try {
-    const memos = await db.navigatorMemos.where('status').equals('active').toArray();
+    const memos = (await db.navigatorMemos.where('status').equals('active').toArray())
+      .filter((m) => m.source !== 'profile'); // 画像另行常驻注入，不占检索位
     if (memos.length === 0) return { lines: [] };
     const q = cjkBigrams(queryText);
     const now = Date.now();

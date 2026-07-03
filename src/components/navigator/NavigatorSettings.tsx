@@ -9,16 +9,16 @@
 import { useEffect, useRef, useState } from 'react';
 import { useAppStore } from '@/store';
 import { useNavigatorStore } from '@/store/navigator';
-import { db } from '@/db';
 import { v4 as uuidv4 } from 'uuid';
 import { getAIConfig } from '@/utils/aiClient';
 import { generatePersonaPrompt } from '@/utils/navigatorIntent';
 import { finalizeStaleSessions } from '@/utils/navigatorMemory';
-import { BUILTIN_NAVIGATOR_PRESETS } from '@/constants/navigatorPresets';
+import { mergedNavigatorPresets } from '@/constants/navigatorPresets';
 import { PresetAvatar, PRESET_GLYPH_IDS } from './PresetAvatar';
+import { NavigatorNotebook } from './NavigatorNotebook';
 import { ImageCropDialog } from '@/components/ImageCropDialog';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
-import type { NavigatorMemo, NavigatorPreset } from '@/types';
+import type { NavigatorPreset } from '@/types';
 
 const TONE_WORDS = ['温柔', '毒舌', '元气', '冷淡', '正经', '幽默', '腹黑', '天然'];
 
@@ -47,27 +47,21 @@ export const NavigatorSettings = () => {
   const activeId = nav.activePreset().id;
 
   const [gen, setGen] = useState<GeneratorState>(closedGenerator);
-  const [memos, setMemos] = useState<NavigatorMemo[]>([]);
-  const [memoEdit, setMemoEdit] = useState<{ id: string; text: string } | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<{ kind: 'preset' | 'memo'; id: string; label: string } | null>(null);
+  const [notebookOpen, setNotebookOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<{ kind: 'preset'; id: string; label: string } | null>(null);
   const [cropFile, setCropFile] = useState<File | null>(null);
   const [archiving, setArchiving] = useState(false);
   const [archiveDone, setArchiveDone] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
-  const loadMemos = async () => {
-    const rows = await db.navigatorMemos.orderBy('createdAt').reverse().toArray();
-    setMemos(rows.filter((m) => m.status === 'active'));
-  };
   useEffect(() => {
     void nav.loadPresets();
-    void loadMemos();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── 人格 ──
+  // ── 人格（影子行覆盖内置后去重） ──
 
-  const allPresets: NavigatorPreset[] = [...BUILTIN_NAVIGATOR_PRESETS, ...nav.presets];
+  const allPresets: NavigatorPreset[] = mergedNavigatorPresets(nav.presets);
 
   const openEditor = (p?: NavigatorPreset) =>
     setGen(p
@@ -101,23 +95,9 @@ export const NavigatorSettings = () => {
     setGen(closedGenerator);
   };
 
-  // ── 记事本 ──
-
-  const togglePin = async (m: NavigatorMemo) => {
-    await db.navigatorMemos.update(m.id, { pinned: !m.pinned, importance: !m.pinned ? 5 : m.importance });
-    await loadMemos();
-  };
-  const saveMemoEdit = async () => {
-    if (!memoEdit) return;
-    const text = memoEdit.text.trim();
-    if (text) await db.navigatorMemos.update(memoEdit.id, { text: text.slice(0, 80) });
-    setMemoEdit(null);
-    await loadMemos();
-  };
   const confirmDelete = async () => {
     if (!deleteTarget) return;
-    if (deleteTarget.kind === 'preset') await nav.deletePreset(deleteTarget.id);
-    else { await db.navigatorMemos.delete(deleteTarget.id); await loadMemos(); }
+    await nav.deletePreset(deleteTarget.id);
     setDeleteTarget(null);
   };
 
@@ -162,13 +142,17 @@ export const NavigatorSettings = () => {
                 切换
               </button>
             )}
-            {!p.isBuiltin && (
+            {!p.isBuiltin ? (
               <>
                 <button type="button" onClick={() => openEditor(p)} aria-label={`编辑 ${p.name}`}
                   className="shrink-0 rounded p-1 text-xs text-gray-400 hover:text-primary">编辑</button>
                 <button type="button" onClick={() => setDeleteTarget({ kind: 'preset', id: p.id, label: p.name })} aria-label={`删除 ${p.name}`}
                   className="shrink-0 rounded p-1 text-xs text-gray-400 hover:text-red-400">删除</button>
               </>
+            ) : nav.presets.some((c) => c.id === p.id) && (
+              // 内置人格的"影子行"（个性化头像等覆盖）——删除影子即恢复默认
+              <button type="button" onClick={() => void nav.deletePreset(p.id).then(() => nav.loadPresets())} aria-label={`恢复 ${p.name} 默认`}
+                className="shrink-0 rounded p-1 text-xs text-gray-400 hover:text-primary">恢复默认</button>
             )}
           </div>
         ))}
@@ -284,56 +268,17 @@ export const NavigatorSettings = () => {
         </div>
       )}
 
-      {/* ── 记事本 ── */}
-      <div className="flex items-center gap-2 pb-2 pt-2 border-b border-gray-200 dark:border-gray-700/80">
-        <span className="text-base">📔</span>
-        <h4 className="text-sm font-bold text-gray-800 dark:text-white tracking-wide">记事本</h4>
-      </div>
-      <p className="-mt-2 text-sm text-gray-500 dark:text-gray-400">
-        它记住的关于你的事。可改可删；置顶的永不遗忘。所有记忆只存本机。
-      </p>
-      {memos.length === 0 ? (
-        <p className="rounded-xl border border-dashed border-gray-300 px-4 py-5 text-center text-xs text-gray-400 dark:border-gray-600">
-          还没有记忆——多聊几天，它会自己记住重要的事。
-        </p>
-      ) : (
-        <div className="space-y-2">
-          {memos.map((m) => (
-            <div key={m.id} className="rounded-xl border border-gray-200 px-3 py-2.5 dark:border-gray-700">
-              {memoEdit?.id === m.id ? (
-                <div className="flex items-center gap-2">
-                  <input
-                    autoFocus
-                    value={memoEdit.text}
-                    onChange={(e) => setMemoEdit({ id: m.id, text: e.target.value })}
-                    onKeyDown={(e) => { if (e.key === 'Enter') void saveMemoEdit(); }}
-                    className="min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm outline-none focus:border-primary dark:border-gray-700 dark:bg-gray-900 dark:text-white"
-                  />
-                  <button type="button" onClick={() => void saveMemoEdit()} className="shrink-0 text-xs font-bold text-primary">存</button>
-                </div>
-              ) : (
-                <div className="flex items-start gap-2">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm leading-relaxed text-gray-700 dark:text-gray-200">
-                      {m.pinned && <span className="mr-1 text-primary" aria-hidden>📌</span>}
-                      {m.text}
-                    </p>
-                    <p className="mt-0.5 text-[10px] text-gray-400 dark:text-gray-500">
-                      {new Date(m.createdAt).toLocaleDateString()} · 重要度 {m.importance}{m.followUp ? ' · 有待追问话头' : ''}
-                    </p>
-                  </div>
-                  <button type="button" onClick={() => void togglePin(m)} aria-label={m.pinned ? '取消置顶' : '置顶'}
-                    className={`shrink-0 rounded p-1 text-xs ${m.pinned ? 'text-primary' : 'text-gray-300 hover:text-primary dark:text-gray-600'}`}>📌</button>
-                  <button type="button" onClick={() => setMemoEdit({ id: m.id, text: m.text })} aria-label="编辑记忆"
-                    className="shrink-0 rounded p-1 text-xs text-gray-400 hover:text-primary">改</button>
-                  <button type="button" onClick={() => setDeleteTarget({ kind: 'memo', id: m.id, label: m.text.slice(0, 12) })} aria-label="删除记忆"
-                    className="shrink-0 rounded p-1 text-xs text-gray-400 hover:text-red-400">删</button>
-                </div>
-              )}
-            </div>
-          ))}
+      {/* ── 记事本（弹窗；含 AI 维护的用户画像 + 原子记忆） ── */}
+      <div className="flex items-center justify-between gap-3 rounded-xl border border-gray-200 px-4 py-3 dark:border-gray-700">
+        <div>
+          <div className="text-sm font-semibold text-gray-700 dark:text-gray-200">📔 记事本</div>
+          <p className="text-xs text-gray-400 dark:text-gray-500">它记住的关于你的事：长期画像 + 零散记忆，可改可删，只存本机。</p>
         </div>
-      )}
+        <button type="button" onClick={() => setNotebookOpen(true)}
+          className="shrink-0 rounded-full border border-primary/40 px-3 py-1.5 text-xs font-semibold text-primary hover:bg-primary/10">
+          打开
+        </button>
+      </div>
 
       {/* ── 手动归档（compact 主泵手动入口） ── */}
       <div className="flex items-center justify-between gap-3 rounded-xl border border-gray-200 px-4 py-3 dark:border-gray-700">
@@ -359,13 +304,14 @@ export const NavigatorSettings = () => {
       <ConfirmDialog
         isOpen={!!deleteTarget}
         tone="danger"
-        title={deleteTarget?.kind === 'preset' ? `删除人格「${deleteTarget.label}」？` : '删除这条记忆？'}
-        description={deleteTarget?.kind === 'preset' ? '它的历史会话仍会保留。' : `「${deleteTarget?.label ?? ''}…」将被移除，它会忘掉这件事。`}
+        title={`删除人格「${deleteTarget?.label ?? ''}」？`}
+        description="它的历史会话仍会保留。"
         confirmText="删除"
         cancelText="取消"
         onConfirm={() => void confirmDelete()}
         onCancel={() => setDeleteTarget(null)}
       />
+      <NavigatorNotebook isOpen={notebookOpen} onClose={() => setNotebookOpen(false)} />
     </div>
   );
 };
