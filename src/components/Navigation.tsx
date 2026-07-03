@@ -179,7 +179,7 @@ const NavTab = ({ item, active, onSelect }: { item: NavItem; active: boolean; on
   <motion.button
     whileTap={{ scale: 0.88 }}
     onClick={onSelect}
-    className={`relative flex flex-col items-center justify-center flex-1 h-full gap-1 cursor-pointer transition-colors duration-150 ${
+    className={`relative flex flex-col items-center justify-center flex-1 h-full cursor-pointer transition-colors duration-150 ${
       active ? 'text-primary' : 'text-gray-400 dark:text-gray-500'
     }`}
   >
@@ -197,10 +197,16 @@ const NavTab = ({ item, active, onSelect }: { item: NavItem; active: boolean; on
         <div className="absolute inset-0 bg-primary" style={{ transform: 'skewX(var(--ui-skew-ui))' }} />
       </motion.div>
     )}
-    <item.Icon filled={active} />
-    <span className={`text-[10px] leading-none ${active ? 'font-semibold' : 'font-normal'}`}>
-      {item.label}
-    </span>
+    {/* iOS standalone 下由 --bottom-nav-content-shift 微调内容基线（行高压缩为 48px 时回正视觉重心） */}
+    <div
+      className="flex flex-col items-center justify-center gap-1"
+      style={{ transform: 'translateY(var(--bottom-nav-content-shift, 0px))' }}
+    >
+      <item.Icon filled={active} />
+      <span className={`text-[10px] leading-none ${active ? 'font-semibold' : 'font-normal'}`}>
+        {item.label}
+      </span>
+    </div>
   </motion.button>
 );
 
@@ -238,10 +244,12 @@ export const BottomNav = () => {
       // z-index 从 z-50 收编为 zClass.nav（40）：标准弹窗（modal=50）必须能盖住导航。
       // 前提是旧的树内浮层（PWAUpdateToast / CallingCardCutIn / auth 弹窗）已 portal 到
       // body——本 PR 的并行任务负责，层级表见 utils/zIndex.ts
-      className={`md:hidden fixed bottom-0 left-0 right-0 ${zClass.nav} bg-white dark:bg-gray-900 border-t border-gray-100 dark:border-gray-800`}
-      style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+      //
+      // 图标区和 Home Indicator safe-area 分层渲染；iOS standalone 下 safe 层由 CSS 置 0，
+      // 避免系统已避让后再叠一层底部空白（iOS 26 bottom chin gap，用户真机手改口径）。
+      className={`md:hidden fixed bottom-0 left-0 right-0 ${zClass.nav} flex flex-col bg-white dark:bg-gray-900 border-t border-gray-100 dark:border-gray-800`}
     >
-      <div className="flex items-center h-16">
+      <div className="flex items-center h-[var(--bottom-nav-item-height,4rem)]">
         {navItems.slice(0, 2).map(renderTab)}
 
         {/* 中央 ◈：黑猫入口（NavigatorWindow）。
@@ -270,6 +278,11 @@ export const BottomNav = () => {
 
         {navItems.slice(2).map(renderTab)}
       </div>
+      <div
+        aria-hidden
+        className="bg-white dark:bg-gray-900"
+        style={{ height: 'var(--bottom-nav-safe-height, env(safe-area-inset-bottom, 0px))' }}
+      />
     </motion.nav>
   );
 };

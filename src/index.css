@@ -11,6 +11,10 @@
   --color-primary: #3B82F6;
   --color-primary-rgb: 59 130 246;
   --color-secondary: #60A5FA;
+  --bottom-nav-item-height: 4rem;
+  --bottom-nav-safe-height: env(safe-area-inset-bottom, 0px);
+  --app-bottom-safe-padding: env(safe-area-inset-bottom, 0px);
+  --bottom-nav-content-shift: 0px;
 }
 
 /* 域色 token（UI_AUDIT_V2.5.md §4.5）：战场紫 / 塔罗金 / 羁绊靛是有意的域身份，
@@ -87,25 +91,15 @@ body {
   
   main {
     /* 底部留出 BottomNav 高度(4rem) + Home Bar 安全区，防止内容被遮挡 */
-    padding-bottom: calc(4rem + env(safe-area-inset-bottom));
+    padding-bottom: calc(4rem + var(--app-bottom-safe-padding, env(safe-area-inset-bottom, 0px)));
   }
 }
 
 /*
  * 防橡皮筋 + 全屏布局。
  *
- * ⚠️ 不能在 html/body 上用 `position: fixed + height: 100%` 这个经典 hack：
- *    在 iOS PWA standalone 下 body 会被错误地 crop 到小 viewport，
- *    fixed 子元素（如底部 BottomNav）的 bottom:0 会偏离真实屏幕底部，
- *    在 Home Indicator 上方留出一条空档。
- *    —— 参考 Apple Developer Forum & StackOverflow iOS PWA viewport bug 讨论
- *
- * 正确做法：
- *    · html 作为固定"锁"容器（防整页滚动／橡皮筋）
- *    · body 正常文档流，不设 position
- *    · #root 作为可滚动容器
- *    · 尺寸用 100dvh（dynamic viewport height, iOS 16+ 原生支持，
- *      降级到 100vh / 100%——旧版 iOS 会略有 100vh 问题但不会翻车）
+ * html 作为固定"锁"容器，#root 作为滚动容器。普通浏览器环境用 100dvh，
+ * 让地址栏伸缩时视口高度跟随更新。
  */
 html {
   position: fixed;
@@ -113,14 +107,12 @@ html {
   left: 0;
   width: 100%;
   height: 100vh;
-  height: 100dvh;
   overflow: hidden;
 }
 
 body {
   width: 100%;
   height: 100vh;
-  height: 100dvh;
   overflow: hidden;
   overscroll-behavior: none;
 }
@@ -128,7 +120,6 @@ body {
 #root {
   width: 100%;
   height: 100vh;
-  height: 100dvh;
   overflow: auto;
   position: relative;
   /* 左右 safe-area：避免横屏刘海压盖内容；
@@ -138,10 +129,39 @@ body {
   padding-right: env(safe-area-inset-right);
 }
 
+@supports (height: 100dvh) {
+  html,
+  body,
+  #root {
+    height: 100dvh;
+  }
+}
+
 /* 移动端滚动优化 */
 @supports (-webkit-overflow-scrolling: touch) {
   #root {
     -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* iOS standalone PWA:
+ * With the default status-bar style, iOS already keeps content in the safe
+ * zone and paints the Home Indicator area from the page background. Adding
+ * env(safe-area-inset-bottom) again creates the bottom "chin" gap, so the app
+ * marks standalone mode from JS and uses compact bottom spacing there.
+ */
+html[data-ios-standalone="true"] {
+  --bottom-nav-item-height: 48px;
+  --bottom-nav-safe-height: 0px;
+  --app-bottom-safe-padding: 0px;
+  --bottom-nav-content-shift: 5px;
+}
+
+@supports (-webkit-touch-callout: none) {
+  html[data-ios-standalone="true"],
+  html[data-ios-standalone="true"] body,
+  html[data-ios-standalone="true"] #root {
+    height: 100vh;
   }
 }
 
