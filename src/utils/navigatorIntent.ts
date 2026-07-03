@@ -22,8 +22,8 @@ import type { AttributeId, LedgerExpenseType } from '@/types';
 export interface NavigatorTurnResult {
   /** 聊天回复分段（空行切分，1~4 段） */
   segments: string[];
-  /** 解析出的动作草稿（走确认卡），可空 */
-  draft?: NavigatorDraft;
+  /** 解析出的动作草稿（每个一张确认卡；一句话说了几件事就出几张） */
+  drafts: NavigatorDraft[];
 }
 
 /** 历史消息的最小投影（store 侧转换后传入，避免循环依赖） */
@@ -49,15 +49,16 @@ const PROTOCOL = `
 - 动作会以「确认卡」形式出现，用户确认后才生效——reply 里不要说"已经记好了"，说"卡片给你，确认一下"这类。
 
 ## 输出格式（只输出一个 JSON 对象，不要代码块、不要多余文字）
-{"reply":"给用户的话","action":null,"query":null}
+{"reply":"给用户的话","actions":[],"query":null}
 - reply：像真人发消息。可用空行分成 1~4 段，每段 ≤60 字。禁止 markdown 标题/列表。
-- action 四选一或 null：
+- actions：本轮要提议的动作数组（0~3 个；用户一句话说了几件事就出几张卡）。每个元素为下列四种之一：
   {"kind":"activity","text":"事项描述","points":{"knowledge":0,"guts":0,"dexterity":0,"kindness":0,"charm":0},"important":false}（points 每项 0~5）
   {"kind":"todo","title":"任务名","attribute":"knowledge|guts|dexterity|kindness|charm","points":2,"repeatDaily":false}
   {"kind":"ledger","direction":"expense|income","amount":0,"note":"摘要","type":"food|transport|shopping|fun|home|study|other","incomeType":"labor|other","channel":""}
   {"kind":"completeTodo","todoId":"清单里的 id","todoTitle":"任务名"}
 - query：需要更早的历史记录才回答时用 {"kind":"activities","days":1~30}，我会把结果发回给你再答。
   动态上下文已给今日状态，今日的事不用 query。
+- **任何情况下输出都必须是且只是这个 JSON 对象**：想说的话全部放进 reply 字段，绝不把文字写在 JSON 之外。
 
 ## 引用数据
 动态上下文里的状态与记录，化进话里自然地说，不要像念报表；没有的信息不要编造。`;
@@ -119,6 +120,26 @@ function extractJson(raw: string): Record<string, unknown> | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * JSON 解析失败时的抢救降级（推理模型 maxTokens 吃紧时 content 可能被截断）：
+ * ① 从残缺 JSON 里正则薅出 "reply" 字符串（截断也常能救回前半句）；
+ * ② 全文没有花括号 = 模型没守格式直接说了人话 → 原文当回复用。
+ * 都救不回才轮到调用方的「走神」兜底。
+ */
+function salvageReply(raw: string): string | null {
+  const m = raw.match(/"reply"\s*:\s*"((?:[^"\\]|\\.)*)"?/);
+  if (m?.[1]) {
+    try {
+      return JSON.parse(`"${m[1].replace(/"$/, '')}"`);
+    } catch {
+      return m[1].replace(/\\n/g, '\n');
+    }
+  }
+  const trimmed = raw.trim();
+  if (trimmed && !trimmed.includes('{') && trimmed.length <= 600) return trimmed;
+  return null;
 }
 
 /** reply 文本 → 分段（空行切，≤4 段，去空） */
@@ -216,9 +237,12 @@ export async function runNavigatorTurn(
     { role: 'user', content: userText },
   ];
 
+  // maxTokens 给足余量：DeepSeek v4 等推理模型的 reasoning 会先吃掉大半 completion 预算，
+  // 给小了 content 里的 JSON 会被截断（实测 375 tokens 推理 + JSON 正文）。
+  let lastRaw = '';
   const callOnce = async (messages: AIMessage[]): Promise<Record<string, unknown> | null> => {
-    const raw = await chatComplete(cfg, messages, { temperature: 0.6, maxTokens: 700, signal });
-    return extractJson(raw);
+    lastRaw = await chatComplete(cfg, messages, { temperature: 0.6, maxTokens: 1400, signal });
+    return extractJson(lastRaw);
   };
 
   let parsed = await callOnce(base);
@@ -235,12 +259,19 @@ export async function runNavigatorTurn(
   }
 
   if (!parsed) {
-    return { segments: ['唔……刚才走神了，没听清。再说一遍？'] };
+    const salvaged = salvageReply(lastRaw);
+    return { segments: splitSegments(salvaged ?? '唔……刚才走神了，没听清。再说一遍？'), drafts: [] };
   }
   const reply = String(parsed.reply ?? '').trim();
-  const draft = toDraft(parsed.action as Record<string, unknown> | null);
-  const segments = splitSegments(reply || (draft ? '卡片给你，看一眼没问题就确认。' : '嗯。'));
-  return { segments, draft };
+  // actions 数组为准；兼容模型仍按旧约定输出单 action 的情况
+  const rawActions = Array.isArray(parsed.actions)
+    ? (parsed.actions as Array<Record<string, unknown>>)
+    : parsed.action
+      ? [parsed.action as Record<string, unknown>]
+      : [];
+  const drafts = rawActions.slice(0, 3).map(toDraft).filter((d): d is NavigatorDraft => !!d);
+  const segments = splitSegments(reply || (drafts.length ? '卡片给你，看一眼没问题就确认。' : '嗯。'));
+  return { segments, drafts };
 }
 
 /** 有 Key 时的 AI 每日问候（>timeout 由调用方落模板；失败返回 null） */
@@ -251,10 +282,11 @@ export async function generateAIGreeting(
   const cfg = getAIConfig(useAppStore.getState().settings);
   if (!cfg) return null;
   try {
+    // 推理模型的 reasoning 也占 completion 预算，问候虽短也要给足（否则必截断→永远落模板）
     const raw = await chatComplete(cfg, [
       { role: 'system', content: `${DEFAULT_PERSONA}\n今天第一次见面，说一句自然的问候。像正常人刚见面：简短、贴合时段和对方状态，**不要刻意罗列数据**，不要问候语大礼包。可用空行分成最多 2 段。只输出问候本身。` },
       { role: 'user', content: buildDynamicContext(snap, []) },
-    ], { temperature: 0.9, maxTokens: 160, signal, timeoutMs: 0 });
+    ], { temperature: 0.9, maxTokens: 600, signal, timeoutMs: 0 });
     const text = raw.trim();
     return text ? text : null;
   } catch {
