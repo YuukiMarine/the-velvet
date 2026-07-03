@@ -54,8 +54,12 @@ export interface ChatOptions {
   jsonMode?: boolean;
 }
 
-/** response_format:{type:'json_object'} 的 provider 白名单（其余发了可能 400） */
-const JSON_MODE_PROVIDERS: ReadonlySet<string> = new Set(['openai', 'deepseek', 'kimi']);
+/**
+ * response_format:{type:'json_object'} 的 provider 白名单（其余发了可能 400）。
+ * deepseek 被剔除：官方文档承认 JSON Output 有概率返回空 content，v4 推理系上
+ * 实测高频复现（content 为纯空格）——DeepSeek 走 prompt 约定 + 解析兜底。
+ */
+const JSON_MODE_PROVIDERS: ReadonlySet<string> = new Set(['openai', 'kimi']);
 
 const DEFAULT_TIMEOUT_MS = 90_000;
 const DEFAULT_TEMPERATURE = 0.8;
