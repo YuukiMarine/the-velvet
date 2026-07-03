@@ -67,6 +67,8 @@ const PROTOCOL = `
 输出：{"reply":"行，换成每日的英语卡。旧的那张记得点取消。","actions":[{"kind":"todo","title":"学英语","attribute":"knowledge","points":2,"repeatDaily":true}],"query":null}
 用户：今天好累啊
 输出：{"reply":"累就瘫一会儿，没人催你。\n\n想记点什么再叫我。","actions":[],"query":null}
+用户：（上一轮已出了一张待确认的卡）帮我记一下
+输出：{"reply":"卡已经在上面了，点「确认」就算数——不用再喊吾辈。","actions":[],"query":null}
 
 ## reply 与 actions 必须一致（防幻觉，最高优先级）
 - 只有本轮 actions 数组里真的放了动作，reply 才可以说「卡片给你/安排上了/记下了」。
@@ -278,6 +280,7 @@ export async function runNavigatorTurn(
         throw e;
       }
     }
+    if (import.meta.env.DEV) console.debug('[navigator] 模型原始输出:', lastRaw);
     return extractJson(lastRaw);
   };
 
@@ -292,11 +295,6 @@ export async function runNavigatorTurn(
       { role: 'assistant', content: JSON.stringify({ reply: '', action: null, query: q }) },
       { role: 'system', content: `${result}\n${SECOND_PASS_NOTE}` },
     ]) ?? parsed;
-  }
-
-  if (!parsed) {
-    const salvaged = salvageReply(lastRaw);
-    return { segments: splitSegments(salvaged ?? '唔……刚才走神了，没听清。再说一遍？'), drafts: [] };
   }
 
   const extract = (p: Record<string, unknown>) => {
@@ -316,17 +314,29 @@ export async function runNavigatorTurn(
     return { reply, drafts };
   };
 
-  let { reply, drafts } = extract(parsed);
+  // parsed / salvage 两路先汇合成 { reply, drafts }，守卫统一在汇合后过闸——
+  // 此前 salvage 提前 return 绕过了守卫，纯文本失守里的承诺语直接漏网（实测案例）。
+  let reply = '';
+  let drafts: NavigatorDraft[] = [];
+  if (parsed) {
+    ({ reply, drafts } = extract(parsed));
+  } else {
+    reply = salvageReply(lastRaw) ?? '';
+  }
 
-  // 承诺-空卡守卫：reply 声称出了卡但 actions 为空 → 定向补救一跳，逼它补卡或改口
-  // （词表兜不住所有说法，few-shot + jsonMode 是主防线，这里是最后一道网）
-  const PROMISE_RE = /卡片?(给你|安排|开|挂|写|已|办)|安排上了?|记下了|给你记|挂上去|开[张好]|换成(这|每)|整个每日|建好了|加进(清单|待办)/;
-  if (drafts.length === 0 && PROMISE_RE.test(reply)) {
-    if (import.meta.env.DEV) console.warn('[navigator] reply 承诺出卡但 actions 为空，触发补救调用');
+  // 承诺-空卡守卫。触发面用语义级宽网（drafts 为空却提到「卡」——枚举动词短语打地鼠
+  // 实测打不赢："记上了/帮你了张卡"都能绕开词表）；补救指令让模型自己分辨
+  // 「想出新卡→补 actions」还是「谈论已有卡→原样重申」。窄词表只做最终硬兜底判据。
+  const PROMISE_RE = /卡片?(给你|安排|开|挂|写|办)|安排上了?|记[下上]了|给你记|记一笔|挂上去|开[张好]|换成(这|每)|整个每日|建好了|帮你.{0,3}[张开]|加进(清单|待办)/;
+  // 谈论已有卡的合法说法（"卡已经在上面了，点确认"）——不触发补救、不被兜底误杀
+  const REFER_RE = /已经在|还[晾挂躺放]|待确认|点.{0,3}[「"']?确认|先确认|上面那张|没确认/;
+  if (drafts.length === 0 && reply && /卡/.test(reply) && !REFER_RE.test(reply)) {
+    if (import.meta.env.DEV) console.warn('[navigator] reply 提到卡但 actions 为空，触发补救调用');
+    const rawBefore = lastRaw;
     const repaired = await callOnce([
       ...base,
-      { role: 'assistant', content: lastRaw },
-      { role: 'system', content: '你上一条 reply 声称出了卡片，但 actions 是空的——用户会看到空头支票。重新输出完整 JSON：要么把该出的 actions 补上（reply 保持原意即可），要么改写 reply 不再声称出卡。本轮禁止 query。' },
+      { role: 'assistant', content: rawBefore },
+      { role: 'system', content: '复核你上一条输出：actions 是空的。若你意图创建/修改卡片 → 重新输出完整 JSON 并把动作放进 actions（reply 保持原意）；若只是谈论【本会话卡片实录】里已有的卡 → 把原 reply 原样放进 JSON 重发即可。若上一条不是合法 JSON，这次必须是。本轮禁止 query。' },
     ]);
     if (repaired) {
       const fixed = extract(repaired);
@@ -334,17 +344,18 @@ export async function runNavigatorTurn(
         // 补上卡了：采纳修复轮
         drafts = fixed.drafts;
         reply = fixed.reply || reply;
-      } else if (fixed.reply && !PROMISE_RE.test(fixed.reply)) {
-        // 改口成功（不再承诺）：采纳新说法
+      } else if (fixed.reply) {
+        // 无卡但给出了（可能原样重申的）说法：采纳，交由下方硬兜底终审
         reply = fixed.reply;
       }
     }
-    // 硬兜底：两轮都没卡还在承诺 → 本地强制改口，绝不放行空头支票
-    if (drafts.length === 0 && PROMISE_RE.test(reply)) {
+    // 硬兜底：补救后仍无卡、命中承诺词表且不是在谈旧卡 → 本地强制改口，绝不放行空头支票
+    if (drafts.length === 0 && PROMISE_RE.test(reply) && !REFER_RE.test(reply)) {
       reply = '这张卡吾辈没能开出来——你把关键信息再说一遍，或者用下面的快捷项手动建一张，我盯着。';
     }
   }
 
+  if (!reply && drafts.length === 0) reply = '唔……刚才走神了，没听清。再说一遍？';
   const segments = splitSegments(reply || (drafts.length ? '卡片给你，看一眼没问题就确认。' : '嗯。'));
   return { segments, drafts };
 }
