@@ -72,6 +72,9 @@ const PERFORM_RULES = `
 ## 说话方式
 - 直接输出你要对用户说的话（纯文本）。可用空行分成 1~4 段，每段 ≤60 字。禁止 markdown 标题/列表/代码块。
 - 动态数据化进话里自然地说，不要像念报表；【】是系统数据区标签，不要把标签名念出来。
+- 【关于用户的记忆】是你们过往相处攒下的：像老朋友那样自然带出，不要背档案（"记得你说过…"胜过复读原文）；
+  带【可自然追问】的话头，合适时顺口问一句，不合适就跳过，同一话头绝不反复问。
+- 【当前语气】是你此刻的状态基调，服从它。
 - 数值纪律：属性点数/等级只能引用给定数字；没给的数值说记不清或建议去对应页面看，禁止编造。
 
 ## 卡片纪律（最高优先级）
@@ -312,6 +315,8 @@ export async function runNavigatorTurn(
   signal: AbortSignal,
   cards: string[] = [],
   personaPrompt: string = DEFAULT_PERSONA,
+  /** 记忆行 + 语气行等附加数据（store 侧检索/计算后传入，本层只负责注入） */
+  extraContext: string[] = [],
 ): Promise<NavigatorTurnResult> {
   const cfg = getAIConfig(useAppStore.getState().settings);
   if (!cfg) throw new Error('未配置 AI');
@@ -332,7 +337,7 @@ export async function runNavigatorTurn(
   const messages: AIMessage[] = [
     { role: 'system', content: `${personaPrompt}\n${PERFORM_RULES}` },
     ...historyToMessages(history).slice(-24),
-    { role: 'system', content: `${buildDynamicContext(snap, swallowed, cards)}\n${turnFacts}` },
+    { role: 'system', content: [buildDynamicContext(snap, swallowed, cards), ...extraContext, turnFacts].filter(Boolean).join('\n') },
     { role: 'user', content: userText },
   ];
   let reply = (await chatComplete(cfg, messages, { temperature: 0.75, maxTokens: 900, signal })).trim();
@@ -362,14 +367,16 @@ export async function generateAIGreeting(
   snap: NavigatorSnapshot,
   signal: AbortSignal,
   personaPrompt: string = DEFAULT_PERSONA,
+  /** 跨日叙事素材（昨日摘要/记忆/话头/语气行），store 侧准备 */
+  extraContext: string[] = [],
 ): Promise<string | null> {
   const cfg = getAIConfig(useAppStore.getState().settings);
   if (!cfg) return null;
   try {
     // 推理模型的 reasoning 也占 completion 预算，问候虽短也要给足（否则必截断→永远落模板）
     const raw = await chatComplete(cfg, [
-      { role: 'system', content: `${personaPrompt}\n今天第一次见面，说一句自然的问候。像正常人刚见面：简短、贴合时段和对方状态，**不要刻意罗列数据**，不要问候语大礼包。可用空行分成最多 2 段。只输出问候本身。` },
-      { role: 'user', content: buildDynamicContext(snap, []) },
+      { role: 'system', content: `${personaPrompt}\n今天第一次见面，说一句自然的问候。像正常人刚见面：简短、贴合时段和对方状态，**不要刻意罗列数据**，不要问候语大礼包。若给了昨日聊天摘要或记忆，可自然接一句昨天的话茬（别复读原文）。可用空行分成最多 2 段。只输出问候本身。` },
+      { role: 'user', content: [buildDynamicContext(snap, []), ...extraContext].filter(Boolean).join('\n') },
     ], { temperature: 0.9, maxTokens: 600, signal, timeoutMs: 0 });
     const text = raw.trim();
     return text ? text : null;

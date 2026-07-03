@@ -21,6 +21,9 @@ import {
 import {
   generateAIGreeting, runNavigatorTurn, splitSegments, type TurnHistoryItem,
 } from '@/utils/navigatorIntent';
+import {
+  buildWarmthLine, finalizeStaleSessions, lazySweepMemos, maybeCompactLive, recallMemories,
+} from '@/utils/navigatorMemory';
 import { BUILTIN_NAVIGATOR_PRESETS, resolveNavigatorPreset } from '@/constants/navigatorPresets';
 import type { NavigatorMessageRow, NavigatorPreset } from '@/types';
 
@@ -92,7 +95,8 @@ let swallowed: string[] = [];
 let pendingWrites: NavigatorMessage[] = [];
 let hydrating: Promise<void> | null = null;
 
-const GREET_TIMEOUT_MS = 4000;
+// 推理模型（DeepSeek v4 等）问候常要 3~8s，4s 会高频落模板；打字指示本来就是拟人化等待
+const GREET_TIMEOUT_MS = 9000;
 const SETTLE_INPUT_POLL_MS = 500;
 const SETTLE_INPUT_MAX_WAIT_MS = 15000;
 
@@ -276,9 +280,15 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
     swallowed = [];
     persistSwallowed();
     try {
+      // 记忆检索（纯本地，失败返回空不阻断）+ warmth 语气行
+      const recall = await recallMemories(batch);
+      const extra = [
+        recall.lines.length ? `【关于用户的记忆】\n${recall.lines.join('\n')}` : '',
+        buildWarmthLine(),
+      ].filter(Boolean);
       const result = await runNavigatorTurn(
         historyForTurn(), batch, mySwallowed, turnAbort.signal, cardsDigest(),
-        get().activePreset().personaPrompt,
+        get().activePreset().personaPrompt, extra,
       );
       if (gen !== generation) return;
       // 分段吐泡（段间隙 = 天然插话点）
@@ -293,6 +303,7 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
       }
       result.drafts.forEach((d) => get().pushCard(d));
       set({ phase: 'idle' });
+      void runLiveCompact(); // 阈值泵（32k/120 条才动手，平时空转）
     } catch (e) {
       if (gen !== generation) return; // 被打断的 abort，静默
       get().pushCat(e instanceof Error && e.message.includes('超时')
@@ -301,6 +312,29 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
       set({ phase: 'idle' });
     } finally {
       if (gen === generation) turnAbort = null;
+    }
+  };
+
+  /** 阈值泵：库内压缩后同步内存流（旧消息换成一条 summary 占位） */
+  const runLiveCompact = async () => {
+    const sid = get().sessionId;
+    if (!sid) return;
+    try {
+      const rows = get().messages.map((m) => toRow(m, sid));
+      const outcome = await maybeCompactLive(sid, rows);
+      if (!outcome.summaryText) return;
+      const removed = new Set(outcome.removedIds);
+      set((s) => ({
+        messages: [
+          {
+            id: uuidv4(), role: 'summary' as const, text: outcome.summaryText!,
+            createdAt: s.messages.find((m) => !removed.has(m.id))?.createdAt ?? Date.now(),
+          },
+          ...s.messages.filter((m) => !removed.has(m.id)),
+        ],
+      }));
+    } catch (e) {
+      if (import.meta.env.DEV) console.warn('[navigator] 阈值泵失败', e);
     }
   };
 
@@ -400,6 +434,9 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
     greet: () => {
       void (async () => {
         get().rolloverIfNewDay();
+        // 主泵（昨日会话末 compact）与遗忘清扫：开窗惰性触发
+        const finalizing = finalizeStaleSessions();
+        void lazySweepMemos();
         await hydrateSession();
         if (get().messages.length > 0) return;
         const snap = buildSnapshot();
@@ -415,17 +452,34 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
         // 有 Key 的跨天首开：打字指示等 AI，超时/失败静默落模板（等待本身就是拟人）
         const gen = ++generation;
         set({ phase: 'thinking' });
-        const ac = new AbortController();
-        const timer = setTimeout(() => ac.abort(), GREET_TIMEOUT_MS);
         try {
-          const text = await generateAIGreeting(snap, ac.signal, preset.personaPrompt);
+          // 跨日叙事素材：昨日摘要（等主泵最多 2.5s，拿不到就不带）+ 记忆 + 语气
+          const yesterday = await Promise.race([finalizing, sleep(2500).then(() => null)]);
+          const recall = await recallMemories('');
+          const lastBefore = (await db.navigatorSessions.toArray())
+            .filter((r) => r.dateKey < snap.dateKey)
+            .sort((a, b) => b.dateKey.localeCompare(a.dateKey))[0];
+          const gapDays = lastBefore
+            ? Math.max(0, Math.round((Date.parse(snap.dateKey) - Date.parse(lastBefore.dateKey)) / 86400_000))
+            : null;
+          const extra = [
+            yesterday ? `【昨日聊天摘要】${yesterday}` : '',
+            gapDays !== null && gapDays >= 2 ? `【距上次聊天】已隔 ${gapDays} 天` : '',
+            recall.lines.length ? `【关于用户的记忆】\n${recall.lines.join('\n')}` : '',
+            buildWarmthLine(),
+          ].filter(Boolean);
+          // 超时计时只覆盖 AI 调用本身（此前从素材准备就开始计时，预算被前置步骤吃掉）
+          const ac = new AbortController();
+          const timer = setTimeout(() => ac.abort(), GREET_TIMEOUT_MS);
+          const text = await generateAIGreeting(snap, ac.signal, preset.personaPrompt, extra);
           clearTimeout(timer);
           if (gen !== generation) return;
+          if (!text && import.meta.env.DEV) console.warn('[navigator] AI 问候失败/超时，落模板');
           splitSegments(text ?? buildDailyGreeting(snap)).forEach((seg) => get().pushCat(seg));
           set({ phase: 'idle' });
-        } catch {
-          clearTimeout(timer);
+        } catch (e) {
           if (gen !== generation) return;
+          if (import.meta.env.DEV) console.warn('[navigator] 问候流程异常，落模板', e);
           get().pushCat(buildDailyGreeting(snap));
           set({ phase: 'idle' });
         }
