@@ -341,6 +341,8 @@ export interface Settings {
   // ── F6 万能记录 AI「黑猫」（Navigator） ──
   /** 最近一次「每日首开问候」的本地日期（YYYY-MM-DD）：跨天首开播完整问候，当日重开只简短招呼。 */
   navigatorLastGreetDate?: string;
+  /** 当前激活的人格 preset id（缺省 = 内置黑猫）。切人格 = 开新会话。 */
+  navigatorPresetId?: string;
   // AI 总结功能配置
   summaryApiProvider?: 'openai' | 'deepseek' | 'kimi' | 'gemini' | 'minimax';
   summaryApiKey?: string;
@@ -563,6 +565,66 @@ export interface CallingCard {
   };
 
   createdAt: Date;
+}
+
+// ── F6 黑猫 Navigator · 持久化（Batch3） ──
+
+/** 人格 preset：人格是皮肤，能力是骨架——personaPrompt 只影响口吻，功能协议不可触。 */
+export interface NavigatorPreset {
+  id: string;
+  name: string;
+  /** 内置剪影 id（'cat'|'toaster'|'bear'…）或本地头像 dataUrl（local-only，永不上云） */
+  avatar?: string;
+  personaPrompt: string;
+  /** 切换/新会话开场的一句接管语（内置手写；自定义可空走通用） */
+  handoffLine?: string;
+  isBuiltin: boolean;
+  createdAt: Date;
+}
+
+/** 会话行：每日每人格最多一条活跃会话（跨天清流、切人格开新会话） */
+export interface NavigatorSessionRow {
+  id: string;
+  dateKey: string;
+  presetId: string;
+  /** compact 双产物：中性摘要（检索/续接用）+ 人格口吻版（注入用；人格绑定随会话归档） */
+  compactedSummary?: string;
+  personaSummary?: string;
+  /** 被打断没说出口的段落（吞话回捞，跨重启存活） */
+  swallowed?: string[];
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/** 消息行：与内存态 NavigatorMessage 对齐；draft 序列化存 JSON */
+export interface NavigatorMessageRow {
+  id: string;
+  sessionId: string;
+  role: 'cat' | 'user' | 'card' | 'summary';
+  text?: string;
+  draftJson?: string;
+  cardStatus?: 'pending' | 'done' | 'cancelled';
+  receipt?: string;
+  createdAt: number;
+}
+
+/** 原子记忆（三源：对话沉淀/观察日记/手动；F8 图片记忆卡共用此表 source='image'） */
+export interface NavigatorMemo {
+  id: string;
+  source: 'chat' | 'observation' | 'manual' | 'image';
+  /** 中性事实文本（不带人格口吻——口吻在 prompt 组装时现场渲染） */
+  text: string;
+  /** 情绪元数据（"用户提起时很沮丧"），可选 */
+  colorHint?: string;
+  /** 1..5；置顶=拉满且免疫遗忘 */
+  importance: number;
+  /** 未完话头（一次性：被黑猫提起后清空） */
+  followUp?: string;
+  status: 'active' | 'archived';
+  pinned?: boolean;
+  createdAt: Date;
+  lastRecalledAt?: Date;
+  recallCount?: number;
 }
 
 /** F3 终端任务完成结算屏（TerminalClearCutIn）的载荷 */

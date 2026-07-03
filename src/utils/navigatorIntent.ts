@@ -311,6 +311,7 @@ export async function runNavigatorTurn(
   swallowed: string[],
   signal: AbortSignal,
   cards: string[] = [],
+  personaPrompt: string = DEFAULT_PERSONA,
 ): Promise<NavigatorTurnResult> {
   const cfg = getAIConfig(useAppStore.getState().settings);
   if (!cfg) throw new Error('未配置 AI');
@@ -329,7 +330,7 @@ export async function runNavigatorTurn(
     queryResult ?? '',
   ].filter(Boolean).join('\n');
   const messages: AIMessage[] = [
-    { role: 'system', content: `${DEFAULT_PERSONA}\n${PERFORM_RULES}` },
+    { role: 'system', content: `${personaPrompt}\n${PERFORM_RULES}` },
     ...historyToMessages(history).slice(-24),
     { role: 'system', content: `${buildDynamicContext(snap, swallowed, cards)}\n${turnFacts}` },
     { role: 'user', content: userText },
@@ -360,13 +361,14 @@ export async function runNavigatorTurn(
 export async function generateAIGreeting(
   snap: NavigatorSnapshot,
   signal: AbortSignal,
+  personaPrompt: string = DEFAULT_PERSONA,
 ): Promise<string | null> {
   const cfg = getAIConfig(useAppStore.getState().settings);
   if (!cfg) return null;
   try {
     // 推理模型的 reasoning 也占 completion 预算，问候虽短也要给足（否则必截断→永远落模板）
     const raw = await chatComplete(cfg, [
-      { role: 'system', content: `${DEFAULT_PERSONA}\n今天第一次见面，说一句自然的问候。像正常人刚见面：简短、贴合时段和对方状态，**不要刻意罗列数据**，不要问候语大礼包。可用空行分成最多 2 段。只输出问候本身。` },
+      { role: 'system', content: `${personaPrompt}\n今天第一次见面，说一句自然的问候。像正常人刚见面：简短、贴合时段和对方状态，**不要刻意罗列数据**，不要问候语大礼包。可用空行分成最多 2 段。只输出问候本身。` },
       { role: 'user', content: buildDynamicContext(snap, []) },
     ], { temperature: 0.9, maxTokens: 600, signal, timeoutMs: 0 });
     const text = raw.trim();
