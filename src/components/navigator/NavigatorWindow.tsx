@@ -395,6 +395,15 @@ const MessageRow = ({ m, sk, bright, busy, onConfirm, onEdit, onCancel }: {
   m: NavigatorMessage; sk: Skin; bright: boolean; busy: boolean;
   onConfirm: () => void; onEdit: () => void; onCancel: () => void;
 }) => {
+  if (m.role === 'summary') {
+    // compact 产物：早前对话的折叠占位
+    return (
+      <div className={`mx-auto max-w-[90%] px-4 py-2 text-center text-[11px] font-bold leading-relaxed ${bright ? 'text-white/75' : 'text-gray-500'}`}>
+        —— 早前的对话已收进记忆 ——
+        <span className="mt-0.5 block opacity-80">{m.text}</span>
+      </div>
+    );
+  }
   if (m.role === 'user') {
     return (
       <div className="flex justify-end">
