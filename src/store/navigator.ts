@@ -329,9 +329,41 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
         recall.lines.length ? `【关于用户的记忆】\n${recall.lines.join('\n')}` : '',
         buildWarmthLine(),
       ].filter(Boolean);
+      const persona = get().activePreset().personaPrompt;
+      const immersive = !!useAppStore.getState().settings.navigatorImmersive && !isD0();
+
+      if (immersive) {
+        // 拟真增强：流式切泡入队，独立 drain 以固定 0.5s 吐泡（吐泡与生成并行）
+        const queue: string[] = [];
+        let streamEnded = false;
+        const turnPromise = runNavigatorTurn(
+          historyForTurn(), batch, mySwallowed, turnAbort.signal, cardsDigest(), persona, extra,
+          { onSegment: (s) => { queue.push(s); return gen === generation; } },
+        ).finally(() => { streamEnded = true; });
+        for (;;) {
+          if (gen !== generation) { swallowed = queue.splice(0); persistSwallowed(); return; }
+          if (queue.length > 0) {
+            if (get().phase !== 'replying') set({ phase: 'replying' });
+            get().pushCat(queue.shift()!);
+            const alive = await sleepUnlessStale(500, gen);
+            if (!alive) { swallowed = queue.splice(0); persistSwallowed(); return; }
+          } else if (streamEnded) {
+            break;
+          } else {
+            const alive = await sleepUnlessStale(90, gen);
+            if (!alive) { swallowed = queue.splice(0); persistSwallowed(); return; }
+          }
+        }
+        const result = await turnPromise;
+        if (gen !== generation) return;
+        result.drafts.forEach((d) => get().pushCard(d));
+        set({ phase: 'idle' });
+        void runLiveCompact();
+        return;
+      }
+
       const result = await runNavigatorTurn(
-        historyForTurn(), batch, mySwallowed, turnAbort.signal, cardsDigest(),
-        get().activePreset().personaPrompt, extra,
+        historyForTurn(), batch, mySwallowed, turnAbort.signal, cardsDigest(), persona, extra,
       );
       if (gen !== generation) return;
       // 分段吐泡（段间隙 = 天然插话点）
