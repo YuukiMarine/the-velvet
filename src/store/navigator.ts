@@ -179,7 +179,7 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
           if (!alive) { swallowed = result.segments.slice(i + 1); return; }
         }
       }
-      if (result.draft) get().pushCard(result.draft);
+      result.drafts.forEach((d) => get().pushCard(d));
       set({ phase: 'idle' });
     } catch (e) {
       if (gen !== generation) return; // 被打断的 abort，静默
