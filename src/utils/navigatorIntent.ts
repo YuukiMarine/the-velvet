@@ -1,13 +1,16 @@
 /**
- * navigatorIntent — F6 黑猫对话层（Batch2）：JSON-intent 意图解析 + 回合执行。
+ * navigatorIntent — F6 黑猫对话层（Batch2）：两阶段回合执行。
  *
- * 技术路线（已定稿，见 F6_NAVIGATOR_MEMORY.md）：
- *   · 单次**非流式**调用返回严格 JSON { reply, action, query }——五家 provider 统一，
- *     分段吐泡的节奏由客户端仲裁器模拟（流式留作未来优化）。
- *   · action 映射到 navigatorRegistry 的 NavigatorDraft，走与菜单层完全相同的确认卡链路。
- *   · query（近 N 天记录）本地执行后注入再调一次（最多一跳，第二跳禁再查）。
- *   · 缓存友好组装：静态 system（persona+协议）做稳定前缀；动态块（快照/待办清单/吞话）
- *     以独立 system 消息下沉到最新用户消息之前——DeepSeek prefix cache 每轮命中。
+ * 架构（2026-07-04 重构，解决「多轮后出卡劣化」）：
+ *   · 阶段1 分诊 triage：无人格、只带最近几轮摘录、低温、只输出 {"actions","query"}。
+ *     判定可靠性与对话长度彻底解耦——单任务短上下文的格式服从率天然极高
+ *     （ledgerAI/decomposeWishAI 同款范式）。失败宁缺勿滥（空卡），绝不阻断聊天。
+ *   · 阶段2 表演 perform：带人格带历史，输入里已注明本轮开了哪些卡/查到了什么，
+ *     输出**纯文本**——没有 JSON 就没有格式失守，reply 与卡天然一致。
+ *   · 此前的单调用 JSON-intent 在 3~5 轮后劣化：闲聊历史把模型带偏成「纯聊天者」、
+ *     few-shot 距离衰减、失败兜底文案进入历史自我强化。两阶段从结构上消除这三者。
+ *   · 与未来 native tool calling 双轨兼容：阶段1 可整体换成 function calling，阶段2 不动。
+ *   · 缓存友好：两阶段的 system 与历史均为稳定前缀，动态块贴在最新消息前。
  */
 import { useAppStore, toLocalDateKey } from '@/store';
 import { chatComplete, getAIConfig } from '@/utils/aiClient';
@@ -36,58 +39,50 @@ export interface TurnHistoryItem {
 const DEFAULT_PERSONA =
   '你是「黑猫」——寄居在这款个人成长记录 App 里的引路猫，偶尔自称「吾辈」。' +
   '性格：有点臭屁、爱下指导棋，说话带刺但都是真心话；嘴上嫌麻烦，实际把对方的事记得很牢；' +
-  '深夜会催人睡觉。你陪伴的是唯一的用户，像老朋友一样说话，不用敬语。';
+  '深夜会催你睡觉。你陪伴的是唯一的用户，像老朋友一样说话，不用敬语。';
 
-// ── 功能协议段（不可被人格覆盖；排在 persona 之后压轴） ──
-const PROTOCOL = `
-## 职责与边界
-- 你只能通过下方「动作」替用户操作 App：记录活动 / 添加待办 / 记一笔账 / 完成今日任务。
-- 其它操作请求（改设置、删数据、账号、导入导出）一律婉拒，说明自己管不到。
-- 判定：用户描述**已经做了**某事→activity；**打算做**→todo；提到花钱/收入→ledger；
-  说做完了某件今日待办→completeTodo（todoId 必须取自动态上下文的待办清单，没有匹配就不出动作）。
-- 拿不准就先聊天确认，不要硬造动作。参数从用户话里提取；提取不到的给合理默认并在 reply 里说明。
-- 动作会以「确认卡」形式出现，用户确认后才生效——reply 里不要说"已经记好了"，说"卡片给你，确认一下"这类。
+// ── 阶段1 · 分诊协议（无人格，纯判定；短上下文 + 低温 = 高服从） ──
+const TRIAGE_PROTOCOL = `你是记录意图判定器。根据对话摘录和最新消息，判定本轮要创建的卡片（0~3 张）与是否需要查历史。
+只输出这一个 JSON 对象（不要代码块、不要任何其它文字）：
+{"actions":[],"query":null}
 
-## 输出格式（只输出一个 JSON 对象，不要代码块、不要多余文字）
-{"reply":"给用户的话","actions":[],"query":null}
-- reply：像真人发消息。可用空行分成 1~4 段，每段 ≤60 字。禁止 markdown 标题/列表。
-- actions：本轮要提议的动作数组（0~3 个；用户一句话说了几件事就出几张卡）。每个元素为下列四种之一：
-  {"kind":"activity","text":"事项描述","points":{"knowledge":0,"guts":0,"dexterity":0,"kindness":0,"charm":0},"important":false}（points 每项 0~5）
-  {"kind":"todo","title":"任务名","attribute":"knowledge|guts|dexterity|kindness|charm","points":2,"repeatDaily":false}
-  {"kind":"ledger","direction":"expense|income","amount":0,"note":"摘要","type":"food|transport|shopping|fun|home|study|other","incomeType":"labor|other","channel":""}
-  {"kind":"completeTodo","todoId":"清单里的 id","todoTitle":"任务名"}
-- query：需要更早的历史记录才回答时用 {"kind":"activities","days":1~30}，我会把结果发回给你再答。
-  动态上下文已给今日状态，今日的事不用 query。
-- **任何情况下输出都必须是且只是这个 JSON 对象**：想说的话全部放进 reply 字段，绝不把文字写在 JSON 之外。
+actions 元素为下列四种之一：
+{"kind":"activity","text":"事项描述","points":{"knowledge":0,"guts":0,"dexterity":0,"kindness":0,"charm":0},"important":false}（用户**已经做了**的事；points 每项 0~5）
+{"kind":"todo","title":"任务名","attribute":"knowledge|guts|dexterity|kindness|charm","points":2,"repeatDaily":false}（用户**打算做/要提醒**的事）
+{"kind":"ledger","direction":"expense|income","amount":0,"note":"摘要","type":"food|transport|shopping|fun|home|study|other","incomeType":"labor|other","channel":""}（花钱/收入）
+{"kind":"completeTodo","todoId":"待办清单里的 id","todoTitle":"任务名"}（用户说做完了某件今日待办；todoId 必须取自清单，没有匹配就不出）
 
-## 示例（严格模仿输出形态）
-用户：今天跑了五公里
-输出：{"reply":"哦？主动跑步，太阳打西边出来了。卡片给你，确认下。","actions":[{"kind":"activity","text":"跑步五公里","points":{"knowledge":0,"guts":2,"dexterity":1,"kindness":0,"charm":0},"important":false}],"query":null}
-用户：（已有一张待确认的「学习」待办卡）改成每天学英语吧
-输出：{"reply":"行，换成每日的英语卡。旧的那张记得点取消。","actions":[{"kind":"todo","title":"学英语","attribute":"knowledge","points":2,"repeatDaily":true}],"query":null}
-用户：今天好累啊
-输出：{"reply":"累就瘫一会儿，没人催你。\n\n想记点什么再叫我。","actions":[],"query":null}
-用户：（上一轮已出了一张待确认的卡）帮我记一下
-输出：{"reply":"卡已经在上面了，点「确认」就算数——不用再喊吾辈。","actions":[],"query":null}
+规则：
+- 「帮我记一下/记上/安排一下」指的是最近对话里提到、且【待确认卡】里还没有的那件事；若那件事已有待确认卡，输出空 actions。
+- 一句话说了几件事就出几张卡（≤3）。信息足够就出卡；确实拿不准或信息不足才空。
+- 修改一张待确认卡 = 出一张修正后的新卡。
+- 需要今天之前的历史记录才能回答时：{"kind":"activities","days":1~30} 填入 query。
+- 其它一律 {"actions":[],"query":null}。
 
-## reply 与 actions 必须一致（防幻觉，最高优先级）
-- 只有本轮 actions 数组里真的放了动作，reply 才可以说「卡片给你/安排上了/记下了」。
-- actions 为空时，绝不声称已创建/已记录任何东西——要么把缺的信息问清，要么直说这轮没出卡。
-- 信息已经够出卡时就直接出卡，不要只在嘴上答应「稍后记」。
-- 出卡的唯一途径是 actions 字段。**绝不在 reply 文本里手写卡片样式**（如「[卡片·…]」或框线画卡）——那不会生效，只会骗到用户。
-- 卡片的真实状态只看【本会话卡片实录】：待用户确认=还没生效、已确认生效、已取消。用户想改一张待确认的卡时，在 actions 里出一张修正后的新卡，并在 reply 里让用户取消旧卡。
-- 数值纪律：属性点数/等级只能引用动态上下文给出的数字；没给的数值一律说记不清或建议去对应页面看，禁止编造。
-- 【】标记是系统数据区的标签，说话时不要把这些标签名念出来（不要说"属性面板显示"，直接说数字）。
+示例：
+输入末句：今天跑了五公里 → {"actions":[{"kind":"activity","text":"跑步五公里","points":{"knowledge":0,"guts":2,"dexterity":1,"kindness":0,"charm":0},"important":false}],"query":null}
+输入末句：提醒我周五给妈妈打电话 → {"actions":[{"kind":"todo","title":"周五给妈妈打电话","attribute":"kindness","points":2,"repeatDaily":false}],"query":null}
+对话提到想学英语、无相关待确认卡，末句：帮我记一下 → {"actions":[{"kind":"todo","title":"学英语","attribute":"knowledge","points":2,"repeatDaily":true}],"query":null}
+待确认卡已有「学英语」，末句：帮我记一下 → {"actions":[],"query":null}
+输入末句：今天好累啊 → {"actions":[],"query":null}
+输入末句：我上周都做了什么？ → {"actions":[],"query":{"kind":"activities","days":7}}`;
 
-## 引用数据
-动态上下文里的状态与记录，化进话里自然地说，不要像念报表；没有的信息不要编造。`;
+// ── 阶段2 · 表演规范（人格侧；输出纯文本，无任何格式负担） ──
+const PERFORM_RULES = `
+## 说话方式
+- 直接输出你要对用户说的话（纯文本）。可用空行分成 1~4 段，每段 ≤60 字。禁止 markdown 标题/列表/代码块。
+- 动态数据化进话里自然地说，不要像念报表；【】是系统数据区标签，不要把标签名念出来。
+- 数值纪律：属性点数/等级只能引用给定数字；没给的数值说记不清或建议去对应页面看，禁止编造。
 
-const SECOND_PASS_NOTE =
-  '（这是你刚才 query 的查询结果。现在直接给出最终 reply，本轮禁止再输出 query。）';
+## 卡片纪律（最高优先级）
+- 【本轮开出的卡片】列了什么，你就只能提这些卡：请用户看一眼并点「确认」。卡片会自动展示，**绝不在文本里手写卡片内容或画卡**。
+- 【本轮没有开卡】时，绝不声称已记录/已安排/开了卡。用户若在要求记录：坦率说缺什么信息，或请他用下方快捷项手动建。
+- 已有卡片的真实状态只看【本会话卡片实录】：待用户确认=还没生效；已确认生效；已取消。引导确认时就说「点一下确认」。
+
+## 边界
+- 你只能通过卡片替用户操作 App；改设置、删数据、账号、导入导出等请求一律婉拒，说明自己管不到。`;
 
 // ── 组装 ──
-
-const buildStaticSystem = (): string => `${DEFAULT_PERSONA}\n${PROTOCOL}`;
 
 /** 动态上下文块：只含数据不含指令，贴在最新用户消息之前（缓存友好） */
 export function buildDynamicContext(snap: NavigatorSnapshot, swallowed: string[], cards: string[] = []): string {
@@ -104,7 +99,7 @@ export function buildDynamicContext(snap: NavigatorSnapshot, swallowed: string[]
     snap.tarotDrawn ? `今日塔罗已抽：「${snap.tarotCardName ?? '?'}」` : '今日塔罗未抽',
     snap.terminalStepTitle ? `进行中的终端小步：「${snap.terminalStepTitle}」` : '',
     due.length
-      ? `【今日未完成待办（completeTodo 只能用这些 id）】\n${due.slice(0, 12).map((t) => `- id=${t.id} 「${t.title}」(${navAttrName(t.attribute)}+${t.points})`).join('\n')}`
+      ? `【今日未完成待办】\n${due.slice(0, 12).map((t) => `- 「${t.title}」(${navAttrName(t.attribute)}+${t.points})`).join('\n')}`
       : '【今日无未完成待办】',
     cards.length
       ? `【本会话卡片实录（真实状态，以此为准）】\n${cards.join('\n')}`
@@ -112,7 +107,6 @@ export function buildDynamicContext(snap: NavigatorSnapshot, swallowed: string[]
     swallowed.length
       ? `【你上一条回复被用户打断，没说出口的是】${swallowed.join(' / ')}（若仍相关可自然续上，不相关就放弃，不要复读原文）`
       : '',
-    '（提醒：输出必须是 {"reply","actions","query"} 这一个 JSON 对象；要出卡/改卡就把动作放进 actions 数组，reply 只负责说话。）',
   ].filter(Boolean);
   return lines.join('\n');
 }
@@ -147,26 +141,6 @@ function extractJson(raw: string): Record<string, unknown> | null {
   } catch {
     return null;
   }
-}
-
-/**
- * JSON 解析失败时的抢救降级（推理模型 maxTokens 吃紧时 content 可能被截断）：
- * ① 从残缺 JSON 里正则薅出 "reply" 字符串（截断也常能救回前半句）；
- * ② 全文没有花括号 = 模型没守格式直接说了人话 → 原文当回复用。
- * 都救不回才轮到调用方的「走神」兜底。
- */
-function salvageReply(raw: string): string | null {
-  const m = raw.match(/"reply"\s*:\s*"((?:[^"\\]|\\.)*)"?/);
-  if (m?.[1]) {
-    try {
-      return JSON.parse(`"${m[1].replace(/"$/, '')}"`);
-    } catch {
-      return m[1].replace(/\\n/g, '\n');
-    }
-  }
-  const trimmed = raw.trim();
-  if (trimmed && !trimmed.includes('{') && trimmed.length <= 600) return trimmed;
-  return null;
 }
 
 /** reply 文本 → 分段（空行切，≤4 段，去空） */
@@ -242,10 +216,93 @@ function runActivitiesQuery(days: number): string {
   return rows.length ? `【近 ${days} 天活动记录，共 ${rows.length} 条】\n${text}` : `【近 ${days} 天没有活动记录】`;
 }
 
+// ── 阶段1 · 分诊 ──
+
+interface TriageResult {
+  drafts: NavigatorDraft[];
+  queryDays: number | null;
+}
+
+/** 空响应自愈的单次调用（DeepSeek json_object 空白 content 官方已知缺陷） */
+async function callJson(
+  cfg: NonNullable<ReturnType<typeof getAIConfig>>,
+  messages: AIMessage[],
+  opts: { temperature: number; maxTokens: number; signal: AbortSignal },
+): Promise<string> {
+  try {
+    return await chatComplete(cfg, messages, { ...opts, jsonMode: true });
+  } catch (e) {
+    if (e instanceof Error && e.message.includes('空响应')) {
+      return await chatComplete(cfg, messages, { ...opts, jsonMode: false });
+    }
+    throw e;
+  }
+}
+
+async function triageActions(
+  cfg: NonNullable<ReturnType<typeof getAIConfig>>,
+  history: TurnHistoryItem[],
+  userText: string,
+  pendingCards: string[],
+  signal: AbortSignal,
+): Promise<TriageResult> {
+  const s = useAppStore.getState();
+  const due = s.getDueTodosToday().filter((t) => !s.getTodayTodoProgress(t.id).isComplete);
+  // 只带最近 6 条摘录：指代消解够用，且上下文永远短小——判定质量不随对话变长而劣化
+  const recent = history.slice(-6).map((h) => `${h.role === 'cat' ? '黑猫' : '用户'}：${h.text.slice(0, 80)}`).join('\n');
+  const user = [
+    recent ? `【最近对话】\n${recent}` : '',
+    due.length ? `【今日未完成待办（completeTodo 用）】\n${due.slice(0, 12).map((t) => `- id=${t.id} 「${t.title}」`).join('\n')}` : '【今日无未完成待办】',
+    pendingCards.length ? `【待确认卡】\n${pendingCards.join('\n')}` : '【无待确认卡】',
+    `【最新消息】${userText}`,
+  ].filter(Boolean).join('\n');
+
+  try {
+    const raw = await callJson(cfg, [
+      { role: 'system', content: TRIAGE_PROTOCOL },
+      { role: 'user', content: user },
+    ], { temperature: 0.1, maxTokens: 800, signal });
+    if (import.meta.env.DEV) console.debug('[navigator] 分诊输出:', raw);
+    const parsed = extractJson(raw);
+    if (!parsed) return { drafts: [], queryDays: null };
+    const rawActions = Array.isArray(parsed.actions) ? (parsed.actions as Array<Record<string, unknown>>) : [];
+    const drafts = rawActions.slice(0, 3).map((a) => {
+      const d = toDraft(a);
+      if (!d && import.meta.env.DEV) console.warn('[navigator] 分诊 action 校验未通过被丢弃:', a);
+      return d;
+    }).filter((d): d is NavigatorDraft => !!d);
+    const q = parsed.query as Record<string, unknown> | null | undefined;
+    const queryDays = q && q.kind === 'activities' ? clampInt(q.days, 1, 30, 7) : null;
+    return { drafts, queryDays };
+  } catch (e) {
+    // 分诊失败宁缺勿滥：不出卡、不查询，聊天照常（表演阶段知道"本轮没有开卡"，不会承诺）
+    if (signal.aborted) throw e;
+    if (import.meta.env.DEV) console.warn('[navigator] 分诊调用失败，本轮不出卡:', e);
+    return { drafts: [], queryDays: null };
+  }
+}
+
+/** 卡片草稿 → 表演阶段可读的一行描述 */
+function draftLine(d: NavigatorDraft): string {
+  switch (d.kind) {
+    case 'activity': {
+      const pts = ATTR_IDS.filter((id) => d.points[id] > 0).map((id) => `${navAttrName(id)}+${d.points[id]}`).join(' ');
+      return `- 记录活动「${d.text}」${pts ? `（${pts}）` : ''}`;
+    }
+    case 'todo':
+      return `- 待办「${d.title}」（${navAttrName(d.attribute)}+${d.points}${d.repeatDaily ? '·每日' : ''}）`;
+    case 'ledger':
+      return `- ${d.direction === 'expense' ? '支出' : '收入'} ¥${d.amount}${d.note ? `（${d.note}）` : ''}`;
+    case 'completeTodo':
+      return `- 完成任务「${d.todoTitle}」`;
+  }
+}
+
 // ── 回合执行 ──
 
 /**
  * 执行一个对话回合（仲裁器 thinking 态调用；signal 可中断）。
+ * 阶段1 分诊定卡 → （可选）本地查询 → 阶段2 带着结果表演。
  * 无 Key 由调用方兜底（不该走到这里）。
  */
 export async function runNavigatorTurn(
@@ -257,107 +314,46 @@ export async function runNavigatorTurn(
 ): Promise<NavigatorTurnResult> {
   const cfg = getAIConfig(useAppStore.getState().settings);
   if (!cfg) throw new Error('未配置 AI');
+
+  // 阶段1：分诊（含 query 判定）。待确认卡列表帮它判「帮我记一下」是否重复出卡。
+  const pendingCards = cards.filter((c) => c.includes('待用户确认'));
+  const { drafts, queryDays } = await triageActions(cfg, history, userText, pendingCards, signal);
+  const queryResult = queryDays !== null ? runActivitiesQuery(queryDays) : null;
+
+  // 阶段2：表演。判定结果作为事实注入——reply 与卡从机制上一致，无 JSON 无失守。
   const snap = buildSnapshot();
-  const base: AIMessage[] = [
-    { role: 'system', content: buildStaticSystem() },
+  const turnFacts = [
+    drafts.length
+      ? `【本轮你已开出的卡片（用户马上会看到确认卡）】\n${drafts.map(draftLine).join('\n')}`
+      : '【本轮没有开卡】',
+    queryResult ?? '',
+  ].filter(Boolean).join('\n');
+  const messages: AIMessage[] = [
+    { role: 'system', content: `${DEFAULT_PERSONA}\n${PERFORM_RULES}` },
     ...historyToMessages(history).slice(-24),
-    { role: 'system', content: buildDynamicContext(snap, swallowed, cards) },
+    { role: 'system', content: `${buildDynamicContext(snap, swallowed, cards)}\n${turnFacts}` },
     { role: 'user', content: userText },
   ];
+  let reply = (await chatComplete(cfg, messages, { temperature: 0.75, maxTokens: 900, signal })).trim();
+  if (import.meta.env.DEV) console.debug('[navigator] 表演输出:', reply);
 
-  // maxTokens 给足余量：DeepSeek v4 等推理模型的 reasoning 会先吃掉大半 completion 预算，
-  // 给小了 content 里的 JSON 会被截断（实测 375 tokens 推理 + JSON 正文）。
-  let lastRaw = '';
-  const callOnce = async (messages: AIMessage[]): Promise<Record<string, unknown> | null> => {
-    try {
-      lastRaw = await chatComplete(cfg, messages, { temperature: 0.6, maxTokens: 1400, signal, jsonMode: true });
-    } catch (e) {
-      // 空响应自愈：个别 provider 的 json_object 会抽风返回纯空白 content（DeepSeek 官方已知），
-      // 关掉 jsonMode 原样重试一次——prompt 约定 + salvage 仍兜底，错误不再糊到用户脸上。
-      if (e instanceof Error && e.message.includes('空响应')) {
-        lastRaw = await chatComplete(cfg, messages, { temperature: 0.6, maxTokens: 1400, signal, jsonMode: false });
-      } else {
-        throw e;
-      }
-    }
-    if (import.meta.env.DEV) console.debug('[navigator] 模型原始输出:', lastRaw);
-    return extractJson(lastRaw);
-  };
-
-  let parsed = await callOnce(base);
-
-  // query 链（最多一跳）：本地执行 → 结果注入 → 再调一次
-  const q = parsed?.query as Record<string, unknown> | null | undefined;
-  if (q && q.kind === 'activities') {
-    const result = runActivitiesQuery(clampInt(q.days, 1, 30, 7));
-    parsed = await callOnce([
-      ...base,
-      { role: 'assistant', content: JSON.stringify({ reply: '', action: null, query: q }) },
-      { role: 'system', content: `${result}\n${SECOND_PASS_NOTE}` },
-    ]) ?? parsed;
+  // 万一它输出了 JSON 形态（旧习惯残留），剥出纯文本
+  if (reply.startsWith('{')) {
+    const parsed = extractJson(reply);
+    const inner = parsed && typeof parsed.reply === 'string' ? parsed.reply.trim() : '';
+    if (inner) reply = inner;
   }
 
-  const extract = (p: Record<string, unknown>) => {
-    const reply = String(p.reply ?? '').trim();
-    // actions 数组为准；兼容模型仍按旧约定输出单 action 的情况
-    const rawActions = Array.isArray(p.actions)
-      ? (p.actions as Array<Record<string, unknown>>)
-      : p.action
-        ? [p.action as Record<string, unknown>]
-        : [];
-    const drafts = rawActions.slice(0, 3).map((a) => {
-      const d = toDraft(a);
-      // 提了动作却被校验丢弃 = 模型很可能在 reply 里许了空头支票——dev 下留痕便于调 prompt
-      if (!d && import.meta.env.DEV) console.warn('[navigator] action 校验未通过被丢弃:', a);
-      return d;
-    }).filter((d): d is NavigatorDraft => !!d);
-    return { reply, drafts };
-  };
-
-  // parsed / salvage 两路先汇合成 { reply, drafts }，守卫统一在汇合后过闸——
-  // 此前 salvage 提前 return 绕过了守卫，纯文本失守里的承诺语直接漏网（实测案例）。
-  let reply = '';
-  let drafts: NavigatorDraft[] = [];
-  if (parsed) {
-    ({ reply, drafts } = extract(parsed));
-  } else {
-    reply = salvageReply(lastRaw) ?? '';
-  }
-
-  // 承诺-空卡守卫。触发面用语义级宽网（drafts 为空却提到「卡」——枚举动词短语打地鼠
-  // 实测打不赢："记上了/帮你了张卡"都能绕开词表）；补救指令让模型自己分辨
-  // 「想出新卡→补 actions」还是「谈论已有卡→原样重申」。窄词表只做最终硬兜底判据。
-  const PROMISE_RE = /卡片?(给你|安排|开|挂|写|办)|安排上了?|记[下上]了|给你记|记一笔|挂上去|开[张好]|换成(这|每)|整个每日|建好了|帮你.{0,3}[张开]|加进(清单|待办)/;
-  // 谈论已有卡的合法说法（"卡已经在上面了，点确认"）——不触发补救、不被兜底误杀
+  // 轻量硬兜底：明知无卡还嘴瓢承诺（概率已极小）→ 本地改口，不再补救跳
+  const PROMISE_RE = /卡片?(给你|安排|开|挂|写|办)|安排上了?|记[下上]了|给你记|记一笔|挂上去|开[张好]|建好了|帮你.{0,3}[张开]|加进(清单|待办)/;
   const REFER_RE = /已经在|还[晾挂躺放]|待确认|点.{0,3}[「"']?确认|先确认|上面那张|没确认/;
-  if (drafts.length === 0 && reply && /卡/.test(reply) && !REFER_RE.test(reply)) {
-    if (import.meta.env.DEV) console.warn('[navigator] reply 提到卡但 actions 为空，触发补救调用');
-    const rawBefore = lastRaw;
-    const repaired = await callOnce([
-      ...base,
-      { role: 'assistant', content: rawBefore },
-      { role: 'system', content: '复核你上一条输出：actions 是空的。若你意图创建/修改卡片 → 重新输出完整 JSON 并把动作放进 actions（reply 保持原意）；若只是谈论【本会话卡片实录】里已有的卡 → 把原 reply 原样放进 JSON 重发即可。若上一条不是合法 JSON，这次必须是。本轮禁止 query。' },
-    ]);
-    if (repaired) {
-      const fixed = extract(repaired);
-      if (fixed.drafts.length > 0) {
-        // 补上卡了：采纳修复轮
-        drafts = fixed.drafts;
-        reply = fixed.reply || reply;
-      } else if (fixed.reply) {
-        // 无卡但给出了（可能原样重申的）说法：采纳，交由下方硬兜底终审
-        reply = fixed.reply;
-      }
-    }
-    // 硬兜底：补救后仍无卡、命中承诺词表且不是在谈旧卡 → 本地强制改口，绝不放行空头支票
-    if (drafts.length === 0 && PROMISE_RE.test(reply) && !REFER_RE.test(reply)) {
-      reply = '这张卡吾辈没能开出来——你把关键信息再说一遍，或者用下面的快捷项手动建一张，我盯着。';
-    }
+  if (drafts.length === 0 && PROMISE_RE.test(reply) && !REFER_RE.test(reply)) {
+    if (import.meta.env.DEV) console.warn('[navigator] 表演阶段明知无卡仍承诺，本地改口');
+    reply = '这张卡吾辈没能开出来——你把关键信息再说一遍，或者用下面的快捷项手动建一张，我盯着。';
   }
 
-  if (!reply && drafts.length === 0) reply = '唔……刚才走神了，没听清。再说一遍？';
-  const segments = splitSegments(reply || (drafts.length ? '卡片给你，看一眼没问题就确认。' : '嗯。'));
-  return { segments, drafts };
+  if (!reply) reply = drafts.length ? '卡片给你，看一眼没问题就确认。' : '嗯。';
+  return { segments: splitSegments(reply), drafts };
 }
 
 /** 有 Key 时的 AI 每日问候（>timeout 由调用方落模板；失败返回 null） */
