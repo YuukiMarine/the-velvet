@@ -1,34 +1,40 @@
 /**
- * navigator store — F6 黑猫的窗口开关 + 当日会话 + 回合仲裁器（Batch2）。
+ * navigator store — F6 黑猫：窗口开关 + 回合仲裁器（Batch2）+ 会话持久化与人格（Batch3）。
  *
  * 仲裁器把「消息流」与「LLM 回合」解耦（F6_NAVIGATOR_MEMORY.md §3）：
  *   idle → collecting(动态收口窗口) → thinking(AI 在飞,可 abort) → replying(分段吐泡,可打断) → idle
- * 崩溃安全：待收口批 = 消息流尾部连续的用户消息（从日志推导，零持久化）；
- * 计时器 / AbortController / 吞话 均为模块级易失状态，丢了重开窗即重建。
+ * 崩溃安全：待收口批 = 消息流尾部连续的用户消息（从日志推导）；计时器/AbortController 易失。
  *
- * 会话延续：当日保留、跨天清流（Batch3 迁 Dexie，消息结构已对齐未来表）。
+ * 持久化（Batch3）：会话按「每日 × 人格」一条（跨天清流、切人格开新会话，当日切回旧人格
+ * 恢复旧会话）；消息/卡片状态/吞话全部落 Dexie，跨重启存活。hydrate 异步、写库 fire-and-forget，
+ * 竞态用 pendingWrites 缓冲（hydrate 完成前产生的消息补写入库）。
  */
 import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
+import { db } from '@/db';
 import { useAppStore, toLocalDateKey } from '@/store';
 import { getAIConfig } from '@/utils/aiClient';
 import {
   ACTION_META, buildDailyGreeting, buildFallbackReply, buildPreviewLines, buildShortGreeting,
   buildSnapshot, type NavigatorDraft,
 } from '@/utils/navigatorRegistry';
-import { generateAIGreeting, runNavigatorTurn, splitSegments, type TurnHistoryItem } from '@/utils/navigatorIntent';
+import {
+  generateAIGreeting, runNavigatorTurn, splitSegments, type TurnHistoryItem,
+} from '@/utils/navigatorIntent';
+import { BUILTIN_NAVIGATOR_PRESETS, resolveNavigatorPreset } from '@/constants/navigatorPresets';
+import type { NavigatorMessageRow, NavigatorPreset } from '@/types';
 
 export type NavigatorCardStatus = 'pending' | 'done' | 'cancelled';
 export type NavigatorPhase = 'idle' | 'collecting' | 'thinking' | 'replying';
 
 export interface NavigatorMessage {
   id: string;
-  /** cat=黑猫气泡 / user=用户气泡 / card=待确认动作卡（draft+status） */
-  role: 'cat' | 'user' | 'card';
+  /** cat=黑猫气泡 / user=用户气泡 / card=待确认动作卡 / summary=compact 摘要占位（Batch3 后段） */
+  role: 'cat' | 'user' | 'card' | 'summary';
   text?: string;
   draft?: NavigatorDraft;
   cardStatus?: NavigatorCardStatus;
-  /** 执行成功后的回执文案（渲染在卡片下方的黑猫签章行） */
+  /** 执行成功后的回执文案（渲染在卡片下方的签章行） */
   receipt?: string;
   createdAt: number;
 }
@@ -37,18 +43,29 @@ interface NavigatorState {
   isOpen: boolean;
   /** 会话所属日期（跨天清流判据） */
   dateKey: string;
+  /** 当前会话 id（hydrate 后非空） */
+  sessionId: string | null;
   messages: NavigatorMessage[];
+  /** 自定义人格（内置在常量里，不入表） */
+  presets: NavigatorPreset[];
   /** 仲裁器相位（UI 据此渲染打字指示等） */
   phase: NavigatorPhase;
   open: () => void;
   close: () => void;
-  /** 跨天则清空消息并更新 dateKey；返回是否发生了清流 */
+  /** 当前激活人格（settings.navigatorPresetId 解析；缺省黑猫） */
+  activePreset: () => NavigatorPreset;
+  loadPresets: () => Promise<void>;
+  savePreset: (p: NavigatorPreset) => Promise<void>;
+  deletePreset: (id: string) => Promise<void>;
+  /** 切人格 = 开（或恢复）该人格的今日会话，空会话时播接管语 */
+  switchPreset: (id: string) => Promise<void>;
+  /** 跨天则清流并重挂当日会话；返回是否发生了清流 */
   rolloverIfNewDay: () => boolean;
   /** 输入框活动信号（聚焦且非空 / IME 组合中）→ 收口窗口挂起等它说完 */
   setInputActive: (active: boolean) => void;
   /** 用户发一条消息 → 进入/重置收口，或打断 thinking/replying */
   userSend: (text: string) => void;
-  /** 开窗问候（跨天完整版走 AI + 超时落模板；当日空会话简短招呼） */
+  /** 开窗问候：先 hydrate 当日会话，空会话才问候（跨天完整版走 AI + 超时落模板） */
   greet: () => void;
   pushCat: (text: string) => void;
   pushUser: (text: string) => void;
@@ -69,8 +86,11 @@ let turnAbort: AbortController | null = null;
 /** 代计数：每次打断/清流 +1，异步续体凭票入场，过期作废 */
 let generation = 0;
 let inputActive = false;
-/** 被打断吞掉的回复段（Batch3 迁入 session.swallowed 持久化） */
+/** 被打断吞掉的回复段（随 session.swallowed 持久化，跨重启回捞） */
 let swallowed: string[] = [];
+/** hydrate 完成前产生的消息先入内存，这里排队补写 */
+let pendingWrites: NavigatorMessage[] = [];
+let hydrating: Promise<void> | null = null;
 
 const GREET_TIMEOUT_MS = 4000;
 const SETTLE_INPUT_POLL_MS = 500;
@@ -113,7 +133,86 @@ const clearSettle = () => {
   if (settleTimer) { clearTimeout(settleTimer); settleTimer = null; }
 };
 
+// ── 持久化编解码 ──
+
+const toRow = (m: NavigatorMessage, sessionId: string): NavigatorMessageRow => ({
+  id: m.id,
+  sessionId,
+  role: m.role,
+  text: m.text,
+  draftJson: m.draft ? JSON.stringify(m.draft) : undefined,
+  cardStatus: m.cardStatus,
+  receipt: m.receipt,
+  createdAt: m.createdAt,
+});
+
+const fromRow = (r: NavigatorMessageRow): NavigatorMessage => ({
+  id: r.id,
+  role: r.role,
+  text: r.text,
+  draft: r.draftJson ? (JSON.parse(r.draftJson) as NavigatorDraft) : undefined,
+  cardStatus: r.cardStatus,
+  receipt: r.receipt,
+  createdAt: r.createdAt,
+});
+
 export const useNavigatorStore = create<NavigatorState>((set, get) => {
+  /** 消息写库（fire-and-forget；未 hydrate 先排队） */
+  const persistMessage = (m: NavigatorMessage) => {
+    const sid = get().sessionId;
+    if (!sid) { pendingWrites.push(m); return; }
+    void db.navigatorMessages.put(toRow(m, sid)).catch((e) => console.warn('[navigator] 消息写库失败', e));
+    void db.navigatorSessions.update(sid, { updatedAt: new Date() }).catch(() => {});
+  };
+
+  const persistSwallowed = () => {
+    const sid = get().sessionId;
+    if (sid) void db.navigatorSessions.update(sid, { swallowed, updatedAt: new Date() }).catch(() => {});
+  };
+
+  /**
+   * 挂载「今日 × 当前人格」的会话：有则恢复（消息回灌），无则新建。
+   * 跨天/切人格都汇到这里——它是会话生命周期的唯一入口。
+   */
+  const hydrateSession = (): Promise<void> => {
+    if (hydrating) return hydrating;
+    hydrating = (async () => {
+      try {
+        const today = toLocalDateKey();
+        const preset = get().activePreset();
+        const cur = get();
+        if (cur.sessionId && cur.dateKey === today) {
+          // 已挂载今日会话：只需校验人格没变
+          const row = await db.navigatorSessions.get(cur.sessionId);
+          if (row && row.presetId === preset.id) return;
+        }
+        const existing = await db.navigatorSessions
+          .where('dateKey').equals(today)
+          .and((s) => s.presetId === preset.id)
+          .first();
+        const sessionId = existing?.id ?? uuidv4();
+        if (!existing) {
+          await db.navigatorSessions.put({
+            id: sessionId, dateKey: today, presetId: preset.id,
+            createdAt: new Date(), updatedAt: new Date(),
+          });
+        }
+        const rows = await db.navigatorMessages.where('sessionId').equals(sessionId).sortBy('createdAt');
+        swallowed = existing?.swallowed ?? [];
+        // hydrate 期间产生的内存消息（如无 Key 秒开就发话）追加在库存消息之后并补写
+        const inMemoryNew = pendingWrites.slice();
+        pendingWrites = [];
+        set({ sessionId, dateKey: today, messages: [...rows.map(fromRow), ...inMemoryNew] });
+        for (const m of inMemoryNew) persistMessage(m);
+      } catch (e) {
+        console.warn('[navigator] 会话挂载失败（本次退化为内存会话）', e);
+      } finally {
+        hydrating = null;
+      }
+    })();
+    return hydrating;
+  };
+
   /** 待收口批 = 消息尾部"最后一条非用户消息之后"的连续用户消息（§3.7 可推导性） */
   const pendingBatch = (): string => {
     const ms = get().messages;
@@ -131,11 +230,10 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
    */
   const historyForTurn = (): TurnHistoryItem[] => {
     const ms = get().messages;
-    // 去掉尾部待收口的用户消息
     let end = ms.length;
     while (end > 0 && ms[end - 1].role === 'user') end--;
     return ms.slice(0, end)
-      .filter((m) => m.role !== 'card')
+      .filter((m) => m.role !== 'card' && m.role !== 'summary')
       .map((m): TurnHistoryItem => ({ role: m.role === 'user' ? 'user' : 'cat', text: m.text ?? '' }))
       .filter((h) => h.text);
   };
@@ -154,7 +252,6 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
   /** 收口 → thinking → replying → idle（gen 凭票，全程可被打断作废） */
   const settleNow = async () => {
     if (get().phase !== 'collecting') return;
-    // 用户还在打字：挂起等他说完（上限兜底防永挂）
     if (inputActive && Date.now() - settleWaitStart < SETTLE_INPUT_MAX_WAIT_MS) {
       settleTimer = setTimeout(() => void settleNow(), SETTLE_INPUT_POLL_MS);
       return;
@@ -177,17 +274,21 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
     turnAbort = new AbortController();
     const mySwallowed = swallowed;
     swallowed = [];
+    persistSwallowed();
     try {
-      const result = await runNavigatorTurn(historyForTurn(), batch, mySwallowed, turnAbort.signal, cardsDigest());
+      const result = await runNavigatorTurn(
+        historyForTurn(), batch, mySwallowed, turnAbort.signal, cardsDigest(),
+        get().activePreset().personaPrompt,
+      );
       if (gen !== generation) return;
       // 分段吐泡（段间隙 = 天然插话点）
       set({ phase: 'replying' });
       for (let i = 0; i < result.segments.length; i++) {
-        if (gen !== generation) { swallowed = result.segments.slice(i); return; }
+        if (gen !== generation) { swallowed = result.segments.slice(i); persistSwallowed(); return; }
         get().pushCat(result.segments[i]);
         if (i < result.segments.length - 1) {
           const alive = await sleepUnlessStale(segmentDelayMs(result.segments[i + 1]), gen);
-          if (!alive) { swallowed = result.segments.slice(i + 1); return; }
+          if (!alive) { swallowed = result.segments.slice(i + 1); persistSwallowed(); return; }
         }
       }
       result.drafts.forEach((d) => get().pushCard(d));
@@ -212,11 +313,59 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
   return {
     isOpen: false,
     dateKey: toLocalDateKey(),
+    sessionId: null,
     messages: [],
+    presets: [],
     phase: 'idle',
 
     open: () => set({ isOpen: true }),
     close: () => set({ isOpen: false }),
+
+    activePreset: () => resolveNavigatorPreset(
+      useAppStore.getState().settings.navigatorPresetId,
+      get().presets,
+    ),
+
+    loadPresets: async () => {
+      try {
+        const presets = await db.navigatorPresets.orderBy('createdAt').toArray();
+        set({ presets });
+      } catch (e) {
+        console.warn('[navigator] presets 加载失败', e);
+      }
+    },
+
+    savePreset: async (p) => {
+      await db.navigatorPresets.put(p);
+      await get().loadPresets();
+    },
+
+    deletePreset: async (id) => {
+      await db.navigatorPresets.delete(id);
+      // 删的是当前激活人格 → 回落黑猫
+      if (useAppStore.getState().settings.navigatorPresetId === id) {
+        await get().switchPreset(BUILTIN_NAVIGATOR_PRESETS[0].id);
+      }
+      await get().loadPresets();
+    },
+
+    switchPreset: async (id) => {
+      const app = useAppStore.getState();
+      if (app.settings.navigatorPresetId === id) return;
+      generation++;
+      clearSettle();
+      turnAbort?.abort();
+      await app.updateSettings({ navigatorPresetId: id });
+      // 换会话：清内存流 → 挂载该人格今日会话（当日切回旧人格 = 恢复旧流）
+      swallowed = [];
+      pendingWrites = [];
+      set({ sessionId: null, messages: [], phase: 'idle' });
+      await hydrateSession();
+      if (get().messages.length === 0) {
+        const preset = get().activePreset();
+        get().pushCat(preset.handoffLine ?? `（${preset.name} 上线了）`);
+      }
+    },
 
     rolloverIfNewDay: () => {
       const today = toLocalDateKey();
@@ -225,7 +374,10 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
       clearSettle();
       turnAbort?.abort();
       swallowed = [];
-      set({ dateKey: today, messages: [], phase: 'idle' });
+      pendingWrites = [];
+      // 旧会话留库（compact 主泵在 Batch3 后段接管归档摘要）
+      set({ dateKey: today, sessionId: null, messages: [], phase: 'idle' });
+      void hydrateSession();
       return true;
     },
 
@@ -235,12 +387,10 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
       const phase = get().phase;
       get().pushUser(text);
       if (phase === 'thinking') {
-        // 打断 AI：作废在飞请求，并回收口重新酝酿
         generation++;
         turnAbort?.abort();
         turnAbort = null;
       } else if (phase === 'replying') {
-        // 打断吐泡：剩余段已在吐泡循环里凭 gen 存入 swallowed
         generation++;
       }
       set({ phase: 'collecting' });
@@ -248,48 +398,62 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
     },
 
     greet: () => {
-      const st = get();
-      st.rolloverIfNewDay();
-      if (get().messages.length > 0) return;
-      const snap = buildSnapshot();
-      const app = useAppStore.getState();
-      const firstToday = app.settings.navigatorLastGreetDate !== snap.dateKey;
-      if (firstToday) void app.updateSettings({ navigatorLastGreetDate: snap.dateKey });
+      void (async () => {
+        get().rolloverIfNewDay();
+        await hydrateSession();
+        if (get().messages.length > 0) return;
+        const snap = buildSnapshot();
+        const app = useAppStore.getState();
+        const preset = get().activePreset();
+        const firstToday = app.settings.navigatorLastGreetDate !== snap.dateKey;
+        if (firstToday) void app.updateSettings({ navigatorLastGreetDate: snap.dateKey });
 
-      if (!firstToday || !getAIConfig(app.settings)) {
-        get().pushCat(firstToday ? buildDailyGreeting(snap) : buildShortGreeting(snap));
-        return;
-      }
-      // 有 Key 的跨天首开：打字指示等 AI，超时/失败静默落模板（等待本身就是拟人）
-      const gen = ++generation;
-      set({ phase: 'thinking' });
-      const ac = new AbortController();
-      const timer = setTimeout(() => ac.abort(), GREET_TIMEOUT_MS);
-      void generateAIGreeting(snap, ac.signal)
-        .then((text) => {
+        if (!firstToday || !getAIConfig(app.settings)) {
+          get().pushCat(firstToday ? buildDailyGreeting(snap) : buildShortGreeting(snap));
+          return;
+        }
+        // 有 Key 的跨天首开：打字指示等 AI，超时/失败静默落模板（等待本身就是拟人）
+        const gen = ++generation;
+        set({ phase: 'thinking' });
+        const ac = new AbortController();
+        const timer = setTimeout(() => ac.abort(), GREET_TIMEOUT_MS);
+        try {
+          const text = await generateAIGreeting(snap, ac.signal, preset.personaPrompt);
           clearTimeout(timer);
           if (gen !== generation) return;
           splitSegments(text ?? buildDailyGreeting(snap)).forEach((seg) => get().pushCat(seg));
           set({ phase: 'idle' });
-        })
-        .catch(() => {
+        } catch {
           clearTimeout(timer);
           if (gen !== generation) return;
           get().pushCat(buildDailyGreeting(snap));
           set({ phase: 'idle' });
-        });
+        }
+      })();
     },
 
-    pushCat: (text) => set((s) => ({ messages: [...s.messages, msg({ role: 'cat', text })] })),
-    pushUser: (text) => set((s) => ({ messages: [...s.messages, msg({ role: 'user', text })] })),
+    pushCat: (text) => {
+      const m = msg({ role: 'cat', text });
+      set((s) => ({ messages: [...s.messages, m] }));
+      persistMessage(m);
+    },
+    pushUser: (text) => {
+      const m = msg({ role: 'user', text });
+      set((s) => ({ messages: [...s.messages, m] }));
+      persistMessage(m);
+    },
     pushCard: (draft) => {
       const m = msg({ role: 'card', draft, cardStatus: 'pending' });
       set((s) => ({ messages: [...s.messages, m] }));
+      persistMessage(m);
       return m.id;
     },
-    updateCard: (id, patch) =>
+    updateCard: (id, patch) => {
       set((s) => ({
         messages: s.messages.map((m) => (m.id === id ? { ...m, ...patch } : m)),
-      })),
+      }));
+      const updated = get().messages.find((m) => m.id === id);
+      if (updated) persistMessage(updated);
+    },
   };
 });

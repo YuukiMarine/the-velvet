@@ -33,7 +33,7 @@ const CatFace = ({ className }: { className?: string }) => (
   </svg>
 );
 
-const CAT_NAME = '黑猫';
+// 人格名随 activePreset 动态取（Batch3）；'黑猫' 仅作窗口未初始化时的兜底
 
 // ── 皮肤 token（bright = P3 站内信 / 暗 = 中性兜底） ──
 const skinOf = (bright: boolean) => bright
@@ -101,6 +101,7 @@ export const NavigatorWindow = () => {
   const bold = useBoldness();
   const bright = terminalChannel(user?.theme) === 'board';
   const sk = skinOf(bright);
+  const preset = nav.activePreset();
 
   const a11yRef = useModalA11y(nav.isOpen, nav.close, { closeOnEscape: true, trapFocus: true });
   useBackHandler(nav.isOpen, nav.close);
@@ -113,9 +114,12 @@ export const NavigatorWindow = () => {
   const [busyCardId, setBusyCardId] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
 
-  // 打开：跨天清流 + 问候（跨天首开有 Key 走 AI+打字指示+超时落模板；逻辑收在 store.greet）
+  // 打开：加载自定义人格 + 挂载当日会话 + 问候（逻辑收在 store.greet，内部先 hydrate）
   useEffect(() => {
-    if (nav.isOpen) useNavigatorStore.getState().greet();
+    if (!nav.isOpen) return;
+    const st = useNavigatorStore.getState();
+    void st.loadPresets();
+    st.greet();
   }, [nav.isOpen]);
 
   // 打开期间锁 body 滚动
@@ -185,7 +189,7 @@ export const NavigatorWindow = () => {
           <motion.div
             role="dialog"
             aria-modal="true"
-            aria-label={CAT_NAME}
+            aria-label={preset.name}
             initial={bold ? { opacity: 0, y: 24 } : { opacity: 0 }}
             animate={{ opacity: 1, y: 0 }}
             exit={bold ? { opacity: 0, y: 18 } : { opacity: 0 }}
@@ -218,7 +222,7 @@ export const NavigatorWindow = () => {
                     <CatFace className="h-5 w-5" />
                   </span>
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-base font-black" style={sk.headerText}>{bright ? `▶ 站内信 · ${CAT_NAME}` : CAT_NAME}</div>
+                    <div className="truncate text-base font-black" style={sk.headerText}>{bright ? `▶ 站内信 · ${preset.name}` : preset.name}</div>
                     <div className="text-[11px] font-bold opacity-60" style={sk.headerText}>{bright ? '深夜在线 · 有事直说' : '万能记录 · 有事直说'}</div>
                   </div>
                   {bright && (

@@ -1,5 +1,5 @@
 import Dexie, { Table } from 'dexie';
-import { User, Attribute, Activity, Achievement, Skill, DailyEvent, DailyDivination, LongReading, Settings, Todo, TodoCompletion, PeriodSummary, WeeklyGoal, Persona, Shadow, BattleState, Confidant, ConfidantEvent, CounselSession, CounselArchive, CallingCard, LedgerEntry, Budget, LedgerAsset, Wish } from '@/types';
+import { User, Attribute, Activity, Achievement, Skill, DailyEvent, DailyDivination, LongReading, Settings, Todo, TodoCompletion, PeriodSummary, WeeklyGoal, Persona, Shadow, BattleState, Confidant, ConfidantEvent, CounselSession, CounselArchive, CallingCard, LedgerEntry, Budget, LedgerAsset, Wish, NavigatorSessionRow, NavigatorMessageRow, NavigatorMemo, NavigatorPreset } from '@/types';
 
 export class PGTDatabase extends Dexie {
   users!: Table<User>;
@@ -27,6 +27,10 @@ export class PGTDatabase extends Dexie {
   budgets!: Table<Budget>;              // F5 月度预算
   assets!: Table<LedgerAsset>;          // F5 固定资产（phase ②）
   wishes!: Table<Wish>;                 // F3 愿望清单（终极目标 + 子愿望）
+  navigatorSessions!: Table<NavigatorSessionRow>;   // F6 黑猫会话（每日每人格）
+  navigatorMessages!: Table<NavigatorMessageRow>;   // F6 会话消息
+  navigatorMemos!: Table<NavigatorMemo>;            // F6 原子记忆（三源 + F8 图片卡共用）
+  navigatorPresets!: Table<NavigatorPreset>;        // F6 自定义人格（内置随代码，不入表）
 
   constructor() {
     super('PGTDatabase');
@@ -232,6 +236,38 @@ export class PGTDatabase extends Dexie {
       budgets: 'id, period, createdAt',
       assets: 'id, category, status, createdAt',
       wishes: 'id, parentId, attribute, status, createdAt, archivedAt'
+    });
+    // v12: F6 黑猫 Navigator —— 会话/消息持久化 + 原子记忆 + 自定义人格（Batch3）
+    this.version(12).stores({
+      users: 'id, name, createdAt, theme',
+      attributes: 'id, displayName, points, level, unlocked',
+      activities: 'id, userId, date, description, method',
+      achievements: 'id, unlocked, unlockedDate',
+      skills: 'id, requiredAttribute, requiredLevel, unlocked',
+      dailyEvents: 'id, date',
+      dailyDivinations: 'id, date',
+      longReadings: 'id, createdAt, archived, expiresAt',
+      settings: 'id',
+      todos: 'id, attribute, frequency, isActive, createdAt',
+      todoCompletions: 'id, todoId, date',
+      summaries: 'id, period, startDate, endDate, createdAt',
+      weeklyGoals: 'id, weekStart, weekEnd, completed, createdAt',
+      personas: 'id, name, createdAt',
+      shadows: 'id, level, createdAt',
+      battleStates: 'id',
+      confidants: 'id, userId, arcanaId, source, intimacy, createdAt, archivedAt',
+      confidantEvents: 'id, confidantId, date, type, createdAt',
+      counselSessions: 'id, startedDate, startedAt',
+      counselArchives: 'id, createdAt',
+      callingCards: 'id, pinned, archived, createdAt, targetDate',
+      ledgerEntries: 'id, direction, type, channel, date, createdAt',
+      budgets: 'id, period, createdAt',
+      assets: 'id, category, status, createdAt',
+      wishes: 'id, parentId, attribute, status, createdAt, archivedAt',
+      navigatorSessions: 'id, dateKey, presetId, createdAt, updatedAt',
+      navigatorMessages: 'id, sessionId, createdAt',
+      navigatorMemos: 'id, source, status, importance, createdAt',
+      navigatorPresets: 'id, isBuiltin, createdAt'
     });
   }
 }
