@@ -22,7 +22,7 @@ import {
   generateAIGreeting, runNavigatorTurn, splitSegments, type TurnHistoryItem,
 } from '@/utils/navigatorIntent';
 import {
-  buildWarmthLine, finalizeStaleSessions, lazySweepMemos, maybeCompactLive, recallMemories,
+  buildWarmthLine, finalizeStaleSessions, getProfile, lazySweepMemos, maybeCompactLive, recallMemories,
 } from '@/utils/navigatorMemory';
 import { BUILTIN_NAVIGATOR_PRESETS, resolveNavigatorPreset } from '@/constants/navigatorPresets';
 import type { NavigatorMessageRow, NavigatorPreset } from '@/types';
@@ -321,9 +321,11 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
     swallowed = [];
     persistSwallowed();
     try {
-      // 记忆检索（纯本地，失败返回空不阻断）+ warmth 语气行
+      // 记忆检索（纯本地，失败返回空不阻断）+ 用户画像常驻 + warmth 语气行
       const recall = await recallMemories(batch);
+      const profile = await getProfile();
       const extra = [
+        profile ? `【用户画像（长期）】${profile}` : '',
         recall.lines.length ? `【关于用户的记忆】\n${recall.lines.join('\n')}` : '',
         buildWarmthLine(),
       ].filter(Boolean);
@@ -529,7 +531,9 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
           const gapDays = lastBefore
             ? Math.max(0, Math.round((Date.parse(snap.dateKey) - Date.parse(lastBefore.dateKey)) / 86400_000))
             : null;
+          const profile = await getProfile();
           const extra = [
+            profile ? `【用户画像（长期）】${profile}` : '',
             yesterday ? `【昨日聊天摘要】${yesterday}` : '',
             gapDays !== null && gapDays >= 2 ? `【距上次聊天】已隔 ${gapDays} 天` : '',
             recall.lines.length ? `【关于用户的记忆】\n${recall.lines.join('\n')}` : '',

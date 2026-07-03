@@ -608,10 +608,11 @@ export interface NavigatorMessageRow {
   createdAt: number;
 }
 
-/** 原子记忆（三源：对话沉淀/观察日记/手动；F8 图片记忆卡共用此表 source='image'） */
+/** 原子记忆（三源：对话沉淀/观察日记/手动；F8 图片记忆卡共用此表 source='image'；
+ *  source='profile' 为特殊单行 = AI 维护的用户画像总览（常驻注入，用户可编辑） */
 export interface NavigatorMemo {
   id: string;
-  source: 'chat' | 'observation' | 'manual' | 'image';
+  source: 'chat' | 'observation' | 'manual' | 'image' | 'profile';
   /** 中性事实文本（不带人格口吻——口吻在 prompt 组装时现场渲染） */
   text: string;
   /** 情绪元数据（"用户提起时很沮丧"），可选 */
