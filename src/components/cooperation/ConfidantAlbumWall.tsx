@@ -23,8 +23,8 @@ const CARD_W = 182;
 const CARD_H = Math.round(CARD_W * 1.6); // TarotCardSVG 比例
 const SPACING = 88;          // 相邻卡横向间距
 const FLIP_THRESHOLD = 90;   // 中央卡拖拽翻转阈值（px）
-const OPEN_ARM = 40;         // 下滑打开档案的视觉阈值（px，短）
-const UP_CAP = 34;           // 上滑橡皮筋位移上限（px，短）
+const OPEN_ARM = 12;         // 下滑打开档案的视觉阈值（px）
+const DRAG_CAP = 15;         // 上/下滑卡片位移上限（px，防卡片被截断）
 const STEP_X = 92;           // 横滑实时切卡步长（px/张，跟手一张张翻）
 
 export interface ConfidantAlbumWallProps {
@@ -249,16 +249,16 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
       }
       if (g.axis === 'y') {
         if (dy > 0 && item !== 'add') {
-          // 下滑：打开档案预览（跟手下沉），过阈越界一次触觉
-          const v = Math.min(96, dy * 0.6);
+          // 下滑：打开档案预览（跟手下沉，位移封顶 DRAG_CAP 防截断），过阈越界一次触觉
+          const v = Math.min(DRAG_CAP, dy * 0.5);
           setDragDown(v);
           setDragY(0);
           const over = v >= OPEN_ARM;
           if (over && !overDetailRef.current) triggerLightHaptic();
           overDetailRef.current = over;
         } else if (dy < 0) {
-          // 上滑：橡皮筋翻角（无动作，短距离）
-          setDragY(Math.max(-UP_CAP, dy * 0.34));
+          // 上滑：橡皮筋翻角（无动作，位移封顶 DRAG_CAP）
+          setDragY(Math.max(-DRAG_CAP, dy * 0.5));
           setDragDown(0);
         }
       } else if (g.axis === 'x') {
@@ -275,7 +275,10 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
         }
       }
     } else {
-      setSlideX(dx);
+      // 两侧卡起拖 → 同样实时一张张切（不等松手）
+      const n = Math.round(-dx / STEP_X);
+      go(g.startIndex + n);
+      setSlideX(dx + n * STEP_X);
     }
   };
 
@@ -298,7 +301,7 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
         }
       } else if (g.axis === 'y' && dy > 0) {
         // 下滑过阈值 → 打开档案（上滑橡皮筋无动作）
-        if (Math.min(96, dy * 0.6) >= OPEN_ARM && item !== 'add') onOpenDetail(item.id);
+        if (Math.min(DRAG_CAP, dy * 0.5) >= OPEN_ARM && item !== 'add') onOpenDetail(item.id);
       } else if (g.axis === 'x') {
         if (flipped) {
           // 背面横拖过阈值 → 翻回正面
@@ -323,11 +326,9 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
         // 点两侧卡 = 跳到它
         go(g.targetIdx);
       } else {
-        // 从两侧卡起拖：位移步长 + 甩动速度（步长同正面横拖）
+        // 拖动中已实时切卡，松手只做甩动补偿（快甩多切一张）
         const velocity = dx / dt; // px/ms
-        const byDist = Math.round(-dx / STEP_X);
-        const byFling = Math.abs(velocity) > 0.45 ? (velocity < 0 ? 1 : -1) : 0;
-        go(g.startIndex + (byDist !== 0 ? byDist : byFling));
+        if (Math.abs(velocity) > 0.5) go(index + (velocity < 0 ? 1 : -1));
       }
       setSlideX(0);
     }
@@ -387,8 +388,8 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
           const y = isCenter ? dragY + dragDown : 0;
           // 上滑时卡顶前倾一点（橡皮筋翻角，rotateX 负 = 顶部靠近）；下滑不翻角
           const rotX = isCenter ? dragY * 0.4 : 0;
-          // 下滑打开预览：轻微放大暗示「聚焦/展开」
-          const liftScale = isCenter ? 1 + Math.min(0.05, dragDown / 1600) : 0.78;
+          // 下滑打开预览：轻微放大暗示「聚焦/展开」（位移封顶后靠放大补足反馈）
+          const liftScale = isCenter ? 1 + Math.min(0.05, dragDown / 300) : 0.78;
           const key = item === 'add' ? 'add' : item.id;
           return (
             <motion.div
@@ -430,8 +431,8 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
           return (
             <div
               aria-hidden
-              className="pointer-events-none absolute inset-x-0 bottom-1 flex justify-center"
-              style={{ opacity: 0.35 + progress * 0.65 }}
+              className="pointer-events-none absolute inset-x-0 top-0 z-[80] flex justify-center"
+              style={{ opacity: 0.4 + progress * 0.6 }}
             >
               <div
                 className="flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-black shadow-lg transition-colors"
