@@ -187,8 +187,23 @@ const Stele = ({
         <div aria-hidden className="absolute inset-0" style={{ clipPath: clip, background: '#f4f1e8' }} />
         {/* 主面（纯底色；文字层已抽到高亮之上） */}
         <div aria-hidden className="absolute inset-[3px]" style={{ clipPath: clip, background: active ? 'var(--color-primary)' : '#0d0d0d' }} />
-        {/* 选中：P5Highlight 红青活高亮覆盖整个字面区（在主面之上、文字之下） */}
-        {active && <P5Highlight live className="absolute -inset-1 z-10" />}
+        {/* 选中：P5Highlight 红青活高亮——旋转 90° 顺牌竖向、放大 1.2、中心略下移
+            （用户口径：原横向覆盖「像蘑菇一样横在条上面」）。宽高互换后 rotate 竖贴牌。 */}
+        {active && (
+          <div
+            aria-hidden
+            className="absolute z-10"
+            style={{
+              width: H * 1.2,
+              height: W * 1.2,
+              left: W / 2 - (H * 1.2) / 2,
+              top: H / 2 - (W * 1.2) / 2 + H * 0.08,
+              transform: 'rotate(90deg)',
+            }}
+          >
+            <P5Highlight live className="block h-full w-full" />
+          </div>
+        )}
         {/* 文字层最上：选中时黑字 + multiply 正片叠底——字透过电光显出（用户口径） */}
         <div
           className="absolute inset-[3px] z-20 flex flex-col items-center justify-between overflow-hidden pb-2 pt-2.5"
