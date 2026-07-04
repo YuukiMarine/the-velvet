@@ -1,9 +1,12 @@
 import { motion } from 'motion/react';
+import { useEffect, useRef, useState } from 'react';
 import { useAppStore } from '@/store';
 import { useNavigatorStore } from '@/store/navigator';
-import { triggerNavFeedback } from '@/utils/feedback';
+import { triggerLightHaptic, triggerNavFeedback } from '@/utils/feedback';
 import { springSnappy } from '@/utils/motion';
 import { zClass } from '@/utils/zIndex';
+import { RadialQuickNav } from '@/components/RadialQuickNav';
+import { playHeavyTransition } from '@/ui/transitionDirector';
 
 // ── SVG 图标组件（24px viewBox / stroke 1.8 / filled 双态制式）──────────────
 
@@ -215,6 +218,42 @@ export const BottomNav = () => {
   // F6：黑猫对话窗（NavigatorWindow 挂在 App 顶层，这里只负责打开）
   const openNavigator = useNavigatorStore((s) => s.open);
 
+  // P8.3 长按轮盘：◈ 按住 500ms 绽放快捷跳转半环（guide §22.5 长按时长统一口径）；
+  // 短按语义不变（开黑猫）。suppressClick 挡掉长按触发后随 pointerup 而来的那次 click。
+  const [wheelOpen, setWheelOpen] = useState(false);
+  const [wheelOrigin, setWheelOrigin] = useState<{ x: number; y: number } | null>(null);
+  const holdTimer = useRef<number | null>(null);
+  const suppressClick = useRef(false);
+
+  const cancelHold = () => {
+    if (holdTimer.current !== null) {
+      clearTimeout(holdTimer.current);
+      holdTimer.current = null;
+    }
+  };
+  useEffect(() => cancelHold, []);
+
+  const startHold = (e: React.PointerEvent<HTMLButtonElement>) => {
+    suppressClick.current = false;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    cancelHold();
+    holdTimer.current = window.setTimeout(() => {
+      holdTimer.current = null;
+      suppressClick.current = true;
+      triggerLightHaptic();
+      setWheelOrigin({ x: cx, y: cy });
+      setWheelOpen(true);
+    }, 500);
+  };
+
+  const wheelNavigate = (pageId: string) => {
+    triggerNavFeedback();
+    // 松手瞬间衔接频道幕布：midpoint（全遮时刻）执行真正的切页
+    playHeavyTransition(() => setCurrentPage(pageId));
+  };
+
   const renderTab = (item: NavItem) => (
     <NavTab
       key={item.id}
@@ -257,17 +296,27 @@ export const BottomNav = () => {
             h-16 容器高度不被 w-14 按钮撑破，安全区 padding 与四格 tab 布局零跳动 */}
         <div className="relative flex-1 h-full">
           <motion.button
-            aria-label="黑猫"
+            aria-label="黑猫（长按打开快捷跳转）"
             whileTap={{ scale: 0.9 }}
             onClick={() => {
+              // 长按已触发轮盘：吞掉随 pointerup 而来的这次 click（短按语义不受影响）
+              if (suppressClick.current) {
+                suppressClick.current = false;
+                return;
+              }
               triggerNavFeedback();
               openNavigator();
             }}
+            onPointerDown={startHold}
+            onPointerUp={cancelHold}
+            onPointerLeave={cancelHold}
+            onContextMenu={(e) => e.preventDefault()}
             // rotate 走 motion style 而非 Tailwind rotate-45：whileTap 会接管 transform，
             // class 里的 rotate 在按压瞬间会被覆盖掉；motion 的 rotate / scale 独立合成。
-            // 水平居中用 -ml-7（w-14 的一半）同理——translate 类靠不住
-            style={{ rotate: 45 }}
-            className="absolute left-1/2 -top-3 -ml-7 w-14 h-14 rounded-2xl bg-primary shadow-lg shadow-primary/30 flex items-center justify-center text-white cursor-pointer"
+            // 水平居中用 -ml-7（w-14 的一半）同理——translate 类靠不住。
+            // touchAction none：长按-上滑手势期间禁掉浏览器滚动/长按系统行为。
+            style={{ rotate: 45, touchAction: 'none' }}
+            className="absolute left-1/2 -top-3 -ml-7 w-14 h-14 rounded-2xl bg-primary shadow-lg shadow-primary/30 flex items-center justify-center text-white cursor-pointer select-none"
           >
             {/* 内层 -rotate-45 回正：菱形是壳，猫保持水平（字恒水平的图形版） */}
             <span className="-rotate-45 flex items-center justify-center" aria-hidden="true">
@@ -282,6 +331,13 @@ export const BottomNav = () => {
         aria-hidden
         className="bg-white dark:bg-gray-900"
         style={{ height: 'var(--bottom-nav-safe-height, env(safe-area-inset-bottom, 0px))' }}
+      />
+      {/* P8.3 轮盘（portal 到 body；手势在 window 级跟踪，与 ◈ 的长按触发配套） */}
+      <RadialQuickNav
+        open={wheelOpen}
+        origin={wheelOrigin}
+        onClose={() => setWheelOpen(false)}
+        onNavigate={wheelNavigate}
       />
     </motion.nav>
   );
