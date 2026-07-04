@@ -24,7 +24,8 @@ const CARD_H = Math.round(CARD_W * 1.6); // TarotCardSVG 比例
 const SPACING = 88;          // 相邻卡横向间距
 const FLIP_THRESHOLD = 90;   // 中央卡拖拽翻转阈值（px）
 const OPEN_ARM = 12;         // 下滑打开档案的视觉阈值（px）
-const DRAG_CAP = 15;         // 上/下滑卡片位移上限（px，防卡片被截断）
+const DOWN_CAP = 20;        // 下滑卡片位移上限（px）
+const UP_CAP = 15;          // 上滑橡皮筋位移上限（px）
 const STEP_X = 92;           // 横滑实时切卡步长（px/张，跟手一张张翻）
 
 export interface ConfidantAlbumWallProps {
@@ -249,16 +250,16 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
       }
       if (g.axis === 'y') {
         if (dy > 0 && item !== 'add') {
-          // 下滑：打开档案预览（跟手下沉，位移封顶 DRAG_CAP 防截断），过阈越界一次触觉
-          const v = Math.min(DRAG_CAP, dy * 0.5);
+          // 下滑：打开档案预览（跟手下沉，位移封顶 DOWN_CAP 防截断），过阈越界一次触觉
+          const v = Math.min(DOWN_CAP, dy * 0.5);
           setDragDown(v);
           setDragY(0);
           const over = v >= OPEN_ARM;
           if (over && !overDetailRef.current) triggerLightHaptic();
           overDetailRef.current = over;
         } else if (dy < 0) {
-          // 上滑：橡皮筋翻角（无动作，位移封顶 DRAG_CAP）
-          setDragY(Math.max(-DRAG_CAP, dy * 0.5));
+          // 上滑：橡皮筋翻角（无动作，位移封顶 UP_CAP）
+          setDragY(Math.max(-UP_CAP, dy * 0.5));
           setDragDown(0);
         }
       } else if (g.axis === 'x') {
@@ -301,7 +302,7 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
         }
       } else if (g.axis === 'y' && dy > 0) {
         // 下滑过阈值 → 打开档案（上滑橡皮筋无动作）
-        if (Math.min(DRAG_CAP, dy * 0.5) >= OPEN_ARM && item !== 'add') onOpenDetail(item.id);
+        if (Math.min(DOWN_CAP, dy * 0.5) >= OPEN_ARM && item !== 'add') onOpenDetail(item.id);
       } else if (g.axis === 'x') {
         if (flipped) {
           // 背面横拖过阈值 → 翻回正面
