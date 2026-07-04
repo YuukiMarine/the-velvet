@@ -27,7 +27,8 @@ const starD = (cx: number, cy: number, R: number): string => {
   return `${d}Z`;
 };
 
-/** 多层同心条纹星（参考图 2 单颗）：黑白交替粗描边嵌套 + 实心小星芯 */
+/** 多层同心条纹星（参考图 2 单颗）：黑白交替粗描边嵌套 + 实心小星芯。
+ *  strokeLinejoin=miter：星尖必须锐利（用户口径「圆角太多」）。 */
 const ConcentricStar = ({ size, layers = 5, invert = false }: { size: number; layers?: number; invert?: boolean }) => {
   const c = size / 2;
   const rings = Array.from({ length: layers }, (_, k) => {
@@ -37,30 +38,44 @@ const ConcentricStar = ({ size, layers = 5, invert = false }: { size: number; la
   });
   const core = (size / 2) * (1 - 0.82) * 0.9;
   return (
-    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden>
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ overflow: 'visible' }} aria-hidden>
       {/* 最外白色粗底轮廓（星与背景的分离边） */}
-      <path d={starD(c, c, size / 2)} fill="none" stroke="#f4f1e8" strokeWidth={Math.max(3, size * 0.07)} strokeLinejoin="round" />
+      <path d={starD(c, c, size / 2)} fill="none" stroke="#f4f1e8" strokeWidth={Math.max(3, size * 0.07)} strokeLinejoin="miter" strokeMiterlimit={12} />
       {rings.map((ring, k) => (
-        <path key={k} d={starD(c, c, ring.R)} fill="none" stroke={ring.stroke} strokeWidth={ring.width} strokeLinejoin="round" />
+        <path key={k} d={starD(c, c, ring.R)} fill="none" stroke={ring.stroke} strokeWidth={ring.width} strokeLinejoin="miter" strokeMiterlimit={12} />
       ))}
       <path d={starD(c, c, Math.max(3, core))} fill={invert ? '#0d0d0d' : '#f4f1e8'} stroke="none" />
     </svg>
   );
 };
 
-/** 星群铺底（固定布局，围着轮盘上半区；opacity 交给父级动画） */
-const FIELD_STARS: { dx: number; dy: number; size: number; rot: number; invert?: boolean; op: number }[] = [
-  { dx: -150, dy: -196, size: 120, rot: -14, op: 0.85 },
-  { dx: -22, dy: -252, size: 158, rot: 9, invert: true, op: 0.9 },
-  { dx: 118, dy: -204, size: 104, rot: 22, op: 0.8 },
-  { dx: -176, dy: -84, size: 66, rot: 30, invert: true, op: 0.6 },
-  { dx: 168, dy: -96, size: 72, rot: -18, op: 0.6 },
-  { dx: 62, dy: -128, size: 46, rot: 40, op: 0.5 },
-  { dx: -84, dy: -136, size: 40, rot: -32, invert: true, op: 0.5 },
-];
+/** 星群铺底：程序生成 22 颗（固定种子，撒满轮盘周围直至屏底；重叠是特色，参考图即堆叠） */
+const FIELD_STARS: { dx: number; dy: number; size: number; rot: number; invert: boolean; op: number }[] = (() => {
+  const rnd = (i: number, salt: number) => {
+    const x = Math.sin(i * 127.13 + salt * 311.7) * 43758.5453;
+    return x - Math.floor(x);
+  };
+  return Array.from({ length: 22 }, (_, i) => {
+    // 上半环均匀撒点 + 抖动；后 6 颗压向底部两侧（把牌后/屏底也填上）
+    const bottomBand = i >= 16;
+    const ang = bottomBand
+      ? -Math.PI * (0.08 + 0.84 * rnd(i, 1)) // 全上半随机
+      : -Math.PI * ((i / 16) * 0.94 + 0.03 + (rnd(i, 1) - 0.5) * 0.08);
+    const dist = bottomBand ? 30 + rnd(i, 2) * 90 : 120 + rnd(i, 2) * 220;
+    const size = bottomBand ? 30 + rnd(i, 3) * 60 : 34 + rnd(i, 3) * 128;
+    return {
+      dx: Math.cos(ang) * dist,
+      dy: Math.sin(ang) * dist * 0.92 + (bottomBand ? 26 : 0),
+      size,
+      rot: (rnd(i, 4) - 0.5) * 70,
+      invert: rnd(i, 5) > 0.5,
+      op: 0.42 + rnd(i, 6) * 0.5,
+    };
+  });
+})();
 
 const StarFieldBackdrop = ({ origin }: { origin: { x: number; y: number } }) => (
-  <div className="pointer-events-none absolute inset-0" aria-hidden>
+  <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
     {FIELD_STARS.map((s, i) => (
       <motion.div
         key={i}
@@ -69,7 +84,7 @@ const StarFieldBackdrop = ({ origin }: { origin: { x: number; y: number } }) => 
         initial={{ opacity: 0, scale: 0.55 }}
         animate={{ opacity: s.op, scale: 1 }}
         exit={{ opacity: 0, scale: 0.7 }}
-        transition={{ type: 'spring', stiffness: 220, damping: 24, delay: 0.16 + i * 0.035 }}
+        transition={{ type: 'spring', stiffness: 220, damping: 24, delay: 0.14 + i * 0.022 }}
       >
         <ConcentricStar size={s.size} invert={s.invert} />
       </motion.div>
@@ -77,30 +92,56 @@ const StarFieldBackdrop = ({ origin }: { origin: { x: number; y: number } }) => 
   </div>
 );
 
-/** 打开波纹：星形描边 3 圈从 ◈ 扩散渐隐 */
+/** 打开波纹：星形描边 5 圈从 ◈ 扩散——铺到上半屏、尾段才渐隐（用户口径「多一轮、晚点消失」） */
 const StarBurstRipple = ({ origin }: { origin: { x: number; y: number } }) => (
   <div className="pointer-events-none absolute inset-0" aria-hidden>
-    {[0, 1, 2].map((i) => (
+    {[0, 1, 2, 3, 4].map((i) => (
       <motion.svg
         key={i}
         width={160}
         height={160}
         viewBox="0 0 160 160"
         className="absolute"
-        style={{ left: origin.x - 80, top: origin.y - 80 }}
+        style={{ left: origin.x - 80, top: origin.y - 80, overflow: 'visible' }}
         initial={{ scale: 0.24, opacity: 0.95 }}
-        animate={{ scale: 3.6 + i * 0.7, opacity: 0 }}
-        transition={{ duration: 0.62, delay: i * 0.09, ease: [0.2, 0.8, 0.3, 1] }}
+        animate={{ scale: 5.2 + i * 1.1, opacity: [0.95, 0.9, 0.55, 0] }}
+        transition={{ duration: 1.15, delay: i * 0.13, ease: [0.16, 0.7, 0.35, 1], opacity: { duration: 1.15, delay: i * 0.13, times: [0, 0.55, 0.82, 1] } }}
       >
-        <path d={starD(80, 80, 74)} fill="none" stroke={i === 1 ? 'var(--color-primary)' : '#f4f1e8'} strokeWidth={i === 1 ? 5 : 3.5} strokeLinejoin="round" />
+        <path
+          d={starD(80, 80, 74)}
+          fill="none"
+          stroke={i % 2 === 1 ? 'var(--color-primary)' : '#f4f1e8'}
+          strokeWidth={i % 2 === 1 ? 4.5 : 3}
+          strokeLinejoin="miter"
+          strokeMiterlimit={12}
+        />
       </motion.svg>
     ))}
   </div>
 );
 
 // ── 碑牌 ──────────────────────────────────────────────────────────────────
-const STELE_CLIP = 'polygon(8% 0%, 96% 2%, 100% 96%, 2% 100%)';
-const SIDE_CLIP = 'polygon(8% 0%, 96% 2%, 100% 96%, 2% 100%)';
+// 五套不规则裁切轮换（用户口径「五个一模一样太板正」）：每张牌形状各异、边角锐利
+const STELE_CLIPS = [
+  'polygon(11% 0%, 93% 3%, 100% 96%, 4% 100%)',
+  'polygon(3% 3%, 100% 0%, 94% 100%, 0% 93%)',
+  'polygon(7% 1%, 99% 5%, 93% 97%, 0% 100%)',
+  'polygon(1% 4%, 95% 0%, 100% 99%, 8% 95%)',
+  'polygon(13% 2%, 100% 1%, 95% 100%, 2% 96%)',
+];
+
+/** 稳定伪随机（牌形/剪报字抖动用，渲染间不变） */
+const jrand = (seed: number) => {
+  const x = Math.sin(seed * 91.7 + 47.3) * 43758.5453;
+  return x - Math.floor(x);
+};
+
+/** 剪报字纸片的三套异形裁切 */
+const RANSOM_CLIPS = [
+  'polygon(6% 8%, 96% 0%, 100% 90%, 0% 100%)',
+  'polygon(0% 4%, 100% 10%, 92% 100%, 4% 92%)',
+  'polygon(8% 0%, 100% 6%, 96% 94%, 0% 98%)',
+];
 
 const Stele = ({
   item,
@@ -122,12 +163,13 @@ const Stele = ({
   // 位置：极坐标 + 纵向压扁（牌群贴底成手牌弧）；旋转：长轴沿半径、系数收拢更「立」
   const x = origin.x + radius * Math.cos(arm);
   const y = origin.y + radius * 0.8 * Math.sin(arm) + 8;
-  const tilt = (armDeg + 90) * 0.55;
-  // 中间高两端矮的手牌弧 + 选中拔高
-  const baseH = 118 + 46 * Math.sin((Math.PI * (index + 0.5)) / count);
+  // 每张牌独立微抖动：倾角/宽/高都不一样（去板正）
+  const tilt = (armDeg + 90) * 0.55 + (jrand(index * 3.1) - 0.5) * 5;
+  const baseH = 118 + 46 * Math.sin((Math.PI * (index + 0.5)) / count) + (jrand(index * 5.7) - 0.5) * 14;
   const active = state === 'active';
-  const W = 56;
+  const W = 56 + Math.round((jrand(index * 7.9) - 0.5) * 8);
   const H = active ? baseH * 1.22 : baseH;
+  const clip = STELE_CLIPS[index % STELE_CLIPS.length];
 
   return (
     <motion.div
@@ -137,7 +179,8 @@ const Stele = ({
       style={{ left: x, top: y, zIndex: active ? 60 : 30 + index }}
       initial={{ opacity: 0, scale: 0.2, x: origin.x - x, y: origin.y - y, rotate: 0 }}
       animate={{
-        opacity: state === 'dim' ? 0.55 : 1,
+        // dim 别太透：星群铺密后，半透明牌会透出星纹显脏
+        opacity: state === 'dim' ? 0.75 : 1,
         scale: active ? 1.06 : state === 'dim' ? 0.92 : 1,
         x: -W / 2,
         y: -H + 8,
@@ -148,22 +191,42 @@ const Stele = ({
     >
       {/* transformOrigin 设在牌根（底部中心）：旋转/放大像从 ◈ 长出来的牌 */}
       <div className="relative" style={{ width: W, height: H, transformOrigin: '50% 100%' }}>
-        {/* 选中：复用 thiefKit P5Highlight 红青活高亮 */}
-        {active && <P5Highlight live className="absolute -inset-x-3 -inset-y-2 -z-10" />}
         {/* 3D 暗侧面 */}
-        <div aria-hidden className="absolute inset-0" style={{ clipPath: SIDE_CLIP, background: active ? '#5c0208' : '#000', transform: 'translate(5px, 4px)' }} />
+        <div aria-hidden className="absolute inset-0" style={{ clipPath: clip, background: active ? '#5c0208' : '#000', transform: 'translate(5px, 4px)' }} />
+        {/* 不规则白色锐利描边：白底层露边 + 内缩主面同形裁切 */}
+        <div aria-hidden className="absolute inset-0" style={{ clipPath: clip, background: '#f4f1e8' }} />
         {/* 主面 */}
         <div
-          className="absolute inset-0 flex flex-col items-center justify-between overflow-hidden pb-2 pt-2.5"
-          style={{ clipPath: STELE_CLIP, background: active ? 'var(--color-primary)' : '#0d0d0d' }}
+          className="absolute inset-[3px] flex flex-col items-center justify-between overflow-hidden pb-2 pt-2.5"
+          style={{ clipPath: clip, background: active ? 'var(--color-primary)' : '#0d0d0d' }}
         >
-          {/* 竖排中文大字 */}
+          {/* 竖排中文大字：随机 ~1/3 字剪报化（白纸片黑字，微转异形，Ransom 语法） */}
           <div className="flex flex-col items-center leading-none">
-            {[...item.label].map((chr, i) => (
-              <span key={i} className="text-[20px] font-black text-white" style={{ textShadow: '1.5px 1.5px 0 rgba(0,0,0,0.55)' }}>
-                {chr}
-              </span>
-            ))}
+            {[...item.label].map((chr, i) => {
+              const r = jrand(index * 13.7 + i * 31.9);
+              if (r < 0.36) {
+                return (
+                  <span
+                    key={i}
+                    className="my-0.5 inline-block px-1 py-0.5 text-[17px] font-black leading-none"
+                    style={{
+                      background: '#f4f1e8',
+                      color: '#0d0d0d',
+                      transform: `rotate(${(jrand(index * 17.3 + i * 7.1) - 0.5) * 14}deg)`,
+                      clipPath: RANSOM_CLIPS[(index + i) % RANSOM_CLIPS.length],
+                      filter: 'drop-shadow(1.5px 1.5px 0 rgba(0,0,0,0.6))',
+                    }}
+                  >
+                    {chr}
+                  </span>
+                );
+              }
+              return (
+                <span key={i} className="text-[20px] font-black text-white" style={{ textShadow: '1.5px 1.5px 0 rgba(0,0,0,0.55)' }}>
+                  {chr}
+                </span>
+              );
+            })}
           </div>
           {/* 竖排英文小字 */}
           <span
@@ -173,6 +236,8 @@ const Stele = ({
             {item.en}
           </span>
         </div>
+        {/* 选中：P5Highlight 红青活高亮——竖长贴牌、压在字面之上（screen 混合透字） */}
+        {active && <P5Highlight live className="absolute -inset-x-1 -inset-y-5 z-20" />}
       </div>
     </motion.div>
   );

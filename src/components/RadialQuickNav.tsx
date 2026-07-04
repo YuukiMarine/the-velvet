@@ -127,9 +127,9 @@ export const RadialQuickNav = ({ open, origin, onClose, onNavigate }: RadialQuic
               {/* 提示区（避开牌区上移；P5 碑牌自身已放大变红，不再重复大字名） */}
               <div
                 className="pointer-events-none absolute z-[70] w-full -translate-x-1/2 text-center"
-                style={{ left: origin.x, top: origin.y - radius - (channel === 'p5' ? 182 : 128) }}
+                style={{ left: origin.x, top: origin.y - radius - (channel === 'p5' || channel === 'p3' ? 182 : 128) }}
               >
-                {channel !== 'p5' && (
+                {channel !== 'p5' && channel !== 'p3' && (
                   <div className="text-2xl font-black text-white" style={{ textShadow: '2px 2px 0 rgba(0,0,0,0.8)' }}>
                     {active !== null ? WHEEL_ITEMS[active].label : '滑向目标'}
                   </div>
@@ -139,11 +139,12 @@ export const RadialQuickNav = ({ open, origin, onClose, onNavigate }: RadialQuic
                 </div>
               </div>
 
-              {/* P5（红/怪盗）：碑牌手扇 + 星形波纹 + 同心条纹星群（设计稿 1:1 演出层） */}
-              {channel === 'p5' ? (
+              {/* P5（红）/P3（蓝）：碑牌手扇 + 星形波纹 + 同心条纹星群——结构同源，
+                  颜色全走 var(--color-primary) 自适应频道；P3 专属微调后置（用户口径） */}
+              {channel === 'p5' || channel === 'p3' ? (
                 <RadialWheelP5 items={WHEEL_ITEMS} origin={origin} radius={radius} active={active} />
               ) : (
-              /* 其余频道暂用圆瓣基础形态（P4/P3 差分后置） */
+              /* 其余频道暂用圆瓣基础形态（P4 差分后置） */
               WHEEL_ITEMS.map((item, i) => {
                 const ang = ((-180 + (i + 0.5) * SEG) * Math.PI) / 180;
                 const x = origin.x + radius * Math.cos(ang);
