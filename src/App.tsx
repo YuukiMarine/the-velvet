@@ -45,6 +45,7 @@ import { initBoldnessRuntime, schedulePerfSample, setStraightenMode } from '@/ut
 import { SlantTuner } from '@/components/dev/SlantTuner';
 import { StarTearDemo } from '@/components/dev/StarTearDemo';
 import { PersonaGallery } from '@/components/dev/PersonaGallery';
+import { TransitionLayer } from '@/components/transition/HeavyTransition';
 
 const isStandalonePwa = () => (
   window.matchMedia('(display-mode: standalone)').matches
@@ -597,6 +598,8 @@ function App() {
           {import.meta.env.DEV && <StarTearDemo />}
           {/* P7.3 UI 原语样品间：仅开发环境，三频道实时切换验收 src/ui 组件 */}
           {import.meta.env.DEV && <PersonaGallery />}
+          {/* P8.2 重转场演出层：订阅 transitionDirector，轮盘跳转/仪式点经此播频道幕布 */}
+          <TransitionLayer />
           {/* 宣告 · 达成 全屏结算屏：放在 App 顶层是为了"完成最后一项 todo 时立即弹出"，
               即便用户当时不在 Dashboard 也能看到 */}
           <GlobalCallingCardCutIn />

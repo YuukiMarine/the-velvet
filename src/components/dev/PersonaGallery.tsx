@@ -15,6 +15,7 @@ import { PersonaProgress } from '@/ui/components/PersonaProgress';
 import { PersonaNumber } from '@/ui/components/PersonaNumber';
 import { Halftone, Scanlines, SignalStripes, SunRing, BigTypeBackdrop, SlashPanel } from '@/ui/motifs';
 import { StarChart } from '@/components/StarChart';
+import { playHeavyTransition } from '@/ui/transitionDirector';
 import type { UIChannel } from '@/ui/channel';
 
 const CHANNELS: { id: UIChannel; label: string }[] = [
@@ -79,6 +80,13 @@ export const PersonaGallery = () => {
                   </button>
                 ))}
               </div>
+              <button
+                type="button"
+                onClick={() => playHeavyTransition(() => console.info('[gallery] transition midpoint (页面在此刻切换)'))}
+                className="ml-2 rounded bg-white/15 px-2.5 py-1 text-xs font-bold text-white/90 hover:bg-white/25"
+              >
+                ▶ 重转场
+              </button>
               <button type="button" onClick={close} className="ml-auto rounded bg-white/15 px-3 py-1 text-xs font-bold text-white">
                 关闭 ✕
               </button>
