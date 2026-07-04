@@ -1,8 +1,13 @@
-import { motion, AnimatePresence } from 'motion/react';
-import { useEffect, useRef, useState } from 'react';
-import { triggerSuccessFeedback } from '@/utils/feedback';
+import { motion } from 'motion/react';
+import { CelebrationCutIn } from '@/components/CelebrationCutIn';
 import { MusicalNotes } from '@/components/MusicalNotes';
+import { triggerSuccessFeedback } from '@/utils/feedback';
 
+/**
+ * 任务完成庆祝 —— P7.2 第一波收编进 CelebrationCutIn 基座。
+ * 相比旧手写版新增：portal + zClass.celebration（旧版树内 z-50，会被黑猫窗盖住）、
+ * ESC/Android back。音符雨走 overlayExtras（卡片外，不被 overflow 裁切）。
+ */
 interface TodoCompleteModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -14,93 +19,29 @@ interface TodoCompleteModalProps {
   };
 }
 
-export const TodoCompleteModal = ({ isOpen, onClose, title, totalPoints, unlockHint }: TodoCompleteModalProps) => {
-  const [ribbons, setRibbons] = useState<Array<{ id: number; x: number; y: number; delay: number }>>([]);
-  const playedRef = useRef(false);
-
-  useEffect(() => {
-    if (isOpen) {
-      if (!playedRef.current) {
-        triggerSuccessFeedback();
-        playedRef.current = true;
-      }
-      const newRibbons = Array.from({ length: 18 }, (_, i) => ({
-        id: i,
-        x: Math.random() * 260 - 130,
-        y: Math.random() * 200 - 100,
-        delay: Math.random() * 0.4
-      }));
-      setRibbons(newRibbons);
-
-      const timer = setTimeout(() => {
-        onClose();
-      }, 3000);
-
-      return () => clearTimeout(timer);
+export const TodoCompleteModal = ({ isOpen, onClose, title, totalPoints, unlockHint }: TodoCompleteModalProps) => (
+  <CelebrationCutIn
+    isOpen={isOpen}
+    onClose={onClose}
+    theme="emerald"
+    autoCloseMs={3000}
+    particles={18}
+    onShown={triggerSuccessFeedback}
+    icon={
+      <motion.span
+        className="inline-block"
+        animate={{ scale: [1, 1.2, 1] }}
+        transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 0.6 }}
+      >
+        ✅
+      </motion.span>
     }
-    playedRef.current = false;
-  }, [isOpen, onClose]);
-
-  return (
-    <AnimatePresence>
-      {isOpen && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
-          onClick={onClose}
-        >
-          <motion.div
-            initial={{ scale: 0.6, opacity: 0, rotate: -6 }}
-            animate={{ scale: 1, opacity: 1, rotate: 0 }}
-            exit={{ scale: 0.6, opacity: 0, rotate: 6 }}
-            transition={{ type: 'spring', duration: 0.6 }}
-            className="bg-gradient-to-br from-emerald-400 via-teal-500 to-sky-500 rounded-2xl p-6 max-w-sm w-full shadow-2xl relative overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {ribbons.map((ribbon) => (
-              <motion.div
-                key={ribbon.id}
-                initial={{ x: 0, y: 0, opacity: 0, scale: 0 }}
-                animate={{
-                  x: ribbon.x,
-                  y: ribbon.y,
-                  opacity: [0, 1, 0],
-                  scale: [0, 1.2, 0]
-                }}
-                transition={{ duration: 1.6, delay: ribbon.delay, ease: 'easeOut' }}
-                className="absolute top-1/2 left-1/2 w-3 h-3 bg-white rounded-full"
-                style={{ boxShadow: '0 0 10px rgba(255, 255, 255, 0.8)' }}
-              />
-            ))}
-
-            <div className="relative z-10 text-center">
-              <motion.div
-                animate={{ scale: [1, 1.2, 1] }}
-                transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 0.6 }}
-                className="text-5xl mb-3"
-              >
-                ✅
-              </motion.div>
-              <h2 className="text-2xl font-bold text-white mb-2">今日完成</h2>
-              <p className="text-white/90 text-sm mb-4 line-clamp-2">{title}</p>
-              {unlockHint && (unlockHint.achievements > 0 || unlockHint.skills > 0) && (
-                <div className="text-white/90 text-sm mb-4">您解锁了新成就/新技能！</div>
-              )}
-              <div className="h-1 bg-white/30 rounded-full overflow-hidden">
-                <motion.div
-                  initial={{ x: '-100%' }}
-                  animate={{ x: '0%' }}
-                  transition={{ duration: 1.6, ease: 'easeInOut' }}
-                  className="h-full bg-white rounded-full"
-                />
-              </div>
-            </div>
-          </motion.div>
-          {(totalPoints ?? 0) > 0 && <MusicalNotes count={totalPoints!} delay={0.3} />}
-        </motion.div>
-      )}
-    </AnimatePresence>
-  );
-};
+    title="今日完成"
+    subtitle={title}
+    overlayExtras={(totalPoints ?? 0) > 0 ? <MusicalNotes count={totalPoints!} delay={0.3} /> : undefined}
+  >
+    {unlockHint && (unlockHint.achievements > 0 || unlockHint.skills > 0) && (
+      <div className="text-sm text-white/90">您解锁了新成就/新技能！</div>
+    )}
+  </CelebrationCutIn>
+);

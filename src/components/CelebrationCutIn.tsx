@@ -40,6 +40,8 @@ export interface CelebrationCutInProps {
   /** 每次打开只触发一次；调用方在此接音效/震动 */
   onShown?: () => void;
   showClose?: boolean;
+  /** 渲染在卡片外、backdrop 层内的附加效果（如 MusicalNotes 音符雨），不受卡片 overflow 裁切 */
+  overlayExtras?: ReactNode;
 }
 
 // 四主题渐变与粒子配色——完整字面量，JIT 可见
@@ -69,6 +71,7 @@ export const CelebrationCutIn = ({
   particles = 24,
   onShown,
   showClose = true,
+  overlayExtras,
 }: CelebrationCutInProps) => {
   const titleId = useId();
   const containerRef = useModalA11y(isOpen, onClose);
@@ -140,6 +143,7 @@ export const CelebrationCutIn = ({
               </div>
             )}
           </motion.div>
+          {overlayExtras}
         </motion.div>
       )}
     </AnimatePresence>,
