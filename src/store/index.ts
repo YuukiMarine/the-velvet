@@ -5,6 +5,7 @@ import { summarizeCounsel, type CounselContext, type CounselConfidantBrief, type
 import { db } from '@/db';
 import { v4 as uuidv4 } from 'uuid';
 import { calcMaxStreak } from '@/utils/streak';
+import { applyUiChannel } from '@/ui/channel';
 import { computeAndSchedule, type NotifSnapshot } from '@/utils/notifications';
 import { isGrowthCategory, cycleRangeForKey } from '@/utils/ledgerFormat';
 import { resolveProvider } from '@/utils/aiProviders';
@@ -652,6 +653,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ user });
       
       document.documentElement.setAttribute('data-theme', user.theme);
+      applyUiChannel(user.theme);
 
       await get().loadData();
       // F2a：历史成长总结一次性回填 viewedAt（=createdAt，视为已读），避免开启通知时旧总结被判「未读」刷屏。
@@ -781,6 +783,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       });
       
       document.documentElement.setAttribute('data-theme', newUser.theme);
+      applyUiChannel(newUser.theme);
 
       // 星象：首次创建用户时留白，由用户主动进入星象页抽卡
       await get().loadDailyDivination();
@@ -822,6 +825,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     await db.users.update(user.id, { theme });
     set({ user: { ...user, theme } });
     document.documentElement.setAttribute('data-theme', theme);
+    applyUiChannel(theme);
     // 自定义主题：应用 CSS 变量
     if (theme === 'custom' && settings.customThemeColor) {
       applyCustomThemeColor(settings.customThemeColor);

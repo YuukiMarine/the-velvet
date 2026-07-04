@@ -34,6 +34,79 @@
   --color-gold-rgb: 245 158 11;          /* #f59e0b */
 }
 
+/* ── 频道 token（PERSONA_UI_REWRITE_GUIDE §3.1/§4，P7.1）────────────────────
+   data-ui-channel 由 src/ui/channel.ts 与 data-theme 同步写入：
+   red→p5 / yellow→p4 / blue→p3 / pink·custom→无属性（用下方 :root 中性缺省）。
+   与 --color-primary 体系共存过渡：原语组件（P7.3 起）只读 --ui-*，
+   旧组件继续读 --color-*，逐批迁移，互不干扰。 */
+:root {
+  /* neutral 缺省：贴近现状的中性面，保证任何组件读 --ui-* 都有值 */
+  --ui-bg: #f9fafb;
+  --ui-surface: #ffffff;
+  --ui-paper: #ffffff;
+  --ui-ink: #111827;
+  --ui-muted: #6b7280;
+  --ui-accent: var(--color-primary);
+  --ui-accent-2: var(--color-secondary);
+  --ui-danger: #ef4444;
+  --ui-line: #e5e7eb;
+  --ui-shadow-hard: 0 1px 3px rgba(0, 0, 0, 0.12);
+  --ui-cut-md: none;
+  --ui-radius: 12px;
+  --ui-noise-opacity: 0;
+}
+
+/* P5 红 —— 反抗/夺回：黑红白三轴，斜切硬影，半调 */
+:root[data-ui-channel="p5"] {
+  --ui-bg: #050505;
+  --ui-surface: #141414;
+  --ui-paper: #f7f4ea;
+  --ui-ink: #f7f4ea;
+  --ui-muted: #9a958a;
+  --ui-accent: #e60012;
+  --ui-accent-2: #18e7d3;
+  --ui-danger: #e60012;
+  --ui-line: #050505;
+  --ui-shadow-hard: 6px 6px 0 #050505;
+  --ui-cut-md: polygon(3% 0, 100% 0, 97% 100%, 0 96%);
+  --ui-radius: 4px;
+  --ui-noise-opacity: 0.12;
+}
+
+/* P4 黄 —— 节目/青春：高明度黄底，黑色信息面板，彩色条带 */
+:root[data-ui-channel="p4"] {
+  --ui-bg: #ffe100;
+  --ui-surface: #111111;
+  --ui-paper: #fff7b0;
+  --ui-ink: #111111;
+  --ui-muted: #6b6320;
+  --ui-accent: #20bff2;
+  --ui-accent-2: #5be04b;
+  --ui-danger: #d71920;
+  --ui-line: #111111;
+  --ui-shadow-hard: 4px 4px 0 #111111;
+  --ui-cut-md: polygon(2% 0, 100% 2%, 98% 100%, 0 98%);
+  --ui-radius: 14px;
+  --ui-noise-opacity: 0.08;
+}
+
+/* P3 蓝 —— 午夜/宿命：深海空间，青色资源线，洋红刀口 */
+:root[data-ui-channel="p3"] {
+  --ui-bg: #001c7a;
+  --ui-surface: #05070d;
+  --ui-paper: #f6fbff;
+  --ui-ink: #f6fbff;
+  --ui-muted: #8da0b8;
+  --ui-accent: #00d8ff;
+  --ui-accent-2: #f5d84a;
+  --ui-danger: #ff3daa;
+  --ui-line: rgba(0, 216, 255, 0.65);
+  --ui-shadow-hard: 4px 4px 0 #05070d;
+  --ui-cut-md: polygon(0 0, 96% 0, 100% 100%, 4% 100%);
+  --ui-radius: 6px;
+  --ui-noise-opacity: 0.12;
+}
+
 :root[data-theme="yellow"] {
   --color-primary: #F59E0B;
   --color-primary-rgb: 245 158 11;
