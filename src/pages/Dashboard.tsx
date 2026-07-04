@@ -8,7 +8,8 @@ import { StackCarousel } from '@/components/StackCarousel';
 import { EyebrowLabel } from '@/components/EyebrowLabel';
 import { SlantGuideLine } from '@/components/SlantGuideLine';
 import { BrandTitleReveal } from '@/components/BrandTitleReveal';
-import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer } from 'recharts';
+import { StarChart } from '@/components/StarChart';
+import { AttributeDossier } from '@/components/AttributeDossier';
 import { TAROT_BY_ID } from '@/constants/tarot';
 import { CallingCardCard } from '@/components/callingCard/CallingCardCard';
 import { CallingCardEmptyHint } from '@/components/callingCard/CallingCardEmptyHint';
@@ -75,58 +76,7 @@ const LV_COLORS = [
   { bg: 'bg-gradient-to-r from-amber-100 to-orange-100 dark:from-amber-900/40 dark:to-orange-900/40', text: 'text-amber-700 dark:text-amber-300', bar: 'bg-gradient-to-r from-amber-400 to-orange-400' },
 ];
 
-// Reads --color-primary from CSS and renders the radar chart
-const RadarChartPanel = ({ radarData, maxLevel }: { radarData: { attribute: string; value: number }[]; maxLevel: number }) => {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [primaryColor, setPrimaryColor] = useState('#3B82F6');
-
-  // Re-read color whenever theme attribute changes on <html>
-  useEffect(() => {
-    const readColor = () => {
-      const raw = getComputedStyle(document.documentElement).getPropertyValue('--color-primary').trim();
-      if (raw) setPrimaryColor(raw);
-    };
-    readColor();
-    const observer = new MutationObserver(readColor);
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
-    return () => observer.disconnect();
-  }, []);
-
-  // Ensure every value is a finite positive number so Recharts draws the polygon
-  // (all-zero produces a single invisible point at center)
-  const MIN_VIS = 0.08; // tiny sliver so shape is always visible
-  const safeData = radarData.map(d => ({
-    ...d,
-    value: isFinite(d.value) && d.value > 0 ? d.value : MIN_VIS,
-  }));
-
-  // Don't render until we actually have data
-  if (safeData.length === 0) return <div className="h-52 w-full flex items-center justify-center text-xs text-gray-400">加载中…</div>;
-
-  return (
-    <div ref={containerRef} className="h-52 w-full">
-      <ResponsiveContainer width="100%" height="100%">
-        <RadarChart data={safeData} outerRadius="70%">
-          <PolarGrid stroke="#d1d5db" strokeDasharray="" />
-          <PolarAngleAxis
-            dataKey="attribute"
-            tick={{ fontSize: 11, fill: '#9ca3af' }}
-          />
-          <PolarRadiusAxis angle={90} domain={[0, maxLevel]} tick={false} axisLine={false} />
-          <Radar
-            name="属性"
-            dataKey="value"
-            stroke={primaryColor}
-            fill={primaryColor}
-            fillOpacity={0.2}
-            strokeWidth={2.5}
-            animationDuration={800}
-          />
-        </RadarChart>
-      </ResponsiveContainer>
-    </div>
-  );
-};
+// （P8.1）recharts 雷达图退役：五维展示统一走 StarChart 星象仪（P5 式星形舞台 + 刻度点 + 可点贴纸）
 
 const ATTR_ORDER_KEY = 'attr-card-order';
 const ATTR_WIDE_KEY  = 'attr-card-wide';   // which id (if any) is wide (col-span-2)
@@ -134,7 +84,8 @@ const ATTR_WIDE_KEY  = 'attr-card-wide';   // which id (if any) is wide (col-spa
 // DropTarget for the last row: 'half' = normal half-width, 'wide' = full-width, null = nothing
 type LastRowDrop = 'half' | 'wide' | null;
 
-const AttributeGrid = ({ attributes, settings, onEditingChange }: {
+// P8.1 星象仪上位后暂无挂载（保留 export 供 P9 首页批次决定去留：拖拽排序/宽卡逻辑完整）
+export const AttributeGrid = ({ attributes, settings, onEditingChange }: {
   attributes: ReturnType<typeof useAppStore.getState>['attributes'];
   settings: ReturnType<typeof useAppStore.getState>['settings'];
   /**
@@ -652,7 +603,8 @@ export const Dashboard = () => {
   }, [hasCountercurrentWarning]);
 
   // 「成长」叠放锁：属性卡排序编辑期间锁死外层横滑（拖拽与横滑同为水平手势，会互抢 pointer）
-  const [attrEditing, setAttrEditing] = useState(false);
+  // P8.1 星象仪：点角打开的属性档案弹窗
+  const [dossierAttr, setDossierAttr] = useState<AttributeId | null>(null);
 
   // In dark mode the UI background is dark, so light text always reads better on the colored banner
   const useLightText = settings.darkMode || !bannerLight;
@@ -661,22 +613,18 @@ export const Dashboard = () => {
   const textSecondaryClass = useLightText ? 'text-white/80' : 'text-black/60';
   const trackClass = useLightText ? 'bg-white/20' : 'bg-black/10';
 
-  const thresholds = settings.levelThresholds?.length ? settings.levelThresholds : (attributes[0]?.levelThresholds ?? []);
-  const maxLevel = thresholds.length || 5;
 
-  const radarData = attributes.map(attr => {
+  // P8.1 星象仪数据：名 / 等级 / 称号（点亮刻度 = level/maxLevel）
+  const starItems = attributes.map(attr => {
     const attrThresholds = settings.levelThresholds?.length ? settings.levelThresholds : attr.levelThresholds;
-    const lvlMax = attrThresholds.length;
-    const curThreshold = attr.level > 1 ? attrThresholds[attr.level - 1] : 0;
-    const nextThreshold = attr.level < lvlMax ? attrThresholds[attr.level] : attrThresholds[lvlMax - 1];
-    const span = nextThreshold - curThreshold;
-    const progressInLevel = attr.level < lvlMax
-      ? (span > 0 ? (attr.points - curThreshold) / span : 0)
-      : 1;
-    const value = attr.level >= lvlMax ? lvlMax : (attr.level - 1) + progressInLevel;
+    const attrId = attr.id as AttributeId;
     return {
-      attribute: settings.attributeNames[attr.id as keyof typeof settings.attributeNames],
-      value: isFinite(value) ? value : 0,
+      id: attrId,
+      name: settings.attributeNames[attrId] || attr.displayName,
+      level: attr.level,
+      maxLevel: attrThresholds.length || 5,
+      points: attr.points,
+      title: getAttributeLevelTitle(settings.attributeLevelTitles, attrId, attr.level),
     };
   });
 
@@ -1005,65 +953,59 @@ export const Dashboard = () => {
         </StackCarousel>
       </motion.div>
 
-      {/* ──「成长」叠放（规格 §3.1 槽位 5）──────────────────────────
-          人格指数网格与成长概览（雷达+六格统计）本是同一数据的两种视图，合并为横滑两页。
-          有意偏差：规格 §3.1 还列了第 3 页「详细统计摘要」，但成长概览卡内已带
-          「详细统计 →」入口，独立第三页与之信息重复——按 2 页实现，入口零丢失。
-          locked={attrEditing}：排序编辑期间锁死横滑，见 AttributeGrid 的 onEditingChange。 */}
+      {/* ──「成长」＝ 星象仪（P8.1）────────────────────────────────
+          原横滑两页（属性网格 / 雷达+统计）本是同一数据的两种视图，星象仪把它们
+          合成一个：星形舞台=概览，五角贴纸可点=每个属性的档案入口（称号阶梯+关联
+          成就+进度，即原网格的信息深度，挪进弹窗）。六格统计与「详细统计→」保留。 */}
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
-        <EyebrowLabel className="mb-2 px-0.5">成长 · 滑动</EyebrowLabel>
-        <StackCarousel id="growth" locked={attrEditing}>
-          {[
-            /* 第 1 页：属性面板 — 可拖拽卡片网格（内部逻辑零改动，只换挂载位置） */
-            <div key="attributes" className="h-full [&>*]:h-full">
-              <AttributeGrid attributes={attributes} settings={settings} onEditingChange={setAttrEditing} />
-            </div>,
-            /* 第 2 页：成长概览 — 雷达图 + 数据合一（原样搬入） */
-            <div key="overview" className="h-full [&>*]:h-full">
-              <div className="rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden">
-                <div className="flex items-center justify-between px-5 pt-4 pb-2">
-                  <h3 className="font-bold text-gray-900 dark:text-white text-sm">成长概览</h3>
-                  <button
-                    onClick={() => setCurrentPage('statistics')}
-                    className="text-xs text-primary hover:text-primary/80 transition-colors"
-                  >
-                    详细统计 →
-                  </button>
-                </div>
-                <RadarChartPanel radarData={radarData} maxLevel={maxLevel} />
-                <div className="grid grid-cols-3 divide-x divide-gray-100 dark:divide-gray-800 border-t border-gray-100 dark:border-gray-800">
-                  <div className="px-3 py-3 text-center">
-                    <div className="text-xl font-bold text-primary tabular-nums">{totalPoints}</div>
-                    <div className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">累计点数</div>
-                  </div>
-                  <div className="px-3 py-3 text-center">
-                    <div className="text-xl font-bold text-primary tabular-nums">{maxStreak}</div>
-                    <div className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">最长连续天</div>
-                  </div>
-                  <div className="px-3 py-3 text-center">
-                    <div className="text-xl font-bold text-primary tabular-nums">{totalActivitiesCount}</div>
-                    <div className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">总记录数</div>
-                  </div>
-                </div>
-                <div className="grid grid-cols-3 divide-x divide-gray-100 dark:divide-gray-800 border-t border-gray-100 dark:border-gray-800">
-                  <div className="px-3 py-3 text-center">
-                    <div className="text-xl font-bold text-amber-500 tabular-nums">{unlockedAchievementsCount}</div>
-                    <div className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">成就已解锁</div>
-                  </div>
-                  <div className="px-3 py-3 text-center">
-                    <div className="text-xl font-bold text-violet-500 tabular-nums">{unlockedSkillsCount}</div>
-                    <div className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">技能已解锁</div>
-                  </div>
-                  <div className="px-3 py-3 text-center">
-                    <div className="text-xl font-bold text-emerald-500 tabular-nums">{uniqueDays}</div>
-                    <div className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">记录天数</div>
-                  </div>
-                </div>
-              </div>
-            </div>,
-          ]}
-        </StackCarousel>
+        <EyebrowLabel className="mb-2 px-0.5">成长 · 星象</EyebrowLabel>
+        <div className="rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden">
+          <div className="flex items-center justify-between px-5 pt-4 pb-1">
+            <h3 className="font-bold text-gray-900 dark:text-white text-sm">人格星象</h3>
+            <button
+              onClick={() => setCurrentPage('statistics')}
+              className="text-xs text-primary hover:text-primary/80 transition-colors"
+            >
+              详细统计 →
+            </button>
+          </div>
+          {/* 深色舞台垫底：灰星/白刻度/白描边字在亮色模式下也保持对比 */}
+          <div className="mx-3 mb-3 rounded-xl bg-gradient-to-b from-slate-800 to-slate-900 px-2 py-4">
+            <StarChart items={starItems} onSelect={(id) => setDossierAttr(id)} />
+          </div>
+          <div className="grid grid-cols-3 divide-x divide-gray-100 dark:divide-gray-800 border-t border-gray-100 dark:border-gray-800">
+            <div className="px-3 py-3 text-center">
+              <div className="text-xl font-bold text-primary tabular-nums">{totalPoints}</div>
+              <div className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">累计点数</div>
+            </div>
+            <div className="px-3 py-3 text-center">
+              <div className="text-xl font-bold text-primary tabular-nums">{maxStreak}</div>
+              <div className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">最长连续天</div>
+            </div>
+            <div className="px-3 py-3 text-center">
+              <div className="text-xl font-bold text-primary tabular-nums">{totalActivitiesCount}</div>
+              <div className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">总记录数</div>
+            </div>
+          </div>
+          <div className="grid grid-cols-3 divide-x divide-gray-100 dark:divide-gray-800 border-t border-gray-100 dark:border-gray-800">
+            <div className="px-3 py-3 text-center">
+              <div className="text-xl font-bold text-amber-500 tabular-nums">{unlockedAchievementsCount}</div>
+              <div className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">成就已解锁</div>
+            </div>
+            <div className="px-3 py-3 text-center">
+              <div className="text-xl font-bold text-violet-500 tabular-nums">{unlockedSkillsCount}</div>
+              <div className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">技能已解锁</div>
+            </div>
+            <div className="px-3 py-3 text-center">
+              <div className="text-xl font-bold text-emerald-500 tabular-nums">{uniqueDays}</div>
+              <div className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">记录天数</div>
+            </div>
+          </div>
+        </div>
       </motion.div>
+
+      {/* P8.1 属性档案：点星象仪贴纸打开（称号阶梯 + 关联成就） */}
+      <AttributeDossier attrId={dossierAttr} onClose={() => setDossierAttr(null)} />
 
       <TodoCompleteModal
         isOpen={!!completedTitle}
