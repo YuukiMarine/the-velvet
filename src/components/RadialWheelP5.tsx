@@ -49,30 +49,19 @@ const ConcentricStar = ({ size, layers = 5, invert = false }: { size: number; la
   );
 };
 
-/** 星群铺底：程序生成 22 颗（固定种子，撒满轮盘周围直至屏底；重叠是特色，参考图即堆叠） */
-const FIELD_STARS: { dx: number; dy: number; size: number; rot: number; invert: boolean; op: number }[] = (() => {
-  const rnd = (i: number, salt: number) => {
-    const x = Math.sin(i * 127.13 + salt * 311.7) * 43758.5453;
-    return x - Math.floor(x);
-  };
-  return Array.from({ length: 22 }, (_, i) => {
-    // 上半环均匀撒点 + 抖动；后 6 颗压向底部两侧（把牌后/屏底也填上）
-    const bottomBand = i >= 16;
-    const ang = bottomBand
-      ? -Math.PI * (0.08 + 0.84 * rnd(i, 1)) // 全上半随机
-      : -Math.PI * ((i / 16) * 0.94 + 0.03 + (rnd(i, 1) - 0.5) * 0.08);
-    const dist = bottomBand ? 30 + rnd(i, 2) * 90 : 120 + rnd(i, 2) * 220;
-    const size = bottomBand ? 30 + rnd(i, 3) * 60 : 34 + rnd(i, 3) * 128;
-    return {
-      dx: Math.cos(ang) * dist,
-      dy: Math.sin(ang) * dist * 0.92 + (bottomBand ? 26 : 0),
-      size,
-      rot: (rnd(i, 4) - 0.5) * 70,
-      invert: rnd(i, 5) > 0.5,
-      op: 0.42 + rnd(i, 6) * 0.5,
-    };
-  });
-})();
+/** 整体缩放（用户口径：轮盘场景所有组件放大 15%） */
+const S = 1.15;
+
+/** 星群铺底（回滚为手调 7 颗——22 颗程序生成版被用户否决「有点太多」；尺寸随 S） */
+const FIELD_STARS: { dx: number; dy: number; size: number; rot: number; invert?: boolean; op: number }[] = [
+  { dx: -150, dy: -196, size: 120, rot: -14, op: 0.85 },
+  { dx: -22, dy: -252, size: 158, rot: 9, invert: true, op: 0.9 },
+  { dx: 118, dy: -204, size: 104, rot: 22, op: 0.8 },
+  { dx: -176, dy: -84, size: 66, rot: 30, invert: true, op: 0.6 },
+  { dx: 168, dy: -96, size: 72, rot: -18, op: 0.6 },
+  { dx: 62, dy: -128, size: 46, rot: 40, op: 0.5 },
+  { dx: -84, dy: -136, size: 40, rot: -32, invert: true, op: 0.5 },
+].map((s) => ({ ...s, dx: s.dx * S, dy: s.dy * S, size: s.size * S }));
 
 const StarFieldBackdrop = ({ origin }: { origin: { x: number; y: number } }) => (
   <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
@@ -104,7 +93,7 @@ const StarBurstRipple = ({ origin }: { origin: { x: number; y: number } }) => (
         className="absolute"
         style={{ left: origin.x - 80, top: origin.y - 80, overflow: 'visible' }}
         initial={{ scale: 0.24, opacity: 0.95 }}
-        animate={{ scale: 5.2 + i * 1.1, opacity: [0.95, 0.9, 0.55, 0] }}
+        animate={{ scale: (5.2 + i * 1.1) * S, opacity: [0.95, 0.9, 0.55, 0] }}
         transition={{ duration: 1.15, delay: i * 0.13, ease: [0.16, 0.7, 0.35, 1], opacity: { duration: 1.15, delay: i * 0.13, times: [0, 0.55, 0.82, 1] } }}
       >
         <path
@@ -160,14 +149,15 @@ const Stele = ({
 }) => {
   const armDeg = -180 + ((index + 0.5) * 180) / count;
   const arm = (armDeg * Math.PI) / 180;
+  const R = radius * S;
   // 位置：极坐标 + 纵向压扁（牌群贴底成手牌弧）；旋转：长轴沿半径、系数收拢更「立」
-  const x = origin.x + radius * Math.cos(arm);
-  const y = origin.y + radius * 0.8 * Math.sin(arm) + 8;
+  const x = origin.x + R * Math.cos(arm);
+  const y = origin.y + R * 0.8 * Math.sin(arm) + 8;
   // 每张牌独立微抖动：倾角/宽/高都不一样（去板正）
   const tilt = (armDeg + 90) * 0.55 + (jrand(index * 3.1) - 0.5) * 5;
-  const baseH = 118 + 46 * Math.sin((Math.PI * (index + 0.5)) / count) + (jrand(index * 5.7) - 0.5) * 14;
+  const baseH = (118 + 46 * Math.sin((Math.PI * (index + 0.5)) / count) + (jrand(index * 5.7) - 0.5) * 14) * S;
   const active = state === 'active';
-  const W = 56 + Math.round((jrand(index * 7.9) - 0.5) * 8);
+  const W = Math.round((56 + (jrand(index * 7.9) - 0.5) * 8) * S);
   const H = active ? baseH * 1.22 : baseH;
   const clip = STELE_CLIPS[index % STELE_CLIPS.length];
 
@@ -195,10 +185,14 @@ const Stele = ({
         <div aria-hidden className="absolute inset-0" style={{ clipPath: clip, background: active ? '#5c0208' : '#000', transform: 'translate(5px, 4px)' }} />
         {/* 不规则白色锐利描边：白底层露边 + 内缩主面同形裁切 */}
         <div aria-hidden className="absolute inset-0" style={{ clipPath: clip, background: '#f4f1e8' }} />
-        {/* 主面 */}
+        {/* 主面（纯底色；文字层已抽到高亮之上） */}
+        <div aria-hidden className="absolute inset-[3px]" style={{ clipPath: clip, background: active ? 'var(--color-primary)' : '#0d0d0d' }} />
+        {/* 选中：P5Highlight 红青活高亮覆盖整个字面区（在主面之上、文字之下） */}
+        {active && <P5Highlight live className="absolute -inset-1 z-10" />}
+        {/* 文字层最上：选中时黑字 + multiply 正片叠底——字透过电光显出（用户口径） */}
         <div
-          className="absolute inset-[3px] flex flex-col items-center justify-between overflow-hidden pb-2 pt-2.5"
-          style={{ clipPath: clip, background: active ? 'var(--color-primary)' : '#0d0d0d' }}
+          className="absolute inset-[3px] z-20 flex flex-col items-center justify-between overflow-hidden pb-2 pt-2.5"
+          style={{ clipPath: clip, mixBlendMode: active ? 'multiply' : undefined }}
         >
           {/* 竖排中文大字：随机 ~1/3 字剪报化（白纸片黑字，微转异形，Ransom 语法） */}
           <div className="flex flex-col items-center leading-none">
@@ -208,13 +202,13 @@ const Stele = ({
                 return (
                   <span
                     key={i}
-                    className="my-0.5 inline-block px-1 py-0.5 text-[17px] font-black leading-none"
+                    className="my-0.5 inline-block px-1 py-0.5 text-[20px] font-black leading-none"
                     style={{
                       background: '#f4f1e8',
                       color: '#0d0d0d',
                       transform: `rotate(${(jrand(index * 17.3 + i * 7.1) - 0.5) * 14}deg)`,
                       clipPath: RANSOM_CLIPS[(index + i) % RANSOM_CLIPS.length],
-                      filter: 'drop-shadow(1.5px 1.5px 0 rgba(0,0,0,0.6))',
+                      filter: active ? undefined : 'drop-shadow(1.5px 1.5px 0 rgba(0,0,0,0.6))',
                     }}
                   >
                     {chr}
@@ -222,7 +216,13 @@ const Stele = ({
                 );
               }
               return (
-                <span key={i} className="text-[20px] font-black text-white" style={{ textShadow: '1.5px 1.5px 0 rgba(0,0,0,0.55)' }}>
+                <span
+                  key={i}
+                  className="text-[23px] font-black"
+                  style={active
+                    ? { color: '#0d0d0d' }
+                    : { color: '#fff', textShadow: '1.5px 1.5px 0 rgba(0,0,0,0.55)' }}
+                >
                   {chr}
                 </span>
               );
@@ -230,14 +230,12 @@ const Stele = ({
           </div>
           {/* 竖排英文小字 */}
           <span
-            className="text-[8px] font-black tracking-[0.12em] text-white/75"
-            style={{ writingMode: 'vertical-rl' }}
+            className="text-[9px] font-black tracking-[0.12em]"
+            style={{ writingMode: 'vertical-rl', color: active ? 'rgba(13,13,13,0.85)' : 'rgba(255,255,255,0.75)' }}
           >
             {item.en}
           </span>
         </div>
-        {/* 选中：P5Highlight 红青活高亮——竖长贴牌、压在字面之上（screen 混合透字） */}
-        {active && <P5Highlight live className="absolute -inset-x-1 -inset-y-5 z-20" />}
       </div>
     </motion.div>
   );
@@ -263,10 +261,10 @@ const RootShards = ({ origin }: { origin: { x: number; y: number } }) => (
           key={i}
           className="absolute bg-black"
           style={{
-            left: origin.x + s.dist * Math.cos(a) - s.size / 2,
-            top: origin.y + s.dist * 0.8 * Math.sin(a) - s.size / 2,
-            width: s.size,
-            height: s.size,
+            left: origin.x + s.dist * S * Math.cos(a) - (s.size * S) / 2,
+            top: origin.y + s.dist * S * 0.8 * Math.sin(a) - (s.size * S) / 2,
+            width: s.size * S,
+            height: s.size * S,
             rotate: s.rot,
             clipPath: 'polygon(50% 0%, 100% 82%, 12% 100%)',
           }}

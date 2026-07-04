@@ -127,7 +127,7 @@ export const RadialQuickNav = ({ open, origin, onClose, onNavigate }: RadialQuic
               {/* 提示区（避开牌区上移；P5 碑牌自身已放大变红，不再重复大字名） */}
               <div
                 className="pointer-events-none absolute z-[70] w-full -translate-x-1/2 text-center"
-                style={{ left: origin.x, top: origin.y - radius - (channel === 'p5' || channel === 'p3' ? 182 : 128) }}
+                style={{ left: origin.x, top: origin.y - radius - (channel === 'p5' || channel === 'p3' ? 228 : 128) }}
               >
                 {channel !== 'p5' && channel !== 'p3' && (
                   <div className="text-2xl font-black text-white" style={{ textShadow: '2px 2px 0 rgba(0,0,0,0.8)' }}>
