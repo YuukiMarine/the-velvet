@@ -65,6 +65,13 @@ const MoonIcon = () => (
   </svg>
 );
 
+// 「主题」：调色板（heroicons swatch outline，24px stroke 1.8 制式）
+const PaletteIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" strokeWidth={1.8} stroke="currentColor" className="w-6 h-6">
+    <path d="M4.098 19.902a3.75 3.75 0 005.304 0l6.401-6.402M6.75 21A3.75 3.75 0 013 17.25V4.125C3 3.504 3.504 3 4.125 3h5.25c.621 0 1.125.504 1.125 1.125v4.072M6.75 21a3.75 3.75 0 003.75-3.75V8.197M6.75 21h13.125c.621 0 1.125-.504 1.125-1.125v-5.25c0-.621-.504-1.125-1.125-1.125h-4.072M10.5 8.197l2.88-2.88c.438-.439 1.15-.439 1.59 0l3.712 3.713c.44.44.44 1.152 0 1.59l-2.879 2.88M6.75 17.25h.008v.008H6.75v-.008z" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
 const GearIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" strokeWidth={1.8} stroke="currentColor" className="w-6 h-6">
     <path d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z" strokeLinecap="round" strokeLinejoin="round" />
@@ -164,7 +171,7 @@ const Tile = ({ side, order, bold, hero, label, ariaLabel, icon, sub, badge, ble
       </div>
 
       {/* 内容反制回正：盒斜、字平 */}
-      <PlaneLevel className={`relative flex flex-col p-4 ${hero ? 'min-h-[212px]' : 'min-h-[100px] justify-between'}`}>
+      <PlaneLevel className={`relative flex flex-col p-4 ${hero ? 'min-h-[202px]' : 'min-h-[100px] justify-between'}`}>
         <div className="flex items-start justify-between gap-2">
           <span className={hero ? 'text-primary' : 'text-gray-500 dark:text-gray-400'}>{icon}</span>
           {badge}
@@ -197,6 +204,9 @@ export const Menu = () => {
   //（面板从横条"长出来"，关闭缩回——UI_DESIGN_BOLD_V2.5.md §4.3）
   const [aboutOpen, setAboutOpen] = useState(false);
   const aboutTriggerRef = useRef<HTMLButtonElement>(null);
+  // 「主题」Sheet：主题瓷砖点开的色板选择（快切上浮的第二形态：block 入口 + 面板选色）
+  const [themeSheetOpen, setThemeSheetOpen] = useState(false);
+  const currentThemeLabel = THEME_SWATCHES.find((t) => t.value === user?.theme)?.label ?? '默认';
 
   const currentStreak = useMemo(() => calcCurrentStreak(activities.map(a => a.date)), [activities]);
 
@@ -332,55 +342,6 @@ export const Menu = () => {
             <UserProfileCard />
           </PlaneLevel>
 
-          {/* ── 主题快切（从设置「主题」节上浮的轻量层：点击即切；精调仍在设置）── */}
-          <PlaneLevel>
-            <div className="flex items-center gap-2.5 px-0.5">
-              <span className="shrink-0 text-[11px] font-bold tracking-widest text-gray-400 dark:text-gray-500">主题</span>
-              <div className="flex flex-1 items-center gap-2">
-                {THEME_SWATCHES.map((t) => {
-                  const selected = user?.theme === t.value;
-                  const swatch =
-                    t.value === 'custom'
-                      ? settings.customThemeColor ||
-                        'conic-gradient(#3B82F6, #F59E0B, #EF4444, #EC4899, #3B82F6)'
-                      : t.color!;
-                  return (
-                    <motion.button
-                      key={t.value}
-                      type="button"
-                      whileTap={TAP}
-                      onClick={() => {
-                        triggerNavFeedback();
-                        void setTheme(t.value);
-                      }}
-                      aria-label={`切换主题：${t.label}`}
-                      aria-pressed={selected}
-                      className={`relative h-9 w-9 rounded-xl border-2 transition-shadow ${
-                        selected
-                          ? 'border-gray-900 shadow-md dark:border-white'
-                          : 'border-black/10 dark:border-white/15'
-                      }`}
-                      style={{ background: swatch }}
-                    >
-                      {selected && (
-                        <span aria-hidden className="absolute inset-0 flex items-center justify-center text-sm font-black text-white" style={{ textShadow: '0 1px 2px rgba(0,0,0,0.6)' }}>
-                          ✓
-                        </span>
-                      )}
-                    </motion.button>
-                  );
-                })}
-              </div>
-              <button
-                type="button"
-                onClick={() => setCurrentPage('settings')}
-                className="shrink-0 text-[11px] font-semibold text-primary"
-              >
-                精调 →
-              </button>
-            </div>
-          </PlaneLevel>
-
           {/* ── 对角断层宫格 ── */}
           <section aria-label="功能入口">
             <div ref={gridRef} className="relative grid grid-cols-2 gap-3">
@@ -476,10 +437,25 @@ export const Menu = () => {
                     onPress={() => setCurrentPage('battle')}
                   />
                 )}
-                {/* 过渡：羁绊页合并后移入羁绊页 */}
+                {/* 主题：从设置上浮的入口 block（放逆影战场下方），点开主题色板 Sheet */}
                 <Tile
                   side="right"
                   order={orderOf('right', battleVisible ? 1 : 0)}
+                  bold={bold}
+                  label="主题"
+                  ariaLabel={`主题：当前 ${currentThemeLabel}`}
+                  icon={<PaletteIcon />}
+                  sub={
+                    <div className="mt-0.5 text-xs font-semibold text-gray-500 dark:text-gray-400">
+                      当前 · {currentThemeLabel}
+                    </div>
+                  }
+                  onPress={() => setThemeSheetOpen(true)}
+                />
+                {/* 过渡：羁绊页合并后移入羁绊页 */}
+                <Tile
+                  side="right"
+                  order={orderOf('right', battleVisible ? 2 : 1)}
                   bold={bold}
                   label="占卜"
                   ariaLabel="占卜"
@@ -488,7 +464,7 @@ export const Menu = () => {
                 />
                 <Tile
                   side="right"
-                  order={orderOf('right', battleVisible ? 2 : 1)}
+                  order={orderOf('right', battleVisible ? 3 : 2)}
                   bold={bold}
                   label="设置"
                   ariaLabel="设置"
@@ -522,7 +498,7 @@ export const Menu = () => {
             <motion.button
               ref={aboutTriggerRef}
               type="button"
-              custom={orderOf('right', battleVisible ? 3 : 2) + 1}
+              custom={orderOf('right', battleVisible ? 4 : 3) + 1}
               variants={bold ? tileIn : fadeIn}
               initial="hidden"
               animate="show"
@@ -610,6 +586,66 @@ export const Menu = () => {
           <p className="text-xs text-center text-gray-400 dark:text-gray-500">
             I am thou, thou art I...
           </p>
+        </div>
+      </SheetModal>
+
+      {/* ── 「主题」Sheet：色板选择（点击即切）+ 精调入口（自定义色/音效仍在设置）── */}
+      <SheetModal
+        isOpen={themeSheetOpen}
+        onClose={() => setThemeSheetOpen(false)}
+        position="bottom"
+        title="主题"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-gray-500 dark:text-gray-400">选择你喜欢的主题，整个房间随之换色。</p>
+          <div className="grid grid-cols-5 gap-3">
+            {THEME_SWATCHES.map((t) => {
+              const selected = user?.theme === t.value;
+              const swatch =
+                t.value === 'custom'
+                  ? settings.customThemeColor ||
+                    'conic-gradient(#3B82F6, #F59E0B, #EF4444, #EC4899, #3B82F6)'
+                  : t.color!;
+              return (
+                <motion.button
+                  key={t.value}
+                  type="button"
+                  whileTap={TAP}
+                  onClick={() => {
+                    triggerNavFeedback();
+                    void setTheme(t.value);
+                  }}
+                  aria-label={`切换主题：${t.label}`}
+                  aria-pressed={selected}
+                  className="flex flex-col items-center gap-1.5"
+                >
+                  <span
+                    className={`relative h-12 w-12 rounded-2xl border-2 transition-shadow ${
+                      selected ? 'border-gray-900 shadow-md dark:border-white' : 'border-black/10 dark:border-white/15'
+                    }`}
+                    style={{ background: swatch }}
+                  >
+                    {selected && (
+                      <span aria-hidden className="absolute inset-0 flex items-center justify-center text-lg font-black text-white" style={{ textShadow: '0 1px 2px rgba(0,0,0,0.6)' }}>
+                        ✓
+                      </span>
+                    )}
+                  </span>
+                  <span className={`text-[11px] font-semibold ${selected ? 'text-primary' : 'text-gray-500 dark:text-gray-400'}`}>{t.label}</span>
+                </motion.button>
+              );
+            })}
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setThemeSheetOpen(false);
+              setCurrentPage('settings');
+            }}
+            className="w-full rounded-xl bg-gray-100 dark:bg-gray-800 py-2.5 text-sm font-semibold text-gray-600 dark:text-gray-300"
+          >
+            更多主题设置（自定义色 / 音效）→
+          </button>
         </div>
       </SheetModal>
     </motion.div>
