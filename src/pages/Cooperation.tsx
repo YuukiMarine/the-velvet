@@ -5,6 +5,7 @@ import { useCloudStore } from '@/store/cloud';
 import { useCloudSocialStore } from '@/store/cloudSocial';
 import { PageTitle } from '@/components/PageTitle';
 import { ConfidantCard } from '@/components/cooperation/ConfidantCard';
+import { ConfidantAlbumWall } from '@/components/cooperation/ConfidantAlbumWall';
 import { ConfidantCreateModal } from '@/components/cooperation/ConfidantCreateModal';
 import { ConfidantDetailModal } from '@/components/cooperation/ConfidantDetailModal';
 import { CounselChatModal } from '@/components/cooperation/CounselChatModal';
@@ -26,7 +27,9 @@ import type { CloudProfile, CoopBond, CoopShadow, Friendship } from '@/types';
 type Filter = 'all' | 'offline' | 'online' | 'archived';
 
 export function Cooperation() {
-  const { confidants, counselArchives, getCounselCooldown, hasActiveCounsel, bumpConfidantIntimacy, battleState, saveBattleState } = useAppStore();
+  const { confidants, counselArchives, getCounselCooldown, hasActiveCounsel, bumpConfidantIntimacy, battleState, saveBattleState, settings, updateSettings } = useAppStore();
+  // P9 专辑墙：视图偏好持久记忆（PRD §5.3），默认墙
+  const viewMode = settings.confidantViewMode ?? 'wall';
   const cloudUser = useCloudStore(s => s.cloudUser);
   const unreadCount = useCloudSocialStore(s => s.unreadCount);
   const linkedFriendships = useCloudSocialStore(s => s.friendships);
@@ -414,29 +417,40 @@ export function Cooperation() {
         </div>
       )}
 
-      {/* 过滤 Tabs */}
-      <div className="grid grid-cols-4 gap-1 p-1 rounded-2xl bg-black/5 dark:bg-white/5 text-xs font-bold">
-        {([
-          { id: 'all', label: '全部' },
-          { id: 'offline', label: '离线' },
-          { id: 'online', label: '在线' },
-          { id: 'archived', label: '归档' },
-        ] as const).map(t => {
-          const active = filter === t.id;
-          return (
-            <button
-              key={t.id}
-              onClick={() => setFilter(t.id)}
-              className={`py-2 rounded-xl transition-all ${
-                active
-                  ? 'bg-white dark:bg-gray-900 text-primary shadow-sm'
-                  : 'text-gray-500 dark:text-gray-400'
-              }`}
-            >
-              {t.label}
-            </button>
-          );
-        })}
+      {/* 过滤 Tabs + 视图切换（P9：专辑墙 ⇄ 列表，右上角、持久记忆） */}
+      <div className="flex items-center gap-2">
+        <div className="grid flex-1 grid-cols-4 gap-1 p-1 rounded-2xl bg-black/5 dark:bg-white/5 text-xs font-bold">
+          {([
+            { id: 'all', label: '全部' },
+            { id: 'offline', label: '离线' },
+            { id: 'online', label: '在线' },
+            { id: 'archived', label: '归档' },
+          ] as const).map(t => {
+            const active = filter === t.id;
+            return (
+              <button
+                key={t.id}
+                onClick={() => setFilter(t.id)}
+                className={`py-2 rounded-xl transition-all ${
+                  active
+                    ? 'bg-white dark:bg-gray-900 text-primary shadow-sm'
+                    : 'text-gray-500 dark:text-gray-400'
+                }`}
+              >
+                {t.label}
+              </button>
+            );
+          })}
+        </div>
+        <button
+          type="button"
+          onClick={() => void updateSettings({ confidantViewMode: viewMode === 'wall' ? 'list' : 'wall' })}
+          aria-label={viewMode === 'wall' ? '切换到列表视图' : '切换到专辑墙视图'}
+          title={viewMode === 'wall' ? '列表视图' : '专辑墙视图'}
+          className="shrink-0 rounded-xl bg-black/5 dark:bg-white/5 p-2.5 text-base leading-none text-gray-500 dark:text-gray-400"
+        >
+          {viewMode === 'wall' ? '☰' : '🃏'}
+        </button>
       </div>
 
       {/* 列表 */}
@@ -494,8 +508,16 @@ export function Cooperation() {
                 </motion.div>
               );
             })}
-            {/* 常规同伴列表 */}
-            {visible.map(c => {
+            {/* 常规同伴：专辑墙（默认）/ 列表（P9 §5.3；快捷祈祷等在线操作走列表或详情页） */}
+            {viewMode === 'wall' ? (
+              <ConfidantAlbumWall
+                confidants={visible}
+                onOpenDetail={(id) => setDetailId(id)}
+                onCreate={() => setCreateOpen(true)}
+                canCreate={remaining > 0 && filter !== 'archived'}
+              />
+            ) : (
+            visible.map(c => {
               const isOnlineActive = c.source === 'online' && !c.archivedAt && !!c.linkedCloudUserId;
               const prayer = isOnlineActive
                 ? {
@@ -541,7 +563,8 @@ export function Cooperation() {
                   />
                 </motion.div>
               );
-            })}
+            })
+            )}
           </motion.div>
         )}
       </AnimatePresence>
