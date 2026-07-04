@@ -34,8 +34,10 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { motion, type Variants } from 'motion/react';
 import { useAppStore } from '@/store';
+import type { ThemeType } from '@/types';
 import { PagePlane, PlaneLevel } from '@/components/PagePlane';
 import { SheetModal } from '@/components/SheetModal';
+import { UserProfileCard } from '@/components/UserProfileCard';
 import { TrophyIcon } from '@/components/Navigation';
 import { isInShadowTime } from '@/constants';
 import { calcCurrentStreak } from '@/utils/streak';
@@ -66,13 +68,6 @@ const MoonIcon = () => (
 const GearIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" strokeWidth={1.8} stroke="currentColor" className="w-6 h-6">
     <path d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z" strokeLinecap="round" strokeLinejoin="round" />
-  </svg>
-);
-
-// 「账号与数据」：云朵（heroicons cloud outline，24px stroke 1.8 制式）
-const CloudIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" strokeWidth={1.8} stroke="currentColor" className="w-6 h-6">
-    <path d="M2.25 15a4.5 4.5 0 004.5 4.5H18a3.75 3.75 0 001.332-7.257 3 3 0 00-3.758-3.848 5.25 5.25 0 00-10.233 2.33A4.502 4.502 0 002.25 15z" strokeLinecap="round" strokeLinejoin="round" />
   </svg>
 );
 
@@ -185,8 +180,17 @@ const Tile = ({ side, order, bold, hero, label, ariaLabel, icon, sub, badge, ble
 
 // ── 页面 ────────────────────────────────────────────────────────────────────
 
+// 主题快切色板（与 index.css data-theme 色值一致；custom 显示当前自定义色）
+const THEME_SWATCHES: { value: ThemeType; label: string; color?: string }[] = [
+  { value: 'blue', label: '蓝', color: '#3B82F6' },
+  { value: 'yellow', label: '黄', color: '#F59E0B' },
+  { value: 'red', label: '红', color: '#EF4444' },
+  { value: 'pink', label: '粉', color: '#EC4899' },
+  { value: 'custom', label: '自定义' },
+];
+
 export const Menu = () => {
-  const { activities, achievements, skills, attributes, settings, setCurrentPage } = useAppStore();
+  const { activities, achievements, skills, attributes, settings, user, setTheme, setCurrentPage } = useAppStore();
   const bold = useBoldness();
 
   // 「关于」Sheet：本页内打开、不跳页；触发器 ref 供 SheetModal 形状记忆生长
@@ -322,6 +326,61 @@ export const Menu = () => {
             <h2 className="sr-only">菜单</h2>
           </header>
 
+          {/* ── 用户资料卡（P9-菜单批：从设置页第一屏上浮到菜单一级）──
+              整体包 PlaneLevel 回正：卡与字都不随世界斜（玻璃卡的柔和气质不吃斜界） */}
+          <PlaneLevel>
+            <UserProfileCard />
+          </PlaneLevel>
+
+          {/* ── 主题快切（从设置「主题」节上浮的轻量层：点击即切；精调仍在设置）── */}
+          <PlaneLevel>
+            <div className="flex items-center gap-2.5 px-0.5">
+              <span className="shrink-0 text-[11px] font-bold tracking-widest text-gray-400 dark:text-gray-500">主题</span>
+              <div className="flex flex-1 items-center gap-2">
+                {THEME_SWATCHES.map((t) => {
+                  const selected = user?.theme === t.value;
+                  const swatch =
+                    t.value === 'custom'
+                      ? settings.customThemeColor ||
+                        'conic-gradient(#3B82F6, #F59E0B, #EF4444, #EC4899, #3B82F6)'
+                      : t.color!;
+                  return (
+                    <motion.button
+                      key={t.value}
+                      type="button"
+                      whileTap={TAP}
+                      onClick={() => {
+                        triggerNavFeedback();
+                        void setTheme(t.value);
+                      }}
+                      aria-label={`切换主题：${t.label}`}
+                      aria-pressed={selected}
+                      className={`relative h-9 w-9 rounded-xl border-2 transition-shadow ${
+                        selected
+                          ? 'border-gray-900 shadow-md dark:border-white'
+                          : 'border-black/10 dark:border-white/15'
+                      }`}
+                      style={{ background: swatch }}
+                    >
+                      {selected && (
+                        <span aria-hidden className="absolute inset-0 flex items-center justify-center text-sm font-black text-white" style={{ textShadow: '0 1px 2px rgba(0,0,0,0.6)' }}>
+                          ✓
+                        </span>
+                      )}
+                    </motion.button>
+                  );
+                })}
+              </div>
+              <button
+                type="button"
+                onClick={() => setCurrentPage('settings')}
+                className="shrink-0 text-[11px] font-semibold text-primary"
+              >
+                精调 →
+              </button>
+            </div>
+          </PlaneLevel>
+
           {/* ── 对角断层宫格 ── */}
           <section aria-label="功能入口">
             <div ref={gridRef} className="relative grid grid-cols-2 gap-3">
@@ -436,16 +495,7 @@ export const Menu = () => {
                   icon={<GearIcon />}
                   onPress={() => setCurrentPage('settings')}
                 />
-                {/* 设置拆解 PR：「数据管理 + 云同步」迁出为独立 'account' 页 */}
-                <Tile
-                  side="right"
-                  order={orderOf('right', battleVisible ? 3 : 2)}
-                  bold={bold}
-                  label="账号与数据"
-                  ariaLabel="账号与数据"
-                  icon={<CloudIcon />}
-                  onPress={() => setCurrentPage('account')}
-                />
+                {/* P9-菜单批：「账号与数据」瓷砖下沉进设置页（与主题快切上浮对调） */}
               </div>
 
               {/* 双描断层线（§2 规则2 制式：2px 主题色 + 偏移 3px 的 1px 中性回声）。
