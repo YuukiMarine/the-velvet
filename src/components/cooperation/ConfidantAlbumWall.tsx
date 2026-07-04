@@ -95,6 +95,78 @@ const BlankCard = () => (
 
 const idOf = (item: Confidant | 'add') => (item === 'add' ? '__add__' : item.id);
 
+/**
+ * WallScrubber —— 刻度条式快速跳卡（替代原生 range，Persona 资源条语言）。
+ * 每个同伴一根竖刻度、空白牌一个描边点；当前项放大成主题色圆头 pill。
+ * 整条轨道可点/拖：按 x 比例取最近刻度，命中区是整轨（刻度细也好点）。
+ */
+const WallScrubber = ({
+  items,
+  index,
+  onJump,
+}: {
+  items: (Confidant | 'add')[];
+  index: number;
+  onJump: (i: number) => void;
+}) => {
+  const trackRef = useRef<HTMLDivElement>(null);
+  const dragging = useRef(false);
+
+  const pickFromX = (clientX: number): number => {
+    const rect = trackRef.current?.getBoundingClientRect();
+    if (!rect || rect.width === 0) return index;
+    const ratio = (clientX - rect.left) / rect.width;
+    return Math.max(0, Math.min(items.length - 1, Math.round(ratio * (items.length - 1))));
+  };
+
+  return (
+    <div
+      ref={trackRef}
+      className="relative flex h-9 cursor-pointer touch-none items-center gap-[3px]"
+      onPointerDown={(e) => {
+        dragging.current = true;
+        onJump(pickFromX(e.clientX));
+        try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ }
+      }}
+      onPointerMove={(e) => { if (dragging.current) onJump(pickFromX(e.clientX)); }}
+      onPointerUp={() => { dragging.current = false; }}
+      onPointerCancel={() => { dragging.current = false; }}
+      role="slider"
+      aria-label="快速跳卡"
+      aria-valuemin={0}
+      aria-valuemax={items.length - 1}
+      aria-valuenow={index}
+    >
+      {items.map((it, i) => {
+        const active = i === index;
+        const isAdd = it === 'add';
+        return (
+          <div key={idOf(it)} className="flex flex-1 items-center justify-center">
+            {isAdd ? (
+              <motion.div
+                aria-hidden
+                className="rounded-full border-2 border-indigo-400/60"
+                animate={{ width: active ? 12 : 8, height: active ? 12 : 8, borderColor: active ? 'var(--color-primary)' : 'rgba(129,140,248,0.5)' }}
+              />
+            ) : (
+              <motion.div
+                aria-hidden
+                className="rounded-full"
+                animate={{
+                  width: active ? 6 : 3,
+                  height: active ? 24 : 10,
+                  backgroundColor: active ? 'var(--color-primary)' : 'rgba(148,163,184,0.45)',
+                }}
+                transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+              />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
 export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCreate }: ConfidantAlbumWallProps) => {
   const bold = useBoldness();
   // 中央卡用【id 锚定】而非数字下标：详情互动/排序变化导致 confidants 重排时，
@@ -104,6 +176,8 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
   const [flipped, setFlipped] = useState(false);
   const [dragRot, setDragRot] = useState(0);   // 中央卡拖拽的实时附加角
   const [slideX, setSlideX] = useState(0);     // 滑动切换的实时位移
+  const [dragY, setDragY] = useState(0);       // 中央卡上滑预览位移（负值）
+  const overDetailRef = useRef(false);         // 上滑是否已越过详情阈值（跨越时触觉一次）
 
   // 空白牌拼接在末尾
   const items: (Confidant | 'add')[] = canCreate ? [...confidants, 'add'] : [...confidants];
@@ -154,9 +228,23 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
     const g = gesture.current;
     if (!g.mode) return;
     const dx = e.clientX - g.startX;
+    const dy = e.clientY - g.startY;
     if (g.mode === 'flip') {
-      // 阻尼：位移的 0.42 倍转角，全程触觉靠 CSS 无法给——阈值跨越时给一次
-      setDragRot(Math.max(-170, Math.min(170, dx * 0.42)));
+      const item = items[index];
+      // 纵向向上为主 → 上滑预览（卡跟手上飘）；否则横向翻转预览（阻尼 0.42）
+      if (item !== 'add' && dy < -8 && Math.abs(dy) > Math.abs(dx)) {
+        const y = Math.max(-150, dy);
+        setDragY(y);
+        setDragRot(0);
+        // 越过详情阈值的瞬间给一次触觉（提示「松手即触发」）
+        const over = -y >= DETAIL_THRESHOLD;
+        if (over && !overDetailRef.current) triggerLightHaptic();
+        overDetailRef.current = over;
+      } else {
+        setDragRot(Math.max(-170, Math.min(170, dx * 0.42)));
+        setDragY(0);
+        overDetailRef.current = false;
+      }
     } else {
       setSlideX(dx);
     }
@@ -188,6 +276,8 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
         triggerLightHaptic();
       }
       setDragRot(0);
+      setDragY(0);
+      overDetailRef.current = false;
     } else {
       if (isTap && g.targetIdx !== null) {
         // 点两侧卡 = 跳到它
@@ -253,6 +343,9 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
           const slideShift = slideX * 0.55; // 拖动跟手（磁吸在松手时）
           const x = offset * SPACING + slideShift;
           const rotY = isCenter ? (flipped ? 180 : 0) + dragRot : offset < 0 ? 38 : -38;
+          // 上滑预览：中央卡跟手上飘 + 轻微放大（越接近阈值越明显）
+          const y = isCenter ? dragY : 0;
+          const liftScale = isCenter ? 1 + Math.min(0.05, -dragY / 3000) : 0.78;
           const key = item === 'add' ? 'add' : item.id;
           return (
             <motion.div
@@ -264,7 +357,7 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
               aria-label={item === 'add' ? '缔结新的羁绊' : `${item.name}（${TAROT_BY_ID[item.arcanaId]?.name ?? ''}，RANK ${item.intimacy}）`}
               className="absolute left-1/2 top-4 cursor-pointer"
               style={{ width: CARD_W, height: CARD_H, marginLeft: -CARD_W / 2, transformStyle: 'preserve-3d', zIndex: 100 - Math.abs(offset) }}
-              animate={{ x, rotateY: rotY, scale: isCenter ? 1 : 0.78 }}
+              animate={{ x, y, rotateY: rotY, scale: liftScale }}
               transition={{ type: 'spring', stiffness: 260, damping: 28 }}
             >
               {/* 正面 */}
@@ -286,36 +379,72 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
             </motion.div>
           );
         })}
+
+        {/* 上滑反馈：底部提示胶囊，随上滑量渐显；过阈值变主题色实心「松手打开」 */}
+        {dragY < -6 && current !== 'add' && (() => {
+          const progress = Math.min(1, -dragY / DETAIL_THRESHOLD);
+          const armed = progress >= 1;
+          return (
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-x-0 bottom-1 flex justify-center"
+              style={{ opacity: 0.35 + progress * 0.65 }}
+            >
+              <div
+                className="flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-black shadow-lg transition-colors"
+                style={{
+                  background: armed ? 'var(--color-primary)' : 'rgba(30,27,75,0.9)',
+                  color: '#fff',
+                  transform: `scale(${0.9 + progress * 0.1})`,
+                }}
+              >
+                <motion.span animate={{ y: armed ? [-1, -3, -1] : 0 }} transition={{ duration: 0.6, repeat: armed ? Infinity : 0 }}>↑</motion.span>
+                {armed ? '松手打开档案' : '上滑查看档案'}
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
-      {/* 信息条 + scrubber */}
-      <div className="mx-auto mt-1 max-w-sm px-2">
-        <div className="flex items-baseline justify-center gap-2 text-center">
-          {current === 'add' || !current ? (
-            <span className="text-sm font-bold text-gray-500 dark:text-gray-400">缔结新的羁绊</span>
-          ) : (
-            <>
-              <span className="truncate text-base font-black text-gray-900 dark:text-white">{current.name}</span>
-              <span className="shrink-0 text-xs font-semibold text-gray-400 dark:text-gray-500">
-                {TAROT_BY_ID[current.arcanaId]?.name}
-                {current.orientation === 'reversed' ? '（逆）' : ''}
-                {' · RANK '}
-                {current.intimacy}
+      {/* 档案铭牌 + scrubber */}
+      <div className="mx-auto mt-2 max-w-sm px-3">
+        {current === 'add' || !current ? (
+          <div className="text-center">
+            <div className="text-2xl font-black text-gray-800 dark:text-gray-100">缔结新的羁绊</div>
+            <div className="mt-0.5 text-xs font-semibold text-gray-400 dark:text-gray-500">点一下这张空白牌开始</div>
+          </div>
+        ) : (
+          <div className="text-center">
+            {/* eyebrow：牌名 · 罗马数 · 正逆位 */}
+            <div className="text-[11px] font-bold tracking-[0.14em] text-indigo-400 dark:text-indigo-300">
+              {TAROT_BY_ID[current.arcanaId]?.roman ? `${TAROT_BY_ID[current.arcanaId]?.roman} · ` : ''}
+              {TAROT_BY_ID[current.arcanaId]?.name}
+              {current.orientation === 'reversed' ? ' · 逆位' : ' · 正位'}
+            </div>
+            {/* 大名字 + RANK 徽章 */}
+            <div className="mt-0.5 flex items-center justify-center gap-2.5">
+              <motion.h3
+                key={current.id}
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="max-w-[70%] truncate text-[28px] font-black leading-tight text-gray-900 dark:text-white"
+              >
+                {current.name}
+              </motion.h3>
+              <span
+                className="shrink-0 rounded-lg px-2 py-1 text-[11px] font-black leading-none text-white"
+                style={{ background: 'linear-gradient(135deg, rgb(var(--color-bond-rgb)), rgb(var(--color-bond-bright-rgb)))' }}
+              >
+                RANK {current.intimacy}
               </span>
-            </>
-          )}
-        </div>
+            </div>
+          </div>
+        )}
+
         {count > 1 && (
-          <input
-            type="range"
-            min={0}
-            max={count - 1}
-            step={1}
-            value={index}
-            onChange={(e) => go(Number(e.target.value))}
-            aria-label="快速跳卡"
-            className="mt-2 w-full accent-[var(--color-primary)]"
-          />
+          <div className="mt-2">
+            <WallScrubber items={items} index={index} onJump={go} />
+          </div>
         )}
         <div className="mt-0.5 text-center text-[10px] text-gray-300 dark:text-gray-600">
           单击翻面 · 横拖也能翻 · 上滑看档案
