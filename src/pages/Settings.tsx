@@ -9,7 +9,6 @@ import { PageTitle } from '@/components/PageTitle';
 import { BackButton } from '@/components/BackButton';
 import { useRipple } from '@/components/RippleEffect';
 import { AI_PROVIDERS, getProviderConfig, testAIConnection, type TestResult } from '@/utils/aiProviders';
-import { UserProfileCard } from '@/components/UserProfileCard';
 import { Toggle } from '@/components/Toggle';
 import NotificationSettings from '@/components/NotificationSettings';
 import { NavigatorSettings } from '@/components/navigator/NavigatorSettings';
@@ -621,8 +620,21 @@ export const Settings = () => {
         </div>
       </div>
 
-      {/* 用户资料卡（头像 / 用户名 / LV / 五维） */}
-      <UserProfileCard />
+      {/* P9-菜单批：用户资料卡上浮至菜单页第一屏；原位改为「账号与数据」入口
+          （账号瓷砖从菜单宫格下沉至此，与主题快切上浮互为对调） */}
+      <motion.button
+        type="button"
+        whileTap={{ scale: 0.98 }}
+        onClick={() => setCurrentPage('account')}
+        className="w-full flex items-center gap-3 rounded-xl bg-white dark:bg-gray-800 shadow-lg px-5 py-4 text-left hover:bg-gray-50 dark:hover:bg-gray-700"
+      >
+        <span className="text-2xl" aria-hidden>☁️</span>
+        <span className="flex-1 min-w-0">
+          <span className="block font-semibold text-gray-800 dark:text-white">账号与数据</span>
+          <span className="block text-xs text-gray-400 dark:text-gray-500 mt-0.5">云同步 · 数据管理 · 备份导出</span>
+        </span>
+        <span className="text-gray-400" aria-hidden>›</span>
+      </motion.button>
 
       <div className="space-y-4">
         {sections.map(section => (
