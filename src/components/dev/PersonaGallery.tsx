@@ -14,6 +14,7 @@ import { PersonaInput } from '@/ui/components/PersonaInput';
 import { PersonaProgress } from '@/ui/components/PersonaProgress';
 import { PersonaNumber } from '@/ui/components/PersonaNumber';
 import { Halftone, Scanlines, SignalStripes, SunRing, BigTypeBackdrop, SlashPanel } from '@/ui/motifs';
+import { StarChart } from '@/components/StarChart';
 import type { UIChannel } from '@/ui/channel';
 
 const CHANNELS: { id: UIChannel; label: string }[] = [
@@ -117,6 +118,23 @@ export const PersonaGallery = () => {
                   <PersonaBadge tone="danger">超支</PersonaBadge>
                   <PersonaBadge tone="muted">已归档</PersonaBadge>
                   <PersonaBadge tone="outline">RANK 3</PersonaBadge>
+                </div>
+              </section>
+
+              {/* StarChart（P8.1 星象仪，非频道原语——固定深色舞台展示） */}
+              <section className="space-y-4">
+                <GalleryLabel ch={ch}>StarChart 星象仪</GalleryLabel>
+                <div className="rounded-xl bg-gradient-to-b from-slate-800 to-slate-900 px-2 py-5">
+                  <StarChart
+                    items={[
+                      { id: 'knowledge', name: '知识', level: 3, maxLevel: 5, points: 120, title: '渐入学理' },
+                      { id: 'charm', name: '魅力', level: 4, maxLevel: 5, points: 210, title: '风度初成' },
+                      { id: 'guts', name: '勇气', level: 3, maxLevel: 5, points: 130, title: '临危不乱' },
+                      { id: 'dexterity', name: '灵巧', level: 2, maxLevel: 5, points: 60, title: '稍具准头' },
+                      { id: 'kindness', name: '体贴', level: 5, maxLevel: 5, points: 320, title: '慈心如灯' },
+                    ]}
+                    onSelect={(id) => console.info('[gallery] star select:', id)}
+                  />
                 </div>
               </section>
 
