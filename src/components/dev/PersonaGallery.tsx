@@ -9,6 +9,10 @@ import { createPortal } from 'react-dom';
 import { PersonaButton } from '@/ui/components/PersonaButton';
 import { PersonaPageTitle } from '@/ui/components/PersonaPageTitle';
 import { PersonaBadge } from '@/ui/components/PersonaBadge';
+import { PersonaListRow } from '@/ui/components/PersonaListRow';
+import { PersonaInput } from '@/ui/components/PersonaInput';
+import { PersonaProgress } from '@/ui/components/PersonaProgress';
+import { PersonaNumber } from '@/ui/components/PersonaNumber';
 import { Halftone, Scanlines, SignalStripes, SunRing, BigTypeBackdrop, SlashPanel } from '@/ui/motifs';
 import type { UIChannel } from '@/ui/channel';
 
@@ -30,6 +34,8 @@ const STAGE_BG: Record<UIChannel, string> = {
 export const PersonaGallery = () => {
   const [open, setOpen] = useState(false);
   const [ch, setCh] = useState<UIChannel>('neutral');
+  const [num, setNum] = useState(1280);
+  const [selectedRow, setSelectedRow] = useState(1);
 
   const switchChannel = (next: UIChannel) => {
     setCh(next);
@@ -111,6 +117,49 @@ export const PersonaGallery = () => {
                   <PersonaBadge tone="danger">超支</PersonaBadge>
                   <PersonaBadge tone="muted">已归档</PersonaBadge>
                   <PersonaBadge tone="outline">RANK 3</PersonaBadge>
+                </div>
+              </section>
+
+              {/* ListRow */}
+              <section className="space-y-4">
+                <GalleryLabel ch={ch}>PersonaListRow</GalleryLabel>
+                <div className="space-y-2">
+                  {['去银行办卡', '固定晨跑 30 分钟', '读《人间失格》两章'].map((t, i) => (
+                    <PersonaListRow
+                      key={t}
+                      title={t}
+                      subtitle={i === 0 ? '知识 +2 · 截止今天' : undefined}
+                      meta={i === 1 ? '7:30' : undefined}
+                      leading={<span className="text-lg" aria-hidden>{['🏦', '🏃', '📖'][i]}</span>}
+                      selected={selectedRow === i}
+                      completed={i === 2}
+                      onClick={() => setSelectedRow(i)}
+                    />
+                  ))}
+                </div>
+              </section>
+
+              {/* Input */}
+              <section className="space-y-4">
+                <GalleryLabel ch={ch}>PersonaInput</GalleryLabel>
+                <PersonaInput label="目标名称" placeholder="锁定一个目标…" hint="2~12 字，短促有力" />
+                <PersonaInput label="金额" defaultValue="不是数字" error="只能填数字" />
+                <PersonaInput label="宣言" multiline rows={2} placeholder="写给明天的自己" />
+              </section>
+
+              {/* Progress + Number */}
+              <section className="space-y-4">
+                <GalleryLabel ch={ch}>PersonaProgress / PersonaNumber</GalleryLabel>
+                <PersonaProgress tone="hp" value={0.62} label="HP" valueText="62/100" />
+                <PersonaProgress tone="sp" value={0.35} label="SP" valueText="35/100" />
+                <PersonaProgress tone="danger" value={0.88} label="预算" valueText="88%" />
+                <div className="flex items-center gap-4">
+                  <div className={`text-4xl font-black ${ch === 'p4' ? 'text-[#111]' : ch === 'neutral' ? 'text-gray-800' : 'text-white'}`}>
+                    <PersonaNumber value={num} />
+                  </div>
+                  <PersonaButton size="sm" variant="secondary" onClick={() => setNum((n) => n + Math.floor(Math.random() * 240) - 60)}>
+                    随机变动
+                  </PersonaButton>
                 </div>
               </section>
 
