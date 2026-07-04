@@ -23,8 +23,9 @@ const CARD_W = 182;
 const CARD_H = Math.round(CARD_W * 1.6); // TarotCardSVG 比例
 const SPACING = 88;          // 相邻卡横向间距
 const FLIP_THRESHOLD = 90;   // 中央卡拖拽翻转阈值（px）
-const DETAIL_THRESHOLD = 70; // 上滑进详情阈值（px）
-const SLIDE_PER_CARD = 76;   // 滑动切卡步长（px/张）
+const OPEN_ARM = 40;         // 下滑打开档案的视觉阈值（px，短）
+const UP_CAP = 34;           // 上滑橡皮筋位移上限（px，短）
+const STEP_X = 92;           // 横滑实时切卡步长（px/张，跟手一张张翻）
 
 export interface ConfidantAlbumWallProps {
   confidants: Confidant[];
@@ -73,6 +74,10 @@ const CardBackFace = ({ c, onOpenDetail }: { c: Confidant; onOpenDetail: () => v
 
       <button
         type="button"
+        // 拦住 pointerdown/up：卡墙手势在祖先 wall 上用 pointer 事件监听，
+        // 只 stopPropagation click 挡不住（翻转走 pointerup）——按钮会被翻回吞掉
+        onPointerDown={(e) => e.stopPropagation()}
+        onPointerUp={(e) => e.stopPropagation()}
         onClick={(e) => {
           e.stopPropagation();
           onOpenDetail();
@@ -206,7 +211,9 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
     targetIdx: number | null;
     /** 主轴锁：首次超过阈值时定死，避免斜拖时横纵行为来回抖 */
     axis: 'x' | 'y' | null;
-  }>({ mode: null, startX: 0, startY: 0, startT: 0, targetIdx: null, axis: null });
+    /** 正面横拖实时步进的基准 index（切卡跟手用） */
+    startIndex: number;
+  }>({ mode: null, startX: 0, startY: 0, startT: 0, targetIdx: null, axis: null, startIndex: 0 });
 
   const onPointerDown = (e: React.PointerEvent) => {
     if (!bold) return;
@@ -219,6 +226,7 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
       startT: performance.now(),
       targetIdx: idx,
       axis: null,
+      startIndex: index,
     };
     // capture 失败不致命（合成事件 / 已释放的 pointerId 会抛 NotFoundError）
     try {
@@ -240,18 +248,18 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
         g.axis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
       }
       if (g.axis === 'y') {
-        if (dy < 0 && item !== 'add') {
-          // 上滑：详情预览（卡跟手上飘）
-          const y = Math.max(-150, dy);
-          setDragY(y);
-          setDragDown(0);
-          const over = -y >= DETAIL_THRESHOLD;
+        if (dy > 0 && item !== 'add') {
+          // 下滑：打开档案预览（跟手下沉），过阈越界一次触觉
+          const v = Math.min(96, dy * 0.6);
+          setDragDown(v);
+          setDragY(0);
+          const over = v >= OPEN_ARM;
           if (over && !overDetailRef.current) triggerLightHaptic();
           overDetailRef.current = over;
-        } else if (dy > 0) {
-          // 下滑：往下翻一点点（橡皮筋，无动作）
-          setDragDown(Math.min(46, dy * 0.34));
-          setDragY(0);
+        } else if (dy < 0) {
+          // 上滑：橡皮筋翻角（无动作，短距离）
+          setDragY(Math.max(-UP_CAP, dy * 0.34));
+          setDragDown(0);
         }
       } else if (g.axis === 'x') {
         if (flipped) {
@@ -259,8 +267,10 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
           setDragRot(Math.max(-170, Math.min(170, dx * 0.42)));
           setSlideX(0);
         } else {
-          // 正面横拖 → 左右选卡（跟手，磁吸在松手时）
-          setSlideX(dx);
+          // 正面横拖 → 实时一张张切卡（跟手，和 scrubber 手感一致）；张内余量做偏移
+          const n = Math.round(-dx / STEP_X);
+          go(g.startIndex + n);
+          setSlideX(dx + n * STEP_X);
           setDragRot(0);
         }
       }
@@ -286,9 +296,9 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
           setFlipped((f) => !f);
           triggerLightHaptic();
         }
-      } else if (g.axis === 'y' && dy < -DETAIL_THRESHOLD) {
-        // 上滑进详情
-        if (item !== 'add') onOpenDetail(item.id);
+      } else if (g.axis === 'y' && dy > 0) {
+        // 下滑过阈值 → 打开档案（上滑橡皮筋无动作）
+        if (Math.min(96, dy * 0.6) >= OPEN_ARM && item !== 'add') onOpenDetail(item.id);
       } else if (g.axis === 'x') {
         if (flipped) {
           // 背面横拖过阈值 → 翻回正面
@@ -297,14 +307,12 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
             triggerLightHaptic();
           }
         } else {
-          // 正面横拖 → 左右选卡（步长 + 甩动速度，同两侧卡 slide 逻辑）
+          // 正面横拖已实时切卡，松手只做甩动补偿（快甩多切一张）
           const velocity = dx / dt;
-          const byDist = Math.round(-dx / SLIDE_PER_CARD);
-          const byFling = Math.abs(velocity) > 0.45 ? (velocity < 0 ? 1 : -1) : 0;
-          go(index + (byDist !== 0 ? byDist : byFling));
+          if (Math.abs(velocity) > 0.5) go(index + (velocity < 0 ? 1 : -1));
         }
       }
-      // 下滑（axis==='y' && dy>0）无动作，橡皮筋回弹
+      // 上滑（axis==='y' && dy<0）无动作，橡皮筋回弹
       setDragRot(0);
       setDragY(0);
       setDragDown(0);
@@ -315,11 +323,11 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
         // 点两侧卡 = 跳到它
         go(g.targetIdx);
       } else {
-        // 滑动切换：位移步长 + 甩动速度
+        // 从两侧卡起拖：位移步长 + 甩动速度（步长同正面横拖）
         const velocity = dx / dt; // px/ms
-        const byDist = Math.round(-dx / SLIDE_PER_CARD);
+        const byDist = Math.round(-dx / STEP_X);
         const byFling = Math.abs(velocity) > 0.45 ? (velocity < 0 ? 1 : -1) : 0;
-        go(index + (byDist !== 0 ? byDist : byFling));
+        go(g.startIndex + (byDist !== 0 ? byDist : byFling));
       }
       setSlideX(0);
     }
@@ -375,11 +383,12 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
           const slideShift = slideX * 0.55; // 拖动跟手（磁吸在松手时）
           const x = offset * SPACING + slideShift;
           const rotY = isCenter ? (flipped ? 180 : 0) + dragRot : offset < 0 ? 38 : -38;
-          // 上滑预览跟手上飘 / 下滑橡皮筋下沉（二者互斥，axis 锁保证）
+          // 上滑橡皮筋上飘 / 下滑打开预览下沉（二者互斥，axis 锁保证）
           const y = isCenter ? dragY + dragDown : 0;
-          // 下滑时卡顶后倒一点，像往下翻开一角（rotateX 正 = 顶部远离）
-          const rotX = isCenter ? dragDown * 0.42 : 0;
-          const liftScale = isCenter ? 1 + Math.min(0.05, -dragY / 3000) : 0.78;
+          // 上滑时卡顶前倾一点（橡皮筋翻角，rotateX 负 = 顶部靠近）；下滑不翻角
+          const rotX = isCenter ? dragY * 0.4 : 0;
+          // 下滑打开预览：轻微放大暗示「聚焦/展开」
+          const liftScale = isCenter ? 1 + Math.min(0.05, dragDown / 1600) : 0.78;
           const key = item === 'add' ? 'add' : item.id;
           return (
             <motion.div
@@ -414,9 +423,9 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
           );
         })}
 
-        {/* 上滑反馈：底部提示胶囊，随上滑量渐显；过阈值变主题色实心「松手打开」 */}
-        {dragY < -6 && current !== 'add' && (() => {
-          const progress = Math.min(1, -dragY / DETAIL_THRESHOLD);
+        {/* 下滑反馈：底部提示胶囊，随下滑量渐显；过阈值变主题色实心「松手打开」 */}
+        {dragDown > 6 && current !== 'add' && (() => {
+          const progress = Math.min(1, dragDown / OPEN_ARM);
           const armed = progress >= 1;
           return (
             <div
@@ -432,8 +441,8 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
                   transform: `scale(${0.9 + progress * 0.1})`,
                 }}
               >
-                <motion.span animate={{ y: armed ? [-1, -3, -1] : 0 }} transition={{ duration: 0.6, repeat: armed ? Infinity : 0 }}>↑</motion.span>
-                {armed ? '松手打开档案' : '上滑查看档案'}
+                <motion.span animate={{ y: armed ? [1, 3, 1] : 0 }} transition={{ duration: 0.6, repeat: armed ? Infinity : 0 }}>↓</motion.span>
+                {armed ? '松手打开档案' : '下滑查看档案'}
               </div>
             </div>
           );
@@ -481,7 +490,7 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
           </div>
         )}
         <div className="mt-0.5 text-center text-[10px] text-gray-300 dark:text-gray-600">
-          左右切换 · 单击翻面 · 上滑看档案
+          左右切换 · 单击翻面 · 下滑看档案
         </div>
       </div>
     </div>
