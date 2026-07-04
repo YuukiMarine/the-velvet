@@ -194,10 +194,11 @@ const Stele = ({
             aria-hidden
             className="absolute z-10"
             style={{
-              width: H * 1.2,
-              height: W * 1.2,
-              left: W / 2 - (H * 1.2) / 2,
-              top: H / 2 - (W * 1.2) / 2 + H * 0.08,
+              // 竖向长 1.2H→1.08H（下端收 10%，上端位置不变→中心随之上移）；横向宽 1.2W→1.14W（收 5%）
+              width: H * 1.08,
+              height: W * 1.14,
+              left: W / 2 - (H * 1.08) / 2,
+              top: H / 2 - (W * 1.14) / 2 + H * 0.02,
               transform: 'rotate(90deg)',
             }}
           >
