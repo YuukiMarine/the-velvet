@@ -19,21 +19,25 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useBoldness } from '@/utils/boldness';
 import { triggerLightHaptic } from '@/utils/feedback';
 import { zClass } from '@/utils/zIndex';
+import { useUiChannel } from '@/ui/useUiChannel';
+import { RadialWheelP5 } from '@/components/RadialWheelP5';
 
 export interface WheelItem {
   id: string;
   label: string;
   icon: string;
+  /** 碑牌底部英文小字（P5 形态用，参考设计稿） */
+  en: string;
 }
 
 export const WHEEL_ITEMS: WheelItem[] = [
-  { id: 'astrology', label: '塔罗', icon: '🔮' },
-  { id: 'activities', label: '记录', icon: '✍️' },
-  { id: 'todos', label: '任务', icon: '⚡' },
-  { id: 'cooperation', label: '羁绊', icon: '🃏' },
-  { id: 'ledger', label: '记账', icon: '💰' },
-  { id: 'achievements', label: '成就', icon: '🏆' },
-  { id: 'settings', label: '设置', icon: '⚙️' },
+  { id: 'astrology', label: '塔罗', icon: '🔮', en: 'TAROT' },
+  { id: 'activities', label: '记录', icon: '✍️', en: 'RECORD' },
+  { id: 'todos', label: '任务', icon: '⚡', en: 'TASKS' },
+  { id: 'cooperation', label: '羁绊', icon: '🃏', en: 'BOND' },
+  { id: 'ledger', label: '记账', icon: '💰', en: 'ACCOUNT' },
+  { id: 'achievements', label: '成就', icon: '🏆', en: 'ACHIEVE' },
+  { id: 'settings', label: '设置', icon: '⚙️', en: 'SETTING' },
 ];
 
 const DEAD_ZONE = 48;      // ◈ 周围取消死区（px）
@@ -51,6 +55,7 @@ export interface RadialQuickNavProps {
 
 export const RadialQuickNav = ({ open, origin, onClose, onNavigate }: RadialQuickNavProps) => {
   const bold = useBoldness();
+  const channel = useUiChannel();
   const [active, setActive] = useState<number | null>(null);
   const activeRef = useRef<number | null>(null);
   const gestureRef = useRef({ onClose, onNavigate });
@@ -119,19 +124,27 @@ export const RadialQuickNav = ({ open, origin, onClose, onNavigate }: RadialQuic
 
           {bold ? (
             <>
-              {/* 当前高亮项名（origin 正上方大字） */}
+              {/* 提示区（避开牌区上移；P5 碑牌自身已放大变红，不再重复大字名） */}
               <div
-                className="pointer-events-none absolute -translate-x-1/2 text-center"
-                style={{ left: origin.x, top: origin.y - radius - 92 }}
+                className="pointer-events-none absolute z-[70] w-full -translate-x-1/2 text-center"
+                style={{ left: origin.x, top: origin.y - radius - (channel === 'p5' ? 182 : 128) }}
               >
-                <div className="text-2xl font-black text-white" style={{ textShadow: '2px 2px 0 rgba(0,0,0,0.8)' }}>
-                  {active !== null ? WHEEL_ITEMS[active].label : '滑向目标'}
+                {channel !== 'p5' && (
+                  <div className="text-2xl font-black text-white" style={{ textShadow: '2px 2px 0 rgba(0,0,0,0.8)' }}>
+                    {active !== null ? WHEEL_ITEMS[active].label : '滑向目标'}
+                  </div>
+                )}
+                <div className="mt-1 text-[11px] font-bold text-white/60" style={{ textShadow: '1px 1px 0 rgba(0,0,0,0.8)' }}>
+                  松开前往 · 滑回中心取消
                 </div>
-                <div className="mt-1 text-[11px] font-bold text-white/60">松开前往 · 滑回中心取消</div>
               </div>
 
-              {/* 七瓣半环 */}
-              {WHEEL_ITEMS.map((item, i) => {
+              {/* P5（红/怪盗）：碑牌手扇 + 星形波纹 + 同心条纹星群（设计稿 1:1 演出层） */}
+              {channel === 'p5' ? (
+                <RadialWheelP5 items={WHEEL_ITEMS} origin={origin} radius={radius} active={active} />
+              ) : (
+              /* 其余频道暂用圆瓣基础形态（P4/P3 差分后置） */
+              WHEEL_ITEMS.map((item, i) => {
                 const ang = ((-180 + (i + 0.5) * SEG) * Math.PI) / 180;
                 const x = origin.x + radius * Math.cos(ang);
                 const y = origin.y + radius * Math.sin(ang);
@@ -162,7 +175,8 @@ export const RadialQuickNav = ({ open, origin, onClose, onNavigate }: RadialQuic
                     <span className="mt-0.5 text-[9px] font-black leading-none text-white">{item.label}</span>
                   </motion.div>
                 );
-              })}
+              })
+              )}
 
               {/* ◈ 死区提示环 */}
               <div
