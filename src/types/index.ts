@@ -345,6 +345,8 @@ export interface Settings {
   navigatorPresetId?: string;
   /** 拟真增强：回复走流式 + 按标点切碎气泡（句号删并断、——删并断、问叹/括号保留断；逗号不断），泡间 1.2s。 */
   navigatorImmersive?: boolean;
+  /** 羁绊页视图：专辑墙（默认）/ 列表；右上角切换、持久记忆（PRD_V2.5_FINAL §5.3） */
+  confidantViewMode?: 'wall' | 'list';
   // AI 总结功能配置
   summaryApiProvider?: 'openai' | 'deepseek' | 'kimi' | 'gemini' | 'minimax';
   summaryApiKey?: string;
