@@ -43,6 +43,7 @@
   /* neutral 缺省：贴近现状的中性面，保证任何组件读 --ui-* 都有值 */
   --ui-bg: #f9fafb;
   --ui-surface: #ffffff;
+  --ui-surface-ink: #111827; /* surface 面板上的字色（≠ --ui-ink：那是 bg 舞台上的正文色） */
   --ui-paper: #ffffff;
   --ui-ink: #111827;
   --ui-muted: #6b7280;
@@ -60,6 +61,7 @@
 :root[data-ui-channel="p5"] {
   --ui-bg: #050505;
   --ui-surface: #141414;
+  --ui-surface-ink: #f7f4ea;
   --ui-paper: #f7f4ea;
   --ui-ink: #f7f4ea;
   --ui-muted: #9a958a;
@@ -77,6 +79,7 @@
 :root[data-ui-channel="p4"] {
   --ui-bg: #ffe100;
   --ui-surface: #111111;
+  --ui-surface-ink: #ffe100; /* 黑面板黄字（TVPanel 风）：--ui-ink 是黄底上的黑，在 surface 上会隐身 */
   --ui-paper: #fff7b0;
   --ui-ink: #111111;
   --ui-muted: #6b6320;
@@ -94,6 +97,7 @@
 :root[data-ui-channel="p3"] {
   --ui-bg: #001c7a;
   --ui-surface: #05070d;
+  --ui-surface-ink: #f6fbff;
   --ui-paper: #f6fbff;
   --ui-ink: #f6fbff;
   --ui-muted: #8da0b8;
