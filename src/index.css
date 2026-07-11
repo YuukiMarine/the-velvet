@@ -423,3 +423,10 @@ html[data-ios-standalone="true"] {
     transform: rotate(0deg);
   }
 }
+
+/* ── P3R（蓝频道）统一卡壳：白斜卡（清单式换壳用，见 components/p3r/kit.tsx） ── */
+.p3r-card {
+  clip-path: polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%);
+  background: #ffffff;
+  box-shadow: 0 10px 24px rgba(38, 96, 140, 0.08);
+}

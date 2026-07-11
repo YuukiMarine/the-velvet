@@ -15,9 +15,69 @@ import { useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import type { Confidant } from '@/types';
 import { TAROT_BY_ID } from '@/constants/tarot';
-import { TarotCardSVG } from '@/components/astrology/TarotCardSVG';
+import { TarotCardSVG, MAJOR_SYMBOLS } from '@/components/astrology/TarotCardSVG';
 import { useBoldness } from '@/utils/boldness';
 import { triggerLightHaptic } from '@/utils/feedback';
+import { useUiChannel } from '@/ui/useUiChannel';
+import { P3R, slantClip } from '@/components/p3r/kit';
+
+/**
+ * P3R 正面卡（p3-cooperation-reference-v2 中央大卡 1:1）：
+ * 白底圆角塔罗卡——顶部罗马数字+双三角 → 青轨道环+大阿卡纳符号 →
+ * 「V · 教皇 · 正位」→ 同伴名超大黑 → RANK 蓝斜块+洋红角。
+ * （信息上卡：p3 下方铭牌只留 scrubber，不再重复名字）
+ */
+const P3FrontFace = ({ c }: { c: Confidant }) => {
+  const card = TAROT_BY_ID[c.arcanaId];
+  const sym = MAJOR_SYMBOLS[c.arcanaId] ?? '✦';
+  return (
+    <div
+      className="flex h-full w-full flex-col items-center rounded-[14px] bg-white px-3 pb-3.5 pt-2.5"
+      style={{ border: '1px solid rgba(147,190,222,0.45)', boxShadow: '0 16px 36px -14px rgba(38,96,140,0.35)' }}
+    >
+      {/* 顶部：罗马数字 + 左右小蓝三角 */}
+      <div className="flex items-center gap-2.5">
+        <span aria-hidden className="h-0 w-0 border-y-[4px] border-y-transparent border-r-[7px]" style={{ borderRightColor: P3R.blue }} />
+        <span className="text-[17px] font-black tracking-[0.1em]" style={{ color: P3R.blueDeep, fontFamily: 'Georgia, serif' }}>
+          {card?.roman ?? '—'}
+        </span>
+        <span aria-hidden className="h-0 w-0 border-y-[4px] border-y-transparent border-l-[7px]" style={{ borderLeftColor: P3R.blue }} />
+      </div>
+      {/* 中央：青轨道环 + 大符号（逆位只倒符号，文字恒正读） */}
+      <div className="relative flex min-h-0 flex-1 items-center justify-center self-stretch">
+        <svg viewBox="0 0 160 120" className="pointer-events-none absolute inset-0 m-auto h-full w-full" aria-hidden>
+          <ellipse cx="80" cy="60" rx="66" ry="32" fill="none" stroke="rgba(53,209,232,0.5)" strokeWidth="1" transform="rotate(-16 80 60)" />
+          <ellipse cx="80" cy="60" rx="46" ry="20" fill="none" stroke="rgba(53,209,232,0.28)" strokeWidth="0.8" strokeDasharray="2 4" transform="rotate(-16 80 60)" />
+          <circle cx="26" cy="78" r="3" fill="#35d1e8" />
+          <circle cx="136" cy="40" r="2.2" fill="#7fd8ee" />
+          <circle cx="118" cy="86" r="1.6" fill="rgba(53,209,232,0.6)" />
+        </svg>
+        <span
+          className="relative text-[56px] leading-none"
+          style={{ color: P3R.blue, transform: c.orientation === 'reversed' ? 'rotate(180deg)' : undefined }}
+          aria-hidden
+        >
+          {sym}
+        </span>
+      </div>
+      {/* 牌位行 */}
+      <div className="max-w-full truncate text-[11px] font-black tracking-wide" style={{ color: P3R.blue }}>
+        {card?.roman ? `${card.roman} · ` : ''}{card?.name ?? c.arcanaId}{c.orientation === 'reversed' ? ' · 逆位' : ' · 正位'}
+      </div>
+      {/* 同伴名 */}
+      <div className="mt-0.5 w-full truncate text-center text-[25px] font-black leading-tight" style={{ color: P3R.ink }}>
+        {c.name}
+      </div>
+      {/* RANK 蓝斜块 + 洋红小角 */}
+      <div className="relative mt-1.5">
+        <span className="inline-block px-4 py-1 text-[12px] font-black tracking-[0.14em] text-white" style={{ clipPath: slantClip(8), background: P3R.blue }}>
+          RANK {c.intimacy}
+        </span>
+        <span aria-hidden className="absolute -bottom-[2px] right-[2px] h-[6px] w-[14px]" style={{ background: P3R.magenta, clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
+      </div>
+    </div>
+  );
+};
 
 const CARD_W = 182;
 const CARD_H = Math.round(CARD_W * 1.6); // TarotCardSVG 比例
@@ -36,41 +96,46 @@ export interface ConfidantAlbumWallProps {
   canCreate: boolean;
 }
 
-/** 背面档案（与正面同尺寸；rotateY(180) 预翻，父层翻转后正读） */
+/** 背面档案（与正面同尺寸；rotateY(180) 预翻，父层翻转后正读；p3=白底蓝字版） */
 const CardBackFace = ({ c, onOpenDetail }: { c: Confidant; onOpenDetail: () => void }) => {
+  const p3 = useUiChannel() === 'p3';
   const card = TAROT_BY_ID[c.arcanaId];
   const nextNeed = 20 + c.intimacy * 10; // 展示用近似值：真实口径在详情页
   return (
     <div
-      className="flex h-full w-full flex-col rounded-xl border border-indigo-300/40 bg-gradient-to-b from-indigo-950 to-slate-900 px-4 py-4 text-white"
-      style={{ boxShadow: '0 10px 30px -12px rgba(49,46,129,0.6)' }}
+      className={p3
+        ? 'flex h-full w-full flex-col rounded-[14px] bg-white px-4 py-4'
+        : 'flex h-full w-full flex-col rounded-xl border border-indigo-300/40 bg-gradient-to-b from-indigo-950 to-slate-900 px-4 py-4 text-white'}
+      style={p3
+        ? { border: '1px solid rgba(147,190,222,0.45)', boxShadow: '0 16px 36px -14px rgba(38,96,140,0.35)' }
+        : { boxShadow: '0 10px 30px -12px rgba(49,46,129,0.6)' }}
     >
       <div className="flex items-baseline justify-between gap-2">
-        <span className="truncate text-lg font-black">{c.name}</span>
-        <span className="shrink-0 text-[10px] font-bold text-indigo-300">
+        <span className={`truncate text-lg font-black ${p3 ? '' : ''}`} style={p3 ? { color: P3R.ink } : undefined}>{c.name}</span>
+        <span className="shrink-0 text-[10px] font-bold" style={p3 ? { color: P3R.blue } : { color: '#a5b4fc' }}>
           {card?.roman ?? ''} {c.orientation === 'reversed' ? '逆位' : '正位'}
         </span>
       </div>
-      <div className="mt-0.5 text-xs font-semibold text-indigo-200/80">{card?.name ?? c.arcanaId}</div>
+      <div className="mt-0.5 text-xs font-semibold" style={p3 ? { color: P3R.inkSoft } : { color: 'rgba(199,210,254,0.8)' }}>{card?.name ?? c.arcanaId}</div>
 
       <div className="mt-3">
-        <div className="flex items-baseline justify-between text-[10px] font-bold text-indigo-200/70">
+        <div className="flex items-baseline justify-between text-[10px] font-bold" style={p3 ? { color: P3R.blue } : { color: 'rgba(199,210,254,0.7)' }}>
           <span>RANK {c.intimacy}</span>
           <span className="tabular-nums">{c.intimacyPoints}/{nextNeed}</span>
         </div>
-        <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-white/15">
+        <div className={`mt-1 h-1.5 overflow-hidden ${p3 ? '' : 'rounded-full bg-white/15'}`} style={p3 ? { background: '#e4eef5', clipPath: 'polygon(2px 0, 100% 0, calc(100% - 2px) 100%, 0 100%)' } : undefined}>
           <div
-            className="h-full rounded-full bg-gradient-to-r from-indigo-400 to-fuchsia-400"
-            style={{ width: `${Math.min(100, (c.intimacyPoints / nextNeed) * 100)}%` }}
+            className={`h-full ${p3 ? '' : 'rounded-full bg-gradient-to-r from-indigo-400 to-fuchsia-400'}`}
+            style={{ width: `${Math.min(100, (c.intimacyPoints / nextNeed) * 100)}%`, ...(p3 ? { background: 'linear-gradient(90deg, #35d1e8, #7fd8ee)' } : {}) }}
           />
         </div>
       </div>
 
       {c.description && (
-        <p className="mt-3 line-clamp-3 text-[11px] leading-relaxed text-indigo-100/75">{c.description}</p>
+        <p className="mt-3 line-clamp-3 text-[11px] leading-relaxed" style={p3 ? { color: P3R.inkSoft } : { color: 'rgba(224,231,255,0.75)' }}>{c.description}</p>
       )}
       {c.aiAdvice && (
-        <p className="mt-2 line-clamp-2 text-[11px] leading-relaxed text-fuchsia-200/80">✦ {c.aiAdvice}</p>
+        <p className="mt-2 line-clamp-2 text-[11px] leading-relaxed" style={p3 ? { color: P3R.magenta } : { color: 'rgba(245,208,254,0.8)' }}>✦ {c.aiAdvice}</p>
       )}
 
       <button
@@ -83,7 +148,10 @@ const CardBackFace = ({ c, onOpenDetail }: { c: Confidant; onOpenDetail: () => v
           e.stopPropagation();
           onOpenDetail();
         }}
-        className="mt-auto w-full rounded-lg bg-white/12 py-2 text-xs font-bold text-white active:bg-white/20"
+        className={p3
+          ? 'mt-auto w-full py-2 text-xs font-black text-white active:brightness-95'
+          : 'mt-auto w-full rounded-lg bg-white/12 py-2 text-xs font-bold text-white active:bg-white/20'}
+        style={p3 ? { clipPath: slantClip(8), background: P3R.blue } : undefined}
       >
         查看档案 →
       </button>
@@ -91,13 +159,21 @@ const CardBackFace = ({ c, onOpenDetail }: { c: Confidant; onOpenDetail: () => v
   );
 };
 
-/** 空白牌（新增入口） */
-const BlankCard = () => (
-  <div className="flex h-full w-full flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-indigo-300/50 bg-indigo-500/5 text-indigo-400">
-    <span className="text-5xl font-thin leading-none">+</span>
-    <span className="text-xs font-bold tracking-wide">缔结新的羁绊</span>
-  </div>
-);
+/** 空白牌（新增入口；p3=浅青虚线白牌） */
+const BlankCard = () => {
+  const p3 = useUiChannel() === 'p3';
+  return (
+    <div
+      className={p3
+        ? 'flex h-full w-full flex-col items-center justify-center gap-3 rounded-[14px]'
+        : 'flex h-full w-full flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-indigo-300/50 bg-indigo-500/5 text-indigo-400'}
+      style={p3 ? { border: '2px dashed rgba(53,209,232,0.6)', background: 'rgba(226,243,250,0.6)', color: P3R.blue } : undefined}
+    >
+      <span className="text-5xl font-thin leading-none">+</span>
+      <span className="text-xs font-bold tracking-wide">缔结新的羁绊</span>
+    </div>
+  );
+};
 
 const idOf = (item: Confidant | 'add') => (item === 'add' ? '__add__' : item.id);
 
@@ -175,6 +251,7 @@ const WallScrubber = ({
 
 export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCreate }: ConfidantAlbumWallProps) => {
   const bold = useBoldness();
+  const p3 = useUiChannel() === 'p3';
   // 中央卡用【id 锚定】而非数字下标：详情互动/排序变化导致 confidants 重排时，
   // 中央卡跟着原卡平滑走位，而不是「index 指到了别人」（实测踩坑：查看详情
   // 会更新排序权重，关闭弹窗后数字锚让中央卡换人）。
@@ -347,7 +424,11 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
             </button>
           ) : (
             <button key={item.id} type="button" onClick={() => onOpenDetail(item.id)} className="shrink-0" style={{ scrollSnapAlign: 'center' }}>
-              <TarotCardSVG card={TAROT_BY_ID[item.arcanaId]} orientation={item.orientation} width={CARD_W * 0.8} staticCard showOrientationTag={false} />
+              {p3 ? (
+                <div style={{ width: CARD_W * 0.8, height: CARD_H * 0.8 }}><P3FrontFace c={item} /></div>
+              ) : (
+                <TarotCardSVG card={TAROT_BY_ID[item.arcanaId]} orientation={item.orientation} width={CARD_W * 0.8} staticCard showOrientationTag={false} />
+              )}
               <div className="mt-1 truncate text-center text-xs font-bold text-gray-700 dark:text-gray-200">{item.name}</div>
             </button>
           ),
@@ -409,11 +490,13 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
               <div className="absolute inset-0" style={{ backfaceVisibility: 'hidden' }}>
                 {item === 'add' ? (
                   <BlankCard />
+                ) : p3 ? (
+                  <P3FrontFace c={item} />
                 ) : (
                   <TarotCardSVG card={TAROT_BY_ID[item.arcanaId]} orientation={item.orientation} width={CARD_W} staticCard showOrientationTag={false} />
                 )}
-                {/* 两侧渐暗罩（transform-only 之外唯一的视觉层，纯透明度） */}
-                {!isCenter && <div aria-hidden className="absolute inset-0 rounded-xl bg-black" style={{ opacity: 0.18 + Math.abs(offset) * 0.16 }} />}
+                {/* 两侧渐暗罩（transform-only 之外唯一的视觉层，纯透明度；p3 用蓝灰调防白卡发脏） */}
+                {!isCenter && <div aria-hidden className={`absolute inset-0 ${p3 ? 'rounded-[14px]' : 'rounded-xl'}`} style={{ background: p3 ? '#4a7a9c' : '#000', opacity: 0.18 + Math.abs(offset) * 0.16 }} />}
               </div>
               {/* 背面（仅真实卡） */}
               {item !== 'add' && (
@@ -451,14 +534,14 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
         })()}
       </div>
 
-      {/* 档案铭牌 + scrubber */}
+      {/* 档案铭牌 + scrubber（p3：信息已上卡，铭牌只留空白牌文案 + scrubber + 蓝提示行） */}
       <div className="mx-auto mt-2 max-w-sm px-3">
         {current === 'add' || !current ? (
           <div className="text-center">
-            <div className="text-2xl font-black text-gray-800 dark:text-gray-100">缔结新的羁绊</div>
-            <div className="mt-0.5 text-xs font-semibold text-gray-400 dark:text-gray-500">点一下这张空白牌开始</div>
+            <div className={`text-2xl font-black ${p3 ? '' : 'text-gray-800 dark:text-gray-100'}`} style={p3 ? { color: P3R.ink } : undefined}>缔结新的羁绊</div>
+            <div className={`mt-0.5 text-xs font-semibold ${p3 ? '' : 'text-gray-400 dark:text-gray-500'}`} style={p3 ? { color: P3R.grey } : undefined}>点一下这张空白牌开始</div>
           </div>
-        ) : (
+        ) : p3 ? null : (
           <div className="text-center">
             {/* eyebrow：牌名 · 罗马数 · 正逆位 */}
             <div className="text-[11px] font-bold tracking-[0.14em] text-indigo-400 dark:text-indigo-300">
@@ -491,9 +574,19 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
             <WallScrubber items={items} index={index} onJump={go} />
           </div>
         )}
-        <div className="mt-0.5 text-center text-[10px] text-gray-300 dark:text-gray-600">
-          左右切换 · 单击翻面 · 下滑看档案
-        </div>
+        {p3 ? (
+          <div className="mt-1.5 flex items-center justify-center gap-2 text-[11px] font-bold" style={{ color: P3R.blue }}>
+            <span aria-hidden className="flex items-center gap-[3px]">
+              <span className="h-0 w-0 border-y-[4px] border-y-transparent border-r-[6px]" style={{ borderRightColor: P3R.cyan }} />
+              <span className="h-0 w-0 border-y-[4px] border-y-transparent border-l-[6px]" style={{ borderLeftColor: P3R.cyan }} />
+            </span>
+            左右切换 · 单击翻面 · 下滑看档案
+          </div>
+        ) : (
+          <div className="mt-0.5 text-center text-[10px] text-gray-300 dark:text-gray-600">
+            左右切换 · 单击翻面 · 下滑看档案
+          </div>
+        )}
       </div>
     </div>
   );

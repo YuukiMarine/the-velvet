@@ -16,8 +16,8 @@ interface TarotCardSVGProps {
   className?: string;
 }
 
-/** 为每张大阿卡纳挑选最贴合的 unicode / emoji 作为中心意象 */
-const MAJOR_SYMBOLS: Record<string, string> = {
+/** 为每张大阿卡纳挑选最贴合的 unicode / emoji 作为中心意象（P3R 羁绊卡面复用，故导出） */
+export const MAJOR_SYMBOLS: Record<string, string> = {
   fool:               '🃏',
   magician:           '✦',
   high_priestess:     '🌙',

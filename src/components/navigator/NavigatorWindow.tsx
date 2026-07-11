@@ -19,7 +19,7 @@ import { useModalA11y } from '@/utils/useModalA11y';
 import { useBackHandler } from '@/utils/useBackHandler';
 import { useBoldness } from '@/utils/boldness';
 import { terminalChannel } from '@/utils/terminalSkin';
-import { P3, P3_WATER_WIDE, P3DotGrid, P3GhostWord } from '@/components/terminal/p3Kit';
+import { P3, P3_WATER_WIDE } from '@/components/terminal/p3Kit';
 import { NavigatorActionForm } from './NavigatorActionForm';
 import { PresetAvatar } from './PresetAvatar';
 import { NavigatorNotebook } from './NavigatorNotebook';
@@ -38,35 +38,36 @@ const CatFace = ({ className }: { className?: string }) => {
 
 // 人格名随 activePreset 动态取（Batch3）；'黑猫' 仅作窗口未初始化时的兜底
 
-// ── 皮肤 token（bright = P3 站内信 / 暗 = 中性兜底） ──
+// ── 皮肤 token（bright = P3R 白日水面（p3-navigator-reference-v2）/ 暗 = 中性兜底） ──
 const skinOf = (bright: boolean) => bright
   ? {
     root: undefined as string | undefined,
-    rootStyle: { background: `linear-gradient(180deg, ${P3.hi} 0%, ${P3.mid} 55%, ${P3.pale} 100%)` },
-    headerSlab: 'bg-[#f7fbff] shadow-[0_10px_26px_rgba(7,40,120,.25)]',
-    headerStyle: { clipPath: 'polygon(0 8%, 100% 0, 99.2% 100%, 0 96%)', transform: 'rotate(-2deg)' } as React.CSSProperties,
-    headerText: { color: P3.ink },
-    catBubble: 'bg-[#f7fbff] shadow-[0_8px_22px_rgba(7,40,120,.18)]',
-    catBubbleStyle: { clipPath: 'polygon(0 7%, 100% 0, 99% 100%, 0.8% 100%)', color: P3.ink } as React.CSSProperties,
-    userBubble: 'text-white shadow-[0_8px_22px_rgba(6,28,80,.3)]',
-    userBubbleStyle: { background: P3.deep, clipPath: 'polygon(1% 0, 100% 7%, 99.2% 100%, 0 100%)' } as React.CSSProperties,
-    avatar: 'text-white',
-    avatarStyle: { background: P3.deep } as React.CSSProperties,
-    chip: 'border-2 border-[#bcd9f8] bg-[#f7fbff] text-[13px] font-black',
-    chipStyle: { color: P3.ink } as React.CSSProperties,
+    rootStyle: { background: 'linear-gradient(168deg, #f2f9fd 0%, #e6f3fa 52%, #cfeaf6 100%)' },
+    headerSlab: 'bg-white shadow-[0_10px_26px_rgba(38,96,140,.14)]',
+    headerStyle: { clipPath: 'polygon(12px 0, 100% 0, calc(100% - 12px) 100%, 0 100%)' } as React.CSSProperties,
+    headerText: { color: '#0a1230' },
+    catBubble: 'shadow-[0_8px_22px_rgba(38,96,140,.12)]',
+    // 右下角青三角：渐变在右下 14px 处硬切一刀（clip 斜切后正好是设计稿的小角）
+    catBubbleStyle: { clipPath: 'polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%)', background: 'linear-gradient(315deg, #35d1e8 13px, #c9e9f6 13px)', color: '#0a1230' } as React.CSSProperties,
+    userBubble: 'text-white shadow-[0_8px_22px_rgba(27,87,255,.25)]',
+    userBubbleStyle: { background: '#1b57ff', clipPath: 'polygon(0 0, calc(100% - 14px) 0, 100% 100%, 14px 100%)' } as React.CSSProperties,
+    avatar: 'text-[#1b57ff]',
+    avatarStyle: { background: '#cfeaf6' } as React.CSSProperties,
+    chip: 'bg-white text-[13px] font-black shadow-[0_6px_14px_rgba(38,96,140,.08)]',
+    chipStyle: { color: '#0a1230', clipPath: 'polygon(9px 0, 100% 0, calc(100% - 9px) 100%, 0 100%)' } as React.CSSProperties,
     inputBar: undefined as string | undefined,
-    inputBarStyle: { background: P3.deep } as React.CSSProperties,
-    input: 'flex-1 bg-white px-3 py-2.5 text-[16px] font-bold outline-none placeholder:text-[#8fb1dc]',
-    inputStyle: { color: P3.ink } as React.CSSProperties,
-    send: 'flex h-11 w-12 shrink-0 items-center justify-center text-lg font-black text-white disabled:opacity-40',
-    sendStyle: { background: P3.deepSoft } as React.CSSProperties,
-    card: 'bg-[#f7fbff] shadow-[0_10px_28px_rgba(7,40,120,.22)]',
-    cardStyle: { clipPath: 'polygon(0 4%, 100% 0, 99.2% 100%, 0 98%)', color: P3.ink } as React.CSSProperties,
-    cardBtn: 'min-h-10 bg-[color-mix(in_srgb,var(--color-primary)_30%,#061c50)] px-4 text-[13px] font-black text-white disabled:opacity-40',
-    cardBtnGhost: 'min-h-10 border-2 border-[#bcd9f8] bg-white px-3.5 text-[13px] font-black text-[color-mix(in_srgb,var(--color-primary)_50%,#1d4ab0)]',
+    inputBarStyle: undefined as React.CSSProperties | undefined,
+    input: 'flex-1 bg-white px-4 py-3 text-[15px] font-bold outline-none placeholder:text-[#9ab4c9] shadow-[0_8px_18px_rgba(38,96,140,.08)]',
+    inputStyle: { color: '#0a1230', clipPath: 'polygon(12px 0, 100% 0, calc(100% - 12px) 100%, 0 100%)' } as React.CSSProperties,
+    send: 'flex h-12 w-16 shrink-0 items-center justify-center text-lg font-black text-white disabled:opacity-40',
+    sendStyle: { background: '#1b57ff', clipPath: 'polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%)' } as React.CSSProperties,
+    card: 'bg-white shadow-[0_14px_32px_rgba(38,96,140,.16)]',
+    cardStyle: { clipPath: 'polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%)', color: '#0a1230' } as React.CSSProperties,
+    cardBtn: 'min-h-10 px-4 text-[13px] font-black text-white disabled:opacity-40 [clip-path:polygon(8px_0,100%_0,calc(100%-8px)_100%,0_100%)] bg-[#1b57ff]',
+    cardBtnGhost: 'min-h-10 px-3.5 text-[13px] font-black text-[#0a3bd6] [clip-path:polygon(8px_0,100%_0,calc(100%-8px)_100%,0_100%)] bg-[#cfeaf6]',
     cardBtnText: 'min-h-10 px-2 text-[13px] font-bold opacity-60',
-    stamp: 'px-2 py-0.5 text-[10px] font-black tracking-[0.12em]',
-    stampStyle: { background: P3.accent, color: P3.deep, transform: 'rotate(-2deg)' } as React.CSSProperties,
+    stamp: 'px-2 py-0.5 text-[11px] font-black tracking-[0.14em]',
+    stampStyle: { color: '#1b57ff' } as React.CSSProperties,
   }
   : {
     root: 'bg-[#0d1017]',
@@ -221,12 +222,19 @@ export const NavigatorWindow = () => {
             className={`fixed inset-0 ${zClass.modal} flex flex-col overflow-hidden ${sk.root ?? ''}`}
             style={sk.rootStyle}
           >
-            {/* P3 房景装饰 */}
+            {/* P3R 房景装饰（p3-navigator 设计稿：NAVIGATOR 竖排巨幽灵字 + 右侧青斜带 + 淡水面） */}
             {bright && (
               <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
-                <P3GhostWord word="INBOX" className="-left-[2%] top-[9%] text-[7rem]" style={{ opacity: 0.13, transform: 'rotate(-2deg)' }} />
-                <P3DotGrid className="right-[6%] top-[13%] h-20 w-24" opacity={0.5} />
-                <div className="absolute inset-x-0 bottom-0 h-[26%]">
+                <div
+                  className="absolute left-[-26px] top-[8%] select-none font-black italic leading-[0.84]"
+                  style={{ fontFamily: 'Impact, "Arial Black", sans-serif', fontSize: '6.4rem', color: 'rgba(147,190,222,0.28)' }}
+                >
+                  {'NAVIGATOR'.split('').map((ch, i) => (
+                    <div key={i}>{ch}</div>
+                  ))}
+                </div>
+                <div className="absolute right-[-18%] top-[-10%] h-[150%] w-[42%]" style={{ background: 'linear-gradient(180deg, rgba(53,209,232,0.28) 0%, rgba(127,216,238,0.5) 100%)', transform: 'skewX(-14deg)' }} />
+                <div className="absolute inset-x-0 bottom-0 h-[24%] opacity-60">
                   <img
                     src={P3_WATER_WIDE}
                     alt=""
@@ -248,20 +256,14 @@ export const NavigatorWindow = () => {
                     aria-expanded={personaMenuOpen}
                     onClick={() => setPersonaMenuOpen((v) => !v)}
                     className={`flex h-9 w-9 shrink-0 items-center justify-center transition hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-current ${sk.avatar}`}
-                    style={{ ...sk.avatarStyle, clipPath: bright ? 'polygon(0 8%, 100% 0, 96% 100%, 2% 96%)' : undefined, borderRadius: bright ? undefined : '0.75rem' }}
+                    style={{ ...sk.avatarStyle, clipPath: bright ? 'polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%)' : undefined, borderRadius: bright ? undefined : '0.75rem' }}
                   >
                     <CatFace className="h-5 w-5" />
                   </button>
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-base font-black" style={sk.headerText}>{bright ? `▶ 站内信 · ${preset.name}` : preset.name}</div>
-                    <div className="text-[11px] font-bold opacity-60" style={sk.headerText}>{bright ? '深夜在线 · 有事直说' : '万能记录 · 有事直说'}</div>
+                    <div className="truncate text-base font-black" style={sk.headerText}>{preset.name}</div>
+                    <div className={`text-[11px] font-bold ${bright ? '' : 'opacity-60'}`} style={bright ? { color: '#1b57ff' } : sk.headerText}>万能记录 · 有事直说</div>
                   </div>
-                  {bright && (
-                    <span className="flex shrink-0 items-center gap-1.5 text-[11px] font-black tracking-[0.2em]" style={{ color: P3.ink }}>
-                      <span className="inline-flex h-2 w-2 rounded-full" style={{ background: P3.accent }} aria-hidden />
-                      在线
-                    </span>
-                  )}
                   <button
                     type="button"
                     aria-label="关闭黑猫"
@@ -328,7 +330,8 @@ export const NavigatorWindow = () => {
               {/* 消息流（顶部上拉加载更早；隔 >5 分钟插居中时间戳） */}
               <div ref={listRef} onScroll={() => void onListScroll()} className="relative flex-1 space-y-3 overflow-y-auto px-4 pb-3 pt-4">
                 {nav.hasOlder && (
-                  <div className={`pb-1 text-center text-[10px] font-bold ${bright ? 'text-white/60' : 'text-gray-500'}`}>
+                  <div className={`pb-1 text-center text-[11px] font-bold ${bright ? 'text-[#3c69c9]' : 'text-gray-500'}`}>
+                    {bright && <span aria-hidden className="mb-0.5 block text-[13px] leading-none">⌃</span>}
                     上拉查看更早的对话
                   </div>
                 )}
@@ -338,7 +341,7 @@ export const NavigatorWindow = () => {
                   return (
                     <div key={m.id} className="space-y-3">
                       {showStamp && (
-                        <div className={`pt-1 text-center text-[10px] font-bold ${bright ? 'text-white/70' : 'text-gray-500'}`}>
+                        <div className={`pt-1 text-center text-[10px] font-bold ${bright ? 'text-[#3c69c9]' : 'text-gray-500'}`}>
                           {formatBubbleTime(m.createdAt)}
                         </div>
                       )}
@@ -353,20 +356,23 @@ export const NavigatorWindow = () => {
                 )}
               </div>
 
-              {/* chips：快捷动作 + 跳转 */}
+              {/* chips：快捷动作 + 跳转（bright：白斜块 + 左侧蓝/青竖斜片，p3-navigator 设计稿） */}
               <div className="flex gap-2 overflow-x-auto px-4 pb-2 pt-1">
-                {(['activity', 'todo', 'ledger', 'completeTodo'] as NavigatorActionKind[]).map((kind) => (
+                {(['activity', 'todo', 'ledger', 'completeTodo'] as NavigatorActionKind[]).map((kind, i) => (
                   <button key={kind} type="button" onClick={() => openForm(kind)}
-                    className={`shrink-0 px-3.5 py-2 ${sk.chip}`} style={sk.chipStyle}>
-                    {ACTION_META[kind].icon} {ACTION_META[kind].label}
+                    className={`shrink-0 ${bright ? 'flex items-center gap-2 py-2 pl-2.5 pr-3.5' : 'px-3.5 py-2'} ${sk.chip}`} style={sk.chipStyle}>
+                    {bright && <span aria-hidden className="h-[16px] w-[7px] shrink-0" style={{ background: i === 0 ? '#1b57ff' : i % 2 ? '#35d1e8' : '#7fd8ee', clipPath: 'polygon(38% 0, 100% 0, 62% 100%, 0 100%)' }} />}
+                    {bright ? ACTION_META[kind].label : <>{ACTION_META[kind].icon} {ACTION_META[kind].label}</>}
                   </button>
                 ))}
-                <button type="button" onClick={() => jump('astrology')} className={`shrink-0 px-3.5 py-2 ${sk.chip}`} style={sk.chipStyle}>
-                  🔮 去抽塔罗
+                <button type="button" onClick={() => jump('astrology')} className={`shrink-0 ${bright ? 'flex items-center gap-2 py-2 pl-2.5 pr-3.5' : 'px-3.5 py-2'} ${sk.chip}`} style={sk.chipStyle}>
+                  {bright && <span aria-hidden className="h-[16px] w-[7px] shrink-0" style={{ background: '#35d1e8', clipPath: 'polygon(38% 0, 100% 0, 62% 100%, 0 100%)' }} />}
+                  {bright ? '去抽塔罗' : '🔮 去抽塔罗'}
                 </button>
                 {settings.terminalEnabled && (
-                  <button type="button" onClick={() => jump('terminal')} className={`shrink-0 px-3.5 py-2 ${sk.chip}`} style={sk.chipStyle}>
-                    ✦ 打开终端
+                  <button type="button" onClick={() => jump('terminal')} className={`shrink-0 ${bright ? 'flex items-center gap-2 py-2 pl-2.5 pr-3.5' : 'px-3.5 py-2'} ${sk.chip}`} style={sk.chipStyle}>
+                    {bright && <span aria-hidden className="h-[16px] w-[7px] shrink-0" style={{ background: '#7fd8ee', clipPath: 'polygon(38% 0, 100% 0, 62% 100%, 0 100%)' }} />}
+                    {bright ? '打开终端' : '✦ 打开终端'}
                   </button>
                 )}
               </div>
