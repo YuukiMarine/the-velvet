@@ -12,8 +12,36 @@ import { ShadowCreateModal } from '@/components/battle/ShadowCreateModal';
 import { BattleModal } from '@/components/battle/BattleModal';
 import { VictoryModal } from '@/components/battle/VictoryModal';
 import { PersonaShuffleModal } from '@/components/battle/PersonaShuffleModal';
+import { useUiChannel } from '@/ui/useUiChannel';
+import { P3R, P3RPage, GhostWords, P3PageHeader, slantClip } from '@/components/p3r/kit';
 
 type TabKey = 'battle' | 'persona' | 'settings';
+
+/** P3R 碎裂星徽（p3-battle 设计稿中央演出物）：白描边青星 + 蓝青三角碎片 */
+const ShatteredStar = () => {
+  const cx = 110, cy = 120, R = 56, inner = R * 0.42;
+  let d = '';
+  for (let i = 0; i < 5; i++) {
+    const a1 = ((-90 + i * 72) * Math.PI) / 180;
+    const a2 = ((-90 + i * 72 + 36) * Math.PI) / 180;
+    d += `${i === 0 ? 'M' : 'L'}${(cx + R * Math.cos(a1)).toFixed(1)},${(cy + R * Math.sin(a1)).toFixed(1)} L${(cx + inner * Math.cos(a2)).toFixed(1)},${(cy + inner * Math.sin(a2)).toFixed(1)} `;
+  }
+  return (
+    <svg viewBox="0 0 220 230" className="mx-auto w-[190px]" aria-hidden>
+      {/* 碎片（蓝青拼贴，围星散射） */}
+      <polygon points="112,4 150,64 94,54" fill="#1b57ff" />
+      <polygon points="158,34 196,88 142,76" fill="#8fdcef" />
+      <polygon points="26,80 68,60 54,108" fill="#0a3bd6" />
+      <polygon points="182,124 216,152 172,168" fill="#2a63ff" />
+      <polygon points="58,172 96,204 44,202" fill="#35d1e8" />
+      <polygon points="150,180 180,214 130,206" fill="#0a3bd6" />
+      <polygon points="14,138 42,124 38,158" fill="#a8e4f2" />
+      <polygon points="196,60 212,92 184,84" fill="#1b57ff" opacity="0.75" />
+      {/* 中央星：白描边 + 青填充 */}
+      <path d={`${d}Z`} fill="#7fd8ee" stroke="#ffffff" strokeWidth="8" strokeLinejoin="miter" />
+    </svg>
+  );
+};
 
 const ATTR_IDS: AttributeId[] = ['knowledge', 'guts', 'dexterity', 'kindness', 'charm'];
 
@@ -51,6 +79,9 @@ export const BattleArena = () => {
   } = useAppStore();
 
   const [activeTab, setActiveTab] = useState<TabKey>('battle');
+  // P3R（蓝频道）：p3-battle-reference-v2 形态；battleCard = 全页 13 处卡壳的统一开关
+  const p3 = useUiChannel() === 'p3';
+  const battleCard = p3 ? 'p3r-card' : 'rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm';
   const [showPersonaCreate, setShowPersonaCreate] = useState(false);
   const [showShadowCreate, setShowShadowCreate] = useState(false);
   const [showBattle, setShowBattle] = useState(false);
@@ -113,54 +144,145 @@ export const BattleArena = () => {
   const currentAttrPersona = persona?.attributePersonas?.[currentAttr];
   const currentSkills = persona?.skills[currentAttr] ?? [];
 
+  // ── P3R 玩家卡（p3-battle 设计稿：PLAYER eyebrow + 名 + Lv + HP 青条 + SP 黄斜块段）──
+  // 未开战时 HP 取设置上限的满值、SP 取 0——这是玩家的真实静息状态，不是演出假数据
+  const p3Hp = battleState?.playerHp ?? (parseInt(playerMaxHp, 10) || 8);
+  const p3HpMax = battleState?.playerMaxHp ?? (parseInt(playerMaxHp, 10) || 8);
+  const p3Sp = battleState?.sp ?? 0;
+  const renderPlayerCardP3 = (extra?: React.ReactNode) => (
+    <div className="p3r-card px-5 py-3.5">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[11px] font-black tracking-[0.18em]" style={{ color: P3R.blue }}>PLAYER</p>
+          <p className="truncate text-[20px] font-black leading-tight" style={{ color: P3R.ink }}>{user?.name ?? '旅行者'}</p>
+          <p className="text-[13px] font-black" style={{ color: P3R.blue }}>Lv.{attributes.reduce((s, a) => s + a.level, 0)}</p>
+        </div>
+        {extra}
+      </div>
+      <div className="mt-2.5 flex items-center gap-4">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <span className="text-[11px] font-black" style={{ color: P3R.ink }}>HP</span>
+          <div className="h-[7px] min-w-0 flex-1 overflow-hidden" style={{ background: '#e4eef5', clipPath: 'polygon(3px 0, 100% 0, calc(100% - 3px) 100%, 0 100%)' }}>
+            <div className="h-full" style={{ width: `${Math.max(0, Math.min(100, (p3Hp / Math.max(1, p3HpMax)) * 100))}%`, background: 'linear-gradient(90deg, #35d1e8, #7fd8ee)' }} />
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <span className="text-[11px] font-black" style={{ color: P3R.ink }}>SP</span>
+          <span className="flex gap-[3px]" aria-hidden>
+            {[0, 1, 2].map(k => (
+              <span key={k} className="h-[10px] w-[13px]" style={{ background: k < Math.min(3, p3Sp) ? '#ffd23e' : '#e4eef5', clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
+            ))}
+          </span>
+          <span className="text-[11px] font-black tabular-nums" style={{ color: p3Sp > 0 ? '#c79a00' : P3R.grey }}>{p3Sp}</span>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <>
+    <P3RPage active={p3}>
     <motion.div
       key="battle-page"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="space-y-5 pb-8"
+      className={`relative space-y-5 ${p3 ? 'pb-10' : 'pb-8'}`}
     >
-      {/* Header — 宫格子页页头归一 PageTitle 制式（审计 S6），返回归一 → 菜单 */}
-      <div className="flex items-start gap-3">
-        <BackButton onClick={() => setCurrentPage('menu')} className="mt-1 -ml-1" />
-        <div className="flex-1 min-w-0">
-          <PageTitle title="逆影战场" en="Battle" />
-        </div>
-        {inShadowTime && (
-          <motion.span
-            animate={{ opacity: [1, 0.5, 1] }}
-            transition={{ repeat: Infinity, duration: 1.5 }}
-            className="flex-shrink-0 mt-1 text-xs font-black px-2.5 py-1 rounded-lg"
-            style={{ background: 'rgb(var(--color-battle-bright-rgb) / 0.15)', color: 'rgb(var(--color-battle-rgb))', border: '1px solid rgb(var(--color-battle-bright-rgb) / 0.3)' }}
-          >
-            ✦ 影时间
-          </motion.span>
-        )}
-      </div>
+      {p3 && <GhostWords words={['BATTLE']} className="right-[-26px] top-[-14px] text-right text-[72px]" />}
 
-      {/* Tabs */}
-      <div className="flex gap-1 p-1 rounded-2xl" style={{ background: 'rgb(var(--color-battle-bright-rgb) / 0.08)', border: '1px solid rgb(var(--color-battle-bright-rgb) / 0.15)' }}>
-        {([
-          { key: 'battle', label: '进入战场' },
-          { key: 'persona', label: 'Persona' },
-          { key: 'settings', label: '设置' },
-        ] as const).map(tab => (
-          <button
-            key={tab.key}
-            onClick={() => setActiveTab(tab.key)}
-            className={`flex-1 py-2 text-sm font-semibold rounded-xl transition-all ${activeTab !== tab.key ? 'text-gray-500 dark:text-gray-400' : ''}`}
-            style={{
-              background: activeTab === tab.key ? 'linear-gradient(135deg, rgb(var(--color-battle-rgb)), rgb(var(--color-battle-indigo-rgb)))' : 'transparent',
-              color: activeTab === tab.key ? 'white' : undefined,
-              boxShadow: activeTab === tab.key ? '0 2px 8px rgb(var(--color-battle-rgb) / 0.3)' : 'none',
-            }}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
+      {/* Header — 宫格子页页头归一 PageTitle 制式（审计 S6），返回归一 → 菜单 */}
+      {p3 ? (
+        <div className="relative">
+          {/* 标题左上小蓝斜片（设计稿装饰） */}
+          <span aria-hidden className="absolute left-[2px] top-[30px] h-[12px] w-[22px]" style={{ background: P3R.blue, clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
+          <div className="flex items-end justify-between gap-3">
+            <P3PageHeader title="逆影战场" onBack={() => setCurrentPage('menu')} className="pt-2" />
+            {inShadowTime && (
+              <motion.span
+                animate={{ opacity: [1, 0.55, 1] }}
+                transition={{ repeat: Infinity, duration: 1.5 }}
+                className="mb-2 flex shrink-0 items-center gap-1.5 px-3 py-1.5 text-[12px] font-black text-white"
+                style={{ clipPath: slantClip(8), background: P3R.blue }}
+              >
+                <span aria-hidden className="inline-block h-0 w-0 border-x-[5px] border-t-[7px] border-x-transparent" style={{ borderTopColor: '#fff' }} />
+                影时间
+              </motion.span>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="flex items-start gap-3">
+          <BackButton onClick={() => setCurrentPage('menu')} className="mt-1 -ml-1" />
+          <div className="flex-1 min-w-0">
+            <PageTitle title="逆影战场" en="Battle" />
+          </div>
+          {inShadowTime && (
+            <motion.span
+              animate={{ opacity: [1, 0.5, 1] }}
+              transition={{ repeat: Infinity, duration: 1.5 }}
+              className="flex-shrink-0 mt-1 text-xs font-black px-2.5 py-1 rounded-lg"
+              style={{ background: 'rgb(var(--color-battle-bright-rgb) / 0.15)', color: 'rgb(var(--color-battle-rgb))', border: '1px solid rgb(var(--color-battle-bright-rgb) / 0.3)' }}
+            >
+              ✦ 影时间
+            </motion.span>
+          )}
+        </div>
+      )}
+
+      {/* Tabs（p3：斜块三格——选中蓝斜块白字+洋红角 / 未选白斜块黑字） */}
+      {p3 ? (
+        <div className="relative flex items-stretch">
+          {([
+            { key: 'battle', label: '进入战场' },
+            { key: 'persona', label: 'Persona' },
+            { key: 'settings', label: '设置' },
+          ] as const).map((tab, i) => {
+            const active = activeTab === tab.key;
+            return (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setActiveTab(tab.key)}
+                className="relative flex-1 py-3 text-center text-[16px] font-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1b57ff]"
+                style={{
+                  clipPath: slantClip(12),
+                  background: active ? P3R.blue : P3R.panel,
+                  color: active ? '#fff' : P3R.ink,
+                  marginLeft: i > 0 ? -7 : 0,
+                  zIndex: active ? 2 : 1,
+                }}
+              >
+                {tab.label}
+                {active && (
+                  <span aria-hidden className="absolute bottom-0 right-3 h-[8px] w-[20px]" style={{ background: P3R.magenta, clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
+                )}
+              </button>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="flex gap-1 p-1 rounded-2xl" style={{ background: 'rgb(var(--color-battle-bright-rgb) / 0.08)', border: '1px solid rgb(var(--color-battle-bright-rgb) / 0.15)' }}>
+          {([
+            { key: 'battle', label: '进入战场' },
+            { key: 'persona', label: 'Persona' },
+            { key: 'settings', label: '设置' },
+          ] as const).map(tab => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={`flex-1 py-2 text-sm font-semibold rounded-xl transition-all ${activeTab !== tab.key ? 'text-gray-500 dark:text-gray-400' : ''}`}
+              style={{
+                background: activeTab === tab.key ? 'linear-gradient(135deg, rgb(var(--color-battle-rgb)), rgb(var(--color-battle-indigo-rgb)))' : 'transparent',
+                color: activeTab === tab.key ? 'white' : undefined,
+                boxShadow: activeTab === tab.key ? '0 2px 8px rgb(var(--color-battle-rgb) / 0.3)' : 'none',
+              }}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Tab content */}
       <div>
@@ -177,13 +299,31 @@ export const BattleArena = () => {
                     className="space-y-4"
                   >
                     {!persona && (
+                      p3 ? (
+                        <div className="space-y-3">
+                          {renderPlayerCardP3()}
+                          {/* 设计稿：碎裂星徽直接坐在水面上（无卡壳）+ 蓝青渐变大梯形召唤钮 */}
+                          <div className="space-y-6 pt-8 pb-4 text-center">
+                            <ShatteredStar />
+                            <p className="text-[16px] font-black" style={{ color: P3R.ink }}>你尚未召唤 Persona</p>
+                            <button
+                              type="button"
+                              onClick={() => setShowPersonaCreate(true)}
+                              className="mx-auto block w-[82%] py-4 text-[24px] font-black tracking-wider text-white active:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1b57ff] focus-visible:ring-offset-2"
+                              style={{ clipPath: 'polygon(9% 0, 100% 0, 91% 100%, 0 100%)', background: 'linear-gradient(135deg, #1b57ff 30%, #35d1e8)' }}
+                            >
+                              召唤 Persona
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
                       <div className="space-y-3">
-                        <div className="rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm px-4 py-3">
+                        <div className={`${battleCard} px-4 py-3`}>
                           <p className="text-[10px] font-semibold tracking-widest uppercase text-gray-400 dark:text-gray-500">Player</p>
                           <p className="font-black text-gray-900 dark:text-white">{user?.name ?? '旅行者'}</p>
                           <p className="text-gray-400 dark:text-gray-500 text-xs">Lv.{attributes.reduce((s, a) => s + a.level, 0)}</p>
                         </div>
-                        <div className="rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm p-8 text-center space-y-4">
+                        <div className={`${battleCard} p-8 text-center space-y-4`}>
                           <p className="text-4xl">⚔️</p>
                           <p className="text-gray-500 dark:text-gray-400 text-sm">你尚未召唤 Persona</p>
                           <button
@@ -195,11 +335,13 @@ export const BattleArena = () => {
                           </button>
                         </div>
                       </div>
+                      )
                     )}
 
                     {persona && !shadow && (
                       <div className="space-y-3">
-                        <div className="rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm px-4 py-3 flex items-center justify-between">
+                        {p3 ? renderPlayerCardP3() : (
+                        <div className={`${battleCard} px-4 py-3 flex items-center justify-between`}>
                           <div>
                             <p className="text-[10px] font-semibold tracking-widest uppercase text-gray-400 dark:text-gray-500">Player</p>
                             <p className="font-black text-gray-900 dark:text-white">{user?.name ?? '旅行者'}</p>
@@ -211,12 +353,13 @@ export const BattleArena = () => {
                             </span>
                           )}
                         </div>
-                        <div className="rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm p-6 text-center space-y-4">
-                          <p className="text-gray-500 dark:text-gray-400 text-sm">尚未识破暗影，无法进入战斗</p>
+                        )}
+                        <div className={`${battleCard} p-6 text-center space-y-4`}>
+                          <p className={p3 ? 'text-[15px] font-black' : 'text-gray-500 dark:text-gray-400 text-sm'} style={p3 ? { color: P3R.ink } : undefined}>尚未识破暗影，无法进入战斗</p>
                           <button
                             onClick={() => setShowShadowCreate(true)}
-                            className="px-6 py-3 rounded-xl font-bold text-white transition-colors"
-                            style={{ background: 'linear-gradient(135deg, #dc2626, rgb(var(--color-battle-rgb)))' }}
+                            className={p3 ? 'px-8 py-3 text-[17px] font-black text-white active:brightness-95' : 'px-6 py-3 rounded-xl font-bold text-white transition-colors'}
+                            style={p3 ? { clipPath: slantClip(10), background: P3R.magenta } : { background: 'linear-gradient(135deg, #dc2626, rgb(var(--color-battle-rgb)))' }}
                           >
                             识破暗影
                           </button>
@@ -227,7 +370,14 @@ export const BattleArena = () => {
                     {persona && shadow && battleState && (
                       <div className="space-y-3">
                         {/* Player info card */}
-                        <div className="rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm px-4 py-3 flex items-center justify-between">
+                        {p3 ? renderPlayerCardP3(
+                          persona.equippedMaskAttribute ? (
+                            <span className="shrink-0 px-2.5 py-1 text-[12px] font-black" style={{ clipPath: slantClip(6), background: P3R.cyanPale, color: P3R.blueDeep }}>
+                              🎭 {settings.attributeNames[persona.equippedMaskAttribute]}
+                            </span>
+                          ) : undefined,
+                        ) : (
+                        <div className={`${battleCard} px-4 py-3 flex items-center justify-between`}>
                           <div>
                             <p className="text-[10px] font-semibold tracking-widest uppercase text-gray-400 dark:text-gray-500">Player</p>
                             <p className="font-black text-gray-900 dark:text-white">{user?.name ?? '旅行者'}</p>
@@ -242,9 +392,10 @@ export const BattleArena = () => {
                             </span>
                           </div>
                         </div>
+                        )}
 
                         {/* Shadow info card */}
-                        <div className="rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm px-4 py-3 space-y-2">
+                        <div className={`${battleCard} px-4 py-3 space-y-2`}>
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2">
                               <span className="font-black text-gray-900 dark:text-white">👁 {shadow.name}</span>
@@ -280,8 +431,11 @@ export const BattleArena = () => {
                           whileTap={canBattle ? { scale: 0.96 } : undefined}
                           onClick={() => canBattle && setShowBattle(true)}
                           disabled={!canBattle}
-                          className="w-full py-3.5 rounded-2xl font-black text-white tracking-wide transition-all shadow-sm"
-                          style={{
+                          className={p3 ? 'w-full py-4 text-[19px] font-black text-white tracking-wide transition-all' : 'w-full py-3.5 rounded-2xl font-black text-white tracking-wide transition-all shadow-sm'}
+                          style={p3 ? {
+                            clipPath: 'polygon(7% 0, 100% 0, 93% 100%, 0 100%)',
+                            background: canBattle ? 'linear-gradient(135deg, #1b57ff 30%, #35d1e8)' : '#dfe9f1',
+                          } : {
                             background: canBattle ? 'linear-gradient(135deg, rgb(var(--color-battle-rgb)), #dc2626)' : undefined,
                           }}
                         >
@@ -294,7 +448,7 @@ export const BattleArena = () => {
 
                         {/* 已击败阴影 */}
                         {(battleState?.defeatedShadowLog?.length ?? 0) > 0 && (
-                          <div className="rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden">
+                          <div className={`${battleCard} overflow-hidden`}>
                             <button
                               onClick={() => setShowDefeatedLog(v => !v)}
                               className="w-full flex items-center justify-between px-4 py-3 text-left"
@@ -361,7 +515,7 @@ export const BattleArena = () => {
                     transition={{ duration: 0.15 }}
                   >
                     {!persona ? (
-                      <div className="rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm p-8 text-center text-gray-400 dark:text-gray-500 text-sm">
+                      <div className={`${battleCard} p-8 text-center text-gray-400 dark:text-gray-500 text-sm`}>
                         还没有 Persona，先在「进入战场」页创建
                       </div>
                     ) : (
@@ -604,7 +758,7 @@ export const BattleArena = () => {
                     className="space-y-5"
                   >
                     {/* ── 战场开关 ── */}
-                    <div className="rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden">
+                    <div className={`${battleCard} overflow-hidden`}>
                       <div className="flex items-center gap-3 px-4 py-3.5">
                         <div className="flex-1">
                           <p className="text-sm font-semibold text-gray-800 dark:text-gray-100">启用逆影战场</p>
@@ -629,7 +783,7 @@ export const BattleArena = () => {
 
                     {/* ── Persona 洗牌 ── */}
                     {persona && (
-                      <div className="rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden">
+                      <div className={`${battleCard} overflow-hidden`}>
                         <div className="flex items-center gap-3 px-4 py-3.5">
                           <div className="flex-1">
                             <p className="text-sm font-semibold text-gray-800 dark:text-gray-100">Persona 洗牌</p>
@@ -650,7 +804,7 @@ export const BattleArena = () => {
                     {showBattleParams && (
                     <div className="space-y-1.5">
                       <p className="text-[11px] font-bold tracking-widest text-gray-400 dark:text-gray-500 uppercase px-1">战斗参数</p>
-                      <div className="rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden divide-y divide-gray-50 dark:divide-gray-800">
+                      <div className={`${battleCard} overflow-hidden divide-y divide-gray-50 dark:divide-gray-800`}>
                         {/* 玩家最大HP */}
                         <div className="flex items-center justify-between gap-3 px-4 py-3.5">
                           <div>
@@ -702,7 +856,7 @@ export const BattleArena = () => {
                     {/* ── 影时间 ── */}
                     <div className="space-y-1.5">
                       <p className="text-[11px] font-bold tracking-widest text-gray-400 dark:text-gray-500 uppercase px-1">影时间</p>
-                      <div className="rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm p-4 space-y-4">
+                      <div className={`${battleCard} p-4 space-y-4`}>
                         {/* 当前状态 */}
                         <div className="flex items-center gap-2">
                           <div
@@ -795,7 +949,7 @@ export const BattleArena = () => {
                       >
                         数据
                       </p>
-                      <div className="rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden">
+                      <div className={`${battleCard} overflow-hidden`}>
                         <div className="px-4 py-3.5">
                           <p className="text-sm font-semibold text-gray-800 dark:text-gray-100">重置战场数据</p>
                           <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5 leading-relaxed">
@@ -836,7 +990,15 @@ export const BattleArena = () => {
                 )}
               </AnimatePresence>
             </div>
+
+      {/* P3R 底部幽灵字 */}
+      {p3 && (
+        <div aria-hidden className="relative h-14">
+          <GhostWords words={['TACTICAL']} className="left-[-30px] top-[-4px] text-[62px]" style={{ color: 'rgba(53,209,232,0.28)' }} />
+        </div>
+      )}
     </motion.div>
+    </P3RPage>
 
     {/* Sub-modals */}
     <PersonaCreateModal isOpen={showPersonaCreate} onClose={() => setShowPersonaCreate(false)} />
