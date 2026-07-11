@@ -5,7 +5,7 @@
  * 三频道三形态：
  *   P5 = 标题贴在黑条切片上，红色斜片从底下探出；
  *   P4 = 黑色斜切题板 + 频道点 eyebrow；
- *   P3 = 青色窄斜体 eyebrow + 白色粗斜体标题 + 洋红刀口穿过；
+ *   P3 = 亮蓝功能标签 + 深蓝无衬线大标题 + 青/洋红扁平切片；
  *   neutral = 现 PageTitle 的克制风格（过渡期两者共存，逐页替换）。
  */
 import type { ReactNode } from 'react';
@@ -78,21 +78,34 @@ export const PersonaPageTitle = ({ channel, title, eyebrow, meta, className }: P
       <div className={`relative flex items-end justify-between gap-3 ${className ?? ''}`}>
         <div className="relative inline-block">
           {eyebrow && (
-            <div className="mb-0.5 text-[10px] font-bold italic tracking-[0.18em] text-[var(--ui-accent)]">
-              {eyebrow}
+            <div className="mb-1 flex items-center gap-2 text-[10px] font-bold tracking-[0.14em] text-[#0b5cff]">
+              <span
+                aria-hidden
+                className="h-4 w-2.5 bg-[#0b5cff]"
+                style={{ clipPath: 'polygon(35% 0, 100% 0, 65% 100%, 0 100%)' }}
+              />
+              <span>{eyebrow}</span>
             </div>
           )}
-          <h1 className="relative inline-block text-3xl font-black italic leading-none tracking-tight text-[var(--ui-ink)]">
+          <h1
+            className="relative inline-block text-3xl font-black leading-none tracking-[-0.045em] text-[#07143f]"
+            style={{ fontFamily: 'var(--ui-display-font, "Arial Narrow", sans-serif)' }}
+          >
             {title}
-            {/* 洋红刀口穿过标题尾部（装饰层） */}
+            {/* 青色切片与洋红小角构成 P3 标题句点。 */}
             <span
               aria-hidden
-              className="absolute -right-3 bottom-0.5 h-[3px] w-8"
-              style={{ background: 'var(--ui-danger)', transform: 'skewX(-30deg)' }}
+              className="absolute -right-11 bottom-0 h-4 w-8"
+              style={{ background: 'var(--p3-cyan, #20cfe8)', clipPath: 'polygon(26% 0, 100% 0, 74% 100%, 0 100%)' }}
+            />
+            <span
+              aria-hidden
+              className="absolute -right-14 bottom-0 h-2.5 w-2.5 bg-[var(--ui-danger)]"
+              style={{ clipPath: 'polygon(100% 0, 100% 100%, 0 100%)' }}
             />
           </h1>
         </div>
-        {meta && <div className="shrink-0 pb-1 text-xs font-semibold tracking-wide text-[var(--ui-muted)]">{meta}</div>}
+        {meta && <div className="shrink-0 pb-1 text-xs font-bold tracking-wide text-[#0b5cff]">{meta}</div>}
       </div>
     );
   }

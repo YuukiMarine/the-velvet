@@ -16,6 +16,9 @@ import { AchievementUnlockModal } from '@/components/AchievementUnlockModal';
 import { SkillUnlockModal } from '@/components/SkillUnlockModal';
 import { db } from '@/db';
 import { Dashboard } from '@/pages/Dashboard';
+// P3R（蓝主题）页面变体：p3-redraw 设计稿 1:1（channel==='p3' 时替换默认形态）
+import { DashboardP3 } from '@/pages/p3/DashboardP3';
+import { useUiChannel } from '@/ui/useUiChannel';
 import { Achievements } from '@/pages/Achievements';
 const Statistics = lazy(() => import('@/pages/Statistics').then(m => ({ default: m.Statistics })));
 import { Settings } from '@/pages/Settings';
@@ -55,6 +58,8 @@ const isStandalonePwa = () => (
 
 function App() {
   const { currentPage, initializeApp, user, levelUpNotification, setLevelUpNotification, achievementNotification, setAchievementNotification, skillNotification, setSkillNotification, settings, modalBlocker } = useAppStore();
+  // P3R 页面变体分流：蓝主题 → p3-redraw 设计稿形态
+  const uiChannel = useUiChannel();
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showSplash, setShowSplash] = useState(true);
@@ -377,7 +382,7 @@ function App() {
   const renderPage = () => {
     switch (currentPage) {
       case 'dashboard':
-        return <Dashboard />;
+        return uiChannel === 'p3' ? <DashboardP3 /> : <Dashboard />;
       // 'todos'/'activities' 是合并前的旧路由 id：散落的 setCurrentPage('todos') 调用点
       // （问候卡提示条等）继续可用，Actions 内部会按旧 id 落到对应子页并归一为 'actions'
       case 'actions':
