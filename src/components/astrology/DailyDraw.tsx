@@ -21,6 +21,16 @@ import { ShuffleAnim } from './ShuffleAnim';
 import { buildDailyRequest, callDailyAI, formatApiError } from '@/utils/tarotAI';
 import { buildOfflineDaily } from '@/utils/tarotOffline';
 import { renderMarkdown } from '@/utils/markdown';
+import { useUiChannel } from '@/ui/useUiChannel';
+import { P3R, slantClip } from '@/components/p3r/kit';
+
+/** P3R 标题两侧的青双斜杠装饰（p3-astrology 设计稿「// 正在洗牌… //」式） */
+const CyanSlashes = () => (
+  <span aria-hidden className="flex gap-1">
+    <span className="h-[13px] w-[11px]" style={{ background: 'rgba(53,209,232,0.75)', clipPath: 'polygon(38% 0, 100% 0, 62% 100%, 0 100%)' }} />
+    <span className="h-[13px] w-[11px]" style={{ background: 'rgba(53,209,232,0.4)', clipPath: 'polygon(38% 0, 100% 0, 62% 100%, 0 100%)' }} />
+  </span>
+);
 
 type Phase =
   | 'init'        // 计算初始态
@@ -44,6 +54,7 @@ export function DailyDraw() {
   const [pickedIndex, setPickedIndex] = useState<number | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const p3 = useUiChannel() === 'p3';
 
   const noApiKey = !settings.summaryApiKey;
 
@@ -173,24 +184,41 @@ export function DailyDraw() {
 
   return (
     <div className="space-y-5">
-      {/* AI 未配置提示 */}
+      {/* AI 未配置提示（p3：浅青斜条 + 左蓝斜片，p3-astrology 设计稿） */}
       {noApiKey && (phase === 'intro' || phase === 'pick') && (
-        <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/40 rounded-2xl p-4 text-xs text-amber-700 dark:text-amber-300 leading-relaxed">
-          尚未配置 AI API。可前往「设置 → AI 总结」配置后获得定制解读；
-          或以离线兜底文案完成今日抽卡——将使用牌意关键词生成通用解读。
-        </div>
+        p3 ? (
+          <div className="flex items-start gap-2.5 px-4 py-3" style={{ clipPath: slantClip(10), background: P3R.cyanPale }}>
+            <span aria-hidden className="mt-0.5 h-[14px] w-[10px] shrink-0" style={{ background: P3R.blue, clipPath: 'polygon(32% 0, 100% 0, 68% 100%, 0 100%)' }} />
+            <p className="text-[12px] font-semibold leading-relaxed" style={{ color: P3R.ink }}>
+              尚未配置 AI API。可前往「设置 → AI 总结」配置后获得定制解读；
+              或以离线兜底文案完成今日抽卡——将使用牌意关键词生成通用解读。
+            </p>
+          </div>
+        ) : (
+          <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/40 rounded-2xl p-4 text-xs text-amber-700 dark:text-amber-300 leading-relaxed">
+            尚未配置 AI API。可前往「设置 → AI 总结」配置后获得定制解读；
+            或以离线兜底文案完成今日抽卡——将使用牌意关键词生成通用解读。
+          </div>
+        )
       )}
 
-      {/* 动态说明 */}
+      {/* 动态说明（p3：蓝色大字 + 两侧青双斜杠） */}
       <div className="text-center px-4">
-        <h2 className="text-sm font-bold text-gray-800 dark:text-gray-100 tracking-[3px]">
-          {phase === 'intro'  && '正在洗牌…'}
-          {phase === 'pick'    && '从三张牌中选择一张'}
-          {phase === 'flipping' && '揭示命运…'}
-          {phase === 'calling'  && '正在解读星象…'}
-          {phase === 'error'    && '解读遇到了阻碍'}
+        <h2
+          className={p3 ? 'flex items-center justify-center gap-3 text-[19px] font-black tracking-[2px]' : 'text-sm font-bold text-gray-800 dark:text-gray-100 tracking-[3px]'}
+          style={p3 ? { color: P3R.blueDeep } : undefined}
+        >
+          {p3 && <CyanSlashes />}
+          <span>
+            {phase === 'intro'  && '正在洗牌…'}
+            {phase === 'pick'    && '从三张牌中选择一张'}
+            {phase === 'flipping' && '揭示命运…'}
+            {phase === 'calling'  && '正在解读星象…'}
+            {phase === 'error'    && '解读遇到了阻碍'}
+          </span>
+          {p3 && <CyanSlashes />}
         </h2>
-        <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-1">
+        <p className={p3 ? 'mt-1.5 text-[12px] font-semibold' : 'text-[11px] text-gray-400 dark:text-gray-500 mt-1'} style={p3 ? { color: P3R.grey } : undefined}>
           {phase === 'intro'   && '今日的星象正在汇聚'}
           {phase === 'pick'    && '每日仅一次，慎重选择'}
           {phase === 'flipping' && '正位 / 逆位皆有意义'}
@@ -202,11 +230,36 @@ export function DailyDraw() {
       {/* 主舞台 */}
       <div className="min-h-[280px] flex items-center justify-center">
         {phase === 'intro' && (
-          <ShuffleAnim
-            onComplete={() => setPhase('pick')}
-            cardWidth={92}
-            duration={1800}
-          />
+          p3 ? (
+            <div className="flex w-full flex-col items-center gap-9">
+              <ShuffleAnim
+                onComplete={() => setPhase('pick')}
+                cardWidth={92}
+                duration={1800}
+              />
+              {/* 接入命运：设计稿大梯形 CTA——点击即跳过洗牌直达选牌（流程不变，纯快进） */}
+              <button
+                type="button"
+                onClick={() => setPhase('pick')}
+                className="relative block w-[88%] py-4 text-[26px] font-black tracking-[0.18em] active:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1b57ff]"
+                style={{ clipPath: 'polygon(8% 0, 100% 0, 92% 100%, 0 100%)', background: '#a5e3f3', color: '#0b2a66' }}
+              >
+                <span
+                  aria-hidden
+                  className="absolute left-[9%] top-1/2 h-[22px] w-[24px] -translate-y-1/2"
+                  style={{ background: `repeating-linear-gradient(105deg, ${P3R.blue} 0 5px, transparent 5px 12px)` }}
+                />
+                接入命运
+                <span aria-hidden className="absolute bottom-0 right-[7%] h-[9px] w-[22px]" style={{ background: P3R.magenta, clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
+              </button>
+            </div>
+          ) : (
+            <ShuffleAnim
+              onComplete={() => setPhase('pick')}
+              cardWidth={92}
+              duration={1800}
+            />
+          )
         )}
 
         {phase === 'pick' && (
@@ -236,19 +289,24 @@ export function DailyDraw() {
       {/* 错误态：重试选项 */}
       {phase === 'error' && (
         <div className="space-y-3">
-          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700/40 rounded-2xl p-3 text-sm text-red-600 dark:text-red-400 whitespace-pre-wrap">
+          <div
+            className={p3 ? 'p-3.5 text-sm font-semibold whitespace-pre-wrap' : 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700/40 rounded-2xl p-3 text-sm text-red-600 dark:text-red-400 whitespace-pre-wrap'}
+            style={p3 ? { clipPath: slantClip(10), background: 'rgba(240,65,127,0.09)', color: P3R.magenta } : undefined}
+          >
             {errorMsg}
           </div>
           <div className="flex gap-2">
             <button
               onClick={handleRetryAI}
-              className="flex-1 py-3 rounded-2xl font-bold text-sm bg-primary text-white shadow-md"
+              className={p3 ? 'flex-1 py-3 font-black text-sm text-white' : 'flex-1 py-3 rounded-2xl font-bold text-sm bg-primary text-white shadow-md'}
+              style={p3 ? { clipPath: slantClip(10), background: P3R.blue } : undefined}
             >
               重试 AI 解读
             </button>
             <button
               onClick={handleTryOffline}
-              className="flex-1 py-3 rounded-2xl font-bold text-sm bg-black/5 dark:bg-white/10 text-gray-700 dark:text-gray-200"
+              className={p3 ? 'flex-1 py-3 font-black text-sm' : 'flex-1 py-3 rounded-2xl font-bold text-sm bg-black/5 dark:bg-white/10 text-gray-700 dark:text-gray-200'}
+              style={p3 ? { clipPath: slantClip(10), background: '#dcebf4', color: P3R.ink } : undefined}
             >
               使用离线兜底
             </button>

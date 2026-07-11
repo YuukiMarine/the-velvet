@@ -7,6 +7,7 @@ import { springSnappy } from '@/utils/motion';
 import { zClass } from '@/utils/zIndex';
 import { RadialQuickNav } from '@/components/RadialQuickNav';
 import { playHeavyTransition } from '@/ui/transitionDirector';
+import { useUiChannel } from '@/ui/useUiChannel';
 
 // ── SVG 图标组件（24px viewBox / stroke 1.8 / filled 双态制式）──────────────
 
@@ -177,32 +178,40 @@ export const Sidebar = () => {
   );
 };
 
-/** 常规 tab（移动端）：激活指示条 = 斜切平行四边形，layoutId 在四格之间滑动 */
-const NavTab = ({ item, active, onSelect }: { item: NavItem; active: boolean; onSelect: () => void }) => (
+/** 常规 tab（移动端）：激活指示 = 斜切平行四边形（p3 频道整格蓝斜块白字；其余频道顶部小条），layoutId 在四格之间滑动 */
+const NavTab = ({ item, active, onSelect, p3 = false }: { item: NavItem; active: boolean; onSelect: () => void; p3?: boolean }) => (
   <motion.button
     whileTap={{ scale: 0.88 }}
     onClick={onSelect}
     className={`relative flex flex-col items-center justify-center flex-1 h-full cursor-pointer transition-colors duration-150 ${
-      active ? 'text-primary' : 'text-gray-400 dark:text-gray-500'
+      active ? (p3 ? 'text-white' : 'text-primary') : 'text-gray-400 dark:text-gray-500'
     }`}
   >
     {active && (
       // 约束（同 SegmentTabs 已验证做法）：layout 动画期间 Framer 的 projection
       // 独占本元素 transform——静态 skew 直接写在 layoutId 元素上会被覆盖，
       // 必须放内层子 div；水平居中也因此只能用负 margin，不能用 -translate-x-1/2
-      <motion.div
-        layoutId="bottomnav-active"
-        transition={springSnappy}
-        aria-hidden="true"
-        className="absolute top-0 w-9 h-1.5"
-        style={{ left: '50%', marginLeft: '-18px' }}
-      >
-        <div className="absolute inset-0 bg-primary" style={{ transform: 'skewX(var(--ui-skew-ui))' }} />
-      </motion.div>
+      p3 ? (
+        // P3R（p3-dashboard 设计稿底导）：选中项 = 亮蓝实心斜块填满整格
+        <motion.div layoutId="bottomnav-active" transition={springSnappy} aria-hidden="true" className="absolute inset-x-0.5 top-1 bottom-1.5">
+          <div className="absolute inset-0" style={{ background: '#1b57ff', clipPath: 'polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%)' }} />
+        </motion.div>
+      ) : (
+        <motion.div
+          layoutId="bottomnav-active"
+          transition={springSnappy}
+          aria-hidden="true"
+          className="absolute top-0 w-9 h-1.5"
+          style={{ left: '50%', marginLeft: '-18px' }}
+        >
+          <div className="absolute inset-0 bg-primary" style={{ transform: 'skewX(var(--ui-skew-ui))' }} />
+        </motion.div>
+      )
     )}
-    {/* iOS standalone 下由 --bottom-nav-content-shift 微调内容基线（行高压缩为 48px 时回正视觉重心） */}
+    {/* iOS standalone 下由 --bottom-nav-content-shift 微调内容基线（行高压缩为 48px 时回正视觉重心）
+        relative：p3 的整格指示块是 positioned 元素，内容必须同为 positioned 才能压在其上 */}
     <div
-      className="flex flex-col items-center justify-center gap-1"
+      className="relative flex flex-col items-center justify-center gap-1"
       style={{ transform: 'translateY(var(--bottom-nav-content-shift, 0px))' }}
     >
       <item.Icon filled={active} />
@@ -217,6 +226,8 @@ export const BottomNav = () => {
   const { currentPage, setCurrentPage } = useAppStore();
   // F6：黑猫对话窗（NavigatorWindow 挂在 App 顶层，这里只负责打开）
   const openNavigator = useNavigatorStore((s) => s.open);
+  // P3R：蓝主题底导换形（选中整格蓝斜块 / 黑猫去菱形壳），红黄频道不受影响
+  const p3 = useUiChannel() === 'p3';
 
   // P8.3 长按轮盘：◈ 按住 500ms 绽放快捷跳转半环（guide §22.5 长按时长统一口径）；
   // 短按语义不变（开黑猫）。suppressClick 挡掉长按触发后随 pointerup 而来的那次 click。
@@ -258,6 +269,7 @@ export const BottomNav = () => {
     <NavTab
       key={item.id}
       item={item}
+      p3={p3}
       active={isNavActive(item.id, currentPage)}
       onSelect={() => {
         triggerNavFeedback();
@@ -313,14 +325,17 @@ export const BottomNav = () => {
             onContextMenu={(e) => e.preventDefault()}
             // rotate 走 motion style 而非 Tailwind rotate-45：whileTap 会接管 transform，
             // class 里的 rotate 在按压瞬间会被覆盖掉；motion 的 rotate / scale 独立合成。
-            // 水平居中用 -ml-7（w-14 的一半）同理——translate 类靠不住。
+            // 水平居中用 -ml-7（w-14 的一半）同理——translate 类靠不住；垂直居中同理走 my-auto。
             // touchAction none：长按-上滑手势期间禁掉浏览器滚动/长按系统行为。
-            style={{ rotate: 45, touchAction: 'none' }}
-            className="absolute left-1/2 -top-3 -ml-7 w-14 h-14 rounded-2xl bg-primary shadow-lg shadow-primary/30 flex items-center justify-center text-white cursor-pointer select-none"
+            // P3R（设计稿底导）：黑猫去菱形壳——深蓝墨猫头直接坐在栏上，与四格图标同水平。
+            style={{ rotate: p3 ? 0 : 45, touchAction: 'none' }}
+            className={`absolute left-1/2 -ml-7 w-14 h-14 flex items-center justify-center cursor-pointer select-none ${
+              p3 ? 'top-0 bottom-0 my-auto text-[#0a1230]' : '-top-3 rounded-2xl bg-primary shadow-lg shadow-primary/30 text-white'
+            }`}
           >
-            {/* 内层 -rotate-45 回正：菱形是壳，猫保持水平（字恒水平的图形版） */}
-            <span className="-rotate-45 flex items-center justify-center" aria-hidden="true">
-              <CatSilhouetteIcon className="w-7 h-7" />
+            {/* 内层回正：菱形是壳，猫保持水平（字恒水平的图形版）；p3 无壳无需回正 */}
+            <span className={`${p3 ? '' : '-rotate-45'} flex items-center justify-center`} aria-hidden="true">
+              <CatSilhouetteIcon className={p3 ? 'w-9 h-9' : 'w-7 h-7'} />
             </span>
           </motion.button>
         </div>
