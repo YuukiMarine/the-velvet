@@ -67,15 +67,70 @@ export const GhostWords = ({ words, className, style }: { words: string[]; class
   </div>
 );
 
-/** 节标记：蓝色小斜块 + 黑粗标题 + 右侧 meta 槽 */
-export const SectionMark = ({ title, meta, className }: { title: ReactNode; meta?: ReactNode; className?: string }) => (
+/** 节标记：蓝色小斜块 + 标题 + 右侧 meta 槽（variant='blue'：蓝色斜体，account 页「数据管理 · DATA」式） */
+export const SectionMark = ({ title, meta, variant = 'ink', className }: { title: ReactNode; meta?: ReactNode; variant?: 'ink' | 'blue'; className?: string }) => (
   <div className={`flex items-center justify-between gap-3 ${className ?? ''}`}>
     <div className="flex items-center gap-2">
       <span aria-hidden className="h-[18px] w-[13px]" style={{ background: P3R.blue, clipPath: 'polygon(32% 0, 100% 0, 68% 100%, 0 100%)' }} />
-      <h3 className="text-[19px] font-black leading-none" style={{ color: P3R.ink }}>{title}</h3>
+      <h3 className={`text-[19px] font-black leading-none ${variant === 'blue' ? 'italic tracking-wide' : ''}`} style={{ color: variant === 'blue' ? P3R.blue : P3R.ink }}>{title}</h3>
     </div>
     {meta}
   </div>
+);
+
+/** P3R 页头：可选返回三角 + 可选大蓝斜块前导 + 超大黑斜体标题 + 可选尾随青双片 */
+export const P3PageHeader = ({
+  title,
+  lead = false,
+  ticks = false,
+  onBack,
+  className,
+}: {
+  title: ReactNode;
+  /** 标题左侧的大蓝斜块（account 页式） */
+  lead?: boolean;
+  /** 标题右下的青双斜片（成就/星象页式） */
+  ticks?: boolean;
+  onBack?: () => void;
+  className?: string;
+}) => (
+  <div className={className}>
+    {onBack && (
+      <button
+        type="button"
+        onClick={onBack}
+        aria-label="返回"
+        className="mb-2 flex h-10 w-10 items-center justify-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1b57ff]"
+      >
+        <span aria-hidden className="block h-[15px] w-[13px]" style={{ background: P3R.ink, clipPath: 'polygon(100% 0, 100% 100%, 0 50%)' }} />
+      </button>
+    )}
+    <div className="flex items-end gap-2.5">
+      {lead && <span aria-hidden className="mb-1.5 h-[40px] w-[25px] shrink-0" style={{ background: P3R.blue, clipPath: 'polygon(36% 0, 100% 0, 64% 100%, 0 100%)' }} />}
+      <h1
+        className="text-[46px] font-black italic leading-[0.95] tracking-tight"
+        style={{ color: P3R.ink, fontFamily: '"Arial Black", "Noto Sans SC", sans-serif' }}
+      >
+        {title}
+      </h1>
+      {ticks && (
+        <span aria-hidden className="mb-2.5 flex shrink-0 items-start gap-1">
+          <span className="h-[13px] w-[17px]" style={{ background: P3R.cyan, clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
+          <span className="mt-[3px] h-[11px] w-[13px]" style={{ background: '#9adcee', clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
+        </span>
+      )}
+    </div>
+  </div>
+);
+
+/** 行内代码片（account 云同步说明的 .env.local / VITE_PB_URL 式） */
+export const CodeChip = ({ children, tone = 'grey' }: { children: ReactNode; tone?: 'grey' | 'cyan' }) => (
+  <code
+    className="px-1.5 py-0.5 font-mono text-[12px] font-bold"
+    style={tone === 'cyan' ? { background: P3R.cyanPale, color: P3R.blueDeep } : { background: '#e6edf3', color: P3R.ink }}
+  >
+    {children}
+  </code>
 );
 
 /** 超大黑斜体节题（今日任务 / 已归档 式），右侧计数槽 */
