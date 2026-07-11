@@ -56,7 +56,7 @@ export const PersonaProgress = ({
       : ch === 'p4'
         ? { cls: 'h-3.5 rounded-full border-2 border-black bg-[#111111]', style: { boxShadow: '0 2px 0 #000' } as React.CSSProperties }
         : ch === 'p3'
-          ? { cls: 'h-1.5 bg-white/15', style: {} as React.CSSProperties }
+          ? { cls: 'h-2 bg-[#d9eef7]', style: {} as React.CSSProperties }
           : { cls: 'h-2 rounded-full bg-gray-100 dark:bg-gray-800', style: {} as React.CSSProperties };
 
   return (

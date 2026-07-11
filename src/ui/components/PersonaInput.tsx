@@ -2,7 +2,7 @@
  * PersonaInput —— 输入框原语（PERSONA_UI_REWRITE_GUIDE §8.7 / §17.5）。
  *
  * 结构统一：label（短）+ 输入区 + hint/error（短提示）。
- * 三频道 focus 语言：P5 = 红色角贴纸出现；P4 = 左侧频道条亮起；P3 = 青色底线从左扫满。
+ * 三频道 focus 语言：P5 = 红色角贴纸出现；P4 = 左侧频道条亮起；P3 = 浅青基线上的亮蓝扫描。
  * 输入字号 16px 防 iOS 聚焦缩放（guide §17.5）；错误提示短促、主题 danger 色。
  * 录入态即「校直模式」语境（guide §22.3）：输入区自身永远水平，不做任何倾斜。
  */
@@ -48,9 +48,12 @@ const skin = (ch: UIChannel, error: boolean) => {
   }
   if (ch === 'p3') {
     return {
-      label: 'text-[11px] font-bold italic tracking-[0.14em] text-[var(--ui-accent)]',
-      box: 'relative bg-[rgba(5,7,13,0.72)] text-[var(--ui-ink)]',
-      boxStyle: {} as React.CSSProperties,
+      label: 'text-[11px] font-bold tracking-[0.12em] text-[#0b5cff]',
+      box: 'relative bg-white/95 text-[#07143f]',
+      boxStyle: {
+        boxShadow: '0 8px 20px rgba(35,111,154,0.08)',
+        clipPath: 'polygon(1.5% 0, 100% 0, 98.5% 100%, 0 100%)',
+      } as React.CSSProperties,
       hint: 'text-[var(--ui-muted)]',
       error: 'text-[var(--ui-danger)] font-bold',
     };
@@ -80,16 +83,21 @@ export const PersonaInput = ({
 }: PersonaInputProps) => {
   const inherited = useUiChannel();
   const ch = channel ?? inherited;
-  const id = useId();
+  const generatedId = useId();
+  const messageId = useId();
   const [focused, setFocused] = useState(false);
   const s = skin(ch, !!error);
+  const fieldId = rest.id ?? generatedId;
+  const describedBy = [rest['aria-describedby'], error || hint ? messageId : undefined]
+    .filter(Boolean)
+    .join(' ') || undefined;
 
   const fieldCls = 'w-full bg-transparent px-3.5 py-2.5 text-[16px] leading-snug outline-none placeholder:opacity-45';
 
   return (
     <div className={className}>
       {label && (
-        <label htmlFor={id} className={`mb-1 block ${s.label}`}>
+        <label htmlFor={fieldId} className={`mb-1 block ${s.label}`}>
           {label}
         </label>
       )}
@@ -108,28 +116,32 @@ export const PersonaInput = ({
         {ch === 'p4' && <SignalStripes className={`absolute inset-y-0 left-0 w-[4px] transition-opacity ${focused ? 'opacity-100' : 'opacity-0'}`} />}
         {multiline ? (
           <textarea
-            id={id}
+            {...(rest as NativeTextareaProps)}
+            id={fieldId}
             rows={rows}
+            aria-invalid={error ? true : undefined}
+            aria-describedby={describedBy}
             className={`${fieldCls} resize-none`}
             onFocus={(e) => { setFocused(true); onFocus?.(e as never); }}
             onBlur={(e) => { setFocused(false); onBlur?.(e as never); }}
-            {...(rest as NativeTextareaProps)}
           />
         ) : (
           <input
-            id={id}
+            {...rest}
+            id={fieldId}
+            aria-invalid={error ? true : undefined}
+            aria-describedby={describedBy}
             className={fieldCls}
             onFocus={(e) => { setFocused(true); onFocus?.(e); }}
             onBlur={(e) => { setFocused(false); onBlur?.(e); }}
-            {...rest}
           />
         )}
-        {/* P3：青色底线，focus 从左扫满（error 时洋红常亮） */}
+        {/* P3：浅青基线，focus 亮蓝从左扫满（error 时洋红常亮） */}
         {ch === 'p3' && (
-          <div aria-hidden className="absolute inset-x-0 bottom-0 h-[2px] bg-[rgba(0,216,255,0.28)]">
+          <div aria-hidden className="absolute inset-x-0 bottom-0 h-[2px] bg-[rgba(32,207,232,0.3)]">
             <motion.div
               className="h-full origin-left"
-              style={{ background: error ? 'var(--ui-danger)' : 'var(--ui-accent)' }}
+              style={{ background: error ? 'var(--ui-danger)' : 'var(--p3-blue, #0b5cff)' }}
               initial={false}
               animate={{ scaleX: error ? 1 : focused ? 1 : 0 }}
               transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
@@ -138,7 +150,13 @@ export const PersonaInput = ({
         )}
       </div>
       {(error || hint) && (
-        <p className={`mt-1 text-[11px] leading-tight ${error ? s.error : s.hint}`}>{error || hint}</p>
+        <p
+          id={messageId}
+          role={error ? 'alert' : undefined}
+          className={`mt-1 text-[11px] leading-tight ${error ? s.error : s.hint}`}
+        >
+          {error || hint}
+        </p>
       )}
     </div>
   );

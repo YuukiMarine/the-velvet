@@ -14,6 +14,8 @@ import { ActionSheet } from '@/components/ActionSheet';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { SheetModal } from '@/components/SheetModal';
 import { ArchiveIcon, EditIcon, RestoreIcon, TrashIcon } from '@/components/icons';
+import { useUiChannel } from '@/ui/useUiChannel';
+import { BigSlantTitle, GhostWords, P3EmptySlab, SlantButton } from '@/components/p3r/kit';
 
 const weekdayLabels = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 
@@ -221,6 +223,8 @@ const ATTR_IDS: AttributeId[] = ['knowledge', 'guts', 'dexterity', 'kindness', '
 // 行动页子视图（任务）：页头/页级转场由宿主 Actions.tsx 承担，本组件只渲染内容
 export const TodosView = () => {
   const { todos, settings, attributes, addTodo, updateTodo, deleteTodo, getTodayTodoProgress, getTodoDateLabel, weeklyGoals, saveWeeklyGoal, deleteWeeklyGoal, completeWeeklyGoal, getWeeklyGoalProgress, undoTodayTodoCompletion } = useAppStore();
+  // P3R（蓝主题）形态：设计稿 p3-actions-reference-v3——节直接铺水面底、大斜体节题、浅青空态板
+  const p3 = useUiChannel() === 'p3';
   const [showAdd, setShowAdd] = useState(false);
   const [editingTodoId, setEditingTodoId] = useState<string | null>(null);
   const [form, setForm] = useState({
@@ -393,16 +397,21 @@ export const TodosView = () => {
         getWeeklyGoalProgress={getWeeklyGoalProgress}
       />
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className={p3 ? 'relative mt-8 space-y-10' : 'grid grid-cols-1 lg:grid-cols-2 gap-4'}>
+        {p3 && <GhostWords words={['PLAN']} className="left-[-14px] top-[36%] text-[84px]" />}
         {/* 今日任务 */}
-        <div className="rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden">
-          <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-gray-100 dark:border-gray-800">
-            <h3 className="font-bold text-gray-900 dark:text-white">今日任务</h3>
-            <span className="text-xs text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-800 px-2.5 py-1 rounded-full">
-              {activeTodos.length} 项
-            </span>
-          </div>
-          <div className="p-3 space-y-2">
+        <div className={p3 ? 'relative' : 'rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden'}>
+          {p3 ? (
+            <BigSlantTitle title="今日任务" count={`${activeTodos.length} 项`} className="mb-4" />
+          ) : (
+            <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-gray-100 dark:border-gray-800">
+              <h3 className="font-bold text-gray-900 dark:text-white">今日任务</h3>
+              <span className="text-xs text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-800 px-2.5 py-1 rounded-full">
+                {activeTodos.length} 项
+              </span>
+            </div>
+          )}
+          <div className={p3 ? 'space-y-2' : 'p-3 space-y-2'}>
             {activeTodos.map(todo => {
               const progress = getTodayTodoProgress(todo.id);
               const attrName = settings.attributeNames[todo.attribute];
@@ -422,20 +431,28 @@ export const TodosView = () => {
               );
             })}
             {activeTodos.length === 0 && (
-              <EmptyState text="还没有任务，添加一个开始吧" />
+              p3 ? <P3EmptySlab /> : <EmptyState text="还没有任务，添加一个开始吧" />
             )}
           </div>
         </div>
 
         {/* 已归档 */}
-        <div className="rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden">
-          <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-gray-100 dark:border-gray-800">
-            <h3 className="font-bold text-gray-900 dark:text-white">已归档</h3>
-            <span className="text-xs text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-800 px-2.5 py-1 rounded-full">
-              {completedArchivedTodos.length + inactiveArchivedTodos.length + pendingDateTodos.length} 项
-            </span>
-          </div>
-          <div className="p-3 space-y-2">
+        <div className={p3 ? 'relative' : 'rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden'}>
+          {p3 ? (
+            <BigSlantTitle
+              title="已归档"
+              count={`${completedArchivedTodos.length + inactiveArchivedTodos.length + pendingDateTodos.length} 项`}
+              className="mb-4"
+            />
+          ) : (
+            <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-gray-100 dark:border-gray-800">
+              <h3 className="font-bold text-gray-900 dark:text-white">已归档</h3>
+              <span className="text-xs text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-800 px-2.5 py-1 rounded-full">
+                {completedArchivedTodos.length + inactiveArchivedTodos.length + pendingDateTodos.length} 项
+              </span>
+            </div>
+          )}
+          <div className={p3 ? 'space-y-2' : 'p-3 space-y-2'}>
 
             {/* ── 未到日期（startDate 在未来 / 今日不在指定星期内）── */}
             {pendingDateTodos.length > 0 && (
@@ -624,31 +641,52 @@ export const TodosView = () => {
             )}
 
             {completedArchivedTodos.length === 0 && inactiveArchivedTodos.length === 0 && pendingDateTodos.length === 0 && (
-              <EmptyState text="归档区暂无内容" />
+              p3 ? <P3EmptySlab /> : <EmptyState text="归档区暂无内容" />
             )}
           </div>
         </div>
+        {p3 && <GhostWords words={['LOG']} className="bottom-[-30px] right-[-10px] text-[84px]" />}
       </div>
 
       {/* 添加任务 FAB：替代原页头「+ 添加任务」按钮。
           与记录子页 FAB 同制式（fixed bottom-24 right-5 z-40 w-14 h-14 圆形 bg-primary），
           子页切换时两枚 FAB 静止视觉完全一致、不跳变 */}
-      <motion.button
-        whileTap={TAP}
-        onClick={() => {
-          triggerNavFeedback();
-          setEditingTodoId(null);
-          resetForm();
-          setShowAdd(true);
-        }}
-        aria-label="添加任务"
-        className="fixed bottom-24 right-5 md:bottom-8 md:right-8 z-40 w-14 h-14 rounded-full bg-primary text-white shadow-lg shadow-primary/30 flex items-center justify-center cursor-pointer"
-      >
-        {/* 白色加号（与记录子页 FAB 的 PlusIcon 同款笔画） */}
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="w-6 h-6" aria-hidden="true">
-          <path d="M12 4.5v15m7.5-7.5h-15" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      </motion.button>
+      {p3 ? (
+        /* P3R：右下蓝色斜切「接入」（设计稿 CTA 形态） */
+        <div className="fixed bottom-24 right-5 z-40 md:bottom-8 md:right-8">
+          <SlantButton
+            tone="primary"
+            ariaLabel="添加任务"
+            className="text-[20px]"
+            style={{ paddingTop: 14, paddingBottom: 14, paddingLeft: 34, paddingRight: 34, boxShadow: '0 14px 28px rgba(27,87,255,0.32)' }}
+            onClick={() => {
+              triggerNavFeedback();
+              setEditingTodoId(null);
+              resetForm();
+              setShowAdd(true);
+            }}
+          >
+            接入
+          </SlantButton>
+        </div>
+      ) : (
+        <motion.button
+          whileTap={TAP}
+          onClick={() => {
+            triggerNavFeedback();
+            setEditingTodoId(null);
+            resetForm();
+            setShowAdd(true);
+          }}
+          aria-label="添加任务"
+          className="fixed bottom-24 right-5 md:bottom-8 md:right-8 z-40 w-14 h-14 rounded-full bg-primary text-white shadow-lg shadow-primary/30 flex items-center justify-center cursor-pointer"
+        >
+          {/* 白色加号（与记录子页 FAB 的 PlusIcon 同款笔画） */}
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="w-6 h-6" aria-hidden="true">
+            <path d="M12 4.5v15m7.5-7.5h-15" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </motion.button>
+      )}
 
       {/* 添加/编辑任务：SheetModal 底部抽屉——自带 backdrop 点关/ESC/Android back
           （修审计"遮罩不可点关、无返回键处理"问题），exit 动画由其内部 AnimatePresence 承担 */}
