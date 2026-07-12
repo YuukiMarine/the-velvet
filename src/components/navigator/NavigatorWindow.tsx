@@ -222,17 +222,17 @@ export const NavigatorWindow = () => {
             className={`fixed inset-0 ${zClass.modal} flex flex-col overflow-hidden ${sk.root ?? ''}`}
             style={sk.rootStyle}
           >
-            {/* P3R 房景装饰（p3-navigator 设计稿：NAVIGATOR 每个字母正立、自上而下排成一列，
-                沿左缘纵贯全高均匀分布——竖屏侧边字样。flex justify-around 让 9 字母自适应铺满，字号变化也不溢出。 */}
+            {/* P3R 房景装饰（p3-navigator 设计稿：整行 NAVIGATOR 横排词整体逆时针旋转 90°，
+                字母躺倒、正常字距，沿左缘纵向纵贯全高——竖屏侧边字样。 */}
             {bright && (
               <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
-                <div
-                  className="absolute inset-y-0 left-0 flex w-[74px] select-none flex-col items-center justify-around font-black leading-none"
-                  style={{ fontFamily: 'Arial, sans-serif', fontSize: '4.1rem', color: 'rgba(147,190,222,0.30)' }}
-                >
-                  {'NAVIGATOR'.split('').map((ch, i) => (
-                    <span key={i}>{ch}</span>
-                  ))}
+                <div className="absolute inset-y-0 left-0 flex w-[96px] select-none items-center justify-center">
+                  <span
+                    className="whitespace-nowrap font-black italic leading-none"
+                    style={{ fontFamily: 'Arial, sans-serif', fontSize: '6.6rem', color: 'rgba(147,190,222,0.30)', transform: 'rotate(-90deg)' }}
+                  >
+                    NAVIGATOR
+                  </span>
                 </div>
                 <div className="absolute right-[-18%] top-[-10%] h-[150%] w-[42%]" style={{ background: 'linear-gradient(180deg, rgba(53,209,232,0.28) 0%, rgba(127,216,238,0.5) 100%)', transform: 'skewX(-14deg)' }} />
                 <div className="absolute inset-x-0 bottom-0 h-[24%] opacity-60">
