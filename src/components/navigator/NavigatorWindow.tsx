@@ -222,14 +222,14 @@ export const NavigatorWindow = () => {
             className={`fixed inset-0 ${zClass.modal} flex flex-col overflow-hidden ${sk.root ?? ''}`}
             style={sk.rootStyle}
           >
-            {/* P3R 房景装饰（p3-navigator 设计稿：整行 NAVIGATOR 横排词整体逆时针旋转 90°，
-                字母躺倒、正常字距，沿左缘纵向纵贯全高——竖屏侧边字样。 */}
+            {/* P3R 房景装饰（p3-navigator 设计稿：整行 NAVIGATOR 横排词整体顺时针旋转 90°，
+                字母躺倒、正常字距，沿左缘纵向纵贯全高（N 顶 R 底，自上而下读）——竖屏侧边字样。 */}
             {bright && (
               <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
                 <div className="absolute inset-y-0 left-0 flex w-[96px] select-none items-center justify-center">
                   <span
                     className="whitespace-nowrap font-black italic leading-none"
-                    style={{ fontFamily: 'Arial, sans-serif', fontSize: '6.6rem', color: 'rgba(147,190,222,0.30)', transform: 'rotate(-90deg)' }}
+                    style={{ fontFamily: 'Arial, sans-serif', fontSize: '6.6rem', color: 'rgba(147,190,222,0.30)', transform: 'rotate(90deg)' }}
                   >
                     NAVIGATOR
                   </span>
