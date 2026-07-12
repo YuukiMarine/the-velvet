@@ -137,6 +137,9 @@ const TodoCompleteP3 = ({ isOpen, onClose, title, totalPoints, unlockHint }: Tod
               <span className="h-px w-12 bg-white/60" />
             </div>
           </div>
+
+          {/* 音符雨（数量随加成，与旧版 overlayExtras 同口径） */}
+          {(totalPoints ?? 0) > 0 && <MusicalNotes count={totalPoints!} delay={0.3} />}
         </motion.div>
       )}
     </AnimatePresence>,

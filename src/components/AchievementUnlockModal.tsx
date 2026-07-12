@@ -84,9 +84,6 @@ const AchievementUnlockP3 = ({ isOpen, onClose, achievementTitle }: AchievementU
               boxShadow: '0 24px 60px rgba(38,96,140,0.28)',
             }}
           >
-            {/* 蓝斜带（横贯面板，压在标题后方） */}
-            <span aria-hidden className="absolute left-[-4%] right-[-4%] top-[43%] h-[64px]" style={{ background: '#1b57ff', transform: 'rotate(-7deg)' }} />
-            <span aria-hidden className="absolute right-[6%] top-[38%] h-[16px] w-[26px]" style={{ background: '#f0417f', clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
             {/* 左下青三角 */}
             <span aria-hidden className="absolute bottom-1 left-2 h-0 w-0 border-b-[26px] border-r-[38px] border-r-transparent" style={{ borderBottomColor: 'rgba(53,209,232,0.8)' }} />
 
@@ -99,17 +96,21 @@ const AchievementUnlockP3 = ({ isOpen, onClose, achievementTitle }: AchievementU
                 <CyanCrest />
               </motion.div>
 
-              {/* 成就解锁！（压在蓝带上，白描边保证跨底可读） */}
-              <div
-                className="mt-1 text-[44px] font-black italic leading-none"
-                style={{
-                  color: '#0a3bd6',
-                  fontFamily: '"Arial Black", "Noto Sans SC", sans-serif',
-                  WebkitTextStroke: '7px #fff',
-                  paintOrder: 'stroke fill',
-                }}
-              >
-                成就解锁！
+              {/* 成就解锁！—— 蓝斜带锚定在标题行内（跟内容走，不再按面板百分比漂移压字），白描边保证跨带可读 */}
+              <div className="relative mt-1 w-full">
+                <span aria-hidden className="absolute left-[-15%] right-[-15%] top-1/2 h-[62px]" style={{ background: '#1b57ff', transform: 'translateY(-50%) rotate(-7deg)' }} />
+                <span aria-hidden className="absolute right-[3%] top-[-16px] h-[16px] w-[26px]" style={{ background: '#f0417f', clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
+                <div
+                  className="relative text-center text-[44px] font-black italic leading-none"
+                  style={{
+                    color: '#0a3bd6',
+                    fontFamily: '"Arial Black", "Noto Sans SC", sans-serif',
+                    WebkitTextStroke: '7px #fff',
+                    paintOrder: 'stroke fill',
+                  }}
+                >
+                  成就解锁！
+                </div>
               </div>
 
               {/* 成就名 + 青双斜杠 */}

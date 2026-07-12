@@ -1,6 +1,8 @@
-import { useState, useRef } from 'react';
+import { Fragment, useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore } from '@/store';
+import { P3R, slantClip, SlantButton } from '@/components/p3r/kit';
+import { useUiChannel } from '@/ui/useUiChannel';
 import { Persona, BattleState, AttributeId } from '@/types';
 import { generatePersonaSkills } from '@/utils/battleAI';
 import { triggerSuccessFeedback, playSound } from '@/utils/feedback';
@@ -61,6 +63,28 @@ const CHOICE_QUESTIONS = [
 ];
 
 const TEXT_QUESTION = '描述你至今最核心的特质——那些让你最受赞扬、令你自己也感到骄傲的品质：';
+
+/** P3R 五步进度排（p3-modal-10 稿：双色三角步标 + 01-05 QUESTION + 青箭头）。current=-1 全亮 */
+const P3StepRow = ({ current }: { current: number }) => (
+  <div className="mt-5 flex items-end justify-between">
+    {[0, 1, 2, 3, 4].map((i) => (
+      <Fragment key={i}>
+        {i > 0 && (
+          <span aria-hidden className="mb-6 h-0 w-0 border-y-[5px] border-l-[8px] border-y-transparent" style={{ borderLeftColor: P3R.cyan, opacity: 0.8 }} />
+        )}
+        <span className={`flex flex-col items-start ${current >= 0 && i > current ? 'opacity-40' : ''}`}>
+          <svg viewBox="0 0 46 40" className="h-9 w-11" aria-hidden>
+            <polygon points="4,38 22,6 26,38" fill={P3R.cyan} />
+            <polygon points="16,38 30,2 36,38" fill={P3R.blue} />
+            <polygon points="32,8 44,0 42,14" fill={P3R.cyan} />
+          </svg>
+          <span className="mt-1 text-[15px] font-black italic leading-none" style={{ color: P3R.ink }}>{`0${i + 1}`}</span>
+          <span className="text-[7px] font-black tracking-[0.14em]" style={{ color: P3R.inkSoft }}>QUESTION</span>
+        </span>
+      </Fragment>
+    ))}
+  </div>
+);
 
 export function PersonaCreateModal({ isOpen, onClose }: Props) {
   const { settings, savePersona, saveBattleState, battleState, user } = useAppStore();
@@ -190,6 +214,250 @@ export function PersonaCreateModal({ isOpen, onClose }: Props) {
     ];
     await generateAndSave(dialog);
   };
+
+  const p3 = useUiChannel() === 'p3';
+
+  // P3R（p3-modal-10 稿 1:1）：亮蓝觉醒协议全屏页——05/AWAKEN 幽灵字 + 白斜面板宣言
+  // （蓝带压「汝即是吾…」+ 青「吾」+ 点列 + 洋红角）+ 五步三角进度 + 蓝大 CTA；
+  // choice / text / reveal 阶段稿上未画，按同语言换装（白斜卡 + 深蓝墨字 + SlantButton）。
+  if (p3) {
+    return (
+      <>
+        <AwakeningOverlay ref={awakeningRef} isOpen={isOpen && stage === 'generating'} />
+        <AnimatePresence>
+          {isOpen && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 overflow-y-auto overscroll-contain"
+              style={{ background: 'linear-gradient(160deg, #f2f9fd 0%, #e2f0f9 55%, #cfe9f6 100%)' }}
+            >
+              {/* 幽灵字：05 巨数字 + AWAKEN */}
+              <div aria-hidden className="pointer-events-none absolute -left-3 -top-6 select-none font-black italic leading-none" style={{ fontFamily: 'Arial, sans-serif', fontSize: '9.5rem', color: 'rgba(27,87,255,0.10)' }}>05</div>
+              <div aria-hidden className="pointer-events-none absolute right-[-28px] top-[66px] select-none font-black italic leading-none" style={{ fontFamily: 'Arial, sans-serif', fontSize: '4.6rem', color: 'rgba(53,209,232,0.30)' }}>AWAKEN</div>
+              {/* 底部左蓝大三角装饰 */}
+              <span aria-hidden className="pointer-events-none fixed bottom-8 left-0 h-0 w-0 border-b-[52px] border-r-[76px] border-r-transparent" style={{ borderBottomColor: 'rgba(27,87,255,0.8)' }} />
+
+              <div className="relative mx-auto flex min-h-full w-full max-w-md flex-col px-5 pb-14 pt-5">
+                {/* 页眉：觉醒协议 + ✕ */}
+                <div className="flex items-center justify-between">
+                  <span className="text-[17px] font-black italic" style={{ color: P3R.ink }}>觉醒协议</span>
+                  <motion.button
+                    whileTap={{ scale: 0.9 }}
+                    onClick={() => { if (stage !== 'generating') handleClose(); }}
+                    aria-label="关闭"
+                    className="flex h-10 w-12 items-center justify-center text-xl font-black text-white"
+                    style={{ background: P3R.blue, clipPath: slantClip(10), opacity: stage === 'generating' ? 0.4 : 1 }}
+                  >
+                    ×
+                  </motion.button>
+                </div>
+
+                {stage === 'generating' && (
+                  <div className="py-20 text-center text-[14px] font-black" style={{ color: P3R.blue }}>Persona 正在觉醒……</div>
+                )}
+
+                {stage === 'intro' && (
+                  <div className="mt-8">
+                    {/* 宣言白斜面板 + 蓝带第二行 */}
+                    <div className="relative">
+                      <div className="relative bg-white px-6 pb-11 pt-9" style={{ clipPath: 'polygon(7% 0, 100% 3%, 93% 100%, 0 97%)', boxShadow: '0 18px 44px rgba(38,96,140,0.16)' }}>
+                        <span aria-hidden className="absolute left-5 top-4 flex gap-1">
+                          <span className="h-[12px] w-[10px]" style={{ background: P3R.cyan, clipPath: 'polygon(38% 0, 100% 0, 62% 100%, 0 100%)' }} />
+                          <span className="h-[12px] w-[10px]" style={{ background: 'rgba(53,209,232,0.5)', clipPath: 'polygon(38% 0, 100% 0, 62% 100%, 0 100%)' }} />
+                        </span>
+                        <div className="text-center text-[44px] font-black leading-none" style={{ color: P3R.ink, fontFamily: '"Arial Black", "Noto Sans SC", sans-serif' }}>吾即是汝，</div>
+                      </div>
+                      <div className="relative z-10 -mt-7 px-6 py-4" style={{ background: P3R.blue, clipPath: 'polygon(22px 0, 100% 0, calc(100% - 22px) 100%, 0 100%)', boxShadow: '0 14px 32px rgba(27,87,255,0.35)' }}>
+                        <span className="whitespace-nowrap text-[38px] font-black leading-none text-white" style={{ fontFamily: '"Arial Black", "Noto Sans SC", sans-serif' }}>
+                          汝即是<span style={{ color: P3R.cyan }}>吾</span>
+                        </span>
+                        <span aria-hidden className="ml-1.5 align-super text-[24px] font-black tracking-[0.08em]" style={{ color: P3R.cyan }}>·····</span>
+                        <span aria-hidden className="absolute bottom-0 right-3 h-[12px] w-[18px]" style={{ background: P3R.magenta, clipPath: 'polygon(35% 0, 100% 0, 65% 100%, 0 100%)' }} />
+                      </div>
+                    </div>
+
+                    <p className="mt-7 text-center text-[15px] font-black" style={{ color: P3R.ink }}>回答五个问题，觉醒你内心的五灵 Persona</p>
+
+                    <P3StepRow current={-1} />
+
+                    {!hasApi && (
+                      <div className="mt-7 flex items-center gap-3">
+                        <span className="flex shrink-0 flex-col items-center leading-none">
+                          <span className="text-[30px] font-black italic" style={{ color: P3R.blue }}>05</span>
+                          <span className="text-[8px] font-black tracking-[0.14em]" style={{ color: P3R.blue }}>QUESTIONS</span>
+                        </span>
+                        <span aria-hidden className="h-9 w-[3px] shrink-0" style={{ background: P3R.blue, transform: 'skewX(-18deg)' }} />
+                        <span className="text-[13px] font-black leading-snug" style={{ color: P3R.blue }}>请先在设置中配置 AI API Key 以召唤 Persona</span>
+                      </div>
+                    )}
+
+                    <div className="mt-6">
+                      <SlantButton
+                        tone="primary"
+                        magentaCorner
+                        disabled={!hasApi}
+                        className="w-full py-4 text-[20px]"
+                        onClick={() => { playSound('/battle-awaken.mp3'); setStage('choice'); }}
+                      >
+                        觉醒 Persona
+                      </SlantButton>
+                    </div>
+                  </div>
+                )}
+
+                {stage === 'choice' && (
+                  <div className="mt-4">
+                    <P3StepRow current={choiceStep} />
+                    <p className="mt-7 text-[11px] font-black tracking-[0.18em]" style={{ color: P3R.blue }}>QUESTION 0{choiceStep + 1} / 04</p>
+                    <h2 className="mt-2 text-[22px] font-black leading-snug" style={{ color: P3R.ink }}>{CHOICE_QUESTIONS[choiceStep].question}</h2>
+                    <div className="mt-5 space-y-3">
+                      {CHOICE_QUESTIONS[choiceStep].options.map((option, i) => (
+                        <motion.button
+                          key={i}
+                          whileTap={{ scale: 0.98 }}
+                          onClick={() => handleChoiceSelect(option)}
+                          className="flex w-full items-center gap-3 bg-white px-5 py-3.5 text-left text-[14px] font-bold leading-relaxed"
+                          style={{ color: P3R.ink, clipPath: slantClip(12), boxShadow: '0 8px 20px rgba(38,96,140,0.10)' }}
+                        >
+                          <span aria-hidden className="h-[16px] w-[5px] shrink-0" style={{ background: P3R.cyan, transform: 'skewX(-18deg)' }} />
+                          {option}
+                        </motion.button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {stage === 'text' && (
+                  <div className="mt-4">
+                    <P3StepRow current={4} />
+                    <p className="mt-7 text-[11px] font-black tracking-[0.18em]" style={{ color: retryMode ? P3R.magenta : P3R.blue }}>
+                      {retryMode ? 'RETRY · QUESTION 05' : 'QUESTION 05 / 05'}
+                    </p>
+                    <h2 className="mt-2 text-[19px] font-black leading-snug" style={{ color: P3R.ink }}>
+                      {retryMode ? '请重新回答第五题，AI 会据此重新召唤 Persona：' : TEXT_QUESTION}
+                    </h2>
+                    {retryMode && (
+                      <p className="mt-2 text-[12px] font-bold" style={{ color: P3R.magenta }}>换一种说法或补充细节可能有助于 AI 稳定输出。</p>
+                    )}
+                    <div className="mt-4 space-y-1.5">
+                      {choiceAnswers.map((answer, i) => (
+                        <div key={i} className="truncate px-3 py-1.5 text-[11px] font-bold" style={{ background: 'rgba(27,87,255,0.07)', color: P3R.inkSoft, clipPath: slantClip(8) }}>
+                          Q{i + 1}: {answer}
+                        </div>
+                      ))}
+                    </div>
+                    <textarea
+                      value={textAnswer}
+                      onChange={e => setTextAnswer(e.target.value)}
+                      placeholder="输入你的回答…"
+                      rows={4}
+                      className="mt-4 w-full resize-none bg-white px-4 py-3 text-[15px] font-bold outline-none placeholder:text-[#8a97ad]"
+                      style={{ color: P3R.ink, clipPath: slantClip(12), borderBottom: `4px solid ${P3R.cyan}`, boxShadow: '0 8px 20px rgba(38,96,140,0.10)' }}
+                    />
+                    {error && (
+                      <div className="mt-3 px-4 py-2.5" style={{ background: 'rgba(240,65,127,0.10)', clipPath: slantClip(10) }}>
+                        <p className="break-all text-[12px] font-bold leading-relaxed" style={{ color: P3R.magenta }}>{error}</p>
+                        <p className="mt-1 text-[10px] font-bold" style={{ color: 'rgba(240,65,127,0.7)' }}>
+                          常见原因：网络超时、模型 token 上限不足、响应被截断。建议换个模型或重试。
+                        </p>
+                      </div>
+                    )}
+                    <div className="mt-5 flex gap-3">
+                      <SlantButton tone="soft" className="px-6 py-3" onClick={() => { setStage('choice'); setChoiceStep(3); setRetryMode(false); setError(''); }}>
+                        返回
+                      </SlantButton>
+                      <SlantButton tone="primary" magentaCorner disabled={!textAnswer.trim()} className="flex-1 py-3" onClick={() => { void handleTextSubmit(); }}>
+                        {retryMode ? '重新召唤' : '召唤 Persona'}
+                      </SlantButton>
+                    </div>
+                  </div>
+                )}
+
+                {stage === 'reveal' && generatedPersona && (() => {
+                  const attrNames = settings.attributeNames as Record<string, string>;
+                  const sparkles = Array.from({ length: 12 }, (_, i) => ({
+                    id: i,
+                    angle: (i / 12) * 360,
+                    dist: 80 + Math.random() * 60,
+                    delay: Math.random() * 0.5,
+                  }));
+                  return (
+                    <div className="relative mt-8">
+                      {sparkles.map(sp => (
+                        <motion.div
+                          key={sp.id}
+                          className="absolute h-1.5 w-1.5 rounded-full"
+                          style={{ left: '50%', top: '18%', background: 'rgba(53,209,232,0.9)', boxShadow: '0 0 6px rgba(53,209,232,0.6)' }}
+                          initial={{ x: 0, y: 0, opacity: 0, scale: 0 }}
+                          animate={{
+                            x: Math.cos(sp.angle * Math.PI / 180) * sp.dist,
+                            y: Math.sin(sp.angle * Math.PI / 180) * sp.dist,
+                            opacity: [0, 1, 0],
+                            scale: [0, 1.5, 0],
+                          }}
+                          transition={{ duration: 1.8, delay: sp.delay, ease: 'easeOut' }}
+                        />
+                      ))}
+
+                      <div className="relative z-10 text-center">
+                        <motion.div animate={{ rotate: 360 }} transition={{ duration: 8, repeat: Infinity, ease: 'linear' }} className="mb-1 inline-block text-4xl" style={{ color: P3R.blue }}>✦</motion.div>
+                        <motion.h2 initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="text-[30px] font-black italic leading-none" style={{ color: P3R.ink }}>
+                          Persona 觉醒完毕
+                        </motion.h2>
+                        <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.4 }} className="mt-2 text-[13px] font-black" style={{ color: P3R.blue }}>
+                          五灵具现，反抗之力觉醒
+                        </motion.p>
+                      </div>
+
+                      <div className="relative z-10 mt-5 space-y-3">
+                        {ATTR_ORDER.map((attr, i) => {
+                          const ap = generatedPersona.attributePersonas?.[attr];
+                          if (!ap) return null;
+                          return (
+                            <motion.div
+                              key={attr}
+                              initial={{ opacity: 0, x: -20 }}
+                              animate={{ opacity: 1, x: 0 }}
+                              transition={{ delay: 0.3 + i * 0.15, type: 'spring', stiffness: 200, damping: 20 }}
+                              className="bg-white px-5 py-3.5"
+                              style={{ clipPath: slantClip(12), boxShadow: '0 8px 20px rgba(38,96,140,0.10)' }}
+                            >
+                              <span className="inline-block px-2 py-0.5 text-[10px] font-black tracking-[0.14em] text-white" style={{ background: P3R.blue, clipPath: slantClip(5) }}>
+                                {attrNames[attr] ?? attr}
+                              </span>
+                              <p className="mt-1.5 text-[15px] font-black" style={{ color: P3R.ink }}>✦ {ap.name}</p>
+                              <p className="mt-0.5 text-[12px] font-semibold leading-relaxed" style={{ color: P3R.inkSoft }}>{ap.description}</p>
+                            </motion.div>
+                          );
+                        })}
+                      </div>
+
+                      {fallbackWarning && (
+                        <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1.0 }} className="mt-4 text-center text-[11px] font-bold leading-relaxed" style={{ color: P3R.magenta }}>
+                          AI 召唤未能成功，已使用默认 Persona。你可以稍后在设置中检查 API 配置后重新召唤。
+                        </motion.p>
+                      )}
+                      <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1.2 }} className="mt-5 text-center text-[11px] font-semibold italic" style={{ color: P3R.inkSoft }}>
+                        {fallbackWarning ? '默认五灵已就位，征途仍将继续。' : '五灵已集，新的征途即将开启。'}
+                      </motion.p>
+
+                      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 1.4 }} className="mt-6">
+                        <SlantButton tone="primary" magentaCorner className="w-full py-3.5 text-[17px]" onClick={() => { reset(); onClose(); }}>
+                          开始征途
+                        </SlantButton>
+                      </motion.div>
+                    </div>
+                  );
+                })()}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </>
+    );
+  }
 
   return (
     <>
