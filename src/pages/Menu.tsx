@@ -45,7 +45,7 @@ import { triggerNavFeedback } from '@/utils/feedback';
 import { useBoldness } from '@/utils/boldness';
 import { STAGGER, TAP, springSoft, fadeIn } from '@/utils/motion';
 import { useUiChannel } from '@/ui/useUiChannel';
-import { P3R, P3RPage, GhostWords, slantClip } from '@/components/p3r/kit';
+import { P3R, P3RPage, slantClip } from '@/components/p3r/kit';
 import { computeTotalLv } from '@/utils/lvTiers';
 
 // ── 图标（24px stroke 制式，与 Navigation.tsx 同一套 heroicons outline 风格）──
@@ -453,12 +453,15 @@ export const Menu = () => {
     return (
       <P3RPage className="overflow-hidden">
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }} className="relative mx-auto max-w-2xl pb-8">
-          {/* SYSTEM / VELVET 巨幽灵字（设计稿：横排巨词按宽拆行堆叠、字母正立、左缘出血、纵贯中下部） */}
-          <GhostWords
-            words={['SYS', 'TEM', 'VEL', 'VET']}
-            className="left-[-26px] top-[330px] text-[112px]"
-            style={{ color: 'rgba(53,209,232,0.20)', transform: 'rotate(0deg)', lineHeight: 1.34 }}
-          />
+          {/* SYSTEM 巨幽灵字（p3-menu 设计稿：整行横排词整体顺时针旋转 90°，沿左缘纵向纵贯中下部——竖屏侧边字样） */}
+          <div aria-hidden className="pointer-events-none absolute left-0 top-[300px] flex h-[760px] w-[130px] select-none items-center justify-center overflow-hidden">
+            <span
+              className="whitespace-nowrap font-black italic leading-none"
+              style={{ fontFamily: 'Arial, sans-serif', fontSize: '9.5rem', color: 'rgba(53,209,232,0.20)', transform: 'rotate(90deg)' }}
+            >
+              SYSTEM
+            </span>
+          </div>
 
           {/* 蓝斜块大标题 + 洋红角 */}
           <div className="relative inline-block pt-2">
