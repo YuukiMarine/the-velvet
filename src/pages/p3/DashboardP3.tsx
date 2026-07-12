@@ -49,6 +49,45 @@ const getSlot = (h: number) => {
 const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 const WEEKDAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 
+// ── 真实月相（月龄按 2000-01-06 18:14 UTC 新月历元 + 朔望月 29.5306 天推算）──
+const SYNODIC_DAYS = 29.530588853;
+const NEW_MOON_EPOCH = Date.UTC(2000, 0, 6, 18, 14);
+const MOON_NAMES = ['新月', '娥眉月', '上弦月', '盈凸月', '满月', '亏凸月', '下弦月', '残月'];
+
+const moonPhaseOf = (date: Date) => {
+  const days = (date.getTime() - NEW_MOON_EPOCH) / 86400000;
+  const phase = (((days % SYNODIC_DAYS) + SYNODIC_DAYS) % SYNODIC_DAYS) / SYNODIC_DAYS; // 0 新月 → 0.5 满月
+  return { phase, name: MOON_NAMES[Math.round(phase * 8) % 8], illum: (1 - Math.cos(2 * Math.PI * phase)) / 2 };
+};
+
+/** 亮面路径：外缘半圆 + 明暗界线椭圆弧（两弧法，盈亏自动换边） */
+const moonLitPath = (phase: number, r: number, c: number) => {
+  const rx = Math.max(0.01, Math.abs(Math.cos(2 * Math.PI * phase)) * r);
+  const outer = phase < 0.5 ? 1 : 0; // 盈月亮右缘，亏月亮左缘
+  const term = phase > 0.25 && phase < 0.75 ? outer : 1 - outer; // 凸月界线鼓向暗面
+  return `M ${c} ${c - r} A ${r} ${r} 0 0 ${outer} ${c} ${c + r} A ${rx} ${r} 0 0 ${term} ${c} ${c - r} Z`;
+};
+
+const MoonPhase = ({ date }: { date: Date }) => {
+  const { phase, name, illum } = moonPhaseOf(date);
+  return (
+    <span className="ml-0.5 flex items-center gap-2" role="img" aria-label={`月相 ${name}，亮面 ${Math.round(illum * 100)}%`}>
+      <span className="relative flex h-11 w-12 shrink-0 items-center justify-center" style={{ background: P3R.cyanFaint, clipPath: slantClip(8) }}>
+        <svg viewBox="0 0 36 36" className="h-8 w-8" aria-hidden>
+          <circle cx="18" cy="18" r="15" fill={P3R.ink} />
+          <path d={moonLitPath(phase, 15, 18)} fill={P3R.cyan} />
+          <circle cx="18" cy="18" r="15" fill="none" stroke="rgba(27,87,255,0.35)" strokeWidth="1.5" />
+        </svg>
+        <span aria-hidden className="absolute right-[3px] top-[3px] h-[7px] w-[9px]" style={{ background: P3R.magenta, clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
+      </span>
+      <span className="flex flex-col gap-1 leading-none">
+        <span className="text-[13px] font-black" style={{ color: P3R.ink }}>{name}</span>
+        <span className="text-[9px] font-black tracking-[0.16em]" style={{ color: P3R.blue }}>LUNAR {Math.round(illum * 100)}%</span>
+      </span>
+    </span>
+  );
+};
+
 // ── 白日版星象仪（数据驱动五角星：角长 = 等级，升级后该角变长；满级淡青大星为底）──
 const STAR_CX = 180;
 const STAR_CY = 178;
@@ -410,6 +449,7 @@ export const DashboardP3 = () => {
               <span>{WEEKDAYS[now.getDay()]}</span>
             </span>
             <span aria-hidden className="ml-1 h-10 w-[3px]" style={{ background: P3R.blue, transform: 'skewX(-24deg)' }} />
+            <MoonPhase date={now} />
           </div>
         </header>
 

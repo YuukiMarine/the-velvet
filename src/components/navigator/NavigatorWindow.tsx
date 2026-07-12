@@ -288,38 +288,98 @@ export const NavigatorWindow = () => {
                         transition={{ duration: 0.16 }}
                         role="menu"
                         aria-label="人格菜单"
-                        className={`absolute left-4 top-full z-20 mt-1 w-64 overflow-hidden ${bright ? 'bg-[#f7fbff] shadow-[0_18px_44px_rgba(7,40,120,.35)]' : 'rounded-2xl border border-white/12 bg-[#171c27] shadow-2xl'}`}
-                        style={bright ? { clipPath: 'polygon(0 2%, 100% 0, 99% 100%, 0 98%)', color: P3.ink } : { color: '#e5e7eb' }}
+                        className={`absolute left-4 top-full z-20 mt-1 w-64 ${bright ? '' : 'overflow-hidden rounded-2xl border border-white/12 bg-[#171c27] shadow-2xl'}`}
+                        style={bright ? { color: P3.ink } : { color: '#e5e7eb' }}
                       >
-                        <div className="px-4 pb-1 pt-3 text-[10px] font-black uppercase tracking-[0.18em] opacity-55">切换人格</div>
-                        {mergedNavigatorPresets(nav.presets).map((p) => (
-                          <button
-                            key={p.id}
-                            type="button"
-                            role="menuitem"
-                            onClick={() => { setPersonaMenuOpen(false); if (p.id !== preset.id) void nav.switchPreset(p.id); }}
-                            className={`flex w-full items-center gap-2.5 px-4 py-2 text-left text-sm font-bold transition ${bright ? 'hover:bg-[#e3f0fd]' : 'hover:bg-white/8'}`}
-                          >
-                            <span className={`flex h-7 w-7 shrink-0 items-center justify-center ${bright ? 'text-white' : 'text-primary'}`} style={bright ? { background: P3.deep, clipPath: 'polygon(0 8%, 100% 0, 96% 100%, 2% 96%)' } : { background: 'rgba(255,255,255,.08)', borderRadius: '0.5rem' }}>
-                              <PresetAvatar avatar={p.avatar} className="h-4 w-4" />
-                            </span>
-                            <span className="min-w-0 flex-1 truncate">{p.name}</span>
-                            {p.id === preset.id && <span className="text-[10px] font-black opacity-60">当前</span>}
-                          </button>
-                        ))}
-                        <div className={`mx-4 my-1 h-px ${bright ? 'bg-[#d5e7fa]' : 'bg-white/10'}`} aria-hidden />
-                        <button type="button" role="menuitem" onClick={() => { setPersonaMenuOpen(false); avatarFileRef.current?.click(); }}
-                          className={`block w-full px-4 py-2 text-left text-sm font-bold transition ${bright ? 'hover:bg-[#e3f0fd]' : 'hover:bg-white/8'}`}>
-                          上传头像（{preset.name}）
-                        </button>
-                        <button type="button" role="menuitem" onClick={() => { setPersonaMenuOpen(false); setNotebookOpen(true); }}
-                          className={`block w-full px-4 py-2 text-left text-sm font-bold transition ${bright ? 'hover:bg-[#e3f0fd]' : 'hover:bg-white/8'}`}>
-                          记事本
-                        </button>
-                        <button type="button" role="menuitem" onClick={() => { setPersonaMenuOpen(false); nav.close(); setCurrentPage('settings'); }}
-                          className={`block w-full px-4 pb-3 pt-2 text-left text-sm font-bold transition ${bright ? 'hover:bg-[#e3f0fd]' : 'hover:bg-white/8'}`}>
-                          更多设置…
-                        </button>
+                        {/* p3-modal-12 稿：层叠独立斜块菜单——标签白斜片，人格行逐级右移，当前=蓝块+当前+洋红角，
+                            工具行三块白斜片再逐级右移；暗色频道保持整面板下拉不变 */}
+                        {bright ? (
+                          <div className="space-y-1.5">
+                            <div className="inline-block bg-white px-4 py-1.5 text-[12px] font-black shadow-[0_8px_20px_rgba(7,40,120,.16)]" style={{ clipPath: 'polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%)' }}>
+                              切换人格
+                            </div>
+                            {mergedNavigatorPresets(nav.presets).map((p, i) => {
+                              const active = p.id === preset.id;
+                              return (
+                                <button
+                                  key={p.id}
+                                  type="button"
+                                  role="menuitem"
+                                  onClick={() => { setPersonaMenuOpen(false); if (p.id !== preset.id) void nav.switchPreset(p.id); }}
+                                  className={`relative flex items-center gap-2.5 px-4 py-2.5 text-left text-sm font-black transition ${active ? 'w-full text-white' : 'bg-white hover:bg-[#e3f0fd]'}`}
+                                  style={{
+                                    width: active ? undefined : `calc(100% - ${i * 10}px)`,
+                                    marginLeft: active ? 0 : i * 10,
+                                    background: active ? '#1b57ff' : undefined,
+                                    clipPath: 'polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%)',
+                                    boxShadow: active ? '0 10px 26px rgba(27,87,255,.35)' : '0 8px 20px rgba(7,40,120,.14)',
+                                  }}
+                                >
+                                  <span className="flex h-6 w-6 shrink-0 items-center justify-center" style={{ color: active ? '#ffffff' : '#35d1e8' }}>
+                                    <PresetAvatar avatar={p.avatar} className="h-5 w-5" />
+                                  </span>
+                                  <span className="min-w-0 flex-1 truncate">{p.name}</span>
+                                  {active && <span className="shrink-0 text-[11px] font-black text-white/90">当前</span>}
+                                  {active && <span aria-hidden className="absolute bottom-0 right-4 h-[9px] w-[16px]" style={{ background: '#f0417f', clipPath: 'polygon(35% 0, 100% 0, 65% 100%, 0 100%)' }} />}
+                                </button>
+                              );
+                            })}
+                            <div className="mx-3 my-2 h-px bg-[#9fc4e4]/70" aria-hidden />
+                            {([
+                              { label: `上传头像（${preset.name}）`, onPick: () => avatarFileRef.current?.click() },
+                              { label: '记事本', onPick: () => setNotebookOpen(true) },
+                              { label: '更多设置…', onPick: () => { nav.close(); setCurrentPage('settings'); } },
+                            ] as const).map((item, i) => (
+                              <button
+                                key={item.label}
+                                type="button"
+                                role="menuitem"
+                                onClick={() => { setPersonaMenuOpen(false); item.onPick(); }}
+                                className="block bg-white px-4 py-2.5 text-left text-sm font-black transition hover:bg-[#e3f0fd]"
+                                style={{
+                                  width: `calc(100% - ${i * 10}px)`,
+                                  marginLeft: i * 10,
+                                  clipPath: 'polygon(12px 0, 100% 0, calc(100% - 12px) 100%, 0 100%)',
+                                  boxShadow: '0 8px 20px rgba(7,40,120,.14)',
+                                }}
+                              >
+                                {item.label}
+                              </button>
+                            ))}
+                          </div>
+                        ) : (
+                          <>
+                            <div className="px-4 pb-1 pt-3 text-[10px] font-black uppercase tracking-[0.18em] opacity-55">切换人格</div>
+                            {mergedNavigatorPresets(nav.presets).map((p) => (
+                              <button
+                                key={p.id}
+                                type="button"
+                                role="menuitem"
+                                onClick={() => { setPersonaMenuOpen(false); if (p.id !== preset.id) void nav.switchPreset(p.id); }}
+                                className="flex w-full items-center gap-2.5 px-4 py-2 text-left text-sm font-bold transition hover:bg-white/8"
+                              >
+                                <span className="flex h-7 w-7 shrink-0 items-center justify-center text-primary" style={{ background: 'rgba(255,255,255,.08)', borderRadius: '0.5rem' }}>
+                                  <PresetAvatar avatar={p.avatar} className="h-4 w-4" />
+                                </span>
+                                <span className="min-w-0 flex-1 truncate">{p.name}</span>
+                                {p.id === preset.id && <span className="text-[10px] font-black opacity-60">当前</span>}
+                              </button>
+                            ))}
+                            <div className="mx-4 my-1 h-px bg-white/10" aria-hidden />
+                            <button type="button" role="menuitem" onClick={() => { setPersonaMenuOpen(false); avatarFileRef.current?.click(); }}
+                              className="block w-full px-4 py-2 text-left text-sm font-bold transition hover:bg-white/8">
+                              上传头像（{preset.name}）
+                            </button>
+                            <button type="button" role="menuitem" onClick={() => { setPersonaMenuOpen(false); setNotebookOpen(true); }}
+                              className="block w-full px-4 py-2 text-left text-sm font-bold transition hover:bg-white/8">
+                              记事本
+                            </button>
+                            <button type="button" role="menuitem" onClick={() => { setPersonaMenuOpen(false); nav.close(); setCurrentPage('settings'); }}
+                              className="block w-full px-4 pb-3 pt-2 text-left text-sm font-bold transition hover:bg-white/8">
+                              更多设置…
+                            </button>
+                          </>
+                        )}
                       </motion.div>
                     </>
                   )}
