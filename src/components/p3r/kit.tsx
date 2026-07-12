@@ -58,15 +58,16 @@ export const P3RPage = ({ children, className, active = true }: { children: Reac
   );
 };
 
-/** 背景幽灵大字（多行，整块斜置；移动端低透明度护栏 §18.1） */
+/** 背景幽灵大字（多行，整块斜置；移动端低透明度护栏 §18.1）
+ *  字重口径：Arial 合成加粗（比 Impact / Arial Black 细一档，用户定稿） */
 export const GhostWords = ({ words, className, style }: { words: string[]; className?: string; style?: CSSProperties }) => (
   <div
     aria-hidden
     className={`pointer-events-none absolute select-none font-black italic leading-[0.86] tracking-tight ${className ?? ''}`}
-    style={{ fontFamily: 'Impact, "Arial Black", sans-serif', color: 'rgba(147,190,222,0.30)', transform: 'rotate(-12deg)', ...style }}
+    style={{ fontFamily: 'Arial, "Noto Sans SC", sans-serif', color: 'rgba(147,190,222,0.30)', transform: 'rotate(-12deg)', ...style }}
   >
-    {words.map((w) => (
-      <div key={w}>{w}</div>
+    {words.map((w, i) => (
+      <div key={`${w}-${i}`}>{w}</div>
     ))}
   </div>
 );
