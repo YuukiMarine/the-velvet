@@ -72,16 +72,47 @@ export const GhostWords = ({ words, className, style }: { words: string[]; class
   </div>
 );
 
-/** 节标记：蓝色小斜块 + 标题 + 右侧 meta 槽（variant='blue'：蓝色斜体，account 页「数据管理 · DATA」式） */
-export const SectionMark = ({ title, meta, variant = 'ink', className }: { title: ReactNode; meta?: ReactNode; variant?: 'ink' | 'blue'; className?: string }) => (
+/** 节标记：蓝色小斜块 + 标题 + 右侧 meta 槽（variant='blue'：蓝色斜体，account 页「数据管理 · DATA」式；
+ *  marker='tri'：蓝色实心倒三角 + 黑粗斜体，p3-modal-03「▼ 关键词分析」式） */
+export const SectionMark = ({ title, meta, variant = 'ink', marker = 'slab', className }: { title: ReactNode; meta?: ReactNode; variant?: 'ink' | 'blue'; marker?: 'slab' | 'tri'; className?: string }) => (
   <div className={`flex items-center justify-between gap-3 ${className ?? ''}`}>
     <div className="flex items-center gap-2">
-      <span aria-hidden className="h-[18px] w-[13px]" style={{ background: P3R.blue, clipPath: 'polygon(32% 0, 100% 0, 68% 100%, 0 100%)' }} />
-      <h3 className={`text-[19px] font-black leading-none ${variant === 'blue' ? 'italic tracking-wide' : ''}`} style={{ color: variant === 'blue' ? P3R.blue : P3R.ink }}>{title}</h3>
+      {marker === 'tri' ? (
+        <span aria-hidden className="h-0 w-0 border-x-[8px] border-t-[13px] border-x-transparent" style={{ borderTopColor: P3R.blue }} />
+      ) : (
+        <span aria-hidden className="h-[18px] w-[13px]" style={{ background: P3R.blue, clipPath: 'polygon(32% 0, 100% 0, 68% 100%, 0 100%)' }} />
+      )}
+      <h3 className={`text-[19px] font-black leading-none ${variant === 'blue' || marker === 'tri' ? 'italic tracking-wide' : ''}`} style={{ color: variant === 'blue' ? P3R.blue : P3R.ink }}>{title}</h3>
     </div>
     {meta}
   </div>
 );
+
+/** 碎裂星徽（battle 页与升级 cutin 共用）：白描边青星 + 蓝青三角碎片；magenta=true 换入洋红碎片（庆祝演出用） */
+export const ShatteredStar = ({ className = 'mx-auto w-[190px]', magenta = false }: { className?: string; magenta?: boolean }) => {
+  const cx = 110, cy = 120, R = 56, inner = R * 0.42;
+  let d = '';
+  for (let i = 0; i < 5; i++) {
+    const a1 = ((-90 + i * 72) * Math.PI) / 180;
+    const a2 = ((-90 + i * 72 + 36) * Math.PI) / 180;
+    d += `${i === 0 ? 'M' : 'L'}${(cx + R * Math.cos(a1)).toFixed(1)},${(cy + R * Math.sin(a1)).toFixed(1)} L${(cx + inner * Math.cos(a2)).toFixed(1)},${(cy + inner * Math.sin(a2)).toFixed(1)} `;
+  }
+  return (
+    <svg viewBox="0 0 220 230" className={className} aria-hidden>
+      {/* 碎片（蓝青拼贴，围星散射；magenta 时两块换洋红） */}
+      <polygon points="112,4 150,64 94,54" fill="#1b57ff" />
+      <polygon points="158,34 196,88 142,76" fill={magenta ? '#f0417f' : '#8fdcef'} />
+      <polygon points="26,80 68,60 54,108" fill="#0a3bd6" />
+      <polygon points="182,124 216,152 172,168" fill="#2a63ff" />
+      <polygon points="58,172 96,204 44,202" fill="#35d1e8" />
+      <polygon points="150,180 180,214 130,206" fill={magenta ? '#f0417f' : '#0a3bd6'} />
+      <polygon points="14,138 42,124 38,158" fill="#a8e4f2" />
+      <polygon points="196,60 212,92 184,84" fill="#1b57ff" opacity="0.75" />
+      {/* 中央星：白描边 + 青填充 */}
+      <path d={`${d}Z`} fill="#7fd8ee" stroke="#ffffff" strokeWidth="8" strokeLinejoin="miter" />
+    </svg>
+  );
+};
 
 /** P3R 页头：可选返回三角 + 可选大蓝斜块前导 + 超大黑斜体标题 + 可选尾随青双片 */
 export const P3PageHeader = ({
@@ -164,6 +195,8 @@ export const SlantButton = ({
   className,
   style,
   ariaLabel,
+  magentaCorner = false,
+  disabled = false,
 }: {
   children: ReactNode;
   tone?: 'primary' | 'soft' | 'ghost' | 'danger';
@@ -171,6 +204,9 @@ export const SlantButton = ({
   className?: string;
   style?: CSSProperties;
   ariaLabel?: string;
+  /** 右下洋红小角（p3-modal 稿主按钮签名件） */
+  magentaCorner?: boolean;
+  disabled?: boolean;
 }) => {
   const skin: Record<string, CSSProperties> = {
     primary: { background: P3R.blue, color: '#fff' },
@@ -183,10 +219,14 @@ export const SlantButton = ({
       type="button"
       onClick={onClick}
       aria-label={ariaLabel}
-      className={`relative select-none px-6 py-2.5 text-[16px] font-black tracking-wide active:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1b57ff] focus-visible:ring-offset-2 ${className ?? ''}`}
+      disabled={disabled}
+      className={`relative select-none px-6 py-2.5 text-[16px] font-black tracking-wide active:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1b57ff] focus-visible:ring-offset-2 disabled:opacity-40 disabled:cursor-not-allowed ${className ?? ''}`}
       style={{ clipPath: slantClip(10), ...skin[tone], ...style }}
     >
       {children}
+      {magentaCorner && (
+        <span aria-hidden className="absolute bottom-0 right-3 h-[7px] w-[18px]" style={{ background: P3R.magenta, clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
+      )}
     </button>
   );
 };
