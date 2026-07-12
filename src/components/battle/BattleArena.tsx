@@ -13,35 +13,9 @@ import { BattleModal } from '@/components/battle/BattleModal';
 import { VictoryModal } from '@/components/battle/VictoryModal';
 import { PersonaShuffleModal } from '@/components/battle/PersonaShuffleModal';
 import { useUiChannel } from '@/ui/useUiChannel';
-import { P3R, P3RPage, GhostWords, P3PageHeader, slantClip } from '@/components/p3r/kit';
+import { P3R, P3RPage, GhostWords, P3PageHeader, ShatteredStar, slantClip } from '@/components/p3r/kit';
 
 type TabKey = 'battle' | 'persona' | 'settings';
-
-/** P3R 碎裂星徽（p3-battle 设计稿中央演出物）：白描边青星 + 蓝青三角碎片 */
-const ShatteredStar = () => {
-  const cx = 110, cy = 120, R = 56, inner = R * 0.42;
-  let d = '';
-  for (let i = 0; i < 5; i++) {
-    const a1 = ((-90 + i * 72) * Math.PI) / 180;
-    const a2 = ((-90 + i * 72 + 36) * Math.PI) / 180;
-    d += `${i === 0 ? 'M' : 'L'}${(cx + R * Math.cos(a1)).toFixed(1)},${(cy + R * Math.sin(a1)).toFixed(1)} L${(cx + inner * Math.cos(a2)).toFixed(1)},${(cy + inner * Math.sin(a2)).toFixed(1)} `;
-  }
-  return (
-    <svg viewBox="0 0 220 230" className="mx-auto w-[190px]" aria-hidden>
-      {/* 碎片（蓝青拼贴，围星散射） */}
-      <polygon points="112,4 150,64 94,54" fill="#1b57ff" />
-      <polygon points="158,34 196,88 142,76" fill="#8fdcef" />
-      <polygon points="26,80 68,60 54,108" fill="#0a3bd6" />
-      <polygon points="182,124 216,152 172,168" fill="#2a63ff" />
-      <polygon points="58,172 96,204 44,202" fill="#35d1e8" />
-      <polygon points="150,180 180,214 130,206" fill="#0a3bd6" />
-      <polygon points="14,138 42,124 38,158" fill="#a8e4f2" />
-      <polygon points="196,60 212,92 184,84" fill="#1b57ff" opacity="0.75" />
-      {/* 中央星：白描边 + 青填充 */}
-      <path d={`${d}Z`} fill="#7fd8ee" stroke="#ffffff" strokeWidth="8" strokeLinejoin="miter" />
-    </svg>
-  );
-};
 
 const ATTR_IDS: AttributeId[] = ['knowledge', 'guts', 'dexterity', 'kindness', 'charm'];
 

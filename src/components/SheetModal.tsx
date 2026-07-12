@@ -134,7 +134,7 @@ export const SheetModal = ({
             transition={springSoft}
             onClick={(e) => e.stopPropagation()}
             className={p3
-              ? `flex w-full flex-col shadow-2xl ${maxHeightClass} ${isBottom ? 'pb-[env(safe-area-inset-bottom)]' : 'mx-4 max-w-md'}`
+              ? `p3r-sheet flex w-full flex-col shadow-2xl ${maxHeightClass} ${isBottom ? 'pb-[env(safe-area-inset-bottom)]' : 'mx-4 max-w-md'}`
               : `flex w-full flex-col bg-white shadow-2xl dark:bg-gray-900 ${maxHeightClass} ${
                   isBottom
                     ? 'rounded-t-3xl pb-[env(safe-area-inset-bottom)]'

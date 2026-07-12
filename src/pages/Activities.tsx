@@ -15,6 +15,8 @@ import { SheetModal } from '@/components/SheetModal';
 import { Stepper } from '@/components/Stepper';
 import { Toggle } from '@/components/Toggle';
 import { TrashIcon } from '@/components/icons';
+import { useUiChannel } from '@/ui/useUiChannel';
+import { SectionMark, SlantButton } from '@/components/p3r/kit';
 
 // ---- 来源筛选选项（筛选面板与已选 chip 共用） ----
 const METHOD_FILTER_OPTIONS = [
@@ -475,6 +477,8 @@ export const ActivitiesView = () => {
 
   // ---- 输入状态 ----
   const [showInput, setShowInput] = useState(false);
+  // P3R（蓝频道）：p3-modal-03 稿——字段/步进器经基座与通用件自动换装，此处只管按钮与节标
+  const p3 = useUiChannel() === 'p3';
   const [description, setDescription] = useState('');
   const [analyzedPoints, setAnalyzedPoints] = useState<Record<string, number> | null>(null);
   const [manualPoints, setManualPoints] = useState<Record<string, number>>({
@@ -1253,7 +1257,7 @@ export const ActivitiesView = () => {
           // "分析关键词→才出现保存"的门控逻辑本次保持原样（审计另案）
           analyzedPoints ? (
             <div className="flex items-center justify-between">
-              <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
+              <label className={`flex items-center gap-2 text-sm cursor-pointer ${p3 ? 'font-black text-[#0a1230]' : 'text-gray-700 dark:text-gray-300'}`}>
                 <input
                   type="checkbox"
                   checked={importantOnly}
@@ -1262,6 +1266,11 @@ export const ActivitiesView = () => {
                 />
                 ⭐ 这很重要
               </label>
+              {p3 ? (
+                <SlantButton tone="primary" magentaCorner onClick={() => handleSave()} className="px-8" ariaLabel="保存记录">
+                  保存记录
+                </SlantButton>
+              ) : (
               <motion.button
                 whileTap={{ scale: 0.96 }}
                 onClick={(e) => { spawnSave(e); handleSave(); }}
@@ -1270,6 +1279,7 @@ export const ActivitiesView = () => {
                 {saveRipples}
                 保存
               </motion.button>
+              )}
             </div>
           ) : undefined
         }
@@ -1297,6 +1307,13 @@ export const ActivitiesView = () => {
           AI 失败 / 描述太短时按钮仍可重复点（错误提示在下面单独显示）。
         */}
         {!analyzedPoints ? (
+          p3 ? (
+            <div className="mt-4 flex justify-center">
+              <SlantButton tone="primary" disabled={!description.trim()} onClick={() => analyzeActivity()} className="px-12 text-[17px]" ariaLabel="分析关键词">
+                分析关键词
+              </SlantButton>
+            </div>
+          ) : (
           <motion.button
             whileTap={{ scale: 0.97 }}
             onClick={(e) => { spawnAnalyze(e); analyzeActivity(); }}
@@ -1306,7 +1323,15 @@ export const ActivitiesView = () => {
             {analyzeRipples}
             分析关键词
           </motion.button>
+          )
         ) : (
+          p3 ? (
+            <div className="mt-4 flex justify-center">
+              <SlantButton tone="soft" disabled={!description.trim() || aiAnalyzing} onClick={() => void analyzeWithAI()} className="px-12 text-[16px]" ariaLabel="AI 分析">
+                {aiAnalyzing ? '⋯ AI 思考中' : '✦ AI 分析'}
+              </SlantButton>
+            </div>
+          ) : (
           <motion.button
             whileTap={{ scale: 0.97 }}
             onClick={(e) => { spawnAnalyze(e); void analyzeWithAI(); }}
@@ -1316,6 +1341,7 @@ export const ActivitiesView = () => {
             {analyzeRipples}
             {aiAnalyzing ? '⋯ AI 思考中' : '✦ AI 分析'}
           </motion.button>
+          )
         )}
 
         {/* AI 错误 / 解释提示 */}
@@ -1337,10 +1363,14 @@ export const ActivitiesView = () => {
             animate={{ opacity: 1, y: 0 }}
             className="mt-4 space-y-3"
           >
-            <p className="text-xs text-gray-500 dark:text-gray-400 font-medium">调整点数</p>
+            {p3 ? (
+              <SectionMark marker="tri" title="关键词分析" className="pb-1" />
+            ) : (
+              <p className="text-xs text-gray-500 dark:text-gray-400 font-medium">调整点数</p>
+            )}
             {Object.entries(manualPoints).map(([attr, pts]) => (
               <div key={attr} className="flex items-center justify-between">
-                <span className="text-sm text-gray-700 dark:text-gray-300">
+                <span className={p3 ? 'text-sm font-black text-[#0a1230]' : 'text-sm text-gray-700 dark:text-gray-300'}>
                   {settings.attributeNames[attr as AttributeId]}
                 </span>
                 {/* §3.2 统一步进器：0–5 区间沿用原 adjustPoints 的夹紧限制 */}

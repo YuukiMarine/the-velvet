@@ -697,6 +697,14 @@ export const TodosView = () => {
         title={editingTodoId ? '编辑任务' : '添加任务'}
         footer={
           /* 协议铁律：取消恒在左，主操作（bg-primary）恒在右 */
+          p3 ? (
+            <div className="flex gap-3">
+              <SlantButton tone="ghost" onClick={closeForm} className="flex-1">取消</SlantButton>
+              <SlantButton tone="primary" magentaCorner onClick={handleSave} className="flex-1">
+                {editingTodoId ? '保存' : '添加'}
+              </SlantButton>
+            </div>
+          ) : (
           <div className="flex gap-3">
             <button
               onClick={closeForm}
@@ -711,6 +719,7 @@ export const TodosView = () => {
               {editingTodoId ? '保存' : '添加'}
             </button>
           </div>
+          )
         }
       >
               <div className="space-y-4">
@@ -722,7 +731,23 @@ export const TodosView = () => {
                   className="w-full px-3 py-2.5 border border-gray-200 dark:border-gray-600 rounded-xl bg-gray-50 dark:bg-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary/30"
                 />
 
-                {/* 重要标记 */}
+                {/* 重要标记（p3：白面 + 洋红小三角 + 黑粗标签 + 青下划线，p3-modal-02 稿） */}
+                {p3 ? (
+                  <label className="relative flex cursor-pointer items-center gap-3 px-3 py-3" style={{ background: 'rgba(255,255,255,0.8)', borderBottom: '2px solid rgba(53,209,232,0.7)' }}>
+                    <input
+                      type="checkbox"
+                      checked={form.important}
+                      onChange={(e) => setForm(prev => ({ ...prev, important: e.target.checked }))}
+                      className="h-5 w-5"
+                      style={{ accentColor: '#1b57ff' }}
+                    />
+                    <span aria-hidden className="h-0 w-0 border-y-[5px] border-l-[9px] border-y-transparent" style={{ borderLeftColor: '#f0417f' }} />
+                    <div>
+                      <span className="text-sm font-black text-[#0a1230]">标记为重要</span>
+                      <p className="mt-0.5 text-xs font-semibold text-[#8a97ad]">重要任务将在首页置顶显示，并记录在历史中</p>
+                    </div>
+                  </label>
+                ) : (
                 <label className="flex items-center gap-3 p-3 rounded-xl border border-amber-200 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 cursor-pointer">
                   <input
                     type="checkbox"
@@ -735,6 +760,7 @@ export const TodosView = () => {
                     <p className="text-xs text-amber-600/70 dark:text-amber-400/70 mt-0.5">重要任务将在首页置顶显示，并记录在历史中</p>
                   </div>
                 </label>
+                )}
 
                 {/* ── 多属性增长区域 ── */}
                 {(() => {
@@ -856,13 +882,24 @@ export const TodosView = () => {
                       <button
                         key={option.value}
                         onClick={() => setForm(prev => ({ ...prev, frequency: option.value, isLongTerm: option.value === 'single' ? false : prev.isLongTerm }))}
-                        className={`px-3 py-2 rounded-xl text-sm font-medium border transition-colors ${
-                          form.frequency === option.value
-                            ? 'bg-primary text-white border-primary'
-                            : 'bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-600'
-                        }`}
+                        className={p3
+                          ? 'relative px-3 py-2.5 text-[15px] font-black italic transition-colors'
+                          : `px-3 py-2 rounded-xl text-sm font-medium border transition-colors ${
+                              form.frequency === option.value
+                                ? 'bg-primary text-white border-primary'
+                                : 'bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-600'
+                            }`}
+                        style={p3 ? {
+                          clipPath: 'polygon(12px 0, 100% 0, calc(100% - 12px) 100%, 0 100%)',
+                          background: form.frequency === option.value ? '#1b57ff' : '#fff',
+                          color: form.frequency === option.value ? '#fff' : '#0a1230',
+                          boxShadow: form.frequency === option.value ? 'none' : '0 4px 12px rgba(38,96,140,0.08)',
+                        } : undefined}
                       >
                         {option.label}
+                        {p3 && form.frequency === option.value && (
+                          <span aria-hidden className="absolute bottom-0 right-3 h-[7px] w-[16px]" style={{ background: '#f0417f', clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
+                        )}
                       </button>
                     ))}
                   </div>
@@ -949,11 +986,18 @@ export const TodosView = () => {
                             <button
                               key={label}
                               onClick={() => toggleWeekday(index)}
-                              className={`px-2 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-                                form.weekdays.includes(index)
-                                  ? 'bg-primary text-white border-primary'
-                                  : 'bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-600'
-                              }`}
+                              className={p3
+                                ? 'px-2 py-1.5 text-xs font-black transition-colors'
+                                : `px-2 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                                    form.weekdays.includes(index)
+                                      ? 'bg-primary text-white border-primary'
+                                      : 'bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-600'
+                                  }`}
+                              style={p3 ? {
+                                clipPath: 'polygon(7px 0, 100% 0, calc(100% - 7px) 100%, 0 100%)',
+                                background: form.weekdays.includes(index) ? '#1b57ff' : '#e2f2fa',
+                                color: form.weekdays.includes(index) ? '#fff' : '#0a1230',
+                              } : undefined}
                             >
                               {label}
                             </button>

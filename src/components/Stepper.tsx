@@ -17,6 +17,7 @@
  */
 import { motion } from 'motion/react';
 import { TAP } from '@/utils/motion';
+import { useUiChannel } from '@/ui/useUiChannel';
 
 export interface StepperProps {
   value: number;
@@ -48,6 +49,8 @@ export const Stepper = ({
 }: StepperProps) => {
   const canDec = min === undefined || value > min;
   const canInc = max === undefined || value < max;
+  // P3R（p3-modal-02/04 稿）：−/+ = 浅青斜块，中值 = 大黑斜体数字
+  const p3 = useUiChannel() === 'p3';
 
   const nudge = (dir: 1 | -1) => {
     const next = round6(value + dir * step);
@@ -56,22 +59,32 @@ export const Stepper = ({
     onChange(clamped);
   };
 
+  const btnClass = p3
+    ? 'w-9 h-8 text-[#0a3bd6] font-black text-lg flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed'
+    : BTN_CLASS;
+  const btnStyle = p3
+    ? { clipPath: 'polygon(7px 0, 100% 0, calc(100% - 7px) 100%, 0 100%)', background: '#c9e9f6' }
+    : undefined;
+
   return (
-    <div role="group" aria-label={ariaLabel} className="flex items-center gap-1">
+    <div role="group" aria-label={ariaLabel} className={`flex items-center ${p3 ? 'gap-2' : 'gap-1'}`}>
       <motion.button
         type="button"
         whileTap={TAP}
         disabled={!canDec}
         onClick={() => nudge(-1)}
         aria-label="减少"
-        className={BTN_CLASS}
+        className={btnClass}
+        style={btnStyle}
       >
         −
       </motion.button>
       {/* aria-live：步进后读屏器播报新值（按钮焦点不动，值在旁边变） */}
       <span
         aria-live="polite"
-        className="w-8 text-center font-bold tabular-nums text-gray-800 dark:text-white"
+        className={p3
+          ? 'w-9 text-center text-[22px] font-black italic tabular-nums text-[#0a1230]'
+          : 'w-8 text-center font-bold tabular-nums text-gray-800 dark:text-white'}
       >
         {value}
       </span>
@@ -81,7 +94,8 @@ export const Stepper = ({
         disabled={!canInc}
         onClick={() => nudge(1)}
         aria-label="增加"
-        className={BTN_CLASS}
+        className={btnClass}
+        style={btnStyle}
       >
         +
       </motion.button>
