@@ -7,6 +7,7 @@ import { useAutoClose } from '@/utils/useAutoClose';
 import { useBackHandler } from '@/utils/useBackHandler';
 import { useFeedbackOnce } from '@/utils/useFeedbackOnce';
 import { useModalA11y } from '@/utils/useModalA11y';
+import { useUiChannel } from '@/ui/useUiChannel';
 import { zClass } from '@/utils/zIndex';
 
 /**
@@ -78,6 +79,8 @@ export const CelebrationCutIn = ({
   useBackHandler(isOpen, onClose);
   useAutoClose(isOpen, autoCloseMs, onClose);
   useFeedbackOnce(isOpen, onShown);
+  // P3R（蓝频道）：庆祝卡入斜切语言（主题渐变语义保留，形换斜卡 + 青/洋红贴角）
+  const p3 = useUiChannel() === 'p3';
 
   return createPortal(
     <AnimatePresence>
@@ -99,8 +102,15 @@ export const CelebrationCutIn = ({
             exit={{ scale: 0.5, opacity: 0, x: -12, y: 12 }}
             transition={springSoft}
             onClick={(e) => e.stopPropagation()}
-            className={`relative w-full max-w-md overflow-hidden rounded-3xl p-8 shadow-2xl ${THEME_BG[theme]}`}
+            className={`relative w-full max-w-md overflow-hidden p-8 shadow-2xl ${p3 ? '' : 'rounded-3xl'} ${THEME_BG[theme]}`}
+            style={p3 ? { clipPath: 'polygon(22px 0, 100% 0, calc(100% - 22px) 100%, 0 100%)' } : undefined}
           >
+            {p3 && (
+              <>
+                <span aria-hidden className="absolute left-0 top-0 z-10 h-[14px] w-[52px]" style={{ background: '#35d1e8', clipPath: 'polygon(0 0, 100% 0, 72% 100%, 0 100%)' }} />
+                <span aria-hidden className="absolute bottom-0 right-6 z-10 h-[10px] w-[26px]" style={{ background: '#f0417f', clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
+              </>
+            )}
             {/* 装饰层：纵向高光 + 斜光带（只有装饰可倾斜，文字层恒水平） */}
             <div aria-hidden className="absolute inset-0 bg-gradient-to-t from-transparent via-white/15 to-transparent" />
             {/* 角度同源：随 --ui-skew 总旋钮变陡、随 --boldness 归零（D0 放平） */}

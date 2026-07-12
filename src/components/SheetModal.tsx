@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import { springSoft } from '@/utils/motion';
 import { useBackHandler } from '@/utils/useBackHandler';
 import { useModalA11y } from '@/utils/useModalA11y';
+import { useUiChannel } from '@/ui/useUiChannel';
 import { zClass } from '@/utils/zIndex';
 
 /**
@@ -107,6 +108,8 @@ export const SheetModal = ({
         };
 
   const isBottom = position === 'bottom';
+  // P3R（蓝频道，p3-modal 设计稿）：浅水面 sheet + 青色斜片把手 + 大黑斜体标题
+  const p3 = useUiChannel() === 'p3' && !forceDark;
 
   return createPortal(
     <AnimatePresence>
@@ -130,18 +133,35 @@ export const SheetModal = ({
             {...panelMotion}
             transition={springSoft}
             onClick={(e) => e.stopPropagation()}
-            className={`flex w-full flex-col bg-white shadow-2xl dark:bg-gray-900 ${maxHeightClass} ${
-              isBottom
-                ? 'rounded-t-3xl pb-[env(safe-area-inset-bottom)]'
-                : 'mx-4 max-w-md rounded-2xl'
-            }`}
+            className={p3
+              ? `flex w-full flex-col shadow-2xl ${maxHeightClass} ${isBottom ? 'pb-[env(safe-area-inset-bottom)]' : 'mx-4 max-w-md'}`
+              : `flex w-full flex-col bg-white shadow-2xl dark:bg-gray-900 ${maxHeightClass} ${
+                  isBottom
+                    ? 'rounded-t-3xl pb-[env(safe-area-inset-bottom)]'
+                    : 'mx-4 max-w-md rounded-2xl'
+                }`}
+            style={p3 ? {
+              background: 'linear-gradient(178deg, #fbfdff 0%, #f0f8fc 60%, #e6f3fa 100%)',
+              clipPath: isBottom ? 'polygon(0 26px, 8% 6px, 30% 14px, 52% 0, 74% 12px, 100% 4px, 100% 100%, 0 100%)' : 'polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%)',
+            } : undefined}
           >
             {isBottom && showHandle && (
+              p3 ? (
+                <div aria-hidden className="relative mx-auto mt-5 flex h-[18px] w-[86px] shrink-0 items-center justify-center" style={{ background: '#35d1e8', clipPath: 'polygon(0 55%, 18% 0, 100% 30%, 82% 100%)' }}>
+                  <span className="h-[3px] w-8 bg-white" />
+                </div>
+              ) : (
               <div aria-hidden className="mx-auto mt-3 h-1.5 w-10 shrink-0 rounded-full bg-gray-300 dark:bg-gray-600" />
+              )
             )}
             {title && (
-              <h2 id={titleId} className="shrink-0 px-6 pt-4 text-lg font-bold text-gray-800 dark:text-white">
+              <h2
+                id={titleId}
+                className={p3 ? 'shrink-0 px-6 pt-4 text-[26px] font-black italic tracking-tight' : 'shrink-0 px-6 pt-4 text-lg font-bold text-gray-800 dark:text-white'}
+                style={p3 ? { color: '#0a1230', fontFamily: '"Arial Black", "Noto Sans SC", sans-serif' } : undefined}
+              >
                 {title}
+                {p3 && <span aria-hidden className="ml-1.5 inline-block h-[10px] w-[13px]" style={{ background: '#1b57ff', clipPath: 'polygon(100% 0, 100% 100%, 0 100%)' }} />}
               </h2>
             )}
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-4">

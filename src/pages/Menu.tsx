@@ -453,8 +453,12 @@ export const Menu = () => {
     return (
       <P3RPage className="overflow-hidden">
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }} className="relative mx-auto max-w-2xl pb-8">
-          {/* SYSTEM 竖排巨幽灵字（左缘纵贯，设计稿主视觉） */}
-          <GhostWords words={['S', 'Y', 'S', 'T', 'E', 'M']} className="left-[-30px] top-[150px] text-[96px]" style={{ color: 'rgba(147,190,222,0.24)' }} />
+          {/* SYSTEM / VELVET 巨幽灵字（设计稿：横排巨词按宽拆行堆叠、字母正立、左缘出血、纵贯中下部） */}
+          <GhostWords
+            words={['SYS', 'TEM', 'VEL', 'VET']}
+            className="left-[-26px] top-[330px] text-[112px]"
+            style={{ color: 'rgba(53,209,232,0.20)', transform: 'rotate(0deg)', lineHeight: 1.34 }}
+          />
 
           {/* 蓝斜块大标题 + 洋红角 */}
           <div className="relative inline-block pt-2">

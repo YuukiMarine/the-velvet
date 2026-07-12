@@ -39,36 +39,31 @@ export const TreasuryTriggerBoard = ({ goalsCount, done, total, onOpen }: { goal
       }}
     >
       <div className="flex items-center gap-3.5">
-        <span aria-hidden className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-white" style={{ background: P3.blue }}>
+        <span aria-hidden className="flex h-11 w-11 shrink-0 items-center justify-center text-white" style={{ background: '#35d1e8', clipPath: 'polygon(7px 0, 100% 0, calc(100% - 7px) 100%, 0 100%)' }}>
           <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round">
             <rect x="4" y="4" width="16" height="16" rx="2" />
             <path d="M8 9h8M8 12.5h8M8 16h5" />
           </svg>
         </span>
         <span className="min-w-0 flex-1 truncate text-[1.55rem] font-black leading-tight" style={{ color: P3.ink }}>我的帖子</span>
-        <span
-          aria-hidden
-          className="shrink-0 px-2.5 py-1 text-[11px] font-black tracking-[0.12em]"
-          style={{ background: P3.accent, color: P3.deep, clipPath: 'polygon(9% 0, 100% 0, 91% 100%, 0 100%)' }}
-        >
-          CH 04
-        </span>
       </div>
       <div className="mt-4 text-sm font-bold" style={{ color: P3.inkDim }}>
-        <span className="font-black" style={{ color: P3.blue }}>{goalsCount}</span> 档节目 · 完成{' '}
+        <span className="font-black" style={{ color: P3.blue }}>{goalsCount}</span> 个主题 · 完成{' '}
         <span className="font-black" style={{ color: P3.blue }}>{done}</span>
         <span className="font-black" style={{ color: P3.blue }}> / {total}</span> 小步
       </div>
       <div className="mt-3 flex items-center gap-4">
         <div className="flex flex-1 gap-1.5" aria-hidden>
           {Array.from({ length: SEGS }).map((_, i) => (
-            <span key={i} className="h-2.5 flex-1" style={{ background: i < filled ? P3.blue : 'color-mix(in srgb, var(--color-primary) 14%, #ddedfc)' }} />
+            <span key={i} className="h-2.5 flex-1" style={{ background: i < filled ? '#35d1e8' : 'color-mix(in srgb, var(--color-primary) 14%, #ddedfc)' }} />
           ))}
         </div>
-        <span className="flex shrink-0 items-center gap-1.5 text-lg font-black" style={{ color: P3.blue }}>
-          打开 <span aria-hidden>→</span>
+        <span className="flex shrink-0 items-center gap-2 text-lg font-black" style={{ color: P3.blue }}>
+          打开 <span aria-hidden className="inline-block h-0 w-0 border-y-[7px] border-l-[11px] border-y-transparent" style={{ borderLeftColor: P3.blue }} />
         </span>
       </div>
+      {/* 右下青三角（设计稿贴角） */}
+      <span aria-hidden className="absolute bottom-1 right-3 h-4 w-6" style={{ background: 'rgba(53,209,232,0.85)', clipPath: 'polygon(100% 0, 100% 100%, 0 100%)' }} />
     </button>
   );
 };

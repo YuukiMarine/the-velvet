@@ -21,6 +21,7 @@
  */
 import { motion } from 'motion/react';
 import { springSnappy } from '@/utils/motion';
+import { useUiChannel } from '@/ui/useUiChannel';
 
 export interface ToggleProps {
   checked: boolean;
@@ -35,7 +36,35 @@ export const Toggle = ({
   onChange,
   disabled = false,
   'aria-label': ariaLabel,
-}: ToggleProps) => (
+}: ToggleProps) => {
+  const p3 = useUiChannel() === 'p3';
+
+  // ── P3R（p3-settings 设计稿）：斜切双段开关——浅青轨 + 蓝色平行四边形滑块 ──
+  if (p3) {
+    return (
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        aria-label={ariaLabel}
+        disabled={disabled}
+        onClick={() => onChange(!checked)}
+        className={`relative inline-flex h-6 w-12 flex-shrink-0 transition-colors ${disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
+        style={{ clipPath: 'polygon(7px 0, 100% 0, calc(100% - 7px) 100%, 0 100%)', background: checked ? '#aee5f2' : '#dfe9f1' }}
+      >
+        <motion.span
+          aria-hidden="true"
+          className="absolute top-0 left-0 h-6 w-6"
+          style={{ clipPath: 'polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%)', background: checked ? '#1b57ff' : '#9fb4c6' }}
+          initial={false}
+          animate={{ x: checked ? 24 : 1 }}
+          transition={springSnappy}
+        />
+      </button>
+    );
+  }
+
+  return (
   <button
     type="button"
     role="switch"
@@ -56,4 +85,5 @@ export const Toggle = ({
       transition={springSnappy}
     />
   </button>
-);
+  );
+};
