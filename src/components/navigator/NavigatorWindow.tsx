@@ -222,15 +222,17 @@ export const NavigatorWindow = () => {
             className={`fixed inset-0 ${zClass.modal} flex flex-col overflow-hidden ${sk.root ?? ''}`}
             style={sk.rootStyle}
           >
-            {/* P3R 房景装饰（p3-navigator 设计稿：NAVIGATOR 横排巨词拆行 + 右侧青斜带 + 淡水面） */}
+            {/* P3R 房景装饰（p3-navigator 设计稿：NAVIGATOR 每个字母正立、自上而下排成一列，
+                沿左缘纵贯全高均匀分布——竖屏侧边字样。flex justify-around 让 9 字母自适应铺满，字号变化也不溢出。 */}
             {bright && (
               <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
                 <div
-                  className="absolute left-[-30px] top-[13%] select-none font-black italic leading-[1.18] tracking-tight"
-                  style={{ fontFamily: 'Arial, sans-serif', fontSize: '5.6rem', color: 'rgba(147,190,222,0.28)' }}
+                  className="absolute inset-y-0 left-0 flex w-[74px] select-none flex-col items-center justify-around font-black leading-none"
+                  style={{ fontFamily: 'Arial, sans-serif', fontSize: '4.1rem', color: 'rgba(147,190,222,0.30)' }}
                 >
-                  <div>NAVI</div>
-                  <div>GATOR</div>
+                  {'NAVIGATOR'.split('').map((ch, i) => (
+                    <span key={i}>{ch}</span>
+                  ))}
                 </div>
                 <div className="absolute right-[-18%] top-[-10%] h-[150%] w-[42%]" style={{ background: 'linear-gradient(180deg, rgba(53,209,232,0.28) 0%, rgba(127,216,238,0.5) 100%)', transform: 'skewX(-14deg)' }} />
                 <div className="absolute inset-x-0 bottom-0 h-[24%] opacity-60">
