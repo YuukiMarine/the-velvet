@@ -20,7 +20,6 @@ import { AttributeDossier } from '@/components/AttributeDossier';
 import { TodoCompleteModal } from '@/components/TodoCompleteModal';
 import { BattleDashboardWidget } from '@/components/BattleDashboardWidget';
 import { StackCarousel } from '@/components/StackCarousel';
-import { SlantGuideLine } from '@/components/SlantGuideLine';
 import { TerminalTaskCard } from '@/components/terminal/TerminalTaskCard';
 import { getAttributeLevelTitle } from '@/utils/attributeLevelTitles';
 import { calcMaxStreak } from '@/utils/streak';
@@ -93,19 +92,33 @@ const LABEL_POS: { left: string; top: string; translate: string; align: 'left' |
 
 const StarChartP3 = ({ items, onSelect }: { items: StarItem[]; onSelect: (id: AttributeId) => void }) => {
   const dataPath = starPathAt(items.slice(0, 5).map((it) => levelRadius(it.level, it.maxLevel)));
+  // 同心等级星环（用户定稿）：每一档一圈同色系五角星、内浅外深（最多 10 档），
+  // 由外到内实心覆盖形成环带——升级即数据星角尖走向更深的一圈，档位一眼可读
+  const ringCount = Math.min(10, Math.max(1, items[0]?.maxLevel ?? 5));
+  const ringColor = (lvl: number) => {
+    const t = lvl / ringCount; // 内圈浅 → 外圈深
+    const r = Math.round(233 - t * 109); // 233→124
+    const g = Math.round(247 - t * 46);  // 247→201
+    const b = Math.round(252 - t * 18);  // 252→234
+    return `rgb(${r}, ${g}, ${b})`;
+  };
   return (
     <div className="relative mx-auto w-full max-w-[400px]" style={{ paddingTop: '13%', paddingBottom: '13%' }}>
       <svg viewBox="0 0 360 356" className="w-full" aria-hidden>
-        {/* 满级底星（淡青近白，同时是升级的目标轮廓） */}
-        <path d={starPathAt([STAR_R, STAR_R, STAR_R, STAR_R, STAR_R])} fill="rgba(226,243,250,0.92)" />
+        {/* 同心星环：从最外档画到最内档，后画的小星盖出环带 */}
+        {Array.from({ length: ringCount }).map((_, k) => {
+          const lvl = ringCount - k;
+          const r = levelRadius(lvl, ringCount);
+          return <path key={lvl} d={starPathAt([r, r, r, r, r])} fill={ringColor(lvl)} />;
+        })}
         {/* 角端 → 标签方向的臂延长细线（设计稿细节） */}
         {items.slice(0, 5).map((it, i) => {
           const [x1, y1] = pt(armAngle(i), STAR_R * 0.99);
           const [x2, y2] = pt(armAngle(i), STAR_R + 15);
           return <line key={it.id} x1={x1} y1={y1} x2={x2} y2={y2} stroke="rgba(53,209,232,0.55)" strokeWidth={1.5} />;
         })}
-        {/* 数据星：五角连线，角长随等级伸长 */}
-        <path d={dataPath} fill="rgba(53,209,232,0.28)" stroke={P3R.cyan} strokeWidth={2.5} strokeLinejoin="miter" />
+        {/* 数据星：五角连线，角长随等级伸长（描边转亮蓝，在深色环带上保持醒目） */}
+        <path d={dataPath} fill="rgba(27,87,255,0.22)" stroke={P3R.blue} strokeWidth={2.5} strokeLinejoin="miter" />
       </svg>
       {/* 五属性标签（可点击 → 属性档案） */}
       {items.slice(0, 5).map((it, i) => {
@@ -176,10 +189,7 @@ export const DashboardP3 = () => {
   const [completedPoints, setCompletedPoints] = useState(1);
   const [unlockHint, setUnlockHint] = useState<{ achievements: number; skills: number }>({ achievements: 0, skills: 0 });
   const [decayedAttrs, setDecayedAttrs] = useState<AttributeId[]>([]);
-  // 斜界引力线锚点：根容器 / 页头日期区（起点）/ 今日任务卡（终点）
   const rootRef = useRef<HTMLDivElement>(null);
-  const greetingRef = useRef<HTMLElement>(null);
-  const todayTaskRef = useRef<HTMLDivElement>(null);
 
   const now = new Date();
   const subtext = useMemo(() => {
@@ -374,21 +384,13 @@ export const DashboardP3 = () => {
   return (
     <P3RPage className="overflow-hidden">
       <motion.div ref={rootRef} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="relative pb-6">
-        {/* 斜界引力线：页头日期 → 今日任务（视线从"今天"坠向"今天要做的事"） */}
-        <SlantGuideLine
-          containerRef={rootRef}
-          fromRef={greetingRef}
-          toRef={todayTaskRef}
-          fromAnchor="bottom-center"
-          toAnchor="top-left"
-          bend={0.55}
-        />
+        {/* 斜界引力线已按用户裁决移除（2026-07-12："删除主页背景那条莫名其妙的生长线"） */}
 
         {/* 幽灵字（右上，随页滚动） */}
         <GhostWords words={['MIDNIGHT', 'STATUS']} className="right-[-44px] top-[8px] text-right text-[64px]" />
 
         {/* ── 页头 ── */}
-        <header ref={greetingRef} className="relative pt-4">
+        <header className="relative pt-4">
           <h1
             className="inline-flex items-end text-[54px] font-black italic leading-[0.95] tracking-tight"
             style={{ color: P3R.ink, fontFamily: '"Arial Black", "Noto Sans SC", sans-serif' }}
@@ -481,7 +483,7 @@ export const DashboardP3 = () => {
               ) : undefined
             }
           />
-          <div ref={todayTaskRef} className="relative mt-3 flex items-stretch">
+          <div className="relative mt-3 flex items-stretch">
             <div
               className="relative min-h-[96px] flex-1"
               style={{ clipPath: slantClip(14), background: P3R.panel, boxShadow: '0 14px 30px rgba(38,96,140,0.10)' }}
@@ -576,7 +578,8 @@ export const DashboardP3 = () => {
         <section className="mt-7" aria-label="今日仪式">
           <SectionMark title="今日仪式" meta={<span className="text-[11px] font-bold" style={{ color: P3R.grey }}>滑动切换</span>} />
           <div className="mt-3">
-            <StackCarousel id="ritual-p3" page={ritualPage}>
+            {/* 全局裁决（2026-07-12）：仪式卡撑满一屏 + 自动轮播（第二张不再探出一截） */}
+            <StackCarousel id="ritual-p3" page={ritualPage} itemWidthClass="w-full" autoPlayMs={6000}>
               {ritualSlides}
             </StackCarousel>
           </div>

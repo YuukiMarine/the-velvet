@@ -222,16 +222,15 @@ export const NavigatorWindow = () => {
             className={`fixed inset-0 ${zClass.modal} flex flex-col overflow-hidden ${sk.root ?? ''}`}
             style={sk.rootStyle}
           >
-            {/* P3R 房景装饰（p3-navigator 设计稿：NAVIGATOR 竖排巨幽灵字 + 右侧青斜带 + 淡水面） */}
+            {/* P3R 房景装饰（p3-navigator 设计稿：NAVIGATOR 横排巨词拆行 + 右侧青斜带 + 淡水面） */}
             {bright && (
               <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
                 <div
-                  className="absolute left-[-26px] top-[8%] select-none font-black italic leading-[0.84]"
-                  style={{ fontFamily: 'Impact, "Arial Black", sans-serif', fontSize: '6.4rem', color: 'rgba(147,190,222,0.28)' }}
+                  className="absolute left-[-30px] top-[13%] select-none font-black italic leading-[1.18] tracking-tight"
+                  style={{ fontFamily: 'Arial, sans-serif', fontSize: '5.6rem', color: 'rgba(147,190,222,0.28)' }}
                 >
-                  {'NAVIGATOR'.split('').map((ch, i) => (
-                    <div key={i}>{ch}</div>
-                  ))}
+                  <div>NAVI</div>
+                  <div>GATOR</div>
                 </div>
                 <div className="absolute right-[-18%] top-[-10%] h-[150%] w-[42%]" style={{ background: 'linear-gradient(180deg, rgba(53,209,232,0.28) 0%, rgba(127,216,238,0.5) 100%)', transform: 'skewX(-14deg)' }} />
                 <div className="absolute inset-x-0 bottom-0 h-[24%] opacity-60">

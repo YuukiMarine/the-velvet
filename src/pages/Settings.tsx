@@ -675,7 +675,7 @@ export const Settings = () => {
           p3（p3-settings 设计稿）：超大黑斜体 + 青片 + 青斜纹排 + CONFIG/SYSTEM 幽灵字 */}
       {p3 ? (
         <div className="relative">
-          <GhostWords words={['CONFIG', 'SYSTEM']} className="right-[-28px] top-[-8px] text-right text-[58px]" style={{ transform: 'rotate(0deg)' }} />
+          <GhostWords words={['CONFIG', 'SYSTEM']} className="right-[-34px] top-[-14px] text-right text-[80px]" style={{ transform: 'rotate(0deg)', lineHeight: 1.04 }} />
           <P3PageHeader ticks title="设置" onBack={() => setCurrentPage('menu')} className="relative pt-2" />
           <div aria-hidden className="mt-2 flex gap-1 pl-1">
             {Array.from({ length: 9 }).map((_, i) => (

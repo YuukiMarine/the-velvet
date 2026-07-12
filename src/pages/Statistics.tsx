@@ -41,13 +41,13 @@ const StatCard = ({
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay, duration: 0.4 }}
-        className="relative px-3 py-3"
-        style={{ clipPath: 'polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%)', background: 'rgba(255,255,255,0.92)', boxShadow: '0 8px 18px rgba(38,96,140,0.07)' }}
+        className="relative overflow-hidden px-3.5 py-3"
+        style={{ clipPath: 'polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%)', background: 'rgba(255,255,255,0.92)', boxShadow: '0 8px 18px rgba(38,96,140,0.07)' }}
       >
-        <span aria-hidden className="absolute left-1.5 top-2 bottom-2 w-[4px]" style={{ background: P3R.blue, transform: 'skewX(-18deg)' }} />
-        <div className="flex flex-col gap-1 pl-3">
-          <span className="whitespace-nowrap text-[11px] font-black" style={{ color: P3R.ink }}>{label}</span>
-          <span className="text-[26px] font-black italic leading-none tabular-nums" style={{ color: P3R.blue }}>{value}</span>
+        <span aria-hidden className="absolute left-2 top-2.5 bottom-2.5 w-[4px]" style={{ background: P3R.blue, transform: 'skewX(-18deg)' }} />
+        <div className="flex min-w-0 flex-col gap-1 pl-3.5">
+          <span className="text-[11px] font-black leading-tight" style={{ color: P3R.ink }}>{label}</span>
+          <span className="text-[21px] font-black italic leading-none tabular-nums" style={{ color: P3R.blue }}>{value}</span>
           {sub && <span className="mt-0.5 truncate text-[10px] font-semibold" style={{ color: P3R.grey }}>{sub}</span>}
         </div>
       </motion.div>
@@ -336,8 +336,9 @@ export const Statistics = () => {
       {p3 ? (
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05, duration: 0.5 }}>
           <SectionMark title="成长轨迹" meta={<span className="text-[13px] font-black" style={{ color: P3R.blue }}>累计点数</span>} className="mb-3" />
-          <div className="relative px-4 pb-4 pt-3" style={{ clipPath: 'polygon(26px 0, 100% 0, calc(100% - 26px) 100%, 0 100%)', background: 'rgba(255,255,255,0.94)', boxShadow: '0 14px 32px rgba(38,96,140,0.10)' }}>
-            <div aria-hidden className="pointer-events-none absolute left-3 top-1 select-none text-[76px] font-black italic leading-none tabular-nums" style={{ color: P3R.blue, opacity: 0.92, fontFamily: 'Impact, "Arial Black", sans-serif' }}>
+          <div className="relative px-4 pb-4 pt-3" style={{ clipPath: 'polygon(18px 0, 100% 0, calc(100% - 18px) 100%, 0 100%)', background: 'rgba(255,255,255,0.94)', boxShadow: '0 14px 32px rgba(38,96,140,0.10)' }}>
+            {/* 大数字内收：避开左上斜切区（clip 18px），字体走 Arial 合成粗（装饰字重口径） */}
+            <div aria-hidden className="pointer-events-none absolute left-7 top-2 select-none text-[64px] font-black italic leading-none tabular-nums" style={{ color: P3R.blue, opacity: 0.92, fontFamily: 'Arial, sans-serif' }}>
               {totalPoints}
             </div>
             <div className="relative pt-16">
