@@ -39,80 +39,81 @@ const LevelUpP3 = ({ attributeName, newLevel, isOpen, onClose }: LevelUpModalPro
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className={`fixed inset-0 ${zClass.celebration} overflow-hidden`}
-          style={{ background: 'linear-gradient(170deg, #eef7fc 0%, #dff0f9 55%, #cfeaf6 100%)' }}
+          className={`fixed inset-0 ${zClass.celebration} flex items-center justify-center overflow-hidden bg-black/55 p-5 backdrop-blur-sm`}
           onClick={onClose}
         >
-          <div
+          {/* 紧凑大卡（用户定稿：不占满全屏、四周留出背景）；演出元素全部收进卡内 */}
+          <motion.div
             ref={containerRef}
             role="dialog"
             aria-modal="true"
             aria-label={`恭喜升级！${attributeName} Lv.${newLevel}`}
-            className="relative flex h-full w-full flex-col items-center justify-center"
+            initial={{ scale: 0.6, opacity: 0, y: 26 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
+            exit={{ scale: 0.8, opacity: 0 }}
+            transition={{ type: 'spring', damping: 20, stiffness: 240 }}
+            onClick={(e) => e.stopPropagation()}
+            className="relative w-full max-w-sm overflow-hidden pb-9 pt-7 shadow-2xl"
+            style={{
+              background: 'linear-gradient(170deg, #eef7fc 0%, #dff0f9 55%, #cfeaf6 100%)',
+              clipPath: 'polygon(18px 0, 100% 0, calc(100% - 18px) 100%, 0 100%)',
+            }}
           >
             {/* 背景：LEVEL 幽灵字 + 巨大新等级数字（超淡，压在星徽后） */}
-            <div aria-hidden className="pointer-events-none absolute left-[-14px] top-[3%] select-none font-black italic leading-none" style={{ fontFamily: 'Arial, sans-serif', fontSize: '6.5rem', color: 'rgba(147,190,222,0.34)', transform: 'rotate(-8deg)' }}>
+            <div aria-hidden className="pointer-events-none absolute left-[-8px] top-[2%] select-none font-black italic leading-none" style={{ fontFamily: 'Arial, sans-serif', fontSize: '4rem', color: 'rgba(147,190,222,0.34)', transform: 'rotate(-8deg)' }}>
               LEVEL
             </div>
-            <div aria-hidden className="pointer-events-none absolute top-[7%] left-1/2 -translate-x-1/2 select-none font-black italic leading-none tabular-nums" style={{ fontFamily: 'Arial, sans-serif', fontSize: '19rem', color: 'rgba(147,190,222,0.26)' }}>
+            <div aria-hidden className="pointer-events-none absolute left-1/2 top-[1%] -translate-x-1/2 select-none font-black italic leading-none tabular-nums" style={{ fontFamily: 'Arial, sans-serif', fontSize: '10rem', color: 'rgba(147,190,222,0.26)' }}>
               {String(newLevel).padStart(2, '0')}
             </div>
             {/* 右上蓝角 + 关闭 */}
-            <span aria-hidden className="absolute right-0 top-0 h-[130px] w-[150px]" style={{ background: '#1b57ff', clipPath: 'polygon(100% 0, 0 0, 100% 100%)' }} />
+            <span aria-hidden className="absolute right-0 top-0 h-[84px] w-[96px]" style={{ background: '#1b57ff', clipPath: 'polygon(100% 0, 0 0, 100% 100%)' }} />
             <motion.button
               whileTap={{ scale: 0.9 }}
               onClick={onClose}
               aria-label="关闭"
-              className="absolute right-4 top-4 z-20 flex h-11 w-11 items-center justify-center text-2xl font-black text-white"
+              className="absolute right-2 top-2 z-20 flex h-10 w-10 items-center justify-center text-2xl font-black text-white"
             >
               ×
             </motion.button>
             {/* 底部蓝三角群装饰 */}
-            <span aria-hidden className="absolute bottom-0 left-0 h-[160px] w-[46%]" style={{ background: 'rgba(53,209,232,0.75)', clipPath: 'polygon(0 100%, 0 20%, 100% 100%)' }} />
-            <span aria-hidden className="absolute bottom-0 right-0 h-[210px] w-[58%]" style={{ background: '#1b57ff', clipPath: 'polygon(100% 100%, 100% 0, 0 100%)' }} />
-            <span aria-hidden className="absolute bottom-[150px] left-[10%] h-0 w-0 border-y-[10px] border-l-[18px] border-y-transparent" style={{ borderLeftColor: 'rgba(53,209,232,0.9)' }} />
+            <span aria-hidden className="absolute bottom-0 left-0 h-[72px] w-[42%]" style={{ background: 'rgba(53,209,232,0.75)', clipPath: 'polygon(0 100%, 0 20%, 100% 100%)' }} />
+            <span aria-hidden className="absolute bottom-0 right-0 h-[96px] w-[54%]" style={{ background: '#1b57ff', clipPath: 'polygon(100% 100%, 100% 0, 0 100%)' }} />
 
-            {/* 主体（弹簧入场；文字层只 translate/scale，倾斜全在装饰带上） */}
-            <motion.div
-              initial={{ scale: 0.6, opacity: 0, y: 26 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.8, opacity: 0 }}
-              transition={{ type: 'spring', damping: 20, stiffness: 240 }}
-              className="relative z-10 flex w-full flex-col items-center"
-              onClick={(e) => e.stopPropagation()}
-            >
+            {/* 主体（文字层只 translate/scale，倾斜全在装饰带上） */}
+            <div className="relative z-10 flex w-full flex-col items-center">
               <motion.div
                 animate={{ rotate: [0, 3, -3, 0], scale: [1, 1.05, 1] }}
                 transition={{ duration: 1.6, repeat: Infinity, repeatDelay: 0.8 }}
               >
-                <ShatteredStar magenta className="w-[210px]" />
+                <ShatteredStar magenta className="w-[136px]" />
               </motion.div>
 
               {/* 白斜面板：恭喜升级！ */}
-              <div className="relative mt-2 w-[86%] max-w-md">
-                <div className="px-6 pb-3 pt-4 text-center" style={{ background: 'rgba(255,255,255,0.94)', clipPath: 'polygon(3% 14%, 100% 0, 97% 100%, 0 92%)', boxShadow: '0 16px 40px rgba(38,96,140,0.18)' }}>
-                  <div className="text-[30px] font-black italic leading-none" style={{ color: '#1b57ff' }}>恭喜升级！</div>
+              <div className="relative mt-1 w-[84%]">
+                <div className="px-5 pb-2.5 pt-3 text-center" style={{ background: 'rgba(255,255,255,0.94)', clipPath: 'polygon(3% 14%, 100% 0, 97% 100%, 0 92%)', boxShadow: '0 12px 30px rgba(38,96,140,0.18)' }}>
+                  <div className="text-[22px] font-black italic leading-none" style={{ color: '#1b57ff' }}>恭喜升级！</div>
                 </div>
                 {/* 蓝斜带：超大白字属性名 */}
-                <div className="-mt-1 px-6 py-4 text-center" style={{ background: '#1b57ff', clipPath: 'polygon(0 10%, 100% 0, 100% 90%, 3% 100%)', boxShadow: '0 18px 44px rgba(27,87,255,0.35)' }}>
-                  <div className="truncate text-[54px] font-black italic leading-none text-white">{attributeName}</div>
+                <div className="-mt-1 px-5 py-3 text-center" style={{ background: '#1b57ff', clipPath: 'polygon(0 10%, 100% 0, 100% 90%, 3% 100%)', boxShadow: '0 14px 34px rgba(27,87,255,0.35)' }}>
+                  <div className="truncate text-[38px] font-black italic leading-none text-white">{attributeName}</div>
                 </div>
               </div>
 
               {/* Lv.N-1 → Lv.N */}
-              <div className="mt-6 flex items-end justify-center gap-4">
-                <span className="text-[26px] font-black italic leading-none" style={{ color: 'rgba(27,87,255,0.55)' }}>Lv.{newLevel - 1}</span>
-                <span aria-hidden className="pb-1 text-[22px] font-black" style={{ color: '#1b57ff' }}>→</span>
-                <span className="relative text-[44px] font-black italic leading-none" style={{ color: '#1b57ff' }}>
+              <div className="mt-5 flex items-end justify-center gap-3">
+                <span className="text-[20px] font-black italic leading-none" style={{ color: 'rgba(27,87,255,0.55)' }}>Lv.{newLevel - 1}</span>
+                <span aria-hidden className="pb-0.5 text-[18px] font-black" style={{ color: '#1b57ff' }}>→</span>
+                <span className="relative text-[34px] font-black italic leading-none" style={{ color: '#1b57ff' }}>
                   Lv.{newLevel}
                   <span aria-hidden className="absolute -bottom-2 left-0 right-0 h-[3px]" style={{ background: '#35d1e8' }} />
-                  <span aria-hidden className="absolute -bottom-2 right-[-14px] h-[3px] w-[10px]" style={{ background: '#f0417f' }} />
+                  <span aria-hidden className="absolute -bottom-2 right-[-12px] h-[3px] w-[9px]" style={{ background: '#f0417f' }} />
                 </span>
               </div>
 
-              <p className="mt-6 text-[16px] font-black" style={{ color: '#1b57ff' }}>继续加油，你越来越强了！</p>
-            </motion.div>
-          </div>
+              <p className="mt-5 text-[14px] font-black" style={{ color: '#1b57ff' }}>继续加油，你越来越强了！</p>
+            </div>
+          </motion.div>
         </motion.div>
       )}
     </AnimatePresence>,

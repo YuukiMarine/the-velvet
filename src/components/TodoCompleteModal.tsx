@@ -1,12 +1,23 @@
-import { motion } from 'motion/react';
+import { AnimatePresence, motion } from 'motion/react';
+import { createPortal } from 'react-dom';
 import { CelebrationCutIn } from '@/components/CelebrationCutIn';
 import { MusicalNotes } from '@/components/MusicalNotes';
+import { useUiChannel } from '@/ui/useUiChannel';
 import { triggerSuccessFeedback } from '@/utils/feedback';
+import { useAutoClose } from '@/utils/useAutoClose';
+import { useBackHandler } from '@/utils/useBackHandler';
+import { useFeedbackOnce } from '@/utils/useFeedbackOnce';
+import { useModalA11y } from '@/utils/useModalA11y';
+import { zClass } from '@/utils/zIndex';
 
 /**
  * 任务完成庆祝 —— P7.2 第一波收编进 CelebrationCutIn 基座。
  * 相比旧手写版新增：portal + zClass.celebration（旧版树内 z-50，会被黑猫窗盖住）、
  * ESC/Android back。音符雨走 overlayExtras（卡片外，不被 overflow 裁切）。
+ *
+ * P3R（p3-modal-06 稿）：蓝频道换「横贯斜带 cut-in」——背景页面可见（浅遮罩），
+ * 白色大斜带横贯全宽：今日完成 + TODAY 行 + 蓝斜块任务名 + 巨大青色碎裂勾 +
+ * 青✕角 + DONE 幽灵字 + 底部自动关闭提示。行为与基座同口径（四 hooks 复用）。
  */
 interface TodoCompleteModalProps {
   isOpen: boolean;
@@ -19,7 +30,125 @@ interface TodoCompleteModalProps {
   };
 }
 
-export const TodoCompleteModal = ({ isOpen, onClose, title, totalPoints, unlockHint }: TodoCompleteModalProps) => (
+/** 巨大青色碎裂勾（p3-modal-06 稿右侧主视觉） */
+const ShatterCheck = () => (
+  <svg viewBox="0 0 210 176" className="w-[148px]" aria-hidden>
+    <polygon points="26,98 60,84 94,130 76,152 42,118" fill="#35d1e8" />
+    <polygon points="76,152 94,130 182,20 202,44 98,164" fill="#5fd9ec" />
+    <polygon points="94,130 182,20 160,14 88,110" fill="#8fe4f2" />
+    <polygon points="186,6 202,0 196,22" fill="#35d1e8" />
+    <polygon points="16,82 32,72 28,94" fill="#7fd8ee" />
+    <polygon points="106,164 122,154 114,176" fill="#1b57ff" opacity="0.55" />
+    <polygon points="200,54 210,48 206,64" fill="#7fd8ee" opacity="0.8" />
+  </svg>
+);
+
+/** P3R 横贯斜带 cut-in（p3-modal-06 1:1） */
+const TodoCompleteP3 = ({ isOpen, onClose, title, totalPoints, unlockHint }: TodoCompleteModalProps) => {
+  const containerRef = useModalA11y(isOpen, onClose);
+  useBackHandler(isOpen, onClose);
+  useAutoClose(isOpen, 3000, onClose);
+  useFeedbackOnce(isOpen, triggerSuccessFeedback);
+
+  return createPortal(
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className={`fixed inset-0 ${zClass.celebration} flex flex-col items-stretch justify-center overflow-hidden bg-black/35 backdrop-blur-[2px]`}
+          onClick={onClose}
+        >
+          <div ref={containerRef} role="dialog" aria-modal="true" aria-label={`今日完成：${title}`} className="relative">
+            {/* 斜带（横贯全宽，从右侧斜切入场） */}
+            <motion.div
+              initial={{ x: '110%', skewX: -6 }}
+              animate={{ x: 0, skewX: 0 }}
+              exit={{ x: '-110%' }}
+              transition={{ type: 'spring', damping: 24, stiffness: 220 }}
+              className="relative w-full"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div
+                className="relative overflow-hidden px-6 pb-10 pt-9"
+                style={{
+                  background: 'linear-gradient(172deg, #ffffff 0%, #f2f9fd 70%, #e8f4fa 100%)',
+                  clipPath: 'polygon(0 12%, 100% 0, 100% 88%, 0 100%)',
+                  boxShadow: '0 22px 60px rgba(10,18,48,0.35)',
+                }}
+              >
+                {/* DONE 幽灵字（带内右下） */}
+                <div aria-hidden className="pointer-events-none absolute -right-3 bottom-0 select-none font-black italic leading-none" style={{ fontFamily: 'Arial, sans-serif', fontSize: '5.2rem', color: 'rgba(53,209,232,0.22)' }}>
+                  DONE
+                </div>
+                <div className="relative flex items-center gap-3">
+                  <div className="min-w-0 flex-1">
+                    {/* 今日完成 + 洋红双片 */}
+                    <div className="flex items-end gap-2">
+                      <span className="text-[38px] font-black italic leading-none" style={{ color: '#0a1230', fontFamily: '"Arial Black", "Noto Sans SC", sans-serif' }}>今日完成</span>
+                      <span aria-hidden className="mb-1 flex gap-[3px]">
+                        <span className="h-[10px] w-[12px]" style={{ background: '#f0417f', clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
+                        <span className="h-[8px] w-[9px]" style={{ background: 'rgba(240,65,127,0.55)', clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
+                      </span>
+                    </div>
+                    {/* TODAY 行 */}
+                    <div className="mt-2.5 flex items-center gap-2.5">
+                      <span aria-hidden className="h-[4px] w-9" style={{ background: '#1b57ff', transform: 'skewX(-24deg)' }} />
+                      <span className="text-[15px] font-black italic tracking-[0.16em]" style={{ color: '#1b57ff' }}>
+                        TODAY{(totalPoints ?? 0) > 0 ? ` / +${totalPoints}` : ''}
+                      </span>
+                    </div>
+                    {/* 蓝斜块任务名 */}
+                    <div className="mt-3 inline-block max-w-full px-5 py-2.5" style={{ background: '#1b57ff', clipPath: 'polygon(12px 0, 100% 0, calc(100% - 12px) 100%, 0 100%)', boxShadow: '0 10px 26px rgba(27,87,255,0.35)' }}>
+                      <span className="block truncate text-[19px] font-black text-white">{title}</span>
+                    </div>
+                    {unlockHint && (unlockHint.achievements > 0 || unlockHint.skills > 0) && (
+                      <div className="mt-2.5 text-[13px] font-black" style={{ color: '#f0417f' }}>✦ 您解锁了新成就 / 新技能！</div>
+                    )}
+                  </div>
+                  {/* 巨大青色碎裂勾 */}
+                  <motion.div
+                    initial={{ scale: 0, rotate: -18 }}
+                    animate={{ scale: 1, rotate: 0 }}
+                    transition={{ type: 'spring', damping: 14, stiffness: 220, delay: 0.12 }}
+                    className="shrink-0"
+                  >
+                    <ShatterCheck />
+                  </motion.div>
+                </div>
+              </div>
+              {/* 右上青斜块 ✕ */}
+              <motion.button
+                whileTap={{ scale: 0.9 }}
+                onClick={onClose}
+                aria-label="关闭"
+                className="absolute right-3 top-0 z-20 flex h-11 w-14 items-center justify-center text-xl font-black text-white"
+                style={{ background: '#35d1e8', clipPath: 'polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%)' }}
+              >
+                ×
+              </motion.button>
+            </motion.div>
+
+            {/* 底部自动关闭提示 */}
+            <div aria-hidden className="mt-5 flex items-center justify-center gap-3 text-[12px] font-black" style={{ color: 'rgba(255,255,255,0.9)' }}>
+              <span className="h-px w-12 bg-white/60" />
+              即将自动关闭 <span style={{ color: '#7fd8ee' }}>3s</span>
+              <span className="h-px w-12 bg-white/60" />
+            </div>
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>,
+    document.body,
+  );
+};
+
+export const TodoCompleteModal = (props: TodoCompleteModalProps) => {
+  const p3 = useUiChannel() === 'p3';
+  if (p3) return <TodoCompleteP3 {...props} />;
+  const { isOpen, onClose, title, totalPoints, unlockHint } = props;
+  return (
   <CelebrationCutIn
     isOpen={isOpen}
     onClose={onClose}
@@ -44,4 +173,5 @@ export const TodoCompleteModal = ({ isOpen, onClose, title, totalPoints, unlockH
       <div className="text-sm text-white/90">您解锁了新成就/新技能！</div>
     )}
   </CelebrationCutIn>
-);
+  );
+};

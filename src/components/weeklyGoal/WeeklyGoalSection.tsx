@@ -1,8 +1,10 @@
 import { motion, AnimatePresence } from 'motion/react';
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useAppStore } from '@/store';
 import { AttributeId, WeeklyGoal, WeeklyGoalItem } from '@/types';
 import { useLongPress } from '@/utils/useLongPress';
+import { useUiChannel } from '@/ui/useUiChannel';
 import { v4 as uuidv4 } from 'uuid';
 import { ALL_GOAL_TYPES, getCurrentWeekRange, makeDefaultItem } from './weeklyGoalShared';
 import { GoalSetupForm } from './GoalSetupForm';
@@ -38,6 +40,8 @@ export const WeeklyGoalSection = ({
   // long-press state
   const [showEditMenu, setShowEditMenu] = useState(false);
   const { pressing, bindings: pressBindings } = useLongPress(() => setShowEditMenu(true));
+  // P3R（蓝频道）：长按菜单风格化
+  const p3 = useUiChannel() === 'p3';
 
   const handleCreate = async (items: WeeklyGoalItem[], reward: string) => {
     const goal: WeeklyGoal = {
@@ -213,40 +217,62 @@ export const WeeklyGoalSection = ({
         </div>
       </motion.div>
 
-      {/* 编辑/重置菜单 */}
-      <AnimatePresence>
-        {showEditMenu && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/40 flex items-end justify-center z-50"
-            onClick={() => setShowEditMenu(false)}
-          >
+      {/* 编辑/重置菜单——portal 到 body：本弹窗曾是树内 fixed，被 GoalDeck 的 drag
+          transform 捕获（containing block）+ p3 斜卡 clip 裁进平行四边形（用户实测 bug）。
+          portal 后回视口坐标；p3 = 白斜面板 + 斜切按钮。 */}
+      {createPortal(
+        <AnimatePresence>
+          {showEditMenu && (
             <motion.div
-              initial={{ y: 100 }}
-              animate={{ y: 0 }}
-              exit={{ y: 100 }}
-              className="bg-white dark:bg-gray-900 rounded-t-2xl w-full max-w-lg p-5 space-y-2"
-              onClick={e => e.stopPropagation()}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/40 flex items-end justify-center z-50"
+              onClick={() => setShowEditMenu(false)}
             >
-              <p className="text-sm font-bold text-gray-800 dark:text-white mb-3">本周目标</p>
-              {!currentGoal.completed && (
+              <motion.div
+                initial={{ y: 100 }}
+                animate={{ y: 0 }}
+                exit={{ y: 100 }}
+                className={p3
+                  ? 'w-full max-w-lg space-y-2.5 p-5 pb-6'
+                  : 'bg-white dark:bg-gray-900 rounded-t-2xl w-full max-w-lg p-5 space-y-2'}
+                style={p3 ? { background: 'linear-gradient(178deg, #fbfdff 0%, #eef7fc 100%)', clipPath: 'polygon(0 22px, 10% 4px, 34% 12px, 56% 0, 78% 10px, 100% 2px, 100% 100%, 0 100%)' } : undefined}
+                onClick={e => e.stopPropagation()}
+              >
+                <p className={p3 ? 'mb-3 text-[18px] font-black italic' : 'text-sm font-bold text-gray-800 dark:text-white mb-3'} style={p3 ? { color: '#0a1230' } : undefined}>
+                  本周目标
+                  {p3 && <span aria-hidden className="ml-1.5 inline-block h-[8px] w-[11px]" style={{ background: '#1b57ff', clipPath: 'polygon(100% 0, 100% 100%, 0 100%)' }} />}
+                </p>
+                {!currentGoal.completed && (
+                  <button
+                    onClick={() => { setShowEditMenu(false); setShowEditForm(true); }}
+                    className={p3 ? 'w-full py-3 text-sm font-black text-white' : 'w-full py-3 rounded-xl bg-primary/10 text-primary dark:text-primary text-sm font-semibold'}
+                    style={p3 ? { clipPath: 'polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%)', background: '#1b57ff' } : undefined}
+                  >
+                    修改选项
+                  </button>
+                )}
                 <button
-                  onClick={() => { setShowEditMenu(false); setShowEditForm(true); }}
-                  className="w-full py-3 rounded-xl bg-primary/10 text-primary dark:text-primary text-sm font-semibold"
+                  onClick={handleReset}
+                  className={p3 ? 'w-full py-3 text-sm font-black text-white' : 'w-full py-3 rounded-xl bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-sm font-medium'}
+                  style={p3 ? { clipPath: 'polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%)', background: '#f0417f' } : undefined}
                 >
-                  修改选项
+                  {currentGoal.completed ? '删除本周目标记录' : '重置本周目标'}
                 </button>
-              )}
-              <button onClick={handleReset} className="w-full py-3 rounded-xl bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-sm font-medium">
-                {currentGoal.completed ? '删除本周目标记录' : '重置本周目标'}
-              </button>
-              <button onClick={() => setShowEditMenu(false)} className="w-full py-3 rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 text-sm">取消</button>
+                <button
+                  onClick={() => setShowEditMenu(false)}
+                  className={p3 ? 'w-full py-3 text-sm font-black' : 'w-full py-3 rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 text-sm'}
+                  style={p3 ? { clipPath: 'polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%)', background: '#cfeaf6', color: '#0a1230' } : undefined}
+                >
+                  取消
+                </button>
+              </motion.div>
             </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+          )}
+        </AnimatePresence>,
+        document.body,
+      )}
 
       {/* 庆祝完成弹窗 */}
       <CelebrationModal
