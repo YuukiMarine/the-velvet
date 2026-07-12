@@ -476,11 +476,14 @@ export const DashboardP3 = () => {
           <SectionMark
             title="今日任务"
             meta={
-              totalCount > 0 ? (
-                <span className="text-[14px] font-black italic tabular-nums" style={{ color: P3R.blue }}>
-                  {completedCount}<span className="mx-0.5" style={{ color: P3R.grey }}>/</span>{totalCount}
-                </span>
-              ) : undefined
+              <button type="button" onClick={() => go('todos')} className="flex items-baseline gap-1.5 text-[14px] font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1b57ff]" style={{ color: P3R.blue }} aria-label="打开任务页">
+                {totalCount > 0 && (
+                  <span className="font-black italic tabular-nums">
+                    {completedCount}<span className="mx-0.5" style={{ color: P3R.grey }}>/</span>{totalCount}
+                  </span>
+                )}
+                <span aria-hidden>›</span>
+              </button>
             }
           />
           <div className="relative mt-3 flex items-stretch">
@@ -561,16 +564,6 @@ export const DashboardP3 = () => {
                 </div>
               )}
             </div>
-            {/* 接入 CTA（探出卡右缘 → 行动页任务子页） */}
-            <SlantButton
-              tone="primary"
-              onClick={() => go('todos')}
-              className="-ml-3 self-center text-[19px]"
-              style={{ paddingTop: 16, paddingBottom: 16, paddingLeft: 30, paddingRight: 30 }}
-              ariaLabel="接入今日任务"
-            >
-              接入
-            </SlantButton>
           </div>
         </section>
 

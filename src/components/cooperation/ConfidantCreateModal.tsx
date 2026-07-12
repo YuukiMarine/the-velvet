@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useUiChannel } from '@/ui/useUiChannel';
 import { useAppStore } from '@/store';
 import { useBackHandler } from '@/utils/useBackHandler';
 import { matchConfidant, type ConfidantMatchResult } from '@/utils/confidantAI';
@@ -80,6 +81,8 @@ export function ConfidantCreateModal({ isOpen, onClose, onCreated, onPickOnline 
   const { settings, confidants, addConfidant } = useAppStore();
 
   const [stage, setStage] = useState<Stage>('basic');
+  // P3R（蓝频道，p3-modal-08 稿）：标题斜体 / 选择卡平行四边形 / 下一步蓝斜钮
+  const p3 = useUiChannel() === 'p3';
   const [traitStep, setTraitStep] = useState(0);
 
   const [name, setName] = useState('');
@@ -263,7 +266,10 @@ export function ConfidantCreateModal({ isOpen, onClose, onCreated, onPickOnline 
                     aria-label="返回上一步"
                   >‹</button>
                 )}
-                <h2 className="text-base font-bold text-gray-900 dark:text-white">
+                <h2
+                  className={p3 ? 'text-[22px] font-black italic tracking-tight' : 'text-base font-bold text-gray-900 dark:text-white'}
+                  style={p3 ? { color: '#0a1230', fontFamily: '"Arial Black", "Noto Sans SC", sans-serif' } : undefined}
+                >
                   {stage === 'result' ? '塔罗的回响' : '结识一位同伴'}
                 </h2>
               </div>
@@ -313,23 +319,37 @@ export function ConfidantCreateModal({ isOpen, onClose, onCreated, onPickOnline 
                     <button
                       type="button"
                       onClick={() => { /* noop: 离线就是本流程，已在这一页 */ }}
-                      className="relative rounded-2xl px-3 py-3 text-left border-2 cursor-default transition-all"
-                      style={{
+                      className={p3 ? 'relative px-3 py-3.5 text-left cursor-default transition-all' : 'relative rounded-2xl px-3 py-3 text-left border-2 cursor-default transition-all'}
+                      style={p3 ? {
+                        clipPath: 'polygon(16px 0, 100% 0, calc(100% - 16px) 100%, 0 100%)',
+                        background: '#1b57ff',
+                        boxShadow: '0 10px 26px rgba(27,87,255,0.3)',
+                      } : {
                         background: 'linear-gradient(135deg, rgb(var(--color-bond-rgb) / 0.12), rgb(var(--color-bond-bright-rgb) / 0.06))',
                         borderColor: 'rgb(var(--color-bond-rgb) / 0.5)',
                         boxShadow: '0 6px 16px -8px rgb(var(--color-bond-rgb) / 0.45)',
                       }}
                     >
                       {/* 选中角标 */}
+                      {p3 ? (
+                        <span aria-hidden className="absolute right-2 top-2 text-[15px] font-black text-white">✓</span>
+                      ) : (
                       <span
                         className="absolute top-2 right-2 w-5 h-5 rounded-full flex items-center justify-center text-white text-[11px] font-black"
                         style={{ background: 'linear-gradient(135deg, rgb(var(--color-bond-rgb)), rgb(var(--color-bond-bright-rgb)))' }}
                       >✓</span>
-                      <div className="text-xl mb-1">📝</div>
-                      <div className="text-sm font-black text-indigo-700 dark:text-indigo-300">离线同伴</div>
-                      <div className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5 leading-snug">
+                      )}
+                      {p3 ? (
+                        <span aria-hidden className="mb-1 block h-0 w-0 border-y-[7px] border-l-[12px] border-y-transparent" style={{ borderLeftColor: '#fff' }} />
+                      ) : (
+                        <div className="text-xl mb-1">📝</div>
+                      )}
+                      <div className={p3 ? 'text-[16px] font-black italic text-white' : 'text-sm font-black text-indigo-700 dark:text-indigo-300'}>离线同伴</div>
+                      {p3 && <span aria-hidden className="mt-1 block flex gap-1"><span className="h-[3px] w-3 bg-[#35d1e8]" style={{ transform: 'skewX(-24deg)' }} /><span className="h-[3px] w-2 bg-[#35d1e8]/60" style={{ transform: 'skewX(-24deg)' }} /></span>}
+                      <div className={p3 ? 'mt-1.5 text-[10px] font-semibold leading-snug text-white/85' : 'text-[10px] text-gray-500 dark:text-gray-400 mt-0.5 leading-snug'}>
                         本地塔罗匹配<br />身边的人 / 自己的关系
                       </div>
+                      {p3 && <span aria-hidden className="absolute bottom-0 right-2 h-[9px] w-[20px]" style={{ background: '#f0417f', clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />}
                     </button>
 
                     {/* 在线（强调卡片，点击后切到 AddOnlineConfidantModal） */}
@@ -340,22 +360,36 @@ export function ConfidantCreateModal({ isOpen, onClose, onCreated, onPickOnline 
                         onPickOnline();
                       }}
                       disabled={!onPickOnline}
-                      className="relative rounded-2xl px-3 py-3 text-left border-2 transition-all active:scale-95 hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
-                      style={{
+                      className={p3
+                        ? 'relative px-3 py-3.5 text-left transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed'
+                        : 'relative rounded-2xl px-3 py-3 text-left border-2 transition-all active:scale-95 hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed'}
+                      style={p3 ? {
+                        clipPath: 'polygon(16px 0, 100% 0, calc(100% - 16px) 100%, 0 100%)',
+                        background: '#ddf1f9',
+                      } : {
                         background: 'linear-gradient(135deg, rgba(16,185,129,0.10), rgba(20,184,166,0.05))',
                         borderColor: 'rgba(16,185,129,0.4)',
                       }}
                     >
-                      <div className="text-xl mb-1">🤝</div>
-                      <div className="text-sm font-black text-emerald-700 dark:text-emerald-300">
+                      {p3 ? (
+                        <span aria-hidden className="mb-1 block h-0 w-0 border-y-[7px] border-l-[12px] border-y-transparent" style={{ borderLeftColor: '#35d1e8' }} />
+                      ) : (
+                        <div className="text-xl mb-1">🤝</div>
+                      )}
+                      <div className={p3 ? 'text-[16px] font-black italic text-[#0a1230]' : 'text-sm font-black text-emerald-700 dark:text-emerald-300'}>
                         在线同伴
-                        <span className="ml-1.5 text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 align-middle tracking-wider">
+                        <span className={p3
+                          ? 'ml-1.5 inline-block px-1.5 py-0.5 align-middle text-[9px] font-black tracking-wider text-white'
+                          : 'ml-1.5 text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 align-middle tracking-wider'}
+                          style={p3 ? { background: '#35d1e8', clipPath: 'polygon(4px 0, 100% 0, calc(100% - 4px) 100%, 0 100%)' } : undefined}
+                        >
                           COOP
                         </span>
                       </div>
-                      <div className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5 leading-snug">
+                      <div className={p3 ? 'mt-1.5 text-[10px] font-semibold leading-snug text-[#3d4a66]' : 'text-[10px] text-gray-500 dark:text-gray-400 mt-0.5 leading-snug'}>
                         按 UserID 邀请<br />缔结双向羁绊
                       </div>
+                      {p3 && <span aria-hidden className="absolute bottom-1 right-2 h-0 w-0 border-b-[10px] border-l-[14px] border-l-transparent" style={{ borderBottomColor: 'rgba(53,209,232,0.9)' }} />}
                     </button>
                   </div>
 
@@ -405,7 +439,8 @@ export function ConfidantCreateModal({ isOpen, onClose, onCreated, onPickOnline 
                     whileTap={{ scale: 0.97 }}
                     onClick={handleNextFromBasic}
                     disabled={!basicValid}
-                    className="w-full py-3 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-bold text-sm shadow-lg shadow-purple-500/30 disabled:opacity-40"
+                    className={p3 ? 'relative w-full py-3.5 text-[15px] font-black text-white disabled:opacity-40' : 'w-full py-3 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-bold text-sm shadow-lg shadow-purple-500/30 disabled:opacity-40'}
+                    style={p3 ? { clipPath: 'polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%)', background: '#1b57ff', boxShadow: '0 12px 28px rgba(27,87,255,0.3)' } : undefined}
                   >
                     下一步
                   </motion.button>
@@ -446,7 +481,8 @@ export function ConfidantCreateModal({ isOpen, onClose, onCreated, onPickOnline 
                     whileTap={{ scale: 0.97 }}
                     onClick={handleNextFromDescription}
                     disabled={!descriptionValid}
-                    className="w-full py-3 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-bold text-sm shadow-lg shadow-purple-500/30 disabled:opacity-40"
+                    className={p3 ? 'relative w-full py-3.5 text-[15px] font-black text-white disabled:opacity-40' : 'w-full py-3 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-bold text-sm shadow-lg shadow-purple-500/30 disabled:opacity-40'}
+                    style={p3 ? { clipPath: 'polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%)', background: '#1b57ff', boxShadow: '0 12px 28px rgba(27,87,255,0.3)' } : undefined}
                   >
                     下一步（还有 4 个小问题）
                   </motion.button>

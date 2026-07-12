@@ -148,21 +148,27 @@ export const GoalDeck = (props: GoalDeckProps) => {
           className="touch-pan-y"
         >
           {p3 ? (
-            /* 白色大平行四边形卡壳 + 左上青倒三角（设计稿目标卡）；内容原组件不动 */
-            <div
-              className="relative px-4 py-4"
-              style={{ clipPath: slantClip(18), background: '#ffffff', boxShadow: '0 14px 30px rgba(38,96,140,0.10)' }}
-            >
+            /* 白色大平行四边形卡壳 + 左上青倒三角（设计稿目标卡）；内容原组件不动。
+               clip 只落在装饰底层——曾直接切内容容器，把内部长按菜单/编辑器等浮层
+               裁进平行四边形（用户实测 bug），内容层必须保持无裁切。 */
+            <div className="relative px-4 py-4">
+              <div
+                aria-hidden
+                className="absolute inset-0"
+                style={{ clipPath: slantClip(18), background: '#ffffff', boxShadow: '0 14px 30px rgba(38,96,140,0.10)' }}
+              />
               <span
                 aria-hidden
                 className="absolute left-6 top-0 h-[26px] w-[34px]"
                 style={{ background: P3R.cyan, clipPath: 'polygon(0 0, 100% 0, 50% 100%)', opacity: 0.85 }}
               />
-              {activePanel === 'weekly' ? (
-                <WeeklyGoalSection {...props} />
-              ) : (
-                <CallingCardSection sectionId="calling-card-panel" />
-              )}
+              <div className="relative">
+                {activePanel === 'weekly' ? (
+                  <WeeklyGoalSection {...props} />
+                ) : (
+                  <CallingCardSection sectionId="calling-card-panel" />
+                )}
+              </div>
             </div>
           ) : activePanel === 'weekly' ? (
             <WeeklyGoalSection {...props} />
