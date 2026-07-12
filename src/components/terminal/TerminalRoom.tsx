@@ -12,7 +12,7 @@ import type { ReactNode } from 'react';
 import { motion } from 'motion/react';
 import type { TerminalChannel } from '@/utils/terminalSkin';
 import { Halftone, SpeedLines, StarBurst, heavy } from './thiefKit';
-import { P3, P3_WATER_WIDE, P3DotGrid, P3GhostWord } from './p3Kit';
+import { P3_WATER_WIDE, P3GhostWord } from './p3Kit';
 
 interface Props {
   channel: TerminalChannel;
@@ -40,17 +40,15 @@ const BoardRoomBg = () => (
   <div
     aria-hidden
     className="pointer-events-none fixed inset-0 z-0 overflow-hidden md:left-60"
-    style={{ background: `linear-gradient(180deg, ${P3.hi} 0%, ${P3.mid} 52%, ${P3.pale} 100%)` }}
+    style={{ background: 'linear-gradient(172deg, #f2f9fd 0%, #e2f2fa 46%, #cfeaf6 100%)' }}
   >
-    {/* 斜向白色光带（设计稿 hero 后方那道亮面） */}
-    <div className="absolute -left-[12%] top-[10%] h-[26%] w-[135%] bg-white/10" style={{ clipPath: 'polygon(0 44%, 100% 0, 100% 56%, 0 100%)' }} />
-    {/* 幽灵 TRACE 水印（顶部，被 hero 面板压住一半） */}
-    <P3GhostWord word="TRACE" className="-left-[3%] top-[10%] text-[8.5rem]" style={{ opacity: 0.15 }} />
-    {/* 白点阵 */}
-    <P3DotGrid className="right-[5%] top-[15%] h-24 w-28" opacity={0.55} />
-    <P3DotGrid className="left-[4%] bottom-[30%] h-16 w-20" size={12} dot={1.1} opacity={0.35} />
-    {/* 底部水面（素材取自设计稿本体，向上渐隐融入背景） */}
-    <div className="absolute inset-x-0 bottom-0 h-[30%]">
+    {/* 斜向青色光带（p3-terminal-reference-v2 hero 后方那道亮面） */}
+    <div className="absolute -left-[12%] top-[12%] h-[30%] w-[135%]" style={{ background: 'rgba(127,216,238,0.4)', clipPath: 'polygon(0 44%, 100% 0, 100% 56%, 0 100%)' }} />
+    {/* 幽灵 TRACE / ARCHIVE 水印（青色，白日版） */}
+    <P3GhostWord word="TRACE" className="-left-[3%] top-[9%] text-[8.5rem]" style={{ color: 'rgba(53,209,232,0.30)', opacity: 1 }} />
+    <P3GhostWord word="ARCHIVE" className="-left-[2%] top-[58%] text-[6.5rem]" style={{ color: 'rgba(53,209,232,0.22)', opacity: 1 }} />
+    {/* 水面纹理（整页极淡平铺，向下加浓） */}
+    <div className="absolute inset-x-0 bottom-0 h-[42%] opacity-70">
       <img
         src={P3_WATER_WIDE}
         alt=""
@@ -91,17 +89,17 @@ export const TerminalRoom = ({ channel, title, channelLabel, onBack, children }:
             type="button"
             onClick={onBack}
             aria-label="返回"
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-white/80 hover:bg-white/10"
+            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${board ? 'text-[#1b57ff] hover:bg-black/5' : 'text-white/80 hover:bg-white/10'}`}
           >
             <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
           </button>
           <motion.h1
             initial={{ opacity: 0, x: -8 }}
             animate={{ opacity: 1, x: 0 }}
-            className={board ? 'min-w-0 truncate text-xl font-black tracking-wide text-white' : tv ? 'min-w-0 truncate text-lg font-bold tracking-wide text-white' : 'text-xl font-black tracking-wide'}
-            style={thief ? heavy(2.5) : { color: '#fff' }}
+            className={board ? 'min-w-0 truncate text-[21px] font-black tracking-wide' : tv ? 'min-w-0 truncate text-lg font-bold tracking-wide text-white' : 'text-xl font-black tracking-wide'}
+            style={thief ? heavy(2.5) : board ? { color: '#1b57ff' } : { color: '#fff' }}
           >
-            {board || tv ? `▶ ${title}` : title}
+            {tv ? `▶ ${title}` : title}
           </motion.h1>
           {tv ? (
             <span className="ml-auto flex shrink-0 items-center gap-1.5 text-[11px] font-black tracking-widest text-white/90">
@@ -109,9 +107,9 @@ export const TerminalRoom = ({ channel, title, channelLabel, onBack, children }:
               LIVE
             </span>
           ) : board ? (
-            <span className="ml-auto flex shrink-0 items-center gap-2 text-[12px] font-black tracking-[0.3em] text-white">
-              <span className="inline-flex h-2.5 w-2.5 animate-pulse rounded-full" style={{ background: P3.accent, boxShadow: '0 0 8px rgba(47,210,255,.9)' }} aria-hidden />
-              LIVE
+            <span className="ml-auto flex shrink-0 items-center gap-2 text-[14px] font-black" style={{ color: '#1b57ff' }}>
+              <span aria-hidden className="inline-flex h-3 w-3 animate-pulse" style={{ background: '#1b57ff' }} />
+              在线
             </span>
           ) : (
             <span className="ml-auto flex shrink-0 items-center gap-1.5 text-[11px] font-bold tracking-widest text-primary">

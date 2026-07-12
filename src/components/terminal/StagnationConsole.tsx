@@ -1171,9 +1171,9 @@ export const StagnationConsole = ({ onOpenMemory }: { onOpenMemory: () => void }
                 <span style={{ color: P3.blue }}>{signalA}</span>{' '}
                 <span style={{ color: P3.accent }}>{signalB}</span>
               </div>
-              <div aria-hidden className="mt-3 flex gap-[5px]">
-                {Array.from({ length: 7 }).map((_, i) => (
-                  <span key={i} className="h-2.5 w-[3px]" style={{ background: P3.blue, opacity: 0.45 }} />
+              <div aria-hidden className="mt-3 flex gap-[6px]">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <span key={i} className="h-0 w-0 border-x-[6px] border-b-[9px] border-x-transparent" style={{ borderBottomColor: P3.blue, opacity: 0.85 - i * 0.12 }} />
                 ))}
               </div>
               <h2
@@ -1193,49 +1193,43 @@ export const StagnationConsole = ({ onOpenMemory }: { onOpenMemory: () => void }
               </div>
             </div>
 
-            {/* 右缘 STASIS / CLEAR / FLOW 信号列 */}
+            {/* 右缘 STASIS / CLEAR / FLOW 信号列（白日版：青蓝字） */}
             <div aria-hidden className="pointer-events-none absolute bottom-2 right-1 z-10 flex flex-col items-end gap-5 sm:right-2">
               <span className="h-[4px] w-7" style={{ background: P3.accent }} />
               {['STASIS', 'CLEAR', 'FLOW'].map((w) => (
-                <span key={w} className="text-[13px] font-black tracking-[0.5em] text-white [text-shadow:0_1px_10px_rgba(7,40,120,.35)]">
+                <span key={w} className="text-[13px] font-black tracking-[0.5em]" style={{ color: 'rgba(27,87,255,0.5)' }}>
                   {w}
                 </span>
               ))}
             </div>
-            <span aria-hidden className="pointer-events-none absolute bottom-3 right-0 z-10 h-[8.5rem] w-px bg-white/70" />
+            <span aria-hidden className="pointer-events-none absolute bottom-3 right-0 z-10 h-[8.5rem] w-px" style={{ background: 'rgba(53,209,232,0.6)' }} />
           </div>
 
-          {/* CTA：藏青斜切条 */}
+          {/* CTA：亮青大梯形（p3-terminal-reference-v2：左蓝 ▶ + 深蓝墨大字 + 右下洋红角） */}
           <motion.button
             type="button"
             onClick={openQuickDecision}
             whileTap={{ scale: 0.985 }}
-            className="relative z-10 mt-4 flex w-full items-center gap-4 px-4 py-4 pr-6 text-left"
+            className="relative z-10 mt-4 flex w-full items-center gap-4 px-5 py-4 pr-6 text-left"
             style={{
-              background: P3.deep,
-              clipPath: 'polygon(1.8% 0, 100% 0, 98.2% 100%, 0 100%)',
-              boxShadow: '0 14px 32px rgba(6,28,80,.35)',
+              background: 'linear-gradient(120deg, #57d9ec 0%, #8fe4f2 100%)',
+              clipPath: 'polygon(4.5% 0, 100% 0, 95.5% 100%, 0 100%)',
+              boxShadow: '0 14px 32px rgba(53,209,232,.35)',
             }}
           >
-            <span
-              aria-hidden
-              className="flex h-12 w-12 shrink-0 items-center justify-center text-xl text-white sm:h-14 sm:w-14 sm:text-2xl"
-              style={{ background: P3.deepSoft }}
-            >
-              ▶
-            </span>
-            <span className="min-w-0 flex-1 text-center text-[1.35rem] font-black tracking-wide text-white sm:text-3xl">
+            <span aria-hidden className="h-0 w-0 shrink-0 border-y-[15px] border-l-[24px] border-y-transparent" style={{ borderLeftColor: '#1b57ff' }} />
+            <span className="min-w-0 flex-1 text-center text-[1.4rem] font-black tracking-wide sm:text-3xl" style={{ color: '#0b2a66' }}>
               {activeTask ? '查看当前小步' : heroCopy.cta}
             </span>
-            <span aria-hidden className="text-2xl font-black text-white">→</span>
-            <span aria-hidden className="absolute bottom-0 left-[5%] h-[3px] w-[36%]" style={{ background: P3.accent }} />
+            <span aria-hidden className="absolute bottom-0 right-[4%] h-[10px] w-[26px]" style={{ background: '#f0417f', clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
           </motion.button>
 
           <div className="mt-3 flex justify-end">
             <button
               type="button"
               onClick={openManualIntake}
-              className="text-[12px] font-bold text-white/90 underline underline-offset-4 hover:text-white"
+              className="text-[12px] font-black underline underline-offset-4"
+              style={{ color: '#1b57ff' }}
             >
               我自己说一句
             </button>

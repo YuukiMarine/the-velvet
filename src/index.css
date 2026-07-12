@@ -109,6 +109,9 @@
   --ui-cut-md: polygon(0 0, 96% 0, 100% 100%, 4% 100%);
   --ui-radius: 6px;
   --ui-noise-opacity: 0.12;
+  /* P3R 白日水面语言：斜切不斜置——斜轴世界与控件 skew 在蓝频道归零 */
+  --ui-axis: 0deg;
+  --ui-skew-ui: 0deg;
 }
 
 :root[data-theme="yellow"] {

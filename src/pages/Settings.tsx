@@ -13,6 +13,8 @@ import { Toggle } from '@/components/Toggle';
 import NotificationSettings from '@/components/NotificationSettings';
 import { NavigatorSettings } from '@/components/navigator/NavigatorSettings';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { useUiChannel } from '@/ui/useUiChannel';
+import { P3R, P3RPage, GhostWords, P3PageHeader } from '@/components/p3r/kit';
 import {
   generateAttributeLevelTitles,
   normalizeAttributeLevelTitles,
@@ -161,7 +163,7 @@ const LevelTitleField = ({
   );
 };
 
-// ── 主题颜色按钮（带涟漪点击反馈） ───────────────────────────
+// ── 主题颜色按钮（带涟漪点击反馈；p3 = 设计稿平行四边形色块 + 白勾） ───────────
 const ThemeColorButton = ({
   theme,
   active,
@@ -172,6 +174,32 @@ const ThemeColorButton = ({
   onSelect: () => void;
 }) => {
   const { spawn, ripples } = useRipple(theme.color);
+  const p3 = useUiChannel() === 'p3';
+
+  if (p3) {
+    return (
+      <motion.button
+        whileTap={{ scale: 0.93 }}
+        transition={{ type: 'spring', stiffness: 400, damping: 22 }}
+        onClick={(e) => { spawn(e); onSelect(); }}
+        className="relative flex flex-1 flex-col items-center gap-1.5"
+        aria-pressed={active}
+      >
+        <span
+          className="relative flex h-11 w-full items-center justify-center overflow-hidden"
+          style={{ clipPath: 'polygon(11px 0, 100% 0, calc(100% - 11px) 100%, 0 100%)', background: theme.color, boxShadow: active ? '0 8px 18px rgba(38,96,140,0.22)' : 'none' }}
+        >
+          {ripples}
+          {active && (
+            <motion.svg initial={{ scale: 0 }} animate={{ scale: 1 }} viewBox="0 0 24 24" className="h-7 w-7" fill="none" aria-hidden>
+              <path d="M5 12.5l4.5 4.5L19 7.5" stroke="#fff" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round" />
+            </motion.svg>
+          )}
+        </span>
+        <span className="whitespace-nowrap text-xs font-black" style={{ color: active ? '#1b57ff' : '#0a1230' }}>{theme.label}</span>
+      </motion.button>
+    );
+  }
 
   return (
     <motion.button
@@ -194,7 +222,7 @@ const ThemeColorButton = ({
   );
 };
 
-// ── 开屏动画选项卡（带涟漪点击反馈） ─────────────────────────
+// ── 开屏动画选项卡（带涟漪点击反馈；p3 = 设计稿斜切预览块 + 块下标签） ─────────
 const SplashStyleButton = ({
   opt,
   active,
@@ -205,6 +233,34 @@ const SplashStyleButton = ({
   onSelect: () => void;
 }) => {
   const { spawn, ripples } = useRipple(opt.color);
+  const p3 = useUiChannel() === 'p3';
+
+  if (p3) {
+    return (
+      <motion.button
+        whileTap={{ scale: 0.94 }}
+        transition={{ type: 'spring', stiffness: 400, damping: 22 }}
+        onClick={(e) => { spawn(e); onSelect(); }}
+        className="relative flex select-none flex-col items-center gap-1.5"
+        aria-pressed={active}
+      >
+        <span
+          className="relative flex h-14 w-full items-center justify-center overflow-hidden"
+          style={{
+            clipPath: 'polygon(12px 0, 100% 0, calc(100% - 12px) 100%, 0 100%)',
+            background: active ? opt.color : '#ddeef7',
+            boxShadow: active ? '0 8px 18px rgba(38,96,140,0.2)' : 'none',
+          }}
+        >
+          {ripples}
+          <span className="text-xl leading-none" style={{ opacity: active ? 0.95 : 0.6 }} aria-hidden>{opt.icon}</span>
+          {/* 预览块斜纹（设计稿质感） */}
+          <span aria-hidden className="pointer-events-none absolute inset-0" style={{ background: `repeating-linear-gradient(115deg, transparent 0 14px, ${active ? 'rgba(255,255,255,0.16)' : 'rgba(255,255,255,0.5)'} 14px 17px)` }} />
+        </span>
+        <span className="whitespace-nowrap text-[11px] font-black leading-tight" style={{ color: active ? '#1b57ff' : '#0a1230' }}>{opt.label}</span>
+      </motion.button>
+    );
+  }
 
   return (
     <motion.button
@@ -275,6 +331,8 @@ export const Settings = () => {
   const skills = useAppStore(s => s.skills);
   const setCurrentPage = useAppStore(s => s.setCurrentPage);
   const [activeSection, setActiveSection] = useState<string | null>('theme');
+  // P3R（蓝频道）：p3-settings-reference-v2 形态
+  const p3 = useUiChannel() === 'p3';
   const [showLevelWarning, setShowLevelWarning] = useState(false);
   // 等级阈值：恢复默认 / 删除高等级 的确认弹窗
   const [showResetThresholdsConfirm, setShowResetThresholdsConfirm] = useState(false);
@@ -606,19 +664,33 @@ export const Settings = () => {
   ];
 
   return (
+    <P3RPage active={p3}>
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="space-y-6"
+      className="relative space-y-6"
     >
-      {/* 顶部标题 + 返回按钮（设置现在只从菜单宫格进入，与其他子页保持一致的视觉） */}
+      {/* 顶部标题 + 返回按钮（设置现在只从菜单宫格进入，与其他子页保持一致的视觉）
+          p3（p3-settings 设计稿）：超大黑斜体 + 青片 + 青斜纹排 + CONFIG/SYSTEM 幽灵字 */}
+      {p3 ? (
+        <div className="relative">
+          <GhostWords words={['CONFIG', 'SYSTEM']} className="right-[-28px] top-[-8px] text-right text-[58px]" style={{ transform: 'rotate(0deg)' }} />
+          <P3PageHeader ticks title="设置" onBack={() => setCurrentPage('menu')} className="relative pt-2" />
+          <div aria-hidden className="mt-2 flex gap-1 pl-1">
+            {Array.from({ length: 9 }).map((_, i) => (
+              <span key={i} className="h-[8px] w-[10px]" style={{ background: i < 5 ? 'rgba(53,209,232,0.75)' : 'rgba(53,209,232,0.35)', clipPath: 'polygon(35% 0, 100% 0, 65% 100%, 0 100%)' }} />
+            ))}
+          </div>
+        </div>
+      ) : (
       <div className="flex items-start justify-between gap-3">
         <BackButton onClick={() => setCurrentPage('menu')} className="mt-1 -ml-1" />
         <div className="flex-1">
           <PageTitle title="设置" en="Settings" />
         </div>
       </div>
+      )}
 
       {/* P9-菜单批：用户资料卡上浮至菜单页第一屏；原位改为「账号与数据」入口
           （账号瓷砖从菜单宫格下沉至此，与主题快切上浮互为对调） */}
@@ -626,30 +698,48 @@ export const Settings = () => {
         type="button"
         whileTap={{ scale: 0.98 }}
         onClick={() => setCurrentPage('account')}
-        className="w-full flex items-center gap-3 rounded-xl bg-white dark:bg-gray-800 shadow-lg px-5 py-4 text-left hover:bg-gray-50 dark:hover:bg-gray-700"
+        className={p3
+          ? 'w-full flex items-center gap-3 px-5 py-4 text-left'
+          : 'w-full flex items-center gap-3 rounded-xl bg-white dark:bg-gray-800 shadow-lg px-5 py-4 text-left hover:bg-gray-50 dark:hover:bg-gray-700'}
+        style={p3 ? { clipPath: 'polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%)', background: 'rgba(255,255,255,0.92)', boxShadow: '0 8px 18px rgba(38,96,140,0.07)' } : undefined}
       >
         <span className="text-2xl" aria-hidden>☁️</span>
         <span className="flex-1 min-w-0">
-          <span className="block font-semibold text-gray-800 dark:text-white">账号与数据</span>
-          <span className="block text-xs text-gray-400 dark:text-gray-500 mt-0.5">云同步 · 数据管理 · 备份导出</span>
+          <span className={p3 ? 'block text-[16px] font-black' : 'block font-semibold text-gray-800 dark:text-white'} style={p3 ? { color: P3R.ink } : undefined}>账号与数据</span>
+          <span className={p3 ? 'block text-xs font-semibold mt-0.5' : 'block text-xs text-gray-400 dark:text-gray-500 mt-0.5'} style={p3 ? { color: P3R.grey } : undefined}>云同步 · 数据管理 · 备份导出</span>
         </span>
-        <span className="text-gray-400" aria-hidden>›</span>
+        {p3 ? (
+          <span aria-hidden className="h-0 w-0 border-y-[6px] border-y-transparent border-l-[9px]" style={{ borderLeftColor: P3R.blue }} />
+        ) : (
+          <span className="text-gray-400" aria-hidden>›</span>
+        )}
       </motion.button>
 
       <div className="space-y-4">
         {sections.map(section => (
-          <div key={section.id} className="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden">
+          <div
+            key={section.id}
+            className={p3 ? 'overflow-hidden' : 'bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden'}
+            style={p3 ? { clipPath: 'polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%)', background: 'rgba(255,255,255,0.92)', boxShadow: '0 8px 18px rgba(38,96,140,0.07)' } : undefined}
+          >
             <motion.button
               onClick={() => setActiveSection(activeSection === section.id ? null : section.id)}
-              className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-700"
+              className={`w-full px-6 py-4 flex items-center justify-between ${p3 ? '' : 'hover:bg-gray-50 dark:hover:bg-gray-700'}`}
             >
               <div className="flex items-center gap-3">
                 <span className="text-2xl">{section.icon}</span>
-                <span className="font-semibold text-gray-800 dark:text-white">{section.label}</span>
+                <span className={p3 ? 'text-[16px] font-black' : 'font-semibold text-gray-800 dark:text-white'} style={p3 ? { color: P3R.ink } : undefined}>{section.label}</span>
               </div>
+              {p3 ? (
+                <span aria-hidden className="h-0 w-0" style={activeSection === section.id
+                  ? { borderLeft: '6px solid transparent', borderRight: '6px solid transparent', borderBottom: `9px solid ${P3R.blue}` }
+                  : { borderLeft: '6px solid transparent', borderRight: '6px solid transparent', borderTop: `9px solid ${P3R.blue}` }}
+                />
+              ) : (
               <span className="text-gray-400">
                 {activeSection === section.id ? '▲' : '▼'}
               </span>
+              )}
             </motion.button>
 
             {activeSection === section.id && (
@@ -809,14 +899,14 @@ export const Settings = () => {
                       <h4 className="text-sm font-bold text-gray-800 dark:text-white tracking-wide">显示</h4>
                     </div>
 
-                    {/* 背景动画 — 多选 toggle */}
+                    {/* 背景动画 — 多选 toggle（p3：一行四个斜切预览块 + 块下标签，p3-settings 设计稿） */}
                     {!settings.backgroundImage && (
-                      <div className="space-y-3 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                      <div className={p3 ? 'space-y-3' : 'space-y-3 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg'}>
                         <div>
-                          <h4 className="font-medium text-gray-800 dark:text-white">背景动画</h4>
-                          <p className="text-sm text-gray-600 dark:text-gray-400">可同时开启多个，跟随主题色</p>
+                          <h4 className={p3 ? 'text-[15px] font-black' : 'font-medium text-gray-800 dark:text-white'} style={p3 ? { color: P3R.ink } : undefined}>背景动画</h4>
+                          <p className={p3 ? 'text-[12px] font-semibold' : 'text-sm text-gray-600 dark:text-gray-400'} style={p3 ? { color: P3R.grey } : undefined}>可同时开启多个，跟随主题色</p>
                         </div>
-                        <div className="grid grid-cols-2 gap-2">
+                        <div className={p3 ? 'grid grid-cols-4 gap-2' : 'grid grid-cols-2 gap-2'}>
                           {([
                             { value: 'aurora',    label: '极光',   desc: '柔和色块漂移' },
                             { value: 'particles', label: '粒子',   desc: '浮尘缓慢上升' },
@@ -825,15 +915,29 @@ export const Settings = () => {
                           ]).map(opt => {
                             const current = (settings.backgroundAnimation ?? []) as string[];
                             const active = current.includes(opt.value);
+                            const toggle = () => {
+                              const next = active
+                                ? current.filter(v => v !== opt.value)
+                                : [...current, opt.value];
+                              updateSettings({ backgroundAnimation: next });
+                            };
+                            if (p3) {
+                              return (
+                                <button key={opt.value} onClick={toggle} aria-pressed={active} title={opt.desc} className="relative flex flex-col items-center gap-1.5">
+                                  <span
+                                    className="relative h-12 w-full overflow-hidden"
+                                    style={{ clipPath: 'polygon(11px 0, 100% 0, calc(100% - 11px) 100%, 0 100%)', background: active ? P3R.blue : '#ddeef7', boxShadow: active ? '0 8px 18px rgba(27,87,255,0.22)' : 'none' }}
+                                  >
+                                    <span aria-hidden className="pointer-events-none absolute inset-0" style={{ background: `repeating-linear-gradient(115deg, transparent 0 12px, ${active ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.55)'} 12px 15px)` }} />
+                                  </span>
+                                  <span className="whitespace-nowrap text-[11px] font-black leading-tight" style={{ color: active ? P3R.blue : P3R.ink }}>{opt.label}</span>
+                                </button>
+                              );
+                            }
                             return (
                               <button
                                 key={opt.value}
-                                onClick={() => {
-                                  const next = active
-                                    ? current.filter(v => v !== opt.value)
-                                    : [...current, opt.value];
-                                  updateSettings({ backgroundAnimation: next });
-                                }}
+                                onClick={toggle}
                                 className={`text-left px-3 py-2.5 rounded-xl border-2 transition-all ${
                                   active
                                     ? 'border-primary bg-primary/10 dark:bg-primary/20'
@@ -868,12 +972,12 @@ export const Settings = () => {
                     )}
 
                     {/* 开屏动画 */}
-                    <div className="space-y-3 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                    <div className={p3 ? 'space-y-3' : 'space-y-3 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg'}>
                       <div>
-                        <h4 className="font-medium text-gray-800 dark:text-white">开屏动画</h4>
-                        <p className="text-sm text-gray-600 dark:text-gray-400">启动时的过场风格与速率</p>
+                        <h4 className={p3 ? 'text-[15px] font-black' : 'font-medium text-gray-800 dark:text-white'} style={p3 ? { color: P3R.ink } : undefined}>开屏动画</h4>
+                        <p className={p3 ? 'text-[12px] font-semibold' : 'text-sm text-gray-600 dark:text-gray-400'} style={p3 ? { color: P3R.grey } : undefined}>启动时的过场风格与速率</p>
                       </div>
-                      <div className="grid grid-cols-2 gap-2">
+                      <div className={p3 ? 'grid grid-cols-4 gap-2' : 'grid grid-cols-2 gap-2'}>
                         {([
                           {
                             value: 'velvet',
@@ -931,8 +1035,8 @@ export const Settings = () => {
                         })}
                       </div>
                       <div className="flex items-center gap-2 pt-1">
-                        <span className="text-sm text-gray-600 dark:text-gray-400 flex-shrink-0">速率</span>
-                        <div className="flex gap-2">
+                        <span className={p3 ? 'flex-shrink-0 text-sm font-black' : 'text-sm text-gray-600 dark:text-gray-400 flex-shrink-0'} style={p3 ? { color: P3R.ink } : undefined}>速率</span>
+                        <div className={p3 ? 'flex flex-1 gap-1.5' : 'flex gap-2'}>
                           {([
                             { value: 'fast',   label: '快' },
                             { value: 'normal', label: '正常' },
@@ -943,11 +1047,14 @@ export const Settings = () => {
                               <button
                                 key={opt.value}
                                 onClick={() => updateSettings({ splashSpeed: opt.value })}
-                                className={`px-4 py-1.5 rounded-lg text-sm font-medium border-2 transition-all ${
-                                  active
-                                    ? 'border-primary bg-primary text-white'
-                                    : 'border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300'
-                                }`}
+                                className={p3
+                                  ? 'flex-1 py-1.5 text-sm font-black transition-all'
+                                  : `px-4 py-1.5 rounded-lg text-sm font-medium border-2 transition-all ${
+                                      active
+                                        ? 'border-primary bg-primary text-white'
+                                        : 'border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300'
+                                    }`}
+                                style={p3 ? { clipPath: 'polygon(9px 0, 100% 0, calc(100% - 9px) 100%, 0 100%)', background: active ? P3R.blue : '#ddeef7', color: active ? '#fff' : P3R.ink } : undefined}
                               >
                                 {opt.label}
                               </button>
@@ -2387,5 +2494,6 @@ export const Settings = () => {
       />
 
     </motion.div>
+    </P3RPage>
   );
 };
