@@ -209,6 +209,7 @@ const AttrDetailInline = ({ attrId, level: fallbackLevel, onBack }: { attrId: At
   const related = achievements.filter((a) => a.condition.attribute === attrId || a.condition.type === 'all_attributes_max');
   const unlockedCount = related.filter((a) => a.unlocked).length;
   const achScrollRef = useRef<HTMLDivElement>(null);
+  const achDrag = useRef({ down: false, startX: 0, startScroll: 0, moved: false });
 
   // 纯位移进出（无淡入淡出）：属性名/返回从左飞入，数据从右飞入；exit 反向倒放
   const container = {
@@ -284,28 +285,37 @@ const AttrDetailInline = ({ attrId, level: fallbackLevel, onBack }: { attrId: At
         {related.length === 0 ? (
           <div className="px-3 py-4 text-center text-[12px] font-semibold" style={{ background: 'rgba(207,234,246,0.5)', clipPath: slantClip(8), color: P3R.grey }}>这个方向还没有专属成就</div>
         ) : (
-          <div className="relative">
-            <div ref={achScrollRef} className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
-              {related.map((a) => (
-                <div key={a.id} className="flex w-[124px] shrink-0 flex-col gap-1 px-3 py-2.5" style={{ background: a.unlocked ? 'rgba(53,209,232,0.14)' : 'rgba(207,234,246,0.4)', clipPath: slantClip(8), opacity: a.unlocked ? 1 : 0.72 }}>
-                  <div className="flex items-center justify-between">
-                    <span className="text-lg leading-none" aria-hidden>{a.icon}</span>
-                    <span className="shrink-0 text-[9px] font-black" style={{ color: a.unlocked ? P3R.magenta : P3R.grey }}>{a.unlocked ? '已解锁' : '未解锁'}</span>
-                  </div>
-                  <div className="truncate text-[12px] font-black" style={{ color: P3R.ink }}>{a.title}</div>
-                  <div className="line-clamp-2 text-[10px] font-semibold leading-tight" style={{ color: P3R.grey }}>{a.description}</div>
+          <div
+            ref={achScrollRef}
+            className="flex cursor-grab gap-2 overflow-x-auto pb-1 active:cursor-grabbing"
+            style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', touchAction: 'pan-x' }}
+            onPointerDown={(e) => {
+              const el = achScrollRef.current; if (!el) return;
+              achDrag.current = { down: true, startX: e.clientX, startScroll: el.scrollLeft, moved: false };
+              try { el.setPointerCapture(e.pointerId); } catch { /* noop */ }
+            }}
+            onPointerMove={(e) => {
+              const el = achScrollRef.current; if (!el || !achDrag.current.down) return;
+              const dx = e.clientX - achDrag.current.startX;
+              if (Math.abs(dx) > 3) achDrag.current.moved = true;
+              el.scrollLeft = achDrag.current.startScroll - dx;
+            }}
+            onPointerUp={(e) => {
+              const el = achScrollRef.current; achDrag.current.down = false;
+              try { el?.releasePointerCapture(e.pointerId); } catch { /* noop */ }
+            }}
+            onClickCapture={(e) => { if (achDrag.current.moved) { e.stopPropagation(); } }}
+          >
+            {related.map((a) => (
+              <div key={a.id} className="flex w-[124px] shrink-0 select-none flex-col gap-1 px-3 py-2.5" style={{ background: a.unlocked ? 'rgba(53,209,232,0.14)' : 'rgba(207,234,246,0.4)', clipPath: slantClip(8), opacity: a.unlocked ? 1 : 0.72 }}>
+                <div className="flex items-center justify-between">
+                  <span className="text-lg leading-none" aria-hidden>{a.icon}</span>
+                  <span className="shrink-0 text-[9px] font-black" style={{ color: a.unlocked ? P3R.magenta : P3R.grey }}>{a.unlocked ? '已解锁' : '未解锁'}</span>
                 </div>
-              ))}
-            </div>
-            {/* 点击滑动（替代拖滚动条）：>2 张时露出左右蓝斜箭头 */}
-            {related.length > 2 && (
-              <>
-                <button type="button" aria-label="上一批成就" onClick={(e) => { e.stopPropagation(); achScrollRef.current?.scrollBy({ left: -272, behavior: 'smooth' }); }}
-                  className="absolute -left-1 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center text-lg font-black leading-none text-white shadow-md active:scale-90" style={{ background: P3R.blue, clipPath: slantClip(6) }}>‹</button>
-                <button type="button" aria-label="下一批成就" onClick={(e) => { e.stopPropagation(); achScrollRef.current?.scrollBy({ left: 272, behavior: 'smooth' }); }}
-                  className="absolute -right-1 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center text-lg font-black leading-none text-white shadow-md active:scale-90" style={{ background: P3R.blue, clipPath: slantClip(6) }}>›</button>
-              </>
-            )}
+                <div className="truncate text-[12px] font-black" style={{ color: P3R.ink }}>{a.title}</div>
+                <div className="line-clamp-2 text-[10px] font-semibold leading-tight" style={{ color: P3R.grey }}>{a.description}</div>
+              </div>
+            ))}
           </div>
         )}
       </motion.div>
