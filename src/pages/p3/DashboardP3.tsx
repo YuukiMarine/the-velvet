@@ -92,8 +92,8 @@ const STAR_CX = 180;
 const STAR_CY = 178;
 const STAR_R = 150;
 const rad = (d: number) => (d * Math.PI) / 180;
-const STAR_TILT = -18; // 整体逆时针倾斜——"放倒"的视觉冲击（数据星 + 星环 + 标签锚点同步转）
-const armAngle = (i: number) => -90 + i * 72 + STAR_TILT;
+const armAngle = (i: number) => -90 + i * 72; // 正立五角星（"放倒/上窄下宽"由容器 3D 透视 rotateX 承担）
+const STAR_ROTX = 32; // 容器 3D 后仰角——顶角远(窄)、底部近(宽)的透视冲击
 const pt = (ang: number, r: number): [number, number] => [STAR_CX + r * Math.cos(rad(ang)), STAR_CY + r * Math.sin(rad(ang))];
 
 /** 五角星路径：radii[i] 为第 i 个外角半径；凹点随相邻两角联动，保持尖锐星形 */
@@ -120,7 +120,7 @@ interface StarItem {
   title: string;
 }
 
-const StarChartP3 = ({ items, onSelect }: { items: StarItem[]; onSelect: (id: AttributeId) => void }) => {
+const StarChartP3 = ({ items, onSelect, showLabels = true }: { items: StarItem[]; onSelect: (id: AttributeId) => void; showLabels?: boolean }) => {
   const dataPath = starPathAt(items.slice(0, 5).map((it) => levelRadius(it.level, it.maxLevel)));
   // 同心等级星环（用户定稿）：每一档一圈同色系五角星、内浅外深（最多 10 档），
   // 由外到内实心覆盖形成环带——升级即数据星角尖走向更深的一圈，档位一眼可读
@@ -132,60 +132,60 @@ const StarChartP3 = ({ items, onSelect }: { items: StarItem[]; onSelect: (id: At
     const b = Math.round(252 - t * 18);  // 252→234
     return `rgb(${r}, ${g}, ${b})`;
   };
-  // 标签锚点：角端外侧，随 STAR_TILT 自动跟随（viewBox 坐标 → 百分比）；
-  // 按锚点相对中心的方位智能对齐——左角右靠、右角左靠、顶底居中，长标签不溢出容器
+  // 标签锚点：紧贴角端外侧（viewBox 坐标 → 百分比），在同一个 rotateX 透视平面内自动跟随；
+  // 按锚点相对中心的方位智能对齐——左角右靠、右角左靠、顶底居中
   const labelAt = (i: number) => {
-    const [x, y] = pt(armAngle(i), STAR_R * 1.18);
+    const [x, y] = pt(armAngle(i), STAR_R * 1.04);
     const dx = x - STAR_CX;
     const dy = y - STAR_CY;
-    const tx = dx < -30 ? -90 : dx > 30 ? -10 : -50;
-    const ty = dy < -30 ? -86 : dy > 30 ? -14 : -50;
+    const tx = dx < -30 ? -86 : dx > 30 ? -14 : -50;
+    const ty = dy < -30 ? -74 : dy > 30 ? -26 : -50;
     return { leftPct: (x / 360) * 100, topPct: (y / 356) * 100, tx, ty };
   };
   return (
-    <div className="relative mx-auto w-full max-w-[264px]" style={{ paddingTop: '15%', paddingBottom: '15%' }}>
-      <svg viewBox="0 0 360 356" className="w-full overflow-visible" aria-hidden>
-        {/* 同心星环：从最外档画到最内档，后画的小星盖出环带 */}
-        {Array.from({ length: ringCount }).map((_, k) => {
-          const lvl = ringCount - k;
-          const r = levelRadius(lvl, ringCount);
-          return <path key={lvl} d={starPathAt([r, r, r, r, r])} fill={ringColor(lvl)} />;
+    <div className="relative mx-auto w-full max-w-[288px]" style={{ perspective: '680px', paddingTop: '2%', paddingBottom: '6%' }}>
+      {/* 3D 后仰平面：星 + 标签同处一个 rotateX 变换，顶远(窄)底近(宽) */}
+      <div className="relative" style={{ transform: `rotateX(${STAR_ROTX}deg)`, transformStyle: 'preserve-3d' }}>
+        <svg viewBox="0 0 360 356" className="w-full overflow-visible" aria-hidden>
+          {/* 同心星环：从最外档画到最内档，后画的小星盖出环带 */}
+          {Array.from({ length: ringCount }).map((_, k) => {
+            const lvl = ringCount - k;
+            const r = levelRadius(lvl, ringCount);
+            return <path key={lvl} d={starPathAt([r, r, r, r, r])} fill={ringColor(lvl)} />;
+          })}
+          {/* 角端 → 标签方向的臂延长细线（设计稿细节） */}
+          {items.slice(0, 5).map((it, i) => {
+            const [x1, y1] = pt(armAngle(i), STAR_R * 0.99);
+            const [x2, y2] = pt(armAngle(i), STAR_R + 12);
+            return <line key={it.id} x1={x1} y1={y1} x2={x2} y2={y2} stroke="rgba(53,209,232,0.55)" strokeWidth={1.5} />;
+          })}
+          {/* 数据星：深蓝纯色实心（去描边，用户定稿——深蓝形状即可） */}
+          <path d={dataPath} fill={P3R.blueDeep} strokeLinejoin="miter" />
+        </svg>
+        {/* 五属性标签（可点击 → 属性档案）；rotateX(-θ) 把文字从后仰平面转正对屏幕 */}
+        {showLabels && items.slice(0, 5).map((it, i) => {
+          const pos = labelAt(i);
+          return (
+            <button
+              key={it.id}
+              type="button"
+              onClick={() => onSelect(it.id)}
+              className="absolute flex flex-col items-center whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1b57ff] focus-visible:ring-offset-1"
+              style={{ left: `${pos.leftPct}%`, top: `${pos.topPct}%`, transform: `translate(${pos.tx}%, ${pos.ty}%) rotateX(-${STAR_ROTX}deg)` }}
+              aria-label={`${it.name} 等级 ${it.level}，${it.title}`}
+            >
+              <span className="flex items-baseline gap-1.5">
+                <span className="text-[15px] font-black leading-none" style={{ color: P3R.ink }}>{it.name}</span>
+                <span className="text-[26px] font-black italic leading-none" style={{ color: P3R.blue }}>{it.level}</span>
+              </span>
+              <span className="mt-0.5 block text-[11px] font-semibold leading-none" style={{ color: P3R.inkSoft }}>{it.title}</span>
+            </button>
+          );
         })}
-        {/* 角端 → 标签方向的臂延长细线（设计稿细节） */}
-        {items.slice(0, 5).map((it, i) => {
-          const [x1, y1] = pt(armAngle(i), STAR_R * 0.99);
-          const [x2, y2] = pt(armAngle(i), STAR_R + 15);
-          return <line key={it.id} x1={x1} y1={y1} x2={x2} y2={y2} stroke="rgba(53,209,232,0.55)" strokeWidth={1.5} />;
-        })}
-        {/* 数据星：深蓝纯色实心（去描边，用户定稿——深蓝形状即可） */}
-        <path d={dataPath} fill={P3R.blueDeep} strokeLinejoin="miter" />
-      </svg>
-      {/* 五属性标签（可点击 → 属性档案；锚点随倾斜跟随角端） */}
-      {items.slice(0, 5).map((it, i) => {
-        const pos = labelAt(i);
-        return (
-          <button
-            key={it.id}
-            type="button"
-            onClick={() => onSelect(it.id)}
-            className="absolute flex flex-col items-center whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1b57ff] focus-visible:ring-offset-1"
-            style={{ left: `${pos.leftPct}%`, top: `${pos.topPct}%`, transform: `translate(${pos.tx}%, ${pos.ty}%)` }}
-            aria-label={`${it.name} 等级 ${it.level}，${it.title}`}
-          >
-            <span className="flex items-baseline gap-1.5">
-              <span className="text-[15px] font-black leading-none" style={{ color: P3R.ink }}>{it.name}</span>
-              <span className="text-[26px] font-black italic leading-none" style={{ color: P3R.blue }}>{it.level}</span>
-            </span>
-            <span className="mt-0.5 block text-[11px] font-semibold leading-none" style={{ color: P3R.inkSoft }}>{it.title}</span>
-          </button>
-        );
-      })}
+      </div>
     </div>
   );
 };
-
-// 正五角星（背景装饰用，随 STAR_TILT 一起倾斜）
-const fullStarPath = starPathAt([STAR_R, STAR_R, STAR_R, STAR_R, STAR_R]);
 
 /**
  * AttrDetailInline —— 点击维度后「原地展开」的属性详情（替代 AttributeDossier 弹窗）：
@@ -208,42 +208,25 @@ const AttrDetailInline = ({ attrId, level: fallbackLevel, onBack }: { attrId: At
   const related = achievements.filter((a) => a.condition.attribute === attrId || a.condition.type === 'all_attributes_max');
   const unlockedCount = related.filter((a) => a.unlocked).length;
 
-  // 逐条 stagger（enter 正放 / exit 倒放）
-  const seg = (i: number) => ({
-    initial: { opacity: 0, x: 26 },
-    animate: { opacity: 1, x: 0, transition: { delay: 0.12 + i * 0.08, type: 'spring' as const, stiffness: 260, damping: 24 } },
-    exit: { opacity: 0, x: 26, transition: { duration: 0.16 } },
-  });
+  // 纯位移进出（无淡入淡出）：属性名/返回从左飞入，数据从右飞入；exit 反向倒放
+  const container = {
+    show: { transition: { staggerChildren: 0.06, delayChildren: 0.03 } },
+    hide: { transition: { staggerChildren: 0.05, staggerDirection: -1 as const } },
+  };
+  const fromLeft = { hide: { x: '-116%' }, show: { x: '0%' } };
+  const fromRight = { hide: { x: '118%' }, show: { x: '0%' } };
+  const spring = { type: 'spring' as const, stiffness: 250, damping: 26 };
 
   return (
     <motion.div
-      key="detail"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.22 }}
-      className="relative min-h-[360px] overflow-hidden pt-1"
+      className="relative z-0 pt-1 pb-2"
+      variants={container}
+      initial="hide"
+      animate="show"
+      exit="hide"
     >
-      {/* 背景大五角星：旋转 + 放大 + 深蓝纯色（倒放对称） */}
-      <motion.svg
-        viewBox="0 0 360 356"
-        aria-hidden
-        className="pointer-events-none absolute -right-20 -top-2 w-[340px]"
-        initial={{ rotate: -48, scale: 0.5, opacity: 0 }}
-        animate={{ rotate: 12, scale: 1, opacity: 0.12 }}
-        exit={{ rotate: -48, scale: 0.5, opacity: 0 }}
-        transition={{ type: 'spring', stiffness: 120, damping: 20 }}
-      >
-        <path d={fullStarPath} fill={P3R.blueDeep} />
-      </motion.svg>
-
-      {/* 属性名大字 + Lv（左侧，放大移入） */}
-      <motion.div
-        className="relative"
-        initial={{ x: -34, opacity: 0 }}
-        animate={{ x: 0, opacity: 1, transition: { type: 'spring', stiffness: 240, damping: 22 } }}
-        exit={{ x: -34, opacity: 0, transition: { duration: 0.18 } }}
-      >
+      {/* 属性名大字 + Lv（从左飞入） */}
+      <motion.div className="relative" variants={fromLeft} transition={spring}>
         <div className="flex items-center gap-2">
           <span aria-hidden className="h-[26px] w-[8px]" style={{ background: P3R.blue, transform: 'skewX(-18deg)' }} />
           <span className="text-[13px] font-black tracking-[0.2em]" style={{ color: P3R.blue }}>PERSONA</span>
@@ -260,19 +243,19 @@ const AttrDetailInline = ({ attrId, level: fallbackLevel, onBack }: { attrId: At
         </div>
       </motion.div>
 
-      {/* 进度 */}
-      <motion.div {...seg(0)} className="relative mt-4">
+      {/* 进度（从右飞入） */}
+      <motion.div className="relative mt-4" variants={fromRight} transition={spring}>
         <div className="mb-1 flex items-baseline justify-between text-[11px] font-black" style={{ color: P3R.blue }}>
           <span>{isMax ? '已达最高等级' : `距 Lv.${level + 1}`}</span>
           <span className="tabular-nums">{isMax ? 'MAX' : `${points - curThreshold}/${nextThreshold - curThreshold}`}</span>
         </div>
         <div className="relative h-[10px] w-full overflow-hidden" style={{ background: 'rgba(207,234,246,0.85)', clipPath: slantClip(3) }}>
-          <motion.div className="absolute inset-y-0 left-0" style={{ background: `linear-gradient(90deg, ${P3R.blue}, ${P3R.cyan})`, clipPath: slantClip(3) }} initial={{ width: 0 }} animate={{ width: `${progress * 100}%`, transition: { delay: 0.28, type: 'spring', stiffness: 110, damping: 20 } }} />
+          <div className="absolute inset-y-0 left-0" style={{ width: `${progress * 100}%`, background: `linear-gradient(90deg, ${P3R.blue}, ${P3R.cyan})`, clipPath: slantClip(3) }} />
         </div>
       </motion.div>
 
-      {/* 称号阶梯 */}
-      <motion.div {...seg(1)} className="relative mt-4">
+      {/* 称号阶梯（从右飞入） */}
+      <motion.div className="relative mt-4" variants={fromRight} transition={spring}>
         <div className="mb-1.5 text-[12px] font-black" style={{ color: P3R.inkSoft }}>称号阶梯</div>
         <div className="space-y-1">
           {Array.from({ length: lvlMax }, (_, i) => {
@@ -291,8 +274,8 @@ const AttrDetailInline = ({ attrId, level: fallbackLevel, onBack }: { attrId: At
         </div>
       </motion.div>
 
-      {/* 关联成就 */}
-      <motion.div {...seg(2)} className="relative mt-4">
+      {/* 关联成就（从右飞入） */}
+      <motion.div className="relative mt-4" variants={fromRight} transition={spring}>
         <div className="mb-1.5 text-[12px] font-black" style={{ color: P3R.inkSoft }}>关联成就（{unlockedCount}/{related.length}）</div>
         {related.length === 0 ? (
           <div className="px-3 py-4 text-center text-[12px] font-semibold" style={{ background: 'rgba(207,234,246,0.5)', clipPath: slantClip(8), color: P3R.grey }}>这个方向还没有专属成就</div>
@@ -312,8 +295,8 @@ const AttrDetailInline = ({ attrId, level: fallbackLevel, onBack }: { attrId: At
         )}
       </motion.div>
 
-      {/* 返回（点击倒放） */}
-      <motion.div {...seg(3)} className="relative mt-5">
+      {/* 返回（从左飞入；点击倒放） */}
+      <motion.div className="relative mt-5" variants={fromLeft} transition={spring}>
         <button type="button" onClick={onBack} className="flex items-center gap-2 text-[15px] font-black" style={{ color: P3R.blue }}>
           <span aria-hidden className="h-0 w-0 border-y-[6px] border-y-transparent border-r-[9px]" style={{ borderRightColor: P3R.blue }} />
           返回五角星
@@ -770,20 +753,30 @@ export const DashboardP3 = () => {
               </button>
             }
           />
-          <AnimatePresence mode="wait">
-            {dossierAttr ? (
-              <AttrDetailInline
-                key="detail"
-                attrId={dossierAttr}
-                level={starItems.find((it) => it.id === dossierAttr)?.level ?? 1}
-                onBack={() => setDossierAttr(null)}
-              />
-            ) : (
-              <motion.div key="star" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}>
-                <StarChartP3 items={starItems} onSelect={(id) => setDossierAttr(id)} />
-              </motion.div>
-            )}
-          </AnimatePresence>
+          {/* 五角星 ⇄ 详情：共存 + 纯位移切换（不淡入淡出，像游戏 UI 移动位置）
+              星 absolute 浮在顶层、详情相对流撑开高度（内容不被裁），父只裁水平飞入 */}
+          <div className="relative min-h-[288px] overflow-hidden">
+            {/* 五角星层：选中时缩小飞到右上角（移动，非淡出） */}
+            <motion.div
+              className="absolute inset-x-0 top-0 z-10"
+              animate={dossierAttr ? { scale: 0.44, x: '46%', y: '-16%' } : { scale: 1, x: '0%', y: '0%' }}
+              transition={{ type: 'spring', stiffness: 220, damping: 26 }}
+              style={{ transformOrigin: 'center', pointerEvents: dossierAttr ? 'none' : 'auto' }}
+            >
+              <StarChartP3 items={starItems} onSelect={(id) => setDossierAttr(id)} showLabels={!dossierAttr} />
+            </motion.div>
+            {/* 详情层：选中时字段从两侧滑入（纯位移 stagger，返回倒放） */}
+            <AnimatePresence>
+              {dossierAttr && (
+                <AttrDetailInline
+                  key={dossierAttr}
+                  attrId={dossierAttr}
+                  level={starItems.find((it) => it.id === dossierAttr)?.level ?? 1}
+                  onBack={() => setDossierAttr(null)}
+                />
+              )}
+            </AnimatePresence>
+          </div>
         </section>
 
         {/* ── 四格统计条（累计点数/总记录数/总等级/记录天数；成就·技能已挪至详细统计页）── */}
