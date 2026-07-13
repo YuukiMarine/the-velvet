@@ -17,6 +17,16 @@ import { CardBack } from './CardBack';
 import { TarotCardSVG } from './TarotCardSVG';
 import { buildLongReadingRequest, buildFollowUpRequest, streamChatSSE, formatApiError } from '@/utils/tarotAI';
 import { renderMarkdown } from '@/utils/markdown';
+import { useUiChannel } from '@/ui/useUiChannel';
+import { P3R, slantClip, SlantButton } from '@/components/p3r/kit';
+
+/** P3R 青双斜杠（p3-modal-16 稿的节标签尾饰） */
+const CyanSlashes = ({ soft = false }: { soft?: boolean }) => (
+  <span aria-hidden className="inline-flex gap-1">
+    <span className="h-[13px] w-[10px]" style={{ background: soft ? 'rgba(53,209,232,0.45)' : '#35d1e8', clipPath: 'polygon(38% 0, 100% 0, 62% 100%, 0 100%)' }} />
+    <span className="h-[13px] w-[10px]" style={{ background: soft ? 'rgba(53,209,232,0.25)' : 'rgba(53,209,232,0.55)', clipPath: 'polygon(38% 0, 100% 0, 62% 100%, 0 100%)' }} />
+  </span>
+);
 
 type Phase =
   | 'form'        // 问题 + 周期
@@ -45,6 +55,7 @@ export function LongReadingFlow({ initialReading, onBack }: Props) {
     countActiveReadings,
   } = useAppStore();
   const noApiKey = !settings.summaryApiKey;
+  const p3 = useUiChannel() === 'p3';
 
   const [phase, setPhase] = useState<Phase>(initialReading ? 'done' : 'form');
   const [reading, setReading] = useState<LongReading | null>(initialReading ?? null);
@@ -282,6 +293,129 @@ export function LongReadingFlow({ initialReading, onBack }: Props) {
 
   // 1) 表单
   if (phase === 'form') {
+    // P3R（p3-modal-16 稿 1:1）：提示斜条 + 大浅青斜切问题面（青底线+计数）+
+    // 时间周期斜块三选（选中蓝+洋红角，同页头 tab 结构）+ 牌阵装饰卡 + 「开始洗牌」蓝大 CTA
+    if (p3) {
+      const periodMetaList = (['recent', 'midterm', 'longterm'] as LongReadingPeriod[]);
+      return (
+        <div className="space-y-6">
+          {hitConcurrencyCap && (
+            <div className="flex items-start gap-2.5 px-4 py-3" style={{ background: 'rgba(240,65,127,0.08)', clipPath: slantClip(10) }}>
+              <span aria-hidden className="mt-0.5 h-[14px] w-[8px] shrink-0" style={{ background: P3R.magenta, transform: 'skewX(-18deg)' }} />
+              <p className="text-[13px] font-bold leading-relaxed" style={{ color: P3R.magenta }}>
+                当前已有 {activeCount} 条活跃占卜（上限 2）。请先归档或等已有占卜过期（14 天）后再发起新的。
+              </p>
+            </div>
+          )}
+          {noApiKey && (
+            <div className="flex items-start gap-2.5 px-4 py-3" style={{ background: P3R.cyanFaint, clipPath: slantClip(10) }}>
+              <span aria-hidden className="mt-0.5 h-[14px] w-[8px] shrink-0" style={{ background: P3R.blue, transform: 'skewX(-18deg)' }} />
+              <p className="text-[13px] font-bold leading-relaxed" style={{ color: P3R.blue }}>
+                中长期占卜需要 AI 解读，请先在「设置 → AI 总结」中配置 API 密钥。
+              </p>
+            </div>
+          )}
+
+          {/* 你想要询问什么？ */}
+          <div>
+            <div className="flex items-center gap-2.5">
+              <span className="text-[19px] font-black" style={{ color: P3R.ink }}>你想要询问什么？</span>
+              <CyanSlashes />
+            </div>
+            <div className="relative mt-3">
+              <textarea
+                value={question}
+                onChange={e => setQuestion(e.target.value.slice(0, 300))}
+                placeholder="例：我最近对工作的方向感到迷茫，接下来该如何取舍？"
+                rows={6}
+                className="w-full resize-none px-5 py-4 text-[15px] font-bold leading-relaxed outline-none placeholder:text-[#8fb1dc]"
+                style={{ color: P3R.ink, background: 'linear-gradient(165deg, #ddeef8 0%, #cfe9f6 100%)', clipPath: 'polygon(26px 0, 100% 0, calc(100% - 26px) 100%, 0 100%)' }}
+              />
+              <span aria-hidden className="absolute -bottom-1 left-0 right-16 h-[3px]" style={{ background: '#35d1e8' }} />
+              <span className="absolute -bottom-2.5 right-0 text-[13px] font-black" style={{ color: P3R.blue }}>{question.length}/300</span>
+            </div>
+          </div>
+
+          {/* 时间周期 */}
+          <div className="pt-1">
+            <div className="flex items-center gap-2.5">
+              <span className="text-[17px] font-black" style={{ color: P3R.ink }}>时间周期</span>
+              <CyanSlashes soft />
+            </div>
+            <div className="mt-2.5 flex items-stretch">
+              {periodMetaList.map((p, i) => {
+                const meta = PERIOD_LABELS[p];
+                const active = period === p;
+                return (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => setPeriod(p)}
+                    className="relative flex-1 px-1 py-2.5 text-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1b57ff]"
+                    style={{
+                      clipPath: slantClip(12),
+                      background: active ? P3R.blue : P3R.panel,
+                      marginLeft: i > 0 ? -7 : 0,
+                      zIndex: active ? 2 : 1,
+                      boxShadow: active ? '0 8px 20px rgba(27,87,255,.28)' : '0 5px 14px rgba(7,40,120,.08)',
+                    }}
+                  >
+                    <div className="text-[14px] font-black leading-tight" style={{ color: active ? '#fff' : P3R.ink }}>{meta.label}</div>
+                    <div className="mt-0.5 text-[11px] font-semibold leading-none" style={{ color: active ? 'rgba(255,255,255,0.85)' : P3R.grey }}>{meta.days}</div>
+                    {active && (
+                      <span aria-hidden className="absolute bottom-0 right-3 h-[8px] w-[20px]" style={{ background: P3R.magenta, clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 牌阵预览（装饰卡背） */}
+          <div>
+            <div className="flex items-center gap-2.5">
+              <span aria-hidden className="h-[14px] w-[8px]" style={{ background: P3R.blue, transform: 'skewX(-18deg)' }} />
+              <span className="text-[15px] font-black" style={{ color: P3R.ink }}>牌阵：{SPREAD_POSITIONS[period].join(' · ')}</span>
+            </div>
+            <div aria-hidden className="mt-3 flex justify-between gap-5 px-1">
+              {[0, 1, 2].map(i => (
+                <span
+                  key={i}
+                  className="h-[148px] flex-1"
+                  style={{
+                    background: 'linear-gradient(115deg, transparent 46%, rgba(53,209,232,.4) 46%, rgba(53,209,232,.4) 50%, transparent 50%), linear-gradient(160deg, #daeef8 0%, #c2e3f2 100%)',
+                    clipPath: 'polygon(18px 0, 100% 0, calc(100% - 18px) 100%, 0 100%)',
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* 开始洗牌 */}
+          <SlantButton
+            tone="primary"
+            magentaCorner
+            disabled={!question.trim() || hitConcurrencyCap || noApiKey}
+            className="w-full py-4 text-[22px]"
+            onClick={handleStartPicking}
+          >
+            <span className="flex items-center justify-center gap-4">
+              <span aria-hidden className="flex gap-1">
+                {[0, 1, 2].map(i => (
+                  <span key={i} className="h-[20px] w-[7px]" style={{ background: '#35d1e8', transform: 'skewX(-20deg)', opacity: 1 - i * 0.25 }} />
+                ))}
+              </span>
+              开始洗牌
+            </span>
+          </SlantButton>
+          {error && (
+            <div className="px-4 py-3 text-[13px] font-bold leading-relaxed whitespace-pre-wrap" style={{ background: 'rgba(240,65,127,0.08)', clipPath: slantClip(10), color: P3R.magenta }}>
+              {error}
+            </div>
+          )}
+        </div>
+      );
+    }
     return (
       <div className="space-y-5">
         {hitConcurrencyCap && (
@@ -412,24 +546,35 @@ export function LongReadingFlow({ initialReading, onBack }: Props) {
           })}
         </div>
 
-        <div className="flex gap-2">
-          <button
-            onClick={() => setPhase('form')}
-            className="flex-1 py-3 rounded-2xl font-bold text-sm bg-black/5 dark:bg-white/10 text-gray-600 dark:text-gray-300"
-          >
-            返回
-          </button>
-          <button
-            onClick={handleReveal}
-            disabled={pickedIndices.length !== 3}
-            className={`flex-1 py-3 rounded-2xl font-bold text-sm transition-all ${
-              pickedIndices.length !== 3
-                ? 'bg-gray-200 dark:bg-gray-700 text-gray-400 cursor-not-allowed'
-                : 'bg-primary text-white shadow-md'
-            }`}
-          >
-            揭示 ({pickedIndices.length}/3)
-          </button>
+        <div className="flex gap-2.5">
+          {p3 ? (
+            <>
+              <SlantButton tone="ghost" className="flex-1 py-3" onClick={() => setPhase('form')}>返回</SlantButton>
+              <SlantButton tone="primary" magentaCorner disabled={pickedIndices.length !== 3} className="flex-1 py-3" onClick={handleReveal}>
+                揭示（{pickedIndices.length}/3）
+              </SlantButton>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={() => setPhase('form')}
+                className="flex-1 py-3 rounded-2xl font-bold text-sm bg-black/5 dark:bg-white/10 text-gray-600 dark:text-gray-300"
+              >
+                返回
+              </button>
+              <button
+                onClick={handleReveal}
+                disabled={pickedIndices.length !== 3}
+                className={`flex-1 py-3 rounded-2xl font-bold text-sm transition-all ${
+                  pickedIndices.length !== 3
+                    ? 'bg-gray-200 dark:bg-gray-700 text-gray-400 cursor-not-allowed'
+                    : 'bg-primary text-white shadow-md'
+                }`}
+              >
+                揭示 ({pickedIndices.length}/3)
+              </button>
+            </>
+          )}
         </div>
 
         {error && (
@@ -518,7 +663,12 @@ export function LongReadingFlow({ initialReading, onBack }: Props) {
           ))}
         </div>
 
-        <div className="relative bg-black/[0.03] dark:bg-white/[0.03] rounded-2xl p-4 text-sm text-gray-700 dark:text-gray-200 leading-relaxed min-h-[120px]">
+        <div
+          className={p3
+            ? 'relative min-h-[120px] bg-white p-4 text-sm font-semibold leading-relaxed'
+            : 'relative bg-black/[0.03] dark:bg-white/[0.03] rounded-2xl p-4 text-sm text-gray-700 dark:text-gray-200 leading-relaxed min-h-[120px]'}
+          style={p3 ? { color: P3R.ink, clipPath: slantClip(14), boxShadow: '0 10px 26px rgba(7,40,120,.10)' } : undefined}
+        >
           {streamedText ? (
             <div
               dangerouslySetInnerHTML={{
@@ -662,11 +812,13 @@ function FollowUpPanel({
   onReveal: (i: number) => void;
   onClose: () => void;
 }) {
+  const p3 = useUiChannel() === 'p3';
   return (
     <motion.div
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
-      className="rounded-2xl border border-primary/30 bg-primary/5 dark:bg-primary/10 p-4 space-y-3"
+      className={p3 ? 'space-y-3 p-4' : 'rounded-2xl border border-primary/30 bg-primary/5 dark:bg-primary/10 p-4 space-y-3'}
+      style={p3 ? { background: '#e6f3fa', clipPath: slantClip(14) } : undefined}
     >
       <div className="flex items-center justify-between">
         <div className="text-xs font-black text-primary tracking-wider uppercase">追问（仅一次）</div>
@@ -684,15 +836,21 @@ function FollowUpPanel({
             rows={3}
             className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-primary resize-none"
           />
-          <button
-            onClick={onStartPick}
-            disabled={!question.trim()}
-            className={`w-full py-2.5 rounded-xl text-sm font-bold ${
-              !question.trim() ? 'bg-gray-200 dark:bg-gray-700 text-gray-400' : 'bg-primary text-white'
-            }`}
-          >
-            抽一张牌
-          </button>
+          {p3 ? (
+            <SlantButton tone="primary" magentaCorner disabled={!question.trim()} className="w-full py-2.5" onClick={onStartPick}>
+              抽一张牌
+            </SlantButton>
+          ) : (
+            <button
+              onClick={onStartPick}
+              disabled={!question.trim()}
+              className={`w-full py-2.5 rounded-xl text-sm font-bold ${
+                !question.trim() ? 'bg-gray-200 dark:bg-gray-700 text-gray-400' : 'bg-primary text-white'
+              }`}
+            >
+              抽一张牌
+            </button>
+          )}
         </div>
       )}
 
@@ -769,6 +927,7 @@ export function ReadingDetail({
   followUI?: React.ReactNode;
 }) {
   const { archiveLongReading, deleteLongReading } = useAppStore();
+  const p3 = useUiChannel() === 'p3';
   const positions = SPREAD_POSITIONS[reading.period];
   const today = toLocalDateKey();
   const expired = reading.expiresAt < today;
@@ -829,7 +988,10 @@ export function ReadingDetail({
 
       {/* 主解读 */}
       <div
-        className="rounded-2xl bg-black/[0.03] dark:bg-white/[0.03] p-4 text-sm text-gray-700 dark:text-gray-200 leading-relaxed"
+        className={p3
+          ? 'bg-white p-4 text-sm font-semibold leading-relaxed'
+          : 'rounded-2xl bg-black/[0.03] dark:bg-white/[0.03] p-4 text-sm text-gray-700 dark:text-gray-200 leading-relaxed'}
+        style={p3 ? { color: P3R.ink, clipPath: slantClip(14), boxShadow: '0 10px 26px rgba(7,40,120,.10)' } : undefined}
         dangerouslySetInnerHTML={{
           __html: DOMPurify.sanitize(`<p class="mb-2">${renderMarkdown(reading.content)}</p>`),
         }}
@@ -863,45 +1025,73 @@ export function ReadingDetail({
       {followUI}
 
       {/* 操作栏 */}
-      <div className="flex gap-2 pt-1">
-        {canFollowUp && !followUI && (
-          <button
-            onClick={onFollowUp}
-            className="flex-1 py-3 rounded-2xl font-bold text-sm bg-primary text-white shadow-md"
-          >
-            追问（1/1）
-          </button>
-        )}
-        {!reading.archived && (
-          <button
-            onClick={() => archiveLongReading(reading.id, true)}
-            className="flex-1 py-3 rounded-2xl font-bold text-sm bg-black/5 dark:bg-white/10 text-gray-700 dark:text-gray-200"
-          >
-            归档
-          </button>
-        )}
-        {reading.archived && (
-          <button
-            onClick={() => archiveLongReading(reading.id, false)}
-            className="flex-1 py-3 rounded-2xl font-bold text-sm bg-black/5 dark:bg-white/10 text-gray-700 dark:text-gray-200"
-          >
-            取消归档
-          </button>
-        )}
-        {confirmDel ? (
-          <button
-            onClick={() => { deleteLongReading(reading.id); onBack(); }}
-            className="flex-1 py-3 rounded-2xl font-bold text-sm bg-red-500 text-white"
-          >
-            确认删除
-          </button>
+      <div className="flex gap-2.5 pt-1">
+        {p3 ? (
+          <>
+            {canFollowUp && !followUI && (
+              <SlantButton tone="primary" magentaCorner className="flex-1 py-3" onClick={onFollowUp}>追问（1/1）</SlantButton>
+            )}
+            {!reading.archived && (
+              <SlantButton tone="ghost" className="flex-1 py-3" onClick={() => archiveLongReading(reading.id, true)}>归档</SlantButton>
+            )}
+            {reading.archived && (
+              <SlantButton tone="ghost" className="flex-1 py-3" onClick={() => archiveLongReading(reading.id, false)}>取消归档</SlantButton>
+            )}
+            {confirmDel ? (
+              <SlantButton tone="danger" className="flex-1 py-3" onClick={() => { deleteLongReading(reading.id); onBack(); }}>确认删除</SlantButton>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setConfirmDel(true)}
+                className="px-5 py-3 text-sm font-black"
+                style={{ background: 'rgba(240,65,127,0.10)', color: P3R.magenta, clipPath: slantClip(10) }}
+              >
+                删除
+              </button>
+            )}
+          </>
         ) : (
-          <button
-            onClick={() => setConfirmDel(true)}
-            className="py-3 px-4 rounded-2xl font-bold text-sm bg-red-50 dark:bg-red-900/20 text-red-500"
-          >
-            删除
-          </button>
+          <>
+            {canFollowUp && !followUI && (
+              <button
+                onClick={onFollowUp}
+                className="flex-1 py-3 rounded-2xl font-bold text-sm bg-primary text-white shadow-md"
+              >
+                追问（1/1）
+              </button>
+            )}
+            {!reading.archived && (
+              <button
+                onClick={() => archiveLongReading(reading.id, true)}
+                className="flex-1 py-3 rounded-2xl font-bold text-sm bg-black/5 dark:bg-white/10 text-gray-700 dark:text-gray-200"
+              >
+                归档
+              </button>
+            )}
+            {reading.archived && (
+              <button
+                onClick={() => archiveLongReading(reading.id, false)}
+                className="flex-1 py-3 rounded-2xl font-bold text-sm bg-black/5 dark:bg-white/10 text-gray-700 dark:text-gray-200"
+              >
+                取消归档
+              </button>
+            )}
+            {confirmDel ? (
+              <button
+                onClick={() => { deleteLongReading(reading.id); onBack(); }}
+                className="flex-1 py-3 rounded-2xl font-bold text-sm bg-red-500 text-white"
+              >
+                确认删除
+              </button>
+            ) : (
+              <button
+                onClick={() => setConfirmDel(true)}
+                className="py-3 px-4 rounded-2xl font-bold text-sm bg-red-50 dark:bg-red-900/20 text-red-500"
+              >
+                删除
+              </button>
+            )}
+          </>
         )}
       </div>
     </div>
