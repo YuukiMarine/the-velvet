@@ -23,10 +23,10 @@ import { P3R, P3RPage, GhostWords, slantClip } from '@/components/p3r/kit';
 
 type ActionsSubTab = 'todos' | 'activities';
 
-/** 子页定义：顺序即空间方位（任务在左、记录在右），决定切换动画的进出方向 */
+/** 子页定义：顺序即空间方位（记录在左、任务在右），决定切换动画的进出方向 */
 const TABS: Array<{ key: ActionsSubTab; label: string }> = [
-  { key: 'todos', label: '任务' },
   { key: 'activities', label: '记录' },
+  { key: 'todos', label: '任务' },
 ];
 
 export const Actions = () => {
@@ -52,15 +52,15 @@ export const Actions = () => {
     setActionsSubTab(tab);
   };
 
-  // 切换头横滑：左滑（位移 < -40）→ 记录，右滑（> 40）→ 任务（与子页左右方位一致）
+  // 切换头横滑：左滑（位移 < -40）→ 任务（右），右滑（> 40）→ 记录（左），与子页左右方位一致
   const handleDragEnd = (_e: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
-    if (info.offset.x < -40) switchTab('activities');
-    else if (info.offset.x > 40) switchTab('todos');
+    if (info.offset.x < -40) switchTab('todos');
+    else if (info.offset.x > 40) switchTab('activities');
   };
 
   // 子页方向偏移：每个面板从自己的"方位侧"进、向同侧出——
-  // 任务→记录时旧新内容一致向左流动，反向则一致向右，形成连贯的横移方向感
-  const panelDir = actionsSubTab === 'todos' ? -24 : 24;
+  // 记录（左）从左侧进出，任务（右）从右侧进出，形成连贯的横移方向感
+  const panelDir = actionsSubTab === 'activities' ? -24 : 24;
 
   // ── P3R 形态（蓝主题）：设计稿切换头（蓝斜块选中 + 洋红角 / 黑字未选中）──
   if (p3) {

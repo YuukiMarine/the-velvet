@@ -88,22 +88,18 @@ export const BandCutInP3 = ({ isOpen, onClose, title, totalPoints, unlockHint, e
                   boxShadow: '0 22px 60px rgba(10,18,48,0.35)',
                 }}
               >
-                {/* 蓝色硬边刀光从左向右划过（无渐变·边缘硬·快而早） */}
-                <motion.div
-                  aria-hidden
-                  className="pointer-events-none absolute inset-y-0 z-10"
-                  style={{
-                    left: '-24%',
-                    width: '17%',
-                    background: 'rgba(53,209,232,0.85)',
-                    borderLeft: '5px solid #1b57ff',
-                    borderRight: '2px solid #ffffff',
-                    transform: 'skewX(-16deg)',
-                  }}
-                  initial={{ x: 0 }}
-                  animate={{ x: '760%' }}
-                  transition={{ duration: 0.38, delay: 0.08, ease: 'linear' }}
-                />
+                {/* 三道圆形波纹逐个扩散（从青勾处 ping ×3，替代刀光；循环保活整场庆祝） */}
+                {[0, 1, 2].map((k) => (
+                  <motion.span
+                    key={k}
+                    aria-hidden
+                    className="pointer-events-none absolute z-10 rounded-full"
+                    style={{ left: '82%', top: '50%', x: '-50%', y: '-50%', border: '3px solid rgba(53,209,232,0.85)' }}
+                    initial={{ width: 26, height: 26, opacity: 0 }}
+                    animate={{ width: 240, height: 240, opacity: [0, 0.85, 0] }}
+                    transition={{ duration: 1.15, delay: 0.15 + k * 0.26, ease: 'easeOut', repeat: Infinity, repeatDelay: 0.35 }}
+                  />
+                ))}
                 {/* 幽灵词（带内右下） */}
                 <div aria-hidden className="pointer-events-none absolute -right-3 bottom-0 select-none font-black italic leading-none" style={{ fontFamily: 'Arial, sans-serif', fontSize: '5.2rem', color: 'rgba(53,209,232,0.22)' }}>
                   {ghost}

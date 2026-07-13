@@ -15,11 +15,23 @@
  */
 import { currentChannel, type UIChannel } from './channel';
 
+/** 指定演出效果（覆盖频道默认幕布）。'water' = 水波纹涨潮转场（P8.4 试验） */
+export type HeavyTransitionEffect = 'water';
+
 export interface HeavyTransitionRequest {
   id: number;
   channel: UIChannel;
   /** 幕布完全遮屏的时刻执行（切路由/切状态） */
   midpoint: () => void;
+  /** 覆盖频道默认演出（如底部栏切换指定水波纹）；缺省走频道幕布 */
+  effect?: HeavyTransitionEffect;
+  /** 演出圆心（水波纹从点击点涨潮）；缺省取屏幕中心 */
+  origin?: { x: number; y: number };
+}
+
+export interface HeavyTransitionOptions {
+  effect?: HeavyTransitionEffect;
+  origin?: { x: number; y: number };
 }
 
 let listener: ((req: HeavyTransitionRequest) => boolean) | null = null;
@@ -37,8 +49,8 @@ export const _registerTransitionLayer = (fn: (req: HeavyTransitionRequest) => bo
  * 播放一次重转场。返回 true = 演出已接管（midpoint 稍后在幕布后执行）；
  * false = 无演出（Layer 缺席/忙/降级），midpoint 已被同步执行。
  */
-export const playHeavyTransition = (midpoint: () => void): boolean => {
-  const accepted = listener?.({ id: ++seq, channel: currentChannel(), midpoint }) ?? false;
+export const playHeavyTransition = (midpoint: () => void, opts?: HeavyTransitionOptions): boolean => {
+  const accepted = listener?.({ id: ++seq, channel: currentChannel(), midpoint, effect: opts?.effect, origin: opts?.origin }) ?? false;
   if (!accepted) midpoint();
   return accepted;
 };
