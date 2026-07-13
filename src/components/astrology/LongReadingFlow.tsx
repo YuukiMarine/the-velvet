@@ -329,7 +329,7 @@ export function LongReadingFlow({ initialReading, onBack }: Props) {
                 placeholder="例：我最近对工作的方向感到迷茫，接下来该如何取舍？"
                 rows={6}
                 className="w-full resize-none px-5 py-4 text-[15px] font-bold leading-relaxed outline-none placeholder:text-[#8fb1dc]"
-                style={{ color: P3R.ink, background: 'linear-gradient(165deg, #ddeef8 0%, #cfe9f6 100%)', clipPath: 'polygon(26px 0, 100% 0, calc(100% - 26px) 100%, 0 100%)' }}
+                style={{ color: P3R.ink, background: 'linear-gradient(165deg, #ddeef8 0%, #cfe9f6 100%)', clipPath: 'polygon(14px 0, 100% 0, calc(100% - 22px) 100%, 0 100%)' }}
               />
               <span aria-hidden className="absolute -bottom-1 left-0 right-16 h-[3px]" style={{ background: '#35d1e8' }} />
               <span className="absolute -bottom-2.5 right-0 text-[13px] font-black" style={{ color: P3R.blue }}>{question.length}/300</span>

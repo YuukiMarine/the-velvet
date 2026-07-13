@@ -19,61 +19,50 @@ import { TarotCardSVG, MAJOR_SYMBOLS } from '@/components/astrology/TarotCardSVG
 import { useBoldness } from '@/utils/boldness';
 import { triggerLightHaptic } from '@/utils/feedback';
 import { useUiChannel } from '@/ui/useUiChannel';
+import { useAppStore } from '@/store';
 import { P3R, slantClip } from '@/components/p3r/kit';
 
 /**
- * P3R 正面卡（p3-cooperation-reference-v2 中央大卡 1:1）：
- * 白底圆角塔罗卡——顶部罗马数字+双三角 → 青轨道环+大阿卡纳符号 →
- * 「V · 教皇 · 正位」→ 同伴名超大黑 → RANK 蓝斜块+洋红角。
- * （信息上卡：p3 下方铭牌只留 scrubber，不再重复名字）
+ * P3R 正面卡（p3-cooperation-reference-v2 中央大卡）：纯塔罗牌面——
+ * 顶部罗马数字+双三角 → 青轨道环+放大的大阿卡纳符号 → 底部牌位行。
+ * （名字/LV/属性/关系描述全部下沉到卡下方铭牌，卡面只当"牌"看）
  */
 const P3FrontFace = ({ c }: { c: Confidant }) => {
   const card = TAROT_BY_ID[c.arcanaId];
   const sym = MAJOR_SYMBOLS[c.arcanaId] ?? '✦';
   return (
     <div
-      className="flex h-full w-full flex-col items-center rounded-[14px] bg-white px-3 pb-3.5 pt-2.5"
+      className="flex h-full w-full flex-col items-center rounded-[14px] bg-white px-3 pb-5 pt-4"
       style={{ border: '1px solid rgba(147,190,222,0.45)', boxShadow: '0 16px 36px -14px rgba(38,96,140,0.35)' }}
     >
       {/* 顶部：罗马数字 + 左右小蓝三角 */}
       <div className="flex items-center gap-2.5">
         <span aria-hidden className="h-0 w-0 border-y-[4px] border-y-transparent border-r-[7px]" style={{ borderRightColor: P3R.blue }} />
-        <span className="text-[17px] font-black tracking-[0.1em]" style={{ color: P3R.blueDeep, fontFamily: 'Georgia, serif' }}>
+        <span className="text-[18px] font-black tracking-[0.1em]" style={{ color: P3R.blueDeep, fontFamily: 'Georgia, serif' }}>
           {card?.roman ?? '—'}
         </span>
         <span aria-hidden className="h-0 w-0 border-y-[4px] border-y-transparent border-l-[7px]" style={{ borderLeftColor: P3R.blue }} />
       </div>
-      {/* 中央：青轨道环 + 大符号（逆位只倒符号，文字恒正读） */}
+      {/* 中央：青轨道环 + 放大符号（逆位只倒符号，文字恒正读） */}
       <div className="relative flex min-h-0 flex-1 items-center justify-center self-stretch">
-        <svg viewBox="0 0 160 120" className="pointer-events-none absolute inset-0 m-auto h-full w-full" aria-hidden>
-          <ellipse cx="80" cy="60" rx="66" ry="32" fill="none" stroke="rgba(53,209,232,0.5)" strokeWidth="1" transform="rotate(-16 80 60)" />
-          <ellipse cx="80" cy="60" rx="46" ry="20" fill="none" stroke="rgba(53,209,232,0.28)" strokeWidth="0.8" strokeDasharray="2 4" transform="rotate(-16 80 60)" />
-          <circle cx="26" cy="78" r="3" fill="#35d1e8" />
-          <circle cx="136" cy="40" r="2.2" fill="#7fd8ee" />
-          <circle cx="118" cy="86" r="1.6" fill="rgba(53,209,232,0.6)" />
+        <svg viewBox="0 0 160 140" className="pointer-events-none absolute inset-0 m-auto h-full w-full" aria-hidden>
+          <ellipse cx="80" cy="70" rx="70" ry="40" fill="none" stroke="rgba(53,209,232,0.5)" strokeWidth="1" transform="rotate(-16 80 70)" />
+          <ellipse cx="80" cy="70" rx="48" ry="24" fill="none" stroke="rgba(53,209,232,0.28)" strokeWidth="0.8" strokeDasharray="2 4" transform="rotate(-16 80 70)" />
+          <circle cx="22" cy="94" r="3.4" fill="#35d1e8" />
+          <circle cx="140" cy="44" r="2.4" fill="#7fd8ee" />
+          <circle cx="122" cy="102" r="1.8" fill="rgba(53,209,232,0.6)" />
         </svg>
         <span
-          className="relative text-[56px] leading-none"
-          style={{ color: P3R.blue, transform: c.orientation === 'reversed' ? 'rotate(180deg)' : undefined }}
+          className="relative leading-none"
+          style={{ fontSize: '78px', color: P3R.blue, transform: c.orientation === 'reversed' ? 'rotate(180deg)' : undefined }}
           aria-hidden
         >
           {sym}
         </span>
       </div>
-      {/* 牌位行 */}
-      <div className="max-w-full truncate text-[11px] font-black tracking-wide" style={{ color: P3R.blue }}>
-        {card?.roman ? `${card.roman} · ` : ''}{card?.name ?? c.arcanaId}{c.orientation === 'reversed' ? ' · 逆位' : ' · 正位'}
-      </div>
-      {/* 同伴名 */}
-      <div className="mt-0.5 w-full truncate text-center text-[25px] font-black leading-tight" style={{ color: P3R.ink }}>
-        {c.name}
-      </div>
-      {/* RANK 蓝斜块 + 洋红小角 */}
-      <div className="relative mt-1.5">
-        <span className="inline-block px-4 py-1 text-[12px] font-black tracking-[0.14em] text-white" style={{ clipPath: slantClip(8), background: P3R.blue }}>
-          RANK {c.intimacy}
-        </span>
-        <span aria-hidden className="absolute -bottom-[2px] right-[2px] h-[6px] w-[14px]" style={{ background: P3R.magenta, clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
+      {/* 底部牌位行（罗马数已在顶部，此处只留牌名·正逆） */}
+      <div className="max-w-full truncate text-[12px] font-black tracking-wide" style={{ color: P3R.blue }}>
+        {card?.name ?? c.arcanaId}{c.orientation === 'reversed' ? ' · 逆位' : ' · 正位'}
       </div>
     </div>
   );
@@ -252,6 +241,7 @@ const WallScrubber = ({
 export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCreate }: ConfidantAlbumWallProps) => {
   const bold = useBoldness();
   const p3 = useUiChannel() === 'p3';
+  const attributeNames = useAppStore(s => s.settings.attributeNames);
   // 中央卡用【id 锚定】而非数字下标：详情互动/排序变化导致 confidants 重排时，
   // 中央卡跟着原卡平滑走位，而不是「index 指到了别人」（实测踩坑：查看详情
   // 会更新排序权重，关闭弹窗后数字锚让中央卡换人）。
@@ -440,11 +430,11 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
   const current = items[index];
 
   return (
-    <div className="select-none">
+    <div className={p3 ? 'select-none -mt-1' : 'select-none'}>
       {/* 墙体 */}
       <div
         className="relative touch-none overflow-hidden"
-        style={{ height: CARD_H + 46, perspective: 1100 }}
+        style={{ height: CARD_H + (p3 ? 22 : 46), perspective: 1100 }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={endGesture}
@@ -535,13 +525,58 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
       </div>
 
       {/* 档案铭牌 + scrubber（p3：信息已上卡，铭牌只留空白牌文案 + scrubber + 蓝提示行） */}
-      <div className="mx-auto mt-2 max-w-sm px-3">
+      <div className={`mx-auto max-w-sm px-3 ${p3 ? 'mt-1' : 'mt-2'}`}>
         {current === 'add' || !current ? (
           <div className="text-center">
             <div className={`text-2xl font-black ${p3 ? '' : 'text-gray-800 dark:text-gray-100'}`} style={p3 ? { color: P3R.ink } : undefined}>缔结新的羁绊</div>
             <div className={`mt-0.5 text-xs font-semibold ${p3 ? '' : 'text-gray-400 dark:text-gray-500'}`} style={p3 ? { color: P3R.grey } : undefined}>点一下这张空白牌开始</div>
           </div>
-        ) : p3 ? null : (
+        ) : p3 ? (
+          <motion.div
+            key={current.id}
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ type: 'spring', stiffness: 300, damping: 26 }}
+            className="text-center"
+          >
+            {/* 牌位眉签：罗马 · 牌名 · 正逆 */}
+            <div className="flex items-center justify-center gap-1.5 text-[11px] font-black tracking-[0.14em]" style={{ color: P3R.blue }}>
+              <span aria-hidden className="flex items-center gap-[3px]">
+                <span className="h-0 w-0 border-y-[4px] border-y-transparent border-r-[6px]" style={{ borderRightColor: P3R.cyan }} />
+                <span className="h-0 w-0 border-y-[4px] border-y-transparent border-l-[6px]" style={{ borderLeftColor: P3R.cyan }} />
+              </span>
+              {TAROT_BY_ID[current.arcanaId]?.roman ? `${TAROT_BY_ID[current.arcanaId]?.roman} · ` : ''}
+              {TAROT_BY_ID[current.arcanaId]?.name}
+              {current.orientation === 'reversed' ? ' · 逆位' : ' · 正位'}
+            </div>
+            {/* 名字大字 + 蓝斜片 */}
+            <div className="mt-1 flex items-center justify-center gap-2.5">
+              <span aria-hidden className="h-[26px] w-[8px] shrink-0" style={{ background: P3R.blue, transform: 'skewX(-18deg)' }} />
+              <h3 className="max-w-[64%] truncate text-[32px] font-black italic leading-tight" style={{ color: P3R.ink, fontFamily: '"Arial Black", "Noto Sans SC", sans-serif' }}>
+                {current.name}
+              </h3>
+            </div>
+            {/* LV 蓝斜块（洋红角）+ 属性青斜块 */}
+            <div className="mt-2 flex items-center justify-center gap-2">
+              <span className="relative inline-flex items-baseline gap-1 px-3.5 py-1 text-white" style={{ clipPath: slantClip(8), background: P3R.blue }}>
+                <span className="text-[10px] font-black tracking-wider text-white/85">LV</span>
+                <span className="text-[16px] font-black italic leading-none tabular-nums">{current.intimacy}</span>
+                <span aria-hidden className="absolute -bottom-[2px] right-1 h-[5px] w-[12px]" style={{ background: P3R.magenta, clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
+              </span>
+              {current.skillAttribute && attributeNames[current.skillAttribute] && (
+                <span className="inline-block px-3 py-1 text-[12px] font-black" style={{ clipPath: slantClip(8), background: P3R.cyanFaint, color: P3R.blueDeep }}>
+                  {attributeNames[current.skillAttribute]}
+                </span>
+              )}
+            </div>
+            {/* 关系描述 */}
+            {current.description && (
+              <p className="mx-auto mt-2 line-clamp-2 max-w-[19rem] text-[12px] font-semibold leading-relaxed" style={{ color: P3R.inkSoft }}>
+                {current.description}
+              </p>
+            )}
+          </motion.div>
+        ) : (
           <div className="text-center">
             {/* eyebrow：牌名 · 罗马数 · 正逆位 */}
             <div className="text-[11px] font-bold tracking-[0.14em] text-indigo-400 dark:text-indigo-300">
