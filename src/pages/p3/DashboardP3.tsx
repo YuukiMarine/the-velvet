@@ -11,7 +11,7 @@
  * 终端 24h 限时任务卡。数据逻辑与 Dashboard.tsx 同源，口径零改动。
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { ReactNode } from 'react';
+import type { MouseEvent as ReactMouseEvent, ReactNode } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore, toLocalDateKey } from '@/store';
 import type { AttributeId, CallingCard } from '@/types';
@@ -121,9 +121,7 @@ interface StarItem {
   title: string;
 }
 
-const StarChartP3 = ({ items, onSelect, showLabels = true }: { items: StarItem[]; onSelect: (id: AttributeId) => void; showLabels?: boolean }) => {
-  const [ripples, setRipples] = useState<{ id: number; x: number; y: number }[]>([]);
-  const rootRef = useRef<HTMLDivElement>(null);
+const StarChartP3 = ({ items, onSelect, showLabels = true }: { items: StarItem[]; onSelect: (id: AttributeId, e: ReactMouseEvent) => void; showLabels?: boolean }) => {
   const dataPath = starPathAt(items.slice(0, 5).map((it) => levelRadius(it.level, it.maxLevel)));
   // 同心等级星环（用户定稿）：每一档一圈同色系五角星、内浅外深（最多 10 档），
   // 由外到内实心覆盖形成环带——升级即数据星角尖走向更深的一圈，档位一眼可读
@@ -146,23 +144,7 @@ const StarChartP3 = ({ items, onSelect, showLabels = true }: { items: StarItem[]
     return { leftPct: (x / 360) * 100, topPct: (y / 356) * 100, tx, ty };
   };
   return (
-    <div ref={rootRef} className="relative mx-auto w-full max-w-[288px]" style={{ paddingTop: '8%', paddingBottom: '11%' }}>
-      {/* 点击波纹：以点击的属性字位置为中心，蓝色圆形波扩散 */}
-      <AnimatePresence>
-        {ripples.map((rp) => (
-          <motion.span
-            key={rp.id}
-            aria-hidden
-            className="pointer-events-none absolute z-20 rounded-full"
-            style={{ left: rp.x, top: rp.y, background: 'radial-gradient(circle, rgba(27,87,255,0.4) 0%, rgba(53,209,232,0.25) 45%, rgba(27,87,255,0) 72%)' }}
-            initial={{ width: 8, height: 8, x: '-50%', y: '-50%', opacity: 0.8 }}
-            animate={{ width: 260, height: 260, opacity: 0 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.62, ease: 'easeOut' }}
-            onAnimationComplete={() => setRipples((rs) => rs.filter((r) => r.id !== rp.id))}
-          />
-        ))}
-      </AnimatePresence>
+    <div className="relative mx-auto w-full max-w-[288px]" style={{ paddingTop: '8%', paddingBottom: '11%' }}>
       {/* 平行四边形斜切(下左上右) + 高度拉伸；星与标签同处一个 transform，标签再反变换回正 */}
       <div className="relative" style={{ transform: `skewX(${STAR_SKEW}deg) scaleY(${STAR_SCALEY})` }}>
         <svg viewBox="0 0 360 356" className="w-full overflow-visible" aria-hidden>
@@ -188,11 +170,7 @@ const StarChartP3 = ({ items, onSelect, showLabels = true }: { items: StarItem[]
             <button
               key={it.id}
               type="button"
-              onClick={(e) => {
-                const rect = rootRef.current?.getBoundingClientRect();
-                if (rect) setRipples((rs) => [...rs, { id: Date.now() + i, x: e.clientX - rect.left, y: e.clientY - rect.top }]);
-                onSelect(it.id);
-              }}
+              onClick={(e) => onSelect(it.id, e)}
               className="absolute flex flex-col items-center whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1b57ff] focus-visible:ring-offset-1"
               style={{ left: `${pos.leftPct}%`, top: `${pos.topPct}%`, transform: `translate(${pos.tx}%, ${pos.ty}%) skewX(${-STAR_SKEW}deg) scaleY(${1 / STAR_SCALEY})` }}
               aria-label={`${it.name} 等级 ${it.level}，${it.title}`}
@@ -398,6 +376,13 @@ export const DashboardP3 = () => {
   const [completedPoints, setCompletedPoints] = useState(1);
   const [unlockHint, setUnlockHint] = useState<{ achievements: number; skills: number }>({ achievements: 0, skills: 0 });
   const [decayedAttrs, setDecayedAttrs] = useState<AttributeId[]>([]);
+  // 五维点击波纹：状态放在维度区（不在会被旋转/淡出的星层内），才看得见
+  const [starRipples, setStarRipples] = useState<{ id: number; x: number; y: number }[]>([]);
+  const starSectionRef = useRef<HTMLDivElement>(null);
+  // 首页空态「无宣言卡」虚线框可关闭（与非蓝主题 CallingCardEmptyHint 共用同一 localStorage 键）
+  const [ccHintDismissed, setCcHintDismissed] = useState(() => {
+    try { return localStorage.getItem('velvet_cc_hint_dismissed') === '1'; } catch { return false; }
+  });
   const rootRef = useRef<HTMLDivElement>(null);
 
   const now = new Date();
@@ -598,7 +583,7 @@ export const DashboardP3 = () => {
         {/* 斜界引力线已按用户裁决移除（2026-07-12："删除主页背景那条莫名其妙的生长线"） */}
 
         {/* 幽灵字（右上，随页滚动） */}
-        <GhostWords words={['THE', 'VELVET']} className="right-[-44px] top-[8px] text-right text-[64px]" />
+        <GhostWords words={['THE', 'VELVET']} className="right-[10px] top-[10px] text-right text-[58px]" />
 
         {/* ── 页头 ── */}
         <header className="relative pt-4">
@@ -659,16 +644,31 @@ export const DashboardP3 = () => {
             <span className="min-w-0 flex-1 truncate">你有 {unpinnedCount} 张倒计时未钉到主页</span>
             <span aria-hidden style={{ color: P3R.blue }}>›</span>
           </button>
-        ) : (
-          <button
-            type="button"
-            onClick={jumpToCallingCardSection}
-            className="mt-5 flex w-full items-center gap-2.5 px-5 py-2.5 text-left text-[12px] font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1b57ff]"
+        ) : ccHintDismissed ? null : (
+          <div
+            className="relative mt-5 flex w-full items-center gap-1 py-2.5 pl-5 pr-2 text-[12px] font-bold"
             style={{ clipPath: slantClip(8), background: 'transparent', border: '1.5px dashed rgba(27,87,255,0.4)', color: P3R.inkSoft }}
           >
-            <span className="min-w-0 flex-1 truncate">还没有宣言卡——立下一个倒计时或目标宣言</span>
-            <span aria-hidden style={{ color: P3R.blue }}>›</span>
-          </button>
+            <button
+              type="button"
+              onClick={jumpToCallingCardSection}
+              className="flex min-w-0 flex-1 items-center gap-2.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1b57ff]"
+            >
+              <span className="min-w-0 flex-1 truncate">还没有宣言卡——立下一个倒计时或目标宣言</span>
+              <span aria-hidden style={{ color: P3R.blue }}>›</span>
+            </button>
+            {/* 关闭：拆成并列 button（不嵌套），主体 min-w-0 可收缩，× 不会被挤出被裁 */}
+            <button
+              type="button"
+              aria-label="不再提示"
+              onClick={() => {
+                try { localStorage.setItem('velvet_cc_hint_dismissed', '1'); } catch { /* 隐私模式忽略 */ }
+                setCcHintDismissed(true);
+              }}
+              className="flex h-7 w-7 shrink-0 items-center justify-center text-base leading-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1b57ff]"
+              style={{ color: P3R.grey }}
+            >×</button>
+          </div>
         )}
 
         {/* 进行中的治疗终端 24h 限时任务（特殊风格，原样复用） */}
@@ -802,7 +802,7 @@ export const DashboardP3 = () => {
           />
           {/* 五角星 ⇄ 详情：共存 + 纯位移切换（不淡入淡出，像游戏 UI 移动位置）
               星 absolute 浮在顶层、详情相对流撑开高度（内容不被裁），父只裁水平飞入 */}
-          <div className="relative min-h-[344px] overflow-hidden">
+          <div ref={starSectionRef} className="relative min-h-[344px] overflow-hidden">
             {/* 五角星层：选中时旋转 + 放大成深蓝大星背景（移动，非淡出；填充随 opacity 沉为衬底） */}
             <motion.div
               className="absolute inset-x-0 top-2 z-0"
@@ -810,7 +810,15 @@ export const DashboardP3 = () => {
               transition={{ type: 'spring', stiffness: 190, damping: 24 }}
               style={{ transformOrigin: 'center', pointerEvents: dossierAttr ? 'none' : 'auto' }}
             >
-              <StarChartP3 items={starItems} onSelect={(id) => setDossierAttr(id)} showLabels={!dossierAttr} />
+              <StarChartP3
+                items={starItems}
+                onSelect={(id, e) => {
+                  const rect = starSectionRef.current?.getBoundingClientRect();
+                  if (rect) setStarRipples((rs) => [...rs, { id: Date.now(), x: e.clientX - rect.left, y: e.clientY - rect.top }]);
+                  setDossierAttr(id);
+                }}
+                showLabels={!dossierAttr}
+              />
             </motion.div>
             {/* 详情层：选中时字段从两侧滑入（纯位移 stagger，返回倒放） */}
             <AnimatePresence>
@@ -822,6 +830,22 @@ export const DashboardP3 = () => {
                   onBack={() => setDossierAttr(null)}
                 />
               )}
+            </AnimatePresence>
+            {/* 点击波纹：独立叠层(z-30)，不随星层旋转/淡出——以点击维度字位置为圆心，全不透明清晰可见 */}
+            <AnimatePresence>
+              {starRipples.map((rp) => (
+                <motion.span
+                  key={rp.id}
+                  aria-hidden
+                  className="pointer-events-none absolute z-30 rounded-full"
+                  style={{ left: rp.x, top: rp.y, border: `3px solid ${P3R.blue}`, background: 'radial-gradient(circle, rgba(53,209,232,0.4) 0%, rgba(27,87,255,0) 70%)' }}
+                  initial={{ width: 16, height: 16, x: '-50%', y: '-50%', opacity: 0.85 }}
+                  animate={{ width: 250, height: 250, opacity: 0 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.6, ease: 'easeOut' }}
+                  onAnimationComplete={() => setStarRipples((rs) => rs.filter((r) => r.id !== rp.id))}
+                />
+              ))}
             </AnimatePresence>
           </div>
         </section>

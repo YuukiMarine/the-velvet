@@ -34,6 +34,13 @@ export const slantClip = (cut = 7, dir: 'lead' | 'tail' = 'lead') =>
     ? `polygon(${cut}px 0, 100% 0, calc(100% - ${cut}px) 100%, 0 100%)`
     : `polygon(0 0, calc(100% - ${cut}px) 0, 100% 100%, ${cut}px 100%)`;
 
+/**
+ * 底部弹层顶缘 clip —— 极缓单斜（左低右高一条直线，约 2–2.5°）。
+ * 取代早期「锯齿多峰顶」（2026-07-14 用户定：锯齿太丑，只保留 2–3° 的一点点斜度即可）。
+ * 仅裁一条顶边，两侧与底边保持方正——用在从底部滑入的表单/抽屉。
+ */
+export const sheetTopClip = 'polygon(0 18px, 100% 0, 100% 100%, 0 100%)';
+
 /** 页面壳：水面底（fixed 铺满视口）+ 内容层。active=false 时退化为透明直通
  *  （给"组件内 p3 分支"的页面用：恒挂同一组件、按频道开关壳，避免内联 Wrapper 每渲染重建导致子树 remount） */
 export const P3RPage = ({ children, className, active = true }: { children: ReactNode; className?: string; active?: boolean }) => {

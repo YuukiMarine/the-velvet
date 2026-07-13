@@ -8,7 +8,7 @@ import { useModalA11y } from '@/utils/useModalA11y';
 import { useBackHandler } from '@/utils/useBackHandler';
 import { chatStream } from '@/utils/aiClient';
 import { useUiChannel } from '@/ui/useUiChannel';
-import { P3R, slantClip } from '@/components/p3r/kit';
+import { P3R, slantClip, sheetTopClip } from '@/components/p3r/kit';
 
 // ── 简单 Markdown 渲染 ────────────────────────────────────
 function renderMarkdown(text: string): string {
@@ -809,7 +809,7 @@ export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week' }
             onClick={e => e.stopPropagation()}
             className={`relative flex w-full max-w-lg flex-col overflow-hidden shadow-2xl ${p3 ? '' : 'rounded-t-3xl bg-white dark:bg-gray-900'}`}
             style={p3
-              ? { maxHeight: '90vh', background: 'linear-gradient(178deg, #fbfdff 0%, #f0f8fc 55%, #e8f4fa 100%)', clipPath: 'polygon(0 22px, 8% 6px, 30% 14px, 52% 0, 74% 12px, 100% 4px, 100% 100%, 0 100%)' }
+              ? { maxHeight: '90vh', background: 'linear-gradient(178deg, #fbfdff 0%, #f0f8fc 55%, #e8f4fa 100%)', clipPath: sheetTopClip }
               : { maxHeight: '90vh' }}
           >
             {/* 流式期间的主题色粒子 */}

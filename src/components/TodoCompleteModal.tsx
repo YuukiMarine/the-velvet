@@ -88,14 +88,21 @@ export const BandCutInP3 = ({ isOpen, onClose, title, totalPoints, unlockHint, e
                   boxShadow: '0 22px 60px rgba(10,18,48,0.35)',
                 }}
               >
-                {/* 蓝青高光从左向右划过（炫酷 sweep） */}
+                {/* 蓝色硬边刀光从左向右划过（无渐变·边缘硬·快而早） */}
                 <motion.div
                   aria-hidden
-                  className="pointer-events-none absolute inset-y-0 -left-1/3 z-10 w-1/3"
-                  style={{ background: 'linear-gradient(100deg, transparent, rgba(27,87,255,0.5) 44%, rgba(53,209,232,0.62) 56%, transparent)' }}
+                  className="pointer-events-none absolute inset-y-0 z-10"
+                  style={{
+                    left: '-24%',
+                    width: '17%',
+                    background: 'rgba(53,209,232,0.85)',
+                    borderLeft: '5px solid #1b57ff',
+                    borderRight: '2px solid #ffffff',
+                    transform: 'skewX(-16deg)',
+                  }}
                   initial={{ x: 0 }}
-                  animate={{ x: '440%' }}
-                  transition={{ duration: 0.85, delay: 0.3, ease: 'easeInOut' }}
+                  animate={{ x: '760%' }}
+                  transition={{ duration: 0.38, delay: 0.08, ease: 'linear' }}
                 />
                 {/* 幽灵词（带内右下） */}
                 <div aria-hidden className="pointer-events-none absolute -right-3 bottom-0 select-none font-black italic leading-none" style={{ fontFamily: 'Arial, sans-serif', fontSize: '5.2rem', color: 'rgba(53,209,232,0.22)' }}>
