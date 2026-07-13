@@ -1,5 +1,6 @@
 import { motion } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
+import type { MouseEvent as ReactMouseEvent } from 'react';
 import { useAppStore } from '@/store';
 import { useNavigatorStore } from '@/store/navigator';
 import { triggerLightHaptic, triggerNavFeedback } from '@/utils/feedback';
@@ -179,7 +180,7 @@ export const Sidebar = () => {
 };
 
 /** 常规 tab（移动端）：激活指示 = 斜切平行四边形（p3 频道整格蓝斜块白字；其余频道顶部小条），layoutId 在四格之间滑动 */
-const NavTab = ({ item, active, onSelect, p3 = false }: { item: NavItem; active: boolean; onSelect: () => void; p3?: boolean }) => (
+const NavTab = ({ item, active, onSelect, p3 = false }: { item: NavItem; active: boolean; onSelect: (e: ReactMouseEvent<HTMLButtonElement>) => void; p3?: boolean }) => (
   <motion.button
     whileTap={{ scale: 0.88 }}
     onClick={onSelect}
@@ -265,18 +266,25 @@ export const BottomNav = () => {
     playHeavyTransition(() => setCurrentPage(pageId));
   };
 
-  const renderTab = (item: NavItem) => (
-    <NavTab
-      key={item.id}
-      item={item}
-      p3={p3}
-      active={isNavActive(item.id, currentPage)}
-      onSelect={() => {
-        triggerNavFeedback();
-        setCurrentPage(item.id);
-      }}
-    />
-  );
+  const renderTab = (item: NavItem) => {
+    const active = isNavActive(item.id, currentPage);
+    return (
+      <NavTab
+        key={item.id}
+        item={item}
+        p3={p3}
+        active={active}
+        onSelect={(e) => {
+          triggerNavFeedback();
+          if (active) return; // 已在本页，不放幕布
+          const rect = e.currentTarget.getBoundingClientRect();
+          const origin = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+          // P8.4 试验：底部栏切换走水波纹转场（从点击的 tab 涨潮铺满 → 幕布后切页 → 退潮露新页）
+          playHeavyTransition(() => setCurrentPage(item.id), { effect: 'water', origin });
+        }}
+      />
+    );
+  };
 
   return (
     <motion.nav

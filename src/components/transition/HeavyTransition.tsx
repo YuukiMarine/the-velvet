@@ -150,6 +150,48 @@ const WaveSliceAct = ({ midpoint, onDone }: ActProps) => {
   );
 };
 
+// ── water：水波纹涨潮（P8.4 试验，底部栏切换指定；从点击点圆形涨满 → 退潮露新页）──
+const WaterRippleAct = ({ midpoint, onDone, origin }: ActProps & { origin?: { x: number; y: number } }) => {
+  const [phase, setPhase] = useState<'in' | 'out'>('in');
+  useTimeline([
+    [300, () => { midpoint(); setPhase('out'); }],
+    [720, onDone],
+  ]);
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  const ox = origin?.x ?? w / 2;
+  const oy = origin?.y ?? h - 40;
+  // 圆心到最远屏角的距离（×1.12 留余量），保证涨满铺盖全屏
+  const cover = Math.hypot(Math.max(ox, w - ox), Math.max(oy, h - oy)) * 1.12;
+  const D = cover * 2;
+  return (
+    <div className={`fixed inset-0 ${zClass.transition} pointer-events-auto overflow-hidden`} aria-hidden>
+      {/* 水盘：从点击点 scale 涨满（幕布），退潮时淡出露出已切好的新页 */}
+      <motion.div
+        className="absolute rounded-full"
+        style={{
+          left: ox, top: oy, width: D, height: D, marginLeft: -cover, marginTop: -cover,
+          background: 'radial-gradient(circle at 50% 50%, #0a3bd6 0%, #1b57ff 48%, rgba(53,209,232,0.92) 100%)',
+        }}
+        initial={{ scale: 0, opacity: 0.97 }}
+        animate={phase === 'in' ? { scale: 1, opacity: 0.97 } : { scale: 1, opacity: 0 }}
+        transition={{ duration: phase === 'in' ? 0.34 : 0.42, ease: phase === 'in' ? [0.33, 0, 0.2, 1] : 'easeOut' }}
+      />
+      {/* 同心波纹环：从圆心逐圈外扩（进/退各播一轮，key 带 phase 触发重放） */}
+      {[0, 1, 2, 3].map((k) => (
+        <motion.span
+          key={`${phase}-${k}`}
+          className="absolute rounded-full"
+          style={{ left: ox, top: oy, x: '-50%', y: '-50%', border: '2px solid rgba(207,234,246,0.85)' }}
+          initial={{ width: 24, height: 24, opacity: 0.75 }}
+          animate={{ width: D * 1.05, height: D * 1.05, opacity: 0 }}
+          transition={{ duration: 0.72, delay: k * 0.11, ease: 'easeOut' }}
+        />
+      ))}
+    </div>
+  );
+};
+
 // ── neutral：黑幕淡切 ──────────────────────────────────────────────────────
 const FadeAct = ({ midpoint, onDone }: ActProps) => {
   const [phase, setPhase] = useState<'in' | 'out'>('in');
@@ -193,6 +235,8 @@ export const TransitionLayer = () => {
     setReq(null);
   };
   const props = { midpoint: req.midpoint, onDone: done };
+  // 指定效果优先于频道默认（底部栏切换 → 水波纹试验）
+  if (req.effect === 'water') return <WaterRippleAct key={req.id} {...props} origin={req.origin} />;
   switch (req.channel) {
     case 'p5':
       return <StarTearAct key={req.id} {...props} />;
