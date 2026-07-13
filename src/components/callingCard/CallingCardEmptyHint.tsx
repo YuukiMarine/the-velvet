@@ -36,22 +36,24 @@ export function CallingCardEmptyHint({ onJump }: Props) {
 
   return (
     <AnimatePresence>
-      <motion.button
+      <motion.div
         initial={{ opacity: 0, y: -4 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0 }}
-        onClick={handleClick}
-        className="w-full text-left rounded-xl px-3 py-2 flex items-center gap-2 text-[11px] bg-white/70 dark:bg-gray-900/70 border border-dashed border-white/80 dark:border-gray-700/80 text-gray-800 dark:text-gray-100 hover:bg-white/85 dark:hover:bg-gray-900 transition-colors shadow-sm"
+        className="flex w-full items-center gap-2 rounded-xl border border-dashed border-white/80 bg-white/70 px-3 py-2 text-[11px] text-gray-800 shadow-sm dark:border-gray-700/80 dark:bg-gray-900/70 dark:text-gray-100"
       >
-        <span className="text-xs text-primary">✦</span>
-        <span className="flex-1">为重要的事写一张「宣告卡」，倒计时随时在此映入眼帘</span>
-        <span
-          role="button"
+        {/* 主体与关闭拆成两个并列 button，不再嵌套（嵌套 button 导致 × 点不动） */}
+        <button type="button" onClick={handleClick} className="flex flex-1 items-center gap-2 text-left transition-opacity hover:opacity-80">
+          <span className="text-xs text-primary">✦</span>
+          <span className="flex-1">为重要的事写一张「宣告卡」，倒计时随时在此映入眼帘</span>
+        </button>
+        <button
+          type="button"
           aria-label="不再提示"
           onClick={handleDismiss}
-          className="text-gray-500 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white px-1 -mr-1"
-        >×</span>
-      </motion.button>
+          className="shrink-0 px-1.5 py-0.5 text-base leading-none text-gray-500 transition-colors hover:text-gray-900 dark:text-gray-300 dark:hover:text-white"
+        >×</button>
+      </motion.div>
     </AnimatePresence>
   );
 }

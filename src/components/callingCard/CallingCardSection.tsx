@@ -68,7 +68,7 @@ export function CallingCardSection({ sectionId = 'calling-card-section' }: { sec
             className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl bg-white/70 dark:bg-gray-900/70 border border-dashed border-gray-300 dark:border-gray-700 text-[12px] text-gray-600 dark:text-gray-300 hover:bg-primary/5 dark:hover:bg-primary/10 hover:border-primary/40 dark:hover:border-primary/50 transition-colors shadow-sm dark:shadow-none"
           >
             <span className="text-primary">✦</span>
-            <span>还没有倒计时 — 立一张</span>
+            <span>还没有倒计时 — 立下约定</span>
           </button>
         )}
 

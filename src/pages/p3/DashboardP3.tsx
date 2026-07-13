@@ -208,6 +208,7 @@ const AttrDetailInline = ({ attrId, level: fallbackLevel, onBack }: { attrId: At
   const curTitle = getAttributeLevelTitle(settings.attributeLevelTitles, attrId, level);
   const related = achievements.filter((a) => a.condition.attribute === attrId || a.condition.type === 'all_attributes_max');
   const unlockedCount = related.filter((a) => a.unlocked).length;
+  const achScrollRef = useRef<HTMLDivElement>(null);
 
   // 纯位移进出（无淡入淡出）：属性名/返回从左飞入，数据从右飞入；exit 反向倒放
   const container = {
@@ -234,11 +235,7 @@ const AttrDetailInline = ({ attrId, level: fallbackLevel, onBack }: { attrId: At
         animate={{ x: ['34%', '9%', '0%'], y: [44, -10, 0], scale: [0.56, 0.94, 1], transition: { duration: 0.5, ease: [0.4, 0, 0.2, 1], times: [0, 0.58, 1] } }}
         exit={{ opacity: 0, transition: { duration: 0.2 } }}
       >
-        <div className="flex items-center gap-2">
-          <span aria-hidden className="h-[26px] w-[8px]" style={{ background: P3R.blue, transform: 'skewX(-18deg)' }} />
-          <span className="text-[13px] font-black tracking-[0.2em]" style={{ color: P3R.blue }}>PERSONA</span>
-        </div>
-        <div className="mt-1 text-[52px] font-black italic leading-none" style={{ color: P3R.ink, fontFamily: '"Arial Black", "Noto Sans SC", sans-serif' }}>{name}</div>
+        <div className="text-[52px] font-black italic leading-none" style={{ color: P3R.ink, fontFamily: '"Arial Black", "Noto Sans SC", sans-serif' }}>{name}</div>
         <div className="mt-2.5 flex items-center gap-2.5">
           <span className="relative inline-flex items-baseline gap-1 px-4 py-1 text-white" style={{ clipPath: slantClip(8), background: P3R.blue }}>
             <span className="text-[11px] font-black tracking-wider text-white/85">LV</span>
@@ -287,17 +284,28 @@ const AttrDetailInline = ({ attrId, level: fallbackLevel, onBack }: { attrId: At
         {related.length === 0 ? (
           <div className="px-3 py-4 text-center text-[12px] font-semibold" style={{ background: 'rgba(207,234,246,0.5)', clipPath: slantClip(8), color: P3R.grey }}>这个方向还没有专属成就</div>
         ) : (
-          <div className="flex gap-2 overflow-x-auto pb-1">
-            {related.map((a) => (
-              <div key={a.id} className="flex w-[124px] shrink-0 flex-col gap-1 px-3 py-2.5" style={{ background: a.unlocked ? 'rgba(53,209,232,0.14)' : 'rgba(207,234,246,0.4)', clipPath: slantClip(8), opacity: a.unlocked ? 1 : 0.72 }}>
-                <div className="flex items-center justify-between">
-                  <span className="text-lg leading-none" aria-hidden>{a.icon}</span>
-                  <span className="shrink-0 text-[9px] font-black" style={{ color: a.unlocked ? P3R.magenta : P3R.grey }}>{a.unlocked ? '已解锁' : '未解锁'}</span>
+          <div className="relative">
+            <div ref={achScrollRef} className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+              {related.map((a) => (
+                <div key={a.id} className="flex w-[124px] shrink-0 flex-col gap-1 px-3 py-2.5" style={{ background: a.unlocked ? 'rgba(53,209,232,0.14)' : 'rgba(207,234,246,0.4)', clipPath: slantClip(8), opacity: a.unlocked ? 1 : 0.72 }}>
+                  <div className="flex items-center justify-between">
+                    <span className="text-lg leading-none" aria-hidden>{a.icon}</span>
+                    <span className="shrink-0 text-[9px] font-black" style={{ color: a.unlocked ? P3R.magenta : P3R.grey }}>{a.unlocked ? '已解锁' : '未解锁'}</span>
+                  </div>
+                  <div className="truncate text-[12px] font-black" style={{ color: P3R.ink }}>{a.title}</div>
+                  <div className="line-clamp-2 text-[10px] font-semibold leading-tight" style={{ color: P3R.grey }}>{a.description}</div>
                 </div>
-                <div className="truncate text-[12px] font-black" style={{ color: P3R.ink }}>{a.title}</div>
-                <div className="line-clamp-2 text-[10px] font-semibold leading-tight" style={{ color: P3R.grey }}>{a.description}</div>
-              </div>
-            ))}
+              ))}
+            </div>
+            {/* 点击滑动（替代拖滚动条）：>2 张时露出左右蓝斜箭头 */}
+            {related.length > 2 && (
+              <>
+                <button type="button" aria-label="上一批成就" onClick={(e) => { e.stopPropagation(); achScrollRef.current?.scrollBy({ left: -272, behavior: 'smooth' }); }}
+                  className="absolute -left-1 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center text-lg font-black leading-none text-white shadow-md active:scale-90" style={{ background: P3R.blue, clipPath: slantClip(6) }}>‹</button>
+                <button type="button" aria-label="下一批成就" onClick={(e) => { e.stopPropagation(); achScrollRef.current?.scrollBy({ left: 272, behavior: 'smooth' }); }}
+                  className="absolute -right-1 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center text-lg font-black leading-none text-white shadow-md active:scale-90" style={{ background: P3R.blue, clipPath: slantClip(6) }}>›</button>
+              </>
+            )}
           </div>
         )}
       </motion.div>
@@ -306,7 +314,7 @@ const AttrDetailInline = ({ attrId, level: fallbackLevel, onBack }: { attrId: At
       <motion.div className="relative mt-5" variants={fromLeft} transition={spring}>
         <button type="button" onClick={onBack} className="flex items-center gap-2 text-[15px] font-black" style={{ color: P3R.blue }}>
           <span aria-hidden className="h-0 w-0 border-y-[6px] border-y-transparent border-r-[9px]" style={{ borderRightColor: P3R.blue }} />
-          返回五角星
+          返回
         </button>
       </motion.div>
     </motion.div>
@@ -558,7 +566,7 @@ export const DashboardP3 = () => {
         {/* 斜界引力线已按用户裁决移除（2026-07-12："删除主页背景那条莫名其妙的生长线"） */}
 
         {/* 幽灵字（右上，随页滚动） */}
-        <GhostWords words={['MIDNIGHT', 'STATUS']} className="right-[-44px] top-[8px] text-right text-[64px]" />
+        <GhostWords words={['THE', 'VELVET']} className="right-[-44px] top-[8px] text-right text-[64px]" />
 
         {/* ── 页头 ── */}
         <header className="relative pt-4">
@@ -566,7 +574,7 @@ export const DashboardP3 = () => {
             className="inline-flex items-end text-[54px] font-black italic leading-[0.95] tracking-tight"
             style={{ color: P3R.ink, fontFamily: '"Arial Black", "Noto Sans SC", sans-serif' }}
           >
-            午夜状态
+            靛蓝色房间
             <TitlePeriod className="mb-1.5 ml-1.5" />
           </h1>
           <p className="mt-2 text-[15px] font-bold" style={{ color: P3R.blue }}>{subtext}</p>
@@ -875,7 +883,7 @@ export const DashboardP3 = () => {
         </AnimatePresence>
 
         {/* 读屏可达的问候（视觉由上方标题承担） */}
-        <h2 className="sr-only">{user?.name ? `${user.name}的午夜状态` : '午夜状态'}</h2>
+        <h2 className="sr-only">{user?.name ? `${user.name}的靛蓝色房间` : '靛蓝色房间'}</h2>
       </motion.div>
     </P3RPage>
   );
