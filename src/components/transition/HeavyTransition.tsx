@@ -150,42 +150,53 @@ const WaveSliceAct = ({ midpoint, onDone }: ActProps) => {
   );
 };
 
-// ── water：水波纹涨潮（P8.4 试验，底部栏切换指定；从点击点圆形涨满 → 退潮露新页）──
+// ── water：线条波纹 + 圆形蒙版擦除（P8.4 试验，底部栏切换指定）────────────────
+// 不铺蓝：只有粗细相间的线条波纹从点击点外扩；切页由一块中性圆形蒙版承担——
+// 圆 clip 涨满遮住切页瞬间，再缩回把新页从边缘"擦除"露出。
+const RIPPLE_LINES = [
+  { w: 2, c: 'rgba(27,87,255,0.70)',   reach: 1.02, d: 0.80, delay: 0.00, o: 0.70 },
+  { w: 6, c: 'rgba(53,209,232,0.85)',  reach: 0.88, d: 0.72, delay: 0.07, o: 0.85 },
+  { w: 3, c: 'rgba(27,87,255,0.55)',   reach: 1.10, d: 0.86, delay: 0.15, o: 0.68 },
+  { w: 9, c: 'rgba(53,209,232,0.42)',  reach: 0.76, d: 0.66, delay: 0.22, o: 0.72 },
+  { w: 2, c: 'rgba(207,234,246,0.95)', reach: 1.16, d: 0.92, delay: 0.11, o: 0.80 },
+];
+
 const WaterRippleAct = ({ midpoint, onDone, origin }: ActProps & { origin?: { x: number; y: number } }) => {
   const [phase, setPhase] = useState<'in' | 'out'>('in');
   useTimeline([
-    [300, () => { midpoint(); setPhase('out'); }],
+    [320, () => { midpoint(); setPhase('out'); }],
     [720, onDone],
   ]);
   const w = window.innerWidth;
   const h = window.innerHeight;
   const ox = origin?.x ?? w / 2;
   const oy = origin?.y ?? h - 40;
-  // 圆心到最远屏角的距离（×1.12 留余量），保证涨满铺盖全屏
-  const cover = Math.hypot(Math.max(ox, w - ox), Math.max(oy, h - oy)) * 1.12;
+  const reachPx = Math.hypot(Math.max(ox, w - ox), Math.max(oy, h - oy)); // 圆心→最远屏角
+  const cover = reachPx * 1.12; // 半径留余量，scale=1 时兜住全屏
   const D = cover * 2;
   return (
     <div className={`fixed inset-0 ${zClass.transition} pointer-events-auto overflow-hidden`} aria-hidden>
-      {/* 水盘：从点击点 scale 涨满（幕布），退潮时淡出露出已切好的新页 */}
+      {/* 圆形蒙版幕布（中性水色，不铺蓝）：从点击点 scale 涨满遮住切页 → 缩回把新页从边缘擦除露出
+          （用 scale 而非 clip-path：framer 不插值 circle() 的混合 %/px，clip-path 会卡在初值） */}
       <motion.div
         className="absolute rounded-full"
         style={{
           left: ox, top: oy, width: D, height: D, marginLeft: -cover, marginTop: -cover,
-          background: 'radial-gradient(circle at 50% 50%, #0a3bd6 0%, #1b57ff 48%, rgba(53,209,232,0.92) 100%)',
+          background: 'linear-gradient(160deg, #f6fbff 0%, #e4f2fb 56%, #d2eaf6 100%)',
         }}
-        initial={{ scale: 0, opacity: 0.97 }}
-        animate={phase === 'in' ? { scale: 1, opacity: 0.97 } : { scale: 1, opacity: 0 }}
-        transition={{ duration: phase === 'in' ? 0.34 : 0.42, ease: phase === 'in' ? [0.33, 0, 0.2, 1] : 'easeOut' }}
+        initial={{ scale: 0 }}
+        animate={{ scale: phase === 'in' ? 1 : 0 }}
+        transition={{ duration: phase === 'in' ? 0.3 : 0.38, ease: [0.4, 0, 0.2, 1] }}
       />
-      {/* 同心波纹环：从圆心逐圈外扩（进/退各播一轮，key 带 phase 触发重放） */}
-      {[0, 1, 2, 3].map((k) => (
+      {/* 线条波纹（有粗有细）：从点击点逐圈外扩，进/退各播一轮（key 带 phase 触发重放） */}
+      {RIPPLE_LINES.map((ln, k) => (
         <motion.span
           key={`${phase}-${k}`}
           className="absolute rounded-full"
-          style={{ left: ox, top: oy, x: '-50%', y: '-50%', border: '2px solid rgba(207,234,246,0.85)' }}
-          initial={{ width: 24, height: 24, opacity: 0.75 }}
-          animate={{ width: D * 1.05, height: D * 1.05, opacity: 0 }}
-          transition={{ duration: 0.72, delay: k * 0.11, ease: 'easeOut' }}
+          style={{ left: ox, top: oy, x: '-50%', y: '-50%', border: `${ln.w}px solid ${ln.c}` }}
+          initial={{ width: 22, height: 22, opacity: ln.o }}
+          animate={{ width: reachPx * 2 * ln.reach, height: reachPx * 2 * ln.reach, opacity: 0 }}
+          transition={{ duration: ln.d, delay: ln.delay, ease: 'easeOut' }}
         />
       ))}
     </div>
