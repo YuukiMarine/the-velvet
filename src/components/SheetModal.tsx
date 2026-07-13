@@ -7,6 +7,7 @@ import { useBackHandler } from '@/utils/useBackHandler';
 import { useModalA11y } from '@/utils/useModalA11y';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { zClass } from '@/utils/zIndex';
+import { sheetTopClip } from '@/components/p3r/kit';
 
 /**
  * SheetModal —— 标准弹窗 / 抽屉基座（UI_AUDIT_V2.5.md §5）。
@@ -142,7 +143,7 @@ export const SheetModal = ({
                 }`}
             style={p3 ? {
               background: 'linear-gradient(178deg, #fbfdff 0%, #f0f8fc 60%, #e6f3fa 100%)',
-              clipPath: isBottom ? 'polygon(0 26px, 8% 6px, 30% 14px, 52% 0, 74% 12px, 100% 4px, 100% 100%, 0 100%)' : 'polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%)',
+              clipPath: isBottom ? sheetTopClip : 'polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%)',
             } : undefined}
           >
             {isBottom && showHandle && (

@@ -5,6 +5,7 @@ import { useAppStore } from '@/store';
 import { AttributeId, WeeklyGoal, WeeklyGoalItem } from '@/types';
 import { useLongPress } from '@/utils/useLongPress';
 import { useUiChannel } from '@/ui/useUiChannel';
+import { sheetTopClip } from '@/components/p3r/kit';
 import { v4 as uuidv4 } from 'uuid';
 import { ALL_GOAL_TYPES, getCurrentWeekRange, makeDefaultItem } from './weeklyGoalShared';
 import { GoalSetupForm } from './GoalSetupForm';
@@ -237,7 +238,7 @@ export const WeeklyGoalSection = ({
                 className={p3
                   ? 'w-full max-w-lg space-y-2.5 p-5 pb-6'
                   : 'bg-white dark:bg-gray-900 rounded-t-2xl w-full max-w-lg p-5 space-y-2'}
-                style={p3 ? { background: 'linear-gradient(178deg, #fbfdff 0%, #eef7fc 100%)', clipPath: 'polygon(0 22px, 10% 4px, 34% 12px, 56% 0, 78% 10px, 100% 2px, 100% 100%, 0 100%)' } : undefined}
+                style={p3 ? { background: 'linear-gradient(178deg, #fbfdff 0%, #eef7fc 100%)', clipPath: sheetTopClip } : undefined}
                 onClick={e => e.stopPropagation()}
               >
                 <p className={p3 ? 'mb-3 text-[18px] font-black italic' : 'text-sm font-bold text-gray-800 dark:text-white mb-3'} style={p3 ? { color: '#0a1230' } : undefined}>

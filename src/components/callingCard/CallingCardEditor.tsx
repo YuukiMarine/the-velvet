@@ -6,6 +6,7 @@ import { useAppStore, toLocalDateKey } from '@/store';
 import { useModalA11y } from '@/utils/useModalA11y';
 import { useBackHandler } from '@/utils/useBackHandler';
 import { useUiChannel } from '@/ui/useUiChannel';
+import { sheetTopClip } from '@/components/p3r/kit';
 import type { CallingCard, CallingCardMode, CallingCardTone, Todo } from '@/types';
 
 interface Props {
@@ -178,7 +179,7 @@ export function CallingCardEditor({ isOpen, initialCard, onClose }: Props) {
               ? 'p3r-sheet relative flex w-full max-w-lg flex-col overflow-hidden shadow-2xl'
               : 'relative w-full max-w-lg bg-white dark:bg-gray-900 rounded-t-3xl shadow-2xl flex flex-col overflow-hidden'}
             style={p3
-              ? { maxHeight: '90vh', background: 'linear-gradient(178deg, #fbfdff 0%, #f0f8fc 60%, #e6f3fa 100%)', clipPath: 'polygon(0 26px, 8% 6px, 30% 14px, 52% 0, 74% 12px, 100% 4px, 100% 100%, 0 100%)' }
+              ? { maxHeight: '90vh', background: 'linear-gradient(178deg, #fbfdff 0%, #f0f8fc 60%, #e6f3fa 100%)', clipPath: sheetTopClip }
               : { maxHeight: '90vh' }}
           >
             {/* Handle（p3：青色斜片把手，与 SheetModal 基座同款） */}
