@@ -217,6 +217,7 @@ export const Menu = () => {
   // pointerdown 即选中预览、松手延时进入（让滑入动效播完）。默认选中首项「统计」。
   const [selectedKey, setSelectedKey] = useState<string>('statistics');
   const enterTimer = useRef<number | null>(null);
+  const press = useRef({ active: false, key: '', moved: false });
   useEffect(() => () => { if (enterTimer.current) window.clearTimeout(enterTimer.current); }, []);
 
   const currentStreak = useMemo(() => calcCurrentStreak(activities.map(a => a.date)), [activities]);
@@ -499,8 +500,40 @@ export const Menu = () => {
             </span>
           </button>
 
-          {/* 游戏化入口列：selectedKey 高亮（深蓝从左揭入 + 长度伸缩）；按下即预览、松手进入 */}
-          <nav className="relative mt-7 space-y-2.5" aria-label="功能入口">
+          {/* 游戏化入口列：selectedKey 高亮（深蓝从左揭入 + 长度伸缩）；按下预览、上下拖拽切换、松手进入 */}
+          <nav
+            className="relative mt-7 space-y-2.5"
+            aria-label="功能入口"
+            style={{ touchAction: 'none' }}
+            onPointerDown={(e) => {
+              const el = (e.target as HTMLElement).closest('[data-menu-key]');
+              if (!el) return;
+              const key = el.getAttribute('data-menu-key') || '';
+              press.current = { active: true, key, moved: false };
+              setSelectedKey(key);
+              try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); } catch { /* noop */ }
+            }}
+            onPointerMove={(e) => {
+              if (!press.current.active) return;
+              const el = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-menu-key]');
+              const key = el?.getAttribute('data-menu-key');
+              if (key && key !== press.current.key) {
+                press.current.key = key;
+                press.current.moved = true;
+                triggerNavFeedback();
+                setSelectedKey(key);
+              }
+            }}
+            onPointerUp={() => {
+              if (!press.current.active) return;
+              const key = press.current.key;
+              press.current.active = false;
+              triggerNavFeedback();
+              if (enterTimer.current) window.clearTimeout(enterTimer.current);
+              enterTimer.current = window.setTimeout(() => { menuItems.find((m) => m.key === key)?.onPress(); }, 200);
+            }}
+            onPointerCancel={() => { press.current.active = false; }}
+          >
             {menuItems.map((m, i) => {
               const selected = m.key === selectedKey;
               const indent = i * 5;                                     // 基础阶梯缩进（%）
@@ -522,14 +555,9 @@ export const Menu = () => {
                 >
                   <motion.button
                     type="button"
+                    data-menu-key={m.key}
                     whileTap={TAP}
-                    onPointerDown={() => setSelectedKey(m.key)}
-                    onClick={() => {
-                      triggerNavFeedback();
-                      setSelectedKey(m.key);
-                      if (enterTimer.current) window.clearTimeout(enterTimer.current);
-                      enterTimer.current = window.setTimeout(m.onPress, 240);
-                    }}
+                    onClick={(e) => { if (e.detail === 0) { setSelectedKey(m.key); m.onPress(); } }}
                     aria-label={m.aria}
                     aria-current={selected ? 'true' : undefined}
                     className="relative block overflow-hidden py-3.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1b57ff]"

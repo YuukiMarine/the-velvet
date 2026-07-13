@@ -43,8 +43,18 @@ const ShatterCheck = () => (
   </svg>
 );
 
-/** P3R 横贯斜带 cut-in（p3-modal-06 1:1） */
-const TodoCompleteP3 = ({ isOpen, onClose, title, totalPoints, unlockHint }: TodoCompleteModalProps) => {
+interface BandCutInP3Props extends TodoCompleteModalProps {
+  /** 主标题（今日完成 / 记录成功） */
+  eyebrow: string;
+  /** 带内右下幽灵词（DONE / SAVED） */
+  ghost: string;
+}
+
+/**
+ * P3R 横贯斜带 cut-in（p3-modal-06 稿）——今日完成 / 记录成功 共用。
+ * 白色大斜带从右滑入 + 一道蓝青高光从左向右划过 + 巨大青色碎裂勾 + 幽灵词 + 音符雨。
+ */
+export const BandCutInP3 = ({ isOpen, onClose, title, totalPoints, unlockHint, eyebrow, ghost }: BandCutInP3Props) => {
   const containerRef = useModalA11y(isOpen, onClose);
   useBackHandler(isOpen, onClose);
   useAutoClose(isOpen, 3000, onClose);
@@ -60,7 +70,7 @@ const TodoCompleteP3 = ({ isOpen, onClose, title, totalPoints, unlockHint }: Tod
           className={`fixed inset-0 ${zClass.celebration} flex flex-col items-stretch justify-center overflow-hidden bg-black/35 backdrop-blur-[2px]`}
           onClick={onClose}
         >
-          <div ref={containerRef} role="dialog" aria-modal="true" aria-label={`今日完成：${title}`} className="relative">
+          <div ref={containerRef} role="dialog" aria-modal="true" aria-label={`${eyebrow}：${title}`} className="relative">
             {/* 斜带（横贯全宽，从右侧斜切入场） */}
             <motion.div
               initial={{ x: '110%', skewX: -6 }}
@@ -78,15 +88,24 @@ const TodoCompleteP3 = ({ isOpen, onClose, title, totalPoints, unlockHint }: Tod
                   boxShadow: '0 22px 60px rgba(10,18,48,0.35)',
                 }}
               >
-                {/* DONE 幽灵字（带内右下） */}
+                {/* 蓝青高光从左向右划过（炫酷 sweep） */}
+                <motion.div
+                  aria-hidden
+                  className="pointer-events-none absolute inset-y-0 -left-1/3 z-10 w-1/3"
+                  style={{ background: 'linear-gradient(100deg, transparent, rgba(27,87,255,0.5) 44%, rgba(53,209,232,0.62) 56%, transparent)' }}
+                  initial={{ x: 0 }}
+                  animate={{ x: '440%' }}
+                  transition={{ duration: 0.85, delay: 0.3, ease: 'easeInOut' }}
+                />
+                {/* 幽灵词（带内右下） */}
                 <div aria-hidden className="pointer-events-none absolute -right-3 bottom-0 select-none font-black italic leading-none" style={{ fontFamily: 'Arial, sans-serif', fontSize: '5.2rem', color: 'rgba(53,209,232,0.22)' }}>
-                  DONE
+                  {ghost}
                 </div>
                 <div className="relative flex items-center gap-3">
                   <div className="min-w-0 flex-1">
-                    {/* 今日完成 + 洋红双片 */}
+                    {/* 主标题 + 洋红双片 */}
                     <div className="flex items-end gap-2">
-                      <span className="text-[38px] font-black italic leading-none" style={{ color: '#0a1230', fontFamily: '"Arial Black", "Noto Sans SC", sans-serif' }}>今日完成</span>
+                      <span className="text-[38px] font-black italic leading-none" style={{ color: '#0a1230', fontFamily: '"Arial Black", "Noto Sans SC", sans-serif' }}>{eyebrow}</span>
                       <span aria-hidden className="mb-1 flex gap-[3px]">
                         <span className="h-[10px] w-[12px]" style={{ background: '#f0417f', clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
                         <span className="h-[8px] w-[9px]" style={{ background: 'rgba(240,65,127,0.55)', clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
@@ -149,7 +168,7 @@ const TodoCompleteP3 = ({ isOpen, onClose, title, totalPoints, unlockHint }: Tod
 
 export const TodoCompleteModal = (props: TodoCompleteModalProps) => {
   const p3 = useUiChannel() === 'p3';
-  if (p3) return <TodoCompleteP3 {...props} />;
+  if (p3) return <BandCutInP3 {...props} eyebrow="今日完成" ghost="DONE" />;
   const { isOpen, onClose, title, totalPoints, unlockHint } = props;
   return (
   <CelebrationCutIn

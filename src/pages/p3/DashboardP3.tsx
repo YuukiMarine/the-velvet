@@ -122,6 +122,8 @@ interface StarItem {
 }
 
 const StarChartP3 = ({ items, onSelect, showLabels = true }: { items: StarItem[]; onSelect: (id: AttributeId) => void; showLabels?: boolean }) => {
+  const [ripples, setRipples] = useState<{ id: number; x: number; y: number }[]>([]);
+  const rootRef = useRef<HTMLDivElement>(null);
   const dataPath = starPathAt(items.slice(0, 5).map((it) => levelRadius(it.level, it.maxLevel)));
   // 同心等级星环（用户定稿）：每一档一圈同色系五角星、内浅外深（最多 10 档），
   // 由外到内实心覆盖形成环带——升级即数据星角尖走向更深的一圈，档位一眼可读
@@ -144,7 +146,23 @@ const StarChartP3 = ({ items, onSelect, showLabels = true }: { items: StarItem[]
     return { leftPct: (x / 360) * 100, topPct: (y / 356) * 100, tx, ty };
   };
   return (
-    <div className="relative mx-auto w-full max-w-[288px]" style={{ paddingTop: '8%', paddingBottom: '11%' }}>
+    <div ref={rootRef} className="relative mx-auto w-full max-w-[288px]" style={{ paddingTop: '8%', paddingBottom: '11%' }}>
+      {/* 点击波纹：以点击的属性字位置为中心，蓝色圆形波扩散 */}
+      <AnimatePresence>
+        {ripples.map((rp) => (
+          <motion.span
+            key={rp.id}
+            aria-hidden
+            className="pointer-events-none absolute z-20 rounded-full"
+            style={{ left: rp.x, top: rp.y, background: 'radial-gradient(circle, rgba(27,87,255,0.4) 0%, rgba(53,209,232,0.25) 45%, rgba(27,87,255,0) 72%)' }}
+            initial={{ width: 8, height: 8, x: '-50%', y: '-50%', opacity: 0.8 }}
+            animate={{ width: 260, height: 260, opacity: 0 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.62, ease: 'easeOut' }}
+            onAnimationComplete={() => setRipples((rs) => rs.filter((r) => r.id !== rp.id))}
+          />
+        ))}
+      </AnimatePresence>
       {/* 平行四边形斜切(下左上右) + 高度拉伸；星与标签同处一个 transform，标签再反变换回正 */}
       <div className="relative" style={{ transform: `skewX(${STAR_SKEW}deg) scaleY(${STAR_SCALEY})` }}>
         <svg viewBox="0 0 360 356" className="w-full overflow-visible" aria-hidden>
@@ -170,7 +188,11 @@ const StarChartP3 = ({ items, onSelect, showLabels = true }: { items: StarItem[]
             <button
               key={it.id}
               type="button"
-              onClick={() => onSelect(it.id)}
+              onClick={(e) => {
+                const rect = rootRef.current?.getBoundingClientRect();
+                if (rect) setRipples((rs) => [...rs, { id: Date.now() + i, x: e.clientX - rect.left, y: e.clientY - rect.top }]);
+                onSelect(it.id);
+              }}
               className="absolute flex flex-col items-center whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1b57ff] focus-visible:ring-offset-1"
               style={{ left: `${pos.leftPct}%`, top: `${pos.topPct}%`, transform: `translate(${pos.tx}%, ${pos.ty}%) skewX(${-STAR_SKEW}deg) scaleY(${1 / STAR_SCALEY})` }}
               aria-label={`${it.name} 等级 ${it.level}，${it.title}`}

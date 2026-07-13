@@ -1,6 +1,8 @@
 import { motion } from 'motion/react';
 import { CelebrationCutIn } from '@/components/CelebrationCutIn';
 import { MusicalNotes } from '@/components/MusicalNotes';
+import { BandCutInP3 } from '@/components/TodoCompleteModal';
+import { useUiChannel } from '@/ui/useUiChannel';
 import { triggerSuccessFeedback } from '@/utils/feedback';
 
 /**
@@ -21,6 +23,9 @@ interface SaveSuccessModalProps {
 
 export const SaveSuccessModal = ({ isOpen, onClose, description, pointsAwarded, tone = 'default', unlockHint }: SaveSuccessModalProps) => {
   const totalPoints = Object.values(pointsAwarded).reduce((sum, points) => sum + points, 0);
+  const p3 = useUiChannel() === 'p3';
+  // p3：复用今日完成的横贯斜带 cut-in（含蓝色划过高光），标题换「记录成功」
+  if (p3) return <BandCutInP3 isOpen={isOpen} onClose={onClose} title={description} totalPoints={totalPoints} unlockHint={unlockHint} eyebrow="记录成功" ghost="SAVED" />;
   return (
     <CelebrationCutIn
       isOpen={isOpen}
