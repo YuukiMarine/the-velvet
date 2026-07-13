@@ -1183,7 +1183,7 @@ export const Settings = () => {
                       </div>
                     </div>
 
-                    {/* 心相记账开关 + 货币（F5） */}
+                    {/* 记账开关 + 货币（F5） */}
                     <div className={`rounded-xl border-2 p-4 transition-all ${
                       settings.ledgerEnabled !== false
                         ? 'border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/20'
@@ -1193,7 +1193,7 @@ export const Settings = () => {
                         <div className="flex-1">
                           <div className="flex items-center gap-2">
                             <span className="text-base">💰</span>
-                            <h4 className="text-sm font-bold text-gray-800 dark:text-white">心相记账</h4>
+                            <h4 className="text-sm font-bold text-gray-800 dark:text-white">记账</h4>
                             <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 font-semibold">新</span>
                           </div>
                           <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 leading-relaxed">
@@ -1204,7 +1204,7 @@ export const Settings = () => {
                           <Toggle
                             checked={settings.ledgerEnabled !== false}
                             onChange={(v) => updateSettings({ ledgerEnabled: v })}
-                            aria-label="心相记账"
+                            aria-label="记账"
                           />
                         </div>
                       </div>

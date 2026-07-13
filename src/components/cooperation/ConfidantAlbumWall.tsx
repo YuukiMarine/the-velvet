@@ -525,13 +525,20 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
       </div>
 
       {/* 档案铭牌 + scrubber（p3：信息已上卡，铭牌只留空白牌文案 + scrubber + 蓝提示行） */}
-      <div className={`mx-auto max-w-sm px-3 ${p3 ? 'mt-1' : 'mt-2'}`}>
+      <div className={`mx-auto max-w-sm px-3 ${p3 ? '-mt-1' : 'mt-2'}`}>
         {current === 'add' || !current ? (
           <div className="text-center">
             <div className={`text-2xl font-black ${p3 ? '' : 'text-gray-800 dark:text-gray-100'}`} style={p3 ? { color: P3R.ink } : undefined}>缔结新的羁绊</div>
             <div className={`mt-0.5 text-xs font-semibold ${p3 ? '' : 'text-gray-400 dark:text-gray-500'}`} style={p3 ? { color: P3R.grey } : undefined}>点一下这张空白牌开始</div>
           </div>
         ) : p3 ? (
+          <>
+            {/* 滚动条上移到铭牌文字上方（设计稿：先跳卡条、再信息） */}
+            {count > 1 && (
+              <div className="mb-3.5">
+                <WallScrubber items={items} index={index} onJump={go} />
+              </div>
+            )}
           <motion.div
             key={current.id}
             initial={{ opacity: 0, y: 16 }}
@@ -540,7 +547,7 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
             className="text-center"
           >
             {/* 牌位眉签：罗马 · 牌名 · 正逆 */}
-            <div className="flex items-center justify-center gap-1.5 text-[11px] font-black tracking-[0.14em]" style={{ color: P3R.blue }}>
+            <div className="flex items-center justify-center gap-2 text-[12px] font-black tracking-[0.14em]" style={{ color: P3R.blue }}>
               <span aria-hidden className="flex items-center gap-[3px]">
                 <span className="h-0 w-0 border-y-[4px] border-y-transparent border-r-[6px]" style={{ borderRightColor: P3R.cyan }} />
                 <span className="h-0 w-0 border-y-[4px] border-y-transparent border-l-[6px]" style={{ borderLeftColor: P3R.cyan }} />
@@ -549,33 +556,34 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
               {TAROT_BY_ID[current.arcanaId]?.name}
               {current.orientation === 'reversed' ? ' · 逆位' : ' · 正位'}
             </div>
-            {/* 名字大字 + 蓝斜片 */}
-            <div className="mt-1 flex items-center justify-center gap-2.5">
-              <span aria-hidden className="h-[26px] w-[8px] shrink-0" style={{ background: P3R.blue, transform: 'skewX(-18deg)' }} />
-              <h3 className="max-w-[64%] truncate text-[32px] font-black italic leading-tight" style={{ color: P3R.ink, fontFamily: '"Arial Black", "Noto Sans SC", sans-serif' }}>
+            {/* 名字大字 + 蓝斜片（放大、放宽 max-w 防右截断） */}
+            <div className="mt-1.5 flex items-center justify-center gap-2.5">
+              <span aria-hidden className="h-[34px] w-[9px] shrink-0" style={{ background: P3R.blue, transform: 'skewX(-18deg)' }} />
+              <h3 className="max-w-[80%] truncate text-[40px] font-black italic leading-tight" style={{ color: P3R.ink, fontFamily: '"Arial Black", "Noto Sans SC", sans-serif' }}>
                 {current.name}
               </h3>
             </div>
             {/* LV 蓝斜块（洋红角）+ 属性青斜块 */}
-            <div className="mt-2 flex items-center justify-center gap-2">
-              <span className="relative inline-flex items-baseline gap-1 px-3.5 py-1 text-white" style={{ clipPath: slantClip(8), background: P3R.blue }}>
-                <span className="text-[10px] font-black tracking-wider text-white/85">LV</span>
-                <span className="text-[16px] font-black italic leading-none tabular-nums">{current.intimacy}</span>
+            <div className="mt-2.5 flex items-center justify-center gap-2">
+              <span className="relative inline-flex items-baseline gap-1 px-4 py-1 text-white" style={{ clipPath: slantClip(8), background: P3R.blue }}>
+                <span className="text-[11px] font-black tracking-wider text-white/85">LV</span>
+                <span className="text-[18px] font-black italic leading-none tabular-nums">{current.intimacy}</span>
                 <span aria-hidden className="absolute -bottom-[2px] right-1 h-[5px] w-[12px]" style={{ background: P3R.magenta, clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
               </span>
               {current.skillAttribute && attributeNames[current.skillAttribute] && (
-                <span className="inline-block px-3 py-1 text-[12px] font-black" style={{ clipPath: slantClip(8), background: P3R.cyanFaint, color: P3R.blueDeep }}>
+                <span className="inline-block px-3.5 py-1 text-[13px] font-black" style={{ clipPath: slantClip(8), background: P3R.cyanFaint, color: P3R.blueDeep }}>
                   {attributeNames[current.skillAttribute]}
                 </span>
               )}
             </div>
             {/* 关系描述 */}
             {current.description && (
-              <p className="mx-auto mt-2 line-clamp-2 max-w-[19rem] text-[12px] font-semibold leading-relaxed" style={{ color: P3R.inkSoft }}>
+              <p className="mx-auto mt-2.5 line-clamp-2 max-w-[21rem] text-[13px] font-semibold leading-relaxed" style={{ color: P3R.inkSoft }}>
                 {current.description}
               </p>
             )}
           </motion.div>
+          </>
         ) : (
           <div className="text-center">
             {/* eyebrow：牌名 · 罗马数 · 正逆位 */}
@@ -604,13 +612,13 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
           </div>
         )}
 
-        {count > 1 && (
+        {!p3 && count > 1 && (
           <div className="mt-2">
             <WallScrubber items={items} index={index} onJump={go} />
           </div>
         )}
         {p3 ? (
-          <div className="mt-1.5 flex items-center justify-center gap-2 text-[11px] font-bold" style={{ color: P3R.blue }}>
+          <div className="mt-2.5 flex items-center justify-center gap-2 text-[11px] font-bold" style={{ color: P3R.blue }}>
             <span aria-hidden className="flex items-center gap-[3px]">
               <span className="h-0 w-0 border-y-[4px] border-y-transparent border-r-[6px]" style={{ borderRightColor: P3R.cyan }} />
               <span className="h-0 w-0 border-y-[4px] border-y-transparent border-l-[6px]" style={{ borderLeftColor: P3R.cyan }} />

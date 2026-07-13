@@ -240,7 +240,7 @@ const AttrTrendChart = ({
 
 // ── main page ─────────────────────────────────────────────────────────────────
 export const Statistics = () => {
-  const { activities, attributes, settings, setCurrentPage } = useAppStore();
+  const { activities, attributes, settings, achievements, skills, setCurrentPage } = useAppStore();
   const [timeRange, setTimeRange] = useState<'7' | '30' | 'all'>('30');
   // P3R（蓝频道）：p3-statistics-reference-v2 形态（斜轴世界经频道 token 归零自动放平）
   const p3 = useUiChannel() === 'p3';
@@ -375,6 +375,9 @@ export const Statistics = () => {
         <StatCard label="记录天数" value={uniqueDays} sub={`共 ${totalRecords} 条记录`} delay={0.2} />
         <StatCard label="最长连续" value={`${maxStreak}天`} sub={todayStreak > 0 ? `当前连续 ${todayStreak} 天` : '继续加油！'} delay={0.25} />
         <StatCard label="日均点数" value={avgPerDay} sub={topAttr?.total > 0 ? `最强：${settings.attributeNames[topAttr.id]}` : ''} delay={0.3} />
+        {/* 成就·技能已解锁（从首页人格指数条挪来） */}
+        <StatCard label="成就已解锁" value={achievements.filter(a => a.unlocked).length} sub={`共 ${achievements.length} 项`} delay={0.35} />
+        <StatCard label="技能已解锁" value={skills.filter(s => s.unlocked).length} sub={`共 ${skills.length} 项`} delay={0.4} />
       </div>
 
       {/* attribute trend（p3：节标 + 斜块切换，卡壳白斜） */}
