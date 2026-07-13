@@ -93,7 +93,8 @@ const STAR_CY = 178;
 const STAR_R = 150;
 const rad = (d: number) => (d * Math.PI) / 180;
 const armAngle = (i: number) => -90 + i * 72; // 正立五角星（"放倒/上窄下宽"由容器 3D 透视 rotateX 承担）
-const STAR_ROTX = 32; // 容器 3D 后仰角——顶角远(窄)、底部近(宽)的透视冲击
+const STAR_SKEW = -13;    // 平行四边形斜切：上边右移、下边左移（下左上右）
+const STAR_SCALEY = 1.16; // 整体高度拉伸一点
 const pt = (ang: number, r: number): [number, number] => [STAR_CX + r * Math.cos(rad(ang)), STAR_CY + r * Math.sin(rad(ang))];
 
 /** 五角星路径：radii[i] 为第 i 个外角半径；凹点随相邻两角联动，保持尖锐星形 */
@@ -143,9 +144,9 @@ const StarChartP3 = ({ items, onSelect, showLabels = true }: { items: StarItem[]
     return { leftPct: (x / 360) * 100, topPct: (y / 356) * 100, tx, ty };
   };
   return (
-    <div className="relative mx-auto w-full max-w-[288px]" style={{ perspective: '680px', paddingTop: '2%', paddingBottom: '6%' }}>
-      {/* 3D 后仰平面：星 + 标签同处一个 rotateX 变换，顶远(窄)底近(宽) */}
-      <div className="relative" style={{ transform: `rotateX(${STAR_ROTX}deg)`, transformStyle: 'preserve-3d' }}>
+    <div className="relative mx-auto w-full max-w-[288px]" style={{ paddingTop: '8%', paddingBottom: '11%' }}>
+      {/* 平行四边形斜切(下左上右) + 高度拉伸；星与标签同处一个 transform，标签再反变换回正 */}
+      <div className="relative" style={{ transform: `skewX(${STAR_SKEW}deg) scaleY(${STAR_SCALEY})` }}>
         <svg viewBox="0 0 360 356" className="w-full overflow-visible" aria-hidden>
           {/* 同心星环：从最外档画到最内档，后画的小星盖出环带 */}
           {Array.from({ length: ringCount }).map((_, k) => {
@@ -171,7 +172,7 @@ const StarChartP3 = ({ items, onSelect, showLabels = true }: { items: StarItem[]
               type="button"
               onClick={() => onSelect(it.id)}
               className="absolute flex flex-col items-center whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1b57ff] focus-visible:ring-offset-1"
-              style={{ left: `${pos.leftPct}%`, top: `${pos.topPct}%`, transform: `translate(${pos.tx}%, ${pos.ty}%) rotateX(-${STAR_ROTX}deg)` }}
+              style={{ left: `${pos.leftPct}%`, top: `${pos.topPct}%`, transform: `translate(${pos.tx}%, ${pos.ty}%) skewX(${-STAR_SKEW}deg) scaleY(${1 / STAR_SCALEY})` }}
               aria-label={`${it.name} 等级 ${it.level}，${it.title}`}
             >
               <span className="flex items-baseline gap-1.5">
@@ -219,14 +220,20 @@ const AttrDetailInline = ({ attrId, level: fallbackLevel, onBack }: { attrId: At
 
   return (
     <motion.div
-      className="relative z-0 pt-1 pb-2"
+      className="relative z-10 cursor-pointer pt-1 pb-2"
+      onClick={onBack}
       variants={container}
       initial="hide"
       animate="show"
       exit="hide"
     >
-      {/* 属性名大字 + Lv（从左飞入） */}
-      <motion.div className="relative" variants={fromLeft} transition={spring}>
+      {/* 属性名大字 + Lv（进：曲线位移+缩放到左上；退：渐隐——避免曲线倒放卡顿） */}
+      <motion.div
+        className="relative origin-top-left"
+        initial={{ x: '34%', y: 44, scale: 0.56 }}
+        animate={{ x: ['34%', '9%', '0%'], y: [44, -10, 0], scale: [0.56, 0.94, 1], transition: { duration: 0.5, ease: [0.4, 0, 0.2, 1], times: [0, 0.58, 1] } }}
+        exit={{ opacity: 0, transition: { duration: 0.2 } }}
+      >
         <div className="flex items-center gap-2">
           <span aria-hidden className="h-[26px] w-[8px]" style={{ background: P3R.blue, transform: 'skewX(-18deg)' }} />
           <span className="text-[13px] font-black tracking-[0.2em]" style={{ color: P3R.blue }}>PERSONA</span>
@@ -280,15 +287,15 @@ const AttrDetailInline = ({ attrId, level: fallbackLevel, onBack }: { attrId: At
         {related.length === 0 ? (
           <div className="px-3 py-4 text-center text-[12px] font-semibold" style={{ background: 'rgba(207,234,246,0.5)', clipPath: slantClip(8), color: P3R.grey }}>这个方向还没有专属成就</div>
         ) : (
-          <div className="space-y-1.5">
+          <div className="flex gap-2 overflow-x-auto pb-1">
             {related.map((a) => (
-              <div key={a.id} className="flex items-center gap-3 px-3 py-2" style={{ background: a.unlocked ? 'rgba(53,209,232,0.14)' : 'rgba(207,234,246,0.4)', clipPath: slantClip(8), opacity: a.unlocked ? 1 : 0.72 }}>
-                <span className="text-xl" aria-hidden>{a.icon}</span>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-[13px] font-black" style={{ color: P3R.ink }}>{a.title}</div>
-                  <div className="truncate text-[11px] font-semibold" style={{ color: P3R.grey }}>{a.description}</div>
+              <div key={a.id} className="flex w-[124px] shrink-0 flex-col gap-1 px-3 py-2.5" style={{ background: a.unlocked ? 'rgba(53,209,232,0.14)' : 'rgba(207,234,246,0.4)', clipPath: slantClip(8), opacity: a.unlocked ? 1 : 0.72 }}>
+                <div className="flex items-center justify-between">
+                  <span className="text-lg leading-none" aria-hidden>{a.icon}</span>
+                  <span className="shrink-0 text-[9px] font-black" style={{ color: a.unlocked ? P3R.magenta : P3R.grey }}>{a.unlocked ? '已解锁' : '未解锁'}</span>
                 </div>
-                <span className="shrink-0 text-[10px] font-black" style={{ color: a.unlocked ? P3R.magenta : P3R.grey }}>{a.unlocked ? '已解锁' : '未解锁'}</span>
+                <div className="truncate text-[12px] font-black" style={{ color: P3R.ink }}>{a.title}</div>
+                <div className="line-clamp-2 text-[10px] font-semibold leading-tight" style={{ color: P3R.grey }}>{a.description}</div>
               </div>
             ))}
           </div>
@@ -755,12 +762,12 @@ export const DashboardP3 = () => {
           />
           {/* 五角星 ⇄ 详情：共存 + 纯位移切换（不淡入淡出，像游戏 UI 移动位置）
               星 absolute 浮在顶层、详情相对流撑开高度（内容不被裁），父只裁水平飞入 */}
-          <div className="relative min-h-[288px] overflow-hidden">
-            {/* 五角星层：选中时缩小飞到右上角（移动，非淡出） */}
+          <div className="relative min-h-[344px] overflow-hidden">
+            {/* 五角星层：选中时旋转 + 放大成深蓝大星背景（移动，非淡出；填充随 opacity 沉为衬底） */}
             <motion.div
-              className="absolute inset-x-0 top-0 z-10"
-              animate={dossierAttr ? { scale: 0.44, x: '46%', y: '-16%' } : { scale: 1, x: '0%', y: '0%' }}
-              transition={{ type: 'spring', stiffness: 220, damping: 26 }}
+              className="absolute inset-x-0 top-2 z-0"
+              animate={dossierAttr ? { scale: 1.42, rotate: -122, x: '14%', y: '16%', opacity: 0.16 } : { scale: 1, rotate: 0, x: '0%', y: '0%', opacity: 1 }}
+              transition={{ type: 'spring', stiffness: 190, damping: 24 }}
               style={{ transformOrigin: 'center', pointerEvents: dossierAttr ? 'none' : 'auto' }}
             >
               <StarChartP3 items={starItems} onSelect={(id) => setDossierAttr(id)} showLabels={!dossierAttr} />
