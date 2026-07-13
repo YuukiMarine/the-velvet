@@ -37,6 +37,14 @@ const FORM_GHOST: Record<NavigatorDraft['kind'], string> = {
   completeTodo: 'DONE',
 };
 
+/** 右上角装饰性无衬线大字（与左缘竖排词呼应，另择词避免重复） */
+const CORNER_GHOST: Record<NavigatorDraft['kind'], string> = {
+  activity: 'REC.',
+  todo: 'PLAN',
+  ledger: 'YEN',
+  completeTodo: 'CLR',
+};
+
 /** 青色三角步进钮（p3-modal-14 稿：◀− / ▶＋） */
 const TriStepBtn = ({ dir, disabled, onClick, label }: {
   dir: 'left' | 'right';
@@ -319,6 +327,12 @@ export const NavigatorActionForm = ({ draft, bright, onSubmit, onClose }: Props)
                   {FORM_GHOST[d.kind]}
                 </span>
               </div>
+            )}
+            {/* 右上角装饰性无衬线大字（水印层，被内容盖压；与左缘竖排词呼应） */}
+            {bright && (
+              <span aria-hidden className="pointer-events-none absolute right-4 top-[52px] select-none whitespace-nowrap font-black italic leading-none" style={{ fontFamily: 'Arial, sans-serif', fontSize: '2.7rem', color: 'rgba(27,87,255,0.11)', letterSpacing: '0.03em' }}>
+                {CORNER_GHOST[d.kind]}
+              </span>
             )}
 
             {bright ? (

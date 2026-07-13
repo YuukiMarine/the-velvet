@@ -32,7 +32,7 @@
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { motion, type Variants } from 'motion/react';
+import { AnimatePresence, motion, type Variants } from 'motion/react';
 import { useAppStore } from '@/store';
 import type { ThemeType } from '@/types';
 import { PagePlane, PlaneLevel } from '@/components/PagePlane';
@@ -213,6 +213,11 @@ export const Menu = () => {
   // P3R（蓝频道）：p3-menu-reference-v2 阶梯瀑布形态；资料卡收进 Sheet（形按稿走、改名/头像功能不减配）
   const p3 = useUiChannel() === 'p3';
   const [profileSheetOpen, setProfileSheetOpen] = useState(false);
+  // P3R 菜单选项「游戏化选择」：selectedKey 驱动高亮（深蓝从左揭入 + 长度伸缩）；
+  // pointerdown 即选中预览、松手延时进入（让滑入动效播完）。默认选中首项「统计」。
+  const [selectedKey, setSelectedKey] = useState<string>('statistics');
+  const enterTimer = useRef<number | null>(null);
+  useEffect(() => () => { if (enterTimer.current) window.clearTimeout(enterTimer.current); }, []);
 
   const currentStreak = useMemo(() => calcCurrentStreak(activities.map(a => a.date)), [activities]);
 
@@ -418,16 +423,19 @@ export const Menu = () => {
   if (p3) {
     const totalLv = computeTotalLv(attributes);
     const totalPoints = attributes.reduce((s, a) => s + (a.points ?? 0), 0);
-    const menuItems = [
+    const menuItems: {
+      key: string; label: string; icon: ReactNode; onPress: () => void;
+      extra?: (sel: boolean) => ReactNode; aria: string;
+    }[] = [
       {
         key: 'statistics', label: '统计', icon: <ChartIcon />, onPress: () => setCurrentPage('statistics'),
-        extra: <span className="shrink-0 text-[11px] font-bold text-white/85">连续 {currentStreak} 天</span>,
+        extra: (sel) => <span className="shrink-0 text-[11px] font-bold" style={{ color: sel ? 'rgba(255,255,255,0.85)' : P3R.grey }}>连续 {currentStreak} 天</span>,
         aria: `统计：当前连续 ${currentStreak} 天`,
       },
       ...(battleVisible ? [{
         key: 'battle', label: '逆影战场', icon: <BoltIcon />, onPress: () => setCurrentPage('battle'),
-        extra: inShadowTime ? (
-          <motion.span animate={{ opacity: [1, 0.55, 1] }} transition={{ repeat: Infinity, duration: 1.5 }} className="shrink-0 px-2 py-0.5 text-[11px] font-black text-white" style={{ clipPath: slantClip(5), background: P3R.blue }}>
+        extra: (sel: boolean) => inShadowTime ? (
+          <motion.span animate={{ opacity: [1, 0.55, 1] }} transition={{ repeat: Infinity, duration: 1.5 }} className="shrink-0 px-2 py-0.5 text-[11px] font-black" style={{ clipPath: slantClip(5), background: sel ? '#fff' : P3R.blue, color: sel ? P3R.blue : '#fff' }}>
             影时间
           </motion.span>
         ) : undefined,
@@ -435,20 +443,20 @@ export const Menu = () => {
       }] : []),
       {
         key: 'theme', label: '主题', icon: <PaletteIcon />, onPress: () => setThemeSheetOpen(true),
-        extra: <span className="shrink-0 text-[11px] font-bold" style={{ color: P3R.grey }}>当前 {currentThemeLabel}</span>,
+        extra: (sel) => <span className="shrink-0 text-[11px] font-bold" style={{ color: sel ? 'rgba(255,255,255,0.85)' : P3R.grey }}>当前 {currentThemeLabel}</span>,
         aria: `主题：当前 ${currentThemeLabel}`,
       },
       {
         key: 'achievements', label: '成就·技能', icon: <TrophyIcon />, onPress: () => setCurrentPage('achievements'),
-        extra: totalPendingUnlocks > 0 ? (
-          <span className="shrink-0 px-2 py-0.5 text-[11px] font-black text-white" style={{ clipPath: slantClip(5), background: P3R.magenta }}>{totalPendingUnlocks} 待解锁</span>
+        extra: (sel) => totalPendingUnlocks > 0 ? (
+          <span className="shrink-0 px-2 py-0.5 text-[11px] font-black" style={{ clipPath: slantClip(5), background: sel ? '#fff' : P3R.magenta, color: sel ? P3R.magenta : '#fff' }}>{totalPendingUnlocks} 待解锁</span>
         ) : undefined,
         aria: totalPendingUnlocks > 0 ? `成就·技能：${totalPendingUnlocks} 项待解锁` : '成就·技能',
       },
-      { key: 'astrology', label: '占卜', icon: <MoonIcon />, onPress: () => setCurrentPage('astrology'), extra: undefined, aria: '占卜' },
-      ...(ledgerVisible ? [{ key: 'ledger', label: '心相记账', icon: <WalletIcon />, onPress: () => setCurrentPage('ledger'), extra: undefined, aria: '心相记账' }] : []),
-      { key: 'settings', label: '设置', icon: <GearIcon />, onPress: () => setCurrentPage('settings'), extra: undefined, aria: '设置' },
-      { key: 'about', label: '关于', icon: <InfoIcon />, onPress: () => setAboutOpen(true), extra: undefined, aria: '关于' },
+      { key: 'astrology', label: '占卜', icon: <MoonIcon />, onPress: () => setCurrentPage('astrology'), aria: '占卜' },
+      ...(ledgerVisible ? [{ key: 'ledger', label: '心相记账', icon: <WalletIcon />, onPress: () => setCurrentPage('ledger'), aria: '心相记账' }] : []),
+      { key: 'settings', label: '设置', icon: <GearIcon />, onPress: () => setCurrentPage('settings'), aria: '设置' },
+      { key: 'about', label: '关于', icon: <InfoIcon />, onPress: () => setAboutOpen(true), aria: '关于' },
     ];
     return (
       <P3RPage className="overflow-hidden">
@@ -491,37 +499,67 @@ export const Menu = () => {
             </span>
           </button>
 
-          {/* 阶梯瀑布入口列（首项蓝实心，逐项右缩进） */}
+          {/* 游戏化入口列：selectedKey 高亮（深蓝从左揭入 + 长度伸缩）；按下即预览、松手进入 */}
           <nav className="relative mt-7 space-y-2.5" aria-label="功能入口">
             {menuItems.map((m, i) => {
-              const first = i === 0;
+              const selected = m.key === selectedKey;
+              const indent = i * 5;                                     // 基础阶梯缩进（%）
+              const ml = selected ? 0 : indent;                         // 选中左伸到 0 → 变长
+              const w = selected ? 100 : Math.max(46, 100 - indent - 6); // 未选中右侧再缩 → 变短
+              const content = (white: boolean) => (
+                <>
+                  <span aria-hidden style={{ color: white ? '#fff' : P3R.blue }}>{m.icon}</span>
+                  <span className="min-w-0 flex-1 truncate text-[17px] font-black" style={{ color: white ? '#fff' : P3R.ink }}>{m.label}</span>
+                  {m.extra?.(white)}
+                </>
+              );
               return (
-                <motion.button
+                <motion.div
                   key={m.key}
-                  type="button"
                   initial={bold ? { opacity: 0, x: 24 } : { opacity: 0 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ ...springSoft, delay: i * 0.045 }}
-                  whileTap={TAP}
-                  onClick={() => {
-                    triggerNavFeedback();
-                    m.onPress();
-                  }}
-                  aria-label={m.aria}
-                  className="relative flex items-center gap-3.5 py-3.5 pl-7 pr-5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1b57ff]"
-                  style={{
-                    clipPath: slantClip(16),
-                    background: first ? P3R.blue : i % 2 ? 'rgba(232,245,251,0.95)' : 'rgba(255,255,255,0.92)',
-                    marginLeft: `${i * 6.2}%`,
-                    width: `${100 - i * 6.2}%`,
-                    boxShadow: first ? '0 10px 26px rgba(27,87,255,0.25)' : '0 8px 18px rgba(38,96,140,0.06)',
-                  }}
                 >
-                  <span aria-hidden style={{ color: first ? '#fff' : P3R.blue }}>{m.icon}</span>
-                  <span className="min-w-0 flex-1 truncate text-[17px] font-black" style={{ color: first ? '#fff' : P3R.ink }}>{m.label}</span>
-                  {m.extra}
-                  {first && <span aria-hidden className="absolute bottom-0 right-3 h-[9px] w-[22px]" style={{ background: P3R.magenta, clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />}
-                </motion.button>
+                  <motion.button
+                    type="button"
+                    whileTap={TAP}
+                    onPointerDown={() => setSelectedKey(m.key)}
+                    onClick={() => {
+                      triggerNavFeedback();
+                      setSelectedKey(m.key);
+                      if (enterTimer.current) window.clearTimeout(enterTimer.current);
+                      enterTimer.current = window.setTimeout(m.onPress, 240);
+                    }}
+                    aria-label={m.aria}
+                    aria-current={selected ? 'true' : undefined}
+                    className="relative block overflow-hidden py-3.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1b57ff]"
+                    style={{
+                      clipPath: slantClip(16),
+                      background: i % 2 ? 'rgba(232,245,251,0.95)' : 'rgba(255,255,255,0.92)',
+                      boxShadow: selected ? '0 12px 28px rgba(27,87,255,0.28)' : '0 8px 18px rgba(38,96,140,0.06)',
+                      marginLeft: `${ml}%`,
+                      width: `${w}%`,
+                      transition: 'margin-left 0.36s cubic-bezier(0.16,1,0.3,1), width 0.36s cubic-bezier(0.16,1,0.3,1), box-shadow 0.3s ease',
+                    }}
+                  >
+                    {/* 底层常态（浅底墨字） */}
+                    <span className="flex items-center gap-3.5 pl-7 pr-5">{content(false)}</span>
+                    {/* 高亮层：深蓝从左揭入（CSS animation，稳过 rAF 节流）、离开淡出 */}
+                    <AnimatePresence>
+                      {selected && (
+                        <motion.span
+                          key="hl"
+                          className="absolute inset-0 flex items-center gap-3.5 pl-7 pr-5"
+                          style={{ background: P3R.blue, animation: 'p3MenuReveal 0.34s cubic-bezier(0.16,1,0.3,1)' }}
+                          exit={{ opacity: 0, transition: { duration: 0.2 } }}
+                        >
+                          {content(true)}
+                          <span aria-hidden className="absolute bottom-0 right-3 h-[9px] w-[22px]" style={{ background: P3R.magenta, clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
+                        </motion.span>
+                      )}
+                    </AnimatePresence>
+                  </motion.button>
+                </motion.div>
               );
             })}
           </nav>

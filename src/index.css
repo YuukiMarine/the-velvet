@@ -258,6 +258,12 @@ html[data-ios-standalone="true"] {
   100% { transform: scale(24); opacity: 0; }
 }
 
+/* P3R 菜单选项高亮：深蓝从左揭入（CSS animation，不依赖 rAF；结束后无 clip-path 全显） */
+@keyframes p3MenuReveal {
+  from { clip-path: inset(0 100% 0 0); }
+  to   { clip-path: inset(0 0 0 0); }
+}
+
 @keyframes tvNoiseDrift {
   0% { background-position: 0 0, 12px 8px, 32px 16px; opacity: 0.045; }
   33% { background-position: -18px 11px, 6px -16px, 18px 24px; opacity: 0.075; }
