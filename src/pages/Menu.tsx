@@ -81,7 +81,7 @@ const GearIcon = () => (
   </svg>
 );
 
-// 「心相记账」：钱包（heroicons wallet outline，24px stroke 1.8 制式）
+// 「记账」：钱包（heroicons wallet outline，24px stroke 1.8 制式）
 const WalletIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" strokeWidth={1.8} stroke="currentColor" className="w-6 h-6">
     <path d="M21 12a2.25 2.25 0 00-2.25-2.25H15a3 3 0 11-6 0H5.25A2.25 2.25 0 003 12m18 0v6a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 18v-6m18 0V9M3 12V9m18 0a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 9m18 0V6a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 6v3" strokeLinecap="round" strokeLinejoin="round" />
@@ -454,7 +454,7 @@ export const Menu = () => {
         aria: totalPendingUnlocks > 0 ? `成就·技能：${totalPendingUnlocks} 项待解锁` : '成就·技能',
       },
       { key: 'astrology', label: '占卜', icon: <MoonIcon />, onPress: () => setCurrentPage('astrology'), aria: '占卜' },
-      ...(ledgerVisible ? [{ key: 'ledger', label: '心相记账', icon: <WalletIcon />, onPress: () => setCurrentPage('ledger'), aria: '心相记账' }] : []),
+      ...(ledgerVisible ? [{ key: 'ledger', label: '记账', icon: <WalletIcon />, onPress: () => setCurrentPage('ledger'), aria: '记账' }] : []),
       { key: 'settings', label: '设置', icon: <GearIcon />, onPress: () => setCurrentPage('settings'), aria: '设置' },
       { key: 'about', label: '关于', icon: <InfoIcon />, onPress: () => setAboutOpen(true), aria: '关于' },
     ];
@@ -700,8 +700,8 @@ export const Menu = () => {
                     side="left"
                     order={orderOf('left', 2)}
                     bold={bold}
-                    label="心相记账"
-                    ariaLabel="心相记账"
+                    label="记账"
+                    ariaLabel="记账"
                     icon={<WalletIcon />}
                     onPress={() => setCurrentPage('ledger')}
                   />

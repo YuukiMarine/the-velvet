@@ -16,7 +16,6 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore, toLocalDateKey } from '@/store';
 import type { AttributeId, CallingCard } from '@/types';
 import { P3R, P3RPage, GhostWords, SectionMark, SlantButton, TitlePeriod, slantClip } from '@/components/p3r/kit';
-import { AttributeDossier } from '@/components/AttributeDossier';
 import { TodoCompleteModal } from '@/components/TodoCompleteModal';
 import { BattleDashboardWidget } from '@/components/BattleDashboardWidget';
 import { StackCarousel } from '@/components/StackCarousel';
@@ -93,7 +92,8 @@ const STAR_CX = 180;
 const STAR_CY = 178;
 const STAR_R = 150;
 const rad = (d: number) => (d * Math.PI) / 180;
-const armAngle = (i: number) => -90 + i * 72; // 正立，顶点朝上
+const STAR_TILT = -18; // 整体逆时针倾斜——"放倒"的视觉冲击（数据星 + 星环 + 标签锚点同步转）
+const armAngle = (i: number) => -90 + i * 72 + STAR_TILT;
 const pt = (ang: number, r: number): [number, number] => [STAR_CX + r * Math.cos(rad(ang)), STAR_CY + r * Math.sin(rad(ang))];
 
 /** 五角星路径：radii[i] 为第 i 个外角半径；凹点随相邻两角联动，保持尖锐星形 */
@@ -120,15 +120,6 @@ interface StarItem {
   title: string;
 }
 
-/** 标签排布：顶标签在星顶正上；上二角标签压在角端上方；下二角在角端下方（全部收进版心，防截断） */
-const LABEL_POS: { left: string; top: string; translate: string; align: 'left' | 'center' }[] = [
-  { left: '50%', top: '7%', translate: 'translate(-50%, -106%)', align: 'center' }, // 顶（知识）
-  { left: '89%', top: '35%', translate: 'translate(-84%, -118%)', align: 'left' },  // 右上（胆量）
-  { left: '74%', top: '86%', translate: 'translate(-46%, 14%)', align: 'left' },    // 右下（灵巧）
-  { left: '26%', top: '86%', translate: 'translate(-54%, 14%)', align: 'left' },    // 左下（温柔）
-  { left: '11%', top: '35%', translate: 'translate(-16%, -118%)', align: 'left' },  // 左上（魅力）
-];
-
 const StarChartP3 = ({ items, onSelect }: { items: StarItem[]; onSelect: (id: AttributeId) => void }) => {
   const dataPath = starPathAt(items.slice(0, 5).map((it) => levelRadius(it.level, it.maxLevel)));
   // 同心等级星环（用户定稿）：每一档一圈同色系五角星、内浅外深（最多 10 档），
@@ -141,9 +132,19 @@ const StarChartP3 = ({ items, onSelect }: { items: StarItem[]; onSelect: (id: At
     const b = Math.round(252 - t * 18);  // 252→234
     return `rgb(${r}, ${g}, ${b})`;
   };
+  // 标签锚点：角端外侧，随 STAR_TILT 自动跟随（viewBox 坐标 → 百分比）；
+  // 按锚点相对中心的方位智能对齐——左角右靠、右角左靠、顶底居中，长标签不溢出容器
+  const labelAt = (i: number) => {
+    const [x, y] = pt(armAngle(i), STAR_R * 1.18);
+    const dx = x - STAR_CX;
+    const dy = y - STAR_CY;
+    const tx = dx < -30 ? -90 : dx > 30 ? -10 : -50;
+    const ty = dy < -30 ? -86 : dy > 30 ? -14 : -50;
+    return { leftPct: (x / 360) * 100, topPct: (y / 356) * 100, tx, ty };
+  };
   return (
-    <div className="relative mx-auto w-full max-w-[400px]" style={{ paddingTop: '13%', paddingBottom: '13%' }}>
-      <svg viewBox="0 0 360 356" className="w-full" aria-hidden>
+    <div className="relative mx-auto w-full max-w-[264px]" style={{ paddingTop: '15%', paddingBottom: '15%' }}>
+      <svg viewBox="0 0 360 356" className="w-full overflow-visible" aria-hidden>
         {/* 同心星环：从最外档画到最内档，后画的小星盖出环带 */}
         {Array.from({ length: ringCount }).map((_, k) => {
           const lvl = ringCount - k;
@@ -156,30 +157,169 @@ const StarChartP3 = ({ items, onSelect }: { items: StarItem[]; onSelect: (id: At
           const [x2, y2] = pt(armAngle(i), STAR_R + 15);
           return <line key={it.id} x1={x1} y1={y1} x2={x2} y2={y2} stroke="rgba(53,209,232,0.55)" strokeWidth={1.5} />;
         })}
-        {/* 数据星：五角连线，角长随等级伸长（描边转亮蓝，在深色环带上保持醒目） */}
-        <path d={dataPath} fill="rgba(27,87,255,0.22)" stroke={P3R.blue} strokeWidth={2.5} strokeLinejoin="miter" />
+        {/* 数据星：深蓝纯色实心（去描边，用户定稿——深蓝形状即可） */}
+        <path d={dataPath} fill={P3R.blueDeep} strokeLinejoin="miter" />
       </svg>
-      {/* 五属性标签（可点击 → 属性档案） */}
+      {/* 五属性标签（可点击 → 属性档案；锚点随倾斜跟随角端） */}
       {items.slice(0, 5).map((it, i) => {
-        const pos = LABEL_POS[i];
+        const pos = labelAt(i);
         return (
           <button
             key={it.id}
             type="button"
             onClick={() => onSelect(it.id)}
-            className="absolute whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1b57ff] focus-visible:ring-offset-1"
-            style={{ left: pos.left, top: pos.top, transform: pos.translate, textAlign: pos.align }}
+            className="absolute flex flex-col items-center whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1b57ff] focus-visible:ring-offset-1"
+            style={{ left: `${pos.leftPct}%`, top: `${pos.topPct}%`, transform: `translate(${pos.tx}%, ${pos.ty}%)` }}
             aria-label={`${it.name} 等级 ${it.level}，${it.title}`}
           >
-            <span className="flex items-baseline gap-1.5" style={{ justifyContent: pos.align === 'center' ? 'center' : 'flex-start' }}>
-              <span className="text-[16px] font-black leading-none" style={{ color: P3R.ink }}>{it.name}</span>
-              <span className="text-[30px] font-black italic leading-none" style={{ color: P3R.blue }}>{it.level}</span>
+            <span className="flex items-baseline gap-1.5">
+              <span className="text-[15px] font-black leading-none" style={{ color: P3R.ink }}>{it.name}</span>
+              <span className="text-[26px] font-black italic leading-none" style={{ color: P3R.blue }}>{it.level}</span>
             </span>
-            <span className="mt-0.5 block text-[12px] font-semibold leading-none" style={{ color: P3R.inkSoft }}>{it.title}</span>
+            <span className="mt-0.5 block text-[11px] font-semibold leading-none" style={{ color: P3R.inkSoft }}>{it.title}</span>
           </button>
         );
       })}
     </div>
+  );
+};
+
+// 正五角星（背景装饰用，随 STAR_TILT 一起倾斜）
+const fullStarPath = starPathAt([STAR_R, STAR_R, STAR_R, STAR_R, STAR_R]);
+
+/**
+ * AttrDetailInline —— 点击维度后「原地展开」的属性详情（替代 AttributeDossier 弹窗）：
+ * 属性名放大移入最左 + 背景大五角星旋转放大填深蓝纯色 + 进度/称号阶梯/关联成就逐条淡入；
+ * 再点「返回」由 AnimatePresence 反向倒放回五角星。数据逻辑与 AttributeDossier 同源。
+ */
+const AttrDetailInline = ({ attrId, level: fallbackLevel, onBack }: { attrId: AttributeId; level: number; onBack: () => void }) => {
+  const { attributes, achievements, settings } = useAppStore();
+  const attr = attributes.find((a) => a.id === attrId);
+  const thresholds = settings.levelThresholds?.length ? settings.levelThresholds : attr?.levelThresholds ?? [];
+  const lvlMax = thresholds.length || 5;
+  const level = attr?.level ?? fallbackLevel;
+  const isMax = level >= lvlMax;
+  const curThreshold = level > 1 ? thresholds[level - 1] : 0;
+  const nextThreshold = !isMax ? thresholds[level] : thresholds[lvlMax - 1];
+  const points = attr?.points ?? 0;
+  const progress = isMax ? 1 : Math.max(0, Math.min(1, (points - curThreshold) / Math.max(1, nextThreshold - curThreshold)));
+  const name = settings.attributeNames?.[attrId] || attr?.displayName || '';
+  const curTitle = getAttributeLevelTitle(settings.attributeLevelTitles, attrId, level);
+  const related = achievements.filter((a) => a.condition.attribute === attrId || a.condition.type === 'all_attributes_max');
+  const unlockedCount = related.filter((a) => a.unlocked).length;
+
+  // 逐条 stagger（enter 正放 / exit 倒放）
+  const seg = (i: number) => ({
+    initial: { opacity: 0, x: 26 },
+    animate: { opacity: 1, x: 0, transition: { delay: 0.12 + i * 0.08, type: 'spring' as const, stiffness: 260, damping: 24 } },
+    exit: { opacity: 0, x: 26, transition: { duration: 0.16 } },
+  });
+
+  return (
+    <motion.div
+      key="detail"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.22 }}
+      className="relative min-h-[360px] overflow-hidden pt-1"
+    >
+      {/* 背景大五角星：旋转 + 放大 + 深蓝纯色（倒放对称） */}
+      <motion.svg
+        viewBox="0 0 360 356"
+        aria-hidden
+        className="pointer-events-none absolute -right-20 -top-2 w-[340px]"
+        initial={{ rotate: -48, scale: 0.5, opacity: 0 }}
+        animate={{ rotate: 12, scale: 1, opacity: 0.12 }}
+        exit={{ rotate: -48, scale: 0.5, opacity: 0 }}
+        transition={{ type: 'spring', stiffness: 120, damping: 20 }}
+      >
+        <path d={fullStarPath} fill={P3R.blueDeep} />
+      </motion.svg>
+
+      {/* 属性名大字 + Lv（左侧，放大移入） */}
+      <motion.div
+        className="relative"
+        initial={{ x: -34, opacity: 0 }}
+        animate={{ x: 0, opacity: 1, transition: { type: 'spring', stiffness: 240, damping: 22 } }}
+        exit={{ x: -34, opacity: 0, transition: { duration: 0.18 } }}
+      >
+        <div className="flex items-center gap-2">
+          <span aria-hidden className="h-[26px] w-[8px]" style={{ background: P3R.blue, transform: 'skewX(-18deg)' }} />
+          <span className="text-[13px] font-black tracking-[0.2em]" style={{ color: P3R.blue }}>PERSONA</span>
+        </div>
+        <div className="mt-1 text-[52px] font-black italic leading-none" style={{ color: P3R.ink, fontFamily: '"Arial Black", "Noto Sans SC", sans-serif' }}>{name}</div>
+        <div className="mt-2.5 flex items-center gap-2.5">
+          <span className="relative inline-flex items-baseline gap-1 px-4 py-1 text-white" style={{ clipPath: slantClip(8), background: P3R.blue }}>
+            <span className="text-[11px] font-black tracking-wider text-white/85">LV</span>
+            <span className="text-[20px] font-black italic leading-none tabular-nums">{level}</span>
+            <span aria-hidden className="absolute -bottom-[2px] right-1 h-[5px] w-[12px]" style={{ background: P3R.magenta, clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
+          </span>
+          <span className="text-[16px] font-black" style={{ color: P3R.ink }}>{curTitle}</span>
+          <span className="ml-auto text-[12px] font-bold tabular-nums" style={{ color: P3R.grey }}>{points} pt</span>
+        </div>
+      </motion.div>
+
+      {/* 进度 */}
+      <motion.div {...seg(0)} className="relative mt-4">
+        <div className="mb-1 flex items-baseline justify-between text-[11px] font-black" style={{ color: P3R.blue }}>
+          <span>{isMax ? '已达最高等级' : `距 Lv.${level + 1}`}</span>
+          <span className="tabular-nums">{isMax ? 'MAX' : `${points - curThreshold}/${nextThreshold - curThreshold}`}</span>
+        </div>
+        <div className="relative h-[10px] w-full overflow-hidden" style={{ background: 'rgba(207,234,246,0.85)', clipPath: slantClip(3) }}>
+          <motion.div className="absolute inset-y-0 left-0" style={{ background: `linear-gradient(90deg, ${P3R.blue}, ${P3R.cyan})`, clipPath: slantClip(3) }} initial={{ width: 0 }} animate={{ width: `${progress * 100}%`, transition: { delay: 0.28, type: 'spring', stiffness: 110, damping: 20 } }} />
+        </div>
+      </motion.div>
+
+      {/* 称号阶梯 */}
+      <motion.div {...seg(1)} className="relative mt-4">
+        <div className="mb-1.5 text-[12px] font-black" style={{ color: P3R.inkSoft }}>称号阶梯</div>
+        <div className="space-y-1">
+          {Array.from({ length: lvlMax }, (_, i) => {
+            const lv = i + 1;
+            const reached = level >= lv;
+            const current = level === lv;
+            return (
+              <div key={lv} className="flex items-center gap-2.5 px-3 py-1.5 text-[13px]" style={{ background: current ? P3R.blue : reached ? 'rgba(207,234,246,0.7)' : 'transparent', clipPath: current || reached ? slantClip(6) : undefined, color: current ? '#fff' : reached ? P3R.ink : P3R.grey }}>
+                <span className="w-9 shrink-0 text-[11px] font-black tabular-nums">Lv.{lv}</span>
+                <span className="flex-1 font-bold">{getAttributeLevelTitle(settings.attributeLevelTitles, attrId, lv)}</span>
+                {current && <span className="text-[10px] font-black">◀ 现在</span>}
+                {!reached && <span className="text-[10px] tabular-nums">{thresholds[i] ?? 0} pt</span>}
+              </div>
+            );
+          })}
+        </div>
+      </motion.div>
+
+      {/* 关联成就 */}
+      <motion.div {...seg(2)} className="relative mt-4">
+        <div className="mb-1.5 text-[12px] font-black" style={{ color: P3R.inkSoft }}>关联成就（{unlockedCount}/{related.length}）</div>
+        {related.length === 0 ? (
+          <div className="px-3 py-4 text-center text-[12px] font-semibold" style={{ background: 'rgba(207,234,246,0.5)', clipPath: slantClip(8), color: P3R.grey }}>这个方向还没有专属成就</div>
+        ) : (
+          <div className="space-y-1.5">
+            {related.map((a) => (
+              <div key={a.id} className="flex items-center gap-3 px-3 py-2" style={{ background: a.unlocked ? 'rgba(53,209,232,0.14)' : 'rgba(207,234,246,0.4)', clipPath: slantClip(8), opacity: a.unlocked ? 1 : 0.72 }}>
+                <span className="text-xl" aria-hidden>{a.icon}</span>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-[13px] font-black" style={{ color: P3R.ink }}>{a.title}</div>
+                  <div className="truncate text-[11px] font-semibold" style={{ color: P3R.grey }}>{a.description}</div>
+                </div>
+                <span className="shrink-0 text-[10px] font-black" style={{ color: a.unlocked ? P3R.magenta : P3R.grey }}>{a.unlocked ? '已解锁' : '未解锁'}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </motion.div>
+
+      {/* 返回（点击倒放） */}
+      <motion.div {...seg(3)} className="relative mt-5">
+        <button type="button" onClick={onBack} className="flex items-center gap-2 text-[15px] font-black" style={{ color: P3R.blue }}>
+          <span aria-hidden className="h-0 w-0 border-y-[6px] border-y-transparent border-r-[9px]" style={{ borderRightColor: P3R.blue }} />
+          返回五角星
+        </button>
+      </motion.div>
+    </motion.div>
   );
 };
 
@@ -350,9 +490,11 @@ export const DashboardP3 = () => {
   // 六格统计（口径同 Dashboard）
   const stats = useMemo(() => {
     const totalPoints = attributes.reduce((s, a) => s + (a.points ?? 0), 0);
+    const totalLevel = attributes.reduce((s, a) => s + (a.level ?? 0), 0);
     const uniqueDays = new Set(activities.map((a) => toLocalDateKey(new Date(a.date)))).size;
     return {
       totalPoints,
+      totalLevel,
       maxStreak: calcMaxStreak(activities.map((a) => a.date)),
       totalActivities: activities.length,
       unlockedAchievements: achievements.filter((a) => a.unlocked).length,
@@ -628,28 +770,38 @@ export const DashboardP3 = () => {
               </button>
             }
           />
-          <StarChartP3 items={starItems} onSelect={(id) => setDossierAttr(id)} />
+          <AnimatePresence mode="wait">
+            {dossierAttr ? (
+              <AttrDetailInline
+                key="detail"
+                attrId={dossierAttr}
+                level={starItems.find((it) => it.id === dossierAttr)?.level ?? 1}
+                onBack={() => setDossierAttr(null)}
+              />
+            ) : (
+              <motion.div key="star" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}>
+                <StarChartP3 items={starItems} onSelect={(id) => setDossierAttr(id)} />
+              </motion.div>
+            )}
+          </AnimatePresence>
         </section>
 
-        {/* ── 六格统计条 ── */}
-        <div className="mt-2 grid grid-cols-6 py-3.5" style={{ clipPath: slantClip(12), background: 'rgba(207,234,246,0.75)' }}>
+        {/* ── 四格统计条（累计点数/总记录数/总等级/记录天数；成就·技能已挪至详细统计页）── */}
+        <div className="mt-2 grid grid-cols-4 py-3.5" style={{ clipPath: slantClip(12), background: 'rgba(207,234,246,0.75)' }}>
           {[
             { v: stats.totalPoints, label: '累计点数', color: P3R.blue },
-            { v: stats.maxStreak, label: '最长连续天', color: P3R.blue },
             { v: stats.totalActivities, label: '总记录数', color: P3R.blue },
-            { v: stats.unlockedAchievements, label: '成就已解锁', color: '#f59e0b' },
-            { v: stats.unlockedSkills, label: '技能已解锁', color: '#8b5cf6' },
+            { v: stats.totalLevel, label: '总等级', color: P3R.blue },
             { v: stats.uniqueDays, label: '记录天数', color: '#10b981' },
           ].map((s, i) => (
-            <div key={s.label} className={`flex flex-col items-center gap-1 px-0.5 ${i > 0 ? 'border-l border-white/70' : ''}`}>
-              <span className="text-[24px] font-black italic leading-none tabular-nums" style={{ color: s.color }}>{s.v}</span>
-              <span className="text-center text-[10px] font-bold leading-tight" style={{ color: P3R.inkSoft }}>{s.label}</span>
+            <div key={s.label} className={`flex flex-col items-center gap-1 px-1 ${i > 0 ? 'border-l border-white/70' : ''}`}>
+              <span className="text-[26px] font-black italic leading-none tabular-nums" style={{ color: s.color }}>{s.v}</span>
+              <span className="text-center text-[11px] font-bold leading-tight" style={{ color: P3R.inkSoft }}>{s.label}</span>
             </div>
           ))}
         </div>
 
         {/* ── 弹窗 / Toast 族（复用现有基座；P3R 弹窗形态属 modals 批次）── */}
-        <AttributeDossier attrId={dossierAttr} onClose={() => setDossierAttr(null)} />
 
         <TodoCompleteModal
           isOpen={!!completedTitle}

@@ -1,5 +1,5 @@
 /**
- * Ledger — F5 心相记账（Phase ①）。
+ * Ledger — F5 记账（Phase ①）。
  *
  * 三层模型的 UI：
  *   · 流：NL/手动录入 → 可改确认卡 → 落账；按日分组流水列表。
@@ -370,13 +370,13 @@ export const Ledger = () => {
             <span className="h-[11px] w-[15px]" style={{ background: P3R.blue, clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
             <span className="h-[11px] w-[12px]" style={{ background: '#9adcee', clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
           </span>
-          <P3PageHeader ticks title="心相记账" onBack={() => setCurrentPage('menu')} className="pt-2" />
+          <P3PageHeader ticks title="记账" onBack={() => setCurrentPage('menu')} className="pt-2" />
         </motion.div>
       ) : (
       <motion.div {...riseIn(0)} className="flex items-start justify-between gap-3">
         <BackButton onClick={() => setCurrentPage('menu')} className="mt-1 -ml-1" />
         <div className="flex-1">
-          <PageTitle title="心相记账" en="Ledger" enOffset={{ right: -20 }} />
+          <PageTitle title="记账" en="Ledger" enOffset={{ right: -20 }} />
         </div>
       </motion.div>
       )}
@@ -479,6 +479,25 @@ export const Ledger = () => {
 
           {cycle.payCycle && (
             <div className="mt-1.5 text-center text-[11px] font-bold" style={{ color: P3R.grey }}>本周期 {cycle.label}</div>
+          )}
+
+          {/* 预算消耗进度条（p3 补：斜切横条，已花蓝青渐变 / 超支洋红；width 弹入动画） */}
+          {balanceView === 'month' && hasBudget && (
+            <div className="mt-3.5 px-6">
+              <div className="relative h-[11px] w-full overflow-hidden" style={{ background: 'rgba(207,234,246,0.8)', clipPath: slantClip(3) }}>
+                <motion.div
+                  className="absolute inset-y-0 left-0"
+                  style={{ background: over ? P3R.magenta : `linear-gradient(90deg, ${P3R.blue}, ${P3R.cyan})`, clipPath: slantClip(3) }}
+                  initial={{ width: 0 }}
+                  animate={{ width: `${Math.max(3, Math.min(100, lim > 0 ? (monthExpense / lim) * 100 : 0))}%` }}
+                  transition={{ type: 'spring', stiffness: 110, damping: 20, delay: 0.1 }}
+                />
+              </div>
+              <div className="mt-1 flex justify-between text-[10px] font-black" style={{ color: P3R.grey }}>
+                <span>已花 {$}{fmtMoney(monthExpense)}</span>
+                <span>{lim > 0 ? Math.round((monthExpense / lim) * 100) : 0}%</span>
+              </div>
+            </div>
           )}
 
           {/* 预算态提示行（超支洋红 / 今日还可花青） */}
