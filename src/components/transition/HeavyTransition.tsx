@@ -154,16 +154,16 @@ const WaveSliceAct = ({ midpoint, onDone }: ActProps) => {
 // 无蒙版无填充（偏灰水色盘被否）：4 圈几十 px 级粗细相间的蓝系波纹从点击点外扩，
 // 时长各异形成速率差；波列扫过屏幕中段时（260ms）切页——新页直接在波纹身后接管。
 const RIPPLE_LINES = [
-  { w: 22, c: 'rgba(27,87,255,0.80)',   reach: 1.06, d: 0.72, delay: 0.00, o: 0.85 },
-  { w: 56, c: 'rgba(53,209,232,0.68)',  reach: 0.95, d: 0.95, delay: 0.06, o: 0.80 },
-  { w: 34, c: 'rgba(10,59,214,0.58)',   reach: 1.12, d: 0.68, delay: 0.14, o: 0.70 },
-  { w: 64, c: 'rgba(127,216,238,0.62)', reach: 0.86, d: 1.05, delay: 0.20, o: 0.75 },
+  { w: 42,  c: 'rgba(27,87,255,0.80)',   reach: 1.06, d: 0.55, delay: 0.00, o: 0.85 },
+  { w: 76,  c: 'rgba(53,209,232,0.68)',  reach: 0.95, d: 0.72, delay: 0.05, o: 0.80 },
+  { w: 54,  c: 'rgba(10,59,214,0.58)',   reach: 1.12, d: 0.50, delay: 0.11, o: 0.70 },
+  { w: 84,  c: 'rgba(127,216,238,0.62)', reach: 0.86, d: 0.80, delay: 0.16, o: 0.75 },
 ];
 
 const WaterRippleAct = ({ midpoint, onDone, origin }: ActProps & { origin?: { x: number; y: number } }) => {
   useTimeline([
-    [260, midpoint],
-    [1100, onDone],
+    [220, midpoint],
+    [960, onDone],
   ]);
   const w = window.innerWidth;
   const h = window.innerHeight;
