@@ -150,52 +150,63 @@ const WaveSliceAct = ({ midpoint, onDone }: ActProps) => {
   );
 };
 
-// ── water：线条波纹 + 圆形蒙版擦除（P8.4 试验，底部栏切换指定）────────────────
-// 不铺蓝：只有粗细相间的线条波纹从点击点外扩；切页由一块中性圆形蒙版承担——
-// 圆 clip 涨满遮住切页瞬间，再缩回把新页从边缘"擦除"露出。
+// ── water：线条波纹 + 圆形开孔擦除（P8.4 试验，底部栏切换指定）────────────────
+// 不铺蓝：4 圈粗细相间的蓝系线条波纹从点击点外扩；切页由中性水色蒙版承担——
+// 先快速涨满遮住切页瞬间，随即从圆心向外「开孔」：孔内即新页，擦除面贴着波纹
+// 一路推出屏幕（新页跟在波纹后面显现，擦除与波纹同步）。
 const RIPPLE_LINES = [
-  { w: 2, c: 'rgba(27,87,255,0.70)',   reach: 1.02, d: 0.80, delay: 0.00, o: 0.70 },
-  { w: 6, c: 'rgba(53,209,232,0.85)',  reach: 0.88, d: 0.72, delay: 0.07, o: 0.85 },
-  { w: 3, c: 'rgba(27,87,255,0.55)',   reach: 1.10, d: 0.86, delay: 0.15, o: 0.68 },
-  { w: 9, c: 'rgba(53,209,232,0.42)',  reach: 0.76, d: 0.66, delay: 0.22, o: 0.72 },
-  { w: 2, c: 'rgba(207,234,246,0.95)', reach: 1.16, d: 0.92, delay: 0.11, o: 0.80 },
+  { w: 5,  c: 'rgba(27,87,255,0.72)',   reach: 1.05, d: 1.05, delay: 0.00, o: 0.75 },
+  { w: 12, c: 'rgba(53,209,232,0.62)',  reach: 0.92, d: 0.95, delay: 0.12, o: 0.72 },
+  { w: 8,  c: 'rgba(10,59,214,0.50)',   reach: 1.12, d: 1.15, delay: 0.24, o: 0.62 },
+  { w: 15, c: 'rgba(127,216,238,0.55)', reach: 0.82, d: 0.90, delay: 0.32, o: 0.66 },
 ];
+
+/** 蒙版水色（涨潮盘与开孔环同色，换相瞬间无跳变） */
+const WATER_TONE = '#e4f2fb';
 
 const WaterRippleAct = ({ midpoint, onDone, origin }: ActProps & { origin?: { x: number; y: number } }) => {
   const [phase, setPhase] = useState<'in' | 'out'>('in');
   useTimeline([
-    [320, () => { midpoint(); setPhase('out'); }],
-    [720, onDone],
+    [260, () => { midpoint(); setPhase('out'); }],
+    [960, onDone],
   ]);
   const w = window.innerWidth;
   const h = window.innerHeight;
   const ox = origin?.x ?? w / 2;
   const oy = origin?.y ?? h - 40;
-  const reachPx = Math.hypot(Math.max(ox, w - ox), Math.max(oy, h - oy)); // 圆心→最远屏角
-  const cover = reachPx * 1.12; // 半径留余量，scale=1 时兜住全屏
+  const cover = Math.hypot(Math.max(ox, w - ox), Math.max(oy, h - oy)) * 1.12; // 圆心→最远屏角（留余量）
   const D = cover * 2;
   return (
     <div className={`fixed inset-0 ${zClass.transition} pointer-events-auto overflow-hidden`} aria-hidden>
-      {/* 圆形蒙版幕布（中性水色，不铺蓝）：从点击点 scale 涨满遮住切页 → 缩回把新页从边缘擦除露出
-          （用 scale 而非 clip-path：framer 不插值 circle() 的混合 %/px，clip-path 会卡在初值） */}
-      <motion.div
-        className="absolute rounded-full"
-        style={{
-          left: ox, top: oy, width: D, height: D, marginLeft: -cover, marginTop: -cover,
-          background: 'linear-gradient(160deg, #f6fbff 0%, #e4f2fb 56%, #d2eaf6 100%)',
-        }}
-        initial={{ scale: 0 }}
-        animate={{ scale: phase === 'in' ? 1 : 0 }}
-        transition={{ duration: phase === 'in' ? 0.3 : 0.38, ease: [0.4, 0, 0.2, 1] }}
-      />
-      {/* 线条波纹（有粗有细）：从点击点逐圈外扩，进/退各播一轮（key 带 phase 触发重放） */}
+      {phase === 'in' ? (
+        /* 涨潮：水色圆盘快速涨满，只为遮住切页瞬间 */
+        <motion.div
+          className="absolute rounded-full"
+          style={{ left: ox, top: oy, width: D, height: D, marginLeft: -cover, marginTop: -cover, background: WATER_TONE }}
+          initial={{ scale: 0 }}
+          animate={{ scale: 1 }}
+          transition={{ duration: 0.24, ease: [0.4, 0, 1, 1] }}
+        />
+      ) : (
+        /* 退潮开孔：恒定厚缘的水色圆环（content-box），中孔从 0 涨到全屏——孔内即新页，
+           擦除面与波纹同步向外推进。只动 width/height（波纹环同款、实证可插值），
+           缘厚恒取 2×cover 把屏外全兜住，不动 borderWidth（framer 对其插值不可靠） */
+        <motion.div
+          className="absolute rounded-full"
+          style={{ left: ox, top: oy, x: '-50%', y: '-50%', boxSizing: 'content-box', borderStyle: 'solid', borderColor: WATER_TONE, borderWidth: cover * 2 }}
+          initial={{ width: 0, height: 0 }}
+          animate={{ width: D, height: D }}
+          transition={{ duration: 0.6, ease: [0.33, 0, 0.2, 1] }}
+        />
+      )}
+      {/* 线条波纹（4 圈粗细相间蓝系，放慢）：从点击点逐圈外扩，涨/退各播一轮 */}
       {RIPPLE_LINES.map((ln, k) => (
         <motion.span
           key={`${phase}-${k}`}
           className="absolute rounded-full"
           style={{ left: ox, top: oy, x: '-50%', y: '-50%', border: `${ln.w}px solid ${ln.c}` }}
-          initial={{ width: 22, height: 22, opacity: ln.o }}
-          animate={{ width: reachPx * 2 * ln.reach, height: reachPx * 2 * ln.reach, opacity: 0 }}
+          initial={{ width: 24, height: 24, opacity: ln.o }}
+          animate={{ width: D * ln.reach, height: D * ln.reach, opacity: 0 }}
           transition={{ duration: ln.d, delay: ln.delay, ease: 'easeOut' }}
         />
       ))}
