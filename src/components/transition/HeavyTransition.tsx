@@ -150,59 +150,31 @@ const WaveSliceAct = ({ midpoint, onDone }: ActProps) => {
   );
 };
 
-// ── water：线条波纹 + 圆形开孔擦除（P8.4 试验，底部栏切换指定）────────────────
-// 不铺蓝：4 圈粗细相间的蓝系线条波纹从点击点外扩；切页由中性水色蒙版承担——
-// 先快速涨满遮住切页瞬间，随即从圆心向外「开孔」：孔内即新页，擦除面贴着波纹
-// 一路推出屏幕（新页跟在波纹后面显现，擦除与波纹同步）。
+// ── water：纯粗波纹擦洗（P8.4 试验，底部栏切换指定）──────────────────────────
+// 无蒙版无填充（偏灰水色盘被否）：4 圈几十 px 级粗细相间的蓝系波纹从点击点外扩，
+// 时长各异形成速率差；波列扫过屏幕中段时（260ms）切页——新页直接在波纹身后接管。
 const RIPPLE_LINES = [
-  { w: 5,  c: 'rgba(27,87,255,0.72)',   reach: 1.05, d: 1.05, delay: 0.00, o: 0.75 },
-  { w: 12, c: 'rgba(53,209,232,0.62)',  reach: 0.92, d: 0.95, delay: 0.12, o: 0.72 },
-  { w: 8,  c: 'rgba(10,59,214,0.50)',   reach: 1.12, d: 1.15, delay: 0.24, o: 0.62 },
-  { w: 15, c: 'rgba(127,216,238,0.55)', reach: 0.82, d: 0.90, delay: 0.32, o: 0.66 },
+  { w: 22, c: 'rgba(27,87,255,0.80)',   reach: 1.06, d: 0.72, delay: 0.00, o: 0.85 },
+  { w: 56, c: 'rgba(53,209,232,0.68)',  reach: 0.95, d: 0.95, delay: 0.06, o: 0.80 },
+  { w: 34, c: 'rgba(10,59,214,0.58)',   reach: 1.12, d: 0.68, delay: 0.14, o: 0.70 },
+  { w: 64, c: 'rgba(127,216,238,0.62)', reach: 0.86, d: 1.05, delay: 0.20, o: 0.75 },
 ];
 
-/** 蒙版水色（涨潮盘与开孔环同色，换相瞬间无跳变） */
-const WATER_TONE = '#e4f2fb';
-
 const WaterRippleAct = ({ midpoint, onDone, origin }: ActProps & { origin?: { x: number; y: number } }) => {
-  const [phase, setPhase] = useState<'in' | 'out'>('in');
   useTimeline([
-    [260, () => { midpoint(); setPhase('out'); }],
-    [960, onDone],
+    [260, midpoint],
+    [1100, onDone],
   ]);
   const w = window.innerWidth;
   const h = window.innerHeight;
   const ox = origin?.x ?? w / 2;
   const oy = origin?.y ?? h - 40;
-  const cover = Math.hypot(Math.max(ox, w - ox), Math.max(oy, h - oy)) * 1.12; // 圆心→最远屏角（留余量）
-  const D = cover * 2;
+  const D = Math.hypot(Math.max(ox, w - ox), Math.max(oy, h - oy)) * 2.24; // 直径盖到最远屏角（留余量）
   return (
     <div className={`fixed inset-0 ${zClass.transition} pointer-events-auto overflow-hidden`} aria-hidden>
-      {phase === 'in' ? (
-        /* 涨潮：水色圆盘快速涨满，只为遮住切页瞬间 */
-        <motion.div
-          className="absolute rounded-full"
-          style={{ left: ox, top: oy, width: D, height: D, marginLeft: -cover, marginTop: -cover, background: WATER_TONE }}
-          initial={{ scale: 0 }}
-          animate={{ scale: 1 }}
-          transition={{ duration: 0.24, ease: [0.4, 0, 1, 1] }}
-        />
-      ) : (
-        /* 退潮开孔：恒定厚缘的水色圆环（content-box），中孔从 0 涨到全屏——孔内即新页，
-           擦除面与波纹同步向外推进。只动 width/height（波纹环同款、实证可插值），
-           缘厚恒取 2×cover 把屏外全兜住，不动 borderWidth（framer 对其插值不可靠） */
-        <motion.div
-          className="absolute rounded-full"
-          style={{ left: ox, top: oy, x: '-50%', y: '-50%', boxSizing: 'content-box', borderStyle: 'solid', borderColor: WATER_TONE, borderWidth: cover * 2 }}
-          initial={{ width: 0, height: 0 }}
-          animate={{ width: D, height: D }}
-          transition={{ duration: 0.6, ease: [0.33, 0, 0.2, 1] }}
-        />
-      )}
-      {/* 线条波纹（4 圈粗细相间蓝系，放慢）：从点击点逐圈外扩，涨/退各播一轮 */}
       {RIPPLE_LINES.map((ln, k) => (
         <motion.span
-          key={`${phase}-${k}`}
+          key={k}
           className="absolute rounded-full"
           style={{ left: ox, top: oy, x: '-50%', y: '-50%', border: `${ln.w}px solid ${ln.c}` }}
           initial={{ width: 24, height: 24, opacity: ln.o }}
