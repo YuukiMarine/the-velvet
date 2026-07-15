@@ -151,19 +151,18 @@ const WaveSliceAct = ({ midpoint, onDone }: ActProps) => {
 };
 
 // ── water：纯粗波纹擦洗（P8.4 试验，底部栏切换指定）──────────────────────────
-// 无蒙版无填充（偏灰水色盘被否）：4 圈几十 px 级粗细相间的蓝系波纹从点击点外扩，
-// 时长各异形成速率差；波列扫过屏幕中段时（260ms）切页——新页直接在波纹身后接管。
+// 无蒙版无填充：2 圈粗蓝系波纹从点击点外扩、速率各异；切页与波纹**同帧开始**
+// （0ms midpoint，不等波列——先动画后切页会不跟手，用户口径），新页边入场边被
+// 波纹洗过。波纹层不拦截指针（转场不锁输入），连点由 Layer busyRef 兜底防叠。
 const RIPPLE_LINES = [
-  { w: 42,  c: 'rgba(27,87,255,0.80)',   reach: 1.06, d: 0.55, delay: 0.00, o: 0.85 },
-  { w: 76,  c: 'rgba(53,209,232,0.68)',  reach: 0.95, d: 0.72, delay: 0.05, o: 0.80 },
-  { w: 54,  c: 'rgba(10,59,214,0.58)',   reach: 1.12, d: 0.50, delay: 0.11, o: 0.70 },
-  { w: 84,  c: 'rgba(127,216,238,0.62)', reach: 0.86, d: 0.80, delay: 0.16, o: 0.75 },
+  { w: 48, c: 'rgba(27,87,255,0.78)',  reach: 1.08, d: 0.55, delay: 0.00, o: 0.85 },
+  { w: 84, c: 'rgba(53,209,232,0.65)', reach: 0.92, d: 0.72, delay: 0.08, o: 0.78 },
 ];
 
 const WaterRippleAct = ({ midpoint, onDone, origin }: ActProps & { origin?: { x: number; y: number } }) => {
   useTimeline([
-    [220, midpoint],
-    [960, onDone],
+    [0, midpoint],
+    [820, onDone],
   ]);
   const w = window.innerWidth;
   const h = window.innerHeight;
@@ -171,7 +170,7 @@ const WaterRippleAct = ({ midpoint, onDone, origin }: ActProps & { origin?: { x:
   const oy = origin?.y ?? h - 40;
   const D = Math.hypot(Math.max(ox, w - ox), Math.max(oy, h - oy)) * 2.24; // 直径盖到最远屏角（留余量）
   return (
-    <div className={`fixed inset-0 ${zClass.transition} pointer-events-auto overflow-hidden`} aria-hidden>
+    <div className={`fixed inset-0 ${zClass.transition} pointer-events-none overflow-hidden`} aria-hidden>
       {RIPPLE_LINES.map((ln, k) => (
         <motion.span
           key={k}
