@@ -59,6 +59,7 @@ export const buildExportJson = async (): Promise<string> => {
     personas: await db.personas.toArray(),
     shadows: await db.shadows.toArray(),
     battleStates: await db.battleStates.toArray(),
+    strata: await db.strata.toArray(),  // 影时间高塔·区层（批2 新增，导入向后兼容）
     // 星象 / 塔罗（v4 新增）
     dailyDivinations: await db.dailyDivinations.toArray(),
     longReadings: await db.longReadings.toArray(),

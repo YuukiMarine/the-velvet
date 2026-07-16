@@ -1,5 +1,5 @@
 ﻿import { create } from 'zustand';
-import { User, Attribute, Activity, Achievement, Skill, Settings, ThemeType, AttributeId, AttributeNamesKey, Todo, TodoCompletion, PeriodSummary, SummaryPeriod, SummaryPromptPreset, WeeklyGoal, WeeklyGoalItem, Persona, Shadow, BattleState, DailyDivination, LongReading, LongReadingFollowUp, Confidant, ConfidantEvent, ConfidantBuff, CounselSession, CounselMessage, CounselArchive, CallingCard, NotifSlot, LedgerEntry, Budget, SpendWorth, LedgerAsset, Wish, TerminalClearPayload } from '@/types';
+import { User, Attribute, Activity, Achievement, Skill, Settings, ThemeType, AttributeId, AttributeNamesKey, Todo, TodoCompletion, PeriodSummary, SummaryPeriod, SummaryPromptPreset, WeeklyGoal, WeeklyGoalItem, Persona, Shadow, BattleState, TowerStratum, StratumNode, DailyDivination, LongReading, LongReadingFollowUp, Confidant, ConfidantEvent, ConfidantBuff, CounselSession, CounselMessage, CounselArchive, CallingCard, NotifSlot, LedgerEntry, Budget, SpendWorth, LedgerAsset, Wish, TerminalClearPayload } from '@/types';
 import { TAROT_BY_ID } from '@/constants/tarot';
 import { summarizeCounsel, type CounselContext, type CounselConfidantBrief, type CounselRecentEvent } from '@/utils/counselAI';
 import { db } from '@/db';
@@ -117,7 +117,9 @@ import {
   SHADOW_REGEN_PER_LEVEL,
   HP_BONUS_PER_DEFEAT,
 } from '@/constants';
-import { PLAYER_BASE_HP } from '@/battle/numbers';
+import { PLAYER_BASE_HP, nodeSpReward, bossSpReward } from '@/battle/numbers';
+import { buildStratum, migrationStratumName, reachableNodeIds, rollMobSpec, weekKeyOf } from '@/battle/tower';
+import { TOWER_EVENT_IDS } from '@/battle/events';
 import { normalizeAttributeLevelTitles } from '@/utils/attributeLevelTitles';
 
 /** Shared request payload returned by buildSummaryRequest used by both non-streaming generateSummary and streaming modal */
@@ -458,6 +460,24 @@ interface AppState {
   defeatShadow: () => Promise<void>;
   resetBattle: () => Promise<void>;
   equipMask: (attr: AttributeId | null) => Promise<void>;
+  // 影时间高塔（批2）：区层攀登
+  stratum: TowerStratum | null;
+  saveStratum: (s: TowerStratum) => Promise<void>;
+  /** 显形新区层：写入区层 + 主影（沿用 shadows 单例=当前区层主影约定） */
+  revealStratum: (params: { level: number; name: string; description: string; themeAttribute?: AttributeId; boss: Shadow }) => Promise<void>;
+  /** 每日一次登塔：满 HP + 记 lastChallengeDate + 初始化当日 session 统计 */
+  enterTowerToday: () => Promise<void>;
+  moveToTowerNode: (nodeId: string) => Promise<StratumNode | null>;
+  /** 完成节点：标记 cleared + 按类型即发 SP（返回发放量） */
+  completeTowerNode: (nodeId: string, opts?: { wasMob?: boolean }) => Promise<number>;
+  /** 事件效果原语：HP%增减 / SP 增减 / 登塔增益 / 被夺先手 */
+  towerAdjust: (opts: { hpDeltaPct?: number; spDelta?: number; buff?: { id: string; label: string; addPct?: number }; stealFirstStrike?: boolean }) => Promise<void>;
+  towerSkipNextFloor: () => Promise<void>;
+  towerRerollNextFloor: () => Promise<void>;
+  /** 战斗结束后回写 session 统计（伤害/最大单击/弱点数） */
+  towerRecordBattleStats: (stats: { damage: number; maxHit: number; weaknessHits: number }) => Promise<void>;
+  /** 月相日（周一）异变加深：主影回满 + deepenCount+1；返回是否触发（供演出） */
+  deepenStratumIfNewWeek: () => Promise<boolean>;
 
   // 同伴 / Confidant
   confidants: Confidant[];
@@ -631,6 +651,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   persona: null,
   shadow: null,
   battleState: null,
+  stratum: null,
   confidants: [],
   confidantEvents: [],
   counselSession: null,
@@ -2129,6 +2150,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     await db.personas.clear();
     await db.shadows.clear();
     await db.battleStates.clear();
+    await db.strata.clear();
     await db.confidants.clear();
     await db.confidantEvents.clear();
     await db.counselSessions.clear();
@@ -2337,6 +2359,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       personas: await db.personas.toArray(),
       shadows: await db.shadows.toArray(),
       battleStates: await db.battleStates.toArray(),
+      strata: await db.strata.toArray(),
       confidants: await db.confidants.toArray(),
       confidantEvents: await db.confidantEvents.toArray(),
       counselArchives: await db.counselArchives.toArray(),
@@ -2419,6 +2442,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
       if (data.battleStates && Array.isArray(data.battleStates)) {
         await db.battleStates.bulkPut(data.battleStates as unknown as BattleState[]);
+      }
+      if (data.strata && Array.isArray(data.strata)) {
+        for (const s of data.strata as unknown[]) {
+          const st = s as TowerStratum;
+          await db.strata.put({ ...st, createdAt: new Date(st.createdAt) });
+        }
       }
 
       // 星象数据（v6 新增，旧备份缺失则跳过）
@@ -2532,6 +2561,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         if (snapshot.personas.length) await db.personas.bulkAdd(snapshot.personas);
         if (snapshot.shadows.length) await db.shadows.bulkAdd(snapshot.shadows);
         if (snapshot.battleStates.length) await db.battleStates.bulkAdd(snapshot.battleStates);
+        if (snapshot.strata?.length) await db.strata.bulkAdd(snapshot.strata);
         if (snapshot.dailyDivinations.length) await db.dailyDivinations.bulkAdd(snapshot.dailyDivinations);
         if (snapshot.longReadings.length) await db.longReadings.bulkAdd(snapshot.longReadings);
         if (snapshot.callingCards.length) await db.callingCards.bulkAdd(snapshot.callingCards);
@@ -3661,12 +3691,34 @@ ${activityLines || '（本期暂无记录）'}
 
   loadBattleData: async () => {
     try {
-      const [personas, shadows, battleStates] = await Promise.all([
+      const [personas, shadows, battleStates, strata] = await Promise.all([
         db.personas.toArray(),
         db.shadows.toArray(),
         db.battleStates.toArray(),
+        db.strata.toArray(),
       ]);
-      set({ persona: personas[0] || null, shadow: shadows[0] || null, battleState: battleStates[0] || null });
+      const latestStratum = strata
+        .slice()
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0] || null;
+      set({ persona: personas[0] || null, shadow: shadows[0] || null, battleState: battleStates[0] || null, stratum: latestStratum });
+
+      // 惰性迁移（§2.7）：存量单只 Shadow 且从未生成过区层 → 迁入同级区层（保留主影本体，区层名用模板，AI 名后置）
+      const sh = shadows[0];
+      if (sh && strata.length === 0) {
+        const tpl = migrationStratumName(sh.name);
+        const migrated = buildStratum({
+          id: uuidv4(),
+          level: sh.level,
+          name: tpl.name,
+          description: tpl.description,
+          baseFloor: 0,
+          now: new Date(),
+          eventPoolIds: TOWER_EVENT_IDS,
+          chestSp: (floor) => nodeSpReward(sh.level, floor, 0, Math.random) + 5,
+        });
+        await db.strata.put(migrated);
+        set({ stratum: migrated });
+      }
     } catch { /* ignore */ }
   },
 
@@ -3698,8 +3750,10 @@ ${activityLines || '（本期暂无记录）'}
   // 战斗结算已全部移入 src/battle/engine.ts（引擎 v2）；store 只负责跨 session 持久化。
 
   checkShadowHpRegen: async () => {
-    const { shadow, battleState } = get();
+    const { shadow, battleState, stratum } = get();
     if (!shadow) return;
+    // 塔模型下（批2）每日回血被「月相日·异变加深」取代——有区层即跳过
+    if (stratum) return;
     // 已胜利但未领取奖励时不回血：否则击破的 Shadow 会被每日回血"复活"，玩家被迫重打一遍
     if (battleState?.status === 'victory') return;
     const today = toLocalDateKey();
@@ -3768,6 +3822,11 @@ ${activityLines || '（本期暂无记录）'}
       hpBonusFromDefeats: newHpBonus,
     };
     await get().saveBattleState(updated);
+    // 批2：区层主影被击破 → 区层通关（上方新区层随「显形仪式」解锁）
+    const st = get().stratum;
+    if (st && st.status === 'climbing') {
+      await get().saveStratum({ ...st, status: 'cleared' });
+    }
   },
 
   resetBattle: async () => {
@@ -3778,6 +3837,7 @@ ${activityLines || '（本期暂无记录）'}
     await db.personas.clear();
     await db.shadows.clear();
     await db.battleStates.clear();
+    await db.strata.clear();
     if (preservedSp > 0) {
       const freshState: BattleState = {
         id: 'current',
@@ -3792,9 +3852,9 @@ ${activityLines || '（本期暂无记录）'}
         shadowsDefeated: 0,
       };
       await db.battleStates.put(freshState);
-      set({ persona: null, shadow: null, battleState: freshState });
+      set({ persona: null, shadow: null, battleState: freshState, stratum: null });
     } else {
-      set({ persona: null, shadow: null, battleState: null });
+      set({ persona: null, shadow: null, battleState: null, stratum: null });
     }
   },
 
@@ -3804,6 +3864,174 @@ ${activityLines || '（本期暂无记录）'}
     const updated = { ...persona, equippedMaskAttribute: attr };
     await db.personas.put(updated);
     set({ persona: updated });
+  },
+
+  // ── 影时间高塔（批2）：区层攀登 ─────────────────────────
+
+  saveStratum: async (s: TowerStratum) => {
+    await db.strata.put(s);
+    set({ stratum: s });
+  },
+
+  revealStratum: async ({ level, name, description, themeAttribute, boss }) => {
+    const prev = get().stratum;
+    const baseFloor = prev ? prev.baseFloor + prev.floors : 0;
+    const stratum = buildStratum({
+      id: uuidv4(),
+      level,
+      name,
+      description,
+      themeAttribute,
+      baseFloor,
+      now: new Date(),
+      eventPoolIds: TOWER_EVENT_IDS,
+      chestSp: (floor) => nodeSpReward(level, floor, 0, Math.random) + 5,
+    });
+    await get().saveShadow(boss); // shadows 单例 = 当前区层主影
+    await get().saveStratum(stratum);
+    const bs = get().battleState;
+    if (bs) await get().saveBattleState({ ...bs, shadowId: boss.id, status: 'idle' });
+  },
+
+  enterTowerToday: async () => {
+    const { stratum } = get();
+    get().startBattleSession(); // 满 HP + lastChallengeDate
+    const bs = get().battleState;
+    if (!bs) return;
+    const curFloor = stratum?.nodes.find(n => n.id === stratum.currentNodeId)?.floor ?? 0;
+    await get().saveBattleState({
+      ...bs,
+      towerSession: {
+        dateKey: toLocalDateKey(),
+        startFloor: curFloor,
+        floorsClimbed: 0,
+        nodesCleared: 0,
+        mobsDefeated: 0,
+        damageDealt: 0,
+        maxSingleHit: 0,
+        weaknessHits: 0,
+        spEarned: 0,
+        buffs: [],
+      },
+    });
+  },
+
+  moveToTowerNode: async (nodeId: string) => {
+    const { stratum } = get();
+    if (!stratum) return null;
+    if (!reachableNodeIds(stratum).includes(nodeId)) return null;
+    const node = stratum.nodes.find(n => n.id === nodeId) ?? null;
+    if (!node) return null;
+    if (stratum.currentNodeId !== nodeId) {
+      await get().saveStratum({ ...stratum, currentNodeId: nodeId });
+    }
+    return node;
+  },
+
+  completeTowerNode: async (nodeId: string, opts) => {
+    const { stratum, battleState } = get();
+    if (!stratum || !battleState) return 0;
+    const node = stratum.nodes.find(n => n.id === nodeId);
+    if (!node || node.cleared) return 0;
+    let sp = 0;
+    if (node.type === 'boss') sp = bossSpReward(stratum.level, stratum.deepenCount);
+    else if (node.type === 'chest') sp = node.lootSp ?? 0;
+    else if (node.type === 'mob' || node.type === 'elite') sp = nodeSpReward(stratum.level, node.floor, stratum.deepenCount, Math.random);
+    // event / echo 的收益由效果本身发放
+    const nodes = stratum.nodes.map(n => (n.id === nodeId ? { ...n, cleared: true } : n));
+    await get().saveStratum({ ...stratum, nodes });
+    const bs = get().battleState!;
+    const ts = bs.towerSession;
+    const session = ts && ts.dateKey === toLocalDateKey()
+      ? {
+          ...ts,
+          nodesCleared: ts.nodesCleared + 1,
+          mobsDefeated: ts.mobsDefeated + (opts?.wasMob ? 1 : 0),
+          floorsClimbed: Math.max(ts.floorsClimbed, node.floor - ts.startFloor),
+          spEarned: ts.spEarned + sp,
+        }
+      : ts;
+    await get().saveBattleState({ ...bs, sp: bs.sp + sp, towerSession: session });
+    return sp;
+  },
+
+  towerAdjust: async ({ hpDeltaPct, spDelta, buff, stealFirstStrike }) => {
+    const bs = get().battleState;
+    if (!bs) return;
+    let playerHp = bs.playerHp;
+    if (hpDeltaPct) {
+      playerHp = Math.max(0, Math.min(bs.playerMaxHp, playerHp + Math.round(bs.playerMaxHp * hpDeltaPct)));
+    }
+    const sp = Math.max(0, bs.sp + (spDelta ?? 0));
+    let session = bs.towerSession;
+    if (session && session.dateKey === toLocalDateKey()) {
+      if (buff && !session.buffs.some(b => b.id === buff.id)) {
+        session = { ...session, buffs: [...session.buffs, buff] };
+      }
+      if (stealFirstStrike) session = { ...session, pendingFirstStrike: true };
+      if (spDelta && spDelta > 0) session = { ...session, spEarned: session.spEarned + spDelta };
+    }
+    await get().saveBattleState({ ...bs, playerHp, sp, towerSession: session });
+  },
+
+  towerSkipNextFloor: async () => {
+    const { stratum } = get();
+    if (!stratum || !stratum.currentNodeId) return;
+    const cur = stratum.nodes.find(n => n.id === stratum.currentNodeId);
+    if (!cur || !cur.cleared) return;
+    const target = cur.edges
+      .map(id => stratum.nodes.find(n => n.id === id))
+      .find(n => n && n.type !== 'boss'); // 主影层不可跃过
+    if (!target) return;
+    const nodes = stratum.nodes.map(n => (n.id === target.id ? { ...n, cleared: true } : n));
+    await get().saveStratum({ ...stratum, nodes, currentNodeId: target.id });
+  },
+
+  towerRerollNextFloor: async () => {
+    const { stratum } = get();
+    if (!stratum || !stratum.currentNodeId) return;
+    const cur = stratum.nodes.find(n => n.id === stratum.currentNodeId);
+    if (!cur) return;
+    const rng = Math.random;
+    const nodes = stratum.nodes.map(n => {
+      if (!cur.edges.includes(n.id) || n.cleared || n.type === 'boss' || n.type === 'elite') return n;
+      const roll = rng();
+      const type: StratumNode['type'] = roll < 0.45 ? 'mob' : roll < 0.7 ? 'event' : roll < 0.85 ? 'echo' : 'chest';
+      const next: StratumNode = { ...n, type, mob: undefined, eventPoolId: undefined, lootSp: undefined };
+      if (type === 'mob') next.mob = rollMobSpec(stratum.level, 'mob', rng);
+      else if (type === 'event') next.eventPoolId = TOWER_EVENT_IDS[Math.floor(rng() * TOWER_EVENT_IDS.length)];
+      else if (type === 'chest') next.lootSp = nodeSpReward(stratum.level, n.floor, stratum.deepenCount, rng) + 5;
+      return next;
+    });
+    await get().saveStratum({ ...stratum, nodes });
+  },
+
+  towerRecordBattleStats: async ({ damage, maxHit, weaknessHits }) => {
+    const bs = get().battleState;
+    if (!bs?.towerSession || bs.towerSession.dateKey !== toLocalDateKey()) return;
+    const ts = bs.towerSession;
+    await get().saveBattleState({
+      ...bs,
+      towerSession: {
+        ...ts,
+        damageDealt: ts.damageDealt + damage,
+        maxSingleHit: Math.max(ts.maxSingleHit, maxHit),
+        weaknessHits: ts.weaknessHits + weaknessHits,
+        pendingFirstStrike: undefined, // 战斗已发生 → 先手债消费
+      },
+    });
+  },
+
+  deepenStratumIfNewWeek: async () => {
+    const { stratum, shadow } = get();
+    if (!stratum || stratum.status !== 'climbing') return false;
+    const wk = weekKeyOf(new Date());
+    if (wk === stratum.createdWeekKey || stratum.lastDeepenWeekKey === wk) return false;
+    if (shadow) {
+      await get().saveShadow({ ...shadow, currentHp: shadow.maxHp, currentHp2: shadow.maxHp2 });
+    }
+    await get().saveStratum({ ...stratum, deepenCount: stratum.deepenCount + 1, lastDeepenWeekKey: wk });
+    return true;
   },
 
   // ── 同伴 / Confidant ─────────────────────────────────────────

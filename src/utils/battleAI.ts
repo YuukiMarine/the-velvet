@@ -555,6 +555,83 @@ ${SHADOW_JSON_FORMAT}`;
   return { name, description, invertedAttributes, responseLines, weakAttribute };
 }
 
+// ── 区层显形（批2）：一次调用产出 区层名/描述 + 主影 ─────────────────────────
+
+const STRATUM_JSON_FORMAT = `
+纯JSON输出，不要包裹在代码块中，不含任何注释：
+{"stratumName":"xx之域","stratumDescription":"1-2句区层氛围描述","name":"主影名称（xx之xx）","description":"主影2句描述","invertedAttributes":{"knowledge":"反向描述","guts":"反向描述","dexterity":"反向描述","kindness":"反向描述","charm":"反向描述"},"responseLines":["台词1","台词2","台词3","台词4","台词5","台词6","台词7","台词8"]}`;
+
+export async function generateStratumReveal(
+  settings: Settings,
+  attributeNames: Record<AttributeId, string>,
+  level: number,
+  attrValues: Record<AttributeId, number>,
+  lastWeakAttribute: AttributeId | undefined,
+  toneHints: string[],
+): Promise<{
+  stratumName: string;
+  stratumDescription: string;
+  name: string;
+  description: string;
+  invertedAttributes: Record<AttributeId, string>;
+  responseLines: string[];
+  weakAttribute: AttributeId;
+}> {
+  const cfg = getAIConfig(settings);
+  const weakAttribute = pickWeakAttribute(lastWeakAttribute);
+  if (!cfg) throw new Error('未配置 AI API Key，请前往「设置 → AI摘要」填写 API Key 后重试');
+
+  const levelPersonality = level <= 2
+    ? '语气不稳定、带有挑衅和嘲讽，像一个试探性的捣蛋鬼'
+    : level <= 3
+    ? '语气冷静而有压迫感，像一个洞察一切的审判者'
+    : '语气绝对而傲慢，像一场降临的灾厄，台词简短有力';
+
+  const prompt = `你是Persona系游戏的"影时间高塔"区层生成器。玩家已通关下方区层，高塔上方的第${level}区层正在显形。
+玩家在显形仪式中的回应（用于定调区层与主影的气质倾向）：
+${toneHints.map((t, i) => `${i + 1}. ${t}`).join('\n')}
+
+区层主影是玩家内心负面特质的具现，其属性为玩家属性的反向：${ATTRS.map(a => `${attributeNames[a]}=${attrValues[a]}`).join('，')}。
+主影弱点属性为"${attributeNames[weakAttribute]}"。
+
+【输出要求】
+- stratumName：区层名，格式"xx之域"（体现越高越危险的塔层氛围，禁止使用现实游戏专有名词）
+- stratumDescription：1-2句，写这一段塔层的景观与压迫感
+- name：主影名，格式"xx之xx"
+- description：2句，主影的阴暗面来源与危险性
+- responseLines：8条战斗台词，${levelPersonality}；每条风格各异，至少含1条嘲讽、1条威胁、1条对玩家弱点的点评、1条自我宣言
+${STRATUM_JSON_FORMAT}`;
+
+  const result = await callAIWithRetry(cfg, [{ role: 'user', content: prompt }], 0.7, 2200);
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = extractJSON(result);
+  } catch {
+    throw new Error('AI 返回的 JSON 格式无效，请重试');
+  }
+  const stratumName = (typeof parsed.stratumName === 'string' && parsed.stratumName) ? parsed.stratumName : `第${level}之域`;
+  const stratumDescription = (typeof parsed.stratumDescription === 'string' && parsed.stratumDescription)
+    ? parsed.stratumDescription
+    : '月光照不进的塔层，影子在栏杆间低语。';
+  const name = (typeof parsed.name === 'string' && parsed.name) ? parsed.name : `区层之主Lv${level}`;
+  const description = (typeof parsed.description === 'string' && parsed.description)
+    ? parsed.description
+    : '盘踞在区层之巅的暗影，等待着登塔者。';
+  const invertedAttributes = (parsed.invertedAttributes && typeof parsed.invertedAttributes === 'object')
+    ? parsed.invertedAttributes as Record<AttributeId, string>
+    : Object.fromEntries(ATTRS.map(a => [a, `缺乏${attributeNames[a]}的力量`])) as Record<AttributeId, string>;
+  let responseLines: string[];
+  if (Array.isArray(parsed.responseLines) && parsed.responseLines.length >= 4) {
+    responseLines = parsed.responseLines.filter((l): l is string => typeof l === 'string').slice(0, 8);
+    while (responseLines.length < 8) {
+      responseLines.push(DEFAULT_SHADOW_LINES[responseLines.length % DEFAULT_SHADOW_LINES.length]);
+    }
+  } else {
+    responseLines = [...DEFAULT_SHADOW_LINES];
+  }
+  return { stratumName, stratumDescription, name, description, invertedAttributes, responseLines, weakAttribute };
+}
+
 export function getDefaultShadow(
   attrNames: Record<AttributeId, string>,
   level: number
