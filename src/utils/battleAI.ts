@@ -591,14 +591,14 @@ export async function generateStratumReveal(
 玩家在显形仪式中的回应（用于定调区层与主影的气质倾向）：
 ${toneHints.map((t, i) => `${i + 1}. ${t}`).join('\n')}
 
-区层主影是玩家内心负面特质的具现，其属性为玩家属性的反向：${ATTRS.map(a => `${attributeNames[a]}=${attrValues[a]}`).join('，')}。
-主影弱点属性为"${attributeNames[weakAttribute]}"。
+区层心魔是玩家内心负面特质的具现，其属性为玩家属性的反向：${ATTRS.map(a => `${attributeNames[a]}=${attrValues[a]}`).join('，')}。
+心魔弱点属性为"${attributeNames[weakAttribute]}"。
 
 【输出要求】
 - stratumName：区层名，格式"xx之域"（体现越高越危险的塔层氛围，禁止使用现实游戏专有名词）
 - stratumDescription：1-2句，写这一段塔层的景观与压迫感
-- name：主影名，格式"xx之xx"
-- description：2句，主影的阴暗面来源与危险性
+- name：心魔名，格式"xx之xx"
+- description：2句，心魔的阴暗面来源与危险性
 - responseLines：8条战斗台词，${levelPersonality}；每条风格各异，至少含1条嘲讽、1条威胁、1条对玩家弱点的点评、1条自我宣言
 ${STRATUM_JSON_FORMAT}`;
 

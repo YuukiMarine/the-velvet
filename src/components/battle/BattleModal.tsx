@@ -71,6 +71,8 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
   const firedFxRef = useRef<Set<number>>(new Set());
   const pendingOutcomeRef = useRef<'ongoing' | 'victory' | 'defeat'>('ongoing');
   const actionsTakenRef = useRef(0);
+  /** 弱点演出已在点击瞬间预触发（验收反馈：WEAK 应即点即现，不等叙事行） */
+  const weakPreFiredRef = useRef(false);
 
   // ── 演出状态 ────────────────────────────────────────────
   const [showRetreatConfirm, setShowRetreatConfirm] = useState(false);
@@ -236,7 +238,7 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
         `${encounter!.mob.name} 挡住了去路！`,
         `属性向【${attrNamesMap[encounter!.mob.attribute]}】——弱点是【${attrNamesMap[s.weakAttribute]}】！`,
       ];
-      if (encounter!.mob.tier === 'elite') intro.splice(1, 0, '危险的气息……这是一只精英影！');
+      if (encounter!.mob.tier === 'elite') intro.splice(1, 0, '危险的气息……是强敌！');
     } else {
       intro = [
         `${userName}！是时候了！`,
@@ -319,6 +321,24 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
   const runAction = useCallback(async (input: PlayerActionInput) => {
     const engine = engineRef.current;
     if (!engine || isAnimating || (phase !== 'waiting' && phase !== 'intro')) return;
+    // WEAK 即点即现：弱点判定是确定性的（出战属性 === 当前弱点），点击瞬间先出演出
+    weakPreFiredRef.current = false;
+    if (input.kind === 'skill') {
+      const t = input.skill.type;
+      const isDmg = t === 'damage' || t === 'crit' || t === 'attack_boost';
+      const s = engine.snapshot;
+      if (isDmg && s.activeMask === s.weakAttribute && s.sp >= engine.skillCost(input.skill)) {
+        weakPreFiredRef.current = true;
+        setShowWeak(true);
+        setTimeout(() => setShowWeak(false), 800);
+        if (!firstWeakHitRef.current) {
+          firstWeakHitRef.current = true;
+          setWeakCutIn(true);
+          playSound('/battle-mask-swap.mp3', 0.7);
+          setTimeout(() => setWeakCutIn(false), 1300);
+        }
+      }
+    }
     const prevHp = useAppStore.getState().battleState?.playerHp;
     const res = engine.act(input);
     bump();
@@ -399,6 +419,8 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
         break;
       }
       case 'weak': {
+        // 点击瞬间已预触发过则跳过（叙事行时刻只留 1More 等后续演出）
+        if (weakPreFiredRef.current) break;
         setShowWeak(true);
         setTimeout(() => setShowWeak(false), 800);
         if (!firstWeakHitRef.current) {
@@ -579,7 +601,7 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
               ) : stratum ? (
                 <>
                   <p className="text-2xl">🌑</p>
-                  <p className="text-white font-bold text-base">暂时撤离主影？</p>
+                  <p className="text-white font-bold text-base">暂时撤离心魔？</p>
                   <p className="text-gray-400 text-sm leading-relaxed">对它造成的伤害会保留。<br />今晚体力尚存时仍可再次挑战。</p>
                   <div className="flex gap-3 pt-1">
                     <button

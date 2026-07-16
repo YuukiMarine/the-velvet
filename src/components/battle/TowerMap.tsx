@@ -12,7 +12,7 @@ const NODE_ICON: Record<StratumNode['type'], string> = {
   mob: '⚔️', elite: '👹', event: '❓', echo: '🌙', chest: '📦', boss: '👁️',
 };
 const NODE_LABEL: Record<StratumNode['type'], string> = {
-  mob: '小影', elite: '精英', event: '异变', echo: '回响', chest: '月匣', boss: '主影',
+  mob: 'Shadow', elite: '强敌', event: '异变', echo: '回响', chest: '月匣', boss: '心魔',
 };
 
 interface Props {
@@ -20,9 +20,11 @@ interface Props {
   /** 今晚已登塔且 session 未结束时可交互 */
   interactive: boolean;
   onSelectNode: (node: StratumNode) => void;
+  /** 独立塔界面内铺满可用高度 */
+  fill?: boolean;
 }
 
-export function TowerMap({ stratum, interactive, onSelectNode }: Props) {
+export function TowerMap({ stratum, interactive, onSelectNode, fill }: Props) {
   const reachable = new Set(reachableNodeIds(stratum));
   const floors: StratumNode[][] = [];
   for (const n of stratum.nodes) {
@@ -33,7 +35,8 @@ export function TowerMap({ stratum, interactive, onSelectNode }: Props) {
     <div
       className="rounded-2xl p-3 overflow-y-auto"
       style={{
-        maxHeight: 420,
+        maxHeight: fill ? undefined : 420,
+        height: fill ? '100%' : undefined,
         background: 'linear-gradient(180deg, rgba(10,4,40,0.92) 0%, rgba(16,10,52,0.92) 45%, rgba(8,10,36,0.95) 100%)',
         border: '1px solid rgb(var(--color-battle-bright-rgb) / 0.25)',
       }}

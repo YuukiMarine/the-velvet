@@ -214,7 +214,7 @@ export function StratumRevealModal({ isOpen, onClose, level }: Props) {
                       </motion.div>
                     </AnimatePresence>
                     <p className="text-center text-[10px] text-gray-500">
-                      主影 HP {cfg.maxHp}{cfg.maxHp2 ? ` + ${cfg.maxHp2}` : ''} · 攻击 {BOSS_ATTACK_BY_LEVEL[level - 1]}
+                      心魔 HP {cfg.maxHp}{cfg.maxHp2 ? ` + ${cfg.maxHp2}` : ''} · 攻击 {BOSS_ATTACK_BY_LEVEL[level - 1]}
                     </p>
                   </div>
                 ) : step === 'choose' ? (
@@ -222,7 +222,7 @@ export function StratumRevealModal({ isOpen, onClose, level }: Props) {
                     {error && (
                       <div className="rounded-xl px-3 py-2 space-y-1" style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.35)' }}>
                         <p className="text-red-300 text-xs leading-relaxed">{error}</p>
-                        <p className="text-red-400/60 text-[10px]">请确认 API 配置可用后重试，或选「手动」自行命名主影。</p>
+                        <p className="text-red-400/60 text-[10px]">请确认 API 配置可用后重试，或选「手动」自行命名心魔。</p>
                       </div>
                     )}
                     <div className="flex gap-3">
@@ -247,7 +247,7 @@ export function StratumRevealModal({ isOpen, onClose, level }: Props) {
                     <input
                       value={manualName}
                       onChange={e => setManualName(e.target.value)}
-                      placeholder="主影名称…"
+                      placeholder="心魔名称…"
                       className="w-full px-4 py-3 rounded-xl text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                       style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)' }}
                       onKeyDown={e => e.key === 'Enter' && void doManual()}

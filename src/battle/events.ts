@@ -62,7 +62,7 @@ export const TOWER_EVENTS: TowerEvent[] = [
     id: 'lost-shadow',
     title: '迷途之影',
     icon: '👤',
-    text: '一只不具敌意的小影蜷在栏杆边，冲你比划着上层的方向。',
+    text: '一只不具敌意的 Shadow蜷在栏杆边，冲你比划着上层的方向。',
     options: [
       {
         label: '为它引路',
@@ -102,7 +102,7 @@ export const TOWER_EVENTS: TowerEvent[] = [
       },
       {
         label: '稳步绕行',
-        resultText: '绕行的暗廊里埋伏着一只小影——遭遇战！',
+        resultText: '绕行的暗廊里埋伏着一只 Shadow——遭遇战！',
         effects: [{ kind: 'mobFight' }],
       },
     ],
