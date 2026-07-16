@@ -370,9 +370,10 @@ export function BattleModal({ isOpen, onClose, onVictory }: Props) {
         break;
       }
       case 'oneMore': {
+        // 右上角小飘带：短促、不占中心（与 WEAK cut-in 区分）、不阻塞操作
         setOneMoreFlash(true);
         playSound('/battle-mask-swap.mp3', 0.6);
-        setTimeout(() => setOneMoreFlash(false), 950);
+        setTimeout(() => setOneMoreFlash(false), 680);
         break;
       }
       case 'phase2': {
@@ -409,7 +410,7 @@ export function BattleModal({ isOpen, onClose, onVictory }: Props) {
     playSound('/battle-mask-swap.mp3', full ? 0.8 : 0.4);
     triggerLightHaptic();
     setMaskCutIn({ attr, full });
-    setTimeout(() => setMaskCutIn(null), full ? 1500 : 900);
+    setTimeout(() => setMaskCutIn(null), full ? 900 : 650);
     equipMask(attr); // 出战面具即佩戴面具（B案）
   };
 
@@ -958,14 +959,10 @@ export function BattleModal({ isOpen, onClose, onVictory }: Props) {
                       border: isWeakAttr ? '1px solid rgba(239,68,68,0.5)' : '1px solid rgb(var(--color-battle-bright-rgb) / 0.4)',
                     }}
                   >
+                    {/* 克制关系不做常驻角标（易误解）——只在造成/受到伤害时随叙事行出现 */}
                     <p className="text-white text-sm font-bold">
                       🎭 {attrNamesMap[snap.activeMask]}
                       {isWeakAttr && <span className="ml-1.5 text-red-400 text-xs">⚡弱点</span>}
-                      {snap.shadowAttribute && (
-                        <span className="ml-1.5 text-[10px] text-cyan-300/80">
-                          {ringHint(snap.activeMask, snap.shadowAttribute)}
-                        </span>
-                      )}
                     </p>
                     <p className="text-white/40 text-[11px] mt-0.5">
                       {activePersonaName} · {MASK_PASSIVE_HINT[snap.activeMask]}
@@ -1175,14 +1172,4 @@ export function BattleModal({ isOpen, onClose, onVictory }: Props) {
       )}
     </motion.div>
   );
-}
-
-/** 克制环即时提示（出战位卡上） */
-function ringHint(mask: AttributeId, shadowAttr: AttributeId): string {
-  const ring: AttributeId[] = ['knowledge', 'guts', 'dexterity', 'kindness', 'charm'];
-  const mi = ring.indexOf(mask);
-  const si = ring.indexOf(shadowAttr);
-  if ((mi + 1) % 5 === si) return '⇧克制';
-  if ((si + 1) % 5 === mi) return '⇩受克';
-  return '';
 }
