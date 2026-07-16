@@ -27,7 +27,8 @@ import {
   SKILL_CRIT_BY_LEVEL, GUTS_MASK_CRIT, KNOWLEDGE_MASK_WEAK_FLAT, DEX_MASK_EXTRA_EVERY,
   STAGGER_MAX, STAGGER_WEAKNESS_GAIN, STAGGER_CRIT_GAIN, STAGGER_TAKEN_MULT,
   STAGGER_IMMUNE_TURNS, ALL_OUT_SP_COST, ALL_OUT_BASE_RATIO, BOSS_FORCED_WINDOW_HP_RATIO,
-  BOSS_ATTACK_BY_LEVEL, SHADOW_CRIT_BY_LEVEL, PHASE2_ATTACK_MULT, PHASE2_RESIST_MULT,
+  BOSS_ATTACK_BY_LEVEL, MOB_ATTACK_BY_LEVEL, ELITE_ATTACK_BY_LEVEL,
+  SHADOW_CRIT_BY_LEVEL, PHASE2_ATTACK_MULT, PHASE2_RESIST_MULT,
   BERSERK_ATK_MULT, BERSERK_SELF_DAMAGE, HEAVY_POWER_MULT, HEAVY_WINDUP_TURNS,
   HEAVY_COOLDOWN_TURNS, GUARD_STANCE_MULT, GUARD_INTENT_ATTACK_MULT,
   DEBUFF_INTENT_ATTACK_MULT, SHADOW_ATKUP_MULT, SHADOW_ATKUP_TURNS,
@@ -40,7 +41,7 @@ import {
 import {
   pickByLevel, PHASE2_DIALOGUE, DEFEAT_DIALOGUE, SHADOW_ATTACK_DIALOGUE,
   SHADOW_CRIT_DIALOGUE, STAGGER_DIALOGUE, HEAVY_RELEASE_DIALOGUE,
-  SHADOW_BUFF_DIALOGUE, SHADOW_DEBUFF_DIALOGUE,
+  SHADOW_BUFF_DIALOGUE, SHADOW_DEBUFF_DIALOGUE, PLAYER_DEFEAT_MONOLOGUE,
 } from './dialogue';
 import { pickShadowLine } from '../constants/shadowLines';
 
@@ -88,8 +89,14 @@ export interface EngineSetup {
     /** 攻击倍率%（金手指），默认 100 */
     attackScalePct?: number;
     responseLines: string[];
+    /** 档位（批2）：小影无失衡条/只会攻击与异常；精英无狂化处刑；默认 boss */
+    tier?: 'mob' | 'elite' | 'boss';
   };
   effectMap: InjectedEffectMap;
+  /** （批2）本次登塔的临时伤害增益（事件/回响来源，进加算段） */
+  sessionAddPct?: number;
+  /** （批2）事件「被夺先手」：开场 Shadow 先攻一次 */
+  firstStrikeStolen?: boolean;
 }
 
 export type PlayerActionInput =
@@ -196,10 +203,18 @@ export class BattleEngine {
   private turn = 1;
   private intent: Intent | null = null;
   private over: 'victory' | 'defeat' | null = null;
+  private shTier: 'mob' | 'elite' | 'boss';
+  private sessionAddPct: number;
+  // 登塔回顾统计
+  totalDamageDealt = 0;
+  maxSingleHit = 0;
+  weaknessHits = 0;
 
   constructor(setup: EngineSetup) {
     this.setup = setup;
     this.rng = setup.rng ?? Math.random;
+    this.shTier = setup.shadow.tier ?? 'boss';
+    this.sessionAddPct = setup.sessionAddPct ?? 0;
     this.playerHp = setup.playerHp;
     this.playerMaxHp = setup.playerMaxHp;
     this.sp = setup.sp;
@@ -251,6 +266,10 @@ export class BattleEngine {
       over: this.over,
       masksSummoned: new Set(this.masksSummoned),
       charmFreeAvailable: this.activeMask === 'charm' && !this.charmFreeUsed,
+      tier: this.shTier,
+      totalDamageDealt: this.totalDamageDealt,
+      maxSingleHit: this.maxSingleHit,
+      weaknessHits: this.weaknessHits,
     };
   }
 
@@ -274,10 +293,15 @@ export class BattleEngine {
     };
   }
 
-  /** 战斗开场：锁定首回合意图（不 tick） */
+  /** 战斗开场：锁定首回合意图（不 tick）；「被夺先手」事件时 Shadow 先攻一次 */
   openingTurn(): TurnResult {
     const lines: string[] = [];
     const fx: FxEvent[] = [];
+    if (this.setup.firstStrikeStolen) {
+      lines.push('先手被夺——它抢先出手了！');
+      this.shadowAttack(1, false, lines, fx);
+      if (this.over === 'defeat') return this.result(lines, fx, false, false);
+    }
     this.lockIntent(lines, fx);
     return this.result(lines, fx, false, false);
   }
@@ -465,6 +489,7 @@ export class BattleEngine {
       flats.push(this.setup.damagePlus[attr] ?? 0);
       if (this.activeMask === 'knowledge' && isWeakness) flats.push(KNOWLEDGE_MASK_WEAK_FLAT);
 
+      if (this.sessionAddPct > 0) adds.push(this.sessionAddPct); // 登塔临时增益（buff 徽标由 UI 常驻展示，不进叙事）
       if (this.attackBuff) { adds.push(BUFF_ADD); this.attackBuff = false; lines.push('攻击强化触发！伤害 +50%！'); }
       if (this.vulnerableArmed) { adds.push(VULNERABLE_ADD); this.vulnerableArmed = false; lines.push('易伤触发！伤害 +30%！'); }
       const resonance = findStatus(this.playerStatuses, 'resonance');
@@ -496,6 +521,7 @@ export class BattleEngine {
       const dmg = computeDamage(skill.power, flats, adds, mults);
       this.damageShadow(dmg);
       if (isWeakness) {
+        this.weaknessHits++;
         this.weaknessHitCounts[attr] = (this.weaknessHitCounts[attr] ?? 0) + 1;
         lines.push(`效果拔群！造成了 ${dmg} 点伤害！`);
         if (this.activeMask === 'knowledge') lines.push('面具之力：弱点伤害+2！');
@@ -722,9 +748,12 @@ export class BattleEngine {
     }
   }
 
-  /** Shadow 基础攻击力（等级表 × 金手指倍率） */
+  /** Shadow 基础攻击力（档位等级表 × 金手指倍率） */
   private baseAttack(): number {
-    return Math.max(1, Math.round(BOSS_ATTACK_BY_LEVEL[this.shLevel - 1] * this.attackScale));
+    const table = this.shTier === 'mob' ? MOB_ATTACK_BY_LEVEL
+      : this.shTier === 'elite' ? ELITE_ATTACK_BY_LEVEL
+      : BOSS_ATTACK_BY_LEVEL;
+    return Math.max(1, Math.round(table[this.shLevel - 1] * this.attackScale));
   }
 
   private shadowAttack(intentMult: number, forceCrit: boolean, lines: string[], fx: FxEvent[]) {
@@ -799,10 +828,12 @@ export class BattleEngine {
     }
     this.over = 'defeat';
     lines.push('体力耗尽……');
+    lines.push(`${this.shName}：${pickByLevel(PLAYER_DEFEAT_MONOLOGUE, this.shLevel, this.rng)}`);
   }
 
   // ── 失衡系统 ────────────────────────────────────────────
   private gainStagger(isWeakness: boolean, isCrit: boolean, lines: string[], fx: FxEvent[]) {
+    if (this.shTier === 'mob') return; // 小影无失衡条（血少速杀，§3.4）
     if (this.staggerState === 'window' || this.staggerImmune > 0) return;
     let gain = 0;
     if (isWeakness) gain += STAGGER_WEAKNESS_GAIN;
@@ -829,6 +860,7 @@ export class BattleEngine {
   }
 
   private maybeForcedWindow(lines: string[], fx: FxEvent[]) {
+    if (this.shTier !== 'boss') return; // 濒死保底窗口是主影专属演出
     if (this.forcedWindowUsed || this.everStaggered || this.staggerState !== 'none') return;
     const hp = this.phase === 2 ? (this.shHp2 ?? 0) : this.shHp;
     const maxHp = this.phase === 2 ? (this.shMaxHp2 ?? 1) : this.shMaxHp;
@@ -849,6 +881,8 @@ export class BattleEngine {
 
   // ── 伤害落点 / 形态切换 / 胜负 ─────────────────────────
   private damageShadow(dmg: number) {
+    this.totalDamageDealt += dmg;
+    if (dmg > this.maxSingleHit) this.maxSingleHit = dmg;
     if (this.phase === 2) {
       this.shHp2 = Math.max(0, (this.shHp2 ?? 0) - dmg);
       if ((this.shHp2 ?? 0) <= 0) this.over = 'victory';
@@ -980,6 +1014,7 @@ export class BattleEngine {
       guardUsed: this.guardUsed,
       executeUsed: this.executeUsed,
       level: this.shLevel,
+      tier: this.shTier,
     });
     const preview = this.previewAttack(kind);
     this.intent = makeIntent(kind, intentDetail(kind, {

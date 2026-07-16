@@ -821,6 +821,8 @@ export interface BattleState {
   lastDefeatedWeakAttribute?: AttributeId;
   defeatedShadowLog?: DefeatedShadowRecord[]; // 已击败阴影历史
   hpBonusFromDefeats?: number; // 击败Shadow累计获得的HP上限加成
+  /** （批2）当日登塔 session 统计与临时增益 */
+  towerSession?: TowerSessionStats;
 }
 
 export interface BattleLogEntry {
@@ -842,6 +844,65 @@ export interface BattleAction {
   spCost: number;
   isCrit?: boolean;      // 是否触发暴击
   isOffBalance?: boolean; // 是否造成失衡
+}
+
+// ── 影时间高塔 · 区层（引擎v2 批2）────────────────────────────
+// 塔是唯一的、常在的；可解锁单位是"区层"（Lv1-5，层号全塔累计）。
+// 单只 shadows 表记录 = 当前区层主影（沿用既有单例约定，避免大迁移）。
+
+export type StratumNodeType = 'mob' | 'elite' | 'event' | 'echo' | 'chest' | 'boss';
+export type StratumStatus = 'climbing' | 'cleared';
+
+export interface MobSpec {
+  name: string;                 // 本地命名池（零 AI）
+  tier: 'mob' | 'elite';
+  attribute: AttributeId;       // 属性向（克制环 / 剪影色）
+  weakAttribute: AttributeId;
+  maxHp: number;
+}
+
+export interface StratumNode {
+  id: string;
+  floor: number;                // 区层内层号 1..floors（boss 层 = floors）
+  lane: number;                 // 0-2 横向位
+  type: StratumNodeType;
+  edges: string[];              // 可通往的上一层节点 id
+  cleared: boolean;
+  mob?: MobSpec;
+  eventPoolId?: string;         // 事件池 id（src/battle/events.ts）
+  lootSp?: number;              // 月匣：批2 掉 SP（物品池批3 接入）
+}
+
+export interface TowerStratum {
+  id: string;
+  level: number;                // 区层 1-5
+  name: string;                 // AI 生成 "xx之域"（迁移/无 Key 用模板名）
+  description: string;
+  themeAttribute?: AttributeId; // 主影主题属性（65% 短板逻辑批4 接入）
+  createdWeekKey: string;       // 显形周（周一为界）
+  lastDeepenWeekKey?: string;   // 最近一次月相日加深的周键
+  baseFloor: number;            // 全塔累计起始层号（区层2 ≈ 从 13F 起）
+  floors: number;               // 本区层层数（10-12）
+  nodes: StratumNode[];
+  currentNodeId: string | null; // null = 区层入口（尚未踏入第 1 层）
+  deepenCount: number;
+  status: StratumStatus;
+  createdAt: Date;
+}
+
+/** 当日登塔 session 统计（登塔回顾用；挂在 BattleState 上跨杀进程持久） */
+export interface TowerSessionStats {
+  dateKey: string;
+  startFloor: number;
+  floorsClimbed: number;
+  nodesCleared: number;
+  mobsDefeated: number;
+  damageDealt: number;
+  maxSingleHit: number;
+  weaknessHits: number;
+  spEarned: number;
+  /** 本次登塔的临时增益（事件/回响来源；伤害类进引擎加算段） */
+  buffs: Array<{ id: string; label: string; addPct?: number }>;
 }
 
 // ── 战斗状态效果（本地，不持久化） ─────────────────────────────

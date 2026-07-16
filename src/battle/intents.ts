@@ -62,6 +62,8 @@ export interface IntentContext {
   executeUsed: number;
   /** Lv1-2 弱影不掌握大招 */
   level: number;
+  /** 敌人档位（批2）：小影只会 攻击/异常，精英无狂化/处刑，主影全套 */
+  tier: 'mob' | 'elite' | 'boss';
 }
 
 export function makeIntent(kind: IntentKind, detail: string): Intent {
@@ -72,11 +74,17 @@ export function makeIntent(kind: IntentKind, detail: string): Intent {
 /**
  * 意图决策（回合开始调用一次，结果锁定）。
  * 优先级：前摇释放 > 狂化转变 > 处刑 > 打断 > 警戒 > 大招前摇 > 权重（攻击/异常/强化）
+ * 档位差分（§3.8）：小影 2 招（攻击/异常）；精英 3+ 招但无狂化/处刑；主影全套。
  */
 export function decideIntent(ctx: IntentContext): IntentKind {
+  if (ctx.tier === 'mob') {
+    return ctx.rng() < 0.72 ? 'attack' : 'debuff';
+  }
   if (ctx.windupActive) return 'heavyRelease';
-  if (ctx.shadowHpRatio < BERSERK_HP_THRESHOLD && !ctx.berserk) return 'berserk';
-  if (ctx.playerHpRatio < EXECUTE_PLAYER_HP_RATIO && ctx.executeUsed === 0) return 'execute';
+  if (ctx.tier === 'boss') {
+    if (ctx.shadowHpRatio < BERSERK_HP_THRESHOLD && !ctx.berserk) return 'berserk';
+    if (ctx.playerHpRatio < EXECUTE_PLAYER_HP_RATIO && ctx.executeUsed === 0) return 'execute';
+  }
   if (ctx.playerChargeActive) return 'interrupt';
   if (ctx.consecutiveWeakness >= 2 && ctx.guardUsed < 2) return 'guard';
   if (ctx.level >= 2 && ctx.turn >= 3 && ctx.heavyCooldown <= 0) return 'heavy';

@@ -352,6 +352,69 @@ console.log('── F. 门禁兜底 ──');
   console.log('  ✓ SP/窗口/洞察门禁');
 }
 
+// ── H. 高塔区层：地图生成健全性 + 小影战档位（批2） ─────────
+console.log('── H. 区层地图与小影档位 ──');
+{
+  const { generateStratumNodes, rollMobSpec, weekKeyOf, reachableNodeIds, buildStratum } = await import('../src/battle/tower');
+  const { TOWER_EVENT_IDS } = await import('../src/battle/events');
+  // 50 张图健全性
+  for (let seed = 1; seed <= 50; seed++) {
+    const rng = mulberry32(seed * 7919);
+    const { nodes, floors } = generateStratumNodes({
+      level: 1 + (seed % 5), rng, eventPoolIds: TOWER_EVENT_IDS, chestSp: () => 10,
+    });
+    assert(floors >= 10 && floors <= 12, `H#${seed}: 层数越界`, `${floors}`);
+    const bossNodes = nodes.filter(n => n.type === 'boss');
+    assert(bossNodes.length === 1 && bossNodes[0].floor === floors, `H#${seed}: 主影应唯一且在顶层`);
+    // 连通性：从第 1 层出发 BFS 应能到达 boss
+    const byId = new Map(nodes.map(n => [n.id, n]));
+    const queue = nodes.filter(n => n.floor === 1).map(n => n.id);
+    const seen = new Set(queue);
+    while (queue.length) {
+      const cur = byId.get(queue.shift()!)!;
+      for (const e of cur.edges) if (!seen.has(e)) { seen.add(e); queue.push(e); }
+    }
+    assert(seen.has(bossNodes[0].id), `H#${seed}: 主影不可达（连通性破坏）`);
+    // 战斗节点必须携带 mob 规格
+    assert(nodes.filter(n => n.type === 'mob' || n.type === 'elite').every(n => !!n.mob), `H#${seed}: 战斗节点缺 mob 规格`);
+    assert(nodes.filter(n => n.type === 'event').every(n => !!n.eventPoolId), `H#${seed}: 事件节点缺池 id`);
+  }
+  console.log('  ✓ 50 张区层地图：层数/顶层主影/连通性/节点负载');
+
+  // reachable 语义
+  const stratum = buildStratum({
+    id: 's1', level: 2, name: '测试之域', description: '', baseFloor: 12, now: new Date('2026-07-16'),
+    rng: mulberry32(9), eventPoolIds: TOWER_EVENT_IDS, chestSp: () => 10,
+  });
+  assert(weekKeyOf(new Date('2026-07-16')) === '2026-07-13', 'H: 周键应取周一', weekKeyOf(new Date('2026-07-16')));
+  const entry = reachableNodeIds(stratum);
+  assert(entry.length >= 1 && entry.every(id => stratum.nodes.find(n => n.id === id)?.floor === 1), 'H: 入口应指向第 1 层');
+
+  // 小影战：档位限制（无失衡条/只会攻击与异常）+ 2-3 技可杀
+  const mob = rollMobSpec(2, 'mob', mulberry32(33));
+  const setupH = makeSetup(2, 77);
+  setupH.shadow = {
+    id: 'mob-1', name: mob.name, level: 2, weakAttribute: mob.weakAttribute, attribute: mob.attribute,
+    hp: mob.maxHp, maxHp: mob.maxHp, phase: 1, attackScalePct: 100, responseLines: ['……'], tier: 'mob',
+  };
+  const e = new BattleEngine(setupH);
+  e.openingTurn();
+  e.act({ kind: 'switchMask', attribute: mob.weakAttribute });
+  const hit: PersonaSkill = { level: 3, name: '当级击打', description: '', type: 'damage', power: 15, spCost: 0 };
+  let mobTurns = 0;
+  const sawIntents = new Set<string>();
+  while (e.snapshot.over === null && mobTurns < 10) {
+    mobTurns++;
+    if (e.snapshot.intent) sawIntents.add(e.snapshot.intent.kind);
+    const r = e.act({ kind: 'skill', skill: hit });
+    assert(!r.lines.some(l => l.includes('失去了平衡')), 'H: 小影不应有失衡演出');
+  }
+  assert(e.snapshot.over === 'victory', 'H: 小影应可速杀', `turns=${mobTurns}`);
+  assert(mobTurns <= 4, 'H: 小影应 2-4 回合内解决（弱点打击）', `turns=${mobTurns}`);
+  assert([...sawIntents].every(k => k === 'attack' || k === 'debuff'), 'H: 小影意图只应有 攻击/异常', [...sawIntents].join(','));
+  console.log(`  ✓ 小影战：${mobTurns} 回合击杀，意图集={${[...sawIntents].join(',')}}`);
+}
+
 console.log('');
 if (failures > 0) {
   console.error(`✗ 模拟战失败：${failures} 项断言未通过`);
