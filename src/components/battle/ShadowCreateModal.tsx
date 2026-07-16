@@ -232,6 +232,19 @@ export function ShadowCreateModal({ isOpen, onClose }: Props) {
                 </div>
               ) : (
                 <div className="space-y-4">
+                  {/* 手动模式沿用上一步选择的等级——在此明示，避免"看不到等级"的盲区 */}
+                  <div
+                    className="flex items-center justify-between rounded-xl px-3 py-2 text-xs"
+                    style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
+                  >
+                    <span className="text-gray-400">
+                      识破等级：<span className="text-red-300 font-bold">Lv{level}</span>
+                    </span>
+                    <span className="text-gray-500">
+                      HP {SHADOW_LEVEL_CONFIG[level - 1].maxHp}
+                      {SHADOW_LEVEL_CONFIG[level - 1].maxHp2 ? ` + ${SHADOW_LEVEL_CONFIG[level - 1].maxHp2}` : ''}
+                    </span>
+                  </div>
                   <input
                     value={manualName}
                     onChange={e => setManualName(e.target.value)}

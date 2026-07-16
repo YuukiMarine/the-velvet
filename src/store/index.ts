@@ -1,5 +1,5 @@
 ﻿import { create } from 'zustand';
-import { User, Attribute, Activity, Achievement, Skill, Settings, ThemeType, AttributeId, AttributeNamesKey, Todo, TodoCompletion, PeriodSummary, SummaryPeriod, SummaryPromptPreset, WeeklyGoal, WeeklyGoalItem, Persona, Shadow, BattleState, BattleLogEntry, BattleAction, DailyDivination, LongReading, LongReadingFollowUp, Confidant, ConfidantEvent, ConfidantBuff, CounselSession, CounselMessage, CounselArchive, CallingCard, NotifSlot, LedgerEntry, Budget, SpendWorth, LedgerAsset, Wish, TerminalClearPayload } from '@/types';
+import { User, Attribute, Activity, Achievement, Skill, Settings, ThemeType, AttributeId, AttributeNamesKey, Todo, TodoCompletion, PeriodSummary, SummaryPeriod, SummaryPromptPreset, WeeklyGoal, WeeklyGoalItem, Persona, Shadow, BattleState, BattleAction, DailyDivination, LongReading, LongReadingFollowUp, Confidant, ConfidantEvent, ConfidantBuff, CounselSession, CounselMessage, CounselArchive, CallingCard, NotifSlot, LedgerEntry, Budget, SpendWorth, LedgerAsset, Wish, TerminalClearPayload } from '@/types';
 import { TAROT_BY_ID } from '@/constants/tarot';
 import { summarizeCounsel, type CounselContext, type CounselConfidantBrief, type CounselRecentEvent } from '@/utils/counselAI';
 import { db } from '@/db';
@@ -115,7 +115,6 @@ import {
   SKILLS,
   DEFAULT_KEYWORD_RULES,
   DEFAULT_LEVEL_THRESHOLDS,
-  SHADOW_RESPONSE_LINES,
   SHADOW_REGEN_PER_LEVEL,
   HP_BONUS_PER_DEFEAT,
 } from '@/constants';
@@ -453,7 +452,7 @@ interface AppState {
   saveShadow: (shadow: Shadow) => Promise<void>;
   saveBattleState: (state: BattleState) => Promise<void>;
   earnSP: (amount: number) => Promise<void>;
-  performBattleAction: (action: BattleAction, shadowHpType: 'hp1' | 'hp2', allowShadowAttack?: boolean) => Promise<{ shadowDefeated: boolean; playerDefeated: boolean; phase2Triggered: boolean; isWeakness: boolean; actualDamage: number; shadowCrit: boolean; shadowAtkValue: number; healAmount: number }>;
+  performBattleAction: (action: BattleAction, shadowHpType: 'hp1' | 'hp2') => Promise<{ shadowDefeated: boolean; phase2Triggered: boolean; isWeakness: boolean; actualDamage: number }>;
   checkShadowHpRegen: () => Promise<void>;
   startBattleSession: () => void;
   endBattleSession: () => void;
@@ -3690,17 +3689,16 @@ ${activityLines || '（本期暂无记录）'}
   },
 
   earnSP: async (amount: number) => {
-    const { battleState, settings } = get();
+    const { battleState } = get();
     if (!battleState) return;
-    const multiplier = settings.battleSpMultiplier ?? 1.0;
-    const earned = Math.round(amount * multiplier);
+    const earned = Math.round(amount);
     const updated = { ...battleState, sp: battleState.sp + earned, totalSpEarned: battleState.totalSpEarned + earned };
     await get().saveBattleState(updated);
   },
 
-  performBattleAction: async (action: BattleAction, shadowHpType: 'hp1' | 'hp2', allowShadowAttack = true) => {
+  performBattleAction: async (action: BattleAction, shadowHpType: 'hp1' | 'hp2') => {
     const { battleState, shadow } = get();
-    if (!battleState || !shadow) return { shadowDefeated: false, playerDefeated: false, phase2Triggered: false, isWeakness: false, actualDamage: 0, shadowCrit: false, shadowAtkValue: 0, healAmount: 0 };
+    if (!battleState || !shadow) return { shadowDefeated: false, phase2Triggered: false, isWeakness: false, actualDamage: 0 };
     const newSp = Math.max(0, battleState.sp - action.spCost);
     // 弱点判断：damage/crit 类型命中弱点时伤害×1.5
     const isDamageType = action.type === 'damage' || action.type === 'crit' || action.type === 'attack_boost';
@@ -3712,7 +3710,7 @@ ${activityLines || '（本期暂无记录）'}
       : 0;
     const baseDamage = isDamageType ? (isWeakness ? Math.round(action.value * 1.5) : action.value) : 0;
     const actualDamage = baseDamage > 0 ? baseDamage + confidantDamageBonus : 0;
-    // heal 类型：回复玩家HP
+    // heal 类型：回复玩家HP。Shadow 反击不在 store 处理——由 BattleModal 的 runShadowCounter 统一执行
     const healAmount = action.type === 'heal' ? action.value : 0;
     let newHp1 = shadow.currentHp;
     let newHp2 = shadow.currentHp2 ?? 0;
@@ -3721,37 +3719,22 @@ ${activityLines || '（本期暂无记录）'}
       else newHp2 = Math.max(0, (shadow.currentHp2 ?? 0) - actualDamage);
     }
     const isPhase2 = battleState.status === 'shadow_phase2';
-    const baseShadowAtk = (shadow.attackPower ?? 2) + (isPhase2 ? 1 : 0);
-    // Shadow 逐级暴击：Lv1=0%, Lv2=10%, Lv3=15%, Lv4=20%, Lv5=30%
-    const shadowCritChances = [0, 0.1, 0.15, 0.2, 0.3];
-    const shadowCritChance = shadowCritChances[Math.min((shadow.level ?? 1) - 1, 4)];
-    const shadowCrit = allowShadowAttack && Math.random() < shadowCritChance;
-    const shadowAtkValue = allowShadowAttack ? (shadowCrit ? baseShadowAtk * 2 : baseShadowAtk) : 0;
-    const newPlayerHp = Math.max(0, Math.min(battleState.playerMaxHp, battleState.playerHp + healAmount - shadowAtkValue));
+    const newPlayerHp = Math.min(battleState.playerMaxHp, battleState.playerHp + healAmount);
     const phase2Triggered = shadowHpType === 'hp1' && newHp1 <= 0 && shadow.maxHp2 !== undefined && !isPhase2;
     const shadowDefeated = (shadowHpType === 'hp1' && newHp1 <= 0 && shadow.maxHp2 === undefined) || (shadowHpType === 'hp2' && newHp2 <= 0);
-    const playerDefeated = newPlayerHp <= 0;
-    const logEntry: BattleLogEntry = {
-      id: uuidv4(),
-      date: toLocalDateKey(),
-      playerActions: [action],
-      shadowResponse: SHADOW_RESPONSE_LINES[Math.floor(Math.random() * SHADOW_RESPONSE_LINES.length)],
-      playerHpBefore: battleState.playerHp, playerHpAfter: newPlayerHp,
-      shadowHpBefore: shadowHpType === 'hp1' ? shadow.currentHp : (shadow.currentHp2 ?? 0),
-      shadowHpAfter: shadowHpType === 'hp1' ? newHp1 : newHp2,
-    };
     let newStatus = battleState.status;
     if (shadowDefeated) newStatus = 'victory';
-    else if (playerDefeated) newStatus = 'session_end';
     else if (phase2Triggered) newStatus = 'shadow_phase2';
     await get().saveShadow({ ...shadow, currentHp: newHp1, currentHp2: newHp2 });
-    await get().saveBattleState({ ...battleState, sp: newSp, playerHp: newPlayerHp, status: newStatus, battleLog: [...battleState.battleLog.slice(-50), logEntry], lastBattleDate: toLocalDateKey() });
-    return { shadowDefeated, playerDefeated, phase2Triggered, isWeakness, actualDamage, shadowCrit, shadowAtkValue, healAmount };
+    await get().saveBattleState({ ...battleState, sp: newSp, playerHp: newPlayerHp, status: newStatus, lastBattleDate: toLocalDateKey() });
+    return { shadowDefeated, phase2Triggered, isWeakness, actualDamage };
   },
 
   checkShadowHpRegen: async () => {
-    const { shadow } = get();
+    const { shadow, battleState } = get();
     if (!shadow) return;
+    // 已胜利但未领取奖励时不回血：否则击破的 Shadow 会被每日回血"复活"，玩家被迫重打一遍
+    if (battleState?.status === 'victory') return;
     const today = toLocalDateKey();
     if (shadow.lastHpRegenDate === today) return;
     const regenPerDay = SHADOW_REGEN_PER_LEVEL[Math.min(shadow.level - 1, 4)] ?? 2;

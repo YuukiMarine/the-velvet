@@ -828,7 +828,7 @@ export function BattleModal({ isOpen, onClose, onVictory }: Props) {
     };
 
     // 关闭 store 内置 shadow 反击，由本组件统一走 runShadowCounter
-    const result = await performBattleAction(action, shadowHpType, false);
+    const result = await performBattleAction(action, shadowHpType);
 
     const lines: string[] = [];
     lines.push(`你向 ${shadow.name} 发起了普通攻击！`);
@@ -950,7 +950,7 @@ export function BattleModal({ isOpen, onClose, onVictory }: Props) {
       isCrit: true,
     };
     // 消耗所有 SP，造成伤害
-    const result = await performBattleAction(action, shadowHpType, false);
+    const result = await performBattleAction(action, shadowHpType);
     lines.push(`造成 ${result.actualDamage} 点巨额伤害！`);
 
     if (result.actualDamage > 0) {
@@ -1398,8 +1398,8 @@ export function BattleModal({ isOpen, onClose, onVictory }: Props) {
       isCrit: isCritHit,
     };
 
-    // store 的 performBattleAction 会计算弱点 1.5 倍并扣血。关闭 shadow 反击，由本组件统一处理。
-    const result = await performBattleAction(actualAction, shadowHpType, false);
+    // store 的 performBattleAction 会计算弱点 1.5 倍并扣血。Shadow 反击由本组件的 runShadowCounter 统一处理。
+    const result = await performBattleAction(actualAction, shadowHpType);
 
     const skillPersonaName = maskAttr
       ? (persona.attributePersonas?.[selectedSkillAttr]?.name ?? '反抗者')
