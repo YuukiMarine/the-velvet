@@ -17,10 +17,10 @@ function formatSingleAttrSpecialization(attr: AttributeId, attrName: string): st
   const boost = SKILL_EFFECT_MAP[attr]?.attack_boost;
   const debuffLine = debuff
     ? `- Lv4 debuff → ${debuff.icon} ${debuff.label}：${debuff.hint}`
-    : '- Lv4 debuff → 默认易伤：Shadow 下次受伤 ×1.3';
+    : '- Lv4 debuff → 默认易伤：Shadow 下次受伤 +30%';
   const boostLine = boost
     ? `- Lv5 attack_boost → ${boost.icon} ${boost.label}：${boost.hint}`
-    : '- Lv5 attack_boost → 默认增伤：3 回合内自身伤害 +15';
+    : '- Lv5 attack_boost → 默认增伤：3 回合内自身伤害 +6';
   return [
     `【"${attrName}"属性的专属副效果（Lv4/Lv5 的技能名称与描述必须呼应这些真实触发的效果，而不是写成通用的"增伤/易伤"）】`,
     debuffLine,
@@ -40,12 +40,12 @@ function formatAllAttrsSpecialization(attrNames: Record<AttributeId, string>): s
     debuffLines.push(
       debuff
         ? `  · ${name} → ${debuff.icon} ${debuff.label}：${debuff.hint}`
-        : `  · ${name} → 默认易伤：Shadow 下次受伤 ×1.3`,
+        : `  · ${name} → 默认易伤：Shadow 下次受伤 +30%`,
     );
     boostLines.push(
       boost
         ? `  · ${name} → ${boost.icon} ${boost.label}：${boost.hint}`
-        : `  · ${name} → 默认增伤：3 回合内自身伤害 +15`,
+        : `  · ${name} → 默认增伤：3 回合内自身伤害 +6`,
     );
   });
   return [
@@ -247,12 +247,12 @@ ${ATTRS.map(a => `${a} → ${attributeNames[a]}`).join('\n')}
 技能规格：level 1-5，power=10/15/22/30/40，spCost=8/12/18/25/35
 技能类型说明（7种）：
 - damage：直接伤害
-- crit：暴击型（有20%概率双倍伤害+令Shadow失衡）
-- buff：增益（提升下次攻击伤害×1.5）
+- crit：暴击型（有概率双倍伤害+积累Shadow失衡）
+- buff：增益（提升下次攻击伤害+50%）
 - debuff：减益（令Shadow陷入易伤状态，下次受到额外30%伤害）
-- charge：蓄力（下回合技能伤害翻倍）
-- heal：治愈（回复玩家5点HP）
-- attack_boost：攻击增益（默认：造成15点伤害，并令接下来3回合所有伤害+15，不可叠加。但不同属性下会触发专属副效果，详见下方）
+- charge：蓄力（下回合技能伤害翻倍，可能被Shadow打断）
+- heal：治愈（回复玩家生命，回复量约为技能威力的30%，温柔属性额外加成）
+- attack_boost：攻击增益（默认：按威力造成伤害，并令接下来3回合所有伤害+6，不可叠加。但不同属性下会触发专属副效果，详见下方）
 
 ${formatAllAttrsSpecialization(attributeNames)}
 
@@ -441,7 +441,7 @@ ${personaName}是一位与"${attrName}"属性高度契合的Persona。请根据�
 
 【技能规格】
 - level 1-5，对应 power=10/15/22/30/40，spCost=8/12/18/25/35
-- 技能类型（7种）：damage(直接伤害) / crit(暴击型,有概率双倍伤害+失衡) / buff(提升下次攻击×1.5) / debuff(施加易伤，实际效果见下) / charge(蓄力,下回合双倍) / heal(回复5HP) / attack_boost(实际效果见下)
+- 技能类型（7种）：damage(直接伤害) / crit(暴击型,有概率双倍伤害+积累失衡) / buff(提升下次攻击+50%) / debuff(施加易伤，实际效果见下) / charge(蓄力,下回合双倍) / heal(回复约威力30%的生命) / attack_boost(实际效果见下)
 
 ${formatSingleAttrSpecialization(attr, attrName)}
 

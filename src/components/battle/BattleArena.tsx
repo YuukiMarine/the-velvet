@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore } from '@/store';
 import { toLocalDateKey } from '@/store';
-import { isInShadowTime, SKILL_EFFECT_MAP, HEAL_VALUE_BY_ATTR } from '@/constants';
+import { isInShadowTime, SKILL_EFFECT_MAP } from '@/constants';
+import { healAmount, BOSS_ATTACK_BY_LEVEL } from '@/battle/numbers';
 import { AttributeId } from '@/types';
 import { playSound } from '@/utils/feedback';
 import { BackButton } from '@/components/BackButton';
@@ -40,10 +41,10 @@ const SKILL_TYPE_TAG: Record<string, { label: string; color: string; bg: string 
 };
 
 const SKILL_EFFECT_HINT: Record<string, string> = {
-  buff:         '下次×1.5',
-  debuff:       '易伤×1.3',
+  buff:         '下次+50%',
+  debuff:       '易伤+30%',
   charge:       '下次×2',
-  attack_boost: '15伤+3回合增伤',
+  attack_boost: '+6伤·3回合',
 };
 
 export const BattleArena = () => {
@@ -70,8 +71,8 @@ export const BattleArena = () => {
 
   // Settings local state
   const [battleEnabled, setBattleEnabled] = useState(settings.battleEnabled !== false);
-  const [playerMaxHp, setPlayerMaxHp] = useState(String(settings.battlePlayerMaxHp ?? 8));
-  const [shadowAttack, setShadowAttack] = useState(String(settings.battleShadowAttack ?? 2));
+  const [playerMaxHp, setPlayerMaxHp] = useState(String(settings.battlePlayerMaxHp ?? 40));
+  const [attackScale, setAttackScale] = useState(String(settings.battleAttackScale ?? 100));
   const [shadowDays, setShadowDays] = useState<number[]>(settings.battleShadowTimeDays ?? [5, 6, 0]);
   const [shadowTimeStart, setShadowTimeStart] = useState(String(settings.battleShadowTimeStart ?? 20));
   const [shadowTimeEnd, setShadowTimeEnd] = useState(String(settings.battleShadowTimeEnd ?? 7));
@@ -547,9 +548,9 @@ export const BattleArena = () => {
                         {(() => {
                           const MASK_BUFFS: Record<AttributeId, string> = {
                             knowledge: '弱点攻击额外+2伤害，日常该属性+1',
-                            guts: '15%暴击率：伤害×1.5并使Shadow失衡，日常该属性+1',
-                            dexterity: '每5回合获得强化回合（额外行动），日常该属性+1',
-                            kindness: '体力耗尽后回复1点体力（仅一次），日常该属性+1',
+                            guts: '出战时暴击率+15%，日常该属性+1',
+                            dexterity: '每使用5次技能获得追加行动，日常该属性+1',
+                            kindness: '体力耗尽后保留1点体力（每场一次），日常该属性+1',
                             charm: '每次战斗仅一次，使用技能不消耗SP，日常该属性+1',
                           } as Record<AttributeId, string>;
                           const isEquipped = persona.equippedMaskAttribute === currentAttr;
@@ -673,9 +674,9 @@ export const BattleArena = () => {
                                       const tagLabel = mapped?.label ?? baseTag?.label;
                                       const tagIcon = mapped?.icon;
                                       // 右侧 hint：优先特化，回落到静态；heal 用真实回血值
-                                      const effectHint = mapped?.hint
-                                        ?? SKILL_EFFECT_HINT[skill.type]
-                                        ?? (skill.type === 'heal' ? `+${HEAL_VALUE_BY_ATTR[currentAttr] ?? 5}HP` : '');
+                                      const effectHint = skill.type === 'heal'
+                                        ? `+${healAmount(skill.power, currentAttr)}HP`
+                                        : (mapped?.hint ?? SKILL_EFFECT_HINT[skill.type] ?? '');
                                       return (
                                       <div
                                         key={i}
@@ -806,22 +807,24 @@ export const BattleArena = () => {
                             min={1}
                           />
                         </div>
-                        {/* Shadow 攻击力 */}
+                        {/* Shadow 攻击倍率（引擎v2：基础攻击走等级表 5/6/7/8/9） */}
                         <div className="flex items-center justify-between gap-3 px-4 py-3.5">
                           <div>
-                            <p className="text-sm font-medium text-gray-800 dark:text-gray-100">Shadow 攻击力</p>
-                            <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">每回合对玩家造成的基础伤害</p>
+                            <p className="text-sm font-medium text-gray-800 dark:text-gray-100">Shadow 攻击倍率 %</p>
+                            <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+                              基础攻击按等级 {BOSS_ATTACK_BY_LEVEL.join('/')}，此倍率整体缩放
+                            </p>
                           </div>
                           <input
                             type="number"
-                            value={shadowAttack}
-                            onChange={(e) => setShadowAttack(e.target.value)}
+                            value={attackScale}
+                            onChange={(e) => setAttackScale(e.target.value)}
                             onBlur={() => {
-                              const v = parseInt(shadowAttack, 10);
-                              if (!isNaN(v) && v >= 0) saveSettings({ battleShadowAttack: v });
+                              const v = parseInt(attackScale, 10);
+                              if (!isNaN(v) && v > 0 && v <= 500) saveSettings({ battleAttackScale: v });
                             }}
                             className={`${inputCls} !w-20 text-center`}
-                            min={0}
+                            min={10} max={500}
                           />
                         </div>
                         {/* HP 回复 */}

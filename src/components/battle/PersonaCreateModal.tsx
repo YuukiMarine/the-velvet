@@ -5,6 +5,7 @@ import { P3R, slantClip, SlantButton } from '@/components/p3r/kit';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { Persona, BattleState, AttributeId } from '@/types';
 import { generatePersonaSkills } from '@/utils/battleAI';
+import { PLAYER_BASE_HP } from '@/battle/numbers';
 import { triggerSuccessFeedback, playSound } from '@/utils/feedback';
 import { AwakeningOverlay, AwakeningOverlayHandle } from '@/components/battle/AwakeningOverlay';
 import { useBackHandler } from '@/utils/useBackHandler';
@@ -181,8 +182,8 @@ export function PersonaCreateModal({ isOpen, onClose }: Props) {
           id: 'current',
           shadowId: '',
           personaId: persona.id,
-          playerHp: settings.battlePlayerMaxHp ?? 8,
-          playerMaxHp: settings.battlePlayerMaxHp ?? 8,
+          playerHp: settings.battlePlayerMaxHp ?? PLAYER_BASE_HP,
+          playerMaxHp: settings.battlePlayerMaxHp ?? PLAYER_BASE_HP,
           sp: 0,
           totalSpEarned: 0,
           battleLog: [],

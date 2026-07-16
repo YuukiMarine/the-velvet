@@ -1,5 +1,5 @@
 ﻿import { create } from 'zustand';
-import { User, Attribute, Activity, Achievement, Skill, Settings, ThemeType, AttributeId, AttributeNamesKey, Todo, TodoCompletion, PeriodSummary, SummaryPeriod, SummaryPromptPreset, WeeklyGoal, WeeklyGoalItem, Persona, Shadow, BattleState, BattleAction, DailyDivination, LongReading, LongReadingFollowUp, Confidant, ConfidantEvent, ConfidantBuff, CounselSession, CounselMessage, CounselArchive, CallingCard, NotifSlot, LedgerEntry, Budget, SpendWorth, LedgerAsset, Wish, TerminalClearPayload } from '@/types';
+import { User, Attribute, Activity, Achievement, Skill, Settings, ThemeType, AttributeId, AttributeNamesKey, Todo, TodoCompletion, PeriodSummary, SummaryPeriod, SummaryPromptPreset, WeeklyGoal, WeeklyGoalItem, Persona, Shadow, BattleState, DailyDivination, LongReading, LongReadingFollowUp, Confidant, ConfidantEvent, ConfidantBuff, CounselSession, CounselMessage, CounselArchive, CallingCard, NotifSlot, LedgerEntry, Budget, SpendWorth, LedgerAsset, Wish, TerminalClearPayload } from '@/types';
 import { TAROT_BY_ID } from '@/constants/tarot';
 import { summarizeCounsel, type CounselContext, type CounselConfidantBrief, type CounselRecentEvent } from '@/utils/counselAI';
 import { db } from '@/db';
@@ -16,7 +16,6 @@ import {
   levelBasePoints,
   MAX_INTIMACY,
   buffsForLevel,
-  sumDamagePlus,
   isItemOnCooldown,
 } from '@/utils/confidantLevels';
 import type { ConfidantMatchResult } from '@/utils/confidantAI';
@@ -118,6 +117,7 @@ import {
   SHADOW_REGEN_PER_LEVEL,
   HP_BONUS_PER_DEFEAT,
 } from '@/constants';
+import { PLAYER_BASE_HP } from '@/battle/numbers';
 import { normalizeAttributeLevelTitles } from '@/utils/attributeLevelTitles';
 
 /** Shared request payload returned by buildSummaryRequest used by both non-streaming generateSummary and streaming modal */
@@ -452,7 +452,6 @@ interface AppState {
   saveShadow: (shadow: Shadow) => Promise<void>;
   saveBattleState: (state: BattleState) => Promise<void>;
   earnSP: (amount: number) => Promise<void>;
-  performBattleAction: (action: BattleAction, shadowHpType: 'hp1' | 'hp2') => Promise<{ shadowDefeated: boolean; phase2Triggered: boolean; isWeakness: boolean; actualDamage: number }>;
   checkShadowHpRegen: () => Promise<void>;
   startBattleSession: () => void;
   endBattleSession: () => void;
@@ -3696,39 +3695,7 @@ ${activityLines || '（本期暂无记录）'}
     await get().saveBattleState(updated);
   },
 
-  performBattleAction: async (action: BattleAction, shadowHpType: 'hp1' | 'hp2') => {
-    const { battleState, shadow } = get();
-    if (!battleState || !shadow) return { shadowDefeated: false, phase2Triggered: false, isWeakness: false, actualDamage: 0 };
-    const newSp = Math.max(0, battleState.sp - action.spCost);
-    // 弱点判断：damage/crit 类型命中弱点时伤害×1.5
-    const isDamageType = action.type === 'damage' || action.type === 'crit' || action.type === 'attack_boost';
-    const isWeakness = isDamageType && action.skillAttribute !== undefined && action.skillAttribute === shadow.weakAttribute;
-    // 同伴永久战斗技能加成：该属性技能固定 +N 伤害（damage_plus）
-    const damagePlusMap = sumDamagePlus(get().confidants);
-    const confidantDamageBonus = (isDamageType && action.skillAttribute)
-      ? (damagePlusMap[action.skillAttribute] ?? 0)
-      : 0;
-    const baseDamage = isDamageType ? (isWeakness ? Math.round(action.value * 1.5) : action.value) : 0;
-    const actualDamage = baseDamage > 0 ? baseDamage + confidantDamageBonus : 0;
-    // heal 类型：回复玩家HP。Shadow 反击不在 store 处理——由 BattleModal 的 runShadowCounter 统一执行
-    const healAmount = action.type === 'heal' ? action.value : 0;
-    let newHp1 = shadow.currentHp;
-    let newHp2 = shadow.currentHp2 ?? 0;
-    if (isDamageType) {
-      if (shadowHpType === 'hp1') newHp1 = Math.max(0, shadow.currentHp - actualDamage);
-      else newHp2 = Math.max(0, (shadow.currentHp2 ?? 0) - actualDamage);
-    }
-    const isPhase2 = battleState.status === 'shadow_phase2';
-    const newPlayerHp = Math.min(battleState.playerMaxHp, battleState.playerHp + healAmount);
-    const phase2Triggered = shadowHpType === 'hp1' && newHp1 <= 0 && shadow.maxHp2 !== undefined && !isPhase2;
-    const shadowDefeated = (shadowHpType === 'hp1' && newHp1 <= 0 && shadow.maxHp2 === undefined) || (shadowHpType === 'hp2' && newHp2 <= 0);
-    let newStatus = battleState.status;
-    if (shadowDefeated) newStatus = 'victory';
-    else if (phase2Triggered) newStatus = 'shadow_phase2';
-    await get().saveShadow({ ...shadow, currentHp: newHp1, currentHp2: newHp2 });
-    await get().saveBattleState({ ...battleState, sp: newSp, playerHp: newPlayerHp, status: newStatus, lastBattleDate: toLocalDateKey() });
-    return { shadowDefeated, phase2Triggered, isWeakness, actualDamage };
-  },
+  // 战斗结算已全部移入 src/battle/engine.ts（引擎 v2）；store 只负责跨 session 持久化。
 
   checkShadowHpRegen: async () => {
     const { shadow, battleState } = get();
@@ -3756,7 +3723,7 @@ ${activityLines || '（本期暂无记录）'}
   startBattleSession: () => {
     const { battleState, shadow, settings } = get();
     if (!battleState) return;
-    const baseHp = settings.battlePlayerMaxHp ?? 8;
+    const baseHp = settings.battlePlayerMaxHp ?? PLAYER_BASE_HP;
     const maxHp = baseHp + (battleState.hpBonusFromDefeats ?? 0);
     const alreadyPhase2 = shadow !== null && shadow.maxHp2 !== undefined &&
       shadow.currentHp <= 0 && (shadow.currentHp2 ?? shadow.maxHp2) > 0;
