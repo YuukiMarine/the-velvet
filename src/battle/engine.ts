@@ -744,8 +744,14 @@ export class BattleEngine {
     const isCrit = forceCrit || this.rng() < critChance;
     if (isCrit) atk *= CRIT_MULT;
 
-    // 克制环（承伤侧：Shadow 属性向 vs 出战面具）
-    atk *= ringMultiplier(this.shAttribute, this.activeMask);
+    // 克制环（承伤侧：Shadow 属性向 vs 出战面具）——提示只在受伤时随叙事出现，不做常驻角标
+    const defRing = ringMultiplier(this.shAttribute, this.activeMask);
+    atk *= defRing;
+    if (defRing > 1) {
+      lines.push(`属性受克！【${this.setup.attrNames[this.activeMask]}】面具难以招架，来袭伤害 ×1.2……`);
+    } else if (defRing < 1) {
+      lines.push(`面具属性占优！【${this.setup.attrNames[this.activeMask]}】削减了来袭伤害 ×0.8。`);
+    }
 
     let dmg = Math.max(0, Math.round(atk));
     const original = dmg;

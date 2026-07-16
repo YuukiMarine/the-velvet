@@ -310,40 +310,32 @@ export function WeakCutIn() {
   );
 }
 
-/** 引擎v2 · 1 MORE 闪现（弱点/暴击追加行动） */
+/** 引擎v2 · 1 MORE 飘带（弱点/暴击追加行动）
+ *  形态：右上角斜切小飘带——不占中心舞台（与 WEAK cut-in 区分）、不遮挡、不阻塞操作 */
 export function OneMoreFlash() {
   return (
     <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.1 }}
-      className="absolute inset-0 z-40 flex items-center justify-center overflow-hidden pointer-events-none"
+      initial={{ x: 90, opacity: 0 }}
+      animate={{ x: 0, opacity: 1 }}
+      exit={{ x: 70, opacity: 0 }}
+      transition={{ type: 'spring', stiffness: 560, damping: 30 }}
+      className="absolute top-[92px] right-0 z-40 pointer-events-none"
     >
-      <motion.div
-        className="absolute w-[170%] h-16"
-        initial={{ x: '120%', rotate: 8, opacity: 0 }}
-        animate={{ x: '0%', opacity: [0, 0.95, 0.95, 0] }}
-        transition={{ duration: 0.85, times: [0, 0.25, 0.8, 1], ease: 'circOut' }}
+      <div
+        className="pl-5 pr-3 py-1.5"
         style={{
-          background: 'linear-gradient(90deg, transparent, rgba(59,130,246,0.85), rgba(53,209,232,0.9), transparent)',
-          boxShadow: '0 0 32px rgba(53,209,232,0.7)',
-        }}
-      />
-      <motion.div
-        initial={{ scale: 0.4, opacity: 0, rotate: 6, x: 60 }}
-        animate={{ scale: [0.4, 1.15, 1], opacity: [0, 1, 1], rotate: [6, -3, -3], x: [60, 0, 0] }}
-        transition={{ duration: 0.55, times: [0, 0.6, 1], ease: 'backOut' }}
-        style={{
-          fontSize: 'clamp(2.6rem,12vw,4rem)', fontWeight: 900, fontStyle: 'italic',
-          color: '#fff', WebkitTextStroke: '2px rgba(27,87,255,0.9)',
-          textShadow: '0 0 26px rgba(53,209,232,0.9), 4px 4px 0 rgba(10,20,80,0.8)',
-          fontFamily: '"Impact", "Arial Black", "Noto Sans SC", sans-serif',
-          letterSpacing: '0.06em', userSelect: 'none',
+          background: 'linear-gradient(100deg, rgba(27,87,255,0.95), rgba(53,209,232,0.95))',
+          clipPath: 'polygon(14px 0, 100% 0, 100% 100%, 0 100%)',
+          boxShadow: '0 0 18px rgba(53,209,232,0.6)',
         }}
       >
-        1 MORE!
-      </motion.div>
+        <span
+          className="font-black italic text-white text-lg leading-none"
+          style={{ textShadow: '0 2px 0 rgba(10,20,80,0.6)', letterSpacing: '0.05em', userSelect: 'none' }}
+        >
+          1 MORE!
+        </span>
+      </div>
     </motion.div>
   );
 }
@@ -369,47 +361,39 @@ export function MaskCutIn({ attrName, personaName, full }: { attrName: string; p
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      transition={{ duration: 0.14 }}
+      transition={{ duration: 0.1 }}
       className="absolute inset-0 z-40 flex items-center justify-center overflow-hidden pointer-events-none"
-      style={{ background: 'rgba(4,0,18,0.55)' }}
+      style={{ background: 'rgba(4,0,18,0.5)' }}
     >
       <motion.div
-        className="absolute w-[190%] h-20"
-        initial={{ x: '-120%', rotate: -10, opacity: 0 }}
-        animate={{ x: '0%', opacity: [0, 1, 1, 0] }}
-        transition={{ duration: 1.0, times: [0, 0.22, 0.78, 1], ease: 'circOut' }}
+        className="absolute w-[190%] h-16"
+        initial={{ x: '-110%', rotate: -10 }}
+        animate={{ x: '0%', opacity: [0.9, 0.9, 0] }}
+        transition={{ duration: 0.62, times: [0, 0.7, 1], ease: 'circOut' }}
         style={{
-          background: 'linear-gradient(90deg, transparent, rgb(var(--color-battle-bright-rgb) / 0.85), rgba(53,209,232,0.85), transparent)',
-          boxShadow: '0 0 36px rgb(var(--color-battle-bright-rgb) / 0.6)',
+          background: 'linear-gradient(90deg, transparent, rgb(var(--color-battle-bright-rgb) / 0.8), rgba(53,209,232,0.8), transparent)',
+          boxShadow: '0 0 30px rgb(var(--color-battle-bright-rgb) / 0.55)',
         }}
       />
       <div className="relative flex flex-col items-center">
         <motion.p
-          initial={{ opacity: 0, letterSpacing: '0.7em', y: 8 }}
-          animate={{ opacity: [0, 1], letterSpacing: ['0.7em', '0.3em'], y: [8, 0] }}
-          transition={{ duration: 0.45, delay: 0.12 }}
-          className="text-[11px] font-bold uppercase text-white/70"
-        >
-          persona
-        </motion.p>
-        <motion.p
-          initial={{ scale: 0.5, opacity: 0, rotate: -4 }}
-          animate={{ scale: [0.5, 1.12, 1], opacity: [0, 1, 1], rotate: [-4, -2, -2] }}
-          transition={{ duration: 0.6, delay: 0.18, times: [0, 0.6, 1], ease: 'backOut' }}
+          initial={{ opacity: 0, x: -36 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ type: 'spring', stiffness: 420, damping: 30 }}
           style={{
-            fontSize: 'clamp(1.9rem,9vw,3rem)', fontWeight: 900, color: '#fff',
-            WebkitTextStroke: '1.5px rgba(53,209,232,0.8)',
-            textShadow: '0 0 28px rgba(53,209,232,0.8), 3px 3px 0 rgba(10,0,40,0.9)',
+            fontSize: 'clamp(1.8rem,8.5vw,2.8rem)', fontWeight: 900, color: '#fff',
+            textShadow: '0 0 22px rgba(53,209,232,0.75), 0 2px 10px rgba(10,0,40,0.8)',
             userSelect: 'none', lineHeight: 1.15,
           }}
         >
           {personaName}
         </motion.p>
         <motion.p
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: [0, 1, 0.9], y: [12, 0, 0] }}
-          transition={{ duration: 0.7, delay: 0.32 }}
-          className="mt-1 text-sm font-bold text-purple-200"
+          initial={{ opacity: 0, x: 28 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ type: 'spring', stiffness: 420, damping: 32, delay: 0.06 }}
+          className="mt-0.5 text-sm font-bold text-purple-200"
+          style={{ textShadow: '0 1px 8px rgba(10,0,40,0.8)' }}
         >
           🎭 {attrName}之面具 · 出战
         </motion.p>
