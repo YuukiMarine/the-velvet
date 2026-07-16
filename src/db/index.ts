@@ -1,5 +1,5 @@
 import Dexie, { Table } from 'dexie';
-import { User, Attribute, Activity, Achievement, Skill, DailyEvent, DailyDivination, LongReading, Settings, Todo, TodoCompletion, PeriodSummary, WeeklyGoal, Persona, Shadow, BattleState, Confidant, ConfidantEvent, CounselSession, CounselArchive, CallingCard, LedgerEntry, Budget, LedgerAsset, Wish, NavigatorSessionRow, NavigatorMessageRow, NavigatorMemo, NavigatorPreset } from '@/types';
+import { User, Attribute, Activity, Achievement, Skill, DailyEvent, DailyDivination, LongReading, Settings, Todo, TodoCompletion, PeriodSummary, WeeklyGoal, Persona, Shadow, BattleState, Confidant, ConfidantEvent, CounselSession, CounselArchive, CallingCard, LedgerEntry, Budget, LedgerAsset, Wish, NavigatorSessionRow, NavigatorMessageRow, NavigatorMemo, NavigatorPreset, TowerStratum } from '@/types';
 
 export class PGTDatabase extends Dexie {
   users!: Table<User>;
@@ -31,6 +31,7 @@ export class PGTDatabase extends Dexie {
   navigatorMessages!: Table<NavigatorMessageRow>;   // F6 会话消息
   navigatorMemos!: Table<NavigatorMemo>;            // F6 原子记忆（三源 + F8 图片卡共用）
   navigatorPresets!: Table<NavigatorPreset>;        // F6 自定义人格（内置随代码，不入表）
+  strata!: Table<TowerStratum>;                     // 批2 影时间高塔·区层
 
   constructor() {
     super('PGTDatabase');
@@ -268,6 +269,11 @@ export class PGTDatabase extends Dexie {
       navigatorMessages: 'id, sessionId, createdAt',
       navigatorMemos: 'id, source, status, importance, createdAt',
       navigatorPresets: 'id, isBuiltin, createdAt'
+    });
+
+    // v13（批2 影时间高塔）：新增区层表
+    this.version(13).stores({
+      strata: 'id, level, status, createdWeekKey, createdAt'
     });
   }
 }

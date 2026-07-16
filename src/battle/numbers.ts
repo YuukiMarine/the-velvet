@@ -105,6 +105,36 @@ export function shadowPoisonValue(attackPower: number): number {
 export const SHADOW_CALM_MULT = 0.85;          // 侵蚀（玩家攻击减弱）
 export const SHADOW_STATUS_TURNS = 2;
 
+// ── 高塔区层 · 小影/精英（§9.2，批2）───────────────────────
+/** 小影 HP 区间（按区层等级）："2-3 次当前等级技能可击败" */
+export const MOB_HP_BY_LEVEL: Array<[number, number]> = [[22, 30], [33, 45], [48, 66], [66, 90], [88, 120]];
+export const MOB_ATTACK_BY_LEVEL = [3, 4, 5, 6, 7];
+export const ELITE_HP_BY_LEVEL: Array<[number, number]> = [[60, 75], [90, 110], [130, 160], [180, 220], [240, 290]];
+export const ELITE_ATTACK_BY_LEVEL = [4, 5, 6, 7, 8];
+
+/** 区层等级 SP 系数（节点奖励 = 层段基准 × 系数 × 1.1^异变加深） */
+export const STRATUM_SP_COEF = [1, 1.25, 1.5, 1.85, 2.2];
+/** 层段 SP 基准（区层内层号）：1-4 层 / 5-8 层 / 9+ 层 */
+export const FLOOR_SP_BANDS: Array<[number, number]> = [[3, 5], [6, 9], [10, 14]];
+export const BOSS_SP_BASE = 30;
+export const DEEPEN_SP_MULT = 1.1;
+
+/** 节点 SP 奖励（rng 注入取整区间） */
+export function nodeSpReward(level: number, floor: number, deepenCount: number, rng: () => number): number {
+  const band = FLOOR_SP_BANDS[floor <= 4 ? 0 : floor <= 8 ? 1 : 2];
+  const base = band[0] + Math.floor(rng() * (band[1] - band[0] + 1));
+  const coef = STRATUM_SP_COEF[Math.min(4, Math.max(0, level - 1))];
+  return Math.max(1, Math.round(base * coef * Math.pow(DEEPEN_SP_MULT, deepenCount)));
+}
+
+export function bossSpReward(level: number, deepenCount: number): number {
+  const coef = STRATUM_SP_COEF[Math.min(4, Math.max(0, level - 1))];
+  return Math.round(BOSS_SP_BASE * coef * Math.pow(DEEPEN_SP_MULT, deepenCount));
+}
+
+/** 回响节点回复比例（§2.6） */
+export const ECHO_HEAL_PCT = 0.2;
+
 // ── 回合压力（§3.11）───────────────────────────────────────
 export const PRESSURE_START_TURN = 12;
 export const PRESSURE_RATE = 0.1;
