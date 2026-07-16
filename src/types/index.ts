@@ -370,7 +370,8 @@ export interface Settings {
   battleShadowTimeEnd?: number;
   battleShadowTimeDays?: number[];
   battlePlayerMaxHp?: number;
-  battleShadowAttack?: number;
+  /** （引擎v2）Shadow 全局攻击倍率%（金手指），默认 100；攻击基础值走 BOSS_ATTACK_BY_LEVEL 等级表 */
+  battleAttackScale?: number;
   // 可自定义 Prompt
   battleShadowPromptTemplate?: string;      // Shadow AI生成提示模板
   battleVictoryPromptTemplate?: string;     // 胜利叙事提示模板
@@ -781,6 +782,11 @@ export interface Shadow {
   description: string;
   invertedAttributes: Record<AttributeId, string>;
   weakAttribute: AttributeId; // 弱点属性，对应技能伤害×1.5
+  /** （引擎v2）属性向：承伤/输出的克制环判定用；存量数据缺省时由 id 稳定派生 */
+  attribute?: AttributeId;
+  /** （引擎v2）二形态更换后的弱点/耐性（跨 session 恢复战斗时需要） */
+  phase2WeakAttribute?: AttributeId;
+  phase2ResistAttribute?: AttributeId;
   maxHp: number;
   currentHp: number;
   maxHp2?: number;
@@ -849,7 +855,9 @@ export type StatusKind =
   | 'shield'        // 护盾：吸收下次伤害×mult
   | 'crit_buff'     // 玩家暴击率+
   | 'crit_debuff'   // Shadow 暴击率-
-  | 'resonance';    // 共鸣：下次伤害×mult
+  | 'resonance'     // 共鸣：下次伤害×mult
+  | 'atk_up'        // （引擎v2）攻击强化：攻击×mult
+  | 'guard_stance'; // （引擎v2）警戒姿态：受伤×mult
 
 export interface StatusEffect {
   kind: StatusKind;

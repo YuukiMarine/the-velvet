@@ -4,6 +4,7 @@ import { useAppStore } from '@/store';
 import { Shadow, AttributeId } from '@/types';
 import { generateShadow } from '@/utils/battleAI';
 import { SHADOW_LEVEL_CONFIG } from '@/constants';
+import { BOSS_ATTACK_BY_LEVEL } from '@/battle/numbers';
 import { playSound } from '@/utils/feedback';
 import { ShadowWarningOverlay } from '@/components/battle/ShadowWarningOverlay';
 import { useBackHandler } from '@/utils/useBackHandler';
@@ -72,7 +73,8 @@ export function ShadowCreateModal({ isOpen, onClose }: Props) {
       maxHp2: cfg.maxHp2,
       currentHp2: cfg.maxHp2,
       responseLines: data.responseLines,
-      attackPower: settings.battleShadowAttack ?? 2,
+      // 引擎 v2：攻击力走等级表 × 金手指倍率；attackPower 仅作存量兼容字段
+      attackPower: BOSS_ATTACK_BY_LEVEL[level - 1],
       createdAt: new Date(),
     };
     await saveShadow(shadow);
@@ -199,8 +201,8 @@ export function ShadowCreateModal({ isOpen, onClose }: Props) {
                       <span>
                         HP: {SHADOW_LEVEL_CONFIG[level - 1].maxHp}
                         {SHADOW_LEVEL_CONFIG[level - 1].maxHp2 ? ` + ${SHADOW_LEVEL_CONFIG[level - 1].maxHp2}` : ''}
-                        {' '}· 攻击: {settings.battleShadowAttack ?? 2}
-                        {SHADOW_LEVEL_CONFIG[level - 1].maxHp2 ? ' +1(第二形态)' : ''}
+                        {' '}· 攻击: {BOSS_ATTACK_BY_LEVEL[level - 1]}
+                        {SHADOW_LEVEL_CONFIG[level - 1].maxHp2 ? ' ·二形态+20%' : ''}
                       </span>
                       {maxUnlockedLevel < SHADOW_LEVEL_CONFIG.length && (
                         <span className="ml-2 text-gray-500">· 击败 Lv{maxUnlockedLevel} 后解锁下一级</span>

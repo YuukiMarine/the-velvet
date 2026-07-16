@@ -374,12 +374,14 @@ export const EVENT_POOL = [
 
 // ── 逆影战场常量 ──────────────────────────────────────────
 
+// 引擎 v2 数值重锚（BATTLE_UPGRADE_PLAN_V2 §9.2，模拟战跑测后定标：
+// 聪明策略下 Lv1-2 单晚可胜、Lv3 五五开、Lv4-5 单晚推 55-70%，两三晚通关）
 export const SHADOW_LEVEL_CONFIG = [
   { level: 1, maxHp: 150, maxHp2: undefined as number | undefined, label: '之阴影' },
   { level: 2, maxHp: 200, maxHp2: undefined as number | undefined, label: '之深渊' },
-  { level: 3, maxHp: 250, maxHp2: 120,                             label: '之执念' },
-  { level: 4, maxHp: 400, maxHp2: 240,                             label: '之噩梦' },
-  { level: 5, maxHp: 450, maxHp2: 260,                             label: '之深渊王' },
+  { level: 3, maxHp: 260, maxHp2: 80,                              label: '之执念' },
+  { level: 4, maxHp: 340, maxHp2: 110,                             label: '之噩梦' },
+  { level: 5, maxHp: 420, maxHp2: 130,                             label: '之深渊王' },
 ];
 
 /** Shadow每日HP恢复量（按等级） */
@@ -449,25 +451,20 @@ export const SKILL_EFFECT_MAP: Partial<Record<AttributeId, Partial<Record<Person
   },
 };
 
-/** 按属性返回 heal 的实际回复量（统一 2 点） */
-export const HEAL_VALUE_BY_ATTR: Record<AttributeId, number> = {
-  knowledge: 2,
-  guts: 2,
-  dexterity: 2,
-  kindness: 2,
-  charm: 2,
-};
+// heal 回复量已由引擎 v2 重做为「威力 × 30%（温柔 ×1.3）」——见 src/battle/numbers.ts healAmount()
 
 /** 状态类型到展示信息（无 skill 映射时兜底使用） */
 export const STATUS_LABELS: Record<StatusKind, { label: string; icon: string }> = {
-  poison:      { label: '中毒', icon: '☠️' },
-  mark:        { label: '标记', icon: '🎯' },
-  fear:        { label: '恐惧', icon: '😱' },
-  calm:        { label: '镇静', icon: '🌿' },
-  beguile:     { label: '魅惑', icon: '💋' },
-  shield:      { label: '护盾', icon: '🛡️' },
-  crit_buff:   { label: '连击', icon: '⚡' },
-  crit_debuff: { label: '洞悉', icon: '🔭' },
-  resonance:   { label: '共鸣', icon: '🎵' },
+  poison:       { label: '中毒', icon: '☠️' },
+  mark:         { label: '标记', icon: '🎯' },
+  fear:         { label: '恐惧', icon: '😱' },
+  calm:         { label: '镇静', icon: '🌿' },
+  beguile:      { label: '魅惑', icon: '💋' },
+  shield:       { label: '护盾', icon: '🛡️' },
+  crit_buff:    { label: '连击', icon: '⚡' },
+  crit_debuff:  { label: '洞悉', icon: '🔭' },
+  resonance:    { label: '共鸣', icon: '🎵' },
+  atk_up:       { label: '强化', icon: '💪' },
+  guard_stance: { label: '警戒', icon: '🛡' },
 };
 
