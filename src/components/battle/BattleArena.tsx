@@ -1,12 +1,11 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore } from '@/store';
 import { toLocalDateKey } from '@/store';
 import { isInShadowTime, SKILL_EFFECT_MAP } from '@/constants';
-import { healAmount, BOSS_ATTACK_BY_LEVEL, ECHO_HEAL_PCT } from '@/battle/numbers';
+import { healAmount, BOSS_ATTACK_BY_LEVEL } from '@/battle/numbers';
 import { AttributeId, MobSpec, StratumNode } from '@/types';
-import { rollMobSpec, absoluteFloor } from '@/battle/tower';
-import { getTowerEvent, TowerEventEffect } from '@/battle/events';
+import { absoluteFloor } from '@/battle/tower';
 import { playSound } from '@/utils/feedback';
 import { BackButton } from '@/components/BackButton';
 import { PageTitle } from '@/components/PageTitle';
@@ -15,8 +14,9 @@ import { StratumRevealModal } from '@/components/battle/StratumRevealModal';
 import { BattleModal } from '@/components/battle/BattleModal';
 import { VictoryModal } from '@/components/battle/VictoryModal';
 import { PersonaShuffleModal } from '@/components/battle/PersonaShuffleModal';
-import { TowerMap } from '@/components/battle/TowerMap';
-import { TowerEventModal, TowerEchoModal, TowerRecapModal } from '@/components/battle/TowerModals';
+import { TowerScreen } from '@/components/battle/TowerScreen';
+import { InfiltrationOverlay } from '@/components/battle/InfiltrationOverlay';
+import { TowerRecapModal } from '@/components/battle/TowerModals';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P3R, P3RPage, GhostWords, P3PageHeader, ShatteredStar, slantClip } from '@/components/p3r/kit';
 
@@ -55,8 +55,7 @@ export const BattleArena = () => {
   const {
     user, attributes, persona, shadow, battleState, settings, stratum,
     checkShadowHpRegen, updateSettings: saveSettings, resetBattle, equipMask, setCurrentPage,
-    saveBattleState, enterTowerToday, moveToTowerNode, completeTowerNode,
-    towerAdjust, towerSkipNextFloor, towerRerollNextFloor, deepenStratumIfNewWeek,
+    saveBattleState, enterTowerToday, completeTowerNode, deepenStratumIfNewWeek,
   } = useAppStore();
 
   const [activeTab, setActiveTab] = useState<TabKey>('battle');
@@ -75,13 +74,12 @@ export const BattleArena = () => {
   const [showBattleParams, setShowBattleParams] = useState(false);
   const [showPersonaShuffle, setShowPersonaShuffle] = useState(false);
   // ── 高塔（批2） ──
-  const [activeEncounter, setActiveEncounter] = useState<{ mob: MobSpec; level: number; nodeId: string; fromEventNode?: boolean } | null>(null);
-  const [eventNode, setEventNode] = useState<StratumNode | null>(null);
-  const [echoNode, setEchoNode] = useState<StratumNode | null>(null);
+  const [activeEncounter, setActiveEncounter] = useState<{ mob: MobSpec; level: number; nodeId: string } | null>(null);
   const [recap, setRecap] = useState<'descend' | 'defeat' | 'clear' | null>(null);
   const [spToast, setSpToast] = useState<string | null>(null);
   const [deepenNotice, setDeepenNotice] = useState(false);
-  const eventPostRef = useRef<{ skip?: boolean; reroll?: boolean; fight?: boolean }>({});
+  const [towerOpen, setTowerOpen] = useState(false);
+  const [infiltrating, setInfiltrating] = useState(false);
 
   // Settings local state
   const [battleEnabled, setBattleEnabled] = useState(settings.battleEnabled !== false);
@@ -144,32 +142,22 @@ export const BattleArena = () => {
     const bossNode = stratum?.nodes.find(n => n.type === 'boss');
     if (bossNode && !bossNode.cleared) {
       const sp = await completeTowerNode(bossNode.id);
-      if (sp > 0) showSpToast(`👁️ 主影讨伐 · +${sp} SP`);
+      if (sp > 0) showSpToast(`👁️ 心魔讨伐 · +${sp} SP`);
     }
     setShowVictory(true);
   };
 
-  // ── 塔节点交互 ──
-  const handleSelectNode = async (node: StratumNode) => {
-    const moved = await moveToTowerNode(node.id);
-    if (!moved || !stratum) return;
-    playSound('/ui-menu.mp3', 0.5);
-    if (moved.type === 'mob' || moved.type === 'elite') {
-      if (moved.mob) {
-        setActiveEncounter({ mob: moved.mob, level: stratum.level, nodeId: moved.id });
-        setShowBattle(true);
-      }
-    } else if (moved.type === 'boss') {
+  // ── 塔屏委托：开战请求（Shadow/强敌/心魔/事件遭遇战） ──
+  const handleRequestBattle = (node: StratumNode, eventMob?: MobSpec) => {
+    if (!stratum) return;
+    if (node.type === 'boss' && !eventMob) {
       setShowBattle(true);
-    } else if (moved.type === 'event') {
-      setEventNode(moved);
-    } else if (moved.type === 'echo') {
-      setEchoNode(moved);
-    } else if (moved.type === 'chest') {
-      const sp = await completeTowerNode(moved.id);
-      playSound('/battle-seal.mp3', 0.5);
-      showSpToast(`📦 月匣开启 · +${sp} SP`);
+      return;
     }
+    const mob = eventMob ?? node.mob;
+    if (!mob) return;
+    setActiveEncounter({ mob, level: stratum.level, nodeId: node.id });
+    setShowBattle(true);
   };
 
   const handleEncounterEnd = async (outcome: 'victory' | 'defeat' | 'retreat') => {
@@ -186,62 +174,36 @@ export const BattleArena = () => {
     // retreat：节点未清，可重试
   };
 
-  // ── 事件效果应用 ──
-  const applyEventEffects = async (effects: TowerEventEffect[]) => {
-    for (const eff of effects) {
-      switch (eff.kind) {
-        case 'sessionBuff': await towerAdjust({ buff: { id: eff.id, label: eff.label, addPct: eff.addPct } }); break;
-        case 'hpLossPct': await towerAdjust({ hpDeltaPct: -eff.pct }); break;
-        case 'hpHealPct': await towerAdjust({ hpDeltaPct: eff.pct }); break;
-        case 'sp': await towerAdjust({ spDelta: eff.amount }); break;
-        case 'stealFirstStrike': await towerAdjust({ stealFirstStrike: true }); break;
-        case 'quiz': await towerAdjust({ spDelta: eff.reward }); break; // 真实问答批3 接入
-        case 'skipNextFloor': eventPostRef.current.skip = true; break;
-        case 'rerollFloor': eventPostRef.current.reroll = true; break;
-        case 'mobFight': eventPostRef.current.fight = true; break;
-        case 'echoLine': case 'nothing': break;
-      }
-    }
-  };
-
-  const materializeEventText = (text: string): string => {
-    if (!text.includes('{echo}')) return text;
-    const acts = useAppStore.getState().activities;
-    const pick = [...acts].reverse().find(a => a.important) ?? acts[acts.length - 1];
-    return text.replace('{echo}', (pick?.description ?? '继续向上，别停下').slice(0, 24));
-  };
-
-  const finishEvent = async () => {
-    const node = eventNode;
-    setEventNode(null);
-    if (!node || !stratum) return;
-    const post = eventPostRef.current;
-    eventPostRef.current = {};
-    if (post.fight) {
-      // 事件遭遇战：胜利后在 handleEncounterEnd 里补记该事件节点完成
-      setActiveEncounter({ mob: rollMobSpec(stratum.level, 'mob', Math.random), level: stratum.level, nodeId: node.id, fromEventNode: true });
-      setShowBattle(true);
-      return;
-    }
-    await completeTowerNode(node.id);
-    if (post.skip) await towerSkipNextFloor();
-    if (post.reroll) await towerRerollNextFloor();
-  };
-
-  const handleEchoChoose = async (choice: 'heal' | 'buff') => {
-    const node = echoNode;
-    setEchoNode(null);
-    if (!node) return;
-    if (choice === 'heal') await towerAdjust({ hpDeltaPct: ECHO_HEAL_PCT });
-    else await towerAdjust({ buff: { id: `echo-${node.id}`, label: '月辉 +6%', addPct: 0.06 } });
-    await completeTowerNode(node.id);
-  };
-
   const handleDescend = async () => {
     const bs = useAppStore.getState().battleState;
     if (bs) await saveBattleState({ ...bs, status: 'session_end' });
     setRecap('descend');
   };
+
+  // ── 潜入战场（验收反馈 #4）：首次进入播潜入演出并开 session；session 中直接回塔 ──
+  const canInfiltrate = sessionActive || (!enteredToday && inShadowTime);
+  const todayLocked = !!enteredToday && !sessionActive && !stratumCleared;
+
+  const handleInfiltrate = () => {
+    if (!canInfiltrate) return;
+    playSound('/ui-menu.mp3', 0.6);
+    if (sessionActive) {
+      setTowerOpen(true); // session 进行中：直接回塔，不重播演出
+    } else {
+      setInfiltrating(true);
+    }
+  };
+
+  const handleInfiltrationDone = async () => {
+    setInfiltrating(false);
+    await enterTowerToday();
+    setTowerOpen(true);
+  };
+
+  // session 结束（败退/下塔/心魔讨伐）→ 自动收起塔屏，回顾在战场页弹出
+  useEffect(() => {
+    if (towerOpen && !sessionActive) setTowerOpen(false);
+  }, [towerOpen, sessionActive]);
 
   const toggleDay = (day: number) => {
     const next = shadowDays.includes(day)
@@ -555,21 +517,8 @@ export const BattleArena = () => {
                               className="w-full px-4 py-2.5 rounded-xl text-left text-xs leading-relaxed"
                               style={{ background: 'rgba(220,38,38,0.1)', border: '1px solid rgba(220,38,38,0.3)', color: '#f87171' }}
                             >
-                              🌕 月相日·异变加深——主影已回满，气息比上周更加危险（点击知悉）
+                              🌕 月相日·异变加深——心魔已回满，气息比上周更加危险（点击知悉）
                             </motion.button>
-                          )}
-                        </AnimatePresence>
-
-                        {/* SP 即发 toast */}
-                        <AnimatePresence>
-                          {spToast && (
-                            <motion.div
-                              initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-                              className="w-full px-4 py-2 rounded-xl text-center text-sm font-bold"
-                              style={{ background: 'rgba(250,204,21,0.12)', border: '1px solid rgba(250,204,21,0.35)', color: '#b45309' }}
-                            >
-                              {spToast}
-                            </motion.div>
                           )}
                         </AnimatePresence>
 
@@ -596,37 +545,31 @@ export const BattleArena = () => {
                               </button>
                             </div>
                           )
+                        ) : todayLocked ? (
+                          <div className={`${battleCard} p-5 text-center space-y-1`}>
+                            <p className="text-2xl">🌙</p>
+                            <p className="text-sm font-bold text-gray-700 dark:text-gray-300">今晚的攀登已结束</p>
+                            <p className="text-xs text-gray-400 dark:text-gray-500">进度已被月光标记——明晚再潜入。</p>
+                          </div>
                         ) : (
-                          <>
-                            <TowerMap stratum={stratum} interactive={sessionActive} onSelectNode={handleSelectNode} />
-                            {!enteredToday ? (
-                              <motion.button
-                                whileTap={inShadowTime ? { scale: 0.96 } : undefined}
-                                onClick={() => inShadowTime && void enterTowerToday()}
-                                disabled={!inShadowTime}
-                                className={p3 ? 'w-full py-4 text-[19px] font-black text-white tracking-wide transition-all' : 'w-full py-3.5 rounded-2xl font-black text-white tracking-wide transition-all shadow-sm'}
-                                style={p3 ? {
-                                  clipPath: 'polygon(7% 0, 100% 0, 93% 100%, 0 100%)',
-                                  background: inShadowTime ? 'linear-gradient(135deg, #1b57ff 30%, #35d1e8)' : '#dfe9f1',
-                                } : {
-                                  background: inShadowTime ? 'linear-gradient(135deg, rgb(var(--color-battle-rgb)), #dc2626)' : undefined,
-                                }}
-                              >
-                                {inShadowTime ? '🗼 登塔' : <span className="text-gray-400 dark:text-gray-500">🗼 等待影时间</span>}
-                              </motion.button>
-                            ) : sessionActive ? (
-                              <button
-                                onClick={() => void handleDescend()}
-                                className="w-full py-2.5 rounded-xl text-sm font-semibold text-gray-500 dark:text-gray-400 border border-gray-200 dark:border-gray-700"
-                              >
-                                🌙 下塔结算（保留进度）
-                              </button>
-                            ) : (
-                              <p className="text-center text-xs text-gray-400 dark:text-gray-500 py-1">
-                                今晚的攀登已结束——进度已保留，明晚再来
-                              </p>
-                            )}
-                          </>
+                          <motion.button
+                            whileTap={canInfiltrate ? { scale: 0.96 } : undefined}
+                            onClick={handleInfiltrate}
+                            disabled={!canInfiltrate}
+                            className={p3 ? 'w-full py-4 text-[19px] font-black text-white tracking-wide transition-all' : 'w-full py-3.5 rounded-2xl font-black text-white tracking-wide transition-all shadow-sm'}
+                            style={p3 ? {
+                              clipPath: 'polygon(7% 0, 100% 0, 93% 100%, 0 100%)',
+                              background: canInfiltrate ? 'linear-gradient(135deg, #1b57ff 30%, #35d1e8)' : '#dfe9f1',
+                            } : {
+                              background: canInfiltrate ? 'linear-gradient(135deg, rgb(var(--color-battle-rgb)), #dc2626)' : undefined,
+                            }}
+                          >
+                            {sessionActive
+                              ? '🗼 回到塔中'
+                              : canInfiltrate
+                                ? '🌊 潜入战场'
+                                : <span className="text-gray-400 dark:text-gray-500">🌊 等待影时间</span>}
+                          </motion.button>
                         )}
 
                         {/* 已击败阴影 */}
@@ -1203,22 +1146,37 @@ export const BattleArena = () => {
       }}
     />
     <PersonaShuffleModal isOpen={showPersonaShuffle} onClose={() => setShowPersonaShuffle(false)} />
-    {/* 塔节点弹窗 */}
+    {/* 塔内独立界面（验收反馈 #4）+ 潜入演出 */}
     <AnimatePresence>
-      {eventNode?.eventPoolId && (() => {
-        const ev = getTowerEvent(eventNode.eventPoolId!);
-        return ev ? (
-          <TowerEventModal
-            event={ev}
-            materialize={materializeEventText}
-            onResolve={(effects) => void applyEventEffects(effects)}
-            onFinish={() => void finishEvent()}
-          />
-        ) : null;
-      })()}
+      {towerOpen && (
+        <TowerScreen
+          open={towerOpen}
+          onClose={() => setTowerOpen(false)}
+          onDescend={() => void handleDescend()}
+          onRequestBattle={handleRequestBattle}
+          onToast={showSpToast}
+          interactive={sessionActive}
+        />
+      )}
     </AnimatePresence>
     <AnimatePresence>
-      {echoNode && <TowerEchoModal onChoose={(c) => void handleEchoChoose(c)} />}
+      {infiltrating && <InfiltrationOverlay onDone={() => void handleInfiltrationDone()} />}
+    </AnimatePresence>
+    {/* SP 即发 toast（全局层：塔屏之上也可见） */}
+    <AnimatePresence>
+      {spToast && (
+        <motion.div
+          initial={{ opacity: 0, y: -18 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
+          className="fixed left-1/2 -translate-x-1/2 z-[70] px-5 py-2 rounded-full text-sm font-bold shadow-xl"
+          style={{
+            top: 'calc(1rem + env(safe-area-inset-top))',
+            background: 'rgba(30,22,4,0.92)', border: '1px solid rgba(250,204,21,0.5)', color: '#fde047',
+            backdropFilter: 'blur(6px)',
+          }}
+        >
+          {spToast}
+        </motion.div>
+      )}
     </AnimatePresence>
     <AnimatePresence>
       {recap && stratum && (

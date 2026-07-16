@@ -143,7 +143,7 @@ interface RecapProps {
 export function TowerRecapModal({ reason, stats, stratum, onClose }: RecapProps) {
   const title = reason === 'clear' ? '区层攻略！' : reason === 'defeat' ? '败退……' : '下塔结算';
   const flavor = reason === 'clear'
-    ? `【${stratum.name}】的主影已被讨伐——上方的黑暗开始蠕动。`
+    ? `【${stratum.name}】的心魔已被讨伐——上方的黑暗开始蠕动。`
     : reason === 'defeat'
       ? '体力耗尽。塔记住了你倒下的位置——进度已保留。'
       : '今晚到此为止。塔层的进度已被月光标记。';
@@ -151,7 +151,7 @@ export function TowerRecapModal({ reason, stats, stratum, onClose }: RecapProps)
   const rows: Array<[string, string]> = [
     ['攀升层数', `${stats?.floorsClimbed ?? 0} 层`],
     ['探索节点', `${stats?.nodesCleared ?? 0} 个`],
-    ['讨伐小影', `${stats?.mobsDefeated ?? 0} 只`],
+    ['讨伐 Shadow', `${stats?.mobsDefeated ?? 0} 只`],
     ['总伤害', `${stats?.damageDealt ?? 0}`],
     ['最大单击', `${stats?.maxSingleHit ?? 0}`],
     ['弱点命中', `${stats?.weaknessHits ?? 0} 次`],

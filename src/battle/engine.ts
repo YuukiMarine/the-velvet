@@ -619,8 +619,8 @@ export class BattleEngine {
   private resolveDefend(lines: string[]) {
     this.defending = true;
     this.consecutiveWeakness = 0;
+    // 规则说明放在按钮副标签上，叙事只报动作本身（验收反馈：每次都念规则太啰嗦）
     lines.push('你稳固身形，进入防御姿态。');
-    lines.push(`本回合所受伤害减半；若完全格挡，下回合首击 +50%。回合结束回复 ${DEFEND_SP_REGEN} SP。`);
   }
 
   private resolveAllOut(qteMult: number, lines: string[], fx: FxEvent[]) {
