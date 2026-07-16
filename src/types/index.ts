@@ -903,6 +903,8 @@ export interface TowerSessionStats {
   spEarned: number;
   /** 本次登塔的临时增益（事件/回响来源；伤害类进引擎加算段） */
   buffs: Array<{ id: string; label: string; addPct?: number }>;
+  /** 事件「被夺先手」：下一场战斗 Shadow 先攻（战斗开场消费并清除） */
+  pendingFirstStrike?: boolean;
 }
 
 // ── 战斗状态效果（本地，不持久化） ─────────────────────────────

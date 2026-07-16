@@ -11,9 +11,9 @@
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { useAppStore } from '@/store';
+import { useAppStore, toLocalDateKey } from '@/store';
 import { useBackHandler } from '@/utils/useBackHandler';
-import { AttributeId, PersonaSkill } from '@/types';
+import { AttributeId, PersonaSkill, MobSpec } from '@/types';
 import { triggerLightHaptic, playSound } from '@/utils/feedback';
 import { isInShadowTime, SKILL_EFFECT_MAP } from '@/constants';
 import { useBoldness } from '@/utils/boldness';
@@ -33,6 +33,9 @@ interface Props {
   isOpen: boolean;
   onClose: () => void;
   onVictory: () => void;
+  /** 塔内小影/精英遭遇战（批2）：临时敌人，不落 shadows 表；结束走 onEncounterEnd */
+  encounter?: { mob: MobSpec; level: number } | null;
+  onEncounterEnd?: (outcome: 'victory' | 'defeat' | 'retreat') => void;
 }
 
 const ATTR_IDS: AttributeId[] = ['knowledge', 'guts', 'dexterity', 'kindness', 'charm'];
@@ -45,12 +48,14 @@ const MASK_PASSIVE_HINT: Record<AttributeId, string> = {
   charm: '首个技能免 SP',
 };
 
-export function BattleModal({ isOpen, onClose, onVictory }: Props) {
+export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounterEnd }: Props) {
   const {
     user, persona, shadow, battleState, attributes, settings,
     startBattleSession, endBattleSession, saveBattleState, equipMask,
+    stratum, towerRecordBattleStats,
   } = useAppStore();
   const bold = useBoldness();
+  const isEncounter = !!encounter;
 
   // ── 引擎实例与渲染版本 ──────────────────────────────────
   const engineRef = useRef<BattleEngine | null>(null);
@@ -104,6 +109,17 @@ export function BattleModal({ isOpen, onClose, onVictory }: Props) {
     setShowRetreatConfirm(v => !v);
   });
 
+  // 登塔统计回写（回顾用）：任何一场战斗收尾时调用一次
+  const recordTowerStats = useCallback(() => {
+    const engine = engineRef.current;
+    if (!engine || !stratum) return;
+    void towerRecordBattleStats({
+      damage: engine.totalDamageDealt,
+      maxHit: engine.maxSingleHit,
+      weaknessHits: engine.weaknessHits,
+    });
+  }, [stratum, towerRecordBattleStats]);
+
   // ── 开场：建引擎 + 叙事 ─────────────────────────────────
   useEffect(() => {
     if (!isOpen) {
@@ -123,11 +139,13 @@ export function BattleModal({ isOpen, onClose, onVictory }: Props) {
       actionsTakenRef.current = 0;
       return;
     }
-    if (!persona || !shadow || !battleState) return;
-    if ((battleState.status === 'idle' || battleState.status === 'shadow_phase2') && shadowTime) {
+    if (!persona || !battleState) return;
+    if (!isEncounter && !shadow) return;
+    // 塔模式下 HP 跨节点持续，每日回满只发生在 enterTowerToday；
+    // 仅旧模型（无区层）保留进场自动开 session
+    if (!isEncounter && !stratum && (battleState.status === 'idle' || battleState.status === 'shadow_phase2') && shadowTime) {
       startBattleSession();
     }
-    // startBattleSession 是同步 set —— 直接读最新快照
     const bs = useAppStore.getState().battleState!;
     const sh = useAppStore.getState().shadow!;
 
@@ -151,6 +169,41 @@ export function BattleModal({ isOpen, onClose, onVictory }: Props) {
     const initialMask = persona.equippedMaskAttribute
       ?? ATTR_IDS.reduce((best, a) => (attrLevels[a] > attrLevels[best] ? a : best), 'knowledge' as AttributeId);
 
+    // 登塔 session 增益 / 被夺先手（事件来源，boss 与小影战通用）
+    const towerTs = stratum && bs.towerSession && bs.towerSession.dateKey === toLocalDateKey() ? bs.towerSession : undefined;
+    const sessionAddPct = towerTs?.buffs.reduce((sum, b) => sum + (b.addPct ?? 0), 0) ?? 0;
+    const firstStrikeStolen = !!towerTs?.pendingFirstStrike;
+
+    const engineShadow = isEncounter
+      ? {
+          id: `encounter-${Date.now()}`,
+          name: encounter!.mob.name,
+          level: encounter!.level,
+          weakAttribute: encounter!.mob.weakAttribute,
+          attribute: encounter!.mob.attribute,
+          hp: encounter!.mob.maxHp, maxHp: encounter!.mob.maxHp,
+          hp2: undefined, maxHp2: undefined,
+          phase: 1 as const,
+          attackScalePct: settings.battleAttackScale ?? 100,
+          responseLines: [] as string[],
+          tier: encounter!.mob.tier,
+        }
+      : {
+          id: sh.id,
+          name: sh.name,
+          level: sh.level,
+          weakAttribute: sh.weakAttribute,
+          attribute: sh.attribute,
+          hp: sh.currentHp, maxHp: sh.maxHp,
+          hp2: sh.currentHp2, maxHp2: sh.maxHp2,
+          phase: (bs.status === 'shadow_phase2' ? 2 : 1) as 1 | 2,
+          phase2WeakAttribute: sh.phase2WeakAttribute,
+          phase2ResistAttribute: sh.phase2ResistAttribute,
+          attackScalePct: settings.battleAttackScale ?? 100,
+          responseLines: sh.responseLines,
+          tier: 'boss' as const,
+        };
+
     const engine = new BattleEngine({
       userName: user?.name ?? '你',
       attrNames: attrNamesMap,
@@ -163,43 +216,41 @@ export function BattleModal({ isOpen, onClose, onVictory }: Props) {
       playerHp: bs.playerHp,
       playerMaxHp: bs.playerMaxHp,
       sp: bs.sp,
-      shadow: {
-        id: sh.id,
-        name: sh.name,
-        level: sh.level,
-        weakAttribute: sh.weakAttribute,
-        attribute: sh.attribute,
-        hp: sh.currentHp, maxHp: sh.maxHp,
-        hp2: sh.currentHp2, maxHp2: sh.maxHp2,
-        phase: bs.status === 'shadow_phase2' ? 2 : 1,
-        phase2WeakAttribute: sh.phase2WeakAttribute,
-        phase2ResistAttribute: sh.phase2ResistAttribute,
-        attackScalePct: settings.battleAttackScale ?? 100,
-        responseLines: sh.responseLines,
-      },
+      shadow: engineShadow,
       effectMap: SKILL_EFFECT_MAP,
+      sessionAddPct,
+      firstStrikeStolen,
     });
     engineRef.current = engine;
-    // 属性向派生后写回（存量 Shadow 无此字段）
-    if (!sh.attribute) {
+    // 属性向派生后写回（存量主影无此字段；小影不落表）
+    if (!isEncounter && !sh.attribute) {
       void useAppStore.getState().saveShadow({ ...sh, attribute: engine.snapshot.shadowAttribute });
     }
 
     const s = engine.snapshot;
     const userName = user?.name ?? '你';
     const maskPersona = personaNames[s.activeMask];
-    const intro: string[] = [
-      `${userName}！是时候了！`,
-      `${userName} 戴上了【${attrNamesMap[s.activeMask]}】的面具——Persona ${maskPersona}，出战！`,
-      `${sh.name} 出现了！`,
-      sh.description,
-      `Shadow 的弱点——${attrNamesMap[s.weakAttribute]}属性！`,
-    ];
-    if (s.phase === 2) {
-      intro.push(`${sh.name} 已进入第二形态……小心！`);
+    let intro: string[];
+    if (isEncounter) {
+      intro = [
+        `${encounter!.mob.name} 挡住了去路！`,
+        `属性向【${attrNamesMap[encounter!.mob.attribute]}】——弱点是【${attrNamesMap[s.weakAttribute]}】！`,
+      ];
+      if (encounter!.mob.tier === 'elite') intro.splice(1, 0, '危险的气息……这是一只精英影！');
+    } else {
+      intro = [
+        `${userName}！是时候了！`,
+        `${userName} 戴上了【${attrNamesMap[s.activeMask]}】的面具——Persona ${maskPersona}，出战！`,
+        `${sh.name} 出现了！`,
+        sh.description,
+        `Shadow 的弱点——${attrNamesMap[s.weakAttribute]}属性！`,
+      ];
+      if (s.phase === 2) {
+        intro.push(`${sh.name} 已进入第二形态……小心！`);
+      }
+      const respLine = sh.responseLines[Math.floor(Math.random() * Math.min(3, sh.responseLines.length))] ?? '……';
+      intro.push(`${sh.name}：「${respLine}」`);
     }
-    const respLine = sh.responseLines[Math.floor(Math.random() * Math.min(3, sh.responseLines.length))] ?? '……';
-    intro.push(`${sh.name}：「${respLine}」`);
     const opening = engine.openingTurn();
     fxBatchRef.current = [];
     firedFxRef.current = new Set();
@@ -217,17 +268,18 @@ export function BattleModal({ isOpen, onClose, onVictory }: Props) {
     return () => clearTimeout(t);
   }, [phase]);
 
-  // BATTLE FINISH 收尾
+  // BATTLE FINISH 收尾（主影战）
   useEffect(() => {
     if (!showBattleFinishAnim) return;
     const t = setTimeout(() => {
       setShowBattleFinishAnim(false);
       setShowDeathExplosion(false);
+      recordTowerStats();
       onVictory();
       onClose();
     }, 2600);
     return () => clearTimeout(t);
-  }, [showBattleFinishAnim, onVictory, onClose]);
+  }, [showBattleFinishAnim, onVictory, onClose, recordTowerStats]);
 
   useEffect(() => {
     if (!showDeathExplosion) return;
@@ -238,9 +290,16 @@ export function BattleModal({ isOpen, onClose, onVictory }: Props) {
   // ── store 持久化适配器 ─────────────────────────────────
   const persistResult = useCallback(async (res: TurnResult) => {
     const bs = useAppStore.getState().battleState;
-    const sh = useAppStore.getState().shadow;
-    if (!bs || !sh) return;
+    if (!bs) return;
     const p = res.persist;
+    if (isEncounter) {
+      // 小影战：临时敌人不落表；败退锁定当晚，胜利/进行中不动 session 状态
+      const status = res.outcome === 'defeat' ? 'session_end' as const : bs.status;
+      await saveBattleState({ ...bs, playerHp: p.playerHp, sp: p.sp, status });
+      return;
+    }
+    const sh = useAppStore.getState().shadow;
+    if (!sh) return;
     const status = res.outcome === 'victory' ? 'victory' as const
       : res.outcome === 'defeat' ? 'session_end' as const
       : p.phase === 2 ? 'shadow_phase2' as const
@@ -254,7 +313,7 @@ export function BattleModal({ isOpen, onClose, onVictory }: Props) {
       phase2ResistAttribute: p.phase2ResistAttribute,
     });
     await saveBattleState({ ...bs, playerHp: p.playerHp, sp: p.sp, status });
-  }, [saveBattleState]);
+  }, [saveBattleState, isEncounter]);
 
   // ── 行动派发 ────────────────────────────────────────────
   const runAction = useCallback(async (input: PlayerActionInput) => {
@@ -292,6 +351,14 @@ export function BattleModal({ isOpen, onClose, onVictory }: Props) {
     if (phase === 'animating') {
       if (pendingOutcomeRef.current === 'victory') {
         pendingOutcomeRef.current = 'ongoing';
+        if (isEncounter) {
+          // 小影战胜利：不播大 FINISH（每节点一场，2.6s 太重）——短促收线回地图
+          recordTowerStats();
+          playSound('/battle-fanfare.mp3', 0.5);
+          onEncounterEnd?.('victory');
+          onClose();
+          return;
+        }
         setShowBattleFinishAnim(true);
         playSound('/battle-fanfare.mp3');
         return;
@@ -305,7 +372,7 @@ export function BattleModal({ isOpen, onClose, onVictory }: Props) {
       setIsAnimating(false);
       setDisplayPlayerHp(null);
     }
-  }, [narIndex, narLines.length, phase]);
+  }, [narIndex, narLines.length, phase, isEncounter, recordTowerStats, onEncounterEnd, onClose]);
 
   // ── fx 触发（叙事行对齐） ───────────────────────────────
   useEffect(() => {
@@ -428,7 +495,10 @@ export function BattleModal({ isOpen, onClose, onVictory }: Props) {
     setQteOpen(true);
   };
 
-  if (!isOpen || !persona || !shadow || !battleState || !snap) return null;
+  if (!isOpen || !persona || !battleState || !snap) return null;
+  if (!isEncounter && !shadow) return null;
+  const foeName = isEncounter ? encounter!.mob.name : shadow!.name;
+  const foeLevel = isEncounter ? encounter!.level : shadow!.level;
 
   const attrLevels = Object.fromEntries(
     attributes.map(a => [a.id, a.unlocked === false ? 0 : (a.level ?? 1)])
@@ -479,7 +549,56 @@ export function BattleModal({ isOpen, onClose, onVictory }: Props) {
               className="w-full max-w-xs rounded-2xl p-6 text-center space-y-4"
               style={{ background: 'rgba(10,0,30,0.95)', border: '1px solid rgb(var(--color-battle-bright-rgb) / 0.4)' }}
             >
-              {actionsTakenRef.current === 0 ? (
+              {isEncounter ? (
+                <>
+                  <p className="text-2xl">💨</p>
+                  <p className="text-white font-bold text-base">撤离节点？</p>
+                  <p className="text-gray-400 text-sm leading-relaxed">退回塔层地图。这只影会恢复元气，<br />今晚仍可重新挑战该节点。</p>
+                  <div className="flex gap-3 pt-1">
+                    <button
+                      onClick={() => setShowRetreatConfirm(false)}
+                      className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-gray-300"
+                      style={{ background: 'rgba(255,255,255,0.1)' }}
+                    >
+                      继续战斗
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowRetreatConfirm(false);
+                        recordTowerStats();
+                        onEncounterEnd?.('retreat');
+                        onClose();
+                      }}
+                      className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-purple-300"
+                      style={{ background: 'rgb(var(--color-battle-bright-rgb) / 0.2)', border: '1px solid rgb(var(--color-battle-bright-rgb) / 0.4)' }}
+                    >
+                      撤离
+                    </button>
+                  </div>
+                </>
+              ) : stratum ? (
+                <>
+                  <p className="text-2xl">🌑</p>
+                  <p className="text-white font-bold text-base">暂时撤离主影？</p>
+                  <p className="text-gray-400 text-sm leading-relaxed">对它造成的伤害会保留。<br />今晚体力尚存时仍可再次挑战。</p>
+                  <div className="flex gap-3 pt-1">
+                    <button
+                      onClick={() => setShowRetreatConfirm(false)}
+                      className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-gray-300"
+                      style={{ background: 'rgba(255,255,255,0.1)' }}
+                    >
+                      继续战斗
+                    </button>
+                    <button
+                      onClick={() => { setShowRetreatConfirm(false); recordTowerStats(); onClose(); }}
+                      className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-red-400"
+                      style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)' }}
+                    >
+                      撤离
+                    </button>
+                  </div>
+                </>
+              ) : actionsTakenRef.current === 0 ? (
                 <>
                   <p className="text-2xl">🔄</p>
                   <p className="text-white font-bold text-base">重整旗鼓？</p>
@@ -538,8 +657,8 @@ export function BattleModal({ isOpen, onClose, onVictory }: Props) {
       <AnimatePresence>
         {qteOpen && (
           <TugQTE
-            shadowLevel={shadow.level}
-            shadowName={shadow.name}
+            shadowLevel={foeLevel}
+            shadowName={foeName}
             onDone={(mult) => {
               setQteOpen(false);
               setAllOutCutIn(true);
@@ -551,7 +670,7 @@ export function BattleModal({ isOpen, onClose, onVictory }: Props) {
       </AnimatePresence>
 
       {/* Cut-ins */}
-      <AnimatePresence>{allOutCutIn && <AllOutCutIn personaName={activePersonaName} shadowName={shadow.name} />}</AnimatePresence>
+      <AnimatePresence>{allOutCutIn && <AllOutCutIn personaName={activePersonaName} shadowName={foeName} />}</AnimatePresence>
       <AnimatePresence>{weakCutIn && <WeakCutIn />}</AnimatePresence>
       <AnimatePresence>{oneMoreFlash && <OneMoreFlash />}</AnimatePresence>
       <AnimatePresence>
@@ -596,8 +715,8 @@ export function BattleModal({ isOpen, onClose, onVictory }: Props) {
             ✕ 撤退
           </button>
           <div className="text-center">
-            <span className="text-red-400 font-bold text-sm">👁 {shadow.name}</span>
-            <span className="ml-2 text-gray-500 text-xs">Lv{shadow.level}</span>
+            <span className="text-red-400 font-bold text-sm">👁 {foeName}</span>
+            <span className="ml-2 text-gray-500 text-xs">Lv{foeLevel}</span>
             {isPhase2 && <span className="ml-1 text-xs font-bold text-orange-400"> II</span>}
           </div>
           <span
@@ -729,7 +848,17 @@ export function BattleModal({ isOpen, onClose, onVictory }: Props) {
               体力不支，被迫撤退。<br />对它造成的伤害将被保留——明晚再来。
             </p>
             <button
-              onClick={() => { endBattleSession(); onClose(); }}
+              onClick={() => {
+                recordTowerStats();
+                if (isEncounter) {
+                  onEncounterEnd?.('defeat');
+                  onClose();
+                  return;
+                }
+                // 塔模式：败退锁定当晚（status 已是 session_end），不重置为 idle
+                if (!stratum) endBattleSession();
+                onClose();
+              }}
               className="px-6 py-3 rounded-xl text-white font-semibold"
               style={{ background: 'rgba(255,255,255,0.15)' }}
             >
@@ -744,7 +873,7 @@ export function BattleModal({ isOpen, onClose, onVictory }: Props) {
         <>
           <div className="flex-shrink-0 relative flex items-center justify-center" style={{ height: 150 }}>
             <ShadowSVG
-              level={shadow.level}
+              level={foeLevel}
               isHurt={isHurt}
               isWeak={showWeak}
               offBalance={snap.staggerWindow}

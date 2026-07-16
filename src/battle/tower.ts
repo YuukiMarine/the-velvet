@@ -180,14 +180,17 @@ export function buildStratum(seed: StratumSeed): TowerStratum {
   };
 }
 
-/** 当前可移动的目标节点：入口（currentNodeId=null）→ 第 1 层全部；否则当前节点的 edges */
+/** 当前可移动的目标节点：入口（currentNodeId=null）→ 第 1 层全部；
+ *  当前节点未完成（战斗撤离/事件未处理）→ 只能重试当前节点；完成后 → edges */
 export function reachableNodeIds(stratum: TowerStratum): string[] {
   if (stratum.status !== 'climbing') return [];
   if (!stratum.currentNodeId) {
     return stratum.nodes.filter(n => n.floor === 1).map(n => n.id);
   }
   const cur = stratum.nodes.find(n => n.id === stratum.currentNodeId);
-  return cur ? cur.edges : [];
+  if (!cur) return [];
+  if (!cur.cleared) return [cur.id];
+  return cur.edges;
 }
 
 /** 全塔累计层号（显示用） */
