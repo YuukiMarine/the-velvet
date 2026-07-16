@@ -370,11 +370,8 @@ export interface Settings {
   battleShadowTimeEnd?: number;
   battleShadowTimeDays?: number[];
   battlePlayerMaxHp?: number;
-  battleSpMultiplier?: number;
   battleShadowAttack?: number;
-  battleShadowHpRegenPerDay?: number;
   // 可自定义 Prompt
-  battlePersonaQuestions?: string[];        // Persona 创建3问
   battleShadowPromptTemplate?: string;      // Shadow AI生成提示模板
   battleVictoryPromptTemplate?: string;     // 胜利叙事提示模板
   // 星象 / 塔罗

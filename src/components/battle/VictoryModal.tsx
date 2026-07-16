@@ -53,8 +53,11 @@ export function VictoryModal({ isOpen, onClose }: Props) {
       ? (persona.attributePersonas?.[equippedAttr]?.name ?? '反抗者')
       : '反抗者';
     const attrDisplayName = settings.attributeNames[selectedAttr as keyof typeof settings.attributeNames];
+    const description = equippedAttr
+      ? `使用面具${maskDisplayName}击败了${shadow.name}，${attrDisplayName}属性获得奖励`
+      : `击败了${shadow.name}，${attrDisplayName}属性获得奖励`;
     await addActivity(
-      `使用面具${maskDisplayName}击败了${shadow.name}，${attrDisplayName}属性获得奖励`,
+      description,
       pts,
       'battle',
       { important: isFirstAtLevel, category: 'shadow_defeat' }

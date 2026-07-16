@@ -392,6 +392,11 @@ export function isInShadowTime(days: number[] = [5, 6, 0], startHour = 20, endHo
   const now = new Date();
   const weekday = now.getDay();
   const hour = now.getHours();
+  // 同日窗口（如 8→12）：当天为开放日且时刻落在 [start, end) 内
+  if (startHour < endHour) {
+    return days.includes(weekday) && hour >= startHour && hour < endHour;
+  }
+  // 跨夜窗口（如 20→7）：开放日晚间段，或次日凌晨段（归属前一开放日）
   if (hour >= startHour && days.includes(weekday)) return true;
   if (hour < endHour) {
     const yesterday = (weekday + 6) % 7;
@@ -466,15 +471,3 @@ export const STATUS_LABELS: Record<StatusKind, { label: string; icon: string }> 
   resonance:   { label: '共鸣', icon: '🎵' },
 };
 
-export const SHADOW_RESPONSE_LINES = [
-  '你以为这就能击败我？',
-  '这点伤害……不过如此。',
-  '有趣……继续吧。',
-  '你的力量……来自何处？',
-  '不要以为你真的了解自己！',
-  '我是你内心深处的一部分！',
-  '就这点实力，还妄想战胜我？',
-  '你越来越强了……但还不够。',
-  '我感受到你的成长……令我不安。',
-  '小心……我也在变强。',
-];

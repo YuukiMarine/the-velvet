@@ -87,6 +87,15 @@ export const BattleArena = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // 胜利结算恢复：status 'victory' 持久化后（刷新 / PWA 被杀）重新拉起 VictoryModal，
+  // 避免奖励悬空、Shadow 尸体被每日回血复活后还得重打一遍
+  useEffect(() => {
+    if (battleState?.status === 'victory' && !showBattle && !showVictory) {
+      setShowVictory(true);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [battleState?.status]);
+
   const todayKey = toLocalDateKey();
   const alreadyChallengedToday = battleState?.lastChallengeDate === todayKey;
   const canBattle = (inShadowTime && !alreadyChallengedToday) || battleState?.status === 'victory';
@@ -927,7 +936,7 @@ export const BattleArena = () => {
                         <div className="px-4 py-3.5">
                           <p className="text-sm font-semibold text-gray-800 dark:text-gray-100">重置战场数据</p>
                           <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5 leading-relaxed">
-                            清除所有 Persona、Shadow 和战斗记录，此操作不可撤销。
+                            清除所有 Persona、Shadow、击败史与 HP 上限加成；未使用的 SP 会保留。此操作不可撤销。
                           </p>
                         </div>
                         <div className="px-4 pb-4">
