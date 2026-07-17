@@ -7,10 +7,8 @@
 import { motion } from 'motion/react';
 import { StratumNode, TowerStratum } from '@/types';
 import { reachableNodeIds, absoluteFloor } from '@/battle/tower';
+import { NodeGlyph } from '@/components/battle/warKit';
 
-const NODE_ICON: Record<StratumNode['type'], string> = {
-  mob: '⚔️', elite: '👹', event: '❓', echo: '🌙', chest: '📦', boss: '👁️',
-};
 const NODE_LABEL: Record<StratumNode['type'], string> = {
   mob: 'Shadow', elite: '强敌', event: '异变', echo: '回响', chest: '月匣', boss: '心魔',
 };
@@ -96,7 +94,12 @@ export function TowerMap({ stratum, interactive, onSelectNode, fill }: Props) {
                           style={{ border: '1px solid rgb(var(--color-battle-bright-rgb) / 0.7)' }}
                         />
                       )}
-                      <span className="text-base leading-none">{node.cleared ? '✓' : NODE_ICON[node.type]}</span>
+                      <span
+                        className="leading-none"
+                        style={{ color: node.cleared ? 'rgba(255,255,255,0.35)' : node.type === 'boss' ? '#ff8fa3' : 'rgba(220,232,255,0.9)' }}
+                      >
+                        {node.cleared ? <span className="text-xs font-black">✓</span> : <NodeGlyph type={node.type} size={16} />}
+                      </span>
                       <span className="text-[9px] mt-0.5 font-semibold" style={{ color: node.cleared ? 'rgba(255,255,255,0.35)' : 'rgba(255,255,255,0.75)' }}>
                         {NODE_LABEL[node.type]}
                         {(node.type === 'mob' || node.type === 'elite') && node.mob && !node.cleared && (

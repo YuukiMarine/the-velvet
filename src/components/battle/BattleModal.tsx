@@ -28,6 +28,10 @@ import {
   BattleFinishAnim, DeathExplosion, NarrationBox, AllOutCutIn, WeakCutIn,
   OneMoreFlash, MaskCutIn,
 } from '@/components/battle/cutins';
+import {
+  NoiseLayer, WarGhost, SlantCard, SkillGlyph, slantPoly,
+  IconSword, IconGuard, IconInsight, IconMask, IconBolt,
+} from '@/components/battle/warKit';
 
 interface Props {
   isOpen: boolean;
@@ -540,9 +544,17 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex flex-col"
+      className="fixed inset-0 z-50 flex flex-col overflow-hidden"
       style={{ background: 'linear-gradient(180deg, #0a0014 0%, #1a0030 50%, #0a0014 100%)' }}
     >
+      {/* 质感层（批2c-i）：噪点 + 幽灵字 */}
+      <NoiseLayer opacity={0.06} />
+      <WarGhost
+        text="SHADOW TIME"
+        style={{ right: -12, top: '30%', fontSize: 58, transform: 'rotate(90deg)', transformOrigin: 'right top' }}
+      />
+      <WarGhost text={isEncounter ? 'ENCOUNTER' : 'SHOWDOWN'} style={{ left: -6, bottom: 4, fontSize: 46, transform: 'rotate(-4deg)' }} />
+
       {/* 同伴援助 Toast */}
       <AnimatePresence>
         {confidantSupportToast && (
@@ -773,7 +785,7 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
               </motion.span>
               <span>{snap.intent.label}</span>
               {snap.insightAvailable && phase === 'waiting' && (
-                <span className="text-emerald-300/80 ml-1">🔍{' '}2SP</span>
+                <span className="ml-1 inline-flex items-center gap-0.5 text-emerald-300/80"><IconInsight size={11} />2SP</span>
               )}
             </motion.button>
           )}
@@ -1050,7 +1062,13 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
             <>
               <div className="px-4 mt-3 flex-shrink-0">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-yellow-300 text-sm font-bold">SP: {snap.sp}</span>
+                  {/* ② 大字号数字排版：SP 主数字放大、标签小写角标化 */}
+                  <span className="flex items-baseline gap-1.5">
+                    <span className="text-[9px] font-bold uppercase tracking-[0.22em] text-yellow-200/50">SP</span>
+                    <span className="text-yellow-300 text-2xl font-black tabular-nums leading-none" style={{ letterSpacing: '-0.02em' }}>
+                      {snap.sp}
+                    </span>
+                  </span>
                   <div className="flex items-center gap-1.5 flex-wrap">
                     {snap.chargeActive && (
                       <motion.span animate={{ opacity: [0.7, 1, 0.7] }} transition={{ duration: 0.7, repeat: Infinity }}
@@ -1103,22 +1121,28 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
                   >
                     ‹
                   </button>
-                  <div
-                    className="flex-1 px-3 py-2 rounded-xl text-center transition-all"
-                    style={{
-                      background: isWeakAttr ? 'rgba(239,68,68,0.2)' : 'rgb(var(--color-battle-bright-rgb) / 0.2)',
-                      border: isWeakAttr ? '1px solid rgba(239,68,68,0.5)' : '1px solid rgb(var(--color-battle-bright-rgb) / 0.4)',
-                    }}
+                  <SlantCard
+                    cut={12}
+                    edge={isWeakAttr ? 'rgba(239,68,68,0.55)' : 'rgb(var(--color-battle-bright-rgb) / 0.45)'}
+                    face={isWeakAttr ? 'rgba(60,10,22,0.92)' : 'rgba(22,8,50,0.92)'}
+                    className="flex-1"
                   >
                     {/* 克制关系不做常驻角标（易误解）——只在造成/受到伤害时随叙事行出现 */}
-                    <p className="text-white text-sm font-bold">
-                      🎭 {attrNamesMap[snap.activeMask]}
-                      {isWeakAttr && <span className="ml-1.5 text-red-400 text-xs">⚡弱点</span>}
-                    </p>
-                    <p className="text-white/40 text-[11px] mt-0.5">
-                      {activePersonaName} · {MASK_PASSIVE_HINT[snap.activeMask]}
-                    </p>
-                  </div>
+                    <div className="px-3 py-2 text-center">
+                      <p className="text-white text-sm font-bold inline-flex items-center justify-center gap-1.5">
+                        <IconMask size={14} className="text-purple-300" />
+                        {attrNamesMap[snap.activeMask]}
+                        {isWeakAttr && (
+                          <span className="inline-flex items-center gap-0.5 text-red-400 text-xs font-black">
+                            <IconBolt size={11} />弱点
+                          </span>
+                        )}
+                      </p>
+                      <p className="text-white/40 text-[11px] mt-0.5">
+                        {activePersonaName} · {MASK_PASSIVE_HINT[snap.activeMask]}
+                      </p>
+                    </div>
+                  </SlantCard>
                   <button
                     onClick={() => {
                       playSound('/ui-menu.mp3', 0.5);
@@ -1138,15 +1162,15 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
                     whileTap={{ scale: 0.95 }}
                     onClick={() => setActionMenuOpen(v => !v)}
                     disabled={isAnimating}
-                    className="flex-1 py-2 rounded-xl text-xs font-semibold transition-all disabled:opacity-50"
+                    className="flex-1 py-2 text-xs font-black transition-all disabled:opacity-50"
                     style={{
-                      background: actionMenuOpen ? 'rgb(var(--color-battle-bright-rgb) / 0.3)' : 'rgb(var(--color-battle-bright-rgb) / 0.18)',
-                      border: `1px solid ${actionMenuOpen ? 'rgb(var(--color-battle-bright-rgb) / 0.6)' : 'rgb(var(--color-battle-bright-rgb) / 0.4)'}`,
+                      clipPath: slantPoly(10),
+                      background: actionMenuOpen ? 'rgb(var(--color-battle-bright-rgb) / 0.34)' : 'rgb(var(--color-battle-bright-rgb) / 0.2)',
                       color: '#c4b5fd',
                     }}
                   >
-                    ⚙️ 行动 {actionMenuOpen ? '▴' : '▾'}
-                    <span className="block text-[9px] opacity-60 mt-0.5">普通攻击 / 防御 / 同伴支援</span>
+                    行动 {actionMenuOpen ? '▴' : '▾'}
+                    <span className="block text-[9px] opacity-60 mt-0.5 font-semibold">普通攻击 / 防御 / 同伴支援</span>
                   </motion.button>
 
                   <AnimatePresence>
@@ -1193,21 +1217,21 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
                             whileTap={{ scale: 0.95 }}
                             onClick={() => { setActionMenuOpen(false); playSound('/themea-nav.mp3', 0.5); void runAction({ kind: 'basic' }); }}
                             disabled={isAnimating}
-                            className="flex-1 py-2 rounded-lg text-xs font-semibold disabled:opacity-50"
-                            style={{ background: 'rgba(244,114,182,0.16)', border: '1px solid rgba(244,114,182,0.4)', color: '#fbcfe8' }}
+                            className="flex-1 py-2 text-xs font-bold disabled:opacity-50"
+                            style={{ clipPath: slantPoly(8), background: 'rgba(244,114,182,0.2)', color: '#fbcfe8' }}
                           >
-                            ⚔️ 普通攻击
-                            <span className="block text-[9px] opacity-60 mt-0.5">0 SP · {basicPower} 伤害</span>
+                            <span className="inline-flex items-center gap-1"><IconSword size={12} />普通攻击</span>
+                            <span className="block text-[9px] opacity-60 mt-0.5 font-semibold">0 SP · {basicPower} 伤害</span>
                           </motion.button>
                           <motion.button
                             whileTap={{ scale: 0.95 }}
                             onClick={() => { setActionMenuOpen(false); playSound('/ui-menu.mp3', 0.6); void runAction({ kind: 'defend' }); }}
                             disabled={isAnimating}
-                            className="flex-1 py-2 rounded-lg text-xs font-semibold disabled:opacity-50"
-                            style={{ background: 'rgba(59,130,246,0.18)', border: '1px solid rgba(59,130,246,0.4)', color: '#93c5fd' }}
+                            className="flex-1 py-2 text-xs font-bold disabled:opacity-50"
+                            style={{ clipPath: slantPoly(8), background: 'rgba(59,130,246,0.22)', color: '#93c5fd' }}
                           >
-                            🛡️ 防御
-                            <span className="block text-[9px] opacity-60 mt-0.5">0 SP · 减半+回5SP</span>
+                            <span className="inline-flex items-center gap-1"><IconGuard size={12} />防御</span>
+                            <span className="block text-[9px] opacity-60 mt-0.5 font-semibold">0 SP · 减半+回5SP</span>
                           </motion.button>
                         </div>
                         <ConfidantSupportRow
@@ -1248,7 +1272,6 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
                     const canAfford = snap.sp >= cost;
                     const isDmg = skill.type === 'damage' || skill.type === 'crit' || skill.type === 'attack_boost';
                     const mappedEffect = SKILL_EFFECT_MAP[snap.activeMask]?.[skill.type];
-                    const ICON: Record<string, string> = { damage: '⚔️', crit: '⚡', buff: '✨', debuff: '🔻', charge: '🔮', heal: '💚', attack_boost: '🔥' };
                     const TYPE_TAG: Record<string, { label: string; color: string; bg: string }> = {
                       damage:       { label: '伤害',   color: '#fca5a5', bg: 'rgba(239,68,68,0.2)' },
                       crit:         { label: '暴击',   color: '#fbbf24', bg: 'rgba(245,158,11,0.2)' },
@@ -1268,51 +1291,74 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
                       heal: `回复${healAmount(skill.power, snap.activeMask)}HP`,
                       attack_boost: mappedEffect?.hint ?? '+6伤·3回合',
                     };
+                    const weakCard = isWeakAttr && isDmg;
                     return (
-                      <motion.button
-                        key={skill.name}
-                        whileTap={{ scale: 0.97 }}
-                        onClick={() => { playSound('/themea-nav.mp3'); void runAction({ kind: 'skill', skill }); }}
-                        disabled={!canAfford || isAnimating}
-                        className="w-full p-3 rounded-xl text-left transition-all disabled:opacity-50"
-                        style={{
-                          background: isWeakAttr && isDmg ? 'rgba(239,68,68,0.15)' : 'rgb(var(--color-battle-bright-rgb) / 0.15)',
-                          border: isWeakAttr && isDmg ? '1px solid rgba(239,68,68,0.4)' : '1px solid rgb(var(--color-battle-bright-rgb) / 0.3)',
-                        }}
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="min-w-0">
-                            <span className="text-white text-sm font-semibold inline-flex items-center flex-wrap gap-x-1.5 gap-y-0.5">
-                              <span>{ICON[skill.type] ?? '⚔️'} {skill.name}</span>
-                              {isWeakAttr && isDmg && <span className="text-xs text-red-400 font-bold">⚡弱点</span>}
-                              {skill.type !== 'damage' && baseTag && tagLabel && (
-                                <span
-                                  className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
-                                  style={{ color: baseTag.color, background: baseTag.bg }}
-                                >
-                                  {tagIcon ? `${tagIcon} ${tagLabel}` : tagLabel}
+                      <motion.div key={skill.name} whileTap={!canAfford || isAnimating ? undefined : { scale: 0.98 }}>
+                        <SlantCard
+                          as="button"
+                          cut={12}
+                          onClick={() => { if (canAfford && !isAnimating) { playSound('/themea-nav.mp3'); void runAction({ kind: 'skill', skill }); } }}
+                          disabled={!canAfford || isAnimating}
+                          edge={weakCard ? 'rgba(239,68,68,0.55)' : 'rgb(var(--color-battle-bright-rgb) / 0.4)'}
+                          face={weakCard ? 'rgba(52,10,22,0.94)' : 'rgba(20,8,46,0.94)'}
+                        >
+                          <div className="flex items-stretch">
+                            {/* 左：类型识别条（几何图标） */}
+                            <div
+                              className="flex w-9 flex-shrink-0 items-center justify-center"
+                              style={{ background: baseTag?.bg ?? 'rgba(255,255,255,0.06)', color: baseTag?.color ?? '#fff' }}
+                            >
+                              <SkillGlyph type={skill.type} size={16} />
+                            </div>
+                            {/* 中：技名 + 描述 */}
+                            <div className="min-w-0 flex-1 px-2.5 py-2">
+                              <span className="inline-flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[15px] font-black text-white leading-tight">
+                                <span className="truncate">{skill.name}</span>
+                                {weakCard && (
+                                  <span className="inline-flex items-center gap-0.5 text-[10px] font-black text-red-400">
+                                    <IconBolt size={10} />弱点
+                                  </span>
+                                )}
+                                {skill.type !== 'damage' && baseTag && tagLabel && (
+                                  <span
+                                    className="px-1.5 py-0.5 text-[9px] font-bold"
+                                    style={{ color: baseTag.color, background: baseTag.bg, clipPath: slantPoly(4), lineHeight: 1.3 }}
+                                  >
+                                    {tagIcon ? `${tagIcon} ${tagLabel}` : tagLabel}
+                                  </span>
+                                )}
+                              </span>
+                              <p className="mt-0.5 text-[11px] leading-snug text-gray-400">{skill.description}</p>
+                            </div>
+                            {/* 右：大数字 */}
+                            <div className="flex flex-shrink-0 flex-col items-end justify-center py-1.5 pr-3">
+                              {isDmg ? (
+                                <>
+                                  <span
+                                    className={`font-black tabular-nums leading-none ${weakCard ? 'text-red-300' : (snap.chargeActive || snap.attackBuff) ? 'text-yellow-300' : 'text-white'}`}
+                                    style={{ fontSize: 24, letterSpacing: '-0.03em' }}
+                                  >
+                                    {skill.power}
+                                    {weakCard && <span className="ml-0.5 align-top text-[10px] font-black">×1.5</span>}
+                                  </span>
+                                  <span className="text-[8px] font-bold uppercase tracking-[0.2em] text-white/35">power</span>
+                                </>
+                              ) : (
+                                <span className="text-[11px] font-bold text-emerald-300 text-right leading-tight max-w-[88px]">
+                                  {EFFECT_HINT[skill.type] ?? baseTag?.label}
                                 </span>
                               )}
-                            </span>
-                            <p className="text-gray-400 text-xs mt-0.5">{skill.description}</p>
-                          </div>
-                          <div className="text-right ml-2 flex-shrink-0">
-                            {isDmg ? (
-                              <div className={`text-xs font-bold ${isWeakAttr ? 'text-red-400' : (snap.chargeActive || snap.attackBuff) ? 'text-yellow-400' : 'text-purple-300'}`}>
-                                威力 {skill.power}{isWeakAttr ? '×1.5' : ''}
-                              </div>
-                            ) : (
-                              <div className="text-xs font-bold text-emerald-400">
-                                {EFFECT_HINT[skill.type] ?? baseTag?.label}
-                              </div>
-                            )}
-                            <div className="text-yellow-300 text-xs">
-                              SP -{cost}
-                              {cost === 0 && skill.spCost > 0 && <span className="text-purple-300 ml-1">🎭</span>}
+                              <span
+                                className="mt-1 inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-black tabular-nums"
+                                style={{ clipPath: slantPoly(4), background: 'rgba(250,204,21,0.16)', color: '#fde047', lineHeight: 1.3 }}
+                              >
+                                SP {cost}
+                                {cost === 0 && skill.spCost > 0 && <IconMask size={10} className="text-purple-300" />}
+                              </span>
                             </div>
                           </div>
-                        </div>
-                      </motion.button>
+                        </SlantCard>
+                      </motion.div>
                     );
                   })
                 )}

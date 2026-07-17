@@ -15,6 +15,7 @@ import { playSound } from '@/utils/feedback';
 import { useBackHandler } from '@/utils/useBackHandler';
 import { TowerMap } from '@/components/battle/TowerMap';
 import { TowerEventModal, TowerEchoModal } from '@/components/battle/TowerModals';
+import { IconTower, IconEvilEye, slantPoly, NoiseLayer } from '@/components/battle/warKit';
 
 interface Props {
   open: boolean;
@@ -118,9 +119,10 @@ export function TowerScreen({ open, onClose, onDescend, onRequestBattle, onToast
   return (
     <motion.div
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      className="fixed inset-0 z-40 flex flex-col"
+      className="fixed inset-0 z-40 flex flex-col overflow-hidden"
       style={{ background: 'linear-gradient(180deg, #04081e 0%, #0a1030 42%, #060a24 100%)' }}
     >
+      <NoiseLayer opacity={0.05} />
       {/* ── 头部 ── */}
       <div className="flex-shrink-0 px-4 pb-2 space-y-2" style={{ paddingTop: 'calc(1rem + env(safe-area-inset-top))' }}>
         <div className="flex items-center justify-between gap-2">
@@ -132,7 +134,10 @@ export function TowerScreen({ open, onClose, onDescend, onRequestBattle, onToast
             ✕ 暂离
           </button>
           <div className="text-center min-w-0">
-            <p className="text-white font-black text-sm truncate">🗼 {stratum.name}</p>
+            <p className="text-white font-black text-sm truncate inline-flex items-center gap-1">
+              <IconTower size={13} className="text-indigo-300 flex-shrink-0" />
+              {stratum.name}
+            </p>
             <p className="text-[10px] text-indigo-200/60">
               第{stratum.level}区层{stratum.deepenCount > 0 ? ` · 异变×${stratum.deepenCount}` : ''}
             </p>
@@ -157,8 +162,9 @@ export function TowerScreen({ open, onClose, onDescend, onRequestBattle, onToast
           </div>
           <span className="flex-shrink-0 text-[11px] font-bold text-yellow-300">SP {battleState.sp}</span>
           {shadow && (
-            <span className="flex-shrink-0 text-[10px] text-red-200/70">
-              👁 {Math.round(((shadow.currentHp + (shadow.currentHp2 ?? 0)) / Math.max(1, shadow.maxHp + (shadow.maxHp2 ?? 0))) * 100)}%
+            <span className="flex-shrink-0 inline-flex items-center gap-1 text-[10px] tabular-nums text-red-200/70">
+              <IconEvilEye size={11} />
+              {Math.round(((shadow.currentHp + (shadow.currentHp2 ?? 0)) / Math.max(1, shadow.maxHp + (shadow.maxHp2 ?? 0))) * 100)}%
             </span>
           )}
         </div>
@@ -184,8 +190,8 @@ export function TowerScreen({ open, onClose, onDescend, onRequestBattle, onToast
         {interactive ? (
           <button
             onClick={onDescend}
-            className="w-full py-2.5 rounded-xl text-sm font-semibold text-indigo-100/80"
-            style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.14)' }}
+            className="w-full py-2.5 text-sm font-bold text-indigo-100/80"
+            style={{ clipPath: slantPoly(12), background: 'rgba(255,255,255,0.08)' }}
           >
             🌙 下塔结算（保留进度）
           </button>

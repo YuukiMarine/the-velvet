@@ -8,11 +8,22 @@ import { TowerEvent, TowerEventOption, TowerEventEffect } from '@/battle/events'
 import { TowerSessionStats, TowerStratum } from '@/types';
 import { ECHO_HEAL_PCT } from '@/battle/numbers';
 import { playSound, triggerLightHaptic } from '@/utils/feedback';
+import { slantPoly, NoiseLayer } from '@/components/battle/warKit';
 
-const panelStyle = {
-  background: 'linear-gradient(160deg, rgba(14,6,44,0.97), rgba(8,8,34,0.97))',
-  border: '1px solid rgb(var(--color-battle-bright-rgb) / 0.4)',
-} as const;
+/** 斜切描边面板（clipPath 会切掉 border → 双层法） */
+function SlantPanel({ children, className }: { children: React.ReactNode; className?: string }) {
+  return (
+    <div className="w-full max-w-sm p-[1px]" style={{ clipPath: slantPoly(16), background: 'rgb(var(--color-battle-bright-rgb) / 0.5)' }}>
+      <div
+        className={`relative overflow-hidden ${className ?? ''}`}
+        style={{ clipPath: slantPoly(16), background: 'linear-gradient(160deg, rgba(14,6,44,0.98), rgba(8,8,34,0.98))' }}
+      >
+        <NoiseLayer opacity={0.04} />
+        <div className="relative">{children}</div>
+      </div>
+    </div>
+  );
+}
 
 // ── 事件弹窗 ────────────────────────────────────────────────
 interface EventProps {
@@ -47,9 +58,9 @@ export function TowerEventModal({ event, materialize, onResolve, onFinish }: Eve
     >
       <motion.div
         initial={{ scale: 0.88, y: 16, opacity: 0 }} animate={{ scale: 1, y: 0, opacity: 1 }}
-        className="w-full max-w-sm rounded-2xl p-5 space-y-4"
-        style={panelStyle}
+        className="w-full flex justify-center"
       >
+        <SlantPanel className="p-5 space-y-4">
         <div className="text-center">
           <p className="text-3xl">{event.icon}</p>
           <p className="text-white font-black text-base mt-1">{event.title}</p>
@@ -84,6 +95,7 @@ export function TowerEventModal({ event, materialize, onResolve, onFinish }: Eve
             </motion.div>
           )}
         </AnimatePresence>
+        </SlantPanel>
       </motion.div>
     </motion.div>
   );
@@ -103,9 +115,9 @@ export function TowerEchoModal({ onChoose }: EchoProps) {
     >
       <motion.div
         initial={{ scale: 0.88, y: 16, opacity: 0 }} animate={{ scale: 1, y: 0, opacity: 1 }}
-        className="w-full max-w-sm rounded-2xl p-5 space-y-4 text-center"
-        style={panelStyle}
+        className="w-full flex justify-center"
       >
+        <SlantPanel className="p-5 space-y-4 text-center">
         <p className="text-3xl">🌙</p>
         <p className="text-white font-black text-base">月光回响</p>
         <p className="text-gray-300 text-sm leading-relaxed">一小片月光落在塔层间。它愿意回应你一次——</p>
@@ -127,6 +139,7 @@ export function TowerEchoModal({ onChoose }: EchoProps) {
             <span className="block text-[10px] opacity-70 mt-0.5">本次登塔伤害 +6%</span>
           </button>
         </div>
+        </SlantPanel>
       </motion.div>
     </motion.div>
   );
@@ -166,19 +179,19 @@ export function TowerRecapModal({ reason, stats, stratum, onClose }: RecapProps)
     >
       <motion.div
         initial={{ scale: 0.88, y: 18, opacity: 0 }} animate={{ scale: 1, y: 0, opacity: 1 }}
-        className="w-full max-w-sm rounded-2xl p-6 space-y-4"
-        style={panelStyle}
+        className="w-full flex justify-center"
       >
+        <SlantPanel className="p-6 space-y-4">
         <div className="text-center">
           <p className="text-3xl">{reason === 'clear' ? '🏆' : reason === 'defeat' ? '💀' : '🌙'}</p>
           <p className="text-white font-black text-lg mt-1">{title}</p>
           <p className="text-gray-400 text-xs mt-1.5 leading-relaxed">{flavor}</p>
         </div>
-        <div className="rounded-xl divide-y divide-white/5" style={{ background: 'rgba(255,255,255,0.04)' }}>
+        <div className="divide-y divide-white/5" style={{ background: 'rgba(255,255,255,0.04)', clipPath: slantPoly(10) }}>
           {rows.map(([k, v]) => (
             <div key={k} className="flex items-center justify-between px-4 py-2">
-              <span className="text-gray-400 text-xs">{k}</span>
-              <span className="text-white text-sm font-bold tabular-nums">{v}</span>
+              <span className="text-gray-400 text-[11px] font-semibold">{k}</span>
+              <span className="text-white text-lg font-black tabular-nums leading-none" style={{ letterSpacing: '-0.02em' }}>{v}</span>
             </div>
           ))}
         </div>
@@ -189,6 +202,7 @@ export function TowerRecapModal({ reason, stats, stratum, onClose }: RecapProps)
         >
           {reason === 'clear' ? '静候上方显形' : '返回'}
         </button>
+        </SlantPanel>
       </motion.div>
     </motion.div>
   );
