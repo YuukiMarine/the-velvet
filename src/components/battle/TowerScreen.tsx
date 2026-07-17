@@ -15,7 +15,7 @@ import { playSound } from '@/utils/feedback';
 import { useBackHandler } from '@/utils/useBackHandler';
 import { TowerMap } from '@/components/battle/TowerMap';
 import { TowerEventModal, TowerEchoModal } from '@/components/battle/TowerModals';
-import { IconTower, IconEvilEye, slantPoly, NoiseLayer } from '@/components/battle/warKit';
+import { IconTower, IconEvilEye, slantPoly, NoiseLayer, paletteFor } from '@/components/battle/warKit';
 
 interface Props {
   open: boolean;
@@ -49,6 +49,7 @@ export function TowerScreen({ open, onClose, onDescend, onRequestBattle, onToast
   const ts = battleState.towerSession;
   const buffs = ts?.buffs ?? [];
   const curFloor = stratum.nodes.find(n => n.id === stratum.currentNodeId)?.floor ?? 0;
+  const pal = paletteFor(stratum.level); // ⑩ 区层色温
 
   const handleSelectNode = async (node: StratumNode) => {
     const moved = await moveToTowerNode(node.id);
@@ -120,7 +121,7 @@ export function TowerScreen({ open, onClose, onDescend, onRequestBattle, onToast
     <motion.div
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
       className="fixed inset-0 z-40 flex flex-col overflow-hidden"
-      style={{ background: 'linear-gradient(180deg, #04081e 0%, #0a1030 42%, #060a24 100%)' }}
+      style={{ background: `linear-gradient(180deg, ${pal.deep} 0%, #0a1030 46%, #060a24 100%)` }}
     >
       <NoiseLayer opacity={0.05} />
       {/* ── 头部 ── */}
