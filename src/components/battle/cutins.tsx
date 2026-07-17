@@ -2,8 +2,8 @@
  * 战斗演出组件包（批1 拆分：自 BattleModal 抽离 + 引擎 v2 新增件）
  * 纯演出、无战斗逻辑；均为叠加层，由 BattleModal 按 fx 事件挂载。
  */
-import { useEffect } from 'react';
-import { motion } from 'motion/react';
+import { useEffect, useState } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { playSound } from '@/utils/feedback';
 
 export const DEATH_EXPLOSION_PARTICLES = Array.from({ length: 26 }, (_, i) => ({
@@ -135,6 +135,10 @@ export function DeathExplosion() {
   );
 }
 
+/** 叙事框（批2c-ii ⑦）：打字机逐字 + 说话人名牌分离
+ *  - 点击：打字中 → 立即补全；已完整 → 推进下一行
+ *  - 台词行「名：内容」自动拆出名牌（斜切小plate 浮在框沿）
+ */
 export function NarrationBox({
   lines, index, onAdvance, canAdvance,
 }: {
@@ -143,30 +147,100 @@ export function NarrationBox({
   onAdvance: () => void;
   canAdvance: boolean;
 }) {
-  useEffect(() => {
-    if (!canAdvance) return;
-    const timer = setTimeout(onAdvance, 5000);
-    return () => clearTimeout(timer);
-  }, [index, canAdvance, onAdvance]);
+  const raw = lines[index] ?? '';
+  // 说话人拆分：全角冒号前 ≤12 字视为名牌
+  const m = raw.match(/^(.{1,12}?)：(.+)$/s);
+  const speaker = m ? m[1] : null;
+  const content = m ? m[2] : raw;
 
-  const current = lines[index] ?? '';
+  const [shown, setShown] = useState(0);
+  const typingDone = shown >= content.length;
+
+  useEffect(() => {
+    setShown(0);
+  }, [index, content]);
+
+  // 打字机：~45 字/秒
+  useEffect(() => {
+    if (typingDone) return;
+    const t = setInterval(() => setShown(s => Math.min(content.length, s + 1)), 22);
+    return () => clearInterval(t);
+  }, [content, typingDone]);
+
+  // 自动推进：从"打完"起计 4.2s
+  useEffect(() => {
+    if (!canAdvance || !typingDone) return;
+    const timer = setTimeout(onAdvance, 4200);
+    return () => clearTimeout(timer);
+  }, [index, canAdvance, onAdvance, typingDone]);
+
+  const handleTap = () => {
+    if (!canAdvance) return;
+    if (!typingDone) {
+      setShown(content.length);
+      return;
+    }
+    playSound('/dd.mp3', 0.45);
+    onAdvance();
+  };
+
   return (
     <motion.div
-      className="mx-4 mb-3 p-3 rounded-xl cursor-pointer select-none"
-      style={{ background: 'rgba(10,0,30,0.9)', border: '2px solid rgb(var(--color-battle-bright-rgb) / 0.5)', minHeight: 52 }}
-      onClick={canAdvance ? () => { playSound('/dd.mp3', 0.45); onAdvance(); } : undefined}
-      whileTap={canAdvance ? { scale: 0.98 } : {}}
+      className="relative mx-4 mb-3 cursor-pointer select-none"
+      onClick={handleTap}
+      whileTap={canAdvance ? { scale: 0.985 } : {}}
     >
-      <p className="text-white text-sm leading-relaxed">{current}</p>
-      {canAdvance && index < lines.length - 1 && (
-        <motion.span
-          animate={{ opacity: [0.4, 1, 0.4] }}
-          transition={{ duration: 0.8, repeat: Infinity }}
-          className="text-purple-400 text-xs"
-        >
-          ▼
-        </motion.span>
-      )}
+      {/* 名牌（斜切 plate，浮在框沿外） */}
+      <AnimatePresence mode="wait">
+        {speaker && (
+          <motion.span
+            key={`${index}-${speaker}`}
+            initial={{ opacity: 0, x: -10 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.14 }}
+            className="absolute -top-2.5 left-3 z-[1] px-2.5 py-0.5 text-[11px] font-black text-white"
+            style={{
+              clipPath: 'polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%)',
+              background: 'linear-gradient(100deg, rgba(190,30,60,0.95), rgba(120,16,40,0.95))',
+              textShadow: '0 1px 2px rgba(0,0,0,0.6)',
+              letterSpacing: '0.04em',
+            }}
+          >
+            {speaker}
+          </motion.span>
+        )}
+      </AnimatePresence>
+      <div
+        className="p-3 pt-3.5"
+        style={{
+          clipPath: 'polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%)',
+          background: 'rgba(8,0,26,0.94)',
+          boxShadow: 'inset 0 0 0 1px rgb(var(--color-battle-bright-rgb) / 0.35)',
+          minHeight: 56,
+        }}
+      >
+        <p className="text-white text-sm leading-relaxed">
+          {content.slice(0, shown)}
+          {!typingDone && (
+            <motion.span
+              animate={{ opacity: [0, 1, 0] }}
+              transition={{ duration: 0.5, repeat: Infinity }}
+              className="inline-block w-[7px] -mb-0.5 h-[14px] ml-0.5 align-baseline"
+              style={{ background: 'rgba(196,181,253,0.9)' }}
+            />
+          )}
+        </p>
+        {canAdvance && typingDone && index < lines.length - 1 && (
+          <motion.span
+            animate={{ opacity: [0.4, 1, 0.4] }}
+            transition={{ duration: 0.8, repeat: Infinity }}
+            className="text-purple-400 text-xs"
+          >
+            ▼
+          </motion.span>
+        )}
+      </div>
     </motion.div>
   );
 }

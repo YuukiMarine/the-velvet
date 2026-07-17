@@ -103,6 +103,44 @@ export function SlantGauge({ value, max, segments = 12, height = 10, onColor, of
   );
 }
 
+// ── 失衡水条（⑤）：表面张力水面，满时溢光 ────────────────────
+export function WaterGauge({ value, max, height = 7, full }: { value: number; max: number; height?: number; full?: boolean }) {
+  const pct = Math.max(0, Math.min(100, (value / Math.max(1, max)) * 100));
+  return (
+    <div
+      className="relative w-full overflow-hidden"
+      style={{ height, clipPath: slantPoly(height * 0.6), background: 'rgba(255,255,255,0.07)' }}
+    >
+      <motion.div
+        className="absolute inset-y-0 left-0"
+        animate={{
+          width: `${pct}%`,
+          backgroundPositionX: ['0%', '200%'],
+          boxShadow: full ? ['0 0 6px rgba(53,209,232,0.5)', '0 0 16px rgba(250,204,21,0.9)', '0 0 6px rgba(53,209,232,0.5)'] : undefined,
+        }}
+        transition={{
+          width: { duration: 0.35 },
+          backgroundPositionX: { duration: 2.2, repeat: Infinity, ease: 'linear' },
+          boxShadow: full ? { duration: 0.8, repeat: Infinity } : undefined,
+        }}
+        style={{
+          background: full
+            ? 'linear-gradient(90deg, #f59e0b, #fde047, #35d1e8, #fde047)'
+            : 'linear-gradient(90deg, #1b57ff, #35d1e8, #7fd8ee, #35d1e8)',
+          backgroundSize: '200% 100%',
+        }}
+      />
+      {/* 水面高光线 */}
+      <motion.div
+        className="absolute top-0 bottom-0 w-6 pointer-events-none"
+        animate={{ left: ['-10%', '104%'] }}
+        transition={{ duration: 2.8, repeat: Infinity, ease: 'easeInOut' }}
+        style={{ background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.35), transparent)', mixBlendMode: 'screen' }}
+      />
+    </div>
+  );
+}
+
 // ── 几何图标集（⑪ 替代 emoji；stroke 风格，继承 currentColor） ──
 interface IconProps { size?: number; className?: string }
 const svgBase = (size: number) => ({

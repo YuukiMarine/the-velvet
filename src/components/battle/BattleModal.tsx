@@ -31,7 +31,21 @@ import {
 import {
   NoiseLayer, WarGhost, SlantCard, SkillGlyph, slantPoly,
   IconSword, IconGuard, IconInsight, IconMask, IconBolt,
+  SlantGauge, WaterGauge, IconUp, IconDown, IconEvilEye,
 } from '@/components/battle/warKit';
+import type { IntentKind } from '@/battle/intents';
+
+/** 意图 → 几何图标（⑪；替代 INTENT_META emoji） */
+function IntentGlyph({ kind, size = 12 }: { kind: IntentKind; size?: number }) {
+  switch (kind) {
+    case 'attack': return <IconSword size={size} />;
+    case 'heavy': case 'heavyRelease': return <IconBolt size={size} />;
+    case 'buff': return <IconUp size={size} />;
+    case 'debuff': return <IconDown size={size} />;
+    case 'guard': return <IconGuard size={size} />;
+    default: return <IconEvilEye size={size} />; // interrupt / execute / berserk
+  }
+}
 
 interface Props {
   isOpen: boolean;
@@ -77,6 +91,18 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
   const actionsTakenRef = useRef(0);
   /** 弱点演出已在点击瞬间预触发（验收反馈：WEAK 应即点即现，不等叙事行） */
   const weakPreFiredRef = useRef(false);
+  /** ⑤ 破段闪光：血条分段数下降时触发一次白闪 */
+  const [segFlash, setSegFlash] = useState(0);
+  const prevSegsRef = useRef<{ a: number; b: number }>({ a: -1, b: -1 });
+  useEffect(() => {
+    const s = engineRef.current?.snapshot;
+    if (!s) { prevSegsRef.current = { a: -1, b: -1 }; return; }
+    const a = Math.ceil((s.shadowHp / Math.max(1, s.shadowMaxHp)) * 12);
+    const b = s.shadowMaxHp2 ? Math.ceil(((s.shadowHp2 ?? 0) / s.shadowMaxHp2) * 12) : 0;
+    const prev = prevSegsRef.current;
+    if ((prev.a >= 0 && a < prev.a) || (prev.b >= 0 && b < prev.b)) setSegFlash(k => k + 1);
+    prevSegsRef.current = { a, b };
+  });
 
   // ── 演出状态 ────────────────────────────────────────────
   const [showRetreatConfirm, setShowRetreatConfirm] = useState(false);
@@ -532,8 +558,6 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
   const availableSkills: PersonaSkill[] =
     persona.skills[snap.activeMask]?.filter(s => s.level <= (attrLevels[snap.activeMask] || 1)) || [];
   const isWeakAttr = snap.activeMask === snap.weakAttribute;
-  const hp1Pct = (snap.shadowHp / Math.max(1, snap.shadowMaxHp)) * 100;
-  const hp2Pct = snap.shadowMaxHp2 ? ((snap.shadowHp2 ?? 0) / snap.shadowMaxHp2) * 100 : 0;
   const isPhase2 = snap.phase === 2;
   const visibleHp = displayPlayerHp ?? snap.playerHp;
   const activePersonaName = persona.attributePersonas?.[snap.activeMask]?.name ?? '反抗者';
@@ -761,34 +785,8 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
           </span>
         </div>
 
-        {/* 意图明牌 */}
+        {/* 状态标签行（意图浮标已随 ⑥ 贴到敌人头顶） */}
         <div className="flex items-center gap-2">
-          {snap.intent && phase !== 'battle_start' && (
-            <motion.button
-              key={`${snap.turn}-${snap.intent.kind}`}
-              initial={{ opacity: 0, x: -8 }}
-              animate={{ opacity: 1, x: 0 }}
-              onClick={() => snap.insightAvailable && phase === 'waiting' && !isAnimating && runAction({ kind: 'insight' })}
-              className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] font-bold"
-              style={{
-                background: snap.windup ? 'rgba(250,204,21,0.2)' : 'rgba(255,255,255,0.08)',
-                border: snap.windup ? '1px solid rgba(250,204,21,0.55)' : '1px solid rgba(255,255,255,0.15)',
-                color: snap.windup ? '#fde047' : '#d1d5db',
-              }}
-            >
-              <span>意图</span>
-              <motion.span
-                animate={snap.windup ? { scale: [1, 1.2, 1] } : {}}
-                transition={{ duration: 0.7, repeat: Infinity }}
-              >
-                {snap.intent.icon}
-              </motion.span>
-              <span>{snap.intent.label}</span>
-              {snap.insightAvailable && phase === 'waiting' && (
-                <span className="ml-1 inline-flex items-center gap-0.5 text-emerald-300/80"><IconInsight size={11} />2SP</span>
-              )}
-            </motion.button>
-          )}
           {snap.staggerImmune > 0 && (
             <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md"
                   style={{ background: 'rgba(156,163,175,0.25)', color: '#d1d5db', lineHeight: 1.2 }}>
@@ -807,62 +805,71 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
           )}
         </div>
 
-        {/* HP 条 1 */}
-        <div>
-          <div className="flex justify-between text-xs text-gray-400 mb-1">
-            <span>HP</span><span>{snap.shadowHp}/{snap.shadowMaxHp}</span>
+        {/* ⑤ HP 条：斜切分段 + 破段闪光 */}
+        <div className="relative">
+          <div className="flex items-end justify-between mb-1">
+            <span className="text-[9px] font-bold uppercase tracking-[0.22em] text-gray-500">HP</span>
+            <span className="text-sm font-black tabular-nums leading-none text-gray-200">
+              {snap.shadowHp}<span className="text-[10px] text-gray-500 font-bold">/{snap.shadowMaxHp}</span>
+            </span>
           </div>
-          <div className="h-3 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.1)' }}>
-            <motion.div
-              className="h-full rounded-full"
-              animate={{ width: `${hp1Pct}%` }}
-              transition={{ duration: 0.4 }}
-              style={{ background: isPhase2 ? 'rgba(107,114,128,0.5)' : 'linear-gradient(90deg, #ef4444, #dc2626)' }}
-            />
-          </div>
-        </div>
-        {/* HP 条 2 */}
-        {snap.shadowMaxHp2 !== undefined && (
-          <div>
-            <div className="flex justify-between text-xs text-gray-400 mb-1">
-              <span>HP2{isPhase2 ? ' ▶' : ''}</span>
-              <span>{snap.shadowHp2 ?? snap.shadowMaxHp2}/{snap.shadowMaxHp2}</span>
-            </div>
-            <div className="h-3 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.1)' }}>
-              <motion.div
-                className="h-full rounded-full"
-                animate={{ width: `${hp2Pct}%` }}
-                transition={{ duration: 0.4 }}
-                style={{ background: isPhase2 ? 'linear-gradient(90deg, #f97316, #ef4444)' : 'rgba(107,114,128,0.3)' }}
+          <SlantGauge
+            value={snap.shadowHp}
+            max={snap.shadowMaxHp}
+            segments={12}
+            height={11}
+            onColor={isPhase2 ? 'rgba(120,126,140,0.55)' : 'linear-gradient(90deg, #ef4444, #dc2626)'}
+            glow={isPhase2 ? undefined : 'rgba(239,68,68,0.55)'}
+          />
+          {snap.shadowMaxHp2 !== undefined && (
+            <div className="mt-1.5">
+              <div className="flex items-end justify-between mb-1">
+                <span className="text-[9px] font-bold uppercase tracking-[0.22em] text-gray-500">HP·II{isPhase2 ? ' ▶' : ''}</span>
+                <span className="text-sm font-black tabular-nums leading-none text-gray-200">
+                  {snap.shadowHp2 ?? snap.shadowMaxHp2}<span className="text-[10px] text-gray-500 font-bold">/{snap.shadowMaxHp2}</span>
+                </span>
+              </div>
+              <SlantGauge
+                value={snap.shadowHp2 ?? snap.shadowMaxHp2}
+                max={snap.shadowMaxHp2}
+                segments={12}
+                height={11}
+                onColor={isPhase2 ? 'linear-gradient(90deg, #f97316, #ef4444)' : 'rgba(120,126,140,0.35)'}
+                glow={isPhase2 ? 'rgba(249,115,22,0.55)' : undefined}
               />
             </div>
-          </div>
-        )}
-
-        {/* 失衡条 */}
-        <div className="flex items-center gap-2">
-          <span className="text-[10px] font-bold text-yellow-200/70 flex-shrink-0">失衡</span>
-          <div className="h-1.5 flex-1 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.08)' }}>
+          )}
+          {/* 破段闪光 */}
+          {segFlash > 0 && (
             <motion.div
-              className="h-full rounded-full"
-              animate={{
-                width: `${snap.staggerGauge}%`,
-                opacity: snap.staggerWindow ? [1, 0.5, 1] : 1,
-              }}
-              transition={{ width: { duration: 0.3 }, opacity: { duration: 0.6, repeat: snap.staggerWindow ? Infinity : 0 } }}
-              style={{ background: 'linear-gradient(90deg, #f59e0b, #fde047)', boxShadow: '0 0 8px rgba(250,204,21,0.5)' }}
+              key={segFlash}
+              className="absolute inset-0 pointer-events-none"
+              initial={{ opacity: 0.6 }}
+              animate={{ opacity: 0 }}
+              transition={{ duration: 0.38 }}
+              style={{ background: 'linear-gradient(90deg, transparent 10%, rgba(255,255,255,0.7), transparent 90%)', mixBlendMode: 'screen' }}
             />
-          </div>
-          {snap.staggerWindow && (
-            <motion.span
-              animate={{ opacity: [1, 0.5, 1] }}
-              transition={{ duration: 0.5, repeat: Infinity }}
-              className="text-[10px] font-black text-yellow-300 flex-shrink-0"
-            >
-              总攻击窗口！
-            </motion.span>
           )}
         </div>
+
+        {/* ⑤ 失衡水条（表面张力；满时溢光） */}
+        {snap.tier !== 'mob' && (
+          <div className="flex items-center gap-2">
+            <span className="text-[9px] font-bold uppercase tracking-[0.18em] text-cyan-200/60 flex-shrink-0">失衡</span>
+            <div className="flex-1">
+              <WaterGauge value={snap.staggerGauge} max={100} height={8} full={snap.staggerWindow} />
+            </div>
+            {snap.staggerWindow && (
+              <motion.span
+                animate={{ opacity: [1, 0.5, 1] }}
+                transition={{ duration: 0.5, repeat: Infinity }}
+                className="text-[10px] font-black text-yellow-300 flex-shrink-0"
+              >
+                总攻击窗口！
+              </motion.span>
+            )}
+          </div>
+        )}
 
         {/* Shadow 状态栏 */}
         {snap.shadowStatuses.length > 0 && (
@@ -905,15 +912,97 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
       {/* ── 主战斗区 ── */}
       {phase !== 'defeat' && (
         <>
-          <div className="flex-shrink-0 relative flex items-center justify-center" style={{ height: 150 }}>
-            <ShadowSVG
-              level={foeLevel}
-              isHurt={isHurt}
-              isWeak={showWeak}
-              offBalance={snap.staggerWindow}
-              damageNumbers={damageNums.filter(d => !d.isHeal)}
-              weakAttribute={snap.weakAttribute}
+          <div className="flex-shrink-0 relative flex items-center justify-center overflow-visible" style={{ height: 168 }}>
+            {/* ④ 舞台：顶光锥 */}
+            <div
+              aria-hidden
+              className="absolute top-0 left-1/2 -translate-x-1/2 pointer-events-none"
+              style={{
+                width: 220, height: '100%',
+                background: 'linear-gradient(180deg, rgba(190,205,255,0.13), rgba(190,205,255,0.03) 55%, transparent 80%)',
+                clipPath: 'polygon(32% 0, 68% 0, 100% 100%, 0 100%)',
+              }}
             />
+            {/* ④ 地平线光圈 */}
+            <motion.div
+              aria-hidden
+              className="absolute bottom-1.5 left-1/2 -translate-x-1/2 rounded-full pointer-events-none"
+              animate={{ opacity: snap.staggerWindow ? [0.5, 0.9, 0.5] : [0.35, 0.55, 0.35] }}
+              transition={{ duration: 2.2, repeat: Infinity }}
+              style={{
+                width: 190, height: 26,
+                background: snap.staggerWindow
+                  ? 'radial-gradient(ellipse, rgba(250,204,21,0.45), transparent 70%)'
+                  : 'radial-gradient(ellipse, rgb(var(--color-battle-bright-rgb) / 0.4), transparent 70%)',
+                filter: 'blur(5px)',
+              }}
+            />
+            {/* 敌人本体 */}
+            <div className="relative z-[1]" style={{ transform: 'translateY(-6px)' }}>
+              <ShadowSVG
+                level={foeLevel}
+                isHurt={isHurt}
+                isWeak={showWeak}
+                offBalance={snap.staggerWindow}
+                damageNumbers={damageNums.filter(d => !d.isHeal)}
+                weakAttribute={snap.weakAttribute}
+              />
+            </div>
+            {/* ④ 水面倒影 */}
+            <div
+              aria-hidden
+              className="absolute left-1/2 -translate-x-1/2 pointer-events-none"
+              style={{
+                bottom: -46, height: 52, overflow: 'hidden',
+                transform: 'translateX(-50%) scaleY(-1)',
+                opacity: 0.14,
+                maskImage: 'linear-gradient(180deg, transparent 10%, #000 90%)',
+                WebkitMaskImage: 'linear-gradient(180deg, transparent 10%, #000 90%)',
+                filter: 'blur(1px) saturate(0.8)',
+              }}
+            >
+              <ShadowSVG
+                level={foeLevel}
+                isHurt={false}
+                isWeak={false}
+                offBalance={false}
+                damageNumbers={[]}
+                weakAttribute={snap.weakAttribute}
+              />
+            </div>
+            {/* ⑥ 意图浮标：贴敌头顶的浮牌 */}
+            {snap.intent && phase !== 'battle_start' && (
+              <motion.button
+                key={`${snap.turn}-${snap.intent.kind}`}
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: [0, -3, 0] }}
+                transition={{ opacity: { duration: 0.2 }, y: { duration: 2, repeat: Infinity, ease: 'easeInOut' } }}
+                onClick={() => snap.insightAvailable && phase === 'waiting' && !isAnimating && runAction({ kind: 'insight' })}
+                className="absolute top-0 left-1/2 -translate-x-1/2 z-[6] flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-black"
+                style={{
+                  clipPath: slantPoly(7),
+                  background: snap.windup ? 'rgba(66,50,4,0.94)' : 'rgba(10,4,32,0.92)',
+                  boxShadow: snap.windup
+                    ? 'inset 0 0 0 1px rgba(250,204,21,0.65), 0 0 14px rgba(250,204,21,0.35)'
+                    : 'inset 0 0 0 1px rgba(255,255,255,0.2)',
+                  color: snap.windup ? '#fde047' : '#e5e7eb',
+                }}
+              >
+                <motion.span
+                  className="inline-flex"
+                  animate={snap.windup ? { scale: [1, 1.25, 1] } : {}}
+                  transition={{ duration: 0.7, repeat: Infinity }}
+                >
+                  <IntentGlyph kind={snap.intent.kind} />
+                </motion.span>
+                <span>{snap.intent.label}</span>
+                {snap.insightAvailable && phase === 'waiting' && (
+                  <span className="inline-flex items-center gap-0.5 text-emerald-300/80 font-bold">
+                    <IconInsight size={10} />2SP
+                  </span>
+                )}
+              </motion.button>
+            )}
             <AnimatePresence>{showDeathExplosion && <DeathExplosion />}</AnimatePresence>
             {/* Combo */}
             <AnimatePresence>
