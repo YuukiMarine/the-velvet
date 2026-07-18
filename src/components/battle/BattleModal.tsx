@@ -310,6 +310,12 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
     const opening = engine.openingTurn();
     fxBatchRef.current = [];
     firedFxRef.current = new Set();
+    // 批3 验收修复：先手（被夺先手事件 / 迅捷词缀）在开场就击败玩家时，
+    // 结果必须持久化（锁定 session_end）并在叙事走完后路由到败北界面——否则战斗卡死无法退出
+    if (opening.outcome === 'defeat') {
+      pendingOutcomeRef.current = 'defeat';
+      void persistResult(opening);
+    }
     setNarLines([...intro, ...opening.lines]);
     setNarIndex(0);
     setPhase('battle_start');
@@ -431,6 +437,12 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
       return;
     }
     if (phase === 'intro') {
+      // 开场先手已定胜负（批3 验收修复）：不进 waiting，直接败北收线
+      if (pendingOutcomeRef.current === 'defeat') {
+        pendingOutcomeRef.current = 'ongoing';
+        setPhase('defeat');
+        return;
+      }
       setPhase('waiting');
       return;
     }

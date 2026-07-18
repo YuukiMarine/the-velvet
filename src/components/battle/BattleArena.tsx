@@ -616,7 +616,7 @@ export const BattleArena = () => {
                             }}
                           >
                             {sessionActive
-                              ? '🗼 回到塔中'
+                              ? '🗼 回到战场'
                               : canInfiltrate
                                 ? '🌊 潜入战场'
                                 : <span className="text-gray-400 dark:text-gray-500">🌊 等待影时间</span>}

@@ -71,8 +71,9 @@ function makeSkills(): Record<AttributeId, PersonaSkill[]> {
 }
 
 // 跑测微调：高层总血量回落（原 300+120/420+200/520+260 拉锯 15+ 回合，压力叠加下不可赢）
+// 批3 验收调整：Lv1-2 +10 / Lv3 +20 / Lv4-5 +30（与 constants/SHADOW_LEVEL_CONFIG 同步）
 const BOSS_HP: Record<number, { hp: number; hp2?: number }> = {
-  1: { hp: 150 }, 2: { hp: 200 }, 3: { hp: 260, hp2: 80 }, 4: { hp: 340, hp2: 110 }, 5: { hp: 420, hp2: 130 },
+  1: { hp: 160 }, 2: { hp: 210 }, 3: { hp: 280, hp2: 80 }, 4: { hp: 370, hp2: 110 }, 5: { hp: 450, hp2: 130 },
 };
 
 function makeSetup(level: number, seed: number, attrLevel = 5): EngineSetup {
