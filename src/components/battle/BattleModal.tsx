@@ -19,6 +19,7 @@ import { isInShadowTime, SKILL_EFFECT_MAP } from '@/constants';
 import { useBoldness } from '@/utils/boldness';
 import { BattleEngine, PlayerActionInput, FxEvent, TurnResult } from '@/battle/engine';
 import { QTE_FALLBACK_MULT, healAmount } from '@/battle/numbers';
+import { aggregateRelicMods, AFFIX_POOL } from '@/battle/loot';
 import { ShadowSVG } from '@/components/battle/ShadowSVG';
 import { BattleStartOverlay } from '@/components/battle/BattleStartOverlay';
 import { StatusBar } from '@/components/battle/StatusBar';
@@ -219,6 +220,7 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
           attackScalePct: settings.battleAttackScale ?? 100,
           responseLines: [] as string[],
           tier: encounter!.mob.tier,
+          affixes: encounter!.mob.affixes,
         }
       : {
           id: sh.id,
@@ -234,6 +236,7 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
           attackScalePct: settings.battleAttackScale ?? 100,
           responseLines: sh.responseLines,
           tier: 'boss' as const,
+          affixes: sh.affixes,
         };
 
     const engine = new BattleEngine({
@@ -252,6 +255,10 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
       effectMap: SKILL_EFFECT_MAP,
       sessionAddPct,
       firstStrikeStolen,
+      // 批3：遗物修正聚合 / 共鸣链 / 记仇词缀事实
+      relicMods: aggregateRelicMods(bs.arsenal?.relics ?? []),
+      chain: bs.arsenal?.activeChainKey ?? null,
+      playerEverRetreated: !!bs.everRetreatedDown,
     });
     engineRef.current = engine;
     // 属性向派生后写回（存量主影无此字段；小影不落表）
@@ -262,12 +269,18 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
     const s = engine.snapshot;
     const userName = user?.name ?? '你';
     const maskPersona = personaNames[s.activeMask];
+    // 批3：月蚀词缀 → 弱点以 ？？？ 示人；词缀在开场点名
+    const weakLabel = s.weaknessHidden ? '？？？' : attrNamesMap[s.weakAttribute];
+    const affixLine = s.affixes.length > 0
+      ? `它缠绕着异样的气息——${s.affixes.map(a => `【${AFFIX_POOL[a].name}】`).join('')}`
+      : null;
     let intro: string[];
     if (isEncounter) {
       intro = [
         `${encounter!.mob.name} 挡住了去路！`,
-        `属性向【${attrNamesMap[encounter!.mob.attribute]}】——弱点是【${attrNamesMap[s.weakAttribute]}】！`,
+        `属性向【${attrNamesMap[encounter!.mob.attribute]}】——弱点是【${weakLabel}】！`,
       ];
+      if (affixLine) intro.push(affixLine);
       if (encounter!.mob.tier === 'elite') intro.splice(1, 0, '危险的气息……是强敌！');
     } else {
       intro = [
@@ -275,8 +288,9 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
         `${userName} 戴上了【${attrNamesMap[s.activeMask]}】的面具——Persona ${maskPersona}，出战！`,
         `${sh.name} 出现了！`,
         sh.description,
-        `Shadow 的弱点——${attrNamesMap[s.weakAttribute]}属性！`,
+        `Shadow 的弱点——${weakLabel}${s.weaknessHidden ? '（被月蚀掩藏，洞察可揭示）' : '属性'}！`,
       ];
+      if (affixLine) intro.push(affixLine);
       if (s.phase === 2) {
         intro.push(`${sh.name} 已进入第二形态……小心！`);
       }
@@ -327,7 +341,10 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
     if (isEncounter) {
       // 小影战：临时敌人不落表；败退锁定当晚，胜利/进行中不动 session 状态
       const status = res.outcome === 'defeat' ? 'session_end' as const : bs.status;
-      await saveBattleState({ ...bs, playerHp: p.playerHp, sp: p.sp, status });
+      await saveBattleState({
+        ...bs, playerHp: p.playerHp, sp: p.sp, status,
+        everRetreatedDown: bs.everRetreatedDown || res.outcome === 'defeat', // 批3「记仇」事实源
+      });
       return;
     }
     const sh = useAppStore.getState().shadow;
@@ -344,7 +361,10 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
       phase2WeakAttribute: p.phase2WeakAttribute,
       phase2ResistAttribute: p.phase2ResistAttribute,
     });
-    await saveBattleState({ ...bs, playerHp: p.playerHp, sp: p.sp, status });
+    await saveBattleState({
+      ...bs, playerHp: p.playerHp, sp: p.sp, status,
+      everRetreatedDown: bs.everRetreatedDown || res.outcome === 'defeat', // 批3「记仇」事实源
+    });
   }, [saveBattleState, isEncounter]);
 
   // ── 行动派发 ────────────────────────────────────────────
@@ -357,7 +377,8 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
       const t = input.skill.type;
       const isDmg = t === 'damage' || t === 'crit' || t === 'attack_boost';
       const s = engine.snapshot;
-      if (isDmg && s.activeMask === s.weakAttribute && s.sp >= engine.skillCost(input.skill)) {
+      // 月蚀词缀：弱点未揭示时不做预判演出（否则演出本身就是剧透）
+      if (isDmg && !s.weaknessHidden && s.activeMask === s.weakAttribute && s.sp >= engine.skillCost(input.skill)) {
         weakPreFiredRef.current = true;
         setShowWeak(true);
         setTimeout(() => setShowWeak(false), 800);
@@ -370,10 +391,15 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
       }
     }
     const prevHp = useAppStore.getState().battleState?.playerHp;
+    const maskAtAct = engine.snapshot.activeMask;
     const res = engine.act(input);
     bump();
     if (res.consumedTurn) actionsTakenRef.current++;
     await persistResult(res);
+    // 批3：熟练度记录（每次成功施展 +1；解锁刷新随内部触发）
+    if (input.kind === 'skill' && res.consumedTurn) {
+      void useAppStore.getState().recordSkillUses([{ attr: maskAtAct, level: input.skill.level }]);
+    }
     if (res.lines.length === 0) return;
     // 有玩家掉血演出 → 冻结显示 HP 到叙事命中行
     if (res.fx.some(f => f.type === 'playerHit') && prevHp !== undefined) {
@@ -556,8 +582,9 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
     attributes.map(a => [a.id, a.unlocked === false ? 0 : (a.level ?? 1)])
   ) as Record<AttributeId, number>;
   const availableSkills: PersonaSkill[] =
-    persona.skills[snap.activeMask]?.filter(s => s.level <= (attrLevels[snap.activeMask] || 1)) || [];
-  const isWeakAttr = snap.activeMask === snap.weakAttribute;
+    // 批3 双条件解锁：unlocked 已迁移置位则以其为准；缺省沿旧规则（属性等级）
+    persona.skills[snap.activeMask]?.filter(s => s.unlocked ?? (s.level <= (attrLevels[snap.activeMask] || 1))) || [];
+  const isWeakAttr = snap.activeMask === snap.weakAttribute && !snap.weaknessHidden;
   const isPhase2 = snap.phase === 2;
   const visibleHp = displayPlayerHp ?? snap.playerHp;
   const activePersonaName = persona.attributePersonas?.[snap.activeMask]?.name ?? '反抗者';
@@ -779,14 +806,24 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
           </div>
           <span
             className="text-xs font-bold px-2 py-0.5 rounded-full"
-            style={{ background: 'rgba(239,68,68,0.25)', color: '#fca5a5', border: '1px solid rgba(239,68,68,0.4)' }}
+            style={snap.weaknessHidden
+              ? { background: 'rgba(107,114,128,0.25)', color: '#9ca3af', border: '1px solid rgba(107,114,128,0.4)' }
+              : { background: 'rgba(239,68,68,0.25)', color: '#fca5a5', border: '1px solid rgba(239,68,68,0.4)' }}
           >
-            弱 {attrNamesMap[snap.weakAttribute]}
+            弱 {snap.weaknessHidden ? '？？？' : attrNamesMap[snap.weakAttribute]}
           </span>
         </div>
 
         {/* 状态标签行（意图浮标已随 ⑥ 贴到敌人头顶） */}
         <div className="flex items-center gap-2">
+          {snap.affixes.map(a => (
+            <span key={a} className="text-[10px] font-bold px-1.5 py-0.5"
+                  title={AFFIX_POOL[a].desc}
+                  style={{ background: 'rgba(147,51,234,0.22)', color: '#d8b4fe', border: '1px solid rgba(147,51,234,0.45)',
+                           clipPath: 'polygon(4px 0, 100% 0, calc(100% - 4px) 100%, 0 100%)', lineHeight: 1.2 }}>
+              {AFFIX_POOL[a].name}
+            </span>
+          ))}
           {snap.staggerImmune > 0 && (
             <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md"
                   style={{ background: 'rgba(156,163,175,0.25)', color: '#d1d5db', lineHeight: 1.2 }}>

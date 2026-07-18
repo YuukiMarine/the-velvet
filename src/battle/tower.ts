@@ -9,6 +9,8 @@
  * ⚠️ 只允许相对导入（模拟战脚本用 tsx 直跑）。
  */
 import type { AttributeId, MobSpec, StratumNode, StratumNodeType, TowerStratum } from '../types';
+import { rollAffixes } from './loot';
+import { AFFIX_HP_MULT } from './numbers';
 import {
   MOB_HP_BY_LEVEL, ELITE_HP_BY_LEVEL,
 } from './numbers';
@@ -48,7 +50,10 @@ export function rollMobSpec(level: number, tier: 'mob' | 'elite', rng: () => num
   const weakPool = ATTRS.filter(a => a !== attribute);
   const weakAttribute = weakPool[Math.floor(rng() * weakPool.length)];
   const [lo, hi] = (tier === 'mob' ? MOB_HP_BY_LEVEL : ELITE_HP_BY_LEVEL)[Math.min(4, Math.max(0, level - 1))];
-  const maxHp = lo + Math.floor(rng() * (hi - lo + 1));
+  let maxHp = lo + Math.floor(rng() * (hi - lo + 1));
+  // 批3 §5.1：强敌必带 1 条词缀；「顽固」的 HP+30% 在生成时应用
+  const affixes = tier === 'elite' ? rollAffixes(1, rng) : undefined;
+  if (affixes?.includes('stubborn')) maxHp = Math.round(maxHp * AFFIX_HP_MULT);
   const pool = tier === 'mob' ? MOB_NAMES[attribute] : ELITE_NAMES[attribute];
   return {
     name: pool[Math.floor(rng() * pool.length)],
@@ -56,6 +61,7 @@ export function rollMobSpec(level: number, tier: 'mob' | 'elite', rng: () => num
     attribute,
     weakAttribute,
     maxHp,
+    affixes,
   };
 }
 

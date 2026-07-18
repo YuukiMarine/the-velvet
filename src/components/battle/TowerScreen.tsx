@@ -11,6 +11,7 @@ import { MobSpec, StratumNode } from '@/types';
 import { rollMobSpec, absoluteFloor } from '@/battle/tower';
 import { getTowerEvent, TowerEventEffect } from '@/battle/events';
 import { ECHO_HEAL_PCT } from '@/battle/numbers';
+import { lootLabel, towerRelicBonus } from '@/battle/loot';
 import { playSound } from '@/utils/feedback';
 import { useBackHandler } from '@/utils/useBackHandler';
 import { TowerMap } from '@/components/battle/TowerMap';
@@ -63,8 +64,11 @@ export function TowerScreen({ open, onClose, onDescend, onRequestBattle, onToast
       setEchoNode(moved);
     } else if (moved.type === 'chest') {
       const sp = await completeTowerNode(moved.id);
+      // 批3：月匣必得战利品（70% 遗物 / 30% 迷思）
+      const drops = await useAppStore.getState().rollTowerLoot('chest', moved.floor / Math.max(1, stratum.floors));
       playSound('/battle-seal.mp3', 0.5);
-      onToast(`📦 月匣开启 · +${sp} SP`);
+      const lootText = drops.map(lootLabel).join(' · ');
+      onToast(`📦 月匣开启${sp > 0 ? ` · +${sp} SP` : ''}${lootText ? ` · ${lootText}` : ''}`);
     }
   };
 
@@ -112,8 +116,13 @@ export function TowerScreen({ open, onClose, onDescend, onRequestBattle, onToast
     const node = echoNode;
     setEchoNode(null);
     if (!node) return;
-    if (choice === 'heal') await towerAdjust({ hpDeltaPct: ECHO_HEAL_PCT });
-    else await towerAdjust({ buff: { id: `echo-${node.id}`, label: '月辉 +6%', addPct: 0.06 } });
+    if (choice === 'heal') {
+      // 批3：影之怀炉遗物 → 回响回复比例提升
+      const { echoHealAdd } = towerRelicBonus(battleState?.arsenal?.relics);
+      await towerAdjust({ hpDeltaPct: ECHO_HEAL_PCT + echoHealAdd });
+    } else {
+      await towerAdjust({ buff: { id: `echo-${node.id}`, label: '月辉 +6%', addPct: 0.06 } });
+    }
     await completeTowerNode(node.id);
   };
 
