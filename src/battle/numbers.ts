@@ -106,10 +106,11 @@ export const SHADOW_CALM_MULT = 0.85;          // 侵蚀（玩家攻击减弱）
 export const SHADOW_STATUS_TURNS = 2;
 
 // ── 高塔区层 · 小影/精英（§9.2，批2）───────────────────────
-/** 小影 HP 区间（按区层等级）："2-3 次当前等级技能可击败" */
-export const MOB_HP_BY_LEVEL: Array<[number, number]> = [[22, 30], [33, 45], [48, 66], [66, 90], [88, 120]];
+// 批3 验收调整：全敌人最大 HP 上调 Lv1-2 +10 / Lv3 +20 / Lv4-5 +30（用户拍板）
+/** 小影 HP 区间（按区层等级） */
+export const MOB_HP_BY_LEVEL: Array<[number, number]> = [[32, 40], [43, 55], [68, 86], [96, 120], [118, 150]];
 export const MOB_ATTACK_BY_LEVEL = [3, 4, 5, 6, 7];
-export const ELITE_HP_BY_LEVEL: Array<[number, number]> = [[60, 75], [90, 110], [130, 160], [180, 220], [240, 290]];
+export const ELITE_HP_BY_LEVEL: Array<[number, number]> = [[70, 85], [100, 120], [150, 180], [210, 250], [270, 320]];
 export const ELITE_ATTACK_BY_LEVEL = [4, 5, 6, 7, 8];
 
 /** 区层等级 SP 系数（节点奖励 = 层段基准 × 系数 × 1.1^异变加深） */
