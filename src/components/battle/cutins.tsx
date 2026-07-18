@@ -245,7 +245,7 @@ export function NarrationBox({
   );
 }
 
-export function AllOutCutIn({ personaName, shadowName }: { personaName: string; shadowName: string }) {
+export function AllOutCutIn({ personaName, shadowName, summonLine }: { personaName: string; shadowName: string; summonLine?: string }) {
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -283,9 +283,10 @@ export function AllOutCutIn({ personaName, shadowName }: { personaName: string; 
         initial={{ opacity: 0, y: 50 }}
         animate={{ opacity: [0, 1, 0], y: [50, 80, 80] }}
         transition={{ duration: 1.2, delay: 0.45 }}
-        className="absolute text-white text-sm font-bold tracking-wider"
+        className="absolute text-white text-sm font-bold tracking-wider text-center px-6"
         style={{ bottom: '28%', textShadow: '0 0 10px rgba(239,68,68,0.9)' }}
       >
+        {summonLine && <span className="block text-[12px] italic text-amber-200/90 mb-0.5">「{summonLine}」</span>}
         {personaName} —— 向 {shadowName} 倾泻全部力量！
       </motion.div>
       <motion.div
@@ -415,7 +416,7 @@ export function OneMoreFlash() {
 }
 
 /** 引擎v2 · 出战面具切换切入（每场每属性首次=完整版，之后走轻量 toast） */
-export function MaskCutIn({ attrName, personaName, full }: { attrName: string; personaName: string; full: boolean }) {
+export function MaskCutIn({ attrName, personaName, full, summonLine }: { attrName: string; personaName: string; full: boolean; summonLine?: string }) {
   if (!full) {
     return (
       <motion.div
@@ -471,6 +472,17 @@ export function MaskCutIn({ attrName, personaName, full }: { attrName: string; p
         >
           🎭 {attrName}之面具 · 出战
         </motion.p>
+        {summonLine && (
+          <motion.p
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.16 }}
+            className="mt-1.5 text-[13px] font-bold italic text-cyan-100/90"
+            style={{ textShadow: '0 0 12px rgba(53,209,232,0.6)' }}
+          >
+            「{summonLine}」
+          </motion.p>
+        )}
       </div>
     </motion.div>
   );

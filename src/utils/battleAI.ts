@@ -669,6 +669,61 @@ export async function generateVictoryNarrative(
 }
 
 /**
+ * 批3 §4.3：召唤台词——每属性 Persona 一句，单次调用批量生成 5 条。
+ * 结果缓存在 Persona.summonLines；无 Key / 失败返回 null（调用方走模板）。
+ */
+export async function generateSummonLines(
+  settings: Settings,
+  attributeNames: Record<AttributeId, string>,
+  personas: Record<AttributeId, { name: string; description: string }>,
+): Promise<Record<AttributeId, string> | null> {
+  const cfg = getAIConfig(settings);
+  if (!cfg) return null;
+  const roster = ATTRS.map(a => `- ${a}（${attributeNames[a]}）：「${personas[a].name}」——${personas[a].description || '无描述'}`).join('\n');
+  const prompt = `你是Persona系游戏的台词作者。玩家有五位属性 Persona，请为每一位写一句"召唤台词"——戴上面具唤出它时喊出的话。
+${roster}
+
+【要求】
+- 每句 6-16 字，气势与该 Persona 的神话/人设意象强绑定；可以是宣言、低语或诗句残行
+- 五句风格必须彼此不同；禁止出现"Persona/面具"字样
+仅输出 JSON：{"knowledge":"…","guts":"…","dexterity":"…","kindness":"…","charm":"…"}`;
+  try {
+    const result = await callAIWithRetry(cfg, [{ role: 'user', content: prompt }], 0.9, 400);
+    const parsed = extractJSON(result);
+    const out = {} as Record<AttributeId, string>;
+    for (const a of ATTRS) {
+      const v = parsed[a];
+      if (typeof v !== 'string' || !v.trim()) return null;
+      out[a] = v.trim().slice(0, 24);
+    }
+    return out;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 批3 §7.3：影之评语——登塔回顾的 50 字 AI 点评（复用胜利叙事通道；可在设置关闭）。
+ */
+export async function generateRecapComment(
+  settings: Settings,
+  summary: { reason: 'descend' | 'defeat' | 'clear'; floors: number; mobs: number; damage: number; maxHit: number; weakHits: number; stratumName: string },
+): Promise<string | null> {
+  const cfg = getAIConfig(settings);
+  if (!cfg) return null;
+  const reasonText = summary.reason === 'clear' ? '讨伐了区层心魔、通关区层' : summary.reason === 'defeat' ? '力竭败退（进度保留）' : '主动下塔结算';
+  const prompt = `你是Persona系游戏中栖息在塔里的神秘影之声。玩家刚结束一晚"影时间高塔"攀登：${reasonText}；区层【${summary.stratumName}】；攀升${summary.floors}层、讨伐${summary.mobs}只Shadow、总伤害${summary.damage}、最大单击${summary.maxHit}、弱点命中${summary.weakHits}次。
+写一句50字以内的点评：以影之声的口吻（低语、略带戏谑或敬意），点出这一晚最亮眼或最遗憾的一处，${summary.reason === 'defeat' ? '败退也要给出一丝不甘的鼓动' : '结尾带一点对更高处的暗示'}。不要用括号和引号，直接输出这句话。`;
+  try {
+    const line = await callAIWithRetry(cfg, [{ role: 'user', content: prompt }], 0.85, 200);
+    const clean = line.trim().replace(/^["「『]|["」』]$/g, '');
+    return clean ? clean.slice(0, 80) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * 批3 §4.4：誓约技 LLM 命名——按该属性 Persona 人设生成新技能名+描述。
  * 结果由调用方缓存到誓约石（重复装备不再调 AI）；无 Key / 失败时调用方保留模板名。
  */

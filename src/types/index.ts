@@ -1037,6 +1037,8 @@ export interface TowerSessionStats {
   buffs: Array<{ id: string; label: string; addPct?: number }>;
   /** 事件「被夺先手」：下一场战斗 Shadow 先攻（战斗开场消费并清除） */
   pendingFirstStrike?: boolean;
+  /** （批3 记忆台词）本次登塔距上一次登塔的间隔天数（entry 时快照，覆写 lastChallengeDate 前计算） */
+  daysAway?: number;
 }
 
 // ── 战斗状态效果（本地，不持久化） ─────────────────────────────

@@ -84,6 +84,17 @@ export function TowerScreen({ open, onClose, onDescend, onRequestBattle, onToast
         case 'skipNextFloor': eventPostRef.current.skip = true; break;
         case 'rerollFloor': eventPostRef.current.reroll = true; break;
         case 'mobFight': eventPostRef.current.fight = true; break;
+        // 批3：事件战利品直接入包（toast 报名字）
+        case 'relicWaning': {
+          const label = await useAppStore.getState().grantEventLoot('relicWaning');
+          if (label) onToast(`🎁 ${label}`);
+          break;
+        }
+        case 'randomMyth': {
+          const label = await useAppStore.getState().grantEventLoot('randomMyth');
+          if (label) onToast(`🎁 ${label}`);
+          break;
+        }
         case 'echoLine': case 'nothing': break;
       }
     }
@@ -220,6 +231,7 @@ export function TowerScreen({ open, onClose, onDescend, onRequestBattle, onToast
               materialize={materializeEventText}
               onResolve={(effects) => void applyEventEffects(effects)}
               onFinish={() => void finishEvent()}
+              playerSp={battleState.sp}
             />
           ) : null;
         })()}
