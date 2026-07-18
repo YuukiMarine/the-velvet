@@ -37,6 +37,14 @@ export interface HeavyTransitionOptions {
 let listener: ((req: HeavyTransitionRequest) => boolean) | null = null;
 let seq = 0;
 
+// ── 水波纹配套：新页圆形揭示原点（App 页面壳 CircleRevealOnEnter 挂载时查询）──
+let circleReveal: { x: number; y: number; until: number } | null = null;
+
+/** 800ms 内发生过水波纹转场则返回其点击原点，否则 null。
+ *  读取不清除（靠 TTL 自然过期）——StrictMode 双挂载下两次读取都要拿到同一原点。 */
+export const consumePendingCircleReveal = (): { x: number; y: number } | null =>
+  circleReveal && Date.now() <= circleReveal.until ? { x: circleReveal.x, y: circleReveal.y } : null;
+
 /** TransitionLayer 专用：注册演出承接者。返回 false 表示当前忙（请求被拒）。 */
 export const _registerTransitionLayer = (fn: (req: HeavyTransitionRequest) => boolean) => {
   listener = fn;
@@ -50,6 +58,8 @@ export const _registerTransitionLayer = (fn: (req: HeavyTransitionRequest) => bo
  * false = 无演出（Layer 缺席/忙/降级），midpoint 已被同步执行。
  */
 export const playHeavyTransition = (midpoint: () => void, opts?: HeavyTransitionOptions): boolean => {
+  // 水波纹导航：登记新页圆形揭示原点（即便 Layer 拒接降级，新页揭示仍成立）
+  if (opts?.effect === 'water' && opts.origin) circleReveal = { ...opts.origin, until: Date.now() + 800 };
   const accepted = listener?.({ id: ++seq, channel: currentChannel(), midpoint, effect: opts?.effect, origin: opts?.origin }) ?? false;
   if (!accepted) midpoint();
   return accepted;
