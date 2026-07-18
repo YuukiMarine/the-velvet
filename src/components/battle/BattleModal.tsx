@@ -20,6 +20,7 @@ import { useBoldness } from '@/utils/boldness';
 import { BattleEngine, PlayerActionInput, FxEvent, TurnResult } from '@/battle/engine';
 import { QTE_FALLBACK_MULT, healAmount } from '@/battle/numbers';
 import { aggregateRelicMods, AFFIX_POOL } from '@/battle/loot';
+import { MasteryStars } from '@/components/battle/ArsenalModal';
 import { ShadowSVG } from '@/components/battle/ShadowSVG';
 import { BattleStartOverlay } from '@/components/battle/BattleStartOverlay';
 import { StatusBar } from '@/components/battle/StatusBar';
@@ -1453,6 +1454,19 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
                                     {tagIcon ? `${tagIcon} ${tagLabel}` : tagLabel}
                                   </span>
                                 )}
+                                {skill.oath && (
+                                  <span className="px-1.5 py-0.5 text-[9px] font-bold"
+                                        style={{ color: '#fcd34d', background: 'rgba(252,211,77,0.14)', clipPath: slantPoly(4), lineHeight: 1.3 }}>
+                                    誓约
+                                  </span>
+                                )}
+                                {skill.socket && (
+                                  <span className="px-1.5 py-0.5 text-[9px] font-bold"
+                                        style={{ color: '#c4b5fd', background: 'rgba(196,181,253,0.14)', clipPath: slantPoly(4), lineHeight: 1.3 }}>
+                                    ◆
+                                  </span>
+                                )}
+                                <MasteryStars skill={skill} />
                               </span>
                               <p className="mt-0.5 text-[11px] leading-snug text-gray-400">{skill.description}</p>
                             </div>
