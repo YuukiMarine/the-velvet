@@ -7,15 +7,16 @@
 import { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore } from '@/store';
-import { MobSpec, StratumNode } from '@/types';
+import { AttributeId, MobSpec, StratumNode } from '@/types';
 import { rollMobSpec, absoluteFloor } from '@/battle/tower';
 import { getTowerEvent, TowerEventEffect } from '@/battle/events';
 import { ECHO_HEAL_PCT } from '@/battle/numbers';
 import { lootLabel, towerRelicBonus } from '@/battle/loot';
+import { buildMirrorQuiz, type MirrorQuestion } from '@/battle/quiz';
 import { playSound } from '@/utils/feedback';
 import { useBackHandler } from '@/utils/useBackHandler';
 import { TowerMap } from '@/components/battle/TowerMap';
-import { TowerEventModal, TowerEchoModal } from '@/components/battle/TowerModals';
+import { TowerEventModal, TowerEchoModal, TowerQuizModal } from '@/components/battle/TowerModals';
 import { IconTower, IconEvilEye, slantPoly, NoiseLayer, paletteFor } from '@/components/battle/warKit';
 
 interface Props {
@@ -38,10 +39,11 @@ export function TowerScreen({ open, onClose, onDescend, onRequestBattle, onToast
 
   const [eventNode, setEventNode] = useState<StratumNode | null>(null);
   const [echoNode, setEchoNode] = useState<StratumNode | null>(null);
-  const eventPostRef = useRef<{ skip?: boolean; reroll?: boolean; fight?: boolean }>({});
+  const [quiz, setQuiz] = useState<{ questions: MirrorQuestion[]; reward: number } | null>(null);
+  const eventPostRef = useRef<{ skip?: boolean; reroll?: boolean; fight?: boolean; quizReward?: number }>({});
 
   useBackHandler(open, () => {
-    if (eventNode || echoNode) return; // 节点弹窗处理中不响应
+    if (eventNode || echoNode || quiz) return; // 节点弹窗处理中不响应
     onClose();
   });
 
@@ -80,7 +82,7 @@ export function TowerScreen({ open, onClose, onDescend, onRequestBattle, onToast
         case 'hpHealPct': await towerAdjust({ hpDeltaPct: eff.pct }); break;
         case 'sp': await towerAdjust({ spDelta: eff.amount }); break;
         case 'stealFirstStrike': await towerAdjust({ stealFirstStrike: true }); break;
-        case 'quiz': await towerAdjust({ spDelta: eff.reward }); break; // 真实问答批3 接入
+        case 'quiz': eventPostRef.current.quizReward = eff.reward; break; // 批3：真实两题问答（finishEvent 后弹出）
         case 'skipNextFloor': eventPostRef.current.skip = true; break;
         case 'rerollFloor': eventPostRef.current.reroll = true; break;
         case 'mobFight': eventPostRef.current.fight = true; break;
@@ -121,6 +123,30 @@ export function TowerScreen({ open, onClose, onDescend, onRequestBattle, onToast
     await completeTowerNode(node.id);
     if (post.skip) await towerSkipNextFloor();
     if (post.reroll) await towerRerollNextFloor();
+    if (post.quizReward) {
+      // 批3 镜之自问：从真实记录出 2 题；素材不足（新用户）回落直接发奖
+      const acts = useAppStore.getState().activities;
+      const attrNames = useAppStore.getState().settings.attributeNames as Record<AttributeId, string>;
+      const questions = buildMirrorQuiz(acts, attrNames);
+      if (questions) {
+        setQuiz({ questions, reward: post.quizReward });
+      } else {
+        await towerAdjust({ spDelta: post.quizReward });
+        onToast(`🪞 镜子沉默地注视你 · +${post.quizReward} SP`);
+      }
+    }
+  };
+
+  const handleQuizDone = async (allCorrect: boolean) => {
+    const reward = quiz?.reward ?? 0;
+    setQuiz(null);
+    if (allCorrect && reward > 0) {
+      await towerAdjust({ spDelta: reward });
+      playSound('/battle-seal.mp3', 0.5);
+      onToast(`🪞 镜中的你微微一笑 · +${reward} SP`);
+    } else {
+      onToast('🪞 镜面暗了下去——但它记住了你诚实的样子');
+    }
   };
 
   const handleEchoChoose = async (choice: 'heal' | 'buff') => {
@@ -238,6 +264,9 @@ export function TowerScreen({ open, onClose, onDescend, onRequestBattle, onToast
       </AnimatePresence>
       <AnimatePresence>
         {echoNode && <TowerEchoModal onChoose={(c) => void handleEchoChoose(c)} />}
+      </AnimatePresence>
+      <AnimatePresence>
+        {quiz && <TowerQuizModal questions={quiz.questions} reward={quiz.reward} onDone={(ok) => void handleQuizDone(ok)} />}
       </AnimatePresence>
     </motion.div>
   );

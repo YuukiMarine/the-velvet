@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { TowerEvent, TowerEventOption, TowerEventEffect } from '@/battle/events';
 import { TowerSessionStats, TowerStratum } from '@/types';
 import { ECHO_HEAL_PCT } from '@/battle/numbers';
+import type { MirrorQuestion } from '@/battle/quiz';
 import { playSound, triggerLightHaptic } from '@/utils/feedback';
 import { slantPoly, NoiseLayer } from '@/components/battle/warKit';
 
@@ -102,6 +103,96 @@ export function TowerEventModal({ event, materialize, onResolve, onFinish, playe
             </motion.div>
           )}
         </AnimatePresence>
+        </SlantPanel>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+// ── 镜之自问弹窗（批3：真实两题问答，全对发奖、答错无惩罚） ──
+interface QuizProps {
+  questions: MirrorQuestion[];
+  reward: number;
+  onDone: (allCorrect: boolean) => void;
+}
+
+export function TowerQuizModal({ questions, reward, onDone }: QuizProps) {
+  const [idx, setIdx] = useState(0);
+  const [picked, setPicked] = useState<number | null>(null);
+  const [correctCount, setCorrectCount] = useState(0);
+  const q = questions[idx];
+  const last = idx >= questions.length - 1;
+
+  const pick = (i: number) => {
+    if (picked !== null) return;
+    triggerLightHaptic();
+    playSound(i === q.correctIdx ? '/battle-seal.mp3' : '/ui-menu.mp3', 0.5);
+    setPicked(i);
+    if (i === q.correctIdx) setCorrectCount(c => c + 1);
+  };
+
+  const advance = () => {
+    if (last) {
+      onDone(correctCount === questions.length); // pick 时已计入本题
+      return;
+    }
+    setIdx(i => i + 1);
+    setPicked(null);
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-5"
+      style={{ background: 'rgba(0,0,0,0.85)' }}
+    >
+      <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="w-full flex justify-center">
+        <SlantPanel className="p-5 space-y-4">
+          <div className="text-center">
+            <p className="text-3xl">🪞</p>
+            <p className="text-white font-black text-base mt-1">镜之自问</p>
+            <p className="text-[10px] font-bold text-indigo-300/60 mt-0.5">
+              第 {idx + 1}/{questions.length} 问 · 全对 +{reward} SP · 答错无惩罚
+            </p>
+          </div>
+          <p className="text-gray-200 text-sm leading-relaxed">{q.q}</p>
+          <div className="space-y-2">
+            {q.options.map((opt, i) => {
+              const revealed = picked !== null;
+              const isCorrect = i === q.correctIdx;
+              const isPicked = i === picked;
+              return (
+                <button
+                  key={i}
+                  onClick={() => pick(i)}
+                  disabled={revealed}
+                  className="w-full py-2.5 rounded-xl text-sm font-semibold text-left px-4 transition-all active:scale-[0.98]"
+                  style={{
+                    background: revealed && isCorrect ? 'rgba(16,185,129,0.25)'
+                      : revealed && isPicked ? 'rgba(239,68,68,0.22)'
+                      : 'rgb(var(--color-battle-bright-rgb) / 0.16)',
+                    border: revealed && isCorrect ? '1px solid rgba(16,185,129,0.6)'
+                      : revealed && isPicked ? '1px solid rgba(239,68,68,0.5)'
+                      : '1px solid rgb(var(--color-battle-bright-rgb) / 0.4)',
+                    color: revealed && isCorrect ? '#6ee7b7' : '#e9d5ff',
+                  }}
+                >
+                  {opt}
+                  {revealed && isCorrect && <span className="ml-2 text-[10px]">✓</span>}
+                  {revealed && isPicked && !isCorrect && <span className="ml-2 text-[10px]">✗</span>}
+                </button>
+              );
+            })}
+          </div>
+          {picked !== null && (
+            <button
+              onClick={advance}
+              className="w-full py-2.5 rounded-xl text-sm font-bold text-white"
+              style={{ background: 'rgb(var(--color-battle-bright-rgb) / 0.35)', border: '1px solid rgb(var(--color-battle-bright-rgb) / 0.6)' }}
+            >
+              {last ? '面对答案' : '下一问'}
+            </button>
+          )}
         </SlantPanel>
       </motion.div>
     </motion.div>
