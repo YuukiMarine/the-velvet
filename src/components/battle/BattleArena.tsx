@@ -7,6 +7,7 @@ import { healAmount, BOSS_ATTACK_BY_LEVEL } from '@/battle/numbers';
 import { AttributeId, MobSpec, StratumNode } from '@/types';
 import { absoluteFloor } from '@/battle/tower';
 import { lootLabel } from '@/battle/loot';
+import { generateSummonLines, generateRecapComment } from '@/utils/battleAI';
 import { playSound } from '@/utils/feedback';
 import { BackButton } from '@/components/BackButton';
 import { PageTitle } from '@/components/PageTitle';
@@ -79,6 +80,7 @@ export const BattleArena = () => {
   // ── 高塔（批2） ──
   const [activeEncounter, setActiveEncounter] = useState<{ mob: MobSpec; level: number; nodeId: string } | null>(null);
   const [recap, setRecap] = useState<'descend' | 'defeat' | 'clear' | null>(null);
+  const [recapComment, setRecapComment] = useState<string | null>(null);
   const [spToast, setSpToast] = useState<string | null>(null);
   const [deepenNotice, setDeepenNotice] = useState(false);
   const [towerOpen, setTowerOpen] = useState(false);
@@ -102,6 +104,20 @@ export const BattleArena = () => {
     checkShadowHpRegen();
     // 批3：熟练度/解锁字段惰性迁移（存量技能不回锁，unlocked 缺省按当前属性等级置位）
     void useAppStore.getState().refreshSkillUnlocks();
+    // 批3 §4.3：召唤台词懒生成——一次批量 5 条并缓存；无 Key 静默留空（cut-in 走模板）
+    void (async () => {
+      const { persona: p, settings: st, savePersona } = useAppStore.getState();
+      if (!p || p.summonLines || !p.attributePersonas) return;
+      const lines = await generateSummonLines(
+        st,
+        st.attributeNames as Record<AttributeId, string>,
+        p.attributePersonas as Record<AttributeId, { name: string; description: string }>,
+      ).catch(() => null);
+      if (lines) {
+        const cur = useAppStore.getState().persona;
+        if (cur && !cur.summonLines) await savePersona({ ...cur, summonLines: lines });
+      }
+    })();
     // 月相日（周一）：未通关区层异变加深——主影回满 + 加深计数
     void deepenStratumIfNewWeek().then(deepened => {
       if (deepened) {
@@ -220,6 +236,25 @@ export const BattleArena = () => {
   useEffect(() => {
     if (towerOpen && !sessionActive) setTowerOpen(false);
   }, [towerOpen, sessionActive]);
+
+  // 批3 §7.3 影之评语：回顾弹出时后台取一句 AI 点评（可在设置关闭；无 Key 静默跳过）
+  useEffect(() => {
+    if (!recap) { setRecapComment(null); return; }
+    const { settings: st, battleState: bs, stratum: stm } = useAppStore.getState();
+    if (st.battleCommentEnabled === false || !stm) return;
+    const ts = bs?.towerSession;
+    let alive = true;
+    void generateRecapComment(st, {
+      reason: recap,
+      floors: ts?.floorsClimbed ?? 0,
+      mobs: ts?.mobsDefeated ?? 0,
+      damage: ts?.damageDealt ?? 0,
+      maxHit: ts?.maxSingleHit ?? 0,
+      weakHits: ts?.weaknessHits ?? 0,
+      stratumName: stm.name,
+    }).then(c => { if (alive && c) setRecapComment(c); }).catch(() => undefined);
+    return () => { alive = false; };
+  }, [recap]);
 
   const toggleDay = (day: number) => {
     const next = shadowDays.includes(day)
@@ -918,6 +953,26 @@ export const BattleArena = () => {
                       </div>
                     </div>
 
+                    {/* ── 影之评语开关（批3 §7.3） ── */}
+                    <div className={`${battleCard} overflow-hidden`}>
+                      <div className="flex items-center gap-3 px-4 py-3.5">
+                        <div className="flex-1">
+                          <p className="text-sm font-semibold text-gray-800 dark:text-gray-100">影之评语</p>
+                          <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">登塔回顾附一句 AI 点评（需配置 API Key）</p>
+                        </div>
+                        <button
+                          onClick={() => void saveSettings({ battleCommentEnabled: settings.battleCommentEnabled === false })}
+                          className="relative w-12 h-6 rounded-full transition-colors flex-shrink-0"
+                          style={{ background: settings.battleCommentEnabled !== false ? 'rgb(var(--color-battle-rgb))' : 'rgba(156,163,175,0.4)' }}
+                        >
+                          <motion.span
+                            animate={{ left: settings.battleCommentEnabled !== false ? 26 : 4 }}
+                            className="absolute top-1 w-4 h-4 rounded-full bg-white shadow"
+                          />
+                        </button>
+                      </div>
+                    </div>
+
                     {/* ── Persona 洗牌 ── */}
                     {persona && (
                       <div className={`${battleCard} overflow-hidden`}>
@@ -1202,6 +1257,7 @@ export const BattleArena = () => {
           reason={recap}
           stats={battleState?.towerSession}
           stratum={stratum}
+          comment={recapComment}
           onClose={() => setRecap(null)}
         />
       )}

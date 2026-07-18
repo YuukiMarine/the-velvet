@@ -20,6 +20,7 @@ import { useBoldness } from '@/utils/boldness';
 import { BattleEngine, PlayerActionInput, FxEvent, TurnResult } from '@/battle/engine';
 import { QTE_FALLBACK_MULT, healAmount } from '@/battle/numbers';
 import { aggregateRelicMods, AFFIX_POOL } from '@/battle/loot';
+import { pickMemoryLine, SUMMON_FALLBACK } from '@/battle/memoryLines';
 import { MasteryStars } from '@/components/battle/ArsenalModal';
 import { ShadowSVG } from '@/components/battle/ShadowSVG';
 import { BattleStartOverlay } from '@/components/battle/BattleStartOverlay';
@@ -295,6 +296,14 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
       if (s.phase === 2) {
         intro.push(`${sh.name} 已进入第二形态……小心！`);
       }
+      // 批3 §5.3 记忆台词：心魔记得你的撤离/缺席/战绩（60% 概率一句）
+      const memLine = pickMemoryLine({
+        everRetreated: !!bs.everRetreatedDown,
+        daysSinceLastClimb: bs.towerSession?.daysAway ?? 0,
+        archiveCount: bs.defeatedShadowLog?.length ?? 0,
+        deepenCount: stratum?.deepenCount ?? 0,
+      }, sh.name);
+      if (memLine) intro.push(memLine);
       const respLine = sh.responseLines[Math.floor(Math.random() * Math.min(3, sh.responseLines.length))] ?? '……';
       intro.push(`${sh.name}：「${respLine}」`);
     }
@@ -756,7 +765,7 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
       </AnimatePresence>
 
       {/* Cut-ins */}
-      <AnimatePresence>{allOutCutIn && <AllOutCutIn personaName={activePersonaName} shadowName={foeName} />}</AnimatePresence>
+      <AnimatePresence>{allOutCutIn && <AllOutCutIn personaName={activePersonaName} shadowName={foeName} summonLine={persona.summonLines?.[snap.activeMask]} />}</AnimatePresence>
       <AnimatePresence>{weakCutIn && <WeakCutIn />}</AnimatePresence>
       <AnimatePresence>{oneMoreFlash && <OneMoreFlash />}</AnimatePresence>
       <AnimatePresence>
@@ -765,6 +774,9 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
             attrName={attrNamesMap[maskCutIn.attr]}
             personaName={persona.attributePersonas?.[maskCutIn.attr]?.name ?? '反抗者'}
             full={maskCutIn.full}
+            summonLine={maskCutIn.full
+              ? (persona.summonLines?.[maskCutIn.attr] ?? SUMMON_FALLBACK[maskCutIn.attr])
+              : undefined}
           />
         )}
       </AnimatePresence>

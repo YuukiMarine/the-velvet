@@ -120,7 +120,7 @@ import {
 import { PLAYER_BASE_HP, nodeSpReward, bossSpReward, RELIC_SALVAGE_SP, RELIC_SLOTS_BY_STRATUM, AFFIX_HP_MULT, masteryStars } from '@/battle/numbers';
 import { buildStratum, migrationStratumName, reachableNodeIds, rollMobSpec, weekKeyOf } from '@/battle/tower';
 import { TOWER_EVENT_IDS } from '@/battle/events';
-import { rollNodeLoot, rollAffixes, buildOathSkill, towerRelicBonus, MYTH_POOL, type LootDrop } from '@/battle/loot';
+import { rollNodeLoot, rollAffixes, buildOathSkill, towerRelicBonus, MYTH_POOL, rollRelic, rollMyth, lootLabel, type LootDrop } from '@/battle/loot';
 import { normalizeAttributeLevelTitles } from '@/utils/attributeLevelTitles';
 
 /** Shared request payload returned by buildSummaryRequest used by both non-streaming generateSummary and streaming modal */
@@ -482,6 +482,8 @@ interface AppState {
   // ── 批3 · 养成与生态 ──
   /** 战利品掷取并入包（月匣/强敌/心魔）；返回掉落列表（toast/演出用） */
   rollTowerLoot: (source: 'chest' | 'elite' | 'boss', floorRatio: number) => Promise<LootDrop[]>;
+  /** 事件奖励：残月遗物 / 随机迷思 直接入包；返回展示名（结果文案用） */
+  grantEventLoot: (kind: 'relicWaning' | 'randomMyth') => Promise<string>;
   /** 删除遗物 → 转化 SP（10/25/60）；返回转化量 */
   salvageRelic: (relicId: string) => Promise<number>;
   /** 装备/卸下遗物（受区层期栏位限制：Lv1期1/Lv2-4期2/Lv5期3）；返回是否成功 */
@@ -3938,7 +3940,12 @@ ${activityLines || '（本期暂无记录）'}
   },
 
   enterTowerToday: async () => {
-    const { stratum } = get();
+    const { stratum, battleState: prevBs } = get();
+    // 批3 记忆台词：在 lastChallengeDate 被覆写前快照缺席天数
+    const prevKey = prevBs?.lastChallengeDate;
+    const daysAway = prevKey
+      ? Math.max(0, Math.floor((new Date(toLocalDateKey() + 'T00:00:00').getTime() - new Date(prevKey + 'T00:00:00').getTime()) / 86400000))
+      : 0;
     get().startBattleSession(); // 满 HP + lastChallengeDate
     const bs = get().battleState;
     if (!bs) return;
@@ -3956,6 +3963,7 @@ ${activityLines || '（本期暂无记录）'}
         weaknessHits: 0,
         spEarned: 0,
         buffs: [],
+        daysAway,
       },
     });
   },
@@ -4118,6 +4126,29 @@ ${activityLines || '（本期暂无记录）'}
     const bs = get().battleState!;
     await get().saveBattleState({ ...bs, arsenal: next, sp: bs.sp + spBonus });
     return drops;
+  },
+
+  grantEventLoot: async (kind) => {
+    const { stratum, battleState } = get();
+    if (!battleState) return '';
+    const arsenal: BattleArsenal = battleState.arsenal ?? { relics: [], myths: [], oaths: [], chains: [] };
+    const ctx = {
+      stratumLevel: stratum?.level ?? 1,
+      floorRatio: 0.5,
+      ownedChainKeys: arsenal.chains.map(c => c.key),
+      ownedOathKinds: arsenal.oaths.map(o => o.kind),
+      rng: Math.random,
+      makeId: uuidv4,
+      today: toLocalDateKey(),
+    };
+    if (kind === 'relicWaning') {
+      const relic = rollRelic(ctx, 'waning');
+      await get().saveBattleState({ ...battleState, arsenal: { ...arsenal, relics: [...arsenal.relics, relic] } });
+      return lootLabel({ kind: 'relic', relic });
+    }
+    const myth = rollMyth(ctx);
+    await get().saveBattleState({ ...battleState, arsenal: { ...arsenal, myths: [...arsenal.myths, myth] } });
+    return lootLabel({ kind: 'myth', myth });
   },
 
   salvageRelic: async (relicId) => {

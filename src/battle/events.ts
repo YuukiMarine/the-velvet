@@ -19,6 +19,8 @@ export type TowerEventEffect =
   | { kind: 'stealFirstStrike' }       // 下一战被夺先手（Shadow 先攻一次）
   | { kind: 'quiz'; reward: number }   // 镜之自问：答对 +SP（素材执行层注入）
   | { kind: 'echoLine' }               // 旧日回音：引用最近一条重要记录（素材执行层注入）
+  | { kind: 'relicWaning' }            // （批3）获得一件残月遗物
+  | { kind: 'randomMyth' }             // （批3）获得一枚随机迷思石
   | { kind: 'nothing' };
 
 export interface TowerEventOption {
@@ -30,6 +32,8 @@ export interface TowerEventOption {
   chance?: number;
   elseResultText?: string;
   elseEffects?: TowerEventEffect[];
+  /** （批3）SP 标价：不足时选项置灰（商人/供奉台） */
+  costSp?: number;
 }
 
 export interface TowerEvent {
@@ -67,8 +71,8 @@ export const TOWER_EVENTS: TowerEvent[] = [
       {
         label: '为它引路',
         chance: 0.6,
-        resultText: '小影感激地散开，留下一小袋月色碎屑。（+18 SP）',
-        effects: [{ kind: 'hpLossPct', pct: 0.08 }, { kind: 'sp', amount: 18 }],
+        resultText: '小影感激地散开，掌心留下一件蒙尘的旧物。（获得残月遗物）',
+        effects: [{ kind: 'hpLossPct', pct: 0.08 }, { kind: 'relicWaning' }],
         elseResultText: '引路耗去了你不少体力，小影消散前只留下一声叹息。',
         elseEffects: [{ kind: 'hpLossPct', pct: 0.08 }],
       },
@@ -113,8 +117,9 @@ export const TOWER_EVENTS: TowerEvent[] = [
     icon: '🎭',
     text: '穿旧大衣的影子摆开一方小摊，货物在月光下明明灭灭。「拿 SP 来换，不讲价。」',
     options: [
-      { label: '小回复剂（15 SP）', resultText: '苦得像药，但确实管用。（回复 15% 体力）', effects: [{ kind: 'sp', amount: -15 }, { kind: 'hpHealPct', pct: 0.15 }] },
-      { label: '月色护符（25 SP）', resultText: '护符贴着掌心微微发烫。（本次登塔伤害 +8%）', effects: [{ kind: 'sp', amount: -25 }, { kind: 'sessionBuff', id: 'charm-amulet', label: '月色护符 +8%', addPct: 0.08 }] },
+      { label: '小回复剂（15 SP）', costSp: 15, resultText: '苦得像药，但确实管用。（回复 15% 体力）', effects: [{ kind: 'sp', amount: -15 }, { kind: 'hpHealPct', pct: 0.15 }] },
+      { label: '随机迷思（30 SP）', costSp: 30, resultText: '影子从大衣内衬摸出一枚温热的石头。「别问来路。」', effects: [{ kind: 'sp', amount: -30 }, { kind: 'randomMyth' }] },
+      { label: '残月遗物（40 SP）', costSp: 40, resultText: '「压箱底的货。」影子的语气里带着一点不舍。', effects: [{ kind: 'sp', amount: -40 }, { kind: 'relicWaning' }] },
       { label: '不买', resultText: '影子耸了耸肩，把摊子收进了自己的影子里。', effects: [{ kind: 'nothing' }] },
     ],
   },
@@ -140,6 +145,7 @@ export const TOWER_EVENTS: TowerEvent[] = [
     options: [
       {
         label: '供奉 20 SP',
+        costSp: 20,
         resultText: '烛火转为月白色，暖意漫过全身。（回复 20% 体力）',
         effects: [{ kind: 'sp', amount: -20 }, { kind: 'hpHealPct', pct: 0.2 }],
       },

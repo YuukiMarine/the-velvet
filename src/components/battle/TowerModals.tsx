@@ -32,9 +32,11 @@ interface EventProps {
   materialize: (text: string) => string;
   onResolve: (effects: TowerEventEffect[]) => void;
   onFinish: () => void;
+  /** （批3）当前 SP：标价选项不足时置灰 */
+  playerSp?: number;
 }
 
-export function TowerEventModal({ event, materialize, onResolve, onFinish }: EventProps) {
+export function TowerEventModal({ event, materialize, onResolve, onFinish, playerSp }: EventProps) {
   const [result, setResult] = useState<string | null>(null);
 
   const choose = (opt: TowerEventOption) => {
@@ -70,16 +72,21 @@ export function TowerEventModal({ event, materialize, onResolve, onFinish }: Eve
             <motion.div key="ask" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-3">
               <p className="text-gray-300 text-sm leading-relaxed">{event.text}</p>
               <div className="space-y-2 pt-1">
-                {event.options.map(opt => (
-                  <button
-                    key={opt.label}
-                    onClick={() => choose(opt)}
-                    className="w-full py-2.5 rounded-xl text-sm font-semibold text-purple-100 text-left px-4 transition-all active:scale-[0.98]"
-                    style={{ background: 'rgb(var(--color-battle-bright-rgb) / 0.16)', border: '1px solid rgb(var(--color-battle-bright-rgb) / 0.4)' }}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
+                {event.options.map(opt => {
+                  const short = opt.costSp !== undefined && playerSp !== undefined && playerSp < opt.costSp;
+                  return (
+                    <button
+                      key={opt.label}
+                      onClick={() => !short && choose(opt)}
+                      disabled={short}
+                      className="w-full py-2.5 rounded-xl text-sm font-semibold text-purple-100 text-left px-4 transition-all active:scale-[0.98] disabled:opacity-40"
+                      style={{ background: 'rgb(var(--color-battle-bright-rgb) / 0.16)', border: '1px solid rgb(var(--color-battle-bright-rgb) / 0.4)' }}
+                    >
+                      {opt.label}
+                      {short && <span className="ml-2 text-[10px] text-gray-400">SP 不足</span>}
+                    </button>
+                  );
+                })}
               </div>
             </motion.div>
           ) : (
@@ -150,10 +157,12 @@ interface RecapProps {
   reason: 'descend' | 'defeat' | 'clear';
   stats: TowerSessionStats | undefined;
   stratum: TowerStratum;
+  /** 批3 §7.3 影之评语（AI 50字点评；null=未到/已关） */
+  comment?: string | null;
   onClose: () => void;
 }
 
-export function TowerRecapModal({ reason, stats, stratum, onClose }: RecapProps) {
+export function TowerRecapModal({ reason, stats, stratum, comment, onClose }: RecapProps) {
   const title = reason === 'clear' ? '区层攻略！' : reason === 'defeat' ? '败退……' : '下塔结算';
   const flavor = reason === 'clear'
     ? `【${stratum.name}】的心魔已被讨伐——上方的黑暗开始蠕动。`
@@ -195,6 +204,16 @@ export function TowerRecapModal({ reason, stats, stratum, onClose }: RecapProps)
             </div>
           ))}
         </div>
+        {comment && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+            className="px-3.5 py-2.5"
+            style={{ clipPath: slantPoly(10), background: 'rgba(99,102,241,0.12)', border: '1px solid rgba(99,102,241,0.0)' }}
+          >
+            <p className="text-[10px] font-black tracking-[0.2em] text-indigo-300/70 mb-1">影之评语</p>
+            <p className="text-[12px] leading-relaxed text-indigo-100/90 italic">{comment}</p>
+          </motion.div>
+        )}
         <button
           onClick={onClose}
           className="w-full py-3 rounded-xl text-sm font-bold text-white"
