@@ -131,7 +131,7 @@ export const TOWER_EVENTS: TowerEvent[] = [
     options: [
       {
         label: '直面镜子',
-        resultText: '你答对了。镜中的你微微一笑，化作光点涌入你的胸口。（+12 SP）',
+        resultText: '镜面泛起涟漪——两个问题从水银深处浮了上来。',
         effects: [{ kind: 'quiz', reward: 12 }],
       },
       { label: '移开视线', resultText: '镜面暗了下去。它没有为难你。', effects: [{ kind: 'nothing' }] },
