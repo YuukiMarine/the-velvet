@@ -6,6 +6,7 @@ import { isInShadowTime, SKILL_EFFECT_MAP } from '@/constants';
 import { healAmount, BOSS_ATTACK_BY_LEVEL } from '@/battle/numbers';
 import { AttributeId, MobSpec, StratumNode } from '@/types';
 import { absoluteFloor } from '@/battle/tower';
+import { lootLabel } from '@/battle/loot';
 import { playSound } from '@/utils/feedback';
 import { BackButton } from '@/components/BackButton';
 import { PageTitle } from '@/components/PageTitle';
@@ -97,6 +98,8 @@ export const BattleArena = () => {
 
   useEffect(() => {
     checkShadowHpRegen();
+    // 批3：熟练度/解锁字段惰性迁移（存量技能不回锁，unlocked 缺省按当前属性等级置位）
+    void useAppStore.getState().refreshSkillUnlocks();
     // 月相日（周一）：未通关区层异变加深——主影回满 + 加深计数
     void deepenStratumIfNewWeek().then(deepened => {
       if (deepened) {
@@ -138,11 +141,13 @@ export const BattleArena = () => {
 
   const handleVictory = async () => {
     setShowBattle(false);
-    // 主影节点结算：SP 即发 + 标记通关节点
+    // 主影节点结算：SP 即发 + 标记通关节点 + 批3 心魔战利品（必得遗物 / 35% 共鸣链 / 25% 誓约石）
     const bossNode = stratum?.nodes.find(n => n.type === 'boss');
     if (bossNode && !bossNode.cleared) {
       const sp = await completeTowerNode(bossNode.id);
-      if (sp > 0) showSpToast(`👁️ 心魔讨伐 · +${sp} SP`);
+      const drops = await useAppStore.getState().rollTowerLoot('boss', 1);
+      const lootText = drops.map(lootLabel).join(' · ');
+      showSpToast(`👁️ 心魔讨伐${sp > 0 ? ` · +${sp} SP` : ''}${lootText ? ` · ${lootText}` : ''}`);
     }
     setShowVictory(true);
   };
@@ -167,7 +172,15 @@ export const BattleArena = () => {
     if (!enc) return;
     if (outcome === 'victory') {
       const sp = await completeTowerNode(enc.nodeId, { wasMob: true });
-      if (sp > 0) showSpToast(`⚔️ 节点攻略 · +${sp} SP`);
+      // 批3：强敌 60% 掉战利品
+      let lootText = '';
+      if (enc.mob.tier === 'elite') {
+        const node = stratum?.nodes.find(n => n.id === enc.nodeId);
+        const floorRatio = stratum ? (node?.floor ?? 1) / Math.max(1, stratum.floors) : 0.5;
+        const drops = await useAppStore.getState().rollTowerLoot('elite', floorRatio);
+        lootText = drops.map(lootLabel).join(' · ');
+      }
+      if (sp > 0 || lootText) showSpToast(`⚔️ 节点攻略${sp > 0 ? ` · +${sp} SP` : ''}${lootText ? ` · ${lootText}` : ''}`);
     } else if (outcome === 'defeat') {
       setRecap('defeat');
     }
@@ -176,7 +189,8 @@ export const BattleArena = () => {
 
   const handleDescend = async () => {
     const bs = useAppStore.getState().battleState;
-    if (bs) await saveBattleState({ ...bs, status: 'session_end' });
+    // 批3：下塔撤离 = 「记仇」词缀与记忆台词的事实源
+    if (bs) await saveBattleState({ ...bs, status: 'session_end', everRetreatedDown: true });
     setRecap('descend');
   };
 

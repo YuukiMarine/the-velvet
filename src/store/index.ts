@@ -1,5 +1,5 @@
 ﻿import { create } from 'zustand';
-import { User, Attribute, Activity, Achievement, Skill, Settings, ThemeType, AttributeId, AttributeNamesKey, Todo, TodoCompletion, PeriodSummary, SummaryPeriod, SummaryPromptPreset, WeeklyGoal, WeeklyGoalItem, Persona, Shadow, BattleState, TowerStratum, StratumNode, DailyDivination, LongReading, LongReadingFollowUp, Confidant, ConfidantEvent, ConfidantBuff, CounselSession, CounselMessage, CounselArchive, CallingCard, NotifSlot, LedgerEntry, Budget, SpendWorth, LedgerAsset, Wish, TerminalClearPayload } from '@/types';
+import { User, Attribute, Activity, Achievement, Skill, Settings, ThemeType, AttributeId, AttributeNamesKey, Todo, TodoCompletion, PeriodSummary, SummaryPeriod, SummaryPromptPreset, WeeklyGoal, WeeklyGoalItem, Persona, Shadow, BattleState, TowerStratum, StratumNode, DailyDivination, LongReading, LongReadingFollowUp, Confidant, ConfidantEvent, ConfidantBuff, CounselSession, CounselMessage, CounselArchive, CallingCard, NotifSlot, LedgerEntry, Budget, SpendWorth, LedgerAsset, Wish, TerminalClearPayload, BattleArsenal, ChainKey } from '@/types';
 import { TAROT_BY_ID } from '@/constants/tarot';
 import { summarizeCounsel, type CounselContext, type CounselConfidantBrief, type CounselRecentEvent } from '@/utils/counselAI';
 import { db } from '@/db';
@@ -117,9 +117,10 @@ import {
   SHADOW_REGEN_PER_LEVEL,
   HP_BONUS_PER_DEFEAT,
 } from '@/constants';
-import { PLAYER_BASE_HP, nodeSpReward, bossSpReward } from '@/battle/numbers';
+import { PLAYER_BASE_HP, nodeSpReward, bossSpReward, RELIC_SALVAGE_SP, RELIC_SLOTS_BY_STRATUM, AFFIX_HP_MULT, masteryStars } from '@/battle/numbers';
 import { buildStratum, migrationStratumName, reachableNodeIds, rollMobSpec, weekKeyOf } from '@/battle/tower';
 import { TOWER_EVENT_IDS } from '@/battle/events';
+import { rollNodeLoot, rollAffixes, buildOathSkill, towerRelicBonus, MYTH_POOL, type LootDrop } from '@/battle/loot';
 import { normalizeAttributeLevelTitles } from '@/utils/attributeLevelTitles';
 
 /** Shared request payload returned by buildSummaryRequest used by both non-streaming generateSummary and streaming modal */
@@ -478,6 +479,29 @@ interface AppState {
   towerRecordBattleStats: (stats: { damage: number; maxHit: number; weaknessHits: number }) => Promise<void>;
   /** 月相日（周一）异变加深：主影回满 + deepenCount+1；返回是否触发（供演出） */
   deepenStratumIfNewWeek: () => Promise<boolean>;
+  // ── 批3 · 养成与生态 ──
+  /** 战利品掷取并入包（月匣/强敌/心魔）；返回掉落列表（toast/演出用） */
+  rollTowerLoot: (source: 'chest' | 'elite' | 'boss', floorRatio: number) => Promise<LootDrop[]>;
+  /** 删除遗物 → 转化 SP（10/25/60）；返回转化量 */
+  salvageRelic: (relicId: string) => Promise<number>;
+  /** 装备/卸下遗物（受区层期栏位限制：Lv1期1/Lv2-4期2/Lv5期3）；返回是否成功 */
+  toggleEquipRelic: (relicId: string) => Promise<boolean>;
+  /** 迷思镶嵌（每技能1枚；誓约技不可镶；淬毒仅 damage/crit）；返回错误文案或 null */
+  socketMyth: (attr: AttributeId, skillLevel: number, stoneId: string) => Promise<string | null>;
+  /** 迷思拆下（石头返还背包，无残留） */
+  unsocketMyth: (attr: AttributeId, skillLevel: number) => Promise<void>;
+  /** 誓约装备：快照原技能→置换（每 Persona 限1）；返回错误文案或 null。命名由 UI 层 LLM 后置覆写 */
+  equipOathStone: (attr: AttributeId, skillLevel: number, stoneId: string) => Promise<string | null>;
+  /** 誓约卸下：原技能完整恢复 + 石返还（完全可逆） */
+  unequipOathStone: (attr: AttributeId) => Promise<void>;
+  /** 誓约技 LLM 命名回写（并缓存到石头上，重复装备不再调 AI） */
+  renameOathSkill: (attr: AttributeId, name: string, description: string) => Promise<void>;
+  /** 共鸣链生效切换（同时 1 条；null=全部收起） */
+  setActiveChain: (key: ChainKey | null) => Promise<void>;
+  /** 熟练度记录（战斗中每次技能使用；内部触发双条件解锁刷新） */
+  recordSkillUses: (uses: Array<{ attr: AttributeId; level: number }>) => Promise<void>;
+  /** 技能解锁刷新：存量迁移（unlocked 缺省→按当时属性等级置位，不回锁）+ 双条件（属性等级≥N 且前技满星） */
+  refreshSkillUnlocks: () => Promise<void>;
 
   // 同伴 / Confidant
   confidants: Confidant[];
@@ -3798,14 +3822,20 @@ ${activityLines || '（本期暂无记录）'}
   },
 
   defeatShadow: async () => {
-    const { battleState, shadow } = get();
+    const { battleState, shadow, attributes, stratum } = get();
     if (!battleState) return;
+    // 批3 阴影档案馆：新藏品带 描述/词缀/代表台词/击败时的你/区层等级（存量记录字段留空 = 首批藏品）
     const newRecord = shadow ? {
       shadowName: shadow.name,
       level: shadow.level,
       breachDate: new Date(shadow.createdAt).toISOString().slice(0, 10),
       defeatDate: new Date().toISOString().slice(0, 10),
       daysElapsed: Math.max(1, Math.floor((Date.now() - new Date(shadow.createdAt).getTime()) / 86400000)),
+      description: shadow.description,
+      affixes: shadow.affixes,
+      quote: shadow.responseLines[Math.floor(Math.random() * Math.max(1, shadow.responseLines.length))],
+      playerTotalLevel: attributes.reduce((s, a) => s + (a.unlocked === false ? 0 : (a.level ?? 1)), 0),
+      stratumLevel: stratum?.level,
     } : null;
     // HP bonus from defeating this shadow
     const hpGain = shadow ? (HP_BONUS_PER_DEFEAT[Math.min(shadow.level - 1, 4)] ?? 2) : 0;
@@ -3873,7 +3903,21 @@ ${activityLines || '（本期暂无记录）'}
     set({ stratum: s });
   },
 
-  revealStratum: async ({ level, name, description, themeAttribute, boss }) => {
+  revealStratum: async ({ level, name, description, themeAttribute, boss: rawBoss }) => {
+    // 批3 §5.1：心魔显形带 0-1 条词缀（50%）；「顽固」的 HP+30% 生成时应用
+    const boss = { ...rawBoss };
+    if (!boss.affixes) {
+      const rolled = Math.random() < 0.5 ? rollAffixes(1, Math.random) : [];
+      boss.affixes = rolled;
+      if (rolled.includes('stubborn')) {
+        boss.maxHp = Math.round(boss.maxHp * AFFIX_HP_MULT);
+        boss.currentHp = boss.maxHp;
+        if (boss.maxHp2 !== undefined) {
+          boss.maxHp2 = Math.round(boss.maxHp2 * AFFIX_HP_MULT);
+          boss.currentHp2 = boss.maxHp2;
+        }
+      }
+    }
     const prev = get().stratum;
     const baseFloor = prev ? prev.baseFloor + prev.floors : 0;
     const stratum = buildStratum({
@@ -3929,7 +3973,7 @@ ${activityLines || '（本期暂无记录）'}
   },
 
   completeTowerNode: async (nodeId: string, opts) => {
-    const { stratum, battleState } = get();
+    const { stratum, battleState, shadow } = get();
     if (!stratum || !battleState) return 0;
     const node = stratum.nodes.find(n => n.id === nodeId);
     if (!node || node.cleared) return 0;
@@ -3938,6 +3982,11 @@ ${activityLines || '（本期暂无记录）'}
     else if (node.type === 'chest') sp = node.lootSp ?? 0;
     else if (node.type === 'mob' || node.type === 'elite') sp = nodeSpReward(stratum.level, node.floor, stratum.deepenCount, Math.random);
     // event / echo 的收益由效果本身发放
+    // 批3：贪婪词缀（击败多掉 50% SP）+ 登塔者罗盘（节点 SP 收益+）
+    const affixes = node.type === 'boss' ? shadow?.affixes : node.mob?.affixes;
+    if (sp > 0 && affixes?.includes('greedy')) sp = Math.round(sp * 1.5);
+    const { nodeSpPct } = towerRelicBonus(battleState.arsenal?.relics);
+    if (sp > 0 && nodeSpPct > 0) sp = Math.round(sp * (1 + nodeSpPct));
     const nodes = stratum.nodes.map(n => (n.id === nodeId ? { ...n, cleared: true } : n));
     await get().saveStratum({ ...stratum, nodes });
     const bs = get().battleState!;
@@ -4028,10 +4077,240 @@ ${activityLines || '（本期暂无记录）'}
     const wk = weekKeyOf(new Date());
     if (wk === stratum.createdWeekKey || stratum.lastDeepenWeekKey === wk) return false;
     if (shadow) {
-      await get().saveShadow({ ...shadow, currentHp: shadow.maxHp, currentHp2: shadow.maxHp2 });
+      // 批3 §5.1：异变加深每次 +1 词缀（不与已有重复）；新增「顽固」时血池同步扩容
+      const added = rollAffixes(1, Math.random, shadow.affixes ?? []);
+      const affixes = [...(shadow.affixes ?? []), ...added];
+      let { maxHp, maxHp2 } = shadow;
+      if (added.includes('stubborn')) {
+        maxHp = Math.round(maxHp * AFFIX_HP_MULT);
+        if (maxHp2 !== undefined) maxHp2 = Math.round(maxHp2 * AFFIX_HP_MULT);
+      }
+      await get().saveShadow({ ...shadow, affixes, maxHp, maxHp2, currentHp: maxHp, currentHp2: maxHp2 });
     }
     await get().saveStratum({ ...stratum, deepenCount: stratum.deepenCount + 1, lastDeepenWeekKey: wk });
     return true;
+  },
+
+  // ── 批3 · 养成与生态：战利品 / 迷思誓约 / 共鸣链 / 熟练度 ──
+
+  rollTowerLoot: async (source, floorRatio) => {
+    const { stratum, battleState } = get();
+    if (!battleState) return [];
+    const arsenal: BattleArsenal = battleState.arsenal ?? { relics: [], myths: [], oaths: [], chains: [] };
+    const drops = rollNodeLoot(source, {
+      stratumLevel: stratum?.level ?? 1,
+      floorRatio,
+      ownedChainKeys: arsenal.chains.map(c => c.key),
+      ownedOathKinds: arsenal.oaths.map(o => o.kind),
+      rng: Math.random,
+      makeId: uuidv4,
+      today: toLocalDateKey(),
+    });
+    if (drops.length === 0) return drops;
+    const next: BattleArsenal = {
+      ...arsenal,
+      relics: [...arsenal.relics, ...drops.filter(d => d.kind === 'relic').map(d => (d as Extract<LootDrop, { kind: 'relic' }>).relic)],
+      myths: [...arsenal.myths, ...drops.filter(d => d.kind === 'myth').map(d => (d as Extract<LootDrop, { kind: 'myth' }>).myth)],
+      oaths: [...arsenal.oaths, ...drops.filter(d => d.kind === 'oath').map(d => (d as Extract<LootDrop, { kind: 'oath' }>).oath)],
+      chains: [...arsenal.chains, ...drops.filter(d => d.kind === 'chain').map(d => (d as Extract<LootDrop, { kind: 'chain' }>).chain)],
+    };
+    const spBonus = drops.filter(d => d.kind === 'sp').reduce((s, d) => s + (d as Extract<LootDrop, { kind: 'sp' }>).amount, 0);
+    const bs = get().battleState!;
+    await get().saveBattleState({ ...bs, arsenal: next, sp: bs.sp + spBonus });
+    return drops;
+  },
+
+  salvageRelic: async (relicId) => {
+    const bs = get().battleState;
+    const arsenal = bs?.arsenal;
+    if (!bs || !arsenal) return 0;
+    const relic = arsenal.relics.find(r => r.id === relicId);
+    if (!relic) return 0;
+    const sp = RELIC_SALVAGE_SP[relic.quality];
+    await get().saveBattleState({
+      ...bs,
+      sp: bs.sp + sp,
+      arsenal: { ...arsenal, relics: arsenal.relics.filter(r => r.id !== relicId) },
+    });
+    return sp;
+  },
+
+  toggleEquipRelic: async (relicId) => {
+    const { battleState: bs, stratum } = get();
+    const arsenal = bs?.arsenal;
+    if (!bs || !arsenal) return false;
+    const relic = arsenal.relics.find(r => r.id === relicId);
+    if (!relic) return false;
+    if (!relic.equipped) {
+      const slots = RELIC_SLOTS_BY_STRATUM[Math.min(4, Math.max(0, (stratum?.level ?? 1) - 1))];
+      const equippedCount = arsenal.relics.filter(r => r.equipped).length;
+      if (equippedCount >= slots) return false;
+    }
+    await get().saveBattleState({
+      ...bs,
+      arsenal: {
+        ...arsenal,
+        relics: arsenal.relics.map(r => (r.id === relicId ? { ...r, equipped: !r.equipped } : r)),
+      },
+    });
+    return true;
+  },
+
+  socketMyth: async (attr, skillLevel, stoneId) => {
+    const { persona, battleState: bs } = get();
+    const arsenal = bs?.arsenal;
+    if (!persona || !arsenal) return '数据未就绪';
+    const stone = arsenal.myths.find(m => m.id === stoneId);
+    if (!stone) return '迷思石不存在';
+    const equippedElsewhere = Object.values(persona.skills).flat().some(s => s.socket?.stoneId === stoneId);
+    if (equippedElsewhere) return '这枚迷思已镶嵌在其他技能上';
+    const skills = persona.skills[attr];
+    const idx = skills.findIndex(s => s.level === skillLevel);
+    if (idx < 0) return '技能不存在';
+    const target = skills[idx];
+    if (target.oath) return '誓约技不可镶嵌迷思';
+    if (target.socket) return '该技能已有迷思（先拆下）';
+    if (MYTH_POOL[stone.kind].damageOnly && target.type !== 'damage' && target.type !== 'crit') {
+      return '「淬毒之牙」只能镶入伤害/暴击技能';
+    }
+    const nextSkills = { ...persona.skills, [attr]: skills.map((s, i) => (i === idx ? { ...s, socket: { stoneId, kind: stone.kind, value: stone.value } } : s)) };
+    await get().savePersona({ ...persona, skills: nextSkills });
+    return null;
+  },
+
+  unsocketMyth: async (attr, skillLevel) => {
+    const { persona } = get();
+    if (!persona) return;
+    const skills = persona.skills[attr];
+    const nextSkills = { ...persona.skills, [attr]: skills.map(s => (s.level === skillLevel ? { ...s, socket: undefined } : s)) };
+    await get().savePersona({ ...persona, skills: nextSkills });
+  },
+
+  equipOathStone: async (attr, skillLevel, stoneId) => {
+    const { persona, battleState: bs } = get();
+    const arsenal = bs?.arsenal;
+    if (!persona || !bs || !arsenal) return '数据未就绪';
+    const stone = arsenal.oaths.find(o => o.id === stoneId);
+    if (!stone) return '誓约石不存在';
+    if (stone.equippedAttr) return '这枚誓约已被装备';
+    const skills = persona.skills[attr];
+    if (skills.some(s => s.oath)) return '每位 Persona 只能缔结一份誓约';
+    const idx = skills.findIndex(s => s.level === skillLevel);
+    if (idx < 0) return '技能槽不存在';
+    if (skills[idx].socket) return '该技能镶有迷思——先拆下再置换';
+    const personaName = persona.attributePersonas?.[attr]?.name ?? persona.name;
+    let oathSkill = buildOathSkill(stone.kind, stoneId, skills[idx], personaName);
+    // 命名缓存命中：重复装备不再调 AI
+    const cached = stone.namedCache?.[attr];
+    if (cached) oathSkill = { ...oathSkill, name: cached.name, description: cached.description };
+    const nextSkills = { ...persona.skills, [attr]: skills.map((s, i) => (i === idx ? oathSkill : s)) };
+    await get().savePersona({ ...persona, skills: nextSkills });
+    await get().saveBattleState({
+      ...get().battleState!,
+      arsenal: { ...arsenal, oaths: arsenal.oaths.map(o => (o.id === stoneId ? { ...o, equippedAttr: attr } : o)) },
+    });
+    return null;
+  },
+
+  unequipOathStone: async (attr) => {
+    const { persona, battleState: bs } = get();
+    if (!persona) return;
+    const skills = persona.skills[attr];
+    const oathSkill = skills.find(s => s.oath);
+    if (!oathSkill?.oath) return;
+    const stoneId = oathSkill.oath.stoneId;
+    // 完整可逆：原技能快照恢复（保留置换期间攒下的熟练度不回写——快照即当时状态）
+    const nextSkills = { ...persona.skills, [attr]: skills.map(s => (s.oath ? s.oath.original : s)) };
+    await get().savePersona({ ...persona, skills: nextSkills });
+    const arsenal = bs?.arsenal;
+    if (bs && arsenal) {
+      await get().saveBattleState({
+        ...get().battleState!,
+        arsenal: { ...arsenal, oaths: arsenal.oaths.map(o => (o.id === stoneId ? { ...o, equippedAttr: undefined } : o)) },
+      });
+    }
+  },
+
+  renameOathSkill: async (attr, name, description) => {
+    const { persona, battleState: bs } = get();
+    if (!persona) return;
+    const skills = persona.skills[attr];
+    const oathSkill = skills.find(s => s.oath);
+    if (!oathSkill?.oath) return;
+    const nextSkills = { ...persona.skills, [attr]: skills.map(s => (s.oath ? { ...s, name, description } : s)) };
+    await get().savePersona({ ...persona, skills: nextSkills });
+    // 缓存到石头：重复装备不再调 AI
+    const arsenal = bs?.arsenal;
+    if (bs && arsenal) {
+      await get().saveBattleState({
+        ...get().battleState!,
+        arsenal: {
+          ...arsenal,
+          oaths: arsenal.oaths.map(o => (o.id === oathSkill.oath!.stoneId
+            ? { ...o, namedCache: { ...o.namedCache, [attr]: { name, description } } }
+            : o)),
+        },
+      });
+    }
+  },
+
+  setActiveChain: async (key) => {
+    const bs = get().battleState;
+    const arsenal = bs?.arsenal;
+    if (!bs || !arsenal) return;
+    if (key !== null && !arsenal.chains.some(c => c.key === key)) return;
+    await get().saveBattleState({ ...bs, arsenal: { ...arsenal, activeChainKey: key ?? undefined } });
+  },
+
+  recordSkillUses: async (uses) => {
+    const { persona } = get();
+    if (!persona || uses.length === 0) return;
+    const counts = new Map<string, number>();
+    for (const u of uses) counts.set(`${u.attr}:${u.level}`, (counts.get(`${u.attr}:${u.level}`) ?? 0) + 1);
+    const nextSkills = { ...persona.skills };
+    for (const attr of Object.keys(nextSkills) as AttributeId[]) {
+      nextSkills[attr] = nextSkills[attr].map(s => {
+        const inc = counts.get(`${attr}:${s.level}`) ?? 0;
+        return inc > 0 ? { ...s, mastery: (s.mastery ?? 0) + inc } : s;
+      });
+    }
+    await get().savePersona({ ...persona, skills: nextSkills });
+    await get().refreshSkillUnlocks();
+  },
+
+  refreshSkillUnlocks: async () => {
+    const { persona, attributes } = get();
+    if (!persona || attributes.length === 0) return;
+    const levelOf = (attr: AttributeId) => {
+      const a = attributes.find(x => x.id === attr);
+      return a && a.unlocked !== false ? (a.level ?? 1) : 0;
+    };
+    let changed = false;
+    const nextSkills = { ...persona.skills };
+    for (const attr of Object.keys(nextSkills) as AttributeId[]) {
+      const attrLevel = levelOf(attr);
+      const sorted = [...nextSkills[attr]].sort((a, b) => a.level - b.level);
+      const byLevel = new Map(sorted.map(s => [s.level, s]));
+      nextSkills[attr] = nextSkills[attr].map(s => {
+        let next = s;
+        if (next.mastery === undefined) { next = { ...next, mastery: 0 }; changed = true; }
+        if (next.unlocked === undefined) {
+          // 存量迁移：按当时属性等级置位——已解锁的不回锁（拍板）
+          next = { ...next, unlocked: attrLevel >= next.level };
+          changed = true;
+        } else if (!next.unlocked) {
+          // 双条件解锁：属性等级 ≥ N 且 技能 N−1 满星
+          const prev = byLevel.get(next.level - 1);
+          const prevFull = next.level === 1 || (prev ? masteryStars(prev.mastery ?? 0, prev.level) === 3 : false);
+          if (attrLevel >= next.level && prevFull) {
+            next = { ...next, unlocked: true };
+            changed = true;
+          }
+        }
+        return next;
+      });
+    }
+    if (changed) await get().savePersona({ ...persona, skills: nextSkills });
   },
 
   // ── 同伴 / Confidant ─────────────────────────────────────────
