@@ -18,6 +18,7 @@ import { PersonaShuffleModal } from '@/components/battle/PersonaShuffleModal';
 import { TowerScreen } from '@/components/battle/TowerScreen';
 import { InfiltrationOverlay } from '@/components/battle/InfiltrationOverlay';
 import { TowerRecapModal } from '@/components/battle/TowerModals';
+import { ArsenalModal, ShadowArchiveModal, MasteryStars } from '@/components/battle/ArsenalModal';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P3R, P3RPage, GhostWords, P3PageHeader, ShatteredStar, slantClip } from '@/components/p3r/kit';
 
@@ -70,7 +71,8 @@ export const BattleArena = () => {
   const [personaCardIdx, setPersonaCardIdx] = useState(0);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [maskEquipAnim, setMaskEquipAnim] = useState<AttributeId | null>(null);
-  const [showDefeatedLog, setShowDefeatedLog] = useState(false);
+  const [showArsenal, setShowArsenal] = useState(false);
+  const [showArchive, setShowArchive] = useState(false);
   const [cheatClicks, setCheatClicks] = useState(0);
   const [showBattleParams, setShowBattleParams] = useState(false);
   const [showPersonaShuffle, setShowPersonaShuffle] = useState(false);
@@ -586,60 +588,37 @@ export const BattleArena = () => {
                           </motion.button>
                         )}
 
-                        {/* 已击败阴影 */}
-                        {(battleState?.defeatedShadowLog?.length ?? 0) > 0 && (
-                          <div className={`${battleCard} overflow-hidden`}>
-                            <button
-                              onClick={() => setShowDefeatedLog(v => !v)}
-                              className="w-full flex items-center justify-between px-4 py-3 text-left"
-                            >
-                              <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-                                👁 已击败阴影
-                                <span className="ml-2 text-xs font-normal text-gray-400 dark:text-gray-500">
-                                  ({battleState!.defeatedShadowLog!.length})
-                                </span>
-                              </span>
-                              <span className="text-gray-400 text-xs">{showDefeatedLog ? '▲' : '▼'}</span>
-                            </button>
-                            <AnimatePresence>
-                              {showDefeatedLog && (
-                                <motion.div
-                                  initial={{ height: 0, opacity: 0 }}
-                                  animate={{ height: 'auto', opacity: 1 }}
-                                  exit={{ height: 0, opacity: 0 }}
-                                  transition={{ duration: 0.2 }}
-                                  className="overflow-hidden"
-                                >
-                                  <div className="border-t border-gray-100 dark:border-gray-800 divide-y divide-gray-50 dark:divide-gray-800">
-                                    {[...(battleState!.defeatedShadowLog!)].reverse().map((rec, i) => (
-                                      <div key={i} className="px-4 py-2.5 flex items-start justify-between gap-3">
-                                        <div className="min-w-0">
-                                          <p className="text-sm font-semibold text-gray-800 dark:text-gray-200 truncate">
-                                            {rec.shadowName}
-                                          </p>
-                                          <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-0.5">
-                                            识破 {rec.breachDate} · 击败 {rec.defeatDate}
-                                          </p>
-                                        </div>
-                                        <div className="flex-shrink-0 text-right space-y-0.5">
-                                          <span
-                                            className="inline-block text-[11px] font-semibold px-1.5 py-0.5 rounded"
-                                            style={{ background: 'rgba(220,38,38,0.12)', color: '#dc2626' }}
-                                          >
-                                            Lv.{rec.level}
-                                          </span>
-                                          <p className="text-[11px] text-gray-400 dark:text-gray-500">
-                                            历时 {rec.daysElapsed} 天
-                                          </p>
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </motion.div>
-                              )}
-                            </AnimatePresence>
-                          </div>
-                        )}
+                        {/* 批3：装备库 + 阴影档案馆入口 */}
+                        <div className="flex gap-2">
+                          <motion.button
+                            whileTap={{ scale: 0.96 }}
+                            onClick={() => { playSound('/ui-menu.mp3', 0.4); setShowArsenal(true); }}
+                            className={`flex-1 py-2.5 text-sm font-black ${p3 ? 'text-white' : 'rounded-2xl text-white'}`}
+                            style={p3
+                              ? { clipPath: 'polygon(6% 0, 100% 0, 94% 100%, 0 100%)', background: 'linear-gradient(135deg,#312e81,#4338ca)' }
+                              : { background: 'linear-gradient(135deg,#312e81,#4338ca)' }}
+                          >
+                            ⚙ 装备库
+                            {(() => {
+                              const a = battleState?.arsenal;
+                              const n = (a?.relics.length ?? 0) + (a?.myths.length ?? 0) + (a?.oaths.length ?? 0);
+                              return n > 0 ? <span className="ml-1.5 text-[10px] font-bold opacity-75">{n}</span> : null;
+                            })()}
+                          </motion.button>
+                          <motion.button
+                            whileTap={{ scale: 0.96 }}
+                            onClick={() => { playSound('/ui-menu.mp3', 0.4); setShowArchive(true); }}
+                            className={`flex-1 py-2.5 text-sm font-black ${p3 ? 'text-white' : 'rounded-2xl text-white'}`}
+                            style={p3
+                              ? { clipPath: 'polygon(6% 0, 100% 0, 94% 100%, 0 100%)', background: 'linear-gradient(135deg,#581c87,#7e22ce)' }
+                              : { background: 'linear-gradient(135deg,#581c87,#7e22ce)' }}
+                          >
+                            👁 阴影档案馆
+                            {(battleState?.defeatedShadowLog?.length ?? 0) > 0 && (
+                              <span className="ml-1.5 text-[10px] font-bold opacity-75">{battleState!.defeatedShadowLog!.length}</span>
+                            )}
+                          </motion.button>
+                        </div>
                       </div>
                     )}
                   </motion.div>
@@ -833,17 +812,18 @@ export const BattleArena = () => {
                                       const effectHint = skill.type === 'heal'
                                         ? `+${healAmount(skill.power, currentAttr)}HP`
                                         : (mapped?.hint ?? SKILL_EFFECT_HINT[skill.type] ?? '');
+                                      const locked = skill.unlocked === false; // 批3 双条件：属性等级≥N 且 前技满星
                                       return (
                                       <div
                                         key={i}
-                                        className="flex items-center justify-between py-2 border-b border-gray-200 dark:border-gray-700"
+                                        className={`flex items-center justify-between py-2 border-b border-gray-200 dark:border-gray-700 ${locked ? 'opacity-45' : ''}`}
                                       >
                                         <div className="flex items-center gap-2 flex-1 min-w-0">
                                           <span
                                             className="text-xs font-black flex-shrink-0 px-1.5 py-0.5 rounded text-purple-600 dark:text-purple-300"
                                             style={{ background: 'rgb(var(--color-battle-bright-rgb) / 0.1)' }}
                                           >
-                                            {skill.level}
+                                            {locked ? '🔒' : skill.level}
                                           </span>
                                           <div className="min-w-0">
                                             <div className="flex items-center gap-1.5">
@@ -859,8 +839,22 @@ export const BattleArena = () => {
                                                   {tagIcon ? `${tagIcon} ${tagLabel}` : tagLabel}
                                                 </span>
                                               )}
+                                              {skill.oath && (
+                                                <span className="flex-shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                                                      style={{ color: '#fcd34d', background: 'rgba(252,211,77,0.14)' }}>
+                                                  誓约
+                                                </span>
+                                              )}
+                                              {skill.socket && (
+                                                <span className="flex-shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                                                      style={{ color: '#c4b5fd', background: 'rgba(196,181,253,0.14)' }}>
+                                                  ◆ 迷思
+                                                </span>
+                                              )}
                                             </div>
-                                            <p className="text-gray-500 dark:text-gray-400 text-xs truncate">{skill.description}</p>
+                                            <p className="text-gray-500 dark:text-gray-400 text-xs truncate">
+                                              {locked ? `解锁：${settings.attributeNames[currentAttr]} Lv${skill.level} + 前技满星` : skill.description}
+                                            </p>
                                           </div>
                                         </div>
                                         <div className="text-right flex-shrink-0 ml-3">
@@ -871,7 +865,10 @@ export const BattleArena = () => {
                                               {effectHint}
                                             </p>
                                           )}
-                                          <p className="text-yellow-600 dark:text-yellow-400/70 text-xs">SP {skill.spCost}</p>
+                                          <div className="flex items-center justify-end gap-1.5">
+                                            {!locked && <MasteryStars skill={skill} />}
+                                            <p className="text-yellow-600 dark:text-yellow-400/70 text-xs">SP {skill.spCost}</p>
+                                          </div>
                                         </div>
                                       </div>
                                       );
@@ -1175,6 +1172,13 @@ export const BattleArena = () => {
     </AnimatePresence>
     <AnimatePresence>
       {infiltrating && <InfiltrationOverlay onDone={() => void handleInfiltrationDone()} />}
+    </AnimatePresence>
+    {/* 批3：装备库 + 阴影档案馆 */}
+    <AnimatePresence>
+      {showArsenal && <ArsenalModal open={showArsenal} onClose={() => setShowArsenal(false)} />}
+    </AnimatePresence>
+    <AnimatePresence>
+      {showArchive && <ShadowArchiveModal open={showArchive} onClose={() => setShowArchive(false)} />}
     </AnimatePresence>
     {/* SP 即发 toast（全局层：塔屏之上也可见） */}
     <AnimatePresence>

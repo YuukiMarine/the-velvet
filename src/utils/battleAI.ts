@@ -667,3 +667,38 @@ export async function generateVictoryNarrative(
     return `你操控${personaName}，将Shadow ${shadowName}彻底击溃！\n黑暗在你面前碎裂，但你感知到——更深处，还有什么正在苏醒……`;
   }
 }
+
+/**
+ * 批3 §4.4：誓约技 LLM 命名——按该属性 Persona 人设生成新技能名+描述。
+ * 结果由调用方缓存到誓约石（重复装备不再调 AI）；无 Key / 失败时调用方保留模板名。
+ */
+export async function generateOathSkill(
+  settings: Settings,
+  personaName: string,
+  personaDescription: string,
+  attrName: string,
+  oathStoneName: string,
+  oathEffectText: string,
+): Promise<{ name: string; description: string } | null> {
+  const cfg = getAIConfig(settings);
+  if (!cfg) return null;
+  const prompt = `你是Persona系游戏的技能命名器。玩家将一枚「${oathStoneName}」誓约石缔结给了${attrName}属性的Persona「${personaName}」。
+Persona 人设：${personaDescription || '无描述——从名字与属性气质推断'}
+誓约技能的实际战斗效果（不可改动，命名与描述必须呼应它）：${oathEffectText}
+
+【输出要求】
+- name：新技能名，2-8个字，贴合该 Persona 的神话/人设意象（例如回复系誓约给阿喀琉斯可命名"斯提克斯的沐浴"）；禁止出现"誓约/之誓"字样
+- description：一句话（20字内），以该 Persona 的口吻或意象描述这股力量，末尾自然点出效果
+仅输出 JSON：{"name":"…","description":"…"}`;
+  try {
+    const result = await callAIWithRetry(cfg, [{ role: 'user', content: prompt }], 0.8, 300);
+    const parsed = extractJSON(result);
+    const name = typeof parsed.name === 'string' && parsed.name.trim() ? parsed.name.trim().slice(0, 12) : null;
+    const description = typeof parsed.description === 'string' && parsed.description.trim()
+      ? parsed.description.trim().slice(0, 40)
+      : oathEffectText;
+    return name ? { name, description } : null;
+  } catch {
+    return null;
+  }
+}
