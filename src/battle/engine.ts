@@ -17,7 +17,7 @@
  *
  * ⚠️ 只允许相对导入（模拟战脚本用 tsx 直跑，不解析 '@/' 别名）。
  */
-import type { AttributeId, PersonaSkill, StatusEffect, StatusKind } from '../types';
+import type { AffixKind, AttributeId, ChainKey, PersonaSkill, StatusEffect, StatusKind } from '../types';
 import { EngineStatus, applyStatus, findStatus, removeStatus, tickTurnStart } from './statusEngine';
 import {
   ringMultiplier, computeDamage, healAmount, turnPressureMult,
@@ -33,6 +33,13 @@ import {
   HEAVY_COOLDOWN_TURNS, GUARD_STANCE_MULT, GUARD_INTENT_ATTACK_MULT,
   DEBUFF_INTENT_ATTACK_MULT, SHADOW_ATKUP_MULT, SHADOW_ATKUP_TURNS,
   shadowPoisonValue, SHADOW_CALM_MULT, SHADOW_STATUS_TURNS,
+  // ── 批3 · 养成与生态 ──
+  masteryStars, MASTERY_STAR_ADD, RelicMods, ZERO_RELIC_MODS, BANDAGE_HP_THRESHOLD,
+  CHAIN_STAGGER_WEAK_BONUS, CHAIN_CRIT_ADD, CHAIN_HEAL_AMP, CHAIN_LETHAL_GUARD,
+  CHAIN_GUARD_COUNTER_ADD, CHAIN_FIRST_TURN_ADD, CHAIN_POISON_MEND, CHAIN_RESONANCE_AMP,
+  AFFIX_CRIT_ADD, AFFIX_VENGEFUL_ATK, AFFIX_THORNS_PCT, AFFIX_SLIPPERY_FACTOR,
+  OATH_HEAL_PCT, OATH_CHARGE_MULT, OATH_SELF_HP_COST_PCT, OATH_POISON_STACKS,
+  OATH_POISON_DOT, OATH_SHIELD_PCT, OATH_SP_GAIN,
 } from './numbers';
 import {
   Intent, IntentKind, decideIntent, makeIntent, intentDetail, pickIntentLine,
@@ -91,12 +98,20 @@ export interface EngineSetup {
     responseLines: string[];
     /** 档位（批2）：小影无失衡条/只会攻击与异常；精英无狂化处刑；默认 boss */
     tier?: 'mob' | 'elite' | 'boss';
+    /** （批3）词缀：强敌1条 / 心魔0-1条（加深+1）。顽固的 HP+30% 在生成时已应用 */
+    affixes?: AffixKind[];
   };
   effectMap: InjectedEffectMap;
   /** （批2）本次登塔的临时伤害增益（事件/回响来源，进加算段） */
   sessionAddPct?: number;
   /** （批2）事件「被夺先手」：开场 Shadow 先攻一次 */
   firstStrikeStolen?: boolean;
+  /** （批3）已装备遗物聚合修正（store 侧汇总；缺省全 0） */
+  relicMods?: RelicMods;
+  /** （批3）生效中的共鸣链（仅战斗内生效） */
+  chain?: ChainKey | null;
+  /** （批3）「记仇」词缀判定：玩家曾下塔撤离/败退 */
+  playerEverRetreated?: boolean;
 }
 
 export type PlayerActionInput =
@@ -161,7 +176,10 @@ export class BattleEngine {
   private activeMask: AttributeId;
   private playerStatuses: EngineStatus[] = [];
   private chargeActive = false;
-  private attackBuff = false;
+  /** 蓄力倍率覆写（蓄雷之誓 ×2.3；null=默认 ×2） */
+  private chargeMultOverride: number | null = null;
+  /** 攻击强化待消费加算值（含施放技能的熟练度加成；null=未激活） */
+  private attackBuffAdd: number | null = null;
   private vulnerableArmed = false;   // 易伤兜底（打在 Shadow 身上的一次性加算）
   private attackBoostTurns = 0;
   private guardCounterReady = false;
@@ -174,6 +192,16 @@ export class BattleEngine {
   private consecutiveWeakness = 0;
   private masksSummoned = new Set<AttributeId>();
   comboCount = 0;
+  // ── 批3 · 养成侧一次性/待消费标记 ──
+  private relicMods: RelicMods;
+  private chain: ChainKey | null;
+  private oneMoreArmed = false;      // 引雷针：1More 后下一击加算
+  private maskSwitchArmed = false;   // 面具挂绳：换面具后首次攻击加算
+  private stageCritArmed = false;    // 舞台魅影：换面具后首次攻击必暴击
+  private stageCritUsed = false;
+  private chainLethalUsed = false;   // 亡命身法：每场 1 次
+  private oathSpUsed = false;        // 月光之誓：每场 1 次
+  private ampNextAdd = 0;            // 增幅回路：命中后下次伤害加算
 
   // Shadow 态
   private shName: string;
@@ -199,6 +227,9 @@ export class BattleEngine {
   private windowJustOpened = false;
   private weaknessHitCounts: Partial<Record<AttributeId, number>> = {};
   private attackScale: number;
+  private affixes: AffixKind[];
+  /** 月蚀词缀：弱点是否已被揭示（洞察 / 误打命中） */
+  private weaknessRevealed = false;
 
   private turn = 1;
   private intent: Intent | null = null;
@@ -215,6 +246,9 @@ export class BattleEngine {
     this.rng = setup.rng ?? Math.random;
     this.shTier = setup.shadow.tier ?? 'boss';
     this.sessionAddPct = setup.sessionAddPct ?? 0;
+    this.relicMods = setup.relicMods ?? ZERO_RELIC_MODS;
+    this.chain = setup.chain ?? null;
+    this.affixes = setup.shadow.affixes ?? [];
     this.playerHp = setup.playerHp;
     this.playerMaxHp = setup.playerMaxHp;
     this.sp = setup.sp;
@@ -243,7 +277,7 @@ export class BattleEngine {
       activeMask: this.activeMask,
       playerStatuses: this.playerStatuses as StatusEffect[],
       shadowStatuses: this.shadowStatuses as StatusEffect[],
-      chargeActive: this.chargeActive, attackBuff: this.attackBuff,
+      chargeActive: this.chargeActive, attackBuff: this.attackBuffAdd !== null,
       vulnerableArmed: this.vulnerableArmed,
       attackBoostTurns: this.attackBoostTurns,
       guardCounterReady: this.guardCounterReady,
@@ -261,7 +295,8 @@ export class BattleEngine {
       staggerImmune: this.staggerImmune,
       canAllOut: this.staggerState === 'window' && this.sp >= ALL_OUT_SP_COST,
       allOutSpCost: ALL_OUT_SP_COST,
-      insightAvailable: !this.insightUsedThisTurn && this.sp >= INSIGHT_SP_COST,
+      insightAvailable: !this.insightUsedThisTurn && this.sp >= this.insightCost(),
+      insightCost: this.insightCost(),
       comboCount: this.comboCount,
       over: this.over,
       masksSummoned: new Set(this.masksSummoned),
@@ -270,8 +305,18 @@ export class BattleEngine {
       totalDamageDealt: this.totalDamageDealt,
       maxSingleHit: this.maxSingleHit,
       weaknessHits: this.weaknessHits,
+      // ── 批3 ──
+      affixes: this.affixes,
+      /** 月蚀：弱点未揭示（UI 显示 ？？？，WEAK 预判需跳过） */
+      weaknessHidden: this.weaknessHidden(),
+      oathSpUsed: this.oathSpUsed,
+      chainKey: this.chain,
     };
   }
+
+  private hasAffix(a: AffixKind): boolean { return this.affixes.includes(a); }
+  private weaknessHidden(): boolean { return this.hasAffix('eclipse') && !this.weaknessRevealed; }
+  private insightCost(): number { return this.chain === 'knowledge+charm' ? 0 : INSIGHT_SP_COST; }
 
   private persistPatch(): PersistPatch {
     return {
@@ -293,12 +338,16 @@ export class BattleEngine {
     };
   }
 
-  /** 战斗开场：锁定首回合意图（不 tick）；「被夺先手」事件时 Shadow 先攻一次 */
+  /** 战斗开场：锁定首回合意图（不 tick）；「被夺先手」事件 /「迅捷」词缀时 Shadow 先攻一次 */
   openingTurn(): TurnResult {
     const lines: string[] = [];
     const fx: FxEvent[] = [];
     if (this.setup.firstStrikeStolen) {
       lines.push('先手被夺——它抢先出手了！');
+      this.shadowAttack(1, false, lines, fx);
+      if (this.over === 'defeat') return this.result(lines, fx, false, false);
+    } else if (this.hasAffix('swift')) {
+      lines.push('【迅捷】之影——它比你的思绪更快！');
       this.shadowAttack(1, false, lines, fx);
       if (this.over === 'defeat') return this.result(lines, fx, false, false);
     }
@@ -324,14 +373,21 @@ export class BattleEngine {
         if (this.sp < this.skillCost(input.skill)) {
           return this.result(['SP 不足，无法施展这个技能。'], [], false, false);
         }
+        if (input.skill.oathEffect === 'sp_once' && this.oathSpUsed) {
+          return this.result(['誓约之力已在本场战斗中兑现——月光不会照两次。'], [], false, false);
+        }
         return this.doTurnAction(input);
       default: return this.doTurnAction(input);
     }
   }
 
-  /** 技能实际 SP 消耗（魅力面具首次免费） */
+  /** 技能实际 SP 消耗（魅力面具首次免费；月光余响迷思减耗、下限 1） */
   skillCost(skill: PersonaSkill): number {
-    return (this.activeMask === 'charm' && !this.charmFreeUsed) ? 0 : skill.spCost;
+    if (this.activeMask === 'charm' && !this.charmFreeUsed) return 0;
+    if (skill.socket?.kind === 'moon_echo' && skill.spCost > 0) {
+      return Math.max(1, skill.spCost - skill.socket.value);
+    }
+    return skill.spCost;
   }
 
   /** 当前弱点（二形态会更换） */
@@ -347,6 +403,9 @@ export class BattleEngine {
     this.activeMask = attr;
     const first = !this.masksSummoned.has(attr);
     this.masksSummoned.add(attr);
+    // 批3：面具挂绳（首次攻击加算）/ 舞台魅影（首次攻击必暴击，每场1次）武装
+    if (this.relicMods.maskSwitchAdd > 0) this.maskSwitchArmed = true;
+    if (this.chain === 'dexterity+charm' && !this.stageCritUsed) this.stageCritArmed = true;
     fx.push({ atLine: 0, type: 'maskSwitch', attr, isCrit: first });
     return this.result(lines, fx, false, false);
   }
@@ -354,13 +413,20 @@ export class BattleEngine {
   private doInsight(): TurnResult {
     const lines: string[] = [];
     const fx: FxEvent[] = [];
-    if (this.insightUsedThisTurn || this.sp < INSIGHT_SP_COST) return this.result(lines, fx, false, false);
-    this.sp -= INSIGHT_SP_COST;
+    const cost = this.insightCost();
+    if (this.insightUsedThisTurn || this.sp < cost) return this.result(lines, fx, false, false);
+    this.sp -= cost;
     this.insightUsedThisTurn = true;
+    if (cost === 0) lines.push('【雄辩之智】共鸣——洞察不费吹灰之力。');
+    lines.push(`你凝神洞察 ${this.shName} 的气息……`);
+    // 月蚀词缀：洞察揭开隐藏的弱点
+    if (this.weaknessHidden()) {
+      this.weaknessRevealed = true;
+      lines.push(`月蚀散去——它的弱点是【${this.setup.attrNames[this.shWeak]}】！`);
+    }
     const detail = this.intent
       ? this.intent.detail
       : '尚未捕捉到明确的意图。';
-    lines.push(`你凝神洞察 ${this.shName} 的气息……`);
     lines.push(detail);
     lines.push(`${this.shName}：${pickShadowLine('insightUsed', this.shName) || '哼……你也只是在看罢了。'}`);
     return this.result(lines, fx, false, false);
@@ -446,10 +512,9 @@ export class BattleEngine {
     const attrName = this.setup.attrNames[attr];
     const personaName = this.setup.personaNames[attr] ?? '反抗者';
 
-    // SP（魅力面具：每场一次免费）
-    let cost = skill.spCost;
-    if (this.activeMask === 'charm' && !this.charmFreeUsed) {
-      cost = 0;
+    // SP（魅力面具：每场一次免费；月光余响迷思减耗）
+    const cost = this.skillCost(skill);
+    if (cost === 0 && skill.spCost > 0 && this.activeMask === 'charm' && !this.charmFreeUsed) {
       this.charmFreeUsed = true;
       lines.push('面具之力：本次技能不消耗SP！');
     }
@@ -463,6 +528,7 @@ export class BattleEngine {
         grantedExtra = true;
         lines.push('面具之力：获得追加行动！');
         fx.push({ atLine: lines.length - 1, type: 'oneMore' });
+        if (this.relicMods.oneMoreAdd > 0) this.oneMoreArmed = true; // 引雷针武装
       }
     }
 
@@ -471,12 +537,25 @@ export class BattleEngine {
 
     if (isDamage) {
       const isWeakness = attr === this.currentWeak();
-      // 暴击判定：crit 技能基础 + 胆量面具 + 连击 buff
+      // 月蚀：误打命中隐藏弱点 → 弱点当场暴露
+      if (isWeakness && this.weaknessHidden()) {
+        this.weaknessRevealed = true;
+        lines.push('被月蚀掩藏的弱点——暴露了！');
+      }
+      // 暴击判定：crit 技能基础 + 胆量面具 + 连击 buff + 星图遗物 + 精算连击 + 慧眼迷思
       const critBuff = findStatus(this.playerStatuses, 'crit_buff')?.value ?? 0;
-      let critChance = critBuff;
+      let critChance = critBuff + this.relicMods.critAdd;
       if (skill.type === 'crit') critChance += SKILL_CRIT_BY_LEVEL[Math.min(skill.level - 1, 4)];
       if (this.activeMask === 'guts') critChance += GUTS_MASK_CRIT;
-      const isCrit = this.rng() < critChance;
+      if (this.chain === 'knowledge+dexterity') critChance += CHAIN_CRIT_ADD;
+      if (skill.socket?.kind === 'keen_eye') critChance += skill.socket.value;
+      let isCrit = this.rng() < critChance;
+      // 舞台魅影：换面具后的首次攻击必定暴击（每场 1 次）
+      if (this.stageCritArmed && !this.stageCritUsed) {
+        this.stageCritArmed = false;
+        this.stageCritUsed = true;
+        if (!isCrit) { isCrit = true; lines.push('【舞台魅影】共鸣——聚光灯下的一击，必中要害！'); }
+      }
 
       // 三段乘区
       const flats: number[] = [];
@@ -490,19 +569,61 @@ export class BattleEngine {
       if (this.activeMask === 'knowledge' && isWeakness) flats.push(KNOWLEDGE_MASK_WEAK_FLAT);
 
       if (this.sessionAddPct > 0) adds.push(this.sessionAddPct); // 登塔临时增益（buff 徽标由 UI 常驻展示，不进叙事）
-      if (this.attackBuff) { adds.push(BUFF_ADD); this.attackBuff = false; lines.push('攻击强化触发！伤害 +50%！'); }
+      // ── 批3 加算段：熟练度星级 / 音叉 / 单片镜·破绽洞察（弱点） / 烈焰亮相（首回合） ──
+      const stars = masteryStars(skill.mastery ?? 0, skill.level);
+      if (stars > 0) adds.push(stars * MASTERY_STAR_ADD);
+      if (this.relicMods.addAll > 0) adds.push(this.relicMods.addAll);
+      if (isWeakness) {
+        if (this.relicMods.weaknessAdd > 0) adds.push(this.relicMods.weaknessAdd);
+        if (skill.socket?.kind === 'flaw_insight') adds.push(skill.socket.value);
+      }
+      if (this.chain === 'guts+charm' && this.turn === 1) {
+        adds.push(CHAIN_FIRST_TURN_ADD);
+        lines.push('【烈焰亮相】共鸣——开幕的火焰格外炽烈！');
+      }
+      if (this.oneMoreArmed) {
+        this.oneMoreArmed = false;
+        if (this.relicMods.oneMoreAdd > 0) {
+          adds.push(this.relicMods.oneMoreAdd);
+          lines.push('引雷针导流——追击的雷势更猛！');
+        }
+      }
+      if (this.maskSwitchArmed) {
+        this.maskSwitchArmed = false;
+        if (this.relicMods.maskSwitchAdd > 0) adds.push(this.relicMods.maskSwitchAdd);
+      }
+      if (this.ampNextAdd > 0) { adds.push(this.ampNextAdd); this.ampNextAdd = 0; }
+      if (this.attackBuffAdd !== null) {
+        adds.push(this.attackBuffAdd);
+        lines.push(`攻击强化触发！伤害 +${Math.round(this.attackBuffAdd * 100)}%！`);
+        this.attackBuffAdd = null;
+      }
       if (this.vulnerableArmed) { adds.push(VULNERABLE_ADD); this.vulnerableArmed = false; lines.push('易伤触发！伤害 +30%！'); }
       const resonance = findStatus(this.playerStatuses, 'resonance');
       if (resonance) {
-        adds.push(resonance.value - 1);
+        // 月下共鸣：共鸣效果 ×1.3
+        const resAdd = (resonance.value - 1) * (this.chain === 'kindness+charm' ? CHAIN_RESONANCE_AMP : 1);
+        adds.push(resAdd);
         this.playerStatuses = removeStatus(this.playerStatuses, 'resonance');
-        lines.push(`【共鸣】触发！伤害 +${Math.round((resonance.value - 1) * 100)}%！`);
+        lines.push(`【共鸣】触发！伤害 +${Math.round(resAdd * 100)}%！`);
       }
       const mark = findStatus(this.shadowStatuses, 'mark');
       if (mark) { adds.push(mark.value - 1); lines.push(`【猎手标记】：伤害 +${Math.round((mark.value - 1) * 100)}%！`); }
-      if (this.guardCounterReady) { adds.push(GUARD_COUNTER_ADD); this.guardCounterReady = false; lines.push('格挡反击！伤害 +50%！'); }
+      if (this.guardCounterReady) {
+        const counterAdd = this.chain === 'guts+kindness' ? CHAIN_GUARD_COUNTER_ADD : GUARD_COUNTER_ADD;
+        adds.push(counterAdd);
+        this.guardCounterReady = false;
+        lines.push(`格挡反击！伤害 +${Math.round(counterAdd * 100)}%！`);
+      }
 
-      if (this.chargeActive) { mults.push(CHARGE_MULT); this.chargeActive = false; lines.push('蓄力爆发！伤害翻倍！'); }
+      if (this.chargeActive) {
+        const chargeMult = this.chargeMultOverride ?? CHARGE_MULT;
+        mults.push(chargeMult);
+        if (this.relicMods.chargeAdd > 0) adds.push(this.relicMods.chargeAdd); // 逆流沙漏
+        this.chargeActive = false;
+        this.chargeMultOverride = null;
+        lines.push(chargeMult > CHARGE_MULT ? `蓄雷炸裂！伤害 ×${chargeMult}！` : '蓄力爆发！伤害翻倍！');
+      }
       if (isCrit) mults.push(CRIT_MULT);
       if (isWeakness) mults.push(WEAKNESS_MULT);
       const ring = ringMultiplier(attr, this.shAttribute);
@@ -534,14 +655,30 @@ export class BattleEngine {
       if (isWeakness) fx.push({ atLine: lines.length - 1, type: 'weak' });
       if (isWeakness || isCrit) this.comboCount++;
 
+      // 燃魂之誓：自损 10% 当前 HP（不致死）
+      if (skill.oathEffect === 'self_hp_cost' && this.playerHp > 1) {
+        const selfCost = Math.min(this.playerHp - 1, Math.max(1, Math.round(this.playerHp * OATH_SELF_HP_COST_PCT)));
+        this.playerHp -= selfCost;
+        lines.push(`誓约的代价：灼烧自身 ${selfCost} 点体力。`);
+        fx.push({ atLine: lines.length - 1, type: 'playerHit', value: selfCost, hpAfter: this.playerHp });
+      }
+
+      // 迷思附带效果（命中后触发）
+      this.applyMythOnHit(skill, dmg, lines, fx);
+
+      // 荆棘词缀：反弹直接伤害
+      this.applyThorns(dmg, lines, fx);
+      if (this.over === 'defeat') return grantedExtra;
+
       // attack_boost 的附带效果
       if (skill.type === 'attack_boost') this.applyMappedEffect(skill, 'attack_boost', lines);
 
       // 连续弱点（警戒决策用）
       this.consecutiveWeakness = isWeakness ? this.consecutiveWeakness + 1 : 0;
 
-      // 失衡充能（BOSS 常备失衡条）
-      this.gainStagger(isWeakness, isCrit, lines, fx);
+      // 失衡充能（BOSS 常备失衡条；失衡助推迷思增幅）
+      const staggerAmp = skill.socket?.kind === 'stagger_boost' ? 1 + skill.socket.value : 1;
+      this.gainStagger(isWeakness, isCrit, lines, fx, staggerAmp);
 
       // 濒死保底窗口
       this.maybeForcedWindow(lines, fx);
@@ -552,26 +689,62 @@ export class BattleEngine {
         lines.push('1 MORE！乘胜追击——再行动一次！');
         fx.push({ atLine: lines.length - 1, type: 'oneMore' });
         grantedExtra = true;
+        if (this.relicMods.oneMoreAdd > 0) this.oneMoreArmed = true; // 引雷针武装
       }
     } else if (skill.type === 'buff') {
-      this.attackBuff = true;
       this.consecutiveWeakness = 0;
-      lines.push('攻击力强化！下次伤害 +50%！');
+      if (skill.oathEffect === 'sp_once') {
+        // 月光之誓：+18 SP，每场 1 次（重复点击已在 act() 拦截）
+        this.oathSpUsed = true;
+        this.sp += OATH_SP_GAIN;
+        lines.push(`月光倾泻——回复了 ${OATH_SP_GAIN} 点 SP！（本场仅此一次）`);
+      } else if (skill.oathEffect === 'shield_block') {
+        // 铁壁之誓：护盾 60% + 本回合视为完全格挡（反击预备）
+        this.playerStatuses = applyStatus(this.playerStatuses, {
+          kind: 'shield', remainingTurns: 1, value: OATH_SHIELD_PCT, stacks: 1, sourceName: skill.name,
+        });
+        this.guardCounterReady = true;
+        lines.push(`铁壁展开！获得 ${Math.round(OATH_SHIELD_PCT * 100)}% 护盾——下回合首次攻击 +50%！`);
+      } else {
+        const stars = masteryStars(skill.mastery ?? 0, skill.level);
+        this.attackBuffAdd = BUFF_ADD * (1 + stars * MASTERY_STAR_ADD);
+        lines.push(`攻击力强化！下次伤害 +${Math.round(this.attackBuffAdd * 100)}%！`);
+      }
     } else if (skill.type === 'debuff') {
       this.consecutiveWeakness = 0;
-      if (!this.applyMappedEffect(skill, 'debuff', lines)) {
+      if (skill.oathEffect === 'poison_calm') {
+        // 蚀影之誓：3 层中毒 + 镇静 1 回合
+        const dot = Math.round(OATH_POISON_DOT * (1 + this.relicMods.poisonAmp));
+        this.shadowStatuses = applyStatus(this.shadowStatuses, {
+          kind: 'poison', remainingTurns: 3, value: dot, stacks: OATH_POISON_STACKS, sourceName: skill.name,
+        }, true, OATH_POISON_STACKS);
+        this.shadowStatuses = applyStatus(this.shadowStatuses, {
+          kind: 'calm', remainingTurns: 1, value: 0.7, stacks: 1, sourceName: skill.name,
+        });
+        lines.push(`蚀影缠绕！${this.shName} 中了 ${OATH_POISON_STACKS} 层剧毒（${dot}/层·回合），攻击也被镇静削弱！`);
+      } else if (!this.applyMappedEffect(skill, 'debuff', lines)) {
         this.vulnerableArmed = true;
         lines.push(`${this.shName} 陷入易伤！下次攻击 +30%！`);
       }
     } else if (skill.type === 'charge') {
       this.chargeActive = true;
       this.consecutiveWeakness = 0;
-      lines.push('正在蓄力……下次技能伤害将翻倍！（小心 Shadow 的打断）');
+      if (skill.oathEffect === 'charge_23') {
+        this.chargeMultOverride = OATH_CHARGE_MULT;
+        lines.push(`雷霆在面具之后凝聚……下次技能伤害 ×${OATH_CHARGE_MULT}！（小心 Shadow 的打断）`);
+      } else {
+        lines.push('正在蓄力……下次技能伤害将翻倍！（小心 Shadow 的打断）');
+      }
     } else if (skill.type === 'heal') {
       this.consecutiveWeakness = 0;
-      const amount = healAmount(skill.power, attr);
+      const stars = masteryStars(skill.mastery ?? 0, skill.level);
+      let amount = skill.oathEffect === 'heal_pct_max'
+        ? Math.round(this.playerMaxHp * OATH_HEAL_PCT)
+        : healAmount(skill.power, attr);
+      amount = Math.round(amount * (1 + stars * MASTERY_STAR_ADD) * (this.chain === 'knowledge+kindness' ? 1 + CHAIN_HEAL_AMP : 1));
       const applied = Math.min(this.playerMaxHp - this.playerHp, amount);
       this.playerHp += applied;
+      if (this.chain === 'knowledge+kindness' && applied > 0) lines.push('【疗理之学】共鸣——回复效果提升！');
       lines.push(`回复了 ${applied} 点体力！`);
       fx.push({ atLine: lines.length - 1, type: 'heal', value: applied, hpAfter: this.playerHp });
     }
@@ -589,10 +762,14 @@ export class BattleEngine {
       }
       return slot === 'attack_boost';
     }
+    // 蚀骨之牙遗物：玩家对 Shadow 施加的中毒强度 ×(1+x)
+    const value = mapped.kind === 'poison' && mapped.target === 'shadow' && this.relicMods.poisonAmp > 0
+      ? Math.round(mapped.value * (1 + this.relicMods.poisonAmp))
+      : mapped.value;
     const eff: StatusEffect = {
       kind: mapped.kind,
       remainingTurns: mapped.turns,
-      value: mapped.value,
+      value,
       stacks: 1,
       sourceName: skill.name,
     };
@@ -605,6 +782,61 @@ export class BattleEngine {
     return true;
   }
 
+  /** 迷思石命中后附带效果（批3 §10.3；仅伤害类技能触发） */
+  private applyMythOnHit(skill: PersonaSkill, dmg: number, lines: string[], fx: FxEvent[]) {
+    const socket = skill.socket;
+    if (!socket || dmg <= 0 || this.over) return;
+    switch (socket.kind) {
+      case 'charge_echo':
+        if (!this.chargeActive && this.rng() < socket.value) {
+          this.chargeActive = true;
+          lines.push('【蓄力余韵】迷思共振——力量再次凝聚！下次技能伤害翻倍！');
+        }
+        break;
+      case 'life_siphon': {
+        const healed = Math.min(this.playerMaxHp - this.playerHp, socket.value);
+        if (healed > 0) {
+          this.playerHp += healed;
+          lines.push(`【生命虹吸】回复了 ${healed} 点体力。`);
+          fx.push({ atLine: lines.length - 1, type: 'heal', value: healed, hpAfter: this.playerHp });
+        }
+        break;
+      }
+      case 'venom_bite': {
+        const dot = Math.round(socket.value * (1 + this.relicMods.poisonAmp));
+        this.shadowStatuses = applyStatus(this.shadowStatuses, {
+          kind: 'poison', remainingTurns: 3, value: dot, stacks: 1, sourceName: skill.name,
+        }, true);
+        lines.push(`【淬毒之牙】毒素渗入——${this.shName} 中毒了（${dot}/回合）。`);
+        break;
+      }
+      case 'calm_ripple':
+        if (this.rng() < socket.value) {
+          this.shadowStatuses = applyStatus(this.shadowStatuses, {
+            kind: 'calm', remainingTurns: 1, value: 0.7, stacks: 1, sourceName: skill.name,
+          });
+          lines.push(`【镇静涟漪】荡开——${this.shName} 的攻击被削弱了。`);
+        }
+        break;
+      case 'amp_circuit':
+        this.ampNextAdd = socket.value;
+        lines.push(`【增幅回路】充能——下次伤害 +${Math.round(socket.value * 100)}%。`);
+        break;
+      // keen_eye / flaw_insight / moon_echo / stagger_boost 在各自判定点生效
+      case 'keen_eye': case 'flaw_insight': case 'moon_echo': case 'stagger_boost': break;
+    }
+  }
+
+  /** 荆棘词缀：反弹 10% 所受直接伤害（技能/普攻/总攻击） */
+  private applyThorns(dmg: number, lines: string[], fx: FxEvent[]) {
+    if (!this.hasAffix('thorns') || dmg <= 0 || this.over === 'victory') return;
+    const reflect = Math.max(1, Math.round(dmg * AFFIX_THORNS_PCT));
+    this.playerHp = Math.max(0, this.playerHp - reflect);
+    lines.push(`【荆棘】反噬——你受到 ${reflect} 点反弹伤害！`);
+    fx.push({ atLine: lines.length - 1, type: 'playerHit', value: reflect, hpAfter: this.playerHp });
+    if (this.playerHp <= 0) this.handlePlayerLethal(lines);
+  }
+
   // ── 玩家：普通攻击 / 防御 / 总攻击 ─────────────────────
   private resolveBasic(lines: string[], fx: FxEvent[]) {
     this.consecutiveWeakness = 0;
@@ -613,6 +845,8 @@ export class BattleEngine {
     this.damageShadow(dmg);
     lines.push(`造成了 ${dmg} 点伤害。`);
     fx.push({ atLine: lines.length - 1, type: 'shadowHit', value: dmg });
+    this.applyThorns(dmg, lines, fx);
+    if (this.over === 'defeat') return;
     this.maybeForcedWindow(lines, fx);
   }
 
@@ -640,6 +874,7 @@ export class BattleEngine {
     this.damageShadow(dmg);
     lines.push(`造成 ${dmg} 点巨额伤害！`);
     fx.push({ atLine: lines.length - 1, type: 'shadowHit', value: dmg, isWeak: true });
+    this.applyThorns(dmg, lines, fx);
   }
 
   // ── Shadow 阶段 ─────────────────────────────────────────
@@ -760,6 +995,7 @@ export class BattleEngine {
     let atk = this.baseAttack();
     if (this.berserk) atk *= BERSERK_ATK_MULT;
     if (this.phase === 2) atk *= PHASE2_ATTACK_MULT;
+    if (this.hasAffix('vengeful') && this.setup.playerEverRetreated) atk *= AFFIX_VENGEFUL_ATK; // 记仇
     const atkUp = findStatus(this.shadowStatuses, 'atk_up');
     if (atkUp) atk *= atkUp.value;
     const calm = findStatus(this.shadowStatuses, 'calm');
@@ -767,11 +1003,17 @@ export class BattleEngine {
     atk *= intentMult;
     atk *= turnPressureMult(this.turn);
 
-    // 暴击
+    // 暴击（敏锐词缀 +10%）
     const critPenalty = findStatus(this.shadowStatuses, 'crit_debuff')?.value ?? 0;
-    const critChance = Math.max(0, SHADOW_CRIT_BY_LEVEL[this.shLevel - 1] - critPenalty);
+    const critChance = Math.max(0, SHADOW_CRIT_BY_LEVEL[this.shLevel - 1] - critPenalty
+      + (this.hasAffix('keen') ? AFFIX_CRIT_ADD : 0));
     const isCrit = forceCrit || this.rng() < critChance;
     if (isCrit) atk *= CRIT_MULT;
+
+    // 执念绷带：HP<30% 时受伤减免
+    if (this.relicMods.lowHpGuard > 0 && this.playerHp / Math.max(1, this.playerMaxHp) < BANDAGE_HP_THRESHOLD) {
+      atk *= 1 - this.relicMods.lowHpGuard;
+    }
 
     // 克制环（承伤侧：Shadow 属性向 vs 出战面具）——提示只在受伤时随叙事出现，不做常驻角标
     const defRing = ringMultiplier(this.shAttribute, this.activeMask);
@@ -826,19 +1068,34 @@ export class BattleEngine {
       lines.push('战斗还未结束……！');
       return;
     }
+    // 亡命身法共鸣：致命伤 20% 保留 1 HP（每场 1 次；批4 同伴庇护实装后先到先得不叠加）
+    if (this.chain === 'guts+dexterity' && !this.chainLethalUsed) {
+      this.chainLethalUsed = true;
+      if (this.rng() < CHAIN_LETHAL_GUARD) {
+        this.playerHp = 1;
+        lines.push('【亡命身法】——千钧一发间侧身，死神擦肩而过！');
+        return;
+      }
+    }
     this.over = 'defeat';
     lines.push('体力耗尽……');
     lines.push(`${this.shName}：${pickByLevel(PLAYER_DEFEAT_MONOLOGUE, this.shLevel, this.rng)}`);
   }
 
   // ── 失衡系统 ────────────────────────────────────────────
-  private gainStagger(isWeakness: boolean, isCrit: boolean, lines: string[], fx: FxEvent[]) {
+  private gainStagger(isWeakness: boolean, isCrit: boolean, lines: string[], fx: FxEvent[], amp = 1) {
     if (this.shTier === 'mob') return; // 小影无失衡条（血少速杀，§3.4）
     if (this.staggerState === 'window' || this.staggerImmune > 0) return;
     let gain = 0;
-    if (isWeakness) gain += STAGGER_WEAKNESS_GAIN;
+    if (isWeakness) {
+      gain += STAGGER_WEAKNESS_GAIN;
+      if (this.chain === 'knowledge+guts') gain += CHAIN_STAGGER_WEAK_BONUS; // 无畏考据
+    }
     if (isCrit) gain += STAGGER_CRIT_GAIN;
     if (gain <= 0) return;
+    gain *= amp; // 失衡助推迷思
+    if (this.hasAffix('slippery')) gain *= AFFIX_SLIPPERY_FACTOR; // 湿滑：条长 +50%
+    gain = Math.round(gain);
     this.staggerGauge = Math.min(STAGGER_MAX, this.staggerGauge + gain);
     if (this.staggerGauge >= STAGGER_MAX) this.triggerStagger(lines, fx);
   }
@@ -904,6 +1161,8 @@ export class BattleEngine {
     this.phase = 2;
     // 新形态新状态：一形态末段的狂化不带入二形态（避免 ×1.5×1.2 叠满的终局压制）
     this.berserk = false;
+    // 变身宣言会公开新弱点——月蚀的隐匿到此为止
+    this.weaknessRevealed = true;
     // 更换弱点（排除旧弱点）
     const ATTRS: AttributeId[] = ['knowledge', 'guts', 'dexterity', 'kindness', 'charm'];
     const pool = ATTRS.filter(a => a !== this.shWeak);
@@ -953,10 +1212,19 @@ export class BattleEngine {
     // phase2 演出（若玩家阶段触发但尚未冲洗）
     this.flushPhase2Lines(lines, fx);
 
-    // 防御回气
+    // 防御回气（铁壁徽记：格挡回合额外回 HP）
     if (this.defending) {
       this.sp += DEFEND_SP_REGEN;
+      if (this.relicMods.blockHeal > 0 && this.playerHp < this.playerMaxHp && this.playerHp > 0) {
+        const healed = Math.min(this.playerMaxHp - this.playerHp, this.relicMods.blockHeal);
+        this.playerHp += healed;
+        lines.push(`铁壁徽记微光——回复 ${healed} 点体力。`);
+      }
       this.defending = false;
+    }
+    // 月光怀表：回合开始回 SP
+    if (this.relicMods.spPerTurn > 0 && !this.over) {
+      this.sp += this.relicMods.spPerTurn;
     }
     // 狂化自损
     if (this.berserk && !this.over) {
@@ -993,6 +1261,13 @@ export class BattleEngine {
       if (this.over === 'victory') return;
     }
 
+    // 巧手医心共鸣：敌方中毒期间每回合回复 1 HP
+    if (this.chain === 'dexterity+kindness' && !this.over
+        && findStatus(this.shadowStatuses, 'poison') && this.playerHp > 0 && this.playerHp < this.playerMaxHp) {
+      this.playerHp = Math.min(this.playerMaxHp, this.playerHp + CHAIN_POISON_MEND);
+      lines.push(`【巧手医心】共鸣——毒雾之中稳住呼吸，回复 ${CHAIN_POISON_MEND} 点体力。`);
+    }
+
     // 锁定新意图
     this.lockIntent(lines, fx);
   }
@@ -1020,7 +1295,8 @@ export class BattleEngine {
     this.intent = makeIntent(kind, intentDetail(kind, {
       name: this.shName,
       attackPreview: preview,
-      weakAttrName: this.setup.attrNames[this.shWeak],
+      // 月蚀词缀：未揭示前弱点在洞察详情中也保持隐匿
+      weakAttrName: this.weaknessHidden() ? '？？？' : this.setup.attrNames[this.shWeak],
     }));
     const flavor = pickIntentLine(kind, this.rng);
     if (flavor) lines.push(flavor);

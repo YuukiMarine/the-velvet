@@ -372,6 +372,8 @@ export interface Settings {
   battlePlayerMaxHp?: number;
   /** （引擎v2）Shadow 全局攻击倍率%（金手指），默认 100；攻击基础值走 BOSS_ATTACK_BY_LEVEL 等级表 */
   battleAttackScale?: number;
+  /** （批3）登塔回顾的影之评语（AI 50字点评）。默认 undefined=开；置 false 关闭。 */
+  battleCommentEnabled?: boolean;
   // 可自定义 Prompt
   battleShadowPromptTemplate?: string;      // Shadow AI生成提示模板
   battleVictoryPromptTemplate?: string;     // 胜利叙事提示模板
@@ -762,6 +764,17 @@ export interface PersonaSkill {
   type: 'damage' | 'buff' | 'debuff' | 'crit' | 'charge' | 'heal' | 'attack_boost';
   power: number;
   spCost: number;
+  // ── 批3 · 养成扩展（全部可选，AI schema 不变） ──
+  /** 熟练度：累计使用次数。星级由 numbers.masteryStars 派生（每星 +5% 加算） */
+  mastery?: number;
+  /** 解锁标记：只会 false→true（存量迁移按当时属性等级置位=不回锁；此后走双条件） */
+  unlocked?: boolean;
+  /** 迷思镶嵌（denormalized 快照；stoneId 指向 arsenal.myths；誓约技不可镶） */
+  socket?: { stoneId: string; kind: MythKind; value: number };
+  /** 誓约置换：本体已是誓约技；original 为被替换技能的完整快照（卸下时恢复） */
+  oath?: { stoneId: string; kind: OathKind; original: PersonaSkill };
+  /** 誓约技行为扩展（本地定义，不进 AI schema） */
+  oathEffect?: OathEffectKind;
 }
 
 export interface Persona {
@@ -772,8 +785,111 @@ export interface Persona {
   equippedMaskAttribute?: AttributeId | null;
   createdViaAI: boolean;
   skills: Record<AttributeId, PersonaSkill[]>;
+  /** （批3）召唤台词：每属性一句，AI 批量生成后缓存；无 Key 用模板 */
+  summonLines?: Partial<Record<AttributeId, string>>;
   createdAt: Date;
 }
+
+// ── 批3 · 战利品与养成（遗物/迷思/誓约/共鸣链/词缀） ────────────
+
+/** 品质三档：残月 / 弦月 / 满月 */
+export type LootQuality = 'waning' | 'half' | 'full';
+
+export type RelicKind =
+  | 'monocle'      // 猎手的单片镜：弱点伤害+
+  | 'pocketwatch'  // 月光怀表：回合开始+SP
+  | 'bulwark'      // 铁壁徽记：格挡时回复HP
+  | 'venomfang'    // 蚀骨之牙：中毒伤害+
+  | 'starchart'    // 观星者的星图：暴击率+
+  | 'hourglass'    // 逆流沙漏：蓄力伤害额外+
+  | 'bandage'      // 执念绷带：HP<30% 时受伤−
+  | 'tuningfork'   // 共鸣音叉：加算段总和+
+  | 'lightningrod' // 引雷针：1More 后下次伤害+
+  | 'compass'      // 登塔者罗盘：塔内节点 SP 收益+
+  | 'maskstrap'    // 面具挂绳：切换面具后首次攻击+
+  | 'handwarmer';  // 影之怀炉：回响节点回复+
+
+export interface RelicInstance {
+  id: string;
+  kind: RelicKind;
+  quality: LootQuality;
+  /** 词条值（百分比类存小数 0.08=8%；SP/HP 类存整数） */
+  value: number;
+  equipped?: boolean;
+  obtainedAt: string; // YYYY-MM-DD
+}
+
+export type MythKind =
+  | 'charge_echo'   // 蓄力余韵：命中后概率获得蓄力
+  | 'life_siphon'   // 生命虹吸：命中回复HP
+  | 'venom_bite'    // 淬毒之牙：附带1层中毒（仅 damage/crit 可镶）
+  | 'keen_eye'      // 慧眼：该技能暴击率+
+  | 'amp_circuit'   // 增幅回路：命中后下次伤害+
+  | 'calm_ripple'   // 镇静涟漪：命中后概率施加镇静
+  | 'flaw_insight'  // 破绽洞察：该技能弱点伤害+
+  | 'moon_echo'     // 月光余响：该技能 SP 消耗−（下限1）
+  | 'stagger_boost';// 失衡助推：该技能失衡充能+
+
+export interface MythStone {
+  id: string;
+  kind: MythKind;
+  quality: LootQuality;
+  value: number;
+  obtainedAt: string;
+}
+
+export type OathKind =
+  | 'abyss'      // 深渊之誓：heal 25% 最大HP
+  | 'storedbolt' // 蓄雷之誓：charge ×2.3
+  | 'soulfire'   // 燃魂之誓：高威伤害，自损10%当前HP
+  | 'shadowrot'  // 蚀影之誓：3层中毒+镇静
+  | 'aegis'      // 铁壁之誓：护盾60%+视为完全格挡
+  | 'moonlight'; // 月光之誓：+18 SP，每场1次
+
+export type OathEffectKind =
+  | 'heal_pct_max' | 'charge_23' | 'self_hp_cost' | 'poison_calm' | 'shield_block' | 'sp_once';
+
+export interface OathStone {
+  id: string;
+  kind: OathKind;
+  /** 已装备到哪个属性 Persona（每 Persona 限1；未装备 = undefined） */
+  equippedAttr?: AttributeId;
+  /** LLM 按人设命名缓存：attr → 名称/描述（重复装备不再调 AI） */
+  namedCache?: Partial<Record<AttributeId, { name: string; description: string }>>;
+  obtainedAt: string;
+}
+
+/** 共鸣链组合键：两属性按克制环顺序拼接 */
+export type ChainKey =
+  | 'knowledge+guts' | 'knowledge+dexterity' | 'knowledge+kindness' | 'knowledge+charm'
+  | 'guts+dexterity' | 'guts+kindness' | 'guts+charm'
+  | 'dexterity+kindness' | 'dexterity+charm' | 'kindness+charm';
+
+export interface ResonanceChain {
+  key: ChainKey;
+  obtainedAt: string;
+}
+
+/** 战斗背包（挂在 BattleState 上，跟随备份/恢复，无需新 Dexie 表） */
+export interface BattleArsenal {
+  relics: RelicInstance[];
+  myths: MythStone[];
+  oaths: OathStone[];
+  chains: ResonanceChain[];
+  /** 生效中的共鸣链（可保有多条，同时生效1条） */
+  activeChainKey?: ChainKey;
+}
+
+/** Shadow 词缀（本地零 AI）：强敌1条、心魔0-1条（异变加深每次+1） */
+export type AffixKind =
+  | 'stubborn'  // 顽固：HP+30%（生成时应用）
+  | 'keen'      // 敏锐：暴击+10%
+  | 'vengeful'  // 记仇：你曾下塔撤离→攻击+15%
+  | 'thorns'    // 荆棘：反弹10%所受直接伤害
+  | 'slippery'  // 湿滑：失衡条+50%长
+  | 'swift'     // 迅捷：开场先制
+  | 'eclipse'   // 月蚀：弱点隐藏（洞察或误打命中可揭示）
+  | 'greedy';   // 贪婪：击败多掉 SP+50%
 
 export interface Shadow {
   id: string;
@@ -794,6 +910,8 @@ export interface Shadow {
   responseLines: string[];
   attackPower: number;
   lastHpRegenDate?: string;
+  /** （批3）词缀：显形时 0-1 条，月相日异变加深每次 +1 */
+  affixes?: AffixKind[];
   createdAt: Date;
 }
 
@@ -803,6 +921,14 @@ export interface DefeatedShadowRecord {
   breachDate: string;   // 识破日期 (ISO date string)
   defeatDate: string;   // 击败日期 (ISO date string)
   daysElapsed: number;  // 历时天数
+  // ── 批3 · 阴影档案馆扩展（存量记录缺省 = 首批藏品，字段留空） ──
+  description?: string;
+  affixes?: AffixKind[];
+  /** 代表台词（响应池抽一句） */
+  quote?: string;
+  /** 击败时的你：五维总等级快照 */
+  playerTotalLevel?: number;
+  stratumLevel?: number;
 }
 
 export interface BattleState {
@@ -823,6 +949,10 @@ export interface BattleState {
   hpBonusFromDefeats?: number; // 击败Shadow累计获得的HP上限加成
   /** （批2）当日登塔 session 统计与临时增益 */
   towerSession?: TowerSessionStats;
+  /** （批3）战斗背包：遗物/迷思/誓约/共鸣链 */
+  arsenal?: BattleArsenal;
+  /** （批3）曾下塔撤离/败退过（「记仇」词缀与记忆台词的事实源） */
+  everRetreatedDown?: boolean;
 }
 
 export interface BattleLogEntry {
@@ -859,6 +989,8 @@ export interface MobSpec {
   attribute: AttributeId;       // 属性向（克制环 / 剪影色）
   weakAttribute: AttributeId;
   maxHp: number;
+  /** （批3）词缀：强敌必带 1 条，Shadow 无 */
+  affixes?: AffixKind[];
 }
 
 export interface StratumNode {

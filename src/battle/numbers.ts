@@ -152,3 +152,72 @@ export function computeDamage(base: number, flats: number[], adds: number[], mul
   const multProduct = mults.reduce((p, v) => p * v, 1);
   return Math.max(0, Math.round((base + flatSum) * (1 + addSum) * multProduct));
 }
+
+// ── 批3 · 技能熟练度（§4.1）────────────────────────────────
+/** 满星（3星）阈值：按技能等级 Lv1-5（拍板：5/10/15/20/30） */
+export const MASTERY_FULL_BY_LEVEL = [5, 10, 15, 20, 30];
+export const MASTERY_STAR_ADD = 0.05;          // 每星 +5%（加算段）
+export function masteryStars(uses: number, skillLevel: number): 0 | 1 | 2 | 3 {
+  const full = MASTERY_FULL_BY_LEVEL[Math.min(4, Math.max(0, skillLevel - 1))];
+  if (uses >= full) return 3;
+  if (uses >= Math.ceil((full * 2) / 3)) return 2;
+  if (uses >= Math.ceil(full / 3)) return 1;
+  return 0;
+}
+
+// ── 批3 · 遗物（§4.2/§10.2）────────────────────────────────
+/** 遗物栏位数：按当前区层等级（拍板：Lv1期1 / Lv2-4期2 / Lv5期3） */
+export const RELIC_SLOTS_BY_STRATUM = [1, 2, 2, 2, 3];
+/** 删除转化 SP：残月/弦月/满月 */
+export const RELIC_SALVAGE_SP: Record<'waning' | 'half' | 'full', number> = { waning: 10, half: 25, full: 60 };
+export const ELITE_LOOT_RATE = 0.6;            // 强敌 60% 掉战利品
+export const CHAIN_DROP_RATE = 0.35;           // 心魔击破 35% 掉共鸣链
+export const OATH_DROP_RATE = 0.25;            // 心魔击破 25% 掉誓约石（渠道酌定）
+export const CHEST_MYTH_RATE = 0.3;            // 月匣战利品：30% 迷思 / 70% 遗物
+export const DUP_CHAIN_SP = 30;                // 重复共鸣链的 SP 补偿
+
+/** 已装备遗物的引擎修正聚合（store 侧汇总注入；塔外效果 compass/handwarmer 由 store 直接消费） */
+export interface RelicMods {
+  weaknessAdd: number;   // 单片镜：弱点命中加算
+  addAll: number;        // 音叉：全伤害加算
+  chargeAdd: number;     // 沙漏：蓄力消费时加算
+  oneMoreAdd: number;    // 引雷针：1More 后下一击加算
+  maskSwitchAdd: number; // 挂绳：换面具后首次攻击加算
+  critAdd: number;       // 星图：暴击率
+  spPerTurn: number;     // 怀表：回合开始回 SP
+  blockHeal: number;     // 铁壁徽记：防御回合结束回 HP
+  poisonAmp: number;     // 蚀骨之牙：玩家施毒强度 ×(1+x)
+  lowHpGuard: number;    // 绷带：HP<30% 受伤 ×(1−x)
+}
+export const ZERO_RELIC_MODS: RelicMods = {
+  weaknessAdd: 0, addAll: 0, chargeAdd: 0, oneMoreAdd: 0, maskSwitchAdd: 0,
+  critAdd: 0, spPerTurn: 0, blockHeal: 0, poisonAmp: 0, lowHpGuard: 0,
+};
+export const BANDAGE_HP_THRESHOLD = 0.3;       // 绷带触发线
+
+// ── 批3 · 共鸣链（§4.5/§10.5，仅战斗内生效）────────────────
+export const CHAIN_STAGGER_WEAK_BONUS = 10;    // 无畏考据：弱点失衡充能 +10（文档"+1"按加档口径实装）
+export const CHAIN_CRIT_ADD = 0.06;            // 精算连击
+export const CHAIN_HEAL_AMP = 0.25;            // 疗理之学
+export const CHAIN_LETHAL_GUARD = 0.2;         // 亡命身法：致命伤 20% 保留 1HP（每场1次）
+export const CHAIN_GUARD_COUNTER_ADD = 0.7;    // 守护之勇：格挡反击 +50%→+70%
+export const CHAIN_FIRST_TURN_ADD = 0.15;      // 烈焰亮相：首回合伤害加算
+export const CHAIN_POISON_MEND = 1;            // 巧手医心：敌中毒期间每回合回 1HP
+export const CHAIN_RESONANCE_AMP = 1.3;        // 月下共鸣：共鸣效果 ×1.3
+
+// ── 批3 · 词缀（§5.1）──────────────────────────────────────
+export const AFFIX_HP_MULT = 1.3;              // 顽固（生成时应用于 maxHp）
+export const AFFIX_CRIT_ADD = 0.1;             // 敏锐
+export const AFFIX_VENGEFUL_ATK = 1.15;        // 记仇（everRetreatedDown 时生效）
+export const AFFIX_THORNS_PCT = 0.1;           // 荆棘：反弹直接伤害
+export const AFFIX_SLIPPERY_FACTOR = 1 / 1.5;  // 湿滑：失衡充能 ×0.67（=条长+50%）
+export const AFFIX_GREEDY_SP_MULT = 1.5;       // 贪婪（store 侧结算）
+
+// ── 批3 · 誓约技数值（§10.4，本地定义）─────────────────────
+export const OATH_HEAL_PCT = 0.25;             // 深渊之誓
+export const OATH_CHARGE_MULT = 2.3;           // 蓄雷之誓
+export const OATH_SELF_HP_COST_PCT = 0.1;      // 燃魂之誓：自损10%当前HP（不致死）
+export const OATH_POISON_STACKS = 3;           // 蚀影之誓
+export const OATH_POISON_DOT = 4;              // 蚀影之誓：每层每回合伤害
+export const OATH_SHIELD_PCT = 0.6;            // 铁壁之誓
+export const OATH_SP_GAIN = 18;                // 月光之誓（每场1次）

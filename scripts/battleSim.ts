@@ -415,6 +415,305 @@ console.log('── H. 区层地图与小影档位 ──');
   console.log(`  ✓ 小影战：${mobTurns} 回合击杀，意图集={${[...sawIntents].join(',')}}`);
 }
 
+// ── I. 熟练度（批3）：星级派生 + 满星伤害应高于零熟练 ───────
+console.log('── I. 技能熟练度 ──');
+{
+  const { masteryStars } = await import('../src/battle/numbers');
+  assert(masteryStars(0, 1) === 0 && masteryStars(2, 1) === 1 && masteryStars(4, 1) === 2 && masteryStars(5, 1) === 3,
+    'I: Lv1 星级阈值 2/4/5', `${masteryStars(2, 1)}/${masteryStars(4, 1)}/${masteryStars(5, 1)}`);
+  assert(masteryStars(29, 5) === 2 && masteryStars(30, 5) === 3, 'I: Lv5 满星阈值 30');
+
+  const dmgOf = (mastery: number): number => {
+    const setup = makeSetup(3, 555);
+    setup.playerHp = 9999; setup.playerMaxHp = 9999;
+    setup.shadow.attackScalePct = 10;
+    const e = new BattleEngine(setup);
+    e.openingTurn();
+    // 非弱点、非 crit 技（knowledge 面具 vs guts 弱点错开）
+    const sk: PersonaSkill = { level: 3, name: '熟练度测试', description: '', type: 'damage', power: 22, spCost: 0, mastery };
+    const r = e.act({ kind: 'skill', skill: sk });
+    const m = r.lines.map(l => l.match(/造成了 (\d+) 点伤害/)).find(Boolean);
+    return m ? parseInt(m[1], 10) : -1;
+  };
+  const d0 = dmgOf(0);
+  const d3 = dmgOf(15); // Lv3 满星
+  assert(d0 > 0 && d3 > d0, 'I: 满星伤害应高于零熟练', `${d0} → ${d3}`);
+  assert(Math.abs(d3 - Math.round(d0 * 1.15)) <= 1, 'I: 满星≈+15% 加算', `${d0} → ${d3}`);
+  console.log(`  ✓ 熟练度：0星 ${d0} → 满星 ${d3}`);
+}
+
+// ── J. 遗物修正（批3）：怀表/徽记/音叉/单片镜/蚀骨/沙漏 ─────
+console.log('── J. 遗物修正 ──');
+{
+  const mods = {
+    weaknessAdd: 0.15, addAll: 0.08, chargeAdd: 0.25, oneMoreAdd: 0.2, maskSwitchAdd: 0.15,
+    critAdd: 0, spPerTurn: 2, blockHeal: 3, poisonAmp: 0.5, lowHpGuard: 0.18,
+  };
+  const setupJ = makeSetup(2, 888);
+  setupJ.playerHp = 200; setupJ.playerMaxHp = 9999; // 受损态：验证徽记回复
+  setupJ.shadow.attackScalePct = 10;
+  setupJ.relicMods = mods;
+  const e = new BattleEngine(setupJ);
+  e.openingTurn();
+  const spBefore = e.snapshot.sp;
+  const rDef = e.act({ kind: 'defend' });
+  assert(e.snapshot.sp === spBefore + 5 + 2, 'J: 防御回合 SP = +5(防御) +2(怀表)', `${spBefore}→${e.snapshot.sp}`);
+  assert(rDef.lines.some(l => l.includes('铁壁徽记')), 'J: 徽记应在防御回合回血');
+
+  // 蚀骨之牙：dexterity 施毒 3 → ×1.5 = 5（四舍五入）
+  e.act({ kind: 'switchMask', attribute: 'dexterity' });
+  const poisonSkill: PersonaSkill = { level: 2, name: '淬毒测试', description: '', type: 'debuff', power: 15, spCost: 0 };
+  e.act({ kind: 'skill', skill: poisonSkill });
+  const poison = e.snapshot.shadowStatuses.find(s => s.kind === 'poison');
+  assert(!!poison && poison.value === 5, 'J: 蚀骨之牙应放大玩家施毒 3→5', `实际=${poison?.value}`);
+
+  // 单片镜+音叉：弱点伤害对照（同种子）
+  const weakDmg = (withMods: boolean): number => {
+    const s2 = makeSetup(2, 999);
+    s2.playerHp = 9999; s2.playerMaxHp = 9999;
+    s2.shadow.attackScalePct = 10;
+    if (withMods) s2.relicMods = mods;
+    const en = new BattleEngine(s2);
+    en.openingTurn();
+    en.act({ kind: 'switchMask', attribute: 'guts' }); // 弱点
+    const sk: PersonaSkill = { level: 2, name: '弱点打', description: '', type: 'damage', power: 15, spCost: 0 };
+    const r = en.act({ kind: 'skill', skill: sk });
+    const m = r.lines.map(l => l.match(/造成了 (\d+) 点伤害/)).find(Boolean);
+    return m ? parseInt(m[1], 10) : -1;
+  };
+  const base = weakDmg(false);
+  const boosted = weakDmg(true);
+  assert(boosted > base, 'J: 单片镜+音叉应提升弱点伤害', `${base} → ${boosted}`);
+  console.log(`  ✓ 遗物：SP回复/徽记回血/施毒 3→5/弱点伤 ${base}→${boosted}`);
+}
+
+// ── K. 誓约技（批3）：六誓全过 + 月光每场一次 + 可逆前提 ────
+console.log('── K. 誓约技 ──');
+{
+  const { OATH_POOL, buildOathSkill } = await import('../src/battle/loot');
+  const mkOath = (kind: keyof typeof OATH_POOL, level = 3): PersonaSkill => {
+    const orig: PersonaSkill = { level, name: `原技${level}`, description: '', type: 'damage', power: 22, spCost: 18 };
+    return buildOathSkill(kind as never, `stone-${String(kind)}`, orig, 'P·测试');
+  };
+  const setupK = makeSetup(3, 2024);
+  setupK.playerHp = 100; setupK.playerMaxHp = 200;
+  setupK.shadow.attackScalePct = 10;
+  const e = new BattleEngine(setupK);
+  e.openingTurn();
+
+  // 月光之誓：+18 SP，每场一次
+  const moon = mkOath('moonlight');
+  const spBefore = e.snapshot.sp;
+  const r1 = e.act({ kind: 'skill', skill: moon });
+  assert(e.snapshot.sp >= spBefore + 18 - 2, 'K: 月光之誓应 +18 SP', `${spBefore}→${e.snapshot.sp}`);
+  assert(r1.consumedTurn, 'K: 月光之誓应消耗回合');
+  const r2 = e.act({ kind: 'skill', skill: moon });
+  assert(!r2.consumedTurn && r2.lines.some(l => l.includes('誓约之力')), 'K: 月光之誓第二次应被拦截且不吞回合');
+
+  // 铁壁之誓：护盾展开（同回合可能已被 Shadow 攻击消耗——吸收叙事同样算通过）
+  const aegis = mkOath('aegis');
+  const rAegis = e.act({ kind: 'skill', skill: aegis });
+  assert(
+    rAegis.lines.some(l => l.includes('铁壁展开')) &&
+    (e.snapshot.playerStatuses.some(s => s.kind === 'shield') || rAegis.lines.some(l => l.includes('护盾吸收'))),
+    'K: 铁壁之誓应展开护盾（或同回合完成吸收）');
+
+  // 蓄雷之誓 ×2.3
+  const bolt = mkOath('storedbolt');
+  const rBolt = e.act({ kind: 'skill', skill: bolt });
+  assert(e.snapshot.chargeActive || rBolt.lines.some(l => l.includes('打断')), 'K: 蓄雷后应进入蓄力态（或被打断）');
+  if (e.snapshot.chargeActive) {
+    const strike: PersonaSkill = { level: 3, name: '释放', description: '', type: 'damage', power: 22, spCost: 0 };
+    const rS = e.act({ kind: 'skill', skill: strike });
+    assert(rS.lines.some(l => l.includes('×2.3') || l.includes('蓄雷')), 'K: 蓄雷释放应有 ×2.3 叙事');
+  }
+
+  // 燃魂之誓：自损但不致死
+  const fire = mkOath('soulfire');
+  const hpBefore = e.snapshot.playerHp;
+  const rF = e.act({ kind: 'skill', skill: fire });
+  if (e.snapshot.over === null) {
+    assert(rF.lines.some(l => l.includes('誓约的代价')), 'K: 燃魂应有自损叙事');
+    assert(e.snapshot.playerHp >= 1, 'K: 燃魂自损不致死', `${hpBefore}→${e.snapshot.playerHp}`);
+  }
+
+  // 蚀影之誓：3 层毒 + 镇静
+  const rot = mkOath('shadowrot');
+  e.act({ kind: 'skill', skill: rot });
+  const rotPoison = e.snapshot.shadowStatuses.find(s => s.kind === 'poison');
+  assert(!!rotPoison && rotPoison.stacks === 3, 'K: 蚀影应叠 3 层毒', `stacks=${rotPoison?.stacks}`);
+  assert(e.snapshot.shadowStatuses.some(s => s.kind === 'calm'), 'K: 蚀影应附带镇静');
+
+  // 深渊之誓：回复 25% 最大 HP（含误差±1）
+  const abyss = mkOath('abyss');
+  const hpB2 = e.snapshot.playerHp;
+  const rA = e.act({ kind: 'skill', skill: abyss });
+  if (e.snapshot.over === null) {
+    const healed = rA.lines.map(l => l.match(/回复了 (\d+) 点体力/)).find(Boolean);
+    const expect = Math.round(200 * 0.25);
+    assert(!!healed && Math.abs(parseInt(healed[1], 10) - Math.min(expect, 200 - hpB2)) <= 1,
+      'K: 深渊之誓应回复约 25% 最大HP', `实际=${healed?.[1]} 期望≈${expect}`);
+  }
+  // 可逆前提：oath.original 快照完整
+  assert(moon.oath?.original.name === '原技3' && moon.oath.original.power === 22, 'K: 誓约应携带原技能完整快照');
+  console.log('  ✓ 六誓约执行 + 每场一次拦截 + 快照可逆前提');
+}
+
+// ── L. 迷思石（批3）：减耗/破绽/淬毒/增幅 ──────────────────
+console.log('── L. 迷思石 ──');
+{
+  const setupL = makeSetup(2, 3033);
+  setupL.playerHp = 9999; setupL.playerMaxHp = 9999;
+  setupL.shadow.attackScalePct = 10;
+  const e = new BattleEngine(setupL);
+  e.openingTurn();
+
+  // 月光余响：SP 消耗 −2（下限 1）
+  const echoSkill: PersonaSkill = {
+    level: 2, name: '余响测试', description: '', type: 'damage', power: 15, spCost: 12,
+    socket: { stoneId: 'm1', kind: 'moon_echo', value: 2 },
+  };
+  assert(e.skillCost(echoSkill) === 10, 'L: 月光余响 12−2=10', `${e.skillCost(echoSkill)}`);
+  const cheapSkill: PersonaSkill = { ...echoSkill, spCost: 2 };
+  assert(e.skillCost(cheapSkill) === 1, 'L: 减耗下限 1', `${e.skillCost(cheapSkill)}`);
+
+  // 淬毒之牙：命中附带中毒
+  const venom: PersonaSkill = {
+    level: 2, name: '淬毒打', description: '', type: 'damage', power: 15, spCost: 0,
+    socket: { stoneId: 'm2', kind: 'venom_bite', value: 3 },
+  };
+  e.act({ kind: 'skill', skill: venom });
+  assert(e.snapshot.shadowStatuses.some(s => s.kind === 'poison'), 'L: 淬毒之牙应附带中毒');
+
+  // 增幅回路：命中后下次伤害提升
+  const amp: PersonaSkill = {
+    level: 2, name: '增幅打', description: '', type: 'damage', power: 15, spCost: 0,
+    socket: { stoneId: 'm3', kind: 'amp_circuit', value: 0.12 },
+  };
+  const rAmp = e.act({ kind: 'skill', skill: amp });
+  assert(rAmp.lines.some(l => l.includes('增幅回路')), 'L: 增幅回路应有充能叙事');
+
+  // 破绽洞察：弱点伤害对照
+  const flawDmg = (withSocket: boolean): number => {
+    const s2 = makeSetup(2, 4044);
+    s2.playerHp = 9999; s2.playerMaxHp = 9999;
+    s2.shadow.attackScalePct = 10;
+    const en = new BattleEngine(s2);
+    en.openingTurn();
+    en.act({ kind: 'switchMask', attribute: 'guts' });
+    const sk: PersonaSkill = {
+      level: 2, name: '破绽打', description: '', type: 'damage', power: 15, spCost: 0,
+      socket: withSocket ? { stoneId: 'm4', kind: 'flaw_insight', value: 0.14 } : undefined,
+    };
+    const r = en.act({ kind: 'skill', skill: sk });
+    const m = r.lines.map(l => l.match(/造成了 (\d+) 点伤害/)).find(Boolean);
+    return m ? parseInt(m[1], 10) : -1;
+  };
+  assert(flawDmg(true) > flawDmg(false), 'L: 破绽洞察应提升弱点伤害', `${flawDmg(false)} → ${flawDmg(true)}`);
+  console.log('  ✓ 迷思：减耗/淬毒/增幅/破绽');
+}
+
+// ── M. 词缀（批3）：月蚀/荆棘/湿滑/迅捷/记仇 ────────────────
+console.log('── M. 词缀 ──');
+{
+  // 月蚀：弱点隐藏 → 洞察揭示
+  const setupM = makeSetup(2, 5055);
+  setupM.playerHp = 9999; setupM.playerMaxHp = 9999;
+  setupM.shadow.attackScalePct = 10;
+  setupM.shadow.affixes = ['eclipse', 'thorns'];
+  const e = new BattleEngine(setupM);
+  e.openingTurn();
+  assert(e.snapshot.weaknessHidden === true, 'M: 月蚀开局应隐藏弱点');
+  const rIns = e.act({ kind: 'insight' });
+  assert(rIns.lines.some(l => l.includes('月蚀散去')), 'M: 洞察应揭示月蚀弱点');
+  assert(e.snapshot.weaknessHidden === false, 'M: 揭示后弱点应可见');
+
+  // 荆棘：直接伤害反弹
+  const hit: PersonaSkill = { level: 2, name: '荆棘测试', description: '', type: 'damage', power: 15, spCost: 0 };
+  const rHit = e.act({ kind: 'skill', skill: hit });
+  assert(rHit.lines.some(l => l.includes('荆棘')), 'M: 荆棘应反弹伤害');
+
+  // 湿滑：失衡充能减速（34 → 23）
+  const slick = makeSetup(2, 6066);
+  slick.playerHp = 9999; slick.playerMaxHp = 9999;
+  slick.shadow.attackScalePct = 10;
+  slick.shadow.affixes = ['slippery'];
+  const e2 = new BattleEngine(slick);
+  e2.openingTurn();
+  e2.act({ kind: 'switchMask', attribute: 'guts' });
+  const poke: PersonaSkill = { level: 1, name: '戳', description: '', type: 'damage', power: 1, spCost: 0 };
+  e2.act({ kind: 'skill', skill: poke });
+  assert(e2.snapshot.staggerGauge === 23, 'M: 湿滑下弱点充能应为 23（34×0.67）', `${e2.snapshot.staggerGauge}`);
+
+  // 迅捷：开场先制
+  const swift = makeSetup(2, 7077);
+  swift.playerHp = 9999; swift.playerMaxHp = 9999;
+  swift.shadow.affixes = ['swift'];
+  const e3 = new BattleEngine(swift);
+  const rOpen = e3.openingTurn();
+  assert(rOpen.lines.some(l => l.includes('迅捷')), 'M: 迅捷词缀应开场先制');
+
+  // 记仇：撤离过 → 攻击更痛（同种子对照）
+  const atkOf = (retreated: boolean): number => {
+    const s4 = makeSetup(3, 8088);
+    s4.playerHp = 9999; s4.playerMaxHp = 9999;
+    s4.shadow.affixes = ['vengeful'];
+    s4.playerEverRetreated = retreated;
+    const en = new BattleEngine(s4);
+    en.openingTurn();
+    const r = en.act({ kind: 'basic' });
+    const m = r.lines.map(l => l.match(/发动了攻击！造成 (\d+) 点伤害/)).find(Boolean);
+    return m ? parseInt(m[1], 10) : -1;
+  };
+  const a0 = atkOf(false);
+  const a1 = atkOf(true);
+  assert(a1 > a0 || (a0 < 0 && a1 < 0), 'M: 记仇应加重攻击（同种子对照）', `${a0} → ${a1}`);
+  console.log(`  ✓ 词缀：月蚀/荆棘/湿滑23充能/迅捷先制/记仇 ${a0}→${a1}`);
+}
+
+// ── N. 共鸣链（批3）：雄辩免费/无畏充能/烈焰首击/守护反击 ───
+console.log('── N. 共鸣链 ──');
+{
+  // 雄辩之智：洞察 0 SP
+  const sN = makeSetup(2, 9099);
+  sN.playerHp = 9999; sN.playerMaxHp = 9999;
+  sN.shadow.attackScalePct = 10;
+  sN.chain = 'knowledge+charm';
+  const e = new BattleEngine(sN);
+  e.openingTurn();
+  const spB = e.snapshot.sp;
+  e.act({ kind: 'insight' });
+  assert(e.snapshot.sp === spB, 'N: 雄辩之智洞察应 0 SP', `${spB}→${e.snapshot.sp}`);
+
+  // 无畏考据：弱点充能 34+10=44
+  const sN2 = makeSetup(2, 9100);
+  sN2.playerHp = 9999; sN2.playerMaxHp = 9999;
+  sN2.shadow.attackScalePct = 10;
+  sN2.chain = 'knowledge+guts';
+  const e2 = new BattleEngine(sN2);
+  e2.openingTurn();
+  e2.act({ kind: 'switchMask', attribute: 'guts' });
+  const poke: PersonaSkill = { level: 1, name: '戳', description: '', type: 'damage', power: 1, spCost: 0 };
+  e2.act({ kind: 'skill', skill: poke });
+  assert(e2.snapshot.staggerGauge === 44, 'N: 无畏考据弱点充能应为 44', `${e2.snapshot.staggerGauge}`);
+
+  // 烈焰亮相：首回合伤害更高（同种子对照）
+  const t1Dmg = (chain: boolean): number => {
+    const s3 = makeSetup(2, 9200);
+    s3.playerHp = 9999; s3.playerMaxHp = 9999;
+    s3.shadow.attackScalePct = 10;
+    if (chain) s3.chain = 'guts+charm';
+    const en = new BattleEngine(s3);
+    en.openingTurn();
+    const sk: PersonaSkill = { level: 2, name: '首击', description: '', type: 'damage', power: 15, spCost: 0 };
+    const r = en.act({ kind: 'skill', skill: sk });
+    const m = r.lines.map(l => l.match(/造成了 (\d+) 点伤害/)).find(Boolean);
+    return m ? parseInt(m[1], 10) : -1;
+  };
+  assert(t1Dmg(true) > t1Dmg(false), 'N: 烈焰亮相首回合应更痛', `${t1Dmg(false)} → ${t1Dmg(true)}`);
+  console.log('  ✓ 共鸣链：雄辩0SP/无畏44充能/烈焰首击');
+}
+
 console.log('');
 if (failures > 0) {
   console.error(`✗ 模拟战失败：${failures} 项断言未通过`);
