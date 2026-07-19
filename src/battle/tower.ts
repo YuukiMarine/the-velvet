@@ -45,6 +45,16 @@ const ELITE_NAMES: Record<AttributeId, string[]> = {
   charm: ['空洞的宴主', '孤高的面具伶人'],
 };
 
+/** 批4 §6.7 主影主题：本周五维成长点数最少者 65% 概率成为主题属性（35% 随机其余）；弱点不硬绑（拍板 Q2） */
+export function rollThemeAttribute(weekPoints: Record<AttributeId, number>, rng: () => number = Math.random): AttributeId {
+  const min = Math.min(...ATTRS.map(a => weekPoints[a] ?? 0));
+  const weakest = ATTRS.filter(a => (weekPoints[a] ?? 0) === min);
+  const pickedWeakest = weakest[Math.floor(rng() * weakest.length)];
+  if (rng() < 0.65) return pickedWeakest;
+  const rest = ATTRS.filter(a => a !== pickedWeakest);
+  return rest[Math.floor(rng() * rest.length)];
+}
+
 export function rollMobSpec(level: number, tier: 'mob' | 'elite', rng: () => number): MobSpec {
   const attribute = ATTRS[Math.floor(rng() * ATTRS.length)];
   const weakPool = ATTRS.filter(a => a !== attribute);

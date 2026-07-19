@@ -168,6 +168,10 @@ export const BattleArena = () => {
       const drops = await useAppStore.getState().rollTowerLoot('boss', 1);
       const lootText = drops.map(lootLabel).join(' · ');
       showSpToast(`👁️ 心魔讨伐${sp > 0 ? ` · +${sp} SP` : ''}${lootText ? ` · ${lootText}` : ''}`);
+      // 批4 §6.8：通关类壮举——首区层通关 / 一夜通层（本 session 从区层入口爬到心魔）
+      const st4 = useAppStore.getState();
+      void st4.recordBattleFeat('first_clear');
+      if (st4.battleState?.towerSession?.startFloor === 0) void st4.recordBattleFeat('night_climb');
     }
     setShowVictory(true);
   };

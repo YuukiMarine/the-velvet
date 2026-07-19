@@ -156,6 +156,18 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
     });
   }, [stratum, towerRecordBattleStats]);
 
+  // 批4 §6.8 战场成就：胜利时按引擎事实记壮举（battleFeats 去重，重复调用无害）
+  const recordVictoryFeats = useCallback(() => {
+    const s = engineRef.current?.snapshot;
+    if (!s) return;
+    const feats: string[] = [];
+    if (s.allOutUsed) feats.push('allout');
+    if (s.masksSummoned.size === 5) feats.push('five_masks');
+    if (s.poisonKill && s.tier === 'elite') feats.push('poison_elite');
+    if (s.tier === 'boss' && s.playerHpLost === 0) feats.push('flawless');
+    feats.forEach(f => void useAppStore.getState().recordBattleFeat(f));
+  }, []);
+
   // ── 开场：建引擎 + 叙事 ─────────────────────────────────
   useEffect(() => {
     if (!isOpen) {
@@ -356,11 +368,12 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
       setShowBattleFinishAnim(false);
       setShowDeathExplosion(false);
       recordTowerStats();
+      recordVictoryFeats();
       onVictory();
       onClose();
     }, 2600);
     return () => clearTimeout(t);
-  }, [showBattleFinishAnim, onVictory, onClose, recordTowerStats]);
+  }, [showBattleFinishAnim, onVictory, onClose, recordTowerStats, recordVictoryFeats]);
 
   useEffect(() => {
     if (!showDeathExplosion) return;
@@ -493,6 +506,7 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
         if (isEncounter) {
           // 小影战胜利：不播大 FINISH（每节点一场，2.6s 太重）——短促收线回地图
           recordTowerStats();
+          recordVictoryFeats();
           playSound('/battle-fanfare.mp3', 0.5);
           onEncounterEnd?.('victory');
           onClose();
