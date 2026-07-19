@@ -126,8 +126,33 @@ export const SectionMark = ({ title, meta, variant = 'ink', marker = 'slab', cla
   );
 };
 
-/** 碎裂星徽（battle 页与升级 cutin 共用）：白描边青星 + 蓝青三角碎片；magenta=true 换入洋红碎片（庆祝演出用） */
+/** 碎裂星徽碎片表（点集 + 填色规则 + 可选透明度）；centroid 供入场"从中心炸开"计算位移向量 */
+const STAR_SHARDS: Array<{ pts: string; fill: (magenta: boolean) => string; op?: number }> = [
+  { pts: '112,4 150,64 94,54', fill: () => '#1b57ff' },
+  { pts: '158,34 196,88 142,76', fill: (m) => (m ? '#f0417f' : '#8fdcef') },
+  { pts: '26,80 68,60 54,108', fill: () => '#0a3bd6' },
+  { pts: '182,124 216,152 172,168', fill: () => '#2a63ff' },
+  { pts: '58,172 96,204 44,202', fill: () => '#35d1e8' },
+  { pts: '150,180 180,214 130,206', fill: (m) => (m ? '#f0417f' : '#0a3bd6') },
+  { pts: '14,138 42,124 38,158', fill: () => '#a8e4f2' },
+  { pts: '196,60 212,92 184,84', fill: () => '#1b57ff', op: 0.75 },
+];
+
+const shardCentroid = (pts: string): [number, number] => {
+  const ns = pts.split(/[\s,]+/).map(Number);
+  let sx = 0;
+  let sy = 0;
+  for (let i = 0; i < ns.length; i += 2) {
+    sx += ns[i];
+    sy += ns[i + 1];
+  }
+  return [sx / (ns.length / 2), sy / (ns.length / 2)];
+};
+
+/** 碎裂星徽（battle 页与升级 cutin 共用）：白描边青星 + 蓝青三角碎片；magenta=true 换入洋红碎片（庆祝演出用）
+ *  动效（A5）：入场碎片从星心炸开就位（stagger spring），常态各碎片不同相位轻微悬浮；D0 静态 */
 export const ShatteredStar = ({ className = 'mx-auto w-[190px]', magenta = false }: { className?: string; magenta?: boolean }) => {
+  const anim = useBoldness();
   const cx = 110, cy = 120, R = 56, inner = R * 0.42;
   let d = '';
   for (let i = 0; i < 5; i++) {
@@ -137,17 +162,38 @@ export const ShatteredStar = ({ className = 'mx-auto w-[190px]', magenta = false
   }
   return (
     <svg viewBox="0 0 220 230" className={className} aria-hidden>
-      {/* 碎片（蓝青拼贴，围星散射；magenta 时两块换洋红） */}
-      <polygon points="112,4 150,64 94,54" fill="#1b57ff" />
-      <polygon points="158,34 196,88 142,76" fill={magenta ? '#f0417f' : '#8fdcef'} />
-      <polygon points="26,80 68,60 54,108" fill="#0a3bd6" />
-      <polygon points="182,124 216,152 172,168" fill="#2a63ff" />
-      <polygon points="58,172 96,204 44,202" fill="#35d1e8" />
-      <polygon points="150,180 180,214 130,206" fill={magenta ? '#f0417f' : '#0a3bd6'} />
-      <polygon points="14,138 42,124 38,158" fill="#a8e4f2" />
-      <polygon points="196,60 212,92 184,84" fill="#1b57ff" opacity="0.75" />
-      {/* 中央星：白描边 + 青填充 */}
-      <path d={`${d}Z`} fill="#7fd8ee" stroke="#ffffff" strokeWidth="8" strokeLinejoin="miter" />
+      {/* 碎片（蓝青拼贴，围星散射）：外层 g 承担入场炸开，内层 g 承担常态悬浮 */}
+      {STAR_SHARDS.map((s, i) => {
+        const [px, py] = shardCentroid(s.pts);
+        return (
+          <motion.g
+            key={s.pts}
+            style={{ transformBox: 'fill-box', transformOrigin: 'center' }}
+            initial={anim ? { x: (cx - px) * 0.6, y: (cy - py) * 0.6, scale: 0.4, opacity: 0 } : false}
+            animate={{ x: 0, y: 0, scale: 1, opacity: s.op ?? 1 }}
+            transition={{ type: 'spring', stiffness: 300, damping: 19, delay: 0.1 + i * 0.05 }}
+          >
+            <motion.g
+              animate={anim ? { y: [0, -2.4, 0] } : undefined}
+              transition={{ duration: 3 + (i % 4) * 0.55, repeat: Infinity, ease: 'easeInOut', delay: i * 0.37 }}
+            >
+              <polygon points={s.pts} fill={s.fill(magenta)} />
+            </motion.g>
+          </motion.g>
+        );
+      })}
+      {/* 中央星：白描边 + 青填充（入场 pop 就位，作为碎片的锚不悬浮） */}
+      <motion.path
+        d={`${d}Z`}
+        fill="#7fd8ee"
+        stroke="#ffffff"
+        strokeWidth="8"
+        strokeLinejoin="miter"
+        style={{ transformBox: 'fill-box', transformOrigin: 'center' }}
+        initial={anim ? { scale: 0.4, opacity: 0 } : false}
+        animate={{ scale: 1, opacity: 1 }}
+        transition={{ type: 'spring', stiffness: 320, damping: 20 }}
+      />
     </svg>
   );
 };
@@ -167,35 +213,56 @@ export const P3PageHeader = ({
   ticks?: boolean;
   onBack?: () => void;
   className?: string;
-}) => (
-  <div className={className}>
-    {onBack && (
-      <button
-        type="button"
-        onClick={onBack}
-        aria-label="返回"
-        className="mb-2 flex h-10 w-10 items-center justify-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1b57ff]"
-      >
-        <span aria-hidden className="block h-[15px] w-[13px]" style={{ background: P3R.ink, clipPath: 'polygon(100% 0, 100% 100%, 0 50%)' }} />
-      </button>
-    )}
-    <div className="flex items-end gap-2.5">
-      {lead && <span aria-hidden className="mb-1.5 h-[40px] w-[25px] shrink-0" style={{ background: P3R.blue, clipPath: 'polygon(36% 0, 100% 0, 64% 100%, 0 100%)' }} />}
-      <h1
-        className="text-[46px] font-black italic leading-[0.95] tracking-tight"
-        style={{ color: P3R.ink, fontFamily: '"Arial Black", "Noto Sans SC", sans-serif' }}
-      >
-        {title}
-      </h1>
-      {ticks && (
-        <span aria-hidden className="mb-2.5 flex shrink-0 items-start gap-1">
-          <span className="h-[13px] w-[17px]" style={{ background: P3R.cyan, clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
-          <span className="mt-[3px] h-[11px] w-[13px]" style={{ background: '#9adcee', clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
-        </span>
+}) => {
+  const anim = useBoldness();
+  // 动效（A6）三段错帧：蓝斜块自上砸入 → 标题从左裁切揭示 → 青双片弹入；D0 直接终态
+  const tickMotion = (delay: number) => ({
+    initial: anim ? { scale: 0, x: -6, opacity: 0 } : (false as const),
+    animate: { scale: 1, x: 0, opacity: 1 },
+    transition: { type: 'spring' as const, stiffness: 520, damping: 22, delay },
+  });
+  return (
+    <div className={className}>
+      {onBack && (
+        <button
+          type="button"
+          onClick={onBack}
+          aria-label="返回"
+          className="mb-2 flex h-10 w-10 items-center justify-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1b57ff]"
+        >
+          <span aria-hidden className="block h-[15px] w-[13px]" style={{ background: P3R.ink, clipPath: 'polygon(100% 0, 100% 100%, 0 50%)' }} />
+        </button>
       )}
+      <div className="flex items-end gap-2.5">
+        {lead && (
+          <motion.span
+            aria-hidden
+            className="mb-1.5 h-[40px] w-[25px] shrink-0"
+            style={{ background: P3R.blue, clipPath: 'polygon(36% 0, 100% 0, 64% 100%, 0 100%)', originY: 0 }}
+            initial={anim ? { y: -14, scaleY: 0.4, opacity: 0 } : false}
+            animate={{ y: 0, scaleY: 1, opacity: 1 }}
+            transition={{ type: 'spring', stiffness: 460, damping: 26 }}
+          />
+        )}
+        <motion.h1
+          className="text-[46px] font-black italic leading-[0.95] tracking-tight"
+          style={{ color: P3R.ink, fontFamily: '"Arial Black", "Noto Sans SC", sans-serif' }}
+          initial={anim ? { clipPath: 'inset(0% 100% 0% 0%)', x: -10 } : false}
+          animate={{ clipPath: 'inset(0% 0% 0% 0%)', x: 0 }}
+          transition={{ duration: 0.42, ease: [0.22, 0.9, 0.3, 1], delay: 0.08 }}
+        >
+          {title}
+        </motion.h1>
+        {ticks && (
+          <span aria-hidden className="mb-2.5 flex shrink-0 items-start gap-1">
+            <motion.span className="h-[13px] w-[17px]" style={{ background: P3R.cyan, clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} {...tickMotion(0.3)} />
+            <motion.span className="mt-[3px] h-[11px] w-[13px]" style={{ background: '#9adcee', clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} {...tickMotion(0.4)} />
+          </span>
+        )}
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 /** 行内代码片（account 云同步说明的 .env.local / VITE_PB_URL 式） */
 export const CodeChip = ({ children, tone = 'grey' }: { children: ReactNode; tone?: 'grey' | 'cyan' }) => (
@@ -252,18 +319,46 @@ export const SlantButton = ({
     ghost: { background: P3R.cyanFaint, color: P3R.ink },
     danger: { background: P3R.magenta, color: '#fff' },
   };
+  const anim = useBoldness();
+  // 动效（A4）：按下瞬间白色硬边斜光扫过（与水波纹/刀光同语言）；键盘激活（detail===0）在 click 补触发
+  const [sweep, setSweep] = useState<number | null>(null);
+  const fireSweep = () => setSweep(Date.now());
   return (
     <button
       type="button"
-      onClick={onClick}
+      onClick={(e) => {
+        if (anim && !disabled && e.detail === 0) fireSweep();
+        onClick?.();
+      }}
+      onPointerDown={() => {
+        if (anim && !disabled) fireSweep();
+      }}
       aria-label={ariaLabel}
       disabled={disabled}
       className={`relative select-none px-6 py-2.5 text-[16px] font-black tracking-wide active:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1b57ff] focus-visible:ring-offset-2 disabled:opacity-40 disabled:cursor-not-allowed ${className ?? ''}`}
       style={{ clipPath: slantClip(10), ...skin[tone], ...style }}
     >
       {children}
+      {sweep !== null && (
+        <motion.span
+          key={sweep}
+          aria-hidden
+          className="pointer-events-none absolute inset-y-0 left-0 w-[30%]"
+          style={{ background: 'rgba(255,255,255,0.5)', borderLeft: '2px solid rgba(255,255,255,0.95)', skewX: -18 }}
+          initial={{ x: '-140%' }}
+          animate={{ x: '480%' }}
+          transition={{ duration: 0.34, ease: 'easeOut' }}
+          onAnimationComplete={() => setSweep(null)}
+        />
+      )}
       {magentaCorner && (
-        <span aria-hidden className="absolute bottom-0 right-3 h-[7px] w-[18px]" style={{ background: P3R.magenta, clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
+        <motion.span
+          aria-hidden
+          className="absolute bottom-0 right-3 h-[7px] w-[18px]"
+          style={{ background: P3R.magenta, clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }}
+          animate={anim ? { opacity: [1, 1, 0.3, 1] } : undefined}
+          transition={{ duration: 4.6, times: [0, 0.88, 0.93, 1], repeat: Infinity, ease: 'linear' }}
+        />
       )}
     </button>
   );
@@ -279,10 +374,32 @@ export const P3EmptySlab = ({ text = '暂无可追踪的信号', className }: { 
   </div>
 );
 
-/** 标题句点：青片 + 洋红小片错位（午夜状态 / 任务 tab 右下的签名符号） */
-export const TitlePeriod = ({ className, style }: { className?: string; style?: CSSProperties }) => (
-  <span aria-hidden className={`relative inline-block h-[14px] w-[30px] ${className ?? ''}`} style={style}>
-    <span className="absolute left-0 top-0 h-full w-[20px]" style={{ background: P3R.cyan, clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
-    <span className="absolute left-[16px] top-[4px] h-[10px] w-[14px]" style={{ background: P3R.magenta, clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
-  </span>
-);
+/** 标题句点：青片 + 洋红小片错位（午夜状态 / 任务 tab 右下的签名符号）
+ *  动效（A1）：两片先后戳入（spring 回弹），落定后洋红片低频眨动 + 错位小抖——"活着的句点"；D0 静态 */
+export const TitlePeriod = ({ className, style }: { className?: string; style?: CSSProperties }) => {
+  const anim = useBoldness();
+  return (
+    <span aria-hidden className={`relative inline-block h-[14px] w-[30px] ${className ?? ''}`} style={style}>
+      <motion.span
+        className="absolute left-0 top-0 h-full w-[20px]"
+        style={{ background: P3R.cyan, clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }}
+        initial={anim ? { scale: 0, x: -6, opacity: 0 } : false}
+        animate={{ scale: 1, x: 0, opacity: 1 }}
+        transition={{ type: 'spring', stiffness: 520, damping: 24, delay: 0.12 }}
+      />
+      <motion.span
+        className="absolute left-[16px] top-[4px] h-[10px] w-[14px]"
+        initial={anim ? { scale: 0, x: -4, opacity: 0 } : false}
+        animate={{ scale: 1, x: 0, opacity: 1 }}
+        transition={{ type: 'spring', stiffness: 520, damping: 20, delay: 0.24 }}
+      >
+        <motion.span
+          className="absolute inset-0"
+          style={{ background: P3R.magenta, clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }}
+          animate={anim ? { opacity: [1, 1, 0.25, 1, 1], x: [0, 0, 1.5, 0, 0] } : undefined}
+          transition={{ duration: 5.2, times: [0, 0.9, 0.94, 0.97, 1], repeat: Infinity, ease: 'linear', delay: 1.2 }}
+        />
+      </motion.span>
+    </span>
+  );
+};
