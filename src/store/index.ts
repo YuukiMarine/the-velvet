@@ -1,5 +1,5 @@
 ﻿import { create } from 'zustand';
-import { User, Attribute, Activity, Achievement, Skill, Settings, ThemeType, AttributeId, AttributeNamesKey, Todo, TodoCompletion, PeriodSummary, SummaryPeriod, SummaryPromptPreset, WeeklyGoal, WeeklyGoalItem, Persona, Shadow, BattleState, TowerStratum, StratumNode, DailyDivination, LongReading, LongReadingFollowUp, Confidant, ConfidantEvent, ConfidantBuff, CounselSession, CounselMessage, CounselArchive, CallingCard, NotifSlot, LedgerEntry, Budget, SpendWorth, LedgerAsset, Wish, TerminalClearPayload, BattleArsenal, ChainKey } from '@/types';
+import { User, Attribute, Activity, Achievement, Skill, Settings, ThemeType, AttributeId, AttributeNamesKey, Todo, TodoCompletion, PeriodSummary, SummaryPeriod, SummaryPromptPreset, WeeklyGoal, WeeklyGoalItem, Persona, Shadow, BattleState, TowerStratum, StratumNode, DailyDivination, LongReading, LongReadingFollowUp, Confidant, ConfidantEvent, ConfidantBuff, CounselSession, CounselMessage, CounselArchive, CallingCard, NotifSlot, LedgerEntry, Budget, SpendWorth, LedgerAsset, Wish, TerminalClearPayload, BattleArsenal, ChainKey, AffixKind } from '@/types';
 import { TAROT_BY_ID } from '@/constants/tarot';
 import { summarizeCounsel, type CounselContext, type CounselConfidantBrief, type CounselRecentEvent } from '@/utils/counselAI';
 import { db } from '@/db';
@@ -516,6 +516,8 @@ interface AppState {
   recordBattleFeat: (feat: string) => Promise<void>;
   /** 黑猫败因信：败退当晚生成（AI/模板兜底）→ 存 pendingCatLetter（黑猫打开时投递）+ 写 observation 记忆 */
   deliverDefeatLetter: () => Promise<void>;
+  /** 月相祭坛：移除主影随机一条词缀（顽固回落 HP 上限）；返回被移除的词缀或 null */
+  removeRandomShadowAffix: () => Promise<AffixKind | null>;
 
   // 同伴 / Confidant
   confidants: Confidant[];
@@ -4218,6 +4220,26 @@ ${activityLines || '（本期暂无记录）'}
     const cur = get().battleState;
     if (!cur) return;
     await get().saveBattleState({ ...cur, pendingCatLetter: { text, dateKey: todayKey } });
+  },
+
+  removeRandomShadowAffix: async () => {
+    const { shadow } = get();
+    if (!shadow || !(shadow.affixes?.length)) return null;
+    const idx = Math.floor(Math.random() * shadow.affixes.length);
+    const removed = shadow.affixes[idx];
+    const affixes = shadow.affixes.filter((_, i) => i !== idx);
+    let { maxHp, maxHp2, currentHp, currentHp2 } = shadow;
+    if (removed === 'stubborn') {
+      // 顽固词缀曾把血池 ×1.3——移除时回落并夹住当前值
+      maxHp = Math.round(maxHp / AFFIX_HP_MULT);
+      currentHp = Math.min(currentHp, maxHp);
+      if (maxHp2 !== undefined) {
+        maxHp2 = Math.round(maxHp2 / AFFIX_HP_MULT);
+        if (currentHp2 !== undefined) currentHp2 = Math.min(currentHp2, maxHp2);
+      }
+    }
+    await get().saveShadow({ ...shadow, affixes, maxHp, maxHp2, currentHp, currentHp2 });
+    return removed;
   },
 
   grantEventLoot: async (kind) => {
