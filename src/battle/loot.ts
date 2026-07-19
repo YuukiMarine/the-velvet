@@ -198,9 +198,16 @@ export function rollMyth(ctx: LootContext, forceQuality?: LootQuality): MythSton
  *  - chest：必得 1 件（70% 遗物 / 30% 迷思）
  *  - elite：60% 掉 1 件（75% 遗物 / 25% 迷思）
  *  - boss ：必得 1 遗物 + 35% 共鸣链（重复→SP 补偿）+ 25% 誓约石（不重复）
+ *  - golden（批5 §5.5 金色回响）：必得 1 件满月品质（70% 遗物 / 30% 迷思）
  */
-export function rollNodeLoot(source: 'chest' | 'elite' | 'boss', ctx: LootContext): LootDrop[] {
+export function rollNodeLoot(source: 'chest' | 'elite' | 'boss' | 'golden', ctx: LootContext): LootDrop[] {
   const drops: LootDrop[] = [];
+  if (source === 'golden') {
+    drops.push(ctx.rng() < 0.3
+      ? { kind: 'myth', myth: rollMyth(ctx, 'full') }
+      : { kind: 'relic', relic: rollRelic(ctx, 'full') });
+    return drops;
+  }
   if (source === 'chest') {
     drops.push(ctx.rng() < CHEST_MYTH_RATE
       ? { kind: 'myth', myth: rollMyth(ctx) }

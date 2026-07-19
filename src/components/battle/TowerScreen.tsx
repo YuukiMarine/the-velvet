@@ -19,7 +19,7 @@ import { playSound } from '@/utils/feedback';
 import { useBackHandler } from '@/utils/useBackHandler';
 import { TowerMap } from '@/components/battle/TowerMap';
 import { TowerEventModal, TowerEchoModal, TowerQuizModal } from '@/components/battle/TowerModals';
-import { IconTower, IconEvilEye, slantPoly, NoiseLayer, paletteFor } from '@/components/battle/warKit';
+import { IconTower, IconEvilEye, slantPoly, NoiseLayer, paletteFor, ABYSS_PALETTE } from '@/components/battle/warKit';
 
 interface Props {
   open: boolean;
@@ -54,7 +54,7 @@ export function TowerScreen({ open, onClose, onDescend, onRequestBattle, onToast
   const ts = battleState.towerSession;
   const buffs = ts?.buffs ?? [];
   const curFloor = stratum.nodes.find(n => n.id === stratum.currentNodeId)?.floor ?? 0;
-  const pal = paletteFor(stratum.level); // ⑩ 区层色温
+  const pal = stratum.abyssRing ? ABYSS_PALETTE : paletteFor(stratum.level); // ⑩ 区层色温（批5：深渊暗金）
   // 批4：弹药匣（今日记录 → 属性加算）与勤勉的光辉
   const attrNames = useAppStore.getState().settings.attributeNames as Record<AttributeId, string>;
   const ammo = ammoFromActivities(useAppStore.getState().activities, toLocalDateKey());
@@ -64,7 +64,7 @@ export function TowerScreen({ open, onClose, onDescend, onRequestBattle, onToast
     const moved = await moveToTowerNode(node.id);
     if (!moved) return;
     playSound('/ui-menu.mp3', 0.5);
-    if (moved.type === 'mob' || moved.type === 'elite' || moved.type === 'boss') {
+    if (moved.type === 'mob' || moved.type === 'elite' || moved.type === 'boss' || moved.type === 'golden') {
       onRequestBattle(moved);
     } else if (moved.type === 'event') {
       setEventNode(moved);

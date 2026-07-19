@@ -196,15 +196,20 @@ export const BattleArena = () => {
     if (!enc) return;
     if (outcome === 'victory') {
       const sp = await completeTowerNode(enc.nodeId, { wasMob: true });
-      // 批3：强敌 60% 掉战利品
+      // 批3：强敌 60% 掉战利品；批5：金色回响必掉满月
       let lootText = '';
-      if (enc.mob.tier === 'elite') {
-        const node = stratum?.nodes.find(n => n.id === enc.nodeId);
-        const floorRatio = stratum ? (node?.floor ?? 1) / Math.max(1, stratum.floors) : 0.5;
+      const node = stratum?.nodes.find(n => n.id === enc.nodeId);
+      const floorRatio = stratum ? (node?.floor ?? 1) / Math.max(1, stratum.floors) : 0.5;
+      if (enc.mob.golden) {
+        const drops = await useAppStore.getState().rollTowerLoot('golden', floorRatio);
+        lootText = drops.map(lootLabel).join(' · ');
+      } else if (enc.mob.tier === 'elite') {
         const drops = await useAppStore.getState().rollTowerLoot('elite', floorRatio);
         lootText = drops.map(lootLabel).join(' · ');
       }
-      if (sp > 0 || lootText) showSpToast(`⚔️ 节点攻略${sp > 0 ? ` · +${sp} SP` : ''}${lootText ? ` · ${lootText}` : ''}`);
+      if (sp > 0 || lootText) {
+        showSpToast(`${enc.mob.golden ? '✨ 金色回响散去' : '⚔️ 节点攻略'}${sp > 0 ? ` · +${sp} SP` : ''}${lootText ? ` · ${lootText}` : ''}`);
+      }
     } else if (outcome === 'defeat') {
       setRecap('defeat');
     }
@@ -601,12 +606,37 @@ export const BattleArena = () => {
 
                         {stratumCleared ? (
                           towerTopReached ? (
-                            <div className={`${battleCard} p-6 text-center space-y-2`}>
+                            <div className={`${battleCard} p-6 text-center space-y-3`}>
                               <p className="text-3xl">🌌</p>
-                              <p className="font-black text-gray-900 dark:text-white">第 5 区层已被攻略</p>
-                              <p className="text-xs text-gray-400 dark:text-gray-500 leading-relaxed">
-                                塔顶之上仍有无尽的黑暗在盘旋……<br />「深渊回廊」将在后续版本开放。
+                              <p className="font-black text-gray-900 dark:text-white">
+                                {stratum?.abyssRing ? `回廊·第${stratum.abyssRing}环已破` : '第 5 区层已被攻略'}
                               </p>
+                              <p className="text-xs text-gray-400 dark:text-gray-500 leading-relaxed">
+                                {stratum?.abyssRing
+                                  ? <>回廊仍在向下盘旋——守卫的词缀会一环比一环更多。<br />最深纪录：第 {Math.max(battleState?.abyssHighestRing ?? 0, stratum.abyssRing)} 环</>
+                                  : <>塔顶之上没有天空——只有向下盘旋的「深渊回廊」。<br />无尽的环域，守卫随深度越发凶恶。</>}
+                              </p>
+                              <motion.button
+                                whileTap={{ scale: 0.96 }}
+                                onClick={async () => {
+                                  playSound('/battle-seal.mp3', 0.6);
+                                  await useAppStore.getState().enterAbyss();
+                                  showSpToast(`⛩ ${useAppStore.getState().stratum?.name ?? '深渊回廊'} · 显形`);
+                                  if (sessionActive) setTowerOpen(true); // 同晚连环：直接回战场继续
+                                }}
+                                className="w-full py-3 font-black text-white"
+                                style={{
+                                  clipPath: 'polygon(6% 0, 100% 0, 94% 100%, 0 100%)',
+                                  background: 'linear-gradient(135deg, #92610e, #e8b64c)',
+                                }}
+                              >
+                                ⛩ {stratum?.abyssRing ? '深入下一环' : '踏入深渊回廊'}
+                              </motion.button>
+                              {!sessionActive && (
+                                <p className="text-[10px] text-gray-400 dark:text-gray-500">
+                                  {enteredToday ? '今晚的攀登已结束——新环将在下次潜入时等你' : '环显形后，影时间潜入即可进入'}
+                                </p>
+                              )}
                             </div>
                           ) : (
                             <div className={`${battleCard} p-6 text-center space-y-4`}>

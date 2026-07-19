@@ -824,6 +824,86 @@ console.log('── P. 主影主题分布 ──');
   console.log(`  ✓ 主题分布：最少者 ${(ratio * 100).toFixed(1)}%（目标 65%）`);
 }
 
+// ── Q. 批5 深渊回廊：环生成健全性 / 词缀cap / 守卫成长 / 金色掷取率 ──
+console.log('── Q. 深渊回廊 ──');
+{
+  const { buildAbyssRing, generateStratumNodes, rollGoldenSpec } = await import('../src/battle/tower');
+  const { abyssAffixCount, abyssGuardHp, ABYSS_RING_FLOORS, GOLDEN_NODE_RATE } = await import('../src/battle/numbers');
+  const { TOWER_EVENT_IDS } = await import('../src/battle/events');
+
+  // 词缀带：1-2环1条 / 3-5环2条 / 6-9环3条 / 10+环4条 cap（验收"叠加不溢出"）
+  assert(abyssAffixCount(1) === 1 && abyssAffixCount(3) === 2 && abyssAffixCount(6) === 3
+    && abyssAffixCount(10) === 4 && abyssAffixCount(99) === 4, 'Q: 词缀带与 cap');
+  assert(abyssGuardHp(1) === 450 && abyssGuardHp(11) === Math.round(450 * 1.5), 'Q: 守卫 HP +5%/环', `${abyssGuardHp(11)}`);
+
+  // 30 环生成健全性
+  for (let ring = 1; ring <= 30; ring++) {
+    const rng = mulberry32(ring * 31337);
+    const { stratum, guard } = buildAbyssRing({
+      ring, stratumId: `abyss-${ring}`, guardId: `guard-${ring}`, baseFloor: 60 + (ring - 1) * 5,
+      now: new Date('2026-07-19'), rng, eventPoolIds: TOWER_EVENT_IDS, chestSp: () => 12,
+      lastWeakAttribute: 'guts', attrNames: ATTR_NAMES,
+    });
+    assert(stratum.floors === ABYSS_RING_FLOORS && stratum.nodes.length === ABYSS_RING_FLOORS, `Q#${ring}: 环应为 5 层 5 节点`);
+    assert(stratum.abyssRing === ring && stratum.status === 'climbing', `Q#${ring}: 环元数据`);
+    const top = stratum.nodes.find(n => n.floor === ABYSS_RING_FLOORS);
+    assert(top?.type === 'boss', `Q#${ring}: 顶端应为守卫`);
+    // 直线连通：每层 edges 指向下一层
+    for (let i = 0; i < stratum.nodes.length - 1; i++) {
+      assert(stratum.nodes[i].edges.length === 1 && stratum.nodes[i].edges[0] === stratum.nodes[i + 1].id, `Q#${ring}: 直线连通断裂@${i}`);
+    }
+    assert(stratum.nodes.filter(n => (n.type === 'mob' || n.type === 'elite' || n.type === 'golden')).every(n => !!n.mob), `Q#${ring}: 战斗节点缺 mob 规格`);
+    assert((guard.affixes?.length ?? 0) === abyssAffixCount(ring) && (guard.affixes?.length ?? 0) <= 4, `Q#${ring}: 守卫词缀数`, `${guard.affixes?.length}`);
+    assert(guard.weakAttribute !== 'guts', `Q#${ring}: 守卫弱点应排除上次`);
+    assert(guard.maxHp2 === undefined, `Q#${ring}: 守卫应无二形态`);
+    assert(Number.isFinite(guard.maxHp) && guard.maxHp >= abyssGuardHp(ring), `Q#${ring}: 守卫 HP 异常`, `${guard.maxHp}`);
+  }
+  console.log('  ✓ 30 环：5层直线/守卫顶端/词缀带 cap4/弱点排除/无二形态');
+
+  // 守卫战斗 smoke：第 12 环守卫（3 词缀）boss 档可战、数值健康
+  {
+    const rng = mulberry32(424242);
+    const { guard } = buildAbyssRing({
+      ring: 12, stratumId: 'abyss-s', guardId: 'guard-s', baseFloor: 115,
+      now: new Date('2026-07-19'), rng, eventPoolIds: TOWER_EVENT_IDS, chestSp: () => 12,
+      lastWeakAttribute: undefined, attrNames: ATTR_NAMES,
+    });
+    const s = makeSetup(5, 555001);
+    s.playerHp = 9999; s.playerMaxHp = 9999;
+    s.shadow = {
+      id: guard.id, name: guard.name, level: 5, weakAttribute: guard.weakAttribute,
+      hp: guard.maxHp, maxHp: guard.maxHp, phase: 1, attackScalePct: 100,
+      responseLines: guard.responseLines, tier: 'boss', affixes: guard.affixes,
+    };
+    const e = new BattleEngine(s);
+    e.openingTurn();
+    const hit: PersonaSkill = { level: 5, name: '深渊打', description: '', type: 'damage', power: 40, spCost: 0 };
+    for (let i = 0; i < 8 && e.snapshot.over === null; i++) {
+      e.act({ kind: 'skill', skill: hit });
+      checkNumbersHealthy(e, 'Q守卫');
+    }
+    console.log(`  ✓ 守卫战 smoke：${guard.name}（${(guard.affixes ?? []).join(',')}）HP=${guard.maxHp}`);
+  }
+
+  // 金色掷取率：500 张主塔图统计（期望 ~1.5%）
+  {
+    let golden = 0, mobLike = 0;
+    for (let seed = 1; seed <= 500; seed++) {
+      const rng = mulberry32(seed * 2654435761);
+      const { nodes } = generateStratumNodes({ level: 3, rng, eventPoolIds: TOWER_EVENT_IDS, chestSp: () => 10 });
+      for (const n of nodes) {
+        if (n.type === 'golden') { golden++; mobLike++; }
+        else if (n.type === 'mob') mobLike++;
+      }
+    }
+    const rate = golden / Math.max(1, mobLike);
+    assert(rate > 0.005 && rate < 0.03, 'Q: 金色掷取率应在 1.5% 附近', `${(rate * 100).toFixed(2)}%`);
+    const spec = rollGoldenSpec(3, mulberry32(7));
+    assert(spec.golden === true && spec.tier === 'elite' && spec.maxHp > 0, 'Q: 金色规格');
+    console.log(`  ✓ 金色回响：${golden}/${mobLike} = ${(rate * 100).toFixed(2)}%（目标 ${(GOLDEN_NODE_RATE * 100).toFixed(1)}%）`);
+  }
+}
+
 console.log('');
 if (failures > 0) {
   console.error(`✗ 模拟战失败：${failures} 项断言未通过`);

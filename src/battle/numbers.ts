@@ -224,6 +224,24 @@ export const DILIGENCE_STREAK_DAYS = 3;        // 勤勉的光辉：连续记录
 export const DILIGENCE_MAX_CHARGES = 2;        // 持有上限
 export const COMPANION_GUARD_CHANCE = 0.35;    // 同伴庇护：致命一击 35% 保留 1HP（每 session 一次）
 
+// ── 批5 · 深渊回廊（§13 批5 / §5.5）────────────────────────
+export const ABYSS_RING_FLOORS = 5;            // 每环 5 层直线小图
+export const ABYSS_GUARD_BASE_HP = 450;        // 守卫基准 = Lv5 心魔一形态（无二形态）
+export const ABYSS_GUARD_HP_GROWTH = 0.05;     // 每环 HP +5%（攻击不涨，词缀补压力）
+/** 词缀条数按环带：1-2环→1条 / 3-5→2 / 6-9→3 / 10+→4（cap，验收"叠加不溢出"） */
+export function abyssAffixCount(ring: number): number {
+  if (ring >= 10) return 4;
+  if (ring >= 6) return 3;
+  if (ring >= 3) return 2;
+  return 1;
+}
+export function abyssGuardHp(ring: number): number {
+  return Math.round(ABYSS_GUARD_BASE_HP * (1 + ABYSS_GUARD_HP_GROWTH * (ring - 1)));
+}
+export const GOLDEN_NODE_RATE = 0.015;         // 金色回响：任意中间层 mob 节点 1.5% 转金
+export const GOLDEN_HP_MULT = 1.1;             // 稀有影 HP = 强敌高段 ×1.1
+export const GOLDEN_SP_MULT = 1.5;             // 金色节点 SP 收益 ×1.5
+
 // ── 批3 · 誓约技数值（§10.4，本地定义）─────────────────────
 export const OATH_HEAL_PCT = 0.25;             // 深渊之誓
 export const OATH_CHARGE_MULT = 2.3;           // 蓄雷之誓

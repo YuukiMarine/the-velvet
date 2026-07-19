@@ -10,10 +10,10 @@ import { useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { StratumNode, TowerStratum } from '@/types';
 import { reachableNodeIds, absoluteFloor } from '@/battle/tower';
-import { NodeGlyph, IconFigure, IconEvilEye, paletteFor, WarGhost, slantPoly } from '@/components/battle/warKit';
+import { NodeGlyph, IconFigure, IconEvilEye, paletteFor, ABYSS_PALETTE, WarGhost, slantPoly } from '@/components/battle/warKit';
 
 const NODE_LABEL: Record<StratumNode['type'], string> = {
-  mob: 'Shadow', elite: '强敌', event: '异变', echo: '回响', chest: '月匣', boss: '心魔',
+  mob: 'Shadow', elite: '强敌', event: '异变', echo: '回响', chest: '月匣', boss: '心魔', golden: '金色回响',
 };
 
 type Visibility = 'full' | 'dim' | 'silhouette' | 'fog';
@@ -30,7 +30,7 @@ interface Props {
 const laneCenter = (lane: number) => ((lane + 0.5) / 3) * 100;
 
 export function TowerMap({ stratum, interactive, onSelectNode, fill }: Props) {
-  const pal = paletteFor(stratum.level);
+  const pal = stratum.abyssRing ? ABYSS_PALETTE : paletteFor(stratum.level); // 批5：深渊暗金
   const reachable = new Set(reachableNodeIds(stratum));
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const currentRowRef = useRef<HTMLDivElement | null>(null);
@@ -249,7 +249,9 @@ export function TowerMap({ stratum, interactive, onSelectNode, fill }: Props) {
                         style={{
                           color: node.cleared
                             ? 'rgba(255,255,255,0.32)'
-                            : node.type === 'boss' ? '#ff8fa3' : 'rgba(222,232,255,0.92)',
+                            : node.type === 'boss' ? '#ff8fa3'
+                            : node.type === 'golden' ? '#fcd34d' // 批5 金色回响
+                            : 'rgba(222,232,255,0.92)',
                         }}
                       >
                         {hideDetail
@@ -267,7 +269,7 @@ export function TowerMap({ stratum, interactive, onSelectNode, fill }: Props) {
                           : (
                             <>
                               {NODE_LABEL[node.type]}
-                              {(node.type === 'mob' || node.type === 'elite') && node.mob && !node.cleared && (
+                              {(node.type === 'mob' || node.type === 'elite' || node.type === 'golden') && node.mob && !node.cleared && (
                                 <span className="opacity-60"> · {node.mob.name.slice(0, 4)}</span>
                               )}
                             </>
