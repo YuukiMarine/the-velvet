@@ -6,8 +6,9 @@
  */
 import { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { useAppStore } from '@/store';
+import { useAppStore, toLocalDateKey } from '@/store';
 import { AttributeId, MobSpec, StratumNode } from '@/types';
+import { ammoFromActivities } from '@/battle/preparation';
 import { rollMobSpec, absoluteFloor } from '@/battle/tower';
 import { getTowerEvent, TowerEventEffect } from '@/battle/events';
 import { ECHO_HEAL_PCT } from '@/battle/numbers';
@@ -53,6 +54,10 @@ export function TowerScreen({ open, onClose, onDescend, onRequestBattle, onToast
   const buffs = ts?.buffs ?? [];
   const curFloor = stratum.nodes.find(n => n.id === stratum.currentNodeId)?.floor ?? 0;
   const pal = paletteFor(stratum.level); // ⑩ 区层色温
+  // 批4：弹药匣（今日记录 → 属性加算）与勤勉的光辉
+  const attrNames = useAppStore.getState().settings.attributeNames as Record<AttributeId, string>;
+  const ammo = ammoFromActivities(useAppStore.getState().activities, toLocalDateKey());
+  const diligence = battleState.diligenceCharges ?? 0;
 
   const handleSelectNode = async (node: StratumNode) => {
     const moved = await moveToTowerNode(node.id);
@@ -215,14 +220,35 @@ export function TowerScreen({ open, onClose, onDescend, onRequestBattle, onToast
             </span>
           )}
         </div>
-        {buffs.length > 0 && (
-          <div className="flex flex-wrap gap-1">
+        {(buffs.length > 0 || Object.keys(ammo).length > 0 || diligence > 0) && (
+          <div className="flex flex-wrap items-center gap-1">
             {buffs.map(b => (
               <span key={b.id} className="text-[9px] font-bold px-1.5 py-0.5 rounded-md"
                     style={{ background: 'rgba(53,209,232,0.14)', color: '#7dd3fc', border: '1px solid rgba(53,209,232,0.35)', lineHeight: 1.2 }}>
                 ✦ {b.label}
               </span>
             ))}
+            {/* 批4 §6.1 弹药匣：今日记录 → 属性伤害加算（可见性验收点） */}
+            {(Object.entries(ammo) as Array<[AttributeId, number]>).map(([attr, pct]) => (
+              <span key={attr} className="text-[9px] font-bold px-1.5 py-0.5 rounded-md"
+                    style={{ background: 'rgba(250,204,21,0.12)', color: '#fde047', border: '1px solid rgba(250,204,21,0.35)', lineHeight: 1.2 }}>
+                🔸 {attrNames[attr]}弹药 +{Math.round(pct * 100)}%
+              </span>
+            ))}
+            {/* 批4 §6.4 勤勉的光辉：使用 = 完全恢复 HP */}
+            {diligence > 0 && interactive && (
+              <button
+                onClick={() => {
+                  void useAppStore.getState().claimDiligence().then(ok => {
+                    if (ok) { playSound('/battle-fanfare.mp3', 0.45); onToast('✨ 勤勉的光辉——体力完全恢复！'); }
+                  });
+                }}
+                className="text-[9px] font-black px-1.5 py-0.5 rounded-md"
+                style={{ background: 'rgba(253,224,71,0.2)', color: '#fef08a', border: '1px solid rgba(253,224,71,0.55)', lineHeight: 1.2 }}
+              >
+                ✨ 光辉 ×{diligence} · 点按全恢复
+              </button>
+            )}
           </div>
         )}
       </div>

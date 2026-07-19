@@ -715,6 +715,90 @@ console.log('── N. 共鸣链 ──');
   console.log('  ✓ 共鸣链：雄辩0SP/无畏44充能/烈焰首击');
 }
 
+// ── O. 批4 日常闭环：弹药/结余护壁/物欲缠身/同伴庇护/光辉判定 ──
+console.log('── O. 日常闭环 ──');
+{
+  const { ammoFromActivities, currentRecordStreak, shouldGrantDiligence } = await import('../src/battle/preparation');
+
+  // 弹药纯函数：今日 2 条胆量记录 → +8%；4 条 → 封顶 12%
+  const mkAct = (attr: AttributeId, dateKey: string) => ({
+    date: new Date(dateKey + 'T12:00:00'),
+    pointsAwarded: { knowledge: 0, guts: 0, dexterity: 0, kindness: 0, charm: 0, [attr]: 1 } as Record<AttributeId, number>,
+  });
+  const a2 = ammoFromActivities([mkAct('guts', '2026-07-19'), mkAct('guts', '2026-07-19'), mkAct('guts', '2026-07-18')], '2026-07-19');
+  assert(Math.abs((a2.guts ?? 0) - 0.08) < 1e-9, 'O: 今日2条记录应 +8%', `${a2.guts}`);
+  const a4 = ammoFromActivities(Array.from({ length: 4 }, () => mkAct('guts', '2026-07-19')), '2026-07-19');
+  assert(Math.abs((a4.guts ?? 0) - 0.12) < 1e-9, 'O: 弹药应封顶 +12%', `${a4.guts}`);
+
+  // 光辉判定：连续 3 天 + 间隔约束
+  const streak = currentRecordStreak(['2026-07-17', '2026-07-18', '2026-07-19'].map(d => new Date(d + 'T09:00:00')), '2026-07-19');
+  assert(streak === 3, 'O: 连续三天记录 streak=3', `${streak}`);
+  assert(shouldGrantDiligence(3, undefined, '2026-07-19') === true, 'O: 首次达标应发放');
+  assert(shouldGrantDiligence(3, '2026-07-18', '2026-07-19') === false, 'O: 间隔<3天不重复发放');
+  assert(shouldGrantDiligence(3, '2026-07-16', '2026-07-19') === true, 'O: 间隔≥3天可再发');
+
+  // 弹药进引擎：同种子对照（非弱点、非暴击路径）
+  const ammoDmg = (withAmmo: boolean): number => {
+    const s = makeSetup(2, 12012);
+    s.playerHp = 9999; s.playerMaxHp = 9999;
+    s.shadow.attackScalePct = 10;
+    if (withAmmo) s.ammoAddPct = { knowledge: 0.12 };
+    const en = new BattleEngine(s);
+    en.openingTurn();
+    const sk: PersonaSkill = { level: 2, name: '弹药打', description: '', type: 'damage', power: 15, spCost: 0 };
+    const r = en.act({ kind: 'skill', skill: sk });
+    const m = r.lines.map(l => l.match(/造成了 (\d+) 点伤害/)).find(Boolean);
+    return m ? parseInt(m[1], 10) : -1;
+  };
+  assert(ammoDmg(true) > ammoDmg(false), 'O: 弹药应提升伤害', `${ammoDmg(false)} → ${ammoDmg(true)}`);
+
+  // 结余护壁：mob 战首次受击减半（每 session 一次）
+  const sWard = makeSetup(2, 13013);
+  sWard.playerHp = 9999; sWard.playerMaxHp = 9999;
+  sWard.shadow.tier = 'mob';
+  sWard.ledgerWard = true;
+  const eW = new BattleEngine(sWard);
+  eW.openingTurn();
+  let wardLines = 0;
+  for (let i = 0; i < 6 && eW.snapshot.over === null; i++) {
+    const r = eW.act({ kind: 'basic' });
+    wardLines += r.lines.filter(l => l.includes('结余护壁')).length;
+  }
+  assert(wardLines === 1 && eW.snapshot.wardConsumed, 'O: 结余护壁应恰好吸收一次', `${wardLines}次`);
+
+  // 物欲缠身：boss 开场 2 回合伤害更低（同种子对照）
+  const curseDmg = (cursed: boolean): number => {
+    const s = makeSetup(3, 14014);
+    s.playerHp = 9999; s.playerMaxHp = 9999;
+    s.shadow.attackScalePct = 10;
+    s.spendCurse = cursed;
+    const en = new BattleEngine(s);
+    en.openingTurn();
+    const sk: PersonaSkill = { level: 3, name: '缠身打', description: '', type: 'damage', power: 22, spCost: 0 };
+    const r = en.act({ kind: 'skill', skill: sk });
+    const m = r.lines.map(l => l.match(/造成了 (\d+) 点伤害/)).find(Boolean);
+    return m ? parseInt(m[1], 10) : -1;
+  };
+  assert(curseDmg(true) < curseDmg(false), 'O: 物欲缠身应削减开场伤害', `${curseDmg(false)} → ${curseDmg(true)}`);
+
+  // 同伴庇护：致命一击时应消耗判定（掷骰成败皆合法；保成则 HP=1）
+  const sGuard = makeSetup(1, 15015);
+  sGuard.playerHp = 1; sGuard.playerMaxHp = 100;
+  sGuard.initialMask = 'guts'; // 绕开温柔面具复活
+  sGuard.companionGuard = '模拟同伴';
+  const eG = new BattleEngine(sGuard);
+  eG.openingTurn();
+  for (let i = 0; i < 8 && eG.snapshot.over === null && !eG.snapshot.companionGuardConsumed; i++) {
+    eG.act({ kind: 'basic' });
+  }
+  assert(eG.snapshot.companionGuardConsumed || eG.snapshot.over === 'victory',
+    'O: 致命受击应触发同伴庇护判定（或提前速杀了对手）');
+  if (eG.snapshot.companionGuardConsumed && eG.snapshot.over === null) {
+    assert(eG.snapshot.playerHp === 1, 'O: 庇护成功应保留 1 HP', `${eG.snapshot.playerHp}`);
+  }
+  console.log('  ✓ 弹药/光辉判定/护壁一次/物欲削伤/同伴庇护');
+}
+
 console.log('');
 if (failures > 0) {
   console.error(`✗ 模拟战失败：${failures} 项断言未通过`);

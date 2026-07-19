@@ -121,6 +121,8 @@ import { PLAYER_BASE_HP, nodeSpReward, bossSpReward, RELIC_SALVAGE_SP, RELIC_SLO
 import { buildStratum, migrationStratumName, reachableNodeIds, rollMobSpec, weekKeyOf } from '@/battle/tower';
 import { TOWER_EVENT_IDS } from '@/battle/events';
 import { rollNodeLoot, rollAffixes, buildOathSkill, towerRelicBonus, MYTH_POOL, rollRelic, rollMyth, lootLabel, type LootDrop } from '@/battle/loot';
+import { currentRecordStreak, shouldGrantDiligence } from '@/battle/preparation';
+import { DILIGENCE_MAX_CHARGES } from '@/battle/numbers';
 import { normalizeAttributeLevelTitles } from '@/utils/attributeLevelTitles';
 
 /** Shared request payload returned by buildSummaryRequest used by both non-streaming generateSummary and streaming modal */
@@ -504,6 +506,13 @@ interface AppState {
   recordSkillUses: (uses: Array<{ attr: AttributeId; level: number }>) => Promise<void>;
   /** 技能解锁刷新：存量迁移（unlocked 缺省→按当时属性等级置位，不回锁）+ 双条件（属性等级≥N 且前技满星） */
   refreshSkillUnlocks: () => Promise<void>;
+  // ── 批4 · 日常闭环 ──
+  /** 备战抽取应用：buff 进 session（伤害类）+ SP 即发；记 prepDrawnId 防重复 */
+  applyPrepBuff: (buff: { id: string; label: string; addPct?: number; sp?: number }) => Promise<void>;
+  /** 勤勉的光辉：塔内使用一枚 → 完全恢复 HP；返回是否成功 */
+  claimDiligence: () => Promise<boolean>;
+  /** 战场成就壮举：记入 battleFeats 并尝试解锁对应成就 */
+  recordBattleFeat: (feat: string) => Promise<void>;
 
   // 同伴 / Confidant
   confidants: Confidant[];
@@ -1156,6 +1165,11 @@ export const useAppStore = create<AppState>((set, get) => ({
           case 'confidants_at_level': {
             const minLv = achievement.condition.minLevel ?? 1;
             return get().confidants.filter(c => !c.archivedAt && c.intimacy >= minLv).length;
+          }
+          case 'battle_feat': {
+            // 批4 战场成就组：事实源 = BattleState.battleFeats（recordBattleFeat 写入）
+            const feats = get().battleState?.battleFeats ?? [];
+            return achievement.condition.feat && feats.includes(achievement.condition.feat) ? 1 : 0;
           }
           default:
             return 0;
@@ -3940,20 +3954,27 @@ ${activityLines || '（本期暂无记录）'}
   },
 
   enterTowerToday: async () => {
-    const { stratum, battleState: prevBs } = get();
+    const { stratum, battleState: prevBs, activities } = get();
     // 批3 记忆台词：在 lastChallengeDate 被覆写前快照缺席天数
     const prevKey = prevBs?.lastChallengeDate;
     const daysAway = prevKey
       ? Math.max(0, Math.floor((new Date(toLocalDateKey() + 'T00:00:00').getTime() - new Date(prevKey + 'T00:00:00').getTime()) / 86400000))
       : 0;
+    // 批4 勤勉的光辉：连续记录 3 天 → +1 枚（上限 2；距上次发放 ≥3 天）
+    const todayKey = toLocalDateKey();
+    const streak = currentRecordStreak(activities.map(a => a.date), todayKey);
+    const grantDiligence = shouldGrantDiligence(streak, prevBs?.diligenceLastGrantKey, todayKey)
+      && (prevBs?.diligenceCharges ?? 0) < DILIGENCE_MAX_CHARGES;
     get().startBattleSession(); // 满 HP + lastChallengeDate
     const bs = get().battleState;
     if (!bs) return;
     const curFloor = stratum?.nodes.find(n => n.id === stratum.currentNodeId)?.floor ?? 0;
     await get().saveBattleState({
       ...bs,
+      diligenceCharges: grantDiligence ? Math.min(DILIGENCE_MAX_CHARGES, (bs.diligenceCharges ?? 0) + 1) : bs.diligenceCharges,
+      diligenceLastGrantKey: grantDiligence ? todayKey : bs.diligenceLastGrantKey,
       towerSession: {
-        dateKey: toLocalDateKey(),
+        dateKey: todayKey,
         startFloor: curFloor,
         floorsClimbed: 0,
         nodesCleared: 0,
@@ -4126,6 +4147,41 @@ ${activityLines || '（本期暂无记录）'}
     const bs = get().battleState!;
     await get().saveBattleState({ ...bs, arsenal: next, sp: bs.sp + spBonus });
     return drops;
+  },
+
+  // ── 批4 · 日常闭环 ──
+
+  applyPrepBuff: async (buff) => {
+    const bs = get().battleState;
+    const ts = bs?.towerSession;
+    if (!bs || !ts || ts.dateKey !== toLocalDateKey() || ts.prepDrawnId) return; // 每次登塔限一次
+    let session = { ...ts, prepDrawnId: buff.id };
+    if (buff.addPct) {
+      session = { ...session, buffs: [...session.buffs, { id: buff.id, label: buff.label, addPct: buff.addPct }] };
+    }
+    const sp = bs.sp + (buff.sp ?? 0);
+    await get().saveBattleState({ ...bs, sp, towerSession: session });
+  },
+
+  claimDiligence: async () => {
+    const bs = get().battleState;
+    if (!bs || (bs.diligenceCharges ?? 0) <= 0) return false;
+    await get().saveBattleState({
+      ...bs,
+      playerHp: bs.playerMaxHp,
+      diligenceCharges: (bs.diligenceCharges ?? 0) - 1,
+    });
+    return true;
+  },
+
+  recordBattleFeat: async (feat) => {
+    const bs = get().battleState;
+    if (!bs) return;
+    if (!(bs.battleFeats ?? []).includes(feat)) {
+      await get().saveBattleState({ ...bs, battleFeats: [...(bs.battleFeats ?? []), feat] });
+    }
+    // 壮举 id 与成就 id 一一对应（constants/ACHIEVEMENTS battle_feat 条目）
+    await get().unlockAchievement(`battle_${feat}`);
   },
 
   grantEventLoot: async (kind) => {

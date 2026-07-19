@@ -214,6 +214,16 @@ export const AFFIX_THORNS_PCT = 0.1;           // 荆棘：反弹直接伤害
 export const AFFIX_SLIPPERY_FACTOR = 1 / 1.5;  // 湿滑：失衡充能 ×0.67（=条长+50%）
 export const AFFIX_GREEDY_SP_MULT = 1.5;       // 贪婪（store 侧结算）
 
+// ── 批4 · 日常闭环（§6）────────────────────────────────────
+export const AMMO_ADD_PER_RECORD = 0.04;       // 弹药：今日该属性每条记录 +4%（加算）
+export const AMMO_ADD_CAP = 0.12;              // 弹药封顶 +12%（本次登塔有效）
+export const LEDGER_WARD_ABSORB = 0.5;         // 结余护壁：吸收一次 Shadow 攻击的 50%（每 session 一次）
+export const SPEND_CURSE_MULT = 0.8;           // 物欲缠身：心魔开场受到的伤害 ×0.8
+export const SPEND_CURSE_TURNS = 2;            // 物欲缠身持续回合
+export const DILIGENCE_STREAK_DAYS = 3;        // 勤勉的光辉：连续记录 3 天得 1 枚
+export const DILIGENCE_MAX_CHARGES = 2;        // 持有上限
+export const COMPANION_GUARD_CHANCE = 0.35;    // 同伴庇护：致命一击 35% 保留 1HP（每 session 一次）
+
 // ── 批3 · 誓约技数值（§10.4，本地定义）─────────────────────
 export const OATH_HEAL_PCT = 0.25;             // 深渊之誓
 export const OATH_CHARGE_MULT = 2.3;           // 蓄雷之誓

@@ -7,6 +7,7 @@ import { healAmount, BOSS_ATTACK_BY_LEVEL } from '@/battle/numbers';
 import { AttributeId, MobSpec, StratumNode } from '@/types';
 import { absoluteFloor } from '@/battle/tower';
 import { lootLabel } from '@/battle/loot';
+import { rollPrepDraw, type PrepBuff } from '@/battle/preparation';
 import { generateSummonLines, generateRecapComment } from '@/utils/battleAI';
 import { playSound } from '@/utils/feedback';
 import { BackButton } from '@/components/BackButton';
@@ -85,6 +86,7 @@ export const BattleArena = () => {
   const [deepenNotice, setDeepenNotice] = useState(false);
   const [towerOpen, setTowerOpen] = useState(false);
   const [infiltrating, setInfiltrating] = useState(false);
+  const [prepChoice, setPrepChoice] = useState<PrepBuff[] | null>(null);
 
   // Settings local state
   const [battleEnabled, setBattleEnabled] = useState(settings.battleEnabled !== false);
@@ -230,6 +232,21 @@ export const BattleArena = () => {
     setInfiltrating(false);
     await enterTowerToday();
     setTowerOpen(true);
+    // 批4 §6.2 备战抽取（每次登塔一次）：今日完成待办 ≥3 → 抽 2 选 1，否则抽 1 直接生效
+    const st = useAppStore.getState();
+    const ts = st.battleState?.towerSession;
+    if (ts && ts.dateKey === toLocalDateKey() && !ts.prepDrawnId) {
+      const todayDone = st.todoCompletions
+        .filter(tc => tc.date === toLocalDateKey())
+        .reduce((s, tc) => s + (tc.count ?? 1), 0);
+      const options = rollPrepDraw(todayDone >= 3 ? 2 : 1);
+      if (options.length >= 2) {
+        setPrepChoice(options);
+      } else if (options.length === 1) {
+        await st.applyPrepBuff(options[0]);
+        showSpToast(`🎴 备战抽取 · ${options[0].label}`);
+      }
+    }
   };
 
   // session 结束（败退/下塔/心魔讨伐）→ 自动收起塔屏，回顾在战场页弹出
@@ -1227,6 +1244,39 @@ export const BattleArena = () => {
     </AnimatePresence>
     <AnimatePresence>
       {infiltrating && <InfiltrationOverlay onDone={() => void handleInfiltrationDone()} />}
+    </AnimatePresence>
+    {/* 批4 §6.2：备战抽取 · 抽2选1（今日待办≥3 的犒赏；z 高于塔屏） */}
+    <AnimatePresence>
+      {prepChoice && (
+        <motion.div
+          initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+          className="fixed inset-0 z-[55] flex items-center justify-center p-6"
+          style={{ background: 'rgba(0,0,0,0.82)' }}
+        >
+          <motion.div initial={{ scale: 0.9, y: 14 }} animate={{ scale: 1, y: 0 }} className="w-full max-w-xs space-y-3">
+            <div className="text-center">
+              <p className="text-3xl">🎴</p>
+              <p className="text-white font-black text-base mt-1">备战抽取</p>
+              <p className="text-[11px] text-indigo-200/60 mt-0.5">今日待办勤勉——月光多给了你一次选择</p>
+            </div>
+            {prepChoice.map(opt => (
+              <button
+                key={opt.id}
+                onClick={() => {
+                  void useAppStore.getState().applyPrepBuff(opt);
+                  setPrepChoice(null);
+                  playSound('/battle-seal.mp3', 0.5);
+                  showSpToast(`🎴 备战抽取 · ${opt.label}`);
+                }}
+                className="w-full py-3 px-4 text-left text-sm font-bold text-indigo-100"
+                style={{ clipPath: 'polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%)', background: 'rgba(49,46,129,0.85)', border: '1px solid rgba(99,102,241,0.5)' }}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </motion.div>
+        </motion.div>
+      )}
     </AnimatePresence>
     {/* 批3：装备库 + 阴影档案馆 */}
     <AnimatePresence>
