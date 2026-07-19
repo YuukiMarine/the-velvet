@@ -12,7 +12,10 @@
  * 仅在 channel==='p3'（蓝主题）挂载的页面变体中使用；铁律照旧：
  * 装饰 aria-hidden、命中区完整矩形、正文恒水平（斜的只有容器与装饰）。
  */
+import { useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
+import { motion, useScroll, useTransform } from 'motion/react';
+import { useBoldness } from '@/utils/boldness';
 
 export const P3R = {
   blue: '#1b57ff',
@@ -66,34 +69,62 @@ export const P3RPage = ({ children, className, active = true }: { children: Reac
 };
 
 /** 背景幽灵大字（多行，整块斜置；移动端低透明度护栏 §18.1）
- *  字重口径：Arial 合成加粗（比 Impact / Arial Black 细一档，用户定稿） */
-export const GhostWords = ({ words, className, style }: { words: string[]; className?: string; style?: CSSProperties }) => (
-  <div
-    aria-hidden
-    className={`pointer-events-none absolute select-none font-black italic leading-[0.86] tracking-tight ${className ?? ''}`}
-    style={{ fontFamily: 'Arial, "Noto Sans SC", sans-serif', color: 'rgba(147,190,222,0.30)', transform: 'rotate(-12deg)', ...style }}
-  >
-    {words.map((w, i) => (
-      <div key={`${w}-${i}`}>{w}</div>
-    ))}
-  </div>
-);
+ *  字重口径：Arial 合成加粗（比 Impact / Arial Black 细一档，用户定稿）
+ *  动效（A3）：内层随页面滚动慢速视差漂移 + 极低频呼吸透明度；外层结构不变
+ *  （调用方经 className/style 传入的定位与 rotate 覆盖全部保留），D0 静止。 */
+export const GhostWords = ({ words, className, style }: { words: string[]; className?: string; style?: CSSProperties }) => {
+  const anim = useBoldness();
+  const { scrollY } = useScroll();
+  const y = useTransform(scrollY, (v) => v * -0.07);
+  return (
+    <div
+      aria-hidden
+      className={`pointer-events-none absolute select-none font-black italic leading-[0.86] tracking-tight ${className ?? ''}`}
+      style={{ fontFamily: 'Arial, "Noto Sans SC", sans-serif', color: 'rgba(147,190,222,0.30)', transform: 'rotate(-12deg)', ...style }}
+    >
+      <motion.div
+        style={anim ? { y } : undefined}
+        animate={anim ? { opacity: [1, 0.78, 1] } : undefined}
+        transition={{ duration: 8.5, repeat: Infinity, ease: 'easeInOut' }}
+      >
+        {words.map((w, i) => (
+          <div key={`${w}-${i}`}>{w}</div>
+        ))}
+      </motion.div>
+    </div>
+  );
+};
 
 /** 节标记：蓝色小斜块 + 标题 + 右侧 meta 槽（variant='blue'：蓝色斜体，account 页「数据管理 · DATA」式；
  *  marker='tri'：蓝色实心倒三角 + 黑粗斜体，p3-modal-03「▼ 关键词分析」式） */
-export const SectionMark = ({ title, meta, variant = 'ink', marker = 'slab', className }: { title: ReactNode; meta?: ReactNode; variant?: 'ink' | 'blue'; marker?: 'slab' | 'tri'; className?: string }) => (
-  <div className={`flex items-center justify-between gap-3 ${className ?? ''}`}>
-    <div className="flex items-center gap-2">
-      {marker === 'tri' ? (
-        <span aria-hidden className="h-0 w-0 border-x-[8px] border-t-[13px] border-x-transparent" style={{ borderTopColor: P3R.blue }} />
-      ) : (
-        <span aria-hidden className="h-[18px] w-[13px]" style={{ background: P3R.blue, clipPath: 'polygon(32% 0, 100% 0, 68% 100%, 0 100%)' }} />
-      )}
-      <h3 className={`text-[19px] font-black leading-none ${variant === 'blue' || marker === 'tri' ? 'italic tracking-wide' : ''}`} style={{ color: variant === 'blue' ? P3R.blue : P3R.ink }}>{title}</h3>
+export const SectionMark = ({ title, meta, variant = 'ink', marker = 'slab', className }: { title: ReactNode; meta?: ReactNode; variant?: 'ink' | 'blue'; marker?: 'slab' | 'tri'; className?: string }) => {
+  const anim = useBoldness();
+  // 动效（A2）：斜块从左拉出（scaleX 0→1），节题紧随其后从左裁切揭示；D0 直接终态
+  const markerMotion = {
+    initial: anim ? { scaleX: 0, opacity: 0 } : false,
+    animate: { scaleX: 1, opacity: 1 },
+    transition: { type: 'spring' as const, stiffness: 480, damping: 30 },
+  };
+  return (
+    <div className={`flex items-center justify-between gap-3 ${className ?? ''}`}>
+      <div className="flex items-center gap-2">
+        {marker === 'tri' ? (
+          <motion.span aria-hidden className="h-0 w-0 border-x-[8px] border-t-[13px] border-x-transparent" style={{ borderTopColor: P3R.blue, originX: 0 }} {...markerMotion} />
+        ) : (
+          <motion.span aria-hidden className="h-[18px] w-[13px]" style={{ background: P3R.blue, clipPath: 'polygon(32% 0, 100% 0, 68% 100%, 0 100%)', originX: 0 }} {...markerMotion} />
+        )}
+        <motion.h3
+          className={`text-[19px] font-black leading-none ${variant === 'blue' || marker === 'tri' ? 'italic tracking-wide' : ''}`}
+          style={{ color: variant === 'blue' ? P3R.blue : P3R.ink }}
+          initial={anim ? { clipPath: 'inset(0% 100% 0% 0%)', x: -6 } : false}
+          animate={{ clipPath: 'inset(0% 0% 0% 0%)', x: 0 }}
+          transition={{ duration: 0.38, ease: [0.25, 0.1, 0.25, 1], delay: 0.06 }}
+        >{title}</motion.h3>
+      </div>
+      {meta}
     </div>
-    {meta}
-  </div>
-);
+  );
+};
 
 /** 碎裂星徽（battle 页与升级 cutin 共用）：白描边青星 + 蓝青三角碎片；magenta=true 换入洋红碎片（庆祝演出用） */
 export const ShatteredStar = ({ className = 'mx-auto w-[190px]', magenta = false }: { className?: string; magenta?: boolean }) => {
