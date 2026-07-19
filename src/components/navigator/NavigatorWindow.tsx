@@ -130,6 +130,21 @@ export const NavigatorWindow = () => {
     st.greet();
   }, [nav.isOpen]);
 
+  // 批4 §6.6 黑猫败因信：有待投递的信 → 问候落定后作为站内信推送（一次性，投完即清）
+  useEffect(() => {
+    if (!nav.isOpen) return;
+    const letter = useAppStore.getState().battleState?.pendingCatLetter;
+    if (!letter) return;
+    const t = setTimeout(() => {
+      const app = useAppStore.getState();
+      const cur = app.battleState;
+      if (!cur?.pendingCatLetter) return; // 已被其他实例投递
+      useNavigatorStore.getState().pushCat(`📮 逆影战场·败因复盘\n${cur.pendingCatLetter.text}`);
+      void app.saveBattleState({ ...cur, pendingCatLetter: undefined });
+    }, 2200);
+    return () => clearTimeout(t);
+  }, [nav.isOpen]);
+
   // 打开期间锁 body 滚动
   useEffect(() => {
     if (!nav.isOpen || typeof document === 'undefined') return;

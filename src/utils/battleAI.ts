@@ -724,6 +724,43 @@ export async function generateRecapComment(
 }
 
 /**
+ * 批4 §6.6：黑猫败因信——败退当晚由黑猫写一封败因复盘站内信（战斗事件流本地拼 prompt）。
+ * 无 Key / 失败 → 返回本地模板信（信必达）。
+ */
+export interface DefeatFacts {
+  shadowName: string;
+  stratumName: string;
+  floor: number;          // 全塔累计层号
+  damageDealt: number;
+  maxSingleHit: number;
+  weaknessHits: number;
+  mobsDefeated: number;
+  hpLostToPoisonOrThorns?: boolean;
+}
+
+export function defeatLetterFallback(f: DefeatFacts): string {
+  return [
+    `喵。今晚 ${f.floor}F 的事我都看见了——${f.shadowName} 把你打下来的那一下，疼吧。`,
+    `但账要算清楚：你砍出了 ${f.damageDealt} 点伤害，最重的一击 ${f.maxSingleHit}，弱点戳中 ${f.weaknessHits} 次，还顺手清了 ${f.mobsDefeated} 只杂影。这些它都记得，塔也记得。`,
+    `明晚把 HP 管好点，看到危险意图就防御，别嫌回合亏。它在【${f.stratumName}】等你，我也等你。`,
+  ].join('\n');
+}
+
+export async function generateDefeatLetter(settings: Settings, f: DefeatFacts): Promise<string> {
+  const cfg = getAIConfig(settings);
+  if (!cfg) return defeatLetterFallback(f);
+  const prompt = `你是Persona系游戏里的黑猫领航员（毒舌但真心为主人好）。玩家今晚在"影时间高塔"败退了，给玩家写一封100-160字的败因复盘信。
+战斗事实：区层【${f.stratumName}】，倒在累计第${f.floor}层；对手是「${f.shadowName}」；本晚总伤害${f.damageDealt}、最大单击${f.maxSingleHit}、弱点命中${f.weaknessHits}次、讨伐杂影${f.mobsDefeated}只${f.hpLostToPoisonOrThorns ? '；有不少体力是被毒/反弹磨掉的' : ''}。
+【要求】黑猫口吻（第一人称"我"，称玩家"你"，可带一声"喵"）；先毒舌点破最可能的败因（贪刀不防御/无视意图/回复太晚/被磨血——从事实推断一条），再给一条明晚可执行的建议，最后一句是不许认输的鼓动。不用括号不用标题，直接输出信的正文。`;
+  try {
+    const text = await callAIWithRetry(cfg, [{ role: 'user', content: prompt }], 0.85, 500);
+    return text.trim() || defeatLetterFallback(f);
+  } catch {
+    return defeatLetterFallback(f);
+  }
+}
+
+/**
  * 批3 §4.4：誓约技 LLM 命名——按该属性 Persona 人设生成新技能名+描述。
  * 结果由调用方缓存到誓约石（重复装备不再调 AI）；无 Key / 失败时调用方保留模板名。
  */
