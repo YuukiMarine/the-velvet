@@ -21,6 +21,8 @@ export type TowerEventEffect =
   | { kind: 'echoLine' }               // 旧日回音：引用最近一条重要记录（素材执行层注入）
   | { kind: 'relicWaning' }            // （批3）获得一件残月遗物
   | { kind: 'randomMyth' }             // （批3）获得一枚随机迷思石
+  | { kind: 'prepBuff' }               // （批4）勤勉的试炼：领一枚备战 buff（本次登塔已抽过则 +8 SP）
+  | { kind: 'removeAffix' }            // （批4）月相祭坛：移除主影一条词缀
   | { kind: 'nothing' };
 
 export interface TowerEventOption {
@@ -177,6 +179,37 @@ export const TOWER_EVENTS: TowerEvent[] = [
         elseEffects: [{ kind: 'hpLossPct', pct: 0.06 }],
       },
       { label: '悄悄绕开', resultText: '你屏住呼吸贴墙而过。有惊无险。', effects: [{ kind: 'nothing' }] },
+    ],
+  },
+  {
+    // 批4 接入（批2 挂账）：仅在主影带词缀时有意义——展示层在无词缀时替换为其他事件
+    id: 'moon-altar',
+    title: '月相祭坛',
+    icon: '🌗',
+    text: '一座刻着月相刻度的祭坛。异变在心魔身上留下的烙印，似乎可以在这里洗去一枚。',
+    options: [
+      {
+        label: '献上 25 SP 洗礼',
+        costSp: 25,
+        resultText: '祭坛的月相转了半圈——心魔的一条烙印剥落了。',
+        effects: [{ kind: 'sp', amount: -25 }, { kind: 'removeAffix' }],
+      },
+      { label: '不予理会', resultText: '祭坛静默。烙印仍在上方等你。', effects: [{ kind: 'nothing' }] },
+    ],
+  },
+  {
+    // 批4 接入（批2 挂账）：勤勉的试炼——今日完成待办 ≥3 才配领赏（展示层判定）
+    id: 'diligence-trial',
+    title: '勤勉的试炼',
+    icon: '📜',
+    text: '石碑上浮现今日的你：待办清单一项项被划去的残影。塔在称量你的白昼。',
+    options: [
+      {
+        label: '接受称量',
+        resultText: '石碑的刻度缓缓移动，称量着你的白昼……',
+        effects: [{ kind: 'prepBuff' }],
+      },
+      { label: '转身离开', resultText: '石碑缓缓暗下。它不评判，只记录。', effects: [{ kind: 'nothing' }] },
     ],
   },
   {

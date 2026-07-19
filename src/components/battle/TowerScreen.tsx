@@ -10,9 +10,10 @@ import { useAppStore, toLocalDateKey } from '@/store';
 import { AttributeId, MobSpec, StratumNode } from '@/types';
 import { ammoFromActivities } from '@/battle/preparation';
 import { rollMobSpec, absoluteFloor } from '@/battle/tower';
-import { getTowerEvent, TowerEventEffect } from '@/battle/events';
+import { getTowerEvent, TOWER_EVENTS, TowerEvent, TowerEventEffect } from '@/battle/events';
 import { ECHO_HEAL_PCT } from '@/battle/numbers';
-import { lootLabel, towerRelicBonus } from '@/battle/loot';
+import { lootLabel, towerRelicBonus, AFFIX_POOL } from '@/battle/loot';
+import { rollPrepDraw } from '@/battle/preparation';
 import { buildMirrorQuiz, type MirrorQuestion } from '@/battle/quiz';
 import { playSound } from '@/utils/feedback';
 import { useBackHandler } from '@/utils/useBackHandler';
@@ -100,6 +101,34 @@ export function TowerScreen({ open, onClose, onDescend, onRequestBattle, onToast
         case 'randomMyth': {
           const label = await useAppStore.getState().grantEventLoot('randomMyth');
           if (label) onToast(`🎁 ${label}`);
+          break;
+        }
+        // 批4：勤勉的试炼——今日待办 ≥3 领备战 buff；本次登塔已抽过 → +8 SP；不足 → 无奖
+        case 'prepBuff': {
+          const st = useAppStore.getState();
+          const todayDone = st.todoCompletions
+            .filter(tc => tc.date === toLocalDateKey())
+            .reduce((s, tc) => s + (tc.count ?? 1), 0);
+          if (todayDone < 3) {
+            onToast('📜 白昼的勤勉不足——石碑没有回应（今日完成待办 ≥3 后再来）');
+          } else if (battleState.towerSession?.prepDrawnId) {
+            await towerAdjust({ spDelta: 8 });
+            onToast('📜 试炼通过——备战已满，转化 +8 SP');
+          } else {
+            const [buff] = rollPrepDraw(1);
+            if (buff) {
+              await st.applyPrepBuff(buff);
+              onToast(`📜 试炼通过 · ${buff.label}`);
+            }
+          }
+          break;
+        }
+        // 批4：月相祭坛——移除主影随机一条词缀
+        case 'removeAffix': {
+          const removed = await useAppStore.getState().removeRandomShadowAffix();
+          onToast(removed
+            ? `🌗 烙印剥落——【${AFFIX_POOL[removed].name}】从心魔身上消散了`
+            : '🌗 祭坛沉默——心魔身上已无烙印可洗');
           break;
         }
         case 'echoLine': case 'nothing': break;
@@ -276,7 +305,12 @@ export function TowerScreen({ open, onClose, onDescend, onRequestBattle, onToast
       {/* ── 节点弹窗 ── */}
       <AnimatePresence>
         {eventNode?.eventPoolId && (() => {
-          const ev = getTowerEvent(eventNode.eventPoolId!);
+          let ev: TowerEvent | undefined = getTowerEvent(eventNode.eventPoolId!);
+          // 批4：月相祭坛仅在「已加深且主影带词缀」时有意义——否则就地换成一个无条件事件
+          if (ev?.id === 'moon-altar' && (stratum.deepenCount === 0 || (shadow?.affixes?.length ?? 0) === 0)) {
+            const pool = TOWER_EVENTS.filter(e => e.id !== 'moon-altar' && e.id !== 'diligence-trial');
+            ev = pool[Math.abs(eventNode.id.split('').reduce((s, c) => s + c.charCodeAt(0), 0)) % pool.length];
+          }
           return ev ? (
             <TowerEventModal
               event={ev}
