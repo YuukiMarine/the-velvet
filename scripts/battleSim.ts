@@ -799,6 +799,31 @@ console.log('── O. 日常闭环 ──');
   console.log('  ✓ 弹药/光辉判定/护壁一次/物欲削伤/同伴庇护');
 }
 
+// ── P. 批4 主影主题：最少成长属性 65% 分布抽样（§6.7 验收） ──
+console.log('── P. 主影主题分布 ──');
+{
+  const { rollThemeAttribute } = await import('../src/battle/tower');
+  const rng = mulberry32(20260719);
+  const weekPoints = { knowledge: 1, guts: 9, dexterity: 7, kindness: 12, charm: 5 } as Record<AttributeId, number>;
+  let hits = 0;
+  const N = 2000;
+  for (let i = 0; i < N; i++) {
+    if (rollThemeAttribute(weekPoints, rng) === 'knowledge') hits++;
+  }
+  const ratio = hits / N;
+  assert(ratio > 0.6 && ratio < 0.7, 'P: 最少成长属性应约 65% 成为主题', `${(ratio * 100).toFixed(1)}%`);
+  // 并列最少：两者合计约 65%+各自吃到 35% 池的份额，且都非零
+  const rng2 = mulberry32(777);
+  const tiePoints = { knowledge: 0, guts: 0, dexterity: 5, kindness: 5, charm: 5 } as Record<AttributeId, number>;
+  const counts: Record<string, number> = {};
+  for (let i = 0; i < N; i++) {
+    const t = rollThemeAttribute(tiePoints, rng2);
+    counts[t] = (counts[t] ?? 0) + 1;
+  }
+  assert((counts.knowledge ?? 0) > 0 && (counts.guts ?? 0) > 0, 'P: 并列最少者应都有机会成为主题');
+  console.log(`  ✓ 主题分布：最少者 ${(ratio * 100).toFixed(1)}%（目标 65%）`);
+}
+
 console.log('');
 if (failures > 0) {
   console.error(`✗ 模拟战失败：${failures} 项断言未通过`);

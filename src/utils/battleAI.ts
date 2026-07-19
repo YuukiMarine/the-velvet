@@ -568,6 +568,8 @@ export async function generateStratumReveal(
   attrValues: Record<AttributeId, number>,
   lastWeakAttribute: AttributeId | undefined,
   toneHints: string[],
+  /** 批4 §6.7 主影主题属性（本周成长最少者 65%）；缺省不注入主题 */
+  themeAttribute?: AttributeId,
 ): Promise<{
   stratumName: string;
   stratumDescription: string;
@@ -592,7 +594,7 @@ export async function generateStratumReveal(
 ${toneHints.map((t, i) => `${i + 1}. ${t}`).join('\n')}
 
 区层心魔是玩家内心负面特质的具现，其属性为玩家属性的反向：${ATTRS.map(a => `${attributeNames[a]}=${attrValues[a]}`).join('，')}。
-心魔弱点属性为"${attributeNames[weakAttribute]}"。
+心魔弱点属性为"${attributeNames[weakAttribute]}"。${themeAttribute ? `\n【主题】本周玩家在"${attributeNames[themeAttribute]}"方向成长最少——心魔以此为主题气质：区层名、心魔名与台词都要围绕"${attributeNames[themeAttribute]}的缺失/荒废"展开（比如荒废知识→蒙昧之域）。` : ''}
 
 【输出要求】
 - stratumName：区层名，格式"xx之域"（体现越高越危险的塔层氛围，禁止使用现实游戏专有名词）

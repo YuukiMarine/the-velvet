@@ -200,6 +200,55 @@ export const ACHIEVEMENTS = [
     unlocked: false,
     condition: { type: 'shadow_defeats' as const, value: 5 }
   },
+  // ── 批4 §6.8 战场成就组（battle_feat：事实源 = BattleState.battleFeats） ──
+  {
+    id: 'battle_allout',
+    title: '五面之力',
+    description: '首次发动总攻击——五副面具的力量汇于一击',
+    icon: '💥',
+    unlocked: false,
+    condition: { type: 'battle_feat' as const, value: 1, feat: 'allout' }
+  },
+  {
+    id: 'battle_flawless',
+    title: '月下无瑕',
+    description: '一场战斗中不损一滴体力讨伐心魔',
+    icon: '🌕',
+    unlocked: false,
+    condition: { type: 'battle_feat' as const, value: 1, feat: 'flawless' }
+  },
+  {
+    id: 'battle_poison_elite',
+    title: '蚀骨之谋',
+    description: '让毒素替你终结一名强敌',
+    icon: '☠️',
+    unlocked: false,
+    condition: { type: 'battle_feat' as const, value: 1, feat: 'poison_elite' }
+  },
+  {
+    id: 'battle_five_masks',
+    title: '千面登台',
+    description: '一场战斗中让五副面具全部上场',
+    icon: '🎭',
+    unlocked: false,
+    condition: { type: 'battle_feat' as const, value: 1, feat: 'five_masks' }
+  },
+  {
+    id: 'battle_first_clear',
+    title: '第一层月光',
+    description: '首次通关一个区层——上方的黑暗开始注视你',
+    icon: '🗼',
+    unlocked: false,
+    condition: { type: 'battle_feat' as const, value: 1, feat: 'first_clear' }
+  },
+  {
+    id: 'battle_night_climb',
+    title: '一夜通天',
+    description: '单夜从区层入口一路攀至心魔并将其讨伐',
+    icon: '🌠',
+    unlocked: false,
+    condition: { type: 'battle_feat' as const, value: 1, feat: 'night_climb' }
+  },
   {
     id: 'confidants_web_5',
     title: '彼此托付',

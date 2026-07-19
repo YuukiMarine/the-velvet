@@ -12,6 +12,7 @@ import { Shadow, AttributeId } from '@/types';
 import { generateStratumReveal } from '@/utils/battleAI';
 import { SHADOW_LEVEL_CONFIG } from '@/constants';
 import { BOSS_ATTACK_BY_LEVEL } from '@/battle/numbers';
+import { rollThemeAttribute, weekKeyOf } from '@/battle/tower';
 import { playSound } from '@/utils/feedback';
 import { ShadowWarningOverlay } from '@/components/battle/ShadowWarningOverlay';
 import { useBackHandler } from '@/utils/useBackHandler';
@@ -55,6 +56,19 @@ export function StratumRevealModal({ isOpen, onClose, level }: Props) {
   const attrValues = Object.fromEntries(attributes.map(a => [a.id, a.points])) as Record<AttributeId, number>;
   const lastWeak = battleState?.lastDefeatedWeakAttribute;
   const cfg = SHADOW_LEVEL_CONFIG[Math.min(level, 5) - 1];
+
+  // 批4 §6.7 主影主题：本周（周一起）五维成长点数最少者 65% 成为主题属性
+  const rollTheme = (): AttributeId => {
+    const weekStart = new Date(weekKeyOf(new Date()) + 'T00:00:00').getTime();
+    const acts = useAppStore.getState().activities.filter(a => new Date(a.date).getTime() >= weekStart);
+    const weekPoints = Object.fromEntries(
+      (Object.keys(attrNames) as AttributeId[]).map(attr => [
+        attr,
+        acts.reduce((s, a) => s + (a.pointsAwarded?.[attr] ?? 0), 0),
+      ]),
+    ) as Record<AttributeId, number>;
+    return rollThemeAttribute(weekPoints);
+  };
 
   useEffect(() => {
     if (isOpen) {
@@ -104,12 +118,14 @@ export function StratumRevealModal({ isOpen, onClose, level }: Props) {
     setStep('generating');
     setError('');
     try {
-      const data = await generateStratumReveal(settings, attrNames, level, attrValues, lastWeak, toneAnswers);
+      const themeAttribute = rollTheme();
+      const data = await generateStratumReveal(settings, attrNames, level, attrValues, lastWeak, toneAnswers, themeAttribute);
       const boss = buildBoss(data);
       await revealStratum({
         level,
         name: data.stratumName,
         description: data.stratumDescription,
+        themeAttribute,
         boss,
       });
       playSound('/battle-seal.mp3');
@@ -134,6 +150,7 @@ export function StratumRevealModal({ isOpen, onClose, level }: Props) {
       level,
       name: `${manualName.trim().slice(0, 6)}之域`,
       description: '月光稀薄的塔层，影子在栏杆间低语。',
+      themeAttribute: rollTheme(),
       boss,
     });
     playSound('/battle-seal.mp3');

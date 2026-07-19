@@ -720,6 +720,8 @@ const AchievementsTab = () => {
         return Math.min(todoCompletions.reduce((sum, item) => sum + item.count, 0), achievement.condition.value);
       case 'shadow_defeats':
         return Math.min(battleState?.defeatedShadowLog?.length ?? 0, achievement.condition.value);
+      case 'battle_feat':
+        return achievement.condition.feat && (battleState?.battleFeats ?? []).includes(achievement.condition.feat) ? 1 : 0;
       default:
         return 0;
     }
