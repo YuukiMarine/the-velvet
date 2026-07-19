@@ -100,7 +100,7 @@ const isNavActive = (itemId: string, currentPage: string): boolean =>
 export { TrophyIcon };
 
 export const Sidebar = () => {
-  const { currentPage, setCurrentPage } = useAppStore();
+  const { currentPage, setCurrentPage, actionsSubTab, setActionsSubTab } = useAppStore();
   // F6：黑猫对话窗（NavigatorWindow 挂在 App 顶层，这里只负责打开）
   const openNavigator = useNavigatorStore((s) => s.open);
 
@@ -112,6 +112,11 @@ export const Sidebar = () => {
         whileTap={{ scale: 0.97 }}
         onClick={() => {
           triggerNavFeedback();
+          // 已在「行动」再点：记录 ⇄ 任务 互切（与底导同口径）
+          if (active && item.id === 'actions') {
+            setActionsSubTab(actionsSubTab === 'activities' ? 'todos' : 'activities');
+            return;
+          }
           setCurrentPage(item.id);
         }}
         className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150 cursor-pointer ${
@@ -224,7 +229,7 @@ const NavTab = ({ item, active, onSelect, p3 = false }: { item: NavItem; active:
 );
 
 export const BottomNav = () => {
-  const { currentPage, setCurrentPage } = useAppStore();
+  const { currentPage, setCurrentPage, actionsSubTab, setActionsSubTab } = useAppStore();
   // F6：黑猫对话窗（NavigatorWindow 挂在 App 顶层，这里只负责打开）
   const openNavigator = useNavigatorStore((s) => s.open);
   // P3R：蓝主题底导换形（选中整格蓝斜块 / 黑猫去菱形壳），红黄频道不受影响
@@ -276,7 +281,11 @@ export const BottomNav = () => {
         active={active}
         onSelect={(e) => {
           triggerNavFeedback();
-          if (active) return; // 已在本页，不放幕布
+          if (active) {
+            // 已在「行动」再点：记录 ⇄ 任务 互切（用户口径）；其余 tab 原地点击无操作
+            if (item.id === 'actions') setActionsSubTab(actionsSubTab === 'activities' ? 'todos' : 'activities');
+            return;
+          }
           const rect = e.currentTarget.getBoundingClientRect();
           const origin = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
           // P8.4 试验：底部栏切换走水波纹转场（从点击的 tab 涨潮铺满 → 幕布后切页 → 退潮露新页）

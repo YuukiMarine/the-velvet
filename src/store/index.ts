@@ -118,11 +118,11 @@ import {
   HP_BONUS_PER_DEFEAT,
 } from '@/constants';
 import { PLAYER_BASE_HP, nodeSpReward, bossSpReward, RELIC_SALVAGE_SP, RELIC_SLOTS_BY_STRATUM, AFFIX_HP_MULT, masteryStars } from '@/battle/numbers';
-import { buildStratum, migrationStratumName, reachableNodeIds, rollMobSpec, weekKeyOf } from '@/battle/tower';
+import { buildStratum, buildAbyssRing, migrationStratumName, reachableNodeIds, rollMobSpec, weekKeyOf } from '@/battle/tower';
 import { TOWER_EVENT_IDS } from '@/battle/events';
 import { rollNodeLoot, rollAffixes, buildOathSkill, towerRelicBonus, MYTH_POOL, rollRelic, rollMyth, lootLabel, type LootDrop } from '@/battle/loot';
 import { currentRecordStreak, shouldGrantDiligence } from '@/battle/preparation';
-import { DILIGENCE_MAX_CHARGES } from '@/battle/numbers';
+import { DILIGENCE_MAX_CHARGES, GOLDEN_SP_MULT } from '@/battle/numbers';
 import { generateDefeatLetter } from '@/utils/battleAI';
 import { normalizeAttributeLevelTitles } from '@/utils/attributeLevelTitles';
 
@@ -483,8 +483,10 @@ interface AppState {
   /** 月相日（周一）异变加深：主影回满 + deepenCount+1；返回是否触发（供演出） */
   deepenStratumIfNewWeek: () => Promise<boolean>;
   // ── 批3 · 养成与生态 ──
-  /** 战利品掷取并入包（月匣/强敌/心魔）；返回掉落列表（toast/演出用） */
-  rollTowerLoot: (source: 'chest' | 'elite' | 'boss', floorRatio: number) => Promise<LootDrop[]>;
+  /** 战利品掷取并入包（月匣/强敌/心魔/金色回响）；返回掉落列表（toast/演出用） */
+  rollTowerLoot: (source: 'chest' | 'elite' | 'boss' | 'golden', floorRatio: number) => Promise<LootDrop[]>;
+  /** （批5）踏入深渊回廊 / 深入下一环：零 AI 即时生成环+守卫（Lv5 通关后解锁） */
+  enterAbyss: () => Promise<void>;
   /** 事件奖励：残月遗物 / 随机迷思 直接入包；返回展示名（结果文案用） */
   grantEventLoot: (kind: 'relicWaning' | 'randomMyth') => Promise<string>;
   /** 删除遗物 → 转化 SP（10/25/60）；返回转化量 */
@@ -683,7 +685,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   weeklyGoals: [],
   settings: DEFAULT_SETTINGS,
   currentPage: 'dashboard',
-  actionsSubTab: 'todos',
+  // 每次启动首进「行动」先落记录页（内存态不持久化，会话内仍记忆上次停留）
+  actionsSubTab: 'activities',
   levelUpNotification: null,
   achievementNotification: null,
   skillNotification: null,
@@ -3845,9 +3848,10 @@ ${activityLines || '（本期暂无记录）'}
   defeatShadow: async () => {
     const { battleState, shadow, attributes, stratum } = get();
     if (!battleState) return;
+    const isAbyss = !!stratum?.abyssRing; // 批5：深渊环击破——不加 HP 上限（无尽模式防膨胀）、更新最深纪录
     // 批3 阴影档案馆：新藏品带 描述/词缀/代表台词/击败时的你/区层等级（存量记录字段留空 = 首批藏品）
     const newRecord = shadow ? {
-      shadowName: shadow.name,
+      shadowName: isAbyss ? `${shadow.name}（回廊第${stratum!.abyssRing}环）` : shadow.name,
       level: shadow.level,
       breachDate: new Date(shadow.createdAt).toISOString().slice(0, 10),
       defeatDate: new Date().toISOString().slice(0, 10),
@@ -3858,8 +3862,8 @@ ${activityLines || '（本期暂无记录）'}
       playerTotalLevel: attributes.reduce((s, a) => s + (a.unlocked === false ? 0 : (a.level ?? 1)), 0),
       stratumLevel: stratum?.level,
     } : null;
-    // HP bonus from defeating this shadow
-    const hpGain = shadow ? (HP_BONUS_PER_DEFEAT[Math.min(shadow.level - 1, 4)] ?? 2) : 0;
+    // HP bonus from defeating this shadow（深渊不加）
+    const hpGain = shadow && !isAbyss ? (HP_BONUS_PER_DEFEAT[Math.min(shadow.level - 1, 4)] ?? 2) : 0;
     const newHpBonus = (battleState.hpBonusFromDefeats ?? 0) + hpGain;
     const updated: BattleState = {
       ...battleState,
@@ -3871,9 +3875,12 @@ ${activityLines || '（本期暂无记录）'}
         ? [...(battleState.defeatedShadowLog ?? []), newRecord]
         : battleState.defeatedShadowLog,
       hpBonusFromDefeats: newHpBonus,
+      abyssHighestRing: isAbyss
+        ? Math.max(battleState.abyssHighestRing ?? 0, stratum!.abyssRing!)
+        : battleState.abyssHighestRing,
     };
     await get().saveBattleState(updated);
-    // 批2：区层主影被击破 → 区层通关（上方新区层随「显形仪式」解锁）
+    // 批2：区层主影被击破 → 区层通关（上方新区层随「显形仪式」解锁；深渊环通关 → 同晚可深入下一环）
     const st = get().stratum;
     if (st && st.status === 'climbing') {
       await get().saveStratum({ ...st, status: 'cleared' });
@@ -4015,6 +4022,7 @@ ${activityLines || '（本期暂无记录）'}
     if (node.type === 'boss') sp = bossSpReward(stratum.level, stratum.deepenCount);
     else if (node.type === 'chest') sp = node.lootSp ?? 0;
     else if (node.type === 'mob' || node.type === 'elite') sp = nodeSpReward(stratum.level, node.floor, stratum.deepenCount, Math.random);
+    else if (node.type === 'golden') sp = Math.round(nodeSpReward(stratum.level, node.floor, stratum.deepenCount, Math.random) * GOLDEN_SP_MULT); // 批5 金色回响
     // event / echo 的收益由效果本身发放
     // 批3：贪婪词缀（击败多掉 50% SP）+ 登塔者罗盘（节点 SP 收益+）
     const affixes = node.type === 'boss' ? shadow?.affixes : node.mob?.affixes;
@@ -4077,7 +4085,7 @@ ${activityLines || '（本期暂无记录）'}
     if (!cur) return;
     const rng = Math.random;
     const nodes = stratum.nodes.map(n => {
-      if (!cur.edges.includes(n.id) || n.cleared || n.type === 'boss' || n.type === 'elite') return n;
+      if (!cur.edges.includes(n.id) || n.cleared || n.type === 'boss' || n.type === 'elite' || n.type === 'golden') return n;
       const roll = rng();
       const type: StratumNode['type'] = roll < 0.45 ? 'mob' : roll < 0.7 ? 'event' : roll < 0.85 ? 'echo' : 'chest';
       const next: StratumNode = { ...n, type, mob: undefined, eventPoolId: undefined, lootSp: undefined };
@@ -4108,6 +4116,7 @@ ${activityLines || '（本期暂无记录）'}
   deepenStratumIfNewWeek: async () => {
     const { stratum, shadow } = get();
     if (!stratum || stratum.status !== 'climbing') return false;
+    if (stratum.abyssRing) return false; // 批5：深渊环无月相加深（每环短命，压力走词缀递增）
     const wk = weekKeyOf(new Date());
     if (wk === stratum.createdWeekKey || stratum.lastDeepenWeekKey === wk) return false;
     if (shadow) {
@@ -4220,6 +4229,27 @@ ${activityLines || '（本期暂无记录）'}
     const cur = get().battleState;
     if (!cur) return;
     await get().saveBattleState({ ...cur, pendingCatLetter: { text, dateKey: todayKey } });
+  },
+
+  enterAbyss: async () => {
+    const { stratum, shadow, settings } = get();
+    const ring = (stratum?.abyssRing ?? 0) + 1;
+    const baseFloor = stratum ? stratum.baseFloor + stratum.floors : 0;
+    const { stratum: ringStratum, guard } = buildAbyssRing({
+      ring,
+      stratumId: uuidv4(),
+      guardId: uuidv4(),
+      baseFloor,
+      now: new Date(),
+      eventPoolIds: TOWER_EVENT_IDS,
+      chestSp: (floor) => nodeSpReward(5, floor, 0, Math.random) + 5,
+      lastWeakAttribute: shadow?.weakAttribute,
+      attrNames: settings.attributeNames as Record<AttributeId, string>,
+    });
+    await get().saveShadow(guard);
+    await get().saveStratum(ringStratum);
+    const bs = get().battleState;
+    if (bs) await get().saveBattleState({ ...bs, shadowId: guard.id, status: 'idle' });
   },
 
   removeRandomShadowAffix: async () => {

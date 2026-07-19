@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from 'motion/react';
 import { createPortal } from 'react-dom';
 import { CelebrationCutIn } from '@/components/CelebrationCutIn';
+import { useBoldness } from '@/utils/boldness';
 import { MusicalNotes } from '@/components/MusicalNotes';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { triggerSuccessFeedback } from '@/utils/feedback';
@@ -50,6 +51,17 @@ interface BandCutInP3Props extends TodoCompleteModalProps {
   ghost: string;
 }
 
+/** 勾落地瞬间的迸溅碎片（B1）：位移/旋转/尺寸/色各异的小三角，从勾中心飞散 */
+const CHECK_BURST = [
+  { dx: -44, dy: -34, rot: -40, s: 10, c: '#35d1e8', d: 0 },
+  { dx: 52, dy: -26, rot: 60, s: 8, c: '#1b57ff', d: 0.03 },
+  { dx: -30, dy: 40, rot: -80, s: 7, c: '#8fe4f2', d: 0.05 },
+  { dx: 58, dy: 30, rot: 45, s: 9, c: '#f0417f', d: 0.02 },
+  { dx: 6, dy: -52, rot: 20, s: 7, c: '#5fd9ec', d: 0.06 },
+  { dx: -56, dy: 4, rot: -25, s: 8, c: '#1b57ff', d: 0.04 },
+  { dx: 30, dy: 52, rot: 70, s: 6, c: '#35d1e8', d: 0.07 },
+];
+
 /**
  * P3R 横贯斜带 cut-in（p3-modal-06 稿）——今日完成 / 记录成功 共用。
  * 白色大斜带从右滑入 + 一道蓝青高光从左向右划过 + 巨大青色碎裂勾 + 幽灵词 + 音符雨。
@@ -59,6 +71,7 @@ export const BandCutInP3 = ({ isOpen, onClose, title, totalPoints, unlockHint, e
   useBackHandler(isOpen, onClose);
   useAutoClose(isOpen, 3000, onClose);
   useFeedbackOnce(isOpen, triggerSuccessFeedback);
+  const anim = useBoldness();
 
   return createPortal(
     <AnimatePresence>
@@ -100,10 +113,17 @@ export const BandCutInP3 = ({ isOpen, onClose, title, totalPoints, unlockHint, e
                     transition={{ duration: 1.15, delay: 0.15 + k * 0.26, ease: 'easeOut', repeat: Infinity, repeatDelay: 0.35 }}
                   />
                 ))}
-                {/* 幽灵词（带内右下） */}
-                <div aria-hidden className="pointer-events-none absolute -right-3 bottom-0 select-none font-black italic leading-none" style={{ fontFamily: 'Arial, sans-serif', fontSize: '5.2rem', color: 'rgba(53,209,232,0.22)' }}>
+                {/* 幽灵词（带内右下）：错帧从右滑入（B1） */}
+                <motion.div
+                  aria-hidden
+                  className="pointer-events-none absolute -right-3 bottom-0 select-none font-black italic leading-none"
+                  style={{ fontFamily: 'Arial, sans-serif', fontSize: '5.2rem', color: 'rgba(53,209,232,0.22)' }}
+                  initial={anim ? { x: 46, opacity: 0 } : false}
+                  animate={{ x: 0, opacity: 1 }}
+                  transition={{ duration: 0.35, delay: 0.26, ease: [0.2, 0.8, 0.3, 1] }}
+                >
                   {ghost}
-                </div>
+                </motion.div>
                 <div className="relative flex items-center gap-3">
                   <div className="min-w-0 flex-1">
                     {/* 主标题 + 洋红双片 */}
@@ -121,22 +141,40 @@ export const BandCutInP3 = ({ isOpen, onClose, title, totalPoints, unlockHint, e
                         TODAY{(totalPoints ?? 0) > 0 ? ` / +${totalPoints}` : ''}
                       </span>
                     </div>
-                    {/* 蓝斜块任务名 */}
-                    <div className="mt-3 inline-block max-w-full px-5 py-2.5" style={{ background: '#1b57ff', clipPath: 'polygon(12px 0, 100% 0, calc(100% - 12px) 100%, 0 100%)', boxShadow: '0 10px 26px rgba(27,87,255,0.35)' }}>
-                      <span className="block truncate text-[19px] font-black text-white">{title}</span>
-                    </div>
+                    {/* 蓝斜块任务名：从左裁切揭示（B1；外层揭示 clip、内层保平行四边形） */}
+                    <motion.div
+                      className="mt-3 inline-block max-w-full align-top"
+                      initial={anim ? { clipPath: 'inset(-6% 102% -6% -3%)' } : false}
+                      animate={{ clipPath: 'inset(-6% -3% -6% -3%)' }}
+                      transition={{ duration: 0.38, delay: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
+                    >
+                      <div className="inline-block max-w-full px-5 py-2.5" style={{ background: '#1b57ff', clipPath: 'polygon(12px 0, 100% 0, calc(100% - 12px) 100%, 0 100%)', boxShadow: '0 10px 26px rgba(27,87,255,0.35)' }}>
+                        <span className="block truncate text-[19px] font-black text-white">{title}</span>
+                      </div>
+                    </motion.div>
                     {unlockHint && (unlockHint.achievements > 0 || unlockHint.skills > 0) && (
                       <div className="mt-2.5 text-[13px] font-black" style={{ color: '#f0417f' }}>✦ 您解锁了新成就 / 新技能！</div>
                     )}
                   </div>
-                  {/* 巨大青色碎裂勾 */}
+                  {/* 巨大青色碎裂勾 + 落地迸溅碎片（B1） */}
                   <motion.div
                     initial={{ scale: 0, rotate: -18 }}
                     animate={{ scale: 1, rotate: 0 }}
                     transition={{ type: 'spring', damping: 14, stiffness: 220, delay: 0.12 }}
-                    className="shrink-0"
+                    className="relative shrink-0"
                   >
                     <ShatterCheck />
+                    {anim && CHECK_BURST.map((b, i) => (
+                      <motion.span
+                        key={i}
+                        aria-hidden
+                        className="pointer-events-none absolute left-1/2 top-1/2"
+                        style={{ width: b.s, height: b.s, background: b.c, clipPath: 'polygon(50% 0, 100% 100%, 0 100%)' }}
+                        initial={{ x: 0, y: 0, scale: 0, opacity: 0, rotate: 0 }}
+                        animate={{ x: b.dx, y: b.dy, scale: 1, opacity: [0, 1, 0], rotate: b.rot }}
+                        transition={{ duration: 0.55, delay: 0.34 + b.d, ease: 'easeOut' }}
+                      />
+                    ))}
                   </motion.div>
                 </div>
               </div>

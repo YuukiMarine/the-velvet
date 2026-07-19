@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from 'motion/react';
 import { createPortal } from 'react-dom';
 import { CelebrationCutIn } from '@/components/CelebrationCutIn';
+import { useBoldness } from '@/utils/boldness';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { triggerLevelFeedback } from '@/utils/feedback';
 import { useAutoClose } from '@/utils/useAutoClose';
@@ -39,6 +40,7 @@ const AchievementUnlockP3 = ({ isOpen, onClose, achievementTitle }: AchievementU
   useBackHandler(isOpen, onClose);
   useAutoClose(isOpen, 4500, onClose);
   useFeedbackOnce(isOpen, triggerLevelFeedback);
+  const anim = useBoldness();
 
   return createPortal(
     <AnimatePresence>
@@ -96,11 +98,33 @@ const AchievementUnlockP3 = ({ isOpen, onClose, achievementTitle }: AchievementU
                 <CyanCrest />
               </motion.div>
 
-              {/* 成就解锁！—— 蓝斜带锚定在标题行内（跟内容走，不再按面板百分比漂移压字），白描边保证跨带可读 */}
+              {/* 成就解锁！—— 蓝斜带锚定在标题行内（跟内容走，不再按面板百分比漂移压字），白描边保证跨带可读
+                  B3：斜带从左拉出（scaleX）→ 标题逐字弹入 → 洋红角戳入后低频眨动 */}
               <div className="relative mt-1 w-full">
-                <span aria-hidden className="absolute left-[-15%] right-[-15%] top-1/2 h-[62px]" style={{ background: '#1b57ff', transform: 'translateY(-50%) rotate(-7deg)' }} />
-                <span aria-hidden className="absolute right-[3%] top-[-16px] h-[16px] w-[26px]" style={{ background: '#f0417f', clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
+                <motion.span
+                  aria-hidden
+                  className="absolute left-[-15%] right-[-15%] top-1/2 h-[62px]"
+                  style={{ background: '#1b57ff', y: '-50%', rotate: -7, originX: 0 }}
+                  initial={anim ? { scaleX: 0, opacity: 0 } : false}
+                  animate={{ scaleX: 1, opacity: 1 }}
+                  transition={{ duration: 0.4, delay: 0.24, ease: [0.16, 1, 0.3, 1] }}
+                />
+                <motion.span
+                  aria-hidden
+                  className="absolute right-[3%] top-[-16px] h-[16px] w-[26px]"
+                  initial={anim ? { scale: 0 } : false}
+                  animate={{ scale: 1 }}
+                  transition={{ type: 'spring', stiffness: 500, damping: 20, delay: 0.52 }}
+                >
+                  <motion.span
+                    className="absolute inset-0"
+                    style={{ background: '#f0417f', clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }}
+                    animate={anim ? { opacity: [1, 1, 0.3, 1] } : undefined}
+                    transition={{ duration: 4.4, times: [0, 0.88, 0.93, 1], repeat: Infinity, ease: 'linear', delay: 1.5 }}
+                  />
+                </motion.span>
                 <div
+                  aria-hidden
                   className="relative text-center text-[44px] font-black italic leading-none"
                   style={{
                     color: '#0a3bd6',
@@ -109,12 +133,27 @@ const AchievementUnlockP3 = ({ isOpen, onClose, achievementTitle }: AchievementU
                     paintOrder: 'stroke fill',
                   }}
                 >
-                  成就解锁！
+                  {'成就解锁！'.split('').map((ch, i) => (
+                    <motion.span
+                      key={i}
+                      className="inline-block"
+                      initial={anim ? { y: 22, opacity: 0, scale: 0.5 } : false}
+                      animate={{ y: 0, opacity: 1, scale: 1 }}
+                      transition={{ type: 'spring', stiffness: 480, damping: 24, delay: 0.3 + i * 0.055 }}
+                    >
+                      {ch}
+                    </motion.span>
+                  ))}
                 </div>
               </div>
 
-              {/* 成就名 + 青双斜杠 */}
-              <div className="mt-7 flex items-center justify-center gap-3">
+              {/* 成就名 + 青双斜杠（整行自下浮入，B3） */}
+              <motion.div
+                className="mt-7 flex items-center justify-center gap-3"
+                initial={anim ? { y: 16, opacity: 0 } : false}
+                animate={{ y: 0, opacity: 1 }}
+                transition={{ type: 'spring', stiffness: 340, damping: 26, delay: 0.6 }}
+              >
                 <span aria-hidden className="flex gap-1">
                   <span className="h-[12px] w-[10px]" style={{ background: 'rgba(53,209,232,0.8)', clipPath: 'polygon(38% 0, 100% 0, 62% 100%, 0 100%)' }} />
                   <span className="h-[12px] w-[10px]" style={{ background: 'rgba(53,209,232,0.45)', clipPath: 'polygon(38% 0, 100% 0, 62% 100%, 0 100%)' }} />
@@ -124,7 +163,7 @@ const AchievementUnlockP3 = ({ isOpen, onClose, achievementTitle }: AchievementU
                   <span className="h-[12px] w-[10px]" style={{ background: 'rgba(53,209,232,0.45)', clipPath: 'polygon(38% 0, 100% 0, 62% 100%, 0 100%)' }} />
                   <span className="h-[12px] w-[10px]" style={{ background: 'rgba(53,209,232,0.8)', clipPath: 'polygon(38% 0, 100% 0, 62% 100%, 0 100%)' }} />
                 </span>
-              </div>
+              </motion.div>
 
               <p className="mt-3 text-[14px] font-black" style={{ color: '#0a1230' }}>恭喜你达成新成就！继续努力解锁更多内容</p>
             </div>

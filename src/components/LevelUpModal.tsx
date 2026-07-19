@@ -2,6 +2,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { createPortal } from 'react-dom';
 import { CelebrationCutIn } from '@/components/CelebrationCutIn';
 import { ShatteredStar } from '@/components/p3r/kit';
+import { useBoldness } from '@/utils/boldness';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { triggerLevelFeedback } from '@/utils/feedback';
 import { useAutoClose } from '@/utils/useAutoClose';
@@ -31,6 +32,7 @@ const LevelUpP3 = ({ attributeName, newLevel, isOpen, onClose }: LevelUpModalPro
   useBackHandler(isOpen, onClose);
   useAutoClose(isOpen, 3600, onClose);
   useFeedbackOnce(isOpen, triggerLevelFeedback);
+  const anim = useBoldness();
 
   return createPortal(
     <AnimatePresence>
@@ -59,13 +61,27 @@ const LevelUpP3 = ({ attributeName, newLevel, isOpen, onClose }: LevelUpModalPro
               clipPath: 'polygon(18px 0, 100% 0, calc(100% - 18px) 100%, 0 100%)',
             }}
           >
-            {/* 背景：LEVEL 幽灵字 + 巨大新等级数字（超淡，压在星徽后） */}
-            <div aria-hidden className="pointer-events-none absolute left-[-8px] top-[2%] select-none font-black italic leading-none" style={{ fontFamily: 'Arial, sans-serif', fontSize: '4rem', color: 'rgba(147,190,222,0.34)', transform: 'rotate(-8deg)' }}>
+            {/* 背景：LEVEL 幽灵字（错帧滑入）+ 巨大新等级数字（从深处 zoom 就位）（B2） */}
+            <motion.div
+              aria-hidden
+              className="pointer-events-none absolute left-[-8px] top-[2%] select-none font-black italic leading-none"
+              style={{ fontFamily: 'Arial, sans-serif', fontSize: '4rem', color: 'rgba(147,190,222,0.34)', rotate: -8 }}
+              initial={anim ? { x: -36, opacity: 0 } : false}
+              animate={{ x: 0, opacity: 1 }}
+              transition={{ duration: 0.4, delay: 0.14, ease: [0.2, 0.8, 0.3, 1] }}
+            >
               LEVEL
-            </div>
-            <div aria-hidden className="pointer-events-none absolute left-1/2 top-[1%] -translate-x-1/2 select-none font-black italic leading-none tabular-nums" style={{ fontFamily: 'Arial, sans-serif', fontSize: '10rem', color: 'rgba(147,190,222,0.26)' }}>
+            </motion.div>
+            <motion.div
+              aria-hidden
+              className="pointer-events-none absolute left-1/2 top-[1%] select-none font-black italic leading-none tabular-nums"
+              style={{ fontFamily: 'Arial, sans-serif', fontSize: '10rem', color: 'rgba(147,190,222,0.26)', x: '-50%' }}
+              initial={anim ? { scale: 1.8, opacity: 0 } : false}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ type: 'spring', stiffness: 260, damping: 22, delay: 0.1 }}
+            >
               {String(newLevel).padStart(2, '0')}
-            </div>
+            </motion.div>
             {/* 右上蓝角 + 关闭 */}
             <span aria-hidden className="absolute right-0 top-0 h-[84px] w-[96px]" style={{ background: '#1b57ff', clipPath: 'polygon(100% 0, 0 0, 100% 100%)' }} />
             <motion.button
@@ -76,9 +92,23 @@ const LevelUpP3 = ({ attributeName, newLevel, isOpen, onClose }: LevelUpModalPro
             >
               ×
             </motion.button>
-            {/* 底部蓝三角群装饰 */}
-            <span aria-hidden className="absolute bottom-0 left-0 h-[72px] w-[42%]" style={{ background: 'rgba(53,209,232,0.75)', clipPath: 'polygon(0 100%, 0 20%, 100% 100%)' }} />
-            <span aria-hidden className="absolute bottom-0 right-0 h-[96px] w-[54%]" style={{ background: '#1b57ff', clipPath: 'polygon(100% 100%, 100% 0, 0 100%)' }} />
+            {/* 底部蓝三角群装饰：自下错帧戳入（B2） */}
+            <motion.span
+              aria-hidden
+              className="absolute bottom-0 left-0 h-[72px] w-[42%]"
+              style={{ background: 'rgba(53,209,232,0.75)', clipPath: 'polygon(0 100%, 0 20%, 100% 100%)' }}
+              initial={anim ? { y: 44, opacity: 0 } : false}
+              animate={{ y: 0, opacity: 1 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 24, delay: 0.16 }}
+            />
+            <motion.span
+              aria-hidden
+              className="absolute bottom-0 right-0 h-[96px] w-[54%]"
+              style={{ background: '#1b57ff', clipPath: 'polygon(100% 100%, 100% 0, 0 100%)' }}
+              initial={anim ? { y: 56, opacity: 0 } : false}
+              animate={{ y: 0, opacity: 1 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 24, delay: 0.24 }}
+            />
 
             {/* 主体（文字层只 translate/scale，倾斜全在装饰带上） */}
             <div className="relative z-10 flex w-full flex-col items-center">
@@ -89,15 +119,37 @@ const LevelUpP3 = ({ attributeName, newLevel, isOpen, onClose }: LevelUpModalPro
                 <ShatteredStar magenta className="w-[136px]" />
               </motion.div>
 
-              {/* 白斜面板：恭喜升级！ */}
+              {/* 白斜面板：恭喜升级！（自上砸入，B2） */}
               <div className="relative mt-1 w-[84%]">
-                <div className="px-5 pb-2.5 pt-3 text-center" style={{ background: 'rgba(255,255,255,0.94)', clipPath: 'polygon(3% 14%, 100% 0, 97% 100%, 0 92%)', boxShadow: '0 12px 30px rgba(38,96,140,0.18)' }}>
+                <motion.div
+                  className="px-5 pb-2.5 pt-3 text-center"
+                  style={{ background: 'rgba(255,255,255,0.94)', clipPath: 'polygon(3% 14%, 100% 0, 97% 100%, 0 92%)', boxShadow: '0 12px 30px rgba(38,96,140,0.18)' }}
+                  initial={anim ? { y: -18, opacity: 0 } : false}
+                  animate={{ y: 0, opacity: 1 }}
+                  transition={{ type: 'spring', stiffness: 420, damping: 26, delay: 0.2 }}
+                >
                   <div className="text-[22px] font-black italic leading-none" style={{ color: '#1b57ff' }}>恭喜升级！</div>
-                </div>
-                {/* 蓝斜带：超大白字属性名 */}
-                <div className="-mt-1 px-5 py-3 text-center" style={{ background: '#1b57ff', clipPath: 'polygon(0 10%, 100% 0, 100% 90%, 3% 100%)', boxShadow: '0 14px 34px rgba(27,87,255,0.35)' }}>
+                </motion.div>
+                {/* 蓝斜带：超大白字属性名 slam 就位 + 白闪一帧（格斗 hit-flash，B2） */}
+                <motion.div
+                  className="relative -mt-1 px-5 py-3 text-center"
+                  style={{ background: '#1b57ff', clipPath: 'polygon(0 10%, 100% 0, 100% 90%, 3% 100%)', boxShadow: '0 14px 34px rgba(27,87,255,0.35)' }}
+                  initial={anim ? { scale: 1.18, opacity: 0 } : false}
+                  animate={{ scale: 1, opacity: 1 }}
+                  transition={{ type: 'spring', stiffness: 420, damping: 24, delay: 0.32 }}
+                >
                   <div className="truncate text-[38px] font-black italic leading-none text-white">{attributeName}</div>
-                </div>
+                  {anim && (
+                    <motion.span
+                      aria-hidden
+                      className="pointer-events-none absolute inset-0"
+                      style={{ background: '#fff' }}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: [0, 0.85, 0] }}
+                      transition={{ duration: 0.3, delay: 0.46, times: [0, 0.35, 1] }}
+                    />
+                  )}
+                </motion.div>
               </div>
 
               {/* Lv.N-1 → Lv.N */}
