@@ -961,6 +961,8 @@ export interface BattleState {
   diligenceLastGrantKey?: string;
   /** （批4）战场成就事实：已达成的战斗壮举 id 列表 */
   battleFeats?: string[];
+  /** （批5）深渊回廊：历史最深环数（本地纪录，验收"层数纪录持久"） */
+  abyssHighestRing?: number;
   /** （批4）黑猫败因信：待投递（下次打开黑猫时推送并清除） */
   pendingCatLetter?: { text: string; dateKey: string };
 }
@@ -990,7 +992,7 @@ export interface BattleAction {
 // 塔是唯一的、常在的；可解锁单位是"区层"（Lv1-5，层号全塔累计）。
 // 单只 shadows 表记录 = 当前区层主影（沿用既有单例约定，避免大迁移）。
 
-export type StratumNodeType = 'mob' | 'elite' | 'event' | 'echo' | 'chest' | 'boss';
+export type StratumNodeType = 'mob' | 'elite' | 'event' | 'echo' | 'chest' | 'boss' | 'golden';
 export type StratumStatus = 'climbing' | 'cleared';
 
 export interface MobSpec {
@@ -1001,6 +1003,8 @@ export interface MobSpec {
   maxHp: number;
   /** （批3）词缀：强敌必带 1 条，Shadow 无 */
   affixes?: AffixKind[];
+  /** （批5 §5.5）金色回响稀有影：必掉满月品质战利品 */
+  golden?: boolean;
 }
 
 export interface StratumNode {
@@ -1029,6 +1033,8 @@ export interface TowerStratum {
   currentNodeId: string | null; // null = 区层入口（尚未踏入第 1 层）
   deepenCount: number;
   status: StratumStatus;
+  /** （批5）深渊回廊环数（1 起；undefined = 主塔区层）。深渊环零 AI 即时生成、无月相加深、通关不锁日 */
+  abyssRing?: number;
   createdAt: Date;
 }
 

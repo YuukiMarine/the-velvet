@@ -23,6 +23,8 @@ export const STRATUM_PALETTE: Record<number, { accent: string; accentRgb: string
   5: { accent: '#ff5c7a', accentRgb: '255,92,122', deep: '#1c0716', mist: 'rgba(255,92,122,0.08)' },
 };
 export const paletteFor = (level: number) => STRATUM_PALETTE[Math.min(5, Math.max(1, level))];
+/** 批5 深渊回廊专属色温：暗金——月光在这里是往上坠的 */
+export const ABYSS_PALETTE = { accent: '#e8b64c', accentRgb: '232,182,76', deep: '#171003', mist: 'rgba(232,182,76,0.08)' };
 
 // ── 噪点/半调纹理层（⑪）：去"数码平涂"味 ────────────────────
 export function NoiseLayer({ opacity = 0.05 }: { opacity?: number }) {
@@ -253,7 +255,7 @@ export function IconTower({ size = 15, className }: IconProps) {
 }
 
 /** 节点类型 → 几何图标 */
-export function NodeGlyph({ type, size = 15, className }: { type: 'mob' | 'elite' | 'event' | 'echo' | 'chest' | 'boss'; size?: number; className?: string }) {
+export function NodeGlyph({ type, size = 15, className }: { type: 'mob' | 'elite' | 'event' | 'echo' | 'chest' | 'boss' | 'golden'; size?: number; className?: string }) {
   switch (type) {
     case 'mob': return <IconSword size={size} className={className} />;
     case 'elite': return <IconElite size={size} className={className} />;
@@ -261,7 +263,17 @@ export function NodeGlyph({ type, size = 15, className }: { type: 'mob' | 'elite
     case 'echo': return <IconCrescent size={size} className={className} />;
     case 'chest': return <IconCase size={size} className={className} />;
     case 'boss': return <IconEvilEye size={size} className={className} />;
+    case 'golden': return <IconSpark size={size} className={className} />;
   }
+}
+
+/** 金色回响：四芒星（批5 §5.5） */
+export function IconSpark({ size = 15, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" className={className} aria-hidden fill="currentColor" stroke="none">
+      <path d="M12 2 L14.2 9.8 L22 12 L14.2 14.2 L12 22 L9.8 14.2 L2 12 L9.8 9.8 Z" />
+    </svg>
+  );
 }
 
 /** 暴击/1More：闪电 */
