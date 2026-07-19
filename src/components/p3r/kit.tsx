@@ -12,9 +12,9 @@
  * 仅在 channel==='p3'（蓝主题）挂载的页面变体中使用；铁律照旧：
  * 装饰 aria-hidden、命中区完整矩形、正文恒水平（斜的只有容器与装饰）。
  */
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
-import { motion, useScroll, useTransform } from 'motion/react';
+import { motion, useMotionValue } from 'motion/react';
 import { useBoldness } from '@/utils/boldness';
 
 export const P3R = {
@@ -74,10 +74,27 @@ export const P3RPage = ({ children, className, active = true }: { children: Reac
  *  （调用方经 className/style 传入的定位与 rotate 覆盖全部保留），D0 静止。 */
 export const GhostWords = ({ words, className, style }: { words: string[]; className?: string; style?: CSSProperties }) => {
   const anim = useBoldness();
-  const { scrollY } = useScroll();
-  const y = useTransform(scrollY, (v) => v * -0.07);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const y = useMotionValue(0);
+  // 本应用不滚 window（body overflow hidden，内容在内部容器滚动）：
+  // 挂载时向上找最近的可滚祖先并监听它，找不到才退回 window
+  useEffect(() => {
+    if (!anim) return;
+    let el: HTMLElement | null = rootRef.current?.parentElement ?? null;
+    while (el && el !== document.body) {
+      if (/(auto|scroll|overlay)/.test(getComputedStyle(el).overflowY)) break;
+      el = el.parentElement;
+    }
+    const scroller: HTMLElement | Window = el && el !== document.body ? el : window;
+    const read = () => (scroller instanceof Window ? window.scrollY : scroller.scrollTop);
+    const onScroll = () => y.set(read() * -0.07);
+    onScroll();
+    scroller.addEventListener('scroll', onScroll, { passive: true });
+    return () => scroller.removeEventListener('scroll', onScroll);
+  }, [anim, y]);
   return (
     <div
+      ref={rootRef}
       aria-hidden
       className={`pointer-events-none absolute select-none font-black italic leading-[0.86] tracking-tight ${className ?? ''}`}
       style={{ fontFamily: 'Arial, "Noto Sans SC", sans-serif', color: 'rgba(147,190,222,0.30)', transform: 'rotate(-12deg)', ...style }}
