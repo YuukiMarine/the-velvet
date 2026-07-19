@@ -319,9 +319,10 @@ export function ConfidantCreateModal({ isOpen, onClose, onCreated, onPickOnline 
                     <button
                       type="button"
                       onClick={() => { /* noop: 离线就是本流程，已在这一页 */ }}
-                      className={p3 ? 'relative px-3 py-3.5 text-left cursor-default transition-all' : 'relative rounded-2xl px-3 py-3 text-left border-2 cursor-default transition-all'}
+                      className={p3 ? 'relative px-4 py-3.5 text-left cursor-default transition-all' : 'relative rounded-2xl px-3 py-3 text-left border-2 cursor-default transition-all'}
                       style={p3 ? {
-                        clipPath: 'polygon(16px 0, 100% 0, calc(100% - 16px) 100%, 0 100%)',
+                        // 斜切收小(16→10px)+加宽内边距:斜边不再吃进文字与角饰(用户反馈截断难看)
+                        clipPath: 'polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%)',
                         background: '#1b57ff',
                         boxShadow: '0 10px 26px rgba(27,87,255,0.3)',
                       } : {
@@ -349,7 +350,7 @@ export function ConfidantCreateModal({ isOpen, onClose, onCreated, onPickOnline 
                       <div className={p3 ? 'mt-1.5 text-[10px] font-semibold leading-snug text-white/85' : 'text-[10px] text-gray-500 dark:text-gray-400 mt-0.5 leading-snug'}>
                         本地塔罗匹配<br />身边的人 / 自己的关系
                       </div>
-                      {p3 && <span aria-hidden className="absolute bottom-0 right-2 h-[9px] w-[20px]" style={{ background: '#f0417f', clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />}
+                      {p3 && <span aria-hidden className="absolute bottom-0 right-3.5 h-[9px] w-[20px]" style={{ background: '#f0417f', clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />}
                     </button>
 
                     {/* 在线（强调卡片，点击后切到 AddOnlineConfidantModal） */}
@@ -361,10 +362,10 @@ export function ConfidantCreateModal({ isOpen, onClose, onCreated, onPickOnline 
                       }}
                       disabled={!onPickOnline}
                       className={p3
-                        ? 'relative px-3 py-3.5 text-left transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed'
+                        ? 'relative px-4 py-3.5 text-left transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed'
                         : 'relative rounded-2xl px-3 py-3 text-left border-2 transition-all active:scale-95 hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed'}
                       style={p3 ? {
-                        clipPath: 'polygon(16px 0, 100% 0, calc(100% - 16px) 100%, 0 100%)',
+                        clipPath: 'polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%)',
                         background: '#ddf1f9',
                       } : {
                         background: 'linear-gradient(135deg, rgba(16,185,129,0.10), rgba(20,184,166,0.05))',
@@ -389,7 +390,7 @@ export function ConfidantCreateModal({ isOpen, onClose, onCreated, onPickOnline 
                       <div className={p3 ? 'mt-1.5 text-[10px] font-semibold leading-snug text-[#3d4a66]' : 'text-[10px] text-gray-500 dark:text-gray-400 mt-0.5 leading-snug'}>
                         按 UserID 邀请<br />缔结双向羁绊
                       </div>
-                      {p3 && <span aria-hidden className="absolute bottom-1 right-2 h-0 w-0 border-b-[10px] border-l-[14px] border-l-transparent" style={{ borderBottomColor: 'rgba(53,209,232,0.9)' }} />}
+                      {p3 && <span aria-hidden className="absolute bottom-1 right-3.5 h-0 w-0 border-b-[10px] border-l-[14px] border-l-transparent" style={{ borderBottomColor: 'rgba(53,209,232,0.9)' }} />}
                     </button>
                   </div>
 

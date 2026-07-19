@@ -133,8 +133,8 @@ export const SectionMark = ({ title, meta, variant = 'ink', marker = 'slab', cla
         <motion.h3
           className={`text-[19px] font-black leading-none ${variant === 'blue' || marker === 'tri' ? 'italic tracking-wide' : ''}`}
           style={{ color: variant === 'blue' ? P3R.blue : P3R.ink }}
-          initial={anim ? { clipPath: 'inset(0% 100% 0% 0%)', x: -6 } : false}
-          animate={{ clipPath: 'inset(0% 0% 0% 0%)', x: 0 }}
+          initial={anim ? { clipPath: 'inset(-10% 102% -10% -3%)', x: -6 } : false}
+          animate={{ clipPath: 'inset(-10% -8% -10% -3%)', x: 0 }}
           transition={{ duration: 0.38, ease: [0.25, 0.1, 0.25, 1], delay: 0.06 }}
         >{title}</motion.h3>
       </div>
@@ -264,8 +264,9 @@ export const P3PageHeader = ({
         <motion.h1
           className="text-[46px] font-black italic leading-[0.95] tracking-tight"
           style={{ color: P3R.ink, fontFamily: '"Arial Black", "Noto Sans SC", sans-serif' }}
-          initial={anim ? { clipPath: 'inset(0% 100% 0% 0%)', x: -10 } : false}
-          animate={{ clipPath: 'inset(0% 0% 0% 0%)', x: 0 }}
+          // 终态用负 inset 外扩:inset(0%) 会贴盒裁掉 Arial Black 斜体的右侧突出部(统计页标题截断根因)
+          initial={anim ? { clipPath: 'inset(-8% 102% -8% -3%)', x: -10 } : false}
+          animate={{ clipPath: 'inset(-8% -8% -8% -3%)', x: 0 }}
           transition={{ duration: 0.42, ease: [0.22, 0.9, 0.3, 1], delay: 0.08 }}
         >
           {title}

@@ -608,6 +608,8 @@ export const DashboardP3 = () => {
 
         {/* 幽灵字（右上，随页滚动） */}
         <GhostWords words={['THE', 'VELVET']} className="right-[10px] top-[10px] text-right text-[58px]" />
+        {/* 幽灵字（左下，横向大单词——与 AI 助手页同款制式） */}
+        <GhostWords words={['WILD HEART']} className="bottom-[14px] left-[-6px] text-[52px] whitespace-nowrap" style={{ transform: 'rotate(0deg)' }} />
 
         {/* ── 页头 ── */}
         <header className="relative pt-4">
