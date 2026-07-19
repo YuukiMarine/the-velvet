@@ -12,7 +12,8 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { MouseEvent as ReactMouseEvent, ReactNode } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence, useMotionValue, useTransform, animate as animateValue } from 'motion/react';
+import { useBoldness } from '@/utils/boldness';
 import { useAppStore, toLocalDateKey } from '@/store';
 import type { AttributeId, CallingCard } from '@/types';
 import { P3R, P3RPage, GhostWords, SectionMark, SlantButton, TitlePeriod, slantClip } from '@/components/p3r/kit';
@@ -69,19 +70,42 @@ const moonLitPath = (phase: number, r: number, c: number) => {
 
 const MoonPhase = ({ date }: { date: Date }) => {
   const { phase, name, illum } = moonPhaseOf(date);
+  const anim = useBoldness();
+  const illumPct = Math.round(illum * 100);
+  // 动效（A7）：LUNAR % 数字从 0 滚动到当前亮面比；D0 直接显示终值
+  const pct = useMotionValue(anim ? 0 : illumPct);
+  const pctText = useTransform(pct, (v) => `${Math.round(v)}`);
+  useEffect(() => {
+    if (!anim) {
+      pct.set(illumPct);
+      return;
+    }
+    const ctrl = animateValue(pct, illumPct, { duration: 0.9, ease: 'easeOut', delay: 0.25 });
+    return () => ctrl.stop();
+  }, [anim, illumPct, pct]);
+  // 亮面生长方向沿盈亏：盈月亮面在右缘（从右往左长出），亏月反之
+  const waxing = phase < 0.5;
   return (
-    <span className="ml-0.5 flex items-center gap-2" role="img" aria-label={`月相 ${name}，亮面 ${Math.round(illum * 100)}%`}>
+    <span className="ml-0.5 flex items-center gap-2" role="img" aria-label={`月相 ${name}，亮面 ${illumPct}%`}>
       <span className="relative flex h-11 w-12 shrink-0 items-center justify-center" style={{ background: P3R.cyanFaint, clipPath: slantClip(8) }}>
         <svg viewBox="0 0 36 36" className="h-8 w-8" aria-hidden>
           <circle cx="18" cy="18" r="15" fill={P3R.ink} />
-          <path d={moonLitPath(phase, 15, 18)} fill={P3R.cyan} />
+          <motion.path
+            d={moonLitPath(phase, 15, 18)}
+            fill={P3R.cyan}
+            initial={anim ? { clipPath: waxing ? 'inset(0% 0% 0% 100%)' : 'inset(0% 100% 0% 0%)', opacity: 0.4 } : false}
+            animate={{ clipPath: 'inset(0% 0% 0% 0%)', opacity: 1 }}
+            transition={{ duration: 0.8, ease: [0.3, 0, 0.2, 1], delay: 0.2 }}
+          />
           <circle cx="18" cy="18" r="15" fill="none" stroke="rgba(27,87,255,0.35)" strokeWidth="1.5" />
         </svg>
         <span aria-hidden className="absolute right-[3px] top-[3px] h-[7px] w-[9px]" style={{ background: P3R.magenta, clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
       </span>
       <span className="flex flex-col gap-1 leading-none">
         <span className="text-[13px] font-black" style={{ color: P3R.ink }}>{name}</span>
-        <span className="text-[9px] font-black tracking-[0.16em]" style={{ color: P3R.blue }}>LUNAR {Math.round(illum * 100)}%</span>
+        <span className="text-[9px] font-black tracking-[0.16em]" style={{ color: P3R.blue }}>
+          LUNAR <motion.span>{pctText}</motion.span>%
+        </span>
       </span>
     </span>
   );
