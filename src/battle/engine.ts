@@ -40,6 +40,7 @@ import {
   AFFIX_CRIT_ADD, AFFIX_VENGEFUL_ATK, AFFIX_THORNS_PCT, AFFIX_SLIPPERY_FACTOR,
   OATH_HEAL_PCT, OATH_CHARGE_MULT, OATH_SELF_HP_COST_PCT, OATH_POISON_STACKS,
   OATH_POISON_DOT, OATH_SHIELD_PCT, OATH_SP_GAIN,
+  LEDGER_WARD_ABSORB, SPEND_CURSE_MULT, SPEND_CURSE_TURNS, COMPANION_GUARD_CHANCE,
 } from './numbers';
 import {
   Intent, IntentKind, decideIntent, makeIntent, intentDetail, pickIntentLine,
@@ -112,6 +113,14 @@ export interface EngineSetup {
   chain?: ChainKey | null;
   /** （批3）「记仇」词缀判定：玩家曾下塔撤离/败退 */
   playerEverRetreated?: boolean;
+  /** （批4 弹药）今日记录 → 该属性伤害加算（+4%/条，封顶12%） */
+  ammoAddPct?: Partial<Record<AttributeId, number>>;
+  /** （批4 记账）结余护壁可用：吸收一次 Shadow(mob) 攻击的 50%（每 session 一次，store 传入未消耗态） */
+  ledgerWard?: boolean;
+  /** （批4 记账）物欲缠身：本月超支 → 心魔开场 2 回合受到的伤害 ×0.8 */
+  spendCurse?: boolean;
+  /** （批4 同伴庇护）Lv7+ 同伴名：致命一击 35% 保留 1HP（每 session 一次；null=不可用） */
+  companionGuard?: string | null;
 }
 
 export type PlayerActionInput =
@@ -230,6 +239,15 @@ export class BattleEngine {
   private affixes: AffixKind[];
   /** 月蚀词缀：弱点是否已被揭示（洞察 / 误打命中） */
   private weaknessRevealed = false;
+  // ── 批4 · 日常闭环状态 ──
+  private ammo: Partial<Record<AttributeId, number>>;
+  private wardConsumed = false;          // 结余护壁（每 session 一次，UI 依 snapshot 回写）
+  private curseNoticed = false;          // 物欲缠身叙事只报一次
+  private companionGuardConsumed = false;// 同伴庇护（触发即消耗，无论掷骰成败）
+  // ── 批4 · 成就计数 ──
+  playerHpLost = 0;                      // 无伤讨伐判定
+  poisonKill = false;                    // 毒杀判定（终结跳伤来自中毒）
+  allOutUsed = false;                    // 首次总攻击判定
 
   private turn = 1;
   private intent: Intent | null = null;
@@ -249,6 +267,7 @@ export class BattleEngine {
     this.relicMods = setup.relicMods ?? ZERO_RELIC_MODS;
     this.chain = setup.chain ?? null;
     this.affixes = setup.shadow.affixes ?? [];
+    this.ammo = setup.ammoAddPct ?? {};
     this.playerHp = setup.playerHp;
     this.playerMaxHp = setup.playerMaxHp;
     this.sp = setup.sp;
@@ -311,6 +330,13 @@ export class BattleEngine {
       weaknessHidden: this.weaknessHidden(),
       oathSpUsed: this.oathSpUsed,
       chainKey: this.chain,
+      // ── 批4 ──
+      ammoAddPct: this.ammo,
+      wardConsumed: this.wardConsumed,
+      companionGuardConsumed: this.companionGuardConsumed,
+      playerHpLost: this.playerHpLost,
+      poisonKill: this.poisonKill,
+      allOutUsed: this.allOutUsed,
     };
   }
 
@@ -569,6 +595,17 @@ export class BattleEngine {
       if (this.activeMask === 'knowledge' && isWeakness) flats.push(KNOWLEDGE_MASK_WEAK_FLAT);
 
       if (this.sessionAddPct > 0) adds.push(this.sessionAddPct); // 登塔临时增益（buff 徽标由 UI 常驻展示，不进叙事）
+      // 批4 弹药：今日该属性记录 → 加算（UI 弹药匣常驻展示，不进叙事）
+      const ammoAdd = this.ammo[attr] ?? 0;
+      if (ammoAdd > 0) adds.push(ammoAdd);
+      // 批4 物欲缠身：本月超支 → 心魔开场 2 回合受到的伤害被削
+      if (this.setup.spendCurse && this.shTier === 'boss' && this.turn <= SPEND_CURSE_TURNS) {
+        mults.push(SPEND_CURSE_MULT);
+        if (!this.curseNoticed) {
+          this.curseNoticed = true;
+          lines.push(`【物欲缠身】——消费的执念钝化了你的锋刃……（开场${SPEND_CURSE_TURNS}回合伤害 ×${SPEND_CURSE_MULT}）`);
+        }
+      }
       // ── 批3 加算段：熟练度星级 / 音叉 / 单片镜·破绽洞察（弱点） / 烈焰亮相（首回合） ──
       const stars = masteryStars(skill.mastery ?? 0, skill.level);
       if (stars > 0) adds.push(stars * MASTERY_STAR_ADD);
@@ -659,6 +696,7 @@ export class BattleEngine {
       if (skill.oathEffect === 'self_hp_cost' && this.playerHp > 1) {
         const selfCost = Math.min(this.playerHp - 1, Math.max(1, Math.round(this.playerHp * OATH_SELF_HP_COST_PCT)));
         this.playerHp -= selfCost;
+        this.playerHpLost += selfCost;
         lines.push(`誓约的代价：灼烧自身 ${selfCost} 点体力。`);
         fx.push({ atLine: lines.length - 1, type: 'playerHit', value: selfCost, hpAfter: this.playerHp });
       }
@@ -832,6 +870,7 @@ export class BattleEngine {
     if (!this.hasAffix('thorns') || dmg <= 0 || this.over === 'victory') return;
     const reflect = Math.max(1, Math.round(dmg * AFFIX_THORNS_PCT));
     this.playerHp = Math.max(0, this.playerHp - reflect);
+    this.playerHpLost += reflect;
     lines.push(`【荆棘】反噬——你受到 ${reflect} 点反弹伤害！`);
     fx.push({ atLine: lines.length - 1, type: 'playerHit', value: reflect, hpAfter: this.playerHp });
     if (this.playerHp <= 0) this.handlePlayerLethal(lines);
@@ -864,6 +903,7 @@ export class BattleEngine {
     }
     this.sp -= ALL_OUT_SP_COST;
     this.consecutiveWeakness = 0;
+    this.allOutUsed = true; // 批4 成就：首次总攻击
     const lv5Sum = Object.values(this.setup.skills).flat()
       .filter(s => s.level === 5)
       .reduce((sum, s) => sum + s.power, 0);
@@ -1025,6 +1065,14 @@ export class BattleEngine {
     }
 
     let dmg = Math.max(0, Math.round(atk));
+
+    // 批4 结余护壁：吸收一次 Shadow(mob) 攻击的 50%（每 session 一次；预算内进塔时可用）
+    if (this.setup.ledgerWard && !this.wardConsumed && this.shTier === 'mob' && dmg > 0) {
+      this.wardConsumed = true;
+      const absorbed = Math.round(dmg * LEDGER_WARD_ABSORB);
+      dmg = Math.max(0, dmg - absorbed);
+      lines.push(`【结余护壁】荡开涟漪——吸收了 ${absorbed} 点冲击！`);
+    }
     const original = dmg;
 
     // 护盾吸收（消耗）
@@ -1048,6 +1096,7 @@ export class BattleEngine {
     }
 
     this.playerHp = Math.max(0, this.playerHp - dmg);
+    this.playerHpLost += dmg;
     if (isCrit) {
       lines.push(`${this.shName} 发动了暴击！造成 ${dmg} 点伤害！`);
       lines.push(`${this.shName}：${pickByLevel(SHADOW_CRIT_DIALOGUE, this.shLevel, this.rng)}`);
@@ -1068,12 +1117,21 @@ export class BattleEngine {
       lines.push('战斗还未结束……！');
       return;
     }
-    // 亡命身法共鸣：致命伤 20% 保留 1 HP（每场 1 次；批4 同伴庇护实装后先到先得不叠加）
+    // 亡命身法共鸣：致命伤 20% 保留 1 HP（每场 1 次；与同伴庇护不叠加=顺序先到先得）
     if (this.chain === 'guts+dexterity' && !this.chainLethalUsed) {
       this.chainLethalUsed = true;
       if (this.rng() < CHAIN_LETHAL_GUARD) {
         this.playerHp = 1;
         lines.push('【亡命身法】——千钧一发间侧身，死神擦肩而过！');
+        return;
+      }
+    }
+    // 批4 同伴庇护：Lv7+ 同伴 35% 保留 1HP（每 session 一次；触发即消耗，无论掷骰成败）
+    if (this.setup.companionGuard && !this.companionGuardConsumed) {
+      this.companionGuardConsumed = true;
+      if (this.rng() < COMPANION_GUARD_CHANCE) {
+        this.playerHp = 1;
+        lines.push(`${this.setup.companionGuard} 的身影闪过——你在鬼门关被硬生生拽了回来！`);
         return;
       }
     }
@@ -1247,6 +1305,7 @@ export class BattleEngine {
     this.playerStatuses = pTick.list;
     if (pTick.poisonDamage > 0) {
       this.playerHp = Math.max(0, this.playerHp - pTick.poisonDamage);
+      this.playerHpLost += pTick.poisonDamage;
       lines.push(`侵蚀之毒发作：你损失 ${pTick.poisonDamage} 点体力。`);
       fx.push({ atLine: lines.length - 1, type: 'playerHit', value: pTick.poisonDamage, hpAfter: this.playerHp });
       if (this.playerHp <= 0) { this.handlePlayerLethal(lines); if (this.over) return; }
@@ -1258,7 +1317,7 @@ export class BattleEngine {
       lines.push(`中毒侵蚀：${this.shName} 损失 ${sTick.poisonDamage} 点HP。`);
       fx.push({ atLine: lines.length - 1, type: 'shadowHit', value: sTick.poisonDamage });
       this.flushPhase2Lines(lines, fx);
-      if (this.over === 'victory') return;
+      if (this.over === 'victory') { this.poisonKill = true; return; } // 批4 成就：毒杀
     }
 
     // 巧手医心共鸣：敌方中毒期间每回合回复 1 HP

@@ -21,6 +21,7 @@ import { BattleEngine, PlayerActionInput, FxEvent, TurnResult } from '@/battle/e
 import { QTE_FALLBACK_MULT, healAmount } from '@/battle/numbers';
 import { aggregateRelicMods, AFFIX_POOL } from '@/battle/loot';
 import { pickMemoryLine, SUMMON_FALLBACK } from '@/battle/memoryLines';
+import { ammoFromActivities } from '@/battle/preparation';
 import { MasteryStars } from '@/components/battle/ArsenalModal';
 import { ShadowSVG } from '@/components/battle/ShadowSVG';
 import { BattleStartOverlay } from '@/components/battle/BattleStartOverlay';
@@ -209,6 +210,19 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
     const sessionAddPct = towerTs?.buffs.reduce((sum, b) => sum + (b.addPct ?? 0), 0) ?? 0;
     const firstStrikeStolen = !!towerTs?.pendingFirstStrike;
 
+    // ── 批4 日常闭环：弹药 / 记账联动 / 同伴庇护 ──
+    const stG = useAppStore.getState();
+    const ammoAddPct = ammoFromActivities(stG.activities, toLocalDateKey());
+    const period = toLocalDateKey().slice(0, 7);
+    const budgetLimit = stG.getBudget(period)?.monthlyLimit;
+    const withinBudget = budgetLimit != null ? stG.getPeriodExpense(period) <= budgetLimit : null;
+    const ledgerWard = withinBudget === true && !!towerTs && !towerTs.wardUsed;
+    const spendCurse = withinBudget === false;
+    const guardCandidates = stG.confidants.filter(c => !c.archivedAt && c.intimacy >= 7);
+    const companionGuard = guardCandidates.length > 0 && !!towerTs && !towerTs.companionGuardUsed
+      ? guardCandidates[Math.floor(Math.random() * guardCandidates.length)].name
+      : null;
+
     const engineShadow = isEncounter
       ? {
           id: `encounter-${Date.now()}`,
@@ -261,6 +275,11 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
       relicMods: aggregateRelicMods(bs.arsenal?.relics ?? []),
       chain: bs.arsenal?.activeChainKey ?? null,
       playerEverRetreated: !!bs.everRetreatedDown,
+      // 批4：弹药 / 结余护壁 / 物欲缠身 / 同伴庇护
+      ammoAddPct,
+      ledgerWard,
+      spendCurse,
+      companionGuard,
     });
     engineRef.current = engine;
     // 属性向派生后写回（存量主影无此字段；小影不落表）
@@ -415,6 +434,22 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
     // 批3：熟练度记录（每次成功施展 +1；解锁刷新随内部触发）
     if (input.kind === 'skill' && res.consumedTurn) {
       void useAppStore.getState().recordSkillUses([{ attr: maskAtAct, level: input.skill.level }]);
+    }
+    // 批4：结余护壁 / 同伴庇护 每 session 一次——引擎消耗后回写 towerSession
+    const s4 = engine.snapshot;
+    if (s4.wardConsumed || s4.companionGuardConsumed) {
+      const cur = useAppStore.getState().battleState;
+      const ts4 = cur?.towerSession;
+      if (cur && ts4 && ((s4.wardConsumed && !ts4.wardUsed) || (s4.companionGuardConsumed && !ts4.companionGuardUsed))) {
+        await useAppStore.getState().saveBattleState({
+          ...cur,
+          towerSession: {
+            ...ts4,
+            wardUsed: ts4.wardUsed || s4.wardConsumed,
+            companionGuardUsed: ts4.companionGuardUsed || s4.companionGuardConsumed,
+          },
+        });
+      }
     }
     if (res.lines.length === 0) return;
     // 有玩家掉血演出 → 冻结显示 HP 到叙事命中行

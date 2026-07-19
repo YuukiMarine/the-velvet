@@ -134,13 +134,15 @@ export interface Achievement {
   unlocked: boolean;
   unlockedDate?: Date;
   condition: {
-    type: 'consecutive_days' | 'total_points' | 'attribute_level' | 'keyword_match' | 'all_attributes_max' | 'todo_completions' | 'weekly_goal_completions' | 'shadow_defeats' | 'confidants_at_level';
+    type: 'consecutive_days' | 'total_points' | 'attribute_level' | 'keyword_match' | 'all_attributes_max' | 'todo_completions' | 'weekly_goal_completions' | 'shadow_defeats' | 'confidants_at_level' | 'battle_feat';
     value: number;
     attribute?: AttributeId;
     keywords?: string[];
     currentProgress?: number;
     /** 用于 'confidants_at_level'：至少需要达到的亲密度等级 */
     minLevel?: number;
+    /** 用于 'battle_feat'（批4 战场成就组）：对应 BattleState.battleFeats 中的壮举 id */
+    feat?: string;
   };
 }
 
@@ -953,6 +955,14 @@ export interface BattleState {
   arsenal?: BattleArsenal;
   /** （批3）曾下塔撤离/败退过（「记仇」词缀与记忆台词的事实源） */
   everRetreatedDown?: boolean;
+  /** （批4）勤勉的光辉：持有数（上限2；连续记录3天+1，塔内使用=完全恢复HP） */
+  diligenceCharges?: number;
+  /** （批4）勤勉的光辉：上次发放日期（YYYY-MM-DD，间隔≥3天才再发） */
+  diligenceLastGrantKey?: string;
+  /** （批4）战场成就事实：已达成的战斗壮举 id 列表 */
+  battleFeats?: string[];
+  /** （批4）黑猫败因信：待投递（下次打开黑猫时推送并清除） */
+  pendingCatLetter?: { text: string; dateKey: string };
 }
 
 export interface BattleLogEntry {
@@ -1039,6 +1049,12 @@ export interface TowerSessionStats {
   pendingFirstStrike?: boolean;
   /** （批3 记忆台词）本次登塔距上一次登塔的间隔天数（entry 时快照，覆写 lastChallengeDate 前计算） */
   daysAway?: number;
+  /** （批4 记账联动）结余护壁已消耗（每 session 一次：吸收一次 Shadow 攻击的 50%） */
+  wardUsed?: boolean;
+  /** （批4 同伴庇护）本 session 的致命保护已触发（每 session 一次） */
+  companionGuardUsed?: boolean;
+  /** （批4 备战抽取）本次登塔已抽取的备战 buff id（防重复抽取） */
+  prepDrawnId?: string;
 }
 
 // ── 战斗状态效果（本地，不持久化） ─────────────────────────────
