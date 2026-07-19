@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore } from '@/store';
 import { TAROT_BY_ID } from '@/constants/tarot';
+import { CONFIDANT_HEAL_HP_PCT, CONFIDANT_RESTORE_SP } from '@/utils/confidantLevels';
 
 interface Props {
   /** 点击治疗道具成功后的回调，参数为恢复的 HP 值 */
@@ -17,11 +18,15 @@ interface Props {
  * 无可用道具时不渲染任何东西。
  */
 export function ConfidantSupportRow({ onHealHp, onRestoreSp, disabled }: Props) {
-  const { getAvailableConfidantItems, useConfidantBattleItem } = useAppStore();
+  const { getAvailableConfidantItems, useConfidantBattleItem, battleState } = useAppStore();
   const [expanded, setExpanded] = useState<'battle_heal' | 'battle_sp' | null>(null);
 
   const healItems = useMemo(() => getAvailableConfidantItems('battle_heal'), [getAvailableConfidantItems]);
   const spItems = useMemo(() => getAvailableConfidantItems('battle_sp'), [getAvailableConfidantItems]);
+
+  // 批4 §6.5 拍板：battle_heal=20% 最大HP、battle_sp=+15——按常量现算，忽略存量 buff.value（旧值 5）
+  const healAmount = Math.max(1, Math.round((battleState?.playerMaxHp ?? 40) * CONFIDANT_HEAL_HP_PCT));
+  const spAmount = CONFIDANT_RESTORE_SP;
 
   if (healItems.length === 0 && spItems.length === 0) return null;
 
@@ -31,8 +36,8 @@ export function ConfidantSupportRow({ onHealHp, onRestoreSp, disabled }: Props) 
     if (!buff) return;
     const item = [...healItems, ...spItems].find(it => it.confidantId === confidantId);
     const name = item?.confidantName ?? '同伴';
-    if (kind === 'battle_heal') onHealHp?.(buff.value, name);
-    else onRestoreSp?.(buff.value, name);
+    if (kind === 'battle_heal') onHealHp?.(healAmount, name);
+    else onRestoreSp?.(spAmount, name);
     setExpanded(null);
   };
 
@@ -113,7 +118,7 @@ export function ConfidantSupportRow({ onHealHp, onRestoreSp, disabled }: Props) 
                       className="px-2 py-0.5 rounded-full text-[10px] font-bold"
                       style={{ background: `${accent}33`, color: accent }}
                     >
-                      {expanded === 'battle_heal' ? `+${it.buff.value} HP` : `+${it.buff.value} SP`}
+                      {expanded === 'battle_heal' ? `+${healAmount} HP` : `+${spAmount} SP`}
                     </div>
                   </button>
                 );

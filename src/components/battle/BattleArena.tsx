@@ -254,6 +254,11 @@ export const BattleArena = () => {
     if (towerOpen && !sessionActive) setTowerOpen(false);
   }, [towerOpen, sessionActive]);
 
+  // 批4 §6.6 黑猫败因信：败退当晚后台写信（AI/模板兜底）→ 下次打开黑猫时投递
+  useEffect(() => {
+    if (recap === 'defeat') void useAppStore.getState().deliverDefeatLetter();
+  }, [recap]);
+
   // 批3 §7.3 影之评语：回顾弹出时后台取一句 AI 点评（可在设置关闭；无 Key 静默跳过）
   useEffect(() => {
     if (!recap) { setRecapComment(null); return; }

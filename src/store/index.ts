@@ -123,6 +123,7 @@ import { TOWER_EVENT_IDS } from '@/battle/events';
 import { rollNodeLoot, rollAffixes, buildOathSkill, towerRelicBonus, MYTH_POOL, rollRelic, rollMyth, lootLabel, type LootDrop } from '@/battle/loot';
 import { currentRecordStreak, shouldGrantDiligence } from '@/battle/preparation';
 import { DILIGENCE_MAX_CHARGES } from '@/battle/numbers';
+import { generateDefeatLetter } from '@/utils/battleAI';
 import { normalizeAttributeLevelTitles } from '@/utils/attributeLevelTitles';
 
 /** Shared request payload returned by buildSummaryRequest used by both non-streaming generateSummary and streaming modal */
@@ -513,6 +514,8 @@ interface AppState {
   claimDiligence: () => Promise<boolean>;
   /** 战场成就壮举：记入 battleFeats 并尝试解锁对应成就 */
   recordBattleFeat: (feat: string) => Promise<void>;
+  /** 黑猫败因信：败退当晚生成（AI/模板兜底）→ 存 pendingCatLetter（黑猫打开时投递）+ 写 observation 记忆 */
+  deliverDefeatLetter: () => Promise<void>;
 
   // 同伴 / Confidant
   confidants: Confidant[];
@@ -4182,6 +4185,39 @@ ${activityLines || '（本期暂无记录）'}
     }
     // 壮举 id 与成就 id 一一对应（constants/ACHIEVEMENTS battle_feat 条目）
     await get().unlockAchievement(`battle_${feat}`);
+  },
+
+  deliverDefeatLetter: async () => {
+    const { battleState: bs, shadow, stratum, settings } = get();
+    if (!bs || !shadow || !stratum) return;
+    const todayKey = toLocalDateKey();
+    if (bs.pendingCatLetter?.dateKey === todayKey) return; // 当晚只写一封
+    const ts = bs.towerSession;
+    const curFloor = stratum.nodes.find(n => n.id === stratum.currentNodeId)?.floor ?? 0;
+    const facts = {
+      shadowName: shadow.name,
+      stratumName: stratum.name,
+      floor: stratum.baseFloor + curFloor,
+      damageDealt: ts?.damageDealt ?? 0,
+      maxSingleHit: ts?.maxSingleHit ?? 0,
+      weaknessHits: ts?.weaknessHits ?? 0,
+      mobsDefeated: ts?.mobsDefeated ?? 0,
+    };
+    // F6 observation 记忆源首发：中性事实，供黑猫日后自然提起（信正文不进记忆，避免口吻污染）
+    try {
+      await db.navigatorMemos.put({
+        id: uuidv4(),
+        source: 'observation',
+        text: `${todayKey} 晚，用户在影时间高塔【${facts.stratumName}】第${facts.floor}层败退（对手「${facts.shadowName}」，本晚造成 ${facts.damageDealt} 点伤害、讨伐 ${facts.mobsDefeated} 只杂影）。`,
+        importance: 3,
+        status: 'active',
+        createdAt: new Date(),
+      });
+    } catch { /* memo 失败不阻塞信 */ }
+    const text = await generateDefeatLetter(settings, facts);
+    const cur = get().battleState;
+    if (!cur) return;
+    await get().saveBattleState({ ...cur, pendingCatLetter: { text, dateKey: todayKey } });
   },
 
   grantEventLoot: async (kind) => {

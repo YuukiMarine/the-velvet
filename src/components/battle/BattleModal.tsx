@@ -441,6 +441,12 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
       const cur = useAppStore.getState().battleState;
       const ts4 = cur?.towerSession;
       if (cur && ts4 && ((s4.wardConsumed && !ts4.wardUsed) || (s4.companionGuardConsumed && !ts4.companionGuardUsed))) {
+        // 庇护成功（消耗发生且没败北）→ cut-in toast
+        if (s4.companionGuardConsumed && !ts4.companionGuardUsed && res.outcome !== 'defeat') {
+          setConfidantSupportToast('🛡 同伴庇护——在鬼门关被拽了回来！');
+          playSound('/battle-seal.mp3', 0.6);
+          setTimeout(() => setConfidantSupportToast(null), 2000);
+        }
         await useAppStore.getState().saveBattleState({
           ...cur,
           towerSession: {
