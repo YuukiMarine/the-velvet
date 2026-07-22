@@ -13,6 +13,8 @@
 import { useId } from 'react';
 import { motion } from 'motion/react';
 import { springSnappy, TAP } from '@/utils/motion';
+import { useUiChannel } from '@/ui/useUiChannel';
+import { P4Flower } from '@/ui/p4Kit';
 
 interface SegmentTabItem<K extends string> {
   key: K;
@@ -41,10 +43,17 @@ export const SegmentTabs = <K extends string>({
 }: SegmentTabsProps<K>) => {
   const autoId = useId();
   const indicatorId = layoutId ?? `segment-tabs-${autoId}`;
+  const isP4 = useUiChannel() === 'p4';
   const sizeClass = size === 'sm' ? 'py-1.5 text-xs' : 'py-2.5 text-sm';
 
   return (
-    <div role="tablist" className={`flex p-1 rounded-2xl bg-gray-100 dark:bg-gray-800 ${className ?? ''}`}>
+    <div
+      role="tablist"
+      className={`flex ${
+        isP4 ? 'rounded-full bg-[var(--ui-paper)] p-0 overflow-hidden' : 'p-1 rounded-2xl bg-gray-100 dark:bg-gray-800'
+      } ${className ?? ''}`}
+      style={isP4 ? { boxShadow: '0 2px 0 rgba(19,19,19,0.1)' } : undefined}
+    >
       {items.map(item => {
         const active = item.key === value;
         return (
@@ -55,7 +64,7 @@ export const SegmentTabs = <K extends string>({
             aria-selected={active}
             whileTap={TAP}
             onClick={() => onChange(item.key)}
-            className={`relative flex-1 rounded-xl ${sizeClass}`}
+            className={`relative flex-1 ${isP4 ? '' : 'rounded-xl'} ${sizeClass}`}
           >
             {active && (
               <motion.div
@@ -64,24 +73,43 @@ export const SegmentTabs = <K extends string>({
                 className="absolute inset-0"
                 aria-hidden="true"
               >
-                <div
-                  className="absolute inset-0 bg-primary rounded-xl"
-                  style={{ transform: 'skewX(var(--ui-skew-ui))' }}
-                />
+                {isP4 ? (
+                  // p4-redraw：黑色斜切块（左右各溢出 2px 吃掉胶囊端头的缝）
+                  <div
+                    className="absolute -inset-x-1 inset-y-0 bg-[#131313]"
+                    style={{ transform: 'skewX(-10deg)', borderRadius: 16 }}
+                  />
+                ) : (
+                  <div
+                    className="absolute inset-0 bg-primary rounded-xl"
+                    style={{ transform: 'skewX(var(--ui-skew-ui))' }}
+                  />
+                )}
               </motion.div>
             )}
             <span
               className={`relative z-10 flex items-center justify-center gap-1.5 transition-colors ${
-                active ? 'text-white font-bold' : 'text-gray-500 dark:text-gray-400 font-semibold'
+                isP4
+                  ? active
+                    ? 'font-black text-[var(--ui-bg)]'
+                    : 'font-black text-[#131313]'
+                  : active
+                    ? 'text-white font-bold'
+                    : 'text-gray-500 dark:text-gray-400 font-semibold'
               }`}
             >
+              {isP4 && active && <P4Flower size={13} color="var(--ui-bg)" />}
               {item.label}
               {item.badge !== undefined && (
                 <span
                   className={`text-2xs leading-none px-1.5 py-0.5 rounded-full ${
-                    active
-                      ? 'bg-white/25 text-white'
-                      : 'bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400'
+                    isP4
+                      ? active
+                        ? 'bg-[var(--ui-bg)]/20 text-[var(--ui-bg)]'
+                        : 'bg-black/10 text-[#131313]'
+                      : active
+                        ? 'bg-white/25 text-white'
+                        : 'bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400'
                   }`}
                 >
                   {item.badge}

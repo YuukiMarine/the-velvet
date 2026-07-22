@@ -21,6 +21,8 @@
  */
 import { motion } from 'motion/react';
 import { springSnappy } from '@/utils/motion';
+import { useUiChannel } from '@/ui/useUiChannel';
+import { P4Flower } from '@/ui/p4Kit';
 
 export interface ToggleProps {
   checked: boolean;
@@ -35,25 +37,57 @@ export const Toggle = ({
   onChange,
   disabled = false,
   'aria-label': ariaLabel,
-}: ToggleProps) => (
-  <button
-    type="button"
-    role="switch"
-    aria-checked={checked}
-    aria-label={ariaLabel}
-    disabled={disabled}
-    onClick={() => onChange(!checked)}
-    className={`relative inline-flex flex-shrink-0 w-11 h-6 rounded-full transition-colors ${
-      checked ? 'bg-primary' : 'bg-gray-200 dark:bg-gray-700'
-    } ${disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
-  >
-    {/* 滑块：x = 2px(off) ↔ 22px(on)，initial=false 避免挂载时空播一次弹簧 */}
-    <motion.span
-      aria-hidden="true"
-      className="absolute top-0.5 left-0 w-5 h-5 bg-white rounded-full shadow-sm"
-      initial={false}
-      animate={{ x: checked ? 22 : 2 }}
-      transition={springSnappy}
-    />
-  </button>
-);
+}: ToggleProps) => {
+  const isP4 = useUiChannel() === 'p4';
+
+  // p4-redraw 定稿：加大绿胶囊（48×28），白圆旋钮内嵌黑色五瓣花
+  if (isP4) {
+    return (
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        aria-label={ariaLabel}
+        disabled={disabled}
+        onClick={() => onChange(!checked)}
+        className={`relative inline-flex flex-shrink-0 w-12 h-7 rounded-full transition-colors ${
+          checked ? 'bg-[var(--p4-green,#55c34f)]' : 'bg-[#d9d2ac]'
+        } ${disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
+        style={{ boxShadow: 'inset 0 1px 2px rgba(19,19,19,0.15)' }}
+      >
+        <motion.span
+          aria-hidden="true"
+          className="absolute top-0.5 left-0 flex h-6 w-6 items-center justify-center rounded-full bg-white shadow-sm"
+          initial={false}
+          animate={{ x: checked ? 22 : 2 }}
+          transition={springSnappy}
+        >
+          <P4Flower size={13} color={checked ? '#131313' : 'rgba(19,19,19,0.35)'} />
+        </motion.span>
+      </button>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={ariaLabel}
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
+      className={`relative inline-flex flex-shrink-0 w-11 h-6 rounded-full transition-colors ${
+        checked ? 'bg-primary' : 'bg-gray-200 dark:bg-gray-700'
+      } ${disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
+    >
+      {/* 滑块：x = 2px(off) ↔ 22px(on)，initial=false 避免挂载时空播一次弹簧 */}
+      <motion.span
+        aria-hidden="true"
+        className="absolute top-0.5 left-0 w-5 h-5 bg-white rounded-full shadow-sm"
+        initial={false}
+        animate={{ x: checked ? 22 : 2 }}
+        transition={springSnappy}
+      />
+    </button>
+  );
+};

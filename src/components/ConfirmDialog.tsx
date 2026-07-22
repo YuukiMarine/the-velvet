@@ -5,6 +5,9 @@ import { springSoft, TAP } from '@/utils/motion';
 import { useBackHandler } from '@/utils/useBackHandler';
 import { useModalA11y } from '@/utils/useModalA11y';
 import { zClass } from '@/utils/zIndex';
+import { useUiChannel } from '@/ui/useUiChannel';
+import { P4Flower, P4Sparkle, P4StickerPanel } from '@/ui/p4Kit';
+import { PersonaButton } from '@/ui/components/PersonaButton';
 
 /**
  * ConfirmDialog —— 确认弹窗基座（UI_AUDIT_V2.5.md §5：收口全仓 11 处手写确认弹窗）。
@@ -85,6 +88,15 @@ export const ConfirmDialog = ({
   });
 
   const visibleActions = actions?.slice(0, 3);
+  const isP4 = useUiChannel() === 'p4';
+
+  /** p4 动作按钮 tone → PersonaButton 形态（default=奶油 / primary=橙确认 / danger=红） */
+  const p4Action = (t: NonNullable<ConfirmAction['tone']> | undefined) =>
+    t === 'danger'
+      ? { variant: 'danger' as const, active: false }
+      : t === 'primary'
+        ? { variant: 'primary' as const, active: true }
+        : { variant: 'secondary' as const, active: false };
 
   return createPortal(
     <AnimatePresence>
@@ -109,61 +121,156 @@ export const ConfirmDialog = ({
             exit={{ opacity: 0, scale: 0.92, x: -12, y: 12 }}
             transition={springSoft}
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl dark:bg-gray-900"
+            className={
+              isP4 ? 'relative w-full max-w-sm' : 'w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl dark:bg-gray-900'
+            }
           >
-            <div className="text-center">
-              <div className="mb-3 text-4xl">{icon ?? (tone === 'default' ? '❓' : '⚠️')}</div>
-              <h2 id={titleId} className="mb-2 text-lg font-bold text-gray-800 dark:text-white">
-                {title}
-              </h2>
-              {description && (
-                <p id={descId} className="whitespace-pre-line text-sm text-gray-600 dark:text-gray-400">
-                  {description}
-                </p>
-              )}
-            </div>
-            {children && <div className="mt-3">{children}</div>}
+            {isP4 ? (
+              /* p4-redraw modal-01 v3：黑色八角贴纸 + 奶油描边，橙圆图标 + 衬线标题，
+                 周身贴橙硬币/蓝星闪/蓝花贴纸；按钮走 PersonaButton 斜切胶囊 */
+              <>
+                <div
+                  aria-hidden
+                  className="pointer-events-none absolute -top-9 right-12 h-20 w-20 rounded-full border-4 border-[#fff6d0]"
+                  style={{ background: 'radial-gradient(circle at 50% 40%, #ffcf3f 0 42%, var(--p4-orange, #f9a11b) 43% 100%)' }}
+                >
+                  <P4Sparkle size={26} color="#ffffff" className="absolute left-1/2 top-1/2 -ml-3.5 -mt-3.5" />
+                </div>
+                <P4Sparkle size={24} color="var(--ui-accent)" className="pointer-events-none absolute -left-2 top-16" />
+                <span aria-hidden className="pointer-events-none absolute -bottom-5 -right-1 block h-16 w-16">
+                  <P4Flower size={62} color="#fff6d0" className="absolute -left-1 -top-1" />
+                  <P4Flower size={50} color="var(--ui-accent)" className="absolute left-1.5 top-1.5" />
+                </span>
 
-            <div className="mt-6 flex gap-3">
-              {visibleActions ? (
-                visibleActions.map((action, i) => (
-                  <motion.button
-                    key={i}
-                    whileTap={TAP}
-                    disabled={busy}
-                    onClick={action.onClick}
-                    className={`flex-1 rounded-xl py-2.5 text-sm font-bold disabled:opacity-50 ${ACTION_BTN[action.tone ?? 'default']}`}
-                  >
-                    {action.label}
-                  </motion.button>
-                ))
-              ) : (
-                <>
-                  <motion.button
-                    whileTap={TAP}
-                    disabled={busy}
-                    onClick={onCancel}
-                    className="flex-1 rounded-xl bg-gray-100 py-2.5 text-sm font-bold text-gray-700 disabled:opacity-50 dark:bg-gray-800 dark:text-gray-200"
-                  >
-                    {cancelText}
-                  </motion.button>
-                  <motion.button
-                    whileTap={TAP}
-                    disabled={busy}
-                    onClick={onConfirm}
-                    className={`flex flex-1 items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-bold text-white disabled:opacity-50 ${CONFIRM_BTN[tone]}`}
-                  >
-                    {busy && (
-                      <span
-                        aria-hidden
-                        className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white"
-                      />
+                <P4StickerPanel className="relative" contentClassName="p-5 pb-6">
+                  {!busy && (
+                    <button
+                      type="button"
+                      aria-label="关闭"
+                      onClick={onCancel}
+                      className="absolute right-3.5 top-3.5 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-[#fff6d0] text-base font-black text-[#131313]"
+                    >
+                      ✕
+                    </button>
+                  )}
+                  <div className="flex items-center gap-3 pr-9">
+                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full" style={{ background: 'var(--p4-orange, #f9a11b)' }}>
+                      {icon ?? <P4Sparkle size={20} color="#ffffff" />}
+                    </span>
+                    <h2
+                      id={titleId}
+                      className="text-[22px] font-black leading-tight text-[#fff6d0]"
+                      style={{ fontFamily: 'var(--p4-display-font, serif)' }}
+                    >
+                      {title}
+                    </h2>
+                  </div>
+                  {description && (
+                    <p id={descId} className="mt-3 whitespace-pre-line text-sm font-semibold leading-relaxed text-[#fff6d0]/90">
+                      {description}
+                    </p>
+                  )}
+                  {children && <div className="mt-3">{children}</div>}
+
+                  <div className="mt-5 flex gap-3">
+                    {visibleActions ? (
+                      visibleActions.map((action, i) => {
+                        const s = p4Action(action.tone);
+                        return (
+                          <PersonaButton
+                            key={i}
+                            variant={s.variant}
+                            active={s.active}
+                            disabled={busy}
+                            onClick={action.onClick}
+                            className="flex-1"
+                          >
+                            {action.label}
+                          </PersonaButton>
+                        );
+                      })
+                    ) : (
+                      <>
+                        <PersonaButton
+                          variant="secondary"
+                          disabled={busy}
+                          onClick={onCancel}
+                          leadingIcon={<P4Flower size={14} />}
+                          className="flex-1"
+                        >
+                          {cancelText}
+                        </PersonaButton>
+                        <PersonaButton
+                          variant={tone === 'default' ? 'primary' : 'danger'}
+                          active={tone === 'default'}
+                          busy={busy}
+                          onClick={onConfirm}
+                          className="flex-1"
+                        >
+                          {confirmText}
+                        </PersonaButton>
+                      </>
                     )}
-                    {confirmText}
-                  </motion.button>
-                </>
-              )}
-            </div>
+                  </div>
+                </P4StickerPanel>
+              </>
+            ) : (
+              <>
+                <div className="text-center">
+                  <div className="mb-3 text-4xl">{icon ?? (tone === 'default' ? '❓' : '⚠️')}</div>
+                  <h2 id={titleId} className="mb-2 text-lg font-bold text-gray-800 dark:text-white">
+                    {title}
+                  </h2>
+                  {description && (
+                    <p id={descId} className="whitespace-pre-line text-sm text-gray-600 dark:text-gray-400">
+                      {description}
+                    </p>
+                  )}
+                </div>
+                {children && <div className="mt-3">{children}</div>}
+
+                <div className="mt-6 flex gap-3">
+                  {visibleActions ? (
+                    visibleActions.map((action, i) => (
+                      <motion.button
+                        key={i}
+                        whileTap={TAP}
+                        disabled={busy}
+                        onClick={action.onClick}
+                        className={`flex-1 rounded-xl py-2.5 text-sm font-bold disabled:opacity-50 ${ACTION_BTN[action.tone ?? 'default']}`}
+                      >
+                        {action.label}
+                      </motion.button>
+                    ))
+                  ) : (
+                    <>
+                      <motion.button
+                        whileTap={TAP}
+                        disabled={busy}
+                        onClick={onCancel}
+                        className="flex-1 rounded-xl bg-gray-100 py-2.5 text-sm font-bold text-gray-700 disabled:opacity-50 dark:bg-gray-800 dark:text-gray-200"
+                      >
+                        {cancelText}
+                      </motion.button>
+                      <motion.button
+                        whileTap={TAP}
+                        disabled={busy}
+                        onClick={onConfirm}
+                        className={`flex flex-1 items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-bold text-white disabled:opacity-50 ${CONFIRM_BTN[tone]}`}
+                      >
+                        {busy && (
+                          <span
+                            aria-hidden
+                            className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white"
+                          />
+                        )}
+                        {confirmText}
+                      </motion.button>
+                    </>
+                  )}
+                </div>
+              </>
+            )}
           </motion.div>
         </motion.div>
       )}
