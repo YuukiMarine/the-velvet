@@ -29,12 +29,14 @@ const skin = (ch: UIChannel, tone: PersonaBadgeTone): { cls: string; style: Reac
     }
   }
   if (ch === 'p4') {
-    const base = 'rounded-full border-2 border-black font-black tracking-wider';
+    // p4-redraw 定稿：无描边实色胶囊。accent=黑底白字（默认章）/ danger=红 /
+    // muted=奶油斜标（LV 牌形态）/ outline=黑细线空心。蓝「选中」绿「完成」由行级状态承担。
+    const base = 'rounded-full font-black tracking-wider';
     switch (tone) {
-      case 'accent': return { cls: `${base} text-black`, style: { background: 'var(--ui-accent)' } };
+      case 'accent': return { cls: `${base} text-white`, style: { background: '#131313' } };
       case 'danger': return { cls: `${base} text-white`, style: { background: 'var(--ui-danger)' } };
-      case 'muted': return { cls: `${base} text-black`, style: { background: 'var(--ui-paper)' } };
-      case 'outline': return { cls: 'rounded-full border-2 border-black/50 font-bold text-black/70', style: {} };
+      case 'muted': return { cls: `${base} italic text-[#131313]`, style: { background: 'var(--ui-paper)', borderRadius: 8, transform: 'skewX(-8deg)' } };
+      case 'outline': return { cls: 'rounded-full border-2 border-black/40 font-bold text-black/70', style: {} };
     }
   }
   if (ch === 'p3') {

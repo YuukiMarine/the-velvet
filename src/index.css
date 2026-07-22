@@ -75,22 +75,34 @@
   --ui-noise-opacity: 0.12;
 }
 
-/* P4 黄 —— 节目/青春：高明度黄底，黑色信息面板，彩色条带 */
+/* P4 黄 —— 节目/青春：高明度黄底，黑色信息面板，彩色条带
+   p4-redraw 设计稿定稿色板（design-refs/p4-redraw/*-v2/v3）：
+   斜切胶囊（skew+大圆角，不再用 clip 多边形）、奶油纸面、花朵/四角星贴花、衬线大标题。 */
 :root[data-ui-channel="p4"] {
-  --ui-bg: #ffe100;
-  --ui-surface: #111111;
-  --ui-surface-ink: #ffe100; /* 黑面板黄字（TVPanel 风）：--ui-ink 是黄底上的黑，在 surface 上会隐身 */
-  --ui-paper: #fff7b0;
-  --ui-ink: #111111;
-  --ui-muted: #6b6320;
-  --ui-accent: #20bff2;
-  --ui-accent-2: #5be04b;
-  --ui-danger: #d71920;
-  --ui-line: #111111;
-  --ui-shadow-hard: 4px 4px 0 #111111;
-  --ui-cut-md: polygon(2% 0, 100% 2%, 98% 100%, 0 98%);
-  --ui-radius: 14px;
-  --ui-noise-opacity: 0.08;
+  --ui-bg: #ffd900;
+  --ui-surface: #131313;
+  --ui-surface-ink: #ffd900; /* 黑面板黄字（TVPanel 风）：--ui-ink 是黄底上的黑，在 surface 上会隐身 */
+  --ui-paper: #fff6d0;
+  --ui-ink: #131313;
+  --ui-muted: #837a58;
+  --ui-accent: #2e6be0;
+  --ui-accent-2: #55c34f;
+  --ui-danger: #e8452c;
+  --ui-line: #131313;
+  --ui-shadow-hard: 0 4px 0 rgba(19, 19, 19, 0.16);
+  --ui-cut-md: none; /* p4 定稿轮廓 = 圆角平行四边形（skew 实现），多边形裁切退役 */
+  --ui-radius: 18px;
+  --ui-noise-opacity: 0.06;
+  /* p4 扩展色板（设计稿采样）：橙贴纸/天空蓝/HP 蓝/纸面蓝绿变体 */
+  --p4-orange: #f9a11b;
+  --p4-sky: #8fd0f4;
+  --p4-sky-deep: #2196e0;
+  --p4-hp: #3d9be9;
+  --p4-green: #55c34f;
+  --p4-paper-blue: #cde6f7;
+  --p4-paper-green: #eef3cf;
+  /* 衬线 display（今日节目单式大标题）：安卓 Noto Serif / iOS 宋体 / Windows 中易宋体 */
+  --p4-display-font: 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', SimSun, serif;
 }
 
 /* P3 蓝 —— 午夜/宿命：深海空间，青色资源线，洋红刀口 */

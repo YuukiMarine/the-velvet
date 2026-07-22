@@ -30,7 +30,7 @@ export interface PersonaProgressProps {
 /** 各频道的 tone → 填充色 */
 const FILL: Record<UIChannel, Record<PersonaProgressTone, string>> = {
   p5: { hp: 'var(--ui-accent)', sp: 'var(--ui-accent-2)', neutral: 'var(--ui-accent)', danger: 'var(--ui-danger)' },
-  p4: { hp: '#20bff2', sp: '#5be04b', neutral: 'var(--ui-bg)', danger: 'var(--ui-danger)' },
+  p4: { hp: 'var(--p4-hp, #3d9be9)', sp: 'var(--p4-green, #55c34f)', neutral: 'linear-gradient(90deg, var(--p4-orange, #f9a11b), var(--ui-bg))', danger: 'var(--ui-danger)' },
   p3: { hp: 'var(--ui-accent)', sp: 'var(--ui-accent-2)', neutral: 'var(--ui-accent)', danger: 'var(--ui-danger)' },
   neutral: { hp: 'var(--color-primary)', sp: '#10b981', neutral: 'var(--color-primary)', danger: '#ef4444' },
 };
@@ -54,7 +54,7 @@ export const PersonaProgress = ({
     ch === 'p5'
       ? { cls: 'h-3 border-2 border-black bg-black', style: {} as React.CSSProperties }
       : ch === 'p4'
-        ? { cls: 'h-3.5 rounded-full border-2 border-black bg-[#111111]', style: { boxShadow: '0 2px 0 #000' } as React.CSSProperties }
+        ? { cls: 'h-3 rounded-full bg-[var(--ui-paper)]', style: { boxShadow: 'inset 0 0 0 1px rgba(19,19,19,0.08)' } as React.CSSProperties }
         : ch === 'p3'
           ? { cls: 'h-1.5 bg-white/15', style: {} as React.CSSProperties }
           : { cls: 'h-2 rounded-full bg-gray-100 dark:bg-gray-800', style: {} as React.CSSProperties };
@@ -62,7 +62,11 @@ export const PersonaProgress = ({
   return (
     <div className={className}>
       {(label || valueText) && (
-        <div className="mb-1 flex items-baseline justify-between gap-2 text-[11px] font-bold leading-none opacity-85">
+        <div
+          className={`mb-1 flex items-baseline justify-between gap-2 leading-none ${
+            ch === 'p4' ? 'text-[13px] font-black italic text-[#131313]' : 'text-[11px] font-bold opacity-85'
+          }`}
+        >
           <span>{label}</span>
           <span className="tabular-nums">{valueText}</span>
         </div>
@@ -80,10 +84,7 @@ export const PersonaProgress = ({
           animate={{ width: `${ratio * 100}%` }}
           transition={bold ? { type: 'spring', stiffness: 160, damping: 26 } : { duration: 0 }}
         >
-          {/* P4 高光线 */}
-          {ch === 'p4' && (
-            <span aria-hidden className="absolute inset-x-1 top-[2px] h-[3px] rounded-full" style={{ background: 'rgba(255,255,255,0.5)' }} />
-          )}
+          {/* p4-redraw：填充平涂无高光（设计稿哑光条） */}
         </motion.div>
       </div>
     </div>
