@@ -15,6 +15,8 @@ import { SheetModal } from '@/components/SheetModal';
 import { Stepper } from '@/components/Stepper';
 import { Toggle } from '@/components/Toggle';
 import { TrashIcon } from '@/components/icons';
+import { useUiChannel } from '@/ui/useUiChannel';
+import { P4Sparkle } from '@/ui/p4Kit';
 
 // ---- 来源筛选选项（筛选面板与已选 chip 共用） ----
 const METHOD_FILTER_OPTIONS = [
@@ -464,6 +466,7 @@ function useSummaryReminder() {
 // 行动页子视图（记录）：页头/页级转场由宿主 Actions.tsx 承担，本组件只渲染内容
 export const ActivitiesView = () => {
   const { activities, addActivity, settings, setModalBlocker, deleteActivity, deleteActivityRecordOnly } = useAppStore();
+  const isP4 = useUiChannel() === 'p4';
 
   // ---- 总结弹窗 ----
   const [showSummary, setShowSummary] = useState(false);
@@ -1226,16 +1229,26 @@ export const ActivitiesView = () => {
             aria-label={isPastDaySelected ? '补录历史记录' : '添加记录'}
             // 制式统一（rounded-2xl → rounded-full）：与任务子页 FAB 同款圆形 bg-primary，
             // 子页切换时 FAB 静止视觉不跳变；双态（+/补记）行为与位置保持原样
-            className={`fixed bottom-24 right-5 md:bottom-8 md:right-8 w-14 h-14 text-white rounded-full shadow-lg flex items-center justify-center z-40 cursor-pointer transition-colors ${
-              isPastDaySelected
-                ? 'bg-amber-500 shadow-amber-500/30'
-                : 'bg-primary shadow-primary/30'
+            className={`fixed bottom-24 right-5 md:bottom-8 md:right-8 flex items-center justify-center z-40 cursor-pointer transition-colors ${
+              isP4 && !isPastDaySelected
+                ? 'h-16 w-16 text-white' // p4-redraw：蓝色四角星 FAB（与任务子页一致）
+                : `w-14 h-14 text-white rounded-full shadow-lg ${
+                    isPastDaySelected ? 'bg-amber-500 shadow-amber-500/30' : 'bg-primary shadow-primary/30'
+                  }`
             }`}
           >
+            {isP4 && !isPastDaySelected && (
+              <P4Sparkle
+                size={64}
+                color="var(--ui-accent)"
+                className="absolute inset-0"
+                style={{ filter: 'drop-shadow(0 3px 0 rgba(19,19,19,0.3))' }}
+              />
+            )}
             {isPastDaySelected ? (
               <span className="text-xl font-black leading-none">补</span>
             ) : (
-              <PlusIcon />
+              <span className="relative"><PlusIcon /></span>
             )}
           </motion.button>
         );

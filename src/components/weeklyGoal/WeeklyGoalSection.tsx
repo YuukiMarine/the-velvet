@@ -3,6 +3,8 @@ import { useState } from 'react';
 import { useAppStore } from '@/store';
 import { AttributeId, WeeklyGoal, WeeklyGoalItem } from '@/types';
 import { useLongPress } from '@/utils/useLongPress';
+import { useUiChannel } from '@/ui/useUiChannel';
+import { P4Flower, P4Sparkle } from '@/ui/p4Kit';
 import { v4 as uuidv4 } from 'uuid';
 import { ALL_GOAL_TYPES, getCurrentWeekRange, makeDefaultItem } from './weeklyGoalShared';
 import { GoalSetupForm } from './GoalSetupForm';
@@ -24,6 +26,7 @@ export const WeeklyGoalSection = ({
 }) => {
   const { weekStart, weekEnd } = getCurrentWeekRange();
   const currentGoal = weeklyGoals.find(g => g.weekStart === weekStart && g.weekEnd === weekEnd);
+  const isP4 = useUiChannel() === 'p4';
 
   // setup form
   const [showSetup, setShowSetup] = useState(false);
@@ -98,6 +101,24 @@ export const WeeklyGoalSection = ({
   // No goal set yet
   if (!currentGoal) {
     if (!showSetup) {
+      // P4（p4-actions-reference-v2）：奶油有机长条 + 左侧大黄花 + 双橙星夹文案
+      if (isP4) {
+        return (
+          <motion.button
+            whileTap={{ scale: 0.98 }}
+            onClick={() => setShowSetup(true)}
+            className="relative w-full overflow-hidden py-7 text-center"
+            style={{ background: 'var(--ui-paper)', borderRadius: '48px 40px 44px 52px / 44px 52px 40px 48px' }}
+          >
+            <P4Flower size={64} color="var(--ui-bg)" className="absolute left-5 top-1/2 -mt-8" />
+            <span className="relative inline-flex items-center gap-2 text-[14px] font-black text-[#131313]">
+              <P4Sparkle size={13} color="var(--p4-orange, #f9a11b)" />
+              设定本周目标
+              <P4Sparkle size={13} color="var(--p4-orange, #f9a11b)" />
+            </span>
+          </motion.button>
+        );
+      }
       return (
         <motion.button
           whileTap={{ scale: 0.98 }}

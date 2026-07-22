@@ -14,6 +14,8 @@ import { ActionSheet } from '@/components/ActionSheet';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { SheetModal } from '@/components/SheetModal';
 import { ArchiveIcon, EditIcon, RestoreIcon, TrashIcon } from '@/components/icons';
+import { useUiChannel } from '@/ui/useUiChannel';
+import { P4CountPill, P4EmptyBloom, P4SectionTitle, P4Sparkle } from '@/ui/p4Kit';
 
 const weekdayLabels = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 
@@ -221,6 +223,7 @@ const ATTR_IDS: AttributeId[] = ['knowledge', 'guts', 'dexterity', 'kindness', '
 // 行动页子视图（任务）：页头/页级转场由宿主 Actions.tsx 承担，本组件只渲染内容
 export const TodosView = () => {
   const { todos, settings, attributes, addTodo, updateTodo, deleteTodo, getTodayTodoProgress, getTodoDateLabel, weeklyGoals, saveWeeklyGoal, deleteWeeklyGoal, completeWeeklyGoal, getWeeklyGoalProgress, undoTodayTodoCompletion } = useAppStore();
+  const isP4 = useUiChannel() === 'p4';
   const [showAdd, setShowAdd] = useState(false);
   const [editingTodoId, setEditingTodoId] = useState<string | null>(null);
   const [form, setForm] = useState({
@@ -393,16 +396,22 @@ export const TodosView = () => {
         getWeeklyGoalProgress={getWeeklyGoalProgress}
       />
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* 今日任务 */}
-        <div className="rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden">
-          <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-gray-100 dark:border-gray-800">
-            <h3 className="font-bold text-gray-900 dark:text-white">今日任务</h3>
-            <span className="text-xs text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-800 px-2.5 py-1 rounded-full">
-              {activeTodos.length} 项
-            </span>
-          </div>
-          <div className="p-3 space-y-2">
+      <div className={`grid grid-cols-1 lg:grid-cols-2 ${isP4 ? 'gap-6' : 'gap-4'}`}>
+        {/* 今日任务：P4 = 无卡壳，衬线区题直压黄底 + 黑胶囊计数（p4-actions-reference-v2） */}
+        <div className={isP4 ? '' : 'rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden'}>
+          {isP4 ? (
+            <P4SectionTitle meta={<P4CountPill>{activeTodos.length} 项</P4CountPill>} className="px-1 pb-2">
+              今日任务
+            </P4SectionTitle>
+          ) : (
+            <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-gray-100 dark:border-gray-800">
+              <h3 className="font-bold text-gray-900 dark:text-white">今日任务</h3>
+              <span className="text-xs text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-800 px-2.5 py-1 rounded-full">
+                {activeTodos.length} 项
+              </span>
+            </div>
+          )}
+          <div className={isP4 ? 'space-y-2' : 'p-3 space-y-2'}>
             {activeTodos.map(todo => {
               const progress = getTodayTodoProgress(todo.id);
               const attrName = settings.attributeNames[todo.attribute];
@@ -422,20 +431,29 @@ export const TodosView = () => {
               );
             })}
             {activeTodos.length === 0 && (
-              <EmptyState text="还没有任务，添加一个开始吧" />
+              isP4 ? <P4EmptyBloom text="还没有任务，添加一个开始吧" /> : <EmptyState text="还没有任务，添加一个开始吧" />
             )}
           </div>
         </div>
 
         {/* 已归档 */}
-        <div className="rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden">
-          <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-gray-100 dark:border-gray-800">
-            <h3 className="font-bold text-gray-900 dark:text-white">已归档</h3>
-            <span className="text-xs text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-800 px-2.5 py-1 rounded-full">
-              {completedArchivedTodos.length + inactiveArchivedTodos.length + pendingDateTodos.length} 项
-            </span>
-          </div>
-          <div className="p-3 space-y-2">
+        <div className={isP4 ? '' : 'rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden'}>
+          {isP4 ? (
+            <P4SectionTitle
+              meta={<P4CountPill>{completedArchivedTodos.length + inactiveArchivedTodos.length + pendingDateTodos.length} 项</P4CountPill>}
+              className="px-1 pb-2"
+            >
+              已归档
+            </P4SectionTitle>
+          ) : (
+            <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-gray-100 dark:border-gray-800">
+              <h3 className="font-bold text-gray-900 dark:text-white">已归档</h3>
+              <span className="text-xs text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-800 px-2.5 py-1 rounded-full">
+                {completedArchivedTodos.length + inactiveArchivedTodos.length + pendingDateTodos.length} 项
+              </span>
+            </div>
+          )}
+          <div className={isP4 ? 'space-y-2' : 'p-3 space-y-2'}>
 
             {/* ── 未到日期（startDate 在未来 / 今日不在指定星期内）── */}
             {pendingDateTodos.length > 0 && (
@@ -624,7 +642,7 @@ export const TodosView = () => {
             )}
 
             {completedArchivedTodos.length === 0 && inactiveArchivedTodos.length === 0 && pendingDateTodos.length === 0 && (
-              <EmptyState text="归档区暂无内容" />
+              isP4 ? <P4EmptyBloom text="归档区暂无内容" /> : <EmptyState text="归档区暂无内容" />
             )}
           </div>
         </div>
@@ -642,10 +660,22 @@ export const TodosView = () => {
           setShowAdd(true);
         }}
         aria-label="添加任务"
-        className="fixed bottom-24 right-5 md:bottom-8 md:right-8 z-40 w-14 h-14 rounded-full bg-primary text-white shadow-lg shadow-primary/30 flex items-center justify-center cursor-pointer"
+        className={`fixed bottom-24 right-5 md:bottom-8 md:right-8 z-40 flex items-center justify-center cursor-pointer ${
+          isP4
+            ? 'h-16 w-16 text-white' // p4-redraw：蓝色四角星 FAB（星形本体当按钮面）
+            : 'w-14 h-14 rounded-full bg-primary text-white shadow-lg shadow-primary/30'
+        }`}
       >
+        {isP4 && (
+          <P4Sparkle
+            size={64}
+            color="var(--ui-accent)"
+            className="absolute inset-0"
+            style={{ filter: 'drop-shadow(0 3px 0 rgba(19,19,19,0.3))' }}
+          />
+        )}
         {/* 白色加号（与记录子页 FAB 的 PlusIcon 同款笔画） */}
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="w-6 h-6" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={isP4 ? 2.6 : 2} className={`relative ${isP4 ? 'w-5 h-5' : 'w-6 h-6'}`} aria-hidden="true">
           <path d="M12 4.5v15m7.5-7.5h-15" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       </motion.button>
@@ -684,7 +714,32 @@ export const TodosView = () => {
                   className="w-full px-3 py-2.5 border border-gray-200 dark:border-gray-600 rounded-xl bg-gray-50 dark:bg-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary/30"
                 />
 
-                {/* 重要标记 */}
+                {/* 重要标记：P4 = 橙色横幅 + 黑花（modal-02 v3），勾选态整条点亮 */}
+                {isP4 ? (
+                  <label
+                    className="flex cursor-pointer items-center gap-3 rounded-2xl p-3.5 transition-colors"
+                    style={{ background: form.important ? 'var(--p4-orange, #f9a11b)' : 'rgba(249, 161, 27, 0.55)' }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={form.important}
+                      onChange={(e) => setForm(prev => ({ ...prev, important: e.target.checked }))}
+                      className="peer sr-only"
+                    />
+                    <span
+                      aria-hidden
+                      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-colors ${
+                        form.important ? 'bg-[#131313]' : 'bg-white/70'
+                      }`}
+                    >
+                      <P4Sparkle size={14} color={form.important ? 'var(--ui-bg)' : '#131313'} />
+                    </span>
+                    <div>
+                      <span className="text-sm font-black text-[#131313]">标记为重要</span>
+                      <p className="mt-0.5 text-xs font-semibold text-[#131313]/70">重要任务将在首页置顶显示，并记录在历史中</p>
+                    </div>
+                  </label>
+                ) : (
                 <label className="flex items-center gap-3 p-3 rounded-xl border border-amber-200 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 cursor-pointer">
                   <input
                     type="checkbox"
@@ -697,6 +752,7 @@ export const TodosView = () => {
                     <p className="text-xs text-amber-600/70 dark:text-amber-400/70 mt-0.5">重要任务将在首页置顶显示，并记录在历史中</p>
                   </div>
                 </label>
+                )}
 
                 {/* ── 多属性增长区域 ── */}
                 {(() => {

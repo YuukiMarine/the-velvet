@@ -4,6 +4,8 @@ import { useAppStore } from '@/store';
 import { AttributeId, WeeklyGoal, WeeklyGoalItem } from '@/types';
 import { CallingCardSection } from '@/components/callingCard/CallingCardSection';
 import { WeeklyGoalSection } from './WeeklyGoalSection';
+import { useUiChannel } from '@/ui/useUiChannel';
+import { P4Sparkle } from '@/ui/p4Kit';
 
 type GoalPanel = 'weekly' | 'countdown';
 
@@ -58,8 +60,50 @@ export const GoalDeck = (props: GoalDeckProps) => {
     if (info.offset.x > 48 || info.velocity.x > 420) openPanel('weekly');
   };
 
+  const isP4 = useUiChannel() === 'p4';
+
   return (
     <section id="calling-card-section" className="space-y-3">
+      {isP4 ? (
+        /* p4-actions-reference-v2：衬线「目标」+ 蓝星闪 + 蓝 blob 激活标签 */
+        <div className="relative flex items-end justify-between gap-3 px-1">
+          <div>
+            <div className="flex items-center gap-1.5">
+              <h3 className="text-[26px] font-black leading-none text-[#131313]" style={{ fontFamily: 'var(--p4-display-font, serif)' }}>
+                目标
+              </h3>
+              <P4Sparkle size={14} color="var(--ui-accent)" />
+            </div>
+            <p className="mt-1 text-[11px] font-bold text-[#131313]/70">本周推进和重要倒计时</p>
+          </div>
+          <div className="flex items-center gap-1">
+            {goalPanelTabs.map(tab => {
+              const selected = activePanel === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => openPanel(tab.id)}
+                  className={`relative z-0 px-3.5 py-2 text-[13px] font-black transition-colors ${
+                    selected ? 'text-[#131313]' : 'text-[#131313]/75'
+                  }`}
+                >
+                  {selected && (
+                    <motion.span
+                      layoutId="goal-panel-tab"
+                      className="absolute inset-0 -z-10"
+                      style={{ background: 'var(--ui-accent)', borderRadius: '58% 42% 55% 45% / 52% 58% 42% 48%', transform: 'rotate(-2deg)' }}
+                      transition={{ type: 'spring', stiffness: 420, damping: 34 }}
+                    />
+                  )}
+                  {selected && <P4Sparkle size={11} color="#ffffff" className="absolute -left-1 top-0.5" />}
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : (
       <div className="flex items-center justify-between gap-3 px-1">
         <div>
           <h3 className="font-bold text-gray-900 dark:text-white text-sm">目标</h3>
@@ -92,6 +136,7 @@ export const GoalDeck = (props: GoalDeckProps) => {
           })}
         </div>
       </div>
+      )}
 
       <AnimatePresence mode="wait" custom={direction}>
         <motion.div
