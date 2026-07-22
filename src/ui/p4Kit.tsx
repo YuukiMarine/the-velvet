@@ -166,6 +166,59 @@ export const P4StickerPanel = ({ children, className, style, contentClassName, c
   );
 };
 
+/** 衬线分区题（actions/statistics 等页的区块标题）：黑衬线大字 + 蓝星闪 + 右侧 meta 槽 */
+export const P4SectionTitle = ({ children, meta, size = 'md', className }: {
+  children: ReactNode; meta?: ReactNode; size?: 'md' | 'lg'; className?: string;
+}) => (
+  <div className={`flex items-center justify-between gap-3 ${className ?? ''}`}>
+    <div className="flex items-center gap-2">
+      <h3
+        className="font-black leading-none text-[#131313]"
+        style={{ fontFamily: 'var(--p4-display-font, serif)', fontSize: size === 'lg' ? 30 : 24 }}
+      >
+        {children}
+      </h3>
+      <P4Sparkle size={size === 'lg' ? 16 : 14} color="var(--ui-accent)" />
+    </div>
+    {meta}
+  </div>
+);
+
+/** 黑胶囊计数章（「0 项」）+ 右上橙星 */
+export const P4CountPill = ({ children, className }: { children: ReactNode; className?: string }) => (
+  <span className={`relative inline-flex items-center rounded-full bg-[#131313] px-3.5 py-1.5 text-[13px] font-black leading-none text-white ${className ?? ''}`}>
+    {children}
+    <P4Sparkle size={15} color="var(--p4-orange, #f9a11b)" className="absolute -right-2 -top-2" />
+  </span>
+);
+
+/** 漂浮花空状态（actions 页式）：大奶油花 + 白星闪 + 黑粗文案 */
+export const P4EmptyBloom = ({ text, hint, className }: { text: string; hint?: string; className?: string }) => (
+  <div className={`relative flex flex-col items-center py-8 text-center ${className ?? ''}`}>
+    <span className="relative inline-block">
+      <P4Flower size={66} color="var(--ui-paper)" />
+      <P4Sparkle size={16} color="#ffffff" className="absolute -left-5 top-0" />
+    </span>
+    <p className="mt-3 text-[14px] font-black text-[#131313]">{text}</p>
+    {hint && <p className="mt-1 text-xs font-semibold text-[#131313]/60">{hint}</p>}
+  </div>
+);
+
+/** 天空圆窗（页头右上）：蓝天照片感圆 + 云 + 黄花 */
+export const P4SkyCircle = ({ size = 160, className, style }: {
+  size?: number; className?: string; style?: CSSProperties;
+}) => (
+  <div
+    aria-hidden
+    className={`pointer-events-none overflow-hidden rounded-full ${className ?? ''}`}
+    style={{ width: size, height: size, background: 'linear-gradient(210deg, var(--p4-sky-deep, #2196e0) 0%, var(--p4-sky, #8fd0f4) 55%, #e6f6ff 100%)', ...style }}
+  >
+    <div className="absolute rounded-full bg-white/95" style={{ width: size * 0.55, height: size * 0.2, left: size * 0.1, top: size * 0.42, filter: 'blur(1px)' }} />
+    <div className="absolute rounded-full bg-white/80" style={{ width: size * 0.42, height: size * 0.16, left: size * 0.36, top: size * 0.6, filter: 'blur(1.5px)' }} />
+    <P4Flower size={size * 0.46} color="var(--ui-bg)" className="absolute" style={{ right: size * 0.08, bottom: size * 0.1 }} />
+  </div>
+);
+
 /** 警戒斜纹带（黑黄 DANGER 线）：危险区/重要提醒的边饰 */
 export const P4CautionStripes = ({ className, style, height = 8 }: {
   className?: string; style?: CSSProperties; height?: number;

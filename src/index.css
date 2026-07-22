@@ -105,6 +105,62 @@
   --p4-display-font: 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', SimSun, serif;
 }
 
+/* ── P4 弹窗表单毯式重皮（p4-redraw modal v3 系列）─────────────────────────
+   旧弹窗表单遍布 bg-gray-50/100 + border-gray-200 的后台灰件；P4 定稿是奶油面无描边。
+   逐调用点改动太散且与并行会话冲突面大，这里按「频道 × 弹窗容器」两级选择器毯式收编：
+   仅 data-ui-channel="p4" + [role=dialog|alertdialog] 内生效，其他频道零影响。 */
+:root[data-ui-channel="p4"] [role="dialog"] input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+:root[data-ui-channel="p4"] [role="alertdialog"] input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+:root[data-ui-channel="p4"] [role="dialog"] textarea,
+:root[data-ui-channel="p4"] [role="alertdialog"] textarea,
+:root[data-ui-channel="p4"] [role="dialog"] select,
+:root[data-ui-channel="p4"] [role="alertdialog"] select {
+  background-color: var(--ui-paper) !important;
+  border-color: transparent !important;
+  border-radius: 14px !important;
+  color: #131313 !important;
+  font-weight: 600;
+}
+/* 弹窗内灰系文字 → 黑（分级透明度保留层级） */
+:root[data-ui-channel="p4"] [role="dialog"] .text-gray-700,
+:root[data-ui-channel="p4"] [role="dialog"] .text-gray-800,
+:root[data-ui-channel="p4"] [role="alertdialog"] .text-gray-700,
+:root[data-ui-channel="p4"] [role="alertdialog"] .text-gray-800 {
+  color: #131313 !important;
+}
+:root[data-ui-channel="p4"] [role="dialog"] .text-gray-500,
+:root[data-ui-channel="p4"] [role="dialog"] .text-gray-600,
+:root[data-ui-channel="p4"] [role="alertdialog"] .text-gray-500,
+:root[data-ui-channel="p4"] [role="alertdialog"] .text-gray-600 {
+  color: rgba(19, 19, 19, 0.72) !important;
+}
+:root[data-ui-channel="p4"] [role="dialog"] .text-gray-400,
+:root[data-ui-channel="p4"] [role="alertdialog"] .text-gray-400 {
+  color: rgba(19, 19, 19, 0.55) !important;
+}
+/* 弹窗内灰面块（选项行/芯片/分组）→ 奶油纸 */
+:root[data-ui-channel="p4"] [role="dialog"] .bg-gray-50,
+:root[data-ui-channel="p4"] [role="dialog"] .bg-gray-100,
+:root[data-ui-channel="p4"] [role="alertdialog"] .bg-gray-50,
+:root[data-ui-channel="p4"] [role="alertdialog"] .bg-gray-100 {
+  background-color: var(--ui-paper) !important;
+}
+:root[data-ui-channel="p4"] [role="dialog"] .border-gray-100,
+:root[data-ui-channel="p4"] [role="dialog"] .border-gray-200,
+:root[data-ui-channel="p4"] [role="dialog"] .border-gray-300,
+:root[data-ui-channel="p4"] [role="alertdialog"] .border-gray-100,
+:root[data-ui-channel="p4"] [role="alertdialog"] .border-gray-200,
+:root[data-ui-channel="p4"] [role="alertdialog"] .border-gray-300 {
+  border-color: rgba(19, 19, 19, 0.12) !important;
+}
+/* 弹窗主操作（bg-primary 系旧按钮）→ 设计稿蓝确认钮 */
+:root[data-ui-channel="p4"] [role="dialog"] button.bg-primary,
+:root[data-ui-channel="p4"] [role="alertdialog"] button.bg-primary {
+  background-color: var(--ui-accent) !important;
+  border-radius: 16px !important;
+  font-weight: 900;
+}
+
 /* P3 蓝 —— 午夜/宿命：深海空间，青色资源线，洋红刀口 */
 :root[data-ui-channel="p3"] {
   --ui-bg: #001c7a;

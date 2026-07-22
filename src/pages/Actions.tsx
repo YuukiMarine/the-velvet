@@ -18,6 +18,8 @@ import { springSnappy, TAP } from '@/utils/motion';
 import { triggerNavFeedback } from '@/utils/feedback';
 import { TodosView } from '@/pages/Todos';
 import { ActivitiesView } from '@/pages/Activities';
+import { useUiChannel } from '@/ui/useUiChannel';
+import { P4SkyCircle } from '@/ui/p4Kit';
 
 type ActionsSubTab = 'todos' | 'activities';
 
@@ -29,6 +31,7 @@ const TABS: Array<{ key: ActionsSubTab; label: string }> = [
 
 export const Actions = () => {
   const { actionsSubTab, setActionsSubTab, currentPage, setCurrentPage } = useAppStore();
+  const isP4 = useUiChannel() === 'p4';
 
   // ── legacy 路由归一 ──────────────────────────────────────────────────────
   // 旧调用点仍可能 setCurrentPage('todos'/'activities')（App 把这两个旧 id 也映射到本页）。
@@ -63,7 +66,66 @@ export const Actions = () => {
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
       {/* ── 大字切换头 ─────────────────────────────────────────────────────
           外层定高（h-10 = 激活词 30px + 间隙 4px + 下划线 6px），字号 spring 动画期间
-          行高浮动被吸收，下方子视图区不抖动；落位与原 PageTitle 标题行一致 */}
+          行高浮动被吸收，下方子视图区不抖动；落位与原 PageTitle 标题行一致。
+          P4（p4-actions-reference-v2 1:1）：衬线双词 + 激活词背后橙圆 + 右上天空圆窗
+          + ACTION PROGRAM 眉标；下划线退役。 */}
+      {isP4 ? (
+        <div className="relative -mx-4 mb-4 overflow-hidden px-4 pb-1 pt-1">
+          <P4SkyCircle size={150} className="absolute -right-8 -top-10" />
+          <motion.div
+            role="tablist"
+            aria-label="行动子页切换"
+            drag="x"
+            dragConstraints={{ left: 0, right: 0 }}
+            dragElastic={0.15}
+            onDragEnd={handleDragEnd}
+            className="relative inline-flex select-none items-end gap-2.5 cursor-grab active:cursor-grabbing"
+          >
+            {TABS.map((tab, i) => {
+              const active = actionsSubTab === tab.key;
+              return (
+                <Fragment key={tab.key}>
+                  {i > 0 && (
+                    <span aria-hidden className="pb-1 text-[30px] font-black leading-none text-[var(--p4-orange,#f9a11b)]" style={{ fontFamily: 'var(--p4-display-font, serif)' }}>
+                      /
+                    </span>
+                  )}
+                  <motion.button
+                    type="button"
+                    role="tab"
+                    id={`actions-tab-${tab.key}`}
+                    aria-selected={active}
+                    aria-controls={`actions-panel-${tab.key}`}
+                    whileTap={TAP}
+                    onClick={() => switchTab(tab.key)}
+                    className="relative"
+                  >
+                    {/* 激活词背后的橙色太阳圆 */}
+                    {active && (
+                      <span
+                        aria-hidden
+                        className="absolute -left-4 -top-4 h-[76px] w-[76px] rounded-full"
+                        style={{ background: 'radial-gradient(circle at 45% 38%, #ffc23f 0 45%, var(--p4-orange, #f9a11b) 46% 100%)', opacity: 0.92 }}
+                      />
+                    )}
+                    <motion.span
+                      animate={{ fontSize: active ? '50px' : '28px' }}
+                      transition={springSnappy}
+                      className="relative block font-black leading-none tracking-tight text-[#131313]"
+                      style={{ fontFamily: 'var(--p4-display-font, serif)' }}
+                    >
+                      {tab.label}
+                    </motion.span>
+                  </motion.button>
+                </Fragment>
+              );
+            })}
+          </motion.div>
+          <div className="relative mt-2 text-xs font-black tracking-[0.22em] text-[#131313]">
+            ACTION&nbsp;&nbsp;PROGRAM
+          </div>
+        </div>
+      ) : (
       <div className="relative h-10 mb-5">
         <motion.div
           role="tablist"
@@ -143,6 +205,7 @@ export const Actions = () => {
           </span>
         </motion.div>
       </div>
+      )}
 
       {/* ── 子视图区 ───────────────────────────────────────────────────────
           D3 同域子切换 180ms 制度；initial={false} 跳过随页面首挂的滑入
