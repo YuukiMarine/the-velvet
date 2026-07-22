@@ -9,6 +9,7 @@ import { zClass } from '@/utils/zIndex';
 import { RadialQuickNav } from '@/components/RadialQuickNav';
 import { playHeavyTransition } from '@/ui/transitionDirector';
 import { useUiChannel } from '@/ui/useUiChannel';
+import { P3R, slantClip, TitlePeriod } from '@/components/p3r/kit';
 
 // ── SVG 图标组件（24px viewBox / stroke 1.8 / filled 双态制式）──────────────
 
@@ -103,6 +104,8 @@ export const Sidebar = () => {
   const { currentPage, setCurrentPage, actionsSubTab, setActionsSubTab } = useAppStore();
   // F6：黑猫对话窗（NavigatorWindow 挂在 App 顶层，这里只负责打开）
   const openNavigator = useNavigatorStore((s) => s.open);
+  // P3R：蓝主题侧栏换形（水面底 + 蓝斜块选中 + 洋红角），其余主题不受影响
+  const p3 = useUiChannel() === 'p3';
 
   const renderItem = (item: NavItem) => {
     const active = isNavActive(item.id, currentPage);
@@ -119,20 +122,29 @@ export const Sidebar = () => {
           }
           setCurrentPage(item.id);
         }}
-        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150 cursor-pointer ${
-          active
-            ? 'bg-primary/10 dark:bg-primary/15 text-primary'
-            : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-200'
-        }`}
+        className={p3
+          ? `relative w-full flex items-center gap-3 px-4 py-2.5 transition-all duration-150 cursor-pointer text-sm font-black ${
+              active ? 'text-white' : 'hover:bg-[#e2f2fa]'
+            }`
+          : `w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150 cursor-pointer ${
+              active
+                ? 'bg-primary/10 dark:bg-primary/15 text-primary'
+                : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-200'
+            }`}
+        style={p3 ? (active ? { clipPath: slantClip(10), background: P3R.blue } : { clipPath: slantClip(10), color: P3R.inkSoft }) : undefined}
       >
         <item.Icon filled={active} />
-        <span className={`text-sm font-medium ${active ? 'font-semibold' : ''}`}>{item.label}</span>
-        {active && (
-          <motion.div
-            layoutId="sidebar-active"
-            className="ml-auto w-1 h-5 bg-primary rounded-full"
-            transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-          />
+        <span className={p3 ? 'text-sm' : `text-sm font-medium ${active ? 'font-semibold' : ''}`}>{item.label}</span>
+        {p3 ? (
+          active && <span aria-hidden className="absolute bottom-0 right-4 h-[6px] w-[15px]" style={{ background: P3R.magenta, clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
+        ) : (
+          active && (
+            <motion.div
+              layoutId="sidebar-active"
+              className="ml-auto w-1 h-5 bg-primary rounded-full"
+              transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+            />
+          )
         )}
       </motion.button>
     );
@@ -143,21 +155,32 @@ export const Sidebar = () => {
       initial={{ x: -280 }}
       animate={{ x: 0 }}
       transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-      className="hidden md:flex md:flex-col md:w-60 bg-white dark:bg-gray-900 border-r border-gray-100 dark:border-gray-800 h-screen fixed left-0 top-0 shadow-sm"
+      // zClass.nav：p3 页面壳带 fixed 全屏水面底（绘制序在侧栏后），无 z 的侧栏会被整条盖住（横屏上报根因）
+      className={`hidden md:flex md:flex-col md:w-60 h-screen fixed left-0 top-0 ${zClass.nav} ${
+        p3 ? '' : 'bg-white dark:bg-gray-900 border-r border-gray-100 dark:border-gray-800 shadow-sm'
+      }`}
+      style={p3 ? { background: 'linear-gradient(175deg, #f8fcff 0%, #eaf5fb 60%, #dfeff8 100%)', borderRight: '1px solid rgba(53,209,232,0.4)', boxShadow: '0 0 24px rgba(38,96,140,0.08)' } : undefined}
     >
       <div className="px-6 pt-8 pb-6">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-xl overflow-hidden flex-shrink-0">
+          <div className={`w-8 h-8 overflow-hidden flex-shrink-0 ${p3 ? '' : 'rounded-xl'}`} style={p3 ? { clipPath: slantClip(5) } : undefined}>
             <img src="/icon.png" alt="靛蓝色房间" className="w-full h-full object-cover" />
           </div>
           <div>
-            <h1 className="text-base font-bold text-gray-900 dark:text-white leading-none">靛蓝色房间</h1>
-            <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-0.5">成长追踪器</p>
+            {p3 ? (
+              <h1 className="inline-flex items-end text-[17px] font-black italic leading-none tracking-tight" style={{ color: P3R.ink, fontFamily: '"Arial Black", "Noto Sans SC", sans-serif' }}>
+                靛蓝色房间
+                <TitlePeriod className="mb-0 ml-1 scale-[0.6]" style={{ transformOrigin: 'left bottom' }} />
+              </h1>
+            ) : (
+              <h1 className="text-base font-bold text-gray-900 dark:text-white leading-none">靛蓝色房间</h1>
+            )}
+            <p className={p3 ? 'mt-0.5 text-[10px] font-black tracking-[0.14em]' : 'text-[11px] text-gray-400 dark:text-gray-500 mt-0.5'} style={p3 ? { color: P3R.blue } : undefined}>THE VELVET</p>
           </div>
         </div>
       </div>
 
-      <nav className="flex-1 px-3 pb-4 space-y-0.5">
+      <nav className="flex-1 min-h-0 overflow-y-auto px-3 pb-4 space-y-0.5">
         {navItems.slice(0, 2).map(renderItem)}
 
         {/* 黑猫项：非页面路由，无激活态——打开 NavigatorWindow，与 BottomNav 中央 ◈ 同一去处。
@@ -168,14 +191,23 @@ export const Sidebar = () => {
             triggerNavFeedback();
             openNavigator();
           }}
-          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150 cursor-pointer text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-200"
+          className={p3
+            ? 'w-full flex items-center gap-3 px-4 py-2.5 transition-all duration-150 cursor-pointer text-sm font-black hover:bg-[#e2f2fa]'
+            : 'w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150 cursor-pointer text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-200'}
+          style={p3 ? { clipPath: slantClip(10), color: P3R.inkSoft } : undefined}
         >
           <span className="w-6 h-6 flex items-center justify-center flex-none" aria-hidden="true">
-            <span className="w-[18px] h-[18px] rotate-45 rounded-[5px] bg-primary shadow-sm shadow-primary/40 flex items-center justify-center">
-              <CatSilhouetteIcon className="w-3 h-3 -rotate-45 text-white" />
-            </span>
+            {p3 ? (
+              <span className="flex h-[20px] w-[20px] items-center justify-center" style={{ background: P3R.cyan, clipPath: slantClip(4) }}>
+                <CatSilhouetteIcon className="h-3.5 w-3.5 text-[#0a1230]" />
+              </span>
+            ) : (
+              <span className="w-[18px] h-[18px] rotate-45 rounded-[5px] bg-primary shadow-sm shadow-primary/40 flex items-center justify-center">
+                <CatSilhouetteIcon className="w-3 h-3 -rotate-45 text-white" />
+              </span>
+            )}
           </span>
-          <span className="text-sm font-medium">黑猫</span>
+          <span className={p3 ? 'text-sm' : 'text-sm font-medium'}>黑猫</span>
         </motion.button>
 
         {navItems.slice(2).map(renderItem)}

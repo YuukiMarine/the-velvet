@@ -72,14 +72,14 @@ export const P3RPage = ({ children, className, active = true }: { children: Reac
  *  字重口径：Arial 合成加粗（比 Impact / Arial Black 细一档，用户定稿）
  *  动效（A3）：内层随页面滚动慢速视差漂移 + 极低频呼吸透明度；外层结构不变
  *  （调用方经 className/style 传入的定位与 rotate 覆盖全部保留），D0 静止。 */
-export const GhostWords = ({ words, className, style }: { words: string[]; className?: string; style?: CSSProperties }) => {
+export const GhostWords = ({ words, className, style, parallax = true }: { words: string[]; className?: string; style?: CSSProperties; parallax?: boolean }) => {
   const anim = useBoldness();
   const rootRef = useRef<HTMLDivElement>(null);
   const y = useMotionValue(0);
   // 本应用不滚 window（body overflow hidden，内容在内部容器滚动）：
   // 挂载时向上找最近的可滚祖先并监听它，找不到才退回 window
   useEffect(() => {
-    if (!anim) return;
+    if (!anim || !parallax) return;
     let el: HTMLElement | null = rootRef.current?.parentElement ?? null;
     while (el && el !== document.body) {
       if (/(auto|scroll|overlay)/.test(getComputedStyle(el).overflowY)) break;
@@ -91,7 +91,7 @@ export const GhostWords = ({ words, className, style }: { words: string[]; class
     onScroll();
     scroller.addEventListener('scroll', onScroll, { passive: true });
     return () => scroller.removeEventListener('scroll', onScroll);
-  }, [anim, y]);
+  }, [anim, parallax, y]);
   return (
     <div
       ref={rootRef}

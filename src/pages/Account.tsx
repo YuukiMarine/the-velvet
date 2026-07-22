@@ -440,7 +440,7 @@ export const Account = () => {
     return (
       <P3RPage>
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="relative pb-10">
-          <GhostWords words={['DATA']} className="right-[-30px] top-[-6px] text-right text-[72px]" />
+          <GhostWords words={['DATA']} className="right-[8px] top-[-6px] text-right text-[72px]" />
 
           <P3PageHeader lead title="账号与数据" onBack={() => setCurrentPage('menu')} className="relative pt-3" />
 
@@ -604,7 +604,7 @@ export const Account = () => {
 
             {/* 底部幽灵字 */}
             <div aria-hidden className="relative h-16">
-              <GhostWords words={['CLOUD']} className="left-[-26px] top-[-4px] text-[68px]" />
+              <GhostWords words={['CLOUD']} className="left-[6px] top-[-4px] text-[68px]" />
             </div>
           </section>
 

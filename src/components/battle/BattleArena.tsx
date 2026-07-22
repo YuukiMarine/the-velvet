@@ -347,7 +347,7 @@ export const BattleArena = () => {
       exit={{ opacity: 0 }}
       className={`relative space-y-5 ${p3 ? 'pb-10' : 'pb-8'}`}
     >
-      {p3 && <GhostWords words={['BATTLE']} className="right-[-26px] top-[-14px] text-right text-[72px]" />}
+      {p3 && <GhostWords words={['BATTLE']} className="right-[8px] top-[-14px] text-right text-[72px]" />}
 
       {/* Header — 宫格子页页头归一 PageTitle 制式（审计 S6），返回归一 → 菜单 */}
       {p3 ? (
@@ -1244,7 +1244,7 @@ export const BattleArena = () => {
       {/* P3R 底部幽灵字 */}
       {p3 && (
         <div aria-hidden className="relative h-14">
-          <GhostWords words={['TACTICAL']} className="left-[-30px] top-[-4px] text-[62px]" style={{ color: 'rgba(53,209,232,0.28)' }} />
+          <GhostWords words={['TACTICAL']} className="left-[6px] top-[-4px] text-[54px]" style={{ color: 'rgba(53,209,232,0.28)' }} />
         </div>
       )}
     </motion.div>

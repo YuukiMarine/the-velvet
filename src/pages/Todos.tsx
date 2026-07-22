@@ -398,7 +398,7 @@ export const TodosView = () => {
       />
 
       <div className={p3 ? 'relative mt-8 space-y-10' : 'grid grid-cols-1 lg:grid-cols-2 gap-4'}>
-        {p3 && <GhostWords words={['PLAN']} className="left-[-14px] top-[36%] text-[84px]" />}
+        {p3 && <GhostWords words={['PLAN']} className="left-[6px] top-[36%] text-[84px]" />}
         {/* 今日任务 */}
         <div className={p3 ? 'relative' : 'rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden'}>
           {p3 ? (
@@ -645,7 +645,7 @@ export const TodosView = () => {
             )}
           </div>
         </div>
-        {p3 && <GhostWords words={['LOG']} className="bottom-[-30px] right-[-10px] text-[84px]" />}
+        {p3 && <GhostWords words={['LOG']} className="bottom-[6px] right-[8px] text-[84px]" />}
       </div>
 
       {/* 添加任务 FAB：替代原页头「+ 添加任务」按钮。
