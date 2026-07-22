@@ -397,7 +397,7 @@ export function Cooperation() {
       {/* P3R：LINK 巨幽灵字（标题下横贯，设计稿主视觉） */}
       {p3 && (
         <div aria-hidden className="relative h-7">
-          <GhostWords words={['LINK']} className="left-[-16px] top-[-34px] text-[92px]" />
+          <GhostWords words={['LINK']} className="left-[6px] top-[-34px] text-[92px]" />
         </div>
       )}
 
@@ -641,7 +641,7 @@ export function Cooperation() {
       {/* P3R：ARCANA 幽灵字（卡墙下部，设计稿） */}
       {p3 && (
         <div aria-hidden className="relative h-8">
-          <GhostWords words={['ARCANA']} className="left-[-10px] top-[-30px] text-[74px]" />
+          <GhostWords words={['ARCANA']} className="left-[6px] top-[-30px] text-[74px]" />
         </div>
       )}
 

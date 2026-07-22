@@ -1155,7 +1155,7 @@ export const Ledger = () => {
       {/* P3R：LEDGER 巨幽灵字（页底，设计稿） */}
       {p3 && (
         <div aria-hidden className="relative h-16">
-          <GhostWords words={['LEDGER']} className="left-[-24px] top-[-6px] text-[84px]" style={{ color: 'rgba(53,209,232,0.30)' }} />
+          <GhostWords words={['LEDGER']} className="left-[6px] top-[-6px] text-[74px]" style={{ color: 'rgba(53,209,232,0.30)' }} />
         </div>
       )}
     </motion.div>

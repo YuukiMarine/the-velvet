@@ -168,7 +168,8 @@ const StarChartP3 = ({ items, onSelect, showLabels = true }: { items: StarItem[]
     return { leftPct: (x / 360) * 100, topPct: (y / 356) * 100, tx, ty };
   };
   return (
-    <div className="relative mx-auto w-full max-w-[288px]" style={{ paddingTop: '8%', paddingBottom: '11%' }}>
+    // padding 用固定 px：百分比 padding 按父宽解析，宽屏下会把星整体顶下去裁掉底部标签（用户上报）
+    <div className="relative mx-auto w-full max-w-[288px]" style={{ paddingTop: 23, paddingBottom: 32 }}>
       {/* 平行四边形斜切(下左上右) + 高度拉伸；星与标签同处一个 transform，标签再反变换回正 */}
       <div className="relative" style={{ transform: `skewX(${STAR_SKEW}deg) scaleY(${STAR_SCALEY})` }}>
         <svg viewBox="0 0 360 356" className="w-full overflow-visible" aria-hidden>
@@ -608,8 +609,8 @@ export const DashboardP3 = () => {
 
         {/* 幽灵字（右上，随页滚动） */}
         <GhostWords words={['THE', 'VELVET']} className="right-[10px] top-[10px] text-right text-[58px]" />
-        {/* 幽灵字（左下，横向大单词——与 AI 助手页同款制式） */}
-        <GhostWords words={['WILD HEART']} className="bottom-[14px] left-[-6px] text-[52px] whitespace-nowrap" style={{ transform: 'rotate(0deg)' }} />
+        {/* 幽灵字（左缘竖排：顺时针 90° 贴左侧；关视差防竖排字横漂） */}
+        <GhostWords words={['WILD HEART']} parallax={false} className="left-[64px] top-[96px] text-[72px] whitespace-nowrap" style={{ transform: 'rotate(90deg)', transformOrigin: 'left top' }} />
 
         {/* ── 页头 ── */}
         <header className="relative pt-4">
@@ -846,17 +847,26 @@ export const DashboardP3 = () => {
                 showLabels={!dossierAttr}
               />
             </motion.div>
-            {/* 详情层：选中时字段从两侧滑入（纯位移 stagger，返回倒放） */}
-            <AnimatePresence>
-              {dossierAttr && (
-                <AttrDetailInline
-                  key={dossierAttr}
-                  attrId={dossierAttr}
-                  level={starItems.find((it) => it.id === dossierAttr)?.level ?? 1}
-                  onBack={() => setDossierAttr(null)}
-                />
-              )}
-            </AnimatePresence>
+            {/* 详情层：选中时字段从两侧滑入（纯位移 stagger，返回倒放）。
+                外层高度动画：展开 0→auto / 收合 auto→0 与内部倒放同播——
+                否则详情 exit 播完瞬间卸载,区块从高位直接跳回 344,底部先空一截再卡回（用户上报） */}
+            <motion.div
+              className="relative z-10 overflow-hidden"
+              initial={false}
+              animate={{ height: dossierAttr ? 'auto' : 0 }}
+              transition={{ duration: 0.34, ease: [0.3, 0, 0.2, 1] }}
+            >
+              <AnimatePresence>
+                {dossierAttr && (
+                  <AttrDetailInline
+                    key={dossierAttr}
+                    attrId={dossierAttr}
+                    level={starItems.find((it) => it.id === dossierAttr)?.level ?? 1}
+                    onBack={() => setDossierAttr(null)}
+                  />
+                )}
+              </AnimatePresence>
+            </motion.div>
             {/* 点击波纹：独立叠层(z-30)，不随星层旋转/淡出——以点击维度字位置为圆心，全不透明清晰可见 */}
             <AnimatePresence>
               {starRipples.map((rp) => (

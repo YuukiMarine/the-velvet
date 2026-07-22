@@ -70,7 +70,7 @@ export function Astrology() {
           transition={{ duration: 0.2 }}
           className="relative mx-auto max-w-xl space-y-5 pb-6"
         >
-          <GhostWords words={['ARCANA']} className="right-[-24px] top-[-12px] text-right text-[72px]" />
+          <GhostWords words={['ARCANA']} className="right-[8px] top-[-12px] text-right text-[72px]" />
           <P3PageHeader ticks title="星象" onBack={() => setCurrentPage('dashboard')} className="relative pt-2" />
           {p3Tabs}
 
@@ -99,7 +99,7 @@ export function Astrology() {
 
           {/* 底部幽灵字 */}
           <div aria-hidden className="relative h-14">
-            <GhostWords words={['DESTINY']} className="left-[-24px] top-[-2px] text-[64px]" />
+            <GhostWords words={['DESTINY']} className="left-[6px] top-[-2px] text-[64px]" />
           </div>
         </motion.div>
       </P3RPage>

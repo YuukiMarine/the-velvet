@@ -1537,7 +1537,7 @@ export const Achievements = () => {
     return (
       <P3RPage className="overflow-hidden">
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="relative space-y-5 pb-8">
-          <GhostWords words={['ARCHIVE']} className="left-[-20px] top-[-14px] text-[70px]" />
+          <GhostWords words={['ARCHIVE']} className="left-[6px] top-[-14px] text-[60px]" />
           <P3PageHeader ticks title="成就" onBack={() => setCurrentPage('menu')} className="relative pt-2" />
 
           {/* 切换头（设计稿：选中 = 蓝斜块白字 + 右下洋红角；未选 = 白斜块黑字） */}
@@ -1571,7 +1571,7 @@ export const Achievements = () => {
 
           {/* 底部幽灵字 */}
           <div aria-hidden className="relative h-14">
-            <GhostWords words={['ACHIEVEMENT']} className="left-[-30px] top-[-2px] text-[58px]" />
+            <GhostWords words={['ACHIEVEMENT']} className="left-[6px] top-[-2px] text-[44px]" />
           </div>
         </motion.div>
       </P3RPage>

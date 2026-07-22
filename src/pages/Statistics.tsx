@@ -309,7 +309,7 @@ export const Statistics = () => {
       exit={{ opacity: 0 }}
       className="relative"
     >
-      {p3 && <GhostWords words={['TRACE']} className="right-[-22px] top-[-12px] text-right text-[78px]" style={{ transform: 'rotate(0deg)' }} />}
+      {p3 && <GhostWords words={['TRACE']} className="right-[8px] top-[-12px] text-right text-[78px]" style={{ transform: 'rotate(0deg)' }} />}
       {/* 斜轴世界（§2 规则1）：整页内容平面随世界倾斜 -4°，卡片成平行四边形；
           每张卡的内容包 PlaneLevel 反制回水平（"世界斜、字不斜"）。聚焦输入自动校直。
           p3：频道 token --ui-axis 归零，本容器自动放平。 */}
@@ -523,7 +523,7 @@ export const Statistics = () => {
       {/* P3R：STATISTICS 巨幽灵字（页底） */}
       {p3 && (
         <div aria-hidden className="relative h-14">
-          <GhostWords words={['STATISTICS']} className="left-[-26px] top-[-4px] text-[58px]" style={{ transform: 'rotate(0deg)', color: 'rgba(53,209,232,0.28)' }} />
+          <GhostWords words={['STATISTICS']} className="left-[6px] top-[-4px] text-[46px]" style={{ transform: 'rotate(0deg)', color: 'rgba(53,209,232,0.28)' }} />
         </div>
       )}
       </PagePlane>

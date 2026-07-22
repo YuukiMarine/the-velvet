@@ -67,7 +67,7 @@ export const Actions = () => {
     return (
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
         <P3RPage className="overflow-hidden">
-          <GhostWords words={['ACTION']} className="right-[-24px] top-[64px] text-[72px]" />
+          <GhostWords words={['ACTION']} className="right-[8px] top-[64px] text-[72px]" />
           <div
             role="tablist"
             aria-label="行动子页切换"

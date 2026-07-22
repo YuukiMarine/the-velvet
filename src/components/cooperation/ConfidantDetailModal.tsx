@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence, type Variants } from 'motion/react';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { useAppStore, toLocalDateKey } from '@/store';
@@ -340,7 +341,10 @@ export function ConfidantDetailModal({
     await updateConfidant(confidant.id, { customAvatarDataUrl: undefined });
   };
 
-  return (
+  // portal 到 body（审计 §3.6）：树内 fixed 会被页面容器的 transform/clip 创建的
+  // containing block 吃掉——p3 页面壳（转场揭示 clip / 入场 y 位移）下弹窗被裁小、
+  // 长按「更换头像」菜单点不到（用户上报蓝主题失灵的根因）
+  return createPortal(
     <AnimatePresence>
       <motion.div
         key="cd-modal-bg"
@@ -1089,7 +1093,8 @@ export function ConfidantDetailModal({
           </motion.div>
         )}
       </AnimatePresence>
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body,
   );
 }
 
