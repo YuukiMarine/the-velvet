@@ -17,6 +17,9 @@ import { TerminalTaskCard } from '@/components/terminal/TerminalTaskCard';
 import { playSound } from '@/utils/feedback';
 import { getAttributeLevelTitle } from '@/utils/attributeLevelTitles';
 import type { AttributeId, CallingCard } from '@/types';
+import { useUiChannel } from '@/ui/useUiChannel';
+import { P4Flower, P4Sparkle, P4SunRings, P4SkyFan } from '@/ui/p4Kit';
+import { FlowerChart } from '@/components/FlowerChart';
 
 // Seeded random: picks a stable index per session (changes on every page open)
 const sessionSeed = Math.random();
@@ -607,11 +610,13 @@ export const Dashboard = () => {
   const [dossierAttr, setDossierAttr] = useState<AttributeId | null>(null);
 
   // In dark mode the UI background is dark, so light text always reads better on the colored banner
+  // P4（p4-redraw 定稿）：问候卡是黑色斜板，文字奶油/黄，覆盖亮暗判定
+  const isP4 = useUiChannel() === 'p4';
   const useLightText = settings.darkMode || !bannerLight;
-  const textClass = useLightText ? 'text-white' : 'text-black/90';
-  const textMutedClass = useLightText ? 'text-white/70' : 'text-black/50';
-  const textSecondaryClass = useLightText ? 'text-white/80' : 'text-black/60';
-  const trackClass = useLightText ? 'bg-white/20' : 'bg-black/10';
+  const textClass = isP4 ? 'text-[#fff6d0]' : useLightText ? 'text-white' : 'text-black/90';
+  const textMutedClass = isP4 ? 'text-[var(--ui-bg)]' : useLightText ? 'text-white/70' : 'text-black/50';
+  const textSecondaryClass = isP4 ? 'text-[#fff6d0]/80' : useLightText ? 'text-white/80' : 'text-black/60';
+  const trackClass = isP4 ? 'bg-white/15' : useLightText ? 'bg-white/20' : 'bg-black/10';
 
 
   // P8.1 星象仪数据：名 / 等级 / 称号（点亮刻度 = level/maxLevel）
@@ -731,45 +736,85 @@ export const Dashboard = () => {
       exit={{ opacity: 0 }}
       className="relative space-y-5 max-w-2xl mx-auto md:max-w-none"
     >
-      {/* 斜界引力线：问候卡 → 今日任务，串起"从今天 → 今天要做的事"的视线。
-          起点取底部中央、终点取顶部偏左，横移收窄、纵向"先竖后斜"更像引力下坠。 */}
-      <SlantGuideLine
-        containerRef={dashRootRef}
-        fromRef={greetingRef}
-        toRef={todayTaskRef}
-        fromAnchor="bottom-center"
-        toAnchor="top-left"
-        bend={0.55}
-      />
+      {/* 斜界引力线：问候卡 → 今日任务（P4 有自己的页头语汇，不挂引力线） */}
+      {!isP4 && (
+        <SlantGuideLine
+          containerRef={dashRootRef}
+          fromRef={greetingRef}
+          toRef={todayTaskRef}
+          fromAnchor="bottom-center"
+          toAnchor="top-left"
+          bend={0.55}
+        />
+      )}
 
       {/* 竖屏流光品牌标题 — 仅在非宽屏显示，banner正上方。
-          GSAP 时间线 + SplitText 逐字入场（BrandTitleReveal 内部 D0 守卫 + revert 清理）。 */}
-      <BrandTitleReveal darkMode={settings.darkMode} />
+          GSAP 时间线 + SplitText 逐字入场（BrandTitleReveal 内部 D0 守卫 + revert 清理）。
+          P4（p4-dashboard-reference-v2 1:1）：衬线特大标题 + TODAY'S SHOW 眉标 + 右上大日期，
+          右上角橙色太阳环 + 天空扇 + 花朵，元素出血到屏幕右缘。 */}
+      {isP4 ? (
+        <div className="relative -mx-4 overflow-hidden px-4 pb-1 pt-2">
+          <P4SkyFan size={150} className="absolute right-0 top-0 opacity-95" />
+          <P4SunRings size={200} className="absolute -right-14 -top-20" />
+          <P4Sparkle size={20} color="#ffffff" className="absolute right-[40%] top-3" />
+          <P4Sparkle size={14} color="var(--ui-accent)" className="absolute right-[36%] top-[112px]" />
+          {/* 大日期牌（压在太阳上） */}
+          <div className="absolute right-5 top-3 text-center">
+            <div className="text-[40px] font-black leading-none tabular-nums text-[#131313]">
+              {String(today.getDate()).padStart(2, '0')}
+            </div>
+            <div className="text-[13px] font-black tracking-[0.2em] text-[#131313]">
+              {today.toLocaleDateString('en-US', { month: 'short' }).toUpperCase()}
+            </div>
+            <div className="mt-0.5 text-[11px] font-black tracking-[0.2em] text-[#131313]/80">
+              {today.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase()}
+            </div>
+          </div>
+          <h1
+            className="relative w-[62%] break-words text-[46px] font-black leading-[1.05] tracking-tight text-[#131313]"
+            style={{ fontFamily: 'var(--p4-display-font, serif)' }}
+          >
+            靛蓝色房间
+          </h1>
+          <div className="relative mt-1.5 text-[13px] font-black tracking-[0.16em] text-[#131313]">
+            TODAY&apos;S SHOW · <span className="text-[var(--p4-orange,#f9a11b)]">04</span>
+          </div>
+        </div>
+      ) : (
+        <BrandTitleReveal darkMode={settings.darkMode} />
+      )}
 
-      {/* 顶部问候卡 */}
+      {/* 顶部问候卡：P4 = 黑色斜切题板（黄小字 + 奶油大字），日期已上移到页头 */}
       <motion.div
         ref={greetingRef}
         initial={{ opacity: 0, y: -12 }}
         animate={{ opacity: 1, y: 0 }}
-        className="relative rounded-2xl p-5 shadow-lg shadow-primary/20"
-        style={{ background: 'color-mix(in srgb, color-mix(in hsl, var(--color-primary) 30%, gray) 92%, transparent)' }}
+        className={isP4 ? 'relative p-5' : 'relative rounded-2xl p-5 shadow-lg shadow-primary/20'}
+        style={
+          isP4
+            ? { background: '#131313', borderRadius: 18, transform: 'skewX(-2deg)', boxShadow: '0 5px 0 rgba(19,19,19,0.2)' }
+            : { background: 'color-mix(in srgb, color-mix(in hsl, var(--color-primary) 30%, gray) 92%, transparent)' }
+        }
       >
+       <div style={isP4 ? { transform: 'skewX(2deg)' } : undefined}>
         <div className="flex items-start justify-between">
           <div className="flex-1 min-w-0 pr-3">
-            <p className={`text-xs mb-1.5 ${textMutedClass}`}>{getTimeSubtext()}</p>
+            <p className={`text-xs mb-1.5 font-bold ${textMutedClass}`}>{getTimeSubtext()}</p>
             <h2 className={`text-2xl font-black tracking-tight leading-tight ${textClass}`}>{getTimeGreeting(user?.name || '朋友')}</h2>
           </div>
-          <div className="flex flex-col items-center gap-0 flex-shrink-0">
-            <div className={`text-4xl font-black leading-none tabular-nums ${textClass}`} style={{ letterSpacing: '-0.03em' }}>
-              {String(today.getDate()).padStart(2, '0')}
+          {!isP4 && (
+            <div className="flex flex-col items-center gap-0 flex-shrink-0">
+              <div className={`text-4xl font-black leading-none tabular-nums ${textClass}`} style={{ letterSpacing: '-0.03em' }}>
+                {String(today.getDate()).padStart(2, '0')}
+              </div>
+              <div className={`text-[10px] font-bold tracking-widest uppercase text-center ${textMutedClass}`}>
+                {today.toLocaleDateString('en-US', { month: 'short' }).toUpperCase()}
+              </div>
+              <div className={`text-[10px] font-medium px-1.5 py-0.5 rounded mt-1 ${useLightText ? 'bg-white/15 text-white/90' : 'bg-black/10 text-black/70'}`}>
+                {today.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase()}
+              </div>
             </div>
-            <div className={`text-[10px] font-bold tracking-widest uppercase text-center ${textMutedClass}`}>
-              {today.toLocaleDateString('en-US', { month: 'short' }).toUpperCase()}
-            </div>
-            <div className={`text-[10px] font-medium px-1.5 py-0.5 rounded mt-1 ${useLightText ? 'bg-white/15 text-white/90' : 'bg-black/10 text-black/70'}`}>
-              {today.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase()}
-            </div>
-          </div>
+          )}
         </div>
         {/* 钉选的宣告卡 / 倒计时 —— 极简横条嵌在问候卡中，今日进度上方 */}
         {pinnedCallingCard && (
@@ -810,7 +855,11 @@ export const Dashboard = () => {
             <div className={`h-1.5 rounded-full overflow-hidden ${trackClass}`}>
               <motion.div
                 className="h-full rounded-full"
-                style={{ background: 'linear-gradient(to right, #EF4444, #3B82F6, #F59E0B)' }}
+                style={{
+                  background: isP4
+                    ? 'linear-gradient(to right, var(--p4-orange, #f9a11b), var(--ui-bg))'
+                    : 'linear-gradient(to right, #EF4444, #3B82F6, #F59E0B)',
+                }}
                 initial={{ width: 0 }}
                 animate={{ width: `${totalCount > 0 ? (completedCount / totalCount) * 100 : 0}%` }}
                 transition={{ duration: 0.8, ease: 'easeOut' }}
@@ -818,6 +867,7 @@ export const Dashboard = () => {
             </div>
           </div>
         )}
+       </div>
       </motion.div>
 
       {/* 进行中的治疗终端 24h 限时任务（特殊风格） */}
@@ -830,22 +880,51 @@ export const Dashboard = () => {
         />
       )}
 
-      {/* 今日任务 */}
-      <div ref={todayTaskRef} className="relative rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden">
-        <div className="flex items-center justify-between px-5 pt-5 pb-3">
-          <div>
-            <p className="text-[10px] font-semibold tracking-widest text-gray-400 dark:text-gray-500 uppercase mb-0.5">Today</p>
-            <h3 className="font-extrabold text-gray-900 dark:text-white">今日任务</h3>
+      {/* 今日任务（P4 与「今日仪式」并置成双列奶油卡，p4-dashboard-reference-v2 1:1） */}
+      <div className={isP4 ? 'grid grid-cols-2 items-stretch gap-3' : 'space-y-5'}>
+      <div
+        ref={todayTaskRef}
+        className={
+          isP4
+            ? 'relative overflow-hidden rounded-[20px] bg-[var(--ui-paper)]'
+            : 'relative rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden'
+        }
+        style={isP4 ? { boxShadow: '0 3px 0 rgba(19,19,19,0.12)' } : undefined}
+      >
+        {isP4 ? (
+          <div className="flex items-center justify-between gap-2 border-b-2 border-[#131313]/10 px-4 pb-2.5 pt-4">
+            <div className="flex min-w-0 items-center gap-2">
+              <P4Flower size={18} color="var(--ui-bg)" />
+              <h3 className="truncate text-[15px] font-black text-[#131313]">今日任务</h3>
+            </div>
+            <span className="shrink-0 text-[13px] font-black tabular-nums text-[#131313]">
+              {totalCount === 0 ? '0 项' : `${completedCount}/${totalCount}`}
+            </span>
           </div>
-          <span className="text-xs text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-800 px-2.5 py-1 rounded-full">
-            {totalCount === 0 ? '暂无' : `${completedCount}/${totalCount}`}
-          </span>
-        </div>
+        ) : (
+          <div className="flex items-center justify-between px-5 pt-5 pb-3">
+            <div>
+              <p className="text-[10px] font-semibold tracking-widest text-gray-400 dark:text-gray-500 uppercase mb-0.5">Today</p>
+              <h3 className="font-extrabold text-gray-900 dark:text-white">今日任务</h3>
+            </div>
+            <span className="text-xs text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-800 px-2.5 py-1 rounded-full">
+              {totalCount === 0 ? '暂无' : `${completedCount}/${totalCount}`}
+            </span>
+          </div>
+        )}
 
         {todayTodos.length === 0 ? (
-          <div className="px-5 pb-5 text-center text-sm text-gray-400 dark:text-gray-500 py-8">
-            今日暂无任务，去「任务」页添加吧
-          </div>
+          isP4 ? (
+            <div className="px-4 py-7 text-center">
+              <p className="text-[13px] font-black text-[#a35a00]">暂无待播行动</p>
+              <p className="mt-1 text-[11px] font-semibold text-[var(--ui-muted)]">去「行动」页添加吧</p>
+              <P4Sparkle size={14} color="var(--p4-orange, #f9a11b)" className="absolute bottom-3 right-4" />
+            </div>
+          ) : (
+            <div className="px-5 pb-5 text-center text-sm text-gray-400 dark:text-gray-500 py-8">
+              今日暂无任务，去「任务」页添加吧
+            </div>
+          )
         ) : (
           <div className="px-3 pb-3 space-y-2">
             {todayTodos.map((todo, i) => {
@@ -873,12 +952,20 @@ export const Dashboard = () => {
                       setModalBlocker(true);
                     }
                   }}
-                  className={`relative overflow-hidden w-full text-left rounded-xl px-4 py-3.5 transition-all duration-150 cursor-pointer ${
-                    progress.isComplete
-                      ? 'bg-gray-50 dark:bg-gray-800/50 opacity-60 cursor-not-allowed'
-                      : todo.important
-                      ? 'bg-amber-50 dark:bg-amber-900/20 border border-amber-200/70 dark:border-amber-700/50 hover:border-amber-300 dark:hover:border-amber-600'
-                      : 'bg-gray-50 dark:bg-gray-800/60 border border-transparent hover:border-primary/20 hover:bg-primary/5 dark:hover:bg-primary/10'
+                  className={`relative overflow-hidden w-full text-left rounded-xl transition-all duration-150 cursor-pointer ${
+                    isP4 ? 'px-3 py-2.5' : 'px-4 py-3.5'
+                  } ${
+                    isP4
+                      ? progress.isComplete
+                        ? 'bg-[var(--p4-paper-green,#eef3cf)] opacity-75 cursor-not-allowed'
+                        : todo.important
+                          ? 'bg-white/85'
+                          : 'bg-white/60'
+                      : progress.isComplete
+                        ? 'bg-gray-50 dark:bg-gray-800/50 opacity-60 cursor-not-allowed'
+                        : todo.important
+                          ? 'bg-amber-50 dark:bg-amber-900/20 border border-amber-200/70 dark:border-amber-700/50 hover:border-amber-300 dark:hover:border-amber-600'
+                          : 'bg-gray-50 dark:bg-gray-800/60 border border-transparent hover:border-primary/20 hover:bg-primary/5 dark:hover:bg-primary/10'
                   }`}
                 >
                   {(todoRipples[todo.id] ?? []).map(rp => (
@@ -888,8 +975,12 @@ export const Dashboard = () => {
                     {/* 完成圆圈 */}
                     <div className={`flex-shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${
                       progress.isComplete
-                        ? 'bg-primary border-primary'
-                        : 'border-gray-300 dark:border-gray-600'
+                        ? isP4
+                          ? 'bg-[var(--p4-green,#55c34f)] border-[var(--p4-green,#55c34f)]'
+                          : 'bg-primary border-primary'
+                        : isP4
+                          ? 'border-[#131313]/30'
+                          : 'border-gray-300 dark:border-gray-600'
                     }`}>
                       {progress.isComplete && (
                         <svg className="w-3 h-3 text-white" viewBox="0 0 12 12" fill="none">
@@ -903,8 +994,14 @@ export const Dashboard = () => {
                         {todo.important && (
                           <span className="text-amber-500 text-xs">⭐</span>
                         )}
-                        <span className={`font-medium text-sm truncate ${
-                          progress.isComplete ? 'line-through text-gray-400 dark:text-gray-500' : 'text-gray-800 dark:text-white'
+                        <span className={`text-sm truncate ${
+                          isP4
+                            ? progress.isComplete
+                              ? 'font-black line-through text-[#131313]/45'
+                              : 'font-black text-[#131313]'
+                            : progress.isComplete
+                              ? 'font-medium line-through text-gray-400 dark:text-gray-500'
+                              : 'font-medium text-gray-800 dark:text-white'
                         }`}>
                           {todo.title}
                         </span>
@@ -926,10 +1023,14 @@ export const Dashboard = () => {
                   </div>
 
                   {/* 进度条（所有任务都显示） */}
-                  <div className="mt-2.5 h-1 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                  <div className={`mt-2.5 h-1 rounded-full overflow-hidden ${isP4 ? 'bg-[#131313]/10' : 'bg-gray-200 dark:bg-gray-700'}`}>
                     <motion.div
                       className="h-full rounded-full"
-                      style={{ background: 'color-mix(in hsl, var(--color-primary) 70%, gray)' }}
+                      style={{
+                        background: isP4
+                          ? 'linear-gradient(to right, var(--p4-orange, #f9a11b), var(--ui-bg))'
+                          : 'color-mix(in hsl, var(--color-primary) 70%, gray)',
+                      }}
                       initial={{ width: 0 }}
                       animate={{ width: `${pct}%` }}
                       transition={{ duration: 0.5, ease: 'easeOut' }}
@@ -945,18 +1046,91 @@ export const Dashboard = () => {
       {/* ──「今日仪式」叠放（规格 §3.1 槽位 4）────────────────────────
           原 星象入口卡 / 逆影战场 / 逆流预警条 三个全宽区块合并为一个横滑组：
           信息零删除、各卡点击行为不变，只换挂载位置。后续区块被压缩后，
-          今日任务自然回到首屏——本次重组的核心收益。slides 组装见 ritualSlides。 */}
-      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
-        <EyebrowLabel className="mb-2 px-0.5">今日仪式 · 滑动</EyebrowLabel>
-        <StackCarousel id="ritual" page={ritualPage}>
-          {ritualSlides}
-        </StackCarousel>
-      </motion.div>
+          今日任务自然回到首屏——本次重组的核心收益。slides 组装见 ritualSlides。
+          P4：并入右列奶油卡（花朵题头 + 星闪），滑动组不变。 */}
+      {isP4 ? (
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="relative overflow-hidden rounded-[20px] bg-[var(--ui-paper)]"
+          style={{ boxShadow: '0 3px 0 rgba(19,19,19,0.12)' }}
+        >
+          <div className="flex items-center justify-between gap-2 border-b-2 border-[#131313]/10 px-4 pb-2.5 pt-4">
+            <div className="flex min-w-0 items-center gap-2">
+              <P4Flower size={18} color="var(--ui-bg)" />
+              <h3 className="truncate text-[15px] font-black text-[#131313]">今日仪式</h3>
+            </div>
+            <P4Sparkle size={14} color="var(--p4-orange, #f9a11b)" className="shrink-0" />
+          </div>
+          <div className="p-2">
+            <StackCarousel id="ritual" page={ritualPage}>
+              {ritualSlides}
+            </StackCarousel>
+          </div>
+        </motion.div>
+      ) : (
+        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
+          <EyebrowLabel className="mb-2 px-0.5">今日仪式 · 滑动</EyebrowLabel>
+          <StackCarousel id="ritual" page={ritualPage}>
+            {ritualSlides}
+          </StackCarousel>
+        </motion.div>
+      )}
+      </div>{/* /P4 双列（今日任务 × 今日仪式）；非 P4 时该包装为 display:contents */}
 
       {/* ──「成长」＝ 星象仪（P8.1）────────────────────────────────
           原横滑两页（属性网格 / 雷达+统计）本是同一数据的两种视图，星象仪把它们
           合成一个：星形舞台=概览，五角贴纸可点=每个属性的档案入口（称号阶梯+关联
-          成就+进度，即原网格的信息深度，挪进弹窗）。六格统计与「详细统计→」保留。 */}
+          成就+进度，即原网格的信息深度，挪进弹窗）。六格统计与「详细统计→」保留。
+          P4（p4-dashboard-reference-v2 1:1）：星象仪换花瓣雷达，统计换奶油圆圈组。 */}
+      {isP4 ? (
+        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
+          <div className="mb-1 flex items-center justify-between px-0.5">
+            <div className="flex items-center gap-2">
+              <P4Flower size={20} color="#131313" />
+              <h3 className="text-xl font-black text-[#131313]">人格指数</h3>
+              <P4Sparkle size={14} color="var(--ui-accent)" />
+            </div>
+            <button
+              onClick={() => setCurrentPage('statistics')}
+              className="text-xs font-black text-[#131313]"
+            >
+              详细统计 ▶
+            </button>
+          </div>
+          <FlowerChart
+            items={starItems.map(s => ({ id: s.id, name: s.name, level: s.level, maxLevel: s.maxLevel }))}
+            onSelect={(id) => setDossierAttr(id)}
+          />
+          <div className="mt-4 flex gap-2">
+            {[
+              { v: totalPoints, label: '累计点数', c: 'var(--p4-orange, #f9a11b)' },
+              { v: maxStreak, label: '最长连续', c: 'var(--ui-accent)' },
+              { v: totalActivitiesCount, label: '总记录数', c: 'var(--p4-green, #55c34f)' },
+              { v: unlockedAchievementsCount, label: '成就', c: '#8e5ad8' },
+              { v: unlockedSkillsCount, label: '技能', c: 'var(--p4-sky-deep, #2196e0)' },
+              { v: uniqueDays, label: '记录天数', c: '#8e5ad8' },
+            ].map((s, i) => (
+              <div key={s.label} className="relative flex-1">
+                <div
+                  className="flex aspect-square w-full flex-col items-center justify-center rounded-full bg-[var(--ui-paper)]"
+                  style={{ boxShadow: '0 2px 0 rgba(19,19,19,0.1)' }}
+                >
+                  <span className="text-lg font-black leading-none tabular-nums" style={{ color: s.c }}>
+                    {s.v}
+                  </span>
+                  <span className="mt-0.5 px-0.5 text-center text-[8px] font-black leading-tight text-[#131313]">
+                    {s.label}
+                  </span>
+                </div>
+                {(i === 0 || i === 3) && (
+                  <P4Sparkle size={10} color={i === 0 ? 'var(--p4-orange, #f9a11b)' : 'var(--ui-accent)'} className="absolute -top-1 right-0" />
+                )}
+              </div>
+            ))}
+          </div>
+        </motion.div>
+      ) : (
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
         <EyebrowLabel className="mb-2 px-0.5">成长 · 星象</EyebrowLabel>
         <div className="rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden">
@@ -1003,6 +1177,7 @@ export const Dashboard = () => {
           </div>
         </div>
       </motion.div>
+      )}
 
       {/* P8.1 属性档案：点星象仪贴纸打开（称号阶梯 + 关联成就） */}
       <AttributeDossier attrId={dossierAttr} onClose={() => setDossierAttr(null)} />
@@ -1095,8 +1270,33 @@ export const Dashboard = () => {
 function AstrologyEntryCard({ onOpen }: { onOpen: () => void }) {
   const { dailyDivination, settings } = useAppStore();
   const drawn = dailyDivination && dailyDivination.date === toLocalDateKey() ? dailyDivination : null;
+  const isP4 = useUiChannel() === 'p4';
 
   if (!drawn) {
+    // P4：挂在奶油仪式卡内 —— 蓝色圆角月亮图标 + 黑粗标题（p4-dashboard-reference-v2）
+    if (isP4) {
+      return (
+        <motion.button
+          onClick={onOpen}
+          whileTap={{ scale: 0.98 }}
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="relative w-full overflow-hidden rounded-2xl p-2 text-left"
+        >
+          <div className="flex items-start gap-2.5">
+            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl text-lg" style={{ background: 'var(--ui-accent)' }}>
+              🌙
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="text-[13px] font-black leading-snug text-[#131313]">今日星象尚未展开</div>
+              <div className="mt-0.5 text-[11px] font-semibold leading-snug text-[var(--ui-muted)]">
+                点击进入星象，从三张塔罗中抽取一张
+              </div>
+            </div>
+          </div>
+        </motion.button>
+      );
+    }
     return (
       <motion.button
         onClick={onOpen}
