@@ -13,7 +13,7 @@ import { motion } from 'motion/react';
 import type { UIChannel } from '../channel';
 import { useUiChannel } from '../useUiChannel';
 import { channelMotion } from '../motion';
-import { SignalStripes } from '../motifs';
+import { P4Check, P4Flower, P4Sparkle } from '../p4Kit';
 
 export interface PersonaListRowProps {
   channel?: UIChannel;
@@ -102,30 +102,49 @@ export const PersonaListRow = ({
   }
 
   if (ch === 'p4') {
+    // p4-redraw 定稿：斜切奶油胶囊 + 左侧大圆状态图标（默认黄圆黑星闪，
+    // 选中=蓝圆白星闪+浅蓝行，完成=绿圆白花+浅绿行+右下角绿勾章），meta 沉到右下加粗。
+    const rowBg = danger ? '#fbe3dc' : completed ? 'var(--p4-paper-green, #eef3cf)' : selected ? 'var(--p4-paper-blue, #cde6f7)' : 'var(--ui-paper)';
+    const circleBg = danger ? 'var(--ui-danger)' : completed ? 'var(--p4-green, #55c34f)' : selected ? 'var(--ui-accent)' : 'var(--ui-bg)';
+    const defaultGlyph = completed
+      ? <P4Flower size={20} color="#ffffff" />
+      : <P4Sparkle size={18} color={selected ? '#ffffff' : '#131313'} />;
     return (
       <motion.button
         type="button"
         onClick={onClick}
         whileTap={onClick ? hit : undefined}
-        className={`relative block w-full min-h-[48px] overflow-hidden rounded-lg border-2 border-black text-left ${className ?? ''}`}
-        style={{
-          background: selected ? '#111111' : 'var(--ui-paper)',
-          color: selected ? 'var(--ui-bg)' : '#111111',
-          boxShadow: '0 3px 0 #000',
-        }}
+        className={`relative block w-full min-h-[56px] text-left ${className ?? ''}`}
       >
-        <div className="relative flex items-center gap-3 py-2.5 pl-4 pr-3.5">
-          {/* 左缘频道条：selected 全彩，未选中淡化 */}
-          <SignalStripes className={`absolute inset-y-0 left-0 w-[5px] ${selected ? '' : 'opacity-40'}`} />
-          {inner}
-          {/* completed：CLEAR 章 */}
+        <div
+          className="relative"
+          style={{ background: rowBg, borderRadius: 24, transform: 'skewX(-6deg)', boxShadow: '0 2px 0 rgba(19,19,19,0.08)' }}
+        >
+          <div className="flex items-center gap-3 py-2 pl-2.5 pr-3.5" style={{ transform: 'skewX(6deg)' }}>
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full" style={{ background: circleBg }}>
+              {leading ?? defaultGlyph}
+            </div>
+            <div className="min-w-0 flex-1 py-0.5">
+              <div className="flex items-start gap-2">
+                <span className={`truncate text-[15px] font-black leading-tight text-[#131313] ${completed ? 'opacity-60' : ''}`}>{title}</span>
+                {trailing && <span className="ml-auto flex shrink-0 items-center text-[#131313]/70">{trailing}</span>}
+              </div>
+              {(subtitle || meta) && (
+                <div className="mt-0.5 flex items-baseline gap-2">
+                  {subtitle && <span className="truncate text-xs font-semibold text-[var(--ui-muted)]">{subtitle}</span>}
+                  {meta && <span className="ml-auto shrink-0 text-[13px] font-black tabular-nums text-[#131313]/85">{meta}</span>}
+                </div>
+              )}
+            </div>
+          </div>
+          {/* completed：右下角绿勾章（压边） */}
           {completed && (
             <span
               aria-hidden
-              className="absolute right-2 top-1 rounded border-2 border-current px-1 text-[9px] font-black tracking-widest opacity-80"
-              style={{ transform: 'rotate(8deg)', color: danger ? 'var(--ui-danger)' : selected ? 'var(--ui-bg)' : '#111' }}
+              className="absolute -bottom-1 right-3 flex h-5 w-6 items-center justify-center rounded-md"
+              style={{ background: 'var(--p4-green, #55c34f)', transform: 'skewX(6deg) rotate(-2deg)', boxShadow: '0 1px 0 rgba(19,19,19,0.2)' }}
             >
-              CLEAR
+              <P4Check size={11} color="#ffffff" />
             </span>
           )}
         </div>

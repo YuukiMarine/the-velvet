@@ -14,6 +14,7 @@ import { motion } from 'motion/react';
 import type { UIChannel } from '../channel';
 import { useUiChannel } from '../useUiChannel';
 import { channelMotion } from '../motion';
+import { P4Flower, P4Sparkle } from '../p4Kit';
 
 export type PersonaButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'icon';
 export type PersonaButtonSize = 'sm' | 'md' | 'lg';
@@ -62,17 +63,22 @@ const skin = (ch: UIChannel, v: PersonaButtonVariant, active: boolean): { cls: s
     }
   }
   if (ch === 'p4') {
+    // p4-redraw 定稿：斜切胶囊（skew + 大圆角），无描边实色块。
+    // primary=黑板黄字（active 时橙板黑字=「确认」形态）/ danger=红板白字 / secondary=奶油纸黑字。
+    const skewed = { skew: true };
     switch (v) {
       case 'primary':
-        return { skew: false, cls: 'font-black tracking-widest text-black border-[3px] border-black rounded-full', style: { background: 'var(--ui-bg)', boxShadow: '0 4px 0 #000' } };
+        return active
+          ? { ...skewed, cls: 'font-black tracking-wide text-[#131313] rounded-2xl', style: { background: 'var(--p4-orange, #f9a11b)', boxShadow: '0 3px 0 rgba(19,19,19,0.25)' } }
+          : { ...skewed, cls: 'font-black tracking-wide text-[var(--ui-bg)] rounded-2xl', style: { background: '#131313', boxShadow: '0 3px 0 rgba(19,19,19,0.3)' } };
       case 'danger':
-        return { skew: false, cls: 'font-black tracking-wider text-white border-[3px] border-black rounded-full', style: { background: 'var(--ui-danger)', boxShadow: '0 4px 0 #000' } };
+        return { ...skewed, cls: 'font-black tracking-wide text-white rounded-2xl', style: { background: 'var(--ui-danger)', boxShadow: '0 3px 0 rgba(19,19,19,0.25)' } };
       case 'secondary':
-        return { skew: false, cls: 'font-black tracking-wider text-[var(--ui-bg)] border-[3px] border-black rounded-full', style: { background: '#111111', boxShadow: '0 3px 0 #000' } };
+        return { ...skewed, cls: 'font-black tracking-wide text-[#131313] rounded-2xl', style: { background: 'var(--ui-paper)', boxShadow: '0 3px 0 rgba(19,19,19,0.16)' } };
       case 'ghost':
-        return { skew: false, cls: 'font-bold text-[#111] border-2 border-transparent hover:border-black/30 rounded-full', style: {} };
+        return { skew: false, cls: 'font-bold text-[#131313]/80 rounded-full hover:bg-black/5', style: {} };
       case 'icon':
-        return { skew: false, cls: 'font-black text-black border-[3px] border-black rounded-full', style: { background: 'var(--ui-bg)', boxShadow: '0 3px 0 #000' } };
+        return { skew: false, cls: 'font-black text-[#131313] rounded-full', style: { background: 'var(--ui-paper)', boxShadow: '0 3px 0 rgba(19,19,19,0.2)' } };
     }
   }
   if (ch === 'p3') {
@@ -131,6 +137,15 @@ export const PersonaButton = ({
   const hit = channelMotion(ch).hit;
   const dead = disabled || busy;
 
+  // p4-redraw：主/危/次按钮自带签名符号（黑黄板=花、红板=白花、奶油=蓝星闪），
+  // 调用方显式给 leadingIcon（含 null）即覆盖
+  const p4AutoIcon =
+    ch === 'p4' && leadingIcon === undefined && variant !== 'ghost' && variant !== 'icon'
+      ? variant === 'secondary'
+        ? <P4Sparkle size={13} color="var(--ui-accent)" />
+        : <P4Flower size={15} />
+      : undefined;
+
   return (
     <motion.button
       type="button"
@@ -145,7 +160,7 @@ export const PersonaButton = ({
     >
       {/* P3 斜切容器内文字反向回正（字恒水平） */}
       <span className={`inline-flex items-center gap-2 ${s.skew ? 'skew-x-[8deg]' : ''}`}>
-        {busy ? <Spinner /> : leadingIcon}
+        {busy ? <Spinner /> : leadingIcon ?? p4AutoIcon}
         {children}
         {trailingIcon}
       </span>

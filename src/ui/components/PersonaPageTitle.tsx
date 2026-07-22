@@ -52,23 +52,32 @@ export const PersonaPageTitle = ({ channel, title, eyebrow, meta, className }: P
   }
 
   if (ch === 'p4') {
+    // p4-redraw 定稿：黑题板退役 —— 衬线特大黑字直压黄底（海报字），
+    // eyebrow 置于标题下方（ON AIR · CHANNEL 04 式），尾部数字自动橙染。
+    const em = eyebrow?.match(/^(.*?)(\d+)\s*$/);
     return (
-      <div className={`flex items-end justify-between gap-3 ${className ?? ''}`}>
-        <div className="inline-block" style={{ filter: 'drop-shadow(3px 3px 0 rgba(0,0,0,0.85))' }}>
-          <div
-            className="inline-block bg-[#111111] px-4 py-2"
-            style={{ clipPath: 'polygon(2% 0, 100% 6%, 97% 100%, 0 92%)' }}
+      <div className={`relative flex items-start justify-between gap-3 ${className ?? ''}`}>
+        <div className="min-w-0">
+          <h1
+            className="break-words text-[40px] font-black leading-[1.04] tracking-tight text-[#131313]"
+            style={{ fontFamily: 'var(--p4-display-font, serif)' }}
           >
-            {eyebrow && (
-              <div className="mb-0.5 flex items-center gap-1.5 text-[10px] font-black tracking-[0.2em] text-[var(--ui-bg)]">
-                <span aria-hidden className="inline-block h-1.5 w-1.5 rounded-full bg-[var(--ui-accent)]" />
-                {eyebrow}
-              </div>
-            )}
-            <h1 className="text-2xl font-black leading-none text-white">{title}</h1>
-          </div>
+            {title}
+          </h1>
+          {eyebrow && (
+            <div className="mt-1.5 text-xs font-black tracking-[0.18em] text-[#131313]">
+              {em ? (
+                <>
+                  {em[1]}
+                  <span className="text-[var(--p4-orange,#f9a11b)]">{em[2]}</span>
+                </>
+              ) : (
+                eyebrow
+              )}
+            </div>
+          )}
         </div>
-        {meta && <div className="shrink-0 pb-1 text-xs font-black text-[#111]/70">{meta}</div>}
+        {meta && <div className="shrink-0 text-right text-xs font-black text-[#131313]">{meta}</div>}
       </div>
     );
   }

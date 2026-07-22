@@ -11,7 +11,7 @@ import type { InputHTMLAttributes, TextareaHTMLAttributes } from 'react';
 import { motion } from 'motion/react';
 import type { UIChannel } from '../channel';
 import { useUiChannel } from '../useUiChannel';
-import { SignalStripes } from '../motifs';
+import { P4Sparkle } from '../p4Kit';
 
 type NativeInputProps = Omit<InputHTMLAttributes<HTMLInputElement>, 'size' | 'className'>;
 type NativeTextareaProps = Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, 'className'>;
@@ -38,11 +38,16 @@ const skin = (ch: UIChannel, error: boolean) => {
     };
   }
   if (ch === 'p4') {
+    // p4-redraw 定稿：无描边奶油圆角面，右下黄星闪角标（focus 转橙）。
+    // error 用真实 border（ring 是 box-shadow，会被内联投影覆盖）
     return {
-      label: 'text-[11px] font-black tracking-wider text-[#111]',
-      box: `relative border-2 bg-[var(--ui-paper)] text-[#111] ${error ? 'border-[var(--ui-danger)]' : 'border-black'}`,
-      boxStyle: { boxShadow: '0 3px 0 #000' } as React.CSSProperties,
-      hint: 'text-[#111]/60',
+      label: 'text-[12px] font-black tracking-wide text-[#131313]',
+      box: 'relative rounded-2xl bg-[var(--ui-paper)] text-[#131313]',
+      boxStyle: {
+        boxShadow: '0 2px 0 rgba(19,19,19,0.1)',
+        border: error ? '2px solid var(--ui-danger)' : '2px solid transparent',
+      } as React.CSSProperties,
+      hint: 'text-[var(--ui-muted)]',
       error: 'text-[var(--ui-danger)] font-black',
     };
   }
@@ -84,7 +89,8 @@ export const PersonaInput = ({
   const [focused, setFocused] = useState(false);
   const s = skin(ch, !!error);
 
-  const fieldCls = 'w-full bg-transparent px-3.5 py-2.5 text-[16px] leading-snug outline-none placeholder:opacity-45';
+  // p4 右下有星闪角标，输入区让出右侧空间防文字压星
+  const fieldCls = `w-full bg-transparent px-3.5 py-2.5 text-[16px] leading-snug outline-none placeholder:opacity-45 ${ch === 'p4' ? 'pr-9' : ''}`;
 
   return (
     <div className={className}>
@@ -104,8 +110,14 @@ export const PersonaInput = ({
             style={{ background: 'var(--ui-accent)' }}
           />
         )}
-        {/* P4 focus：左侧频道条亮起 */}
-        {ch === 'p4' && <SignalStripes className={`absolute inset-y-0 left-0 w-[4px] transition-opacity ${focused ? 'opacity-100' : 'opacity-0'}`} />}
+        {/* P4：右下星闪角标（focus 黄→橙），设计稿输入框签名件 */}
+        {ch === 'p4' && (
+          <P4Sparkle
+            size={15}
+            color={focused ? 'var(--p4-orange, #f9a11b)' : 'var(--ui-bg)'}
+            className="absolute bottom-2 right-2.5 transition-colors"
+          />
+        )}
         {multiline ? (
           <textarea
             id={id}
