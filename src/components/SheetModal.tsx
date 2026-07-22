@@ -6,6 +6,8 @@ import { springSoft } from '@/utils/motion';
 import { useBackHandler } from '@/utils/useBackHandler';
 import { useModalA11y } from '@/utils/useModalA11y';
 import { zClass } from '@/utils/zIndex';
+import { useUiChannel } from '@/ui/useUiChannel';
+import { P4Flower, P4Sparkle } from '@/ui/p4Kit';
 
 /**
  * SheetModal —— 标准弹窗 / 抽屉基座（UI_AUDIT_V2.5.md §5）。
@@ -107,6 +109,7 @@ export const SheetModal = ({
         };
 
   const isBottom = position === 'bottom';
+  const isP4 = useUiChannel() === 'p4';
 
   return createPortal(
     <AnimatePresence>
@@ -130,17 +133,56 @@ export const SheetModal = ({
             {...panelMotion}
             transition={springSoft}
             onClick={(e) => e.stopPropagation()}
-            className={`flex w-full flex-col bg-white shadow-2xl dark:bg-gray-900 ${maxHeightClass} ${
-              isBottom
-                ? 'rounded-t-3xl pb-[env(safe-area-inset-bottom)]'
-                : 'mx-4 max-w-md rounded-2xl'
+            className={`flex w-full flex-col ${maxHeightClass} ${
+              isP4
+                ? `relative bg-[var(--ui-bg)] ${
+                    isBottom ? 'mx-2 mb-2 rounded-[28px] pb-[env(safe-area-inset-bottom)]' : 'mx-4 max-w-md rounded-[28px]'
+                  }`
+                : `bg-white shadow-2xl dark:bg-gray-900 ${
+                    isBottom ? 'rounded-t-3xl pb-[env(safe-area-inset-bottom)]' : 'mx-4 max-w-md rounded-2xl'
+                  }`
             }`}
+            style={
+              isP4
+                ? { border: '5px solid #fff6d0', boxShadow: '0 10px 0 rgba(19, 19, 19, 0.28)' }
+                : undefined
+            }
           >
-            {isBottom && showHandle && (
+            {/* p4-redraw modal v3：贴纸装饰 —— 顶部橙硬币、角落蓝/黄星闪、右上天空花瓣块 */}
+            {isP4 && (
+              <>
+                <div
+                  aria-hidden
+                  className="pointer-events-none absolute -top-8 left-1/2 -ml-8 h-16 w-16 rounded-full border-4 border-[#fff6d0]"
+                  style={{ background: 'radial-gradient(circle at 50% 40%, #ffcf3f 0 42%, var(--p4-orange, #f9a11b) 43% 100%)' }}
+                >
+                  <P4Sparkle size={22} color="#ffffff" className="absolute left-1/2 top-1/2 -ml-3 -mt-3" />
+                </div>
+                <div
+                  aria-hidden
+                  className="pointer-events-none absolute right-4 top-3 h-14 w-24 overflow-hidden rounded-2xl opacity-95"
+                  style={{ background: 'linear-gradient(200deg, var(--p4-sky-deep, #2196e0) 0%, var(--p4-sky, #8fd0f4) 60%, #e8f6ff 100%)' }}
+                >
+                  <div className="absolute left-3 top-7 h-4 w-14 rounded-full bg-white/95" style={{ filter: 'blur(1px)' }} />
+                  <div className="absolute left-9 top-4 h-3 w-10 rounded-full bg-white/80" style={{ filter: 'blur(1.5px)' }} />
+                  <P4Flower size={40} color="var(--ui-bg)" className="absolute -right-2 top-2" />
+                </div>
+                <P4Sparkle size={22} color="var(--ui-accent)" className="pointer-events-none absolute -left-2.5 top-16" />
+                <P4Sparkle size={24} color="var(--ui-accent)" className="pointer-events-none absolute -bottom-2 -right-1.5" />
+                <P4Sparkle size={16} color="var(--p4-orange, #f9a11b)" className="pointer-events-none absolute -bottom-2.5 left-8" />
+              </>
+            )}
+            {isBottom && showHandle && !isP4 && (
               <div aria-hidden className="mx-auto mt-3 h-1.5 w-10 shrink-0 rounded-full bg-gray-300 dark:bg-gray-600" />
             )}
             {title && (
-              <h2 id={titleId} className="shrink-0 px-6 pt-4 text-lg font-bold text-gray-800 dark:text-white">
+              <h2
+                id={titleId}
+                className={`shrink-0 px-6 pt-4 ${
+                  isP4 ? 'pr-32 text-[26px] font-black leading-tight text-[#131313]' : 'text-lg font-bold text-gray-800 dark:text-white'
+                }`}
+                style={isP4 ? { fontFamily: 'var(--p4-display-font, serif)' } : undefined}
+              >
                 {title}
               </h2>
             )}
@@ -148,7 +190,7 @@ export const SheetModal = ({
               {children}
             </div>
             {footer && (
-              <div className="shrink-0 border-t border-gray-100 px-6 py-3 dark:border-gray-800">
+              <div className={`shrink-0 px-6 py-3 ${isP4 ? '' : 'border-t border-gray-100 dark:border-gray-800'}`}>
                 {footer}
               </div>
             )}

@@ -21,6 +21,8 @@
 import type { ReactNode } from 'react';
 import { motion } from 'motion/react';
 import { TAP } from '@/utils/motion';
+import { useUiChannel } from '@/ui/useUiChannel';
+import { P4Flower, P4Sparkle } from '@/ui/p4Kit';
 
 export interface EmptyStateProps {
   /** 大号灰图标：emoji 字符或 SVG 节点（SVG 用 currentColor 自动继承灰色） */
@@ -33,26 +35,68 @@ export interface EmptyStateProps {
   action?: { label: string; onClick: () => void };
 }
 
-export const EmptyState = ({ icon, text, hint, action }: EmptyStateProps) => (
-  <div className="flex flex-col items-center justify-center py-10 text-center">
-    {icon !== undefined && (
-      <div aria-hidden="true" className="text-4xl text-gray-300 dark:text-gray-600 mb-3">
-        {icon}
+export const EmptyState = ({ icon, text, hint, action }: EmptyStateProps) => {
+  const isP4 = useUiChannel() === 'p4';
+
+  // p4-redraw 定稿：奶油斜切宽条 + 左侧大黄花 + 蓝/橙星闪缀饰，文案黑粗
+  if (isP4) {
+    return (
+      <div className="relative px-1 py-3">
+        <div
+          className="relative flex items-center gap-4 px-5 py-5"
+          style={{ background: 'var(--ui-paper)', borderRadius: 24, transform: 'skewX(-5deg)' }}
+        >
+          <div className="flex items-center gap-4" style={{ transform: 'skewX(5deg)', width: '100%' }}>
+            <span aria-hidden className="shrink-0">
+              {icon !== undefined && typeof icon !== 'string' ? (
+                <span className="text-3xl">{icon}</span>
+              ) : (
+                <P4Flower size={44} color="var(--ui-bg)" />
+              )}
+            </span>
+            <div className="min-w-0 flex-1 text-left">
+              <p className="text-[15px] font-black leading-snug text-[#131313]">{text}</p>
+              {hint !== undefined && <p className="mt-0.5 text-xs font-semibold text-[var(--ui-muted)]">{hint}</p>}
+              {action !== undefined && (
+                <motion.button
+                  type="button"
+                  whileTap={TAP}
+                  onClick={action.onClick}
+                  className="mt-2 text-[13px] font-black text-[#131313] underline decoration-[var(--p4-orange,#f9a11b)] decoration-2 underline-offset-2"
+                >
+                  {action.label}
+                </motion.button>
+              )}
+            </div>
+          </div>
+        </div>
+        <P4Sparkle size={16} color="var(--ui-accent)" className="absolute -top-1 right-6" />
+        <P4Sparkle size={12} color="var(--p4-orange, #f9a11b)" className="absolute bottom-0 left-8" />
       </div>
-    )}
-    <p className="text-sm text-gray-400 dark:text-gray-500">{text}</p>
-    {hint !== undefined && (
-      <p className="text-2xs text-gray-300 dark:text-gray-600 mt-1">{hint}</p>
-    )}
-    {action !== undefined && (
-      <motion.button
-        type="button"
-        whileTap={TAP}
-        onClick={action.onClick}
-        className="mt-3 text-sm font-semibold text-primary"
-      >
-        {action.label}
-      </motion.button>
-    )}
-  </div>
-);
+    );
+  }
+
+  return (
+    <div className="flex flex-col items-center justify-center py-10 text-center">
+      {icon !== undefined && (
+        <div aria-hidden="true" className="text-4xl text-gray-300 dark:text-gray-600 mb-3">
+          {icon}
+        </div>
+      )}
+      <p className="text-sm text-gray-400 dark:text-gray-500">{text}</p>
+      {hint !== undefined && (
+        <p className="text-2xs text-gray-300 dark:text-gray-600 mt-1">{hint}</p>
+      )}
+      {action !== undefined && (
+        <motion.button
+          type="button"
+          whileTap={TAP}
+          onClick={action.onClick}
+          className="mt-3 text-sm font-semibold text-primary"
+        >
+          {action.label}
+        </motion.button>
+      )}
+    </div>
+  );
+};

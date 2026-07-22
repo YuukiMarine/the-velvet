@@ -145,6 +145,27 @@ export const P4SunRings = ({ size = 220, className, style }: {
   />
 );
 
+/** 八角贴纸面板（modal v3 定稿）：奶油描边 + 黑底 + 不规则切角 + 微旋。
+ *  实现：外层裁切奶油面充当描边，内层同形内缩。cuts=[TL,TR,BR,BL] 切角 px。 */
+export const P4StickerPanel = ({ children, className, style, contentClassName, cuts = [18, 10, 20, 10], outline = '#fff6d0', bg = '#131313', pad = 3, rotate = -1 }: {
+  children: ReactNode; className?: string; style?: CSSProperties; contentClassName?: string;
+  cuts?: [number, number, number, number]; outline?: string; bg?: string; pad?: number; rotate?: number;
+}) => {
+  const poly = `polygon(${cuts[0]}px 0, calc(100% - ${cuts[1]}px) 0, 100% ${cuts[1]}px, 100% calc(100% - ${cuts[2]}px), calc(100% - ${cuts[2]}px) 100%, ${cuts[3]}px 100%, 0 calc(100% - ${cuts[3]}px), 0 ${cuts[0]}px)`;
+  return (
+    <div
+      className={className}
+      style={{ filter: 'drop-shadow(0 6px 0 rgba(19, 19, 19, 0.28))', transform: rotate ? `rotate(${rotate}deg)` : undefined, ...style }}
+    >
+      <div style={{ clipPath: poly, background: outline, padding: pad }}>
+        <div className={contentClassName} style={{ clipPath: poly, background: bg }}>
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 /** 警戒斜纹带（黑黄 DANGER 线）：危险区/重要提醒的边饰 */
 export const P4CautionStripes = ({ className, style, height = 8 }: {
   className?: string; style?: CSSProperties; height?: number;
