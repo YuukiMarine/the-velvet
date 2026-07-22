@@ -308,6 +308,10 @@ function App() {
     if (user?.theme === 'custom' && settings.customThemeColor) {
       color = settings.customThemeColor;
     }
+    // P4 黄频道（p4-redraw）：舞台就是高饱和黄平面，html/body 同步染黄防缩放白条
+    if (user?.theme === 'yellow') {
+      color = '#ffd900';
+    }
     // iOS standalone + 移动端：html/body 是系统安全区（状态栏/Home Bar）的着色来源，
     // 用中性面色而非主题色，避免顶/底被主题色染出「彩条」——用户真机手改口径
     const isStandalone = isStandalonePwa();
@@ -490,7 +494,11 @@ function App() {
           }}
         />
 
-        <div className="min-h-screen bg-gray-50 dark:bg-gray-900 relative">
+        <div
+          className="min-h-screen bg-gray-50 dark:bg-gray-900 relative"
+          // P4 黄频道：舞台平面直接铺 --ui-bg（p4-redraw 定稿），暗色也保持黄
+          style={user?.theme === 'yellow' ? { background: 'var(--ui-bg, #ffd900)' } : undefined}
+        >
           {/* 背景图片 */}
           {settings.backgroundImage && (
             <div 
@@ -515,10 +523,11 @@ function App() {
             </div>
           )}
 
-          {/* 装饰纹理（无背景图、无动画时） */}
+          {/* 装饰纹理（无背景图、无动画时；P4 黄舞台要真留白，不铺点阵） */}
           {!settings.backgroundImage
             && (settings.backgroundAnimation ?? []).length === 0
             && (settings.backgroundPattern ?? true)
+            && user?.theme !== 'yellow'
             && (
               <div
                 className="fixed inset-0 pointer-events-none select-none"
