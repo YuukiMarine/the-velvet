@@ -146,6 +146,15 @@
   border-radius: 16px !important;
   font-weight: 900;
 }
+/* P4 庆祝贴纸（CelebrationCutIn）：调用方 children 里的白系文字在橙圆上翻黑，
+   text-yellow-200（新等级高亮）转蓝强调 —— 免改四个庆祝弹窗调用点 */
+:root[data-ui-channel="p4"] .p4-cutin :is(.text-white, [class*="text-white/"]) {
+  color: #131313 !important;
+}
+:root[data-ui-channel="p4"] .p4-cutin .text-yellow-200 {
+  color: var(--ui-accent) !important;
+}
+
 /* 白卡（含 dark 变体）→ 奶油纸；滑杆/复选强调色 → 黑 */
 :root[data-ui-channel="p4"] :is([role="dialog"], [role="alertdialog"], .p4-reskin) .bg-white {
   background-color: var(--ui-paper) !important;
