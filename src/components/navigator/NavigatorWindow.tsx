@@ -38,8 +38,38 @@ const CatFace = ({ className }: { className?: string }) => {
 
 // 人格名随 activePreset 动态取（Batch3）；'黑猫' 仅作窗口未初始化时的兜底
 
-// ── 皮肤 token（bright = P3 站内信 / 暗 = 中性兜底） ──
-const skinOf = (bright: boolean) => bright
+// ── 皮肤 token（p4 = 黄频道节目窗 / bright = P3 站内信 / 暗 = 中性兜底） ──
+const skinOf = (bright: boolean, p4 = false) => p4
+  ? {
+    // p4-navigator-reference-v2：黄舞台 + 奶油斜切信头（蓝圆黑猫）+ 奶油/黑气泡 + 蓝圆发送
+    root: undefined as string | undefined,
+    rootStyle: { background: '#ffd900' } as React.CSSProperties,
+    headerSlab: 'bg-[#fff6d0] shadow-[0_6px_0_rgba(19,19,19,0.15)]',
+    headerStyle: { clipPath: 'polygon(0 0, 100% 0, 97% 100%, 0 100%)', borderRadius: 18 } as React.CSSProperties,
+    headerText: { color: '#131313' } as React.CSSProperties,
+    catBubble: 'bg-[#fff6d0] shadow-[0_4px_0_rgba(19,19,19,0.12)] font-bold',
+    catBubbleStyle: { clipPath: 'polygon(0 4%, 100% 0, 98.4% 100%, 0.8% 100%)', borderRadius: 16, color: '#131313' } as React.CSSProperties,
+    userBubble: 'text-[#ffd900] shadow-[0_4px_0_rgba(19,19,19,0.25)] font-bold',
+    userBubbleStyle: { background: '#131313', clipPath: 'polygon(1.6% 0, 100% 4%, 99.2% 100%, 0 100%)', borderRadius: 16 } as React.CSSProperties,
+    avatar: 'text-[#131313]',
+    avatarStyle: { background: 'var(--ui-accent, #2e6be0)', borderRadius: 9999, boxShadow: '0 0 0 3px #131313' } as React.CSSProperties,
+    chip: 'text-[13px] font-black bg-[#fff6d0] text-[#131313] shadow-[0_3px_0_rgba(19,19,19,0.18)]',
+    chipStyle: { clipPath: 'polygon(8% 0, 100% 0, 92% 100%, 0 100%)', borderRadius: 10, paddingLeft: 18, paddingRight: 18 } as React.CSSProperties,
+    inputBar: undefined as string | undefined,
+    inputBarStyle: { background: 'transparent' } as React.CSSProperties,
+    input: 'flex-1 bg-[#fff6d0] px-4 py-2.5 text-[16px] font-bold outline-none placeholder:text-[#131313]/40 rounded-2xl',
+    inputStyle: { color: '#131313', clipPath: 'polygon(0 0, 100% 0, 98% 100%, 0 100%)' } as React.CSSProperties,
+    send: 'flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-lg font-black text-white disabled:opacity-40',
+    sendStyle: { background: 'var(--ui-accent, #2e6be0)', boxShadow: '0 3px 0 rgba(19,19,19,0.25)' } as React.CSSProperties,
+    card: 'bg-[#fff6d0] shadow-[0_5px_0_rgba(19,19,19,0.15)]',
+    cardStyle: { borderRadius: 18, color: '#131313' } as React.CSSProperties,
+    cardBtn: 'min-h-10 px-4 text-[13px] font-black text-white disabled:opacity-40 rounded-xl bg-[var(--ui-accent,#2e6be0)]',
+    cardBtnGhost: 'min-h-10 px-3.5 text-[13px] font-black text-[#131313] rounded-xl bg-[#ffd900]',
+    cardBtnText: 'min-h-10 px-2 text-[13px] font-bold text-[#131313]/60',
+    stamp: 'px-2 py-0.5 text-[10px] font-black tracking-[0.12em]',
+    stampStyle: { background: 'var(--p4-orange, #f9a11b)', color: '#131313', transform: 'rotate(-2deg)', borderRadius: 6 } as React.CSSProperties,
+  }
+  : bright
   ? {
     root: undefined as string | undefined,
     rootStyle: { background: `linear-gradient(180deg, ${P3.hi} 0%, ${P3.mid} 55%, ${P3.pale} 100%)` },
@@ -103,7 +133,8 @@ export const NavigatorWindow = () => {
   const nav = useNavigatorStore();
   const bold = useBoldness();
   const bright = terminalChannel(user?.theme) === 'board';
-  const sk = skinOf(bright);
+  const isP4 = user?.theme === 'yellow';
+  const sk = skinOf(bright, isP4);
   const preset = nav.activePreset();
 
   const a11yRef = useModalA11y(nav.isOpen, nav.close, { closeOnEscape: true, trapFocus: true });
@@ -248,12 +279,12 @@ export const NavigatorWindow = () => {
                     aria-expanded={personaMenuOpen}
                     onClick={() => setPersonaMenuOpen((v) => !v)}
                     className={`flex h-9 w-9 shrink-0 items-center justify-center transition hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-current ${sk.avatar}`}
-                    style={{ ...sk.avatarStyle, clipPath: bright ? 'polygon(0 8%, 100% 0, 96% 100%, 2% 96%)' : undefined, borderRadius: bright ? undefined : '0.75rem' }}
+                    style={{ ...sk.avatarStyle, clipPath: bright ? 'polygon(0 8%, 100% 0, 96% 100%, 2% 96%)' : undefined, borderRadius: bright ? undefined : isP4 ? 9999 : '0.75rem' }}
                   >
                     <CatFace className="h-5 w-5" />
                   </button>
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-base font-black" style={sk.headerText}>{bright ? `▶ 站内信 · ${preset.name}` : preset.name}</div>
+                    <div className={`truncate font-black ${isP4 ? 'text-[22px]' : 'text-base'}`} style={{ ...sk.headerText, ...(isP4 ? { fontFamily: 'var(--p4-display-font, serif)' } : {}) }}>{bright ? `▶ 站内信 · ${preset.name}` : preset.name}</div>
                     <div className="text-[11px] font-bold opacity-60" style={sk.headerText}>{bright ? '深夜在线 · 有事直说' : '万能记录 · 有事直说'}</div>
                   </div>
                   {bright && (
@@ -479,7 +510,7 @@ const TypingRow = ({ sk, bright, bold }: { sk: Skin; bright: boolean; bold: bool
   <div className="flex items-start gap-2.5" role="status" aria-label="黑猫正在输入">
     <span
       className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center ${sk.avatar}`}
-      style={{ ...sk.avatarStyle, clipPath: bright ? 'polygon(0 8%, 100% 0, 96% 100%, 2% 96%)' : undefined, borderRadius: bright ? undefined : '0.65rem' }}
+      style={{ ...sk.avatarStyle, clipPath: bright ? 'polygon(0 8%, 100% 0, 96% 100%, 2% 96%)' : undefined, borderRadius: bright ? undefined : ((sk.avatarStyle as React.CSSProperties | undefined)?.borderRadius ?? '0.65rem') }}
       aria-hidden
     >
       <CatFace className="h-[18px] w-[18px]" />
@@ -527,7 +558,7 @@ const MessageRow = ({ m, sk, bright, busy, onConfirm, onEdit, onCancel }: {
   if (m.role === 'cat') {
     return (
       <div className="flex items-start gap-2.5">
-        <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center ${sk.avatar}`} style={{ ...sk.avatarStyle, clipPath: bright ? 'polygon(0 8%, 100% 0, 96% 100%, 2% 96%)' : undefined, borderRadius: bright ? undefined : '0.65rem' }}>
+        <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center ${sk.avatar}`} style={{ ...sk.avatarStyle, clipPath: bright ? 'polygon(0 8%, 100% 0, 96% 100%, 2% 96%)' : undefined, borderRadius: bright ? undefined : ((sk.avatarStyle as React.CSSProperties | undefined)?.borderRadius ?? '0.65rem') }}>
           <CatFace className="h-[18px] w-[18px]" />
         </span>
         <div className={`max-w-[85%] whitespace-pre-wrap px-4 py-2.5 text-sm font-bold leading-relaxed ${sk.catBubble}`} style={sk.catBubbleStyle}>
