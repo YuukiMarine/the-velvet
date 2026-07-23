@@ -7,12 +7,15 @@ import { BackButton } from '@/components/BackButton';
 import { DailyDraw } from '@/components/astrology/DailyDraw';
 import { LongReadingFlow } from '@/components/astrology/LongReadingFlow';
 import { ReadingArchive } from '@/components/astrology/ReadingArchive';
+import { useUiChannel } from '@/ui/useUiChannel';
+import { P4SkyCircle, P4Sparkle } from '@/ui/p4Kit';
 
 type Tab = 'daily' | 'long' | 'archive';
 
 export function Astrology() {
   const { setCurrentPage, loadDailyDivination, loadLongReadings, sweepExpiredReadings, longReadings } = useAppStore();
   const [tab, setTab] = useState<Tab>('daily');
+  const isP4 = useUiChannel() === 'p4';
 
   // 选中的归档项（进入详情）
   const [detailReading, setDetailReading] = useState<LongReading | null>(null);
@@ -36,12 +39,66 @@ export function Astrology() {
       transition={{ duration: 0.2 }}
       className="max-w-xl mx-auto space-y-5"
     >
+      {isP4 ? (
+        /* p4-astrology-reference-v2：衬线特大「星象」+ ARCANA CHANNEL + 右上天空圆窗 */
+        <div className="relative -mx-4 overflow-hidden px-4 pb-1 pt-1">
+          <P4SkyCircle size={140} className="absolute -right-8 -top-12" />
+          <P4Sparkle size={16} color="var(--ui-accent)" className="absolute right-[38%] top-8" />
+          <div className="flex items-start gap-2">
+            <BackButton onClick={() => setCurrentPage('dashboard')} label="返回首页" className="mt-3" />
+            <div>
+              <h1
+                className="text-[52px] font-black leading-[1.02] tracking-tight text-[#131313]"
+                style={{ fontFamily: 'var(--p4-display-font, serif)' }}
+              >
+                星象
+              </h1>
+              <div className="mt-1 text-xs font-black tracking-[0.22em] text-[#131313]">ARCANA CHANNEL</div>
+            </div>
+          </div>
+        </div>
+      ) : (
       <div className="flex items-center gap-2">
         <BackButton onClick={() => setCurrentPage('dashboard')} label="返回首页" />
         <PageTitle title="星象" en="Arcana" />
       </div>
+      )}
 
-      {/* Tabs */}
+      {/* Tabs：P4 = 三段衬线选择器（激活项蓝花 blob + 橙色指向箭），设计稿弧线选择器转译 */}
+      {isP4 ? (
+        <div className="relative flex items-center justify-between px-1">
+          {tabs.map((t, i) => {
+            const active = tab === t.id;
+            return (
+              <div key={t.id} className="flex items-center">
+                {i > 0 && <span aria-hidden className="mx-1 text-[var(--p4-orange,#f9a11b)]">{tab === tabs[i - 1].id ? '◄' : '►'}</span>}
+                <button
+                  onClick={() => { setTab(t.id); setDetailReading(null); }}
+                  className="relative px-2 py-2 text-center"
+                >
+                  {active && (
+                    <span
+                      aria-hidden
+                      className="absolute -inset-x-2 -inset-y-1 -z-10"
+                      style={{ background: 'var(--ui-accent)', borderRadius: '55% 45% 60% 40% / 48% 60% 40% 52%', transform: 'rotate(-2deg)', opacity: 0.95 }}
+                    />
+                  )}
+                  {active && <P4Sparkle size={13} color="#ffffff" className="absolute -left-1 top-0" />}
+                  <div
+                    className={`font-black leading-tight ${active ? 'text-[19px] text-white' : 'text-[17px] text-[#131313]'}`}
+                    style={{ fontFamily: 'var(--p4-display-font, serif)' }}
+                  >
+                    {t.label}
+                  </div>
+                  <div className={`mt-0.5 text-[10px] font-bold ${active ? 'text-white/85' : 'text-[#131313]/70'}`}>
+                    {t.hint}
+                  </div>
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
       <div className="grid grid-cols-3 gap-1 p-1 rounded-2xl bg-black/5 dark:bg-white/5">
         {tabs.map(t => {
           const active = tab === t.id;
@@ -63,6 +120,7 @@ export function Astrology() {
           );
         })}
       </div>
+      )}
 
       <AnimatePresence mode="wait">
         {tab === 'daily' && (

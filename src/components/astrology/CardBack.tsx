@@ -1,4 +1,14 @@
 import { motion } from 'motion/react';
+import { useUiChannel } from '@/ui/useUiChannel';
+
+/** P4 卡背用的五瓣小花（SVG 内联版，cx/cy 为中心） */
+const P4BackFlower = ({ cx, cy, r = 10, color = '#f0b428' }: { cx: number; cy: number; r?: number; color?: string }) => (
+  <g transform={`translate(${cx}, ${cy})`}>
+    {[0, 72, 144, 216, 288].map(deg => (
+      <ellipse key={deg} cx={0} cy={-r * 0.55} rx={r * 0.32} ry={r * 0.5} fill={color} transform={`rotate(${deg})`} />
+    ))}
+  </g>
+);
 
 interface CardBackProps {
   width?: number;
@@ -26,6 +36,55 @@ export function CardBack({
   const VB_W = 200;
   const VB_H = 320;
   const interactive = !!onClick && !disabled;
+  const isP4 = useUiChannel() === 'p4';
+
+  // ── P4 卡背（p4-astrology-reference-v2 1:1）：奶油底黑细框 + 黄圆黑星靶心 + 角落黄花 ──
+  if (isP4) {
+    return (
+      <motion.div
+        onClick={interactive ? onClick : undefined}
+        whileHover={hoverable && interactive ? { y: -4 } : undefined}
+        whileTap={interactive ? { scale: 0.97 } : undefined}
+        className={`relative inline-block select-none ${interactive ? 'cursor-pointer' : ''} ${className}`}
+        style={{ width, height, opacity: disabled ? 0.5 : 1 }}
+      >
+        {selected && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="absolute inset-0 pointer-events-none"
+            style={{ boxShadow: '0 0 0 4px var(--ui-accent)', borderRadius: 14 }}
+          />
+        )}
+        <svg viewBox={`0 0 ${VB_W} ${VB_H}`} width={width} height={height} style={{ display: 'block' }}>
+          {/* 奶油底板 + 黑色双框 */}
+          <rect x="2" y="2" width={VB_W - 4} height={VB_H - 4} rx="14" fill="#fff6d0" stroke="#131313" strokeWidth="3" />
+          <rect x="12" y="12" width={VB_W - 24} height={VB_H - 24} rx="8" fill="none" stroke="#131313" strokeWidth="1.4" opacity="0.85" />
+          {/* 虚线圆规线 */}
+          <circle cx={VB_W / 2} cy={VB_H / 2} r="74" fill="none" stroke="#131313" strokeWidth="1" strokeDasharray="2 5" opacity="0.4" />
+          {/* 黄色靶心圆 + 内白环 + 黑圆 + 白四角星 */}
+          <circle cx={VB_W / 2} cy={VB_H / 2} r="56" fill="#ffd900" />
+          <circle cx={VB_W / 2} cy={VB_H / 2} r="40" fill="none" stroke="#fff6d0" strokeWidth="5" />
+          <circle cx={VB_W / 2} cy={VB_H / 2} r="27" fill="#131313" />
+          <path
+            d={`M ${VB_W / 2} ${VB_H / 2 - 15} C ${VB_W / 2 + 3} ${VB_H / 2 - 4}, ${VB_W / 2 + 4} ${VB_H / 2 - 3}, ${VB_W / 2 + 15} ${VB_H / 2}
+               C ${VB_W / 2 + 4} ${VB_H / 2 + 3}, ${VB_W / 2 + 3} ${VB_H / 2 + 4}, ${VB_W / 2} ${VB_H / 2 + 15}
+               C ${VB_W / 2 - 3} ${VB_H / 2 + 4}, ${VB_W / 2 - 4} ${VB_H / 2 + 3}, ${VB_W / 2 - 15} ${VB_H / 2}
+               C ${VB_W / 2 - 4} ${VB_H / 2 - 3}, ${VB_W / 2 - 3} ${VB_H / 2 - 4}, ${VB_W / 2} ${VB_H / 2 - 15} Z`}
+            fill="#fff6d0"
+          />
+          {/* 角落黄花 + 黑星点 */}
+          <P4BackFlower cx={44} cy={52} r={16} />
+          <P4BackFlower cx={VB_W - 44} cy={52} r={16} />
+          <P4BackFlower cx={44} cy={VB_H - 52} r={16} />
+          <P4BackFlower cx={VB_W - 44} cy={VB_H - 52} r={16} />
+          {[[VB_W / 2, 36], [VB_W / 2, VB_H - 36]].map(([cx, cy], i) => (
+            <polygon key={i} points={`${cx},${cy - 5} ${cx + 3.5},${cy} ${cx},${cy + 5} ${cx - 3.5},${cy}`} fill="#131313" />
+          ))}
+        </svg>
+      </motion.div>
+    );
+  }
 
   return (
     <motion.div
