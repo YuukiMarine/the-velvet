@@ -23,10 +23,13 @@ import { sendPrayer, hasPrayedToday, hasBeenPrayedByToday } from '@/services/pra
 import { loadSocial } from '@/services/social';
 import { playSound } from '@/utils/feedback';
 import type { CloudProfile, CoopBond, CoopShadow, Friendship } from '@/types';
+import { useUiChannel } from '@/ui/useUiChannel';
+import { P4Sparkle } from '@/ui/p4Kit';
 
 type Filter = 'all' | 'offline' | 'online' | 'archived';
 
 export function Cooperation() {
+  const isP4 = useUiChannel() === 'p4';
   const { confidants, counselArchives, getCounselCooldown, hasActiveCounsel, bumpConfidantIntimacy, battleState, saveBattleState, settings, updateSettings } = useAppStore();
   // P9 专辑墙：视图偏好持久记忆（PRD §5.3），默认墙
   const viewMode = settings.confidantViewMode ?? 'wall';
@@ -248,9 +251,24 @@ export function Cooperation() {
       className="max-w-2xl mx-auto space-y-5"
     >
       <div className="flex items-center gap-2">
-        <PageTitle title="同伴" en="Cooperation" enOffset={{ right: -32 }} />
+        {isP4 ? (
+          /* p4-cooperation-reference-v2：衬线特大「同伴」+ COOPERATION FILE 眉标（FILE 橙染） */
+          <div>
+            <h1
+              className="text-[50px] font-black leading-[1.02] tracking-tight text-[#131313]"
+              style={{ fontFamily: 'var(--p4-display-font, serif)' }}
+            >
+              同伴
+            </h1>
+            <div className="mt-1 text-xs font-black tracking-[0.2em] text-[#131313]">
+              COOPERATION <span className="text-[var(--p4-orange,#f9a11b)]">FILE</span>
+            </div>
+          </div>
+        ) : (
+          <PageTitle title="同伴" en="Cooperation" enOffset={{ right: -32 }} />
+        )}
         <div className="ml-auto flex items-center gap-2">
-          <span className="text-[11px] tracking-wider text-gray-400 tabular-nums">
+          <span className={`tracking-wider tabular-nums ${isP4 ? 'text-[13px] font-black text-[#131313]' : 'text-[11px] text-gray-400'}`}>
             {activeCount} / {MAJOR_ARCANA_IDS.length}
           </span>
           {/* ✧ 菜单按钮：关于系统 / 谏言 / 归档 */}
@@ -417,9 +435,14 @@ export function Cooperation() {
         </div>
       )}
 
-      {/* 过滤 Tabs + 视图切换（P9：专辑墙 ⇄ 列表，右上角、持久记忆） */}
+      {/* 过滤 Tabs + 视图切换（P9：专辑墙 ⇄ 列表，右上角、持久记忆）。
+          P4：激活项 = 蓝色花形 blob（白星闪），其余为黑粗文字（设计稿弧线选择器的扁平化转译）。 */}
       <div className="flex items-center gap-2">
-        <div className="grid flex-1 grid-cols-4 gap-1 p-1 rounded-2xl bg-black/5 dark:bg-white/5 text-xs font-bold">
+        <div
+          className={`grid flex-1 grid-cols-4 gap-1 text-xs font-bold ${
+            isP4 ? '' : 'p-1 rounded-2xl bg-black/5 dark:bg-white/5'
+          }`}
+        >
           {([
             { id: 'all', label: '全部' },
             { id: 'offline', label: '离线' },
@@ -427,6 +450,27 @@ export function Cooperation() {
             { id: 'archived', label: '归档' },
           ] as const).map(t => {
             const active = filter === t.id;
+            if (isP4) {
+              return (
+                <button
+                  key={t.id}
+                  onClick={() => setFilter(t.id)}
+                  className={`relative py-2.5 text-[13px] font-black transition-all ${active ? 'text-[#131313]' : 'text-[#131313]/70'}`}
+                >
+                  {active && (
+                    <>
+                      <span
+                        aria-hidden
+                        className="absolute inset-x-1 inset-y-0 -z-10"
+                        style={{ background: 'var(--ui-accent)', borderRadius: '62% 38% 55% 45% / 48% 62% 38% 52%', transform: 'rotate(-3deg)' }}
+                      />
+                      <P4Sparkle size={12} color="#ffffff" className="absolute left-1 top-0.5" />
+                    </>
+                  )}
+                  {t.label}
+                </button>
+              );
+            }
             return (
               <button
                 key={t.id}
@@ -463,16 +507,25 @@ export function Cooperation() {
             exit={{ opacity: 0 }}
             className="py-16 text-center"
           >
-            <div className="text-5xl mb-3 opacity-40">✧</div>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
+            {isP4 ? (
+              <P4Sparkle size={44} color="var(--ui-paper)" className="mx-auto mb-3" />
+            ) : (
+              <div className="text-5xl mb-3 opacity-40">✧</div>
+            )}
+            <p className={`text-sm ${isP4 ? 'font-black text-[#131313]' : 'text-gray-500 dark:text-gray-400'}`}>
               {filter === 'archived' ? '暂无归档的同伴' : '尚未与任何同伴建立羁绊'}
             </p>
             {filter !== 'archived' && (
               <button
                 onClick={() => setCreateOpen(true)}
-                className="mt-4 px-5 py-2 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white text-sm font-bold shadow-lg shadow-purple-500/20"
+                className={
+                  isP4
+                    ? 'mt-4 px-6 py-2.5 text-sm font-black text-white'
+                    : 'mt-4 px-5 py-2 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white text-sm font-bold shadow-lg shadow-purple-500/20'
+                }
+                style={isP4 ? { background: 'var(--ui-accent)', borderRadius: 16, transform: 'skewX(-6deg)', boxShadow: '0 3px 0 rgba(19,19,19,0.25)' } : undefined}
               >
-                邀请第一位同伴
+                <span style={isP4 ? { display: 'inline-block', transform: 'skewX(6deg)' } : undefined}>邀请第一位同伴</span>
               </button>
             )}
           </motion.div>
@@ -569,19 +622,28 @@ export function Cooperation() {
         )}
       </AnimatePresence>
 
-      {/* 浮动新增按钮 */}
+      {/* 浮动新增按钮（P4 = 蓝色四角星 FAB，与行动页同制式） */}
       {remaining > 0 && filter !== 'archived' && (
         <motion.button
           whileTap={{ scale: 0.95 }}
           onClick={() => setCreateOpen(true)}
-          className="fixed bottom-24 md:bottom-8 right-5 md:right-8 z-40 w-14 h-14 rounded-full text-white shadow-2xl flex items-center justify-center text-2xl font-bold"
-          style={{
-            background: 'linear-gradient(135deg, rgb(var(--color-bond-rgb)), rgb(var(--color-bond-bright-rgb)))',
-            boxShadow: '0 12px 36px -8px rgb(var(--color-bond-bright-rgb) / 0.5)',
-          }}
+          className={`fixed bottom-24 md:bottom-8 right-5 md:right-8 z-40 flex items-center justify-center text-2xl font-bold text-white ${
+            isP4 ? 'h-16 w-16' : 'w-14 h-14 rounded-full shadow-2xl'
+          }`}
+          style={
+            isP4
+              ? undefined
+              : {
+                  background: 'linear-gradient(135deg, rgb(var(--color-bond-rgb)), rgb(var(--color-bond-bright-rgb)))',
+                  boxShadow: '0 12px 36px -8px rgb(var(--color-bond-bright-rgb) / 0.5)',
+                }
+          }
           aria-label="新增同伴"
         >
-          +
+          {isP4 && (
+            <P4Sparkle size={64} color="var(--ui-accent)" className="absolute inset-0" style={{ filter: 'drop-shadow(0 3px 0 rgba(19,19,19,0.3))' }} />
+          )}
+          <span className="relative">+</span>
         </motion.button>
       )}
 
