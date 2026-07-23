@@ -23,6 +23,8 @@ import { AssetBoard } from '@/components/ledger/AssetBoard';
 import { Donut } from '@/components/ledger/Donut';
 import { catMeta, CATEGORY_KEYS, isGrowthCategory, INCOME_META, sym, fmtMoney, fmtSigned, DEFAULT_CHANNELS, DEFAULT_INCOME_SOURCES, incomeTypeFromSource, shiftMonth, weekdayCN, monthLabel, ledgerDateLabel, ledgerCycle } from '@/utils/ledgerFormat';
 import type { LedgerEntry, LedgerExpenseType, AttributeId, SpendWorth, Settings } from '@/types';
+import { useUiChannel } from '@/ui/useUiChannel';
+import { P4Flower } from '@/ui/p4Kit';
 
 // ── 录入草稿 ──────────────────────────────────────────────
 
@@ -173,6 +175,7 @@ const popIn = (i: number) => ({
 // ── 页面 ──────────────────────────────────────────────────
 
 export const Ledger = () => {
+  const isP4 = useUiChannel() === 'p4';
   const {
     settings, ledgerEntries, setCurrentPage, updateSettings,
     addLedgerEntry, deleteLedgerEntry, setBudget, adjustTotalBalance, rewardForLedgerEntry, addAsset,
@@ -356,15 +359,30 @@ export const Ledger = () => {
     <motion.div
       initial={false} exit={{ opacity: 0 }}
       transition={{ duration: 0.2 }}
-      className="max-w-2xl mx-auto pb-8"
+      className={`max-w-2xl mx-auto pb-8 ${isP4 ? 'p4-reskin' : ''}`}
     >
-      {/* 页头 */}
+      {/* 页头：P4 = 衬线特大 + LEDGER SHOW 橙眉标（p4-ledger-reference-v2） */}
+      {isP4 ? (
+        <motion.div {...riseIn(0)} className="flex items-start gap-2">
+          <BackButton onClick={() => setCurrentPage('menu')} className="mt-3 -ml-1" />
+          <div>
+            <h1
+              className="text-[42px] font-black leading-[1.05] tracking-tight text-[#131313]"
+              style={{ fontFamily: 'var(--p4-display-font, serif)' }}
+            >
+              心相记账
+            </h1>
+            <div className="mt-0.5 text-xs font-black tracking-[0.22em] text-[var(--p4-orange,#f9a11b)]">LEDGER SHOW</div>
+          </div>
+        </motion.div>
+      ) : (
       <motion.div {...riseIn(0)} className="flex items-start justify-between gap-3">
         <BackButton onClick={() => setCurrentPage('menu')} className="mt-1 -ml-1" />
         <div className="flex-1">
           <PageTitle title="心相记账" en="Ledger" enOffset={{ right: -20 }} />
         </div>
       </motion.div>
+      )}
 
       {/* 顶层：记账 / 资产（平级） */}
       <motion.div {...riseIn(1)} className="mt-4">
@@ -380,6 +398,22 @@ export const Ledger = () => {
         <>
       {/* 开局引导：无流水时先设初始余额（避免首笔变负） */}
       {needsSetup && (
+        isP4 ? (
+          /* p4：奶油话泡（左下小尾巴），橙色标题黑正文 */
+          <button
+            onClick={() => setAdjustOpen(true)}
+            className="relative mt-4 w-full px-5 py-3.5 text-left active:scale-[0.99] transition"
+            style={{ background: 'var(--ui-paper)', borderRadius: 22 }}
+          >
+            <div className="text-sm font-black text-[var(--p4-orange,#f9a11b)]">👋 先设置你当前的余额</div>
+            <div className="mt-0.5 text-xs font-semibold text-[#131313]/80">告诉我你现在大概有多少钱，记账才准——之后随时可「对账」修正。</div>
+            <span
+              aria-hidden
+              className="absolute -bottom-2 left-10 h-5 w-5"
+              style={{ background: 'var(--ui-paper)', clipPath: 'polygon(0 0, 100% 0, 30% 100%)' }}
+            />
+          </button>
+        ) : (
         <button
           onClick={() => setAdjustOpen(true)}
           className="mt-4 w-full rounded-2xl border-2 border-dashed border-primary/40 bg-primary/5 px-4 py-3 text-left active:scale-[0.99] transition"
@@ -387,10 +421,33 @@ export const Ledger = () => {
           <div className="text-sm font-bold text-primary">👋 先设置你当前的余额</div>
           <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">告诉我你现在大概有多少钱，记账才准——之后随时可「对账」修正。</div>
         </button>
+        )
       )}
 
-      {/* 总余额 + 预算环（环显示本月预算「剩余」，花钱往下消耗） */}
-      <motion.section {...popIn(2)} className="mt-4 bg-gradient-to-b from-white to-gray-50/60 dark:from-gray-800 dark:to-gray-800/60 rounded-2xl shadow-lg ring-1 ring-gray-100/80 dark:ring-gray-700/40 p-5">
+      {/* 总余额 + 预算环（环显示本月预算「剩余」，花钱往下消耗）。
+          P4：卡壳退役 —— 向日葵舞台（橙花瓣环 + 放射短线）直压黄底。 */}
+      <motion.section
+        {...popIn(2)}
+        className={
+          isP4
+            ? 'relative mt-4 p-5'
+            : 'mt-4 bg-gradient-to-b from-white to-gray-50/60 dark:from-gray-800 dark:to-gray-800/60 rounded-2xl shadow-lg ring-1 ring-gray-100/80 dark:ring-gray-700/40 p-5'
+        }
+      >
+        {isP4 && (
+          <div aria-hidden className="pointer-events-none absolute left-1/2 top-[118px] -translate-x-1/2 -translate-y-1/2">
+            {/* 花瓣环：12 枚橙椭圆 + 外圈虚线放射 */}
+            <svg width="300" height="300" viewBox="-150 -150 300 300" className="opacity-90">
+              {Array.from({ length: 12 }).map((_, i) => (
+                <ellipse key={i} cx="0" cy="-96" rx="26" ry="40" fill={i % 2 ? '#f9a11b' : '#ffb628'} transform={`rotate(${i * 30})`} />
+              ))}
+              {Array.from({ length: 24 }).map((_, i) => (
+                <line key={`l${i}`} x1="0" y1="-132" x2="0" y2="-144" stroke="#fff6d0" strokeWidth="4" strokeLinecap="round" transform={`rotate(${i * 15})`} />
+              ))}
+              <circle r="92" fill="#fff9dd" />
+            </svg>
+          </div>
+        )}
         {balanceView === 'month' ? (
           <Donut variant="hero" className="mx-auto" segments={[{ value: Math.max(0, Math.min(1, remainingRatio)), color: ringColor }]} total={1}>
             <button onClick={() => setBalanceView('total')} className="flex flex-col items-center focus:outline-none active:scale-95 transition-transform" aria-label="切换到总余额">
@@ -444,7 +501,33 @@ export const Ledger = () => {
           </div>
         )}
 
-        <div className="flex gap-2 justify-center mt-4">
+        <div className="relative flex gap-2.5 justify-center mt-4">
+          {isP4 ? (
+            /* p4：设置预算=蓝斜板白花 / 对账=橙斜板白花 */
+            <>
+              <button
+                onClick={() => setBudgetMode('edit')}
+                className="flex items-center gap-1.5 px-4 py-2 text-[13px] font-black text-white transition-transform active:scale-95"
+                style={{ background: 'var(--ui-accent)', borderRadius: 14, transform: 'skewX(-8deg)', boxShadow: '0 3px 0 rgba(19,19,19,0.22)' }}
+              >
+                <span className="flex items-center gap-1.5" style={{ transform: 'skewX(8deg)' }}>
+                  <P4Flower size={14} color="#ffffff" />
+                  {hasBudget ? '编辑预算' : '设置预算'}
+                </span>
+              </button>
+              <button
+                onClick={() => setAdjustOpen(true)}
+                className="flex items-center gap-1.5 px-4 py-2 text-[13px] font-black text-white transition-transform active:scale-95"
+                style={{ background: '#f06a13', borderRadius: 14, transform: 'skewX(-8deg)', boxShadow: '0 3px 0 rgba(19,19,19,0.22)' }}
+              >
+                <span className="flex items-center gap-1.5" style={{ transform: 'skewX(8deg)' }}>
+                  <P4Flower size={14} color="#ffffff" />
+                  对账
+                </span>
+              </button>
+            </>
+          ) : (
+            <>
           <button
             onClick={() => setBudgetMode('edit')}
             className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
@@ -457,6 +540,8 @@ export const Ledger = () => {
           >
             对账
           </button>
+            </>
+          )}
         </div>
       </motion.section>
 
@@ -472,9 +557,17 @@ export const Ledger = () => {
         <button
           onClick={handleNL}
           disabled={nlBusy || !nlText.trim()}
-          className="px-4 py-3 rounded-xl text-sm font-bold bg-primary text-white disabled:opacity-40 active:scale-[0.96] transition-transform"
+          className={
+            isP4
+              ? 'relative flex h-[72px] w-[72px] -my-2 shrink-0 items-center justify-center text-sm font-black text-white disabled:opacity-40 active:scale-[0.96] transition-transform'
+              : 'px-4 py-3 rounded-xl text-sm font-bold bg-primary text-white disabled:opacity-40 active:scale-[0.96] transition-transform'
+          }
         >
-          {nlBusy ? '…' : '记一笔'}
+          {isP4 && (
+            /* p4：蓝色五瓣花形按钮（p4-ledger-reference-v2「记一笔」） */
+            <P4Flower size={76} color="var(--ui-accent)" className="absolute inset-0 -left-0.5 -top-0.5" style={{ filter: 'drop-shadow(0 2px 0 rgba(19,19,19,0.25))' }} />
+          )}
+          <span className="relative">{nlBusy ? '…' : '记一笔'}</span>
         </button>
         <button
           onClick={() => startDraft(emptyDraft())}

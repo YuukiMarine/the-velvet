@@ -7,6 +7,7 @@
  */
 import { motion } from 'motion/react';
 import { type ReactNode } from 'react';
+import { useUiChannel } from '@/ui/useUiChannel';
 
 const SIZES = {
   hero: { vb: 200, r: 84, stroke: 12, cls: 'w-56 h-56' },
@@ -25,10 +26,18 @@ export function Donut({ segments, total, variant = 'card', track = true, classNa
   const C = 2 * Math.PI * r;
   const c = vb / 2;
   let acc = 0;
+  // P4（p4-ledger-reference-v2）：向日葵舞台上环槽退为半透明奶油描边，不与花瓣打架
+  const isP4 = useUiChannel() === 'p4';
   return (
     <div className={`relative flex-shrink-0 ${cls} ${className}`}>
       <svg viewBox={`0 0 ${vb} ${vb}`} className="w-full h-full -rotate-90">
-        {track && <circle cx={c} cy={c} r={r} fill="none" strokeWidth={stroke} className="stroke-gray-100 dark:stroke-gray-800" />}
+        {track && (
+          isP4 ? (
+            <circle cx={c} cy={c} r={r} fill="none" strokeWidth={stroke} stroke="rgba(255,246,208,0.75)" />
+          ) : (
+            <circle cx={c} cy={c} r={r} fill="none" strokeWidth={stroke} className="stroke-gray-100 dark:stroke-gray-800" />
+          )
+        )}
         {segments.map((sg, i) => {
           const frac = total > 0 ? Math.max(0, sg.value) / total : 0;
           const len = frac * C;
