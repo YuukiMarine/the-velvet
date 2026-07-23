@@ -67,21 +67,53 @@ const ChannelTag = () => (
   </div>
 );
 
-const SkyShard = () => (
-  <div
-    aria-hidden
-    className="pointer-events-none absolute left-0 top-[4.9rem] z-[1] h-[15.3rem] w-[68%] overflow-hidden"
-    style={{
-      clipPath: 'polygon(0 24%, 100% 0, 43% 100%, 0 100%)',
-    }}
-  >
+/** p4-terminal-reference-v2：右上天空大圆 + TAKE YOUR HEART 赎金信字贴（原斜切 SkyShard 退役） */
+const SkyCircle = () => (
+  <div aria-hidden className="pointer-events-none absolute -right-16 -top-14 z-[1] h-[22rem] w-[22rem] overflow-hidden rounded-full">
     <img
       src="/assets/terminal/p4-cloud-sky.png"
       alt=""
       className="absolute inset-0 h-full w-full object-cover"
-      style={{ objectPosition: '30% 70%', filter: 'saturate(1.16) contrast(1.08)' }}
+      style={{ objectPosition: '40% 55%', filter: 'saturate(1.15) contrast(1.06)' }}
     />
     <div className="absolute inset-0 bg-[#00a6ff]/10 mix-blend-screen" />
+    {/* 赎金信字贴：奶油/黑块交替 */}
+    <div className="absolute left-[12%] top-[38%] flex flex-wrap gap-1 pr-16">
+      {['T', 'A', 'K', 'E', ' ', 'Y', 'O', 'U', 'R'].map((chr, i) =>
+        chr === ' ' ? (
+          <span key={i} className="w-2" />
+        ) : (
+          <span
+            key={i}
+            className="inline-flex h-7 w-6 items-center justify-center text-[15px] font-black"
+            style={{
+              background: i % 3 === 1 ? '#131313' : '#fff6d0',
+              color: i % 3 === 1 ? '#fff6d0' : '#131313',
+              transform: `rotate(${(i % 3) - 1}deg)`,
+              fontFamily: 'Georgia, serif',
+            }}
+          >
+            {chr}
+          </span>
+        )
+      )}
+    </div>
+    <div className="absolute left-[26%] top-[54%] flex gap-1">
+      {['H', 'E', 'A', 'R', 'T'].map((chr, i) => (
+        <span
+          key={i}
+          className="inline-flex h-7 w-6 items-center justify-center text-[15px] font-black"
+          style={{
+            background: i % 3 === 2 ? '#131313' : '#fff6d0',
+            color: i % 3 === 2 ? '#fff6d0' : '#131313',
+            transform: `rotate(${((i + 1) % 3) - 1}deg)`,
+            fontFamily: 'Georgia, serif',
+          }}
+        >
+          {chr}
+        </span>
+      ))}
+    </div>
   </div>
 );
 
@@ -181,7 +213,7 @@ export const AntechamberTV = ({ skin, onEnter, onBack, danmakuPool }: Props) => 
                 background: 'repeating-radial-gradient(circle at 50% 34%, transparent 0 44px, rgba(255,255,255,0.5) 46px 50px, transparent 52px 84px)',
               }}
             />
-            <SkyShard />
+            <SkyCircle />
             <SignalBars />
             <ChannelTag />
             <Flower className="left-[2.7rem] top-[12.2rem] text-[2.7rem]" />
@@ -207,45 +239,41 @@ export const AntechamberTV = ({ skin, onEnter, onBack, danmakuPool }: Props) => 
               <span className="font-mono">CH 04 / 深夜 00:00</span>
             </div>
 
-            {/* huge program number */}
+            {/* 怪盗 CHANNEL 黑斜章（p4-terminal-reference-v2） */}
+            <div
+              className="absolute left-5 top-[16.4rem] z-[4] flex items-center gap-2 bg-[#131313] px-4 py-2 text-[15px] font-black tracking-wide text-white"
+              style={{ borderRadius: 10, transform: 'skewX(-9deg)' }}
+            >
+              <span className="flex items-center gap-2" style={{ transform: 'skewX(9deg)' }}>
+                <span aria-hidden className="text-[#ffe100]">✽</span>
+                怪盗 CHANNEL
+              </span>
+            </div>
+
+            {/* main title：橙圆垫底 + 衬线特大「开始潜入行动」+ 奶油缎带 */}
             <div
               aria-hidden
-              className="absolute left-[4.2rem] top-[13.1rem] z-[2] select-none text-[9.8rem] font-black italic leading-none text-black sm:left-[5.8rem]"
-              style={{
-                fontFamily: 'Georgia, "Times New Roman", serif',
-                letterSpacing: '-0.13em',
-                textShadow: '0 2px 0 rgba(0,0,0,0.12)',
-              }}
-            >
-              04
-            </div>
-            <div aria-hidden className="absolute left-[8.6rem] top-[19.9rem] z-[2] h-24 w-28 opacity-70" style={{ backgroundImage: 'radial-gradient(circle, #ffe100 1px, transparent 1.5px)', backgroundSize: '6px 6px', transform: 'skewX(-13deg)' }} />
-            <div className="absolute right-[1.15rem] top-[20.9rem] z-[5] rotate-[-6deg] border-2 border-[#172100] bg-[#ffe100] px-2.5 py-0.5 text-[0.82rem] font-black tracking-wide text-[#172100]">
-              ON AIR
-            </div>
-
-            {/* main title board */}
-            <section
-              aria-label="本期节目"
-              className="absolute left-5 right-[-0.6rem] top-[21.25rem] z-[4] min-h-[11.5rem] bg-[#172100] px-7 pb-7 pt-7 text-left text-white"
-              style={{
-                clipPath: 'polygon(0 10%, 98% 0, 100% 75%, 93% 100%, 0 88%)',
-                transform: 'rotate(-4deg)',
-                boxShadow: '0 7px 0 rgba(23,33,0,0.28)',
-              }}
-            >
-              <div aria-hidden className="absolute inset-x-10 bottom-7 h-0.5 bg-[#ffe100]" />
-              <h2 className="whitespace-nowrap text-[2.32rem] font-black leading-[1.02] tracking-normal">
-                本期节目·录制中
+              className="absolute left-1/2 top-[18.2rem] z-[2] h-[22rem] w-[22rem] -translate-x-1/2 rounded-full"
+              style={{ background: 'radial-gradient(circle at 46% 40%, #ffc23f 0 46%, var(--p4-orange, #f9a11b) 47% 100%)', opacity: 0.92 }}
+            />
+            <section aria-label="本期节目" className="absolute inset-x-4 top-[19.6rem] z-[4] text-center">
+              <h2
+                className="text-[3.6rem] font-black leading-[1.06] tracking-tight text-[#131313]"
+                style={{ fontFamily: 'var(--p4-display-font, Georgia, serif)' }}
+              >
+                开始
+                <br />
+                潜入行动
               </h2>
-              <div className="mt-4 h-1 w-[78%] bg-[#ffe100]" />
-              <p className="mt-3 text-center text-[1.17rem] font-black leading-tight text-[#ffe100]">
-                {skin.heroSub}
-              </p>
-              <div aria-hidden className="absolute bottom-3 left-7 h-16 w-24 opacity-45" style={{ backgroundImage: 'radial-gradient(circle, #ffe100 1px, transparent 1.5px)', backgroundSize: '6px 6px' }} />
+              <div
+                className="mx-auto mt-4 inline-block px-8 py-2.5 text-[1.3rem] font-black text-[#131313]"
+                style={{ background: '#fff6d0', clipPath: 'polygon(3% 0, 100% 8%, 97% 100%, 0 92%)', transform: 'rotate(-2deg)' }}
+              >
+                {skin.heroSub || '夺回失控的心'}
+              </div>
             </section>
 
-            {/* enter CTA */}
+            {/* enter CTA：蓝色斜板 + 黑色眼罩 + 奶油衬线「潜入」 */}
             <motion.button
               type="button"
               onClick={(e) => { e.stopPropagation(); enter(); }}
@@ -253,15 +281,22 @@ export const AntechamberTV = ({ skin, onEnter, onBack, danmakuPool }: Props) => 
               animate={popping ? { scale: [1, 1.12, 0.93, 1.04, 1] } : { scale: 1 }}
               transition={popping ? { duration: 0.24, ease: 'easeOut' } : perso.control}
               whileTap={popping ? undefined : { scale: 0.96 }}
-              className="absolute left-[4.8rem] right-[4.8rem] top-[34.65rem] z-[6] bg-[#ffe100] px-5 py-4 text-center text-[1.82rem] font-black leading-none text-[#172100] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#172100]"
+              className="absolute left-[3.4rem] right-[3.4rem] top-[35.4rem] z-[6] flex items-center justify-center gap-5 px-5 py-5 text-center leading-none text-[#fff6d0] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#172100]"
               style={{
-                clipPath: 'polygon(5% 0, 96% 0, 100% 82%, 92% 100%, 0 100%, 4% 18%)',
-                boxShadow: '0 0 0 5px #172100, 9px 9px 0 #172100',
+                background: 'var(--ui-accent, #2e6be0)',
+                clipPath: 'polygon(6% 0, 100% 0, 94% 100%, 0 100%)',
+                borderRadius: 18,
+                boxShadow: '0 6px 0 rgba(19,19,19,0.3)',
               }}
             >
-              <span className="relative z-[1]">{skin.enterLabel} ▶</span>
-              <span aria-hidden className="absolute inset-x-6 top-2 h-1 bg-[#172100]/80" />
-              <span aria-hidden className="absolute inset-x-6 bottom-2 h-1 bg-[#172100]/80" />
+              {/* 眼罩 */}
+              <svg aria-hidden viewBox="0 0 48 20" className="h-6 w-14" fill="#131313">
+                <path d="M2 8 C10 0, 20 0, 24 6 C28 0, 38 0, 46 8 C44 16, 34 20, 26 12 C24 10, 24 10, 22 12 C14 20, 4 16, 2 8 Z" />
+              </svg>
+              <span className="text-[2.1rem] font-black" style={{ fontFamily: 'var(--p4-display-font, Georgia, serif)' }}>
+                {skin.enterLabel || '潜入'}
+              </span>
+              <span aria-hidden className="text-[#fff6d0]">✦</span>
             </motion.button>
             {/* lower broadcast metadata */}
             <div className="absolute bottom-[4.25rem] left-7 z-[4] text-left">
