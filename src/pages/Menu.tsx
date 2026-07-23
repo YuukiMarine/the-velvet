@@ -286,9 +286,15 @@ export const Menu = () => {
 
   const streakDigits = String(currentStreak).length;
 
-  // P4 用户章数据（p4-menu-reference-v2）：LV = 五维等级和，总点数 = 点数和
+  // P4 学生证数据：LV = 五维等级和，总点数 = 点数和，入学 = 建号日期
   const totalLevel = attributes.reduce((s, a) => s + a.level, 0);
   const p4TotalPoints = attributes.reduce((s, a) => s + (a.points ?? 0), 0);
+  const p4Admission = user?.createdAt
+    ? (() => {
+        const d = new Date(user.createdAt);
+        return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`;
+      })()
+    : '—';
 
   /** P4 黑血块菜单行定义（设计稿自上而下序；battle/ledger 跟随开关） */
   const p4Rows: Array<{
@@ -341,108 +347,176 @@ export const Menu = () => {
       className="max-w-2xl mx-auto"
     >
       {isP4 ? (
-        /* ── P4 舞台（p4-menu-reference-v2 1:1）：衬线大标题 + 用户章 + 黑色有机血块对角菜单 ── */
+        /* ── P4 舞台：衬线大标题 + 学生证用户卡 + 黑色有机血块斜排菜单 ──
+           二轮改版：用户信息从页头右侧移入「学生证」；菜单行整体 -4° 斜置 +
+           波形缩进 + 更松行距；天空 blob 换实景云素材；宽屏血块收束 540px。 */
         <div className="relative">
           {/* 页头 */}
           <div className="relative px-1">
             <P4SunRings size={150} className="absolute -right-10 -top-14 opacity-90" />
-            <P4Sparkle size={18} color="#ffffff" className="absolute left-[38%] top-0" />
-            <div className="relative flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <h1
-                  className="text-[56px] font-black leading-[1.02] tracking-tight text-[#131313]"
-                  style={{ fontFamily: 'var(--p4-display-font, serif)' }}
-                >
-                  菜单
-                </h1>
-                <div className="mt-1 text-xs font-black tracking-[0.2em] text-[#131313]">
-                  CHANNEL DIRECTORY <span className="text-[var(--p4-orange,#f9a11b)]">04</span>
-                </div>
-              </div>
-              {/* 用户章：黑花 + 昵称 + LV 黑胶囊 + 总点数 */}
-              <div className="mt-3 shrink-0 text-right">
-                <div className="flex items-center justify-end gap-1.5">
-                  <P4Flower size={18} color="#131313" />
-                  <span className="max-w-[120px] truncate text-[15px] font-black text-[#131313]">{user?.name || '客人'}</span>
-                </div>
-                <div className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-[#131313] px-3 py-1 text-[13px] font-black leading-none text-white">
-                  LV <span className="tabular-nums">{totalLevel}</span>
-                </div>
-                <div className="mt-1.5 text-xs font-black text-[#131313]">
-                  总点数 <span className="tabular-nums text-[var(--p4-orange,#f9a11b)]">{p4TotalPoints}</span>
-                </div>
+            <P4Sparkle size={18} color="#ffffff" className="absolute right-[30%] top-1" />
+            <P4Sparkle size={13} color="var(--ui-accent)" className="absolute right-[22%] top-14" />
+            <div className="min-w-0">
+              <h1
+                className="text-[56px] font-black leading-[1.02] tracking-tight text-[#131313]"
+                style={{ fontFamily: 'var(--p4-display-font, serif)' }}
+              >
+                菜单
+              </h1>
+              <div className="mt-1 text-xs font-black tracking-[0.2em] text-[#131313]">
+                CHANNEL DIRECTORY <span className="text-[var(--p4-orange,#f9a11b)]">04</span>
               </div>
             </div>
           </div>
 
-          {/* 舞台：右侧天空色块 + 黄花，左侧黑血块菜单 */}
-          <div className="relative -mx-4 mt-3 overflow-hidden pb-4">
+          {/* 学生证（standalone 用户卡）：黑校条 + 照片框 + 点线信息行 + 条码 + 橙花校章 */}
+          <motion.div
+            initial={{ opacity: 0, y: 10, rotate: -2 }}
+            animate={{ opacity: 1, y: 0, rotate: -2 }}
+            className="relative mt-4 max-w-[430px]"
+          >
+            <div className="overflow-hidden rounded-[18px] bg-[#fff6d0]" style={{ boxShadow: '0 5px 0 rgba(19,19,19,0.18)' }}>
+              <div className="flex items-center justify-between bg-[#131313] px-4 py-2">
+                <span className="flex items-center gap-1.5 text-[11px] font-black tracking-[0.16em] text-[var(--ui-bg)]">
+                  <P4Flower size={12} color="var(--ui-bg)" />
+                  靛蓝色房间 · STUDENT PASS
+                </span>
+                <span className="text-[11px] font-black tracking-[0.16em] text-white/85">CH 04</span>
+              </div>
+              <div className="flex gap-4 px-4 pb-2.5 pt-3.5">
+                {/* 照片框：上传头像 / 奶油花兜底 */}
+                <div
+                  className="relative h-[78px] w-[64px] shrink-0 overflow-hidden rounded-lg bg-[var(--ui-accent)]"
+                  style={{ boxShadow: '0 0 0 3px #131313' }}
+                >
+                  {user?.avatarDataUrl ? (
+                    <img src={user.avatarDataUrl} alt="" className="h-full w-full object-cover" />
+                  ) : (
+                    <P4Flower size={40} color="#fff6d0" className="absolute left-1/2 top-1/2 -ml-5 -mt-5" />
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="truncate text-[24px] font-black leading-tight text-[#131313]"
+                      style={{ fontFamily: 'var(--p4-display-font, serif)' }}
+                    >
+                      {user?.name || '客人'}
+                    </span>
+                    <span className="shrink-0 rounded-full bg-[#131313] px-2.5 py-1 text-[11px] font-black leading-none text-white">
+                      LV <span className="tabular-nums">{totalLevel}</span>
+                    </span>
+                  </div>
+                  <div className="mt-1.5 space-y-1">
+                    {([
+                      ['总点数', <span key="v" className="tabular-nums text-[var(--p4-orange,#f9a11b)]">{p4TotalPoints}</span>],
+                      ['连续记录', <span key="v" className="tabular-nums">{currentStreak} 天</span>],
+                      ['入学', <span key="v" className="tabular-nums">{p4Admission}</span>],
+                    ] as const).map(([label, value]) => (
+                      <div key={label} className="flex items-baseline gap-2 text-[12px] font-black text-[#131313]">
+                        <span className="shrink-0">{label}</span>
+                        <span aria-hidden className="flex-1 border-b-2 border-dotted border-[#131313]/30" />
+                        <span className="shrink-0">{value}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              {/* 底缘：条码 + 蓝星闪 */}
+              <div className="flex items-end justify-between px-4 pb-3">
+                <div aria-hidden className="flex h-5 items-stretch gap-[2px] opacity-80">
+                  {[3, 1, 2, 1, 3, 2, 1, 1, 2, 3, 1, 2, 1, 1, 3, 2, 1, 3].map((w, bi) => (
+                    <span key={bi} className="bg-[#131313]" style={{ width: w }} />
+                  ))}
+                </div>
+                <P4Sparkle size={15} color="var(--ui-accent)" className="mb-0.5 mr-12" />
+              </div>
+            </div>
+            {/* 橙花校章（压右下角） */}
+            <span aria-hidden className="pointer-events-none absolute -bottom-4 -right-3 block h-14 w-14">
+              <P4Flower size={56} color="var(--p4-orange, #f9a11b)" className="absolute" style={{ transform: 'rotate(-10deg)' }} />
+              <P4Flower size={30} color="rgba(255,246,208,0.9)" className="absolute left-[13px] top-[13px]" />
+            </span>
+          </motion.div>
+
+          {/* 舞台：右侧实景天空 blob + 黄花，左侧黑血块斜排菜单 */}
+          <div className="relative -mx-4 mt-4 overflow-hidden pb-4">
             <div
               aria-hidden
-              className="pointer-events-none absolute -right-9 top-2 h-[340px] w-[220px]"
-              style={{
-                background: 'linear-gradient(205deg, var(--p4-sky-deep, #2196e0) 0%, var(--p4-sky, #8fd0f4) 52%, #e8f6ff 100%)',
-                borderRadius: '52% 48% 38% 62% / 42% 58% 46% 54%',
-              }}
+              className="pointer-events-none absolute -right-9 top-2 h-[340px] w-[230px] overflow-hidden"
+              style={{ borderRadius: '52% 48% 38% 62% / 42% 58% 46% 54%' }}
             >
-              <div className="absolute left-6 top-24 h-6 w-24 rounded-full bg-white/90" style={{ filter: 'blur(2px)' }} />
-              <div className="absolute left-12 top-36 h-5 w-20 rounded-full bg-white/75" style={{ filter: 'blur(2.5px)' }} />
-              <P4Flower size={90} color="var(--ui-bg)" className="absolute left-4 top-4" />
+              <img
+                src="/assets/terminal/p4-cloud-sky.png"
+                alt=""
+                className="absolute inset-0 h-full w-full object-cover"
+                style={{ objectPosition: '42% 45%', filter: 'saturate(1.15) contrast(1.06)' }}
+              />
+              <div className="absolute inset-0 bg-[#00a6ff]/10 mix-blend-screen" />
+              <P4Flower size={90} color="var(--ui-bg)" className="absolute left-4 top-5" />
             </div>
             <P4Flower size={70} color="rgba(255,246,208,0.65)" className="pointer-events-none absolute bottom-24 right-6" />
             <P4Sparkle size={20} color="var(--p4-orange, #f9a11b)" className="pointer-events-none absolute bottom-10 right-16" />
             <P4Sparkle size={16} color="#fff6d0" className="pointer-events-none absolute bottom-40 right-3" />
 
-            {/* 黑血块：左缘出血，右缘有机波 */}
+            {/* 黑血块：左缘出血、右缘有机波；手机宽度让出右缘天空缝，宽屏收束 540px */}
             <div
-              className="relative mr-14 pb-6 pt-5"
+              className="relative max-w-[540px] pb-8 pt-6"
               style={{
+                width: 'calc(100% - 56px)',
                 background: '#131313',
                 borderRadius: '0 190px 240px 0 / 120px 170px 210px 0',
               }}
             >
-              {p4Rows.map((row, i) => (
-                <motion.button
-                  key={row.key}
-                  ref={row.triggerRef as React.Ref<HTMLButtonElement> | undefined}
-                  type="button"
-                  custom={i}
-                  variants={bold ? tileIn : fadeIn}
-                  initial="hidden"
-                  animate="show"
-                  whileTap={TAP}
-                  onClick={() => {
-                    triggerNavFeedback();
-                    row.onPress();
-                  }}
-                  className="relative block w-full text-left"
-                  style={{ paddingLeft: row.indent + 20 }}
-                >
-                  <div className={`relative flex items-center gap-3 pr-10 ${row.big ? 'pb-1.5 pt-1' : 'py-2.5'}`}>
-                    {/* 统计行的蓝色泼溅 */}
-                    {row.big && (
-                      <P4Sparkle size={46} color="var(--ui-accent)" className="absolute -left-9 top-1" style={{ transform: 'rotate(-12deg)' }} />
-                    )}
-                    {row.icon && <span className="shrink-0">{row.icon}</span>}
-                    <span
-                      className={`font-black leading-none text-[var(--ui-bg)] ${row.big ? 'text-[44px]' : 'text-[32px]'}`}
-                      style={{ fontFamily: 'var(--p4-display-font, serif)' }}
-                    >
-                      {row.label}
-                    </span>
-                    {row.badge && <span className="shrink-0">{row.badge}</span>}
-                  </div>
-                  {row.caption && (
-                    <div className="pb-2 pl-9 text-[13px] font-black leading-none text-[var(--p4-orange,#f9a11b)]" style={{ marginLeft: row.big ? 4 : 0 }}>
-                      {row.caption}
+              {p4Rows.map((row, i) => {
+                /* 波形缩进：沿血块左弧起伏（覆盖数组 indent，行内容整体 -4° 斜置） */
+                const wave = [46, 22, 34, 50, 30, 44, 22, 36];
+                const indent = wave[i % wave.length];
+                return (
+                  <motion.button
+                    key={row.key}
+                    ref={row.triggerRef as React.Ref<HTMLButtonElement> | undefined}
+                    type="button"
+                    custom={i}
+                    variants={bold ? tileIn : fadeIn}
+                    initial="hidden"
+                    animate="show"
+                    whileTap={TAP}
+                    onClick={() => {
+                      triggerNavFeedback();
+                      row.onPress();
+                    }}
+                    className="relative block w-full py-1 text-left"
+                    style={{ paddingLeft: indent + 18 }}
+                  >
+                    <div style={{ transform: 'rotate(-4deg)', transformOrigin: 'left center' }}>
+                      <div className={`relative flex items-center gap-3 pr-10 ${row.big ? 'pb-1 pt-1' : 'py-1'}`}>
+                        {/* 统计行的蓝色泼溅 */}
+                        {row.big && (
+                          <P4Sparkle size={46} color="var(--ui-accent)" className="absolute -left-9 top-1" style={{ transform: 'rotate(-12deg)' }} />
+                        )}
+                        {row.icon && <span className="shrink-0">{row.icon}</span>}
+                        <span
+                          className={`font-black leading-none text-[var(--ui-bg)] ${row.big ? 'text-[46px]' : 'text-[33px]'}`}
+                          style={{ fontFamily: 'var(--p4-display-font, serif)' }}
+                        >
+                          {row.label}
+                        </span>
+                        {row.badge && <span className="shrink-0">{row.badge}</span>}
+                      </div>
+                      {row.caption && (
+                        <div className="mt-0.5 pl-9 text-[13px] font-black leading-none text-[var(--p4-orange,#f9a11b)]" style={{ marginLeft: row.big ? 4 : 0 }}>
+                          {row.caption}
+                        </div>
+                      )}
+                      {/* 行间黄虚线（随行体一起斜，末行不画） */}
+                      {i < p4Rows.length - 1 && (
+                        <div aria-hidden className="mt-2.5 w-[64%] border-b-2 border-dashed border-[rgba(255,217,0,0.4)]" />
+                      )}
                     </div>
-                  )}
-                  {/* 行间黄虚线（末行不画） */}
-                  {i < p4Rows.length - 1 && (
-                    <div aria-hidden className="mr-16 border-b-2 border-dashed border-[rgba(255,217,0,0.4)]" style={{ marginLeft: Math.max(row.indent - 12, 8) }} />
-                  )}
-                </motion.button>
-              ))}
+                  </motion.button>
+                );
+              })}
             </div>
           </div>
         </div>

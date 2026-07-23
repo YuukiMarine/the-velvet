@@ -99,25 +99,45 @@ export const P4NumberSticker = ({ children, className, style }: {
   </div>
 );
 
-/** 天空扇角：页首右上角的四分之一圆天空 + 云朵 + 花朵剪影（CSS 绘制，无外部资源）。
+/** 实景天空底（p4-cloud-sky 素材，终端玄关同源）：photo 模式共享的内层 */
+const P4SkyPhoto = ({ position = '38% 55%' }: { position?: string }) => (
+  <>
+    <img
+      src="/assets/terminal/p4-cloud-sky.png"
+      alt=""
+      className="absolute inset-0 h-full w-full object-cover"
+      style={{ objectPosition: position, filter: 'saturate(1.15) contrast(1.06)' }}
+    />
+    <div className="absolute inset-0 bg-[#00a6ff]/10 mix-blend-screen" />
+  </>
+);
+
+/** 天空扇角：页首右上角的四分之一圆天空 + 云朵 + 花朵剪影。
+ *  photo=true（默认）用实景云朵素材（设计稿口径）；false 退 CSS 渐变绘制。
  *  贴在 relative 容器右上角使用；size 为扇形半径（px）。 */
-export const P4SkyFan = ({ size = 180, className, style }: {
-  size?: number; className?: string; style?: CSSProperties;
+export const P4SkyFan = ({ size = 180, className, style, photo = true }: {
+  size?: number; className?: string; style?: CSSProperties; photo?: boolean;
 }) => (
   <div
     aria-hidden
     className={`pointer-events-none absolute right-0 top-0 overflow-hidden ${className ?? ''}`}
     style={{ width: size, height: size, borderBottomLeftRadius: size, ...style }}
   >
-    {/* 天空底 + 高光 */}
-    <div
-      className="absolute inset-0"
-      style={{ background: 'linear-gradient(200deg, var(--p4-sky-deep, #2196e0) 0%, var(--p4-sky, #8fd0f4) 55%, #cfeafd 100%)' }}
-    />
-    {/* 云朵：三团椭圆叠出 */}
-    <div className="absolute rounded-full bg-white/95" style={{ width: size * 0.52, height: size * 0.22, left: size * 0.34, top: size * 0.52, filter: 'blur(1px)' }} />
-    <div className="absolute rounded-full bg-white/85" style={{ width: size * 0.4, height: size * 0.18, left: size * 0.52, top: size * 0.66, filter: 'blur(1.5px)' }} />
-    <div className="absolute rounded-full bg-white/70" style={{ width: size * 0.3, height: size * 0.14, left: size * 0.28, top: size * 0.36, filter: 'blur(2px)' }} />
+    {photo ? (
+      <P4SkyPhoto position="45% 62%" />
+    ) : (
+      <>
+        {/* 天空底 + 高光 */}
+        <div
+          className="absolute inset-0"
+          style={{ background: 'linear-gradient(200deg, var(--p4-sky-deep, #2196e0) 0%, var(--p4-sky, #8fd0f4) 55%, #cfeafd 100%)' }}
+        />
+        {/* 云朵：三团椭圆叠出 */}
+        <div className="absolute rounded-full bg-white/95" style={{ width: size * 0.52, height: size * 0.22, left: size * 0.34, top: size * 0.52, filter: 'blur(1px)' }} />
+        <div className="absolute rounded-full bg-white/85" style={{ width: size * 0.4, height: size * 0.18, left: size * 0.52, top: size * 0.66, filter: 'blur(1.5px)' }} />
+        <div className="absolute rounded-full bg-white/70" style={{ width: size * 0.3, height: size * 0.14, left: size * 0.28, top: size * 0.36, filter: 'blur(2px)' }} />
+      </>
+    )}
     {/* 黄花剪影压在天空上 */}
     <P4Flower size={size * 0.42} color="var(--ui-bg)" className="absolute" style={{ right: size * 0.06, top: size * 0.3 }} />
   </div>
@@ -204,17 +224,28 @@ export const P4EmptyBloom = ({ text, hint, className }: { text: string; hint?: s
   </div>
 );
 
-/** 天空圆窗（页头右上）：蓝天照片感圆 + 云 + 黄花 */
-export const P4SkyCircle = ({ size = 160, className, style }: {
-  size?: number; className?: string; style?: CSSProperties;
+/** 天空圆窗（页头右上）：蓝天照片圆 + 黄花。photo=true（默认）走实景素材 */
+export const P4SkyCircle = ({ size = 160, className, style, photo = true }: {
+  size?: number; className?: string; style?: CSSProperties; photo?: boolean;
 }) => (
   <div
     aria-hidden
-    className={`pointer-events-none overflow-hidden rounded-full ${className ?? ''}`}
-    style={{ width: size, height: size, background: 'linear-gradient(210deg, var(--p4-sky-deep, #2196e0) 0%, var(--p4-sky, #8fd0f4) 55%, #e6f6ff 100%)', ...style }}
+    className={`pointer-events-none relative overflow-hidden rounded-full ${className ?? ''}`}
+    style={{
+      width: size,
+      height: size,
+      background: photo ? undefined : 'linear-gradient(210deg, var(--p4-sky-deep, #2196e0) 0%, var(--p4-sky, #8fd0f4) 55%, #e6f6ff 100%)',
+      ...style,
+    }}
   >
-    <div className="absolute rounded-full bg-white/95" style={{ width: size * 0.55, height: size * 0.2, left: size * 0.1, top: size * 0.42, filter: 'blur(1px)' }} />
-    <div className="absolute rounded-full bg-white/80" style={{ width: size * 0.42, height: size * 0.16, left: size * 0.36, top: size * 0.6, filter: 'blur(1.5px)' }} />
+    {photo ? (
+      <P4SkyPhoto position="35% 50%" />
+    ) : (
+      <>
+        <div className="absolute rounded-full bg-white/95" style={{ width: size * 0.55, height: size * 0.2, left: size * 0.1, top: size * 0.42, filter: 'blur(1px)' }} />
+        <div className="absolute rounded-full bg-white/80" style={{ width: size * 0.42, height: size * 0.16, left: size * 0.36, top: size * 0.6, filter: 'blur(1.5px)' }} />
+      </>
+    )}
     <P4Flower size={size * 0.46} color="var(--ui-bg)" className="absolute" style={{ right: size * 0.08, bottom: size * 0.1 }} />
   </div>
 );
