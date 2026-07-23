@@ -12,6 +12,8 @@ import { ShadowCreateModal } from '@/components/battle/ShadowCreateModal';
 import { BattleModal } from '@/components/battle/BattleModal';
 import { VictoryModal } from '@/components/battle/VictoryModal';
 import { PersonaShuffleModal } from '@/components/battle/PersonaShuffleModal';
+import { useUiChannel } from '@/ui/useUiChannel';
+import { P4Flower, P4Sparkle } from '@/ui/p4Kit';
 
 type TabKey = 'battle' | 'persona' | 'settings';
 
@@ -45,6 +47,7 @@ const SKILL_EFFECT_HINT: Record<string, string> = {
 };
 
 export const BattleArena = () => {
+  const isP4 = useUiChannel() === 'p4';
   const {
     user, attributes, persona, shadow, battleState, settings,
     checkShadowHpRegen, updateSettings: saveSettings, resetBattle, equipMask, setCurrentPage,
@@ -122,7 +125,37 @@ export const BattleArena = () => {
       exit={{ opacity: 0 }}
       className="space-y-5 pb-8"
     >
-      {/* Header — 宫格子页页头归一 PageTitle 制式（审计 S6），返回归一 → 菜单 */}
+      {/* Header — 宫格子页页头归一 PageTitle 制式（审计 S6），返回归一 → 菜单。
+          P4（p4-battle-reference-v2）：衬线特大标题 + Battle 橙手写角标 + 影时间橙胶囊。 */}
+      {isP4 ? (
+        <div className="flex items-start gap-2">
+          <BackButton onClick={() => setCurrentPage('menu')} className="mt-3 -ml-1" />
+          <div className="min-w-0 flex-1">
+            <h1
+              className="text-[44px] font-black leading-[1.02] tracking-tight text-[#131313]"
+              style={{ fontFamily: 'var(--p4-display-font, serif)' }}
+            >
+              逆影战场
+            </h1>
+            <div
+              className="-mt-1 pl-16 text-[22px] font-bold italic leading-none text-[var(--p4-orange,#f9a11b)]"
+              style={{ fontFamily: "'Caveat', 'Segoe Script', cursive" }}
+            >
+              Battle
+            </div>
+          </div>
+          {inShadowTime && (
+            <motion.span
+              animate={{ opacity: [1, 0.6, 1] }}
+              transition={{ repeat: Infinity, duration: 1.5 }}
+              className="mt-2 flex shrink-0 items-center gap-1 rounded-full px-3 py-1.5 text-xs font-black text-[#131313]"
+              style={{ background: 'var(--p4-orange, #f9a11b)', boxShadow: '0 2px 0 rgba(19,19,19,0.25)' }}
+            >
+              <P4Sparkle size={11} color="#131313" /> 影时间
+            </motion.span>
+          )}
+        </div>
+      ) : (
       <div className="flex items-start gap-3">
         <BackButton onClick={() => setCurrentPage('menu')} className="mt-1 -ml-1" />
         <div className="flex-1 min-w-0">
@@ -139,8 +172,36 @@ export const BattleArena = () => {
           </motion.span>
         )}
       </div>
+      )}
 
-      {/* Tabs */}
+      {/* Tabs：P4 = 奶油斜行 + 黑色斜章激活（黄花前缀），战紫渐变退役 */}
+      {isP4 ? (
+        <div
+          className="flex items-stretch overflow-hidden text-sm font-black"
+          style={{ background: 'var(--ui-paper)', borderRadius: 16, transform: 'skewX(-8deg)', boxShadow: '0 3px 0 rgba(19,19,19,0.14)' }}
+        >
+          {([
+            { key: 'battle', label: '进入战场' },
+            { key: 'persona', label: 'Persona' },
+            { key: 'settings', label: '设置' },
+          ] as const).map(tab => {
+            const active = activeTab === tab.key;
+            return (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                className={`flex-1 py-3 transition-colors ${active ? 'text-[var(--ui-bg)]' : 'text-[#131313]'}`}
+                style={active ? { background: '#131313', borderRadius: 14 } : undefined}
+              >
+                <span className="inline-flex items-center gap-1.5" style={{ transform: 'skewX(8deg)' }}>
+                  {active && <P4Flower size={14} color="var(--ui-bg)" />}
+                  {tab.label}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      ) : (
       <div className="flex gap-1 p-1 rounded-2xl" style={{ background: 'rgb(var(--color-battle-bright-rgb) / 0.08)', border: '1px solid rgb(var(--color-battle-bright-rgb) / 0.15)' }}>
         {([
           { key: 'battle', label: '进入战场' },
@@ -161,6 +222,7 @@ export const BattleArena = () => {
           </button>
         ))}
       </div>
+      )}
 
       {/* Tab content */}
       <div>
@@ -177,6 +239,55 @@ export const BattleArena = () => {
                     className="space-y-4"
                   >
                     {!persona && (
+                      isP4 ? (
+                        /* p4-battle-reference-v2：PLAYER 游戏 HUD 框 + 橙环竞技场 + 蓝斜召唤钮 */
+                        <div className="space-y-4">
+                          <div
+                            className="relative flex items-stretch overflow-hidden"
+                            style={{ background: 'var(--ui-bg)', border: '4px solid #131313', borderRadius: 16 }}
+                          >
+                            <div className="min-w-0 flex-1 px-4 pb-3 pt-2">
+                              <span className="inline-block rounded-b-md bg-[#131313] px-2.5 py-1 text-[10px] font-black tracking-[0.18em] text-white">
+                                PLAYER
+                              </span>
+                              <p className="mt-1.5 truncate text-[24px] font-black leading-tight text-[#131313]">{user?.name ?? '旅行者'}</p>
+                            </div>
+                            <div className="flex shrink-0 items-center gap-1 bg-[#131313] px-4 text-[var(--ui-bg)]" style={{ clipPath: 'polygon(18px 0, 100% 0, 100% 100%, 0 100%)' }}>
+                              <span className="mt-3 text-[13px] font-black">LV.</span>
+                              <span className="text-[44px] font-black leading-none tabular-nums">{attributes.reduce((s, a) => s + a.level, 0)}</span>
+                            </div>
+                            <P4Sparkle size={16} color="#ffffff" className="absolute right-1 top-1" />
+                          </div>
+
+                          <div className="relative mx-auto flex h-[380px] max-w-[380px] flex-col items-center justify-center">
+                            <div
+                              aria-hidden
+                              className="pointer-events-none absolute left-1/2 top-1/2 h-[340px] w-[340px] -translate-x-1/2 -translate-y-1/2 rounded-full"
+                              style={{ border: '14px solid var(--p4-orange, #f9a11b)', boxShadow: '0 0 0 10px rgba(255,246,208,0.5), inset 0 0 0 10px rgba(255,246,208,0.5)' }}
+                            />
+                            <P4Sparkle size={20} color="var(--ui-accent)" className="absolute right-6 top-10" />
+                            <svg aria-hidden viewBox="0 0 24 24" className="h-20 w-20" fill="#131313">
+                              <path d="M6.92 5H5l9 9 1-.94L6.92 5zM19 5h-1.92L9 13.06l.94.94L19 5zM5 19l2-2 1 1-2 2H5v-1zm14 0v1h-1l-2-2 1-1 2 2z" />
+                              <path d="M4.5 4.5L15 15l-1.5 1.5L3 6V4.5h1.5zM19.5 4.5H21V6L10.5 16.5 9 15 19.5 4.5z" />
+                            </svg>
+                            <div
+                              className="mt-5 px-8 py-3 text-[17px] font-black text-[#131313]"
+                              style={{ background: 'var(--ui-paper)', borderRadius: 14, transform: 'skewX(-8deg)', boxShadow: '0 3px 0 rgba(19,19,19,0.15)' }}
+                            >
+                              <span className="inline-block" style={{ transform: 'skewX(8deg)' }}>你尚未召唤 Persona</span>
+                            </div>
+                            <button
+                              onClick={() => setShowPersonaCreate(true)}
+                              className="relative mt-3 px-9 py-3.5 text-[19px] font-black text-white transition-transform active:scale-95"
+                              style={{ background: 'var(--ui-accent)', borderRadius: 14, transform: 'skewX(-8deg)', boxShadow: '0 4px 0 rgba(19,19,19,0.28)' }}
+                            >
+                              <span className="inline-block" style={{ transform: 'skewX(8deg)' }}>召唤 Persona</span>
+                              <P4Sparkle size={22} color="#fff6d0" className="absolute -left-3 -top-2" />
+                              <P4Sparkle size={16} color="#fff6d0" className="absolute -right-2 bottom-0" />
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
                       <div className="space-y-3">
                         <div className="rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm px-4 py-3">
                           <p className="text-[10px] font-semibold tracking-widest uppercase text-gray-400 dark:text-gray-500">Player</p>
@@ -195,6 +306,7 @@ export const BattleArena = () => {
                           </button>
                         </div>
                       </div>
+                      )
                     )}
 
                     {persona && !shadow && (
