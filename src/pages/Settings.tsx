@@ -19,6 +19,8 @@ import {
   patchAttributeLevelTitle,
 } from '@/utils/attributeLevelTitles';
 import { generatePresetNameMatches, type PresetNameMatchResult } from '@/utils/presetNameMatcher';
+import { useUiChannel } from '@/ui/useUiChannel';
+import { P4Flower, P4Sparkle, P4SkyFan } from '@/ui/p4Kit';
 
 /** 五维属性的展示元数据（图标 + 主色 + 默认中文名），仅用于设置页 UI */
 const ATTRIBUTE_META: Array<{
@@ -172,6 +174,27 @@ const ThemeColorButton = ({
   onSelect: () => void;
 }) => {
   const { spawn, ripples } = useRipple(theme.color);
+  const isP4 = useUiChannel() === 'p4';
+
+  // p4-settings-reference-v2：色板 = 彩色五瓣花，激活 = 黄tile + 白花 + 蓝星闪
+  if (isP4) {
+    return (
+      <motion.button
+        whileTap={{ scale: 0.93 }}
+        transition={{ type: 'spring', stiffness: 400, damping: 22 }}
+        onClick={(e) => { spawn(e); onSelect(); }}
+        className="relative flex flex-1 flex-col items-center gap-1.5 overflow-visible rounded-2xl py-2.5"
+        style={{ background: active ? 'var(--ui-bg)' : 'transparent', boxShadow: active ? '0 2px 0 rgba(19,19,19,0.2)' : undefined }}
+      >
+        {ripples}
+        <span className="relative">
+          <P4Flower size={36} color={active ? '#ffffff' : theme.color} />
+          {active && <P4Sparkle size={17} color="var(--ui-accent)" className="absolute -right-3.5 -top-2" />}
+        </span>
+        <div className="whitespace-nowrap text-xs font-black text-[#131313]">{theme.label}</div>
+      </motion.button>
+    );
+  }
 
   return (
     <motion.button
@@ -271,6 +294,7 @@ export const Settings = () => {
     setTheme,
     loadData
   } = useAppStore();
+  const isP4 = useUiChannel() === 'p4';
   const achievements = useAppStore(s => s.achievements);
   const skills = useAppStore(s => s.skills);
   const setCurrentPage = useAppStore(s => s.setCurrentPage);
@@ -610,18 +634,72 @@ export const Settings = () => {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="space-y-6"
+      className={`space-y-6 ${isP4 ? 'p4-reskin' : ''}`}
     >
-      {/* 顶部标题 + 返回按钮（设置现在只从菜单宫格进入，与其他子页保持一致的视觉） */}
+      {/* 顶部标题 + 返回按钮（设置现在只从菜单宫格进入，与其他子页保持一致的视觉）。
+          P4（p4-settings-reference-v2）：衬线特大「设置」+ 橙色 Settings 手写角标 + 右上天空扇。 */}
+      {isP4 ? (
+        <div className="relative -mx-4 overflow-hidden px-4 pb-1 pt-1">
+          <P4SkyFan size={120} className="absolute right-0 top-0" />
+          <P4Sparkle size={18} color="#ffffff" className="absolute right-[32%] top-2" />
+          <P4Sparkle size={13} color="var(--ui-accent)" className="absolute right-[38%] top-[92px]" />
+          <div className="flex items-start gap-2">
+            <BackButton onClick={() => setCurrentPage('menu')} className="mt-3 -ml-1" />
+            <div>
+              <h1
+                className="text-[52px] font-black leading-[1.02] tracking-tight text-[#131313]"
+                style={{ fontFamily: 'var(--p4-display-font, serif)' }}
+              >
+                设置
+              </h1>
+              <div
+                className="-mt-1.5 pl-10 text-[24px] font-bold italic leading-none text-[var(--p4-orange,#f9a11b)]"
+                style={{ fontFamily: "'Caveat', 'Segoe Script', cursive" }}
+              >
+                Settings
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : (
       <div className="flex items-start justify-between gap-3">
         <BackButton onClick={() => setCurrentPage('menu')} className="mt-1 -ml-1" />
         <div className="flex-1">
           <PageTitle title="设置" en="Settings" />
         </div>
       </div>
+      )}
 
       {/* P9-菜单批：用户资料卡上浮至菜单页第一屏；原位改为「账号与数据」入口
-          （账号瓷砖从菜单宫格下沉至此，与主题快切上浮互为对调） */}
+          （账号瓷砖从菜单宫格下沉至此，与主题快切上浮互为对调）。
+          P4：黑斜章 + 奶油斜行（设计稿账号行制式）。 */}
+      {isP4 ? (
+        <motion.button
+          type="button"
+          whileTap={{ scale: 0.98 }}
+          onClick={() => setCurrentPage('account')}
+          className="flex w-full items-stretch text-left"
+        >
+          <span
+            className="z-10 flex shrink-0 items-center gap-2 px-4 py-3 font-black text-white"
+            style={{ background: '#131313', borderRadius: 14, transform: 'skewX(-8deg)' }}
+          >
+            <span className="flex items-center gap-2" style={{ transform: 'skewX(8deg)' }}>
+              <P4Flower size={16} color="var(--ui-bg)" />
+              账号与数据
+            </span>
+          </span>
+          <span
+            className="-ml-2 flex min-w-0 flex-1 items-center gap-2 py-3 pl-6 pr-4"
+            style={{ background: 'var(--ui-paper)', borderRadius: 14, transform: 'skewX(-8deg)' }}
+          >
+            <span className="flex min-w-0 flex-1 items-center justify-between gap-2" style={{ transform: 'skewX(8deg)' }}>
+              <span className="truncate text-xs font-bold text-[#131313]/75">云同步 · 数据管理 · 备份导出</span>
+              <span aria-hidden className="font-black text-[#131313]">›</span>
+            </span>
+          </span>
+        </motion.button>
+      ) : (
       <motion.button
         type="button"
         whileTap={{ scale: 0.98 }}
@@ -635,10 +713,38 @@ export const Settings = () => {
         </span>
         <span className="text-gray-400" aria-hidden>›</span>
       </motion.button>
+      )}
 
       <div className="space-y-4">
         {sections.map(section => (
-          <div key={section.id} className="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden">
+          <div
+            key={section.id}
+            className={
+              isP4
+                ? 'overflow-visible'
+                : 'bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden'
+            }
+          >
+            {isP4 ? (
+              /* P4 分组头：黑色斜章（黄花 + 白字）+ 折叠箭头 */
+              <motion.button
+                onClick={() => setActiveSection(activeSection === section.id ? null : section.id)}
+                className="flex w-full items-center justify-between py-1 text-left"
+              >
+                <span
+                  className="flex items-center gap-2 px-5 py-2.5 font-black text-white"
+                  style={{ background: '#131313', borderRadius: 14, transform: 'skewX(-8deg)' }}
+                >
+                  <span className="flex items-center gap-2" style={{ transform: 'skewX(8deg)' }}>
+                    <P4Flower size={16} color="var(--ui-bg)" />
+                    {section.label}
+                  </span>
+                </span>
+                <span className="pr-1 font-black text-[#131313]">
+                  {activeSection === section.id ? '▲' : '▼'}
+                </span>
+              </motion.button>
+            ) : (
             <motion.button
               onClick={() => setActiveSection(activeSection === section.id ? null : section.id)}
               className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-700"
@@ -651,13 +757,15 @@ export const Settings = () => {
                 {activeSection === section.id ? '▲' : '▼'}
               </span>
             </motion.button>
+            )}
 
             {activeSection === section.id && (
               <motion.div
                 initial={{ height: 0 }}
                 animate={{ height: 'auto' }}
                 exit={{ height: 0 }}
-                className="px-6 pb-6"
+                className={isP4 ? 'mt-2 rounded-[20px] bg-[var(--ui-paper)] px-5 pb-6 pt-4' : 'px-6 pb-6'}
+                style={isP4 ? { boxShadow: '0 3px 0 rgba(19,19,19,0.12)' } : undefined}
               >
                 {section.id === 'theme' && (
                   <div className="space-y-5">

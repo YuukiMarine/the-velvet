@@ -44,6 +44,8 @@ import { calcCurrentStreak } from '@/utils/streak';
 import { triggerNavFeedback } from '@/utils/feedback';
 import { useBoldness } from '@/utils/boldness';
 import { STAGGER, TAP, springSoft, fadeIn } from '@/utils/motion';
+import { useUiChannel } from '@/ui/useUiChannel';
+import { P4Flower, P4Sparkle, P4SunRings } from '@/ui/p4Kit';
 
 // ── 图标（24px stroke 制式，与 Navigation.tsx 同一套 heroicons outline 风格）──
 
@@ -199,6 +201,7 @@ const THEME_SWATCHES: { value: ThemeType; label: string; color?: string }[] = [
 export const Menu = () => {
   const { activities, achievements, skills, attributes, settings, user, setTheme, setCurrentPage } = useAppStore();
   const bold = useBoldness();
+  const isP4 = useUiChannel() === 'p4';
 
   // 「关于」Sheet：本页内打开、不跳页；触发器 ref 供 SheetModal 形状记忆生长
   //（面板从横条"长出来"，关闭缩回——UI_DESIGN_BOLD_V2.5.md §4.3）
@@ -283,6 +286,52 @@ export const Menu = () => {
 
   const streakDigits = String(currentStreak).length;
 
+  // P4 用户章数据（p4-menu-reference-v2）：LV = 五维等级和，总点数 = 点数和
+  const totalLevel = attributes.reduce((s, a) => s + a.level, 0);
+  const p4TotalPoints = attributes.reduce((s, a) => s + (a.points ?? 0), 0);
+
+  /** P4 黑血块菜单行定义（设计稿自上而下序；battle/ledger 跟随开关） */
+  const p4Rows: Array<{
+    key: string;
+    label: string;
+    caption?: string;
+    big?: boolean;
+    icon?: ReactNode;
+    badge?: ReactNode;
+    indent: number;
+    onPress: () => void;
+    triggerRef?: React.RefObject<HTMLButtonElement | null>;
+  }> = [
+    {
+      key: 'stats', label: '统计', caption: `连续 ${currentStreak} 天`, big: true, indent: 56,
+      onPress: () => setCurrentPage('statistics'),
+    },
+    ...(battleVisible
+      ? [{ key: 'battle', label: '逆影战场', indent: 26, icon: <span className="text-[var(--ui-bg)]"><BoltIcon /></span>,
+          badge: inShadowTime ? <span aria-hidden className="animate-pulse text-base leading-none text-[var(--p4-orange,#f9a11b)]">✦</span> : undefined,
+          onPress: () => setCurrentPage('battle') }]
+      : []),
+    {
+      key: 'theme', label: '主题', caption: `当前 · ${currentThemeLabel}`, indent: 36,
+      icon: <span className="text-[var(--ui-bg)]"><PaletteIcon /></span>,
+      onPress: () => setThemeSheetOpen(true),
+    },
+    {
+      key: 'achievements', label: '成就 · 技能', indent: 44,
+      icon: <span className="text-[var(--ui-bg)]"><TrophyIcon /></span>,
+      badge: totalPendingUnlocks > 0
+        ? <span className="rounded-full bg-[var(--p4-orange,#f9a11b)] px-2 py-0.5 text-xs font-black text-[#131313]">{totalPendingUnlocks}</span>
+        : undefined,
+      onPress: () => setCurrentPage('achievements'),
+    },
+    { key: 'astrology', label: '占卜', indent: 30, icon: <span className="text-[var(--ui-bg)]"><MoonIcon /></span>, onPress: () => setCurrentPage('astrology') },
+    ...(ledgerVisible
+      ? [{ key: 'ledger', label: '心相记账', indent: 38, icon: <P4Flower size={24} color="var(--p4-green, #55c34f)" />, onPress: () => setCurrentPage('ledger') }]
+      : []),
+    { key: 'settings', label: '设置', indent: 26, icon: <span className="text-[var(--ui-accent)]"><GearIcon /></span>, onPress: () => setCurrentPage('settings') },
+    { key: 'about', label: '关于', indent: 34, icon: <P4Sparkle size={22} color="#ff7a2f" />, onPress: () => setAboutOpen(true), triggerRef: aboutTriggerRef },
+  ];
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -291,6 +340,113 @@ export const Menu = () => {
       transition={{ duration: 0.2 }}
       className="max-w-2xl mx-auto"
     >
+      {isP4 ? (
+        /* ── P4 舞台（p4-menu-reference-v2 1:1）：衬线大标题 + 用户章 + 黑色有机血块对角菜单 ── */
+        <div className="relative">
+          {/* 页头 */}
+          <div className="relative px-1">
+            <P4SunRings size={150} className="absolute -right-10 -top-14 opacity-90" />
+            <P4Sparkle size={18} color="#ffffff" className="absolute left-[38%] top-0" />
+            <div className="relative flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h1
+                  className="text-[56px] font-black leading-[1.02] tracking-tight text-[#131313]"
+                  style={{ fontFamily: 'var(--p4-display-font, serif)' }}
+                >
+                  菜单
+                </h1>
+                <div className="mt-1 text-xs font-black tracking-[0.2em] text-[#131313]">
+                  CHANNEL DIRECTORY <span className="text-[var(--p4-orange,#f9a11b)]">04</span>
+                </div>
+              </div>
+              {/* 用户章：黑花 + 昵称 + LV 黑胶囊 + 总点数 */}
+              <div className="mt-3 shrink-0 text-right">
+                <div className="flex items-center justify-end gap-1.5">
+                  <P4Flower size={18} color="#131313" />
+                  <span className="max-w-[120px] truncate text-[15px] font-black text-[#131313]">{user?.name || '客人'}</span>
+                </div>
+                <div className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-[#131313] px-3 py-1 text-[13px] font-black leading-none text-white">
+                  LV <span className="tabular-nums">{totalLevel}</span>
+                </div>
+                <div className="mt-1.5 text-xs font-black text-[#131313]">
+                  总点数 <span className="tabular-nums text-[var(--p4-orange,#f9a11b)]">{p4TotalPoints}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* 舞台：右侧天空色块 + 黄花，左侧黑血块菜单 */}
+          <div className="relative -mx-4 mt-3 overflow-hidden pb-4">
+            <div
+              aria-hidden
+              className="pointer-events-none absolute -right-9 top-2 h-[340px] w-[220px]"
+              style={{
+                background: 'linear-gradient(205deg, var(--p4-sky-deep, #2196e0) 0%, var(--p4-sky, #8fd0f4) 52%, #e8f6ff 100%)',
+                borderRadius: '52% 48% 38% 62% / 42% 58% 46% 54%',
+              }}
+            >
+              <div className="absolute left-6 top-24 h-6 w-24 rounded-full bg-white/90" style={{ filter: 'blur(2px)' }} />
+              <div className="absolute left-12 top-36 h-5 w-20 rounded-full bg-white/75" style={{ filter: 'blur(2.5px)' }} />
+              <P4Flower size={90} color="var(--ui-bg)" className="absolute left-4 top-4" />
+            </div>
+            <P4Flower size={70} color="rgba(255,246,208,0.65)" className="pointer-events-none absolute bottom-24 right-6" />
+            <P4Sparkle size={20} color="var(--p4-orange, #f9a11b)" className="pointer-events-none absolute bottom-10 right-16" />
+            <P4Sparkle size={16} color="#fff6d0" className="pointer-events-none absolute bottom-40 right-3" />
+
+            {/* 黑血块：左缘出血，右缘有机波 */}
+            <div
+              className="relative mr-14 pb-6 pt-5"
+              style={{
+                background: '#131313',
+                borderRadius: '0 190px 240px 0 / 120px 170px 210px 0',
+              }}
+            >
+              {p4Rows.map((row, i) => (
+                <motion.button
+                  key={row.key}
+                  ref={row.triggerRef as React.Ref<HTMLButtonElement> | undefined}
+                  type="button"
+                  custom={i}
+                  variants={bold ? tileIn : fadeIn}
+                  initial="hidden"
+                  animate="show"
+                  whileTap={TAP}
+                  onClick={() => {
+                    triggerNavFeedback();
+                    row.onPress();
+                  }}
+                  className="relative block w-full text-left"
+                  style={{ paddingLeft: row.indent + 20 }}
+                >
+                  <div className={`relative flex items-center gap-3 pr-10 ${row.big ? 'pb-1.5 pt-1' : 'py-2.5'}`}>
+                    {/* 统计行的蓝色泼溅 */}
+                    {row.big && (
+                      <P4Sparkle size={46} color="var(--ui-accent)" className="absolute -left-9 top-1" style={{ transform: 'rotate(-12deg)' }} />
+                    )}
+                    {row.icon && <span className="shrink-0">{row.icon}</span>}
+                    <span
+                      className={`font-black leading-none text-[var(--ui-bg)] ${row.big ? 'text-[44px]' : 'text-[32px]'}`}
+                      style={{ fontFamily: 'var(--p4-display-font, serif)' }}
+                    >
+                      {row.label}
+                    </span>
+                    {row.badge && <span className="shrink-0">{row.badge}</span>}
+                  </div>
+                  {row.caption && (
+                    <div className="pb-2 pl-9 text-[13px] font-black leading-none text-[var(--p4-orange,#f9a11b)]" style={{ marginLeft: row.big ? 4 : 0 }}>
+                      {row.caption}
+                    </div>
+                  )}
+                  {/* 行间黄虚线（末行不画） */}
+                  {i < p4Rows.length - 1 && (
+                    <div aria-hidden className="mr-16 border-b-2 border-dashed border-[rgba(255,217,0,0.4)]" style={{ marginLeft: Math.max(row.indent - 12, 8) }} />
+                  )}
+                </motion.button>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : (
       <PagePlane>
         <div className="space-y-5">
           {/* ── 页头：镂空斜带标题（本页的「文字怪物」，§2 规则5） ──
@@ -529,6 +685,7 @@ export const Menu = () => {
           </section>
         </div>
       </PagePlane>
+      )}
 
       {/* ── 「关于」Sheet：复刻 Settings 原「关于」节（设置拆解 PR 后此处为唯一入口）。
           文案与外链 URL 逐字保留；仅信息卡底色随 Sheet 面板（dark:bg-gray-900）

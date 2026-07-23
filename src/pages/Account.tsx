@@ -25,6 +25,8 @@ import { computeTotalLv } from '@/utils/lvTiers';
 import { logout as cloudLogout } from '@/services/auth';
 import { pushAll, pullAll, syncOnLogin, computeSyncDiff } from '@/services/sync';
 import { downloadBackup, copyBackupToClipboard, readBackupFile } from '@/services/backup';
+import { useUiChannel } from '@/ui/useUiChannel';
+import { P4Flower, P4Sparkle } from '@/ui/p4Kit';
 
 /** 将一个过去的时间格式化为 "刚刚 / N 分钟前 / N 小时前 / N 天前"（随云同步节自 Settings 迁来） */
 const formatRelative = (date: Date): string => {
@@ -40,6 +42,7 @@ const formatRelative = (date: Date): string => {
 };
 
 export const Account = () => {
+  const isP4 = useUiChannel() === 'p4';
   const {
     user,
     settings,
@@ -149,14 +152,35 @@ export const Account = () => {
       {/* 斜轴世界（§2 规则1）：内容平面随世界倾斜，卡片成平行四边形；各卡内容 + 眉标
           包 PlaneLevel 反制回水平（"世界斜、字不斜"）。ConfirmDialog 走 portal 基座、
           在平面之外，不受倾斜影响。聚焦输入框时整页 :focus-within 自动校直。 */}
-      <PagePlane className="space-y-4">
-      {/* 顶部标题 + 返回按钮（与其他子页保持一致的视觉） */}
+      <PagePlane className={`space-y-4 ${isP4 ? 'p4-reskin' : ''}`}>
+      {/* 顶部标题 + 返回按钮（与其他子页保持一致的视觉）。
+          P4（p4-account-reference-v2）：衬线特大标题 + Account 手写橙角标。 */}
+      {isP4 ? (
+        <PlaneLevel className="flex items-start gap-2">
+          <BackButton onClick={() => setCurrentPage('menu')} className="mt-3 -ml-1" />
+          <div>
+            <h1
+              className="text-[42px] font-black leading-[1.05] tracking-tight text-[#131313]"
+              style={{ fontFamily: 'var(--p4-display-font, serif)' }}
+            >
+              账号与数据
+            </h1>
+            <div
+              className="-mt-1 pl-6 text-[22px] font-bold italic leading-none text-[var(--p4-orange,#f9a11b)]"
+              style={{ fontFamily: "'Caveat', 'Segoe Script', cursive" }}
+            >
+              Account
+            </div>
+          </div>
+        </PlaneLevel>
+      ) : (
       <PlaneLevel className="flex items-start justify-between gap-3">
         <BackButton onClick={() => setCurrentPage('menu')} className="mt-1 -ml-1" />
         <div className="flex-1">
           <PageTitle title="账号与数据" en="Account" />
         </div>
       </PlaneLevel>
+      )}
 
       {/* ── 数据管理 ─────────────────────────────────────── */}
       <section className="space-y-2">
@@ -184,6 +208,39 @@ export const Account = () => {
             <div className="space-y-2">
               <p className="text-[11px] font-semibold tracking-widest uppercase text-gray-400 dark:text-gray-500">备份导出</p>
               <div className="grid grid-cols-2 gap-2">
+                {isP4 ? (
+                  /* p4-account-reference-v2：下载备份=黑斜板黄花黄字 / 复制 JSON=蓝斜板白星白字 */
+                  <>
+                    <motion.button
+                      whileTap={{ scale: 0.97 }}
+                      onClick={handleDownload}
+                      className="py-3.5 text-sm font-black"
+                      style={{ background: '#131313', color: 'var(--ui-bg)', borderRadius: 16, transform: 'skewX(-6deg)', boxShadow: '0 3px 0 rgba(19,19,19,0.3)' }}
+                    >
+                      <span className="flex items-center justify-center gap-2" style={{ transform: 'skewX(6deg)' }}>
+                        <P4Flower size={18} color="var(--ui-bg)" />
+                        {isNative() ? '分享备份' : '下载备份'}
+                      </span>
+                    </motion.button>
+                    <motion.button
+                      whileTap={{ scale: 0.97 }}
+                      onClick={handleCopy}
+                      className="py-3.5 text-sm font-black text-white"
+                      style={{
+                        background: copyState === 'ok' ? 'var(--p4-green, #55c34f)' : copyState === 'err' ? 'var(--ui-danger)' : 'var(--ui-accent)',
+                        borderRadius: 16,
+                        transform: 'skewX(-6deg)',
+                        boxShadow: '0 3px 0 rgba(19,19,19,0.25)',
+                      }}
+                    >
+                      <span className="flex items-center justify-center gap-2" style={{ transform: 'skewX(6deg)' }}>
+                        <P4Sparkle size={15} color="#ffffff" />
+                        {copyState === 'ok' ? '已复制' : '复制 JSON'}
+                      </span>
+                    </motion.button>
+                  </>
+                ) : (
+                <>
                 <motion.button
                   whileTap={{ scale: 0.97 }}
                   onClick={handleDownload}
@@ -206,6 +263,8 @@ export const Account = () => {
                   <span>{copyState === 'ok' ? '✓' : '📋'}</span>
                   <span>{copyState === 'ok' ? '已复制' : '复制 JSON'}</span>
                 </motion.button>
+                </>
+                )}
               </div>
 
               {/* 下载完成后显示可点击蓝链 */}
@@ -289,6 +348,21 @@ export const Account = () => {
             {/* 重置 */}
             <div className="pt-3 border-t border-gray-100 dark:border-gray-800">
               <p className="text-[11px] font-semibold tracking-widest uppercase text-gray-400 dark:text-gray-500 mb-2">危险区域</p>
+              {isP4 ? (
+                /* p4-account-reference-v2：红色斜板 + 奶油花 + 白星角 */
+                <motion.button
+                  whileTap={{ scale: 0.97 }}
+                  onClick={() => setShowResetConfirm(true)}
+                  className="relative w-full py-3.5 text-[15px] font-black text-white"
+                  style={{ background: 'var(--ui-danger)', borderRadius: 16, transform: 'skewX(-6deg)', boxShadow: '0 3px 0 rgba(19,19,19,0.25)' }}
+                >
+                  <span className="flex items-center justify-center gap-2.5" style={{ transform: 'skewX(6deg)' }}>
+                    <P4Flower size={18} color="#fff6d0" />
+                    重置所有数据
+                  </span>
+                  <P4Sparkle size={16} color="#fff6d0" className="absolute -top-1.5 right-3" />
+                </motion.button>
+              ) : (
               <motion.button
                 whileTap={{ scale: 0.97 }}
                 onClick={() => setShowResetConfirm(true)}
@@ -296,6 +370,7 @@ export const Account = () => {
               >
                 重置所有数据
               </motion.button>
+              )}
               <p className="text-xs text-red-400 dark:text-red-500 mt-1.5">
                 删除全部数据，无法恢复。
               </p>
