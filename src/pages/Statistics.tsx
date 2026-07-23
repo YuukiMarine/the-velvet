@@ -11,6 +11,17 @@ import {
   ResponsiveContainer
 } from 'recharts';
 import { AttributeId } from '@/types';
+import { useUiChannel } from '@/ui/useUiChannel';
+import { P4Flower, P4Sparkle, P4SkyFan } from '@/ui/p4Kit';
+
+/** P4 属性分布五瓣花牌配色（p4-statistics-reference-v2 采样：绿/蓝/橙/粉/紫） */
+const P4_ATTR_COLORS: Record<AttributeId, string> = {
+  knowledge: '#7cc86b',
+  guts:      '#5aa7e8',
+  dexterity: '#f5a33c',
+  kindness:  '#f08ca8',
+  charm:     '#b58fe0',
+};
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 const ATTR_COLORS: Record<AttributeId, string> = {
@@ -216,6 +227,7 @@ const AttrTrendChart = ({
 export const Statistics = () => {
   const { activities, attributes, settings, setCurrentPage } = useAppStore();
   const [timeRange, setTimeRange] = useState<'7' | '30' | 'all'>('30');
+  const isP4 = useUiChannel() === 'p4';
 
   const filtered = useMemo(() => {
     if (timeRange === 'all') return activities;
@@ -282,14 +294,91 @@ export const Statistics = () => {
       {/* 斜轴世界（§2 规则1）：整页内容平面随世界倾斜 -4°，卡片成平行四边形；
           每张卡的内容包 PlaneLevel 反制回水平（"世界斜、字不斜"）。聚焦输入自动校直。 */}
       <PagePlane className="space-y-5">
-      {/* header — 宫格子页页头归一 PageTitle 制式（审计 S6），返回归一 → 菜单 */}
+      {/* header — 宫格子页页头归一 PageTitle 制式（审计 S6），返回归一 → 菜单。
+          P4（p4-statistics-reference-v2）：衬线特大「统计」+ STATUS CHECK 眉标 + 天空扇。 */}
+      {isP4 ? (
+        <PlaneLevel className="relative -mx-4 overflow-hidden px-4 pb-1 pt-1">
+          <P4SkyFan size={130} className="absolute right-0 top-0" />
+          <P4Sparkle size={18} color="#ffffff" className="absolute right-[34%] top-2" />
+          <div className="flex items-start gap-2">
+            <BackButton onClick={() => setCurrentPage('menu')} className="mt-3 -ml-1" />
+            <div>
+              <h1
+                className="text-[52px] font-black leading-[1.02] tracking-tight text-[#131313]"
+                style={{ fontFamily: 'var(--p4-display-font, serif)' }}
+              >
+                统计
+              </h1>
+              <div className="mt-1 text-xs font-black tracking-[0.24em] text-[#131313]">STATUS CHECK</div>
+            </div>
+          </div>
+        </PlaneLevel>
+      ) : (
       <PlaneLevel className="flex items-start gap-3">
         <BackButton onClick={() => setCurrentPage('menu')} className="mt-1 -ml-1" />
         <PageTitle title="统计" en="Statistics" enOffset={{ right: -24 }} />
       </PlaneLevel>
+      )}
 
       {/* growth curve —— 统计页独有的可视化，置顶为 hero（审计 §3.5：此前被首页已有的
-          汇总卡压到下方）。点「详细统计 →」进来第一眼即看到成长轨迹，而非重复的汇总数。 */}
+          汇总卡压到下方）。点「详细统计 →」进来第一眼即看到成长轨迹，而非重复的汇总数。
+          P4：太阳舞台 —— 中央奶油大圆（累计点数巨数 + 蓝波线）+ 四角彩色卫星圆。 */}
+      {isP4 ? (
+        <PlaneLevel>
+          <div className="mb-1 flex items-center gap-2 px-1">
+            <P4Flower size={18} color="var(--p4-orange, #f9a11b)" />
+            <h3 className="text-[24px] font-black leading-none text-[#131313]" style={{ fontFamily: 'var(--p4-display-font, serif)' }}>
+              成长轨迹
+            </h3>
+          </div>
+          <div className="relative mx-auto h-[400px] max-w-[400px]">
+            {/* 两侧奶油花瓣缀饰 */}
+            <P4Flower size={54} color="rgba(255,246,208,0.85)" className="absolute -left-3 top-1/2 -mt-7" />
+            <P4Flower size={54} color="rgba(255,246,208,0.85)" className="absolute -right-3 top-1/2 -mt-7" />
+            {/* 中央太阳圆：橙环 + 奶油面 */}
+            <div
+              className="absolute left-1/2 top-1/2 h-[252px] w-[252px] -translate-x-1/2 -translate-y-1/2 rounded-full p-2.5"
+              style={{ background: 'var(--p4-orange, #f9a11b)', boxShadow: '0 0 0 12px rgba(255, 246, 208, 0.55)' }}
+            >
+              <div className="flex h-full w-full flex-col items-center justify-center rounded-full px-5 text-center" style={{ background: '#fff9dd' }}>
+                <div className="text-[13px] font-black text-[#131313]/80">累计点数</div>
+                <div className="text-[62px] font-black leading-none tabular-nums text-[#131313]">{totalPoints}</div>
+                <P4Sparkle size={14} color="var(--ui-accent)" className="mt-1" />
+                <svg aria-hidden width="130" height="14" viewBox="0 0 130 14" className="mt-1">
+                  <path d="M4 8 Q 20 1, 36 8 T 66 8 T 96 8 T 126 8" fill="none" stroke="var(--ui-accent)" strokeWidth="2.5" strokeLinecap="round" />
+                </svg>
+                <div className="mt-1.5 text-[11px] font-semibold leading-snug text-[#131313]/60">
+                  {activities.length > 0 ? `共 ${totalRecords} 条记录 · ${topAttr?.total > 0 ? `最强 ${settings.attributeNames[topAttr.id]}` : '继续加油'}` : '记录更多后这里会出现成长曲线'}
+                </div>
+              </div>
+            </div>
+            {/* 四角卫星圆 */}
+            {[
+              { label: '累计点数', v: String(totalPoints), bg: 'var(--p4-green, #55c34f)', pos: 'left-0 top-1', flower: true },
+              { label: '记录天数', v: String(uniqueDays), bg: 'var(--p4-orange, #f9a11b)', pos: 'right-0 top-1', flower: true },
+              { label: '最长连续', v: `${maxStreak}天`, bg: 'var(--ui-accent)', pos: 'left-0 bottom-1', flower: false },
+              { label: '日均点数', v: String(avgPerDay), bg: 'var(--ui-danger)', pos: 'right-0 bottom-1', flower: true },
+            ].map((s) => (
+              <div
+                key={s.label}
+                className={`absolute ${s.pos} flex h-[108px] w-[108px] flex-col items-center justify-center rounded-full text-white`}
+                style={{ background: s.bg, boxShadow: '0 0 0 6px rgba(255, 246, 208, 0.9)' }}
+              >
+                {s.flower ? <P4Flower size={18} color="#ffffff" /> : <P4Sparkle size={16} color="#ffffff" />}
+                <div className="mt-0.5 text-[12px] font-black">{s.label}</div>
+                <div className="text-[24px] font-black leading-tight tabular-nums">{s.v}</div>
+              </div>
+            ))}
+          </div>
+          {/* 有数据时补挂成长曲线（设计稿只画空态；曲线功能保留在奶油面板中） */}
+          {activities.length > 0 && (
+            <div className="mt-3 rounded-[24px] bg-[var(--ui-paper)] p-4" style={{ boxShadow: '0 3px 0 rgba(19,19,19,0.12)' }}>
+              <GrowthCurve activities={activities} />
+            </div>
+          )}
+        </PlaneLevel>
+      ) : (
+      <>
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
@@ -316,32 +405,67 @@ export const Statistics = () => {
         <StatCard label="最长连续" value={`${maxStreak}天`} sub={todayStreak > 0 ? `当前连续 ${todayStreak} 天` : '继续加油！'} delay={0.25} />
         <StatCard label="日均点数" value={avgPerDay} sub={topAttr?.total > 0 ? `最强：${settings.attributeNames[topAttr.id]}` : ''} delay={0.3} />
       </div>
+      </>
+      )}
 
-      {/* attribute trend */}
+      {/* attribute trend
+          P4：标题出面板（橙花+衬线），趋势区 = 超圆角奶油大板 + 居中分段（激活蓝 blob）+ 左下大花。 */}
+      {isP4 && (
+        <PlaneLevel className="mb-1 mt-2 flex items-center gap-2 px-1">
+          <P4Flower size={18} color="var(--p4-orange, #f9a11b)" />
+          <h3 className="text-[24px] font-black leading-none text-[#131313]" style={{ fontFamily: 'var(--p4-display-font, serif)' }}>
+            属性趋势
+          </h3>
+        </PlaneLevel>
+      )}
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.3, duration: 0.5 }}
-        className="rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm p-5"
+        className={
+          isP4
+            ? 'relative overflow-hidden rounded-[36px] bg-[var(--ui-paper)] p-5'
+            : 'rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm p-5'
+        }
+        style={isP4 ? { boxShadow: '0 3px 0 rgba(19,19,19,0.12)' } : undefined}
       >
         <PlaneLevel>
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <p className="text-[10px] font-semibold tracking-widest uppercase text-gray-400 dark:text-gray-500">Attributes</p>
-            <h3 className="font-black text-gray-900 dark:text-white">属性趋势</h3>
-          </div>
+        {isP4 && <P4Flower size={80} color="var(--ui-bg)" className="pointer-events-none absolute -left-4 bottom-2 opacity-80" />}
+        <div className={isP4 ? 'mb-3 flex items-center justify-center' : 'flex items-center justify-between mb-4'}>
+          {!isP4 && (
+            <div>
+              <p className="text-[10px] font-semibold tracking-widest uppercase text-gray-400 dark:text-gray-500">Attributes</p>
+              <h3 className="font-black text-gray-900 dark:text-white">属性趋势</h3>
+            </div>
+          )}
           {/* time range tabs */}
-          <div className="flex gap-1">
+          <div className={isP4 ? 'flex items-center gap-5' : 'flex gap-1'}>
             {([['7', '7天'], ['30', '30天'], ['all', '全部']] as [string, string][]).map(([v, label]) => (
               <button
                 key={v}
                 onClick={() => setTimeRange(v as '7' | '30' | 'all')}
-                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors ${
-                  timeRange === v
-                    ? 'bg-primary text-white'
-                    : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
-                }`}
+                className={
+                  isP4
+                    ? `relative px-3 py-1.5 text-[15px] font-black transition-colors ${
+                        timeRange === v ? 'text-white' : 'text-[#131313]'
+                      }`
+                    : `px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors ${
+                        timeRange === v
+                          ? 'bg-primary text-white'
+                          : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
+                      }`
+                }
               >
+                {isP4 && timeRange === v && (
+                  <>
+                    <span
+                      aria-hidden
+                      className="absolute inset-0 -z-10"
+                      style={{ background: 'var(--ui-accent)', borderRadius: '58% 42% 55% 45% / 52% 58% 42% 48%', transform: 'rotate(-3deg)' }}
+                    />
+                    <P4Sparkle size={13} color="var(--ui-accent)" className="absolute -right-2.5 -top-1.5" />
+                  </>
+                )}
                 {label}
               </button>
             ))}
@@ -366,7 +490,42 @@ export const Statistics = () => {
         </PlaneLevel>
       </motion.div>
 
-      {/* per-attribute breakdown */}
+      {/* per-attribute breakdown
+          P4：条形图退役 —— 五枚花瓣圆牌（彩环 + 彩花 + pts + 名·Lv 标签）。 */}
+      {isP4 ? (
+        <PlaneLevel>
+          <div className="mb-3 mt-2 flex items-center gap-2 px-1">
+            <P4Flower size={18} color="var(--p4-orange, #f9a11b)" />
+            <h3 className="text-[24px] font-black leading-none text-[#131313]" style={{ fontFamily: 'var(--p4-display-font, serif)' }}>
+              属性分布
+            </h3>
+          </div>
+          <div className="flex items-start justify-between gap-1">
+            {attrIds.map((id) => {
+              const attr = attributes.find(a => a.id === id);
+              const total = attrTotals.find(t => t.id === id)?.total ?? 0;
+              const c = P4_ATTR_COLORS[id];
+              return (
+                <div key={id} className="flex min-w-0 flex-1 flex-col items-center gap-1.5">
+                  <div
+                    className="relative flex h-[62px] w-[62px] items-center justify-center rounded-full"
+                    style={{ background: 'var(--ui-paper)', border: `3px solid ${c}` }}
+                  >
+                    <P4Flower size={46} color={c} className="absolute opacity-45" />
+                    <div className="relative text-center leading-none">
+                      <div className="text-[17px] font-black tabular-nums text-[#131313]">{total}</div>
+                      <div className="text-[9px] font-bold text-[#131313]/60">pts</div>
+                    </div>
+                  </div>
+                  <div className="whitespace-nowrap text-[11px] font-black text-[#131313]">
+                    {settings.attributeNames[id]} <span className="text-[#131313]/60">Lv.{attr?.level ?? 1}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </PlaneLevel>
+      ) : (
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
@@ -412,6 +571,7 @@ export const Statistics = () => {
         </div>
         </PlaneLevel>
       </motion.div>
+      )}
       </PagePlane>
     </motion.div>
   );

@@ -5,6 +5,11 @@ import { Achievement, AttributeId } from '@/types';
 import { triggerNavFeedback } from '@/utils/feedback';
 import { PageTitle } from '@/components/PageTitle';
 import { BackButton } from '@/components/BackButton';
+import { useUiChannel } from '@/ui/useUiChannel';
+import { P4Flower, P4Sparkle, P4SunRings } from '@/ui/p4Kit';
+
+/** P4 绶带横幅裁切（p4-achievements-reference-v2）：两端内凹的奖带形 */
+const P4_RIBBON_CLIP = 'polygon(0% 0%, 100% 0%, calc(100% - 14px) 50%, 100% 100%, 0% 100%, 14px 50%)';
 
 type ConditionType = Achievement['condition']['type'];
 
@@ -618,6 +623,7 @@ const SkillsTab = () => {
    Achievements sub-page (embedded)
 ───────────────────────────────────────────── */
 const AchievementsTab = () => {
+  const isP4 = useUiChannel() === 'p4';
   const {
     achievements,
     activities,
@@ -822,7 +828,7 @@ const AchievementsTab = () => {
 
   return (
     <div className="space-y-4">
-      {/* Controls */}
+      {/* Controls：P4 = 黑胶囊筛选 + 橙胶囊添加（白花前缀） */}
       <div className="flex items-center gap-2 justify-end">
         <motion.button
           whileTap={{ scale: 0.95 }}
@@ -830,15 +836,26 @@ const AchievementsTab = () => {
             const nextIndex = (filterCycle.indexOf(filterStatus) + 1) % filterCycle.length;
             setFilterStatus(filterCycle[nextIndex]);
           }}
-          className="px-3 py-1.5 rounded-lg text-sm font-medium bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200"
+          className={
+            isP4
+              ? 'flex items-center gap-1.5 rounded-full bg-[#131313] px-3.5 py-1.5 text-sm font-black text-white'
+              : 'px-3 py-1.5 rounded-lg text-sm font-medium bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200'
+          }
         >
+          {isP4 && <P4Flower size={13} color="var(--ui-bg)" />}
           {filterLabels[filterStatus]}
         </motion.button>
         <motion.button
           whileTap={{ scale: 0.95 }}
           onClick={() => { setShowAddForm(true); setEditForm(defaultEditForm); }}
-          className="px-4 py-1.5 bg-primary text-white rounded-lg text-sm font-medium"
+          className={
+            isP4
+              ? 'flex items-center gap-1.5 rounded-full px-4 py-1.5 text-sm font-black text-white'
+              : 'px-4 py-1.5 bg-primary text-white rounded-lg text-sm font-medium'
+          }
+          style={isP4 ? { background: 'var(--p4-orange, #f9a11b)', boxShadow: '0 2px 0 rgba(19,19,19,0.25)' } : undefined}
         >
+          {isP4 && <P4Flower size={13} color="#ffffff" />}
           添加成就
         </motion.button>
       </div>
@@ -862,13 +879,30 @@ const AchievementsTab = () => {
               key={`group-${attr}`}
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
-              className={`rounded-2xl border relative transition-all ${
-                achievement.unlocked
-                  ? 'bg-gradient-to-br from-amber-400 to-orange-500 border-transparent text-white shadow-md shadow-amber-200/50 dark:shadow-amber-900/30'
-                  : canUnlock
-                  ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-300 dark:border-amber-600'
-                  : 'bg-white dark:bg-gray-900 border-gray-100 dark:border-gray-800 shadow-sm'
-              }`}
+              className={
+                isP4
+                  ? 'relative transition-all'
+                  : `rounded-2xl border relative transition-all ${
+                      achievement.unlocked
+                        ? 'bg-gradient-to-br from-amber-400 to-orange-500 border-transparent text-white shadow-md shadow-amber-200/50 dark:shadow-amber-900/30'
+                        : canUnlock
+                        ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-300 dark:border-amber-600'
+                        : 'bg-white dark:bg-gray-900 border-gray-100 dark:border-gray-800 shadow-sm'
+                    }`
+              }
+              style={
+                isP4
+                  ? {
+                      clipPath: P4_RIBBON_CLIP,
+                      background: achievement.unlocked
+                        ? 'linear-gradient(120deg, var(--p4-orange, #f9a11b), #ffc23f)'
+                        : canUnlock
+                          ? '#ffefb8'
+                          : 'var(--ui-paper)',
+                      color: '#131313',
+                    }
+                  : undefined
+              }
             >
               {/* Attribute label */}
               <div className={`text-[10px] font-semibold text-center pt-3 pb-0.5 tracking-wider ${
@@ -930,8 +964,17 @@ const AchievementsTab = () => {
                     transition={{ duration: 0.18, ease: 'easeOut' }}
                     className="py-2"
                   >
-                    <div className="text-2xl mb-1">{achievement.icon}</div>
-                    <h3 className={`font-bold text-sm mb-0.5 ${achievement.unlocked ? 'text-white' : 'text-gray-800 dark:text-white'}`}>
+                    {isP4 ? (
+                      <span className="mx-auto mb-1.5 flex h-12 w-12 items-center justify-center rounded-full text-2xl" style={{ background: '#fffbe8', border: '3px solid var(--p4-orange, #f9a11b)' }}>
+                        {achievement.icon}
+                      </span>
+                    ) : (
+                      <div className="text-2xl mb-1">{achievement.icon}</div>
+                    )}
+                    <h3
+                      className={`font-bold text-sm mb-0.5 ${isP4 ? 'text-[15px] font-black text-[#131313]' : achievement.unlocked ? 'text-white' : 'text-gray-800 dark:text-white'}`}
+                      style={isP4 ? { fontFamily: 'var(--p4-display-font, serif)' } : undefined}
+                    >
                       {achievement.title}
                     </h3>
                     <p className={`text-xs mb-2 leading-snug ${achievement.unlocked ? 'text-white/90' : 'text-gray-500 dark:text-gray-400'}`}>
@@ -940,15 +983,16 @@ const AchievementsTab = () => {
 
                     {!achievement.unlocked && (
                       <>
-                        <div className="w-full bg-gray-100 dark:bg-gray-800 rounded-full h-1.5 mb-1.5 overflow-hidden">
+                        <div className={`w-full rounded-full h-1.5 mb-1.5 overflow-hidden ${isP4 ? 'mx-auto max-w-[75%] bg-[#131313]/15' : 'bg-gray-100 dark:bg-gray-800'}`}>
                           <motion.div
-                            className={`h-full rounded-full ${canUnlock ? 'bg-amber-500' : 'bg-primary'}`}
+                            className={`h-full rounded-full ${isP4 ? '' : canUnlock ? 'bg-amber-500' : 'bg-primary'}`}
+                            style={isP4 ? { background: 'var(--ui-danger)' } : undefined}
                             initial={{ width: 0 }}
                             animate={{ width: `${Math.min(100, percentage)}%` }}
                             transition={{ duration: 0.7, ease: 'easeOut' }}
                           />
                         </div>
-                        <div className={`text-[10px] ${canUnlock ? 'text-amber-600 dark:text-amber-400 font-semibold' : 'text-gray-400 dark:text-gray-500'}`}>
+                        <div className={`text-[10px] ${isP4 ? 'font-black text-[#131313]/70 tabular-nums' : canUnlock ? 'text-amber-600 dark:text-amber-400 font-semibold' : 'text-gray-400 dark:text-gray-500'}`}>
                           {canUnlock ? '已达成，点击解锁 ✨' : `${progress} / ${achievement.condition.value}`}
                         </div>
                       </>
@@ -1007,13 +1051,30 @@ const AchievementsTab = () => {
               onTouchEnd={cancelPress}
               onTouchCancel={cancelPress}
               onClick={() => { if (canUnlock) unlockAchievement(achievement.id); }}
-              className={`rounded-2xl p-3 border cursor-pointer relative transition-all ${
-                achievement.unlocked
-                  ? 'bg-gradient-to-br from-amber-400 to-orange-500 border-transparent text-white shadow-md shadow-amber-200/50 dark:shadow-amber-900/30'
-                  : canUnlock
-                  ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-300 dark:border-amber-600'
-                  : 'bg-white dark:bg-gray-900 border-gray-100 dark:border-gray-800 shadow-sm'
-              }`}
+              className={
+                isP4
+                  ? 'relative cursor-pointer p-3 transition-all'
+                  : `rounded-2xl p-3 border cursor-pointer relative transition-all ${
+                      achievement.unlocked
+                        ? 'bg-gradient-to-br from-amber-400 to-orange-500 border-transparent text-white shadow-md shadow-amber-200/50 dark:shadow-amber-900/30'
+                        : canUnlock
+                        ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-300 dark:border-amber-600'
+                        : 'bg-white dark:bg-gray-900 border-gray-100 dark:border-gray-800 shadow-sm'
+                    }`
+              }
+              style={
+                isP4
+                  ? {
+                      clipPath: P4_RIBBON_CLIP,
+                      background: achievement.unlocked
+                        ? 'linear-gradient(120deg, var(--p4-orange, #f9a11b), #ffc23f)'
+                        : canUnlock
+                          ? '#ffefb8'
+                          : 'var(--ui-paper)',
+                      color: '#131313',
+                    }
+                  : undefined
+              }
             >
               {/* Edit/Delete buttons */}
               <div className="absolute top-2.5 right-2.5 flex gap-1">
@@ -1045,8 +1106,17 @@ const AchievementsTab = () => {
                 )}
               </div>
 
-              <div className="text-2xl mb-1 text-center">{achievement.icon}</div>
-              <h3 className={`font-bold text-sm mb-0.5 text-center ${achievement.unlocked ? 'text-white' : 'text-gray-800 dark:text-white'}`}>
+              {isP4 ? (
+                <span className="mx-auto mb-1.5 flex h-12 w-12 items-center justify-center rounded-full text-2xl" style={{ background: '#fffbe8', border: '3px solid var(--p4-orange, #f9a11b)' }}>
+                  {achievement.icon}
+                </span>
+              ) : (
+                <div className="text-2xl mb-1 text-center">{achievement.icon}</div>
+              )}
+              <h3
+                className={`font-bold text-sm mb-0.5 text-center ${isP4 ? 'text-[15px] font-black text-[#131313]' : achievement.unlocked ? 'text-white' : 'text-gray-800 dark:text-white'}`}
+                style={isP4 ? { fontFamily: 'var(--p4-display-font, serif)' } : undefined}
+              >
                 {achievement.title}
               </h3>
               <p className={`text-xs mb-2 text-center leading-snug ${achievement.unlocked ? 'text-white/90' : 'text-gray-500 dark:text-gray-400'}`}>
@@ -1055,15 +1125,16 @@ const AchievementsTab = () => {
 
               {!achievement.unlocked && (
                 <>
-                  <div className="w-full bg-gray-100 dark:bg-gray-800 rounded-full h-1.5 mb-1.5 overflow-hidden">
+                  <div className={`w-full rounded-full h-1.5 mb-1.5 overflow-hidden ${isP4 ? 'mx-auto max-w-[75%] bg-[#131313]/15' : 'bg-gray-100 dark:bg-gray-800'}`}>
                     <motion.div
-                      className={`h-full rounded-full ${canUnlock ? 'bg-amber-500' : 'bg-primary'}`}
+                      className={`h-full rounded-full ${isP4 ? '' : canUnlock ? 'bg-amber-500' : 'bg-primary'}`}
+                      style={isP4 ? { background: 'var(--ui-danger)' } : undefined}
                       initial={{ width: 0 }}
                       animate={{ width: `${Math.min(100, percentage)}%` }}
                       transition={{ duration: 0.7, ease: 'easeOut' }}
                     />
                   </div>
-                  <div className={`text-[10px] text-center ${canUnlock ? 'text-amber-600 dark:text-amber-400 font-semibold' : 'text-gray-400 dark:text-gray-500'}`}>
+                  <div className={`text-[10px] text-center ${isP4 ? 'font-black text-[#131313]/70 tabular-nums' : canUnlock ? 'text-amber-600 dark:text-amber-400 font-semibold' : 'text-gray-400 dark:text-gray-500'}`}>
                     {canUnlock ? '已达成，点击解锁 ✨' : `${progress} / ${achievement.condition.value}`}
                   </div>
                 </>
@@ -1203,6 +1274,7 @@ const AchievementsTab = () => {
 export const Achievements = () => {
   const [activeTab, setActiveTab] = useState<'achievements' | 'skills'>('achievements');
   const setCurrentPage = useAppStore(s => s.setCurrentPage);
+  const isP4 = useUiChannel() === 'p4';
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -1210,7 +1282,42 @@ export const Achievements = () => {
       exit={{ opacity: 0 }}
       className="space-y-4"
     >
-      {/* 顶部标题 + 返回按钮（与其他子页保持一致的视觉） */}
+      {/* 顶部标题 + 返回按钮（与其他子页保持一致的视觉）。
+          P4（p4-achievements-reference-v2）：衬线双词标签页头（激活词大）+ AWARD SHOW 黑胶囊眉标。 */}
+      {isP4 ? (
+        <div className="relative -mx-4 overflow-hidden px-4 pb-1 pt-1">
+          <P4SunRings size={130} className="absolute -right-8 -top-12 opacity-90" />
+          <P4Flower size={90} color="rgba(255,246,208,0.55)" className="absolute -left-6 -top-6" />
+          <P4Sparkle size={16} color="var(--ui-accent)" className="absolute right-[30%] top-16" />
+          <div className="relative flex items-end gap-2">
+            <BackButton onClick={() => setCurrentPage('menu')} className="mb-3 -ml-1" />
+            {([
+              { key: 'achievements', label: '成就' },
+              { key: 'skills', label: '技能' }
+            ] as const).map(tab => (
+              <motion.button
+                key={tab.key}
+                onClick={() => { triggerNavFeedback(); setActiveTab(tab.key); }}
+                whileTap={{ scale: 0.96 }}
+                className="relative"
+              >
+                <motion.span
+                  animate={{ fontSize: activeTab === tab.key ? '46px' : '28px' }}
+                  transition={{ type: 'spring', stiffness: 400, damping: 32 }}
+                  className="block px-1 font-black leading-none tracking-tight text-[#131313]"
+                  style={{ fontFamily: 'var(--p4-display-font, serif)' }}
+                >
+                  {tab.label}
+                </motion.span>
+              </motion.button>
+            ))}
+          </div>
+          <div className="relative mt-2 inline-block rounded-full bg-[#131313] px-3 py-1 text-[10px] font-black tracking-[0.2em] text-[var(--ui-bg)]">
+            AWARD SHOW
+          </div>
+        </div>
+      ) : (
+      <>
       <div className="flex items-start justify-between gap-3">
         <BackButton onClick={() => setCurrentPage('menu')} className="mt-1 -ml-1" />
         <div className="flex-1">
@@ -1244,6 +1351,8 @@ export const Achievements = () => {
           </motion.button>
         ))}
       </div>
+      </>
+      )}
 
       {/* Tab content */}
       <AnimatePresence mode="wait">
