@@ -18,6 +18,7 @@ import { TAROT_BY_ID } from '@/constants/tarot';
 import { TarotCardSVG } from '@/components/astrology/TarotCardSVG';
 import { useBoldness } from '@/utils/boldness';
 import { triggerLightHaptic } from '@/utils/feedback';
+import { useUiChannel } from '@/ui/useUiChannel';
 
 const CARD_W = 182;
 const CARD_H = Math.round(CARD_W * 1.6); // TarotCardSVG 比例
@@ -174,6 +175,7 @@ const WallScrubber = ({
 };
 
 export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCreate }: ConfidantAlbumWallProps) => {
+  const isP4 = useUiChannel() === 'p4';
   const bold = useBoldness();
   // 中央卡用【id 锚定】而非数字下标：详情互动/排序变化导致 confidants 重排时，
   // 中央卡跟着原卡平滑走位，而不是「index 指到了别人」（实测踩坑：查看详情
@@ -460,25 +462,38 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
           </div>
         ) : (
           <div className="text-center">
-            {/* eyebrow：牌名 · 罗马数 · 正逆位 */}
-            <div className="text-[11px] font-bold tracking-[0.14em] text-indigo-400 dark:text-indigo-300">
+            {/* eyebrow：牌名 · 罗马数 · 正逆位（P4 = 蓝色粗字，p4-cooperation-reference-v2） */}
+            <div
+              className={
+                isP4
+                  ? 'text-[13px] font-black tracking-[0.14em] text-[var(--ui-accent)]'
+                  : 'text-[11px] font-bold tracking-[0.14em] text-indigo-400 dark:text-indigo-300'
+              }
+            >
               {TAROT_BY_ID[current.arcanaId]?.roman ? `${TAROT_BY_ID[current.arcanaId]?.roman} · ` : ''}
               {TAROT_BY_ID[current.arcanaId]?.name}
               {current.orientation === 'reversed' ? ' · 逆位' : ' · 正位'}
             </div>
-            {/* 大名字 + RANK 徽章 */}
+            {/* 大名字 + RANK 徽章（P4 = 衬线大字 + 橙色斜章） */}
             <div className="mt-0.5 flex items-center justify-center gap-2.5">
               <motion.h3
                 key={current.id}
                 initial={{ opacity: 0, y: 4 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="max-w-[70%] truncate text-[28px] font-black leading-tight text-gray-900 dark:text-white"
+                className={`max-w-[70%] truncate leading-tight ${
+                  isP4 ? 'text-[36px] font-black text-[#131313]' : 'text-[28px] font-black text-gray-900 dark:text-white'
+                }`}
+                style={isP4 ? { fontFamily: 'var(--p4-display-font, serif)' } : undefined}
               >
                 {current.name}
               </motion.h3>
               <span
-                className="shrink-0 rounded-lg px-2 py-1 text-[11px] font-black leading-none text-white"
-                style={{ background: 'linear-gradient(135deg, rgb(var(--color-bond-rgb)), rgb(var(--color-bond-bright-rgb)))' }}
+                className={`shrink-0 px-2 py-1 text-[11px] font-black leading-none text-white ${isP4 ? 'italic' : 'rounded-lg'}`}
+                style={
+                  isP4
+                    ? { background: 'var(--p4-orange, #f9a11b)', borderRadius: 8, transform: 'skewX(-8deg)', boxShadow: '0 2px 0 rgba(19,19,19,0.25)' }
+                    : { background: 'linear-gradient(135deg, rgb(var(--color-bond-rgb)), rgb(var(--color-bond-bright-rgb)))' }
+                }
               >
                 RANK {current.intimacy}
               </span>
