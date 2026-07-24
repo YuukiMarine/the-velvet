@@ -5,9 +5,10 @@ import { createPortal } from 'react-dom';
 import { springSoft } from '@/utils/motion';
 import { useBackHandler } from '@/utils/useBackHandler';
 import { useModalA11y } from '@/utils/useModalA11y';
-import { zClass } from '@/utils/zIndex';
 import { useUiChannel } from '@/ui/useUiChannel';
+import { zClass } from '@/utils/zIndex';
 import { P4Flower, P4Sparkle } from '@/ui/p4Kit';
+import { sheetTopClip } from '@/components/p3r/kit';
 
 /**
  * SheetModal —— 标准弹窗 / 抽屉基座（UI_AUDIT_V2.5.md §5）。
@@ -109,7 +110,11 @@ export const SheetModal = ({
         };
 
   const isBottom = position === 'bottom';
-  const isP4 = useUiChannel() === 'p4';
+  const channel = useUiChannel();
+  // forceDark（thief 暗房等场景）下强制回落中性皮肤，避免明亮主题皮肤染进暗色语境
+  const isP4 = channel === 'p4' && !forceDark;
+  // P3R（蓝频道，p3-modal 设计稿）：浅水面 sheet + 青色斜片把手 + 大黑斜体标题
+  const p3 = channel === 'p3' && !forceDark;
 
   return createPortal(
     <AnimatePresence>
@@ -138,14 +143,21 @@ export const SheetModal = ({
                 ? `relative bg-[var(--ui-bg)] ${
                     isBottom ? 'mx-2 mb-2 rounded-[28px] pb-[env(safe-area-inset-bottom)]' : 'mx-4 max-w-md rounded-[28px]'
                   }`
-                : `bg-white shadow-2xl dark:bg-gray-900 ${
-                    isBottom ? 'rounded-t-3xl pb-[env(safe-area-inset-bottom)]' : 'mx-4 max-w-md rounded-2xl'
-                  }`
+                : p3
+                  ? `p3r-sheet shadow-2xl ${isBottom ? 'pb-[env(safe-area-inset-bottom)]' : 'mx-4 max-w-md'}`
+                  : `bg-white shadow-2xl dark:bg-gray-900 ${
+                      isBottom ? 'rounded-t-3xl pb-[env(safe-area-inset-bottom)]' : 'mx-4 max-w-md rounded-2xl'
+                    }`
             }`}
             style={
               isP4
                 ? { border: '5px solid #fff6d0', boxShadow: '0 10px 0 rgba(19, 19, 19, 0.28)' }
-                : undefined
+                : p3
+                  ? {
+                      background: 'linear-gradient(178deg, #fbfdff 0%, #f0f8fc 60%, #e6f3fa 100%)',
+                      clipPath: isBottom ? sheetTopClip : 'polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%)',
+                    }
+                  : undefined
             }
           >
             {/* p4-redraw modal v3：贴纸装饰 —— 顶部橙硬币、角落蓝/黄星闪、右上天空花瓣块 */}
@@ -173,17 +185,28 @@ export const SheetModal = ({
               </>
             )}
             {isBottom && showHandle && !isP4 && (
+              p3 ? (
+                <div aria-hidden className="relative mx-auto mt-5 flex h-[18px] w-[86px] shrink-0 items-center justify-center" style={{ background: '#35d1e8', clipPath: 'polygon(0 55%, 18% 0, 100% 30%, 82% 100%)' }}>
+                  <span className="h-[3px] w-8 bg-white" />
+                </div>
+              ) : (
               <div aria-hidden className="mx-auto mt-3 h-1.5 w-10 shrink-0 rounded-full bg-gray-300 dark:bg-gray-600" />
+              )
             )}
             {title && (
               <h2
                 id={titleId}
                 className={`shrink-0 px-6 pt-4 ${
-                  isP4 ? 'pr-32 text-[26px] font-black leading-tight text-[#131313]' : 'text-lg font-bold text-gray-800 dark:text-white'
+                  isP4
+                    ? 'pr-32 text-[26px] font-black leading-tight text-[#131313]'
+                    : p3
+                      ? 'text-[26px] font-black italic tracking-tight'
+                      : 'text-lg font-bold text-gray-800 dark:text-white'
                 }`}
-                style={isP4 ? { fontFamily: 'var(--p4-display-font, serif)' } : undefined}
+                style={isP4 ? { fontFamily: 'var(--p4-display-font, serif)' } : p3 ? { color: '#0a1230', fontFamily: '"Arial Black", "Noto Sans SC", sans-serif' } : undefined}
               >
                 {title}
+                {p3 && <span aria-hidden className="ml-1.5 inline-block h-[10px] w-[13px]" style={{ background: '#1b57ff', clipPath: 'polygon(100% 0, 100% 100%, 0 100%)' }} />}
               </h2>
             )}
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-4">

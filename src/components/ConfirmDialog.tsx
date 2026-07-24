@@ -4,8 +4,8 @@ import { createPortal } from 'react-dom';
 import { springSoft, TAP } from '@/utils/motion';
 import { useBackHandler } from '@/utils/useBackHandler';
 import { useModalA11y } from '@/utils/useModalA11y';
-import { zClass } from '@/utils/zIndex';
 import { useUiChannel } from '@/ui/useUiChannel';
+import { zClass } from '@/utils/zIndex';
 import { P4Flower, P4Sparkle, P4StickerPanel } from '@/ui/p4Kit';
 import { PersonaButton } from '@/ui/components/PersonaButton';
 
@@ -88,7 +88,8 @@ export const ConfirmDialog = ({
   });
 
   const visibleActions = actions?.slice(0, 3);
-  const isP4 = useUiChannel() === 'p4';
+  const channel = useUiChannel();
+  const isP4 = channel === 'p4' && !forceDark;
 
   /** p4 动作按钮 tone → PersonaButton 形态（default=奶油 / primary=橙确认 / danger=红） */
   const p4Action = (t: NonNullable<ConfirmAction['tone']> | undefined) =>
@@ -97,6 +98,14 @@ export const ConfirmDialog = ({
       : t === 'primary'
         ? { variant: 'primary' as const, active: true }
         : { variant: 'secondary' as const, active: false };
+  // P3R（蓝频道）：白斜卡面板 + 斜切双钮（取消浅青 / 确认蓝、危险洋红）
+  const p3 = channel === 'p3' && !forceDark;
+  const p3Clip = 'polygon(9px 0, 100% 0, calc(100% - 9px) 100%, 0 100%)';
+  const p3ConfirmBg: Record<ConfirmTone, string> = { default: '#1b57ff', danger: '#f0417f', warning: '#f5a623' };
+  const p3ActionStyle = (t: NonNullable<ConfirmAction['tone']>) =>
+    t === 'primary' ? { clipPath: p3Clip, background: '#1b57ff', color: '#fff' }
+    : t === 'danger' ? { clipPath: p3Clip, background: '#f0417f', color: '#fff' }
+    : { clipPath: p3Clip, background: '#cfeaf6', color: '#0a1230' };
 
   return createPortal(
     <AnimatePresence>
@@ -122,8 +131,13 @@ export const ConfirmDialog = ({
             transition={springSoft}
             onClick={(e) => e.stopPropagation()}
             className={
-              isP4 ? 'relative w-full max-w-sm' : 'w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl dark:bg-gray-900'
+              isP4
+                ? 'relative w-full max-w-sm'
+                : p3
+                  ? 'w-full max-w-sm bg-white p-6 shadow-2xl'
+                  : 'w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl dark:bg-gray-900'
             }
+            style={p3 ? { clipPath: 'polygon(16px 0, 100% 0, calc(100% - 16px) 100%, 0 100%)' } : undefined}
           >
             {isP4 ? (
               /* p4-redraw modal-01 v3：黑色八角贴纸 + 奶油描边，橙圆图标 + 衬线标题，
@@ -218,7 +232,10 @@ export const ConfirmDialog = ({
               <>
                 <div className="text-center">
                   <div className="mb-3 text-4xl">{icon ?? (tone === 'default' ? '❓' : '⚠️')}</div>
-                  <h2 id={titleId} className="mb-2 text-lg font-bold text-gray-800 dark:text-white">
+                  <h2
+                    id={titleId}
+                    className={p3 ? 'mb-2 text-lg font-black italic tracking-tight text-[#0a1230]' : 'mb-2 text-lg font-bold text-gray-800 dark:text-white'}
+                  >
                     {title}
                   </h2>
                   {description && (
@@ -237,7 +254,8 @@ export const ConfirmDialog = ({
                         whileTap={TAP}
                         disabled={busy}
                         onClick={action.onClick}
-                        className={`flex-1 rounded-xl py-2.5 text-sm font-bold disabled:opacity-50 ${ACTION_BTN[action.tone ?? 'default']}`}
+                        className={p3 ? 'flex-1 py-2.5 text-sm font-black disabled:opacity-50' : `flex-1 rounded-xl py-2.5 text-sm font-bold disabled:opacity-50 ${ACTION_BTN[action.tone ?? 'default']}`}
+                        style={p3 ? p3ActionStyle(action.tone ?? 'default') : undefined}
                       >
                         {action.label}
                       </motion.button>
@@ -248,7 +266,8 @@ export const ConfirmDialog = ({
                         whileTap={TAP}
                         disabled={busy}
                         onClick={onCancel}
-                        className="flex-1 rounded-xl bg-gray-100 py-2.5 text-sm font-bold text-gray-700 disabled:opacity-50 dark:bg-gray-800 dark:text-gray-200"
+                        className={p3 ? 'flex-1 py-2.5 text-sm font-black disabled:opacity-50' : 'flex-1 rounded-xl bg-gray-100 py-2.5 text-sm font-bold text-gray-700 disabled:opacity-50 dark:bg-gray-800 dark:text-gray-200'}
+                        style={p3 ? { clipPath: p3Clip, background: '#cfeaf6', color: '#0a1230' } : undefined}
                       >
                         {cancelText}
                       </motion.button>
@@ -256,7 +275,8 @@ export const ConfirmDialog = ({
                         whileTap={TAP}
                         disabled={busy}
                         onClick={onConfirm}
-                        className={`flex flex-1 items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-bold text-white disabled:opacity-50 ${CONFIRM_BTN[tone]}`}
+                        className={p3 ? 'flex flex-1 items-center justify-center gap-2 py-2.5 text-sm font-black text-white disabled:opacity-50' : `flex flex-1 items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-bold text-white disabled:opacity-50 ${CONFIRM_BTN[tone]}`}
+                        style={p3 ? { clipPath: p3Clip, background: p3ConfirmBg[tone] } : undefined}
                       >
                         {busy && (
                           <span

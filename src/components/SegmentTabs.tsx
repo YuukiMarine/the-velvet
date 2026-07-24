@@ -45,6 +45,56 @@ export const SegmentTabs = <K extends string>({
   const indicatorId = layoutId ?? `segment-tabs-${autoId}`;
   const isP4 = useUiChannel() === 'p4';
   const sizeClass = size === 'sm' ? 'py-1.5 text-xs' : 'py-2.5 text-sm';
+  const p3 = useUiChannel() === 'p3';
+
+  // ── P3R（蓝频道，p3-redraw 设计稿切换头）：全员白斜块底，选中 = 蓝斜块白字 + 右下洋红角 ──
+  if (p3) {
+    const p3Size = size === 'sm' ? 'py-2 text-[13px]' : 'py-3 text-[16px]';
+    return (
+      <div role="tablist" className={`flex ${className ?? ''}`}>
+        {items.map((item, i) => {
+          const active = item.key === value;
+          return (
+            <motion.button
+              key={item.key}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              whileTap={TAP}
+              onClick={() => onChange(item.key)}
+              className={`relative flex-1 font-black ${p3Size}`}
+              style={{ marginLeft: i > 0 ? -7 : 0, zIndex: active ? 2 : 1 }}
+            >
+              {/* 白斜块底（全员；layout 指示块盖其上） */}
+              <span aria-hidden className="absolute inset-0" style={{ clipPath: 'polygon(12px 0, 100% 0, calc(100% - 12px) 100%, 0 100%)', background: '#ffffff', boxShadow: '0 6px 14px rgba(38,96,140,0.06)' }} />
+              {active && (
+                <motion.div layoutId={indicatorId} transition={springSnappy} className="absolute inset-0" aria-hidden="true">
+                  {/* clip / 装饰放内层：layout 动画期间 projection 独占外层 transform（同 skew 约束） */}
+                  <div className="absolute inset-0" style={{ clipPath: 'polygon(12px 0, 100% 0, calc(100% - 12px) 100%, 0 100%)', background: '#1b57ff' }} />
+                  <span className="absolute bottom-0 right-3 h-[8px] w-[20px]" style={{ background: '#f0417f', clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
+                </motion.div>
+              )}
+              <span className={`relative z-10 flex items-center justify-center gap-1.5 transition-colors ${active ? 'text-white' : 'text-[#0a1230]'}`}>
+                {item.label}
+                {item.badge !== undefined && (
+                  <span
+                    className="text-2xs leading-none px-1.5 py-0.5"
+                    style={{
+                      clipPath: 'polygon(4px 0, 100% 0, calc(100% - 4px) 100%, 0 100%)',
+                      background: active ? 'rgba(255,255,255,0.25)' : '#cfeaf6',
+                      color: active ? '#fff' : '#0a3bd6',
+                    }}
+                  >
+                    {item.badge}
+                  </span>
+                )}
+              </span>
+            </motion.button>
+          );
+        })}
+      </div>
+    );
+  }
 
   return (
     <div

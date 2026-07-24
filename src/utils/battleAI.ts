@@ -17,10 +17,10 @@ function formatSingleAttrSpecialization(attr: AttributeId, attrName: string): st
   const boost = SKILL_EFFECT_MAP[attr]?.attack_boost;
   const debuffLine = debuff
     ? `- Lv4 debuff → ${debuff.icon} ${debuff.label}：${debuff.hint}`
-    : '- Lv4 debuff → 默认易伤：Shadow 下次受伤 ×1.3';
+    : '- Lv4 debuff → 默认易伤：Shadow 下次受伤 +30%';
   const boostLine = boost
     ? `- Lv5 attack_boost → ${boost.icon} ${boost.label}：${boost.hint}`
-    : '- Lv5 attack_boost → 默认增伤：3 回合内自身伤害 +15';
+    : '- Lv5 attack_boost → 默认增伤：3 回合内自身伤害 +6';
   return [
     `【"${attrName}"属性的专属副效果（Lv4/Lv5 的技能名称与描述必须呼应这些真实触发的效果，而不是写成通用的"增伤/易伤"）】`,
     debuffLine,
@@ -40,12 +40,12 @@ function formatAllAttrsSpecialization(attrNames: Record<AttributeId, string>): s
     debuffLines.push(
       debuff
         ? `  · ${name} → ${debuff.icon} ${debuff.label}：${debuff.hint}`
-        : `  · ${name} → 默认易伤：Shadow 下次受伤 ×1.3`,
+        : `  · ${name} → 默认易伤：Shadow 下次受伤 +30%`,
     );
     boostLines.push(
       boost
         ? `  · ${name} → ${boost.icon} ${boost.label}：${boost.hint}`
-        : `  · ${name} → 默认增伤：3 回合内自身伤害 +15`,
+        : `  · ${name} → 默认增伤：3 回合内自身伤害 +6`,
     );
   });
   return [
@@ -247,12 +247,12 @@ ${ATTRS.map(a => `${a} → ${attributeNames[a]}`).join('\n')}
 技能规格：level 1-5，power=10/15/22/30/40，spCost=8/12/18/25/35
 技能类型说明（7种）：
 - damage：直接伤害
-- crit：暴击型（有20%概率双倍伤害+令Shadow失衡）
-- buff：增益（提升下次攻击伤害×1.5）
+- crit：暴击型（有概率双倍伤害+积累Shadow失衡）
+- buff：增益（提升下次攻击伤害+50%）
 - debuff：减益（令Shadow陷入易伤状态，下次受到额外30%伤害）
-- charge：蓄力（下回合技能伤害翻倍）
-- heal：治愈（回复玩家5点HP）
-- attack_boost：攻击增益（默认：造成15点伤害，并令接下来3回合所有伤害+15，不可叠加。但不同属性下会触发专属副效果，详见下方）
+- charge：蓄力（下回合技能伤害翻倍，可能被Shadow打断）
+- heal：治愈（回复玩家生命，回复量约为技能威力的30%，温柔属性额外加成）
+- attack_boost：攻击增益（默认：按威力造成伤害，并令接下来3回合所有伤害+6，不可叠加。但不同属性下会触发专属副效果，详见下方）
 
 ${formatAllAttrsSpecialization(attributeNames)}
 
@@ -441,7 +441,7 @@ ${personaName}是一位与"${attrName}"属性高度契合的Persona。请根据�
 
 【技能规格】
 - level 1-5，对应 power=10/15/22/30/40，spCost=8/12/18/25/35
-- 技能类型（7种）：damage(直接伤害) / crit(暴击型,有概率双倍伤害+失衡) / buff(提升下次攻击×1.5) / debuff(施加易伤，实际效果见下) / charge(蓄力,下回合双倍) / heal(回复5HP) / attack_boost(实际效果见下)
+- 技能类型（7种）：damage(直接伤害) / crit(暴击型,有概率双倍伤害+积累失衡) / buff(提升下次攻击+50%) / debuff(施加易伤，实际效果见下) / charge(蓄力,下回合双倍) / heal(回复约威力30%的生命) / attack_boost(实际效果见下)
 
 ${formatSingleAttrSpecialization(attr, attrName)}
 
@@ -555,6 +555,85 @@ ${SHADOW_JSON_FORMAT}`;
   return { name, description, invertedAttributes, responseLines, weakAttribute };
 }
 
+// ── 区层显形（批2）：一次调用产出 区层名/描述 + 主影 ─────────────────────────
+
+const STRATUM_JSON_FORMAT = `
+纯JSON输出，不要包裹在代码块中，不含任何注释：
+{"stratumName":"xx之域","stratumDescription":"1-2句区层氛围描述","name":"主影名称（xx之xx）","description":"主影2句描述","invertedAttributes":{"knowledge":"反向描述","guts":"反向描述","dexterity":"反向描述","kindness":"反向描述","charm":"反向描述"},"responseLines":["台词1","台词2","台词3","台词4","台词5","台词6","台词7","台词8"]}`;
+
+export async function generateStratumReveal(
+  settings: Settings,
+  attributeNames: Record<AttributeId, string>,
+  level: number,
+  attrValues: Record<AttributeId, number>,
+  lastWeakAttribute: AttributeId | undefined,
+  toneHints: string[],
+  /** 批4 §6.7 主影主题属性（本周成长最少者 65%）；缺省不注入主题 */
+  themeAttribute?: AttributeId,
+): Promise<{
+  stratumName: string;
+  stratumDescription: string;
+  name: string;
+  description: string;
+  invertedAttributes: Record<AttributeId, string>;
+  responseLines: string[];
+  weakAttribute: AttributeId;
+}> {
+  const cfg = getAIConfig(settings);
+  const weakAttribute = pickWeakAttribute(lastWeakAttribute);
+  if (!cfg) throw new Error('未配置 AI API Key，请前往「设置 → AI摘要」填写 API Key 后重试');
+
+  const levelPersonality = level <= 2
+    ? '语气不稳定、带有挑衅和嘲讽，像一个试探性的捣蛋鬼'
+    : level <= 3
+    ? '语气冷静而有压迫感，像一个洞察一切的审判者'
+    : '语气绝对而傲慢，像一场降临的灾厄，台词简短有力';
+
+  const prompt = `你是Persona系游戏的"影时间高塔"区层生成器。玩家已通关下方区层，高塔上方的第${level}区层正在显形。
+玩家在显形仪式中的回应（用于定调区层与主影的气质倾向）：
+${toneHints.map((t, i) => `${i + 1}. ${t}`).join('\n')}
+
+区层心魔是玩家内心负面特质的具现，其属性为玩家属性的反向：${ATTRS.map(a => `${attributeNames[a]}=${attrValues[a]}`).join('，')}。
+心魔弱点属性为"${attributeNames[weakAttribute]}"。${themeAttribute ? `\n【主题】本周玩家在"${attributeNames[themeAttribute]}"方向成长最少——心魔以此为主题气质：区层名、心魔名与台词都要围绕"${attributeNames[themeAttribute]}的缺失/荒废"展开（比如荒废知识→蒙昧之域）。` : ''}
+
+【输出要求】
+- stratumName：区层名，格式"xx之域"（体现越高越危险的塔层氛围，禁止使用现实游戏专有名词）
+- stratumDescription：1-2句，写这一段塔层的景观与压迫感
+- name：心魔名，格式"xx之xx"
+- description：2句，心魔的阴暗面来源与危险性
+- responseLines：8条战斗台词，${levelPersonality}；每条风格各异，至少含1条嘲讽、1条威胁、1条对玩家弱点的点评、1条自我宣言
+${STRATUM_JSON_FORMAT}`;
+
+  const result = await callAIWithRetry(cfg, [{ role: 'user', content: prompt }], 0.7, 2200);
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = extractJSON(result);
+  } catch {
+    throw new Error('AI 返回的 JSON 格式无效，请重试');
+  }
+  const stratumName = (typeof parsed.stratumName === 'string' && parsed.stratumName) ? parsed.stratumName : `第${level}之域`;
+  const stratumDescription = (typeof parsed.stratumDescription === 'string' && parsed.stratumDescription)
+    ? parsed.stratumDescription
+    : '月光照不进的塔层，影子在栏杆间低语。';
+  const name = (typeof parsed.name === 'string' && parsed.name) ? parsed.name : `区层之主Lv${level}`;
+  const description = (typeof parsed.description === 'string' && parsed.description)
+    ? parsed.description
+    : '盘踞在区层之巅的暗影，等待着登塔者。';
+  const invertedAttributes = (parsed.invertedAttributes && typeof parsed.invertedAttributes === 'object')
+    ? parsed.invertedAttributes as Record<AttributeId, string>
+    : Object.fromEntries(ATTRS.map(a => [a, `缺乏${attributeNames[a]}的力量`])) as Record<AttributeId, string>;
+  let responseLines: string[];
+  if (Array.isArray(parsed.responseLines) && parsed.responseLines.length >= 4) {
+    responseLines = parsed.responseLines.filter((l): l is string => typeof l === 'string').slice(0, 8);
+    while (responseLines.length < 8) {
+      responseLines.push(DEFAULT_SHADOW_LINES[responseLines.length % DEFAULT_SHADOW_LINES.length]);
+    }
+  } else {
+    responseLines = [...DEFAULT_SHADOW_LINES];
+  }
+  return { stratumName, stratumDescription, name, description, invertedAttributes, responseLines, weakAttribute };
+}
+
 export function getDefaultShadow(
   attrNames: Record<AttributeId, string>,
   level: number
@@ -588,5 +667,132 @@ export async function generateVictoryNarrative(
     return await callAIWithRetry(cfg, [{ role: 'user', content: prompt }]);
   } catch {
     return `你操控${personaName}，将Shadow ${shadowName}彻底击溃！\n黑暗在你面前碎裂，但你感知到——更深处，还有什么正在苏醒……`;
+  }
+}
+
+/**
+ * 批3 §4.3：召唤台词——每属性 Persona 一句，单次调用批量生成 5 条。
+ * 结果缓存在 Persona.summonLines；无 Key / 失败返回 null（调用方走模板）。
+ */
+export async function generateSummonLines(
+  settings: Settings,
+  attributeNames: Record<AttributeId, string>,
+  personas: Record<AttributeId, { name: string; description: string }>,
+): Promise<Record<AttributeId, string> | null> {
+  const cfg = getAIConfig(settings);
+  if (!cfg) return null;
+  const roster = ATTRS.map(a => `- ${a}（${attributeNames[a]}）：「${personas[a].name}」——${personas[a].description || '无描述'}`).join('\n');
+  const prompt = `你是Persona系游戏的台词作者。玩家有五位属性 Persona，请为每一位写一句"召唤台词"——戴上面具唤出它时喊出的话。
+${roster}
+
+【要求】
+- 每句 6-16 字，气势与该 Persona 的神话/人设意象强绑定；可以是宣言、低语或诗句残行
+- 五句风格必须彼此不同；禁止出现"Persona/面具"字样
+仅输出 JSON：{"knowledge":"…","guts":"…","dexterity":"…","kindness":"…","charm":"…"}`;
+  try {
+    const result = await callAIWithRetry(cfg, [{ role: 'user', content: prompt }], 0.9, 400);
+    const parsed = extractJSON(result);
+    const out = {} as Record<AttributeId, string>;
+    for (const a of ATTRS) {
+      const v = parsed[a];
+      if (typeof v !== 'string' || !v.trim()) return null;
+      out[a] = v.trim().slice(0, 24);
+    }
+    return out;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 批3 §7.3：影之评语——登塔回顾的 50 字 AI 点评（复用胜利叙事通道；可在设置关闭）。
+ */
+export async function generateRecapComment(
+  settings: Settings,
+  summary: { reason: 'descend' | 'defeat' | 'clear'; floors: number; mobs: number; damage: number; maxHit: number; weakHits: number; stratumName: string },
+): Promise<string | null> {
+  const cfg = getAIConfig(settings);
+  if (!cfg) return null;
+  const reasonText = summary.reason === 'clear' ? '讨伐了区层心魔、通关区层' : summary.reason === 'defeat' ? '力竭败退（进度保留）' : '主动下塔结算';
+  const prompt = `你是Persona系游戏中栖息在塔里的神秘影之声。玩家刚结束一晚"影时间高塔"攀登：${reasonText}；区层【${summary.stratumName}】；攀升${summary.floors}层、讨伐${summary.mobs}只Shadow、总伤害${summary.damage}、最大单击${summary.maxHit}、弱点命中${summary.weakHits}次。
+写一句50字以内的点评：以影之声的口吻（低语、略带戏谑或敬意），点出这一晚最亮眼或最遗憾的一处，${summary.reason === 'defeat' ? '败退也要给出一丝不甘的鼓动' : '结尾带一点对更高处的暗示'}。不要用括号和引号，直接输出这句话。`;
+  try {
+    const line = await callAIWithRetry(cfg, [{ role: 'user', content: prompt }], 0.85, 200);
+    const clean = line.trim().replace(/^["「『]|["」』]$/g, '');
+    return clean ? clean.slice(0, 80) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 批4 §6.6：黑猫败因信——败退当晚由黑猫写一封败因复盘站内信（战斗事件流本地拼 prompt）。
+ * 无 Key / 失败 → 返回本地模板信（信必达）。
+ */
+export interface DefeatFacts {
+  shadowName: string;
+  stratumName: string;
+  floor: number;          // 全塔累计层号
+  damageDealt: number;
+  maxSingleHit: number;
+  weaknessHits: number;
+  mobsDefeated: number;
+  hpLostToPoisonOrThorns?: boolean;
+}
+
+export function defeatLetterFallback(f: DefeatFacts): string {
+  return [
+    `喵。今晚 ${f.floor}F 的事我都看见了——${f.shadowName} 把你打下来的那一下，疼吧。`,
+    `但账要算清楚：你砍出了 ${f.damageDealt} 点伤害，最重的一击 ${f.maxSingleHit}，弱点戳中 ${f.weaknessHits} 次，还顺手清了 ${f.mobsDefeated} 只杂影。这些它都记得，塔也记得。`,
+    `明晚把 HP 管好点，看到危险意图就防御，别嫌回合亏。它在【${f.stratumName}】等你，我也等你。`,
+  ].join('\n');
+}
+
+export async function generateDefeatLetter(settings: Settings, f: DefeatFacts): Promise<string> {
+  const cfg = getAIConfig(settings);
+  if (!cfg) return defeatLetterFallback(f);
+  const prompt = `你是Persona系游戏里的黑猫领航员（毒舌但真心为主人好）。玩家今晚在"影时间高塔"败退了，给玩家写一封100-160字的败因复盘信。
+战斗事实：区层【${f.stratumName}】，倒在累计第${f.floor}层；对手是「${f.shadowName}」；本晚总伤害${f.damageDealt}、最大单击${f.maxSingleHit}、弱点命中${f.weaknessHits}次、讨伐杂影${f.mobsDefeated}只${f.hpLostToPoisonOrThorns ? '；有不少体力是被毒/反弹磨掉的' : ''}。
+【要求】黑猫口吻（第一人称"我"，称玩家"你"，可带一声"喵"）；先毒舌点破最可能的败因（贪刀不防御/无视意图/回复太晚/被磨血——从事实推断一条），再给一条明晚可执行的建议，最后一句是不许认输的鼓动。不用括号不用标题，直接输出信的正文。`;
+  try {
+    const text = await callAIWithRetry(cfg, [{ role: 'user', content: prompt }], 0.85, 500);
+    return text.trim() || defeatLetterFallback(f);
+  } catch {
+    return defeatLetterFallback(f);
+  }
+}
+
+/**
+ * 批3 §4.4：誓约技 LLM 命名——按该属性 Persona 人设生成新技能名+描述。
+ * 结果由调用方缓存到誓约石（重复装备不再调 AI）；无 Key / 失败时调用方保留模板名。
+ */
+export async function generateOathSkill(
+  settings: Settings,
+  personaName: string,
+  personaDescription: string,
+  attrName: string,
+  oathStoneName: string,
+  oathEffectText: string,
+): Promise<{ name: string; description: string } | null> {
+  const cfg = getAIConfig(settings);
+  if (!cfg) return null;
+  const prompt = `你是Persona系游戏的技能命名器。玩家将一枚「${oathStoneName}」誓约石缔结给了${attrName}属性的Persona「${personaName}」。
+Persona 人设：${personaDescription || '无描述——从名字与属性气质推断'}
+誓约技能的实际战斗效果（不可改动，命名与描述必须呼应它）：${oathEffectText}
+
+【输出要求】
+- name：新技能名，2-8个字，贴合该 Persona 的神话/人设意象（例如回复系誓约给阿喀琉斯可命名"斯提克斯的沐浴"）；禁止出现"誓约/之誓"字样
+- description：一句话（20字内），以该 Persona 的口吻或意象描述这股力量，末尾自然点出效果
+仅输出 JSON：{"name":"…","description":"…"}`;
+  try {
+    const result = await callAIWithRetry(cfg, [{ role: 'user', content: prompt }], 0.8, 300);
+    const parsed = extractJSON(result);
+    const name = typeof parsed.name === 'string' && parsed.name.trim() ? parsed.name.trim().slice(0, 12) : null;
+    const description = typeof parsed.description === 'string' && parsed.description.trim()
+      ? parsed.description.trim().slice(0, 40)
+      : oathEffectText;
+    return name ? { name, description } : null;
+  } catch {
+    return null;
   }
 }

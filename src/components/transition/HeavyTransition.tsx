@@ -150,6 +150,41 @@ const WaveSliceAct = ({ midpoint, onDone }: ActProps) => {
   );
 };
 
+// ── water：纯粗波纹擦洗（P8.4 试验，底部栏切换指定）──────────────────────────
+// 无蒙版无填充：2 圈粗蓝系波纹从点击点外扩、速率各异；切页与波纹**同帧开始**
+// （0ms midpoint，不等波列——先动画后切页会不跟手，用户口径）。新页本体由
+// App 层 CircleRevealOnEnter 以同一原点做扩散圆形蒙版揭示（真正的"蒙版转场"）。
+// 波纹只扩到屏高一半（半径 50%vh）即衰减殆尽；波纹层不拦截指针，连点由 busyRef 兜底。
+const RIPPLE_LINES = [
+  { w: 60, c: 'rgba(27,87,255,0.78)',  reach: 1.00, d: 0.45, delay: 0.00, o: 0.85 },
+  { w: 96, c: 'rgba(53,209,232,0.65)', reach: 0.88, d: 0.60, delay: 0.07, o: 0.78 },
+];
+
+const WaterRippleAct = ({ midpoint, onDone, origin }: ActProps & { origin?: { x: number; y: number } }) => {
+  useTimeline([
+    [0, midpoint],
+    [700, onDone],
+  ]);
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  const ox = origin?.x ?? w / 2;
+  const oy = origin?.y ?? h - 40;
+  return (
+    <div className={`fixed inset-0 ${zClass.transition} pointer-events-none overflow-hidden`} aria-hidden>
+      {RIPPLE_LINES.map((ln, k) => (
+        <motion.span
+          key={k}
+          className="absolute rounded-full"
+          style={{ left: ox, top: oy, x: '-50%', y: '-50%', border: `${ln.w}px solid ${ln.c}` }}
+          initial={{ width: 24, height: 24, opacity: ln.o }}
+          animate={{ width: h * ln.reach, height: h * ln.reach, opacity: 0 }}
+          transition={{ duration: ln.d, delay: ln.delay, ease: 'easeOut' }}
+        />
+      ))}
+    </div>
+  );
+};
+
 // ── neutral：黑幕淡切 ──────────────────────────────────────────────────────
 const FadeAct = ({ midpoint, onDone }: ActProps) => {
   const [phase, setPhase] = useState<'in' | 'out'>('in');
@@ -193,6 +228,8 @@ export const TransitionLayer = () => {
     setReq(null);
   };
   const props = { midpoint: req.midpoint, onDone: done };
+  // 指定效果优先于频道默认（底部栏切换 → 水波纹试验）
+  if (req.effect === 'water') return <WaterRippleAct key={req.id} {...props} origin={req.origin} />;
   switch (req.channel) {
     case 'p5':
       return <StarTearAct key={req.id} {...props} />;

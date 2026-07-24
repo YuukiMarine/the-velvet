@@ -7,6 +7,8 @@ import DOMPurify from 'dompurify';
 import { useModalA11y } from '@/utils/useModalA11y';
 import { useBackHandler } from '@/utils/useBackHandler';
 import { chatStream } from '@/utils/aiClient';
+import { useUiChannel } from '@/ui/useUiChannel';
+import { P3R, slantClip, sheetTopClip } from '@/components/p3r/kit';
 
 // ── 简单 Markdown 渲染 ────────────────────────────────────
 function renderMarkdown(text: string): string {
@@ -606,6 +608,7 @@ export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week' }
   void getActiveSummaryPreset;
 
   const noApiKey = !settings.summaryApiKey;
+  const p3 = useUiChannel() === 'p3';
 
   useEffect(() => {
     if (isOpen) {
@@ -804,14 +807,22 @@ export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week' }
             initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
             transition={{ type: 'spring', damping: 28, stiffness: 300 }}
             onClick={e => e.stopPropagation()}
-            className="relative w-full max-w-lg bg-white dark:bg-gray-900 rounded-t-3xl shadow-2xl flex flex-col overflow-hidden"
-            style={{ maxHeight: '90vh' }}
+            className={`relative flex w-full max-w-lg flex-col overflow-hidden shadow-2xl ${p3 ? '' : 'rounded-t-3xl bg-white dark:bg-gray-900'}`}
+            style={p3
+              ? { maxHeight: '90vh', background: 'linear-gradient(178deg, #fbfdff 0%, #f0f8fc 55%, #e8f4fa 100%)', clipPath: sheetTopClip }
+              : { maxHeight: '90vh' }}
           >
             {/* 流式期间的主题色粒子 */}
             {view === 'result' && isStreaming && <StreamingParticles />}
             {/* Handle */}
-            <div className="flex justify-center pt-3 pb-1">
-              <div className="w-10 h-1 rounded-full bg-gray-300 dark:bg-gray-600" />
+            <div className="flex justify-center pt-4 pb-1">
+              {p3 ? (
+                <div aria-hidden className="relative flex h-[16px] w-[82px] items-center justify-center" style={{ background: '#35d1e8', clipPath: 'polygon(0 55%, 18% 0, 100% 30%, 82% 100%)' }}>
+                  <span className="h-[3px] w-7 bg-white" />
+                </div>
+              ) : (
+                <div className="w-10 h-1 rounded-full bg-gray-300 dark:bg-gray-600" />
+              )}
             </div>
 
             {/* Header */}
@@ -827,14 +838,15 @@ export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week' }
                 >‹</button>
               )}
               <div className="flex-1">
-                <h2 className="text-base font-black text-gray-900 dark:text-white">
+                <h2 className={p3 ? 'flex items-center gap-2 text-[19px] font-black italic' : 'text-base font-black text-gray-900 dark:text-white'} style={p3 ? { color: P3R.ink } : undefined}>
+                  {p3 && <span aria-hidden className="h-[18px] w-[6px] shrink-0" style={{ background: P3R.blue, transform: 'skewX(-18deg)' }} />}
                   {view === 'generate' && '生成成长总结'}
                   {view === 'result' && (isStreaming ? '✨ AI 正在书写…' : '总结预览')}
                   {view === 'archive' && '历史总结归档'}
                   {view === 'view' && (selectedSummary?.label ?? '总结详情')}
                 </h2>
                 {view === 'generate' && (
-                  <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">由 AI 分析你的成长记录，实时生成总结与建议</p>
+                  <p className={p3 ? 'mt-0.5 text-xs font-bold' : 'text-xs text-gray-400 dark:text-gray-500 mt-0.5'} style={p3 ? { color: P3R.blue } : undefined}>由 AI 分析你的成长记录，实时生成总结与建议</p>
                 )}
               </div>
               <div className="flex items-center gap-2">
@@ -1049,11 +1061,15 @@ export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week' }
                 <button
                   onClick={handleGenerate}
                   disabled={isGenerating || noApiKey}
-                  className={`w-full py-3.5 rounded-2xl font-bold text-sm transition-all ${isGenerating || noApiKey ? 'bg-gray-200 dark:bg-gray-700 text-gray-400 cursor-not-allowed' : 'bg-primary text-white shadow-lg active:scale-[0.98]'}`}
+                  className={p3
+                    ? `relative w-full py-3.5 text-[15px] font-black text-white transition-transform ${isGenerating || noApiKey ? 'opacity-40' : 'active:translate-y-0.5'}`
+                    : `w-full py-3.5 rounded-2xl font-bold text-sm transition-all ${isGenerating || noApiKey ? 'bg-gray-200 dark:bg-gray-700 text-gray-400 cursor-not-allowed' : 'bg-primary text-white shadow-lg active:scale-[0.98]'}`}
+                  style={p3 ? { clipPath: slantClip(12), background: isGenerating || noApiKey ? '#9db4d0' : P3R.blue, boxShadow: '0 10px 24px rgba(27,87,255,0.3)' } : undefined}
                 >
                   {isGenerating
                     ? <span className="flex items-center justify-center gap-2"><motion.span animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: 'linear' }} className="inline-block">◌</motion.span>准备中…</span>
                      : '🦋 生成总结'}
+                  {p3 && !(isGenerating || noApiKey) && <span aria-hidden className="absolute bottom-0 right-4 h-[9px] w-[22px]" style={{ background: P3R.magenta, clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />}
                 </button>
               )}
 

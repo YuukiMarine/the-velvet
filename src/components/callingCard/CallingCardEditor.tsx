@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { v4 as uuidv4 } from 'uuid';
 import { useAppStore, toLocalDateKey } from '@/store';
 import { useModalA11y } from '@/utils/useModalA11y';
 import { useBackHandler } from '@/utils/useBackHandler';
+import { useUiChannel } from '@/ui/useUiChannel';
+import { sheetTopClip } from '@/components/p3r/kit';
 import type { CallingCard, CallingCardMode, CallingCardTone, Todo } from '@/types';
 
 interface Props {
@@ -30,6 +33,8 @@ export function CallingCardEditor({ isOpen, initialCard, onClose }: Props) {
   const { saveCallingCard, todos, callingCards } = useAppStore();
 
   const dialogRef = useModalA11y(isOpen, onClose);
+  // P3R（蓝频道）：sheet 风格化——字段经 p3r-sheet CSS 自动换装
+  const p3 = useUiChannel() === 'p3';
   useBackHandler(isOpen, onClose);
 
   // 表单状态
@@ -146,7 +151,10 @@ export function CallingCardEditor({ isOpen, initialCard, onClose }: Props) {
     onClose();
   };
 
-  return (
+  // portal 到 body：本弹窗曾是树内 fixed，挂在 GoalDeck 的 drag（transform）容器里——
+  // transform 建立 containing block，fixed 被捕获成局部定位，再叠 p3 斜卡 clip 就被裁进
+  // 平行四边形窗口（用户实测 bug）。portal 后回到视口坐标系，三主题一并治好。
+  return createPortal(
     <AnimatePresence>
       {isOpen && (
         <motion.div
@@ -167,18 +175,32 @@ export function CallingCardEditor({ isOpen, initialCard, onClose }: Props) {
             exit={{ y: '100%' }}
             transition={{ type: 'spring', damping: 28, stiffness: 300 }}
             onClick={(e) => e.stopPropagation()}
-            className="relative w-full max-w-lg bg-white dark:bg-gray-900 rounded-t-3xl shadow-2xl flex flex-col overflow-hidden"
-            style={{ maxHeight: '90vh' }}
+            className={p3
+              ? 'p3r-sheet relative flex w-full max-w-lg flex-col overflow-hidden shadow-2xl'
+              : 'relative w-full max-w-lg bg-white dark:bg-gray-900 rounded-t-3xl shadow-2xl flex flex-col overflow-hidden'}
+            style={p3
+              ? { maxHeight: '90vh', background: 'linear-gradient(178deg, #fbfdff 0%, #f0f8fc 60%, #e6f3fa 100%)', clipPath: sheetTopClip }
+              : { maxHeight: '90vh' }}
           >
-            {/* Handle */}
+            {/* Handle（p3：青色斜片把手，与 SheetModal 基座同款） */}
+            {p3 ? (
+              <div aria-hidden className="relative mx-auto mt-5 flex h-[18px] w-[86px] shrink-0 items-center justify-center" style={{ background: '#35d1e8', clipPath: 'polygon(0 55%, 18% 0, 100% 30%, 82% 100%)' }}>
+                <span className="h-[3px] w-8 bg-white" />
+              </div>
+            ) : (
             <div className="flex justify-center pt-3 pb-1">
               <div className="w-10 h-1 rounded-full bg-gray-300 dark:bg-gray-600" />
             </div>
+            )}
 
             {/* Header */}
-            <div className="flex items-center gap-2 px-5 py-3 border-b border-black/5 dark:border-white/5">
-              <h2 className="text-base font-black text-gray-900 dark:text-white flex-1">
+            <div className={`flex items-center gap-2 px-5 py-3 ${p3 ? '' : 'border-b border-black/5 dark:border-white/5'}`}>
+              <h2
+                className={p3 ? 'flex-1 text-[24px] font-black italic tracking-tight' : 'text-base font-black text-gray-900 dark:text-white flex-1'}
+                style={p3 ? { color: '#0a1230', fontFamily: '"Arial Black", "Noto Sans SC", sans-serif' } : undefined}
+              >
                 {initialCard ? '编辑倒计时' : '新建倒计时'}
+                {p3 && <span aria-hidden className="ml-1.5 inline-block h-[10px] w-[13px]" style={{ background: '#1b57ff', clipPath: 'polygon(100% 0, 100% 100%, 0 100%)' }} />}
               </h2>
               <button
                 onClick={onClose}
@@ -198,11 +220,18 @@ export function CallingCardEditor({ isOpen, initialCard, onClose }: Props) {
                     <button
                       key={m}
                       onClick={() => setMode(m)}
-                      className={`py-2.5 rounded-xl text-xs font-bold transition-all ${
-                        mode === m
-                          ? 'bg-primary text-white shadow-md'
-                          : 'bg-black/5 dark:bg-white/10 text-gray-500 dark:text-gray-400'
-                      }`}
+                      className={p3
+                        ? 'py-2.5 text-xs font-black transition-all'
+                        : `py-2.5 rounded-xl text-xs font-bold transition-all ${
+                            mode === m
+                              ? 'bg-primary text-white shadow-md'
+                              : 'bg-black/5 dark:bg-white/10 text-gray-500 dark:text-gray-400'
+                          }`}
+                      style={p3 ? {
+                        clipPath: 'polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%)',
+                        background: mode === m ? '#1b57ff' : '#e2f2fa',
+                        color: mode === m ? '#fff' : '#0a1230',
+                      } : undefined}
                     >
                       {m === 'deadline' ? '日期' : m === 'todos' ? '任务清单' : '兼有'}
                     </button>
@@ -430,21 +459,28 @@ export function CallingCardEditor({ isOpen, initialCard, onClose }: Props) {
             </div>
 
             {/* Footer */}
-            <div className="px-5 py-4 border-t border-black/5 dark:border-white/5">
+            <div className={`px-5 py-4 ${p3 ? '' : 'border-t border-black/5 dark:border-white/5'}`}>
               <button
                 onClick={handleSave}
                 disabled={!canSave}
-                className={`w-full py-3.5 rounded-2xl font-bold text-sm transition-all ${
-                  canSave ? 'bg-primary text-white shadow-lg active:scale-[0.98]' : 'bg-gray-200 dark:bg-gray-700 text-gray-400 cursor-not-allowed'
-                }`}
+                className={p3
+                  ? 'relative w-full py-3.5 text-[15px] font-black text-white transition-all active:brightness-95 disabled:cursor-not-allowed disabled:opacity-40'
+                  : `w-full py-3.5 rounded-2xl font-bold text-sm transition-all ${
+                      canSave ? 'bg-primary text-white shadow-lg active:scale-[0.98]' : 'bg-gray-200 dark:bg-gray-700 text-gray-400 cursor-not-allowed'
+                    }`}
+                style={p3 ? { clipPath: 'polygon(12px 0, 100% 0, calc(100% - 12px) 100%, 0 100%)', background: '#1b57ff' } : undefined}
               >
                 {initialCard ? '保存修改' : '✦ 立此宣告'}
+                {p3 && canSave && (
+                  <span aria-hidden className="absolute bottom-0 right-4 h-[7px] w-[18px]" style={{ background: '#f0417f', clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
+                )}
               </button>
             </div>
           </motion.div>
         </motion.div>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body,
   );
 }
 

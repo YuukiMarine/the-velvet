@@ -40,6 +40,8 @@ interface StackCarouselProps {
    * 如属性卡排序编辑模式：两套水平手势会互抢 pointer，编辑期间必须锁外层。
    */
   locked?: boolean;
+  /** 自动轮播间隔毫秒（>0 开启，循环播放）；指针按下暂停、抬起重续；D0 不自动滚 */
+  autoPlayMs?: number;
 }
 
 /** 缩放/透明度内插区间：非激活卡缩到 0.84、淡到 0.4（激活卡 1 / 1） */
@@ -70,6 +72,7 @@ export const StackCarousel = ({
   onPageChange,
   page,
   locked = false,
+  autoPlayMs = 0,
 }: StackCarouselProps) => {
   const storageKey = `sl-stack-${id}`;
   const slides = Children.toArray(children);
@@ -170,6 +173,39 @@ export const StackCarousel = ({
       emblaApi.off('select', onSelect).off('scroll', applyTween).off('slideFocus', applyTween).off('reInit', onReInit);
     };
   }, [emblaApi, setTweenNodes, setTweenFactor, applyTween, storageKey]);
+
+  // ── 自动轮播（autoPlayMs>0）：循环下一页；指针按下暂停、抬起重续；D0 静止 ──
+  useEffect(() => {
+    if (!emblaApi || !autoPlayMs || autoPlayMs <= 0 || locked) return;
+    let timer: number | undefined;
+    const stop = () => {
+      if (timer !== undefined) {
+        clearInterval(timer);
+        timer = undefined;
+      }
+    };
+    const start = () => {
+      stop();
+      timer = window.setInterval(() => {
+        if (!boldRef.current) return;
+        if (emblaApi.canScrollNext()) emblaApi.scrollNext();
+        else emblaApi.scrollTo(0);
+      }, autoPlayMs);
+    };
+    start();
+    const node = emblaApi.rootNode();
+    const onDown = () => stop();
+    const onUp = () => start();
+    node.addEventListener('pointerdown', onDown);
+    node.addEventListener('pointerup', onUp);
+    node.addEventListener('pointercancel', onUp);
+    return () => {
+      stop();
+      node.removeEventListener('pointerdown', onDown);
+      node.removeEventListener('pointerup', onUp);
+      node.removeEventListener('pointercancel', onUp);
+    };
+  }, [emblaApi, autoPlayMs, locked]);
 
   // locked 切换：reInit 改 watchDrag，startIndex 取当前位置避免跳页
   useEffect(() => {

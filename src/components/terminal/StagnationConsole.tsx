@@ -12,7 +12,7 @@ import { useAppStore } from '@/store';
 import { minimalStep, terminalChannel, terminalSkin } from '@/utils/terminalSkin';
 import { useBoldness } from '@/utils/boldness';
 import { zClass } from '@/utils/zIndex';
-import { P3, P3_WATER, P3DotGrid } from './p3Kit';
+import { P3 } from './p3Kit';
 import type { AttributeId, TerminalProblemKind, Todo, Wish } from '@/types';
 
 type StagnationMode = 'long_term' | 'pressure' | 'lost' | 'exhausted';
@@ -1141,103 +1141,93 @@ export const StagnationConsole = ({ onOpenMemory }: { onOpenMemory: () => void }
     );
   }
 
-  // 蓝 · P3R 亮蓝水面（对照设计稿 v4：白斜面板 + 水面斜切板 + STASIS/CLEAR/FLOW + 藏青 CTA）
+  // 蓝 · P3R（对照 p3-modal-11 稿 1:1：TRACE 幽灵大字 + 白斜面板〔信号词/四小三角/大标/导语/蓝角〕
+  // + 入口状态斜条 + 蓝大 CTA〔白▶ + 洋红角〕+ 底部双文字链）
   if (channel === 'board') {
     const [signalA, signalB] = heroCopy.signal.split(' ');
     return (
       <>
         <section className="relative mb-6 mt-1">
-          <div className="relative">
-            {/* 右侧斜切水面板（素材取自设计稿本体，自带左上白雾与点阵） */}
-            <div
-              aria-hidden
-              className="pointer-events-none absolute -right-4 -top-5 bottom-10 w-[62%] overflow-hidden sm:-right-7"
-              style={{ clipPath: 'polygon(30% 0, 100% 0, 100% 74%, 0 100%)' }}
-            >
-              <img src={P3_WATER} alt="" className="h-full w-full object-cover" />
-              <P3DotGrid className="right-2 top-14 h-28 w-24" size={13} dot={1.2} opacity={0.6} />
-            </div>
-
-            {/* 白色主面板 */}
-            <div
-              className="relative z-10 w-[88%] px-6 pb-9 pt-7 sm:px-8"
-              style={{
-                background: P3.panel,
-                clipPath: 'polygon(0 4.5%, 96% 0, 84% 100%, 0 97%)',
-                boxShadow: '0 18px 44px rgba(7,40,120,.2)',
-              }}
-            >
-              <div className="text-[15px] font-black uppercase tracking-[0.34em]">
-                <span style={{ color: P3.blue }}>{signalA}</span>{' '}
-                <span style={{ color: P3.accent }}>{signalB}</span>
-              </div>
-              <div aria-hidden className="mt-3 flex gap-[5px]">
-                {Array.from({ length: 7 }).map((_, i) => (
-                  <span key={i} className="h-2.5 w-[3px]" style={{ background: P3.blue, opacity: 0.45 }} />
-                ))}
-              </div>
-              <h2
-                className="mt-4 max-w-[8ch] text-[3.2rem] font-black leading-[1.08] sm:text-[3.9rem]"
-                style={{ color: P3.ink }}
-              >
-                {heroCopy.title}
-              </h2>
-              <div className="mt-6 flex max-w-[19rem] items-center gap-3">
-                <span aria-hidden className="text-xl leading-none" style={{ color: P3.accent }}>✦</span>
-                <span aria-hidden className="relative h-[3px] flex-1" style={{ background: P3.ink }}>
-                  <span className="absolute right-[6%] top-1/2 h-[7px] w-10 -translate-y-1/2" style={{ background: P3.accent }} />
-                </span>
-              </div>
-              <div className="mt-4 truncate text-[11px] font-black tracking-wide" style={{ color: P3.inkDim }}>
-                {heroStatus}
-              </div>
-            </div>
-
-            {/* 右缘 STASIS / CLEAR / FLOW 信号列 */}
-            <div aria-hidden className="pointer-events-none absolute bottom-2 right-1 z-10 flex flex-col items-end gap-5 sm:right-2">
-              <span className="h-[4px] w-7" style={{ background: P3.accent }} />
-              {['STASIS', 'CLEAR', 'FLOW'].map((w) => (
-                <span key={w} className="text-[13px] font-black tracking-[0.5em] text-white [text-shadow:0_1px_10px_rgba(7,40,120,.35)]">
-                  {w}
-                </span>
-              ))}
-            </div>
-            <span aria-hidden className="pointer-events-none absolute bottom-3 right-0 z-10 h-[8.5rem] w-px bg-white/70" />
+          {/* 幽灵大字（面板后方，左出血横贯） */}
+          <div
+            aria-hidden
+            className="pointer-events-none absolute -left-8 top-0 select-none whitespace-nowrap font-black italic leading-none tracking-tight"
+            style={{ fontFamily: 'Arial, sans-serif', fontSize: '6.2rem', color: 'rgba(53,209,232,0.28)' }}
+          >
+            {signalA}
           </div>
 
-          {/* CTA：藏青斜切条 */}
+          {/* 白色主面板 */}
+          <div
+            className="relative z-10 mt-16 px-6 pb-9 pt-6 sm:px-8"
+            style={{
+              background: P3.panel,
+              clipPath: 'polygon(0 8%, 94% 0, 100% 92%, 3% 100%)',
+              boxShadow: '0 18px 44px rgba(7,40,120,.2)',
+            }}
+          >
+            <div className="text-[16px] font-black uppercase tracking-[0.3em]">
+              <span style={{ color: P3.ink }}>{signalA}</span>{' '}
+              <span style={{ color: P3.accent }}>{signalB}</span>
+            </div>
+            <span aria-hidden className="mt-2 block h-[4px] w-24" style={{ background: P3.blue }} />
+            <div aria-hidden className="mt-2.5 flex gap-[6px]">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <span key={i} className="h-0 w-0 border-x-[6px] border-b-[9px] border-x-transparent" style={{ borderBottomColor: P3.blue, opacity: 0.85 - i * 0.12 }} />
+              ))}
+            </div>
+            <h2
+              className="mt-4 max-w-[8ch] text-[3.1rem] font-black leading-[1.12] sm:text-[3.8rem]"
+              style={{ color: P3.ink }}
+            >
+              {heroCopy.title}
+            </h2>
+            <p className="mt-4 max-w-[32ch] text-[14px] font-bold leading-relaxed" style={{ color: P3.inkDim }}>
+              {heroCopy.lead}
+            </p>
+            {/* 右下蓝角 */}
+            <span aria-hidden className="absolute bottom-[12%] right-[7%] h-0 w-0 border-b-[15px] border-l-[22px] border-l-transparent" style={{ borderBottomColor: P3.blue }} />
+          </div>
+
+          {/* 入口状态斜条（档案夹 + 当前入口态） */}
+          <div
+            className="relative z-10 mt-4 flex items-center gap-3 px-4 py-2.5"
+            style={{ background: 'color-mix(in srgb, var(--color-primary) 14%, #c8e7f5)', clipPath: 'polygon(12px 0, 100% 0, calc(100% - 12px) 100%, 0 100%)' }}
+          >
+            <span aria-hidden className="flex h-6 w-7 shrink-0 items-center justify-center" style={{ background: P3.accent, clipPath: 'polygon(3px 0, 100% 0, calc(100% - 3px) 100%, 0 100%)' }}>
+              <svg viewBox="0 0 14 11" className="h-3 w-3.5" fill="#fff" aria-hidden><path d="M0 1.5A1.5 1.5 0 0 1 1.5 0H5l1.5 2h6A1.5 1.5 0 0 1 14 3.5v6A1.5 1.5 0 0 1 12.5 11h-11A1.5 1.5 0 0 1 0 9.5z" /></svg>
+            </span>
+            <span className="min-w-0 flex-1 truncate text-[13px] font-black" style={{ color: P3.ink }}>{heroStatus}</span>
+          </div>
+
+          {/* CTA：亮蓝大斜块（白▶ + 白大字 + 右下洋红角） */}
           <motion.button
             type="button"
             onClick={openQuickDecision}
             whileTap={{ scale: 0.985 }}
-            className="relative z-10 mt-4 flex w-full items-center gap-4 px-4 py-4 pr-6 text-left"
+            className="relative z-10 mt-4 flex w-full items-center justify-center gap-4 overflow-hidden px-6 py-5"
             style={{
-              background: P3.deep,
-              clipPath: 'polygon(1.8% 0, 100% 0, 98.2% 100%, 0 100%)',
-              boxShadow: '0 14px 32px rgba(6,28,80,.35)',
+              background: `linear-gradient(115deg, ${P3.blue} 0%, ${P3.deepSoft} 100%)`,
+              clipPath: 'polygon(3.5% 0, 100% 0, 96.5% 100%, 0 100%)',
+              boxShadow: '0 16px 36px rgba(27,87,255,.38)',
             }}
           >
-            <span
-              aria-hidden
-              className="flex h-12 w-12 shrink-0 items-center justify-center text-xl text-white sm:h-14 sm:w-14 sm:text-2xl"
-              style={{ background: P3.deepSoft }}
-            >
-              ▶
-            </span>
-            <span className="min-w-0 flex-1 text-center text-[1.35rem] font-black tracking-wide text-white sm:text-3xl">
+            <span aria-hidden className="h-0 w-0 shrink-0 border-y-[15px] border-l-[25px] border-y-transparent" style={{ borderLeftColor: '#ffffff' }} />
+            <span className="min-w-0 text-[1.55rem] font-black tracking-wide text-white sm:text-3xl">
               {activeTask ? '查看当前小步' : heroCopy.cta}
             </span>
-            <span aria-hidden className="text-2xl font-black text-white">→</span>
-            <span aria-hidden className="absolute bottom-0 left-[5%] h-[3px] w-[36%]" style={{ background: P3.accent }} />
+            <span aria-hidden className="absolute bottom-0 right-[5%] h-[12px] w-[30px]" style={{ background: '#f0417f', clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
           </motion.button>
 
-          <div className="mt-3 flex justify-end">
-            <button
-              type="button"
-              onClick={openManualIntake}
-              className="text-[12px] font-bold text-white/90 underline underline-offset-4 hover:text-white"
-            >
+          {/* 底部双文字链（青三角箭标） */}
+          <div className="relative z-10 mt-5 flex items-center justify-around">
+            <button type="button" onClick={openManualIntake} className="flex items-center gap-2 text-[15px] font-black" style={{ color: P3.ink }}>
               我自己说一句
+              <span aria-hidden className="h-0 w-0 border-y-[6px] border-l-[9px] border-y-transparent" style={{ borderLeftColor: P3.accent }} />
+            </button>
+            <button type="button" onClick={onOpenMemory} className="flex items-center gap-2 text-[15px] font-black" style={{ color: P3.ink }}>
+              {copy.memory}
+              <span aria-hidden className="h-0 w-0 border-y-[6px] border-l-[9px] border-y-transparent" style={{ borderLeftColor: P3.accent }} />
             </button>
           </div>
         </section>

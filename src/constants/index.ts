@@ -200,6 +200,55 @@ export const ACHIEVEMENTS = [
     unlocked: false,
     condition: { type: 'shadow_defeats' as const, value: 5 }
   },
+  // ── 批4 §6.8 战场成就组（battle_feat：事实源 = BattleState.battleFeats） ──
+  {
+    id: 'battle_allout',
+    title: '五面之力',
+    description: '首次发动总攻击——五副面具的力量汇于一击',
+    icon: '💥',
+    unlocked: false,
+    condition: { type: 'battle_feat' as const, value: 1, feat: 'allout' }
+  },
+  {
+    id: 'battle_flawless',
+    title: '月下无瑕',
+    description: '一场战斗中不损一滴体力讨伐心魔',
+    icon: '🌕',
+    unlocked: false,
+    condition: { type: 'battle_feat' as const, value: 1, feat: 'flawless' }
+  },
+  {
+    id: 'battle_poison_elite',
+    title: '蚀骨之谋',
+    description: '让毒素替你终结一名强敌',
+    icon: '☠️',
+    unlocked: false,
+    condition: { type: 'battle_feat' as const, value: 1, feat: 'poison_elite' }
+  },
+  {
+    id: 'battle_five_masks',
+    title: '千面登台',
+    description: '一场战斗中让五副面具全部上场',
+    icon: '🎭',
+    unlocked: false,
+    condition: { type: 'battle_feat' as const, value: 1, feat: 'five_masks' }
+  },
+  {
+    id: 'battle_first_clear',
+    title: '第一层月光',
+    description: '首次通关一个区层——上方的黑暗开始注视你',
+    icon: '🗼',
+    unlocked: false,
+    condition: { type: 'battle_feat' as const, value: 1, feat: 'first_clear' }
+  },
+  {
+    id: 'battle_night_climb',
+    title: '一夜通天',
+    description: '单夜从区层入口一路攀至心魔并将其讨伐',
+    icon: '🌠',
+    unlocked: false,
+    condition: { type: 'battle_feat' as const, value: 1, feat: 'night_climb' }
+  },
   {
     id: 'confidants_web_5',
     title: '彼此托付',
@@ -374,12 +423,15 @@ export const EVENT_POOL = [
 
 // ── 逆影战场常量 ──────────────────────────────────────────
 
+// 引擎 v2 数值重锚（BATTLE_UPGRADE_PLAN_V2 §9.2，模拟战跑测后定标：
+// 聪明策略下 Lv1-2 单晚可胜、Lv3 五五开、Lv4-5 单晚推 55-70%，两三晚通关）
+// 批3 验收调整（2026-07-19 用户拍板）：全敌人最大 HP 上调 Lv1-2 +10 / Lv3 +20 / Lv4-5 +30（一形态池吃满）
 export const SHADOW_LEVEL_CONFIG = [
-  { level: 1, maxHp: 150, maxHp2: undefined as number | undefined, label: '之阴影' },
-  { level: 2, maxHp: 200, maxHp2: undefined as number | undefined, label: '之深渊' },
-  { level: 3, maxHp: 250, maxHp2: 120,                             label: '之执念' },
-  { level: 4, maxHp: 400, maxHp2: 240,                             label: '之噩梦' },
-  { level: 5, maxHp: 450, maxHp2: 260,                             label: '之深渊王' },
+  { level: 1, maxHp: 160, maxHp2: undefined as number | undefined, label: '之阴影' },
+  { level: 2, maxHp: 210, maxHp2: undefined as number | undefined, label: '之深渊' },
+  { level: 3, maxHp: 280, maxHp2: 80,                              label: '之执念' },
+  { level: 4, maxHp: 370, maxHp2: 110,                             label: '之噩梦' },
+  { level: 5, maxHp: 450, maxHp2: 130,                             label: '之深渊王' },
 ];
 
 /** Shadow每日HP恢复量（按等级） */
@@ -392,6 +444,11 @@ export function isInShadowTime(days: number[] = [5, 6, 0], startHour = 20, endHo
   const now = new Date();
   const weekday = now.getDay();
   const hour = now.getHours();
+  // 同日窗口（如 8→12）：当天为开放日且时刻落在 [start, end) 内
+  if (startHour < endHour) {
+    return days.includes(weekday) && hour >= startHour && hour < endHour;
+  }
+  // 跨夜窗口（如 20→7）：开放日晚间段，或次日凌晨段（归属前一开放日）
   if (hour >= startHour && days.includes(weekday)) return true;
   if (hour < endHour) {
     const yesterday = (weekday + 6) % 7;
@@ -444,37 +501,20 @@ export const SKILL_EFFECT_MAP: Partial<Record<AttributeId, Partial<Record<Person
   },
 };
 
-/** 按属性返回 heal 的实际回复量（统一 2 点） */
-export const HEAL_VALUE_BY_ATTR: Record<AttributeId, number> = {
-  knowledge: 2,
-  guts: 2,
-  dexterity: 2,
-  kindness: 2,
-  charm: 2,
-};
+// heal 回复量已由引擎 v2 重做为「威力 × 30%（温柔 ×1.3）」——见 src/battle/numbers.ts healAmount()
 
 /** 状态类型到展示信息（无 skill 映射时兜底使用） */
 export const STATUS_LABELS: Record<StatusKind, { label: string; icon: string }> = {
-  poison:      { label: '中毒', icon: '☠️' },
-  mark:        { label: '标记', icon: '🎯' },
-  fear:        { label: '恐惧', icon: '😱' },
-  calm:        { label: '镇静', icon: '🌿' },
-  beguile:     { label: '魅惑', icon: '💋' },
-  shield:      { label: '护盾', icon: '🛡️' },
-  crit_buff:   { label: '连击', icon: '⚡' },
-  crit_debuff: { label: '洞悉', icon: '🔭' },
-  resonance:   { label: '共鸣', icon: '🎵' },
+  poison:       { label: '中毒', icon: '☠️' },
+  mark:         { label: '标记', icon: '🎯' },
+  fear:         { label: '恐惧', icon: '😱' },
+  calm:         { label: '镇静', icon: '🌿' },
+  beguile:      { label: '魅惑', icon: '💋' },
+  shield:       { label: '护盾', icon: '🛡️' },
+  crit_buff:    { label: '连击', icon: '⚡' },
+  crit_debuff:  { label: '洞悉', icon: '🔭' },
+  resonance:    { label: '共鸣', icon: '🎵' },
+  atk_up:       { label: '强化', icon: '💪' },
+  guard_stance: { label: '警戒', icon: '🛡' },
 };
 
-export const SHADOW_RESPONSE_LINES = [
-  '你以为这就能击败我？',
-  '这点伤害……不过如此。',
-  '有趣……继续吧。',
-  '你的力量……来自何处？',
-  '不要以为你真的了解自己！',
-  '我是你内心深处的一部分！',
-  '就这点实力，还妄想战胜我？',
-  '你越来越强了……但还不够。',
-  '我感受到你的成长……令我不安。',
-  '小心……我也在变强。',
-];

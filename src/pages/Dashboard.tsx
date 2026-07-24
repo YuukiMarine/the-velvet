@@ -1071,7 +1071,8 @@ export const Dashboard = () => {
       ) : (
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
           <EyebrowLabel className="mb-2 px-0.5">今日仪式 · 滑动</EyebrowLabel>
-          <StackCarousel id="ritual" page={ritualPage}>
+          {/* 全局裁决（2026-07-12）：仪式卡撑满一屏 + 自动轮播（非 P4 频道保留） */}
+          <StackCarousel id="ritual" page={ritualPage} itemWidthClass="w-full" autoPlayMs={6000}>
             {ritualSlides}
           </StackCarousel>
         </motion.div>

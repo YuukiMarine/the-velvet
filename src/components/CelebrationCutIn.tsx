@@ -7,8 +7,8 @@ import { useAutoClose } from '@/utils/useAutoClose';
 import { useBackHandler } from '@/utils/useBackHandler';
 import { useFeedbackOnce } from '@/utils/useFeedbackOnce';
 import { useModalA11y } from '@/utils/useModalA11y';
-import { zClass } from '@/utils/zIndex';
 import { useUiChannel } from '@/ui/useUiChannel';
+import { zClass } from '@/utils/zIndex';
 import { P4Flower, P4Sparkle } from '@/ui/p4Kit';
 
 /**
@@ -80,8 +80,11 @@ export const CelebrationCutIn = ({
   useBackHandler(isOpen, onClose);
   useAutoClose(isOpen, autoCloseMs, onClose);
   useFeedbackOnce(isOpen, onShown);
+  const channel = useUiChannel();
   // p4-redraw modal-05/06/07 v3：庆祝一律「橙色大圆贴纸」——奶油描边圆 + 黑斜章标题 + 花/星贴饰
-  const isP4 = useUiChannel() === 'p4';
+  const isP4 = channel === 'p4';
+  // P3R（蓝频道）：庆祝卡入斜切语言（主题渐变语义保留，形换斜卡 + 青/洋红贴角）
+  const p3 = channel === 'p3';
 
   return createPortal(
     <AnimatePresence>
@@ -106,7 +109,7 @@ export const CelebrationCutIn = ({
             className={
               isP4
                 ? 'p4-cutin relative aspect-square w-full max-w-[350px] overflow-visible p-8'
-                : `relative w-full max-w-md overflow-hidden rounded-3xl p-8 shadow-2xl ${THEME_BG[theme]}`
+                : `relative w-full max-w-md overflow-hidden p-8 shadow-2xl ${p3 ? '' : 'rounded-3xl'} ${THEME_BG[theme]}`
             }
             style={
               isP4
@@ -115,9 +118,17 @@ export const CelebrationCutIn = ({
                     borderRadius: '50%',
                     boxShadow: '0 0 0 4px #ffd900, 0 0 0 11px #fff6d0, 0 10px 0 11px rgba(19,19,19,0.25)',
                   }
-                : undefined
+                : p3
+                  ? { clipPath: 'polygon(22px 0, 100% 0, calc(100% - 22px) 100%, 0 100%)' }
+                  : undefined
             }
           >
+            {p3 && (
+              <>
+                <span aria-hidden className="absolute left-0 top-0 z-10 h-[14px] w-[52px]" style={{ background: '#35d1e8', clipPath: 'polygon(0 0, 100% 0, 72% 100%, 0 100%)' }} />
+                <span aria-hidden className="absolute bottom-0 right-6 z-10 h-[10px] w-[26px]" style={{ background: '#f0417f', clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
+              </>
+            )}
             {/* 装饰层：纵向高光 + 斜光带（只有装饰可倾斜，文字层恒水平） */}
             {!isP4 && (
               <>

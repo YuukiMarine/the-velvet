@@ -1,5 +1,5 @@
 /**
- * Ledger — F5 心相记账（Phase ①）。
+ * Ledger — F5 记账（Phase ①）。
  *
  * 三层模型的 UI：
  *   · 流：NL/手动录入 → 可改确认卡 → 落账；按日分组流水列表。
@@ -21,9 +21,10 @@ import { SegmentTabs } from '@/components/SegmentTabs';
 import { LedgerStats } from '@/components/ledger/LedgerStats';
 import { AssetBoard } from '@/components/ledger/AssetBoard';
 import { Donut } from '@/components/ledger/Donut';
+import { useUiChannel } from '@/ui/useUiChannel';
+import { P3R, P3RPage, GhostWords, P3PageHeader, slantClip } from '@/components/p3r/kit';
 import { catMeta, CATEGORY_KEYS, isGrowthCategory, INCOME_META, sym, fmtMoney, fmtSigned, DEFAULT_CHANNELS, DEFAULT_INCOME_SOURCES, incomeTypeFromSource, shiftMonth, weekdayCN, monthLabel, ledgerDateLabel, ledgerCycle } from '@/utils/ledgerFormat';
 import type { LedgerEntry, LedgerExpenseType, AttributeId, SpendWorth, Settings } from '@/types';
-import { useUiChannel } from '@/ui/useUiChannel';
 import { P4Flower } from '@/ui/p4Kit';
 
 // ── 录入草稿 ──────────────────────────────────────────────
@@ -219,6 +220,8 @@ export const Ledger = () => {
   const fundBase = total + monthExpense;                 // 进度环满刻度（= 月初结转 + 本月收入；空缺=本月已花）
 
   const [balanceView, setBalanceView] = useState<'month' | 'total'>('month');
+  // P3R（蓝频道）：p3-ledger-reference-v2 形态
+  const p3 = useUiChannel() === 'p3';
   const [nlText, setNlText] = useState('');
   const [nlBusy, setNlBusy] = useState(false);
   const [draft, setDraft] = useState<EntryDraft | null>(null);
@@ -356,12 +359,14 @@ export const Ledger = () => {
   };
 
   return (
+    <P3RPage active={p3}>
     <motion.div
       initial={false} exit={{ opacity: 0 }}
       transition={{ duration: 0.2 }}
-      className={`max-w-2xl mx-auto pb-8 ${isP4 ? 'p4-reskin' : ''}`}
+      className={`relative max-w-2xl mx-auto pb-8 ${isP4 ? 'p4-reskin' : ''}`}
     >
-      {/* 页头：P4 = 衬线特大 + LEDGER SHOW 橙眉标（p4-ledger-reference-v2） */}
+      {/* 页头：P4 = 衬线特大 + LEDGER SHOW 橙眉标（p4-ledger-reference-v2）；
+          p3 = 大黑斜体 + 左上双青片装饰（p3-ledger 设计稿） */}
       {isP4 ? (
         <motion.div {...riseIn(0)} className="flex items-start gap-2">
           <BackButton onClick={() => setCurrentPage('menu')} className="mt-3 -ml-1" />
@@ -375,11 +380,19 @@ export const Ledger = () => {
             <div className="mt-0.5 text-xs font-black tracking-[0.22em] text-[var(--p4-orange,#f9a11b)]">LEDGER SHOW</div>
           </div>
         </motion.div>
+      ) : p3 ? (
+        <motion.div {...riseIn(0)} className="relative">
+          <span aria-hidden className="absolute left-[2px] top-[34px] flex gap-1">
+            <span className="h-[11px] w-[15px]" style={{ background: P3R.blue, clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
+            <span className="h-[11px] w-[12px]" style={{ background: '#9adcee', clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
+          </span>
+          <P3PageHeader ticks title="记账" onBack={() => setCurrentPage('menu')} className="pt-2" />
+        </motion.div>
       ) : (
       <motion.div {...riseIn(0)} className="flex items-start justify-between gap-3">
         <BackButton onClick={() => setCurrentPage('menu')} className="mt-1 -ml-1" />
         <div className="flex-1">
-          <PageTitle title="心相记账" en="Ledger" enOffset={{ right: -20 }} />
+          <PageTitle title="记账" en="Ledger" enOffset={{ right: -20 }} />
         </div>
       </motion.div>
       )}
@@ -396,7 +409,8 @@ export const Ledger = () => {
 
       {mode === 'ledger' && (
         <>
-      {/* 开局引导：无流水时先设初始余额（避免首笔变负） */}
+      {/* 开局引导：无流水时先设初始余额（避免首笔变负）
+          p3（设计稿）：浅青斜条 + ⚠ + 蓝粗标题 + 右缘青三角 */}
       {needsSetup && (
         isP4 ? (
           /* p4：奶油话泡（左下小尾巴），橙色标题黑正文 */
@@ -413,6 +427,18 @@ export const Ledger = () => {
               style={{ background: 'var(--ui-paper)', clipPath: 'polygon(0 0, 100% 0, 30% 100%)' }}
             />
           </button>
+        ) : p3 ? (
+          <button
+            onClick={() => setAdjustOpen(true)}
+            className="relative mt-4 w-full px-4 py-3 text-left transition active:scale-[0.99]"
+            style={{ clipPath: slantClip(12), background: P3R.cyanPale }}
+          >
+            <div className="flex items-center gap-2 text-[14px] font-black" style={{ color: P3R.blue }}>
+              <span aria-hidden>⚠️</span> 先设置你当前的余额
+            </div>
+            <div className="mt-0.5 pl-6 text-[12px] font-semibold" style={{ color: P3R.ink }}>告诉我你现在大概有多少钱，记账才准——之后随时可「对账」修正。</div>
+            <span aria-hidden className="absolute right-2 top-1/2 h-4 w-5 -translate-y-1/2" style={{ background: 'rgba(53,209,232,0.9)', clipPath: 'polygon(0 100%, 100% 0, 100% 100%)' }} />
+          </button>
         ) : (
         <button
           onClick={() => setAdjustOpen(true)}
@@ -425,7 +451,131 @@ export const Ledger = () => {
       )}
 
       {/* 总余额 + 预算环（环显示本月预算「剩余」，花钱往下消耗）。
-          P4：卡壳退役 —— 向日葵舞台（橙花瓣环 + 放射短线）直压黄底。 */}
+          P4：卡壳退役 —— 向日葵舞台（橙花瓣环 + 放射短线）直压黄底；
+          p3：白大斜卡 + 左侧青斜纹梯级 + 超大蓝斜体金额 + 分割线（点数字切换月/总视图）。 */}
+      {p3 ? (
+        <motion.section {...popIn(2)} className="mt-5">
+          <div className="relative px-6 py-7" style={{ clipPath: 'polygon(34px 0, 100% 0, calc(100% - 34px) 100%, 0 100%)', background: 'rgba(255,255,255,0.96)', boxShadow: '0 18px 40px rgba(38,96,140,0.10)' }}>
+            {/* 左侧青斜纹梯级（设计稿装饰） */}
+            <div aria-hidden className="absolute bottom-6 left-7 top-6 flex w-[54px] flex-col justify-between">
+              {Array.from({ length: 9 }).map((_, i) => (
+                <span
+                  key={i}
+                  className="h-[9px]"
+                  style={{
+                    width: 46 - i * 1.6,
+                    marginLeft: i * 2.2,
+                    background: i % 2 ? `rgba(53,209,232,${0.85 - i * 0.05})` : `rgba(27,87,255,${0.8 - i * 0.05})`,
+                    clipPath: 'polygon(7px 0, 100% 0, calc(100% - 7px) 100%, 0 100%)',
+                  }}
+                />
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => setBalanceView(v => (v === 'month' ? 'total' : 'month'))}
+              aria-label={balanceView === 'month' ? '切换到总余额' : '切换到月余额'}
+              className="relative mx-auto block w-full pl-14 text-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1b57ff]"
+            >
+              {balanceView === 'month' ? (
+                <>
+                  <div className="text-[16px] font-black" style={{ color: P3R.blue }}>{hasBudget ? '月余额' : '本月已花'}</div>
+                  <div className="mt-1 text-[56px] font-black italic leading-none tabular-nums" style={{ color: P3R.blue }}>
+                    {hasBudget ? fmtSigned(monthBalance, $) : `${$}${fmtMoney(monthExpense)}`}
+                  </div>
+                  <div aria-hidden className="mx-auto mt-3.5 flex h-[2px] w-[210px] items-center" style={{ background: 'rgba(27,87,255,0.45)' }}>
+                    <span className="h-[4px] w-8" style={{ background: P3R.blue }} />
+                  </div>
+                  <div className="mt-2.5 text-[14px] font-bold" style={{ color: P3R.grey }}>
+                    {hasBudget ? `预算 ${$}${fmtMoney(lim)}` : '未设预算'}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="text-[16px] font-black" style={{ color: P3R.blue }}>总余额</div>
+                  <div className="mt-1 text-[56px] font-black italic leading-none tabular-nums" style={{ color: P3R.blue }}>{fmtSigned(total, $)}</div>
+                  <div aria-hidden className="mx-auto mt-3.5 flex h-[2px] w-[210px] items-center" style={{ background: 'rgba(27,87,255,0.45)' }}>
+                    <span className="h-[4px] w-8" style={{ background: P3R.blue }} />
+                  </div>
+                  <div className="mt-2.5 flex flex-wrap justify-center gap-x-4 gap-y-1 text-[12px] font-bold" style={{ color: P3R.inkSoft }}>
+                    <span className="flex items-center gap-1.5"><span aria-hidden className="h-2 w-2.5" style={{ background: '#34d399', clipPath: slantClip(2) }} />收入剩余 <b className="tabular-nums">{$}{fmtMoney(fundIncome)}</b></span>
+                    <span className="flex items-center gap-1.5"><span aria-hidden className="h-2 w-2.5" style={{ background: '#818cf8', clipPath: slantClip(2) }} />结转 <b className="tabular-nums">{$}{fmtMoney(fundCarried)}</b></span>
+                    {savings > 0 && <span>🐷 攒下 {$}{fmtMoney(savings)}</span>}
+                  </div>
+                </>
+              )}
+            </button>
+            {/* 卡右下青三角 */}
+            <span aria-hidden className="absolute bottom-0 right-10 h-5 w-9" style={{ background: 'rgba(53,209,232,0.85)', clipPath: 'polygon(100% 0, 100% 100%, 0 100%)' }} />
+          </div>
+
+          {cycle.payCycle && (
+            <div className="mt-1.5 text-center text-[11px] font-bold" style={{ color: P3R.grey }}>本周期 {cycle.label}</div>
+          )}
+
+          {/* 预算消耗进度条（p3 补：斜切横条，已花蓝青渐变 / 超支洋红；width 弹入动画） */}
+          {balanceView === 'month' && hasBudget && (
+            <div className="mt-3.5 px-6">
+              <div className="relative h-[11px] w-full overflow-hidden" style={{ background: 'rgba(207,234,246,0.8)', clipPath: slantClip(3) }}>
+                <motion.div
+                  className="absolute inset-y-0 left-0"
+                  style={{ background: over ? P3R.magenta : `linear-gradient(90deg, ${P3R.blue}, ${P3R.cyan})`, clipPath: slantClip(3) }}
+                  initial={{ width: 0 }}
+                  animate={{ width: `${Math.max(3, Math.min(100, lim > 0 ? (monthExpense / lim) * 100 : 0))}%` }}
+                  transition={{ type: 'spring', stiffness: 110, damping: 20, delay: 0.1 }}
+                />
+              </div>
+              <div className="mt-1 flex justify-between text-[10px] font-black" style={{ color: P3R.grey }}>
+                <span>已花 {$}{fmtMoney(monthExpense)}</span>
+                <span>{lim > 0 ? Math.round((monthExpense / lim) * 100) : 0}%</span>
+              </div>
+            </div>
+          )}
+
+          {/* 预算态提示行（超支洋红 / 今日还可花青） */}
+          {balanceView === 'month' && hasBudget && (
+            over ? (
+              <div className="mt-2.5 flex flex-col items-center gap-1">
+                <div className="inline-flex items-baseline gap-1.5 px-4 py-1" style={{ clipPath: slantClip(8), background: 'rgba(240,65,127,0.1)' }}>
+                  <span className="text-[12px] font-bold" style={{ color: P3R.magenta }}>本月已超</span>
+                  <span className="text-lg font-black tabular-nums" style={{ color: P3R.magenta }}>{$}{fmtMoney(-budgetLeft)}</span>
+                </div>
+                <span className="text-[12px] font-semibold" style={{ color: P3R.grey }}>预算 {$}{fmtMoney(lim)} · 已花 {$}{fmtMoney(monthExpense)}</span>
+              </div>
+            ) : (
+              <div className="mt-2.5 flex flex-col items-center gap-1">
+                {todayLeft > 0 && (
+                  <div className="inline-flex items-baseline gap-1.5 px-4 py-1" style={{ clipPath: slantClip(8), background: 'rgba(53,209,232,0.16)' }}>
+                    <span className="text-[12px] font-bold" style={{ color: P3R.blueDeep }}>今日还可花</span>
+                    <span className="text-lg font-black tabular-nums" style={{ color: P3R.blueDeep }}>{$}{fmtMoney(todayLeft)}</span>
+                  </div>
+                )}
+                <span className="text-[12px] font-semibold" style={{ color: P3R.grey }}>本月预算剩 <b className="tabular-nums">{$}{fmtMoney(budgetLeft)}</b> / {$}{fmtMoney(lim)}</span>
+              </div>
+            )
+          )}
+
+          {/* 设置预算 / 对账（白斜块钮） */}
+          <div className="mt-3.5 flex justify-center gap-2.5">
+            <button
+              type="button"
+              onClick={() => setBudgetMode('edit')}
+              className="px-5 py-2 text-[14px] font-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1b57ff]"
+              style={{ clipPath: slantClip(9), background: 'rgba(255,255,255,0.92)', color: P3R.ink, boxShadow: '0 6px 14px rgba(38,96,140,0.08)' }}
+            >
+              {hasBudget ? '编辑预算' : '设置预算'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setAdjustOpen(true)}
+              className="px-5 py-2 text-[14px] font-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1b57ff]"
+              style={{ clipPath: slantClip(9), background: 'rgba(255,255,255,0.92)', color: P3R.ink, boxShadow: '0 6px 14px rgba(38,96,140,0.08)' }}
+            >
+              对账
+            </button>
+          </div>
+        </motion.section>
+      ) : (
       <motion.section
         {...popIn(2)}
         className={
@@ -544,8 +694,40 @@ export const Ledger = () => {
           )}
         </div>
       </motion.section>
+      )}
 
-      {/* 录入条 */}
+      {/* 录入条（p3：白斜输入条 + 蓝斜块「记一笔」+洋红角 + 白斜块「手动」，GUI 主体地位照旧） */}
+      {p3 ? (
+        <motion.section {...riseIn(3)} className="mt-5 flex items-stretch gap-0">
+          <div className="min-w-0 flex-1" style={{ clipPath: slantClip(12), background: '#fff', boxShadow: '0 8px 18px rgba(38,96,140,0.07)' }}>
+            <input
+              value={nlText}
+              onChange={e => setNlText(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') handleNL(); }}
+              placeholder="28 咖啡 / 工资 8000（可多笔）"
+              className="h-full w-full bg-transparent px-5 py-3.5 text-[14px] font-semibold focus:outline-none"
+              style={{ color: P3R.ink }}
+            />
+          </div>
+          <button
+            onClick={handleNL}
+            disabled={nlBusy || !nlText.trim()}
+            className="relative -ml-2 shrink-0 px-5 py-3.5 text-[15px] font-black text-white transition-transform active:scale-[0.96] disabled:opacity-40"
+            style={{ clipPath: slantClip(12), background: P3R.blue }}
+          >
+            {nlBusy ? '…' : '记一笔'}
+            <span aria-hidden className="absolute bottom-0 right-3 h-[6px] w-[14px]" style={{ background: P3R.magenta, clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
+          </button>
+          <button
+            onClick={() => startDraft(emptyDraft())}
+            aria-label="手动记一笔"
+            className="-ml-2 shrink-0 whitespace-nowrap px-4 py-3.5 text-[15px] font-black transition active:scale-[0.96]"
+            style={{ clipPath: slantClip(12), background: '#fff', color: P3R.ink, boxShadow: '0 8px 18px rgba(38,96,140,0.07)' }}
+          >
+            手动
+          </button>
+        </motion.section>
+      ) : (
       <motion.section {...riseIn(3)} className="mt-4 flex gap-2">
         <input
           value={nlText}
@@ -577,6 +759,7 @@ export const Ledger = () => {
           手动
         </button>
       </motion.section>
+      )}
 
       {/* 流水 / 统计 切换 */}
       <motion.div {...riseIn(4)} className="mt-4">
@@ -591,7 +774,36 @@ export const Ledger = () => {
       {/* 流水 */}
       {view === 'list' && (
       <motion.section {...riseIn(5)} className="mt-5 space-y-4">
-        {/* 月份导航 + 当月收支小结 */}
+        {/* 月份导航 + 当月收支小结（p3：蓝实心三角 + 黑粗月份 + 青下划线，p3-ledger 设计稿） */}
+        {p3 ? (
+          <div className="flex items-center justify-between gap-2">
+            <button
+              onClick={() => setListMonth(shiftMonth(listMonth, -1))}
+              className="flex h-10 w-10 items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1b57ff]"
+              aria-label="上个月"
+            >
+              <span aria-hidden className="h-0 w-0 border-y-[9px] border-y-transparent border-r-[13px]" style={{ borderRightColor: P3R.blue }} />
+            </button>
+            <div className="text-center">
+              <div className="inline-block text-[19px] font-black tabular-nums" style={{ color: P3R.ink }}>
+                {monthLabel(listMonth)}
+                <span aria-hidden className="mx-auto mt-0.5 block h-[3px] w-full" style={{ background: 'rgba(53,209,232,0.7)', transform: 'skewX(-24deg)' }} />
+              </div>
+              <div className="mt-1 text-[12px] font-bold" style={{ color: P3R.grey }}>
+                支出 <b className="tabular-nums" style={{ color: P3R.blue }}>{$}{fmtMoney(monthSum.exp)}</b>
+                {monthSum.inc > 0 && <> · 收入 <b className="tabular-nums text-emerald-500">{$}{fmtMoney(monthSum.inc)}</b></>}
+              </div>
+            </div>
+            <button
+              onClick={() => setListMonth(shiftMonth(listMonth, 1))}
+              disabled={listMonth >= curMonth}
+              className="flex h-10 w-10 items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1b57ff]"
+              aria-label="下个月"
+            >
+              <span aria-hidden className="h-0 w-0 border-y-[9px] border-y-transparent border-l-[13px]" style={{ borderLeftColor: P3R.blue }} />
+            </button>
+          </div>
+        ) : (
         <div className="flex items-center justify-between gap-2">
           <button
             onClick={() => setListMonth(shiftMonth(listMonth, -1))}
@@ -616,11 +828,25 @@ export const Ledger = () => {
             →
           </button>
         </div>
+        )}
 
         {monthGrouped.length === 0 && (
+          p3 ? (
+            <div className="flex flex-col items-center gap-4 py-10">
+              <span aria-hidden className="flex flex-col items-start gap-1.5">
+                <span className="h-0 w-0 border-y-[13px] border-y-transparent border-l-[20px]" style={{ borderLeftColor: 'rgba(53,209,232,0.75)' }} />
+                <span className="ml-5 h-0 w-0 border-y-[10px] border-y-transparent border-l-[16px]" style={{ borderLeftColor: 'rgba(127,216,238,0.75)' }} />
+                <span className="ml-1 h-0 w-0 border-y-[7px] border-y-transparent border-l-[11px]" style={{ borderLeftColor: 'rgba(53,209,232,0.45)' }} />
+              </span>
+              <div className="text-[15px] font-black" style={{ color: P3R.grey }}>
+                {ledgerEntries.length === 0 ? '暂无可追踪的信号' : '这个月还没有记录。'}
+              </div>
+            </div>
+          ) : (
           <div className="text-center text-sm text-gray-400 py-10">
             {ledgerEntries.length === 0 ? '还没有记录，记一笔开始吧。' : '这个月还没有记录。'}
           </div>
+          )
         )}
         {monthGrouped.map(([date, entries], gi) => (
           <motion.div
@@ -632,7 +858,10 @@ export const Ledger = () => {
               <span className="text-xs font-semibold text-gray-500 dark:text-gray-400">{ledgerDateLabel(date)}</span>
               <span className="text-xs text-gray-300 dark:text-gray-600">{weekdayCN(date)}</span>
             </div>
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm divide-y divide-gray-50 dark:divide-gray-700/40">
+            <div
+              className={p3 ? 'divide-y divide-[#eef5fa]' : 'bg-white dark:bg-gray-800 rounded-xl shadow-sm divide-y divide-gray-50 dark:divide-gray-700/40'}
+              style={p3 ? { clipPath: slantClip(12), background: '#fff', boxShadow: '0 10px 24px rgba(38,96,140,0.08)' } : undefined}
+            >
               {entries.map(e => <LedgerRow key={e.id} entry={e} $={$} onClick={() => setDeleteTarget(e)} />)}
             </div>
           </motion.div>
@@ -1011,7 +1240,15 @@ export const Ledger = () => {
         onConfirm={async () => { if (deleteTarget) await deleteLedgerEntry(deleteTarget.id); setDeleteTarget(null); }}
         onCancel={() => setDeleteTarget(null)}
       />
+
+      {/* P3R：LEDGER 巨幽灵字（页底，设计稿） */}
+      {p3 && (
+        <div aria-hidden className="relative h-16">
+          <GhostWords words={['LEDGER']} className="left-[6px] top-[-6px] text-[74px]" style={{ color: 'rgba(53,209,232,0.30)' }} />
+        </div>
+      )}
     </motion.div>
+    </P3RPage>
   );
 };
 

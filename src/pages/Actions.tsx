@@ -20,18 +20,22 @@ import { TodosView } from '@/pages/Todos';
 import { ActivitiesView } from '@/pages/Activities';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P4SkyCircle } from '@/ui/p4Kit';
+import { P3R, P3RPage, GhostWords, slantClip } from '@/components/p3r/kit';
 
 type ActionsSubTab = 'todos' | 'activities';
 
-/** 子页定义：顺序即空间方位（任务在左、记录在右），决定切换动画的进出方向 */
+/** 子页定义：顺序即空间方位（记录在左、任务在右），决定切换动画的进出方向 */
 const TABS: Array<{ key: ActionsSubTab; label: string }> = [
-  { key: 'todos', label: '任务' },
   { key: 'activities', label: '记录' },
+  { key: 'todos', label: '任务' },
 ];
 
 export const Actions = () => {
   const { actionsSubTab, setActionsSubTab, currentPage, setCurrentPage } = useAppStore();
-  const isP4 = useUiChannel() === 'p4';
+  const channel = useUiChannel();
+  const isP4 = channel === 'p4';
+  // P3R（蓝主题）形态：水面壳 + 设计稿切换头（p3-actions-reference-v3）
+  const p3 = channel === 'p3';
 
   // ── legacy 路由归一 ──────────────────────────────────────────────────────
   // 旧调用点仍可能 setCurrentPage('todos'/'activities')（App 把这两个旧 id 也映射到本页）。
@@ -51,15 +55,71 @@ export const Actions = () => {
     setActionsSubTab(tab);
   };
 
-  // 切换头横滑：左滑（位移 < -40）→ 记录，右滑（> 40）→ 任务（与子页左右方位一致）
+  // 切换头横滑：左滑（位移 < -40）→ 任务（右），右滑（> 40）→ 记录（左），与子页左右方位一致
   const handleDragEnd = (_e: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
-    if (info.offset.x < -40) switchTab('activities');
-    else if (info.offset.x > 40) switchTab('todos');
+    if (info.offset.x < -40) switchTab('todos');
+    else if (info.offset.x > 40) switchTab('activities');
   };
 
   // 子页方向偏移：每个面板从自己的"方位侧"进、向同侧出——
-  // 任务→记录时旧新内容一致向左流动，反向则一致向右，形成连贯的横移方向感
-  const panelDir = actionsSubTab === 'todos' ? -24 : 24;
+  // 记录（左）从左侧进出，任务（右）从右侧进出，形成连贯的横移方向感
+  const panelDir = actionsSubTab === 'activities' ? -24 : 24;
+
+  // ── P3R 形态（蓝主题）：设计稿切换头（蓝斜块选中 + 洋红角 / 黑字未选中）──
+  if (p3) {
+    return (
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+        <P3RPage className="overflow-hidden">
+          <GhostWords words={['ACTION']} className="right-[8px] top-[64px] text-[72px]" />
+          <div
+            role="tablist"
+            aria-label="行动子页切换"
+            className="relative mb-6 flex items-center gap-5 pt-1"
+          >
+            {TABS.map((tab) => {
+              const active = actionsSubTab === tab.key;
+              return (
+                <button
+                  key={tab.key}
+                  type="button"
+                  role="tab"
+                  id={`actions-tab-${tab.key}`}
+                  aria-selected={active}
+                  aria-controls={`actions-panel-${tab.key}`}
+                  onClick={() => switchTab(tab.key)}
+                  className="relative select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1b57ff] focus-visible:ring-offset-2"
+                >
+                  {active ? (
+                    <span className="relative inline-block px-7 py-2.5" style={{ clipPath: slantClip(12), background: P3R.blue }}>
+                      <span className="text-[22px] font-black leading-none text-white">{tab.label}</span>
+                      {/* 右下洋红小角（设计稿签名细节） */}
+                      <span aria-hidden className="absolute bottom-0 right-[10px] h-[7px] w-[12px]" style={{ background: P3R.magenta, clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
+                    </span>
+                  ) : (
+                    <span className="text-[22px] font-black leading-none" style={{ color: P3R.ink }}>{tab.label}</span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div
+              key={actionsSubTab}
+              role="tabpanel"
+              id={`actions-panel-${actionsSubTab}`}
+              aria-labelledby={`actions-tab-${actionsSubTab}`}
+              initial={{ opacity: 0, x: panelDir }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: panelDir }}
+              transition={{ duration: 0.18 }}
+            >
+              {actionsSubTab === 'todos' ? <TodosView /> : <ActivitiesView />}
+            </motion.div>
+          </AnimatePresence>
+        </P3RPage>
+      </motion.div>
+    );
+  }
 
   return (
     // 页级进出场沿用全站页面制式（App 顶层 AnimatePresence 消费 exit）
