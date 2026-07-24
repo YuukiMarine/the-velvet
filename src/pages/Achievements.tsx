@@ -7,6 +7,7 @@ import { PageTitle } from '@/components/PageTitle';
 import { BackButton } from '@/components/BackButton';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P4Flower, P4Sparkle, P4SunRings } from '@/ui/p4Kit';
+import { P3R, P3RPage, GhostWords, P3PageHeader, P3EmptySlab, slantClip } from '@/components/p3r/kit';
 
 /** P4 绶带横幅裁切（p4-achievements-reference-v2）：两端内凹的奖带形 */
 const P4_RIBBON_CLIP = 'polygon(0% 0%, 100% 0%, calc(100% - 14px) 50%, 100% 100%, 0% 100%, 14px 50%)';
@@ -289,9 +290,11 @@ const SkillsTab = () => {
     return acc;
   }, {} as Record<string, typeof skills>);
 
+  const p3 = useUiChannel() === 'p3';
+
   return (
     <div className="space-y-4">
-      {/* Controls */}
+      {/* Controls（p3：白斜块 + 亮青斜块，与成就页筛选行同款） */}
       <div className="flex items-center gap-2 justify-end">
         <motion.button
           whileTap={{ scale: 0.95 }}
@@ -299,7 +302,8 @@ const SkillsTab = () => {
             const nextIndex = (filterCycle.indexOf(filterStatus) + 1) % filterCycle.length;
             setFilterStatus(filterCycle[nextIndex]);
           }}
-          className="px-3 py-1.5 rounded-lg text-sm font-medium bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200"
+          className={p3 ? 'px-4 py-2 text-[14px] font-black' : 'px-3 py-1.5 rounded-lg text-sm font-medium bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200'}
+          style={p3 ? { clipPath: slantClip(8), background: P3R.panel, color: P3R.ink, boxShadow: '0 6px 14px rgba(38,96,140,0.08)' } : undefined}
         >
           {filterLabels[filterStatus]}
         </motion.button>
@@ -309,7 +313,8 @@ const SkillsTab = () => {
             setShowAddForm(true);
             setEditForm({ name: '', requiredAttribute: 'knowledge', requiredLevel: 2, bonusMultiplier: 1.2 });
           }}
-          className="px-4 py-1.5 bg-primary text-white rounded-lg text-sm font-medium"
+          className={p3 ? 'px-4 py-2 text-[14px] font-black text-white' : 'px-4 py-1.5 bg-primary text-white rounded-lg text-sm font-medium'}
+          style={p3 ? { clipPath: slantClip(8), background: P3R.cyan } : undefined}
         >
           添加技能
         </motion.button>
@@ -319,10 +324,18 @@ const SkillsTab = () => {
       {Object.entries(byAttr).map(([attrId, attrSkills]) => {
         const attrName = settings.attributeNames[attrId as keyof typeof settings.attributeNames] || attrId;
         return (
-          <div key={attrId} className="rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden">
-            <div className="px-5 py-3 border-b border-gray-100 dark:border-gray-800 flex items-center gap-2">
-              <span className="text-base font-bold text-gray-800 dark:text-white">{attrName}</span>
-              <span className="text-xs bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 px-2 py-0.5 rounded-full">
+          <div
+            key={attrId}
+            className={p3 ? 'relative overflow-hidden' : 'rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden'}
+            style={p3 ? { clipPath: slantClip(14), background: P3R.panel, boxShadow: '0 10px 24px rgba(38,96,140,0.08)' } : undefined}
+          >
+            <div className={`px-5 py-3 flex items-center gap-2 ${p3 ? '' : 'border-b border-gray-100 dark:border-gray-800'}`}>
+              {p3 && <span aria-hidden className="h-[15px] w-[11px]" style={{ background: P3R.blue, clipPath: 'polygon(32% 0, 100% 0, 68% 100%, 0 100%)' }} />}
+              <span className={p3 ? 'text-[16px] font-black' : 'text-base font-bold text-gray-800 dark:text-white'} style={p3 ? { color: P3R.ink } : undefined}>{attrName}</span>
+              <span
+                className={p3 ? 'text-[12px] font-black italic tabular-nums' : 'text-xs bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 px-2 py-0.5 rounded-full'}
+                style={p3 ? { color: P3R.blue } : undefined}
+              >
                 {attrSkills.filter(s => s.unlocked).length}/{attrSkills.length} 已解锁
               </span>
             </div>
@@ -339,7 +352,7 @@ const SkillsTab = () => {
                       initial={{ opacity: 0, y: 6 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: idx * 0.04 }}
-                      className={`rounded-xl px-4 py-3 relative flex items-start gap-3 ${
+                      className={p3 ? 'relative flex items-start gap-3 px-4 py-3' : `rounded-xl px-4 py-3 relative flex items-start gap-3 ${
                         isBlessing
                           ? skill.unlocked
                             ? 'bg-gradient-to-r from-amber-500/10 to-yellow-500/5 border border-amber-200/60 dark:border-amber-700/40'
@@ -350,23 +363,40 @@ const SkillsTab = () => {
                           ? 'bg-primary/5 border border-primary/30 dark:border-primary/20'
                           : 'bg-gray-50 dark:bg-gray-800/60 border border-gray-100 dark:border-gray-700/60'
                       }`}
+                      style={p3 ? {
+                        clipPath: 'polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%)',
+                        background: isBlessing
+                          ? skill.unlocked ? '#fff4d6' : '#f2f7fb'
+                          : skill.unlocked ? 'rgba(53,209,232,0.16)' : canUnlockSkill ? 'rgba(27,87,255,0.08)' : '#f2f7fb',
+                      } : undefined}
                     >
-                      {/* Status icon */}
-                      <div className={`flex-shrink-0 mt-0.5 w-7 h-7 rounded-full flex items-center justify-center text-sm ${
-                        isBlessing
-                          ? skill.unlocked ? 'bg-amber-500 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500'
-                          : skill.unlocked ? 'bg-violet-500 text-white' : canUnlockSkill ? 'bg-primary text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500'
-                      }`}>
+                      {/* Status icon（p3：斜切小块） */}
+                      <div
+                        className={p3 ? 'flex-shrink-0 mt-0.5 w-7 h-7 flex items-center justify-center text-sm font-black text-white' : `flex-shrink-0 mt-0.5 w-7 h-7 rounded-full flex items-center justify-center text-sm ${
+                          isBlessing
+                            ? skill.unlocked ? 'bg-amber-500 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500'
+                            : skill.unlocked ? 'bg-violet-500 text-white' : canUnlockSkill ? 'bg-primary text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500'
+                        }`}
+                        style={p3 ? {
+                          clipPath: 'polygon(5px 0, 100% 0, calc(100% - 5px) 100%, 0 100%)',
+                          background: isBlessing
+                            ? skill.unlocked ? '#f5a623' : '#b9c6d4'
+                            : skill.unlocked ? P3R.cyan : canUnlockSkill ? P3R.blue : '#b9c6d4',
+                        } : undefined}
+                      >
                         {isBlessing ? (skill.unlocked ? '✦' : '✧') : skill.unlocked ? '✓' : canUnlockSkill ? '!' : `${skill.requiredLevel}`}
                       </div>
 
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className={`font-semibold text-sm ${
-                            isBlessing
-                              ? skill.unlocked ? 'text-amber-700 dark:text-amber-300' : 'text-gray-700 dark:text-gray-300'
-                              : skill.unlocked ? 'text-violet-700 dark:text-violet-300' : canUnlockSkill ? 'text-primary' : 'text-gray-700 dark:text-gray-300'
-                          }`}>
+                          <span
+                            className={p3 ? 'font-black text-sm' : `font-semibold text-sm ${
+                              isBlessing
+                                ? skill.unlocked ? 'text-amber-700 dark:text-amber-300' : 'text-gray-700 dark:text-gray-300'
+                                : skill.unlocked ? 'text-violet-700 dark:text-violet-300' : canUnlockSkill ? 'text-primary' : 'text-gray-700 dark:text-gray-300'
+                            }`}
+                            style={p3 ? { color: isBlessing ? (skill.unlocked ? '#c07f00' : P3R.inkSoft) : skill.unlocked ? P3R.blueDeep : canUnlockSkill ? P3R.blue : P3R.ink } : undefined}
+                          >
                             {skill.name}
                           </span>
                           {isBlessing && (
@@ -695,6 +725,8 @@ const AchievementsTab = () => {
         return Math.min(todoCompletions.reduce((sum, item) => sum + item.count, 0), achievement.condition.value);
       case 'shadow_defeats':
         return Math.min(battleState?.defeatedShadowLog?.length ?? 0, achievement.condition.value);
+      case 'battle_feat':
+        return achievement.condition.feat && (battleState?.battleFeats ?? []).includes(achievement.condition.feat) ? 1 : 0;
       default:
         return 0;
     }
@@ -825,6 +857,390 @@ const AchievementsTab = () => {
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [attrGroupKeys.join(',')]);
+
+  const p3 = useUiChannel() === 'p3';
+
+  // ── 表单 / 确认弹窗（p3 与默认形态共用；P3R 弹窗形态属 modals 批次）──
+  const achievementModalsJsx = (
+    <>
+      {/* Add modal */}
+      <AnimatePresence>
+        {showAddForm && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+            onClick={(e) => { if (e.target === e.currentTarget) { setShowAddForm(false); setFormError(null); } }}
+          >
+            <motion.div
+              initial={{ scale: 0.92, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.92, opacity: 0 }}
+              className="bg-white dark:bg-gray-900 rounded-2xl p-6 max-w-md w-full shadow-2xl max-h-[85vh] overflow-y-auto"
+            >
+              <h3 className="text-lg font-bold mb-5 text-gray-900 dark:text-white">添加自定义成就</h3>
+              <AchievementFormFields
+                editForm={editForm}
+                setEditForm={setEditForm as any}
+                isCustom={true}
+                attributeNames={settings.attributeNames}
+                maxLevel={settings.levelThresholds.length}
+              />
+              {formError && (
+                <div className="mt-4 px-3 py-2 rounded-xl bg-red-50 dark:bg-red-900/20 text-sm text-red-600 dark:text-red-400">{formError}</div>
+              )}
+              <div className="flex gap-3 mt-4">
+                <button onClick={handleAddAchievement} className="flex-1 bg-primary text-white py-2.5 rounded-xl font-medium">添加</button>
+                <button onClick={() => { setShowAddForm(false); setEditForm(defaultEditForm); setFormError(null); }} className="flex-1 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 py-2.5 rounded-xl font-medium">取消</button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Edit modal */}
+      <AnimatePresence>
+        {editingAchievement && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+            onClick={(e) => { if (e.target === e.currentTarget) { setEditingAchievement(null); setFormError(null); } }}
+          >
+            <motion.div
+              initial={{ scale: 0.92, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.92, opacity: 0 }}
+              className="bg-white dark:bg-gray-900 rounded-2xl p-6 max-w-md w-full shadow-2xl max-h-[85vh] overflow-y-auto"
+            >
+              <h3 className="text-lg font-bold mb-5 text-gray-900 dark:text-white">编辑成就</h3>
+              <AchievementFormFields
+                editForm={editForm}
+                setEditForm={setEditForm as any}
+                isCustom={!!editingAchievement?.startsWith('custom_')}
+                attributeNames={settings.attributeNames}
+                maxLevel={settings.levelThresholds.length}
+              />
+              {formError && (
+                <div className="mt-4 px-3 py-2 rounded-xl bg-red-50 dark:bg-red-900/20 text-sm text-red-600 dark:text-red-400">{formError}</div>
+              )}
+              <div className="flex gap-3 mt-4">
+                <button onClick={handleSaveEdit} className="flex-1 bg-primary text-white py-2.5 rounded-xl font-medium">保存</button>
+                <button onClick={() => { setEditingAchievement(null); setFormError(null); }} className="flex-1 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 py-2.5 rounded-xl font-medium">取消</button>
+              </div>
+              {editingAchievement.startsWith('custom_') && (
+                <button
+                  onClick={() => handleDelete(editingAchievement)}
+                  className="w-full mt-3 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 py-2.5 rounded-xl font-medium"
+                >
+                  删除成就
+                </button>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* 内置删除确认弹窗 */}
+      <AnimatePresence>
+        {confirmDeleteId && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60] p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white dark:bg-gray-900 rounded-2xl p-6 max-w-xs w-full shadow-2xl"
+            >
+              <div className="text-center mb-5">
+                <div className="text-3xl mb-2">⚠️</div>
+                <h3 className="font-bold text-gray-900 dark:text-white text-base">确认删除</h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">确定要删除这个成就吗？此操作不可恢复。</p>
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={async () => {
+                    await deleteCustomAchievement(confirmDeleteId);
+                    setConfirmDeleteId(null);
+                    setEditingAchievement(null);
+                  }}
+                  className="flex-1 bg-red-500 text-white py-2.5 rounded-xl font-medium"
+                >
+                  删除
+                </button>
+                <button
+                  onClick={() => setConfirmDeleteId(null)}
+                  className="flex-1 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 py-2.5 rounded-xl font-medium"
+                >
+                  取消
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </>
+  );
+
+  // ── P3R（蓝频道）形态：p3-achievements-reference-v2 列表卡（横排：图标斜块+名/描述/进度+右侧 n/m）──
+  if (p3) {
+    return (
+      <div className="space-y-4">
+        {/* 筛选行（设计稿：白斜块「全部」+ 亮青斜块「添加成就」，右对齐） */}
+        <div className="flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              const nextIndex = (filterCycle.indexOf(filterStatus) + 1) % filterCycle.length;
+              setFilterStatus(filterCycle[nextIndex]);
+            }}
+            className="px-4 py-2 text-[14px] font-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1b57ff]"
+            style={{ clipPath: slantClip(8), background: P3R.panel, color: P3R.ink, boxShadow: '0 6px 14px rgba(38,96,140,0.08)' }}
+          >
+            {filterLabels[filterStatus]}
+          </button>
+          <button
+            type="button"
+            onClick={() => { setShowAddForm(true); setEditForm(defaultEditForm); }}
+            className="px-4 py-2 text-[14px] font-black text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1b57ff]"
+            style={{ clipPath: slantClip(8), background: P3R.cyan }}
+          >
+            添加成就
+          </button>
+        </div>
+
+        <div className="space-y-2.5">
+          {/* 属性等级成就（组内横滑切档，逻辑同默认形态） */}
+          {attrGroupKeys.map((attr, gi) => {
+            const group = attrGroups[attr];
+            if (!group || group.length === 0) return null;
+            const idx = attrGroupIdx[attr] ?? 0;
+            const achievement = group[idx];
+            if (!achievement) return null;
+            const progress = getProgress(achievement);
+            const percentage = (progress / achievement.condition.value) * 100;
+            const canUnlock = !achievement.unlocked && percentage >= 100;
+            const attrDisplayName = settings.attributeNames[attr as keyof typeof settings.attributeNames] ?? attr;
+            const unlocked = achievement.unlocked;
+            return (
+              <motion.div
+                key={`group-${attr}`}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="relative"
+                style={{ clipPath: slantClip(14), background: unlocked ? P3R.blue : canUnlock ? '#fff6dc' : P3R.panel, boxShadow: '0 10px 24px rgba(38,96,140,0.08)' }}
+              >
+                <div
+                  className="flex items-center gap-3 py-3 pl-5 pr-4"
+                  style={{ touchAction: group.length > 1 ? 'pan-y' : undefined }}
+                  onPointerDown={(e) => {
+                    if (group.length <= 1) return;
+                    cardSwipeRef.current[attr] = { x: e.clientX, y: e.clientY };
+                    try { (e.currentTarget as Element).setPointerCapture(e.pointerId); } catch { /* ignore */ }
+                  }}
+                  onPointerUp={(e) => {
+                    const start = cardSwipeRef.current[attr];
+                    if (!start) return;
+                    cardSwipeRef.current[attr] = null;
+                    const dx = e.clientX - start.x;
+                    const dy = e.clientY - start.y;
+                    if (group.length > 1 && Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 35) {
+                      if (dx < 0) {
+                        setAttrGroupDir(prev => ({ ...prev, [attr]: 1 }));
+                        setAttrGroupIdx(prev => ({ ...prev, [attr]: (idx + 1) % group.length }));
+                      } else {
+                        setAttrGroupDir(prev => ({ ...prev, [attr]: -1 }));
+                        setAttrGroupIdx(prev => ({ ...prev, [attr]: (idx - 1 + group.length) % group.length }));
+                      }
+                    } else if (Math.hypot(dx, dy) < 8 && canUnlock) {
+                      unlockAchievement(achievement.id);
+                    }
+                  }}
+                  onPointerCancel={() => { cardSwipeRef.current[attr] = null; }}
+                >
+                  <span
+                    aria-hidden
+                    className="flex h-12 w-12 shrink-0 items-center justify-center text-[22px]"
+                    style={{ clipPath: slantClip(7), background: unlocked ? 'rgba(255,255,255,0.22)' : gi % 2 ? P3R.cyan : P3R.blue }}
+                  >
+                    {achievement.icon}
+                  </span>
+                  <AnimatePresence mode="wait" initial={false}>
+                    <motion.div
+                      key={`${attr}-${idx}`}
+                      initial={{ x: (attrGroupDir[attr] ?? 1) * 30, opacity: 0 }}
+                      animate={{ x: 0, opacity: 1 }}
+                      exit={{ x: (attrGroupDir[attr] ?? 1) * -30, opacity: 0 }}
+                      transition={{ duration: 0.18, ease: 'easeOut' }}
+                      className="min-w-0 flex-1"
+                    >
+                      <div className="text-[10px] font-bold tracking-wider" style={{ color: unlocked ? 'rgba(255,255,255,0.65)' : P3R.grey }}>{attrDisplayName}</div>
+                      <div className="truncate text-[16px] font-black" style={{ color: unlocked ? '#fff' : P3R.ink }}>{achievement.title}</div>
+                      <div className="truncate text-[11px] font-semibold" style={{ color: unlocked ? 'rgba(255,255,255,0.85)' : P3R.grey }}>{achievement.description}</div>
+                      {!unlocked && (
+                        <div className="mt-1.5 h-[4px] w-[85%] overflow-hidden" style={{ background: 'rgba(53,209,232,0.18)' }}>
+                          <motion.div
+                            className="h-full"
+                            style={{ background: canUnlock ? '#f5a623' : P3R.cyan }}
+                            initial={{ width: 0 }}
+                            animate={{ width: `${Math.min(100, percentage)}%` }}
+                            transition={{ duration: 0.7, ease: 'easeOut' }}
+                          />
+                        </div>
+                      )}
+                      {canUnlock && <div className="mt-1 text-[10px] font-bold" style={{ color: '#e08a00' }}>已达成，点击解锁 ✨</div>}
+                      {unlocked && achievement.unlockedDate && (
+                        <div className="mt-0.5 text-[10px] font-semibold" style={{ color: 'rgba(255,255,255,0.75)' }}>
+                          解锁于 {new Date(achievement.unlockedDate).toLocaleDateString('zh-CN')}
+                        </div>
+                      )}
+                    </motion.div>
+                  </AnimatePresence>
+                  <div className="shrink-0 pl-1 text-right">
+                    {unlocked ? (
+                      <span className="text-[20px] font-black text-white" aria-hidden>✓</span>
+                    ) : (
+                      <span className="text-[18px] font-black italic tabular-nums" style={{ color: canUnlock ? '#e08a00' : P3R.blue }}>
+                        {progress}<span className="mx-px opacity-50">/</span>{achievement.condition.value}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                {/* 编辑铅笔 */}
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); handleEdit(achievement); }}
+                  className="absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1b57ff]"
+                  style={{ color: unlocked ? 'rgba(255,255,255,0.7)' : P3R.grey }}
+                  aria-label={`编辑成就 ${achievement.title}`}
+                >
+                  <svg viewBox="0 0 16 16" className="h-3 w-3" fill="currentColor">
+                    <path d="M11.5 2.5a1.5 1.5 0 012.121 2.121L5.561 12.682l-2.829.707.707-2.829L11.5 2.5z" />
+                  </svg>
+                </button>
+                {/* 组内档位指示 */}
+                {group.length > 1 && (
+                  <div className="flex justify-center gap-1.5 pb-2.5">
+                    {group.map((_, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => setAttrGroupIdx(prev => ({ ...prev, [attr]: i }))}
+                        aria-label={`切到第 ${i + 1} 档`}
+                        style={{
+                          width: i === idx ? 16 : 6,
+                          height: 5,
+                          background: i === idx ? (unlocked ? 'rgba(255,255,255,0.85)' : P3R.cyan) : (unlocked ? 'rgba(255,255,255,0.35)' : 'rgba(53,209,232,0.3)'),
+                          clipPath: slantClip(2),
+                          transition: 'all .2s',
+                        }}
+                      />
+                    ))}
+                  </div>
+                )}
+                <span aria-hidden className="absolute bottom-0 right-0 h-3.5 w-3.5" style={{ background: unlocked ? 'rgba(255,255,255,0.4)' : P3R.cyan, clipPath: 'polygon(100% 0, 100% 100%, 0 100%)' }} />
+              </motion.div>
+            );
+          })}
+
+          {/* 其他成就（长按编辑自定义、点击解锁，逻辑同默认形态） */}
+          {otherAchievements.map((achievement, i) => {
+            const progress = getProgress(achievement);
+            const percentage = (progress / achievement.condition.value) * 100;
+            const isCustom = isCustomAchievement(achievement);
+            const isWild = isWildHeart(achievement);
+            const canUnlock = !achievement.unlocked && percentage >= 100;
+            const unlocked = achievement.unlocked;
+            return (
+              <motion.div
+                key={achievement.id}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                whileTap={{ scale: pressedId === achievement.id ? 0.97 : 1 }}
+                onMouseDown={() => { if (isCustom) startPress(achievement); }}
+                onMouseUp={cancelPress}
+                onMouseLeave={cancelPress}
+                onTouchStart={() => { if (isCustom) startPress(achievement); }}
+                onTouchEnd={cancelPress}
+                onTouchCancel={cancelPress}
+                onClick={() => { if (canUnlock) unlockAchievement(achievement.id); }}
+                className="relative cursor-pointer"
+                style={{ clipPath: slantClip(14), background: unlocked ? P3R.blue : canUnlock ? '#fff6dc' : P3R.panel, boxShadow: '0 10px 24px rgba(38,96,140,0.08)' }}
+              >
+                <div className="flex items-center gap-3 py-3.5 pl-5 pr-4">
+                  <span
+                    aria-hidden
+                    className="flex h-12 w-12 shrink-0 items-center justify-center text-[22px]"
+                    style={{ clipPath: slantClip(7), background: unlocked ? 'rgba(255,255,255,0.22)' : (attrGroupKeys.length + i) % 2 ? P3R.cyan : P3R.blue }}
+                  >
+                    {achievement.icon}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[16px] font-black" style={{ color: unlocked ? '#fff' : P3R.ink }}>{achievement.title}</div>
+                    <div className="truncate text-[11px] font-semibold" style={{ color: unlocked ? 'rgba(255,255,255,0.85)' : P3R.grey }}>{achievement.description}</div>
+                    {!unlocked && (
+                      <div className="mt-1.5 h-[4px] w-[85%] overflow-hidden" style={{ background: 'rgba(53,209,232,0.18)' }}>
+                        <motion.div
+                          className="h-full"
+                          style={{ background: canUnlock ? '#f5a623' : P3R.cyan }}
+                          initial={{ width: 0 }}
+                          animate={{ width: `${Math.min(100, percentage)}%` }}
+                          transition={{ duration: 0.7, ease: 'easeOut' }}
+                        />
+                      </div>
+                    )}
+                    {canUnlock && <div className="mt-1 text-[10px] font-bold" style={{ color: '#e08a00' }}>已达成，点击解锁 ✨</div>}
+                    {unlocked && achievement.unlockedDate && (
+                      <div className="mt-0.5 text-[10px] font-semibold" style={{ color: 'rgba(255,255,255,0.75)' }}>
+                        解锁于 {new Date(achievement.unlockedDate).toLocaleDateString('zh-CN')}
+                      </div>
+                    )}
+                  </div>
+                  <div className="shrink-0 pl-1 text-right">
+                    {unlocked ? (
+                      <span className="text-[20px] font-black text-white" aria-hidden>✓</span>
+                    ) : (
+                      <span className="text-[18px] font-black italic tabular-nums" style={{ color: canUnlock ? '#e08a00' : P3R.blue }}>
+                        {progress}<span className="mx-px opacity-50">/</span>{achievement.condition.value}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                {/* 编辑 / 删除（自定义） */}
+                <div className="absolute right-1.5 top-1.5 flex gap-0.5">
+                  {!isWild && (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); handleEdit(achievement); }}
+                      className="flex h-6 w-6 items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1b57ff]"
+                      style={{ color: unlocked ? 'rgba(255,255,255,0.7)' : P3R.grey }}
+                      aria-label={`编辑成就 ${achievement.title}`}
+                    >
+                      <svg viewBox="0 0 16 16" className="h-3 w-3" fill="currentColor">
+                        <path d="M11.5 2.5a1.5 1.5 0 012.121 2.121L5.561 12.682l-2.829.707.707-2.829L11.5 2.5z" />
+                      </svg>
+                    </button>
+                  )}
+                  {isCustom && (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); handleDelete(achievement.id); }}
+                      className="flex h-6 w-6 items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f0417f]"
+                      style={{ color: unlocked ? 'rgba(255,255,255,0.7)' : P3R.magenta }}
+                      aria-label={`删除成就 ${achievement.title}`}
+                    >
+                      <svg viewBox="0 0 16 16" className="h-3 w-3" fill="currentColor">
+                        <path d="M5 2h6l1 1H3L5 2zm-2 2h10l-1 9H4L3 4zm3 2v6h1V6H6zm3 0v6h1V6H9z" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
+                <span aria-hidden className="absolute bottom-0 right-0 h-3.5 w-3.5" style={{ background: unlocked ? 'rgba(255,255,255,0.4)' : P3R.cyan, clipPath: 'polygon(100% 0, 100% 100%, 0 100%)' }} />
+              </motion.div>
+            );
+          })}
+        </div>
+
+        {filtered.length === 0 && <P3EmptySlab text="暂无可展示的成就" />}
+
+        {achievementModalsJsx}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -1154,116 +1570,7 @@ const AchievementsTab = () => {
         <div className="text-center py-12 text-gray-400 dark:text-gray-500 text-sm">暂无成就</div>
       )}
 
-      {/* Add modal */}
-      <AnimatePresence>
-        {showAddForm && (
-          <motion.div
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
-            onClick={(e) => { if (e.target === e.currentTarget) { setShowAddForm(false); setFormError(null); } }}
-          >
-            <motion.div
-              initial={{ scale: 0.92, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.92, opacity: 0 }}
-              className="bg-white dark:bg-gray-900 rounded-2xl p-6 max-w-md w-full shadow-2xl max-h-[85vh] overflow-y-auto"
-            >
-              <h3 className="text-lg font-bold mb-5 text-gray-900 dark:text-white">添加自定义成就</h3>
-              <AchievementFormFields
-                editForm={editForm}
-                setEditForm={setEditForm as any}
-                isCustom={true}
-                attributeNames={settings.attributeNames}
-                maxLevel={settings.levelThresholds.length}
-              />
-              {formError && (
-                <div className="mt-4 px-3 py-2 rounded-xl bg-red-50 dark:bg-red-900/20 text-sm text-red-600 dark:text-red-400">{formError}</div>
-              )}
-              <div className="flex gap-3 mt-4">
-                <button onClick={handleAddAchievement} className="flex-1 bg-primary text-white py-2.5 rounded-xl font-medium">添加</button>
-                <button onClick={() => { setShowAddForm(false); setEditForm(defaultEditForm); setFormError(null); }} className="flex-1 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 py-2.5 rounded-xl font-medium">取消</button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Edit modal */}
-      <AnimatePresence>
-        {editingAchievement && (
-          <motion.div
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
-            onClick={(e) => { if (e.target === e.currentTarget) { setEditingAchievement(null); setFormError(null); } }}
-          >
-            <motion.div
-              initial={{ scale: 0.92, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.92, opacity: 0 }}
-              className="bg-white dark:bg-gray-900 rounded-2xl p-6 max-w-md w-full shadow-2xl max-h-[85vh] overflow-y-auto"
-            >
-              <h3 className="text-lg font-bold mb-5 text-gray-900 dark:text-white">编辑成就</h3>
-              <AchievementFormFields
-                editForm={editForm}
-                setEditForm={setEditForm as any}
-                isCustom={!!editingAchievement?.startsWith('custom_')}
-                attributeNames={settings.attributeNames}
-                maxLevel={settings.levelThresholds.length}
-              />
-              {formError && (
-                <div className="mt-4 px-3 py-2 rounded-xl bg-red-50 dark:bg-red-900/20 text-sm text-red-600 dark:text-red-400">{formError}</div>
-              )}
-              <div className="flex gap-3 mt-4">
-                <button onClick={handleSaveEdit} className="flex-1 bg-primary text-white py-2.5 rounded-xl font-medium">保存</button>
-                <button onClick={() => { setEditingAchievement(null); setFormError(null); }} className="flex-1 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 py-2.5 rounded-xl font-medium">取消</button>
-              </div>
-              {editingAchievement.startsWith('custom_') && (
-                <button
-                  onClick={() => handleDelete(editingAchievement)}
-                  className="w-full mt-3 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 py-2.5 rounded-xl font-medium"
-                >
-                  删除成就
-                </button>
-              )}
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* 内置删除确认弹窗 */}
-      <AnimatePresence>
-        {confirmDeleteId && (
-          <motion.div
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60] p-4"
-          >
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-white dark:bg-gray-900 rounded-2xl p-6 max-w-xs w-full shadow-2xl"
-            >
-              <div className="text-center mb-5">
-                <div className="text-3xl mb-2">⚠️</div>
-                <h3 className="font-bold text-gray-900 dark:text-white text-base">确认删除</h3>
-                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">确定要删除这个成就吗？此操作不可恢复。</p>
-              </div>
-              <div className="flex gap-3">
-                <button
-                  onClick={async () => {
-                    await deleteCustomAchievement(confirmDeleteId);
-                    setConfirmDeleteId(null);
-                    setEditingAchievement(null);
-                  }}
-                  className="flex-1 bg-red-500 text-white py-2.5 rounded-xl font-medium"
-                >
-                  删除
-                </button>
-                <button
-                  onClick={() => setConfirmDeleteId(null)}
-                  className="flex-1 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 py-2.5 rounded-xl font-medium"
-                >
-                  取消
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {achievementModalsJsx}
     </div>
   );
 };
@@ -1274,7 +1581,74 @@ const AchievementsTab = () => {
 export const Achievements = () => {
   const [activeTab, setActiveTab] = useState<'achievements' | 'skills'>('achievements');
   const setCurrentPage = useAppStore(s => s.setCurrentPage);
-  const isP4 = useUiChannel() === 'p4';
+  const channel = useUiChannel();
+  const isP4 = channel === 'p4';
+  const p3 = channel === 'p3';
+
+  const tabs = [
+    { key: 'achievements', label: '成就' },
+    { key: 'skills', label: '技能' },
+  ] as const;
+
+  const tabContent = (
+    <AnimatePresence mode="wait">
+      <motion.div
+        key={activeTab}
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: -8 }}
+        transition={{ duration: 0.18 }}
+      >
+        {activeTab === 'achievements' ? <AchievementsTab /> : <SkillsTab />}
+      </motion.div>
+    </AnimatePresence>
+  );
+
+  // ── P3R（蓝频道）形态：p3-achievements-reference-v2 1:1 ──
+  if (p3) {
+    return (
+      <P3RPage className="overflow-hidden">
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="relative space-y-5 pb-8">
+          <GhostWords words={['ARCHIVE']} className="left-[6px] top-[-14px] text-[60px]" />
+          <P3PageHeader ticks title="成就" onBack={() => setCurrentPage('menu')} className="relative pt-2" />
+
+          {/* 切换头（设计稿：选中 = 蓝斜块白字 + 右下洋红角；未选 = 白斜块黑字） */}
+          <div className="relative flex items-stretch">
+            {tabs.map(tab => {
+              const active = activeTab === tab.key;
+              return (
+                <button
+                  key={tab.key}
+                  type="button"
+                  onClick={() => { triggerNavFeedback(); setActiveTab(tab.key); }}
+                  className={`relative flex-1 py-3 text-center text-[20px] font-black tracking-wide ${active ? 'text-white' : ''} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1b57ff]`}
+                  style={{
+                    clipPath: slantClip(14),
+                    background: active ? P3R.blue : P3R.panel,
+                    color: active ? '#fff' : P3R.ink,
+                    marginLeft: tab.key === 'skills' ? -8 : 0,
+                    zIndex: active ? 2 : 1,
+                  }}
+                >
+                  {tab.label}
+                  {active && (
+                    <span aria-hidden className="absolute bottom-0 right-4 h-[9px] w-[22px]" style={{ background: P3R.magenta, clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="relative">{tabContent}</div>
+
+          {/* 底部幽灵字 */}
+          <div aria-hidden className="relative h-14">
+            <GhostWords words={['ACHIEVEMENT']} className="left-[6px] top-[-2px] text-[44px]" />
+          </div>
+        </motion.div>
+      </P3RPage>
+    );
+  }
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -1327,10 +1701,7 @@ export const Achievements = () => {
 
       {/* Tab bar */}
       <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-800 rounded-2xl p-1">
-        {([
-          { key: 'achievements', label: '成就' },
-          { key: 'skills', label: '技能' }
-        ] as const).map(tab => (
+        {tabs.map(tab => (
           <motion.button
             key={tab.key}
             onClick={() => { triggerNavFeedback(); setActiveTab(tab.key); }}
@@ -1355,17 +1726,7 @@ export const Achievements = () => {
       )}
 
       {/* Tab content */}
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={activeTab}
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -8 }}
-          transition={{ duration: 0.18 }}
-        >
-          {activeTab === 'achievements' ? <AchievementsTab /> : <SkillsTab />}
-        </motion.div>
-      </AnimatePresence>
+      {tabContent}
     </motion.div>
   );
 };

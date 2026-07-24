@@ -2,18 +2,27 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore } from '@/store';
 import { toLocalDateKey } from '@/store';
-import { isInShadowTime, SKILL_EFFECT_MAP, HEAL_VALUE_BY_ATTR } from '@/constants';
-import { AttributeId } from '@/types';
+import { isInShadowTime, SKILL_EFFECT_MAP } from '@/constants';
+import { healAmount, BOSS_ATTACK_BY_LEVEL } from '@/battle/numbers';
+import { AttributeId, MobSpec, StratumNode } from '@/types';
+import { absoluteFloor } from '@/battle/tower';
+import { lootLabel } from '@/battle/loot';
+import { rollPrepDraw, type PrepBuff } from '@/battle/preparation';
+import { generateSummonLines, generateRecapComment } from '@/utils/battleAI';
 import { playSound } from '@/utils/feedback';
 import { BackButton } from '@/components/BackButton';
 import { PageTitle } from '@/components/PageTitle';
 import { PersonaCreateModal } from '@/components/battle/PersonaCreateModal';
-import { ShadowCreateModal } from '@/components/battle/ShadowCreateModal';
+import { StratumRevealModal } from '@/components/battle/StratumRevealModal';
 import { BattleModal } from '@/components/battle/BattleModal';
 import { VictoryModal } from '@/components/battle/VictoryModal';
 import { PersonaShuffleModal } from '@/components/battle/PersonaShuffleModal';
+import { TowerScreen } from '@/components/battle/TowerScreen';
+import { InfiltrationOverlay } from '@/components/battle/InfiltrationOverlay';
+import { TowerRecapModal } from '@/components/battle/TowerModals';
+import { ArsenalModal, ShadowArchiveModal, MasteryStars } from '@/components/battle/ArsenalModal';
 import { useUiChannel } from '@/ui/useUiChannel';
-import { P4Flower, P4Sparkle } from '@/ui/p4Kit';
+import { P3R, P3RPage, GhostWords, P3PageHeader, ShatteredStar, slantClip } from '@/components/p3r/kit';
 
 type TabKey = 'battle' | 'persona' | 'settings';
 
@@ -40,36 +49,49 @@ const SKILL_TYPE_TAG: Record<string, { label: string; color: string; bg: string 
 };
 
 const SKILL_EFFECT_HINT: Record<string, string> = {
-  buff:         '下次×1.5',
-  debuff:       '易伤×1.3',
+  buff:         '下次+50%',
+  debuff:       '易伤+30%',
   charge:       '下次×2',
-  attack_boost: '15伤+3回合增伤',
+  attack_boost: '+6伤·3回合',
 };
 
 export const BattleArena = () => {
-  const isP4 = useUiChannel() === 'p4';
   const {
-    user, attributes, persona, shadow, battleState, settings,
+    user, attributes, persona, shadow, battleState, settings, stratum,
     checkShadowHpRegen, updateSettings: saveSettings, resetBattle, equipMask, setCurrentPage,
+    saveBattleState, enterTowerToday, completeTowerNode, deepenStratumIfNewWeek,
   } = useAppStore();
 
   const [activeTab, setActiveTab] = useState<TabKey>('battle');
+  // P3R（蓝频道）：p3-battle-reference-v2 形态；battleCard = 全页 13 处卡壳的统一开关
+  const p3 = useUiChannel() === 'p3';
+  const battleCard = p3 ? 'p3r-card' : 'rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm';
   const [showPersonaCreate, setShowPersonaCreate] = useState(false);
-  const [showShadowCreate, setShowShadowCreate] = useState(false);
+  const [showReveal, setShowReveal] = useState(false);
   const [showBattle, setShowBattle] = useState(false);
   const [showVictory, setShowVictory] = useState(false);
   const [personaCardIdx, setPersonaCardIdx] = useState(0);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [maskEquipAnim, setMaskEquipAnim] = useState<AttributeId | null>(null);
-  const [showDefeatedLog, setShowDefeatedLog] = useState(false);
+  const [showArsenal, setShowArsenal] = useState(false);
+  const [showArchive, setShowArchive] = useState(false);
   const [cheatClicks, setCheatClicks] = useState(0);
   const [showBattleParams, setShowBattleParams] = useState(false);
   const [showPersonaShuffle, setShowPersonaShuffle] = useState(false);
+  // ── 高塔（批2） ──
+  const [activeEncounter, setActiveEncounter] = useState<{ mob: MobSpec; level: number; nodeId: string } | null>(null);
+  const [recap, setRecap] = useState<'descend' | 'defeat' | 'clear' | null>(null);
+  const [recapComment, setRecapComment] = useState<string | null>(null);
+  const [spToast, setSpToast] = useState<string | null>(null);
+  const [deepenNotice, setDeepenNotice] = useState(false);
+  const [towerOpen, setTowerOpen] = useState(false);
+  const [infiltrating, setInfiltrating] = useState(false);
+  const [prepChoice, setPrepChoice] = useState<PrepBuff[] | null>(null);
 
   // Settings local state
   const [battleEnabled, setBattleEnabled] = useState(settings.battleEnabled !== false);
-  const [playerMaxHp, setPlayerMaxHp] = useState(String(settings.battlePlayerMaxHp ?? 8));
-  const [shadowAttack, setShadowAttack] = useState(String(settings.battleShadowAttack ?? 2));
+  const [playerMaxHp, setPlayerMaxHp] = useState(String(settings.battlePlayerMaxHp ?? 40));
+  const [attackScale, setAttackScale] = useState(String(settings.battleAttackScale ?? 100));
   const [shadowDays, setShadowDays] = useState<number[]>(settings.battleShadowTimeDays ?? [5, 6, 0]);
   const [shadowTimeStart, setShadowTimeStart] = useState(String(settings.battleShadowTimeStart ?? 20));
   const [shadowTimeEnd, setShadowTimeEnd] = useState(String(settings.battleShadowTimeEnd ?? 7));
@@ -82,24 +104,188 @@ export const BattleArena = () => {
 
   useEffect(() => {
     checkShadowHpRegen();
+    // 批3：熟练度/解锁字段惰性迁移（存量技能不回锁，unlocked 缺省按当前属性等级置位）
+    void useAppStore.getState().refreshSkillUnlocks();
+    // 批3 §4.3：召唤台词懒生成——一次批量 5 条并缓存；无 Key 静默留空（cut-in 走模板）
+    void (async () => {
+      const { persona: p, settings: st, savePersona } = useAppStore.getState();
+      if (!p || p.summonLines || !p.attributePersonas) return;
+      const lines = await generateSummonLines(
+        st,
+        st.attributeNames as Record<AttributeId, string>,
+        p.attributePersonas as Record<AttributeId, { name: string; description: string }>,
+      ).catch(() => null);
+      if (lines) {
+        const cur = useAppStore.getState().persona;
+        if (cur && !cur.summonLines) await savePersona({ ...cur, summonLines: lines });
+      }
+    })();
+    // 月相日（周一）：未通关区层异变加深——主影回满 + 加深计数
+    void deepenStratumIfNewWeek().then(deepened => {
+      if (deepened) {
+        setDeepenNotice(true);
+        playSound('/battle-impact.mp3', 0.5);
+      }
+    });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // 胜利结算恢复：status 'victory' 持久化后（刷新 / PWA 被杀）重新拉起 VictoryModal，
+  // 避免奖励悬空、Shadow 尸体被每日回血复活后还得重打一遍
+  useEffect(() => {
+    if (battleState?.status === 'victory' && !showBattle && !showVictory) {
+      setShowVictory(true);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [battleState?.status]);
+
   const todayKey = toLocalDateKey();
-  const alreadyChallengedToday = battleState?.lastChallengeDate === todayKey;
-  const canBattle = (inShadowTime && !alreadyChallengedToday) || battleState?.status === 'victory';
+  const enteredToday = battleState?.lastChallengeDate === todayKey;
+  const sessionActive = !!enteredToday && battleState?.status !== 'session_end' && battleState?.status !== 'victory';
+  const stratumCleared = stratum?.status === 'cleared';
+  const nextStratumLevel = stratum ? Math.min(5, stratum.level + 1) : 1;
+  const towerTopReached = !!stratumCleared && (stratum?.level ?? 0) >= 5;
+
+  const showSpToast = (text: string) => {
+    setSpToast(text);
+    setTimeout(() => setSpToast(null), 1900);
+  };
 
   const handleBattleClosed = () => {
     setShowBattle(false);
+    setActiveEncounter(null);
     if (battleState?.status === 'victory') {
       setShowVictory(true);
     }
   };
 
-  const handleVictory = () => {
+  const handleVictory = async () => {
     setShowBattle(false);
+    // 主影节点结算：SP 即发 + 标记通关节点 + 批3 心魔战利品（必得遗物 / 35% 共鸣链 / 25% 誓约石）
+    const bossNode = stratum?.nodes.find(n => n.type === 'boss');
+    if (bossNode && !bossNode.cleared) {
+      const sp = await completeTowerNode(bossNode.id);
+      const drops = await useAppStore.getState().rollTowerLoot('boss', 1);
+      const lootText = drops.map(lootLabel).join(' · ');
+      showSpToast(`👁️ 心魔讨伐${sp > 0 ? ` · +${sp} SP` : ''}${lootText ? ` · ${lootText}` : ''}`);
+      // 批4 §6.8：通关类壮举——首区层通关 / 一夜通层（本 session 从区层入口爬到心魔）
+      const st4 = useAppStore.getState();
+      void st4.recordBattleFeat('first_clear');
+      if (st4.battleState?.towerSession?.startFloor === 0) void st4.recordBattleFeat('night_climb');
+    }
     setShowVictory(true);
   };
+
+  // ── 塔屏委托：开战请求（Shadow/强敌/心魔/事件遭遇战） ──
+  const handleRequestBattle = (node: StratumNode, eventMob?: MobSpec) => {
+    if (!stratum) return;
+    if (node.type === 'boss' && !eventMob) {
+      setShowBattle(true);
+      return;
+    }
+    const mob = eventMob ?? node.mob;
+    if (!mob) return;
+    setActiveEncounter({ mob, level: stratum.level, nodeId: node.id });
+    setShowBattle(true);
+  };
+
+  const handleEncounterEnd = async (outcome: 'victory' | 'defeat' | 'retreat') => {
+    const enc = activeEncounter;
+    setShowBattle(false);
+    setActiveEncounter(null);
+    if (!enc) return;
+    if (outcome === 'victory') {
+      const sp = await completeTowerNode(enc.nodeId, { wasMob: true });
+      // 批3：强敌 60% 掉战利品；批5：金色回响必掉满月
+      let lootText = '';
+      const node = stratum?.nodes.find(n => n.id === enc.nodeId);
+      const floorRatio = stratum ? (node?.floor ?? 1) / Math.max(1, stratum.floors) : 0.5;
+      if (enc.mob.golden) {
+        const drops = await useAppStore.getState().rollTowerLoot('golden', floorRatio);
+        lootText = drops.map(lootLabel).join(' · ');
+      } else if (enc.mob.tier === 'elite') {
+        const drops = await useAppStore.getState().rollTowerLoot('elite', floorRatio);
+        lootText = drops.map(lootLabel).join(' · ');
+      }
+      if (sp > 0 || lootText) {
+        showSpToast(`${enc.mob.golden ? '✨ 金色回响散去' : '⚔️ 节点攻略'}${sp > 0 ? ` · +${sp} SP` : ''}${lootText ? ` · ${lootText}` : ''}`);
+      }
+    } else if (outcome === 'defeat') {
+      setRecap('defeat');
+    }
+    // retreat：节点未清，可重试
+  };
+
+  const handleDescend = async () => {
+    const bs = useAppStore.getState().battleState;
+    // 批3：下塔撤离 = 「记仇」词缀与记忆台词的事实源
+    if (bs) await saveBattleState({ ...bs, status: 'session_end', everRetreatedDown: true });
+    setRecap('descend');
+  };
+
+  // ── 潜入战场（验收反馈 #4）：首次进入播潜入演出并开 session；session 中直接回塔 ──
+  const canInfiltrate = sessionActive || (!enteredToday && inShadowTime);
+  const todayLocked = !!enteredToday && !sessionActive && !stratumCleared;
+
+  const handleInfiltrate = () => {
+    if (!canInfiltrate) return;
+    playSound('/ui-menu.mp3', 0.6);
+    if (sessionActive) {
+      setTowerOpen(true); // session 进行中：直接回塔，不重播演出
+    } else {
+      setInfiltrating(true);
+    }
+  };
+
+  const handleInfiltrationDone = async () => {
+    setInfiltrating(false);
+    await enterTowerToday();
+    setTowerOpen(true);
+    // 批4 §6.2 备战抽取（每次登塔一次）：今日完成待办 ≥3 → 抽 2 选 1，否则抽 1 直接生效
+    const st = useAppStore.getState();
+    const ts = st.battleState?.towerSession;
+    if (ts && ts.dateKey === toLocalDateKey() && !ts.prepDrawnId) {
+      const todayDone = st.todoCompletions
+        .filter(tc => tc.date === toLocalDateKey())
+        .reduce((s, tc) => s + (tc.count ?? 1), 0);
+      const options = rollPrepDraw(todayDone >= 3 ? 2 : 1);
+      if (options.length >= 2) {
+        setPrepChoice(options);
+      } else if (options.length === 1) {
+        await st.applyPrepBuff(options[0]);
+        showSpToast(`🎴 备战抽取 · ${options[0].label}`);
+      }
+    }
+  };
+
+  // session 结束（败退/下塔/心魔讨伐）→ 自动收起塔屏，回顾在战场页弹出
+  useEffect(() => {
+    if (towerOpen && !sessionActive) setTowerOpen(false);
+  }, [towerOpen, sessionActive]);
+
+  // 批4 §6.6 黑猫败因信：败退当晚后台写信（AI/模板兜底）→ 下次打开黑猫时投递
+  useEffect(() => {
+    if (recap === 'defeat') void useAppStore.getState().deliverDefeatLetter();
+  }, [recap]);
+
+  // 批3 §7.3 影之评语：回顾弹出时后台取一句 AI 点评（可在设置关闭；无 Key 静默跳过）
+  useEffect(() => {
+    if (!recap) { setRecapComment(null); return; }
+    const { settings: st, battleState: bs, stratum: stm } = useAppStore.getState();
+    if (st.battleCommentEnabled === false || !stm) return;
+    const ts = bs?.towerSession;
+    let alive = true;
+    void generateRecapComment(st, {
+      reason: recap,
+      floors: ts?.floorsClimbed ?? 0,
+      mobs: ts?.mobsDefeated ?? 0,
+      damage: ts?.damageDealt ?? 0,
+      maxHit: ts?.maxSingleHit ?? 0,
+      weakHits: ts?.weaknessHits ?? 0,
+      stratumName: stm.name,
+    }).then(c => { if (alive && c) setRecapComment(c); }).catch(() => undefined);
+    return () => { alive = false; };
+  }, [recap]);
 
   const toggleDay = (day: number) => {
     const next = shadowDays.includes(day)
@@ -116,112 +302,144 @@ export const BattleArena = () => {
   const currentAttrPersona = persona?.attributePersonas?.[currentAttr];
   const currentSkills = persona?.skills[currentAttr] ?? [];
 
+  // ── P3R 玩家卡（p3-battle 设计稿：PLAYER eyebrow + 名 + Lv + HP 青条 + SP 黄斜块段）──
+  // 未开战时 HP 取设置上限的满值、SP 取 0——这是玩家的真实静息状态，不是演出假数据
+  const p3Hp = battleState?.playerHp ?? (parseInt(playerMaxHp, 10) || 8);
+  const p3HpMax = battleState?.playerMaxHp ?? (parseInt(playerMaxHp, 10) || 8);
+  const p3Sp = battleState?.sp ?? 0;
+  const renderPlayerCardP3 = (extra?: React.ReactNode) => (
+    <div className="p3r-card px-5 py-3.5">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[11px] font-black tracking-[0.18em]" style={{ color: P3R.blue }}>PLAYER</p>
+          <p className="truncate text-[20px] font-black leading-tight" style={{ color: P3R.ink }}>{user?.name ?? '旅行者'}</p>
+          <p className="text-[13px] font-black" style={{ color: P3R.blue }}>Lv.{attributes.reduce((s, a) => s + a.level, 0)}</p>
+        </div>
+        {extra}
+      </div>
+      <div className="mt-2.5 flex items-center gap-4">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <span className="text-[11px] font-black" style={{ color: P3R.ink }}>HP</span>
+          <div className="h-[7px] min-w-0 flex-1 overflow-hidden" style={{ background: '#e4eef5', clipPath: 'polygon(3px 0, 100% 0, calc(100% - 3px) 100%, 0 100%)' }}>
+            <div className="h-full" style={{ width: `${Math.max(0, Math.min(100, (p3Hp / Math.max(1, p3HpMax)) * 100))}%`, background: 'linear-gradient(90deg, #35d1e8, #7fd8ee)' }} />
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <span className="text-[11px] font-black" style={{ color: P3R.ink }}>SP</span>
+          <span className="flex gap-[3px]" aria-hidden>
+            {[0, 1, 2].map(k => (
+              <span key={k} className="h-[10px] w-[13px]" style={{ background: k < Math.min(3, p3Sp) ? '#ffd23e' : '#e4eef5', clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
+            ))}
+          </span>
+          <span className="text-[11px] font-black tabular-nums" style={{ color: p3Sp > 0 ? '#c79a00' : P3R.grey }}>{p3Sp}</span>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <>
+    <P3RPage active={p3}>
     <motion.div
       key="battle-page"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="space-y-5 pb-8"
+      className={`relative space-y-5 ${p3 ? 'pb-10' : 'pb-8'}`}
     >
-      {/* Header — 宫格子页页头归一 PageTitle 制式（审计 S6），返回归一 → 菜单。
-          P4（p4-battle-reference-v2）：衬线特大标题 + Battle 橙手写角标 + 影时间橙胶囊。 */}
-      {isP4 ? (
-        <div className="flex items-start gap-2">
-          <BackButton onClick={() => setCurrentPage('menu')} className="mt-3 -ml-1" />
-          <div className="min-w-0 flex-1">
-            <h1
-              className="text-[44px] font-black leading-[1.02] tracking-tight text-[#131313]"
-              style={{ fontFamily: 'var(--p4-display-font, serif)' }}
-            >
-              逆影战场
-            </h1>
-            <div
-              className="-mt-1 pl-16 text-[22px] font-bold italic leading-none text-[var(--p4-orange,#f9a11b)]"
-              style={{ fontFamily: "'Caveat', 'Segoe Script', cursive" }}
-            >
-              Battle
-            </div>
+      {p3 && <GhostWords words={['BATTLE']} className="right-[8px] top-[-14px] text-right text-[72px]" />}
+
+      {/* Header — 宫格子页页头归一 PageTitle 制式（审计 S6），返回归一 → 菜单 */}
+      {p3 ? (
+        <div className="relative">
+          {/* 标题左上小蓝斜片（设计稿装饰） */}
+          <span aria-hidden className="absolute left-[2px] top-[30px] h-[12px] w-[22px]" style={{ background: P3R.blue, clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
+          <div className="flex items-end justify-between gap-3">
+            <P3PageHeader title="逆影战场" onBack={() => setCurrentPage('menu')} className="pt-2" />
+            {inShadowTime && (
+              <motion.span
+                animate={{ opacity: [1, 0.55, 1] }}
+                transition={{ repeat: Infinity, duration: 1.5 }}
+                className="mb-2 flex shrink-0 items-center gap-1.5 px-3 py-1.5 text-[12px] font-black text-white"
+                style={{ clipPath: slantClip(8), background: P3R.blue }}
+              >
+                <span aria-hidden className="inline-block h-0 w-0 border-x-[5px] border-t-[7px] border-x-transparent" style={{ borderTopColor: '#fff' }} />
+                影时间
+              </motion.span>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="flex items-start gap-3">
+          <BackButton onClick={() => setCurrentPage('menu')} className="mt-1 -ml-1" />
+          <div className="flex-1 min-w-0">
+            <PageTitle title="逆影战场" en="Battle" />
           </div>
           {inShadowTime && (
             <motion.span
-              animate={{ opacity: [1, 0.6, 1] }}
+              animate={{ opacity: [1, 0.5, 1] }}
               transition={{ repeat: Infinity, duration: 1.5 }}
-              className="mt-2 flex shrink-0 items-center gap-1 rounded-full px-3 py-1.5 text-xs font-black text-[#131313]"
-              style={{ background: 'var(--p4-orange, #f9a11b)', boxShadow: '0 2px 0 rgba(19,19,19,0.25)' }}
+              className="flex-shrink-0 mt-1 text-xs font-black px-2.5 py-1 rounded-lg"
+              style={{ background: 'rgb(var(--color-battle-bright-rgb) / 0.15)', color: 'rgb(var(--color-battle-rgb))', border: '1px solid rgb(var(--color-battle-bright-rgb) / 0.3)' }}
             >
-              <P4Sparkle size={11} color="#131313" /> 影时间
+              ✦ 影时间
             </motion.span>
           )}
         </div>
-      ) : (
-      <div className="flex items-start gap-3">
-        <BackButton onClick={() => setCurrentPage('menu')} className="mt-1 -ml-1" />
-        <div className="flex-1 min-w-0">
-          <PageTitle title="逆影战场" en="Battle" />
-        </div>
-        {inShadowTime && (
-          <motion.span
-            animate={{ opacity: [1, 0.5, 1] }}
-            transition={{ repeat: Infinity, duration: 1.5 }}
-            className="flex-shrink-0 mt-1 text-xs font-black px-2.5 py-1 rounded-lg"
-            style={{ background: 'rgb(var(--color-battle-bright-rgb) / 0.15)', color: 'rgb(var(--color-battle-rgb))', border: '1px solid rgb(var(--color-battle-bright-rgb) / 0.3)' }}
-          >
-            ✦ 影时间
-          </motion.span>
-        )}
-      </div>
       )}
 
-      {/* Tabs：P4 = 奶油斜行 + 黑色斜章激活（黄花前缀），战紫渐变退役 */}
-      {isP4 ? (
-        <div
-          className="flex items-stretch overflow-hidden text-sm font-black"
-          style={{ background: 'var(--ui-paper)', borderRadius: 16, transform: 'skewX(-8deg)', boxShadow: '0 3px 0 rgba(19,19,19,0.14)' }}
-        >
+      {/* Tabs（p3：斜块三格——选中蓝斜块白字+洋红角 / 未选白斜块黑字） */}
+      {p3 ? (
+        <div className="relative flex items-stretch">
           {([
             { key: 'battle', label: '进入战场' },
             { key: 'persona', label: 'Persona' },
             { key: 'settings', label: '设置' },
-          ] as const).map(tab => {
+          ] as const).map((tab, i) => {
             const active = activeTab === tab.key;
             return (
               <button
                 key={tab.key}
+                type="button"
                 onClick={() => setActiveTab(tab.key)}
-                className={`flex-1 py-3 transition-colors ${active ? 'text-[var(--ui-bg)]' : 'text-[#131313]'}`}
-                style={active ? { background: '#131313', borderRadius: 14 } : undefined}
+                className="relative flex-1 py-3 text-center text-[16px] font-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1b57ff]"
+                style={{
+                  clipPath: slantClip(12),
+                  background: active ? P3R.blue : P3R.panel,
+                  color: active ? '#fff' : P3R.ink,
+                  marginLeft: i > 0 ? -7 : 0,
+                  zIndex: active ? 2 : 1,
+                }}
               >
-                <span className="inline-flex items-center gap-1.5" style={{ transform: 'skewX(8deg)' }}>
-                  {active && <P4Flower size={14} color="var(--ui-bg)" />}
-                  {tab.label}
-                </span>
+                {tab.label}
+                {active && (
+                  <span aria-hidden className="absolute bottom-0 right-3 h-[8px] w-[20px]" style={{ background: P3R.magenta, clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
+                )}
               </button>
             );
           })}
         </div>
       ) : (
-      <div className="flex gap-1 p-1 rounded-2xl" style={{ background: 'rgb(var(--color-battle-bright-rgb) / 0.08)', border: '1px solid rgb(var(--color-battle-bright-rgb) / 0.15)' }}>
-        {([
-          { key: 'battle', label: '进入战场' },
-          { key: 'persona', label: 'Persona' },
-          { key: 'settings', label: '设置' },
-        ] as const).map(tab => (
-          <button
-            key={tab.key}
-            onClick={() => setActiveTab(tab.key)}
-            className={`flex-1 py-2 text-sm font-semibold rounded-xl transition-all ${activeTab !== tab.key ? 'text-gray-500 dark:text-gray-400' : ''}`}
-            style={{
-              background: activeTab === tab.key ? 'linear-gradient(135deg, rgb(var(--color-battle-rgb)), rgb(var(--color-battle-indigo-rgb)))' : 'transparent',
-              color: activeTab === tab.key ? 'white' : undefined,
-              boxShadow: activeTab === tab.key ? '0 2px 8px rgb(var(--color-battle-rgb) / 0.3)' : 'none',
-            }}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
+        <div className="flex gap-1 p-1 rounded-2xl" style={{ background: 'rgb(var(--color-battle-bright-rgb) / 0.08)', border: '1px solid rgb(var(--color-battle-bright-rgb) / 0.15)' }}>
+          {([
+            { key: 'battle', label: '进入战场' },
+            { key: 'persona', label: 'Persona' },
+            { key: 'settings', label: '设置' },
+          ] as const).map(tab => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={`flex-1 py-2 text-sm font-semibold rounded-xl transition-all ${activeTab !== tab.key ? 'text-gray-500 dark:text-gray-400' : ''}`}
+              style={{
+                background: activeTab === tab.key ? 'linear-gradient(135deg, rgb(var(--color-battle-rgb)), rgb(var(--color-battle-indigo-rgb)))' : 'transparent',
+                color: activeTab === tab.key ? 'white' : undefined,
+                boxShadow: activeTab === tab.key ? '0 2px 8px rgb(var(--color-battle-rgb) / 0.3)' : 'none',
+              }}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
       )}
 
       {/* Tab content */}
@@ -239,62 +457,31 @@ export const BattleArena = () => {
                     className="space-y-4"
                   >
                     {!persona && (
-                      isP4 ? (
-                        /* p4-battle-reference-v2：PLAYER 游戏 HUD 框 + 橙环竞技场 + 蓝斜召唤钮 */
-                        <div className="space-y-4">
-                          <div
-                            className="relative flex items-stretch overflow-hidden"
-                            style={{ background: 'var(--ui-bg)', border: '4px solid #131313', borderRadius: 16 }}
-                          >
-                            <div className="min-w-0 flex-1 px-4 pb-3 pt-2">
-                              <span className="inline-block rounded-b-md bg-[#131313] px-2.5 py-1 text-[10px] font-black tracking-[0.18em] text-white">
-                                PLAYER
-                              </span>
-                              <p className="mt-1.5 truncate text-[24px] font-black leading-tight text-[#131313]">{user?.name ?? '旅行者'}</p>
-                            </div>
-                            <div className="flex shrink-0 items-center gap-1 bg-[#131313] px-4 text-[var(--ui-bg)]" style={{ clipPath: 'polygon(18px 0, 100% 0, 100% 100%, 0 100%)' }}>
-                              <span className="mt-3 text-[13px] font-black">LV.</span>
-                              <span className="text-[44px] font-black leading-none tabular-nums">{attributes.reduce((s, a) => s + a.level, 0)}</span>
-                            </div>
-                            <P4Sparkle size={16} color="#ffffff" className="absolute right-1 top-1" />
-                          </div>
-
-                          <div className="relative mx-auto flex h-[380px] max-w-[380px] flex-col items-center justify-center">
-                            <div
-                              aria-hidden
-                              className="pointer-events-none absolute left-1/2 top-1/2 h-[340px] w-[340px] -translate-x-1/2 -translate-y-1/2 rounded-full"
-                              style={{ border: '14px solid var(--p4-orange, #f9a11b)', boxShadow: '0 0 0 10px rgba(255,246,208,0.5), inset 0 0 0 10px rgba(255,246,208,0.5)' }}
-                            />
-                            <P4Sparkle size={20} color="var(--ui-accent)" className="absolute right-6 top-10" />
-                            <svg aria-hidden viewBox="0 0 24 24" className="h-20 w-20" fill="#131313">
-                              <path d="M6.92 5H5l9 9 1-.94L6.92 5zM19 5h-1.92L9 13.06l.94.94L19 5zM5 19l2-2 1 1-2 2H5v-1zm14 0v1h-1l-2-2 1-1 2 2z" />
-                              <path d="M4.5 4.5L15 15l-1.5 1.5L3 6V4.5h1.5zM19.5 4.5H21V6L10.5 16.5 9 15 19.5 4.5z" />
-                            </svg>
-                            <div
-                              className="mt-5 px-8 py-3 text-[17px] font-black text-[#131313]"
-                              style={{ background: 'var(--ui-paper)', borderRadius: 14, transform: 'skewX(-8deg)', boxShadow: '0 3px 0 rgba(19,19,19,0.15)' }}
-                            >
-                              <span className="inline-block" style={{ transform: 'skewX(8deg)' }}>你尚未召唤 Persona</span>
-                            </div>
+                      p3 ? (
+                        <div className="space-y-3">
+                          {renderPlayerCardP3()}
+                          {/* 设计稿：碎裂星徽直接坐在水面上（无卡壳）+ 蓝青渐变大梯形召唤钮 */}
+                          <div className="space-y-6 pt-8 pb-4 text-center">
+                            <ShatteredStar />
+                            <p className="text-[16px] font-black" style={{ color: P3R.ink }}>你尚未召唤 Persona</p>
                             <button
+                              type="button"
                               onClick={() => setShowPersonaCreate(true)}
-                              className="relative mt-3 px-9 py-3.5 text-[19px] font-black text-white transition-transform active:scale-95"
-                              style={{ background: 'var(--ui-accent)', borderRadius: 14, transform: 'skewX(-8deg)', boxShadow: '0 4px 0 rgba(19,19,19,0.28)' }}
+                              className="mx-auto block w-[82%] py-4 text-[24px] font-black tracking-wider text-white active:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1b57ff] focus-visible:ring-offset-2"
+                              style={{ clipPath: 'polygon(9% 0, 100% 0, 91% 100%, 0 100%)', background: 'linear-gradient(135deg, #1b57ff 30%, #35d1e8)' }}
                             >
-                              <span className="inline-block" style={{ transform: 'skewX(8deg)' }}>召唤 Persona</span>
-                              <P4Sparkle size={22} color="#fff6d0" className="absolute -left-3 -top-2" />
-                              <P4Sparkle size={16} color="#fff6d0" className="absolute -right-2 bottom-0" />
+                              召唤 Persona
                             </button>
                           </div>
                         </div>
                       ) : (
                       <div className="space-y-3">
-                        <div className="rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm px-4 py-3">
+                        <div className={`${battleCard} px-4 py-3`}>
                           <p className="text-[10px] font-semibold tracking-widest uppercase text-gray-400 dark:text-gray-500">Player</p>
                           <p className="font-black text-gray-900 dark:text-white">{user?.name ?? '旅行者'}</p>
                           <p className="text-gray-400 dark:text-gray-500 text-xs">Lv.{attributes.reduce((s, a) => s + a.level, 0)}</p>
                         </div>
-                        <div className="rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm p-8 text-center space-y-4">
+                        <div className={`${battleCard} p-8 text-center space-y-4`}>
                           <p className="text-4xl">⚔️</p>
                           <p className="text-gray-500 dark:text-gray-400 text-sm">你尚未召唤 Persona</p>
                           <button
@@ -309,9 +496,10 @@ export const BattleArena = () => {
                       )
                     )}
 
-                    {persona && !shadow && (
+                    {persona && !stratum && (
                       <div className="space-y-3">
-                        <div className="rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm px-4 py-3 flex items-center justify-between">
+                        {p3 ? renderPlayerCardP3() : (
+                        <div className={`${battleCard} px-4 py-3 flex items-center justify-between`}>
                           <div>
                             <p className="text-[10px] font-semibold tracking-widest uppercase text-gray-400 dark:text-gray-500">Player</p>
                             <p className="font-black text-gray-900 dark:text-white">{user?.name ?? '旅行者'}</p>
@@ -323,23 +511,33 @@ export const BattleArena = () => {
                             </span>
                           )}
                         </div>
-                        <div className="rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm p-6 text-center space-y-4">
-                          <p className="text-gray-500 dark:text-gray-400 text-sm">尚未识破暗影，无法进入战斗</p>
+                        )}
+                        <div className={`${battleCard} p-6 text-center space-y-4`}>
+                          <p className={p3 ? 'text-[15px] font-black' : 'text-gray-500 dark:text-gray-400 text-sm'} style={p3 ? { color: P3R.ink } : undefined}>
+                            影时间高塔隐于夜色——第 1 区层尚未显形
+                          </p>
                           <button
-                            onClick={() => setShowShadowCreate(true)}
-                            className="px-6 py-3 rounded-xl font-bold text-white transition-colors"
-                            style={{ background: 'linear-gradient(135deg, #dc2626, rgb(var(--color-battle-rgb)))' }}
+                            onClick={() => setShowReveal(true)}
+                            className={p3 ? 'px-8 py-3 text-[17px] font-black text-white active:brightness-95' : 'px-6 py-3 rounded-xl font-bold text-white transition-colors'}
+                            style={p3 ? { clipPath: slantClip(10), background: P3R.magenta } : { background: 'linear-gradient(135deg, #dc2626, rgb(var(--color-battle-rgb)))' }}
                           >
-                            识破暗影
+                            🗼 区层显形仪式
                           </button>
                         </div>
                       </div>
                     )}
 
-                    {persona && shadow && battleState && (
+                    {persona && stratum && battleState && (
                       <div className="space-y-3">
                         {/* Player info card */}
-                        <div className="rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm px-4 py-3 flex items-center justify-between">
+                        {p3 ? renderPlayerCardP3(
+                          persona.equippedMaskAttribute ? (
+                            <span className="shrink-0 px-2.5 py-1 text-[12px] font-black" style={{ clipPath: slantClip(6), background: P3R.cyanPale, color: P3R.blueDeep }}>
+                              🎭 {settings.attributeNames[persona.equippedMaskAttribute]}
+                            </span>
+                          ) : undefined,
+                        ) : (
+                        <div className={`${battleCard} px-4 py-3 flex items-center justify-between`}>
                           <div>
                             <p className="text-[10px] font-semibold tracking-widest uppercase text-gray-400 dark:text-gray-500">Player</p>
                             <p className="font-black text-gray-900 dark:text-white">{user?.name ?? '旅行者'}</p>
@@ -354,110 +552,164 @@ export const BattleArena = () => {
                             </span>
                           </div>
                         </div>
+                        )}
 
-                        {/* Shadow info card */}
-                        <div className="rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm px-4 py-3 space-y-2">
+                        {/* 区层头卡：名 / 等级 / 累计层高 / 主影 */}
+                        <div className={`${battleCard} px-4 py-3 space-y-2`}>
                           <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                              <span className="font-black text-gray-900 dark:text-white">👁 {shadow.name}</span>
-                              <span className="text-xs px-1.5 py-0.5 rounded font-semibold" style={{ background: 'rgba(220,38,38,0.12)', color: '#dc2626' }}>
-                                Lv.{shadow.level}
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="font-black text-gray-900 dark:text-white truncate">🗼 {stratum.name}</span>
+                              <span className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded font-semibold" style={{ background: 'rgb(var(--color-battle-bright-rgb) / 0.14)', color: 'rgb(var(--color-battle-rgb))' }}>
+                                第{stratum.level}区层
                               </span>
+                              {stratum.deepenCount > 0 && (
+                                <span className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded font-bold" style={{ background: 'rgba(220,38,38,0.12)', color: '#dc2626' }}>
+                                  异变×{stratum.deepenCount}
+                                </span>
+                              )}
                             </div>
-                            <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: 'rgba(234,179,8,0.12)', color: '#b45309', border: '1px solid rgba(234,179,8,0.3)' }}>
-                              弱 {settings.attributeNames[shadow.weakAttribute]}
+                            <span className="flex-shrink-0 text-xs font-bold tabular-nums text-gray-400 dark:text-gray-500">
+                              {absoluteFloor(stratum, stratum.nodes.find(n => n.id === stratum.currentNodeId)?.floor ?? 0)}F / {absoluteFloor(stratum, stratum.floors)}F
                             </span>
                           </div>
-                          <div>
-                            <div className="flex justify-between text-xs text-gray-400 dark:text-gray-500 mb-1">
-                              <span>HP</span><span>{shadow.currentHp}/{shadow.maxHp}</span>
-                            </div>
-                            <div className="h-2 rounded-full overflow-hidden bg-gray-100 dark:bg-gray-800">
-                              <motion.div className="h-full rounded-full" style={{ background: 'linear-gradient(to right, #dc2626, #ef4444)' }} animate={{ width: `${(shadow.currentHp / shadow.maxHp) * 100}%` }} transition={{ duration: 0.4 }} />
-                            </div>
-                          </div>
-                          {shadow.maxHp2 !== undefined && shadow.currentHp2 !== undefined && (
+                          {shadow && (
                             <div>
                               <div className="flex justify-between text-xs text-gray-400 dark:text-gray-500 mb-1">
-                                <span>HP 2</span><span>{shadow.currentHp2}/{shadow.maxHp2}</span>
+                                <span>👁 {shadow.name} · 弱 {settings.attributeNames[shadow.weakAttribute]}</span>
+                                <span>{shadow.currentHp + (shadow.currentHp2 ?? 0)}/{shadow.maxHp + (shadow.maxHp2 ?? 0)}</span>
                               </div>
                               <div className="h-2 rounded-full overflow-hidden bg-gray-100 dark:bg-gray-800">
-                                <motion.div className="h-full rounded-full" style={{ background: 'linear-gradient(to right, rgb(var(--color-battle-rgb)), rgb(var(--color-battle-bright-rgb)))' }} animate={{ width: `${(shadow.currentHp2 / shadow.maxHp2) * 100}%` }} transition={{ duration: 0.4 }} />
+                                <motion.div
+                                  className="h-full rounded-full"
+                                  style={{ background: 'linear-gradient(to right, #dc2626, #ef4444)' }}
+                                  animate={{ width: `${((shadow.currentHp + (shadow.currentHp2 ?? 0)) / Math.max(1, shadow.maxHp + (shadow.maxHp2 ?? 0))) * 100}%` }}
+                                  transition={{ duration: 0.4 }}
+                                />
                               </div>
                             </div>
                           )}
                         </div>
 
-                        <motion.button
-                          whileTap={canBattle ? { scale: 0.96 } : undefined}
-                          onClick={() => canBattle && setShowBattle(true)}
-                          disabled={!canBattle}
-                          className="w-full py-3.5 rounded-2xl font-black text-white tracking-wide transition-all shadow-sm"
-                          style={{
-                            background: canBattle ? 'linear-gradient(135deg, rgb(var(--color-battle-rgb)), #dc2626)' : undefined,
-                          }}
-                        >
-                          {canBattle ? '⚔️ 进入战斗' : alreadyChallengedToday ? (
-                            <span className="text-gray-400 dark:text-gray-500">⚔️ 今日已挑战</span>
-                          ) : (
-                            <span className="text-gray-400 dark:text-gray-500">⚔️ 等待影时间</span>
-                          )}
-                        </motion.button>
-
-                        {/* 已击败阴影 */}
-                        {(battleState?.defeatedShadowLog?.length ?? 0) > 0 && (
-                          <div className="rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden">
-                            <button
-                              onClick={() => setShowDefeatedLog(v => !v)}
-                              className="w-full flex items-center justify-between px-4 py-3 text-left"
+                        {/* 月相日加深通告 */}
+                        <AnimatePresence>
+                          {deepenNotice && (
+                            <motion.button
+                              initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                              onClick={() => setDeepenNotice(false)}
+                              className="w-full px-4 py-2.5 rounded-xl text-left text-xs leading-relaxed"
+                              style={{ background: 'rgba(220,38,38,0.1)', border: '1px solid rgba(220,38,38,0.3)', color: '#f87171' }}
                             >
-                              <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-                                👁 已击败阴影
-                                <span className="ml-2 text-xs font-normal text-gray-400 dark:text-gray-500">
-                                  ({battleState!.defeatedShadowLog!.length})
-                                </span>
-                              </span>
-                              <span className="text-gray-400 text-xs">{showDefeatedLog ? '▲' : '▼'}</span>
-                            </button>
-                            <AnimatePresence>
-                              {showDefeatedLog && (
-                                <motion.div
-                                  initial={{ height: 0, opacity: 0 }}
-                                  animate={{ height: 'auto', opacity: 1 }}
-                                  exit={{ height: 0, opacity: 0 }}
-                                  transition={{ duration: 0.2 }}
-                                  className="overflow-hidden"
-                                >
-                                  <div className="border-t border-gray-100 dark:border-gray-800 divide-y divide-gray-50 dark:divide-gray-800">
-                                    {[...(battleState!.defeatedShadowLog!)].reverse().map((rec, i) => (
-                                      <div key={i} className="px-4 py-2.5 flex items-start justify-between gap-3">
-                                        <div className="min-w-0">
-                                          <p className="text-sm font-semibold text-gray-800 dark:text-gray-200 truncate">
-                                            {rec.shadowName}
-                                          </p>
-                                          <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-0.5">
-                                            识破 {rec.breachDate} · 击败 {rec.defeatDate}
-                                          </p>
-                                        </div>
-                                        <div className="flex-shrink-0 text-right space-y-0.5">
-                                          <span
-                                            className="inline-block text-[11px] font-semibold px-1.5 py-0.5 rounded"
-                                            style={{ background: 'rgba(220,38,38,0.12)', color: '#dc2626' }}
-                                          >
-                                            Lv.{rec.level}
-                                          </span>
-                                          <p className="text-[11px] text-gray-400 dark:text-gray-500">
-                                            历时 {rec.daysElapsed} 天
-                                          </p>
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </motion.div>
+                              🌕 月相日·异变加深——心魔已回满，气息比上周更加危险（点击知悉）
+                            </motion.button>
+                          )}
+                        </AnimatePresence>
+
+                        {stratumCleared ? (
+                          towerTopReached ? (
+                            <div className={`${battleCard} p-6 text-center space-y-3`}>
+                              <p className="text-3xl">🌌</p>
+                              <p className="font-black text-gray-900 dark:text-white">
+                                {stratum?.abyssRing ? `回廊·第${stratum.abyssRing}环已破` : '第 5 区层已被攻略'}
+                              </p>
+                              <p className="text-xs text-gray-400 dark:text-gray-500 leading-relaxed">
+                                {stratum?.abyssRing
+                                  ? <>回廊仍在向下盘旋——守卫的词缀会一环比一环更多。<br />最深纪录：第 {Math.max(battleState?.abyssHighestRing ?? 0, stratum.abyssRing)} 环</>
+                                  : <>塔顶之上没有天空——只有向下盘旋的「深渊回廊」。<br />无尽的环域，守卫随深度越发凶恶。</>}
+                              </p>
+                              <motion.button
+                                whileTap={{ scale: 0.96 }}
+                                onClick={async () => {
+                                  playSound('/battle-seal.mp3', 0.6);
+                                  await useAppStore.getState().enterAbyss();
+                                  showSpToast(`⛩ ${useAppStore.getState().stratum?.name ?? '深渊回廊'} · 显形`);
+                                  if (sessionActive) setTowerOpen(true); // 同晚连环：直接回战场继续
+                                }}
+                                className="w-full py-3 font-black text-white"
+                                style={{
+                                  clipPath: 'polygon(6% 0, 100% 0, 94% 100%, 0 100%)',
+                                  background: 'linear-gradient(135deg, #92610e, #e8b64c)',
+                                }}
+                              >
+                                ⛩ {stratum?.abyssRing ? '深入下一环' : '踏入深渊回廊'}
+                              </motion.button>
+                              {!sessionActive && (
+                                <p className="text-[10px] text-gray-400 dark:text-gray-500">
+                                  {enteredToday ? '今晚的攀登已结束——新环将在下次潜入时等你' : '环显形后，影时间潜入即可进入'}
+                                </p>
                               )}
-                            </AnimatePresence>
+                            </div>
+                          ) : (
+                            <div className={`${battleCard} p-6 text-center space-y-4`}>
+                              <p className={p3 ? 'text-[15px] font-black' : 'text-gray-500 dark:text-gray-400 text-sm'} style={p3 ? { color: P3R.ink } : undefined}>
+                                区层已攻略——上方的黑暗开始蠕动
+                              </p>
+                              <button
+                                onClick={() => setShowReveal(true)}
+                                className={p3 ? 'px-8 py-3 text-[17px] font-black text-white active:brightness-95' : 'px-6 py-3 rounded-xl font-bold text-white transition-colors'}
+                                style={p3 ? { clipPath: slantClip(10), background: P3R.magenta } : { background: 'linear-gradient(135deg, #dc2626, rgb(var(--color-battle-rgb)))' }}
+                              >
+                                🗼 显形第 {nextStratumLevel} 区层
+                              </button>
+                            </div>
+                          )
+                        ) : todayLocked ? (
+                          <div className={`${battleCard} p-5 text-center space-y-1`}>
+                            <p className="text-2xl">🌙</p>
+                            <p className="text-sm font-bold text-gray-700 dark:text-gray-300">今晚的攀登已结束</p>
+                            <p className="text-xs text-gray-400 dark:text-gray-500">进度已被月光标记——明晚再潜入。</p>
                           </div>
+                        ) : (
+                          <motion.button
+                            whileTap={canInfiltrate ? { scale: 0.96 } : undefined}
+                            onClick={handleInfiltrate}
+                            disabled={!canInfiltrate}
+                            className={p3 ? 'w-full py-4 text-[19px] font-black text-white tracking-wide transition-all' : 'w-full py-3.5 rounded-2xl font-black text-white tracking-wide transition-all shadow-sm'}
+                            style={p3 ? {
+                              clipPath: 'polygon(7% 0, 100% 0, 93% 100%, 0 100%)',
+                              background: canInfiltrate ? 'linear-gradient(135deg, #1b57ff 30%, #35d1e8)' : '#dfe9f1',
+                            } : {
+                              background: canInfiltrate ? 'linear-gradient(135deg, rgb(var(--color-battle-rgb)), #dc2626)' : undefined,
+                            }}
+                          >
+                            {sessionActive
+                              ? '🗼 回到战场'
+                              : canInfiltrate
+                                ? '🌊 潜入战场'
+                                : <span className="text-gray-400 dark:text-gray-500">🌊 等待影时间</span>}
+                          </motion.button>
                         )}
+
+                        {/* 批3：装备库 + 阴影档案馆入口 */}
+                        <div className="flex gap-2">
+                          <motion.button
+                            whileTap={{ scale: 0.96 }}
+                            onClick={() => { playSound('/ui-menu.mp3', 0.4); setShowArsenal(true); }}
+                            className={`flex-1 py-2.5 text-sm font-black ${p3 ? 'text-white' : 'rounded-2xl text-white'}`}
+                            style={p3
+                              ? { clipPath: 'polygon(6% 0, 100% 0, 94% 100%, 0 100%)', background: 'linear-gradient(135deg,#312e81,#4338ca)' }
+                              : { background: 'linear-gradient(135deg,#312e81,#4338ca)' }}
+                          >
+                            ⚙ 装备库
+                            {(() => {
+                              const a = battleState?.arsenal;
+                              const n = (a?.relics.length ?? 0) + (a?.myths.length ?? 0) + (a?.oaths.length ?? 0);
+                              return n > 0 ? <span className="ml-1.5 text-[10px] font-bold opacity-75">{n}</span> : null;
+                            })()}
+                          </motion.button>
+                          <motion.button
+                            whileTap={{ scale: 0.96 }}
+                            onClick={() => { playSound('/ui-menu.mp3', 0.4); setShowArchive(true); }}
+                            className={`flex-1 py-2.5 text-sm font-black ${p3 ? 'text-white' : 'rounded-2xl text-white'}`}
+                            style={p3
+                              ? { clipPath: 'polygon(6% 0, 100% 0, 94% 100%, 0 100%)', background: 'linear-gradient(135deg,#581c87,#7e22ce)' }
+                              : { background: 'linear-gradient(135deg,#581c87,#7e22ce)' }}
+                          >
+                            👁 阴影档案馆
+                            {(battleState?.defeatedShadowLog?.length ?? 0) > 0 && (
+                              <span className="ml-1.5 text-[10px] font-bold opacity-75">{battleState!.defeatedShadowLog!.length}</span>
+                            )}
+                          </motion.button>
+                        </div>
                       </div>
                     )}
                   </motion.div>
@@ -473,7 +725,7 @@ export const BattleArena = () => {
                     transition={{ duration: 0.15 }}
                   >
                     {!persona ? (
-                      <div className="rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm p-8 text-center text-gray-400 dark:text-gray-500 text-sm">
+                      <div className={`${battleCard} p-8 text-center text-gray-400 dark:text-gray-500 text-sm`}>
                         还没有 Persona，先在「进入战场」页创建
                       </div>
                     ) : (
@@ -522,9 +774,9 @@ export const BattleArena = () => {
                         {(() => {
                           const MASK_BUFFS: Record<AttributeId, string> = {
                             knowledge: '弱点攻击额外+2伤害，日常该属性+1',
-                            guts: '15%暴击率：伤害×1.5并使Shadow失衡，日常该属性+1',
-                            dexterity: '每5回合获得强化回合（额外行动），日常该属性+1',
-                            kindness: '体力耗尽后回复1点体力（仅一次），日常该属性+1',
+                            guts: '出战时暴击率+15%，日常该属性+1',
+                            dexterity: '每使用5次技能获得追加行动，日常该属性+1',
+                            kindness: '体力耗尽后保留1点体力（每场一次），日常该属性+1',
                             charm: '每次战斗仅一次，使用技能不消耗SP，日常该属性+1',
                           } as Record<AttributeId, string>;
                           const isEquipped = persona.equippedMaskAttribute === currentAttr;
@@ -648,20 +900,21 @@ export const BattleArena = () => {
                                       const tagLabel = mapped?.label ?? baseTag?.label;
                                       const tagIcon = mapped?.icon;
                                       // 右侧 hint：优先特化，回落到静态；heal 用真实回血值
-                                      const effectHint = mapped?.hint
-                                        ?? SKILL_EFFECT_HINT[skill.type]
-                                        ?? (skill.type === 'heal' ? `+${HEAL_VALUE_BY_ATTR[currentAttr] ?? 5}HP` : '');
+                                      const effectHint = skill.type === 'heal'
+                                        ? `+${healAmount(skill.power, currentAttr)}HP`
+                                        : (mapped?.hint ?? SKILL_EFFECT_HINT[skill.type] ?? '');
+                                      const locked = skill.unlocked === false; // 批3 双条件：属性等级≥N 且 前技满星
                                       return (
                                       <div
                                         key={i}
-                                        className="flex items-center justify-between py-2 border-b border-gray-200 dark:border-gray-700"
+                                        className={`flex items-center justify-between py-2 border-b border-gray-200 dark:border-gray-700 ${locked ? 'opacity-45' : ''}`}
                                       >
                                         <div className="flex items-center gap-2 flex-1 min-w-0">
                                           <span
                                             className="text-xs font-black flex-shrink-0 px-1.5 py-0.5 rounded text-purple-600 dark:text-purple-300"
                                             style={{ background: 'rgb(var(--color-battle-bright-rgb) / 0.1)' }}
                                           >
-                                            {skill.level}
+                                            {locked ? '🔒' : skill.level}
                                           </span>
                                           <div className="min-w-0">
                                             <div className="flex items-center gap-1.5">
@@ -677,8 +930,22 @@ export const BattleArena = () => {
                                                   {tagIcon ? `${tagIcon} ${tagLabel}` : tagLabel}
                                                 </span>
                                               )}
+                                              {skill.oath && (
+                                                <span className="flex-shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                                                      style={{ color: '#fcd34d', background: 'rgba(252,211,77,0.14)' }}>
+                                                  誓约
+                                                </span>
+                                              )}
+                                              {skill.socket && (
+                                                <span className="flex-shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                                                      style={{ color: '#c4b5fd', background: 'rgba(196,181,253,0.14)' }}>
+                                                  ◆ 迷思
+                                                </span>
+                                              )}
                                             </div>
-                                            <p className="text-gray-500 dark:text-gray-400 text-xs truncate">{skill.description}</p>
+                                            <p className="text-gray-500 dark:text-gray-400 text-xs truncate">
+                                              {locked ? `解锁：${settings.attributeNames[currentAttr]} Lv${skill.level} + 前技满星` : skill.description}
+                                            </p>
                                           </div>
                                         </div>
                                         <div className="text-right flex-shrink-0 ml-3">
@@ -689,7 +956,10 @@ export const BattleArena = () => {
                                               {effectHint}
                                             </p>
                                           )}
-                                          <p className="text-yellow-600 dark:text-yellow-400/70 text-xs">SP {skill.spCost}</p>
+                                          <div className="flex items-center justify-end gap-1.5">
+                                            {!locked && <MasteryStars skill={skill} />}
+                                            <p className="text-yellow-600 dark:text-yellow-400/70 text-xs">SP {skill.spCost}</p>
+                                          </div>
                                         </div>
                                       </div>
                                       );
@@ -716,7 +986,7 @@ export const BattleArena = () => {
                     className="space-y-5"
                   >
                     {/* ── 战场开关 ── */}
-                    <div className="rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden">
+                    <div className={`${battleCard} overflow-hidden`}>
                       <div className="flex items-center gap-3 px-4 py-3.5">
                         <div className="flex-1">
                           <p className="text-sm font-semibold text-gray-800 dark:text-gray-100">启用逆影战场</p>
@@ -739,9 +1009,29 @@ export const BattleArena = () => {
                       </div>
                     </div>
 
+                    {/* ── 影之评语开关（批3 §7.3） ── */}
+                    <div className={`${battleCard} overflow-hidden`}>
+                      <div className="flex items-center gap-3 px-4 py-3.5">
+                        <div className="flex-1">
+                          <p className="text-sm font-semibold text-gray-800 dark:text-gray-100">影之评语</p>
+                          <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">登塔回顾附一句 AI 点评（需配置 API Key）</p>
+                        </div>
+                        <button
+                          onClick={() => void saveSettings({ battleCommentEnabled: settings.battleCommentEnabled === false })}
+                          className="relative w-12 h-6 rounded-full transition-colors flex-shrink-0"
+                          style={{ background: settings.battleCommentEnabled !== false ? 'rgb(var(--color-battle-rgb))' : 'rgba(156,163,175,0.4)' }}
+                        >
+                          <motion.span
+                            animate={{ left: settings.battleCommentEnabled !== false ? 26 : 4 }}
+                            className="absolute top-1 w-4 h-4 rounded-full bg-white shadow"
+                          />
+                        </button>
+                      </div>
+                    </div>
+
                     {/* ── Persona 洗牌 ── */}
                     {persona && (
-                      <div className="rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden">
+                      <div className={`${battleCard} overflow-hidden`}>
                         <div className="flex items-center gap-3 px-4 py-3.5">
                           <div className="flex-1">
                             <p className="text-sm font-semibold text-gray-800 dark:text-gray-100">Persona 洗牌</p>
@@ -762,7 +1052,7 @@ export const BattleArena = () => {
                     {showBattleParams && (
                     <div className="space-y-1.5">
                       <p className="text-[11px] font-bold tracking-widest text-gray-400 dark:text-gray-500 uppercase px-1">战斗参数</p>
-                      <div className="rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden divide-y divide-gray-50 dark:divide-gray-800">
+                      <div className={`${battleCard} overflow-hidden divide-y divide-gray-50 dark:divide-gray-800`}>
                         {/* 玩家最大HP */}
                         <div className="flex items-center justify-between gap-3 px-4 py-3.5">
                           <div>
@@ -781,22 +1071,24 @@ export const BattleArena = () => {
                             min={1}
                           />
                         </div>
-                        {/* Shadow 攻击力 */}
+                        {/* Shadow 攻击倍率（引擎v2：基础攻击走等级表 5/6/7/8/9） */}
                         <div className="flex items-center justify-between gap-3 px-4 py-3.5">
                           <div>
-                            <p className="text-sm font-medium text-gray-800 dark:text-gray-100">Shadow 攻击力</p>
-                            <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">每回合对玩家造成的基础伤害</p>
+                            <p className="text-sm font-medium text-gray-800 dark:text-gray-100">Shadow 攻击倍率 %</p>
+                            <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+                              基础攻击按等级 {BOSS_ATTACK_BY_LEVEL.join('/')}，此倍率整体缩放
+                            </p>
                           </div>
                           <input
                             type="number"
-                            value={shadowAttack}
-                            onChange={(e) => setShadowAttack(e.target.value)}
+                            value={attackScale}
+                            onChange={(e) => setAttackScale(e.target.value)}
                             onBlur={() => {
-                              const v = parseInt(shadowAttack, 10);
-                              if (!isNaN(v) && v >= 0) saveSettings({ battleShadowAttack: v });
+                              const v = parseInt(attackScale, 10);
+                              if (!isNaN(v) && v > 0 && v <= 500) saveSettings({ battleAttackScale: v });
                             }}
                             className={`${inputCls} !w-20 text-center`}
-                            min={0}
+                            min={10} max={500}
                           />
                         </div>
                         {/* HP 回复 */}
@@ -814,7 +1106,7 @@ export const BattleArena = () => {
                     {/* ── 影时间 ── */}
                     <div className="space-y-1.5">
                       <p className="text-[11px] font-bold tracking-widest text-gray-400 dark:text-gray-500 uppercase px-1">影时间</p>
-                      <div className="rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm p-4 space-y-4">
+                      <div className={`${battleCard} p-4 space-y-4`}>
                         {/* 当前状态 */}
                         <div className="flex items-center gap-2">
                           <div
@@ -907,11 +1199,11 @@ export const BattleArena = () => {
                       >
                         数据
                       </p>
-                      <div className="rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden">
+                      <div className={`${battleCard} overflow-hidden`}>
                         <div className="px-4 py-3.5">
                           <p className="text-sm font-semibold text-gray-800 dark:text-gray-100">重置战场数据</p>
                           <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5 leading-relaxed">
-                            清除所有 Persona、Shadow 和战斗记录，此操作不可撤销。
+                            清除所有 Persona、Shadow、击败史与 HP 上限加成；未使用的 SP 会保留。此操作不可撤销。
                           </p>
                         </div>
                         <div className="px-4 pb-4">
@@ -948,14 +1240,117 @@ export const BattleArena = () => {
                 )}
               </AnimatePresence>
             </div>
+
+      {/* P3R 底部幽灵字 */}
+      {p3 && (
+        <div aria-hidden className="relative h-14">
+          <GhostWords words={['TACTICAL']} className="left-[6px] top-[-4px] text-[54px]" style={{ color: 'rgba(53,209,232,0.28)' }} />
+        </div>
+      )}
     </motion.div>
+    </P3RPage>
 
     {/* Sub-modals */}
     <PersonaCreateModal isOpen={showPersonaCreate} onClose={() => setShowPersonaCreate(false)} />
-    <ShadowCreateModal isOpen={showShadowCreate} onClose={() => setShowShadowCreate(false)} />
-    <BattleModal isOpen={showBattle} onClose={handleBattleClosed} onVictory={handleVictory} />
-    <VictoryModal isOpen={showVictory} onClose={() => setShowVictory(false)} />
+    <StratumRevealModal isOpen={showReveal} onClose={() => setShowReveal(false)} level={nextStratumLevel} />
+    <BattleModal
+      isOpen={showBattle}
+      onClose={handleBattleClosed}
+      onVictory={() => void handleVictory()}
+      encounter={activeEncounter ? { mob: activeEncounter.mob, level: activeEncounter.level } : null}
+      onEncounterEnd={(o) => void handleEncounterEnd(o)}
+    />
+    <VictoryModal
+      isOpen={showVictory}
+      onClose={() => {
+        setShowVictory(false);
+        if (useAppStore.getState().stratum?.status === 'cleared') setRecap('clear');
+      }}
+    />
     <PersonaShuffleModal isOpen={showPersonaShuffle} onClose={() => setShowPersonaShuffle(false)} />
+    {/* 塔内独立界面（验收反馈 #4）+ 潜入演出 */}
+    <AnimatePresence>
+      {towerOpen && (
+        <TowerScreen
+          open={towerOpen}
+          onClose={() => setTowerOpen(false)}
+          onDescend={() => void handleDescend()}
+          onRequestBattle={handleRequestBattle}
+          onToast={showSpToast}
+          interactive={sessionActive}
+        />
+      )}
+    </AnimatePresence>
+    <AnimatePresence>
+      {infiltrating && <InfiltrationOverlay onDone={() => void handleInfiltrationDone()} />}
+    </AnimatePresence>
+    {/* 批4 §6.2：备战抽取 · 抽2选1（今日待办≥3 的犒赏；z 高于塔屏） */}
+    <AnimatePresence>
+      {prepChoice && (
+        <motion.div
+          initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+          className="fixed inset-0 z-[55] flex items-center justify-center p-6"
+          style={{ background: 'rgba(0,0,0,0.82)' }}
+        >
+          <motion.div initial={{ scale: 0.9, y: 14 }} animate={{ scale: 1, y: 0 }} className="w-full max-w-xs space-y-3">
+            <div className="text-center">
+              <p className="text-3xl">🎴</p>
+              <p className="text-white font-black text-base mt-1">备战抽取</p>
+              <p className="text-[11px] text-indigo-200/60 mt-0.5">今日待办勤勉——月光多给了你一次选择</p>
+            </div>
+            {prepChoice.map(opt => (
+              <button
+                key={opt.id}
+                onClick={() => {
+                  void useAppStore.getState().applyPrepBuff(opt);
+                  setPrepChoice(null);
+                  playSound('/battle-seal.mp3', 0.5);
+                  showSpToast(`🎴 备战抽取 · ${opt.label}`);
+                }}
+                className="w-full py-3 px-4 text-left text-sm font-bold text-indigo-100"
+                style={{ clipPath: 'polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%)', background: 'rgba(49,46,129,0.85)', border: '1px solid rgba(99,102,241,0.5)' }}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+    {/* 批3：装备库 + 阴影档案馆 */}
+    <AnimatePresence>
+      {showArsenal && <ArsenalModal open={showArsenal} onClose={() => setShowArsenal(false)} />}
+    </AnimatePresence>
+    <AnimatePresence>
+      {showArchive && <ShadowArchiveModal open={showArchive} onClose={() => setShowArchive(false)} />}
+    </AnimatePresence>
+    {/* SP 即发 toast（全局层：塔屏之上也可见） */}
+    <AnimatePresence>
+      {spToast && (
+        <motion.div
+          initial={{ opacity: 0, y: -18 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
+          className="fixed left-1/2 -translate-x-1/2 z-[70] px-5 py-2 rounded-full text-sm font-bold shadow-xl"
+          style={{
+            top: 'calc(1rem + env(safe-area-inset-top))',
+            background: 'rgba(30,22,4,0.92)', border: '1px solid rgba(250,204,21,0.5)', color: '#fde047',
+            backdropFilter: 'blur(6px)',
+          }}
+        >
+          {spToast}
+        </motion.div>
+      )}
+    </AnimatePresence>
+    <AnimatePresence>
+      {recap && stratum && (
+        <TowerRecapModal
+          reason={recap}
+          stats={battleState?.towerSession}
+          stratum={stratum}
+          comment={recapComment}
+          onClose={() => setRecap(null)}
+        />
+      )}
+    </AnimatePresence>
     </>
   );
 };

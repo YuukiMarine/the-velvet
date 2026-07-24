@@ -4,6 +4,8 @@ import { useAppStore } from '@/store';
 import { useCloudStore } from '@/store/cloud';
 import { useCloudSocialStore } from '@/store/cloudSocial';
 import { PageTitle } from '@/components/PageTitle';
+import { useUiChannel } from '@/ui/useUiChannel';
+import { P3R, P3RPage, GhostWords, P3PageHeader, SlantButton, slantClip } from '@/components/p3r/kit';
 import { ConfidantCard } from '@/components/cooperation/ConfidantCard';
 import { ConfidantAlbumWall } from '@/components/cooperation/ConfidantAlbumWall';
 import { ConfidantCreateModal } from '@/components/cooperation/ConfidantCreateModal';
@@ -23,7 +25,6 @@ import { sendPrayer, hasPrayedToday, hasBeenPrayedByToday } from '@/services/pra
 import { loadSocial } from '@/services/social';
 import { playSound } from '@/utils/feedback';
 import type { CloudProfile, CoopBond, CoopShadow, Friendship } from '@/types';
-import { useUiChannel } from '@/ui/useUiChannel';
 import { P4Sparkle } from '@/ui/p4Kit';
 
 type Filter = 'all' | 'offline' | 'online' | 'archived';
@@ -43,6 +44,8 @@ export function Cooperation() {
   const [shadowBattle, setShadowBattle] = useState<{ shadow: CoopShadow; partnerName: string } | null>(null);
   const [shadowVictory, setShadowVictory] = useState<CoopShadow | null>(null);
   const [filter, setFilter] = useState<Filter>('all');
+  // P3R（蓝频道）：p3-cooperation-reference-v2 形态
+  const p3 = useUiChannel() === 'p3';
   const [createOpen, setCreateOpen] = useState(false);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -243,12 +246,13 @@ export function Cooperation() {
   const showOnlineFriends = filter === 'all' || filter === 'online';
 
   return (
+    <P3RPage active={p3}>
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.2 }}
-      className="max-w-2xl mx-auto space-y-5"
+      className="relative max-w-2xl mx-auto space-y-5"
     >
       <div className="flex items-center gap-2">
         {isP4 ? (
@@ -264,13 +268,27 @@ export function Cooperation() {
               COOPERATION <span className="text-[var(--p4-orange,#f9a11b)]">FILE</span>
             </div>
           </div>
+        ) : p3 ? (
+          <P3PageHeader ticks title="同伴" className="pt-1" />
         ) : (
           <PageTitle title="同伴" en="Cooperation" enOffset={{ right: -32 }} />
         )}
         <div className="ml-auto flex items-center gap-2">
-          <span className={`tracking-wider tabular-nums ${isP4 ? 'text-[13px] font-black text-[#131313]' : 'text-[11px] text-gray-400'}`}>
+          {isP4 ? (
+            <span className="text-[13px] font-black tracking-wider tabular-nums text-[#131313]">
+              {activeCount} / {MAJOR_ARCANA_IDS.length}
+            </span>
+          ) : p3 ? (
+            <span className="flex items-center gap-1" aria-label={`已缔结 ${activeCount} / ${MAJOR_ARCANA_IDS.length}`}>
+              <span className="text-[20px] font-black italic leading-none tabular-nums" style={{ color: P3R.blue }}>{activeCount}</span>
+              <span className="text-[13px] font-black" style={{ color: P3R.grey }}>/ {MAJOR_ARCANA_IDS.length}</span>
+              <span aria-hidden className="ml-0.5 h-2.5 w-2.5" style={{ background: P3R.blue, clipPath: 'polygon(100% 0, 100% 100%, 0 100%)' }} />
+            </span>
+          ) : (
+          <span className="text-[11px] tracking-wider text-gray-400 tabular-nums">
             {activeCount} / {MAJOR_ARCANA_IDS.length}
           </span>
+          )}
           {/* ✧ 菜单按钮：关于系统 / 谏言 / 归档 */}
           <div className="relative" ref={menuAnchorRef}>
             <button
@@ -279,11 +297,14 @@ export function Cooperation() {
                 // 仅在 "打开" 这个动作上熄灭红点；关闭操作不动 ack
                 if (!menuOpen) setMenuDotAck(true);
               }}
-              className={`relative w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-all ${
-                menuOpen
-                  ? 'bg-indigo-500 text-white shadow-md shadow-indigo-500/30'
-                  : 'bg-indigo-500/10 text-indigo-500 border border-indigo-500/30 hover:bg-indigo-500/20'
-              }`}
+              className={p3
+                ? 'relative flex h-8 w-9 items-center justify-center text-sm font-black transition-all'
+                : `relative w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-all ${
+                    menuOpen
+                      ? 'bg-indigo-500 text-white shadow-md shadow-indigo-500/30'
+                      : 'bg-indigo-500/10 text-indigo-500 border border-indigo-500/30 hover:bg-indigo-500/20'
+                  }`}
+              style={p3 ? { clipPath: slantClip(6), background: menuOpen ? P3R.blue : P3R.cyanPale, color: menuOpen ? '#fff' : P3R.blueDeep } : undefined}
               aria-label={showMenuTriggerDot ? `同伴系统菜单（${unreadCount} 条新通知）` : '同伴系统菜单'}
             >
               ✧
@@ -392,6 +413,13 @@ export function Cooperation() {
         </div>
       </div>
 
+      {/* P3R：LINK 巨幽灵字（标题下横贯，设计稿主视觉） */}
+      {p3 && (
+        <div aria-hidden className="relative h-7">
+          <GhostWords words={['LINK']} className="left-[6px] top-[-34px] text-[92px]" />
+        </div>
+      )}
+
       {/* 说明面板：默认收起；菜单里点"关于"展开 */}
       <AnimatePresence initial={false}>
         {infoOpen && (
@@ -436,8 +464,44 @@ export function Cooperation() {
       )}
 
       {/* 过滤 Tabs + 视图切换（P9：专辑墙 ⇄ 列表，右上角、持久记忆）。
-          P4：激活项 = 蓝色花形 blob（白星闪），其余为黑粗文字（设计稿弧线选择器的扁平化转译）。 */}
+          P4：激活项 = 蓝色花形 blob（白星闪），其余为黑粗文字；
+          p3（设计稿）：选中 = 蓝斜块白字 + 洋红角；未选 = 黑字 + 底部小青杠 */}
       <div className="flex items-center gap-2">
+        {p3 ? (
+          <div className="flex flex-1 items-center gap-1">
+            {([
+              { id: 'all', label: '全部' },
+              { id: 'offline', label: '离线' },
+              { id: 'online', label: '在线' },
+              { id: 'archived', label: '归档' },
+            ] as const).map(t => {
+              const active = filter === t.id;
+              return active ? (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => setFilter(t.id)}
+                  className="relative flex-1 py-2 text-[15px] font-black text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1b57ff]"
+                  style={{ clipPath: slantClip(10), background: P3R.blue }}
+                >
+                  {t.label}
+                  <span aria-hidden className="absolute bottom-0 right-2.5 h-[7px] w-[16px]" style={{ background: P3R.magenta, clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
+                </button>
+              ) : (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => setFilter(t.id)}
+                  className="flex flex-1 flex-col items-center gap-1 py-1.5 text-[15px] font-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1b57ff]"
+                  style={{ color: P3R.ink }}
+                >
+                  {t.label}
+                  <span aria-hidden className="h-[3px] w-5" style={{ background: 'rgba(53,209,232,0.65)', transform: 'skewX(-24deg)' }} />
+                </button>
+              );
+            })}
+          </div>
+        ) : (
         <div
           className={`grid flex-1 grid-cols-4 gap-1 text-xs font-bold ${
             isP4 ? '' : 'p-1 rounded-2xl bg-black/5 dark:bg-white/5'
@@ -486,12 +550,14 @@ export function Cooperation() {
             );
           })}
         </div>
+        )}
         <button
           type="button"
           onClick={() => void updateSettings({ confidantViewMode: viewMode === 'wall' ? 'list' : 'wall' })}
           aria-label={viewMode === 'wall' ? '切换到列表视图' : '切换到专辑墙视图'}
           title={viewMode === 'wall' ? '列表视图' : '专辑墙视图'}
-          className="shrink-0 rounded-xl bg-black/5 dark:bg-white/5 p-2.5 text-base leading-none text-gray-500 dark:text-gray-400"
+          className={p3 ? 'shrink-0 p-2.5 text-base leading-none' : 'shrink-0 rounded-xl bg-black/5 dark:bg-white/5 p-2.5 text-base leading-none text-gray-500 dark:text-gray-400'}
+          style={p3 ? { clipPath: slantClip(8), background: P3R.panel, color: P3R.blueDeep, boxShadow: '0 6px 14px rgba(38,96,140,0.08)' } : undefined}
         >
           {viewMode === 'wall' ? '☰' : '🃏'}
         </button>
@@ -516,6 +582,9 @@ export function Cooperation() {
               {filter === 'archived' ? '暂无归档的同伴' : '尚未与任何同伴建立羁绊'}
             </p>
             {filter !== 'archived' && (
+              p3 ? (
+                <SlantButton tone="primary" onClick={() => setCreateOpen(true)} className="mt-4">邀请第一位同伴</SlantButton>
+              ) : (
               <button
                 onClick={() => setCreateOpen(true)}
                 className={
@@ -527,6 +596,7 @@ export function Cooperation() {
               >
                 <span style={isP4 ? { display: 'inline-block', transform: 'skewX(6deg)' } : undefined}>邀请第一位同伴</span>
               </button>
+              )
             )}
           </motion.div>
         ) : (
@@ -622,21 +692,38 @@ export function Cooperation() {
         )}
       </AnimatePresence>
 
-      {/* 浮动新增按钮（P4 = 蓝色四角星 FAB，与行动页同制式） */}
+      {/* P3R：ARCANA 幽灵字（卡墙下部，设计稿） */}
+      {p3 && (
+        <div aria-hidden className="relative h-8">
+          <GhostWords words={['ARCANA']} className="left-[6px] top-[-30px] text-[74px]" />
+        </div>
+      )}
+
+      {/* 浮动新增按钮（P4 = 蓝色四角星 FAB / p3 = 右下大青斜块 +，与行动页同制式） */}
       {remaining > 0 && filter !== 'archived' && (
         <motion.button
           whileTap={{ scale: 0.95 }}
           onClick={() => setCreateOpen(true)}
-          className={`fixed bottom-24 md:bottom-8 right-5 md:right-8 z-40 flex items-center justify-center text-2xl font-bold text-white ${
-            isP4 ? 'h-16 w-16' : 'w-14 h-14 rounded-full shadow-2xl'
+          className={`fixed bottom-24 md:bottom-8 right-5 md:right-8 z-40 flex items-center justify-center text-white ${
+            isP4
+              ? 'h-16 w-16 text-2xl font-bold'
+              : p3
+                ? 'h-14 w-[76px] text-3xl font-black'
+                : 'w-14 h-14 rounded-full text-2xl font-bold shadow-2xl'
           }`}
           style={
             isP4
               ? undefined
-              : {
-                  background: 'linear-gradient(135deg, rgb(var(--color-bond-rgb)), rgb(var(--color-bond-bright-rgb)))',
-                  boxShadow: '0 12px 36px -8px rgb(var(--color-bond-bright-rgb) / 0.5)',
-                }
+              : p3
+                ? {
+                    clipPath: 'polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%)',
+                    background: 'linear-gradient(135deg, #35d1e8, #7fd8ee)',
+                    boxShadow: '0 12px 30px rgba(53,209,232,0.45)',
+                  }
+                : {
+                    background: 'linear-gradient(135deg, rgb(var(--color-bond-rgb)), rgb(var(--color-bond-bright-rgb)))',
+                    boxShadow: '0 12px 36px -8px rgb(var(--color-bond-bright-rgb) / 0.5)',
+                  }
           }
           aria-label="新增同伴"
         >
@@ -747,6 +834,7 @@ export function Cooperation() {
         onClose={() => setShadowVictory(null)}
       />
     </motion.div>
+    </P3RPage>
   );
 }
 

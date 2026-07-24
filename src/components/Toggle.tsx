@@ -18,6 +18,8 @@
  *   - 轨道底色用 CSS transition-colors（颜色不参与弹簧）；
  *   - 语义：button role="switch" + aria-checked，aria-label 必传（开关旁的
  *     文字 label 往往在调用方布局里，不能指望它被关联上）。
+ *
+ * 频道皮肤：P4 绿胶囊白圆花 / P3 斜切双段（浅青轨+蓝平行四边形滑块）/ neutral 圆胶囊。
  */
 import { motion } from 'motion/react';
 import { springSnappy } from '@/utils/motion';
@@ -38,7 +40,9 @@ export const Toggle = ({
   disabled = false,
   'aria-label': ariaLabel,
 }: ToggleProps) => {
-  const isP4 = useUiChannel() === 'p4';
+  const channel = useUiChannel();
+  const isP4 = channel === 'p4';
+  const p3 = channel === 'p3';
 
   // p4-redraw 定稿：加大绿胶囊（48×28），白圆旋钮内嵌黑色五瓣花
   if (isP4) {
@@ -64,6 +68,31 @@ export const Toggle = ({
         >
           <P4Flower size={13} color={checked ? '#131313' : 'rgba(19,19,19,0.35)'} />
         </motion.span>
+      </button>
+    );
+  }
+
+  // ── P3R（p3-settings 设计稿）：斜切双段开关——浅青轨 + 蓝色平行四边形滑块 ──
+  if (p3) {
+    return (
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        aria-label={ariaLabel}
+        disabled={disabled}
+        onClick={() => onChange(!checked)}
+        className={`relative inline-flex h-6 w-12 flex-shrink-0 transition-colors ${disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
+        style={{ clipPath: 'polygon(7px 0, 100% 0, calc(100% - 7px) 100%, 0 100%)', background: checked ? '#aee5f2' : '#dfe9f1' }}
+      >
+        <motion.span
+          aria-hidden="true"
+          className="absolute top-0 left-0 h-6 w-6"
+          style={{ clipPath: 'polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%)', background: checked ? '#1b57ff' : '#9fb4c6' }}
+          initial={false}
+          animate={{ x: checked ? 24 : 1 }}
+          transition={springSnappy}
+        />
       </button>
     );
   }

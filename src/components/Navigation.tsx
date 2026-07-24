@@ -1,5 +1,6 @@
 import { motion } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
+import type { MouseEvent as ReactMouseEvent } from 'react';
 import { useAppStore } from '@/store';
 import { useNavigatorStore } from '@/store/navigator';
 import { triggerLightHaptic, triggerNavFeedback } from '@/utils/feedback';
@@ -9,6 +10,7 @@ import { RadialQuickNav } from '@/components/RadialQuickNav';
 import { playHeavyTransition } from '@/ui/transitionDirector';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P4Sparkle } from '@/ui/p4Kit';
+import { P3R, slantClip, TitlePeriod } from '@/components/p3r/kit';
 
 // ── SVG 图标组件（24px viewBox / stroke 1.8 / filled 双态制式）──────────────
 
@@ -100,9 +102,11 @@ const isNavActive = (itemId: string, currentPage: string): boolean =>
 export { TrophyIcon };
 
 export const Sidebar = () => {
-  const { currentPage, setCurrentPage } = useAppStore();
+  const { currentPage, setCurrentPage, actionsSubTab, setActionsSubTab } = useAppStore();
   // F6：黑猫对话窗（NavigatorWindow 挂在 App 顶层，这里只负责打开）
   const openNavigator = useNavigatorStore((s) => s.open);
+  // P3R：蓝主题侧栏换形（水面底 + 蓝斜块选中 + 洋红角），其余主题不受影响
+  const p3 = useUiChannel() === 'p3';
 
   const renderItem = (item: NavItem) => {
     const active = isNavActive(item.id, currentPage);
@@ -112,22 +116,36 @@ export const Sidebar = () => {
         whileTap={{ scale: 0.97 }}
         onClick={() => {
           triggerNavFeedback();
+          // 已在「行动」再点：记录 ⇄ 任务 互切（与底导同口径）
+          if (active && item.id === 'actions') {
+            setActionsSubTab(actionsSubTab === 'activities' ? 'todos' : 'activities');
+            return;
+          }
           setCurrentPage(item.id);
         }}
-        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150 cursor-pointer ${
-          active
-            ? 'bg-primary/10 dark:bg-primary/15 text-primary'
-            : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-200'
-        }`}
+        className={p3
+          ? `relative w-full flex items-center gap-3 px-4 py-2.5 transition-all duration-150 cursor-pointer text-sm font-black ${
+              active ? 'text-white' : 'hover:bg-[#e2f2fa]'
+            }`
+          : `w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150 cursor-pointer ${
+              active
+                ? 'bg-primary/10 dark:bg-primary/15 text-primary'
+                : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-200'
+            }`}
+        style={p3 ? (active ? { clipPath: slantClip(10), background: P3R.blue } : { clipPath: slantClip(10), color: P3R.inkSoft }) : undefined}
       >
         <item.Icon filled={active} />
-        <span className={`text-sm font-medium ${active ? 'font-semibold' : ''}`}>{item.label}</span>
-        {active && (
-          <motion.div
-            layoutId="sidebar-active"
-            className="ml-auto w-1 h-5 bg-primary rounded-full"
-            transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-          />
+        <span className={p3 ? 'text-sm' : `text-sm font-medium ${active ? 'font-semibold' : ''}`}>{item.label}</span>
+        {p3 ? (
+          active && <span aria-hidden className="absolute bottom-0 right-4 h-[6px] w-[15px]" style={{ background: P3R.magenta, clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
+        ) : (
+          active && (
+            <motion.div
+              layoutId="sidebar-active"
+              className="ml-auto w-1 h-5 bg-primary rounded-full"
+              transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+            />
+          )
         )}
       </motion.button>
     );
@@ -138,21 +156,32 @@ export const Sidebar = () => {
       initial={{ x: -280 }}
       animate={{ x: 0 }}
       transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-      className="hidden md:flex md:flex-col md:w-60 bg-white dark:bg-gray-900 border-r border-gray-100 dark:border-gray-800 h-screen fixed left-0 top-0 shadow-sm"
+      // zClass.nav：p3 页面壳带 fixed 全屏水面底（绘制序在侧栏后），无 z 的侧栏会被整条盖住（横屏上报根因）
+      className={`hidden md:flex md:flex-col md:w-60 h-screen fixed left-0 top-0 ${zClass.nav} ${
+        p3 ? '' : 'bg-white dark:bg-gray-900 border-r border-gray-100 dark:border-gray-800 shadow-sm'
+      }`}
+      style={p3 ? { background: 'linear-gradient(175deg, #f8fcff 0%, #eaf5fb 60%, #dfeff8 100%)', borderRight: '1px solid rgba(53,209,232,0.4)', boxShadow: '0 0 24px rgba(38,96,140,0.08)' } : undefined}
     >
       <div className="px-6 pt-8 pb-6">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-xl overflow-hidden flex-shrink-0">
+          <div className={`w-8 h-8 overflow-hidden flex-shrink-0 ${p3 ? '' : 'rounded-xl'}`} style={p3 ? { clipPath: slantClip(5) } : undefined}>
             <img src="/icon.png" alt="靛蓝色房间" className="w-full h-full object-cover" />
           </div>
           <div>
-            <h1 className="text-base font-bold text-gray-900 dark:text-white leading-none">靛蓝色房间</h1>
-            <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-0.5">成长追踪器</p>
+            {p3 ? (
+              <h1 className="inline-flex items-end text-[17px] font-black italic leading-none tracking-tight" style={{ color: P3R.ink, fontFamily: '"Arial Black", "Noto Sans SC", sans-serif' }}>
+                靛蓝色房间
+                <TitlePeriod className="mb-0 ml-1 scale-[0.6]" style={{ transformOrigin: 'left bottom' }} />
+              </h1>
+            ) : (
+              <h1 className="text-base font-bold text-gray-900 dark:text-white leading-none">靛蓝色房间</h1>
+            )}
+            <p className={p3 ? 'mt-0.5 text-[10px] font-black tracking-[0.14em]' : 'text-[11px] text-gray-400 dark:text-gray-500 mt-0.5'} style={p3 ? { color: P3R.blue } : undefined}>THE VELVET</p>
           </div>
         </div>
       </div>
 
-      <nav className="flex-1 px-3 pb-4 space-y-0.5">
+      <nav className="flex-1 min-h-0 overflow-y-auto px-3 pb-4 space-y-0.5">
         {navItems.slice(0, 2).map(renderItem)}
 
         {/* 黑猫项：非页面路由，无激活态——打开 NavigatorWindow，与 BottomNav 中央 ◈ 同一去处。
@@ -163,14 +192,23 @@ export const Sidebar = () => {
             triggerNavFeedback();
             openNavigator();
           }}
-          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150 cursor-pointer text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-200"
+          className={p3
+            ? 'w-full flex items-center gap-3 px-4 py-2.5 transition-all duration-150 cursor-pointer text-sm font-black hover:bg-[#e2f2fa]'
+            : 'w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150 cursor-pointer text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-200'}
+          style={p3 ? { clipPath: slantClip(10), color: P3R.inkSoft } : undefined}
         >
           <span className="w-6 h-6 flex items-center justify-center flex-none" aria-hidden="true">
-            <span className="w-[18px] h-[18px] rotate-45 rounded-[5px] bg-primary shadow-sm shadow-primary/40 flex items-center justify-center">
-              <CatSilhouetteIcon className="w-3 h-3 -rotate-45 text-white" />
-            </span>
+            {p3 ? (
+              <span className="flex h-[20px] w-[20px] items-center justify-center" style={{ background: P3R.cyan, clipPath: slantClip(4) }}>
+                <CatSilhouetteIcon className="h-3.5 w-3.5 text-[#0a1230]" />
+              </span>
+            ) : (
+              <span className="w-[18px] h-[18px] rotate-45 rounded-[5px] bg-primary shadow-sm shadow-primary/40 flex items-center justify-center">
+                <CatSilhouetteIcon className="w-3 h-3 -rotate-45 text-white" />
+              </span>
+            )}
           </span>
-          <span className="text-sm font-medium">黑猫</span>
+          <span className={p3 ? 'text-sm' : 'text-sm font-medium'}>黑猫</span>
         </motion.button>
 
         {navItems.slice(2).map(renderItem)}
@@ -180,8 +218,8 @@ export const Sidebar = () => {
 };
 
 /** 常规 tab（移动端）：激活指示条 = 斜切平行四边形，layoutId 在四格之间滑动。
- *  P4 频道（p4-redraw 定稿）：奶油圆顶瓷砖 + 黑色图标粗字 + 激活橙星角标（无指示条）。 */
-const NavTab = ({ item, active, onSelect }: { item: NavItem; active: boolean; onSelect: () => void }) => {
+ *  P4：奶油圆顶瓷砖 + 橙星角标；P3：整格蓝斜块白字；其余：顶部小条。 */
+const NavTab = ({ item, active, onSelect, p3 = false }: { item: NavItem; active: boolean; onSelect: (e: ReactMouseEvent<HTMLButtonElement>) => void; p3?: boolean }) => {
   const isP4 = useUiChannel() === 'p4';
 
   if (isP4) {
@@ -214,26 +252,34 @@ const NavTab = ({ item, active, onSelect }: { item: NavItem; active: boolean; on
       whileTap={{ scale: 0.88 }}
       onClick={onSelect}
       className={`relative flex flex-col items-center justify-center flex-1 h-full cursor-pointer transition-colors duration-150 ${
-        active ? 'text-primary' : 'text-gray-400 dark:text-gray-500'
+        active ? (p3 ? 'text-white' : 'text-primary') : 'text-gray-400 dark:text-gray-500'
       }`}
     >
       {active && (
         // 约束（同 SegmentTabs 已验证做法）：layout 动画期间 Framer 的 projection
         // 独占本元素 transform——静态 skew 直接写在 layoutId 元素上会被覆盖，
         // 必须放内层子 div；水平居中也因此只能用负 margin，不能用 -translate-x-1/2
-        <motion.div
-          layoutId="bottomnav-active"
-          transition={springSnappy}
-          aria-hidden="true"
-          className="absolute top-0 w-9 h-1.5"
-          style={{ left: '50%', marginLeft: '-18px' }}
-        >
-          <div className="absolute inset-0 bg-primary" style={{ transform: 'skewX(var(--ui-skew-ui))' }} />
-        </motion.div>
+        p3 ? (
+          // P3R（p3-dashboard 设计稿底导）：选中项 = 亮蓝实心斜块填满整格
+          <motion.div layoutId="bottomnav-active" transition={springSnappy} aria-hidden="true" className="absolute inset-x-0.5 top-1 bottom-1.5">
+            <div className="absolute inset-0" style={{ background: '#1b57ff', clipPath: 'polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%)' }} />
+          </motion.div>
+        ) : (
+          <motion.div
+            layoutId="bottomnav-active"
+            transition={springSnappy}
+            aria-hidden="true"
+            className="absolute top-0 w-9 h-1.5"
+            style={{ left: '50%', marginLeft: '-18px' }}
+          >
+            <div className="absolute inset-0 bg-primary" style={{ transform: 'skewX(var(--ui-skew-ui))' }} />
+          </motion.div>
+        )
       )}
-      {/* iOS standalone 下由 --bottom-nav-content-shift 微调内容基线（行高压缩为 48px 时回正视觉重心） */}
+      {/* iOS standalone 下由 --bottom-nav-content-shift 微调内容基线（行高压缩为 48px 时回正视觉重心）
+          relative：p3 的整格指示块是 positioned 元素，内容必须同为 positioned 才能压在其上 */}
       <div
-        className="flex flex-col items-center justify-center gap-1"
+        className="relative flex flex-col items-center justify-center gap-1"
         style={{ transform: 'translateY(var(--bottom-nav-content-shift, 0px))' }}
       >
         <item.Icon filled={active} />
@@ -246,10 +292,13 @@ const NavTab = ({ item, active, onSelect }: { item: NavItem; active: boolean; on
 };
 
 export const BottomNav = () => {
-  const { currentPage, setCurrentPage } = useAppStore();
+  const { currentPage, setCurrentPage, actionsSubTab, setActionsSubTab } = useAppStore();
   // F6：黑猫对话窗（NavigatorWindow 挂在 App 顶层，这里只负责打开）
   const openNavigator = useNavigatorStore((s) => s.open);
-  const isP4 = useUiChannel() === 'p4';
+  const channel = useUiChannel();
+  const isP4 = channel === 'p4';
+  // P3R：蓝主题底导换形（选中整格蓝斜块 / 黑猫去菱形壳），红黄频道不受影响
+  const p3 = channel === 'p3';
 
   // P8.3 长按轮盘：◈ 按住 500ms 绽放快捷跳转半环（guide §22.5 长按时长统一口径）；
   // 短按语义不变（开黑猫）。suppressClick 挡掉长按触发后随 pointerup 而来的那次 click。
@@ -287,17 +336,29 @@ export const BottomNav = () => {
     playHeavyTransition(() => setCurrentPage(pageId));
   };
 
-  const renderTab = (item: NavItem) => (
-    <NavTab
-      key={item.id}
-      item={item}
-      active={isNavActive(item.id, currentPage)}
-      onSelect={() => {
-        triggerNavFeedback();
-        setCurrentPage(item.id);
-      }}
-    />
-  );
+  const renderTab = (item: NavItem) => {
+    const active = isNavActive(item.id, currentPage);
+    return (
+      <NavTab
+        key={item.id}
+        item={item}
+        p3={p3}
+        active={active}
+        onSelect={(e) => {
+          triggerNavFeedback();
+          if (active) {
+            // 已在「行动」再点：记录 ⇄ 任务 互切（用户口径）；其余 tab 原地点击无操作
+            if (item.id === 'actions') setActionsSubTab(actionsSubTab === 'activities' ? 'todos' : 'activities');
+            return;
+          }
+          const rect = e.currentTarget.getBoundingClientRect();
+          const origin = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+          // P8.4 试验：底部栏切换走水波纹转场（从点击的 tab 涨潮铺满 → 幕布后切页 → 退潮露新页）
+          playHeavyTransition(() => setCurrentPage(item.id), { effect: 'water', origin });
+        }}
+      />
+    );
+  };
 
   return (
     <motion.nav
@@ -350,14 +411,16 @@ export const BottomNav = () => {
             onContextMenu={(e) => e.preventDefault()}
             // rotate 走 motion style 而非 Tailwind rotate-45：whileTap 会接管 transform，
             // class 里的 rotate 在按压瞬间会被覆盖掉；motion 的 rotate / scale 独立合成。
-            // 水平居中用 -ml-7（w-14 的一半）同理——translate 类靠不住。
+            // 水平居中用 -ml-7（w-14 的一半）同理——translate 类靠不住；垂直居中同理走 my-auto。
             // touchAction none：长按-上滑手势期间禁掉浏览器滚动/长按系统行为。
-            // P4（p4-redraw 定稿）：蓝色正圆 + 白描边 + 头顶三道黄色小放射线，不转菱形。
-            style={{ rotate: isP4 ? 0 : 45, touchAction: 'none' }}
-            className={`absolute left-1/2 -top-3 -ml-7 w-14 h-14 flex items-center justify-center cursor-pointer select-none ${
+            // P4：蓝色正圆 + 白描边 + 头顶三道黄色小放射线，不转菱形。P3R：黑猫去菱形壳——深蓝墨猫头直接坐在栏上，与四格图标同水平。
+            style={{ rotate: isP4 || p3 ? 0 : 45, touchAction: 'none' }}
+            className={`absolute left-1/2 -ml-7 w-14 h-14 flex items-center justify-center cursor-pointer select-none ${
               isP4
-                ? 'rounded-full bg-[var(--ui-accent)] border-[3px] border-white text-[#131313]'
-                : 'rounded-2xl bg-primary shadow-lg shadow-primary/30 text-white'
+                ? '-top-3 rounded-full bg-[var(--ui-accent)] border-[3px] border-white text-[#131313]'
+                : p3
+                  ? 'top-0 bottom-0 my-auto text-[#0a1230]'
+                  : '-top-3 rounded-2xl bg-primary shadow-lg shadow-primary/30 text-white'
             }`}
           >
             {isP4 && (
@@ -374,9 +437,9 @@ export const BottomNav = () => {
                 </g>
               </svg>
             )}
-            {/* 内层 -rotate-45 回正：菱形是壳，猫保持水平（字恒水平的图形版）；P4 圆壳无需回正 */}
-            <span className={`${isP4 ? '' : '-rotate-45'} flex items-center justify-center`} aria-hidden="true">
-              <CatSilhouetteIcon className="w-7 h-7" />
+            {/* 内层 -rotate-45 回正：菱形是壳，猫保持水平（字恒水平的图形版）；P4 圆壳 / P3 无壳无需回正 */}
+            <span className={`${isP4 || p3 ? '' : '-rotate-45'} flex items-center justify-center`} aria-hidden="true">
+              <CatSilhouetteIcon className={p3 ? 'w-9 h-9' : 'w-7 h-7'} />
             </span>
           </motion.button>
         </div>

@@ -4,7 +4,7 @@ import { useAppStore } from '@/store';
 import { isInShadowTime } from '@/constants';
 
 export const BattleDashboardWidget = () => {
-  const { persona, shadow, battleState, settings, setCurrentPage } = useAppStore();
+  const { persona, shadow, battleState, settings, stratum, setCurrentPage } = useAppStore();
 
   const [inShadowTime, setInShadowTime] = useState(false);
 
@@ -92,15 +92,29 @@ export const BattleDashboardWidget = () => {
                 </span>
               )}
               <span className={`flex-shrink-0 ${dimCls}`}>·</span>
-              <span className={`text-xs truncate ${smallCls}`}>{shadow.name}</span>
-              <span
-                className="text-xs px-1.5 py-0.5 rounded flex-shrink-0"
-                style={{ background: 'rgba(220,38,38,0.2)', color: '#dc2626' }}
-              >
-                Lv.{shadow.level}
-              </span>
+              {stratum ? (
+                <>
+                  <span className={`text-xs truncate ${smallCls}`}>{stratum.name}</span>
+                  <span
+                    className="text-xs px-1.5 py-0.5 rounded flex-shrink-0 tabular-nums"
+                    style={{ background: 'rgba(220,38,38,0.2)', color: '#dc2626' }}
+                  >
+                    {stratum.baseFloor + (stratum.nodes.find(n => n.id === stratum.currentNodeId)?.floor ?? 0)}F
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className={`text-xs truncate ${smallCls}`}>{shadow.name}</span>
+                  <span
+                    className="text-xs px-1.5 py-0.5 rounded flex-shrink-0"
+                    style={{ background: 'rgba(220,38,38,0.2)', color: '#dc2626' }}
+                  >
+                    Lv.{shadow.level}
+                  </span>
+                </>
+              )}
 
-              {/* Mini HP bar */}
+              {/* Mini HP bar（主影） */}
               <div
                 className="flex-shrink-0 h-1.5 rounded-full overflow-hidden"
                 style={{ width: 40, background: hpTrack }}
@@ -115,8 +129,8 @@ export const BattleDashboardWidget = () => {
         </div>
       </div>
 
-      {/* Right: shadow time badge */}
-      {inShadowTime && (
+      {/* Right: shadow time badge / 开启时刻 */}
+      {inShadowTime ? (
         <motion.span
           animate={{ opacity: [1, 0.5, 1] }}
           transition={{ repeat: Infinity, duration: 1.5 }}
@@ -125,6 +139,10 @@ export const BattleDashboardWidget = () => {
         >
           影
         </motion.span>
+      ) : (
+        <span className={`flex-shrink-0 text-[10px] font-bold px-1.5 py-1 rounded-lg ${dimCls}`}>
+          {settings.battleShadowTimeStart ?? 20}:00 显形
+        </span>
       )}
     </motion.button>
   );

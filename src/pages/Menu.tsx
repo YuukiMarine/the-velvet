@@ -32,7 +32,7 @@
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { motion, type Variants } from 'motion/react';
+import { AnimatePresence, motion, type Variants } from 'motion/react';
 import { useAppStore } from '@/store';
 import type { ThemeType } from '@/types';
 import { PagePlane, PlaneLevel } from '@/components/PagePlane';
@@ -46,6 +46,8 @@ import { useBoldness } from '@/utils/boldness';
 import { STAGGER, TAP, springSoft, fadeIn } from '@/utils/motion';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P4Flower, P4Sparkle, P4SunRings } from '@/ui/p4Kit';
+import { P3R, P3RPage, slantClip } from '@/components/p3r/kit';
+import { computeTotalLv } from '@/utils/lvTiers';
 
 // ── 图标（24px stroke 制式，与 Navigation.tsx 同一套 heroicons outline 风格）──
 
@@ -80,7 +82,7 @@ const GearIcon = () => (
   </svg>
 );
 
-// 「心相记账」：钱包（heroicons wallet outline，24px stroke 1.8 制式）
+// 「记账」：钱包（heroicons wallet outline，24px stroke 1.8 制式）
 const WalletIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" strokeWidth={1.8} stroke="currentColor" className="w-6 h-6">
     <path d="M21 12a2.25 2.25 0 00-2.25-2.25H15a3 3 0 11-6 0H5.25A2.25 2.25 0 003 12m18 0v6a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 18v-6m18 0V9M3 12V9m18 0a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 9m18 0V6a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 6v3" strokeLinecap="round" strokeLinejoin="round" />
@@ -210,6 +212,15 @@ export const Menu = () => {
   // 「主题」Sheet：主题瓷砖点开的色板选择（快切上浮的第二形态：block 入口 + 面板选色）
   const [themeSheetOpen, setThemeSheetOpen] = useState(false);
   const currentThemeLabel = THEME_SWATCHES.find((t) => t.value === user?.theme)?.label ?? '默认';
+  // P3R（蓝频道）：p3-menu-reference-v2 阶梯瀑布形态；资料卡收进 Sheet（形按稿走、改名/头像功能不减配）
+  const p3 = useUiChannel() === 'p3';
+  const [profileSheetOpen, setProfileSheetOpen] = useState(false);
+  // P3R 菜单选项「游戏化选择」：selectedKey 驱动高亮（深蓝从左揭入 + 长度伸缩）；
+  // pointerdown 即选中预览、松手延时进入（让滑入动效播完）。默认选中首项「统计」。
+  const [selectedKey, setSelectedKey] = useState<string>('statistics');
+  const enterTimer = useRef<number | null>(null);
+  const press = useRef({ active: false, key: '', moved: false });
+  useEffect(() => () => { if (enterTimer.current) window.clearTimeout(enterTimer.current); }, []);
 
   const currentStreak = useMemo(() => calcCurrentStreak(activities.map(a => a.date)), [activities]);
 
@@ -337,6 +348,314 @@ export const Menu = () => {
     { key: 'settings', label: '设置', indent: 26, icon: <span className="text-[var(--ui-accent)]"><GearIcon /></span>, onPress: () => setCurrentPage('settings') },
     { key: 'about', label: '关于', indent: 34, icon: <P4Sparkle size={22} color="#ff7a2f" />, onPress: () => setAboutOpen(true), triggerRef: aboutTriggerRef },
   ];
+
+  // ── 「关于」/「主题」Sheet（p3 与默认形态共用）────────────────────────────
+  const sheetsJsx = (
+    <>
+      {/* ── 「关于」Sheet：复刻 Settings 原「关于」节（设置拆解 PR 后此处为唯一入口）。
+          文案与外链 URL 逐字保留；仅信息卡底色随 Sheet 面板（dark:bg-gray-900）
+          把 dark:bg-gray-700/border-gray-600 调整为 gray-800/gray-700 以维持层级对比。 */}
+      <SheetModal
+        isOpen={aboutOpen}
+        onClose={() => setAboutOpen(false)}
+        position="bottom"
+        title="关于"
+        originRef={aboutTriggerRef}
+      >
+        <div className="space-y-4">
+          {/* 居中头部：logo / 应用名 / 副题 / 版本 */}
+          <div className="text-center py-2">
+            <div className="text-5xl mb-4">🦋</div>
+            <h3 className="text-xl font-bold text-gray-800 dark:text-white mb-1">靛蓝色房间</h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Persona Growth Tracker</p>
+            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">v{import.meta.env.PACKAGE_VERSION}</p>
+          </div>
+          {/* 信息行列表：作者 / GitHub / Bilibili */}
+          <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-gray-600 dark:text-gray-400">作者</span>
+              <span className="text-sm font-medium text-gray-800 dark:text-white">IIInk</span>
+            </div>
+            <div className="border-t border-gray-200 dark:border-gray-700"></div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-gray-600 dark:text-gray-400">GitHub</span>
+              <a
+                href="https://github.com/YuukiMarine"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm font-medium text-primary hover:underline"
+              >
+                @YuukiMarine
+              </a>
+            </div>
+            <div className="border-t border-gray-200 dark:border-gray-700"></div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-gray-600 dark:text-gray-400">Bilibili</span>
+              <a
+                href="https://space.bilibili.com/15727079"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm font-medium text-primary hover:underline"
+              >
+                @IIInk
+              </a>
+            </div>
+          </div>
+          {/* 寄语：逐字保留 */}
+          <p className="text-xs text-center text-gray-400 dark:text-gray-500 leading-relaxed">
+            100%用爱发电，用得习惯欢迎点个star或者关注b站获取更新动态喵
+          </p>
+          <p className="text-xs text-center text-gray-400 dark:text-gray-500">
+            I am thou, thou art I...
+          </p>
+        </div>
+      </SheetModal>
+
+      {/* ── 「主题」Sheet：色板选择（点击即切）+ 精调入口（自定义色/音效仍在设置）── */}
+      <SheetModal
+        isOpen={themeSheetOpen}
+        onClose={() => setThemeSheetOpen(false)}
+        position="bottom"
+        title="主题"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-gray-500 dark:text-gray-400">选择你喜欢的主题，整个房间随之换色。</p>
+          <div className="grid grid-cols-5 gap-3">
+            {THEME_SWATCHES.map((t) => {
+              const selected = user?.theme === t.value;
+              const swatch =
+                t.value === 'custom'
+                  ? settings.customThemeColor ||
+                    'conic-gradient(#3B82F6, #F59E0B, #EF4444, #EC4899, #3B82F6)'
+                  : t.color!;
+              return (
+                <motion.button
+                  key={t.value}
+                  type="button"
+                  whileTap={TAP}
+                  onClick={() => {
+                    triggerNavFeedback();
+                    void setTheme(t.value);
+                  }}
+                  aria-label={`切换主题：${t.label}`}
+                  aria-pressed={selected}
+                  className="flex flex-col items-center gap-1.5"
+                >
+                  <span
+                    className={`relative h-12 w-12 rounded-2xl border-2 transition-shadow ${
+                      selected ? 'border-gray-900 shadow-md dark:border-white' : 'border-black/10 dark:border-white/15'
+                    }`}
+                    style={{ background: swatch }}
+                  >
+                    {selected && (
+                      <span aria-hidden className="absolute inset-0 flex items-center justify-center text-lg font-black text-white" style={{ textShadow: '0 1px 2px rgba(0,0,0,0.6)' }}>
+                        ✓
+                      </span>
+                    )}
+                  </span>
+                  <span className={`text-[11px] font-semibold ${selected ? 'text-primary' : 'text-gray-500 dark:text-gray-400'}`}>{t.label}</span>
+                </motion.button>
+              );
+            })}
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setThemeSheetOpen(false);
+              setCurrentPage('settings');
+            }}
+            className="w-full rounded-xl bg-gray-100 dark:bg-gray-800 py-2.5 text-sm font-semibold text-gray-600 dark:text-gray-300"
+          >
+            更多主题设置（自定义色 / 音效）→
+          </button>
+        </div>
+      </SheetModal>
+    </>
+  );
+
+  // ── P3R（蓝频道）形态：p3-menu-reference-v2 1:1 ── 蓝斜块大标 → 用户区 →
+  //    阶梯瀑布入口列（首项蓝实心+洋红角，逐项右缩进）；SYSTEM 竖排巨幽灵字
+  if (p3) {
+    const totalLv = computeTotalLv(attributes);
+    const totalPoints = attributes.reduce((s, a) => s + (a.points ?? 0), 0);
+    const menuItems: {
+      key: string; label: string; icon: ReactNode; onPress: () => void;
+      extra?: (sel: boolean) => ReactNode; aria: string;
+    }[] = [
+      {
+        key: 'statistics', label: '统计', icon: <ChartIcon />, onPress: () => setCurrentPage('statistics'),
+        extra: (sel) => <span className="shrink-0 text-[11px] font-bold" style={{ color: sel ? 'rgba(255,255,255,0.85)' : P3R.grey }}>连续 {currentStreak} 天</span>,
+        aria: `统计：当前连续 ${currentStreak} 天`,
+      },
+      ...(battleVisible ? [{
+        key: 'battle', label: '逆影战场', icon: <BoltIcon />, onPress: () => setCurrentPage('battle'),
+        extra: (sel: boolean) => inShadowTime ? (
+          <motion.span animate={{ opacity: [1, 0.55, 1] }} transition={{ repeat: Infinity, duration: 1.5 }} className="shrink-0 px-2 py-0.5 text-[11px] font-black" style={{ clipPath: slantClip(5), background: sel ? '#fff' : P3R.blue, color: sel ? P3R.blue : '#fff' }}>
+            影时间
+          </motion.span>
+        ) : undefined,
+        aria: inShadowTime ? '逆影战场：影时间进行中' : '逆影战场',
+      }] : []),
+      {
+        key: 'theme', label: '主题', icon: <PaletteIcon />, onPress: () => setThemeSheetOpen(true),
+        extra: (sel) => <span className="shrink-0 text-[11px] font-bold" style={{ color: sel ? 'rgba(255,255,255,0.85)' : P3R.grey }}>当前 {currentThemeLabel}</span>,
+        aria: `主题：当前 ${currentThemeLabel}`,
+      },
+      {
+        key: 'achievements', label: '成就·技能', icon: <TrophyIcon />, onPress: () => setCurrentPage('achievements'),
+        extra: (sel) => totalPendingUnlocks > 0 ? (
+          <span className="shrink-0 px-2 py-0.5 text-[11px] font-black" style={{ clipPath: slantClip(5), background: sel ? '#fff' : P3R.magenta, color: sel ? P3R.magenta : '#fff' }}>{totalPendingUnlocks} 待解锁</span>
+        ) : undefined,
+        aria: totalPendingUnlocks > 0 ? `成就·技能：${totalPendingUnlocks} 项待解锁` : '成就·技能',
+      },
+      { key: 'astrology', label: '占卜', icon: <MoonIcon />, onPress: () => setCurrentPage('astrology'), aria: '占卜' },
+      ...(ledgerVisible ? [{ key: 'ledger', label: '记账', icon: <WalletIcon />, onPress: () => setCurrentPage('ledger'), aria: '记账' }] : []),
+      { key: 'settings', label: '设置', icon: <GearIcon />, onPress: () => setCurrentPage('settings'), aria: '设置' },
+      { key: 'about', label: '关于', icon: <InfoIcon />, onPress: () => setAboutOpen(true), aria: '关于' },
+    ];
+    return (
+      <P3RPage className="overflow-hidden">
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }} className="relative mx-auto max-w-2xl pb-8">
+          {/* SYSTEM 巨幽灵字（p3-menu 设计稿：整行横排词整体顺时针旋转 90°，沿左缘纵向纵贯中下部——竖屏侧边字样） */}
+          <div aria-hidden className="pointer-events-none absolute left-0 top-[300px] flex h-[760px] w-[130px] select-none items-center justify-center overflow-hidden">
+            <span
+              className="whitespace-nowrap font-black italic leading-none"
+              style={{ fontFamily: 'Arial, sans-serif', fontSize: '9.5rem', color: 'rgba(53,209,232,0.20)', transform: 'rotate(90deg)' }}
+            >
+              SYSTEM
+            </span>
+          </div>
+
+          {/* 蓝斜块大标题 + 洋红角 */}
+          <div className="relative inline-block pt-2">
+            <h1 className="relative px-9 py-2.5 text-[32px] font-black italic leading-none text-white" style={{ clipPath: slantClip(16), background: P3R.blue }}>
+              菜单
+            </h1>
+            <span aria-hidden className="absolute bottom-0 right-2 h-[10px] w-[24px]" style={{ background: P3R.magenta, clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
+          </div>
+
+          {/* 用户区（设计稿排版；点击开资料 Sheet——改名/头像功能都在里面） */}
+          <button
+            type="button"
+            onClick={() => setProfileSheetOpen(true)}
+            aria-label="用户资料"
+            className="relative mt-6 block pl-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1b57ff]"
+          >
+            <span className="flex items-center gap-2.5">
+              <span aria-hidden className="h-[20px] w-[13px]" style={{ background: P3R.blue, clipPath: 'polygon(32% 0, 100% 0, 68% 100%, 0 100%)' }} />
+              <span className="text-[22px] font-black leading-none" style={{ color: P3R.ink }}>{user?.name ?? '旅行者'}</span>
+            </span>
+            <span className="mt-2 inline-flex items-baseline gap-1.5 px-5 py-1.5" style={{ clipPath: slantClip(9), background: 'rgba(207,234,246,0.85)' }}>
+              <span className="text-[13px] font-black tracking-wider" style={{ color: P3R.inkSoft }}>LV</span>
+              <span className="text-[18px] font-black italic leading-none tabular-nums" style={{ color: P3R.blue }}>{totalLv}</span>
+            </span>
+            <span className="mt-2 block text-[14px] font-black" style={{ color: P3R.ink }}>
+              总点数 <span className="italic tabular-nums" style={{ color: P3R.blue }}>{totalPoints}</span>
+            </span>
+          </button>
+
+          {/* 游戏化入口列：selectedKey 高亮（深蓝从左揭入 + 长度伸缩）；按下预览、上下拖拽切换、松手进入 */}
+          <nav
+            className="relative mt-7 space-y-2.5"
+            aria-label="功能入口"
+            style={{ touchAction: 'none' }}
+            onPointerDown={(e) => {
+              const el = (e.target as HTMLElement).closest('[data-menu-key]');
+              if (!el) return;
+              const key = el.getAttribute('data-menu-key') || '';
+              press.current = { active: true, key, moved: false };
+              setSelectedKey(key);
+              try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); } catch { /* noop */ }
+            }}
+            onPointerMove={(e) => {
+              if (!press.current.active) return;
+              const el = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-menu-key]');
+              const key = el?.getAttribute('data-menu-key');
+              if (key && key !== press.current.key) {
+                press.current.key = key;
+                press.current.moved = true;
+                triggerNavFeedback();
+                setSelectedKey(key);
+              }
+            }}
+            onPointerUp={() => {
+              if (!press.current.active) return;
+              const key = press.current.key;
+              press.current.active = false;
+              triggerNavFeedback();
+              if (enterTimer.current) window.clearTimeout(enterTimer.current);
+              enterTimer.current = window.setTimeout(() => { menuItems.find((m) => m.key === key)?.onPress(); }, 200);
+            }}
+            onPointerCancel={() => { press.current.active = false; }}
+          >
+            {menuItems.map((m, i) => {
+              const selected = m.key === selectedKey;
+              const indent = i * 5;                                     // 基础阶梯缩进（%）
+              const ml = selected ? 0 : indent;                         // 选中左伸到 0 → 变长
+              const w = selected ? 100 : Math.max(46, 100 - indent - 6); // 未选中右侧再缩 → 变短
+              const content = (white: boolean) => (
+                <>
+                  <span aria-hidden style={{ color: white ? '#fff' : P3R.blue }}>{m.icon}</span>
+                  <span className="min-w-0 flex-1 truncate text-[17px] font-black" style={{ color: white ? '#fff' : P3R.ink }}>{m.label}</span>
+                  {m.extra?.(white)}
+                </>
+              );
+              return (
+                <motion.div
+                  key={m.key}
+                  initial={bold ? { opacity: 0, x: 24 } : { opacity: 0 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ ...springSoft, delay: i * 0.045 }}
+                >
+                  <motion.button
+                    type="button"
+                    data-menu-key={m.key}
+                    whileTap={TAP}
+                    onClick={(e) => { if (e.detail === 0) { setSelectedKey(m.key); m.onPress(); } }}
+                    aria-label={m.aria}
+                    aria-current={selected ? 'true' : undefined}
+                    className="relative block overflow-hidden py-3.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1b57ff]"
+                    style={{
+                      clipPath: slantClip(16),
+                      background: i % 2 ? 'rgba(232,245,251,0.95)' : 'rgba(255,255,255,0.92)',
+                      boxShadow: selected ? '0 12px 28px rgba(27,87,255,0.28)' : '0 8px 18px rgba(38,96,140,0.06)',
+                      marginLeft: `${ml}%`,
+                      width: `${w}%`,
+                      transition: 'margin-left 0.36s cubic-bezier(0.16,1,0.3,1), width 0.36s cubic-bezier(0.16,1,0.3,1), box-shadow 0.3s ease',
+                    }}
+                  >
+                    {/* 底层常态（浅底墨字） */}
+                    <span className="flex items-center gap-3.5 pl-7 pr-5">{content(false)}</span>
+                    {/* 高亮层：深蓝从左揭入（CSS animation，稳过 rAF 节流）、离开淡出 */}
+                    <AnimatePresence>
+                      {selected && (
+                        <motion.span
+                          key="hl"
+                          className="absolute inset-0 flex items-center gap-3.5 pl-7 pr-5"
+                          style={{ background: P3R.blue, animation: 'p3MenuReveal 0.34s cubic-bezier(0.16,1,0.3,1)' }}
+                          exit={{ opacity: 0, transition: { duration: 0.2 } }}
+                        >
+                          {content(true)}
+                          <span aria-hidden className="absolute bottom-0 right-3 h-[9px] w-[22px]" style={{ background: P3R.magenta, clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
+                        </motion.span>
+                      )}
+                    </AnimatePresence>
+                  </motion.button>
+                </motion.div>
+              );
+            })}
+          </nav>
+
+          {sheetsJsx}
+
+          {/* 资料 Sheet（UserProfileCard 全功能收纳） */}
+          <SheetModal isOpen={profileSheetOpen} onClose={() => setProfileSheetOpen(false)} position="bottom" title="用户资料">
+            <UserProfileCard />
+          </SheetModal>
+        </motion.div>
+      </P3RPage>
+    );
+  }
 
   return (
     <motion.div
@@ -638,8 +957,8 @@ export const Menu = () => {
                     side="left"
                     order={orderOf('left', 2)}
                     bold={bold}
-                    label="心相记账"
-                    ariaLabel="心相记账"
+                    label="记账"
+                    ariaLabel="记账"
                     icon={<WalletIcon />}
                     onPress={() => setCurrentPage('ledger')}
                   />
@@ -761,124 +1080,7 @@ export const Menu = () => {
       </PagePlane>
       )}
 
-      {/* ── 「关于」Sheet：复刻 Settings 原「关于」节（设置拆解 PR 后此处为唯一入口）。
-          文案与外链 URL 逐字保留；仅信息卡底色随 Sheet 面板（dark:bg-gray-900）
-          把 dark:bg-gray-700/border-gray-600 调整为 gray-800/gray-700 以维持层级对比。 */}
-      <SheetModal
-        isOpen={aboutOpen}
-        onClose={() => setAboutOpen(false)}
-        position="bottom"
-        title="关于"
-        originRef={aboutTriggerRef}
-      >
-        <div className="space-y-4">
-          {/* 居中头部：logo / 应用名 / 副题 / 版本 */}
-          <div className="text-center py-2">
-            <div className="text-5xl mb-4">🦋</div>
-            <h3 className="text-xl font-bold text-gray-800 dark:text-white mb-1">靛蓝色房间</h3>
-            <p className="text-sm text-gray-500 dark:text-gray-400">Persona Growth Tracker</p>
-            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">v{import.meta.env.PACKAGE_VERSION}</p>
-          </div>
-          {/* 信息行列表：作者 / GitHub / Bilibili */}
-          <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-600 dark:text-gray-400">作者</span>
-              <span className="text-sm font-medium text-gray-800 dark:text-white">IIInk</span>
-            </div>
-            <div className="border-t border-gray-200 dark:border-gray-700"></div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-600 dark:text-gray-400">GitHub</span>
-              <a
-                href="https://github.com/YuukiMarine"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-sm font-medium text-primary hover:underline"
-              >
-                @YuukiMarine
-              </a>
-            </div>
-            <div className="border-t border-gray-200 dark:border-gray-700"></div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-600 dark:text-gray-400">Bilibili</span>
-              <a
-                href="https://space.bilibili.com/15727079"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-sm font-medium text-primary hover:underline"
-              >
-                @IIInk
-              </a>
-            </div>
-          </div>
-          {/* 寄语：逐字保留 */}
-          <p className="text-xs text-center text-gray-400 dark:text-gray-500 leading-relaxed">
-            100%用爱发电，用得习惯欢迎点个star或者关注b站获取更新动态喵
-          </p>
-          <p className="text-xs text-center text-gray-400 dark:text-gray-500">
-            I am thou, thou art I...
-          </p>
-        </div>
-      </SheetModal>
-
-      {/* ── 「主题」Sheet：色板选择（点击即切）+ 精调入口（自定义色/音效仍在设置）── */}
-      <SheetModal
-        isOpen={themeSheetOpen}
-        onClose={() => setThemeSheetOpen(false)}
-        position="bottom"
-        title="主题"
-      >
-        <div className="space-y-4">
-          <p className="text-sm text-gray-500 dark:text-gray-400">选择你喜欢的主题，整个房间随之换色。</p>
-          <div className="grid grid-cols-5 gap-3">
-            {THEME_SWATCHES.map((t) => {
-              const selected = user?.theme === t.value;
-              const swatch =
-                t.value === 'custom'
-                  ? settings.customThemeColor ||
-                    'conic-gradient(#3B82F6, #F59E0B, #EF4444, #EC4899, #3B82F6)'
-                  : t.color!;
-              return (
-                <motion.button
-                  key={t.value}
-                  type="button"
-                  whileTap={TAP}
-                  onClick={() => {
-                    triggerNavFeedback();
-                    void setTheme(t.value);
-                  }}
-                  aria-label={`切换主题：${t.label}`}
-                  aria-pressed={selected}
-                  className="flex flex-col items-center gap-1.5"
-                >
-                  <span
-                    className={`relative h-12 w-12 rounded-2xl border-2 transition-shadow ${
-                      selected ? 'border-gray-900 shadow-md dark:border-white' : 'border-black/10 dark:border-white/15'
-                    }`}
-                    style={{ background: swatch }}
-                  >
-                    {selected && (
-                      <span aria-hidden className="absolute inset-0 flex items-center justify-center text-lg font-black text-white" style={{ textShadow: '0 1px 2px rgba(0,0,0,0.6)' }}>
-                        ✓
-                      </span>
-                    )}
-                  </span>
-                  <span className={`text-[11px] font-semibold ${selected ? 'text-primary' : 'text-gray-500 dark:text-gray-400'}`}>{t.label}</span>
-                </motion.button>
-              );
-            })}
-          </div>
-          <button
-            type="button"
-            onClick={() => {
-              setThemeSheetOpen(false);
-              setCurrentPage('settings');
-            }}
-            className="w-full rounded-xl bg-gray-100 dark:bg-gray-800 py-2.5 text-sm font-semibold text-gray-600 dark:text-gray-300"
-          >
-            更多主题设置（自定义色 / 音效）→
-          </button>
-        </div>
-      </SheetModal>
+      {sheetsJsx}
     </motion.div>
   );
 };

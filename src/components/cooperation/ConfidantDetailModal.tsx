@@ -1,5 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence, type Variants } from 'motion/react';
+import { useUiChannel } from '@/ui/useUiChannel';
 import { useAppStore, toLocalDateKey } from '@/store';
 import { useCloudSocialStore } from '@/store/cloudSocial';
 import { TAROT_BY_ID } from '@/constants/tarot';
@@ -160,6 +162,8 @@ export function ConfidantDetailModal({
   }, [relatedBond, confidant]);
 
   const [tab, setTab] = useState<Tab>('info');
+  // P3R（蓝频道，p3-modal-09 稿）：tab 斜块 / CTA 蓝斜钮+洋红角 / 归档浅青·删除洋红
+  const p3 = useUiChannel() === 'p3';
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [interactionOpen, setInteractionOpen] = useState(false);
   const [starShiftOpen, setStarShiftOpen] = useState(false);
@@ -337,7 +341,10 @@ export function ConfidantDetailModal({
     await updateConfidant(confidant.id, { customAvatarDataUrl: undefined });
   };
 
-  return (
+  // portal 到 body（审计 §3.6）：树内 fixed 会被页面容器的 transform/clip 创建的
+  // containing block 吃掉——p3 页面壳（转场揭示 clip / 入场 y 位移）下弹窗被裁小、
+  // 长按「更换头像」菜单点不到（用户上报蓝主题失灵的根因）
+  return createPortal(
     <AnimatePresence>
       <motion.div
         key="cd-modal-bg"
@@ -607,7 +614,35 @@ export function ConfidantDetailModal({
             </div>
           )}
 
-          {/* Tabs */}
+          {/* Tabs（p3：选中蓝斜块白字+洋红角 / 未选白斜块黑字，p3-modal-09 稿） */}
+          {p3 ? (
+            <div className="mx-6 mt-4 flex items-stretch">
+              {([
+                { id: 'info', label: '信息' },
+                { id: 'abilities', label: '能力' },
+                { id: 'history', label: '历史' },
+              ] as const).map((t, i) => {
+                const active = tab === t.id;
+                return (
+                  <button
+                    key={t.id}
+                    onClick={() => setTab(t.id)}
+                    className="relative flex-1 py-2.5 text-[14px] font-black transition-all"
+                    style={{
+                      clipPath: 'polygon(11px 0, 100% 0, calc(100% - 11px) 100%, 0 100%)',
+                      background: active ? '#1b57ff' : '#eef6fb',
+                      color: active ? '#fff' : '#0a1230',
+                      marginLeft: i > 0 ? -6 : 0,
+                      zIndex: active ? 2 : 1,
+                    }}
+                  >
+                    {t.label}
+                    {active && <span aria-hidden className="absolute bottom-0 right-2.5 h-[7px] w-[16px]" style={{ background: '#f0417f', clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />}
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
           <div className="grid grid-cols-3 gap-1 p-1 mx-6 mt-4 rounded-xl bg-black/5 dark:bg-white/5">
             {([
               { id: 'info', label: '信息' },
@@ -629,6 +664,7 @@ export function ConfidantDetailModal({
               );
             })}
           </div>
+          )}
 
           <div className="p-6 pt-4 space-y-4">
             <AnimatePresence mode="wait">
@@ -840,14 +876,21 @@ export function ConfidantDetailModal({
                     whileTap={{ scale: 0.97 }}
                     onClick={() => setInteractionOpen(true)}
                     disabled={confidant.intimacy >= MAX_INTIMACY || interactedToday}
-                    className="w-full py-3 rounded-xl text-white text-sm font-bold shadow-lg disabled:opacity-40"
-                    style={{ background: `linear-gradient(135deg, ${accent}, ${accent}cc)`, boxShadow: `0 10px 28px -12px ${accent}80` }}
+                    className={p3
+                      ? 'relative w-full py-3.5 text-[16px] font-black text-white disabled:opacity-40'
+                      : 'w-full py-3 rounded-xl text-white text-sm font-bold shadow-lg disabled:opacity-40'}
+                    style={p3
+                      ? { clipPath: 'polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%)', background: '#1b57ff', boxShadow: '0 12px 28px rgba(27,87,255,0.3)' }
+                      : { background: `linear-gradient(135deg, ${accent}, ${accent}cc)`, boxShadow: `0 10px 28px -12px ${accent}80` }}
                   >
                     {confidant.intimacy >= MAX_INTIMACY
                       ? '已圆满 ✧'
                       : interactedToday
                       ? '今日已解读'
                       : '今日互动 · 由 AI 解读加点'}
+                    {p3 && !(confidant.intimacy >= MAX_INTIMACY || interactedToday) && (
+                      <span aria-hidden className="absolute bottom-0 right-4 h-[7px] w-[18px]" style={{ background: '#f0417f', clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
+                    )}
                   </motion.button>
 
                   {/* Row 2: 次要 CTA —— 星移（仅有可用次数时展示） */}
@@ -875,17 +918,19 @@ export function ConfidantDetailModal({
                 </>
               )}
 
-              {/* Row 3: 归档 / 删除 */}
+              {/* Row 3: 归档 / 删除（p3：浅青斜块 / 洋红斜块白字，p3-modal-09 稿） */}
               <div className="grid grid-cols-2 gap-2">
                 <button
                   onClick={handleArchive}
-                  className="py-2 rounded-xl text-xs font-medium bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300"
+                  className={p3 ? 'py-2.5 text-xs font-black' : 'py-2 rounded-xl text-xs font-medium bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300'}
+                  style={p3 ? { clipPath: 'polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%)', background: '#cfeaf6', color: '#0a1230' } : undefined}
                 >
                   {confidant.archivedAt ? '恢复关系' : '暂时归档'}
                 </button>
                 <button
                   onClick={() => setDeleteConfirmOpen(true)}
-                  className="py-2 rounded-xl text-xs font-medium bg-transparent border border-rose-300 text-rose-500 hover:bg-rose-500/10 transition-colors"
+                  className={p3 ? 'py-2.5 text-xs font-black text-white' : 'py-2 rounded-xl text-xs font-medium bg-transparent border border-rose-300 text-rose-500 hover:bg-rose-500/10 transition-colors'}
+                  style={p3 ? { clipPath: 'polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%)', background: '#f0417f' } : undefined}
                 >
                   彻底删除
                 </button>
@@ -1048,7 +1093,8 @@ export function ConfidantDetailModal({
           </motion.div>
         )}
       </AnimatePresence>
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body,
   );
 }
 

@@ -738,7 +738,7 @@ export const Terminal = () => {
           channelLabel={skin.label}
           onBack={() => setCurrentPage('dashboard')}
         >
-          <div className="dark relative">
+          <div className={ch === 'board' ? 'relative' : 'dark relative'}>
             {/* 房里其他人的声音：board = 底部弹幕栏（P3R 设计稿），其余频道 = 漂浮弹幕氛围层 */}
             {ch === 'board' ? (
               <P3DanmakuBar messages={danmakuPool} bold={bold} />
@@ -748,12 +748,8 @@ export const Terminal = () => {
             {ch === 'board' ? (
               <div className="mb-6">
                 <div className="flex items-start gap-2.5">
-                  <span aria-hidden className="mt-[5px] h-4 w-1.5 shrink-0" style={{ background: '#2fd2ff' }} />
-                  <p className="text-[15px] font-semibold leading-relaxed text-white">{skin.velvet}</p>
-                </div>
-                <div className="mt-3 flex items-center gap-2" aria-hidden>
-                  <span className="h-px flex-1 bg-white/40" />
-                  <span className="h-[3px] w-6 bg-white/85" />
+                  <span aria-hidden className="mt-[5px] h-4 w-1.5 shrink-0" style={{ background: '#1b57ff' }} />
+                  <p className="text-[15px] font-black leading-relaxed" style={{ color: '#0a1230' }}>{skin.velvet}</p>
                 </div>
               </div>
             ) : ch === 'tv' ? (

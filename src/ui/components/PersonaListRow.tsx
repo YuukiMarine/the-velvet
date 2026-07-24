@@ -3,7 +3,7 @@
  *
  * 三频道三形态：P5 纸条（selected 放大+红贴角，completed 被斜纹划过但可读）；
  * P4 节目单条（左缘彩色频道条，completed 盖 CLEAR 章）；
- * P3 战术条（深底斜切+青色底线，selected 白反转+洋红刀口）。
+ * P3 战术条（白/浅青斜面，selected 亮蓝反转+洋红角标）。
  *
  * 铁律（guide §22.3）：clip-path 只裁视觉层，button 本体 hit area 保持完整矩形；
  * 文字层恒水平。行高紧凑但可点区 ≥48px（guide §18.1）。
@@ -158,24 +158,39 @@ export const PersonaListRow = ({
         type="button"
         onClick={onClick}
         whileTap={onClick ? hit : undefined}
-        className={`relative block w-full min-h-[48px] text-left ${className ?? ''}`}
+        aria-pressed={onClick ? selected : undefined}
+        className={`relative block min-h-[48px] w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0b5cff] focus-visible:ring-offset-2 ${className ?? ''}`}
       >
         {/* 视觉层裁切；hit area 是外层完整矩形 */}
         <div
           className="relative flex items-center gap-3 px-4 py-2.5"
           style={{
-            clipPath: 'polygon(0 0, calc(100% - 10px) 0, 100% 100%, 10px 100%)',
-            background: selected ? 'var(--ui-paper)' : 'var(--ui-surface)',
-            color: selected ? '#05070d' : 'var(--ui-surface-ink)',
-            borderBottom: completed ? '2px solid rgba(0,216,255,0.35)' : `2px solid ${danger ? 'var(--ui-danger)' : 'rgba(0,216,255,0.65)'}`,
-            opacity: completed ? 0.68 : 1,
+            clipPath: 'polygon(3% 0, 100% 0, 97% 100%, 0 100%)',
+            background: selected
+              ? 'var(--p3-blue, #0b5cff)'
+              : completed
+                ? 'rgba(218,246,255,0.9)'
+                : 'rgba(255,255,255,0.94)',
+            color: selected ? '#ffffff' : '#07143f',
+            boxShadow: selected ? '0 10px 22px rgba(11,92,255,0.14)' : '0 8px 20px rgba(35,111,154,0.07)',
+            opacity: completed ? 0.78 : 1,
           }}
         >
-          {/* selected：洋红刀口从左穿入（装饰层） */}
+          {/* selected：洋红角标只承担当前状态，不参与命中。 */}
           {selected && (
-            <span aria-hidden className="absolute left-0 top-1/2 h-[3px] w-6 -translate-y-1/2" style={{ background: 'var(--ui-danger)', transform: 'skewX(-30deg)' }} />
+            <span
+              aria-hidden
+              className="pointer-events-none absolute bottom-0 right-0 h-4 w-4 bg-[var(--ui-danger)]"
+              style={{ clipPath: 'polygon(100% 0, 100% 100%, 0 100%)' }}
+            />
           )}
-          <div className={selected ? 'pl-4' : ''} />
+          {completed && !selected && (
+            <span
+              aria-hidden
+              className="pointer-events-none absolute inset-y-0 right-0 w-8 opacity-55"
+              style={{ background: 'var(--p3-cyan, #20cfe8)', clipPath: 'polygon(45% 0, 100% 0, 100% 100%, 0 100%)' }}
+            />
+          )}
           {inner}
         </div>
       </motion.button>

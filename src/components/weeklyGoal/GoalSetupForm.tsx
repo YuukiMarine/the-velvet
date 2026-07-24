@@ -3,6 +3,8 @@ import { useState } from 'react';
 import { useAppStore } from '@/store';
 import { AttributeId, WeeklyGoalItem, WeeklyGoalType } from '@/types';
 import { Stepper } from '@/components/Stepper';
+import { useUiChannel } from '@/ui/useUiChannel';
+import { SlantButton } from '@/components/p3r/kit';
 import { ALL_GOAL_TYPES, ATTR_IDS, GOAL_TYPE_DESCS, GOAL_TYPE_LABELS, makeDefaultItem } from './weeklyGoalShared';
 
 // ── GoalSetupForm (shared between create & edit) ────────────────────────────
@@ -56,6 +58,8 @@ export const GoalSetupForm = ({
   };
 
   const canConfirm = selectedTypes.size >= 2;
+  // P3R（p3-modal-04 稿）：浅青斜卡 + 左上青色大勾块 + 白斜奖励 input + 斜切双钮
+  const p3 = useUiChannel() === 'p3';
 
   const handleConfirm = () => {
     const items = ALL_GOAL_TYPES
@@ -63,6 +67,125 @@ export const GoalSetupForm = ({
       .map(t => itemConfigs[t]);
     onConfirm(items, reward);
   };
+
+  // ── P3R 形态（结构差异大，独立分支；数据与 handlers 全同源）──────────────
+  if (p3) {
+    return (
+      <div className="p3r-sheet relative">
+        {/* 左上青色大三角装饰（稿） */}
+        <span aria-hidden className="absolute -left-2 -top-2 h-0 w-0 border-r-[46px] border-t-[38px] border-r-transparent" style={{ borderTopColor: 'rgba(53,209,232,0.85)' }} />
+        <div className="relative px-4 pb-4 pt-5">
+          <h3 className="text-[26px] font-black italic leading-none" style={{ color: '#0a1230', fontFamily: '"Arial Black", "Noto Sans SC", sans-serif' }}>设定本周目标</h3>
+          <p className="mt-2 text-[13px] font-bold" style={{ color: '#1b57ff' }}>{weekStart} ~ {weekEnd}　· 至少选择 2 项</p>
+
+          <div className="mt-4 space-y-3">
+            {ALL_GOAL_TYPES.map((type, ti) => {
+              const isSelected = selectedTypes.has(type);
+              const cfg = itemConfigs[type];
+              const needsAttr = type === 'activity_count' || type === 'attr_points';
+              return (
+                <div
+                  key={type}
+                  className="relative overflow-hidden transition-all"
+                  style={{
+                    clipPath: 'polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%)',
+                    background: isSelected ? 'rgba(207,234,246,0.55)' : 'rgba(255,255,255,0.85)',
+                    boxShadow: '0 8px 18px rgba(38,96,140,0.07)',
+                  }}
+                >
+                  {/* 头行：左上青色大勾块 + 标题/副题 */}
+                  <button
+                    type="button"
+                    className="flex w-full items-start gap-3.5 py-3 pl-4 pr-4 text-left"
+                    onClick={() => toggleType(type)}
+                    aria-pressed={isSelected}
+                  >
+                    <span
+                      aria-hidden
+                      className="flex h-11 w-11 shrink-0 items-center justify-center"
+                      style={{ clipPath: 'polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%)', background: isSelected ? '#35d1e8' : '#dfe9f1' }}
+                    >
+                      {isSelected && (
+                        <svg viewBox="0 0 14 11" className="h-5 w-6" fill="none">
+                          <path d="M1.5 5.5l3.5 3.5L12.5 1.5" stroke="white" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      )}
+                    </span>
+                    <span className="min-w-0 flex-1 pt-0.5">
+                      <span className="block text-[17px] font-black leading-tight" style={{ color: '#0a1230' }}>{GOAL_TYPE_LABELS[type]}</span>
+                      <span className="mt-0.5 block text-[11px] font-semibold" style={{ color: '#8a97ad' }}>{GOAL_TYPE_DESCS[type]}</span>
+                    </span>
+                    {!isSelected && <span className="shrink-0 pt-1 text-xs font-bold" style={{ color: '#8a97ad' }}>点击添加</span>}
+                  </button>
+                  {/* 卡角小三角（洋红/青交替，稿） */}
+                  <span aria-hidden className="absolute right-1 top-1 h-0 w-0 border-l-[14px] border-t-[11px] border-l-transparent" style={{ borderTopColor: ti % 2 ? '#f0417f' : 'rgba(53,209,232,0.9)' }} />
+
+                  {/* 展开配置行：目标 label + 属性选择 + 步进器 */}
+                  <AnimatePresence initial={false}>
+                    {isSelected && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className="overflow-hidden"
+                      >
+                        <div className="flex items-center justify-between gap-3 px-4 pb-3.5">
+                          <div className="flex flex-wrap items-center gap-2.5">
+                            <span className="text-[13px] font-black" style={{ color: '#0a1230' }}>目标</span>
+                            {needsAttr && (
+                              <select
+                                value={cfg.attribute || 'knowledge'}
+                                onChange={e => updateConfig(type, { attribute: e.target.value as AttributeId })}
+                                onClick={e => e.stopPropagation()}
+                                className="px-3 py-1 text-sm focus:outline-none"
+                              >
+                                {ATTR_IDS.map(id => (
+                                  <option key={id} value={id}>{settings.attributeNames[id]}</option>
+                                ))}
+                              </select>
+                            )}
+                          </div>
+                          <Stepper
+                            value={cfg.target}
+                            min={1}
+                            max={999}
+                            aria-label={`${GOAL_TYPE_LABELS[type]}目标`}
+                            onChange={v => updateConfig(type, { target: v })}
+                          />
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="mt-4">
+            <label className="mb-1.5 block text-[14px]">完成奖励（选填）</label>
+            <div className="relative">
+              <input
+                type="text"
+                value={reward}
+                onChange={e => setReward(e.target.value)}
+                placeholder="给自己一个奖励吧…"
+                className="w-full px-4 py-2.5 text-sm focus:outline-none"
+              />
+              <span aria-hidden className="pointer-events-none absolute bottom-0 right-0 h-0 w-0 border-b-[12px] border-l-[16px] border-l-transparent" style={{ borderBottomColor: '#35d1e8' }} />
+            </div>
+          </div>
+
+          <div className="mt-4 flex gap-3">
+            <SlantButton tone="ghost" onClick={onCancel} className="flex-1">取消</SlantButton>
+            <SlantButton tone="primary" magentaCorner disabled={!canConfirm} onClick={handleConfirm} className="flex-1">
+              确认（{selectedTypes.size} 项）
+            </SlantButton>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="rounded-2xl bg-white dark:bg-gray-900 border border-gray-200/80 dark:border-gray-700/80 shadow-sm overflow-hidden">

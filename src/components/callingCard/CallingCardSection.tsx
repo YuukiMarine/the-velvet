@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore } from '@/store';
 import { useLongPress } from '@/utils/useLongPress';
 import { triggerLightHaptic } from '@/utils/feedback';
 import { CallingCardCard } from './CallingCardCard';
 import { CallingCardEditor } from './CallingCardEditor';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import type { CallingCard } from '@/types';
 
 /**
@@ -67,7 +68,7 @@ export function CallingCardSection({ sectionId = 'calling-card-section' }: { sec
             className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl bg-white/70 dark:bg-gray-900/70 border border-dashed border-gray-300 dark:border-gray-700 text-[12px] text-gray-600 dark:text-gray-300 hover:bg-primary/5 dark:hover:bg-primary/10 hover:border-primary/40 dark:hover:border-primary/50 transition-colors shadow-sm dark:shadow-none"
           >
             <span className="text-primary">✦</span>
-            <span>还没有倒计时 — 立一张</span>
+            <span>还没有倒计时 — 立下约定</span>
           </button>
         )}
 
@@ -158,8 +159,19 @@ function CardMenu({
   onDelete: () => void;
 }) {
   const [confirmDel, setConfirmDel] = useState(false);
+  // 点外关闭改 document 级监听：原先的树内 fixed 遮罩会被 GoalDeck 的 drag
+  // transform 捕获成"只罩住卡壳"的局部层（点外面关不掉，全局 bug 的一环）
+  const rootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: PointerEvent) => {
+      if (!rootRef.current?.contains(e.target as Node)) onClose();
+    };
+    document.addEventListener('pointerdown', onDown);
+    return () => document.removeEventListener('pointerdown', onDown);
+  }, [open, onClose]);
   return (
-    <div className="relative" onClick={(e) => e.stopPropagation()}>
+    <div ref={rootRef} className="relative" onClick={(e) => e.stopPropagation()}>
       <button
         onClick={onToggle}
         className="w-7 h-7 flex items-center justify-center rounded-full text-white/70 hover:text-white hover:bg-white/10 transition-colors"
@@ -171,7 +183,6 @@ function CardMenu({
       <AnimatePresence>
         {open && (
           <>
-            <div className="fixed inset-0 z-10" onClick={onClose} />
             <motion.div
               initial={{ opacity: 0, y: -4, scale: 0.96 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -277,52 +288,18 @@ function ArchivedRow({
         />
       </motion.div>
 
-      {/* 长按删除确认弹窗（与 Activities 删除二级风格一致：背景遮罩 + 居中卡片） */}
-      <AnimatePresence>
-        {confirmOpen && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
-            onClick={() => setConfirmOpen(false)}
-          >
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0, y: 10 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.9, opacity: 0, y: 10 }}
-              transition={{ type: 'spring', duration: 0.4 }}
-              className="bg-white dark:bg-gray-800 rounded-2xl p-6 max-w-sm w-full shadow-2xl"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="text-center">
-                <div className="text-4xl mb-3 text-red-500">⚠️</div>
-                <h3 className="text-lg font-bold text-gray-800 dark:text-white mb-2">
-                  删除「{card.title}」？
-                </h3>
-                <p className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed">
-                  归档的倒计时不可恢复。<br />
-                  历史"留下记录"保留不动。
-                </p>
-              </div>
-              <div className="flex gap-3 mt-6">
-                <button
-                  onClick={() => setConfirmOpen(false)}
-                  className="flex-1 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 py-2 rounded-lg font-medium"
-                >
-                  取消
-                </button>
-                <button
-                  onClick={async () => { await onDelete(); setConfirmOpen(false); }}
-                  className="flex-1 py-2 rounded-lg font-medium text-white bg-red-500"
-                >
-                  删除
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* 长按删除确认——换 ConfirmDialog 基座：portal 到 body（治 GoalDeck drag transform
+          捕获树内 fixed 的全局 bug）+ p3 白斜卡/斜切双钮自动换装 */}
+      <ConfirmDialog
+        isOpen={confirmOpen}
+        tone="danger"
+        title={`删除「${card.title}」？`}
+        description={'归档的倒计时不可恢复。\n历史"留下记录"保留不动。'}
+        confirmText="删除"
+        cancelText="取消"
+        onConfirm={async () => { await onDelete(); setConfirmOpen(false); }}
+        onCancel={() => setConfirmOpen(false)}
+      />
     </div>
   );
 }

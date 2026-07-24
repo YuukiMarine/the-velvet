@@ -179,6 +179,9 @@
   --ui-cut-md: polygon(0 0, 96% 0, 100% 100%, 4% 100%);
   --ui-radius: 6px;
   --ui-noise-opacity: 0.12;
+  /* P3R 白日水面语言：斜切不斜置——斜轴世界与控件 skew 在蓝频道归零 */
+  --ui-axis: 0deg;
+  --ui-skew-ui: 0deg;
 }
 
 :root[data-theme="yellow"] {
@@ -323,6 +326,12 @@ html[data-ios-standalone="true"] {
   0%   { transform: scale(0);  opacity: 0.5; }
   60%  { transform: scale(18); opacity: 0.15; }
   100% { transform: scale(24); opacity: 0; }
+}
+
+/* P3R 菜单选项高亮：深蓝从左揭入（CSS animation，不依赖 rAF；结束后无 clip-path 全显） */
+@keyframes p3MenuReveal {
+  from { clip-path: inset(0 100% 0 0); }
+  to   { clip-path: inset(0 0 0 0); }
 }
 
 @keyframes tvNoiseDrift {
@@ -492,4 +501,50 @@ html[data-ios-standalone="true"] {
   .sl-plane:focus-within .sl-level {
     transform: rotate(0deg);
   }
+}
+
+/* ── P3R（蓝频道）统一卡壳：白斜卡（清单式换壳用，见 components/p3r/kit.tsx） ── */
+.p3r-card {
+  clip-path: polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%);
+  background: #ffffff;
+  box-shadow: 0 10px 24px rgba(38, 96, 140, 0.08);
+}
+
+/* ── P3R sheet 表单原语（蓝频道 SheetModal 内自动换装，p3-modal-02/03/04 稿）：
+     字段 = 浅青面 + 亮青粗下划线 + 深蓝墨字；select = 白斜块蓝粗字。
+     !important 用于压过各表单手写的 Tailwind 边框/圆角/暗色类。 ── */
+.p3r-sheet input[type="text"],
+.p3r-sheet input[type="number"],
+.p3r-sheet input[type="date"],
+.p3r-sheet input[type="time"],
+.p3r-sheet textarea {
+  border: none !important;
+  border-bottom: 3px solid #35d1e8 !important;
+  border-radius: 0 !important;
+  background: rgba(207, 234, 246, 0.35) !important;
+  color: #0a1230 !important;
+  font-weight: 600;
+}
+.p3r-sheet input::placeholder,
+.p3r-sheet textarea::placeholder {
+  color: #8fa8bd !important;
+  font-weight: 500;
+}
+.p3r-sheet input:focus,
+.p3r-sheet textarea:focus {
+  border-bottom-color: #1b57ff !important;
+  background: rgba(207, 234, 246, 0.5) !important;
+}
+.p3r-sheet select {
+  border: none !important;
+  border-bottom: 2px solid #35d1e8 !important;
+  border-radius: 0 !important;
+  background-color: #fff !important;
+  clip-path: polygon(7px 0, 100% 0, calc(100% - 7px) 100%, 0 100%);
+  color: #1b57ff !important;
+  font-weight: 800;
+}
+.p3r-sheet label {
+  color: #0a1230;
+  font-weight: 800;
 }

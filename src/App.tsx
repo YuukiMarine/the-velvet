@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef, useCallback, lazy, Suspense } from 'react';
+import type { ReactNode } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useAppStore, toLocalDateKey } from '@/store';
 import { useCloudStore } from '@/store/cloud';
@@ -16,6 +17,9 @@ import { AchievementUnlockModal } from '@/components/AchievementUnlockModal';
 import { SkillUnlockModal } from '@/components/SkillUnlockModal';
 import { db } from '@/db';
 import { Dashboard } from '@/pages/Dashboard';
+// P3R（蓝主题）页面变体：p3-redraw 设计稿 1:1（channel==='p3' 时替换默认形态）
+import { DashboardP3 } from '@/pages/p3/DashboardP3';
+import { useUiChannel } from '@/ui/useUiChannel';
 import { Achievements } from '@/pages/Achievements';
 const Statistics = lazy(() => import('@/pages/Statistics').then(m => ({ default: m.Statistics })));
 import { Settings } from '@/pages/Settings';
@@ -46,6 +50,7 @@ import { SlantTuner } from '@/components/dev/SlantTuner';
 import { StarTearDemo } from '@/components/dev/StarTearDemo';
 import { PersonaGallery } from '@/components/dev/PersonaGallery';
 import { TransitionLayer } from '@/components/transition/HeavyTransition';
+import { consumePendingCircleReveal } from '@/ui/transitionDirector';
 
 const isStandalonePwa = () => (
   window.matchMedia('(display-mode: standalone)').matches
@@ -55,6 +60,8 @@ const isStandalonePwa = () => (
 
 function App() {
   const { currentPage, initializeApp, user, levelUpNotification, setLevelUpNotification, achievementNotification, setAchievementNotification, skillNotification, setSkillNotification, settings, modalBlocker } = useAppStore();
+  // P3R 页面变体分流：蓝主题 → p3-redraw 设计稿形态
+  const uiChannel = useUiChannel();
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showSplash, setShowSplash] = useState(true);
@@ -378,10 +385,10 @@ function App() {
     );
   }
 
-  const renderPage = () => {
-    switch (currentPage) {
+  const renderPage = (page: string) => {
+    switch (page) {
       case 'dashboard':
-        return <Dashboard />;
+        return uiChannel === 'p3' ? <DashboardP3 /> : <Dashboard />;
       // 'todos'/'activities' 是合并前的旧路由 id：散落的 setCurrentPage('todos') 调用点
       // （问候卡提示条等）继续可用，Actions 内部会按旧 id 落到对应子页并归一为 'actions'
       case 'actions':
@@ -559,9 +566,9 @@ function App() {
                 // 避免 iPhone home bar 设备上出现多余的灰色空白条。
                 className="md:ml-60 px-4 md:px-8 pt-[calc(1rem+env(safe-area-inset-top))] md:pt-8 pb-[calc(4rem+var(--app-bottom-safe-padding,env(safe-area-inset-bottom,0px))+0.5rem)] md:pb-8"
               >
-                <AnimatePresence mode="wait">
-                  {renderPage()}
-                </AnimatePresence>
+                {/* 页面双缓冲切换：水波纹导航=旧页垫底+新页圆形擦除（页对页，无背景闪白）；
+                    普通导航=交叉淡化 */}
+                <PageSwitcher current={currentPage} render={renderPage} />
               </main>
 
                {/* 升级弹窗 */}
@@ -619,6 +626,79 @@ function App() {
     </div>
   );
 }
+
+/**
+ * 水波纹转场配套（P8.4）：页面双缓冲切换器。
+ * 水波纹导航（800ms 内登记过原点）：旧页**原样垫底**，新页以点击点为圆心经扩散
+ * 圆形蒙版直接擦出来——页对页擦除，中间不露背景（用户口径：不要白色遮罩）。
+ * 普通导航：旧页快速淡出 + 新页自身入场动画（原交叉淡化口径）。
+ * 擦除完旧页出栈、clip 撤为 none：clip-path 会给 fixed 子孙创建 containing block
+ * （P3RPage 的水面底就是 fixed inset-0），不撤会让页面背景错位。
+ * 同实例约束：active→leaving 必须由同一个 PageShell 承载（换组件类型会 remount
+ * 页面、on-mount 数据副作用重跑——逆流衰减等不可重放）。
+ */
+const PAGE_HOLD_MS = 520;
+/** 旧路由 id todos/activities 与 actions 同页，归一避免瞬间误 remount */
+const normPageKey = (id: string) => (id === 'todos' || id === 'activities' ? 'actions' : id);
+
+const PageShell = ({ leaving, children }: { leaving: boolean; children: ReactNode }) => {
+  const [origin] = useState(consumePendingCircleReveal); // 入场时查询一次（读取不清除，StrictMode 双挂载安全）
+  const [revealing, setRevealing] = useState(!!origin);
+  // 变 leaving 的瞬间若仍在水波纹窗口内：保持原样垫底等着被新页擦除盖掉；否则交叉淡出
+  const holdStatic = leaving && !!consumePendingCircleReveal();
+  const R = origin
+    ? Math.ceil(Math.hypot(Math.max(origin.x, window.innerWidth - origin.x), Math.max(origin.y, window.innerHeight - origin.y)) * 1.06)
+    : 0;
+  return (
+    <motion.div
+      className={leaving ? 'pointer-events-none absolute inset-x-0 top-0 z-0' : 'relative z-[1]'}
+      aria-hidden={leaving || undefined}
+      initial={origin ? { clipPath: `circle(0px at ${origin.x}px ${origin.y}px)` } : false}
+      animate={{
+        clipPath: origin && revealing ? `circle(${R}px at ${origin.x}px ${origin.y}px)` : 'none',
+        opacity: leaving && !holdStatic ? 0 : 1,
+      }}
+      transition={{
+        clipPath: revealing ? { duration: 0.42, ease: [0.3, 0, 0.2, 1] } : { duration: 0 },
+        opacity: { duration: 0.18 },
+      }}
+      onAnimationComplete={() => setRevealing(false)}
+    >
+      {children}
+    </motion.div>
+  );
+};
+
+const PageSwitcher = ({ current, render }: { current: string; render: (page: string) => ReactNode }) => {
+  const [stack, setStack] = useState<Array<{ key: string; id: string; leaving: boolean }>>(() => [
+    { key: normPageKey(current), id: current, leaving: false },
+  ]);
+  const pruneTimer = useRef<number | null>(null);
+  useEffect(() => {
+    const key = normPageKey(current);
+    setStack((prev) => {
+      const top = prev[prev.length - 1];
+      // 同页（含 todos→actions 归一）：仅同步 id，保持实例
+      if (top.key === key) return top.id === current ? prev : [...prev.slice(0, -1), { ...top, id: current }];
+      // 切页：先清掉上一轮残留的 leaving，再把当前顶置为 leaving 垫底、新页压顶
+      return [...prev.filter((p) => !p.leaving).map((p) => ({ ...p, leaving: true })), { key, id: current, leaving: false }];
+    });
+    if (pruneTimer.current) clearTimeout(pruneTimer.current);
+    pruneTimer.current = window.setTimeout(() => setStack((prev) => prev.filter((p) => !p.leaving)), PAGE_HOLD_MS);
+    return () => {
+      if (pruneTimer.current) clearTimeout(pruneTimer.current);
+    };
+  }, [current]);
+  return (
+    <div className="relative">
+      {stack.map((p) => (
+        <PageShell key={p.key} leaving={p.leaving}>
+          {render(p.id)}
+        </PageShell>
+      ))}
+    </div>
+  );
+};
 
 /**
  * 全局宣告·达成结算屏：渲染在 App 顶层，确保用户在任何页面完成最后一项关联待办时

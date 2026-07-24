@@ -52,12 +52,12 @@ export const P3DotGrid = ({ className, style, size = 14, dot = 1.3, opacity = 0.
   />
 );
 
-/** 巨型幽灵字（背景 TRACE 水印） */
+/** 巨型幽灵字（背景 TRACE 水印；Arial 合成加粗——比 Impact 细一档，用户定稿） */
 export const P3GhostWord = ({ word, className, style }: { word: string; className?: string; style?: CSSProperties }) => (
   <div
     aria-hidden
     className={`pointer-events-none absolute select-none whitespace-nowrap font-black italic leading-none tracking-tight text-white ${className ?? ''}`}
-    style={{ fontFamily: 'Arial Black, Impact, sans-serif', ...style }}
+    style={{ fontFamily: 'Arial, sans-serif', ...style }}
   >
     {word}
   </div>

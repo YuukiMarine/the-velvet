@@ -16,9 +16,12 @@
 import type { AttributeId, AttributeNames, ConfidantBuff, ConfidantBuffKind } from '@/types';
 import { MAJOR_ARCANA, TAROT_BY_ID } from '@/constants/tarot';
 
-/** 同伴战斗道具的数值常量（供 UI 与 buff 生成共用） */
-export const CONFIDANT_HEAL_HP = 5;
-export const CONFIDANT_RESTORE_SP = 5;
+/** 同伴战斗道具的数值常量（供 UI 与 buff 生成共用）
+ *  批4 §6.5 拍板：battle_heal = 20% 最大 HP、battle_sp = +15。
+ *  存量同伴 buff.value 仍是旧值（5）——战斗使用点一律按下面两个常量现算，忽略存量 value。 */
+export const CONFIDANT_HEAL_HP_PCT = 0.2;
+export const CONFIDANT_HEAL_HP = 5; // 旧平添值（仅存量数据兼容展示，勿新增引用）
+export const CONFIDANT_RESTORE_SP = 15;
 /** 同伴战斗道具的冷却（天）——上次使用后需要等 N 天才能再次使用 */
 export const CONFIDANT_ITEM_CD_DAYS = 2;
 
@@ -145,10 +148,10 @@ export function buffsForLevel(
       id: 'battle_heal',
       kind: 'battle_heal',
       attribute: attr,
-      value: CONFIDANT_HEAL_HP,
+      value: Math.round(CONFIDANT_HEAL_HP_PCT * 100), // 语义=最大HP百分比（使用点按 PCT 现算）
       unlockAtLevel: 4,
       title: `${name}的慰藉`,
-      description: `战斗中使用一次，恢复 ${CONFIDANT_HEAL_HP} 点 HP（每 ${CONFIDANT_ITEM_CD_DAYS} 天限一次）`,
+      description: `战斗中使用一次，恢复 ${Math.round(CONFIDANT_HEAL_HP_PCT * 100)}% 最大 HP（每 ${CONFIDANT_ITEM_CD_DAYS} 天限一次）`,
     });
   }
   // Lv 7：永久战斗伤害 +1（此属性技能）
@@ -204,7 +207,7 @@ export function formatBuffDisplay(
     case 'battle_heal':
       return {
         title: `${name}的慰藉`,
-        description: `战斗中使用一次，恢复 ${buff.value} 点 HP（每 ${CONFIDANT_ITEM_CD_DAYS} 天限一次）`,
+        description: `战斗中使用一次，恢复 ${Math.round(CONFIDANT_HEAL_HP_PCT * 100)}% 最大 HP（每 ${CONFIDANT_ITEM_CD_DAYS} 天限一次）`,
       };
     case 'damage_plus':
       return {
@@ -214,7 +217,7 @@ export function formatBuffDisplay(
     case 'battle_sp':
       return {
         title: `${name}的余韵`,
-        description: `战斗中使用一次，恢复 ${buff.value} 点 SP（每 ${CONFIDANT_ITEM_CD_DAYS} 天限一次）`,
+        description: `战斗中使用一次，恢复 ${CONFIDANT_RESTORE_SP} 点 SP（每 ${CONFIDANT_ITEM_CD_DAYS} 天限一次）`,
       };
     default:
       return { title: buff.title || '同伴能力', description: buff.description || '' };
