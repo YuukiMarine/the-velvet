@@ -1,14 +1,18 @@
 import { motion } from 'motion/react';
 import { useUiChannel } from '@/ui/useUiChannel';
+import { P4_PETAL_D } from '@/ui/p4Kit';
 
-/** P4 卡背用的五瓣小花（SVG 内联版，cx/cy 为中心） */
+/** P4 卡背用的六瓣小花（与 P4Flower 同一枚花瓣路径，只是内联进 SVG 并按 r 缩放） */
 const P4BackFlower = ({ cx, cy, r = 10, color = '#f0b428' }: { cx: number; cy: number; r?: number; color?: string }) => (
-  <g transform={`translate(${cx}, ${cy})`}>
-    {[0, 72, 144, 216, 288].map(deg => (
-      <ellipse key={deg} cx={0} cy={-r * 0.55} rx={r * 0.32} ry={r * 0.5} fill={color} transform={`rotate(${deg})`} />
+  <g transform={`translate(${cx}, ${cy}) scale(${r / 12})`}>
+    {[0, 60, 120, 180, 240, 300].map(deg => (
+      <path key={deg} d={P4_PETAL_D} fill={color} transform={`rotate(${deg})`} />
     ))}
   </g>
 );
+
+/** P4 卡背底色：原为奶油白，按用户口径换成中性灰（与黄/黑主调拉开层次） */
+const P4_FACE = '#d7d5cf';
 
 interface CardBackProps {
   width?: number;
@@ -60,21 +64,27 @@ export function CardBack({
           />
         )}
         <svg viewBox={`0 0 ${VB_W} ${VB_H}`} width={width} height={height} style={{ display: 'block' }}>
-          {/* 奶油底板 + 黑色双框 */}
-          <rect x="2" y="2" width={VB_W - 4} height={VB_H - 4} rx="14" fill="#fff6d0" stroke="#131313" strokeWidth="3" />
-          <rect x="12" y="12" width={VB_W - 24} height={VB_H - 24} rx="8" fill="none" stroke="#131313" strokeWidth="1.4" opacity="0.85" />
-          {/* 虚线圆规线 */}
-          <circle cx={VB_W / 2} cy={VB_H / 2} r="74" fill="none" stroke="#131313" strokeWidth="1" strokeDasharray="2 5" opacity="0.4" />
-          {/* 黄色靶心圆 + 内白环 + 黑圆 + 白四角星 */}
+          {/* 全实心构图（用户口径：不要描边线条，一律纯色块面）——
+              外框 = 黑底板上压一层灰卡面；内框 = 黑矩形上再压一层灰矩形；
+              圆规环 = 两枚同心实心圆叠出的细环。原先那套 stroke/strokeDasharray 全退役。 */}
+          <rect x="0" y="0" width={VB_W} height={VB_H} rx="16" fill="#131313" />
+          <rect x="4" y="4" width={VB_W - 8} height={VB_H - 8} rx="13" fill={P4_FACE} />
+          <rect x="12" y="12" width={VB_W - 24} height={VB_H - 24} rx="9" fill="#131313" />
+          <rect x="14" y="14" width={VB_W - 28} height={VB_H - 28} rx="8" fill={P4_FACE} />
+          {/* 圆规环 */}
+          <circle cx={VB_W / 2} cy={VB_H / 2} r="76" fill="rgba(19,19,19,0.3)" />
+          <circle cx={VB_W / 2} cy={VB_H / 2} r="74.5" fill={P4_FACE} />
+          {/* 黄色靶心圆 + 灰环 + 黑圆 + 灰四角星（环也由实心同心圆叠出） */}
           <circle cx={VB_W / 2} cy={VB_H / 2} r="56" fill="#ffd900" />
-          <circle cx={VB_W / 2} cy={VB_H / 2} r="40" fill="none" stroke="#fff6d0" strokeWidth="5" />
+          <circle cx={VB_W / 2} cy={VB_H / 2} r="42.5" fill={P4_FACE} />
+          <circle cx={VB_W / 2} cy={VB_H / 2} r="37.5" fill="#ffd900" />
           <circle cx={VB_W / 2} cy={VB_H / 2} r="27" fill="#131313" />
           <path
             d={`M ${VB_W / 2} ${VB_H / 2 - 15} C ${VB_W / 2 + 3} ${VB_H / 2 - 4}, ${VB_W / 2 + 4} ${VB_H / 2 - 3}, ${VB_W / 2 + 15} ${VB_H / 2}
                C ${VB_W / 2 + 4} ${VB_H / 2 + 3}, ${VB_W / 2 + 3} ${VB_H / 2 + 4}, ${VB_W / 2} ${VB_H / 2 + 15}
                C ${VB_W / 2 - 3} ${VB_H / 2 + 4}, ${VB_W / 2 - 4} ${VB_H / 2 + 3}, ${VB_W / 2 - 15} ${VB_H / 2}
                C ${VB_W / 2 - 4} ${VB_H / 2 - 3}, ${VB_W / 2 - 3} ${VB_H / 2 - 4}, ${VB_W / 2} ${VB_H / 2 - 15} Z`}
-            fill="#fff6d0"
+            fill={P4_FACE}
           />
           {/* 角落黄花 + 黑星点 */}
           <P4BackFlower cx={44} cy={52} r={16} />

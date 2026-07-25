@@ -25,7 +25,17 @@ import type { CSSProperties, ReactNode } from 'react';
  */
 export const P4_HEADER_BLEED: CSSProperties = { clipPath: 'inset(-999px 0 0 0)' };
 
-/** 五瓣花（P4 签名符号：按钮/徽章/圆图标/空状态装饰通用） */
+/**
+ * 六瓣花（P4 签名符号：按钮/徽章/圆图标/空状态装饰通用）。
+ *
+ * 形状按用户给的参考图定：**六**枚圆头水滴瓣，根部收窄、外端饱满圆钝，
+ * 相邻瓣之间留出可见的缝——不是早先那版五枚等宽椭圆。
+ * 路径写在以中心为原点的坐标系（viewBox 平移到 -12 -12），瓣朝 -Y，靠 rotate 复制。
+ */
+export const P4_PETAL_D =
+  'M0 -1.9 C 3.9 -2.6, 5.6 -6.0, 4.8 -8.7 C 4.2 -10.7, 2.3 -11.7, 0 -11.7 '
+  + 'C -2.3 -11.7, -4.2 -10.7, -4.8 -8.7 C -5.6 -6.0, -3.9 -2.6, 0 -1.9 Z';
+
 export const P4Flower = ({ size = 16, color = 'currentColor', className, style }: {
   size?: number; color?: string; className?: string; style?: CSSProperties;
 }) => (
@@ -34,11 +44,11 @@ export const P4Flower = ({ size = 16, color = 'currentColor', className, style }
     className={`pointer-events-none shrink-0 ${className ?? ''}`}
     width={size}
     height={size}
-    viewBox="0 0 24 24"
+    viewBox="-12 -12 24 24"
     style={style}
   >
-    {[0, 72, 144, 216, 288].map((deg) => (
-      <ellipse key={deg} cx="12" cy="5.6" rx="3.7" ry="5.4" fill={color} transform={`rotate(${deg} 12 12)`} />
+    {[0, 60, 120, 180, 240, 300].map((deg) => (
+      <path key={deg} d={P4_PETAL_D} fill={color} transform={`rotate(${deg})`} />
     ))}
   </svg>
 );

@@ -8,7 +8,7 @@ import { db } from '@/db';
 import { PageTitle } from '@/components/PageTitle';
 import { BackButton } from '@/components/BackButton';
 import { useRipple } from '@/components/RippleEffect';
-import { AI_PROVIDERS, getProviderConfig, testAIConnection, type TestResult } from '@/utils/aiProviders';
+import { AI_PROVIDERS, getProviderConfig, testAIConnection, fetchAvailableModels, type TestResult } from '@/utils/aiProviders';
 import { Toggle } from '@/components/Toggle';
 import NotificationSettings from '@/components/NotificationSettings';
 import { NavigatorSettings } from '@/components/navigator/NavigatorSettings';
@@ -618,6 +618,38 @@ export const Settings = () => {
   const [summaryApiKeyDraft, setSummaryApiKeyDraft] = useState(settings.summaryApiKey ?? '');
   const [apiTestStatus, setApiTestStatus] = useState<'idle' | 'testing' | 'ok' | 'error'>('idle');
   const [apiTestMessage, setApiTestMessage] = useState<string>('');
+  // 可选模型列表：按当前 provider + Key + baseUrl 从 /models 拉取，拉到就变下拉，
+  // 拉不到（网关不支持 / CORS）保持手填输入框兜底
+  const [modelOptions, setModelOptions] = useState<string[]>([]);
+  const [modelFetchStatus, setModelFetchStatus] = useState<'idle' | 'loading' | 'ok' | 'error'>('idle');
+  const [modelFetchMessage, setModelFetchMessage] = useState<string>('');
+
+  const handleFetchModels = async () => {
+    const key = summaryApiKeyDraft.trim() || (settings.summaryApiKey ?? '');
+    setModelFetchStatus('loading');
+    setModelFetchMessage('');
+    const result = await fetchAvailableModels({
+      provider: settings.summaryApiProvider ?? 'openai',
+      apiKey: key,
+      baseUrl: settings.summaryApiBaseUrl,
+    });
+    if (result.ok) {
+      setModelOptions(result.models);
+      setModelFetchStatus('ok');
+      setModelFetchMessage(`已拉取 ${result.models.length} 个可用模型`);
+    } else {
+      setModelOptions([]);
+      setModelFetchStatus('error');
+      setModelFetchMessage(result.error);
+    }
+  };
+
+  // 换 provider / 改地址 → 旧列表作废（不同端点的模型集不通用）
+  useEffect(() => {
+    setModelOptions([]);
+    setModelFetchStatus('idle');
+    setModelFetchMessage('');
+  }, [settings.summaryApiProvider, settings.summaryApiBaseUrl]);
 
   const handleTestApi = async () => {
     const keyToTest = summaryApiKeyDraft.trim() || (settings.summaryApiKey ?? '');
@@ -2100,7 +2132,40 @@ export const Settings = () => {
                             />
                           </div>
                           <div className="space-y-1.5">
-                            <p className="text-xs text-gray-500 dark:text-gray-400">模型名称</p>
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="text-xs text-gray-500 dark:text-gray-400">模型名称</p>
+                              <button
+                                onClick={handleFetchModels}
+                                disabled={modelFetchStatus === 'loading'}
+                                className={`text-[11px] font-bold px-2.5 py-1 rounded-lg transition-all ${
+                                  modelFetchStatus === 'loading'
+                                    ? 'bg-gray-100 dark:bg-gray-700 text-gray-400'
+                                    : modelFetchStatus === 'error'
+                                    ? 'bg-red-100 dark:bg-red-900/30 text-red-500 dark:text-red-400'
+                                    : 'bg-primary/10 text-primary hover:bg-primary/20'
+                                }`}
+                              >
+                                {modelFetchStatus === 'loading' ? '拉取中…' : modelOptions.length ? '重新拉取' : '拉取可选模型'}
+                              </button>
+                            </div>
+                            {/* 拉到列表就给下拉；拉不到（网关不支持 /models、CORS 拦截等）保持手填 */}
+                            {modelOptions.length > 0 && (
+                              <select
+                                value={modelOptions.includes(settings.summaryModel ?? '') ? settings.summaryModel : '__custom__'}
+                                onChange={e => {
+                                  if (e.target.value === '__custom__') return;
+                                  updateSettings({ summaryModel: e.target.value });
+                                  setApiTestStatus('idle');
+                                  setApiTestMessage('');
+                                }}
+                                className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 dark:text-white focus:outline-none focus:border-primary"
+                              >
+                                <option value="__custom__">自定义（用下方输入框）</option>
+                                {modelOptions.map(m => (
+                                  <option key={m} value={m}>{m}</option>
+                                ))}
+                              </select>
+                            )}
                             <input
                               type="text"
                               value={settings.summaryModel ?? ''}
@@ -2108,6 +2173,11 @@ export const Settings = () => {
                               placeholder={getProviderConfig(provider).defaultModel}
                               className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-primary"
                             />
+                            {modelFetchMessage && (
+                              <p className={`text-[11px] leading-relaxed whitespace-pre-wrap break-words ${modelFetchStatus === 'ok' ? 'text-green-600 dark:text-green-400' : 'text-red-500 dark:text-red-400'}`}>
+                                {modelFetchMessage}
+                              </p>
+                            )}
                           </div>
                         </div>
 

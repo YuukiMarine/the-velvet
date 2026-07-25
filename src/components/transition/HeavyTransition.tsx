@@ -155,9 +155,12 @@ const WaveSliceAct = ({ midpoint, onDone }: ActProps) => {
 // （0ms midpoint，不等波列——先动画后切页会不跟手，用户口径）。新页本体由
 // App 层 CircleRevealOnEnter 以同一原点做扩散圆形蒙版揭示（真正的"蒙版转场"）。
 // 波纹只扩到屏高一半（半径 50%vh）即衰减殆尽；波纹层不拦截指针，连点由 busyRef 兜底。
+// 环宽与起手直径：initial 的 width/height 是**内径**，外径还要加两倍边框——
+// 旧口径 24px 内径 + 60px 边框 = 起手就是 144px 的近实心大圆盘（用户上报"底部栏
+// 那个圆形填充有点大"）。收到 12 + 2×32 = 76px，一上来就读得出是"环"而不是"盘"。
 const RIPPLE_LINES = [
-  { w: 60, reach: 1.00, d: 0.45, delay: 0.00, o: 0.85 },
-  { w: 96, reach: 0.88, d: 0.60, delay: 0.07, o: 0.78 },
+  { w: 32, reach: 1.00, d: 0.45, delay: 0.00, o: 0.85 },
+  { w: 52, reach: 0.88, d: 0.60, delay: 0.07, o: 0.78 },
 ];
 
 /** 波纹配色随频道走：P3 蓝青（原口径）／P4 橙黄（黄舞台上蓝波纹是异色，用户口径）／
@@ -187,7 +190,7 @@ const WaterRippleAct = ({ midpoint, onDone, origin, channel }: ActProps & { orig
           key={k}
           className="absolute rounded-full"
           style={{ left: ox, top: oy, x: '-50%', y: '-50%', border: `${ln.w}px solid ${colors[k]}` }}
-          initial={{ width: 24, height: 24, opacity: ln.o }}
+          initial={{ width: 12, height: 12, opacity: ln.o }}
           animate={{ width: h * ln.reach, height: h * ln.reach, opacity: 0 }}
           transition={{ duration: ln.d, delay: ln.delay, ease: 'easeOut' }}
         />

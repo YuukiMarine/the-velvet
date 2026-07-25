@@ -130,9 +130,9 @@ export const Actions = () => {
           P4（p4-actions-reference-v2 1:1）：衬线双词 + 激活词背后橙圆 + 右上天空圆窗
           + ACTION PROGRAM 眉标；下划线退役。 */}
       {isP4 ? (
-        <div className="relative -mx-4 mb-4 min-h-[126px] px-4 pb-1 pt-1" style={P4_HEADER_BLEED}>
+        <div className="relative -mx-4 mb-1 min-h-[104px] px-4 pb-0 pt-0" style={P4_HEADER_BLEED}>
           {/* 天空圆窗统一口径：贴容器上缘、只朝右出血；纵向由 P4_HEADER_BLEED 放行不再削顶削底 */}
-          <P4SkyCircle size={150} className="absolute -right-8 -top-8" />
+          <P4SkyCircle size={132} className="absolute -right-7 -top-9" />
           <motion.div
             role="tablist"
             aria-label="行动子页切换"
@@ -182,7 +182,7 @@ export const Actions = () => {
               );
             })}
           </motion.div>
-          <div className="relative mt-2 text-xs font-black tracking-[0.22em] text-[#131313]">
+          <div className="relative mt-1.5 text-xs font-black tracking-[0.22em] text-[#131313]">
             ACTION&nbsp;&nbsp;PROGRAM
           </div>
         </div>
