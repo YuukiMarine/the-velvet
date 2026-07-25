@@ -33,10 +33,11 @@ export const P4_HEADER_BLEED: CSSProperties = { clipPath: 'inset(-999px 0 0 0)' 
  * 几何按用户定稿：**一枚胖水滴，以尖端为旋转中心按 60° 等角复制六次，再布尔合并，
  * 边缘全程平滑**。
  *
- * 单瓣：尖端锚在原点（= 旋转中心），球部是圆心 (0,-6.6)、半径 4.6 的半圆；两条腹线
+ * 单瓣：尖端锚在原点（= 旋转中心），球部是圆心 (0,-7.3)、半径 3.9 的半圆；两条腹线
  * 用三次贝塞尔从尖端接到球部左右端点，且在接点处切线竖直——与圆在该点的切线同向，
- * 接缝 G1 连续，所以并集的外轮廓没有折角。相邻瓣的球部相距 6.6 < 两半径和 9.2，
- * 天然交叠成平滑过渡，不留缝。
+ * 接缝 G1 连续，所以并集的外轮廓没有折角。相邻瓣的球部相距 7.3 < 两半径和 7.8，
+ * 仍有交叠所以谷底平滑，但只是「刚好搭上」——每瓣张角约 65°（vs 瓣距 60°），
+ * 瓣与瓣分得开、不再糊成一朵云（用户口径：水滴的角度再小一点，靠拢 P4G 原作）。
  *
  * 为什么必须合成**一条** path：上一版每瓣一个 <path>，颜色带 alpha 时（背景装饰层就是
  * rgba）交叠处会叠深、瓣根还留着空心——看上去根本不是一朵整花，这正是"形状没被正常
@@ -44,9 +45,9 @@ export const P4_HEADER_BLEED: CSSProperties = { clipPath: 'inset(-999px 0 0 0)' 
  */
 const PETAL_ANCHORS: readonly (readonly [number, number])[] = [
   [0, 0],        // 尖端（旋转中心）
-  [-2.4, -2.1], [-4.6, -4], [-4.6, -6.6],   // 左腹线两个控制点 + 球部左端
-  [4.6, -6.6],                               // 球部右端（圆弧终点）
-  [4.6, -4], [2.4, -2.1],                    // 右腹线两个控制点
+  [-2.0, -2.1], [-3.9, -4.5], [-3.9, -7.3],  // 左腹线两个控制点 + 球部左端
+  [3.9, -7.3],                                // 球部右端（圆弧终点）
+  [3.9, -4.5], [2.0, -2.1],                   // 右腹线两个控制点
 ];
 
 const rotPt = (p: readonly [number, number], deg: number) => {
@@ -60,7 +61,7 @@ const rotPt = (p: readonly [number, number], deg: number) => {
 export const P4_FLOWER_PATH = [0, 60, 120, 180, 240, 300]
   .map((d) => {
     const p = PETAL_ANCHORS.map((pt) => rotPt(pt, d));
-    return `M${p[0]}C${p[1]} ${p[2]} ${p[3]}A4.6 4.6 0 0 1 ${p[4]}C${p[5]} ${p[6]} ${p[0]}Z`;
+    return `M${p[0]}C${p[1]} ${p[2]} ${p[3]}A3.9 3.9 0 0 1 ${p[4]}C${p[5]} ${p[6]} ${p[0]}Z`;
   })
   .join('');
 
@@ -102,16 +103,15 @@ export const P4Sparkle = ({ size = 14, color = 'currentColor', className, style 
  * P4「活高亮」—— 沿用 P5Highlight 的机制（rAF 每帧朝随机目标插值，得到 60fps 平滑震颤），
  * 但把里面那对**运动不规则四边形换成运动三角形**（用户口径）。
  *
- * 每层两枚三角沿对角线拼满整块，两枚各自独立抖 → 对角缝时开时合，像玻璃碴在动；
- * 底层橙、上层电蓝走 screen 叠加，配黑字（选中态）看得清。
+ * 形状定稿（用户口径）：**只留一枚三角，左侧是短边、另外两边是长边**——
+ * 即左缘一条竖直短边（条高），两条长边收拢到右端一点，成一枚朝右的楔。
+ * 颜色取频道蓝：选中态字翻黄，黄字压在蓝楔上对比最足。
  * preserveAspectRatio="none" → 由调用方拉伸成任意长条。
  * D0 / live=false 时不跑 rAF，退化成静态高亮（常驻屏幕不烧帧）。
  */
-// 两枚三角各自的顶点抖动范围 [xmin,xmax,ymin,ymax]：橙的尖朝上、蓝的尖朝下，交叉成 X 形。
-// 刻意不铺满——露出来的米黄底正是"看得出是三角形"的关键（P5 那对四边形是铺满的）。
+// 三个顶点各自的抖动范围 [xmin,xmax,ymin,ymax]：左上、左下（短边两端）、右尖。
 const TRI_BOXES: number[][][] = [
-  [[-14, -2, 44, 56], [40, 62, -6, 6], [98, 112, 44, 56]],   // ▲ 橙
-  [[-4, 10, -6, 4], [90, 106, -6, 4], [38, 62, 42, 56]],     // ▼ 蓝
+  [[-4, 3, -6, 5], [-4, 3, 45, 56], [93, 108, 17, 34]],
 ];
 
 const triTarget = (box: number[][]) =>
@@ -141,9 +141,7 @@ export const P4Highlight = ({ className, live = true }: { className?: string; li
   }, [bold, live]);
   return (
     <svg viewBox="0 0 100 50" preserveAspectRatio="none" className={className} aria-hidden>
-      {/* 不走 screen 混合：橙底上叠青会直接白掉、糊成一片淡紫（实测）。用不透明度叠。 */}
-      <polygon ref={(el) => { refs.current[0] = el; }} fill="var(--p4-orange, #f9a11b)" points="-8,50 50,0 104,50" />
-      <polygon ref={(el) => { refs.current[1] = el; }} fill="#1cc8ff" opacity={0.88} points="2,0 98,0 50,50" />
+      <polygon ref={(el) => { refs.current[0] = el; }} fill="var(--ui-accent)" points="0,0 0,50 100,25" />
     </svg>
   );
 };

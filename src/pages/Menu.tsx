@@ -674,7 +674,31 @@ export const Menu = () => {
            学生证压缩成微旋小卡，让出纵向空间给菜单本体）；
            下半是真正的有机黑色块——右缘用 SVG 拉伸路径画成起伏波，菜单行沿波起落缩进；
            实景天空块垫在黑块右侧，被波缘咬出交错。 */
-        <div className="relative">
+        <div className="relative" style={{ isolation: 'isolate' }}>
+          {/* 蓝天大楔（用户红线口径 / P4G 原作构图）：覆盖右上大半，尖端斜插到左缘约
+              四成高处，左下与下方留黄——不是贴右缘的一小片。挂在页根而不是内容舞台里，
+              才能一路顶到屏幕上缘（main 有 px-4/pt，用负向 inset 抵消）。
+              z-index -1 + 父层 isolation:isolate：压在标题/学生证/笔记本之下、
+              又不会掉到 App 根的黄底后面。 */}
+          <div
+            aria-hidden
+            className="pointer-events-none absolute left-[-1rem] right-[-1rem] md:left-[-2rem] md:right-[-2rem]"
+            style={{
+              top: 'calc(-1rem - env(safe-area-inset-top, 0px))',
+              height: '42vh',
+              zIndex: -1,
+              clipPath: 'polygon(56% 0, 100% 0, 100% 39%, 0 100%)',
+            }}
+          >
+            <img
+              src="/assets/terminal/p4-cloud-sky.png"
+              alt=""
+              className="absolute inset-0 h-full w-full object-cover"
+              style={{ objectPosition: '52% 42%', filter: 'saturate(1.15) contrast(1.06)' }}
+            />
+            <div className="absolute inset-0 bg-[#00a6ff]/10 mix-blend-screen" />
+          </div>
+
           {/* 页头 */}
           <div className="relative flex items-start justify-between gap-2 px-1 pt-1">
             <P4Sparkle size={18} color="#ffffff" className="absolute left-[44%] top-1" />
@@ -753,31 +777,6 @@ export const Menu = () => {
 
           {/* 舞台：右上角天空锥垫底 → 斜置笔记本压上 → 花/星缀饰 */}
           <div className="relative -mx-4 mt-7 pb-2" style={{ clipPath: 'inset(-40px 0 -60px 0)' }}>
-            {/* 天空楔：贴右缘的叶形（对齐 p4-menu-reference-v2 的落位）——
-                上不顶到页头（标题/学生证那条黄带留白）、下只到页面中段就收住，
-                左尖插进笔记本右缘、被纸张盖住形成交错。旧版是从最顶一路铺到底的
-                大三角，占了整个右半屏（用户上报"位置不对"）。
-                曲线用 objectBoundingBox 的 clipPath 定义：随容器缩放，不写死像素。 */}
-            <svg width="0" height="0" aria-hidden className="absolute">
-              <defs>
-                <clipPath id="p4-menu-sky-wedge" clipPathUnits="objectBoundingBox">
-                  <path d="M1 0 C0.72 0.10, 0.30 0.26, 0.02 0.52 C0.28 0.72, 0.70 0.90, 1 1 Z" />
-                </clipPath>
-              </defs>
-            </svg>
-            <div
-              aria-hidden
-              className="pointer-events-none absolute right-0 top-[-24px] h-[300px] w-[46%]"
-              style={{ clipPath: 'url(#p4-menu-sky-wedge)' }}
-            >
-              <img
-                src="/assets/terminal/p4-cloud-sky.png"
-                alt=""
-                className="absolute inset-0 h-full w-full object-cover"
-                style={{ objectPosition: '48% 38%', filter: 'saturate(1.15) contrast(1.06)' }}
-              />
-              <div className="absolute inset-0 bg-[#00a6ff]/10 mix-blend-screen" />
-            </div>
             <P4Flower size={96} color="var(--p4-orange, #f9a11b)" className="pointer-events-none absolute right-3 top-6" />
             <P4Flower size={82} color="rgba(255,246,208,0.7)" className="pointer-events-none absolute bottom-16 right-4" />
             <P4Sparkle size={22} color="var(--ui-accent)" className="pointer-events-none absolute bottom-8 right-20" />
@@ -881,22 +880,20 @@ export const Menu = () => {
                         <P4Sparkle size={44} color="var(--ui-accent)" className="absolute -left-8 top-1" style={{ transform: 'rotate(-12deg)' }} />
                       )}
                       {row.icon && (
-                        // 选中态 brightness(0) 把各色图标一律压成墨色，与黑字统一
+                        // 常态 brightness(0) 把各色图标一律压成墨色与黑字统一；选中放回本色
                         <span
                           className="relative shrink-0"
-                          style={{ filter: selected ? 'brightness(0)' : 'drop-shadow(1.5px 2px 0 #131313)' }}
+                          style={{ filter: selected ? undefined : 'brightness(0)' }}
                         >
                           {row.icon}
                         </span>
                       )}
+                      {/* 配色（用户定稿）：未高亮黑字、高亮黄字，都不带阴影 */}
                       <span
                         className={`relative font-black leading-none ${row.big ? 'text-[44px]' : 'text-[32px]'}`}
                         style={{
                           fontFamily: 'var(--p4-display-font, serif)',
-                          color: selected ? '#131313' : 'var(--ui-bg)',
-                          textShadow: selected
-                            ? '1.5px 2px 0 rgba(255,246,208,0.9)'
-                            : row.big ? '3px 4px 0 #131313' : '2px 3px 0 #131313',
+                          color: selected ? 'var(--ui-bg)' : '#131313',
                         }}
                       >
                         {row.label}
@@ -906,7 +903,8 @@ export const Menu = () => {
                     {row.caption && (
                       <div
                         className="mt-0.5 pl-9 text-[13px] font-black leading-none"
-                        style={{ color: selected ? '#131313' : 'var(--p4-orange, #f9a11b)' }}
+                        // 副行恒橙：它落在高亮三角之外的米黄纸上，跟着翻黄就看不清了
+                        style={{ color: 'var(--p4-orange, #f9a11b)' }}
                       >
                         {row.caption}
                       </div>

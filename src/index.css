@@ -281,11 +281,21 @@ body {
   height: 100vh;
   overflow: auto;
   position: relative;
+  /* 滚动条不占布局宽度。#root 是 overflow:auto，而入场动画的 y 位移会计入可滚区，
+     于是本来不需要滚动的页（羁绊/菜单）会"先预留出滚动条宽度、动画落定后又撤掉"，
+     整页横向抖一下（用户上报）。隐掉原生滚动条 → 宽度恒定，滚动本身不受影响。 */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
   /* 左右 safe-area：避免横屏刘海压盖内容；
      不加 padding-top/padding-bottom —— 顶部由各页面组件自己加，
      底部由 BottomNav 的双层结构自己处理 */
   padding-left: env(safe-area-inset-left);
   padding-right: env(safe-area-inset-right);
+}
+
+#root::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
 @supports (height: 100dvh) {

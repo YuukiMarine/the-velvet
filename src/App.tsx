@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback, lazy, Suspense } from 'react';
+import { useEffect, useLayoutEffect, useState, useRef, useCallback, lazy, Suspense } from 'react';
 import type { ReactNode } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useAppStore, toLocalDateKey } from '@/store';
@@ -752,6 +752,20 @@ const PageSwitcher = ({ current, stageBg, stageDecor, render }: {
   ]);
   const pruneTimer = useRef<number | null>(null);
   const prune = useCallback(() => setStack((prev) => (prev.some((p) => p.leaving) ? prev.filter((p) => !p.leaving) : prev)), []);
+  // 切页即把滚动容器复位到顶。#root 是唯一滚动容器，跨页不会自动归零——
+  // 从长页滚到底再切到一个不需要滚动的短页时，scrollTop 还停在老位置：新页被顶到
+  // 视口外、下面空出一大截，等旧页出栈、可滚高度塌回去才被浏览器钳回 0，看着就是
+  //「先滚到最底 + 多出空隙 → 卡一下 → 弹回顶部」（用户上报）。
+  // 用 layout effect 在同一帧 paint 前改，不会看到中间态；行动页子 tab 互切（归一后
+  // 同 key）不复位，免得切「任务⇄记录」时把用户的阅读位置冲掉。
+  const lastKeyRef = useRef(normPageKey(current));
+  useLayoutEffect(() => {
+    const key = normPageKey(current);
+    if (key === lastKeyRef.current) return;
+    lastKeyRef.current = key;
+    const root = document.getElementById('root');
+    if (root && root.scrollTop !== 0) root.scrollTop = 0;
+  }, [current]);
   useEffect(() => {
     const key = normPageKey(current);
     setStack((prev) => {
