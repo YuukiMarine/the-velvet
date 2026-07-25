@@ -751,46 +751,50 @@ export const Menu = () => {
             </motion.button>
           </div>
 
-          {/* 舞台：实景天空块垫底 → 有机黑块压上 → 花/星缀饰 */}
-          <div className="relative -mx-4 mt-3 pb-2" style={{ clipPath: 'inset(0 0 -60px 0)' }}>
+          {/* 舞台：右上角天空锥垫底 → 斜置笔记本压上 → 花/星缀饰 */}
+          <div className="relative -mx-4 mt-7 pb-2" style={{ clipPath: 'inset(-40px 0 -60px 0)' }}>
+            {/* 天空锥：从右上角一刀斜切下来的巨大楔形（替代原来的有机 blob，用户口径） */}
             <div
               aria-hidden
-              className="pointer-events-none absolute -right-8 top-6 h-[300px] w-[218px] overflow-hidden"
-              style={{ borderRadius: '54% 46% 36% 64% / 40% 60% 44% 56%' }}
+              className="pointer-events-none absolute -top-10 bottom-0 right-0 w-full"
+              style={{ clipPath: 'polygon(100% 0, 22% 0, 100% 82%)' }}
             >
               <img
                 src="/assets/terminal/p4-cloud-sky.png"
                 alt=""
                 className="absolute inset-0 h-full w-full object-cover"
-                style={{ objectPosition: '42% 45%', filter: 'saturate(1.15) contrast(1.06)' }}
+                style={{ objectPosition: '48% 38%', filter: 'saturate(1.15) contrast(1.06)' }}
               />
               <div className="absolute inset-0 bg-[#00a6ff]/10 mix-blend-screen" />
-              <P4Flower size={96} color="var(--p4-orange, #f9a11b)" className="absolute right-2 top-8" />
             </div>
+            <P4Flower size={96} color="var(--p4-orange, #f9a11b)" className="pointer-events-none absolute right-3 top-6" />
             <P4Flower size={82} color="rgba(255,246,208,0.7)" className="pointer-events-none absolute bottom-16 right-4" />
             <P4Sparkle size={22} color="var(--ui-accent)" className="pointer-events-none absolute bottom-8 right-20" />
             <P4Sparkle size={16} color="#ffffff" className="pointer-events-none absolute bottom-44 right-2" />
 
-            {/* 有机黑块：SVG 路径拉伸铺满行列高度，右缘起伏成波（不再是圆角矩形） */}
-            <div className="relative max-w-[560px] pb-6 pt-7">
-              <svg
-                aria-hidden
-                className="absolute inset-0 h-full w-full"
-                viewBox="0 0 100 100"
-                preserveAspectRatio="none"
-                style={{ filter: 'drop-shadow(0 6px 0 rgba(19,19,19,0.18))' }}
-              >
-                <path
-                  d="M-4 5 C 14 -1, 44 -2, 63 1 C 82 9, 55 15, 70 23 C 85 32, 53 39, 68 48
-                     C 83 57, 51 63, 66 72 C 80 81, 52 87, 60 93 C 64 97, 46 101, 30 102 L-4 102 Z"
-                  fill="#131313"
-                />
-              </svg>
-              {p4Rows.map((row, i) => {
-                /* 波形缩进：与上面路径右缘的起伏同相，行体整体 -4° 斜置 */
-                const wave = [50, 24, 38, 54, 30, 46, 24, 38];
-                const indent = wave[i % wave.length];
-                return (
+            {/* 笔记本（拟物）：斜置的活页纸 —— 左缘装订条 + 打孔 + 橙色页边线 +
+                纸张厚度（两层错位垫底）。整本一起斜，行不再各自 rotate，
+                行间黄虚线就是横格线。替代原先那块"黑色波浪"（用户口径）。 */}
+            <div
+              className="relative ml-[-14px] w-[81%] max-w-[500px]"
+              style={{ transform: 'rotate(-3.2deg)', transformOrigin: 'left top' }}
+            >
+              <div aria-hidden className="absolute inset-0 translate-x-[7px] translate-y-[9px] rounded-r-[22px] bg-[#050505]/45" />
+              <div aria-hidden className="absolute inset-0 translate-x-[3px] translate-y-[4px] rounded-r-[22px] bg-[#2b2b2b]" />
+              <div className="relative overflow-hidden rounded-r-[22px] bg-[#131313] pb-7 pl-[74px] pr-5 pt-6">
+                {/* 装订条 + 打孔（孔洞透出黄舞台色） */}
+                <div aria-hidden className="absolute inset-y-0 left-0 w-[52px] bg-[#0a0a0a]">
+                  <span
+                    className="absolute inset-0"
+                    style={{
+                      backgroundImage: 'radial-gradient(circle at 26px 23px, var(--ui-bg) 0 6.5px, transparent 7px)',
+                      backgroundSize: '52px 46px',
+                    }}
+                  />
+                </div>
+                {/* 橙色页边线 */}
+                <div aria-hidden className="absolute inset-y-0 left-[62px] w-[2px] bg-[var(--p4-orange,#f9a11b)]/65" />
+                {p4Rows.map((row, i) => (
                   <motion.button
                     key={row.key}
                     ref={row.triggerRef as React.Ref<HTMLButtonElement> | undefined}
@@ -804,39 +808,36 @@ export const Menu = () => {
                       triggerNavFeedback();
                       row.onPress();
                     }}
-                    className="relative block w-full py-1 text-left"
-                    style={{ paddingLeft: indent + 18 }}
+                    className="relative block w-full py-1 pl-1 text-left"
                   >
-                    <div style={{ transform: 'rotate(-4deg)', transformOrigin: 'left center' }}>
-                      <div className={`relative flex items-center gap-3 pr-10 ${row.big ? 'pb-1 pt-1' : 'py-1'}`}>
-                        {/* 统计行的蓝色泼溅 */}
-                        {row.big && (
-                          <P4Sparkle size={46} color="var(--ui-accent)" className="absolute -left-9 top-1" style={{ transform: 'rotate(-12deg)' }} />
-                        )}
-                        {row.icon && <span className="shrink-0">{row.icon}</span>}
-                        <span
-                          className={`font-black leading-none text-[var(--ui-bg)] ${row.big ? 'text-[46px]' : 'text-[33px]'}`}
-                          style={{ fontFamily: 'var(--p4-display-font, serif)' }}
-                        >
-                          {row.label}
-                        </span>
-                        {row.badge && <span className="shrink-0">{row.badge}</span>}
-                      </div>
-                      {row.caption && (
-                        <div className="mt-0.5 pl-9 text-[13px] font-black leading-none text-[var(--p4-orange,#f9a11b)]" style={{ marginLeft: row.big ? 4 : 0 }}>
-                          {row.caption}
-                        </div>
+                    <div className={`relative flex items-center gap-3 pr-6 ${row.big ? 'pb-1 pt-1' : 'py-1'}`}>
+                      {/* 统计行的蓝色泼溅 */}
+                      {row.big && (
+                        <P4Sparkle size={44} color="var(--ui-accent)" className="absolute -left-8 top-1" style={{ transform: 'rotate(-12deg)' }} />
                       )}
-                      {/* 行间黄虚线（随行体一起斜，末行不画） */}
-                      {i < p4Rows.length - 1 && (
-                        <div aria-hidden className="mt-2.5 w-[54%] border-b-2 border-dashed border-[rgba(255,217,0,0.4)]" />
-                      )}
+                      {row.icon && <span className="shrink-0">{row.icon}</span>}
+                      <span
+                        className={`font-black leading-none text-[var(--ui-bg)] ${row.big ? 'text-[44px]' : 'text-[32px]'}`}
+                        style={{ fontFamily: 'var(--p4-display-font, serif)' }}
+                      >
+                        {row.label}
+                      </span>
+                      {row.badge && <span className="shrink-0">{row.badge}</span>}
                     </div>
+                    {row.caption && (
+                      <div className="mt-0.5 pl-9 text-[13px] font-black leading-none text-[var(--p4-orange,#f9a11b)]">
+                        {row.caption}
+                      </div>
+                    )}
+                    {/* 横格线（笔记本页的行线；末行不画） */}
+                    {i < p4Rows.length - 1 && (
+                      <div aria-hidden className="mt-2.5 w-full border-b border-dashed border-[rgba(255,217,0,0.28)]" />
+                    )}
                   </motion.button>
-                );
-              })}
-            </div>
-          </div>
+                ))}
+              </div>{/* /笔记本内页 */}
+            </div>{/* /笔记本（斜置层） */}
+          </div>{/* /舞台 */}
         </div>
       ) : (
       <PagePlane>

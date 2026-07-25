@@ -105,6 +105,15 @@
   --p4-display-font: 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', SimSun, serif;
 }
 
+/* ── P4 标题毯式衬线化（用户口径：所有标题类字样都走衬线）────────────────
+   逐调用点补 fontFamily 太散也一定会漏（弹窗、Sheet、卡片题头各写各的），
+   这里按频道一刀切收编标题语义元素；`.p4-serif` 给非标题语义但视觉上是标题的
+   元素（大字数值、切换头词条等）留手动入口。
+   注意只管字体，不动字重字号——各处标题的字阶已按设计稿定过。 */
+:root[data-ui-channel="p4"] :is(h1, h2, h3, h4, .p4-serif) {
+  font-family: var(--p4-display-font, serif);
+}
+
 /* ── P4 弹窗表单毯式重皮（p4-redraw modal v3 系列）─────────────────────────
    旧弹窗表单遍布 bg-gray-50/100 + border-gray-200 的后台灰件；P4 定稿是奶油面无描边。
    逐调用点改动太散且与并行会话冲突面大，这里按「频道 × 弹窗容器」两级选择器毯式收编：

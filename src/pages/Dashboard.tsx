@@ -18,7 +18,7 @@ import { playSound } from '@/utils/feedback';
 import { getAttributeLevelTitle } from '@/utils/attributeLevelTitles';
 import type { AttributeId, CallingCard } from '@/types';
 import { useUiChannel } from '@/ui/useUiChannel';
-import { P4Flower, P4Sparkle, P4ArcRings, P4SkyFan, P4_HEADER_BLEED } from '@/ui/p4Kit';
+import { P4Flower, P4Sparkle, P4SkyFan, P4_HEADER_BLEED } from '@/ui/p4Kit';
 import { FlowerChart } from '@/components/FlowerChart';
 import { AttrDetailInlineP4 } from '@/components/AttrDetailInlineP4';
 
@@ -739,7 +739,7 @@ export const Dashboard = () => {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="relative space-y-5 max-w-2xl mx-auto md:max-w-none"
+      className={`relative mx-auto max-w-2xl md:max-w-none ${isP4 ? 'space-y-3.5' : 'space-y-5'}`}
     >
       {/* 斜界引力线：问候卡 → 今日任务（P4 有自己的页头语汇，不挂引力线） */}
       {!isP4 && (
@@ -758,17 +758,14 @@ export const Dashboard = () => {
           P4（p4-dashboard-reference-v2 1:1）：衬线特大标题 + TODAY'S SHOW 眉标 + 右上大日期，
           右上角橙色太阳环 + 天空扇 + 花朵，元素出血到屏幕右缘。 */}
       {isP4 ? (
-        <div className="relative -mx-4 min-h-[164px] px-4 pb-1 pt-2" style={P4_HEADER_BLEED}>
-          {/* 巨型同心弧环垫底（镂空，天空从环缝里透出来）→ 天空扇压上 → 星闪。
-              旧版是实心橙盘盖在天空扇上、且天空被 overflow-hidden 沿题块下缘齐根切断，
-              看上去像"天空被错误截断"（用户上报）。 */}
-          <P4SkyFan size={158} className="absolute right-0 top-0 opacity-95" flower={false} />
-          <P4ArcRings size={286} className="absolute -right-20 -top-32" />
-          <P4Flower size={54} color="var(--ui-bg)" className="absolute right-[26%] top-[86px]" />
-          <P4Sparkle size={20} color="#ffffff" className="absolute right-[40%] top-3" />
-          <P4Sparkle size={14} color="var(--ui-accent)" className="absolute right-[36%] top-[112px]" />
-          {/* 大日期牌（压在太阳上） */}
-          <div className="absolute right-5 top-3 text-center">
+        <div className="relative -mx-4 min-h-[126px] px-4 pb-1 pt-2" style={P4_HEADER_BLEED}>
+          {/* 天空扇顶到屏幕上缘（-top-4 抵掉 main 的 pt-4）——贴 top-0 时和屏幕上缘之间
+              会留一条黄缝（用户上报）。弧环按用户裁决从首页撤掉：和天空叠在一起太吵。 */}
+          <P4SkyFan size={150} className="absolute -right-1 -top-4 opacity-95" flower={false} />
+          <P4Sparkle size={20} color="#ffffff" className="absolute right-[44%] top-3" />
+          <P4Sparkle size={14} color="var(--ui-accent)" className="absolute right-[40%] top-[96px]" />
+          {/* 大日期牌（压在天空上） */}
+          <div className="absolute right-5 top-1 text-center">
             <div className="text-[40px] font-black leading-none tabular-nums text-[#131313]">
               {String(today.getDate()).padStart(2, '0')}
             </div>
@@ -889,8 +886,8 @@ export const Dashboard = () => {
         />
       )}
 
-      {/* 今日任务（P4 与「今日仪式」并置成双列奶油卡，p4-dashboard-reference-v2 1:1） */}
-      <div className={isP4 ? 'grid grid-cols-2 items-stretch gap-3' : 'space-y-5'}>
+      {/* 今日任务 ×「今日仪式」：竖屏上下排（并排时两栏都太挤，用户口径），宽屏才回双列 */}
+      <div className={isP4 ? 'grid grid-cols-1 items-stretch gap-3 md:grid-cols-2' : 'space-y-5'}>
       <div
         ref={todayTaskRef}
         className={
@@ -1072,7 +1069,10 @@ export const Dashboard = () => {
             <P4Sparkle size={14} color="var(--p4-orange, #f9a11b)" className="shrink-0" />
           </div>
           <div className="p-2">
-            <StackCarousel id="ritual" page={ritualPage}>
+            {/* 满宽 slide：默认 86% 会让下一张探出右缘，宽屏下探出的那截尤其大——
+                首页只有两三张仪式卡，靠圆点指示就够，不需要"露一角"的暗示（用户上报
+                "宽屏下右边战场的卡片会露出来"）。 */}
+            <StackCarousel id="ritual" page={ritualPage} itemWidthClass="w-full">
               {ritualSlides}
             </StackCarousel>
           </div>
@@ -1110,7 +1110,9 @@ export const Dashboard = () => {
           </div>
           {/* 花瓣图 ⇄ 属性档案：与 p3 同一交互（选中时花层旋转放大、透明度沉为衬底，
               详情在原位撑开；再点任意处倒放收回）。外层只裁水平飞入，详情自己撑高度。 */}
-          <div ref={petalSectionRef} className="relative min-h-[268px] overflow-hidden">
+          {/* min-h 必须 ≥ 花瓣图实际高度（svg 1:1，高 = min(340, 容器宽)），否则
+              overflow-hidden 会把下面两瓣（温柔/灵巧）齐根切掉、连带点不着（用户上报） */}
+          <div ref={petalSectionRef} className="relative min-h-[352px] overflow-hidden">
             <motion.div
               className="absolute inset-x-0 top-0 z-0"
               animate={dossierAttr
@@ -1165,14 +1167,15 @@ export const Dashboard = () => {
             </AnimatePresence>
           </div>
           {/* 四格统计（与 p3 同口径：成就·技能已挪到详细统计页，首页只留四项） */}
-          <div className="mt-3 flex gap-2">
+          {/* 每格限宽：只有 flex-1 + aspect-square 时，宽屏/横屏下四个圆会被撑成巨圆（用户上报） */}
+          <div className="mx-auto mt-3 flex max-w-[420px] justify-center gap-3">
             {[
               { v: totalPoints, label: '累计点数', c: 'var(--p4-orange, #f9a11b)' },
               { v: totalActivitiesCount, label: '总记录数', c: 'var(--p4-green, #55c34f)' },
               { v: totalLevel, label: '总等级', c: 'var(--p4-sky-deep, #2196e0)' },
               { v: uniqueDays, label: '记录天数', c: '#8e5ad8' },
             ].map((s, i) => (
-              <div key={s.label} className="relative flex-1">
+              <div key={s.label} className="relative w-full max-w-[94px] flex-1">
                 <div
                   className="flex aspect-square w-full flex-col items-center justify-center rounded-full bg-[var(--ui-paper)]"
                   style={{ boxShadow: '0 3px 0 rgba(19,19,19,0.12)' }}

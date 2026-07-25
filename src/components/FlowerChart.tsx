@@ -73,14 +73,19 @@ export const FlowerChart = ({ items, onSelect, showLabels = true }: {
           const c = PETAL_COLORS[i % PETAL_COLORS.length];
           return (
             <g key={item.id}>
-              <motion.path
-                d={petalPath(R0, R1, W)}
-                fill={c.fill}
-                transform={`rotate(${deg})`}
-                style={{ cursor: onSelect ? 'pointer' : undefined }}
-                whileTap={{ scale: 0.96 }}
-                onClick={(e) => onSelect?.(item.id, e as unknown as ReactMouseEvent)}
-              />
+              {/* 旋转必须挂在外层静态 <g> 上：motion 的 whileTap 会往元素 style 里写
+                  transform，而 style.transform 会整个盖掉 SVG 的 transform **属性**——
+                  以前 rotate 写在 motion.path 自己身上，点一下所有花瓣就归位到 0°、
+                  全叠在顶瓣底下（用户上报"叶片消失"＋"只有最上面能点"）。 */}
+              <g transform={`rotate(${deg})`}>
+                <motion.path
+                  d={petalPath(R0, R1, W)}
+                  fill={c.fill}
+                  style={{ cursor: onSelect ? 'pointer' : undefined, transformBox: 'fill-box', transformOrigin: 'center' }}
+                  whileTap={{ scale: 0.96 }}
+                  onClick={(e) => onSelect?.(item.id, e as unknown as ReactMouseEvent)}
+                />
+              </g>
               {showLabels && (
                 <>
                   <text

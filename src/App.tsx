@@ -620,6 +620,7 @@ function App() {
                   current={currentPage}
                   // 与 App 根的舞台底色同源（黄频道走 --ui-bg，其余走 gray-50 / gray-900）
                   stageBg={user?.theme === 'yellow' ? 'var(--ui-bg, #ffd900)' : settings.darkMode ? '#111827' : '#f9fafb'}
+                  stageDecor={user?.theme === 'yellow' ? <P4StageDecor /> : undefined}
                   render={renderPage}
                 />
               </main>
@@ -694,9 +695,14 @@ const PAGE_HOLD_MS = 520;
 /** 旧路由 id todos/activities 与 actions 同页，归一避免瞬间误 remount */
 const normPageKey = (id: string) => (id === 'todos' || id === 'activities' ? 'actions' : id);
 
-const PageShell = ({ leaving, stageBg, children }: { leaving: boolean; stageBg: string; children: ReactNode }) => {
+const PageShell = ({ leaving, stageBg, stageDecor, onRevealed, children }: {
+  leaving: boolean; stageBg: string; stageDecor?: ReactNode; onRevealed?: () => void; children: ReactNode;
+}) => {
   const [origin] = useState(consumePendingCircleReveal); // 入场时查询一次（读取不清除，StrictMode 双挂载安全）
   const [revealing, setRevealing] = useState(!!origin);
+  // 连点保护：上一张还没擦完就被顶成 leaving 时立刻收掉它的圆蒙版，
+  // 否则它会带着半截圆停在垫底层上，看起来就是"两个界面卡在一起"（用户上报）。
+  useEffect(() => { if (leaving) setRevealing(false); }, [leaving]);
   // 变 leaving 的瞬间若仍在水波纹窗口内：保持原样垫底等着被新页擦除盖掉；否则交叉淡出
   const holdStatic = leaving && !!consumePendingCircleReveal();
   const R = origin
@@ -715,30 +721,37 @@ const PageShell = ({ leaving, stageBg, children }: { leaving: boolean; stageBg: 
         clipPath: revealing ? { duration: 0.42, ease: [0.3, 0, 0.2, 1] } : { duration: 0 },
         opacity: { duration: 0.18 },
       }}
-      onAnimationComplete={() => setRevealing(false)}
+      onAnimationComplete={() => { setRevealing(false); onRevealed?.(); }}
     >
       {/* 擦除期给新页垫一层不透明舞台底。页面本体自己是透明的（底色由 App 根铺），
-          不垫底的话圆内是"新页压在旧页上"的重影而不是擦除——用户上报的"圆形擦除
-          蒙版没有正确响应"就是这个：两页标题字直接叠在一起。
+          不垫底的话圆内是"新页压在旧页上"的重影而不是擦除。
           垫层在 clip 之内（跟着圆一起长），所以不会出现整屏白幕；四周出血盖住 main
-          的左右内边距与短页下方，避免边缘漏出旧页。 */}
+          的左右内边距与短页下方，避免边缘漏出旧页。
+          stageDecor：把全局背景装饰层原样复刻一份进来。装饰是 fixed inset-0，两份
+          落点完全重合——不复刻的话垫底层会把它盖成纯色，擦除结束垫层一卸，装饰"跳"
+          回来就是用户看到的"背景错误闪烁"。 */}
       {origin && revealing && (
         <div
           aria-hidden
           className="pointer-events-none absolute"
           style={{ left: -40, right: -40, top: -40, bottom: -2000, zIndex: -1, background: stageBg }}
-        />
+        >
+          {stageDecor}
+        </div>
       )}
       {children}
     </motion.div>
   );
 };
 
-const PageSwitcher = ({ current, stageBg, render }: { current: string; stageBg: string; render: (page: string) => ReactNode }) => {
+const PageSwitcher = ({ current, stageBg, stageDecor, render }: {
+  current: string; stageBg: string; stageDecor?: ReactNode; render: (page: string) => ReactNode;
+}) => {
   const [stack, setStack] = useState<Array<{ key: string; id: string; leaving: boolean }>>(() => [
     { key: normPageKey(current), id: current, leaving: false },
   ]);
   const pruneTimer = useRef<number | null>(null);
+  const prune = useCallback(() => setStack((prev) => (prev.some((p) => p.leaving) ? prev.filter((p) => !p.leaving) : prev)), []);
   useEffect(() => {
     const key = normPageKey(current);
     setStack((prev) => {
@@ -748,16 +761,26 @@ const PageSwitcher = ({ current, stageBg, render }: { current: string; stageBg: 
       // 切页：先清掉上一轮残留的 leaving，再把当前顶置为 leaving 垫底、新页压顶
       return [...prev.filter((p) => !p.leaving).map((p) => ({ ...p, leaving: true })), { key, id: current, leaving: false }];
     });
+    // 兜底出栈（新页没有圆擦除时走这条）；有擦除时由 onRevealed 提前收
     if (pruneTimer.current) clearTimeout(pruneTimer.current);
-    pruneTimer.current = window.setTimeout(() => setStack((prev) => prev.filter((p) => !p.leaving)), PAGE_HOLD_MS);
+    pruneTimer.current = window.setTimeout(prune, PAGE_HOLD_MS);
     return () => {
       if (pruneTimer.current) clearTimeout(pruneTimer.current);
     };
-  }, [current]);
+  }, [current, prune]);
   return (
     <div className="relative">
       {stack.map((p) => (
-        <PageShell key={p.key} leaving={p.leaving} stageBg={stageBg}>
+        <PageShell
+          key={p.key}
+          leaving={p.leaving}
+          stageBg={stageBg}
+          stageDecor={stageDecor}
+          // 擦除一到位就把旧页出栈。原先固定等 PAGE_HOLD_MS(520ms)，比擦除(420ms)晚
+          // 100ms——这段时间垫底层已卸、旧页还在，比新页高的部分就从底部露出来一帧
+          //（用户上报的"转完后底部闪一下原来的界面"）。
+          onRevealed={p.leaving ? undefined : prune}
+        >
           {render(p.id)}
         </PageShell>
       ))}

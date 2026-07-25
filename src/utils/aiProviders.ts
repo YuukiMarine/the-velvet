@@ -162,6 +162,72 @@ export async function testAIConnection(opts: {
   }
 }
 
+export type ModelListResult =
+  | { ok: true; models: string[] }
+  | { ok: false; error: string };
+
+/**
+ * 按当前 API 配置拉取「这把 Key 能用哪些模型」。
+ *
+ * 走 OpenAI 兼容的 `GET {baseUrl}/models`——本项目所有 provider（含 Gemini 的
+ * v1beta/openai 兼容层、各类自建网关）都实现了这个端点。返回体两种形态都吃：
+ * 标准的 `{ data: [{ id }] }`，以及少数网关直接吐的字符串/对象数组。
+ *
+ * Gemini 的 id 带 `models/` 前缀，这里剥掉——/chat/completions 要的是裸模型名。
+ * 拉不到不是致命错误：调用方保留手填输入框兜底。
+ */
+export async function fetchAvailableModels(opts: {
+  provider: ApiProvider;
+  apiKey: string;
+  baseUrl?: string;
+}): Promise<ModelListResult> {
+  if (!opts.apiKey?.trim()) return { ok: false, error: '请先填写并保存 API 密钥' };
+
+  const { baseUrl } = resolveProvider(opts.provider, opts.baseUrl);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+  try {
+    const resp = await fetch(`${baseUrl}/models`, {
+      headers: { Authorization: `Bearer ${opts.apiKey.trim()}` },
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+
+    if (!resp.ok) {
+      const body = await resp.text().catch(() => '');
+      const detail = extractProviderErrorMessage(body).slice(0, 200).trim();
+      const hint = resp.status === 404
+        ? '该地址不支持 /models 列表接口，请手动填写模型名'
+        : getHttpStatusHint(resp.status, opts.provider);
+      const prefix = hint ? `${hint} (HTTP ${resp.status})` : `HTTP ${resp.status}`;
+      return { ok: false, error: detail ? `${prefix}: ${detail}` : prefix };
+    }
+
+    const data = (await resp.json().catch(() => null)) as unknown;
+    const rows =
+      Array.isArray(data) ? data
+      : data && typeof data === 'object' && Array.isArray((data as { data?: unknown }).data)
+        ? ((data as { data: unknown[] }).data)
+        : null;
+    if (!rows) return { ok: false, error: '响应格式非 OpenAI 兼容（没有 data 数组）' };
+
+    const models = [...new Set(
+      rows
+        .map((row) => (typeof row === 'string' ? row : (row as { id?: unknown } | null)?.id))
+        .filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
+        .map((id) => id.trim().replace(/^models\//, '')),
+    )].sort((a, b) => a.localeCompare(b));
+
+    if (models.length === 0) return { ok: false, error: '接口没有返回任何模型' };
+    return { ok: true, models };
+  } catch (e) {
+    clearTimeout(timeout);
+    if (e instanceof Error && e.name === 'AbortError') return { ok: false, error: '拉取超时（15s 无响应）' };
+    if (e instanceof TypeError) return { ok: false, error: '网络错误：可能是 CORS 被拦截或无网络连接' };
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 export function getHttpStatusHint(status: number, provider?: ApiProvider): string {
   if (status === 400) return '请求格式有误';
   if (status === 401) return '密钥无效或已过期';
