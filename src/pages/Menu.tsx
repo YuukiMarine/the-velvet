@@ -45,7 +45,7 @@ import { triggerNavFeedback } from '@/utils/feedback';
 import { useBoldness } from '@/utils/boldness';
 import { STAGGER, TAP, springSoft, fadeIn } from '@/utils/motion';
 import { useUiChannel } from '@/ui/useUiChannel';
-import { P4Flower, P4Sparkle } from '@/ui/p4Kit';
+import { P4Flower, P4Sparkle, P4Highlight } from '@/ui/p4Kit';
 import { P3R, P3RPage, slantClip } from '@/components/p3r/kit';
 import { computeTotalLv } from '@/utils/lvTiers';
 
@@ -320,7 +320,7 @@ export const Menu = () => {
     triggerRef?: React.RefObject<HTMLButtonElement | null>;
   }> = [
     {
-      key: 'stats', label: '统计', caption: `连续 ${currentStreak} 天`, big: true, indent: 56,
+      key: 'statistics', label: '统计', caption: `连续 ${currentStreak} 天`, big: true, indent: 56,
       onPress: () => setCurrentPage('statistics'),
     },
     ...(battleVisible
@@ -779,9 +779,44 @@ export const Menu = () => {
               className="relative ml-[-14px] w-[81%] max-w-[500px]"
               style={{ transform: 'rotate(-3.2deg)', transformOrigin: 'left top' }}
             >
-              <div aria-hidden className="absolute inset-0 translate-x-[7px] translate-y-[9px] rounded-r-[22px] bg-[#050505]/45" />
-              <div aria-hidden className="absolute inset-0 translate-x-[3px] translate-y-[4px] rounded-r-[22px] bg-[#2b2b2b]" />
-              <div className="relative overflow-hidden rounded-r-[22px] bg-[#131313] pb-7 pl-[74px] pr-5 pt-6">
+              <div aria-hidden className="absolute inset-0 translate-x-[7px] translate-y-[9px] rounded-r-[22px] bg-[#131313]/35" />
+              <div aria-hidden className="absolute inset-0 translate-x-[3px] translate-y-[4px] rounded-r-[22px] bg-[#efe0ac]" />
+              {/* 内页改米黄（用户口径）：字仍是黄的，靠墨色硬阴影压出来；选中翻黑 */}
+              <nav
+                aria-label="功能入口"
+                className="relative overflow-hidden rounded-r-[22px] bg-[var(--ui-paper)] pb-7 pl-[74px] pr-5 pt-6"
+                style={{ touchAction: 'none' }}
+                onPointerDown={(e) => {
+                  const el = (e.target as HTMLElement).closest('[data-menu-key]');
+                  if (!el) return;
+                  const key = el.getAttribute('data-menu-key') || '';
+                  press.current = { active: true, key, moved: false };
+                  setSelectedKey(key);
+                  triggerNavFeedback();
+                  try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); } catch { /* noop */ }
+                }}
+                onPointerMove={(e) => {
+                  if (!press.current.active) return;
+                  const el = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-menu-key]');
+                  const key = el?.getAttribute('data-menu-key');
+                  if (key && key !== press.current.key) {
+                    press.current.key = key;
+                    press.current.moved = true;
+                    triggerNavFeedback();
+                    setSelectedKey(key);
+                  }
+                }}
+                onPointerUp={() => {
+                  if (!press.current.active) return;
+                  const key = press.current.key;
+                  press.current.active = false;
+                  triggerNavFeedback();
+                  if (enterTimer.current) window.clearTimeout(enterTimer.current);
+                  // 留 200ms 让高亮演出走完再跳（与 p3 同口径：按下预览、拖拽换行、松手进入）
+                  enterTimer.current = window.setTimeout(() => { p4Rows.find((r) => r.key === key)?.onPress(); }, 200);
+                }}
+                onPointerCancel={() => { press.current.active = false; }}
+              >
                 {/* 装订条 + 打孔（孔洞透出黄舞台色） */}
                 <div aria-hidden className="absolute inset-y-0 left-0 w-[52px] bg-[#0a0a0a]">
                   <span
@@ -794,48 +829,85 @@ export const Menu = () => {
                 </div>
                 {/* 橙色页边线 */}
                 <div aria-hidden className="absolute inset-y-0 left-[62px] w-[2px] bg-[var(--p4-orange,#f9a11b)]/65" />
-                {p4Rows.map((row, i) => (
+                {p4Rows.map((row, i) => {
+                  const selected = row.key === selectedKey;
+                  return (
                   <motion.button
                     key={row.key}
                     ref={row.triggerRef as React.Ref<HTMLButtonElement> | undefined}
                     type="button"
+                    data-menu-key={row.key}
                     custom={i}
                     variants={bold ? tileIn : fadeIn}
                     initial="hidden"
                     animate="show"
                     whileTap={TAP}
-                    onClick={() => {
-                      triggerNavFeedback();
-                      row.onPress();
-                    }}
+                    aria-current={selected ? 'true' : undefined}
+                    // 指针路径已由 nav 统管；这里只接键盘激活（e.detail === 0）
+                    onClick={(e) => { if (e.detail === 0) { setSelectedKey(row.key); row.onPress(); } }}
                     className="relative block w-full py-1 pl-1 text-left"
                   >
                     <div className={`relative flex items-center gap-3 pr-6 ${row.big ? 'pb-1 pt-1' : 'py-1'}`}>
+                      {/* 高亮层：选中时从左「变长」铺出（p3 同款伸缩），里面是运动三角形活高亮 */}
+                      <AnimatePresence>
+                        {selected && (
+                          <motion.span
+                            key="hl"
+                            aria-hidden
+                            className="absolute -inset-y-1 -left-4 right-0 overflow-hidden"
+                            style={{ transformOrigin: 'left center' }}
+                            initial={{ scaleX: 0, opacity: 0 }}
+                            animate={{ scaleX: 1, opacity: 1 }}
+                            exit={{ scaleX: 0, opacity: 0, transition: { duration: 0.18 } }}
+                            transition={{ duration: 0.34, ease: [0.16, 1, 0.3, 1] }}
+                          >
+                            <P4Highlight className="block h-full w-full" />
+                          </motion.span>
+                        )}
+                      </AnimatePresence>
                       {/* 统计行的蓝色泼溅 */}
                       {row.big && (
                         <P4Sparkle size={44} color="var(--ui-accent)" className="absolute -left-8 top-1" style={{ transform: 'rotate(-12deg)' }} />
                       )}
-                      {row.icon && <span className="shrink-0">{row.icon}</span>}
+                      {row.icon && (
+                        // 选中态 brightness(0) 把各色图标一律压成墨色，与黑字统一
+                        <span
+                          className="relative shrink-0"
+                          style={{ filter: selected ? 'brightness(0)' : 'drop-shadow(1.5px 2px 0 #131313)' }}
+                        >
+                          {row.icon}
+                        </span>
+                      )}
                       <span
-                        className={`font-black leading-none text-[var(--ui-bg)] ${row.big ? 'text-[44px]' : 'text-[32px]'}`}
-                        style={{ fontFamily: 'var(--p4-display-font, serif)' }}
+                        className={`relative font-black leading-none ${row.big ? 'text-[44px]' : 'text-[32px]'}`}
+                        style={{
+                          fontFamily: 'var(--p4-display-font, serif)',
+                          color: selected ? '#131313' : 'var(--ui-bg)',
+                          textShadow: selected
+                            ? '1.5px 2px 0 rgba(255,246,208,0.9)'
+                            : row.big ? '3px 4px 0 #131313' : '2px 3px 0 #131313',
+                        }}
                       >
                         {row.label}
                       </span>
-                      {row.badge && <span className="shrink-0">{row.badge}</span>}
+                      {row.badge && <span className="relative shrink-0">{row.badge}</span>}
                     </div>
                     {row.caption && (
-                      <div className="mt-0.5 pl-9 text-[13px] font-black leading-none text-[var(--p4-orange,#f9a11b)]">
+                      <div
+                        className="mt-0.5 pl-9 text-[13px] font-black leading-none"
+                        style={{ color: selected ? '#131313' : 'var(--p4-orange, #f9a11b)' }}
+                      >
                         {row.caption}
                       </div>
                     )}
                     {/* 横格线（笔记本页的行线；末行不画） */}
                     {i < p4Rows.length - 1 && (
-                      <div aria-hidden className="mt-2.5 w-full border-b border-dashed border-[rgba(255,217,0,0.28)]" />
+                      <div aria-hidden className="mt-2.5 w-full border-b border-dashed border-[rgba(19,19,19,0.2)]" />
                     )}
                   </motion.button>
-                ))}
-              </div>{/* /笔记本内页 */}
+                  );
+                })}
+              </nav>{/* /笔记本内页 */}
             </div>{/* /笔记本（斜置层） */}
           </div>{/* /舞台 */}
         </div>

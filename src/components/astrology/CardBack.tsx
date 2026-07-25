@@ -1,13 +1,11 @@
 import { motion } from 'motion/react';
 import { useUiChannel } from '@/ui/useUiChannel';
-import { P4_PETAL_D } from '@/ui/p4Kit';
+import { P4_FLOWER_PATH } from '@/ui/p4Kit';
 
-/** P4 卡背用的六瓣小花（与 P4Flower 同一枚花瓣路径，只是内联进 SVG 并按 r 缩放） */
+/** P4 卡背用的六瓣小花（与 P4Flower 同一条并集轮廓，只是内联进 SVG 并按 r 缩放） */
 const P4BackFlower = ({ cx, cy, r = 10, color = '#f0b428' }: { cx: number; cy: number; r?: number; color?: string }) => (
   <g transform={`translate(${cx}, ${cy}) scale(${r / 12})`}>
-    {[0, 60, 120, 180, 240, 300].map(deg => (
-      <path key={deg} d={P4_PETAL_D} fill={color} transform={`rotate(${deg})`} />
-    ))}
+    <path d={P4_FLOWER_PATH} fill={color} fillRule="nonzero" />
   </g>
 );
 

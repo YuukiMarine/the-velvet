@@ -48,6 +48,16 @@ export const FlowerChart = ({ items, onSelect, showLabels = true }: {
   const R1 = 96;   // 瓣尖
   const W = 30;    // 瓣半宽
   const LABEL_R = 64;  // 属性名半径（靠瓣尖；数字固定在名正下方 30px）
+  /** 逐瓣字组微调（用户实测：字整体溢出到花瓣之外了）。
+   *  索引同 PETAL_ORDER：0 顶(知识) / 1 右上(胆量) / 2 右下(灵巧) / 3 左下(温柔) / 4 左上(魅力)。
+   *  左右两侧的往内（右上往左上、左上往右上）收，左下右下的整体上提。 */
+  const LABEL_NUDGE: [number, number][] = [
+    [0, 0],      // 知识（顶，正对瓣心，不动）
+    [-9, -7],    // 胆量（右侧 → 左上）
+    [-2, -10],   // 灵巧（右下 → 上）
+    [2, -10],    // 温柔（左下 → 上）
+    [9, -7],     // 魅力（左侧 → 右上）
+  ];
   const sorted = [...items].sort(
     (a, b) => (PETAL_ORDER[a.id] ?? 9) - (PETAL_ORDER[b.id] ?? 9)
   );
@@ -68,8 +78,9 @@ export const FlowerChart = ({ items, onSelect, showLabels = true }: {
         {sorted.slice(0, 5).map((item, i) => {
           const deg = i * 72;
           const rad = (deg * Math.PI) / 180;
-          const lx = Math.sin(rad) * LABEL_R;
-          const ly = -Math.cos(rad) * LABEL_R;
+          const nudge = LABEL_NUDGE[i] ?? [0, 0];
+          const lx = Math.sin(rad) * LABEL_R + nudge[0];
+          const ly = -Math.cos(rad) * LABEL_R + nudge[1];
           const c = PETAL_COLORS[i % PETAL_COLORS.length];
           return (
             <g key={item.id}>
