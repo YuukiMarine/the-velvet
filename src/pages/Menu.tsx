@@ -753,11 +753,22 @@ export const Menu = () => {
 
           {/* 舞台：右上角天空锥垫底 → 斜置笔记本压上 → 花/星缀饰 */}
           <div className="relative -mx-4 mt-7 pb-2" style={{ clipPath: 'inset(-40px 0 -60px 0)' }}>
-            {/* 天空锥：从右上角一刀斜切下来的巨大楔形（替代原来的有机 blob，用户口径） */}
+            {/* 天空楔：贴右缘的叶形（对齐 p4-menu-reference-v2 的落位）——
+                上不顶到页头（标题/学生证那条黄带留白）、下只到页面中段就收住，
+                左尖插进笔记本右缘、被纸张盖住形成交错。旧版是从最顶一路铺到底的
+                大三角，占了整个右半屏（用户上报"位置不对"）。
+                曲线用 objectBoundingBox 的 clipPath 定义：随容器缩放，不写死像素。 */}
+            <svg width="0" height="0" aria-hidden className="absolute">
+              <defs>
+                <clipPath id="p4-menu-sky-wedge" clipPathUnits="objectBoundingBox">
+                  <path d="M1 0 C0.72 0.10, 0.30 0.26, 0.02 0.52 C0.28 0.72, 0.70 0.90, 1 1 Z" />
+                </clipPath>
+              </defs>
+            </svg>
             <div
               aria-hidden
-              className="pointer-events-none absolute -top-10 bottom-0 right-0 w-full"
-              style={{ clipPath: 'polygon(100% 0, 22% 0, 100% 82%)' }}
+              className="pointer-events-none absolute right-0 top-[-24px] h-[300px] w-[46%]"
+              style={{ clipPath: 'url(#p4-menu-sky-wedge)' }}
             >
               <img
                 src="/assets/terminal/p4-cloud-sky.png"
