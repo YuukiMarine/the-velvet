@@ -37,6 +37,8 @@ export interface NavigatorMessage {
   text?: string;
   draft?: NavigatorDraft;
   cardStatus?: NavigatorCardStatus;
+  /** 用户手改过这张卡：进卡片实录，模型据此知道内容已不是它提议的那版 */
+  userEdited?: boolean;
   /** 执行成功后的回执文案（渲染在卡片下方的签章行） */
   receipt?: string;
   createdAt: number;
@@ -95,7 +97,7 @@ interface NavigatorState {
   pushCat: (text: string) => void;
   pushUser: (text: string) => void;
   pushCard: (draft: NavigatorDraft) => string;
-  updateCard: (id: string, patch: Partial<Pick<NavigatorMessage, 'draft' | 'cardStatus' | 'receipt'>>) => void;
+  updateCard: (id: string, patch: Partial<Pick<NavigatorMessage, 'draft' | 'cardStatus' | 'userEdited' | 'receipt'>>) => void;
 }
 
 const msg = (partial: Omit<NavigatorMessage, 'id' | 'createdAt'>): NavigatorMessage => ({
@@ -168,6 +170,7 @@ const toRow = (m: NavigatorMessage, sessionId: string): NavigatorMessageRow => (
   text: m.text,
   draftJson: m.draft ? JSON.stringify(m.draft) : undefined,
   cardStatus: m.cardStatus,
+  userEdited: m.userEdited,
   receipt: m.receipt,
   createdAt: m.createdAt,
 });
@@ -178,6 +181,7 @@ const fromRow = (r: NavigatorMessageRow): NavigatorMessage => ({
   text: r.text,
   draft: r.draftJson ? (JSON.parse(r.draftJson) as NavigatorDraft) : undefined,
   cardStatus: r.cardStatus,
+  userEdited: r.userEdited,
   receipt: r.receipt,
   createdAt: r.createdAt,
   sessionId: r.sessionId,
@@ -290,8 +294,11 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
       .slice(-10)
       .map((m) => {
         const status = m.cardStatus === 'done' ? '已确认生效' : m.cardStatus === 'cancelled' ? '已取消' : '待用户确认';
+        // 用户手改过就显式标出来：否则改后的卡和模型自己提议的那版在实录里长得一模一样，
+        // 模型无从得知内容被动过（用户上报「Agent 不知道我改没改 / 取消没取消卡片」）
+        const edited = m.userEdited ? ' · 用户已手改' : '';
         const head = buildPreviewLines(m.draft!).slice(0, 2).join('；');
-        return `- ${ACTION_META[m.draft!.kind].label}【${status}】${head}${m.receipt ? `（回执：${m.receipt}）` : ''}`;
+        return `- ${ACTION_META[m.draft!.kind].label}【${status}${edited}】${head}${m.receipt ? `（回执：${m.receipt}）` : ''}`;
       });
 
   /** 收口 → thinking → replying → idle（gen 凭票，全程可被打断作废） */
