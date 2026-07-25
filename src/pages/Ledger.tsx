@@ -584,37 +584,45 @@ export const Ledger = () => {
             : 'mt-4 bg-gradient-to-b from-white to-gray-50/60 dark:from-gray-800 dark:to-gray-800/60 rounded-2xl shadow-lg ring-1 ring-gray-100/80 dark:ring-gray-700/40 p-5'
         }
       >
-        {isP4 && (
-          <div aria-hidden className="pointer-events-none absolute left-1/2 top-[118px] -translate-x-1/2 -translate-y-1/2">
-            {/* 花瓣环：12 枚橙椭圆 + 外圈虚线放射 */}
-            <svg width="300" height="300" viewBox="-150 -150 300 300" className="opacity-90">
-              {Array.from({ length: 12 }).map((_, i) => (
-                <ellipse key={i} cx="0" cy="-96" rx="26" ry="40" fill={i % 2 ? '#f9a11b' : '#ffb628'} transform={`rotate(${i * 30})`} />
-              ))}
-              {Array.from({ length: 24 }).map((_, i) => (
-                <line key={`l${i}`} x1="0" y1="-132" x2="0" y2="-144" stroke="#fff6d0" strokeWidth="4" strokeLinecap="round" transform={`rotate(${i * 15})`} />
-              ))}
-              <circle r="92" fill="#fff9dd" />
-            </svg>
-          </div>
-        )}
-        {balanceView === 'month' ? (
-          <Donut variant="hero" className="mx-auto" segments={[{ value: Math.max(0, Math.min(1, remainingRatio)), color: ringColor }]} total={1}>
-            <button onClick={() => setBalanceView('total')} className="flex flex-col items-center focus:outline-none active:scale-95 transition-transform" aria-label="切换到总余额">
-              <span className="inline-flex items-center gap-1 text-xs text-gray-400 dark:text-gray-500">{hasBudget ? '月余额' : '本月已花'} <span className="text-[10px] opacity-70">⇄ 总余额</span></span>
-              <span className="text-3xl font-black text-gray-900 dark:text-white tabular-nums mt-0.5">{hasBudget ? fmtSigned(monthBalance, $) : `${$}${fmtMoney(monthExpense)}`}</span>
-              <span className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{hasBudget ? `预算 ${$}${fmtMoney(lim)}` : '未设预算'}</span>
-            </button>
-          </Donut>
-        ) : (
-          <Donut variant="hero" className="mx-auto" segments={[{ value: fundIncome, color: '#34d399' }, { value: fundCarried, color: '#818cf8' }]} total={fundBase}>
-            <button onClick={() => setBalanceView('month')} className="flex flex-col items-center focus:outline-none active:scale-95 transition-transform" aria-label="切换到月余额">
-              <span className="inline-flex items-center gap-1 text-xs text-gray-400 dark:text-gray-500">总余额 <span className="text-[10px] opacity-70">⇄ 月余额</span></span>
-              <span className="text-3xl font-black text-gray-900 dark:text-white tabular-nums mt-0.5">{fmtSigned(total, $)}</span>
-              {savings > 0 && <span className="text-xs font-semibold text-indigo-500 dark:text-indigo-400 mt-0.5">🐷 攒下 {$}{fmtMoney(savings)}</span>}
-            </button>
-          </Donut>
-        )}
+        {/* P4 舞台装饰与进度环必须**同心**：以前装饰是 `top-[118px]` 硬写死，而 hero 环的
+            真圆心是 p-5(20) + 224/2 = 132px，整整偏 14px（用户上报"进度环和底部装饰圆圈
+            错位"）。这里改成把环包进一个 relative 盒子、装饰用 absolute inset-0 居中，
+            圆心由布局保证，环尺寸怎么改都不会再错开。
+            花瓣按用户口径退役，换成两圈同心圆装饰（外圈粗、再外一圈细）。 */}
+        <div className="relative mx-auto w-56">
+          {/* zIndex -1：装饰环比 224 的环盒大一圈，不沉到负层就会盖住下方
+              「本月还没设预算」那行字（绝对定位元素默认画在无定位内容之上） */}
+          {isP4 && (
+            <div aria-hidden className="pointer-events-none absolute inset-0 flex items-center justify-center" style={{ zIndex: -1 }}>
+              {/* shrink-0 必带：外层是 flex 居中盒且只有 224px 宽，不锁的话 300px 的
+                  svg 会被 flex 压到 224，两圈装饰跟着缩进去贴上进度环 */}
+              <svg width="300" height="300" viewBox="-150 -150 300 300" className="shrink-0">
+                <circle r="92" fill="#fff9dd" />
+                {/* 两圈同心装饰：橙粗环贴着进度环外缘，再外一圈奶油细环——
+                    浅橙描边在黄底上几乎看不见，所以外圈用奶油而不是淡橙 */}
+                <circle r="118" fill="none" stroke="var(--p4-orange, #f9a11b)" strokeWidth="12" />
+                <circle r="140" fill="none" stroke="#fff6d0" strokeWidth="7" />
+              </svg>
+            </div>
+          )}
+          {balanceView === 'month' ? (
+            <Donut variant="hero" segments={[{ value: Math.max(0, Math.min(1, remainingRatio)), color: ringColor }]} total={1}>
+              <button onClick={() => setBalanceView('total')} className="flex flex-col items-center focus:outline-none active:scale-95 transition-transform" aria-label="切换到总余额">
+                <span className="inline-flex items-center gap-1 text-xs text-gray-400 dark:text-gray-500">{hasBudget ? '月余额' : '本月已花'} <span className="text-[10px] opacity-70">⇄ 总余额</span></span>
+                <span className="text-3xl font-black text-gray-900 dark:text-white tabular-nums mt-0.5">{hasBudget ? fmtSigned(monthBalance, $) : `${$}${fmtMoney(monthExpense)}`}</span>
+                <span className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{hasBudget ? `预算 ${$}${fmtMoney(lim)}` : '未设预算'}</span>
+              </button>
+            </Donut>
+          ) : (
+            <Donut variant="hero" segments={[{ value: fundIncome, color: '#34d399' }, { value: fundCarried, color: '#818cf8' }]} total={fundBase}>
+              <button onClick={() => setBalanceView('month')} className="flex flex-col items-center focus:outline-none active:scale-95 transition-transform" aria-label="切换到月余额">
+                <span className="inline-flex items-center gap-1 text-xs text-gray-400 dark:text-gray-500">总余额 <span className="text-[10px] opacity-70">⇄ 月余额</span></span>
+                <span className="text-3xl font-black text-gray-900 dark:text-white tabular-nums mt-0.5">{fmtSigned(total, $)}</span>
+                {savings > 0 && <span className="text-xs font-semibold text-indigo-500 dark:text-indigo-400 mt-0.5">🐷 攒下 {$}{fmtMoney(savings)}</span>}
+              </button>
+            </Donut>
+          )}
+        </div>
 
         {cycle.payCycle && (
           <div className="text-center text-[11px] text-gray-400 dark:text-gray-500 -mt-1 mb-1.5">本周期 {cycle.label}</div>
