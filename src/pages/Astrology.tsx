@@ -8,7 +8,7 @@ import { DailyDraw } from '@/components/astrology/DailyDraw';
 import { LongReadingFlow } from '@/components/astrology/LongReadingFlow';
 import { ReadingArchive } from '@/components/astrology/ReadingArchive';
 import { useUiChannel } from '@/ui/useUiChannel';
-import { P4SkyCircle, P4Sparkle } from '@/ui/p4Kit';
+import { P4SkyCircle, P4Sparkle, P4_HEADER_BLEED } from '@/ui/p4Kit';
 import { P3R, P3RPage, GhostWords, P3PageHeader, slantClip } from '@/components/p3r/kit';
 
 type Tab = 'daily' | 'long' | 'archive';
@@ -119,8 +119,8 @@ export function Astrology() {
     >
       {isP4 ? (
         /* p4-astrology-reference-v2：衬线特大「星象」+ ARCANA CHANNEL + 右上天空圆窗 */
-        <div className="relative -mx-4 overflow-hidden px-4 pb-1 pt-1">
-          <P4SkyCircle size={140} className="absolute -right-8 -top-12" />
+        <div className="relative -mx-4 min-h-[146px] px-4 pb-1 pt-1" style={P4_HEADER_BLEED}>
+          <P4SkyCircle size={140} className="absolute -right-8 top-0" />
           <P4Sparkle size={16} color="var(--ui-accent)" className="absolute right-[38%] top-8" />
           <div className="flex items-start gap-2">
             <BackButton onClick={() => setCurrentPage('dashboard')} label="返回首页" className="mt-3" />

@@ -11,6 +11,20 @@
  */
 import type { CSSProperties, ReactNode } from 'react';
 
+/**
+ * P4 页头出血口径（所有 `-mx-4 px-4` 页头共用）：**裁左右与下缘，只朝上放行**。
+ *
+ * 页头原本用 overflow-hidden 兜横向出血，副作用是天空扇/太阳环也被沿题块下缘齐根
+ * 切断——题块只有 ~90px 高，150px 的天空就少了一大截，看上去像"实景天空被错误截断"
+ * （用户上报）。这里改 clip-path：横向照旧不撑出滚动条，上缘放行让弧环/天空自然
+ * 探出屏顶，下缘仍然裁——**页头必须自己给够高度**（`min-h-` ≥ 装饰底缘）来避免截断。
+ *
+ * 为什么下缘不能一起放行：页头是 position:relative 的定位元素，它的绝对定位装饰会
+ * 落在"定位后代"绘制层，而紧随其后的内容块多半没有定位，于是装饰会盖在下方按钮上
+ * （成就页的「添加成就」就被天空压住过）。给足高度比玩 z-index 更可预期。
+ */
+export const P4_HEADER_BLEED: CSSProperties = { clipPath: 'inset(-999px 0 0 0)' };
+
 /** 五瓣花（P4 签名符号：按钮/徽章/圆图标/空状态装饰通用） */
 export const P4Flower = ({ size = 16, color = 'currentColor', className, style }: {
   size?: number; color?: string; className?: string; style?: CSSProperties;
@@ -115,8 +129,10 @@ const P4SkyPhoto = ({ position = '38% 55%' }: { position?: string }) => (
 /** 天空扇角：页首右上角的四分之一圆天空 + 云朵 + 花朵剪影。
  *  photo=true（默认）用实景云朵素材（设计稿口径）；false 退 CSS 渐变绘制。
  *  贴在 relative 容器右上角使用；size 为扇形半径（px）。 */
-export const P4SkyFan = ({ size = 180, className, style, photo = true }: {
+export const P4SkyFan = ({ size = 180, className, style, photo = true, flower = true }: {
   size?: number; className?: string; style?: CSSProperties; photo?: boolean;
+  /** 关掉压在天空上的黄花（页头右上另有大日期/弧环时避免叠字） */
+  flower?: boolean;
 }) => (
   <div
     aria-hidden
@@ -139,7 +155,7 @@ export const P4SkyFan = ({ size = 180, className, style, photo = true }: {
       </>
     )}
     {/* 黄花剪影压在天空上 */}
-    <P4Flower size={size * 0.42} color="var(--ui-bg)" className="absolute" style={{ right: size * 0.06, top: size * 0.3 }} />
+    {flower && <P4Flower size={size * 0.42} color="var(--ui-bg)" className="absolute" style={{ right: size * 0.06, top: size * 0.3 }} />}
   </div>
 );
 
@@ -163,6 +179,44 @@ export const P4SunRings = ({ size = 220, className, style }: {
       ...style,
     }}
   />
+);
+
+/** 巨型同心弧环（设计稿签名背景件：橙/浅黄粗环一圈套一圈，中心镂空所以能透出底下的
+ *  天空/内容）。dashboard 右上的"太阳"与全站背景装饰共用同一个原语。
+ *  rings：[相对半径0~1, 环宽px, 色] 三元组；容器只画环，圆心外的部分交给父级裁切。 */
+export const P4ArcRings = ({
+  size = 260,
+  className,
+  style,
+  rings = [
+    [0.30, 26, 'var(--p4-orange, #f9a11b)'],
+    [0.52, 20, 'rgba(255, 200, 60, 0.75)'],
+    [0.74, 16, 'rgba(255, 176, 40, 0.55)'],
+    [0.94, 11, 'rgba(255, 214, 90, 0.45)'],
+  ],
+}: {
+  size?: number; className?: string; style?: CSSProperties;
+  rings?: [number, number, string][];
+}) => (
+  <div
+    aria-hidden
+    className={`pointer-events-none ${className ?? ''}`}
+    style={{ width: size, height: size, ...style }}
+  >
+    <svg width={size} height={size} viewBox="0 0 100 100" className="block overflow-visible">
+      {rings.map(([r, w, c], i) => (
+        <circle
+          key={i}
+          cx="50"
+          cy="50"
+          r={r * 50}
+          fill="none"
+          stroke={c}
+          strokeWidth={(w / size) * 100}
+        />
+      ))}
+    </svg>
+  </div>
 );
 
 /** 八角贴纸面板（modal v3 定稿）：奶油描边 + 黑底 + 不规则切角 + 微旋。
@@ -224,14 +278,18 @@ export const P4EmptyBloom = ({ text, hint, className }: { text: string; hint?: s
   </div>
 );
 
-/** 天空圆窗（页头右上）：蓝天照片圆 + 黄花。photo=true（默认）走实景素材 */
+/** 天空圆窗（页头右上）：蓝天照片圆 + 黄花。photo=true（默认）走实景素材。
+ *  position 走内联样式而不是 `relative` 类：Tailwind 里 .relative 排在 .absolute 之后，
+ *  基类写死 relative 会盖掉调用方传入的 absolute —— 圆窗于是掉回文档流跑到左上角，
+ *  还把后面的页标题整整顶下去一个身位（用户上报"行动页标题掉下来了"）。 */
 export const P4SkyCircle = ({ size = 160, className, style, photo = true }: {
   size?: number; className?: string; style?: CSSProperties; photo?: boolean;
 }) => (
   <div
     aria-hidden
-    className={`pointer-events-none relative overflow-hidden rounded-full ${className ?? ''}`}
+    className={`pointer-events-none overflow-hidden rounded-full ${className ?? ''}`}
     style={{
+      position: 'absolute',
       width: size,
       height: size,
       background: photo ? undefined : 'linear-gradient(210deg, var(--p4-sky-deep, #2196e0) 0%, var(--p4-sky, #8fd0f4) 55%, #e6f6ff 100%)',
@@ -247,6 +305,57 @@ export const P4SkyCircle = ({ size = 160, className, style, photo = true }: {
       </>
     )}
     <P4Flower size={size * 0.46} color="var(--ui-bg)" className="absolute" style={{ right: size * 0.08, bottom: size * 0.1 }} />
+  </div>
+);
+
+/**
+ * P4 舞台背景装饰层（App 顶层挂一次，仅黄频道）。
+ *
+ * 纯黄底大面积平铺太扎眼（用户上报），按设计稿的背景语汇补进三件套：
+ * 屏外两组巨型同心橙弧环 + 大号浅奶油花剪影 + 四角星闪。全部低对比度，
+ * 只负责把"整片纯色"打散成有层次的舞台，不与内容抢注意力。
+ *
+ * 口径：fixed 一层、静态无动画、aria-hidden + pointer-events-none，
+ * z-index 0（内容层是 z-10），滚动时不重排不重绘。
+ */
+export const P4StageDecor = () => (
+  <div
+    aria-hidden
+    className="pointer-events-none fixed inset-0 select-none overflow-hidden"
+    style={{ zIndex: 0, contain: 'strict' }}
+  >
+    {/* 右上：主弧环组，圆心落在屏外右上，弧线横扫上半屏 */}
+    <P4ArcRings
+      size={720}
+      className="absolute"
+      style={{ right: '-40vw', top: '-32vh' }}
+      rings={[
+        [0.34, 46, 'rgba(249,161,27,0.20)'],
+        [0.56, 34, 'rgba(255,200,60,0.20)'],
+        [0.76, 26, 'rgba(249,161,27,0.13)'],
+        [0.94, 18, 'rgba(255,214,90,0.16)'],
+      ]}
+    />
+    {/* 左下：副弧环组，与主组反向呼应 */}
+    <P4ArcRings
+      size={560}
+      className="absolute"
+      style={{ left: '-36vw', bottom: '-24vh' }}
+      rings={[
+        [0.42, 34, 'rgba(249,161,27,0.14)'],
+        [0.68, 24, 'rgba(255,214,90,0.16)'],
+        [0.92, 16, 'rgba(249,161,27,0.10)'],
+      ]}
+    />
+    {/* 巨型花剪影：三朵错落，压在弧环之上 */}
+    <P4Flower size={280} color="rgba(255,248,214,0.34)" className="absolute" style={{ left: '-86px', top: '30%' }} />
+    <P4Flower size={190} color="rgba(255,248,214,0.28)" className="absolute" style={{ right: '-40px', top: '58%' }} />
+    <P4Flower size={120} color="rgba(255,248,214,0.26)" className="absolute" style={{ left: '38%', bottom: '6%' }} />
+    {/* 四角星闪：白/橙/蓝三色点缀 */}
+    <P4Sparkle size={30} color="rgba(255,255,255,0.5)" className="absolute" style={{ left: '12%', top: '18%' }} />
+    <P4Sparkle size={20} color="rgba(249,161,27,0.4)" className="absolute" style={{ right: '18%', top: '38%' }} />
+    <P4Sparkle size={26} color="rgba(33,150,224,0.28)" className="absolute" style={{ left: '8%', bottom: '26%' }} />
+    <P4Sparkle size={16} color="rgba(255,255,255,0.42)" className="absolute" style={{ right: '8%', bottom: '14%' }} />
   </div>
 );
 

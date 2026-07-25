@@ -8,6 +8,7 @@
  * 字恒水平：文字不随瓣旋转，按极坐标摆放。仅 P4 频道挂载（Dashboard 分支）。
  */
 import { motion } from 'motion/react';
+import type { MouseEvent as ReactMouseEvent } from 'react';
 import type { AttributeId } from '@/types';
 import { P4Flower, P4Sparkle } from '@/ui/p4Kit';
 
@@ -36,9 +37,12 @@ const petalPath = (r0: number, r1: number, w: number) =>
 /** 设计稿瓣位固定序：知识顶 → 顺时针 胆量/灵巧/温柔/魅力 */
 const PETAL_ORDER: Record<string, number> = { knowledge: 0, guts: 1, dexterity: 2, kindness: 3, charm: 4 };
 
-export const FlowerChart = ({ items, onSelect }: {
+export const FlowerChart = ({ items, onSelect, showLabels = true }: {
   items: FlowerChartItem[];
-  onSelect?: (id: AttributeId) => void;
+  /** 事件透传：调用方用点击坐标作波纹圆心（与 p3 StarChartP3 同契约） */
+  onSelect?: (id: AttributeId, e?: ReactMouseEvent) => void;
+  /** 档案展开时隐去瓣上文字，只留花形当衬底 */
+  showLabels?: boolean;
 }) => {
   const R0 = 22;   // 瓣根
   const R1 = 96;   // 瓣尖
@@ -75,31 +79,35 @@ export const FlowerChart = ({ items, onSelect }: {
                 transform={`rotate(${deg})`}
                 style={{ cursor: onSelect ? 'pointer' : undefined }}
                 whileTap={{ scale: 0.96 }}
-                onClick={() => onSelect?.(item.id)}
+                onClick={(e) => onSelect?.(item.id, e as unknown as ReactMouseEvent)}
               />
-              <text
-                x={lx}
-                y={ly + 4}
-                textAnchor="middle"
-                fill={c.ink}
-                fontSize={13}
-                fontWeight={900}
-                style={{ pointerEvents: 'none' }}
-              >
-                {item.name}
-              </text>
-              {/* 数字恒在属性名正下方（设计稿：名→数纵向堆叠） */}
-              <text
-                x={lx}
-                y={ly + 30}
-                textAnchor="middle"
-                fill={c.ink}
-                fontSize={27}
-                fontWeight={900}
-                style={{ pointerEvents: 'none' }}
-              >
-                {item.level}
-              </text>
+              {showLabels && (
+                <>
+                  <text
+                    x={lx}
+                    y={ly + 4}
+                    textAnchor="middle"
+                    fill={c.ink}
+                    fontSize={13}
+                    fontWeight={900}
+                    style={{ pointerEvents: 'none' }}
+                  >
+                    {item.name}
+                  </text>
+                  {/* 数字恒在属性名正下方（设计稿：名→数纵向堆叠） */}
+                  <text
+                    x={lx}
+                    y={ly + 30}
+                    textAnchor="middle"
+                    fill={c.ink}
+                    fontSize={27}
+                    fontWeight={900}
+                    style={{ pointerEvents: 'none' }}
+                  >
+                    {item.level}
+                  </text>
+                </>
+              )}
             </g>
           );
         })}

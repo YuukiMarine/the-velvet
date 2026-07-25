@@ -18,23 +18,24 @@
  *
  * 本 PR 仅提供组件，页面采用在后续迁移 PR 中进行。
  */
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 
 interface PlaneProps {
   children: ReactNode;
   className?: string;
+  style?: CSSProperties;
 }
 
 /** 斜面层：包整页内容；命中区随平面一起旋转（rotate 不破 hit-testing） */
-export function PagePlane({ children, className }: PlaneProps) {
+export function PagePlane({ children, className, style }: PlaneProps) {
   return (
     <div className="sl-plane-clip">
-      <div className={className ? `sl-plane ${className}` : 'sl-plane'}>{children}</div>
+      <div className={className ? `sl-plane ${className}` : 'sl-plane'} style={style}>{children}</div>
     </div>
   );
 }
 
 /** 反制层：放在 PagePlane 内，把正文等量转回水平——"字恒水平"铁律（§7 规则1） */
-export function PlaneLevel({ children, className }: PlaneProps) {
-  return <div className={className ? `sl-level ${className}` : 'sl-level'}>{children}</div>;
+export function PlaneLevel({ children, className, style }: PlaneProps) {
+  return <div className={className ? `sl-level ${className}` : 'sl-level'} style={style}>{children}</div>;
 }

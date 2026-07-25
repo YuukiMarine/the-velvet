@@ -1179,6 +1179,11 @@ export const useAppStore = create<AppState>((set, get) => ({
             const feats = get().battleState?.battleFeats ?? [];
             return achievement.condition.feat && feats.includes(achievement.condition.feat) ? 1 : 0;
           }
+          // 击破累计：事实源 = BattleState.defeatedShadowLog（与成就页 getProgress 同口径）。
+          // 此前漏了这一 case → 落 default 0 → 卡片显示"已达成，点击解锁"但这里被 progress<value
+          // 挡回，点了永远没反应（用户上报"已完成的成就无法解锁"）。
+          case 'shadow_defeats':
+            return get().battleState?.defeatedShadowLog?.length ?? 0;
           default:
             return 0;
         }

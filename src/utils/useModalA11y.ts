@@ -41,13 +41,18 @@ export function useModalA11y(
 
     // 打开时把焦点移进对话框（WCAG：模态打开焦点应入内）。
     // 仅当焦点尚未在容器内才移动——保住 autoFocus 输入框（它在挂载时已同步聚焦、落在容器内）。
+    //
+    // preventScroll 必带：入场动画期间弹窗本体常在屏外（如 P3 斜带 cut-in 从 x:110% 滑入），
+    // 默认 focus() 会让浏览器把那个屏外按钮"滚进视口"——遮罩是 fixed + overflow-hidden，
+    // 仍可被程序化设 scrollLeft，于是整层内容被滚偏（用户上报"稍微向左错位"）；退场时内容
+    // 缩回、scrollLeft 被钳回 0，看起来就是"消失前向右抽一下"。归还焦点同理（防页面跳动）。
     const root = containerRef.current;
     if (root && !root.contains(document.activeElement)) {
       const target = root.querySelector<HTMLElement>(
         'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
       );
-      if (target) target.focus();
-      else { root.setAttribute('tabindex', '-1'); root.focus(); }
+      if (target) target.focus({ preventScroll: true });
+      else { root.setAttribute('tabindex', '-1'); root.focus({ preventScroll: true }); }
     }
 
     const handleKey = (e: KeyboardEvent) => {
@@ -89,7 +94,7 @@ export function useModalA11y(
       if (idx !== -1) a11yStack.splice(idx, 1);
       // 关闭时把焦点交还给打开前的元素（仍在文档内才还）——避免键盘/读屏丢失定位
       if (previouslyFocused && previouslyFocused.isConnected && typeof previouslyFocused.focus === 'function') {
-        previouslyFocused.focus();
+        previouslyFocused.focus({ preventScroll: true });
       }
     };
   }, [isOpen]);

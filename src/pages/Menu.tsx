@@ -45,7 +45,7 @@ import { triggerNavFeedback } from '@/utils/feedback';
 import { useBoldness } from '@/utils/boldness';
 import { STAGGER, TAP, springSoft, fadeIn } from '@/utils/motion';
 import { useUiChannel } from '@/ui/useUiChannel';
-import { P4Flower, P4Sparkle, P4SunRings } from '@/ui/p4Kit';
+import { P4Flower, P4Sparkle } from '@/ui/p4Kit';
 import { P3R, P3RPage, slantClip } from '@/components/p3r/kit';
 import { computeTotalLv } from '@/utils/lvTiers';
 
@@ -517,7 +517,10 @@ export const Menu = () => {
       <P3RPage className="overflow-hidden">
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }} className="relative mx-auto max-w-2xl pb-8">
           {/* SYSTEM 巨幽灵字（p3-menu 设计稿：整行横排词整体顺时针旋转 90°，沿左缘纵向纵贯中下部——竖屏侧边字样） */}
-          <div aria-hidden className="pointer-events-none absolute left-0 top-[300px] flex h-[760px] w-[130px] select-none items-center justify-center overflow-hidden">
+          {/* 容器宽必须 ≥ 旋转后字样占的横向尺寸（= 行高 ≈ 9.5rem），否则 overflow-hidden
+              会把字母左右两边齐齐削掉（用户上报"SYSTEM 被错误截断"）。这里放到 168px
+              并撤掉裁切，横向出血交给 P3RPage 自己的 overflow-hidden 兜。 */}
+          <div aria-hidden className="pointer-events-none absolute left-0 top-[300px] flex h-[760px] w-[168px] select-none items-center justify-center">
             <span
               className="whitespace-nowrap font-black italic leading-none"
               style={{ fontFamily: 'Arial, sans-serif', fontSize: '9.5rem', color: 'rgba(53,209,232,0.20)', transform: 'rotate(90deg)' }}
@@ -666,15 +669,15 @@ export const Menu = () => {
       className="max-w-2xl mx-auto"
     >
       {isP4 ? (
-        /* ── P4 舞台：衬线大标题 + 学生证用户卡 + 黑色有机血块斜排菜单 ──
-           二轮改版：用户信息从页头右侧移入「学生证」；菜单行整体 -4° 斜置 +
-           波形缩进 + 更松行距；天空 blob 换实景云素材；宽屏血块收束 540px。 */
+        /* ── P4 舞台（三轮改版，p4-menu-reference-v2 靠拢）──
+           页头一行两栏：左=衬线巨标题 + CHANNEL DIRECTORY，右=学生证吊牌（原整幅
+           学生证压缩成微旋小卡，让出纵向空间给菜单本体）；
+           下半是真正的有机黑色块——右缘用 SVG 拉伸路径画成起伏波，菜单行沿波起落缩进；
+           实景天空块垫在黑块右侧，被波缘咬出交错。 */
         <div className="relative">
           {/* 页头 */}
-          <div className="relative px-1">
-            <P4SunRings size={150} className="absolute -right-10 -top-14 opacity-90" />
-            <P4Sparkle size={18} color="#ffffff" className="absolute right-[30%] top-1" />
-            <P4Sparkle size={13} color="var(--ui-accent)" className="absolute right-[22%] top-14" />
+          <div className="relative flex items-start justify-between gap-2 px-1 pt-1">
+            <P4Sparkle size={18} color="#ffffff" className="absolute left-[44%] top-1" />
             <div className="min-w-0">
               <h1
                 className="text-[56px] font-black leading-[1.02] tracking-tight text-[#131313]"
@@ -686,84 +689,74 @@ export const Menu = () => {
                 CHANNEL DIRECTORY <span className="text-[var(--p4-orange,#f9a11b)]">04</span>
               </div>
             </div>
-          </div>
 
-          {/* 学生证（standalone 用户卡）：黑校条 + 照片框 + 点线信息行 + 条码 + 橙花校章 */}
-          <motion.div
-            initial={{ opacity: 0, y: 10, rotate: -2 }}
-            animate={{ opacity: 1, y: 0, rotate: -2 }}
-            className="relative mt-4 max-w-[430px]"
-          >
-            <div className="overflow-hidden rounded-[18px] bg-[#fff6d0]" style={{ boxShadow: '0 5px 0 rgba(19,19,19,0.18)' }}>
-              <div className="flex items-center justify-between bg-[#131313] px-4 py-2">
-                <span className="flex items-center gap-1.5 text-[11px] font-black tracking-[0.16em] text-[var(--ui-bg)]">
-                  <P4Flower size={12} color="var(--ui-bg)" />
-                  靛蓝色房间 · STUDENT PASS
+            {/* 学生证吊牌：黑校条 + 小照片 + 名/LV/点数/连续，微旋压在标题右侧 */}
+            <motion.button
+              type="button"
+              onClick={() => { triggerNavFeedback(); setProfileSheetOpen(true); }}
+              aria-label={`用户资料：${user?.name || '客人'}，等级 ${totalLevel}`}
+              initial={{ opacity: 0, y: -8, rotate: 3 }}
+              animate={{ opacity: 1, y: 0, rotate: 3 }}
+              whileTap={TAP}
+              className="relative mt-1 w-[190px] shrink-0 overflow-hidden rounded-[14px] bg-[#fff6d0] text-left"
+              style={{ boxShadow: '0 4px 0 rgba(19,19,19,0.2)' }}
+            >
+              <div className="flex items-center justify-between bg-[#131313] px-2.5 py-1">
+                <span className="flex items-center gap-1 text-[9px] font-black tracking-[0.14em] text-[var(--ui-bg)]">
+                  <P4Flower size={9} color="var(--ui-bg)" />
+                  STUDENT PASS
                 </span>
-                <span className="text-[11px] font-black tracking-[0.16em] text-white/85">CH 04</span>
+                <span className="text-[9px] font-black tracking-[0.12em] text-white/80">CH 04</span>
               </div>
-              <div className="flex gap-4 px-4 pb-2.5 pt-3.5">
-                {/* 照片框：上传头像 / 奶油花兜底 */}
+              <div className="flex gap-2 px-2.5 py-2">
                 <div
-                  className="relative h-[78px] w-[64px] shrink-0 overflow-hidden rounded-lg bg-[var(--ui-accent)]"
-                  style={{ boxShadow: '0 0 0 3px #131313' }}
+                  className="relative h-[46px] w-[38px] shrink-0 overflow-hidden rounded-md bg-[var(--ui-accent)]"
+                  style={{ boxShadow: '0 0 0 2px #131313' }}
                 >
                   {user?.avatarDataUrl ? (
                     <img src={user.avatarDataUrl} alt="" className="h-full w-full object-cover" />
                   ) : (
-                    <P4Flower size={40} color="#fff6d0" className="absolute left-1/2 top-1/2 -ml-5 -mt-5" />
+                    <P4Flower size={24} color="#fff6d0" className="absolute left-1/2 top-1/2 -ml-3 -mt-3" />
                   )}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-baseline gap-1">
                     <span
-                      className="truncate text-[24px] font-black leading-tight text-[#131313]"
+                      className="min-w-0 flex-1 truncate text-[15px] font-black leading-tight text-[#131313]"
                       style={{ fontFamily: 'var(--p4-display-font, serif)' }}
                     >
                       {user?.name || '客人'}
                     </span>
-                    <span className="shrink-0 rounded-full bg-[#131313] px-2.5 py-1 text-[11px] font-black leading-none text-white">
+                    <span className="shrink-0 rounded-full bg-[#131313] px-1.5 py-[3px] text-[9px] font-black leading-none text-white">
                       LV <span className="tabular-nums">{totalLevel}</span>
                     </span>
                   </div>
-                  <div className="mt-1.5 space-y-1">
-                    {([
-                      ['总点数', <span key="v" className="tabular-nums text-[var(--p4-orange,#f9a11b)]">{p4TotalPoints}</span>],
-                      ['连续记录', <span key="v" className="tabular-nums">{currentStreak} 天</span>],
-                      ['入学', <span key="v" className="tabular-nums">{p4Admission}</span>],
-                    ] as const).map(([label, value]) => (
-                      <div key={label} className="flex items-baseline gap-2 text-[12px] font-black text-[#131313]">
-                        <span className="shrink-0">{label}</span>
-                        <span aria-hidden className="flex-1 border-b-2 border-dotted border-[#131313]/30" />
-                        <span className="shrink-0">{value}</span>
-                      </div>
-                    ))}
+                  <div className="mt-1 flex items-baseline gap-1.5 text-[10px] font-black text-[#131313]">
+                    <span>总点数</span>
+                    <span aria-hidden className="flex-1 border-b-2 border-dotted border-[#131313]/30" />
+                    <span className="tabular-nums text-[var(--p4-orange,#f9a11b)]">{p4TotalPoints}</span>
+                  </div>
+                  <div className="mt-0.5 flex items-baseline gap-1.5 text-[10px] font-black text-[#131313]">
+                    <span>入学</span>
+                    <span aria-hidden className="flex-1 border-b-2 border-dotted border-[#131313]/30" />
+                    <span className="tabular-nums">{p4Admission}</span>
                   </div>
                 </div>
               </div>
-              {/* 底缘：条码 + 蓝星闪 */}
-              <div className="flex items-end justify-between px-4 pb-3">
-                <div aria-hidden className="flex h-5 items-stretch gap-[2px] opacity-80">
-                  {[3, 1, 2, 1, 3, 2, 1, 1, 2, 3, 1, 2, 1, 1, 3, 2, 1, 3].map((w, bi) => (
-                    <span key={bi} className="bg-[#131313]" style={{ width: w }} />
-                  ))}
-                </div>
-                <P4Sparkle size={15} color="var(--ui-accent)" className="mb-0.5 mr-12" />
+              <div aria-hidden className="flex h-3 items-stretch gap-[2px] px-2.5 pb-2 opacity-75">
+                {[3, 1, 2, 1, 3, 2, 1, 1, 2, 3, 1, 2, 1, 1, 3].map((w, bi) => (
+                  <span key={bi} className="bg-[#131313]" style={{ width: w }} />
+                ))}
               </div>
-            </div>
-            {/* 橙花校章（压右下角） */}
-            <span aria-hidden className="pointer-events-none absolute -bottom-4 -right-3 block h-14 w-14">
-              <P4Flower size={56} color="var(--p4-orange, #f9a11b)" className="absolute" style={{ transform: 'rotate(-10deg)' }} />
-              <P4Flower size={30} color="rgba(255,246,208,0.9)" className="absolute left-[13px] top-[13px]" />
-            </span>
-          </motion.div>
+            </motion.button>
+          </div>
 
-          {/* 舞台：右侧实景天空 blob + 黄花，左侧黑血块斜排菜单 */}
-          <div className="relative -mx-4 mt-4 overflow-hidden pb-4">
+          {/* 舞台：实景天空块垫底 → 有机黑块压上 → 花/星缀饰 */}
+          <div className="relative -mx-4 mt-3 pb-2" style={{ clipPath: 'inset(0 0 -60px 0)' }}>
             <div
               aria-hidden
-              className="pointer-events-none absolute -right-9 top-2 h-[340px] w-[230px] overflow-hidden"
-              style={{ borderRadius: '52% 48% 38% 62% / 42% 58% 46% 54%' }}
+              className="pointer-events-none absolute -right-8 top-6 h-[300px] w-[218px] overflow-hidden"
+              style={{ borderRadius: '54% 46% 36% 64% / 40% 60% 44% 56%' }}
             >
               <img
                 src="/assets/terminal/p4-cloud-sky.png"
@@ -772,24 +765,30 @@ export const Menu = () => {
                 style={{ objectPosition: '42% 45%', filter: 'saturate(1.15) contrast(1.06)' }}
               />
               <div className="absolute inset-0 bg-[#00a6ff]/10 mix-blend-screen" />
-              <P4Flower size={90} color="var(--ui-bg)" className="absolute left-4 top-5" />
+              <P4Flower size={96} color="var(--p4-orange, #f9a11b)" className="absolute right-2 top-8" />
             </div>
-            <P4Flower size={70} color="rgba(255,246,208,0.65)" className="pointer-events-none absolute bottom-24 right-6" />
-            <P4Sparkle size={20} color="var(--p4-orange, #f9a11b)" className="pointer-events-none absolute bottom-10 right-16" />
-            <P4Sparkle size={16} color="#fff6d0" className="pointer-events-none absolute bottom-40 right-3" />
+            <P4Flower size={82} color="rgba(255,246,208,0.7)" className="pointer-events-none absolute bottom-16 right-4" />
+            <P4Sparkle size={22} color="var(--ui-accent)" className="pointer-events-none absolute bottom-8 right-20" />
+            <P4Sparkle size={16} color="#ffffff" className="pointer-events-none absolute bottom-44 right-2" />
 
-            {/* 黑血块：左缘出血、右缘有机波；手机宽度让出右缘天空缝，宽屏收束 540px */}
-            <div
-              className="relative max-w-[540px] pb-8 pt-6"
-              style={{
-                width: 'calc(100% - 56px)',
-                background: '#131313',
-                borderRadius: '0 190px 240px 0 / 120px 170px 210px 0',
-              }}
-            >
+            {/* 有机黑块：SVG 路径拉伸铺满行列高度，右缘起伏成波（不再是圆角矩形） */}
+            <div className="relative max-w-[560px] pb-6 pt-7">
+              <svg
+                aria-hidden
+                className="absolute inset-0 h-full w-full"
+                viewBox="0 0 100 100"
+                preserveAspectRatio="none"
+                style={{ filter: 'drop-shadow(0 6px 0 rgba(19,19,19,0.18))' }}
+              >
+                <path
+                  d="M-4 5 C 14 -1, 44 -2, 63 1 C 82 9, 55 15, 70 23 C 85 32, 53 39, 68 48
+                     C 83 57, 51 63, 66 72 C 80 81, 52 87, 60 93 C 64 97, 46 101, 30 102 L-4 102 Z"
+                  fill="#131313"
+                />
+              </svg>
               {p4Rows.map((row, i) => {
-                /* 波形缩进：沿血块左弧起伏（覆盖数组 indent，行内容整体 -4° 斜置） */
-                const wave = [46, 22, 34, 50, 30, 44, 22, 36];
+                /* 波形缩进：与上面路径右缘的起伏同相，行体整体 -4° 斜置 */
+                const wave = [50, 24, 38, 54, 30, 46, 24, 38];
                 const indent = wave[i % wave.length];
                 return (
                   <motion.button
@@ -830,7 +829,7 @@ export const Menu = () => {
                       )}
                       {/* 行间黄虚线（随行体一起斜，末行不画） */}
                       {i < p4Rows.length - 1 && (
-                        <div aria-hidden className="mt-2.5 w-[64%] border-b-2 border-dashed border-[rgba(255,217,0,0.4)]" />
+                        <div aria-hidden className="mt-2.5 w-[54%] border-b-2 border-dashed border-[rgba(255,217,0,0.4)]" />
                       )}
                     </div>
                   </motion.button>
@@ -1081,6 +1080,11 @@ export const Menu = () => {
       )}
 
       {sheetsJsx}
+
+      {/* 资料 Sheet：P4 的学生证吊牌点开走这里（默认形态页内已有 UserProfileCard，不会触发） */}
+      <SheetModal isOpen={profileSheetOpen} onClose={() => setProfileSheetOpen(false)} position="bottom" title="用户资料">
+        <UserProfileCard />
+      </SheetModal>
     </motion.div>
   );
 };
