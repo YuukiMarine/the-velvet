@@ -610,6 +610,8 @@ export interface NavigatorMessageRow {
   text?: string;
   draftJson?: string;
   cardStatus?: 'pending' | 'done' | 'cancelled';
+  /** 用户手改过这张卡（进卡片实录，让模型知道内容已不是它提议的那版） */
+  userEdited?: boolean;
   receipt?: string;
   createdAt: number;
 }

@@ -864,10 +864,11 @@ export const Menu = () => {
                           <motion.span
                             key="hl"
                             aria-hidden
-                            className="absolute -inset-y-1 -left-4 right-0 overflow-hidden"
+                            // 短边（左缘）再高几像素；长边收到 ~70%；整体半透明
+                            className="absolute -inset-y-2 -left-4 w-[72%] overflow-hidden"
                             style={{ transformOrigin: 'left center' }}
                             initial={{ scaleX: 0, opacity: 0 }}
-                            animate={{ scaleX: 1, opacity: 1 }}
+                            animate={{ scaleX: 1, opacity: 0.5 }}
                             exit={{ scaleX: 0, opacity: 0, transition: { duration: 0.18 } }}
                             transition={{ duration: 0.34, ease: [0.16, 1, 0.3, 1] }}
                           >

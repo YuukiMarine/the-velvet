@@ -221,7 +221,8 @@ export const NavigatorWindow = () => {
     setFormKey((k) => k + 1);
   };
   const onFormSubmit = (d: NavigatorDraft) => {
-    if (editingCardId) nav.updateCard(editingCardId, { draft: d });
+    // userEdited 一并落下：卡片实录里会标出「用户已手改」，模型才知道内容被动过
+    if (editingCardId) nav.updateCard(editingCardId, { draft: d, userEdited: true });
     else nav.pushCard(d);
     setFormDraft(null);
     setEditingCardId(null);
