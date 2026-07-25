@@ -156,11 +156,21 @@ const WaveSliceAct = ({ midpoint, onDone }: ActProps) => {
 // App 层 CircleRevealOnEnter 以同一原点做扩散圆形蒙版揭示（真正的"蒙版转场"）。
 // 波纹只扩到屏高一半（半径 50%vh）即衰减殆尽；波纹层不拦截指针，连点由 busyRef 兜底。
 const RIPPLE_LINES = [
-  { w: 60, c: 'rgba(27,87,255,0.78)',  reach: 1.00, d: 0.45, delay: 0.00, o: 0.85 },
-  { w: 96, c: 'rgba(53,209,232,0.65)', reach: 0.88, d: 0.60, delay: 0.07, o: 0.78 },
+  { w: 60, reach: 1.00, d: 0.45, delay: 0.00, o: 0.85 },
+  { w: 96, reach: 0.88, d: 0.60, delay: 0.07, o: 0.78 },
 ];
 
-const WaterRippleAct = ({ midpoint, onDone, origin }: ActProps & { origin?: { x: number; y: number } }) => {
+/** 波纹配色随频道走：P3 蓝青（原口径）／P4 橙黄（黄舞台上蓝波纹是异色，用户口径）／
+ *  P5 主题红＋墨／neutral 主题色。两条波纹 = [粗内圈, 细外圈]。 */
+const RIPPLE_PALETTE: Record<string, [string, string]> = {
+  p3: ['rgba(27,87,255,0.78)', 'rgba(53,209,232,0.65)'],
+  p4: ['rgba(249,161,27,0.85)', 'rgba(255,246,208,0.72)'],
+  p5: ['rgba(215,25,32,0.78)', 'rgba(19,19,19,0.55)'],
+};
+const rippleColors = (channel: string): [string, string] =>
+  RIPPLE_PALETTE[channel] ?? ['color-mix(in srgb, var(--color-primary) 78%, transparent)', 'rgba(148,163,184,0.6)'];
+
+const WaterRippleAct = ({ midpoint, onDone, origin, channel }: ActProps & { origin?: { x: number; y: number }; channel: string }) => {
   useTimeline([
     [0, midpoint],
     [700, onDone],
@@ -169,13 +179,14 @@ const WaterRippleAct = ({ midpoint, onDone, origin }: ActProps & { origin?: { x:
   const h = window.innerHeight;
   const ox = origin?.x ?? w / 2;
   const oy = origin?.y ?? h - 40;
+  const colors = rippleColors(channel);
   return (
     <div className={`fixed inset-0 ${zClass.transition} pointer-events-none overflow-hidden`} aria-hidden>
       {RIPPLE_LINES.map((ln, k) => (
         <motion.span
           key={k}
           className="absolute rounded-full"
-          style={{ left: ox, top: oy, x: '-50%', y: '-50%', border: `${ln.w}px solid ${ln.c}` }}
+          style={{ left: ox, top: oy, x: '-50%', y: '-50%', border: `${ln.w}px solid ${colors[k]}` }}
           initial={{ width: 24, height: 24, opacity: ln.o }}
           animate={{ width: h * ln.reach, height: h * ln.reach, opacity: 0 }}
           transition={{ duration: ln.d, delay: ln.delay, ease: 'easeOut' }}
@@ -229,7 +240,7 @@ export const TransitionLayer = () => {
   };
   const props = { midpoint: req.midpoint, onDone: done };
   // 指定效果优先于频道默认（底部栏切换 → 水波纹试验）
-  if (req.effect === 'water') return <WaterRippleAct key={req.id} {...props} origin={req.origin} />;
+  if (req.effect === 'water') return <WaterRippleAct key={req.id} {...props} origin={req.origin} channel={req.channel} />;
   switch (req.channel) {
     case 'p5':
       return <StarTearAct key={req.id} {...props} />;

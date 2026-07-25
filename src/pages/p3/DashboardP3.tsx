@@ -610,7 +610,10 @@ export const DashboardP3 = () => {
         {/* 幽灵字（右上，随页滚动） */}
         <GhostWords words={['THE', 'VELVET']} className="right-[10px] top-[10px] text-right text-[58px]" />
         {/* 幽灵字（左缘竖排：顺时针 90° 贴左侧；关视差防竖排字横漂） */}
-        <GhostWords words={['WILD HEART']} parallax={false} className="left-[64px] top-[96px] text-[72px] whitespace-nowrap" style={{ transform: 'rotate(90deg)', transformOrigin: 'left top' }} />
+        {/* 竖排 WILD HEART：放大到 104px 并整体下移到首屏下半（用户口径"平移到屏幕底部、
+            放大一些"）。rotate(90deg)+origin:left top 下，字样占的横向宽度 = 行高
+            (104 × leading .86 ≈ 90px)，所以 left 必须 ≥ 90 才不被页面左缘削掉。 */}
+        <GhostWords words={['WILD HEART']} parallax={false} className="left-[104px] top-[336px] text-[104px] whitespace-nowrap" style={{ transform: 'rotate(90deg)', transformOrigin: 'left top' }} />
 
         {/* ── 页头 ── */}
         <header className="relative pt-4">

@@ -19,7 +19,7 @@ import { triggerNavFeedback } from '@/utils/feedback';
 import { TodosView } from '@/pages/Todos';
 import { ActivitiesView } from '@/pages/Activities';
 import { useUiChannel } from '@/ui/useUiChannel';
-import { P4SkyCircle } from '@/ui/p4Kit';
+import { P4SkyCircle, P4_HEADER_BLEED } from '@/ui/p4Kit';
 import { P3R, P3RPage, GhostWords, slantClip } from '@/components/p3r/kit';
 
 type ActionsSubTab = 'todos' | 'activities';
@@ -130,8 +130,9 @@ export const Actions = () => {
           P4（p4-actions-reference-v2 1:1）：衬线双词 + 激活词背后橙圆 + 右上天空圆窗
           + ACTION PROGRAM 眉标；下划线退役。 */}
       {isP4 ? (
-        <div className="relative -mx-4 mb-4 overflow-hidden px-4 pb-1 pt-1">
-          <P4SkyCircle size={150} className="absolute -right-8 -top-10" />
+        <div className="relative -mx-4 mb-4 min-h-[126px] px-4 pb-1 pt-1" style={P4_HEADER_BLEED}>
+          {/* 天空圆窗统一口径：贴容器上缘、只朝右出血；纵向由 P4_HEADER_BLEED 放行不再削顶削底 */}
+          <P4SkyCircle size={150} className="absolute -right-8 -top-8" />
           <motion.div
             role="tablist"
             aria-label="行动子页切换"

@@ -6,7 +6,7 @@ import { triggerNavFeedback } from '@/utils/feedback';
 import { PageTitle } from '@/components/PageTitle';
 import { BackButton } from '@/components/BackButton';
 import { useUiChannel } from '@/ui/useUiChannel';
-import { P4Flower, P4Sparkle, P4SunRings } from '@/ui/p4Kit';
+import { P4Flower, P4Sparkle, P4ArcRings, P4SkyCircle, P4_HEADER_BLEED } from '@/ui/p4Kit';
 import { P3R, P3RPage, GhostWords, P3PageHeader, P3EmptySlab, slantClip } from '@/components/p3r/kit';
 
 /** P4 绶带横幅裁切（p4-achievements-reference-v2）：两端内凹的奖带形 */
@@ -661,6 +661,8 @@ const AchievementsTab = () => {
     settings,
     todoCompletions,
     battleState,
+    weeklyGoals,
+    confidants,
     updateCustomAchievement,
     deleteCustomAchievement,
     addCustomAchievement,
@@ -727,6 +729,17 @@ const AchievementsTab = () => {
         return Math.min(battleState?.defeatedShadowLog?.length ?? 0, achievement.condition.value);
       case 'battle_feat':
         return achievement.condition.feat && (battleState?.battleFeats ?? []).includes(achievement.condition.feat) ? 1 : 0;
+      // 周目标 / 羁绊两类此前漏在这里 → 落 default 0，进度条永远 0/N、也永远不显示
+      // "已达成，点击解锁"（store.unlockAchievement 侧其实早就支持）。口径与 store 同源。
+      case 'weekly_goal_completions':
+        return Math.min(weeklyGoals.filter(g => g.completed).length, achievement.condition.value);
+      case 'confidants_at_level': {
+        const minLv = achievement.condition.minLevel ?? 1;
+        return Math.min(
+          confidants.filter(c => !c.archivedAt && c.intimacy >= minLv).length,
+          achievement.condition.value,
+        );
+      }
       default:
         return 0;
     }
@@ -846,11 +859,14 @@ const AchievementsTab = () => {
         if (prev[attr] !== undefined && prev[attr] < (attrGroups[attr]?.length ?? 0)) {
           next[attr] = prev[attr];
         } else {
-          // Default to highest unlocked
+          // 默认档位：优先停在「已达成但还没解锁」那张（否则用户看到的是已解锁的低档卡，
+          // 得自己横滑才发现还有一张能领 —— 这也是"成就完成了却解锁不了"的观感来源之一）；
+          // 没有可领的再退回最高已解锁档。
           const group = attrGroups[attr] ?? [];
+          const claimable = group.findIndex(a => !a.unlocked && getProgress(a) >= a.condition.value);
           let highest = 0;
           group.forEach((a, i) => { if (a.unlocked) highest = i; });
-          next[attr] = highest;
+          next[attr] = claimable >= 0 ? claimable : highest;
         }
       });
       return next;
@@ -1028,8 +1044,10 @@ const AchievementsTab = () => {
                   className="flex items-center gap-3 py-3 pl-5 pr-4"
                   style={{ touchAction: group.length > 1 ? 'pan-y' : undefined }}
                   onPointerDown={(e) => {
-                    if (group.length <= 1) return;
+                    // 起点无条件记：组内只剩一张时（"未完成"筛选下每个属性只余最后一档必现）
+                    // 早退会让 onPointerUp 取不到起点直接 return，点击解锁彻底失效（用户上报）
                     cardSwipeRef.current[attr] = { x: e.clientX, y: e.clientY };
+                    if (group.length <= 1) return; // 不可横滑就不抢指针，交回给普通点击
                     try { (e.currentTarget as Element).setPointerCapture(e.pointerId); } catch { /* ignore */ }
                   }}
                   onPointerUp={(e) => {
@@ -1347,8 +1365,9 @@ const AchievementsTab = () => {
                 className="px-3 pb-1 text-center overflow-hidden"
                 style={{ touchAction: group.length > 1 ? 'pan-y' : undefined }}
                 onPointerDown={(e) => {
-                  if (group.length <= 1) return;
+                  // 同 p3 分支：起点无条件记，否则单张组的点击解锁会被 onPointerUp 的 !start 吞掉
                   cardSwipeRef.current[attr] = { x: e.clientX, y: e.clientY };
+                  if (group.length <= 1) return;
                   try { (e.currentTarget as Element).setPointerCapture(e.pointerId); } catch { /* ignore */ }
                 }}
                 onPointerUp={(e) => {
@@ -1659,8 +1678,9 @@ export const Achievements = () => {
       {/* 顶部标题 + 返回按钮（与其他子页保持一致的视觉）。
           P4（p4-achievements-reference-v2）：衬线双词标签页头（激活词大）+ AWARD SHOW 黑胶囊眉标。 */}
       {isP4 ? (
-        <div className="relative -mx-4 overflow-hidden px-4 pb-1 pt-1">
-          <P4SunRings size={130} className="absolute -right-8 -top-12 opacity-90" />
+        <div className="relative -mx-4 min-h-[136px] px-4 pb-1 pt-1" style={P4_HEADER_BLEED}>
+          <P4ArcRings size={210} className="absolute -right-16 -top-24" />
+          <P4SkyCircle size={128} className="absolute -right-6 top-0" />
           <P4Flower size={90} color="rgba(255,246,208,0.55)" className="absolute -left-6 -top-6" />
           <P4Sparkle size={16} color="var(--ui-accent)" className="absolute right-[30%] top-16" />
           <div className="relative flex items-end gap-2">

@@ -18,8 +18,9 @@ import { playSound } from '@/utils/feedback';
 import { getAttributeLevelTitle } from '@/utils/attributeLevelTitles';
 import type { AttributeId, CallingCard } from '@/types';
 import { useUiChannel } from '@/ui/useUiChannel';
-import { P4Flower, P4Sparkle, P4SunRings, P4SkyFan } from '@/ui/p4Kit';
+import { P4Flower, P4Sparkle, P4ArcRings, P4SkyFan, P4_HEADER_BLEED } from '@/ui/p4Kit';
 import { FlowerChart } from '@/components/FlowerChart';
+import { AttrDetailInlineP4 } from '@/components/AttrDetailInlineP4';
 
 // Seeded random: picks a stable index per session (changes on every page open)
 const sessionSeed = Math.random();
@@ -606,8 +607,11 @@ export const Dashboard = () => {
   }, [hasCountercurrentWarning]);
 
   // 「成长」叠放锁：属性卡排序编辑期间锁死外层横滑（拖拽与横滑同为水平手势，会互抢 pointer）
-  // P8.1 星象仪：点角打开的属性档案弹窗
+  // P8.1 星象仪：点角打开的属性档案（非 P4 走弹窗；P4 走花瓣图原地展开，见下）
   const [dossierAttr, setDossierAttr] = useState<AttributeId | null>(null);
+  // P4 花瓣图点击波纹：状态放在区块层（不在会被旋转/淡出的花层内），才看得见
+  const [petalRipples, setPetalRipples] = useState<{ id: number; x: number; y: number }[]>([]);
+  const petalSectionRef = useRef<HTMLDivElement>(null);
 
   // In dark mode the UI background is dark, so light text always reads better on the colored banner
   // P4（p4-redraw 定稿）：问候卡是黑色斜板，文字奶油/黄，覆盖亮暗判定
@@ -662,6 +666,7 @@ export const Dashboard = () => {
 
   // 统计数据
   const totalPoints = attributes.reduce((sum, attr) => sum + attr.points, 0);
+  const totalLevel = attributes.reduce((sum, attr) => sum + (attr.level ?? 0), 0);
   const totalActivitiesCount = activities.length;
   const unlockedAchievementsCount = achievements.filter(a => a.unlocked).length;
   const unlockedSkillsCount = skills.filter(s => s.unlocked).length;
@@ -753,9 +758,13 @@ export const Dashboard = () => {
           P4（p4-dashboard-reference-v2 1:1）：衬线特大标题 + TODAY'S SHOW 眉标 + 右上大日期，
           右上角橙色太阳环 + 天空扇 + 花朵，元素出血到屏幕右缘。 */}
       {isP4 ? (
-        <div className="relative -mx-4 overflow-hidden px-4 pb-1 pt-2">
-          <P4SkyFan size={150} className="absolute right-0 top-0 opacity-95" />
-          <P4SunRings size={200} className="absolute -right-14 -top-20" />
+        <div className="relative -mx-4 min-h-[164px] px-4 pb-1 pt-2" style={P4_HEADER_BLEED}>
+          {/* 巨型同心弧环垫底（镂空，天空从环缝里透出来）→ 天空扇压上 → 星闪。
+              旧版是实心橙盘盖在天空扇上、且天空被 overflow-hidden 沿题块下缘齐根切断，
+              看上去像"天空被错误截断"（用户上报）。 */}
+          <P4SkyFan size={158} className="absolute right-0 top-0 opacity-95" flower={false} />
+          <P4ArcRings size={286} className="absolute -right-20 -top-32" />
+          <P4Flower size={54} color="var(--ui-bg)" className="absolute right-[26%] top-[86px]" />
           <P4Sparkle size={20} color="#ffffff" className="absolute right-[40%] top-3" />
           <P4Sparkle size={14} color="var(--ui-accent)" className="absolute right-[36%] top-[112px]" />
           {/* 大日期牌（压在太阳上） */}
@@ -1099,33 +1108,84 @@ export const Dashboard = () => {
               详细统计 ▶
             </button>
           </div>
-          <FlowerChart
-            items={starItems.map(s => ({ id: s.id, name: s.name, level: s.level, maxLevel: s.maxLevel }))}
-            onSelect={(id) => setDossierAttr(id)}
-          />
-          <div className="mt-4 flex gap-2">
+          {/* 花瓣图 ⇄ 属性档案：与 p3 同一交互（选中时花层旋转放大、透明度沉为衬底，
+              详情在原位撑开；再点任意处倒放收回）。外层只裁水平飞入，详情自己撑高度。 */}
+          <div ref={petalSectionRef} className="relative min-h-[268px] overflow-hidden">
+            <motion.div
+              className="absolute inset-x-0 top-0 z-0"
+              animate={dossierAttr
+                ? { scale: 1.38, rotate: 118, x: '12%', y: '14%', opacity: 0.18 }
+                : { scale: 1, rotate: 0, x: '0%', y: '0%', opacity: 1 }}
+              transition={{ type: 'spring', stiffness: 190, damping: 24 }}
+              style={{ transformOrigin: 'center', pointerEvents: dossierAttr ? 'none' : 'auto' }}
+            >
+              <FlowerChart
+                items={starItems.map(s => ({ id: s.id, name: s.name, level: s.level, maxLevel: s.maxLevel }))}
+                onSelect={(id, e) => {
+                  const rect = petalSectionRef.current?.getBoundingClientRect();
+                  if (rect && e) setPetalRipples(rs => [...rs, { id: Date.now(), x: e.clientX - rect.left, y: e.clientY - rect.top }]);
+                  setDossierAttr(id);
+                }}
+                showLabels={!dossierAttr}
+              />
+            </motion.div>
+            {/* 详情层：高度 0⇄auto 与内部 stagger 同播，收回时底部不会先塌一截 */}
+            <motion.div
+              className="relative z-10 overflow-hidden"
+              initial={false}
+              animate={{ height: dossierAttr ? 'auto' : 0 }}
+              transition={{ duration: 0.34, ease: [0.3, 0, 0.2, 1] }}
+            >
+              <AnimatePresence>
+                {dossierAttr && (
+                  <AttrDetailInlineP4
+                    key={dossierAttr}
+                    attrId={dossierAttr}
+                    level={starItems.find(it => it.id === dossierAttr)?.level ?? 1}
+                    onBack={() => setDossierAttr(null)}
+                  />
+                )}
+              </AnimatePresence>
+            </motion.div>
+            {/* 点击波纹：独立叠层，不随花层旋转/淡出 */}
+            <AnimatePresence>
+              {petalRipples.map((rp) => (
+                <motion.span
+                  key={rp.id}
+                  aria-hidden
+                  className="pointer-events-none absolute z-30 rounded-full"
+                  style={{ left: rp.x, top: rp.y, border: '3px solid var(--p4-orange, #f9a11b)', background: 'radial-gradient(circle, rgba(255,214,90,0.45) 0%, rgba(249,161,27,0) 70%)' }}
+                  initial={{ width: 16, height: 16, x: '-50%', y: '-50%', opacity: 0.9 }}
+                  animate={{ width: 250, height: 250, opacity: 0 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.6, ease: 'easeOut' }}
+                  onAnimationComplete={() => setPetalRipples(rs => rs.filter(r => r.id !== rp.id))}
+                />
+              ))}
+            </AnimatePresence>
+          </div>
+          {/* 四格统计（与 p3 同口径：成就·技能已挪到详细统计页，首页只留四项） */}
+          <div className="mt-3 flex gap-2">
             {[
               { v: totalPoints, label: '累计点数', c: 'var(--p4-orange, #f9a11b)' },
-              { v: maxStreak, label: '最长连续', c: 'var(--ui-accent)' },
               { v: totalActivitiesCount, label: '总记录数', c: 'var(--p4-green, #55c34f)' },
-              { v: unlockedAchievementsCount, label: '成就', c: '#8e5ad8' },
-              { v: unlockedSkillsCount, label: '技能', c: 'var(--p4-sky-deep, #2196e0)' },
+              { v: totalLevel, label: '总等级', c: 'var(--p4-sky-deep, #2196e0)' },
               { v: uniqueDays, label: '记录天数', c: '#8e5ad8' },
             ].map((s, i) => (
               <div key={s.label} className="relative flex-1">
                 <div
                   className="flex aspect-square w-full flex-col items-center justify-center rounded-full bg-[var(--ui-paper)]"
-                  style={{ boxShadow: '0 2px 0 rgba(19,19,19,0.1)' }}
+                  style={{ boxShadow: '0 3px 0 rgba(19,19,19,0.12)' }}
                 >
-                  <span className="text-lg font-black leading-none tabular-nums" style={{ color: s.c }}>
+                  <span className="text-[26px] font-black leading-none tabular-nums" style={{ color: s.c }}>
                     {s.v}
                   </span>
-                  <span className="mt-0.5 px-0.5 text-center text-[8px] font-black leading-tight text-[#131313]">
+                  <span className="mt-0.5 px-0.5 text-center text-[10px] font-black leading-tight text-[#131313]">
                     {s.label}
                   </span>
                 </div>
-                {(i === 0 || i === 3) && (
-                  <P4Sparkle size={10} color={i === 0 ? 'var(--p4-orange, #f9a11b)' : 'var(--ui-accent)'} className="absolute -top-1 right-0" />
+                {(i === 0 || i === 2) && (
+                  <P4Sparkle size={13} color={i === 0 ? 'var(--p4-orange, #f9a11b)' : 'var(--ui-accent)'} className="absolute -top-1 right-0" />
                 )}
               </div>
             ))}
@@ -1180,8 +1240,9 @@ export const Dashboard = () => {
       </motion.div>
       )}
 
-      {/* P8.1 属性档案：点星象仪贴纸打开（称号阶梯 + 关联成就） */}
-      <AttributeDossier attrId={dossierAttr} onClose={() => setDossierAttr(null)} />
+      {/* P8.1 属性档案：点星象仪贴纸打开（称号阶梯 + 关联成就）。
+          P4 已改成花瓣图原地展开（AttrDetailInlineP4），不再叠这层弹窗。 */}
+      <AttributeDossier attrId={isP4 ? null : dossierAttr} onClose={() => setDossierAttr(null)} />
 
       <TodoCompleteModal
         isOpen={!!completedTitle}

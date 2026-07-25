@@ -21,7 +21,7 @@ import {
   patchAttributeLevelTitle,
 } from '@/utils/attributeLevelTitles';
 import { generatePresetNameMatches, type PresetNameMatchResult } from '@/utils/presetNameMatcher';
-import { P4Flower, P4Sparkle, P4SkyFan } from '@/ui/p4Kit';
+import { P4Flower, P4Sparkle, P4SkyFan, P4ArcRings, P4_HEADER_BLEED } from '@/ui/p4Kit';
 
 /** 五维属性的展示元数据（图标 + 主色 + 默认中文名），仅用于设置页 UI */
 const ATTRIBUTE_META: Array<{
@@ -700,8 +700,9 @@ export const Settings = () => {
           P4（p4-settings-reference-v2）：衬线特大「设置」+ 橙 Settings 手写角标 + 右上天空扇；
           p3（p3-settings 设计稿）：超大黑斜体 + 青片 + 青斜纹排 + CONFIG/SYSTEM 幽灵字 */}
       {isP4 ? (
-        <div className="relative -mx-4 overflow-hidden px-4 pb-1 pt-1">
-          <P4SkyFan size={120} className="absolute right-0 top-0" />
+        <div className="relative -mx-4 min-h-[146px] px-4 pb-1 pt-1" style={P4_HEADER_BLEED}>
+          <P4ArcRings size={230} className="absolute -right-20 -top-24" />
+          <P4SkyFan size={140} className="absolute right-0 top-0" />
           <P4Sparkle size={18} color="#ffffff" className="absolute right-[32%] top-2" />
           <P4Sparkle size={13} color="var(--ui-accent)" className="absolute right-[38%] top-[92px]" />
           <div className="flex items-start gap-2">

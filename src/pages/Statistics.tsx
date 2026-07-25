@@ -13,7 +13,7 @@ import {
   ResponsiveContainer
 } from 'recharts';
 import { AttributeId } from '@/types';
-import { P4Flower, P4Sparkle, P4SkyFan } from '@/ui/p4Kit';
+import { P4Flower, P4Sparkle, P4SkyFan, P4ArcRings, P4_HEADER_BLEED } from '@/ui/p4Kit';
 
 /** P4 属性分布五瓣花牌配色（p4-statistics-reference-v2 采样：绿/蓝/橙/粉/紫） */
 const P4_ATTR_COLORS: Record<AttributeId, string> = {
@@ -330,8 +330,9 @@ export const Statistics = () => {
           P4（p4-statistics-reference-v2）：衬线特大「统计」+ STATUS CHECK 眉标 + 天空扇；
           p3（p3-statistics-reference-v2）：P3PageHeader + 命运轨迹青斜纹。 */}
       {isP4 ? (
-        <PlaneLevel className="relative -mx-4 overflow-hidden px-4 pb-1 pt-1">
-          <P4SkyFan size={130} className="absolute right-0 top-0" />
+        <PlaneLevel className="relative -mx-4 min-h-[152px] px-4 pb-1 pt-1" style={P4_HEADER_BLEED}>
+          <P4ArcRings size={250} className="absolute -right-20 -top-28" />
+          <P4SkyFan size={148} className="absolute right-0 top-0" />
           <P4Sparkle size={18} color="#ffffff" className="absolute right-[34%] top-2" />
           <div className="flex items-start gap-2">
             <BackButton onClick={() => setCurrentPage('menu')} className="mt-3 -ml-1" />

@@ -51,6 +51,35 @@ import { StarTearDemo } from '@/components/dev/StarTearDemo';
 import { PersonaGallery } from '@/components/dev/PersonaGallery';
 import { TransitionLayer } from '@/components/transition/HeavyTransition';
 import { consumePendingCircleReveal } from '@/ui/transitionDirector';
+import { P4StageDecor } from '@/ui/p4Kit';
+
+/**
+ * 页面分包预热清单。
+ *
+ * 上面这些页走 lazy()，chunk 直到首次导航才开始下载——用户感知就是"第一次点进某个页
+ * 要顿一下、先闪一下『加载中…』"（用户上报的首开卡顿）。这里把同样的动态 import 再列
+ * 一份：Vite 对同一模块说明符的 import() 是同一个 chunk，预热完 lazy() 的 promise 立刻
+ * resolve，导航零等待。
+ *
+ * 节奏：首屏画完 + 空闲后才逐个取，一次一个，不和首屏抢带宽/主线程。
+ * 顺序按底部导航的使用频度排（行动 / 菜单最常点）。
+ */
+const PAGE_CHUNKS: Array<() => Promise<unknown>> = [
+  () => import('@/pages/Actions'),
+  () => import('@/pages/Menu'),
+  () => import('@/pages/Cooperation'),
+  () => import('@/pages/Statistics'),
+  () => import('@/pages/Astrology'),
+  () => import('@/pages/Ledger'),
+  () => import('@/pages/Account'),
+  () => import('@/pages/Terminal'),
+];
+
+const onIdle = (cb: () => void, timeout = 2000) => {
+  const w = window as Window & { requestIdleCallback?: (cb: IdleRequestCallback, o?: { timeout: number }) => number };
+  if (typeof w.requestIdleCallback === 'function') return w.requestIdleCallback(cb, { timeout });
+  return window.setTimeout(cb, 200);
+};
 
 const isStandalonePwa = () => (
   window.matchMedia('(display-mode: standalone)').matches
@@ -116,6 +145,22 @@ function App() {
 
     init();
   }, [initializeApp]);
+
+  // 页面分包预热：首屏画完 + 空闲后逐个把 lazy 页的 chunk 拉进模块表，
+  // 消掉"第一次点进某页要等 chunk、先闪一下加载中"的首开卡顿（见 PAGE_CHUNKS 注释）。
+  useEffect(() => {
+    if (isLoading || showSplash || !user) return;
+    let cancelled = false;
+    let i = 0;
+    const step = () => {
+      if (cancelled || i >= PAGE_CHUNKS.length) return;
+      PAGE_CHUNKS[i++]()
+        .catch(() => { /* 预热失败不影响真正导航时的重试 */ })
+        .then(() => { if (!cancelled) onIdle(step); });
+    };
+    const kick = window.setTimeout(() => onIdle(step), 1200);
+    return () => { cancelled = true; clearTimeout(kick); };
+  }, [isLoading, showSplash, user]);
 
   // 订阅云端登录状态变化（PocketBase token 刷新 / 登出）
   useEffect(() => {
@@ -545,7 +590,10 @@ function App() {
               />
             )
           }
-        
+
+          {/* P4 黄舞台背景装饰：巨型橙弧环 + 大花剪影 + 四角星，缓解纯黄大面积平铺 */}
+          {user?.theme === 'yellow' && <P4StageDecor />}
+
         <div className="relative z-10">
           <WelcomeModal />
           
@@ -568,7 +616,12 @@ function App() {
               >
                 {/* 页面双缓冲切换：水波纹导航=旧页垫底+新页圆形擦除（页对页，无背景闪白）；
                     普通导航=交叉淡化 */}
-                <PageSwitcher current={currentPage} render={renderPage} />
+                <PageSwitcher
+                  current={currentPage}
+                  // 与 App 根的舞台底色同源（黄频道走 --ui-bg，其余走 gray-50 / gray-900）
+                  stageBg={user?.theme === 'yellow' ? 'var(--ui-bg, #ffd900)' : settings.darkMode ? '#111827' : '#f9fafb'}
+                  render={renderPage}
+                />
               </main>
 
                {/* 升级弹窗 */}
@@ -641,7 +694,7 @@ const PAGE_HOLD_MS = 520;
 /** 旧路由 id todos/activities 与 actions 同页，归一避免瞬间误 remount */
 const normPageKey = (id: string) => (id === 'todos' || id === 'activities' ? 'actions' : id);
 
-const PageShell = ({ leaving, children }: { leaving: boolean; children: ReactNode }) => {
+const PageShell = ({ leaving, stageBg, children }: { leaving: boolean; stageBg: string; children: ReactNode }) => {
   const [origin] = useState(consumePendingCircleReveal); // 入场时查询一次（读取不清除，StrictMode 双挂载安全）
   const [revealing, setRevealing] = useState(!!origin);
   // 变 leaving 的瞬间若仍在水波纹窗口内：保持原样垫底等着被新页擦除盖掉；否则交叉淡出
@@ -664,12 +717,24 @@ const PageShell = ({ leaving, children }: { leaving: boolean; children: ReactNod
       }}
       onAnimationComplete={() => setRevealing(false)}
     >
+      {/* 擦除期给新页垫一层不透明舞台底。页面本体自己是透明的（底色由 App 根铺），
+          不垫底的话圆内是"新页压在旧页上"的重影而不是擦除——用户上报的"圆形擦除
+          蒙版没有正确响应"就是这个：两页标题字直接叠在一起。
+          垫层在 clip 之内（跟着圆一起长），所以不会出现整屏白幕；四周出血盖住 main
+          的左右内边距与短页下方，避免边缘漏出旧页。 */}
+      {origin && revealing && (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute"
+          style={{ left: -40, right: -40, top: -40, bottom: -2000, zIndex: -1, background: stageBg }}
+        />
+      )}
       {children}
     </motion.div>
   );
 };
 
-const PageSwitcher = ({ current, render }: { current: string; render: (page: string) => ReactNode }) => {
+const PageSwitcher = ({ current, stageBg, render }: { current: string; stageBg: string; render: (page: string) => ReactNode }) => {
   const [stack, setStack] = useState<Array<{ key: string; id: string; leaving: boolean }>>(() => [
     { key: normPageKey(current), id: current, leaving: false },
   ]);
@@ -692,7 +757,7 @@ const PageSwitcher = ({ current, render }: { current: string; render: (page: str
   return (
     <div className="relative">
       {stack.map((p) => (
-        <PageShell key={p.key} leaving={p.leaving}>
+        <PageShell key={p.key} leaving={p.leaving} stageBg={stageBg}>
           {render(p.id)}
         </PageShell>
       ))}
