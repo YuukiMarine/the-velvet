@@ -9,7 +9,9 @@
  * 铁律（guide §22.3）：纯装饰组件 aria-hidden + pointer-events-none；
  * P4Panel 的 skew 只作用于容器，内容层反向回正（字恒水平）。
  */
+import { useEffect, useRef } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
+import { useBoldness } from '@/utils/boldness';
 
 /**
  * P4 页头出血口径（所有 `-mx-4 px-4` 页头共用）：**裁左右与下缘，只朝上放行**。
@@ -28,13 +30,39 @@ export const P4_HEADER_BLEED: CSSProperties = { clipPath: 'inset(-999px 0 0 0)' 
 /**
  * 六瓣花（P4 签名符号：按钮/徽章/圆图标/空状态装饰通用）。
  *
- * 形状按用户给的参考图定：**六**枚圆头水滴瓣，根部收窄、外端饱满圆钝，
- * 相邻瓣之间留出可见的缝——不是早先那版五枚等宽椭圆。
- * 路径写在以中心为原点的坐标系（viewBox 平移到 -12 -12），瓣朝 -Y，靠 rotate 复制。
+ * 几何按用户定稿：**一枚胖水滴，以尖端为旋转中心按 60° 等角复制六次，再布尔合并，
+ * 边缘全程平滑**。
+ *
+ * 单瓣：尖端锚在原点（= 旋转中心），球部是圆心 (0,-6.6)、半径 4.6 的半圆；两条腹线
+ * 用三次贝塞尔从尖端接到球部左右端点，且在接点处切线竖直——与圆在该点的切线同向，
+ * 接缝 G1 连续，所以并集的外轮廓没有折角。相邻瓣的球部相距 6.6 < 两半径和 9.2，
+ * 天然交叠成平滑过渡，不留缝。
+ *
+ * 为什么必须合成**一条** path：上一版每瓣一个 <path>，颜色带 alpha 时（背景装饰层就是
+ * rgba）交叠处会叠深、瓣根还留着空心——看上去根本不是一朵整花，这正是"形状没被正常
+ * 画出来"的成因。同一条 path 的多个子路径按 nonzero 规则天然求并，半透明也只填一次。
  */
-export const P4_PETAL_D =
-  'M0 -1.9 C 3.9 -2.6, 5.6 -6.0, 4.8 -8.7 C 4.2 -10.7, 2.3 -11.7, 0 -11.7 '
-  + 'C -2.3 -11.7, -4.2 -10.7, -4.8 -8.7 C -5.6 -6.0, -3.9 -2.6, 0 -1.9 Z';
+const PETAL_ANCHORS: readonly (readonly [number, number])[] = [
+  [0, 0],        // 尖端（旋转中心）
+  [-2.4, -2.1], [-4.6, -4], [-4.6, -6.6],   // 左腹线两个控制点 + 球部左端
+  [4.6, -6.6],                               // 球部右端（圆弧终点）
+  [4.6, -4], [2.4, -2.1],                    // 右腹线两个控制点
+];
+
+const rotPt = (p: readonly [number, number], deg: number) => {
+  const a = (deg * Math.PI) / 180;
+  const x = p[0] * Math.cos(a) - p[1] * Math.sin(a);
+  const y = p[0] * Math.sin(a) + p[1] * Math.cos(a);
+  return `${Math.round(x * 1000) / 1000} ${Math.round(y * 1000) / 1000}`;
+};
+
+/** 六瓣并集轮廓（模块级算一次）。旋转保向 → 圆弧 sweep 标志不变；rx=ry → x 轴旋转无关。 */
+export const P4_FLOWER_PATH = [0, 60, 120, 180, 240, 300]
+  .map((d) => {
+    const p = PETAL_ANCHORS.map((pt) => rotPt(pt, d));
+    return `M${p[0]}C${p[1]} ${p[2]} ${p[3]}A4.6 4.6 0 0 1 ${p[4]}C${p[5]} ${p[6]} ${p[0]}Z`;
+  })
+  .join('');
 
 export const P4Flower = ({ size = 16, color = 'currentColor', className, style }: {
   size?: number; color?: string; className?: string; style?: CSSProperties;
@@ -47,9 +75,7 @@ export const P4Flower = ({ size = 16, color = 'currentColor', className, style }
     viewBox="-12 -12 24 24"
     style={style}
   >
-    {[0, 60, 120, 180, 240, 300].map((deg) => (
-      <path key={deg} d={P4_PETAL_D} fill={color} transform={`rotate(${deg})`} />
-    ))}
+    <path d={P4_FLOWER_PATH} fill={color} fillRule="nonzero" />
   </svg>
 );
 
@@ -71,6 +97,56 @@ export const P4Sparkle = ({ size = 14, color = 'currentColor', className, style 
     />
   </svg>
 );
+
+/**
+ * P4「活高亮」—— 沿用 P5Highlight 的机制（rAF 每帧朝随机目标插值，得到 60fps 平滑震颤），
+ * 但把里面那对**运动不规则四边形换成运动三角形**（用户口径）。
+ *
+ * 每层两枚三角沿对角线拼满整块，两枚各自独立抖 → 对角缝时开时合，像玻璃碴在动；
+ * 底层橙、上层电蓝走 screen 叠加，配黑字（选中态）看得清。
+ * preserveAspectRatio="none" → 由调用方拉伸成任意长条。
+ * D0 / live=false 时不跑 rAF，退化成静态高亮（常驻屏幕不烧帧）。
+ */
+// 两枚三角各自的顶点抖动范围 [xmin,xmax,ymin,ymax]：橙的尖朝上、蓝的尖朝下，交叉成 X 形。
+// 刻意不铺满——露出来的米黄底正是"看得出是三角形"的关键（P5 那对四边形是铺满的）。
+const TRI_BOXES: number[][][] = [
+  [[-14, -2, 44, 56], [40, 62, -6, 6], [98, 112, 44, 56]],   // ▲ 橙
+  [[-4, 10, -6, 4], [90, 106, -6, 4], [38, 62, 42, 56]],     // ▼ 蓝
+];
+
+const triTarget = (box: number[][]) =>
+  box.flatMap((v) => [v[0] + Math.random() * (v[1] - v[0]), v[2] + Math.random() * (v[3] - v[2])]);
+const triPoints = (a: number[]) =>
+  `${a[0].toFixed(1)},${a[1].toFixed(1)} ${a[2].toFixed(1)},${a[3].toFixed(1)} ${a[4].toFixed(1)},${a[5].toFixed(1)}`;
+
+export const P4Highlight = ({ className, live = true }: { className?: string; live?: boolean }) => {
+  const bold = useBoldness();
+  const refs = useRef<(SVGPolygonElement | null)[]>([]);
+  useEffect(() => {
+    if (!bold || !live) return;
+    const layers = refs.current
+      .map((ref, i) => (ref ? { ref, box: TRI_BOXES[i], cur: triTarget(TRI_BOXES[i]), tgt: triTarget(TRI_BOXES[i]), last: 0 } : null))
+      .filter((l): l is NonNullable<typeof l> => !!l);
+    let raf = 0;
+    const loop = (t: number) => {
+      for (const L of layers) {
+        if (t - L.last > 130) { L.tgt = triTarget(L.box); L.last = t; }
+        for (let i = 0; i < 6; i++) L.cur[i] += (L.tgt[i] - L.cur[i]) * 0.18;
+        L.ref.setAttribute('points', triPoints(L.cur));
+      }
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [bold, live]);
+  return (
+    <svg viewBox="0 0 100 50" preserveAspectRatio="none" className={className} aria-hidden>
+      {/* 不走 screen 混合：橙底上叠青会直接白掉、糊成一片淡紫（实测）。用不透明度叠。 */}
+      <polygon ref={(el) => { refs.current[0] = el; }} fill="var(--p4-orange, #f9a11b)" points="-8,50 50,0 104,50" />
+      <polygon ref={(el) => { refs.current[1] = el; }} fill="#1cc8ff" opacity={0.88} points="2,0 98,0 50,50" />
+    </svg>
+  );
+};
 
 /** 对勾（完成态圆角小方块内用） */
 export const P4Check = ({ size = 12, color = 'currentColor', className }: {
