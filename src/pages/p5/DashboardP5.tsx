@@ -107,6 +107,10 @@ interface StarItem {
   title: string;
 }
 
+// 平行四边形斜切透视（P3 同款口径：上边右移、下边左移 + 高度微拉伸）
+const STAR_SKEW = -13;
+const STAR_SCALEY = 1.16;
+
 const StarRadarP5 = ({ items, onSelect, showLabels = true }: {
   items: StarItem[];
   onSelect: (id: AttributeId, e: ReactMouseEvent) => void;
@@ -114,61 +118,47 @@ const StarRadarP5 = ({ items, onSelect, showLabels = true }: {
 }) => {
   const radii = items.slice(0, 5).map((it) => levelRadius(it.level, it.maxLevel));
   const dataPath = starPathAt(radii);
-  // 白点轨：沿各臂从中心红星外缘铺到臂端附近，中段最大、彼此留缝（设计稿点列节奏）
-  const dotArms = items.slice(0, 5).map((it, i) => {
-    const armR = radii[i];
-    const dots: Array<{ x: number; y: number; r: number }> = [];
-    const n = 6;
-    for (let k = 0; k < n; k++) {
-      const t = k / (n - 1);
-      const rr = 48 + (armR * 0.9 - 48) * t;
-      const [x, y] = pt(armAngle(i), rr);
-      dots.push({ x, y, r: 1.8 + 3 * Math.sin(Math.PI * (0.16 + 0.74 * t)) });
-    }
-    return { id: it.id, dots };
-  });
   // 标签锚点：贴各自臂端外侧（随等级臂长走），按方位智能对齐（左角右靠、右角左靠、顶底居中）
   const labelAt = (i: number) => {
     const [x, y] = pt(armAngle(i), Math.min(radii[i] * 1.06 + 14, STAR_R * 1.02));
     const dx = x - STAR_CX;
     const dy = y - STAR_CY;
-    const tx = dx < -30 ? -92 : dx > 30 ? -6 : -50;
+    const tx = dx < -30 ? -86 : dx > 30 ? -42 : -50;
     const ty = dy < -30 ? -96 : dy > 30 ? -6 : -50;
     return { leftPct: (x / 360) * 100, topPct: (y / 344) * 100, tx, ty };
   };
   return (
     <div className="relative mx-auto w-full max-w-[364px]" style={{ paddingTop: 48, paddingBottom: 44 }}>
-      <svg viewBox="0 0 360 344" className="w-full overflow-visible" aria-hidden>
-        {/* 硬影星（黑，右下错位——黑面板上只留一丝存在感） */}
-        <path d={dataPath} fill="rgba(0,0,0,0.85)" transform="translate(7 9)" />
-        {/* 灰星本体 */}
-        <path d={dataPath} fill={P5R.grey} strokeLinejoin="miter" />
-        {/* 白点轨 */}
-        {dotArms.map((arm) => arm.dots.map((d2, k) => (
-          <circle key={`${arm.id}-${k}`} cx={d2.x} cy={d2.y} r={d2.r} fill={P5R.paper} />
-        )))}
-        {/* 中心红星 */}
-        <polygon points={starPts(STAR_CX, STAR_CY, 40)} fill={P5R.red} />
-      </svg>
-      {showLabels && items.slice(0, 5).map((it, i) => {
-        const pos = labelAt(i);
-        return (
-          <button
-            key={it.id}
-            type="button"
-            onClick={(e) => onSelect(it.id, e)}
-            className="absolute flex flex-col items-start whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c00008] focus-visible:ring-offset-1"
-            style={{ left: `${pos.leftPct}%`, top: `${pos.topPct}%`, transform: `translate(${pos.tx}%, ${pos.ty}%)` }}
-            aria-label={`${it.name} 等级 ${it.level}，${it.title}`}
-          >
-            <span className="flex items-center gap-1.5">
-              <P5Chip tone="red" rot={-2}>{it.name}</P5Chip>
-              <span className="text-[30px] font-black italic leading-none" style={{ color: P5R.white, fontFamily: P5_FONT, textShadow: '2px 2px 0 rgba(0,0,0,0.8)' }}>{it.level}</span>
-            </span>
-            <span className="mt-1 block text-[12px] font-bold leading-none" style={{ color: P5R.white, textShadow: '1.5px 1.5px 0 rgba(0,0,0,0.8)' }}>{it.title}</span>
-          </button>
-        );
-      })}
+      {/* 星与标签同处一个斜切平面，标签再反变换回正（字恒水平） */}
+      <div className="relative" style={{ transform: `skewX(${STAR_SKEW}deg) scaleY(${STAR_SCALEY})` }}>
+        <svg viewBox="0 0 360 344" className="w-full overflow-visible" aria-hidden>
+          {/* 硬影星（纯黑，右下错位） */}
+          <path d={dataPath} fill="#000000" transform="translate(7 9)" />
+          {/* 灰星本体 */}
+          <path d={dataPath} fill={P5R.grey} strokeLinejoin="miter" />
+          {/* 中心红星 */}
+          <polygon points={starPts(STAR_CX, STAR_CY, 40)} fill={P5R.red} />
+        </svg>
+        {showLabels && items.slice(0, 5).map((it, i) => {
+          const pos = labelAt(i);
+          return (
+            <button
+              key={it.id}
+              type="button"
+              onClick={(e) => onSelect(it.id, e)}
+              className="absolute flex flex-col items-start whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c00008] focus-visible:ring-offset-1"
+              style={{ left: `${pos.leftPct}%`, top: `${pos.topPct}%`, transform: `translate(${pos.tx}%, ${pos.ty}%) skewX(${-STAR_SKEW}deg) scaleY(${1 / STAR_SCALEY})` }}
+              aria-label={`${it.name} 等级 ${it.level}，${it.title}`}
+            >
+              <span className="flex items-center gap-1.5">
+                <P5Chip tone="red" rot={-2}>{it.name}</P5Chip>
+                <span className="text-[30px] font-black italic leading-none" style={{ color: P5R.white, fontFamily: P5_FONT, textShadow: '2px 2px 0 #000000' }}>{it.level}</span>
+              </span>
+              <span className="mt-1 block text-[12px] font-bold leading-none" style={{ color: P5R.white, textShadow: '1.5px 1.5px 0 #000000' }}>{it.title}</span>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 };
@@ -219,7 +209,7 @@ const AttrDetailInlineP5 = ({ attrId, level: fallbackLevel, onBack }: { attrId: 
         animate={{ x: ['34%', '9%', '0%'], y: [44, -10, 0], scale: [0.56, 0.94, 1], transition: { duration: 0.5, ease: [0.4, 0, 0.2, 1], times: [0, 0.58, 1] } }}
         exit={{ opacity: 0, transition: { duration: 0.2 } }}
       >
-        <div className="text-[50px] font-black leading-none" style={{ color: P5R.paper, fontFamily: P5_FONT, textShadow: '4px 4px 0 rgba(192,0,8,0.55)' }}>{name}</div>
+        <div className="text-[50px] font-black leading-none" style={{ color: P5R.paper, fontFamily: P5_FONT, textShadow: '4px 4px 0 #8e0000' }}>{name}</div>
         <div className="mt-2.5 flex items-center gap-2.5">
           <span className="relative inline-flex items-baseline gap-1 px-3.5 py-1" style={{ background: P5R.red, clipPath: 'polygon(4px 0, 100% 2px, calc(100% - 4px) 100%, 0 calc(100% - 2px))', boxShadow: `3px 3px 0 ${P5R.ink}` }}>
             <span className="text-[11px] font-black tracking-wider text-white/90">LV</span>
@@ -236,7 +226,7 @@ const AttrDetailInlineP5 = ({ attrId, level: fallbackLevel, onBack }: { attrId: 
           <span>{isMax ? '已达最高等级' : `距 Lv.${level + 1}`}</span>
           <span className="tabular-nums">{isMax ? 'MAX' : `${points - curThreshold}/${nextThreshold - curThreshold}`}</span>
         </div>
-        <div className="relative h-[12px] w-full" style={{ background: 'rgba(240,233,223,0.18)', clipPath: roughQuad(41, 3) }}>
+        <div className="relative h-[12px] w-full" style={{ background: '#3a3831', clipPath: roughQuad(41, 3) }}>
           <div className="absolute inset-y-0 left-0" style={{ width: `${progress * 100}%`, background: P5R.red, clipPath: roughQuad(42, 3) }} />
         </div>
       </motion.div>
@@ -254,8 +244,8 @@ const AttrDetailInlineP5 = ({ attrId, level: fallbackLevel, onBack }: { attrId: 
                 key={lv}
                 className="flex items-center gap-2.5 px-3 py-1.5 text-[13px]"
                 style={{
-                  background: current ? P5R.red : reached ? 'rgba(240,233,223,0.92)' : 'rgba(240,233,223,0.07)',
-                  clipPath: current || reached ? roughQuad(60 + lv, 4) : undefined,
+                  background: current ? P5R.red : reached ? P5R.paper : '#242320',
+                  clipPath: roughQuad(60 + lv, 4),
                   color: current ? '#fff' : reached ? P5R.ink : P5R.greyLight,
                 }}
               >
@@ -273,7 +263,7 @@ const AttrDetailInlineP5 = ({ attrId, level: fallbackLevel, onBack }: { attrId: 
       <motion.div className="relative mt-4" variants={fromRight} transition={spring}>
         <div className="mb-1.5 text-[12px] font-black" style={{ color: P5R.greyLight }}>关联成就（{unlockedCount}/{related.length}）</div>
         {related.length === 0 ? (
-          <div className="px-3 py-4 text-center text-[12px] font-bold" style={{ background: 'rgba(240,233,223,0.1)', clipPath: roughQuad(77, 6), color: P5R.greyLight }}>这个方向还没有专属成就</div>
+          <div className="px-3 py-4 text-center text-[12px] font-bold" style={{ background: '#242320', clipPath: roughQuad(77, 6), color: P5R.greyLight }}>这个方向还没有专属成就</div>
         ) : (
           <div
             ref={achScrollRef}
@@ -297,13 +287,14 @@ const AttrDetailInlineP5 = ({ attrId, level: fallbackLevel, onBack }: { attrId: 
             onClickCapture={(e) => { if (achDrag.current.moved) { e.stopPropagation(); } }}
           >
             {related.map((a, ai) => (
-              <div key={a.id} className="flex w-[126px] shrink-0 select-none flex-col gap-1 px-3 py-2.5" style={{ background: a.unlocked ? P5R.paper : 'rgba(240,233,223,0.55)', clipPath: roughQuad(90 + ai, 5), opacity: a.unlocked ? 1 : 0.8 }}>
+              // 未解锁 = 纯灰实色卡（不用透明度表达状态——用户口径）
+              <div key={a.id} className="flex w-[126px] shrink-0 select-none flex-col gap-1 px-3 py-2.5" style={{ background: a.unlocked ? P5R.paper : '#8f8b82', clipPath: roughQuad(90 + ai, 5) }}>
                 <div className="flex items-center justify-between">
                   <span className="text-lg leading-none" aria-hidden>{a.icon}</span>
-                  <span className="shrink-0 text-[9px] font-black" style={{ color: a.unlocked ? P5R.red : P5R.grey }}>{a.unlocked ? '已解锁' : '未解锁'}</span>
+                  <span className="shrink-0 text-[9px] font-black" style={{ color: a.unlocked ? P5R.red : '#403d38' }}>{a.unlocked ? '已解锁' : '未解锁'}</span>
                 </div>
                 <div className="truncate text-[12px] font-black" style={{ color: P5R.ink }}>{a.title}</div>
-                <div className="line-clamp-2 text-[10px] font-bold leading-tight" style={{ color: P5R.grey }}>{a.description}</div>
+                <div className="line-clamp-2 text-[10px] font-bold leading-tight" style={{ color: a.unlocked ? P5R.grey : '#403d38' }}>{a.description}</div>
               </div>
             ))}
           </div>
@@ -346,8 +337,8 @@ const RitualSlabP5 = ({ icon, title, sub, onClick, trailing, seed = 21 }: {
         {icon ?? <P5Star size={30} fill={P5R.paper} />}
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[17px] font-black leading-tight" style={{ color: P5R.white, fontFamily: P5_FONT, textShadow: '2px 2px 0 rgba(0,0,0,0.65)' }}>{title}</span>
-        {sub && <span className="mt-1 block truncate text-[12px] font-bold" style={{ color: 'rgba(248,248,246,0.92)' }}>{sub}</span>}
+        <span className="block truncate text-[17px] font-black leading-tight" style={{ color: P5R.white, fontFamily: P5_FONT, textShadow: '2px 2px 0 #000000' }}>{title}</span>
+        {sub && <span className="mt-1 block truncate text-[12px] font-bold" style={{ color: P5R.white }}>{sub}</span>}
       </span>
       {trailing ?? <span aria-hidden className="shrink-0 text-xl font-black" style={{ color: P5R.white }}>›</span>}
     </span>
@@ -643,8 +634,8 @@ export const DashboardP5 = () => {
             <svg viewBox="0 0 100 100" className="absolute" style={{ left: -30, top: 20, width: 240, height: 240 }} aria-hidden>
               <polygon points={starPts(50, 50, 50, -90 + 14)} fill={P5R.red} opacity={0.92} />
             </svg>
-            <P5Dots className="absolute" style={{ left: 8, top: 0, width: 90, height: 90, opacity: 0.75 }} color="rgba(0,0,0,0.5)" />
-            <P5Slab color={P5R.grey} seed={53} rot={20} style={{ right: 100, top: -30, width: 120, height: 90, opacity: 0.7 }} />
+            <P5Dots className="absolute" style={{ left: 8, top: 0, width: 90, height: 90 }} color="#000000" />
+            <P5Slab color={P5R.grey} seed={53} rot={20} style={{ right: 100, top: -30, width: 120, height: 90 }} />
           </div>
 
           <div className="flex items-start justify-between gap-3">
@@ -781,7 +772,7 @@ export const DashboardP5 = () => {
             <P5Slab color={P5R.red} seed={61} rot={-2} style={{ left: 0, top: 10, right: 14, bottom: 12 }} />
             <P5Slab color={P5R.redDeep} seed={62} rot={4} style={{ right: 0, top: 30, width: 130, height: 110 }} />
             <P5Slab color={P5R.ink} seed={63} rot={-8} style={{ left: 6, bottom: 0, width: 150, height: 60 }} />
-            <P5Dots className="absolute" style={{ right: 10, top: 0, width: 80, height: 70, opacity: 0.5 }} color="rgba(0,0,0,0.55)" />
+            <P5Dots className="absolute" style={{ right: 10, top: 0, width: 80, height: 70 }} color="#000000" />
           </div>
 
           <div className="flex items-center justify-between px-1">
@@ -832,10 +823,10 @@ export const DashboardP5 = () => {
                           setModalBlocker(true);
                         }
                       }}
-                      className={`flex w-full items-center gap-3 px-1 py-2 text-left transition-colors ${done ? 'cursor-not-allowed opacity-55' : 'cursor-pointer active:bg-black/5'} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c00008]`}
+                      className={`flex w-full items-center gap-3 px-1 py-2 text-left transition-colors ${done ? 'cursor-not-allowed' : 'cursor-pointer active:bg-[#e3dccd]'} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c00008]`}
                     >
-                      {/* 方黑框勾选：完成 = 红底白勾 */}
-                      <span aria-hidden className="relative h-[19px] w-[19px] shrink-0" style={{ border: `2.5px solid ${P5R.ink}`, background: done ? P5R.red : P5R.paper, transform: 'rotate(-2deg)' }}>
+                      {/* 方黑框勾选：完成 = 红底白勾（完成态整行不降透明度，用灰字+删除线表达） */}
+                      <span aria-hidden className="relative h-[19px] w-[19px] shrink-0" style={{ border: `2.5px solid ${done ? P5R.grey : P5R.ink}`, background: done ? P5R.red : P5R.paper, transform: 'rotate(-2deg)' }}>
                         {done && (
                           <svg viewBox="0 0 12 12" className="absolute inset-0 m-auto h-3 w-3" fill="none">
                             <path d="M2 6l3 3 5-5" stroke="#fff" strokeWidth="2.4" strokeLinecap="square" />
@@ -892,7 +883,7 @@ export const DashboardP5 = () => {
             {/* 面板角饰（裁在面板形内）：暗红角斜块 + 半调 + 右缘红爆炸星 */}
             <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden" style={{ clipPath: roughQuad(71.57, 5) }}>
               <P5Slab color="#1c1c1c" seed={72} rot={-16} style={{ left: -50, top: -40, width: 170, height: 120 }} />
-              <P5Dots className="absolute" style={{ left: 0, top: 40, width: 70, height: 90, opacity: 0.35 }} />
+              <P5Dots className="absolute" style={{ left: 0, top: 40, width: 70, height: 90 }} color="#4a4741" />
               <P5Burst size={130} seed={7} fill={P5R.red} ring={P5R.paper} className="absolute" style={{ right: -56, bottom: 26 }} />
               <P5Slab color="#161616" seed={73} rot={9} style={{ right: -40, bottom: -30, width: 150, height: 100 }} />
             </div>
@@ -947,7 +938,7 @@ export const DashboardP5 = () => {
                     key={rp.id}
                     aria-hidden
                     className="pointer-events-none absolute z-30 rounded-full"
-                    style={{ left: rp.x, top: rp.y, border: `3px solid ${P5R.red}`, background: 'radial-gradient(circle, rgba(192,0,8,0.4) 0%, rgba(192,0,8,0) 70%)' }}
+                    style={{ left: rp.x, top: rp.y, border: `3px solid ${P5R.red}` }}
                     initial={{ width: 16, height: 16, x: '-50%', y: '-50%', opacity: 0.9 }}
                     animate={{ width: 250, height: 250, opacity: 0 }}
                     exit={{ opacity: 0 }}
@@ -1051,7 +1042,7 @@ export const DashboardP5 = () => {
                   </div>
                   <div className="mb-5 space-y-2">
                     {decayedAttrs.map((id, di) => (
-                      <div key={id} className="flex items-center justify-between px-4 py-2.5" style={{ clipPath: roughQuad(98 + di, 5), background: 'rgba(0,0,0,0.06)' }}>
+                      <div key={id} className="flex items-center justify-between px-4 py-2.5" style={{ clipPath: roughQuad(98 + di, 5), background: '#e3dccd' }}>
                         <span className="text-sm font-black" style={{ color: P5R.ink }}>{settings.attributeNames[id]}</span>
                         <span className="text-sm font-black" style={{ color: P5R.red }}>−1</span>
                       </div>
