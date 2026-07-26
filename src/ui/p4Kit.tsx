@@ -16,16 +16,16 @@ import { useBoldness } from '@/utils/boldness';
 /**
  * P4 页头出血口径（所有 `-mx-4 px-4` 页头共用）：**裁左右与下缘，只朝上放行**。
  *
- * 页头原本用 overflow-hidden 兜横向出血，副作用是天空扇/太阳环也被沿题块下缘齐根
- * 切断——题块只有 ~90px 高，150px 的天空就少了一大截，看上去像"实景天空被错误截断"
- * （用户上报）。这里改 clip-path：横向照旧不撑出滚动条，上缘放行让弧环/天空自然
- * 探出屏顶，下缘仍然裁——**页头必须自己给够高度**（`min-h-` ≥ 装饰底缘）来避免截断。
+ * 页头原本用 overflow-hidden 兜横向出血，副作用是天空扇/太阳环被沿题块下缘齐根切断，
+ * 看上去像"实景天空被错误截断"（用户反复上报）。中间试过"下缘照裁、页头自己 min-h
+ * 给够高度"，但页头高度是会被后续调优改的（并行会话就把首页 164→126、行动 126→104），
+ * 一改天空立刻又被切平。
  *
- * 为什么下缘不能一起放行：页头是 position:relative 的定位元素，它的绝对定位装饰会
- * 落在"定位后代"绘制层，而紧随其后的内容块多半没有定位，于是装饰会盖在下方按钮上
- * （成就页的「添加成就」就被天空压住过）。给足高度比玩 z-index 更可预期。
+ * 现在：clip-path 只钳制左右（横向不撑出滚动条），**上下全放行**；装饰"盖住下方按钮"
+ * 的老问题改由大装饰自己沉到 z-index:-1 解决（见 P4SkyFan / P4SkyCircle / P4ArcRings），
+ * 于是天空想多高多低都行，且永远画在内容之后。
  */
-export const P4_HEADER_BLEED: CSSProperties = { clipPath: 'inset(-999px 0 0 0)' };
+export const P4_HEADER_BLEED: CSSProperties = { clipPath: 'inset(-999px 0 -999px 0)' };
 
 /**
  * 六瓣花（P4 签名符号：按钮/徽章/圆图标/空状态装饰通用）。
@@ -48,11 +48,11 @@ const R_IN = 1.8;    // 内半径（凹点）≈ 外半径 15%
 /** 单瓣锚点（局部系：瓣尖朝 -Y）。顺序＝左凹点 / 左腹两控制点 / 尖端 / 右腹两控制点 / 右凹点 */
 const PETAL_ANCHORS: readonly (readonly [number, number])[] = [
   [-R_IN * 0.5, -R_IN * 0.866],   // 左内凹点：内半径 ∠-30°
-  [-3.6, -4.2],                    // 左腹控制点1（决定花瓣腰身）
+  [-2.9, -4.3],                    // 左腹控制点1：腰身（从 -3.6 收到 -2.9 → 腹线更朝内、瓣间更分明）
   [-4.8, -R_OUT],                  // 左腹控制点2：与尖端同高 → 尖端切线水平
   [0, -R_OUT],                     // 尖端
   [4.8, -R_OUT],                   // 右腹控制点1：同上，镜像
-  [3.6, -4.2],                     // 右腹控制点2
+  [2.9, -4.3],                     // 右腹控制点2
   [R_IN * 0.5, -R_IN * 0.866],     // 右内凹点：内半径 ∠+30°
 ];
 
@@ -120,8 +120,11 @@ export const P4Sparkle = ({ size = 14, color = 'currentColor', className, style 
  * D0 / live=false 时不跑 rAF，退化成静态高亮（常驻屏幕不烧帧）。
  */
 // 三个顶点各自的抖动范围 [xmin,xmax,ymin,ymax]：左上、左下（短边两端）、右尖。
+// **必须全部落在 viewBox(0..100, 0..50) 之内**：超出的部分会被 svg 视口裁掉，
+// 抖到边界外时三角就被切成不规则多边形（用户上报"运动时会变成不规则多边形"）。
+// 左上顶点整体右移（短边成为往右倾的斜边，不再是竖直边）。
 const TRI_BOXES: number[][][] = [
-  [[-4, 3, -6, 5], [-4, 3, 45, 56], [93, 108, 17, 34]],
+  [[12, 19, 1, 6], [0, 6, 44, 49], [92, 99, 20, 31]],
 ];
 
 const triTarget = (box: number[][]) =>
@@ -151,7 +154,7 @@ export const P4Highlight = ({ className, live = true }: { className?: string; li
   }, [bold, live]);
   return (
     <svg viewBox="0 0 100 50" preserveAspectRatio="none" className={className} aria-hidden>
-      <polygon ref={(el) => { refs.current[0] = el; }} fill="var(--ui-accent)" points="0,0 0,50 100,25" />
+      <polygon ref={(el) => { refs.current[0] = el; }} fill="var(--ui-accent)" points="15,3 3,47 96,25" />
     </svg>
   );
 };
@@ -231,7 +234,8 @@ export const P4SkyFan = ({ size = 180, className, style, photo = true, flower = 
   <div
     aria-hidden
     className={`pointer-events-none absolute right-0 top-0 overflow-hidden ${className ?? ''}`}
-    style={{ width: size, height: size, borderBottomLeftRadius: size, ...style }}
+    // zIndex -1：页头出血已上下全放行，装饰得沉到内容之后才不会盖住下方按钮
+    style={{ zIndex: -1, width: size, height: size, borderBottomLeftRadius: size, ...style }}
   >
     {photo ? (
       <P4SkyPhoto position="45% 62%" />
@@ -295,7 +299,7 @@ export const P4ArcRings = ({
   <div
     aria-hidden
     className={`pointer-events-none ${className ?? ''}`}
-    style={{ width: size, height: size, ...style }}
+    style={{ zIndex: -1, width: size, height: size, ...style }}
   >
     <svg width={size} height={size} viewBox="0 0 100 100" className="block overflow-visible">
       {rings.map(([r, w, c], i) => (
@@ -384,6 +388,7 @@ export const P4SkyCircle = ({ size = 160, className, style, photo = true }: {
     className={`pointer-events-none overflow-hidden rounded-full ${className ?? ''}`}
     style={{
       position: 'absolute',
+      zIndex: -1,
       width: size,
       height: size,
       background: photo ? undefined : 'linear-gradient(210deg, var(--p4-sky-deep, #2196e0) 0%, var(--p4-sky, #8fd0f4) 55%, #e6f6ff 100%)',
