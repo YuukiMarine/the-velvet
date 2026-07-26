@@ -11,7 +11,7 @@ import { useAppStore } from '@/store';
 import { useNavigatorStore } from '@/store/navigator';
 import { v4 as uuidv4 } from 'uuid';
 import { getAIConfig } from '@/utils/aiClient';
-import { fetchAvailableModels } from '@/utils/aiProviders';
+import { AI_PROVIDERS, fetchAvailableModels, getProviderConfig, type ApiProvider } from '@/utils/aiProviders';
 import { generatePersonaPrompt } from '@/utils/navigatorIntent';
 import { finalizeStaleSessions } from '@/utils/navigatorMemory';
 import { mergedNavigatorPresets } from '@/constants/navigatorPresets';
@@ -49,8 +49,7 @@ export const NavigatorSettings = () => {
   const activeId = nav.activePreset().id;
 
   const [gen, setGen] = useState<GeneratorState>(closedGenerator);
-  // 对话模型picker：从全局连接拉 /models；拉不到保持手填
-  const [navModels, setNavModels] = useState<string[]>([]);
+  // 深思熟虑档 picker：列表读 aiProfiles 里各家存的（设置页/这里拉取共用一份缓存）
   const [navModelStatus, setNavModelStatus] = useState<'idle' | 'loading' | 'ok' | 'error'>('idle');
   const [navModelMsg, setNavModelMsg] = useState('');
   const [notebookOpen, setNotebookOpen] = useState(false);
@@ -109,24 +108,38 @@ export const NavigatorSettings = () => {
     setDeleteTarget(null);
   };
 
+  // 与设置页「刷新全部模型列表」同口径：所有已配 Key 的服务商一起拉，按家落进 aiProfiles
   const fetchNavModels = async () => {
     if (navModelStatus === 'loading') return;
     setNavModelStatus('loading');
     setNavModelMsg('');
-    const result = await fetchAvailableModels({
-      provider: settings.summaryApiProvider ?? 'openai',
-      apiKey: settings.summaryApiKey ?? '',
-      baseUrl: settings.summaryApiBaseUrl,
-    });
-    if (result.ok) {
-      setNavModels(result.models);
-      setNavModelStatus('ok');
-      setNavModelMsg(`已拉取 ${result.models.length} 个可用模型`);
-    } else {
-      setNavModels([]);
+    const active = settings.summaryApiProvider ?? 'openai';
+    const targets = AI_PROVIDERS
+      .map((p) => ({
+        id: p.id,
+        key: p.id === active ? (settings.summaryApiKey ?? '') : (settings.aiProfiles?.[p.id]?.key ?? ''),
+        baseUrl: p.id === active ? settings.summaryApiBaseUrl : settings.aiProfiles?.[p.id]?.baseUrl,
+      }))
+      .filter((t) => t.key.trim());
+    if (!targets.length) {
       setNavModelStatus('error');
-      setNavModelMsg(result.error);
+      setNavModelMsg('还没有任何服务商配好 Key');
+      return;
     }
+    const results = await Promise.all(targets.map(async (t) => ({
+      id: t.id,
+      r: await fetchAvailableModels({ provider: t.id, apiKey: t.key, baseUrl: t.baseUrl }),
+    })));
+    const profiles = { ...(settings.aiProfiles ?? {}) };
+    const ok: string[] = [];
+    const skipped: string[] = [];
+    for (const { id, r } of results) {
+      if (r.ok) { profiles[id] = { ...(profiles[id] ?? {}), models: r.models }; ok.push(getProviderConfig(id).label); }
+      else skipped.push(getProviderConfig(id).label);
+    }
+    updateSettings({ aiProfiles: profiles });
+    setNavModelStatus(ok.length ? 'ok' : 'error');
+    setNavModelMsg([ok.length ? `已更新：${ok.join('、')}` : '', skipped.length ? `跳过：${skipped.join('、')}` : ''].filter(Boolean).join('；'));
   };
 
   const runArchive = async () => {
@@ -350,7 +363,9 @@ export const NavigatorSettings = () => {
         >
           <span className="text-sm font-semibold text-gray-700 dark:text-gray-200">对话模型</span>
           <span className="min-w-0 flex-1 truncate text-xs text-gray-400 dark:text-gray-500">
-            {settings.navigatorModel?.trim() || '跟随通用档'}
+            {settings.navigatorModel?.trim()
+              ? `${getProviderConfig(settings.navigatorProvider ?? settings.summaryApiProvider ?? 'openai').label} · ${settings.navigatorModel.trim()}`
+              : '跟随快速响应'}
           </span>
           <span aria-hidden className={`shrink-0 text-gray-400 transition-transform ${modelCardOpen ? 'rotate-180' : ''}`}>▾</span>
         </button>
@@ -358,36 +373,57 @@ export const NavigatorSettings = () => {
         <div className="border-t border-gray-200 px-4 py-3 dark:border-gray-700">
         {/* 标题由上面的折叠头承担，这里只留说明 */}
         <p className="text-xs leading-relaxed text-gray-400 dark:text-gray-500">
-          聊天值得用更好的模型。这里只换助手对话（含问候/人格生成）用的模型，
-          连接与 Key 沿用「设置 → AI 智能功能」的连接卡；塔罗、记账解析等仍走通用档。
+          这里就是「深思熟虑」档：助手对话、中长期占卜走它，可跨服务商选更强的模型
+          （用那家已存的 Key 直连）。记账解析等批量任务仍走「快速响应」档。
         </p>
         {hasAI ? (
           <div className="mt-2.5 space-y-2">
             <div className="flex items-center gap-2">
-              {navModels.length > 0 ? (
-                <select
-                  value={settings.navigatorModel && navModels.includes(settings.navigatorModel) ? settings.navigatorModel : settings.navigatorModel ? '__custom__' : ''}
-                  onChange={(e) => {
-                    if (e.target.value === '__custom__') return;
-                    updateSettings({ navigatorModel: e.target.value || undefined });
-                  }}
-                  className="min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
-                >
-                  <option value="">跟随通用档（{getAIConfig(settings)?.model}）</option>
-                  {navModels.map((m) => <option key={m} value={m}>{m}</option>)}
-                  {settings.navigatorModel && !navModels.includes(settings.navigatorModel) && (
-                    <option value="__custom__">自定义：{settings.navigatorModel}</option>
-                  )}
-                </select>
-              ) : (
-                <input
-                  type="text"
-                  value={settings.navigatorModel ?? ''}
-                  onChange={(e) => updateSettings({ navigatorModel: e.target.value || undefined })}
-                  placeholder={`留空 = 跟随通用档（${getAIConfig(settings)?.model}）`}
-                  className="min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 placeholder:text-gray-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
-                />
-              )}
+              {(() => {
+                const active = settings.summaryApiProvider ?? 'openai';
+                const delibPv = settings.navigatorProvider ?? active;
+                const groups = AI_PROVIDERS.filter((p) =>
+                  (settings.aiProfiles?.[p.id]?.models?.length ?? 0) > 0 &&
+                  (p.id === active || settings.aiProfiles?.[p.id]?.key?.trim()));
+                const val = settings.navigatorModel ? `${delibPv}::${settings.navigatorModel}` : '';
+                const known = !settings.navigatorModel ||
+                  (settings.aiProfiles?.[delibPv]?.models ?? []).includes(settings.navigatorModel);
+                if (!groups.length) {
+                  return (
+                    <input
+                      type="text"
+                      value={settings.navigatorModel ?? ''}
+                      onChange={(e) => updateSettings({ navigatorModel: e.target.value || undefined })}
+                      placeholder={`留空 = 跟随快速响应（${getAIConfig(settings)?.model}）`}
+                      className="min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 placeholder:text-gray-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
+                    />
+                  );
+                }
+                return (
+                  <select
+                    value={known ? val : '__custom__'}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      if (v === '__custom__') return;
+                      if (!v) { updateSettings({ navigatorModel: undefined, navigatorProvider: undefined }); return; }
+                      const sep = v.indexOf('::');
+                      const pv = v.slice(0, sep) as ApiProvider;
+                      updateSettings({ navigatorModel: v.slice(sep + 2), navigatorProvider: pv === active ? undefined : pv });
+                    }}
+                    className="min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
+                  >
+                    <option value="">跟随快速响应（{getAIConfig(settings)?.model}）</option>
+                    {groups.map((g) => (
+                      <optgroup key={g.id} label={g.id === active ? `${g.label}（当前连接）` : g.label}>
+                        {(settings.aiProfiles?.[g.id]?.models ?? []).map((m) => (
+                          <option key={`${g.id}::${m}`} value={`${g.id}::${m}`}>{m}</option>
+                        ))}
+                      </optgroup>
+                    ))}
+                    {!known && <option value="__custom__">自定义：{settings.navigatorModel}</option>}
+                  </select>
+                );
+              })()}
               <button
                 type="button"
                 onClick={() => void fetchNavModels()}
@@ -402,10 +438,10 @@ export const NavigatorSettings = () => {
             {settings.navigatorModel && (
               <button
                 type="button"
-                onClick={() => updateSettings({ navigatorModel: undefined })}
+                onClick={() => updateSettings({ navigatorModel: undefined, navigatorProvider: undefined })}
                 className="text-xs font-semibold text-primary"
               >
-                恢复跟随通用档
+                恢复跟随快速响应
               </button>
             )}
           </div>

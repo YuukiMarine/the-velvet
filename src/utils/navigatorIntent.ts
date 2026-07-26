@@ -13,7 +13,7 @@
  *   · 缓存友好：两阶段的 system 与历史均为稳定前缀，动态块贴在最新消息前。
  */
 import { useAppStore, toLocalDateKey } from '@/store';
-import { chatComplete, chatStream, getAIConfig, getNavigatorAIConfig } from '@/utils/aiClient';
+import { chatComplete, chatStream, getAIConfig, getDeliberateAIConfig } from '@/utils/aiClient';
 import { CATEGORY_KEYS } from '@/utils/ledgerFormat';
 import {
   ATTR_IDS, buildSnapshot, navAttrName,
@@ -400,7 +400,7 @@ export async function runNavigatorTurn(
   /** 拟真增强：传入即表演层走流式 + 标点切泡（分诊层不变——两阶段红利） */
   immersive?: ImmersiveStreamHooks,
 ): Promise<NavigatorTurnResult> {
-  const cfg = getNavigatorAIConfig(useAppStore.getState().settings);
+  const cfg = getDeliberateAIConfig(useAppStore.getState().settings);
   if (!cfg) throw new Error('未配置 AI');
 
   // 阶段1：分诊（含 query 判定）。卡片列表帮它判「帮我记一下」是否重复出卡。
@@ -491,7 +491,7 @@ export async function generatePersonaPrompt(input: {
   coach: 'push' | 'accompany';
   freeText: string;
 }): Promise<string> {
-  const cfg = getNavigatorAIConfig(useAppStore.getState().settings);
+  const cfg = getDeliberateAIConfig(useAppStore.getState().settings);
   if (!cfg) throw new Error('未配置 AI');
   const raw = await chatComplete(cfg, [
     {
@@ -525,7 +525,7 @@ export async function generateAIGreeting(
   /** 跨日叙事素材（昨日摘要/记忆/话头/语气行），store 侧准备 */
   extraContext: string[] = [],
 ): Promise<string | null> {
-  const cfg = getNavigatorAIConfig(useAppStore.getState().settings);
+  const cfg = getDeliberateAIConfig(useAppStore.getState().settings);
   if (!cfg) return null;
   try {
     // 推理模型的 reasoning 也占 completion 预算，问候虽短也要给足（否则必截断→永远落模板）

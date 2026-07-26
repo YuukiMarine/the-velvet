@@ -17,7 +17,7 @@ export interface ProviderConfig {
   hint: string;
 }
 
-// 默认模型/端点核对于 2026-06（见各 provider 官方 models/pricing/deprecations 页）。
+// 默认模型/端点核对于 2026-07（见各 provider 官方 models/pricing/deprecations 页）。
 // 注意：Kimi 与 MiniMax 的默认 baseUrl 是「国内端点」；用国际平台申请的 Key 请在
 // 「高级选项」里改成 https://api.moonshot.ai/v1 / https://api.minimax.io/v1，
 // 否则区域不匹配会返回 401。
@@ -42,8 +42,8 @@ export const AI_PROVIDERS: ProviderConfig[] = [
     id: 'kimi',
     label: 'Kimi',
     defaultBaseUrl: 'https://api.moonshot.cn/v1', // 国际 Key 改 https://api.moonshot.ai/v1
-    defaultModel: 'kimi-k2.5',
-    hint: 'kimi-k2.5',
+    defaultModel: 'kimi-k3',
+    hint: 'kimi-k3',
   },
   {
     id: 'qwen',
@@ -66,8 +66,8 @@ export const AI_PROVIDERS: ProviderConfig[] = [
     id: 'minimax',
     label: 'MiniMax',
     defaultBaseUrl: 'https://api.minimaxi.com/v1', // 国际 Key 改 https://api.minimax.io/v1
-    defaultModel: 'MiniMax-M2.5',
-    hint: 'MiniMax-M2.5',
+    defaultModel: 'MiniMax-M3',
+    hint: 'MiniMax-M3',
   },
 ];
 

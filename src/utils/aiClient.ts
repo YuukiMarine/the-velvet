@@ -81,17 +81,35 @@ export function getAIConfig(settings: Settings): AIConfig | null {
 }
 
 /**
- * 黑猫（Navigator）对话专用配置：连接（provider/key/baseUrl）恒复用全局，
- * 仅当用户在黑猫设置里选了专用模型（settings.navigatorModel）时替换 model。
- * 用途边界：对话回合 / 每日问候 / 人格生成器这些**用户直接读产出的**调用；
- * 记忆归档（compact）等批量后台任务仍走 getAIConfig 的全局便宜档。
+ * 「深思熟虑」档配置（助手对话 / 每日问候 / 人格生成 / 中长期占卜）。
+ *
+ * 跨平台：settings.navigatorProvider 指了别家、且那家在 aiProfiles 里有 Key 时，
+ * 直接用那家的连接（key/baseUrl）跑 navigatorModel——聊天可以用更贵更好的平台，
+ * 而「快速响应」档（getAIConfig，记账解析/塔罗单抽/打分等批量任务）留在当前生效
+ * 服务商的便宜模型上。未指别家时退化为老口径：当前连接 + navigatorModel 覆盖。
+ * 指了别家但那家 Key 缺失 → 忽略整套覆盖（连 navigatorModel 一起丢：那个模型名
+ * 属于别家，套在当前连接上必 404）。
  */
-export function getNavigatorAIConfig(settings: Settings): AIConfig | null {
+export function getDeliberateAIConfig(settings: Settings): AIConfig | null {
+  const activeProvider = settings.summaryApiProvider ?? 'openai';
+  const pv = settings.navigatorProvider;
+  if (pv && pv !== activeProvider) {
+    const prof = settings.aiProfiles?.[pv];
+    const key = prof?.key?.trim();
+    if (key) {
+      const { baseUrl, model } = resolveProvider(pv, prof?.baseUrl, settings.navigatorModel?.trim() || prof?.model);
+      return { apiKey: key, baseUrl, model, provider: pv };
+    }
+    return getAIConfig(settings);
+  }
   const base = getAIConfig(settings);
   if (!base) return null;
   const override = settings.navigatorModel?.trim();
   return override ? { ...base, model: override } : base;
 }
+
+/** @deprecated 改名 getDeliberateAIConfig（覆盖面已不止 Navigator）；保留别名防漏改 */
+export const getNavigatorAIConfig = getDeliberateAIConfig;
 
 // ── 内部：超时 + 调用方 signal 合流 ──────────────────────────────────────────
 

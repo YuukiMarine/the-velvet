@@ -329,8 +329,9 @@ export const pushAll = async (): Promise<void> => {
           } = r as Record<string, unknown>;
           void _bg; void _bgo;
           if (!includeApiKey) {
-            const { summaryApiKey: _s, openaiApiKey: _o, ...leaner } = rest;
-            void _s; void _o;
+            // aiProfiles 里存着各家明文 Key，跟生效位的 Key 走同一豁免开关
+            const { summaryApiKey: _s, openaiApiKey: _o, aiProfiles: _p, ...leaner } = rest;
+            void _s; void _o; void _p;
             return leaner;
           }
           return rest;
@@ -490,6 +491,7 @@ export const pullAll = async (): Promise<void> => {
           localSettingsOverrides = {
             summaryApiKey: first.summaryApiKey,
             openaiApiKey: first.openaiApiKey,
+            aiProfiles: first.aiProfiles,
             backgroundImage: first.backgroundImage,
             backgroundOrientation: first.backgroundOrientation,
           };
@@ -519,6 +521,9 @@ export const pullAll = async (): Promise<void> => {
             }
             if (!merged.openaiApiKey && ov.openaiApiKey) {
               merged.openaiApiKey = ov.openaiApiKey;
+            }
+            if (!merged.aiProfiles && ov.aiProfiles) {
+              merged.aiProfiles = ov.aiProfiles;
             }
             // 背景图：永远用本地（云端既不存也不会带回来，无条件保留设备本地偏好）
             if (ov.backgroundImage) {
