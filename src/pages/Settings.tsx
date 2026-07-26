@@ -623,6 +623,8 @@ export const Settings = () => {
   const [modelOptions, setModelOptions] = useState<string[]>([]);
   const [modelFetchStatus, setModelFetchStatus] = useState<'idle' | 'loading' | 'ok' | 'error'>('idle');
   const [modelFetchMessage, setModelFetchMessage] = useState<string>('');
+  // 连接卡折叠：有 Key 时默认收起（配好后日常只跟模型分档打交道），无 Key 展开引导配置
+  const [connOpen, setConnOpen] = useState(() => !settings.summaryApiKey?.trim());
 
   const handleFetchModels = async () => {
     const key = summaryApiKeyDraft.trim() || (settings.summaryApiKey ?? '');
@@ -2043,11 +2045,28 @@ export const Settings = () => {
                       </div>
                     </div>
 
-                    {/* ── API 配置卡片 ── */}
+                    {/* ── 连接卡（provider / Key / 地址 / 测试 收进一张可折叠卡）──
+                        配好后常态收起，只露一行状态；日常操作面是下面的「模型分档」。 */}
                     <div className="rounded-2xl border border-gray-100 dark:border-gray-700/60 overflow-hidden">
-                      <div className="px-4 py-3 bg-gray-50 dark:bg-gray-800/60 border-b border-gray-100 dark:border-gray-700/60">
-                        <span className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">API 配置</span>
-                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setConnOpen(v => !v)}
+                        aria-expanded={connOpen}
+                        className={`w-full flex items-center gap-2.5 px-4 py-3 bg-gray-50 dark:bg-gray-800/60 text-left ${connOpen ? 'border-b border-gray-100 dark:border-gray-700/60' : ''}`}
+                      >
+                        <span className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider shrink-0">连接</span>
+                        <span className="flex-1 min-w-0 truncate text-xs font-semibold">
+                          {settings.summaryApiKey?.trim() ? (
+                            <span className={apiTestStatus === 'ok' ? 'text-green-600 dark:text-green-400' : 'text-gray-600 dark:text-gray-300'}>
+                              {apiTestStatus === 'ok' ? '✓ ' : ''}{getProviderConfig(provider).label} · {apiTestStatus === 'ok' ? '连接正常' : '已配置'}
+                            </span>
+                          ) : (
+                            <span className="text-amber-600 dark:text-amber-400">未配置 —— 展开填写 API Key</span>
+                          )}
+                        </span>
+                        <span aria-hidden className={`shrink-0 text-gray-400 transition-transform ${connOpen ? 'rotate-180' : ''}`}>▾</span>
+                      </button>
+                      {connOpen && (
                       <div className="p-4 space-y-4 dark:bg-gray-800/20">
 
                         {/* 提供商 */}
@@ -2118,68 +2137,110 @@ export const Settings = () => {
                           <p className="text-[11px] text-gray-400 dark:text-gray-500">Key 仅保存在本地设备，不会上传。测试前请先保存 Key。</p>
                         </div>
 
-                        {/* 高级：URL + 模型 */}
-                        <div className="space-y-3 pt-1 border-t border-gray-100 dark:border-gray-700/50">
-                          <p className="text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">高级选项（可选）</p>
-                          <div className="space-y-1.5">
-                            <p className="text-xs text-gray-500 dark:text-gray-400">自定义 API 地址</p>
-                            <input
-                              type="text"
-                              value={settings.summaryApiBaseUrl ?? ''}
-                              onChange={e => { updateSettings({ summaryApiBaseUrl: e.target.value || undefined }); setApiTestStatus('idle'); setApiTestMessage(''); }}
-                              placeholder={getProviderConfig(provider).defaultBaseUrl}
-                              className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-primary"
-                            />
-                          </div>
-                          <div className="space-y-1.5">
-                            <div className="flex items-center justify-between gap-2">
-                              <p className="text-xs text-gray-500 dark:text-gray-400">模型名称</p>
-                              <button
-                                onClick={handleFetchModels}
-                                disabled={modelFetchStatus === 'loading'}
-                                className={`text-[11px] font-bold px-2.5 py-1 rounded-lg transition-all ${
-                                  modelFetchStatus === 'loading'
-                                    ? 'bg-gray-100 dark:bg-gray-700 text-gray-400'
-                                    : modelFetchStatus === 'error'
-                                    ? 'bg-red-100 dark:bg-red-900/30 text-red-500 dark:text-red-400'
-                                    : 'bg-primary/10 text-primary hover:bg-primary/20'
-                                }`}
-                              >
-                                {modelFetchStatus === 'loading' ? '拉取中…' : modelOptions.length ? '重新拉取' : '拉取可选模型'}
-                              </button>
-                            </div>
-                            {/* 拉到列表就给下拉；拉不到（网关不支持 /models、CORS 拦截等）保持手填 */}
-                            {modelOptions.length > 0 && (
-                              <select
-                                value={modelOptions.includes(settings.summaryModel ?? '') ? settings.summaryModel : '__custom__'}
-                                onChange={e => {
-                                  if (e.target.value === '__custom__') return;
-                                  updateSettings({ summaryModel: e.target.value });
-                                  setApiTestStatus('idle');
-                                  setApiTestMessage('');
-                                }}
-                                className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 dark:text-white focus:outline-none focus:border-primary"
-                              >
-                                <option value="__custom__">自定义（用下方输入框）</option>
-                                {modelOptions.map(m => (
-                                  <option key={m} value={m}>{m}</option>
-                                ))}
-                              </select>
-                            )}
-                            <input
-                              type="text"
-                              value={settings.summaryModel ?? ''}
-                              onChange={e => { updateSettings({ summaryModel: e.target.value || undefined }); setApiTestStatus('idle'); setApiTestMessage(''); }}
-                              placeholder={getProviderConfig(provider).defaultModel}
-                              className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-primary"
-                            />
-                            {modelFetchMessage && (
-                              <p className={`text-[11px] leading-relaxed whitespace-pre-wrap break-words ${modelFetchStatus === 'ok' ? 'text-green-600 dark:text-green-400' : 'text-red-500 dark:text-red-400'}`}>
-                                {modelFetchMessage}
-                              </p>
-                            )}
-                          </div>
+                        {/* 高级：自定义地址（连接级配置，跟 provider/Key 同卡） */}
+                        <div className="space-y-1.5 pt-1 border-t border-gray-100 dark:border-gray-700/50">
+                          <p className="text-xs text-gray-500 dark:text-gray-400">自定义 API 地址（可选）</p>
+                          <input
+                            type="text"
+                            value={settings.summaryApiBaseUrl ?? ''}
+                            onChange={e => { updateSettings({ summaryApiBaseUrl: e.target.value || undefined }); setApiTestStatus('idle'); setApiTestMessage(''); }}
+                            placeholder={getProviderConfig(provider).defaultBaseUrl}
+                            className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-primary"
+                          />
                         </div>
+
+                      </div>
+                      )}
+                    </div>
+
+                    {/* ── 模型分档（日常操作面）：聊天用好模型，杂活用便宜模型 ── */}
+                    <div className="rounded-2xl border border-gray-100 dark:border-gray-700/60 overflow-hidden">
+                      <div className="flex items-center justify-between gap-2 px-4 py-3 bg-gray-50 dark:bg-gray-800/60 border-b border-gray-100 dark:border-gray-700/60">
+                        <span className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">模型分档</span>
+                        <button
+                          onClick={handleFetchModels}
+                          disabled={modelFetchStatus === 'loading'}
+                          className={`text-[11px] font-bold px-2.5 py-1 rounded-lg transition-all ${
+                            modelFetchStatus === 'loading'
+                              ? 'bg-gray-100 dark:bg-gray-700 text-gray-400'
+                              : modelFetchStatus === 'error'
+                              ? 'bg-red-100 dark:bg-red-900/30 text-red-500 dark:text-red-400'
+                              : 'bg-primary/10 text-primary hover:bg-primary/20'
+                          }`}
+                        >
+                          {modelFetchStatus === 'loading' ? '拉取中…' : modelOptions.length ? '重新拉取列表' : '拉取模型列表'}
+                        </button>
+                      </div>
+                      <div className="p-4 space-y-4 dark:bg-gray-800/20">
+
+                        {/* 通用模型（解析档） */}
+                        <div className="space-y-1.5">
+                          <p className="text-xs font-medium text-gray-500 dark:text-gray-400">通用模型 · 杂活档</p>
+                          <p className="text-[11px] text-gray-400 dark:text-gray-500">记账解析、塔罗、活动打分、成长总结等批量任务走这档，便宜够用就行。</p>
+                          {modelOptions.length > 0 && (
+                            <select
+                              value={(settings.summaryModel ?? '') === '' ? '' : modelOptions.includes(settings.summaryModel!) ? settings.summaryModel : '__custom__'}
+                              onChange={e => {
+                                if (e.target.value === '__custom__') return;
+                                updateSettings({ summaryModel: e.target.value || undefined });
+                                setApiTestStatus('idle');
+                                setApiTestMessage('');
+                              }}
+                              className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 dark:text-white focus:outline-none focus:border-primary"
+                            >
+                              <option value="">默认（{getProviderConfig(provider).defaultModel}）</option>
+                              {modelOptions.map(m => (
+                                <option key={m} value={m}>{m}</option>
+                              ))}
+                              <option value="__custom__">自定义（用下方输入框）</option>
+                            </select>
+                          )}
+                          <input
+                            type="text"
+                            value={settings.summaryModel ?? ''}
+                            onChange={e => { updateSettings({ summaryModel: e.target.value || undefined }); setApiTestStatus('idle'); setApiTestMessage(''); }}
+                            placeholder={`留空 = 默认（${getProviderConfig(provider).defaultModel}）`}
+                            className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-primary"
+                          />
+                        </div>
+
+                        {/* 黑猫对话模型（对话档） */}
+                        <div className="space-y-1.5 pt-3 border-t border-gray-100 dark:border-gray-700/50">
+                          <p className="text-xs font-medium text-gray-500 dark:text-gray-400">黑猫对话模型 · 对话档</p>
+                          <p className="text-[11px] text-gray-400 dark:text-gray-500">聊天、每日问候、人格生成走这档——对话值得用更好的模型。留空则跟随通用档。</p>
+                          {modelOptions.length > 0 && (
+                            <select
+                              value={(settings.navigatorModel ?? '') === '' ? '' : modelOptions.includes(settings.navigatorModel!) ? settings.navigatorModel : '__custom__'}
+                              onChange={e => {
+                                if (e.target.value === '__custom__') return;
+                                updateSettings({ navigatorModel: e.target.value || undefined });
+                              }}
+                              className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 dark:text-white focus:outline-none focus:border-primary"
+                            >
+                              <option value="">跟随通用档（{settings.summaryModel?.trim() || getProviderConfig(provider).defaultModel}）</option>
+                              {modelOptions.map(m => (
+                                <option key={m} value={m}>{m}</option>
+                              ))}
+                              <option value="__custom__">自定义（用下方输入框）</option>
+                            </select>
+                          )}
+                          <input
+                            type="text"
+                            value={settings.navigatorModel ?? ''}
+                            onChange={e => updateSettings({ navigatorModel: e.target.value || undefined })}
+                            placeholder={`留空 = 跟随通用档（${settings.summaryModel?.trim() || getProviderConfig(provider).defaultModel}）`}
+                            className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-primary"
+                          />
+                        </div>
+
+                        {modelFetchMessage && (
+                          <p className={`text-[11px] leading-relaxed whitespace-pre-wrap break-words ${modelFetchStatus === 'ok' ? 'text-green-600 dark:text-green-400' : 'text-red-500 dark:text-red-400'}`}>
+                            {modelFetchMessage}
+                          </p>
+                        )}
+                        {!settings.summaryApiKey?.trim() && (
+                          <p className="text-[11px] text-amber-600 dark:text-amber-400">先在上方「连接」卡里配好 API Key，再来选模型。</p>
+                        )}
 
                       </div>
                     </div>
