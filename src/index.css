@@ -77,6 +77,76 @@
   --ui-noise-opacity: 0.12;
 }
 
+/* ── P5 设置页毯式重皮（p5-settings-flat-newsprint-v1）────────────────────
+   旧表单遍布 bg-gray-50/白卡 + 圆角 + 灰字的后台件；P5 定稿是纸面黑框直角。
+   仅 data-ui-channel="p5" + .p5-reskin 容器内生效（含其内弹窗），其他频道零影响。 */
+:root[data-ui-channel="p5"] .p5-reskin input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+:root[data-ui-channel="p5"] .p5-reskin textarea,
+:root[data-ui-channel="p5"] .p5-reskin select {
+  background-color: var(--ui-paper) !important;
+  border: 2.5px solid #050505 !important;
+  border-radius: 2px !important;
+  color: #050505 !important;
+  font-weight: 700;
+}
+/* 灰系文字 → 黑（分级保层级，纯色不透明） */
+:root[data-ui-channel="p5"] .p5-reskin :is(.text-gray-700, .text-gray-800, .text-gray-900, .dark\:text-white) {
+  color: #050505 !important;
+}
+:root[data-ui-channel="p5"] .p5-reskin :is(.text-gray-500, .text-gray-600) {
+  color: #494540 !important;
+}
+:root[data-ui-channel="p5"] .p5-reskin .text-gray-400 {
+  color: #6b6862 !important;
+}
+/* 灰面块 / 白卡 → 纸面；边线 → 黑 */
+:root[data-ui-channel="p5"] .p5-reskin :is(.bg-gray-50, .bg-gray-100, .bg-white) {
+  background-color: var(--ui-paper) !important;
+}
+:root[data-ui-channel="p5"] .p5-reskin :is(.border-gray-100, .border-gray-200, .border-gray-300) {
+  border-color: #050505 !important;
+}
+/* 圆角直角化（rounded-full 豁免：圆点/头像仍圆） */
+:root[data-ui-channel="p5"] .p5-reskin :is(.rounded-md, .rounded-lg, .rounded-xl, .rounded-2xl, .rounded-3xl) {
+  border-radius: 2px !important;
+}
+/* 主操作按钮 → 猩红黑框 */
+:root[data-ui-channel="p5"] .p5-reskin button.bg-primary {
+  background-color: var(--ui-accent) !important;
+  border: 2.5px solid #050505 !important;
+  border-radius: 2px !important;
+  font-weight: 900;
+  box-shadow: 3px 3px 0 #000000;
+}
+/* 滑杆：黑轨自绘（红星滑块），复选/单选强调红 */
+:root[data-ui-channel="p5"] .p5-reskin :is(input[type="checkbox"], input[type="radio"]) {
+  accent-color: #c00008;
+}
+:root[data-ui-channel="p5"] .p5-reskin input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 8px;
+  border-radius: 0;
+  background: linear-gradient(90deg, #c00008 0%, #c00008 var(--p5-range-fill, 50%), #050505 var(--p5-range-fill, 50%), #050505 100%);
+  outline: none;
+}
+:root[data-ui-channel="p5"] .p5-reskin input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 26px;
+  height: 26px;
+  border: none;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpolygon points='50,2 61.8,38.2 100,38.2 69.1,60.6 80.9,96.8 50,74.4 19.1,96.8 30.9,60.6 0,38.2 38.2,38.2' fill='%23c00008' stroke='%23050505' stroke-width='6'/%3E%3C/svg%3E") center / contain no-repeat;
+  cursor: pointer;
+}
+:root[data-ui-channel="p5"] .p5-reskin input[type="range"]::-moz-range-thumb {
+  width: 26px;
+  height: 26px;
+  border: none;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpolygon points='50,2 61.8,38.2 100,38.2 69.1,60.6 80.9,96.8 50,74.4 19.1,96.8 30.9,60.6 0,38.2 38.2,38.2' fill='%23c00008' stroke='%23050505' stroke-width='6'/%3E%3C/svg%3E") center / contain no-repeat;
+  cursor: pointer;
+}
+
 /* P4 黄 —— 节目/青春：高明度黄底，黑色信息面板，彩色条带
    p4-redraw 设计稿定稿色板（design-refs/p4-redraw/*-v2/v3）：
    斜切胶囊（skew+大圆角，不再用 clip 多边形）、奶油纸面、花朵/四角星贴花、衬线大标题。 */

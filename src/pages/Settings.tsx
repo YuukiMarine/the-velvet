@@ -1,5 +1,6 @@
 import { motion, AnimatePresence } from 'motion/react';
 import { useEffect, useRef, useState, useCallback } from 'react';
+import type { CSSProperties } from 'react';
 import { useAppStore, DEFAULT_SUMMARY_PROMPT_PRESETS, FAMILIAR_FACE_PRESETS, toLocalDateKey, applyCustomThemeColor } from '@/store';
 import { triggerThemeSwitchFeedback, playSound } from '@/utils/feedback';
 import { ThemeType, AttributeId, SummaryPromptPreset, AttributeLevelTitles } from '@/types';
@@ -17,6 +18,7 @@ import { NavigatorSettings } from '@/components/navigator/NavigatorSettings';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P3R, P3RPage, GhostWords, P3PageHeader } from '@/components/p3r/kit';
+import { P5R, P5_FONT, roughQuad, P5Collage, P5Star, P5RPage } from '@/components/p5r/kit';
 import {
   generateAttributeLevelTitles,
   normalizeAttributeLevelTitles,
@@ -201,6 +203,32 @@ const ThemeColorButton = ({
     );
   }
 
+  // P5UI/p5-settings：色板 = 斜切黑框灰缩略块（浅灰斜高光），选中 = 红面红框 + 白星角标
+  if (channel === 'p5') {
+    return (
+      <motion.button
+        whileTap={{ scale: 0.93 }}
+        transition={{ type: 'spring', stiffness: 400, damping: 22 }}
+        onClick={(e) => { spawn(e); onSelect(); }}
+        className="relative flex flex-1 cursor-pointer flex-col items-center gap-1.5"
+        aria-pressed={active}
+      >
+        <span className="relative h-12 w-full" style={{ transform: 'rotate(-1.5deg)' }}>
+          <span aria-hidden className="absolute inset-0" style={{ background: active ? '#c00008' : '#050505', clipPath: 'polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%)' }} />
+          <span className="absolute inset-[3px] overflow-hidden" style={{ background: active ? '#c00008' : '#3a3a3a', clipPath: 'polygon(7px 0, 100% 0, calc(100% - 7px) 100%, 0 100%)' }}>
+            {ripples}
+            {/* 斜高光切（纯色，不用透明度） */}
+            <span aria-hidden className="absolute -top-3 left-1/4 h-20 w-5" style={{ background: active ? '#d64046' : '#6f6f6f', transform: 'rotate(26deg)' }} />
+            {/* 主题色认色条（底缘） */}
+            <span aria-hidden className="absolute inset-x-0 bottom-0 h-[5px]" style={{ background: theme.color }} />
+          </span>
+          {active && <P5Star size={20} fill="#f8f8f6" className="absolute -right-1.5 -top-2" />}
+        </span>
+        <span className="whitespace-nowrap text-xs font-black" style={{ color: '#050505' }}>{theme.label}</span>
+      </motion.button>
+    );
+  }
+
   // p3-settings-reference-v2：色板 = 斜切色块 + 白勾，激活标签蓝字
   if (p3) {
     return (
@@ -260,6 +288,35 @@ const SplashStyleButton = ({
 }) => {
   const { spawn, ripples } = useRipple(opt.color);
   const p3 = useUiChannel() === 'p3';
+  const p5 = useUiChannel() === 'p5';
+
+  // P5UI/p5-settings：选项卡 = 黑框纸卡 + 左上方块 + 标题/英文副题；选中 = 红框浅红底 + 红星
+  if (p5) {
+    return (
+      <motion.button
+        whileTap={{ scale: 0.96 }}
+        transition={{ type: 'spring', stiffness: 400, damping: 22 }}
+        onClick={(e) => { spawn(e); onSelect(); }}
+        className="relative cursor-pointer select-none overflow-hidden text-left"
+        aria-pressed={active}
+        style={{
+          background: active ? '#f4dcd4' : '#f0e9df',
+          border: `3px solid ${active ? '#c00008' : '#050505'}`,
+          boxShadow: '3px 3px 0 #000000',
+        }}
+      >
+        {ripples}
+        <span className="flex items-start justify-between px-3 pt-2.5">
+          <span aria-hidden className="mt-0.5 inline-block h-4 w-4" style={{ background: active ? '#c00008' : '#050505', boxShadow: active ? '0 0 0 2px #050505' : undefined }} />
+          {active && <P5Star size={18} fill="#c00008" className="-mr-0.5 -mt-0.5" />}
+        </span>
+        <span className="block px-3 pb-2.5 pt-1.5">
+          <span className="block text-[13px] font-black leading-tight" style={{ color: '#050505' }}>{opt.label}</span>
+          <span className="mt-0.5 block text-[10px] font-bold uppercase tracking-wide" style={{ color: active ? '#c00008' : '#6b6862' }}>{opt.sub}</span>
+        </span>
+      </motion.button>
+    );
+  }
 
   if (p3) {
     return (
@@ -360,6 +417,8 @@ export const Settings = () => {
   const [activeSection, setActiveSection] = useState<string | null>('theme');
   // P3R（蓝频道）：p3-settings-reference-v2 形态
   const p3 = useUiChannel() === 'p3';
+  // P5R（红频道）：p5-settings-flat-newsprint-v1 形态（壳层 + 毯式 .p5-reskin）
+  const p5 = useUiChannel() === 'p5';
   const [showLevelWarning, setShowLevelWarning] = useState(false);
   // 等级阈值：恢复默认 / 删除高等级 的确认弹窗
   const [showResetThresholdsConfirm, setShowResetThresholdsConfirm] = useState(false);
@@ -794,11 +853,12 @@ export const Settings = () => {
 
   return (
     <P3RPage active={p3}>
+    <P5RPage active={p5}>
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className={`relative space-y-6 ${isP4 ? 'p4-reskin' : ''}`}
+      className={`relative space-y-6 ${isP4 ? 'p4-reskin' : ''} ${p5 ? 'p5-reskin' : ''}`}
     >
       {/* 顶部标题 + 返回按钮（设置从菜单宫格进入，与其他子页一致）。
           P4（p4-settings-reference-v2）：衬线特大「设置」+ 橙 Settings 手写角标 + 右上天空扇；
@@ -837,6 +897,44 @@ export const Settings = () => {
             ))}
           </div>
         </div>
+      ) : p5 ? (
+        /* P5UI/p5-settings：拼贴「设置」+ SETTINGS 纸条 + 红星；左上红斜块沉底 */
+        <div className="relative pt-1">
+          <div aria-hidden className="pointer-events-none absolute -inset-x-4 -top-5 h-[170px]" style={{ zIndex: -1 }}>
+            <span className="absolute" style={{ left: -30, top: -14, width: 250, height: 90, background: P5R.red, clipPath: 'polygon(0 0, 100% 18%, 82% 100%, 0 86%)', transform: 'rotate(-4deg)' }} />
+            <span className="absolute" style={{ right: -40, top: -30, width: 300, height: 110, background: P5R.redDeep, clipPath: 'polygon(14% 0, 100% 0, 100% 74%, 0 100%)', transform: 'rotate(5deg)' }} />
+            <P5Star size={16} fill={P5R.red} rot={16} className="absolute" style={{ right: 90, top: 96 }} />
+            <P5Star size={12} fill="#3a3831" rot={-10} className="absolute" style={{ right: 40, top: 130 }} />
+          </div>
+          <div className="flex items-start gap-2">
+            <button
+              type="button"
+              onClick={() => setCurrentPage('menu')}
+              aria-label="返回"
+              className="mt-2 flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c00008]"
+              style={{ background: P5R.paper, border: '2.5px solid #050505', boxShadow: '3px 3px 0 #000000' }}
+            >
+              <span aria-hidden className="h-0 w-0 border-y-[7px] border-y-transparent border-r-[11px]" style={{ borderRightColor: '#050505' }} />
+            </button>
+            <div className="min-w-0">
+              <div className="flex items-start gap-2">
+                <P5Collage
+                  size={44}
+                  tiles={[
+                    { ch: '设', bg: P5R.paper, fg: P5R.ink, rot: -3.5, dy: 0 },
+                    { ch: '置', bg: P5R.paper, fg: P5R.red, rot: 3, dy: 7 },
+                  ]}
+                />
+                <P5Star size={30} fill={P5R.red} ring2={P5R.paper} rot={-12} className="mt-1" />
+              </div>
+              <div className="mt-2 pl-12">
+                <span className="inline-flex select-none items-center px-3 py-1 text-[15px] font-black tracking-[0.14em]" style={{ background: P5R.paper, color: '#050505', transform: 'rotate(-1.4deg)', boxShadow: '0 0 0 2.5px #050505, 4px 4px 0 #000000', fontFamily: P5_FONT }}>
+                  S<span style={{ color: P5R.red }}>E</span>TTINGS
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
       ) : (
       <div className="flex items-start justify-between gap-3">
         <BackButton onClick={() => setCurrentPage('menu')} className="mt-1 -ml-1" />
@@ -851,7 +949,7 @@ export const Settings = () => {
           <div
             key={section.id}
             className={
-              isP4
+              isP4 || p5
                 ? 'overflow-visible'
                 : p3
                   ? 'overflow-hidden'
@@ -859,7 +957,42 @@ export const Settings = () => {
             }
             style={p3 ? { clipPath: 'polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%)', background: 'rgba(255,255,255,0.92)', boxShadow: '0 8px 18px rgba(38,96,140,0.07)' } : undefined}
           >
-            {isP4 ? (
+            {p5 ? (
+              /* P5 分组头：收起 = 纸长条 + 黑星方章 + ▶；展开 = 红楔章（白星 + 白字）+ ▲ */
+              <motion.button
+                onClick={() => setActiveSection(activeSection === section.id ? null : section.id)}
+                className="relative block w-full cursor-pointer py-0.5 text-left"
+              >
+                {activeSection === section.id ? (
+                  <span className="flex items-center justify-between">
+                    <span className="relative inline-block" style={{ transform: 'rotate(-1deg)' }}>
+                      <span aria-hidden className="absolute -inset-[2.5px]" style={{ background: P5R.paper, clipPath: 'polygon(0 0, 100% 0, calc(100% - 16px) 100%, 0 100%)' }} />
+                      <span className="relative flex items-center gap-2 py-2 pl-4 pr-9" style={{ background: P5R.red, clipPath: 'polygon(0 0, 100% 0, calc(100% - 16px) 100%, 0 100%)' }}>
+                        {section.id === 'navigator'
+                          ? <span aria-hidden className="text-[15px] font-black leading-none text-white">◈</span>
+                          : <P5Star size={15} fill="#f8f8f6" className="shrink-0" />}
+                        <span className="text-[17px] font-black leading-none tracking-wide text-white" style={{ fontFamily: P5_FONT }}>{section.label}</span>
+                      </span>
+                    </span>
+                    <span className="pr-2 font-black" style={{ color: P5R.paper }}>▲</span>
+                  </span>
+                ) : (
+                  <span className="relative block">
+                    <span aria-hidden className="absolute inset-0" style={{ transform: 'translate(3px,4px)', background: '#000000', clipPath: roughQuad(500 + section.id.length * 7, 5) }} />
+                    <span aria-hidden className="absolute inset-0" style={{ background: P5R.paper, clipPath: roughQuad(501 + section.id.length * 7, 5) }} />
+                    <span className="relative flex items-center gap-3 px-4 py-3">
+                      <span aria-hidden className="flex h-8 w-8 shrink-0 items-center justify-center" style={{ background: '#050505' }}>
+                        {section.id === 'navigator'
+                          ? <span className="text-[14px] font-black leading-none text-white">◈</span>
+                          : <P5Star size={17} fill="#f8f8f6" />}
+                      </span>
+                      <span className="flex-1 text-[16.5px] font-black" style={{ color: P5R.ink, fontFamily: P5_FONT }}>{section.label}</span>
+                      <span aria-hidden className="h-0 w-0 border-y-[7px] border-y-transparent border-l-[11px]" style={{ borderLeftColor: '#050505' }} />
+                    </span>
+                  </span>
+                )}
+              </motion.button>
+            ) : isP4 ? (
               /* P4 分组头：黑色斜章（黄花 + 白字）+ 折叠箭头 */
               <motion.button
                 onClick={() => setActiveSection(activeSection === section.id ? null : section.id)}
@@ -905,14 +1038,22 @@ export const Settings = () => {
                 initial={{ height: 0 }}
                 animate={{ height: 'auto' }}
                 exit={{ height: 0 }}
-                className={isP4 ? 'mt-2 rounded-[20px] bg-[var(--ui-paper)] px-5 pb-6 pt-4' : 'px-6 pb-6'}
-                style={isP4 ? { boxShadow: '0 3px 0 rgba(19,19,19,0.12)' } : undefined}
+                className={isP4 ? 'mt-2 rounded-[20px] bg-[var(--ui-paper)] px-5 pb-6 pt-4' : p5 ? 'relative -mt-1 px-5 pb-6 pt-5' : 'px-6 pb-6'}
+                style={isP4
+                  ? { boxShadow: '0 3px 0 rgba(19,19,19,0.12)' }
+                  : p5
+                    ? { background: P5R.paper, border: '3px solid #050505', boxShadow: '5px 6px 0 #000000' }
+                    : undefined}
               >
                 {section.id === 'theme' && (
                   <div className="space-y-5">
                     {/* ── 子板块：颜色与声音 ─────────────────────────── */}
                     <div className="flex items-center gap-2 pb-2 border-b border-gray-200 dark:border-gray-700/80">
-                      <span className="text-base">🎨</span>
+                      {p5 ? (
+                        <span aria-hidden className="h-0 w-0 border-y-[6px] border-y-transparent border-l-[10px]" style={{ borderLeftColor: '#c00008' }} />
+                      ) : (
+                        <span className="text-base">🎨</span>
+                      )}
                       <h4 className="text-sm font-bold text-gray-800 dark:text-white tracking-wide">颜色与声音</h4>
                     </div>
                     <p className="text-gray-600 dark:text-gray-400 -mt-2 mb-1 text-sm">选择你喜欢的主题颜色</p>
@@ -1033,6 +1174,8 @@ export const Settings = () => {
                             value={settings.soundVolume ?? 80}
                             onChange={(e) => updateSettings({ soundVolume: Number(e.target.value) })}
                             className="flex-1 h-1.5 appearance-none rounded-full bg-gray-200 dark:bg-gray-600 accent-primary cursor-pointer"
+                            // p5 毯式滑杆：红/黑双色轨的分界位跟随当前值
+                            style={p5 ? ({ '--p5-range-fill': `${settings.soundVolume ?? 80}%` } as CSSProperties) : undefined}
                           />
                           <span className="text-base select-none">🔊</span>
                         </div>
@@ -1054,7 +1197,11 @@ export const Settings = () => {
 
                     {/* ── 子板块：显示 ────────────────────────────── */}
                     <div className="flex items-center gap-2 pt-3 pb-2 border-b border-gray-200 dark:border-gray-700/80">
-                      <span className="text-base">🖼️</span>
+                      {p5 ? (
+                        <span aria-hidden className="h-0 w-0 border-y-[6px] border-y-transparent border-l-[10px]" style={{ borderLeftColor: '#c00008' }} />
+                      ) : (
+                        <span className="text-base">🖼️</span>
+                      )}
                       <h4 className="text-sm font-bold text-gray-800 dark:text-white tracking-wide">显示</h4>
                     </div>
 
@@ -2334,7 +2481,28 @@ export const Settings = () => {
       {/* P9-菜单批：用户资料卡上浮至菜单页第一屏；原位改为「账号与数据」入口
           （账号瓷砖从菜单宫格下沉至此，与主题快切上浮互为对调）。
           P4：黑斜章 + 奶油斜行（设计稿账号行制式）。 */}
-      {isP4 ? (
+      {p5 ? (
+        /* P5UI/p5-settings 顶卡制式（我们的 IA 放页底）：红星方章 + 标题/副题 + ▶ */
+        <motion.button
+          type="button"
+          whileTap={{ x: 2, y: 3 }}
+          onClick={() => setCurrentPage('account')}
+          className="relative block w-full cursor-pointer text-left"
+        >
+          <span aria-hidden className="absolute inset-0" style={{ transform: 'translate(4px,5px)', background: '#000000', clipPath: roughQuad(521, 7) }} />
+          <span aria-hidden className="absolute inset-0" style={{ background: P5R.paper, clipPath: roughQuad(522, 6) }} />
+          <span className="relative flex items-center gap-3.5 px-4 py-3.5">
+            <span aria-hidden className="flex h-10 w-10 shrink-0 items-center justify-center" style={{ background: P5R.red, border: '2.5px solid #050505', transform: 'rotate(-3deg)', boxShadow: '2px 2px 0 #000000' }}>
+              <P5Star size={22} fill="#f8f8f6" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[17px] font-black" style={{ color: P5R.ink, fontFamily: P5_FONT }}>账号与数据</span>
+              <span className="mt-0.5 block text-xs font-bold" style={{ color: P5R.grey }}>云同步 · 数据管理 · 备份导出</span>
+            </span>
+            <span aria-hidden className="h-0 w-0 border-y-[8px] border-y-transparent border-l-[12px]" style={{ borderLeftColor: '#050505' }} />
+          </span>
+        </motion.button>
+      ) : isP4 ? (
         <motion.button
           type="button"
           whileTap={{ scale: 0.98 }}
@@ -2860,6 +3028,7 @@ export const Settings = () => {
       />
 
     </motion.div>
+    </P5RPage>
     </P3RPage>
   );
 };
