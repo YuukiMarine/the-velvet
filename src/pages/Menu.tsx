@@ -47,6 +47,7 @@ import { STAGGER, TAP, springSoft, fadeIn } from '@/utils/motion';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P4Flower, P4Sparkle, P4Highlight } from '@/ui/p4Kit';
 import { P3R, P3RPage, slantClip } from '@/components/p3r/kit';
+import { P5R, P5_FONT, roughQuad, starPts, P5Collage, P5SubBar, P5Star, P5StarOutline, P5Dots, P5Slab, P5RPage } from '@/components/p5r/kit';
 import { computeTotalLv } from '@/utils/lvTiers';
 
 // ── 图标（24px stroke 制式，与 Navigation.tsx 同一套 heroicons outline 风格）──
@@ -214,6 +215,8 @@ export const Menu = () => {
   const currentThemeLabel = THEME_SWATCHES.find((t) => t.value === user?.theme)?.label ?? '默认';
   // P3R（蓝频道）：p3-menu-reference-v2 阶梯瀑布形态；资料卡收进 Sheet（形按稿走、改名/头像功能不减配）
   const p3 = useUiChannel() === 'p3';
+  // P5R（红频道）：p5-menu 磁贴墙形态
+  const p5 = useUiChannel() === 'p5';
   const [profileSheetOpen, setProfileSheetOpen] = useState(false);
   // P3R 菜单选项「游戏化选择」：selectedKey 驱动高亮（深蓝从左揭入 + 长度伸缩）；
   // pointerdown 即选中预览、松手延时进入（让滑入动效播完）。默认选中首项「统计」。
@@ -472,6 +475,245 @@ export const Menu = () => {
       </SheetModal>
     </>
   );
+
+  // ── P5R（红频道）形态：P5UI/p5-menu-flat-newsprint-v1 1:1 ── 拼贴大标 + MENU 黑条
+  //    → 用户纸卡（红星头像框 / LV·SEEKER 双章 / 总点数行）→ 不均匀双列磁贴墙
+  //    （统计红高卡带巨数字水印 / 黑卡纸描边 / 灰卡）→ 关于通栏灰条
+  if (p5) {
+    const totalLv = computeTotalLv(attributes);
+    const totalPoints = attributes.reduce((s, a) => s + (a.points ?? 0), 0);
+    const initial = (user?.name || 'S').trim().charAt(0).toUpperCase() || 'S';
+
+    // 磁贴（不规则四边形双层：外圈描边层 + 面层；黑卡配纸圈、纸卡配黑圈）
+    const Tile = ({ tone, seed, icon, label, caption, star, badge, watermark, cutTR = false, alignTop = false, minH = 104, onPress, aria }: {
+      tone: 'red' | 'ink' | 'paper' | 'grey';
+      seed: number;
+      icon: ReactNode;
+      label: string;
+      caption?: ReactNode;
+      /** 角星：位置 + 色 */
+      star?: { pos: 'tr' | 'br'; color: string };
+      badge?: ReactNode;
+      /** 右下巨字水印（统计卡的连续天数） */
+      watermark?: string;
+      /** 右上大切角（逆影战场卡形制） */
+      cutTR?: boolean;
+      /** 内容顶对齐（统计高卡：文字在上、巨数字水印沉右下） */
+      alignTop?: boolean;
+      minH?: number;
+      onPress: () => void;
+      aria: string;
+    }) => {
+      const face = tone === 'red' ? P5R.red : tone === 'ink' ? '#050505' : tone === 'grey' ? P5R.greyLight : P5R.paper;
+      const ring = tone === 'ink' || tone === 'red' ? P5R.paper : P5R.ink;
+      const fg = tone === 'ink' || tone === 'red' ? P5R.white : P5R.ink;
+      const cut = (s: number, j: number) =>
+        cutTR
+          ? `polygon(${j * 0.4}px ${j * 0.5}px, calc(100% - 30px) ${j * 0.3}px, 100% 30px, calc(100% - ${j * 0.4}px) calc(100% - ${j * 0.5}px), ${j * 0.5}px calc(100% - ${j * 0.3}px))`
+          : roughQuad(s, j);
+      return (
+        <motion.button
+          type="button"
+          whileTap={{ x: 2, y: 3 }}
+          onClick={() => { triggerNavFeedback(); onPress(); }}
+          aria-label={aria}
+          className="relative block w-full cursor-pointer select-none text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c00008]"
+          style={{ minHeight: minH }}
+        >
+          <span aria-hidden className="pointer-events-none absolute inset-0" style={{ transform: 'translate(4px,5px)', background: P5R.ink, clipPath: cut(seed + 0.13, 8) }} />
+          <span aria-hidden className="pointer-events-none absolute inset-0" style={{ background: ring, clipPath: cut(seed + 0.29, 7) }} />
+          <span aria-hidden className="pointer-events-none absolute inset-[3px]" style={{ background: face, clipPath: cut(seed + 0.47, 5) }} />
+          {watermark !== undefined && (
+            <span aria-hidden className="pointer-events-none absolute -bottom-5 right-1 select-none text-[110px] font-black leading-none" style={{ color: '#8e0000', fontFamily: P5_FONT, transform: 'rotate(-9deg)' }}>{watermark}</span>
+          )}
+          {star && (
+            <P5Star
+              size={30}
+              fill={star.color}
+              rot={star.pos === 'tr' ? -8 : 10}
+              className={`pointer-events-none absolute ${star.pos === 'tr' ? 'right-3 top-2.5' : 'bottom-2.5 right-3'}`}
+            />
+          )}
+          {badge && <span className="pointer-events-none absolute right-3 top-2.5">{badge}</span>}
+          <span className={`relative flex h-full min-h-[inherit] flex-col gap-1.5 px-4 py-3 ${alignTop ? 'justify-start pt-6' : 'justify-center'}`} style={{ color: fg }}>
+            <span aria-hidden>{icon}</span>
+            <span className="text-[19px] font-black leading-tight" style={{ fontFamily: P5_FONT }}>{label}</span>
+            {caption && <span className="text-[12px] font-black leading-none">{caption}</span>}
+          </span>
+        </motion.button>
+      );
+    };
+
+    return (
+      <P5RPage className="overflow-hidden">
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }} className="relative mx-auto max-w-2xl pb-8">
+          {/* ── 页头：拼贴「菜单」+ MENU 黑条 + 红星装饰群 ── */}
+          <header className="relative pt-2">
+            <div aria-hidden className="pointer-events-none absolute -inset-x-4 -top-6 h-[230px]" style={{ zIndex: -1 }}>
+              <P5Slab color={P5R.red} seed={131} rot={-9} style={{ left: -40, top: -10, width: 200, height: 130 }} />
+              <P5Slab color={P5R.red} seed={132} rot={14} style={{ right: -60, top: 30, width: 240, height: 170 }} />
+              <svg viewBox="0 0 100 100" className="absolute" style={{ right: -14, top: -18, width: 170, height: 170 }} aria-hidden>
+                <polygon points={starPts(50, 50, 48, -90 + 22)} fill="#050505" stroke={P5R.paper} strokeWidth={3} strokeLinejoin="miter" />
+              </svg>
+              <P5StarOutline size={26} color={P5R.paper} rot={-16} className="absolute" style={{ left: 6, top: 6 }} />
+              <P5Dots className="absolute" style={{ right: 0, top: 130, width: 84, height: 90 }} color="#4a4741" />
+            </div>
+            <P5Collage
+              size={52}
+              tiles={[
+                { ch: '菜', bg: P5R.red, fg: P5R.ink, scale: 1.06, rot: -3.5, dy: 0 },
+                { ch: '单', bg: P5R.paper, fg: P5R.ink, rot: 2.5, dy: 9 },
+              ]}
+            />
+            <div className="mt-2.5 pl-16">
+              <P5SubBar segs={[{ t: 'MENU' }]} star={false} rot={-1.2} />
+            </div>
+          </header>
+
+          {/* ── 用户纸卡（点开资料 Sheet：改名/头像全功能） ── */}
+          <motion.button
+            type="button"
+            onClick={() => { triggerNavFeedback(); setProfileSheetOpen(true); }}
+            whileTap={{ x: 2, y: 3 }}
+            aria-label={`用户资料：${user?.name || '客人'}，等级 ${totalLv}`}
+            className="relative mt-5 block w-full cursor-pointer select-none text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c00008]"
+          >
+            <span aria-hidden className="pointer-events-none absolute inset-0" style={{ transform: 'translate(5px,6px)', background: P5R.ink, clipPath: roughQuad(141.13, 9) }} />
+            <span aria-hidden className="pointer-events-none absolute inset-0" style={{ background: P5R.ink, clipPath: roughQuad(141.29, 8) }} />
+            <span aria-hidden className="pointer-events-none absolute inset-[4px]" style={{ background: P5R.paper, clipPath: roughQuad(141.47, 5) }} />
+            <span className="relative block px-4 pb-3 pt-4">
+              <span className="flex items-center gap-3.5">
+                {/* 红星头像框：红底黑框 + 白描边星 + 首字母 */}
+                <span aria-hidden className="relative flex h-[72px] w-[72px] shrink-0 items-center justify-center" style={{ background: P5R.red, border: `3.5px solid ${P5R.ink}` }}>
+                  <svg viewBox="0 0 100 100" className="h-[62px] w-[62px]">
+                    <polygon points={starPts(50, 54, 46)} fill={P5R.red} stroke={P5R.paper} strokeWidth={7} strokeLinejoin="miter" />
+                  </svg>
+                  <span className="absolute text-[26px] font-black leading-none text-white" style={{ fontFamily: P5_FONT, textShadow: '2px 2px 0 #000000' }}>{initial}</span>
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-2">
+                    <span className="truncate text-[23px] font-black leading-tight" style={{ color: P5R.ink, fontFamily: P5_FONT }}>{user?.name || '怪盗'}</span>
+                    <P5Star size={17} fill={P5R.red} rot={-14} className="shrink-0" />
+                  </span>
+                  <span className="mt-2 flex items-center">
+                    <span className="flex items-baseline gap-1.5 px-3 py-1 text-white" style={{ background: P5R.ink, clipPath: 'polygon(0 0, 100% 0, calc(100% - 8px) 100%, 0 100%)' }}>
+                      <span className="text-[11px] font-black tracking-wider">LV</span>
+                      <span className="text-[19px] font-black leading-none tabular-nums">{totalLv}</span>
+                    </span>
+                    <span className="-ml-1 px-3 py-1.5 text-[13px] font-black italic tracking-wider" style={{ background: P5R.paper, color: P5R.ink, border: `2.5px solid ${P5R.ink}`, clipPath: 'polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%)' }}>SEEKER</span>
+                  </span>
+                </span>
+              </span>
+              <span className="mt-3 flex items-center justify-between border-t-2 pt-2.5" style={{ borderColor: '#0000001f' }}>
+                <span className="text-[13px] font-black" style={{ color: P5R.ink }}>
+                  总点数：<span className="ml-0.5 text-[15px] tabular-nums" style={{ color: P5R.redHot }}>{totalPoints}</span>
+                </span>
+                <span className="text-[13px] font-black" style={{ color: P5R.ink }}>{totalLv} 级累计 <span aria-hidden className="text-[10px]">▼</span></span>
+              </span>
+            </span>
+          </motion.button>
+
+          {/* ── 磁贴墙（不均匀双列；缝隙露出纯黑舞台）── */}
+          <div className="mt-5 flex gap-3">
+            <div className="flex w-1/2 flex-col gap-3">
+              <Tile
+                tone="red" seed={151} minH={224} alignTop
+                icon={<ChartIcon />}
+                label="统计"
+                caption={<span>连续 {currentStreak} 天</span>}
+                watermark={String(currentStreak)}
+                onPress={() => setCurrentPage('statistics')}
+                aria={`统计：当前连续 ${currentStreak} 天`}
+              />
+              <Tile
+                tone="paper" seed={152}
+                icon={<span className="relative inline-block"><TrophyIcon /><P5Star size={11} fill={P5R.red} className="absolute -top-0.5 left-1/2 -translate-x-1/2" /></span>}
+                label="成就 · 技能"
+                badge={totalPendingUnlocks > 0
+                  ? <span className="px-2 py-0.5 text-[11px] font-black text-white" style={{ background: P5R.red, clipPath: 'polygon(3px 0, 100% 1px, calc(100% - 3px) 100%, 0 calc(100% - 2px))', boxShadow: `2px 2px 0 ${P5R.ink}` }}>{totalPendingUnlocks}</span>
+                  : undefined}
+                onPress={() => setCurrentPage('achievements')}
+                aria={totalPendingUnlocks > 0 ? `成就·技能：${totalPendingUnlocks} 项待解锁` : '成就·技能'}
+              />
+              {ledgerVisible && (
+                <Tile
+                  tone="ink" seed={153}
+                  icon={<span className="relative inline-block"><WalletIcon /><span aria-hidden className="absolute right-[3px] top-[7px] h-1.5 w-1.5 rounded-full" style={{ background: P5R.red }} /></span>}
+                  label="心相记账"
+                  star={{ pos: 'tr', color: P5R.paper }}
+                  onPress={() => setCurrentPage('ledger')}
+                  aria="心相记账"
+                />
+              )}
+            </div>
+            <div className="flex w-1/2 flex-col gap-3">
+              {battleVisible && (
+                <Tile
+                  tone="ink" seed={154} cutTR
+                  icon={<BoltIcon />}
+                  label="逆影战场"
+                  caption={inShadowTime ? <motion.span animate={{ opacity: [1, 0.45, 1] }} transition={{ repeat: Infinity, duration: 1.5 }} className="font-black" style={{ color: P5R.redHot }}>✦ 影时间</motion.span> : undefined}
+                  star={{ pos: 'tr', color: P5R.paper }}
+                  onPress={() => setCurrentPage('battle')}
+                  aria={inShadowTime ? '逆影战场：影时间进行中' : '逆影战场'}
+                />
+              )}
+              <Tile
+                tone="paper" seed={155}
+                icon={<PaletteIcon />}
+                label="主题"
+                caption={<span>当前 · <span style={{ color: P5R.redHot }}>{currentThemeLabel}</span></span>}
+                star={{ pos: 'tr', color: P5R.red }}
+                onPress={() => setThemeSheetOpen(true)}
+                aria={`主题：当前 ${currentThemeLabel}`}
+              />
+              <Tile
+                tone="grey" seed={156}
+                icon={<MoonIcon />}
+                label="占卜"
+                star={{ pos: 'br', color: '#050505' }}
+                onPress={() => setCurrentPage('astrology')}
+                aria="占卜"
+              />
+              <Tile
+                tone="paper" seed={157}
+                icon={<span className="relative inline-block"><GearIcon /><span aria-hidden className="absolute left-1/2 top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full" style={{ background: P5R.red }} /></span>}
+                label="设置"
+                star={{ pos: 'br', color: '#050505' }}
+                onPress={() => setCurrentPage('settings')}
+                aria="设置"
+              />
+            </div>
+          </div>
+
+          {/* ── 关于：通栏灰条（两端斜切 + 黑 i + 右端黑星）── */}
+          <motion.button
+            type="button"
+            ref={aboutTriggerRef}
+            whileTap={{ x: 2, y: 3 }}
+            onClick={() => { triggerNavFeedback(); setAboutOpen(true); }}
+            className="relative mt-3 block w-full cursor-pointer select-none text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c00008]"
+            aria-label="关于"
+          >
+            <span aria-hidden className="pointer-events-none absolute inset-0" style={{ transform: 'translate(4px,4px)', background: '#3a3831', clipPath: 'polygon(22px 2px, calc(100% - 6px) 0, calc(100% - 20px) 100%, 4px calc(100% - 3px))' }} />
+            <span aria-hidden className="pointer-events-none absolute inset-0" style={{ background: P5R.greyLight, clipPath: 'polygon(20px 0, 100% 2px, calc(100% - 22px) calc(100% - 2px), 2px 100%)' }} />
+            <span className="relative flex items-center gap-3 py-3 pl-7 pr-6">
+              <span aria-hidden className="flex h-6 w-6 items-center justify-center rounded-full text-[15px] font-black text-white" style={{ background: '#050505' }}>i</span>
+              <span className="flex-1 text-[17px] font-black" style={{ color: '#050505', fontFamily: P5_FONT }}>关于</span>
+              <P5Star size={26} fill="#050505" rot={8} className="shrink-0" />
+            </span>
+          </motion.button>
+        </motion.div>
+
+        {sheetsJsx}
+
+        {/* 资料 Sheet（UserProfileCard 全功能收纳） */}
+        <SheetModal isOpen={profileSheetOpen} onClose={() => setProfileSheetOpen(false)} position="bottom" title="用户资料">
+          <UserProfileCard />
+        </SheetModal>
+      </P5RPage>
+    );
+  }
 
   // ── P3R（蓝频道）形态：p3-menu-reference-v2 1:1 ── 蓝斜块大标 → 用户区 →
   //    阶梯瀑布入口列（首项蓝实心+洋红角，逐项右缩进）；SYSTEM 竖排巨幽灵字

@@ -9,6 +9,7 @@
  */
 import { motion } from 'motion/react';
 import { useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import { useAppStore } from '@/store';
 import { useCloudStore } from '@/store/cloud';
 import { BackButton } from '@/components/BackButton';
@@ -28,6 +29,7 @@ import { downloadBackup, copyBackupToClipboard, readBackupFile } from '@/service
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P4Flower, P4Sparkle } from '@/ui/p4Kit';
 import { P3R, P3RPage, GhostWords, SectionMark, SlantButton, P3PageHeader, CodeChip, slantClip } from '@/components/p3r/kit';
+import { P5R, P5_FONT, P5Panel, P5Collage, P5Star, P5Sparkle, P5Dots, P5Slab, P5RPage } from '@/components/p5r/kit';
 
 // P3R 备份双钮图标（设计稿：白色软盘 / 蓝色文档，线稿风）
 const DiskIcon = () => (
@@ -436,6 +438,266 @@ export const Account = () => {
       />
     </>
   );
+
+  // ── P5R（红频道）形态：P5UI/p5-account-flat-newsprint-v1 1:1；功能逻辑与默认形态完全同源 ──
+  if (useUiChannel() === 'p5') {
+    // 黑楔节标（左红星 + 白字 + 灰缀）
+    const WedgeHead = ({ zh, en }: { zh: string; en: string }) => (
+      <div className="relative inline-block" style={{ transform: 'rotate(-1deg)' }}>
+        <span aria-hidden className="absolute -inset-[2.5px]" style={{ background: P5R.paper, clipPath: 'polygon(14px 0, 100% 0, calc(100% - 18px) 100%, 0 100%)' }} />
+        <span className="relative flex items-center gap-2 py-1.5 pl-5 pr-9" style={{ background: '#050505', clipPath: 'polygon(14px 0, 100% 0, calc(100% - 18px) 100%, 0 100%)' }}>
+          <P5Star size={15} fill={P5R.red} className="shrink-0" />
+          <span className="text-[17px] font-black leading-none tracking-wide text-white" style={{ fontFamily: P5_FONT }}>{zh}</span>
+          <span className="text-[12px] font-black leading-none" style={{ color: P5R.greyLight }}>· {en}</span>
+        </span>
+      </div>
+    );
+    // 小黑楔子标（备份导出 / 从备份恢复 / 危险区域）
+    const SubWedge = ({ children }: { children: ReactNode }) => (
+      <span className="inline-block px-3 py-1 text-[13px] font-black leading-none text-white" style={{ background: '#050505', clipPath: 'polygon(0 0, 100% 0, calc(100% - 10px) 100%, 0 100%)', fontFamily: P5_FONT }}>{children}</span>
+    );
+    // 代码片（黑底白 mono）
+    const Code5 = ({ children }: { children: ReactNode }) => (
+      <code className="px-1.5 py-0.5 font-mono text-[12px] font-bold text-white" style={{ background: '#050505' }}>{children}</code>
+    );
+    return (
+      <P5RPage className="overflow-hidden">
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="relative pb-10">
+          {/* ── 页头：拼贴「账号与数据」+ ACCOUNT 纸条（O=红星）+ 红斜块星群 ── */}
+          <header className="relative pt-2">
+            <div aria-hidden className="pointer-events-none absolute -inset-x-4 -top-6 h-[240px]" style={{ zIndex: -1 }}>
+              <P5Slab color={P5R.red} seed={171} rot={-11} style={{ left: -50, top: 40, width: 240, height: 150 }} />
+              <P5Slab color={P5R.redDeep} seed={172} rot={16} style={{ right: -70, top: -20, width: 260, height: 180 }} />
+              <P5Star size={30} fill={P5R.red} rot={-14} className="absolute" style={{ left: 4, top: 0 }} />
+              <P5Star size={22} fill={P5R.red} rot={12} className="absolute" style={{ right: 10, top: 8 }} />
+              <P5Star size={18} fill="#050505" rot={20} className="absolute" style={{ right: 60, top: 130 }} />
+              <P5Dots className="absolute" style={{ left: 0, top: 130, width: 80, height: 80 }} color="#5c0004" />
+            </div>
+            <div className="flex items-start gap-2">
+              <button
+                type="button"
+                onClick={() => setCurrentPage('menu')}
+                aria-label="返回"
+                className="mt-2 flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c00008]"
+                style={{ background: P5R.paper, border: '2.5px solid #050505', boxShadow: '3px 3px 0 #000000' }}
+              >
+                <span aria-hidden className="h-0 w-0 border-y-[7px] border-y-transparent border-r-[11px]" style={{ borderRightColor: '#050505' }} />
+              </button>
+              <div className="min-w-0">
+                <P5Collage
+                  size={35}
+                  tiles={[
+                    { ch: '账', bg: P5R.paper, fg: P5R.red, scale: 1.08, rot: -4, dy: 0 },
+                    { ch: '号', bg: P5R.paper, fg: P5R.ink, rot: 3, dy: 8 },
+                    { ch: '与', bg: P5R.paper, fg: P5R.ink, scale: 0.82, rot: -2, dy: 4 },
+                    { ch: '数', bg: P5R.red, fg: P5R.ink, scale: 1.06, rot: 2.5, dy: 10 },
+                    { ch: '据', bg: P5R.paper, fg: P5R.ink, rot: -3, dy: 2 },
+                  ]}
+                />
+                <div className="mt-2 pl-10">
+                  <span className="inline-flex select-none items-center gap-0.5 px-3 py-1 text-[15px] font-black tracking-[0.12em]" style={{ background: P5R.paper, color: '#050505', transform: 'rotate(-1.5deg)', boxShadow: '0 0 0 2.5px #050505, 4px 4px 0 #000000', fontFamily: P5_FONT }}>
+                    ACC<P5Star size={13} fill={P5R.red} className="mx-0.5" />UNT
+                  </span>
+                </div>
+              </div>
+            </div>
+          </header>
+
+          {/* ── 数据管理 · DATA ── */}
+          <section className="relative mt-6" aria-label="数据管理">
+            <WedgeHead zh="数据管理" en="DATA" />
+            <P5Panel seed={175} jag={9} frame={4} shadow={{ x: 5, y: 6 }} className="mt-2" bodyClassName="space-y-5 px-4 py-5">
+              {exportMessage && (
+                <div className="flex items-start gap-2 px-3.5 py-2.5" style={{ border: '2.5px solid #050505', background: P5R.paper }}>
+                  <span className="min-w-0 flex-1 text-[13px] font-bold leading-snug" style={{ color: P5R.ink }}>{exportMessage}</span>
+                  <button type="button" onClick={() => setExportMessage(null)} className="shrink-0 cursor-pointer text-[13px] font-black" style={{ color: P5R.grey }} aria-label="关闭提示">✕</button>
+                </div>
+              )}
+
+              {!isNative() && (
+                <p className="text-[13.5px] font-black leading-relaxed" style={{ color: P5R.ink }}>
+                  数据保存在本地，已构建防护但以防万一如需清理浏览器缓存请注意备份数据哦
+                </p>
+              )}
+
+              {/* 备份导出 */}
+              <div className="space-y-2.5">
+                <SubWedge>备份导出</SubWedge>
+                <div className="grid grid-cols-2 gap-3">
+                  <motion.button
+                    type="button"
+                    whileTap={{ x: 2, y: 3 }}
+                    onClick={handleDownload}
+                    className="flex cursor-pointer flex-col items-center gap-1.5 py-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c00008]"
+                    style={{ background: P5R.paper, border: '3px solid #050505', boxShadow: '4px 4px 0 #000000', color: P5R.ink }}
+                  >
+                    <DiskIcon />
+                    <span className="text-[15.5px] font-black" style={{ fontFamily: P5_FONT }}>{isNative() ? '分享备份' : '下载备份'}</span>
+                  </motion.button>
+                  <motion.button
+                    type="button"
+                    whileTap={{ x: 2, y: 3 }}
+                    onClick={handleCopy}
+                    className="flex cursor-pointer flex-col items-center gap-1.5 py-4 text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c00008]"
+                    style={{ background: copyState === 'ok' ? '#050505' : P5R.red, border: '3px solid #050505', boxShadow: '4px 4px 0 #000000' }}
+                  >
+                    <DocIcon />
+                    <span className="text-[15.5px] font-black" style={{ fontFamily: P5_FONT }}>{copyState === 'ok' ? '已复制' : copyState === 'err' ? '复制失败' : '复制 JSON'}</span>
+                  </motion.button>
+                </div>
+
+                {downloadLink && (
+                  <div className="flex items-center gap-2.5 px-3.5 py-2.5" style={{ border: '2.5px solid #050505', background: P5R.paper }}>
+                    <div className="min-w-0 flex-1">
+                      <a
+                        href={downloadLink.url}
+                        download={downloadLink.filename}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block truncate text-[13px] font-black underline underline-offset-2"
+                        style={{ color: P5R.red }}
+                      >
+                        {downloadLink.filename}
+                      </a>
+                      <span className="text-[11px] font-bold" style={{ color: P5R.grey }}>{downloadLink.size} · 点击打开或另存为</span>
+                    </div>
+                    <button type="button" onClick={() => setDownloadLink(null)} className="shrink-0 cursor-pointer text-[13px] font-black" style={{ color: P5R.grey }} aria-label="关闭下载提示">✕</button>
+                  </div>
+                )}
+
+                <p className="text-[12px] font-bold" style={{ color: P5R.grey }}>背景图与 API Key 不会在备份中。</p>
+              </div>
+
+              {/* 从备份恢复 */}
+              <div className="space-y-2.5 pt-1">
+                <SubWedge>从备份恢复</SubWedge>
+                <div className="relative" style={{ border: '3px solid #050505', background: P5R.paper }}>
+                  <textarea
+                    rows={5}
+                    placeholder='粘贴备份 JSON 文本（以 {"user":.... 开头）'
+                    value={importJson}
+                    onChange={e => setImportJson(e.target.value)}
+                    className="w-full resize-none bg-transparent px-4 py-3 font-mono text-[12px] focus:outline-none"
+                    style={{ color: P5R.ink }}
+                  />
+                  <span aria-hidden className="pointer-events-none absolute bottom-0 right-0 h-8 w-8" style={{ background: P5R.red, clipPath: 'polygon(100% 0, 100% 100%, 0 100%)' }} />
+                </div>
+
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".json,application/json"
+                  className="hidden"
+                  onChange={e => { const f = e.target.files?.[0]; if (f) handleFileSelect(f); e.target.value = ''; }}
+                />
+                <motion.button
+                  type="button"
+                  whileTap={{ x: 2, y: 3 }}
+                  onClick={() => fileInputRef.current?.click()}
+                  onDragOver={e => e.preventDefault()}
+                  onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) handleFileSelect(f); }}
+                  className="flex w-full cursor-pointer items-center justify-center gap-2.5 py-3.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c00008]"
+                  style={{ background: P5R.paper, border: '3px solid #050505', boxShadow: '4px 4px 0 #000000' }}
+                >
+                  <svg viewBox="0 0 24 24" className="h-5 w-5 shrink-0" fill="#050505" aria-hidden>
+                    <path d="M2 5.5A1.5 1.5 0 0 1 3.5 4h5l2 2.5h9A1.5 1.5 0 0 1 21 8v10a1.5 1.5 0 0 1-1.5 1.5h-16A1.5 1.5 0 0 1 2 18V5.5z" />
+                  </svg>
+                  <span className="text-[15px] font-black" style={{ color: importJson ? P5R.red : P5R.ink, fontFamily: P5_FONT }}>
+                    {importJson ? '✓ 文件已加载' : isNative() ? '从文件管理器选择备份文件' : '选择备份文件'}
+                  </span>
+                  {!importJson && !isNative() && <span className="text-[13px] font-bold" style={{ color: P5R.grey }}>或拖拽</span>}
+                </motion.button>
+
+                {importJson && (
+                  <motion.button
+                    type="button"
+                    whileTap={{ x: 2, y: 3 }}
+                    onClick={handleImportData}
+                    disabled={importLoading}
+                    className="w-full cursor-pointer py-3.5 text-[16px] font-black tracking-wider text-white disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c00008]"
+                    style={{ background: importLoading ? P5R.grey : P5R.red, border: '3px solid #050505', boxShadow: '4px 4px 0 #000000', fontFamily: P5_FONT }}
+                  >
+                    {importLoading ? '正在导入…' : '确认导入（会覆盖当前数据）'}
+                  </motion.button>
+                )}
+
+                <p className="flex items-start gap-1.5 text-[12.5px] font-black leading-relaxed" style={{ color: P5R.redHot }}>
+                  <span aria-hidden>⚠</span>
+                  <span>导入会清空并覆盖当前所有数据，操作前请先导出备份。</span>
+                </p>
+              </div>
+
+              {/* 危险区域 */}
+              <div className="space-y-2.5 pt-1">
+                <SubWedge>危险区域</SubWedge>
+                <motion.button
+                  type="button"
+                  whileTap={{ x: 2, y: 3 }}
+                  onClick={() => setShowResetConfirm(true)}
+                  className="relative block w-full cursor-pointer overflow-hidden py-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c00008]"
+                  style={{ background: P5R.red, border: '3px solid #050505', boxShadow: '5px 5px 0 #000000' }}
+                >
+                  {/* 右端黑色半调渐入（设计稿签名件） */}
+                  <P5Dots className="absolute inset-y-0 right-0 w-[86px]" color="#050505" dot={2.2} gap={9} />
+                  <span className="relative flex items-center justify-center gap-3">
+                    <P5Star size={24} fill="#f8f8f6" />
+                    <span className="text-[19px] font-black tracking-wider text-white" style={{ fontFamily: P5_FONT }}>重置所有数据</span>
+                  </span>
+                </motion.button>
+                <p className="text-[12.5px] font-black" style={{ color: P5R.redHot }}>删除全部数据，无法恢复。</p>
+              </div>
+            </P5Panel>
+          </section>
+
+          {/* ── 云同步 · CLOUD ── */}
+          <section className="relative mt-7" aria-label="云同步">
+            <WedgeHead zh="云同步" en="CLOUD" />
+            <P5Panel seed={181} jag={9} frame={4} shadow={{ x: 5, y: 6 }} className="mt-2" bodyClassName="px-4 py-4">
+              {!cloudEnabled ? (
+                <div className="flex items-center gap-3.5 px-3.5 py-3.5" style={{ border: '3px solid #050505' }}>
+                  {/* 云朵 + 红箭头图标 */}
+                  <svg viewBox="0 0 48 48" className="h-11 w-11 shrink-0" aria-hidden>
+                    <path d="M14 34a9 9 0 0 1-1.4-17.9A12 12 0 0 1 36 19a8 8 0 0 1-1 15.9H14z" fill="#050505" />
+                    <path d="M24 38 V27 M24 27 l-5 5.5 M24 27 l5 5.5" stroke={P5R.red} strokeWidth="4.5" strokeLinecap="square" fill="none" />
+                  </svg>
+                  <p className="min-w-0 flex-1 text-[13.5px] font-black leading-relaxed" style={{ color: P5R.ink }}>
+                    云同步功能未配置。如需启用，请在 <Code5>.env.local</Code5> 中设置 <Code5>VITE_PB_URL</Code5>。
+                  </p>
+                </div>
+              ) : !cloudUser ? (
+                <div className="space-y-3">
+                  <div className="px-3.5 py-3.5" style={{ border: '3px solid #050505' }}>
+                    <p className="text-[13.5px] font-black leading-relaxed" style={{ color: P5R.ink }}>
+                      登录后，您在本机的数据可以同步到云端，让多台设备共享同一份成长记录。
+                    </p>
+                    <p className="mt-2 text-[12px] font-bold" style={{ color: P5R.grey }}>— 登录仅需邮箱验证码，不需要密码 —</p>
+                  </div>
+                  <motion.button
+                    type="button"
+                    whileTap={{ x: 2, y: 3 }}
+                    onClick={() => setShowLoginModal(true)}
+                    className="w-full cursor-pointer py-3.5 text-[16px] font-black tracking-wider text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c00008]"
+                    style={{ background: P5R.red, border: '3px solid #050505', boxShadow: '4px 4px 0 #000000', fontFamily: P5_FONT }}
+                  >
+                    登录云端
+                  </motion.button>
+                </div>
+              ) : (
+                <div className="space-y-4">{cloudLoggedInJsx}</div>
+              )}
+            </P5Panel>
+            {/* 底部角饰 */}
+            <div aria-hidden className="relative mt-4 h-10">
+              <P5Sparkle size={16} color={P5R.red} className="absolute left-2 top-0" />
+              <P5Star size={20} fill="#3a3831" rot={14} className="absolute right-6 top-1" />
+            </div>
+          </section>
+
+          {dialogs}
+        </motion.div>
+      </P5RPage>
+    );
+  }
 
   // ── P3R（蓝频道）形态：p3-account-reference-v2 1:1；功能逻辑与默认形态完全同源 ──
   if (p3) {

@@ -44,6 +44,38 @@ export const Toggle = ({
   const isP4 = channel === 'p4';
   const p3 = channel === 'p3';
 
+  // ── P5R（p5-settings 设计稿）：黑框方壳 + 状态字（关/开）+ 方块滑块（关=黑块右、开=红块左，字换侧）──
+  if (channel === 'p5') {
+    return (
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        aria-label={ariaLabel}
+        disabled={disabled}
+        onClick={() => onChange(!checked)}
+        className={`relative inline-flex h-[26px] w-[58px] flex-shrink-0 items-center ${disabled ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+        style={{ background: disabled ? '#dcd4c4' : '#f0e9df', border: '2.5px solid #050505', boxShadow: '2px 2px 0 #000000' }}
+      >
+        <span
+          aria-hidden
+          className={`absolute text-[11px] font-black leading-none ${checked ? 'right-[7px]' : 'left-[7px]'}`}
+          style={{ color: '#050505' }}
+        >
+          {checked ? '开' : '关'}
+        </span>
+        <motion.span
+          aria-hidden
+          className="absolute top-[1px] h-[19px] w-[24px]"
+          style={{ background: checked ? '#c00008' : '#050505' }}
+          initial={false}
+          animate={{ x: checked ? 2 : 27 }}
+          transition={springSnappy}
+        />
+      </button>
+    );
+  }
+
   // p4-redraw 定稿：加大绿胶囊（48×28），白圆旋钮内嵌黑色五瓣花
   if (isP4) {
     return (
