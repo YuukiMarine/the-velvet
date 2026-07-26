@@ -18,7 +18,7 @@ import { playSound } from '@/utils/feedback';
 import { getAttributeLevelTitle } from '@/utils/attributeLevelTitles';
 import type { AttributeId, CallingCard } from '@/types';
 import { useUiChannel } from '@/ui/useUiChannel';
-import { P4Flower, P4Sparkle, P4SkyFan, P4_HEADER_BLEED } from '@/ui/p4Kit';
+import { P4Flower, P4Sparkle, P4SkyCircle, P4_HEADER_BLEED } from '@/ui/p4Kit';
 import { FlowerChart } from '@/components/FlowerChart';
 import { AttrDetailInlineP4 } from '@/components/AttrDetailInlineP4';
 
@@ -759,9 +759,10 @@ export const Dashboard = () => {
           右上角橙色太阳环 + 天空扇 + 花朵，元素出血到屏幕右缘。 */}
       {isP4 ? (
         <div className="relative -mx-4 min-h-[126px] px-4 pb-1 pt-2" style={P4_HEADER_BLEED}>
-          {/* 天空扇顶到屏幕上缘（-top-4 抵掉 main 的 pt-4）——贴 top-0 时和屏幕上缘之间
-              会留一条黄缝（用户上报）。弧环按用户裁决从首页撤掉：和天空叠在一起太吵。 */}
-          <P4SkyFan size={150} className="absolute -right-1 -top-4 opacity-95" flower={false} />
+          {/* 首页天空改与行动页同制式：整圆出血到右上角外（用户对照：行动页的圆没问题，
+              扇形的弧线终点落在屏幕右缘内、末段近乎水平，看着像被水平切了一刀）。
+              圆的弧永远越出屏幕边缘，不存在"终点落在屏内"这回事。-top 同时抵掉 main 的 pt。 */}
+          <P4SkyCircle size={210} className="absolute -right-16 -top-16 opacity-95" flower={false} />
           <P4Sparkle size={20} color="#ffffff" className="absolute right-[44%] top-3" />
           <P4Sparkle size={14} color="var(--ui-accent)" className="absolute right-[40%] top-[96px]" />
           {/* 大日期牌（压在天空上） */}

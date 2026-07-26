@@ -684,11 +684,14 @@ export const Menu = () => {
             aria-hidden
             className="pointer-events-none absolute left-[-1rem] right-[-4rem] md:left-[-2rem] md:right-[-5rem]"
             style={{
-              // 上/右多留一截：楔顺时针转 15° 后右上会甩空，靠外扩兜住不露黄角
+              // 上/右多留一截：楔顺时针转 15° 后右上会甩空。位置沿用用户已认可的档位，
+              // 右上缺口只靠把楔的两条左边拉长补（48%/46%，见 clipPath）——改 top/height
+              // 会连带把整个楔挪位，上一轮试过会滑到页面中段。
               top: 'calc(-1rem - env(safe-area-inset-top, 0px) - 80px)',
               height: '54vh',
               zIndex: -1,
-              clipPath: 'polygon(56% 0, 100% 0, 100% 39%, 0 100%)',
+              // 左边两条边加长：顶点 56%→48%（上边斜线更长）、右点 39%→46%（右缘斜线更长）
+              clipPath: 'polygon(48% 0, 100% 0, 100% 46%, 0 100%)',
               transform: 'translateY(56px) rotate(15deg)',
             }}
           >
@@ -696,8 +699,9 @@ export const Menu = () => {
               src="/assets/terminal/p4-cloud-sky.png"
               alt=""
               className="absolute inset-0 h-full w-full object-cover"
-              // objectPosition 的 Y 越大越取素材下半部——原来 42% 只截到纯蓝天，看不见云
-              style={{ objectPosition: '52% 74%', filter: 'saturate(1.15) contrast(1.06)' }}
+              // 水平翻转（用户口径：云团往右挪或翻转更合适）：素材云团在左半，
+              // 翻转后落到楔形右侧的宽区；objectPosition X 相应取镜像 (100-52)=48%
+              style={{ objectPosition: '48% 74%', filter: 'saturate(1.15) contrast(1.06)', transform: 'scaleX(-1)' }}
             />
             <div className="absolute inset-0 bg-[#00a6ff]/10 mix-blend-screen" />
           </div>
