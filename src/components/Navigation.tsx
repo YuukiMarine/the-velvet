@@ -208,7 +208,7 @@ export const Sidebar = () => {
               </span>
             )}
           </span>
-          <span className={p3 ? 'text-sm' : 'text-sm font-medium'}>黑猫</span>
+          <span className={p3 ? 'text-sm' : 'text-sm font-medium'}>助手</span>
         </motion.button>
 
         {navItems.slice(2).map(renderItem)}
@@ -394,7 +394,7 @@ export const BottomNav = () => {
             h-16 容器高度不被 w-14 按钮撑破，安全区 padding 与四格 tab 布局零跳动 */}
         <div className="relative flex-1 h-full">
           <motion.button
-            aria-label="黑猫（长按打开快捷跳转）"
+            aria-label="助手（长按打开快捷跳转）"
             whileTap={{ scale: 0.9 }}
             onClick={() => {
               // 长按已触发轮盘：吞掉随 pointerup 而来的这次 click（短按语义不受影响）

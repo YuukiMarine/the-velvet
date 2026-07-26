@@ -4,7 +4,7 @@
  * 所有 provider 均走 OpenAI 兼容的 /chat/completions 端点
  */
 
-export type ApiProvider = 'openai' | 'deepseek' | 'kimi' | 'gemini' | 'minimax';
+export type ApiProvider = 'openai' | 'deepseek' | 'kimi' | 'qwen' | 'gemini' | 'minimax';
 
 export interface ProviderConfig {
   id: ApiProvider;
@@ -44,6 +44,15 @@ export const AI_PROVIDERS: ProviderConfig[] = [
     defaultBaseUrl: 'https://api.moonshot.cn/v1', // 国际 Key 改 https://api.moonshot.ai/v1
     defaultModel: 'kimi-k2.5',
     hint: 'kimi-k2.5',
+  },
+  {
+    id: 'qwen',
+    label: '千问',
+    // 阿里云百炼的 OpenAI 兼容端点；国际站 Key 改 https://dashscope-intl.aliyuncs.com/compatible-mode/v1
+    defaultBaseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    // qwen-plus 是稳定别名（始终指向当前 Qwen-Plus），不随版本迭代失效
+    defaultModel: 'qwen-plus',
+    hint: 'qwen-plus',
   },
   {
     id: 'gemini',

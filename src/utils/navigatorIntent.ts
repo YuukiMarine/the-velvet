@@ -332,7 +332,7 @@ async function triageActions(
   const s = useAppStore.getState();
   const due = s.getDueTodosToday().filter((t) => !s.getTodayTodoProgress(t.id).isComplete);
   // 只带最近 6 条摘录：指代消解够用，且上下文永远短小——判定质量不随对话变长而劣化
-  const recent = history.slice(-6).map((h) => `${h.role === 'cat' ? '黑猫' : '用户'}：${h.text.slice(0, 80)}`).join('\n');
+  const recent = history.slice(-6).map((h) => `${h.role === 'cat' ? 'AI' : '用户'}：${h.text.slice(0, 80)}`).join('\n');
   const user = [
     recent ? `【最近对话】\n${recent}` : '',
     due.length ? `【今日未完成待办（completeTodo 用）】\n${due.slice(0, 12).map((t) => `- id=${t.id} 「${t.title}」`).join('\n')}` : '【今日无未完成待办】',

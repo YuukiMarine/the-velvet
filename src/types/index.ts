@@ -350,7 +350,17 @@ export interface Settings {
   /** 羁绊页视图：专辑墙（默认）/ 列表；右上角切换、持久记忆（PRD_V2.5_FINAL §5.3） */
   confidantViewMode?: 'wall' | 'list';
   // AI 总结功能配置
-  summaryApiProvider?: 'openai' | 'deepseek' | 'kimi' | 'gemini' | 'minimax';
+  summaryApiProvider?: 'openai' | 'deepseek' | 'kimi' | 'qwen' | 'gemini' | 'minimax';
+  /**
+   * 各服务商独立存档（配好多家、点胶囊即切）。
+   * 上面 summaryApiKey / summaryApiBaseUrl / summaryModel / navigatorModel 是**当前生效**的
+   * 那一份（所有消费方只读它们，无需感知本表）；切换服务商时先把生效值存回旧家的档，
+   * 再把新家的档载入生效位。verifiedAt = 该家最近一次「测试连接」成功的时间戳（亮绿灯用）。
+   */
+  aiProfiles?: Partial<Record<
+    'openai' | 'deepseek' | 'kimi' | 'qwen' | 'gemini' | 'minimax',
+    { key?: string; baseUrl?: string; model?: string; navModel?: string; verifiedAt?: number }
+  >>;
   summaryApiKey?: string;
   summaryApiBaseUrl?: string;
   summaryModel?: string;

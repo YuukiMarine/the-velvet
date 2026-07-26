@@ -8,7 +8,7 @@ import { db } from '@/db';
 import { PageTitle } from '@/components/PageTitle';
 import { BackButton } from '@/components/BackButton';
 import { useRipple } from '@/components/RippleEffect';
-import { AI_PROVIDERS, getProviderConfig, testAIConnection, fetchAvailableModels, type TestResult } from '@/utils/aiProviders';
+import { AI_PROVIDERS, getProviderConfig, testAIConnection, fetchAvailableModels, type TestResult, type ApiProvider } from '@/utils/aiProviders';
 import { Toggle } from '@/components/Toggle';
 import NotificationSettings from '@/components/NotificationSettings';
 import { NavigatorSettings } from '@/components/navigator/NavigatorSettings';
@@ -671,10 +671,73 @@ export const Settings = () => {
     if (result.ok) {
       setApiTestStatus('ok');
       setApiTestMessage(`连接成功 · ${result.model} · ${result.latencyMs} ms`);
+      // 成功即落库：绿灯要能跨刷新/跨切换保留（用户口径「已配置」感知太弱）
+      const pv = settings.summaryApiProvider ?? 'openai';
+      updateSettings({
+        aiProfiles: {
+          ...(settings.aiProfiles ?? {}),
+          [pv]: { ...(settings.aiProfiles?.[pv] ?? {}), key: keyToTest, verifiedAt: Date.now() },
+        },
+      });
     } else {
       setApiTestStatus('error');
       setApiTestMessage(result.error);
     }
+  };
+
+  // ── 多服务商存档：切胶囊 = 存回旧家 + 载入新家（生效位仍是 summaryApi* 四项）──
+  const activeProvider = settings.summaryApiProvider ?? 'openai';
+  const switchProvider = (next: ApiProvider) => {
+    if (next === activeProvider) return;
+    const profiles = { ...(settings.aiProfiles ?? {}) };
+    profiles[activeProvider] = {
+      ...(profiles[activeProvider] ?? {}),
+      key: summaryApiKeyDraft.trim() || settings.summaryApiKey || undefined,
+      baseUrl: settings.summaryApiBaseUrl,
+      model: settings.summaryModel,
+      navModel: settings.navigatorModel,
+    };
+    const inc = profiles[next] ?? {};
+    updateSettings({
+      aiProfiles: profiles,
+      summaryApiProvider: next,
+      summaryApiKey: inc.key ?? '',
+      summaryApiBaseUrl: inc.baseUrl,
+      summaryModel: inc.model,
+      navigatorModel: inc.navModel,
+    });
+    setSummaryApiKeyDraft(inc.key ?? '');
+    setApiTestStatus('idle');
+    setApiTestMessage('');
+  };
+
+  /** 该服务商是否已存过 Key（胶囊上打勾） */
+  const providerHasKey = (id: ApiProvider) =>
+    id === activeProvider
+      ? !!(summaryApiKeyDraft.trim() || settings.summaryApiKey?.trim())
+      : !!settings.aiProfiles?.[id]?.key?.trim();
+  /** 该服务商是否验证过（胶囊亮绿点） */
+  const providerVerified = (id: ApiProvider) =>
+    id === activeProvider
+      ? apiTestStatus === 'ok' || !!settings.aiProfiles?.[id]?.verifiedAt
+      : !!settings.aiProfiles?.[id]?.verifiedAt;
+
+  const savedProviderCount = AI_PROVIDERS.filter(p => providerHasKey(p.id)).length;
+  const keyDirty = summaryApiKeyDraft.trim() !== (settings.summaryApiKey ?? '').trim();
+  const saveActiveKey = () => {
+    const k = summaryApiKeyDraft.trim();
+    const pv = activeProvider;
+    updateSettings({
+      summaryApiKey: k,
+      aiProfiles: {
+        ...(settings.aiProfiles ?? {}),
+        // 改了 Key 就作废这家的绿灯，必须重新测
+        [pv]: { ...(settings.aiProfiles?.[pv] ?? {}), key: k || undefined, verifiedAt: undefined },
+      },
+    });
+    setSummaryApiKeySaved(true);
+    setApiTestStatus('idle');
+    setApiTestMessage('');
   };
 
   const effectivePresets: SummaryPromptPreset[] = settings.summaryPromptPresets?.length
@@ -717,7 +780,7 @@ export const Settings = () => {
   const sections = [
     { id: 'theme', label: '主题', icon: '🎨' },
     { id: 'personalize', label: '体验个性化', icon: '⚙️' },
-    { id: 'navigator', label: '黑猫', icon: '◈' },
+    { id: 'navigator', label: '助手', icon: '◈' },
     { id: 'notifications', label: '通知提醒', icon: '🔔' },
     { id: 'summary', label: 'AI 总结', icon: '✨' }
   ];
@@ -2055,13 +2118,27 @@ export const Settings = () => {
                         className={`w-full flex items-center gap-2.5 px-4 py-3 bg-gray-50 dark:bg-gray-800/60 text-left ${connOpen ? 'border-b border-gray-100 dark:border-gray-700/60' : ''}`}
                       >
                         <span className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider shrink-0">连接</span>
-                        <span className="flex-1 min-w-0 truncate text-xs font-semibold">
+                        <span className="flex-1 min-w-0 flex items-center gap-1.5 text-xs font-semibold">
                           {settings.summaryApiKey?.trim() ? (
-                            <span className={apiTestStatus === 'ok' ? 'text-green-600 dark:text-green-400' : 'text-gray-600 dark:text-gray-300'}>
-                              {apiTestStatus === 'ok' ? '✓ ' : ''}{getProviderConfig(provider).label} · {apiTestStatus === 'ok' ? '连接正常' : '已配置'}
-                            </span>
+                            <>
+                              {/* 绿灯 = 该服务商测过且成功（落库，跨刷新保留）；灰灯 = 存了 Key 但没验证过 */}
+                              <span
+                                aria-hidden
+                                className={`h-2 w-2 shrink-0 rounded-full ${providerVerified(activeProvider)
+                                  ? 'bg-green-500 shadow-[0_0_5px_rgba(34,197,94,0.9)]'
+                                  : 'bg-gray-300 dark:bg-gray-600'}`}
+                              />
+                              <span className={`truncate ${providerVerified(activeProvider) ? 'text-green-600 dark:text-green-400' : 'text-gray-600 dark:text-gray-300'}`}>
+                                {getProviderConfig(provider).label} · {providerVerified(activeProvider) ? '连接正常' : '待测试'}
+                              </span>
+                              {savedProviderCount > 1 && (
+                                <span className="shrink-0 rounded-full bg-gray-100 px-1.5 py-px text-[10px] font-bold text-gray-500 dark:bg-gray-700 dark:text-gray-400">
+                                  共 {savedProviderCount} 家
+                                </span>
+                              )}
+                            </>
                           ) : (
-                            <span className="text-amber-600 dark:text-amber-400">未配置 —— 展开填写 API Key</span>
+                            <span className="text-amber-600 dark:text-amber-400 truncate">未配置 —— 展开填写 API Key</span>
                           )}
                         </span>
                         <span aria-hidden className={`shrink-0 text-gray-400 transition-transform ${connOpen ? 'rotate-180' : ''}`}>▾</span>
@@ -2069,30 +2146,52 @@ export const Settings = () => {
                       {connOpen && (
                       <div className="p-4 space-y-4 dark:bg-gray-800/20">
 
-                        {/* 提供商 */}
+                        {/* 提供商：每家一份独立存档，点即切换（打勾=已存 Key，绿点=测过且成功） */}
                         <div className="space-y-1.5">
-                          <p className="text-xs font-medium text-gray-500 dark:text-gray-400">提供商</p>
+                          <div className="flex items-baseline justify-between gap-2">
+                            <p className="text-xs font-medium text-gray-500 dark:text-gray-400">提供商</p>
+                            <p className="text-[11px] text-gray-400 dark:text-gray-500">各家 Key 独立保存，点一下即切换</p>
+                          </div>
                           <div className="grid grid-cols-3 gap-1.5">
-                            {AI_PROVIDERS.map(p => (
-                              <button
-                                key={p.id}
-                                onClick={() => { updateSettings({ summaryApiProvider: p.id }); setApiTestStatus('idle'); setApiTestMessage(''); }}
-                                className={`py-2.5 rounded-xl text-xs font-bold transition-all border ${
-                                  provider === p.id
-                                    ? 'bg-primary text-white border-primary shadow-sm'
-                                    : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-600'
-                                }`}
-                              >
-                                <div>{p.label}</div>
-                                <div className="opacity-55 font-normal mt-0.5">{p.hint}</div>
-                              </button>
-                            ))}
+                            {AI_PROVIDERS.map(p => {
+                              const isActive = provider === p.id;
+                              const hasKey = providerHasKey(p.id);
+                              const verified = providerVerified(p.id);
+                              return (
+                                <button
+                                  key={p.id}
+                                  onClick={() => switchProvider(p.id)}
+                                  className={`relative py-2.5 rounded-xl text-xs font-bold transition-all border ${
+                                    isActive
+                                      ? 'bg-primary text-white border-primary shadow-sm'
+                                      : hasKey
+                                      ? 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 border-primary/35'
+                                      : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-600'
+                                  }`}
+                                >
+                                  {hasKey && (
+                                    <span
+                                      aria-hidden
+                                      className={`absolute right-1.5 top-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full text-[9px] font-black leading-none ${
+                                        verified
+                                          ? 'bg-green-500 text-white shadow-[0_0_4px_rgba(34,197,94,0.85)]'
+                                          : isActive ? 'bg-white/30 text-white' : 'bg-gray-200 text-gray-500 dark:bg-gray-600 dark:text-gray-300'
+                                      }`}
+                                    >
+                                      ✓
+                                    </span>
+                                  )}
+                                  <div>{p.label}</div>
+                                  <div className="opacity-55 font-normal mt-0.5">{p.hint}</div>
+                                </button>
+                              );
+                            })}
                           </div>
                         </div>
 
                         {/* API Key */}
                         <div className="space-y-1.5">
-                          <p className="text-xs font-medium text-gray-500 dark:text-gray-400">API 密钥</p>
+                          <p className="text-xs font-medium text-gray-500 dark:text-gray-400">{getProviderConfig(provider).label} 的 API 密钥</p>
                           <div className="flex gap-2">
                             <input
                               type="password"
@@ -2101,15 +2200,20 @@ export const Settings = () => {
                               placeholder="sk-..."
                               className="flex-1 min-w-0 px-3 py-2.5 text-sm border border-gray-200 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-primary"
                             />
+                            {/* 保存态由「草稿 vs 已存值」实时推导，不再依赖一次性 state——
+                                否则切页回来按钮又变回「保存」，用户以为没存上（用户上报感知弱） */}
                             <button
-                              onClick={() => { updateSettings({ summaryApiKey: summaryApiKeyDraft }); setSummaryApiKeySaved(true); }}
+                              onClick={saveActiveKey}
+                              disabled={!keyDirty && !!settings.summaryApiKey?.trim()}
                               className={`px-4 py-2.5 rounded-xl text-sm font-bold transition-all flex-shrink-0 whitespace-nowrap ${
-                                summaryApiKeySaved
+                                !keyDirty && settings.summaryApiKey?.trim()
                                   ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400'
                                   : 'bg-primary text-white'
                               }`}
                             >
-                              {summaryApiKeySaved ? '✓ 已保存' : '保存'}
+                              {!keyDirty && settings.summaryApiKey?.trim()
+                                ? (summaryApiKeySaved ? '✓ 已保存' : '✓ 已存')
+                                : '保存'}
                             </button>
                           </div>
                           <div className="flex items-center gap-2">
@@ -2134,7 +2238,9 @@ export const Settings = () => {
                               </span>
                             )}
                           </div>
-                          <p className="text-[11px] text-gray-400 dark:text-gray-500">Key 仅保存在本地设备，不会上传。测试前请先保存 Key。</p>
+                          <p className="text-[11px] text-gray-400 dark:text-gray-500">
+                            Key 仅保存在本地设备，不会上传。测试连接成功后这家会亮绿灯（换 Key 需重新测试）。
+                          </p>
                         </div>
 
                         {/* 高级：自定义地址（连接级配置，跟 provider/Key 同卡） */}
@@ -2204,9 +2310,9 @@ export const Settings = () => {
                           />
                         </div>
 
-                        {/* 黑猫对话模型（对话档） */}
+                        {/* 助手对话模型（对话档） */}
                         <div className="space-y-1.5 pt-3 border-t border-gray-100 dark:border-gray-700/50">
-                          <p className="text-xs font-medium text-gray-500 dark:text-gray-400">黑猫对话模型 · 对话档</p>
+                          <p className="text-xs font-medium text-gray-500 dark:text-gray-400">助手对话模型 · 对话档</p>
                           <p className="text-[11px] text-gray-400 dark:text-gray-500">聊天、每日问候、人格生成走这档——对话值得用更好的模型。留空则跟随通用档。</p>
                           {modelOptions.length > 0 && (
                             <select
