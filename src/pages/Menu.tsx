@@ -682,19 +682,22 @@ export const Menu = () => {
               又不会掉到 App 根的黄底后面。 */}
           <div
             aria-hidden
-            className="pointer-events-none absolute left-[-1rem] right-[-1rem] md:left-[-2rem] md:right-[-2rem]"
+            className="pointer-events-none absolute left-[-1rem] right-[-4rem] md:left-[-2rem] md:right-[-5rem]"
             style={{
-              top: 'calc(-1rem - env(safe-area-inset-top, 0px))',
-              height: '42vh',
+              // 上/右多留一截：楔顺时针转 15° 后右上会甩空，靠外扩兜住不露黄角
+              top: 'calc(-1rem - env(safe-area-inset-top, 0px) - 80px)',
+              height: '54vh',
               zIndex: -1,
               clipPath: 'polygon(56% 0, 100% 0, 100% 39%, 0 100%)',
+              transform: 'translateY(56px) rotate(15deg)',
             }}
           >
             <img
               src="/assets/terminal/p4-cloud-sky.png"
               alt=""
               className="absolute inset-0 h-full w-full object-cover"
-              style={{ objectPosition: '52% 42%', filter: 'saturate(1.15) contrast(1.06)' }}
+              // objectPosition 的 Y 越大越取素材下半部——原来 42% 只截到纯蓝天，看不见云
+              style={{ objectPosition: '52% 74%', filter: 'saturate(1.15) contrast(1.06)' }}
             />
             <div className="absolute inset-0 bg-[#00a6ff]/10 mix-blend-screen" />
           </div>
@@ -709,7 +712,8 @@ export const Menu = () => {
               >
                 菜单
               </h1>
-              <div className="mt-1 text-xs font-black tracking-[0.2em] text-[#131313]">
+              {/* 学生证放大 30% 后左栏变窄，字距/字号同步收一档才不折行 */}
+              <div className="mt-1 whitespace-nowrap text-[10px] font-black tracking-[0.14em] text-[#131313]">
                 CHANNEL DIRECTORY <span className="text-[var(--p4-orange,#f9a11b)]">04</span>
               </div>
             </div>
@@ -722,52 +726,52 @@ export const Menu = () => {
               initial={{ opacity: 0, y: -8, rotate: 3 }}
               animate={{ opacity: 1, y: 0, rotate: 3 }}
               whileTap={TAP}
-              className="relative mt-1 w-[190px] shrink-0 overflow-hidden rounded-[14px] bg-[#fff6d0] text-left"
+              className="relative mt-1 w-[247px] shrink-0 overflow-hidden rounded-[18px] bg-[#fff6d0] text-left"
               style={{ boxShadow: '0 4px 0 rgba(19,19,19,0.2)' }}
             >
-              <div className="flex items-center justify-between bg-[#131313] px-2.5 py-1">
-                <span className="flex items-center gap-1 text-[9px] font-black tracking-[0.14em] text-[var(--ui-bg)]">
-                  <P4Flower size={9} color="var(--ui-bg)" />
+              <div className="flex items-center justify-between bg-[#131313] px-3 py-1.5">
+                <span className="flex items-center gap-1.5 text-[12px] font-black tracking-[0.14em] text-[var(--ui-bg)]">
+                  <P4Flower size={12} color="var(--ui-bg)" />
                   STUDENT PASS
                 </span>
-                <span className="text-[9px] font-black tracking-[0.12em] text-white/80">CH 04</span>
+                <span className="text-[12px] font-black tracking-[0.12em] text-white/80">CH 04</span>
               </div>
-              <div className="flex gap-2 px-2.5 py-2">
+              <div className="flex gap-2.5 px-3 py-2.5">
                 <div
-                  className="relative h-[46px] w-[38px] shrink-0 overflow-hidden rounded-md bg-[var(--ui-accent)]"
-                  style={{ boxShadow: '0 0 0 2px #131313' }}
+                  className="relative h-[60px] w-[50px] shrink-0 overflow-hidden rounded-lg bg-[var(--ui-accent)]"
+                  style={{ boxShadow: '0 0 0 3px #131313' }}
                 >
                   {user?.avatarDataUrl ? (
                     <img src={user.avatarDataUrl} alt="" className="h-full w-full object-cover" />
                   ) : (
-                    <P4Flower size={24} color="#fff6d0" className="absolute left-1/2 top-1/2 -ml-3 -mt-3" />
+                    <P4Flower size={31} color="#fff6d0" className="absolute left-1/2 top-1/2 -ml-4 -mt-4" />
                   )}
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-baseline gap-1">
                     <span
-                      className="min-w-0 flex-1 truncate text-[15px] font-black leading-tight text-[#131313]"
+                      className="min-w-0 flex-1 truncate text-[19px] font-black leading-tight text-[#131313]"
                       style={{ fontFamily: 'var(--p4-display-font, serif)' }}
                     >
                       {user?.name || '客人'}
                     </span>
-                    <span className="shrink-0 rounded-full bg-[#131313] px-1.5 py-[3px] text-[9px] font-black leading-none text-white">
+                    <span className="shrink-0 rounded-full bg-[#131313] px-2 py-[4px] text-[12px] font-black leading-none text-white">
                       LV <span className="tabular-nums">{totalLevel}</span>
                     </span>
                   </div>
-                  <div className="mt-1 flex items-baseline gap-1.5 text-[10px] font-black text-[#131313]">
+                  <div className="mt-1.5 flex items-baseline gap-2 text-[13px] font-black text-[#131313]">
                     <span>总点数</span>
                     <span aria-hidden className="flex-1 border-b-2 border-dotted border-[#131313]/30" />
                     <span className="tabular-nums text-[var(--p4-orange,#f9a11b)]">{p4TotalPoints}</span>
                   </div>
-                  <div className="mt-0.5 flex items-baseline gap-1.5 text-[10px] font-black text-[#131313]">
+                  <div className="mt-1 flex items-baseline gap-2 text-[13px] font-black text-[#131313]">
                     <span>入学</span>
                     <span aria-hidden className="flex-1 border-b-2 border-dotted border-[#131313]/30" />
                     <span className="tabular-nums">{p4Admission}</span>
                   </div>
                 </div>
               </div>
-              <div aria-hidden className="flex h-3 items-stretch gap-[2px] px-2.5 pb-2 opacity-75">
+              <div aria-hidden className="flex h-4 items-stretch gap-[3px] px-3 pb-2.5 opacity-75">
                 {[3, 1, 2, 1, 3, 2, 1, 1, 2, 3, 1, 2, 1, 1, 3].map((w, bi) => (
                   <span key={bi} className="bg-[#131313]" style={{ width: w }} />
                 ))}
@@ -864,8 +868,8 @@ export const Menu = () => {
                           <motion.span
                             key="hl"
                             aria-hidden
-                            // 短边（左缘）再高几像素；长边收到 ~70%；整体半透明
-                            className="absolute -inset-y-2 -left-4 w-[72%] overflow-hidden"
+                            // 长边再 -30%、整体再 -20%；overflow 放开，避免把抖动中的顶点切平
+                            className="absolute -inset-y-0.5 -left-3 w-[40%]"
                             style={{ transformOrigin: 'left center' }}
                             initial={{ scaleX: 0, opacity: 0 }}
                             animate={{ scaleX: 1, opacity: 0.5 }}

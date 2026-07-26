@@ -20,6 +20,7 @@ import { useBackHandler } from '@/utils/useBackHandler';
 import { useBoldness } from '@/utils/boldness';
 import { terminalChannel } from '@/utils/terminalSkin';
 import { P3, P3_WATER_WIDE } from '@/components/terminal/p3Kit';
+import { P4ArcRings, P4Flower, P4Sparkle } from '@/ui/p4Kit';
 import { NavigatorActionForm } from './NavigatorActionForm';
 import { PresetAvatar } from './PresetAvatar';
 import { NavigatorNotebook } from './NavigatorNotebook';
@@ -290,6 +291,38 @@ export const NavigatorWindow = () => {
                     style={{ maskImage: 'linear-gradient(180deg, transparent 0%, #000 62%)', WebkitMaskImage: 'linear-gradient(180deg, transparent 0%, #000 62%)' }}
                   />
                 </div>
+              </div>
+            )}
+
+            {/* P4 舞台装饰：聊天页原本是一整片纯黄（用户上报不好看），补上与全站同源的
+                巨型橙弧环 + 大花剪影 + 星闪。静态一层、pointer-events-none；
+                正文容器自带 relative，天然压在其上。 */}
+            {isP4 && (
+              <div aria-hidden className="pointer-events-none absolute inset-0 select-none overflow-hidden">
+                <P4ArcRings
+                  size={620}
+                  className="absolute"
+                  style={{ right: '-34vw', top: '-26vh' }}
+                  rings={[
+                    [0.34, 40, 'rgba(249,161,27,0.22)'],
+                    [0.58, 30, 'rgba(255,200,60,0.22)'],
+                    [0.80, 22, 'rgba(249,161,27,0.14)'],
+                  ]}
+                />
+                <P4ArcRings
+                  size={480}
+                  className="absolute"
+                  style={{ left: '-30vw', bottom: '-20vh' }}
+                  rings={[
+                    [0.44, 30, 'rgba(249,161,27,0.15)'],
+                    [0.72, 20, 'rgba(255,214,90,0.18)'],
+                  ]}
+                />
+                <P4Flower size={240} color="rgba(255,248,214,0.36)" className="absolute" style={{ left: '-70px', top: '26%' }} />
+                <P4Flower size={150} color="rgba(255,248,214,0.28)" className="absolute" style={{ right: '-28px', bottom: '22%' }} />
+                <P4Sparkle size={26} color="rgba(255,255,255,0.5)" className="absolute" style={{ left: '14%', top: '13%' }} />
+                <P4Sparkle size={18} color="rgba(46,107,224,0.3)" className="absolute" style={{ right: '16%', top: '34%' }} />
+                <P4Sparkle size={22} color="rgba(249,161,27,0.4)" className="absolute" style={{ left: '10%', bottom: '18%' }} />
               </div>
             )}
 
