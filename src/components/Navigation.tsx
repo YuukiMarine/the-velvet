@@ -11,6 +11,10 @@ import { playHeavyTransition } from '@/ui/transitionDirector';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P4Sparkle } from '@/ui/p4Kit';
 import { P3R, slantClip, TitlePeriod } from '@/components/p3r/kit';
+import { P5R, roughQuad, starPts } from '@/components/p5r/kit';
+
+// P5 侧栏选中角标的五角星点集（模块级算一次）
+const starPtsSidebar = starPts(50, 50, 48);
 
 // ── SVG 图标组件（24px viewBox / stroke 1.8 / filled 双态制式）──────────────
 
@@ -107,6 +111,8 @@ export const Sidebar = () => {
   const openNavigator = useNavigatorStore((s) => s.open);
   // P3R：蓝主题侧栏换形（水面底 + 蓝斜块选中 + 洋红角），其余主题不受影响
   const p3 = useUiChannel() === 'p3';
+  // P5R：红主题侧栏换形（纯黑底 + 猩红斜块选中 + 纸色字）
+  const p5 = useUiChannel() === 'p5';
 
   const renderItem = (item: NavItem) => {
     const active = isNavActive(item.id, currentPage);
@@ -127,17 +133,27 @@ export const Sidebar = () => {
           ? `relative w-full flex items-center gap-3 px-4 py-2.5 transition-all duration-150 cursor-pointer text-sm font-black ${
               active ? 'text-white' : 'hover:bg-[#e2f2fa]'
             }`
+          : p5
+            ? `relative w-full flex items-center gap-3 px-4 py-2.5 transition-all duration-150 cursor-pointer text-sm font-black ${
+                active ? 'text-white' : 'text-[#f0e9df]/85 hover:bg-white/10'
+              }`
           : `w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150 cursor-pointer ${
               active
                 ? 'bg-primary/10 dark:bg-primary/15 text-primary'
                 : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-200'
             }`}
-        style={p3 ? (active ? { clipPath: slantClip(10), background: P3R.blue } : { clipPath: slantClip(10), color: P3R.inkSoft }) : undefined}
+        style={p3
+          ? (active ? { clipPath: slantClip(10), background: P3R.blue } : { clipPath: slantClip(10), color: P3R.inkSoft })
+          : p5
+            ? (active ? { clipPath: roughQuad(310 + item.id.charCodeAt(0), 5), background: P5R.red } : { clipPath: roughQuad(310 + item.id.charCodeAt(0), 5) })
+            : undefined}
       >
         <item.Icon filled={active} />
-        <span className={p3 ? 'text-sm' : `text-sm font-medium ${active ? 'font-semibold' : ''}`}>{item.label}</span>
+        <span className={p3 || p5 ? 'text-sm' : `text-sm font-medium ${active ? 'font-semibold' : ''}`}>{item.label}</span>
         {p3 ? (
           active && <span aria-hidden className="absolute bottom-0 right-4 h-[6px] w-[15px]" style={{ background: P3R.magenta, clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
+        ) : p5 ? (
+          active && <span aria-hidden className="absolute bottom-1 right-4"><svg viewBox="0 0 100 100" width={12} height={12}><polygon points={starPtsSidebar} fill="#fff" /></svg></span>
         ) : (
           active && (
             <motion.div
@@ -158,9 +174,13 @@ export const Sidebar = () => {
       transition={{ type: 'spring', stiffness: 300, damping: 30 }}
       // zClass.nav：p3 页面壳带 fixed 全屏水面底（绘制序在侧栏后），无 z 的侧栏会被整条盖住（横屏上报根因）
       className={`hidden md:flex md:flex-col md:w-60 h-screen fixed left-0 top-0 ${zClass.nav} ${
-        p3 ? '' : 'bg-white dark:bg-gray-900 border-r border-gray-100 dark:border-gray-800 shadow-sm'
+        p3 || p5 ? '' : 'bg-white dark:bg-gray-900 border-r border-gray-100 dark:border-gray-800 shadow-sm'
       }`}
-      style={p3 ? { background: 'linear-gradient(175deg, #f8fcff 0%, #eaf5fb 60%, #dfeff8 100%)', borderRight: '1px solid rgba(53,209,232,0.4)', boxShadow: '0 0 24px rgba(38,96,140,0.08)' } : undefined}
+      style={p3
+        ? { background: 'linear-gradient(175deg, #f8fcff 0%, #eaf5fb 60%, #dfeff8 100%)', borderRight: '1px solid rgba(53,209,232,0.4)', boxShadow: '0 0 24px rgba(38,96,140,0.08)' }
+        : p5
+          ? { background: '#050505', borderRight: '2px solid rgba(240,233,223,0.35)' }
+          : undefined}
     >
       <div className="px-6 pt-8 pb-6">
         <div className="flex items-center gap-3">
@@ -173,10 +193,12 @@ export const Sidebar = () => {
                 靛蓝色房间
                 <TitlePeriod className="mb-0 ml-1 scale-[0.6]" style={{ transformOrigin: 'left bottom' }} />
               </h1>
+            ) : p5 ? (
+              <h1 className="text-[16px] font-black leading-none" style={{ color: P5R.paper }}>靛蓝色房间</h1>
             ) : (
               <h1 className="text-base font-bold text-gray-900 dark:text-white leading-none">靛蓝色房间</h1>
             )}
-            <p className={p3 ? 'mt-0.5 text-[10px] font-black tracking-[0.14em]' : 'text-[11px] text-gray-400 dark:text-gray-500 mt-0.5'} style={p3 ? { color: P3R.blue } : undefined}>THE VELVET</p>
+            <p className={p3 || p5 ? 'mt-0.5 text-[10px] font-black tracking-[0.14em]' : 'text-[11px] text-gray-400 dark:text-gray-500 mt-0.5'} style={p3 ? { color: P3R.blue } : p5 ? { color: P5R.red } : undefined}>THE VELVET</p>
           </div>
         </div>
       </div>
@@ -194,13 +216,19 @@ export const Sidebar = () => {
           }}
           className={p3
             ? 'w-full flex items-center gap-3 px-4 py-2.5 transition-all duration-150 cursor-pointer text-sm font-black hover:bg-[#e2f2fa]'
-            : 'w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150 cursor-pointer text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-200'}
-          style={p3 ? { clipPath: slantClip(10), color: P3R.inkSoft } : undefined}
+            : p5
+              ? 'w-full flex items-center gap-3 px-4 py-2.5 transition-all duration-150 cursor-pointer text-sm font-black text-[#f0e9df]/85 hover:bg-white/10'
+              : 'w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150 cursor-pointer text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-200'}
+          style={p3 ? { clipPath: slantClip(10), color: P3R.inkSoft } : p5 ? { clipPath: roughQuad(333, 5) } : undefined}
         >
           <span className="w-6 h-6 flex items-center justify-center flex-none" aria-hidden="true">
             {p3 ? (
               <span className="flex h-[20px] w-[20px] items-center justify-center" style={{ background: P3R.cyan, clipPath: slantClip(4) }}>
                 <CatSilhouetteIcon className="h-3.5 w-3.5 text-[#0a1230]" />
+              </span>
+            ) : p5 ? (
+              <span className="flex h-[20px] w-[20px] items-center justify-center" style={{ background: '#050505', border: '1.5px solid rgba(240,233,223,0.7)' }}>
+                <CatSilhouetteIcon className="h-3.5 w-3.5 text-[#c00008]" />
               </span>
             ) : (
               <span className="w-[18px] h-[18px] rotate-45 rounded-[5px] bg-primary shadow-sm shadow-primary/40 flex items-center justify-center">
@@ -208,7 +236,7 @@ export const Sidebar = () => {
               </span>
             )}
           </span>
-          <span className={p3 ? 'text-sm' : 'text-sm font-medium'}>助手</span>
+          <span className={p3 || p5 ? 'text-sm' : 'text-sm font-medium'}>助手</span>
         </motion.button>
 
         {navItems.slice(2).map(renderItem)}
@@ -219,8 +247,37 @@ export const Sidebar = () => {
 
 /** 常规 tab（移动端）：激活指示条 = 斜切平行四边形，layoutId 在四格之间滑动。
  *  P4：奶油圆顶瓷砖 + 橙星角标；P3：整格蓝斜块白字；其余：顶部小条。 */
-const NavTab = ({ item, active, onSelect, p3 = false }: { item: NavItem; active: boolean; onSelect: (e: ReactMouseEvent<HTMLButtonElement>) => void; p3?: boolean }) => {
+const NavTab = ({ item, active, onSelect, p3 = false, p5 = false }: { item: NavItem; active: boolean; onSelect: (e: ReactMouseEvent<HTMLButtonElement>) => void; p3?: boolean; p5?: boolean }) => {
   const isP4 = useUiChannel() === 'p4';
+
+  if (p5) {
+    // P5R（p5-dashboard 设计稿底导）：黑舞台上每格 = 纸白描边斜块，选中格整块猩红；
+    // 首页格图标按稿用描边五角星（设计稿首格 ☆），其余格沿用功能图标
+    const seed = 300 + item.id.length * 7 + item.id.charCodeAt(0);
+    return (
+      <motion.button
+        whileTap={{ scale: 0.93 }}
+        onClick={onSelect}
+        className={`relative mx-1 flex h-[54px] flex-1 cursor-pointer flex-col items-center justify-center self-center ${active ? 'text-white' : 'text-[#f0e9df]'}`}
+      >
+        <span aria-hidden className="absolute inset-0" style={{ background: P5R.paper, clipPath: roughQuad(seed, 5) }} />
+        <span aria-hidden className="absolute inset-[2.5px]" style={{ background: active ? P5R.red : '#050505', clipPath: roughQuad(seed + 0.3, 4) }} />
+        <div
+          className="relative flex flex-col items-center justify-center gap-1"
+          style={{ transform: 'translateY(var(--bottom-nav-content-shift, 0px))' }}
+        >
+          {item.id === 'dashboard' ? (
+            <svg viewBox="0 0 100 100" className="h-6 w-6" aria-hidden>
+              <polygon points={starPtsSidebar} fill="none" stroke="currentColor" strokeWidth={9} strokeLinejoin="miter" />
+            </svg>
+          ) : (
+            <item.Icon filled={active} />
+          )}
+          <span className="text-[10px] font-black leading-none">{item.label}</span>
+        </div>
+      </motion.button>
+    );
+  }
 
   if (isP4) {
     return (
@@ -299,6 +356,8 @@ export const BottomNav = () => {
   const isP4 = channel === 'p4';
   // P3R：蓝主题底导换形（选中整格蓝斜块 / 黑猫去菱形壳），红黄频道不受影响
   const p3 = channel === 'p3';
+  // P5R：红主题底导换形（黑舞台 + 纸描边斜块 tab + 中央六边形黑基座红猫）
+  const p5 = channel === 'p5';
 
   // P8.3 长按轮盘：◈ 按住 500ms 绽放快捷跳转半环（guide §22.5 长按时长统一口径）；
   // 短按语义不变（开黑猫）。suppressClick 挡掉长按触发后随 pointerup 而来的那次 click。
@@ -343,6 +402,7 @@ export const BottomNav = () => {
         key={item.id}
         item={item}
         p3={p3}
+        p5={p5}
         active={active}
         onSelect={(e) => {
           triggerNavFeedback();
@@ -383,7 +443,9 @@ export const BottomNav = () => {
       className={`md:hidden fixed bottom-0 left-0 right-0 ${zClass.nav} flex flex-col ${
         isP4
           ? 'bg-transparent px-1' // p4-redraw：瓷砖直接坐在黄底上，缝隙露出舞台色
-          : 'bg-white dark:bg-gray-900 border-t border-gray-100 dark:border-gray-800'
+          : p5
+            ? 'bg-black px-0.5' // p5-redraw：纯黑舞台条，纸描边瓷砖浮在其上
+            : 'bg-white dark:bg-gray-900 border-t border-gray-100 dark:border-gray-800'
       }`}
     >
       <div className="flex items-center h-[var(--bottom-nav-item-height,4rem)]">
@@ -414,15 +476,25 @@ export const BottomNav = () => {
             // 水平居中用 -ml-7（w-14 的一半）同理——translate 类靠不住；垂直居中同理走 my-auto。
             // touchAction none：长按-上滑手势期间禁掉浏览器滚动/长按系统行为。
             // P4：蓝色正圆 + 白描边 + 头顶三道黄色小放射线，不转菱形。P3R：黑猫去菱形壳——深蓝墨猫头直接坐在栏上，与四格图标同水平。
-            style={{ rotate: isP4 || p3 ? 0 : 45, touchAction: 'none' }}
-            className={`absolute left-1/2 -ml-7 w-14 h-14 flex items-center justify-center cursor-pointer select-none ${
+            // P5R：六边形黑基座 + 纸描边（设计稿中键形制），猫剪影转红——造型稿定、图标保猫（用户裁决）。
+            style={{ rotate: isP4 || p3 || p5 ? 0 : 45, touchAction: 'none' }}
+            className={`absolute left-1/2 flex items-center justify-center cursor-pointer select-none ${
               isP4
-                ? '-top-3 rounded-full bg-[var(--ui-accent)] border-[3px] border-white text-[#131313]'
+                ? '-top-3 -ml-7 w-14 h-14 rounded-full bg-[var(--ui-accent)] border-[3px] border-white text-[#131313]'
                 : p3
-                  ? 'top-0 bottom-0 my-auto text-[#0a1230]'
-                  : '-top-3 rounded-2xl bg-primary shadow-lg shadow-primary/30 text-white'
+                  ? 'top-0 bottom-0 my-auto -ml-7 w-14 h-14 text-[#0a1230]'
+                  : p5
+                    ? '-top-3.5 -ml-9 w-[72px] h-[68px] text-[#c00008]'
+                    : '-top-3 -ml-7 w-14 h-14 rounded-2xl bg-primary shadow-lg shadow-primary/30 text-white'
             }`}
           >
+            {p5 && (
+              // 六边形基座：纸白外圈 + 纯黑内面（设计稿中键），猫压在其上
+              <span aria-hidden className="pointer-events-none absolute inset-0">
+                <span className="absolute inset-0" style={{ background: P5R.paper, clipPath: 'polygon(26% 3%, 74% 3%, 99% 50%, 74% 97%, 26% 97%, 1% 50%)' }} />
+                <span className="absolute inset-[3.5px]" style={{ background: '#050505', clipPath: 'polygon(26% 3%, 74% 3%, 99% 50%, 74% 97%, 26% 97%, 1% 50%)' }} />
+              </span>
+            )}
             {isP4 && (
               // 头顶放射线（设计稿黑猫圈上的三道黄色短线）
               <svg
@@ -437,9 +509,9 @@ export const BottomNav = () => {
                 </g>
               </svg>
             )}
-            {/* 内层 -rotate-45 回正：菱形是壳，猫保持水平（字恒水平的图形版）；P4 圆壳 / P3 无壳无需回正 */}
-            <span className={`${isP4 || p3 ? '' : '-rotate-45'} flex items-center justify-center`} aria-hidden="true">
-              <CatSilhouetteIcon className={p3 ? 'w-9 h-9' : 'w-7 h-7'} />
+            {/* 内层 -rotate-45 回正：菱形是壳，猫保持水平（字恒水平的图形版）；P4 圆壳 / P3 无壳 / P5 六边形壳无需回正 */}
+            <span className={`${isP4 || p3 || p5 ? '' : '-rotate-45'} relative flex items-center justify-center`} aria-hidden="true">
+              <CatSilhouetteIcon className={p3 ? 'w-9 h-9' : p5 ? 'w-8 h-8' : 'w-7 h-7'} />
             </span>
           </motion.button>
         </div>
@@ -448,7 +520,7 @@ export const BottomNav = () => {
       </div>
       <div
         aria-hidden
-        className={isP4 ? 'bg-[var(--ui-paper)]' : 'bg-white dark:bg-gray-900'}
+        className={isP4 ? 'bg-[var(--ui-paper)]' : p5 ? 'bg-black' : 'bg-white dark:bg-gray-900'}
         style={{ height: 'var(--bottom-nav-safe-height, env(safe-area-inset-bottom, 0px))' }}
       />
       {/* P8.3 轮盘（portal 到 body；手势在 window 级跟踪，与 ◈ 的长按触发配套） */}

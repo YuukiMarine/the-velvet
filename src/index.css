@@ -57,19 +57,21 @@
   --ui-noise-opacity: 0;
 }
 
-/* P5 红 —— 反抗/夺回：黑红白三轴，斜切硬影，半调 */
+/* P5 红 —— 反抗/夺回：黑红白三轴，斜切硬影，半调
+   p5-redraw 定稿色板（P5UI/*-flat-newsprint-v1 / *-reference-v2 采样）：
+   纯黑舞台 / 猩红 #c00008 / 米白纸 #f0e9df / 橙点缀（成就数字）。 */
 :root[data-ui-channel="p5"] {
-  --ui-bg: #050505;
-  --ui-surface: #141414;
-  --ui-surface-ink: #f7f4ea;
-  --ui-paper: #f7f4ea;
-  --ui-ink: #f7f4ea;
-  --ui-muted: #9a958a;
-  --ui-accent: #e60012;
-  --ui-accent-2: #18e7d3;
-  --ui-danger: #e60012;
-  --ui-line: #050505;
-  --ui-shadow-hard: 6px 6px 0 #050505;
+  --ui-bg: #000000;
+  --ui-surface: #0d0d0d;
+  --ui-surface-ink: #f0e9df;
+  --ui-paper: #f0e9df;
+  --ui-ink: #f0e9df;
+  --ui-muted: #9b9791;
+  --ui-accent: #c00008;
+  --ui-accent-2: #e06808;
+  --ui-danger: #d90008;
+  --ui-line: #000000;
+  --ui-shadow-hard: 6px 6px 0 #000000;
   --ui-cut-md: polygon(3% 0, 100% 0, 97% 100%, 0 96%);
   --ui-radius: 4px;
   --ui-noise-opacity: 0.12;
