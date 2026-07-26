@@ -10,8 +10,10 @@
  *   · 搜索框子串过滤；空态内置「拉取全部列表」。
  *
  * mode='fast'：只列当前连接那家，写 summaryModel；
- * mode='deliberate'：列所有已配 Key 的家，写 navigatorModel + navigatorProvider
- * （选当前家时 navigatorProvider 存 undefined，保持"跟随连接"的老语义）。
+ * mode='deliberate'：列所有已配 Key 的家，写 navigatorModel + navigatorProvider；
+ * mode='assistant'：同上但写 assistantModel + assistantProvider——助手那条线单独指定，
+ *   不连带改中长期占卜（用户口径：快捷入口只该管它自己）。
+ * 后两档选当前连接那家时 provider 存 undefined，保持"跟随连接"的老语义。
  */
 import { useMemo, useState } from 'react';
 import { useAppStore } from '@/store';
@@ -20,7 +22,7 @@ import { AI_PROVIDERS, getProviderConfig, type ApiProvider } from '@/utils/aiPro
 import { familyBadge, isAggregatorList, isChatModel, refreshAllProviderModels } from '@/utils/aiModelCatalog';
 
 export const ModelPickerSheet = ({ mode, isOpen, onClose }: {
-  mode: 'fast' | 'deliberate';
+  mode: 'fast' | 'deliberate' | 'assistant';
   isOpen: boolean;
   onClose: () => void;
 }) => {
@@ -32,8 +34,13 @@ export const ModelPickerSheet = ({ mode, isOpen, onClose }: {
 
   const active = settings.summaryApiProvider ?? 'openai';
   const fast = mode === 'fast';
-  const currentPv = fast ? active : (settings.navigatorProvider ?? active);
-  const currentModel = fast ? (settings.summaryModel ?? '') : (settings.navigatorModel ?? '');
+  const assistant = mode === 'assistant';
+  const currentPv = fast ? active
+    : assistant ? (settings.assistantProvider ?? settings.navigatorProvider ?? active)
+    : (settings.navigatorProvider ?? active);
+  const currentModel = fast ? (settings.summaryModel ?? '')
+    : assistant ? (settings.assistantModel ?? '')
+    : (settings.navigatorModel ?? '');
 
   const sections = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -51,12 +58,17 @@ export const ModelPickerSheet = ({ mode, isOpen, onClose }: {
   const hasAnyList = sections.some((s) => s.all.length > 0);
 
   const pick = (pv: ApiProvider | null, model: string | null) => {
+    const scoped = pv === active ? undefined : (pv ?? undefined);
     if (fast) {
       updateSettings({ summaryModel: model || undefined });
-    } else if (!model) {
-      updateSettings({ navigatorModel: undefined, navigatorProvider: undefined });
+    } else if (assistant) {
+      updateSettings(model
+        ? { assistantModel: model, assistantProvider: scoped }
+        : { assistantModel: undefined, assistantProvider: undefined });
     } else {
-      updateSettings({ navigatorModel: model, navigatorProvider: pv === active ? undefined : (pv ?? undefined) });
+      updateSettings(model
+        ? { navigatorModel: model, navigatorProvider: scoped }
+        : { navigatorModel: undefined, navigatorProvider: undefined });
     }
     onClose();
   };
@@ -75,9 +87,15 @@ export const ModelPickerSheet = ({ mode, isOpen, onClose }: {
     ].filter(Boolean).join('\n'));
   };
 
+  const fastModel = settings.summaryModel?.trim() || getProviderConfig(active).defaultModel;
+  const delibLabel = settings.navigatorModel?.trim()
+    ? `${getProviderConfig(settings.navigatorProvider ?? active).label} · ${settings.navigatorModel.trim()}`
+    : fastModel;
   const followLabel = fast
     ? `默认（${getProviderConfig(active).defaultModel}）`
-    : `跟随快速响应（${settings.summaryModel?.trim() || getProviderConfig(active).defaultModel}）`;
+    : assistant
+      ? `跟随深思熟虑档（${delibLabel}）`
+      : `跟随快速响应（${fastModel}）`;
 
   const rowCls = (selected: boolean) =>
     `flex w-full items-center gap-2 rounded-xl border px-3 py-2.5 text-left text-sm transition ${
@@ -87,8 +105,19 @@ export const ModelPickerSheet = ({ mode, isOpen, onClose }: {
     }`;
 
   return (
-    <SheetModal isOpen={isOpen} onClose={onClose} position="bottom" title={fast ? '⚡ 快速响应 · 选择模型' : '🌙 深思熟虑 · 选择模型'} maxHeightClass="max-h-[82vh]">
+    <SheetModal
+      isOpen={isOpen}
+      onClose={onClose}
+      position="bottom"
+      title={fast ? '⚡ 快速响应 · 选择模型' : assistant ? '◈ 助手专属模型' : '🌙 深思熟虑 · 选择模型'}
+      maxHeightClass="max-h-[82vh]"
+    >
       <div className="space-y-3 pb-2">
+        {assistant && (
+          <p className="text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">
+            这里只改<b>助手</b>（对话 / 每日问候 / 人格生成）用的模型，不影响中长期占卜等其它走「深思熟虑」的功能。
+          </p>
+        )}
         <p className="text-[11px] leading-relaxed text-gray-400 dark:text-gray-500">
           按<b>平台</b>分区——模型跑在哪家、用哪把 Key 计费；条目右侧的徽标是模型<b>出身</b>：
           聚合平台（如千问）会托管别家的开源版，带「DeepSeek 系」徽标的是托管版，官方 API 请去 DeepSeek 分区选。

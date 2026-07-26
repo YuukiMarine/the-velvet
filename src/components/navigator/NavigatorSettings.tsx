@@ -10,7 +10,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useAppStore } from '@/store';
 import { useNavigatorStore } from '@/store/navigator';
 import { v4 as uuidv4 } from 'uuid';
-import { getAIConfig } from '@/utils/aiClient';
+import { getAIConfig, getDeliberateAIConfig } from '@/utils/aiClient';
 import { getProviderConfig } from '@/utils/aiProviders';
 import { ModelPickerSheet } from '@/components/ai/ModelPickerSheet';
 import { generatePersonaPrompt } from '@/utils/navigatorIntent';
@@ -329,9 +329,9 @@ export const NavigatorSettings = () => {
         >
           <span className="text-sm font-semibold text-gray-700 dark:text-gray-200">对话模型</span>
           <span className="min-w-0 flex-1 truncate text-xs text-gray-400 dark:text-gray-500">
-            {settings.navigatorModel?.trim()
-              ? `${getProviderConfig(settings.navigatorProvider ?? settings.summaryApiProvider ?? 'openai').label} · ${settings.navigatorModel.trim()}`
-              : '跟随快速响应'}
+            {settings.assistantModel?.trim()
+              ? `${getProviderConfig(settings.assistantProvider ?? settings.summaryApiProvider ?? 'openai').label} · ${settings.assistantModel.trim()}`
+              : '跟随深思熟虑档'}
           </span>
           <span aria-hidden className={`shrink-0 text-gray-400 transition-transform ${modelCardOpen ? 'rotate-180' : ''}`}>▾</span>
         </button>
@@ -339,8 +339,9 @@ export const NavigatorSettings = () => {
         <div className="border-t border-gray-200 px-4 py-3 dark:border-gray-700">
         {/* 标题由上面的折叠头承担，这里只留说明 */}
         <p className="text-xs leading-relaxed text-gray-400 dark:text-gray-500">
-          这里就是「深思熟虑」档：助手对话、中长期占卜走它，可跨服务商选更强的模型
-          （用那家已存的 Key 直连）。记账解析等批量任务仍走「快速响应」档。
+          只给<b>助手</b>（对话 / 每日问候 / 人格生成）单独指定模型，可跨服务商
+          （用那家已存的 Key 直连）。留空 = 跟随「深思熟虑」档；这里的选择<b>不会</b>
+          影响中长期占卜等其它走深思熟虑的功能。
         </p>
         {hasAI ? (
           <div className="mt-2.5 space-y-2">
@@ -350,22 +351,22 @@ export const NavigatorSettings = () => {
               className="flex w-full items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
             >
               <span className="min-w-0 flex-1 truncate text-left">
-                {settings.navigatorModel?.trim()
-                  ? `${getProviderConfig(settings.navigatorProvider ?? settings.summaryApiProvider ?? 'openai').label} · ${settings.navigatorModel}`
-                  : `跟随快速响应（${getAIConfig(settings)?.model}）`}
+                {settings.assistantModel?.trim()
+                  ? `${getProviderConfig(settings.assistantProvider ?? settings.summaryApiProvider ?? 'openai').label} · ${settings.assistantModel}`
+                  : `跟随深思熟虑档（${getDeliberateAIConfig(settings)?.model ?? '未配置'}）`}
               </span>
               <span className="shrink-0 text-xs font-bold text-primary">选择模型 ›</span>
             </button>
-            {settings.navigatorModel && (
+            {settings.assistantModel && (
               <button
                 type="button"
-                onClick={() => updateSettings({ navigatorModel: undefined, navigatorProvider: undefined })}
+                onClick={() => updateSettings({ assistantModel: undefined, assistantProvider: undefined })}
                 className="text-xs font-semibold text-primary"
               >
-                恢复跟随快速响应
+                恢复跟随深思熟虑档
               </button>
             )}
-            <ModelPickerSheet mode="deliberate" isOpen={pickerOpen} onClose={() => setPickerOpen(false)} />
+            <ModelPickerSheet mode="assistant" isOpen={pickerOpen} onClose={() => setPickerOpen(false)} />
           </div>
         ) : (
           <p className="mt-2 text-xs text-gray-400 dark:text-gray-500">先在「设置 → AI 智能功能」里配置 API Key，这里才能选模型。</p>

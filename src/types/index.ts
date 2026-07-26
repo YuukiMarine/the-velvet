@@ -368,9 +368,14 @@ export interface Settings {
    *  连接（provider/key/baseUrl）恒复用全局，只换 model —— 聊天值得用更好的模型，
    *  其余批量任务（塔罗/记账解析等）继续用全局便宜档。 */
   navigatorModel?: string;
-  /** 深思熟虑档跨平台指向：设了且那家在 aiProfiles 有 Key 时，助手对话/中长期占卜
+  /** 深思熟虑档跨平台指向：设了且那家在 aiProfiles 有 Key 时，中长期占卜/助手
    *  改用那家的连接跑 navigatorModel；未设 = navigatorModel 属于当前生效服务商。 */
   navigatorProvider?: 'openai' | 'deepseek' | 'kimi' | 'qwen' | 'gemini' | 'minimax';
+  /** 助手（Navigator）专属模型：只管对话/问候/人格生成这条线，空 = 跟随深思熟虑档。
+   *  与 navigatorModel 分开存，才能做到「换助手的模型不动中长期占卜」（用户口径）。 */
+  assistantModel?: string;
+  /** 助手专属模型的平台指向（同 navigatorProvider 语义，作用域只有助手） */
+  assistantProvider?: 'openai' | 'deepseek' | 'kimi' | 'qwen' | 'gemini' | 'minimax';
   summaryPromptPresets?: SummaryPromptPreset[];
   summaryActivePresetId?: string;
   /**

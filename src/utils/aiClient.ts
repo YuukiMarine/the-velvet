@@ -91,20 +91,45 @@ export function getAIConfig(settings: Settings): AIConfig | null {
  * 属于别家，套在当前连接上必 404）。
  */
 export function getDeliberateAIConfig(settings: Settings): AIConfig | null {
+  return applyModelOverride(settings, settings.navigatorProvider, settings.navigatorModel);
+}
+
+/**
+ * 「助手」专属配置（对话回合 / 每日问候 / 人格生成器）。
+ *
+ * 层级：助手专属（assistantModel/assistantProvider）→ 深思熟虑档 → 快速响应档。
+ * 分成两层的理由（用户口径）：助手区那个快捷入口应当只改助手自己，
+ * 而不是连带把中长期占卜的模型一起换掉。
+ */
+export function getAssistantAIConfig(settings: Settings): AIConfig | null {
+  const own = settings.assistantModel?.trim();
+  if (own) return applyModelOverride(settings, settings.assistantProvider, own);
+  return getDeliberateAIConfig(settings);
+}
+
+/**
+ * 把「平台 + 模型」覆盖套到当前连接上，得到可直接发请求的配置。
+ * pv 指了别家且那家在 aiProfiles 有 Key → 用那家的 key/baseUrl 直连；
+ * 那家 Key 缺失 → 整套覆盖作废回落快速响应（模型名属于别家，套错连接必 404）。
+ */
+function applyModelOverride(
+  settings: Settings,
+  pv: ApiProvider | undefined,
+  model: string | undefined,
+): AIConfig | null {
   const activeProvider = settings.summaryApiProvider ?? 'openai';
-  const pv = settings.navigatorProvider;
   if (pv && pv !== activeProvider) {
     const prof = settings.aiProfiles?.[pv];
     const key = prof?.key?.trim();
     if (key) {
-      const { baseUrl, model } = resolveProvider(pv, prof?.baseUrl, settings.navigatorModel?.trim() || prof?.model);
-      return { apiKey: key, baseUrl, model, provider: pv };
+      const resolved = resolveProvider(pv, prof?.baseUrl, model?.trim() || prof?.model);
+      return { apiKey: key, baseUrl: resolved.baseUrl, model: resolved.model, provider: pv };
     }
     return getAIConfig(settings);
   }
   const base = getAIConfig(settings);
   if (!base) return null;
-  const override = settings.navigatorModel?.trim();
+  const override = model?.trim();
   return override ? { ...base, model: override } : base;
 }
 
