@@ -80,6 +80,19 @@ export function getAIConfig(settings: Settings): AIConfig | null {
   return { apiKey, baseUrl, model, provider: settings.summaryApiProvider };
 }
 
+/**
+ * 黑猫（Navigator）对话专用配置：连接（provider/key/baseUrl）恒复用全局，
+ * 仅当用户在黑猫设置里选了专用模型（settings.navigatorModel）时替换 model。
+ * 用途边界：对话回合 / 每日问候 / 人格生成器这些**用户直接读产出的**调用；
+ * 记忆归档（compact）等批量后台任务仍走 getAIConfig 的全局便宜档。
+ */
+export function getNavigatorAIConfig(settings: Settings): AIConfig | null {
+  const base = getAIConfig(settings);
+  if (!base) return null;
+  const override = settings.navigatorModel?.trim();
+  return override ? { ...base, model: override } : base;
+}
+
 // ── 内部：超时 + 调用方 signal 合流 ──────────────────────────────────────────
 
 interface AbortBundle {

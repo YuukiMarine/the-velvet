@@ -354,6 +354,10 @@ export interface Settings {
   summaryApiKey?: string;
   summaryApiBaseUrl?: string;
   summaryModel?: string;
+  /** 黑猫（Navigator）对话专用模型覆盖：空/未设 = 跟随全局 summaryModel。
+   *  连接（provider/key/baseUrl）恒复用全局，只换 model —— 聊天值得用更好的模型，
+   *  其余批量任务（塔罗/记账解析等）继续用全局便宜档。 */
+  navigatorModel?: string;
   summaryPromptPresets?: SummaryPromptPreset[];
   summaryActivePresetId?: string;
   /**

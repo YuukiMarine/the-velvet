@@ -380,8 +380,10 @@ export const P4EmptyBloom = ({ text, hint, className }: { text: string; hint?: s
  *  position 走内联样式而不是 `relative` 类：Tailwind 里 .relative 排在 .absolute 之后，
  *  基类写死 relative 会盖掉调用方传入的 absolute —— 圆窗于是掉回文档流跑到左上角，
  *  还把后面的页标题整整顶下去一个身位（用户上报"行动页标题掉下来了"）。 */
-export const P4SkyCircle = ({ size = 160, className, style, photo = true }: {
+export const P4SkyCircle = ({ size = 160, className, style, photo = true, flower = true }: {
   size?: number; className?: string; style?: CSSProperties; photo?: boolean;
+  /** 关掉压在天空上的黄花（右上另有大日期等元素时避免叠字） */
+  flower?: boolean;
 }) => (
   <div
     aria-hidden
@@ -403,7 +405,7 @@ export const P4SkyCircle = ({ size = 160, className, style, photo = true }: {
         <div className="absolute rounded-full bg-white/80" style={{ width: size * 0.42, height: size * 0.16, left: size * 0.36, top: size * 0.6, filter: 'blur(1.5px)' }} />
       </>
     )}
-    <P4Flower size={size * 0.46} color="var(--ui-bg)" className="absolute" style={{ right: size * 0.08, bottom: size * 0.1 }} />
+    {flower && <P4Flower size={size * 0.46} color="var(--ui-bg)" className="absolute" style={{ right: size * 0.08, bottom: size * 0.1 }} />}
   </div>
 );
 

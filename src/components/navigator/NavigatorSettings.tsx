@@ -11,6 +11,7 @@ import { useAppStore } from '@/store';
 import { useNavigatorStore } from '@/store/navigator';
 import { v4 as uuidv4 } from 'uuid';
 import { getAIConfig } from '@/utils/aiClient';
+import { fetchAvailableModels } from '@/utils/aiProviders';
 import { generatePersonaPrompt } from '@/utils/navigatorIntent';
 import { finalizeStaleSessions } from '@/utils/navigatorMemory';
 import { mergedNavigatorPresets } from '@/constants/navigatorPresets';
@@ -48,6 +49,10 @@ export const NavigatorSettings = () => {
   const activeId = nav.activePreset().id;
 
   const [gen, setGen] = useState<GeneratorState>(closedGenerator);
+  // 对话模型picker：从全局连接拉 /models；拉不到保持手填
+  const [navModels, setNavModels] = useState<string[]>([]);
+  const [navModelStatus, setNavModelStatus] = useState<'idle' | 'loading' | 'ok' | 'error'>('idle');
+  const [navModelMsg, setNavModelMsg] = useState('');
   const [notebookOpen, setNotebookOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<{ kind: 'preset'; id: string; label: string } | null>(null);
   const [cropFile, setCropFile] = useState<File | null>(null);
@@ -102,6 +107,26 @@ export const NavigatorSettings = () => {
     setDeleteTarget(null);
   };
 
+  const fetchNavModels = async () => {
+    if (navModelStatus === 'loading') return;
+    setNavModelStatus('loading');
+    setNavModelMsg('');
+    const result = await fetchAvailableModels({
+      provider: settings.summaryApiProvider ?? 'openai',
+      apiKey: settings.summaryApiKey ?? '',
+      baseUrl: settings.summaryApiBaseUrl,
+    });
+    if (result.ok) {
+      setNavModels(result.models);
+      setNavModelStatus('ok');
+      setNavModelMsg(`已拉取 ${result.models.length} 个可用模型`);
+    } else {
+      setNavModels([]);
+      setNavModelStatus('error');
+      setNavModelMsg(result.error);
+    }
+  };
+
   const runArchive = async () => {
     setArchiving(true);
     setArchiveDone(null);
@@ -132,6 +157,70 @@ export const NavigatorSettings = () => {
             aria-label="拟真增强"
           />
         </div>
+      </div>
+
+      {/* ── 对话模型（专用覆盖）── */}
+      <div className="rounded-xl border border-gray-200 px-4 py-3 dark:border-gray-700">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-sm font-semibold text-gray-700 dark:text-gray-200">对话模型</div>
+            <p className="mt-0.5 text-xs leading-relaxed text-gray-400 dark:text-gray-500">
+              聊天值得用更好的模型。这里只换黑猫对话（含问候/人格生成）用的模型，
+              连接与 Key 沿用「设置 → AI」；塔罗、记账解析等仍走全局模型。
+            </p>
+          </div>
+        </div>
+        {hasAI ? (
+          <div className="mt-2.5 space-y-2">
+            <div className="flex items-center gap-2">
+              {navModels.length > 0 ? (
+                <select
+                  value={settings.navigatorModel && navModels.includes(settings.navigatorModel) ? settings.navigatorModel : settings.navigatorModel ? '__custom__' : ''}
+                  onChange={(e) => {
+                    if (e.target.value === '__custom__') return;
+                    updateSettings({ navigatorModel: e.target.value || undefined });
+                  }}
+                  className="min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
+                >
+                  <option value="">跟随全局（{getAIConfig(settings)?.model}）</option>
+                  {navModels.map((m) => <option key={m} value={m}>{m}</option>)}
+                  {settings.navigatorModel && !navModels.includes(settings.navigatorModel) && (
+                    <option value="__custom__">自定义：{settings.navigatorModel}</option>
+                  )}
+                </select>
+              ) : (
+                <input
+                  type="text"
+                  value={settings.navigatorModel ?? ''}
+                  onChange={(e) => updateSettings({ navigatorModel: e.target.value || undefined })}
+                  placeholder={`留空 = 跟随全局（${getAIConfig(settings)?.model}）`}
+                  className="min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 placeholder:text-gray-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
+                />
+              )}
+              <button
+                type="button"
+                onClick={() => void fetchNavModels()}
+                className="shrink-0 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-500 transition hover:text-gray-700 dark:border-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+              >
+                {navModelStatus === 'loading' ? '拉取中…' : '拉取模型列表'}
+              </button>
+            </div>
+            {navModelMsg && (
+              <p className={`text-xs ${navModelStatus === 'error' ? 'text-red-500' : 'text-gray-400 dark:text-gray-500'}`}>{navModelMsg}</p>
+            )}
+            {settings.navigatorModel && (
+              <button
+                type="button"
+                onClick={() => updateSettings({ navigatorModel: undefined })}
+                className="text-xs font-semibold text-primary"
+              >
+                恢复跟随全局
+              </button>
+            )}
+          </div>
+        ) : (
+          <p className="mt-2 text-xs text-gray-400 dark:text-gray-500">先在「设置 → AI 智能功能」里配置 API Key，这里才能选模型。</p>
+        )}
       </div>
 
       {/* ── 人格管理 ── */}
