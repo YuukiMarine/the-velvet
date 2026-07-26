@@ -19,6 +19,8 @@ import { db } from '@/db';
 import { Dashboard } from '@/pages/Dashboard';
 // P3R（蓝主题）页面变体：p3-redraw 设计稿 1:1（channel==='p3' 时替换默认形态）
 import { DashboardP3 } from '@/pages/p3/DashboardP3';
+// P5R（红主题）页面变体：P5UI 设计稿 1:1（channel==='p5' 时替换默认形态）
+import { DashboardP5 } from '@/pages/p5/DashboardP5';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { Achievements } from '@/pages/Achievements';
 const Statistics = lazy(() => import('@/pages/Statistics').then(m => ({ default: m.Statistics })));
@@ -433,7 +435,7 @@ function App() {
   const renderPage = (page: string) => {
     switch (page) {
       case 'dashboard':
-        return uiChannel === 'p3' ? <DashboardP3 /> : <Dashboard />;
+        return uiChannel === 'p3' ? <DashboardP3 /> : uiChannel === 'p5' ? <DashboardP5 /> : <Dashboard />;
       // 'todos'/'activities' 是合并前的旧路由 id：散落的 setCurrentPage('todos') 调用点
       // （问候卡提示条等）继续可用，Actions 内部会按旧 id 落到对应子页并归一为 'actions'
       case 'actions':
