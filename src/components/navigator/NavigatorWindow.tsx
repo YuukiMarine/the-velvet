@@ -347,7 +347,7 @@ export const NavigatorWindow = () => {
                   </div>
                   <button
                     type="button"
-                    aria-label="关闭黑猫"
+                    aria-label="关闭助手"
                     onClick={nav.close}
                     className="flex h-9 w-9 shrink-0 items-center justify-center text-xl font-black opacity-70 transition hover:opacity-100"
                     style={sk.headerText}
@@ -533,8 +533,8 @@ export const NavigatorWindow = () => {
                     onCompositionStart={() => nav.setInputActive(true)}
                     onCompositionEnd={(e) => nav.setInputActive((e.target as HTMLInputElement).value.trim().length > 0)}
                     onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) send(); }}
-                    placeholder="跟黑猫说点什么…"
-                    aria-label="给黑猫的消息"
+                    placeholder={`跟${preset.name}说点什么…`}
+                    aria-label={`给${preset.name}的消息`}
                     className={sk.input}
                     style={sk.inputStyle}
                   />
@@ -623,7 +623,7 @@ export const NavigatorWindow = () => {
 
 // ── 打字指示（thinking/replying 相位；等待本身就是拟人） ──
 const TypingRow = ({ sk, bright, bold }: { sk: Skin; bright: boolean; bold: boolean }) => (
-  <div className="flex items-start gap-2.5" role="status" aria-label="黑猫正在输入">
+  <div className="flex items-start gap-2.5" role="status" aria-label="助手正在输入">
     <span
       className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center ${sk.avatar}`}
       style={{ ...sk.avatarStyle, clipPath: bright ? 'polygon(0 8%, 100% 0, 96% 100%, 2% 96%)' : undefined, borderRadius: bright ? undefined : ((sk.avatarStyle as React.CSSProperties | undefined)?.borderRadius ?? '0.65rem') }}

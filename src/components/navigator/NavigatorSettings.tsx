@@ -54,6 +54,8 @@ export const NavigatorSettings = () => {
   const [navModelStatus, setNavModelStatus] = useState<'idle' | 'loading' | 'ok' | 'error'>('idle');
   const [navModelMsg, setNavModelMsg] = useState('');
   const [notebookOpen, setNotebookOpen] = useState(false);
+  // 对话模型是副入口：默认收起，不跟人格/记事本抢注意力
+  const [modelCardOpen, setModelCardOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<{ kind: 'preset'; id: string; label: string } | null>(null);
   const [cropFile, setCropFile] = useState<File | null>(null);
   const [archiving, setArchiving] = useState(false);
@@ -157,70 +159,6 @@ export const NavigatorSettings = () => {
             aria-label="拟真增强"
           />
         </div>
-      </div>
-
-      {/* ── 对话模型（专用覆盖）── */}
-      <div className="rounded-xl border border-gray-200 px-4 py-3 dark:border-gray-700">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="text-sm font-semibold text-gray-700 dark:text-gray-200">对话模型</div>
-            <p className="mt-0.5 text-xs leading-relaxed text-gray-400 dark:text-gray-500">
-              聊天值得用更好的模型。这里只换黑猫对话（含问候/人格生成）用的模型，
-              连接与 Key 沿用「设置 → AI」；塔罗、记账解析等仍走全局模型。
-            </p>
-          </div>
-        </div>
-        {hasAI ? (
-          <div className="mt-2.5 space-y-2">
-            <div className="flex items-center gap-2">
-              {navModels.length > 0 ? (
-                <select
-                  value={settings.navigatorModel && navModels.includes(settings.navigatorModel) ? settings.navigatorModel : settings.navigatorModel ? '__custom__' : ''}
-                  onChange={(e) => {
-                    if (e.target.value === '__custom__') return;
-                    updateSettings({ navigatorModel: e.target.value || undefined });
-                  }}
-                  className="min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
-                >
-                  <option value="">跟随通用档（{getAIConfig(settings)?.model}）</option>
-                  {navModels.map((m) => <option key={m} value={m}>{m}</option>)}
-                  {settings.navigatorModel && !navModels.includes(settings.navigatorModel) && (
-                    <option value="__custom__">自定义：{settings.navigatorModel}</option>
-                  )}
-                </select>
-              ) : (
-                <input
-                  type="text"
-                  value={settings.navigatorModel ?? ''}
-                  onChange={(e) => updateSettings({ navigatorModel: e.target.value || undefined })}
-                  placeholder={`留空 = 跟随通用档（${getAIConfig(settings)?.model}）`}
-                  className="min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 placeholder:text-gray-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
-                />
-              )}
-              <button
-                type="button"
-                onClick={() => void fetchNavModels()}
-                className="shrink-0 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-500 transition hover:text-gray-700 dark:border-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-              >
-                {navModelStatus === 'loading' ? '拉取中…' : '拉取模型列表'}
-              </button>
-            </div>
-            {navModelMsg && (
-              <p className={`text-xs ${navModelStatus === 'error' ? 'text-red-500' : 'text-gray-400 dark:text-gray-500'}`}>{navModelMsg}</p>
-            )}
-            {settings.navigatorModel && (
-              <button
-                type="button"
-                onClick={() => updateSettings({ navigatorModel: undefined })}
-                className="text-xs font-semibold text-primary"
-              >
-                恢复跟随通用档
-              </button>
-            )}
-          </div>
-        ) : (
-          <p className="mt-2 text-xs text-gray-400 dark:text-gray-500">先在「设置 → AI 智能功能」里配置 API Key，这里才能选模型。</p>
-        )}
       </div>
 
       {/* ── 人格管理 ── */}
@@ -399,6 +337,84 @@ export const NavigatorSettings = () => {
         </button>
       </div>
       {archiveDone && <p className="text-xs text-gray-400 dark:text-gray-500">{archiveDone}</p>}
+
+      {/* ── 对话模型（副入口，默认收起）──
+          正式入口在「设置 → AI 智能功能 → 模型分档」；这里留一个就近快捷位，
+          按用户口径放在助手区最下方并默认折叠，不占日常视线。 */}
+      <div className="rounded-xl border border-gray-200 dark:border-gray-700">
+        <button
+          type="button"
+          onClick={() => setModelCardOpen((v) => !v)}
+          aria-expanded={modelCardOpen}
+          className="flex w-full items-center gap-2 px-4 py-3 text-left"
+        >
+          <span className="text-sm font-semibold text-gray-700 dark:text-gray-200">对话模型</span>
+          <span className="min-w-0 flex-1 truncate text-xs text-gray-400 dark:text-gray-500">
+            {settings.navigatorModel?.trim() || '跟随通用档'}
+          </span>
+          <span aria-hidden className={`shrink-0 text-gray-400 transition-transform ${modelCardOpen ? 'rotate-180' : ''}`}>▾</span>
+        </button>
+        {modelCardOpen && (
+        <div className="border-t border-gray-200 px-4 py-3 dark:border-gray-700">
+        {/* 标题由上面的折叠头承担，这里只留说明 */}
+        <p className="text-xs leading-relaxed text-gray-400 dark:text-gray-500">
+          聊天值得用更好的模型。这里只换助手对话（含问候/人格生成）用的模型，
+          连接与 Key 沿用「设置 → AI 智能功能」的连接卡；塔罗、记账解析等仍走通用档。
+        </p>
+        {hasAI ? (
+          <div className="mt-2.5 space-y-2">
+            <div className="flex items-center gap-2">
+              {navModels.length > 0 ? (
+                <select
+                  value={settings.navigatorModel && navModels.includes(settings.navigatorModel) ? settings.navigatorModel : settings.navigatorModel ? '__custom__' : ''}
+                  onChange={(e) => {
+                    if (e.target.value === '__custom__') return;
+                    updateSettings({ navigatorModel: e.target.value || undefined });
+                  }}
+                  className="min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
+                >
+                  <option value="">跟随通用档（{getAIConfig(settings)?.model}）</option>
+                  {navModels.map((m) => <option key={m} value={m}>{m}</option>)}
+                  {settings.navigatorModel && !navModels.includes(settings.navigatorModel) && (
+                    <option value="__custom__">自定义：{settings.navigatorModel}</option>
+                  )}
+                </select>
+              ) : (
+                <input
+                  type="text"
+                  value={settings.navigatorModel ?? ''}
+                  onChange={(e) => updateSettings({ navigatorModel: e.target.value || undefined })}
+                  placeholder={`留空 = 跟随通用档（${getAIConfig(settings)?.model}）`}
+                  className="min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 placeholder:text-gray-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
+                />
+              )}
+              <button
+                type="button"
+                onClick={() => void fetchNavModels()}
+                className="shrink-0 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-500 transition hover:text-gray-700 dark:border-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+              >
+                {navModelStatus === 'loading' ? '拉取中…' : '拉取模型列表'}
+              </button>
+            </div>
+            {navModelMsg && (
+              <p className={`text-xs ${navModelStatus === 'error' ? 'text-red-500' : 'text-gray-400 dark:text-gray-500'}`}>{navModelMsg}</p>
+            )}
+            {settings.navigatorModel && (
+              <button
+                type="button"
+                onClick={() => updateSettings({ navigatorModel: undefined })}
+                className="text-xs font-semibold text-primary"
+              >
+                恢复跟随通用档
+              </button>
+            )}
+          </div>
+        ) : (
+          <p className="mt-2 text-xs text-gray-400 dark:text-gray-500">先在「设置 → AI 智能功能」里配置 API Key，这里才能选模型。</p>
+        )}
+        </div>
+        )}
+      </div>
 
       {/* 上传裁切（复用全站头像管线，输出 dataUrl，local-only） */}
       <ImageCropDialog
