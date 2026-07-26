@@ -1,7 +1,7 @@
 import { Activity, Attribute, AttributeId, DailyDivination, DrawnCard, Fortune, LongReadingPeriod, Settings, TarotOrientation } from '@/types';
 import { TarotCardData, TAROT_BY_ID, SPREAD_POSITIONS, PERIOD_LABELS, FORTUNE_META } from '@/constants/tarot';
 import { resolveProvider } from '@/utils/aiProviders';
-import { chatComplete, chatStream } from '@/utils/aiClient';
+import { chatComplete, chatStream, getDeliberateAIConfig } from '@/utils/aiClient';
 
 const ATTRIBUTE_IDS: AttributeId[] = ['knowledge', 'guts', 'dexterity', 'kindness', 'charm'];
 
@@ -277,7 +277,9 @@ export function buildLongReadingRequest(params: {
   picked: DrawnCard[];
 }): AIRequestData {
   const { settings, attributes, recentByAttribute, question, period, picked } = params;
-  const { baseUrl, model } = resolveProvider(
+  // 中长期占卜走「深思熟虑」档（可跨服务商；未配置时自动退回当前连接）
+  const deliberate = getDeliberateAIConfig(settings);
+  const { baseUrl, model } = deliberate ?? resolveProvider(
     settings.summaryApiProvider,
     settings.summaryApiBaseUrl,
     settings.summaryModel,
@@ -325,7 +327,7 @@ export function buildLongReadingRequest(params: {
   return {
     baseUrl,
     model,
-    apiKey: settings.summaryApiKey || '',
+    apiKey: deliberate?.apiKey ?? settings.summaryApiKey ?? '',
     messages: [
       { role: 'system', content: LONG_SYSTEM_PROMPT },
       { role: 'user',   content: userMessage },
@@ -351,7 +353,9 @@ export function buildFollowUpRequest(params: {
 }): AIRequestData {
   const { settings, previousUserMessage, previousAssistantMessage,
           followUpQuestion, followUpCard, followUpOrientation } = params;
-  const { baseUrl, model } = resolveProvider(
+  // 中长期占卜走「深思熟虑」档（可跨服务商；未配置时自动退回当前连接）
+  const deliberate = getDeliberateAIConfig(settings);
+  const { baseUrl, model } = deliberate ?? resolveProvider(
     settings.summaryApiProvider,
     settings.summaryApiBaseUrl,
     settings.summaryModel,
@@ -369,7 +373,7 @@ export function buildFollowUpRequest(params: {
   return {
     baseUrl,
     model,
-    apiKey: settings.summaryApiKey || '',
+    apiKey: deliberate?.apiKey ?? settings.summaryApiKey ?? '',
     messages: [
       { role: 'system', content: LONG_SYSTEM_PROMPT + FOLLOW_UP_SYSTEM_ADDITION },
       { role: 'user',   content: previousUserMessage },

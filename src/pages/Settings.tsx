@@ -620,38 +620,53 @@ export const Settings = () => {
   const [apiTestMessage, setApiTestMessage] = useState<string>('');
   // 可选模型列表：按当前 provider + Key + baseUrl 从 /models 拉取，拉到就变下拉，
   // 拉不到（网关不支持 / CORS）保持手填输入框兜底
-  const [modelOptions, setModelOptions] = useState<string[]>([]);
   const [modelFetchStatus, setModelFetchStatus] = useState<'idle' | 'loading' | 'ok' | 'error'>('idle');
   const [modelFetchMessage, setModelFetchMessage] = useState<string>('');
   // 连接卡折叠：有 Key 时默认收起（配好后日常只跟模型分档打交道），无 Key 展开引导配置
   const [connOpen, setConnOpen] = useState(() => !settings.summaryApiKey?.trim());
 
+  // 一键刷新**所有**已配 Key 的服务商的模型列表，按家落进 aiProfiles[].models
+  //（用户口径：重新拉取 = 全 provider 同步更新；不支持 /models 的跳过并注明）。
+  // 列表持久化在 settings 里，跨刷新/跨服务商切换都在，深思熟虑档的跨平台下拉直接读它。
   const handleFetchModels = async () => {
-    const key = summaryApiKeyDraft.trim() || (settings.summaryApiKey ?? '');
     setModelFetchStatus('loading');
     setModelFetchMessage('');
-    const result = await fetchAvailableModels({
-      provider: settings.summaryApiProvider ?? 'openai',
-      apiKey: key,
-      baseUrl: settings.summaryApiBaseUrl,
-    });
-    if (result.ok) {
-      setModelOptions(result.models);
-      setModelFetchStatus('ok');
-      setModelFetchMessage(`已拉取 ${result.models.length} 个可用模型`);
-    } else {
-      setModelOptions([]);
+    const targets = AI_PROVIDERS
+      .map(p => ({
+        id: p.id,
+        key: p.id === activeProvider
+          ? (summaryApiKeyDraft.trim() || settings.summaryApiKey || '')
+          : (settings.aiProfiles?.[p.id]?.key ?? ''),
+        baseUrl: p.id === activeProvider ? settings.summaryApiBaseUrl : settings.aiProfiles?.[p.id]?.baseUrl,
+      }))
+      .filter(t => t.key.trim());
+    if (!targets.length) {
       setModelFetchStatus('error');
-      setModelFetchMessage(result.error);
+      setModelFetchMessage('还没有任何服务商配好 Key');
+      return;
     }
+    const results = await Promise.all(targets.map(async t => ({
+      id: t.id,
+      r: await fetchAvailableModels({ provider: t.id, apiKey: t.key, baseUrl: t.baseUrl }),
+    })));
+    const profiles = { ...(settings.aiProfiles ?? {}) };
+    const okParts: string[] = [];
+    const skipped: string[] = [];
+    for (const { id, r } of results) {
+      if (r.ok) {
+        profiles[id] = { ...(profiles[id] ?? {}), models: r.models };
+        okParts.push(`${getProviderConfig(id).label} ${r.models.length} 个`);
+      } else {
+        skipped.push(`${getProviderConfig(id).label}（${r.error.slice(0, 60)}）`);
+      }
+    }
+    updateSettings({ aiProfiles: profiles });
+    setModelFetchStatus(okParts.length ? 'ok' : 'error');
+    setModelFetchMessage([
+      okParts.length ? `已更新：${okParts.join('、')}` : '',
+      skipped.length ? `跳过：${skipped.join('；')}` : '',
+    ].filter(Boolean).join('\n'));
   };
-
-  // 换 provider / 改地址 → 旧列表作废（不同端点的模型集不通用）
-  useEffect(() => {
-    setModelOptions([]);
-    setModelFetchStatus('idle');
-    setModelFetchMessage('');
-  }, [settings.summaryApiProvider, settings.summaryApiBaseUrl]);
 
   const handleTestApi = async () => {
     const keyToTest = summaryApiKeyDraft.trim() || (settings.summaryApiKey ?? '');
@@ -670,13 +685,23 @@ export const Settings = () => {
     });
     if (result.ok) {
       setApiTestStatus('ok');
-      setApiTestMessage(`连接成功 · ${result.model} · ${result.latencyMs} ms`);
-      // 成功即落库：绿灯要能跨刷新/跨切换保留（用户口径「已配置」感知太弱）
+      // 成功顺手拉一次该家的模型列表（用户口径）；不支持 /models 的注明跳过，不算失败
       const pv = settings.summaryApiProvider ?? 'openai';
+      const listed = await fetchAvailableModels({ provider: pv, apiKey: keyToTest, baseUrl: settings.summaryApiBaseUrl });
+      setApiTestMessage(
+        `连接成功 · ${result.model} · ${result.latencyMs} ms` +
+        (listed.ok ? ` · 模型列表已更新（${listed.models.length} 个）` : ' · 该服务商不支持拉取列表，模型请手填'),
+      );
+      // 成功即落库：绿灯要能跨刷新/跨切换保留（用户口径「已配置」感知太弱）
       updateSettings({
         aiProfiles: {
           ...(settings.aiProfiles ?? {}),
-          [pv]: { ...(settings.aiProfiles?.[pv] ?? {}), key: keyToTest, verifiedAt: Date.now() },
+          [pv]: {
+            ...(settings.aiProfiles?.[pv] ?? {}),
+            key: keyToTest,
+            verifiedAt: Date.now(),
+            ...(listed.ok ? { models: listed.models } : {}),
+          },
         },
       });
     } else {
@@ -777,12 +802,13 @@ export const Settings = () => {
   };
 
   // 「关于」已迁至菜单宫格的 SheetModal（设置拆解 PR）；「数据管理/云同步」迁至账号与数据页
+  // 排序为用户裁决（2026-07-27）：AI 总结提到第一位；「账号与数据」入口下沉到页底
   const sections = [
+    { id: 'summary', label: 'AI 总结', icon: '✨' },
     { id: 'theme', label: '主题', icon: '🎨' },
     { id: 'personalize', label: '体验个性化', icon: '⚙️' },
     { id: 'navigator', label: '助手', icon: '◈' },
-    { id: 'notifications', label: '通知提醒', icon: '🔔' },
-    { id: 'summary', label: 'AI 总结', icon: '✨' }
+    { id: 'notifications', label: '通知提醒', icon: '🔔' }
   ];
 
   return (
@@ -837,58 +863,6 @@ export const Settings = () => {
           <PageTitle title="设置" en="Settings" />
         </div>
       </div>
-      )}
-
-      {/* P9-菜单批：用户资料卡上浮至菜单页第一屏；原位改为「账号与数据」入口
-          （账号瓷砖从菜单宫格下沉至此，与主题快切上浮互为对调）。
-          P4：黑斜章 + 奶油斜行（设计稿账号行制式）。 */}
-      {isP4 ? (
-        <motion.button
-          type="button"
-          whileTap={{ scale: 0.98 }}
-          onClick={() => setCurrentPage('account')}
-          className="flex w-full items-stretch text-left"
-        >
-          <span
-            className="z-10 flex shrink-0 items-center gap-2 px-4 py-3 font-black text-white"
-            style={{ background: '#131313', borderRadius: 14, transform: 'skewX(-8deg)' }}
-          >
-            <span className="flex items-center gap-2" style={{ transform: 'skewX(8deg)' }}>
-              <P4Flower size={16} color="var(--ui-bg)" />
-              账号与数据
-            </span>
-          </span>
-          <span
-            className="-ml-2 flex min-w-0 flex-1 items-center gap-2 py-3 pl-6 pr-4"
-            style={{ background: 'var(--ui-paper)', borderRadius: 14, transform: 'skewX(-8deg)' }}
-          >
-            <span className="flex min-w-0 flex-1 items-center justify-between gap-2" style={{ transform: 'skewX(8deg)' }}>
-              <span className="truncate text-xs font-bold text-[#131313]/75">云同步 · 数据管理 · 备份导出</span>
-              <span aria-hidden className="font-black text-[#131313]">›</span>
-            </span>
-          </span>
-        </motion.button>
-      ) : (
-      <motion.button
-        type="button"
-        whileTap={{ scale: 0.98 }}
-        onClick={() => setCurrentPage('account')}
-        className={p3
-          ? 'w-full flex items-center gap-3 px-5 py-4 text-left'
-          : 'w-full flex items-center gap-3 rounded-xl bg-white dark:bg-gray-800 shadow-lg px-5 py-4 text-left hover:bg-gray-50 dark:hover:bg-gray-700'}
-        style={p3 ? { clipPath: 'polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%)', background: 'rgba(255,255,255,0.92)', boxShadow: '0 8px 18px rgba(38,96,140,0.07)' } : undefined}
-      >
-        <span className="text-2xl" aria-hidden>☁️</span>
-        <span className="flex-1 min-w-0">
-          <span className={p3 ? 'block text-[16px] font-black' : 'block font-semibold text-gray-800 dark:text-white'} style={p3 ? { color: P3R.ink } : undefined}>账号与数据</span>
-          <span className={p3 ? 'block text-xs font-semibold mt-0.5' : 'block text-xs text-gray-400 dark:text-gray-500 mt-0.5'} style={p3 ? { color: P3R.grey } : undefined}>云同步 · 数据管理 · 备份导出</span>
-        </span>
-        {p3 ? (
-          <span aria-hidden className="h-0 w-0 border-y-[6px] border-y-transparent border-l-[9px]" style={{ borderLeftColor: P3R.blue }} />
-        ) : (
-          <span className="text-gray-400" aria-hidden>›</span>
-        )}
-      </motion.button>
       )}
 
       <div className="space-y-4">
@@ -2259,7 +2233,8 @@ export const Settings = () => {
                       )}
                     </div>
 
-                    {/* ── 模型分档（日常操作面）：聊天用好模型，杂活用便宜模型 ── */}
+                    {/* ── 模型分档（日常操作面）：快速响应=当前连接的便宜快模型；
+                        深思熟虑=可跨服务商指向更强的模型（助手对话/中长期占卜） ── */}
                     <div className="rounded-2xl border border-gray-100 dark:border-gray-700/60 overflow-hidden">
                       <div className="flex items-center justify-between gap-2 px-4 py-3 bg-gray-50 dark:bg-gray-800/60 border-b border-gray-100 dark:border-gray-700/60">
                         <span className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">模型分档</span>
@@ -2274,70 +2249,105 @@ export const Settings = () => {
                               : 'bg-primary/10 text-primary hover:bg-primary/20'
                           }`}
                         >
-                          {modelFetchStatus === 'loading' ? '拉取中…' : modelOptions.length ? '重新拉取列表' : '拉取模型列表'}
+                          {modelFetchStatus === 'loading' ? '拉取中…' : '刷新全部模型列表'}
                         </button>
                       </div>
                       <div className="p-4 space-y-4 dark:bg-gray-800/20">
+                        {(() => {
+                          const activeModels = settings.aiProfiles?.[provider]?.models ?? [];
+                          const delibPv = settings.navigatorProvider ?? provider;
+                          const delibGroups = AI_PROVIDERS.filter(p =>
+                            (settings.aiProfiles?.[p.id]?.models?.length ?? 0) > 0 &&
+                            (p.id === provider || settings.aiProfiles?.[p.id]?.key?.trim()));
+                          const delibVal = settings.navigatorModel ? `${delibPv}::${settings.navigatorModel}` : '';
+                          const delibKnown = !settings.navigatorModel ||
+                            (settings.aiProfiles?.[delibPv]?.models ?? []).includes(settings.navigatorModel);
+                          const fastFallback = settings.summaryModel?.trim() || getProviderConfig(provider).defaultModel;
+                          return (
+                            <>
+                              {/* 快速响应：绑定当前连接（换服务商 = 换连接） */}
+                              <div className="space-y-1.5">
+                                <p className="text-xs font-medium text-gray-500 dark:text-gray-400">⚡ 快速响应</p>
+                                <p className="text-[11px] text-gray-400 dark:text-gray-500">
+                                  记账解析、每日塔罗、活动打分、成长总结等批量任务走这档——要快、便宜够用。
+                                  跑在当前连接（{getProviderConfig(provider).label}）上。
+                                </p>
+                                {activeModels.length > 0 && (
+                                  <select
+                                    value={(settings.summaryModel ?? '') === '' ? '' : activeModels.includes(settings.summaryModel!) ? settings.summaryModel : '__custom__'}
+                                    onChange={e => {
+                                      if (e.target.value === '__custom__') return;
+                                      updateSettings({ summaryModel: e.target.value || undefined });
+                                      setApiTestStatus('idle');
+                                      setApiTestMessage('');
+                                    }}
+                                    className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 dark:text-white focus:outline-none focus:border-primary"
+                                  >
+                                    <option value="">默认（{getProviderConfig(provider).defaultModel}）</option>
+                                    {activeModels.map(m => (
+                                      <option key={m} value={m}>{m}</option>
+                                    ))}
+                                    <option value="__custom__">自定义（用下方输入框）</option>
+                                  </select>
+                                )}
+                                <input
+                                  type="text"
+                                  value={settings.summaryModel ?? ''}
+                                  onChange={e => { updateSettings({ summaryModel: e.target.value || undefined }); setApiTestStatus('idle'); setApiTestMessage(''); }}
+                                  placeholder={`留空 = 默认（${getProviderConfig(provider).defaultModel}）`}
+                                  className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-primary"
+                                />
+                              </div>
 
-                        {/* 通用模型（解析档） */}
-                        <div className="space-y-1.5">
-                          <p className="text-xs font-medium text-gray-500 dark:text-gray-400">通用模型 · 杂活档</p>
-                          <p className="text-[11px] text-gray-400 dark:text-gray-500">记账解析、塔罗、活动打分、成长总结等批量任务走这档，便宜够用就行。</p>
-                          {modelOptions.length > 0 && (
-                            <select
-                              value={(settings.summaryModel ?? '') === '' ? '' : modelOptions.includes(settings.summaryModel!) ? settings.summaryModel : '__custom__'}
-                              onChange={e => {
-                                if (e.target.value === '__custom__') return;
-                                updateSettings({ summaryModel: e.target.value || undefined });
-                                setApiTestStatus('idle');
-                                setApiTestMessage('');
-                              }}
-                              className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 dark:text-white focus:outline-none focus:border-primary"
-                            >
-                              <option value="">默认（{getProviderConfig(provider).defaultModel}）</option>
-                              {modelOptions.map(m => (
-                                <option key={m} value={m}>{m}</option>
-                              ))}
-                              <option value="__custom__">自定义（用下方输入框）</option>
-                            </select>
-                          )}
-                          <input
-                            type="text"
-                            value={settings.summaryModel ?? ''}
-                            onChange={e => { updateSettings({ summaryModel: e.target.value || undefined }); setApiTestStatus('idle'); setApiTestMessage(''); }}
-                            placeholder={`留空 = 默认（${getProviderConfig(provider).defaultModel}）`}
-                            className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-primary"
-                          />
-                        </div>
-
-                        {/* 助手对话模型（对话档） */}
-                        <div className="space-y-1.5 pt-3 border-t border-gray-100 dark:border-gray-700/50">
-                          <p className="text-xs font-medium text-gray-500 dark:text-gray-400">助手对话模型 · 对话档</p>
-                          <p className="text-[11px] text-gray-400 dark:text-gray-500">聊天、每日问候、人格生成走这档——对话值得用更好的模型。留空则跟随通用档。</p>
-                          {modelOptions.length > 0 && (
-                            <select
-                              value={(settings.navigatorModel ?? '') === '' ? '' : modelOptions.includes(settings.navigatorModel!) ? settings.navigatorModel : '__custom__'}
-                              onChange={e => {
-                                if (e.target.value === '__custom__') return;
-                                updateSettings({ navigatorModel: e.target.value || undefined });
-                              }}
-                              className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 dark:text-white focus:outline-none focus:border-primary"
-                            >
-                              <option value="">跟随通用档（{settings.summaryModel?.trim() || getProviderConfig(provider).defaultModel}）</option>
-                              {modelOptions.map(m => (
-                                <option key={m} value={m}>{m}</option>
-                              ))}
-                              <option value="__custom__">自定义（用下方输入框）</option>
-                            </select>
-                          )}
-                          <input
-                            type="text"
-                            value={settings.navigatorModel ?? ''}
-                            onChange={e => updateSettings({ navigatorModel: e.target.value || undefined })}
-                            placeholder={`留空 = 跟随通用档（${settings.summaryModel?.trim() || getProviderConfig(provider).defaultModel}）`}
-                            className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-primary"
-                          />
-                        </div>
+                              {/* 深思熟虑：可跨服务商（按厂家分组），Key 已配好即可直选别家模型 */}
+                              <div className="space-y-1.5 pt-3 border-t border-gray-100 dark:border-gray-700/50">
+                                <p className="text-xs font-medium text-gray-500 dark:text-gray-400">🌙 深思熟虑</p>
+                                <p className="text-[11px] text-gray-400 dark:text-gray-500">
+                                  助手对话、中长期占卜走这档——值得等的深答案，可跨服务商选更强的模型
+                                  （用那家已存的 Key 直连）。留空跟随快速响应。
+                                </p>
+                                {delibGroups.length > 0 && (
+                                  <select
+                                    value={delibKnown ? delibVal : '__custom__'}
+                                    onChange={e => {
+                                      const v = e.target.value;
+                                      if (v === '__custom__') return;
+                                      if (!v) { updateSettings({ navigatorModel: undefined, navigatorProvider: undefined }); return; }
+                                      const sep = v.indexOf('::');
+                                      const pv = v.slice(0, sep) as ApiProvider;
+                                      const m = v.slice(sep + 2);
+                                      updateSettings({ navigatorModel: m, navigatorProvider: pv === provider ? undefined : pv });
+                                    }}
+                                    className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 dark:text-white focus:outline-none focus:border-primary"
+                                  >
+                                    <option value="">跟随快速响应（{fastFallback}）</option>
+                                    {delibGroups.map(g => (
+                                      <optgroup key={g.id} label={g.id === provider ? `${g.label}（当前连接）` : g.label}>
+                                        {(settings.aiProfiles?.[g.id]?.models ?? []).map(m => (
+                                          <option key={`${g.id}::${m}`} value={`${g.id}::${m}`}>{m}</option>
+                                        ))}
+                                      </optgroup>
+                                    ))}
+                                    <option value="__custom__">自定义（用下方输入框）</option>
+                                  </select>
+                                )}
+                                <input
+                                  type="text"
+                                  value={settings.navigatorModel ?? ''}
+                                  onChange={e => updateSettings({ navigatorModel: e.target.value || undefined })}
+                                  placeholder={`留空 = 跟随快速响应（${fastFallback}）`}
+                                  className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-primary"
+                                />
+                                {/* 生效行：跨平台时明确写出实际调用哪家（防"我以为在用A其实在用B"） */}
+                                <p className="text-[11px] text-gray-400 dark:text-gray-500">
+                                  实际调用：{settings.navigatorModel
+                                    ? `${getProviderConfig(delibPv).label} · ${settings.navigatorModel}${settings.navigatorProvider && !settings.aiProfiles?.[settings.navigatorProvider]?.key?.trim() ? '（该家没存 Key，已临时回落快速响应）' : ''}`
+                                    : `跟随快速响应（${getProviderConfig(provider).label} · ${fastFallback}）`}
+                                </p>
+                              </div>
+                            </>
+                          );
+                        })()}
 
                         {modelFetchMessage && (
                           <p className={`text-[11px] leading-relaxed whitespace-pre-wrap break-words ${modelFetchStatus === 'ok' ? 'text-green-600 dark:text-green-400' : 'text-red-500 dark:text-red-400'}`}>
@@ -2360,6 +2370,58 @@ export const Settings = () => {
           </div>
         ))}
       </div>
+
+      {/* P9-菜单批：用户资料卡上浮至菜单页第一屏；原位改为「账号与数据」入口
+          （账号瓷砖从菜单宫格下沉至此，与主题快切上浮互为对调）。
+          P4：黑斜章 + 奶油斜行（设计稿账号行制式）。 */}
+      {isP4 ? (
+        <motion.button
+          type="button"
+          whileTap={{ scale: 0.98 }}
+          onClick={() => setCurrentPage('account')}
+          className="flex w-full items-stretch text-left"
+        >
+          <span
+            className="z-10 flex shrink-0 items-center gap-2 px-4 py-3 font-black text-white"
+            style={{ background: '#131313', borderRadius: 14, transform: 'skewX(-8deg)' }}
+          >
+            <span className="flex items-center gap-2" style={{ transform: 'skewX(8deg)' }}>
+              <P4Flower size={16} color="var(--ui-bg)" />
+              账号与数据
+            </span>
+          </span>
+          <span
+            className="-ml-2 flex min-w-0 flex-1 items-center gap-2 py-3 pl-6 pr-4"
+            style={{ background: 'var(--ui-paper)', borderRadius: 14, transform: 'skewX(-8deg)' }}
+          >
+            <span className="flex min-w-0 flex-1 items-center justify-between gap-2" style={{ transform: 'skewX(8deg)' }}>
+              <span className="truncate text-xs font-bold text-[#131313]/75">云同步 · 数据管理 · 备份导出</span>
+              <span aria-hidden className="font-black text-[#131313]">›</span>
+            </span>
+          </span>
+        </motion.button>
+      ) : (
+      <motion.button
+        type="button"
+        whileTap={{ scale: 0.98 }}
+        onClick={() => setCurrentPage('account')}
+        className={p3
+          ? 'w-full flex items-center gap-3 px-5 py-4 text-left'
+          : 'w-full flex items-center gap-3 rounded-xl bg-white dark:bg-gray-800 shadow-lg px-5 py-4 text-left hover:bg-gray-50 dark:hover:bg-gray-700'}
+        style={p3 ? { clipPath: 'polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%)', background: 'rgba(255,255,255,0.92)', boxShadow: '0 8px 18px rgba(38,96,140,0.07)' } : undefined}
+      >
+        <span className="text-2xl" aria-hidden>☁️</span>
+        <span className="flex-1 min-w-0">
+          <span className={p3 ? 'block text-[16px] font-black' : 'block font-semibold text-gray-800 dark:text-white'} style={p3 ? { color: P3R.ink } : undefined}>账号与数据</span>
+          <span className={p3 ? 'block text-xs font-semibold mt-0.5' : 'block text-xs text-gray-400 dark:text-gray-500 mt-0.5'} style={p3 ? { color: P3R.grey } : undefined}>云同步 · 数据管理 · 备份导出</span>
+        </span>
+        {p3 ? (
+          <span aria-hidden className="h-0 w-0 border-y-[6px] border-y-transparent border-l-[9px]" style={{ borderLeftColor: P3R.blue }} />
+        ) : (
+          <span className="text-gray-400" aria-hidden>›</span>
+        )}
+      </motion.button>
+      )}
 
       <AnimatePresence>
         {levelTitleModalOpen && levelTitleSuggestions && (() => {

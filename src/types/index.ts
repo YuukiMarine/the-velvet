@@ -359,7 +359,7 @@ export interface Settings {
    */
   aiProfiles?: Partial<Record<
     'openai' | 'deepseek' | 'kimi' | 'qwen' | 'gemini' | 'minimax',
-    { key?: string; baseUrl?: string; model?: string; navModel?: string; verifiedAt?: number }
+    { key?: string; baseUrl?: string; model?: string; navModel?: string; verifiedAt?: number; models?: string[] }
   >>;
   summaryApiKey?: string;
   summaryApiBaseUrl?: string;
@@ -368,6 +368,9 @@ export interface Settings {
    *  连接（provider/key/baseUrl）恒复用全局，只换 model —— 聊天值得用更好的模型，
    *  其余批量任务（塔罗/记账解析等）继续用全局便宜档。 */
   navigatorModel?: string;
+  /** 深思熟虑档跨平台指向：设了且那家在 aiProfiles 有 Key 时，助手对话/中长期占卜
+   *  改用那家的连接跑 navigatorModel；未设 = navigatorModel 属于当前生效服务商。 */
+  navigatorProvider?: 'openai' | 'deepseek' | 'kimi' | 'qwen' | 'gemini' | 'minimax';
   summaryPromptPresets?: SummaryPromptPreset[];
   summaryActivePresetId?: string;
   /**
