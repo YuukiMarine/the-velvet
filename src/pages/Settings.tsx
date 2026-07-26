@@ -357,9 +357,7 @@ export const Settings = () => {
   const achievements = useAppStore(s => s.achievements);
   const skills = useAppStore(s => s.skills);
   const setCurrentPage = useAppStore(s => s.setCurrentPage);
-  // 默认全收起：主题区展开有 1300+px，进页面就把后面的分区全顶出视口（用户上报
-  // 「AI 总结被顶到上面看不见」）。全收起时五个分区头一屏可见，一点即达。
-  const [activeSection, setActiveSection] = useState<string | null>(null);
+  const [activeSection, setActiveSection] = useState<string | null>('theme');
   // P3R（蓝频道）：p3-settings-reference-v2 形态
   const p3 = useUiChannel() === 'p3';
   const [showLevelWarning, setShowLevelWarning] = useState(false);
@@ -785,14 +783,13 @@ export const Settings = () => {
   };
 
   // 「关于」已迁至菜单宫格的 SheetModal（设置拆解 PR）；「数据管理/云同步」迁至账号与数据页
-  // 排序（2026-07-27 二次裁决）：AI 总结放回最下——它内容最长，摆第一位时
-  // 用户滚过默认展开的主题区后反而找不着它；「账号与数据」入口仍在页底。
+  // 排序（2026-07-27 三次裁决）：AI 总结紧跟主题之后；「账号与数据」入口仍在页底。
   const sections = [
     { id: 'theme', label: '主题', icon: '🎨' },
+    { id: 'summary', label: 'AI 总结', icon: '✨' },
     { id: 'personalize', label: '体验个性化', icon: '⚙️' },
     { id: 'navigator', label: '助手', icon: '◈' },
-    { id: 'notifications', label: '通知提醒', icon: '🔔' },
-    { id: 'summary', label: 'AI 总结', icon: '✨' }
+    { id: 'notifications', label: '通知提醒', icon: '🔔' }
   ];
 
   return (
