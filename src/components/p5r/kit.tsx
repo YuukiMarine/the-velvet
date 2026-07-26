@@ -226,7 +226,7 @@ export const P5Sparkle = ({ size = 14, color = P5R.red, className, style }: { si
 );
 
 /** 半调网点补丁（P5 专属默认：白点低透明度洒在黑上 / 黑点洒在红上） */
-export const P5Dots = ({ className, style, dot = 1.6, gap = 9, color = 'rgba(240,233,223,0.5)' }: {
+export const P5Dots = ({ className, style, dot = 1.6, gap = 9, color = '#6e6a62' }: {
   className?: string; style?: CSSProperties; dot?: number; gap?: number; color?: string;
 }) => (
   <div
@@ -294,7 +294,7 @@ export const P5Collage = ({ tiles, size = 52, gap = 5, className, delay = 0 }: {
               background: t.bg ?? d.bg,
               color: t.fg ?? d.fg,
               border: `3px solid ${P5R.ink}`,
-              boxShadow: `0 0 0 3px ${P5R.paper}, 6px 7px 0 rgba(0,0,0,0.9)`,
+              boxShadow: `0 0 0 3px ${P5R.paper}, 6px 7px 0 #000000`,
             }}
           >
             {t.ch}
@@ -317,7 +317,7 @@ export const P5SubBar = ({ segs, star = true, rot = -1.6, className }: {
     style={{
       background: P5R.ink,
       transform: `rotate(${rot}deg)`,
-      boxShadow: `0 0 0 2.5px ${P5R.paper}, 5px 5px 0 rgba(0,0,0,0.9)`,
+      boxShadow: `0 0 0 2.5px ${P5R.paper}, 5px 5px 0 #000000`,
     }}
   >
     {segs.map((s, i) => (
@@ -373,7 +373,7 @@ export const P5Chip = ({ children, tone = 'red', rot = 0, className, style, onCl
 }) => {
   const skin: Record<string, CSSProperties> = {
     red: { background: P5R.red, color: P5R.white, boxShadow: `2px 2.5px 0 ${P5R.ink}` },
-    ink: { background: P5R.ink, color: P5R.white, boxShadow: `2px 2.5px 0 rgba(240,233,223,0.35)` },
+    ink: { background: P5R.ink, color: P5R.white, boxShadow: `2px 2.5px 0 ${P5R.grey}` },
     paper: { background: P5R.paper, color: P5R.ink, boxShadow: `2px 2.5px 0 ${P5R.ink}` },
   };
   const cls = `inline-flex select-none items-center gap-1 px-2.5 py-1 text-[13px] font-black leading-none ${className ?? ''}`;
@@ -462,13 +462,13 @@ export const P5RPage = ({ children, className, active = true, decor = true }: {
             <P5Slab color="#4a0000" seed={12} rot={-9} style={{ left: -110, top: '38%', width: 200, height: 240 }} />
             {/* 底部左暗红 */}
             <P5Slab color={P5R.redDeep} seed={13} rot={7} style={{ left: -70, bottom: -80, width: 240, height: 200 }} />
-            {/* 半调网点两片 */}
-            <P5Dots className="absolute" style={{ left: 0, top: 96, width: 90, height: 130, opacity: 0.5 }} />
-            <P5Dots className="absolute" style={{ right: 0, bottom: '24%', width: 76, height: 150, opacity: 0.4 }} dot={1.3} gap={8} />
-            {/* 散落描边星 */}
-            <P5StarOutline size={30} color="rgba(240,233,223,0.5)" rot={-14} className="absolute" style={{ right: 24, top: '30%' }} />
-            <P5StarOutline size={20} color="rgba(192,0,8,0.55)" rot={18} className="absolute" style={{ left: 14, top: '58%' }} />
-            <P5Star size={14} fill="rgba(240,233,223,0.4)" rot={10} className="absolute" style={{ right: 52, bottom: '14%' }} />
+            {/* 半调网点两片（纯色暗灰点——舞台上不用透明度表达） */}
+            <P5Dots className="absolute" style={{ left: 0, top: 96, width: 90, height: 130 }} color="#57534c" />
+            <P5Dots className="absolute" style={{ right: 0, bottom: '24%', width: 76, height: 150 }} dot={1.3} gap={8} color="#4a4741" />
+            {/* 散落描边星（纯色暗灰 / 暗红） */}
+            <P5StarOutline size={30} color="#57534c" rot={-14} className="absolute" style={{ right: 24, top: '30%' }} />
+            <P5StarOutline size={20} color="#5c0004" rot={18} className="absolute" style={{ left: 14, top: '58%' }} />
+            <P5Star size={14} fill="#4a4741" rot={10} className="absolute" style={{ right: 52, bottom: '14%' }} />
           </>
         )}
       </div>

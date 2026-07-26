@@ -135,7 +135,7 @@ export const Sidebar = () => {
             }`
           : p5
             ? `relative w-full flex items-center gap-3 px-4 py-2.5 transition-all duration-150 cursor-pointer text-sm font-black ${
-                active ? 'text-white' : 'text-[#f0e9df]/85 hover:bg-white/10'
+                active ? 'text-white' : 'text-[#d9d3c7] hover:bg-[#1f1e1c]'
               }`
           : `w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150 cursor-pointer ${
               active
@@ -217,7 +217,7 @@ export const Sidebar = () => {
           className={p3
             ? 'w-full flex items-center gap-3 px-4 py-2.5 transition-all duration-150 cursor-pointer text-sm font-black hover:bg-[#e2f2fa]'
             : p5
-              ? 'w-full flex items-center gap-3 px-4 py-2.5 transition-all duration-150 cursor-pointer text-sm font-black text-[#f0e9df]/85 hover:bg-white/10'
+              ? 'w-full flex items-center gap-3 px-4 py-2.5 transition-all duration-150 cursor-pointer text-sm font-black text-[#d9d3c7] hover:bg-[#1f1e1c]'
               : 'w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150 cursor-pointer text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-200'}
           style={p3 ? { clipPath: slantClip(10), color: P3R.inkSoft } : p5 ? { clipPath: roughQuad(333, 5) } : undefined}
         >
