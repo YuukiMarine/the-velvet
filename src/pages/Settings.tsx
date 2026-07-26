@@ -9,6 +9,8 @@ import { PageTitle } from '@/components/PageTitle';
 import { BackButton } from '@/components/BackButton';
 import { useRipple } from '@/components/RippleEffect';
 import { AI_PROVIDERS, getProviderConfig, testAIConnection, fetchAvailableModels, type TestResult, type ApiProvider } from '@/utils/aiProviders';
+import { refreshAllProviderModels } from '@/utils/aiModelCatalog';
+import { ModelPickerSheet } from '@/components/ai/ModelPickerSheet';
 import { Toggle } from '@/components/Toggle';
 import NotificationSettings from '@/components/NotificationSettings';
 import { NavigatorSettings } from '@/components/navigator/NavigatorSettings';
@@ -624,6 +626,8 @@ export const Settings = () => {
   const [modelFetchMessage, setModelFetchMessage] = useState<string>('');
   // 连接卡折叠：有 Key 时默认收起（配好后日常只跟模型分档打交道），无 Key 展开引导配置
   const [connOpen, setConnOpen] = useState(() => !settings.summaryApiKey?.trim());
+  // 模型选择面板（快速响应/深思熟虑 共用一个 Sheet，靠 mode 区分）
+  const [modelPicker, setModelPicker] = useState<'fast' | 'deliberate' | null>(null);
 
   // 一键刷新**所有**已配 Key 的服务商的模型列表，按家落进 aiProfiles[].models
   //（用户口径：重新拉取 = 全 provider 同步更新；不支持 /models 的跳过并注明）。
@@ -631,40 +635,17 @@ export const Settings = () => {
   const handleFetchModels = async () => {
     setModelFetchStatus('loading');
     setModelFetchMessage('');
-    const targets = AI_PROVIDERS
-      .map(p => ({
-        id: p.id,
-        key: p.id === activeProvider
-          ? (summaryApiKeyDraft.trim() || settings.summaryApiKey || '')
-          : (settings.aiProfiles?.[p.id]?.key ?? ''),
-        baseUrl: p.id === activeProvider ? settings.summaryApiBaseUrl : settings.aiProfiles?.[p.id]?.baseUrl,
-      }))
-      .filter(t => t.key.trim());
-    if (!targets.length) {
+    const out = await refreshAllProviderModels(settings, summaryApiKeyDraft);
+    if (!out) {
       setModelFetchStatus('error');
       setModelFetchMessage('还没有任何服务商配好 Key');
       return;
     }
-    const results = await Promise.all(targets.map(async t => ({
-      id: t.id,
-      r: await fetchAvailableModels({ provider: t.id, apiKey: t.key, baseUrl: t.baseUrl }),
-    })));
-    const profiles = { ...(settings.aiProfiles ?? {}) };
-    const okParts: string[] = [];
-    const skipped: string[] = [];
-    for (const { id, r } of results) {
-      if (r.ok) {
-        profiles[id] = { ...(profiles[id] ?? {}), models: r.models };
-        okParts.push(`${getProviderConfig(id).label} ${r.models.length} 个`);
-      } else {
-        skipped.push(`${getProviderConfig(id).label}（${r.error.slice(0, 60)}）`);
-      }
-    }
-    updateSettings({ aiProfiles: profiles });
-    setModelFetchStatus(okParts.length ? 'ok' : 'error');
+    updateSettings({ aiProfiles: out.profiles });
+    setModelFetchStatus(out.okParts.length ? 'ok' : 'error');
     setModelFetchMessage([
-      okParts.length ? `已更新：${okParts.join('、')}` : '',
-      skipped.length ? `跳过：${skipped.join('；')}` : '',
+      out.okParts.length ? `已更新：${out.okParts.join('、')}` : '',
+      out.skipped.length ? `跳过：${out.skipped.join('；')}` : '',
     ].filter(Boolean).join('\n'));
   };
 
@@ -2254,14 +2235,7 @@ export const Settings = () => {
                       </div>
                       <div className="p-4 space-y-4 dark:bg-gray-800/20">
                         {(() => {
-                          const activeModels = settings.aiProfiles?.[provider]?.models ?? [];
                           const delibPv = settings.navigatorProvider ?? provider;
-                          const delibGroups = AI_PROVIDERS.filter(p =>
-                            (settings.aiProfiles?.[p.id]?.models?.length ?? 0) > 0 &&
-                            (p.id === provider || settings.aiProfiles?.[p.id]?.key?.trim()));
-                          const delibVal = settings.navigatorModel ? `${delibPv}::${settings.navigatorModel}` : '';
-                          const delibKnown = !settings.navigatorModel ||
-                            (settings.aiProfiles?.[delibPv]?.models ?? []).includes(settings.navigatorModel);
                           const fastFallback = settings.summaryModel?.trim() || getProviderConfig(provider).defaultModel;
                           return (
                             <>
@@ -2272,24 +2246,16 @@ export const Settings = () => {
                                   记账解析、每日塔罗、活动打分、成长总结等批量任务走这档——要快、便宜够用。
                                   跑在当前连接（{getProviderConfig(provider).label}）上。
                                 </p>
-                                {activeModels.length > 0 && (
-                                  <select
-                                    value={(settings.summaryModel ?? '') === '' ? '' : activeModels.includes(settings.summaryModel!) ? settings.summaryModel : '__custom__'}
-                                    onChange={e => {
-                                      if (e.target.value === '__custom__') return;
-                                      updateSettings({ summaryModel: e.target.value || undefined });
-                                      setApiTestStatus('idle');
-                                      setApiTestMessage('');
-                                    }}
-                                    className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 dark:text-white focus:outline-none focus:border-primary"
-                                  >
-                                    <option value="">默认（{getProviderConfig(provider).defaultModel}）</option>
-                                    {activeModels.map(m => (
-                                      <option key={m} value={m}>{m}</option>
-                                    ))}
-                                    <option value="__custom__">自定义（用下方输入框）</option>
-                                  </select>
-                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => setModelPicker('fast')}
+                                  className="flex w-full items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                                >
+                                  <span className="min-w-0 flex-1 truncate text-left">
+                                    {settings.summaryModel?.trim() || `默认（${getProviderConfig(provider).defaultModel}）`}
+                                  </span>
+                                  <span className="shrink-0 text-xs font-bold text-primary">选择模型 ›</span>
+                                </button>
                                 <input
                                   type="text"
                                   value={settings.summaryModel ?? ''}
@@ -2306,31 +2272,18 @@ export const Settings = () => {
                                   助手对话、中长期占卜走这档——值得等的深答案，可跨服务商选更强的模型
                                   （用那家已存的 Key 直连）。留空跟随快速响应。
                                 </p>
-                                {delibGroups.length > 0 && (
-                                  <select
-                                    value={delibKnown ? delibVal : '__custom__'}
-                                    onChange={e => {
-                                      const v = e.target.value;
-                                      if (v === '__custom__') return;
-                                      if (!v) { updateSettings({ navigatorModel: undefined, navigatorProvider: undefined }); return; }
-                                      const sep = v.indexOf('::');
-                                      const pv = v.slice(0, sep) as ApiProvider;
-                                      const m = v.slice(sep + 2);
-                                      updateSettings({ navigatorModel: m, navigatorProvider: pv === provider ? undefined : pv });
-                                    }}
-                                    className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 dark:text-white focus:outline-none focus:border-primary"
-                                  >
-                                    <option value="">跟随快速响应（{fastFallback}）</option>
-                                    {delibGroups.map(g => (
-                                      <optgroup key={g.id} label={g.id === provider ? `${g.label}（当前连接）` : g.label}>
-                                        {(settings.aiProfiles?.[g.id]?.models ?? []).map(m => (
-                                          <option key={`${g.id}::${m}`} value={`${g.id}::${m}`}>{m}</option>
-                                        ))}
-                                      </optgroup>
-                                    ))}
-                                    <option value="__custom__">自定义（用下方输入框）</option>
-                                  </select>
-                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => setModelPicker('deliberate')}
+                                  className="flex w-full items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                                >
+                                  <span className="min-w-0 flex-1 truncate text-left">
+                                    {settings.navigatorModel?.trim()
+                                      ? `${getProviderConfig(delibPv).label} · ${settings.navigatorModel}`
+                                      : `跟随快速响应（${fastFallback}）`}
+                                  </span>
+                                  <span className="shrink-0 text-xs font-bold text-primary">选择模型 ›</span>
+                                </button>
                                 <input
                                   type="text"
                                   value={settings.navigatorModel ?? ''}
@@ -2360,6 +2313,13 @@ export const Settings = () => {
 
                       </div>
                     </div>
+
+                    {/* 模型选择面板（SheetModal，portal 渲染） */}
+                    <ModelPickerSheet
+                      mode={modelPicker ?? 'fast'}
+                      isOpen={modelPicker !== null}
+                      onClose={() => setModelPicker(null)}
+                    />
 
                   </div>
                   );

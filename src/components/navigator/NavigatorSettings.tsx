@@ -11,7 +11,8 @@ import { useAppStore } from '@/store';
 import { useNavigatorStore } from '@/store/navigator';
 import { v4 as uuidv4 } from 'uuid';
 import { getAIConfig } from '@/utils/aiClient';
-import { AI_PROVIDERS, fetchAvailableModels, getProviderConfig, type ApiProvider } from '@/utils/aiProviders';
+import { getProviderConfig } from '@/utils/aiProviders';
+import { ModelPickerSheet } from '@/components/ai/ModelPickerSheet';
 import { generatePersonaPrompt } from '@/utils/navigatorIntent';
 import { finalizeStaleSessions } from '@/utils/navigatorMemory';
 import { mergedNavigatorPresets } from '@/constants/navigatorPresets';
@@ -49,9 +50,8 @@ export const NavigatorSettings = () => {
   const activeId = nav.activePreset().id;
 
   const [gen, setGen] = useState<GeneratorState>(closedGenerator);
-  // 深思熟虑档 picker：列表读 aiProfiles 里各家存的（设置页/这里拉取共用一份缓存）
-  const [navModelStatus, setNavModelStatus] = useState<'idle' | 'loading' | 'ok' | 'error'>('idle');
-  const [navModelMsg, setNavModelMsg] = useState('');
+  // 深思熟虑档选择面板（与设置页共用 ModelPickerSheet，列表读 aiProfiles 缓存）
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [notebookOpen, setNotebookOpen] = useState(false);
   // 对话模型是副入口：默认收起，不跟人格/记事本抢注意力
   const [modelCardOpen, setModelCardOpen] = useState(false);
@@ -106,40 +106,6 @@ export const NavigatorSettings = () => {
     if (!deleteTarget) return;
     await nav.deletePreset(deleteTarget.id);
     setDeleteTarget(null);
-  };
-
-  // 与设置页「刷新全部模型列表」同口径：所有已配 Key 的服务商一起拉，按家落进 aiProfiles
-  const fetchNavModels = async () => {
-    if (navModelStatus === 'loading') return;
-    setNavModelStatus('loading');
-    setNavModelMsg('');
-    const active = settings.summaryApiProvider ?? 'openai';
-    const targets = AI_PROVIDERS
-      .map((p) => ({
-        id: p.id,
-        key: p.id === active ? (settings.summaryApiKey ?? '') : (settings.aiProfiles?.[p.id]?.key ?? ''),
-        baseUrl: p.id === active ? settings.summaryApiBaseUrl : settings.aiProfiles?.[p.id]?.baseUrl,
-      }))
-      .filter((t) => t.key.trim());
-    if (!targets.length) {
-      setNavModelStatus('error');
-      setNavModelMsg('还没有任何服务商配好 Key');
-      return;
-    }
-    const results = await Promise.all(targets.map(async (t) => ({
-      id: t.id,
-      r: await fetchAvailableModels({ provider: t.id, apiKey: t.key, baseUrl: t.baseUrl }),
-    })));
-    const profiles = { ...(settings.aiProfiles ?? {}) };
-    const ok: string[] = [];
-    const skipped: string[] = [];
-    for (const { id, r } of results) {
-      if (r.ok) { profiles[id] = { ...(profiles[id] ?? {}), models: r.models }; ok.push(getProviderConfig(id).label); }
-      else skipped.push(getProviderConfig(id).label);
-    }
-    updateSettings({ aiProfiles: profiles });
-    setNavModelStatus(ok.length ? 'ok' : 'error');
-    setNavModelMsg([ok.length ? `已更新：${ok.join('、')}` : '', skipped.length ? `跳过：${skipped.join('、')}` : ''].filter(Boolean).join('；'));
   };
 
   const runArchive = async () => {
@@ -378,63 +344,18 @@ export const NavigatorSettings = () => {
         </p>
         {hasAI ? (
           <div className="mt-2.5 space-y-2">
-            <div className="flex items-center gap-2">
-              {(() => {
-                const active = settings.summaryApiProvider ?? 'openai';
-                const delibPv = settings.navigatorProvider ?? active;
-                const groups = AI_PROVIDERS.filter((p) =>
-                  (settings.aiProfiles?.[p.id]?.models?.length ?? 0) > 0 &&
-                  (p.id === active || settings.aiProfiles?.[p.id]?.key?.trim()));
-                const val = settings.navigatorModel ? `${delibPv}::${settings.navigatorModel}` : '';
-                const known = !settings.navigatorModel ||
-                  (settings.aiProfiles?.[delibPv]?.models ?? []).includes(settings.navigatorModel);
-                if (!groups.length) {
-                  return (
-                    <input
-                      type="text"
-                      value={settings.navigatorModel ?? ''}
-                      onChange={(e) => updateSettings({ navigatorModel: e.target.value || undefined })}
-                      placeholder={`留空 = 跟随快速响应（${getAIConfig(settings)?.model}）`}
-                      className="min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 placeholder:text-gray-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
-                    />
-                  );
-                }
-                return (
-                  <select
-                    value={known ? val : '__custom__'}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      if (v === '__custom__') return;
-                      if (!v) { updateSettings({ navigatorModel: undefined, navigatorProvider: undefined }); return; }
-                      const sep = v.indexOf('::');
-                      const pv = v.slice(0, sep) as ApiProvider;
-                      updateSettings({ navigatorModel: v.slice(sep + 2), navigatorProvider: pv === active ? undefined : pv });
-                    }}
-                    className="min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
-                  >
-                    <option value="">跟随快速响应（{getAIConfig(settings)?.model}）</option>
-                    {groups.map((g) => (
-                      <optgroup key={g.id} label={g.id === active ? `${g.label}（当前连接）` : g.label}>
-                        {(settings.aiProfiles?.[g.id]?.models ?? []).map((m) => (
-                          <option key={`${g.id}::${m}`} value={`${g.id}::${m}`}>{m}</option>
-                        ))}
-                      </optgroup>
-                    ))}
-                    {!known && <option value="__custom__">自定义：{settings.navigatorModel}</option>}
-                  </select>
-                );
-              })()}
-              <button
-                type="button"
-                onClick={() => void fetchNavModels()}
-                className="shrink-0 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-500 transition hover:text-gray-700 dark:border-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-              >
-                {navModelStatus === 'loading' ? '拉取中…' : '拉取模型列表'}
-              </button>
-            </div>
-            {navModelMsg && (
-              <p className={`text-xs ${navModelStatus === 'error' ? 'text-red-500' : 'text-gray-400 dark:text-gray-500'}`}>{navModelMsg}</p>
-            )}
+            <button
+              type="button"
+              onClick={() => setPickerOpen(true)}
+              className="flex w-full items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
+            >
+              <span className="min-w-0 flex-1 truncate text-left">
+                {settings.navigatorModel?.trim()
+                  ? `${getProviderConfig(settings.navigatorProvider ?? settings.summaryApiProvider ?? 'openai').label} · ${settings.navigatorModel}`
+                  : `跟随快速响应（${getAIConfig(settings)?.model}）`}
+              </span>
+              <span className="shrink-0 text-xs font-bold text-primary">选择模型 ›</span>
+            </button>
             {settings.navigatorModel && (
               <button
                 type="button"
@@ -444,6 +365,7 @@ export const NavigatorSettings = () => {
                 恢复跟随快速响应
               </button>
             )}
+            <ModelPickerSheet mode="deliberate" isOpen={pickerOpen} onClose={() => setPickerOpen(false)} />
           </div>
         ) : (
           <p className="mt-2 text-xs text-gray-400 dark:text-gray-500">先在「设置 → AI 智能功能」里配置 API Key，这里才能选模型。</p>
