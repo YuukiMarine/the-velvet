@@ -48,7 +48,7 @@ import { useUiChannel } from '@/ui/useUiChannel';
 import { P4Flower, P4Sparkle, P4Highlight } from '@/ui/p4Kit';
 import { P3R, P3RPage, slantClip } from '@/components/p3r/kit';
 import { P5R, P5_FONT, starPts, P5Collage, P5SubBar, P5Star, P5StarOutline, P5Dots, P5Slab, P5RPage } from '@/components/p5r/kit';
-import { computeTotalLv } from '@/utils/lvTiers';
+import { computeTotalLv, resolveTier } from '@/utils/lvTiers';
 
 // ── 图标（24px stroke 制式，与 Navigation.tsx 同一套 heroicons outline 风格）──
 
@@ -483,6 +483,8 @@ export const Menu = () => {
     const totalLv = computeTotalLv(attributes);
     const totalPoints = attributes.reduce((s, a) => s + (a.points ?? 0), 0);
     const initial = (user?.name || 'S').trim().charAt(0).toUpperCase() || 'S';
+    // 阶位（原来 SEEKER 是写死的，不随等级变）
+    const tier = resolveTier(totalLv);
     // 用户卡：上边向右抬、下边向右落的斜四边形（稿上头牌形制）
     const USER_CARD_SHAPE = 'polygon(0 13px, 100% 0, calc(100% - 6px) calc(100% - 4px), 9px 100%)';
     // 关于条：左端尖头 + 右端内收的长斜条（稿上底部条形制）
@@ -594,23 +596,50 @@ export const Menu = () => {
             <span className="relative block px-4 pb-3 pt-4">
               <span className="flex items-center gap-3.5">
                 {/* 红星头像框：红底黑框 + 白描边星 + 首字母 */}
-                <span aria-hidden className="relative flex h-[72px] w-[72px] shrink-0 items-center justify-center" style={{ background: P5R.red, border: `3.5px solid ${P5R.ink}` }}>
-                  <svg viewBox="0 0 100 100" className="h-[62px] w-[62px]">
-                    <polygon points={starPts(50, 54, 46)} fill={P5R.red} stroke={P5R.paper} strokeWidth={7} strokeLinejoin="miter" />
-                  </svg>
-                  <span className="absolute text-[26px] font-black leading-none text-white" style={{ fontFamily: P5_FONT, textShadow: '2px 2px 0 #000000' }}>{initial}</span>
+                <span
+                  aria-hidden
+                  className="relative flex h-[72px] w-[72px] shrink-0 items-center justify-center overflow-hidden"
+                  style={{ background: P5R.red, border: `3.5px solid ${P5R.ink}`, clipPath: 'polygon(3px 0, 100% 2px, calc(100% - 4px) 100%, 0 calc(100% - 3px))' }}
+                >
+                  {user?.avatarDataUrl ? (
+                    <>
+                      <img src={user.avatarDataUrl} alt="" className="absolute inset-0 h-full w-full object-cover" />
+                      {/* 角星压在头像上，保住稿上的星标语言 */}
+                      <svg viewBox="0 0 100 100" className="absolute -bottom-1 -right-1 h-6 w-6">
+                        <polygon points={starPts(50, 50, 48)} fill={P5R.red} stroke={P5R.paper} strokeWidth={7} strokeLinejoin="miter" />
+                      </svg>
+                    </>
+                  ) : (
+                    <>
+                      <svg viewBox="0 0 100 100" className="h-[62px] w-[62px]">
+                        <polygon points={starPts(50, 54, 46)} fill={P5R.red} stroke={P5R.paper} strokeWidth={7} strokeLinejoin="miter" />
+                      </svg>
+                      <span className="absolute text-[26px] font-black leading-none text-white" style={{ fontFamily: P5_FONT, textShadow: '2px 2px 0 #000000' }}>{initial}</span>
+                    </>
+                  )}
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-2">
                     <span className="truncate text-[23px] font-black leading-tight" style={{ color: P5R.ink, fontFamily: P5_FONT }}>{user?.name || '怪盗'}</span>
                     <P5Star size={17} fill={P5R.red} rot={-14} className="shrink-0" />
                   </span>
-                  <span className="mt-2 flex items-center">
-                    <span className="flex items-baseline gap-1.5 px-3 py-1 text-white" style={{ background: P5R.ink, clipPath: 'polygon(0 0, 100% 0, calc(100% - 8px) 100%, 0 100%)' }}>
-                      <span className="text-[11px] font-black tracking-wider">LV</span>
-                      <span className="text-[19px] font-black leading-none tabular-nums">{totalLv}</span>
+                  <span className="mt-2 flex items-center gap-0">
+                    {/* LV 黑斜章 */}
+                    <span
+                      className="relative flex items-baseline gap-1.5 py-1 pl-3 pr-4 text-white"
+                      style={{ background: P5R.ink, clipPath: 'polygon(2px 0, 100% 1px, calc(100% - 11px) 100%, 0 calc(100% - 2px))' }}
+                    >
+                      <span className="text-[11px] font-black tracking-[0.14em]">LV</span>
+                      <span className="text-[20px] font-black leading-none tabular-nums">{totalLv}</span>
                     </span>
-                    <span className="-ml-1 px-3 py-1.5 text-[13px] font-black italic tracking-wider" style={{ background: P5R.paper, color: P5R.ink, border: `2.5px solid ${P5R.ink}`, clipPath: 'polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%)' }}>SEEKER</span>
+                    {/* 阶位章（英文名 + 中文名，随总等级变） */}
+                    <span
+                      className="relative -ml-2.5 flex items-baseline gap-1.5 py-1 pl-4 pr-3"
+                      style={{ background: P5R.red, color: '#fff', clipPath: 'polygon(11px 1px, 100% 0, calc(100% - 3px) calc(100% - 2px), 0 100%)' }}
+                    >
+                      <span className="text-[13px] font-black italic tracking-[0.1em]">{tier.label.toUpperCase()}</span>
+                      <span className="text-[11px] font-black">{tier.labelZh}</span>
+                    </span>
                   </span>
                 </span>
               </span>
