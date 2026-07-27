@@ -21,6 +21,7 @@ import { CoopMemorialPanel } from '@/components/cooperation/CoopMemorialPanel';
 import { TarotCardSVG } from '@/components/astrology/TarotCardSVG';
 import { triggerLightHaptic } from '@/utils/feedback';
 import { ImageCropDialog } from '@/components/ImageCropDialog';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { useModalA11y } from '@/utils/useModalA11y';
 import { useBackHandler } from '@/utils/useBackHandler';
 import type { Confidant, ConfidantEvent } from '@/types';
@@ -175,6 +176,8 @@ export function ConfidantDetailModal({
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [avatarErr, setAvatarErr] = useState<string | null>(null);
   const [pendingAvatarFile, setPendingAvatarFile] = useState<File | null>(null);
+  // 上传完问一句：要不要把塔罗的「卡面」也换成这张图
+  const [askCardFace, setAskCardFace] = useState(false);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const avatarWrapperRef = useRef<HTMLDivElement>(null);
   const longPressFiredRef = useRef(false);
@@ -328,6 +331,8 @@ export function ConfidantDetailModal({
     setAvatarUploading(true);
     try {
       await updateConfidant(confidant.id, { customAvatarDataUrl: dataUrl });
+      // 换头像本质上就是「换卡面」：问一句是否同步，同步后羁绛墙 / 卡片 / 详情全部用这张图当牌面
+      if (!confidant.avatarAsCardFace) setAskCardFace(true);
     } catch (err) {
       setAvatarErr(err instanceof Error ? err.message : '上传失败');
       setTimeout(() => setAvatarErr(null), 2200);
@@ -338,7 +343,8 @@ export function ConfidantDetailModal({
 
   const handleRestoreTarot = async () => {
     setAvatarMenuOpen(false);
-    await updateConfidant(confidant.id, { customAvatarDataUrl: undefined });
+    // 恢复塔罗：头像与卡面覆盖一起清掉
+    await updateConfidant(confidant.id, { customAvatarDataUrl: undefined, avatarAsCardFace: false });
   };
 
   // portal 到 body（审计 §3.6）：树内 fixed 会被页面容器的 transform/clip 创建的
@@ -1006,6 +1012,21 @@ export function ConfidantDetailModal({
 
       {/* 同伴头像裁切弹窗（可取消，支持拖动 / 缩放）
           使用塔罗牌比例 1:1.6，避免替换后被 object-cover 再次截取 */}
+      {/* 换头像 = 换卡面：二选一确认 */}
+      <ConfirmDialog
+        isOpen={askCardFace}
+        tone="default"
+        title="同步换成卡面？"
+        description="选「同步」会把羁绛墙上这位同伴的整张塔罗牌面换成刚上传的图；选「只当头像」则仅在档案里用它，牌面保持塔罗。之后可随时长按头像改回。"
+        confirmText="同步卡面"
+        cancelText="只当头像"
+        onConfirm={() => {
+          setAskCardFace(false);
+          void updateConfidant(confidant.id, { avatarAsCardFace: true });
+        }}
+        onCancel={() => setAskCardFace(false)}
+      />
+
       <ImageCropDialog
         key="cd-crop"
         isOpen={!!pendingAvatarFile}

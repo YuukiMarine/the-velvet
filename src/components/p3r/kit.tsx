@@ -50,14 +50,9 @@ export const P3RPage = ({ children, className, active = true }: { children: Reac
   if (!active) return <>{children}</>;
   return (
     <div className={`relative ${className ?? ''}`}>
-      {/* 水面底：只留一层可读性罩纱 —— 深色水体交给 App 里全局的 UnderwaterStage
-          （渐变水体 + 光柱 + 4 帧水面波纹）。这里若还铺不透明浅底会把它整块盖住，
-          所以改成自上而下渐浓的浅色半透罩：上方留出水面演出，下方压出正文对比度。 */}
-      <div
-        aria-hidden
-        className="fixed inset-0 z-0"
-        style={{ background: 'linear-gradient(180deg, rgba(238,245,249,0.12) 0%, rgba(238,245,249,0.50) 38%, rgba(238,245,249,0.76) 70%, rgba(238,245,249,0.85) 100%)' }}
-      />
+      {/* 水面底 / 可读性罩纱都已上收到 App 根（UnderwaterStage + 全局罩纱）：
+          原来每个 P3 页各挂一层 fixed 底，翻页时随页面一起淡入淡出，
+          看上去就是「背景每次切页都重载一次」。这里不再挂任何固定层。 */}
       <div className="relative z-10">{children}</div>
     </div>
   );

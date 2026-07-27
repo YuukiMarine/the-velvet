@@ -597,9 +597,21 @@ function App() {
           {/* P4 黄舞台背景装饰：巨型橙弧环 + 大花剪影 + 四角星，缓解纯黄大面积平铺 */}
           {user?.theme === 'yellow' && <P4StageDecor />}
 
-          {/* P3 蓝舞台：全局水下场景（渐变水体 + 缓慢左移右的光柱 + 1s/4 帧水面波纹）。
-              用户自定义了背景图时让位，不覆盖对方的设置。 */}
-          {user?.theme === 'blue' && !settings.backgroundImage && <UnderwaterStage />}
+          {/* P3 蓝舞台：全局水下场景（渐变水体 + 缓慢左移右的光柱 + 1s/8 帧水面波纹）+
+              一层自上而下渐浓的可读性罩纱。两者都挂在 App 根、不随页面切换重挂，
+              所以翻页时背景是连续的（以前罩纱在每个 P3 页里，跟着页面一起淡入淡出，
+              看上去就是"每次切页背景重载一次"）。用户自定义了背景图时整体让位。 */}
+          {user?.theme === 'blue' && !settings.backgroundImage && (
+            <>
+              <UnderwaterStage motion={settings.underwaterMotion ?? true} />
+              <div
+                aria-hidden
+                className="pointer-events-none fixed inset-0 z-0"
+                // 罩纱只做「够读」不做「洗白」：底部刻意留薄，让水体收到靛紫看得见
+                style={{ background: 'linear-gradient(180deg, rgba(238,245,249,0.05) 0%, rgba(238,245,249,0.34) 34%, rgba(238,245,249,0.46) 66%, rgba(238,245,249,0.36) 100%)' }}
+              />
+            </>
+          )}
 
         <div className="relative z-10">
           <WelcomeModal />

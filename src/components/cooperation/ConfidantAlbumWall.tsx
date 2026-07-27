@@ -39,46 +39,88 @@ export interface ConfidantAlbumWallProps {
   canCreate: boolean;
 }
 
-/** 背面档案（与正面同尺寸；rotateY(180) 预翻，父层翻转后正读；p3=白底蓝字版） */
+/**
+ * 背面档案（与正面同尺寸；rotateY(180) 预翻，父层翻转后正读）。
+ * 三频道各一套配色：以前一律暗靛紫渐变，在红/黄主题里既出戏又不好读。
+ *   p5 = 纸面黑框红点缀 · p4 = 奶油面墨字橙点缀 · p3 = 白底蓝字 · 中性 = 原靛紫。
+ */
+const BACK_SKIN = {
+  p5: {
+    face: '#f0e9df', line: '#050505', radius: 2,
+    ink: '#050505', sub: '#494540', meta: '#c00008', accent: '#c00008',
+    track: '#cdc7ba', bar: 'linear-gradient(90deg, #c00008, #d90008)',
+    advice: '#8e0000', btnBg: '#c00008', btnInk: '#f0e9df',
+    shadow: '5px 6px 0 #050505',
+  },
+  p4: {
+    face: '#fff9e3', line: '#131313', radius: 14,
+    ink: '#131313', sub: 'rgba(19,19,19,0.66)', meta: '#b26a00', accent: 'var(--p4-orange, #f9a11b)',
+    track: 'rgba(19,19,19,0.12)', bar: 'linear-gradient(90deg, #f9a11b, #ffd900)',
+    advice: '#b26a00', btnBg: '#131313', btnInk: '#ffd900',
+    shadow: '0 4px 0 rgba(19,19,19,0.25)',
+  },
+  p3: {
+    face: '#ffffff', line: 'rgba(147,190,222,0.45)', radius: 14,
+    ink: P3R.ink, sub: P3R.inkSoft, meta: P3R.blue, accent: P3R.blue,
+    track: '#e4eef5', bar: 'linear-gradient(90deg, #35d1e8, #7fd8ee)',
+    advice: P3R.magenta, btnBg: P3R.blue, btnInk: '#ffffff',
+    shadow: '0 16px 36px -14px rgba(38,96,140,0.35)',
+  },
+  neutral: {
+    face: 'linear-gradient(180deg, #1e1b4b, #0f172a)', line: 'rgba(165,180,252,0.4)', radius: 12,
+    ink: '#ffffff', sub: 'rgba(199,210,254,0.8)', meta: '#a5b4fc', accent: '#a5b4fc',
+    track: 'rgba(255,255,255,0.15)', bar: 'linear-gradient(90deg, #818cf8, #e879f9)',
+    advice: 'rgba(245,208,254,0.85)', btnBg: 'rgba(255,255,255,0.14)', btnInk: '#ffffff',
+    shadow: '0 10px 30px -12px rgba(49,46,129,0.6)',
+  },
+} as const;
+
 const CardBackFace = ({ c, onOpenDetail }: { c: Confidant; onOpenDetail: () => void }) => {
-  const p3 = useUiChannel() === 'p3';
+  const channel = useUiChannel();
+  const sk = BACK_SKIN[channel];
+  const p5 = channel === 'p5';
   const card = TAROT_BY_ID[c.arcanaId];
   const nextNeed = 20 + c.intimacy * 10; // 展示用近似值：真实口径在详情页
   return (
     <div
-      className={p3
-        ? 'flex h-full w-full flex-col rounded-[14px] bg-white px-4 py-4'
-        : 'flex h-full w-full flex-col rounded-xl border border-indigo-300/40 bg-gradient-to-b from-indigo-950 to-slate-900 px-4 py-4 text-white'}
-      style={p3
-        ? { border: '1px solid rgba(147,190,222,0.45)', boxShadow: '0 16px 36px -14px rgba(38,96,140,0.35)' }
-        : { boxShadow: '0 10px 30px -12px rgba(49,46,129,0.6)' }}
+      className="flex h-full w-full flex-col px-4 py-4"
+      style={{
+        background: sk.face,
+        border: `${p5 ? 3 : 1}px solid ${sk.line}`,
+        borderRadius: sk.radius,
+        boxShadow: sk.shadow,
+        color: sk.ink,
+      }}
     >
       <div className="flex items-baseline justify-between gap-2">
-        <span className={`truncate text-lg font-black ${p3 ? '' : ''}`} style={p3 ? { color: P3R.ink } : undefined}>{c.name}</span>
-        <span className="shrink-0 text-[10px] font-bold" style={p3 ? { color: P3R.blue } : { color: '#a5b4fc' }}>
+        <span className="truncate text-lg font-black" style={{ color: sk.ink }}>{c.name}</span>
+        <span className="shrink-0 text-[10px] font-bold" style={{ color: sk.meta }}>
           {card?.roman ?? ''} {c.orientation === 'reversed' ? '逆位' : '正位'}
         </span>
       </div>
-      <div className="mt-0.5 text-xs font-semibold" style={p3 ? { color: P3R.inkSoft } : { color: 'rgba(199,210,254,0.8)' }}>{card?.name ?? c.arcanaId}</div>
+      <div className="mt-0.5 text-xs font-semibold" style={{ color: sk.sub }}>{card?.name ?? c.arcanaId}</div>
 
       <div className="mt-3">
-        <div className="flex items-baseline justify-between text-[10px] font-bold" style={p3 ? { color: P3R.blue } : { color: 'rgba(199,210,254,0.7)' }}>
+        <div className="flex items-baseline justify-between text-[10px] font-bold" style={{ color: sk.meta }}>
           <span>RANK {c.intimacy}</span>
           <span className="tabular-nums">{c.intimacyPoints}/{nextNeed}</span>
         </div>
-        <div className={`mt-1 h-1.5 overflow-hidden ${p3 ? '' : 'rounded-full bg-white/15'}`} style={p3 ? { background: '#e4eef5', clipPath: 'polygon(2px 0, 100% 0, calc(100% - 2px) 100%, 0 100%)' } : undefined}>
+        <div
+          className="mt-1 h-1.5 overflow-hidden"
+          style={{ background: sk.track, borderRadius: p5 ? 0 : 9999, clipPath: p5 ? 'polygon(2px 0, 100% 0, calc(100% - 2px) 100%, 0 100%)' : undefined }}
+        >
           <div
-            className={`h-full ${p3 ? '' : 'rounded-full bg-gradient-to-r from-indigo-400 to-fuchsia-400'}`}
-            style={{ width: `${Math.min(100, (c.intimacyPoints / nextNeed) * 100)}%`, ...(p3 ? { background: 'linear-gradient(90deg, #35d1e8, #7fd8ee)' } : {}) }}
+            className="h-full"
+            style={{ width: `${Math.min(100, (c.intimacyPoints / nextNeed) * 100)}%`, background: sk.bar, borderRadius: p5 ? 0 : 9999 }}
           />
         </div>
       </div>
 
       {c.description && (
-        <p className="mt-3 line-clamp-3 text-[11px] leading-relaxed" style={p3 ? { color: P3R.inkSoft } : { color: 'rgba(224,231,255,0.75)' }}>{c.description}</p>
+        <p className="mt-3 line-clamp-3 text-[11px] leading-relaxed" style={{ color: sk.sub }}>{c.description}</p>
       )}
       {c.aiAdvice && (
-        <p className="mt-2 line-clamp-2 text-[11px] leading-relaxed" style={p3 ? { color: P3R.magenta } : { color: 'rgba(245,208,254,0.8)' }}>✦ {c.aiAdvice}</p>
+        <p className="mt-2 line-clamp-2 text-[11px] leading-relaxed" style={{ color: sk.advice }}>✦ {c.aiAdvice}</p>
       )}
 
       <button
@@ -91,10 +133,13 @@ const CardBackFace = ({ c, onOpenDetail }: { c: Confidant; onOpenDetail: () => v
           e.stopPropagation();
           onOpenDetail();
         }}
-        className={p3
-          ? 'mt-auto w-full py-2 text-xs font-black text-white active:brightness-95'
-          : 'mt-auto w-full rounded-lg bg-white/12 py-2 text-xs font-bold text-white active:bg-white/20'}
-        style={p3 ? { clipPath: slantClip(8), background: P3R.blue } : undefined}
+        className="mt-auto w-full py-2 text-xs font-black active:brightness-95"
+        style={{
+          background: sk.btnBg,
+          color: sk.btnInk,
+          borderRadius: p5 ? 0 : 8,
+          clipPath: channel === 'p3' ? slantClip(8) : p5 ? 'polygon(3px 0, 100% 2px, calc(100% - 3px) 100%, 0 calc(100% - 2px))' : undefined,
+        }}
       >
         查看档案 →
       </button>
@@ -119,6 +164,10 @@ const BlankCard = () => {
 };
 
 const idOf = (item: Confidant | 'add') => (item === 'add' ? '__add__' : item.id);
+
+/** 「头像同步为卡面」开着时，整张牌面换成上传的图 */
+const faceOf = (c: Confidant): string | undefined =>
+  c.avatarAsCardFace && c.customAvatarDataUrl ? c.customAvatarDataUrl : undefined;
 
 /**
  * WallScrubber —— 刻度条式快速跳卡（替代原生 range，Persona 资源条语言）。
@@ -369,7 +418,7 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
             </button>
           ) : (
             <button key={item.id} type="button" onClick={() => onOpenDetail(item.id)} className="shrink-0" style={{ scrollSnapAlign: 'center' }}>
-              <TarotCardSVG card={TAROT_BY_ID[item.arcanaId]} orientation={item.orientation} width={CARD_W * 0.8} staticCard showOrientationTag={false} />
+              <TarotCardSVG card={TAROT_BY_ID[item.arcanaId]} orientation={item.orientation} width={CARD_W * 0.8} staticCard showOrientationTag={false} faceOverride={faceOf(item)} />
               <div className="mt-1 truncate text-center text-xs font-bold text-gray-700 dark:text-gray-200">{item.name}</div>
             </button>
           ),
@@ -432,7 +481,7 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
                 {item === 'add' ? (
                   <BlankCard />
                 ) : (
-                  <TarotCardSVG card={TAROT_BY_ID[item.arcanaId]} orientation={item.orientation} width={CARD_W} staticCard showOrientationTag={false} />
+                  <TarotCardSVG card={TAROT_BY_ID[item.arcanaId]} orientation={item.orientation} width={CARD_W} staticCard showOrientationTag={false} faceOverride={faceOf(item)} />
                 )}
                 {/* 两侧渐暗罩（transform-only 之外唯一的视觉层，纯透明度；p3 用蓝灰调防白卡发脏） */}
                 {!isCenter && <div aria-hidden className={`absolute inset-0 ${p3 ? 'rounded-[14px]' : 'rounded-xl'}`} style={{ background: p3 ? '#4a7a9c' : '#000', opacity: 0.18 + Math.abs(offset) * 0.16 }} />}

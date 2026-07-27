@@ -271,15 +271,15 @@ const BubbleIn = ({ side, mark, markCh, children }: {
 const P5Bubble = ({ side, children }: { side: 'cat' | 'user'; children: React.ReactNode }) => {
   const left = side === 'cat';
   return (
-    <div className="relative" style={{ minHeight: 56 }}>
+    <div className="relative" style={{ minHeight: 62 }}>
       <span aria-hidden className="absolute inset-0" style={{ background: left ? '#f0e9df' : '#050505', clipPath: left ? BUB_EDGE_L : BUB_EDGE_R }} />
       <span aria-hidden className="absolute inset-0" style={{ background: left ? '#050505' : '#f0e9df', clipPath: left ? BUB_FACE_L : BUB_FACE_R }} />
       <div
-        className={`relative flex min-h-[56px] items-center whitespace-pre-wrap text-sm font-bold leading-relaxed ${
-          left ? 'pl-[46px] pr-[32px] text-[#f0e9df]' : 'pl-[32px] pr-[46px] text-[#050505]'
+        className={`relative flex min-h-[62px] items-center whitespace-pre-wrap text-[15.4px] font-bold leading-relaxed ${
+          left ? 'pl-[51px] pr-[35px] text-[#f0e9df]' : 'pl-[35px] pr-[51px] text-[#050505]'
         }`}
         // overflowWrap:anywhere：用户粘一千字无空格长串时不会把气泡撞爆
-        style={{ paddingTop: 12, paddingBottom: 14, overflowWrap: 'anywhere', wordBreak: 'break-word' }}
+        style={{ paddingTop: 13, paddingBottom: 15, overflowWrap: 'anywhere', wordBreak: 'break-word' }}
       >
         {children}
       </div>
@@ -603,10 +603,10 @@ export const NavigatorWindow = () => {
                     aria-label="人格菜单"
                     aria-expanded={personaMenuOpen}
                     onClick={() => setPersonaMenuOpen((v) => !v)}
-                    className={`relative flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden transition hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-current ${sk.avatar}`}
+                    className={`relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden transition hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-current ${sk.avatar}`}
                     style={{ ...sk.avatarStyle, clipPath: bright ? 'polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%)' : undefined, borderRadius: bright ? undefined : isP4 ? 9999 : '0.75rem' }}
                   >
-                    <CatFace className="h-6 w-6" />
+                    <CatFace className="h-[26px] w-[26px]" />
                   </button>
                   <div className="min-w-0 flex-1">
                     <div className={`truncate font-black ${isP4 ? 'text-[22px]' : 'text-base'}`} style={{ ...sk.headerText, ...(isP4 ? { fontFamily: 'var(--p4-display-font, serif)' } : {}) }}>{preset.name}</div>
@@ -899,11 +899,11 @@ export const NavigatorWindow = () => {
 const TypingRow = ({ sk, bright, bold }: { sk: Skin; bright: boolean; bold: boolean }) => (
   <div className="flex items-start gap-2.5" role="status" aria-label="助手正在输入">
     <span
-      className={`relative mt-0.5 flex h-[38px] w-[38px] shrink-0 items-center justify-center overflow-hidden ${sk.avatar}`}
+      className={`relative mt-0.5 flex h-[42px] w-[42px] shrink-0 items-center justify-center overflow-hidden ${sk.avatar}`}
       style={{ ...sk.avatarStyle, clipPath: bright ? 'polygon(0 8%, 100% 0, 96% 100%, 2% 96%)' : undefined, borderRadius: bright ? undefined : ((sk.avatarStyle as React.CSSProperties | undefined)?.borderRadius ?? '0.65rem') }}
       aria-hidden
     >
-      <CatFace className="h-[22px] w-[22px]" />
+      <CatFace className="h-[24px] w-[24px]" />
     </span>
     <div className={`flex items-center gap-1.5 px-4 py-3.5 ${sk.catBubble}`} style={sk.catBubbleStyle} aria-hidden>
       {[0, 1, 2].map((i) =>
@@ -946,7 +946,7 @@ const MessageRow = ({ m, sk, bright, p5 = false, p4 = false, busy, onConfirm, on
           {p5 ? (
             <P5Bubble side="user">{m.text}</P5Bubble>
           ) : (
-            <div className={`whitespace-pre-wrap px-4 py-2.5 text-sm font-bold leading-relaxed ${sk.userBubble}`} style={{ ...sk.userBubbleStyle, overflowWrap: 'anywhere' }}>
+            <div className={`whitespace-pre-wrap px-[18px] py-[11px] text-[15.4px] font-bold leading-relaxed ${sk.userBubble}`} style={{ ...sk.userBubbleStyle, overflowWrap: 'anywhere' }}>
               {m.text}
             </div>
           )}
@@ -958,17 +958,17 @@ const MessageRow = ({ m, sk, bright, p5 = false, p4 = false, busy, onConfirm, on
     return (
       <div className="flex items-start gap-2.5" data-spine-side="cat">
         {p5 ? (
-          <P5Avatar size={62}><CatFace className="h-[18px] w-[18px]" /></P5Avatar>
+          <P5Avatar size={68}><CatFace className="h-[20px] w-[20px]" /></P5Avatar>
         ) : (
-          <span className={`relative mt-0.5 flex h-[38px] w-[38px] shrink-0 items-center justify-center overflow-hidden ${sk.avatar}`} style={{ ...sk.avatarStyle, clipPath: bright ? 'polygon(0 8%, 100% 0, 96% 100%, 2% 96%)' : undefined, borderRadius: bright ? undefined : ((sk.avatarStyle as React.CSSProperties | undefined)?.borderRadius ?? '0.65rem') }}>
-            <CatFace className="h-[22px] w-[22px]" />
+          <span className={`relative mt-0.5 flex h-[42px] w-[42px] shrink-0 items-center justify-center overflow-hidden ${sk.avatar}`} style={{ ...sk.avatarStyle, clipPath: bright ? 'polygon(0 8%, 100% 0, 96% 100%, 2% 96%)' : undefined, borderRadius: bright ? undefined : ((sk.avatarStyle as React.CSSProperties | undefined)?.borderRadius ?? '0.65rem') }}>
+            <CatFace className="h-[24px] w-[24px]" />
           </span>
         )}
         <BubbleIn side="cat" mark={mark} markCh={markCh}>
           {p5 ? (
             <P5Bubble side="cat">{m.text}</P5Bubble>
           ) : (
-            <div className={`whitespace-pre-wrap px-4 py-2.5 text-sm font-bold leading-relaxed ${sk.catBubble}`} style={{ ...sk.catBubbleStyle, overflowWrap: 'anywhere' }}>
+            <div className={`whitespace-pre-wrap px-[18px] py-[11px] text-[15.4px] font-bold leading-relaxed ${sk.catBubble}`} style={{ ...sk.catBubbleStyle, overflowWrap: 'anywhere' }}>
               {m.text}
             </div>
           )}
@@ -986,13 +986,13 @@ const MessageRow = ({ m, sk, bright, p5 = false, p4 = false, busy, onConfirm, on
     <div className={`px-4 py-4 ${sk.card} ${cancelled ? 'opacity-55' : ''}`} style={sk.cardStyle}>
       <div className="flex items-center gap-2">
         <span aria-hidden>{meta.icon}</span>
-        <span className="flex-1 text-sm font-black">{meta.label}</span>
+        <span className="flex-1 text-[15.4px] font-black">{meta.label}</span>
         {done && <span className={sk.stamp} style={sk.stampStyle}>已记录 ✓</span>}
         {cancelled && <span className="text-[11px] font-bold opacity-60">已取消</span>}
       </div>
       <div className="mt-2 space-y-1">
         {lines.map((l, i) => (
-          <p key={i} className={`text-sm leading-relaxed ${i === 0 ? 'font-black' : 'font-bold opacity-75'}`}>{l}</p>
+          <p key={i} className={`text-[15.4px] leading-relaxed ${i === 0 ? 'font-black' : 'font-bold opacity-75'}`}>{l}</p>
         ))}
       </div>
       {m.cardStatus === 'pending' && (

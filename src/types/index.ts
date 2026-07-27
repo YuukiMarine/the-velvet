@@ -284,7 +284,8 @@ export interface Settings {
   customSkills?: Skill[];
   customLevelThresholds?: number[];
   backgroundPattern?: boolean; // 装饰纹理（无背景图时显示）
-  backgroundAnimation?: string[]; // 背景动画风格（可多选：'aurora'|'particles'|'wave'|'pulse'）
+  backgroundAnimation?: string[]; // 背景动画风格（可多选：'aurora'|'particles'|'wave'|'pulse'）；蓝频道不再提供
+  underwaterMotion?: boolean;     // 蓝频道水下舞台的循环动画（光柱推移 + 水面波纹），默认开
   customThemeColor?: string;       // 自定义主题色 hex（theme='custom' 时生效）
   customSoundScheme?: ThemeType;   // 自定义音效方案（custom 主题时使用，默认跟随 blue）
   countercurrentEnabled?: boolean; // 逆流：连续3日无增长属性自动 -1/天
@@ -1233,6 +1234,11 @@ export interface Confidant {
    * 未来版本会自动拉取对方的官方头像覆盖此处。
    */
   customAvatarDataUrl?: string;
+  /**
+   * 上传头像后是否把塔罗的**卡面**也一并换成这张图（羁绊墙 / 卡片 / 详情统一生效）。
+   * 上传完会问一次；不同步时头像只出现在详情页的小像位，卡面仍是塔罗牌。
+   */
+  avatarAsCardFace?: boolean;
   /**
    * 仅在线同伴：是否在卡片上优先显示塔罗而非对方头像。
    * 默认 false（显示头像）；用户可在卡片长按菜单切换。
