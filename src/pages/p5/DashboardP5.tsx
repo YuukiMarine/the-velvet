@@ -660,11 +660,12 @@ export const DashboardP5 = () => {
           <div className="flex items-start justify-between gap-3">
             {/* 拼贴大字「靛蓝色房间」（五块瓷砖异色穿插，配色循环沿用稿上口径） */}
             <div className="min-w-0 pt-1">
+              {/* 字号 +30%（33→43）；瓷砖变宽后日期卡同步收窄，两块在 450 宽下仍互不挤压 */}
               <P5Collage
-                size={33}
-                gap={4}
+                size={43}
+                gap={3}
                 tiles={[
-                  { ch: '靛', bg: P5R.red, fg: P5R.ink, scale: 1.1, rot: -4, dy: 0 },
+                  { ch: '靛', bg: P5R.red, fg: P5R.ink, rot: -4, dy: 0 },
                   { ch: '蓝', bg: P5R.paper, fg: P5R.ink, rot: 2.5, dy: 9 },
                   { ch: '色', bg: P5R.paper, fg: P5R.grey, rot: -2, dy: 3 },
                   { ch: '房', bg: P5R.ink, fg: P5R.greyLight, rot: 3, dy: 11 },
@@ -677,10 +678,10 @@ export const DashboardP5 = () => {
             </div>
 
             {/* 日期纸卡：切角 + 月相 + 两行问候 + 大红日数字 + JUL / SAT */}
-            <motion.div className="relative w-[168px] shrink-0" {...enter(0.12)}>
+            <motion.div className="relative w-[134px] shrink-0" {...enter(0.12)}>
               <div aria-hidden className="absolute inset-0" style={{ transform: 'translate(4px,5px)', background: P5R.ink, clipPath: 'polygon(18px 0, 100% 0, 100% 100%, 0 100%, 0 18px)' }} />
               <div aria-hidden className="absolute inset-0" style={{ background: P5R.paper, clipPath: 'polygon(18px 0, 100% 0, 100% 100%, 0 100%, 0 18px)', boxShadow: `inset 0 0 0 2.5px ${P5R.ink}` }} />
-              <div className="relative px-3.5 py-3">
+              <div className="relative px-2.5 py-2.5">
                 <div className="flex items-center gap-2">
                   <MoonGlyph date={now} />
                   {subLine2 ? (
@@ -700,7 +701,7 @@ export const DashboardP5 = () => {
                   </span>
                 </div>
                 <div className="mt-1 flex items-end justify-end gap-1.5">
-                  <span className="text-[54px] font-black leading-none tabular-nums" style={{ color: P5R.redHot, fontFamily: P5_FONT }}>{now.getDate()}</span>
+                  <span className="text-[46px] font-black leading-none tabular-nums" style={{ color: P5R.redHot, fontFamily: P5_FONT }}>{now.getDate()}</span>
                   <span className="flex flex-col items-center gap-1 pb-1">
                     <span className="text-[14px] font-black leading-none" style={{ color: P5R.ink }}>{MONTHS[now.getMonth()]}</span>
                     <span className="px-1.5 py-0.5 text-[11px] font-black leading-none text-white" style={{ background: P5R.red }}>{WEEKDAYS[now.getDay()]}</span>

@@ -249,6 +249,27 @@
 :root[data-ui-channel="p5"] .p5-reskin .text-gray-400 {
   color: #6b6862 !important;
 }
+/* ── 黑舞台直铺的页面（占卜 / 塔罗）：内容不坐在纸卡上，上面那套「灰系→黑」会把字
+   全部压进黑底里看不见。加 .p5-onink 把舞台层的灰系文字翻到纸色；纸面卡内部再翻回黑
+   （选择器更深，天然覆盖上一条），保证卡里卡外都可读。 */
+:root[data-ui-channel="p5"] .p5-onink :is(.text-gray-700, .text-gray-800, .text-gray-900, .dark\:text-white) {
+  color: var(--ui-paper) !important;
+}
+:root[data-ui-channel="p5"] .p5-onink :is(.text-gray-500, .text-gray-600) {
+  color: #cdc6b8 !important;
+}
+:root[data-ui-channel="p5"] .p5-onink .text-gray-400 {
+  color: #a9a49b !important;
+}
+:root[data-ui-channel="p5"] .p5-onink :is(.bg-white, .bg-gray-50, .bg-gray-100, .p5-card, .p5-ach) :is(.text-gray-700, .text-gray-800, .text-gray-900, .dark\:text-white) {
+  color: #050505 !important;
+}
+:root[data-ui-channel="p5"] .p5-onink :is(.bg-white, .bg-gray-50, .bg-gray-100, .p5-card, .p5-ach) :is(.text-gray-500, .text-gray-600) {
+  color: #494540 !important;
+}
+:root[data-ui-channel="p5"] .p5-onink :is(.bg-white, .bg-gray-50, .bg-gray-100, .p5-card, .p5-ach) .text-gray-400 {
+  color: #6b6862 !important;
+}
 /* 灰面块 / 白卡 → 纸面；边线 → 黑 */
 :root[data-ui-channel="p5"] .p5-reskin :is(.bg-gray-50, .bg-gray-100, .bg-white) {
   background-color: var(--ui-paper) !important;

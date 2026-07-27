@@ -54,7 +54,9 @@ export function DailyDraw() {
   const [pickedIndex, setPickedIndex] = useState<number | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
-  const p3 = useUiChannel() === 'p3';
+  const drawChannel = useUiChannel();
+  const p3 = drawChannel === 'p3';
+  const p5 = drawChannel === 'p5';
 
   const noApiKey = !settings.summaryApiKey;
 
@@ -205,8 +207,15 @@ export function DailyDraw() {
       {/* 动态说明（p3：蓝色大字 + 两侧青双斜杠） */}
       <div className="text-center px-4">
         <h2
-          className={p3 ? 'flex items-center justify-center gap-3 text-[19px] font-black tracking-[2px]' : 'text-sm font-bold text-gray-800 dark:text-gray-100 tracking-[3px]'}
-          style={p3 ? { color: P3R.blueDeep } : undefined}
+          className={
+            p3
+              ? 'flex items-center justify-center gap-3 text-[19px] font-black tracking-[2px]'
+              : p5
+                ? 'text-[17px] font-black tracking-[2px]'
+                : 'text-sm font-bold text-gray-800 dark:text-gray-100 tracking-[3px]'
+          }
+          // P5：这行字直接坐在纯黑舞台上，走通用灰系类会被重皮压成黑字（隐形）
+          style={p3 ? { color: P3R.blueDeep } : p5 ? { color: '#f0e9df', textShadow: '2px 2px 0 #050505' } : undefined}
         >
           {p3 && <CyanSlashes />}
           <span>
@@ -218,7 +227,10 @@ export function DailyDraw() {
           </span>
           {p3 && <CyanSlashes />}
         </h2>
-        <p className={p3 ? 'mt-1.5 text-[12px] font-semibold' : 'text-[11px] text-gray-400 dark:text-gray-500 mt-1'} style={p3 ? { color: P3R.grey } : undefined}>
+        <p
+          className={p3 ? 'mt-1.5 text-[12px] font-semibold' : p5 ? 'mt-1.5 text-[12px] font-bold' : 'text-[11px] text-gray-400 dark:text-gray-500 mt-1'}
+          style={p3 ? { color: P3R.grey } : p5 ? { color: '#a9a49b' } : undefined}
+        >
           {phase === 'intro'   && '今日的星象正在汇聚'}
           {phase === 'pick'    && '每日仅一次，慎重选择'}
           {phase === 'flipping' && '正位 / 逆位皆有意义'}
