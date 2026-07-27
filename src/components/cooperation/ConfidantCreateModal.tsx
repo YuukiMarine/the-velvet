@@ -82,7 +82,11 @@ export function ConfidantCreateModal({ isOpen, onClose, onCreated, onPickOnline 
 
   const [stage, setStage] = useState<Stage>('basic');
   // P3R（蓝频道，p3-modal-08 稿）：标题斜体 / 选择卡平行四边形 / 下一步蓝斜钮
-  const p3 = useUiChannel() === 'p3';
+  const createChannel = useUiChannel();
+  const p3 = createChannel === 'p3';
+  // P4：黄频道整壳换奶油纸 + 墨色硬影 + 衬线大标题（原来只有 p3 分支，黄主题下
+  // 还是白底圆角灰字的通用后台件，跟纯黄舞台完全不搭）
+  const p4 = createChannel === 'p4';
   const [traitStep, setTraitStep] = useState(0);
 
   const [name, setName] = useState('');
@@ -254,34 +258,50 @@ export function ConfidantCreateModal({ isOpen, onClose, onCreated, onPickOnline 
           animate={{ scale: 1, opacity: 1 }}
           exit={{ scale: 0.95, opacity: 0 }}
           transition={{ type: 'spring', damping: 22, stiffness: 280 }}
-          className="w-full max-w-md max-h-[92vh] overflow-y-auto bg-white dark:bg-gray-900 rounded-3xl shadow-2xl"
+          className={`w-full max-w-md max-h-[92vh] overflow-y-auto ${p4 ? 'p4-onbright' : 'bg-white dark:bg-gray-900 rounded-3xl shadow-2xl'}`}
+          style={p4 ? { background: '#fff9e3', borderRadius: 28, border: '2px solid #131313', boxShadow: '0 6px 0 rgba(19,19,19,0.35)' } : undefined}
           onClick={(e) => e.stopPropagation()}
         >
           {/* 头部 */}
-          <div className="relative px-6 pt-6 pb-3 border-b border-gray-100 dark:border-gray-800">
+          <div
+            className={`relative px-6 pt-6 pb-3 ${p4 ? '' : 'border-b border-gray-100 dark:border-gray-800'}`}
+            style={p4 ? { borderBottom: '2px solid rgba(19,19,19,0.16)' } : undefined}
+          >
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 {stage !== 'basic' && stage !== 'result' && stage !== 'matching' && (
                   <button
                     onClick={handleBack}
-                    className="w-7 h-7 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-500 text-sm flex items-center justify-center"
+                    className="w-7 h-7 rounded-full text-sm flex items-center justify-center"
+                    style={p4
+                      ? { background: 'var(--p4-orange, #f9a11b)', color: '#131313' }
+                      : undefined}
                     aria-label="返回上一步"
                   >‹</button>
                 )}
                 <h2
-                  className={p3 ? 'text-[22px] font-black italic tracking-tight' : 'text-base font-bold text-gray-900 dark:text-white'}
-                  style={p3 ? { color: '#0a1230', fontFamily: '"Arial Black", "Noto Sans SC", sans-serif' } : undefined}
+                  className={
+                    p3 ? 'text-[22px] font-black italic tracking-tight'
+                      : p4 ? 'text-[26px] font-black leading-none'
+                        : 'text-base font-bold text-gray-900 dark:text-white'
+                  }
+                  style={
+                    p3 ? { color: '#0a1230', fontFamily: '"Arial Black", "Noto Sans SC", sans-serif' }
+                      : p4 ? { color: '#131313', fontFamily: 'var(--p4-display-font, serif)' }
+                        : undefined
+                  }
                 >
                   {stage === 'result' ? '塔罗的回响' : '结识一位同伴'}
                 </h2>
               </div>
               <button
                 onClick={onClose}
-                className="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-400 flex items-center justify-center"
+                className={`w-8 h-8 rounded-full flex items-center justify-center ${p4 ? '' : 'bg-gray-100 dark:bg-gray-800 text-gray-400'}`}
+                style={p4 ? { background: '#131313', color: 'var(--ui-bg, #ffd900)' } : undefined}
                 aria-label="关闭"
               >✕</button>
             </div>
-            <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1">
+            <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1" style={p4 ? { color: 'rgba(19,19,19,0.7)' } : undefined}>
               剩余阿卡纳：{remaining} / {MAJOR_ARCANA_IDS.length}
             </p>
 

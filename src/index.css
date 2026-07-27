@@ -876,3 +876,16 @@ html[data-ios-standalone="true"] {
   [style*="p3-underwater-rays"],
   [style*="p3-underwater-ripple"] { animation: none !important; }
 }
+
+/* ── P4 亮黄舞台上的灰系小字（.p4-onbright）────────────────────────────────
+   纯黄底 #ffd900 上，text-gray-400 的对比度只有 ~1.9:1，text-gray-500 也才 3.4:1。
+   翻成墨色的浓淡三档，保住层级的同时把对比度拉回可读。 */
+:root[data-ui-channel="p4"] .p4-onbright :is(.text-gray-400, .dark\:text-gray-400, .dark\:text-gray-500) {
+  color: rgba(19, 19, 19, 0.6) !important;
+}
+:root[data-ui-channel="p4"] .p4-onbright :is(.text-gray-500, .text-gray-600, .dark\:text-gray-300) {
+  color: rgba(19, 19, 19, 0.74) !important;
+}
+:root[data-ui-channel="p4"] .p4-onbright :is(.text-gray-700, .text-gray-800, .text-gray-900, .dark\:text-white) {
+  color: #131313 !important;
+}

@@ -16,6 +16,8 @@ interface TarotCardSVGProps {
   showOrientationTag?: boolean;
   /** 禁用 hover 效果 */
   staticCard?: boolean;
+  /** 用自定义图替换整张卡面（羁绊同伴「头像同步为卡面」用），仍保留正逆位翻转与角标 */
+  faceOverride?: string;
   className?: string;
 }
 
@@ -61,6 +63,7 @@ export function TarotCardSVG({
   onClick,
   showOrientationTag = true,
   staticCard = false,
+  faceOverride,
   className = '',
 }: TarotCardSVGProps) {
   const height = Math.round(width * 1.6);
@@ -69,7 +72,7 @@ export function TarotCardSVG({
   // 大阿卡纳走三频道各自的实拍卡面；无图 / 加载失败则退回下面的程序化卡面
   const channel = useUiChannel();
   const [artFailed, setArtFailed] = useState(false);
-  const artSrc = artFailed ? null : tarotArtUrl(card.id, channel);
+  const artSrc = faceOverride ?? (artFailed ? null : tarotArtUrl(card.id, channel));
 
   // 内部使用的 viewBox 尺寸（方便绘制）
   const VB_W = 200;
