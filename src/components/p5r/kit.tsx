@@ -65,6 +65,16 @@ export const roughSlant = (seed: number, slant = 14, jag = 3): string => {
   return `polygon(${s()}px ${j()}px, calc(100% - ${j()}px) ${j()}px, calc(100% - ${s()}px) calc(100% - ${j()}px), ${j()}px calc(100% - ${j()}px))`;
 };
 
+/**
+ * 横幅撕边形（首页「今日仪式」红幅制式）：左右两端斜切更狠，上下沿轻微起伏。
+ * 由 seed 决定唯一形状；同一张幅的影/衬/面三层用 seed 派生值即得不等宽边框。
+ */
+export const roughBanner = (seed: number): string => {
+  const r = mulberry(seed);
+  const j = (amp: number) => (r() * amp).toFixed(1);
+  return `polygon(${j(14)}px ${j(8)}px, 40% ${j(5)}px, calc(100% - ${j(16)}px) ${j(8)}px, calc(100% - ${j(6)}px) calc(50% + ${j(8)}px), calc(100% - ${j(18)}px) calc(100% - ${j(8)}px), 55% calc(100% - ${j(5)}px), ${j(16)}px calc(100% - ${j(9)}px), ${j(5)}px calc(50% - ${j(8)}px))`;
+};
+
 /** 八点变体：四角 + 四边中点内凹/外凸，撕纸感更强（横幅 / 大面积红斜块用） */
 export const roughOct = (seed: number, jag = 10): string => {
   const r = mulberry(seed + 0.5);

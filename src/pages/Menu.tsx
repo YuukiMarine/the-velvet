@@ -503,7 +503,7 @@ export const Menu = () => {
     } as const;
 
     // 磁贴（三层：黑硬影 / 描边圈 / 面层，同形逐层内缩→四边描边宽度天然不等）
-    const Tile = ({ tone, shape, icon, label, caption, star, badge, watermark, alignTop = false, minH = 104, onPress, aria }: {
+    const Tile = ({ tone, shape, icon, label, caption, star, badge, watermark, pattern = false, alignTop = false, minH = 104, onPress, aria }: {
       tone: 'red' | 'ink' | 'paper' | 'grey';
       shape: string;
       icon: ReactNode;
@@ -514,6 +514,8 @@ export const Menu = () => {
       badge?: ReactNode;
       /** 右下巨字水印（统计卡的连续天数） */
       watermark?: string;
+      /** 巨型同心五角星底纹（统计高卡） */
+      pattern?: boolean;
       /** 内容顶对齐（统计高卡：文字在上、巨数字水印沉右下） */
       alignTop?: boolean;
       minH?: number;
@@ -535,8 +537,18 @@ export const Menu = () => {
           <span aria-hidden className="pointer-events-none absolute inset-0" style={{ transform: 'translate(4px,5px)', background: P5R.ink, clipPath: shape }} />
           <span aria-hidden className="pointer-events-none absolute inset-0" style={{ background: ring, clipPath: shape }} />
           <span aria-hidden className="pointer-events-none absolute inset-[3px]" style={{ background: face, clipPath: shape }} />
+          {/* 巨型暗红同心五角星花纹（统计高卡专属底纹，裁在面层轮廓内） */}
+          {pattern && (
+            <span aria-hidden className="pointer-events-none absolute inset-[3px] overflow-hidden" style={{ clipPath: shape }}>
+              <svg viewBox="0 0 100 100" className="absolute" style={{ left: '-30%', top: '2%', width: '160%', height: '160%' }}>
+                {[49, 42, 35, 28, 21, 14, 7].map((r) => (
+                  <polygon key={r} points={starPts(50, 50, r, -90 + 14)} fill="none" stroke="#9d0007" strokeWidth={2.4} strokeLinejoin="miter" />
+                ))}
+              </svg>
+            </span>
+          )}
           {watermark !== undefined && (
-            <span aria-hidden className="pointer-events-none absolute -bottom-5 right-1 select-none text-[110px] font-black leading-none" style={{ color: '#8e0000', fontFamily: P5_FONT, transform: 'rotate(-9deg)' }}>{watermark}</span>
+            <span aria-hidden className="pointer-events-none absolute bottom-3 right-6 select-none text-[92px] font-black leading-none" style={{ color: '#4a0000', fontFamily: P5_FONT, transform: 'rotate(-9deg)' }}>{watermark}</span>
           )}
           {star && (
             <P5Star
@@ -549,7 +561,7 @@ export const Menu = () => {
           {badge && <span className="pointer-events-none absolute right-3 top-2.5">{badge}</span>}
           <span className={`relative flex h-full min-h-[inherit] flex-col gap-1.5 px-4 py-3 ${alignTop ? 'justify-start pt-6' : 'justify-center'}`} style={{ color: fg }}>
             <span aria-hidden>{icon}</span>
-            <span className="text-[19px] font-black leading-tight" style={{ fontFamily: P5_FONT }}>{label}</span>
+            <span className="text-[23px] font-black leading-tight" style={{ fontFamily: P5_FONT }}>{label}</span>
             {caption && <span className="text-[12px] font-black leading-none">{caption}</span>}
           </span>
         </motion.button>
@@ -661,6 +673,7 @@ export const Menu = () => {
                 label="统计"
                 caption={<span>连续 {currentStreak} 天</span>}
                 watermark={String(currentStreak)}
+                pattern
                 onPress={() => setCurrentPage('statistics')}
                 aria={`统计：当前连续 ${currentStreak} 天`}
               />

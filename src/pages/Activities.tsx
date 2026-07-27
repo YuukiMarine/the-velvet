@@ -18,7 +18,10 @@ import { TrashIcon } from '@/components/icons';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P4Sparkle } from '@/ui/p4Kit';
 import { SectionMark, SlantButton } from '@/components/p3r/kit';
-import { P5R, P5_FONT, roughSlant, starPts } from '@/components/p5r/kit';
+import { P5R, P5_FONT, roughSlant, starPts, P5Star } from '@/components/p5r/kit';
+
+/** 成长总结入口：左低右高的平行四边形（P5 反板正口径，四边斜率各不相同） */
+const SUMMARY_SHAPE = 'polygon(7px 0, 100% 2px, calc(100% - 6px) 100%, 0 calc(100% - 3px))';
 
 // ---- 来源筛选选项（筛选面板与已选 chip 共用） ----
 const METHOD_FILTER_OPTIONS = [
@@ -769,15 +772,29 @@ export const ActivitiesView = () => {
           {/* 总结入口按钮 */}
           <button
             onClick={() => setShowSummary(true)}
-            className="relative flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-black/5 dark:bg-white/10 text-gray-600 dark:text-gray-300 text-xs font-semibold hover:bg-primary/10 hover:text-primary transition-colors"
+            className={
+              p5
+                ? 'relative flex items-center gap-1.5 px-3.5 py-1.5 text-[13px] font-black'
+                : 'relative flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-black/5 dark:bg-white/10 text-gray-600 dark:text-gray-300 text-xs font-semibold hover:bg-primary/10 hover:text-primary transition-colors'
+            }
+            style={p5 ? { color: P5R.ink, fontFamily: P5_FONT } : undefined}
           >
-            <span>✨</span>
-            <span>成长总结</span>
+            {/* P5：半透明底色在红频道读成「脏灰块」——换成纸白平行四边形 + 不等宽黑描边 */}
+            {p5 && (
+              <>
+                <span aria-hidden className="absolute inset-0" style={{ transform: 'translate(3px,3px)', background: P5R.ink, clipPath: SUMMARY_SHAPE }} />
+                <span aria-hidden className="absolute inset-0" style={{ background: P5R.ink, clipPath: SUMMARY_SHAPE }} />
+                <span aria-hidden className="absolute inset-[2.5px]" style={{ background: P5R.paper, clipPath: SUMMARY_SHAPE }} />
+              </>
+            )}
+            {p5 ? <P5Star size={13} fill={P5R.red} className="relative shrink-0" /> : <span>✨</span>}
+            <span className="relative">成长总结</span>
             {showDot && (
               <motion.span
                 initial={{ scale: 0 }}
                 animate={{ scale: 1 }}
-                className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-red-500 shadow-sm"
+                className={p5 ? 'absolute -top-1.5 -right-1.5 h-3 w-3' : 'absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-red-500 shadow-sm'}
+                style={p5 ? { background: P5R.red, clipPath: 'polygon(2px 0, 100% 1px, calc(100% - 2px) 100%, 0 calc(100% - 1px))', boxShadow: `0 0 0 2px ${P5R.ink}` } : undefined}
               />
             )}
           </button>

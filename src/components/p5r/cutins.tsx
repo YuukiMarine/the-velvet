@@ -355,6 +355,8 @@ export const LevelUpP5 = ({ attributeName, newLevel, isOpen, onClose }: {
 };
 
 // ── 06 · 今日完成 ────────────────────────────────────────────────────────────
+/** 今日完成幅面形：四条明确斜边的不规则四边形（宽 > 高） */
+const TODO_PANEL_SHAPE = 'polygon(0 16px, 100% 0, calc(100% - 12px) 100%, 9px calc(100% - 9px))';
 export const TodoCompleteP5 = ({ isOpen, onClose, title, totalPoints, unlockHint, heading = '今日完成' }: {
   isOpen: boolean; onClose: () => void; title: string;
   totalPoints?: number; unlockHint?: { achievements: number; skills: number };
@@ -373,33 +375,50 @@ export const TodoCompleteP5 = ({ isOpen, onClose, title, totalPoints, unlockHint
       maxW={424}
     >
       <div className="relative">
-        <P5Panel seed={430} jag={12} frame={4} keyline={3} face={P5R.red} shadow={{ x: 6, y: 8 }} bodyClassName="px-4 pb-4 pt-14">
-          {/* 板内暗红碎块（左上那块黑网点已按定稿删除，底噪交给舞台的大圆环/同心星层） */}
-          <span aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden" style={{ clipPath: roughQuad(430.57, 10) }}>
-            <span className="absolute" style={{ right: 6, bottom: 66, width: 74, height: 78, background: '#5c0004', clipPath: roughQuad(432, 16), transform: 'rotate(4deg)' }} />
-            <span className="absolute" style={{ left: 4, bottom: 82, width: 58, height: 64, background: '#5c0004', clipPath: roughQuad(432.6, 15), transform: 'rotate(-6deg)' }} />
+        {/* 幅面：宽 > 高 的不规则四边形（手写四条明确斜边，不用抖动——抖动只会读成毛边矩形）；
+            三层同形逐层内缩 → 四边黑框天然不等宽 */}
+        <div className="relative px-4 pb-4 pt-12">
+          <span aria-hidden className="pointer-events-none absolute inset-0" style={{ transform: 'translate(6px,8px)', background: P5R.ink, clipPath: TODO_PANEL_SHAPE }} />
+          <span aria-hidden className="pointer-events-none absolute inset-0" style={{ background: P5R.paper, clipPath: TODO_PANEL_SHAPE }} />
+          <span aria-hidden className="pointer-events-none absolute inset-[3px]" style={{ background: P5R.ink, clipPath: TODO_PANEL_SHAPE }} />
+          <span aria-hidden className="pointer-events-none absolute inset-[7px]" style={{ background: P5R.red, clipPath: TODO_PANEL_SHAPE }} />
+          {/* 板内巨大同心圆环：浅暗红描边，始终缓慢向外扩散（裁在面层轮廓内） */}
+          {/* 半径成 1.5 等比 + 线宽同比 → 整组放大 1.5× 后与初态自相似，
+              所以 linear 循环看上去就是「永远在向外扩散的同心圆环」，没有接缝 */}
+          <span aria-hidden className="pointer-events-none absolute inset-[7px] overflow-hidden" style={{ clipPath: TODO_PANEL_SHAPE }}>
+            <motion.svg
+              viewBox="0 0 200 200"
+              className="absolute left-1/2 top-1/2"
+              style={{ width: 640, height: 640, marginLeft: -320, marginTop: -320 }}
+              animate={anim ? { scale: [1, 1.5] } : undefined}
+              transition={anim ? { duration: 9, repeat: Infinity, ease: 'linear' } : undefined}
+            >
+              {[6, 9, 13.5, 20.3, 30.4, 45.6, 68.4].map((r) => (
+                <circle key={r} cx="100" cy="100" r={r} fill="none" stroke="#e8464e" strokeWidth={r * 0.15} />
+              ))}
+            </motion.svg>
           </span>
 
-          {/* 巨星 + 黑勾：整体斜置，贴纸叠层 = 黑硬影 / 纸白不规则描边 / 黑锁边 / 纸面 */}
+          {/* 巨星 + 黑勾：整体斜置，贴纸叠层 = 黑硬影 / 纸白不规则粗描边 / 黑粗锁边 / 纸面 */}
           <motion.div
             aria-hidden
             className="pointer-events-none relative mx-auto"
-            style={{ width: 284, height: 284 }}
+            style={{ width: 208, height: 208 }}
             initial={anim ? { scale: 0, rotate: 60, opacity: 0 } : false}
             animate={{ scale: 1, rotate: 0, opacity: 1 }}
             transition={{ type: 'spring', stiffness: 250, damping: 16, delay: 0.3 }}
           >
             {/* 倾斜写在内层 svg 上：motion 会接管外层的 transform */}
-            <svg viewBox="0 0 100 100" width={284} height={284} className="absolute left-0 top-0 overflow-visible" style={{ transform: 'rotate(-13deg)' }}>
+            <svg viewBox="0 0 100 100" width={208} height={208} className="absolute left-0 top-0 overflow-visible" style={{ transform: 'rotate(-13deg)' }}>
               <defs>
                 <clipPath id={checkClipId}>
-                  <polygon points={starPts(50, 50, 41)} />
+                  <polygon points={starPts(50, 50, 39.5)} />
                 </clipPath>
               </defs>
-              <polygon points={jitterStarPts(50, 50, 49, 771, 0.055)} fill={P5R.ink} transform="translate(3 4)" />
-              <polygon points={jitterStarPts(50, 50, 49, 772, 0.075)} fill={P5R.paper} />
-              <polygon points={starPts(50, 50, 45)} fill={P5R.ink} />
-              <polygon points={starPts(50, 50, 41)} fill={P5R.paper} />
+              <polygon points={jitterStarPts(50, 50, 53, 771, 0.055)} fill={P5R.ink} transform="translate(3 4)" />
+              <polygon points={jitterStarPts(50, 50, 53, 772, 0.075)} fill={P5R.paper} />
+              <polygon points={starPts(50, 50, 46)} fill={P5R.ink} />
+              <polygon points={starPts(50, 50, 39.5)} fill={P5R.paper} />
               {/* 勾用纸面星裁一刀：稿上勾的两端就是被星缘齐口切断的 */}
               <g clipPath={`url(#${checkClipId})`}>
                 <motion.polyline
@@ -445,10 +464,10 @@ export const TodoCompleteP5 = ({ isOpen, onClose, title, totalPoints, unlockHint
               ★ 你解锁了新成就 / 新技能！
             </div>
           )}
-        </P5Panel>
+        </div>
 
         <StraddleTitle text={heading} size={heading.length > 4 ? 50 : 60} />
-        <P5CloseKey onClose={onClose} style={{ right: -6, top: -96, height: 50, width: 50 }} />
+        <P5CloseKey onClose={onClose} variant="star" style={{ right: -10, top: -90, height: 62, width: 62 }} />
       </div>
     </P5CutInStage>
   );
