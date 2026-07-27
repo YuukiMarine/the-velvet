@@ -256,7 +256,9 @@ export function Cooperation() {
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.2 }}
-      className={`relative max-w-2xl mx-auto space-y-5 ${p5 ? 'p5-reskin' : ''}`}
+      // p5-onink：羁绊页的铭牌（称呼 / 牌名 / RANK）直接坐在纯黑舞台上，
+      // 只有 .p5-reskin 时那套「灰系→黑」会把它们压成黑字隐形
+      className={`relative max-w-2xl mx-auto space-y-5 ${p5 ? 'p5-reskin p5-onink' : ''}`}
     >
       {/* P5 页头装饰（沉底）：右上红斜块群 + 半调 */}
       {p5 && (
