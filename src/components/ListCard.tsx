@@ -84,7 +84,8 @@ export const ListCard = ({
   };
 
   const cardClass = [
-    'relative overflow-hidden rounded-2xl border border-gray-100 dark:border-gray-800',
+    // p5-card：给 P5 频道一个稳定钩子（其他频道无样式），用于整卡换成不规则剪报形
+    'p5-card relative overflow-hidden rounded-2xl border border-gray-100 dark:border-gray-800',
     'bg-white dark:bg-gray-900 py-3',
     accent ? 'pl-5 pr-4' : 'px-4',
     // 可长按的卡禁掉文字选区，否则按住 500ms 会先拉出蓝色选区

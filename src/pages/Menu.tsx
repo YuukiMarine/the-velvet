@@ -47,7 +47,7 @@ import { STAGGER, TAP, springSoft, fadeIn } from '@/utils/motion';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P4Flower, P4Sparkle, P4Highlight } from '@/ui/p4Kit';
 import { P3R, P3RPage, slantClip } from '@/components/p3r/kit';
-import { P5R, P5_FONT, roughQuad, starPts, P5Collage, P5SubBar, P5Star, P5StarOutline, P5Dots, P5Slab, P5RPage } from '@/components/p5r/kit';
+import { P5R, P5_FONT, starPts, P5Collage, P5SubBar, P5Star, P5StarOutline, P5Dots, P5Slab, P5RPage } from '@/components/p5r/kit';
 import { computeTotalLv } from '@/utils/lvTiers';
 
 // ── 图标（24px stroke 制式，与 Navigation.tsx 同一套 heroicons outline 风格）──
@@ -483,11 +483,27 @@ export const Menu = () => {
     const totalLv = computeTotalLv(attributes);
     const totalPoints = attributes.reduce((s, a) => s + (a.points ?? 0), 0);
     const initial = (user?.name || 'S').trim().charAt(0).toUpperCase() || 'S';
+    // 用户卡：上边向右抬、下边向右落的斜四边形（稿上头牌形制）
+    const USER_CARD_SHAPE = 'polygon(0 13px, 100% 0, calc(100% - 6px) calc(100% - 4px), 9px 100%)';
+    // 关于条：左端尖头 + 右端内收的长斜条（稿上底部条形制）
+    const ABOUT_SHAPE = 'polygon(26px 0, 100% 4px, calc(100% - 24px) 100%, 0 calc(100% - 6px))';
 
-    // 磁贴（不规则四边形双层：外圈描边层 + 面层；黑卡配纸圈、纸卡配黑圈）
-    const Tile = ({ tone, seed, icon, label, caption, star, badge, watermark, cutTR = false, alignTop = false, minH = 104, onPress, aria }: {
+    /* 磁贴形表（逐块手写，照 p5-menu 稿）—— 四边均为明确斜直线的不规则四/五边形，
+       不再用小幅度抖动（那种只会读成「毛边的矩形」，即用户指的板正）。 */
+    const TILE_SHAPE = {
+      stats:  'polygon(0 15px, 100% 0, calc(100% - 11px) 100%, 7px calc(100% - 7px))',
+      battle: 'polygon(0 9px, calc(100% - 32px) 0, 100% 28px, calc(100% - 5px) 100%, 5px calc(100% - 5px))',
+      theme:  'polygon(5px 0, 100% 11px, calc(100% - 4px) 100%, 0 calc(100% - 9px))',
+      achv:   'polygon(0 7px, 100% 0, calc(100% - 9px) 100%, 6px calc(100% - 11px))',
+      astro:  'polygon(7px 0, 100% 7px, calc(100% - 3px) 100%, 0 calc(100% - 6px))',
+      ledger: 'polygon(0 5px, 100% 0, calc(100% - 11px) calc(100% - 2px), 8px 100%)',
+      settings: 'polygon(6px 3px, 100% 0, 100% calc(100% - 9px), 0 100%)',
+    } as const;
+
+    // 磁贴（三层：黑硬影 / 描边圈 / 面层，同形逐层内缩→四边描边宽度天然不等）
+    const Tile = ({ tone, shape, icon, label, caption, star, badge, watermark, alignTop = false, minH = 104, onPress, aria }: {
       tone: 'red' | 'ink' | 'paper' | 'grey';
-      seed: number;
+      shape: string;
       icon: ReactNode;
       label: string;
       caption?: ReactNode;
@@ -496,8 +512,6 @@ export const Menu = () => {
       badge?: ReactNode;
       /** 右下巨字水印（统计卡的连续天数） */
       watermark?: string;
-      /** 右上大切角（逆影战场卡形制） */
-      cutTR?: boolean;
       /** 内容顶对齐（统计高卡：文字在上、巨数字水印沉右下） */
       alignTop?: boolean;
       minH?: number;
@@ -507,10 +521,6 @@ export const Menu = () => {
       const face = tone === 'red' ? P5R.red : tone === 'ink' ? '#050505' : tone === 'grey' ? P5R.greyLight : P5R.paper;
       const ring = tone === 'ink' || tone === 'red' ? P5R.paper : P5R.ink;
       const fg = tone === 'ink' || tone === 'red' ? P5R.white : P5R.ink;
-      const cut = (s: number, j: number) =>
-        cutTR
-          ? `polygon(${j * 0.4}px ${j * 0.5}px, calc(100% - 30px) ${j * 0.3}px, 100% 30px, calc(100% - ${j * 0.4}px) calc(100% - ${j * 0.5}px), ${j * 0.5}px calc(100% - ${j * 0.3}px))`
-          : roughQuad(s, j);
       return (
         <motion.button
           type="button"
@@ -520,9 +530,9 @@ export const Menu = () => {
           className="relative block w-full cursor-pointer select-none text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c00008]"
           style={{ minHeight: minH }}
         >
-          <span aria-hidden className="pointer-events-none absolute inset-0" style={{ transform: 'translate(4px,5px)', background: P5R.ink, clipPath: cut(seed + 0.13, 8) }} />
-          <span aria-hidden className="pointer-events-none absolute inset-0" style={{ background: ring, clipPath: cut(seed + 0.29, 7) }} />
-          <span aria-hidden className="pointer-events-none absolute inset-[3px]" style={{ background: face, clipPath: cut(seed + 0.47, 5) }} />
+          <span aria-hidden className="pointer-events-none absolute inset-0" style={{ transform: 'translate(4px,5px)', background: P5R.ink, clipPath: shape }} />
+          <span aria-hidden className="pointer-events-none absolute inset-0" style={{ background: ring, clipPath: shape }} />
+          <span aria-hidden className="pointer-events-none absolute inset-[3px]" style={{ background: face, clipPath: shape }} />
           {watermark !== undefined && (
             <span aria-hidden className="pointer-events-none absolute -bottom-5 right-1 select-none text-[110px] font-black leading-none" style={{ color: '#8e0000', fontFamily: P5_FONT, transform: 'rotate(-9deg)' }}>{watermark}</span>
           )}
@@ -578,9 +588,9 @@ export const Menu = () => {
             aria-label={`用户资料：${user?.name || '客人'}，等级 ${totalLv}`}
             className="relative mt-5 block w-full cursor-pointer select-none text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c00008]"
           >
-            <span aria-hidden className="pointer-events-none absolute inset-0" style={{ transform: 'translate(5px,6px)', background: P5R.ink, clipPath: roughQuad(141.13, 9) }} />
-            <span aria-hidden className="pointer-events-none absolute inset-0" style={{ background: P5R.ink, clipPath: roughQuad(141.29, 8) }} />
-            <span aria-hidden className="pointer-events-none absolute inset-[4px]" style={{ background: P5R.paper, clipPath: roughQuad(141.47, 5) }} />
+            <span aria-hidden className="pointer-events-none absolute inset-0" style={{ transform: 'translate(5px,6px)', background: P5R.ink, clipPath: USER_CARD_SHAPE }} />
+            <span aria-hidden className="pointer-events-none absolute inset-0" style={{ background: P5R.ink, clipPath: USER_CARD_SHAPE }} />
+            <span aria-hidden className="pointer-events-none absolute inset-[4px]" style={{ background: P5R.paper, clipPath: USER_CARD_SHAPE }} />
             <span className="relative block px-4 pb-3 pt-4">
               <span className="flex items-center gap-3.5">
                 {/* 红星头像框：红底黑框 + 白描边星 + 首字母 */}
@@ -617,7 +627,7 @@ export const Menu = () => {
           <div className="mt-5 flex gap-3">
             <div className="flex w-1/2 flex-col gap-3">
               <Tile
-                tone="red" seed={151} minH={224} alignTop
+                tone="red" shape={TILE_SHAPE.stats} minH={224} alignTop
                 icon={<ChartIcon />}
                 label="统计"
                 caption={<span>连续 {currentStreak} 天</span>}
@@ -626,7 +636,7 @@ export const Menu = () => {
                 aria={`统计：当前连续 ${currentStreak} 天`}
               />
               <Tile
-                tone="paper" seed={152}
+                tone="paper" shape={TILE_SHAPE.achv}
                 icon={<span className="relative inline-block"><TrophyIcon /><P5Star size={11} fill={P5R.red} className="absolute -top-0.5 left-1/2 -translate-x-1/2" /></span>}
                 label="成就 · 技能"
                 badge={totalPendingUnlocks > 0
@@ -637,7 +647,7 @@ export const Menu = () => {
               />
               {ledgerVisible && (
                 <Tile
-                  tone="ink" seed={153}
+                  tone="ink" shape={TILE_SHAPE.ledger}
                   icon={<span className="relative inline-block"><WalletIcon /><span aria-hidden className="absolute right-[3px] top-[7px] h-1.5 w-1.5 rounded-full" style={{ background: P5R.red }} /></span>}
                   label="心相记账"
                   star={{ pos: 'tr', color: P5R.paper }}
@@ -649,7 +659,7 @@ export const Menu = () => {
             <div className="flex w-1/2 flex-col gap-3">
               {battleVisible && (
                 <Tile
-                  tone="ink" seed={154} cutTR
+                  tone="ink" shape={TILE_SHAPE.battle}
                   icon={<BoltIcon />}
                   label="逆影战场"
                   caption={inShadowTime ? <motion.span animate={{ opacity: [1, 0.45, 1] }} transition={{ repeat: Infinity, duration: 1.5 }} className="font-black" style={{ color: P5R.redHot }}>✦ 影时间</motion.span> : undefined}
@@ -659,7 +669,7 @@ export const Menu = () => {
                 />
               )}
               <Tile
-                tone="paper" seed={155}
+                tone="paper" shape={TILE_SHAPE.theme}
                 icon={<PaletteIcon />}
                 label="主题"
                 caption={<span>当前 · <span style={{ color: P5R.redHot }}>{currentThemeLabel}</span></span>}
@@ -668,7 +678,7 @@ export const Menu = () => {
                 aria={`主题：当前 ${currentThemeLabel}`}
               />
               <Tile
-                tone="grey" seed={156}
+                tone="grey" shape={TILE_SHAPE.astro}
                 icon={<MoonIcon />}
                 label="占卜"
                 star={{ pos: 'br', color: '#050505' }}
@@ -676,7 +686,7 @@ export const Menu = () => {
                 aria="占卜"
               />
               <Tile
-                tone="paper" seed={157}
+                tone="paper" shape={TILE_SHAPE.settings}
                 icon={<span className="relative inline-block"><GearIcon /><span aria-hidden className="absolute left-1/2 top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full" style={{ background: P5R.red }} /></span>}
                 label="设置"
                 star={{ pos: 'br', color: '#050505' }}
@@ -695,8 +705,9 @@ export const Menu = () => {
             className="relative mt-3 block w-full cursor-pointer select-none text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c00008]"
             aria-label="关于"
           >
-            <span aria-hidden className="pointer-events-none absolute inset-0" style={{ transform: 'translate(4px,4px)', background: '#3a3831', clipPath: 'polygon(22px 2px, calc(100% - 6px) 0, calc(100% - 20px) 100%, 4px calc(100% - 3px))' }} />
-            <span aria-hidden className="pointer-events-none absolute inset-0" style={{ background: P5R.greyLight, clipPath: 'polygon(20px 0, 100% 2px, calc(100% - 22px) calc(100% - 2px), 2px 100%)' }} />
+            <span aria-hidden className="pointer-events-none absolute inset-0" style={{ transform: 'translate(4px,5px)', background: '#000000', clipPath: ABOUT_SHAPE }} />
+            <span aria-hidden className="pointer-events-none absolute inset-0" style={{ background: '#050505', clipPath: ABOUT_SHAPE }} />
+            <span aria-hidden className="pointer-events-none absolute inset-[3px]" style={{ background: P5R.greyLight, clipPath: ABOUT_SHAPE }} />
             <span className="relative flex items-center gap-3 py-3 pl-7 pr-6">
               <span aria-hidden className="flex h-6 w-6 items-center justify-center rounded-full text-[15px] font-black text-white" style={{ background: '#050505' }}>i</span>
               <span className="flex-1 text-[17px] font-black" style={{ color: '#050505', fontFamily: P5_FONT }}>关于</span>
