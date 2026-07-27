@@ -2,6 +2,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { createPortal } from 'react-dom';
 import { CelebrationCutIn } from '@/components/CelebrationCutIn';
 import { ShatteredStar } from '@/components/p3r/kit';
+import { LevelUpP5 } from '@/components/p5r/cutins';
 import { useBoldness } from '@/utils/boldness';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { triggerLevelFeedback } from '@/utils/feedback';
@@ -174,7 +175,10 @@ const LevelUpP3 = ({ attributeName, newLevel, isOpen, onClose }: LevelUpModalPro
 };
 
 export const LevelUpModal = (props: LevelUpModalProps) => {
-  const p3 = useUiChannel() === 'p3';
+  const channel = useUiChannel();
+  // P5R（p5-modal-05 稿）：红频道换「猩红大板砸落」全屏演出
+  if (channel === 'p5') return <LevelUpP5 {...props} />;
+  const p3 = channel === 'p3';
   if (p3) return <LevelUpP3 {...props} />;
   const { attributeName, newLevel, isOpen, onClose } = props;
   return (

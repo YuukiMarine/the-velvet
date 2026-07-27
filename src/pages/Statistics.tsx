@@ -7,7 +7,13 @@ import { PageTitle } from '@/components/PageTitle';
 import { PagePlane, PlaneLevel } from '@/components/PagePlane';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P3R, P3RPage, GhostWords, P3PageHeader, SectionMark, slantClip } from '@/components/p3r/kit';
-import { P5R, P5Collage, P5SubBar, P5Star, P5Dots, P5Slab, P5RPage } from '@/components/p5r/kit';
+import {
+  P5R, P5_FONT, roughQuad,
+  P5Collage, P5SubBar, P5Star, P5Dots, P5Slab, P5RPage,
+  P5Panel, P5Rough, P5Wedge, P5AttrGlyph,
+} from '@/components/p5r/kit';
+import { useBoldness } from '@/utils/boldness';
+import type { ReactNode } from 'react';
 import {
   AreaChart, Area, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip,
@@ -78,6 +84,236 @@ const StatCard = ({
       {sub && <span className="text-[11px] text-gray-400 dark:text-gray-500 mt-0.5">{sub}</span>}
     </PlaneLevel>
   </motion.div>
+  );
+};
+
+// ── P5R（红频道）：p5-statistics-flat-newsprint-v1 1:1 ────────────────────────
+/** 稿上五属性的分色：三色律内取（红/黑/橙/灰/暗红），不引第三方色相 */
+const P5_ATTR_COLORS: Record<AttributeId, string> = {
+  knowledge: P5R.red,
+  guts:      P5R.ink,
+  dexterity: P5R.orange,
+  kindness:  P5R.grey,
+  charm:     P5R.redDeep,
+};
+
+/** 节卡：纸面不规则四边形 + 黑楔标骑在上缘（稿上四个区块都是这个制式） */
+const P5SectionCard = ({ seed, title, meta, children, bodyClassName = 'px-3.5 pb-4 pt-8' }: {
+  seed: number;
+  title: string;
+  /** 卡内右上角挂件（「累计点数」/ 时间段段钮），与楔标同一行 */
+  meta?: ReactNode;
+  children: ReactNode;
+  bodyClassName?: string;
+}) => (
+  <div className="relative">
+    <P5Panel seed={seed} jag={8} frame={3.5} keyline={2.5} shadow={{ x: 5, y: 6 }} bodyClassName={bodyClassName}>
+      {meta && <div className="absolute right-0 top-0 z-10">{meta}</div>}
+      {children}
+    </P5Panel>
+    {/* 楔标压在卡的上缘外沿——稿上标签是「贴上去」的另一张纸，不是卡的一部分 */}
+    <div className="absolute -top-3 left-2.5">
+      <P5Wedge tone="ink" rot={-1.8} starSide="left">{title}</P5Wedge>
+    </div>
+  </div>
+);
+
+/** 图表浮层（不规则纸片 + 不等宽黑框，沿用 P5Rough 垫底） */
+const P5Tooltip = ({ active, payload, label }: { active?: boolean; payload?: { name: string; value: number; color: string }[]; label?: string }) => {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="relative px-3 py-2">
+      <P5Rough seed={211} jag={4} frame={2.5} shadow={{ x: 3, y: 3 }} />
+      <div className="relative">
+        <p className="mb-0.5 text-[11px] font-black" style={{ color: P5R.ink, fontFamily: P5_FONT }}>{label}</p>
+        {payload.map(p => (
+          <p key={p.name} className="text-[11px] font-black tabular-nums" style={{ color: p.color === '#000000' ? P5R.ink : p.color }}>
+            {p.name} +{p.value}
+          </p>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+/** 成长轨迹：黑折线 + 红实心填充 + 纸白圆点，灰巨星水印压在轴区背后 */
+const GrowthCurveP5 = ({ activities }: { activities: ReturnType<typeof useAppStore.getState>['activities'] }) => {
+  const data = useMemo(() => {
+    const sorted = [...activities].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    let cumulative = 0;
+    const dayMap = new Map<string, number>();
+    sorted.forEach(a => {
+      const key = toLocalDateKey(new Date(a.date));
+      const pts = Object.values(a.pointsAwarded).reduce((s, v) => s + v, 0);
+      dayMap.set(key, (dayMap.get(key) ?? 0) + pts);
+    });
+    return Array.from(dayMap.entries()).map(([date, pts]) => {
+      cumulative += pts;
+      return { date: formatDate(new Date(date), true), total: cumulative, daily: pts };
+    });
+  }, [activities]);
+
+  if (data.length < 2) {
+    return (
+      <div className="relative flex h-[170px] items-center justify-center">
+        <P5Star size={124} fill={P5R.paperDim} className="pointer-events-none absolute" style={{ left: '50%', top: '48%', transform: 'translate(-50%,-50%)' }} />
+        <span className="relative text-[13px] font-black" style={{ color: P5R.grey, fontFamily: P5_FONT }}>记录更多后这里会出现成长轨迹</span>
+      </div>
+    );
+  }
+  const maxTotal = Math.max(...data.map(d => d.total));
+
+  return (
+    <div className="relative h-[200px]">
+      <P5Star size={136} fill={P5R.paperDim} className="pointer-events-none absolute" style={{ left: '48%', top: 2, transform: 'translateX(-50%)' }} />
+      <ResponsiveContainer width="100%" height="100%">
+        <AreaChart data={data} margin={{ top: 10, right: 8, left: -10, bottom: 0 }}>
+          <XAxis
+            dataKey="date"
+            tick={{ fontSize: 10, fill: '#3a3831', fontWeight: 800 }}
+            tickLine={false}
+            axisLine={{ stroke: P5R.ink, strokeWidth: 2.5 }}
+            interval="preserveStartEnd"
+          />
+          <YAxis
+            domain={[0, Math.ceil(maxTotal * 1.1)]}
+            allowDecimals={false}
+            tick={{ fontSize: 10, fill: '#3a3831', fontWeight: 800 }}
+            tickLine={false}
+            axisLine={{ stroke: P5R.ink, strokeWidth: 2.5 }}
+          />
+          <Tooltip content={<P5Tooltip />} cursor={{ stroke: P5R.ink, strokeWidth: 1.5 }} />
+          <Area
+            type="linear"
+            dataKey="total"
+            name="累计点数"
+            stroke={P5R.ink}
+            strokeWidth={3.4}
+            fill={P5R.red}
+            fillOpacity={1}
+            dot={{ r: 4.4, fill: P5R.paper, stroke: P5R.ink, strokeWidth: 3 }}
+            activeDot={{ r: 6, fill: P5R.redHot, stroke: P5R.ink, strokeWidth: 3 }}
+            animationDuration={900}
+          />
+        </AreaChart>
+      </ResponsiveContainer>
+    </div>
+  );
+};
+
+/** 数据格：红星磁贴 + 黑标题 + 猩红巨数 + 灰副文 */
+const StatCardP5 = ({ label, value, sub, seed, delay = 0 }: {
+  label: string; value: string | number; sub?: string; seed: number; delay?: number;
+}) => {
+  const anim = useBoldness();
+  return (
+    <motion.div
+      initial={anim ? { opacity: 0, y: 14 } : false}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay, duration: 0.4 }}
+      className="relative"
+    >
+      <P5Panel seed={seed} jag={7} frame={3} keyline={2.5} shadow={{ x: 4, y: 5 }} bodyClassName="px-4 pb-2.5 pt-3">
+        <div className="flex items-center gap-2">
+          <span
+            aria-hidden
+            className="relative flex h-[29px] w-[29px] shrink-0 items-center justify-center"
+            style={{ background: P5R.red, clipPath: roughQuad(seed + 3.1, 4), boxShadow: `2px 2.5px 0 ${P5R.ink}` }}
+          >
+            <P5Star size={17} fill={P5R.paper} />
+          </span>
+          <span className="min-w-0 truncate text-[14px] font-black leading-none" style={{ color: P5R.ink, fontFamily: P5_FONT }}>{label}</span>
+        </div>
+        <div className="mt-1.5 text-[36px] font-black leading-none tabular-nums" style={{ color: P5R.redHot, fontFamily: P5_FONT }}>{value}</div>
+        {sub && <div className="mt-1 truncate text-center text-[11px] font-bold" style={{ color: P5R.grey }}>{sub}</div>}
+      </P5Panel>
+    </motion.div>
+  );
+};
+
+/** 时间段段钮：纸片斜四边形，选中翻红（不用透明度表达未选中） */
+const P5Seg = ({ active, children, onClick, seed }: { active: boolean; children: ReactNode; onClick: () => void; seed: number }) => (
+  <motion.button
+    type="button"
+    whileTap={{ x: 2, y: 2 }}
+    onClick={onClick}
+    className="relative px-2.5 py-1.5 text-[13px] font-black leading-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c00008]"
+    style={{ color: active ? P5R.white : P5R.ink, fontFamily: P5_FONT }}
+  >
+    <P5Rough seed={seed} jag={4} frame={2.5} face={active ? P5R.red : P5R.paper} shadow={{ x: 2.5, y: 3 }} />
+    <span className="relative">{children}</span>
+  </motion.button>
+);
+
+/** 属性趋势折线（P5 分色 + 纸片图例开关） */
+const AttrTrendChartP5 = ({ data, attrIds, attrNames, range }: {
+  data: DayRecord[]; attrIds: AttributeId[]; attrNames: Record<string, string>; range: string;
+}) => {
+  const [activeAttrs, setActiveAttrs] = useState<Set<AttributeId>>(new Set(attrIds));
+  const toggle = (id: AttributeId) => setActiveAttrs(prev => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
+
+  if (data.length === 0) {
+    return (
+      <div className="relative flex h-[150px] items-center justify-center">
+        <P5Star size={112} fill={P5R.paperDim} className="pointer-events-none absolute" style={{ left: '50%', top: '48%', transform: 'translate(-50%,-50%)' }} />
+        <span className="relative text-[13px] font-black" style={{ color: P5R.grey, fontFamily: P5_FONT }}>
+          {range === '7' ? '近7天' : range === '30' ? '近30天' : '全部'}暂无记录
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2.5">
+      <div className="flex flex-wrap gap-1.5">
+        {attrIds.map((id, i) => {
+          const on = activeAttrs.has(id);
+          return (
+            <button
+              key={id}
+              type="button"
+              onClick={() => toggle(id)}
+              className="relative px-2.5 py-1 text-[11px] font-black leading-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c00008]"
+              style={{
+                background: on ? P5_ATTR_COLORS[id] : '#b9b3a8',
+                color: on ? P5R.white : '#2a2926',
+                clipPath: roughQuad(230 + i, 3),
+                fontFamily: P5_FONT,
+              }}
+            >
+              {attrNames[id]}
+            </button>
+          );
+        })}
+      </div>
+      <div className="relative h-[168px]">
+        <P5Star size={110} fill={P5R.paperDim} className="pointer-events-none absolute" style={{ left: '48%', top: 4, transform: 'translateX(-50%)' }} />
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={data} margin={{ top: 6, right: 8, left: -10, bottom: 0 }}>
+            <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#3a3831', fontWeight: 800 }} tickLine={false} axisLine={{ stroke: P5R.ink, strokeWidth: 2.5 }} interval="preserveStartEnd" />
+            <YAxis allowDecimals={false} tick={{ fontSize: 10, fill: '#3a3831', fontWeight: 800 }} tickLine={false} axisLine={{ stroke: P5R.ink, strokeWidth: 2.5 }} />
+            <Tooltip content={<P5Tooltip />} cursor={{ stroke: P5R.ink, strokeWidth: 1.5 }} />
+            {attrIds.filter(id => activeAttrs.has(id)).map(id => (
+              <Line
+                key={id}
+                type="linear"
+                dataKey={id}
+                name={attrNames[id]}
+                stroke={P5_ATTR_COLORS[id]}
+                strokeWidth={3}
+                dot={{ r: 3.4, fill: P5R.paper, stroke: P5_ATTR_COLORS[id], strokeWidth: 2.5 }}
+                activeDot={{ r: 5, fill: P5R.redHot, stroke: P5R.ink, strokeWidth: 2.5 }}
+                animationDuration={700}
+              />
+            ))}
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
   );
 };
 
@@ -402,7 +638,22 @@ export const Statistics = () => {
       {/* growth curve —— 统计页独有的可视化，置顶为 hero（审计 §3.5：此前被首页已有的
           汇总卡压到下方）。点「详细统计 →」进来第一眼即看到成长轨迹，而非重复的汇总数。
           P4：太阳舞台（中央奶油大圆累计数 + 四角卫星圆）；p3：白大斜卡 + 出血蓝斜体大数字。 */}
-      {isP4 ? (
+      {p5 ? (
+        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05, duration: 0.5 }} className="pt-2">
+          <P5SectionCard
+            seed={201}
+            title="成长轨迹"
+            meta={
+              <span className="mr-4 mt-2 inline-block text-[12px] font-black" style={{ color: P5R.ink, fontFamily: P5_FONT }}>
+                累计点数
+              </span>
+            }
+            bodyClassName="px-2.5 pb-3 pt-9"
+          >
+            <GrowthCurveP5 activities={activities} />
+          </P5SectionCard>
+        </motion.div>
+      ) : isP4 ? (
         <PlaneLevel>
           <div className="mb-1 flex items-center gap-2 px-1">
             <P4Flower size={18} color="var(--p4-orange, #f9a11b)" />
@@ -491,7 +742,16 @@ export const Statistics = () => {
       )}
 
       {/* stat grid —— P4 已把汇总烘进太阳舞台卫星圆，故仅非 P4 显示（p3=四格窄卡） */}
-      {!isP4 && (
+      {p5 ? (
+        <div className="grid grid-cols-2 gap-x-3 gap-y-4">
+          <StatCardP5 seed={301} label="累计点数" value={totalPoints} sub="所有属性总和" delay={0.15} />
+          <StatCardP5 seed={302} label="记录天数" value={uniqueDays} sub={`共 ${totalRecords} 条记录`} delay={0.2} />
+          <StatCardP5 seed={303} label="最长连续" value={`${maxStreak}天`} sub={todayStreak > 0 ? `当前连续 ${todayStreak} 天` : '继续加油！'} delay={0.25} />
+          <StatCardP5 seed={304} label="日均点数" value={avgPerDay} sub={topAttr?.total > 0 ? `最强：${settings.attributeNames[topAttr.id]}` : '平均每日获得'} delay={0.3} />
+          <StatCardP5 seed={305} label="成就解锁" value={achievements.filter(a => a.unlocked).length} sub={`共 ${achievements.length} 项`} delay={0.35} />
+          <StatCardP5 seed={306} label="技能解锁" value={skills.filter(s => s.unlocked).length} sub={`共 ${skills.length} 项`} delay={0.4} />
+        </div>
+      ) : !isP4 && (
         <div className={p3 ? 'grid grid-cols-2 gap-2 sm:grid-cols-4' : 'grid grid-cols-2 gap-3'}>
           <StatCard label="累计点数" value={totalPoints} sub="所有属性总和" delay={0.15} />
           <StatCard label="记录天数" value={uniqueDays} sub={`共 ${totalRecords} 条记录`} delay={0.2} />
@@ -514,6 +774,30 @@ export const Statistics = () => {
           </h3>
         </PlaneLevel>
       )}
+      {p5 ? (
+      <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3, duration: 0.5 }} className="pt-2">
+        <P5SectionCard
+          seed={207}
+          title="属性趋势"
+          meta={
+            <div className="mr-2.5 mt-2 flex items-center gap-1.5">
+              {([['7', '7天'], ['30', '30天'], ['all', '全部']] as [string, string][]).map(([v, label], i) => (
+                <P5Seg key={v} seed={240 + i} active={timeRange === v} onClick={() => setTimeRange(v as '7' | '30' | 'all')}>
+                  {label}
+                </P5Seg>
+              ))}
+            </div>
+          }
+          bodyClassName="px-3 pb-3.5 pt-11"
+        >
+          <AnimatePresence mode="wait">
+            <motion.div key={timeRange} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}>
+              <AttrTrendChartP5 data={chartData} attrIds={attrIds} attrNames={settings.attributeNames} range={timeRange} />
+            </motion.div>
+          </AnimatePresence>
+        </P5SectionCard>
+      </motion.div>
+      ) : (
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
@@ -600,11 +884,61 @@ export const Statistics = () => {
         </AnimatePresence>
         </PlaneLevel>
       </motion.div>
+      )}
 
       {/* per-attribute breakdown
           P4：条形图退役 —— 五枚花瓣圆牌（彩环 + 彩花 + pts + 名·Lv 标签）；
           p3 设计稿：名 Lv 行内排 + 青条洋红端点 + 蓝 pts。 */}
-      {isP4 ? (
+      {p5 ? (
+        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4, duration: 0.5 }} className="pt-2">
+          <P5SectionCard seed={209} title="属性分布" bodyClassName="px-3 pb-3 pt-9">
+            <div>
+              {[...attrTotals].sort((a, b) => b.total - a.total).map((item, i, arr) => {
+                const attr = attributes.find(a => a.id === item.id);
+                const maxTotal = Math.max(...attrTotals.map(a => a.total), 1);
+                const pct = Math.round((item.total / maxTotal) * 100);
+                return (
+                  <motion.div
+                    key={item.id}
+                    initial={{ opacity: 0, x: -12 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: 0.45 + i * 0.06 }}
+                    className="relative flex items-center gap-2 py-2"
+                  >
+                    <span
+                      aria-hidden
+                      className="relative flex h-[26px] w-[26px] shrink-0 items-center justify-center"
+                      style={{ background: P5R.ink, clipPath: roughQuad(320 + i, 4) }}
+                    >
+                      <P5AttrGlyph id={item.id} size={16} color={P5R.paper} />
+                    </span>
+                    <span className="shrink-0 text-[13px] font-black leading-none" style={{ color: P5R.ink, fontFamily: P5_FONT }}>
+                      {settings.attributeNames[item.id]}
+                    </span>
+                    <span className="shrink-0 text-[11px] font-bold leading-none" style={{ color: P5R.grey }}>Lv.{attr?.level ?? 1}</span>
+                    <div className="relative ml-0.5 h-[11px] min-w-0 flex-1" style={{ background: '#c9c3b6', clipPath: roughQuad(330 + i, 3) }}>
+                      <motion.div
+                        initial={{ width: 0 }}
+                        animate={{ width: `${Math.max(8, pct)}%` }}
+                        transition={{ duration: 0.8, delay: 0.5 + i * 0.06, ease: 'easeOut' }}
+                        className="absolute inset-y-0 left-0"
+                        style={{ background: P5R.red, clipPath: roughQuad(340 + i, 3) }}
+                      />
+                    </div>
+                    <span className="w-[54px] shrink-0 text-right text-[12px] font-black leading-none tabular-nums" style={{ color: P5R.ink, fontFamily: P5_FONT }}>
+                      {item.total} <span className="text-[10px]">pts</span>
+                    </span>
+                    {/* 行分隔：稿上是一条从图标右侧起的细黑线 */}
+                    {i < arr.length - 1 && (
+                      <span aria-hidden className="absolute bottom-0 left-[30px] right-0 h-[2px]" style={{ background: '#c9c3b6' }} />
+                    )}
+                  </motion.div>
+                );
+              })}
+            </div>
+          </P5SectionCard>
+        </motion.div>
+      ) : isP4 ? (
         <PlaneLevel>
           <div className="mb-3 mt-2 flex items-center gap-2 px-1">
             <P4Flower size={18} color="var(--p4-orange, #f9a11b)" />

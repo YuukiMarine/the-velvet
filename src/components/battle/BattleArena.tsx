@@ -23,6 +23,10 @@ import { TowerRecapModal } from '@/components/battle/TowerModals';
 import { ArsenalModal, ShadowArchiveModal, MasteryStars } from '@/components/battle/ArsenalModal';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P3R, P3RPage, GhostWords, P3PageHeader, ShatteredStar, slantClip } from '@/components/p3r/kit';
+import {
+  P5R, P5_FONT, roughQuad, roughSlant,
+  P5RPage, P5Panel, P5Btn, P5Collage, P5Star, P5StarOutline, P5RingStar, P5Dots, P5Slab,
+} from '@/components/p5r/kit';
 
 type TabKey = 'battle' | 'persona' | 'settings';
 
@@ -55,6 +59,27 @@ const SKILL_EFFECT_HINT: Record<string, string> = {
   attack_boost: '+6伤·3回合',
 };
 
+/** P5 取景框（p5-battle 稿：空态巨星外那四个黑 L 角标） */
+const P5Viewfinder = ({ children }: { children: React.ReactNode }) => {
+  const CORNERS = [
+    { pos: { left: 0, top: 0 }, h: { left: 0, top: 0 }, v: { left: 0, top: 0 } },
+    { pos: { right: 0, top: 0 }, h: { right: 0, top: 0 }, v: { right: 0, top: 0 } },
+    { pos: { left: 0, bottom: 0 }, h: { left: 0, bottom: 0 }, v: { left: 0, bottom: 0 } },
+    { pos: { right: 0, bottom: 0 }, h: { right: 0, bottom: 0 }, v: { right: 0, bottom: 0 } },
+  ];
+  return (
+    <div className="relative flex h-[128px] w-[158px] items-center justify-center">
+      {CORNERS.map((c, i) => (
+        <span key={i} aria-hidden className="absolute h-[32px] w-[32px]" style={c.pos}>
+          <span className="absolute h-[4.5px] w-[32px]" style={{ ...c.h, background: P5R.ink }} />
+          <span className="absolute h-[32px] w-[4.5px]" style={{ ...c.v, background: P5R.ink }} />
+        </span>
+      ))}
+      {children}
+    </div>
+  );
+};
+
 export const BattleArena = () => {
   const {
     user, attributes, persona, shadow, battleState, settings, stratum,
@@ -64,7 +89,11 @@ export const BattleArena = () => {
 
   const [activeTab, setActiveTab] = useState<TabKey>('battle');
   // P3R（蓝频道）：p3-battle-reference-v2 形态；battleCard = 全页 13 处卡壳的统一开关
-  const p3 = useUiChannel() === 'p3';
+  const uiChannel = useUiChannel();
+  const p3 = uiChannel === 'p3';
+  // P5R（红频道）：p5-battle-flat-newsprint-v1 稿——页头/段签/玩家条/空态大板照稿重画，
+  // 其余（Persona 页、设置页、塔内）走 .p5-reskin 毯式重皮
+  const p5 = uiChannel === 'p5';
   const battleCard = p3 ? 'p3r-card' : 'rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm';
   const [showPersonaCreate, setShowPersonaCreate] = useState(false);
   const [showReveal, setShowReveal] = useState(false);
@@ -337,20 +366,140 @@ export const BattleArena = () => {
     </div>
   );
 
+  // ── P5R 玩家条（p5-battle 稿：PLAYER 黑标骑上缘 + 大黑名 + LV + 右缘红星探出）──
+  const renderPlayerCardP5 = (extra?: React.ReactNode) => (
+    <div className="relative mt-1.5">
+      <P5Panel seed={620} jag={8} frame={3.5} keyline={2.5} shadow={{ x: 5, y: 6 }} bodyClassName="px-4 pb-3 pt-4">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="truncate text-[22px] font-black leading-tight" style={{ color: P5R.ink, fontFamily: P5_FONT }}>{user?.name ?? '旅行者'}</p>
+            <p className="mt-0.5 text-[15px] font-black leading-none" style={{ color: P5R.ink, fontFamily: P5_FONT }}>
+              LV.{attributes.reduce((s, a) => s + a.level, 0)}
+            </p>
+          </div>
+          {extra}
+        </div>
+        {battleState && (
+          <div className="mt-2.5 flex items-center gap-3">
+            <span className="text-[11px] font-black" style={{ color: P5R.ink }}>HP</span>
+            <div className="relative h-[10px] min-w-0 flex-1" style={{ background: '#c9c3b6', clipPath: roughQuad(622, 3) }}>
+              <div
+                className="absolute inset-y-0 left-0"
+                style={{
+                  width: `${Math.max(0, Math.min(100, (p3Hp / Math.max(1, p3HpMax)) * 100))}%`,
+                  background: P5R.red,
+                  clipPath: roughQuad(623, 3),
+                }}
+              />
+            </div>
+            <span className="shrink-0 text-[11px] font-black" style={{ color: P5R.ink }}>SP</span>
+            <span className="flex shrink-0 gap-[3px]" aria-hidden>
+              {[0, 1, 2].map(k => (
+                <span key={k} className="h-[11px] w-[13px]" style={{ background: k < Math.min(3, p3Sp) ? P5R.red : '#c9c3b6', clipPath: 'polygon(28% 0, 100% 0, 72% 100%, 0 100%)' }} />
+              ))}
+            </span>
+            <span className="shrink-0 text-[11px] font-black tabular-nums" style={{ color: p3Sp > 0 ? P5R.red : P5R.grey }}>{p3Sp}</span>
+          </div>
+        )}
+      </P5Panel>
+      {/* PLAYER 黑标：另一张纸贴在卡的上缘 */}
+      <span
+        className="absolute -top-2.5 left-3.5 px-2.5 py-[3px] text-[11px] font-black leading-none tracking-[0.2em]"
+        style={{ background: P5R.ink, color: P5R.paper, clipPath: roughQuad(621, 3), boxShadow: `0 0 0 2px ${P5R.paper}`, fontFamily: P5_FONT }}
+      >
+        PLAYER
+      </span>
+      <P5Star size={56} fill={P5R.red} ring={P5R.ink} rot={-8} className="pointer-events-none absolute -bottom-4 -right-2" />
+    </div>
+  );
+
   return (
     <>
+    <P5RPage active={p5}>
     <P3RPage active={p3}>
     <motion.div
       key="battle-page"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className={`relative space-y-5 ${p3 ? 'pb-10' : 'pb-8'}`}
+      className={`relative space-y-5 ${p3 ? 'pb-10' : 'pb-8'} ${p5 ? 'p5-reskin' : ''}`}
     >
       {p3 && <GhostWords words={['BATTLE']} className="right-[8px] top-[-14px] text-right text-[72px]" />}
 
       {/* Header — 宫格子页页头归一 PageTitle 制式（审计 S6），返回归一 → 菜单 */}
-      {p3 ? (
+      {p5 ? (
+        <div className="relative pt-1">
+          {/* 区块局部装饰：红斜块碰撞 + 网点 + 探出的纸白星 */}
+          <div aria-hidden className="pointer-events-none absolute -inset-x-4 -top-8 h-[230px]" style={{ zIndex: -1 }}>
+            <P5Slab color={P5R.red} seed={601} rot={-10} style={{ left: -70, top: -16, width: 250, height: 140 }} />
+            <P5Slab color={P5R.redDeep} seed={602} rot={12} style={{ right: -80, top: 26, width: 220, height: 160 }} />
+            <P5Dots className="absolute" style={{ left: 0, top: 86, width: 74, height: 130 }} color="#4a4741" />
+            <P5Star size={30} fill={P5R.paper} rot={-12} className="absolute" style={{ right: 40, top: 62 }} />
+            <P5StarOutline size={22} color="#57534c" rot={16} className="absolute" style={{ right: 8, top: 132 }} />
+          </div>
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex min-w-0 items-start gap-2">
+              <button
+                type="button"
+                onClick={() => setCurrentPage('menu')}
+                aria-label="返回"
+                className="relative mt-2 flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c00008]"
+                style={{
+                  background: P5R.paper,
+                  border: '2.5px solid #050505',
+                  boxShadow: '3px 3px 0 #000000',
+                  clipPath: 'polygon(2px 1px, calc(100% - 1px) 3px, calc(100% - 3px) calc(100% - 1px), 1px calc(100% - 3px))',
+                }}
+              >
+                <span aria-hidden className="h-0 w-0 border-y-[7px] border-y-transparent border-r-[11px]" style={{ borderRightColor: '#050505' }} />
+              </button>
+              <div className="min-w-0">
+                <P5Collage
+                  size={42}
+                  gap={4}
+                  tiles={[
+                    { ch: '逆', bg: P5R.red, fg: P5R.paper, rot: -3.6, dy: 0 },
+                    { ch: '影', bg: P5R.paper, fg: P5R.ink, rot: 2.6, dy: 7 },
+                    { ch: '战', bg: P5R.red, fg: P5R.paper, rot: -2, dy: 2 },
+                    { ch: '场', bg: P5R.paper, fg: P5R.ink, rot: 3, dy: 8 },
+                  ]}
+                />
+                <div className="mt-2.5 pl-7">
+                  <P5Collage
+                    size={21}
+                    gap={2}
+                    delay={0.2}
+                    tiles={[
+                      { ch: 'B', bg: P5R.paper, fg: P5R.red, rot: -4, dy: 2 },
+                      { ch: 'A', bg: P5R.paper, fg: P5R.ink, rot: 2, dy: 0 },
+                      { ch: 'T', bg: P5R.paper, fg: P5R.ink, rot: -2.5, dy: 3 },
+                      { ch: 'T', bg: P5R.paper, fg: P5R.ink, rot: 3, dy: 1 },
+                      { ch: 'L', bg: P5R.paper, fg: P5R.red, rot: -3, dy: 4 },
+                      { ch: 'E', bg: P5R.paper, fg: P5R.ink, rot: 2.4, dy: 1 },
+                    ]}
+                  />
+                </div>
+              </div>
+            </div>
+            {inShadowTime && (
+              <motion.span
+                animate={{ scale: [1, 1.05, 1] }}
+                transition={{ repeat: Infinity, duration: 1.6 }}
+                className="relative mt-1 flex shrink-0 items-center gap-1.5 px-2.5 py-1.5 text-[13px] font-black"
+                style={{ color: P5R.paper, fontFamily: P5_FONT }}
+              >
+                <span aria-hidden className="absolute inset-0" style={{ transform: 'translate(3px,3px)', background: P5R.ink, clipPath: roughQuad(604, 4) }} />
+                <span aria-hidden className="absolute inset-0" style={{ background: P5R.paper, clipPath: roughQuad(605, 3) }} />
+                <span aria-hidden className="absolute inset-[2.5px]" style={{ background: P5R.red, clipPath: roughQuad(606, 3) }} />
+                <span className="relative flex items-center gap-1.5">
+                  <P5Star size={13} fill={P5R.paper} />
+                  影时间
+                </span>
+              </motion.span>
+            )}
+          </div>
+        </div>
+      ) : p3 ? (
         <div className="relative">
           {/* 标题左上小蓝斜片（设计稿装饰） */}
           <span aria-hidden className="absolute left-[2px] top-[30px] h-[12px] w-[22px]" style={{ background: P3R.blue, clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
@@ -388,8 +537,42 @@ export const BattleArena = () => {
         </div>
       )}
 
-      {/* Tabs（p3：斜块三格——选中蓝斜块白字+洋红角 / 未选白斜块黑字） */}
-      {p3 ? (
+      {/* Tabs（p3：斜块三格——选中蓝斜块白字+洋红角 / 未选白斜块黑字；
+          p5：三张斜纸片叠压，选中翻猩红 + 纸白下划线，未选纯纸底黑字——不用透明度分主次） */}
+      {p5 ? (
+        <div className="relative flex items-stretch">
+          {([
+            { key: 'battle', label: '进入战场' },
+            { key: 'persona', label: 'Persona' },
+            { key: 'settings', label: '设置' },
+          ] as const).map((tab, i) => {
+            const active = activeTab === tab.key;
+            return (
+              <motion.button
+                key={tab.key}
+                type="button"
+                whileTap={{ x: 2, y: 3 }}
+                onClick={() => setActiveTab(tab.key)}
+                className="relative flex-1 px-1 py-3 text-center text-[15px] font-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c00008]"
+                style={{
+                  marginLeft: i > 0 ? -9 : 0,
+                  zIndex: active ? 4 : 3 - i,
+                  color: active ? P5R.paper : P5R.ink,
+                  fontFamily: P5_FONT,
+                }}
+              >
+                <span aria-hidden className="absolute inset-0" style={{ transform: 'translate(3px,4px)', background: P5R.ink, clipPath: roughSlant(610 + i, 14, 3) }} />
+                <span aria-hidden className="absolute inset-0" style={{ background: P5R.ink, clipPath: roughSlant(613 + i, 14, 3) }} />
+                <span aria-hidden className="absolute inset-[3px]" style={{ background: active ? P5R.red : P5R.paper, clipPath: roughSlant(616 + i, 13, 3) }} />
+                <span className="relative">{tab.label}</span>
+                {active && (
+                  <span aria-hidden className="absolute bottom-[8px] left-1/2 h-[3px] w-[52%] -translate-x-1/2" style={{ background: P5R.paper }} />
+                )}
+              </motion.button>
+            );
+          })}
+        </div>
+      ) : p3 ? (
         <div className="relative flex items-stretch">
           {([
             { key: 'battle', label: '进入战场' },
@@ -457,7 +640,23 @@ export const BattleArena = () => {
                     className="space-y-4"
                   >
                     {!persona && (
-                      p3 ? (
+                      p5 ? (
+                        <div className="space-y-4">
+                          {renderPlayerCardP5()}
+                          {/* 空态大纸板：取景框巨星 + 提示 + 猩红召唤钮（稿上主视觉） */}
+                          <P5Panel seed={630} jag={10} frame={4} keyline={3} shadow={{ x: 6, y: 7 }} bodyClassName="px-5 pb-8 pt-9">
+                            <div className="flex flex-col items-center gap-5">
+                              <P5Viewfinder>
+                                <P5RingStar size={92} rings={[P5R.ink, P5R.paper, P5R.ink, P5R.red]} step={0.13} />
+                              </P5Viewfinder>
+                              <p className="text-[16px] font-black" style={{ color: P5R.ink, fontFamily: P5_FONT }}>你尚未召唤 Persona</p>
+                              <P5Btn tone="red" seed={631} rot={-1.2} onClick={() => setShowPersonaCreate(true)} className="w-[78%]" bodyClassName="!py-3.5 !text-[21px]">
+                                召唤 Persona
+                              </P5Btn>
+                            </div>
+                          </P5Panel>
+                        </div>
+                      ) : p3 ? (
                         <div className="space-y-3">
                           {renderPlayerCardP3()}
                           {/* 设计稿：碎裂星徽直接坐在水面上（无卡壳）+ 蓝青渐变大梯形召唤钮 */}
@@ -498,7 +697,7 @@ export const BattleArena = () => {
 
                     {persona && !stratum && (
                       <div className="space-y-3">
-                        {p3 ? renderPlayerCardP3() : (
+                        {p5 ? renderPlayerCardP5() : p3 ? renderPlayerCardP3() : (
                         <div className={`${battleCard} px-4 py-3 flex items-center justify-between`}>
                           <div>
                             <p className="text-[10px] font-semibold tracking-widest uppercase text-gray-400 dark:text-gray-500">Player</p>
@@ -530,7 +729,14 @@ export const BattleArena = () => {
                     {persona && stratum && battleState && (
                       <div className="space-y-3">
                         {/* Player info card */}
-                        {p3 ? renderPlayerCardP3(
+                        {p5 ? renderPlayerCardP5(
+                          persona.equippedMaskAttribute ? (
+                            <span className="relative shrink-0 px-2.5 py-1.5 text-[12px] font-black" style={{ color: P5R.paper, fontFamily: P5_FONT }}>
+                              <span aria-hidden className="absolute inset-0" style={{ background: P5R.ink, clipPath: roughQuad(626, 3) }} />
+                              <span className="relative">{settings.attributeNames[persona.equippedMaskAttribute]}</span>
+                            </span>
+                          ) : undefined,
+                        ) : p3 ? renderPlayerCardP3(
                           persona.equippedMaskAttribute ? (
                             <span className="shrink-0 px-2.5 py-1 text-[12px] font-black" style={{ clipPath: slantClip(6), background: P3R.cyanPale, color: P3R.blueDeep }}>
                               🎭 {settings.attributeNames[persona.equippedMaskAttribute]}
@@ -1249,6 +1455,7 @@ export const BattleArena = () => {
       )}
     </motion.div>
     </P3RPage>
+    </P5RPage>
 
     {/* Sub-modals */}
     <PersonaCreateModal isOpen={showPersonaCreate} onClose={() => setShowPersonaCreate(false)} />

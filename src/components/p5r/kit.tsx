@@ -314,6 +314,71 @@ export const BubbleMark = ({ mark, channel = 'p5', size = 34, className, style }
   );
 };
 
+/**
+ * 同心多环星 —— 由外到内逐层缩半径铺色（p5-modal-07 主视觉：黑/纸/红/纸/黑 五环）。
+ * 比 P5Star 的三层版自由：环数、每环占比都由 rings 数组决定。
+ */
+export const P5RingStar = ({ size = 120, rings = [P5R.ink, P5R.paper, P5R.red, P5R.paper, P5R.ink], step = 0.145, rot = 0, className, style }: {
+  size?: number;
+  /** 由外到内的环色 */
+  rings?: string[];
+  /** 每层半径相对最外层的递减比例 */
+  step?: number;
+  rot?: number;
+  className?: string;
+  style?: CSSProperties;
+}) => (
+  <svg viewBox="0 0 100 100" width={size} height={size} className={className} style={{ transform: rot ? `rotate(${rot}deg)` : undefined, ...style }} aria-hidden>
+    {rings.map((c, i) => (
+      <polygon key={i} points={starPts(50, 50, 49 * (1 - i * step))} fill={c} />
+    ))}
+  </svg>
+);
+
+/**
+ * 五属性字形（p5-statistics 稿「属性分布」行首黑磁贴里的白色图标）。
+ * 纯路径单色——不引 emoji，保住红/黑/纸三色律。
+ */
+export const P5AttrGlyph = ({ id, size = 18, color = P5R.white, className, style }: {
+  id: 'knowledge' | 'guts' | 'dexterity' | 'kindness' | 'charm';
+  size?: number;
+  color?: string;
+  className?: string;
+  style?: CSSProperties;
+}) => (
+  <svg viewBox="0 0 24 24" width={size} height={size} className={className} style={style} aria-hidden>
+    {id === 'knowledge' && (
+      // 摊开的书：左右两页各一块梯形
+      <path d="M2 5 L11 7.1 V20 L2 17.9 Z M13 7.1 L22 5 V17.9 L13 20 Z" fill={color} />
+    )}
+    {id === 'guts' && (
+      // 哑铃：两端配重 + 中杆
+      <path d="M2 8.6 h3.2 v6.8 H2 Z M6.2 10 h2.4 v4 H6.2 Z M8.8 10.8 h6.4 v2.4 H8.8 Z M15.4 10 h2.4 v4 h-2.4 Z M18.8 8.6 H22 v6.8 h-3.2 Z" fill={color} />
+    )}
+    {id === 'dexterity' && (
+      // 靶心：外环 + 靶点
+      <>
+        <circle cx="12" cy="12" r="9.4" fill="none" stroke={color} strokeWidth="2.6" />
+        <circle cx="12" cy="12" r="3.6" fill={color} />
+      </>
+    )}
+    {id === 'kindness' && (
+      // 三瓣嫩芽
+      <path d="M12 3.2 C14.6 7 14.6 10.4 12 13.4 C9.4 10.4 9.4 7 12 3.2 Z M4 8.6 C8.2 9 10.6 11 11.4 14.6 C7.4 14.6 4.8 12.6 4 8.6 Z M20 8.6 C19.2 12.6 16.6 14.6 12.6 14.6 C13.4 11 15.8 9 20 8.6 Z M11 15.6 h2 V21 h-2 Z" fill={color} />
+    )}
+    {id === 'charm' && (
+      // 假面：眼孔用 evenodd 掏空
+      <path
+        fillRule="evenodd"
+        d="M2.4 8 C7 5.9 17 5.9 21.6 8 C21.6 14 18 17 14.6 14.9 C13.1 14 10.9 14 9.4 14.9 C6 17 2.4 14 2.4 8 Z
+           M5 10.6 a2.3 1.8 0 1 0 4.6 0 a2.3 1.8 0 1 0 -4.6 0 Z
+           M14.4 10.6 a2.3 1.8 0 1 0 4.6 0 a2.3 1.8 0 1 0 -4.6 0 Z"
+        fill={color}
+      />
+    )}
+  </svg>
+);
+
 /** 四角星闪光（✦） */
 export const P5Sparkle = ({ size = 14, color = P5R.red, className, style }: { size?: number; color?: string; className?: string; style?: CSSProperties }) => (
   <svg viewBox="0 0 24 24" width={size} height={size} className={className} style={style} aria-hidden>
@@ -430,8 +495,9 @@ export const P5CollageTitle = ({ text, size = 30, star = true, className }: {
   return (
     <span className={`flex flex-wrap items-start gap-[3px] ${className ?? ''}`} aria-hidden>
       {chars.map((ch, i) => {
-        // 标点/空格不做瓷砖（做出来像掉字），直接以黑字排在基线上
-        if (/[\s·、，。：；！？（）()「」【】…—-]/.test(ch)) {
+        // 标点/空格不做瓷砖（做出来像掉字），直接以黑字排在基线上。
+        // 例外：！？ 在稿上（成就解锁！/ 恭喜升级！）是实打实的一块瓷砖，不能落成裸字
+        if (/[\s·、，。：；（）()「」【】…—-]/.test(ch)) {
           return (
             <span key={i} className="inline-block font-black" style={{ fontSize: size * 0.9, lineHeight: 1.2, marginTop: 6, color: P5R.ink, fontFamily: P5_FONT }}>
               {ch === ' ' ? ' ' : ch}
@@ -511,9 +577,11 @@ export const P5SubBar = ({ segs, star = true, rot = -1.6, className }: {
 
 // ── 楔形节标 / 徽章 ──────────────────────────────────────────────────────────
 /** 楔形节标（左直右斜 + 微旋转）：tone=ink 黑底白字（今日任务）/ paper 纸底黑字（人格星象） */
-export const P5Wedge = ({ children, star = true, tone = 'ink', rot = -1.2, keyline = true, className, style }: {
+export const P5Wedge = ({ children, star = true, starSide = 'right', tone = 'ink', rot = -1.2, keyline = true, className, style }: {
   children: ReactNode;
   star?: boolean;
+  /** 星在文字左还是右（p5-statistics 的节标是「★ 成长轨迹」，星在左） */
+  starSide?: 'left' | 'right';
   tone?: 'ink' | 'paper' | 'red';
   rot?: number;
   /** 深底上的黑楔要一圈纸边才看得见轮廓 */
@@ -524,14 +592,16 @@ export const P5Wedge = ({ children, star = true, tone = 'ink', rot = -1.2, keyli
   const bg = tone === 'ink' ? P5R.ink : tone === 'red' ? P5R.red : P5R.paper;
   const fg = tone === 'paper' ? P5R.ink : P5R.white;
   const wedge = 'polygon(0 0, 100% 0, calc(100% - 16px) 100%, 0 100%)';
+  const starEl = star ? <P5Star size={15} fill={fg} className="shrink-0" /> : null;
   return (
     <div className={`relative inline-block ${className ?? ''}`} style={{ transform: `rotate(${rot}deg)`, ...style }}>
       {keyline && (
         <span aria-hidden className="absolute -inset-[2.5px]" style={{ background: tone === 'paper' ? P5R.ink : P5R.paper, clipPath: wedge }} />
       )}
       <span className="relative flex items-center gap-2 py-1.5 pl-4 pr-8" style={{ background: bg, clipPath: wedge }}>
+        {starSide === 'left' && starEl}
         <span className="text-[19px] font-black leading-none tracking-wide" style={{ color: fg, fontFamily: P5_FONT }}>{children}</span>
-        {star && <P5Star size={15} fill={fg} className="shrink-0" />}
+        {starSide === 'right' && starEl}
       </span>
     </div>
   );
