@@ -170,25 +170,44 @@
 /* ── 成就 / 技能条目（p5-ach）──────────────────────────────────────────────
    条目与按钮同样换不规则四边形；状态一律纯色表达（用户铁律：不用透明度、
    未完成就用灰）：已解锁=猩红面白字 / 已达成待领=纸面 / 未达成=纯灰面。 */
+/* 成就/技能条目是 div（不像 input 受限），所以描边走「两层异形」而不是等宽边带：
+   本体 = 黑，::before = 面，两者用**不同**的不规则多边形 → 露出的黑沿边连续变宽变窄，
+   即「不规则描边的不规则四边形」。isolation+z-index:-1 让面层沉到内容之下、黑底之上，
+   不动任何子元素的定位。padding 同时收紧 4px（用户口径「紧凑 3-5px」）。 */
 :root[data-ui-channel="p5"] .p5-ach {
   border: none !important;
   border-radius: 0 !important;
   box-shadow: none !important;
-  background-image:
-    linear-gradient(to right, #050505 0 5px, transparent 5px),
-    linear-gradient(to left, #050505 0 5px, transparent 5px),
-    linear-gradient(to bottom, #050505 0 5px, transparent 5px),
-    linear-gradient(to top, #050505 0 5px, transparent 5px) !important;
-  background-repeat: no-repeat !important;
-  background-color: #b8b2a6 !important;   /* 缺省 = 未达成的纯灰 */
-  clip-path: polygon(4px 0, 100% 2px, calc(100% - 4px) 100%, 0 calc(100% - 3px));
+  background-image: none !important;
+  background-color: #050505 !important;   /* 本体即描边色 */
+  isolation: isolate;
+  padding: 8px !important;
+  clip-path: polygon(5px 1px, calc(100% - 1px) 4px, calc(100% - 6px) calc(100% - 1px), 1px calc(100% - 5px));
+}
+:root[data-ui-channel="p5"] .p5-ach::before {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  z-index: -1;
+  background: #b8b2a6;   /* 缺省 = 未达成的纯灰 */
+  /* 与外形不同的多边形 → 四边黑边宽度各不相同、且沿边渐变 */
+  clip-path: polygon(1px 5px, calc(100% - 6px) 0, 100% calc(100% - 6px), 6px 100%);
 }
 :root[data-ui-channel="p5"] .p5-ach:nth-child(2n) {
-  clip-path: polygon(0 3px, calc(100% - 3px) 0, 100% calc(100% - 3px), 4px 100%);
+  clip-path: polygon(1px 4px, calc(100% - 5px) 1px, calc(100% - 1px) calc(100% - 5px), 5px calc(100% - 1px));
+}
+:root[data-ui-channel="p5"] .p5-ach:nth-child(2n)::before {
+  clip-path: polygon(6px 0, 100% 5px, calc(100% - 1px) 100%, 0 calc(100% - 6px));
 }
 :root[data-ui-channel="p5"] .p5-ach:nth-child(3n) {
-  clip-path: polygon(3px 2px, 100% 0, calc(100% - 3px) calc(100% - 2px), 0 100%);
+  clip-path: polygon(4px 1px, calc(100% - 1px) 1px, calc(100% - 4px) calc(100% - 1px), 1px calc(100% - 4px));
 }
+:root[data-ui-channel="p5"] .p5-ach:nth-child(3n)::before {
+  clip-path: polygon(0 6px, calc(100% - 5px) 1px, 100% calc(100% - 1px), 5px calc(100% - 5px));
+}
+/* 条目内部行距收紧（同「紧凑 3-5px」口径） */
+:root[data-ui-channel="p5"] .p5-ach :is(.mb-2, .mb-1\.5) { margin-bottom: 4px !important; }
+:root[data-ui-channel="p5"] .p5-ach :is(.mt-1, .mt-1\.5) { margin-top: 3px !important; }
 /* 已解锁（原琥珀渐变）→ 猩红实面 */
 :root[data-ui-channel="p5"] .p5-ach[class*="from-amber-400"] {
   background-color: #c00008 !important;
@@ -380,13 +399,23 @@
 :root[data-ui-channel="p5"] .p5-ach.bg-white,
 :root[data-ui-channel="p5"] .p5-ach.bg-gray-50,
 :root[data-ui-channel="p5"] .p5-ach[class*="bg-gray-50"] {
-  background-color: #b8b2a6 !important;
+  background-color: #050505 !important;
+}
+:root[data-ui-channel="p5"] .p5-ach.bg-white::before,
+:root[data-ui-channel="p5"] .p5-ach.bg-gray-50::before,
+:root[data-ui-channel="p5"] .p5-ach[class*="bg-gray-50"]::before {
+  background: #b8b2a6;
 }
 :root[data-ui-channel="p5"] .p5-ach[class*="from-amber-400"],
 :root[data-ui-channel="p5"] .p5-ach[class*="from-amber-500"],
 :root[data-ui-channel="p5"] .p5-ach[class*="from-violet-500"] {
-  background-color: #c00008 !important;
+  background-color: #050505 !important;
   color: #f8f8f6 !important;
+}
+:root[data-ui-channel="p5"] .p5-ach[class*="from-amber-400"]::before,
+:root[data-ui-channel="p5"] .p5-ach[class*="from-amber-500"]::before,
+:root[data-ui-channel="p5"] .p5-ach[class*="from-violet-500"]::before {
+  background: #c00008;
 }
 :root[data-ui-channel="p5"] .p5-ach[class*="from-amber-400"] :is(h3, h4, p, span, div),
 :root[data-ui-channel="p5"] .p5-ach[class*="from-amber-500"] :is(h3, h4, p, span, div),
@@ -395,7 +424,11 @@
 }
 :root[data-ui-channel="p5"] .p5-ach[class*="bg-amber-50"],
 :root[data-ui-channel="p5"] .p5-ach[class*="bg-primary/5"] {
-  background-color: var(--ui-paper) !important;
+  background-color: #050505 !important;
+}
+:root[data-ui-channel="p5"] .p5-ach[class*="bg-amber-50"]::before,
+:root[data-ui-channel="p5"] .p5-ach[class*="bg-primary/5"]::before {
+  background: var(--ui-paper);
 }
 /* 技能开关：琥珀 → 猩红；未解锁轨道 → 纯灰 */
 :root[data-ui-channel="p5"] .p5-reskin :is(.bg-amber-500, .bg-violet-500) {
