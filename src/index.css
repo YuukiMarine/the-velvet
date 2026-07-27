@@ -80,51 +80,97 @@
 /* ── P5 设置页毯式重皮（p5-settings-flat-newsprint-v1）────────────────────
    旧表单遍布 bg-gray-50/白卡 + 圆角 + 灰字的后台件；P5 定稿是纸面黑框直角。
    仅 data-ui-channel="p5" + .p5-reskin 容器内生效（含其内弹窗），其他频道零影响。 */
+/* 输入件：形状本身必须是不规则四边形（用户口径「我本来的意思就是调整输入框的形状」）。
+   关键约束——clip-path 在 filter 之后应用，任何**朝外**的描边/投影都会被一并裁掉，
+   所以黑框只能画在形状内部：用四条 linear-gradient 边带当描边，再被斜边裁一刀，
+   于是每条边的可见宽度沿斜度连续变化 = 天然不等宽；右上角另叠一块红角（稿上签名件）。 */
 :root[data-ui-channel="p5"] .p5-reskin input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
 :root[data-ui-channel="p5"] .p5-reskin textarea,
 :root[data-ui-channel="p5"] .p5-reskin select {
-  background-color: var(--ui-paper) !important;
-  /* 反板正：四边不等宽描边 + 四角不等圆角，输入件也不许是板正矩形 */
-  border-color: #050505 !important;
-  border-style: solid !important;
-  border-width: 2px 3px 3.5px 2.5px !important;
-  border-radius: 2px 5px 3px 6px !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
   color: #050505 !important;
   font-weight: 700;
-  /* 稿上输入件右下恒有一块错位红衬（p5-modal-02/03 签名件） */
-  box-shadow: 5px 5px 0 #c00008 !important;
+  background-color: var(--ui-paper) !important;
+  background-image:
+    linear-gradient(225deg, #c00008 0 17px, transparent 17px),
+    linear-gradient(to right, #050505 0 9px, transparent 9px),
+    linear-gradient(to left, #050505 0 9px, transparent 9px),
+    linear-gradient(to bottom, #050505 0 9px, transparent 9px),
+    linear-gradient(to top, #050505 0 9px, transparent 9px) !important;
+  background-position: top right, 0 0, 0 0, 0 0, 0 0 !important;
+  background-size: 30px 30px, 100% 100%, 100% 100%, 100% 100%, 100% 100% !important;
+  background-repeat: no-repeat !important;
+  clip-path: polygon(5px 0, 100% 3px, calc(100% - 6px) 100%, 0 calc(100% - 4px));
 }
-/* 弹窗内的输入件红衬收窄一档（表单密集，5px 会互相打架） */
-:root[data-ui-channel="p5"] :is([role="dialog"], [role="alertdialog"]) .p5-reskin input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
-:root[data-ui-channel="p5"] :is([role="dialog"], [role="alertdialog"]).p5-reskin input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
-:root[data-ui-channel="p5"] :is([role="dialog"], [role="alertdialog"]) .p5-reskin select,
-:root[data-ui-channel="p5"] :is([role="dialog"], [role="alertdialog"]).p5-reskin select {
-  box-shadow: 4px 4px 0 #c00008 !important;
+/* 同屏多个输入件不能一个模子：偶数位反向斜 */
+:root[data-ui-channel="p5"] .p5-reskin :is(input, textarea, select):nth-of-type(2n) {
+  clip-path: polygon(0 4px, calc(100% - 5px) 0, 100% calc(100% - 3px), 5px 100%);
+}
+:root[data-ui-channel="p5"] .p5-reskin textarea {
+  clip-path: polygon(5px 0, 100% 4px, calc(100% - 6px) 100%, 0 calc(100% - 5px));
 }
 /* P5 分区纸卡：直接子内容提权到 P5Rough 垫底层之上 */
 :root[data-ui-channel="p5"] .p5-sec-body > *:not([aria-hidden]) {
   position: relative;
 }
-/* 带投影的卡片 → 黑框 + 错位硬影（去柔影；旧列表卡自动获得剪报骨架）。
-   反板正：四边描边不等宽 + 四角圆角不等，杜绝「规规矩矩的矩形卡」——
-   nth-of-type 轮换三套参数，同屏多卡不会整齐划一。 */
+/* 列表条目卡（任务条 / 记录条 / 旧带投影卡）：同样是裁形 + 描边链，
+   形状本身就歪，而不是给矩形贴不等宽边（后者仍读作板正矩形）。
+   nth-of-type 轮换三套斜向，同屏条目不会一个模子刻出来。 */
 :root[data-ui-channel="p5"] .p5-reskin :is(.shadow-sm, .shadow, .shadow-md, .shadow-lg, .shadow-xl, .shadow-2xl) {
-  box-shadow: 4px 5px 0 #000000 !important;
-  border-color: #050505 !important;
-  border-style: solid !important;
-  border-width: 2px 3.5px 3px 2.5px;
-  border-radius: 2px 7px 3px 6px;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  /* 描边同样画在内部（clip 会吃掉外投影），四条边带被斜边裁出不等宽 */
+  background-image:
+    linear-gradient(to right, #050505 0 8px, transparent 8px),
+    linear-gradient(to left, #050505 0 8px, transparent 8px),
+    linear-gradient(to bottom, #050505 0 8px, transparent 8px),
+    linear-gradient(to top, #050505 0 8px, transparent 8px);
+  background-repeat: no-repeat;
+  clip-path: polygon(6px 0, 100% 3px, calc(100% - 6px) 100%, 0 calc(100% - 5px));
 }
 :root[data-ui-channel="p5"] .p5-reskin :is(.shadow-sm, .shadow, .shadow-md, .shadow-lg, .shadow-xl, .shadow-2xl):nth-of-type(2n) {
-  border-width: 3.5px 2px 2.5px 3px;
-  border-radius: 7px 2px 6px 3px;
-  box-shadow: 5px 4px 0 #000000 !important;
+  clip-path: polygon(0 4px, calc(100% - 5px) 0, 100% calc(100% - 4px), 6px 100%);
 }
 :root[data-ui-channel="p5"] .p5-reskin :is(.shadow-sm, .shadow, .shadow-md, .shadow-lg, .shadow-xl, .shadow-2xl):nth-of-type(3n) {
-  border-width: 2.5px 3px 3.5px 2px;
-  border-radius: 5px 3px 7px 2px;
+  clip-path: polygon(4px 3px, 100% 0, calc(100% - 5px) calc(100% - 3px), 0 100%);
+}
+/* ListCard（任务条 / 记录条 / 归档条）：整卡换不规则剪报形 —— 与上面同一套
+   「裁形 + 内描边带」，另加 nth-child 轮换避免同屏一个模子。 */
+:root[data-ui-channel="p5"] .p5-card {
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  background-color: var(--ui-paper) !important;
+  background-image:
+    linear-gradient(to right, #050505 0 8px, transparent 8px),
+    linear-gradient(to left, #050505 0 8px, transparent 8px),
+    linear-gradient(to bottom, #050505 0 8px, transparent 8px),
+    linear-gradient(to top, #050505 0 8px, transparent 8px) !important;
+  background-repeat: no-repeat !important;
+  clip-path: polygon(6px 0, 100% 3px, calc(100% - 6px) 100%, 0 calc(100% - 5px));
+}
+:root[data-ui-channel="p5"] .p5-card:nth-child(2n) {
+  clip-path: polygon(0 4px, calc(100% - 5px) 0, 100% calc(100% - 4px), 6px 100%);
+}
+:root[data-ui-channel="p5"] .p5-card:nth-child(3n) {
+  clip-path: polygon(4px 3px, 100% 0, calc(100% - 5px) calc(100% - 3px), 0 100%);
+}
+/* dimmed 卡（未到日期 / 已完成）：纯灰面，不用 opacity 表状态 */
+:root[data-ui-channel="p5"] .p5-card.opacity-75 {
+  opacity: 1 !important;
+  background-color: #cdc7ba !important;
+}
+/* 卡左缘强调条：琥珀 → 猩红 */
+:root[data-ui-channel="p5"] .p5-card :is(.bg-amber-400, .bg-amber-500, .bg-yellow-400) {
+  background-color: #c00008 !important;
 }
 /* amber/yellow 提示系 → 红黑纸三色律（「标记为重要」黄卡等） */
+:root[data-ui-channel="p5"] .p5-reskin [class*="bg-amber-400/"] {
+  background-color: #e7dfd0 !important;
+}
 :root[data-ui-channel="p5"] .p5-reskin :is(.bg-amber-50, .bg-yellow-50, .bg-amber-100, .bg-yellow-100, [class*="bg-amber-50/"], [class*="bg-yellow-50/"]) {
   background-color: var(--ui-paper) !important;
 }
