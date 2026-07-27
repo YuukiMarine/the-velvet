@@ -267,7 +267,8 @@ const MARK_STROKE = {
 } as const;
 const MARK_DOT = {
   outer: '18,50 34,54 30,70 14,66',
-  inner: '21,54 30,56 28,66 18,64',
+  // 内芯相对外形收得更狠（离质心 ~0.45 而非原先 ~0.65），露出的边圈更厚
+  inner: '21,56 29,57 27,65 20,63',
 } as const;
 
 export const BubbleMark = ({ mark, channel = 'p5', size = 34, className, style }: {
@@ -293,8 +294,8 @@ export const BubbleMark = ({ mark, channel = 'p5', size = 34, className, style }
       transition={{ duration: 0.46, times: [0, 0.62, 1], ease: [0.2, 1.45, 0.4, 1], delay: 0.14 }}
     >
       <svg viewBox="0 0 56 72" className="h-full w-full overflow-visible">
-        <polyline points={points} fill="none" stroke={sk.edge} strokeWidth={13} strokeLinejoin="miter" strokeLinecap="square" />
-        <polyline points={points} fill="none" stroke={sk.ink} strokeWidth={5.5} strokeLinejoin="miter" strokeLinecap="square" />
+        <polyline points={points} fill="none" stroke={sk.edge} strokeWidth={19} strokeLinejoin="miter" strokeLinecap="square" />
+        <polyline points={points} fill="none" stroke={sk.ink} strokeWidth={7} strokeLinejoin="miter" strokeLinecap="square" />
         <polygon points={MARK_DOT.outer} fill={sk.edge} />
         <polygon points={MARK_DOT.inner} fill={sk.ink} />
       </svg>
