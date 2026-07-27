@@ -188,6 +188,8 @@ type Skin = ReturnType<typeof skinOf>;
    三层同框叠放，露出来的就是两道宽窄不一的不规则环。bbox 103.12×91.56。 */
 /* 舞台巨星（粗描边）的五角星点集 */
 const P5_BIG_STAR = '50,3 61.8,38.2 98.8,38.2 68.9,60.1 80.4,95.4 50,73.6 19.6,95.4 31.1,60.1 1.2,38.2 38.2,38.2';
+/** 舞台巨星描边色：比原先 #8e0000 更贴近舞台红 #c00008，对比降一档（用户：再淡一些） */
+const P5_STAR_TINT = '#ad0206';
 
 const P5_AV_BLACK = 'polygon(0 0, 84.9% 7.3%, 100% 88.3%, 26.7% 100%)';
 const P5_AV_WHITE = 'polygon(11.6% 7.3%, 81.9% 11.7%, 92.7% 83%, 30.6% 91.8%)';
@@ -507,14 +509,14 @@ export const NavigatorWindow = () => {
             {/* P5 舞台装饰：半调网点 + 四缘暗红巨星粗描边（只在边缘露一截） */}
             {isP5 && (
               <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden" style={{ zIndex: 0 }}>
-                <svg className="absolute" style={{ left: -150, top: 40, width: 330, height: 330 }} viewBox="0 0 100 100">
-                  <polygon points={P5_BIG_STAR} fill="none" stroke="#8e0000" strokeWidth={7} strokeLinejoin="miter" />
+                <svg className="absolute" style={{ left: -135, top: 40, width: 297, height: 297 }} viewBox="0 0 100 100">
+                  <polygon points={P5_BIG_STAR} fill="none" stroke={P5_STAR_TINT} strokeWidth={7} strokeLinejoin="miter" />
                 </svg>
-                <svg className="absolute" style={{ right: -170, top: '38%', width: 380, height: 380 }} viewBox="0 0 100 100">
-                  <polygon points={P5_BIG_STAR} fill="none" stroke="#8e0000" strokeWidth={6} strokeLinejoin="miter" transform="rotate(18 50 50)" />
+                <svg className="absolute" style={{ right: -153, top: '38%', width: 342, height: 342 }} viewBox="0 0 100 100">
+                  <polygon points={P5_BIG_STAR} fill="none" stroke={P5_STAR_TINT} strokeWidth={6} strokeLinejoin="miter" transform="rotate(18 50 50)" />
                 </svg>
-                <svg className="absolute" style={{ left: -120, bottom: -60, width: 300, height: 300 }} viewBox="0 0 100 100">
-                  <polygon points={P5_BIG_STAR} fill="none" stroke="#8e0000" strokeWidth={7} strokeLinejoin="miter" transform="rotate(-12 50 50)" />
+                <svg className="absolute" style={{ left: -108, bottom: -54, width: 270, height: 270 }} viewBox="0 0 100 100">
+                  <polygon points={P5_BIG_STAR} fill="none" stroke={P5_STAR_TINT} strokeWidth={7} strokeLinejoin="miter" transform="rotate(-12 50 50)" />
                 </svg>
                 {/* 半调：两块暗红网点贴在上下边缘 */}
                 <div

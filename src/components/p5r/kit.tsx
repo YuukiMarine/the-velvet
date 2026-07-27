@@ -267,9 +267,11 @@ const MARK_STROKE = {
 } as const;
 /** 点：单条菱形轮廓，与折线共用同一个描边宽度参数（见下方 STROKE_W/INK_W） */
 const MARK_DOT = '18,50 34,54 30,70 14,66';
-/** 外层描边宽 / 内芯宽——折线与点共用，改一处两者联动 */
+/** 折线笔画：外层描边宽 / 内芯宽 */
 const STROKE_W = 25;
 const INK_W = 7;
+/** 点的描边宽（点体积小，跟折线同宽会糊成一坨，单独一档） */
+const DOT_STROKE_W = 15;
 
 export const BubbleMark = ({ mark, channel = 'p5', size = 34, className, style }: {
   mark: '!' | '?';
@@ -302,7 +304,7 @@ export const BubbleMark = ({ mark, channel = 'p5', size = 34, className, style }
           points={MARK_DOT}
           fill={sk.ink}
           stroke={sk.edge}
-          strokeWidth={STROKE_W}
+          strokeWidth={DOT_STROKE_W}
           strokeLinejoin="miter"
           paintOrder="stroke"
         />
