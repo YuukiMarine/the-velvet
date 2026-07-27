@@ -247,8 +247,8 @@ const BubbleIn = ({ side, mark, markCh, children }: {
         <BubbleMark
           mark={mark}
           channel={markCh ?? 'p5'}
-          size={28}
-          style={{ [side === 'cat' ? 'right' : 'left']: -8, top: -15, zIndex: 3 } as React.CSSProperties}
+          size={38}
+          style={{ right: -4, top: -26, zIndex: 3 }}
         />
       )}
       {children}
@@ -931,7 +931,7 @@ const MessageRow = ({ m, sk, bright, p5 = false, p4 = false, busy, onConfirm, on
   if (m.role === 'user') {
     return (
       <div className="flex justify-end" data-spine-side="user">
-        <BubbleIn side="user" mark={mark} markCh={markCh}>
+        <BubbleIn side="user">
           {p5 ? (
             <P5Bubble side="user">{m.text}</P5Bubble>
           ) : (

@@ -238,10 +238,11 @@ export const P5Burst = ({
  */
 export type MarkChannel = 'p5' | 'p4' | 'p3';
 
-const MARK_SKIN: Record<MarkChannel, { face: string; edge: string; ink: string }> = {
-  p5: { face: '#050505', edge: '#f0e9df', ink: '#f0e9df' },
-  p4: { face: '#131313', edge: '#fff6d0', ink: '#ffd900' },
-  p3: { face: '#0a1230', edge: '#ffffff', ink: '#35d1e8' },
+/** 字形填色 + 粗描边色（不是方块底：描边直接长在字上） */
+const MARK_SKIN: Record<MarkChannel, { ink: string; edge: string }> = {
+  p5: { ink: '#f0e9df', edge: '#050505' },
+  p4: { ink: '#131313', edge: '#fff6d0' },
+  p3: { ink: '#ffffff', edge: '#0a1230' },
 };
 
 /** 从文本判定角标字符；无则 null */
@@ -252,35 +253,46 @@ export const bubbleMarkOf = (text: string | undefined | null): '!' | '?' | null 
   return null;
 };
 
-export const BubbleMark = ({ mark, channel = 'p5', size = 26, className, style }: {
+export const BubbleMark = ({ mark, channel = 'p5', size = 34, className, style }: {
   mark: '!' | '?';
   channel?: MarkChannel;
+  /** 字形高度（px） */
   size?: number;
   className?: string;
   style?: CSSProperties;
 }) => {
   const anim = useBoldness();
   const sk = MARK_SKIN[channel];
+  // SVG text + paintOrder="stroke"：描边先画、字后画 → 粗边完全长在字形外侧，
+  // 比 -webkit-text-stroke（居中描边、只能细细一圈）粗壮得多，也不需要方块底。
   return (
     <motion.span
       aria-hidden
       className={`pointer-events-none absolute ${className ?? ''}`}
-      style={{ width: size, height: size * 1.12, ...style }}
-      initial={anim ? { scale: 0, rotate: -34, opacity: 0 } : false}
+      style={{ width: size * 0.78, height: size, ...style }}
+      initial={anim ? { scale: 0, rotate: -30, opacity: 0 } : false}
       animate={anim
-        ? { scale: [0, 1.28, 1], rotate: [-34, 9, -6], opacity: 1 }
-        : { scale: 1, rotate: -6, opacity: 1 }}
-      transition={{ duration: 0.44, times: [0, 0.62, 1], ease: [0.2, 1.4, 0.4, 1], delay: 0.12 }}
+        ? { scale: [0, 1.3, 1], rotate: [-30, 10, -5], opacity: 1 }
+        : { scale: 1, rotate: -5, opacity: 1 }}
+      transition={{ duration: 0.46, times: [0, 0.62, 1], ease: [0.2, 1.45, 0.4, 1], delay: 0.14 }}
     >
-      {/* 粗糙白描边：外层白 + 内层面，两套不同的不规则多边形 */}
-      <span className="absolute inset-0" style={{ background: sk.edge, clipPath: 'polygon(14% 2%, 92% 0, 100% 78%, 76% 100%, 20% 96%, 0 24%)' }} />
-      <span className="absolute inset-[3px]" style={{ background: sk.face, clipPath: 'polygon(10% 6%, 88% 2%, 97% 74%, 72% 97%, 22% 92%, 3% 28%)' }} />
-      <span
-        className="absolute inset-0 flex items-center justify-center font-black leading-none"
-        style={{ color: sk.ink, fontSize: size * 0.72, fontFamily: P5_FONT, paddingBottom: size * 0.06 }}
-      >
-        {mark}
-      </span>
+      <svg viewBox="0 0 56 72" className="h-full w-full overflow-visible">
+        <text
+          x="28"
+          y="58"
+          textAnchor="middle"
+          fontFamily={P5_FONT}
+          fontSize="70"
+          fontWeight="900"
+          stroke={sk.edge}
+          strokeWidth="13"
+          strokeLinejoin="round"
+          paintOrder="stroke"
+          fill={sk.ink}
+        >
+          {mark}
+        </text>
+      </svg>
     </motion.span>
   );
 };
