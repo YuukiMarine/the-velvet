@@ -394,6 +394,28 @@ export const P5Chip = ({ children, tone = 'red', rot = 0, className, style, onCl
   return <span className={cls} style={st}>{children}</span>;
 };
 
+/** 不规则块底三层（影/黑框/面）——按钮与小件的通用垫底，渲染为绝对层组，父需 relative。
+ *  反板正铁律（用户口径）：任何按钮/组件不得是板正矩形——最规整也要不规则四边形 +
+ *  不等宽描边/错位影。内容自行放在层组之后的 relative 元素里。 */
+export const P5Rough = ({ seed, jag = 6, frame = 3, face = P5R.paper, frameColor = P5R.ink, shadow = { x: 3, y: 4 }, shadowColor, className }: {
+  seed: number;
+  jag?: number;
+  frame?: number;
+  face?: string;
+  frameColor?: string;
+  shadow?: { x: number; y: number } | null;
+  shadowColor?: string;
+  className?: string;
+}) => (
+  <span aria-hidden className={`pointer-events-none absolute inset-0 ${className ?? ''}`}>
+    {shadow && (
+      <span className="absolute inset-0" style={{ transform: `translate(${shadow.x}px, ${shadow.y}px)`, background: shadowColor ?? P5R.ink, clipPath: roughQuad(seed + 0.13, jag + 1.5) }} />
+    )}
+    <span className="absolute inset-0" style={{ background: frameColor, clipPath: roughQuad(seed + 0.29, jag) }} />
+    <span className="absolute" style={{ inset: frame, background: face, clipPath: roughQuad(seed + 0.47, Math.max(2, jag - 2)) }} />
+  </span>
+);
+
 // ── 大按钮 ───────────────────────────────────────────────────────────────────
 /** P5 大按钮：红面/纸面/黑面 + 不等宽黑框 + 硬影，按下沉入影位 */
 export const P5Btn = ({ children, tone = 'red', seed = 9, onClick, disabled = false, className, bodyClassName, ariaLabel, rot = 0 }: {

@@ -18,7 +18,7 @@ import { NavigatorSettings } from '@/components/navigator/NavigatorSettings';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P3R, P3RPage, GhostWords, P3PageHeader } from '@/components/p3r/kit';
-import { P5R, P5_FONT, roughQuad, P5Collage, P5Star, P5RPage } from '@/components/p5r/kit';
+import { P5R, P5_FONT, roughQuad, P5Collage, P5Rough, P5Star, P5RPage } from '@/components/p5r/kit';
 import {
   generateAttributeLevelTitles,
   normalizeAttributeLevelTitles,
@@ -290,29 +290,28 @@ const SplashStyleButton = ({
   const p3 = useUiChannel() === 'p3';
   const p5 = useUiChannel() === 'p5';
 
-  // P5UI/p5-settings：选项卡 = 黑框纸卡 + 左上方块 + 标题/英文副题；选中 = 红框浅红底 + 红星
+  // P5UI/p5-settings：选项卡 = 不规则黑框纸卡 + 左上方块 + 标题/英文副题；选中 = 红框浅红底 + 红星
   if (p5) {
+    const seed = 560 + opt.value.length * 11 + opt.value.charCodeAt(0);
     return (
       <motion.button
         whileTap={{ scale: 0.96 }}
         transition={{ type: 'spring', stiffness: 400, damping: 22 }}
         onClick={(e) => { spawn(e); onSelect(); }}
-        className="relative cursor-pointer select-none overflow-hidden text-left"
+        className="relative cursor-pointer select-none text-left"
         aria-pressed={active}
-        style={{
-          background: active ? '#f4dcd4' : '#f0e9df',
-          border: `3px solid ${active ? '#c00008' : '#050505'}`,
-          boxShadow: '3px 3px 0 #000000',
-        }}
       >
-        {ripples}
-        <span className="flex items-start justify-between px-3 pt-2.5">
-          <span aria-hidden className="mt-0.5 inline-block h-4 w-4" style={{ background: active ? '#c00008' : '#050505', boxShadow: active ? '0 0 0 2px #050505' : undefined }} />
-          {active && <P5Star size={18} fill="#c00008" className="-mr-0.5 -mt-0.5" />}
-        </span>
-        <span className="block px-3 pb-2.5 pt-1.5">
-          <span className="block text-[13px] font-black leading-tight" style={{ color: '#050505' }}>{opt.label}</span>
-          <span className="mt-0.5 block text-[10px] font-bold uppercase tracking-wide" style={{ color: active ? '#c00008' : '#6b6862' }}>{opt.sub}</span>
+        <P5Rough seed={seed} jag={5} frame={2.8} face={active ? '#f4dcd4' : '#f0e9df'} frameColor={active ? '#c00008' : '#050505'} shadow={{ x: 3, y: 3 }} />
+        <span className="relative block overflow-hidden" style={{ clipPath: roughQuad(seed + 0.47, 2.5) }}>
+          {ripples}
+          <span className="flex items-start justify-between px-3 pt-2.5">
+            <span aria-hidden className="mt-0.5 inline-block h-4 w-4" style={{ background: active ? '#c00008' : '#050505', transform: 'rotate(-3deg)', boxShadow: active ? '0 0 0 2px #050505' : undefined }} />
+            {active && <P5Star size={18} fill="#c00008" className="-mr-0.5 -mt-0.5" />}
+          </span>
+          <span className="block px-3 pb-2.5 pt-1.5">
+            <span className="block text-[13px] font-black leading-tight" style={{ color: '#050505' }}>{opt.label}</span>
+            <span className="mt-0.5 block text-[10px] font-bold uppercase tracking-wide" style={{ color: active ? '#c00008' : '#6b6862' }}>{opt.sub}</span>
+          </span>
         </span>
       </motion.button>
     );
@@ -911,10 +910,10 @@ export const Settings = () => {
               type="button"
               onClick={() => setCurrentPage('menu')}
               aria-label="返回"
-              className="mt-2 flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c00008]"
-              style={{ background: P5R.paper, border: '2.5px solid #050505', boxShadow: '3px 3px 0 #000000' }}
+              className="relative mt-2 flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c00008]"
             >
-              <span aria-hidden className="h-0 w-0 border-y-[7px] border-y-transparent border-r-[11px]" style={{ borderRightColor: '#050505' }} />
+              <P5Rough seed={533} jag={3.5} frame={2.5} />
+              <span aria-hidden className="relative h-0 w-0 border-y-[7px] border-y-transparent border-r-[11px]" style={{ borderRightColor: '#050505' }} />
             </button>
             <div className="min-w-0">
               <div className="flex items-start gap-2">
@@ -1038,13 +1037,12 @@ export const Settings = () => {
                 initial={{ height: 0 }}
                 animate={{ height: 'auto' }}
                 exit={{ height: 0 }}
-                className={isP4 ? 'mt-2 rounded-[20px] bg-[var(--ui-paper)] px-5 pb-6 pt-4' : p5 ? 'relative -mt-1 px-5 pb-6 pt-5' : 'px-6 pb-6'}
-                style={isP4
-                  ? { boxShadow: '0 3px 0 rgba(19,19,19,0.12)' }
-                  : p5
-                    ? { background: P5R.paper, border: '3px solid #050505', boxShadow: '5px 6px 0 #000000' }
-                    : undefined}
+                className={isP4 ? 'mt-2 rounded-[20px] bg-[var(--ui-paper)] px-5 pb-6 pt-4' : p5 ? 'p5-sec-body relative -mt-1 px-5 pb-6 pt-5' : 'px-6 pb-6'}
+                style={isP4 ? { boxShadow: '0 3px 0 rgba(19,19,19,0.12)' } : undefined}
               >
+                {/* P5：不规则纸卡垫底（反板正铁律——不用直角 border）；
+                    直接子内容由 .p5-sec-body > * 提权到层上（index.css） */}
+                {p5 && <P5Rough seed={540 + section.id.length * 13} jag={8} frame={3.5} shadow={{ x: 5, y: 6 }} />}
                 {section.id === 'theme' && (
                   <div className="space-y-5">
                     {/* ── 子板块：颜色与声音 ─────────────────────────── */}
@@ -1349,6 +1347,23 @@ export const Settings = () => {
                             { value: 'slow',   label: '慢' },
                           ] as { value: 'fast'|'normal'|'slow'; label: string }[]).map(opt => {
                             const active = (settings.splashSpeed ?? 'normal') === opt.value;
+                            // P5：不规则黑框段钮，选中 = 红面白字 + 白星（稿「正常 ☆」）
+                            if (p5) {
+                              return (
+                                <button
+                                  key={opt.value}
+                                  onClick={() => updateSettings({ splashSpeed: opt.value })}
+                                  className="relative cursor-pointer px-4 py-1.5 text-sm font-black transition-all"
+                                  style={{ color: active ? '#fff' : '#050505' }}
+                                >
+                                  <P5Rough seed={575 + opt.value.length * 9} jag={4} frame={2.5} face={active ? '#c00008' : '#f0e9df'} shadow={{ x: 2.5, y: 3 }} />
+                                  <span className="relative inline-flex items-center gap-1">
+                                    {opt.label}
+                                    {active && <P5Star size={12} fill="#f8f8f6" />}
+                                  </span>
+                                </button>
+                              );
+                            }
                             return (
                               <button
                                 key={opt.value}

@@ -84,10 +84,17 @@
 :root[data-ui-channel="p5"] .p5-reskin textarea,
 :root[data-ui-channel="p5"] .p5-reskin select {
   background-color: var(--ui-paper) !important;
-  border: 2.5px solid #050505 !important;
-  border-radius: 2px !important;
+  /* 反板正：四边不等宽描边 + 四角不等圆角，输入件也不许是板正矩形 */
+  border-color: #050505 !important;
+  border-style: solid !important;
+  border-width: 2px 3px 3.5px 2.5px !important;
+  border-radius: 2px 5px 3px 6px !important;
   color: #050505 !important;
   font-weight: 700;
+}
+/* P5 分区纸卡：直接子内容提权到 P5Rough 垫底层之上 */
+:root[data-ui-channel="p5"] .p5-sec-body > *:not([aria-hidden]) {
+  position: relative;
 }
 /* 灰系文字 → 黑（分级保层级，纯色不透明） */
 :root[data-ui-channel="p5"] .p5-reskin :is(.text-gray-700, .text-gray-800, .text-gray-900, .dark\:text-white) {

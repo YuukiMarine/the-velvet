@@ -44,7 +44,8 @@ export const Toggle = ({
   const isP4 = channel === 'p4';
   const p3 = channel === 'p3';
 
-  // ── P5R（p5-settings 设计稿）：黑框方壳 + 状态字（关/开）+ 方块滑块（关=黑块右、开=红块左，字换侧）──
+  // ── P5R（p5-settings 设计稿）：不规则黑框壳 + 状态字（关/开）+ 微斜方块滑块
+  //   （关=黑块右、开=红块左，字换侧；反板正——壳与滑块都不许是板正矩形）──
   if (channel === 'p5') {
     return (
       <button
@@ -55,8 +56,13 @@ export const Toggle = ({
         disabled={disabled}
         onClick={() => onChange(!checked)}
         className={`relative inline-flex h-[26px] w-[58px] flex-shrink-0 items-center ${disabled ? 'cursor-not-allowed' : 'cursor-pointer'}`}
-        style={{ background: disabled ? '#dcd4c4' : '#f0e9df', border: '2.5px solid #050505', boxShadow: '2px 2px 0 #000000' }}
       >
+        {/* 不规则壳：黑框 + 纸面（双层错位多边形） */}
+        <span aria-hidden className="pointer-events-none absolute inset-0">
+          <span className="absolute inset-0" style={{ transform: 'translate(2px,2.5px)', background: '#000000', clipPath: 'polygon(2.1px 1.4px, calc(100% - 0.8px) 2.6px, calc(100% - 2.4px) calc(100% - 1.1px), 1.2px calc(100% - 2.2px))' }} />
+          <span className="absolute inset-0" style={{ background: '#050505', clipPath: 'polygon(1.6px 2.2px, calc(100% - 1.9px) 0.7px, calc(100% - 0.9px) calc(100% - 2.4px), 0.8px calc(100% - 1.3px))' }} />
+          <span className="absolute inset-[2.5px]" style={{ background: disabled ? '#dcd4c4' : '#f0e9df', clipPath: 'polygon(1.2px 0.8px, calc(100% - 0.6px) 1.6px, calc(100% - 1.5px) calc(100% - 0.7px), 0.5px calc(100% - 1.4px))' }} />
+        </span>
         <span
           aria-hidden
           className={`absolute text-[11px] font-black leading-none ${checked ? 'right-[7px]' : 'left-[7px]'}`}
@@ -66,10 +72,10 @@ export const Toggle = ({
         </span>
         <motion.span
           aria-hidden
-          className="absolute top-[1px] h-[19px] w-[24px]"
-          style={{ background: checked ? '#c00008' : '#050505' }}
+          className="absolute top-[3px] h-[19px] w-[24px]"
+          style={{ background: checked ? '#c00008' : '#050505', clipPath: 'polygon(1.5px 0.5px, calc(100% - 0.5px) 1.8px, calc(100% - 1.8px) calc(100% - 0.6px), 0.4px calc(100% - 1.6px))', rotate: checked ? -2 : 2 }}
           initial={false}
-          animate={{ x: checked ? 2 : 27 }}
+          animate={{ x: checked ? 3 : 27 }}
           transition={springSnappy}
         />
       </button>
