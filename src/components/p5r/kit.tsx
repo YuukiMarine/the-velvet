@@ -294,7 +294,7 @@ export const BubbleMark = ({ mark, channel = 'p5', size = 34, className, style }
       transition={{ duration: 0.46, times: [0, 0.62, 1], ease: [0.2, 1.45, 0.4, 1], delay: 0.14 }}
     >
       <svg viewBox="0 0 56 72" className="h-full w-full overflow-visible">
-        <polyline points={points} fill="none" stroke={sk.edge} strokeWidth={19} strokeLinejoin="miter" strokeLinecap="square" />
+        <polyline points={points} fill="none" stroke={sk.edge} strokeWidth={25} strokeLinejoin="miter" strokeLinecap="square" />
         <polyline points={points} fill="none" stroke={sk.ink} strokeWidth={7} strokeLinejoin="miter" strokeLinecap="square" />
         <polygon points={MARK_DOT.outer} fill={sk.edge} />
         <polygon points={MARK_DOT.inner} fill={sk.ink} />
