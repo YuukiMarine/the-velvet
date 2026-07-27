@@ -226,6 +226,8 @@ export const TodosView = () => {
   const { todos, settings, attributes, addTodo, updateTodo, deleteTodo, getTodayTodoProgress, getTodoDateLabel, weeklyGoals, saveWeeklyGoal, deleteWeeklyGoal, completeWeeklyGoal, getWeeklyGoalProgress, undoTodayTodoCompletion } = useAppStore();
   const channel = useUiChannel();
   const isP4 = channel === 'p4';
+  // P5R：红主题 FAB 换八角红块（p5-menu 稿「+」形制）
+  const p5 = channel === 'p5';
   // P3R（蓝主题）形态：设计稿 p3-actions-reference-v3——节直接铺水面底、大斜体节题、浅青空态板
   const p3 = channel === 'p3';
   const [showAdd, setShowAdd] = useState(false);
@@ -696,7 +698,9 @@ export const TodosView = () => {
           className={`fixed bottom-24 right-5 md:bottom-8 md:right-8 z-40 flex items-center justify-center cursor-pointer ${
             isP4
               ? 'h-16 w-16 text-white' // p4-redraw：蓝色四角星 FAB（星形本体当按钮面）
-              : 'w-14 h-14 rounded-full bg-primary text-white shadow-lg shadow-primary/30'
+              : p5
+                ? 'h-14 w-14 text-white' // p5-redraw：纸圈黑影红八角（p5-menu 稿「+」形制）
+                : 'w-14 h-14 rounded-full bg-primary text-white shadow-lg shadow-primary/30'
           }`}
         >
           {isP4 && (
@@ -706,6 +710,13 @@ export const TodosView = () => {
               className="absolute inset-0"
               style={{ filter: 'drop-shadow(0 3px 0 rgba(19,19,19,0.3))' }}
             />
+          )}
+          {p5 && (
+            <span aria-hidden className="pointer-events-none absolute inset-0">
+              <span className="absolute inset-0" style={{ transform: 'translate(3px,3.5px)', background: '#000000', clipPath: 'polygon(31% 2%, 71% 3%, 97% 30%, 98% 69%, 70% 97%, 29% 98%, 3% 71%, 2% 31%)' }} />
+              <span className="absolute inset-0" style={{ background: '#f0e9df', clipPath: 'polygon(30% 3%, 70% 2%, 98% 31%, 97% 70%, 71% 98%, 30% 97%, 2% 69%, 3% 30%)' }} />
+              <span className="absolute inset-[3px]" style={{ background: '#c00008', clipPath: 'polygon(30% 3%, 70% 2%, 98% 31%, 97% 70%, 71% 98%, 30% 97%, 2% 69%, 3% 30%)' }} />
+            </span>
           )}
           {/* 白色加号（与记录子页 FAB 的 PlusIcon 同款笔画） */}
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={isP4 ? 2.6 : 2} className={`relative ${isP4 ? 'w-5 h-5' : 'w-6 h-6'}`} aria-hidden="true">

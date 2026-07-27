@@ -468,6 +468,8 @@ function useSummaryReminder() {
 export const ActivitiesView = () => {
   const { activities, addActivity, settings, setModalBlocker, deleteActivity, deleteActivityRecordOnly } = useAppStore();
   const isP4 = useUiChannel() === 'p4';
+  // P5R：红主题 FAB 换八角红块（p5-menu 稿「+」形制）
+  const p5 = useUiChannel() === 'p5';
 
   // ---- 总结弹窗 ----
   const [showSummary, setShowSummary] = useState(false);
@@ -1235,9 +1237,11 @@ export const ActivitiesView = () => {
             className={`fixed bottom-24 right-5 md:bottom-8 md:right-8 flex items-center justify-center z-40 cursor-pointer transition-colors ${
               isP4 && !isPastDaySelected
                 ? 'h-16 w-16 text-white' // p4-redraw：蓝色四角星 FAB（与任务子页一致）
-                : `w-14 h-14 text-white rounded-full shadow-lg ${
-                    isPastDaySelected ? 'bg-amber-500 shadow-amber-500/30' : 'bg-primary shadow-primary/30'
-                  }`
+                : p5
+                  ? 'h-14 w-14 text-white' // p5-redraw：纸圈黑影八角（红 / 补录橙）
+                  : `w-14 h-14 text-white rounded-full shadow-lg ${
+                      isPastDaySelected ? 'bg-amber-500 shadow-amber-500/30' : 'bg-primary shadow-primary/30'
+                    }`
             }`}
           >
             {isP4 && !isPastDaySelected && (
@@ -1248,8 +1252,15 @@ export const ActivitiesView = () => {
                 style={{ filter: 'drop-shadow(0 3px 0 rgba(19,19,19,0.3))' }}
               />
             )}
+            {p5 && (
+              <span aria-hidden className="pointer-events-none absolute inset-0">
+                <span className="absolute inset-0" style={{ transform: 'translate(3px,3.5px)', background: '#000000', clipPath: 'polygon(31% 2%, 71% 3%, 97% 30%, 98% 69%, 70% 97%, 29% 98%, 3% 71%, 2% 31%)' }} />
+                <span className="absolute inset-0" style={{ background: '#f0e9df', clipPath: 'polygon(30% 3%, 70% 2%, 98% 31%, 97% 70%, 71% 98%, 30% 97%, 2% 69%, 3% 30%)' }} />
+                <span className="absolute inset-[3px]" style={{ background: isPastDaySelected ? '#e08a00' : '#c00008', clipPath: 'polygon(30% 3%, 70% 2%, 98% 31%, 97% 70%, 71% 98%, 30% 97%, 2% 69%, 3% 30%)' }} />
+              </span>
+            )}
             {isPastDaySelected ? (
-              <span className="text-xl font-black leading-none">补</span>
+              <span className="relative text-xl font-black leading-none">补</span>
             ) : (
               <span className="relative"><PlusIcon /></span>
             )}
