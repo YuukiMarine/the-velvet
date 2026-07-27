@@ -247,8 +247,8 @@ const BubbleIn = ({ side, mark, markCh, children }: {
         <BubbleMark
           mark={mark}
           channel={markCh ?? 'p5'}
-          size={38}
-          style={{ right: -4, top: -26, zIndex: 3 }}
+          size={19}
+          style={{ left: 16, top: -10, zIndex: 3 }}
         />
       )}
       {children}
