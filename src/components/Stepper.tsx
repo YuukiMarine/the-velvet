@@ -51,6 +51,8 @@ export const Stepper = ({
   const canInc = max === undefined || value < max;
   // P3R（p3-modal-02/04 稿）：−/+ = 浅青斜块，中值 = 大黑斜体数字
   const p3 = useUiChannel() === 'p3';
+  // P5R（p5-modal-14 稿）：− 黑块 / + 红块（微斜方块），中值大黑数字
+  const p5 = useUiChannel() === 'p5';
 
   const nudge = (dir: 1 | -1) => {
     const next = round6(value + dir * step);
@@ -61,13 +63,18 @@ export const Stepper = ({
 
   const btnClass = p3
     ? 'w-9 h-8 text-[#0a3bd6] font-black text-lg flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed'
-    : BTN_CLASS;
+    : p5
+      ? 'w-9 h-8 text-white font-black text-lg flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed'
+      : BTN_CLASS;
   const btnStyle = p3
     ? { clipPath: 'polygon(7px 0, 100% 0, calc(100% - 7px) 100%, 0 100%)', background: '#c9e9f6' }
     : undefined;
+  // p5：减 = 黑块微左斜，加 = 红块微右斜（不规则四边形铁律）
+  const p5DecStyle = { background: '#050505', clipPath: 'polygon(2.5px 1px, calc(100% - 1px) 2.5px, calc(100% - 2px) calc(100% - 1.5px), 1px calc(100% - 2.5px))', transform: 'rotate(-1.5deg)' };
+  const p5IncStyle = { background: '#c00008', clipPath: 'polygon(1px 2px, calc(100% - 2.5px) 1px, calc(100% - 1px) calc(100% - 2.5px), 2px calc(100% - 1px))', transform: 'rotate(1.5deg)', boxShadow: '2px 2px 0 #050505' };
 
   return (
-    <div role="group" aria-label={ariaLabel} className={`flex items-center ${p3 ? 'gap-2' : 'gap-1'}`}>
+    <div role="group" aria-label={ariaLabel} className={`flex items-center ${p3 || p5 ? 'gap-2' : 'gap-1'}`}>
       <motion.button
         type="button"
         whileTap={TAP}
@@ -75,7 +82,7 @@ export const Stepper = ({
         onClick={() => nudge(-1)}
         aria-label="减少"
         className={btnClass}
-        style={btnStyle}
+        style={p5 ? p5DecStyle : btnStyle}
       >
         −
       </motion.button>
@@ -84,7 +91,9 @@ export const Stepper = ({
         aria-live="polite"
         className={p3
           ? 'w-9 text-center text-[22px] font-black italic tabular-nums text-[#0a1230]'
-          : 'w-8 text-center font-bold tabular-nums text-gray-800 dark:text-white'}
+          : p5
+            ? 'w-9 text-center text-[21px] font-black tabular-nums text-[#050505]'
+            : 'w-8 text-center font-bold tabular-nums text-gray-800 dark:text-white'}
       >
         {value}
       </span>
@@ -95,7 +104,7 @@ export const Stepper = ({
         onClick={() => nudge(1)}
         aria-label="增加"
         className={btnClass}
-        style={btnStyle}
+        style={p5 ? p5IncStyle : btnStyle}
       >
         +
       </motion.button>
