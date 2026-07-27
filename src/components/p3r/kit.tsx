@@ -50,19 +50,14 @@ export const P3RPage = ({ children, className, active = true }: { children: Reac
   if (!active) return <>{children}</>;
   return (
     <div className={`relative ${className ?? ''}`}>
-      {/* 水面底：浅色基底 + caustic 素材极淡平铺（页面卸载即消失，不污染其它主题） */}
-      <div aria-hidden className="fixed inset-0 z-0" style={{ background: P3R.bg }}>
-        <div
-          className="absolute inset-0"
-          style={{
-            backgroundImage: 'url(/assets/terminal/p3-water-wide.png)',
-            backgroundSize: 'cover',
-            backgroundPosition: 'center top',
-            opacity: 0.3,
-          }}
-        />
-        <div className="absolute inset-0" style={{ background: 'linear-gradient(180deg, rgba(238,245,249,0.35) 0%, rgba(238,245,249,0.82) 58%, rgba(238,245,249,0.95) 100%)' }} />
-      </div>
+      {/* 水面底：只留一层可读性罩纱 —— 深色水体交给 App 里全局的 UnderwaterStage
+          （渐变水体 + 光柱 + 4 帧水面波纹）。这里若还铺不透明浅底会把它整块盖住，
+          所以改成自上而下渐浓的浅色半透罩：上方留出水面演出，下方压出正文对比度。 */}
+      <div
+        aria-hidden
+        className="fixed inset-0 z-0"
+        style={{ background: 'linear-gradient(180deg, rgba(238,245,249,0.12) 0%, rgba(238,245,249,0.50) 38%, rgba(238,245,249,0.76) 70%, rgba(238,245,249,0.85) 100%)' }}
+      />
       <div className="relative z-10">{children}</div>
     </div>
   );

@@ -16,7 +16,20 @@ export default defineConfig({
       //   - 现有的 PWAUpdateToast UI 就是 prompt 模式设计的（"✦ 有新版本可用 · 立即更新"）。
       registerType: 'prompt',
       workbox: {
+        // webp 故意不进预缓存：塔罗三套共 66 张（~3.8 MB），全塞进安装包会显著拖慢
+        // 首次安装与 iOS 的磁盘占用。改由下面的 runtimeCaching 在首次看到时收编。
         globPatterns: ['**/*.{js,css,html,ico,png,svg,mp3}'],
+        runtimeCaching: [
+          {
+            urlPattern: ({ url }) => url.pathname.startsWith('/tarot/'),
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'tarot-art-v1',
+              expiration: { maxEntries: 80, maxAgeSeconds: 60 * 60 * 24 * 180 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+        ],
         // 导航请求（HTML）走 NetworkFirst：优先请求新版本，断网才用缓存。
         // 默认的 NetworkFirst 超时 3 秒，对 iOS PWA 冷启动足够快。
         navigateFallback: '/index.html',

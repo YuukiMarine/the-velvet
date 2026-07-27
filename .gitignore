@@ -55,3 +55,6 @@ scripts/*.class
 
 # Claude Code local files
 .claude/
+
+# 塔罗原稿（118 MB PNG）：只提交 public/tarot 下压缩后的 webp，原稿留在本地
+/tarot/

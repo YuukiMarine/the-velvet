@@ -10,7 +10,7 @@ import { ReadingArchive } from '@/components/astrology/ReadingArchive';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P4SkyCircle, P4Sparkle, P4_HEADER_BLEED } from '@/ui/p4Kit';
 import { P3R, P3RPage, GhostWords, P3PageHeader, slantClip } from '@/components/p3r/kit';
-import { P5R, P5_FONT, roughSlant, P5Collage, P5SubBar, P5Star, P5Dots, P5Slab, P5RPage } from '@/components/p5r/kit';
+import { P5R, P5_FONT, roughSlant, starPts, P5Collage, P5SubBar, P5Star, P5Dots, P5Slab, P5RPage } from '@/components/p5r/kit';
 
 type Tab = 'daily' | 'long' | 'archive';
 
@@ -122,13 +122,23 @@ export function Astrology() {
       className={`max-w-xl mx-auto space-y-5 ${p5 ? 'p5-reskin p5-onink relative' : ''}`}
     >
       {p5 && (
-        <div aria-hidden className="pointer-events-none absolute -inset-x-4 -top-6 h-[200px]" style={{ zIndex: -1 }}>
-          <P5Slab color={P5R.red} seed={271} rot={-10} style={{ left: -60, top: -20, width: 220, height: 140 }} />
-          <P5Slab color={P5R.redDeep} seed={272} rot={12} style={{ right: -70, top: 20, width: 230, height: 150 }} />
-          <P5Star size={34} fill={P5R.red} ring2={P5R.paper} rot={16} className="absolute" style={{ right: 30, top: 0 }} />
-          <P5Star size={14} fill="#3a3831" rot={-8} className="absolute" style={{ left: 30, top: 120 }} />
-          <P5Dots className="absolute" style={{ right: 0, top: 110, width: 80, height: 76 }} color="#4a4741" />
-        </div>
+        <>
+          {/* 巨型暗红同心五角星底纹（与菜单统计磁贴同一套花纹），铺在整页背后 */}
+          <div aria-hidden className="pointer-events-none absolute -inset-x-4 top-[70px] bottom-0 overflow-hidden" style={{ zIndex: -2 }}>
+            <svg viewBox="0 0 100 100" className="absolute" style={{ left: '-34%', top: 30, width: '168%', height: 'auto', aspectRatio: '1 / 1' }}>
+              {[50, 39, 28, 17, 6].map((r) => (
+                <polygon key={r} points={starPts(50, 50, r, -90 + 14)} fill="none" stroke="#4a0004" strokeWidth={2.4} strokeLinejoin="miter" />
+              ))}
+            </svg>
+          </div>
+          <div aria-hidden className="pointer-events-none absolute -inset-x-4 -top-6 h-[200px]" style={{ zIndex: -1 }}>
+            <P5Slab color={P5R.red} seed={271} rot={-10} style={{ left: -60, top: -20, width: 220, height: 140 }} />
+            <P5Slab color={P5R.redDeep} seed={272} rot={12} style={{ right: -70, top: 20, width: 230, height: 150 }} />
+            <P5Star size={34} fill={P5R.red} ring2={P5R.paper} rot={16} className="absolute" style={{ right: 30, top: 0 }} />
+            <P5Star size={14} fill="#3a3831" rot={-8} className="absolute" style={{ left: 30, top: 120 }} />
+            <P5Dots className="absolute" style={{ right: 0, top: 110, width: 80, height: 76 }} color="#4a4741" />
+          </div>
+        </>
       )}
       {p5 ? (
         /* P5UI/p5-modal-16：拼贴「星象」（星=红底黑字/象=纸底黑字）+ ARCANA 纸条 */
