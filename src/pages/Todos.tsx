@@ -17,6 +17,7 @@ import { ArchiveIcon, EditIcon, RestoreIcon, TrashIcon } from '@/components/icon
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P4CountPill, P4EmptyBloom, P4SectionTitle, P4Sparkle } from '@/ui/p4Kit';
 import { BigSlantTitle, GhostWords, P3EmptySlab, SlantButton } from '@/components/p3r/kit';
+import { roughQuad, P5Wedge, P5Chip } from '@/components/p5r/kit';
 
 const weekdayLabels = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 
@@ -405,8 +406,14 @@ export const TodosView = () => {
       <div className={isP4 ? 'grid grid-cols-1 lg:grid-cols-2 gap-6' : p3 ? 'relative mt-8 space-y-10' : 'grid grid-cols-1 lg:grid-cols-2 gap-4'}>
         {p3 && <GhostWords words={['PLAN']} className="left-[6px] top-[36%] text-[84px]" />}
         {/* 今日任务：P4 = 无卡壳，衬线区题直压黄底 + 黑胶囊计数（p4-actions-reference-v2）；p3 = 水面底大斜体节题 */}
-        <div className={isP4 ? '' : p3 ? 'relative' : 'rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden'}>
-          {isP4 ? (
+        <div className={isP4 ? '' : p3 ? 'relative' : p5 ? 'relative' : 'rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden'}>
+          {p5 ? (
+            /* p5-modal-04 稿：黑楞区标 + 右缘红计数章（坐在纸卡顶缘上） */
+            <div className="relative z-10 mb-[-6px] flex items-center justify-between pl-1 pr-2">
+              <P5Wedge tone="ink" rot={-1.4}>今日任务</P5Wedge>
+              <P5Chip tone="red" rot={1.6}>{activeTodos.length} 项</P5Chip>
+            </div>
+          ) : isP4 ? (
             <P4SectionTitle meta={<P4CountPill>{activeTodos.length} 项</P4CountPill>} className="px-1 pb-2">
               今日任务
             </P4SectionTitle>
@@ -420,7 +427,14 @@ export const TodosView = () => {
               </span>
             </div>
           )}
-          <div className={isP4 || p3 ? 'space-y-2' : 'p-3 space-y-2'}>
+          <div className={isP4 || p3 ? 'space-y-2' : p5 ? 'relative space-y-2 px-3 pb-3 pt-5' : 'p-3 space-y-2'}>
+            {p5 && (
+              <>
+                <span aria-hidden className="pointer-events-none absolute inset-0" style={{ transform: 'translate(4px,5px)', background: '#000000', clipPath: roughQuad(371, 8), zIndex: -1 }} />
+                <span aria-hidden className="pointer-events-none absolute inset-0" style={{ background: '#050505', clipPath: roughQuad(372, 7), zIndex: -1 }} />
+                <span aria-hidden className="pointer-events-none absolute inset-[3px]" style={{ background: '#f0e9df', clipPath: roughQuad(373, 5), zIndex: -1 }} />
+              </>
+            )}
             {activeTodos.map(todo => {
               const progress = getTodayTodoProgress(todo.id);
               const attrName = settings.attributeNames[todo.attribute];
@@ -446,8 +460,13 @@ export const TodosView = () => {
         </div>
 
         {/* 已归档 */}
-        <div className={isP4 ? '' : p3 ? 'relative' : 'rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden'}>
-          {isP4 ? (
+        <div className={isP4 ? '' : p3 ? 'relative' : p5 ? 'relative' : 'rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden'}>
+          {p5 ? (
+            <div className="relative z-10 mb-[-6px] flex items-center justify-between pl-1 pr-2">
+              <P5Wedge tone="ink" rot={-1.2}>已归档</P5Wedge>
+              <P5Chip tone="red" rot={1.4}>{completedArchivedTodos.length + inactiveArchivedTodos.length + pendingDateTodos.length} 项</P5Chip>
+            </div>
+          ) : isP4 ? (
             <P4SectionTitle
               meta={<P4CountPill>{completedArchivedTodos.length + inactiveArchivedTodos.length + pendingDateTodos.length} 项</P4CountPill>}
               className="px-1 pb-2"
@@ -468,7 +487,14 @@ export const TodosView = () => {
               </span>
             </div>
           )}
-          <div className={isP4 || p3 ? 'space-y-2' : 'p-3 space-y-2'}>
+          <div className={isP4 || p3 ? 'space-y-2' : p5 ? 'relative space-y-2 px-3 pb-3 pt-5' : 'p-3 space-y-2'}>
+            {p5 && (
+              <>
+                <span aria-hidden className="pointer-events-none absolute inset-0" style={{ transform: 'translate(4px,5px)', background: '#000000', clipPath: roughQuad(381, 8), zIndex: -1 }} />
+                <span aria-hidden className="pointer-events-none absolute inset-0" style={{ background: '#050505', clipPath: roughQuad(382, 7), zIndex: -1 }} />
+                <span aria-hidden className="pointer-events-none absolute inset-[3px]" style={{ background: '#f0e9df', clipPath: roughQuad(383, 5), zIndex: -1 }} />
+              </>
+            )}
 
             {/* ── 未到日期（startDate 在未来 / 今日不在指定星期内）── */}
             {pendingDateTodos.length > 0 && (
@@ -558,7 +584,7 @@ export const TodosView = () => {
             {completedArchivedTodos.length > 0 && (
               <>
                 {(pendingDateTodos.length > 0 || inactiveArchivedTodos.length > 0) && <div className="border-t border-gray-100 dark:border-gray-800 my-1" />}
-                <div className="text-[10px] font-semibold text-emerald-500 dark:text-emerald-400 uppercase tracking-wider px-1 pt-1 pb-0.5">已完成</div>
+                <div className={`px-1 pt-1 pb-0.5 text-[10px] font-semibold uppercase tracking-wider ${p5 ? 'font-black' : 'text-emerald-500 dark:text-emerald-400'}`} style={p5 ? { color: '#c00008' } : undefined}>已完成</div>
               </>
             )}
             {(expandCompleted ? completedArchivedTodos : completedArchivedTodos.slice(0, 5)).map(todo => {
@@ -713,9 +739,9 @@ export const TodosView = () => {
           )}
           {p5 && (
             <span aria-hidden className="pointer-events-none absolute inset-0">
-              <span className="absolute inset-0" style={{ transform: 'translate(3px,3.5px)', background: '#000000', clipPath: 'polygon(31% 2%, 71% 3%, 97% 30%, 98% 69%, 70% 97%, 29% 98%, 3% 71%, 2% 31%)' }} />
-              <span className="absolute inset-0" style={{ background: '#f0e9df', clipPath: 'polygon(30% 3%, 70% 2%, 98% 31%, 97% 70%, 71% 98%, 30% 97%, 2% 69%, 3% 30%)' }} />
-              <span className="absolute inset-[3px]" style={{ background: '#c00008', clipPath: 'polygon(30% 3%, 70% 2%, 98% 31%, 97% 70%, 71% 98%, 30% 97%, 2% 69%, 3% 30%)' }} />
+              <span className="absolute inset-0" style={{ transform: 'translate(3px,3.5px)', background: '#000000', clipPath: 'polygon(25% 7%, 66% 0%, 100% 25%, 94% 74%, 76% 100%, 33% 94%, 0% 76%, 7% 23%)' }} />
+              <span className="absolute inset-0" style={{ background: '#f0e9df', clipPath: 'polygon(27% 5%, 69% 1%, 99% 28%, 93% 72%, 73% 99%, 30% 96%, 1% 74%, 6% 25%)' }} />
+              <span className="absolute inset-[3px]" style={{ background: '#c00008', clipPath: 'polygon(27% 5%, 69% 1%, 99% 28%, 93% 72%, 73% 99%, 30% 96%, 1% 74%, 6% 25%)' }} />
             </span>
           )}
           {/* 白色加号（与记录子页 FAB 的 PlusIcon 同款笔画） */}

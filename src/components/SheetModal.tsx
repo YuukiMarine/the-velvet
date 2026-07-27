@@ -9,7 +9,7 @@ import { useUiChannel } from '@/ui/useUiChannel';
 import { zClass } from '@/utils/zIndex';
 import { P4Flower, P4Sparkle } from '@/ui/p4Kit';
 import { sheetTopClip } from '@/components/p3r/kit';
-import { P5Star } from '@/components/p5r/kit';
+import { P5Star, P5CollageTitle } from '@/components/p5r/kit';
 
 // P5 撕纸顶缘（p5-modal-02 稿的纸卡翻折顶）：外黑衬 / 内纸面 两套顶点微错位 = 不等宽黑框
 const P5_SHEET_OUTER = 'polygon(0 24px, 7% 7px, 22% 17px, 41% 3px, 60% 15px, 79% 5px, 100% 13px, 100% 100%, 0 100%)';
@@ -130,13 +130,25 @@ export const SheetModal = ({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className={`fixed inset-0 ${zClass.modal} flex bg-black/55 backdrop-blur-sm ${forceDark ? 'dark' : ''} ${
+          className={`fixed inset-0 ${zClass.modal} flex ${p5 ? 'bg-black/72' : 'bg-black/55 backdrop-blur-sm'} ${forceDark ? 'dark' : ''} ${
             isBottom ? 'items-end justify-center' : 'items-center justify-center'
           }`}
           onClick={() => {
             if (closeOnBackdrop && !busy) onClose();
           }}
         >
+          {/* P5：幕布红黑斜纹（设计稿弹窗背景签名件）—— 两组不同宽度/相位的斜条叠加 */}
+          {p5 && (
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-0"
+              style={{
+                backgroundImage:
+                  'repeating-linear-gradient(122deg, transparent 0 74px, #c00008 74px 116px, transparent 116px 190px),'
+                  + 'repeating-linear-gradient(122deg, transparent 0 128px, #050505 128px 178px, transparent 178px 300px)',
+              }}
+            />
+          )}
           <motion.div
             ref={containerRef}
             role="dialog"
@@ -176,9 +188,23 @@ export const SheetModal = ({
                   : undefined
             }
           >
-            {/* P5：纸面内衬（黑外壳内缩，两套撕缘顶点错位 = 不等宽黑框）+ 红角贴 + 星章 */}
+            {/* P5：纸面内衬（黑外壳内缩，两套撕缘顶点错位 = 不等宽黑框）+ 红衬错位层 + 红角贴 + 星章 */}
             {p5 && (
               <>
+                {/* 红衬：向左下错位，从黑壳边缘露出一条红（p5-modal-03 稿） */}
+                <span
+                  aria-hidden
+                  className="pointer-events-none absolute"
+                  style={{
+                    inset: 0,
+                    transform: 'translate(-7px, 7px)',
+                    background: '#c00008',
+                    zIndex: -1,
+                    clipPath: isBottom
+                      ? P5_SHEET_OUTER
+                      : 'polygon(7px 5px, 30% 1px, calc(100% - 4px) 8px, calc(100% - 8px) calc(100% - 5px), 55% calc(100% - 1px), 4px calc(100% - 9px))',
+                  }}
+                />
                 <span
                   aria-hidden
                   className="pointer-events-none absolute"
@@ -232,23 +258,29 @@ export const SheetModal = ({
               )
             )}
             {title && (
+              p5 ? (
+                /* P5：标题走勒索信剪报瓷砖（逐字异色穿插 + 微旋转错位）——
+                   设计稿所有表单顶部的统一制式，不再是平排大字 */
+                <h2 id={titleId} className="relative shrink-0 px-5 pr-14 pt-4">
+                  <span className="sr-only">{title}</span>
+                  <P5CollageTitle text={title} size={30} />
+                </h2>
+              ) : (
               <h2
                 id={titleId}
                 className={`shrink-0 px-6 pt-4 ${
                   isP4
                     ? 'pr-32 text-[26px] font-black leading-tight text-[#131313]'
-                    : p5
-                      ? 'relative pr-14 text-[23px] font-black leading-tight'
                     : p3
                       ? 'text-[26px] font-black italic tracking-tight'
                       : 'text-lg font-bold text-gray-800 dark:text-white'
                 }`}
-                style={isP4 ? { fontFamily: 'var(--p4-display-font, serif)' } : p5 ? { color: '#050505', fontFamily: '"Noto Sans SC", "Microsoft YaHei", sans-serif' } : p3 ? { color: '#0a1230', fontFamily: '"Arial Black", "Noto Sans SC", sans-serif' } : undefined}
+                style={isP4 ? { fontFamily: 'var(--p4-display-font, serif)' } : p3 ? { color: '#0a1230', fontFamily: '"Arial Black", "Noto Sans SC", sans-serif' } : undefined}
               >
                 {title}
-                {p5 && <P5Star size={14} fill="#c00008" className="ml-2 inline-block align-baseline" />}
                 {p3 && <span aria-hidden className="ml-1.5 inline-block h-[10px] w-[13px]" style={{ background: '#1b57ff', clipPath: 'polygon(100% 0, 100% 100%, 0 100%)' }} />}
               </h2>
+              )
             )}
             <div className={`min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-4 ${p5 ? 'relative' : ''}`}>
               {children}

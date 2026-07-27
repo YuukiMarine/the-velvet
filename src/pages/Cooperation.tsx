@@ -789,9 +789,9 @@ export function Cooperation() {
           )}
           {p5 && (
             <span aria-hidden className="pointer-events-none absolute inset-0">
-              <span className="absolute inset-0" style={{ transform: 'translate(3px,3.5px)', background: '#000000', clipPath: 'polygon(31% 2%, 71% 3%, 97% 30%, 98% 69%, 70% 97%, 29% 98%, 3% 71%, 2% 31%)' }} />
-              <span className="absolute inset-0" style={{ background: '#f0e9df', clipPath: 'polygon(30% 3%, 70% 2%, 98% 31%, 97% 70%, 71% 98%, 30% 97%, 2% 69%, 3% 30%)' }} />
-              <span className="absolute inset-[3px]" style={{ background: '#c00008', clipPath: 'polygon(30% 3%, 70% 2%, 98% 31%, 97% 70%, 71% 98%, 30% 97%, 2% 69%, 3% 30%)' }} />
+              <span className="absolute inset-0" style={{ transform: 'translate(3px,3.5px)', background: '#000000', clipPath: 'polygon(25% 7%, 66% 0%, 100% 25%, 94% 74%, 76% 100%, 33% 94%, 0% 76%, 7% 23%)' }} />
+              <span className="absolute inset-0" style={{ background: '#f0e9df', clipPath: 'polygon(27% 5%, 69% 1%, 99% 28%, 93% 72%, 73% 99%, 30% 96%, 1% 74%, 6% 25%)' }} />
+              <span className="absolute inset-[3px]" style={{ background: '#c00008', clipPath: 'polygon(27% 5%, 69% 1%, 99% 28%, 93% 72%, 73% 99%, 30% 96%, 1% 74%, 6% 25%)' }} />
             </span>
           )}
           <span className="relative">+</span>

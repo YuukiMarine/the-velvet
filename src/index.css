@@ -91,15 +91,38 @@
   border-radius: 2px 5px 3px 6px !important;
   color: #050505 !important;
   font-weight: 700;
+  /* 稿上输入件右下恒有一块错位红衬（p5-modal-02/03 签名件） */
+  box-shadow: 5px 5px 0 #c00008 !important;
+}
+/* 弹窗内的输入件红衬收窄一档（表单密集，5px 会互相打架） */
+:root[data-ui-channel="p5"] :is([role="dialog"], [role="alertdialog"]) .p5-reskin input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+:root[data-ui-channel="p5"] :is([role="dialog"], [role="alertdialog"]).p5-reskin input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+:root[data-ui-channel="p5"] :is([role="dialog"], [role="alertdialog"]) .p5-reskin select,
+:root[data-ui-channel="p5"] :is([role="dialog"], [role="alertdialog"]).p5-reskin select {
+  box-shadow: 4px 4px 0 #c00008 !important;
 }
 /* P5 分区纸卡：直接子内容提权到 P5Rough 垫底层之上 */
 :root[data-ui-channel="p5"] .p5-sec-body > *:not([aria-hidden]) {
   position: relative;
 }
-/* 带投影的卡片 → 黑框 + 错位硬影（去柔影；旧列表卡自动获得剪报骨架） */
+/* 带投影的卡片 → 黑框 + 错位硬影（去柔影；旧列表卡自动获得剪报骨架）。
+   反板正：四边描边不等宽 + 四角圆角不等，杜绝「规规矩矩的矩形卡」——
+   nth-of-type 轮换三套参数，同屏多卡不会整齐划一。 */
 :root[data-ui-channel="p5"] .p5-reskin :is(.shadow-sm, .shadow, .shadow-md, .shadow-lg, .shadow-xl, .shadow-2xl) {
   box-shadow: 4px 5px 0 #000000 !important;
-  border: 2.5px solid #050505;
+  border-color: #050505 !important;
+  border-style: solid !important;
+  border-width: 2px 3.5px 3px 2.5px;
+  border-radius: 2px 7px 3px 6px;
+}
+:root[data-ui-channel="p5"] .p5-reskin :is(.shadow-sm, .shadow, .shadow-md, .shadow-lg, .shadow-xl, .shadow-2xl):nth-of-type(2n) {
+  border-width: 3.5px 2px 2.5px 3px;
+  border-radius: 7px 2px 6px 3px;
+  box-shadow: 5px 4px 0 #000000 !important;
+}
+:root[data-ui-channel="p5"] .p5-reskin :is(.shadow-sm, .shadow, .shadow-md, .shadow-lg, .shadow-xl, .shadow-2xl):nth-of-type(3n) {
+  border-width: 2.5px 3px 3.5px 2px;
+  border-radius: 5px 3px 7px 2px;
 }
 /* amber/yellow 提示系 → 红黑纸三色律（「标记为重要」黄卡等） */
 :root[data-ui-channel="p5"] .p5-reskin :is(.bg-amber-50, .bg-yellow-50, .bg-amber-100, .bg-yellow-100, [class*="bg-amber-50/"], [class*="bg-yellow-50/"]) {

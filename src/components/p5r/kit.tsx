@@ -54,6 +54,17 @@ export const roughQuad = (seed: number, jag = 7): string => {
   return `polygon(${j()}px ${j()}px, calc(100% - ${j()}px) ${j()}px, calc(100% - ${j()}px) calc(100% - ${j()}px), ${j()}px calc(100% - ${j()}px))`;
 };
 
+/**
+ * 斜平行四边形 + 顶点抖动 —— 设计稿里 tab / 段钮 / 横条的标准轮廓。
+ * 与 roughQuad 的区别：整体向右倾（上边右移、下边左移），杜绝「板正矩形」的观感。
+ */
+export const roughSlant = (seed: number, slant = 14, jag = 3): string => {
+  const r = mulberry(seed + 0.77);
+  const j = () => (r() * jag).toFixed(1);
+  const s = () => (slant + r() * jag).toFixed(1);
+  return `polygon(${s()}px ${j()}px, calc(100% - ${j()}px) ${j()}px, calc(100% - ${s()}px) calc(100% - ${j()}px), ${j()}px calc(100% - ${j()}px))`;
+};
+
 /** 八点变体：四角 + 四边中点内凹/外凸，撕纸感更强（横幅 / 大面积红斜块用） */
 export const roughOct = (seed: number, jag = 10): string => {
   const r = mulberry(seed + 0.5);
@@ -302,6 +313,86 @@ export const P5Collage = ({ tiles, size = 52, gap = 5, className, delay = 0 }: {
         );
       })}
     </div>
+  );
+};
+
+/**
+ * P5CollageTitle —— 由一串中文自动生成剪报瓷砖标题（全站表单/弹窗顶部统一制式）。
+ *
+ * 配色循环照 p5-modal-03「记录一件事」采样：
+ *   纸底红字 → 纸底黑字 → 红底白字 → 黑底白字 → 灰底黑字，之后重复。
+ * 尾部缀一颗红星（稿上「添加任务 ☆」「记录一件事 ★」同款）。标点不占瓷砖，直接排黑字。
+ */
+const TITLE_CYCLE: Array<{ bg: string; fg: string }> = [
+  { bg: P5R.paper, fg: P5R.red },
+  { bg: P5R.paper, fg: P5R.ink },
+  { bg: P5R.red, fg: P5R.white },
+  { bg: P5R.ink, fg: P5R.white },
+  { bg: P5R.greyLight, fg: P5R.ink },
+];
+const TITLE_ROT = [-3.5, 2.4, -2, 3, -2.8, 1.8, -3.2, 2.6];
+const TITLE_DY = [0, 6, 2, 7, 3, 5, 1, 6];
+
+export const P5CollageTitle = ({ text, size = 30, star = true, className }: {
+  text: string;
+  size?: number;
+  star?: boolean;
+  className?: string;
+}) => {
+  const anim = useBoldness();
+  const chars = Array.from(text.trim());
+  let tileIdx = 0;
+  return (
+    <span className={`flex flex-wrap items-start gap-[3px] ${className ?? ''}`} aria-hidden>
+      {chars.map((ch, i) => {
+        // 标点/空格不做瓷砖（做出来像掉字），直接以黑字排在基线上
+        if (/[\s·、，。：；！？（）()「」【】…—-]/.test(ch)) {
+          return (
+            <span key={i} className="inline-block font-black" style={{ fontSize: size * 0.9, lineHeight: 1.2, marginTop: 6, color: P5R.ink, fontFamily: P5_FONT }}>
+              {ch === ' ' ? ' ' : ch}
+            </span>
+          );
+        }
+        const c = TITLE_CYCLE[tileIdx % TITLE_CYCLE.length];
+        const rot = TITLE_ROT[tileIdx % TITLE_ROT.length];
+        const dy = TITLE_DY[tileIdx % TITLE_DY.length];
+        tileIdx += 1;
+        return (
+          <motion.span
+            key={i}
+            className="inline-flex shrink-0 select-none items-center justify-center font-black"
+            initial={anim ? { scale: 1.5, opacity: 0, rotate: rot * 3 } : false}
+            animate={{ scale: 1, opacity: 1, rotate: rot }}
+            transition={{ type: 'spring', stiffness: 520, damping: 26, delay: i * 0.045 }}
+            style={{
+              width: size * 1.2,
+              height: size * 1.2,
+              marginTop: dy,
+              fontSize: size,
+              lineHeight: 1,
+              fontFamily: P5_FONT,
+              background: c.bg,
+              color: c.fg,
+              border: `2.5px solid ${P5R.ink}`,
+              boxShadow: `0 0 0 2.5px ${P5R.paper}, 4px 5px 0 ${P5R.ink}`,
+            }}
+          >
+            {ch}
+          </motion.span>
+        );
+      })}
+      {star && (
+        <motion.span
+          className="ml-1 shrink-0"
+          style={{ marginTop: size * 0.18 }}
+          initial={anim ? { scale: 0, rotate: -40 } : false}
+          animate={{ scale: 1, rotate: -10 }}
+          transition={{ type: 'spring', stiffness: 480, damping: 20, delay: chars.length * 0.045 }}
+        >
+          <P5Star size={size * 0.62} fill={P5R.red} ring2={P5R.paper} />
+        </motion.span>
+      )}
+    </span>
   );
 };
 

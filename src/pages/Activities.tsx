@@ -18,6 +18,7 @@ import { TrashIcon } from '@/components/icons';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P4Sparkle } from '@/ui/p4Kit';
 import { SectionMark, SlantButton } from '@/components/p3r/kit';
+import { P5R, P5_FONT, roughSlant, starPts } from '@/components/p5r/kit';
 
 // ---- 来源筛选选项（筛选面板与已选 chip 共用） ----
 const METHOD_FILTER_OPTIONS = [
@@ -1254,9 +1255,9 @@ export const ActivitiesView = () => {
             )}
             {p5 && (
               <span aria-hidden className="pointer-events-none absolute inset-0">
-                <span className="absolute inset-0" style={{ transform: 'translate(3px,3.5px)', background: '#000000', clipPath: 'polygon(31% 2%, 71% 3%, 97% 30%, 98% 69%, 70% 97%, 29% 98%, 3% 71%, 2% 31%)' }} />
-                <span className="absolute inset-0" style={{ background: '#f0e9df', clipPath: 'polygon(30% 3%, 70% 2%, 98% 31%, 97% 70%, 71% 98%, 30% 97%, 2% 69%, 3% 30%)' }} />
-                <span className="absolute inset-[3px]" style={{ background: isPastDaySelected ? '#e08a00' : '#c00008', clipPath: 'polygon(30% 3%, 70% 2%, 98% 31%, 97% 70%, 71% 98%, 30% 97%, 2% 69%, 3% 30%)' }} />
+                <span className="absolute inset-0" style={{ transform: 'translate(3px,3.5px)', background: '#000000', clipPath: 'polygon(25% 7%, 66% 0%, 100% 25%, 94% 74%, 76% 100%, 33% 94%, 0% 76%, 7% 23%)' }} />
+                <span className="absolute inset-0" style={{ background: '#f0e9df', clipPath: 'polygon(27% 5%, 69% 1%, 99% 28%, 93% 72%, 73% 99%, 30% 96%, 1% 74%, 6% 25%)' }} />
+                <span className="absolute inset-[3px]" style={{ background: isPastDaySelected ? '#e08a00' : '#c00008', clipPath: 'polygon(27% 5%, 69% 1%, 99% 28%, 93% 72%, 73% 99%, 30% 96%, 1% 74%, 6% 25%)' }} />
               </span>
             )}
             {isPastDaySelected ? (
@@ -1330,7 +1331,25 @@ export const ActivitiesView = () => {
           AI 失败 / 描述太短时按钮仍可重复点（错误提示在下面单独显示）。
         */}
         {!analyzedPoints ? (
-          p3 ? (
+          p5 ? (
+            /* p5-modal-03 稿：黑长条 + 白字 + 右端灰星，黑硬影错位 */
+            <motion.button
+              whileTap={{ x: 2, y: 3 }}
+              onClick={() => analyzeActivity()}
+              disabled={!description.trim()}
+              aria-label="分析关键词"
+              className="relative mt-4 block w-full cursor-pointer py-3 text-[16px] font-black tracking-wider text-white disabled:cursor-not-allowed disabled:opacity-50"
+              style={{ fontFamily: P5_FONT }}
+            >
+              <span aria-hidden className="absolute inset-0" style={{ transform: 'translate(4px,5px)', background: '#000000', clipPath: roughSlant(451, 14, 3) }} />
+              <span aria-hidden className="absolute inset-0" style={{ background: P5R.paper, clipPath: roughSlant(451, 14, 3) }} />
+              <span aria-hidden className="absolute inset-[3px]" style={{ background: '#050505', clipPath: roughSlant(452, 13, 2.5) }} />
+              <span className="relative">分析关键词</span>
+              <svg viewBox="0 0 100 100" className="pointer-events-none absolute -right-2 -top-3 h-12 w-12" aria-hidden>
+                <polygon points={starPts(50, 50, 48)} fill="#9b9791" stroke={P5R.paper} strokeWidth="6" strokeLinejoin="miter" />
+              </svg>
+            </motion.button>
+          ) : p3 ? (
             <div className="mt-4 flex justify-center">
               <SlantButton tone="primary" disabled={!description.trim()} onClick={() => analyzeActivity()} className="px-12 text-[17px]" ariaLabel="分析关键词">
                 分析关键词

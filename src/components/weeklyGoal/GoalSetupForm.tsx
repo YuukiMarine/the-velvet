@@ -5,6 +5,7 @@ import { AttributeId, WeeklyGoalItem, WeeklyGoalType } from '@/types';
 import { Stepper } from '@/components/Stepper';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { SlantButton } from '@/components/p3r/kit';
+import { P5R, P5_FONT, roughQuad, roughSlant, starPts } from '@/components/p5r/kit';
 import { ALL_GOAL_TYPES, ATTR_IDS, GOAL_TYPE_DESCS, GOAL_TYPE_LABELS, makeDefaultItem } from './weeklyGoalShared';
 
 // ── GoalSetupForm (shared between create & edit) ────────────────────────────
@@ -60,6 +61,8 @@ export const GoalSetupForm = ({
   const canConfirm = selectedTypes.size >= 2;
   // P3R（p3-modal-04 稿）：浅青斜卡 + 左上青色大勾块 + 白斜奖励 input + 斜切双钮
   const p3 = useUiChannel() === 'p3';
+  // P5R（p5-modal-04 稿）：纸卡黑框硬影 + 每行左缘红星章 + 黑红步进器 + 斜双钮
+  const p5 = useUiChannel() === 'p5';
 
   const handleConfirm = () => {
     const items = ALL_GOAL_TYPES
@@ -69,6 +72,142 @@ export const GoalSetupForm = ({
   };
 
   // ── P3R 形态（结构差异大，独立分支；数据与 handlers 全同源）──────────────
+  // ── P5R 形态（p5-modal-04-weekly-goal-setup 1:1）───────────────────
+  if (p5) {
+    return (
+      <div className="p5-reskin relative">
+        {/* 纸卡底：黑硬影 + 黑框 + 纸面（三层错位不规则四边形） */}
+        <span aria-hidden className="pointer-events-none absolute inset-0" style={{ transform: 'translate(5px,6px)', background: '#000000', clipPath: roughQuad(401, 9) }} />
+        <span aria-hidden className="pointer-events-none absolute inset-0" style={{ background: '#050505', clipPath: roughQuad(402, 8) }} />
+        <span aria-hidden className="pointer-events-none absolute inset-[3.5px]" style={{ background: P5R.paper, clipPath: roughQuad(403, 5) }} />
+        <div className="relative px-4 pb-4 pt-5">
+          <h3 className="text-[24px] font-black leading-none" style={{ color: '#050505', fontFamily: P5_FONT }}>设定本周目标</h3>
+          <p className="mt-2 text-[13px] font-black" style={{ color: '#050505' }}>
+            {weekStart} ~ {weekEnd}　· 至少选择 2 项
+          </p>
+          <span aria-hidden className="mt-3 block h-[2.5px] w-full" style={{ background: '#050505' }} />
+
+          <div className="mt-4 space-y-3.5">
+            {ALL_GOAL_TYPES.map((type, ti) => {
+              const isSelected = selectedTypes.has(type);
+              const cfg = itemConfigs[type];
+              const needsAttr = type === 'activity_count' || type === 'attr_points';
+              const seed = 410 + ti * 7;
+              return (
+                <div key={type} className="relative">
+                  {/* 行卡：黑硬影 + 黑框 + 纸面（未选中走灰面，不用透明度） */}
+                  <span aria-hidden className="pointer-events-none absolute inset-0" style={{ transform: 'translate(4px,5px)', background: '#000000', clipPath: roughQuad(seed, 7) }} />
+                  <span aria-hidden className="pointer-events-none absolute inset-0" style={{ background: '#050505', clipPath: roughQuad(seed + 1, 6) }} />
+                  <span aria-hidden className="pointer-events-none absolute inset-[3px]" style={{ background: isSelected ? P5R.paper : '#cdc7ba', clipPath: roughQuad(seed + 2, 4) }} />
+                  {/* 左缘红星章（稿上每行的签名件，出卡半截） */}
+                  <button
+                    type="button"
+                    onClick={() => toggleType(type)}
+                    aria-pressed={isSelected}
+                    aria-label={`${GOAL_TYPE_LABELS[type]}：${isSelected ? '已选中' : '点击添加'}`}
+                    className="absolute -left-1.5 top-2.5 z-10 flex h-[46px] w-[42px] cursor-pointer items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c00008]"
+                    style={{ background: isSelected ? P5R.red : '#6b6862', clipPath: 'polygon(4px 0, 100% 3px, calc(100% - 6px) 100%, 0 calc(100% - 5px))', boxShadow: '3px 3px 0 #000000' }}
+                  >
+                    <svg viewBox="0 0 100 100" className="h-6 w-6" aria-hidden>
+                      <polygon points={starPts(50, 50, 48)} fill={P5R.paper} />
+                    </svg>
+                  </button>
+
+                  <div className="relative py-3 pl-12 pr-4">
+                    <button type="button" onClick={() => toggleType(type)} className="block w-full cursor-pointer text-left" aria-hidden tabIndex={-1}>
+                      <span className="block text-[17px] font-black leading-tight" style={{ color: isSelected ? P5R.red : '#3a3831', fontFamily: P5_FONT }}>{GOAL_TYPE_LABELS[type]}</span>
+                      <span className="mt-0.5 block text-[11.5px] font-bold" style={{ color: '#050505' }}>{GOAL_TYPE_DESCS[type]}</span>
+                    </button>
+
+                    <AnimatePresence initial={false}>
+                      {isSelected && (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: 'auto', opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          transition={{ duration: 0.2 }}
+                          className="overflow-hidden"
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-3 pt-3">
+                            <div className="flex flex-wrap items-center gap-2.5">
+                              <span className="text-[13px] font-black" style={{ color: '#050505' }}>目标</span>
+                              {needsAttr && (
+                                <select
+                                  value={cfg.attribute || 'knowledge'}
+                                  onChange={e => updateConfig(type, { attribute: e.target.value as AttributeId })}
+                                  onClick={e => e.stopPropagation()}
+                                  className="px-3 py-1 text-sm font-black focus:outline-none"
+                                >
+                                  {ATTR_IDS.map(id => (
+                                    <option key={id} value={id}>{settings.attributeNames[id]}</option>
+                                  ))}
+                                </select>
+                              )}
+                            </div>
+                            <Stepper
+                              value={cfg.target}
+                              min={1}
+                              max={999}
+                              aria-label={`${GOAL_TYPE_LABELS[type]}目标`}
+                              onChange={v => updateConfig(type, { target: v })}
+                            />
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="mt-5">
+            <label className="mb-1.5 block text-[14px] font-black" style={{ color: '#050505' }}>完成奖励（选填）</label>
+            <input
+              type="text"
+              value={reward}
+              onChange={e => setReward(e.target.value)}
+              placeholder="给自己一个奖励吧…"
+              className="w-full px-4 py-2.5 text-sm focus:outline-none"
+            />
+          </div>
+
+          <div className="mt-5 flex items-center gap-3">
+            <motion.button
+              type="button"
+              whileTap={{ x: 2, y: 3 }}
+              onClick={onCancel}
+              className="relative flex-1 cursor-pointer py-2.5 text-[15px] font-black"
+              style={{ color: '#050505', fontFamily: P5_FONT }}
+            >
+              <span aria-hidden className="absolute inset-0" style={{ transform: 'translate(3px,4px)', background: '#000000', clipPath: roughSlant(430, 12, 3) }} />
+              <span aria-hidden className="absolute inset-0" style={{ background: '#050505', clipPath: roughSlant(430, 12, 3) }} />
+              <span aria-hidden className="absolute inset-[2.5px]" style={{ background: '#cdc7ba', clipPath: roughSlant(431, 11, 2.5) }} />
+              <span className="relative">取消</span>
+            </motion.button>
+            <motion.button
+              type="button"
+              whileTap={{ x: 2, y: 3 }}
+              disabled={!canConfirm}
+              onClick={handleConfirm}
+              className="relative flex-1 cursor-pointer py-2.5 text-[15px] font-black text-white disabled:cursor-not-allowed disabled:opacity-50"
+              style={{ fontFamily: P5_FONT }}
+            >
+              <span aria-hidden className="absolute inset-0" style={{ transform: 'translate(3px,4px)', background: '#000000', clipPath: roughSlant(432, 12, 3) }} />
+              <span aria-hidden className="absolute inset-0" style={{ background: '#050505', clipPath: roughSlant(432, 12, 3) }} />
+              <span aria-hidden className="absolute inset-[2.5px]" style={{ background: P5R.red, clipPath: roughSlant(433, 11, 2.5) }} />
+              <span className="relative">确认（{selectedTypes.size} 项）</span>
+              {/* 右缘纸星（稿上确认钮的签名件） */}
+              <svg viewBox="0 0 100 100" className="pointer-events-none absolute -right-4 -top-2 h-11 w-11" aria-hidden>
+                <polygon points={starPts(50, 50, 48)} fill={P5R.paper} stroke="#050505" strokeWidth="5" strokeLinejoin="miter" />
+              </svg>
+            </motion.button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (p3) {
     return (
       <div className="p3r-sheet relative">
