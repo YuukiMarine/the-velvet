@@ -265,11 +265,11 @@ const MARK_STROKE = {
   '!': '27,3 25,22 22,42',
   '?': '15,11 28,2 43,6 46,19 35,29 26,31 25,43',
 } as const;
-const MARK_DOT = {
-  outer: '18,50 34,54 30,70 14,66',
-  // 内芯相对外形收得更狠（离质心 ~0.45 而非原先 ~0.65），露出的边圈更厚
-  inner: '21,56 29,57 27,65 20,63',
-} as const;
+/** 点：单条菱形轮廓，与折线共用同一个描边宽度参数（见下方 STROKE_W/INK_W） */
+const MARK_DOT = '18,50 34,54 30,70 14,66';
+/** 外层描边宽 / 内芯宽——折线与点共用，改一处两者联动 */
+const STROKE_W = 25;
+const INK_W = 7;
 
 export const BubbleMark = ({ mark, channel = 'p5', size = 34, className, style }: {
   mark: '!' | '?';
@@ -294,10 +294,18 @@ export const BubbleMark = ({ mark, channel = 'p5', size = 34, className, style }
       transition={{ duration: 0.46, times: [0, 0.62, 1], ease: [0.2, 1.45, 0.4, 1], delay: 0.14 }}
     >
       <svg viewBox="0 0 56 72" className="h-full w-full overflow-visible">
-        <polyline points={points} fill="none" stroke={sk.edge} strokeWidth={25} strokeLinejoin="miter" strokeLinecap="square" />
-        <polyline points={points} fill="none" stroke={sk.ink} strokeWidth={7} strokeLinejoin="miter" strokeLinecap="square" />
-        <polygon points={MARK_DOT.outer} fill={sk.edge} />
-        <polygon points={MARK_DOT.inner} fill={sk.ink} />
+        <polyline points={points} fill="none" stroke={sk.edge} strokeWidth={STROKE_W} strokeLinejoin="miter" strokeLinecap="square" />
+        <polyline points={points} fill="none" stroke={sk.ink} strokeWidth={INK_W} strokeLinejoin="miter" strokeLinecap="square" />
+        {/* 点：描边居中于路径 + paintOrder="stroke" 让内芯盖掉描边的内半圈，
+            只留外半圈可见——与上面折线「先粗后细」殊途同归，且直接吃同一组宽度参数 */}
+        <polygon
+          points={MARK_DOT}
+          fill={sk.ink}
+          stroke={sk.edge}
+          strokeWidth={STROKE_W}
+          strokeLinejoin="miter"
+          paintOrder="stroke"
+        />
       </svg>
     </motion.span>
   );
