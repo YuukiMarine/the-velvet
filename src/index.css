@@ -96,6 +96,11 @@
 :root[data-ui-channel="p5"] .p5-sec-body > *:not([aria-hidden]) {
   position: relative;
 }
+/* 带投影的卡片 → 黑框 + 错位硬影（去柔影；旧列表卡自动获得剪报骨架） */
+:root[data-ui-channel="p5"] .p5-reskin :is(.shadow-sm, .shadow, .shadow-md, .shadow-lg, .shadow-xl, .shadow-2xl) {
+  box-shadow: 4px 5px 0 #000000 !important;
+  border: 2.5px solid #050505;
+}
 /* 灰系文字 → 黑（分级保层级，纯色不透明） */
 :root[data-ui-channel="p5"] .p5-reskin :is(.text-gray-700, .text-gray-800, .text-gray-900, .dark\:text-white) {
   color: #050505 !important;

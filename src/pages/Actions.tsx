@@ -21,6 +21,7 @@ import { ActivitiesView } from '@/pages/Activities';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P4SkyCircle, P4_HEADER_BLEED } from '@/ui/p4Kit';
 import { P3R, P3RPage, GhostWords, slantClip } from '@/components/p3r/kit';
+import { P5R, P5_FONT, P5Chip, P5Star, P5Dots, P5Slab, P5RPage } from '@/components/p5r/kit';
 
 type ActionsSubTab = 'todos' | 'activities';
 
@@ -64,6 +65,95 @@ export const Actions = () => {
   // 子页方向偏移：每个面板从自己的"方位侧"进、向同侧出——
   // 记录（左）从左侧进出，任务（右）从右侧进出，形成连贯的横移方向感
   const panelDir = actionsSubTab === 'activities' ? -24 : 24;
+
+  // ── P5R 形态（红主题）：p5-modal-04 稿的切换头——激活词大纸瓷砖 + 红斜杠 +
+  //    未激活小瓷砖灰字；「行动」红章眉标；子视图区罩 .p5-reskin 毯式 ──
+  if (channel === 'p5') {
+    return (
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+        <P5RPage className="overflow-hidden">
+          <div className="p5-reskin relative">
+            {/* 页头装饰（沉底）：右上红斜块 + 大红星 + 半调 */}
+            <div aria-hidden className="pointer-events-none absolute -inset-x-4 -top-4 h-[160px]" style={{ zIndex: -1 }}>
+              <P5Slab color={P5R.red} seed={211} rot={10} style={{ right: -70, top: -36, width: 230, height: 140 }} />
+              <P5Slab color={P5R.redDeep} seed={212} rot={-7} style={{ right: 90, top: 40, width: 130, height: 90 }} />
+              <P5Star size={36} fill={P5R.red} ring2={P5R.paper} rot={-14} className="absolute" style={{ right: 26, top: 4 }} />
+              <P5Star size={16} fill="#3a3831" rot={12} className="absolute" style={{ right: 150, top: 12 }} />
+              <P5Dots className="absolute" style={{ right: 0, top: 84, width: 74, height: 66 }} color="#4a4741" />
+            </div>
+
+            <motion.div
+              role="tablist"
+              aria-label="行动子页切换"
+              drag="x"
+              dragConstraints={{ left: 0, right: 0 }}
+              dragElastic={0.15}
+              onDragEnd={handleDragEnd}
+              className="relative mb-2.5 inline-flex cursor-grab select-none items-end gap-3 pt-2 active:cursor-grabbing"
+            >
+              {TABS.map((tab, i) => {
+                const active = actionsSubTab === tab.key;
+                return (
+                  <Fragment key={tab.key}>
+                    {i > 0 && (
+                      <span aria-hidden className="pb-2 text-[32px] font-black leading-none" style={{ color: P5R.red, fontFamily: P5_FONT, transform: 'rotate(10deg)', textShadow: '2px 2px 0 #000000' }}>
+                        /
+                      </span>
+                    )}
+                    <motion.button
+                      type="button"
+                      role="tab"
+                      id={`actions-tab-${tab.key}`}
+                      aria-selected={active}
+                      aria-controls={`actions-panel-${tab.key}`}
+                      whileTap={TAP}
+                      onClick={() => switchTab(tab.key)}
+                      className="relative cursor-pointer"
+                    >
+                      {/* 词瓷砖：激活 = 大黑字纸砖，未激活 = 小灰字纸砖（拼贴信纸语言） */}
+                      <motion.span
+                        animate={{ fontSize: active ? '27px' : '17px', rotate: active ? (i === 0 ? -2.5 : 2) : (i === 0 ? 2 : -2) }}
+                        transition={springSnappy}
+                        className="inline-block px-3 py-1.5 font-black leading-none"
+                        style={{
+                          background: P5R.paper,
+                          color: active ? P5R.ink : P5R.grey,
+                          border: '3px solid #050505',
+                          boxShadow: '0 0 0 2.5px #f0e9df, 5px 6px 0 #000000',
+                          fontFamily: P5_FONT,
+                        }}
+                      >
+                        {tab.label}
+                      </motion.span>
+                    </motion.button>
+                  </Fragment>
+                );
+              })}
+            </motion.div>
+
+            <div className="mb-4">
+              <P5Chip tone="red" rot={-1.5} className="!px-3 !py-1 !text-[13px]">行动</P5Chip>
+            </div>
+
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.div
+                key={actionsSubTab}
+                role="tabpanel"
+                id={`actions-panel-${actionsSubTab}`}
+                aria-labelledby={`actions-tab-${actionsSubTab}`}
+                initial={{ opacity: 0, x: panelDir }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: panelDir }}
+                transition={{ duration: 0.18 }}
+              >
+                {actionsSubTab === 'todos' ? <TodosView /> : <ActivitiesView />}
+              </motion.div>
+            </AnimatePresence>
+          </div>
+        </P5RPage>
+      </motion.div>
+    );
+  }
 
   // ── P3R 形态（蓝主题）：设计稿切换头（蓝斜块选中 + 洋红角 / 黑字未选中）──
   if (p3) {

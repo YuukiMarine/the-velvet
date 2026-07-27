@@ -34,6 +34,7 @@ const goalPanelVariants = {
 export const GoalDeck = (props: GoalDeckProps) => {
   // P3R（蓝主题）壳：黑粗标题 + 蓝下划线文字 tabs + 白斜卡面板（p3-actions-reference-v3「目标」节）
   const p3 = useUiChannel() === 'p3';
+  const p5 = useUiChannel() === 'p5';
   const [activePanel, setActivePanel] = useState<GoalPanel>(() => {
     try {
       const requestedPanel = sessionStorage.getItem('velvet:todos-goal-panel');
@@ -112,6 +113,12 @@ export const GoalDeck = (props: GoalDeckProps) => {
             <div>
               <h3 className="text-[22px] font-black leading-none" style={{ color: P3R.ink }}>目标</h3>
               <p className="mt-1 text-[12px] font-semibold" style={{ color: P3R.grey }}>本周推进和重要倒计时</p>
+            </div>
+          ) : p5 ? (
+            /* P5R：黑舞台上的裸区块标题走纸色（毯式的灰转黑只适用于纸卡内） */
+            <div>
+              <h3 className="text-[21px] font-black leading-none" style={{ color: '#f0e9df', fontFamily: '"Noto Sans SC", sans-serif', textShadow: '2px 2px 0 #000000' }}>目标</h3>
+              <p className="mt-1 text-[11px] font-bold" style={{ color: '#9b9791' }}>本周推进和重要倒计时</p>
             </div>
           ) : (
             <div>
