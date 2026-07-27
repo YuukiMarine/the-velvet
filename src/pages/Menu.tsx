@@ -541,7 +541,7 @@ export const Menu = () => {
           {pattern && (
             <span aria-hidden className="pointer-events-none absolute inset-[3px] overflow-hidden" style={{ clipPath: shape }}>
               <svg viewBox="0 0 100 100" className="absolute" style={{ left: '-30%', top: '2%', width: '160%', height: '160%' }}>
-                {[49, 42, 35, 28, 21, 14, 7].map((r) => (
+                {[50, 39, 28, 17, 6].map((r) => (
                   <polygon key={r} points={starPts(50, 50, r, -90 + 14)} fill="none" stroke="#9d0007" strokeWidth={2.4} strokeLinejoin="miter" />
                 ))}
               </svg>

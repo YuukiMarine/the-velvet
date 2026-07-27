@@ -409,7 +409,8 @@ export const BattleArena = () => {
       >
         PLAYER
       </span>
-      <P5Star size={56} fill={P5R.red} ring={P5R.ink} rot={-8} className="pointer-events-none absolute -bottom-4 -right-2" />
+      {/* 再往右下让开：原位会压住 HP/SP 行右端的 SP 数字 */}
+      <P5Star size={56} fill={P5R.red} ring={P5R.ink} rot={-8} className="pointer-events-none absolute -bottom-8 -right-7" />
     </div>
   );
 

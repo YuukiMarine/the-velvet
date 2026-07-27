@@ -10,7 +10,7 @@ import { ReadingArchive } from '@/components/astrology/ReadingArchive';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P4SkyCircle, P4Sparkle, P4_HEADER_BLEED } from '@/ui/p4Kit';
 import { P3R, P3RPage, GhostWords, P3PageHeader, slantClip } from '@/components/p3r/kit';
-import { P5R, P5Collage, P5SubBar, P5Star, P5Dots, P5Slab, P5RPage } from '@/components/p5r/kit';
+import { P5R, P5_FONT, roughSlant, P5Collage, P5SubBar, P5Star, P5Dots, P5Slab, P5RPage } from '@/components/p5r/kit';
 
 type Tab = 'daily' | 'long' | 'archive';
 
@@ -119,7 +119,7 @@ export function Astrology() {
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.2 }}
-      className={`max-w-xl mx-auto space-y-5 ${p5 ? 'p5-reskin relative' : ''}`}
+      className={`max-w-xl mx-auto space-y-5 ${p5 ? 'p5-reskin p5-onink relative' : ''}`}
     >
       {p5 && (
         <div aria-hidden className="pointer-events-none absolute -inset-x-4 -top-6 h-[200px]" style={{ zIndex: -1 }}>
@@ -211,6 +211,34 @@ export function Astrology() {
                   </div>
                 </button>
               </div>
+            );
+          })}
+        </div>
+      ) : p5 ? (
+        /* P5：三张斜纸片段签（选中翻红 + 纸白下划线）——原来的通用版把未选项交给
+           .p5-reskin 的「灰系→黑」，压在黑舞台上等于隐形 */
+        <div className="relative flex items-stretch">
+          {tabs.map((t, i) => {
+            const active = tab === t.id;
+            return (
+              <motion.button
+                key={t.id}
+                type="button"
+                whileTap={{ x: 2, y: 3 }}
+                onClick={() => { setTab(t.id); setDetailReading(null); }}
+                className="relative flex-1 px-1 py-2.5 text-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c00008]"
+                style={{ marginLeft: i > 0 ? -9 : 0, zIndex: active ? 4 : 3 - i }}
+              >
+                <span aria-hidden className="absolute inset-0" style={{ transform: 'translate(3px,4px)', background: P5R.ink, clipPath: roughSlant(280 + i, 13, 3) }} />
+                <span aria-hidden className="absolute inset-0" style={{ background: P5R.ink, clipPath: roughSlant(283 + i, 13, 3) }} />
+                <span aria-hidden className="absolute inset-[3px]" style={{ background: active ? P5R.red : P5R.paper, clipPath: roughSlant(286 + i, 12, 3) }} />
+                <span className="relative block text-[14px] font-black leading-tight" style={{ color: active ? P5R.paper : P5R.ink, fontFamily: P5_FONT }}>
+                  {t.label}
+                </span>
+                <span className="relative mt-0.5 block text-[10px] font-bold leading-none" style={{ color: active ? P5R.paper : P5R.grey }}>
+                  {t.hint}
+                </span>
+              </motion.button>
             );
           })}
         </div>
