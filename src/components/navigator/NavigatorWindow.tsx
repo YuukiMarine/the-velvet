@@ -173,24 +173,58 @@ const skinOf = (bright: boolean, p4 = false, p5 = false) => p5
   };
 type Skin = ReturnType<typeof skinOf>;
 
-/* P5 头像双圈（稿）：外一圈黑、内一圈白，两圈各自不规则且不同形，
-   再带一点旋转，读作“贴上去的大头贴”。 */
-const P5_AV_OUTER = 'polygon(4px 1px, calc(100% - 1px) 5px, calc(100% - 5px) calc(100% - 1px), 1px calc(100% - 4px))';
-const P5_AV_MID = 'polygon(2px 3px, calc(100% - 3px) 1px, calc(100% - 1px) calc(100% - 4px), 4px calc(100% - 2px))';
-const P5_AV_FACE = 'polygon(3px 2px, calc(100% - 2px) 4px, calc(100% - 4px) calc(100% - 2px), 2px calc(100% - 3px))';
+/* ── 头像框（照用户手绘 tx.svg 转译）────────────────────────
+   原稿是两条带洞的路径：外黑环 + 内白环，两圈各自是歪的四边形。
+   这里把三圈轮廓（黑外 / 白中 / 照面）归一化为百分比多边形，
+   三层同框叠放，露出来的就是两道宽窄不一的不规则环。bbox 103.12×91.56。 */
+const P5_AV_BLACK = 'polygon(0 0, 84.9% 7.3%, 100% 88.3%, 26.7% 100%)';
+const P5_AV_WHITE = 'polygon(11.6% 7.3%, 81.9% 11.7%, 92.7% 83%, 30.6% 91.8%)';
+const P5_AV_FACE = 'polygon(16.1% 10.3%, 80.6% 14.3%, 88.7% 79.9%, 32.3% 89.2%)';
 
-/** P5 头像壳：黑外圈 → 白中圈 → 面（内容居中） */
-const P5Avatar = ({ size = 34, rot = -3, children }: { size?: number; rot?: number; children: React.ReactNode }) => (
+/** P5 头像壳：黑外环 → 白环 → 照面（内容居中） */
+const P5Avatar = ({ size = 38, children }: { size?: number; children: React.ReactNode }) => (
   <span
     className="relative mt-0.5 flex shrink-0 items-center justify-center"
-    style={{ width: size, height: size, transform: `rotate(${rot}deg)` }}
+    style={{ width: size, height: size * (91.56 / 103.12) }}
   >
-    <span aria-hidden className="absolute inset-0" style={{ background: '#050505', clipPath: P5_AV_OUTER }} />
-    <span aria-hidden className="absolute inset-[2.5px]" style={{ background: '#f0e9df', clipPath: P5_AV_MID }} />
-    <span aria-hidden className="absolute inset-[5px]" style={{ background: '#050505', clipPath: P5_AV_FACE }} />
+    <span aria-hidden className="absolute inset-0" style={{ background: '#050505', clipPath: P5_AV_BLACK }} />
+    <span aria-hidden className="absolute inset-0" style={{ background: '#f0e9df', clipPath: P5_AV_WHITE }} />
+    <span aria-hidden className="absolute inset-0" style={{ background: '#050505', clipPath: P5_AV_FACE }} />
     <span className="relative flex items-center justify-center text-[#c00008]">{children}</span>
   </span>
 );
+
+/* ── 对话框（照用户手绘 dhk.svg 转译）──────────────────────
+   原稿：白多边形（描边）+ 黑多边形（面），左缘一个尖刺尾。bbox 241.16×61.17。
+   缩放口径：X 用 px（尾巴与右缘斜刀口尺寸恒定，气泡变宽不会把尾巴拉长），
+   Y 用 %（随行数等比）—— 这样样式比例在任意尺寸下都立得住。 */
+const BUB_EDGE_L = 'polygon(0 59.9%, 22.8px 26.4%, 24px 37.3%, 30.5px 31.3%, 39.3px 4.1%, 100% 0, calc(100% - 36.8px) 100%, 13.3px 84.7%, 23.7px 62.4%, 15.3px 68.9%, 12.8px 58%)';
+const BUB_FACE_L = 'polygon(6.2px 53.9%, 20px 35.4%, 22.7px 44.7%, 32.8px 38.7%, 40.8px 14.7%, calc(100% - 18.3px) 6.8%, calc(100% - 38px) 89.9%, 20.7px 75.8%, 27px 58.9%, 17.3px 64.3%, 15.3px 50%)';
+/* 右尾版 = 水平镜像（x → 100% - x） */
+const BUB_EDGE_R = 'polygon(100% 59.9%, calc(100% - 22.8px) 26.4%, calc(100% - 24px) 37.3%, calc(100% - 30.5px) 31.3%, calc(100% - 39.3px) 4.1%, 0 0, 36.8px 100%, calc(100% - 13.3px) 84.7%, calc(100% - 23.7px) 62.4%, calc(100% - 15.3px) 68.9%, calc(100% - 12.8px) 58%)';
+const BUB_FACE_R = 'polygon(calc(100% - 6.2px) 53.9%, calc(100% - 20px) 35.4%, calc(100% - 22.7px) 44.7%, calc(100% - 32.8px) 38.7%, calc(100% - 40.8px) 14.7%, 18.3px 6.8%, 38px 89.9%, calc(100% - 20.7px) 75.8%, calc(100% - 27px) 58.9%, calc(100% - 17.3px) 64.3%, calc(100% - 15.3px) 50%)';
+
+/** P5 气泡：描边层 + 面层两张多边形叠放，文字避开尾巴与斜刀口 */
+const P5Bubble = ({ side, children }: { side: 'cat' | 'user'; children: React.ReactNode }) => {
+  const left = side === 'cat';
+  return (
+    <div
+      className="relative max-w-[86%]"
+      style={{ filter: 'drop-shadow(5px 6px 0 #6d0000)', minHeight: 54 }}
+    >
+      <span aria-hidden className="absolute inset-0" style={{ background: left ? '#f0e9df' : '#050505', clipPath: left ? BUB_EDGE_L : BUB_EDGE_R }} />
+      <span aria-hidden className="absolute inset-0" style={{ background: left ? '#050505' : '#f0e9df', clipPath: left ? BUB_FACE_L : BUB_FACE_R }} />
+      <div
+        className={`relative flex min-h-[54px] items-center whitespace-pre-wrap text-sm font-bold leading-relaxed ${
+          left ? 'pl-[46px] pr-[32px] text-[#f0e9df]' : 'pl-[32px] pr-[46px] text-[#050505]'
+        }`}
+        style={{ paddingTop: 10, paddingBottom: 12 }}
+      >
+        {children}
+      </div>
+    </div>
+  );
+};
 
 /**
  * P5Spine —— p5-navigator 稿的黑色生长折线脊。
@@ -806,9 +840,13 @@ const MessageRow = ({ m, sk, bright, p5 = false, busy, onConfirm, onEdit, onCanc
   if (m.role === 'user') {
     return (
       <div className="flex justify-end" data-spine-side="user">
-        <div className={`max-w-[85%] whitespace-pre-wrap px-4 py-2.5 text-sm font-bold leading-relaxed ${sk.userBubble}`} style={sk.userBubbleStyle}>
-          {m.text}
-        </div>
+        {p5 ? (
+          <P5Bubble side="user">{m.text}</P5Bubble>
+        ) : (
+          <div className={`max-w-[85%] whitespace-pre-wrap px-4 py-2.5 text-sm font-bold leading-relaxed ${sk.userBubble}`} style={sk.userBubbleStyle}>
+            {m.text}
+          </div>
+        )}
       </div>
     );
   }
@@ -816,15 +854,19 @@ const MessageRow = ({ m, sk, bright, p5 = false, busy, onConfirm, onEdit, onCanc
     return (
       <div className="flex items-start gap-2.5" data-spine-side="cat">
         {p5 ? (
-          <P5Avatar size={36} rot={-4}><CatFace className="h-[18px] w-[18px]" /></P5Avatar>
+          <P5Avatar size={40}><CatFace className="h-[18px] w-[18px]" /></P5Avatar>
         ) : (
           <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center ${sk.avatar}`} style={{ ...sk.avatarStyle, clipPath: bright ? 'polygon(0 8%, 100% 0, 96% 100%, 2% 96%)' : undefined, borderRadius: bright ? undefined : ((sk.avatarStyle as React.CSSProperties | undefined)?.borderRadius ?? '0.65rem') }}>
             <CatFace className="h-[18px] w-[18px]" />
           </span>
         )}
-        <div className={`max-w-[85%] whitespace-pre-wrap px-4 py-2.5 text-sm font-bold leading-relaxed ${sk.catBubble}`} style={sk.catBubbleStyle}>
-          {m.text}
-        </div>
+        {p5 ? (
+          <P5Bubble side="cat">{m.text}</P5Bubble>
+        ) : (
+          <div className={`max-w-[85%] whitespace-pre-wrap px-4 py-2.5 text-sm font-bold leading-relaxed ${sk.catBubble}`} style={sk.catBubbleStyle}>
+            {m.text}
+          </div>
+        )}
       </div>
     );
   }
