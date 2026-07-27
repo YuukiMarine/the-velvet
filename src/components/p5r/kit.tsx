@@ -229,6 +229,62 @@ export const P5Burst = ({
   );
 };
 
+/**
+ * BubbleMark —— 气泡右上角的「！/ ？」粗白描边小角标（设计稿签名件，三频道通用）。
+ *
+ * 触发：文本里出现 ！! 就出叹号（优先），只出现 ？? 出问号，都没有则不渲染。
+ * 造型：不规则四边形黑底 + 粗糙白描边（两层异形错位），入场先弹出再回正并轻晃。
+ * 三个频道只换配色，形与动效共用。
+ */
+export type MarkChannel = 'p5' | 'p4' | 'p3';
+
+const MARK_SKIN: Record<MarkChannel, { face: string; edge: string; ink: string }> = {
+  p5: { face: '#050505', edge: '#f0e9df', ink: '#f0e9df' },
+  p4: { face: '#131313', edge: '#fff6d0', ink: '#ffd900' },
+  p3: { face: '#0a1230', edge: '#ffffff', ink: '#35d1e8' },
+};
+
+/** 从文本判定角标字符；无则 null */
+export const bubbleMarkOf = (text: string | undefined | null): '!' | '?' | null => {
+  if (!text) return null;
+  if (/[!！]/.test(text)) return '!';
+  if (/[?？]/.test(text)) return '?';
+  return null;
+};
+
+export const BubbleMark = ({ mark, channel = 'p5', size = 26, className, style }: {
+  mark: '!' | '?';
+  channel?: MarkChannel;
+  size?: number;
+  className?: string;
+  style?: CSSProperties;
+}) => {
+  const anim = useBoldness();
+  const sk = MARK_SKIN[channel];
+  return (
+    <motion.span
+      aria-hidden
+      className={`pointer-events-none absolute ${className ?? ''}`}
+      style={{ width: size, height: size * 1.12, ...style }}
+      initial={anim ? { scale: 0, rotate: -34, opacity: 0 } : false}
+      animate={anim
+        ? { scale: [0, 1.28, 1], rotate: [-34, 9, -6], opacity: 1 }
+        : { scale: 1, rotate: -6, opacity: 1 }}
+      transition={{ duration: 0.44, times: [0, 0.62, 1], ease: [0.2, 1.4, 0.4, 1], delay: 0.12 }}
+    >
+      {/* 粗糙白描边：外层白 + 内层面，两套不同的不规则多边形 */}
+      <span className="absolute inset-0" style={{ background: sk.edge, clipPath: 'polygon(14% 2%, 92% 0, 100% 78%, 76% 100%, 20% 96%, 0 24%)' }} />
+      <span className="absolute inset-[3px]" style={{ background: sk.face, clipPath: 'polygon(10% 6%, 88% 2%, 97% 74%, 72% 97%, 22% 92%, 3% 28%)' }} />
+      <span
+        className="absolute inset-0 flex items-center justify-center font-black leading-none"
+        style={{ color: sk.ink, fontSize: size * 0.72, fontFamily: P5_FONT, paddingBottom: size * 0.06 }}
+      >
+        {mark}
+      </span>
+    </motion.span>
+  );
+};
+
 /** 四角星闪光（✦） */
 export const P5Sparkle = ({ size = 14, color = P5R.red, className, style }: { size?: number; color?: string; className?: string; style?: CSSProperties }) => (
   <svg viewBox="0 0 24 24" width={size} height={size} className={className} style={style} aria-hidden>
