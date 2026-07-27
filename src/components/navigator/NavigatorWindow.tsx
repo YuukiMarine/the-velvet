@@ -44,18 +44,29 @@ const skinOf = (bright: boolean, p4 = false, p5 = false) => p5
   ? {
     // p5-navigator-reference-v2：红舞台（黑斜杠装饰）+ 纸信头 + 黑/纸尖角气泡（白圈硬影）+ 红发送
     root: undefined as string | undefined,
-    rootStyle: {
-      background: 'linear-gradient(115deg, transparent 61%, #050505 61.5%, #050505 67%, transparent 67.5%), linear-gradient(295deg, transparent 77%, #050505 77.5%, #050505 82%, transparent 82.5%), #b80000',
-    } as React.CSSProperties,
+    // 纯红舞台：黑色图形全交给生长折线脊（背景斜纹会与之打架）
+    rootStyle: { background: '#c00008' } as React.CSSProperties,
     headerSlab: 'bg-[#f0e9df]',
     headerStyle: { clipPath: 'polygon(2px 3px, 46% 0, calc(100% - 3px) 5px, calc(100% - 16px) calc(100% - 2px), 40% 100%, 0 calc(100% - 5px))', boxShadow: '0 5px 0 #000000' } as React.CSSProperties,
     headerText: { color: '#050505' } as React.CSSProperties,
+    // 猫话：黑面白字，左缘一个尖尾指向头像（p5-navigator 稿）
     catBubble: 'text-[#f0e9df] font-bold',
-    catBubbleStyle: { background: '#050505', clipPath: 'polygon(14px 2px, 55% 0, calc(100% - 2px) 4px, calc(100% - 7px) calc(100% - 2px), 44% 100%, 2px calc(100% - 5px), 0 13px)', boxShadow: '0 0 0 2.5px #f0e9df', borderRadius: 2 } as React.CSSProperties,
+    catBubbleStyle: {
+      background: '#050505',
+      clipPath: 'polygon(14px 6px, 62% 0, 100% 5px, calc(100% - 5px) calc(100% - 4px), 40% 100%, 15px calc(100% - 7px), 0 46%)',
+      filter: 'drop-shadow(5px 6px 0 #6d0000)',
+      borderRadius: 0,
+    } as React.CSSProperties,
+    // 用户话：纸面黑字，右缘尖尾
     userBubble: 'text-[#050505] font-bold',
-    userBubbleStyle: { background: '#f0e9df', clipPath: 'polygon(2px 3px, 48% 0, calc(100% - 14px) 2px, 100% 13px, calc(100% - 2px) calc(100% - 3px), 52% 100%, 7px calc(100% - 1px))', boxShadow: '0 0 0 2.5px #050505', borderRadius: 2 } as React.CSSProperties,
+    userBubbleStyle: {
+      background: '#f0e9df',
+      clipPath: 'polygon(0 4px, 55% 0, calc(100% - 14px) 6px, 100% 48%, calc(100% - 15px) calc(100% - 6px), 42% 100%, 4px calc(100% - 5px))',
+      filter: 'drop-shadow(5px 6px 0 #6d0000)',
+      borderRadius: 0,
+    } as React.CSSProperties,
     avatar: 'text-[#c00008]',
-    avatarStyle: { background: '#050505', boxShadow: '0 0 0 2.5px #f0e9df', clipPath: 'polygon(3px 1px, calc(100% - 1px) 4px, calc(100% - 4px) calc(100% - 2px), 1px calc(100% - 4px))' } as React.CSSProperties,
+    avatarStyle: { background: '#050505' } as React.CSSProperties,
     chip: 'text-[13px] font-black bg-[#f0e9df] text-[#050505]',
     chipStyle: { clipPath: 'polygon(10px 1px, calc(100% - 1px) 3px, calc(100% - 8px) calc(100% - 1px), 0 calc(100% - 3px))', boxShadow: '0 0 0 2px #050505, 3px 3.5px 0 #000000', paddingLeft: 16, paddingRight: 16 } as React.CSSProperties,
     inputBar: undefined as string | undefined,
@@ -161,6 +172,102 @@ const skinOf = (bright: boolean, p4 = false, p5 = false) => p5
     stampStyle: undefined as React.CSSProperties | undefined,
   };
 type Skin = ReturnType<typeof skinOf>;
+
+/* P5 头像双圈（稿）：外一圈黑、内一圈白，两圈各自不规则且不同形，
+   再带一点旋转，读作“贴上去的大头贴”。 */
+const P5_AV_OUTER = 'polygon(4px 1px, calc(100% - 1px) 5px, calc(100% - 5px) calc(100% - 1px), 1px calc(100% - 4px))';
+const P5_AV_MID = 'polygon(2px 3px, calc(100% - 3px) 1px, calc(100% - 1px) calc(100% - 4px), 4px calc(100% - 2px))';
+const P5_AV_FACE = 'polygon(3px 2px, calc(100% - 2px) 4px, calc(100% - 4px) calc(100% - 2px), 2px calc(100% - 3px))';
+
+/** P5 头像壳：黑外圈 → 白中圈 → 面（内容居中） */
+const P5Avatar = ({ size = 34, rot = -3, children }: { size?: number; rot?: number; children: React.ReactNode }) => (
+  <span
+    className="relative mt-0.5 flex shrink-0 items-center justify-center"
+    style={{ width: size, height: size, transform: `rotate(${rot}deg)` }}
+  >
+    <span aria-hidden className="absolute inset-0" style={{ background: '#050505', clipPath: P5_AV_OUTER }} />
+    <span aria-hidden className="absolute inset-[2.5px]" style={{ background: '#f0e9df', clipPath: P5_AV_MID }} />
+    <span aria-hidden className="absolute inset-[5px]" style={{ background: '#050505', clipPath: P5_AV_FACE }} />
+    <span className="relative flex items-center justify-center text-[#c00008]">{children}</span>
+  </span>
+);
+
+/**
+ * P5Spine —— p5-navigator 稿的黑色生长折线脊。
+ *
+ * 沿消息流从上往下走一条粗黑折线，每条消息在它自己那侧（猫左 / 用户右）
+ * 提供一个拐点，于是整条线在左右之间 zigzag。线画在消息列内部的绝对层，
+ * 所以会随列表一起滚动；新消息到达时用非线性缓动把 pathLength 从旧值
+ * 长到新值（“延伸到对话框处”）。装饰件：aria-hidden + 不吃指针。
+ */
+const P5Spine = ({ containerRef, count, phase }: {
+  containerRef: React.RefObject<HTMLDivElement | null>;
+  count: number;
+  phase: string;
+}) => {
+  const anim = useBoldness();
+  const [geo, setGeo] = useState<{ w: number; h: number; d: string }>({ w: 0, h: 0, d: '' });
+
+  useEffect(() => {
+    const host = containerRef.current;
+    if (!host) return;
+    const measure = () => {
+      const rows = Array.from(host.querySelectorAll<HTMLElement>('[data-spine-side]'));
+      const hostBox = host.getBoundingClientRect();
+      const w = host.clientWidth;
+      const h = Math.max(host.scrollHeight, host.clientHeight);
+      if (rows.length === 0 || w === 0) { setGeo({ w, h, d: '' }); return; }
+      const pts: Array<[number, number]> = [];
+      rows.forEach((row) => {
+        const side = row.dataset.spineSide;
+        const b = row.getBoundingClientRect();
+        const y = b.top - hostBox.top + host.scrollTop + b.height / 2;
+        // 拐点靠到气泡那侧的内侧（留出头像宽度）
+        const x = side === 'user' ? w - 26 : 26;
+        pts.push([x, y]);
+      });
+      // 首点之前先从顶部接一段，末点往下拖一截（稿上的“未完”感）
+      const first = pts[0];
+      const last = pts[pts.length - 1];
+      const all: Array<[number, number]> = [[first[0], Math.max(0, first[1] - 46)], ...pts, [last[0], last[1] + 34]];
+      const d = all.map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
+      setGeo({ w, h, d });
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(host);
+    const t = window.setTimeout(measure, 260); // 等气泡入场动画落定再量一次
+    return () => { ro.disconnect(); window.clearTimeout(t); };
+  }, [containerRef, count, phase]);
+
+  if (!geo.d) return null;
+  return (
+    <svg
+      aria-hidden
+      className="pointer-events-none absolute left-0 top-0"
+      width={geo.w}
+      height={geo.h}
+      viewBox={`0 0 ${geo.w} ${geo.h}`}
+      style={{ zIndex: 0 }}
+    >
+      {/* 暗红错位影（与气泡硬影同语言） */}
+      <path d={geo.d} fill="none" stroke="#6d0000" strokeWidth={13} strokeLinejoin="miter" strokeLinecap="butt" transform="translate(5 6)" />
+      <motion.path
+        key={count}
+        d={geo.d}
+        fill="none"
+        stroke="#050505"
+        strokeWidth={13}
+        strokeLinejoin="miter"
+        strokeLinecap="butt"
+        initial={anim ? { pathLength: 0.82 } : false}
+        animate={{ pathLength: 1 }}
+        // 非线性：先猛窜再收尾（稿上折线“甩”到位的手感）
+        transition={{ duration: 0.62, ease: [0.16, 1.1, 0.3, 1] }}
+      />
+    </svg>
+  );
+};
 
 export const NavigatorWindow = () => {
   const { user, settings, setCurrentPage, getDueTodosToday, getTodayTodoProgress } = useAppStore();
@@ -503,6 +610,7 @@ export const NavigatorWindow = () => {
 
               {/* 消息流（顶部上拉加载更早；隔 >5 分钟插居中时间戳） */}
               <div ref={listRef} onScroll={() => void onListScroll()} className="relative flex-1 space-y-3 overflow-y-auto px-4 pb-3 pt-4">
+                {isP5 && <P5Spine containerRef={listRef} count={nav.messages.length} phase={nav.phase} />}
                 {nav.hasOlder && (
                   <div className={`pb-1 text-center text-[11px] font-bold ${bright ? 'text-[#3c69c9]' : 'text-gray-500'}`}>
                     {bright && <span aria-hidden className="mb-0.5 block text-[13px] leading-none">⌃</span>}
@@ -513,13 +621,13 @@ export const NavigatorWindow = () => {
                   const prev = nav.messages[i - 1];
                   const showStamp = !prev || m.createdAt - prev.createdAt > TIME_GAP_MS;
                   return (
-                    <div key={m.id} className="space-y-3">
+                    <div key={m.id} className="relative space-y-3" style={{ zIndex: 1 }}>
                       {showStamp && (
                         <div className={`pt-1 text-center text-[10px] font-bold ${bright ? 'text-[#3c69c9]' : 'text-gray-500'}`}>
                           {formatBubbleTime(m.createdAt)}
                         </div>
                       )}
-                      <MessageRow m={m} sk={sk} bright={bright} busy={busyCardId === m.id}
+                      <MessageRow m={m} sk={sk} bright={bright} p5={isP5} busy={busyCardId === m.id}
                         onConfirm={() => void confirmCard(m)} onEdit={() => editCard(m)}
                         onCancel={() => nav.updateCard(m.id, { cardStatus: 'cancelled' })} />
                     </div>
@@ -682,8 +790,8 @@ const TypingRow = ({ sk, bright, bold }: { sk: Skin; bright: boolean; bold: bool
 );
 
 // ── 单条消息 ──
-const MessageRow = ({ m, sk, bright, busy, onConfirm, onEdit, onCancel }: {
-  m: NavigatorMessage; sk: Skin; bright: boolean; busy: boolean;
+const MessageRow = ({ m, sk, bright, p5 = false, busy, onConfirm, onEdit, onCancel }: {
+  m: NavigatorMessage; sk: Skin; bright: boolean; p5?: boolean; busy: boolean;
   onConfirm: () => void; onEdit: () => void; onCancel: () => void;
 }) => {
   if (m.role === 'summary') {
@@ -697,7 +805,7 @@ const MessageRow = ({ m, sk, bright, busy, onConfirm, onEdit, onCancel }: {
   }
   if (m.role === 'user') {
     return (
-      <div className="flex justify-end">
+      <div className="flex justify-end" data-spine-side="user">
         <div className={`max-w-[85%] whitespace-pre-wrap px-4 py-2.5 text-sm font-bold leading-relaxed ${sk.userBubble}`} style={sk.userBubbleStyle}>
           {m.text}
         </div>
@@ -706,10 +814,14 @@ const MessageRow = ({ m, sk, bright, busy, onConfirm, onEdit, onCancel }: {
   }
   if (m.role === 'cat') {
     return (
-      <div className="flex items-start gap-2.5">
-        <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center ${sk.avatar}`} style={{ ...sk.avatarStyle, clipPath: bright ? 'polygon(0 8%, 100% 0, 96% 100%, 2% 96%)' : undefined, borderRadius: bright ? undefined : ((sk.avatarStyle as React.CSSProperties | undefined)?.borderRadius ?? '0.65rem') }}>
-          <CatFace className="h-[18px] w-[18px]" />
-        </span>
+      <div className="flex items-start gap-2.5" data-spine-side="cat">
+        {p5 ? (
+          <P5Avatar size={36} rot={-4}><CatFace className="h-[18px] w-[18px]" /></P5Avatar>
+        ) : (
+          <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center ${sk.avatar}`} style={{ ...sk.avatarStyle, clipPath: bright ? 'polygon(0 8%, 100% 0, 96% 100%, 2% 96%)' : undefined, borderRadius: bright ? undefined : ((sk.avatarStyle as React.CSSProperties | undefined)?.borderRadius ?? '0.65rem') }}>
+            <CatFace className="h-[18px] w-[18px]" />
+          </span>
+        )}
         <div className={`max-w-[85%] whitespace-pre-wrap px-4 py-2.5 text-sm font-bold leading-relaxed ${sk.catBubble}`} style={sk.catBubbleStyle}>
           {m.text}
         </div>
