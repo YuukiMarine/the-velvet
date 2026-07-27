@@ -146,6 +146,24 @@ export const starPts = (cx: number, cy: number, R: number, rot = -90, innerRatio
   return pts.join(' ');
 };
 
+/**
+ * 抖动五角星点集 —— 每个内外顶点的半径按 seed 各自浮动，得到「手撕纸」的不规则星。
+ * 用途：贴纸式叠层里最外那圈白描边（正圆星缩放叠出来的边太匀，稿上是歪的）。
+ */
+export const jitterStarPts = (cx: number, cy: number, R: number, seed: number, jag = 0.08, rot = -90, innerRatio = 0.42): string => {
+  const rnd = mulberry(seed);
+  const pts: string[] = [];
+  for (let i = 0; i < 5; i++) {
+    const a = ((rot + i * 72) * Math.PI) / 180;
+    const b = ((rot + i * 72 + 36) * Math.PI) / 180;
+    const ro = R * (1 + (rnd() - 0.5) * 2 * jag);
+    const ri = R * innerRatio * (1 + (rnd() - 0.5) * 2 * jag);
+    pts.push(`${(cx + ro * Math.cos(a)).toFixed(1)},${(cy + ro * Math.sin(a)).toFixed(1)}`);
+    pts.push(`${(cx + ri * Math.cos(b)).toFixed(1)},${(cy + ri * Math.sin(b)).toFixed(1)}`);
+  }
+  return pts.join(' ');
+};
+
 /** 实心五角星：ring2→ring→fill 同形缩放叠层（贴纸式多层描边：尖角处自然更厚） */
 export const P5Star = ({
   size = 24,
