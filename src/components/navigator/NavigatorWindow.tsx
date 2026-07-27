@@ -226,6 +226,13 @@ const BUB_FACE_R = 'polygon(calc(100% - 6.2px) calc(50% + 2.4px), calc(100% - 20
  * 从下方 60° 逆时针转回正位，同时透明度 0→1；旋转轴取气泡尾巴那侧的底角，
  * 所以看上去是“从头像那头甩上来”。缓动非线性（过冲一点再回收）。D0 直接终态。
  */
+/** 角标落位（气泡右上角）：逐频道微调以贴合各自的轮廓 */
+const MARK_POS: Record<MarkChannel, React.CSSProperties> = {
+  p5: { right: 6, top: -10, zIndex: 3 },
+  p4: { right: 2, top: -7, zIndex: 3 },
+  p3: { right: 4, top: -9, zIndex: 3 },
+};
+
 const BubbleIn = ({ side, mark, markCh, children }: {
   side: 'cat' | 'user';
   mark?: '!' | '?' | null;
@@ -248,7 +255,9 @@ const BubbleIn = ({ side, mark, markCh, children }: {
           mark={mark}
           channel={markCh ?? 'p5'}
           size={19}
-          style={{ left: 16, top: -10, zIndex: 3 }}
+          // 逐频道微调：气泡轮廓不同（p5 右缘内斜 / p4 大圆角 / p3 平行四边形），
+          // 统一偏移会有的贴着、有的悬空
+          style={MARK_POS[markCh ?? 'p5']}
         />
       )}
       {children}
