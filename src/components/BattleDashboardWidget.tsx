@@ -4,6 +4,7 @@ import { useAppStore } from '@/store';
 import { isInShadowTime } from '@/constants';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P4Flower, P4Sparkle } from '@/ui/p4Kit';
+import { P5R, P5_FONT, roughQuad, roughBanner, P5Star, P5Dots } from '@/components/p5r/kit';
 
 /** 影时间扫描线：CRT 横纹叠层（只在暗底上叠，靠 mix-blend 压出微亮/微暗交替） */
 const ScanLines = ({ opacity = 0.5 }: { opacity?: number }) => (
@@ -20,7 +21,11 @@ const ScanLines = ({ opacity = 0.5 }: { opacity?: number }) => (
 
 export const BattleDashboardWidget = () => {
   const { persona, shadow, battleState, settings, stratum, setCurrentPage } = useAppStore();
-  const isP4 = useUiChannel() === 'p4';
+  const channel = useUiChannel();
+  const isP4 = channel === 'p4';
+  // P5R：首页「今日仪式」横滑组里的其他卡都是撕边红幅，这张过去还留着圆角灰卡，
+  // 在红频道里非常出戏——换成同一张 roughBanner 幅面（影/暗红衬/红面三层）
+  const isP5 = channel === 'p5';
 
   const [inShadowTime, setInShadowTime] = useState(false);
 
@@ -44,6 +49,67 @@ export const BattleDashboardWidget = () => {
   const shadowHpPct = shadow
     ? Math.min(100, (shadow.currentHp / shadow.maxHp) * 100)
     : 0;
+
+  if (isP5) {
+    const personaName = persona?.equippedMaskAttribute
+      ? (persona.attributePersonas?.[persona.equippedMaskAttribute]?.name ?? '反抗者')
+      : '反抗者';
+    const status = !persona
+      ? '唤醒 Persona →'
+      : !shadow
+        ? `${personaName} · 识破暗影 →`
+        : stratum
+          ? `${personaName} · ${stratum.name} ${stratum.baseFloor + (stratum.nodes.find(n => n.id === stratum.currentNodeId)?.floor ?? 0)}F`
+          : `${personaName} · ${shadow.name} Lv.${shadow.level}`;
+    return (
+      <motion.button
+        type="button"
+        whileTap={{ x: 2, y: 3 }}
+        onClick={() => setCurrentPage('battle')}
+        aria-label={inShadowTime ? '逆影战场：影时间进行中' : '逆影战场'}
+        className="relative block h-full min-h-[86px] w-full cursor-pointer select-none text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c00008]"
+      >
+        <span aria-hidden className="pointer-events-none absolute inset-0" style={{ transform: 'translate(5px, 6px)', background: P5R.ink, clipPath: roughBanner(47.7) }} />
+        <span aria-hidden className="pointer-events-none absolute -inset-x-1 -top-1 bottom-1" style={{ background: inShadowTime ? P5R.ink : P5R.redDeep, clipPath: roughBanner(47.4) }} />
+        <span aria-hidden className="pointer-events-none absolute inset-0" style={{ background: inShadowTime ? '#5c0004' : P5R.red, clipPath: roughBanner(47) }} />
+        {/* 影时间：幅面上洒一层黑网点当「夜」 */}
+        {inShadowTime && (
+          <P5Dots className="pointer-events-none absolute inset-0" style={{ clipPath: roughBanner(47) }} dot={1.4} gap={9} color="#2a0002" />
+        )}
+        <span className="relative flex h-full min-h-[86px] items-center gap-3.5 py-3 pl-3 pr-4">
+          <span aria-hidden className="relative flex h-14 w-14 shrink-0 items-center justify-center" style={{ background: P5R.ink, clipPath: roughQuad(48.3, 6), boxShadow: `0 0 0 2.5px ${P5R.paper}` }}>
+            <svg viewBox="0 0 24 24" width={28} height={28}>
+              <path d="M13.6 1.5 L5.2 13.4 h5.1 l-2 9.1 L17.1 10 h-5.2 Z" fill={P5R.paper} />
+            </svg>
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[17px] font-black leading-tight" style={{ color: P5R.white, fontFamily: P5_FONT, textShadow: '2px 2px 0 #000000' }}>
+              逆影战场
+            </span>
+            <span className="mt-1 block truncate text-[12px] font-bold" style={{ color: P5R.white }}>{status}</span>
+          </span>
+          {inShadowTime ? (
+            <motion.span
+              animate={{ scale: [1, 1.06, 1] }}
+              transition={{ repeat: Infinity, duration: 1.6 }}
+              className="relative flex shrink-0 items-center gap-1 px-2 py-1 text-[12px] font-black leading-none"
+              style={{ color: P5R.ink, fontFamily: P5_FONT }}
+            >
+              <span aria-hidden className="absolute inset-0" style={{ background: P5R.paper, clipPath: roughQuad(48.9, 3) }} />
+              <span className="relative flex items-center gap-1">
+                <P5Star size={12} fill={P5R.red} />
+                影时间
+              </span>
+            </motion.span>
+          ) : (
+            <span className="shrink-0 text-[10px] font-black leading-none" style={{ color: P5R.white }}>
+              {settings.battleShadowTimeStart ?? 20}:00 显形
+            </span>
+          )}
+        </span>
+      </motion.button>
+    );
+  }
 
   // Text colour helpers — swap between dark-bg (shadow time) and light/dark-aware (non-shadow)
   // P4：非影时间走奶油纸卡 + 墨字（黄舞台语汇）；影时间仍是暗底，字色沿用亮系。

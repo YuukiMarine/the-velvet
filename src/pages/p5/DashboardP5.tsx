@@ -17,7 +17,7 @@ import { useBoldness } from '@/utils/boldness';
 import { useAppStore, toLocalDateKey } from '@/store';
 import type { AttributeId, CallingCard } from '@/types';
 import {
-  P5R, P5_FONT, roughQuad, starPts,
+  P5R, P5_FONT, roughQuad, roughBanner, starPts,
   P5Panel, P5Collage, P5SubBar, P5Wedge, P5Chip, P5Star, P5StarOutline, P5Burst, P5Sparkle, P5Dots, P5Slab, P5RPage,
 } from '@/components/p5r/kit';
 import { TodoCompleteModal } from '@/components/TodoCompleteModal';
@@ -55,9 +55,11 @@ const WEEKDAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 // ── 真实月相（历元推算与 P3 版同源；渲染为设计稿的黑月牙图形）────────────────
 const SYNODIC_DAYS = 29.530588853;
 const NEW_MOON_EPOCH = Date.UTC(2000, 0, 6, 18, 14);
+const MOON_NAMES = ['新月', '娥眉月', '上弦月', '盈凸月', '满月', '亏凸月', '下弦月', '残月'];
 const moonPhaseOf = (date: Date) => {
   const days = (date.getTime() - NEW_MOON_EPOCH) / 86400000;
-  return (((days % SYNODIC_DAYS) + SYNODIC_DAYS) % SYNODIC_DAYS) / SYNODIC_DAYS; // 0 新月 → 0.5 满月
+  const phase = (((days % SYNODIC_DAYS) + SYNODIC_DAYS) % SYNODIC_DAYS) / SYNODIC_DAYS; // 0 新月 → 0.5 满月
+  return { phase, name: MOON_NAMES[Math.round(phase * 8) % 8], illum: (1 - Math.cos(2 * Math.PI * phase)) / 2 };
 };
 const moonLitPath = (phase: number, r: number, c: number) => {
   const rx = Math.max(0.01, Math.abs(Math.cos(2 * Math.PI * phase)) * r);
@@ -65,15 +67,30 @@ const moonLitPath = (phase: number, r: number, c: number) => {
   const term = phase > 0.25 && phase < 0.75 ? outer : 1 - outer;
   return `M ${c} ${c - r} A ${r} ${r} 0 0 ${outer} ${c} ${c + r} A ${rx} ${r} 0 0 ${term} ${c} ${c - r} Z`;
 };
-/** 纸面月相块：暗面涂黑、亮面留纸色 + 黑描边圈（满月 = 亮纸圆，新月 = 黑饼——真实月龄） */
+/**
+ * 月相块（P3 同口径，换 P5 皮）：黑饼打底、亮面留纸色 + 黑锁边圈，
+ * 亮面按盈亏方向裁切生长入场；旁边给出月相名与 LUNAR 亮面百分比——
+ * 否则满月时只剩一个纸色圆，读不出「这是月相」。
+ */
 const MoonGlyph = ({ date }: { date: Date }) => {
-  const phase = moonPhaseOf(date);
+  const { phase } = moonPhaseOf(date);
+  const anim = useBoldness();
+  const waxing = phase < 0.5;
   return (
-    <svg viewBox="0 0 36 36" className="h-9 w-9 shrink-0" aria-hidden>
-      <circle cx="18" cy="18" r="15" fill={P5R.ink} />
-      <path d={moonLitPath(phase, 15, 18)} fill={P5R.paper} />
-      <circle cx="18" cy="18" r="15" fill="none" stroke={P5R.ink} strokeWidth="2.5" />
-    </svg>
+    <span aria-hidden className="relative flex h-10 w-10 shrink-0 items-center justify-center" style={{ background: P5R.ink, clipPath: roughQuad(7.3, 4) }}>
+      <svg viewBox="0 0 36 36" className="h-[30px] w-[30px]">
+        <circle cx="18" cy="18" r="15" fill="#2a2926" />
+        <motion.path
+          d={moonLitPath(phase, 15, 18)}
+          fill={P5R.paper}
+          initial={anim ? { clipPath: waxing ? 'inset(0% 0% 0% 100%)' : 'inset(0% 100% 0% 0%)' } : false}
+          animate={{ clipPath: 'inset(0% 0% 0% 0%)' }}
+          transition={{ duration: 0.8, ease: [0.3, 0, 0.2, 1], delay: 0.2 }}
+        />
+        <circle cx="18" cy="18" r="15" fill="none" stroke={P5R.paper} strokeWidth="2" />
+      </svg>
+      <span className="absolute -right-[3px] -top-[3px] h-[8px] w-[10px]" style={{ background: P5R.red, clipPath: 'polygon(28% 0, 100% 0, 72% 100%, 0 100%)' }} />
+    </span>
   );
 };
 
@@ -95,9 +112,15 @@ const starPathAt = (radii: number[]) => {
   }
   return `${d}Z`;
 };
-/** 等级 → 臂长：保底 0.77R（Lv.1 也要有设计稿那种撑开面板的大星），升级仍可见地长角 */
+/** 等级 → 臂长：低档起步压到 0.26R，升级才「长得出来」（外圈由同心等级星环撑满面板） */
 const levelRadius = (level: number, maxLevel: number) =>
-  STAR_R * (0.72 + 0.28 * Math.max(0, Math.min(1, level / Math.max(1, maxLevel))));
+  STAR_R * (0.26 + 0.74 * Math.max(0, Math.min(1, level / Math.max(1, maxLevel))));
+
+/** 等级星环底色：内圈近纸白 → 外圈深灰（黑舞台上的档位刻度，纯色不用透明度） */
+const ringColor = (lvl: number, ringCount: number) => {
+  const t = lvl / ringCount;
+  return `rgb(${Math.round(222 - t * 130)}, ${Math.round(216 - t * 128)}, ${Math.round(203 - t * 122)})`;
+};
 
 interface StarItem {
   id: AttributeId;
@@ -118,9 +141,12 @@ const StarRadarP5 = ({ items, onSelect, showLabels = true }: {
 }) => {
   const radii = items.slice(0, 5).map((it) => levelRadius(it.level, it.maxLevel));
   const dataPath = starPathAt(radii);
-  // 标签锚点：贴各自臂端外侧（随等级臂长走），按方位智能对齐（左角右靠、右角左靠、顶底居中）
+  // 同心等级星环（P3 同口径）：每档一圈同色系五角星、内浅外深，由外到内实心覆盖成环带；
+  // 红数据星的角尖落在哪一圈 = 该维度当前几级，一眼可读
+  const ringCount = Math.min(10, Math.max(1, items[0]?.maxLevel ?? 5));
+  // 标签锚点：固定贴在最外圈之外（星环已撑满面板，跟着臂长走会在低等级时挤到中心）
   const labelAt = (i: number) => {
-    const [x, y] = pt(armAngle(i), Math.min(radii[i] * 1.06 + 14, STAR_R * 1.02));
+    const [x, y] = pt(armAngle(i), STAR_R * 1.03);
     const dx = x - STAR_CX;
     const dy = y - STAR_CY;
     const tx = dx < -30 ? -86 : dx > 30 ? -42 : -50;
@@ -132,12 +158,17 @@ const StarRadarP5 = ({ items, onSelect, showLabels = true }: {
       {/* 星与标签同处一个斜切平面，标签再反变换回正（字恒水平） */}
       <div className="relative" style={{ transform: `skewX(${STAR_SKEW}deg) scaleY(${STAR_SCALEY})` }}>
         <svg viewBox="0 0 360 344" className="w-full overflow-visible" aria-hidden>
-          {/* 硬影星（纯黑，右下错位） */}
-          <path d={dataPath} fill="#000000" transform="translate(7 9)" />
-          {/* 灰星本体 */}
-          <path d={dataPath} fill={P5R.grey} strokeLinejoin="miter" />
-          {/* 中心红星 */}
-          <polygon points={starPts(STAR_CX, STAR_CY, 40)} fill={P5R.red} />
+          {/* 整组星环的黑硬影（一次性打在最外圈上，内圈不用各自带影） */}
+          <path d={starPathAt(Array(5).fill(levelRadius(ringCount, ringCount)))} fill="#000000" transform="translate(7 9)" />
+          {/* 同心等级星环：由外档画到内档，后画的小星盖出环带 */}
+          {Array.from({ length: ringCount }).map((_, k) => {
+            const lvl = ringCount - k;
+            const r = levelRadius(lvl, ringCount);
+            return <path key={lvl} d={starPathAt([r, r, r, r, r])} fill={ringColor(lvl, ringCount)} />;
+          })}
+          {/* 中心红星 = 数据星：五臂各自随等级长短，角尖落在对应档位的环带上 */}
+          <path d={dataPath} fill="#5c0004" transform="translate(4 5)" />
+          <path d={dataPath} fill={P5R.red} strokeLinejoin="miter" />
         </svg>
         {showLabels && items.slice(0, 5).map((it, i) => {
           const pos = labelAt(i);
@@ -344,21 +375,8 @@ const RitualSlabP5 = ({ icon, title, sub, onClick, trailing, seed = 21 }: {
     </span>
   </button>
 );
-/** RitualSlabP5 专用撕边形（模块级函数便于 seed 派生） */
-const roughOctLocal = (seed: number) => {
-  // 横幅左右两端斜切更狠（设计稿红幅两端是斜刀口）
-  const r = ((n: number) => {
-    let a = (Math.round(n * 1000) ^ 0x9e3779b9) >>> 0 || 1;
-    return () => {
-      a |= 0; a = (a + 0x6d2b79f5) | 0;
-      let t = Math.imul(a ^ (a >>> 15), 1 | a);
-      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-    };
-  })(seed);
-  const j = (amp: number) => (r() * amp).toFixed(1);
-  return `polygon(${j(14)}px ${j(8)}px, 40% ${j(5)}px, calc(100% - ${j(16)}px) ${j(8)}px, calc(100% - ${j(6)}px) calc(50% + ${j(8)}px), calc(100% - ${j(18)}px) calc(100% - ${j(8)}px), 55% calc(100% - ${j(5)}px), ${j(16)}px calc(100% - ${j(9)}px), ${j(5)}px calc(50% - ${j(8)}px))`;
-};
+/** RitualSlabP5 专用撕边形 —— 已上收到 kit（roughBanner），黑猫窗/战场挂件共用同一形 */
+const roughOctLocal = roughBanner;
 
 /** 塔罗三连小卡堆（横幅右端饰件） */
 const TarotStackGlyph = () => (
@@ -416,6 +434,7 @@ export const DashboardP5 = () => {
   });
 
   const now = new Date();
+  const moon = moonPhaseOf(now);
   const subtext = useMemo(() => {
     const pool = SUBTEXTS[getSlot(now.getHours())];
     return pool[Math.floor(Math.random() * pool.length)];
@@ -639,24 +658,26 @@ export const DashboardP5 = () => {
           </div>
 
           <div className="flex items-start justify-between gap-3">
-            {/* 拼贴大字（设计稿瓷砖配色：夺=红底黑字 / 回=纸底黑 / 今=纸底灰 / 天=黑底灰白） */}
+            {/* 拼贴大字「靛蓝色房间」（五块瓷砖异色穿插，配色循环沿用稿上口径） */}
             <div className="min-w-0 pt-1">
               <P5Collage
-                size={49}
+                size={33}
+                gap={4}
                 tiles={[
-                  { ch: '夺', bg: P5R.red, fg: P5R.ink, scale: 1.14, rot: -4, dy: 0 },
-                  { ch: '回', bg: P5R.paper, fg: P5R.ink, rot: 2.5, dy: 10 },
-                  { ch: '今', bg: P5R.paper, fg: P5R.grey, rot: -2, dy: 3 },
-                  { ch: '天', bg: P5R.ink, fg: P5R.greyLight, rot: 3, dy: 12 },
+                  { ch: '靛', bg: P5R.red, fg: P5R.ink, scale: 1.1, rot: -4, dy: 0 },
+                  { ch: '蓝', bg: P5R.paper, fg: P5R.ink, rot: 2.5, dy: 9 },
+                  { ch: '色', bg: P5R.paper, fg: P5R.grey, rot: -2, dy: 3 },
+                  { ch: '房', bg: P5R.ink, fg: P5R.greyLight, rot: 3, dy: 11 },
+                  { ch: '间', bg: P5R.red, fg: P5R.white, rot: -2.6, dy: 5 },
                 ]}
               />
-              <div className="mt-3 pl-8">
-                <P5SubBar segs={[{ t: 'TAKE', c: P5R.red }, { t: 'BACK', c: P5R.white }]} />
+              <div className="mt-3 pl-6">
+                <P5SubBar segs={[{ t: 'THE', c: P5R.red }, { t: 'VELVET', c: P5R.white }]} />
               </div>
             </div>
 
             {/* 日期纸卡：切角 + 月相 + 两行问候 + 大红日数字 + JUL / SAT */}
-            <motion.div className="relative w-[152px] shrink-0" {...enter(0.12)}>
+            <motion.div className="relative w-[168px] shrink-0" {...enter(0.12)}>
               <div aria-hidden className="absolute inset-0" style={{ transform: 'translate(4px,5px)', background: P5R.ink, clipPath: 'polygon(18px 0, 100% 0, 100% 100%, 0 100%, 0 18px)' }} />
               <div aria-hidden className="absolute inset-0" style={{ background: P5R.paper, clipPath: 'polygon(18px 0, 100% 0, 100% 100%, 0 100%, 0 18px)', boxShadow: `inset 0 0 0 2.5px ${P5R.ink}` }} />
               <div className="relative px-3.5 py-3">
@@ -671,7 +692,14 @@ export const DashboardP5 = () => {
                     <div className="line-clamp-2 min-w-0 text-[12px] font-black leading-[1.35]" style={{ color: P5R.ink }}>{subLine1}</div>
                   )}
                 </div>
-                <div className="mt-1.5 flex items-end justify-end gap-1.5">
+                {/* 月相读数：名 + LUNAR 亮面百分比（P3 同口径，只有图形读不出月相） */}
+                <div className="mt-1.5 flex items-center gap-1.5">
+                  <span className="text-[11px] font-black leading-none" style={{ color: P5R.ink, fontFamily: P5_FONT }}>{moon.name}</span>
+                  <span className="text-[9px] font-black leading-none tracking-[0.14em]" style={{ color: P5R.red }}>
+                    LUNAR {Math.round(moon.illum * 100)}%
+                  </span>
+                </div>
+                <div className="mt-1 flex items-end justify-end gap-1.5">
                   <span className="text-[54px] font-black leading-none tabular-nums" style={{ color: P5R.redHot, fontFamily: P5_FONT }}>{now.getDate()}</span>
                   <span className="flex flex-col items-center gap-1 pb-1">
                     <span className="text-[14px] font-black leading-none" style={{ color: P5R.ink }}>{MONTHS[now.getMonth()]}</span>
