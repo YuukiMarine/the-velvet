@@ -17,6 +17,7 @@ import {
 import { DailyDivination, Fortune, TarotOrientation } from '@/types';
 import { CardBack } from './CardBack';
 import { TarotCardSVG } from './TarotCardSVG';
+import { CardNameReveal } from './CardNameReveal';
 import { ShuffleAnim } from './ShuffleAnim';
 import { buildDailyRequest, callDailyAI, formatApiError } from '@/utils/tarotAI';
 import { buildOfflineDaily } from '@/utils/tarotOffline';
@@ -46,6 +47,44 @@ interface Candidate {
   orientation: TarotOrientation;
 }
 
+// ── 未完成抽取的暂存（仪式感保护）──────────────────────────────────────────
+/**
+ * 抽牌到完成解读之间会经过一次网络请求。以前这一段是纯内存状态：网络抖动、模型报错、
+ * 或者用户切走进程回来，候选牌就重新洗一遍——"我抽到的那张"没了，仪式感直接塌掉。
+ * 这里把当日候选与已选下标落到 localStorage：
+ *   - 只存牌 id + 正逆位 + 已选下标，几十字节，不进 Dexie 免得为它加一张表；
+ *   - 按日期 key，跨日自然失效；
+ *   - 解读成功写入 dailyDivination 后清空。
+ * 恢复时若已经选过牌，直接回到「重试 / 离线兜底」而不是重抽，牌面保持不变。
+ */
+const PENDING_KEY = 'velvet.dailyDraw.pending.v1';
+
+interface PendingDraw {
+  date: string;
+  cards: Array<{ id: string; orientation: TarotOrientation }>;
+  pickedIndex: number | null;
+}
+
+const readPending = (): PendingDraw | null => {
+  try {
+    const raw = localStorage.getItem(PENDING_KEY);
+    if (!raw) return null;
+    const p = JSON.parse(raw) as PendingDraw;
+    if (!p || p.date !== toLocalDateKey() || !Array.isArray(p.cards) || p.cards.length === 0) return null;
+    return p;
+  } catch {
+    return null;
+  }
+};
+
+const writePending = (p: PendingDraw) => {
+  try { localStorage.setItem(PENDING_KEY, JSON.stringify(p)); } catch { /* 隐私模式/配额满：降级为不保留 */ }
+};
+
+const clearPending = () => {
+  try { localStorage.removeItem(PENDING_KEY); } catch { /* 同上 */ }
+};
+
 export function DailyDraw() {
   const { dailyDivination, settings, attributes, saveDailyDivination, getRecentActivitiesForDaily } = useAppStore();
 
@@ -60,7 +99,7 @@ export function DailyDraw() {
 
   const noApiKey = !settings.summaryApiKey;
 
-  // 生成候选（每日塔罗仅用 22 张大阿卡纳）
+  // 生成候选（每日塔罗仅用 22 张大阿卡纳）——同时落盘，供中断后恢复
   const rollCandidates = () => {
     const cards = drawRandomCards(3, MAJOR_ARCANA);
     const list: Candidate[] = cards.map(c => ({
@@ -68,6 +107,11 @@ export function DailyDraw() {
       orientation: randomOrientation(),
     }));
     setCandidates(list);
+    writePending({
+      date: toLocalDateKey(),
+      cards: list.map(c => ({ id: c.card.id, orientation: c.orientation })),
+      pickedIndex: null,
+    });
   };
 
   // 初始化：若今日已抽直接 done，否则进入 intro
@@ -75,8 +119,27 @@ export function DailyDraw() {
   // App 入口的 visibilitychange 已经在跨日时调 loadDailyDivination()，这里是双保险。
   useEffect(() => {
     if (dailyDivination && dailyDivination.date === toLocalDateKey()) {
+      clearPending();
       setPhase('done');
       return;
+    }
+    // 有当日暂存 → 恢复同一副候选；已经选过牌就直接回到「重试 / 离线兜底」，不重抽
+    const pending = readPending();
+    if (pending) {
+      const restored = pending.cards
+        .map(c => ({ card: TAROT_BY_ID[c.id], orientation: c.orientation }))
+        .filter((c): c is Candidate => !!c.card);
+      if (restored.length === pending.cards.length) {
+        setCandidates(restored);
+        if (pending.pickedIndex !== null && restored[pending.pickedIndex]) {
+          setPickedIndex(pending.pickedIndex);
+          setErrorMsg('上次的解读没能完成——这张牌已经为你留着，直接继续就好。');
+          setPhase('error');
+        } else {
+          setPhase('pick');
+        }
+        return;
+      }
     }
     rollCandidates();
     setPhase('intro');
@@ -86,9 +149,14 @@ export function DailyDraw() {
     return () => { abortRef.current?.abort(); };
   }, []);
 
-  const handlePick = async (idx: number, useOffline = false) => {
-    if (phase !== 'pick') return;
+  // force：从 error 态重试时用。phase 是闭包里的旧值，先 setPhase 再调这里读到的仍是
+  // 'error'，会被守卫挡掉——这也是「重试 AI 解读 / 使用离线兜底」一直点不动的原因。
+  const handlePick = async (idx: number, useOffline = false, force = false) => {
+    if (!force && phase !== 'pick') return;
     setPickedIndex(idx);
+    // 先把「选了哪张」落盘：从这一刻起中断都不该丢牌
+    const cur = readPending();
+    if (cur) writePending({ ...cur, pickedIndex: idx });
     setPhase('flipping');
 
     // 翻牌动画 + 随后请求
@@ -159,20 +227,17 @@ export function DailyDraw() {
     };
 
     await saveDailyDivination(drawn);
+    clearPending();
     setPhase('done');
   };
 
-  const handleTryOffline = () => {
+  const resume = (useOffline: boolean) => {
     if (pickedIndex === null) return;
     setErrorMsg(null);
-    void handlePick(pickedIndex, true);
+    void handlePick(pickedIndex, useOffline, true);
   };
-
-  const handleRetryAI = () => {
-    if (pickedIndex === null) return;
-    setErrorMsg(null);
-    void handlePick(pickedIndex, false);
-  };
+  const handleTryOffline = () => resume(true);
+  const handleRetryAI = () => resume(false);
 
   // ── 视图 ──────────────────────────────────────────────────
 
@@ -379,6 +444,15 @@ function FlipReveal({
           />
         </div>
       </motion.div>
+      {/* 牌名大字：翻面完成即亮相（逆位追「· 逆位」） */}
+      {revealed && (
+        <CardNameReveal
+          name={candidate.card.name}
+          nameEn={candidate.card.nameEn}
+          reversed={candidate.orientation === 'reversed'}
+          delay={0.1}
+        />
+      )}
       {loading && (
         <div className="flex items-center gap-2 text-xs text-primary">
           <motion.span
@@ -427,6 +501,14 @@ function DoneView({ d }: { d: DailyDivination }) {
           </motion.div>
         </motion.div>
       </div>
+
+      {/* 牌名大字（已完成视图同样亮相，逆位追「· 逆位」） */}
+      <CardNameReveal
+        name={card.name}
+        nameEn={card.nameEn}
+        reversed={d.orientation === 'reversed'}
+        delay={0.18}
+      />
 
       {/* 加成卡 */}
       <motion.div

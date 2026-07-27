@@ -15,58 +15,12 @@ import { useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import type { Confidant } from '@/types';
 import { TAROT_BY_ID } from '@/constants/tarot';
-import { TarotCardSVG, MAJOR_SYMBOLS } from '@/components/astrology/TarotCardSVG';
+import { TarotCardSVG } from '@/components/astrology/TarotCardSVG';
 import { useBoldness } from '@/utils/boldness';
 import { triggerLightHaptic } from '@/utils/feedback';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { useAppStore } from '@/store';
 import { P3R, slantClip } from '@/components/p3r/kit';
-
-/**
- * P3R 正面卡（p3-cooperation-reference-v2 中央大卡）：纯塔罗牌面——
- * 顶部罗马数字+双三角 → 青轨道环+放大的大阿卡纳符号 → 底部牌位行。
- * （名字/LV/属性/关系描述全部下沉到卡下方铭牌，卡面只当"牌"看）
- */
-const P3FrontFace = ({ c }: { c: Confidant }) => {
-  const card = TAROT_BY_ID[c.arcanaId];
-  const sym = MAJOR_SYMBOLS[c.arcanaId] ?? '✦';
-  return (
-    <div
-      className="flex h-full w-full flex-col items-center rounded-[14px] bg-white px-3 pb-5 pt-4"
-      style={{ border: '1px solid rgba(147,190,222,0.45)', boxShadow: '0 16px 36px -14px rgba(38,96,140,0.35)' }}
-    >
-      {/* 顶部：罗马数字 + 左右小蓝三角 */}
-      <div className="flex items-center gap-2.5">
-        <span aria-hidden className="h-0 w-0 border-y-[4px] border-y-transparent border-r-[7px]" style={{ borderRightColor: P3R.blue }} />
-        <span className="text-[18px] font-black tracking-[0.1em]" style={{ color: P3R.blueDeep, fontFamily: 'Georgia, serif' }}>
-          {card?.roman ?? '—'}
-        </span>
-        <span aria-hidden className="h-0 w-0 border-y-[4px] border-y-transparent border-l-[7px]" style={{ borderLeftColor: P3R.blue }} />
-      </div>
-      {/* 中央：青轨道环 + 放大符号（逆位只倒符号，文字恒正读） */}
-      <div className="relative flex min-h-0 flex-1 items-center justify-center self-stretch">
-        <svg viewBox="0 0 160 140" className="pointer-events-none absolute inset-0 m-auto h-full w-full" aria-hidden>
-          <ellipse cx="80" cy="70" rx="70" ry="40" fill="none" stroke="rgba(53,209,232,0.5)" strokeWidth="1" transform="rotate(-16 80 70)" />
-          <ellipse cx="80" cy="70" rx="48" ry="24" fill="none" stroke="rgba(53,209,232,0.28)" strokeWidth="0.8" strokeDasharray="2 4" transform="rotate(-16 80 70)" />
-          <circle cx="22" cy="94" r="3.4" fill="#35d1e8" />
-          <circle cx="140" cy="44" r="2.4" fill="#7fd8ee" />
-          <circle cx="122" cy="102" r="1.8" fill="rgba(53,209,232,0.6)" />
-        </svg>
-        <span
-          className="relative leading-none"
-          style={{ fontSize: '78px', color: P3R.blue, transform: c.orientation === 'reversed' ? 'rotate(180deg)' : undefined }}
-          aria-hidden
-        >
-          {sym}
-        </span>
-      </div>
-      {/* 底部牌位行（罗马数已在顶部，此处只留牌名·正逆） */}
-      <div className="max-w-full truncate text-[12px] font-black tracking-wide" style={{ color: P3R.blue }}>
-        {card?.name ?? c.arcanaId}{c.orientation === 'reversed' ? ' · 逆位' : ' · 正位'}
-      </div>
-    </div>
-  );
-};
 
 const CARD_W = 182;
 const CARD_H = Math.round(CARD_W * 1.6); // TarotCardSVG 比例
@@ -415,11 +369,7 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
             </button>
           ) : (
             <button key={item.id} type="button" onClick={() => onOpenDetail(item.id)} className="shrink-0" style={{ scrollSnapAlign: 'center' }}>
-              {p3 ? (
-                <div style={{ width: CARD_W * 0.8, height: CARD_H * 0.8 }}><P3FrontFace c={item} /></div>
-              ) : (
-                <TarotCardSVG card={TAROT_BY_ID[item.arcanaId]} orientation={item.orientation} width={CARD_W * 0.8} staticCard showOrientationTag={false} />
-              )}
+              <TarotCardSVG card={TAROT_BY_ID[item.arcanaId]} orientation={item.orientation} width={CARD_W * 0.8} staticCard showOrientationTag={false} />
               <div className="mt-1 truncate text-center text-xs font-bold text-gray-700 dark:text-gray-200">{item.name}</div>
             </button>
           ),
@@ -481,8 +431,6 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
               <div className="absolute inset-0" style={{ backfaceVisibility: 'hidden' }}>
                 {item === 'add' ? (
                   <BlankCard />
-                ) : p3 ? (
-                  <P3FrontFace c={item} />
                 ) : (
                   <TarotCardSVG card={TAROT_BY_ID[item.arcanaId]} orientation={item.orientation} width={CARD_W} staticCard showOrientationTag={false} />
                 )}
