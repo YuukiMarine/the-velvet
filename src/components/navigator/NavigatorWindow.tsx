@@ -177,6 +177,9 @@ type Skin = ReturnType<typeof skinOf>;
    原稿是两条带洞的路径：外黑环 + 内白环，两圈各自是歪的四边形。
    这里把三圈轮廓（黑外 / 白中 / 照面）归一化为百分比多边形，
    三层同框叠放，露出来的就是两道宽窄不一的不规则环。bbox 103.12×91.56。 */
+/* 舞台巨星（粗描边）的五角星点集 */
+const P5_BIG_STAR = '50,3 61.8,38.2 98.8,38.2 68.9,60.1 80.4,95.4 50,73.6 19.6,95.4 31.1,60.1 1.2,38.2 38.2,38.2';
+
 const P5_AV_BLACK = 'polygon(0 0, 84.9% 7.3%, 100% 88.3%, 26.7% 100%)';
 const P5_AV_WHITE = 'polygon(11.6% 7.3%, 81.9% 11.7%, 92.7% 83%, 30.6% 91.8%)';
 const P5_AV_FACE = 'polygon(16.1% 10.3%, 80.6% 14.3%, 88.7% 79.9%, 32.3% 89.2%)';
@@ -198,27 +201,29 @@ const P5Avatar = ({ size = 38, children }: { size?: number; children: React.Reac
    原稿：白多边形（描边）+ 黑多边形（面），左缘一个尖刺尾。bbox 241.16×61.17。
    缩放口径：X 用 px（尾巴与右缘斜刀口尺寸恒定，气泡变宽不会把尾巴拉长），
    Y 用 %（随行数等比）—— 这样样式比例在任意尺寸下都立得住。 */
-const BUB_EDGE_L = 'polygon(0 59.9%, 22.8px 26.4%, 24px 37.3%, 30.5px 31.3%, 39.3px 4.1%, 100% 0, calc(100% - 36.8px) 100%, 13.3px 84.7%, 23.7px 62.4%, 15.3px 68.9%, 12.8px 58%)';
-const BUB_FACE_L = 'polygon(6.2px 53.9%, 20px 35.4%, 22.7px 44.7%, 32.8px 38.7%, 40.8px 14.7%, calc(100% - 18.3px) 6.8%, calc(100% - 38px) 89.9%, 20.7px 75.8%, 27px 58.9%, 17.3px 64.3%, 15.3px 50%)';
+/* 缩放口径（修正版）：Y 不再用 %——百分比会让白描边的厚度随气泡变高而等比变粗
+   （用户上报：气泡高时白边过大），长文时更会把尾巴拉成巨刺。
+   改成三种锚定：顶边离顶 px / 底边离底 px / 尾巴锚在垂直中心 ±px。
+   于是描边厚度与尾巴尺寸在任意宽高下恒定，只有身体面积在长。 */
+const BUB_EDGE_L = 'polygon(0 calc(50% + 6.1px), 22.8px calc(50% - 14.4px), 24px calc(50% - 7.8px), 30.5px calc(50% - 11.4px), 39.3px 2.5px, 100% 0, calc(100% - 36.8px) 100%, 13.3px calc(100% - 9.3px), 23.7px calc(50% + 7.6px), 15.3px calc(50% + 11.6px), 12.8px calc(50% + 4.9px))';
+const BUB_FACE_L = 'polygon(6.2px calc(50% + 2.4px), 20px calc(50% - 8.9px), 22.7px calc(50% - 3.3px), 32.8px calc(50% - 6.9px), 40.8px 9px, calc(100% - 18.3px) 4.2px, calc(100% - 38px) calc(100% - 6.2px), 20.7px calc(100% - 14.8px), 27px calc(50% + 5.4px), 17.3px calc(50% + 8.8px), 15.3px 50%)';
 /* 右尾版 = 水平镜像（x → 100% - x） */
-const BUB_EDGE_R = 'polygon(100% 59.9%, calc(100% - 22.8px) 26.4%, calc(100% - 24px) 37.3%, calc(100% - 30.5px) 31.3%, calc(100% - 39.3px) 4.1%, 0 0, 36.8px 100%, calc(100% - 13.3px) 84.7%, calc(100% - 23.7px) 62.4%, calc(100% - 15.3px) 68.9%, calc(100% - 12.8px) 58%)';
-const BUB_FACE_R = 'polygon(calc(100% - 6.2px) 53.9%, calc(100% - 20px) 35.4%, calc(100% - 22.7px) 44.7%, calc(100% - 32.8px) 38.7%, calc(100% - 40.8px) 14.7%, 18.3px 6.8%, 38px 89.9%, calc(100% - 20.7px) 75.8%, calc(100% - 27px) 58.9%, calc(100% - 17.3px) 64.3%, calc(100% - 15.3px) 50%)';
+const BUB_EDGE_R = 'polygon(100% calc(50% + 6.1px), calc(100% - 22.8px) calc(50% - 14.4px), calc(100% - 24px) calc(50% - 7.8px), calc(100% - 30.5px) calc(50% - 11.4px), calc(100% - 39.3px) 2.5px, 0 0, 36.8px 100%, calc(100% - 13.3px) calc(100% - 9.3px), calc(100% - 23.7px) calc(50% + 7.6px), calc(100% - 15.3px) calc(50% + 11.6px), calc(100% - 12.8px) calc(50% + 4.9px))';
+const BUB_FACE_R = 'polygon(calc(100% - 6.2px) calc(50% + 2.4px), calc(100% - 20px) calc(50% - 8.9px), calc(100% - 22.7px) calc(50% - 3.3px), calc(100% - 32.8px) calc(50% - 6.9px), calc(100% - 40.8px) 9px, 18.3px 4.2px, 38px calc(100% - 6.2px), calc(100% - 20.7px) calc(100% - 14.8px), calc(100% - 27px) calc(50% + 5.4px), calc(100% - 17.3px) calc(50% + 8.8px), calc(100% - 15.3px) 50%)';
 
 /** P5 气泡：描边层 + 面层两张多边形叠放，文字避开尾巴与斜刀口 */
 const P5Bubble = ({ side, children }: { side: 'cat' | 'user'; children: React.ReactNode }) => {
   const left = side === 'cat';
   return (
-    <div
-      className="relative max-w-[86%]"
-      style={{ filter: 'drop-shadow(5px 6px 0 #6d0000)', minHeight: 54 }}
-    >
+    <div className="relative max-w-[86%]" style={{ minHeight: 56 }}>
       <span aria-hidden className="absolute inset-0" style={{ background: left ? '#f0e9df' : '#050505', clipPath: left ? BUB_EDGE_L : BUB_EDGE_R }} />
       <span aria-hidden className="absolute inset-0" style={{ background: left ? '#050505' : '#f0e9df', clipPath: left ? BUB_FACE_L : BUB_FACE_R }} />
       <div
-        className={`relative flex min-h-[54px] items-center whitespace-pre-wrap text-sm font-bold leading-relaxed ${
+        className={`relative flex min-h-[56px] items-center whitespace-pre-wrap text-sm font-bold leading-relaxed ${
           left ? 'pl-[46px] pr-[32px] text-[#f0e9df]' : 'pl-[32px] pr-[46px] text-[#050505]'
         }`}
-        style={{ paddingTop: 10, paddingBottom: 12 }}
+        // overflowWrap:anywhere：用户粘一千字无空格长串时不会把气泡撞爆
+        style={{ paddingTop: 12, paddingBottom: 14, overflowWrap: 'anywhere', wordBreak: 'break-word' }}
       >
         {children}
       </div>
@@ -260,10 +265,10 @@ const P5Spine = ({ containerRef, count, phase }: {
         const x = side === 'user' ? w - 26 : 26;
         pts.push([x, y]);
       });
-      // 首点之前先从顶部接一段，末点往下拖一截（稿上的“未完”感）
+      // 只从顶部接一段进来；末端**不**再往下拖垂直段（用户：停下来那根竖线不要）。
+      // 同侧连着多条时，相邻拐点 x 相同，自然就是一段竖向延伸——这是要的。
       const first = pts[0];
-      const last = pts[pts.length - 1];
-      const all: Array<[number, number]> = [[first[0], Math.max(0, first[1] - 46)], ...pts, [last[0], last[1] + 34]];
+      const all: Array<[number, number]> = [[first[0], Math.max(0, first[1] - 44)], ...pts];
       const d = all.map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
       setGeo({ w, h, d });
     };
@@ -285,14 +290,15 @@ const P5Spine = ({ containerRef, count, phase }: {
       style={{ zIndex: 0 }}
     >
       {/* 暗红错位影（与气泡硬影同语言） */}
-      <path d={geo.d} fill="none" stroke="#6d0000" strokeWidth={13} strokeLinejoin="miter" strokeLinecap="butt" transform="translate(5 6)" />
+      <path d={geo.d} fill="none" stroke="#6d0000" strokeWidth={19} strokeLinejoin="miter" strokeLinecap="butt" strokeMiterlimit={12} transform="translate(5 6)" />
       <motion.path
         key={count}
         d={geo.d}
         fill="none"
         stroke="#050505"
-        strokeWidth={13}
+        strokeWidth={19}
         strokeLinejoin="miter"
+        strokeMiterlimit={12}
         strokeLinecap="butt"
         initial={anim ? { pathLength: 0.82 } : false}
         animate={{ pathLength: 1 }}
@@ -444,6 +450,37 @@ export const NavigatorWindow = () => {
             className={`fixed inset-0 ${zClass.modal} flex flex-col overflow-hidden ${sk.root ?? ''}`}
             style={sk.rootStyle}
           >
+            {/* P5 舞台装饰：半调网点 + 四缘暗红巨星粗描边（只在边缘露一截） */}
+            {isP5 && (
+              <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden" style={{ zIndex: 0 }}>
+                <svg className="absolute" style={{ left: -150, top: 40, width: 330, height: 330 }} viewBox="0 0 100 100">
+                  <polygon points={P5_BIG_STAR} fill="none" stroke="#8e0000" strokeWidth={7} strokeLinejoin="miter" />
+                </svg>
+                <svg className="absolute" style={{ right: -170, top: '38%', width: 380, height: 380 }} viewBox="0 0 100 100">
+                  <polygon points={P5_BIG_STAR} fill="none" stroke="#8e0000" strokeWidth={6} strokeLinejoin="miter" transform="rotate(18 50 50)" />
+                </svg>
+                <svg className="absolute" style={{ left: -120, bottom: -60, width: 300, height: 300 }} viewBox="0 0 100 100">
+                  <polygon points={P5_BIG_STAR} fill="none" stroke="#8e0000" strokeWidth={7} strokeLinejoin="miter" transform="rotate(-12 50 50)" />
+                </svg>
+                {/* 半调：两块暗红网点贴在上下边缘 */}
+                <div
+                  className="absolute"
+                  style={{
+                    right: 0, top: 0, width: 150, height: 190,
+                    backgroundImage: 'radial-gradient(circle, #8e0000 2px, transparent 2.4px)',
+                    backgroundSize: '11px 11px',
+                  }}
+                />
+                <div
+                  className="absolute"
+                  style={{
+                    left: 0, bottom: 90, width: 120, height: 170,
+                    backgroundImage: 'radial-gradient(circle, #8e0000 1.7px, transparent 2.1px)',
+                    backgroundSize: '10px 10px',
+                  }}
+                />
+              </div>
+            )}
             {/* P3R 房景装饰（p3-navigator 设计稿：整行 NAVIGATOR 横排词整体顺时针旋转 90°，
                 字母躺倒、正常字距，沿左缘纵向纵贯全高（N 顶 R 底，自上而下读）——竖屏侧边字样。 */}
             {bright && (
@@ -657,8 +694,14 @@ export const NavigatorWindow = () => {
                   return (
                     <div key={m.id} className="relative space-y-3" style={{ zIndex: 1 }}>
                       {showStamp && (
-                        <div className={`pt-1 text-center text-[10px] font-bold ${bright ? 'text-[#3c69c9]' : 'text-gray-500'}`}>
-                          {formatBubbleTime(m.createdAt)}
+                        <div className={`pt-1 text-center text-[10px] font-bold ${bright ? 'text-[#3c69c9]' : isP5 ? '' : 'text-gray-500'}`}>
+                          {isP5 ? (
+                            <span className="relative inline-flex items-center px-3 py-1 text-[11px] font-black" style={{ color: '#f0e9df' }}>
+                              <span aria-hidden className="absolute inset-0" style={{ background: '#f0e9df', clipPath: 'polygon(4px 0, 100% 2px, calc(100% - 5px) 100%, 0 calc(100% - 3px))' }} />
+                              <span aria-hidden className="absolute inset-[2.5px]" style={{ background: '#c00008', clipPath: 'polygon(3px 0, 100% 2px, calc(100% - 4px) 100%, 0 calc(100% - 2px))' }} />
+                              <span className="relative">{formatBubbleTime(m.createdAt)}</span>
+                            </span>
+                          ) : formatBubbleTime(m.createdAt)}
                         </div>
                       )}
                       <MessageRow m={m} sk={sk} bright={bright} p5={isP5} busy={busyCardId === m.id}
@@ -854,7 +897,7 @@ const MessageRow = ({ m, sk, bright, p5 = false, busy, onConfirm, onEdit, onCanc
     return (
       <div className="flex items-start gap-2.5" data-spine-side="cat">
         {p5 ? (
-          <P5Avatar size={40}><CatFace className="h-[18px] w-[18px]" /></P5Avatar>
+          <P5Avatar size={52}><CatFace className="h-[18px] w-[18px]" /></P5Avatar>
         ) : (
           <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center ${sk.avatar}`} style={{ ...sk.avatarStyle, clipPath: bright ? 'polygon(0 8%, 100% 0, 96% 100%, 2% 96%)' : undefined, borderRadius: bright ? undefined : ((sk.avatarStyle as React.CSSProperties | undefined)?.borderRadius ?? '0.65rem') }}>
             <CatFace className="h-[18px] w-[18px]" />
