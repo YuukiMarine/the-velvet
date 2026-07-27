@@ -43,6 +43,7 @@ import { TerminalClearCutIn } from '@/components/terminal/TerminalClearCutIn';
 import { NavigatorWindow } from '@/components/navigator/NavigatorWindow';
 import { primeCurrentTheme } from '@/utils/feedback';
 import { BackgroundAnimation } from '@/components/BackgroundAnimation';
+import { UnderwaterStage } from '@/components/p3r/UnderwaterStage';
 import { PWAUpdateToast } from '@/components/PWAUpdateToast';
 import { CallingCardCutIn } from '@/components/callingCard/CallingCardCutIn';
 import { isNative } from '@/utils/native';
@@ -595,6 +596,10 @@ function App() {
 
           {/* P4 黄舞台背景装饰：巨型橙弧环 + 大花剪影 + 四角星，缓解纯黄大面积平铺 */}
           {user?.theme === 'yellow' && <P4StageDecor />}
+
+          {/* P3 蓝舞台：全局水下场景（渐变水体 + 缓慢左移右的光柱 + 1s/4 帧水面波纹）。
+              用户自定义了背景图时让位，不覆盖对方的设置。 */}
+          {user?.theme === 'blue' && !settings.backgroundImage && <UnderwaterStage />}
 
         <div className="relative z-10">
           <WelcomeModal />

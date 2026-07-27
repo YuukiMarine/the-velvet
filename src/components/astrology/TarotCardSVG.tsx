@@ -1,5 +1,8 @@
+import { useState } from 'react';
 import { motion } from 'motion/react';
 import { TarotCardData, TarotOrientation, SUIT_META } from '@/constants/tarot';
+import { tarotArtUrl } from '@/constants/tarotArt';
+import { useUiChannel } from '@/ui/useUiChannel';
 
 interface TarotCardSVGProps {
   card: TarotCardData;
@@ -63,6 +66,11 @@ export function TarotCardSVG({
   const height = Math.round(width * 1.6);
   const flipped = orientation === 'reversed';
 
+  // 大阿卡纳走三频道各自的实拍卡面；无图 / 加载失败则退回下面的程序化卡面
+  const channel = useUiChannel();
+  const [artFailed, setArtFailed] = useState(false);
+  const artSrc = artFailed ? null : tarotArtUrl(card.id, channel);
+
   // 内部使用的 viewBox 尺寸（方便绘制）
   const VB_W = 200;
   const VB_H = 320;
@@ -102,6 +110,27 @@ export function TarotCardSVG({
         />
       )}
 
+      {artSrc ? (
+        <img
+          src={artSrc}
+          alt={`${card.name} ${card.nameEn}`}
+          width={width}
+          height={height}
+          loading="lazy"
+          decoding="async"
+          draggable={false}
+          onError={() => setArtFailed(true)}
+          style={{
+            width,
+            height,
+            objectFit: 'cover',
+            display: 'block',
+            borderRadius: 10,
+            transform: flipped ? 'rotate(180deg)' : 'none',
+            transition: 'transform 0.45s ease',
+          }}
+        />
+      ) : (
       <svg
         viewBox={`0 0 ${VB_W} ${VB_H}`}
         width={width}
@@ -226,6 +255,7 @@ export function TarotCardSVG({
           )}
         </g>
       </svg>
+      )}
 
       {/* 正/逆位角标（不参与卡面翻转） */}
       {showOrientationTag && (
