@@ -2,6 +2,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { createPortal } from 'react-dom';
 import { CelebrationCutIn } from '@/components/CelebrationCutIn';
 import { useBoldness } from '@/utils/boldness';
+import { UnlockCutInP5 } from '@/components/p5r/cutins';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { triggerLevelFeedback } from '@/utils/feedback';
 import { useAutoClose } from '@/utils/useAutoClose';
@@ -176,7 +177,20 @@ const AchievementUnlockP3 = ({ isOpen, onClose, achievementTitle }: AchievementU
 };
 
 export const AchievementUnlockModal = (props: AchievementUnlockModalProps) => {
-  const p3 = useUiChannel() === 'p3';
+  const channel = useUiChannel();
+  // P5R（p5-modal-07 稿；面板按用户定稿改成不规则四边形）
+  if (channel === 'p5') {
+    return (
+      <UnlockCutInP5
+        isOpen={props.isOpen}
+        onClose={props.onClose}
+        heading="成就解锁！"
+        name={props.achievementTitle}
+        lines={['恭喜你达成新成就！', '继续努力解锁更多内容']}
+      />
+    );
+  }
+  const p3 = channel === 'p3';
   if (p3) return <AchievementUnlockP3 {...props} />;
   const { isOpen, onClose, achievementTitle } = props;
   return (
