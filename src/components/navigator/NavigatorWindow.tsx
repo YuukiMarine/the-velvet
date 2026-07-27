@@ -310,8 +310,19 @@ const P5Spine = ({ containerRef, count, phase }: {
       const rows = Array.from(host.querySelectorAll<HTMLElement>('[data-spine-side]'));
       const hostBox = host.getBoundingClientRect();
       const w = host.clientWidth;
-      const h = Math.max(host.scrollHeight, host.clientHeight);
-      if (rows.length === 0 || w === 0) { setGeo({ w, h, d: '' }); return; }
+      // 画布高度必须量「内容」而不是 scrollHeight：本 svg 是 absolute 子元素，
+      // 它自己就参与 scrollHeight，一旦拿 scrollHeight 反过来设自己的高度就形成棘轮
+      // ——只增不减，滚到底会多出越来越大的一块空白（用户上报"自动留空半个屏幕"）。
+      const kids = Array.from(host.children).filter((c) => c.tagName.toLowerCase() !== 'svg');
+      const lastKid = kids[kids.length - 1] as HTMLElement | undefined;
+      const contentH = lastKid
+        ? lastKid.getBoundingClientRect().bottom - hostBox.top + host.scrollTop
+        : host.clientHeight;
+      const h = Math.max(Math.ceil(contentH), host.clientHeight);
+      if (rows.length === 0 || w === 0) {
+        setGeo((g) => (g.w === w && g.h === h && g.d === '' ? g : { w, h, d: '' }));
+        return;
+      }
       const pts: Array<[number, number]> = [];
       rows.forEach((row) => {
         const side = row.dataset.spineSide;
@@ -326,7 +337,9 @@ const P5Spine = ({ containerRef, count, phase }: {
       const first = pts[0];
       const all: Array<[number, number]> = [[first[0], Math.max(0, first[1] - 44)], ...pts];
       const d = all.map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
-      setGeo({ w, h, d });
+      // 几何没变就不 setState：measure 由 ResizeObserver 驱动，无脑 setState 会
+      // 触发「重渲染 → svg 尺寸变 → RO 再触发」的抖动（用户上报的卡顿来源之一）
+      setGeo((g) => (g.w === w && g.h === h && g.d === d ? g : { w, h, d }));
     };
     measure();
     const ro = new ResizeObserver(measure);
@@ -424,11 +437,23 @@ export const NavigatorWindow = () => {
   // 新消息 / 打字指示出现时自动贴底（上拉加载历史时跳过，见 loadingOlderRef）
   const msgCount = nav.messages.length;
   const loadingOlderRef = useRef(false);
+  // 首次打开瞬时贴底（否则会从顶部一路滑下来）；之后的新消息/打字指示走平滑滚动
+  const firstStickRef = useRef(true);
   useEffect(() => {
+    if (!nav.isOpen) { firstStickRef.current = true; return; }
     if (loadingOlderRef.current) return;
     const el = listRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [msgCount, nav.phase, nav.isOpen]);
+    if (!el) return;
+    const instant = firstStickRef.current || !bold;
+    firstStickRef.current = false;
+    // rAF：等这一帧的布局（新气泡/打字指示）落定再滚，避免滚到旧的 scrollHeight
+    requestAnimationFrame(() => {
+      const node = listRef.current;
+      if (!node) return;
+      if (instant) node.scrollTop = node.scrollHeight;
+      else node.scrollTo({ top: node.scrollHeight, behavior: 'smooth' });
+    });
+  }, [msgCount, nav.phase, nav.isOpen, bold]);
 
   // 上拉到顶：加载更早一天的对话（当前人格线，7 天保存期），并保持滚动位置不跳
   const onListScroll = async () => {
@@ -603,10 +628,17 @@ export const NavigatorWindow = () => {
                     aria-label="人格菜单"
                     aria-expanded={personaMenuOpen}
                     onClick={() => setPersonaMenuOpen((v) => !v)}
-                    className={`relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden transition hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-current ${sk.avatar}`}
-                    style={{ ...sk.avatarStyle, clipPath: bright ? 'polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%)' : undefined, borderRadius: bright ? undefined : isP4 ? 9999 : '0.75rem' }}
+                    className={
+                      isP5
+                        ? 'relative flex h-[54px] w-[54px] shrink-0 items-center justify-center transition hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c00008]'
+                        : `relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden transition hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-current ${sk.avatar}`
+                    }
+                    style={isP5 ? undefined : { ...sk.avatarStyle, clipPath: bright ? 'polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%)' : undefined, borderRadius: bright ? undefined : isP4 ? 9999 : '0.75rem' }}
                   >
-                    <CatFace className="h-[26px] w-[26px]" />
+                    {/* 红频道页头也要那圈不规则黑白框，否则只是一张裸方图 */}
+                    {isP5
+                      ? <P5Avatar size={54}><CatFace className="h-[18px] w-[18px]" /></P5Avatar>
+                      : <CatFace className="h-[26px] w-[26px]" />}
                   </button>
                   <div className="min-w-0 flex-1">
                     <div className={`truncate font-black ${isP4 ? 'text-[22px]' : 'text-base'}`} style={{ ...sk.headerText, ...(isP4 ? { fontFamily: 'var(--p4-display-font, serif)' } : {}) }}>{preset.name}</div>
@@ -767,7 +799,7 @@ export const NavigatorWindow = () => {
                   );
                 })}
                 {(nav.phase === 'thinking' || nav.phase === 'replying') && (
-                  <TypingRow sk={sk} bright={bright} bold={bold} />
+                  <TypingRow sk={sk} bright={bright} bold={bold} p5={isP5} />
                 )}
               </div>
 
@@ -896,8 +928,12 @@ export const NavigatorWindow = () => {
 };
 
 // ── 打字指示（thinking/replying 相位；等待本身就是拟人） ──
-const TypingRow = ({ sk, bright, bold }: { sk: Skin; bright: boolean; bold: boolean }) => (
+const TypingRow = ({ sk, bright, bold, p5 = false }: { sk: Skin; bright: boolean; bold: boolean; p5?: boolean }) => (
   <div className="flex items-start gap-2.5" role="status" aria-label="助手正在输入">
+    {p5 ? (
+      // 红频道：黑底黑框的通用头像压在纯黑舞台上等于消失，走消息行同一套不规则框
+      <P5Avatar size={68}><CatFace className="h-[20px] w-[20px]" /></P5Avatar>
+    ) : (
     <span
       className={`relative mt-0.5 flex h-[42px] w-[42px] shrink-0 items-center justify-center overflow-hidden ${sk.avatar}`}
       style={{ ...sk.avatarStyle, clipPath: bright ? 'polygon(0 8%, 100% 0, 96% 100%, 2% 96%)' : undefined, borderRadius: bright ? undefined : ((sk.avatarStyle as React.CSSProperties | undefined)?.borderRadius ?? '0.65rem') }}
@@ -905,6 +941,7 @@ const TypingRow = ({ sk, bright, bold }: { sk: Skin; bright: boolean; bold: bool
     >
       <CatFace className="h-[24px] w-[24px]" />
     </span>
+    )}
     <div className={`flex items-center gap-1.5 px-4 py-3.5 ${sk.catBubble}`} style={sk.catBubbleStyle} aria-hidden>
       {[0, 1, 2].map((i) =>
         bold ? (

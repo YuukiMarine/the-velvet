@@ -24,6 +24,25 @@ import { buildOfflineDaily } from '@/utils/tarotOffline';
 import { renderMarkdown } from '@/utils/markdown';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P3R, slantClip } from '@/components/p3r/kit';
+import { roughQuad } from '@/components/p5r/kit';
+
+/**
+ * P5 结果纸卡 —— 抽完之后的三块文字（本牌含义 / 今日运势 / 总体运势）原本是
+ * 半透明灰底 + 灰字，压在纯黑舞台上既糊又读不出；这里换成纸面 + 不等宽黑框。
+ * 挂 .p5-paper：页面上的 .p5-onink 会据此把内部灰系文字翻回黑（卡内不跟舞台走）。
+ */
+const P5Sheet = ({ seed, children, className }: { seed: number; children: React.ReactNode; className?: string }) => (
+  <div className={`p5-paper relative px-4 py-3.5 ${className ?? ''}`}>
+    <span aria-hidden className="absolute inset-0" style={{ transform: 'translate(4px,5px)', background: '#050505', clipPath: roughQuad(seed, 6) }} />
+    <span aria-hidden className="absolute inset-0" style={{ background: '#050505', clipPath: roughQuad(seed + 0.31, 5) }} />
+    <span aria-hidden className="absolute inset-[3px]" style={{ background: '#f0e9df', clipPath: roughQuad(seed + 0.63, 4) }} />
+    <div className="relative" style={{ color: '#050505' }}>{children}</div>
+  </div>
+);
+
+/** p5 时套上纸卡，其它频道原样透传（避免为三处各写一遍三元表达式） */
+const Wrap = ({ p5, seed, children }: { p5: boolean; seed: number; children: React.ReactNode }) =>
+  p5 ? <P5Sheet seed={seed}>{children}</P5Sheet> : <>{children}</>;
 
 /** P3R 标题两侧的青双斜杠装饰（p3-astrology 设计稿「// 正在洗牌… //」式） */
 const CyanSlashes = () => (
@@ -470,6 +489,7 @@ function FlipReveal({
 
 function DoneView({ d }: { d: DailyDivination }) {
   const { settings } = useAppStore();
+  const doneP5 = useUiChannel() === 'p5';
   const card = TAROT_BY_ID[d.cardId];
   if (!card) return null;
   const attrName = settings.attributeNames[d.effect.attribute];
@@ -545,8 +565,9 @@ function DoneView({ d }: { d: DailyDivination }) {
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.2 }}
-        className="rounded-2xl border border-gray-200 dark:border-gray-700/60 bg-gray-50/60 dark:bg-gray-800/30 p-4"
+        className={doneP5 ? '' : 'rounded-2xl border border-gray-200 dark:border-gray-700/60 bg-gray-50/60 dark:bg-gray-800/30 p-4'}
       >
+        <Wrap p5={doneP5} seed={521}>
         <div className="flex items-center gap-2 mb-2">
           <span className="text-[10px] font-bold tracking-[2px] uppercase text-gray-500 dark:text-gray-400">
             本牌含义
@@ -568,6 +589,7 @@ function DoneView({ d }: { d: DailyDivination }) {
         <p className="text-xs leading-relaxed text-gray-600 dark:text-gray-300">
           {card[d.orientation].meaning}
         </p>
+        </Wrap>
       </motion.div>
 
       {/* 今日运势（AI 结合近期活动给出的个性化解读） */}
@@ -575,8 +597,9 @@ function DoneView({ d }: { d: DailyDivination }) {
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.25 }}
-        className="rounded-2xl bg-black/[0.03] dark:bg-white/[0.03] p-4 text-sm text-gray-700 dark:text-gray-200 leading-relaxed"
+        className={doneP5 ? 'text-sm leading-relaxed' : 'rounded-2xl bg-black/[0.03] dark:bg-white/[0.03] p-4 text-sm text-gray-700 dark:text-gray-200 leading-relaxed'}
       >
+        <Wrap p5={doneP5} seed={523}>
         <div className="flex items-center gap-2 mb-2">
           <span className="text-[10px] font-bold tracking-[2px] uppercase text-primary/80">
             今日运势
@@ -593,6 +616,7 @@ function DoneView({ d }: { d: DailyDivination }) {
             __html: DOMPurify.sanitize(`<p class="mb-2">${renderMarkdown(d.narration)}</p>`),
           }}
         />
+        </Wrap>
       </motion.div>
 
       {/* 总体运势 */}
@@ -600,9 +624,10 @@ function DoneView({ d }: { d: DailyDivination }) {
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.35 }}
-        className={`rounded-2xl border ${fortuneMeta.borderClass} ${fortuneMeta.bgClass} p-4`}
-        style={{ boxShadow: `0 0 24px ${fortuneMeta.ring}` }}
+        className={doneP5 ? '' : `rounded-2xl border ${fortuneMeta.borderClass} ${fortuneMeta.bgClass} p-4`}
+        style={doneP5 ? undefined : { boxShadow: `0 0 24px ${fortuneMeta.ring}` }}
       >
+        <Wrap p5={doneP5} seed={525}>
         <div className="flex items-center gap-3">
           <div
             className="w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 text-2xl"
@@ -622,6 +647,7 @@ function DoneView({ d }: { d: DailyDivination }) {
             </div>
           </div>
         </div>
+        </Wrap>
       </motion.div>
 
       <AnimatePresence>

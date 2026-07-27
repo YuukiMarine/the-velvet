@@ -65,17 +65,18 @@ export const Toggle = ({
         </span>
         <span
           aria-hidden
-          className={`absolute text-[11px] font-black leading-none ${checked ? 'right-[7px]' : 'left-[7px]'}`}
+          className={`absolute text-[11px] font-black leading-none ${checked ? 'left-[7px]' : 'right-[7px]'}`}
           style={{ color: '#050505' }}
         >
           {checked ? '开' : '关'}
         </span>
+        {/* 滑块方向按通用直觉：开=靠右、关=靠左（此前是反的，用户上报） */}
         <motion.span
           aria-hidden
           className="absolute top-[3px] h-[19px] w-[24px]"
           style={{ background: checked ? '#c00008' : '#050505', clipPath: 'polygon(1.5px 0.5px, calc(100% - 0.5px) 1.8px, calc(100% - 1.8px) calc(100% - 0.6px), 0.4px calc(100% - 1.6px))', rotate: checked ? -2 : 2 }}
           initial={false}
-          animate={{ x: checked ? 3 : 27 }}
+          animate={{ x: checked ? 27 : 3 }}
           transition={springSnappy}
         />
       </button>

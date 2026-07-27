@@ -333,17 +333,31 @@ export function Cooperation() {
                 // 仅在 "打开" 这个动作上熄灭红点；关闭操作不动 ack
                 if (!menuOpen) setMenuDotAck(true);
               }}
-              className={p3
-                ? 'relative flex h-8 w-9 items-center justify-center text-sm font-black transition-all'
-                : `relative w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-all ${
-                    menuOpen
-                      ? 'bg-indigo-500 text-white shadow-md shadow-indigo-500/30'
-                      : 'bg-indigo-500/10 text-indigo-500 border border-indigo-500/30 hover:bg-indigo-500/20'
-                  }`}
-              style={p3 ? { clipPath: slantClip(6), background: menuOpen ? P3R.blue : P3R.cyanPale, color: menuOpen ? '#fff' : P3R.blueDeep } : undefined}
+              className={
+                p5
+                  ? 'relative flex h-9 w-9 items-center justify-center text-[15px] font-black'
+                  : p3
+                    ? 'relative flex h-8 w-9 items-center justify-center text-sm font-black transition-all'
+                    : `relative w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-all ${
+                        menuOpen
+                          ? 'bg-indigo-500 text-white shadow-md shadow-indigo-500/30'
+                          : 'bg-indigo-500/10 text-indigo-500 border border-indigo-500/30 hover:bg-indigo-500/20'
+                      }`}
+              // P5：原来落在通用分支 = 半透明靛蓝圆 + 靛蓝字，压在黑舞台上几乎看不见。
+              // 换成纸底 + 不规则黑描边（两层异形错位），✧ 用黑 / 打开时翻猩红。
+              style={p5
+                ? { color: menuOpen ? '#f0e9df' : '#050505' }
+                : p3 ? { clipPath: slantClip(6), background: menuOpen ? P3R.blue : P3R.cyanPale, color: menuOpen ? '#fff' : P3R.blueDeep } : undefined}
               aria-label={showMenuTriggerDot ? `同伴系统菜单（${unreadCount} 条新通知）` : '同伴系统菜单'}
             >
-              ✧
+              {p5 && (
+                <span aria-hidden className="pointer-events-none absolute inset-0">
+                  <span className="absolute inset-0" style={{ transform: 'translate(2.5px,3px)', background: '#050505', clipPath: 'polygon(2px 1px, calc(100% - 1px) 3px, calc(100% - 3px) calc(100% - 1px), 1px calc(100% - 3px))' }} />
+                  <span className="absolute inset-0" style={{ background: '#050505', clipPath: 'polygon(1.5px 2.5px, calc(100% - 2px) 0.5px, calc(100% - 0.5px) calc(100% - 2.5px), 0.5px calc(100% - 1px))' }} />
+                  <span className="absolute inset-[2.5px]" style={{ background: menuOpen ? '#c00008' : '#f0e9df', clipPath: 'polygon(1px 0.5px, calc(100% - 0.5px) 1.5px, calc(100% - 1.5px) calc(100% - 0.5px), 0.5px calc(100% - 1.5px))' }} />
+                </span>
+              )}
+              <span className="relative">✧</span>
               {showMenuTriggerDot && (
                 <span
                   aria-hidden

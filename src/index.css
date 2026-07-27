@@ -889,3 +889,15 @@ html[data-ios-standalone="true"] {
 :root[data-ui-channel="p4"] .p4-onbright :is(.text-gray-700, .text-gray-800, .text-gray-900, .dark\:text-white) {
   color: #131313 !important;
 }
+
+/* .p5-paper：黑舞台页面里的「纸卡」标记。.p5-onink 把舞台层灰系文字翻成纸色，
+   纸卡内部要翻回黑——与 .bg-white / .p5-card 同一组例外。 */
+:root[data-ui-channel="p5"] .p5-onink .p5-paper :is(.text-gray-700, .text-gray-800, .text-gray-900, .dark\:text-white, .dark\:text-gray-100, .dark\:text-gray-200, .dark\:text-gray-300) {
+  color: #050505 !important;
+}
+:root[data-ui-channel="p5"] .p5-onink .p5-paper :is(.text-gray-500, .text-gray-600) {
+  color: #494540 !important;
+}
+:root[data-ui-channel="p5"] .p5-onink .p5-paper .text-gray-400 {
+  color: #6b6862 !important;
+}

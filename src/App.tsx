@@ -608,7 +608,7 @@ function App() {
                 aria-hidden
                 className="pointer-events-none fixed inset-0 z-0"
                 // 罩纱只做「够读」不做「洗白」：底部刻意留薄，让水体收到靛紫看得见
-                style={{ background: 'linear-gradient(180deg, rgba(238,245,249,0.05) 0%, rgba(238,245,249,0.34) 34%, rgba(238,245,249,0.46) 66%, rgba(238,245,249,0.36) 100%)' }}
+                style={{ background: 'linear-gradient(180deg, rgba(238,245,249,0.05) 0%, rgba(238,245,249,0.32) 34%, rgba(238,245,249,0.42) 64%, rgba(238,245,249,0.22) 100%)' }}
               />
             </>
           )}
