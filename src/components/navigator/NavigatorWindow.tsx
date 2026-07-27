@@ -254,7 +254,7 @@ const BubbleIn = ({ side, mark, markCh, children }: {
         <BubbleMark
           mark={mark}
           channel={markCh ?? 'p5'}
-          size={19}
+          size={23}
           // 逐频道微调：气泡轮廓不同（p5 右缘内斜 / p4 大圆角 / p3 平行四边形），
           // 统一偏移会有的贴着、有的悬空
           style={MARK_POS[markCh ?? 'p5']}
