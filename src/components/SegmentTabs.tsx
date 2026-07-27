@@ -15,7 +15,7 @@ import { motion } from 'motion/react';
 import { springSnappy, TAP } from '@/utils/motion';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P4Flower } from '@/ui/p4Kit';
-import { roughQuad } from '@/components/p5r/kit';
+import { roughSlant } from '@/components/p5r/kit';
 
 interface SegmentTabItem<K extends string> {
   key: K;
@@ -67,12 +67,13 @@ export const SegmentTabs = <K extends string>({
               className={`relative flex-1 cursor-pointer font-black ${p5Size}`}
               style={{ zIndex: active ? 2 : 1 }}
             >
-              {/* 纸底黑框（全员，不规则四边形） */}
-              <span aria-hidden className="absolute inset-0" style={{ background: '#050505', clipPath: roughQuad(seed, 4.5) }} />
-              <span aria-hidden className="absolute inset-[2.5px]" style={{ background: '#f0e9df', clipPath: roughQuad(seed + 0.3, 3) }} />
+              {/* 斜平行四边形三层：黑硬影 → 黑框 → 纸面（设计稿「记账/资产」「流水/统计」制式） */}
+              <span aria-hidden className="absolute inset-0" style={{ transform: 'translate(4px, 5px)', background: '#050505', clipPath: roughSlant(seed, 15, 4) }} />
+              <span aria-hidden className="absolute inset-0" style={{ background: '#050505', clipPath: roughSlant(seed, 15, 4) }} />
+              <span aria-hidden className="absolute inset-[2.5px]" style={{ background: '#f0e9df', clipPath: roughSlant(seed + 0.3, 14, 3) }} />
               {active && (
                 <motion.div layoutId={indicatorId} transition={springSnappy} className="absolute inset-[2.5px]" aria-hidden="true">
-                  <div className="absolute inset-0" style={{ clipPath: roughQuad(seed + 0.5, 3), background: '#c00008' }} />
+                  <div className="absolute inset-0" style={{ clipPath: roughSlant(seed + 0.5, 14, 3), background: '#c00008' }} />
                 </motion.div>
               )}
               <span className={`relative z-10 flex items-center justify-center gap-1.5 transition-colors ${active ? 'text-white' : 'text-[#050505]'}`}>

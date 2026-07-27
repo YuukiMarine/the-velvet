@@ -491,8 +491,8 @@ export const BottomNav = () => {
             {p5 && (
               // 六边形基座：纸白外圈 + 纯黑内面（设计稿中键），猫压在其上
               <span aria-hidden className="pointer-events-none absolute inset-0">
-                <span className="absolute inset-0" style={{ background: P5R.paper, clipPath: 'polygon(26% 3%, 74% 3%, 99% 50%, 74% 97%, 26% 97%, 1% 50%)' }} />
-                <span className="absolute inset-[3.5px]" style={{ background: '#050505', clipPath: 'polygon(26% 3%, 74% 3%, 99% 50%, 74% 97%, 26% 97%, 1% 50%)' }} />
+                <span className="absolute inset-0" style={{ background: P5R.paper, clipPath: 'polygon(23% 6%, 71% 0%, 100% 44%, 79% 98%, 30% 94%, 1% 56%)' }} />
+                <span className="absolute inset-[3.5px]" style={{ background: '#050505', clipPath: 'polygon(23% 6%, 71% 0%, 100% 44%, 79% 98%, 30% 94%, 1% 56%)' }} />
               </span>
             )}
             {isP4 && (

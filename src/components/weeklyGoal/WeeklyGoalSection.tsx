@@ -7,6 +7,7 @@ import { useLongPress } from '@/utils/useLongPress';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P4Flower, P4Sparkle } from '@/ui/p4Kit';
 import { sheetTopClip } from '@/components/p3r/kit';
+import { roughQuad, P5Star } from '@/components/p5r/kit';
 import { v4 as uuidv4 } from 'uuid';
 import { ALL_GOAL_TYPES, getCurrentWeekRange, makeDefaultItem } from './weeklyGoalShared';
 import { GoalSetupForm } from './GoalSetupForm';
@@ -29,6 +30,7 @@ export const WeeklyGoalSection = ({
   const { weekStart, weekEnd } = getCurrentWeekRange();
   const currentGoal = weeklyGoals.find(g => g.weekStart === weekStart && g.weekEnd === weekEnd);
   const isP4 = useUiChannel() === 'p4';
+  const isP5 = useUiChannel() === 'p5';
 
   // setup form
   const [showSetup, setShowSetup] = useState(false);
@@ -119,6 +121,25 @@ export const WeeklyGoalSection = ({
               <P4Sparkle size={13} color="var(--p4-orange, #f9a11b)" />
               设定本周目标
               <P4Sparkle size={13} color="var(--p4-orange, #f9a11b)" />
+            </span>
+          </motion.button>
+        );
+      }
+      // P5：黑舞台上不能用灰虚线（等于隐身）——纸面撕边条 + 红星 + 黑字
+      if (isP5) {
+        return (
+          <motion.button
+            whileTap={{ x: 2, y: 3 }}
+            onClick={() => setShowSetup(true)}
+            className="relative w-full cursor-pointer py-5 text-center"
+          >
+            <span aria-hidden className="pointer-events-none absolute inset-0" style={{ transform: 'translate(4px,5px)', background: '#000000', clipPath: roughQuad(391, 8) }} />
+            <span aria-hidden className="pointer-events-none absolute inset-0" style={{ background: '#050505', clipPath: roughQuad(392, 7) }} />
+            <span aria-hidden className="pointer-events-none absolute inset-[3px]" style={{ background: '#f0e9df', clipPath: roughQuad(393, 5) }} />
+            <span className="relative inline-flex items-center gap-2 text-[15px] font-black" style={{ color: '#050505' }}>
+              <P5Star size={16} fill="#c00008" />
+              设定本周目标
+              <P5Star size={16} fill="#c00008" />
             </span>
           </motion.button>
         );

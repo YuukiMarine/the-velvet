@@ -23,7 +23,7 @@ import { AssetBoard } from '@/components/ledger/AssetBoard';
 import { Donut } from '@/components/ledger/Donut';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P3R, P3RPage, GhostWords, P3PageHeader, slantClip } from '@/components/p3r/kit';
-import { P5R, P5Collage, P5SubBar, P5Star, P5Dots, P5Slab, P5RPage } from '@/components/p5r/kit';
+import { P5R, P5_FONT, roughQuad, roughSlant, starPts, P5Collage, P5SubBar, P5Star, P5Dots, P5Slab, P5RPage } from '@/components/p5r/kit';
 import { catMeta, CATEGORY_KEYS, isGrowthCategory, INCOME_META, sym, fmtMoney, fmtSigned, DEFAULT_CHANNELS, DEFAULT_INCOME_SOURCES, incomeTypeFromSource, shiftMonth, weekdayCN, monthLabel, ledgerDateLabel, ledgerCycle } from '@/utils/ledgerFormat';
 import type { LedgerEntry, LedgerExpenseType, AttributeId, SpendWorth, Settings } from '@/types';
 import { P4Flower } from '@/ui/p4Kit';
@@ -449,7 +449,26 @@ export const Ledger = () => {
       {/* 开局引导：无流水时先设初始余额（避免首笔变负）
           p3（设计稿）：浅青斜条 + ⚠ + 蓝粗标题 + 右缘青三角 */}
       {needsSetup && (
-        isP4 ? (
+        p5 ? (
+          /* p5-ledger 稿：纸卡 + 红星 + 红标题 + 右缘 › */
+          <motion.button
+            onClick={() => setAdjustOpen(true)}
+            whileTap={{ x: 2, y: 3 }}
+            className="relative mt-4 block w-full cursor-pointer text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c00008]"
+          >
+            <span aria-hidden className="pointer-events-none absolute inset-0" style={{ transform: 'translate(4px,5px)', background: '#050505', clipPath: roughQuad(311, 7) }} />
+            <span aria-hidden className="pointer-events-none absolute inset-0" style={{ background: '#050505', clipPath: roughQuad(312, 6) }} />
+            <span aria-hidden className="pointer-events-none absolute inset-[3px]" style={{ background: P5R.paper, clipPath: roughQuad(313, 4) }} />
+            <span className="relative flex items-center gap-3 px-4 py-3">
+              <P5Star size={30} fill={P5R.red} className="shrink-0" />
+              <span className="min-w-0 flex-1">
+                <span className="block text-[15px] font-black" style={{ color: P5R.red, fontFamily: P5_FONT }}>先设置你当前的余额</span>
+                <span className="mt-0.5 block text-[12px] font-bold leading-snug" style={{ color: '#050505' }}>告诉我你现在大概有多少钱，记账才准——之后随时可「对账」修正。</span>
+              </span>
+              <span aria-hidden className="shrink-0 text-xl font-black" style={{ color: '#050505' }}>›</span>
+            </span>
+          </motion.button>
+        ) : isP4 ? (
           /* p4：奶油话泡（左下小尾巴），橙色标题黑正文 */
           <button
             onClick={() => setAdjustOpen(true)}
@@ -490,7 +509,97 @@ export const Ledger = () => {
       {/* 总余额 + 预算环（环显示本月预算「剩余」，花钱往下消耗）。
           P4：卡壳退役 —— 向日葵舞台（橙花瓣环 + 放射短线）直压黄底；
           p3：白大斜卡 + 左侧青斜纹梯级 + 超大蓝斜体金额 + 分割线（点数字切换月/总视图）。 */}
-      {p3 ? (
+      {p5 ? (
+        /* ── p5-ledger-reference-v2 1:1：红爆炸底 + 黑环纸星仪表 ── */
+        <motion.section {...popIn(2)} className="relative mt-5 pb-1">
+          {/* 红爆炸底衢（撑满通栏，尖刺边缘）+ 黑碎片 */}
+          <div aria-hidden className="pointer-events-none absolute -inset-x-5 -top-3 bottom-14" style={{ zIndex: -1 }}>
+            <span className="absolute inset-0" style={{ background: P5R.red, clipPath: 'polygon(0 12%, 13% 3%, 27% 14%, 44% 0, 58% 12%, 74% 2%, 88% 15%, 100% 6%, 96% 47%, 100% 88%, 84% 79%, 70% 96%, 55% 84%, 40% 100%, 24% 83%, 9% 95%, 3% 52%)' }} />
+            <span className="absolute" style={{ left: 0, top: '18%', width: 120, height: 150, background: '#050505', clipPath: 'polygon(0 6%, 62% 0, 100% 44%, 48% 100%, 0 78%)' }} />
+            <span className="absolute" style={{ right: 0, bottom: '6%', width: 130, height: 120, background: '#050505', clipPath: 'polygon(24% 0, 100% 14%, 100% 100%, 0 86%)' }} />
+          </div>
+
+          {/* 仪表：纸环带 + 黑盘 + 红进度弧 + 纸星 */}
+          <div className="relative mx-auto w-[262px]">
+            <svg viewBox="0 0 240 240" className="w-full" aria-hidden>
+              <circle cx="120" cy="120" r="106" fill="#050505" />
+              <circle cx="120" cy="120" r="101" fill="none" stroke={P5R.paper} strokeWidth="9" />
+              {hasBudget && (
+                <motion.circle
+                  cx="120" cy="120" r="101" fill="none" stroke={over ? '#8e0000' : P5R.red} strokeWidth="9"
+                  strokeLinecap="butt" transform="rotate(-90 120 120)"
+                  initial={{ strokeDasharray: `0 ${2 * Math.PI * 101}` }}
+                  animate={{ strokeDasharray: `${Math.max(0, Math.min(1, lim > 0 ? monthExpense / lim : 0)) * 2 * Math.PI * 101} ${2 * Math.PI * 101}` }}
+                  transition={{ duration: 0.9, ease: [0.22, 1, 0.36, 1] }}
+                />
+              )}
+              <circle cx="120" cy="120" r="92" fill="#050505" />
+              <polygon points={starPts(120, 126, 84)} fill={P5R.paper} />
+            </svg>
+            {/* 星心数值（点击切月/总余额） */}
+            <button
+              type="button"
+              onClick={() => setBalanceView(v => (v === 'month' ? 'total' : 'month'))}
+              aria-label={balanceView === 'month' ? '切换到总余额' : '切换到月余额'}
+              className="absolute inset-0 flex cursor-pointer flex-col items-center justify-center pt-3 focus-visible:outline-none"
+            >
+              <span className="text-[13px] font-black leading-none" style={{ color: '#050505', fontFamily: P5_FONT }}>
+                {balanceView === 'month' ? (hasBudget ? '月余额' : '本月已花') : '总余额'}
+              </span>
+              <span className="mt-1 text-[40px] font-black leading-none tabular-nums" style={{ color: P5R.redHot, fontFamily: P5_FONT }}>
+                {balanceView === 'month'
+                  ? (hasBudget ? fmtSigned(monthBalance, $) : `${$}${fmtMoney(monthExpense)}`)
+                  : fmtSigned(total, $)}
+              </span>
+              <span className="mt-1 text-[12px] font-black leading-none" style={{ color: '#050505' }}>
+                {balanceView === 'month' ? (hasBudget ? `预算 ${$}${fmtMoney(lim)}` : '未设预算') : '∇ 点击看本月'}
+              </span>
+            </button>
+            {/* 左黑星 / 右红星（纸描边，稿上的两颗卫星） */}
+            <P5Star size={54} fill="#050505" ring2={P5R.paper} rot={-14} className="pointer-events-none absolute -left-9 top-8" />
+            <P5Star size={72} fill={P5R.red} ring2={P5R.paper} rot={12} className="pointer-events-none absolute -right-11 bottom-6" />
+          </div>
+
+          {cycle.payCycle && (
+            <div className="relative mt-2 text-center text-[11px] font-black" style={{ color: P5R.white }}>本周期 {cycle.label}</div>
+          )}
+          <div className="relative mt-2 text-center text-[13px] font-black" style={{ color: P5R.white, textShadow: '2px 2px 0 #000000' }}>
+            {balanceView === 'total'
+              ? `收入剩余 ${$}${fmtMoney(fundIncome)} · 结转 ${$}${fmtMoney(fundCarried)}`
+              : hasBudget
+                ? (over ? `本月已超 ${$}${fmtMoney(-budgetLeft)}` : `本月预算剩 ${$}${fmtMoney(budgetLeft)}${todayLeft > 0 ? ` · 今日可花 ${$}${fmtMoney(todayLeft)}` : ''}`)
+                : '本月还没设预算'}
+          </div>
+
+          {/* 设置预算（黑）/ 对账（纸）双斜钮 */}
+          <div className="relative mt-3 flex justify-center gap-2">
+            <motion.button
+              type="button"
+              whileTap={{ x: 2, y: 3 }}
+              onClick={() => setBudgetMode('edit')}
+              className="relative cursor-pointer px-6 py-2 text-[15px] font-black text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c00008]"
+              style={{ fontFamily: P5_FONT }}
+            >
+              <span aria-hidden className="absolute inset-0" style={{ transform: 'translate(3px,4px)', background: '#000000', clipPath: roughSlant(321, 13, 3) }} />
+              <span aria-hidden className="absolute inset-0" style={{ background: P5R.paper, clipPath: roughSlant(321, 13, 3) }} />
+              <span aria-hidden className="absolute inset-[2.5px]" style={{ background: '#050505', clipPath: roughSlant(322, 12, 2.5) }} />
+              <span className="relative">{hasBudget ? '编辑预算' : '设置预算'}</span>
+            </motion.button>
+            <motion.button
+              type="button"
+              whileTap={{ x: 2, y: 3 }}
+              onClick={() => setAdjustOpen(true)}
+              className="relative cursor-pointer px-6 py-2 text-[15px] font-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c00008]"
+              style={{ color: '#050505', fontFamily: P5_FONT }}
+            >
+              <span aria-hidden className="absolute inset-0" style={{ transform: 'translate(3px,4px)', background: '#000000', clipPath: roughSlant(323, 13, 3) }} />
+              <span aria-hidden className="absolute inset-0" style={{ background: '#050505', clipPath: roughSlant(323, 13, 3) }} />
+              <span aria-hidden className="absolute inset-[2.5px]" style={{ background: P5R.paper, clipPath: roughSlant(324, 12, 2.5) }} />
+              <span className="relative">对账</span>
+            </motion.button>
+          </div>
+        </motion.section>
+      ) : p3 ? (
         <motion.section {...popIn(2)} className="mt-5">
           <div className="relative px-6 py-7" style={{ clipPath: 'polygon(34px 0, 100% 0, calc(100% - 34px) 100%, 0 100%)', background: 'rgba(255,255,255,0.96)', boxShadow: '0 18px 40px rgba(38,96,140,0.10)' }}>
             {/* 左侧青斜纹梯级（设计稿装饰） */}
@@ -742,7 +851,48 @@ export const Ledger = () => {
       )}
 
       {/* 录入条（p3：白斜输入条 + 蓝斜块「记一笔」+洋红角 + 白斜块「手动」，GUI 主体地位照旧） */}
-      {p3 ? (
+      {p5 ? (
+        /* p5-ledger 稿：纸斜输入条 + 红斜块「记一笔」+ 纸斜块「手动」 */
+        <motion.section {...riseIn(3)} className="mt-5 flex items-stretch gap-0">
+          <div className="relative min-w-0 flex-1">
+            <span aria-hidden className="pointer-events-none absolute inset-0" style={{ transform: 'translate(3px,4px)', background: '#000000', clipPath: roughSlant(331, 16, 3) }} />
+            <span aria-hidden className="pointer-events-none absolute inset-0" style={{ background: '#050505', clipPath: roughSlant(331, 16, 3) }} />
+            <span aria-hidden className="pointer-events-none absolute inset-[2.5px]" style={{ background: P5R.paper, clipPath: roughSlant(332, 15, 2.5) }} />
+            <input
+              value={nlText}
+              onChange={e => setNlText(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') handleNL(); }}
+              placeholder="28 咖啡 / 工资 8000（可多笔）"
+              className="relative h-full w-full bg-transparent py-3.5 pl-6 pr-8 text-[14px] font-bold focus:outline-none"
+              style={{ color: '#050505', border: 'none', boxShadow: 'none', borderRadius: 0 }}
+            />
+          </div>
+          <motion.button
+            whileTap={{ x: 2, y: 3 }}
+            onClick={handleNL}
+            disabled={nlBusy || !nlText.trim()}
+            className="relative -ml-3 shrink-0 cursor-pointer px-5 py-3.5 text-[15px] font-black text-white disabled:opacity-40"
+            style={{ fontFamily: P5_FONT, zIndex: 2 }}
+          >
+            <span aria-hidden className="absolute inset-0" style={{ transform: 'translate(3px,4px)', background: '#000000', clipPath: roughSlant(333, 10, 2.5) }} />
+            <span aria-hidden className="absolute inset-0" style={{ background: P5R.paper, clipPath: roughSlant(333, 10, 2.5) }} />
+            <span aria-hidden className="absolute inset-[2.5px]" style={{ background: P5R.red, clipPath: roughSlant(334, 9, 2) }} />
+            <span className="relative">{nlBusy ? '…' : '记一笔'}</span>
+          </motion.button>
+          <motion.button
+            whileTap={{ x: 2, y: 3 }}
+            onClick={() => startDraft(emptyDraft())}
+            aria-label="手动记一笔"
+            className="relative -ml-2 shrink-0 cursor-pointer whitespace-nowrap px-4 py-3.5 text-[15px] font-black"
+            style={{ color: '#050505', fontFamily: P5_FONT, zIndex: 3 }}
+          >
+            <span aria-hidden className="absolute inset-0" style={{ transform: 'translate(3px,4px)', background: '#000000', clipPath: roughSlant(335, 9, 2.5) }} />
+            <span aria-hidden className="absolute inset-0" style={{ background: '#050505', clipPath: roughSlant(335, 9, 2.5) }} />
+            <span aria-hidden className="absolute inset-[2.5px]" style={{ background: P5R.paper, clipPath: roughSlant(336, 8, 2) }} />
+            <span className="relative">手动</span>
+          </motion.button>
+        </motion.section>
+      ) : p3 ? (
         <motion.section {...riseIn(3)} className="mt-5 flex items-stretch gap-0">
           <div className="min-w-0 flex-1" style={{ clipPath: slantClip(12), background: '#fff', boxShadow: '0 8px 18px rgba(38,96,140,0.07)' }}>
             <input
@@ -848,6 +998,35 @@ export const Ledger = () => {
               <span aria-hidden className="h-0 w-0 border-y-[9px] border-y-transparent border-l-[13px]" style={{ borderLeftColor: P3R.blue }} />
             </button>
           </div>
+        ) : p5 ? (
+          /* p5-ledger 稿：纸卡内的月份导航（黑底舊台上不能裸排黑字） */
+          <div className="relative px-3 py-3">
+            <span aria-hidden className="pointer-events-none absolute inset-0" style={{ transform: 'translate(4px,5px)', background: '#000000', clipPath: roughQuad(341, 8) }} />
+            <span aria-hidden className="pointer-events-none absolute inset-0" style={{ background: '#050505', clipPath: roughQuad(342, 7) }} />
+            <span aria-hidden className="pointer-events-none absolute inset-[3px]" style={{ background: P5R.paper, clipPath: roughQuad(343, 5) }} />
+            <div className="relative flex items-center justify-between gap-2">
+              <button
+                onClick={() => setListMonth(shiftMonth(listMonth, -1))}
+                aria-label="上个月"
+                className="flex h-9 w-9 cursor-pointer items-center justify-center text-[16px] font-black text-white"
+                style={{ background: '#050505', clipPath: 'polygon(3px 1px, calc(100% - 1px) 3px, calc(100% - 3px) calc(100% - 1px), 1px calc(100% - 3px))' }}
+              >←</button>
+              <div className="text-center">
+                <div className="text-[19px] font-black tabular-nums" style={{ color: '#050505', fontFamily: P5_FONT }}>{monthLabel(listMonth)}</div>
+                <div className="text-[12px] font-bold" style={{ color: '#3a3831' }}>
+                  支出 <b className="tabular-nums" style={{ color: P5R.redHot }}>{$}{fmtMoney(monthSum.exp)}</b>
+                  {monthSum.inc > 0 && <> · 收入 <b className="tabular-nums" style={{ color: '#050505' }}>{$}{fmtMoney(monthSum.inc)}</b></>}
+                </div>
+              </div>
+              <button
+                onClick={() => setListMonth(shiftMonth(listMonth, 1))}
+                disabled={listMonth >= curMonth}
+                aria-label="下个月"
+                className="flex h-9 w-9 cursor-pointer items-center justify-center text-[16px] font-black text-white disabled:cursor-not-allowed"
+                style={{ background: listMonth >= curMonth ? '#9b9791' : '#050505', clipPath: 'polygon(3px 1px, calc(100% - 1px) 3px, calc(100% - 3px) calc(100% - 1px), 1px calc(100% - 3px))' }}
+              >→</button>
+            </div>
+          </div>
         ) : (
         <div className="flex items-center justify-between gap-2">
           <button
@@ -885,6 +1064,27 @@ export const Ledger = () => {
               </span>
               <div className="text-[15px] font-black" style={{ color: P3R.grey }}>
                 {ledgerEntries.length === 0 ? '暂无可追踪的信号' : '这个月还没有记录。'}
+              </div>
+            </div>
+          ) : p5 ? (
+            <div className="relative px-4 py-9">
+              <span aria-hidden className="pointer-events-none absolute inset-0" style={{ transform: 'translate(4px,5px)', background: '#000000', clipPath: roughQuad(351, 9) }} />
+              <span aria-hidden className="pointer-events-none absolute inset-0" style={{ background: '#050505', clipPath: roughQuad(352, 8) }} />
+              <span aria-hidden className="pointer-events-none absolute inset-[3px]" style={{ background: P5R.paper, clipPath: roughQuad(353, 5) }} />
+              <div className="relative flex flex-col items-center gap-3">
+                <span aria-hidden className="relative block h-14 w-14">
+                  <svg viewBox="0 0 100 100" className="absolute inset-0 h-full w-full">
+                    <polygon points={starPts(50, 50, 46)} fill="#050505" stroke={P5R.paper} strokeWidth="5" strokeLinejoin="miter" />
+                  </svg>
+                  {/* 四周红芒（稿上空态星的签名件） */}
+                  <span className="absolute -left-2 top-1 h-2.5 w-1.5" style={{ background: P5R.red, transform: 'rotate(-28deg)' }} />
+                  <span className="absolute -right-2 top-2 h-2.5 w-1.5" style={{ background: P5R.red, transform: 'rotate(26deg)' }} />
+                  <span className="absolute -bottom-1 left-3 h-2 w-1.5" style={{ background: P5R.red, transform: 'rotate(14deg)' }} />
+                  <span className="absolute -bottom-1 right-3 h-2 w-1.5" style={{ background: P5R.red, transform: 'rotate(-16deg)' }} />
+                </span>
+                <span className="text-[14.5px] font-black" style={{ color: '#3a3831' }}>
+                  {ledgerEntries.length === 0 ? '还没有记录，记一笔开始吧' : '这个月还没有记录'}
+                </span>
               </div>
             </div>
           ) : (
