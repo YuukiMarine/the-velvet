@@ -23,6 +23,7 @@ import { AssetBoard } from '@/components/ledger/AssetBoard';
 import { Donut } from '@/components/ledger/Donut';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P3R, P3RPage, GhostWords, P3PageHeader, slantClip } from '@/components/p3r/kit';
+import { P5R, P5Collage, P5SubBar, P5Star, P5Dots, P5Slab, P5RPage } from '@/components/p5r/kit';
 import { catMeta, CATEGORY_KEYS, isGrowthCategory, INCOME_META, sym, fmtMoney, fmtSigned, DEFAULT_CHANNELS, DEFAULT_INCOME_SOURCES, incomeTypeFromSource, shiftMonth, weekdayCN, monthLabel, ledgerDateLabel, ledgerCycle } from '@/utils/ledgerFormat';
 import type { LedgerEntry, LedgerExpenseType, AttributeId, SpendWorth, Settings } from '@/types';
 import { P4Flower } from '@/ui/p4Kit';
@@ -358,16 +359,52 @@ export const Ledger = () => {
     setNlText('');
   };
 
+  const p5 = useUiChannel() === 'p5';
+
   return (
     <P3RPage active={p3}>
+    <P5RPage active={p5}>
     <motion.div
       initial={false} exit={{ opacity: 0 }}
       transition={{ duration: 0.2 }}
-      className={`relative max-w-2xl mx-auto pb-8 ${isP4 ? 'p4-reskin' : ''}`}
+      className={`relative max-w-2xl mx-auto pb-8 ${isP4 ? 'p4-reskin' : ''} ${p5 ? 'p5-reskin' : ''}`}
     >
+      {p5 && (
+        <div aria-hidden className="pointer-events-none absolute -inset-x-4 -top-6 h-[200px]" style={{ zIndex: -1 }}>
+          <P5Slab color={P5R.red} seed={261} rot={9} style={{ right: -60, top: -24, width: 240, height: 150 }} />
+          <P5Star size={26} fill={P5R.red} rot={-10} className="absolute" style={{ right: 30, top: 120 }} />
+          <P5Dots className="absolute" style={{ left: 0, top: 60, width: 70, height: 90 }} color="#4a4741" />
+        </div>
+      )}
       {/* 页头：P4 = 衬线特大 + LEDGER SHOW 橙眉标（p4-ledger-reference-v2）；
           p3 = 大黑斜体 + 左上双青片装饰（p3-ledger 设计稿） */}
-      {isP4 ? (
+      {p5 ? (
+        <motion.div {...riseIn(0)} className="flex items-start gap-2 pt-1">
+          <button
+            type="button"
+            onClick={() => setCurrentPage('menu')}
+            aria-label="返回"
+            className="relative mt-2 flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c00008]"
+            style={{ background: P5R.paper, border: '2.5px solid #050505', boxShadow: '3px 3px 0 #000000', clipPath: 'polygon(2px 1px, calc(100% - 1px) 3px, calc(100% - 3px) calc(100% - 1px), 1px calc(100% - 3px))' }}
+          >
+            <span aria-hidden className="h-0 w-0 border-y-[7px] border-y-transparent border-r-[11px]" style={{ borderRightColor: '#050505' }} />
+          </button>
+          <div className="min-w-0">
+            <P5Collage
+              size={30}
+              tiles={[
+                { ch: '心', bg: P5R.paper, fg: P5R.red, scale: 1.06, rot: -4, dy: 0 },
+                { ch: '相', bg: '#9b9791', fg: P5R.ink, rot: 3, dy: 6 },
+                { ch: '记', bg: P5R.red, fg: P5R.ink, rot: -2, dy: 2 },
+                { ch: '账', bg: P5R.paper, fg: P5R.ink, rot: 2.5, dy: 8 },
+              ]}
+            />
+            <div className="mt-2 pl-9">
+              <P5SubBar segs={[{ t: 'LEDGER' }]} star={false} rot={-1.2} className="!px-2.5 !py-0.5" />
+            </div>
+          </div>
+        </motion.div>
+      ) : isP4 ? (
         <motion.div {...riseIn(0)} className="flex items-start gap-2">
           <BackButton onClick={() => setCurrentPage('menu')} className="mt-3 -ml-1" />
           <div>
@@ -1256,6 +1293,7 @@ export const Ledger = () => {
         </div>
       )}
     </motion.div>
+    </P5RPage>
     </P3RPage>
   );
 };

@@ -8,6 +8,7 @@ import { BackButton } from '@/components/BackButton';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P4Flower, P4Sparkle, P4ArcRings, P4SkyCircle, P4_HEADER_BLEED } from '@/ui/p4Kit';
 import { P3R, P3RPage, GhostWords, P3PageHeader, P3EmptySlab, slantClip } from '@/components/p3r/kit';
+import { P5R, P5_FONT, P5SubBar, P5Star, P5Dots, P5Slab, P5RPage } from '@/components/p5r/kit';
 
 /** P4 绶带横幅裁切（p4-achievements-reference-v2）：两端内凹的奖带形 */
 const P4_RIBBON_CLIP = 'polygon(0% 0%, 100% 0%, calc(100% - 14px) 50%, 100% 100%, 0% 100%, 14px 50%)';
@@ -1668,16 +1669,66 @@ export const Achievements = () => {
       </P3RPage>
     );
   }
+  const p5 = channel === 'p5';
+
   return (
+    <P5RPage active={p5}>
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="space-y-4"
+      className={`space-y-4 ${p5 ? 'p5-reskin relative' : ''}`}
     >
-      {/* 顶部标题 + 返回按钮（与其他子页保持一致的视觉）。
-          P4（p4-achievements-reference-v2）：衬线双词标签页头（激活词大）+ AWARD SHOW 黑胶囊眉标。 */}
-      {isP4 ? (
+      {p5 && (
+        <div aria-hidden className="pointer-events-none absolute -inset-x-4 -top-6 h-[190px]" style={{ zIndex: -1 }}>
+          <P5Slab color={P5R.red} seed={281} rot={-9} style={{ left: -60, top: -16, width: 210, height: 130 }} />
+          <P5Slab color={P5R.redDeep} seed={282} rot={11} style={{ right: -70, top: 30, width: 220, height: 140 }} />
+          <P5Star size={30} fill={P5R.red} ring2={P5R.paper} rot={-14} className="absolute" style={{ right: 40, top: 6 }} />
+          <P5Dots className="absolute" style={{ right: 0, top: 120, width: 76, height: 66 }} color="#4a4741" />
+        </div>
+      )}
+      {p5 ? (
+        /* P5（无稿延伸）：拼贴双词瓷砖切换头（成就/技能）+ AWARD 纸条 */
+        <div className="relative pt-1">
+          <div className="flex items-end gap-2.5">
+            <button
+              type="button"
+              onClick={() => setCurrentPage('menu')}
+              aria-label="返回"
+              className="relative mb-1 flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c00008]"
+              style={{ background: P5R.paper, border: '2.5px solid #050505', boxShadow: '3px 3px 0 #000000', clipPath: 'polygon(2px 1px, calc(100% - 1px) 3px, calc(100% - 3px) calc(100% - 1px), 1px calc(100% - 3px))' }}
+            >
+              <span aria-hidden className="h-0 w-0 border-y-[7px] border-y-transparent border-r-[11px]" style={{ borderRightColor: '#050505' }} />
+            </button>
+            {tabs.map((tab, i) => (
+              <motion.button
+                key={tab.key}
+                onClick={() => { triggerNavFeedback(); setActiveTab(tab.key); }}
+                whileTap={{ scale: 0.95 }}
+                className="relative cursor-pointer"
+              >
+                <motion.span
+                  animate={{ fontSize: activeTab === tab.key ? '26px' : '17px', rotate: activeTab === tab.key ? (i === 0 ? -2.5 : 2) : (i === 0 ? 2 : -2) }}
+                  transition={{ type: 'spring', stiffness: 400, damping: 32 }}
+                  className="inline-block px-3 py-1.5 font-black leading-none"
+                  style={{
+                    background: activeTab === tab.key ? P5R.red : P5R.paper,
+                    color: activeTab === tab.key ? '#ffffff' : P5R.grey,
+                    border: '3px solid #050505',
+                    boxShadow: '0 0 0 2.5px #f0e9df, 5px 6px 0 #000000',
+                    fontFamily: P5_FONT,
+                  }}
+                >
+                  {tab.label}
+                </motion.span>
+              </motion.button>
+            ))}
+          </div>
+          <div className="mt-2.5 pl-12">
+            <P5SubBar segs={[{ t: 'AWARD' }, { t: 'SHOW', c: P5R.red }]} star rot={-1.2} className="!px-2.5 !py-0.5" />
+          </div>
+        </div>
+      ) : isP4 ? (
         <div className="relative -mx-4 min-h-[136px] px-4 pb-1 pt-1" style={P4_HEADER_BLEED}>
           <P4ArcRings size={210} className="absolute -right-16 -top-24" />
           <P4SkyCircle size={128} className="absolute -right-6 top-0" />
@@ -1748,5 +1799,6 @@ export const Achievements = () => {
       {/* Tab content */}
       {tabContent}
     </motion.div>
+    </P5RPage>
   );
 };

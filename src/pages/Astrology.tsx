@@ -10,6 +10,7 @@ import { ReadingArchive } from '@/components/astrology/ReadingArchive';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P4SkyCircle, P4Sparkle, P4_HEADER_BLEED } from '@/ui/p4Kit';
 import { P3R, P3RPage, GhostWords, P3PageHeader, slantClip } from '@/components/p3r/kit';
+import { P5R, P5Collage, P5SubBar, P5Star, P5Dots, P5Slab, P5RPage } from '@/components/p5r/kit';
 
 type Tab = 'daily' | 'long' | 'archive';
 
@@ -109,15 +110,52 @@ export function Astrology() {
     );
   }
 
+  const p5 = channel === 'p5';
+
   return (
+    <P5RPage active={p5}>
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.2 }}
-      className="max-w-xl mx-auto space-y-5"
+      className={`max-w-xl mx-auto space-y-5 ${p5 ? 'p5-reskin relative' : ''}`}
     >
-      {isP4 ? (
+      {p5 && (
+        <div aria-hidden className="pointer-events-none absolute -inset-x-4 -top-6 h-[200px]" style={{ zIndex: -1 }}>
+          <P5Slab color={P5R.red} seed={271} rot={-10} style={{ left: -60, top: -20, width: 220, height: 140 }} />
+          <P5Slab color={P5R.redDeep} seed={272} rot={12} style={{ right: -70, top: 20, width: 230, height: 150 }} />
+          <P5Star size={34} fill={P5R.red} ring2={P5R.paper} rot={16} className="absolute" style={{ right: 30, top: 0 }} />
+          <P5Star size={14} fill="#3a3831" rot={-8} className="absolute" style={{ left: 30, top: 120 }} />
+          <P5Dots className="absolute" style={{ right: 0, top: 110, width: 80, height: 76 }} color="#4a4741" />
+        </div>
+      )}
+      {p5 ? (
+        /* P5UI/p5-modal-16：拼贴「星象」（星=红底黑字/象=纸底黑字）+ ARCANA 纸条 */
+        <div className="flex items-start gap-2 pt-1">
+          <button
+            type="button"
+            onClick={() => setCurrentPage('dashboard')}
+            aria-label="返回首页"
+            className="relative mt-2 flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c00008]"
+            style={{ background: P5R.paper, border: '2.5px solid #050505', boxShadow: '3px 3px 0 #000000', clipPath: 'polygon(2px 1px, calc(100% - 1px) 3px, calc(100% - 3px) calc(100% - 1px), 1px calc(100% - 3px))' }}
+          >
+            <span aria-hidden className="h-0 w-0 border-y-[7px] border-y-transparent border-r-[11px]" style={{ borderRightColor: '#050505' }} />
+          </button>
+          <div className="min-w-0">
+            <P5Collage
+              size={40}
+              tiles={[
+                { ch: '星', bg: P5R.red, fg: P5R.ink, scale: 1.05, rot: -3.5, dy: 0 },
+                { ch: '象', bg: P5R.paper, fg: P5R.ink, rot: 2.5, dy: 7 },
+              ]}
+            />
+            <div className="mt-2 pl-8">
+              <P5SubBar segs={[{ t: 'ARCANA' }]} star={false} rot={-1.2} className="!px-2.5 !py-0.5" />
+            </div>
+          </div>
+        </div>
+      ) : isP4 ? (
         /* p4-astrology-reference-v2：衬线特大「星象」+ ARCANA CHANNEL + 右上天空圆窗 */
         <div className="relative -mx-4 min-h-[146px] px-4 pb-1 pt-1" style={P4_HEADER_BLEED}>
           <P4SkyCircle size={140} className="absolute -right-8 top-0" />
@@ -258,5 +296,6 @@ export function Astrology() {
         )}
       </AnimatePresence>
     </motion.div>
+    </P5RPage>
   );
 }

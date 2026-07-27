@@ -40,7 +40,39 @@ const CatFace = ({ className }: { className?: string }) => {
 // 人格名随 activePreset 动态取（Batch3）；'黑猫' 仅作窗口未初始化时的兜底
 
 // ── 皮肤 token（p4 = 黄频道节目窗 / bright = P3R 白日水面（p3-navigator-reference-v2）/ 暗 = 中性兜底） ──
-const skinOf = (bright: boolean, p4 = false) => p4
+const skinOf = (bright: boolean, p4 = false, p5 = false) => p5
+  ? {
+    // p5-navigator-reference-v2：红舞台（黑斜杠装饰）+ 纸信头 + 黑/纸尖角气泡（白圈硬影）+ 红发送
+    root: undefined as string | undefined,
+    rootStyle: {
+      background: 'linear-gradient(115deg, transparent 61%, #050505 61.5%, #050505 67%, transparent 67.5%), linear-gradient(295deg, transparent 77%, #050505 77.5%, #050505 82%, transparent 82.5%), #b80000',
+    } as React.CSSProperties,
+    headerSlab: 'bg-[#f0e9df]',
+    headerStyle: { clipPath: 'polygon(0 0, 100% 0, calc(100% - 14px) 100%, 0 100%)', boxShadow: '0 5px 0 #000000' } as React.CSSProperties,
+    headerText: { color: '#050505' } as React.CSSProperties,
+    catBubble: 'text-[#f0e9df] font-bold',
+    catBubbleStyle: { background: '#050505', clipPath: 'polygon(13px 0, 100% 0, calc(100% - 6px) 100%, 0 100%, 0 12px)', boxShadow: '0 0 0 2.5px #f0e9df', borderRadius: 3 } as React.CSSProperties,
+    userBubble: 'text-[#050505] font-bold',
+    userBubbleStyle: { background: '#f0e9df', clipPath: 'polygon(0 0, calc(100% - 13px) 0, 100% 12px, 100% 100%, 6px 100%)', boxShadow: '0 0 0 2.5px #050505', borderRadius: 3 } as React.CSSProperties,
+    avatar: 'text-[#c00008]',
+    avatarStyle: { background: '#050505', boxShadow: '0 0 0 2.5px #f0e9df' } as React.CSSProperties,
+    chip: 'text-[13px] font-black bg-[#f0e9df] text-[#050505]',
+    chipStyle: { clipPath: 'polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%)', boxShadow: '2.5px 3px 0 #000000', paddingLeft: 16, paddingRight: 16 } as React.CSSProperties,
+    inputBar: undefined as string | undefined,
+    inputBarStyle: { background: 'transparent' } as React.CSSProperties,
+    input: 'flex-1 bg-[#f0e9df] px-4 py-2.5 text-[16px] font-bold outline-none placeholder:text-[#6b6862]',
+    inputStyle: { color: '#050505', clipPath: 'polygon(6px 0, 100% 2px, calc(100% - 4px) 100%, 0 calc(100% - 3px))', boxShadow: '0 0 0 2.5px #050505' } as React.CSSProperties,
+    send: 'flex h-11 w-14 shrink-0 items-center justify-center text-lg font-black text-white disabled:opacity-40',
+    sendStyle: { background: '#c00008', clipPath: 'polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%)', boxShadow: '0 0 0 2.5px #050505, 3px 3px 0 #000000' } as React.CSSProperties,
+    card: 'bg-[#f0e9df] text-[#050505]',
+    cardStyle: { clipPath: 'polygon(8px 2px, 40% 0, calc(100% - 4px) 6px, calc(100% - 9px) calc(100% - 4px), 50% 100%, 4px calc(100% - 8px))', boxShadow: '0 0 0 2.5px #050505, 4px 5px 0 #000000' } as React.CSSProperties,
+    cardBtn: 'min-h-10 px-4 text-[13px] font-black text-white disabled:opacity-40 bg-[#c00008] [clip-path:polygon(4px_1px,calc(100%-1px)_3px,calc(100%-4px)_calc(100%-1px),1px_calc(100%-3px))]',
+    cardBtnGhost: 'min-h-10 px-3.5 text-[13px] font-black text-[#050505] bg-[#dcd4c4] [clip-path:polygon(4px_1px,calc(100%-1px)_3px,calc(100%-4px)_calc(100%-1px),1px_calc(100%-3px))]',
+    cardBtnText: 'min-h-10 px-2 text-[13px] font-bold text-[#6b6862]',
+    stamp: 'px-2 py-0.5 text-[10px] font-black tracking-[0.12em]',
+    stampStyle: { background: '#050505', color: '#f0e9df', transform: 'rotate(-2deg)' } as React.CSSProperties,
+  }
+  : p4
   ? {
     // p4-navigator-reference-v2：黄舞台 + 奶油斜切信头（蓝圆黑猫）+ 奶油/黑气泡 + 蓝圆发送
     root: undefined as string | undefined,
@@ -136,7 +168,8 @@ export const NavigatorWindow = () => {
   const bold = useBoldness();
   const bright = terminalChannel(user?.theme) === 'board';
   const isP4 = user?.theme === 'yellow';
-  const sk = skinOf(bright, isP4);
+  const isP5 = user?.theme === 'red';
+  const sk = skinOf(bright, isP4, isP5);
   const preset = nav.activePreset();
 
   const a11yRef = useModalA11y(nav.isOpen, nav.close, { closeOnEscape: true, trapFocus: true });
