@@ -6,6 +6,7 @@ import { useCloudSocialStore } from '@/store/cloudSocial';
 import { PageTitle } from '@/components/PageTitle';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P3R, P3RPage, GhostWords, P3PageHeader, SlantButton, slantClip } from '@/components/p3r/kit';
+import { P5R, P5_FONT, P5Collage, P5SubBar, P5Star, P5Dots, P5Slab, P5RPage } from '@/components/p5r/kit';
 import { ConfidantCard } from '@/components/cooperation/ConfidantCard';
 import { ConfidantAlbumWall } from '@/components/cooperation/ConfidantAlbumWall';
 import { ConfidantCreateModal } from '@/components/cooperation/ConfidantCreateModal';
@@ -245,17 +246,43 @@ export function Cooperation() {
 
   const showOnlineFriends = filter === 'all' || filter === 'online';
 
+  const p5 = useUiChannel() === 'p5';
+
   return (
     <P3RPage active={p3}>
+    <P5RPage active={p5}>
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.2 }}
-      className="relative max-w-2xl mx-auto space-y-5"
+      className={`relative max-w-2xl mx-auto space-y-5 ${p5 ? 'p5-reskin' : ''}`}
     >
+      {/* P5 页头装饰（沉底）：右上红斜块群 + 半调 */}
+      {p5 && (
+        <div aria-hidden className="pointer-events-none absolute -inset-x-4 -top-6 h-[190px]" style={{ zIndex: -1 }}>
+          <P5Slab color={P5R.red} seed={231} rot={12} style={{ right: -60, top: -30, width: 250, height: 150 }} />
+          <P5Slab color={P5R.redDeep} seed={232} rot={-8} style={{ left: -70, top: 50, width: 180, height: 120 }} />
+          <P5Star size={22} fill={P5R.red} rot={14} className="absolute" style={{ right: 40, top: 110 }} />
+          <P5Dots className="absolute" style={{ right: 0, top: 0, width: 90, height: 84 }} color="#000000" />
+        </div>
+      )}
       <div className="flex items-center gap-2">
-        {isP4 ? (
+        {p5 ? (
+          /* P5UI/p5-cooperation：拼贴「羁绊」（羁=红底黑字/绊=纸底黑字）+ COOPERATION 黑条 */
+          <div className="min-w-0 pt-1">
+            <P5Collage
+              size={40}
+              tiles={[
+                { ch: '羁', bg: P5R.red, fg: P5R.ink, scale: 1.05, rot: -3.5, dy: 0 },
+                { ch: '绊', bg: P5R.paper, fg: P5R.ink, rot: 2.5, dy: 7 },
+              ]}
+            />
+            <div className="mt-2 pl-8">
+              <P5SubBar segs={[{ t: 'COOPERATION' }]} star={false} rot={-1.2} className="!px-2.5 !py-0.5" />
+            </div>
+          </div>
+        ) : isP4 ? (
           /* p4-cooperation-reference-v2：衬线特大「同伴」+ COOPERATION FILE 眉标（FILE 橙染） */
           <div>
             <h1
@@ -274,7 +301,13 @@ export function Cooperation() {
           <PageTitle title="同伴" en="Cooperation" enOffset={{ right: -32 }} />
         )}
         <div className="ml-auto flex items-center gap-2">
-          {isP4 ? (
+          {p5 ? (
+            /* P5UI/p5-cooperation：N / 22 黑底斜章 + 白星 */
+            <span className="flex items-center gap-1.5 px-2.5 py-1" style={{ background: '#050505', clipPath: 'polygon(6px 0, 100% 2px, calc(100% - 5px) 100%, 0 calc(100% - 3px))', boxShadow: '0 0 0 2px #f0e9df' }} aria-label={`已缔结 ${activeCount} / ${MAJOR_ARCANA_IDS.length}`}>
+              <span className="text-[14px] font-black leading-none tabular-nums text-white" style={{ fontFamily: P5_FONT }}>{activeCount} / {MAJOR_ARCANA_IDS.length}</span>
+              <P5Star size={13} fill="#f8f8f6" />
+            </span>
+          ) : isP4 ? (
             <span className="text-[13px] font-black tracking-wider tabular-nums text-[#131313]">
               {activeCount} / {MAJOR_ARCANA_IDS.length}
             </span>
@@ -514,6 +547,20 @@ export function Cooperation() {
             { id: 'archived', label: '归档' },
           ] as const).map(t => {
             const active = filter === t.id;
+            if (p5) {
+              // P5UI/p5-cooperation：选中 = 猩红不规则块白字，未选中 = 黑底纸描边块
+              return (
+                <button
+                  key={t.id}
+                  onClick={() => setFilter(t.id)}
+                  className={`relative mx-0.5 cursor-pointer py-2 text-[13px] font-black transition-colors ${active ? 'text-white' : 'text-[#d9d3c7]'}`}
+                >
+                  <span aria-hidden className="absolute inset-0" style={{ background: '#f0e9df', clipPath: `polygon(${3 + (t.id.length % 3)}px 1px, calc(100% - 1px) 3px, calc(100% - 4px) calc(100% - 1px), 1px calc(100% - 3px))` }} />
+                  <span aria-hidden className="absolute inset-[2px]" style={{ background: active ? '#c00008' : '#050505', clipPath: `polygon(2px 1px, calc(100% - 1px) 2px, calc(100% - 3px) calc(100% - 1px), 1px calc(100% - 2px))` }} />
+                  <span className="relative">{t.label}</span>
+                </button>
+              );
+            }
             if (isP4) {
               return (
                 <button
@@ -590,9 +637,15 @@ export function Cooperation() {
                 className={
                   isP4
                     ? 'mt-4 px-6 py-2.5 text-sm font-black text-white'
-                    : 'mt-4 px-5 py-2 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white text-sm font-bold shadow-lg shadow-purple-500/20'
+                    : p5
+                      ? 'relative mt-4 cursor-pointer px-6 py-2.5 text-sm font-black text-white'
+                      : 'mt-4 px-5 py-2 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white text-sm font-bold shadow-lg shadow-purple-500/20'
                 }
-                style={isP4 ? { background: 'var(--ui-accent)', borderRadius: 16, transform: 'skewX(-6deg)', boxShadow: '0 3px 0 rgba(19,19,19,0.25)' } : undefined}
+                style={isP4
+                  ? { background: 'var(--ui-accent)', borderRadius: 16, transform: 'skewX(-6deg)', boxShadow: '0 3px 0 rgba(19,19,19,0.25)' }
+                  : p5
+                    ? { background: '#c00008', clipPath: 'polygon(5px 2px, calc(100% - 2px) 5px, calc(100% - 5px) calc(100% - 2px), 2px calc(100% - 5px))', boxShadow: '0 0 0 2.5px #f0e9df, 4px 4px 0 #000000', transform: 'rotate(-1deg)' }
+                    : undefined}
               >
                 <span style={isP4 ? { display: 'inline-block', transform: 'skewX(6deg)' } : undefined}>邀请第一位同伴</span>
               </button>
@@ -707,6 +760,8 @@ export function Cooperation() {
           className={`fixed bottom-24 md:bottom-8 right-5 md:right-8 z-40 flex items-center justify-center text-white ${
             isP4
               ? 'h-16 w-16 text-2xl font-bold'
+              : p5
+                ? 'h-14 w-14 text-2xl font-black'
               : p3
                 ? 'h-14 w-[76px] text-3xl font-black'
                 : 'w-14 h-14 rounded-full text-2xl font-bold shadow-2xl'
@@ -714,6 +769,8 @@ export function Cooperation() {
           style={
             isP4
               ? undefined
+              : p5
+                ? undefined
               : p3
                 ? {
                     clipPath: 'polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%)',
@@ -729,6 +786,13 @@ export function Cooperation() {
         >
           {isP4 && (
             <P4Sparkle size={64} color="var(--ui-accent)" className="absolute inset-0" style={{ filter: 'drop-shadow(0 3px 0 rgba(19,19,19,0.3))' }} />
+          )}
+          {p5 && (
+            <span aria-hidden className="pointer-events-none absolute inset-0">
+              <span className="absolute inset-0" style={{ transform: 'translate(3px,3.5px)', background: '#000000', clipPath: 'polygon(31% 2%, 71% 3%, 97% 30%, 98% 69%, 70% 97%, 29% 98%, 3% 71%, 2% 31%)' }} />
+              <span className="absolute inset-0" style={{ background: '#f0e9df', clipPath: 'polygon(30% 3%, 70% 2%, 98% 31%, 97% 70%, 71% 98%, 30% 97%, 2% 69%, 3% 30%)' }} />
+              <span className="absolute inset-[3px]" style={{ background: '#c00008', clipPath: 'polygon(30% 3%, 70% 2%, 98% 31%, 97% 70%, 71% 98%, 30% 97%, 2% 69%, 3% 30%)' }} />
+            </span>
           )}
           <span className="relative">+</span>
         </motion.button>
@@ -834,6 +898,7 @@ export function Cooperation() {
         onClose={() => setShadowVictory(null)}
       />
     </motion.div>
+    </P5RPage>
     </P3RPage>
   );
 }

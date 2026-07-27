@@ -7,6 +7,7 @@ import { PageTitle } from '@/components/PageTitle';
 import { PagePlane, PlaneLevel } from '@/components/PagePlane';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P3R, P3RPage, GhostWords, P3PageHeader, SectionMark, slantClip } from '@/components/p3r/kit';
+import { P5R, P5Collage, P5SubBar, P5Star, P5Dots, P5Slab, P5RPage } from '@/components/p5r/kit';
 import {
   AreaChart, Area, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip,
@@ -313,14 +314,26 @@ export const Statistics = () => {
   }));
   const topAttr = attrTotals.sort((a, b) => b.total - a.total)[0];
 
+  const p5 = channel === 'p5';
+
   return (
     <P3RPage active={p3}>
+    <P5RPage active={p5}>
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="relative"
+      className={`relative ${p5 ? 'p5-reskin' : ''}`}
     >
+      {p5 && (
+        <div aria-hidden className="pointer-events-none absolute -inset-x-4 -top-6 h-[180px]" style={{ zIndex: -1 }}>
+          <P5Slab color={P5R.red} seed={251} rot={-8} style={{ left: -50, top: -20, width: 210, height: 120 }} />
+          <P5Slab color={P5R.redDeep} seed={252} rot={10} style={{ right: -60, top: 10, width: 200, height: 130 }} />
+          <P5Star size={30} fill={P5R.red} ring2={P5R.paper} rot={-12} className="absolute" style={{ right: 60, top: 20 }} />
+          <P5Star size={16} fill="#3a3831" rot={10} className="absolute" style={{ right: 24, top: 96 }} />
+          <P5Dots className="absolute" style={{ left: 0, top: 90, width: 76, height: 70 }} color="#4a4741" />
+        </div>
+      )}
       {p3 && <GhostWords words={['TRACE']} className="right-[8px] top-[-12px] text-right text-[78px]" style={{ transform: 'rotate(0deg)' }} />}
       {/* 斜轴世界（§2 规则1）：整页内容平面随世界倾斜 -4°，卡片成平行四边形；
           每张卡的内容包 PlaneLevel 反制回水平（"世界斜、字不斜"）。聚焦输入自动校直。
@@ -329,7 +342,31 @@ export const Statistics = () => {
       {/* header — 宫格子页页头归一 PageTitle 制式（审计 S6），返回归一 → 菜单。
           P4（p4-statistics-reference-v2）：衬线特大「统计」+ STATUS CHECK 眉标 + 天空扇；
           p3（p3-statistics-reference-v2）：P3PageHeader + 命运轨迹青斜纹。 */}
-      {isP4 ? (
+      {p5 ? (
+        <PlaneLevel className="relative flex items-start gap-2 pt-1">
+          <button
+            type="button"
+            onClick={() => setCurrentPage('menu')}
+            aria-label="返回"
+            className="relative mt-2 flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c00008]"
+            style={{ background: P5R.paper, border: '2.5px solid #050505', boxShadow: '3px 3px 0 #000000', clipPath: 'polygon(2px 1px, calc(100% - 1px) 3px, calc(100% - 3px) calc(100% - 1px), 1px calc(100% - 3px))' }}
+          >
+            <span aria-hidden className="h-0 w-0 border-y-[7px] border-y-transparent border-r-[11px]" style={{ borderRightColor: '#050505' }} />
+          </button>
+          <div className="min-w-0">
+            <P5Collage
+              size={38}
+              tiles={[
+                { ch: '统', bg: P5R.paper, fg: P5R.ink, rot: -3.5, dy: 0 },
+                { ch: '计', bg: P5R.red, fg: P5R.ink, rot: 3, dy: 7 },
+              ]}
+            />
+            <div className="mt-2 pl-8">
+              <P5SubBar segs={[{ t: 'STATISTICS' }]} star={false} rot={-1.2} className="!px-2.5 !py-0.5" />
+            </div>
+          </div>
+        </PlaneLevel>
+      ) : isP4 ? (
         <PlaneLevel className="relative -mx-4 min-h-[152px] px-4 pb-1 pt-1" style={P4_HEADER_BLEED}>
           <P4ArcRings size={250} className="absolute -right-20 -top-28" />
           <P4SkyFan size={148} className="absolute right-0 top-0" />
@@ -692,6 +729,7 @@ export const Statistics = () => {
       )}
       </PagePlane>
     </motion.div>
+    </P5RPage>
     </P3RPage>
   );
 };

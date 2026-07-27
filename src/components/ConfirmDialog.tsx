@@ -100,6 +100,9 @@ export const ConfirmDialog = ({
         : { variant: 'secondary' as const, active: false };
   // P3R（蓝频道）：白斜卡面板 + 斜切双钮（取消浅青 / 确认蓝、危险洋红）
   const p3 = channel === 'p3' && !forceDark;
+  // P5R（p5-modal-01 稿）：微斜纸卡 + 右上大红星 + 不规则双钮（取消纸 / 确认红）
+  const p5 = channel === 'p5' && !forceDark;
+  const p5BtnClip = 'polygon(3px 1px, calc(100% - 1px) 3px, calc(100% - 3px) calc(100% - 1px), 1px calc(100% - 3px))';
   const p3Clip = 'polygon(9px 0, 100% 0, calc(100% - 9px) 100%, 0 100%)';
   const p3ConfirmBg: Record<ConfirmTone, string> = { default: '#1b57ff', danger: '#f0417f', warning: '#f5a623' };
   const p3ActionStyle = (t: NonNullable<ConfirmAction['tone']>) =>
@@ -133,12 +136,27 @@ export const ConfirmDialog = ({
             className={
               isP4
                 ? 'relative w-full max-w-sm'
+                : p5
+                  ? 'p5-reskin relative w-full max-w-sm p-6'
                 : p3
                   ? 'w-full max-w-sm bg-white p-6 shadow-2xl'
                   : 'w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl dark:bg-gray-900'
             }
-            style={p3 ? { clipPath: 'polygon(16px 0, 100% 0, calc(100% - 16px) 100%, 0 100%)' } : undefined}
+            style={p5
+              ? { background: '#f0e9df', clipPath: 'polygon(9px 6px, 38% 1px, calc(100% - 5px) 9px, calc(100% - 10px) calc(100% - 6px), 55% calc(100% - 1px), 5px calc(100% - 10px))', boxShadow: '0 0 0 3px #050505, 7px 8px 0 #000000', transform: 'rotate(-0.6deg)' }
+              : p3 ? { clipPath: 'polygon(16px 0, 100% 0, calc(100% - 16px) 100%, 0 100%)' } : undefined}
           >
+            {/* P5：右上大红星（纸描边）+ 左下黑星贴 */}
+            {p5 && (
+              <>
+                <svg aria-hidden viewBox="0 0 100 100" className="pointer-events-none absolute -right-5 -top-6 h-16 w-16">
+                  <polygon points="50,2 61.8,38.2 100,38.2 69.1,60.6 80.9,96.8 50,74.4 19.1,96.8 30.9,60.6 0,38.2 38.2,38.2" fill="#c00008" stroke="#f0e9df" strokeWidth="6" />
+                </svg>
+                <svg aria-hidden viewBox="0 0 100 100" className="pointer-events-none absolute -bottom-4 -left-3 h-9 w-9" style={{ transform: 'rotate(-14deg)' }}>
+                  <polygon points="50,2 61.8,38.2 100,38.2 69.1,60.6 80.9,96.8 50,74.4 19.1,96.8 30.9,60.6 0,38.2 38.2,38.2" fill="#050505" />
+                </svg>
+              </>
+            )}
             {isP4 ? (
               /* p4-redraw modal-01 v3：黑色八角贴纸 + 奶油描边，橙圆图标 + 衬线标题，
                  周身贴橙硬币/蓝星闪/蓝花贴纸；按钮走 PersonaButton 斜切胶囊 */
@@ -254,8 +272,12 @@ export const ConfirmDialog = ({
                         whileTap={TAP}
                         disabled={busy}
                         onClick={action.onClick}
-                        className={p3 ? 'flex-1 py-2.5 text-sm font-black disabled:opacity-50' : `flex-1 rounded-xl py-2.5 text-sm font-bold disabled:opacity-50 ${ACTION_BTN[action.tone ?? 'default']}`}
-                        style={p3 ? p3ActionStyle(action.tone ?? 'default') : undefined}
+                        className={p3 || p5 ? 'flex-1 py-2.5 text-sm font-black disabled:opacity-50' : `flex-1 rounded-xl py-2.5 text-sm font-bold disabled:opacity-50 ${ACTION_BTN[action.tone ?? 'default']}`}
+                        style={p5
+                          ? ((action.tone ?? 'default') === 'primary' || (action.tone ?? 'default') === 'danger'
+                              ? { clipPath: p5BtnClip, background: '#c00008', color: '#fff', boxShadow: '0 0 0 2.5px #050505, 3px 3px 0 #000000' }
+                              : { clipPath: p5BtnClip, background: '#f0e9df', color: '#050505', boxShadow: '0 0 0 2.5px #050505, 3px 3px 0 #000000' })
+                          : p3 ? p3ActionStyle(action.tone ?? 'default') : undefined}
                       >
                         {action.label}
                       </motion.button>
@@ -266,8 +288,10 @@ export const ConfirmDialog = ({
                         whileTap={TAP}
                         disabled={busy}
                         onClick={onCancel}
-                        className={p3 ? 'flex-1 py-2.5 text-sm font-black disabled:opacity-50' : 'flex-1 rounded-xl bg-gray-100 py-2.5 text-sm font-bold text-gray-700 disabled:opacity-50 dark:bg-gray-800 dark:text-gray-200'}
-                        style={p3 ? { clipPath: p3Clip, background: '#cfeaf6', color: '#0a1230' } : undefined}
+                        className={p3 || p5 ? 'flex-1 py-2.5 text-sm font-black disabled:opacity-50' : 'flex-1 rounded-xl bg-gray-100 py-2.5 text-sm font-bold text-gray-700 disabled:opacity-50 dark:bg-gray-800 dark:text-gray-200'}
+                        style={p5
+                          ? { clipPath: p5BtnClip, background: '#f0e9df', color: '#050505', boxShadow: '0 0 0 2.5px #050505, 3px 3px 0 #000000', transform: 'rotate(-0.8deg)' }
+                          : p3 ? { clipPath: p3Clip, background: '#cfeaf6', color: '#0a1230' } : undefined}
                       >
                         {cancelText}
                       </motion.button>
@@ -275,8 +299,10 @@ export const ConfirmDialog = ({
                         whileTap={TAP}
                         disabled={busy}
                         onClick={onConfirm}
-                        className={p3 ? 'flex flex-1 items-center justify-center gap-2 py-2.5 text-sm font-black text-white disabled:opacity-50' : `flex flex-1 items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-bold text-white disabled:opacity-50 ${CONFIRM_BTN[tone]}`}
-                        style={p3 ? { clipPath: p3Clip, background: p3ConfirmBg[tone] } : undefined}
+                        className={p3 || p5 ? 'flex flex-1 items-center justify-center gap-2 py-2.5 text-sm font-black text-white disabled:opacity-50' : `flex flex-1 items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-bold text-white disabled:opacity-50 ${CONFIRM_BTN[tone]}`}
+                        style={p5
+                          ? { clipPath: p5BtnClip, background: '#c00008', boxShadow: '0 0 0 2.5px #050505, 3px 3px 0 #000000', transform: 'rotate(0.8deg)' }
+                          : p3 ? { clipPath: p3Clip, background: p3ConfirmBg[tone] } : undefined}
                       >
                         {busy && (
                           <span
