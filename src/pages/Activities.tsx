@@ -1338,12 +1338,13 @@ export const ActivitiesView = () => {
               onClick={() => analyzeActivity()}
               disabled={!description.trim()}
               aria-label="分析关键词"
-              className="relative mt-4 block w-full cursor-pointer py-3 text-[16px] font-black tracking-wider text-white disabled:cursor-not-allowed disabled:opacity-50"
+              className="relative mt-4 block w-full cursor-pointer py-3 text-[16px] font-black tracking-wider text-white disabled:cursor-not-allowed"
               style={{ fontFamily: P5_FONT }}
             >
+              {/* 禁用态走纯灰面，不用透明度表达状态（用户铁律） */}
               <span aria-hidden className="absolute inset-0" style={{ transform: 'translate(4px,5px)', background: '#000000', clipPath: roughSlant(451, 14, 3) }} />
               <span aria-hidden className="absolute inset-0" style={{ background: P5R.paper, clipPath: roughSlant(451, 14, 3) }} />
-              <span aria-hidden className="absolute inset-[3px]" style={{ background: '#050505', clipPath: roughSlant(452, 13, 2.5) }} />
+              <span aria-hidden className="absolute inset-[3px]" style={{ background: description.trim() ? '#050505' : '#6b6862', clipPath: roughSlant(452, 13, 2.5) }} />
               <span className="relative">分析关键词</span>
               <svg viewBox="0 0 100 100" className="pointer-events-none absolute -right-2 -top-3 h-12 w-12" aria-hidden>
                 <polygon points={starPts(50, 50, 48)} fill="#9b9791" stroke={P5R.paper} strokeWidth="6" strokeLinejoin="miter" />

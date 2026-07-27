@@ -9,11 +9,15 @@ import { useUiChannel } from '@/ui/useUiChannel';
 import { zClass } from '@/utils/zIndex';
 import { P4Flower, P4Sparkle } from '@/ui/p4Kit';
 import { sheetTopClip } from '@/components/p3r/kit';
-import { P5Star, P5CollageTitle } from '@/components/p5r/kit';
+import { P5CollageTitle } from '@/components/p5r/kit';
 
-// P5 撕纸顶缘（p5-modal-02 稿的纸卡翻折顶）：外黑衬 / 内纸面 两套顶点微错位 = 不等宽黑框
-const P5_SHEET_OUTER = 'polygon(0 24px, 7% 7px, 22% 17px, 41% 3px, 60% 15px, 79% 5px, 100% 13px, 100% 100%, 0 100%)';
-const P5_SHEET_INNER = 'polygon(0 28px, 7% 11px, 22% 21px, 41% 7px, 60% 19px, 79% 9px, 100% 17px, 100% 100%, 0 100%)';
+/* P5 纸卡轮廓（p5-modal-03 稿）—— 四条都是干净斜直线，不是撕纸皱边：
+   上边一条斜线（左低右高）/ 右边向内斜 / 下边微斜；
+   外黑壳与内纸面四边内缩量各不相同 = 不等宽黑框（依旧反板正，但边是直的）。 */
+const P5_SHEET_OUTER = 'polygon(0 32px, 100% 0, calc(100% - 20px) 100%, 0 calc(100% - 6px))';
+const P5_SHEET_INNER = 'polygon(5px 40px, calc(100% - 7px) 8px, calc(100% - 26px) calc(100% - 2px), 3px calc(100% - 12px))';
+const P5_CARD_OUTER = 'polygon(0 24px, 100% 0, calc(100% - 17px) 100%, 7px calc(100% - 14px))';
+const P5_CARD_INNER = 'polygon(5px 32px, calc(100% - 7px) 7px, calc(100% - 23px) calc(100% - 4px), 11px calc(100% - 19px))';
 
 /**
  * SheetModal —— 标准弹窗 / 抽屉基座（UI_AUDIT_V2.5.md §5）。
@@ -137,18 +141,7 @@ export const SheetModal = ({
             if (closeOnBackdrop && !busy) onClose();
           }}
         >
-          {/* P5：幕布红黑斜纹（设计稿弹窗背景签名件）—— 两组不同宽度/相位的斜条叠加 */}
-          {p5 && (
-            <div
-              aria-hidden
-              className="pointer-events-none absolute inset-0"
-              style={{
-                backgroundImage:
-                  'repeating-linear-gradient(122deg, transparent 0 74px, #c00008 74px 116px, transparent 116px 190px),'
-                  + 'repeating-linear-gradient(122deg, transparent 0 128px, #050505 128px 178px, transparent 178px 300px)',
-              }}
-            />
-          )}
+
           <motion.div
             ref={containerRef}
             role="dialog"
@@ -174,12 +167,7 @@ export const SheetModal = ({
               isP4
                 ? { border: '5px solid #fff6d0', boxShadow: '0 10px 0 rgba(19, 19, 19, 0.28)' }
                 : p5
-                  ? {
-                      background: '#050505',
-                      clipPath: isBottom
-                        ? P5_SHEET_OUTER
-                        : 'polygon(7px 5px, 30% 1px, calc(100% - 4px) 8px, calc(100% - 8px) calc(100% - 5px), 55% calc(100% - 1px), 4px calc(100% - 9px))',
-                    }
+                  ? { background: 'transparent' }
                 : p3
                   ? {
                       background: 'linear-gradient(178deg, #fbfdff 0%, #f0f8fc 60%, #e6f3fa 100%)',
@@ -188,36 +176,25 @@ export const SheetModal = ({
                   : undefined
             }
           >
-            {/* P5：纸面内衬（黑外壳内缩，两套撕缘顶点错位 = 不等宽黑框）+ 红衬错位层 + 红角贴 + 星章 */}
+            {/* P5 壳层（红衬 / 黑壳 / 纸面）：全部走负层绝对定位——
+                不在面板本体上上 clip-path，标题瓷砖才能骑到上边框之外。 */}
             {p5 && (
               <>
-                {/* 红衬：向左下错位，从黑壳边缘露出一条红（p5-modal-03 稿） */}
                 <span
                   aria-hidden
-                  className="pointer-events-none absolute"
-                  style={{
-                    inset: 0,
-                    transform: 'translate(-7px, 7px)',
-                    background: '#c00008',
-                    zIndex: -1,
-                    clipPath: isBottom
-                      ? P5_SHEET_OUTER
-                      : 'polygon(7px 5px, 30% 1px, calc(100% - 4px) 8px, calc(100% - 8px) calc(100% - 5px), 55% calc(100% - 1px), 4px calc(100% - 9px))',
-                  }}
+                  className="pointer-events-none absolute inset-0"
+                  style={{ transform: 'translate(-8px, 8px)', background: '#c00008', zIndex: -1, clipPath: isBottom ? P5_SHEET_OUTER : P5_CARD_OUTER }}
                 />
                 <span
                   aria-hidden
-                  className="pointer-events-none absolute"
-                  style={{
-                    inset: 3.5,
-                    background: '#f0e9df',
-                    clipPath: isBottom
-                      ? P5_SHEET_INNER
-                      : 'polygon(9px 8px, 30% 4px, calc(100% - 7px) 11px, calc(100% - 11px) calc(100% - 8px), 55% calc(100% - 4px), 7px calc(100% - 12px))',
-                  }}
+                  className="pointer-events-none absolute inset-0"
+                  style={{ background: '#050505', zIndex: -1, clipPath: isBottom ? P5_SHEET_OUTER : P5_CARD_OUTER }}
                 />
-                <span aria-hidden className="pointer-events-none absolute right-3.5 top-7" style={{ width: 30, height: 30, background: '#c00008', clipPath: 'polygon(100% 0, 100% 100%, 0 0)' }} />
-                <P5Star size={20} fill="#c00008" rot={-12} className="pointer-events-none absolute left-6 top-1" />
+                <span
+                  aria-hidden
+                  className="pointer-events-none absolute inset-0"
+                  style={{ background: '#f0e9df', zIndex: -1, clipPath: isBottom ? P5_SHEET_INNER : P5_CARD_INNER }}
+                />
               </>
             )}
             {/* p4-redraw modal v3：贴纸装饰 —— 顶部橙硬币、角落蓝/黄星闪、右上天空花瓣块 */}
@@ -246,7 +223,7 @@ export const SheetModal = ({
             )}
             {isBottom && showHandle && !isP4 && (
               p5 ? (
-                <div aria-hidden className="relative mx-auto mt-6 flex h-[16px] w-[72px] shrink-0 items-center justify-center" style={{ background: '#050505', clipPath: 'polygon(6% 45%, 20% 0, 100% 20%, 88% 100%, 0 90%)' }}>
+                <div aria-hidden className="relative mx-auto mt-2.5 flex h-[15px] w-[68px] shrink-0 items-center justify-center" style={{ background: '#050505', clipPath: 'polygon(6% 45%, 20% 0, 100% 20%, 88% 100%, 0 90%)' }}>
                   <span className="h-[3px] w-8" style={{ background: '#f0e9df' }} />
                 </div>
               ) : p3 ? (
@@ -261,9 +238,9 @@ export const SheetModal = ({
               p5 ? (
                 /* P5：标题走勒索信剪报瓷砖（逐字异色穿插 + 微旋转错位）——
                    设计稿所有表单顶部的统一制式，不再是平排大字 */
-                <h2 id={titleId} className="relative shrink-0 px-5 pr-14 pt-4">
+                <h2 id={titleId} className="relative z-10 shrink-0 pl-4 pr-12" style={{ marginTop: -22, marginBottom: 6 }}>
                   <span className="sr-only">{title}</span>
-                  <P5CollageTitle text={title} size={30} />
+                  <P5CollageTitle text={title} size={40} />
                 </h2>
               ) : (
               <h2
