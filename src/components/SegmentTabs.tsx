@@ -15,6 +15,7 @@ import { motion } from 'motion/react';
 import { springSnappy, TAP } from '@/utils/motion';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P4Flower } from '@/ui/p4Kit';
+import { roughQuad } from '@/components/p5r/kit';
 
 interface SegmentTabItem<K extends string> {
   key: K;
@@ -46,6 +47,55 @@ export const SegmentTabs = <K extends string>({
   const isP4 = useUiChannel() === 'p4';
   const sizeClass = size === 'sm' ? 'py-1.5 text-xs' : 'py-2.5 text-sm';
   const p3 = useUiChannel() === 'p3';
+
+  // ── P5R（红频道，p5 稿 tab 律）：全员纸底黑框不规则块，选中 = 猩红块白字（layout 滑动） ──
+  if (useUiChannel() === 'p5') {
+    const p5Size = size === 'sm' ? 'py-2 text-[13px]' : 'py-2.5 text-[15px]';
+    return (
+      <div role="tablist" className={`flex gap-1.5 ${className ?? ''}`}>
+        {items.map((item, i) => {
+          const active = item.key === value;
+          const seed = 700 + i * 17 + item.key.length * 3;
+          return (
+            <motion.button
+              key={item.key}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              whileTap={TAP}
+              onClick={() => onChange(item.key)}
+              className={`relative flex-1 cursor-pointer font-black ${p5Size}`}
+              style={{ zIndex: active ? 2 : 1 }}
+            >
+              {/* 纸底黑框（全员，不规则四边形） */}
+              <span aria-hidden className="absolute inset-0" style={{ background: '#050505', clipPath: roughQuad(seed, 4.5) }} />
+              <span aria-hidden className="absolute inset-[2.5px]" style={{ background: '#f0e9df', clipPath: roughQuad(seed + 0.3, 3) }} />
+              {active && (
+                <motion.div layoutId={indicatorId} transition={springSnappy} className="absolute inset-[2.5px]" aria-hidden="true">
+                  <div className="absolute inset-0" style={{ clipPath: roughQuad(seed + 0.5, 3), background: '#c00008' }} />
+                </motion.div>
+              )}
+              <span className={`relative z-10 flex items-center justify-center gap-1.5 transition-colors ${active ? 'text-white' : 'text-[#050505]'}`}>
+                {item.label}
+                {item.badge !== undefined && (
+                  <span
+                    className="text-2xs leading-none px-1.5 py-0.5"
+                    style={{
+                      clipPath: 'polygon(3px 0, 100% 1px, calc(100% - 3px) 100%, 0 calc(100% - 1px))',
+                      background: active ? '#050505' : '#c00008',
+                      color: '#fff',
+                    }}
+                  >
+                    {item.badge}
+                  </span>
+                )}
+              </span>
+            </motion.button>
+          );
+        })}
+      </div>
+    );
+  }
 
   // ── P3R（蓝频道，p3-redraw 设计稿切换头）：全员白斜块底，选中 = 蓝斜块白字 + 右下洋红角 ──
   if (p3) {

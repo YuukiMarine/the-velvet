@@ -9,6 +9,11 @@ import { useUiChannel } from '@/ui/useUiChannel';
 import { zClass } from '@/utils/zIndex';
 import { P4Flower, P4Sparkle } from '@/ui/p4Kit';
 import { sheetTopClip } from '@/components/p3r/kit';
+import { P5Star } from '@/components/p5r/kit';
+
+// P5 撕纸顶缘（p5-modal-02 稿的纸卡翻折顶）：外黑衬 / 内纸面 两套顶点微错位 = 不等宽黑框
+const P5_SHEET_OUTER = 'polygon(0 24px, 7% 7px, 22% 17px, 41% 3px, 60% 15px, 79% 5px, 100% 13px, 100% 100%, 0 100%)';
+const P5_SHEET_INNER = 'polygon(0 28px, 7% 11px, 22% 21px, 41% 7px, 60% 19px, 79% 9px, 100% 17px, 100% 100%, 0 100%)';
 
 /**
  * SheetModal —— 标准弹窗 / 抽屉基座（UI_AUDIT_V2.5.md §5）。
@@ -115,6 +120,8 @@ export const SheetModal = ({
   const isP4 = channel === 'p4' && !forceDark;
   // P3R（蓝频道，p3-modal 设计稿）：浅水面 sheet + 青色斜片把手 + 大黑斜体标题
   const p3 = channel === 'p3' && !forceDark;
+  // P5R（红频道，p5-modal 稿）：撕纸顶缘黑衬纸卡 + 星章把手 + 红角贴
+  const p5 = channel === 'p5' && !forceDark;
 
   return createPortal(
     <AnimatePresence>
@@ -143,6 +150,8 @@ export const SheetModal = ({
                 ? `relative bg-[var(--ui-bg)] ${
                     isBottom ? 'mx-2 mb-2 rounded-[28px] pb-[env(safe-area-inset-bottom)]' : 'mx-4 max-w-md rounded-[28px]'
                   }`
+                : p5
+                  ? `p5-reskin relative ${isBottom ? 'pb-[env(safe-area-inset-bottom)]' : 'mx-4 max-w-md'}`
                 : p3
                   ? `p3r-sheet shadow-2xl ${isBottom ? 'pb-[env(safe-area-inset-bottom)]' : 'mx-4 max-w-md'}`
                   : `bg-white shadow-2xl dark:bg-gray-900 ${
@@ -152,6 +161,13 @@ export const SheetModal = ({
             style={
               isP4
                 ? { border: '5px solid #fff6d0', boxShadow: '0 10px 0 rgba(19, 19, 19, 0.28)' }
+                : p5
+                  ? {
+                      background: '#050505',
+                      clipPath: isBottom
+                        ? P5_SHEET_OUTER
+                        : 'polygon(7px 5px, 30% 1px, calc(100% - 4px) 8px, calc(100% - 8px) calc(100% - 5px), 55% calc(100% - 1px), 4px calc(100% - 9px))',
+                    }
                 : p3
                   ? {
                       background: 'linear-gradient(178deg, #fbfdff 0%, #f0f8fc 60%, #e6f3fa 100%)',
@@ -160,6 +176,24 @@ export const SheetModal = ({
                   : undefined
             }
           >
+            {/* P5：纸面内衬（黑外壳内缩，两套撕缘顶点错位 = 不等宽黑框）+ 红角贴 + 星章 */}
+            {p5 && (
+              <>
+                <span
+                  aria-hidden
+                  className="pointer-events-none absolute"
+                  style={{
+                    inset: 3.5,
+                    background: '#f0e9df',
+                    clipPath: isBottom
+                      ? P5_SHEET_INNER
+                      : 'polygon(9px 8px, 30% 4px, calc(100% - 7px) 11px, calc(100% - 11px) calc(100% - 8px), 55% calc(100% - 4px), 7px calc(100% - 12px))',
+                  }}
+                />
+                <span aria-hidden className="pointer-events-none absolute right-3.5 top-7" style={{ width: 30, height: 30, background: '#c00008', clipPath: 'polygon(100% 0, 100% 100%, 0 0)' }} />
+                <P5Star size={20} fill="#c00008" rot={-12} className="pointer-events-none absolute left-6 top-1" />
+              </>
+            )}
             {/* p4-redraw modal v3：贴纸装饰 —— 顶部橙硬币、角落蓝/黄星闪、右上天空花瓣块 */}
             {isP4 && (
               <>
@@ -185,7 +219,11 @@ export const SheetModal = ({
               </>
             )}
             {isBottom && showHandle && !isP4 && (
-              p3 ? (
+              p5 ? (
+                <div aria-hidden className="relative mx-auto mt-6 flex h-[16px] w-[72px] shrink-0 items-center justify-center" style={{ background: '#050505', clipPath: 'polygon(6% 45%, 20% 0, 100% 20%, 88% 100%, 0 90%)' }}>
+                  <span className="h-[3px] w-8" style={{ background: '#f0e9df' }} />
+                </div>
+              ) : p3 ? (
                 <div aria-hidden className="relative mx-auto mt-5 flex h-[18px] w-[86px] shrink-0 items-center justify-center" style={{ background: '#35d1e8', clipPath: 'polygon(0 55%, 18% 0, 100% 30%, 82% 100%)' }}>
                   <span className="h-[3px] w-8 bg-white" />
                 </div>
@@ -199,21 +237,24 @@ export const SheetModal = ({
                 className={`shrink-0 px-6 pt-4 ${
                   isP4
                     ? 'pr-32 text-[26px] font-black leading-tight text-[#131313]'
+                    : p5
+                      ? 'relative pr-14 text-[23px] font-black leading-tight'
                     : p3
                       ? 'text-[26px] font-black italic tracking-tight'
                       : 'text-lg font-bold text-gray-800 dark:text-white'
                 }`}
-                style={isP4 ? { fontFamily: 'var(--p4-display-font, serif)' } : p3 ? { color: '#0a1230', fontFamily: '"Arial Black", "Noto Sans SC", sans-serif' } : undefined}
+                style={isP4 ? { fontFamily: 'var(--p4-display-font, serif)' } : p5 ? { color: '#050505', fontFamily: '"Noto Sans SC", "Microsoft YaHei", sans-serif' } : p3 ? { color: '#0a1230', fontFamily: '"Arial Black", "Noto Sans SC", sans-serif' } : undefined}
               >
                 {title}
+                {p5 && <P5Star size={14} fill="#c00008" className="ml-2 inline-block align-baseline" />}
                 {p3 && <span aria-hidden className="ml-1.5 inline-block h-[10px] w-[13px]" style={{ background: '#1b57ff', clipPath: 'polygon(100% 0, 100% 100%, 0 100%)' }} />}
               </h2>
             )}
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-4">
+            <div className={`min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-4 ${p5 ? 'relative' : ''}`}>
               {children}
             </div>
             {footer && (
-              <div className={`shrink-0 px-6 py-3 ${isP4 ? '' : 'border-t border-gray-100 dark:border-gray-800'}`}>
+              <div className={`shrink-0 px-6 py-3 ${isP4 || p5 ? '' : 'border-t border-gray-100 dark:border-gray-800'} ${p5 ? 'relative' : ''}`}>
                 {footer}
               </div>
             )}

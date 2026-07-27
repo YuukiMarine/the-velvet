@@ -101,6 +101,16 @@
   box-shadow: 4px 5px 0 #000000 !important;
   border: 2.5px solid #050505;
 }
+/* amber/yellow 提示系 → 红黑纸三色律（「标记为重要」黄卡等） */
+:root[data-ui-channel="p5"] .p5-reskin :is(.bg-amber-50, .bg-yellow-50, .bg-amber-100, .bg-yellow-100, [class*="bg-amber-50/"], [class*="bg-yellow-50/"]) {
+  background-color: var(--ui-paper) !important;
+}
+:root[data-ui-channel="p5"] .p5-reskin :is(.border-amber-200, .border-yellow-200, .border-amber-300) {
+  border-color: #050505 !important;
+}
+:root[data-ui-channel="p5"] .p5-reskin :is(.text-amber-600, .text-amber-700, .text-yellow-600, .text-yellow-700, .text-amber-500) {
+  color: #c00008 !important;
+}
 /* 灰系文字 → 黑（分级保层级，纯色不透明） */
 :root[data-ui-channel="p5"] .p5-reskin :is(.text-gray-700, .text-gray-800, .text-gray-900, .dark\:text-white) {
   color: #050505 !important;
