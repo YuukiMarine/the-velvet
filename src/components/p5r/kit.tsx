@@ -266,13 +266,13 @@ const MARK_STROKE = {
   '?': '15,11 28,2 43,6 46,19 35,29 26,31 25,43',
 } as const;
 /** 点：单条菱形轮廓（描边宽见下方 DOT_STROKE_W）。
- *  当前点位 = 原始形以质心 (24,60) 为中心缩到 80%（用户：点缩小 20%）。 */
-const MARK_DOT = '19.2,52 32,55.2 28.8,68 16,64.8';
+ *  当前点位 = 原始形以质心 (24,60) 为中心缩到 72%（先 80% 再 90%，两轮调整叠加）。 */
+const MARK_DOT = '19.68,52.8 31.2,55.68 28.32,67.2 16.8,64.32';
 /** 折线笔画：外层描边宽 / 内芯宽 */
 const STROKE_W = 25;
 const INK_W = 7;
 /** 点的描边宽（点体积小，跟折线同宽会糊成一坨，单独一档） */
-const DOT_STROKE_W = 15;
+const DOT_STROKE_W = 14;
 
 export const BubbleMark = ({ mark, channel = 'p5', size = 34, className, style }: {
   mark: '!' | '?';
