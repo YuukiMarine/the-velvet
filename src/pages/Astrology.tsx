@@ -123,9 +123,17 @@ export function Astrology() {
     >
       {p5 && (
         <>
-          {/* 巨型暗红同心五角星底纹（与菜单统计磁贴同一套花纹），铺在整页背后 */}
+          {/* 巨型暗红同心五角星底纹（与菜单统计磁贴同一套花纹），铺在整页背后。
+              星整体居中而不是钉在顶部：中长期占卜 / 档案两个 tab 内容短，页面一矮
+              原来那种「左上角固定、底部裁掉半截」就读成穿帮了；居中裁切左右对称，
+              无论页面多高都像是有意的构图。 */}
           <div aria-hidden className="pointer-events-none absolute -inset-x-4 top-[70px] bottom-0 overflow-hidden" style={{ zIndex: -2 }}>
-            <svg viewBox="0 0 100 100" className="absolute" style={{ left: '-34%', top: 30, width: '168%', height: 'auto', aspectRatio: '1 / 1' }}>
+            <svg
+              viewBox="0 0 100 100"
+              preserveAspectRatio="xMidYMid meet"
+              className="absolute left-1/2 top-1/2"
+              style={{ width: 'min(150%, 560px)', aspectRatio: '1 / 1', transform: 'translate(-50%, -50%)' }}
+            >
               {[50, 39, 28, 17, 6].map((r) => (
                 <polygon key={r} points={starPts(50, 50, r, -90 + 14)} fill="none" stroke="#4a0004" strokeWidth={2.4} strokeLinejoin="miter" />
               ))}

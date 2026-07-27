@@ -33,16 +33,17 @@ const WATER_PATH_MAIN =
 const WATER_PATH_TAIL =
   'M571.62,110.33c0,0-49.28-4.33-79.95,14c13,1.33,32.33-3.67,65,0c17.67,3.33,14.95,2.33,14.95,2.33V110.33z';
 
-/** 8 帧：同一张线稿的位移 / 纵向缩放 / 镜像组合，逐帧跳变（不是补间） */
+/** 8 帧：同一张线稿的位移 / 纵向缩放 / 镜像组合，逐帧跳变（不是补间）。
+ *  幅度按定稿收窄——原来位移 ±66、纵缩 ±9% 抖得太凶，现在只留轻微晃动。 */
 const FRAMES: Array<{ dx: number; dy: number; sy: number; flip: boolean }> = [
   { dx: 0, dy: 0, sy: 1, flip: false },
-  { dx: -18, dy: 2, sy: 1.07, flip: false },
-  { dx: -36, dy: -1, sy: 0.95, flip: true },
-  { dx: -54, dy: 3, sy: 1.04, flip: true },
-  { dx: -12, dy: -2, sy: 0.93, flip: false },
-  { dx: -30, dy: 1, sy: 1.09, flip: true },
-  { dx: -48, dy: -3, sy: 0.97, flip: false },
-  { dx: -66, dy: 2, sy: 1.02, flip: true },
+  { dx: -5, dy: 0.8, sy: 1.02, flip: false },
+  { dx: -10, dy: -0.5, sy: 0.985, flip: true },
+  { dx: -15, dy: 1.1, sy: 1.012, flip: true },
+  { dx: -3, dy: -0.8, sy: 0.978, flip: false },
+  { dx: -8, dy: 0.4, sy: 1.026, flip: true },
+  { dx: -13, dy: -1, sy: 0.99, flip: false },
+  { dx: -18, dy: 0.7, sy: 1.006, flip: true },
 ];
 
 const VB_X = -4;
@@ -61,7 +62,7 @@ const RippleFrame = ({ f }: { f: (typeof FRAMES)[number] }) => {
   ].join(' ');
   return (
     <svg viewBox={`${VB_X} ${VB_Y} ${VB_W} ${VB_H}`} preserveAspectRatio="none" className="h-full w-1/8 shrink-0" style={{ width: '12.5%' }}>
-      <g transform={t} fill="#a9f0ff">
+      <g transform={t} fill="#a9f0ff" opacity="0.62">
         <path d={WATER_PATH_MAIN} />
         <path d={WATER_PATH_TAIL} />
       </g>
@@ -97,12 +98,15 @@ export const UnderwaterStage = ({ motion = true }: { motion?: boolean }) => (
     {/* 3 · 三条很宽的散射光：硬边不羽化；34° 一个重复周期，转满 34° 无缝接回 */}
     <div
       className="absolute"
+      // inset 拉到 -150%：原来 -70% 时元素本身不够大，旋转后它的下缘会露在画面里
+      // （用户上报"光效太短、最下方边缘露出来"）。锥顶落在视口 y≈-8%：
+      // 元素高 400vh、顶在 -150vh → 顶点分数 = (-8+150)/400 = 35.5%。
       style={{
-        inset: '-70%',
-        transformOrigin: '50% 20%',
+        inset: '-150%',
+        transformOrigin: '50% 35.5%',
         background:
-          'repeating-conic-gradient(from -17deg at 50% 20%,' +
-          ' rgba(255,255,255,0.15) 0deg 18deg,' +
+          'repeating-conic-gradient(from -17deg at 50% 35.5%,' +
+          ' rgba(255,255,255,0.09) 0deg 18deg,' +
           ' rgba(255,255,255,0) 18deg 34deg)',
         animation: motion ? 'p3-underwater-rays 52s linear infinite' : 'none',
         willChange: motion ? 'transform' : undefined,

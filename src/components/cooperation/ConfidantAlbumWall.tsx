@@ -21,6 +21,7 @@ import { triggerLightHaptic } from '@/utils/feedback';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { useAppStore } from '@/store';
 import { P3R, slantClip } from '@/components/p3r/kit';
+import { starPts } from '@/components/p5r/kit';
 
 const CARD_W = 182;
 const CARD_H = Math.round(CARD_W * 1.6); // TarotCardSVG 比例
@@ -242,7 +243,9 @@ const WallScrubber = ({
 };
 
 export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCreate }: ConfidantAlbumWallProps) => {
-  const isP4 = useUiChannel() === 'p4';
+  const wallChannel = useUiChannel();
+  const isP4 = wallChannel === 'p4';
+  const isP5 = wallChannel === 'p5';
   const bold = useBoldness();
   const p3 = useUiChannel() === 'p3';
   const attributeNames = useAppStore(s => s.settings.attributeNames);
@@ -523,7 +526,24 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
       </div>
 
       {/* 档案铭牌 + scrubber（p3：信息已上卡，铭牌只留空白牌文案 + scrubber + 蓝提示行） */}
-      <div className={`mx-auto max-w-sm px-3 ${p3 ? '-mt-1' : 'mt-2'}`}>
+      <div className={`relative mx-auto max-w-sm px-3 ${p3 ? '-mt-1' : 'mt-2'}`}>
+        {/* P5：铭牌背后压一枚与星象 / 菜单同款的暗红同心五角星；每翻一张牌转 60°
+            （非线性弹簧，跟着 index 走，左右翻分别是 ∓60°） */}
+        {isP5 && (
+          <motion.div
+            aria-hidden
+            className="pointer-events-none absolute left-1/2 top-1/2 -z-10"
+            style={{ width: 330, height: 330, marginLeft: -165, marginTop: -150 }}
+            animate={{ rotate: index * 60 }}
+            transition={{ type: 'spring', stiffness: 140, damping: 15, mass: 0.9 }}
+          >
+            <svg viewBox="0 0 100 100" className="h-full w-full">
+              {[50, 39, 28, 17, 6].map((r) => (
+                <polygon key={r} points={starPts(50, 50, r, -90 + 14)} fill="none" stroke="#4a0004" strokeWidth={2.4} strokeLinejoin="miter" />
+              ))}
+            </svg>
+          </motion.div>
+        )}
         {current === 'add' || !current ? (
           <div className="text-center">
             <div className={`text-2xl font-black ${p3 ? '' : 'text-gray-800 dark:text-gray-100'}`} style={p3 ? { color: P3R.ink } : undefined}>缔结新的羁绊</div>
@@ -589,8 +609,11 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
               className={
                 isP4
                   ? 'text-[13px] font-black tracking-[0.14em] text-[var(--ui-accent)]'
-                  : 'text-[11px] font-bold tracking-[0.14em] text-indigo-400 dark:text-indigo-300'
+                  : isP5
+                    ? 'text-[12px] font-black tracking-[0.14em]'
+                    : 'text-[11px] font-bold tracking-[0.14em] text-indigo-400 dark:text-indigo-300'
               }
+              style={isP5 ? { color: '#d90008' } : undefined}
             >
               {TAROT_BY_ID[current.arcanaId]?.roman ? `${TAROT_BY_ID[current.arcanaId]?.roman} · ` : ''}
               {TAROT_BY_ID[current.arcanaId]?.name}
@@ -614,12 +637,25 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
                 style={
                   isP4
                     ? { background: 'var(--p4-orange, #f9a11b)', borderRadius: 8, transform: 'skewX(-8deg)', boxShadow: '0 2px 0 rgba(19,19,19,0.25)' }
-                    : { background: 'linear-gradient(135deg, rgb(var(--color-bond-rgb)), rgb(var(--color-bond-bright-rgb)))' }
+                    : isP5
+                      ? { background: '#c00008', borderRadius: 0, clipPath: 'polygon(3px 0, 100% 1px, calc(100% - 3px) 100%, 0 calc(100% - 2px))', boxShadow: '0 0 0 2px #f0e9df' }
+                      : { background: 'linear-gradient(135deg, rgb(var(--color-bond-rgb)), rgb(var(--color-bond-bright-rgb)))' }
                 }
               >
                 RANK {current.intimacy}
               </span>
             </div>
+            {/* 关系描述（此前只有蓝频道有，红/黄两套铭牌漏了这一行）。
+                颜色交给 text-gray-500：页面上的 .p5-onink / .p4-onbright 会把它
+                分别翻成纸灰 / 墨灰，正好是两个频道要的层级色。 */}
+            {current.description && (
+              <p
+                className="mx-auto mt-2 line-clamp-2 max-w-[21rem] text-[13px] font-semibold leading-relaxed text-gray-500 dark:text-gray-400"
+                style={isP4 ? { fontFamily: 'var(--p4-display-font, serif)' } : undefined}
+              >
+                {current.description}
+              </p>
+            )}
           </div>
         )}
 
