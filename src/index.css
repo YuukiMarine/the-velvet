@@ -94,22 +94,22 @@
   font-weight: 700;
   background-color: var(--ui-paper) !important;
   background-image:
-    linear-gradient(225deg, #c00008 0 17px, transparent 17px),
-    linear-gradient(to right, #050505 0 9px, transparent 9px),
-    linear-gradient(to left, #050505 0 9px, transparent 9px),
-    linear-gradient(to bottom, #050505 0 9px, transparent 9px),
-    linear-gradient(to top, #050505 0 9px, transparent 9px) !important;
+    linear-gradient(225deg, #c00008 0 14px, transparent 14px),
+    linear-gradient(to right, #050505 0 5px, transparent 5px),
+    linear-gradient(to left, #050505 0 5px, transparent 5px),
+    linear-gradient(to bottom, #050505 0 5px, transparent 5px),
+    linear-gradient(to top, #050505 0 5px, transparent 5px) !important;
   background-position: top right, 0 0, 0 0, 0 0, 0 0 !important;
   background-size: 30px 30px, 100% 100%, 100% 100%, 100% 100%, 100% 100% !important;
   background-repeat: no-repeat !important;
-  clip-path: polygon(5px 0, 100% 3px, calc(100% - 6px) 100%, 0 calc(100% - 4px));
+  clip-path: polygon(3px 0, 100% 2px, calc(100% - 4px) 100%, 0 calc(100% - 3px));
 }
 /* 同屏多个输入件不能一个模子：偶数位反向斜 */
 :root[data-ui-channel="p5"] .p5-reskin :is(input, textarea, select):nth-of-type(2n) {
-  clip-path: polygon(0 4px, calc(100% - 5px) 0, 100% calc(100% - 3px), 5px 100%);
+  clip-path: polygon(0 3px, calc(100% - 3px) 0, 100% calc(100% - 2px), 4px 100%);
 }
 :root[data-ui-channel="p5"] .p5-reskin textarea {
-  clip-path: polygon(5px 0, 100% 4px, calc(100% - 6px) 100%, 0 calc(100% - 5px));
+  clip-path: polygon(3px 0, 100% 3px, calc(100% - 4px) 100%, 0 calc(100% - 3px));
 }
 /* P5 分区纸卡：直接子内容提权到 P5Rough 垫底层之上 */
 :root[data-ui-channel="p5"] .p5-sec-body > *:not([aria-hidden]) {
@@ -124,18 +124,18 @@
   box-shadow: none !important;
   /* 描边同样画在内部（clip 会吃掉外投影），四条边带被斜边裁出不等宽 */
   background-image:
-    linear-gradient(to right, #050505 0 8px, transparent 8px),
-    linear-gradient(to left, #050505 0 8px, transparent 8px),
-    linear-gradient(to bottom, #050505 0 8px, transparent 8px),
-    linear-gradient(to top, #050505 0 8px, transparent 8px);
+    linear-gradient(to right, #050505 0 5px, transparent 5px),
+    linear-gradient(to left, #050505 0 5px, transparent 5px),
+    linear-gradient(to bottom, #050505 0 5px, transparent 5px),
+    linear-gradient(to top, #050505 0 5px, transparent 5px);
   background-repeat: no-repeat;
-  clip-path: polygon(6px 0, 100% 3px, calc(100% - 6px) 100%, 0 calc(100% - 5px));
+  clip-path: polygon(4px 0, 100% 2px, calc(100% - 4px) 100%, 0 calc(100% - 3px));
 }
 :root[data-ui-channel="p5"] .p5-reskin :is(.shadow-sm, .shadow, .shadow-md, .shadow-lg, .shadow-xl, .shadow-2xl):nth-of-type(2n) {
-  clip-path: polygon(0 4px, calc(100% - 5px) 0, 100% calc(100% - 4px), 6px 100%);
+  clip-path: polygon(0 3px, calc(100% - 3px) 0, 100% calc(100% - 3px), 4px 100%);
 }
 :root[data-ui-channel="p5"] .p5-reskin :is(.shadow-sm, .shadow, .shadow-md, .shadow-lg, .shadow-xl, .shadow-2xl):nth-of-type(3n) {
-  clip-path: polygon(4px 3px, 100% 0, calc(100% - 5px) calc(100% - 3px), 0 100%);
+  clip-path: polygon(3px 2px, 100% 0, calc(100% - 3px) calc(100% - 2px), 0 100%);
 }
 /* ListCard（任务条 / 记录条 / 归档条）：整卡换不规则剪报形 —— 与上面同一套
    「裁形 + 内描边带」，另加 nth-child 轮换避免同屏一个模子。 */
@@ -145,18 +145,18 @@
   box-shadow: none !important;
   background-color: var(--ui-paper) !important;
   background-image:
-    linear-gradient(to right, #050505 0 8px, transparent 8px),
-    linear-gradient(to left, #050505 0 8px, transparent 8px),
-    linear-gradient(to bottom, #050505 0 8px, transparent 8px),
-    linear-gradient(to top, #050505 0 8px, transparent 8px) !important;
+    linear-gradient(to right, #050505 0 5px, transparent 5px),
+    linear-gradient(to left, #050505 0 5px, transparent 5px),
+    linear-gradient(to bottom, #050505 0 5px, transparent 5px),
+    linear-gradient(to top, #050505 0 5px, transparent 5px) !important;
   background-repeat: no-repeat !important;
-  clip-path: polygon(6px 0, 100% 3px, calc(100% - 6px) 100%, 0 calc(100% - 5px));
+  clip-path: polygon(4px 0, 100% 2px, calc(100% - 4px) 100%, 0 calc(100% - 3px));
 }
 :root[data-ui-channel="p5"] .p5-card:nth-child(2n) {
-  clip-path: polygon(0 4px, calc(100% - 5px) 0, 100% calc(100% - 4px), 6px 100%);
+  clip-path: polygon(0 3px, calc(100% - 3px) 0, 100% calc(100% - 3px), 4px 100%);
 }
 :root[data-ui-channel="p5"] .p5-card:nth-child(3n) {
-  clip-path: polygon(4px 3px, 100% 0, calc(100% - 5px) calc(100% - 3px), 0 100%);
+  clip-path: polygon(3px 2px, 100% 0, calc(100% - 3px) calc(100% - 2px), 0 100%);
 }
 /* dimmed 卡（未到日期 / 已完成）：纯灰面，不用 opacity 表状态 */
 :root[data-ui-channel="p5"] .p5-card.opacity-75 {
@@ -166,6 +166,46 @@
 /* 卡左缘强调条：琥珀 → 猩红 */
 :root[data-ui-channel="p5"] .p5-card :is(.bg-amber-400, .bg-amber-500, .bg-yellow-400) {
   background-color: #c00008 !important;
+}
+/* ── 成就 / 技能条目（p5-ach）──────────────────────────────────────────────
+   条目与按钮同样换不规则四边形；状态一律纯色表达（用户铁律：不用透明度、
+   未完成就用灰）：已解锁=猩红面白字 / 已达成待领=纸面 / 未达成=纯灰面。 */
+:root[data-ui-channel="p5"] .p5-ach {
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  background-image:
+    linear-gradient(to right, #050505 0 5px, transparent 5px),
+    linear-gradient(to left, #050505 0 5px, transparent 5px),
+    linear-gradient(to bottom, #050505 0 5px, transparent 5px),
+    linear-gradient(to top, #050505 0 5px, transparent 5px) !important;
+  background-repeat: no-repeat !important;
+  background-color: #b8b2a6 !important;   /* 缺省 = 未达成的纯灰 */
+  clip-path: polygon(4px 0, 100% 2px, calc(100% - 4px) 100%, 0 calc(100% - 3px));
+}
+:root[data-ui-channel="p5"] .p5-ach:nth-child(2n) {
+  clip-path: polygon(0 3px, calc(100% - 3px) 0, 100% calc(100% - 3px), 4px 100%);
+}
+:root[data-ui-channel="p5"] .p5-ach:nth-child(3n) {
+  clip-path: polygon(3px 2px, 100% 0, calc(100% - 3px) calc(100% - 2px), 0 100%);
+}
+/* 已解锁（原琥珀渐变）→ 猩红实面 */
+:root[data-ui-channel="p5"] .p5-ach[class*="from-amber-400"] {
+  background-color: #c00008 !important;
+  color: #f8f8f6 !important;
+}
+/* 已达成待领（原 amber-50）→ 纸面 */
+:root[data-ui-channel="p5"] .p5-ach[class*="bg-amber-50"] {
+  background-color: var(--ui-paper) !important;
+}
+/* 技能：已解锁纸面 / 可解锁纸面 / 未达成灰面（技能卡走 bg-* 内联 style，这里兜底描边形） */
+:root[data-ui-channel="p5"] .p5-ach .rounded-full {
+  border-radius: 2px !important;
+}
+/* 成就页顶部两个按钮（筛选 / 添加成就）同样斜切 */
+:root[data-ui-channel="p5"] .p5-reskin button:is(.rounded-lg, .rounded-xl) {
+  border-radius: 0 !important;
+  clip-path: polygon(4px 0, 100% 2px, calc(100% - 5px) 100%, 0 calc(100% - 3px));
 }
 /* amber/yellow 提示系 → 红黑纸三色律（「标记为重要」黄卡等） */
 :root[data-ui-channel="p5"] .p5-reskin [class*="bg-amber-400/"] {
@@ -333,6 +373,40 @@
 }
 :root[data-ui-channel="p4"] :is([role="dialog"], [role="alertdialog"], .p4-reskin) :is(input[type="range"], input[type="checkbox"], input[type="radio"]) {
   accent-color: #131313;
+}
+
+/* ── p5-ach 状态覆盖（必须排在 .bg-white / .bg-gray-50 毯式之后才压得住）──
+   一律纯色表达状态：已解锁=猩红面白字 / 已达成待领=纸面 / 未达成=纯灰面。 */
+:root[data-ui-channel="p5"] .p5-ach.bg-white,
+:root[data-ui-channel="p5"] .p5-ach.bg-gray-50,
+:root[data-ui-channel="p5"] .p5-ach[class*="bg-gray-50"] {
+  background-color: #b8b2a6 !important;
+}
+:root[data-ui-channel="p5"] .p5-ach[class*="from-amber-400"],
+:root[data-ui-channel="p5"] .p5-ach[class*="from-amber-500"],
+:root[data-ui-channel="p5"] .p5-ach[class*="from-violet-500"] {
+  background-color: #c00008 !important;
+  color: #f8f8f6 !important;
+}
+:root[data-ui-channel="p5"] .p5-ach[class*="from-amber-400"] :is(h3, h4, p, span, div),
+:root[data-ui-channel="p5"] .p5-ach[class*="from-amber-500"] :is(h3, h4, p, span, div),
+:root[data-ui-channel="p5"] .p5-ach[class*="from-violet-500"] :is(h3, h4, p, span, div) {
+  color: #f8f8f6 !important;
+}
+:root[data-ui-channel="p5"] .p5-ach[class*="bg-amber-50"],
+:root[data-ui-channel="p5"] .p5-ach[class*="bg-primary/5"] {
+  background-color: var(--ui-paper) !important;
+}
+/* 技能开关：琥珀 → 猩红；未解锁轨道 → 纯灰 */
+:root[data-ui-channel="p5"] .p5-reskin :is(.bg-amber-500, .bg-violet-500) {
+  background-color: #c00008 !important;
+}
+:root[data-ui-channel="p5"] .p5-reskin :is(.bg-gray-200, .bg-gray-300) {
+  background-color: #8f8b82 !important;
+}
+/* 成就进度轨 / 条：轨灰、条红（去掉圆头，跟直角语言一致） */
+:root[data-ui-channel="p5"] .p5-ach :is(.bg-primary, .bg-amber-500) {
+  background-color: #c00008 !important;
 }
 
 /* P3 蓝 —— 午夜/宿命：深海空间，青色资源线，洋红刀口 */

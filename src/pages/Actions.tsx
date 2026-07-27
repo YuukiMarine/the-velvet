@@ -21,9 +21,17 @@ import { ActivitiesView } from '@/pages/Activities';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P4SkyCircle, P4_HEADER_BLEED } from '@/ui/p4Kit';
 import { P3R, P3RPage, GhostWords, slantClip } from '@/components/p3r/kit';
-import { P5R, P5_FONT, P5Chip, P5Star, P5Dots, P5Slab, P5RPage } from '@/components/p5r/kit';
+import { P5R, P5_FONT, P5Star, P5Dots, P5Slab, P5RPage } from '@/components/p5r/kit';
 
 type ActionsSubTab = 'todos' | 'activities';
+
+/** P5 切换头逐字瓷砖配色循环（与 P5CollageTitle 同一采样） */
+const P5_TAB_TILE = [
+  { bg: '#f0e9df', fg: '#c00008' },
+  { bg: '#050505', fg: '#f8f8f6' },
+  { bg: '#c00008', fg: '#f8f8f6' },
+  { bg: '#9b9791', fg: '#050505' },
+] as const;
 
 /** 子页定义：顺序即空间方位（记录在左、任务在右），决定切换动画的进出方向 */
 const TABS: Array<{ key: ActionsSubTab; label: string }> = [
@@ -110,30 +118,40 @@ export const Actions = () => {
                       onClick={() => switchTab(tab.key)}
                       className="relative cursor-pointer"
                     >
-                      {/* 词瓷砖：激活 = 大黑字纸砖，未激活 = 小灰字纸砖（拼贴信纸语言） */}
-                      <motion.span
-                        animate={{ fontSize: active ? '27px' : '17px', rotate: active ? (i === 0 ? -2.5 : 2) : (i === 0 ? 2 : -2) }}
-                        transition={springSnappy}
-                        className="inline-block px-3 py-1.5 font-black leading-none"
-                        style={{
-                          background: P5R.paper,
-                          color: active ? P5R.ink : P5R.grey,
-                          border: '3px solid #050505',
-                          boxShadow: '0 0 0 2.5px #f0e9df, 5px 6px 0 #000000',
-                          fontFamily: P5_FONT,
-                        }}
-                      >
-                        {tab.label}
-                      </motion.span>
+                      {/* 逐字拼贴瓷砖（与弹窗标题同一套剔索信语言）：
+                          激活 = 大字异色穿插，未激活 = 小字纸砖灰字。 */}
+                      <span className="inline-flex items-start gap-[3px]">
+                        {Array.from(tab.label).map((ch, ci) => {
+                          const pal = P5_TAB_TILE[ci % P5_TAB_TILE.length];
+                          return (
+                            <motion.span
+                              key={ci}
+                              animate={{
+                                fontSize: active ? '27px' : '17px',
+                                rotate: active ? (ci % 2 ? 2.6 : -3) : (ci % 2 ? -2 : 2),
+                                y: active ? (ci % 2 ? 5 : 0) : (ci % 2 ? 3 : 0),
+                              }}
+                              transition={springSnappy}
+                              className="inline-flex items-center justify-center font-black leading-none"
+                              style={{
+                                padding: active ? '7px 8px' : '5px 6px',
+                                background: active ? pal.bg : P5R.paper,
+                                color: active ? pal.fg : P5R.grey,
+                                border: '3px solid #050505',
+                                boxShadow: '0 0 0 2.5px #f0e9df, 5px 6px 0 #000000',
+                                fontFamily: P5_FONT,
+                              }}
+                            >
+                              {ch}
+                            </motion.span>
+                          );
+                        })}
+                      </span>
                     </motion.button>
                   </Fragment>
                 );
               })}
             </motion.div>
-
-            <div className="mb-4">
-              <P5Chip tone="red" rot={-1.5} className="!px-3 !py-1 !text-[13px]">行动</P5Chip>
-            </div>
 
             <AnimatePresence mode="wait" initial={false}>
               <motion.div

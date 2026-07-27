@@ -353,7 +353,7 @@ const SkillsTab = () => {
                       initial={{ opacity: 0, y: 6 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: idx * 0.04 }}
-                      className={p3 ? 'relative flex items-start gap-3 px-4 py-3' : `rounded-xl px-4 py-3 relative flex items-start gap-3 ${
+                      className={p3 ? 'relative flex items-start gap-3 px-4 py-3' : `p5-ach rounded-xl px-4 py-3 relative flex items-start gap-3 ${
                         isBlessing
                           ? skill.unlocked
                             ? 'bg-gradient-to-r from-amber-500/10 to-yellow-500/5 border border-amber-200/60 dark:border-amber-700/40'
@@ -1317,7 +1317,7 @@ const AchievementsTab = () => {
               className={
                 isP4
                   ? 'relative transition-all'
-                  : `rounded-2xl border relative transition-all ${
+                  : `p5-ach rounded-2xl border relative transition-all ${
                       achievement.unlocked
                         ? 'bg-gradient-to-br from-amber-400 to-orange-500 border-transparent text-white shadow-md shadow-amber-200/50 dark:shadow-amber-900/30'
                         : canUnlock
@@ -1490,7 +1490,7 @@ const AchievementsTab = () => {
               className={
                 isP4
                   ? 'relative cursor-pointer p-3 transition-all'
-                  : `rounded-2xl p-3 border cursor-pointer relative transition-all ${
+                  : `p5-ach rounded-2xl p-3 border cursor-pointer relative transition-all ${
                       achievement.unlocked
                         ? 'bg-gradient-to-br from-amber-400 to-orange-500 border-transparent text-white shadow-md shadow-amber-200/50 dark:shadow-amber-900/30'
                         : canUnlock
