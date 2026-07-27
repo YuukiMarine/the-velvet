@@ -23,6 +23,7 @@ import { P3, P3_WATER_WIDE } from '@/components/terminal/p3Kit';
 import { P4ArcRings, P4Flower, P4Sparkle } from '@/ui/p4Kit';
 import { NavigatorActionForm } from './NavigatorActionForm';
 import { PresetAvatar } from './PresetAvatar';
+import { BubbleMark, bubbleMarkOf, type MarkChannel } from '@/components/p5r/kit';
 import { NavigatorNotebook } from './NavigatorNotebook';
 import { ImageCropDialog } from '@/components/ImageCropDialog';
 import { mergedNavigatorPresets } from '@/constants/navigatorPresets';
@@ -31,9 +32,17 @@ import {
   type NavigatorActionKind, type NavigatorDraft,
 } from '@/utils/navigatorRegistry';
 
-/** 当前人格的头像（剪影集/上传双轨；订阅 sessionId——切人格必换会话，借它触发重渲染） */
-const CatFace = ({ className }: { className?: string }) => {
+/** 当前人格的头像（剪影集/上传双轨；订阅 sessionId——切人格必换会话，借它触发重渲染）
+ *
+ *  修正（用户上报：三个主题上传头像都只有中间小小一个）：
+ *  剪影是字形，只占 18px 合适；上传照片则应该**铺满头像壳**。
+ *  fill 为真时改走绝对定位满框 + object-cover。 */
+const CatFace = ({ className, fillWhenPhoto = true }: { className?: string; fillWhenPhoto?: boolean }) => {
   const avatar = useNavigatorStore((s) => (void s.sessionId, s.activePreset().avatar));
+  const isPhoto = !!avatar?.startsWith('data:');
+  if (isPhoto && fillWhenPhoto) {
+    return <img src={avatar} alt="" aria-hidden className="absolute inset-0 h-full w-full object-cover" />;
+  }
   return <PresetAvatar avatar={avatar} className={className} />;
 };
 
@@ -193,7 +202,8 @@ const P5Avatar = ({ size = 38, children }: { size?: number; children: React.Reac
     <span aria-hidden className="absolute inset-0" style={{ background: '#050505', clipPath: P5_AV_BLACK }} />
     <span aria-hidden className="absolute inset-0" style={{ background: '#f0e9df', clipPath: P5_AV_WHITE }} />
     <span aria-hidden className="absolute inset-0" style={{ background: '#050505', clipPath: P5_AV_FACE }} />
-    <span className="relative flex items-center justify-center text-[#c00008]">{children}</span>
+    {/* 内容层满框：上传照片靠 absolute inset-0 铺满，剪影仍居中 */}
+    <span className="relative flex h-full w-full items-center justify-center overflow-hidden text-[#c00008]" style={{ clipPath: P5_AV_FACE }}>{children}</span>
   </span>
 );
 
@@ -211,11 +221,46 @@ const BUB_FACE_L = 'polygon(6.2px calc(50% + 2.4px), 20px calc(50% - 8.9px), 22.
 const BUB_EDGE_R = 'polygon(100% calc(50% + 6.1px), calc(100% - 22.8px) calc(50% - 14.4px), calc(100% - 24px) calc(50% - 7.8px), calc(100% - 30.5px) calc(50% - 11.4px), calc(100% - 39.3px) 2.5px, 0 0, 36.8px 100%, calc(100% - 13.3px) calc(100% - 9.3px), calc(100% - 23.7px) calc(50% + 7.6px), calc(100% - 15.3px) calc(50% + 11.6px), calc(100% - 12.8px) calc(50% + 4.9px))';
 const BUB_FACE_R = 'polygon(calc(100% - 6.2px) calc(50% + 2.4px), calc(100% - 20px) calc(50% - 8.9px), calc(100% - 22.7px) calc(50% - 3.3px), calc(100% - 32.8px) calc(50% - 6.9px), calc(100% - 40.8px) 9px, 18.3px 4.2px, 38px calc(100% - 6.2px), calc(100% - 20.7px) calc(100% - 14.8px), calc(100% - 27px) calc(50% + 5.4px), calc(100% - 17.3px) calc(50% + 8.8px), calc(100% - 15.3px) 50%)';
 
+/**
+ * BubbleIn —— 气泡首次出现的入场（三频道共用）：
+ * 从下方 60° 逆时针转回正位，同时透明度 0→1；旋转轴取气泡尾巴那侧的底角，
+ * 所以看上去是“从头像那头甩上来”。缓动非线性（过冲一点再回收）。D0 直接终态。
+ */
+const BubbleIn = ({ side, mark, markCh, children }: {
+  side: 'cat' | 'user';
+  mark?: '!' | '?' | null;
+  markCh?: MarkChannel;
+  children: React.ReactNode;
+}) => {
+  const anim = useBoldness();
+  return (
+    <motion.div
+      // max-w 必须挂在这层：挂在内层时百分比参照的是“内容宽”，会把短气泡挤成一列字
+      className="relative max-w-[86%]"
+      style={{ transformOrigin: side === 'cat' ? '0% 100%' : '100% 100%' }}
+      initial={anim ? { rotate: 60, opacity: 0 } : false}
+      animate={{ rotate: 0, opacity: 1 }}
+      transition={{ duration: 0.52, ease: [0.18, 1.3, 0.32, 1] }}
+    >
+      {/* 角标画在这层：气泡本体带 clip-path，放在内部会被裁成半截 */}
+      {mark && (
+        <BubbleMark
+          mark={mark}
+          channel={markCh ?? 'p5'}
+          size={28}
+          style={{ [side === 'cat' ? 'right' : 'left']: -8, top: -15, zIndex: 3 } as React.CSSProperties}
+        />
+      )}
+      {children}
+    </motion.div>
+  );
+};
+
 /** P5 气泡：描边层 + 面层两张多边形叠放，文字避开尾巴与斜刀口 */
 const P5Bubble = ({ side, children }: { side: 'cat' | 'user'; children: React.ReactNode }) => {
   const left = side === 'cat';
   return (
-    <div className="relative max-w-[86%]" style={{ minHeight: 56 }}>
+    <div className="relative" style={{ minHeight: 56 }}>
       <span aria-hidden className="absolute inset-0" style={{ background: left ? '#f0e9df' : '#050505', clipPath: left ? BUB_EDGE_L : BUB_EDGE_R }} />
       <span aria-hidden className="absolute inset-0" style={{ background: left ? '#050505' : '#f0e9df', clipPath: left ? BUB_FACE_L : BUB_FACE_R }} />
       <div
@@ -303,7 +348,7 @@ const P5Spine = ({ containerRef, count, phase }: {
         initial={anim ? { pathLength: 0.82 } : false}
         animate={{ pathLength: 1 }}
         // 非线性：先猛窜再收尾（稿上折线“甩”到位的手感）
-        transition={{ duration: 0.62, ease: [0.16, 1.1, 0.3, 1] }}
+        transition={{ duration: 0.92, ease: [0.16, 1.06, 0.3, 1] }}
       />
     </svg>
   );
@@ -547,10 +592,10 @@ export const NavigatorWindow = () => {
                     aria-label="人格菜单"
                     aria-expanded={personaMenuOpen}
                     onClick={() => setPersonaMenuOpen((v) => !v)}
-                    className={`flex h-9 w-9 shrink-0 items-center justify-center transition hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-current ${sk.avatar}`}
+                    className={`relative flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden transition hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-current ${sk.avatar}`}
                     style={{ ...sk.avatarStyle, clipPath: bright ? 'polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%)' : undefined, borderRadius: bright ? undefined : isP4 ? 9999 : '0.75rem' }}
                   >
-                    <CatFace className="h-5 w-5" />
+                    <CatFace className="h-6 w-6" />
                   </button>
                   <div className="min-w-0 flex-1">
                     <div className={`truncate font-black ${isP4 ? 'text-[22px]' : 'text-base'}`} style={{ ...sk.headerText, ...(isP4 ? { fontFamily: 'var(--p4-display-font, serif)' } : {}) }}>{preset.name}</div>
@@ -704,7 +749,7 @@ export const NavigatorWindow = () => {
                           ) : formatBubbleTime(m.createdAt)}
                         </div>
                       )}
-                      <MessageRow m={m} sk={sk} bright={bright} p5={isP5} busy={busyCardId === m.id}
+                      <MessageRow m={m} sk={sk} bright={bright} p5={isP5} p4={isP4} busy={busyCardId === m.id}
                         onConfirm={() => void confirmCard(m)} onEdit={() => editCard(m)}
                         onCancel={() => nav.updateCard(m.id, { cardStatus: 'cancelled' })} />
                     </div>
@@ -843,11 +888,11 @@ export const NavigatorWindow = () => {
 const TypingRow = ({ sk, bright, bold }: { sk: Skin; bright: boolean; bold: boolean }) => (
   <div className="flex items-start gap-2.5" role="status" aria-label="助手正在输入">
     <span
-      className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center ${sk.avatar}`}
+      className={`relative mt-0.5 flex h-[38px] w-[38px] shrink-0 items-center justify-center overflow-hidden ${sk.avatar}`}
       style={{ ...sk.avatarStyle, clipPath: bright ? 'polygon(0 8%, 100% 0, 96% 100%, 2% 96%)' : undefined, borderRadius: bright ? undefined : ((sk.avatarStyle as React.CSSProperties | undefined)?.borderRadius ?? '0.65rem') }}
       aria-hidden
     >
-      <CatFace className="h-[18px] w-[18px]" />
+      <CatFace className="h-[22px] w-[22px]" />
     </span>
     <div className={`flex items-center gap-1.5 px-4 py-3.5 ${sk.catBubble}`} style={sk.catBubbleStyle} aria-hidden>
       {[0, 1, 2].map((i) =>
@@ -867,10 +912,13 @@ const TypingRow = ({ sk, bright, bold }: { sk: Skin; bright: boolean; bold: bool
 );
 
 // ── 单条消息 ──
-const MessageRow = ({ m, sk, bright, p5 = false, busy, onConfirm, onEdit, onCancel }: {
-  m: NavigatorMessage; sk: Skin; bright: boolean; p5?: boolean; busy: boolean;
+const MessageRow = ({ m, sk, bright, p5 = false, p4 = false, busy, onConfirm, onEdit, onCancel }: {
+  m: NavigatorMessage; sk: Skin; bright: boolean; p5?: boolean; p4?: boolean; busy: boolean;
   onConfirm: () => void; onEdit: () => void; onCancel: () => void;
 }) => {
+  // 角标频道：红 / 黄 / 蓝（其余中性也借蓝套配色）
+  const markCh: MarkChannel = p5 ? 'p5' : p4 ? 'p4' : 'p3';
+  const mark = bubbleMarkOf(m.text);
   if (m.role === 'summary') {
     // compact 产物：早前对话的折叠占位
     return (
@@ -883,13 +931,15 @@ const MessageRow = ({ m, sk, bright, p5 = false, busy, onConfirm, onEdit, onCanc
   if (m.role === 'user') {
     return (
       <div className="flex justify-end" data-spine-side="user">
-        {p5 ? (
-          <P5Bubble side="user">{m.text}</P5Bubble>
-        ) : (
-          <div className={`max-w-[85%] whitespace-pre-wrap px-4 py-2.5 text-sm font-bold leading-relaxed ${sk.userBubble}`} style={sk.userBubbleStyle}>
-            {m.text}
-          </div>
-        )}
+        <BubbleIn side="user" mark={mark} markCh={markCh}>
+          {p5 ? (
+            <P5Bubble side="user">{m.text}</P5Bubble>
+          ) : (
+            <div className={`whitespace-pre-wrap px-4 py-2.5 text-sm font-bold leading-relaxed ${sk.userBubble}`} style={{ ...sk.userBubbleStyle, overflowWrap: 'anywhere' }}>
+              {m.text}
+            </div>
+          )}
+        </BubbleIn>
       </div>
     );
   }
@@ -897,19 +947,21 @@ const MessageRow = ({ m, sk, bright, p5 = false, busy, onConfirm, onEdit, onCanc
     return (
       <div className="flex items-start gap-2.5" data-spine-side="cat">
         {p5 ? (
-          <P5Avatar size={52}><CatFace className="h-[18px] w-[18px]" /></P5Avatar>
+          <P5Avatar size={62}><CatFace className="h-[18px] w-[18px]" /></P5Avatar>
         ) : (
-          <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center ${sk.avatar}`} style={{ ...sk.avatarStyle, clipPath: bright ? 'polygon(0 8%, 100% 0, 96% 100%, 2% 96%)' : undefined, borderRadius: bright ? undefined : ((sk.avatarStyle as React.CSSProperties | undefined)?.borderRadius ?? '0.65rem') }}>
-            <CatFace className="h-[18px] w-[18px]" />
+          <span className={`relative mt-0.5 flex h-[38px] w-[38px] shrink-0 items-center justify-center overflow-hidden ${sk.avatar}`} style={{ ...sk.avatarStyle, clipPath: bright ? 'polygon(0 8%, 100% 0, 96% 100%, 2% 96%)' : undefined, borderRadius: bright ? undefined : ((sk.avatarStyle as React.CSSProperties | undefined)?.borderRadius ?? '0.65rem') }}>
+            <CatFace className="h-[22px] w-[22px]" />
           </span>
         )}
-        {p5 ? (
-          <P5Bubble side="cat">{m.text}</P5Bubble>
-        ) : (
-          <div className={`max-w-[85%] whitespace-pre-wrap px-4 py-2.5 text-sm font-bold leading-relaxed ${sk.catBubble}`} style={sk.catBubbleStyle}>
-            {m.text}
-          </div>
-        )}
+        <BubbleIn side="cat" mark={mark} markCh={markCh}>
+          {p5 ? (
+            <P5Bubble side="cat">{m.text}</P5Bubble>
+          ) : (
+            <div className={`whitespace-pre-wrap px-4 py-2.5 text-sm font-bold leading-relaxed ${sk.catBubble}`} style={{ ...sk.catBubbleStyle, overflowWrap: 'anywhere' }}>
+              {m.text}
+            </div>
+          )}
+        </BubbleIn>
       </div>
     );
   }
