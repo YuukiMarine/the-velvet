@@ -253,6 +253,23 @@ export const bubbleMarkOf = (text: string | undefined | null): '!' | '?' | null 
   return null;
 };
 
+/**
+ * 手绘字形（不吃字体渲染——不同系统/字重下「！」「？」的粗细与转角软硬差异很大，
+ * 直接画笔画保证跨平台一致的硬边）：
+ *   「！」= 折线笔画（描边+内芯双层）+ 独立菱形点；
+ *   「？」= 硬折角钩形笔画（同一根折线，miter 尖角、方头端点，不走圆弧）+ 同款菱形点。
+ * 描边法：同一路径画两遍——先粗（edge 色）再细（ink 色），linejoin="miter" +
+ * linecap="square" 保证转角是尖角、端头是平切，不出现任何圆润的地方。
+ */
+const MARK_STROKE = {
+  '!': '27,3 25,22 22,42',
+  '?': '15,11 28,2 43,6 46,19 35,29 26,31 25,43',
+} as const;
+const MARK_DOT = {
+  outer: '18,50 34,54 30,70 14,66',
+  inner: '21,54 30,56 28,66 18,64',
+} as const;
+
 export const BubbleMark = ({ mark, channel = 'p5', size = 34, className, style }: {
   mark: '!' | '?';
   channel?: MarkChannel;
@@ -263,8 +280,7 @@ export const BubbleMark = ({ mark, channel = 'p5', size = 34, className, style }
 }) => {
   const anim = useBoldness();
   const sk = MARK_SKIN[channel];
-  // SVG text + paintOrder="stroke"：描边先画、字后画 → 粗边完全长在字形外侧，
-  // 比 -webkit-text-stroke（居中描边、只能细细一圈）粗壮得多，也不需要方块底。
+  const points = MARK_STROKE[mark];
   return (
     <motion.span
       aria-hidden
@@ -277,21 +293,10 @@ export const BubbleMark = ({ mark, channel = 'p5', size = 34, className, style }
       transition={{ duration: 0.46, times: [0, 0.62, 1], ease: [0.2, 1.45, 0.4, 1], delay: 0.14 }}
     >
       <svg viewBox="0 0 56 72" className="h-full w-full overflow-visible">
-        <text
-          x="28"
-          y="58"
-          textAnchor="middle"
-          fontFamily={P5_FONT}
-          fontSize="70"
-          fontWeight="900"
-          stroke={sk.edge}
-          strokeWidth="13"
-          strokeLinejoin="round"
-          paintOrder="stroke"
-          fill={sk.ink}
-        >
-          {mark}
-        </text>
+        <polyline points={points} fill="none" stroke={sk.edge} strokeWidth={13} strokeLinejoin="miter" strokeLinecap="square" />
+        <polyline points={points} fill="none" stroke={sk.ink} strokeWidth={5.5} strokeLinejoin="miter" strokeLinecap="square" />
+        <polygon points={MARK_DOT.outer} fill={sk.edge} />
+        <polygon points={MARK_DOT.inner} fill={sk.ink} />
       </svg>
     </motion.span>
   );
