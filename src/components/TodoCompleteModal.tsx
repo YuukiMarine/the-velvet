@@ -135,7 +135,7 @@ export const BandCutInP3 = ({ isOpen, onClose, title, totalPoints, unlockHint, e
                   <div className="min-w-0 flex-1">
                     {/* 主标题 + 洋红双片 */}
                     <div className="flex items-end gap-2">
-                      <span className="text-[38px] font-black italic leading-none" style={{ color: '#0a1230', fontFamily: '"Arial Black", "Noto Sans SC", sans-serif' }}>{eyebrow}</span>
+                      <span className="text-[52px] font-black italic leading-[0.9]" style={{ color: '#0a1230', fontFamily: '"Arial Black", "Noto Sans SC", sans-serif', WebkitTextStroke: '5px #ffffff', paintOrder: 'stroke fill' }}>{eyebrow}</span>
                       <span aria-hidden className="mb-1 flex gap-[3px]">
                         <span className="h-[10px] w-[12px]" style={{ background: '#f0417f', clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
                         <span className="h-[8px] w-[9px]" style={{ background: 'rgba(240,65,127,0.55)', clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
@@ -144,7 +144,7 @@ export const BandCutInP3 = ({ isOpen, onClose, title, totalPoints, unlockHint, e
                     {/* TODAY 行 */}
                     <div className="mt-2.5 flex items-center gap-2.5">
                       <span aria-hidden className="h-[4px] w-9" style={{ background: '#1b57ff', transform: 'skewX(-24deg)' }} />
-                      <span className="text-[15px] font-black italic tracking-[0.16em]" style={{ color: '#1b57ff' }}>
+                      <span className="text-[18px] font-black italic tracking-[0.18em]" style={{ color: '#1b57ff' }}>
                         TODAY{(totalPoints ?? 0) > 0 ? ` / +${totalPoints}` : ''}
                       </span>
                     </div>
@@ -156,7 +156,7 @@ export const BandCutInP3 = ({ isOpen, onClose, title, totalPoints, unlockHint, e
                       transition={{ duration: 0.38, delay: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
                     >
                       <div className="inline-block max-w-full px-5 py-2.5" style={{ background: '#1b57ff', clipPath: 'polygon(12px 0, 100% 0, calc(100% - 12px) 100%, 0 100%)', boxShadow: '0 10px 26px rgba(27,87,255,0.35)' }}>
-                        <span className="block truncate text-[19px] font-black text-white">{title}</span>
+                        <span className="block truncate text-[24px] font-black text-white">{title}</span>
                       </div>
                     </motion.div>
                     {unlockHint && (unlockHint.achievements > 0 || unlockHint.skills > 0) && (

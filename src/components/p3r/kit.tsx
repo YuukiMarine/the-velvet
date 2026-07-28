@@ -16,6 +16,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { motion, useMotionValue } from 'motion/react';
 import { useBoldness } from '@/utils/boldness';
+import { useAppStore } from '@/store';
 
 export const P3R = {
   blue: '#1b57ff',
@@ -47,22 +48,29 @@ export const sheetTopClip = 'polygon(0 18px, 100% 0, 100% 100%, 0 100%)';
 /** 页面壳：水面底（fixed 铺满视口）+ 内容层。active=false 时退化为透明直通
  *  （给"组件内 p3 分支"的页面用：恒挂同一组件、按频道开关壳，避免内联 Wrapper 每渲染重建导致子树 remount） */
 export const P3RPage = ({ children, className, active = true }: { children: ReactNode; className?: string; active?: boolean }) => {
+  // 开了背景动画就不铺水面底：这层是不透明的 fixed z-0，且比 App 根的动画层后画，
+  // 铺上去就把动画整块盖住了（观感 = 蓝主题下"背景动画开关没反应"）。
+  const anims = useAppStore((s) => s.settings.backgroundAnimation);
+  const bgImage = useAppStore((s) => s.settings.backgroundImage);
+  const yieldStage = !bgImage && (anims ?? []).length > 0;
   if (!active) return <>{children}</>;
   return (
     <div className={`relative ${className ?? ''}`}>
       {/* 水面底：浅色基底 + caustic 素材极淡平铺（页面卸载即消失，不污染其它主题） */}
-      <div aria-hidden className="fixed inset-0 z-0" style={{ background: P3R.bg }}>
-        <div
-          className="absolute inset-0"
-          style={{
-            backgroundImage: 'url(/assets/terminal/p3-water-wide.png)',
-            backgroundSize: 'cover',
-            backgroundPosition: 'center top',
-            opacity: 0.3,
-          }}
-        />
-        <div className="absolute inset-0" style={{ background: 'linear-gradient(180deg, rgba(238,245,249,0.35) 0%, rgba(238,245,249,0.82) 58%, rgba(238,245,249,0.95) 100%)' }} />
-      </div>
+      {!yieldStage && (
+        <div aria-hidden className="fixed inset-0 z-0" style={{ background: P3R.bg }}>
+          <div
+            className="absolute inset-0"
+            style={{
+              backgroundImage: 'url(/assets/terminal/p3-water-wide.png)',
+              backgroundSize: 'cover',
+              backgroundPosition: 'center top',
+              opacity: 0.3,
+            }}
+          />
+          <div className="absolute inset-0" style={{ background: 'linear-gradient(180deg, rgba(238,245,249,0.35) 0%, rgba(238,245,249,0.82) 58%, rgba(238,245,249,0.95) 100%)' }} />
+        </div>
+      )}
       <div className="relative z-10">{children}</div>
     </div>
   );

@@ -17,6 +17,7 @@ import {
   P5Panel, P5Star, P5StarOutline, P5RingStar, P5CollageTitle,
 } from './kit';
 import { useBoldness } from '@/utils/boldness';
+import { MusicalNotes } from '@/components/MusicalNotes';
 import { triggerLevelFeedback, triggerSuccessFeedback } from '@/utils/feedback';
 import { useAutoClose } from '@/utils/useAutoClose';
 import { useBackHandler } from '@/utils/useBackHandler';
@@ -436,27 +437,42 @@ export const TodoCompleteP5 = ({ isOpen, onClose, title, totalPoints, unlockHint
             </svg>
           </motion.div>
 
-          {/* 底部纸条：勾选框 + 任务名 + 红计数片 */}
+          {/* 底部纸条：勾选框 + 任务名 + 红计数片。
+              收窄到 84%（原来顶满板宽，读成一条素长方形），两端各嵌一枚小星、
+              纸面上压一层极淡的红斜纹 —— 同一块纸条，装饰密度上去了才配得上这张演出。
+              入场也从「左滑淡入」换成「斜着甩进来 + 回正」。 */}
           <motion.div
-            className="relative mt-3 flex items-center gap-2 px-2.5 py-2"
-            initial={anim ? { x: -24, opacity: 0 } : false}
-            animate={{ x: 0, opacity: 1 }}
-            transition={{ type: 'spring', stiffness: 380, damping: 26, delay: 0.72 }}
+            className="relative mx-auto mt-3 flex w-[84%] items-center gap-2 px-2.5 py-2"
+            initial={anim ? { x: -34, rotate: -5, opacity: 0 } : false}
+            animate={{ x: 0, rotate: -1.2, opacity: 1 }}
+            transition={{ type: 'spring', stiffness: 340, damping: 20, delay: 0.72 }}
           >
             <span aria-hidden className="absolute inset-0" style={{ transform: 'translate(4px,5px)', background: P5R.ink, clipPath: roughQuad(433, 6) }} />
             <span aria-hidden className="absolute inset-0" style={{ background: P5R.ink, clipPath: roughQuad(434, 5) }} />
             <span aria-hidden className="absolute inset-[3px]" style={{ background: P5R.paper, clipPath: roughQuad(435, 4) }} />
+            {/* 纸面斜纹：极淡的红，只在斜射光下看得见的那种印痕 */}
+            <span
+              aria-hidden
+              className="absolute inset-[3px]"
+              style={{
+                clipPath: roughQuad(435, 4),
+                backgroundImage: 'repeating-linear-gradient(118deg, rgba(192,0,8,0.09) 0 3px, transparent 3px 9px)',
+              }}
+            />
             <span aria-hidden className="relative flex h-[26px] w-[26px] shrink-0 items-center justify-center" style={{ background: P5R.paper, boxShadow: `inset 0 0 0 3px ${P5R.ink}`, clipPath: roughQuad(436, 3) }}>
               <svg viewBox="0 0 24 24" width={17} height={17}>
                 <polyline points="4,12 10,18 21,4" fill="none" stroke={P5R.red} strokeWidth={4.6} strokeLinejoin="miter" strokeLinecap="butt" />
               </svg>
             </span>
-            <span className="relative min-w-0 flex-1 truncate text-[14px] font-black" style={{ color: P5R.ink, fontFamily: P5_FONT }}>{title}</span>
+            <span className="relative min-w-0 flex-1 truncate text-[15px] font-black" style={{ color: P5R.ink, fontFamily: P5_FONT }}>{title}</span>
             {(totalPoints ?? 0) > 0 && (
               <span className="relative shrink-0 px-2.5 py-1 text-[16px] font-black leading-none tabular-nums" style={{ background: P5R.red, color: P5R.paper, clipPath: roughQuad(437, 3), fontFamily: P5_FONT }}>
                 +{totalPoints}
               </span>
             )}
+            {/* 两端小星：纸条不再是一条光板 */}
+            <P5Star size={15} fill={P5R.red} ring={P5R.ink} className="absolute -left-[7px] -top-[7px]" rot={-14} />
+            <P5Star size={12} fill={P5R.ink} className="absolute -bottom-[6px] -right-[6px]" rot={12} />
           </motion.div>
 
           {unlockHint && (unlockHint.achievements > 0 || unlockHint.skills > 0) && (
@@ -468,6 +484,13 @@ export const TodoCompleteP5 = ({ isOpen, onClose, title, totalPoints, unlockHint
 
         <StraddleTitle text={heading} size={heading.length > 4 ? 50 : 60} />
         <P5CloseKey onClose={onClose} variant="star" style={{ right: -10, top: -90, height: 62, width: 62 }} />
+        {/* 跳音符：中性主题一直有（SaveSuccessModal 的 overlayExtras），红频道走的是
+            这张演出，之前漏掉了。MusicalNotes 自己按主题取 /m5.svg，直接挂即可。 */}
+        {anim && (totalPoints ?? 0) > 0 && (
+          <div aria-hidden className="pointer-events-none absolute left-[18%] top-[26%] z-30">
+            <MusicalNotes count={totalPoints ?? 0} delay={0.45} />
+          </div>
+        )}
       </div>
     </P5CutInStage>
   );
@@ -480,57 +503,66 @@ export const UnlockCutInP5 = ({ isOpen, onClose, heading, name, lines }: {
 }) => {
   const anim = useBoldness();
   return (
-    <P5CutInStage isOpen={isOpen} onClose={onClose} ariaLabel={`${heading}${name}`} autoCloseMs={4500} onShown={triggerLevelFeedback}>
-      <div className="relative">
+    <P5CutInStage isOpen={isOpen} onClose={onClose} ariaLabel={`${heading}${name}`} autoCloseMs={4500} onShown={triggerLevelFeedback} maxW={332}>
+      {/* 纸板收窄到 332（原 384）+ 内边距压紧：白板太大、四周空得慌 */}
+      <motion.div
+        className="relative"
+        // 出场不再只是淡入：整块纸板斜着砸进来再回正（外层管位移/旋转，
+        // P5Panel 自己的三层裁切不受影响）
+        initial={anim ? { scale: 0.72, rotate: -8, y: -26, opacity: 0 } : false}
+        animate={{ scale: 1, rotate: 0, y: 0, opacity: 1 }}
+        exit={anim ? { scale: 0.86, rotate: 4, opacity: 0 } : undefined}
+        transition={{ type: 'spring', stiffness: 300, damping: 17, mass: 0.9 }}
+      >
         {/* 纸板背后探出的红/黑碎块 */}
         <span aria-hidden className="pointer-events-none absolute -left-4 -top-2 h-[64%] w-[52%]" style={{ background: P5R.red, clipPath: roughQuad(451, 14), transform: 'rotate(-4deg)' }} />
         <span aria-hidden className="pointer-events-none absolute -right-5 top-[18%] h-[58%] w-[46%]" style={{ background: P5R.ink, clipPath: roughQuad(452, 14), transform: 'rotate(5deg)' }} />
         <span aria-hidden className="pointer-events-none absolute -bottom-4 left-[12%] h-[26%] w-[70%]" style={{ background: '#5c0004', clipPath: roughQuad(453, 13), transform: 'rotate(-2deg)' }} />
 
-        <P5Panel seed={450} jag={13} frame={4} keyline={0} face={P5R.paper} shadow={{ x: 6, y: 8 }} bodyClassName="px-5 pb-6 pt-12">
+        <P5Panel seed={450} jag={13} frame={4} keyline={0} face={P5R.paper} shadow={{ x: 6, y: 8 }} bodyClassName="px-4 pb-4 pt-10">
           {/* 多环巨星（黑/纸/红/纸/黑）+ 两侧小星与斜刺 */}
           <motion.div
             aria-hidden
             className="pointer-events-none relative mx-auto"
-            style={{ width: 186, height: 186 }}
-            initial={anim ? { scale: 0, rotate: -90, opacity: 0 } : false}
+            style={{ width: 158, height: 158 }}
+            initial={anim ? { scale: 0, rotate: -110, opacity: 0 } : false}
             animate={{ scale: 1, rotate: 0, opacity: 1 }}
-            transition={{ type: 'spring', stiffness: 240, damping: 16, delay: 0.32 }}
+            transition={{ type: 'spring', stiffness: 260, damping: 15, delay: 0.24 }}
           >
-            <P5RingStar size={186} className="absolute left-0 top-0" />
-            <P5Star size={30} fill={P5R.grey} rot={-14} className="absolute" style={{ left: -14, bottom: 26 }} />
-            <P5Star size={24} fill={P5R.red} rot={12} className="absolute" style={{ right: -8, top: 14 }} />
-            <span className="absolute" style={{ right: -14, top: 96, width: 42, height: 5, background: P5R.red, transform: 'rotate(24deg)' }} />
-            <span className="absolute" style={{ right: -18, top: 108, width: 34, height: 5, background: P5R.ink, transform: 'rotate(38deg)' }} />
+            <P5RingStar size={158} className="absolute left-0 top-0" />
+            <P5Star size={26} fill={P5R.grey} rot={-14} className="absolute" style={{ left: -12, bottom: 22 }} />
+            <P5Star size={21} fill={P5R.red} rot={12} className="absolute" style={{ right: -7, top: 12 }} />
+            <span className="absolute" style={{ right: -12, top: 82, width: 36, height: 5, background: P5R.red, transform: 'rotate(24deg)' }} />
+            <span className="absolute" style={{ right: -15, top: 92, width: 29, height: 5, background: P5R.ink, transform: 'rotate(38deg)' }} />
           </motion.div>
 
           {/* 名称黑条 */}
           <motion.div
-            className="relative mx-auto mt-4 w-fit max-w-full px-4 py-2"
+            className="relative mx-auto mt-3 w-fit max-w-full px-3.5 py-1.5"
             initial={anim ? { scaleX: 0.2, opacity: 0 } : false}
             animate={{ scaleX: 1, opacity: 1 }}
-            transition={{ type: 'spring', stiffness: 400, damping: 26, delay: 0.56 }}
+            transition={{ type: 'spring', stiffness: 400, damping: 26, delay: 0.46 }}
           >
             <span aria-hidden className="absolute inset-0" style={{ transform: 'translate(4px,5px)', background: P5R.red, clipPath: roughQuad(454, 5) }} />
             <span aria-hidden className="absolute inset-0" style={{ background: P5R.ink, clipPath: roughQuad(455, 4) }} />
-            <span className="relative block truncate text-[26px] font-black leading-none" style={{ color: P5R.paper, fontFamily: P5_FONT }}>{name}</span>
+            <span className="relative block truncate text-[24px] font-black leading-none" style={{ color: P5R.paper, fontFamily: P5_FONT }}>{name}</span>
           </motion.div>
 
           <motion.div
-            className="relative mt-3.5 text-center"
+            className="relative mt-2.5 text-center"
             initial={anim ? { y: 14, opacity: 0 } : false}
             animate={{ y: 0, opacity: 1 }}
-            transition={{ type: 'spring', stiffness: 340, damping: 26, delay: 0.68 }}
+            transition={{ type: 'spring', stiffness: 340, damping: 26, delay: 0.58 }}
           >
-            <p className="text-[15px] font-black leading-snug" style={{ color: P5R.ink, fontFamily: P5_FONT }}>{lines[0]}</p>
-            <p className="text-[15px] font-black leading-snug" style={{ color: P5R.ink, fontFamily: P5_FONT }}>{lines[1]}</p>
-            <span className="mt-2 flex justify-center"><P5Star size={16} fill={P5R.ink} /></span>
+            <p className="text-[14px] font-black leading-snug" style={{ color: P5R.ink, fontFamily: P5_FONT }}>{lines[0]}</p>
+            <p className="text-[14px] font-black leading-snug" style={{ color: P5R.ink, fontFamily: P5_FONT }}>{lines[1]}</p>
+            <span className="mt-1.5 flex justify-center"><P5Star size={14} fill={P5R.ink} /></span>
           </motion.div>
         </P5Panel>
 
-        <StraddleTitle text={heading} size={50} />
-        <P5CloseKey onClose={onClose} variant="star" style={{ right: -14, top: -100, height: 64, width: 64 }} />
-      </div>
+        <StraddleTitle text={heading} size={46} />
+        <P5CloseKey onClose={onClose} variant="star" style={{ right: -14, top: -92, height: 60, width: 60 }} />
+      </motion.div>
     </P5CutInStage>
   );
 };

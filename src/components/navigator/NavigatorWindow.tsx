@@ -1043,8 +1043,16 @@ const MessageRow = ({ m, sk, bright, p5 = false, p4 = false, busy, onConfirm, on
       )}
       {done && m.receipt && (
         <div className={`mt-3 flex items-start gap-2 border-t pt-3 ${bright ? 'border-[#dcebfb]' : 'border-white/10'}`}>
-          <span aria-hidden style={bright ? { color: P3.accent } : undefined} className={bright ? '' : 'text-primary'}>
-            <CatFace className="h-4 w-4" />
+          {/* 回执前的小猫头是**行内 16px 图标位**，不是头像壳：这里必须关掉 fillWhenPhoto。
+              开着时上传的照片走的是 absolute inset-0，而这个 span 没有定位，
+              absolute 会一路找到卡片本体当包含块——照片直接铺满整张卡（用户上报
+              「点完成后整个卡片被头像盖掉」的根因）。 */}
+          <span
+            aria-hidden
+            style={bright ? { color: P3.accent } : undefined}
+            className={`relative mt-0.5 block h-4 w-4 shrink-0 overflow-hidden ${bright ? '' : 'text-primary'}`}
+          >
+            <CatFace className="h-4 w-4" fillWhenPhoto={false} />
           </span>
           <p className="text-[13px] font-bold leading-relaxed opacity-80">{m.receipt}</p>
         </div>
