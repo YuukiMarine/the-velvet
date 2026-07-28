@@ -275,7 +275,22 @@ export const LevelUpP5 = ({ attributeName, newLevel, isOpen, onClose }: {
       onShown={triggerLevelFeedback}
     >
       <div className="relative">
-        <P5Panel seed={410} jag={12} frame={4} keyline={3} face={P5R.red} shadow={{ x: 6, y: 8 }} bodyClassName="px-4 pb-4 pt-11">
+        <P5Panel seed={410} jag={12} frame={4} keyline={3} face={P5R.red} shadow={{ x: 6, y: 8 }} bodyClassName="relative overflow-hidden px-4 pb-4 pt-11">
+          {/* 红面里的巨大同心圆环：与「今日完成」同一套——半径成 1.5 等比、线宽同比，
+              整组放大 1.5× 后与初态自相似，所以 linear 循环看上去就是永远在向外扩散，
+              没有接缝。裁在板面内（bodyClassName 的 overflow-hidden）。 */}
+          <motion.svg
+            aria-hidden
+            viewBox="0 0 200 200"
+            className="pointer-events-none absolute left-1/2 top-1/2"
+            style={{ width: 620, height: 620, marginLeft: -310, marginTop: -310 }}
+            animate={anim ? { scale: [1, 1.5] } : undefined}
+            transition={anim ? { duration: 9, repeat: Infinity, ease: 'linear' } : undefined}
+          >
+            {[6, 9, 13.5, 20.3, 30.4, 45.6, 68.4].map((r) => (
+              <circle key={r} cx="100" cy="100" r={r} fill="none" stroke="#e8464e" strokeWidth={r * 0.15} />
+            ))}
+          </motion.svg>
           {/* 巨星：灰影星在后、纸白星在前（稿上是错位双层） */}
           {/* 位移写进 motion 的 x（用 -translate-x-1/2 会被 motion 的 transform 覆盖掉） */}
           <motion.div

@@ -33,15 +33,37 @@ const ORANGE = 'var(--p4-orange, #f9a11b)';
 const BLUE = '#1668d8';
 const GREEN = '#3faa4a';
 
-/** 奶油粗描边 + 柔投影：稿上每个贴纸零件的统一收边。w = 描边视觉宽度（px） */
-const sticker = (w = 5, shadow = '0 6px 10px rgba(19,19,19,0.32)'): CSSProperties => ({
-  filter:
-    `drop-shadow(0 ${w}px 0 ${CREAM}) drop-shadow(0 -${w}px 0 ${CREAM})` +
-    ` drop-shadow(${w}px 0 0 ${CREAM}) drop-shadow(-${w}px 0 0 ${CREAM})` +
-    ` drop-shadow(${w * 0.7}px ${w * 0.7}px 0 ${CREAM}) drop-shadow(-${w * 0.7}px ${w * 0.7}px 0 ${CREAM})` +
-    ` drop-shadow(${w * 0.7}px -${w * 0.7}px 0 ${CREAM}) drop-shadow(-${w * 0.7}px -${w * 0.7}px 0 ${CREAM})` +
-    ` drop-shadow(${shadow.split(' ').slice(0, 3).join(' ')} rgba(19,19,19,0.3))`,
-});
+/**
+ * 柔投影（只此一层 filter）。
+ *
+ * 原来这里是「8 个方向的硬 drop-shadow 叠出一圈奶油描边」——两个问题都由它来：
+ *   1. 边缘毛糙：8 个方向之间是有缝的，曲线形上就是一圈锯齿缺口；
+ *   2. 掉帧：每个 drop-shadow 都是一遍独立的位图 pass，9 层 ×几十个元素，
+ *      每帧都要重算，动效一跑就卡。
+ * 换成两种零成本的画法：SVG 走真描边（stroke + paintOrder），
+ * DOM 走 box-shadow / 底层同形色片，另见 Outlined。
+ */
+const softShadow: CSSProperties = { filter: 'drop-shadow(0 5px 7px rgba(19,19,19,0.34))' };
+
+/**
+ * 贴纸描边（给 P4Sparkle / P4Flower 这类只吃 size+color 的图元用）：
+ * 底下垫一枚放大到 ratio 的奶油同形副本，上面压原色的本体。
+ * 形状按比例放大 → 描边宽度天然随形（尖角处更厚），与稿上的收边一致，且完全不走 filter。
+ */
+const Outlined = ({ size, color, kind, ratio = 1.32, className, style }: {
+  size: number; color: string; kind: 'star' | 'flower'; ratio?: number;
+  className?: string; style?: CSSProperties;
+}) => {
+  const Glyph = kind === 'star' ? P4Sparkle : P4Flower;
+  return (
+    <span className={`relative inline-block ${className ?? ''}`} style={{ width: size, height: size, ...softShadow, ...style }} aria-hidden>
+      <span className="absolute left-1/2 top-1/2" style={{ transform: `translate(-50%,-50%) scale(${ratio})` }}>
+        <Glyph size={size} color={CREAM} />
+      </span>
+      <Glyph size={size} color={color} className="absolute inset-0" />
+    </span>
+  );
+};
 
 /** 关闭键：实心圆 + 奶油四角星当 ✕（稿上三张都是这枚） */
 const P4CloseKey = ({ onClose, tone = INK, className, style }: {
@@ -61,12 +83,14 @@ const P4CloseKey = ({ onClose, tone = INK, className, style }: {
 /** 奶油旗标：两端切角的横幅（稿上副文都在这块上） */
 const RIBBON_CLIP = 'polygon(0 0, 100% 0, calc(100% - 16px) 50%, 100% 100%, 0 100%, 16px 50%)';
 
-const Ribbon = ({ children, delay, anim, rot = -1.5 }: {
+const Ribbon = ({ children, delay, anim, rot = -1.5, lift = -14 }: {
   children: ReactNode; delay: number; anim: boolean; rot?: number;
+  /** 与上一块的纵向咬合量（负=往上压住题板下缘） */
+  lift?: number;
 }) => (
   <motion.div
-    className="relative mx-auto mt-[-14px] w-fit max-w-full px-8 py-2"
-    style={{ rotate: rot }}
+    className="relative mx-auto w-fit max-w-full px-8 py-2"
+    style={{ rotate: rot, marginTop: lift }}
     initial={anim ? { y: 22, opacity: 0 } : false}
     animate={{ y: 0, opacity: 1 }}
     transition={{ type: 'spring', stiffness: 380, damping: 26, delay }}
@@ -125,12 +149,11 @@ const Confetti = ({ anim }: { anim: boolean }) => {
           key={i}
           aria-hidden
           className="pointer-events-none absolute left-1/2 top-[38%] z-20"
-          style={sticker(3, '0 4px 6px')}
           initial={{ x: 0, y: 0, scale: 0, rotate: -40, opacity: 0 }}
           animate={{ x: b.dx, y: b.dy, scale: 1, rotate: 0, opacity: 1 }}
           transition={{ type: 'spring', stiffness: 260, damping: 17, delay: 0.42 + i * 0.035 }}
         >
-          {b.kind === 'star' ? <P4Sparkle size={b.s} color={b.c} /> : <P4Flower size={b.s} color={b.c} />}
+          <Outlined size={b.s} color={b.c} kind={b.kind} />
         </motion.span>
       ))}
     </>
@@ -211,15 +234,20 @@ const Badge = ({ children, anim, size }: { children: ReactNode; anim: boolean; s
 );
 
 // ── 06 · 今日完成 / 记录成功 ────────────────────────────────────────────────
-/** 绿四叶勾徽：四瓣云朵形底 + 奶油粗勾（稿上主视觉） */
-const CloverCheck = ({ size }: { size: number }) => (
-  <svg viewBox="0 0 200 200" width={size} height={size} style={sticker(6)} aria-hidden>
-    {/* 四瓣云朵：四个大圆叠出的鼓形轮廓 */}
+/** 主徽：黄色大四角星 + 奶油粗勾（用户口径：原稿的绿四叶草换成四角星）。
+ *  描边用真 stroke + paintOrder，不再叠 filter。 */
+const StarCheck = ({ size }: { size: number }) => (
+  <svg viewBox="0 0 200 200" width={size} height={size} style={softShadow} aria-hidden>
+    {/* 四角星：四条腰深深内凹（与频道签名件 P4Sparkle 同形，放大版） */}
     <path
-      d="M100 18c24 0 40 14 44 32 20-6 40 8 42 30 2 22-12 38-32 42 8 20-4 42-26 46-20 4-38-8-44-26-8 18-28 28-48 22-22-6-32-28-24-48-20-6-32-24-28-46 4-20 24-32 44-26 6-18 22-32 44-32Z"
-      fill={GREEN}
+      d="M100 4C109 60 140 91 196 100C140 109 109 140 100 196C91 140 60 109 4 100C60 91 91 60 100 4Z"
+      fill="var(--ui-bg, #ffd900)"
+      stroke={CREAM}
+      strokeWidth={11}
+      strokeLinejoin="round"
+      paintOrder="stroke"
     />
-    <polyline points="62,104 88,132 142,72" fill="none" stroke={CREAM} strokeWidth={22} strokeLinecap="round" strokeLinejoin="round" />
+    <polyline points="66,102 90,128 138,76" fill="none" stroke={INK} strokeWidth={20} strokeLinecap="round" strokeLinejoin="round" />
   </svg>
 );
 
@@ -233,7 +261,7 @@ export const TodoCompleteP4 = ({ isOpen, onClose, title, totalPoints, unlockHint
     <P4CutInStage isOpen={isOpen} onClose={onClose} ariaLabel={`${heading}：${title}`} autoCloseMs={3200} onShown={triggerSuccessFeedback}>
       <div className="relative pb-6 pt-2">
         <Badge anim={anim} size={228}>
-          <CloverCheck size={228} />
+          <StarCheck size={228} />
         </Badge>
         {/* 题板压在徽的下半（稿上是骑在勾徽上的） */}
         <div className="relative z-20 -mt-[48px]">
@@ -258,12 +286,11 @@ export const TodoCompleteP4 = ({ isOpen, onClose, title, totalPoints, unlockHint
         <motion.span
           aria-hidden
           className="pointer-events-none absolute right-[2%] top-[58%] z-20"
-          style={sticker(4, '0 4px 6px')}
           initial={anim ? { scale: 0, rotate: -60 } : false}
           animate={{ scale: 1, rotate: 0 }}
           transition={{ type: 'spring', stiffness: 280, damping: 16, delay: 0.56 }}
         >
-          <P4Flower size={46} color={GREEN} />
+          <Outlined size={46} color={GREEN} kind="flower" />
         </motion.span>
         <Confetti anim={anim} />
         <P4CloseKey onClose={onClose} style={{ right: -6, top: 34 }} />
@@ -275,8 +302,8 @@ export const TodoCompleteP4 = ({ isOpen, onClose, title, totalPoints, unlockHint
 // ── 07 · 成就解锁 ──────────────────────────────────────────────────────────
 /** 金环奖杯徽：金盘 + 同心金环线 + 奶油奖杯 */
 const TrophyBadge = ({ size }: { size: number }) => (
-  <svg viewBox="0 0 200 200" width={size} height={size} style={sticker(6)} aria-hidden>
-    <circle cx="100" cy="100" r="96" fill="var(--ui-bg, #ffd900)" />
+  <svg viewBox="0 0 200 200" width={size} height={size} style={softShadow} aria-hidden>
+    <circle cx="100" cy="100" r="92" fill="var(--ui-bg, #ffd900)" stroke={CREAM} strokeWidth={10} paintOrder="stroke" />
     {[80, 64, 48].map((r) => (
       <circle key={r} cx="100" cy="100" r={r} fill="none" stroke="rgba(19,19,19,0.08)" strokeWidth="7" />
     ))}
@@ -316,7 +343,9 @@ export const AchievementUnlockP4 = ({ isOpen, onClose, achievementTitle }: {
               {achievementTitle}
             </Plate>
           </div>
-          <Ribbon delay={0.62} anim={anim} rot={-1}>恭喜你达成新成就！继续努力解锁更多内容</Ribbon>
+          {/* 旗标默认 mt-[-14px] 是为了压在题板下缘；成就解锁上面多一块蓝名板，
+              再往上叠就把成就名盖住了，这里把它压回正外边距 */}
+          <Ribbon delay={0.62} anim={anim} rot={-1} lift={-6}>恭喜你达成新成就！继续努力解锁更多内容</Ribbon>
         </div>
         <Confetti anim={anim} />
         <P4CloseKey onClose={onClose} tone={ORANGE} style={{ right: -6, top: 30 }} />
@@ -336,13 +365,13 @@ export const LevelUpP4 = ({ isOpen, onClose, attributeName, newLevel }: {
         {/* 橙盘 + 顶部大奶油四角星（稿上主视觉） */}
         <Badge anim={anim} size={260}>
           <div className="relative h-full w-full">
-            <svg viewBox="0 0 200 200" width={260} height={260} style={sticker(6)} aria-hidden>
-              <circle cx="100" cy="100" r="96" fill={ORANGE} />
+            <svg viewBox="0 0 200 200" width={260} height={260} style={softShadow} aria-hidden>
+              <circle cx="100" cy="100" r="92" fill={ORANGE} stroke={CREAM} strokeWidth={10} paintOrder="stroke" />
               {[80, 62].map((r) => (
                 <circle key={r} cx="100" cy="100" r={r} fill="none" stroke="rgba(255,246,208,0.28)" strokeWidth="8" />
               ))}
             </svg>
-            <span aria-hidden className="absolute left-1/2 top-[-12%] -translate-x-1/2" style={sticker(4, '0 4px 6px')}>
+            <span aria-hidden className="absolute left-1/2 top-[-12%] -translate-x-1/2" style={softShadow}>
               <P4Sparkle size={78} color={CREAM} />
             </span>
           </div>

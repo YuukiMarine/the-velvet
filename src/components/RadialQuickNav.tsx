@@ -22,6 +22,7 @@ import { zClass } from '@/utils/zIndex';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { RadialWheelP5 } from '@/components/RadialWheelP5';
 import { RadialWheelP3, p3Pick, p3Strip } from '@/components/RadialWheelP3';
+import { RadialWheelP4 } from '@/components/RadialWheelP4';
 
 export interface WheelItem {
   id: string;
@@ -155,10 +156,10 @@ export const RadialQuickNav = ({ open, origin, onClose, onNavigate }: RadialQuic
                 style={
                   channel === 'p3'
                     ? { left: origin.x, top: p3Strip(origin, WHEEL_ITEMS.length).bottom + 16 }
-                    : { left: origin.x, top: origin.y - radius - (channel === 'p5' ? 228 : 128) }
+                    : { left: origin.x, top: origin.y - radius - (channel === 'p5' ? 228 : channel === 'p4' ? 150 : 128) }
                 }
               >
-                {channel !== 'p5' && channel !== 'p3' && (
+                {channel !== 'p5' && channel !== 'p3' && channel !== 'p4' && (
                   <div className="text-2xl font-black text-white" style={{ textShadow: '2px 2px 0 rgba(0,0,0,0.8)' }}>
                     {active !== null ? WHEEL_ITEMS[active].label : '滑向目标'}
                   </div>
@@ -174,6 +175,9 @@ export const RadialQuickNav = ({ open, origin, onClose, onNavigate }: RadialQuic
               ) : channel === 'p5' ? (
                 /* P5（红）：碑牌手扇 + 星形波纹 + 同心条纹星群 */
                 <RadialWheelP5 items={WHEEL_ITEMS} origin={origin} radius={radius} active={active} />
+              ) : channel === 'p4' ? (
+                /* P4（黄）：四角星粗波纹 → 同心圆盘 → 中心大星 + 衬线大字 */
+                <RadialWheelP4 items={WHEEL_ITEMS} origin={origin} radius={radius} active={active} />
               ) : (
               /* 其余频道暂用圆瓣基础形态（P4 差分后置） */
               WHEEL_ITEMS.map((item, i) => {

@@ -368,7 +368,7 @@ function App() {
     }
     // iOS standalone + 移动端：html/body 是系统安全区（状态栏/Home Bar）的着色来源，
     // 用中性面色而非主题色，避免顶/底被主题色染出「彩条」——用户真机手改口径
-    const isStandalone = isStandalonePwa();
+  const isStandalone = isStandalonePwa();
     const isMobile = window.matchMedia('(max-width: 767px)').matches;
     const systemAreaColor = isStandalone && isMobile
       ? (settings.darkMode ? '#111827' : '#ffffff')
@@ -432,6 +432,21 @@ function App() {
     );
   }
 
+  // 背景动画是否开着（无背景图 + 至少选了一种）——擦除垫底层要按它决定是否复刻
+  const bgAnimOn = !settings.backgroundImage && (settings.backgroundAnimation ?? []).length > 0;
+  // 背景图开着：三个频道的页面壳都要给它让位，擦除垫底层也要把它复刻一份
+  const bgImageOn = !!settings.backgroundImage;
+  const bgImageLayer = bgImageOn ? (
+    <div
+      aria-hidden
+      className="pointer-events-none fixed inset-0 bg-cover bg-center bg-no-repeat"
+      style={{
+        backgroundImage: `url(${settings.backgroundImage})`,
+        backgroundSize: settings.backgroundOrientation === 'landscape' ? '100% auto' : 'auto 100%',
+        opacity: settings.backgroundOpacity ?? 0.3,
+      }}
+    />
+  ) : null;
   const renderPage = (page: string) => {
     switch (page) {
       case 'dashboard':
@@ -551,19 +566,11 @@ function App() {
         <div
           className="min-h-screen bg-gray-50 dark:bg-gray-900 relative"
           // P4 黄频道：舞台平面直接铺 --ui-bg（p4-redraw 定稿），暗色也保持黄
-          style={user?.theme === 'yellow' ? { background: 'var(--ui-bg, #ffd900)' } : undefined}
+          // 用户自定义了背景图时让位——这层不透明黄会把图整块盖没（"背景图片没反应"）
+          style={user?.theme === 'yellow' && !settings.backgroundImage ? { background: 'var(--ui-bg, #ffd900)' } : undefined}
         >
-          {/* 背景图片 */}
-          {settings.backgroundImage && (
-            <div 
-            className="fixed inset-0 bg-cover bg-center bg-no-repeat"
-            style={{ 
-              backgroundImage: `url(${settings.backgroundImage})`,
-              backgroundSize: settings.backgroundOrientation === 'landscape' ? '100% auto' : 'auto 100%',
-              opacity: settings.backgroundOpacity ?? 0.3
-            }}
-            />
-          )}
+          {/* 背景图片（与擦除垫底层复刻的是同一个节点，见 bgImageLayer） */}
+          {bgImageLayer}
 
           {/* 背景动画（无背景图时，优先于纹理） */}
           {!settings.backgroundImage && (settings.backgroundAnimation ?? []).length > 0 && (
@@ -594,7 +601,7 @@ function App() {
           }
 
           {/* P4 黄舞台背景装饰：巨型橙弧环 + 大花剪影 + 四角星，缓解纯黄大面积平铺 */}
-          {user?.theme === 'yellow' && <P4StageDecor />}
+          {user?.theme === 'yellow' && !bgImageOn && <P4StageDecor />}
 
         <div className="relative z-10">
           <WelcomeModal />
@@ -627,7 +634,18 @@ function App() {
                   current={currentPage}
                   // 与 App 根的舞台底色同源（黄频道走 --ui-bg，其余走 gray-50 / gray-900）
                   stageBg={user?.theme === 'yellow' ? 'var(--ui-bg, #ffd900)' : settings.darkMode ? '#111827' : '#f9fafb'}
-                  stageDecor={user?.theme === 'yellow' ? <P4StageDecor /> : undefined}
+                  // 擦除垫底层要把**所有全局背景层**都复刻一份，否则垫层期间它们被盖成
+                  // 纯色、垫层一卸又跳回来——这就是"切页时背景动画闪一下"的全部原因
+                  // （P4StageDecor 早就这么做了，背景动画一直漏在外面）。
+                  stageDecor={
+                    (user?.theme === 'yellow' || bgAnimOn || bgImageOn) ? (
+                      <>
+                        {user?.theme === 'yellow' && !bgImageOn && <P4StageDecor />}
+                        {bgAnimOn && <BackgroundAnimation styles={settings.backgroundAnimation as string[]} darkMode={settings.darkMode} />}
+                        {bgImageLayer}
+                      </>
+                    ) : undefined
+                  }
                   render={renderPage}
                 />
               </main>
