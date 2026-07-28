@@ -208,6 +208,27 @@ export const P5Star = ({
   </svg>
 );
 
+/**
+ * FAB 五角星底 —— 记录 / 任务 / 羁绊 右下角「+」的红频道形制（原为八角块）。
+ *
+ * 三层同形叠出「黑硬影 + 手撕纸白边 + 红面」，与全站贴纸语法同源。
+ * 两处几何是刻意的，别顺手改：
+ *   1. 星心下移到 y=54.4 —— 五角星上尖下宽，几何中心放正会让整个星在按钮框里偏上；
+ *      下移 (R−0.809R)/2 后 **包围盒**才居中，而按钮里的「+」仍在 flex 中心，
+ *      于是「+」落在星心略上方 2.8px 处（视觉上恰好在星的视重心）。
+ *   2. innerRatio 0.55（比装饰星的 0.42 胖）—— 星腰内切圆要能整个吃下 20px 的加号，
+ *      细星会让笔画压到凹角上。
+ */
+export const P5StarFab = ({ face = P5R.red, seed = 4 }: { face?: string; seed?: number }) => (
+  <span aria-hidden className="pointer-events-none absolute inset-0">
+    <svg viewBox="0 0 100 100" className="h-full w-full" style={{ overflow: 'visible' }}>
+      <polygon points={jitterStarPts(50, 54.4, 46, seed, 0.045, -90, 0.55)} fill={P5R.ink} transform="translate(4,4.5)" />
+      <polygon points={jitterStarPts(50, 54.4, 46, seed, 0.045, -90, 0.55)} fill={P5R.paper} />
+      <polygon points={starPts(50, 54.4, 40, -90, 0.55)} fill={face} />
+    </svg>
+  </span>
+);
+
 /** 空心描边星（背景水印 / 装饰） */
 export const P5StarOutline = ({ size = 24, color = P5R.paper, width = 7, className, style, rot = 0 }: {
   size?: number; color?: string; width?: number; className?: string; style?: CSSProperties; rot?: number;

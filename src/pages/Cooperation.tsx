@@ -6,7 +6,7 @@ import { useCloudSocialStore } from '@/store/cloudSocial';
 import { PageTitle } from '@/components/PageTitle';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P3R, P3RPage, GhostWords, P3PageHeader, SlantButton, slantClip } from '@/components/p3r/kit';
-import { P5R, P5_FONT, P5Collage, P5SubBar, P5Star, P5Dots, P5Slab, P5RPage } from '@/components/p5r/kit';
+import { P5R, P5_FONT, P5Collage, P5SubBar, P5Star, P5Dots, P5Slab, P5RPage, P5StarFab } from '@/components/p5r/kit';
 import { ConfidantCard } from '@/components/cooperation/ConfidantCard';
 import { ConfidantAlbumWall } from '@/components/cooperation/ConfidantAlbumWall';
 import { ConfidantCreateModal } from '@/components/cooperation/ConfidantCreateModal';
@@ -778,7 +778,7 @@ export function Cooperation() {
             isP4
               ? 'h-16 w-16 text-2xl font-bold'
               : p5
-                ? 'h-14 w-14 text-2xl font-black'
+                ? 'h-16 w-16 text-3xl font-black leading-none'
               : p3
                 ? 'h-14 w-[76px] text-3xl font-black'
                 : 'w-14 h-14 rounded-full text-2xl font-bold shadow-2xl'
@@ -804,14 +804,15 @@ export function Cooperation() {
           {isP4 && (
             <P4Sparkle size={64} color="var(--ui-accent)" className="absolute inset-0" style={{ filter: 'drop-shadow(0 3px 0 rgba(19,19,19,0.3))' }} />
           )}
-          {p5 && (
-            <span aria-hidden className="pointer-events-none absolute inset-0">
-              <span className="absolute inset-0" style={{ transform: 'translate(3px,3.5px)', background: '#000000', clipPath: 'polygon(25% 7%, 66% 0%, 100% 25%, 94% 74%, 76% 100%, 33% 94%, 0% 76%, 7% 23%)' }} />
-              <span className="absolute inset-0" style={{ background: '#f0e9df', clipPath: 'polygon(27% 5%, 69% 1%, 99% 28%, 93% 72%, 73% 99%, 30% 96%, 1% 74%, 6% 25%)' }} />
-              <span className="absolute inset-[3px]" style={{ background: '#c00008', clipPath: 'polygon(27% 5%, 69% 1%, 99% 28%, 93% 72%, 73% 99%, 30% 96%, 1% 74%, 6% 25%)' }} />
-            </span>
+          {p5 && <P5StarFab seed={17} />}
+          {p5 ? (
+            // 与记录 / 任务两页的星形 FAB 用同一枚加号笔画，三处形制才真的统一
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.6} className="relative h-6 w-6" aria-hidden="true">
+              <path d="M12 4.5v15m7.5-7.5h-15" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          ) : (
+            <span className="relative">+</span>
           )}
-          <span className="relative">+</span>
         </motion.button>
       )}
 

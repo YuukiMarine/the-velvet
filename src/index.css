@@ -859,24 +859,6 @@ html[data-ios-standalone="true"] {
   font-weight: 800;
 }
 
-/* ── 蓝频道水下舞台（UnderwaterStage）──────────────────────────────────────
-   光柱：转满一个 repeating-conic-gradient 周期（9°）即与初态重合 → 无缝循环，
-   观感是「光缓慢从左向右扫」。
-   水波：胶片横排 4 帧、steps(4) 在 1s 内走完一轮 = 每秒 4 帧的定格动画。 */
-@keyframes p3-underwater-rays {
-  from { transform: rotate(0deg); }
-  to   { transform: rotate(12deg); } /* = repeating-conic 的一个周期，转满即与初态重合 */
-}
-@keyframes p3-underwater-ripple {
-  from { transform: translateX(0); }
-  to   { transform: translateX(-100%); }
-}
-/* 降低动效偏好：保留画面，停掉循环运动 */
-@media (prefers-reduced-motion: reduce) {
-  [style*="p3-underwater-rays"],
-  [style*="p3-underwater-ripple"] { animation: none !important; }
-}
-
 /* ── P4 亮黄舞台上的灰系小字（.p4-onbright）────────────────────────────────
    纯黄底 #ffd900 上，text-gray-400 的对比度只有 ~1.9:1，text-gray-500 也才 3.4:1。
    翻成墨色的浓淡三档，保住层级的同时把对比度拉回可读。 */

@@ -22,6 +22,7 @@ import { useUiChannel } from '@/ui/useUiChannel';
 import { useAppStore } from '@/store';
 import { P3R, slantClip } from '@/components/p3r/kit';
 import { starPts } from '@/components/p5r/kit';
+import { P4Sparkle } from '@/ui/p4Kit';
 
 const CARD_W = 182;
 const CARD_H = Math.round(CARD_W * 1.6); // TarotCardSVG 比例
@@ -537,19 +538,9 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
             animate={{ rotate: index * 90 }}
             transition={{ type: 'spring', stiffness: 140, damping: 15, mass: 0.9 }}
           >
-            {/* 黄频道的对位件：同心四角星，每翻一张转 90°（红是五角星转 60°） */}
-            <svg viewBox="0 0 100 100" className="h-full w-full">
-              {[48, 37, 26, 15].map((r) => (
-                <path
-                  key={r}
-                  d={`M50 ${50 - r} L${50 + r * 0.26} ${50 - r * 0.26} L${50 + r} 50 L${50 + r * 0.26} ${50 + r * 0.26} L50 ${50 + r} L${50 - r * 0.26} ${50 + r * 0.26} L${50 - r} 50 L${50 - r * 0.26} ${50 - r * 0.26} Z`}
-                  fill="none"
-                  stroke="rgba(19,19,19,0.13)"
-                  strokeWidth={2.4}
-                  strokeLinejoin="miter"
-                />
-              ))}
-            </svg>
+            {/* 黄频道的对位件：**实色**四角星（就是频道签名件 P4Sparkle——四条腰是深深
+                内凹的曲线，不是同心描边），每翻一张转 90°（红是同心五角星转 60°） */}
+            <P4Sparkle size={300} color="rgba(19,19,19,0.12)" />
           </motion.div>
         )}
         {isP5 && (

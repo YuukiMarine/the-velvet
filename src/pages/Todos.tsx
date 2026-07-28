@@ -17,7 +17,7 @@ import { ArchiveIcon, EditIcon, RestoreIcon, TrashIcon } from '@/components/icon
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P4CountPill, P4EmptyBloom, P4SectionTitle, P4Sparkle } from '@/ui/p4Kit';
 import { BigSlantTitle, GhostWords, P3EmptySlab, SlantButton } from '@/components/p3r/kit';
-import { roughQuad, P5Wedge, P5Chip } from '@/components/p5r/kit';
+import { roughQuad, P5Wedge, P5Chip, P5StarFab } from '@/components/p5r/kit';
 
 const weekdayLabels = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 
@@ -725,7 +725,7 @@ export const TodosView = () => {
             isP4
               ? 'h-16 w-16 text-white' // p4-redraw：蓝色四角星 FAB（星形本体当按钮面）
               : p5
-                ? 'h-14 w-14 text-white' // p5-redraw：纸圈黑影红八角（p5-menu 稿「+」形制）
+                ? 'h-16 w-16 text-white' // p5-redraw：纸边黑影红五角星
                 : 'w-14 h-14 rounded-full bg-primary text-white shadow-lg shadow-primary/30'
           }`}
         >
@@ -737,15 +737,9 @@ export const TodosView = () => {
               style={{ filter: 'drop-shadow(0 3px 0 rgba(19,19,19,0.3))' }}
             />
           )}
-          {p5 && (
-            <span aria-hidden className="pointer-events-none absolute inset-0">
-              <span className="absolute inset-0" style={{ transform: 'translate(3px,3.5px)', background: '#000000', clipPath: 'polygon(25% 7%, 66% 0%, 100% 25%, 94% 74%, 76% 100%, 33% 94%, 0% 76%, 7% 23%)' }} />
-              <span className="absolute inset-0" style={{ background: '#f0e9df', clipPath: 'polygon(27% 5%, 69% 1%, 99% 28%, 93% 72%, 73% 99%, 30% 96%, 1% 74%, 6% 25%)' }} />
-              <span className="absolute inset-[3px]" style={{ background: '#c00008', clipPath: 'polygon(27% 5%, 69% 1%, 99% 28%, 93% 72%, 73% 99%, 30% 96%, 1% 74%, 6% 25%)' }} />
-            </span>
-          )}
+          {p5 && <P5StarFab seed={11} />}
           {/* 白色加号（与记录子页 FAB 的 PlusIcon 同款笔画） */}
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={isP4 ? 2.6 : 2} className={`relative ${isP4 ? 'w-5 h-5' : 'w-6 h-6'}`} aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={isP4 || p5 ? 2.6 : 2} className={`relative ${isP4 ? 'w-5 h-5' : 'w-6 h-6'}`} aria-hidden="true">
             <path d="M12 4.5v15m7.5-7.5h-15" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </motion.button>
