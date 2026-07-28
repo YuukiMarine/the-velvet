@@ -1208,7 +1208,7 @@ export const Settings = () => {
                       <div className={p3 ? 'space-y-3' : 'space-y-3 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg'}>
                         <div>
                           <h4 className={p3 ? 'text-[15px] font-black' : 'font-medium text-gray-800 dark:text-white'} style={p3 ? { color: P3R.ink } : undefined}>背景动画</h4>
-                          <p className={p3 ? 'text-[12px] font-semibold' : 'text-sm text-gray-600 dark:text-gray-400'} style={p3 ? { color: P3R.grey } : undefined}>可同时开启多个，跟随主题色</p>
+                          <p className={p3 ? 'text-[12px] font-semibold' : 'text-sm text-gray-600 dark:text-gray-400'} style={p3 ? { color: P3R.grey } : undefined}>最多同时开启两个，跟随主题色</p>
                         </div>
                         <div className={p3 ? 'grid grid-cols-4 gap-2' : 'grid grid-cols-2 gap-2'}>
                           {([
@@ -1220,9 +1220,10 @@ export const Settings = () => {
                             const current = (settings.backgroundAnimation ?? []) as string[];
                             const active = current.includes(opt.value);
                             const toggle = () => {
+                              // 最多两个：已满时再点第三个，挤掉最早开的那个（不做静默失败）
                               const next = active
                                 ? current.filter(v => v !== opt.value)
-                                : [...current, opt.value];
+                                : [...current, opt.value].slice(-2);
                               updateSettings({ backgroundAnimation: next });
                             };
                             if (p3) {
