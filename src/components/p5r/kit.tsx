@@ -294,6 +294,9 @@ const MARK_SKIN: Record<MarkChannel, { ink: string; edge: string }> = {
   p3: { ink: '#ffffff', edge: '#0a1230' },
 };
 
+/** 蓝频道的 ？/！ 用字体渲染（见 BubbleMark 内的 p3 分支），取频道亮蓝 */
+const P3_MARK_INK = '#1b57ff';
+
 /** 从文本判定角标字符；无则 null */
 export const bubbleMarkOf = (text: string | undefined | null): '!' | '?' | null => {
   if (!text) return null;
@@ -345,6 +348,21 @@ export const BubbleMark = ({ mark, channel = 'p5', size = 34, className, style }
         : { scale: 1, rotate: -5, opacity: 1 }}
       transition={{ duration: 0.46, times: [0, 0.62, 1], ease: [0.2, 1.45, 0.4, 1], delay: 0.14 }}
     >
+      {/* 蓝频道不用手绘粗描边字形：那套「硬边 + 黑锁边」是红/黄的拼贴语法，
+          压在白日水面的清爽气泡上很出戏。这里换成方正无衬线的 ？/！ + 一层浅投影。 */}
+      {channel === 'p3' ? (
+        <span
+          className="flex h-full w-full items-center justify-center font-black leading-none"
+          style={{
+            fontFamily: 'Arial, Helvetica, "Noto Sans SC", sans-serif',
+            fontSize: size * 0.96,
+            color: P3_MARK_INK,
+            filter: 'drop-shadow(0 2px 2px rgba(10,18,48,0.22))',
+          }}
+        >
+          {mark === '!' ? '!' : '?'}
+        </span>
+      ) : (
       <svg viewBox="0 0 56 72" className="h-full w-full overflow-visible">
         <polyline points={points} fill="none" stroke={sk.edge} strokeWidth={STROKE_W} strokeLinejoin="miter" strokeLinecap="square" />
         <polyline points={points} fill="none" stroke={sk.ink} strokeWidth={INK_W} strokeLinejoin="miter" strokeLinecap="square" />
@@ -359,6 +377,7 @@ export const BubbleMark = ({ mark, channel = 'p5', size = 34, className, style }
           paintOrder="stroke"
         />
       </svg>
+      )}
     </motion.span>
   );
 };

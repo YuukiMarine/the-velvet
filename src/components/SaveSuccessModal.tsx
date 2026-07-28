@@ -3,6 +3,7 @@ import { CelebrationCutIn } from '@/components/CelebrationCutIn';
 import { MusicalNotes } from '@/components/MusicalNotes';
 import { BandCutInP3 } from '@/components/TodoCompleteModal';
 import { TodoCompleteP5 } from '@/components/p5r/cutins';
+import { TodoCompleteP4 } from '@/components/p4r/cutins';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { triggerSuccessFeedback } from '@/utils/feedback';
 
@@ -28,6 +29,10 @@ export const SaveSuccessModal = ({ isOpen, onClose, description, pointsAwarded, 
   // p5：复用今日完成的猩红大板演出（p5-modal-06 制式），标题换「记录成功」
   if (channel === 'p5') {
     return <TodoCompleteP5 isOpen={isOpen} onClose={onClose} title={description} totalPoints={totalPoints} unlockHint={unlockHint} heading="记录成功" />;
+  }
+  // p4：复用今日完成的贴纸演出（p4 定稿稿 06），标题换「记录成功」
+  if (channel === 'p4') {
+    return <TodoCompleteP4 isOpen={isOpen} onClose={onClose} title={description} totalPoints={totalPoints} unlockHint={unlockHint} heading="记录成功" />;
   }
   // p3：复用今日完成的横贯斜带 cut-in（含蓝色划过高光），标题换「记录成功」
   if (channel === 'p3') return <BandCutInP3 isOpen={isOpen} onClose={onClose} title={description} totalPoints={totalPoints} unlockHint={unlockHint} eyebrow="记录成功" ghost="SAVED" />;

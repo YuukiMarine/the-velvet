@@ -58,9 +58,11 @@ export const p3Pick = (
 // ── 1 · 圆环波纹 ───────────────────────────────────────────────────────────
 /** 用 motion 直接补间 SVG 的 r 属性：环在放大过程中描边恒定粗细
  *  （用 CSS scale 撑一个带 border 的 div，边会跟着放大成一圈粗白箍）。 */
-const Ring = ({ cx, cy, r0, r1, stroke, width, delay, duration, repeat }: {
+const Ring = ({ cx, cy, r0, r1, stroke, width, delay, duration, repeat, fadeEarly }: {
   cx: number; cy: number; r0: number; r1: number; stroke: string; width: number;
   delay: number; duration: number; repeat?: boolean;
+  /** 环还没扩到最大就先化掉（浪推出去、水面先平） */
+  fadeEarly?: boolean;
 }) => (
   <motion.circle
     cx={cx}
@@ -69,12 +71,12 @@ const Ring = ({ cx, cy, r0, r1, stroke, width, delay, duration, repeat }: {
     stroke={stroke}
     strokeWidth={width}
     initial={{ r: r0, opacity: 0 }}
-    animate={{ r: r1, opacity: [0, 0.85, 0.6, 0] }}
+    animate={{ r: r1, opacity: [0, 0.85, 0.45, 0] }}
     transition={{
       duration,
       delay,
       ease: [0.16, 0.7, 0.35, 1],
-      opacity: { duration, delay, times: [0, 0.12, 0.6, 1] },
+      opacity: { duration, delay, times: fadeEarly ? [0, 0.08, 0.34, 0.66] : [0, 0.12, 0.6, 1] },
       ...(repeat ? { repeat: Infinity, repeatDelay: 0.5 } : {}),
     }}
   />
@@ -94,25 +96,26 @@ const RingBurst = ({ origin }: { origin: { x: number; y: number } }) => {
   const vh = window.innerHeight;
   return (
     <svg className="pointer-events-none absolute inset-0 h-full w-full" aria-hidden>
-      {/* ◈ 处的主波：5 圈一次性推到上半屏，环身要粗（十几 px）才像水推出去的浪 */}
-      {[0, 1, 2, 3, 4].map((i) => (
+      {/* ◈ 处的主波：4 圈（原 5 圈太密），环身再粗一档、化得更早 */}
+      {[0, 1, 2, 3].map((i) => (
         <Ring
           key={`o${i}`}
           cx={origin.x}
           cy={origin.y}
           r0={16}
-          r1={190 + i * 84}
+          r1={200 + i * 92}
           stroke={i % 2 === 1 ? P3R.cyan : '#ffffff'}
-          width={i % 2 === 1 ? 16 : 12}
+          width={i % 2 === 1 ? 20 : 15}
           delay={i * 0.11}
-          duration={1.15}
+          duration={0.95}
+          fadeEarly
         />
       ))}
-      {/* 屏幕其它位置：各自两圈、错相位、循环 */}
+      {/* 屏幕其它位置：远处的环细一点（回调到接近原始值），错相位、循环 */}
       {SCATTER.map((s, i) => (
         <g key={`s${i}`}>
-          <Ring cx={s.fx * vw} cy={s.fy * vh} r0={6} r1={s.r} stroke={P3R.cyan} width={8} delay={s.d} duration={s.dur} repeat />
-          <Ring cx={s.fx * vw} cy={s.fy * vh} r0={6} r1={s.r * 0.62} stroke="rgba(255,255,255,0.8)" width={7} delay={s.d + 0.28} duration={s.dur} repeat />
+          <Ring cx={s.fx * vw} cy={s.fy * vh} r0={6} r1={s.r} stroke={P3R.cyan} width={3.5} delay={s.d} duration={s.dur} repeat />
+          <Ring cx={s.fx * vw} cy={s.fy * vh} r0={6} r1={s.r * 0.62} stroke="rgba(255,255,255,0.8)" width={2.4} delay={s.d + 0.28} duration={s.dur} repeat />
         </g>
       ))}
     </svg>
