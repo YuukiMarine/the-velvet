@@ -4,6 +4,7 @@ import { CelebrationCutIn } from '@/components/CelebrationCutIn';
 import { useBoldness } from '@/utils/boldness';
 import { MusicalNotes } from '@/components/MusicalNotes';
 import { TodoCompleteP5 } from '@/components/p5r/cutins';
+import { TodoCompleteP4 } from '@/components/p4r/cutins';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { triggerSuccessFeedback } from '@/utils/feedback';
 import { useAutoClose } from '@/utils/useAutoClose';
@@ -218,6 +219,7 @@ export const TodoCompleteModal = (props: TodoCompleteModalProps) => {
   const channel = useUiChannel();
   // P5R（p5-modal-06 稿）：红频道换「纸白巨星嵌黑勾」全屏演出
   if (channel === 'p5') return <TodoCompleteP5 {...props} />;
+  if (channel === 'p4') return <TodoCompleteP4 {...props} />;
   const p3 = channel === 'p3';
   if (p3) return <BandCutInP3 {...props} eyebrow="今日完成" ghost="DONE" />;
   const { isOpen, onClose, title, totalPoints, unlockHint } = props;

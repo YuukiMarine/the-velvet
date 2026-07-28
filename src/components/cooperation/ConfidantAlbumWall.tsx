@@ -191,17 +191,18 @@ const P3SwitchRipple = () => (
     style={{ width: 460, height: 460, marginLeft: -230, marginTop: -212, overflow: 'visible' }}
     viewBox="0 0 460 460"
   >
-    {[0, 1, 2].map((i) => (
+    {/* 两圈就够（三圈太吵），再粗一档，并且更早化掉：opacity 的 times 前移 */}
+    {[0, 1].map((i) => (
       <motion.circle
         key={i}
         cx={230}
         cy={230}
         fill="none"
         stroke={i === 1 ? P3R.blue : P3R.cyan}
-        strokeWidth={i === 1 ? 5 : 3.5}
+        strokeWidth={i === 1 ? 7 : 5.5}
         initial={{ r: 18, opacity: 0 }}
-        animate={{ r: 150 + i * 62, opacity: [0, 0.5, 0.34, 0] }}
-        transition={{ duration: 1.05, delay: i * 0.12, ease: [0.16, 0.7, 0.35, 1], opacity: { duration: 1.05, delay: i * 0.12, times: [0, 0.14, 0.6, 1] } }}
+        animate={{ r: 158 + i * 70, opacity: [0, 0.5, 0.2, 0] }}
+        transition={{ duration: 0.9, delay: i * 0.11, ease: [0.16, 0.7, 0.35, 1], opacity: { duration: 0.9, delay: i * 0.11, times: [0, 0.1, 0.38, 0.72] } }}
       />
     ))}
   </svg>
@@ -625,7 +626,10 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
             {/* 名字大字 + 蓝斜片（放大、放宽 max-w 防右截断） */}
             <div className="mt-1.5 flex items-center justify-center gap-2.5">
               <span aria-hidden className="h-[34px] w-[9px] shrink-0" style={{ background: P3R.blue, transform: 'skewX(-18deg)' }} />
-              <h3 className="max-w-[80%] truncate text-[40px] font-black italic leading-tight" style={{ color: P3R.ink, fontFamily: '"Arial Black", "Noto Sans SC", sans-serif' }}>
+              {/* pr-[0.18em]：Arial Black 斜体的字形会探出自己的内容盒，truncate 的
+                  overflow:hidden 正好贴着盒切，末字右侧就少一刀。留一点右内边距，
+                  让它裁的是空白而不是笔画。 */}
+              <h3 className="max-w-[80%] truncate pr-[0.18em] text-[40px] font-black italic leading-tight" style={{ color: P3R.ink, fontFamily: '"Arial Black", "Noto Sans SC", sans-serif' }}>
                 {current.name}
               </h3>
             </div>
