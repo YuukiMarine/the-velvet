@@ -126,8 +126,25 @@ export const RadialQuickNav = ({ open, origin, onClose, onNavigate }: RadialQuic
           {/* 遮罩：频道底色压暗。
               注意 bg-black/72 是**不存在的类**——Tailwind 的透明度修饰符只认 opacity 阶梯
               （…65 / 70 / 75…），72 不在表里、也没走 [0.72] 方括号，于是这层一直是全透明的，
-              压暗从来没生效过。用方括号任意值写回去。 */}
-          <div className="absolute inset-0 bg-black/[0.72] backdrop-blur-[2px]" onClick={onClose} />
+              压暗从来没生效过。用方括号任意值写回去。
+              P3 换成「以 ◈ 为心向外渐暗 + 顶部再压一道」的双层渐变：手按住的地方最亮、
+              越往外越沉，色阶拉得很开（羽化高）所以看不出圈层。 */}
+          <div
+            className={`absolute inset-0 backdrop-blur-[2px] ${channel === 'p3' ? '' : 'bg-black/[0.72]'}`}
+            style={
+              channel === 'p3'
+                ? {
+                    background: [
+                      `radial-gradient(circle 76vmax at ${origin.x}px ${origin.y}px,` +
+                        ' rgba(6,20,78,0.34) 0%, rgba(5,16,66,0.52) 22%, rgba(4,12,54,0.72) 48%,' +
+                        ' rgba(3,8,42,0.86) 72%, rgba(2,5,30,0.94) 100%)',
+                      'linear-gradient(180deg, rgba(2,5,30,0.74) 0%, rgba(2,5,30,0.44) 22%, rgba(2,5,30,0.14) 44%, rgba(2,5,30,0) 62%)',
+                    ].join(','),
+                  }
+                : undefined
+            }
+            onClick={onClose}
+          />
 
           {bold ? (
             <>

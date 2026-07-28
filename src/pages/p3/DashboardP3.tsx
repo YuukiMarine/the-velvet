@@ -54,10 +54,14 @@ const SYNODIC_DAYS = 29.530588853;
 const NEW_MOON_EPOCH = Date.UTC(2000, 0, 6, 18, 14);
 const MOON_NAMES = ['新月', '娥眉月', '上弦月', '盈凸月', '满月', '亏凸月', '下弦月', '残月'];
 
+/** 满月专用暖黄：只有月满时亮面才翻黄，其余相位仍走频道色（红/蓝两个首页同款） */
+export const MOON_YELLOW = '#ffcf1a';
+
 const moonPhaseOf = (date: Date) => {
   const days = (date.getTime() - NEW_MOON_EPOCH) / 86400000;
   const phase = (((days % SYNODIC_DAYS) + SYNODIC_DAYS) % SYNODIC_DAYS) / SYNODIC_DAYS; // 0 新月 → 0.5 满月
-  return { phase, name: MOON_NAMES[Math.round(phase * 8) % 8], illum: (1 - Math.cos(2 * Math.PI * phase)) / 2 };
+  const idx = Math.round(phase * 8) % 8;
+  return { phase, name: MOON_NAMES[idx], illum: (1 - Math.cos(2 * Math.PI * phase)) / 2, full: idx === 4 };
 };
 
 /** 亮面路径：外缘半圆 + 明暗界线椭圆弧（两弧法，盈亏自动换边） */
@@ -69,7 +73,7 @@ const moonLitPath = (phase: number, r: number, c: number) => {
 };
 
 const MoonPhase = ({ date }: { date: Date }) => {
-  const { phase, name, illum } = moonPhaseOf(date);
+  const { phase, name, illum, full } = moonPhaseOf(date);
   const anim = useBoldness();
   const illumPct = Math.round(illum * 100);
   // 动效（A7）：LUNAR % 数字从 0 滚动到当前亮面比；D0 直接显示终值
@@ -92,7 +96,7 @@ const MoonPhase = ({ date }: { date: Date }) => {
           <circle cx="18" cy="18" r="15" fill={P3R.ink} />
           <motion.path
             d={moonLitPath(phase, 15, 18)}
-            fill={P3R.cyan}
+            fill={full ? MOON_YELLOW : P3R.cyan}
             initial={anim ? { clipPath: waxing ? 'inset(0% 0% 0% 100%)' : 'inset(0% 100% 0% 0%)', opacity: 0.4 } : false}
             animate={{ clipPath: 'inset(0% 0% 0% 0%)', opacity: 1 }}
             transition={{ duration: 0.8, ease: [0.3, 0, 0.2, 1], delay: 0.2 }}
@@ -576,7 +580,8 @@ export const DashboardP3 = () => {
       <RitualSlab
         icon={
           <svg viewBox="0 0 24 24" className="h-6 w-6" aria-hidden>
-            <path d="M20.5 15.2A9 9 0 1 1 9.2 3.8a7.2 7.2 0 0 0 11.3 11.4Z" fill={P3R.cyan} />
+            {/* 塔罗仪式卡的月亮：整站唯一一处暖黄，作为「今日星象」的记号色 */}
+            <path d="M20.5 15.2A9 9 0 1 1 9.2 3.8a7.2 7.2 0 0 0 11.3 11.4Z" fill={MOON_YELLOW} />
           </svg>
         }
         onClick={() => go('astrology')}

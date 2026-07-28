@@ -94,7 +94,7 @@ const RingBurst = ({ origin }: { origin: { x: number; y: number } }) => {
   const vh = window.innerHeight;
   return (
     <svg className="pointer-events-none absolute inset-0 h-full w-full" aria-hidden>
-      {/* ◈ 处的主波：5 圈一次性推到上半屏 */}
+      {/* ◈ 处的主波：5 圈一次性推到上半屏，环身要粗（十几 px）才像水推出去的浪 */}
       {[0, 1, 2, 3, 4].map((i) => (
         <Ring
           key={`o${i}`}
@@ -103,7 +103,7 @@ const RingBurst = ({ origin }: { origin: { x: number; y: number } }) => {
           r0={16}
           r1={190 + i * 84}
           stroke={i % 2 === 1 ? P3R.cyan : '#ffffff'}
-          width={i % 2 === 1 ? 4 : 2.5}
+          width={i % 2 === 1 ? 16 : 12}
           delay={i * 0.11}
           duration={1.15}
         />
@@ -111,8 +111,8 @@ const RingBurst = ({ origin }: { origin: { x: number; y: number } }) => {
       {/* 屏幕其它位置：各自两圈、错相位、循环 */}
       {SCATTER.map((s, i) => (
         <g key={`s${i}`}>
-          <Ring cx={s.fx * vw} cy={s.fy * vh} r0={6} r1={s.r} stroke={P3R.cyan} width={2.5} delay={s.d} duration={s.dur} repeat />
-          <Ring cx={s.fx * vw} cy={s.fy * vh} r0={6} r1={s.r * 0.62} stroke="rgba(255,255,255,0.8)" width={1.6} delay={s.d + 0.28} duration={s.dur} repeat />
+          <Ring cx={s.fx * vw} cy={s.fy * vh} r0={6} r1={s.r} stroke={P3R.cyan} width={8} delay={s.d} duration={s.dur} repeat />
+          <Ring cx={s.fx * vw} cy={s.fy * vh} r0={6} r1={s.r * 0.62} stroke="rgba(255,255,255,0.8)" width={7} delay={s.d + 0.28} duration={s.dur} repeat />
         </g>
       ))}
     </svg>
@@ -122,10 +122,10 @@ const RingBurst = ({ origin }: { origin: { x: number; y: number } }) => {
 // ── 2 · 背景大字 VELVET TIME ───────────────────────────────────────────────
 const VelvetTime = ({ cx, cy }: { cx: number; cy: number }) => {
   const size = Math.min(96, window.innerWidth * 0.21);
-  const line = (text: string, color: string, shadow: string, delay: number, drift: number) => (
+  const line = (text: string, color: string, delay: number, drift: number) => (
     <motion.div
       className="whitespace-nowrap font-black italic leading-[0.84] tracking-[-0.03em]"
-      style={{ fontFamily: '"Arial Black", Arial, "Noto Sans SC", sans-serif', fontSize: size, color, textShadow: `4px 4px 0 ${shadow}` }}
+      style={{ fontFamily: '"Arial Black", Arial, "Noto Sans SC", sans-serif', fontSize: size, color }}
       initial={{ clipPath: 'inset(-12% 103% -12% -3%)', x: drift < 0 ? 26 : -26 }}
       animate={{ clipPath: 'inset(-12% -6% -12% -3%)', x: [0, drift, 0] }}
       exit={{ opacity: 0 }}
@@ -149,8 +149,8 @@ const VelvetTime = ({ cx, cy }: { cx: number; cy: number }) => {
       className="pointer-events-none absolute select-none"
       style={{ left: cx, top: cy, transform: 'translate(-50%, -50%) rotate(-9deg)' }}
     >
-      {line('VELVET', 'rgba(255,255,255,0.17)', 'rgba(53,209,232,0.16)', 0.1, 7)}
-      <div className="pl-[8%]">{line('TIME', 'rgba(43,104,255,0.62)', 'rgba(255,255,255,0.14)', 0.2, -9)}</div>
+      {line('VELVET', 'rgba(255,255,255,0.17)', 0.1, 7)}
+      <div className="pl-[8%]">{line('TIME', 'rgba(43,104,255,0.62)', 0.2, -9)}</div>
     </div>
   );
 };
@@ -188,7 +188,7 @@ const Bar = ({
       className="pointer-events-none absolute"
       style={{ left, top, width: barW, height: barH, transformOrigin: '50% 100%', zIndex: active ? 60 : 30 }}
       initial={{ scaleY: 0.06, y: 26, opacity: 0 }}
-      animate={{ scaleY: 1, y: 0, opacity: 1, scale: active ? 1.06 : 1 }}
+      animate={{ scaleY: 1, y: 0, opacity: 1, scale: active ? 1.16 : 1 }}
       exit={{ scaleY: 0.06, y: 26, opacity: 0 }}
       transition={{ type: 'spring', stiffness: 470 - 190 * d, damping: 27, delay: 0.04 * d }}
     >
@@ -196,18 +196,24 @@ const Bar = ({
       <span aria-hidden className="absolute inset-0" style={{ clipPath: BAR_CLIP, background: '#050c34', transform: 'translate(5px,5px)' }} />
       {/* 面：常态白 / 未选中态退到浅青实色（**不用透明度表达状态**）/ 选中蓝 */}
       <span aria-hidden className="absolute inset-0" style={{ clipPath: BAR_CLIP, background: active ? P3R.blue : state === 'dim' ? '#d7e6f0' : P3R.panel }} />
-      {/* 选中：一枚运动三角形（转 90° 顺条子竖向铺满） */}
-      {active && (
-        <span
-          aria-hidden
-          className="absolute"
-          style={{ width: barH, height: barW, left: barW / 2 - barH / 2, top: barH / 2 - barW / 2, transform: 'rotate(90deg)' }}
-        >
-          <P3Highlight live className="block h-full w-full" />
-        </span>
-      )}
-      {/* 内容层：英文幽灵大字在底、竖排中文在上 */}
+      {/* 内容层：高亮在底、英文幽灵大字居中、竖排中文在上 —— 三层共用同一个
+          overflow-hidden + BAR_CLIP 容器，高亮从条子下缘滑进来时不会溢出条外 */}
       <span className="absolute inset-0 overflow-hidden" style={{ clipPath: BAR_CLIP }}>
+        {/* 选中：一枚运动三角形（转 90° 顺条子竖向铺满），自下而上快速滑入。
+            motion 的 transform 串是 translate → rotate，所以 y 走的是**未旋转**的
+            父坐标系 = 屏幕竖直方向，直接给 barH 就是"从条子底下推上来"。 */}
+        {active && (
+          <motion.span
+            aria-hidden
+            className="absolute"
+            style={{ width: barH, height: barW, left: barW / 2 - barH / 2, top: barH / 2 - barW / 2, rotate: 90 }}
+            initial={{ y: barH }}
+            animate={{ y: 0 }}
+            transition={{ duration: 0.24, ease: [0.14, 0.85, 0.28, 1] }}
+          >
+            <P3Highlight live className="block h-full w-full" />
+          </motion.span>
+        )}
         <span
           aria-hidden
           className="absolute left-1/2 top-1/2 whitespace-nowrap font-black italic leading-none tracking-[-0.02em]"
@@ -222,7 +228,7 @@ const Bar = ({
           {item.en}
         </span>
         <span
-          className="absolute inset-x-0 top-[13px] flex justify-center text-[23px] font-black leading-[1.06]"
+          className="absolute inset-x-0 top-[12px] flex justify-center text-[26px] font-black leading-[1.06]"
           style={{
             writingMode: 'vertical-rl',
             textOrientation: 'upright',
@@ -253,17 +259,8 @@ export const RadialWheelP3 = ({ items, origin, active }: RadialWheelP3Props) => 
   const strip = p3Strip(origin, items.length);
   return (
     <>
-      {/* 频道染色：公用遮罩是中性黑，压在近白的水面页上会发灰。这里再铺一层靛蓝，
-          让整幕退成「深水里」的蓝黑，而不是灰。 */}
-      <motion.div
-        aria-hidden
-        className="pointer-events-none absolute inset-0"
-        style={{ background: 'radial-gradient(120% 78% at 50% 88%, rgba(10,24,96,0.5) 0%, rgba(4,10,52,0.72) 62%, rgba(2,6,36,0.86) 100%)' }}
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        transition={{ duration: 0.22 }}
-      />
+      {/* 遮罩已上收到 RadialQuickNav（那层同时负责点击关闭），P3 走的是
+          「以 ◈ 为心向外渐暗 + 顶部下压」的双层渐变，这里不再另铺一层。 */}
       <RingBurst origin={origin} />
       {/* 大字压在条带**上方**：条子是实心白的，摆在条带后面等于看不见 */}
       <VelvetTime cx={strip.x0 + (strip.pitch * items.length) / 2} cy={strip.bottom - strip.barH - 118} />
