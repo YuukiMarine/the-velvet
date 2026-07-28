@@ -52,7 +52,7 @@ export const P3RPage = ({ children, className, active = true }: { children: Reac
   // 铺上去就把动画整块盖住了（观感 = 蓝主题下"背景动画开关没反应"）。
   const anims = useAppStore((s) => s.settings.backgroundAnimation);
   const bgImage = useAppStore((s) => s.settings.backgroundImage);
-  const yieldStage = !bgImage && (anims ?? []).length > 0;
+  const yieldStage = !!bgImage || (anims ?? []).length > 0;
   if (!active) return <>{children}</>;
   return (
     <div className={`relative ${className ?? ''}`}>

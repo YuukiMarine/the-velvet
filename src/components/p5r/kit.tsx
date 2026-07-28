@@ -16,6 +16,7 @@
 import type { CSSProperties, ReactNode } from 'react';
 import { motion } from 'motion/react';
 import { useBoldness } from '@/utils/boldness';
+import { useAppStore } from '@/store';
 
 export const P5R = {
   red: '#c00008',      // 主红（横幅 / 选中 / 大按钮）
@@ -294,8 +295,8 @@ const MARK_SKIN: Record<MarkChannel, { ink: string; edge: string }> = {
   p3: { ink: '#ffffff', edge: '#0a1230' },
 };
 
-/** 蓝频道的 ？/！ 用字体渲染（见 BubbleMark 内的 p3 分支），取频道亮蓝 */
-const P3_MARK_INK = '#1b57ff';
+/** 蓝频道的 ？/！ 用字体渲染（见 BubbleMark 内的 p3 分支）：白字 + 浅投影 */
+const P3_MARK_INK = '#ffffff';
 
 /** 从文本判定角标字符；无则 null */
 export const bubbleMarkOf = (text: string | undefined | null): '!' | '?' | null => {
@@ -357,7 +358,7 @@ export const BubbleMark = ({ mark, channel = 'p5', size = 34, className, style }
             fontFamily: 'Arial, Helvetica, "Noto Sans SC", sans-serif',
             fontSize: size * 0.96,
             color: P3_MARK_INK,
-            filter: 'drop-shadow(0 2px 2px rgba(10,18,48,0.22))',
+            filter: 'drop-shadow(0 2px 3px rgba(10,18,48,0.38))',
           }}
         >
           {mark === '!' ? '!' : '?'}
@@ -786,9 +787,15 @@ export const P5RPage = ({ children, className, active = true, decor = true }: {
   active?: boolean;
   decor?: boolean;
 }) => {
+  // 用户开了背景图 / 背景动画时不铺纯黑舞台：这层是不透明的 fixed z-0，
+  // 铺上去就把它们整块盖没了（红主题下"背景图片没反应"的根因）
+  const anims = useAppStore((st) => st.settings.backgroundAnimation);
+  const bgImage = useAppStore((st) => st.settings.backgroundImage);
+  const yieldStage = !!bgImage || (anims ?? []).length > 0;
   if (!active) return <>{children}</>;
   return (
     <div className={`relative ${className ?? ''}`}>
+      {!yieldStage && (
       <div aria-hidden className="fixed inset-0 z-0 pointer-events-none" style={{ background: P5R.ink, contain: 'strict' }}>
         {decor && (
           <>
@@ -808,6 +815,7 @@ export const P5RPage = ({ children, className, active = true, decor = true }: {
           </>
         )}
       </div>
+      )}
       <div className="relative z-10">{children}</div>
     </div>
   );

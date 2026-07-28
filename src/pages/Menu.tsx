@@ -644,13 +644,12 @@ export const Menu = () => {
                       <span className="text-[11px] font-black tracking-[0.14em]">LV</span>
                       <span className="text-[20px] font-black leading-none tabular-nums">{totalLv}</span>
                     </span>
-                    {/* 阶位章（英文名 + 中文名，随总等级变） */}
+                    {/* 阶位章（只留英文名，随总等级变；中文重复且挤，用户定去掉） */}
                     <span
                       className="relative -ml-2.5 flex items-baseline gap-1.5 py-1 pl-4 pr-3"
                       style={{ background: P5R.red, color: '#fff', clipPath: 'polygon(11px 1px, 100% 0, calc(100% - 3px) calc(100% - 2px), 0 100%)' }}
                     >
                       <span className="text-[13px] font-black italic tracking-[0.1em]">{tier.label.toUpperCase()}</span>
-                      <span className="text-[11px] font-black">{tier.labelZh}</span>
                     </span>
                   </span>
                 </span>
