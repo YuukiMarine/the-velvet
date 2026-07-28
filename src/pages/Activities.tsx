@@ -18,7 +18,7 @@ import { TrashIcon } from '@/components/icons';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P4Sparkle } from '@/ui/p4Kit';
 import { SectionMark, SlantButton } from '@/components/p3r/kit';
-import { P5R, P5_FONT, roughSlant, starPts, P5Star } from '@/components/p5r/kit';
+import { P5R, P5_FONT, roughSlant, starPts, P5Star, P5StarFab } from '@/components/p5r/kit';
 
 /** 成长总结入口：左低右高的平行四边形（P5 反板正口径，四边斜率各不相同） */
 const SUMMARY_SHAPE = 'polygon(7px 0, 100% 2px, calc(100% - 6px) 100%, 0 calc(100% - 3px))';
@@ -1256,7 +1256,7 @@ export const ActivitiesView = () => {
               isP4 && !isPastDaySelected
                 ? 'h-16 w-16 text-white' // p4-redraw：蓝色四角星 FAB（与任务子页一致）
                 : p5
-                  ? 'h-14 w-14 text-white' // p5-redraw：纸圈黑影八角（红 / 补录橙）
+                  ? 'h-16 w-16 text-white' // p5-redraw：纸边黑影五角星（红 / 补录橙）
                   : `w-14 h-14 text-white rounded-full shadow-lg ${
                       isPastDaySelected ? 'bg-amber-500 shadow-amber-500/30' : 'bg-primary shadow-primary/30'
                     }`
@@ -1270,13 +1270,7 @@ export const ActivitiesView = () => {
                 style={{ filter: 'drop-shadow(0 3px 0 rgba(19,19,19,0.3))' }}
               />
             )}
-            {p5 && (
-              <span aria-hidden className="pointer-events-none absolute inset-0">
-                <span className="absolute inset-0" style={{ transform: 'translate(3px,3.5px)', background: '#000000', clipPath: 'polygon(25% 7%, 66% 0%, 100% 25%, 94% 74%, 76% 100%, 33% 94%, 0% 76%, 7% 23%)' }} />
-                <span className="absolute inset-0" style={{ background: '#f0e9df', clipPath: 'polygon(27% 5%, 69% 1%, 99% 28%, 93% 72%, 73% 99%, 30% 96%, 1% 74%, 6% 25%)' }} />
-                <span className="absolute inset-[3px]" style={{ background: isPastDaySelected ? '#e08a00' : '#c00008', clipPath: 'polygon(27% 5%, 69% 1%, 99% 28%, 93% 72%, 73% 99%, 30% 96%, 1% 74%, 6% 25%)' }} />
-              </span>
-            )}
+            {p5 && <P5StarFab face={isPastDaySelected ? '#e08a00' : '#c00008'} seed={6} />}
             {isPastDaySelected ? (
               <span className="relative text-xl font-black leading-none">补</span>
             ) : (

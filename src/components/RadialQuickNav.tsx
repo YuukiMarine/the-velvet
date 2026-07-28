@@ -21,6 +21,7 @@ import { triggerLightHaptic } from '@/utils/feedback';
 import { zClass } from '@/utils/zIndex';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { RadialWheelP5 } from '@/components/RadialWheelP5';
+import { RadialWheelP3, p3Pick, p3Strip } from '@/components/RadialWheelP3';
 
 export interface WheelItem {
   id: string;
@@ -67,7 +68,10 @@ export const RadialQuickNav = ({ open, origin, onClose, onNavigate }: RadialQuic
     setActive(null);
     activeRef.current = null;
 
+    // P3 的条目是等距直排，不是扇形：命中要按横向分带算，否则"手指在哪"和
+    // "哪条亮"对不上（角度分区的 cos 分布会把两端挤成一堆）。
     const pick = (cx: number, cy: number): number | null => {
+      if (channel === 'p3') return p3Pick(origin, WHEEL_ITEMS.length, cx, cy);
       const dx = cx - origin.x;
       const dy = cy - origin.y;
       const dist = Math.hypot(dx, dy);
@@ -101,7 +105,7 @@ export const RadialQuickNav = ({ open, origin, onClose, onNavigate }: RadialQuic
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onCancel);
     };
-  }, [open, origin, bold]);
+  }, [open, origin, bold, channel]);
 
   if (!origin) return null;
 
@@ -119,15 +123,23 @@ export const RadialQuickNav = ({ open, origin, onClose, onNavigate }: RadialQuic
           aria-label="快捷跳转轮盘"
           role="menu"
         >
-          {/* 遮罩：频道底色压暗 */}
-          <div className="absolute inset-0 bg-black/72 backdrop-blur-[2px]" onClick={onClose} />
+          {/* 遮罩：频道底色压暗。
+              注意 bg-black/72 是**不存在的类**——Tailwind 的透明度修饰符只认 opacity 阶梯
+              （…65 / 70 / 75…），72 不在表里、也没走 [0.72] 方括号，于是这层一直是全透明的，
+              压暗从来没生效过。用方括号任意值写回去。 */}
+          <div className="absolute inset-0 bg-black/[0.72] backdrop-blur-[2px]" onClick={onClose} />
 
           {bold ? (
             <>
-              {/* 提示区（避开牌区上移；P5 碑牌自身已放大变红，不再重复大字名） */}
+              {/* 提示区（避开牌区上移；P5 碑牌自身已放大变红，不再重复大字名）。
+                  P3 的条带是直排、底缘固定，提示落到条带下方而不是牌区上方。 */}
               <div
                 className="pointer-events-none absolute z-[70] w-full -translate-x-1/2 text-center"
-                style={{ left: origin.x, top: origin.y - radius - (channel === 'p5' || channel === 'p3' ? 228 : 128) }}
+                style={
+                  channel === 'p3'
+                    ? { left: origin.x, top: p3Strip(origin, WHEEL_ITEMS.length).bottom + 16 }
+                    : { left: origin.x, top: origin.y - radius - (channel === 'p5' ? 228 : 128) }
+                }
               >
                 {channel !== 'p5' && channel !== 'p3' && (
                   <div className="text-2xl font-black text-white" style={{ textShadow: '2px 2px 0 rgba(0,0,0,0.8)' }}>
@@ -135,13 +147,15 @@ export const RadialQuickNav = ({ open, origin, onClose, onNavigate }: RadialQuic
                   </div>
                 )}
                 <div className="mt-1 text-[11px] font-bold text-white/60" style={{ textShadow: '1px 1px 0 rgba(0,0,0,0.8)' }}>
-                  松开前往 · 滑回中心取消
+                  {channel === 'p3' ? '松开前往 · 滑回下方取消' : '松开前往 · 滑回中心取消'}
                 </div>
               </div>
 
-              {/* P5（红）/P3（蓝）：碑牌手扇 + 星形波纹 + 同心条纹星群——结构同源，
-                  颜色全走 var(--color-primary) 自适应频道；P3 专属微调后置（用户口径） */}
-              {channel === 'p5' || channel === 'p3' ? (
+              {/* P3（蓝）：白底竖条带 + 圆环波纹 + VELVET TIME 大字背景 */}
+              {channel === 'p3' ? (
+                <RadialWheelP3 items={WHEEL_ITEMS} origin={origin} active={active} />
+              ) : channel === 'p5' ? (
+                /* P5（红）：碑牌手扇 + 星形波纹 + 同心条纹星群 */
                 <RadialWheelP5 items={WHEEL_ITEMS} origin={origin} radius={radius} active={active} />
               ) : (
               /* 其余频道暂用圆瓣基础形态（P4 差分后置） */
@@ -179,12 +193,14 @@ export const RadialQuickNav = ({ open, origin, onClose, onNavigate }: RadialQuic
               })
               )}
 
-              {/* ◈ 死区提示环 */}
-              <div
-                aria-hidden
-                className="pointer-events-none absolute rounded-full border border-white/25"
-                style={{ left: origin.x - DEAD_ZONE, top: origin.y - DEAD_ZONE, width: DEAD_ZONE * 2, height: DEAD_ZONE * 2 }}
-              />
+              {/* ◈ 死区提示环（P3 走横向分带、没有死区，不画） */}
+              {channel !== 'p3' && (
+                <div
+                  aria-hidden
+                  className="pointer-events-none absolute rounded-full border border-white/25"
+                  style={{ left: origin.x - DEAD_ZONE, top: origin.y - DEAD_ZONE, width: DEAD_ZONE * 2, height: DEAD_ZONE * 2 }}
+                />
+              )}
             </>
           ) : (
             /* D0 降级：普通垂直菜单（点选跳转） */

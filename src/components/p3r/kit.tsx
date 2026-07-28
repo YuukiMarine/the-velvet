@@ -50,9 +50,19 @@ export const P3RPage = ({ children, className, active = true }: { children: Reac
   if (!active) return <>{children}</>;
   return (
     <div className={`relative ${className ?? ''}`}>
-      {/* 水面底 / 可读性罩纱都已上收到 App 根（UnderwaterStage + 全局罩纱）：
-          原来每个 P3 页各挂一层 fixed 底，翻页时随页面一起淡入淡出，
-          看上去就是「背景每次切页都重载一次」。这里不再挂任何固定层。 */}
+      {/* 水面底：浅色基底 + caustic 素材极淡平铺（页面卸载即消失，不污染其它主题） */}
+      <div aria-hidden className="fixed inset-0 z-0" style={{ background: P3R.bg }}>
+        <div
+          className="absolute inset-0"
+          style={{
+            backgroundImage: 'url(/assets/terminal/p3-water-wide.png)',
+            backgroundSize: 'cover',
+            backgroundPosition: 'center top',
+            opacity: 0.3,
+          }}
+        />
+        <div className="absolute inset-0" style={{ background: 'linear-gradient(180deg, rgba(238,245,249,0.35) 0%, rgba(238,245,249,0.82) 58%, rgba(238,245,249,0.95) 100%)' }} />
+      </div>
       <div className="relative z-10">{children}</div>
     </div>
   );
@@ -269,6 +279,47 @@ export const P3PageHeader = ({
         )}
       </div>
     </div>
+  );
+};
+
+/**
+ * P3「活高亮」—— 与 P5Highlight / P4Highlight 同机制（rAF 每帧朝随机目标插值，
+ * 得到 60fps 的平滑震颤），但里面**只有一枚运动三角形**（用户口径：红频道那对
+ * 运动四边形在蓝频道换成单枚三角）。
+ *
+ * 形制：左缘一条略斜的短边、两条长边收拢到右端一点 = 一枚朝右的楔。
+ * 顶点抖动范围必须整个落在 viewBox(0..100, 0..50) 内——抖出去会被视口裁成
+ * 不规则多边形（P4 踩过这个坑）。preserveAspectRatio="none" 由调用方拉成任意长条。
+ * D0 / live=false 不跑 rAF，退化成静态楔。
+ */
+const P3_TRI_BOX = [[11, 18, 2, 7], [1, 7, 43, 48], [91, 98, 19, 30]];
+const p3TriTarget = () => P3_TRI_BOX.flatMap((v) => [v[0] + Math.random() * (v[1] - v[0]), v[2] + Math.random() * (v[3] - v[2])]);
+const p3TriPoints = (a: number[]) => `${a[0].toFixed(1)},${a[1].toFixed(1)} ${a[2].toFixed(1)},${a[3].toFixed(1)} ${a[4].toFixed(1)},${a[5].toFixed(1)}`;
+
+export const P3Highlight = ({ className, color = 'rgba(255,255,255,0.24)', live = true }: {
+  className?: string; color?: string; live?: boolean;
+}) => {
+  const bold = useBoldness();
+  const ref = useRef<SVGPolygonElement>(null);
+  useEffect(() => {
+    if (!bold || !live) return;
+    let cur = p3TriTarget();
+    let tgt = p3TriTarget();
+    let last = 0;
+    let raf = 0;
+    const loop = (t: number) => {
+      if (t - last > 130) { tgt = p3TriTarget(); last = t; }
+      for (let i = 0; i < 6; i++) cur[i] += (tgt[i] - cur[i]) * 0.18;
+      ref.current?.setAttribute('points', p3TriPoints(cur));
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [bold, live]);
+  return (
+    <svg viewBox="0 0 100 50" preserveAspectRatio="none" className={className} aria-hidden>
+      <polygon ref={ref} fill={color} points="14,4 4,46 95,24" />
+    </svg>
   );
 };
 

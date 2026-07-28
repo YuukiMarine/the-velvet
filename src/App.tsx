@@ -43,7 +43,6 @@ import { TerminalClearCutIn } from '@/components/terminal/TerminalClearCutIn';
 import { NavigatorWindow } from '@/components/navigator/NavigatorWindow';
 import { primeCurrentTheme } from '@/utils/feedback';
 import { BackgroundAnimation } from '@/components/BackgroundAnimation';
-import { UnderwaterStage } from '@/components/p3r/UnderwaterStage';
 import { PWAUpdateToast } from '@/components/PWAUpdateToast';
 import { CallingCardCutIn } from '@/components/callingCard/CallingCardCutIn';
 import { isNative } from '@/utils/native';
@@ -567,7 +566,7 @@ function App() {
           )}
 
           {/* 背景动画（无背景图时，优先于纹理） */}
-          {!settings.backgroundImage && user?.theme !== 'blue' && (settings.backgroundAnimation ?? []).length > 0 && (
+          {!settings.backgroundImage && (settings.backgroundAnimation ?? []).length > 0 && (
             // 用独立 will-change 容器包裹，使背景动画层与页面切换（AnimatePresence）
             // 产生的 stacking context 完全隔离，避免页面转场时背景闪烁
             <div style={{ isolation: 'isolate', willChange: 'transform', position: 'fixed', inset: 0, zIndex: 0 }}>
@@ -596,22 +595,6 @@ function App() {
 
           {/* P4 黄舞台背景装饰：巨型橙弧环 + 大花剪影 + 四角星，缓解纯黄大面积平铺 */}
           {user?.theme === 'yellow' && <P4StageDecor />}
-
-          {/* P3 蓝舞台：全局水下场景（渐变水体 + 缓慢左移右的光柱 + 1s/8 帧水面波纹）+
-              一层自上而下渐浓的可读性罩纱。两者都挂在 App 根、不随页面切换重挂，
-              所以翻页时背景是连续的（以前罩纱在每个 P3 页里，跟着页面一起淡入淡出，
-              看上去就是"每次切页背景重载一次"）。用户自定义了背景图时整体让位。 */}
-          {user?.theme === 'blue' && !settings.backgroundImage && (
-            <>
-              <UnderwaterStage motion={settings.underwaterMotion ?? true} />
-              <div
-                aria-hidden
-                className="pointer-events-none fixed inset-0 z-0"
-                // 罩纱只做「够读」不做「洗白」：底部刻意留薄，让水体收到靛紫看得见
-                style={{ background: 'linear-gradient(180deg, rgba(238,245,249,0.02) 0%, rgba(238,245,249,0.26) 34%, rgba(238,245,249,0.38) 64%, rgba(238,245,249,0.12) 100%)' }}
-              />
-            </>
-          )}
 
         <div className="relative z-10">
           <WelcomeModal />
@@ -643,13 +626,7 @@ function App() {
                 <PageSwitcher
                   current={currentPage}
                   // 与 App 根的舞台底色同源（黄频道走 --ui-bg，其余走 gray-50 / gray-900）
-                  // 蓝频道用透明：页面壳的不透明底会在转场那一瞬把固定的水下舞台整块盖住，
-                  // 观感就是"每次切页背景先消失再出现"
-                  stageBg={
-                    user?.theme === 'blue' && !settings.backgroundImage
-                      ? 'transparent'
-                      : user?.theme === 'yellow' ? 'var(--ui-bg, #ffd900)' : settings.darkMode ? '#111827' : '#f9fafb'
-                  }
+                  stageBg={user?.theme === 'yellow' ? 'var(--ui-bg, #ffd900)' : settings.darkMode ? '#111827' : '#f9fafb'}
                   stageDecor={user?.theme === 'yellow' ? <P4StageDecor /> : undefined}
                   render={renderPage}
                 />

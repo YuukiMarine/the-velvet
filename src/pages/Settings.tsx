@@ -1203,24 +1203,8 @@ export const Settings = () => {
                       <h4 className="text-sm font-bold text-gray-800 dark:text-white tracking-wide">显示</h4>
                     </div>
 
-                    {/* 蓝频道水下舞台开关（取代了原来的「背景动画」四选：蓝主题的背景现在是
-                        固定的水下场景，只保留"要不要动"这一个旋钮） */}
-                    {!settings.backgroundImage && p3 && (
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="min-w-0">
-                          <h4 className="text-[15px] font-black" style={{ color: P3R.ink }}>水下背景动态</h4>
-                          <p className="text-[12px] font-semibold" style={{ color: P3R.grey }}>光柱缓慢推移 + 水面波纹；关掉只保留静止画面</p>
-                        </div>
-                        <Toggle
-                          checked={settings.underwaterMotion ?? true}
-                          onChange={(v) => updateSettings({ underwaterMotion: v })}
-                          aria-label="水下背景动态"
-                        />
-                      </div>
-                    )}
-
-                    {/* 背景动画 — 多选 toggle（蓝频道已被上面的水下舞台取代，不再出现） */}
-                    {!settings.backgroundImage && !p3 && (
+                    {/* 背景动画 — 多选 toggle（p3：一行四个斜切预览块 + 块下标签，p3-settings 设计稿） */}
+                    {!settings.backgroundImage && (
                       <div className={p3 ? 'space-y-3' : 'space-y-3 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg'}>
                         <div>
                           <h4 className={p3 ? 'text-[15px] font-black' : 'font-medium text-gray-800 dark:text-white'} style={p3 ? { color: P3R.ink } : undefined}>背景动画</h4>

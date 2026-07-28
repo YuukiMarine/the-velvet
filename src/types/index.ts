@@ -284,8 +284,7 @@ export interface Settings {
   customSkills?: Skill[];
   customLevelThresholds?: number[];
   backgroundPattern?: boolean; // 装饰纹理（无背景图时显示）
-  backgroundAnimation?: string[]; // 背景动画风格（可多选：'aurora'|'particles'|'wave'|'pulse'）；蓝频道不再提供
-  underwaterMotion?: boolean;     // 蓝频道水下舞台的循环动画（光柱推移 + 水面波纹），默认开
+  backgroundAnimation?: string[]; // 背景动画风格（可多选：'aurora'|'particles'|'wave'|'pulse'）
   customThemeColor?: string;       // 自定义主题色 hex（theme='custom' 时生效）
   customSoundScheme?: ThemeType;   // 自定义音效方案（custom 主题时使用，默认跟随 blue）
   countercurrentEnabled?: boolean; // 逆流：连续3日无增长属性自动 -1/天
