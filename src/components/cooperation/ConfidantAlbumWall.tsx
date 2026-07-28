@@ -169,13 +169,44 @@ const idOf = (item: Confidant | 'add') => (item === 'add' ? '__add__' : item.id)
 
 /** 「卡面用头像」开着时，整张牌面换成头像图（离线=本地上传，在线=对方云端头像） */
 const faceOf = (c: Confidant): string | undefined =>
-  c.avatarAsCardFace ? (c.customAvatarDataUrl || c.linkedProfile?.avatarUrl || undefined) : undefined;
+  c.avatarAsCardFace
+    ? (c.cardFaceDataUrl || c.customAvatarDataUrl || c.linkedProfile?.avatarUrl || undefined)
+    : undefined;
 
 /**
  * WallScrubber —— 刻度条式快速跳卡（替代原生 range，Persona 资源条语言）。
  * 每个同伴一根竖刻度、空白牌一个描边点；当前项放大成主题色圆头 pill。
  * 整条轨道可点/拖：按 x 比例取最近刻度，命中区是整轨（刻度细也好点）。
  */
+/**
+ * P3 换牌水波：三圈同心圆环从铭牌处推开、扩到最大时化掉。
+ * 调用方给 key={index}，翻一张就整块重挂 = 从头播一遍（不必手写播放状态机）。
+ * 环用 motion 补间 SVG 的 r 属性画，描边粗细恒定——拿带 border 的 div 去 scale，
+ * 边会跟着放大成一圈粗白箍（与长按轮盘的圆环同一套做法）。
+ */
+const P3SwitchRipple = () => (
+  <svg
+    aria-hidden
+    className="pointer-events-none absolute left-1/2 top-1/2 -z-10"
+    style={{ width: 460, height: 460, marginLeft: -230, marginTop: -212, overflow: 'visible' }}
+    viewBox="0 0 460 460"
+  >
+    {[0, 1, 2].map((i) => (
+      <motion.circle
+        key={i}
+        cx={230}
+        cy={230}
+        fill="none"
+        stroke={i === 1 ? P3R.blue : P3R.cyan}
+        strokeWidth={i === 1 ? 5 : 3.5}
+        initial={{ r: 18, opacity: 0 }}
+        animate={{ r: 150 + i * 62, opacity: [0, 0.5, 0.34, 0] }}
+        transition={{ duration: 1.05, delay: i * 0.12, ease: [0.16, 0.7, 0.35, 1], opacity: { duration: 1.05, delay: i * 0.12, times: [0, 0.14, 0.6, 1] } }}
+      />
+    ))}
+  </svg>
+);
+
 const WallScrubber = ({
   items,
   index,
@@ -558,6 +589,9 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
             </svg>
           </motion.div>
         )}
+        {/* P3 的对位件：不转星，改成每翻一张就从铭牌处推出去的一组水波圆环
+            （key=index → 换牌即重挂 = 重新播一遍）。红是转 60°、黄是转 90°。 */}
+        {p3 && <P3SwitchRipple key={index} />}
         {current === 'add' || !current ? (
           <div className="text-center">
             <div className={`text-2xl font-black ${p3 ? '' : 'text-gray-800 dark:text-gray-100'}`} style={p3 ? { color: P3R.ink } : undefined}>缔结新的羁绊</div>

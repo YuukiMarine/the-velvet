@@ -56,10 +56,13 @@ const WEEKDAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 const SYNODIC_DAYS = 29.530588853;
 const NEW_MOON_EPOCH = Date.UTC(2000, 0, 6, 18, 14);
 const MOON_NAMES = ['新月', '娥眉月', '上弦月', '盈凸月', '满月', '亏凸月', '下弦月', '残月'];
+/** 满月专用暖黄（与蓝频道同一个常量口径）：只有月满时亮面翻黄，其余相位仍是纸色 */
+const MOON_YELLOW = '#ffcf1a';
 const moonPhaseOf = (date: Date) => {
   const days = (date.getTime() - NEW_MOON_EPOCH) / 86400000;
   const phase = (((days % SYNODIC_DAYS) + SYNODIC_DAYS) % SYNODIC_DAYS) / SYNODIC_DAYS; // 0 新月 → 0.5 满月
-  return { phase, name: MOON_NAMES[Math.round(phase * 8) % 8], illum: (1 - Math.cos(2 * Math.PI * phase)) / 2 };
+  const idx = Math.round(phase * 8) % 8;
+  return { phase, name: MOON_NAMES[idx], illum: (1 - Math.cos(2 * Math.PI * phase)) / 2, full: idx === 4 };
 };
 const moonLitPath = (phase: number, r: number, c: number) => {
   const rx = Math.max(0.01, Math.abs(Math.cos(2 * Math.PI * phase)) * r);
@@ -73,7 +76,7 @@ const moonLitPath = (phase: number, r: number, c: number) => {
  * 否则满月时只剩一个纸色圆，读不出「这是月相」。
  */
 const MoonGlyph = ({ date }: { date: Date }) => {
-  const { phase } = moonPhaseOf(date);
+  const { phase, full } = moonPhaseOf(date);
   const anim = useBoldness();
   const waxing = phase < 0.5;
   return (
@@ -82,7 +85,7 @@ const MoonGlyph = ({ date }: { date: Date }) => {
         <circle cx="18" cy="18" r="15" fill="#2a2926" />
         <motion.path
           d={moonLitPath(phase, 15, 18)}
-          fill={P5R.paper}
+          fill={full ? MOON_YELLOW : P5R.paper}
           initial={anim ? { clipPath: waxing ? 'inset(0% 0% 0% 100%)' : 'inset(0% 100% 0% 0%)' } : false}
           animate={{ clipPath: 'inset(0% 0% 0% 0%)' }}
           transition={{ duration: 0.8, ease: [0.3, 0, 0.2, 1], delay: 0.2 }}

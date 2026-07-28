@@ -1239,6 +1239,12 @@ export interface Confidant {
    */
   avatarAsCardFace?: boolean;
   /**
+   * 卡面专用图（1:1.6 塔罗比例）。在线同伴的官方头像是 1:1 的，直接铺到卡面上
+   * 会被上下裁掉一大截，所以切卡面时让用户自己裁一次、结果存这里；
+   * 缺省时回落到 customAvatarDataUrl / linkedProfile.avatarUrl。
+   */
+  cardFaceDataUrl?: string;
+  /**
    * 仅在线同伴：是否在卡片上优先显示塔罗而非对方头像。
    * 默认 false（显示头像）；用户可在卡片长按菜单切换。
    */

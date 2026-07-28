@@ -85,16 +85,22 @@ export const BandCutInP3 = ({ isOpen, onClose, title, totalPoints, unlockHint, e
           onClick={onClose}
         >
           <div ref={containerRef} role="dialog" aria-modal="true" aria-label={`${eyebrow}：${title}`} className="relative">
-            {/* 斜带（横贯全宽，从右侧斜切入场） */}
+            {/* 斜带（横贯全宽，从右侧斜切入场）。
+                位移与斜切拆成两层：斜切只包住带体，右上角的 ✕ 挂在**外层**。
+                合在一层时 skewX 的弹簧会一路叠加到 ✕ 上，它自己那 14px 的平行四边形
+                斜度就跟着弹簧忽大忽小，落定前有一下几乎站直（看着像"抖成方块又变回来"）。 */}
             <motion.div
-              initial={{ x: '110%', skewX: -6 }}
-              animate={{ x: 0, skewX: 0 }}
+              initial={{ x: '110%' }}
+              animate={{ x: 0 }}
               exit={{ x: '-110%' }}
               transition={{ type: 'spring', damping: 24, stiffness: 220 }}
               className="relative w-full"
               onClick={(e) => e.stopPropagation()}
             >
-              <div
+              <motion.div
+                initial={{ skewX: -6 }}
+                animate={{ skewX: 0 }}
+                transition={{ type: 'spring', damping: 24, stiffness: 220 }}
                 className="relative overflow-hidden px-6 pb-10 pt-9"
                 style={{
                   background: 'linear-gradient(172deg, #ffffff 0%, #f2f9fd 70%, #e8f4fa 100%)',
@@ -178,8 +184,8 @@ export const BandCutInP3 = ({ isOpen, onClose, title, totalPoints, unlockHint, e
                     ))}
                   </motion.div>
                 </div>
-              </div>
-              {/* 右上青斜块 ✕ */}
+              </motion.div>
+              {/* 右上青斜块 ✕（在斜切层之外，斜度恒定） */}
               <motion.button
                 whileTap={{ scale: 0.9 }}
                 onClick={onClose}

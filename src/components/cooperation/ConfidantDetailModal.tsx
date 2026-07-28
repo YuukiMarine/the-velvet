@@ -176,6 +176,7 @@ export function ConfidantDetailModal({
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [avatarErr, setAvatarErr] = useState<string | null>(null);
   const [pendingAvatarFile, setPendingAvatarFile] = useState<File | null>(null);
+  const [pendingCardFaceFile, setPendingCardFaceFile] = useState<File | null>(null);
   // 上传完问一句：要不要把塔罗的「卡面」也换成这张图
   const [askCardFace, setAskCardFace] = useState(false);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -344,7 +345,34 @@ export function ConfidantDetailModal({
   const handleRestoreTarot = async () => {
     setAvatarMenuOpen(false);
     // 恢复塔罗：头像与卡面覆盖一起清掉
-    await updateConfidant(confidant.id, { customAvatarDataUrl: undefined, avatarAsCardFace: false });
+    await updateConfidant(confidant.id, { customAvatarDataUrl: undefined, cardFaceDataUrl: undefined, avatarAsCardFace: false });
+  };
+
+  /**
+   * 卡面裁切 —— 在线同伴的官方头像是 1:1 的，直接当卡面会被上下切掉一大截，
+   * 所以切卡面时先让用户自己裁一次（1:1.6 塔罗比例）。
+   * 上传的头像本来就是按 1:1.6 裁过的，可以直接用，不再多问一次。
+   *
+   * 远端 URL 先 fetch 成 blob 再包成 File：ImageCropDialog 走的是 objectURL，
+   * 这样 canvas 不会被跨域图污染（直接给 <img src=远端URL> 会 taint、toDataURL 抛异常）。
+   */
+  const openCardFaceCrop = async () => {
+    const src = confidant.customAvatarDataUrl || confidant.linkedProfile?.avatarUrl;
+    if (!src) return;
+    try {
+      const blob = await (await fetch(src)).blob();
+      setPendingCardFaceFile(new File([blob], 'card-face', { type: blob.type || 'image/jpeg' }));
+    } catch {
+      // 取不到原图（离线 / 跨域被拒）：退回不裁切直接用，至少功能是通的
+      await updateConfidant(confidant.id, { avatarAsCardFace: true });
+      setAvatarErr('取不到原图，已按默认位置裁切');
+      setTimeout(() => setAvatarErr(null), 2600);
+    }
+  };
+
+  const handleCardFaceCropConfirm = async (dataUrl: string) => {
+    setPendingCardFaceFile(null);
+    await updateConfidant(confidant.id, { cardFaceDataUrl: dataUrl, avatarAsCardFace: true });
   };
 
   // portal 到 body（审计 §3.6）：树内 fixed 会被页面容器的 transform/clip 创建的
@@ -419,7 +447,9 @@ export function ConfidantDetailModal({
                   className="cursor-pointer select-none"
                   style={{ touchAction: 'manipulation' }}
                 >
-                  {confidant.customAvatarDataUrl ? (
+                  {/* 详情页的像位恒显头像（口径：卡面可切塔罗/头像，详情页始终是头像）——
+                      在线同伴没自己传过图时用对方的官方头像兜底 */}
+                  {(confidant.customAvatarDataUrl || confidant.linkedProfile?.avatarUrl) ? (
                     <div
                       className="w-[86px] h-[138px] rounded-xl overflow-hidden relative"
                       style={{
@@ -428,7 +458,7 @@ export function ConfidantDetailModal({
                       }}
                     >
                       <img
-                        src={confidant.customAvatarDataUrl}
+                        src={confidant.customAvatarDataUrl || confidant.linkedProfile?.avatarUrl}
                         alt={confidant.name}
                         className="w-full h-full object-cover"
                         draggable={false}
@@ -498,12 +528,30 @@ export function ConfidantDetailModal({
                         <button
                           onClick={() => {
                             setAvatarMenuOpen(false);
-                            void updateConfidant(confidant.id, { avatarAsCardFace: !confidant.avatarAsCardFace });
+                            if (confidant.avatarAsCardFace) {
+                              void updateConfidant(confidant.id, { avatarAsCardFace: false });
+                              return;
+                            }
+                            // 上传的头像已经是 1:1.6，直接用；在线的官方头像是 1:1，先让用户裁一次
+                            if (confidant.customAvatarDataUrl) void updateConfidant(confidant.id, { avatarAsCardFace: true });
+                            else void openCardFaceCrop();
                           }}
                           className="w-full px-3 py-2 text-left text-xs font-semibold text-gray-800 dark:text-gray-100 hover:bg-black/5 dark:hover:bg-white/10 transition-colors flex items-center gap-2 border-t border-black/5 dark:border-white/10"
                         >
                           <span className="text-base">{confidant.avatarAsCardFace ? '🂠' : '🖼'}</span>
                           卡面：{confidant.avatarAsCardFace ? '头像（点此改回塔罗）' : '塔罗（点此换成头像）'}
+                        </button>
+                      )}
+                      {confidant.avatarAsCardFace && (
+                        <button
+                          onClick={() => {
+                            setAvatarMenuOpen(false);
+                            void openCardFaceCrop();
+                          }}
+                          className="w-full px-3 py-2 text-left text-xs font-semibold text-gray-800 dark:text-gray-100 hover:bg-black/5 dark:hover:bg-white/10 transition-colors flex items-center gap-2 border-t border-black/5 dark:border-white/10"
+                        >
+                          <span className="text-base">✂️</span>
+                          重新裁切卡面
                         </button>
                       )}
                       {confidant.customAvatarDataUrl && (
@@ -1047,6 +1095,17 @@ export function ConfidantDetailModal({
         aspectRatio={1 / 1.6}
         onCancel={() => setPendingAvatarFile(null)}
         onConfirm={handleAvatarCropConfirm}
+      />
+
+      {/* 卡面裁切：在线同伴 1:1 的官方头像铺到 1:1.6 的牌面上要自己挑保留哪一段 */}
+      <ImageCropDialog
+        key="cd-crop-face"
+        isOpen={!!pendingCardFaceFile}
+        file={pendingCardFaceFile}
+        title={`裁切 ${confidant.name} 的卡面`}
+        aspectRatio={1 / 1.6}
+        onCancel={() => setPendingCardFaceFile(null)}
+        onConfirm={handleCardFaceCropConfirm}
       />
 
       {/* 快捷谏言：预先 @ 这位同伴 */}

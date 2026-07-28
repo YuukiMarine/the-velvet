@@ -762,10 +762,27 @@ export function Cooperation() {
         )}
       </AnimatePresence>
 
-      {/* P3R：ARCANA 幽灵字（卡墙下部，设计稿） */}
+      {/* P3R：ARCANA 幽灵字 —— 改成右缘顺时针 90° 的竖排大字。
+          原来用 GhostWords 横排铺在卡墙下方，它自带随滚动的视差位移，
+          结果就是"跟着正文上下抖"（用户上报）；这里换成固定在页面右缘的
+          旋转大字，脱离滚动联动，也不再和卡墙抢横向空间。
+          锚点是一个零尺寸的定位点，字以 left/top 为轴转 90°：
+          局部 +x（右）→ 屏幕下，局部 +y（下）→ 屏幕左，所以字从锚点向下排、
+          字身向左展开，正好贴着右边缘。 */}
       {p3 && (
-        <div aria-hidden className="relative h-8">
-          <GhostWords words={['ARCANA']} className="left-[6px] top-[-30px] text-[74px]" />
+        <div aria-hidden className="pointer-events-none absolute right-[-6px] top-[430px] z-0 h-0 w-0 select-none">
+          <span
+            className="absolute left-0 top-0 whitespace-nowrap font-black italic leading-none tracking-tight"
+            style={{
+              fontFamily: 'Arial, "Noto Sans SC", sans-serif',
+              fontSize: 74,
+              color: 'rgba(147,190,222,0.30)',
+              transformOrigin: 'left top',
+              transform: 'rotate(90deg)',
+            }}
+          >
+            ARCANA
+          </span>
         </div>
       )}
 
