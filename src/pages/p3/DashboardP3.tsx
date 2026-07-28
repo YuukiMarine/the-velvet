@@ -416,6 +416,9 @@ export const DashboardP3 = () => {
     return pool[Math.floor(Math.random() * pool.length)];
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  // 问候语开头自带 emoji（夜间是 🌙/🌟）。首页日期卡旁边就是真实月相图形，
+  // 再挂一个系统黄色月亮 emoji 既撞义又破配色——这里摘掉开头的 emoji 只留文字。
+  const greeting = useMemo(() => subtext.replace(/^\s*\p{Extended_Pictographic}[️‍\p{Extended_Pictographic}]*\s*/u, ''), [subtext]);
 
   // ── 今日任务（口径同 Dashboard：启用+星期匹配+未来启用日过滤；今天完成后归档的仍显示；重要在前）──
   const todayWeekday = now.getDay();
@@ -571,7 +574,11 @@ export const DashboardP3 = () => {
   ritualSlides.push(
     <div key="astrology" className="h-full [&>*]:h-full">
       <RitualSlab
-        icon="🌙"
+        icon={
+          <svg viewBox="0 0 24 24" className="h-6 w-6" aria-hidden>
+            <path d="M20.5 15.2A9 9 0 1 1 9.2 3.8a7.2 7.2 0 0 0 11.3 11.4Z" fill={P3R.cyan} />
+          </svg>
+        }
         onClick={() => go('astrology')}
         title={drawn && drawnCard ? `${drawnCard.name} · ${drawn.orientation === 'upright' ? '正位' : '逆位'}` : '今日星象尚未展开'}
         sub={
@@ -624,7 +631,7 @@ export const DashboardP3 = () => {
             靛蓝色房间
             <TitlePeriod className="mb-1.5 ml-1.5" />
           </h1>
-          <p className="mt-2 text-[15px] font-bold" style={{ color: P3R.blue }}>{subtext}</p>
+          <p className="mt-2 text-[15px] font-bold" style={{ color: P3R.blue }}>{greeting}</p>
 
           {/* 日期块 */}
           <div className="mt-4 flex items-center gap-2.5">

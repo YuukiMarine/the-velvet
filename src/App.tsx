@@ -567,7 +567,7 @@ function App() {
           )}
 
           {/* 背景动画（无背景图时，优先于纹理） */}
-          {!settings.backgroundImage && (settings.backgroundAnimation ?? []).length > 0 && (
+          {!settings.backgroundImage && user?.theme !== 'blue' && (settings.backgroundAnimation ?? []).length > 0 && (
             // 用独立 will-change 容器包裹，使背景动画层与页面切换（AnimatePresence）
             // 产生的 stacking context 完全隔离，避免页面转场时背景闪烁
             <div style={{ isolation: 'isolate', willChange: 'transform', position: 'fixed', inset: 0, zIndex: 0 }}>
@@ -608,7 +608,7 @@ function App() {
                 aria-hidden
                 className="pointer-events-none fixed inset-0 z-0"
                 // 罩纱只做「够读」不做「洗白」：底部刻意留薄，让水体收到靛紫看得见
-                style={{ background: 'linear-gradient(180deg, rgba(238,245,249,0.05) 0%, rgba(238,245,249,0.32) 34%, rgba(238,245,249,0.42) 64%, rgba(238,245,249,0.22) 100%)' }}
+                style={{ background: 'linear-gradient(180deg, rgba(238,245,249,0.02) 0%, rgba(238,245,249,0.26) 34%, rgba(238,245,249,0.38) 64%, rgba(238,245,249,0.12) 100%)' }}
               />
             </>
           )}
@@ -643,7 +643,13 @@ function App() {
                 <PageSwitcher
                   current={currentPage}
                   // 与 App 根的舞台底色同源（黄频道走 --ui-bg，其余走 gray-50 / gray-900）
-                  stageBg={user?.theme === 'yellow' ? 'var(--ui-bg, #ffd900)' : settings.darkMode ? '#111827' : '#f9fafb'}
+                  // 蓝频道用透明：页面壳的不透明底会在转场那一瞬把固定的水下舞台整块盖住，
+                  // 观感就是"每次切页背景先消失再出现"
+                  stageBg={
+                    user?.theme === 'blue' && !settings.backgroundImage
+                      ? 'transparent'
+                      : user?.theme === 'yellow' ? 'var(--ui-bg, #ffd900)' : settings.darkMode ? '#111827' : '#f9fafb'
+                  }
                   stageDecor={user?.theme === 'yellow' ? <P4StageDecor /> : undefined}
                   render={renderPage}
                 />

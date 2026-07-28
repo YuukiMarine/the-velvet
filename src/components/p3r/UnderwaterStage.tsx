@@ -33,17 +33,21 @@ const WATER_PATH_MAIN =
 const WATER_PATH_TAIL =
   'M571.62,110.33c0,0-49.28-4.33-79.95,14c13,1.33,32.33-3.67,65,0c17.67,3.33,14.95,2.33,14.95,2.33V110.33z';
 
-/** 8 帧：同一张线稿的位移 / 纵向缩放 / 镜像组合，逐帧跳变（不是补间）。
- *  幅度按定稿收窄——原来位移 ±66、纵缩 ±9% 抖得太凶，现在只留轻微晃动。 */
-const FRAMES: Array<{ dx: number; dy: number; sy: number; flip: boolean }> = [
-  { dx: 0, dy: 0, sy: 1, flip: false },
-  { dx: -5, dy: 0.8, sy: 1.02, flip: false },
-  { dx: -10, dy: -0.5, sy: 0.985, flip: true },
-  { dx: -15, dy: 1.1, sy: 1.012, flip: true },
-  { dx: -3, dy: -0.8, sy: 0.978, flip: false },
-  { dx: -8, dy: 0.4, sy: 1.026, flip: true },
-  { dx: -13, dy: -1, sy: 0.99, flip: false },
-  { dx: -18, dy: 0.7, sy: 1.006, flip: true },
+/**
+ * 8 帧：不再整体平移/缩放/镜像那张线稿——刚体滑动正是"上个世纪 Flash"的观感来源。
+ * 改成给每一帧套一个 feTurbulence + feDisplacementMap：湍流场逐帧换 seed，
+ * 位移作用在**路径的每个点**上，于是波纹是自己在起伏，而不是整块图在挪。
+ * dx 只留极小的横向漂移，让相邻帧之间有一点连续感。
+ */
+const FRAMES: Array<{ dx: number; seed: number }> = [
+  { dx: 0, seed: 3 },
+  { dx: -2.2, seed: 11 },
+  { dx: -4.4, seed: 19 },
+  { dx: -6.6, seed: 27 },
+  { dx: -8.8, seed: 35 },
+  { dx: -11, seed: 43 },
+  { dx: -13.2, seed: 51 },
+  { dx: -15.4, seed: 59 },
 ];
 
 const VB_X = -4;
@@ -51,20 +55,35 @@ const VB_Y = 84;
 const VB_W = 600;
 const VB_H = 126;
 
-const RippleFrame = ({ f }: { f: (typeof FRAMES)[number] }) => {
-  const cx = VB_X + VB_W / 2;
-  const cy = VB_Y + VB_H / 2;
-  const t = [
-    `translate(${f.dx} ${f.dy})`,
-    `translate(${cx} ${cy})`,
-    `scale(${f.flip ? -1 : 1} ${f.sy})`,
-    `translate(${-cx} ${-cy})`,
-  ].join(' ');
+const RippleFrame = ({ f, i }: { f: (typeof FRAMES)[number]; i: number }) => {
+  const fid = `p3wave${i}`;
   return (
-    <svg viewBox={`${VB_X} ${VB_Y} ${VB_W} ${VB_H}`} preserveAspectRatio="none" className="h-full w-1/8 shrink-0" style={{ width: '12.5%' }}>
-      <g transform={t} fill="#a9f0ff" opacity="0.62">
-        <path d={WATER_PATH_MAIN} />
-        <path d={WATER_PATH_TAIL} />
+    <svg
+      viewBox={`${VB_X} ${VB_Y} ${VB_W} ${VB_H}`}
+      preserveAspectRatio="none"
+      className="h-full shrink-0"
+      style={{ width: '12.5%' }}
+    >
+      <defs>
+        <filter id={fid} x="-12%" y="-25%" width="124%" height="150%" colorInterpolationFilters="sRGB">
+          <feTurbulence type="fractalNoise" baseFrequency="0.012 0.05" numOctaves={2} seed={f.seed} result="n" />
+          <feDisplacementMap in="SourceGraphic" in2="n" scale={9} xChannelSelector="R" yChannelSelector="G" />
+        </filter>
+        {/* 下缘化进水里，避免容器底部切出一条硬边 */}
+        <linearGradient id={`${fid}fade`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#fff" stopOpacity="1" />
+          <stop offset="62%" stopColor="#fff" stopOpacity="1" />
+          <stop offset="100%" stopColor="#fff" stopOpacity="0" />
+        </linearGradient>
+        <mask id={`${fid}mask`}>
+          <rect x={VB_X} y={VB_Y} width={VB_W} height={VB_H} fill={`url(#${fid}fade)`} />
+        </mask>
+      </defs>
+      <g mask={`url(#${fid}mask)`}>
+        <g transform={`translate(${f.dx} 0)`} filter={`url(#${fid})`} fill="#a9f0ff" opacity="0.55">
+          <path d={WATER_PATH_MAIN} />
+          <path d={WATER_PATH_TAIL} />
+        </g>
       </g>
     </svg>
   );
@@ -91,35 +110,36 @@ export const UnderwaterStage = ({ motion = true }: { motion?: boolean }) => (
       className="absolute inset-0"
       style={{
         background:
-          'linear-gradient(180deg, #1aa9f2 0%, #1592ec 12%, #1276e4 30%, #0f4fd2 50%, #1a2fb4 68%, #33169c 84%, #4B0082 100%)',
+          'linear-gradient(180deg, #1aa9f2 0%, #1592ec 12%, #1276e4 28%, #0f4fd2 46%, #24239f 64%, #3a108e 80%, #4B0082 94%, #4B0082 100%)',
       }}
     />
 
     {/* 3 · 三条很宽的散射光：硬边不羽化；34° 一个重复周期，转满 34° 无缝接回 */}
     <div
       className="absolute"
-      // inset 拉到 -150%：原来 -70% 时元素本身不够大，旋转后它的下缘会露在画面里
-      // （用户上报"光效太短、最下方边缘露出来"）。锥顶落在视口 y≈-8%：
-      // 元素高 400vh、顶在 -150vh → 顶点分数 = (-8+150)/400 = 35.5%。
+      // 锥顶推到视口上方 120vh、元素放大到 600vh：光柱在画面里近乎平行地垂下，
+      // 无论屏幕多高都看不到收束点，也看不到元素自身的边缘。
+      // 元素高 600vh、顶在 -250vh → 顶点分数 = (-120+250)/600 = 21.7%。
       style={{
-        inset: '-150%',
-        transformOrigin: '50% 35.5%',
+        inset: '-250%',
+        transformOrigin: '50% 21.7%',
         background:
-          'repeating-conic-gradient(from -17deg at 50% 35.5%,' +
-          ' rgba(255,255,255,0.09) 0deg 18deg,' +
-          ' rgba(255,255,255,0) 18deg 34deg)',
+          // 实测 6° 一轮在 450 宽下会排出 6 条，加倍到 12° 才是稿上「很宽的三条」
+          'repeating-conic-gradient(from -3.2deg at 50% 21.7%,' +
+          ' rgba(255,255,255,0.085) 0deg 6.4deg,' +
+          ' rgba(255,255,255,0) 6.4deg 12deg)',
         animation: motion ? 'p3-underwater-rays 52s linear infinite' : 'none',
         willChange: motion ? 'transform' : undefined,
       }}
     />
 
     {/* 2 · 水面波纹：1s / 8 帧定格 */}
-    <div className="absolute inset-x-0 top-0 h-[14vh] min-h-[92px] overflow-hidden">
+    <div className="absolute inset-x-0 top-0 h-[19vh] min-h-[124px] overflow-hidden">
       <div
         className="flex h-full"
         style={{ width: '800%', animation: motion ? 'p3-underwater-ripple 1s steps(8) infinite' : 'none', willChange: motion ? 'transform' : undefined }}
       >
-        {FRAMES.map((f, i) => <RippleFrame key={i} f={f} />)}
+        {FRAMES.map((f, i) => <RippleFrame key={i} f={f} i={i} />)}
       </div>
     </div>
 

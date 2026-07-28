@@ -441,10 +441,13 @@ export const DashboardP5 = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   // 日期卡两行问候：按第一个「，」拆行（设计稿「夜深了 / 给自己点掌声」）
+  // 问候语开头自带 emoji（夜间是 🌙/🌟）。首页日期卡旁边就是真实月相图形，
+  // 再挂一个系统黄色月亮 emoji 既撞义又破配色——这里摘掉开头的 emoji 只留文字。
+  const greeting = useMemo(() => subtext.replace(/^\s*\p{Extended_Pictographic}[️‍\p{Extended_Pictographic}]*\s*/u, ''), [subtext]);
   const [subLine1, subLine2] = useMemo(() => {
-    const i = subtext.indexOf('，');
-    return i > 0 ? [subtext.slice(0, i), subtext.slice(i + 1)] : [subtext, ''];
-  }, [subtext]);
+    const i = greeting.indexOf('，');
+    return i > 0 ? [greeting.slice(0, i), greeting.slice(i + 1)] : [greeting, ''];
+  }, [greeting]);
 
   // ── 今日任务（口径同 Dashboard）────────────────────────────────────────────
   const todayWeekday = now.getDay();
