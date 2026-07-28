@@ -865,7 +865,7 @@ html[data-ios-standalone="true"] {
    水波：胶片横排 4 帧、steps(4) 在 1s 内走完一轮 = 每秒 4 帧的定格动画。 */
 @keyframes p3-underwater-rays {
   from { transform: rotate(0deg); }
-  to   { transform: rotate(9deg); }
+  to   { transform: rotate(12deg); } /* = repeating-conic 的一个周期，转满即与初态重合 */
 }
 @keyframes p3-underwater-ripple {
   from { transform: translateX(0); }

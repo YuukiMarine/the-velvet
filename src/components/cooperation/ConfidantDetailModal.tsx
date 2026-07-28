@@ -494,6 +494,18 @@ export function ConfidantDetailModal({
                         <span className="text-base">📷</span>
                         {confidant.customAvatarDataUrl ? '更换头像' : '上传头像替换塔罗'}
                       </button>
+                      {(confidant.customAvatarDataUrl || confidant.linkedProfile?.avatarUrl) && (
+                        <button
+                          onClick={() => {
+                            setAvatarMenuOpen(false);
+                            void updateConfidant(confidant.id, { avatarAsCardFace: !confidant.avatarAsCardFace });
+                          }}
+                          className="w-full px-3 py-2 text-left text-xs font-semibold text-gray-800 dark:text-gray-100 hover:bg-black/5 dark:hover:bg-white/10 transition-colors flex items-center gap-2 border-t border-black/5 dark:border-white/10"
+                        >
+                          <span className="text-base">{confidant.avatarAsCardFace ? '🂠' : '🖼'}</span>
+                          卡面：{confidant.avatarAsCardFace ? '头像（点此改回塔罗）' : '塔罗（点此换成头像）'}
+                        </button>
+                      )}
                       {confidant.customAvatarDataUrl && (
                         <button
                           onClick={handleRestoreTarot}

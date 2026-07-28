@@ -166,9 +166,9 @@ const BlankCard = () => {
 
 const idOf = (item: Confidant | 'add') => (item === 'add' ? '__add__' : item.id);
 
-/** 「头像同步为卡面」开着时，整张牌面换成上传的图 */
+/** 「卡面用头像」开着时，整张牌面换成头像图（离线=本地上传，在线=对方云端头像） */
 const faceOf = (c: Confidant): string | undefined =>
-  c.avatarAsCardFace && c.customAvatarDataUrl ? c.customAvatarDataUrl : undefined;
+  c.avatarAsCardFace ? (c.customAvatarDataUrl || c.linkedProfile?.avatarUrl || undefined) : undefined;
 
 /**
  * WallScrubber —— 刻度条式快速跳卡（替代原生 range，Persona 资源条语言）。
@@ -529,6 +529,29 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
       <div className={`relative mx-auto max-w-sm px-3 ${p3 ? '-mt-1' : 'mt-2'}`}>
         {/* P5：铭牌背后压一枚与星象 / 菜单同款的暗红同心五角星；每翻一张牌转 60°
             （非线性弹簧，跟着 index 走，左右翻分别是 ∓60°） */}
+        {isP4 && (
+          <motion.div
+            aria-hidden
+            className="pointer-events-none absolute left-1/2 top-1/2 -z-10"
+            style={{ width: 300, height: 300, marginLeft: -150, marginTop: -136 }}
+            animate={{ rotate: index * 90 }}
+            transition={{ type: 'spring', stiffness: 140, damping: 15, mass: 0.9 }}
+          >
+            {/* 黄频道的对位件：同心四角星，每翻一张转 90°（红是五角星转 60°） */}
+            <svg viewBox="0 0 100 100" className="h-full w-full">
+              {[48, 37, 26, 15].map((r) => (
+                <path
+                  key={r}
+                  d={`M50 ${50 - r} L${50 + r * 0.26} ${50 - r * 0.26} L${50 + r} 50 L${50 + r * 0.26} ${50 + r * 0.26} L50 ${50 + r} L${50 - r * 0.26} ${50 + r * 0.26} L${50 - r} 50 L${50 - r * 0.26} ${50 - r * 0.26} Z`}
+                  fill="none"
+                  stroke="rgba(19,19,19,0.13)"
+                  strokeWidth={2.4}
+                  strokeLinejoin="miter"
+                />
+              ))}
+            </svg>
+          </motion.div>
+        )}
         {isP5 && (
           <motion.div
             aria-hidden
