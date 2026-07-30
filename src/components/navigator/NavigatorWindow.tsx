@@ -96,12 +96,13 @@ const skinOf = (bright: boolean, p4 = false, p5 = false) => p5
   ? {
     // p4-navigator-reference-v2：黄舞台 + 奶油斜切信头（蓝圆黑猫）+ 奶油/黑气泡 + 蓝圆发送
     root: undefined as string | undefined,
-    rootStyle: { background: '#ffd900' } as React.CSSProperties,
+    // 舞台底走 --p4-stage：夜间紫舞台自动跟随（--ui-bg 保持黄当强调，不能用）
+    rootStyle: { background: 'var(--p4-stage, #ffd900)' } as React.CSSProperties,
     headerSlab: 'bg-[#fff6d0] shadow-[0_6px_0_rgba(19,19,19,0.15)]',
     headerStyle: { clipPath: 'polygon(0 0, 100% 0, 97% 100%, 0 100%)', borderRadius: 18 } as React.CSSProperties,
-    headerText: { color: '#131313' } as React.CSSProperties,
+    headerText: { color: 'var(--ui-ink, #131313)' } as React.CSSProperties,
     catBubble: 'bg-[#fff6d0] shadow-[0_4px_0_rgba(19,19,19,0.12)] font-bold',
-    catBubbleStyle: { clipPath: 'polygon(0 4%, 100% 0, 98.4% 100%, 0.8% 100%)', borderRadius: 16, color: '#131313' } as React.CSSProperties,
+    catBubbleStyle: { clipPath: 'polygon(0 4%, 100% 0, 98.4% 100%, 0.8% 100%)', borderRadius: 16, color: 'var(--ui-ink, #131313)' } as React.CSSProperties,
     userBubble: 'text-[#ffd900] shadow-[0_4px_0_rgba(19,19,19,0.25)] font-bold',
     userBubbleStyle: { background: '#131313', clipPath: 'polygon(1.6% 0, 100% 4%, 99.2% 100%, 0 100%)', borderRadius: 16 } as React.CSSProperties,
     avatar: 'text-[#131313]',
@@ -111,11 +112,11 @@ const skinOf = (bright: boolean, p4 = false, p5 = false) => p5
     inputBar: undefined as string | undefined,
     inputBarStyle: { background: 'transparent' } as React.CSSProperties,
     input: 'flex-1 bg-[#fff6d0] px-4 py-2.5 text-[16px] font-bold outline-none placeholder:text-[#131313]/40 rounded-2xl',
-    inputStyle: { color: '#131313', clipPath: 'polygon(0 0, 100% 0, 98% 100%, 0 100%)' } as React.CSSProperties,
+    inputStyle: { color: 'var(--ui-ink, #131313)', clipPath: 'polygon(0 0, 100% 0, 98% 100%, 0 100%)' } as React.CSSProperties,
     send: 'flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-lg font-black text-white disabled:opacity-40',
     sendStyle: { background: 'var(--ui-accent, #2e6be0)', boxShadow: '0 3px 0 rgba(19,19,19,0.25)' } as React.CSSProperties,
     card: 'bg-[#fff6d0] shadow-[0_5px_0_rgba(19,19,19,0.15)]',
-    cardStyle: { borderRadius: 18, color: '#131313' } as React.CSSProperties,
+    cardStyle: { borderRadius: 18, color: 'var(--ui-ink, #131313)' } as React.CSSProperties,
     cardBtn: 'min-h-10 px-4 text-[13px] font-black text-white disabled:opacity-40 rounded-xl bg-[var(--ui-accent,#2e6be0)]',
     cardBtnGhost: 'min-h-10 px-3.5 text-[13px] font-black text-[#131313] rounded-xl bg-[#ffd900]',
     cardBtnText: 'min-h-10 px-2 text-[13px] font-bold text-[#131313]/60',
@@ -124,33 +125,35 @@ const skinOf = (bright: boolean, p4 = false, p5 = false) => p5
   }
   : bright
   ? {
+    // 配色全部走 --p3r-* / --p3nav-* 变量（浅色值为 fallback）：夜间模式只覆盖变量，
+    // 白日水面自动翻成深海面（bg-white 类由夜间毯式规则接管）。
     root: undefined as string | undefined,
-    rootStyle: { background: 'linear-gradient(168deg, #f2f9fd 0%, #e6f3fa 52%, #cfeaf6 100%)' },
+    rootStyle: { background: 'var(--p3nav-root, linear-gradient(168deg, #f2f9fd 0%, #e6f3fa 52%, #cfeaf6 100%))' },
     headerSlab: 'bg-white shadow-[0_10px_26px_rgba(38,96,140,.14)]',
     headerStyle: { clipPath: 'polygon(12px 0, 100% 0, calc(100% - 12px) 100%, 0 100%)' } as React.CSSProperties,
-    headerText: { color: '#0a1230' },
+    headerText: { color: 'var(--p3r-ink, #0a1230)' },
     catBubble: 'shadow-[0_8px_22px_rgba(38,96,140,.12)]',
     // 右下角青三角：渐变在右下 14px 处硬切一刀（clip 斜切后正好是设计稿的小角）
-    catBubbleStyle: { clipPath: 'polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%)', background: 'linear-gradient(315deg, #35d1e8 13px, #c9e9f6 13px)', color: '#0a1230' } as React.CSSProperties,
+    catBubbleStyle: { clipPath: 'polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%)', background: 'var(--p3nav-cat-bub, linear-gradient(315deg, #35d1e8 13px, #c9e9f6 13px))', color: 'var(--p3r-ink, #0a1230)' } as React.CSSProperties,
     userBubble: 'text-white shadow-[0_8px_22px_rgba(27,87,255,.25)]',
-    userBubbleStyle: { background: '#1b57ff', clipPath: 'polygon(0 0, calc(100% - 14px) 0, 100% 100%, 14px 100%)' } as React.CSSProperties,
+    userBubbleStyle: { background: 'var(--p3r-blue, #1b57ff)', clipPath: 'polygon(0 0, calc(100% - 14px) 0, 100% 100%, 14px 100%)' } as React.CSSProperties,
     avatar: 'text-[#1b57ff]',
-    avatarStyle: { background: '#cfeaf6' } as React.CSSProperties,
+    avatarStyle: { background: 'var(--p3r-cyan-pale, #cfeaf6)' } as React.CSSProperties,
     chip: 'bg-white text-[13px] font-black shadow-[0_6px_14px_rgba(38,96,140,.08)]',
-    chipStyle: { color: '#0a1230', clipPath: 'polygon(9px 0, 100% 0, calc(100% - 9px) 100%, 0 100%)' } as React.CSSProperties,
+    chipStyle: { color: 'var(--p3r-ink, #0a1230)', clipPath: 'polygon(9px 0, 100% 0, calc(100% - 9px) 100%, 0 100%)' } as React.CSSProperties,
     inputBar: undefined as string | undefined,
     inputBarStyle: undefined as React.CSSProperties | undefined,
     input: 'flex-1 bg-white px-4 py-3 text-[15px] font-bold outline-none placeholder:text-[#9ab4c9] shadow-[0_8px_18px_rgba(38,96,140,.08)]',
-    inputStyle: { color: '#0a1230', clipPath: 'polygon(12px 0, 100% 0, calc(100% - 12px) 100%, 0 100%)' } as React.CSSProperties,
+    inputStyle: { color: 'var(--p3r-ink, #0a1230)', clipPath: 'polygon(12px 0, 100% 0, calc(100% - 12px) 100%, 0 100%)' } as React.CSSProperties,
     send: 'flex h-12 w-16 shrink-0 items-center justify-center text-lg font-black text-white disabled:opacity-40',
-    sendStyle: { background: '#1b57ff', clipPath: 'polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%)' } as React.CSSProperties,
+    sendStyle: { background: 'var(--p3r-blue, #1b57ff)', clipPath: 'polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%)' } as React.CSSProperties,
     card: 'bg-white shadow-[0_14px_32px_rgba(38,96,140,.16)]',
-    cardStyle: { clipPath: 'polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%)', color: '#0a1230' } as React.CSSProperties,
+    cardStyle: { clipPath: 'polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%)', color: 'var(--p3r-ink, #0a1230)' } as React.CSSProperties,
     cardBtn: 'min-h-10 px-4 text-[13px] font-black text-white disabled:opacity-40 [clip-path:polygon(8px_0,100%_0,calc(100%-8px)_100%,0_100%)] bg-[#1b57ff]',
     cardBtnGhost: 'min-h-10 px-3.5 text-[13px] font-black text-[#0a3bd6] [clip-path:polygon(8px_0,100%_0,calc(100%-8px)_100%,0_100%)] bg-[#cfeaf6]',
     cardBtnText: 'min-h-10 px-2 text-[13px] font-bold opacity-60',
     stamp: 'px-2 py-0.5 text-[11px] font-black tracking-[0.14em]',
-    stampStyle: { color: '#1b57ff' } as React.CSSProperties,
+    stampStyle: { color: 'var(--p3r-blue, #1b57ff)' } as React.CSSProperties,
   }
   : {
     root: 'bg-[#0d1017]',
@@ -569,12 +572,12 @@ export const NavigatorWindow = () => {
                 <div className="absolute inset-y-0 left-0 flex w-[96px] select-none items-center justify-center">
                   <span
                     className="whitespace-nowrap font-black italic leading-none"
-                    style={{ fontFamily: 'Arial, sans-serif', fontSize: '6.6rem', color: 'rgba(147,190,222,0.30)', transform: 'rotate(90deg)' }}
+                    style={{ fontFamily: 'Arial, sans-serif', fontSize: '6.6rem', color: 'var(--p3r-ghost, rgba(147,190,222,0.30))', transform: 'rotate(90deg)' }}
                   >
                     NAVIGATOR
                   </span>
                 </div>
-                <div className="absolute right-[-18%] top-[-10%] h-[150%] w-[42%]" style={{ background: 'linear-gradient(180deg, rgba(53,209,232,0.28) 0%, rgba(127,216,238,0.5) 100%)', transform: 'skewX(-14deg)' }} />
+                <div className="absolute right-[-18%] top-[-10%] h-[150%] w-[42%]" style={{ background: 'var(--p3nav-slab, linear-gradient(180deg, rgba(53,209,232,0.28) 0%, rgba(127,216,238,0.5) 100%))', transform: 'skewX(-14deg)' }} />
                 <div className="absolute inset-x-0 bottom-0 h-[24%] opacity-60">
                   <img
                     src={P3_WATER_WIDE}

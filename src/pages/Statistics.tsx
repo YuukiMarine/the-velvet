@@ -59,7 +59,7 @@ const StatCard = ({
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay, duration: 0.4 }}
         className="relative overflow-hidden px-3.5 py-3"
-        style={{ clipPath: 'polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%)', background: 'rgba(255,255,255,0.92)', boxShadow: '0 8px 18px rgba(38,96,140,0.07)' }}
+        style={{ clipPath: 'polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%)', background: P3R.panelGlass, boxShadow: '0 8px 18px rgba(38,96,140,0.07)' }}
       >
         <span aria-hidden className="absolute left-2 top-2.5 bottom-2.5 w-[4px]" style={{ background: P3R.blue, transform: 'skewX(-18deg)' }} />
         <div className="flex min-w-0 flex-col gap-1 pl-3.5">
@@ -670,7 +670,7 @@ export const Statistics = () => {
               className="absolute left-1/2 top-1/2 h-[252px] w-[252px] -translate-x-1/2 -translate-y-1/2 rounded-full p-2.5"
               style={{ background: 'var(--p4-orange, #f9a11b)', boxShadow: '0 0 0 12px rgba(255, 246, 208, 0.55)' }}
             >
-              <div className="flex h-full w-full flex-col items-center justify-center rounded-full px-5 text-center" style={{ background: '#fff9dd' }}>
+              <div className="p4-onlight flex h-full w-full flex-col items-center justify-center rounded-full px-5 text-center" style={{ background: '#fff9dd' }}>
                 <div className="text-[13px] font-black text-[#131313]/80">累计点数</div>
                 <div className="text-[62px] font-black leading-none tabular-nums text-[#131313]">{totalPoints}</div>
                 <P4Sparkle size={14} color="var(--ui-accent)" className="mt-1" />
@@ -710,7 +710,7 @@ export const Statistics = () => {
       ) : p3 ? (
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05, duration: 0.5 }}>
           <SectionMark title="成长轨迹" meta={<span className="text-[13px] font-black" style={{ color: P3R.blue }}>累计点数</span>} className="mb-3" />
-          <div className="relative px-4 pb-4 pt-3" style={{ clipPath: 'polygon(18px 0, 100% 0, calc(100% - 18px) 100%, 0 100%)', background: 'rgba(255,255,255,0.94)', boxShadow: '0 14px 32px rgba(38,96,140,0.10)' }}>
+          <div className="relative px-4 pb-4 pt-3" style={{ clipPath: 'polygon(18px 0, 100% 0, calc(100% - 18px) 100%, 0 100%)', background: P3R.panelGlass, boxShadow: '0 14px 32px rgba(38,96,140,0.10)' }}>
             {/* 大数字内收：避开左上斜切区（clip 18px），字体走 Arial 合成粗（装饰字重口径） */}
             <div aria-hidden className="pointer-events-none absolute left-7 top-2 select-none text-[64px] font-black italic leading-none tabular-nums" style={{ color: P3R.blue, opacity: 0.92, fontFamily: 'Arial, sans-serif' }}>
               {totalPoints}
@@ -813,7 +813,7 @@ export const Statistics = () => {
           isP4
             ? { boxShadow: '0 3px 0 rgba(19,19,19,0.12)' }
             : p3
-              ? { clipPath: 'polygon(20px 0, 100% 0, calc(100% - 20px) 100%, 0 100%)', background: 'rgba(255,255,255,0.92)', boxShadow: '0 10px 24px rgba(38,96,140,0.08)' }
+              ? { clipPath: 'polygon(20px 0, 100% 0, calc(100% - 20px) 100%, 0 100%)', background: P3R.panelGlass, boxShadow: '0 10px 24px rgba(38,96,140,0.08)' }
               : undefined
         }
       >
@@ -849,7 +849,7 @@ export const Statistics = () => {
                             : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
                         }`
                 }
-                style={p3 ? { clipPath: slantClip(7), background: timeRange === v ? P3R.blue : '#ddeef7', color: timeRange === v ? '#fff' : P3R.ink, marginLeft: -3 } : undefined}
+                style={p3 ? { clipPath: slantClip(7), background: timeRange === v ? P3R.blue : 'var(--p3r-chip, #ddeef7)', color: timeRange === v ? '#fff' : P3R.ink, marginLeft: -3 } : undefined}
               >
                 {isP4 && timeRange === v && (
                   <>
@@ -977,7 +977,7 @@ export const Statistics = () => {
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.4, duration: 0.5 }}
         className={p3 ? 'p-5' : 'rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm p-5'}
-        style={p3 ? { clipPath: 'polygon(20px 0, 100% 0, calc(100% - 20px) 100%, 0 100%)', background: 'rgba(255,255,255,0.92)', boxShadow: '0 10px 24px rgba(38,96,140,0.08)' } : undefined}
+        style={p3 ? { clipPath: 'polygon(20px 0, 100% 0, calc(100% - 20px) 100%, 0 100%)', background: P3R.panelGlass, boxShadow: '0 10px 24px rgba(38,96,140,0.08)' } : undefined}
       >
         <PlaneLevel>
         <div className="mb-4">

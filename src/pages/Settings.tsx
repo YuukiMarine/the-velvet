@@ -330,16 +330,16 @@ const SplashStyleButton = ({
           className="relative flex h-14 w-full items-center justify-center overflow-hidden"
           style={{
             clipPath: 'polygon(12px 0, 100% 0, calc(100% - 12px) 100%, 0 100%)',
-            background: active ? opt.color : '#ddeef7',
+            background: active ? opt.color : 'var(--p3r-chip, #ddeef7)',
             boxShadow: active ? '0 8px 18px rgba(38,96,140,0.2)' : 'none',
           }}
         >
           {ripples}
           <span className="text-xl leading-none" style={{ opacity: active ? 0.95 : 0.6 }} aria-hidden>{opt.icon}</span>
           {/* 预览块斜纹（设计稿质感） */}
-          <span aria-hidden className="pointer-events-none absolute inset-0" style={{ background: `repeating-linear-gradient(115deg, transparent 0 14px, ${active ? 'rgba(255,255,255,0.16)' : 'rgba(255,255,255,0.5)'} 14px 17px)` }} />
+          <span aria-hidden className="pointer-events-none absolute inset-0" style={{ background: `repeating-linear-gradient(115deg, transparent 0 14px, ${active ? 'rgba(255,255,255,0.16)' : 'var(--p3r-chip-stripe, rgba(255,255,255,0.5))'} 14px 17px)` }} />
         </span>
-        <span className="whitespace-nowrap text-[11px] font-black leading-tight" style={{ color: active ? '#1b57ff' : '#0a1230' }}>{opt.label}</span>
+        <span className="whitespace-nowrap text-[11px] font-black leading-tight" style={{ color: active ? P3R.blue : P3R.ink }}>{opt.label}</span>
       </motion.button>
     );
   }
@@ -954,7 +954,7 @@ export const Settings = () => {
                   ? 'overflow-hidden'
                   : 'bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden'
             }
-            style={p3 ? { clipPath: 'polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%)', background: 'rgba(255,255,255,0.92)', boxShadow: '0 8px 18px rgba(38,96,140,0.07)' } : undefined}
+            style={p3 ? { clipPath: 'polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%)', background: P3R.panelGlass, boxShadow: '0 8px 18px rgba(38,96,140,0.07)' } : undefined}
           >
             {p5 ? (
               /* P5 分组头：收起 = 纸长条 + 黑星方章 + ▶；展开 = 红楔章（白星 + 白字）+ ▲ */
@@ -1231,7 +1231,7 @@ export const Settings = () => {
                                 <button key={opt.value} onClick={toggle} aria-pressed={active} title={opt.desc} className="relative flex flex-col items-center gap-1.5">
                                   <span
                                     className="relative h-12 w-full overflow-hidden"
-                                    style={{ clipPath: 'polygon(11px 0, 100% 0, calc(100% - 11px) 100%, 0 100%)', background: active ? P3R.blue : '#ddeef7', boxShadow: active ? '0 8px 18px rgba(27,87,255,0.22)' : 'none' }}
+                                    style={{ clipPath: 'polygon(11px 0, 100% 0, calc(100% - 11px) 100%, 0 100%)', background: active ? P3R.blue : 'var(--p3r-chip, #ddeef7)', boxShadow: active ? '0 8px 18px rgba(27,87,255,0.22)' : 'none' }}
                                   >
                                     <span aria-hidden className="pointer-events-none absolute inset-0" style={{ background: `repeating-linear-gradient(115deg, transparent 0 12px, ${active ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.55)'} 12px 15px)` }} />
                                   </span>
@@ -1376,7 +1376,7 @@ export const Settings = () => {
                                         ? 'border-primary bg-primary text-white'
                                         : 'border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300'
                                     }`}
-                                style={p3 ? { clipPath: 'polygon(9px 0, 100% 0, calc(100% - 9px) 100%, 0 100%)', background: active ? P3R.blue : '#ddeef7', color: active ? '#fff' : P3R.ink } : undefined}
+                                style={p3 ? { clipPath: 'polygon(9px 0, 100% 0, calc(100% - 9px) 100%, 0 100%)', background: active ? P3R.blue : 'var(--p3r-chip, #ddeef7)', color: active ? '#fff' : P3R.ink } : undefined}
                               >
                                 {opt.label}
                               </button>
@@ -2552,7 +2552,7 @@ export const Settings = () => {
         className={p3
           ? 'w-full flex items-center gap-3 px-5 py-4 text-left'
           : 'w-full flex items-center gap-3 rounded-xl bg-white dark:bg-gray-800 shadow-lg px-5 py-4 text-left hover:bg-gray-50 dark:hover:bg-gray-700'}
-        style={p3 ? { clipPath: 'polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%)', background: 'rgba(255,255,255,0.92)', boxShadow: '0 8px 18px rgba(38,96,140,0.07)' } : undefined}
+        style={p3 ? { clipPath: 'polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%)', background: P3R.panelGlass, boxShadow: '0 8px 18px rgba(38,96,140,0.07)' } : undefined}
       >
         <span className="text-2xl" aria-hidden>☁️</span>
         <span className="flex-1 min-w-0">

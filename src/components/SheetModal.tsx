@@ -152,7 +152,7 @@ export const SheetModal = ({
             onClick={(e) => e.stopPropagation()}
             className={`flex w-full flex-col ${maxHeightClass} ${
               isP4
-                ? `relative bg-[var(--ui-bg)] ${
+                ? `relative bg-[color:var(--p4-sheet,var(--ui-bg))] ${
                     isBottom ? 'mx-2 mb-2 rounded-[28px] pb-[env(safe-area-inset-bottom)]' : 'mx-4 max-w-md rounded-[28px]'
                   }`
                 : p5
@@ -165,12 +165,12 @@ export const SheetModal = ({
             }`}
             style={
               isP4
-                ? { border: '5px solid #fff6d0', boxShadow: '0 10px 0 rgba(19, 19, 19, 0.28)' }
+                ? { border: '5px solid var(--p4-sheet-border, #fff6d0)', boxShadow: '0 10px 0 rgba(19, 19, 19, 0.28)' }
                 : p5
                   ? { background: 'transparent' }
                 : p3
                   ? {
-                      background: 'linear-gradient(178deg, #fbfdff 0%, #f0f8fc 60%, #e6f3fa 100%)',
+                      background: 'var(--p3r-sheet-grad, linear-gradient(178deg, #fbfdff 0%, #f0f8fc 60%, #e6f3fa 100%))',
                       clipPath: isBottom ? sheetTopClip : 'polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%)',
                     }
                   : undefined
@@ -252,10 +252,10 @@ export const SheetModal = ({
                       ? 'text-[26px] font-black italic tracking-tight'
                       : 'text-lg font-bold text-gray-800 dark:text-white'
                 }`}
-                style={isP4 ? { fontFamily: 'var(--p4-display-font, serif)' } : p3 ? { color: '#0a1230', fontFamily: '"Arial Black", "Noto Sans SC", sans-serif' } : undefined}
+                style={isP4 ? { fontFamily: 'var(--p4-display-font, serif)' } : p3 ? { color: 'var(--p3r-ink, #0a1230)', fontFamily: '"Arial Black", "Noto Sans SC", sans-serif' } : undefined}
               >
                 {title}
-                {p3 && <span aria-hidden className="ml-1.5 inline-block h-[10px] w-[13px]" style={{ background: '#1b57ff', clipPath: 'polygon(100% 0, 100% 100%, 0 100%)' }} />}
+                {p3 && <span aria-hidden className="ml-1.5 inline-block h-[10px] w-[13px]" style={{ background: 'var(--p3r-blue, #1b57ff)', clipPath: 'polygon(100% 0, 100% 100%, 0 100%)' }} />}
               </h2>
               )
             )}

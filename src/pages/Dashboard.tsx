@@ -765,8 +765,9 @@ export const Dashboard = () => {
           <P4SkyCircle size={210} className="absolute -right-16 -top-16 opacity-95" flower={false} />
           <P4Sparkle size={20} color="#ffffff" className="absolute right-[44%] top-3" />
           <P4Sparkle size={14} color="var(--ui-accent)" className="absolute right-[40%] top-[96px]" />
-          {/* 大日期牌（压在天空上） */}
-          <div className="absolute right-5 top-1 text-center">
+          {/* 大日期牌（压在天空上）：p4-onlight——牌坐在浅色天空圆上，
+              夜间墨字不许跟全局翻浅（用户 R16：角标保持黑） */}
+          <div className="p4-onlight absolute right-5 top-1 text-center">
             <div className="text-[40px] font-black leading-none tabular-nums text-[#131313]">
               {String(today.getDate()).padStart(2, '0')}
             </div>

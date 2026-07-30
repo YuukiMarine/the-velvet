@@ -116,12 +116,12 @@ export const SegmentTabs = <K extends string>({
               className={`relative flex-1 font-black ${p3Size}`}
               style={{ marginLeft: i > 0 ? -7 : 0, zIndex: active ? 2 : 1 }}
             >
-              {/* 白斜块底（全员；layout 指示块盖其上） */}
-              <span aria-hidden className="absolute inset-0" style={{ clipPath: 'polygon(12px 0, 100% 0, calc(100% - 12px) 100%, 0 100%)', background: '#ffffff', boxShadow: '0 6px 14px rgba(38,96,140,0.06)' }} />
+              {/* 白斜块底（全员；layout 指示块盖其上）——面板色走变量，夜间翻深靛 */}
+              <span aria-hidden className="absolute inset-0" style={{ clipPath: 'polygon(12px 0, 100% 0, calc(100% - 12px) 100%, 0 100%)', background: 'var(--p3r-panel, #ffffff)', boxShadow: '0 6px 14px rgba(38,96,140,0.06)' }} />
               {active && (
                 <motion.div layoutId={indicatorId} transition={springSnappy} className="absolute inset-0" aria-hidden="true">
                   {/* clip / 装饰放内层：layout 动画期间 projection 独占外层 transform（同 skew 约束） */}
-                  <div className="absolute inset-0" style={{ clipPath: 'polygon(12px 0, 100% 0, calc(100% - 12px) 100%, 0 100%)', background: '#1b57ff' }} />
+                  <div className="absolute inset-0" style={{ clipPath: 'polygon(12px 0, 100% 0, calc(100% - 12px) 100%, 0 100%)', background: 'var(--p3r-blue, #1b57ff)' }} />
                   <span className="absolute bottom-0 right-3 h-[8px] w-[20px]" style={{ background: '#f0417f', clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
                 </motion.div>
               )}
@@ -132,8 +132,8 @@ export const SegmentTabs = <K extends string>({
                     className="text-2xs leading-none px-1.5 py-0.5"
                     style={{
                       clipPath: 'polygon(4px 0, 100% 0, calc(100% - 4px) 100%, 0 100%)',
-                      background: active ? 'rgba(255,255,255,0.25)' : '#cfeaf6',
-                      color: active ? '#fff' : '#0a3bd6',
+                      background: active ? 'rgba(255,255,255,0.25)' : 'var(--p3r-cyan-pale, #cfeaf6)',
+                      color: active ? '#fff' : 'var(--p3r-blue-deep, #0a3bd6)',
                     }}
                   >
                     {item.badge}

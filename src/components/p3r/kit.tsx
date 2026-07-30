@@ -35,6 +35,8 @@ export const P3R = {
   magenta: 'var(--p3r-magenta, #f0417f)',
   bg: 'var(--p3r-bg, #eef5f9)',
   panel: 'var(--p3r-panel, #ffffff)',
+  /** 半透明白面板（斜卡/分组壳的玻璃白）：夜间翻半透明深靛 */
+  panelGlass: 'var(--p3r-panel-glass, rgba(255,255,255,0.93))',
 } as const;
 
 /** 平行四边形 clip（dir: 左上→右下 = 'lead'；右上→左下 = 'tail'） */

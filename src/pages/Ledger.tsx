@@ -636,7 +636,7 @@ export const Ledger = () => {
         </motion.section>
       ) : p3 ? (
         <motion.section {...popIn(2)} className="mt-5">
-          <div className="relative px-6 py-7" style={{ clipPath: 'polygon(34px 0, 100% 0, calc(100% - 34px) 100%, 0 100%)', background: 'rgba(255,255,255,0.96)', boxShadow: '0 18px 40px rgba(38,96,140,0.10)' }}>
+          <div className="relative px-6 py-7" style={{ clipPath: 'polygon(34px 0, 100% 0, calc(100% - 34px) 100%, 0 100%)', background: P3R.panelGlass, boxShadow: '0 18px 40px rgba(38,96,140,0.10)' }}>
             {/* 左侧梯级：不再是纯装饰——近 9 日的日支出图（上旧下今）。
                 宽 ∝ 当日支出 / 9 日峰值；没花钱是短灰桩；超 9 日均值 1.5 倍翻洋红；
                 今天恒亮蓝。形制照旧（斜切条 + 逐级缩进），只是每一条都长在数据上。 */}
@@ -707,7 +707,7 @@ export const Ledger = () => {
           {/* 预算消耗进度条（p3 补：斜切横条，已花蓝青渐变 / 超支洋红；width 弹入动画） */}
           {balanceView === 'month' && hasBudget && (
             <div className="mt-3.5 px-6">
-              <div className="relative h-[11px] w-full overflow-hidden" style={{ background: 'rgba(207,234,246,0.8)', clipPath: slantClip(3) }}>
+              <div className="relative h-[11px] w-full overflow-hidden" style={{ background: 'rgba(var(--p3r-wash, 207,234,246), 0.8)', clipPath: slantClip(3) }}>
                 <motion.div
                   className="absolute inset-y-0 left-0"
                   style={{ background: over ? P3R.magenta : `linear-gradient(90deg, ${P3R.blue}, ${P3R.cyan})`, clipPath: slantClip(3) }}
@@ -752,7 +752,7 @@ export const Ledger = () => {
               type="button"
               onClick={() => setBudgetMode('edit')}
               className="px-5 py-2 text-[14px] font-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1b57ff]"
-              style={{ clipPath: slantClip(9), background: 'rgba(255,255,255,0.92)', color: P3R.ink, boxShadow: '0 6px 14px rgba(38,96,140,0.08)' }}
+              style={{ clipPath: slantClip(9), background: P3R.panelGlass, color: P3R.ink, boxShadow: '0 6px 14px rgba(38,96,140,0.08)' }}
             >
               {hasBudget ? '编辑预算' : '设置预算'}
             </button>
@@ -760,7 +760,7 @@ export const Ledger = () => {
               type="button"
               onClick={() => setAdjustOpen(true)}
               className="px-5 py-2 text-[14px] font-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1b57ff]"
-              style={{ clipPath: slantClip(9), background: 'rgba(255,255,255,0.92)', color: P3R.ink, boxShadow: '0 6px 14px rgba(38,96,140,0.08)' }}
+              style={{ clipPath: slantClip(9), background: P3R.panelGlass, color: P3R.ink, boxShadow: '0 6px 14px rgba(38,96,140,0.08)' }}
             >
               对账
             </button>
@@ -780,7 +780,7 @@ export const Ledger = () => {
             错位"）。这里改成把环包进一个 relative 盒子、装饰用 absolute inset-0 居中，
             圆心由布局保证，环尺寸怎么改都不会再错开。
             花瓣按用户口径退役，换成两圈同心圆装饰（外圈粗、再外一圈细）。 */}
-        <div className="relative mx-auto w-56">
+        <div className={`relative mx-auto w-56 ${isP4 ? 'p4-onlight' : ''}`}>
           {/* zIndex -1：装饰环比 224 的环盒大一圈，不沉到负层就会盖住下方
               「本月还没设预算」那行字（绝对定位元素默认画在无定位内容之上） */}
           {isP4 && (
@@ -927,7 +927,7 @@ export const Ledger = () => {
         </motion.section>
       ) : p3 ? (
         <motion.section {...riseIn(3)} className="mt-5 flex items-stretch gap-0">
-          <div className="min-w-0 flex-1" style={{ clipPath: slantClip(12), background: '#fff', boxShadow: '0 8px 18px rgba(38,96,140,0.07)' }}>
+          <div className="min-w-0 flex-1" style={{ clipPath: slantClip(12), background: P3R.panel, boxShadow: '0 8px 18px rgba(38,96,140,0.07)' }}>
             <input
               value={nlText}
               onChange={e => setNlText(e.target.value)}
@@ -1122,8 +1122,8 @@ export const Ledger = () => {
               <span className="text-xs text-gray-300 dark:text-gray-600">{weekdayCN(date)}</span>
             </div>
             <div
-              className={p3 ? 'divide-y divide-[#eef5fa]' : 'bg-white dark:bg-gray-800 rounded-xl shadow-sm divide-y divide-gray-50 dark:divide-gray-700/40'}
-              style={p3 ? { clipPath: slantClip(12), background: '#fff', boxShadow: '0 10px 24px rgba(38,96,140,0.08)' } : undefined}
+              className={p3 ? 'divide-y divide-[#eef5fa] dark:divide-[#24395f]' : 'bg-white dark:bg-gray-800 rounded-xl shadow-sm divide-y divide-gray-50 dark:divide-gray-700/40'}
+              style={p3 ? { clipPath: slantClip(12), background: P3R.panel, boxShadow: '0 10px 24px rgba(38,96,140,0.08)' } : undefined}
             >
               {entries.map(e => <LedgerRow key={e.id} entry={e} $={$} onClick={() => setDeleteTarget(e)} />)}
             </div>

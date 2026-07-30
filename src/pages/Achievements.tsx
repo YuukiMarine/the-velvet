@@ -367,8 +367,8 @@ const SkillsTab = () => {
                       style={p3 ? {
                         clipPath: 'polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%)',
                         background: isBlessing
-                          ? skill.unlocked ? '#fff4d6' : '#f2f7fb'
-                          : skill.unlocked ? 'rgba(53,209,232,0.16)' : canUnlockSkill ? 'rgba(27,87,255,0.08)' : '#f2f7fb',
+                          ? skill.unlocked ? 'var(--p3r-claim, #fff4d6)' : 'var(--p3r-skill-locked, #f2f7fb)'
+                          : skill.unlocked ? 'rgba(var(--p3r-cyan-rgb, 53,209,232), 0.16)' : canUnlockSkill ? 'var(--p3r-skill-ready, rgba(27,87,255,0.08))' : 'var(--p3r-skill-locked, #f2f7fb)',
                       } : undefined}
                     >
                       {/* Status icon（p3：斜切小块） */}
@@ -381,8 +381,8 @@ const SkillsTab = () => {
                         style={p3 ? {
                           clipPath: 'polygon(5px 0, 100% 0, calc(100% - 5px) 100%, 0 100%)',
                           background: isBlessing
-                            ? skill.unlocked ? '#f5a623' : '#b9c6d4'
-                            : skill.unlocked ? P3R.cyan : canUnlockSkill ? P3R.blue : '#b9c6d4',
+                            ? skill.unlocked ? '#f5a623' : 'var(--p3r-skill-badge, #b9c6d4)'
+                            : skill.unlocked ? P3R.cyan : canUnlockSkill ? P3R.blue : 'var(--p3r-skill-badge, #b9c6d4)',
                         } : undefined}
                       >
                         {isBlessing ? (skill.unlocked ? '✦' : '✧') : skill.unlocked ? '✓' : canUnlockSkill ? '!' : `${skill.requiredLevel}`}
@@ -396,7 +396,7 @@ const SkillsTab = () => {
                                 ? skill.unlocked ? 'text-amber-700 dark:text-amber-300' : 'text-gray-700 dark:text-gray-300'
                                 : skill.unlocked ? 'text-violet-700 dark:text-violet-300' : canUnlockSkill ? 'text-primary' : 'text-gray-700 dark:text-gray-300'
                             }`}
-                            style={p3 ? { color: isBlessing ? (skill.unlocked ? '#c07f00' : P3R.inkSoft) : skill.unlocked ? P3R.blueDeep : canUnlockSkill ? P3R.blue : P3R.ink } : undefined}
+                            style={p3 ? { color: isBlessing ? (skill.unlocked ? 'var(--p3r-blessing-ink, #c07f00)' : P3R.inkSoft) : skill.unlocked ? P3R.blueDeep : canUnlockSkill ? P3R.blue : P3R.ink } : undefined}
                           >
                             {skill.name}
                           </span>
@@ -1039,7 +1039,7 @@ const AchievementsTab = () => {
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 className="relative"
-                style={{ clipPath: slantClip(14), background: unlocked ? P3R.blue : canUnlock ? '#fff6dc' : P3R.panel, boxShadow: '0 10px 24px rgba(38,96,140,0.08)' }}
+                style={{ clipPath: slantClip(14), background: unlocked ? P3R.blue : canUnlock ? 'var(--p3r-claim, #fff6dc)' : P3R.panel, boxShadow: '0 10px 24px rgba(38,96,140,0.08)' }}
               >
                 <div
                   className="flex items-center gap-3 py-3 pl-5 pr-4"
@@ -1178,7 +1178,7 @@ const AchievementsTab = () => {
                 onTouchCancel={cancelPress}
                 onClick={() => { if (canUnlock) unlockAchievement(achievement.id); }}
                 className="relative cursor-pointer"
-                style={{ clipPath: slantClip(14), background: unlocked ? P3R.blue : canUnlock ? '#fff6dc' : P3R.panel, boxShadow: '0 10px 24px rgba(38,96,140,0.08)' }}
+                style={{ clipPath: slantClip(14), background: unlocked ? P3R.blue : canUnlock ? 'var(--p3r-claim, #fff6dc)' : P3R.panel, boxShadow: '0 10px 24px rgba(38,96,140,0.08)' }}
               >
                 <div className="flex items-center gap-3 py-3.5 pl-5 pr-4">
                   <span

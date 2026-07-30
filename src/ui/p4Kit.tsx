@@ -425,16 +425,18 @@ export const P4StageDecor = () => (
     className="pointer-events-none fixed inset-0 select-none overflow-hidden"
     style={{ zIndex: 0, contain: 'strict' }}
   >
-    {/* 右上：主弧环组，圆心落在屏外右上，弧线横扫上半屏 */}
+    {/* 右上：主弧环组，圆心落在屏外右上，弧线横扫上半屏。
+        颜色走 rgb 三元组变量（浅色值为 fallback）：夜间紫舞台上整套装饰翻紫罗兰系，
+        透明度留在调用点、色相交给变量——每圈浓淡各异但只需 4 个变量。 */}
     <P4ArcRings
       size={720}
       className="absolute"
       style={{ right: '-40vw', top: '-32vh' }}
       rings={[
-        [0.34, 46, 'rgba(249,161,27,0.20)'],
-        [0.56, 34, 'rgba(255,200,60,0.20)'],
-        [0.76, 26, 'rgba(249,161,27,0.13)'],
-        [0.94, 18, 'rgba(255,214,90,0.16)'],
+        [0.34, 46, 'rgba(var(--p4dec-orange, 249,161,27), 0.20)'],
+        [0.56, 34, 'rgba(var(--p4dec-yellow, 255,200,60), 0.20)'],
+        [0.76, 26, 'rgba(var(--p4dec-orange, 249,161,27), 0.13)'],
+        [0.94, 18, 'rgba(var(--p4dec-gold, 255,214,90), 0.16)'],
       ]}
     />
     {/* 左下：副弧环组，与主组反向呼应 */}
@@ -443,18 +445,18 @@ export const P4StageDecor = () => (
       className="absolute"
       style={{ left: '-36vw', bottom: '-24vh' }}
       rings={[
-        [0.42, 34, 'rgba(249,161,27,0.14)'],
-        [0.68, 24, 'rgba(255,214,90,0.16)'],
-        [0.92, 16, 'rgba(249,161,27,0.10)'],
+        [0.42, 34, 'rgba(var(--p4dec-orange, 249,161,27), 0.14)'],
+        [0.68, 24, 'rgba(var(--p4dec-gold, 255,214,90), 0.16)'],
+        [0.92, 16, 'rgba(var(--p4dec-orange, 249,161,27), 0.10)'],
       ]}
     />
     {/* 巨型花剪影：三朵错落，压在弧环之上 */}
-    <P4Flower size={280} color="rgba(255,248,214,0.34)" className="absolute" style={{ left: '-86px', top: '30%' }} />
-    <P4Flower size={190} color="rgba(255,248,214,0.28)" className="absolute" style={{ right: '-40px', top: '58%' }} />
-    <P4Flower size={120} color="rgba(255,248,214,0.26)" className="absolute" style={{ left: '38%', bottom: '6%' }} />
-    {/* 四角星闪：白/橙/蓝三色点缀 */}
+    <P4Flower size={280} color="rgba(var(--p4dec-cream, 255,248,214), 0.34)" className="absolute" style={{ left: '-86px', top: '30%' }} />
+    <P4Flower size={190} color="rgba(var(--p4dec-cream, 255,248,214), 0.28)" className="absolute" style={{ right: '-40px', top: '58%' }} />
+    <P4Flower size={120} color="rgba(var(--p4dec-cream, 255,248,214), 0.26)" className="absolute" style={{ left: '38%', bottom: '6%' }} />
+    {/* 四角星闪：白/橙/蓝三色点缀（白与蓝在紫底上依然成立，只翻橙） */}
     <P4Sparkle size={30} color="rgba(255,255,255,0.5)" className="absolute" style={{ left: '12%', top: '18%' }} />
-    <P4Sparkle size={20} color="rgba(249,161,27,0.4)" className="absolute" style={{ right: '18%', top: '38%' }} />
+    <P4Sparkle size={20} color="rgba(var(--p4dec-orange, 249,161,27), 0.4)" className="absolute" style={{ right: '18%', top: '38%' }} />
     <P4Sparkle size={26} color="rgba(33,150,224,0.28)" className="absolute" style={{ left: '8%', bottom: '26%' }} />
     <P4Sparkle size={16} color="rgba(255,255,255,0.42)" className="absolute" style={{ right: '8%', bottom: '14%' }} />
   </div>
