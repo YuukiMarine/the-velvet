@@ -72,6 +72,10 @@ const SkyWedge = () => (
       />
       <div className="absolute inset-0 bg-[#00a6ff]/10 mix-blend-screen" />
       <div className="absolute inset-0" style={{ background: 'linear-gradient(180deg, rgba(19,19,19,0.30) 0%, rgba(19,19,19,0) 46%)' }} />
+      {/* 天空里的五瓣花剪影 */}
+      <P4Flower size={38} color={CREAM} className="absolute" style={{ left: '9%', top: '38%', transform: 'rotate(10deg)' }} />
+      <P4Flower size={24} color={YELLOW} className="absolute" style={{ left: '20%', top: '62%', transform: 'rotate(-24deg)' }} />
+      <P4Flower size={30} color={CREAM} className="absolute" style={{ right: '7%', top: '30%', transform: 'rotate(32deg)' }} />
     </div>
     {/* 彩虹缎带：精确骑在棱线上（奶油棱线中线 14.5%，斜率在 450px 宽下 ≈ -9°）。
         rotate 必须走 motion 的 style——initial/animate 带了 x，CSS transform 会被整条覆盖 */}
@@ -102,7 +106,7 @@ const StarBurst = ({ origin }: { origin: { x: number; y: number } }) => (
         height={200}
         className="absolute"
         style={{ left: origin.x - 100, top: origin.y - 100, overflow: 'visible' }}
-        initial={{ scale: 0.18, opacity: 0, rotate: i % 2 === 1 ? 45 : 0 }}
+        initial={{ scale: 0.18, opacity: 0 }}
         animate={{ scale: 3.6 + i * 1.2, opacity: [0, 0.95, 0.5, 0] }}
         transition={{ duration: 1.05, delay: i * 0.1, ease: [0.16, 0.7, 0.35, 1], opacity: { duration: 1.05, delay: i * 0.1, times: [0, 0.1, 0.4, 0.78] } }}
       >
@@ -207,14 +211,14 @@ const Hub = ({ origin, item, R }: { origin: { x: number; y: number }; item: Whee
       width={item ? 176 : 150}
       height={item ? 176 : 150}
       className="absolute left-1/2 top-1/2"
-      style={{ x: '-50%', y: '-50%', overflow: 'visible' }}
+      style={{ x: '-50%', y: 'calc(-50% + 7px)', overflow: 'visible' }}
       initial={{ scale: 0, rotate: -140, opacity: 0 }}
       animate={{ scale: 1, rotate: 0, opacity: 1 }}
       transition={{ type: 'spring', stiffness: 250, damping: 15, delay: 0.32 }}
     >
       {/* 星外奶油细圆环（参考图的星环结构；45° 黑副星按用户口径删除） */}
       <circle cx={100} cy={100} r={72} fill="none" stroke={CREAM} strokeWidth={4.5} />
-      <path d={starD(100, 100, 97)} fill={item ? YELLOW : CREAM} stroke={CREAM} strokeWidth={5} strokeLinejoin="miter" strokeMiterlimit={10} paintOrder="stroke" />
+      <path d={starD(100, 100, 97)} fill={item ? YELLOW : CREAM} />
     </motion.svg>
     {item && (
       <motion.div
@@ -303,7 +307,7 @@ const Tag = ({
         {active && (
           <motion.span
             aria-hidden
-            className="absolute -right-2 -top-2"
+            className="absolute right-[9%] top-[3%]"
             initial={{ scale: 0, rotate: -60 }}
             animate={{ scale: 1, rotate: 0 }}
             transition={{ type: 'spring', stiffness: 480, damping: 16 }}
@@ -372,9 +376,7 @@ export const RadialWheelP4 = ({ items, origin, radius, active }: RadialWheelP4Pr
           >
             <path
               d={`M100 100 L${100 + 96 * Math.cos((-90 - 90 / items.length) * Math.PI / 180)} ${100 + 96 * Math.sin((-90 - 90 / items.length) * Math.PI / 180)} A96 96 0 0 1 ${100 + 96 * Math.cos((-90 + 90 / items.length) * Math.PI / 180)} ${100 + 96 * Math.sin((-90 + 90 / items.length) * Math.PI / 180)} Z`}
-              fill="rgba(255,217,0,0.2)"
-              stroke={YELLOW}
-              strokeWidth={2.5}
+              fill="rgba(255,217,0,0.5)"
             />
           </motion.svg>
         </motion.div>
