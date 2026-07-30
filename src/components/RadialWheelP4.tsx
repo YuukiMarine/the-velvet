@@ -1,24 +1,21 @@
 /**
- * RadialWheelP4 —— 轮盘的 P4（黄/午夜频道）演出层，v2 全面返工（用户口径）：
+ * RadialWheelP4 —— 轮盘的 P4（黄/午夜频道）演出层，v3（对照用户参考图返工）：
  *
- *   - 四角星改「长尖深腰」：v1 的腰太鼓（cubic w=0.42R），读起来像圆角菱形；
- *     现在用二次曲线、控制点收到 0.19R——四个顶点更长、四条边弧度更大；
- *   - 同心圆盘加粗改造：细线圈全部撤掉，换成「墨色粗环（载刻度）/ 橙环 /
- *     奶油珠链环（dasharray 0+间隔 & round 线帽 = 一圈圆珠）/ 内细环」四件套，
- *     底下垫一片半透明黄圆把环组收拢成一个整体；
- *   - 七枚一模一样的黑星徽（重复度太高）换成**斜切奶油签牌**：横排中文 + 硬墨影，
- *     沿环位微扇排布；选中翻墨底黄字、右上迸一枚橙四角星——星形只留给
- *     波纹 / 中心主星，不再满屏都是；
- *   - 新增**斜天空**：底部一整块斜切的实景云天（p4-cloud-sky 素材，频道签名件），
- *     上缘压奶油粗棱线 + 墨色细线，从屏下滑入；
- *   - 新增**彩虹元素**（P4G 语汇）：一组六色彩虹弧从盘外扫过（pathLength 挥入），
- *     天空楔的棱线上再横一条小彩虹缎带。
+ *   - 盘面改**实心墨盘**：黄粗轮缘 + 缘内奶油刻度（慢自转）+ 细虚线环，
+ *     盘心不再透出天空；
+ *   - 四角星再收腰：k 0.19 → 0.14（四条边更细长），并删掉底下叠的 45° 纯黑副星；
+ *     星外套一圈奶油细圆环（参考图的星环结构）；
+ *   - 七个选项换**不规则菱形徽**（参考图形制）：墨面 + 奶油粗描边 + 竖排中文，
+ *     五套四边形轮换避免整齐划一；选中翻黄面墨字并放大；
+ *   - 波纹的圆角改回**尖角**（miter——round 的圆头是上一版被点名的丑处）；
+ *   - 彩虹弧拉长（-232° → 6°，两端探进天空/盘后）且**平头端点**（去掉 round 线帽）；
+ *   - 补五瓣花元素：盘面上两朵小花 + 幕布左右各一朵大花。
  *
- * 命中判定沿用父级 RadialQuickNav 的扇形分区（绕 ◈ 上半环，与红频道同构），
- * 本层纯渲染；中心星与大字整体上提 0.42R——◈ 贴屏底，压在其上会被屏缘切半。
+ * 命中判定沿用父级 RadialQuickNav 的扇形分区；中心星与大字上提 0.42R
+ * （◈ 贴屏底，压在其上会被屏缘切半），只挪视觉不动几何。
  */
 import { motion } from 'motion/react';
-import { P4Sparkle } from '@/ui/p4Kit';
+import { P4Flower, P4Sparkle, P4_FLOWER_PATH } from '@/ui/p4Kit';
 import type { WheelItem } from './RadialQuickNav';
 
 const CREAM = '#fff6d0';
@@ -30,10 +27,10 @@ const YELLOW = 'var(--ui-bg, #ffd900)';
 const RAINBOW = ['#e94b4b', '#f9a11b', '#ffd900', '#57c15e', '#39a8e0', '#8d6bc7'];
 
 /**
- * 四角星路径 v2：二次曲线 + 控制点收到 k·R（默认 0.19）。
- * k 越小腰越深、尖越长；v1 的 cubic（w=0.42R）就是用户说的「弧度太平缓」。
+ * 四角星路径：二次曲线 + 控制点收到 k·R。
+ * k=0.14（v3，用户口径「四条边更细一些」）；越小腰越深、尖越长。
  */
-const starD = (cx: number, cy: number, R: number, k = 0.19): string => {
+const starD = (cx: number, cy: number, R: number, k = 0.14): string => {
   const q = R * k;
   return (
     `M${cx} ${cy - R}` +
@@ -44,7 +41,7 @@ const starD = (cx: number, cy: number, R: number, k = 0.19): string => {
   );
 };
 
-/** 圆弧路径（彩虹弧用）：角度制，0° = 正右，逆时针为负 */
+/** 圆弧路径（彩虹弧用）：角度制，0° = 正右，顺时针为正 */
 const arcD = (cx: number, cy: number, r: number, a1: number, a2: number): string => {
   const p = (a: number) => `${cx + r * Math.cos((a * Math.PI) / 180)} ${cy + r * Math.sin((a * Math.PI) / 180)}`;
   return `M${p(a1)} A${r} ${r} 0 ${Math.abs(a2 - a1) > 180 ? 1 : 0} 1 ${p(a2)}`;
@@ -74,16 +71,12 @@ const SkyWedge = () => (
         style={{ objectPosition: '50% 68%', filter: 'saturate(1.18) contrast(1.06)' }}
       />
       <div className="absolute inset-0 bg-[#00a6ff]/10 mix-blend-screen" />
-      {/* 上暗下明的一点纵深，别抢轮盘 */}
       <div className="absolute inset-0" style={{ background: 'linear-gradient(180deg, rgba(19,19,19,0.30) 0%, rgba(19,19,19,0) 46%)' }} />
     </div>
-    {/* 彩虹缎带：**精确骑在棱线上**。奶油棱线左端 24.5%、右端 4.5%，中线 14.5%；
-        斜率 = 20% × 42vh / 100vw，在 450px 宽下 ≈ -9°——缎带转同一个角度才像
-        贴着棱走，差几度就会一头扎进黑带、一头飘在天上（v2 初版的穿帮）。 */}
+    {/* 彩虹缎带：精确骑在棱线上（奶油棱线中线 14.5%，斜率在 450px 宽下 ≈ -9°）。
+        rotate 必须走 motion 的 style——initial/animate 带了 x，CSS transform 会被整条覆盖 */}
     <motion.div
       className="absolute left-[-4%] right-[-4%]"
-      // rotate 必须写进 motion 的 style（motion 值）：initial/animate 里带了 x，
-      // motion 会整条接管 transform，写在 CSS transform 里的 rotate 会被覆盖成 0
       style={{
         top: 'calc(14.5% - 7px)',
         height: 14,
@@ -98,7 +91,7 @@ const SkyWedge = () => (
   </motion.div>
 );
 
-// ── 1 · 四角星粗波纹（长按瞬间）─────────────────────────────────────────────
+// ── 1 · 四角星粗波纹（长按瞬间；尖角，不要 round 的圆头）────────────────────
 const StarBurst = ({ origin }: { origin: { x: number; y: number } }) => (
   <div className="pointer-events-none absolute inset-0" aria-hidden>
     {[0, 1, 2, 3].map((i) => (
@@ -118,17 +111,18 @@ const StarBurst = ({ origin }: { origin: { x: number; y: number } }) => (
           fill="none"
           stroke={i % 2 === 1 ? ORANGE : CREAM}
           strokeWidth={i % 2 === 1 ? 16 : 12}
-          strokeLinejoin="round"
+          strokeLinejoin="miter"
+          strokeMiterlimit={10}
         />
       </motion.svg>
     ))}
   </div>
 );
 
-// ── 2 · 彩虹弧：六色同心弧从盘外左下扫到右上 ────────────────────────────────
+// ── 2 · 彩虹弧：六色同心弧，拉长到两端探进盘后/天空，平头端点 ────────────────
 const RainbowSweep = ({ origin, R }: { origin: { x: number; y: number }; R: number }) => {
   const pad = R * 0.16;
-  const box = R + pad + 70;
+  const box = R + pad + 80;
   return (
     <svg
       aria-hidden
@@ -141,21 +135,20 @@ const RainbowSweep = ({ origin, R }: { origin: { x: number; y: number }; R: numb
       {RAINBOW.map((c, i) => (
         <motion.path
           key={c}
-          d={arcD(0, 0, R + pad + i * 10, -206, -22)}
+          d={arcD(0, 0, R + pad + i * 10, -232, 6)}
           fill="none"
           stroke={c}
-          strokeWidth={9}
-          strokeLinecap="round"
+          strokeWidth={10}
           initial={{ pathLength: 0, opacity: 0 }}
           animate={{ pathLength: 1, opacity: 1 }}
-          transition={{ duration: 0.6, delay: 0.18 + i * 0.045, ease: [0.3, 0, 0.2, 1] }}
+          transition={{ duration: 0.66, delay: 0.18 + i * 0.045, ease: [0.3, 0, 0.2, 1] }}
         />
       ))}
     </svg>
   );
 };
 
-// ── 3 · 同心圆盘（粗环组 + 刻度慢自转 + 珠链环）────────────────────────────
+// ── 3 · 实心墨盘（黄粗轮缘 + 奶油刻度慢自转 + 细虚线环 + 盘面小花）──────────
 const Dial = ({ origin, R }: { origin: { x: number; y: number }; R: number }) => (
   <motion.svg
     aria-hidden
@@ -168,17 +161,17 @@ const Dial = ({ origin, R }: { origin: { x: number; y: number }; R: number }) =>
     animate={{ scale: 1, opacity: 1, rotate: 0 }}
     transition={{ type: 'spring', stiffness: 190, damping: 20, delay: 0.14 }}
   >
-    {/* 半透明黄底盘：把整组环收拢成一件东西 */}
-    <circle cx={R} cy={R} r={R * 0.98} fill="rgba(255,217,0,0.14)" />
-    {/* 墨色粗环（承载刻度） */}
-    <circle cx={R} cy={R} r={R * 0.88} fill="none" stroke={INK} strokeWidth={R * 0.17} />
-    {/* 刻度：随粗环慢自转；每 7.5° 一根、逢五加长翻黄 */}
+    {/* 实心墨盘（用户口径：中间不透出天空） */}
+    <circle cx={R} cy={R} r={R * 0.985} fill={INK} />
+    {/* 黄粗轮缘 */}
+    <circle cx={R} cy={R} r={R * 0.94} fill="none" stroke={YELLOW} strokeWidth={R * 0.06} />
+    {/* 刻度：奶油细划 + 逢五黄长划，慢自转 */}
     <motion.g style={{ transformOrigin: `${R}px ${R}px` }} animate={{ rotate: 360 }} transition={{ duration: 80, repeat: Infinity, ease: 'linear' }}>
       {Array.from({ length: 48 }, (_, i) => {
         const a = ((i * 7.5 - 90) * Math.PI) / 180;
         const long = i % 4 === 0;
-        const r1 = R * (long ? 0.815 : 0.845);
-        const r2 = R * (long ? 0.945 : 0.915);
+        const r1 = R * (long ? 0.75 : 0.785);
+        const r2 = R * 0.865;
         return (
           <line
             key={i}
@@ -187,36 +180,23 @@ const Dial = ({ origin, R }: { origin: { x: number; y: number }; R: number }) =>
             x2={R + r2 * Math.cos(a)}
             y2={R + r2 * Math.sin(a)}
             stroke={long ? YELLOW : CREAM}
-            strokeWidth={long ? 5 : 3}
-            strokeLinecap="round"
+            strokeWidth={long ? 5 : 2.5}
           />
         );
       })}
     </motion.g>
-    {/* 橙环 */}
-    <circle cx={R} cy={R} r={R * 0.7} fill="none" stroke={ORANGE} strokeWidth={R * 0.075} />
-    {/* 奶油珠链环：dasharray「0 + 间隔」+ round 线帽 = 一圈圆珠，反向慢转 */}
+    {/* 细虚线环（反向慢转） */}
     <motion.g style={{ transformOrigin: `${R}px ${R}px` }} animate={{ rotate: -360 }} transition={{ duration: 110, repeat: Infinity, ease: 'linear' }}>
-      <circle
-        cx={R}
-        cy={R}
-        r={R * 0.585}
-        fill="none"
-        stroke={CREAM}
-        strokeWidth={R * 0.045}
-        strokeLinecap="round"
-        strokeDasharray={`0 ${(2 * Math.PI * R * 0.585) / 26}`}
-      />
+      <circle cx={R} cy={R} r={R * 0.66} fill="none" stroke="rgba(255,246,208,0.55)" strokeWidth={2.5} strokeDasharray="3 7" />
     </motion.g>
-    {/* 内细环 */}
-    <circle cx={R} cy={R} r={R * 0.46} fill="none" stroke={INK} strokeWidth={R * 0.028} />
+    {/* 盘面小花（补五瓣花元素）：kit 的花 path 花心在原点、半径 ~12，按需缩放 */}
+    <g transform={`translate(${R * 0.36} ${R * 0.6}) scale(1.5) rotate(14)`}><path d={P4_FLOWER_PATH} fill={YELLOW} fillRule="nonzero" /></g>
+    <g transform={`translate(${R * 1.58} ${R * 0.68}) scale(1.15) rotate(-22)`}><path d={P4_FLOWER_PATH} fill={ORANGE} fillRule="nonzero" /></g>
   </motion.svg>
 );
 
-// ── 4 · 中心大四角星 + 选中项衬线大字 ──────────────────────────────────────
+// ── 4 · 中心：奶油细圆环 + 长尖四角星 + 衬线大字 ────────────────────────────
 const Hub = ({ origin, item, R }: { origin: { x: number; y: number }; item: WheelItem | null; R: number }) => (
-  // ◈ 贴在屏幕最底，压在其上会被屏缘切半——整体上提到可见半圆的中心；
-  // 命中判定仍以 ◈ 为极点（父级算角度），只挪视觉不动几何。
   <div
     aria-hidden
     className="pointer-events-none absolute z-30 flex flex-col items-center"
@@ -224,19 +204,18 @@ const Hub = ({ origin, item, R }: { origin: { x: number; y: number }; item: Whee
   >
     <motion.svg
       viewBox="0 0 200 200"
-      width={item ? 176 : 138}
-      height={item ? 176 : 138}
+      width={item ? 176 : 150}
+      height={item ? 176 : 150}
       className="absolute left-1/2 top-1/2"
       style={{ x: '-50%', y: '-50%', overflow: 'visible' }}
       initial={{ scale: 0, rotate: -140, opacity: 0 }}
       animate={{ scale: 1, rotate: 0, opacity: 1 }}
       transition={{ type: 'spring', stiffness: 250, damping: 15, delay: 0.32 }}
     >
-      {/* 底下垫一枚 45° 的墨色副星：双星错位 = 频道贴纸语法，也当外描边 */}
-      <path d={starD(100, 100, 82)} fill={INK} transform="rotate(45 100 100)" />
-      <path d={starD(100, 100, 96)} fill={item ? YELLOW : CREAM} stroke={INK} strokeWidth={8} strokeLinejoin="round" paintOrder="stroke" />
+      {/* 星外奶油细圆环（参考图的星环结构；45° 黑副星按用户口径删除） */}
+      <circle cx={100} cy={100} r={72} fill="none" stroke={CREAM} strokeWidth={4.5} />
+      <path d={starD(100, 100, 97)} fill={item ? YELLOW : CREAM} stroke={CREAM} strokeWidth={5} strokeLinejoin="miter" strokeMiterlimit={10} paintOrder="stroke" />
     </motion.svg>
-    {/* 选中项：衬线大字打在星心上 */}
     {item && (
       <motion.div
         key={item.id}
@@ -260,8 +239,14 @@ const Hub = ({ origin, item, R }: { origin: { x: number; y: number }; item: Whee
   </div>
 );
 
-// ── 5 · 签牌（斜切奶油小牌，取代 v1 的七枚黑星徽）──────────────────────────
-const TAG_CLIP = 'polygon(9px 0, 100% 0, calc(100% - 9px) 100%, 0 100%)';
+// ── 5 · 选项：不规则菱形徽（参考图形制；五套四边形轮换）────────────────────
+const BADGE_CLIPS = [
+  'polygon(50% 0, 100% 48%, 52% 100%, 0 50%)',
+  'polygon(46% 4%, 100% 42%, 56% 100%, 0 56%)',
+  'polygon(54% 0, 100% 56%, 48% 100%, 0 44%)',
+  'polygon(50% 2%, 96% 50%, 50% 98%, 4% 46%)',
+  'polygon(44% 0, 100% 50%, 58% 98%, 0 48%)',
+];
 
 const Tag = ({
   item,
@@ -278,37 +263,47 @@ const Tag = ({
   const a = (armDeg * Math.PI) / 180;
   const x = origin.x + R * Math.cos(a);
   const y = origin.y + R * Math.sin(a);
-  // 沿环位微扇（顶正、两端 ±20°），牌面永远可读
-  const rot = (armDeg + 90) * 0.22;
+  const rot = (armDeg + 90) * 0.14; // 沿环位微扇，顶正、两端 ±12°
+  const clip = BADGE_CLIPS[index % BADGE_CLIPS.length];
+  const size = active ? 96 : 72;
 
   return (
     <motion.div
       role="menuitem"
       aria-label={item.label}
       className="pointer-events-none absolute z-20"
-      style={{ left: x, top: y }}
+      style={{ left: x, top: y, width: size, height: size }}
       initial={{ opacity: 0, scale: 0.2, x: origin.x - x, y: origin.y - y, rotate: 0 }}
-      animate={{ opacity: 1, scale: active ? 1.14 : 1, x: '-50%', y: '-50%', rotate: rot }}
+      animate={{ opacity: 1, scale: 1, x: '-50%', y: '-50%', rotate: rot }}
       exit={{ opacity: 0, scale: 0.2, x: origin.x - x, y: origin.y - y }}
       transition={{ type: 'spring', stiffness: 330, damping: 22, delay: 0.28 + index * 0.032 }}
     >
-      <div className="relative px-4 py-1.5">
-        {/* 硬墨影 + 面：斜切签牌（P4 贴纸语法，不透明度不表达状态） */}
-        <span aria-hidden className="absolute inset-0" style={{ background: INK, clipPath: TAG_CLIP, transform: 'translate(3.5px,4px)' }} />
-        <span aria-hidden className="absolute inset-0" style={{ background: active ? INK : CREAM, clipPath: TAG_CLIP }} />
-        {/* 左缘橙条 */}
-        <span aria-hidden className="absolute bottom-[3px] left-[6px] top-[3px] w-[4px]" style={{ background: active ? YELLOW : ORANGE, transform: 'skewX(-14deg)' }} />
+      {/* 选中沿臂向外推一档：不推的话顶位的徽会被中心大星盖住半张。
+          径向位移放内层（外层的 x/y 已被居中占用，一层 motion 只有一组位移量） */}
+      <motion.div
+        className="relative h-full w-full"
+        animate={{ x: (active ? R * 0.3 : 0) * Math.cos(a), y: (active ? R * 0.3 : 0) * Math.sin(a) }}
+        transition={{ type: 'spring', stiffness: 380, damping: 24 }}
+      >
+        {/* 奶油描边层 + 内缩面层（同形裁切；不透明度不表达状态） */}
+        <span aria-hidden className="absolute inset-0" style={{ background: CREAM, clipPath: clip }} />
+        <span aria-hidden className="absolute inset-[4px]" style={{ background: active ? YELLOW : INK, clipPath: clip }} />
         <span
-          className="relative block whitespace-nowrap text-[16px] font-black leading-none"
-          style={{ color: active ? YELLOW : INK }}
+          className="absolute inset-0 flex items-center justify-center text-center font-black"
+          style={{
+            writingMode: 'vertical-rl',
+            textOrientation: 'upright',
+            fontSize: active ? 21 : 16,
+            lineHeight: 1.04,
+            color: active ? INK : CREAM,
+          }}
         >
           {item.label}
         </span>
-        {/* 选中：右上迸一枚橙四角星 */}
         {active && (
           <motion.span
             aria-hidden
-            className="absolute -right-3 -top-3.5"
+            className="absolute -right-2 -top-2"
             initial={{ scale: 0, rotate: -60 }}
             animate={{ scale: 1, rotate: 0 }}
             transition={{ type: 'spring', stiffness: 480, damping: 16 }}
@@ -316,10 +311,32 @@ const Tag = ({
             <P4Sparkle size={22} color={ORANGE} />
           </motion.span>
         )}
-      </div>
+      </motion.div>
     </motion.div>
   );
 };
+
+// ── 6 · 幕布上的大五瓣花（补花元素）─────────────────────────────────────────
+const Flowers = ({ origin, R }: { origin: { x: number; y: number }; R: number }) => (
+  <div className="pointer-events-none absolute inset-0" aria-hidden>
+    {[
+      { dx: -R * 1.62, dy: -R * 1.66, s: 40, c: YELLOW, rot: 12, d: 0.3 },
+      { dx: R * 1.66, dy: -R * 1.28, s: 30, c: CREAM, rot: -18, d: 0.4 },
+      { dx: -R * 1.78, dy: -R * 0.5, s: 22, c: ORANGE, rot: 30, d: 0.5 },
+    ].map((f, i) => (
+      <motion.span
+        key={i}
+        className="absolute"
+        style={{ left: origin.x + f.dx - f.s / 2, top: origin.y + f.dy - f.s / 2, rotate: f.rot }}
+        initial={{ scale: 0, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        transition={{ type: 'spring', stiffness: 300, damping: 18, delay: f.d }}
+      >
+        <P4Flower size={f.s} color={f.c} />
+      </motion.span>
+    ))}
+  </div>
+);
 
 export interface RadialWheelP4Props {
   items: WheelItem[];
@@ -336,7 +353,8 @@ export const RadialWheelP4 = ({ items, origin, radius, active }: RadialWheelP4Pr
       <StarBurst origin={origin} />
       <RainbowSweep origin={origin} R={R} />
       <Dial origin={origin} R={R} />
-      {/* 选中扇形指向：橙面 + 奶油描边，转到选中瓣的方向 */}
+      <Flowers origin={origin} R={R} />
+      {/* 选中扇形指向：墨盘上的一道黄光 */}
       {active !== null && (
         <motion.div
           aria-hidden
@@ -354,8 +372,8 @@ export const RadialWheelP4 = ({ items, origin, radius, active }: RadialWheelP4Pr
           >
             <path
               d={`M100 100 L${100 + 96 * Math.cos((-90 - 90 / items.length) * Math.PI / 180)} ${100 + 96 * Math.sin((-90 - 90 / items.length) * Math.PI / 180)} A96 96 0 0 1 ${100 + 96 * Math.cos((-90 + 90 / items.length) * Math.PI / 180)} ${100 + 96 * Math.sin((-90 + 90 / items.length) * Math.PI / 180)} Z`}
-              fill="rgba(249,161,27,0.34)"
-              stroke={CREAM}
+              fill="rgba(255,217,0,0.2)"
+              stroke={YELLOW}
               strokeWidth={2.5}
             />
           </motion.svg>
