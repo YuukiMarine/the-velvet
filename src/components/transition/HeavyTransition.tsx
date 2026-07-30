@@ -41,6 +41,8 @@ const StarTearAct = ({ midpoint, onDone }: ActProps) => {
   const curtainRef = useRef<HTMLDivElement>(null);
   const bar1Ref = useRef<HTMLDivElement>(null);
   const bar2Ref = useRef<HTMLDivElement>(null);
+  const sliverRef = useRef<HTMLDivElement>(null);
+  const stampRef = useRef<HTMLDivElement>(null);
   const morphRef = useRef<SVGPathElement>(null);
 
   useEffect(() => {
@@ -64,13 +66,16 @@ const StarTearAct = ({ midpoint, onDone }: ActProps) => {
     syncClip();
 
     const tl = gsap.timeline({ onComplete: onDone });
-    // 双色条斜扫入（幕布铺满）
-    tl.fromTo(bar1Ref.current, { xPercent: -140, skewX: -20 }, { xPercent: 0, skewX: -20, duration: 0.22, ease: 'power3.out' }, 0);
-    tl.fromTo(bar2Ref.current, { xPercent: -140, skewX: -20 }, { xPercent: 0, skewX: -20, duration: 0.22, ease: 'power3.out' }, 0.04);
+    // 三层斜扫入（红 / 黑 / 纸斜条）——节奏比旧版收紧约 0.1s（用户口径「太慢」）
+    tl.fromTo(bar1Ref.current, { xPercent: -140, skewX: -20 }, { xPercent: 0, skewX: -20, duration: 0.18, ease: 'power3.out' }, 0);
+    tl.fromTo(bar2Ref.current, { xPercent: -140, skewX: -20 }, { xPercent: 0, skewX: -20, duration: 0.18, ease: 'power3.out' }, 0.04);
+    tl.fromTo(sliverRef.current, { xPercent: 150 }, { xPercent: 0, duration: 0.2, ease: 'power3.out' }, 0.06);
+    // 中心星印：纸白巨星带红芯砸下（盖在黑幕上，随幕布一起被反撕带走）
+    tl.fromTo(stampRef.current, { scale: 0, rotation: -40 }, { scale: 1, rotation: -8, duration: 0.18, ease: 'back.out(2.2)' }, 0.14);
     // 全遮时刻：切页（被幕布挡住）
-    tl.call(midpoint, undefined, 0.3);
+    tl.call(midpoint, undefined, 0.26);
     // 幕布星形反撕离场：星 expanded → collapsed，可见幕布从四缘向中心缩没
-    tl.to(path, { duration: 0.42, morphSVG: { shape: collapsed, shapeIndex: 0 }, ease: 'power2.in', onUpdate: syncClip }, 0.38);
+    tl.to(path, { duration: 0.38, morphSVG: { shape: collapsed, shapeIndex: 0 }, ease: 'power2.in', onUpdate: syncClip }, 0.34);
 
     return () => { tl.kill(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -81,6 +86,20 @@ const StarTearAct = ({ midpoint, onDone }: ActProps) => {
       <div ref={curtainRef} className="absolute inset-0">
         <div ref={bar1Ref} className="absolute top-0 bottom-0" style={{ background: 'var(--color-primary)', left: '-30%', width: '160%', zIndex: 1 }} />
         <div ref={bar2Ref} className="absolute top-0 bottom-0" style={{ background: '#0b0b12', left: '-30%', width: '160%', zIndex: 2 }} />
+        {/* 纸斜条：横贯中部的一道米白撕纸（P5 拼贴语法的第三色） */}
+        <div
+          ref={sliverRef}
+          className="absolute top-0 bottom-0"
+          style={{ background: '#f0e9df', left: '-30%', width: '160%', zIndex: 3, clipPath: 'polygon(0 46%, 100% 34%, 100% 44%, 0 56%)' }}
+        />
+        {/* 中心星印：纸白巨星 + 红芯 + 黑锁边（随幕布反撕一起离场） */}
+        <div ref={stampRef} className="absolute left-1/2 top-1/2" style={{ zIndex: 4, width: 190, height: 190, marginLeft: -95, marginTop: -95 }}>
+          <svg viewBox="0 0 100 100" width={190} height={190} style={{ overflow: 'visible' }}>
+            <polygon points={STAMP_OUTER} fill="#f0e9df" />
+            <polygon points={STAMP_MID} fill="#0b0b12" />
+            <polygon points={STAMP_CORE} fill="var(--color-primary)" />
+          </svg>
+        </div>
       </div>
       <svg width="0" height="0" className="absolute" aria-hidden>
         <path ref={morphRef} d="M0 0Z" />
@@ -89,63 +108,135 @@ const StarTearAct = ({ midpoint, onDone }: ActProps) => {
   );
 };
 
-// ── P4：五色信号带切镜 ─────────────────────────────────────────────────────
-const STRIPES = ['#d71920', '#ffe100', '#ff6a00', '#20bff2', '#0057ff'];
+/** 星印三层点集（模块级算一次；正五角星，逐层缩半径） */
+const starPts5 = (R: number): string => {
+  const pts: string[] = [];
+  for (let i = 0; i < 5; i++) {
+    const a = ((-90 + i * 72) * Math.PI) / 180;
+    const b = ((-90 + i * 72 + 36) * Math.PI) / 180;
+    pts.push(`${(50 + R * Math.cos(a)).toFixed(1)},${(50 + R * Math.sin(a)).toFixed(1)}`);
+    pts.push(`${(50 + R * 0.42 * Math.cos(b)).toFixed(1)},${(50 + R * 0.42 * Math.sin(b)).toFixed(1)}`);
+  }
+  return pts.join(' ');
+};
+const STAMP_OUTER = starPts5(50);
+const STAMP_MID = starPts5(41);
+const STAMP_CORE = starPts5(33);
 
-const StripeSweepAct = ({ midpoint, onDone }: ActProps) => {
+// ── P4：斜楔切镜 v2 ─────────────────────────────────────────────────────────
+// 旧版是五条水平色带横扫（与频道现行语汇脱节，用户口径「不符合主题风格/太简陋」）。
+// 现在：墨楔自上、黄楔自下沿斜缝合拢（各带奶油棱线），缝上一条六色彩虹缎带扫过，
+// 中心奶油四角星砸下 → midpoint → 楔沿原方向继续滑出（切镜）。
+// 楔的 clip 顶点用负/超界百分比外扩，滑入滑出全程无露缝。
+const P4_RAINBOW = ['#e94b4b', '#f9a11b', '#ffd900', '#57c15e', '#39a8e0', '#8d6bc7'];
+/** 长尖四角星（与轮盘同形：二次曲线、腰收 0.14R） */
+const p4StarD = (() => {
+  const R = 46, q = R * 0.14, c = 50;
+  return `M${c} ${c - R} Q${c + q} ${c - q} ${c + R} ${c} Q${c + q} ${c + q} ${c} ${c + R} Q${c - q} ${c + q} ${c - R} ${c} Q${c - q} ${c - q} ${c} ${c - R}Z`;
+})();
+
+const WedgeCutAct = ({ midpoint, onDone }: ActProps) => {
   const [phase, setPhase] = useState<'in' | 'out'>('in');
   useTimeline([
-    [520, () => { midpoint(); setPhase('out'); }],
-    [1040, onDone],
+    [300, midpoint],
+    [430, () => setPhase('out')],
+    [780, onDone],
   ]);
+  const EASE: [number, number, number, number] = [0.85, 0, 0.15, 1];
   return (
     <div className={`fixed inset-0 ${zClass.transition} pointer-events-auto overflow-hidden`} aria-hidden>
-      {STRIPES.map((c, i) => (
-        <motion.div
-          key={c}
-          className="absolute left-0 w-full"
-          style={{ background: c, height: '20.5%', top: `${i * 20}%` }}
-          initial={{ x: '-102%' }}
-          animate={{ x: phase === 'in' ? '0%' : '102%' }}
-          transition={{ duration: 0.3, delay: i * 0.05, ease: [0.85, 0, 0.15, 1] }}
+      {/* 墨楔（带奶油底衬露出棱线）：自上砸下，out 继续向下走完（切镜，不回头） */}
+      <motion.div
+        className="absolute inset-0"
+        initial={{ y: '-115%' }}
+        animate={{ y: phase === 'in' ? '0%' : '118%' }}
+        transition={{ duration: phase === 'in' ? 0.24 : 0.3, ease: EASE }}
+      >
+        <div className="absolute inset-0" style={{ background: '#fff6d0', clipPath: 'polygon(-40% -40%, 140% -40%, 140% 45%, -40% 77%)' }} />
+        <div className="absolute inset-0" style={{ background: '#131313', clipPath: 'polygon(-40% -40%, 140% -40%, 140% 42.5%, -40% 74.5%)' }} />
+        {/* 彩虹缎带：贴着墨楔下缘（同一层里，跟着楔进出） */}
+        <div
+          className="absolute left-[-30%] right-[-30%]"
+          style={{
+            top: '54%',
+            height: 13,
+            transform: 'rotate(-11.3deg)',
+            background: `linear-gradient(180deg, ${P4_RAINBOW.map((c, i) => `${c} ${(i / 6) * 100}% ${((i + 1) / 6) * 100}%`).join(', ')})`,
+          }}
         />
-      ))}
+      </motion.div>
+      {/* 黄楔：自下顶上，out 继续向上走完 */}
+      <motion.div
+        className="absolute inset-0"
+        initial={{ y: '115%' }}
+        animate={{ y: phase === 'in' ? '0%' : '-118%' }}
+        transition={{ duration: phase === 'in' ? 0.24 : 0.3, delay: phase === 'in' ? 0.03 : 0, ease: EASE }}
+      >
+        <div className="absolute inset-0" style={{ background: '#fff6d0', clipPath: 'polygon(-40% 71%, 140% 39%, 140% 140%, -40% 140%)' }} />
+        <div className="absolute inset-0" style={{ background: 'var(--ui-bg, #ffd900)', clipPath: 'polygon(-40% 73.5%, 140% 41.5%, 140% 140%, -40% 140%)' }} />
+      </motion.div>
+      {/* 中心四角星：合拢后砸下，out 随黄楔方向甩出 */}
+      <motion.div
+        className="absolute left-1/2 top-1/2"
+        style={{ width: 170, height: 170, marginLeft: -85, marginTop: -85 }}
+        initial={{ scale: 0, rotate: -120 }}
+        animate={phase === 'in' ? { scale: 1, rotate: 0, y: 0 } : { scale: 0.7, rotate: 40, y: '-140vh' }}
+        transition={phase === 'in' ? { type: 'spring', stiffness: 320, damping: 17, delay: 0.2 } : { duration: 0.3, ease: EASE }}
+      >
+        <svg viewBox="0 0 100 100" width={170} height={170} style={{ overflow: 'visible' }}>
+          <path d={p4StarD} fill="#fff6d0" />
+        </svg>
+      </motion.div>
     </div>
   );
 };
 
-// ── P3：深蓝斜切片合拢/滑开 ────────────────────────────────────────────────
-const SLICES = [
-  { bg: '#0057ff', from: '-120%' },
-  { bg: '#001c7a', from: '120%' },
-  { bg: '#05070d', from: '-120%' },
-  { bg: '#0053d0', from: '120%' },
+// ── P3：白日水面斜栅 v2 ─────────────────────────────────────────────────────
+// 旧版四片深蓝在近白的「白日水面」频道里像换了个 App（用户口径「不符合主题风格」），
+// 且逐片各自 skew 时屏角会露缝。现在：白/浅青/亮蓝/青交替的五条竖栅左右交错合拢，
+// skew 写在**外层容器**上（容器 inset -30% 出血）——所有栅条同一坐标系，
+// 任何高度上的水平偏移都一致，几何上不可能开缝。合拢后中心洋红双片一戳，
+// 栅条反向滑开。总时长 0.74s。
+const P3_SLATS = [
+  { bg: '#ffffff', from: -1 },
+  { bg: '#cfeaf6', from: 1 },
+  { bg: '#1b57ff', from: -1 },
+  { bg: '#35d1e8', from: 1 },
+  { bg: '#eef5f9', from: -1 },
 ];
 
 const WaveSliceAct = ({ midpoint, onDone }: ActProps) => {
   const [phase, setPhase] = useState<'in' | 'out'>('in');
   useTimeline([
-    [500, () => { midpoint(); setPhase('out'); }],
-    [1020, onDone],
+    [300, midpoint],
+    [400, () => setPhase('out')],
+    [740, onDone],
   ]);
   return (
     <div className={`fixed inset-0 ${zClass.transition} pointer-events-auto overflow-hidden`} aria-hidden>
-      {SLICES.map((s, i) => (
-        <motion.div
-          key={i}
-          className="absolute top-[-10%] bottom-[-10%] border-r-2"
-          style={{
-            background: s.bg,
-            borderRightColor: 'rgba(0,216,255,0.5)',
-            width: '31%',
-            left: `${i * 25 - 3}%`,
-            skewX: -12,
-          }}
-          initial={{ x: s.from }}
-          animate={{ x: phase === 'in' ? '0%' : s.from === '-120%' ? '120%' : '-120%' }}
-          transition={{ duration: 0.32, delay: i * 0.045, ease: [0.16, 1, 0.3, 1] }}
-        />
-      ))}
+      <div className="absolute inset-[-30%]" style={{ transform: 'skewX(-12deg)' }}>
+        {P3_SLATS.map((sl, i) => (
+          <motion.div
+            key={i}
+            className="absolute bottom-0 top-0"
+            style={{ background: sl.bg, width: '21%', left: `${i * 20}%`, borderRight: i % 2 ? undefined : '2px solid rgba(53,209,232,0.55)' }}
+            initial={{ x: `${sl.from * 160}vw` }}
+            animate={{ x: phase === 'in' ? '0vw' : `${-sl.from * 160}vw` }}
+            transition={{ duration: phase === 'in' ? 0.26 : 0.3, delay: i * 0.035, ease: [0.16, 1, 0.3, 1] }}
+          />
+        ))}
+      </div>
+      {/* 中心签名句点：青片 + 洋红片错位戳入（频道句点语法），随栅条滑开一并淡走 */}
+      <motion.div
+        className="absolute left-1/2 top-1/2"
+        style={{ width: 84, height: 40, marginLeft: -42, marginTop: -20 }}
+        initial={{ scale: 0, opacity: 0 }}
+        animate={phase === 'in' ? { scale: 1, opacity: 1 } : { scale: 0.6, opacity: 0 }}
+        transition={phase === 'in' ? { type: 'spring', stiffness: 420, damping: 18, delay: 0.24 } : { duration: 0.16 }}
+      >
+        <span className="absolute left-0 top-0 h-full w-[52px]" style={{ background: '#35d1e8', clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
+        <span className="absolute left-[44px] top-[10px] h-[26px] w-[36px]" style={{ background: '#f0417f', clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
+      </motion.div>
     </div>
   );
 };
@@ -248,7 +339,7 @@ export const TransitionLayer = () => {
     case 'p5':
       return <StarTearAct key={req.id} {...props} />;
     case 'p4':
-      return <StripeSweepAct key={req.id} {...props} />;
+      return <WedgeCutAct key={req.id} {...props} />;
     case 'p3':
       return <WaveSliceAct key={req.id} {...props} />;
     default:

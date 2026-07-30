@@ -883,3 +883,43 @@ html[data-ios-standalone="true"] {
 :root[data-ui-channel="p5"] .p5-onink .p5-paper .text-gray-400 {
   color: #6b6862 !important;
 }
+
+/* ── 红频道记账表单（.p5-ledgerform）────────────────────────────────────────
+   默认皮的字段盒是「圆角 + 1px 灰描边」，套在 P5 的纸面 Sheet 里就是一堆细灰框
+   （用户口径「奇丑」）。这里把灰描边盒整体翻成 P5 制式：纸面 + 2.5px 墨边 + 硬影；
+   选中态（border-primary 系）翻红边。 */
+:root[data-ui-channel="p5"] .p5-ledgerform :is([class*="border-gray-2"], [class*="border-gray-3"]) {
+  border-width: 2.5px !important;
+  border-style: solid !important;
+  border-color: #050505 !important;
+  border-radius: 3px !important;
+  background: #f7f1e4 !important;
+  box-shadow: 2.5px 3px 0 #050505 !important;
+}
+:root[data-ui-channel="p5"] .p5-ledgerform :is([class*="border-gray-2"], [class*="border-gray-3"]):focus-within {
+  border-color: #c00008 !important;
+  box-shadow: 2.5px 3px 0 #c00008 !important;
+}
+:root[data-ui-channel="p5"] .p5-ledgerform [class*="border-primary"] {
+  border: 2.5px solid #c00008 !important;
+  border-radius: 3px !important;
+  background: #ffece9 !important;
+  color: #c00008 !important;
+  box-shadow: 2.5px 3px 0 #7a0004 !important;
+}
+:root[data-ui-channel="p5"] .p5-ledgerform [class*="border-dashed"] {
+  border: 2.5px dashed #6b6862 !important;
+  border-radius: 3px !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+/* 已经套在 P5 框盒里的输入件不再自画一层皮（.p5-reskin 的输入规则会给每个 input
+   画边带+裁形；在框盒内就成了「框中框」）。选择器特意压过那条规则的特异度。 */
+:root[data-ui-channel="p5"] .p5-ledgerform :is([class*="border-gray-2"], [class*="border-primary"]) input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+:root[data-ui-channel="p5"] .p5-ledgerform :is([class*="border-gray-2"], [class*="border-primary"]) select {
+  background-color: transparent !important;
+  background-image: none !important;
+  clip-path: none !important;
+  border: none !important;
+  box-shadow: none !important;
+}

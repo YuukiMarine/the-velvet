@@ -831,25 +831,68 @@ export const Menu = () => {
             <span aria-hidden className="absolute bottom-0 right-2 h-[10px] w-[24px]" style={{ background: P3R.magenta, clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
           </div>
 
-          {/* 用户区（设计稿排版；点击开资料 Sheet——改名/头像功能都在里面） */}
-          <button
+          {/* 用户证卡（对位 P4 的 STUDENT PASS / P5 的头牌；点击开资料 Sheet——改名/头像都在里面）：
+              白斜卡 + 蓝顶条 MEMBER PASS + 斜切照片位 + 名/LV/总点数/连续 + 青条码 */}
+          <motion.button
             type="button"
             onClick={() => setProfileSheetOpen(true)}
-            aria-label="用户资料"
-            className="relative mt-6 block pl-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1b57ff]"
+            aria-label={`用户资料：${user?.name ?? '旅行者'}，等级 ${totalLv}`}
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            whileTap={{ scale: 0.98 }}
+            className="relative mt-6 block w-full max-w-[344px] text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1b57ff]"
           >
-            <span className="flex items-center gap-2.5">
-              <span aria-hidden className="h-[20px] w-[13px]" style={{ background: P3R.blue, clipPath: 'polygon(32% 0, 100% 0, 68% 100%, 0 100%)' }} />
-              <span className="text-[22px] font-black leading-none" style={{ color: P3R.ink }}>{user?.name ?? '旅行者'}</span>
+            <span aria-hidden className="absolute inset-0" style={{ clipPath: slantClip(20), background: '#ffffff', boxShadow: '0 16px 34px rgba(38,96,140,0.14)' }} />
+            {/* 顶条：蓝底斜切 MEMBER PASS */}
+            <span className="relative block">
+              <span className="flex items-center justify-between py-1.5 pl-8 pr-7" style={{ clipPath: slantClip(20), background: P3R.blue }}>
+                <span className="text-[11px] font-black italic tracking-[0.22em] text-white">MEMBER PASS</span>
+                <span className="text-[11px] font-black tracking-[0.14em] text-white/70">ROOM 03</span>
+              </span>
+              <span className="relative flex items-center gap-3.5 py-3 pl-9 pr-6">
+                {/* 照片位：斜切 + 浅青底；没头像时放大写首字母 */}
+                <span className="relative h-[58px] w-[48px] shrink-0 overflow-hidden" style={{ clipPath: slantClip(8), background: P3R.cyanPale }}>
+                  {user?.avatarDataUrl ? (
+                    <img src={user.avatarDataUrl} alt="" className="absolute inset-0 h-full w-full object-cover" />
+                  ) : (
+                    <span className="absolute inset-0 flex items-center justify-center text-[26px] font-black italic" style={{ color: P3R.blue }}>
+                      {(user?.name || 'V').trim().charAt(0).toUpperCase()}
+                    </span>
+                  )}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-2">
+                    <span className="min-w-0 flex-1 truncate text-[21px] font-black italic leading-none" style={{ color: P3R.ink, fontFamily: '"Arial Black", "Noto Sans SC", sans-serif' }}>
+                      {user?.name ?? '旅行者'}
+                    </span>
+                    <span className="relative inline-flex shrink-0 items-baseline gap-1 px-3 py-1 text-white" style={{ clipPath: slantClip(7), background: P3R.blue }}>
+                      <span className="text-[10px] font-black tracking-wider text-white/85">LV</span>
+                      <span className="text-[15px] font-black italic leading-none tabular-nums">{totalLv}</span>
+                      <span aria-hidden className="absolute -bottom-[1px] right-1 h-[4px] w-[10px]" style={{ background: P3R.magenta, clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
+                    </span>
+                  </span>
+                  <span className="mt-2 flex items-baseline gap-2 text-[12.5px] font-black" style={{ color: P3R.inkSoft }}>
+                    <span>总点数</span>
+                    <span aria-hidden className="flex-1 border-b-2 border-dotted" style={{ borderColor: 'rgba(53,209,232,0.6)' }} />
+                    <span className="text-[14px] italic tabular-nums" style={{ color: P3R.blue }}>{totalPoints}</span>
+                  </span>
+                  <span className="mt-1 flex items-baseline gap-2 text-[12.5px] font-black" style={{ color: P3R.inkSoft }}>
+                    <span>连续</span>
+                    <span aria-hidden className="flex-1 border-b-2 border-dotted" style={{ borderColor: 'rgba(53,209,232,0.6)' }} />
+                    <span className="text-[14px] italic tabular-nums" style={{ color: P3R.blue }}>{currentStreak} 天</span>
+                  </span>
+                </span>
+              </span>
+              {/* 底缘条码：青/蓝细竖条（频道版的磁条） */}
+              <span aria-hidden className="flex h-[14px] items-stretch gap-[3px] pb-2 pl-9 pr-8">
+                {[3, 1, 2, 1, 3, 2, 1, 1, 2, 3, 1, 2, 1, 3, 1, 2, 2, 1, 3, 1].map((w, bi) => (
+                  <span key={bi} style={{ width: w, background: bi % 3 === 2 ? P3R.cyan : P3R.blue }} />
+                ))}
+              </span>
             </span>
-            <span className="mt-2 inline-flex items-baseline gap-1.5 px-5 py-1.5" style={{ clipPath: slantClip(9), background: 'rgba(207,234,246,0.85)' }}>
-              <span className="text-[13px] font-black tracking-wider" style={{ color: P3R.inkSoft }}>LV</span>
-              <span className="text-[18px] font-black italic leading-none tabular-nums" style={{ color: P3R.blue }}>{totalLv}</span>
-            </span>
-            <span className="mt-2 block text-[14px] font-black" style={{ color: P3R.ink }}>
-              总点数 <span className="italic tabular-nums" style={{ color: P3R.blue }}>{totalPoints}</span>
-            </span>
-          </button>
+            {/* 右下洋红角（签名件） */}
+            <span aria-hidden className="absolute bottom-[3px] right-4 h-[8px] w-[20px]" style={{ background: P3R.magenta, clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
+          </motion.button>
 
           {/* 游戏化入口列：selectedKey 高亮（深蓝从左揭入 + 长度伸缩）；按下预览、上下拖拽切换、松手进入 */}
           <nav
