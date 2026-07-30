@@ -236,18 +236,25 @@ const Badge = ({ children, anim, size }: { children: ReactNode; anim: boolean; s
 // ── 06 · 今日完成 / 记录成功 ────────────────────────────────────────────────
 /** 主徽：黄色大四角星 + 奶油粗勾（用户口径：原稿的绿四叶草换成四角星）。
  *  描边用真 stroke + paintOrder，不再叠 filter。 */
+/** 长尖四角星 path（与轮盘同款：二次曲线、腰收 0.14R——旧 cubic 腰太鼓） */
+const STAR_CHECK_D = (() => {
+  const R = 96, q = R * 0.14, c = 100;
+  return `M${c} ${c - R} Q${c + q} ${c - q} ${c + R} ${c} Q${c + q} ${c + q} ${c} ${c + R} Q${c - q} ${c + q} ${c - R} ${c} Q${c - q} ${c - q} ${c} ${c - R}Z`;
+})();
+
 const StarCheck = ({ size }: { size: number }) => (
-  <svg viewBox="0 0 200 200" width={size} height={size} style={softShadow} aria-hidden>
-    {/* 四角星：四条腰深深内凹（与频道签名件 P4Sparkle 同形，放大版） */}
+  <svg viewBox="0 0 200 200" width={size} height={size} style={{ ...softShadow, overflow: 'visible' }} aria-hidden>
+    {/* 描边 miter + 高 miterlimit：round 会把四个长尖磨圆，读起来像被截断 */}
     <path
-      d="M100 4C109 60 140 91 196 100C140 109 109 140 100 196C91 140 60 109 4 100C60 91 91 60 100 4Z"
+      d={STAR_CHECK_D}
       fill="var(--ui-bg, #ffd900)"
       stroke={CREAM}
-      strokeWidth={11}
-      strokeLinejoin="round"
+      strokeWidth={9}
+      strokeLinejoin="miter"
+      strokeMiterlimit={14}
       paintOrder="stroke"
     />
-    <polyline points="66,102 90,128 138,76" fill="none" stroke={INK} strokeWidth={20} strokeLinecap="round" strokeLinejoin="round" />
+    <polyline points="72,102 92,124 132,80" fill="none" stroke={INK} strokeWidth={17} strokeLinecap="round" strokeLinejoin="round" />
   </svg>
 );
 
@@ -263,8 +270,8 @@ export const TodoCompleteP4 = ({ isOpen, onClose, title, totalPoints, unlockHint
         <Badge anim={anim} size={228}>
           <StarCheck size={228} />
         </Badge>
-        {/* 题板压在徽的下半（稿上是骑在勾徽上的） */}
-        <div className="relative z-20 -mt-[48px]">
+        {/* 题板骑在星的下尖上——只咬 18px，再多就把星盖掉一截（用户上报） */}
+        <div className="relative z-20 -mt-[18px]">
           <Plate delay={0.34} anim={anim}>{heading}</Plate>
           <Ribbon delay={0.5} anim={anim}>
             {title}

@@ -319,7 +319,7 @@ const NavTab = ({ item, active, onSelect, p3 = false, p5 = false }: { item: NavI
         p3 ? (
           // P3R（p3-dashboard 设计稿底导）：选中项 = 亮蓝实心斜块填满整格
           <motion.div layoutId="bottomnav-active" transition={springSnappy} aria-hidden="true" className="absolute inset-x-0.5 top-1 bottom-1.5">
-            <div className="absolute inset-0" style={{ background: '#1b57ff', clipPath: 'polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%)' }} />
+            <div className="absolute inset-0" style={{ background: P3R.blue, clipPath: 'polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%)' }} />
           </motion.div>
         ) : (
           <motion.div

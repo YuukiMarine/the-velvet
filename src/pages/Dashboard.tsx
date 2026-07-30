@@ -904,9 +904,15 @@ export const Dashboard = () => {
               <P4Flower size={18} color="var(--ui-bg)" />
               <h3 className="truncate text-[15px] font-black text-[#131313]">今日任务</h3>
             </div>
-            <span className="shrink-0 text-[13px] font-black tabular-nums text-[#131313]">
-              {totalCount === 0 ? '0 项' : `${completedCount}/${totalCount}`}
-            </span>
+            <button
+              type="button"
+              onClick={() => setCurrentPage('todos')}
+              aria-label="查看全部任务"
+              className="shrink-0 rounded-full px-2 py-0.5 text-[13px] font-black tabular-nums text-[#131313] transition active:scale-95"
+              style={{ background: 'rgba(19,19,19,0.08)' }}
+            >
+              {totalCount === 0 ? '0 项' : `${completedCount}/${totalCount}`} ›
+            </button>
           </div>
         ) : (
           <div className="flex items-center justify-between px-5 pt-5 pb-3">

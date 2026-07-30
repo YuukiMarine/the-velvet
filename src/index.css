@@ -923,3 +923,67 @@ html[data-ios-standalone="true"] {
   border: none !important;
   box-shadow: none !important;
 }
+
+/* ── 夜间模式 · 蓝频道（深蓝底 + 浅绿强调）────────────────────────────────
+   P3 页面的配色几乎全部经 P3R 常量内联（kit 里已变量化），这里覆盖变量即全站生效。
+   洋红句点是频道签名件，夜间保持不变。 */
+:root.dark[data-ui-channel="p3"] {
+  --p3r-bg: #081226;
+  --p3r-panel: #10203f;
+  --p3r-ink: #e9f6f1;
+  --p3r-ink-soft: #b9cfdc;
+  --p3r-grey: #7e94ab;
+  --p3r-blue: #3ecf8e;        /* 浅绿强调（原亮蓝的对位） */
+  --p3r-blue-deep: #2aa974;
+  --p3r-cyan: #35e0b8;
+  --p3r-cyan-pale: #12382f;
+  --p3r-cyan-faint: #0d2b26;
+  --p3r-ghost: rgba(62,207,142,0.13);
+  --p3r-veil-grad: linear-gradient(180deg, rgba(8,18,38,0.5) 0%, rgba(8,18,38,0.85) 58%, rgba(8,18,38,0.96) 100%);
+  --ui-accent: #3ecf8e;
+  --ui-bg: #081226;
+  --ui-surface: #10203f;
+  --ui-surface-ink: #e9f6f1;
+  --ui-paper: #10203f;
+  --ui-ink: #e9f6f1;
+  --ui-muted: #7e94ab;
+}
+
+/* ── 夜间模式 · 黄频道（紫底 + 黄强调）────────────────────────────────────
+   关键解耦：白天黄既是舞台底又是强调色（全站 var(--ui-bg) 当黄用）。
+   夜间只把**舞台**换紫（--p4-stage，App/PageSwitcher 走它），--ui-bg 保持黄——
+   于是四角星/花/黄章全部原样发光，纸面类 token 翻深紫。 */
+:root.dark[data-ui-channel="p4"] {
+  --p4-stage: #241447;
+  --ui-surface: #2f1c5c;
+  --ui-surface-ink: #f3ecff;
+  --ui-paper: #33205f;
+  --ui-ink: #f3ecff;
+  --ui-muted: #b7a6dc;
+  --ui-line: #47327c;
+}
+/* 页面里手写的墨/奶油任意值类：夜间统一翻色（inline 样式够不着的部分）。
+   [class*=] 按字面匹配 Tailwind 任意值类名。 */
+:root.dark[data-ui-channel="p4"] [class*="text-[#131313]"] { color: #f3ecff !important; }
+:root.dark[data-ui-channel="p4"] [class*="bg-[#fff6d0]"] { background-color: #3a2a68 !important; }
+:root.dark[data-ui-channel="p4"] [class*="bg-[#fff6d0]"] :is([class*="text-[#131313]"]) { color: #f3ecff !important; }
+:root.dark[data-ui-channel="p4"] [class*="border-[#131313]"] { border-color: rgba(243,236,255,0.4) !important; }
+:root.dark[data-ui-channel="p4"] [class*="bg-[#131313]"] { background-color: #150b33 !important; }
+/* 夜间 · 蓝频道补漏：--color-primary 是 store 往 :root 内联写的（主题主色），
+   内联普通声明干不过样式表 !important——借此在夜间把旧蓝体系（底导航高亮、
+   text-primary/bg-primary 族）整体翻到浅绿强调。 */
+:root.dark[data-ui-channel="p3"] {
+  --color-primary: #3ecf8e !important;
+  --color-primary-rgb: 62 207 142 !important;
+  --color-secondary: #6fe3b0 !important;
+}
+/* 夜间 · 黄频道补漏：半透明白面（bg-white/70 一族）压在紫舞台上泛灰紫，
+   上面的浅字直接没了对比——统一翻成深紫半透明面。 */
+:root.dark[data-ui-channel="p4"] :is([class*="bg-white/"], .bg-white) {
+  background-color: rgba(27, 15, 58, 0.78) !important;
+}
+:root.dark[data-ui-channel="p4"] [class*="text-[#a35a00]"] { color: #f5c76b !important; }
+:root.dark[data-ui-channel="p3"] {
+  --p3r-row: rgba(16, 32, 63, 0.92);
+  --p3r-row-alt: rgba(13, 27, 54, 0.95);
+}

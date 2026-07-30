@@ -842,7 +842,7 @@ export const Menu = () => {
             whileTap={{ scale: 0.98 }}
             className="relative mt-6 block w-full max-w-[344px] text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1b57ff]"
           >
-            <span aria-hidden className="absolute inset-0" style={{ clipPath: slantClip(20), background: '#ffffff', boxShadow: '0 16px 34px rgba(38,96,140,0.14)' }} />
+            <span aria-hidden className="absolute inset-0" style={{ clipPath: slantClip(20), background: P3R.panel, boxShadow: '0 16px 34px rgba(38,96,140,0.14)' }} />
             {/* 顶条：蓝底斜切 MEMBER PASS */}
             <span className="relative block">
               <span className="flex items-center justify-between py-1.5 pl-8 pr-7" style={{ clipPath: slantClip(20), background: P3R.blue }}>
@@ -957,7 +957,7 @@ export const Menu = () => {
                     className="relative block overflow-hidden py-3.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1b57ff]"
                     style={{
                       clipPath: slantClip(16),
-                      background: i % 2 ? 'rgba(232,245,251,0.95)' : 'rgba(255,255,255,0.92)',
+                      background: i % 2 ? 'var(--p3r-row-alt, rgba(232,245,251,0.95))' : 'var(--p3r-row, rgba(255,255,255,0.92))',
                       boxShadow: selected ? '0 12px 28px rgba(27,87,255,0.28)' : '0 8px 18px rgba(38,96,140,0.06)',
                       marginLeft: `${ml}%`,
                       width: `${w}%`,
