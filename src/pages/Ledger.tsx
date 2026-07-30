@@ -14,6 +14,7 @@ import { useAppStore, toLocalDateKey } from '@/store';
 import { PageTitle } from '@/components/PageTitle';
 import { BackButton } from '@/components/BackButton';
 import { SheetModal } from '@/components/SheetModal';
+import { LedgerSavedModal } from '@/components/LedgerSavedModal';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { getAIConfig } from '@/utils/aiClient';
 import { parseLedgerBatch, type LedgerAIResult } from '@/utils/ledgerAI';
@@ -227,6 +228,8 @@ export const Ledger = () => {
   const [nlBusy, setNlBusy] = useState(false);
   const [draft, setDraft] = useState<EntryDraft | null>(null);
   const [budgetMode, setBudgetMode] = useState<null | 'edit' | 'newCycle'>(null);
+  // 落账庆祝：存摘要文案；非空即弹（复用各频道「今日完成」演出，换标题）
+  const [savedNote, setSavedNote] = useState<string | null>(null);
   const [adjustOpen, setAdjustOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<LedgerEntry | null>(null);
   const [mode, setMode] = useState<'ledger' | 'assets'>('ledger');
@@ -275,6 +278,25 @@ export const Ledger = () => {
   }, [monthGrouped]);
   const curMonth = toLocalDateKey().slice(0, 7);
 
+  // 近 9 日支出（p3 预算卡左侧梯级从纯装饰改为迷你日耗图）：宽 ∝ 当日支出
+  const last9 = useMemo(() => {
+    const days: { key: string; spent: number }[] = [];
+    for (let i = 8; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      days.push({ key: toLocalDateKey(d), spent: 0 });
+    }
+    const idx = new Map(days.map((d, i) => [d.key, i]));
+    for (const e of ledgerEntries) {
+      if (e.direction !== 'expense') continue;
+      const i = idx.get(e.date);
+      if (i != null) days[i].spent += e.amount;
+    }
+    const max = Math.max(1, ...days.map(d => d.spent));
+    const avg = days.reduce((s2, d) => s2 + d.spent, 0) / 9;
+    return { days, max, avg };
+  }, [ledgerEntries]);
+
   // 当前预算周期 id = cycle.key（日历月或发薪日周期）；进入新周期且未确认时弹「规划窗」
   const resetDay = settings.ledgerResetDay ?? 1;
   const currentCycle = cycle.key;
@@ -306,6 +328,13 @@ export const Ledger = () => {
     }
   };
 
+  /** 合并后的唯一入口：有字走 NL 解析，空着直接开手动表单（原「手动」按钮并入） */
+  const handleEntry = () => {
+    if (nlBusy) return;
+    if (nlText.trim()) void handleNL();
+    else startDraft(emptyDraft());
+  };
+
   const updateRow = (i: number, patch: Partial<BatchRow>) =>
     setBatch(rows => rows ? rows.map((r, j) => (j === i ? { ...r, ...patch } : r)) : rows);
   const saveBatch = async () => {
@@ -323,8 +352,10 @@ export const Ledger = () => {
     }
     if (lastCh && settings.ledgerLastChannel !== lastCh) updateSettings({ ledgerLastChannel: lastCh });
     setListMonth(batchDate.slice(0, 7));    // 跳到批量记账所在月
+    const n = batch.filter(r => Number(r.amount) > 0).length;
     setBatch(null);
     setNlText('');
+    if (n > 0) setSavedNote(`共 ${n} 笔已入账`);
   };
 
   const saveDraft = async () => {
@@ -355,8 +386,12 @@ export const Ledger = () => {
     const ch = draft.channel.trim();
     if (saved.direction === 'expense' && ch && settings.ledgerLastChannel !== ch) updateSettings({ ledgerLastChannel: ch });
     setListMonth(saved.date.slice(0, 7));   // 跳到刚记账所在月，确保可见
+    const label = draft.note.trim()
+      || (draft.direction === 'income' ? draft.incomeSource.trim() : draft.category.trim() || draft.channel.trim())
+      || (draft.direction === 'expense' ? '支出' : '收入');
     setDraft(null);
     setNlText('');
+    setSavedNote(`${draft.direction === 'expense' ? '−' : '+'}${$}${fmtMoney(amount)} · ${label}`);
   };
 
   const p5 = useUiChannel() === 'p5';
@@ -602,20 +637,30 @@ export const Ledger = () => {
       ) : p3 ? (
         <motion.section {...popIn(2)} className="mt-5">
           <div className="relative px-6 py-7" style={{ clipPath: 'polygon(34px 0, 100% 0, calc(100% - 34px) 100%, 0 100%)', background: 'rgba(255,255,255,0.96)', boxShadow: '0 18px 40px rgba(38,96,140,0.10)' }}>
-            {/* 左侧青斜纹梯级（设计稿装饰） */}
-            <div aria-hidden className="absolute bottom-6 left-7 top-6 flex w-[54px] flex-col justify-between">
-              {Array.from({ length: 9 }).map((_, i) => (
-                <span
-                  key={i}
-                  className="h-[9px]"
-                  style={{
-                    width: 46 - i * 1.6,
-                    marginLeft: i * 2.2,
-                    background: i % 2 ? `rgba(53,209,232,${0.85 - i * 0.05})` : `rgba(27,87,255,${0.8 - i * 0.05})`,
-                    clipPath: 'polygon(7px 0, 100% 0, calc(100% - 7px) 100%, 0 100%)',
-                  }}
-                />
-              ))}
+            {/* 左侧梯级：不再是纯装饰——近 9 日的日支出图（上旧下今）。
+                宽 ∝ 当日支出 / 9 日峰值；没花钱是短灰桩；超 9 日均值 1.5 倍翻洋红；
+                今天恒亮蓝。形制照旧（斜切条 + 逐级缩进），只是每一条都长在数据上。 */}
+            <div aria-hidden className="absolute bottom-6 left-7 top-6 flex w-[56px] flex-col justify-between" title="近 9 日支出">
+              {last9.days.map((d, i) => {
+                const today = i === last9.days.length - 1;
+                const w = d.spent === 0 ? 8 : 12 + (d.spent / last9.max) * 36;
+                const over = !today && last9.avg > 0 && d.spent > last9.avg * 1.5;
+                return (
+                  <span
+                    key={d.key}
+                    className="h-[9px] transition-[width] duration-500"
+                    style={{
+                      width: w,
+                      marginLeft: (last9.days.length - 1 - i) * 1.6,
+                      background: d.spent === 0
+                        ? 'rgba(138,151,173,0.35)'
+                        : today ? P3R.blue : over ? P3R.magenta : 'rgba(53,209,232,0.9)',
+                      clipPath: 'polygon(5px 0, 100% 0, calc(100% - 5px) 100%, 0 100%)',
+                    }}
+                  />
+                );
+              })}
+              <span className="mt-0.5 text-[9px] font-black leading-none" style={{ color: P3R.grey }}>近9日</span>
             </div>
             <button
               type="button"
@@ -861,16 +906,16 @@ export const Ledger = () => {
             <input
               value={nlText}
               onChange={e => setNlText(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') handleNL(); }}
-              placeholder="28 咖啡 / 工资 8000（可多笔）"
+              onKeyDown={e => { if (e.key === 'Enter') handleEntry(); }}
+              placeholder="一句话记多笔；空着点 = 手动填"
               className="relative h-full w-full bg-transparent py-3.5 pl-6 pr-8 text-[14px] font-bold focus:outline-none"
               style={{ color: '#050505', border: 'none', boxShadow: 'none', borderRadius: 0 }}
             />
           </div>
           <motion.button
             whileTap={{ x: 2, y: 3 }}
-            onClick={handleNL}
-            disabled={nlBusy || !nlText.trim()}
+            onClick={handleEntry}
+            disabled={nlBusy}
             className="relative -ml-3 shrink-0 cursor-pointer px-5 py-3.5 text-[15px] font-black text-white disabled:opacity-40"
             style={{ fontFamily: P5_FONT, zIndex: 2 }}
           >
@@ -879,18 +924,6 @@ export const Ledger = () => {
             <span aria-hidden className="absolute inset-[2.5px]" style={{ background: P5R.red, clipPath: roughSlant(334, 9, 2) }} />
             <span className="relative">{nlBusy ? '…' : '记一笔'}</span>
           </motion.button>
-          <motion.button
-            whileTap={{ x: 2, y: 3 }}
-            onClick={() => startDraft(emptyDraft())}
-            aria-label="手动记一笔"
-            className="relative -ml-2 shrink-0 cursor-pointer whitespace-nowrap px-4 py-3.5 text-[15px] font-black"
-            style={{ color: '#050505', fontFamily: P5_FONT, zIndex: 3 }}
-          >
-            <span aria-hidden className="absolute inset-0" style={{ transform: 'translate(3px,4px)', background: '#000000', clipPath: roughSlant(335, 9, 2.5) }} />
-            <span aria-hidden className="absolute inset-0" style={{ background: '#050505', clipPath: roughSlant(335, 9, 2.5) }} />
-            <span aria-hidden className="absolute inset-[2.5px]" style={{ background: P5R.paper, clipPath: roughSlant(336, 8, 2) }} />
-            <span className="relative">手动</span>
-          </motion.button>
         </motion.section>
       ) : p3 ? (
         <motion.section {...riseIn(3)} className="mt-5 flex items-stretch gap-0">
@@ -898,28 +931,20 @@ export const Ledger = () => {
             <input
               value={nlText}
               onChange={e => setNlText(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') handleNL(); }}
-              placeholder="28 咖啡 / 工资 8000（可多笔）"
+              onKeyDown={e => { if (e.key === 'Enter') handleEntry(); }}
+              placeholder="一句话记多笔；空着点 = 手动填"
               className="h-full w-full bg-transparent px-5 py-3.5 text-[14px] font-semibold focus:outline-none"
               style={{ color: P3R.ink }}
             />
           </div>
           <button
-            onClick={handleNL}
-            disabled={nlBusy || !nlText.trim()}
+            onClick={handleEntry}
+            disabled={nlBusy}
             className="relative -ml-2 shrink-0 px-5 py-3.5 text-[15px] font-black text-white transition-transform active:scale-[0.96] disabled:opacity-40"
             style={{ clipPath: slantClip(12), background: P3R.blue }}
           >
             {nlBusy ? '…' : '记一笔'}
             <span aria-hidden className="absolute bottom-0 right-3 h-[6px] w-[14px]" style={{ background: P3R.magenta, clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
-          </button>
-          <button
-            onClick={() => startDraft(emptyDraft())}
-            aria-label="手动记一笔"
-            className="-ml-2 shrink-0 whitespace-nowrap px-4 py-3.5 text-[15px] font-black transition active:scale-[0.96]"
-            style={{ clipPath: slantClip(12), background: '#fff', color: P3R.ink, boxShadow: '0 8px 18px rgba(38,96,140,0.07)' }}
-          >
-            手动
           </button>
         </motion.section>
       ) : (
@@ -927,13 +952,13 @@ export const Ledger = () => {
         <input
           value={nlText}
           onChange={e => setNlText(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter') handleNL(); }}
-          placeholder="28 咖啡 / 工资 8000（可多笔）"
+          onKeyDown={e => { if (e.key === 'Enter') handleEntry(); }}
+          placeholder="一句话记多笔；空着点 = 手动填"
           className="flex-1 min-w-0 px-4 py-3 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-sm text-gray-800 dark:text-white placeholder-gray-400 focus:outline-none focus:border-primary transition-colors"
         />
         <button
-          onClick={handleNL}
-          disabled={nlBusy || !nlText.trim()}
+          onClick={handleEntry}
+          disabled={nlBusy}
           className={
             isP4
               ? 'relative flex h-[72px] w-[72px] -my-2 shrink-0 items-center justify-center text-sm font-black text-white disabled:opacity-40 active:scale-[0.96] transition-transform'
@@ -945,13 +970,6 @@ export const Ledger = () => {
             <P4Flower size={76} color="var(--ui-accent)" className="absolute inset-0 -left-0.5 -top-0.5" style={{ filter: 'drop-shadow(0 2px 0 rgba(19,19,19,0.25))' }} />
           )}
           <span className="relative">{nlBusy ? '…' : '记一笔'}</span>
-        </button>
-        <button
-          onClick={() => startDraft(emptyDraft())}
-          aria-label="手动记一笔"
-          className="px-3 py-3 rounded-xl text-sm font-semibold bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 active:scale-[0.96] transition whitespace-nowrap"
-        >
-          手动
         </button>
       </motion.section>
       )}
@@ -1121,6 +1139,9 @@ export const Ledger = () => {
       {mode === 'assets' && <div className="mt-4"><AssetBoard /></div>}
 
       {/* 录入确认卡 */}
+      {/* 落账庆祝：复用各频道「今日完成」演出，标题换「记账完成」 */}
+      <LedgerSavedModal isOpen={!!savedNote} onClose={() => setSavedNote(null)} title={savedNote ?? ''} />
+
       <SheetModal
         isOpen={!!draft}
         onClose={() => setDraft(null)}
@@ -1136,7 +1157,7 @@ export const Ledger = () => {
         }
       >
         {draft && (
-          <div className="space-y-4">
+          <div className="p5-ledgerform space-y-4">
             {/* 进 / 出 */}
             <div className="grid grid-cols-2 gap-2">
               {(['expense', 'income'] as const).map(dir => (
@@ -1346,7 +1367,7 @@ export const Ledger = () => {
         }
       >
         {batch && (
-          <div className="space-y-3">
+          <div className="p5-ledgerform space-y-3">
             <div className="text-xs text-gray-500 dark:text-gray-400">识别到多笔，逐行确认 / 增删后一次保存</div>
             <div className="space-y-2">
               {batch.map((row, i) => (
