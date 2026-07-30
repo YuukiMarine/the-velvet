@@ -18,18 +18,23 @@ import { motion, useMotionValue } from 'motion/react';
 import { useBoldness } from '@/utils/boldness';
 import { useAppStore } from '@/store';
 
+/**
+ * 调色板走 CSS 变量（浅色值为 fallback）：夜间模式只需在
+ * :root.dark[data-ui-channel="p3"] 覆盖变量，全站 inline 用法自动跟随——
+ * P3 页面几乎所有配色都是 style 内联的，类名层面的 dark: 前缀够不着它们。
+ */
 export const P3R = {
-  blue: '#1b57ff',
-  blueDeep: '#0a3bd6',
-  ink: '#0a1230',
-  inkSoft: '#3d4a66',
-  grey: '#8a97ad',
-  cyan: '#35d1e8',
-  cyanPale: '#cfeaf6',
-  cyanFaint: '#e2f2fa',
-  magenta: '#f0417f',
-  bg: '#eef5f9',
-  panel: '#ffffff',
+  blue: 'var(--p3r-blue, #1b57ff)',
+  blueDeep: 'var(--p3r-blue-deep, #0a3bd6)',
+  ink: 'var(--p3r-ink, #0a1230)',
+  inkSoft: 'var(--p3r-ink-soft, #3d4a66)',
+  grey: 'var(--p3r-grey, #8a97ad)',
+  cyan: 'var(--p3r-cyan, #35d1e8)',
+  cyanPale: 'var(--p3r-cyan-pale, #cfeaf6)',
+  cyanFaint: 'var(--p3r-cyan-faint, #e2f2fa)',
+  magenta: 'var(--p3r-magenta, #f0417f)',
+  bg: 'var(--p3r-bg, #eef5f9)',
+  panel: 'var(--p3r-panel, #ffffff)',
 } as const;
 
 /** 平行四边形 clip（dir: 左上→右下 = 'lead'；右上→左下 = 'tail'） */
@@ -68,7 +73,7 @@ export const P3RPage = ({ children, className, active = true }: { children: Reac
               opacity: 0.3,
             }}
           />
-          <div className="absolute inset-0" style={{ background: 'linear-gradient(180deg, rgba(238,245,249,0.35) 0%, rgba(238,245,249,0.82) 58%, rgba(238,245,249,0.95) 100%)' }} />
+          <div className="absolute inset-0" style={{ background: 'var(--p3r-veil-grad, linear-gradient(180deg, rgba(238,245,249,0.35) 0%, rgba(238,245,249,0.82) 58%, rgba(238,245,249,0.95) 100%))' }} />
         </div>
       )}
       <div className="relative z-10">{children}</div>
@@ -105,7 +110,7 @@ export const GhostWords = ({ words, className, style, parallax = true }: { words
       ref={rootRef}
       aria-hidden
       className={`pointer-events-none absolute select-none font-black italic leading-[0.86] tracking-tight ${className ?? ''}`}
-      style={{ fontFamily: 'Arial, "Noto Sans SC", sans-serif', color: 'rgba(147,190,222,0.30)', transform: 'rotate(-12deg)', ...style }}
+      style={{ fontFamily: 'Arial, "Noto Sans SC", sans-serif', color: 'var(--p3r-ghost, rgba(147,190,222,0.30))', transform: 'rotate(-12deg)', ...style }}
     >
       <motion.div
         style={anim ? { y } : undefined}

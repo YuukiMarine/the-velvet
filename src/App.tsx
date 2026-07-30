@@ -567,7 +567,8 @@ function App() {
           className="min-h-screen bg-gray-50 dark:bg-gray-900 relative"
           // P4 黄频道：舞台平面直接铺 --ui-bg（p4-redraw 定稿），暗色也保持黄
           // 用户自定义了背景图时让位——这层不透明黄会把图整块盖没（"背景图片没反应"）
-          style={user?.theme === 'yellow' && !settings.backgroundImage ? { background: 'var(--ui-bg, #ffd900)' } : undefined}
+          // 舞台底走 --p4-stage（夜间=紫），fallback 到 --ui-bg（白天=黄，黄同时兼任强调色）
+          style={user?.theme === 'yellow' && !settings.backgroundImage ? { background: 'var(--p4-stage, var(--ui-bg, #ffd900))' } : undefined}
         >
           {/* 背景图片（与擦除垫底层复刻的是同一个节点，见 bgImageLayer） */}
           {bgImageLayer}
@@ -633,7 +634,13 @@ function App() {
                 <PageSwitcher
                   current={currentPage}
                   // 与 App 根的舞台底色同源（黄频道走 --ui-bg，其余走 gray-50 / gray-900）
-                  stageBg={user?.theme === 'yellow' ? 'var(--ui-bg, #ffd900)' : settings.darkMode ? '#111827' : '#f9fafb'}
+                  // 背景图开着时黄频道不能再垫不透明黄：擦除瞬间一块黄盖住背景图
+                  // 再消失，就是"蒙版闪烁"（垫底层里已复刻了 bgImageLayer，用中性底即可）
+                  stageBg={
+                    user?.theme === 'yellow' && !bgImageOn
+                      ? 'var(--p4-stage, var(--ui-bg, #ffd900))'
+                      : settings.darkMode ? '#111827' : '#f9fafb'
+                  }
                   // 擦除垫底层要把**所有全局背景层**都复刻一份，否则垫层期间它们被盖成
                   // 纯色、垫层一卸又跳回来——这就是"切页时背景动画闪一下"的全部原因
                   // （P4StageDecor 早就这么做了，背景动画一直漏在外面）。
