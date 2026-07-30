@@ -154,12 +154,11 @@ const StarChartP3 = ({ items, onSelect, showLabels = true }: { items: StarItem[]
   // 同心等级星环（用户定稿）：每一档一圈同色系五角星、内浅外深（最多 10 档），
   // 由外到内实心覆盖形成环带——升级即数据星角尖走向更深的一圈，档位一眼可读
   const ringCount = Math.min(10, Math.max(1, items[0]?.maxLevel ?? 5));
+  // 内圈浅 → 外圈深：两端点走 CSS 变量、中间档 color-mix 插值——JS 不感知亮暗，
+  // 夜间只在 CSS 覆盖两端点（浅青系 → 深蓝系），星环整族自动跟随
   const ringColor = (lvl: number) => {
-    const t = lvl / ringCount; // 内圈浅 → 外圈深
-    const r = Math.round(233 - t * 109); // 233→124
-    const g = Math.round(247 - t * 46);  // 247→201
-    const b = Math.round(252 - t * 18);  // 252→234
-    return `rgb(${r}, ${g}, ${b})`;
+    const t = Math.round((lvl / ringCount) * 100);
+    return `color-mix(in srgb, var(--p3r-star-ring-deep, rgb(124, 201, 234)) ${t}%, var(--p3r-star-ring-pale, rgb(233, 247, 252)))`;
   };
   // 标签锚点：紧贴角端外侧（viewBox 坐标 → 百分比），在同一个 rotateX 透视平面内自动跟随；
   // 按锚点相对中心的方位智能对齐——左角右靠、右角左靠、顶底居中
@@ -283,7 +282,7 @@ const AttrDetailInline = ({ attrId, level: fallbackLevel, onBack }: { attrId: At
           <span>{isMax ? '已达最高等级' : `距 Lv.${level + 1}`}</span>
           <span className="tabular-nums">{isMax ? 'MAX' : `${points - curThreshold}/${nextThreshold - curThreshold}`}</span>
         </div>
-        <div className="relative h-[10px] w-full overflow-hidden" style={{ background: 'rgba(207,234,246,0.85)', clipPath: slantClip(3) }}>
+        <div className="relative h-[10px] w-full overflow-hidden" style={{ background: 'rgba(var(--p3r-wash, 207,234,246), 0.85)', clipPath: slantClip(3) }}>
           <div className="absolute inset-y-0 left-0" style={{ width: `${progress * 100}%`, background: `linear-gradient(90deg, ${P3R.blue}, ${P3R.cyan})`, clipPath: slantClip(3) }} />
         </div>
       </motion.div>
@@ -297,7 +296,7 @@ const AttrDetailInline = ({ attrId, level: fallbackLevel, onBack }: { attrId: At
             const reached = level >= lv;
             const current = level === lv;
             return (
-              <div key={lv} className="flex items-center gap-2.5 px-3 py-1.5 text-[13px]" style={{ background: current ? P3R.blue : reached ? 'rgba(207,234,246,0.7)' : 'transparent', clipPath: current || reached ? slantClip(6) : undefined, color: current ? '#fff' : reached ? P3R.ink : P3R.grey }}>
+              <div key={lv} className="flex items-center gap-2.5 px-3 py-1.5 text-[13px]" style={{ background: current ? P3R.blue : reached ? 'rgba(var(--p3r-wash, 207,234,246), 0.7)' : 'transparent', clipPath: current || reached ? slantClip(6) : undefined, color: current ? '#fff' : reached ? P3R.ink : P3R.grey }}>
                 <span className="w-9 shrink-0 text-[11px] font-black tabular-nums">Lv.{lv}</span>
                 <span className="flex-1 font-bold">{getAttributeLevelTitle(settings.attributeLevelTitles, attrId, lv)}</span>
                 {current && <span className="text-[10px] font-black">◀ 现在</span>}
@@ -312,7 +311,7 @@ const AttrDetailInline = ({ attrId, level: fallbackLevel, onBack }: { attrId: At
       <motion.div className="relative mt-4" variants={fromRight} transition={spring}>
         <div className="mb-1.5 text-[12px] font-black" style={{ color: P3R.inkSoft }}>关联成就（{unlockedCount}/{related.length}）</div>
         {related.length === 0 ? (
-          <div className="px-3 py-4 text-center text-[12px] font-semibold" style={{ background: 'rgba(207,234,246,0.5)', clipPath: slantClip(8), color: P3R.grey }}>这个方向还没有专属成就</div>
+          <div className="px-3 py-4 text-center text-[12px] font-semibold" style={{ background: 'rgba(var(--p3r-wash, 207,234,246), 0.5)', clipPath: slantClip(8), color: P3R.grey }}>这个方向还没有专属成就</div>
         ) : (
           <div
             ref={achScrollRef}
@@ -336,7 +335,7 @@ const AttrDetailInline = ({ attrId, level: fallbackLevel, onBack }: { attrId: At
             onClickCapture={(e) => { if (achDrag.current.moved) { e.stopPropagation(); } }}
           >
             {related.map((a) => (
-              <div key={a.id} className="flex w-[124px] shrink-0 select-none flex-col gap-1 px-3 py-2.5" style={{ background: a.unlocked ? 'rgba(53,209,232,0.14)' : 'rgba(207,234,246,0.4)', clipPath: slantClip(8), opacity: a.unlocked ? 1 : 0.72 }}>
+              <div key={a.id} className="flex w-[124px] shrink-0 select-none flex-col gap-1 px-3 py-2.5" style={{ background: a.unlocked ? 'rgba(var(--p3r-cyan-rgb, 53,209,232), 0.14)' : 'rgba(var(--p3r-wash, 207,234,246), 0.4)', clipPath: slantClip(8), opacity: a.unlocked ? 1 : 0.72 }}>
                 <div className="flex items-center justify-between">
                   <span className="text-lg leading-none" aria-hidden>{a.icon}</span>
                   <span className="shrink-0 text-[9px] font-black" style={{ color: a.unlocked ? P3R.magenta : P3R.grey }}>{a.unlocked ? '已解锁' : '未解锁'}</span>
@@ -776,7 +775,7 @@ export const DashboardP3 = () => {
                       >
                         {/* 斜切勾选框（P3R：完成 = 亮青底白勾） */}
                         <span aria-hidden className="relative h-[18px] w-[18px] shrink-0" style={{ clipPath: slantClip(4), background: done ? P3R.cyan : 'rgba(53,209,232,0.45)' }}>
-                          {!done && <span className="absolute inset-[2.5px]" style={{ clipPath: slantClip(3), background: '#fff' }} />}
+                          {!done && <span className="absolute inset-[2.5px]" style={{ clipPath: slantClip(3), background: P3R.panel }} />}
                           {done && (
                             <svg viewBox="0 0 12 12" className="absolute inset-0 m-auto h-3 w-3" fill="none">
                               <path d="M2 6l3 3 5-5" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
@@ -807,7 +806,7 @@ export const DashboardP3 = () => {
               )}
               {/* 卡底整体进度细条（completed/total） */}
               {totalCount > 0 && (
-                <div aria-hidden className="absolute bottom-0 left-0 right-0 h-[5px]" style={{ background: 'rgba(207,234,246,0.9)' }}>
+                <div aria-hidden className="absolute bottom-0 left-0 right-0 h-[5px]" style={{ background: 'rgba(var(--p3r-wash, 207,234,246), 0.9)' }}>
                   <motion.div
                     className="h-full"
                     style={{ background: P3R.cyan }}
@@ -902,14 +901,14 @@ export const DashboardP3 = () => {
         </section>
 
         {/* ── 四格统计条（累计点数/总记录数/总等级/记录天数；成就·技能已挪至详细统计页）── */}
-        <div className="mt-2 grid grid-cols-4 py-3.5" style={{ clipPath: slantClip(12), background: 'rgba(207,234,246,0.75)' }}>
+        <div className="mt-2 grid grid-cols-4 py-3.5" style={{ clipPath: slantClip(12), background: 'var(--p3r-statstrip, rgba(207,234,246,0.75))' }}>
           {[
             { v: stats.totalPoints, label: '累计点数', color: P3R.blue },
             { v: stats.totalActivities, label: '总记录数', color: P3R.blue },
             { v: stats.totalLevel, label: '总等级', color: P3R.blue },
             { v: stats.uniqueDays, label: '记录天数', color: '#10b981' },
           ].map((s, i) => (
-            <div key={s.label} className={`flex flex-col items-center gap-1 px-1 ${i > 0 ? 'border-l border-white/70' : ''}`}>
+            <div key={s.label} className={`flex flex-col items-center gap-1 px-1 ${i > 0 ? 'border-l' : ''}`} style={i > 0 ? { borderColor: 'var(--p3r-statstrip-div, rgba(255,255,255,0.7))' } : undefined}>
               <span className="text-[26px] font-black italic leading-none tabular-nums" style={{ color: s.color }}>{s.v}</span>
               <span className="text-center text-[11px] font-bold leading-tight" style={{ color: P3R.inkSoft }}>{s.label}</span>
             </div>

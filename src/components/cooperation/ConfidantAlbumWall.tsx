@@ -62,9 +62,9 @@ const BACK_SKIN = {
     shadow: '0 4px 0 rgba(19,19,19,0.25)',
   },
   p3: {
-    face: '#ffffff', line: 'rgba(147,190,222,0.45)', radius: 14,
+    face: P3R.panel, line: 'rgba(147,190,222,0.45)', radius: 14,
     ink: P3R.ink, sub: P3R.inkSoft, meta: P3R.blue, accent: P3R.blue,
-    track: '#e4eef5', bar: 'linear-gradient(90deg, #35d1e8, #7fd8ee)',
+    track: 'var(--p3r-track, #e4eef5)', bar: 'linear-gradient(90deg, #35d1e8, #7fd8ee)',
     advice: P3R.magenta, btnBg: P3R.blue, btnInk: '#ffffff',
     shadow: '0 16px 36px -14px rgba(38,96,140,0.35)',
   },
@@ -157,7 +157,7 @@ const BlankCard = () => {
       className={p3
         ? 'flex h-full w-full flex-col items-center justify-center gap-3 rounded-[14px]'
         : 'flex h-full w-full flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-indigo-300/50 bg-indigo-500/5 text-indigo-400'}
-      style={p3 ? { border: '2px dashed rgba(53,209,232,0.6)', background: 'rgba(226,243,250,0.6)', color: P3R.blue } : undefined}
+      style={p3 ? { border: '2px dashed rgba(53,209,232,0.6)', background: 'var(--p3r-blank, rgba(226,243,250,0.6))', color: P3R.blue } : undefined}
     >
       <span className="text-5xl font-thin leading-none">+</span>
       <span className="text-xs font-bold tracking-wide">缔结新的羁绊</span>

@@ -482,7 +482,7 @@ export const BottomNav = () => {
               isP4
                 ? '-top-3 -ml-7 w-14 h-14 rounded-full bg-[var(--ui-accent)] border-[3px] border-white text-[#131313]'
                 : p3
-                  ? 'top-0 bottom-0 my-auto -ml-7 w-14 h-14 text-[#0a1230]'
+                  ? 'top-0 bottom-0 my-auto -ml-7 w-14 h-14 text-[color:var(--p3-cat,#0a1230)]'
                   : p5
                     ? '-top-3.5 -ml-9 w-[72px] h-[68px] text-[#c00008]'
                     : '-top-3 -ml-7 w-14 h-14 rounded-2xl bg-primary shadow-lg shadow-primary/30 text-white'

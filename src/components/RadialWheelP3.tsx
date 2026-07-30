@@ -153,7 +153,7 @@ const VelvetTime = ({ cx, cy }: { cx: number; cy: number }) => {
       style={{ left: cx, top: cy, transform: 'translate(-50%, -50%) rotate(-9deg)' }}
     >
       {line('VELVET', 'rgba(255,255,255,0.17)', 0.1, 7)}
-      <div className="pl-[8%]">{line('TIME', 'rgba(43,104,255,0.62)', 0.2, -9)}</div>
+      <div className="pl-[8%]">{line('TIME', 'var(--p3r-velvet, rgba(43,104,255,0.62))', 0.2, -9)}</div>
     </div>
   );
 };
@@ -197,8 +197,10 @@ const Bar = ({
     >
       {/* 深蓝硬影（clip 会裁掉 filter 阴影，所以影是另一块同形色片） */}
       <span aria-hidden className="absolute inset-0" style={{ clipPath: BAR_CLIP, background: '#050c34', transform: 'translate(5px,5px)' }} />
-      {/* 面：常态白 / 未选中态退到浅青实色（**不用透明度表达状态**）/ 选中蓝 */}
-      <span aria-hidden className="absolute inset-0" style={{ clipPath: BAR_CLIP, background: active ? P3R.blue : state === 'dim' ? '#d7e6f0' : P3R.panel }} />
+      {/* 面：常态与未选中同色（用户 R16：选中时其他条不许变色——原先 dim 退浅青
+          在夜间深蓝条上会集体闪成浅蓝）/ 选中蓝；条面走独立变量，夜间比面板亮一档
+          （深蓝遮罩上纯 panel 色会沉没）。 */}
+      <span aria-hidden className="absolute inset-0" style={{ clipPath: BAR_CLIP, background: active ? P3R.blue : 'var(--p3r-wheel-bar, #ffffff)' }} />
       {/* 内容层：高亮在底、英文幽灵大字居中、竖排中文在上 —— 三层共用同一个
           overflow-hidden + BAR_CLIP 容器，高亮从条子下缘滑进来时不会溢出条外 */}
       <span className="absolute inset-0 overflow-hidden" style={{ clipPath: BAR_CLIP }}>
@@ -223,7 +225,7 @@ const Bar = ({
           style={{
             fontFamily: '"Arial Black", Arial, sans-serif',
             fontSize: enSize,
-            color: active ? 'rgba(255,255,255,0.34)' : 'rgba(27,87,255,0.16)',
+            color: active ? 'rgba(255,255,255,0.34)' : 'var(--p3r-bar-ghost, rgba(27,87,255,0.16))',
             transform: 'translate(-50%,-50%) rotate(90deg)',
             transformOrigin: 'center',
           }}

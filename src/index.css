@@ -816,7 +816,7 @@ html[data-ios-standalone="true"] {
 /* ── P3R（蓝频道）统一卡壳：白斜卡（清单式换壳用，见 components/p3r/kit.tsx） ── */
 .p3r-card {
   clip-path: polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%);
-  background: #ffffff;
+  background: var(--p3r-panel, #ffffff);
   box-shadow: 0 10px 24px rgba(38, 96, 140, 0.08);
 }
 
@@ -829,33 +829,33 @@ html[data-ios-standalone="true"] {
 .p3r-sheet input[type="time"],
 .p3r-sheet textarea {
   border: none !important;
-  border-bottom: 3px solid #35d1e8 !important;
+  border-bottom: 3px solid var(--p3r-cyan, #35d1e8) !important;
   border-radius: 0 !important;
-  background: rgba(207, 234, 246, 0.35) !important;
-  color: #0a1230 !important;
+  background: var(--p3r-field, rgba(207, 234, 246, 0.35)) !important;
+  color: var(--p3r-ink, #0a1230) !important;
   font-weight: 600;
 }
 .p3r-sheet input::placeholder,
 .p3r-sheet textarea::placeholder {
-  color: #8fa8bd !important;
+  color: var(--p3r-ph, #8fa8bd) !important;
   font-weight: 500;
 }
 .p3r-sheet input:focus,
 .p3r-sheet textarea:focus {
-  border-bottom-color: #1b57ff !important;
-  background: rgba(207, 234, 246, 0.5) !important;
+  border-bottom-color: var(--p3r-blue, #1b57ff) !important;
+  background: var(--p3r-field-focus, rgba(207, 234, 246, 0.5)) !important;
 }
 .p3r-sheet select {
   border: none !important;
-  border-bottom: 2px solid #35d1e8 !important;
+  border-bottom: 2px solid var(--p3r-cyan, #35d1e8) !important;
   border-radius: 0 !important;
-  background-color: #fff !important;
+  background-color: var(--p3r-panel, #fff) !important;
   clip-path: polygon(7px 0, 100% 0, calc(100% - 7px) 100%, 0 100%);
-  color: #1b57ff !important;
+  color: var(--p3r-blue, #1b57ff) !important;
   font-weight: 800;
 }
 .p3r-sheet label {
-  color: #0a1230;
+  color: var(--p3r-ink, #0a1230);
   font-weight: 800;
 }
 
@@ -986,4 +986,166 @@ html[data-ios-standalone="true"] {
 :root.dark[data-ui-channel="p3"] {
   --p3r-row: rgba(16, 32, 63, 0.92);
   --p3r-row-alt: rgba(13, 27, 54, 0.95);
+}
+
+/* ═══ 夜间模式 · 第二轮逐页清扫（R16）═══════════════════════════════════════
+   第一轮只翻了 P3R/ui token；这轮补三类漏网：
+   ① p3 分支里内联写死的白面板/浅青字面量 → 新变量（浅色值作 fallback 写在调用点）；
+   ② 旧 Tailwind 工具类页面（表单/设置/战场/行动）→ 按类名毯式翻色;
+   ③ p4 亮件上的黑字（太阳盘/天空日期牌）→ .p4-onlight 钉黑，其余灰系翻浅紫。 */
+
+/* ── 蓝 · 新变量（调用点 fallback 即浅色值，此处只声明夜间值）── */
+:root.dark[data-ui-channel="p3"] {
+  --p3r-panel-glass: rgba(16, 32, 63, 0.94);
+  --p3r-field: rgba(53, 224, 184, 0.10);
+  --p3r-field-focus: rgba(53, 224, 184, 0.16);
+  --p3r-ph: #5e7d99;
+  --p3r-chip: #1a2d55;              /* 未选中芯片（原 #ddeef7） */
+  --p3r-claim: #453a10;             /* 已达成待解锁的琥珀纸（原 #fff6dc） */
+  --p3r-blessing-ink: #f5c76b;
+  --p3r-skill-locked: #16294a;      /* 未解锁技能行（原 #f2f7fb） */
+  --p3r-skill-badge: #2c4262;       /* 未解锁技能状态块（原 #b9c6d4） */
+  --p3r-track: #24395f;             /* 进度轨 */
+  --p3r-blank: rgba(16, 32, 63, 0.6);
+  --p3r-star-ring-pale: #24406e;    /* 人格指数星环：内浅 */
+  --p3r-star-ring-deep: #0b1730;    /* 人格指数星环：外深 */
+  --p3r-statstrip: rgba(16, 32, 63, 0.9);
+  --p3r-statstrip-div: rgba(233, 246, 241, 0.14);
+  --p3r-wheel-bar: #1a2f5c;         /* 轮盘条面（原纯白） */
+  --p3r-bar-ghost: rgba(62, 207, 142, 0.2);
+  --p3r-velvet: rgba(62, 207, 142, 0.5);
+  --p3-cat: #8fc7ff;                /* 底导黑猫 → 浅蓝（用户点名） */
+  --p3nav-root: linear-gradient(168deg, #0a1a36 0%, #081226 52%, #060d1e 100%);
+  --p3nav-cat-bub: linear-gradient(315deg, #35e0b8 13px, #14294a 13px);
+  --p3nav-slab: linear-gradient(180deg, rgba(53, 224, 184, 0.08) 0%, rgba(53, 224, 184, 0.18) 100%);
+  /* 浅青 wash 家族（进度轨/阶梯芯片/迷你成就卡）与青强调的 rgb 三元组：
+     透明度留在调用点，色相在此翻深 */
+  --p3r-wash: 24, 48, 90;
+  --p3r-cyan-rgb: 53, 224, 184;
+  --p3r-skill-ready: rgba(62, 207, 142, 0.14);
+  --p3r-chip-stripe: rgba(255, 255, 255, 0.07);
+  --p3r-sheet-grad: linear-gradient(178deg, #0d1b36 0%, #0a1530 60%, #081226 100%);
+}
+
+/* ── 蓝 · 旧工具类毯式翻色（表单/设置/战场/目标·倒计时/技能等未换壳页面）──
+   同时压过 bg-white 与它的 dark:bg-gray-* 变体：中性灰在深蓝世界里发闷，统一进靛蓝阶。 */
+:root.dark[data-ui-channel="p3"] :is(.bg-white, [class*="dark:bg-gray-900"]) {
+  background-color: var(--p3r-panel, #10203f) !important;
+}
+:root.dark[data-ui-channel="p3"] :is(.bg-gray-50, .bg-gray-100, [class*="dark:bg-gray-800"]) {
+  background-color: #182b52 !important;
+}
+:root.dark[data-ui-channel="p3"] .bg-gray-200 {
+  background-color: #24395f !important;
+}
+:root.dark[data-ui-channel="p3"] :is(.text-gray-900, .text-gray-800, .text-gray-700, .text-black) {
+  color: #e9f6f1 !important;
+}
+:root.dark[data-ui-channel="p3"] :is(.text-gray-600, .text-gray-500) {
+  color: #9fb6c8 !important;
+}
+:root.dark[data-ui-channel="p3"] .text-gray-400 {
+  color: #7e94ab !important;
+}
+:root.dark[data-ui-channel="p3"] :is(.border-gray-100, .border-gray-200, .border-gray-300, [class*="dark:border-gray-800"], [class*="dark:border-gray-700"]) {
+  border-color: #24395f !important;
+}
+/* p3 页面手写的任意值类 */
+:root.dark[data-ui-channel="p3"] [class*="text-[#0a1230]"] { color: #e9f6f1 !important; }
+:root.dark[data-ui-channel="p3"] [class*="text-[#1b57ff]"] { color: #3ecf8e !important; }
+:root.dark[data-ui-channel="p3"] [class*="text-[#0a3bd6]"] { color: #6fe3b0 !important; }
+:root.dark[data-ui-channel="p3"] [class*="bg-[#1b57ff]"] { background-color: #2aa974 !important; }
+:root.dark[data-ui-channel="p3"] [class*="bg-[#cfeaf6]"] { background-color: #12382f !important; }
+:root.dark[data-ui-channel="p3"] [class*="active:bg-[#e2f2fa]"]:active { background-color: #1a2d55 !important; }
+:root.dark[data-ui-channel="p3"] [class*="placeholder:text-[#9ab4c9]"]::placeholder { color: #5e7d99 !important; }
+
+/* ── 黄 · 新变量 ── */
+:root.dark[data-ui-channel="p4"] {
+  --p4-menu-ink: #a9c6ff;           /* 菜单未高亮字 → 浅蓝（用户点名） */
+  /* 菜单图标常态 brightness(0) 压墨；夜间转近似浅蓝（先压黑→反相提亮→sepia 造彩→转蓝） */
+  --p4-menu-icon-filter: brightness(0) invert(0.82) sepia(0.9) hue-rotate(175deg) saturate(2.2);
+  --p4-rule: rgba(243, 236, 255, 0.22);   /* 笔记本横格线（原 rgba(19,19,19,0.2)） */
+  --p4-paper-green: #221542;              /* 已完成任务行（原浅黄绿 #eef3cf） */
+  /* 舞台装饰（弧环/花/闪）的 rgb 三元组：黄橙奶油 → 紫罗兰系 */
+  --p4dec-orange: 164, 124, 255;
+  --p4dec-yellow: 185, 150, 255;
+  --p4dec-gold: 205, 175, 255;
+  --p4dec-cream: 196, 170, 250;
+  --p4-sheet: #2f1c5c;              /* 弹层表单壳：黄 → 深紫（用户 R16：表单页翻紫） */
+  --p4-sheet-border: #47327c;
+}
+
+/* ── 黄 · 页面级灰系文字/面块翻浅紫（第一轮只盖了弹窗内）── */
+:root.dark[data-ui-channel="p4"] :is(.text-gray-900, .text-gray-800, .text-gray-700) {
+  color: #f3ecff !important;
+}
+:root.dark[data-ui-channel="p4"] :is(.text-gray-600, .text-gray-500) {
+  color: rgba(243, 236, 255, 0.75) !important;
+}
+:root.dark[data-ui-channel="p4"] .text-gray-400 {
+  color: rgba(243, 236, 255, 0.55) !important;
+}
+:root.dark[data-ui-channel="p4"] :is(.bg-gray-50, .bg-gray-100) {
+  background-color: #3a2a68 !important;
+}
+:root.dark[data-ui-channel="p4"] :is([class*="dark:bg-gray-900"], [class*="dark:bg-gray-800"]) {
+  background-color: var(--ui-surface, #2f1c5c) !important;
+}
+:root.dark[data-ui-channel="p4"] :is(.border-gray-100, .border-gray-200, .border-gray-300, [class*="dark:border-gray-800"], [class*="dark:border-gray-700"]) {
+  border-color: var(--ui-line, #47327c) !important;
+}
+/* 带透明度修饰的墨字（done 行删除线等）：夜间转半透明浅紫——
+   必须排在 [class*="text-[#131313]"] 基础翻色之后（同权重，后者胜） */
+:root.dark[data-ui-channel="p4"] [class*="text-[#131313]/"] {
+  color: rgba(243, 236, 255, 0.55) !important;
+}
+/* 笔记本横格线等手写墨色 rgba 边框类 */
+:root.dark[data-ui-channel="p4"] [class*="border-[rgba(19,19,19"] {
+  border-color: var(--p4-rule, rgba(243, 236, 255, 0.22)) !important;
+}
+/* 墨色占位符（黑猫聊天输入等）：深纸面上 40% 墨直接隐身 */
+:root.dark[data-ui-channel="p4"] [class*="placeholder:text-[#131313]"]::placeholder {
+  color: rgba(243, 236, 255, 0.4) !important;
+}
+
+/* ── 黄 · 弹窗表单皮的墨字面量补翻（第一轮皮写死 #131313）── */
+:root.dark[data-ui-channel="p4"] :is([role="dialog"], [role="alertdialog"], .p4-reskin) input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+:root.dark[data-ui-channel="p4"] :is([role="dialog"], [role="alertdialog"], .p4-reskin) textarea,
+:root.dark[data-ui-channel="p4"] :is([role="dialog"], [role="alertdialog"], .p4-reskin) select {
+  color: #f3ecff !important;
+}
+:root.dark[data-ui-channel="p4"] :is([role="dialog"], [role="alertdialog"], .p4-reskin) :is(.text-gray-700, .text-gray-800) {
+  color: #f3ecff !important;
+}
+:root.dark[data-ui-channel="p4"] :is([role="dialog"], [role="alertdialog"], .p4-reskin) :is(.text-gray-500, .text-gray-600) {
+  color: rgba(243, 236, 255, 0.72) !important;
+}
+:root.dark[data-ui-channel="p4"] :is([role="dialog"], [role="alertdialog"], .p4-reskin) .text-gray-400 {
+  color: rgba(243, 236, 255, 0.55) !important;
+}
+:root.dark[data-ui-channel="p4"] :is([role="dialog"], [role="alertdialog"], .p4-reskin) :is(.border-gray-100, .border-gray-200, .border-gray-300) {
+  border-color: rgba(243, 236, 255, 0.16) !important;
+}
+:root.dark[data-ui-channel="p4"] :is([role="dialog"], [role="alertdialog"], .p4-reskin) :is(input[type="range"], input[type="checkbox"], input[type="radio"]) {
+  accent-color: var(--ui-bg, #ffd900);
+}
+
+/* ── 黄 · 亮黄件上的灰字补丁（.p4-onbright）在紫底夜间反转成浅字 ── */
+:root.dark[data-ui-channel="p4"] .p4-onbright :is(.text-gray-400, .dark\:text-gray-400, .dark\:text-gray-500) {
+  color: rgba(243, 236, 255, 0.6) !important;
+}
+:root.dark[data-ui-channel="p4"] .p4-onbright :is(.text-gray-500, .text-gray-600, .dark\:text-gray-300) {
+  color: rgba(243, 236, 255, 0.78) !important;
+}
+:root.dark[data-ui-channel="p4"] .p4-onbright :is(.text-gray-700, .text-gray-800, .text-gray-900, .dark\:text-white) {
+  color: #f3ecff !important;
+}
+
+/* ── 黄 · .p4-onlight：仍是亮面的件（奶油太阳盘/天空日期牌）上墨字钉死不翻——
+   权重 (0,5,0) 高过上面所有毯式规则，顺序无关恒胜。 */
+:root.dark[data-ui-channel="p4"] .p4-onlight :is([class*="text-[#131313]"], .text-gray-900, .text-gray-800, .text-gray-700, .dark\:text-white, .dark\:text-gray-100) {
+  color: #131313 !important;
+}
+:root.dark[data-ui-channel="p4"] .p4-onlight :is(.text-gray-400, .text-gray-500, .text-gray-600, .dark\:text-gray-400, .dark\:text-gray-500, [class*="text-[#131313]/"]) {
+  color: rgba(19, 19, 19, 0.66) !important;
 }

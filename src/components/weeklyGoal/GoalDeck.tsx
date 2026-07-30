@@ -206,7 +206,7 @@ export const GoalDeck = (props: GoalDeckProps) => {
               <div
                 aria-hidden
                 className="absolute inset-0"
-                style={{ clipPath: slantClip(18), background: '#ffffff', boxShadow: '0 14px 30px rgba(38,96,140,0.10)' }}
+                style={{ clipPath: slantClip(18), background: 'var(--p3r-panel, #ffffff)', boxShadow: '0 14px 30px rgba(38,96,140,0.10)' }}
               />
               <span
                 aria-hidden

@@ -1229,7 +1229,7 @@ export const Menu = () => {
                         // 常态 brightness(0) 把各色图标一律压成墨色与黑字统一；选中放回本色
                         <span
                           className="relative shrink-0"
-                          style={{ filter: selected ? undefined : 'brightness(0)' }}
+                          style={{ filter: selected ? undefined : 'var(--p4-menu-icon-filter, brightness(0))' }}
                         >
                           {row.icon}
                         </span>
@@ -1239,7 +1239,8 @@ export const Menu = () => {
                         className={`relative font-black leading-none ${row.big ? 'text-[44px]' : 'text-[32px]'}`}
                         style={{
                           fontFamily: 'var(--p4-display-font, serif)',
-                          color: selected ? 'var(--ui-bg)' : '#131313',
+                          // 夜间未高亮翻浅蓝（--p4-menu-ink，用户 R16 点名），高亮仍黄
+                          color: selected ? 'var(--ui-bg)' : 'var(--p4-menu-ink, #131313)',
                         }}
                       >
                         {row.label}

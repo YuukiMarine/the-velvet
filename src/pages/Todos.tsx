@@ -16,7 +16,7 @@ import { SheetModal } from '@/components/SheetModal';
 import { ArchiveIcon, EditIcon, RestoreIcon, TrashIcon } from '@/components/icons';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P4CountPill, P4EmptyBloom, P4SectionTitle, P4Sparkle } from '@/ui/p4Kit';
-import { BigSlantTitle, GhostWords, P3EmptySlab, SlantButton } from '@/components/p3r/kit';
+import { BigSlantTitle, GhostWords, P3EmptySlab, P3R, SlantButton } from '@/components/p3r/kit';
 import { roughQuad, P5Wedge, P5Chip, P5StarFab } from '@/components/p5r/kit';
 
 const weekdayLabels = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
@@ -815,7 +815,7 @@ export const TodosView = () => {
                     </div>
                   </label>
                 ) : p3 ? (
-                  <label className="relative flex cursor-pointer items-center gap-3 px-3 py-3" style={{ background: 'rgba(255,255,255,0.8)', borderBottom: '2px solid rgba(53,209,232,0.7)' }}>
+                  <label className="relative flex cursor-pointer items-center gap-3 px-3 py-3" style={{ background: 'var(--p3r-panel-glass, rgba(255,255,255,0.8))', borderBottom: '2px solid rgba(53,209,232,0.7)' }}>
                     <input
                       type="checkbox"
                       checked={form.important}
@@ -973,8 +973,8 @@ export const TodosView = () => {
                             }`}
                         style={p3 ? {
                           clipPath: 'polygon(12px 0, 100% 0, calc(100% - 12px) 100%, 0 100%)',
-                          background: form.frequency === option.value ? '#1b57ff' : '#fff',
-                          color: form.frequency === option.value ? '#fff' : '#0a1230',
+                          background: form.frequency === option.value ? P3R.blue : P3R.panel,
+                          color: form.frequency === option.value ? '#fff' : P3R.ink,
                           boxShadow: form.frequency === option.value ? 'none' : '0 4px 12px rgba(38,96,140,0.08)',
                         } : undefined}
                       >
@@ -1077,8 +1077,8 @@ export const TodosView = () => {
                                   }`}
                               style={p3 ? {
                                 clipPath: 'polygon(7px 0, 100% 0, calc(100% - 7px) 100%, 0 100%)',
-                                background: form.weekdays.includes(index) ? '#1b57ff' : '#e2f2fa',
-                                color: form.weekdays.includes(index) ? '#fff' : '#0a1230',
+                                background: form.weekdays.includes(index) ? P3R.blue : P3R.cyanFaint,
+                                color: form.weekdays.includes(index) ? '#fff' : P3R.ink,
                               } : undefined}
                             >
                               {label}
