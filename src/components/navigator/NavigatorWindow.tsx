@@ -899,11 +899,11 @@ export const NavigatorWindow = () => {
         )}
       </AnimatePresence>
 
-      {/* 迷你表单（新建 / 编辑确认卡共用） */}
+      {/* 迷你表单（新建 / 编辑确认卡共用）——频道皮随主题：红=剪报 / 黄=综艺 / 其余=P3R 亮蓝 */}
       <NavigatorActionForm
         key={formKey}
         draft={formDraft}
-        bright={bright}
+        channel={user?.theme === 'red' ? 'p5' : user?.theme === 'yellow' ? 'p4' : 'p3'}
         onSubmit={onFormSubmit}
         onClose={() => { setFormDraft(null); setEditingCardId(null); }}
       />

@@ -21,10 +21,13 @@ import {
 } from '@/utils/navigatorRegistry';
 import { P3R, slantClip, SlantButton } from '@/components/p3r/kit';
 
+/** 表单频道皮：p3=P3R 亮蓝斜面（原 bright）/ p4=黄综艺 / p5=红黑剪报。主题→频道映射在调用方。 */
+export type NavFormChannel = 'p3' | 'p4' | 'p5';
+
 interface Props {
   /** null = 关闭 */
   draft: NavigatorDraft | null;
-  bright: boolean;
+  channel: NavFormChannel;
   onSubmit: (d: NavigatorDraft) => void;
   onClose: () => void;
 }
@@ -66,7 +69,7 @@ const TriStepBtn = ({ dir, disabled, onClick, label }: {
   </button>
 );
 
-export const NavigatorActionForm = ({ draft, bright, onSubmit, onClose }: Props) => {
+export const NavigatorActionForm = ({ draft, channel, onSubmit, onClose }: Props) => {
   const open = draft !== null;
   const a11yRef = useModalA11y(open, onClose, { closeOnEscape: true, trapFocus: true });
   useBackHandler(open, onClose);
@@ -77,21 +80,44 @@ export const NavigatorActionForm = ({ draft, bright, onSubmit, onClose }: Props)
 
   if (typeof document === 'undefined') return null;
 
+  // p3 沿用原 bright 全套分支；p5=红黑剪报（纸底/黑描边/硬影）、p4=黄综艺（黄纸/黑描边/橙落影）
+  const bright = channel === 'p3';
+  const p5 = channel === 'p5';
+  const p4 = channel === 'p4';
+
   const ink = bright ? { color: P3R.ink } : undefined;
   const panelCls = bright
     ? 'bg-[#f4fafd] shadow-[0_24px_60px_rgba(6,30,90,.4)]'
-    : 'border border-white/10 bg-[#15181f] text-gray-100 shadow-2xl';
+    : p5
+      ? 'border-[3px] border-[#050505] bg-[#f0e9df] text-[#131313] shadow-[10px_10px_0_rgba(0,0,0,0.5)]'
+      : p4
+        ? 'border-[3px] border-[#131313] bg-[#fff7b0] text-[#131313] shadow-[0_8px_0_#ff9a00]'
+        : 'border border-white/10 bg-[#15181f] text-gray-100 shadow-2xl';
   const labelCls = bright
     ? 'mb-2 block text-[15px] font-black'
-    : 'mb-1.5 block text-xs font-bold text-gray-400';
+    : p5 || p4
+      ? 'mb-1.5 block text-[13px] font-black'
+      : 'mb-1.5 block text-xs font-bold text-gray-400';
   const inputCls = bright
     ? 'w-full bg-[#dbeff8] px-4 py-3 text-[16px] font-bold outline-none placeholder:text-[#8fb1dc]'
-    : 'w-full rounded-xl border border-white/15 bg-black/30 px-3 py-2.5 text-[16px] outline-none placeholder:text-gray-500 focus:border-primary';
+    : p5
+      ? 'w-full border-[3px] border-[#050505] bg-white px-3 py-2.5 text-[16px] font-bold text-[#131313] outline-none placeholder:text-[#131313]/30 focus:shadow-[3px_3px_0_#050505]'
+      : p4
+        ? 'w-full rounded-[12px] border-[3px] border-[#131313] bg-white px-3 py-2.5 text-[16px] font-bold text-[#131313] outline-none placeholder:text-[#131313]/30 focus:border-[#20bff2]'
+        : 'w-full rounded-xl border border-white/15 bg-black/30 px-3 py-2.5 text-[16px] outline-none placeholder:text-gray-500 focus:border-primary';
   const inputStyle = bright ? { ...ink, clipPath: slantClip(12) } : ink;
   const chipCls = (active: boolean) => bright
     ? `px-3.5 py-1.5 text-xs font-black transition [clip-path:polygon(8px_0,100%_0,calc(100%_-_8px)_100%,0_100%)] ${active ? 'bg-[#1b57ff] text-white shadow-[0_6px_16px_rgba(27,87,255,.3)]' : 'bg-white shadow-[0_4px_12px_rgba(7,40,120,.10)]'}`
-    : `rounded-full px-3 py-1.5 text-xs font-bold transition ${active ? 'bg-primary text-white' : 'border border-white/15 bg-white/5 text-gray-300'}`;
-  const stepBtnCls = 'flex h-8 w-8 items-center justify-center rounded-lg border border-white/15 bg-white/5 text-sm font-bold disabled:opacity-30';
+    : p5
+      ? `border-2 border-[#050505] px-3 py-1.5 text-xs font-black transition ${active ? 'bg-[#c00008] text-white shadow-[2px_2px_0_#050505]' : 'bg-white text-[#131313]'}`
+      : p4
+        ? `rounded-full border-2 border-[#131313] px-3 py-1.5 text-xs font-black transition ${active ? 'bg-[#131313] text-[#ffe100]' : 'bg-white text-[#131313]'}`
+        : `rounded-full px-3 py-1.5 text-xs font-bold transition ${active ? 'bg-primary text-white' : 'border border-white/15 bg-white/5 text-gray-300'}`;
+  const stepBtnCls = p5
+    ? 'flex h-8 w-8 items-center justify-center border-2 border-[#050505] bg-white text-sm font-black text-[#131313] disabled:opacity-30'
+    : p4
+      ? 'flex h-8 w-8 items-center justify-center rounded-full border-2 border-[#131313] bg-white text-sm font-black text-[#131313] disabled:opacity-30'
+      : 'flex h-8 w-8 items-center justify-center rounded-lg border border-white/15 bg-white/5 text-sm font-bold disabled:opacity-30';
 
   const patch = (p: Partial<NavigatorDraft>) => setD((prev) => (prev ? ({ ...prev, ...p } as NavigatorDraft) : prev));
 
@@ -241,7 +267,7 @@ export const NavigatorActionForm = ({ draft, bright, onSubmit, onClose }: Props)
             </div>
             {d.extraAttribute && (
               <div className="mt-2 flex items-center gap-2">
-                <span className={bright ? 'text-[13px] font-black' : 'text-xs font-bold text-gray-400'} style={ink}>
+                <span className={bright || p5 || p4 ? 'text-[13px] font-black' : 'text-xs font-bold text-gray-400'} style={ink}>
                   {navAttrName(d.extraAttribute)} 点数
                 </span>
                 {bright ? (
@@ -359,22 +385,26 @@ export const NavigatorActionForm = ({ draft, bright, onSubmit, onClose }: Props)
             exit={{ y: 12, opacity: 0 }}
             transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
             className={`relative w-full max-w-md overflow-hidden ${panelCls}`}
-            style={bright ? { clipPath: 'polygon(0 2%, 100% 0, 99% 100%, 0 98%)' } : { borderRadius: '1.25rem' }}
+            style={bright
+              ? { clipPath: 'polygon(0 2%, 100% 0, 99% 100%, 0 98%)' }
+              : p5
+                ? { clipPath: 'polygon(0 1.5%, 100% 0, 99.2% 100%, 0.8% 98.5%)' }
+                : { borderRadius: p4 ? '22px' : '1.25rem' }}
             onMouseDown={(e) => e.stopPropagation()}
           >
-            {/* LOG/TODO/NOTE 竖排幽灵字（整行横排词顺时针 90°，沿左缘——定稿口径） */}
-            {bright && (
-              <div aria-hidden className="pointer-events-none absolute inset-y-0 left-[-14px] flex w-[72px] select-none items-center justify-center overflow-hidden">
-                <span className="whitespace-nowrap font-black italic leading-none" style={{ fontFamily: 'Arial, sans-serif', fontSize: '4.8rem', color: 'rgba(53,209,232,0.22)', transform: 'rotate(90deg)' }}>
-                  {FORM_GHOST[d.kind]}
-                </span>
-              </div>
-            )}
-            {/* 右上角装饰性无衬线大字（水印层，被内容盖压；与左缘竖排词呼应） */}
-            {bright && (
-              <span aria-hidden className="pointer-events-none absolute right-4 top-[52px] select-none whitespace-nowrap font-black italic leading-none" style={{ fontFamily: 'Arial, sans-serif', fontSize: '2.7rem', color: 'rgba(27,87,255,0.11)', letterSpacing: '0.03em' }}>
-                {CORNER_GHOST[d.kind]}
+            {/* LOG/TODO/NOTE 竖排幽灵字（整行横排词顺时针 90°，沿左缘）——三频道各自的水印色 */}
+            <div aria-hidden className="pointer-events-none absolute inset-y-0 left-[-14px] flex w-[72px] select-none items-center justify-center overflow-hidden">
+              <span className="whitespace-nowrap font-black italic leading-none" style={{ fontFamily: 'Arial, sans-serif', fontSize: '4.8rem', color: bright ? 'rgba(53,209,232,0.22)' : p5 ? 'rgba(192,0,8,0.13)' : p4 ? 'rgba(255,106,0,0.20)' : 'rgba(255,255,255,0.05)', transform: 'rotate(90deg)' }}>
+                {FORM_GHOST[d.kind]}
               </span>
+            </div>
+            {/* 右上角装饰性无衬线大字（水印层，被内容盖压；与左缘竖排词呼应） */}
+            <span aria-hidden className="pointer-events-none absolute right-4 top-[52px] select-none whitespace-nowrap font-black italic leading-none" style={{ fontFamily: 'Arial, sans-serif', fontSize: '2.7rem', color: bright ? 'rgba(27,87,255,0.11)' : p5 ? 'rgba(5,5,5,0.08)' : p4 ? 'rgba(19,19,19,0.08)' : 'rgba(255,255,255,0.04)', letterSpacing: '0.03em' }}>
+              {CORNER_GHOST[d.kind]}
+            </span>
+            {/* p4 签名细节：右上角半调点阵 */}
+            {p4 && (
+              <span aria-hidden className="pointer-events-none absolute right-3 top-3 h-10 w-20 opacity-20" style={{ backgroundImage: 'radial-gradient(circle, #131313 1.4px, transparent 1.9px)', backgroundSize: '8px 8px' }} />
             )}
 
             {bright ? (
@@ -389,6 +419,36 @@ export const NavigatorActionForm = ({ draft, bright, onSubmit, onClose }: Props)
                   onClick={onClose}
                   className="flex h-9 w-12 shrink-0 items-center justify-center text-lg font-black text-white"
                   style={{ background: '#35d1e8', clipPath: slantClip(10) }}
+                >
+                  ✕
+                </button>
+              </header>
+            ) : p5 ? (
+              <header className="relative flex items-center gap-2.5 px-5 pt-5">
+                <span aria-hidden className="h-[22px] w-[9px] shrink-0 bg-[#c00008]" style={{ transform: 'skewX(-16deg)' }} />
+                <h2 className="flex-1 text-[24px] font-black italic leading-none text-[#131313]" style={{ fontFamily: '"Arial Black", "Noto Sans SC", sans-serif' }}>
+                  {ACTION_META[d.kind].label}
+                </h2>
+                <button
+                  type="button"
+                  aria-label="关闭"
+                  onClick={onClose}
+                  className="flex h-9 w-11 shrink-0 items-center justify-center border-[3px] border-[#050505] bg-[#050505] text-lg font-black text-[#f0e9df]"
+                >
+                  ✕
+                </button>
+              </header>
+            ) : p4 ? (
+              <header className="relative flex items-center gap-2.5 px-5 pt-5">
+                <span aria-hidden className="h-4 w-4 shrink-0 rounded-full border-2 border-[#131313]" style={{ background: 'radial-gradient(circle at 42% 36%, #ffc23f 0 45%, #f9a11b 46% 100%)' }} />
+                <h2 className="flex-1 text-[22px] font-black leading-none text-[#131313]" style={{ fontFamily: 'var(--p4-display-font, Georgia, serif)' }}>
+                  {ACTION_META[d.kind].label}
+                </h2>
+                <button
+                  type="button"
+                  aria-label="关闭"
+                  onClick={onClose}
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-[3px] border-[#131313] bg-[#131313] text-base font-black text-[#ffe100]"
                 >
                   ✕
                 </button>
@@ -428,6 +488,42 @@ export const NavigatorActionForm = ({ draft, bright, onSubmit, onClose }: Props)
                   >
                     取消
                     <span aria-hidden className="absolute bottom-0 right-1 h-[8px] w-[14px]" style={{ background: '#35d1e8', clipPath: 'polygon(35% 0, 100% 0, 65% 100%, 0 100%)' }} />
+                  </button>
+                </>
+              ) : p5 ? (
+                <>
+                  <button
+                    type="button"
+                    disabled={!draftReady(d)}
+                    onClick={() => { onSubmit(d); }}
+                    className="min-h-11 flex-1 border-[3px] border-[#050505] bg-[#c00008] px-4 text-[15px] font-black text-white shadow-[4px_4px_0_#050505] transition active:translate-x-0.5 active:translate-y-0.5 active:shadow-[1px_1px_0_#050505] disabled:opacity-40"
+                  >
+                    写好了
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="min-h-11 border-[3px] border-[#050505] bg-white px-5 text-sm font-black text-[#131313] shadow-[4px_4px_0_#050505] transition active:translate-x-0.5 active:translate-y-0.5 active:shadow-[1px_1px_0_#050505]"
+                  >
+                    取消
+                  </button>
+                </>
+              ) : p4 ? (
+                <>
+                  <button
+                    type="button"
+                    disabled={!draftReady(d)}
+                    onClick={() => { onSubmit(d); }}
+                    className="min-h-11 flex-1 rounded-full border-[3px] border-[#131313] bg-[#131313] px-4 text-[15px] font-black tracking-[0.08em] text-[#ffe100] shadow-[0_5px_0_#ff6a00] transition active:translate-y-0.5 active:shadow-[0_1px_0_#ff6a00] disabled:opacity-40"
+                  >
+                    写好了
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="min-h-11 rounded-full border-[3px] border-[#131313] bg-white px-5 text-sm font-black text-[#131313] transition hover:bg-[#fff4b8]"
+                  >
+                    取消
                   </button>
                 </>
               ) : (
