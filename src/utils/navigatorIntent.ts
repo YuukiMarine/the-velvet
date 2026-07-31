@@ -50,7 +50,7 @@ const TRIAGE_PROTOCOL = `你是记录意图判定器。根据对话摘录和最�
 
 actions 元素为下列四种之一：
 {"kind":"activity","text":"事项描述","points":{"knowledge":0,"guts":0,"dexterity":0,"kindness":0,"charm":0},"important":false}（用户**已经做了**的事；points 每项 0~5）
-{"kind":"todo","title":"任务名","attribute":"knowledge|guts|dexterity|kindness|charm","points":2,"repeatDaily":false}（用户**打算做/要提醒**的事）
+{"kind":"todo","title":"任务名","attribute":"knowledge|guts|dexterity|kindness|charm","points":2,"attribute2":"同属性枚举","points2":1,"repeatDaily":false}（用户**打算做/要提醒**的事；attribute2/points2 是可选副奖励——仅当这件事明显同时锻炼两种属性才给，须与 attribute 不同，否则省略这两个字段）
 {"kind":"ledger","direction":"expense|income","amount":0,"note":"摘要","type":"food|transport|shopping|fun|home|study|other","incomeType":"labor|other","channel":""}（花钱/收入）
 {"kind":"completeTodo","todoId":"待办清单里的 id","todoTitle":"任务名"}（用户说做完了某件今日待办；todoId 必须取自清单，没有匹配就不出）
 
@@ -67,7 +67,7 @@ actions 元素为下列四种之一：
 
 示例：
 输入末句：今天跑了五公里 → {"actions":[{"kind":"activity","text":"跑步五公里","points":{"knowledge":0,"guts":2,"dexterity":1,"kindness":0,"charm":0},"important":false}],"query":null}
-输入末句：提醒我周五给妈妈打电话 → {"actions":[{"kind":"todo","title":"周五给妈妈打电话","attribute":"kindness","points":2,"repeatDaily":false}],"query":null}
+输入末句：提醒我周五给妈妈打电话 → {"actions":[{"kind":"todo","title":"周五给妈妈打电话","attribute":"kindness","points":2,"attribute2":"charm","points2":1,"repeatDaily":false}],"query":null}
 对话提到想学英语、无相关待确认卡，末句：帮我记一下 → {"actions":[{"kind":"todo","title":"学英语","attribute":"knowledge","points":2,"repeatDaily":true}],"query":null}
 待确认卡已有「学英语」，末句：帮我记一下 → {"actions":[],"query":null}
 输入末句：今天好累啊 → {"actions":[],"query":null}
@@ -253,7 +253,17 @@ function toDraft(a: Record<string, unknown> | null | undefined): NavigatorDraft 
     const title = String(a.title ?? '').trim();
     if (!title) return undefined;
     const attribute = ATTR_IDS.includes(a.attribute as AttributeId) ? (a.attribute as AttributeId) : 'guts';
-    return { kind: 'todo', title, attribute, points: clampInt(a.points, 1, 5, 2), repeatDaily: a.repeatDaily === true };
+    // 副奖励维度：合法属性且不与主属性重复才收，否则静默丢弃
+    const extraAttribute = ATTR_IDS.includes(a.attribute2 as AttributeId) && a.attribute2 !== attribute
+      ? (a.attribute2 as AttributeId)
+      : null;
+    return {
+      kind: 'todo', title, attribute,
+      points: clampInt(a.points, 1, 5, 2),
+      extraAttribute,
+      extraPoints: clampInt(a.points2, 1, 5, 1),
+      repeatDaily: a.repeatDaily === true,
+    };
   }
   if (kind === 'ledger') {
     const amount = Math.round(Number(a.amount) * 100) / 100;
@@ -373,7 +383,7 @@ function draftLine(d: NavigatorDraft): string {
       return `- 记录活动「${d.text}」${pts ? `（${pts}）` : ''}`;
     }
     case 'todo':
-      return `- 待办「${d.title}」（${navAttrName(d.attribute)}+${d.points}${d.repeatDaily ? '·每日' : ''}）`;
+      return `- 待办「${d.title}」（${navAttrName(d.attribute)}+${d.points}${d.extraAttribute ? ` ${navAttrName(d.extraAttribute)}+${d.extraPoints}` : ''}${d.repeatDaily ? '·每日' : ''}）`;
     case 'ledger':
       return `- ${d.direction === 'expense' ? '支出' : '收入'} ¥${d.amount}${d.note ? `（${d.note}）` : ''}`;
     case 'completeTodo':

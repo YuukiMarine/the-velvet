@@ -185,7 +185,14 @@ export const NavigatorActionForm = ({ draft, bright, onSubmit, onClose }: Props)
             <div className={labelCls} style={ink}>绑定属性</div>
             <div className="flex flex-wrap gap-1.5">
               {ATTR_IDS.map((id) => (
-                <button key={id} type="button" onClick={() => patch({ attribute: id })} className={chipCls(d.attribute === id)} style={bright && d.attribute !== id ? ink : undefined}>
+                <button
+                  key={id}
+                  type="button"
+                  // 主属性切到与副属性同名时清掉副奖励，避免同维双发
+                  onClick={() => patch(d.extraAttribute === id ? { attribute: id, extraAttribute: null } : { attribute: id })}
+                  className={chipCls(d.attribute === id)}
+                  style={bright && d.attribute !== id ? ink : undefined}
+                >
                   {navAttrName(id)}
                 </button>
               ))}
@@ -219,6 +226,41 @@ export const NavigatorActionForm = ({ draft, bright, onSubmit, onClose }: Props)
                 <button type="button" onClick={() => patch({ repeatDaily: true })} className={chipCls(d.repeatDaily)} style={bright && !d.repeatDaily ? ink : undefined}>每日</button>
               </div>
             </div>
+          </div>
+          <div>
+            <div className={labelCls} style={ink}>副奖励（可选）</div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <button type="button" onClick={() => patch({ extraAttribute: null })} className={chipCls(d.extraAttribute === null)} style={bright && d.extraAttribute !== null ? ink : undefined}>
+                无
+              </button>
+              {ATTR_IDS.filter((id) => id !== d.attribute).map((id) => (
+                <button key={id} type="button" onClick={() => patch({ extraAttribute: id })} className={chipCls(d.extraAttribute === id)} style={bright && d.extraAttribute !== id ? ink : undefined}>
+                  {navAttrName(id)}
+                </button>
+              ))}
+            </div>
+            {d.extraAttribute && (
+              <div className="mt-2 flex items-center gap-2">
+                <span className={bright ? 'text-[13px] font-black' : 'text-xs font-bold text-gray-400'} style={ink}>
+                  {navAttrName(d.extraAttribute)} 点数
+                </span>
+                {bright ? (
+                  <>
+                    <TriStepBtn dir="left" disabled={d.extraPoints <= 1} label="副奖励点数减一" onClick={() => patch({ extraPoints: d.extraPoints - 1 })} />
+                    <span className="w-8 text-center text-[22px] font-black italic" style={ink}>{d.extraPoints}</span>
+                    <TriStepBtn dir="right" disabled={d.extraPoints >= 5} label="副奖励点数加一" onClick={() => patch({ extraPoints: d.extraPoints + 1 })} />
+                  </>
+                ) : (
+                  <>
+                    <button type="button" className={stepBtnCls} disabled={d.extraPoints <= 1}
+                      onClick={() => patch({ extraPoints: d.extraPoints - 1 })} aria-label="副奖励点数减一">−</button>
+                    <span className="w-6 text-center text-sm font-black">{d.extraPoints}</span>
+                    <button type="button" className={stepBtnCls} disabled={d.extraPoints >= 5}
+                      onClick={() => patch({ extraPoints: d.extraPoints + 1 })} aria-label="副奖励点数加一">＋</button>
+                  </>
+                )}
+              </div>
+            )}
           </div>
         </>
       )}
