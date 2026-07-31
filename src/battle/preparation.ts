@@ -40,11 +40,16 @@ export const BLAZE_TODO_THRESHOLD = 3;
 export interface BlazeTodoSource { id: string; attribute: AttributeId }
 export interface BlazeCompletionSource { todoId: string; date: string; count?: number }
 
-/** 今日各属性待办完成数 ≥3 的属性列表（面具「燃起」；纯计算，store/UI 读写） */
+/**
+ * 今日各属性待办完成数 ≥3 的属性列表（面具「燃起」；纯计算，store/UI 读写）。
+ * extraAttrEvents：不走 todoCompletion 的当日完成事件（BIG DEAL 子步，TASKS_MERGE_PRD §5），
+ * 每个元素记 1 次该属性完成。
+ */
 export function blazingAttrsToday(
   todos: BlazeTodoSource[],
   completions: BlazeCompletionSource[],
   todayKey?: string,
+  extraAttrEvents: AttributeId[] = [],
 ): AttributeId[] {
   const today = todayKey ?? (() => {
     const d = new Date();
@@ -57,6 +62,9 @@ export function blazingAttrsToday(
     const attr = attrOf.get(c.todoId);
     if (!attr) continue;
     counts[attr] = (counts[attr] ?? 0) + (c.count ?? 1);
+  }
+  for (const attr of extraAttrEvents) {
+    counts[attr] = (counts[attr] ?? 0) + 1;
   }
   return ATTRS.filter(a => (counts[a] ?? 0) >= BLAZE_TODO_THRESHOLD);
 }

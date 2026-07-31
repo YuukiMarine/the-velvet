@@ -46,7 +46,9 @@ export interface Activity {
   };
   method: 'local' | 'todo' | 'battle';
   important?: boolean;
-  category?: 'skill_unlock' | 'achievement_unlock' | 'level_up' | 'weekly_goal' | 'countercurrent' | 'shadow_defeat' | 'confidant' | 'calling_card_clear' | 'ledger' | 'terminal_clear';
+  category?: 'skill_unlock' | 'achievement_unlock' | 'level_up' | 'weekly_goal' | 'countercurrent' | 'shadow_defeat' | 'confidant' | 'calling_card_clear' | 'ledger' | 'terminal_clear' | 'bigdeal_step' | 'bigdeal_clear';
+  /** BIG DEAL 从属标注（bigdeal_step / bigdeal_clear 都挂）：收束分组键 + Agent 读取时识别非独立任务 */
+  bigDealId?: string;
   /** 同伴互动记录的关联同伴 id（category === 'confidant' 时填充） */
   confidantId?: string;
   levelUps?: Array<{
@@ -97,6 +99,18 @@ export interface Wish {
 
 export type TodoFrequency = 'single' | 'count';
 
+/** BIG DEAL 轻量子步（TASKS_MERGE_PRD §2）：只有标题与可选属性覆写，点数挂在父条目上 */
+export interface TodoStep {
+  id: string;
+  title: string;
+  /** 覆写属性；缺省随父条目 attribute */
+  attribute?: AttributeId;
+  done?: boolean;
+  /** 完成时间 ISO */
+  doneAt?: string;
+  source: 'manual' | 'ai';
+}
+
 export interface Todo {
   id: string;
   title: string;
@@ -117,6 +131,16 @@ export interface Todo {
   archivedAt?: Date;
   /** 任务被完成（达标）时的时间戳，用于区分"已完成"和"手动归档" */
   completedAt?: Date;
+  // ── BIG DEAL（任务×终端二合一，TASKS_MERGE_PRD §4.1）──
+  /** 大事模式：进度由 steps 派生，不走 todoCompletion 计数 */
+  isBigDeal?: boolean;
+  steps?: TodoStep[];
+  /** 现状一句话（喂 AI 拆解上下文；自 Wish.currentState 迁移） */
+  currentState?: string;
+  /** 可选截止日 YYYY-MM-DD（压力场景的软时限） */
+  deadline?: string;
+  /** 收官记录的 activity id；存在 = 已收官 */
+  clearedActivityId?: string;
 }
 
 export interface TodoCompletion {
@@ -338,8 +362,10 @@ export interface Settings {
   terminalEnabled?: boolean;
   /** 终端任务奖励日封顶锚日（YYYY-MM-DD）：每日首次完成才给属性点 + 弹幕机会，防刷。 */
   terminalRewardDate?: string;
-  /** 已累积但未发送的「鼓励弹幕」机会数（在线发送随 F2b 后端批开放）。 */
+  /** 已累积但未发送的「鼓励弹幕」机会数（在线发送随 F2b 后端批开放；二合一后由大事收官发放）。 */
   terminalDanmakuTokens?: number;
+  /** 任务×终端二合一迁移完成时间 ISO（TASKS_MERGE_PRD §2）：防重入标记 */
+  tasksMergeMigratedAt?: string;
   // ── F6 万能记录 AI「黑猫」（Navigator） ──
   /** 最近一次「每日首开问候」的本地日期（YYYY-MM-DD）：跨天首开播完整问候，当日重开只简短招呼。 */
   navigatorLastGreetDate?: string;

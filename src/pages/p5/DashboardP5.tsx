@@ -421,7 +421,6 @@ export const DashboardP5 = () => {
     completeTodo, getTodayTodoProgress, setModalBlocker, setCurrentPage,
     applyCountercurrentDecay, getCountercurrentWarnings, callingCards,
     getActiveTerminalTask, completeTerminalTask, dismissTerminalTask,
-    wishes, getDueTodosToday,
   } = useAppStore();
   const anim = useBoldness();
   const activeTerminalTask = getActiveTerminalTask();
@@ -456,6 +455,7 @@ export const DashboardP5 = () => {
   const todayWeekday = now.getDay();
   const todayKey = toLocalDateKey(now);
   const todayTodos = [...todos.filter((todo) => {
+    if (todo.isBigDeal) return false; // 大事不进今日清单：走独立聚合卡（批2）
     const matchesWeekday = !todo.weekdays || todo.weekdays.length === 0 || todo.weekdays.includes(todayWeekday);
     if (todo.startDate && todo.startDate > todayKey) return false;
     if (todo.isActive && matchesWeekday) return true;
@@ -580,12 +580,6 @@ export const DashboardP5 = () => {
     setCurrentPage(page);
   };
 
-  // ── 治疗终端入口副行数据（口径同 Dashboard）───────────────────────────────
-  const terminalGoals = wishes.filter((w) => !w.parentId && w.status !== 'archived');
-  const terminalSteps =
-    wishes.filter((w) => w.parentId && w.status === 'active').length +
-    getDueTodosToday().filter((t) => !getTodayTodoProgress(t.id).isComplete).length;
-
   // ──「今日仪式」slides（条件在组装处拦截）──────────────────────────────────
   const ritualSlides: ReactNode[] = [];
   if (hasCountercurrentWarning) {
@@ -620,19 +614,7 @@ export const DashboardP5 = () => {
       />
     </div>,
   );
-  if (settings.terminalEnabled) {
-    ritualSlides.push(
-      <div key="terminal" className="h-full [&>*]:h-full">
-        <RitualSlabP5
-          seed={41}
-          icon={<P5Sparkle size={26} color={P5R.paper} />}
-          onClick={() => go('terminal')}
-          title="治疗终端"
-          sub={terminalGoals.length === 0 ? '失去记录的勇气时，来这里许下第一个愿望' : `${terminalGoals.length} 个目标 · ${terminalSteps} 个待迈出的一步`}
-        />
-      </div>,
-    );
-  }
+  // F3 治疗终端入口已退役（TASKS_MERGE_PRD）：能力并入任务系统
   if (settings.battleEnabled !== false) {
     ritualSlides.push(
       <div key="battle" className="h-full [&>*]:h-full">
