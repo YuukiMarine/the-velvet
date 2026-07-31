@@ -38,6 +38,9 @@ export interface TodoDraft {
   title: string;
   attribute: AttributeId;
   points: number;
+  /** 副奖励维度（可选）：与主属性不同的第二属性，落库进 Todo.extraBoosts */
+  extraAttribute: AttributeId | null;
+  extraPoints: number;
   repeatDaily: boolean;
 }
 export interface LedgerDraft {
@@ -62,7 +65,7 @@ export const emptyDraft = (kind: NavigatorActionKind): NavigatorDraft => {
     case 'activity':
       return { kind, text: '', points: { knowledge: 0, guts: 0, dexterity: 0, kindness: 0, charm: 0 }, important: false };
     case 'todo':
-      return { kind, title: '', attribute: 'guts', points: 2, repeatDaily: false };
+      return { kind, title: '', attribute: 'guts', points: 2, extraAttribute: null, extraPoints: 1, repeatDaily: false };
     case 'ledger':
       return { kind, direction: 'expense', amount: 0, note: '', type: 'food', incomeType: 'labor', channel: '' };
     case 'completeTodo':
@@ -93,7 +96,7 @@ export function buildPreviewLines(draft: NavigatorDraft): string[] {
     case 'todo':
       return [
         `「${draft.title}」`,
-        `${navAttrName(draft.attribute)} +${draft.points} · ${draft.repeatDaily ? '每日重复' : '单次完成'}`,
+        `${navAttrName(draft.attribute)} +${draft.points}${draft.extraAttribute ? ` · ${navAttrName(draft.extraAttribute)} +${draft.extraPoints}` : ''} · ${draft.repeatDaily ? '每日重复' : '单次完成'}`,
       ];
     case 'ledger': {
       const head = draft.direction === 'expense'
@@ -146,6 +149,9 @@ export async function executeDraft(draft: NavigatorDraft): Promise<string> {
         title: draft.title.trim(),
         attribute: draft.attribute,
         points: draft.points,
+        extraBoosts: draft.extraAttribute
+          ? [{ attribute: draft.extraAttribute, points: draft.extraPoints }]
+          : undefined,
         frequency: 'single',
         repeatDaily: draft.repeatDaily,
         isActive: true,
