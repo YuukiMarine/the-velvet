@@ -382,7 +382,7 @@ const P5Spine = ({ containerRef, count, phase }: {
 };
 
 export const NavigatorWindow = () => {
-  const { user, settings, setCurrentPage, getDueTodosToday, getTodayTodoProgress } = useAppStore();
+  const { user, setCurrentPage, getDueTodosToday, getTodayTodoProgress } = useAppStore();
   const nav = useNavigatorStore();
   const bold = useBoldness();
   const bright = terminalChannel(user?.theme) === 'board';
@@ -819,12 +819,7 @@ export const NavigatorWindow = () => {
                   {bright && <span aria-hidden className="h-[16px] w-[7px] shrink-0" style={{ background: '#35d1e8', clipPath: 'polygon(38% 0, 100% 0, 62% 100%, 0 100%)' }} />}
                   {bright ? '去抽塔罗' : '🔮 去抽塔罗'}
                 </button>
-                {settings.terminalEnabled && (
-                  <button type="button" onClick={() => jump('terminal')} className={`shrink-0 ${bright ? 'flex items-center gap-2 py-2 pl-2.5 pr-3.5' : 'px-3.5 py-2'} ${sk.chip}`} style={sk.chipStyle}>
-                    {bright && <span aria-hidden className="h-[16px] w-[7px] shrink-0" style={{ background: '#7fd8ee', clipPath: 'polygon(38% 0, 100% 0, 62% 100%, 0 100%)' }} />}
-                    {bright ? '打开终端' : '✦ 打开终端'}
-                  </button>
-                )}
+                {/* 终端跳转 chip 已退役（TASKS_MERGE_PRD）：批5 黑猫改为「拆小步」递刀 */}
               </div>
 
               {/* 输入栏 */}

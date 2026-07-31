@@ -36,7 +36,6 @@ const Account = lazy(() => import('@/pages/Account').then(m => ({ default: m.Acc
 // 心相记账页（F5）
 const Ledger = lazy(() => import('@/pages/Ledger').then(m => ({ default: m.Ledger })));
 // 无气力症治疗终端（F3）
-const Terminal = lazy(() => import('@/pages/Terminal').then(m => ({ default: m.Terminal })));
 import { BattleArena } from '@/components/battle/BattleArena';
 import { TerminalClearCutIn } from '@/components/terminal/TerminalClearCutIn';
 // F6 黑猫对话窗（portal 到 body 的全屏 overlay；入口在 Sidebar / BottomNav 中央 ◈）
@@ -74,7 +73,6 @@ const PAGE_CHUNKS: Array<() => Promise<unknown>> = [
   () => import('@/pages/Astrology'),
   () => import('@/pages/Ledger'),
   () => import('@/pages/Account'),
-  () => import('@/pages/Terminal'),
 ];
 
 const onIdle = (cb: () => void, timeout = 2000) => {
@@ -136,6 +134,13 @@ function App() {
         setIsLoading(true);
         setError(null);
         await initializeApp();
+        // 任务×终端二合一（TASKS_MERGE_PRD 批1）：一次性数据迁移（内部防重入，已迁则瞬时返回）。
+        // 失败不阻塞启动：按根逐个迁移天然可重入，下次启动续跑
+        try {
+          await useAppStore.getState().runTasksMergeMigration();
+        } catch (e) {
+          console.warn('[velvet] tasks-merge migration failed; will retry next boot', e);
+        }
         void useAppStore.getState().syncNotifications(); // F2a：启动后排程本地通知
       } catch (err) {
         console.error('App initialization error:', err);
@@ -476,7 +481,8 @@ function App() {
       case 'ledger':
         return <Suspense fallback={<div className="flex items-center justify-center h-64 text-gray-400">加载中…</div>}><Ledger /></Suspense>;
       case 'terminal':
-        return <Suspense fallback={<div className="flex items-center justify-center h-64 text-gray-400">加载中…</div>}><Terminal /></Suspense>;
+        // F3 终端已并入任务系统（TASKS_MERGE_PRD）：旧跳转一律落回首页
+        return <Dashboard />;
       default:
         return <Dashboard />;
     }

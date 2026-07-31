@@ -13,7 +13,6 @@ import { AttributeDossier } from '@/components/AttributeDossier';
 import { TAROT_BY_ID } from '@/constants/tarot';
 import { CallingCardCard } from '@/components/callingCard/CallingCardCard';
 import { CallingCardEmptyHint } from '@/components/callingCard/CallingCardEmptyHint';
-import { TerminalTaskCard } from '@/components/terminal/TerminalTaskCard';
 import { playSound } from '@/utils/feedback';
 import { getAttributeLevelTitle } from '@/utils/attributeLevelTitles';
 import type { AttributeId, CallingCard } from '@/types';
@@ -499,8 +498,7 @@ const isLightColor = (hex: string): boolean => {
 };
 
 export const Dashboard = () => {
-  const { attributes, user, settings, todos, activities, achievements, skills, completeTodo, getTodayTodoProgress, setModalBlocker, setCurrentPage, applyCountercurrentDecay, getCountercurrentWarnings, callingCards, getActiveTerminalTask, completeTerminalTask, dismissTerminalTask } = useAppStore();
-  const activeTerminalTask = getActiveTerminalTask();
+  const { attributes, user, settings, todos, activities, achievements, skills, completeTodo, getTodayTodoProgress, setModalBlocker, setCurrentPage, applyCountercurrentDecay, getCountercurrentWarnings, callingCards } = useAppStore();
   const [completedTitle, setCompletedTitle] = useState<string | null>(null);
   const [completedPoints, setCompletedPoints] = useState(1);
   const [unlockHint, setUnlockHint] = useState<{ achievements: number; skills: number }>({ achievements: 0, skills: 0 });
@@ -642,6 +640,7 @@ export const Dashboard = () => {
   const todayKey = toLocalDateKey(today);
 
   const todayTodos = [...todos.filter(todo => {
+    if (todo.isBigDeal) return false; // 大事不进今日清单：走独立聚合卡（批2），混入会被当单次任务误勾
     const matchesWeekday = !todo.weekdays || todo.weekdays.length === 0 || todo.weekdays.includes(todayWeekday);
     // 未来启用日期的任务今天不显示
     if (todo.startDate && todo.startDate > todayKey) return false;
@@ -716,14 +715,7 @@ export const Dashboard = () => {
       <AstrologyEntryCard onOpen={() => setCurrentPage('astrology')} />
     </div>
   );
-  // F3 治疗终端入口（默认关，设置里开启）：常驻应急工具，不 gating
-  if (settings.terminalEnabled) {
-    ritualSlides.push(
-      <div key="terminal" className="h-full [&>*]:h-full">
-        <TerminalEntryCard onOpen={() => setCurrentPage('terminal')} />
-      </div>
-    );
-  }
+  // F3 治疗终端已并入任务系统（TASKS_MERGE_PRD）：入口退役，能力由 BIG DEAL / 抽签承接
   if (settings.battleEnabled !== false) {
     // BattleDashboardWidget 在 battleEnabled === false 时内部 return null，必须在此处就拦下不入数组
     ritualSlides.push(
@@ -877,16 +869,6 @@ export const Dashboard = () => {
         )}
        </div>
       </motion.div>
-
-      {/* 进行中的治疗终端 24h 限时任务（特殊风格） */}
-      {settings.terminalEnabled && activeTerminalTask && (
-        <TerminalTaskCard
-          card={activeTerminalTask}
-          onComplete={() => completeTerminalTask(activeTerminalTask.id)}
-          onDismiss={() => dismissTerminalTask(activeTerminalTask.id)}
-          compact
-        />
-      )}
 
       {/* 今日任务 ×「今日仪式」：竖屏上下排（并排时两栏都太挤，用户口径），宽屏才回双列 */}
       <div className={isP4 ? 'grid grid-cols-1 items-stretch gap-3 md:grid-cols-2' : 'space-y-5'}>
@@ -1425,35 +1407,3 @@ function AstrologyEntryCard({ onOpen }: { onOpen: () => void }) {
   );
 }
 
-// F3 治疗终端入口卡（挂在 ritualSlides 轮播里，与星象 / 战场入口平级）
-function TerminalEntryCard({ onOpen }: { onOpen: () => void }) {
-  const { wishes, getDueTodosToday, getTodayTodoProgress } = useAppStore();
-  const goals = wishes.filter(w => !w.parentId && w.status !== 'archived');
-  const activeSubs = wishes.filter(w => w.parentId && w.status === 'active');
-  // 「待迈出的一步」= 短路决策候选池口径：活跃子愿望 + 今日应做未完成待办
-  const dueTodos = getDueTodosToday().filter(t => !getTodayTodoProgress(t.id).isComplete);
-  const stepCount = activeSubs.length + dueTodos.length;
-  return (
-    <motion.button
-      onClick={onOpen}
-      whileTap={{ scale: 0.98 }}
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="w-full text-left rounded-2xl border border-primary/30 bg-primary/5 dark:bg-primary/10 p-4 overflow-hidden relative"
-    >
-      <div className="absolute -right-3 -top-3 text-6xl opacity-10 select-none">✦</div>
-      <div className="flex items-center gap-3">
-        <div className="text-2xl flex-shrink-0">✦</div>
-        <div className="flex-1 min-w-0">
-          <div className="text-sm font-black text-primary">治疗终端</div>
-          <div className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5 leading-snug">
-            {goals.length === 0
-              ? '失去记录的勇气时，来这里许下第一个愿望'
-              : `${goals.length} 个目标 · ${stepCount} 个待迈出的一步`}
-          </div>
-        </div>
-        <div className="text-primary/50 text-xl flex-shrink-0">›</div>
-      </div>
-    </motion.button>
-  );
-}

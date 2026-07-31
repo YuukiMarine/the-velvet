@@ -298,7 +298,15 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
       maskBondTiers: Object.fromEntries(
         (Object.entries(bs.maskBattles ?? {}) as Array<[AttributeId, number]>).map(([a, n]) => [a, maskBondTier(n)])
       ) as Partial<Record<AttributeId, number>>,
-      blazingMasks: blazingAttrsToday(useAppStore.getState().todos, useAppStore.getState().todoCompletions),
+      // 燃起统计：todoCompletion 之外补记今日 BIG DEAL 子步完成（不写 completion 表，属性从记录点数反查）
+      blazingMasks: blazingAttrsToday(
+        useAppStore.getState().todos,
+        useAppStore.getState().todoCompletions,
+        undefined,
+        useAppStore.getState().activities
+          .filter(a => a.category === 'bigdeal_step' && toLocalDateKey(new Date(a.date)) === toLocalDateKey())
+          .map(a => (Object.entries(a.pointsAwarded).find(([, v]) => v > 0)?.[0] ?? 'guts') as AttributeId),
+      ),
     });
     engineRef.current = engine;
     // 属性向派生后写回（存量主影无此字段；小影不落表）

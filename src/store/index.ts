@@ -1,5 +1,5 @@
 ﻿import { create } from 'zustand';
-import { User, Attribute, Activity, Achievement, Skill, Settings, ThemeType, AttributeId, AttributeNamesKey, Todo, TodoCompletion, PeriodSummary, SummaryPeriod, SummaryPromptPreset, WeeklyGoal, WeeklyGoalItem, Persona, Shadow, BattleState, TowerStratum, StratumNode, DailyDivination, LongReading, LongReadingFollowUp, Confidant, ConfidantEvent, ConfidantBuff, CounselSession, CounselMessage, CounselArchive, CallingCard, NotifSlot, LedgerEntry, Budget, SpendWorth, LedgerAsset, Wish, TerminalClearPayload, BattleArsenal, ChainKey, AffixKind } from '@/types';
+import { User, Attribute, Activity, Achievement, Skill, Settings, ThemeType, AttributeId, AttributeNamesKey, Todo, TodoCompletion, TodoStep, PeriodSummary, SummaryPeriod, SummaryPromptPreset, WeeklyGoal, WeeklyGoalItem, Persona, Shadow, BattleState, TowerStratum, StratumNode, DailyDivination, LongReading, LongReadingFollowUp, Confidant, ConfidantEvent, ConfidantBuff, CounselSession, CounselMessage, CounselArchive, CallingCard, NotifSlot, LedgerEntry, Budget, SpendWorth, LedgerAsset, Wish, TerminalClearPayload, BattleArsenal, ChainKey, AffixKind } from '@/types';
 import { TAROT_BY_ID } from '@/constants/tarot';
 import { summarizeCounsel, type CounselContext, type CounselConfidantBrief, type CounselRecentEvent } from '@/utils/counselAI';
 import { db } from '@/db';
@@ -43,6 +43,17 @@ let _addConfidantLock: Promise<unknown> = Promise.resolve();
 const _completingTerminalIds = new Set<string>();
 const TERMINAL_COMBO_WINDOW_MS = 20 * 60 * 1000;
 let _terminalComboState: { goalKey: string; count: number; lastAt: number } = { goalKey: '', count: 0, lastAt: 0 };
+
+/** BIG DEAL 收官 SP（TASKS_MERGE_PRD §5）：min(20, 子步数×3)，经 earnSP 入战场钱包 */
+const BIGDEAL_CLEAR_SP_PER_STEP = 3;
+const BIGDEAL_CLEAR_SP_CAP = 20;
+/** completeTodoStep 在途锁：同一子步双击在 addActivity 异步窗口内重入会双发点数 */
+const _completingStepIds = new Set<string>();
+/**
+ * 迁移单飞锁：StrictMode 下 App 启动 effect 双跑，两次调用会在 settings 标记落库前
+ * 双双通过防重入检查 → 大事被迁两份。同一 JS 会话内只允许第一次真正执行。
+ */
+let _tasksMergeMigrationPromise: Promise<void> | null = null;
 
 type TerminalStepHistory = NonNullable<Wish['stepHistory']>[number];
 
@@ -257,7 +268,7 @@ interface AppState {
   createUser: (name: string, attrNames?: Partial<import('@/types').AttributeNames>, blessingAttribute?: AttributeId) => Promise<void>;
   updateUser: (patch: Partial<Pick<User, 'name' | 'avatarDataUrl'>>) => Promise<void>;
   setTheme: (theme: ThemeType) => Promise<void>;
-  addActivity: (description: string, points: Record<string, number>, method: 'local' | 'todo' | 'battle', options?: { important?: boolean; date?: Date; category?: Activity['category'] }) => Promise<{ unlockHints: { achievements: number; skills: number }; activityId: string }>;
+  addActivity: (description: string, points: Record<string, number>, method: 'local' | 'todo' | 'battle', options?: { important?: boolean; date?: Date; category?: Activity['category']; bigDealId?: string }) => Promise<{ unlockHints: { achievements: number; skills: number }; activityId: string }>;
   updateAttribute: (attributeId: string, points: number) => Promise<void>;
   unlockAchievement: (achievementId: string) => Promise<void>;
   unlockSkill: (skillId: string) => Promise<void>;
@@ -374,6 +385,21 @@ interface AppState {
    * 仅作用于 today + method='todo' 的活动；非当天已完成的项不应进入这个入口。
    */
   undoTodayTodoCompletion: (todoId: string) => Promise<void>;
+  // ── BIG DEAL（任务×终端二合一，TASKS_MERGE_PRD 批1 数据底座）──
+  addTodoStep: (todoId: string, title: string, opts?: { attribute?: AttributeId; source?: 'manual' | 'ai' }) => Promise<void>;
+  updateTodoStep: (todoId: string, stepId: string, patch: Partial<Pick<TodoStep, 'title' | 'attribute'>>) => Promise<void>;
+  removeTodoStep: (todoId: string, stepId: string) => Promise<void>;
+  /** 勾一子步：发父条目点数 + 写 bigdeal_step 记录；最后一步自动收官。返回 null = 未生效 */
+  completeTodoStep: (todoId: string, stepId: string) => Promise<{ collapsed: boolean } | null>;
+  /** 撤勾（未收官前）：走 deleteActivity 完整回档链路 */
+  undoTodoStep: (todoId: string, stepId: string) => Promise<void>;
+  /** 收官：触及属性各+1（承载在收官记录上）+ SP 入账 + 归档；全子步 done 才生效 */
+  collapseBigDeal: (todoId: string) => Promise<void>;
+  getBigDealProgress: (todoId: string) => { done: number; total: number; nextStep: TodoStep | null };
+  /** AI 拆解大事子步（复用 decomposeWishAI 管线；无 Key 抛错由 UI 走离线模板兜底） */
+  decomposeBigDealAI: (todoId: string) => Promise<string[]>;
+  /** 一次性迁移：Wish 树根→BIG DEAL / 无子步根→愿望纸片 / 在途终端卡归档（防重入） */
+  runTasksMergeMigration: () => Promise<void>;
   getTodayTodoProgress: (todoId: string) => { count: number; isComplete: boolean; target: number };
   getTodoDateLabel: (date: Date) => string;
   setLevelUpNotification: (notification: { id: string; displayName: string; level: number } | null) => void;
@@ -902,7 +928,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  addActivity: async (description: string, points: Record<string, number>, method: 'local' | 'todo' | 'battle', options?: { important?: boolean; date?: Date; category?: Activity['category'] }) => {
+  addActivity: async (description: string, points: Record<string, number>, method: 'local' | 'todo' | 'battle', options?: { important?: boolean; date?: Date; category?: Activity['category']; bigDealId?: string }) => {
     const { user, dailyDivination, settings } = get();
     if (!user) return { unlockHints: { achievements: 0, skills: 0 }, activityId: '' };
 
@@ -945,6 +971,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       levelUps: [],
       important: options?.important,
       category: options?.category,
+      bigDealId: options?.bigDealId,
     };
 
     // ── 所有 DB 写操作包在事务里：中途崩溃 / 异常时自动回滚 ─────────
@@ -1844,6 +1871,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     return get().todos.filter(t =>
       t.isActive &&
       !t.archivedAt &&
+      !t.isBigDeal && // BIG DEAL 不进今日清单：首页走独立聚合卡（批2），此处混入会被当单次任务误完成
       (!t.startDate || t.startDate <= todayKey) &&
       (!t.weekdays || t.weekdays.length === 0 || t.weekdays.includes(todayWeekday)),
     );
@@ -2855,6 +2883,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   getTodayTodoProgress: (todoId) => {
     const today = toLocalDateKey();
     const todo = get().todos.find(t => t.id === todoId);
+    // BIG DEAL：进度恒为 steps 派生（生涯口径），不走 todoCompletion 计数
+    if (todo?.isBigDeal) {
+      const steps = todo.steps ?? [];
+      const done = steps.filter(s => s.done).length;
+      return { count: done, isComplete: steps.length > 0 && done >= steps.length, target: Math.max(1, steps.length) };
+    }
     const target = todo?.frequency === 'count' ? (todo.targetCount || 1) : 1;
     let count: number;
     if (todo?.isLongTerm) {
@@ -2883,6 +2917,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     const todo = todos.find(t => t.id === todoId);
     if (!todo || !todo.isActive) return null;
+    if (todo.isBigDeal) return null; // 大事只能逐子步完成（completeTodoStep），整单完成路径拦死
 
     const today = toLocalDateKey();
     const completion = await db.todoCompletions.where('todoId').equals(todoId).filter(c => c.date === today).first();
@@ -2988,6 +3023,233 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
     });
     await get().loadData();
+  },
+
+  // ── BIG DEAL（任务×终端二合一，TASKS_MERGE_PRD 批1）───────────────────
+
+  addTodoStep: async (todoId, title, opts) => {
+    const clean = title.trim();
+    if (!clean) return;
+    const todo = await db.todos.get(todoId);
+    if (!todo?.isBigDeal || todo.clearedActivityId) return;
+    const step: TodoStep = { id: uuidv4(), title: clean, attribute: opts?.attribute, source: opts?.source ?? 'manual' };
+    await db.todos.update(todoId, { steps: [...(todo.steps ?? []), step] });
+    await get().loadData();
+  },
+
+  updateTodoStep: async (todoId, stepId, patch) => {
+    const todo = await db.todos.get(todoId);
+    if (!todo?.isBigDeal) return;
+    await db.todos.update(todoId, {
+      steps: (todo.steps ?? []).map(s => (s.id === stepId ? { ...s, ...patch, title: (patch.title ?? s.title).trim() || s.title } : s)),
+    });
+    await get().loadData();
+  },
+
+  removeTodoStep: async (todoId, stepId) => {
+    const todo = await db.todos.get(todoId);
+    if (!todo?.isBigDeal || todo.clearedActivityId) return;
+    // 已完成子步的删除 = 先撤勾（连点数回档）再移除，避免幽灵点数
+    const step = (todo.steps ?? []).find(s => s.id === stepId);
+    if (step?.done) await get().undoTodoStep(todoId, stepId);
+    const fresh = await db.todos.get(todoId);
+    if (!fresh) return;
+    await db.todos.update(todoId, { steps: (fresh.steps ?? []).filter(s => s.id !== stepId) });
+    await get().loadData();
+  },
+
+  completeTodoStep: async (todoId, stepId) => {
+    // 在途锁：同一子步双击在 addActivity 异步窗口内重入会双发点数
+    if (_completingStepIds.has(stepId)) return null;
+    _completingStepIds.add(stepId);
+    try {
+      const { user } = get();
+      if (!user) return null;
+      const todo = await db.todos.get(todoId);
+      if (!todo?.isBigDeal || !todo.isActive || todo.clearedActivityId) return null;
+      const steps = todo.steps ?? [];
+      const idx = steps.findIndex(s => s.id === stepId);
+      if (idx < 0 || steps[idx].done) return null;
+
+      const doneStep: TodoStep = { ...steps[idx], done: true, doneAt: new Date().toISOString() };
+      const nextSteps = steps.map((s, i) => (i === idx ? doneStep : s));
+      await db.todos.update(todoId, { steps: nextSteps });
+
+      // 子步点数 = 父条目 points，落在子步覆写属性（缺省父属性）；
+      // 描述模板固定带主任务标注（D4：Agent 读记录时识别非独立任务），改动需同步 undoTodoStep 的匹配
+      const attr = doneStep.attribute ?? todo.attribute;
+      const points = { knowledge: 0, guts: 0, dexterity: 0, kindness: 0, charm: 0 } as Record<string, number>;
+      points[attr] = todo.points;
+      const doneCount = nextSteps.filter(s => s.done).length;
+      await get().addActivity(
+        `完成小步: ${doneStep.title}（大事「${todo.title}」第 ${doneCount}/${nextSteps.length} 步）`,
+        points, 'todo',
+        { category: 'bigdeal_step', bigDealId: todoId },
+      );
+
+      if (nextSteps.every(s => s.done)) {
+        await get().collapseBigDeal(todoId);
+        return { collapsed: true };
+      }
+      return { collapsed: false };
+    } finally {
+      _completingStepIds.delete(stepId);
+    }
+  },
+
+  undoTodoStep: async (todoId, stepId) => {
+    const todo = await db.todos.get(todoId);
+    // 已收官后不可逐步撤：整体撤销 = 删除收官记录（批4 给入口）
+    if (!todo?.isBigDeal || todo.clearedActivityId) return;
+    const steps = todo.steps ?? [];
+    const step = steps.find(s => s.id === stepId);
+    if (!step?.done) return;
+    await db.todos.update(todoId, { steps: steps.map(s => (s.id === stepId ? { ...s, done: false, doneAt: undefined } : s)) });
+    // 对应 bigdeal_step 记录 → deleteActivity 完整回档（扣点/回算等级/清 level_up 副记录）。
+    // activities 已按日期倒序，find 即取最近一次命中（同名子步取最新，可接受的边界）
+    const act = get().activities.find(a =>
+      a.category === 'bigdeal_step' && a.bigDealId === todoId
+      && a.description.startsWith(`完成小步: ${step.title}（`),
+    );
+    if (act) await get().deleteActivity(act.id);
+    else await get().loadData();
+  },
+
+  collapseBigDeal: async (todoId) => {
+    const todo = await db.todos.get(todoId);
+    if (!todo?.isBigDeal || todo.clearedActivityId) return;
+    const steps = todo.steps ?? [];
+    if (steps.length === 0 || !steps.some(s => s.done) || !steps.every(s => s.done)) return;
+
+    // 触及属性各 +1（D3）：直接承载在收官记录的 pointsAwarded 上——deleteActivity 撤销链路免费继承
+    const touched = new Set<AttributeId>(steps.map(s => s.attribute ?? todo.attribute));
+    const points = { knowledge: 0, guts: 0, dexterity: 0, kindness: 0, charm: 0 } as Record<string, number>;
+    touched.forEach(a => { points[a] = 1; });
+    const { activityId } = await get().addActivity(
+      `大事收官: ${todo.title}（${steps.length} 步全成）`,
+      points, 'todo',
+      { important: true, category: 'bigdeal_clear', bigDealId: todoId },
+    );
+
+    // 收官 SP = min(20, 子步数×3)：战场模块关闭不发；从未初始化战场时 earnSP 自带空守卫静默跳过
+    if (get().settings.battleEnabled !== false) {
+      await get().earnSP(Math.min(BIGDEAL_CLEAR_SP_CAP, steps.length * BIGDEAL_CLEAR_SP_PER_STEP));
+    }
+    // 收官投稿权 +1（弹幕闭环，批4 表面消费）
+    await get().updateSettings({ terminalDanmakuTokens: (get().settings.terminalDanmakuTokens ?? 0) + 1 });
+
+    await db.todos.update(todoId, {
+      clearedActivityId: activityId,
+      completedAt: new Date(),
+      archivedAt: new Date(),
+      isActive: false,
+    });
+    await get().loadData();
+    void get().syncNotifications();
+  },
+
+  getBigDealProgress: (todoId) => {
+    const todo = get().todos.find(t => t.id === todoId);
+    const steps = todo?.steps ?? [];
+    return {
+      done: steps.filter(s => s.done).length,
+      total: steps.length,
+      nextStep: steps.find(s => !s.done) ?? null,
+    };
+  },
+
+  decomposeBigDealAI: async (todoId) => {
+    const todo = get().todos.find(t => t.id === todoId);
+    if (!todo?.isBigDeal) return [];
+    // 复用 decomposeWishAI：把大事映射成伪 Wish 树，避重/限量/清洗逻辑免费继承
+    const parent: Wish = {
+      id: todo.id,
+      title: todo.title,
+      kind: todo.deadline ? 'pressure' : 'long_term',
+      currentState: todo.currentState,
+      status: 'active',
+      source: 'manual',
+      createdAt: new Date(todo.createdAt),
+    };
+    const children: Wish[] = (todo.steps ?? []).map(s => ({
+      id: s.id,
+      parentId: todo.id,
+      title: s.title,
+      status: s.done ? 'done' : 'active',
+      source: s.source,
+      createdAt: new Date(todo.createdAt),
+    }));
+    return get().decomposeWishAI(parent, children);
+  },
+
+  runTasksMergeMigration: async () => {
+    if (_tasksMergeMigrationPromise) return _tasksMergeMigrationPromise;
+    _tasksMergeMigrationPromise = (async () => {
+    if (get().settings.tasksMergeMigratedAt) return;
+    const wishes = await db.wishes.toArray();
+    // 轻量恢复保险：原始 wishes 全量快照进 localStorage（数据量小；隐私模式失败不阻塞）
+    try { localStorage.setItem('velvet:wishes-premigrate', JSON.stringify(wishes)); } catch { /* ignore */ }
+
+    const roots = wishes.filter(w => !w.parentId);
+    for (const root of roots) {
+      // 已完成/已归档的根不迁移（历史在 activities 里）；对应子步一并清走避免孤儿
+      const children = wishes.filter(w => w.parentId === root.id);
+      if (root.status !== 'active') {
+        if (children.length) for (const c of children) await db.wishes.delete(c.id);
+        if (root.status === 'archived') await db.wishes.delete(root.id);
+        continue;
+      }
+      // 无子步的活跃根 → 原地留作愿望纸片（D8）
+      if (children.length === 0) continue;
+
+      // 带子步的根 → BIG DEAL：children 全量成子步；stepHistory 里无对应 child 的完成项补录为已完成子步
+      const steps: TodoStep[] = children
+        .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+        .map(c => ({
+          id: c.id,
+          title: c.title,
+          attribute: c.attribute,
+          done: c.status === 'done',
+          doneAt: c.status === 'done' ? new Date(c.archivedAt ?? c.createdAt).toISOString() : undefined,
+          source: c.source,
+        }));
+      const childIds = new Set(children.map(c => c.id));
+      for (const h of root.stepHistory ?? []) {
+        if (h.sourceStepId && childIds.has(h.sourceStepId)) continue;
+        steps.push({ id: h.id, title: h.title, done: true, doneAt: h.completedAt, source: 'manual' });
+      }
+      const todo: Todo = {
+        id: uuidv4(),
+        title: root.title,
+        attribute: root.attribute ?? 'guts',
+        points: 2,
+        frequency: 'single',
+        isActive: true,
+        createdAt: new Date(root.createdAt),
+        isBigDeal: true,
+        steps,
+        currentState: root.currentState,
+      };
+      // 注：迁移时即使 steps 全 done 也不自动收官——收官是有奖励的仪式，留给用户在批2 面板里主动按
+      await db.todos.add(todo);
+      await db.wishes.delete(root.id);
+      for (const c of children) await db.wishes.delete(c.id);
+    }
+
+    // 在途 24h 终端卡 → 静默归档（终端不再有入口，防止孤儿活跃卡）
+    const cards = await db.callingCards.toArray();
+    for (const c of cards) {
+      if (c.terminal && !c.archived) {
+        await db.callingCards.update(c.id, { archived: true, archivedAt: new Date(), archiveReason: 'manual' as const });
+      }
+    }
+
+    await get().updateSettings({ tasksMergeMigratedAt: new Date().toISOString() });
+    await get().loadData();
+    await get().loadWishes();
+    await get().loadCallingCards();
+    })();
+    return _tasksMergeMigrationPromise;
   },
 
   applySkillBonus: (attributeId: string, points: number) => {
