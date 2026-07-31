@@ -35,7 +35,7 @@ import {
   shadowPoisonValue, SHADOW_CALM_MULT, SHADOW_STATUS_TURNS,
   // ── 批3 · 养成与生态 ──
   masteryStars, MASTERY_STAR_ADD, RelicMods, ZERO_RELIC_MODS, BANDAGE_HP_THRESHOLD,
-  ALL_OUT_BASE_AT_LV5, ALL_OUT_PER_LEVEL, MASK_BOND_ADD_PER_TIER,
+  ALL_OUT_BASE_AT_LV1, ALL_OUT_PER_LEVEL, MASK_BOND_ADD_PER_TIER,
   CHAIN_STAGGER_WEAK_BONUS, CHAIN_CRIT_ADD, CHAIN_HEAL_AMP, CHAIN_LETHAL_GUARD,
   CHAIN_GUARD_COUNTER_ADD, CHAIN_FIRST_TURN_ADD, CHAIN_POISON_MEND, CHAIN_RESONANCE_AMP,
   AFFIX_CRIT_ADD, AFFIX_VENGEFUL_ATK, AFFIX_THORNS_PCT, AFFIX_SLIPPERY_FACTOR,
@@ -940,9 +940,9 @@ export class BattleEngine {
     this.sp -= ALL_OUT_SP_COST;
     this.consecutiveWeakness = 0;
     this.allOutUsed = true; // 批4 成就：首次总攻击
-    // R18：基数挂玩家总等级（五维和=5 → 100，逐级 +5）；QTE 与失衡受伤倍率照旧
+    // R19：基数 = 50 + (总等级−1)×4（LV1 时 1.0 倍率 50）；QTE 与失衡受伤倍率照旧
     const totalLv = Object.values(this.setup.attrLevels).reduce((s, v) => s + v, 0);
-    const base = ALL_OUT_BASE_AT_LV5 + Math.max(0, totalLv - 5) * ALL_OUT_PER_LEVEL;
+    const base = ALL_OUT_BASE_AT_LV1 + Math.max(0, totalLv - 1) * ALL_OUT_PER_LEVEL;
     const dmg = Math.round(base * qteMult * STAGGER_TAKEN_MULT);
     lines.push(`${this.shName}：${pickShadowLine('allOutReady', this.shName) || '那是……禁忌的力量！'}`);
     lines.push('总攻击！五副面具的力量汇于一击！');

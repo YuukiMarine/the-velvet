@@ -25,6 +25,7 @@ import { ArsenalModal, ShadowArchiveModal } from '@/components/battle/ArsenalMod
 import { PersonaCodex } from '@/components/battle/PersonaCodex';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P3R, P3RPage, GhostWords, P3PageHeader, ShatteredStar, slantClip } from '@/components/p3r/kit';
+import { NoiseLayer } from '@/components/battle/warKit';
 import {
   P5R, P5_FONT, roughQuad, roughSlant,
   P5RPage, P5Panel, P5Btn, P5Collage, P5Star, P5StarOutline, P5RingStar, P5Dots, P5Slab,
@@ -390,15 +391,30 @@ export const BattleArena = () => {
   return (
     <>
     <P5RPage active={p5}>
-    <P3RPage active={p3}>
+    {/* R19 #4 异空间：战场是「异空间」，页面底永远走深紫虚空——浅色主题下 Persona 紫板
+        不再突兀（p5 保留定稿红舞台，本就是暗色异空间）。P3 水面壳就此让位。 */}
+    <P3RPage active={false}>
     <motion.div
       key="battle-page"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className={`relative space-y-5 ${p3 ? 'pb-10' : 'pb-8'} ${p5 ? 'p5-reskin' : ''}`}
+      className={`relative isolate space-y-5 ${p3 ? 'pb-10' : 'pb-8'} ${p5 ? 'p5-reskin' : ''}`}
     >
-      {p3 && <GhostWords words={['BATTLE']} className="right-[8px] top-[-14px] text-right text-[72px]" />}
+      {!p5 && (
+        <div
+          aria-hidden
+          className="pointer-events-none fixed inset-0 -z-10 overflow-hidden"
+          style={{ background: 'radial-gradient(circle at 50% 10%, #251b4f 0%, #150e33 46%, #0c0722 100%)' }}
+        >
+          <NoiseLayer opacity={0.05} />
+          {/* 虚空装饰：屏外大弧环 + 底部微光地平线 */}
+          <div aria-hidden className="absolute -right-40 -top-44 h-[420px] w-[420px] rounded-full" style={{ border: '30px solid rgba(139,124,246,0.07)' }} />
+          <div aria-hidden className="absolute -left-52 top-1/3 h-[480px] w-[480px] rounded-full" style={{ border: '22px solid rgba(139,124,246,0.05)' }} />
+          <div aria-hidden className="absolute inset-x-0 bottom-0 h-40" style={{ background: 'linear-gradient(0deg, rgba(139,124,246,0.1), transparent)' }} />
+        </div>
+      )}
+      {p3 && <GhostWords words={['BATTLE']} className="right-[8px] top-[-14px] text-right text-[72px]" style={{ color: 'rgba(160,150,255,0.13)' }} />}
 
       {/* Header — 宫格子页页头归一 PageTitle 制式（审计 S6），返回归一 → 菜单 */}
       {p5 ? (
@@ -474,7 +490,7 @@ export const BattleArena = () => {
           </div>
         </div>
       ) : p3 ? (
-        <div className="relative">
+        <div className="battle-void-head relative">
           {/* 标题左上小蓝斜片（设计稿装饰） */}
           <span aria-hidden className="absolute left-[2px] top-[30px] h-[12px] w-[22px]" style={{ background: P3R.blue, clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
           <div className="flex items-end justify-between gap-3">
@@ -493,7 +509,7 @@ export const BattleArena = () => {
           </div>
         </div>
       ) : (
-        <div className="flex items-start gap-3">
+        <div className="battle-void-head flex items-start gap-3">
           <BackButton onClick={() => setCurrentPage('menu')} className="mt-1 -ml-1" />
           <div className="flex-1 min-w-0">
             <PageTitle title="逆影战场" en="Battle" />

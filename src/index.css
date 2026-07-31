@@ -924,6 +924,22 @@ html[data-ios-standalone="true"] {
   box-shadow: none !important;
 }
 
+/* ── R19 异空间：战场页永紫（p5 红舞台除外）。频道页头原是各自的墨色，
+   在虚空上统一漂白——只圈页头，卡内黑字不受波及 ── */
+.battle-void-head {
+  --p3r-ink: #e9ecff;
+  --p3r-ink-soft: #b9bfe4;
+}
+.battle-void-head :is(.text-gray-900, .text-gray-800, .text-gray-700, .dark\:text-white, [class*="text-[#131313]"]) {
+  color: #efeaff !important;
+}
+.battle-void-head :is(.text-gray-600, .text-gray-500, .text-gray-400, .dark\:text-gray-400, .dark\:text-gray-500) {
+  color: rgba(228, 223, 255, 0.6) !important;
+}
+.battle-void-head :is(.bg-gray-100, .bg-white) {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+}
+
 /* ── 夜间模式 · 蓝频道（深蓝底 + 浅绿强调）────────────────────────────────
    P3 页面的配色几乎全部经 P3R 常量内联（kit 里已变量化），这里覆盖变量即全站生效。
    洋红句点是频道签名件，夜间保持不变。 */
