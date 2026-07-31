@@ -795,8 +795,11 @@ export interface PersonaSkill {
   mastery?: number;
   /** 解锁标记：只会 false→true（存量迁移按当时属性等级置位=不回锁；此后走双条件） */
   unlocked?: boolean;
-  /** 迷思镶嵌（denormalized 快照；stoneId 指向 arsenal.myths；誓约技不可镶） */
-  socket?: { stoneId: string; kind: MythKind; value: number };
+  /** 迷思镶嵌（denormalized 快照；stoneId 指向 arsenal.myths；誓约技不可镶）。
+   *  permanent=觉醒烧录：石已消耗、词条永久，不可卸除 */
+  socket?: { stoneId: string; kind: MythKind; value: number; permanent?: boolean };
+  /** （R18 觉醒）轮次：满星消耗一颗迷思烧录词条+改名，星级清零进下一轮（每星价值 ×(轮+1)） */
+  awakenRound?: number;
   /** 誓约置换：本体已是誓约技；original 为被替换技能的完整快照（卸下时恢复） */
   oath?: { stoneId: string; kind: OathKind; original: PersonaSkill };
   /** 誓约技行为扩展（本地定义，不进 AI schema） */
@@ -973,6 +976,8 @@ export interface BattleState {
   lastDefeatedWeakAttribute?: AttributeId;
   defeatedShadowLog?: DefeatedShadowRecord[]; // 已击败阴影历史
   hpBonusFromDefeats?: number; // 击败Shadow累计获得的HP上限加成
+  /** （R18 面具羁绊）各面具累计出战场次（战斗胜利时按本场召唤过的面具 +1）→ 档位 Ⅰ/Ⅱ/Ⅲ 伤害加算 */
+  maskBattles?: Partial<Record<AttributeId, number>>;
   /** （批2）当日登塔 session 统计与临时增益 */
   towerSession?: TowerSessionStats;
   /** （批3）战斗背包：遗物/迷思/誓约/共鸣链 */

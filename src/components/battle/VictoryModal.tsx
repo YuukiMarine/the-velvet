@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { motion } from 'motion/react';
 import { useAppStore } from '@/store';
 import { AttributeId } from '@/types';
@@ -75,7 +76,8 @@ export function VictoryModal({ isOpen, onClose }: Props) {
 
   const attrNamesMap = settings.attributeNames as Record<AttributeId, string>;
 
-  return (
+  // R18：portal 到 body（页面内容层 z 语境压不过底导，结算屏不该露导航）
+  return createPortal(
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
@@ -176,6 +178,7 @@ export function VictoryModal({ isOpen, onClose }: Props) {
           </motion.div>
         )}
       </motion.div>
-    </motion.div>
+    </motion.div>,
+    document.body,
   );
 }

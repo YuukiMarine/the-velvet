@@ -495,8 +495,12 @@ interface AppState {
   toggleEquipRelic: (relicId: string) => Promise<boolean>;
   /** 迷思镶嵌（每技能1枚；誓约技不可镶；淬毒仅 damage/crit）；返回错误文案或 null */
   socketMyth: (attr: AttributeId, skillLevel: number, stoneId: string) => Promise<string | null>;
-  /** 迷思拆下（石头返还背包，无残留） */
+  /** 迷思拆下（石头返还背包，无残留；R18 觉醒烧录 permanent 不可拆） */
   unsocketMyth: (attr: AttributeId, skillLevel: number) => Promise<void>;
+  /** R18 面具羁绊：战斗胜利后按本场召唤过的面具累加出战场次 */
+  recordMaskBattles: (masks: AttributeId[]) => Promise<void>;
+  /** R18 技能觉醒：满星 + 消耗一颗迷思 → 词条烧录永久 + 改名（空名 = 原名·觉醒）+ 星级清零进下一轮；返回错误文案或 null */
+  awakenSkill: (attr: AttributeId, skillLevel: number, stoneId: string, newName?: string) => Promise<string | null>;
   /** 誓约装备：快照原技能→置换（每 Persona 限1）；返回错误文案或 null。命名由 UI 层 LLM 后置覆写 */
   equipOathStone: (attr: AttributeId, skillLevel: number, stoneId: string) => Promise<string | null>;
   /** 誓约卸下：原技能完整恢复 + 石返还（完全可逆） */
@@ -4362,8 +4366,56 @@ ${activityLines || '（本期暂无记录）'}
     const { persona } = get();
     if (!persona) return;
     const skills = persona.skills[attr];
-    const nextSkills = { ...persona.skills, [attr]: skills.map(s => (s.level === skillLevel ? { ...s, socket: undefined } : s)) };
+    // R18 觉醒烧录（permanent）不可卸除
+    const nextSkills = { ...persona.skills, [attr]: skills.map(s => (s.level === skillLevel && !s.socket?.permanent ? { ...s, socket: undefined } : s)) };
     await get().savePersona({ ...persona, skills: nextSkills });
+  },
+
+  // ── R18 面具羁绊：战斗胜利后按本场召唤过的面具累加出战场次 ──
+  recordMaskBattles: async (masks) => {
+    const bs = get().battleState;
+    if (!bs || masks.length === 0) return;
+    const next = { ...(bs.maskBattles ?? {}) } as Partial<Record<AttributeId, number>>;
+    for (const m of masks) next[m] = (next[m] ?? 0) + 1;
+    await get().saveBattleState({ ...bs, maskBattles: next });
+  },
+
+  // ── R18 技能觉醒：满星 + 消耗一颗迷思 → 词条烧录永久 + 改名 + 星级清零进下一轮 ──
+  awakenSkill: async (attr, skillLevel, stoneId, newName) => {
+    const { persona, battleState: bs } = get();
+    const arsenal = bs?.arsenal;
+    if (!persona || !bs || !arsenal) return '数据未就绪';
+    const skills = persona.skills[attr];
+    const idx = skills.findIndex(s => s.level === skillLevel);
+    if (idx < 0) return '技能不存在';
+    const target = skills[idx];
+    if (target.unlocked === false) return '技能尚未解锁';
+    if (masteryStars(target.mastery ?? 0, target.level) < 3) return '熟练度未满星——继续使用它吧';
+    if (target.oath) return '誓约技不可觉醒';
+    if (target.socket && !target.socket.permanent) return '技能镶有迷思——先拆下（或直接用它觉醒）';
+    const stone = arsenal.myths.find(m => m.id === stoneId);
+    if (!stone) return '迷思石不存在';
+    const equippedElsewhere = Object.values(persona.skills).flat().some(s => s.socket?.stoneId === stoneId && !s.socket.permanent);
+    if (equippedElsewhere) return '这枚迷思已镶嵌在其他技能上';
+    if (MYTH_POOL[stone.kind].damageOnly && target.type !== 'damage' && target.type !== 'crit') {
+      return '「淬毒之牙」只能烧录进伤害/暴击技能';
+    }
+    const name = (newName ?? '').trim() || `${target.name}·觉醒`;
+    const nextSkills = {
+      ...persona.skills,
+      [attr]: skills.map((s, i) => (i === idx ? {
+        ...s,
+        name,
+        mastery: 0,
+        awakenRound: (s.awakenRound ?? 0) + 1,
+        socket: { stoneId: stone.id, kind: stone.kind, value: stone.value, permanent: true },
+      } : s)),
+    };
+    // 石头消耗：从背包移除（烧进技能里了）
+    const nextArsenal = { ...arsenal, myths: arsenal.myths.filter(m => m.id !== stoneId) };
+    await get().savePersona({ ...persona, skills: nextSkills });
+    await get().saveBattleState({ ...get().battleState!, arsenal: nextArsenal });
+    return null;
   },
 
   equipOathStone: async (attr, skillLevel, stoneId) => {

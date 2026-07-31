@@ -10,6 +10,7 @@
  * 五维克制环 / 双向打断 / 格挡反击 / 回合压力 / 二形态差分
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore, toLocalDateKey } from '@/store';
 import { useBackHandler } from '@/utils/useBackHandler';
@@ -18,10 +19,10 @@ import { triggerLightHaptic, playSound } from '@/utils/feedback';
 import { isInShadowTime, SKILL_EFFECT_MAP } from '@/constants';
 import { useBoldness } from '@/utils/boldness';
 import { BattleEngine, PlayerActionInput, FxEvent, TurnResult } from '@/battle/engine';
-import { QTE_FALLBACK_MULT, healAmount } from '@/battle/numbers';
+import { QTE_FALLBACK_MULT, healAmount, BASIC_ATTACK_POWER, maskBondTier } from '@/battle/numbers';
 import { aggregateRelicMods, AFFIX_POOL } from '@/battle/loot';
 import { pickMemoryLine, SUMMON_FALLBACK } from '@/battle/memoryLines';
-import { ammoFromActivities } from '@/battle/preparation';
+import { ammoFromActivities, blazingAttrsToday } from '@/battle/preparation';
 import { MasteryStars } from '@/components/battle/ArsenalModal';
 import { ShadowSVG } from '@/components/battle/ShadowSVG';
 import { BattleStartOverlay } from '@/components/battle/BattleStartOverlay';
@@ -209,7 +210,8 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
     const attrLevels = Object.fromEntries(
       attributes.map(a => [a.id, a.unlocked === false ? 0 : (a.level ?? 1)])
     ) as Record<AttributeId, number>;
-    const basicAttackPower = Object.values(attrLevels).reduce((s, v) => s + v, 0);
+    // R18：普攻固定 8 点（可暴击）；原「五维等级和」退役
+    const basicAttackPower = BASIC_ATTACK_POWER;
     const personaNames = Object.fromEntries(
       ATTR_IDS.map(a => [a, persona.attributePersonas?.[a]?.name ?? '反抗者'])
     ) as Record<AttributeId, string>;
@@ -292,6 +294,11 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
       ledgerWard,
       spendCurse,
       companionGuard,
+      // R18：面具羁绊档位（出战场次）/ 燃起（白天该属性待办≥3 → 首技免 SP）
+      maskBondTiers: Object.fromEntries(
+        (Object.entries(bs.maskBattles ?? {}) as Array<[AttributeId, number]>).map(([a, n]) => [a, maskBondTier(n)])
+      ) as Partial<Record<AttributeId, number>>,
+      blazingMasks: blazingAttrsToday(useAppStore.getState().todos, useAppStore.getState().todoCompletions),
     });
     engineRef.current = engine;
     // 属性向派生后写回（存量主影无此字段；小影不落表）
@@ -503,6 +510,8 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
     if (phase === 'animating') {
       if (pendingOutcomeRef.current === 'victory') {
         pendingOutcomeRef.current = 'ongoing';
+        // R18 面具羁绊：本场召唤过的面具出战场次 +1（小影/强敌/心魔胜利通吃）
+        void useAppStore.getState().recordMaskBattles(Array.from(engineRef.current?.snapshot.masksSummoned ?? []));
         if (isEncounter) {
           // 小影战胜利：不播大 FINISH（每节点一场，2.6s 太重）——短促收线回地图
           recordTowerStats();
@@ -665,9 +674,11 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
   const isPhase2 = snap.phase === 2;
   const visibleHp = displayPlayerHp ?? snap.playerHp;
   const activePersonaName = persona.attributePersonas?.[snap.activeMask]?.name ?? '反抗者';
-  const basicPower = Math.max(1, Object.values(attrLevels).reduce((s, v) => s + v, 0));
+  const basicPower = BASIC_ATTACK_POWER; // R18：普攻固定 8（可暴击）
 
-  return (
+  // R18：portal 到 body——原在页面内容层（z-10 语境）里，z-50 压不过底部导航（z-40），
+  // 导航条会悬在技能面板/好友援助上（矮屏「按不到」上报的元凶之一）
+  return createPortal(
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
@@ -1263,10 +1274,13 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
             </div>
           )}
 
-          {/* ── 行动面板 ── */}
+          {/* ── 行动面板 ──
+              R18 分辨率适配修复：SP/面具/行动/子菜单 + 技能列表合并进**同一个滚动容器**——
+              旧结构控制区全 flex-shrink-0、技能区 flex-1 无 min-h-0：矮屏（SE/横屏）上
+              子菜单展开会把好友援助推出屏外、技能区被压到 0 且整页无法滚动（用户上报）。 */}
           {phase === 'waiting' && (
-            <>
-              <div className="px-4 mt-3 flex-shrink-0">
+            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain pb-6">
+              <div className="px-4 mt-3">
                 <div className="flex items-center justify-between mb-2">
                   {/* ② 大字号数字排版：SP 主数字放大、标签小写角标化 */}
                   <span className="flex items-baseline gap-1.5">
@@ -1343,6 +1357,16 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
                             <IconBolt size={11} />弱点
                           </span>
                         )}
+                        {snap.blazingReady?.includes(snap.activeMask) && (
+                          <motion.span
+                            animate={{ opacity: [0.7, 1, 0.7] }}
+                            transition={{ duration: 0.9, repeat: Infinity }}
+                            className="inline-flex items-center text-[10px] font-black text-amber-300"
+                            title="白昼的勤勉：本面具首个技能免 SP"
+                          >
+                            🔥 燃起
+                          </motion.span>
+                        )}
                       </p>
                       <p className="text-white/40 text-[11px] mt-0.5">
                         {activePersonaName} · {MASK_PASSIVE_HINT[snap.activeMask]}
@@ -1390,15 +1414,23 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
                         onClick={handleAllOut}
                         disabled={isAnimating || !snap.canAllOut}
                         className="flex-1 py-2 rounded-xl text-xs font-bold transition-all disabled:opacity-35"
-                        style={{
+                        style={snap.executeReady ? {
+                          // R18 处决窗口：心魔残血 ≤10% 的失衡——猩红皮 + 强脉冲
+                          background: 'linear-gradient(90deg, rgba(190,18,60,0.6), rgba(239,68,68,0.45))',
+                          border: '1px solid rgba(248,113,113,0.9)',
+                          color: '#fecaca',
+                          boxShadow: '0 0 26px rgba(239,68,68,0.65), inset 0 0 12px rgba(239,68,68,0.25)',
+                        } : {
                           background: 'linear-gradient(90deg, rgba(239,68,68,0.35), rgba(250,204,21,0.35))',
                           border: '1px solid rgba(250,204,21,0.7)',
                           color: '#fde047',
                           boxShadow: '0 0 18px rgba(250,204,21,0.45), inset 0 0 10px rgba(250,204,21,0.15)',
                         }}
                       >
-                        ⚡ 总攻击
-                        <span className="block text-[9px] opacity-90 mt-0.5">{snap.allOutSpCost} SP · 拔河 QTE</span>
+                        {snap.executeReady ? '🗡 处决·总攻击' : '⚡ 总攻击'}
+                        <span className="block text-[9px] opacity-90 mt-0.5">
+                          {snap.executeReady ? `残焰将熄——${snap.allOutSpCost} SP 送它谢幕` : `${snap.allOutSpCost} SP · 拔河 QTE`}
+                        </span>
                       </motion.button>
                     )}
                   </AnimatePresence>
@@ -1465,8 +1497,8 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
                 </AnimatePresence>
               </div>
 
-              {/* 技能面板（出战位锁定当前属性） */}
-              <div className="flex-1 px-4 overflow-y-auto pb-6 space-y-2">
+              {/* 技能面板（出战位锁定当前属性；随外层统一滚动） */}
+              <div className="px-4 mt-1 space-y-2">
                 {availableSkills.length === 0 ? (
                   <p className="text-gray-500 text-sm text-center py-4">
                     提升{attrNamesMap[snap.activeMask]}等级以解锁技能
@@ -1582,10 +1614,11 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
                   })
                 )}
               </div>
-            </>
+            </div>
           )}
         </>
       )}
-    </motion.div>
+    </motion.div>,
+    document.body,
   );
 }
