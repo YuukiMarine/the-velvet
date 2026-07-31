@@ -58,9 +58,22 @@ export const STAGGER_WEAKNESS_GAIN = 34;       // 3 次弱点满条
 export const STAGGER_CRIT_GAIN = 17;           // 暴击半量
 export const STAGGER_TAKEN_MULT = 1.3;         // 失衡期间受伤 +30%
 export const STAGGER_IMMUNE_TURNS = 3;
-export const ALL_OUT_SP_COST = 20;
-export const ALL_OUT_BASE_RATIO = 0.6;         // 基数 = 全 Lv5 威力和 × 0.6
+export const ALL_OUT_SP_COST = 10;             // R18：20 → 10（处决化，随手可发）
+/** R18：总攻击基数改挂玩家总等级——五维和=5 时 100，逐级 +5（原 全Lv5威力和×0.6 退役） */
+export const ALL_OUT_BASE_AT_LV5 = 100;
+export const ALL_OUT_PER_LEVEL = 5;
 export const BOSS_FORCED_WINDOW_HP_RATIO = 0.1; // 濒死保底失衡窗口
+/** R18 普攻：固定 8 点（原 五维等级和），可暴击 */
+export const BASIC_ATTACK_POWER = 8;
+/** R18 面具羁绊：出战场次阈值（Ⅰ/Ⅱ/Ⅲ）与每档伤害加算 */
+export const MASK_BOND_THRESHOLDS = [3, 10, 25];
+export const MASK_BOND_ADD_PER_TIER = 0.02;
+export function maskBondTier(battles: number): 0 | 1 | 2 | 3 {
+  if (battles >= MASK_BOND_THRESHOLDS[2]) return 3;
+  if (battles >= MASK_BOND_THRESHOLDS[1]) return 2;
+  if (battles >= MASK_BOND_THRESHOLDS[0]) return 1;
+  return 0;
+}
 
 // ── 拔河 QTE（§3.7）────────────────────────────────────────
 export const QTE_DURATION_MS = 3500;

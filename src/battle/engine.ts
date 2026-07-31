@@ -26,7 +26,7 @@ import {
   CHARGE_MULT, CRIT_MULT, WEAKNESS_MULT, ONE_MORE_CD_TURNS,
   SKILL_CRIT_BY_LEVEL, GUTS_MASK_CRIT, KNOWLEDGE_MASK_WEAK_FLAT, DEX_MASK_EXTRA_EVERY,
   STAGGER_MAX, STAGGER_WEAKNESS_GAIN, STAGGER_CRIT_GAIN, STAGGER_TAKEN_MULT,
-  STAGGER_IMMUNE_TURNS, ALL_OUT_SP_COST, ALL_OUT_BASE_RATIO, BOSS_FORCED_WINDOW_HP_RATIO,
+  STAGGER_IMMUNE_TURNS, ALL_OUT_SP_COST, BOSS_FORCED_WINDOW_HP_RATIO,
   BOSS_ATTACK_BY_LEVEL, MOB_ATTACK_BY_LEVEL, ELITE_ATTACK_BY_LEVEL,
   SHADOW_CRIT_BY_LEVEL, PHASE2_ATTACK_MULT, PHASE2_RESIST_MULT,
   BERSERK_ATK_MULT, BERSERK_SELF_DAMAGE, HEAVY_POWER_MULT, HEAVY_WINDUP_TURNS,
@@ -35,6 +35,7 @@ import {
   shadowPoisonValue, SHADOW_CALM_MULT, SHADOW_STATUS_TURNS,
   // ── 批3 · 养成与生态 ──
   masteryStars, MASTERY_STAR_ADD, RelicMods, ZERO_RELIC_MODS, BANDAGE_HP_THRESHOLD,
+  ALL_OUT_BASE_AT_LV5, ALL_OUT_PER_LEVEL, MASK_BOND_ADD_PER_TIER,
   CHAIN_STAGGER_WEAK_BONUS, CHAIN_CRIT_ADD, CHAIN_HEAL_AMP, CHAIN_LETHAL_GUARD,
   CHAIN_GUARD_COUNTER_ADD, CHAIN_FIRST_TURN_ADD, CHAIN_POISON_MEND, CHAIN_RESONANCE_AMP,
   AFFIX_CRIT_ADD, AFFIX_VENGEFUL_ATK, AFFIX_THORNS_PCT, AFFIX_SLIPPERY_FACTOR,
@@ -121,6 +122,10 @@ export interface EngineSetup {
   spendCurse?: boolean;
   /** （批4 同伴庇护）Lv7+ 同伴名：致命一击 35% 保留 1HP（每 session 一次；null=不可用） */
   companionGuard?: string | null;
+  /** （R18 面具羁绊）各面具羁绊档位（0-3）：每档伤害加算 +2%（进加算段） */
+  maskBondTiers?: Partial<Record<AttributeId, number>>;
+  /** （R18 燃起）白天该属性待办 ≥3 → 当晚该面具首个技能免 SP */
+  blazingMasks?: AttributeId[];
 }
 
 export type PlayerActionInput =
@@ -196,6 +201,7 @@ export class BattleEngine {
   private oneMoreCd = 0;
   private insightUsedThisTurn = false;
   private charmFreeUsed = false;
+  private blazeUsed = new Set<AttributeId>();   // R18 燃起：每面具一次免 SP
   private kindnessRevived = false;
   private dexSkillCount = 0;
   private consecutiveWeakness = 0;
@@ -337,6 +343,13 @@ export class BattleEngine {
       playerHpLost: this.playerHpLost,
       poisonKill: this.poisonKill,
       allOutUsed: this.allOutUsed,
+      // ── R18 ──
+      /** 燃起待用面具（UI 火焰角标；用过即摘） */
+      blazingReady: (this.setup.blazingMasks ?? []).filter(a => !this.blazeUsed.has(a)),
+      /** 处决窗口：心魔失衡窗口 + 残血 ≤10% —— 总攻击按钮换「处决」皮 */
+      executeReady: this.staggerState === 'window'
+        && this.shTier === 'boss'
+        && (this.shHp + (this.shHp2 ?? 0)) / Math.max(1, this.shMaxHp + (this.shMaxHp2 ?? 0)) <= BOSS_FORCED_WINDOW_HP_RATIO,
     };
   }
 
@@ -407,8 +420,19 @@ export class BattleEngine {
     }
   }
 
-  /** 技能实际 SP 消耗（魅力面具首次免费；月光余响迷思减耗、下限 1） */
+  /** 熟练度加算：星 × 5% ×（觉醒轮+1）——R18 觉醒后每星价值翻倍 */
+  private masteryAddOf(skill: PersonaSkill): number {
+    return masteryStars(skill.mastery ?? 0, skill.level) * MASTERY_STAR_ADD * ((skill.awakenRound ?? 0) + 1);
+  }
+
+  /** R18 燃起可用：白天该属性待办达标 且 本场该面具还没烧过 */
+  private blazeFree(): boolean {
+    return (this.setup.blazingMasks ?? []).includes(this.activeMask) && !this.blazeUsed.has(this.activeMask);
+  }
+
+  /** 技能实际 SP 消耗（燃起首技免费 > 魅力面具首次免费；月光余响迷思减耗、下限 1） */
   skillCost(skill: PersonaSkill): number {
+    if (this.blazeFree()) return 0;
     if (this.activeMask === 'charm' && !this.charmFreeUsed) return 0;
     if (skill.socket?.kind === 'moon_echo' && skill.spCost > 0) {
       return Math.max(1, skill.spCost - skill.socket.value);
@@ -538,11 +562,16 @@ export class BattleEngine {
     const attrName = this.setup.attrNames[attr];
     const personaName = this.setup.personaNames[attr] ?? '反抗者';
 
-    // SP（魅力面具：每场一次免费；月光余响迷思减耗）
+    // SP（R18 燃起首技免费 > 魅力面具每场一次免费；月光余响迷思减耗）
     const cost = this.skillCost(skill);
-    if (cost === 0 && skill.spCost > 0 && this.activeMask === 'charm' && !this.charmFreeUsed) {
-      this.charmFreeUsed = true;
-      lines.push('面具之力：本次技能不消耗SP！');
+    if (cost === 0 && skill.spCost > 0) {
+      if (this.blazeFree()) {
+        this.blazeUsed.add(this.activeMask);
+        lines.push('🔥 面具燃起——白昼的勤勉化作火焰，这一击不耗 SP！');
+      } else if (this.activeMask === 'charm' && !this.charmFreeUsed) {
+        this.charmFreeUsed = true;
+        lines.push('面具之力：本次技能不消耗SP！');
+      }
     }
     this.sp = Math.max(0, this.sp - cost);
 
@@ -606,9 +635,12 @@ export class BattleEngine {
           lines.push(`【物欲缠身】——消费的执念钝化了你的锋刃……（开场${SPEND_CURSE_TURNS}回合伤害 ×${SPEND_CURSE_MULT}）`);
         }
       }
-      // ── 批3 加算段：熟练度星级 / 音叉 / 单片镜·破绽洞察（弱点） / 烈焰亮相（首回合） ──
-      const stars = masteryStars(skill.mastery ?? 0, skill.level);
-      if (stars > 0) adds.push(stars * MASTERY_STAR_ADD);
+      // ── 批3 加算段：熟练度星级（R18 觉醒轮翻倍）/ 音叉 / 单片镜·破绽洞察（弱点） / 烈焰亮相（首回合） ──
+      const mAdd = this.masteryAddOf(skill);
+      if (mAdd > 0) adds.push(mAdd);
+      // R18 面具羁绊：出战场次档位 → 该面具伤害加算（+2%/档）
+      const bondTier = this.setup.maskBondTiers?.[this.activeMask] ?? 0;
+      if (bondTier > 0) adds.push(bondTier * MASK_BOND_ADD_PER_TIER);
       if (this.relicMods.addAll > 0) adds.push(this.relicMods.addAll);
       if (isWeakness) {
         if (this.relicMods.weaknessAdd > 0) adds.push(this.relicMods.weaknessAdd);
@@ -744,8 +776,7 @@ export class BattleEngine {
         this.guardCounterReady = true;
         lines.push(`铁壁展开！获得 ${Math.round(OATH_SHIELD_PCT * 100)}% 护盾——下回合首次攻击 +50%！`);
       } else {
-        const stars = masteryStars(skill.mastery ?? 0, skill.level);
-        this.attackBuffAdd = BUFF_ADD * (1 + stars * MASTERY_STAR_ADD);
+        this.attackBuffAdd = BUFF_ADD * (1 + this.masteryAddOf(skill));
         lines.push(`攻击力强化！下次伤害 +${Math.round(this.attackBuffAdd * 100)}%！`);
       }
     } else if (skill.type === 'debuff') {
@@ -775,11 +806,10 @@ export class BattleEngine {
       }
     } else if (skill.type === 'heal') {
       this.consecutiveWeakness = 0;
-      const stars = masteryStars(skill.mastery ?? 0, skill.level);
       let amount = skill.oathEffect === 'heal_pct_max'
         ? Math.round(this.playerMaxHp * OATH_HEAL_PCT)
         : healAmount(skill.power, attr);
-      amount = Math.round(amount * (1 + stars * MASTERY_STAR_ADD) * (this.chain === 'knowledge+kindness' ? 1 + CHAIN_HEAL_AMP : 1));
+      amount = Math.round(amount * (1 + this.masteryAddOf(skill)) * (this.chain === 'knowledge+kindness' ? 1 + CHAIN_HEAL_AMP : 1));
       const applied = Math.min(this.playerMaxHp - this.playerHp, amount);
       this.playerHp += applied;
       if (this.chain === 'knowledge+kindness' && applied > 0) lines.push('【疗理之学】共鸣——回复效果提升！');
@@ -879,11 +909,17 @@ export class BattleEngine {
   // ── 玩家：普通攻击 / 防御 / 总攻击 ─────────────────────
   private resolveBasic(lines: string[], fx: FxEvent[]) {
     this.consecutiveWeakness = 0;
-    const dmg = Math.max(1, this.setup.basicAttackPower);
+    // R18：普攻固定 8 点，享受暴击率加成（连击 buff / 星图遗物 / 胆量面具 / 精算连击）
+    const critBuff = findStatus(this.playerStatuses, 'crit_buff')?.value ?? 0;
+    let critChance = critBuff + this.relicMods.critAdd;
+    if (this.activeMask === 'guts') critChance += GUTS_MASK_CRIT;
+    if (this.chain === 'knowledge+dexterity') critChance += CHAIN_CRIT_ADD;
+    const isCrit = this.rng() < critChance;
+    const dmg = Math.max(1, Math.round(this.setup.basicAttackPower * (isCrit ? CRIT_MULT : 1)));
     lines.push(`你向 ${this.shName} 发起了普通攻击！`);
     this.damageShadow(dmg);
-    lines.push(`造成了 ${dmg} 点伤害。`);
-    fx.push({ atLine: lines.length - 1, type: 'shadowHit', value: dmg });
+    lines.push(isCrit ? `暴击！造成了 ${dmg} 点伤害！` : `造成了 ${dmg} 点伤害。`);
+    fx.push({ atLine: lines.length - 1, type: 'shadowHit', value: dmg, isCrit });
     this.applyThorns(dmg, lines, fx);
     if (this.over === 'defeat') return;
     this.maybeForcedWindow(lines, fx);
@@ -904,10 +940,10 @@ export class BattleEngine {
     this.sp -= ALL_OUT_SP_COST;
     this.consecutiveWeakness = 0;
     this.allOutUsed = true; // 批4 成就：首次总攻击
-    const lv5Sum = Object.values(this.setup.skills).flat()
-      .filter(s => s.level === 5)
-      .reduce((sum, s) => sum + s.power, 0);
-    const dmg = Math.round(lv5Sum * ALL_OUT_BASE_RATIO * qteMult * STAGGER_TAKEN_MULT);
+    // R18：基数挂玩家总等级（五维和=5 → 100，逐级 +5）；QTE 与失衡受伤倍率照旧
+    const totalLv = Object.values(this.setup.attrLevels).reduce((s, v) => s + v, 0);
+    const base = ALL_OUT_BASE_AT_LV5 + Math.max(0, totalLv - 5) * ALL_OUT_PER_LEVEL;
+    const dmg = Math.round(base * qteMult * STAGGER_TAKEN_MULT);
     lines.push(`${this.shName}：${pickShadowLine('allOutReady', this.shName) || '那是……禁忌的力量！'}`);
     lines.push('总攻击！五副面具的力量汇于一击！');
     fx.push({ atLine: lines.length - 1, type: 'allOut' });

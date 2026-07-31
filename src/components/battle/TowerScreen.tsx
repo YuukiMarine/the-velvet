@@ -5,11 +5,12 @@
  * 战斗（Shadow/强敌/心魔）通过 onRequestBattle 委托给 BattleArena（BattleModal z-50 叠于本屏之上）。
  */
 import { useState, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore, toLocalDateKey } from '@/store';
 import { AttributeId, MobSpec, StratumNode } from '@/types';
 import { ammoFromActivities } from '@/battle/preparation';
-import { rollMobSpec, absoluteFloor } from '@/battle/tower';
+import { rollMobSpec, absoluteFloor, reachableNodeIds } from '@/battle/tower';
 import { getTowerEvent, TOWER_EVENTS, TowerEvent, TowerEventEffect } from '@/battle/events';
 import { ECHO_HEAL_PCT } from '@/battle/numbers';
 import { towerRelicBonus, AFFIX_POOL, type LootDrop } from '@/battle/loot';
@@ -20,7 +21,7 @@ import { playSound } from '@/utils/feedback';
 import { useBackHandler } from '@/utils/useBackHandler';
 import { TowerMap } from '@/components/battle/TowerMap';
 import { TowerEventModal, TowerEchoModal, TowerQuizModal } from '@/components/battle/TowerModals';
-import { IconTower, IconEvilEye, slantPoly, NoiseLayer, paletteFor, ABYSS_PALETTE } from '@/components/battle/warKit';
+import { IconTower, IconEvilEye, slantPoly, NoiseLayer, paletteFor, ABYSS_PALETTE, SlantGauge, NodeGlyph } from '@/components/battle/warKit';
 
 interface Props {
   open: boolean;
@@ -45,6 +46,8 @@ export function TowerScreen({ open, onClose, onDescend, onRequestBattle, onToast
   const [quiz, setQuiz] = useState<{ questions: MirrorQuestion[]; reward: number } | null>(null);
   // R17 #2：月匣从 toast 升格为开匣抽取仪式
   const [chestReveal, setChestReveal] = useState<{ drops: LootDrop[]; sp: number } | null>(null);
+  // R18 #1（A 案）：状态胶囊点开的作战简报抽屉（buff/弹药/光辉/下塔收进来）
+  const [briefOpen, setBriefOpen] = useState(false);
   const eventPostRef = useRef<{ skip?: boolean; reroll?: boolean; fight?: boolean; quizReward?: number }>({});
 
   useBackHandler(open, () => {
@@ -53,6 +56,8 @@ export function TowerScreen({ open, onClose, onDescend, onRequestBattle, onToast
   });
 
   if (!open || !stratum || !battleState) return null;
+  // R18：portal 到 body——塔屏原在页面内容层（z-10 语境）里，fixed z 再高也压不过
+  // 底部导航（z-40），导航会悬在行动条上（分辨率适配上报的元凶之一）
 
   const ts = battleState.towerSession;
   const buffs = ts?.buffs ?? [];
@@ -62,6 +67,24 @@ export function TowerScreen({ open, onClose, onDescend, onRequestBattle, onToast
   const attrNames = useAppStore.getState().settings.attributeNames as Record<AttributeId, string>;
   const ammo = ammoFromActivities(useAppStore.getState().activities, toLocalDateKey());
   const diligence = battleState.diligenceCharges ?? 0;
+
+  // R18 #1（B 案）：下一步可走节点提级成底部房间卡——「选路」从地图点击挪进拇指区，
+  // 塔图退回空间叙事（仍可点，但不再是唯一交互面）
+  const reachable = new Set(reachableNodeIds(stratum));
+  const nextNodes = [...stratum.nodes].filter(n => reachable.has(n.id)).sort((a, b) => a.lane - b.lane).slice(0, 3);
+  const NODE_TITLE: Record<StratumNode['type'], string> = {
+    mob: 'Shadow', elite: '强敌', event: '异变', echo: '回响', chest: '月匣', boss: '心魔', golden: '金色回响',
+  };
+  const previewOf = (n: StratumNode): string => {
+    switch (n.type) {
+      case 'mob': case 'elite': case 'golden':
+        return n.mob ? `${n.mob.name.slice(0, 5)} · 弱${attrNames[n.mob.weakAttribute ?? 'knowledge']?.slice(0, 2) ?? '?'}` : '未知的敌影';
+      case 'chest': return '开匣 · 必得战利品';
+      case 'echo': return '回响 · 回复或月辉';
+      case 'event': return '未知的遭遇';
+      case 'boss': return shadow ? shadow.name.slice(0, 6) : '决战';
+    }
+  };
 
   const handleSelectNode = async (node: StratumNode) => {
     const moved = await moveToTowerNode(node.id);
@@ -198,89 +221,125 @@ export function TowerScreen({ open, onClose, onDescend, onRequestBattle, onToast
     await completeTowerNode(node.id);
   };
 
-  return (
+  return createPortal(
     <motion.div
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      className="fixed inset-0 z-40 flex flex-col overflow-hidden"
+      className="fixed inset-0 z-[45] flex flex-col overflow-hidden"
       style={{ background: `linear-gradient(180deg, ${pal.deep} 0%, #0a1030 46%, #060a24 100%)` }}
     >
       <NoiseLayer opacity={0.05} />
-      {/* ── 头部 ── */}
-      <div className="flex-shrink-0 px-4 pb-2 space-y-2" style={{ paddingTop: 'calc(1rem + env(safe-area-inset-top))' }}>
-        <div className="flex items-center justify-between gap-2">
+      {/* ── 顶部（R18 A 案）：一条状态胶囊——HP 斜节槽 + SP 大数字 + 心魔残量 + 层数。
+          点开 = 作战简报抽屉（区层详情/buff/弹药/光辉/下塔全收进来），
+          旧三层 9px chips 流退役——常态只留「还能打多久」这一件事。 ── */}
+      <div className="flex-shrink-0 px-3 pb-1.5" style={{ paddingTop: 'calc(0.9rem + env(safe-area-inset-top))' }}>
+        <div className="flex items-stretch gap-2">
           <button
             onClick={onClose}
-            className="text-gray-400 text-sm px-2 py-1 rounded-lg flex-shrink-0"
-            style={{ background: 'rgba(255,255,255,0.1)' }}
+            aria-label="暂离（进度保留）"
+            className="w-9 flex-shrink-0 text-sm font-black text-gray-300"
+            style={{ clipPath: slantPoly(8), background: 'rgba(255,255,255,0.09)' }}
           >
-            ✕ 暂离
+            ✕
           </button>
-          <div className="text-center min-w-0">
-            <p className="text-white font-black text-sm truncate inline-flex items-center gap-1">
-              <IconTower size={13} className="text-indigo-300 flex-shrink-0" />
-              {stratum.name}
-            </p>
-            <p className="text-[10px] text-indigo-200/60">
-              第{stratum.level}区层{stratum.deepenCount > 0 ? ` · 异变×${stratum.deepenCount}` : ''}
-            </p>
-          </div>
-          <span className="flex-shrink-0 text-xs font-bold tabular-nums text-indigo-200/70">
+          <button
+            onClick={() => setBriefOpen(v => !v)}
+            aria-expanded={briefOpen}
+            aria-label="作战简报"
+            className="min-w-0 flex-1 px-3 py-1.5"
+            style={{ clipPath: slantPoly(10), background: 'rgba(255,255,255,0.07)', boxShadow: `inset 0 0 0 1px rgba(${pal.accentRgb}, 0.3)` }}
+          >
+            <div className="flex items-center gap-2.5">
+              <div className="min-w-0 flex-1">
+                <SlantGauge
+                  value={battleState.playerHp}
+                  max={Math.max(1, battleState.playerMaxHp)}
+                  segments={12}
+                  height={8}
+                  onColor="#f97316"
+                  glow="rgba(249,115,22,0.5)"
+                />
+                <span className="mt-0.5 block text-left text-[9px] font-bold tabular-nums text-white/60">
+                  HP {battleState.playerHp}/{battleState.playerMaxHp}
+                </span>
+              </div>
+              <span className="flex-shrink-0 text-right leading-none">
+                <span className="block text-[8px] font-bold tracking-[0.2em] text-yellow-200/50">SP</span>
+                <span className="text-[22px] font-black tabular-nums text-yellow-300" style={{ letterSpacing: '-0.02em' }}>{battleState.sp}</span>
+              </span>
+              {shadow && (
+                <span className="flex-shrink-0 inline-flex items-center gap-1 text-[11px] font-bold tabular-nums text-red-200/80">
+                  <IconEvilEye size={12} />
+                  {Math.round(((shadow.currentHp + (shadow.currentHp2 ?? 0)) / Math.max(1, shadow.maxHp + (shadow.maxHp2 ?? 0))) * 100)}%
+                </span>
+              )}
+              <span className="flex-shrink-0 text-[10px] font-black text-indigo-200/60">{briefOpen ? '▴' : '▾'}</span>
+            </div>
+          </button>
+          <span className="flex-shrink-0 self-center text-xs font-bold tabular-nums text-indigo-200/70">
             {absoluteFloor(stratum, curFloor)}F<span className="opacity-50">/{absoluteFloor(stratum, stratum.floors)}F</span>
           </span>
         </div>
 
-        {/* HP / SP / 心魔残量 / 登塔增益 */}
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1.5 flex-1 min-w-0">
-            <span className="text-[10px] font-bold text-red-300/80 flex-shrink-0">HP</span>
-            <div className="h-2 flex-1 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.1)' }}>
-              <motion.div
-                className="h-full rounded-full"
-                animate={{ width: `${(battleState.playerHp / Math.max(1, battleState.playerMaxHp)) * 100}%` }}
-                style={{ background: 'linear-gradient(90deg, #ef4444, #f97316)' }}
-              />
-            </div>
-            <span className="text-[10px] tabular-nums text-white/70 flex-shrink-0">{battleState.playerHp}/{battleState.playerMaxHp}</span>
-          </div>
-          <span className="flex-shrink-0 text-[11px] font-bold text-yellow-300">SP {battleState.sp}</span>
-          {shadow && (
-            <span className="flex-shrink-0 inline-flex items-center gap-1 text-[10px] tabular-nums text-red-200/70">
-              <IconEvilEye size={11} />
-              {Math.round(((shadow.currentHp + (shadow.currentHp2 ?? 0)) / Math.max(1, shadow.maxHp + (shadow.maxHp2 ?? 0))) * 100)}%
-            </span>
+        {/* 作战简报抽屉 */}
+        <AnimatePresence initial={false}>
+          {briefOpen && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.2 }}
+              className="overflow-hidden"
+            >
+              <div className="mt-1.5 space-y-2 px-3 py-2.5" style={{ clipPath: slantPoly(10), background: 'rgba(8,10,34,0.92)', boxShadow: `inset 0 0 0 1px rgba(${pal.accentRgb}, 0.22)` }}>
+                <p className="inline-flex items-center gap-1.5 text-[12px] font-black text-white">
+                  <IconTower size={12} className="text-indigo-300" />
+                  {stratum.name}
+                  <span className="text-[10px] font-bold text-indigo-200/60">第{stratum.level}区层{stratum.deepenCount > 0 ? ` · 异变×${stratum.deepenCount}` : ''}</span>
+                </p>
+                {(buffs.length > 0 || Object.keys(ammo).length > 0) && (
+                  <div className="flex flex-wrap items-center gap-1">
+                    {buffs.map(b => (
+                      <span key={b.id} className="rounded-md px-1.5 py-0.5 text-[9px] font-bold"
+                            style={{ background: 'rgba(53,209,232,0.14)', color: '#7dd3fc', border: '1px solid rgba(53,209,232,0.35)', lineHeight: 1.2 }}>
+                        ✦ {b.label}
+                      </span>
+                    ))}
+                    {(Object.entries(ammo) as Array<[AttributeId, number]>).map(([attr, pct]) => (
+                      <span key={attr} className="rounded-md px-1.5 py-0.5 text-[9px] font-bold"
+                            style={{ background: 'rgba(250,204,21,0.12)', color: '#fde047', border: '1px solid rgba(250,204,21,0.35)', lineHeight: 1.2 }}>
+                        🔸 {attrNames[attr]}弹药 +{Math.round(pct * 100)}%
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  {diligence > 0 && interactive && (
+                    <button
+                      onClick={() => {
+                        void useAppStore.getState().claimDiligence().then(ok => {
+                          if (ok) { playSound('/battle-fanfare.mp3', 0.45); onToast('✨ 勤勉的光辉——体力完全恢复！'); }
+                        });
+                      }}
+                      className="flex-1 py-1.5 text-[11px] font-black"
+                      style={{ clipPath: slantPoly(8), background: 'rgba(253,224,71,0.2)', color: '#fef08a', border: '1px solid rgba(253,224,71,0.55)' }}
+                    >
+                      ✨ 光辉 ×{diligence} · 全恢复
+                    </button>
+                  )}
+                  {interactive && (
+                    <button
+                      onClick={onDescend}
+                      className="flex-1 py-1.5 text-[11px] font-bold text-indigo-100/80"
+                      style={{ clipPath: slantPoly(8), background: 'rgba(255,255,255,0.08)' }}
+                    >
+                      🌙 下塔结算（保留进度）
+                    </button>
+                  )}
+                </div>
+              </div>
+            </motion.div>
           )}
-        </div>
-        {(buffs.length > 0 || Object.keys(ammo).length > 0 || diligence > 0) && (
-          <div className="flex flex-wrap items-center gap-1">
-            {buffs.map(b => (
-              <span key={b.id} className="text-[9px] font-bold px-1.5 py-0.5 rounded-md"
-                    style={{ background: 'rgba(53,209,232,0.14)', color: '#7dd3fc', border: '1px solid rgba(53,209,232,0.35)', lineHeight: 1.2 }}>
-                ✦ {b.label}
-              </span>
-            ))}
-            {/* 批4 §6.1 弹药匣：今日记录 → 属性伤害加算（可见性验收点） */}
-            {(Object.entries(ammo) as Array<[AttributeId, number]>).map(([attr, pct]) => (
-              <span key={attr} className="text-[9px] font-bold px-1.5 py-0.5 rounded-md"
-                    style={{ background: 'rgba(250,204,21,0.12)', color: '#fde047', border: '1px solid rgba(250,204,21,0.35)', lineHeight: 1.2 }}>
-                🔸 {attrNames[attr]}弹药 +{Math.round(pct * 100)}%
-              </span>
-            ))}
-            {/* 批4 §6.4 勤勉的光辉：使用 = 完全恢复 HP */}
-            {diligence > 0 && interactive && (
-              <button
-                onClick={() => {
-                  void useAppStore.getState().claimDiligence().then(ok => {
-                    if (ok) { playSound('/battle-fanfare.mp3', 0.45); onToast('✨ 勤勉的光辉——体力完全恢复！'); }
-                  });
-                }}
-                className="text-[9px] font-black px-1.5 py-0.5 rounded-md"
-                style={{ background: 'rgba(253,224,71,0.2)', color: '#fef08a', border: '1px solid rgba(253,224,71,0.55)', lineHeight: 1.2 }}
-              >
-                ✨ 光辉 ×{diligence} · 点按全恢复
-              </button>
-            )}
-          </div>
-        )}
+        </AnimatePresence>
       </div>
 
       {/* ── 塔图 ── */}
@@ -288,18 +347,43 @@ export function TowerScreen({ open, onClose, onDescend, onRequestBattle, onToast
         <TowerMap stratum={stratum} interactive={interactive} onSelectNode={handleSelectNode} fill />
       </div>
 
-      {/* ── 底部 ── */}
-      <div className="flex-shrink-0 px-4 pt-2" style={{ paddingBottom: 'calc(0.9rem + env(safe-area-inset-bottom))' }}>
+      {/* ── 底部（R18 B 案）：房间卡行动条——下一层的选择摆在拇指区 ── */}
+      <div className="flex-shrink-0 px-3 pt-1.5" style={{ paddingBottom: 'calc(0.8rem + env(safe-area-inset-bottom))' }}>
         {interactive ? (
-          <button
-            onClick={onDescend}
-            className="w-full py-2.5 text-sm font-bold text-indigo-100/80"
-            style={{ clipPath: slantPoly(12), background: 'rgba(255,255,255,0.08)' }}
-          >
-            🌙 下塔结算（保留进度）
-          </button>
+          nextNodes.length > 0 ? (
+            <>
+              <p className="mb-1 px-1 text-[9px] font-black tracking-[0.34em] text-indigo-200/45">选 择 前 路</p>
+              <div className="flex gap-2">
+                {nextNodes.map(node => {
+                  const danger = node.type === 'boss';
+                  const gold = node.type === 'golden' || node.type === 'chest';
+                  return (
+                    <motion.button
+                      key={node.id}
+                      whileTap={{ scale: 0.95 }}
+                      onClick={() => void handleSelectNode(node)}
+                      className="min-w-0 flex-1 px-2 py-2.5 text-center"
+                      style={{
+                        clipPath: slantPoly(10),
+                        background: danger ? 'rgba(190,18,60,0.24)' : gold ? 'rgba(250,204,21,0.13)' : `rgba(${pal.accentRgb}, 0.15)`,
+                        boxShadow: `inset 0 0 0 1px ${danger ? 'rgba(248,113,113,0.6)' : gold ? 'rgba(250,204,21,0.5)' : `rgba(${pal.accentRgb}, 0.45)`}`,
+                      }}
+                    >
+                      <span className="inline-block" style={{ color: danger ? '#ff8fa3' : gold ? '#fcd34d' : 'rgba(222,232,255,0.92)' }}>
+                        <NodeGlyph type={node.type} size={18} />
+                      </span>
+                      <span className="mt-0.5 block text-[12px] font-black leading-tight text-white">{NODE_TITLE[node.type]}</span>
+                      <span className="block truncate text-[9px] font-semibold leading-tight text-white/55">{previewOf(node)}</span>
+                    </motion.button>
+                  );
+                })}
+              </div>
+            </>
+          ) : (
+            <p className="py-2 text-center text-xs text-indigo-200/50">前路已尽——本区层的黑暗到头了</p>
+          )
         ) : (
-          <p className="text-center text-xs text-indigo-200/50 py-2">今晚的攀登已结束——进度已保留</p>
+          <p className="py-2 text-center text-xs text-indigo-200/50">今晚的攀登已结束——进度已保留</p>
         )}
       </div>
 
@@ -340,6 +424,7 @@ export function TowerScreen({ open, onClose, onDescend, onRequestBattle, onToast
           />
         )}
       </AnimatePresence>
-    </motion.div>
+    </motion.div>,
+    document.body,
   );
 }

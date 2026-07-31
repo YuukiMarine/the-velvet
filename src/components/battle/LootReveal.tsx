@@ -12,6 +12,7 @@
  * 心魔流程是 reveal 关闭后才拉 VictoryModal(z-60)，两者不同帧共存。
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import type { LootDrop } from '@/battle/loot';
 import {
@@ -230,7 +231,8 @@ export function LootReveal({ open, source, drops, sp = 0, onClose }: Props) {
 
   if (!open) return null;
 
-  return (
+  // portal 到 body：仪式层不吃页面内容层的层叠上下文（否则底导会浮在终幕上）
+  return createPortal(
     <motion.div
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
       className="fixed inset-0 z-[70] flex flex-col items-center justify-center overflow-hidden px-6"
@@ -353,6 +355,7 @@ export function LootReveal({ open, source, drops, sp = 0, onClose }: Props) {
           </motion.div>
         </>
       )}
-    </motion.div>
+    </motion.div>,
+    document.body,
   );
 }

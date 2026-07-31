@@ -34,6 +34,33 @@ export function ammoFromActivities(activities: AmmoSource[], todayKey: string): 
   return out;
 }
 
+// ── R18 燃起：白天某属性待办完成 ≥3 → 当晚该面具首个技能免 SP ──
+export const BLAZE_TODO_THRESHOLD = 3;
+
+export interface BlazeTodoSource { id: string; attribute: AttributeId }
+export interface BlazeCompletionSource { todoId: string; date: string; count?: number }
+
+/** 今日各属性待办完成数 ≥3 的属性列表（面具「燃起」；纯计算，store/UI 读写） */
+export function blazingAttrsToday(
+  todos: BlazeTodoSource[],
+  completions: BlazeCompletionSource[],
+  todayKey?: string,
+): AttributeId[] {
+  const today = todayKey ?? (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  })();
+  const attrOf = new Map(todos.map(t => [t.id, t.attribute]));
+  const counts: Partial<Record<AttributeId, number>> = {};
+  for (const c of completions) {
+    if (c.date !== today) continue;
+    const attr = attrOf.get(c.todoId);
+    if (!attr) continue;
+    counts[attr] = (counts[attr] ?? 0) + (c.count ?? 1);
+  }
+  return ATTRS.filter(a => (counts[a] ?? 0) >= BLAZE_TODO_THRESHOLD);
+}
+
 // ── 6.2 备战抽取：进塔随机小 buff ────────────────────────────
 export interface PrepBuff {
   id: string;
