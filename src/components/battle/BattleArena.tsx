@@ -2,11 +2,12 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore } from '@/store';
 import { toLocalDateKey } from '@/store';
-import { isInShadowTime, SKILL_EFFECT_MAP } from '@/constants';
-import { healAmount, BOSS_ATTACK_BY_LEVEL } from '@/battle/numbers';
+import { isInShadowTime } from '@/constants';
+import { BOSS_ATTACK_BY_LEVEL } from '@/battle/numbers';
 import { AttributeId, MobSpec, StratumNode } from '@/types';
 import { absoluteFloor } from '@/battle/tower';
-import { lootLabel } from '@/battle/loot';
+import { type LootDrop } from '@/battle/loot';
+import { LootReveal, type LootRevealSource } from '@/components/battle/LootReveal';
 import { rollPrepDraw, type PrepBuff } from '@/battle/preparation';
 import { generateSummonLines, generateRecapComment } from '@/utils/battleAI';
 import { playSound } from '@/utils/feedback';
@@ -20,7 +21,8 @@ import { PersonaShuffleModal } from '@/components/battle/PersonaShuffleModal';
 import { TowerScreen } from '@/components/battle/TowerScreen';
 import { InfiltrationOverlay } from '@/components/battle/InfiltrationOverlay';
 import { TowerRecapModal } from '@/components/battle/TowerModals';
-import { ArsenalModal, ShadowArchiveModal, MasteryStars } from '@/components/battle/ArsenalModal';
+import { ArsenalModal, ShadowArchiveModal } from '@/components/battle/ArsenalModal';
+import { PersonaCodex } from '@/components/battle/PersonaCodex';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P3R, P3RPage, GhostWords, P3PageHeader, ShatteredStar, slantClip } from '@/components/p3r/kit';
 import {
@@ -29,35 +31,6 @@ import {
 } from '@/components/p5r/kit';
 
 type TabKey = 'battle' | 'persona' | 'settings';
-
-const ATTR_IDS: AttributeId[] = ['knowledge', 'guts', 'dexterity', 'kindness', 'charm'];
-
-const SKILL_TYPE_ICON: Record<string, string> = {
-  damage: '⚔️',
-  crit: '⚡',
-  buff: '✨',
-  debuff: '🔻',
-  charge: '🔮',
-  heal: '💚',
-  attack_boost: '🔥',
-};
-
-const SKILL_TYPE_TAG: Record<string, { label: string; color: string; bg: string }> = {
-  damage:       { label: '伤害', color: '#ef4444', bg: 'rgba(239,68,68,0.12)' },
-  crit:         { label: '暴击', color: '#f59e0b', bg: 'rgba(245,158,11,0.12)' },
-  buff:         { label: '增伤', color: '#3b82f6', bg: 'rgba(59,130,246,0.12)' },
-  debuff:       { label: '易伤', color: '#f97316', bg: 'rgba(249,115,22,0.12)' },
-  charge:       { label: '蓄力', color: 'rgb(var(--color-battle-bright-rgb))', bg: 'rgb(var(--color-battle-bright-rgb) / 0.12)' },
-  heal:         { label: '回复', color: '#10b981', bg: 'rgba(16,185,129,0.12)' },
-  attack_boost: { label: '攻击增益', color: '#f43f5e', bg: 'rgba(244,63,94,0.12)' },
-};
-
-const SKILL_EFFECT_HINT: Record<string, string> = {
-  buff:         '下次+50%',
-  debuff:       '易伤+30%',
-  charge:       '下次×2',
-  attack_boost: '+6伤·3回合',
-};
 
 /** P5 取景框（p5-battle 稿：空态巨星外那四个黑 L 角标） */
 const P5Viewfinder = ({ children }: { children: React.ReactNode }) => {
@@ -83,7 +56,7 @@ const P5Viewfinder = ({ children }: { children: React.ReactNode }) => {
 export const BattleArena = () => {
   const {
     user, attributes, persona, shadow, battleState, settings, stratum,
-    checkShadowHpRegen, updateSettings: saveSettings, resetBattle, equipMask, setCurrentPage,
+    checkShadowHpRegen, updateSettings: saveSettings, resetBattle, setCurrentPage,
     saveBattleState, enterTowerToday, completeTowerNode, deepenStratumIfNewWeek,
   } = useAppStore();
 
@@ -101,7 +74,6 @@ export const BattleArena = () => {
   const [showVictory, setShowVictory] = useState(false);
   const [personaCardIdx, setPersonaCardIdx] = useState(0);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
-  const [maskEquipAnim, setMaskEquipAnim] = useState<AttributeId | null>(null);
   const [showArsenal, setShowArsenal] = useState(false);
   const [showArchive, setShowArchive] = useState(false);
   const [cheatClicks, setCheatClicks] = useState(0);
@@ -109,6 +81,8 @@ export const BattleArena = () => {
   const [showPersonaShuffle, setShowPersonaShuffle] = useState(false);
   // ── 高塔（批2） ──
   const [activeEncounter, setActiveEncounter] = useState<{ mob: MobSpec; level: number; nodeId: string } | null>(null);
+  // R17 #5：强敌/金色/心魔战利品 → 抽卡仪式（心魔在仪式关闭后再拉 VictoryModal）
+  const [lootReveal, setLootReveal] = useState<{ source: LootRevealSource; drops: LootDrop[]; sp: number; thenVictory?: boolean } | null>(null);
   const [recap, setRecap] = useState<'descend' | 'defeat' | 'clear' | null>(null);
   const [recapComment, setRecapComment] = useState<string | null>(null);
   const [spToast, setSpToast] = useState<string | null>(null);
@@ -195,12 +169,13 @@ export const BattleArena = () => {
     if (bossNode && !bossNode.cleared) {
       const sp = await completeTowerNode(bossNode.id);
       const drops = await useAppStore.getState().rollTowerLoot('boss', 1);
-      const lootText = drops.map(lootLabel).join(' · ');
-      showSpToast(`👁️ 心魔讨伐${sp > 0 ? ` · +${sp} SP` : ''}${lootText ? ` · ${lootText}` : ''}`);
       // 批4 §6.8：通关类壮举——首区层通关 / 一夜通层（本 session 从区层入口爬到心魔）
       const st4 = useAppStore.getState();
       void st4.recordBattleFeat('first_clear');
       if (st4.battleState?.towerSession?.startFloor === 0) void st4.recordBattleFeat('night_climb');
+      // R17 #5：抽卡仪式 → DONE AND DUSTED 终幕 → 再进 VictoryModal 领奖
+      setLootReveal({ source: 'boss', drops, sp, thenVictory: true });
+      return;
     }
     setShowVictory(true);
   };
@@ -226,18 +201,19 @@ export const BattleArena = () => {
     if (outcome === 'victory') {
       const sp = await completeTowerNode(enc.nodeId, { wasMob: true });
       // 批3：强敌 60% 掉战利品；批5：金色回响必掉满月
-      let lootText = '';
+      let drops: LootDrop[] = [];
       const node = stratum?.nodes.find(n => n.id === enc.nodeId);
       const floorRatio = stratum ? (node?.floor ?? 1) / Math.max(1, stratum.floors) : 0.5;
       if (enc.mob.golden) {
-        const drops = await useAppStore.getState().rollTowerLoot('golden', floorRatio);
-        lootText = drops.map(lootLabel).join(' · ');
+        drops = await useAppStore.getState().rollTowerLoot('golden', floorRatio);
       } else if (enc.mob.tier === 'elite') {
-        const drops = await useAppStore.getState().rollTowerLoot('elite', floorRatio);
-        lootText = drops.map(lootLabel).join(' · ');
+        drops = await useAppStore.getState().rollTowerLoot('elite', floorRatio);
       }
-      if (sp > 0 || lootText) {
-        showSpToast(`${enc.mob.golden ? '✨ 金色回响散去' : '⚔️ 节点攻略'}${sp > 0 ? ` · +${sp} SP` : ''}${lootText ? ` · ${lootText}` : ''}`);
+      if (drops.length > 0) {
+        // R17 #5：有掉落 → 抽卡仪式；空手（强敌 40%）与小怪保持轻量 toast
+        setLootReveal({ source: enc.mob.golden ? 'golden' : 'elite', drops, sp });
+      } else if (sp > 0) {
+        showSpToast(`${enc.mob.golden ? '✨ 金色回响散去' : '⚔️ 节点攻略'} · +${sp} SP`);
       }
     } else if (outcome === 'defeat') {
       setRecap('defeat');
@@ -327,9 +303,6 @@ export const BattleArena = () => {
   const inputCls = "w-full rounded-xl border border-gray-200 dark:border-purple-800/40 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-purple-400/50";
 
   // Persona card navigation
-  const currentAttr = ATTR_IDS[personaCardIdx];
-  const currentAttrPersona = persona?.attributePersonas?.[currentAttr];
-  const currentSkills = persona?.skills[currentAttr] ?? [];
 
   // ── P3R 玩家卡（p3-battle 设计稿：PLAYER eyebrow + 名 + Lv + HP 青条 + SP 黄斜块段）──
   // 未开战时 HP 取设置上限的满值、SP 取 0——这是玩家的真实静息状态，不是演出假数据
@@ -922,7 +895,7 @@ export const BattleArena = () => {
                   </motion.div>
                 )}
 
-                {/* ── Persona 卡片视图 ── */}
+                {/* ── Persona 卡片视图（R17 #4：PersonaCodex——面具轨 / 英雄板 / 技能典·熟练度） ── */}
                 {activeTab === 'persona' && (
                   <motion.div
                     key="persona"
@@ -936,248 +909,7 @@ export const BattleArena = () => {
                         还没有 Persona，先在「进入战场」页创建
                       </div>
                     ) : (
-                      <div className="space-y-4">
-                        {/* Navigation header */}
-                        <div className="flex items-center justify-between">
-                          <button
-                            onClick={() => { playSound('/ui-menu.mp3', 0.5); setPersonaCardIdx(i => (i - 1 + ATTR_IDS.length) % ATTR_IDS.length); }}
-                            className="w-9 h-9 flex items-center justify-center rounded-xl text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-lg"
-                          >
-                            ‹
-                          </button>
-                          <div className="text-center flex-1">
-                            <p className="text-gray-500 dark:text-gray-400 text-xs font-semibold">
-                              {settings.attributeNames[currentAttr]}
-                            </p>
-                            <p className="text-gray-400 dark:text-gray-500 text-xs mt-0.5">
-                              {personaCardIdx + 1} / {ATTR_IDS.length}
-                            </p>
-                          </div>
-                          <button
-                            onClick={() => { playSound('/ui-menu.mp3', 0.5); setPersonaCardIdx(i => (i + 1) % ATTR_IDS.length); }}
-                            className="w-9 h-9 flex items-center justify-center rounded-xl text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-lg"
-                          >
-                            ›
-                          </button>
-                        </div>
-
-                        {/* Navigation dots */}
-                        <div className="flex justify-center gap-1.5">
-                          {ATTR_IDS.map((_, i) => (
-                            <button
-                              key={i}
-                              onClick={() => setPersonaCardIdx(i)}
-                              className="rounded-full transition-all"
-                              style={{
-                                width: i === personaCardIdx ? 16 : 6,
-                                height: 6,
-                                background: i === personaCardIdx ? 'rgb(var(--color-battle-rgb))' : 'rgb(var(--color-battle-bright-rgb) / 0.2)',
-                              }}
-                            />
-                          ))}
-                        </div>
-
-                        {/* Persona card */}
-                        {(() => {
-                          const MASK_BUFFS: Record<AttributeId, string> = {
-                            knowledge: '弱点攻击额外+2伤害，日常该属性+1',
-                            guts: '出战时暴击率+15%，日常该属性+1',
-                            dexterity: '每使用5次技能获得追加行动，日常该属性+1',
-                            kindness: '体力耗尽后保留1点体力（每场一次），日常该属性+1',
-                            charm: '每次战斗仅一次，使用技能不消耗SP，日常该属性+1',
-                          } as Record<AttributeId, string>;
-                          const isEquipped = persona.equippedMaskAttribute === currentAttr;
-                          const handleEquip = () => {
-                            equipMask(isEquipped ? null : currentAttr);
-                            if (!isEquipped) {
-                              playSound('/battle-mask-swap.mp3');
-                              setMaskEquipAnim(currentAttr);
-                              setTimeout(() => setMaskEquipAnim(null), 2200);
-                            }
-                          };
-                          return (
-                            <AnimatePresence mode="wait">
-                              <motion.div
-                                key={currentAttr}
-                                initial={{ opacity: 0, x: 20 }}
-                                animate={{ opacity: 1, x: 0 }}
-                                exit={{ opacity: 0, x: -20 }}
-                                transition={{ duration: 0.2 }}
-                                className="rounded-2xl overflow-hidden relative bg-white dark:bg-gray-800/40"
-                                style={{ borderColor: isEquipped ? 'rgb(var(--color-battle-bright-rgb) / 0.6)' : 'rgb(var(--color-battle-bright-rgb) / 0.25)', borderWidth: 1 }}
-                              >
-                                {/* Equip animation overlay — 居中的毛玻璃小卡片，不遮挡整张卡片 */}
-                                <AnimatePresence>
-                                  {maskEquipAnim === currentAttr && (
-                                    <div className="absolute inset-0 z-10 flex items-center justify-center rounded-2xl pointer-events-none p-4">
-                                      <motion.div
-                                        initial={{ opacity: 0, scale: 0.85, y: 8 }}
-                                        animate={{ opacity: 1, scale: 1, y: 0 }}
-                                        exit={{ opacity: 0, scale: 1.05 }}
-                                        transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-                                        className="rounded-2xl px-5 py-3 text-center shadow-xl max-w-[85%]"
-                                        style={{
-                                          background: 'rgb(var(--color-battle-bright-rgb) / 0.78)',
-                                          backdropFilter: 'blur(8px) saturate(140%)',
-                                          WebkitBackdropFilter: 'blur(8px) saturate(140%)',
-                                          border: '1px solid rgba(233,213,255,0.4)',
-                                          boxShadow: '0 6px 24px rgba(88,28,135,0.35), 0 0 18px rgb(var(--color-battle-bright-rgb) / 0.35)',
-                                        }}
-                                      >
-                                        <motion.p
-                                          initial={{ y: 6, opacity: 0 }}
-                                          animate={{ y: 0, opacity: 1 }}
-                                          transition={{ delay: 0.08 }}
-                                          className="text-white font-black text-sm"
-                                        >
-                                          🎭 Persona 已佩戴
-                                        </motion.p>
-                                        <motion.p
-                                          initial={{ y: 6, opacity: 0 }}
-                                          animate={{ y: 0, opacity: 1 }}
-                                          transition={{ delay: 0.2 }}
-                                          className="text-purple-100 text-[11px] leading-snug mt-1"
-                                        >
-                                          {MASK_BUFFS[currentAttr]}
-                                        </motion.p>
-                                      </motion.div>
-                                    </div>
-                                  )}
-                                </AnimatePresence>
-
-                                {/* Card header */}
-                                <div
-                                  className="px-5 py-4 bg-purple-50 dark:bg-gray-700/50"
-                                  style={{ borderBottom: isEquipped ? '1px solid rgb(var(--color-battle-bright-rgb) / 0.3)' : '1px solid rgb(var(--color-battle-bright-rgb) / 0.15)' }}
-                                >
-                                  <div className="flex items-start justify-between gap-3">
-                                    <div className="flex-1 min-w-0">
-                                      {currentAttrPersona ? (
-                                        <>
-                                          <div className="flex items-center gap-2">
-                                            <p className="text-purple-500 dark:text-purple-300 text-xl font-black tracking-wide">
-                                              ✦ {currentAttrPersona.name}
-                                            </p>
-                                            {isEquipped && (
-                                              <span className="text-xs font-bold px-1.5 py-0.5 rounded-full flex-shrink-0" style={{ background: 'rgb(var(--color-battle-bright-rgb) / 0.5)', color: '#e9d5ff' }}>
-                                                佩戴中
-                                              </span>
-                                            )}
-                                          </div>
-                                          <p className="text-gray-600 dark:text-gray-300 text-xs mt-1 leading-relaxed">
-                                            {currentAttrPersona.description}
-                                          </p>
-                                        </>
-                                      ) : (
-                                        <p className="text-gray-500 dark:text-white/60 text-sm font-semibold">
-                                          {settings.attributeNames[currentAttr]} Persona
-                                        </p>
-                                      )}
-                                    </div>
-                                    <motion.button
-                                      whileTap={{ scale: 0.94 }}
-                                      onClick={handleEquip}
-                                      className="flex-shrink-0 px-3 py-1.5 rounded-xl text-xs font-bold transition-all"
-                                      style={{
-                                        background: isEquipped ? 'rgb(var(--color-battle-bright-rgb) / 0.5)' : 'rgb(var(--color-battle-bright-rgb) / 0.1)',
-                                        color: isEquipped ? '#e9d5ff' : 'rgb(var(--color-battle-rgb))',
-                                        border: isEquipped ? '1px solid rgb(var(--color-battle-bright-rgb) / 0.7)' : '1px solid rgb(var(--color-battle-bright-rgb) / 0.3)',
-                                      }}
-                                    >
-                                      {isEquipped ? '已佩戴' : '佩戴'}
-                                    </motion.button>
-                                  </div>
-                                  {isEquipped && (
-                                    <p className="text-purple-600 dark:text-purple-300/60 text-xs mt-2 leading-relaxed">
-                                      {MASK_BUFFS[currentAttr]}
-                                    </p>
-                                  )}
-                                </div>
-
-                                {/* Skills */}
-                                <div className="px-4 py-3 space-y-2 bg-gray-50 dark:bg-gray-800/30">
-                                  {currentSkills.length === 0 ? (
-                                    <p className="text-center py-4 text-gray-400 dark:text-gray-500 text-sm">暂无技能</p>
-                                  ) : (
-                                    currentSkills.map((skill, i) => {
-                                      const isDmg = skill.type === 'damage' || skill.type === 'crit' || skill.type === 'attack_boost';
-                                      const baseTag = SKILL_TYPE_TAG[skill.type];
-                                      // 特化效果（按当前属性）—— 优先展示"共鸣/护盾/洞悉"这种风味 label 和 hint
-                                      const mapped = SKILL_EFFECT_MAP[currentAttr]?.[skill.type];
-                                      const tagLabel = mapped?.label ?? baseTag?.label;
-                                      const tagIcon = mapped?.icon;
-                                      // 右侧 hint：优先特化，回落到静态；heal 用真实回血值
-                                      const effectHint = skill.type === 'heal'
-                                        ? `+${healAmount(skill.power, currentAttr)}HP`
-                                        : (mapped?.hint ?? SKILL_EFFECT_HINT[skill.type] ?? '');
-                                      const locked = skill.unlocked === false; // 批3 双条件：属性等级≥N 且 前技满星
-                                      return (
-                                      <div
-                                        key={i}
-                                        className={`flex items-center justify-between py-2 border-b border-gray-200 dark:border-gray-700 ${locked ? 'opacity-45' : ''}`}
-                                      >
-                                        <div className="flex items-center gap-2 flex-1 min-w-0">
-                                          <span
-                                            className="text-xs font-black flex-shrink-0 px-1.5 py-0.5 rounded text-purple-600 dark:text-purple-300"
-                                            style={{ background: 'rgb(var(--color-battle-bright-rgb) / 0.1)' }}
-                                          >
-                                            {locked ? '🔒' : skill.level}
-                                          </span>
-                                          <div className="min-w-0">
-                                            <div className="flex items-center gap-1.5">
-                                              <p className="text-gray-900 dark:text-white text-sm font-semibold truncate">
-                                                {SKILL_TYPE_ICON[skill.type]} {skill.name}
-                                              </p>
-                                              {/* 只要不是纯 damage 就挂 tag 徽章 —— 特化 label 优先（比如灵巧 attack_boost 显示"⚡ 连击"而非"攻击增益"） */}
-                                              {skill.type !== 'damage' && baseTag && tagLabel && (
-                                                <span
-                                                  className="flex-shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full"
-                                                  style={{ color: baseTag.color, background: baseTag.bg }}
-                                                >
-                                                  {tagIcon ? `${tagIcon} ${tagLabel}` : tagLabel}
-                                                </span>
-                                              )}
-                                              {skill.oath && (
-                                                <span className="flex-shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full"
-                                                      style={{ color: '#fcd34d', background: 'rgba(252,211,77,0.14)' }}>
-                                                  誓约
-                                                </span>
-                                              )}
-                                              {skill.socket && (
-                                                <span className="flex-shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full"
-                                                      style={{ color: '#c4b5fd', background: 'rgba(196,181,253,0.14)' }}>
-                                                  ◆ 迷思
-                                                </span>
-                                              )}
-                                            </div>
-                                            <p className="text-gray-500 dark:text-gray-400 text-xs truncate">
-                                              {locked ? `解锁：${settings.attributeNames[currentAttr]} Lv${skill.level} + 前技满星` : skill.description}
-                                            </p>
-                                          </div>
-                                        </div>
-                                        <div className="text-right flex-shrink-0 ml-3">
-                                          {isDmg ? (
-                                            <p className="text-purple-600 dark:text-purple-300 text-xs font-bold">{skill.power}</p>
-                                          ) : (
-                                            <p className="text-xs font-bold" style={{ color: baseTag?.color }}>
-                                              {effectHint}
-                                            </p>
-                                          )}
-                                          <div className="flex items-center justify-end gap-1.5">
-                                            {!locked && <MasteryStars skill={skill} />}
-                                            <p className="text-yellow-600 dark:text-yellow-400/70 text-xs">SP {skill.spCost}</p>
-                                          </div>
-                                        </div>
-                                      </div>
-                                      );
-                                    })
-                                  )}
-                                </div>
-                              </motion.div>
-                            </AnimatePresence>
-                          );
-                        })()}
-                      </div>
+                      <PersonaCodex attrIdx={personaCardIdx} onSelectAttr={setPersonaCardIdx} />
                     )}
                   </motion.div>
                 )}
@@ -1475,6 +1207,22 @@ export const BattleArena = () => {
         if (useAppStore.getState().stratum?.status === 'cleared') setRecap('clear');
       }}
     />
+    {/* R17 #5：战利品抽卡仪式（强敌/金色即场；心魔在终幕后接 VictoryModal） */}
+    <AnimatePresence>
+      {lootReveal && (
+        <LootReveal
+          open
+          source={lootReveal.source}
+          drops={lootReveal.drops}
+          sp={lootReveal.sp}
+          onClose={() => {
+            const next = lootReveal.thenVictory;
+            setLootReveal(null);
+            if (next) setShowVictory(true);
+          }}
+        />
+      )}
+    </AnimatePresence>
     <PersonaShuffleModal isOpen={showPersonaShuffle} onClose={() => setShowPersonaShuffle(false)} />
     {/* 塔内独立界面（验收反馈 #4）+ 潜入演出 */}
     <AnimatePresence>

@@ -12,7 +12,8 @@ import { ammoFromActivities } from '@/battle/preparation';
 import { rollMobSpec, absoluteFloor } from '@/battle/tower';
 import { getTowerEvent, TOWER_EVENTS, TowerEvent, TowerEventEffect } from '@/battle/events';
 import { ECHO_HEAL_PCT } from '@/battle/numbers';
-import { lootLabel, towerRelicBonus, AFFIX_POOL } from '@/battle/loot';
+import { towerRelicBonus, AFFIX_POOL, type LootDrop } from '@/battle/loot';
+import { LootReveal } from '@/components/battle/LootReveal';
 import { rollPrepDraw } from '@/battle/preparation';
 import { buildMirrorQuiz, type MirrorQuestion } from '@/battle/quiz';
 import { playSound } from '@/utils/feedback';
@@ -42,6 +43,8 @@ export function TowerScreen({ open, onClose, onDescend, onRequestBattle, onToast
   const [eventNode, setEventNode] = useState<StratumNode | null>(null);
   const [echoNode, setEchoNode] = useState<StratumNode | null>(null);
   const [quiz, setQuiz] = useState<{ questions: MirrorQuestion[]; reward: number } | null>(null);
+  // R17 #2：月匣从 toast 升格为开匣抽取仪式
+  const [chestReveal, setChestReveal] = useState<{ drops: LootDrop[]; sp: number } | null>(null);
   const eventPostRef = useRef<{ skip?: boolean; reroll?: boolean; fight?: boolean; quizReward?: number }>({});
 
   useBackHandler(open, () => {
@@ -72,11 +75,9 @@ export function TowerScreen({ open, onClose, onDescend, onRequestBattle, onToast
       setEchoNode(moved);
     } else if (moved.type === 'chest') {
       const sp = await completeTowerNode(moved.id);
-      // 批3：月匣必得战利品（70% 遗物 / 30% 迷思）
+      // 批3：月匣必得战利品（70% 遗物 / 30% 迷思）→ R17 #2：开匣抽取仪式（音效在仪式内）
       const drops = await useAppStore.getState().rollTowerLoot('chest', moved.floor / Math.max(1, stratum.floors));
-      playSound('/battle-seal.mp3', 0.5);
-      const lootText = drops.map(lootLabel).join(' · ');
-      onToast(`📦 月匣开启${sp > 0 ? ` · +${sp} SP` : ''}${lootText ? ` · ${lootText}` : ''}`);
+      setChestReveal({ drops, sp });
     }
   };
 
@@ -327,6 +328,17 @@ export function TowerScreen({ open, onClose, onDescend, onRequestBattle, onToast
       </AnimatePresence>
       <AnimatePresence>
         {quiz && <TowerQuizModal questions={quiz.questions} reward={quiz.reward} onDone={(ok) => void handleQuizDone(ok)} />}
+      </AnimatePresence>
+      <AnimatePresence>
+        {chestReveal && (
+          <LootReveal
+            open
+            source="chest"
+            drops={chestReveal.drops}
+            sp={chestReveal.sp}
+            onClose={() => setChestReveal(null)}
+          />
+        )}
       </AnimatePresence>
     </motion.div>
   );
