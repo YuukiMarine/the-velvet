@@ -59,9 +59,9 @@ export const STAGGER_CRIT_GAIN = 17;           // 暴击半量
 export const STAGGER_TAKEN_MULT = 1.3;         // 失衡期间受伤 +30%
 export const STAGGER_IMMUNE_TURNS = 3;
 export const ALL_OUT_SP_COST = 10;             // R18：20 → 10（处决化，随手可发）
-/** R18：总攻击基数改挂玩家总等级——五维和=5 时 100，逐级 +5（原 全Lv5威力和×0.6 退役） */
-export const ALL_OUT_BASE_AT_LV5 = 100;
-export const ALL_OUT_PER_LEVEL = 5;
+/** R19：总攻击基数再压——LV1 时 1.0 倍率 50，逐级 +4（R18 的 100@5 溢出过多） */
+export const ALL_OUT_BASE_AT_LV1 = 50;
+export const ALL_OUT_PER_LEVEL = 4;
 export const BOSS_FORCED_WINDOW_HP_RATIO = 0.1; // 濒死保底失衡窗口
 /** R18 普攻：固定 8 点（原 五维等级和），可暴击 */
 export const BASIC_ATTACK_POWER = 8;
