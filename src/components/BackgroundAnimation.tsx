@@ -25,6 +25,14 @@ interface BackgroundAnimationProps {
   darkMode?: boolean;
 }
 
+// ── 相位锚定 ──────────────────────────────────────────────
+// 页面擦除转场会把本组件在垫底层临时复刻一份（App.tsx stageDecor）：CSS 动画
+// 从挂载时刻起跑，复刻份与活层相位不同，垫层卸载瞬间光斑/粒子就"跳位"（切页闪烁）。
+// 解法：所有实例的 delay 都减去"距模块加载的流逝秒数"——负 delay 等于快进，
+// 任意时刻挂载的实例相位都等价于 (now - 纪元)，逐帧同相，卸载复刻份无痕。
+const BG_EPOCH = performance.now();
+const syncSeconds = () => (performance.now() - BG_EPOCH) / 1000;
+
 // ── 注入一次性 keyframes CSS（去重）───────────────────────
 const KEYFRAMES_ID = 'bg-anim-keyframes';
 
@@ -91,10 +99,11 @@ function ensureKeyframes() {
 // ── Aurora ────────────────────────────────────────────────
 function Aurora({ darkMode }: { darkMode?: boolean }) {
   const baseOp = darkMode ? 0.18 : 0.13;
+  const sync = syncSeconds();
   const blobs = [
-    { anim: 'aurora-a 22s ease-in-out infinite', size: '70vmax', top: '-20%', left: '-15%',  opacity: baseOp },
-    { anim: 'aurora-b 28s ease-in-out infinite', size: '65vmax', top: '30%',  left: '40%',   opacity: baseOp * 0.85 },
-    { anim: 'aurora-c 18s ease-in-out infinite', size: '55vmax', top: '55%',  left: '-10%',  opacity: baseOp * 0.7 },
+    { anim: `aurora-a 22s ease-in-out ${(-sync).toFixed(2)}s infinite`, size: '70vmax', top: '-20%', left: '-15%',  opacity: baseOp },
+    { anim: `aurora-b 28s ease-in-out ${(-sync).toFixed(2)}s infinite`, size: '65vmax', top: '30%',  left: '40%',   opacity: baseOp * 0.85 },
+    { anim: `aurora-c 18s ease-in-out ${(-sync).toFixed(2)}s infinite`, size: '55vmax', top: '55%',  left: '-10%',  opacity: baseOp * 0.7 },
   ];
   return (
     <div
@@ -148,6 +157,7 @@ const PARTICLE_CONFIG = [
 
 function Particles({ darkMode }: { darkMode?: boolean }) {
   const op = darkMode ? 0.5 : 0.35;
+  const sync = syncSeconds();
   return (
     <div
       style={{
@@ -164,7 +174,7 @@ function Particles({ darkMode }: { darkMode?: boolean }) {
             position: 'absolute',
             bottom: '-10px',
             left: p.left,
-            animation: `particle-drift ${p.dur * 0.6}s ease-in-out ${p.delay}s infinite`,
+            animation: `particle-drift ${p.dur * 0.6}s ease-in-out ${(p.delay - sync).toFixed(2)}s infinite`,
             willChange: 'transform',
             transform: 'translateZ(0)',
             backfaceVisibility: 'hidden',
@@ -178,7 +188,7 @@ function Particles({ darkMode }: { darkMode?: boolean }) {
               borderRadius: '50%',
               background: 'var(--color-primary)',
               opacity: op,
-              animation: `particle-rise ${p.dur}s ease-in ${p.delay}s infinite`,
+              animation: `particle-rise ${p.dur}s ease-in ${(p.delay - sync).toFixed(2)}s infinite`,
               willChange: 'transform, opacity',
               transform: 'translateZ(0)',
               backfaceVisibility: 'hidden',
@@ -197,6 +207,7 @@ function Particles({ darkMode }: { darkMode?: boolean }) {
 // 用 translate3d 平移该子 div——translate 是纯合成器操作，零重绘。
 function Wave({ darkMode }: { darkMode?: boolean }) {
   const op = darkMode ? 0.12 : 0.08;
+  const sync = syncSeconds();
   return (
     <div
       style={{
@@ -220,7 +231,7 @@ function Wave({ darkMode }: { darkMode?: boolean }) {
             'radial-gradient(ellipse at 50% 50%, var(--color-primary) 0%, transparent 40%)',
           ].join(', '),
           opacity: op,
-          animation: 'wave-shift 20s ease-in-out infinite',
+          animation: `wave-shift 20s ease-in-out ${(-sync).toFixed(2)}s infinite`,
           willChange: 'transform',
           // 强制独立合成层
           transform: 'translateZ(0)',
@@ -236,6 +247,7 @@ function Pulse({ darkMode }: { darkMode?: boolean }) {
   const animName = darkMode ? 'grid-breathe-dark' : 'grid-breathe';
   // 与 keyframes 0% 帧对齐的初始 opacity，避免动画启动前/延迟期间出现"满亮度闪烁"
   const initialOpacity = darkMode ? 0.08 : 0.06;
+  const sync = syncSeconds();
   return (
     <div
       style={{
@@ -252,7 +264,7 @@ function Pulse({ darkMode }: { darkMode?: boolean }) {
           backgroundImage: 'linear-gradient(0deg, var(--color-primary) 1px, transparent 1px)',
           backgroundSize: '100% 48px',
           opacity: initialOpacity,                              // 初始帧锁定，防止首帧拉满
-          animation: `${animName} 4s ease-in-out infinite`,
+          animation: `${animName} 4s ease-in-out ${(-sync).toFixed(2)}s infinite`,
           animationFillMode: 'both',                            // 0% 帧立即生效（含延迟期）
           willChange: 'opacity',
           transform: 'translateZ(0)',
@@ -267,7 +279,7 @@ function Pulse({ darkMode }: { darkMode?: boolean }) {
           backgroundImage: 'linear-gradient(90deg, var(--color-primary) 1px, transparent 1px)',
           backgroundSize: '48px 100%',
           opacity: initialOpacity,                              // 同上：与 2s 延迟期间保持一致
-          animation: `${animName} 4s ease-in-out infinite 2s`,
+          animation: `${animName} 4s ease-in-out infinite ${(2 - sync).toFixed(2)}s`,
           animationFillMode: 'both',                            // backwards 让 0% 帧在 2s 延迟期就锁定
           willChange: 'opacity',
           transform: 'translateZ(0)',

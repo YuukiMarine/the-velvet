@@ -570,6 +570,9 @@ function App() {
 
         <div
           className="min-h-screen bg-gray-50 dark:bg-gray-900 relative"
+          // 擦除垫底层的取色锚点：PageShell 开擦时直接量这个节点的计算色当垫底色，
+          // 夜间频道毯式规则怎么翻（蓝→靛/黄→紫），垫底就跟着是什么，永不脱钩
+          data-app-stage
           // P4 黄频道：舞台平面直接铺 --ui-bg（p4-redraw 定稿），暗色也保持黄
           // 用户自定义了背景图时让位——这层不透明黄会把图整块盖没（"背景图片没反应"）
           // 舞台底走 --p4-stage（夜间=紫），fallback 到 --ui-bg（白天=黄，黄同时兼任强调色）
@@ -736,6 +739,15 @@ const PageShell = ({ leaving, stageBg, stageDecor, onRevealed, children }: {
   leaving: boolean; stageBg: string; stageDecor?: ReactNode; onRevealed?: () => void; children: ReactNode;
 }) => {
   const [origin] = useState(consumePendingCircleReveal); // 入场时查询一次（读取不清除，StrictMode 双挂载安全）
+  // 垫底色以 App 根的**实际计算色**为准：夜间频道毯式规则会把根的 dark:bg-gray-900
+  // 翻成频道色（蓝→靛/黄→紫），stageBg 里写死的 #111827 与之差一档——垫层一卸就是
+  // 一次底色跳变，即夜间开背景动画/背景图时的"切页背景闪烁"。量不到再退回 stageBg。
+  const [measuredBg] = useState(() => {
+    if (!origin) return null;
+    const el = document.querySelector('[data-app-stage]');
+    const c = el ? getComputedStyle(el).backgroundColor : '';
+    return c && c !== 'transparent' && c !== 'rgba(0, 0, 0, 0)' ? c : null;
+  });
   const [revealing, setRevealing] = useState(!!origin);
   // 连点保护：上一张还没擦完就被顶成 leaving 时立刻收掉它的圆蒙版，
   // 否则它会带着半截圆停在垫底层上，看起来就是"两个界面卡在一起"（用户上报）。
@@ -771,7 +783,7 @@ const PageShell = ({ leaving, stageBg, stageDecor, onRevealed, children }: {
         <div
           aria-hidden
           className="pointer-events-none absolute"
-          style={{ left: -40, right: -40, top: -40, bottom: -2000, zIndex: -1, background: stageBg }}
+          style={{ left: -40, right: -40, top: -40, bottom: -2000, zIndex: -1, background: measuredBg ?? stageBg }}
         >
           {stageDecor}
         </div>

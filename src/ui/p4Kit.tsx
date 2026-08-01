@@ -427,18 +427,32 @@ export const P4StageDecor = () => (
   >
     {/* 右上：主弧环组，圆心落在屏外右上，弧线横扫上半屏。
         颜色走 rgb 三元组变量（浅色值为 fallback）：夜间紫舞台上整套装饰翻紫罗兰系，
-        透明度留在调用点、色相交给变量——每圈浓淡各异但只需 4 个变量。 */}
-    <P4ArcRings
-      size={720}
-      className="absolute"
-      style={{ right: '-40vw', top: '-32vh' }}
-      rings={[
-        [0.34, 46, 'rgba(var(--p4dec-orange, 249,161,27), 0.20)'],
-        [0.56, 34, 'rgba(var(--p4dec-yellow, 255,200,60), 0.20)'],
-        [0.76, 26, 'rgba(var(--p4dec-orange, 249,161,27), 0.13)'],
-        [0.94, 18, 'rgba(var(--p4dec-gold, 255,214,90), 0.16)'],
-      ]}
-    />
+        透明度留在调用点、色相交给变量——每圈浓淡各异但只需 4 个变量。
+        夜间另开一份：紫环在深底上比黄底显眼得多——只留内两圈、透明度再压一档（用户点名）。 */}
+    <div className="dark:hidden">
+      <P4ArcRings
+        size={720}
+        className="absolute"
+        style={{ right: '-40vw', top: '-32vh' }}
+        rings={[
+          [0.34, 46, 'rgba(var(--p4dec-orange, 249,161,27), 0.20)'],
+          [0.56, 34, 'rgba(var(--p4dec-yellow, 255,200,60), 0.20)'],
+          [0.76, 26, 'rgba(var(--p4dec-orange, 249,161,27), 0.13)'],
+          [0.94, 18, 'rgba(var(--p4dec-gold, 255,214,90), 0.16)'],
+        ]}
+      />
+    </div>
+    <div className="hidden dark:block">
+      <P4ArcRings
+        size={720}
+        className="absolute"
+        style={{ right: '-40vw', top: '-32vh' }}
+        rings={[
+          [0.34, 46, 'rgba(var(--p4dec-orange, 249,161,27), 0.11)'],
+          [0.56, 34, 'rgba(var(--p4dec-yellow, 255,200,60), 0.09)'],
+        ]}
+      />
+    </div>
     {/* 左下：副弧环组，与主组反向呼应 */}
     <P4ArcRings
       size={560}
