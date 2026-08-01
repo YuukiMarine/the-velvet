@@ -1,5 +1,6 @@
 import { motion } from 'motion/react';
 import { useState, useEffect, useRef } from 'react';
+import { VelvetRoomSplash } from '@/components/splash/VelvetRoomSplash';
 
 type SplashStyle = 'velvet' | 'p5' | 'p3' | 'p4';
 type SplashSpeedOption = 'fast' | 'normal' | 'slow';
@@ -16,110 +17,13 @@ export interface SplashScreenProps {
 // ─────────────────────────────────────────────────────────────────────────────
 // 1. VELVET (original dark-indigo style)
 // ─────────────────────────────────────────────────────────────────────────────
+/**
+ * VELVET 开屏 = 「天鹅绒房间」入场（PRD_V2.6 §4，v2.6 重做）。
+ * 本体拆到 components/splash/VelvetRoomSplash：那里是一整套 3D 透视场景，
+ * 与本文件其余三个频道开屏（纯 2D 拼贴）不是一个量级，混在一起会难以维护。
+ */
 function VelvetSplash({ onComplete, s }: { onComplete: () => void; s: number }) {
-  const [showText, setShowText] = useState(false);
-  const [showSubtitle, setShowSubtitle] = useState(false);
-
-  useEffect(() => {
-    const t1 = setTimeout(() => setShowText(true),    300  * s);
-    const t2 = setTimeout(() => setShowSubtitle(true), 800  * s);
-    const t3 = setTimeout(onComplete,                  2500 * s);
-    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
-  }, [onComplete, s]);
-
-  return (
-    <div className="fixed inset-0 bg-gradient-to-br from-[#0b061a] via-[#1a0b2e] to-black flex items-center justify-center z-50 overflow-hidden" style={{ transform: 'translateZ(0)', backfaceVisibility: 'hidden', contain: 'strict' }}>
-      <style>{`
-        @keyframes vr-slide-ltr { from { transform:translateX(-30%); } to { transform:translateX(10%); } }
-        @keyframes vr-slide-rtl { from { transform:translateX(10%); }  to { transform:translateX(-30%); } }
-        .vr-top { animation: vr-slide-ltr ${2.5 * s}s linear forwards; white-space:nowrap;
-          font-size:clamp(5rem,22vw,14rem); font-weight:900; font-style:italic;
-          color:transparent; -webkit-text-stroke:1px rgba(255,255,255,0.55);
-          letter-spacing:-0.02em; line-height:1; }
-        .vr-btm { animation: vr-slide-rtl ${2.5 * s}s linear forwards; white-space:nowrap;
-          font-size:clamp(5rem,22vw,14rem); font-weight:900; font-style:italic;
-          color:transparent; -webkit-text-stroke:1px rgba(255,255,255,0.55);
-          letter-spacing:-0.02em; line-height:1; }
-      `}</style>
-
-      <div className="absolute top-[8%] left-0 right-0 overflow-hidden pointer-events-none select-none">
-        <div className="vr-top">THE VELVET</div>
-      </div>
-      <div className="absolute bottom-[8%] left-0 right-0 overflow-hidden pointer-events-none select-none">
-        <div className="vr-btm">THE VELVET</div>
-      </div>
-
-      {/* Floating particles */}
-      <div className="absolute inset-0 overflow-hidden">
-        {[...Array(18)].map((_, i) => (
-          <motion.div key={i}
-            initial={{ scale: 0, opacity: 0 }}
-            animate={{ y: [0, -120], scale: [0, 1, 0], opacity: [0, 0.7, 0] }}
-            transition={{ duration: (1.8 + (i % 5) * 0.4) * s, repeat: Infinity, delay: (i * 0.14) * s }}
-            className="absolute w-1.5 h-1.5 bg-white rounded-full"
-            style={{ left: `${(i * 17 + 5) % 95}%`, top: `${(i * 23 + 10) % 90}%` }}
-          />
-        ))}
-      </div>
-
-      <div className="relative z-10 text-center px-6">
-        <motion.div
-          initial={{ scale: 0, rotate: -180 }}
-          animate={{ scale: 1, rotate: 0 }}
-          transition={{ type: 'spring', duration: 1 * s, damping: 20, stiffness: 100 }}
-          className="mb-8"
-        >
-          <motion.div
-            animate={{ scale: [1, 1.08, 1], rotate: [0, 4, -4, 0] }}
-            transition={{ duration: 2 * s, repeat: Infinity, repeatType: 'reverse' }}
-            className="text-6xl font-bold text-white"
-          >
-            靛蓝色房间
-          </motion.div>
-        </motion.div>
-
-        <motion.div
-          animate={{ opacity: showText ? 1 : 0, y: showText ? 0 : 20 }}
-          transition={{ duration: 0.8 * s }}
-          className="text-2xl font-semibold text-white mb-2"
-        >
-          个人成长追踪器
-        </motion.div>
-
-        <motion.div
-          animate={{ opacity: showSubtitle ? 1 : 0, y: showSubtitle ? 0 : 20 }}
-          transition={{ duration: 0.8 * s, delay: 0.2 * s }}
-          className="text-lg text-white/80"
-        >
-          愿您成为最棒的客人
-        </motion.div>
-
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 1 * s }}
-          className="mt-8 flex justify-center gap-2"
-        >
-          {[0, 1, 2].map(i => (
-            <motion.div key={i}
-              animate={{ scale: [1, 1.5, 1], opacity: [0.5, 1, 0.5] }}
-              transition={{ duration: 1 * s, repeat: Infinity, delay: i * 0.2 * s }}
-              className="w-3 h-3 bg-white rounded-full"
-            />
-          ))}
-        </motion.div>
-      </div>
-
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 1.5 * s }}
-        className="absolute bottom-8 left-0 right-0 text-center"
-      >
-        <p className="text-white/60 text-sm">正在启动应用...</p>
-      </motion.div>
-    </div>
-  );
+  return <VelvetRoomSplash onComplete={onComplete} s={s} />;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
