@@ -234,7 +234,7 @@ const ATTR_IDS: AttributeId[] = ['knowledge', 'guts', 'dexterity', 'kindness', '
 
 // 行动页子视图（任务）：页头/页级转场由宿主 Actions.tsx 承担，本组件只渲染内容
 export const TodosView = () => {
-  const { todos, settings, attributes, addTodo, updateTodo, deleteTodo, getTodayTodoProgress, getTodoDateLabel, weeklyGoals, saveWeeklyGoal, deleteWeeklyGoal, completeWeeklyGoal, getWeeklyGoalProgress, undoTodayTodoCompletion, addWish} = useAppStore();
+  const { todos, settings, attributes, addTodo, updateTodo, deleteTodo, getTodayTodoProgress, getTodoDateLabel, weeklyGoals, saveWeeklyGoal, deleteWeeklyGoal, completeWeeklyGoal, getWeeklyGoalProgress, undoTodayTodoCompletion, addWish, wishes} = useAppStore();
   const channel = useUiChannel();
   const isP4 = channel === 'p4';
   // P5R：红主题 FAB 换八角红块（p5-menu 稿「+」形制）
@@ -310,6 +310,13 @@ export const TodosView = () => {
   /** 手动归档（未启用）的任务 */
   const inactiveArchivedTodos = useMemo(() => todos.filter(t => !t.isActive && !t.completedAt), [todos]);
   const [expandCompleted, setExpandCompleted] = useState(false);
+  /** 离场的愿望（已实现 / 已收起），进归档区展示 */
+  const archivedWishes = useMemo(
+    () => wishes.filter(w => !w.parentId && w.status !== 'active')
+      .sort((a, b) => new Date(b.fulfilledAt ?? b.archivedAt ?? b.createdAt).getTime()
+                    - new Date(a.fulfilledAt ?? a.archivedAt ?? a.createdAt).getTime()),
+    [wishes],
+  );
 
   // ── §4.6 交互协议状态 ──
   //   menuTodoId      长按菜单的目标任务：单个 ActionSheet 按 id 寻址，所有卡共用
@@ -736,6 +743,14 @@ export const TodosView = () => {
                         {todo.important && (
                           <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-400/20 text-amber-700 dark:text-amber-300">⭐</span>
                         )}
+                        {/* 归档区身份标签（PRD_V2.6 §2.3）：一屏几十条历史里，
+                            "这条当年是一件大事"和"这是普通待办"必须一眼分得出 */}
+                        {todo.isBigDeal && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-500/15 font-black text-indigo-600 dark:text-indigo-300">◆ BIG DEAL</span>
+                        )}
+                        {todo.wishId && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/15 font-black text-primary">✦ 愿望</span>
+                        )}
                         <span className="font-semibold text-sm truncate line-through text-gray-400 dark:text-gray-500">
                           {todo.title}
                         </span>
@@ -809,7 +824,36 @@ export const TodosView = () => {
               </button>
             )}
 
-            {completedArchivedTodos.length === 0 && inactiveArchivedTodos.length === 0 && pendingDateTodos.length === 0 && (
+            {/* 离场的愿望（PRD_V2.6 §1.4）：实现的与收起的都落在这里。
+                「已实现」靠 fulfilledAt 判定而不是 status —— archivedAt 只说明"离场"，
+                分不出是达成了还是放弃了，而这两件事对用户的意义完全相反。 */}
+            {archivedWishes.length > 0 && (
+              <div className="space-y-1.5 pt-2">
+                {archivedWishes.map(w => (
+                  <ListCard key={w.id} dimmed>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-black ${
+                        w.fulfilledAt
+                          ? 'bg-primary/15 text-primary'
+                          : 'bg-gray-400/15 text-gray-500 dark:text-gray-400'
+                      }`}>
+                        {w.fulfilledAt ? '✦ 愿望 · 已实现' : '✦ 愿望 · 已收起'}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate text-sm font-semibold text-gray-400 dark:text-gray-500">
+                        {w.title}
+                      </span>
+                      {w.fulfilledAt && (
+                        <span className="shrink-0 text-[10px] text-gray-400 dark:text-gray-500">
+                          {new Date(w.fulfilledAt).toLocaleDateString('zh-CN', { month: 'long', day: 'numeric' })}
+                        </span>
+                      )}
+                    </div>
+                  </ListCard>
+                ))}
+              </div>
+            )}
+
+            {completedArchivedTodos.length === 0 && inactiveArchivedTodos.length === 0 && pendingDateTodos.length === 0 && archivedWishes.length === 0 && (
               isP4 ? <P4EmptyBloom text="归档区暂无内容" /> : p3 ? <P3EmptySlab /> : <EmptyState text="归档区暂无内容" />
             )}
           </div>

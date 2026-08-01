@@ -8,6 +8,7 @@
 import { useState } from 'react';
 import { motion } from 'motion/react';
 import { useAppStore, toLocalDateKey } from '@/store';
+import { BigDealStepCutIn, type BigDealStepCutInPayload } from './BigDealStepCutIn';
 import { SheetModal } from '@/components/SheetModal';
 import { GoalArc } from '@/components/bigdeal/GoalArc';
 import { triggerSuccessFeedback } from '@/utils/feedback';
@@ -31,6 +32,7 @@ const deadlineLabel = (deadline?: string): { text: string; urgent: boolean } | n
 
 export const BigDealPanel = ({ todoId, onClose }: Props) => {
   const { todos, settings, completeTodoStep, undoTodoStep, addTodoStep, removeTodoStep, collapseBigDeal, decomposeBigDealAI, rebuildBigDeal } = useAppStore();
+  const [stepCut, setStepCut] = useState<BigDealStepCutInPayload | null>(null);
   const [rebuildAsk, setRebuildAsk] = useState(false);
   const [rebuilding, setRebuilding] = useState(false);
   const todo = todoId ? todos.find(t => t.id === todoId) : undefined;
@@ -51,9 +53,20 @@ export const BigDealPanel = ({ todoId, onClose }: Props) => {
     if (!todo || busyStepId) return;
     setBusyStepId(stepId);
     try {
+      const stepTitle = steps.find(x => x.id === stepId)?.title ?? '';
       const r = await completeTodoStep(todo.id, stepId);
-      // 末步收官的演出由全局 BigDealClearCutIn 承担（store.bigDealClear 载荷），这里只给普通勾选反馈
-      if (r && !r.collapsed) triggerSuccessFeedback();
+      // 末步收官的演出由全局 BigDealClearCutIn 承担（store.bigDealClear 载荷）；
+      // 中间步骤此前只有一声音效、毫无视觉——补一张短卡告诉用户「整件事推到哪了」（§2.2）
+      if (r && !r.collapsed) {
+        const after = useAppStore.getState().todos.find(t => t.id === todo.id);
+        const all = after?.steps ?? [];
+        setStepCut({
+          dealTitle: todo.title,
+          stepTitle,
+          done: all.filter(x => x.done).length,
+          total: all.length,
+        });
+      }
     } finally {
       setBusyStepId(null);
     }
@@ -273,6 +286,7 @@ export const BigDealPanel = ({ todoId, onClose }: Props) => {
           )}
         </div>
       )}
+      <BigDealStepCutIn payload={stepCut} onClose={() => setStepCut(null)} />
     </SheetModal>
   );
 };
