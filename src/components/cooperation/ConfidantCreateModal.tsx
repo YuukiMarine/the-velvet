@@ -286,7 +286,7 @@ export function ConfidantCreateModal({ isOpen, onClose, onCreated, onPickOnline 
                      显式四色循环（Actions 切换头同采样）——默认循环会出黑底暗字不可读块 */
                   <div role="heading" aria-level={2} aria-label={stage === 'result' ? '塔罗的回响' : '结识一位同伴'} className="pt-1">
                     <P5Collage
-                      size={18}
+                      size={26}
                       gap={3}
                       tiles={Array.from(stage === 'result' ? '塔罗的回响' : '结识一位同伴').map((ch, i) => {
                         const pal = [
