@@ -127,8 +127,8 @@ export function CardBack({
           {/* 内白细框 */}
           <rect x="12" y="12" width={VB_W - 24} height={VB_H - 24} rx="6" fill="none" stroke="rgba(255,255,255,0.7)" strokeWidth="1" />
           {/* 左上青角 / 右下洋红角 */}
-          <path d={`M6 6 L66 6 L6 60 Z`} fill="#35d1e8" opacity="0.92" />
-          <path d={`M${VB_W - 6} ${VB_H - 6} L${VB_W - 46} ${VB_H - 6} L${VB_W - 6} ${VB_H - 40} Z`} fill="#f0417f" opacity="0.88" />
+          <path d={`M6 6 L66 6 L6 60 Z`} fill="var(--p3r-cyan, #35d1e8)" opacity="0.92" />
+          <path d={`M${VB_W - 6} ${VB_H - 6} L${VB_W - 46} ${VB_H - 6} L${VB_W - 6} ${VB_H - 40} Z`} fill="var(--p3r-magenta, #f0417f)" opacity="0.88" />
           {/* 对角细虚线 */}
           <line x1="22" y1="298" x2="178" y2="24" stroke="rgba(255,255,255,0.32)" strokeWidth="0.7" strokeDasharray="3 4" />
           <line x1="14" y1="236" x2="186" y2="86" stroke="rgba(255,255,255,0.18)" strokeWidth="0.6" strokeDasharray="2 5" />

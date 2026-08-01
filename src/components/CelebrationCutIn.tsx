@@ -125,8 +125,8 @@ export const CelebrationCutIn = ({
           >
             {p3 && (
               <>
-                <span aria-hidden className="absolute left-0 top-0 z-10 h-[14px] w-[52px]" style={{ background: '#35d1e8', clipPath: 'polygon(0 0, 100% 0, 72% 100%, 0 100%)' }} />
-                <span aria-hidden className="absolute bottom-0 right-6 z-10 h-[10px] w-[26px]" style={{ background: '#f0417f', clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
+                <span aria-hidden className="absolute left-0 top-0 z-10 h-[14px] w-[52px]" style={{ background: 'var(--p3r-cyan, #35d1e8)', clipPath: 'polygon(0 0, 100% 0, 72% 100%, 0 100%)' }} />
+                <span aria-hidden className="absolute bottom-0 right-6 z-10 h-[10px] w-[26px]" style={{ background: 'var(--p3r-magenta, #f0417f)', clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
               </>
             )}
             {/* 装饰层：纵向高光 + 斜光带（只有装饰可倾斜，文字层恒水平） */}

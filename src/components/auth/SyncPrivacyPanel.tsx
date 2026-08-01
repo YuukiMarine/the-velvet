@@ -12,7 +12,7 @@ interface Group {
   /** 字段级组：开关对应 settings 里的一个布尔字段（用于单字段敏感数据，如 API Key；或 opt-in 数据，如愿望清单） */
   field?: {
     /** 要开/关的 settings 字段名 */
-    settingKey: 'syncCloudApiKey' | 'syncWishesToCloud';
+    settingKey: 'syncCloudApiKey' | 'syncWishesToCloud' | 'syncNavigatorToCloud';
     /** settings 值未定义时视为的默认状态（true = 默认开；false = 默认关 / opt-in）*/
     defaultWhenUndefined: boolean;
   };
@@ -55,8 +55,9 @@ const GROUPS: Group[] = [
   {
     id: 'battle',
     label: '逆影战场',
-    hint: 'Persona / Shadow / 战斗状态',
-    tables: ['personas', 'shadows', 'battleStates'],
+    // strata（影时间高塔区层）与 battleStates 成对，同开同关——分开会让新设备"层数有、层没了"
+    hint: 'Persona / Shadow / 战斗状态 / 高塔区层',
+    tables: ['personas', 'shadows', 'battleStates', 'strata'],
   },
   {
     id: 'confidant',
@@ -70,6 +71,12 @@ const GROUPS: Group[] = [
     hint: '终极目标 / 子愿望 —— 默认只存本地；勾选后才随账号上云，换设备可恢复',
     field: { settingKey: 'syncWishesToCloud', defaultWhenUndefined: false },
   },
+  {
+    id: 'navigator',
+    label: '黑猫 · 人格与记忆',
+    hint: '自定义人格 / 它记住的关于你的事 —— 默认只存本地；勾选后换设备黑猫还认得你。聊天原文永不上云',
+    field: { settingKey: 'syncNavigatorToCloud', defaultWhenUndefined: false },
+  },
 ];
 
 interface Props {
@@ -80,6 +87,8 @@ interface Props {
   syncCloudApiKey?: boolean;
   /** 愿望清单是否上云（F3 opt-in）；undefined = 默认 false（不上云） */
   syncWishesToCloud?: boolean;
+  /** 黑猫人格与记忆是否上云（FS1 opt-in）；undefined = 默认 false */
+  syncNavigatorToCloud?: boolean;
   onChange: (patch: Partial<Settings>) => void;
 }
 
@@ -92,7 +101,7 @@ interface Props {
  *    · 若"同伴"组被关，`syncConfidantsToCloud = false`（兼容旧逻辑）
  *    · 若被打开，`syncConfidantsToCloud = true`
  */
-export function SyncPrivacyPanel({ excluded, syncConfidantsToCloud, syncCloudApiKey, syncWishesToCloud, onChange }: Props) {
+export function SyncPrivacyPanel({ excluded, syncConfidantsToCloud, syncCloudApiKey, syncWishesToCloud, syncNavigatorToCloud, onChange }: Props) {
   const [open, setOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -132,6 +141,9 @@ export function SyncPrivacyPanel({ excluded, syncConfidantsToCloud, syncCloudApi
     }
     if (g.field.settingKey === 'syncWishesToCloud') {
       return syncWishesToCloud === undefined ? g.field.defaultWhenUndefined : syncWishesToCloud;
+    }
+    if (g.field.settingKey === 'syncNavigatorToCloud') {
+      return syncNavigatorToCloud === undefined ? g.field.defaultWhenUndefined : syncNavigatorToCloud;
     }
     return g.field.defaultWhenUndefined;
   };

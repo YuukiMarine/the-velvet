@@ -227,7 +227,7 @@ export const SheetModal = ({
                   <span className="h-[3px] w-8" style={{ background: '#f0e9df' }} />
                 </div>
               ) : p3 ? (
-                <div aria-hidden className="relative mx-auto mt-5 flex h-[18px] w-[86px] shrink-0 items-center justify-center" style={{ background: '#35d1e8', clipPath: 'polygon(0 55%, 18% 0, 100% 30%, 82% 100%)' }}>
+                <div aria-hidden className="relative mx-auto mt-5 flex h-[18px] w-[86px] shrink-0 items-center justify-center" style={{ background: 'var(--p3r-cyan, #35d1e8)', clipPath: 'polygon(0 55%, 18% 0, 100% 30%, 82% 100%)' }}>
                   <span className="h-[3px] w-8 bg-white" />
                 </div>
               ) : (

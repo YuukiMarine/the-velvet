@@ -160,14 +160,14 @@ export const SectionMark = ({ title, meta, variant = 'ink', marker = 'slab', cla
 
 /** 碎裂星徽碎片表（点集 + 填色规则 + 可选透明度）；centroid 供入场"从中心炸开"计算位移向量 */
 const STAR_SHARDS: Array<{ pts: string; fill: (magenta: boolean) => string; op?: number }> = [
-  { pts: '112,4 150,64 94,54', fill: () => '#1b57ff' },
-  { pts: '158,34 196,88 142,76', fill: (m) => (m ? '#f0417f' : '#8fdcef') },
-  { pts: '26,80 68,60 54,108', fill: () => '#0a3bd6' },
+  { pts: '112,4 150,64 94,54', fill: () => 'var(--p3r-blue, #1b57ff)' },
+  { pts: '158,34 196,88 142,76', fill: (m) => (m ? 'var(--p3r-magenta, #f0417f)' : '#8fdcef') },
+  { pts: '26,80 68,60 54,108', fill: () => 'var(--p3r-blue-deep, #0a3bd6)' },
   { pts: '182,124 216,152 172,168', fill: () => '#2a63ff' },
-  { pts: '58,172 96,204 44,202', fill: () => '#35d1e8' },
-  { pts: '150,180 180,214 130,206', fill: (m) => (m ? '#f0417f' : '#0a3bd6') },
+  { pts: '58,172 96,204 44,202', fill: () => 'var(--p3r-cyan, #35d1e8)' },
+  { pts: '150,180 180,214 130,206', fill: (m) => (m ? 'var(--p3r-magenta, #f0417f)' : 'var(--p3r-blue-deep, #0a3bd6)') },
   { pts: '14,138 42,124 38,158', fill: () => '#a8e4f2' },
-  { pts: '196,60 212,92 184,84', fill: () => '#1b57ff', op: 0.75 },
+  { pts: '196,60 212,92 184,84', fill: () => 'var(--p3r-blue, #1b57ff)', op: 0.75 },
 ];
 
 const shardCentroid = (pts: string): [number, number] => {

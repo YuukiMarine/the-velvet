@@ -438,6 +438,16 @@ export interface Settings {
    */
   syncWishesToCloud?: boolean;
   /**
+   * 云同步：是否将黑猫的自定义人格 + 原子记忆（navigatorPresets / navigatorMemos）上云。
+   * FS1 opt-in：默认 undefined / false = 只存本地。聊天原文（sessions/messages）永不上云。
+   */
+  syncNavigatorToCloud?: boolean;
+  /**
+   * 云同步免责声明的同意时间（ISO）。undefined = 尚未同意，
+   * 登录弹窗会先出声明页；已登录的存量用户在账号页补弹一次。
+   */
+  cloudConsentAt?: string;
+  /**
    * 云同步黑名单：列出不需要同步的表名。
    * 默认 undefined = 全部同步（except 由 syncConfidantsToCloud 控制的"同伴"两张表）。
    * 这里列出的表在 push/pull 时都会被跳过；本地依然完整保留。

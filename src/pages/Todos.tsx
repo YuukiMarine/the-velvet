@@ -1222,9 +1222,9 @@ export const TodosView = () => {
                                 checked={form.important}
                                 onChange={(e) => setForm(prev => ({ ...prev, important: e.target.checked }))}
                                 className="h-5 w-5"
-                                style={{ accentColor: '#1b57ff' }}
+                                style={{ accentColor: 'var(--p3r-blue, #1b57ff)' }}
                               />
-                              <span aria-hidden className="h-0 w-0 border-y-[5px] border-l-[9px] border-y-transparent" style={{ borderLeftColor: '#f0417f' }} />
+                              <span aria-hidden className="h-0 w-0 border-y-[5px] border-l-[9px] border-y-transparent" style={{ borderLeftColor: 'var(--p3r-magenta, #f0417f)' }} />
                               <div>
                                 <span className="text-sm font-black text-[#0a1230]">标记为重要</span>
                                 <p className="mt-0.5 text-xs font-semibold text-[#8a97ad]">重要任务将在首页置顶显示，并记录在历史中</p>

@@ -104,11 +104,11 @@ export const ConfirmDialog = ({
   const p5 = channel === 'p5' && !forceDark;
   const p5BtnClip = 'polygon(3px 1px, calc(100% - 1px) 3px, calc(100% - 3px) calc(100% - 1px), 1px calc(100% - 3px))';
   const p3Clip = 'polygon(9px 0, 100% 0, calc(100% - 9px) 100%, 0 100%)';
-  const p3ConfirmBg: Record<ConfirmTone, string> = { default: '#1b57ff', danger: '#f0417f', warning: '#f5a623' };
+  const p3ConfirmBg: Record<ConfirmTone, string> = { default: 'var(--p3r-blue, #1b57ff)', danger: 'var(--p3r-magenta, #f0417f)', warning: '#f5a623' };
   const p3ActionStyle = (t: NonNullable<ConfirmAction['tone']>) =>
-    t === 'primary' ? { clipPath: p3Clip, background: '#1b57ff', color: '#fff' }
-    : t === 'danger' ? { clipPath: p3Clip, background: '#f0417f', color: '#fff' }
-    : { clipPath: p3Clip, background: '#cfeaf6', color: '#0a1230' };
+    t === 'primary' ? { clipPath: p3Clip, background: 'var(--p3r-blue, #1b57ff)', color: '#fff' }
+    : t === 'danger' ? { clipPath: p3Clip, background: 'var(--p3r-magenta, #f0417f)', color: '#fff' }
+    : { clipPath: p3Clip, background: 'var(--p3r-cyan-pale, #cfeaf6)', color: 'var(--p3r-ink, #0a1230)' };
 
   return createPortal(
     <AnimatePresence>
@@ -291,7 +291,7 @@ export const ConfirmDialog = ({
                         className={p3 || p5 ? 'flex-1 py-2.5 text-sm font-black disabled:opacity-50' : 'flex-1 rounded-xl bg-gray-100 py-2.5 text-sm font-bold text-gray-700 disabled:opacity-50 dark:bg-gray-800 dark:text-gray-200'}
                         style={p5
                           ? { clipPath: p5BtnClip, background: '#f0e9df', color: '#050505', boxShadow: '0 0 0 2.5px #050505, 3px 3px 0 #000000', transform: 'rotate(-0.8deg)' }
-                          : p3 ? { clipPath: p3Clip, background: '#cfeaf6', color: '#0a1230' } : undefined}
+                          : p3 ? { clipPath: p3Clip, background: 'var(--p3r-cyan-pale, #cfeaf6)', color: 'var(--p3r-ink, #0a1230)' } : undefined}
                       >
                         {cancelText}
                       </motion.button>

@@ -122,7 +122,7 @@ export const SegmentTabs = <K extends string>({
                 <motion.div layoutId={indicatorId} transition={springSnappy} className="absolute inset-0" aria-hidden="true">
                   {/* clip / 装饰放内层：layout 动画期间 projection 独占外层 transform（同 skew 约束） */}
                   <div className="absolute inset-0" style={{ clipPath: 'polygon(12px 0, 100% 0, calc(100% - 12px) 100%, 0 100%)', background: 'var(--p3r-blue, #1b57ff)' }} />
-                  <span className="absolute bottom-0 right-3 h-[8px] w-[20px]" style={{ background: '#f0417f', clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
+                  <span className="absolute bottom-0 right-3 h-[8px] w-[20px]" style={{ background: 'var(--p3r-magenta, #f0417f)', clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
                 </motion.div>
               )}
               <span className={`relative z-10 flex items-center justify-center gap-1.5 transition-colors ${active ? 'text-white' : 'text-[#0a1230]'}`}>

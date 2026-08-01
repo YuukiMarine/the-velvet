@@ -185,6 +185,11 @@ const STAMP_CORE = starPts5(33);
 // 中心奶油四角星砸下 → midpoint → 楔沿原方向继续滑出（切镜）。
 // 楔的 clip 顶点用负/超界百分比外扩，滑入滑出全程无露缝。
 const P4_RAINBOW = ['#e94b4b', '#f9a11b', '#ffd900', '#57c15e', '#39a8e0', '#8d6bc7'];
+/** 星外彩虹圈几何（viewBox 100 坐标系）：半径/环宽/周长/单段弧长（六等分） */
+const P4_RING_R = 38;
+const P4_RING_W = 6.5;
+const P4_RING_C = 2 * Math.PI * P4_RING_R;
+const P4_RING_SEG = P4_RING_C / 6;
 /** 长尖四角星（与轮盘同形：二次曲线、腰收 0.14R） */
 const p4StarD = (() => {
   const R = 46, q = R * 0.14, c = 50;
@@ -231,22 +236,8 @@ const WedgeCutAct = ({ midpoint, onDone }: ActProps) => {
         <div className="absolute inset-0" style={{ background: '#fff6d0', clipPath: 'polygon(-40% 71%, 140% 39%, 140% 140%, -40% 140%)' }} />
         <div className="absolute inset-0" style={{ background: 'var(--ui-bg, #ffd900)', clipPath: 'polygon(-40% 73.5%, 140% 41.5%, 140% 140%, -40% 140%)' }} />
       </motion.div>
-      {/* 斜向彩虹缎带擦过：全遮期从左扫到右（signal sweep），在楔滑开露新页前淡尽。
-          rotate 放外层静态容器——motion 接管 transform，同元素上写死的 rotate 会被覆盖 */}
-      <div aria-hidden className="pointer-events-none absolute left-[-45%] right-[-45%]" style={{ top: '43%', height: 56, transform: 'rotate(-16deg)' }}>
-        <motion.div
-          className="absolute inset-y-0 left-0"
-          style={{
-            width: '40%',
-            background: `linear-gradient(180deg, ${P4_RAINBOW.map((c, i) => `${c} ${(i / 6) * 100}% ${((i + 1) / 6) * 100}%`).join(', ')})`,
-            boxShadow: '0 3px 0 rgba(19,19,19,0.35), 0 -3px 0 rgba(19,19,19,0.35)',
-          }}
-          initial={{ x: '-130%', opacity: 0 }}
-          animate={{ x: ['-130%', '40%', '230%', '340%'], opacity: [0, 1, 1, 0] }}
-          transition={{ duration: 0.4, delay: 0.14, times: [0, 0.22, 0.8, 1], ease: 'easeInOut' }}
-        />
-      </div>
-      {/* 中心四角星：合拢后砸下，out 随黄楔方向甩出 */}
+      {/* 中心四角星 + 环绕的六色彩虹圈：合拢后一起砸下，out 随黄楔方向甩出。
+          圈是星的伴生件，放同一个 motion 容器里，位移/缩放全程咬合不脱节。 */}
       <motion.div
         className="absolute left-1/2 top-1/2"
         style={{ width: 170, height: 170, marginLeft: -85, marginTop: -85 }}
@@ -254,6 +245,34 @@ const WedgeCutAct = ({ midpoint, onDone }: ActProps) => {
         animate={phase === 'in' ? { scale: 1, rotate: 0, y: 0 } : { scale: 0.7, rotate: 40, y: '-140vh' }}
         transition={phase === 'in' ? { type: 'spring', stiffness: 320, damping: 17, delay: 0.2 } : { duration: 0.3, ease: EASE }}
       >
+        {/* 彩虹圈：六段等分弧（各 60°），自转一圈半；描边式圆环不遮星，
+            墨色底环压在彩虹下当锁边（黄舞台上纯彩虹会发飘）。 */}
+        <motion.svg
+          className="absolute left-1/2 top-1/2"
+          viewBox="0 0 100 100"
+          width={244}
+          height={244}
+          style={{ marginLeft: -122, marginTop: -122, overflow: 'visible' }}
+          initial={{ rotate: -70, opacity: 0 }}
+          animate={{ rotate: 130, opacity: 1 }}
+          transition={{ rotate: { duration: 0.72, ease: 'easeOut' }, opacity: { duration: 0.14, delay: 0.18 } }}
+        >
+          <circle cx="50" cy="50" r={P4_RING_R} fill="none" stroke="rgba(19,19,19,0.42)" strokeWidth={P4_RING_W + 1.6} />
+          {P4_RAINBOW.map((c, i) => (
+            <circle
+              key={i}
+              cx="50"
+              cy="50"
+              r={P4_RING_R}
+              fill="none"
+              stroke={c}
+              strokeWidth={P4_RING_W}
+              strokeDasharray={`${P4_RING_SEG} ${P4_RING_C - P4_RING_SEG}`}
+              strokeDashoffset={-i * P4_RING_SEG}
+              transform="rotate(-90 50 50)"
+            />
+          ))}
+        </motion.svg>
         <svg viewBox="0 0 100 100" width={170} height={170} style={{ overflow: 'visible' }}>
           <path d={p4StarD} fill="#fff6d0" />
         </svg>
@@ -270,9 +289,9 @@ const WedgeCutAct = ({ midpoint, onDone }: ActProps) => {
 // 栅条反向滑开。总时长 0.74s。
 const P3_SLATS = [
   { bg: '#ffffff', from: -1 },
-  { bg: '#cfeaf6', from: 1 },
-  { bg: '#1b57ff', from: -1 },
-  { bg: '#35d1e8', from: 1 },
+  { bg: 'var(--p3r-cyan-pale, #cfeaf6)', from: 1 },
+  { bg: 'var(--p3r-blue, #1b57ff)', from: -1 },
+  { bg: 'var(--p3r-cyan, #35d1e8)', from: 1 },
   { bg: '#eef5f9', from: -1 },
 ];
 
@@ -305,8 +324,8 @@ const WaveSliceAct = ({ midpoint, onDone }: ActProps) => {
         animate={phase === 'in' ? { scale: 1, opacity: 1 } : { scale: 0.6, opacity: 0 }}
         transition={phase === 'in' ? { type: 'spring', stiffness: 420, damping: 18, delay: 0.24 } : { duration: 0.16 }}
       >
-        <span className="absolute left-0 top-0 h-full w-[52px]" style={{ background: '#35d1e8', clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
-        <span className="absolute left-[44px] top-[10px] h-[26px] w-[36px]" style={{ background: '#f0417f', clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
+        <span className="absolute left-0 top-0 h-full w-[52px]" style={{ background: 'var(--p3r-cyan, #35d1e8)', clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
+        <span className="absolute left-[44px] top-[10px] h-[26px] w-[36px]" style={{ background: 'var(--p3r-magenta, #f0417f)', clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
       </motion.div>
     </div>
   );

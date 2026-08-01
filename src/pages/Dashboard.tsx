@@ -6,9 +6,8 @@ import { TodoCompleteModal } from '@/components/TodoCompleteModal';
 import { BattleDashboardWidget } from '@/components/BattleDashboardWidget';
 import { StackCarousel } from '@/components/StackCarousel';
 import { EyebrowLabel } from '@/components/EyebrowLabel';
-import { SlantGuideLine } from '@/components/SlantGuideLine';
 import { BrandTitleReveal } from '@/components/BrandTitleReveal';
-import { StarChart } from '@/components/StarChart';
+import { StarChartP3, NEUTRAL_STAR_PALETTE } from '@/components/StarChartP3';
 import { AttributeDossier } from '@/components/AttributeDossier';
 import { TAROT_BY_ID } from '@/constants/tarot';
 import { CallingCardCard } from '@/components/callingCard/CallingCardCard';
@@ -507,10 +506,6 @@ export const Dashboard = () => {
   // 涟漪反馈（任务按钮列表）
   const [todoRipples, setTodoRipples] = useState<Record<string, Array<{id: number; x: number; y: number}>>>({});
   const todoRippleId = useRef(0);
-  // 斜界引力线锚点：根容器（定位参照）/ 问候卡（起点，含今日日期）/ 今日任务卡（终点）
-  const dashRootRef = useRef<HTMLDivElement>(null);
-  const greetingRef = useRef<HTMLDivElement>(null);
-  const todayTaskRef = useRef<HTMLDivElement>(null);
   const spawnTodoRipple = (todoId: string, e: React.MouseEvent<HTMLElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - rect.left;
@@ -733,23 +728,14 @@ export const Dashboard = () => {
 
   return (
     <motion.div
-      ref={dashRootRef}
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       className={`relative mx-auto max-w-2xl md:max-w-none ${isP4 ? 'space-y-3.5' : 'space-y-5'}`}
     >
-      {/* 斜界引力线：问候卡 → 今日任务（P4 有自己的页头语汇，不挂引力线） */}
-      {!isP4 && (
-        <SlantGuideLine
-          containerRef={dashRootRef}
-          fromRef={greetingRef}
-          toRef={todayTaskRef}
-          fromAnchor="bottom-center"
-          toAnchor="top-left"
-          bend={0.55}
-        />
-      )}
+      {/* 斜界引力线（问候卡 → 今日任务的"先竖后斜"动线）已随 FS2.2 下架：
+          这个分支现在只服务 custom 主题，用户口径是那条线"莫名其妙"——
+          中性皮不做戏剧化引导，卡片自己的顺序就是动线。 */}
 
       {/* 竖屏流光品牌标题 — 仅在非宽屏显示，banner正上方。
           GSAP 时间线 + SplitText 逐字入场（BrandTitleReveal 内部 D0 守卫 + revert 清理）。
@@ -792,7 +778,6 @@ export const Dashboard = () => {
 
       {/* 顶部问候卡：P4 = 黑色斜切题板（黄小字 + 奶油大字），日期已上移到页头 */}
       <motion.div
-        ref={greetingRef}
         initial={{ opacity: 0, y: -12 }}
         animate={{ opacity: 1, y: 0 }}
         className={isP4 ? 'relative p-5' : 'relative rounded-2xl p-5 shadow-lg shadow-primary/20'}
@@ -889,7 +874,6 @@ export const Dashboard = () => {
       {/* 今日任务 ×「今日仪式」：竖屏上下排（并排时两栏都太挤，用户口径），宽屏才回双列 */}
       <div className={isP4 ? 'grid grid-cols-1 items-stretch gap-3 md:grid-cols-2' : 'space-y-5'}>
       <div
-        ref={todayTaskRef}
         className={
           isP4
             ? 'relative overflow-hidden rounded-[20px] bg-[var(--ui-paper)]'
@@ -1216,9 +1200,15 @@ export const Dashboard = () => {
               详细统计 →
             </button>
           </div>
-          {/* 深色舞台垫底：灰星/白刻度/白描边字在亮色模式下也保持对比 */}
-          <div className="mx-3 mb-3 rounded-xl bg-gradient-to-b from-slate-800 to-slate-900 px-2 py-4">
-            <StarChart items={starItems} onSelect={(id) => setDossierAttr(id)} />
+          {/* FS2.2：旧的深色舞台 StarChart 过时下架，改用与 P3 同源的 StarChartP3
+              （角长=等级 + 同心档位环 + 可点角标签），配中性调色板走 --color-primary。
+              不再垫深色舞台——中性皮就是白卡面。 */}
+          <div className="mx-3 mb-1 px-2 pt-1">
+            <StarChartP3
+              items={starItems}
+              palette={NEUTRAL_STAR_PALETTE}
+              onSelect={(id) => setDossierAttr(id)}
+            />
           </div>
           <div className="grid grid-cols-3 divide-x divide-gray-100 dark:divide-gray-800 border-t border-gray-100 dark:border-gray-800">
             <div className="px-3 py-3 text-center">

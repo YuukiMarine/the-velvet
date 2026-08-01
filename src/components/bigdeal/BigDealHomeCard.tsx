@@ -69,7 +69,7 @@ export const BigDealHomeCard = ({ todo, channel, onOpen, onMenu }: Props) => {
     >
       {/* 频道签名角饰 */}
       {p5 && <span aria-hidden className="pointer-events-none absolute -right-2 -top-2 text-4xl font-black opacity-10 select-none">◆</span>}
-      {p3 && <span aria-hidden className="pointer-events-none absolute bottom-0 right-[8%] h-[8px] w-[18px]" style={{ background: '#f0417f', clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />}
+      {p3 && <span aria-hidden className="pointer-events-none absolute bottom-0 right-[8%] h-[8px] w-[18px]" style={{ background: 'var(--p3r-magenta, #f0417f)', clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />}
 
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">

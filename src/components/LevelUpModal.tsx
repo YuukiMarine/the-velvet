@@ -85,7 +85,7 @@ const LevelUpP3 = ({ attributeName, newLevel, isOpen, onClose }: LevelUpModalPro
               {String(newLevel).padStart(2, '0')}
             </motion.div>
             {/* 右上蓝角 + 关闭 */}
-            <span aria-hidden className="absolute right-0 top-0 h-[84px] w-[96px]" style={{ background: '#1b57ff', clipPath: 'polygon(100% 0, 0 0, 100% 100%)' }} />
+            <span aria-hidden className="absolute right-0 top-0 h-[84px] w-[96px]" style={{ background: 'var(--p3r-blue, #1b57ff)', clipPath: 'polygon(100% 0, 0 0, 100% 100%)' }} />
             <motion.button
               whileTap={{ scale: 0.9 }}
               onClick={onClose}
@@ -106,7 +106,7 @@ const LevelUpP3 = ({ attributeName, newLevel, isOpen, onClose }: LevelUpModalPro
             <motion.span
               aria-hidden
               className="absolute bottom-0 right-0 h-[96px] w-[54%]"
-              style={{ background: '#1b57ff', clipPath: 'polygon(100% 100%, 100% 0, 0 100%)' }}
+              style={{ background: 'var(--p3r-blue, #1b57ff)', clipPath: 'polygon(100% 100%, 100% 0, 0 100%)' }}
               initial={anim ? { y: 56, opacity: 0 } : false}
               animate={{ y: 0, opacity: 1 }}
               transition={{ type: 'spring', stiffness: 300, damping: 24, delay: 0.24 }}
@@ -130,12 +130,12 @@ const LevelUpP3 = ({ attributeName, newLevel, isOpen, onClose }: LevelUpModalPro
                   animate={{ y: 0, opacity: 1 }}
                   transition={{ type: 'spring', stiffness: 420, damping: 26, delay: 0.2 }}
                 >
-                  <div className="text-[22px] font-black italic leading-none" style={{ color: '#1b57ff' }}>恭喜升级！</div>
+                  <div className="text-[22px] font-black italic leading-none" style={{ color: 'var(--p3r-blue, #1b57ff)' }}>恭喜升级！</div>
                 </motion.div>
                 {/* 蓝斜带：超大白字属性名 slam 就位 + 白闪一帧（格斗 hit-flash，B2） */}
                 <motion.div
                   className="relative -mt-1 px-5 py-3 text-center"
-                  style={{ background: '#1b57ff', clipPath: 'polygon(0 10%, 100% 0, 100% 90%, 3% 100%)', boxShadow: '0 14px 34px rgba(27,87,255,0.35)' }}
+                  style={{ background: 'var(--p3r-blue, #1b57ff)', clipPath: 'polygon(0 10%, 100% 0, 100% 90%, 3% 100%)', boxShadow: '0 14px 34px rgba(27,87,255,0.35)' }}
                   initial={anim ? { scale: 1.18, opacity: 0 } : false}
                   animate={{ scale: 1, opacity: 1 }}
                   transition={{ type: 'spring', stiffness: 420, damping: 24, delay: 0.32 }}
@@ -157,15 +157,15 @@ const LevelUpP3 = ({ attributeName, newLevel, isOpen, onClose }: LevelUpModalPro
               {/* Lv.N-1 → Lv.N */}
               <div className="mt-5 flex items-end justify-center gap-3">
                 <span className="text-[20px] font-black italic leading-none" style={{ color: 'rgba(27,87,255,0.55)' }}>Lv.{newLevel - 1}</span>
-                <span aria-hidden className="pb-0.5 text-[18px] font-black" style={{ color: '#1b57ff' }}>→</span>
-                <span className="relative text-[34px] font-black italic leading-none" style={{ color: '#1b57ff' }}>
+                <span aria-hidden className="pb-0.5 text-[18px] font-black" style={{ color: 'var(--p3r-blue, #1b57ff)' }}>→</span>
+                <span className="relative text-[34px] font-black italic leading-none" style={{ color: 'var(--p3r-blue, #1b57ff)' }}>
                   Lv.{newLevel}
-                  <span aria-hidden className="absolute -bottom-2 left-0 right-0 h-[3px]" style={{ background: '#35d1e8' }} />
-                  <span aria-hidden className="absolute -bottom-2 right-[-12px] h-[3px] w-[9px]" style={{ background: '#f0417f' }} />
+                  <span aria-hidden className="absolute -bottom-2 left-0 right-0 h-[3px]" style={{ background: 'var(--p3r-cyan, #35d1e8)' }} />
+                  <span aria-hidden className="absolute -bottom-2 right-[-12px] h-[3px] w-[9px]" style={{ background: 'var(--p3r-magenta, #f0417f)' }} />
                 </span>
               </div>
 
-              <p className="mt-5 text-[14px] font-black" style={{ color: '#1b57ff' }}>继续加油，你越来越强了！</p>
+              <p className="mt-5 text-[14px] font-black" style={{ color: 'var(--p3r-blue, #1b57ff)' }}>继续加油，你越来越强了！</p>
             </div>
           </motion.div>
         </motion.div>

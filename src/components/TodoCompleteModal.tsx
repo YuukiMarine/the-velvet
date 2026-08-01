@@ -36,12 +36,12 @@ interface TodoCompleteModalProps {
 /** 巨大青色碎裂勾（p3-modal-06 稿右侧主视觉） */
 const ShatterCheck = () => (
   <svg viewBox="0 0 210 176" className="w-[148px]" aria-hidden>
-    <polygon points="26,98 60,84 94,130 76,152 42,118" fill="#35d1e8" />
+    <polygon points="26,98 60,84 94,130 76,152 42,118" fill="var(--p3r-cyan, #35d1e8)" />
     <polygon points="76,152 94,130 182,20 202,44 98,164" fill="#5fd9ec" />
     <polygon points="94,130 182,20 160,14 88,110" fill="#8fe4f2" />
-    <polygon points="186,6 202,0 196,22" fill="#35d1e8" />
+    <polygon points="186,6 202,0 196,22" fill="var(--p3r-cyan, #35d1e8)" />
     <polygon points="16,82 32,72 28,94" fill="#7fd8ee" />
-    <polygon points="106,164 122,154 114,176" fill="#1b57ff" opacity="0.55" />
+    <polygon points="106,164 122,154 114,176" fill="var(--p3r-blue, #1b57ff)" opacity="0.55" />
     <polygon points="200,54 210,48 206,64" fill="#7fd8ee" opacity="0.8" />
   </svg>
 );
@@ -55,13 +55,13 @@ interface BandCutInP3Props extends TodoCompleteModalProps {
 
 /** 勾落地瞬间的迸溅碎片（B1）：位移/旋转/尺寸/色各异的小三角，从勾中心飞散 */
 const CHECK_BURST = [
-  { dx: -44, dy: -34, rot: -40, s: 10, c: '#35d1e8', d: 0 },
-  { dx: 52, dy: -26, rot: 60, s: 8, c: '#1b57ff', d: 0.03 },
+  { dx: -44, dy: -34, rot: -40, s: 10, c: 'var(--p3r-cyan, #35d1e8)', d: 0 },
+  { dx: 52, dy: -26, rot: 60, s: 8, c: 'var(--p3r-blue, #1b57ff)', d: 0.03 },
   { dx: -30, dy: 40, rot: -80, s: 7, c: '#8fe4f2', d: 0.05 },
-  { dx: 58, dy: 30, rot: 45, s: 9, c: '#f0417f', d: 0.02 },
+  { dx: 58, dy: 30, rot: 45, s: 9, c: 'var(--p3r-magenta, #f0417f)', d: 0.02 },
   { dx: 6, dy: -52, rot: 20, s: 7, c: '#5fd9ec', d: 0.06 },
-  { dx: -56, dy: 4, rot: -25, s: 8, c: '#1b57ff', d: 0.04 },
-  { dx: 30, dy: 52, rot: 70, s: 6, c: '#35d1e8', d: 0.07 },
+  { dx: -56, dy: 4, rot: -25, s: 8, c: 'var(--p3r-blue, #1b57ff)', d: 0.04 },
+  { dx: 30, dy: 52, rot: 70, s: 6, c: 'var(--p3r-cyan, #35d1e8)', d: 0.07 },
 ];
 
 /**
@@ -136,16 +136,16 @@ export const BandCutInP3 = ({ isOpen, onClose, title, totalPoints, unlockHint, e
                   <div className="min-w-0 flex-1">
                     {/* 主标题 + 洋红双片 */}
                     <div className="flex items-end gap-2">
-                      <span className="text-[52px] font-black italic leading-[0.9]" style={{ color: '#0a1230', fontFamily: '"Arial Black", "Noto Sans SC", sans-serif', WebkitTextStroke: '5px #ffffff', paintOrder: 'stroke fill' }}>{eyebrow}</span>
+                      <span className="text-[52px] font-black italic leading-[0.9]" style={{ color: 'var(--p3r-ink, #0a1230)', fontFamily: '"Arial Black", "Noto Sans SC", sans-serif', WebkitTextStroke: '5px #ffffff', paintOrder: 'stroke fill' }}>{eyebrow}</span>
                       <span aria-hidden className="mb-1 flex gap-[3px]">
-                        <span className="h-[10px] w-[12px]" style={{ background: '#f0417f', clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
+                        <span className="h-[10px] w-[12px]" style={{ background: 'var(--p3r-magenta, #f0417f)', clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
                         <span className="h-[8px] w-[9px]" style={{ background: 'rgba(240,65,127,0.55)', clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
                       </span>
                     </div>
                     {/* TODAY 行 */}
                     <div className="mt-2.5 flex items-center gap-2.5">
-                      <span aria-hidden className="h-[4px] w-9" style={{ background: '#1b57ff', transform: 'skewX(-24deg)' }} />
-                      <span className="text-[18px] font-black italic tracking-[0.18em]" style={{ color: '#1b57ff' }}>
+                      <span aria-hidden className="h-[4px] w-9" style={{ background: 'var(--p3r-blue, #1b57ff)', transform: 'skewX(-24deg)' }} />
+                      <span className="text-[18px] font-black italic tracking-[0.18em]" style={{ color: 'var(--p3r-blue, #1b57ff)' }}>
                         TODAY{(totalPoints ?? 0) > 0 ? ` / +${totalPoints}` : ''}
                       </span>
                     </div>
@@ -156,12 +156,12 @@ export const BandCutInP3 = ({ isOpen, onClose, title, totalPoints, unlockHint, e
                       animate={{ clipPath: 'inset(-6% -3% -6% -3%)' }}
                       transition={{ duration: 0.38, delay: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
                     >
-                      <div className="inline-block max-w-full px-5 py-2.5" style={{ background: '#1b57ff', clipPath: 'polygon(12px 0, 100% 0, calc(100% - 12px) 100%, 0 100%)', boxShadow: '0 10px 26px rgba(27,87,255,0.35)' }}>
+                      <div className="inline-block max-w-full px-5 py-2.5" style={{ background: 'var(--p3r-blue, #1b57ff)', clipPath: 'polygon(12px 0, 100% 0, calc(100% - 12px) 100%, 0 100%)', boxShadow: '0 10px 26px rgba(27,87,255,0.35)' }}>
                         <span className="block truncate text-[24px] font-black text-white">{title}</span>
                       </div>
                     </motion.div>
                     {unlockHint && (unlockHint.achievements > 0 || unlockHint.skills > 0) && (
-                      <div className="mt-2.5 text-[13px] font-black" style={{ color: '#f0417f' }}>✦ 您解锁了新成就 / 新技能！</div>
+                      <div className="mt-2.5 text-[13px] font-black" style={{ color: 'var(--p3r-magenta, #f0417f)' }}>✦ 您解锁了新成就 / 新技能！</div>
                     )}
                   </div>
                   {/* 巨大青色碎裂勾 + 落地迸溅碎片（B1） */}
@@ -192,7 +192,7 @@ export const BandCutInP3 = ({ isOpen, onClose, title, totalPoints, unlockHint, e
                 onClick={onClose}
                 aria-label="关闭"
                 className="absolute right-3 top-0 z-20 flex h-11 w-14 items-center justify-center text-xl font-black text-white"
-                style={{ background: '#35d1e8', clipPath: 'polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%)' }}
+                style={{ background: 'var(--p3r-cyan, #35d1e8)', clipPath: 'polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%)' }}
               >
                 ×
               </motion.button>

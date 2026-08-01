@@ -817,7 +817,7 @@ export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week' }
             {/* Handle */}
             <div className="flex justify-center pt-4 pb-1">
               {p3 ? (
-                <div aria-hidden className="relative flex h-[16px] w-[82px] items-center justify-center" style={{ background: '#35d1e8', clipPath: 'polygon(0 55%, 18% 0, 100% 30%, 82% 100%)' }}>
+                <div aria-hidden className="relative flex h-[16px] w-[82px] items-center justify-center" style={{ background: 'var(--p3r-cyan, #35d1e8)', clipPath: 'polygon(0 55%, 18% 0, 100% 30%, 82% 100%)' }}>
                   <span className="h-[3px] w-7 bg-white" />
                 </div>
               ) : (

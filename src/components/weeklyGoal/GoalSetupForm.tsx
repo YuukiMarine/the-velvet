@@ -214,8 +214,8 @@ export const GoalSetupForm = ({
         {/* 左上青色大三角装饰（稿） */}
         <span aria-hidden className="absolute -left-2 -top-2 h-0 w-0 border-r-[46px] border-t-[38px] border-r-transparent" style={{ borderTopColor: 'rgba(53,209,232,0.85)' }} />
         <div className="relative px-4 pb-4 pt-5">
-          <h3 className="text-[26px] font-black italic leading-none" style={{ color: '#0a1230', fontFamily: '"Arial Black", "Noto Sans SC", sans-serif' }}>设定本周目标</h3>
-          <p className="mt-2 text-[13px] font-bold" style={{ color: '#1b57ff' }}>{weekStart} ~ {weekEnd}　· 至少选择 2 项</p>
+          <h3 className="text-[26px] font-black italic leading-none" style={{ color: 'var(--p3r-ink, #0a1230)', fontFamily: '"Arial Black", "Noto Sans SC", sans-serif' }}>设定本周目标</h3>
+          <p className="mt-2 text-[13px] font-bold" style={{ color: 'var(--p3r-blue, #1b57ff)' }}>{weekStart} ~ {weekEnd}　· 至少选择 2 项</p>
 
           <div className="mt-4 space-y-3">
             {ALL_GOAL_TYPES.map((type, ti) => {
@@ -242,7 +242,7 @@ export const GoalSetupForm = ({
                     <span
                       aria-hidden
                       className="flex h-11 w-11 shrink-0 items-center justify-center"
-                      style={{ clipPath: 'polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%)', background: isSelected ? '#35d1e8' : '#dfe9f1' }}
+                      style={{ clipPath: 'polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%)', background: isSelected ? 'var(--p3r-cyan, #35d1e8)' : '#dfe9f1' }}
                     >
                       {isSelected && (
                         <svg viewBox="0 0 14 11" className="h-5 w-6" fill="none">
@@ -251,13 +251,13 @@ export const GoalSetupForm = ({
                       )}
                     </span>
                     <span className="min-w-0 flex-1 pt-0.5">
-                      <span className="block text-[17px] font-black leading-tight" style={{ color: '#0a1230' }}>{GOAL_TYPE_LABELS[type]}</span>
+                      <span className="block text-[17px] font-black leading-tight" style={{ color: 'var(--p3r-ink, #0a1230)' }}>{GOAL_TYPE_LABELS[type]}</span>
                       <span className="mt-0.5 block text-[11px] font-semibold" style={{ color: '#8a97ad' }}>{GOAL_TYPE_DESCS[type]}</span>
                     </span>
                     {!isSelected && <span className="shrink-0 pt-1 text-xs font-bold" style={{ color: '#8a97ad' }}>点击添加</span>}
                   </button>
                   {/* 卡角小三角（洋红/青交替，稿） */}
-                  <span aria-hidden className="absolute right-1 top-1 h-0 w-0 border-l-[14px] border-t-[11px] border-l-transparent" style={{ borderTopColor: ti % 2 ? '#f0417f' : 'rgba(53,209,232,0.9)' }} />
+                  <span aria-hidden className="absolute right-1 top-1 h-0 w-0 border-l-[14px] border-t-[11px] border-l-transparent" style={{ borderTopColor: ti % 2 ? 'var(--p3r-magenta, #f0417f)' : 'rgba(53,209,232,0.9)' }} />
 
                   {/* 展开配置行：目标 label + 属性选择 + 步进器 */}
                   <AnimatePresence initial={false}>
@@ -271,7 +271,7 @@ export const GoalSetupForm = ({
                       >
                         <div className="flex items-center justify-between gap-3 px-4 pb-3.5">
                           <div className="flex flex-wrap items-center gap-2.5">
-                            <span className="text-[13px] font-black" style={{ color: '#0a1230' }}>目标</span>
+                            <span className="text-[13px] font-black" style={{ color: 'var(--p3r-ink, #0a1230)' }}>目标</span>
                             {needsAttr && (
                               <select
                                 value={cfg.attribute || 'knowledge'}
@@ -311,7 +311,7 @@ export const GoalSetupForm = ({
                 placeholder="给自己一个奖励吧…"
                 className="w-full px-4 py-2.5 text-sm focus:outline-none"
               />
-              <span aria-hidden className="pointer-events-none absolute bottom-0 right-0 h-0 w-0 border-b-[12px] border-l-[16px] border-l-transparent" style={{ borderBottomColor: '#35d1e8' }} />
+              <span aria-hidden className="pointer-events-none absolute bottom-0 right-0 h-0 w-0 border-b-[12px] border-l-[16px] border-l-transparent" style={{ borderBottomColor: 'var(--p3r-cyan, #35d1e8)' }} />
             </div>
           </div>
 

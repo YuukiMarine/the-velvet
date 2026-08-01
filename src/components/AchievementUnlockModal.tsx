@@ -28,22 +28,22 @@ interface AchievementUnlockModalProps {
 /** 青纸鹤徽记（p3-modal-07 面板顶部三角拼贴） */
 const CyanCrest = () => (
   <svg viewBox="0 0 150 110" className="w-[108px]" aria-hidden>
-    <polygon points="46,72 108,10 96,84" fill="#35d1e8" />
+    <polygon points="46,72 108,10 96,84" fill="var(--p3r-cyan, #35d1e8)" />
     <polygon points="46,72 96,84 60,102" fill="#0fb8d8" />
     <polygon points="108,10 118,64 96,84" fill="#7fd8ee" />
-    <polygon points="96,84 132,70 122,92" fill="#f0417f" />
+    <polygon points="96,84 132,70 122,92" fill="var(--p3r-magenta, #f0417f)" />
     <polygon points="28,80 44,74 38,92" fill="#8fe4f2" />
   </svg>
 );
 
 /** 青纸鹤落地时迸开的碎三角 */
 const CREST_BURST = [
-  { dx: -62, dy: -30, rot: -40, s: 11, c: '#35d1e8' },
-  { dx: 66, dy: -22, rot: 60, s: 9, c: '#1b57ff' },
+  { dx: -62, dy: -30, rot: -40, s: 11, c: 'var(--p3r-cyan, #35d1e8)' },
+  { dx: 66, dy: -22, rot: 60, s: 9, c: 'var(--p3r-blue, #1b57ff)' },
   { dx: -44, dy: 44, rot: -80, s: 8, c: '#8fe4f2' },
-  { dx: 72, dy: 36, rot: 45, s: 10, c: '#f0417f' },
+  { dx: 72, dy: 36, rot: 45, s: 10, c: 'var(--p3r-magenta, #f0417f)' },
   { dx: 8, dy: -62, rot: 20, s: 8, c: '#5fd9ec' },
-  { dx: -78, dy: 8, rot: -25, s: 9, c: '#1b57ff' },
+  { dx: -78, dy: 8, rot: -25, s: 9, c: 'var(--p3r-blue, #1b57ff)' },
 ];
 
 /** P3R 成就解锁演出（p3-modal-07 1:1） */
@@ -75,7 +75,7 @@ const AchievementUnlockP3 = ({ isOpen, onClose, achievementTitle }: AchievementU
                   cx="50%"
                   cy="50%"
                   fill="none"
-                  stroke={k === 1 ? '#1b57ff' : '#35d1e8'}
+                  stroke={k === 1 ? 'var(--p3r-blue, #1b57ff)' : 'var(--p3r-cyan, #35d1e8)'}
                   strokeWidth={k === 1 ? 14 : 9}
                   initial={{ r: 24, opacity: 0 }}
                   animate={{ r: 300 + k * 110, opacity: [0, 0.55, 0.3, 0] }}
@@ -96,7 +96,7 @@ const AchievementUnlockP3 = ({ isOpen, onClose, achievementTitle }: AchievementU
             UNLOCK
           </motion.div>
           {/* 右上蓝三角 + ✕ */}
-          <span aria-hidden className="absolute right-0 top-0 h-[120px] w-[140px]" style={{ background: '#1b57ff', clipPath: 'polygon(100% 0, 0 0, 100% 100%)' }} />
+          <span aria-hidden className="absolute right-0 top-0 h-[120px] w-[140px]" style={{ background: 'var(--p3r-blue, #1b57ff)', clipPath: 'polygon(100% 0, 0 0, 100% 100%)' }} />
           <motion.button
             whileTap={{ scale: 0.9 }}
             onClick={onClose}
@@ -155,7 +155,7 @@ const AchievementUnlockP3 = ({ isOpen, onClose, achievementTitle }: AchievementU
                 <motion.span
                   aria-hidden
                   className="absolute left-[-15%] right-[-15%] top-1/2 h-[62px]"
-                  style={{ background: '#1b57ff', y: '-50%', rotate: -7, originX: 0 }}
+                  style={{ background: 'var(--p3r-blue, #1b57ff)', y: '-50%', rotate: -7, originX: 0 }}
                   initial={anim ? { scaleX: 0, opacity: 0 } : false}
                   animate={{ scaleX: 1, opacity: 1 }}
                   transition={{ duration: 0.4, delay: 0.24, ease: [0.16, 1, 0.3, 1] }}
@@ -169,7 +169,7 @@ const AchievementUnlockP3 = ({ isOpen, onClose, achievementTitle }: AchievementU
                 >
                   <motion.span
                     className="absolute inset-0"
-                    style={{ background: '#f0417f', clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }}
+                    style={{ background: 'var(--p3r-magenta, #f0417f)', clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }}
                     animate={anim ? { opacity: [1, 1, 0.3, 1] } : undefined}
                     transition={{ duration: 4.4, times: [0, 0.88, 0.93, 1], repeat: Infinity, ease: 'linear', delay: 1.5 }}
                   />
@@ -178,7 +178,7 @@ const AchievementUnlockP3 = ({ isOpen, onClose, achievementTitle }: AchievementU
                   aria-hidden
                   className="relative text-center text-[44px] font-black italic leading-none"
                   style={{
-                    color: '#0a3bd6',
+                    color: 'var(--p3r-blue-deep, #0a3bd6)',
                     fontFamily: '"Arial Black", "Noto Sans SC", sans-serif',
                     WebkitTextStroke: '7px #fff',
                     paintOrder: 'stroke fill',
@@ -209,14 +209,14 @@ const AchievementUnlockP3 = ({ isOpen, onClose, achievementTitle }: AchievementU
                   <span className="h-[12px] w-[10px]" style={{ background: 'rgba(53,209,232,0.8)', clipPath: 'polygon(38% 0, 100% 0, 62% 100%, 0 100%)' }} />
                   <span className="h-[12px] w-[10px]" style={{ background: 'rgba(53,209,232,0.45)', clipPath: 'polygon(38% 0, 100% 0, 62% 100%, 0 100%)' }} />
                 </span>
-                <span className="max-w-[70%] truncate text-[30px] font-black leading-none" style={{ color: '#1b57ff' }}>{achievementTitle}</span>
+                <span className="max-w-[70%] truncate text-[30px] font-black leading-none" style={{ color: 'var(--p3r-blue, #1b57ff)' }}>{achievementTitle}</span>
                 <span aria-hidden className="flex gap-1">
                   <span className="h-[12px] w-[10px]" style={{ background: 'rgba(53,209,232,0.45)', clipPath: 'polygon(38% 0, 100% 0, 62% 100%, 0 100%)' }} />
                   <span className="h-[12px] w-[10px]" style={{ background: 'rgba(53,209,232,0.8)', clipPath: 'polygon(38% 0, 100% 0, 62% 100%, 0 100%)' }} />
                 </span>
               </motion.div>
 
-              <p className="mt-3 text-[14px] font-black" style={{ color: '#0a1230' }}>恭喜你达成新成就！继续努力解锁更多内容</p>
+              <p className="mt-3 text-[14px] font-black" style={{ color: 'var(--p3r-ink, #0a1230)' }}>恭喜你达成新成就！继续努力解锁更多内容</p>
             </div>
           </motion.div>
         </motion.div>

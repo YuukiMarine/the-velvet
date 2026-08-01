@@ -17,7 +17,7 @@ export const slantEdge = (px = 10) => `polygon(0 0, 100% 0, calc(100% - ${px}px)
 /** 区层色温（⑩）：等级 → 主色/辅色/背景端色 */
 export const STRATUM_PALETTE: Record<number, { accent: string; accentRgb: string; deep: string; mist: string }> = {
   1: { accent: '#9fc0ff', accentRgb: '159,192,255', deep: '#0a1030', mist: 'rgba(159,192,255,0.08)' },
-  2: { accent: '#35d1e8', accentRgb: '53,209,232', deep: '#071426', mist: 'rgba(53,209,232,0.08)' },
+  2: { accent: 'var(--p3r-cyan, #35d1e8)', accentRgb: '53,209,232', deep: '#071426', mist: 'rgba(53,209,232,0.08)' },
   3: { accent: '#7d8cff', accentRgb: '125,140,255', deep: '#0c0b2e', mist: 'rgba(125,140,255,0.09)' },
   4: { accent: '#b06cff', accentRgb: '176,108,255', deep: '#150a30', mist: 'rgba(176,108,255,0.09)' },
   5: { accent: '#ff5c7a', accentRgb: '255,92,122', deep: '#1c0716', mist: 'rgba(255,92,122,0.08)' },

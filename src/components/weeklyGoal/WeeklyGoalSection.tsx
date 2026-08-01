@@ -282,15 +282,15 @@ export const WeeklyGoalSection = ({
                 style={p3 ? { background: 'linear-gradient(178deg, #fbfdff 0%, #eef7fc 100%)', clipPath: sheetTopClip } : undefined}
                 onClick={e => e.stopPropagation()}
               >
-                <p className={p3 ? 'mb-3 text-[18px] font-black italic' : 'text-sm font-bold text-gray-800 dark:text-white mb-3'} style={p3 ? { color: '#0a1230' } : undefined}>
+                <p className={p3 ? 'mb-3 text-[18px] font-black italic' : 'text-sm font-bold text-gray-800 dark:text-white mb-3'} style={p3 ? { color: 'var(--p3r-ink, #0a1230)' } : undefined}>
                   本周目标
-                  {p3 && <span aria-hidden className="ml-1.5 inline-block h-[8px] w-[11px]" style={{ background: '#1b57ff', clipPath: 'polygon(100% 0, 100% 100%, 0 100%)' }} />}
+                  {p3 && <span aria-hidden className="ml-1.5 inline-block h-[8px] w-[11px]" style={{ background: 'var(--p3r-blue, #1b57ff)', clipPath: 'polygon(100% 0, 100% 100%, 0 100%)' }} />}
                 </p>
                 {!currentGoal.completed && (
                   <button
                     onClick={() => { setShowEditMenu(false); setShowEditForm(true); }}
                     className={p3 ? 'w-full py-3 text-sm font-black text-white' : 'w-full py-3 rounded-xl bg-primary/10 text-primary dark:text-primary text-sm font-semibold'}
-                    style={p3 ? { clipPath: 'polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%)', background: '#1b57ff' } : undefined}
+                    style={p3 ? { clipPath: 'polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%)', background: 'var(--p3r-blue, #1b57ff)' } : undefined}
                   >
                     修改选项
                   </button>
@@ -298,14 +298,14 @@ export const WeeklyGoalSection = ({
                 <button
                   onClick={handleReset}
                   className={p3 ? 'w-full py-3 text-sm font-black text-white' : 'w-full py-3 rounded-xl bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-sm font-medium'}
-                  style={p3 ? { clipPath: 'polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%)', background: '#f0417f' } : undefined}
+                  style={p3 ? { clipPath: 'polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%)', background: 'var(--p3r-magenta, #f0417f)' } : undefined}
                 >
                   {currentGoal.completed ? '删除本周目标记录' : '重置本周目标'}
                 </button>
                 <button
                   onClick={() => setShowEditMenu(false)}
                   className={p3 ? 'w-full py-3 text-sm font-black' : 'w-full py-3 rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 text-sm'}
-                  style={p3 ? { clipPath: 'polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%)', background: '#cfeaf6', color: '#0a1230' } : undefined}
+                  style={p3 ? { clipPath: 'polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%)', background: 'var(--p3r-cyan-pale, #cfeaf6)', color: 'var(--p3r-ink, #0a1230)' } : undefined}
                 >
                   取消
                 </button>

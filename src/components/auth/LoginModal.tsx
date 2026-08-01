@@ -10,6 +10,8 @@ import {
   requestOTP as requestOTPByEmail,
 } from '@/services/auth';
 import { useBackHandler } from '@/utils/useBackHandler';
+import { useAppStore } from '@/store';
+import { CloudConsentNotice } from './CloudConsentNotice';
 import type { RecordModel } from 'pocketbase';
 
 interface Props {
@@ -26,6 +28,11 @@ const RESEND_COOLDOWN = 60;
 
 export const LoginModal = ({ isOpen, onClose, onSuccess, origin = 'settings' }: Props) => {
   const [mode, setMode] = useState<AuthMode>('otp');
+  // 免责声明闸门（FS1.2）：没同意过就先出声明页，同意后本弹窗原地切到登录表单。
+  // 同意态存在 settings 里并随账号上云，多设备只需同意一次。
+  const cloudConsentAt = useAppStore(s => s.settings.cloudConsentAt);
+  const updateSettings = useAppStore(s => s.updateSettings);
+  const needConsent = !cloudConsentAt;
 
   // 输入
   const [identity, setIdentity] = useState('');
@@ -182,11 +189,14 @@ export const LoginModal = ({ isOpen, onClose, onSuccess, origin = 'settings' }: 
     }
   };
 
-  const title =
-    origin === 'welcome'
+  const title = needConsent
+    ? '把数据交给云端之前'
+    : origin === 'welcome'
       ? '欢迎归来，客人'
       : '登录靛蓝色房间';
-  const subtitle = '验证码最省心——没登记过的邮箱也能直接进';
+  const subtitle = needConsent
+    ? '几句实话，读完再决定'
+    : '验证码最省心——没登记过的邮箱也能直接进';
 
   // portal 到 body：脱离 App.tsx `relative z-10` stacking context（见 zIndex.ts 头注释）。
   // createPortal 必须包在 AnimatePresence 外侧，否则 exit 失效（参考 ConfirmDialog）。
@@ -236,6 +246,12 @@ export const LoginModal = ({ isOpen, onClose, onSuccess, origin = 'settings' }: 
               }}
             />
 
+            {needConsent ? (
+              <CloudConsentNotice
+                onAccept={() => { void updateSettings({ cloudConsentAt: new Date().toISOString() }); }}
+                onDecline={onClose}
+              />
+            ) : (
             <div className="px-7 pb-6">
               {/* 两个 Tab：验证码（默认） / 密码 */}
               <div
@@ -367,6 +383,7 @@ export const LoginModal = ({ isOpen, onClose, onSuccess, origin = 'settings' }: 
                 </button>
               </div>
             </div>
+            )}
 
             <div
               className="pb-5 pt-1 text-center text-[10px] tracking-[0.3em]"

@@ -184,7 +184,7 @@ export function CallingCardEditor({ isOpen, initialCard, onClose }: Props) {
           >
             {/* Handle（p3：青色斜片把手，与 SheetModal 基座同款） */}
             {p3 ? (
-              <div aria-hidden className="relative mx-auto mt-5 flex h-[18px] w-[86px] shrink-0 items-center justify-center" style={{ background: '#35d1e8', clipPath: 'polygon(0 55%, 18% 0, 100% 30%, 82% 100%)' }}>
+              <div aria-hidden className="relative mx-auto mt-5 flex h-[18px] w-[86px] shrink-0 items-center justify-center" style={{ background: 'var(--p3r-cyan, #35d1e8)', clipPath: 'polygon(0 55%, 18% 0, 100% 30%, 82% 100%)' }}>
                 <span className="h-[3px] w-8 bg-white" />
               </div>
             ) : (
@@ -197,10 +197,10 @@ export function CallingCardEditor({ isOpen, initialCard, onClose }: Props) {
             <div className={`flex items-center gap-2 px-5 py-3 ${p3 ? '' : 'border-b border-black/5 dark:border-white/5'}`}>
               <h2
                 className={p3 ? 'flex-1 text-[24px] font-black italic tracking-tight' : 'text-base font-black text-gray-900 dark:text-white flex-1'}
-                style={p3 ? { color: '#0a1230', fontFamily: '"Arial Black", "Noto Sans SC", sans-serif' } : undefined}
+                style={p3 ? { color: 'var(--p3r-ink, #0a1230)', fontFamily: '"Arial Black", "Noto Sans SC", sans-serif' } : undefined}
               >
                 {initialCard ? '编辑倒计时' : '新建倒计时'}
-                {p3 && <span aria-hidden className="ml-1.5 inline-block h-[10px] w-[13px]" style={{ background: '#1b57ff', clipPath: 'polygon(100% 0, 100% 100%, 0 100%)' }} />}
+                {p3 && <span aria-hidden className="ml-1.5 inline-block h-[10px] w-[13px]" style={{ background: 'var(--p3r-blue, #1b57ff)', clipPath: 'polygon(100% 0, 100% 100%, 0 100%)' }} />}
               </h2>
               <button
                 onClick={onClose}
@@ -229,8 +229,8 @@ export function CallingCardEditor({ isOpen, initialCard, onClose }: Props) {
                           }`}
                       style={p3 ? {
                         clipPath: 'polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%)',
-                        background: mode === m ? '#1b57ff' : '#e2f2fa',
-                        color: mode === m ? '#fff' : '#0a1230',
+                        background: mode === m ? 'var(--p3r-blue, #1b57ff)' : 'var(--p3r-cyan-faint, #e2f2fa)',
+                        color: mode === m ? '#fff' : 'var(--p3r-ink, #0a1230)',
                       } : undefined}
                     >
                       {m === 'deadline' ? '日期' : m === 'todos' ? '任务清单' : '兼有'}
@@ -468,11 +468,11 @@ export function CallingCardEditor({ isOpen, initialCard, onClose }: Props) {
                   : `w-full py-3.5 rounded-2xl font-bold text-sm transition-all ${
                       canSave ? 'bg-primary text-white shadow-lg active:scale-[0.98]' : 'bg-gray-200 dark:bg-gray-700 text-gray-400 cursor-not-allowed'
                     }`}
-                style={p3 ? { clipPath: 'polygon(12px 0, 100% 0, calc(100% - 12px) 100%, 0 100%)', background: '#1b57ff' } : undefined}
+                style={p3 ? { clipPath: 'polygon(12px 0, 100% 0, calc(100% - 12px) 100%, 0 100%)', background: 'var(--p3r-blue, #1b57ff)' } : undefined}
               >
                 {initialCard ? '保存修改' : '✦ 立此宣告'}
                 {p3 && canSave && (
-                  <span aria-hidden className="absolute bottom-0 right-4 h-[7px] w-[18px]" style={{ background: '#f0417f', clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
+                  <span aria-hidden className="absolute bottom-0 right-4 h-[7px] w-[18px]" style={{ background: 'var(--p3r-magenta, #f0417f)', clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
                 )}
               </button>
             </div>

@@ -65,7 +65,7 @@ const TriStepBtn = ({ dir, disabled, onClick, label }: {
     onClick={onClick}
     className="relative flex h-9 w-10 shrink-0 items-center justify-center disabled:opacity-30"
   >
-    <span aria-hidden className="absolute inset-0" style={{ background: '#35d1e8', clipPath: dir === 'left' ? 'polygon(100% 0, 100% 100%, 0 50%)' : 'polygon(0 0, 0 100%, 100% 50%)' }} />
+    <span aria-hidden className="absolute inset-0" style={{ background: 'var(--p3r-cyan, #35d1e8)', clipPath: dir === 'left' ? 'polygon(100% 0, 100% 100%, 0 50%)' : 'polygon(0 0, 0 100%, 100% 50%)' }} />
     <span className="relative text-[15px] font-black leading-none text-white" style={dir === 'left' ? { marginLeft: 10 } : { marginRight: 10 }}>
       {dir === 'left' ? '−' : '＋'}
     </span>
@@ -142,7 +142,7 @@ export const NavigatorActionForm = ({ draft, channel, onSubmit, onClose }: Props
                   className={`${inputCls} resize-none`}
                   style={inputStyle}
                 />
-                <span aria-hidden className="pointer-events-none absolute bottom-2 right-1 h-[12px] w-[20px]" style={{ background: '#35d1e8', clipPath: 'polygon(35% 0, 100% 0, 65% 100%, 0 100%)' }} />
+                <span aria-hidden className="pointer-events-none absolute bottom-2 right-1 h-[12px] w-[20px]" style={{ background: 'var(--p3r-cyan, #35d1e8)', clipPath: 'polygon(35% 0, 100% 0, 65% 100%, 0 100%)' }} />
               </div>
             ) : (
               <textarea
@@ -185,7 +185,7 @@ export const NavigatorActionForm = ({ draft, channel, onSubmit, onClose }: Props
           </div>
           {bright ? (
             <button type="button" onClick={() => patch({ important: !d.important })} className="flex items-center gap-2.5 text-[16px] font-black" style={ink} aria-pressed={d.important}>
-              <span aria-hidden className="h-0 w-0 border-t-[18px] border-r-[22px] border-r-transparent transition-colors" style={{ borderTopColor: d.important ? '#f0417f' : '#bcd3e2' }} />
+              <span aria-hidden className="h-0 w-0 border-t-[18px] border-r-[22px] border-r-transparent transition-colors" style={{ borderTopColor: d.important ? 'var(--p3r-magenta, #f0417f)' : '#bcd3e2' }} />
               重要事件{d.important ? '（已标记）' : ''}
             </button>
           ) : (
@@ -482,7 +482,7 @@ export const NavigatorActionForm = ({ draft, channel, onSubmit, onClose }: Props
 
             {bright ? (
               <header className="relative flex items-center gap-2.5 px-5 pt-5">
-                <span aria-hidden className="h-[24px] w-[9px] shrink-0" style={{ background: '#35d1e8', transform: 'skewX(-18deg)' }} />
+                <span aria-hidden className="h-[24px] w-[9px] shrink-0" style={{ background: 'var(--p3r-cyan, #35d1e8)', transform: 'skewX(-18deg)' }} />
                 <h2 className="flex-1 text-[26px] font-black italic leading-none" style={{ color: P3R.ink, fontFamily: '"Arial Black", "Noto Sans SC", sans-serif' }}>
                   {ACTION_META[d.kind].label}
                 </h2>
@@ -491,7 +491,7 @@ export const NavigatorActionForm = ({ draft, channel, onSubmit, onClose }: Props
                   aria-label="关闭"
                   onClick={onClose}
                   className="flex h-9 w-12 shrink-0 items-center justify-center text-lg font-black text-white"
-                  style={{ background: '#35d1e8', clipPath: slantClip(10) }}
+                  style={{ background: 'var(--p3r-cyan, #35d1e8)', clipPath: slantClip(10) }}
                 >
                   ✕
                 </button>
@@ -573,7 +573,7 @@ export const NavigatorActionForm = ({ draft, channel, onSubmit, onClose }: Props
                     style={{ color: P3R.ink, clipPath: slantClip(10), boxShadow: '0 8px 20px rgba(7,40,120,.12)' }}
                   >
                     取消
-                    <span aria-hidden className="absolute bottom-0 right-1 h-[8px] w-[14px]" style={{ background: '#35d1e8', clipPath: 'polygon(35% 0, 100% 0, 65% 100%, 0 100%)' }} />
+                    <span aria-hidden className="absolute bottom-0 right-1 h-[8px] w-[14px]" style={{ background: 'var(--p3r-cyan, #35d1e8)', clipPath: 'polygon(35% 0, 100% 0, 65% 100%, 0 100%)' }} />
                   </button>
                 </>
               ) : p5 ? (
