@@ -366,7 +366,6 @@ export const DashboardP3 = () => {
   const greeting = useMemo(() => subtext.replace(/^\s*\p{Extended_Pictographic}[️‍\p{Extended_Pictographic}]*\s*/u, ''), [subtext]);
 
   // ── BIG DEAL 聚合卡数据 + 二级面板 ──
-  const activeBigDeals = todos.filter((t) => t.isBigDeal && t.isActive && !t.archivedAt);
   const [dealPanelId, setDealPanelId] = useState<string | null>(null);
 
   // ── 今日任务（口径同 Dashboard：启用+星期匹配+未来启用日过滤；今天完成后归档的仍显示；重要在前）──
@@ -646,14 +645,6 @@ export const DashboardP3 = () => {
           </div>
         )}
 
-        {/* ── BIG DEAL 聚合卡（D5：只露总进度+下一步，点击进二级面板）── */}
-        {activeBigDeals.length > 0 && (
-          <section className="mt-6 space-y-2.5" aria-label="进行中的大事">
-            {activeBigDeals.map((t) => (
-              <BigDealHomeCard key={t.id} todo={t} channel="p3" onOpen={() => setDealPanelId(t.id)} />
-            ))}
-          </section>
-        )}
         <BigDealPanel todoId={dealPanelId} onClose={() => setDealPanelId(null)} />
 
         {/* ── 今日任务（白斜卡列表：直接打卡；接入 CTA 探出右缘）── */}
@@ -684,6 +675,21 @@ export const DashboardP3 = () => {
               ) : (
                 <div className="flex flex-col gap-0.5 py-3 pl-6 pr-3">
                   {todayTodos.map((todo) => {
+              // BIG DEAL 并入列表内部（PRD_V2.6 §2.1 / 反馈 §9）：
+              // 它以前是今日任务**上方的独立板块**，同时又作为普通行落在列表里，
+              // 于是同一件事出现两次、且列表里那行点了没反应
+              // （completeTodo 对大事直接返回 null，"大事只能逐子步完成"）。
+              // 现在统一走聚合卡、排序已把它顶到最前，独立板块整段删除。
+              if (todo.isBigDeal) {
+                return (
+                  <BigDealHomeCard
+                    key={todo.id}
+                    todo={todo}
+                    channel={"p3"}
+                    onOpen={() => setDealPanelId(todo.id)}
+                  />
+                );
+              }
                     const progress = getTodayTodoProgress(todo.id);
                     const attrName = settings.attributeNames[todo.attribute as keyof typeof settings.attributeNames];
                     const done = progress.isComplete;

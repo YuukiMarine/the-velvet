@@ -637,7 +637,6 @@ export const Dashboard = () => {
   const todayKey = toLocalDateKey(today);
 
   // BIG DEAL 聚合卡数据 + 二级面板（批2）
-  const activeBigDeals = todos.filter(t => t.isBigDeal && t.isActive && !t.archivedAt);
   const [dealPanelId, setDealPanelId] = useState<string | null>(null);
 
   const todayTodos = [...todos.filter(todo => {
@@ -865,14 +864,6 @@ export const Dashboard = () => {
        </div>
       </motion.div>
 
-      {/* BIG DEAL 聚合卡（D5：只露总进度+下一步，点击进二级面板） */}
-      {activeBigDeals.length > 0 && (
-        <div className="space-y-2.5">
-          {activeBigDeals.map((t) => (
-            <BigDealHomeCard key={t.id} todo={t} channel={isP4 ? 'p4' : 'plain'} onOpen={() => setDealPanelId(t.id)} />
-          ))}
-        </div>
-      )}
       <BigDealPanel todoId={dealPanelId} onClose={() => setDealPanelId(null)} />
 
       {/* 今日任务 ×「今日仪式」：竖屏上下排（并排时两栏都太挤，用户口径），宽屏才回双列 */}
@@ -928,6 +919,21 @@ export const Dashboard = () => {
         ) : (
           <div className="px-3 pb-3 space-y-2">
             {todayTodos.map((todo, i) => {
+              // BIG DEAL 并入列表内部（PRD_V2.6 §2.1 / 反馈 §9）：
+              // 它以前是今日任务**上方的独立板块**，同时又作为普通行落在列表里，
+              // 于是同一件事出现两次、且列表里那行点了没反应
+              // （completeTodo 对大事直接返回 null，"大事只能逐子步完成"）。
+              // 现在统一走聚合卡、排序已把它顶到最前，独立板块整段删除。
+              if (todo.isBigDeal) {
+                return (
+                  <BigDealHomeCard
+                    key={todo.id}
+                    todo={todo}
+                    channel={isP4 ? 'p4' : 'plain'}
+                    onOpen={() => setDealPanelId(todo.id)}
+                  />
+                );
+              }
               const progress = getTodayTodoProgress(todo.id);
               const attrName = settings.attributeNames[todo.attribute as keyof typeof settings.attributeNames];
               const pct = Math.min(100, (progress.count / progress.target) * 100);
