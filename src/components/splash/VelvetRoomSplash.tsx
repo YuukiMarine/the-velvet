@@ -2,7 +2,8 @@
  * 「天鹅绒房间」入场动画（PRD_V2.6 §4，v2.6.1 按实测反馈调校）。
  *
  * 分镜（时间以 s 倍率缩放，s 来自「开屏速度」设置）：
- *   ① 纵深建立：门在**极远处**（-3200px），两侧走廊导轨向它收敛
+ *   ① 纵深建立：门在**极远处**，纵深由两壁掠过的白色门板建立（导轨已删——
+ *      有门板之后它只剩「书页边」的观感）
  *   ② 灯带自远而近掠过 —— 严格分左右两列夹着门排布，形成纵深走廊
  *   ③ 镜头旋转着推进：场景整体 translateZ + rotate，门由小变大
  *   ④ 门先**看得见地**打开（52% 起转），门缝白光押后到 68% 才真正炸开
@@ -165,12 +166,15 @@ export function VelvetRoomSplash({ onComplete, s }: { onComplete: () => void; s:
           40%      { transform: scale(1.5) rotate(-8deg); opacity: 0.6; }
           72%      { transform: scale(2.1) rotate(-14deg); opacity: 0; }
         }
-        /* 前置擦除（0.25s）：黑底里擦出一条白色长矩形 → 转成靛色 → 交棒给门场景 */
+/* 前置擦除（0.25s）：黑底里擦出一条白色长矩形 → 转靛色 → 纵向撑开交棒。
+           ⚠️ 首版的末帧收成 #140e2e，与黑底几乎同色 —— "变色"这一步等于隐形，
+           用户反馈"没做"。现在末帧是**能看见的靛蓝**并靠 opacity 交棒，
+           纵向撑开也收敛到 9×（26× 太快，一帧就掠过看不清）。 */
         @keyframes vlv-preroll {
-          0%   { transform: scaleX(0) scaleY(1); background: #ffffff; }
-          46%  { transform: scaleX(1) scaleY(1); background: #ffffff; }
-          72%  { transform: scaleX(1) scaleY(1.9); background: #b9c8ff; }
-          100% { transform: scaleX(1) scaleY(26); background: #140e2e; }
+          0%   { transform: scaleX(0) scaleY(1); background: #ffffff; opacity: 1; }
+          38%  { transform: scaleX(1) scaleY(1); background: #ffffff; opacity: 1; }
+          62%  { transform: scaleX(1) scaleY(1.6); background: #8ea0ff; opacity: 1; }
+          100% { transform: scaleX(1) scaleY(9); background: #3b3f9e; opacity: 0; }
         }
         /* 上下两条大字划过（P3 展示字面：Arial Black + 描边空心） */
         @keyframes vlv-marquee-l { from { transform: translateX(-34%); } to { transform: translateX(6%); } }
@@ -223,10 +227,11 @@ export function VelvetRoomSplash({ onComplete, s }: { onComplete: () => void; s:
           aria-hidden
           className="pointer-events-none absolute left-0 right-0 top-1/2 -translate-y-1/2"
           style={{
-            height: 10,
+            height: 16,
             transformOrigin: 'center',
-            animation: 'vlv-preroll 250ms cubic-bezier(0.6,0,0.2,1) forwards',
-            willChange: 'transform, background',
+            boxShadow: '0 0 34px 6px rgba(220,232,255,0.65)',
+            animation: 'vlv-preroll 250ms cubic-bezier(0.55,0,0.25,1) forwards',
+            willChange: 'transform, background, opacity',
           }}
         />
       )}
@@ -241,26 +246,6 @@ export function VelvetRoomSplash({ onComplete, s }: { onComplete: () => void; s:
               willChange: 'transform',
             }}
           >
-            {/* 走廊导轨：四条向门收敛的长线。没有它，门就是一块浮在纯黑里的方片 */}
-            {[
-              { x: '6%', y: '18%', rot: 9 },
-              { x: '6%', y: '82%', rot: -9 },
-              { x: '94%', y: '18%', rot: -9 },
-              { x: '94%', y: '82%', rot: 9 },
-            ].map((r, i) => (
-              <span
-                key={`rail${i}`}
-                aria-hidden
-                className="absolute"
-                style={{
-                  left: r.x, top: r.y, width: '46%', height: 1.5,
-                  marginLeft: i >= 2 ? '-46%' : 0,
-                  transform: `rotate(${r.rot}deg) translateZ(-900px)`,
-                  background: 'linear-gradient(90deg, rgba(120,140,230,0) 0%, rgba(146,168,255,0.4) 70%, rgba(200,215,255,0.68) 100%)',
-                }}
-              />
-            ))}
-
             {/* ② 两壁的白色门板（图 2 形态）：同一面墙上等距排开，朝内 rotateY，迎面掠过。
                 横向位置放到**视口外缘**（-13%）：靠透视收敛进画面，
                 这样在最远端也不会压住中央那扇门（首版把门挡住了）。 */}
