@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { MouseEvent as ReactMouseEvent } from 'react';
 import { useAppStore } from '@/store';
 import { useNavigatorStore } from '@/store/navigator';
-import { triggerLightHaptic, triggerNavFeedback } from '@/utils/feedback';
+import { triggerNavFeedback, triggerWheelOpenFeedback } from '@/utils/feedback';
 import { springSnappy } from '@/utils/motion';
 import { zClass } from '@/utils/zIndex';
 import { RadialQuickNav } from '@/components/RadialQuickNav';
@@ -383,7 +383,8 @@ export const BottomNav = () => {
     holdTimer.current = window.setTimeout(() => {
       holdTimer.current = null;
       suppressClick.current = true;
-      triggerLightHaptic();
+      // 轮盘绽放音效 = 主题切换声（用户口径），触觉一并在内
+      triggerWheelOpenFeedback();
       setWheelOrigin({ x: cx, y: cy });
       setWheelOpen(true);
     }, 500);

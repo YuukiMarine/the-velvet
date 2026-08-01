@@ -37,12 +37,28 @@ const useTimeline = (steps: [number, () => void][]) => {
 };
 
 // ── P5：星形反撕（GSAP MorphSVG，同 StarTearOverlay 技法、方向相反）────────────
+// 「TAKE YOUR TIME」剪报拼贴（P5 装载语法）：大小写不一、逐字块贴、微旋错落。
+// null = 词间距；palette 索引显式给定——幕布字区是黑底，不排纯黑砖（黑上黑隐身）。
+const TYT_PALETTE = [
+  { bg: '#f0e9df', fg: '#c00008' },
+  { bg: '#c00008', fg: '#f8f8f6' },
+  { bg: '#9b9791', fg: '#050505' },
+  { bg: '#f0e9df', fg: '#050505' },
+] as const;
+const TYT_TILES: (readonly [string, number, number, number] | null)[] = [
+  // [字, 字号, 旋转deg, palette 序号]（总宽须 <430px，450 屏起点 3.5% 不裁尾）
+  ['T', 25, -6, 0], ['A', 20, 5, 1], ['k', 23, -3, 2], ['E', 19, 7, 3], null,
+  ['y', 20, -7, 1], ['O', 24, 4, 0], ['U', 19, -4, 3], ['r', 22, 6, 2], null,
+  ['T', 23, -5, 1], ['i', 18, 8, 0], ['M', 25, -4, 3], ['E', 20, 5, 2],
+];
+
 const StarTearAct = ({ midpoint, onDone }: ActProps) => {
   const curtainRef = useRef<HTMLDivElement>(null);
   const bar1Ref = useRef<HTMLDivElement>(null);
   const bar2Ref = useRef<HTMLDivElement>(null);
   const sliverRef = useRef<HTMLDivElement>(null);
   const stampRef = useRef<HTMLDivElement>(null);
+  const tytRef = useRef<HTMLDivElement>(null);
   const morphRef = useRef<SVGPathElement>(null);
 
   useEffect(() => {
@@ -72,6 +88,13 @@ const StarTearAct = ({ midpoint, onDone }: ActProps) => {
     tl.fromTo(sliverRef.current, { xPercent: 150 }, { xPercent: 0, duration: 0.2, ease: 'power3.out' }, 0.06);
     // 中心星印：纸白巨星带红芯砸下（盖在黑幕上，随幕布一起被反撕带走）
     tl.fromTo(stampRef.current, { scale: 0, rotation: -40 }, { scale: 1, rotation: -8, duration: 0.18, ease: 'back.out(2.2)' }, 0.14);
+    // 拼贴字逐块贴上（yPercent/opacity 单独 tween，静态 rotate 由 GSAP 原样保留）
+    tl.fromTo(
+      tytRef.current!.children,
+      { yPercent: 130, opacity: 0 },
+      { yPercent: 0, opacity: 1, duration: 0.15, stagger: 0.013, ease: 'back.out(2)' },
+      0.12,
+    );
     // 全遮时刻：切页（被幕布挡住）
     tl.call(midpoint, undefined, 0.26);
     // 幕布星形反撕离场：星 expanded → collapsed，可见幕布从四缘向中心缩没
@@ -99,6 +122,39 @@ const StarTearAct = ({ midpoint, onDone }: ActProps) => {
             <polygon points={STAMP_MID} fill="#0b0b12" />
             <polygon points={STAMP_CORE} fill="var(--color-primary)" />
           </svg>
+        </div>
+        {/* TAKE YOUR TIME 拼贴：星印下方沿撕纸斜率贴一行，随幕布反撕带走 */}
+        <div
+          ref={tytRef}
+          className="absolute flex items-end"
+          style={{ zIndex: 5, left: '3.5%', top: '66%', gap: 3, transform: 'rotate(-13deg)' }}
+        >
+          {TYT_TILES.map((t, i) =>
+            t === null ? (
+              <span key={i} aria-hidden style={{ width: 11 }} />
+            ) : (
+              <span
+                key={i}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: t[1] + 9,
+                  height: t[1] + 13,
+                  background: TYT_PALETTE[t[3]].bg,
+                  color: TYT_PALETTE[t[3]].fg,
+                  fontSize: t[1],
+                  fontWeight: 900,
+                  fontFamily: '"Arial Black", "Noto Sans SC", sans-serif',
+                  lineHeight: 1,
+                  transform: `rotate(${t[2]}deg)`,
+                  boxShadow: '2.5px 2.5px 0 rgba(0,0,0,0.5)',
+                }}
+              >
+                {t[0]}
+              </span>
+            ),
+          )}
         </div>
       </div>
       <svg width="0" height="0" className="absolute" aria-hidden>
@@ -175,6 +231,21 @@ const WedgeCutAct = ({ midpoint, onDone }: ActProps) => {
         <div className="absolute inset-0" style={{ background: '#fff6d0', clipPath: 'polygon(-40% 71%, 140% 39%, 140% 140%, -40% 140%)' }} />
         <div className="absolute inset-0" style={{ background: 'var(--ui-bg, #ffd900)', clipPath: 'polygon(-40% 73.5%, 140% 41.5%, 140% 140%, -40% 140%)' }} />
       </motion.div>
+      {/* 斜向彩虹缎带擦过：全遮期从左扫到右（signal sweep），在楔滑开露新页前淡尽。
+          rotate 放外层静态容器——motion 接管 transform，同元素上写死的 rotate 会被覆盖 */}
+      <div aria-hidden className="pointer-events-none absolute left-[-45%] right-[-45%]" style={{ top: '43%', height: 56, transform: 'rotate(-16deg)' }}>
+        <motion.div
+          className="absolute inset-y-0 left-0"
+          style={{
+            width: '40%',
+            background: `linear-gradient(180deg, ${P4_RAINBOW.map((c, i) => `${c} ${(i / 6) * 100}% ${((i + 1) / 6) * 100}%`).join(', ')})`,
+            boxShadow: '0 3px 0 rgba(19,19,19,0.35), 0 -3px 0 rgba(19,19,19,0.35)',
+          }}
+          initial={{ x: '-130%', opacity: 0 }}
+          animate={{ x: ['-130%', '40%', '230%', '340%'], opacity: [0, 1, 1, 0] }}
+          transition={{ duration: 0.4, delay: 0.14, times: [0, 0.22, 0.8, 1], ease: 'easeInOut' }}
+        />
+      </div>
       {/* 中心四角星：合拢后砸下，out 随黄楔方向甩出 */}
       <motion.div
         className="absolute left-1/2 top-1/2"

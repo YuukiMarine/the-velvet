@@ -222,6 +222,12 @@ export const triggerNavFeedback = (): void => {
   playThemeSound('nav');
 };
 
+/** 长按 ◈ 轮盘绽放：音效复用主题切换声（用户口径——弹菜单与切主题同声），附轻触觉。 */
+export const triggerWheelOpenFeedback = (): void => {
+  triggerLightHaptic();
+  playThemeSound('theme_switch');
+};
+
 /**
  * 预加载当前主题的所有音效。
  * 在用户首次交互后调用（如 App.tsx 的 pointerdown 事件），

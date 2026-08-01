@@ -503,7 +503,8 @@ export const TodosView = () => {
               p3
                 ? ''
                 : isP4
-                  ? 'rounded-full border-2 border-[#131313]/70 bg-[var(--p4-paper,#fff7b0)] text-[#131313]'
+                  // p4-onlight：纸条夜间仍是亮黄面，墨字必须钉死不随毯式翻白（白底白字，用户点名）
+                  ? 'p4-onlight rounded-full border-2 border-[#131313]/70 bg-[var(--p4-paper,#fff7b0)] text-[#131313]'
                   : p5
                     ? 'relative z-10 border-2 border-[#050505] bg-[#f0e9df] text-[#131313] shadow-[3px_3px_0_rgba(0,0,0,0.45)]'
                     : 'mx-3 mt-3 w-[calc(100%-1.5rem)] rounded-xl border border-dashed border-gray-300 text-gray-500 dark:border-gray-600 dark:text-gray-400'
