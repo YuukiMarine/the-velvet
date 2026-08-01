@@ -72,8 +72,21 @@ export const buildExportJson = async (): Promise<string> => {
     counselArchives: await db.counselArchives.toArray(),
     // 愿望清单（F3 v7 新增；本地全量备份始终包含，云端是否上传另由 syncWishesToCloud 控制）
     wishes: await db.wishes.toArray(),
+    // ── v8 补挂（FS7 审查）：以下几张表此前**导出端整段缺失**，是真漏不是设计 ──
+    //   · callingCards：导入端一直有 data.callingCards 分支，导出端却从没写过这个 key（两端不对称）
+    //   · ledgerEntries/budgets/assets：F5 财务数据按 PRD §F5.8 **永不上云**，
+    //     若备份也不带，用户就一条迁移路径都没有——换机/重装即全灭。
+    //     它只落本地文件、由用户自己保管，与"不上云"的承诺不冲突。
+    //   · navigatorPresets/navigatorMemos：黑猫人格与原子记忆默认 opt-out 不上云，同上理由。
+    //     （navigatorSessions/Messages 是 7 天即焚的聊天原文，与 counselSessions 同口径，故意不带。）
+    callingCards: await db.callingCards.toArray(),
+    ledgerEntries: await db.ledgerEntries.toArray(),
+    budgets: await db.budgets.toArray(),
+    assets: await db.assets.toArray(),
+    navigatorPresets: await db.navigatorPresets.toArray(),
+    navigatorMemos: await db.navigatorMemos.toArray(),
     _exportedAt: new Date().toISOString(),
-    _version: 7,
+    _version: 8,
   };
   const json = JSON.stringify(data);
   // 出口校验：确保产生的 JSON 字符串可被原样解析回来。

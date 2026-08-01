@@ -1,5 +1,5 @@
 ﻿import { create } from 'zustand';
-import { User, Attribute, Activity, Achievement, Skill, Settings, ThemeType, AttributeId, AttributeNamesKey, Todo, TodoCompletion, TodoStep, FateCandidate, BigDealClearPayload, PeriodSummary, SummaryPeriod, SummaryPromptPreset, WeeklyGoal, WeeklyGoalItem, Persona, Shadow, BattleState, TowerStratum, StratumNode, DailyDivination, LongReading, LongReadingFollowUp, Confidant, ConfidantEvent, ConfidantBuff, CounselSession, CounselMessage, CounselArchive, CallingCard, NotifSlot, LedgerEntry, Budget, SpendWorth, LedgerAsset, Wish, BattleArsenal, ChainKey, AffixKind } from '@/types';
+import { User, Attribute, Activity, Achievement, Skill, Settings, ThemeType, AttributeId, AttributeNamesKey, Todo, TodoCompletion, TodoStep, FateCandidate, BigDealClearPayload, PeriodSummary, SummaryPeriod, SummaryPromptPreset, WeeklyGoal, WeeklyGoalItem, Persona, Shadow, BattleState, TowerStratum, StratumNode, DailyDivination, LongReading, LongReadingFollowUp, Confidant, ConfidantEvent, ConfidantBuff, CounselSession, CounselMessage, CounselArchive, CallingCard, NotifSlot, LedgerEntry, Budget, SpendWorth, LedgerAsset, Wish, BattleArsenal, ChainKey, AffixKind, NavigatorPreset, NavigatorMemo } from '@/types';
 import { TAROT_BY_ID } from '@/constants/tarot';
 import { summarizeCounsel, type CounselContext, type CounselConfidantBrief, type CounselRecentEvent } from '@/utils/counselAI';
 import { db } from '@/db';
@@ -27,6 +27,27 @@ export function toLocalDateKey(date: Date = new Date()): string {
   const d = String(date.getDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
 }
+
+/**
+ * 本机全部业务表的**唯一真源**：resetAllData 清哪些、importData 快照/回滚哪些，都读这一份。
+ *
+ * 为什么要收成一份（FS7 审查）：这三处原本各写一遍表名，结果各漏各的——
+ * resetAllData 漏了黑猫四表（"清空所有数据"后猫还记得你），
+ * importData 的快照漏了记账三表（导入失败自动回滚时把整本账吃掉）。
+ * 新加表只要 db 里加了、这里跟一行，三个语义就同时正确。
+ *
+ * 与 services/sync.ts 的 SYNC_TABLES 是两码事：那份管"上不上云"，这份管"算不算本机数据"。
+ */
+export const ALL_LOCAL_TABLES = [
+  'users', 'attributes', 'activities', 'achievements', 'skills',
+  'dailyEvents', 'dailyDivinations', 'longReadings', 'callingCards',
+  'settings', 'todos', 'todoCompletions', 'summaries', 'weeklyGoals',
+  'personas', 'shadows', 'battleStates', 'strata',
+  'confidants', 'confidantEvents', 'counselSessions', 'counselArchives',
+  'ledgerEntries', 'budgets', 'assets', 'wishes',
+  // F6 黑猫：人格 / 原子记忆 / 会话与消息（聊天原文 7 天即焚，但"清空数据"必须清）
+  'navigatorPresets', 'navigatorMemos', 'navigatorSessions', 'navigatorMessages',
+] as const;
 
 /**
  * addConfidant 串行锁：防止两次并发调用绕过"22 arcana 唯一 / 在线同伴唯一"检查。
@@ -2031,32 +2052,15 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   resetAllData: async () => {
-    await db.users.clear();
-    await db.attributes.clear();
-    await db.activities.clear();
-    await db.achievements.clear();
-    await db.skills.clear();
-    await db.dailyEvents.clear();
-    await db.dailyDivinations.clear();
-    await db.longReadings.clear();
-    await db.callingCards.clear();
-    await db.settings.clear();
-    await db.todos.clear();
-    await db.todoCompletions.clear();
-    await db.summaries.clear();
-    await db.weeklyGoals.clear();
-    await db.personas.clear();
-    await db.shadows.clear();
-    await db.battleStates.clear();
-    await db.strata.clear();
-    await db.confidants.clear();
-    await db.confidantEvents.clear();
-    await db.counselSessions.clear();
-    await db.counselArchives.clear();
-    await db.ledgerEntries.clear();
-    await db.budgets.clear();
-    await db.assets.clear();
-    await db.wishes.clear();
+    for (const t of ALL_LOCAL_TABLES) {
+      await db.table(t).clear();
+    }
+    // 黑猫是独立 store：表清了，内存里的人格列表/消息流还留着，不重置会出现
+    //「数据已清空但猫还在接着上一句说」的错乱。
+    try {
+      const { useNavigatorStore } = await import('@/store/navigator');
+      useNavigatorStore.setState({ messages: [], presets: [], sessionId: null, phase: 'idle' });
+    } catch { /* 尚未加载过黑猫模块则无需重置 */ }
 
     set({
       user: null,
@@ -2239,30 +2243,14 @@ export const useAppStore = create<AppState>((set, get) => ({
       throw new Error(`JSON 格式错误：${msg}${context}`);
     }
 
-    // 2. 快照当前所有数据，用于失败时恢复
-    const snapshot = {
-      users: await db.users.toArray(),
-      attributes: await db.attributes.toArray(),
-      activities: await db.activities.toArray(),
-      achievements: await db.achievements.toArray(),
-      skills: await db.skills.toArray(),
-      settings: await db.settings.toArray(),
-      todos: await db.todos.toArray(),
-      todoCompletions: await db.todoCompletions.toArray(),
-      summaries: await db.summaries.toArray(),
-      weeklyGoals: await db.weeklyGoals.toArray(),
-      dailyDivinations: await db.dailyDivinations.toArray(),
-      longReadings: await db.longReadings.toArray(),
-      callingCards: await db.callingCards.toArray(),
-      personas: await db.personas.toArray(),
-      shadows: await db.shadows.toArray(),
-      battleStates: await db.battleStates.toArray(),
-      strata: await db.strata.toArray(),
-      confidants: await db.confidants.toArray(),
-      confidantEvents: await db.confidantEvents.toArray(),
-      counselArchives: await db.counselArchives.toArray(),
-      wishes: await db.wishes.toArray(),
-    };
+    // 2. 快照当前所有数据，用于失败时恢复。
+    //    ⚠️ 逐表手写会漂（FS7 审查实证：旧版快照漏了 ledgerEntries/budgets/assets，
+    //    而 resetAllData 会清它们 —— 于是"导入失败自动恢复"反而把整本账吃掉）。
+    //    这里改成对 ALL_LOCAL_TABLES 循环，与 resetAllData 共用同一份清单，从此不会再漏。
+    const snapshot: Record<string, unknown[]> = {};
+    for (const t of ALL_LOCAL_TABLES) {
+      snapshot[t] = await db.table(t).toArray();
+    }
 
     // 3. 写入新数据；若失败则从快照恢复
     try {
@@ -2439,35 +2427,54 @@ export const useAppStore = create<AppState>((set, get) => ({
         }
       }
 
+      // ── 备份 v8 补挂（FS7）：这几张表此前导出端整段缺失，导入端自然也没分支。
+      //    对旧备份（无这些 key）全部走 if 短路跳过，向后兼容。
+      // F5 心相记账：永不上云，备份文件是它唯一的迁移载体
+      if (data.ledgerEntries && Array.isArray(data.ledgerEntries)) {
+        for (const e of data.ledgerEntries as unknown[]) {
+          const le = e as LedgerEntry;
+          await db.ledgerEntries.put({ ...le, createdAt: new Date(le.createdAt) });
+        }
+      }
+      if (data.budgets && Array.isArray(data.budgets)) {
+        await db.budgets.bulkPut(data.budgets as Budget[]);
+      }
+      if (data.assets && Array.isArray(data.assets)) {
+        for (const a of data.assets as unknown[]) {
+          const as = a as LedgerAsset;
+          await db.assets.put({ ...as, createdAt: new Date(as.createdAt) });
+        }
+      }
+      // F6 黑猫：自定义人格 + 原子记忆（聊天原文不入备份，同 counselSessions 口径）
+      if (data.navigatorPresets && Array.isArray(data.navigatorPresets)) {
+        for (const p of data.navigatorPresets as unknown[]) {
+          const np = p as NavigatorPreset;
+          await db.navigatorPresets.put({ ...np, createdAt: new Date(np.createdAt) });
+        }
+      }
+      if (data.navigatorMemos && Array.isArray(data.navigatorMemos)) {
+        for (const m of data.navigatorMemos as unknown[]) {
+          const nm = m as NavigatorMemo;
+          await db.navigatorMemos.put({
+            ...nm,
+            createdAt: new Date(nm.createdAt),
+            lastRecalledAt: nm.lastRecalledAt ? new Date(nm.lastRecalledAt) : undefined,
+          });
+        }
+      }
+
       // 重新加载应用
       await get().initializeApp();
     } catch (error) {
       console.error('导入数据失败，正在恢复原有数据', error);
 
-      // 4. 恢复快照：先清空（部分写入可能已发生），再写入
+      // 4. 恢复快照：先清空（部分写入可能已发生），再按同一份表清单写回
       try {
         await get().resetAllData();
-        if (snapshot.users.length) await db.users.bulkAdd(snapshot.users);
-        if (snapshot.attributes.length) await db.attributes.bulkAdd(snapshot.attributes);
-        if (snapshot.activities.length) await db.activities.bulkAdd(snapshot.activities);
-        if (snapshot.achievements.length) await db.achievements.bulkAdd(snapshot.achievements);
-        if (snapshot.skills.length) await db.skills.bulkAdd(snapshot.skills);
-        if (snapshot.settings.length) await db.settings.bulkAdd(snapshot.settings);
-        if (snapshot.todos.length) await db.todos.bulkAdd(snapshot.todos);
-        if (snapshot.todoCompletions.length) await db.todoCompletions.bulkAdd(snapshot.todoCompletions);
-        if (snapshot.summaries.length) await db.summaries.bulkAdd(snapshot.summaries);
-        if (snapshot.personas.length) await db.personas.bulkAdd(snapshot.personas);
-        if (snapshot.shadows.length) await db.shadows.bulkAdd(snapshot.shadows);
-        if (snapshot.battleStates.length) await db.battleStates.bulkAdd(snapshot.battleStates);
-        if (snapshot.strata?.length) await db.strata.bulkAdd(snapshot.strata);
-        if (snapshot.dailyDivinations.length) await db.dailyDivinations.bulkAdd(snapshot.dailyDivinations);
-        if (snapshot.longReadings.length) await db.longReadings.bulkAdd(snapshot.longReadings);
-        if (snapshot.callingCards.length) await db.callingCards.bulkAdd(snapshot.callingCards);
-        if (snapshot.weeklyGoals.length) await db.weeklyGoals.bulkAdd(snapshot.weeklyGoals);
-        if (snapshot.confidants.length) await db.confidants.bulkAdd(snapshot.confidants);
-        if (snapshot.confidantEvents.length) await db.confidantEvents.bulkAdd(snapshot.confidantEvents);
-        if (snapshot.counselArchives.length) await db.counselArchives.bulkAdd(snapshot.counselArchives);
-        if (snapshot.wishes.length) await db.wishes.bulkAdd(snapshot.wishes);
+        for (const t of ALL_LOCAL_TABLES) {
+          const rows = snapshot[t];
+          if (rows && rows.length) await db.table(t).bulkAdd(rows as never[]);
+        }
         await get().initializeApp();
       } catch (restoreError) {
         console.error('恢复原有数据失败:', restoreError);
@@ -3083,6 +3090,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     await get().loadWishes();
     await get().loadCallingCards();
     })();
+    // 跑完即释放这把锁：它只用来防"同一时刻并发进入"，**不是**幂等守卫——
+    // 幂等由 settings.tasksMergeMigratedAt 负责。原来跑完不释放，
+    // 于是「云端拉回一份来自未迁移设备的数据」之后，本会话再也不会补迁移（FS7 审查）。
+    _tasksMergeMigrationPromise.finally(() => { _tasksMergeMigrationPromise = null; });
     return _tasksMergeMigrationPromise;
   },
 
@@ -3852,7 +3863,11 @@ ${activityLines || '（本期暂无记录）'}
     if (budget == null || get().getPeriodExpense(period) > budget) return false;
     const granted = await get().earnLedgerSp(10, 'flat');
     if (granted <= 0) return false; // 无战场→SP 没发，不烧名额、不弹横幅（M1）
-    await get().updateSettings({ ledgerBudgetBonusMonths: [...(s.ledgerBudgetBonusMonths ?? []), period] });
+    // 名额数组必须在 await 之后**重读**再追加：earnLedgerSp 内部也写 settings，
+    // 拿 await 之前抓的 s 去展开就是一次 lost update，会把期间写进去的其它名额抹掉（FS7 审查）
+    const claimed = get().settings.ledgerBudgetBonusMonths ?? [];
+    if (claimed.includes(period)) return true; // 竞态下已被另一次调用记账，不重复追加
+    await get().updateSettings({ ledgerBudgetBonusMonths: [...claimed, period] });
     return true;
   },
 
@@ -3866,7 +3881,9 @@ ${activityLines || '（本期暂无记录）'}
     if (saved < b.savingsGoal) return null; // 未达成挑战
     const granted = await get().earnLedgerSp(10, 'flat');
     if (granted <= 0) return null; // 无战场→不发不烧名额（M1）
-    await get().updateSettings({ ledgerChallengeWonMonths: [...(s.ledgerChallengeWonMonths ?? []), period] });
+    const won = get().settings.ledgerChallengeWonMonths ?? []; // 同上：await 之后重读再追加
+    if (won.includes(period)) return saved;
+    await get().updateSettings({ ledgerChallengeWonMonths: [...won, period] });
     return saved;
   },
 
@@ -4038,8 +4055,10 @@ ${activityLines || '（本期暂无记录）'}
     const newRecord = shadow ? {
       shadowName: isAbyss ? `${shadow.name}（回廊第${stratum!.abyssRing}环）` : shadow.name,
       level: shadow.level,
-      breachDate: new Date(shadow.createdAt).toISOString().slice(0, 10),
-      defeatDate: new Date().toISOString().slice(0, 10),
+      // 用本地日期口径（toLocalDateKey），不要 toISOString().slice —— 那是 UTC：
+      // 东八区凌晨 0–8 点击破，档案里会写成"昨天"（FS7 审查；全站其余日期都走这个函数）
+      breachDate: toLocalDateKey(new Date(shadow.createdAt)),
+      defeatDate: toLocalDateKey(),
       daysElapsed: Math.max(1, Math.floor((Date.now() - new Date(shadow.createdAt).getTime()) / 86400000)),
       description: shadow.description,
       affixes: shadow.affixes,

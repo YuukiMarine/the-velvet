@@ -355,7 +355,21 @@ export const pushAll = async (): Promise<void> => {
     const appSettings = useAppStore.getState().settings;
     const includeApiKey = appSettings.syncCloudApiKey !== false; // 默认上传；开关显式关了才剔除
     for (const key of SYNC_TABLES) {
-      if (skipSet.has(key)) continue; // 用户选择不上传该表
+      if (skipSet.has(key)) {
+        // 用户选择不上传该表。若云端还留着**上次开着开关时**推上去的那份，就顺手删掉——
+        // 否则「关掉开关」只是停止继续上传，历史数据永远躺在服务器上，
+        // 与同步隐私面板给用户的承诺（这类数据不出本机）对不上（FS7 审查）。
+        const staleId = existingByKey.get(key);
+        if (staleId) {
+          try {
+            await pb.collection('user_data').delete(staleId);
+            existingByKey.delete(key);
+          } catch (e) {
+            console.warn('[velvet-sync] push: 清理已关闭分类的云端残留失败', key, e);
+          }
+        }
+        continue;
+      }
       let rows = await db.table(key).toArray();
       // 隐私豁免：confidants 的 customAvatarDataUrl 字段只保留在本地，不上云
       if (key === 'confidants') {
@@ -517,6 +531,14 @@ export const pullAll = async (): Promise<void> => {
       }
       if (!Array.isArray(rows)) continue;
 
+      // settings 是单行表，云端拿回空数组只可能是异常（推送时本地就是空的 / 记录被截断）。
+      // 这时若照常"清空后写入"，本地设置会被整行抹掉——连永不上云的背景图与 API Key
+      // 都一起没了（回填逻辑只在非空数组的第 0 行上跑）。宁可跳过这一张。
+      if (key === 'settings' && rows.length === 0) {
+        console.warn('[velvet-sync] pull: 云端 settings 为空数组，跳过覆盖以保护本地设置');
+        continue;
+      }
+
       // 清空后整体写入，实现覆盖
       const table = db.table(key as SyncKey);
 
@@ -550,8 +572,7 @@ export const pullAll = async (): Promise<void> => {
         }
       }
 
-      await table.clear();
-      if (rows.length) {
+      {
         let toWrite = rows as Array<Record<string, unknown>>;
         if (localAvatarById) {
           toWrite = toWrite.map(r => {
@@ -587,7 +608,15 @@ export const pullAll = async (): Promise<void> => {
             return merged;
           });
         }
-        await table.bulkAdd(toWrite as never[]);
+        // 「清空 + 整表写入」必须在同一个事务里（FS7 审查）：
+        // 原来是 clear() 后再 bulkAdd()，中间任何一步失败——重复主键、
+        // 移动端写到一半 QuotaExceeded、Dexie 被浏览器掐断——都会让这张表**停在空表**，
+        // 而外层只是把状态置成「拉取失败」。用户看到的是"同步失败"，实际本地已经被清了。
+        // 放进 rw 事务后，抛错即整体回滚，本地维持拉取前的样子。
+        await db.transaction('rw', table, async () => {
+          await table.clear();
+          if (toWrite.length) await table.bulkAdd(toWrite as never[]);
+        });
       }
       tablesRewritten++;
       totalRowsWritten += rows.length;
@@ -602,6 +631,13 @@ export const pullAll = async (): Promise<void> => {
 
     // 重载 Zustand in-memory 状态
     await useAppStore.getState().initializeApp();
+    // 拉回来的可能是**未做过任务×终端合并迁移**的老设备数据（settings.tasksMergeMigratedAt 也被一起覆盖了），
+    // 这里补跑一次；已迁移则读到标记瞬时返回。不补的话要等下次冷启动才自愈（FS7 审查）。
+    try {
+      await useAppStore.getState().runTasksMergeMigration();
+    } catch (e) {
+      console.warn('[velvet-sync] pull: tasks-merge 迁移补跑失败，下次启动续跑', e);
+    }
 
     const now = new Date();
     saveLastSync(now);
@@ -705,10 +741,17 @@ export const computeSyncDiff = async (): Promise<SyncDiff | null> => {
     }
   }
 
+  // ⚠️ 必须套用与 push/pull 相同的豁免集（FS7 审查发现的真漏）：
+  // 不套的话，任何"本地有、按用户意愿故意不上云"的表（愿望 / 黑猫记忆 / 用户自选排除的分类）
+  // 都会算成「本地 N 条 vs 云端 0 条」，直接把 significant 顶成 true——后果有两层：
+  //   ① trySyncInBackground 从此**永远不推送**，只反复弹「条目差异」，后台自动备份等于废掉；
+  //   ② 用户在「检查条目差异」里看到一排 0，像是云端把数据弄丢了，实际是自己关了开关。
+  const skipSet = getSkipSet();
   const tables: SyncTableDiff[] = [];
   let localTotal = 0;
   let cloudTotal = 0;
   for (const key of SYNC_TABLES) {
+    if (skipSet.has(key)) continue; // 这张表两边本就不该一致，不参与比对
     const localCount = await db.table(key).count();
     let cloudCount = 0;
     const cloudVal = cloudByKey.get(key);
