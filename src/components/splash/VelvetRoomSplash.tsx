@@ -24,28 +24,37 @@ import { useBoldness } from '@/utils/boldness';
 const TRAVEL_SEC = 3.0;
 
 /**
- * 灯带：**严格分左右两列**夹着门。
- * 首版是满宽横条随机散落，读起来像杂乱的划痕而不是走廊灯——
- * 现在每根都锚在离中轴固定距离的一侧，长度收到 22%，纵向均匀铺开，
- * 于是它们在透视里自然收敛成两道向门延伸的光轨。
+ * 走廊两侧的**白色门板**（参考图 2：天鹅绒房间长廊里立在两壁的一扇扇白门）。
+ *
+ * 首版是细长光带，读起来像划痕；这版换成有体积的门板——
+ * 立在左右两壁、朝内微转，随镜头由远而近掠过。
+ * **不做 opacity 衰减**（用户口径）：它们就是实体的门，不是会淡出的光，
+ * 掠出视锥即离场，靠 3D 裁切收尾而不是靠变透明。
  */
-const LIGHT_BANDS = Array.from({ length: 12 }, (_, i) => {
+const SIDE_DOORS = Array.from({ length: 10 }, (_, i) => {
   const side = i % 2 === 0 ? 'left' : 'right';
-  const row = Math.floor(i / 2);          // 0..5，纵向六档
+  const slot = Math.floor(i / 2);         // 0..4，纵深五档
   return {
     side: side as 'left' | 'right',
-    top: 14 + row * 13.5,
-    delay: (i * 0.23) % TRAVEL_SEC,
-    h: row % 3 === 0 ? 4 : 2.5,
+    // 越靠后的门离中轴越近（透视收敛），高度也略矮
+    inset: 3 + slot * 1.6,
+    h: 46 - slot * 3.5,
+    delay: (i * 0.31) % TRAVEL_SEC,
   };
 });
 
-/** 开门瞬间背景里闪的十字星（PRD 反馈 §5）：位置固定、闪烁靠 delay 错开 */
-const CROSS_STARS = Array.from({ length: 10 }, (_, i) => ({
-  left: [12, 78, 26, 88, 8, 66, 40, 92, 20, 72][i],
-  top: [18, 26, 72, 62, 46, 12, 84, 38, 58, 90][i],
-  size: 8 + (i % 3) * 5,
-  delay: (i * 0.19) % 1.4,
+/**
+ * 开门瞬间背景里闪的**四角星**（PRD 反馈 §5）。
+ * 首版用两条交叉线性渐变画，出来是个规规矩矩的「+」——
+ * 要的是四角星：四条尖角向外收细，外加一圈放射状光晕。
+ * 形状用 clip-path 的八点多边形（四个长尖 + 四个内凹腰），光晕用 drop-shadow 叠。
+ */
+const STAR_CLIP = 'polygon(50% 0%, 58% 42%, 100% 50%, 58% 58%, 50% 100%, 42% 58%, 0% 50%, 42% 42%)';
+const CROSS_STARS = Array.from({ length: 12 }, (_, i) => ({
+  left: [12, 78, 26, 88, 8, 66, 40, 92, 20, 72, 34, 58][i],
+  top: [18, 26, 72, 62, 46, 12, 84, 38, 58, 90, 8, 78][i],
+  size: 14 + (i % 3) * 9,
+  delay: (i * 0.17) % 1.4,
 }));
 
 /** 收尾漂浮的尘埃 */
@@ -58,11 +67,17 @@ const DUST = Array.from({ length: 16 }, (_, i) => ({
 
 export function VelvetRoomSplash({ onComplete, s }: { onComplete: () => void; s: number }) {
   const anim = useBoldness();
-  const [phase, setPhase] = useState<'travel' | 'flood' | 'title'>(anim ? 'travel' : 'title');
+  const [phase, setPhase] = useState<'preroll' | 'travel' | 'flood' | 'title'>(anim ? 'preroll' : 'title');
   const doneRef = useRef(false);
 
   const skip = () => setPhase((p) => (p === 'title' ? p : 'title'));
 
+  // 前置擦除：0.25s（用户口径），不随速度倍率拉长——它是"起手式"，长了就拖沓
+  useEffect(() => {
+    if (phase !== 'preroll') return;
+    const t = setTimeout(() => setPhase('travel'), 250);
+    return () => clearTimeout(t);
+  }, [phase]);
   useEffect(() => {
     if (phase !== 'travel') return;
     const t = setTimeout(() => setPhase('flood'), TRAVEL_SEC * 1000 * s);
@@ -90,12 +105,11 @@ export function VelvetRoomSplash({ onComplete, s }: { onComplete: () => void; s:
       style={{ transform: 'translateZ(0)', backfaceVisibility: 'hidden', contain: 'strict' }}
     >
       <style>{`
-        /* 灯带：极远 → 掠过镜头后方。只有 transform/opacity，交给合成器 */
-        @keyframes vlv-band {
-          0%   { transform: translateZ(-3400px) scaleX(0.5); opacity: 0; }
-          16%  { opacity: 0.95; }
-          84%  { opacity: 0.8; }
-          100% { transform: translateZ(700px) scaleX(1.5); opacity: 0; }
+/* 侧门板：极远 → 掠过镜头。**全程 opacity 1，不衰减**（用户口径：
+           它们是实体的门，不是会淡出的光；掠出视锥即离场） */
+        @keyframes vlv-sidedoor {
+          from { transform: translateZ(-3400px); }
+          to   { transform: translateZ(780px); }
         }
         /* 镜头推进：场景整体压向观众并缓缓旋转 */
         @keyframes vlv-dolly {
@@ -104,17 +118,24 @@ export function VelvetRoomSplash({ onComplete, s }: { onComplete: () => void; s:
         }
         /* 门：从**极远处**（-3200）放大到贴脸。实测反馈：起点要再靠后很多 */
         @keyframes vlv-door {
-          0%   { transform: translateZ(-3200px); }
+          0%   { transform: translateZ(-4200px); }
           100% { transform: translateZ(180px); }
         }
         /* 门扇：52% 起转 —— 比首版(58%)提前，且白光押后，于是"开门"这一下真的看得见 */
         @keyframes vlv-leaf-l { 0%, 52% { transform: rotateY(0deg); } 100% { transform: rotateY(-104deg); } }
         @keyframes vlv-leaf-r { 0%, 52% { transform: rotateY(0deg); } 100% { transform: rotateY(104deg); } }
-        /* 门缝白光：68% 之前只是门中央一条克制的亮缝，之后才真正炸开 */
+/* 门缝白光：**关键帧与门扇逐帧对齐**。
+           首版是一团糊在门中间不动的高光（用户上报"有点好笑"）——
+           根因是它只在最后 32% 才开始变宽，前面 68% 都停在同一个 scaleX 上、
+           而且底纹是个大范围 radial 模糊团，看不出"缝"的形状。
+           现在：52% 门扇起转，缝光就同步开始变宽变白，一路推到满屏，
+           曲线与 leaf 同款（linear 段更长），于是"门缝随开门张大"是连续可见的。 */
         @keyframes vlv-slit {
-          0%      { transform: scaleX(0.05); opacity: 0.45; }
-          68%     { transform: scaleX(0.16); opacity: 0.7; }
-          100%    { transform: scaleX(1); opacity: 1; }
+          0%   { transform: scaleX(0.035); opacity: 0.5;  filter: brightness(0.75); }
+          52%  { transform: scaleX(0.05);  opacity: 0.62; filter: brightness(0.9); }
+          70%  { transform: scaleX(0.30);  opacity: 0.85; filter: brightness(1.25); }
+          86%  { transform: scaleX(0.62);  opacity: 0.95; filter: brightness(1.6); }
+          100% { transform: scaleX(1);     opacity: 1;    filter: brightness(2.1); }
         }
         /* 背景星尘：极缓慢的整体漂移，给"空间是活的"这个底噪 */
         @keyframes vlv-drift {
@@ -122,19 +143,32 @@ export function VelvetRoomSplash({ onComplete, s }: { onComplete: () => void; s:
           50%  { transform: translate3d(-1.5%, 1.2%, 0); }
           100% { transform: translate3d(0,0,0); }
         }
-        /* 十字星闪烁 */
+/* 四角星闪烁（本体）+ 放射光晕（外圈，转速略慢形成层次） */
         @keyframes vlv-twinkle {
-          0%, 100% { transform: scale(0.35) rotate(0deg); opacity: 0; }
-          45%      { transform: scale(1) rotate(12deg); opacity: 0.95; }
-          70%      { transform: scale(0.8) rotate(18deg); opacity: 0.4; }
+          0%, 100% { transform: scale(0.2) rotate(0deg); opacity: 0; }
+          40%      { transform: scale(1) rotate(10deg); opacity: 1; }
+          72%      { transform: scale(0.78) rotate(16deg); opacity: 0.45; }
+        }
+        @keyframes vlv-rays {
+          0%, 100% { transform: scale(0.4) rotate(0deg); opacity: 0; }
+          40%      { transform: scale(1.5) rotate(-8deg); opacity: 0.6; }
+          72%      { transform: scale(2.1) rotate(-14deg); opacity: 0; }
+        }
+        /* 前置擦除（0.25s）：黑底里擦出一条白色长矩形 → 转成靛色 → 交棒给门场景 */
+        @keyframes vlv-preroll {
+          0%   { transform: scaleX(0) scaleY(1); background: #ffffff; }
+          46%  { transform: scaleX(1) scaleY(1); background: #ffffff; }
+          72%  { transform: scaleX(1) scaleY(1.9); background: #b9c8ff; }
+          100% { transform: scaleX(1) scaleY(26); background: #140e2e; }
         }
         /* 上下两条大字划过（P3 展示字面：Arial Black + 描边空心） */
         @keyframes vlv-marquee-l { from { transform: translateX(-34%); } to { transform: translateX(6%); } }
         @keyframes vlv-marquee-r { from { transform: translateX(6%); }  to { transform: translateX(-34%); } }
-        .vlv-band {
-          position: absolute; width: 22%; border-radius: 999px;
-          background: linear-gradient(90deg, rgba(120,150,255,0) 0%, rgba(196,214,255,0.98) 50%, rgba(255,255,255,0) 100%);
-          will-change: transform, opacity;
+.vlv-sidedoor {
+          position: absolute;
+          background: linear-gradient(180deg, #ffffff 0%, #f2f6ff 62%, #d8e3ff 100%);
+          box-shadow: 0 0 26px rgba(190,210,255,0.5);
+          will-change: transform;
         }
         .vlv-marquee {
           white-space: nowrap; font-size: clamp(4.2rem, 20vw, 12rem); font-weight: 900; font-style: italic;
@@ -171,6 +205,21 @@ export function VelvetRoomSplash({ onComplete, s }: { onComplete: () => void; s:
         style={{ background: 'radial-gradient(ellipse at 50% 48%, transparent 32%, rgba(3,2,10,0.72) 78%)' }}
       />
 
+      {/* ⓪ 前置擦除（0.25s）：黑底里横向擦出一条白色长矩形 → 转靛色 → 纵向撑开交棒给门场景。
+          它是整段动画的"起手式"：先给一个干净的白，再从白里长出这个空间。 */}
+      {phase === 'preroll' && (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute left-0 right-0 top-1/2 -translate-y-1/2"
+          style={{
+            height: 10,
+            transformOrigin: 'center',
+            animation: 'vlv-preroll 250ms cubic-bezier(0.6,0,0.2,1) forwards',
+            willChange: 'transform, background',
+          }}
+        />
+      )}
+
       {traveling && (
         <div className="absolute inset-0" style={{ perspective: 900, perspectiveOrigin: '50% 48%' }}>
           <div
@@ -201,22 +250,26 @@ export function VelvetRoomSplash({ onComplete, s }: { onComplete: () => void; s:
               />
             ))}
 
-            {/* ② 灯带：左右两列夹着门 */}
-            {LIGHT_BANDS.map((b, i) => (
+            {/* ② 两壁的白色门板（图 2 参考形态）：立在左右墙上、朝内微转，随镜头掠过 */}
+            {SIDE_DOORS.map((d, i) => (
               <span
                 key={i}
                 aria-hidden
-                className="vlv-band"
+                className="vlv-sidedoor"
                 style={{
-                  top: `${b.top}%`,
-                  height: b.h,
-                  [b.side]: '7%',
-                  animation: `vlv-band ${TRAVEL_SEC * 0.92 * s}s linear ${b.delay * s}s infinite`,
+                  [d.side]: `${d.inset}%`,
+                  top: `${50 - d.h / 2}%`,
+                  width: '11%',
+                  height: `${d.h}%`,
+                  // 朝走廊内侧转 —— 左壁的门右转、右壁的门左转，形成"两侧对开"的观感
+                  transformOrigin: d.side === 'left' ? 'right center' : 'left center',
+                  animation: `vlv-sidedoor ${TRAVEL_SEC * 0.95 * s}s linear ${d.delay * s}s infinite`,
+                  rotate: `${d.side === 'left' ? -16 : 16}deg`,
                 } as CSSProperties}
               />
             ))}
 
-            {/* ⑤ 开门瞬间的十字星（travel 后段才浮现） */}
+            {/* ⑤ 开门瞬间的四角星：本体 clip-path 八点星 + 外圈放射光晕，两层转速不同 */}
             {CROSS_STARS.map((st, i) => (
               <span
                 key={`st${i}`}
@@ -225,14 +278,29 @@ export function VelvetRoomSplash({ onComplete, s }: { onComplete: () => void; s:
                 style={{
                   left: `${st.left}%`, top: `${st.top}%`, width: st.size, height: st.size,
                   transform: 'translateZ(-260px)',
-                  animation: `vlv-twinkle ${1.5 * s}s ease-in-out ${(T * 0.52 + st.delay * s)}s infinite`,
-                  background:
-                    'linear-gradient(to bottom, transparent 44%, rgba(255,255,255,0.95) 50%, transparent 56%),'
-                    + 'linear-gradient(to right, transparent 44%, rgba(255,255,255,0.95) 50%, transparent 56%)',
-                  filter: 'drop-shadow(0 0 4px rgba(200,215,255,0.9))',
-                  willChange: 'transform, opacity',
                 }}
-              />
+              >
+                {/* 放射光晕 */}
+                <span
+                  className="absolute inset-0"
+                  style={{
+                    background: 'radial-gradient(circle, rgba(255,255,255,0.85) 0%, rgba(190,212,255,0.35) 34%, transparent 70%)',
+                    animation: `vlv-rays ${1.7 * s}s ease-out ${(T * 0.5 + st.delay * s)}s infinite`,
+                    willChange: 'transform, opacity',
+                  }}
+                />
+                {/* 星本体 */}
+                <span
+                  className="absolute inset-0"
+                  style={{
+                    background: 'linear-gradient(180deg, #ffffff 0%, #dbe6ff 100%)',
+                    clipPath: STAR_CLIP,
+                    filter: 'drop-shadow(0 0 6px rgba(200,220,255,0.95))',
+                    animation: `vlv-twinkle ${1.5 * s}s ease-in-out ${(T * 0.5 + st.delay * s)}s infinite`,
+                    willChange: 'transform, opacity',
+                  }}
+                />
+              </span>
             ))}
 
             {/* ①③④ 门 */}
