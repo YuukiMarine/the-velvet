@@ -1165,3 +1165,17 @@ html[data-ios-standalone="true"] {
 :root.dark[data-ui-channel="p4"] .p4-onlight :is(.text-gray-400, .text-gray-500, .text-gray-600, .dark\:text-gray-400, .dark\:text-gray-500, [class*="text-[#131313]/"]) {
   color: rgba(19, 19, 19, 0.66) !important;
 }
+
+/* ── 红 · .p5-onpaper：p5-reskin 毯把弹窗面板映成纸白，而红主题的 dark 语境让
+   dark:text-* 系漂白 → 白纸白字（羁绊·结识同伴表单等）。纸上定向压墨，不分明暗恒生效。 */
+:root[data-ui-channel="p5"] .p5-onpaper :is(.text-gray-900, .text-gray-800, .text-gray-700, .dark\:text-white, .dark\:text-gray-100, .dark\:text-gray-200) {
+  color: #131313 !important;
+}
+:root[data-ui-channel="p5"] .p5-onpaper :is(.text-gray-600, .text-gray-500, .text-gray-400, .dark\:text-gray-300, .dark\:text-gray-400, .dark\:text-gray-500) {
+  color: rgba(19, 19, 19, 0.62) !important;
+}
+/* 表单输入面同步回纸色（dark:bg-gray-800 在纸白面板里是突兀暗块） */
+:root[data-ui-channel="p5"] .p5-onpaper :is(.dark\:bg-gray-800, .dark\:bg-gray-900) {
+  background-color: #ffffff !important;
+  border-color: rgba(19, 19, 19, 0.25) !important;
+}

@@ -84,6 +84,7 @@ export function ConfidantCreateModal({ isOpen, onClose, onCreated, onPickOnline 
   // P3R（蓝频道，p3-modal-08 稿）：标题斜体 / 选择卡平行四边形 / 下一步蓝斜钮
   const createChannel = useUiChannel();
   const p3 = createChannel === 'p3';
+  const p5 = createChannel === 'p5';
   // P4：黄频道整壳换奶油纸 + 墨色硬影 + 衬线大标题（原来只有 p3 分支，黄主题下
   // 还是白底圆角灰字的通用后台件，跟纯黄舞台完全不搭）
   const p4 = createChannel === 'p4';
@@ -258,7 +259,7 @@ export function ConfidantCreateModal({ isOpen, onClose, onCreated, onPickOnline 
           animate={{ scale: 1, opacity: 1 }}
           exit={{ scale: 0.95, opacity: 0 }}
           transition={{ type: 'spring', damping: 22, stiffness: 280 }}
-          className={`w-full max-w-md max-h-[92vh] overflow-y-auto ${p4 ? 'p4-onbright' : 'bg-white dark:bg-gray-900 rounded-3xl shadow-2xl'}`}
+          className={`w-full max-w-md max-h-[92vh] overflow-y-auto ${p4 ? 'p4-onbright' : `bg-white dark:bg-gray-900 rounded-3xl shadow-2xl${p5 ? ' p5-onpaper' : ''}`}`}
           style={p4 ? { background: '#fff9e3', borderRadius: 28, border: '2px solid #131313', boxShadow: '0 6px 0 rgba(19,19,19,0.35)' } : undefined}
           onClick={(e) => e.stopPropagation()}
         >
