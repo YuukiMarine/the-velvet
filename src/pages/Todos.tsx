@@ -511,7 +511,7 @@ export const TodosView = () => {
             style={p3 ? { clipPath: 'polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%)', background: 'var(--p3r-panel-glass, rgba(255,255,255,0.85))', color: P3R.ink, boxShadow: '0 4px 12px rgba(38,96,140,0.08)' } : undefined}
           >
             <span aria-hidden className={p5 ? 'text-[#c00008]' : isP4 ? 'text-[#f9a11b]' : 'text-primary'}>✦</span>
-            <span className="min-w-0 flex-1 truncate">不知道从哪开始？抽一张，只做这一件</span>
+            <span className="min-w-0 flex-1 truncate">不知道做什么好？命运会替你选择</span>
             <span aria-hidden className="opacity-50">›</span>
           </button>
           <div className={isP4 || p3 ? 'space-y-2' : p5 ? 'relative space-y-2 px-3 pb-3 pt-5' : 'p-3 space-y-2'}>
