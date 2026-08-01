@@ -4,7 +4,10 @@
  * 首页与任务页共用：只露总进度 + 未完成第一步，点击进二级面板（不在卡上直接打勾）。
  * channel 皮：p3=白斜面板+蓝 / p4=纸卡+黑描边 / p5=纸底+黑描边硬影 / plain=中性白卡。
  */
+import { useRef } from 'react';
 import { motion } from 'motion/react';
+import { useLongPress } from '@/utils/useLongPress';
+import { triggerLightHaptic } from '@/utils/feedback';
 import { toLocalDateKey } from '@/store';
 import type { Todo } from '@/types';
 
@@ -17,6 +20,21 @@ interface Props {
 }
 
 export const BigDealHomeCard = ({ todo, channel, onOpen, onMenu }: Props) => {
+  /**
+   * 长按 = 唤出管理菜单（PRD_V2.6 反馈 §9）。
+   * 卡上本来只有右上角一枚 ⋯ 按钮，而同列表里的**普通待办是长按出菜单**的
+   * （§4.6 交互协议）——同一个列表两种手势，肌肉记忆对不上。
+   * 现在两条路都通：⋯ 仍在（可发现性），长按补上（一致性）。
+   * 长按触发后吞掉随后的 click，否则松手会顺带把二级面板也打开。
+   */
+  const suppressClickRef = useRef(false);
+  const { pressing, bindings } = useLongPress(() => {
+    if (!onMenu) return;
+    suppressClickRef.current = true;
+    triggerLightHaptic();
+    onMenu();
+  }, { durationMs: 480 });
+
   const steps = todo.steps ?? [];
   const done = steps.filter(s => s.done).length;
   const total = steps.length;
@@ -63,7 +81,13 @@ export const BigDealHomeCard = ({ todo, channel, onOpen, onMenu }: Props) => {
     <motion.button
       type="button"
       whileTap={{ scale: 0.985 }}
-      onClick={onOpen}
+      animate={{ scale: pressing ? 0.97 : 1 }}
+      transition={{ type: 'spring', damping: 24, stiffness: 320 }}
+      {...(onMenu ? bindings : {})}
+      onClick={() => {
+        if (suppressClickRef.current) { suppressClickRef.current = false; return; }
+        onOpen();
+      }}
       className={shell}
       style={shellStyle}
     >
