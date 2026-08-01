@@ -33,12 +33,26 @@ const DOWN_CAP = 20;        // 下滑卡片位移上限（px）
 const UP_CAP = 15;          // 上滑橡皮筋位移上限（px）
 const STEP_X = 92;           // 横滑实时切卡步长（px/张，跟手一张张翻）
 
+/** 单张卡的祈愿状态（与列表视图 ConfidantCard 同口径，两处共用一个构造函数） */
+export interface AlbumPrayerState {
+  alreadyPrayed: boolean;
+  /** 对方今天为我祈过、我还没回 —— 回敬双方 +3 SP，值得高亮 */
+  waitingReciprocity: boolean;
+  pending: boolean;
+  onPray: () => void;
+}
+
 export interface ConfidantAlbumWallProps {
   confidants: Confidant[];
   onOpenDetail: (id: string) => void;
   onCreate: () => void;
   /** 达到同伴上限时隐藏空白牌 */
   canCreate: boolean;
+  /**
+   * 逐卡取祈愿状态；返回 undefined = 这张卡不是"在线同伴"，不显示祈愿。
+   * 专辑墙成为默认视图后祈愿入口一度整个消失（只有列表视图接了线），这条就是补回来的通道。
+   */
+  prayerFor?: (c: Confidant) => AlbumPrayerState | undefined;
 }
 
 /**
@@ -77,7 +91,11 @@ const BACK_SKIN = {
   },
 } as const;
 
-const CardBackFace = ({ c, onOpenDetail }: { c: Confidant; onOpenDetail: () => void }) => {
+const CardBackFace = ({ c, onOpenDetail, prayer }: {
+  c: Confidant;
+  onOpenDetail: () => void;
+  prayer?: AlbumPrayerState;
+}) => {
   const channel = useUiChannel();
   const sk = BACK_SKIN[channel];
   const p5 = channel === 'p5';
@@ -125,26 +143,55 @@ const CardBackFace = ({ c, onOpenDetail }: { c: Confidant; onOpenDetail: () => v
         <p className="mt-2 line-clamp-2 text-[11px] leading-relaxed" style={{ color: sk.advice }}>✦ {c.aiAdvice}</p>
       )}
 
-      <button
-        type="button"
-        // 拦住 pointerdown/up：卡墙手势在祖先 wall 上用 pointer 事件监听，
-        // 只 stopPropagation click 挡不住（翻转走 pointerup）——按钮会被翻回吞掉
-        onPointerDown={(e) => e.stopPropagation()}
-        onPointerUp={(e) => e.stopPropagation()}
-        onClick={(e) => {
-          e.stopPropagation();
-          onOpenDetail();
-        }}
-        className="mt-auto w-full py-2 text-xs font-black active:brightness-95"
-        style={{
-          background: sk.btnBg,
-          color: sk.btnInk,
-          borderRadius: p5 ? 0 : 8,
-          clipPath: channel === 'p3' ? slantClip(8) : p5 ? 'polygon(3px 0, 100% 2px, calc(100% - 3px) 100%, 0 calc(100% - 2px))' : undefined,
-        }}
-      >
-        查看档案 →
-      </button>
+      {/* 底部动作区。在线同伴 = 祈愿 + 档案两格；本地同伴 = 档案独占一行。
+          祈愿按钮的皮跟着 BACK_SKIN 走（p5 直角硬边 / p4 圆角墨框 / p3 斜切 / 中性圆角），
+          状态字直接写在按钮里——用户不必点开详情页才知道今天祈没祈过。 */}
+      <div className="mt-auto flex gap-1.5">
+        {prayer && (
+          <button
+            type="button"
+            onPointerDown={(e) => e.stopPropagation()}
+            onPointerUp={(e) => e.stopPropagation()}
+            onClick={(e) => { e.stopPropagation(); if (!prayer.alreadyPrayed && !prayer.pending) prayer.onPray(); }}
+            disabled={prayer.alreadyPrayed || prayer.pending}
+            aria-label={prayer.alreadyPrayed ? '今日已祈愿' : prayer.waitingReciprocity ? '回敬祈愿' : '为 Ta 祈愿'}
+            className="flex-1 py-2 text-[11px] font-black active:brightness-95 disabled:active:brightness-100"
+            style={{
+              // 已祈愿 = 描边留白态（不用 opacity 表达状态）；待回敬 = 强调色实心；常态 = 弱底描边
+              background: prayer.alreadyPrayed ? 'transparent' : prayer.waitingReciprocity ? sk.accent : 'transparent',
+              color: prayer.alreadyPrayed ? sk.sub : prayer.waitingReciprocity ? (p5 || channel === 'p4' ? sk.btnInk : '#ffffff') : sk.accent,
+              border: `${p5 ? 2 : 1}px solid ${prayer.alreadyPrayed ? sk.line : sk.accent}`,
+              borderRadius: p5 ? 0 : 8,
+              clipPath: channel === 'p3' ? slantClip(8) : p5 ? 'polygon(3px 0, 100% 2px, calc(100% - 3px) 100%, 0 calc(100% - 2px))' : undefined,
+            }}
+          >
+            {prayer.pending ? '祈愿中…'
+              : prayer.alreadyPrayed ? '今日已祈愿'
+              : prayer.waitingReciprocity ? '✦ 回敬祈愿'
+              : '✦ 祈愿'}
+          </button>
+        )}
+        <button
+          type="button"
+          // 拦住 pointerdown/up：卡墙手势在祖先 wall 上用 pointer 事件监听，
+          // 只 stopPropagation click 挡不住（翻转走 pointerup）——按钮会被翻回吞掉
+          onPointerDown={(e) => e.stopPropagation()}
+          onPointerUp={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpenDetail();
+          }}
+          className={`${prayer ? 'flex-1' : 'w-full'} py-2 text-xs font-black active:brightness-95`}
+          style={{
+            background: sk.btnBg,
+            color: sk.btnInk,
+            borderRadius: p5 ? 0 : 8,
+            clipPath: channel === 'p3' ? slantClip(8) : p5 ? 'polygon(3px 0, 100% 2px, calc(100% - 3px) 100%, 0 calc(100% - 2px))' : undefined,
+          }}
+        >
+          {prayer ? '档案 →' : '查看档案 →'}
+        </button>
+      </div>
     </div>
   );
 };
@@ -275,7 +322,7 @@ const WallScrubber = ({
   );
 };
 
-export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCreate }: ConfidantAlbumWallProps) => {
+export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCreate, prayerFor }: ConfidantAlbumWallProps) => {
   const wallChannel = useUiChannel();
   const isP4 = wallChannel === 'p4';
   const isP5 = wallChannel === 'p5';
@@ -525,7 +572,7 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
               {/* 背面（仅真实卡） */}
               {item !== 'add' && (
                 <div className="absolute inset-0" style={{ backfaceVisibility: 'hidden', transform: 'rotateY(180deg)' }}>
-                  <CardBackFace c={item} onOpenDetail={() => onOpenDetail(item.id)} />
+                  <CardBackFace c={item} onOpenDetail={() => onOpenDetail(item.id)} prayer={prayerFor?.(item)} />
                 </div>
               )}
             </motion.div>

@@ -194,6 +194,27 @@ export function Cooperation() {
     return () => window.removeEventListener('pointerdown', onDown);
   }, [menuOpen]);
 
+  /**
+   * 逐个同伴算祈愿状态。专辑墙与列表两个视图**共用这一个**构造函数——
+   * 以前这段逻辑内联在列表分支里，于是专辑墙（v2.5 起是默认视图）根本没有祈愿入口，
+   * 用户要祈愿得先切到列表或点进详情页。返回 undefined = 不是在线同伴，不显示按钮。
+   */
+  const buildPrayer = (c: typeof confidants[number]) => {
+    const isOnlineActive = c.source === 'online' && !c.archivedAt && !!c.linkedCloudUserId;
+    if (!isOnlineActive) return undefined;
+    const uid = c.linkedCloudUserId!;
+    return {
+      alreadyPrayed: hasPrayedToday(uid, todayPrayers),
+      waitingReciprocity: hasBeenPrayedByToday(uid, todayPrayers) && !hasPrayedToday(uid, todayPrayers),
+      pending: prayerInFlight === uid,
+      onQuickPray: () => {
+        const profile = c.linkedProfile;
+        if (!profile) return;
+        void executePrayer(profile);
+      },
+    };
+  };
+
   const visible = useMemo(() => {
     const pickOrder = (a: typeof confidants[number], b: typeof confidants[number]) => {
       // 在线 !archived > 离线 !archived > archived；同组内按创建时间倒序
@@ -708,23 +729,14 @@ export function Cooperation() {
                 onOpenDetail={(id) => setDetailId(id)}
                 onCreate={() => setCreateOpen(true)}
                 canCreate={remaining > 0 && filter !== 'archived'}
+                prayerFor={(c) => {
+                  const p = buildPrayer(c);
+                  return p ? { ...p, onPray: p.onQuickPray } : undefined;
+                }}
               />
             ) : (
             visible.map(c => {
-              const isOnlineActive = c.source === 'online' && !c.archivedAt && !!c.linkedCloudUserId;
-              const prayer = isOnlineActive
-                ? {
-                    alreadyPrayed: hasPrayedToday(c.linkedCloudUserId!, todayPrayers),
-                    waitingReciprocity: hasBeenPrayedByToday(c.linkedCloudUserId!, todayPrayers)
-                      && !hasPrayedToday(c.linkedCloudUserId!, todayPrayers),
-                    pending: prayerInFlight === c.linkedCloudUserId,
-                    onQuickPray: () => {
-                      const profile = c.linkedProfile;
-                      if (!profile) return;
-                      void executePrayer(profile);
-                    },
-                  }
-                : undefined;
+              const prayer = buildPrayer(c);
               return (
                 <motion.div
                   key={c.id}

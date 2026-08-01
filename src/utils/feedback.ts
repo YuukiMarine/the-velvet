@@ -21,6 +21,8 @@ const THEME_SOUNDS: Record<ThemeType, Record<FeedbackKind, string>> = {
 //   5. 降级：若 Web Audio API 不可用，回退到 new Audio()
 
 let _ctx: AudioContext | null = null;
+/** 总线限幅器：所有音效经它汇入 destination，见 getBus() 说明 */
+let _bus: DynamicsCompressorNode | null = null;
 // LRU 缓存：Map 按插入顺序保序，命中时移到队尾；超出上限时从队首淘汰。
 // 上限 48 够覆盖"4 主题 × 4 feedback + 战斗/同伴 所有音效"，且单文件约 100KB，最多占用 ~5MB。
 const _BUFFER_CACHE_MAX = 48;
@@ -47,6 +49,35 @@ function getContext(): AudioContext | null {
     return _ctx;
   } catch {
     return null;
+  }
+}
+
+/**
+ * 总线限幅器（v2.5 增益改造）。
+ *
+ * 用户反馈"音量开到最大还是不够响"。根因不是滑条，是**天花板**：
+ * 原来每个音源的 gain 被 clamp 到 1.0，而 1.0 只是"原样播放"——
+ * 素材本身录得偏轻，再怎么调也不会超过素材响度。
+ *
+ * Web Audio 的 GainNode 本来就允许 >1（数字增益），风险只有削顶失真。
+ * 所以这里在 destination 前串一个 DynamicsCompressor 当**软限幅**：
+ * 增益放开到 2.0，超出部分被压回来而不是硬削，听感是"更响"而不是"更破"。
+ * 参数取限幅器口径——高阈值、大压缩比、极快启动、几乎无膝。
+ */
+function getBus(ctx: AudioContext): AudioNode {
+  if (_bus) return _bus;
+  try {
+    const c = ctx.createDynamicsCompressor();
+    c.threshold.value = -6;   // 到 -6dBFS 才开始压
+    c.knee.value = 0;         // 硬拐点 = 限幅而非"温柔压缩"，不改变正常音量段的听感
+    c.ratio.value = 20;       // 20:1，越界部分基本被摁住
+    c.attack.value = 0.001;   // 1ms 起效，抓得住瞬态
+    c.release.value = 0.08;
+    c.connect(ctx.destination);
+    _bus = c;
+    return c;
+  } catch {
+    return ctx.destination; // 拿不到压缩器就直连（老 Safari），此时仍受 clamp 保护
   }
 }
 
@@ -118,7 +149,7 @@ async function playBuffered(src: string, volume: number): Promise<void> {
     const gainNode = ctx.createGain();
     gainNode.gain.value = volume;
     source.connect(gainNode);
-    gainNode.connect(ctx.destination);
+    gainNode.connect(getBus(ctx)); // 经限幅总线，而非直连 destination
 
     // 播放结束后断开节点，避免 AudioNode 泄漏（长会话下累计可至数百个）
     source.onended = () => {
@@ -166,18 +197,17 @@ const getVolume = (): number => {
   }
 };
 
-// ── 音量调档（v2.1）─────────────────────────────────────
-// 用户反馈现有音量普遍偏低，此处统一上调：
-//   · playThemeSound（主页/导航 / 主题切换 / 通用 success / level）：×1.5（+50%）
-//   · playSound（战斗、塔罗、Coop 等直接调用方）：×1.3（+30%）
-// 这两个倍率独立于用户在「设置 → 体验个性化 → 音效音量」滑条里设的总比例（getVolume()），
-// 也不绕过 isMuted() 静音；仅作为"基础响度"的修正系数。
-const THEME_SOUND_BOOST = 1.5;
-const SOUND_BOOST       = 1.3;
+// ── 音量调档（v2.5：在 v2.1 基础上再 +40%）───────────────
+// 用户反馈"开到最大依旧不够响"。这一轮做了两件事，缺一不可：
+//   ① 倍率各再 ×1.4：主题音 1.5→2.1、通用音 1.3→1.82
+//   ② 天花板从 1.0 抬到 2.0 —— 否则倍率会被 clamp 原地吃掉，改了等于没改。
+//      抬顶的安全垫是 getBus() 里的软限幅器：越界被压回来，不硬削、不破音。
+// 两个倍率独立于「设置 → 体验个性化 → 音效音量」滑条（getVolume()），也不绕过 isMuted()。
+const THEME_SOUND_BOOST = 2.1;
+const SOUND_BOOST       = 1.82;
 
-// 浏览器对 AudioBufferSourceNode 的 gain 没有上限（>1 会失真），
-// 这里 clamp 到 1.0，超出部分由用户自行降总音量来取舍。
-const clampVolume = (v: number) => Math.max(0, Math.min(1, v));
+/** 上限 2.0（数字增益，>1 靠总线限幅器兜底）；下限 0 */
+const clampVolume = (v: number) => Math.max(0, Math.min(2, v));
 
 // ── 公开 API ─────────────────────────────────────────────
 

@@ -12,6 +12,7 @@ import { useRipple } from '@/components/RippleEffect';
 import { AI_PROVIDERS, getProviderConfig, testAIConnection, fetchAvailableModels, type TestResult, type ApiProvider } from '@/utils/aiProviders';
 import { refreshAllProviderModels } from '@/utils/aiModelCatalog';
 import { ModelPickerSheet, type ModelPickerMode } from '@/components/ai/ModelPickerSheet';
+import { BufferedTextInput } from '@/components/ui/BufferedTextInput';
 import { Toggle } from '@/components/Toggle';
 import NotificationSettings from '@/components/NotificationSettings';
 import { NavigatorSettings } from '@/components/navigator/NavigatorSettings';
@@ -2422,10 +2423,9 @@ export const Settings = () => {
                                   </span>
                                   <span className="shrink-0 text-xs font-bold text-primary">选择模型 ›</span>
                                 </button>
-                                <input
-                                  type="text"
+                                <BufferedTextInput
                                   value={settings.summaryModel ?? ''}
-                                  onChange={e => { updateSettings({ summaryModel: e.target.value || undefined }); setApiTestStatus('idle'); setApiTestMessage(''); }}
+                                  onCommit={v => { updateSettings({ summaryModel: v || undefined }); setApiTestStatus('idle'); setApiTestMessage(''); }}
                                   placeholder={`留空 = 默认（${getProviderConfig(provider).defaultModel}）`}
                                   className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-primary"
                                 />
@@ -2450,10 +2450,9 @@ export const Settings = () => {
                                   </span>
                                   <span className="shrink-0 text-xs font-bold text-primary">选择模型 ›</span>
                                 </button>
-                                <input
-                                  type="text"
+                                <BufferedTextInput
                                   value={settings.navigatorModel ?? ''}
-                                  onChange={e => updateSettings({ navigatorModel: e.target.value || undefined })}
+                                  onCommit={v => updateSettings({ navigatorModel: v || undefined })}
                                   placeholder={`留空 = 跟随快速响应（${fastFallback}）`}
                                   className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-primary"
                                 />
@@ -2484,10 +2483,9 @@ export const Settings = () => {
                                   </span>
                                   <span className="shrink-0 text-xs font-bold text-primary">选择模型 ›</span>
                                 </button>
-                                <input
-                                  type="text"
+                                <BufferedTextInput
                                   value={settings.visionModel ?? ''}
-                                  onChange={e => updateSettings({ visionModel: e.target.value || undefined })}
+                                  onCommit={v => updateSettings({ visionModel: v || undefined })}
                                   placeholder="留空 = 不启用（如 qwen-vl-plus / gpt-5.4-mini）"
                                   className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-primary"
                                 />
@@ -2513,10 +2511,9 @@ export const Settings = () => {
                                   </span>
                                   <span className="shrink-0 text-xs font-bold text-primary">选择模型 ›</span>
                                 </button>
-                                <input
-                                  type="text"
+                                <BufferedTextInput
                                   value={settings.audioModel ?? ''}
-                                  onChange={e => updateSettings({ audioModel: e.target.value || undefined })}
+                                  onCommit={v => updateSettings({ audioModel: v || undefined })}
                                   placeholder="留空 = 不启用（如 whisper-1 / qwen3-asr-flash）"
                                   className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-primary"
                                 />

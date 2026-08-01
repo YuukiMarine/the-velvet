@@ -91,7 +91,7 @@ export const emptyDraft = (kind: NavigatorActionKind): NavigatorDraft => {
 export const ACTION_META: Record<NavigatorActionKind, { label: string; icon: string }> = {
   activity: { label: '记录活动', icon: '✍️' },
   todo: { label: '添加待办', icon: '📌' },
-  ledger: { label: '记一笔', icon: '💰' },
+  ledger: { label: '记账', icon: '💰' },
   completeTodo: { label: '完成任务', icon: '✅' },
   bigdeal: { label: '拆一件大事', icon: '◆' },
 };
