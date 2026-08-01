@@ -372,7 +372,7 @@ export function Cooperation() {
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: -4, scale: 0.96 }}
                   transition={{ duration: 0.15 }}
-                  className="absolute right-0 top-10 z-30 w-56 rounded-2xl overflow-hidden shadow-2xl border bg-white/95 dark:bg-gray-800/95 border-slate-400/35 dark:border-white/10"
+                  className={`absolute right-0 top-10 z-30 w-56 rounded-2xl overflow-hidden shadow-2xl border bg-white/95 dark:bg-gray-800/95 border-slate-400/35 dark:border-white/10${p5 ? ' p5-onpaper' : ''}`}
                   style={{
                     backdropFilter: 'blur(18px)',
                     WebkitBackdropFilter: 'blur(18px)',
