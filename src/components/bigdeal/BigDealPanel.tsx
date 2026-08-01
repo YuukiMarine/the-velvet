@@ -30,7 +30,9 @@ const deadlineLabel = (deadline?: string): { text: string; urgent: boolean } | n
 };
 
 export const BigDealPanel = ({ todoId, onClose }: Props) => {
-  const { todos, settings, completeTodoStep, undoTodoStep, addTodoStep, removeTodoStep, collapseBigDeal, decomposeBigDealAI } = useAppStore();
+  const { todos, settings, completeTodoStep, undoTodoStep, addTodoStep, removeTodoStep, collapseBigDeal, decomposeBigDealAI, rebuildBigDeal } = useAppStore();
+  const [rebuildAsk, setRebuildAsk] = useState(false);
+  const [rebuilding, setRebuilding] = useState(false);
   const todo = todoId ? todos.find(t => t.id === todoId) : undefined;
   const [newStep, setNewStep] = useState('');
   const [busyStepId, setBusyStepId] = useState<string | null>(null);
@@ -218,6 +220,56 @@ export const BigDealPanel = ({ todoId, onClose }: Props) => {
             >
               {collapsing ? '结算中…' : `收官 · 领取奖励（SP +${Math.min(20, steps.length * 3)}）`}
             </button>
+          )}
+
+          {/* 收官之后唯一还能做的事：重建（PRD_V2.6 §2.4）。
+              旧的"回退/撤销"路径已砍——它会把条目留在「全成但所有控件都 disabled」的僵死态。
+              重建 = 新立一条同名同步骤的全新大事，旧的原样归档留作历史。带二次确认。 */}
+          {cleared && (
+            rebuildAsk ? (
+              <div className="space-y-2 rounded-xl border border-amber-300/60 bg-amber-50 p-3 dark:border-amber-700/50 dark:bg-amber-900/15">
+                <p className="text-[12px] leading-relaxed text-amber-900 dark:text-amber-200">
+                  会新立一条同名同步骤的大事，子步全部重置为未完成；
+                  <b>当前这条原样归档</b>，已领的奖励和历史记录都不受影响。
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!todo || rebuilding) return;
+                      setRebuilding(true);
+                      try {
+                        await rebuildBigDeal(todo.id);
+                        triggerSuccessFeedback();
+                        setRebuildAsk(false);
+                        onClose();
+                      } finally {
+                        setRebuilding(false);
+                      }
+                    }}
+                    disabled={rebuilding}
+                    className="flex-1 rounded-lg bg-amber-500 py-2 text-[12px] font-black text-white disabled:opacity-50"
+                  >
+                    {rebuilding ? '重建中…' : '确认重建'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRebuildAsk(false)}
+                    className="flex-1 rounded-lg border border-amber-300 py-2 text-[12px] font-black text-amber-700 dark:border-amber-700 dark:text-amber-300"
+                  >
+                    算了
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setRebuildAsk(true)}
+                className="w-full rounded-xl border border-dashed border-gray-300 py-2.5 text-[12px] font-black text-gray-500 dark:border-gray-600 dark:text-gray-400"
+              >
+                ↻ 重建这件大事
+              </button>
+            )
           )}
         </div>
       )}

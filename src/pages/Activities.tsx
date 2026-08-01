@@ -1,6 +1,7 @@
 import { motion, AnimatePresence } from 'motion/react';
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { useAppStore, toLocalDateKey } from '@/store';
+import { WishMountPicker } from '@/components/wish/WishMountPicker';
 import { AttributeId, SummaryPeriod } from '@/types';
 import { SaveSuccessModal } from '@/components/SaveSuccessModal';
 import SummaryModal from '@/components/SummaryModal';
@@ -499,6 +500,8 @@ export const ActivitiesView = () => {
     knowledge: 0, guts: 0, dexterity: 0, kindness: 0, charm: 0
   });
   const [importantOnly, setImportantOnly] = useState(false);
+  /** 本次记录挂到哪个愿望（PRD_V2.6 §1.3），undefined = 不挂 */
+  const [wishMount, setWishMount] = useState<string | undefined>(undefined);
 
   // ---- AI 二次分析 ----
   // analyzedPoints 非 null 时（说明已经做过本地关键词分析），按钮文案切到 "AI 分析"
@@ -698,6 +701,7 @@ export const ActivitiesView = () => {
     const result = await addActivity(description, manualPoints, 'local', {
       important: importantOnly,
       date: backdateDate,
+      wishId: wishMount,
     });
     setUnlockHint(result.unlockHints);
     setModalBlocker(true);
@@ -706,6 +710,7 @@ export const ActivitiesView = () => {
     setAnalyzedPoints(null);
     setManualPoints({ knowledge: 0, guts: 0, dexterity: 0, kindness: 0, charm: 0 });
     setImportantOnly(false);
+    setWishMount(undefined);
     setShowInput(false);
     setBackdateTarget(null);
     setAiError(null);
@@ -1496,6 +1501,9 @@ export const ActivitiesView = () => {
             animate={{ opacity: 1, y: 0 }}
             className="mt-4 space-y-3"
           >
+            {/* 挂到愿望（PRD_V2.6 §1.3）：放在加点确认之后、保存之前——
+                此时用户已经确认"这件事值多少"，正是接着回答"它属于哪个远期目标"的位置 */}
+            <WishMountPicker value={wishMount} onChange={setWishMount} />
             {p3 ? (
               <SectionMark marker="tri" title="关键词分析" className="pb-1" />
             ) : (

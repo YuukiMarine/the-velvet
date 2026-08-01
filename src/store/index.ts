@@ -279,7 +279,7 @@ interface AppState {
   createUser: (name: string, attrNames?: Partial<import('@/types').AttributeNames>, blessingAttribute?: AttributeId) => Promise<void>;
   updateUser: (patch: Partial<Pick<User, 'name' | 'avatarDataUrl'>>) => Promise<void>;
   setTheme: (theme: ThemeType) => Promise<void>;
-  addActivity: (description: string, points: Record<string, number>, method: 'local' | 'todo' | 'battle', options?: { important?: boolean; date?: Date; category?: Activity['category']; bigDealId?: string }) => Promise<{ unlockHints: { achievements: number; skills: number }; activityId: string }>;
+  addActivity: (description: string, points: Record<string, number>, method: 'local' | 'todo' | 'battle', options?: { important?: boolean; date?: Date; category?: Activity['category']; bigDealId?: string; wishId?: string }) => Promise<{ unlockHints: { achievements: number; skills: number }; activityId: string }>;
   updateAttribute: (attributeId: string, points: number) => Promise<void>;
   unlockAchievement: (achievementId: string) => Promise<void>;
   unlockSkill: (skillId: string) => Promise<void>;
@@ -359,6 +359,14 @@ interface AppState {
   deleteWish: (id: string) => Promise<void>;
   /** 改素材状态（active/done/archived）；done/archived 落 archivedAt */
   setWishStatus: (id: string, status: Wish['status']) => Promise<void>;
+  /** 某个愿望「已完成相关任务」次数 = 挂了 wishId 的活动条数（V2.6 §1.2） */
+  getWishProgress: (wishId: string) => number;
+  /**
+   * 「愿望已实现」（V2.6 §1.4）：写 fulfilledAt + status='done'，
+   * 并把该愿望名下的子愿望与在途 BIG DEAL/待办一并归档（口径同 BIG DEAL 收官）。
+   * 返回结算屏要用的载荷；没有这条愿望则返回 null。
+   */
+  fulfillWish: (id: string) => Promise<{ title: string; timesLogged: number; archivedTodos: number } | null>;
   /**
    * AI 拆分：把一件卡住的事拆成 3–5 个「可执行的小步骤」标题。
    * 在线走 chatComplete；无 Key 抛错由调用方兜底（手动输入）。返回标题数组，由 UI 确认后再落库。
@@ -395,6 +403,13 @@ interface AppState {
   decomposeBigDealAI: (todoId: string) => Promise<string[]>;
   /** 一次性迁移：Wish 树根→BIG DEAL / 无子步根→愿望纸片 / 在途终端卡归档（防重入） */
   runTasksMergeMigration: () => Promise<void>;
+  /**
+   * 收官后的 BIG DEAL「重建任务」（PRD_V2.6 §2.4）。
+   * 取代原来的"回退/撤销"：回退会把条目留在"全成但动不了"的僵死态
+   * （clearedActivityId 已写、子步全 done、所有控件 disabled）——那条路已砍。
+   * 这里改为新立一条同名同步骤的全新 BIG DEAL，旧条目原样归档留作历史。
+   */
+  rebuildBigDeal: (todoId: string) => Promise<string | null>;
   // ── 抽签（TASKS_MERGE_PRD §4.2 批3）──
   /** 三源奖池：今日未完成待办 + 愿望纸片 + 近 30 天手动记录去重；当日已抽中/已完成剔除 */
   getFateDrawPool: () => FateCandidate[];
@@ -930,7 +945,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  addActivity: async (description: string, points: Record<string, number>, method: 'local' | 'todo' | 'battle', options?: { important?: boolean; date?: Date; category?: Activity['category']; bigDealId?: string }) => {
+  addActivity: async (description: string, points: Record<string, number>, method: 'local' | 'todo' | 'battle', options?: { important?: boolean; date?: Date; category?: Activity['category']; bigDealId?: string; wishId?: string }) => {
     const { user, dailyDivination, settings } = get();
     if (!user) return { unlockHints: { achievements: 0, skills: 0 }, activityId: '' };
 
@@ -973,6 +988,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       levelUps: [],
       important: options?.important,
       category: options?.category,
+      wishId: options?.wishId,
       bigDealId: options?.bigDealId,
     };
 
@@ -1729,6 +1745,61 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
     }
     await get().loadWishes();
+  },
+
+  getWishProgress: (wishId: string) => {
+    // 只数"用户主动记下的事"：升级/成就解锁这类副记录不算数（它们本来就不带 wishId，
+    // 这里再挡一道是防止将来有人给副记录也挂上）
+    return get().activities.filter(a =>
+      a.wishId === wishId
+      && a.category !== 'level_up'
+      && a.category !== 'achievement_unlock'
+      && a.category !== 'skill_unlock',
+    ).length;
+  },
+
+  fulfillWish: async (id: string) => {
+    const w = await db.wishes.get(id);
+    if (!w) return null;
+    const timesLogged = get().getWishProgress(id);
+    const now = new Date();
+
+    // 本体：实现 + 归档。fulfilledAt 与 archivedAt 都写——
+    // 前者标"这是实现不是放弃"，后者让它走既有的归档筛选
+    await db.wishes.put({ ...w, status: 'done', fulfilledAt: now, archivedAt: w.archivedAt ?? now });
+
+    // 子愿望一并离场（避免"父愿望实现了、子条目还挂在列表里"）
+    const children = await db.wishes.where('parentId').equals(id).toArray();
+    for (const c of children) {
+      if (c.status === 'active') {
+        await db.wishes.put({ ...c, status: 'archived', archivedAt: now });
+      }
+    }
+
+    // 挂在这个愿望上的在途待办同样归档（口径同 BIG DEAL 收官：主体了结则从属一起收）
+    const todos = await db.todos.toArray();
+    let archivedTodos = 0;
+    for (const t of todos) {
+      if (t.wishId === id && t.isActive !== false) {
+        await db.todos.put({ ...t, isActive: false });
+        archivedTodos++;
+      }
+    }
+
+    // 留一条纪念记录（不加点——这是 milestone 不是 grind，同 calling_card_clear 口径）
+    const user = get().user;
+    if (user) {
+      await get().addActivity(
+        `实现了愿望「${w.title}」`,
+        { knowledge: 0, guts: 0, dexterity: 0, kindness: 0, charm: 0 },
+        'local',
+        { important: true, category: 'wish_fulfilled', wishId: id },
+      );
+    }
+
+    await get().loadWishes();
+    await get().loadData();
+    return { title: w.title, timesLogged, archivedTodos };
   },
 
   decomposeWishAI: async (parent: Wish, children: Wish[] = []) => {
@@ -2773,7 +2844,8 @@ export const useAppStore = create<AppState>((set, get) => ({
           points[boost.attribute] = (points[boost.attribute] || 0) + boost.points;
         }
       }
-      const result = await get().addActivity(`完成任务: ${todo.title}`, points, 'todo', { important: !!todo.important });
+      // 待办挂了愿望 → 完成它产生的活动带上同一个 wishId，愿望进度才数得到（V2.6 §1.3）
+      const result = await get().addActivity(`完成任务: ${todo.title}`, points, 'todo', { important: !!todo.important, wishId: todo.wishId });
       // 命运加成（TASKS_MERGE_PRD §4.2）：当日抽中并完成 → 主属性额外 +1。
       // 独立小记录而非改主记录描述——undoTodayTodoCompletion/deleteActivity 都按
       // 「完成任务: {title}」逐字匹配，动模板会断撤销链；单删本记录也能正确回档
@@ -3021,6 +3093,28 @@ export const useAppStore = create<AppState>((set, get) => ({
       createdAt: new Date(todo.createdAt),
     }));
     return get().decomposeWishAI(parent, children);
+  },
+
+  rebuildBigDeal: async (todoId: string) => {
+    const old = await db.todos.get(todoId);
+    if (!old || !old.isBigDeal) return null;
+    // 旧的原样归档（保留 clearedActivityId，历史与统计不受影响）
+    await db.todos.put({ ...old, isActive: false, archivedAt: old.archivedAt ?? new Date() });
+    // 新的：同名同步骤，子步全部重置为未完成，清掉收官痕迹
+    const fresh: Todo = {
+      ...old,
+      id: uuidv4(),
+      isActive: true,
+      createdAt: new Date(),
+      archivedAt: undefined,
+      completedAt: undefined,
+      clearedActivityId: undefined,
+      fateDrawnDate: undefined,
+      steps: (old.steps ?? []).map(st => ({ ...st, id: uuidv4(), done: false, doneAt: undefined })),
+    };
+    await db.todos.put(fresh);
+    await get().loadData();
+    return fresh.id;
   },
 
   runTasksMergeMigration: async () => {

@@ -387,6 +387,10 @@ export const DashboardP3 = () => {
     }
     return false;
   })].sort((a, b) => {
+    // BIG DEAL 恒在最上（PRD_V2.6 §2.1）：它是"这段时间最重要的一件事"，
+    // 排在普通待办之后就等于每天都要滚一下才看得见，与它的分量不符
+    if (a.isBigDeal && !b.isBigDeal) return -1;
+    if (!a.isBigDeal && b.isBigDeal) return 1;
     if (a.important && !b.important) return -1;
     if (!a.important && b.important) return 1;
     return 0;

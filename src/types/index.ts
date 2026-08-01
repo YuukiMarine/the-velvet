@@ -46,9 +46,16 @@ export interface Activity {
   };
   method: 'local' | 'todo' | 'battle';
   important?: boolean;
-  category?: 'skill_unlock' | 'achievement_unlock' | 'level_up' | 'weekly_goal' | 'countercurrent' | 'shadow_defeat' | 'confidant' | 'calling_card_clear' | 'ledger' | 'terminal_clear' | 'bigdeal_step' | 'bigdeal_clear';
+  category?: 'skill_unlock' | 'achievement_unlock' | 'level_up' | 'weekly_goal' | 'countercurrent' | 'shadow_defeat' | 'confidant' | 'calling_card_clear' | 'ledger' | 'terminal_clear' | 'bigdeal_step' | 'bigdeal_clear' | 'wish_fulfilled';
   /** BIG DEAL 从属标注（bigdeal_step / bigdeal_clear 都挂）：收束分组键 + Agent 读取时识别非独立任务 */
   bigDealId?: string;
+  /**
+   * 挂载到哪个愿望（V2.6 §1.3）。记录活动 / 完成待办 / 黑猫记录卡都可以选。
+   * 愿望的「已完成相关任务 N 次」就是数这个字段——它是"离愿望更近了"的唯一计数来源。
+   * 注意：activities 表本身上云，所以这个字段随行上云；愿望条目本体另受 syncWishesToCloud 管辖，
+   * 于是可能出现"活动带着 wishId 上云、但对面没有那条愿望"——UI 取不到就当未挂载，不报错。
+   */
+  wishId?: string;
   /** 同伴互动记录的关联同伴 id（category === 'confidant' 时填充） */
   confidantId?: string;
   levelUps?: Array<{
@@ -91,6 +98,12 @@ export interface Wish {
   /** 可选关联的 arcana（同伴）id */
   arcanaId?: string;
   status: WishStatus;
+  /**
+   * 「愿望已实现」的时刻（V2.6 §1.4）。区别于 archivedAt：
+   * archivedAt 是"离场"（可能是放弃、可能是实现），fulfilledAt 只在**实现**时写。
+   * 归档区据此打「已实现」标签而不是笼统的"已归档"。
+   */
+  fulfilledAt?: Date;
   /** 小步骤来源：手动输入 / AI 拆分 */
   source: 'manual' | 'ai';
   createdAt: Date;
@@ -133,6 +146,8 @@ export interface Todo {
   completedAt?: Date;
   /** 抽签（TASKS_MERGE_PRD §4.2）：当日被命运选中的日期 YYYY-MM-DD——当日完成触发命运加成 +1 */
   fateDrawnDate?: string;
+  /** 挂载到哪个愿望（V2.6 §1.3）：完成它时产生的活动会带上同一个 wishId，从而计入愿望进度 */
+  wishId?: string;
   // ── BIG DEAL（任务×终端二合一，TASKS_MERGE_PRD §4.1）──
   /** 大事模式：进度由 steps 派生，不走 todoCompletion 计数 */
   isBigDeal?: boolean;
@@ -310,6 +325,11 @@ export interface Settings {
    * 点一下月相即切换，切换被记住——所以它是 settings 字段而不是组件内 state。
    */
   homeSkyMode?: 'moon' | 'weather';
+  /**
+   * 首页那张卡显示什么：'todos' 今日任务（缺省）/ 'wishes' 愿望（PRD_V2.6 §1.1）。
+   * 点标题切换，与 homeSkyMode 同口径——切换要被记住，所以进 settings 而不是组件 state。
+   */
+  homeTaskPane?: 'todos' | 'wishes';
   /** 'qweather'（默认，和风）| 'openmeteo'（免 Key 兜底） */
   weatherProvider?: 'qweather' | 'openmeteo';
   /** 和风 Key。**不上云**（与城市同组豁免），只进本地备份 */
