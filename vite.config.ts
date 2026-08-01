@@ -30,8 +30,12 @@ export default defineConfig({
             },
           },
         ],
-        // 导航请求（HTML）走 NetworkFirst：优先请求新版本，断网才用缓存。
-        // 默认的 NetworkFirst 超时 3 秒，对 iOS PWA 冷启动足够快。
+        // 导航请求（HTML）→ 预缓存里的 index.html。
+        // ⚠️ 这**不是** NetworkFirst（旧注释写错了，FS7 审查核对生成的 dist/sw.js 确认：
+        // 全文只有一个 CacheFirst——塔罗图——加一个 createHandlerBoundToURL，无 NetworkFirst）。
+        // 即：导航永远秒开缓存版；拿新版本靠的是 registerType:'prompt' 那条链——
+        // PWAUpdateToast 启动时 registration.update() → 有 waiting SW → 弹「立即更新」。
+        // 排查"更新不生效"时请顺着 SW 更新链看，不要去找并不存在的网络优先超时。
         navigateFallback: '/index.html',
         // 明确清理旧版本的预缓存条目，避免 iOS 磁盘上残留过多旧 chunk
         cleanupOutdatedCaches: true,

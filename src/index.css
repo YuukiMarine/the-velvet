@@ -57,6 +57,23 @@
   --ui-noise-opacity: 0;
 }
 
+/* neutral 频道（自定义主题）的夜间态。
+   FS7 审查发现的真漏：--ui-* 只在**频道块**里被改写（p5/p4/p3 各一套），
+   neutral 从来没有夜间覆盖 —— 于是自定义主题开夜间时 --ui-ink 仍是浅色态的 #111827，
+   而卡片底已经是 dark:bg-gray-900 的 #111827，任何读 --ui-ink 的字直接隐身
+   （首页「人格星象」的属性名就是这么消失的，对比度实测 1.00）。
+   三大频道自带夜色不受影响，这里只补 neutral 这一支。 */
+:root.dark:not([data-ui-channel]) {
+  --ui-bg: #111827;
+  --ui-surface: #1f2937;
+  --ui-surface-ink: #f3f4f6;
+  --ui-paper: #1f2937;
+  --ui-ink: #f3f4f6;
+  --ui-muted: #9ca3af;
+  --ui-line: #374151;
+  --ui-shadow-hard: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
 /* P5 红 —— 反抗/夺回：黑红白三轴，斜切硬影，半调
    p5-redraw 定稿色板（P5UI/*-flat-newsprint-v1 / *-reference-v2 采样）：
    纯黑舞台 / 猩红 #c00008 / 米白纸 #f0e9df / 橙点缀（成就数字）。 */

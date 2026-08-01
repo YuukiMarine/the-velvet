@@ -76,15 +76,18 @@ const P3_PALETTE: StarPalette = {
   focus: 'var(--p3r-blue, #1b57ff)',
 };
 
-/** 中性皮（自定义主题）：整族从 --color-primary 派生，深浅由 color-mix 拉开 */
+/** 中性皮（自定义主题）：整族从 --color-primary 派生，深浅由 color-mix 拉开。
+ *  字色用 --ui-surface-ink 而非 --ui-ink：星图画在卡片（surface）上，不是舞台底（bg）上——
+ *  两者在夜间是相反的极性，用错那一个属性名就会和卡片底同色而隐身（FS7 审查实测对比度 1.00）。
+ *  同理同心环不再硬取 #ffffff，改向 --ui-surface 混色，夜间才不会在深卡上炸出白圈。 */
 export const NEUTRAL_STAR_PALETTE: StarPalette = {
   data: 'color-mix(in srgb, var(--color-primary) 82%, #0b1020)',
-  ink: 'var(--ui-ink, #111827)',
-  inkSoft: 'color-mix(in srgb, var(--ui-ink, #111827) 62%, transparent)',
+  ink: 'var(--ui-surface-ink, #111827)',
+  inkSoft: 'color-mix(in srgb, var(--ui-surface-ink, #111827) 62%, transparent)',
   accent: 'var(--color-primary)',
   arm: 'color-mix(in srgb, var(--color-primary) 45%, transparent)',
-  ringPale: 'color-mix(in srgb, var(--color-primary) 12%, #ffffff)',
-  ringDeep: 'color-mix(in srgb, var(--color-primary) 62%, #ffffff)',
+  ringPale: 'color-mix(in srgb, var(--color-primary) 12%, var(--ui-surface, #ffffff))',
+  ringDeep: 'color-mix(in srgb, var(--color-primary) 62%, var(--ui-surface, #ffffff))',
   focus: 'var(--color-primary)',
 };
 
