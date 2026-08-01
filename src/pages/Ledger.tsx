@@ -8,7 +8,7 @@
  *
  * 奖励 / 统计 / 资产 / 月末结算属后续批次，本页先把核心跑通。
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { useAppStore, toLocalDateKey } from '@/store';
 import { PageTitle } from '@/components/PageTitle';
@@ -16,8 +16,9 @@ import { BackButton } from '@/components/BackButton';
 import { SheetModal } from '@/components/SheetModal';
 import { LedgerSavedModal } from '@/components/LedgerSavedModal';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
-import { getAIConfig } from '@/utils/aiClient';
-import { parseLedgerBatch, type LedgerAIResult } from '@/utils/ledgerAI';
+import { getAIConfig, getVisionAIConfig } from '@/utils/aiClient';
+import { parseLedgerBatch, parseLedgerShot, type LedgerAIResult } from '@/utils/ledgerAI';
+import { readAsDataUrl, downscaleDataUrl } from '@/utils/imageCrop';
 import { SegmentTabs } from '@/components/SegmentTabs';
 import { LedgerStats } from '@/components/ledger/LedgerStats';
 import { AssetBoard } from '@/components/ledger/AssetBoard';
@@ -226,6 +227,10 @@ export const Ledger = () => {
   const p3 = useUiChannel() === 'p3';
   const [nlText, setNlText] = useState('');
   const [nlBusy, setNlBusy] = useState(false);
+  // 拍照记账（FS3.2）：隐藏 file input 承接相机/相册，结果一律进确认卡
+  const shotInputRef = useRef<HTMLInputElement>(null);
+  const [shotBusy, setShotBusy] = useState(false);
+  const [shotHint, setShotHint] = useState<string | null>(null);
   const [draft, setDraft] = useState<EntryDraft | null>(null);
   const [budgetMode, setBudgetMode] = useState<null | 'edit' | 'newCycle'>(null);
   // 落账庆祝：存摘要文案；非空即弹（复用各频道「今日完成」演出，换标题）
@@ -333,6 +338,45 @@ export const Ledger = () => {
     if (nlBusy) return;
     if (nlText.trim()) void handleNL();
     else startDraft(emptyDraft());
+  };
+
+  /**
+   * 拍照记账（FS3.2）：选/拍一张 → 降采样 → 三级降级链解析 → 走与文字录入相同的确认流。
+   * 红线照旧：GUI 是主体，这只是又一个入口；结果一律进确认卡，不直接落库。
+   */
+  const handleShot = async (file: File) => {
+    if (shotBusy) return;
+    setShotBusy(true);
+    setShotHint(null);
+    try {
+      const raw = await readAsDataUrl(file);
+      const dataUrl = await downscaleDataUrl(raw);
+      const { results, via, ocrText } = await parseLedgerShot(dataUrl, settings);
+      if (results.length >= 2) {
+        const last = settings.ledgerLastChannel ?? '';
+        setBatchDate(toLocalDateKey());
+        setBatch(results.map(rowFromResult).map(r => (r.direction === 'expense' && !r.channel ? { ...r, channel: last } : r)));
+        setShotHint(via === 'vision' ? '看图读出多笔，核对一下' : '本机识字读出多笔，核对一下');
+      } else if (results.length === 1) {
+        startDraft(draftFromAI(results[0], 'ai'));
+        setShotHint(via === 'vision' ? '看图读的，核对一下金额' : '本机识字读的，核对一下金额');
+      } else if (ocrText) {
+        // 认出了字但没读出金额：把原文塞回输入框，用户改两下再点「记一笔」
+        setNlText(ocrText.slice(0, 80));
+        setShotHint('认出了字但没读出金额——已填进输入框，改完点「记一笔」');
+      } else {
+        startDraft(emptyDraft());
+        setShotHint(
+          getVisionAIConfig(settings)
+            ? '这张没读出来，手动填吧'
+            : '还没配「视觉」模型，本机也没有离线识字（需原生 App）——先手动填',
+        );
+      }
+    } catch {
+      setShotHint('图片读取失败，换一张试试');
+    } finally {
+      setShotBusy(false);
+    }
   };
 
   const updateRow = (i: number, patch: Partial<BatchRow>) =>
@@ -973,6 +1017,34 @@ export const Ledger = () => {
         </button>
       </motion.section>
       )}
+
+      {/* 拍照记账（FS3.2）：录入条的副入口——主体仍是上面的 GUI 输入条。
+          相机由原生 file input 承接（capture 提示优先后置摄像头，也可从相册选）。 */}
+      <motion.section {...riseIn(3)} className="mt-2 flex items-center gap-2">
+        <input
+          ref={shotInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          className="hidden"
+          onChange={e => {
+            const f = e.target.files?.[0];
+            e.target.value = ''; // 允许连拍同一张
+            if (f) void handleShot(f);
+          }}
+        />
+        <button
+          type="button"
+          onClick={() => { if (!shotBusy) shotInputRef.current?.click(); }}
+          disabled={shotBusy}
+          className="shrink-0 rounded-full border border-dashed border-gray-300 px-3 py-1.5 text-xs font-bold text-gray-500 transition-colors hover:border-primary hover:text-primary disabled:opacity-50 dark:border-gray-600 dark:text-gray-400"
+        >
+          {shotBusy ? '读图中…' : '📷 拍小票'}
+        </button>
+        {shotHint && (
+          <span className="min-w-0 flex-1 truncate text-[11px] text-gray-400 dark:text-gray-500">{shotHint}</span>
+        )}
+      </motion.section>
 
       {/* 流水 / 统计 切换 */}
       <motion.div {...riseIn(4)} className="mt-4">

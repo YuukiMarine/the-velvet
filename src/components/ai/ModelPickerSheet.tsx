@@ -13,16 +13,20 @@
  * mode='deliberate'：列所有已配 Key 的家，写 navigatorModel + navigatorProvider；
  * mode='assistant'：同上但写 assistantModel + assistantProvider——助手那条线单独指定，
  *   不连带改中长期占卜（用户口径：快捷入口只该管它自己）。
- * 后两档选当前连接那家时 provider 存 undefined，保持"跟随连接"的老语义。
+ * mode='vision' / 'audio'（FS3）：同 deliberate 的跨平台结构，写 visionModel / audioModel；
+ *   默认筛选换成「只看能看图 / 能听写的」，两档都允许留空 = 不启用该能力。
+ * 除 fast 外，选当前连接那家时 provider 存 undefined，保持"跟随连接"的老语义。
  */
 import { useMemo, useState } from 'react';
 import { useAppStore } from '@/store';
 import { SheetModal } from '@/components/SheetModal';
 import { AI_PROVIDERS, getProviderConfig, type ApiProvider } from '@/utils/aiProviders';
-import { familyBadge, isAggregatorList, isChatModel, refreshAllProviderModels } from '@/utils/aiModelCatalog';
+import { familyBadge, isAggregatorList, isAudioModel, isChatModel, isVisionModel, refreshAllProviderModels } from '@/utils/aiModelCatalog';
+
+export type ModelPickerMode = 'fast' | 'deliberate' | 'assistant' | 'vision' | 'audio';
 
 export const ModelPickerSheet = ({ mode, isOpen, onClose }: {
-  mode: 'fast' | 'deliberate' | 'assistant';
+  mode: ModelPickerMode;
   isOpen: boolean;
   onClose: () => void;
 }) => {
@@ -35,12 +39,22 @@ export const ModelPickerSheet = ({ mode, isOpen, onClose }: {
   const active = settings.summaryApiProvider ?? 'openai';
   const fast = mode === 'fast';
   const assistant = mode === 'assistant';
+  const vision = mode === 'vision';
+  const audio = mode === 'audio';
   const currentPv = fast ? active
     : assistant ? (settings.assistantProvider ?? settings.navigatorProvider ?? active)
+    : vision ? (settings.visionProvider ?? active)
+    : audio ? (settings.audioProvider ?? active)
     : (settings.navigatorProvider ?? active);
   const currentModel = fast ? (settings.summaryModel ?? '')
     : assistant ? (settings.assistantModel ?? '')
+    : vision ? (settings.visionModel ?? '')
+    : audio ? (settings.audioModel ?? '')
     : (settings.navigatorModel ?? '');
+
+  /** 本档的默认筛选器（"只看…"开关按下时生效） */
+  const capabilityFilter = vision ? isVisionModel : audio ? isAudioModel : isChatModel;
+  const filterLabel = vision ? '只看能看图' : audio ? '只看能听写' : '只看对话';
 
   const sections = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -50,10 +64,10 @@ export const ModelPickerSheet = ({ mode, isOpen, onClose }: {
           id === active || settings.aiProfiles?.[id]?.key?.trim());
     return pvs.map((pv) => {
       const all = settings.aiProfiles?.[pv]?.models ?? [];
-      const filtered = all.filter((m) => (!chatOnly || isChatModel(m)) && (!q || m.toLowerCase().includes(q)));
+      const filtered = all.filter((m) => (!chatOnly || capabilityFilter(m)) && (!q || m.toLowerCase().includes(q)));
       return { pv, all, filtered, aggregator: isAggregatorList(all) };
     });
-  }, [fast, active, settings.aiProfiles, chatOnly, query]);
+  }, [fast, active, settings.aiProfiles, chatOnly, query, capabilityFilter]);
 
   const hasAnyList = sections.some((s) => s.all.length > 0);
 
@@ -65,6 +79,14 @@ export const ModelPickerSheet = ({ mode, isOpen, onClose }: {
       updateSettings(model
         ? { assistantModel: model, assistantProvider: scoped }
         : { assistantModel: undefined, assistantProvider: undefined });
+    } else if (vision) {
+      updateSettings(model
+        ? { visionModel: model, visionProvider: scoped }
+        : { visionModel: undefined, visionProvider: undefined });
+    } else if (audio) {
+      updateSettings(model
+        ? { audioModel: model, audioProvider: scoped }
+        : { audioModel: undefined, audioProvider: undefined });
     } else {
       updateSettings(model
         ? { navigatorModel: model, navigatorProvider: scoped }
@@ -95,7 +117,11 @@ export const ModelPickerSheet = ({ mode, isOpen, onClose }: {
     ? `默认（${getProviderConfig(active).defaultModel}）`
     : assistant
       ? `跟随深思熟虑档（${delibLabel}）`
-      : `跟随快速响应（${fastModel}）`;
+      : vision
+        ? '不启用（拍照记账退回本地 OCR / 手输）'
+        : audio
+          ? '不启用（不显示语音话筒）'
+          : `跟随快速响应（${fastModel}）`;
 
   const rowCls = (selected: boolean) =>
     `flex w-full items-center gap-2 rounded-xl border px-3 py-2.5 text-left text-sm transition ${
@@ -109,13 +135,31 @@ export const ModelPickerSheet = ({ mode, isOpen, onClose }: {
       isOpen={isOpen}
       onClose={onClose}
       position="bottom"
-      title={fast ? '⚡ 快速响应 · 选择模型' : assistant ? '◈ 助手专属模型' : '🌙 深思熟虑 · 选择模型'}
+      title={
+        fast ? '⚡ 快速响应 · 选择模型'
+        : assistant ? '◈ 助手专属模型'
+        : vision ? '👁 视觉 · 选择模型'
+        : audio ? '🎤 听觉 · 选择模型'
+        : '🌙 深思熟虑 · 选择模型'
+      }
       maxHeightClass="max-h-[82vh]"
     >
       <div className="space-y-3 pb-2">
         {assistant && (
           <p className="text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">
             这里只改<b>助手</b>（对话 / 每日问候 / 人格生成）用的模型，不影响中长期占卜等其它走「深思熟虑」的功能。
+          </p>
+        )}
+        {vision && (
+          <p className="text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">
+            拍小票记账等<b>看图</b>任务用这档。/models 不告诉我们谁能看图，下面是按名字猜的——
+            猜错了调用会报错，不影响别的功能；关掉筛选可以看全量、也能直接手填。
+          </p>
+        )}
+        {audio && (
+          <p className="text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">
+            <b>语音转写</b>用这档（走 /audio/transcriptions 端点）。配好后黑猫输入栏会出现话筒，
+            按住说话、松手转成文字填进输入框——发不发还是你决定。
           </p>
         )}
         <p className="text-[11px] leading-relaxed text-gray-400 dark:text-gray-500">
@@ -140,7 +184,7 @@ export const ModelPickerSheet = ({ mode, isOpen, onClose }: {
             }`}
             aria-pressed={chatOnly}
           >
-            只看对话
+            {filterLabel}
           </button>
           <button
             type="button"
@@ -178,7 +222,7 @@ export const ModelPickerSheet = ({ mode, isOpen, onClose }: {
               </p>
             ) : filtered.length === 0 ? (
               <p className="rounded-xl border border-dashed border-gray-200 px-3 py-2.5 text-[11px] text-gray-400 dark:border-gray-700 dark:text-gray-500">
-                没有匹配的条目（试试关掉「只看对话」或换个关键词）。
+                没有匹配的条目（试试关掉「{filterLabel}」或换个关键词）。
               </p>
             ) : (
               filtered.map((m) => {

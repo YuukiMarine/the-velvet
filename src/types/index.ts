@@ -402,6 +402,14 @@ export interface Settings {
   assistantModel?: string;
   /** 助手专属模型的平台指向（同 navigatorProvider 语义，作用域只有助手） */
   assistantProvider?: 'openai' | 'deepseek' | 'kimi' | 'qwen' | 'gemini' | 'minimax';
+  /** 👁 视觉档（FS3）：看图的模型（拍照记账 / 图片理解）。空 = 没配，走 OCR 或手输。
+   *  与深思熟虑同构：可跨平台指向别家（那家 aiProfiles 有 Key 才生效）。 */
+  visionModel?: string;
+  visionProvider?: 'openai' | 'deepseek' | 'kimi' | 'qwen' | 'gemini' | 'minimax';
+  /** 🎤 听觉档（FS3）：语音转写模型（走 OpenAI 兼容 /audio/transcriptions）。
+   *  空 = 不显示黑猫输入栏的话筒（除非原生识别可用）。 */
+  audioModel?: string;
+  audioProvider?: 'openai' | 'deepseek' | 'kimi' | 'qwen' | 'gemini' | 'minimax';
   summaryPromptPresets?: SummaryPromptPreset[];
   summaryActivePresetId?: string;
   /**

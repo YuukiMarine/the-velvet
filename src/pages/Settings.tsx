@@ -11,7 +11,7 @@ import { BackButton } from '@/components/BackButton';
 import { useRipple } from '@/components/RippleEffect';
 import { AI_PROVIDERS, getProviderConfig, testAIConnection, fetchAvailableModels, type TestResult, type ApiProvider } from '@/utils/aiProviders';
 import { refreshAllProviderModels } from '@/utils/aiModelCatalog';
-import { ModelPickerSheet } from '@/components/ai/ModelPickerSheet';
+import { ModelPickerSheet, type ModelPickerMode } from '@/components/ai/ModelPickerSheet';
 import { Toggle } from '@/components/Toggle';
 import NotificationSettings from '@/components/NotificationSettings';
 import { NavigatorSettings } from '@/components/navigator/NavigatorSettings';
@@ -684,8 +684,11 @@ export const Settings = () => {
   const [modelFetchMessage, setModelFetchMessage] = useState<string>('');
   // 连接卡折叠：有 Key 时默认收起（配好后日常只跟模型分档打交道），无 Key 展开引导配置
   const [connOpen, setConnOpen] = useState(() => !settings.summaryApiKey?.trim());
-  // 模型选择面板（快速响应/深思熟虑 共用一个 Sheet，靠 mode 区分）
-  const [modelPicker, setModelPicker] = useState<'fast' | 'deliberate' | null>(null);
+  // 模型选择面板（四档共用一个 Sheet，靠 mode 区分）
+  const [modelPicker, setModelPicker] = useState<ModelPickerMode | null>(null);
+  // 模型分档整卡收进「高级设置」（FS3.1 用户口径）：默认收起，只留一行摘要。
+  // 日常用户配完连接就不用再来这儿；要调档的人点开即可。
+  const [tiersOpen, setTiersOpen] = useState(false);
 
   // 一键刷新**所有**已配 Key 的服务商的模型列表，按家落进 aiProfiles[].models
   //（用户口径：重新拉取 = 全 provider 同步更新；不支持 /models 的跳过并注明）。
@@ -2066,6 +2069,13 @@ export const Settings = () => {
 
                 {section.id === 'summary' && (() => {
                   const provider = settings.summaryApiProvider ?? 'openai';
+                  // 折叠态摘要：一行报四档现状（收起时唯一的信息来源）
+                  const tierSummary = [
+                    `⚡ ${settings.summaryModel?.trim() || getProviderConfig(provider).defaultModel}`,
+                    `🌙 ${settings.navigatorModel?.trim() || '跟随'}`,
+                    `👁 ${settings.visionModel?.trim() || '未启用'}`,
+                    `🎤 ${settings.audioModel?.trim() || '未启用'}`,
+                  ].join(' · ');
                   const activePresetId = settings.summaryActivePresetId ?? 'igor';
                   const activeFamiliar = FAMILIAR_FACE_PRESETS.find(p => p.id === activePresetId);
                   const familiarTaglines: Record<string, string> = {
@@ -2352,11 +2362,29 @@ export const Settings = () => {
                       )}
                     </div>
 
-                    {/* ── 模型分档（日常操作面）：快速响应=当前连接的便宜快模型；
-                        深思熟虑=可跨服务商指向更强的模型（助手对话/中长期占卜） ── */}
+                    {/* ── 模型分档（FS3.1 收进「高级设置」折叠）──
+                        快速响应=当前连接的便宜快模型；深思熟虑=可跨服务商的强模型；
+                        视觉=看图；听觉=听写。默认收起，摘要行直接报当前四档。 */}
                     <div className="rounded-2xl border border-gray-100 dark:border-gray-700/60 overflow-hidden">
-                      <div className="flex items-center justify-between gap-2 px-4 py-3 bg-gray-50 dark:bg-gray-800/60 border-b border-gray-100 dark:border-gray-700/60">
-                        <span className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">模型分档</span>
+                      <button
+                        type="button"
+                        onClick={() => setTiersOpen(v => !v)}
+                        aria-expanded={tiersOpen}
+                        className="flex w-full items-center justify-between gap-2 px-4 py-3 bg-gray-50 dark:bg-gray-800/60 text-left"
+                      >
+                        <span className="min-w-0">
+                          <span className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                            高级设置 · 模型分档
+                          </span>
+                          <span className="mt-0.5 block truncate text-[11px] text-gray-400 dark:text-gray-500">
+                            {tierSummary}
+                          </span>
+                        </span>
+                        <span className="shrink-0 text-xs text-gray-400">{tiersOpen ? '▲' : '▼'}</span>
+                      </button>
+                      {tiersOpen && (
+                      <>
+                      <div className="flex items-center justify-end gap-2 px-4 py-2 border-y border-gray-100 dark:border-gray-700/60 dark:bg-gray-800/40">
                         <button
                           onClick={handleFetchModels}
                           disabled={modelFetchStatus === 'loading'}
@@ -2436,6 +2464,63 @@ export const Settings = () => {
                                     : `跟随快速响应（${getProviderConfig(provider).label} · ${fastFallback}）`}
                                 </p>
                               </div>
+
+                              {/* 👁 视觉（FS3）：看图。没配就是没配——不回落文本模型（发图过去只会报错） */}
+                              <div className="space-y-1.5 pt-3 border-t border-gray-100 dark:border-gray-700/50">
+                                <p className="text-xs font-medium text-gray-500 dark:text-gray-400">👁 视觉</p>
+                                <p className="text-[11px] text-gray-400 dark:text-gray-500">
+                                  拍小票记账等看图任务走这档。没配也能用——记账会退到本机离线识字（需原生 App），
+                                  再不行就手输。图片只发给你自己配的服务商。
+                                </p>
+                                <button
+                                  type="button"
+                                  onClick={() => setModelPicker('vision')}
+                                  className="flex w-full items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                                >
+                                  <span className="min-w-0 flex-1 truncate text-left">
+                                    {settings.visionModel?.trim()
+                                      ? `${getProviderConfig(settings.visionProvider ?? provider).label} · ${settings.visionModel}`
+                                      : '未启用'}
+                                  </span>
+                                  <span className="shrink-0 text-xs font-bold text-primary">选择模型 ›</span>
+                                </button>
+                                <input
+                                  type="text"
+                                  value={settings.visionModel ?? ''}
+                                  onChange={e => updateSettings({ visionModel: e.target.value || undefined })}
+                                  placeholder="留空 = 不启用（如 qwen-vl-plus / gpt-5.4-mini）"
+                                  className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-primary"
+                                />
+                              </div>
+
+                              {/* 🎤 听觉（FS3）：语音转写，走 /audio/transcriptions */}
+                              <div className="space-y-1.5 pt-3 border-t border-gray-100 dark:border-gray-700/50">
+                                <p className="text-xs font-medium text-gray-500 dark:text-gray-400">🎤 听觉</p>
+                                <p className="text-[11px] text-gray-400 dark:text-gray-500">
+                                  配好后黑猫输入栏出现话筒：按住说话、松手转成文字填进输入框（发不发你决定）。
+                                  走 /audio/transcriptions 端点，模型名如 whisper-1 / SenseVoiceSmall / qwen3-asr-flash。
+                                  不配也没关系——输入法自带的语音键一直都能用。
+                                </p>
+                                <button
+                                  type="button"
+                                  onClick={() => setModelPicker('audio')}
+                                  className="flex w-full items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                                >
+                                  <span className="min-w-0 flex-1 truncate text-left">
+                                    {settings.audioModel?.trim()
+                                      ? `${getProviderConfig(settings.audioProvider ?? provider).label} · ${settings.audioModel}`
+                                      : '未启用'}
+                                  </span>
+                                  <span className="shrink-0 text-xs font-bold text-primary">选择模型 ›</span>
+                                </button>
+                                <input
+                                  type="text"
+                                  value={settings.audioModel ?? ''}
+                                  onChange={e => updateSettings({ audioModel: e.target.value || undefined })}
+                                  placeholder="留空 = 不启用（如 whisper-1 / qwen3-asr-flash）"
+                                  className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-primary"
+                                />
+                              </div>
                             </>
                           );
                         })()}
@@ -2450,6 +2535,8 @@ export const Settings = () => {
                         )}
 
                       </div>
+                      </>
+                      )}
                     </div>
 
                     {/* 模型选择面板（SheetModal，portal 渲染） */}
