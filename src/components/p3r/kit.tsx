@@ -349,13 +349,13 @@ export const CodeChip = ({ children, tone = 'grey' }: { children: ReactNode; ton
 );
 
 /** 超大黑斜体节题（今日任务 / 已归档 式），右侧计数槽 */
-export const BigSlantTitle = ({ title, count, className }: { title: string; count?: ReactNode; className?: string }) => (
+export const BigSlantTitle = ({ title, count, className, titleSuffix }: { title: string; count?: ReactNode; className?: string; titleSuffix?: ReactNode }) => (
   <div className={`flex items-end justify-between gap-3 ${className ?? ''}`}>
     <h2
-      className="text-[34px] font-black italic leading-none tracking-tight"
+      className="flex items-center text-[34px] font-black italic leading-none tracking-tight"
       style={{ color: P3R.ink, fontFamily: '"Arial Black", "Noto Sans SC", sans-serif' }}
     >
-      {title}
+      {title}{titleSuffix}
     </h2>
     {count !== undefined && (
       <div className="flex items-center gap-1.5 pb-1">

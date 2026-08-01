@@ -8,7 +8,7 @@
 import { useRef, useState } from 'react';
 import { useAppStore } from '@/store';
 import { SheetModal } from '@/components/SheetModal';
-import { submitDanmaku, danmakuThemeOf, validateDanmaku, DANMAKU_MAX_LEN } from '@/services/danmaku';
+import { submitDanmaku, danmakuThemeOf, validateDanmaku, DANMAKU_MAX_LEN, DANMAKU_COOLDOWN_MS } from '@/services/danmaku';
 
 interface Props {
   isOpen: boolean;
@@ -43,13 +43,27 @@ export const DanmakuCompose = ({ isOpen, onClose, forceDark }: Props) => {
       setError('暂时没有鼓励机会了');
       return;
     }
+    // 三天一发（PRD_V2.6 §3 反馈）：机会攒得再多也不能连着刷屏
+    const last = useAppStore.getState().settings.lastDanmakuSentAt;
+    if (last) {
+      const passed = Date.now() - new Date(last).getTime();
+      const left = DANMAKU_COOLDOWN_MS - passed;
+      if (left > 0) {
+        const days = Math.ceil(left / 86400000);
+        setError(`还要等 ${days} 天才能再发一条——留点时间给上一句`);
+        return;
+      }
+    }
     sendingRef.current = true;
     setBusy(true);
     try {
       await submitDanmaku(text, danmakuThemeOf(user?.theme));
       // 成功才消费，且基于最新 store 值原子递减（避免与完成小步的 +1 互相覆盖丢点）
       const cur = useAppStore.getState().settings.terminalDanmakuTokens ?? 0;
-      await updateSettings({ terminalDanmakuTokens: Math.max(0, cur - 1) });
+      await updateSettings({
+        terminalDanmakuTokens: Math.max(0, cur - 1),
+        lastDanmakuSentAt: new Date().toISOString(),
+      });
       setDone(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : '发送失败');
@@ -78,7 +92,7 @@ export const DanmakuCompose = ({ isOpen, onClose, forceDark }: Props) => {
       ) : (
         <div className="space-y-3">
           <p className="text-xs leading-relaxed text-gray-400 dark:text-gray-500">
-            匿名发送给同样卡住的人。先审后发，请温柔。还剩 {tokens} 次机会。
+            匿名发送弹幕鼓励一同努力的人，审核通过将会发出，慎言即可。还剩 {tokens} 次机会。
           </p>
           <textarea
             autoFocus
