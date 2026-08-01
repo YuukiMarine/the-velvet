@@ -1,6 +1,10 @@
 import { motion, AnimatePresence } from 'motion/react';
 import { useMemo, useState } from 'react';
+import { v4 as uuidv4 } from 'uuid';
 import { useAppStore, toLocalDateKey } from '@/store';
+import { minimalStep, terminalSkin } from '@/utils/terminalSkin';
+import { BigDealPanel } from '@/components/bigdeal/BigDealPanel';
+import { BigDealHomeCard } from '@/components/bigdeal/BigDealHomeCard';
 import { AttributeId, TodoFrequency } from '@/types';
 import { triggerNavFeedback } from '@/utils/feedback';
 import { TAP } from '@/utils/motion';
@@ -233,12 +237,13 @@ export const TodosView = () => {
   const p3 = channel === 'p3';
   const [showAdd, setShowAdd] = useState(false);
   const [editingTodoId, setEditingTodoId] = useState<string | null>(null);
-  const [form, setForm] = useState({
+  /** 表单模式（三段式表单第二段）：single/count 映射 frequency；big = BIG DEAL（frequency 恒 single） */
+  const emptyForm = {
     title: '',
+    mode: 'single' as 'single' | 'count' | 'big',
     attribute: 'knowledge' as AttributeId,
     points: 2,
     extraBoosts: [] as Array<{ attribute: AttributeId; points: number }>,
-    frequency: 'single' as TodoFrequency,
     targetCount: 1,
     repeatDaily: false,
     isLongTerm: false,
@@ -246,7 +251,14 @@ export const TodosView = () => {
     isActive: true,
     important: false,
     startDate: '' as string,
-  });
+    // BIG DEAL 专属
+    currentState: '' as string,
+    deadline: '' as string,
+    steps: [] as Array<{ id?: string; title: string; attribute?: AttributeId; done?: boolean; doneAt?: string; source: 'manual' | 'ai' }>,
+  };
+  const [form, setForm] = useState(emptyForm);
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
 
   const todayWeekday = new Date().getDay();
   const todayDateKey = toLocalDateKey();
@@ -295,20 +307,9 @@ export const TodosView = () => {
   const pendingDeleteTodo = pendingDeleteId ? todos.find(t => t.id === pendingDeleteId) : undefined;
 
   const resetForm = () => {
-    setForm({
-      title: '',
-      attribute: 'knowledge',
-      points: 2,
-      extraBoosts: [],
-      frequency: 'single',
-      targetCount: 1,
-      repeatDaily: false,
-      isLongTerm: false,
-      weekdays: [],
-      isActive: true,
-      important: false,
-      startDate: '',
-    });
+    setForm(emptyForm);
+    setAiError(null);
+    setShowMore(false);
   };
 
   /** 统一关闭表单弹窗：SheetModal 的 backdrop/ESC/Android back 与"取消"按钮共用同一条路径 */
@@ -318,10 +319,14 @@ export const TodosView = () => {
     resetForm();
   };
 
-  const [showWeekdays, setShowWeekdays] = useState(false);
+  /** 更多设置折叠区（重要/每日/周几/启用/启用日期）；编辑带非默认值的任务时自动展开 */
+  const [showMore, setShowMore] = useState(false);
+  /** BIG DEAL 二级面板（聚合卡点击落点） */
+  const [dealPanelId, setDealPanelId] = useState<string | null>(null);
 
   const handleSave = async () => {
     if (!form.title.trim()) return;
+    const isBig = form.mode === 'big';
     const validExtraBoosts = form.extraBoosts
       .filter(b => b.points >= 1)
       .map(b => ({ attribute: b.attribute, points: Math.max(1, Math.min(5, b.points)) }));
@@ -330,14 +335,24 @@ export const TodosView = () => {
       attribute: form.attribute,
       points: Math.max(1, Math.min(5, form.points)),
       extraBoosts: validExtraBoosts.length > 0 ? validExtraBoosts : undefined,
-      frequency: form.frequency,
-      targetCount: form.frequency === 'count' ? Math.max(1, form.targetCount) : undefined,
-      repeatDaily: form.repeatDaily,
-      isLongTerm: form.frequency === 'count' ? form.isLongTerm : false,
-      weekdays: form.weekdays.sort(),
+      frequency: (form.mode === 'count' ? 'count' : 'single') as TodoFrequency,
+      targetCount: form.mode === 'count' ? Math.max(1, form.targetCount) : undefined,
+      repeatDaily: isBig ? false : form.repeatDaily,
+      isLongTerm: form.mode === 'count' ? form.isLongTerm : false,
+      weekdays: isBig ? [] : form.weekdays.sort(),
       isActive: form.isActive,
       important: form.important,
       startDate: form.startDate || undefined,
+      // BIG DEAL：已有子步保留 id/done/doneAt（编辑不清进度），新行补 uuid
+      isBigDeal: isBig || undefined,
+      currentState: isBig ? form.currentState.trim() || undefined : undefined,
+      deadline: isBig ? form.deadline || undefined : undefined,
+      steps: isBig
+        ? form.steps
+            .map(s => ({ ...s, title: s.title.trim() }))
+            .filter(s => s.title)
+            .map(s => ({ id: s.id ?? uuidv4(), title: s.title, attribute: s.attribute, done: s.done, doneAt: s.doneAt, source: s.source }))
+        : undefined,
     };
 
     if (editingTodoId) {
@@ -356,10 +371,10 @@ export const TodosView = () => {
     setEditingTodoId(todoId);
     setForm({
       title: todo.title,
+      mode: todo.isBigDeal ? 'big' : todo.frequency === 'count' ? 'count' : 'single',
       attribute: todo.attribute,
       points: todo.points,
       extraBoosts: todo.extraBoosts ? [...todo.extraBoosts] : [],
-      frequency: todo.frequency,
       targetCount: todo.targetCount || 1,
       repeatDaily: !!todo.repeatDaily,
       isLongTerm: !!todo.isLongTerm,
@@ -367,8 +382,55 @@ export const TodosView = () => {
       isActive: todo.isActive,
       important: !!todo.important,
       startDate: todo.startDate || '',
+      currentState: todo.currentState || '',
+      deadline: todo.deadline || '',
+      steps: (todo.steps ?? []).map(s => ({ ...s })),
     });
+    setAiError(null);
+    setShowMore(!!(todo.important || todo.repeatDaily || (todo.weekdays?.length ?? 0) > 0 || !todo.isActive || todo.startDate));
     setShowAdd(true);
+  };
+
+  /** BIG DEAL「帮我拆」：复用 decomposeWishAI（伪 Wish 树），失败落一条离线模板步 */
+  const runFormAI = async () => {
+    const title = form.title.trim();
+    if (!title || aiBusy) return;
+    setAiBusy(true);
+    setAiError(null);
+    try {
+      const parent = {
+        id: 'draft',
+        title,
+        kind: (form.deadline ? 'pressure' : 'long_term') as 'pressure' | 'long_term',
+        currentState: form.currentState.trim() || undefined,
+        status: 'active' as const,
+        source: 'manual' as const,
+        createdAt: new Date(),
+      };
+      const children = form.steps
+        .filter(s => s.title.trim())
+        .map((s, i) => ({
+          id: s.id ?? `draft-${i}`,
+          parentId: 'draft',
+          title: s.title.trim(),
+          status: (s.done ? 'done' : 'active') as 'done' | 'active',
+          source: s.source,
+          createdAt: new Date(),
+        }));
+      const list = await useAppStore.getState().decomposeWishAI(parent, children);
+      if (list.length === 0) {
+        setAiError('这次没拆出能用的小步。换个说法，或手写一条吧');
+      } else {
+        setForm(prev => ({ ...prev, steps: [...prev.steps, ...list.map(t => ({ title: t, source: 'ai' as const }))] }));
+      }
+    } catch {
+      // 无 Key / 网络失败 → 离线模板兜底一条（minimalStep，批5 随终端瘦身迁址）
+      const fallback = minimalStep(terminalSkin(useAppStore.getState().user?.theme), title);
+      setForm(prev => ({ ...prev, steps: [...prev.steps, { title: fallback, source: 'manual' as const }] }));
+      setAiError('AI 未接通，先放了一条离线拆步——可改可删');
+    } finally {
+      setAiBusy(false);
+    }
   };
 
   const toggleWeekday = (day: number) => {
@@ -436,6 +498,18 @@ export const TodosView = () => {
               </>
             )}
             {activeTodos.map(todo => {
+              // BIG DEAL：聚合卡（进度=子步派生，点击进二级面板；⋯ 走同一长按菜单）
+              if (todo.isBigDeal) {
+                return (
+                  <BigDealHomeCard
+                    key={todo.id}
+                    todo={todo}
+                    channel={p3 ? 'p3' : isP4 ? 'p4' : p5 ? 'p5' : 'plain'}
+                    onOpen={() => setDealPanelId(todo.id)}
+                    onMenu={() => setMenuTodoId(todo.id)}
+                  />
+                );
+              }
               const progress = getTodayTodoProgress(todo.id);
               const attrName = settings.attributeNames[todo.attribute];
               const pct = Math.min(100, (progress.count / progress.target) * 100);
@@ -779,359 +853,462 @@ export const TodosView = () => {
           )
         }
       >
-              <div className="space-y-4">
+              <div className="space-y-5">
+                {/* ── ① 标题 ─────────────────────────────────────────── */}
                 <input
                   type="text"
                   value={form.title}
                   onChange={(e) => setForm(prev => ({ ...prev, title: e.target.value }))}
-                  placeholder="今日要完成什么？"
-                  className="w-full px-3 py-2.5 border border-gray-200 dark:border-gray-600 rounded-xl bg-gray-50 dark:bg-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  placeholder={form.mode === 'big' ? '想搞定的一件大事…' : '今日要完成什么？'}
+                  className="w-full px-3.5 py-3 text-[16px] font-semibold border border-gray-200 dark:border-gray-600 rounded-xl bg-gray-50 dark:bg-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary/30"
                 />
 
-                {/* 重要标记：P4 = 橙色横幅 + 黑花（modal-02 v3），勾选态整条点亮；
-                    p3 = 白面 + 洋红小三角 + 黑粗标签 + 青下划线（p3-modal-02 稿） */}
-                {isP4 ? (
-                  <label
-                    className="flex cursor-pointer items-center gap-3 rounded-2xl p-3.5 transition-colors"
-                    style={{ background: form.important ? 'var(--p4-orange, #f9a11b)' : 'rgba(249, 161, 27, 0.55)' }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={form.important}
-                      onChange={(e) => setForm(prev => ({ ...prev, important: e.target.checked }))}
-                      className="peer sr-only"
-                    />
-                    <span
-                      aria-hidden
-                      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-colors ${
-                        form.important ? 'bg-[#131313]' : 'bg-white/70'
-                      }`}
-                    >
-                      <P4Sparkle size={14} color={form.important ? 'var(--ui-bg)' : '#131313'} />
-                    </span>
-                    <div>
-                      <span className="text-sm font-black text-[#131313]">标记为重要</span>
-                      <p className="mt-0.5 text-xs font-semibold text-[#131313]/70">重要任务将在首页置顶显示，并记录在历史中</p>
-                    </div>
-                  </label>
-                ) : p3 ? (
-                  <label className="relative flex cursor-pointer items-center gap-3 px-3 py-3" style={{ background: 'var(--p3r-panel-glass, rgba(255,255,255,0.8))', borderBottom: '2px solid rgba(53,209,232,0.7)' }}>
-                    <input
-                      type="checkbox"
-                      checked={form.important}
-                      onChange={(e) => setForm(prev => ({ ...prev, important: e.target.checked }))}
-                      className="h-5 w-5"
-                      style={{ accentColor: '#1b57ff' }}
-                    />
-                    <span aria-hidden className="h-0 w-0 border-y-[5px] border-l-[9px] border-y-transparent" style={{ borderLeftColor: '#f0417f' }} />
-                    <div>
-                      <span className="text-sm font-black text-[#0a1230]">标记为重要</span>
-                      <p className="mt-0.5 text-xs font-semibold text-[#8a97ad]">重要任务将在首页置顶显示，并记录在历史中</p>
-                    </div>
-                  </label>
-                ) : (
-                <label className="flex items-center gap-3 p-3 rounded-xl border border-amber-200 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={form.important}
-                    onChange={(e) => setForm(prev => ({ ...prev, important: e.target.checked }))}
-                    className="w-5 h-5 text-amber-500"
-                  />
-                  <div>
-                    <span className="text-sm font-medium text-amber-700 dark:text-amber-300">⭐ 标记为重要</span>
-                    <p className="text-xs text-amber-600/70 dark:text-amber-400/70 mt-0.5">重要任务将在首页置顶显示，并记录在历史中</p>
-                  </div>
-                </label>
-                )}
-
-                {/* ── 多属性增长区域 ── */}
-                {(() => {
-                  // 当前已使用的属性集合
-                  const usedAttrs = new Set<string>([
-                    form.attribute,
-                    ...form.extraBoosts.map(b => b.attribute),
-                  ]);
-                  // 还未被选中的第一个属性，用于点"+"时默认填入
-                  const firstUnused = (ATTR_IDS.find(id => !usedAttrs.has(id)) ?? 'knowledge') as AttributeId;
-                  const canAddMore = form.extraBoosts.length < 2 && usedAttrs.size < ATTR_IDS.length;
-
-                  return (
-                    <div className="space-y-2">
-                      {/* 标签行：左边"增长属性"，右边"+"按钮 */}
-                      <div className="flex items-center justify-between">
-                        <label className="text-sm font-medium text-gray-700 dark:text-gray-300">增长属性</label>
-                        {canAddMore && (
-                          <motion.button
-                            whileTap={{ scale: 0.88 }}
-                            type="button"
-                            onClick={() => setForm(prev => ({
-                              ...prev,
-                              extraBoosts: [...prev.extraBoosts, { attribute: firstUnused, points: 1 }],
-                            }))}
-                            className="w-6 h-6 rounded-full bg-primary text-white flex items-center justify-center text-base font-bold leading-none"
-                            title="添加增长属性"
-                          >
-                            +
-                          </motion.button>
-                        )}
-                      </div>
-
-                      {/* 主属性行 */}
-                      <div className="flex items-center gap-2 p-2.5 rounded-xl bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-600">
-                        <select
-                          value={form.attribute}
-                          onChange={(e) => setForm(prev => ({ ...prev, attribute: e.target.value as AttributeId }))}
-                          className="flex-1 px-2 py-1.5 text-sm border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 dark:text-white focus:outline-none focus:border-primary"
-                        >
-                          {Object.entries(settings.attributeNames).map(([key, name]) => (
-                            // 主属性：排除已被 extraBoosts 占用的选项
-                            (!form.extraBoosts.some(b => b.attribute === key) || form.attribute === key) && (
-                              <option key={key} value={key}>{name}</option>
-                            )
-                          ))}
-                        </select>
-                        <Stepper
-                          value={form.points}
-                          min={1}
-                          max={5}
-                          aria-label="主属性点数"
-                          onChange={(v) => setForm(prev => ({ ...prev, points: v }))}
-                        />
-                        {/* 主属性无法删除，占位对齐 */}
-                        <div className="w-7 h-7 flex-shrink-0" />
-                      </div>
-
-                      {/* 额外加成行 */}
-                      {form.extraBoosts.map((boost, idx) => {
-                        // 该行可选的属性：排除主属性和其他额外行已选的属性（保留自身当前值）
-                        const otherUsed = new Set<string>([
-                          form.attribute,
-                          ...form.extraBoosts.filter((_, i) => i !== idx).map(b => b.attribute),
-                        ]);
-                        return (
-                          <div key={idx} className="flex items-center gap-2 p-2.5 rounded-xl bg-primary/5 dark:bg-primary/10 border border-primary/20 dark:border-primary/30">
-                            <select
-                              value={boost.attribute}
-                              onChange={(e) => setForm(prev => {
-                                const next = [...prev.extraBoosts];
-                                next[idx] = { ...next[idx], attribute: e.target.value as AttributeId };
-                                return { ...prev, extraBoosts: next };
-                              })}
-                              className="flex-1 px-2 py-1.5 text-sm border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 dark:text-white focus:outline-none focus:border-primary"
-                            >
-                              {Object.entries(settings.attributeNames).map(([key, name]) =>
-                                (!otherUsed.has(key) || boost.attribute === key) && (
-                                  <option key={key} value={key}>{name}</option>
-                                )
-                              )}
-                            </select>
-                            <Stepper
-                              value={boost.points}
-                              min={1}
-                              max={5}
-                              aria-label="额外属性点数"
-                              onChange={(v) => setForm(prev => {
-                                const next = [...prev.extraBoosts];
-                                next[idx] = { ...next[idx], points: v };
-                                return { ...prev, extraBoosts: next };
-                              })}
-                            />
-                            <motion.button
-                              whileTap={{ scale: 0.9 }}
-                              type="button"
-                              onClick={() => setForm(prev => ({
-                                ...prev,
-                                extraBoosts: prev.extraBoosts.filter((_, i) => i !== idx),
-                              }))}
-                              className="w-7 h-7 flex-shrink-0 rounded-full bg-red-100 dark:bg-red-900/30 text-red-500 flex items-center justify-center text-base font-bold"
-                            >
-                              −
-                            </motion.button>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  );
-                })()}
-
+                {/* ── ② 模式三卡（三段式第二段；编辑中锁定防止子步/计数语义悬空） ── */}
                 <div>
-                  <label className="block text-sm font-medium mb-1.5 text-gray-700 dark:text-gray-300">完成频率</label>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-3 gap-2">
                     {([
-                      { value: 'single', label: '单次' },
-                      { value: 'count', label: '多次' }
-                    ] as { value: TodoFrequency; label: string }[]).map(option => (
-                      <button
-                        key={option.value}
-                        onClick={() => setForm(prev => ({ ...prev, frequency: option.value, isLongTerm: option.value === 'single' ? false : prev.isLongTerm }))}
-                        className={p3
-                          ? 'relative px-3 py-2.5 text-[15px] font-black italic transition-colors'
-                          : `px-3 py-2 rounded-xl text-sm font-medium border transition-colors ${
-                              form.frequency === option.value
-                                ? 'bg-primary text-white border-primary'
-                                : 'bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-600'
-                            }`}
-                        style={p3 ? {
-                          clipPath: 'polygon(12px 0, 100% 0, calc(100% - 12px) 100%, 0 100%)',
-                          background: form.frequency === option.value ? P3R.blue : P3R.panel,
-                          color: form.frequency === option.value ? '#fff' : P3R.ink,
-                          boxShadow: form.frequency === option.value ? 'none' : '0 4px 12px rgba(38,96,140,0.08)',
-                        } : undefined}
-                      >
-                        {option.label}
-                        {p3 && form.frequency === option.value && (
-                          <span aria-hidden className="absolute bottom-0 right-3 h-[7px] w-[16px]" style={{ background: '#f0417f', clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
-                        )}
-                      </button>
-                    ))}
+                      { key: 'single', name: '单次', hint: '做完即归档', glyph: '✓' },
+                      { key: 'count', name: '计数', hint: '重复 N 次', glyph: '∞' },
+                      { key: 'big', name: 'BIG DEAL', hint: '大事拆小步', glyph: '◆' },
+                    ] as const).map(m => {
+                      const active = form.mode === m.key;
+                      return (
+                        <button
+                          key={m.key}
+                          type="button"
+                          disabled={!!editingTodoId && !active}
+                          onClick={() => setForm(prev => ({ ...prev, mode: m.key }))}
+                          className={`flex flex-col items-start gap-0.5 px-3 py-2.5 text-left transition-colors disabled:opacity-35 ${
+                            p3
+                              ? ''
+                              : isP4
+                                ? `rounded-[14px] border-[3px] border-[#131313] ${active ? 'bg-[#131313] text-[#ffe100]' : 'bg-[var(--p4-paper, #fff7b0)] text-[#131313]'}`
+                                : p5
+                                  ? `border-2 border-[#050505] ${active ? 'bg-[#c00008] text-white shadow-[3px_3px_0_#050505]' : 'bg-white text-[#131313]'}`
+                                  : `rounded-xl border ${active ? 'bg-primary text-white border-primary' : 'bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-600'}`
+                          }`}
+                          style={p3 ? {
+                            clipPath: 'polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%)',
+                            background: active ? P3R.blue : P3R.panel,
+                            color: active ? '#fff' : P3R.ink,
+                            boxShadow: active ? 'none' : '0 4px 12px rgba(38,96,140,0.08)',
+                          } : undefined}
+                        >
+                          <span aria-hidden className="text-base font-black leading-none">{m.glyph}</span>
+                          <span className="text-[13px] font-black leading-tight">{m.name}</span>
+                          <span className="text-[10px] font-semibold leading-tight opacity-60">{m.hint}</span>
+                        </button>
+                      );
+                    })}
                   </div>
+                  {editingTodoId && (
+                    <p className="mt-1 text-[11px] text-gray-400 dark:text-gray-500">编辑中不可切换模式</p>
+                  )}
                 </div>
 
-                {form.frequency === 'count' && (
-                  <div>
-                    <label className="block text-sm font-medium mb-1.5 text-gray-700 dark:text-gray-300">目标次数</label>
-                    <input
-                      type="number"
-                      min="1"
-                      max="99"
-                      value={form.targetCount}
-                      onChange={(e) => setForm(prev => ({ ...prev, targetCount: parseInt(e.target.value) || 1 }))}
-                      className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-xl bg-gray-50 dark:bg-gray-800 dark:text-white"
-                    />
-                  </div>
-                )}
-
-                <div>
-                  <label className="block text-sm font-medium mb-1.5 text-gray-700 dark:text-gray-300">计划设置</label>
+                {/* 模式附属 · 计数 */}
+                {form.mode === 'count' && (
                   <div className="space-y-2.5">
+                    <div className="flex items-center justify-between rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 px-3 py-2.5">
+                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">目标次数</span>
+                      <Stepper
+                        value={form.targetCount}
+                        min={1}
+                        max={99}
+                        aria-label="目标次数"
+                        onChange={(v) => setForm(prev => ({ ...prev, targetCount: v }))}
+                      />
+                    </div>
                     <label className={`flex items-start gap-2.5 text-sm rounded-xl px-3 py-2.5 cursor-pointer ${
-                      form.repeatDaily
-                        ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300'
+                      form.isLongTerm
+                        ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300'
                         : 'text-gray-600 dark:text-gray-300'
                     }`}>
                       <input
                         type="checkbox"
-                        checked={form.repeatDaily}
-                        onChange={(e) => setForm(prev => ({ ...prev, repeatDaily: e.target.checked, isLongTerm: e.target.checked ? false : prev.isLongTerm }))}
-                        className="w-4 h-4 text-emerald-500 mt-0.5 rounded"
+                        checked={form.isLongTerm}
+                        onChange={(e) => setForm(prev => ({ ...prev, isLongTerm: e.target.checked, repeatDaily: e.target.checked ? false : prev.repeatDaily }))}
+                        className="w-4 h-4 text-indigo-500 mt-0.5 rounded"
                       />
                       <div>
-                        <span className="font-medium">每日重置</span>
-                        <p className="text-xs opacity-70 mt-0.5">每天刷新任务，包括进度</p>
+                        <span className="font-medium">长期任务</span>
+                        <p className="text-xs opacity-70 mt-0.5">进度长期保留，不随时间刷新，直到完成为止</p>
                       </div>
                     </label>
-
-                    {form.frequency === 'count' && (
-                      <label className={`flex items-start gap-2.5 text-sm rounded-xl px-3 py-2.5 cursor-pointer ${
-                        form.isLongTerm
-                          ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300'
-                          : 'text-gray-600 dark:text-gray-300'
-                      }`}>
-                        <input
-                          type="checkbox"
-                          checked={form.isLongTerm}
-                          onChange={(e) => setForm(prev => ({ ...prev, isLongTerm: e.target.checked, repeatDaily: e.target.checked ? false : prev.repeatDaily }))}
-                          className="w-4 h-4 text-indigo-500 mt-0.5 rounded"
-                        />
-                        <div>
-                          <span className="font-medium">长期任务</span>
-                          <p className="text-xs opacity-70 mt-0.5">进度长期保留，不随时间刷新，直到完成为止</p>
-                        </div>
-                      </label>
-                    )}
                   </div>
+                )}
+
+                {/* 模式附属 · BIG DEAL：现状 + 截止日 + 子步编辑器 + 帮我拆 */}
+                {form.mode === 'big' && (
+                  <div className="space-y-2.5 rounded-2xl border border-primary/25 bg-primary/5 dark:bg-primary/10 p-3">
+                    <input
+                      type="text"
+                      value={form.currentState}
+                      onChange={(e) => setForm(prev => ({ ...prev, currentState: e.target.value }))}
+                      placeholder="现在到哪一步了？一句话（可选，AI 拆解会参考）"
+                      className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 dark:text-white focus:outline-none focus:border-primary"
+                    />
+                    <div className="flex items-center gap-2">
+                      <span className="shrink-0 text-xs font-medium text-gray-500 dark:text-gray-400">截止日（可选）</span>
+                      <input
+                        type="date"
+                        value={form.deadline}
+                        min={todayDateKey}
+                        onChange={(e) => setForm(prev => ({ ...prev, deadline: e.target.value }))}
+                        className="flex-1 px-2.5 py-1.5 text-sm border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 dark:text-white"
+                      />
+                      {form.deadline && (
+                        <button type="button" onClick={() => setForm(prev => ({ ...prev, deadline: '' }))} className="text-xs text-gray-400 underline">清除</button>
+                      )}
+                    </div>
+
+                    <div className="space-y-1.5 pt-0.5">
+                      {form.steps.map((s, i) => (
+                        <div key={s.id ?? `new-${i}`} className="flex items-center gap-2">
+                          <span
+                            aria-hidden
+                            className={`flex h-4.5 w-4.5 h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full border-2 text-[10px] font-black ${
+                              s.done ? 'border-primary bg-primary text-white' : 'border-gray-300 dark:border-gray-600 text-transparent'
+                            }`}
+                          >
+                            ✓
+                          </span>
+                          <input
+                            value={s.title}
+                            disabled={s.done}
+                            onChange={(e) => setForm(prev => {
+                              const next = [...prev.steps];
+                              next[i] = { ...next[i], title: e.target.value };
+                              return { ...prev, steps: next };
+                            })}
+                            placeholder="一个够得着的小步…"
+                            className={`min-w-0 flex-1 px-2.5 py-1.5 text-sm border rounded-lg outline-none ${
+                              s.done
+                                ? 'border-transparent bg-transparent text-gray-400 line-through dark:text-gray-500'
+                                : 'border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 dark:text-white focus:border-primary'
+                            }`}
+                          />
+                          {s.source === 'ai' && <span className="shrink-0 text-[10px] font-bold text-primary/60">AI</span>}
+                          {!s.done && (
+                            <button
+                              type="button"
+                              aria-label="删除子步"
+                              onClick={() => setForm(prev => ({ ...prev, steps: prev.steps.filter((_, j) => j !== i) }))}
+                              className="shrink-0 rounded p-1 text-gray-300 hover:text-red-400 dark:text-gray-600"
+                            >
+                              ✕
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => setForm(prev => ({ ...prev, steps: [...prev.steps, { title: '', source: 'manual' }] }))}
+                          className="rounded-full border border-gray-300 px-3 py-1 text-xs font-medium text-gray-500 dark:border-gray-600 dark:text-gray-400"
+                        >
+                          + 手写一步
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void runFormAI()}
+                          disabled={aiBusy || !form.title.trim()}
+                          className="rounded-full border border-primary/40 px-3 py-1 text-xs font-bold text-primary disabled:opacity-45"
+                        >
+                          {aiBusy ? '正在拆…' : '✦ AI 帮我拆'}
+                        </button>
+                      </div>
+                      {aiError && <p className="text-xs text-amber-600 dark:text-amber-400">{aiError}</p>}
+                      <p className="text-[11px] leading-relaxed text-gray-400 dark:text-gray-500">
+                        每完成一子步得主属性 +{form.points}；全部完成触发收官奖励（SP + 触及属性各 +1）
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* ── ③ 奖励：主属性 chips + 点数 + 副奖励 ── */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm font-medium text-gray-700 dark:text-gray-300">奖励 · 主属性</label>
+                    <Stepper
+                      value={form.points}
+                      min={1}
+                      max={5}
+                      aria-label="主属性点数"
+                      onChange={(v) => setForm(prev => ({ ...prev, points: v }))}
+                    />
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {ATTR_IDS.map(id => {
+                      const usedByExtra = form.extraBoosts.some(b => b.attribute === id);
+                      const active = form.attribute === id;
+                      return (
+                        <button
+                          key={id}
+                          type="button"
+                          disabled={usedByExtra}
+                          onClick={() => setForm(prev => ({ ...prev, attribute: id }))}
+                          className={`px-3 py-1.5 text-xs font-bold transition-colors disabled:opacity-35 ${
+                            p3
+                              ? ''
+                              : isP4
+                                ? `rounded-full border-2 border-[#131313] ${active ? 'bg-[#131313] text-[#ffe100]' : 'bg-white text-[#131313]'}`
+                                : p5
+                                  ? `border-2 border-[#050505] ${active ? 'bg-[#c00008] text-white' : 'bg-white text-[#131313]'}`
+                                  : `rounded-full ${active ? 'bg-primary text-white' : 'border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300'}`
+                          }`}
+                          style={p3 ? {
+                            clipPath: 'polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%)',
+                            background: active ? P3R.blue : P3R.panel,
+                            color: active ? '#fff' : P3R.ink,
+                          } : undefined}
+                        >
+                          {settings.attributeNames[id] ?? id}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* 副奖励（最多 2 条） */}
+                  {(() => {
+                    const usedAttrs = new Set<string>([form.attribute, ...form.extraBoosts.map(b => b.attribute)]);
+                    const firstUnused = (ATTR_IDS.find(id => !usedAttrs.has(id)) ?? 'knowledge') as AttributeId;
+                    const canAddMore = form.extraBoosts.length < 2 && usedAttrs.size < ATTR_IDS.length;
+                    return (
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-medium text-gray-500 dark:text-gray-400">副奖励（可选，最多 2 条）</span>
+                          {canAddMore && (
+                            <motion.button
+                              whileTap={{ scale: 0.88 }}
+                              type="button"
+                              onClick={() => setForm(prev => ({
+                                ...prev,
+                                extraBoosts: [...prev.extraBoosts, { attribute: firstUnused, points: 1 }],
+                              }))}
+                              className="w-6 h-6 rounded-full bg-primary text-white flex items-center justify-center text-base font-bold leading-none"
+                              title="添加副奖励"
+                            >
+                              +
+                            </motion.button>
+                          )}
+                        </div>
+                        {form.extraBoosts.map((boost, idx) => {
+                          const otherUsed = new Set<string>([
+                            form.attribute,
+                            ...form.extraBoosts.filter((_, i) => i !== idx).map(b => b.attribute),
+                          ]);
+                          return (
+                            <div key={idx} className="flex items-center gap-2 p-2.5 rounded-xl bg-primary/5 dark:bg-primary/10 border border-primary/20 dark:border-primary/30">
+                              <select
+                                value={boost.attribute}
+                                onChange={(e) => setForm(prev => {
+                                  const next = [...prev.extraBoosts];
+                                  next[idx] = { ...next[idx], attribute: e.target.value as AttributeId };
+                                  return { ...prev, extraBoosts: next };
+                                })}
+                                className="flex-1 px-2 py-1.5 text-sm border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 dark:text-white focus:outline-none focus:border-primary"
+                              >
+                                {Object.entries(settings.attributeNames).map(([key, name]) =>
+                                  (!otherUsed.has(key) || boost.attribute === key) && (
+                                    <option key={key} value={key}>{name}</option>
+                                  )
+                                )}
+                              </select>
+                              <Stepper
+                                value={boost.points}
+                                min={1}
+                                max={5}
+                                aria-label="副奖励点数"
+                                onChange={(v) => setForm(prev => {
+                                  const next = [...prev.extraBoosts];
+                                  next[idx] = { ...next[idx], points: v };
+                                  return { ...prev, extraBoosts: next };
+                                })}
+                              />
+                              <motion.button
+                                whileTap={{ scale: 0.9 }}
+                                type="button"
+                                onClick={() => setForm(prev => ({
+                                  ...prev,
+                                  extraBoosts: prev.extraBoosts.filter((_, i) => i !== idx),
+                                }))}
+                                className="w-7 h-7 flex-shrink-0 rounded-full bg-red-100 dark:bg-red-900/30 text-red-500 flex items-center justify-center text-base font-bold"
+                              >
+                                −
+                              </motion.button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
                 </div>
 
+                {/* ── ④ 更多设置（折叠：重要 / 每日 / 周几 / 启用 / 启用日期） ── */}
                 <div>
                   <button
-                    onClick={() => setShowWeekdays(prev => !prev)}
+                    type="button"
+                    onClick={() => setShowMore(prev => !prev)}
                     className="w-full flex items-center justify-between text-left text-sm font-medium text-gray-700 dark:text-gray-300 py-1"
                   >
-                    <span>每周几执行（可选）</span>
-                    <motion.span
-                      animate={{ rotate: showWeekdays ? 180 : 0 }}
-                      className="text-gray-400 text-xs"
-                    >
-                      ▼
-                    </motion.span>
+                    <span>更多设置</span>
+                    <motion.span animate={{ rotate: showMore ? 180 : 0 }} className="text-gray-400 text-xs">▼</motion.span>
                   </button>
                   <AnimatePresence initial={false}>
-                    {showWeekdays && (
+                    {showMore && (
                       <motion.div
                         initial={{ height: 0, opacity: 0 }}
                         animate={{ height: 'auto', opacity: 1 }}
                         exit={{ height: 0, opacity: 0 }}
-                        className="overflow-hidden mt-2"
+                        className="overflow-hidden"
                       >
-                        <div className="grid grid-cols-4 gap-1.5">
-                          {weekdayLabels.map((label, index) => (
-                            <button
-                              key={label}
-                              onClick={() => toggleWeekday(index)}
-                              className={p3
-                                ? 'px-2 py-1.5 text-xs font-black transition-colors'
-                                : `px-2 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-                                    form.weekdays.includes(index)
-                                      ? 'bg-primary text-white border-primary'
-                                      : 'bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-600'
-                                  }`}
-                              style={p3 ? {
-                                clipPath: 'polygon(7px 0, 100% 0, calc(100% - 7px) 100%, 0 100%)',
-                                background: form.weekdays.includes(index) ? P3R.blue : P3R.cyanFaint,
-                                color: form.weekdays.includes(index) ? '#fff' : P3R.ink,
-                              } : undefined}
+                        <div className="space-y-2.5 pt-2">
+                          {/* 重要标记（三频道皮沿用） */}
+                          {isP4 ? (
+                            <label
+                              className="flex cursor-pointer items-center gap-3 rounded-2xl p-3.5 transition-colors"
+                              style={{ background: form.important ? 'var(--p4-orange, #f9a11b)' : 'rgba(249, 161, 27, 0.55)' }}
                             >
-                              {label}
-                            </button>
-                          ))}
+                              <input
+                                type="checkbox"
+                                checked={form.important}
+                                onChange={(e) => setForm(prev => ({ ...prev, important: e.target.checked }))}
+                                className="peer sr-only"
+                              />
+                              <span
+                                aria-hidden
+                                className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-colors ${
+                                  form.important ? 'bg-[#131313]' : 'bg-white/70'
+                                }`}
+                              >
+                                <P4Sparkle size={14} color={form.important ? 'var(--ui-bg)' : '#131313'} />
+                              </span>
+                              <div>
+                                <span className="text-sm font-black text-[#131313]">标记为重要</span>
+                                <p className="mt-0.5 text-xs font-semibold text-[#131313]/70">重要任务将在首页置顶显示，并记录在历史中</p>
+                              </div>
+                            </label>
+                          ) : p3 ? (
+                            <label className="relative flex cursor-pointer items-center gap-3 px-3 py-3" style={{ background: 'var(--p3r-panel-glass, rgba(255,255,255,0.8))', borderBottom: '2px solid rgba(53,209,232,0.7)' }}>
+                              <input
+                                type="checkbox"
+                                checked={form.important}
+                                onChange={(e) => setForm(prev => ({ ...prev, important: e.target.checked }))}
+                                className="h-5 w-5"
+                                style={{ accentColor: '#1b57ff' }}
+                              />
+                              <span aria-hidden className="h-0 w-0 border-y-[5px] border-l-[9px] border-y-transparent" style={{ borderLeftColor: '#f0417f' }} />
+                              <div>
+                                <span className="text-sm font-black text-[#0a1230]">标记为重要</span>
+                                <p className="mt-0.5 text-xs font-semibold text-[#8a97ad]">重要任务将在首页置顶显示，并记录在历史中</p>
+                              </div>
+                            </label>
+                          ) : (
+                            <label className="flex items-center gap-3 p-3 rounded-xl border border-amber-200 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={form.important}
+                                onChange={(e) => setForm(prev => ({ ...prev, important: e.target.checked }))}
+                                className="w-5 h-5 text-amber-500"
+                              />
+                              <div>
+                                <span className="text-sm font-medium text-amber-700 dark:text-amber-300">⭐ 标记为重要</span>
+                                <p className="text-xs text-amber-600/70 dark:text-amber-400/70 mt-0.5">重要任务将在首页置顶显示，并记录在历史中</p>
+                              </div>
+                            </label>
+                          )}
+
+                          {form.mode !== 'big' && (
+                            <label className={`flex items-start gap-2.5 text-sm rounded-xl px-3 py-2.5 cursor-pointer ${
+                              form.repeatDaily
+                                ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300'
+                                : 'text-gray-600 dark:text-gray-300'
+                            }`}>
+                              <input
+                                type="checkbox"
+                                checked={form.repeatDaily}
+                                onChange={(e) => setForm(prev => ({ ...prev, repeatDaily: e.target.checked, isLongTerm: e.target.checked ? false : prev.isLongTerm }))}
+                                className="w-4 h-4 text-emerald-500 mt-0.5 rounded"
+                              />
+                              <div>
+                                <span className="font-medium">每日重置</span>
+                                <p className="text-xs opacity-70 mt-0.5">每天刷新任务，包括进度</p>
+                              </div>
+                            </label>
+                          )}
+
+                          {form.mode !== 'big' && (
+                            <div>
+                              <span className="block text-xs font-medium mb-1.5 text-gray-500 dark:text-gray-400">每周几执行（可选）</span>
+                              <div className="grid grid-cols-4 gap-1.5">
+                                {weekdayLabels.map((label, index) => (
+                                  <button
+                                    key={label}
+                                    type="button"
+                                    onClick={() => toggleWeekday(index)}
+                                    className={p3
+                                      ? 'px-2 py-1.5 text-xs font-black transition-colors'
+                                      : `px-2 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                                          form.weekdays.includes(index)
+                                            ? 'bg-primary text-white border-primary'
+                                            : 'bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-600'
+                                        }`}
+                                    style={p3 ? {
+                                      clipPath: 'polygon(7px 0, 100% 0, calc(100% - 7px) 100%, 0 100%)',
+                                      background: form.weekdays.includes(index) ? P3R.blue : P3R.cyanFaint,
+                                      color: form.weekdays.includes(index) ? '#fff' : P3R.ink,
+                                    } : undefined}
+                                  >
+                                    {label}
+                                  </button>
+                                ))}
+                              </div>
+                              {form.weekdays.length > 0 && (
+                                <button type="button" onClick={() => setForm(prev => ({ ...prev, weekdays: [] }))} className="mt-2 text-xs text-gray-400 dark:text-gray-500 underline">
+                                  清除选择
+                                </button>
+                              )}
+                            </div>
+                          )}
+
+                          <div className="flex items-center justify-between py-1">
+                            <span className="text-sm text-gray-600 dark:text-gray-400">是否启用</span>
+                            <Toggle
+                              checked={form.isActive}
+                              onChange={(v) => setForm(prev => ({ ...prev, isActive: v }))}
+                              aria-label="是否启用"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-sm font-medium mb-1.5 text-gray-700 dark:text-gray-300">指定启用日期（可选）</label>
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="date"
+                                value={form.startDate}
+                                min={todayDateKey}
+                                onChange={(e) => setForm(prev => ({ ...prev, startDate: e.target.value }))}
+                                className="flex-1 px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-xl bg-gray-50 dark:bg-gray-800 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                              />
+                              {form.startDate && (
+                                <button type="button" onClick={() => setForm(prev => ({ ...prev, startDate: '' }))} className="text-xs text-gray-400 dark:text-gray-500 underline whitespace-nowrap">
+                                  清除
+                                </button>
+                              )}
+                            </div>
+                            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">设定后，该任务在指定日期前不会出现在今日任务中</p>
+                          </div>
                         </div>
-                        {form.weekdays.length > 0 && (
-                          <button
-                            onClick={() => setForm(prev => ({ ...prev, weekdays: [] }))}
-                            className="mt-2 text-xs text-gray-400 dark:text-gray-500 underline"
-                          >
-                            清除选择
-                          </button>
-                        )}
                       </motion.div>
                     )}
                   </AnimatePresence>
                 </div>
-
-                <div className="flex items-center justify-between py-1">
-                  <span className="text-sm text-gray-600 dark:text-gray-400">是否启用</span>
-                  {/* 统一开关基元（替代 w-12 h-7 自绘开关） */}
-                  <Toggle
-                    checked={form.isActive}
-                    onChange={(v) => setForm(prev => ({ ...prev, isActive: v }))}
-                    aria-label="是否启用"
-                  />
-                </div>
-
-                {/* ── 未来启用日期 ── */}
-                <div>
-                  <label className="block text-sm font-medium mb-1.5 text-gray-700 dark:text-gray-300">指定启用日期（可选）</label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="date"
-                      value={form.startDate}
-                      min={todayDateKey}
-                      onChange={(e) => setForm(prev => ({ ...prev, startDate: e.target.value }))}
-                      className="flex-1 px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-xl bg-gray-50 dark:bg-gray-800 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-                    />
-                    {form.startDate && (
-                      <button
-                        onClick={() => setForm(prev => ({ ...prev, startDate: '' }))}
-                        className="text-xs text-gray-400 dark:text-gray-500 underline whitespace-nowrap"
-                      >
-                        清除
-                      </button>
-                    )}
-                  </div>
-                  <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">设定后，该任务在指定日期前不会出现在今日任务中</p>
-                </div>
               </div>
       </SheetModal>
+
+      {/* BIG DEAL 二级面板（聚合卡统一落点） */}
+      <BigDealPanel todoId={dealPanelId} onClose={() => setDealPanelId(null)} />
 
       {/* ── §4.6 长按上下文菜单：全页单实例，按 menuTodoId 寻址目标任务。
           关闭后 SheetModal 的 AnimatePresence 会用上一帧的子树播 exit，

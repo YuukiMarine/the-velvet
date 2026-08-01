@@ -20,6 +20,8 @@ import { useUiChannel } from '@/ui/useUiChannel';
 import { P4Flower, P4Sparkle, P4SkyCircle, P4_HEADER_BLEED } from '@/ui/p4Kit';
 import { FlowerChart } from '@/components/FlowerChart';
 import { AttrDetailInlineP4 } from '@/components/AttrDetailInlineP4';
+import { BigDealHomeCard } from '@/components/bigdeal/BigDealHomeCard';
+import { BigDealPanel } from '@/components/bigdeal/BigDealPanel';
 
 // Seeded random: picks a stable index per session (changes on every page open)
 const sessionSeed = Math.random();
@@ -639,6 +641,10 @@ export const Dashboard = () => {
   const todayWeekday = today.getDay();
   const todayKey = toLocalDateKey(today);
 
+  // BIG DEAL 聚合卡数据 + 二级面板（批2）
+  const activeBigDeals = todos.filter(t => t.isBigDeal && t.isActive && !t.archivedAt);
+  const [dealPanelId, setDealPanelId] = useState<string | null>(null);
+
   const todayTodos = [...todos.filter(todo => {
     if (todo.isBigDeal) return false; // 大事不进今日清单：走独立聚合卡（批2），混入会被当单次任务误勾
     const matchesWeekday = !todo.weekdays || todo.weekdays.length === 0 || todo.weekdays.includes(todayWeekday);
@@ -869,6 +875,16 @@ export const Dashboard = () => {
         )}
        </div>
       </motion.div>
+
+      {/* BIG DEAL 聚合卡（D5：只露总进度+下一步，点击进二级面板） */}
+      {activeBigDeals.length > 0 && (
+        <div className="space-y-2.5">
+          {activeBigDeals.map((t) => (
+            <BigDealHomeCard key={t.id} todo={t} channel={isP4 ? 'p4' : 'plain'} onOpen={() => setDealPanelId(t.id)} />
+          ))}
+        </div>
+      )}
+      <BigDealPanel todoId={dealPanelId} onClose={() => setDealPanelId(null)} />
 
       {/* 今日任务 ×「今日仪式」：竖屏上下排（并排时两栏都太挤，用户口径），宽屏才回双列 */}
       <div className={isP4 ? 'grid grid-cols-1 items-stretch gap-3 md:grid-cols-2' : 'space-y-5'}>

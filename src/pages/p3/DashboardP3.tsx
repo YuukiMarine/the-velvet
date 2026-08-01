@@ -25,6 +25,8 @@ import { getAttributeLevelTitle } from '@/utils/attributeLevelTitles';
 import { calcMaxStreak } from '@/utils/streak';
 import { TAROT_BY_ID } from '@/constants/tarot';
 import { triggerNavFeedback, playSound } from '@/utils/feedback';
+import { BigDealHomeCard } from '@/components/bigdeal/BigDealHomeCard';
+import { BigDealPanel } from '@/components/bigdeal/BigDealPanel';
 
 // 问候副题池（与 Dashboard.tsx SUBTEXTS 同源；P3R 版去 emoji——设计稿为纯文字蓝副题）
 const SUBTEXTS: Record<string, string[]> = {
@@ -422,6 +424,10 @@ export const DashboardP3 = () => {
   // 再挂一个系统黄色月亮 emoji 既撞义又破配色——这里摘掉开头的 emoji 只留文字。
   const greeting = useMemo(() => subtext.replace(/^\s*\p{Extended_Pictographic}[️‍\p{Extended_Pictographic}]*\s*/u, ''), [subtext]);
 
+  // ── BIG DEAL 聚合卡数据 + 二级面板 ──
+  const activeBigDeals = todos.filter((t) => t.isBigDeal && t.isActive && !t.archivedAt);
+  const [dealPanelId, setDealPanelId] = useState<string | null>(null);
+
   // ── 今日任务（口径同 Dashboard：启用+星期匹配+未来启用日过滤；今天完成后归档的仍显示；重要在前）──
   const todayWeekday = now.getDay();
   const todayKey = toLocalDateKey(now);
@@ -706,6 +712,16 @@ export const DashboardP3 = () => {
             />
           </div>
         )}
+
+        {/* ── BIG DEAL 聚合卡（D5：只露总进度+下一步，点击进二级面板）── */}
+        {activeBigDeals.length > 0 && (
+          <section className="mt-6 space-y-2.5" aria-label="进行中的大事">
+            {activeBigDeals.map((t) => (
+              <BigDealHomeCard key={t.id} todo={t} channel="p3" onOpen={() => setDealPanelId(t.id)} />
+            ))}
+          </section>
+        )}
+        <BigDealPanel todoId={dealPanelId} onClose={() => setDealPanelId(null)} />
 
         {/* ── 今日任务（白斜卡列表：直接打卡；接入 CTA 探出右缘）── */}
         <section className="mt-7" aria-label="今日任务">
