@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { useAppStore, toLocalDateKey } from '@/store';
 import { WishBoard, useWishPane, wishSkinFor } from '@/components/wish/WishBoard';
+import { PaneSwapMark } from '@/components/wish/PaneSwapMark';
 import { BufferedTextInput } from '@/components/ui/BufferedTextInput';
 import { minimalStep } from '@/utils/minimalStep';
 import { BigDealPanel } from '@/components/bigdeal/BigDealPanel';
@@ -234,7 +235,7 @@ const ATTR_IDS: AttributeId[] = ['knowledge', 'guts', 'dexterity', 'kindness', '
 
 // 行动页子视图（任务）：页头/页级转场由宿主 Actions.tsx 承担，本组件只渲染内容
 export const TodosView = () => {
-  const { todos, settings, attributes, addTodo, updateTodo, deleteTodo, getTodayTodoProgress, getTodoDateLabel, weeklyGoals, saveWeeklyGoal, deleteWeeklyGoal, completeWeeklyGoal, getWeeklyGoalProgress, undoTodayTodoCompletion, addWish, wishes} = useAppStore();
+  const { todos, settings, attributes, addTodo, updateTodo, deleteTodo, getTodayTodoProgress, getTodoDateLabel, weeklyGoals, saveWeeklyGoal, deleteWeeklyGoal, completeWeeklyGoal, getWeeklyGoalProgress, undoTodayTodoCompletion, addWish, wishes, setWishStatus} = useAppStore();
   const channel = useUiChannel();
   const isP4 = channel === 'p4';
   // P5R：红主题 FAB 换八角红块（p5-menu 稿「+」形制）
@@ -496,20 +497,21 @@ export const TodosView = () => {
             /* p5-modal-04 稿：黑楞区标 + 右缘红计数章（坐在纸卡顶缘上） */
             <div className="relative z-10 mb-[-6px] flex items-center justify-between pl-1 pr-2">
               <button type="button" onClick={togglePane} aria-label={paneLabel} className="text-left">
-                <P5Wedge tone="ink" rot={-1.4}>{isWishPane ? '愿望 ⇄' : '今日任务 ⇄'}</P5Wedge>
+                <P5Wedge tone="ink" rot={-1.4}>{isWishPane ? '愿望' : '今日任务'}<PaneSwapMark tone="#c00008" /></P5Wedge>
               </button>
               <P5Chip tone="red" rot={1.6}>{isWishPane ? `${activeWishCount} 个` : `${activeTodos.length} 项`}</P5Chip>
             </div>
           ) : isP4 ? (
             <button type="button" onClick={togglePane} aria-label={paneLabel} className="block w-full text-left">
               <P4SectionTitle meta={<P4CountPill>{isWishPane ? `${activeWishCount} 个` : `${activeTodos.length} 项`}</P4CountPill>} className="px-1 pb-2">
-                {isWishPane ? '愿望 ⇄' : '今日任务 ⇄'}
+                {isWishPane ? '愿望' : '今日任务'}<PaneSwapMark tone="var(--p4-orange, #f9a11b)" />
               </P4SectionTitle>
             </button>
           ) : p3 ? (
             <button type="button" onClick={togglePane} aria-label={paneLabel} className="block w-full text-left">
               <BigSlantTitle
-                title={isWishPane ? '愿望 ⇄' : '今日任务 ⇄'}
+                title={isWishPane ? '愿望' : '今日任务'}
+                titleSuffix={<PaneSwapMark tone="var(--p3r-blue, #1b57ff)" />}
                 count={isWishPane ? `${activeWishCount} 个` : `${activeTodos.length} 项`}
                 className="mb-4"
               />
@@ -518,7 +520,7 @@ export const TodosView = () => {
             <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-gray-100 dark:border-gray-800">
               <button type="button" onClick={togglePane} aria-label={paneLabel} className="flex items-center gap-1.5 text-left">
                 <h3 className="font-bold text-gray-900 dark:text-white">{isWishPane ? '愿望' : '今日任务'}</h3>
-                <span className="text-[11px] font-black text-gray-400 dark:text-gray-500">⇄</span>
+                <PaneSwapMark tone="var(--color-primary)" />
               </button>
               <span className="text-xs text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-800 px-2.5 py-1 rounded-full">
                 {isWishPane ? `${activeWishCount} 个` : `${activeTodos.length} 项`}
@@ -556,7 +558,22 @@ export const TodosView = () => {
                 <span aria-hidden className="pointer-events-none absolute inset-[3px]" style={{ background: '#f0e9df', clipPath: roughQuad(373, 5), zIndex: -1 }} />
               </>
             )}
-            {isWishPane && <WishBoard skin={wishSkin} />}
+            {/* 两面切换有进出动效（PRD_V2.6 反馈 §6）：mode="wait" 让旧面先退场，
+                否则两份列表会在同一帧里叠着算高度，视觉上"抖一下"。
+                只动 opacity + x，D0 下 motion 会自动退化成直给。 */}
+            <AnimatePresence mode="wait" initial={false}>
+              {isWishPane && (
+                <motion.div
+                  key="wish-pane"
+                  initial={{ opacity: 0, x: 18 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -18 }}
+                  transition={{ duration: 0.2, ease: [0.2, 0, 0.1, 1] }}
+                >
+                  <WishBoard skin={wishSkin} />
+                </motion.div>
+              )}
+            </AnimatePresence>
             {!isWishPane && activeTodos.map(todo => {
               // BIG DEAL：聚合卡（进度=子步派生，点击进二级面板；⋯ 走同一长按菜单）
               if (todo.isBigDeal) {
@@ -842,10 +859,20 @@ export const TodosView = () => {
                       <span className="min-w-0 flex-1 truncate text-sm font-semibold text-gray-400 dark:text-gray-500">
                         {w.title}
                       </span>
-                      {w.fulfilledAt && (
+                      {w.fulfilledAt ? (
                         <span className="shrink-0 text-[10px] text-gray-400 dark:text-gray-500">
                           {new Date(w.fulfilledAt).toLocaleDateString('zh-CN', { month: 'long', day: 'numeric' })}
                         </span>
+                      ) : (
+                        // 只有「收起」的能恢复；已实现的不给回头路——
+                        // 实现是不可逆的仪式，能撤销就不成其为仪式了（要改只能删了重写）
+                        <button
+                          type="button"
+                          onClick={() => void setWishStatus(w.id, 'active')}
+                          className="shrink-0 rounded-full border border-primary/40 px-2 py-0.5 text-[10px] font-black text-primary"
+                        >
+                          恢复
+                        </button>
                       )}
                     </div>
                   </ListCard>

@@ -1786,6 +1786,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
     }
 
+    // 实现愿望同样发一次弹幕投稿机会（与 BIG DEAL 收官同口径）——
+    // 「值得说给别人听的时刻」不该只有大事收官一种（PRD_V2.6 §3 反馈）
+    await get().updateSettings({
+      terminalDanmakuTokens: (get().settings.terminalDanmakuTokens ?? 0) + 1,
+    });
+
     // 留一条纪念记录（不加点——这是 milestone 不是 grind，同 calling_card_clear 口径）
     const user = get().user;
     if (user) {

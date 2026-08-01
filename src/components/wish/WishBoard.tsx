@@ -82,7 +82,7 @@ export function WishBoard({ skin }: { skin: WishBoardSkin }) {
         >
           <span className="shrink-0 text-[13px]" style={{ color: skin.accent }}>✦</span>
           <span className="min-w-0 flex-1 truncate text-[11px] font-bold" style={{ color: skin.ink }}>
-            你还有 {tokens} 次话想说给同样卡住的人
+            你还有 {tokens} 次机会鼓励同样努力的人
           </span>
           <span className="shrink-0 text-[10px] font-black" style={{ color: skin.accent }}>去写 ›</span>
         </button>

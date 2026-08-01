@@ -41,7 +41,11 @@ import type { ThemeType } from '@/types';
 export type DanmakuTheme = 'blue' | 'yellow' | 'red';
 
 /** 弹幕内容上限（短句，飘得动、读得完） */
-export const DANMAKU_MAX_LEN = 30;
+export const DANMAKU_MAX_LEN = 20;
+/** 同屏最大密度：再多就糊成一片，读不成句子 */
+export const DANMAKU_MAX_ON_SCREEN = 50;
+/** 投稿冷却：三天一条。与「有几次机会」是两个独立闸门 */
+export const DANMAKU_COOLDOWN_MS = 3 * 24 * 60 * 60 * 1000;
 
 /**
  * 客户端轻量预过滤——真正的审核走 PB Admin「先审后发」，这里只挡掉最明显的脏内容、
@@ -66,7 +70,7 @@ export const danmakuThemeOf = (theme?: ThemeType): DanmakuTheme =>
 /**
  * 拉取已过审弹幕文本。无云 / 集合未建 / 权限未配 / 出错 → 返回空（由 UI 退回种子池）。
  */
-export const listApprovedDanmaku = async (limit = 60): Promise<string[]> => {
+export const listApprovedDanmaku = async (limit = DANMAKU_MAX_ON_SCREEN): Promise<string[]> => {
   if (!pb) return [];
   try {
     const res = await pb.collection('danmaku').getList(1, limit, {

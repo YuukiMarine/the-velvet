@@ -397,6 +397,12 @@ export interface Settings {
   // ── 弹幕投稿（原 F3 终端遗产，二合一后由大事收官发放；字段名保留兼容存量数据）──
   /** 已累积但未发送的「鼓励弹幕」投稿机会数。 */
   terminalDanmakuTokens?: number;
+  /**
+   * 上次成功投稿弹幕的时间（ISO）。**三天一发**的唯一真源（PRD_V2.6 §3 反馈）——
+   * 攒了多少次机会是一回事，多久能发一次是另一回事：
+   * 前者管"有没有资格"，后者管"会不会刷屏"，两个闸门缺一不可。
+   */
+  lastDanmakuSentAt?: string;
   /** 任务×终端二合一迁移完成时间 ISO（TASKS_MERGE_PRD §2）：防重入标记 */
   tasksMergeMigratedAt?: string;
   /** 抽签当日状态：已抽中的候选 key 当日沉底（跨天自动重置） */
