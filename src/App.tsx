@@ -46,9 +46,6 @@ import { CallingCardCutIn } from '@/components/callingCard/CallingCardCutIn';
 import { isNative } from '@/utils/native';
 import { tryHandleBack } from '@/utils/useBackHandler';
 import { initBoldnessRuntime, schedulePerfSample, setStraightenMode } from '@/utils/boldness';
-import { SlantTuner } from '@/components/dev/SlantTuner';
-import { StarTearDemo } from '@/components/dev/StarTearDemo';
-import { PersonaGallery } from '@/components/dev/PersonaGallery';
 import { TransitionLayer } from '@/components/transition/HeavyTransition';
 import { consumePendingCircleReveal } from '@/ui/transitionDirector';
 import { P4StageDecor } from '@/ui/p4Kit';
@@ -702,12 +699,8 @@ function App() {
           <SyncStatusBadge />
           <GlobalConflictDialog />
           <GlobalDiffDialog />
-          {/* 斜界 dev 调参面板：仅开发环境，tweakpane 动态 import 不进生产包 */}
-          {import.meta.env.DEV && <SlantTuner />}
-          {/* 星形撕页转场 dev 演示触发器：仅开发环境，真机点按钮看实跑 */}
-          {import.meta.env.DEV && <StarTearDemo />}
-          {/* P7.3 UI 原语样品间：仅开发环境，三频道实时切换验收 src/ui 组件 */}
-          {import.meta.env.DEV && <PersonaGallery />}
+          {/* dev 临时件（斜界调参/星形撕页演示/原语样品间）已随收官下架（2026-08-01 用户口径）；
+              组件仍在 components/dev/ 备查，需要时挂回来即可 */}
           {/* P8.2 重转场演出层：订阅 transitionDirector，轮盘跳转/仪式点经此播频道幕布 */}
           <TransitionLayer />
           {/* 宣告 · 达成 全屏结算屏：放在 App 顶层是为了"完成最后一项 todo 时立即弹出"，

@@ -1160,8 +1160,11 @@ html[data-ios-standalone="true"] {
 }
 
 /* ── 黄 · .p4-onlight：仍是亮面的件（奶油太阳盘/天空日期牌）上墨字钉死不翻——
-   权重 (0,5,0) 高过上面所有毯式规则，顺序无关恒胜。 */
-:root.dark[data-ui-channel="p4"] .p4-onlight :is([class*="text-[#131313]"], .text-gray-900, .text-gray-800, .text-gray-700, .dark\:text-white, .dark\:text-gray-100) {
+   权重 (0,5,0) 高过上面所有毯式规则，顺序无关恒胜。
+   第二个选择器盖"类挂在载体自己身上"的场景（如任务页抽签纸条：按钮本体既是
+   .p4-onlight 又是 text-[#131313]，后代选择器够不着它自己）。 */
+:root.dark[data-ui-channel="p4"] .p4-onlight :is([class*="text-[#131313]"], .text-gray-900, .text-gray-800, .text-gray-700, .dark\:text-white, .dark\:text-gray-100),
+:root.dark[data-ui-channel="p4"] .p4-onlight:is([class*="text-[#131313]"], .text-gray-900, .text-gray-800, .text-gray-700) {
   color: #131313 !important;
 }
 :root.dark[data-ui-channel="p4"] .p4-onlight :is(.text-gray-400, .text-gray-500, .text-gray-600, .dark\:text-gray-400, .dark\:text-gray-500, [class*="text-[#131313]/"]) {

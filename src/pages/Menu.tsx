@@ -840,7 +840,7 @@ export const Menu = () => {
             initial={{ opacity: 0, y: -8 }}
             animate={{ opacity: 1, y: 0 }}
             whileTap={{ scale: 0.98 }}
-            className="relative mt-6 block w-full max-w-[344px] text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1b57ff]"
+            className="relative mt-6 block w-full max-w-[372px] text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1b57ff]"
           >
             <span aria-hidden className="absolute inset-0" style={{ clipPath: slantClip(20), background: P3R.panel, boxShadow: '0 16px 34px rgba(38,96,140,0.14)' }} />
             {/* 顶条：蓝底斜切 MEMBER PASS */}
@@ -851,7 +851,7 @@ export const Menu = () => {
               </span>
               <span className="relative flex items-center gap-3.5 py-3 pl-9 pr-6">
                 {/* 照片位：斜切 + 浅青底；没头像时放大写首字母 */}
-                <span className="relative h-[58px] w-[48px] shrink-0 overflow-hidden" style={{ clipPath: slantClip(8), background: P3R.cyanPale }}>
+                <span className="relative h-[58px] w-[58px] shrink-0 overflow-hidden" style={{ clipPath: slantClip(8), background: P3R.cyanPale }}>
                   {user?.avatarDataUrl ? (
                     <img src={user.avatarDataUrl} alt="" className="absolute inset-0 h-full w-full object-cover" />
                   ) : (
