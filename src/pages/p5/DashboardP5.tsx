@@ -649,6 +649,8 @@ export const DashboardP5 = () => {
             </svg>
             <P5Dots className="absolute" style={{ left: 8, top: 0, width: 90, height: 90 }} color="#000000" />
             <P5Slab color={P5R.grey} seed={53} rot={20} style={{ right: 100, top: -30, width: 120, height: 90 }} />
+            {/* 暗红同心五角星（用户点名试样）：日期卡与宣言条之间的右缘空档探头，与全站贴纸星同语法 */}
+            <P5Star size={56} fill={P5R.redDeep} ring={P5R.ink} ring2={P5R.red} rot={16} className="absolute" style={{ right: -12, top: 294 }} />
           </div>
 
           <div className="flex items-start justify-between gap-3">

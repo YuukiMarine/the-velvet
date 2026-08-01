@@ -787,15 +787,21 @@ export const P5RPage = ({ children, className, active = true, decor = true }: {
   active?: boolean;
   decor?: boolean;
 }) => {
-  // 用户开了背景图 / 背景动画时不铺纯黑舞台：这层是不透明的 fixed z-0，
-  // 铺上去就把它们整块盖没了（红主题下"背景图片没反应"的根因）
+  // 用户开了背景图时不铺纯黑舞台：这层是不透明的 fixed z-0，
+  // 铺上去就把它整块盖没了（红主题下"背景图片没反应"的根因）。
+  // 只开背景动画（无图）时不能整层让位——App 根是白底，直接让位 = 纯白+动画（用户回报 bug）；
+  // 改铺半透明暗幕：动画透出暗光，红舞台身份保持。
   const anims = useAppStore((st) => st.settings.backgroundAnimation);
   const bgImage = useAppStore((st) => st.settings.backgroundImage);
-  const yieldStage = !!bgImage || (anims ?? []).length > 0;
+  const yieldStage = !!bgImage;
+  const animVeil = !bgImage && (anims ?? []).length > 0;
   if (!active) return <>{children}</>;
   return (
     <div className={`relative ${className ?? ''}`}>
-      {!yieldStage && (
+      {animVeil && (
+        <div aria-hidden className="fixed inset-0 z-0 pointer-events-none" style={{ background: 'rgba(5,5,5,0.78)' }} />
+      )}
+      {!yieldStage && !animVeil && (
       <div aria-hidden className="fixed inset-0 z-0 pointer-events-none" style={{ background: P5R.ink, contain: 'strict' }}>
         {decor && (
           <>

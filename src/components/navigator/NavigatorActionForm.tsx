@@ -20,6 +20,7 @@ import {
   type NavigatorDraft,
 } from '@/utils/navigatorRegistry';
 import { P3R, slantClip, SlantButton } from '@/components/p3r/kit';
+import { P5Collage } from '@/components/p5r/kit';
 
 /** 表单频道皮：p3=P3R 亮蓝斜面（原 bright）/ p4=黄综艺 / p5=红黑剪报。主题→频道映射在调用方。 */
 export type NavFormChannel = 'p3' | 'p4' | 'p5';
@@ -426,9 +427,22 @@ export const NavigatorActionForm = ({ draft, channel, onSubmit, onClose }: Props
             ) : p5 ? (
               <header className="relative flex items-center gap-2.5 px-5 pt-5">
                 <span aria-hidden className="h-[22px] w-[9px] shrink-0 bg-[#c00008]" style={{ transform: 'skewX(-16deg)' }} />
-                <h2 className="flex-1 text-[24px] font-black italic leading-none text-[#131313]" style={{ fontFamily: '"Arial Black", "Noto Sans SC", sans-serif' }}>
-                  {ACTION_META[d.kind].label}
-                </h2>
+                {/* 拼贴瓷砖题（用户点名：与全站 P5 表单同语法；显式四色循环防黑底暗字） */}
+                <div role="heading" aria-level={2} aria-label={ACTION_META[d.kind].label} className="flex-1">
+                  <P5Collage
+                    size={16}
+                    gap={3}
+                    tiles={Array.from(ACTION_META[d.kind].label).map((ch, i) => {
+                      const pal = [
+                        { bg: '#f0e9df', fg: '#c00008' },
+                        { bg: '#050505', fg: '#f8f8f6' },
+                        { bg: '#c00008', fg: '#f8f8f6' },
+                        { bg: '#9b9791', fg: '#050505' },
+                      ][i % 4];
+                      return { ch, bg: pal.bg, fg: pal.fg };
+                    })}
+                  />
+                </div>
                 <button
                   type="button"
                   aria-label="关闭"

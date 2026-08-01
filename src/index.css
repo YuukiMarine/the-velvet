@@ -1174,6 +1174,10 @@ html[data-ios-standalone="true"] {
 :root[data-ui-channel="p5"] .p5-onpaper :is(.text-gray-600, .text-gray-500, .text-gray-400, .dark\:text-gray-300, .dark\:text-gray-400, .dark\:text-gray-500) {
   color: rgba(19, 19, 19, 0.62) !important;
 }
+/* 纸上彩字（谏言靛蓝等）：dark 变体在纸上洗淡 → 钉回深彩 */
+:root[data-ui-channel="p5"] .p5-onpaper :is(.text-indigo-700, .dark\:text-indigo-300) {
+  color: #3730a3 !important;
+}
 /* 表单输入面同步回纸色（dark:bg-gray-800 在纸白面板里是突兀暗块） */
 :root[data-ui-channel="p5"] .p5-onpaper :is(.dark\:bg-gray-800, .dark\:bg-gray-900) {
   background-color: #ffffff !important;

@@ -7,6 +7,7 @@ import { matchConfidant, type ConfidantMatchResult } from '@/utils/confidantAI';
 import { TAROT_BY_ID } from '@/constants/tarot';
 import { INTIMACY_LABELS, MAJOR_ARCANA_IDS, MAX_INTIMACY } from '@/utils/confidantLevels';
 import { TarotCardSVG } from '@/components/astrology/TarotCardSVG';
+import { P5Collage } from '@/components/p5r/kit';
 
 type Stage =
   | 'basic'        // 模式 + 名字（+ 在线邮箱）
@@ -280,6 +281,25 @@ export function ConfidantCreateModal({ isOpen, onClose, onCreated, onPickOnline 
                     aria-label="返回上一步"
                   >‹</button>
                 )}
+                {p5 ? (
+                  /* 红：拼贴瓷砖题（与全站 P5 表单标题同语法，用户点名口径）。
+                     显式四色循环（Actions 切换头同采样）——默认循环会出黑底暗字不可读块 */
+                  <div role="heading" aria-level={2} aria-label={stage === 'result' ? '塔罗的回响' : '结识一位同伴'} className="pt-1">
+                    <P5Collage
+                      size={18}
+                      gap={3}
+                      tiles={Array.from(stage === 'result' ? '塔罗的回响' : '结识一位同伴').map((ch, i) => {
+                        const pal = [
+                          { bg: '#f0e9df', fg: '#c00008' },
+                          { bg: '#050505', fg: '#f8f8f6' },
+                          { bg: '#c00008', fg: '#f8f8f6' },
+                          { bg: '#9b9791', fg: '#050505' },
+                        ][i % 4];
+                        return { ch, bg: pal.bg, fg: pal.fg };
+                      })}
+                    />
+                  </div>
+                ) : (
                 <h2
                   className={
                     p3 ? 'text-[22px] font-black italic tracking-tight'
@@ -294,6 +314,7 @@ export function ConfidantCreateModal({ isOpen, onClose, onCreated, onPickOnline 
                 >
                   {stage === 'result' ? '塔罗的回响' : '结识一位同伴'}
                 </h2>
+                )}
               </div>
               <button
                 onClick={onClose}
