@@ -10,7 +10,7 @@ import { motion } from 'motion/react';
 import { useAppStore, toLocalDateKey } from '@/store';
 import { SheetModal } from '@/components/SheetModal';
 import { GoalArc } from '@/components/terminal/GoalArc';
-import { triggerSuccessFeedback, triggerLevelFeedback } from '@/utils/feedback';
+import { triggerSuccessFeedback } from '@/utils/feedback';
 
 interface Props {
   /** null = 关闭 */
@@ -50,14 +50,8 @@ export const BigDealPanel = ({ todoId, onClose }: Props) => {
     setBusyStepId(stepId);
     try {
       const r = await completeTodoStep(todo.id, stepId);
-      if (r) {
-        triggerSuccessFeedback();
-        if (r.collapsed) {
-          // 末步直接连收官：collapseBigDeal 已在 store 侧被 completeTodoStep 触发
-          triggerLevelFeedback();
-          setNotice(`大事收官！触及属性 +1，SP 已入账`);
-        }
-      }
+      // 末步收官的演出由全局 BigDealClearCutIn 承担（store.bigDealClear 载荷），这里只给普通勾选反馈
+      if (r && !r.collapsed) triggerSuccessFeedback();
     } finally {
       setBusyStepId(null);
     }
@@ -103,9 +97,8 @@ export const BigDealPanel = ({ todoId, onClose }: Props) => {
     if (!todo || collapsing) return;
     setCollapsing(true);
     try {
+      // 演出交给全局 BigDealClearCutIn（store 载荷触发）
       await collapseBigDeal(todo.id);
-      triggerLevelFeedback();
-      setNotice('大事收官！触及属性 +1，SP 已入账');
     } finally {
       setCollapsing(false);
     }

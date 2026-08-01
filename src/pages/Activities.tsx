@@ -44,6 +44,7 @@ type ActivityAccentKey =
   | 'confidant'        // 同伴事件
   | 'weeklyGoal'       // 本周目标达成
   | 'callingCardClear' // 倒计时达成
+  | 'bigdealClear'     // BIG DEAL 收官（收束卡）
   | 'todo'             // 任务完成
   | 'important'        // 手动标记重要
   | 'default';         // 普通记录
@@ -56,10 +57,15 @@ const ACTIVITY_ACCENT: Record<ActivityAccentKey, string> = {
   confidant: 'bg-indigo-400',
   weeklyGoal: 'bg-emerald-500',
   callingCardClear: 'bg-primary',
+  bigdealClear: 'bg-primary',
   todo: 'bg-sky-400',
   important: 'bg-amber-400',
   default: 'bg-gray-200 dark:bg-gray-700',
 };
+
+/** 收束卡时间线里的子步描述瘦身：去掉「完成小步: 」前缀与「（大事「X」第 i/n 步）」后缀 */
+const stripStepDesc = (desc: string) =>
+  desc.replace(/^完成小步[:：]\s*/, '').replace(/（大事「.*」第 \d+\/\d+ 步）$/, '');
 
 /** 描述截断：ActionSheet 标题 / 删除确认文案用，防超长描述撑爆弹层 */
 const truncateText = (text: string, max: number) =>
@@ -565,9 +571,25 @@ export const ActivitiesView = () => {
     return Array.from(months).sort((a, b) => a - b);
   }, [activities, filterYear]);
 
+  // 收束（TASKS_MERGE_PRD D4）：已收官大事的子步记录从列表隐藏（DB 保留），
+  // 由对应收束卡（bigdeal_clear）展开时间线时按需展示
+  const clearedDealIds = useMemo(
+    () => new Set(activities.filter(a => a.category === 'bigdeal_clear' && a.bigDealId).map(a => a.bigDealId as string)),
+    [activities],
+  );
+  /** 收束卡展开态（按 bigDealId 寻址） */
+  const [expandedDeals, setExpandedDeals] = useState<Set<string>>(new Set());
+  const toggleDealExpand = (id: string) =>
+    setExpandedDeals(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+
   const filteredActivities = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return activities.filter(activity => {
+      if (activity.category === 'bigdeal_step' && activity.bigDealId && clearedDealIds.has(activity.bigDealId)) return false;
       const date = new Date(activity.date);
       if (filterAttributes.length > 0 && !filterAttributes.some(a => activity.pointsAwarded[a as AttributeId] > 0)) return false;
       if (filterYear !== 'all' && date.getFullYear() !== parseInt(filterYear)) return false;
@@ -584,7 +606,7 @@ export const ActivitiesView = () => {
       if (q && !activity.description.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [activities, filterAttributes, filterYear, filterMonth, showImportantOnly, filterMethod, searchQuery]);
+  }, [activities, filterAttributes, filterYear, filterMonth, showImportantOnly, filterMethod, searchQuery, clearedDealIds]);
 
   const groupedActivities = useMemo(() => {
     const map = new Map<string, { year: number; months: Map<string, { month: number; days: Map<string, { dateLabel: string; dayKey: string; items: typeof activities }> }> }>();
@@ -1095,7 +1117,9 @@ export const ActivitiesView = () => {
                                           // v2.1：倒计时达成（calling_card_clear）—— 用主题 primary 强调，
                                           // 表达"用户跨越的里程碑"，与 LevelUp / Achievement 同等重要的视觉权重
                                           const isCallingCardClear = activity.category === 'calling_card_clear';
-                                          const isSpecial = isAchievement || isSkill || isLevelUp || isConfidant || isWeeklyGoal || isCallingCardClear;
+                                          // BIG DEAL 收束卡：默认重要 + 可展开子步时间线（隐藏记录按需展示）
+                                          const isBigDealClear = activity.category === 'bigdeal_clear' && !!activity.bigDealId;
+                                          const isSpecial = isAchievement || isSkill || isLevelUp || isConfidant || isWeeklyGoal || isCallingCardClear || isBigDealClear;
 
                                           // §3.2：原"边框/内联 rgba 底色/强调条"三套联动收敛为
                                           // accentKey → ACTIVITY_ACCENT 单次查表；类型优先级保持旧三元链原序
@@ -1113,6 +1137,8 @@ export const ActivitiesView = () => {
                                             ? 'weeklyGoal'
                                             : isCallingCardClear
                                             ? 'callingCardClear'
+                                            : isBigDealClear
+                                            ? 'bigdealClear'
                                             : isTodo
                                             ? 'todo'
                                             : isImportant
@@ -1138,8 +1164,58 @@ export const ActivitiesView = () => {
                                                   ? 'text-gray-900 dark:text-white'
                                                   : 'text-gray-800 dark:text-gray-100'
                                               }`}>
+                                                {isBigDealClear && (
+                                                  <span className="mr-1.5 inline-block translate-y-[-1px] rounded-full bg-primary/10 px-1.5 py-0.5 align-middle text-[9px] font-black uppercase text-primary">BIG DEAL</span>
+                                                )}
                                                 {activity.description}
                                               </p>
+
+                                              {/* 收束卡：子步时间线（点击展开；隐藏的 bigdeal_step 记录按需展示） */}
+                                              {isBigDealClear && (() => {
+                                                const dealId = activity.bigDealId!;
+                                                const opened = expandedDeals.has(dealId);
+                                                const steps = activities
+                                                  .filter(a => a.category === 'bigdeal_step' && a.bigDealId === dealId)
+                                                  .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+                                                return (
+                                                  <div className="mt-2">
+                                                    <button
+                                                      type="button"
+                                                      onPointerDown={(e) => e.stopPropagation()}
+                                                      onClick={(e) => { e.stopPropagation(); toggleDealExpand(dealId); }}
+                                                      className="flex items-center gap-1 text-[11px] font-bold text-primary"
+                                                    >
+                                                      子步时间线（{steps.length}）
+                                                      <ChevronDown open={opened} />
+                                                    </button>
+                                                    <AnimatePresence initial={false}>
+                                                      {opened && (
+                                                        <motion.div
+                                                          initial={{ height: 0, opacity: 0 }}
+                                                          animate={{ height: 'auto', opacity: 1 }}
+                                                          exit={{ height: 0, opacity: 0 }}
+                                                          className="overflow-hidden"
+                                                        >
+                                                          <div className="mt-1.5 space-y-1 border-l-2 border-primary/20 pl-3">
+                                                            {steps.map(s => (
+                                                              <div key={s.id} className="flex items-baseline gap-2 text-[12px]">
+                                                                <span aria-hidden className="text-primary">✓</span>
+                                                                <span className="min-w-0 flex-1 truncate text-gray-600 dark:text-gray-300">{stripStepDesc(s.description)}</span>
+                                                                <span className="shrink-0 tabular-nums text-[10px] text-gray-400 dark:text-gray-500">
+                                                                  {new Date(s.date).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })} {new Date(s.date).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
+                                                                </span>
+                                                              </div>
+                                                            ))}
+                                                            {steps.length === 0 && (
+                                                              <div className="text-[11px] text-gray-400 dark:text-gray-500">子步记录已被单独清理</div>
+                                                            )}
+                                                          </div>
+                                                        </motion.div>
+                                                      )}
+                                                    </AnimatePresence>
+                                                  </div>
+                                                );
+                                              })()}
 
                                               {/* 点数 + 时间 — 次要信息行 */}
                                               <div className="flex items-center gap-2 mt-2 flex-wrap">

@@ -38,6 +38,7 @@ const Ledger = lazy(() => import('@/pages/Ledger').then(m => ({ default: m.Ledge
 // 无气力症治疗终端（F3）
 import { BattleArena } from '@/components/battle/BattleArena';
 import { TerminalClearCutIn } from '@/components/terminal/TerminalClearCutIn';
+import { BigDealClearCutIn } from '@/components/bigdeal/BigDealClearCutIn';
 // F6 黑猫对话窗（portal 到 body 的全屏 overlay；入口在 Sidebar / BottomNav 中央 ◈）
 import { NavigatorWindow } from '@/components/navigator/NavigatorWindow';
 import { primeCurrentTheme } from '@/utils/feedback';
@@ -713,6 +714,8 @@ function App() {
           <GlobalCallingCardCutIn />
           {/* F3 终端任务「我做到了」结算屏（独立于宣告卡 cut-in） */}
           <TerminalClearCutIn />
+          {/* BIG DEAL 收官结算屏（批4）：collapseBigDeal 落库后全局弹出，不依赖当前页面 */}
+          <BigDealClearCutIn />
         </div>
       </div>
     </div>
