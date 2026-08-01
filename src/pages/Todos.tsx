@@ -2,12 +2,14 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useMemo, useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { useAppStore, toLocalDateKey } from '@/store';
+import { WishBoard, useWishPane, wishSkinFor } from '@/components/wish/WishBoard';
+import { BufferedTextInput } from '@/components/ui/BufferedTextInput';
 import { minimalStep } from '@/utils/minimalStep';
 import { BigDealPanel } from '@/components/bigdeal/BigDealPanel';
 import { BigDealHomeCard } from '@/components/bigdeal/BigDealHomeCard';
 import { FateDrawSheet } from '@/components/fate/FateDrawSheet';
 import { AttributeId, TodoFrequency } from '@/types';
-import { triggerNavFeedback } from '@/utils/feedback';
+import { triggerSuccessFeedback, triggerNavFeedback } from '@/utils/feedback';
 import { TAP } from '@/utils/motion';
 import { GoalDeck } from '@/components/weeklyGoal/GoalDeck';
 // ── 行动域统一基元（UI_AUDIT_V2.5.md §3.2 + §4.6 交互协议）──
@@ -232,7 +234,7 @@ const ATTR_IDS: AttributeId[] = ['knowledge', 'guts', 'dexterity', 'kindness', '
 
 // 行动页子视图（任务）：页头/页级转场由宿主 Actions.tsx 承担，本组件只渲染内容
 export const TodosView = () => {
-  const { todos, settings, attributes, addTodo, updateTodo, deleteTodo, getTodayTodoProgress, getTodoDateLabel, weeklyGoals, saveWeeklyGoal, deleteWeeklyGoal, completeWeeklyGoal, getWeeklyGoalProgress, undoTodayTodoCompletion } = useAppStore();
+  const { todos, settings, attributes, addTodo, updateTodo, deleteTodo, getTodayTodoProgress, getTodoDateLabel, weeklyGoals, saveWeeklyGoal, deleteWeeklyGoal, completeWeeklyGoal, getWeeklyGoalProgress, undoTodayTodoCompletion, addWish} = useAppStore();
   const channel = useUiChannel();
   const isP4 = channel === 'p4';
   // P5R：红主题 FAB 换八角红块（p5-menu 稿「+」形制）
@@ -240,6 +242,14 @@ export const TodosView = () => {
   // P3R（蓝主题）形态：设计稿 p3-actions-reference-v3——节直接铺水面底、大斜体节题、浅青空态板
   const p3 = channel === 'p3';
   const [showAdd, setShowAdd] = useState(false);
+  /**
+   * 「今日任务 ⇄ 愿望」（PRD_V2.6 §1.1，位置修正：在**行动-任务**里而不是首页）。
+   * 切到愿望后：抽签入口与任务列表让位给 WishBoard，右下 FAB 同步变成「添加愿望」。
+   */
+  const { isWishPane, togglePane, paneLabel, activeWishCount } = useWishPane();
+  const wishSkin = wishSkinFor(p5 ? 'p5' : isP4 ? 'p4' : p3 ? 'p3' : 'neutral');
+  const [wishAddOpen, setWishAddOpen] = useState(false);
+  const [wishDraft, setWishDraft] = useState('');
   const [editingTodoId, setEditingTodoId] = useState<string | null>(null);
   /** 表单模式（三段式表单第二段）：single/count 映射 frequency；big = BIG DEAL（frequency 恒 single） */
   const emptyForm = {
@@ -478,24 +488,39 @@ export const TodosView = () => {
           {p5 ? (
             /* p5-modal-04 稿：黑楞区标 + 右缘红计数章（坐在纸卡顶缘上） */
             <div className="relative z-10 mb-[-6px] flex items-center justify-between pl-1 pr-2">
-              <P5Wedge tone="ink" rot={-1.4}>今日任务</P5Wedge>
-              <P5Chip tone="red" rot={1.6}>{activeTodos.length} 项</P5Chip>
+              <button type="button" onClick={togglePane} aria-label={paneLabel} className="text-left">
+                <P5Wedge tone="ink" rot={-1.4}>{isWishPane ? '愿望 ⇄' : '今日任务 ⇄'}</P5Wedge>
+              </button>
+              <P5Chip tone="red" rot={1.6}>{isWishPane ? `${activeWishCount} 个` : `${activeTodos.length} 项`}</P5Chip>
             </div>
           ) : isP4 ? (
-            <P4SectionTitle meta={<P4CountPill>{activeTodos.length} 项</P4CountPill>} className="px-1 pb-2">
-              今日任务
-            </P4SectionTitle>
+            <button type="button" onClick={togglePane} aria-label={paneLabel} className="block w-full text-left">
+              <P4SectionTitle meta={<P4CountPill>{isWishPane ? `${activeWishCount} 个` : `${activeTodos.length} 项`}</P4CountPill>} className="px-1 pb-2">
+                {isWishPane ? '愿望 ⇄' : '今日任务 ⇄'}
+              </P4SectionTitle>
+            </button>
           ) : p3 ? (
-            <BigSlantTitle title="今日任务" count={`${activeTodos.length} 项`} className="mb-4" />
+            <button type="button" onClick={togglePane} aria-label={paneLabel} className="block w-full text-left">
+              <BigSlantTitle
+                title={isWishPane ? '愿望 ⇄' : '今日任务 ⇄'}
+                count={isWishPane ? `${activeWishCount} 个` : `${activeTodos.length} 项`}
+                className="mb-4"
+              />
+            </button>
           ) : (
             <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-gray-100 dark:border-gray-800">
-              <h3 className="font-bold text-gray-900 dark:text-white">今日任务</h3>
+              <button type="button" onClick={togglePane} aria-label={paneLabel} className="flex items-center gap-1.5 text-left">
+                <h3 className="font-bold text-gray-900 dark:text-white">{isWishPane ? '愿望' : '今日任务'}</h3>
+                <span className="text-[11px] font-black text-gray-400 dark:text-gray-500">⇄</span>
+              </button>
               <span className="text-xs text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-800 px-2.5 py-1 rounded-full">
-                {activeTodos.length} 项
+                {isWishPane ? `${activeWishCount} 个` : `${activeTodos.length} 项`}
               </span>
             </div>
           )}
-          {/* 抽签入口（TASKS_MERGE_PRD §4.2）：决策短路——不知道先做哪个，交给命运单抽 */}
+          {/* 抽签入口（TASKS_MERGE_PRD §4.2）：决策短路——不知道先做哪个，交给命运单抽。
+              愿望面下隐藏：抽签抽的是"今天做什么"，与"远处的灯"不是一件事 */}
+          {!isWishPane && (
           <button
             type="button"
             onClick={() => setFateOpen(true)}
@@ -515,6 +540,7 @@ export const TodosView = () => {
             <span className="min-w-0 flex-1 truncate">不知道做什么好？命运会替你选择</span>
             <span aria-hidden className="opacity-50">›</span>
           </button>
+          )}
           <div className={isP4 || p3 ? 'space-y-2' : p5 ? 'relative space-y-2 px-3 pb-3 pt-5' : 'p-3 space-y-2'}>
             {p5 && (
               <>
@@ -523,7 +549,8 @@ export const TodosView = () => {
                 <span aria-hidden className="pointer-events-none absolute inset-[3px]" style={{ background: '#f0e9df', clipPath: roughQuad(373, 5), zIndex: -1 }} />
               </>
             )}
-            {activeTodos.map(todo => {
+            {isWishPane && <WishBoard skin={wishSkin} />}
+            {!isWishPane && activeTodos.map(todo => {
               // BIG DEAL：聚合卡（进度=子步派生，点击进二级面板；⋯ 走同一长按菜单）
               if (todo.isBigDeal) {
                 return (
@@ -798,17 +825,18 @@ export const TodosView = () => {
         <div className="fixed bottom-24 right-5 z-40 md:bottom-8 md:right-8">
           <SlantButton
             tone="primary"
-            ariaLabel="添加任务"
+            ariaLabel={isWishPane ? '添加愿望' : '添加任务'}
             className="text-[20px]"
             style={{ paddingTop: 14, paddingBottom: 14, paddingLeft: 34, paddingRight: 34, boxShadow: '0 14px 28px rgba(27,87,255,0.32)' }}
             onClick={() => {
               triggerNavFeedback();
+              if (isWishPane) { setWishDraft(''); setWishAddOpen(true); return; }
               setEditingTodoId(null);
               resetForm();
               setShowAdd(true);
             }}
           >
-            接入
+            {isWishPane ? '许愿' : '接入'}
           </SlantButton>
         </div>
       ) : (
@@ -816,11 +844,13 @@ export const TodosView = () => {
           whileTap={TAP}
           onClick={() => {
             triggerNavFeedback();
+            // 愿望面下 FAB 直接变成「添加愿望」（用户口径：切换后添加按钮也要跟着变）
+            if (isWishPane) { setWishDraft(''); setWishAddOpen(true); return; }
             setEditingTodoId(null);
             resetForm();
             setShowAdd(true);
           }}
-          aria-label="添加任务"
+          aria-label={isWishPane ? '添加愿望' : '添加任务'}
           className={`fixed bottom-24 right-5 md:bottom-8 md:right-8 z-40 flex items-center justify-center cursor-pointer ${
             isP4
               ? 'h-16 w-16 text-white' // p4-redraw：蓝色四角星 FAB（星形本体当按钮面）
@@ -847,6 +877,44 @@ export const TodosView = () => {
 
       {/* 添加/编辑任务：SheetModal 底部抽屉——自带 backdrop 点关/ESC/Android back
           （修审计"遮罩不可点关、无返回键处理"问题），exit 动画由其内部 AnimatePresence 承担 */}
+      {/* 添加愿望（FAB 在愿望面下的目的地）。刻意只要一个标题——
+          愿望是"远处的灯"，此刻多填字段只会让人写不出来；细节等它真的动起来再补。 */}
+      <SheetModal
+        isOpen={wishAddOpen}
+        onClose={() => setWishAddOpen(false)}
+        title="记下一个愿望"
+        footer={
+          <button
+            onClick={async () => {
+              const t = wishDraft.trim();
+              if (!t) return;
+              await addWish({ title: t, source: 'manual' });
+              setWishDraft('');
+              setWishAddOpen(false);
+              triggerSuccessFeedback();
+            }}
+            disabled={!wishDraft.trim()}
+            className="w-full rounded-2xl bg-primary py-3.5 text-sm font-bold text-white disabled:opacity-40 active:scale-[0.98]"
+          >
+            记下
+          </button>
+        }
+      >
+        <div className="space-y-2">
+          <p className="text-xs leading-relaxed text-gray-500 dark:text-gray-400">
+            它不会出现在今日任务里。记录时把事挂上去，你就能看见自己在靠近它。
+          </p>
+          <BufferedTextInput
+            value={wishDraft}
+            onCommit={setWishDraft}
+            debounceMs={150}
+            placeholder="想实现的事…"
+            aria-label="愿望标题"
+            className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-primary dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+          />
+        </div>
+      </SheetModal>
+
       <SheetModal
         isOpen={showAdd}
         onClose={closeForm}

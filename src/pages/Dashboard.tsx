@@ -2,7 +2,6 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useState, useEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { useAppStore, toLocalDateKey } from '@/store';
-import { WishBoard, useWishPane, wishSkinFor } from '@/components/wish/WishBoard';
 import { TodoCompleteModal } from '@/components/TodoCompleteModal';
 import { BattleDashboardWidget } from '@/components/BattleDashboardWidget';
 import { StackCarousel } from '@/components/StackCarousel';
@@ -501,9 +500,6 @@ const isLightColor = (hex: string): boolean => {
 
 export const Dashboard = () => {
   const { attributes, user, settings, todos, activities, achievements, skills, completeTodo, getTodayTodoProgress, setModalBlocker, setCurrentPage, applyCountercurrentDecay, getCountercurrentWarnings, callingCards } = useAppStore();
-  // 今日任务 ⇄ 愿望（PRD_V2.6 §1.1）：切换态记进 settings，三个 Dashboard 变体共用同一个 hook
-  const { isWishPane, togglePane, paneLabel, activeWishCount } = useWishPane();
-  const wishSkin = wishSkinFor(useUiChannel());
   const [completedTitle, setCompletedTitle] = useState<string | null>(null);
   const [completedPoints, setCompletedPoints] = useState(1);
   const [unlockHint, setUnlockHint] = useState<{ achievements: number; skills: number }>({ achievements: 0, skills: 0 });
@@ -891,11 +887,10 @@ export const Dashboard = () => {
       >
         {isP4 ? (
           <div className="flex items-center justify-between gap-2 border-b-2 border-[#131313]/10 px-4 pb-2.5 pt-4">
-            <button type="button" onClick={togglePane} className="flex min-w-0 items-center gap-2 text-left" aria-label={paneLabel}>
+            <div className="flex min-w-0 items-center gap-2">
               <P4Flower size={18} color="var(--ui-bg)" />
-              <h3 className="truncate text-[15px] font-black text-[#131313]">{isWishPane ? '愿望' : '今日任务'}</h3>
-              <span className="shrink-0 text-[11px] font-black" style={{ color: 'rgba(19,19,19,0.45)' }}>⇄</span>
-            </button>
+              <h3 className="truncate text-[15px] font-black text-[#131313]">今日任务</h3>
+            </div>
             <button
               type="button"
               onClick={() => setCurrentPage('todos')}
@@ -903,29 +898,22 @@ export const Dashboard = () => {
               className="shrink-0 rounded-full px-2 py-0.5 text-[13px] font-black tabular-nums text-[#131313] transition active:scale-95"
               style={{ background: 'rgba(19,19,19,0.08)' }}
             >
-              {isWishPane ? `${activeWishCount} 个` : totalCount === 0 ? '0 项' : `${completedCount}/${totalCount}`} ›
+              {totalCount === 0 ? '0 项' : `${completedCount}/${totalCount}`} ›
             </button>
           </div>
         ) : (
           <div className="flex items-center justify-between px-5 pt-5 pb-3">
-            <button type="button" onClick={togglePane} className="text-left" aria-label={paneLabel}>
-              <p className="text-[10px] font-semibold tracking-widest text-gray-400 dark:text-gray-500 uppercase mb-0.5">{isWishPane ? 'Wishes' : 'Today'}</p>
-              <h3 className="flex items-center gap-1.5 font-extrabold text-gray-900 dark:text-white">
-                {isWishPane ? '愿望' : '今日任务'}
-                <span className="text-[11px] font-black text-gray-400 dark:text-gray-500">⇄</span>
-              </h3>
-            </button>
+            <div>
+              <p className="text-[10px] font-semibold tracking-widest text-gray-400 dark:text-gray-500 uppercase mb-0.5">Today</p>
+              <h3 className="font-extrabold text-gray-900 dark:text-white">今日任务</h3>
+            </div>
             <span className="text-xs text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-800 px-2.5 py-1 rounded-full">
-              {isWishPane ? `${activeWishCount} 个` : totalCount === 0 ? '暂无' : `${completedCount}/${totalCount}`}
+              {totalCount === 0 ? '暂无' : `${completedCount}/${totalCount}`}
             </span>
           </div>
         )}
 
-        {isWishPane ? (
-          <div className="px-3 pb-3 pt-2">
-            <WishBoard skin={wishSkin} />
-          </div>
-        ) : todayTodos.length === 0 ? (
+        {todayTodos.length === 0 ? (
           isP4 ? (
             <div className="px-4 py-7 text-center">
               <p className="text-[13px] font-black text-[#a35a00]">暂无待播行动</p>
