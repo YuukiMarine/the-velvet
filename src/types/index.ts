@@ -703,6 +703,17 @@ export interface NavigatorMemo {
   recallCount?: number;
 }
 
+/** BIG DEAL 收官结算屏载荷（TASKS_MERGE_PRD 批4） */
+export interface BigDealClearPayload {
+  todoId: string;
+  title: string;
+  stepsCount: number;
+  /** 实际入账 SP（战场关闭 / 未初始化 = 0） */
+  sp: number;
+  /** 触及属性（收官记录里各 +1） */
+  attrs: AttributeId[];
+}
+
 /** F3 终端任务完成结算屏（TerminalClearCutIn）的载荷 */
 export interface TerminalClearPayload {
   stepTitle: string;

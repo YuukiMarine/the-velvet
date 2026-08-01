@@ -1,5 +1,5 @@
 ﻿import { create } from 'zustand';
-import { User, Attribute, Activity, Achievement, Skill, Settings, ThemeType, AttributeId, AttributeNamesKey, Todo, TodoCompletion, TodoStep, FateCandidate, PeriodSummary, SummaryPeriod, SummaryPromptPreset, WeeklyGoal, WeeklyGoalItem, Persona, Shadow, BattleState, TowerStratum, StratumNode, DailyDivination, LongReading, LongReadingFollowUp, Confidant, ConfidantEvent, ConfidantBuff, CounselSession, CounselMessage, CounselArchive, CallingCard, NotifSlot, LedgerEntry, Budget, SpendWorth, LedgerAsset, Wish, TerminalClearPayload, BattleArsenal, ChainKey, AffixKind } from '@/types';
+import { User, Attribute, Activity, Achievement, Skill, Settings, ThemeType, AttributeId, AttributeNamesKey, Todo, TodoCompletion, TodoStep, FateCandidate, BigDealClearPayload, PeriodSummary, SummaryPeriod, SummaryPromptPreset, WeeklyGoal, WeeklyGoalItem, Persona, Shadow, BattleState, TowerStratum, StratumNode, DailyDivination, LongReading, LongReadingFollowUp, Confidant, ConfidantEvent, ConfidantBuff, CounselSession, CounselMessage, CounselArchive, CallingCard, NotifSlot, LedgerEntry, Budget, SpendWorth, LedgerAsset, Wish, TerminalClearPayload, BattleArsenal, ChainKey, AffixKind } from '@/types';
 import { TAROT_BY_ID } from '@/constants/tarot';
 import { summarizeCounsel, type CounselContext, type CounselConfidantBrief, type CounselRecentEvent } from '@/utils/counselAI';
 import { db } from '@/db';
@@ -395,6 +395,9 @@ interface AppState {
   undoTodoStep: (todoId: string, stepId: string) => Promise<void>;
   /** 收官：触及属性各+1（承载在收官记录上）+ SP 入账 + 归档；全子步 done 才生效 */
   collapseBigDeal: (todoId: string) => Promise<void>;
+  /** 收官结算屏载荷（App 顶层 BigDealClearCutIn 消费；null = 无待播结算） */
+  bigDealClear: BigDealClearPayload | null;
+  clearBigDealClear: () => void;
   getBigDealProgress: (todoId: string) => { done: number; total: number; nextStep: TodoStep | null };
   /** AI 拆解大事子步（复用 decomposeWishAI 管线；无 Key 抛错由 UI 走离线模板兜底） */
   decomposeBigDealAI: (todoId: string) => Promise<string[]>;
@@ -713,6 +716,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   callingCards: [],
   wishes: [],
   terminalClear: null,
+  bigDealClear: null,
   todos: [],
   todoCompletions: [],
   summaries: [],
@@ -2263,6 +2267,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       callingCards: [],
       wishes: [],
       terminalClear: null,
+      bigDealClear: null,
       todos: [],
       todoCompletions: [],
       summaries: [],
@@ -3146,11 +3151,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       { important: true, category: 'bigdeal_clear', bigDealId: todoId },
     );
 
-    // 收官 SP = min(20, 子步数×3)：战场模块关闭不发；从未初始化战场时 earnSP 自带空守卫静默跳过
-    if (get().settings.battleEnabled !== false) {
-      await get().earnSP(Math.min(BIGDEAL_CLEAR_SP_CAP, steps.length * BIGDEAL_CLEAR_SP_PER_STEP));
-    }
-    // 收官投稿权 +1（弹幕闭环，批4 表面消费）
+    // 收官 SP = min(20, 子步数×3)：战场模块关闭不发；从未初始化战场（无 battleState）也不发
+    const spGrant = get().settings.battleEnabled !== false && get().battleState
+      ? Math.min(BIGDEAL_CLEAR_SP_CAP, steps.length * BIGDEAL_CLEAR_SP_PER_STEP)
+      : 0;
+    if (spGrant > 0) await get().earnSP(spGrant);
+    // 收官投稿权 +1（弹幕闭环，结算屏消费）
     await get().updateSettings({ terminalDanmakuTokens: (get().settings.terminalDanmakuTokens ?? 0) + 1 });
 
     await db.todos.update(todoId, {
@@ -3160,8 +3166,20 @@ export const useAppStore = create<AppState>((set, get) => ({
       isActive: false,
     });
     await get().loadData();
+    // 结算屏载荷（App 顶层 BigDealClearCutIn 消费）
+    set({
+      bigDealClear: {
+        todoId,
+        title: todo.title,
+        stepsCount: steps.length,
+        sp: spGrant,
+        attrs: Array.from(touched),
+      },
+    });
     void get().syncNotifications();
   },
+
+  clearBigDealClear: () => set({ bigDealClear: null }),
 
   getBigDealProgress: (todoId) => {
     const todo = get().todos.find(t => t.id === todoId);
