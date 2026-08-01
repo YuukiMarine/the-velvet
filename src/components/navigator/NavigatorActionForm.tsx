@@ -430,7 +430,7 @@ export const NavigatorActionForm = ({ draft, channel, onSubmit, onClose }: Props
                 {/* 拼贴瓷砖题（用户点名：与全站 P5 表单同语法；显式四色循环防黑底暗字） */}
                 <div role="heading" aria-level={2} aria-label={ACTION_META[d.kind].label} className="flex-1">
                   <P5Collage
-                    size={16}
+                    size={24}
                     gap={3}
                     tiles={Array.from(ACTION_META[d.kind].label).map((ch, i) => {
                       const pal = [
