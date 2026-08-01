@@ -728,8 +728,8 @@ const PAGE_HOLD_MS = 520;
 /** 旧路由 id todos/activities 与 actions 同页，归一避免瞬间误 remount */
 const normPageKey = (id: string) => (id === 'todos' || id === 'activities' ? 'actions' : id);
 
-const PageShell = ({ leaving, stageBg, stageDecor, onRevealed, children }: {
-  leaving: boolean; stageBg: string; stageDecor?: ReactNode; onRevealed?: () => void; children: ReactNode;
+const PageShell = ({ leaving, coveredByWipe, stageBg, stageDecor, onRevealed, children }: {
+  leaving: boolean; coveredByWipe: boolean; stageBg: string; stageDecor?: ReactNode; onRevealed?: () => void; children: ReactNode;
 }) => {
   const [origin] = useState(consumePendingCircleReveal); // 入场时查询一次（读取不清除，StrictMode 双挂载安全）
   // 垫底色以 App 根的**实际计算色**为准：夜间频道毯式规则会把根的 dark:bg-gray-900
@@ -745,8 +745,24 @@ const PageShell = ({ leaving, stageBg, stageDecor, onRevealed, children }: {
   // 连点保护：上一张还没擦完就被顶成 leaving 时立刻收掉它的圆蒙版，
   // 否则它会带着半截圆停在垫底层上，看起来就是"两个界面卡在一起"（用户上报）。
   useEffect(() => { if (leaving) setRevealing(false); }, [leaving]);
-  // 变 leaving 的瞬间若仍在水波纹窗口内：保持原样垫底等着被新页擦除盖掉；否则交叉淡出
-  const holdStatic = leaving && !!consumePendingCircleReveal();
+  /**
+   * 变 leaving 时是否"原样垫底等着被擦掉"。
+   *
+   * ⚠️ 这里不能自己去问 consumePendingCircleReveal()——**有没有人来擦我，只有
+   * PageSwitcher 知道**：连点时新页可能是被复活的旧实例（origin 是它上次挂载时的，
+   * 不会再擦一次），此时若我还把 opacity 钉在 1 等擦除，就永远等不到，
+   * 两张页面就都不透明地叠在一起（用户上报的"1 秒点 3~4 次出现两个页面"）。
+   * 所以改由外部传 coveredByWipe。
+   */
+  const holdStatic = leaving && coveredByWipe;
+  // 兜底：leaving 超过这个时长仍没被出栈（擦除没来 / prune 被连点冲掉），强制淡出。
+  // 宁可少一次"垫底等擦除"的观感，也不能留一张不透明的旧页压在新页上。
+  const [forceFade, setForceFade] = useState(false);
+  useEffect(() => {
+    if (!leaving) { setForceFade(false); return; }
+    const t = setTimeout(() => setForceFade(true), 260);
+    return () => clearTimeout(t);
+  }, [leaving]);
   const R = origin
     ? Math.ceil(Math.hypot(Math.max(origin.x, window.innerWidth - origin.x), Math.max(origin.y, window.innerHeight - origin.y)) * 1.06)
     : 0;
@@ -757,7 +773,7 @@ const PageShell = ({ leaving, stageBg, stageDecor, onRevealed, children }: {
       initial={origin ? { clipPath: `circle(0px at ${origin.x}px ${origin.y}px)` } : false}
       animate={{
         clipPath: origin && revealing ? `circle(${R}px at ${origin.x}px ${origin.y}px)` : 'none',
-        opacity: leaving && !holdStatic ? 0 : 1,
+        opacity: leaving && (!holdStatic || forceFade) ? 0 : 1,
       }}
       transition={{
         clipPath: revealing ? { duration: 0.42, ease: [0.3, 0, 0.2, 1] } : { duration: 0 },
@@ -789,8 +805,20 @@ const PageShell = ({ leaving, stageBg, stageDecor, onRevealed, children }: {
 const PageSwitcher = ({ current, stageBg, stageDecor, render }: {
   current: string; stageBg: string; stageDecor?: ReactNode; render: (page: string) => ReactNode;
 }) => {
-  const [stack, setStack] = useState<Array<{ key: string; id: string; leaving: boolean }>>(() => [
-    { key: normPageKey(current), id: current, leaving: false },
+  /**
+   * 页面栈。**每个 key 至多一条** —— 这是本组件最重要的不变量。
+   *
+   * 之前是"旧条目标 leaving + 直接 push 新条目"，来回快点同两个 tab 时
+   * （1 秒 3~4 下，用户上报）栈会变成 [A, B] → [B, A] → [A, B]…：
+   * React 按 key 复用实例并**交换顺序**，于是刚才那张 leaving 的被原地复活成 active，
+   * 却带着上一次挂载的内部状态（origin/revealing 都是旧的、不会再擦一次），
+   * 而新变 leaving 的那张又在 holdStatic 里等一个永远不来的擦除 —— 两张都不透明，叠住。
+   *
+   * 现在遇到"目标页已在栈里"就**原地复活**它（reviving=true 告诉即将离场的那张：
+   * 别等擦除了，直接淡出），而不是再压一条同 key 的进来。
+   */
+  const [stack, setStack] = useState<Array<{ key: string; id: string; leaving: boolean; reviving: boolean }>>(() => [
+    { key: normPageKey(current), id: current, leaving: false, reviving: false },
   ]);
   const pruneTimer = useRef<number | null>(null);
   const prune = useCallback(() => setStack((prev) => (prev.some((p) => p.leaving) ? prev.filter((p) => !p.leaving) : prev)), []);
@@ -814,8 +842,19 @@ const PageSwitcher = ({ current, stageBg, stageDecor, render }: {
       const top = prev[prev.length - 1];
       // 同页（含 todos→actions 归一）：仅同步 id，保持实例
       if (top.key === key) return top.id === current ? prev : [...prev.slice(0, -1), { ...top, id: current }];
-      // 切页：先清掉上一轮残留的 leaving，再把当前顶置为 leaving 垫底、新页压顶
-      return [...prev.filter((p) => !p.leaving).map((p) => ({ ...p, leaving: true })), { key, id: current, leaving: false }];
+      // 目标页仍在栈里（连点回头）：原地复活它，其余全部标 leaving 且不等擦除
+      const existing = prev.find((p) => p.key === key);
+      if (existing) {
+        return [
+          ...prev.filter((p) => p.key !== key).map((p) => ({ ...p, leaving: true, reviving: true })),
+          { ...existing, id: current, leaving: false, reviving: true },
+        ];
+      }
+      // 常规切页：清掉上一轮残留的 leaving，当前顶置为 leaving 垫底、新页压顶
+      return [
+        ...prev.filter((p) => !p.leaving).map((p) => ({ ...p, leaving: true, reviving: false })),
+        { key, id: current, leaving: false, reviving: false },
+      ];
     });
     // 兜底出栈（新页没有圆擦除时走这条）；有擦除时由 onRevealed 提前收
     if (pruneTimer.current) clearTimeout(pruneTimer.current);
@@ -824,12 +863,18 @@ const PageSwitcher = ({ current, stageBg, stageDecor, render }: {
       if (pruneTimer.current) clearTimeout(pruneTimer.current);
     };
   }, [current, prune]);
+  // 本轮切页是否登记过水波纹原点：只在 current 变化时取一次快照，
+  // 不要让每张 shell 各问一遍（各问各的会拿到不同答案，正是叠页的来源之一）
+  const hasPendingWipe = !!consumePendingCircleReveal();
   return (
     <div className="relative">
       {stack.map((p) => (
         <PageShell
           key={p.key}
           leaving={p.leaving}
+          // 只有"新页确实会放圆形擦除"时，离场页才值得原样垫底等着被盖掉。
+          // 复活场景（reviving）不会再擦一次 —— 必须直接淡出，否则两张页面都留在屏上。
+          coveredByWipe={!p.reviving && hasPendingWipe}
           stageBg={stageBg}
           stageDecor={stageDecor}
           // 擦除一到位就把旧页出栈。原先固定等 PAGE_HOLD_MS(520ms)，比擦除(420ms)晚
