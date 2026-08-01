@@ -131,6 +131,8 @@ export interface Todo {
   archivedAt?: Date;
   /** 任务被完成（达标）时的时间戳，用于区分"已完成"和"手动归档" */
   completedAt?: Date;
+  /** 抽签（TASKS_MERGE_PRD §4.2）：当日被命运选中的日期 YYYY-MM-DD——当日完成触发命运加成 +1 */
+  fateDrawnDate?: string;
   // ── BIG DEAL（任务×终端二合一，TASKS_MERGE_PRD §4.1）──
   /** 大事模式：进度由 steps 派生，不走 todoCompletion 计数 */
   isBigDeal?: boolean;
@@ -366,6 +368,8 @@ export interface Settings {
   terminalDanmakuTokens?: number;
   /** 任务×终端二合一迁移完成时间 ISO（TASKS_MERGE_PRD §2）：防重入标记 */
   tasksMergeMigratedAt?: string;
+  /** 抽签当日状态：已抽中的候选 key 当日沉底（跨天自动重置） */
+  fateDrawState?: { date: string; drawnKeys: string[] };
   // ── F6 万能记录 AI「黑猫」（Navigator） ──
   /** 最近一次「每日首开问候」的本地日期（YYYY-MM-DD）：跨天首开播完整问候，当日重开只简短招呼。 */
   navigatorLastGreetDate?: string;
@@ -619,6 +623,21 @@ export interface CallingCard {
   };
 
   createdAt: Date;
+}
+
+// ── 抽签（决策短路转世，TASKS_MERGE_PRD §4.2） ──
+
+/** 抽签候选：三源奖池条目（今日待办 / 愿望纸片 / 近 30 天手动记录） */
+export interface FateCandidate {
+  /** 当日沉底键：todo:{id} / wish:{id} / hist:{归一化描述} */
+  key: string;
+  kind: 'todo' | 'wish' | 'history';
+  title: string;
+  todoId?: string;
+  wishId?: string;
+  /** wish/history 接受成任务时的属性与点数建议（history 取原记录最大加点维度） */
+  attribute?: AttributeId;
+  points?: number;
 }
 
 // ── F6 黑猫 Navigator · 持久化（Batch3） ──

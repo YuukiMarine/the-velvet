@@ -784,6 +784,9 @@ export const DashboardP3 = () => {
                         <span className="min-w-0 flex-1">
                           <span className="flex items-center gap-1.5">
                             {todo.important && <span aria-hidden className="h-2 w-2 shrink-0" style={{ background: P3R.magenta, clipPath: 'polygon(50% 0, 100% 100%, 0 100%)' }} />}
+                            {todo.fateDrawnDate === todayKey && (
+                              <span className="shrink-0 text-[11px] font-black" style={{ color: P3R.blue }} title="今日抽签选中">✦</span>
+                            )}
                             <span className={`truncate text-[15px] font-black ${done ? 'line-through' : ''}`} style={{ color: done ? P3R.grey : P3R.ink }}>
                               {todo.title}
                             </span>

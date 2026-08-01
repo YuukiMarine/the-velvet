@@ -869,6 +869,9 @@ export const DashboardP5 = () => {
                       <span className="min-w-0 flex-1">
                         <span className="flex items-center gap-1.5">
                           {todo.important && <P5Star size={12} fill={P5R.red} className="shrink-0" />}
+                          {todo.fateDrawnDate === todayKey && (
+                            <span className="shrink-0 text-[11px] font-black" style={{ color: P5R.red }} title="今日抽签选中">✦</span>
+                          )}
                           <span className={`truncate text-[15px] font-black ${done ? 'line-through' : ''}`} style={{ color: done ? P5R.grey : P5R.ink }}>
                             {todo.title}
                           </span>
