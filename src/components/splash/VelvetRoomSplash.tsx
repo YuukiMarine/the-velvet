@@ -31,17 +31,17 @@ const TRAVEL_SEC = 3.0;
  * **不做 opacity 衰减**（用户口径）：它们就是实体的门，不是会淡出的光，
  * 掠出视锥即离场，靠 3D 裁切收尾而不是靠变透明。
  */
-const SIDE_DOORS = Array.from({ length: 10 }, (_, i) => {
-  const side = i % 2 === 0 ? 'left' : 'right';
-  const slot = Math.floor(i / 2);         // 0..4，纵深五档
-  return {
-    side: side as 'left' | 'right',
-    // 越靠后的门离中轴越近（透视收敛），高度也略矮
-    inset: 3 + slot * 1.6,
-    h: 46 - slot * 3.5,
-    delay: (i * 0.31) % TRAVEL_SEC,
-  };
-});
+const SIDE_DOORS = Array.from({ length: 10 }, (_, i) => ({
+  side: (i % 2 === 0 ? 'left' : 'right') as 'left' | 'right',
+  // 同一侧的门都贴在**同一面墙**上（横向位置相同），纵深错落靠 delay 排队——
+  // 这才是走廊：一排等距的门迎面而来。首版给每扇不同的 inset，
+  // 结果是"散落的板子"而不是一条廊。
+  delay: (Math.floor(i / 2) * (TRAVEL_SEC / 5)) + (i % 2) * (TRAVEL_SEC / 10),
+}));
+
+/** 侧门板尺寸：高度取中央门（420px）的三分之一（用户口径），宽度按门比例收 */
+const SIDE_DOOR_H = 140;
+const SIDE_DOOR_W = 66;
 
 /**
  * 开门瞬间背景里闪的**四角星**（PRD 反馈 §5）。
@@ -85,7 +85,8 @@ export function VelvetRoomSplash({ onComplete, s }: { onComplete: () => void; s:
   }, [phase, s]);
   useEffect(() => {
     if (phase !== 'flood') return;
-    const t = setTimeout(() => setPhase('title'), 620 * s);
+    // 白 → 标题：由 620ms 收到 520ms（用户口径：快 0.1 秒）
+    const t = setTimeout(() => setPhase('title'), 520 * s);
     return () => clearTimeout(t);
   }, [phase, s]);
   useEffect(() => {
@@ -105,11 +106,20 @@ export function VelvetRoomSplash({ onComplete, s }: { onComplete: () => void; s:
       style={{ transform: 'translateZ(0)', backfaceVisibility: 'hidden', contain: 'strict' }}
     >
       <style>{`
-/* 侧门板：极远 → 掠过镜头。**全程 opacity 1，不衰减**（用户口径：
-           它们是实体的门，不是会淡出的光；掠出视锥即离场） */
-        @keyframes vlv-sidedoor {
-          from { transform: translateZ(-3400px); }
-          to   { transform: translateZ(780px); }
+/* 侧门板：立在两壁、**朝内 rotateY** —— 首版用 2D rotate 做成了"歪倒的骨牌"，
+           斜度自然和参考图对不上；门是绕竖轴转的，只能用 rotateY。
+           行程推到 870px（透视原点 900），末段放大约 30×，自然从视口两侧扫出去；
+           最后 4% 才淡出：不是"随距离衰减"（那条口径不变），
+           只是把贴边硬切的那一帧抹掉——否则每轮循环都会看到门板凭空消失。 */
+        @keyframes vlv-sidedoor-l {
+          0%   { transform: translateZ(-3400px) rotateY(56deg); opacity: 1; }
+          96%  { opacity: 1; }
+          100% { transform: translateZ(870px) rotateY(56deg); opacity: 0; }
+        }
+        @keyframes vlv-sidedoor-r {
+          0%   { transform: translateZ(-3400px) rotateY(-56deg); opacity: 1; }
+          96%  { opacity: 1; }
+          100% { transform: translateZ(870px) rotateY(-56deg); opacity: 0; }
         }
         /* 镜头推进：场景整体压向观众并缓缓旋转 */
         @keyframes vlv-dolly {
@@ -130,12 +140,13 @@ export function VelvetRoomSplash({ onComplete, s }: { onComplete: () => void; s:
            而且底纹是个大范围 radial 模糊团，看不出"缝"的形状。
            现在：52% 门扇起转，缝光就同步开始变宽变白，一路推到满屏，
            曲线与 leaf 同款（linear 段更长），于是"门缝随开门张大"是连续可见的。 */
-        @keyframes vlv-slit {
-          0%   { transform: scaleX(0.035); opacity: 0.5;  filter: brightness(0.75); }
-          52%  { transform: scaleX(0.05);  opacity: 0.62; filter: brightness(0.9); }
-          70%  { transform: scaleX(0.30);  opacity: 0.85; filter: brightness(1.25); }
-          86%  { transform: scaleX(0.62);  opacity: 0.95; filter: brightness(1.6); }
-          100% { transform: scaleX(1);     opacity: 1;    filter: brightness(2.1); }
+@keyframes vlv-slit {
+          0%   { transform: scaleX(0.03); opacity: 0.5;  filter: brightness(0.7); }
+          52%  { transform: scaleX(0.06); opacity: 0.65; filter: brightness(0.95); }
+          60%  { transform: scaleX(0.34); opacity: 0.82; filter: brightness(1.3); }
+          70%  { transform: scaleX(0.62); opacity: 0.9;  filter: brightness(1.6); }
+          82%  { transform: scaleX(0.86); opacity: 0.96; filter: brightness(1.95); }
+          100% { transform: scaleX(1);    opacity: 1;    filter: brightness(2.3); }
         }
         /* 背景星尘：极缓慢的整体漂移，给"空间是活的"这个底噪 */
         @keyframes vlv-drift {
@@ -250,21 +261,21 @@ export function VelvetRoomSplash({ onComplete, s }: { onComplete: () => void; s:
               />
             ))}
 
-            {/* ② 两壁的白色门板（图 2 参考形态）：立在左右墙上、朝内微转，随镜头掠过 */}
+            {/* ② 两壁的白色门板（图 2 形态）：同一面墙上等距排开，朝内 rotateY，迎面掠过。
+                横向位置放到**视口外缘**（-13%）：靠透视收敛进画面，
+                这样在最远端也不会压住中央那扇门（首版把门挡住了）。 */}
             {SIDE_DOORS.map((d, i) => (
               <span
                 key={i}
                 aria-hidden
                 className="vlv-sidedoor"
                 style={{
-                  [d.side]: `${d.inset}%`,
-                  top: `${50 - d.h / 2}%`,
-                  width: '11%',
-                  height: `${d.h}%`,
-                  // 朝走廊内侧转 —— 左壁的门右转、右壁的门左转，形成"两侧对开"的观感
+                  [d.side]: '-13%',
+                  top: `calc(50% - ${SIDE_DOOR_H / 2}px)`,
+                  width: SIDE_DOOR_W,
+                  height: SIDE_DOOR_H,
                   transformOrigin: d.side === 'left' ? 'right center' : 'left center',
-                  animation: `vlv-sidedoor ${TRAVEL_SEC * 0.95 * s}s linear ${d.delay * s}s infinite`,
-                  rotate: `${d.side === 'left' ? -16 : 16}deg`,
+                  animation: `vlv-sidedoor-${d.side === 'left' ? 'l' : 'r'} ${TRAVEL_SEC * 0.95 * s}s linear ${d.delay * s}s infinite`,
                 } as CSSProperties}
               />
             ))}
@@ -328,7 +339,10 @@ export function VelvetRoomSplash({ onComplete, s }: { onComplete: () => void; s:
                 style={{
                   background: 'radial-gradient(ellipse at 50% 50%, #ffffff 0%, #e2eaff 45%, rgba(180,200,255,0) 78%)',
                   boxShadow: '0 0 40px 12px rgba(210,225,255,0.5)',
-                  animation: `vlv-slit ${T}s cubic-bezier(0.7,0,0.9,0.4) forwards`,
+                  // 必须 linear：timing 函数是**逐段**作用在每两个关键帧之间的，
+                  // 原来那个 cubic-bezier(0.7,0,0.9,0.4) 是重度 ease-in，
+                  // 把上面写好的百分比又拖慢一遍 —— 这才是"缝光比开门慢半拍"的真凶。
+                  animation: `vlv-slit ${T}s linear forwards`,
                   willChange: 'transform, opacity',
                 }}
               />
