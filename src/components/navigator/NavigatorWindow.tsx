@@ -18,8 +18,10 @@ import { zClass } from '@/utils/zIndex';
 import { useModalA11y } from '@/utils/useModalA11y';
 import { useBackHandler } from '@/utils/useBackHandler';
 import { useBoldness } from '@/utils/boldness';
-import { terminalChannel } from '@/utils/terminalSkin';
-import { P3, P3_WATER_WIDE } from '@/components/terminal/p3Kit';
+import { P3, P3_WATER_WIDE } from '@/components/navigator/p3Kit';
+import { detectStagnation, stagnationTitle } from '@/utils/stagnationHint';
+import { minimalStep } from '@/utils/minimalStep';
+import type { Wish } from '@/types';
 import { P4ArcRings, P4Flower, P4Sparkle } from '@/ui/p4Kit';
 import { NavigatorActionForm } from './NavigatorActionForm';
 import { PresetAvatar } from './PresetAvatar';
@@ -385,7 +387,8 @@ export const NavigatorWindow = () => {
   const { user, setCurrentPage, getDueTodosToday, getTodayTodoProgress } = useAppStore();
   const nav = useNavigatorStore();
   const bold = useBoldness();
-  const bright = terminalChannel(user?.theme) === 'board';
+  // 亮皮 = 蓝/粉/自定义（原 terminalChannel 'board' 口径；终端退役后内联，黄/红走各自暗件）
+  const bright = user?.theme !== 'yellow' && user?.theme !== 'red';
   const isP4 = user?.theme === 'yellow';
   const isP5 = user?.theme === 'red';
   const sk = skinOf(bright, isP4, isP5);
@@ -508,8 +511,56 @@ export const NavigatorWindow = () => {
     const text = input.trim();
     if (!text) return;
     nav.userSend(text); // 进仲裁器：收口/打断由它裁决
+    // 递刀检测（TASKS_MERGE_PRD §4.4）：纯客户端关键词，不给分诊/表演加任何职责。
+    // 发送后命中的话，chip 留在场上等这轮倾诉说完
+    setSentStuck(detectStagnation(text) ? text : null);
     setInput('');
     nav.setInputActive(false);
+  };
+
+  // ── 黑猫递刀：输入中实时命中 or 刚发送的消息命中 → 亮一枚本地 chip ──
+  const [sentStuck, setSentStuck] = useState<string | null>(null);
+  const [stuckDismissed, setStuckDismissed] = useState<string | null>(null);
+  const [stuckBusy, setStuckBusy] = useState(false);
+  const liveStuck = detectStagnation(input) ? input.trim() : null;
+  const stuckText = liveStuck ?? sentStuck;
+  const showStuck = !!stuckText && stuckText !== stuckDismissed;
+
+  const runStuckSplit = async () => {
+    if (!stuckText || stuckBusy) return;
+    setStuckBusy(true);
+    try {
+      const title = stagnationTitle(stuckText);
+      // 确定性拆解管线：decomposeWishAI（伪 Wish）→ 失败/无 Key 落 minimalStep 一条
+      let steps: string[] = [];
+      try {
+        const pseudo: Wish = {
+          id: 'draft',
+          title,
+          kind: 'pressure',
+          currentState: stuckText.slice(0, 90),
+          status: 'active',
+          source: 'manual',
+          createdAt: new Date(),
+        };
+        steps = await useAppStore.getState().decomposeWishAI(pseudo, []);
+      } catch { /* 离线兜底 */ }
+      if (steps.length === 0) steps = [minimalStep(user?.theme, title)];
+      // 产出 BIG DEAL 确认卡（复用既有卡片确认流：预览/编辑/确认/取消）
+      nav.pushCard({
+        kind: 'bigdeal',
+        title,
+        attribute: 'guts',
+        points: 2,
+        currentState: stuckText.slice(0, 60),
+        deadline: '',
+        steps,
+      });
+      setSentStuck(null);
+      setStuckDismissed(stuckText);
+    } finally {
+      setStuckBusy(false);
+    }
   };
   const jump = (page: string) => { nav.close(); setCurrentPage(page); };
 
@@ -806,6 +857,38 @@ export const NavigatorWindow = () => {
                 )}
               </div>
 
+              {/* 递刀 chip（§4.4）：倾诉里听出卡住 → 递一把确定性拆解的刀，聊天零打扰 */}
+              {showStuck && (
+                <div className="flex items-center gap-1.5 px-4 pb-1">
+                  <button
+                    type="button"
+                    onClick={() => void runStuckSplit()}
+                    disabled={stuckBusy}
+                    className={`flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-left text-xs font-bold transition disabled:opacity-60 ${
+                      bright
+                        ? 'bg-white text-[#0a1230] shadow-[0_6px_16px_rgba(7,40,120,.14)] [clip-path:polygon(10px_0,100%_0,calc(100%_-_10px)_100%,0_100%)]'
+                        : user?.theme === 'red'
+                          ? 'border-2 border-[#050505] bg-[#f0e9df] text-[#131313] shadow-[3px_3px_0_rgba(0,0,0,0.45)]'
+                          : user?.theme === 'yellow'
+                            ? 'rounded-full border-2 border-[#ffe100]/70 bg-[#131313] text-[#ffe100]'
+                            : 'rounded-full border border-white/20 bg-white/10 text-gray-100'
+                    }`}
+                  >
+                    <span aria-hidden className={user?.theme === 'red' ? 'text-[#c00008]' : user?.theme === 'yellow' ? 'text-[#ffe100]' : 'text-primary'}>◆</span>
+                    <span className="min-w-0 flex-1 truncate">
+                      {stuckBusy ? '正在拆成能下手的小步…' : '听起来卡住了——要吾辈把它拆成小步吗？'}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="先不拆"
+                    onClick={() => { setStuckDismissed(stuckText); setSentStuck(null); }}
+                    className={`shrink-0 p-1.5 text-sm font-black ${bright ? 'text-[#8a97ad]' : 'text-white/40'}`}
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
               {/* chips：快捷动作 + 跳转（bright：白斜块 + 左侧蓝/青竖斜片，p3-navigator 设计稿） */}
               <div className="flex gap-2 overflow-x-auto px-4 pb-2 pt-1">
                 {(['activity', 'todo', 'ledger', 'completeTodo'] as NavigatorActionKind[]).map((kind, i) => (

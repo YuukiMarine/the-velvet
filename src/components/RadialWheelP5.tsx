@@ -12,7 +12,7 @@
  * （guide §1.4 允许菜单项错位旋转），非正文不受字恒水平约束。
  */
 import { motion } from 'motion/react';
-import { P5Highlight } from '@/components/terminal/thiefKit';
+import { P5Highlight } from '@/components/p5r/kit';
 import type { WheelItem } from './RadialQuickNav';
 
 // ── 规则五角星 path（同心条纹星用；与 starPath.buildStar 的不规则星区分）──────

@@ -384,6 +384,9 @@ function draftLine(d: NavigatorDraft): string {
     }
     case 'todo':
       return `- 待办「${d.title}」（${navAttrName(d.attribute)}+${d.points}${d.extraAttribute ? ` ${navAttrName(d.extraAttribute)}+${d.extraPoints}` : ''}${d.repeatDaily ? '·每日' : ''}）`;
+    case 'bigdeal':
+      // 递刀产物（批5）：卡由客户端 chip 直出，不经分诊；此行仅供表演阶段知情
+      return `- 大事「${d.title}」拆 ${d.steps.length} 步（${navAttrName(d.attribute)} 每步+${d.points}）`;
     case 'ledger':
       return `- ${d.direction === 'expense' ? '支出' : '收入'} ¥${d.amount}${d.note ? `（${d.note}）` : ''}`;
     case 'completeTodo':

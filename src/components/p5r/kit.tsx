@@ -13,6 +13,7 @@
  * 重渲染零抖动；装饰一律 aria-hidden + pointer-events-none；命中区完整矩形。
  * 仅在 channel==='p5'（红主题）挂载的页面变体中使用。
  */
+import { useEffect, useRef } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { motion } from 'motion/react';
 import { useBoldness } from '@/utils/boldness';
@@ -824,5 +825,40 @@ export const P5RPage = ({ children, className, active = true, decor = true }: {
       )}
       <div className="relative z-10">{children}</div>
     </div>
+  );
+};
+
+// ── P5「活高亮」：双多边形(红/青)，顶层 screen 混合；rAF 每帧向随机目标插值 → 60fps 平滑红青震颤。
+//    原 F3 终端 thiefKit 技法（终端退役后迁此）；现役消费方：RadialWheelP5 选中态。 ──
+const hlTarget = (): number[] => {
+  const r = (a: number, b: number) => a + Math.random() * (b - a);
+  return [r(0, 16), r(0, 12), r(84, 100), r(0, 14), r(84, 100), r(38, 50), r(0, 16), r(40, 50)];
+};
+const hlPoints = (a: number[]) => `${a[0].toFixed(1)},${a[1].toFixed(1)} ${a[2].toFixed(1)},${a[3].toFixed(1)} ${a[4].toFixed(1)},${a[5].toFixed(1)} ${a[6].toFixed(1)},${a[7].toFixed(1)}`;
+export const P5Highlight = ({ className, live = true }: { className?: string; live?: boolean }) => {
+  const bold = useBoldness();
+  const redRef = useRef<SVGPolygonElement>(null);
+  const blueRef = useRef<SVGPolygonElement>(null);
+  useEffect(() => {
+    // D0 或非 live（常驻卡场景）：静态高亮，不跑 rAF——避免常驻屏幕无限烧帧
+    if (!bold || !live) return;
+    const layers = [redRef, blueRef].map((ref) => ({ ref, cur: hlTarget(), tgt: hlTarget(), last: 0 }));
+    let raf = 0;
+    const loop = (t: number) => {
+      for (const L of layers) {
+        if (t - L.last > 130) { L.tgt = hlTarget(); L.last = t; } // 每 ~130ms 换目标，逐帧插值过去
+        for (let i = 0; i < 8; i++) L.cur[i] += (L.tgt[i] - L.cur[i]) * 0.18;
+        L.ref.current?.setAttribute('points', hlPoints(L.cur));
+      }
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [bold, live]);
+  return (
+    <svg viewBox="0 0 100 50" preserveAspectRatio="none" className={className} aria-hidden>
+      <polygon ref={redRef} fill="#ff0022" points="2,6 95,5 94,45 5,46" />
+      <polygon ref={blueRef} fill="#1cfeff" points="6,9 92,12 88,46 8,42" style={{ mixBlendMode: 'screen' }} />
+    </svg>
   );
 };

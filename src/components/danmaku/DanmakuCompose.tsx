@@ -1,8 +1,9 @@
 /**
- * DanmakuCompose — F3 弹幕投稿（先审后发）。
+ * DanmakuCompose — 弹幕投稿（先审后发）。
  *
- * 完成终端任务攒到「鼓励机会」(settings.terminalDanmakuTokens) 才能发；匿名、先审后发。
- * 成功投稿才消费一次机会；失败（未登录 / 集合未建 / 校验不过）保留机会并提示。
+ * 大事收官攒到「投稿机会」(settings.terminalDanmakuTokens，字段名沿用旧终端时代) 才能发；
+ * 匿名、先审后发。成功投稿才消费一次机会；失败（未登录 / 集合未建 / 校验不过）保留机会并提示。
+ * 原 F3 终端组件，终端退役（TASKS_MERGE_PRD 批5）后迁此，逻辑零改动。
  */
 import { useRef, useState } from 'react';
 import { useAppStore } from '@/store';

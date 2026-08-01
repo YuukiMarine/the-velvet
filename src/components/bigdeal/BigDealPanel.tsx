@@ -9,7 +9,7 @@ import { useState } from 'react';
 import { motion } from 'motion/react';
 import { useAppStore, toLocalDateKey } from '@/store';
 import { SheetModal } from '@/components/SheetModal';
-import { GoalArc } from '@/components/terminal/GoalArc';
+import { GoalArc } from '@/components/bigdeal/GoalArc';
 import { triggerSuccessFeedback } from '@/utils/feedback';
 
 interface Props {

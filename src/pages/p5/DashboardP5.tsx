@@ -23,7 +23,6 @@ import {
 import { TodoCompleteModal } from '@/components/TodoCompleteModal';
 import { BattleDashboardWidget } from '@/components/BattleDashboardWidget';
 import { StackCarousel } from '@/components/StackCarousel';
-import { TerminalTaskCard } from '@/components/terminal/TerminalTaskCard';
 import { getAttributeLevelTitle } from '@/utils/attributeLevelTitles';
 import { calcMaxStreak } from '@/utils/streak';
 import { TAROT_BY_ID } from '@/constants/tarot';
@@ -422,10 +421,8 @@ export const DashboardP5 = () => {
     user, todos, activities, achievements, skills, attributes, settings, dailyDivination,
     completeTodo, getTodayTodoProgress, setModalBlocker, setCurrentPage,
     applyCountercurrentDecay, getCountercurrentWarnings, callingCards,
-    getActiveTerminalTask, completeTerminalTask, dismissTerminalTask,
   } = useAppStore();
   const anim = useBoldness();
-  const activeTerminalTask = getActiveTerminalTask();
   const [dossierAttr, setDossierAttr] = useState<AttributeId | null>(null);
   const [completedTitle, setCompletedTitle] = useState<string | null>(null);
   const [completedPoints, setCompletedPoints] = useState(1);
@@ -778,18 +775,6 @@ export const DashboardP5 = () => {
             </motion.div>
           )}
         </header>
-
-        {/* 进行中的治疗终端 24h 限时任务（特殊风格，原样复用） */}
-        {settings.terminalEnabled && activeTerminalTask && (
-          <div className="mt-5">
-            <TerminalTaskCard
-              card={activeTerminalTask}
-              onComplete={() => completeTerminalTask(activeTerminalTask.id)}
-              onDismiss={() => dismissTerminalTask(activeTerminalTask.id)}
-              compact
-            />
-          </div>
-        )}
 
         {/* ── BIG DEAL 聚合卡（D5：只露总进度+下一步，点击进二级面板）── */}
         {activeBigDeals.length > 0 && (

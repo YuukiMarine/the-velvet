@@ -2,7 +2,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useMemo, useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { useAppStore, toLocalDateKey } from '@/store';
-import { minimalStep, terminalSkin } from '@/utils/terminalSkin';
+import { minimalStep } from '@/utils/minimalStep';
 import { BigDealPanel } from '@/components/bigdeal/BigDealPanel';
 import { BigDealHomeCard } from '@/components/bigdeal/BigDealHomeCard';
 import { FateDrawSheet } from '@/components/fate/FateDrawSheet';
@@ -430,8 +430,8 @@ export const TodosView = () => {
         setForm(prev => ({ ...prev, steps: [...prev.steps, ...list.map(t => ({ title: t, source: 'ai' as const }))] }));
       }
     } catch {
-      // 无 Key / 网络失败 → 离线模板兜底一条（minimalStep，批5 随终端瘦身迁址）
-      const fallback = minimalStep(terminalSkin(useAppStore.getState().user?.theme), title);
+      // 无 Key / 网络失败 → 离线模板兜底一条
+      const fallback = minimalStep(useAppStore.getState().user?.theme, title);
       setForm(prev => ({ ...prev, steps: [...prev.steps, { title: fallback, source: 'manual' as const }] }));
       setAiError('AI 未接通，先放了一条离线拆步——可改可删');
     } finally {
