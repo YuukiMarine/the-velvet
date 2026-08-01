@@ -790,7 +790,10 @@ export const ActivitiesView = () => {
       {/* 页头 + 搜索（PageTitle 移除：标题职责由宿主 Actions 的大字切换头承担；
           成长总结入口保留并维持右对齐位置） */}
       <div className="space-y-2.5">
-        <div className="flex items-center justify-end">
+        {/* 红点是 -top/-right 的负偏移，会探出按钮边界；行容器一旦被祖先裁掉边缘，
+            蓝/粉下就"被切掉一半"，红频道因为偏移更大（-1.5）直接整颗不见。
+            这里给行留出等量内边距，让红点始终落在**行的盒子内部**，不再靠边缘运气。 */}
+        <div className="flex items-center justify-end pr-1.5 pt-1.5">
           {/* 总结入口按钮 */}
           <button
             onClick={() => setShowSummary(true)}

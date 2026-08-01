@@ -22,6 +22,8 @@ interface CloudSocialState {
   friendships: Friendship[];
   notifications: NotificationEntry[];
   unreadCount: number;
+  /** 重要未读（剔除祈愿这类日常问候）——页头 ✧ 菜单红点用它，见 computeImportantUnread */
+  importantUnreadCount: number;
   /** 今天（本地 04:00 日界）与我相关的全部祈愿记录（from=me / to=me 都在） */
   todayPrayers: Prayer[];
   /** 所有与我相关的 COOP 契约（pending / linked / rejected / severed / expired） */
@@ -65,10 +67,21 @@ interface CloudSocialState {
 const computeUnread = (notifications: NotificationEntry[]): number =>
   notifications.filter(n => !n.read).length;
 
+/**
+ * 「重要未读」——只数需要用户**做点什么**或涉及关系变动的通知。
+ * 祈愿（prayer_received / prayer_reciprocal）是每天都会来的日常问候，
+ * 让它去点亮页头红点等于红点常亮、红点失效；它照常出现在通知列表里，只是不催人。
+ * 页头 ✧ 菜单的红点跟这个数走；菜单内「通知」项仍显示全量 unreadCount。
+ */
+const AMBIENT_TYPES = new Set(['prayer_received', 'prayer_reciprocal']);
+const computeImportantUnread = (notifications: NotificationEntry[]): number =>
+  notifications.filter(n => !n.read && !AMBIENT_TYPES.has(n.type)).length;
+
 export const useCloudSocialStore = create<CloudSocialState>(set => ({
   friendships: [],
   notifications: [],
   unreadCount: 0,
+  importantUnreadCount: 0,
   todayPrayers: [],
   coopBonds: [],
   coopShadows: [],
@@ -86,6 +99,7 @@ export const useCloudSocialStore = create<CloudSocialState>(set => ({
   setNotifications: notifications => set({
     notifications,
     unreadCount: computeUnread(notifications),
+    importantUnreadCount: computeImportantUnread(notifications),
   }),
 
   setTodayPrayers: todayPrayers => set({ todayPrayers }),
@@ -122,18 +136,30 @@ export const useCloudSocialStore = create<CloudSocialState>(set => ({
     const notifications = state.notifications.map(n =>
       n.id === id ? { ...n, read: true } : n,
     );
-    return { notifications, unreadCount: computeUnread(notifications) };
+    return {
+      notifications,
+      unreadCount: computeUnread(notifications),
+      importantUnreadCount: computeImportantUnread(notifications),
+    };
   }),
 
   addNotification: n => set(state => {
     if (state.notifications.some(x => x.id === n.id)) return state;
     const notifications = [n, ...state.notifications];
-    return { notifications, unreadCount: computeUnread(notifications) };
+    return {
+      notifications,
+      unreadCount: computeUnread(notifications),
+      importantUnreadCount: computeImportantUnread(notifications),
+    };
   }),
 
   removeNotification: id => set(state => {
     const notifications = state.notifications.filter(n => n.id !== id);
-    return { notifications, unreadCount: computeUnread(notifications) };
+    return {
+      notifications,
+      unreadCount: computeUnread(notifications),
+      importantUnreadCount: computeImportantUnread(notifications),
+    };
   }),
 
   addFriendship: f => set(state => {
@@ -155,6 +181,7 @@ export const useCloudSocialStore = create<CloudSocialState>(set => ({
     friendships: [],
     notifications: [],
     unreadCount: 0,
+    importantUnreadCount: 0,
     todayPrayers: [],
     coopBonds: [],
     coopShadows: [],

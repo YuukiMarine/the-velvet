@@ -31,8 +31,8 @@ const GROUPS: Group[] = [
   {
     id: 'apiKey',
     label: 'AI 模型 API',
-    hint: 'API Key（AI 摘要 / 谏言 / Persona / 同伴解读 都用这把钥匙）。关闭后下次同步不再上传；新设备需要重新填写。若想清掉云端已存的 Key，请配合下方"删除云端数据"',
-    field: { settingKey: 'syncCloudApiKey', defaultWhenUndefined: true },
+    hint: 'API Key（AI 摘要 / 谏言 / Persona / 同伴解读 都用这把钥匙）。**默认不上传**——钥匙留在本机最安全，代价是换设备要重填一次。打开则随同步上云，方便多设备共用同一把。',
+    field: { settingKey: 'syncCloudApiKey', defaultWhenUndefined: false },
   },
   {
     id: 'journal',

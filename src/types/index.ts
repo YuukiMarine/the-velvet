@@ -303,6 +303,21 @@ export interface Settings {
   darkMode: boolean;
   backgroundImage?: string;
   backgroundOrientation?: 'landscape' | 'portrait';
+
+  // ── 天气角标（v2.6）───────────────────────────────────────────────
+  /**
+   * 首页天空位显示什么：'moon' 月相（缺省）/ 'weather' 天气。
+   * 点一下月相即切换，切换被记住——所以它是 settings 字段而不是组件内 state。
+   */
+  homeSkyMode?: 'moon' | 'weather';
+  /** 'qweather'（默认，和风）| 'openmeteo'（免 Key 兜底） */
+  weatherProvider?: 'qweather' | 'openmeteo';
+  /** 和风 Key。**不上云**（与城市同组豁免），只进本地备份 */
+  weatherApiKey?: string;
+  /** 和风账号专属 API Host（控制台里给的那个域名）；留空走 devapi.qweather.com */
+  weatherApiHost?: string;
+  /** 选定城市。位置语义强，**不上云**，只进本地备份 */
+  weatherCity?: { id?: string; name: string; lat: number; lon: number };
   backgroundOpacity?: number;
   soundMuted?: boolean;
   soundVolume?: number;     // 音量大小 0–100，默认 80
@@ -467,7 +482,8 @@ export interface Settings {
    *  - true / undefined（默认）：push 会带上 summaryApiKey，pull 会接受云端的 key
    *  - false：push 时从 settings 行中剔除 summaryApiKey / openaiApiKey；
    *           pull 时若云端没有 key 则保留本地 key（不会被清空）
-   * 设成 false 可以避免 API Key 离开本机（更安全），代价是新设备要重新填写。
+   * **默认（undefined）= 不上传**（v2.6 起翻转，此前是默认上传）。
+   * 设成 true 才随同步上云，方便多设备共用同一把钥匙。
    */
   syncCloudApiKey?: boolean;
   /**
