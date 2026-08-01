@@ -33,6 +33,8 @@ export interface ActivityDraft {
   text: string;
   points: Record<AttributeId, number>;
   important: boolean;
+  /** 挂到哪个愿望（PRD_V2.6 §1.3）；黑猫记录卡与「记录一件事」表单同口径 */
+  wishId?: string;
 }
 export interface TodoDraft {
   kind: 'todo';
@@ -158,7 +160,7 @@ export async function executeDraft(draft: NavigatorDraft): Promise<string> {
         draft.text.trim(),
         draft.points,
         'local',
-        { important: draft.important },
+        { important: draft.important, wishId: draft.wishId },
       );
       const gains = ATTR_IDS.filter((id) => draft.points[id] > 0)
         .map((id) => `${navAttrName(id)} +${draft.points[id]}`)

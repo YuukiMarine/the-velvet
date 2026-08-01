@@ -15,6 +15,7 @@ import { zClass } from '@/utils/zIndex';
 import { useModalA11y } from '@/utils/useModalA11y';
 import { useBackHandler } from '@/utils/useBackHandler';
 import { CATEGORY_KEYS, CATEGORY_META, INCOME_TYPES, INCOME_META } from '@/utils/ledgerFormat';
+import { WishMountPicker } from '@/components/wish/WishMountPicker';
 import {
   ACTION_META, ATTR_IDS, draftReady, navAttrName,
   type NavigatorDraft,
@@ -128,6 +129,8 @@ export const NavigatorActionForm = ({ draft, channel, onSubmit, onClose }: Props
     <div className="space-y-4">
       {d.kind === 'activity' && (
         <>
+          {/* 挂到愿望（PRD_V2.6 §1.3）：黑猫这张卡也要有，否则从黑猫记的事永远不计入愿望进度 */}
+          <WishMountPicker compact value={d.wishId} onChange={(wishId) => patch({ wishId })} />
           <div>
             <label className={labelCls} style={ink} htmlFor="nav-form-text">做了什么</label>
             {bright ? (
