@@ -7,7 +7,8 @@
  * 页面统一调 parseLedgerInput（有 Key 走 AI、失败或无 Key 退离线；离线再失败返 null → 转手动）。
  */
 import { Settings, LedgerExpenseType, LedgerIncomeType } from '@/types';
-import { chatComplete, getAIConfig } from '@/utils/aiClient';
+import { chatComplete, getAIConfig, getVisionAIConfig } from '@/utils/aiClient';
+import { recognizeText } from '@/utils/ocr';
 
 export interface LedgerAIResult {
   direction: 'expense' | 'income';
@@ -206,6 +207,73 @@ export async function parseLedgerBatch(
     .map(s => parseLedgerOffline(s))
     .filter((r): r is LedgerAIResult => !!r && r.amount > 0);
   return offline;
+}
+
+// ── 拍照记账（FS3.2 三级降级链）─────────────────────────────────────────────
+
+const SYSTEM_PROMPT_SHOT = `你是一个记账助手。用户拍了一张小票/账单/支付截图，你要读图并把其中的消费解析成 JSON 数组。
+规则与文字录入一致：
+- direction："expense" 花钱 / "income" 收入
+- amount：金额数字（元，正数）。**优先取实付/合计金额**，不要把单价和合计重复计成两笔
+- 若 expense，type ∈ food/transport/shopping/fun/home/study/other
+- 若 income，incomeType ∈ labor / other
+- note：≤12 字中文摘要（商家名或商品名优先）
+一张小票通常只对应**一笔**（合计）；只有明显是多笔独立消费（如账单列表截图）才输出多条。
+读不出金额就返回空数组 []。
+
+**只输出严格合法 JSON 数组**，不要代码块、不要多余文字：
+[{ "direction":"expense","amount":0,"type":"food","incomeType":null,"note":"" }]`;
+
+/** 拍照记账的结果：解析到的账目 + 走了哪条路（UI 据此说人话） */
+export interface LedgerShotOutcome {
+  results: LedgerAIResult[];
+  /** vision=视觉模型读图 / ocr=本机离线取字后再解析 / none=两条路都不通 */
+  via: 'vision' | 'ocr' | 'none';
+  /** OCR 路径下识别到的原文（供用户核对/手改） */
+  ocrText?: string;
+}
+
+/**
+ * 从一张图解析账目。三级降级（PRD FS3.2）：
+ *   ① 配了视觉档 → 图直接喂模型，效果最好；
+ *   ② 否则本机有离线 OCR（原生 ML Kit / Vision）→ 取字后交给现有文字链路；
+ *   ③ 都没有 → via='none'，页面提示手输。
+ * 图片只在这两条路里流动：视觉档发给用户自己配的服务商，OCR 全程不出设备。
+ */
+export async function parseLedgerShot(
+  dataUrl: string,
+  settings: Settings,
+  signal?: AbortSignal,
+): Promise<LedgerShotOutcome> {
+  // ① 视觉档
+  const vcfg = getVisionAIConfig(settings);
+  if (vcfg) {
+    try {
+      const raw = await chatComplete(vcfg, [
+        { role: 'system', content: SYSTEM_PROMPT_SHOT },
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: '这是我的消费凭证，请按要求输出 JSON 数组。' },
+            { type: 'image_url', image_url: { url: dataUrl } },
+          ],
+        },
+      ], { temperature: 0.1, maxTokens: 700, signal });
+      const results = extractJsonArray(raw).map(o => normalizeResult(o)).filter(r => r.amount > 0);
+      if (results.length) return { results, via: 'vision' };
+    } catch {
+      /* 视觉失败 → 继续往下降级 */
+    }
+  }
+
+  // ② 本机离线 OCR → 复用文字链路（OCR 出来的是一坨小票文本，交给批量解析更合适）
+  const text = await recognizeText(dataUrl);
+  if (text) {
+    const results = await parseLedgerBatch(text, settings, signal);
+    return { results: results.filter(r => r.amount > 0), via: 'ocr', ocrText: text };
+  }
+
+  return { results: [], via: 'none' };
 }
 
 /** 从模型输出里抽出 JSON 数组（容错代码块/前后缀文字）。 */

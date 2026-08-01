@@ -37,6 +37,37 @@ export function dataUrlBytes(dataUrl: string): number {
 }
 
 /**
+ * 等比缩到长边 maxEdge 以内 + JPEG 压缩（不裁切，保全画面）。
+ * 用于拍照记账：小票原图动辄 4000px/5MB，视觉模型按像素计费、base64 还会再涨 1/3；
+ * 长边 1600 对小票文字足够清晰，体积通常落到 200KB 上下。
+ */
+export function downscaleDataUrl(
+  dataUrl: string,
+  maxEdge = 1600,
+  quality = 0.82,
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const long = Math.max(img.width, img.height);
+      if (long <= maxEdge) { resolve(dataUrl); return; } // 本来就小，别二次压
+      const scale = maxEdge / long;
+      const w = Math.round(img.width * scale);
+      const h = Math.round(img.height * scale);
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) { resolve(dataUrl); return; }
+      ctx.drawImage(img, 0, 0, w, h);
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = () => reject(new Error('图片解码失败'));
+    img.src = dataUrl;
+  });
+}
+
+/**
  * 1:1 居中裁切 + 逐步降质压缩到目标字节以下。
  * 典型用法：上传头像 / 长按同伴塔罗换图。
  */

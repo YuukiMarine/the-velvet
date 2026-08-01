@@ -26,7 +26,18 @@ import {
 } from '@/utils/aiProviders';
 
 export type AIRole = 'system' | 'user' | 'assistant';
-export interface AIMessage { role: AIRole; content: string; }
+
+/**
+ * 多模态内容块（FS3 视觉专线）。OpenAI 兼容的 content 数组形态，
+ * 各家（GPT-4o/5 系、qwen-vl、gemini 兼容层、GLM-4V…）都吃这套结构。
+ * 图片用 data URL 直接内联，不上传任何第三方图床。
+ */
+export type ContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string; detail?: 'auto' | 'low' | 'high' } };
+
+/** content 为字符串 = 纯文本（老路径，绝大多数调用）；为数组 = 多模态 */
+export interface AIMessage { role: AIRole; content: string | ContentPart[]; }
 
 export interface AIConfig {
   apiKey: string;
@@ -135,6 +146,27 @@ function applyModelOverride(
 
 /** @deprecated 改名 getDeliberateAIConfig（覆盖面已不止 Navigator）；保留别名防漏改 */
 export const getNavigatorAIConfig = getDeliberateAIConfig;
+
+/**
+ * 「视觉」档（FS3）：拍照记账等看图任务。**没配就是没配**——不回落到文本档，
+ * 因为把图发给纯文本模型只会 400 或胡说；调用方据 null 走 OCR / 手输降级链。
+ */
+export function getVisionAIConfig(settings: Settings): AIConfig | null {
+  const model = settings.visionModel?.trim();
+  if (!model) return null;
+  return applyModelOverride(settings, settings.visionProvider, model);
+}
+
+/**
+ * 「听觉」档（FS3）：语音转写。同样不回落——没配就当没有话筒。
+ * 注意它走的是 /audio/transcriptions（见 speech.ts），不是 /chat/completions，
+ * 但连接解析（key/baseUrl/跨平台）与其它档完全同构，所以复用同一套。
+ */
+export function getAudioAIConfig(settings: Settings): AIConfig | null {
+  const model = settings.audioModel?.trim();
+  if (!model) return null;
+  return applyModelOverride(settings, settings.audioProvider, model);
+}
 
 // ── 内部：超时 + 调用方 signal 合流 ──────────────────────────────────────────
 

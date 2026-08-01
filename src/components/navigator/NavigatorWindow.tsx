@@ -34,6 +34,7 @@ import {
   type NavigatorActionKind, type NavigatorDraft,
 } from '@/utils/navigatorRegistry';
 import { themeToChannel } from '@/ui/channel';
+import { speechAvailable, recorderSupported, startRecording, transcribe, type Recording } from '@/utils/speech';
 
 /** 当前人格的头像（剪影集/上传双轨；订阅 sessionId——切人格必换会话，借它触发重渲染）
  *
@@ -411,6 +412,51 @@ export const NavigatorWindow = () => {
   const [avatarCropFile, setAvatarCropFile] = useState<File | null>(null);
   const avatarFileRef = useRef<HTMLInputElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
+
+  // ── 🎤 语音输入（FS3.3）───────────────────────────────────────────────────
+  // 只在「配了听觉档 + 这个环境能录音」时出现；转写结果**回填输入框**不自动发送。
+  const settings = useAppStore((s) => s.settings);
+  const micVisible = speechAvailable(settings) && recorderSupported();
+  const [micState, setMicState] = useState<'idle' | 'recording' | 'transcribing'>('idle');
+  const [micHint, setMicHint] = useState<string | null>(null);
+  const recRef = useRef<Recording | null>(null);
+
+  const startMic = async () => {
+    if (micState !== 'idle') return;
+    setMicHint(null);
+    try {
+      recRef.current = await startRecording();
+      setMicState('recording');
+    } catch {
+      setMicHint('没能开始录音——检查一下麦克风权限');
+    }
+  };
+  const cancelMic = () => {
+    recRef.current?.cancel();
+    recRef.current = null;
+    setMicState('idle');
+    setMicHint('已取消');
+  };
+  const stopMic = async () => {
+    const rec = recRef.current;
+    if (!rec || micState !== 'recording') return;
+    recRef.current = null;
+    setMicState('transcribing');
+    try {
+      const blob = await rec.stop();
+      const text = await transcribe(blob, settings);
+      // 追加而不是覆盖：允许"打一半字再补一句语音"
+      setInput((prev) => (prev.trim() ? `${prev.trim()} ${text}` : text));
+      nav.setInputActive(true);
+      setMicHint(null);
+    } catch (e) {
+      setMicHint(e instanceof Error ? e.message : '转写失败');
+    } finally {
+      setMicState('idle');
+    }
+  };
+  // 卸载/关窗时别把麦克风留着
+  useEffect(() => () => { recRef.current?.cancel(); recRef.current = null; }, []);
 
   // 打开：加载自定义人格 + 挂载当日会话 + 问候（逻辑收在 store.greet，内部先 hydrate）
   useEffect(() => {
@@ -931,10 +977,33 @@ export const NavigatorWindow = () => {
                     className={sk.input}
                     style={sk.inputStyle}
                   />
+                  {/* 🎤 语音输入（FS3.3）：配了听觉档才出现。按住说话、松手转写回填输入框，
+                      不自动发送——转写有误的时候用户还能改。 */}
+                  {micVisible && (
+                    <button
+                      type="button"
+                      onPointerDown={(e) => { e.preventDefault(); void startMic(); }}
+                      onPointerUp={() => void stopMic()}
+                      onPointerLeave={() => { if (micState === 'recording') cancelMic(); }}
+                      onContextMenu={(e) => e.preventDefault()}
+                      disabled={micState === 'transcribing'}
+                      aria-label={micState === 'recording' ? '松手结束录音' : '按住说话'}
+                      title={micState === 'recording' ? '松手结束' : '按住说话'}
+                      className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-lg transition-transform disabled:opacity-50 ${
+                        micState === 'recording' ? 'scale-110 bg-red-500 text-white' : bright ? 'bg-white/80' : 'bg-white/10'
+                      }`}
+                      style={{ touchAction: 'none' }}
+                    >
+                      {micState === 'transcribing' ? '…' : '🎤'}
+                    </button>
+                  )}
                   <button type="button" onClick={send} disabled={!input.trim()} aria-label="发送" className={sk.send} style={sk.sendStyle}>
                     ▶
                   </button>
                 </div>
+                {micHint && (
+                  <p className={`mt-1 text-center text-[11px] ${bright ? 'text-[#3c69c9]' : 'text-gray-400'}`}>{micHint}</p>
+                )}
               </div>
             </div>
 

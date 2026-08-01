@@ -28,6 +28,37 @@ export function isChatModel(id: string): boolean {
   return !NON_CHAT_KEYWORDS.some((k) => s.includes(k));
 }
 
+// ── 视觉 / 听觉能力过滤（FS3 两个新档的选择面板用）─────────────────────────────
+// /models 不返回能力元数据，只能按命名约定猜。宁可**多列几个**也不漏：
+// 猜错的代价是用户选中后调用报错（可读的 400/404），漏掉的代价是明明能用却选不到。
+// 两个列表都保留「关掉筛选」的开关，手填输入框也一直在。
+const VISION_HINTS = [
+  '-vl', 'vl-', 'vision', 'omni', '4o', 'gpt-5', 'gpt-4.1', 'gpt-4-turbo',
+  'gemini', 'claude', 'glm-4v', 'glm-4.', 'internvl', 'llava', 'pixtral',
+  'kimi-k', 'moonshot-v1-vision', 'step-1v', 'yi-vision', 'minimax-m', 'abab7',
+];
+
+/** 像不像"能看图"的模型（按命名猜，宁滥勿缺） */
+export function isVisionModel(id: string): boolean {
+  const s = id.toLowerCase();
+  // 明确的非对话件（embedding/tts…）先排除，再看视觉线索
+  if (!isChatModel(s) && !s.includes('vl') && !s.includes('vision')) return false;
+  return VISION_HINTS.some((k) => s.includes(k));
+}
+
+const AUDIO_HINTS = [
+  'whisper', 'transcri', 'asr', 'audio', 'speech', 'voice',
+  'sensevoice', 'paraformer', 'qwen-audio', 'qwen3-asr', 'gummy', 'fun-asr',
+];
+
+/** 像不像"能听写"的模型（走 /audio/transcriptions 的那类） */
+export function isAudioModel(id: string): boolean {
+  const s = id.toLowerCase();
+  // tts / 语音合成不是听写：合成类命名里带 tts / cosyvoice / sambert
+  if (/tts|cosyvoice|sambert|speech-0?1|synthes/i.test(s)) return false;
+  return AUDIO_HINTS.some((k) => s.includes(k));
+}
+
 // ── 模型血统 ─────────────────────────────────────────────────────────────────
 
 export interface ModelFamily { id: string; label: string; }
