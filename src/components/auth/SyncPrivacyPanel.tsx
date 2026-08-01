@@ -66,7 +66,7 @@ const GROUPS: Group[] = [
   },
   {
     id: 'wishes',
-    label: '治疗终端 · 愿望清单',
+    label: '愿望清单',
     hint: '终极目标 / 子愿望 —— 默认只存本地；勾选后才随账号上云，换设备可恢复',
     field: { settingKey: 'syncWishesToCloud', defaultWhenUndefined: false },
   },

@@ -9,6 +9,7 @@
  * **不在此文件出现**——Batch2 的 AI 只能看到这里注册的动作。
  * 增强反馈免费继承：执行直接调用现有 store action，升级/成就/技能弹窗照常触发。
  */
+import { v4 as uuidv4 } from 'uuid';
 import { useAppStore, toLocalDateKey } from '@/store';
 import { TAROT_BY_ID } from '@/constants/tarot';
 import { CATEGORY_META, INCOME_META } from '@/utils/ledgerFormat';
@@ -57,7 +58,19 @@ export interface CompleteTodoDraft {
   todoId: string;
   todoTitle: string;
 }
-export type NavigatorDraft = ActivityDraft | TodoDraft | LedgerDraft | CompleteTodoDraft;
+/** 黑猫递刀产物（TASKS_MERGE_PRD §4.4）：一件大事 + AI/离线拆好的子步，确认即立 BIG DEAL */
+export interface BigDealDraft {
+  kind: 'bigdeal';
+  title: string;
+  attribute: AttributeId;
+  points: number;
+  /** 现状一句话（倾诉原文截段，AI 拆解已参考） */
+  currentState: string;
+  /** 截止日 YYYY-MM-DD；'' = 无 */
+  deadline: string;
+  steps: string[];
+}
+export type NavigatorDraft = ActivityDraft | TodoDraft | LedgerDraft | CompleteTodoDraft | BigDealDraft;
 export type NavigatorActionKind = NavigatorDraft['kind'];
 
 export const emptyDraft = (kind: NavigatorActionKind): NavigatorDraft => {
@@ -70,6 +83,8 @@ export const emptyDraft = (kind: NavigatorActionKind): NavigatorDraft => {
       return { kind, direction: 'expense', amount: 0, note: '', type: 'food', incomeType: 'labor', channel: '' };
     case 'completeTodo':
       return { kind, todoId: '', todoTitle: '' };
+    case 'bigdeal':
+      return { kind, title: '', attribute: 'guts', points: 2, currentState: '', deadline: '', steps: [] };
   }
 };
 
@@ -78,6 +93,7 @@ export const ACTION_META: Record<NavigatorActionKind, { label: string; icon: str
   todo: { label: '添加待办', icon: '📌' },
   ledger: { label: '记一笔', icon: '💰' },
   completeTodo: { label: '完成任务', icon: '✅' },
+  bigdeal: { label: '拆一件大事', icon: '◆' },
 };
 
 /** 确认卡的参数预览行 */
@@ -110,6 +126,15 @@ export function buildPreviewLines(draft: NavigatorDraft): string[] {
     }
     case 'completeTodo':
       return [`把「${draft.todoTitle}」标记为完成`, '完成加点与反馈按任务设置发放'];
+    case 'bigdeal': {
+      const head = draft.steps.slice(0, 3).map((s, i) => `${i + 1}. ${s}`);
+      return [
+        `「${draft.title}」 · BIG DEAL`,
+        ...head,
+        ...(draft.steps.length > 3 ? [`…共 ${draft.steps.length} 步`] : []),
+        `${navAttrName(draft.attribute)} 每步 +${draft.points}${draft.deadline ? ` · 截止 ${draft.deadline}` : ''} · 全成有收官奖励`,
+      ];
+    }
   }
 }
 
@@ -120,6 +145,7 @@ export function draftReady(draft: NavigatorDraft): boolean {
     case 'todo': return draft.title.trim().length > 0;
     case 'ledger': return draft.amount > 0;
     case 'completeTodo': return draft.todoId.length > 0;
+    case 'bigdeal': return draft.title.trim().length > 0 && draft.steps.some(s => s.trim());
   }
 }
 
@@ -192,6 +218,21 @@ export async function executeDraft(draft: NavigatorDraft): Promise<string> {
         : '';
       return `划掉一件：「${draft.todoTitle}」。加点我亲眼看着到账了。${unlockLine}`;
     }
+    case 'bigdeal': {
+      const steps = draft.steps.map(t => t.trim()).filter(Boolean);
+      await s.addTodo({
+        title: draft.title.trim(),
+        attribute: draft.attribute,
+        points: draft.points,
+        frequency: 'single',
+        isActive: true,
+        isBigDeal: true,
+        currentState: draft.currentState.trim() || undefined,
+        deadline: draft.deadline || undefined,
+        steps: steps.map(t => ({ id: uuidv4(), title: t, source: 'ai' as const })),
+      });
+      return `大事立好了，拆成 ${steps.length} 步。从第一步开始——别贪多，吾辈盯着呢。`;
+    }
   }
 }
 
@@ -216,7 +257,6 @@ export function buildSnapshot(): NavigatorSnapshot {
   const done = due.filter((t) => s.getTodayTodoProgress(t.id).isComplete).length;
   const tarot = s.dailyDivination && s.dailyDivination.date === dateKey ? s.dailyDivination : null;
   const activityCountToday = s.activities.filter((a) => toLocalDateKey(new Date(a.date)) === dateKey).length;
-  const terminalTask = s.getActiveTerminalTask();
   return {
     dateKey,
     hour: new Date().getHours(),
@@ -226,7 +266,7 @@ export function buildSnapshot(): NavigatorSnapshot {
     tarotDrawn: !!tarot,
     tarotCardName: tarot ? TAROT_BY_ID[tarot.cardId]?.name : undefined,
     activityCountToday,
-    terminalStepTitle: terminalTask?.title,
+    // terminalStepTitle 字段保留在类型上（navigatorIntent 仍引用），终端退役后恒 undefined
   };
 }
 

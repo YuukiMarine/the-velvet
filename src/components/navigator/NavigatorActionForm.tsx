@@ -39,6 +39,7 @@ const FORM_GHOST: Record<NavigatorDraft['kind'], string> = {
   todo: 'TODO',
   ledger: 'NOTE',
   completeTodo: 'DONE',
+  bigdeal: 'DEAL',
 };
 
 /** 右上角装饰性无衬线大字（与左缘竖排词呼应，另择词避免重复） */
@@ -47,6 +48,7 @@ const CORNER_GHOST: Record<NavigatorDraft['kind'], string> = {
   todo: 'PLAN',
   ledger: 'YEN',
   completeTodo: 'CLR',
+  bigdeal: 'BIG',
 };
 
 /** 青色三角步进钮（p3-modal-14 稿：◀− / ▶＋） */
@@ -288,6 +290,76 @@ export const NavigatorActionForm = ({ draft, channel, onSubmit, onClose }: Props
                 )}
               </div>
             )}
+          </div>
+        </>
+      )}
+
+      {d.kind === 'bigdeal' && (
+        <>
+          <div>
+            <label className={labelCls} style={ink} htmlFor="nav-form-deal-title">这件大事</label>
+            <input
+              id="nav-form-deal-title"
+              autoFocus
+              value={d.title}
+              onChange={(e) => patch({ title: e.target.value })}
+              placeholder="想搞定的一件大事…"
+              className={inputCls}
+              style={inputStyle}
+            />
+          </div>
+          <div>
+            <div className={labelCls} style={ink}>拆好的小步（可改可删）</div>
+            <div className="space-y-1.5">
+              {d.steps.map((s, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <input
+                    value={s}
+                    onChange={(e) => patch({ steps: d.steps.map((x, j) => (j === i ? e.target.value : x)) })}
+                    placeholder="一个够得着的小步…"
+                    className={inputCls}
+                    style={inputStyle}
+                  />
+                  <button
+                    type="button"
+                    aria-label="删除这一步"
+                    onClick={() => patch({ steps: d.steps.filter((_, j) => j !== i) })}
+                    className="shrink-0 p-1 text-base font-black opacity-40 hover:opacity-80"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={() => patch({ steps: [...d.steps, ''] })}
+                className={chipCls(false)}
+                style={bright ? ink : undefined}
+              >
+                + 再加一步
+              </button>
+            </div>
+          </div>
+          <div>
+            <div className={labelCls} style={ink}>绑定属性 · 每步 +{d.points}</div>
+            <div className="flex flex-wrap gap-1.5">
+              {ATTR_IDS.map((id) => (
+                <button key={id} type="button" onClick={() => patch({ attribute: id })} className={chipCls(d.attribute === id)} style={bright && d.attribute !== id ? ink : undefined}>
+                  {navAttrName(id)}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className={labelCls} style={ink} htmlFor="nav-form-deal-deadline">截止日（可选）</label>
+            <input
+              id="nav-form-deal-deadline"
+              type="date"
+              value={d.deadline}
+              onChange={(e) => patch({ deadline: e.target.value })}
+              className={inputCls}
+              style={inputStyle}
+            />
           </div>
         </>
       )}

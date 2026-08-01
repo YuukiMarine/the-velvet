@@ -17,7 +17,7 @@ import { triggerLevelFeedback } from '@/utils/feedback';
 import { TERMINAL_DANMAKU_SEEDS } from '@/constants/terminalDanmaku';
 import { listApprovedDanmaku } from '@/services/danmaku';
 import { cloudEnabled } from '@/services/pocketbase';
-import { DanmakuCompose } from '@/components/terminal/DanmakuCompose';
+import { DanmakuCompose } from '@/components/danmaku/DanmakuCompose';
 import { zClass } from '@/utils/zIndex';
 
 interface StageSkin {

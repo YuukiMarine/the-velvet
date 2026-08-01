@@ -35,9 +35,7 @@ const Menu = lazy(() => import('@/pages/Menu').then(m => ({ default: m.Menu })))
 const Account = lazy(() => import('@/pages/Account').then(m => ({ default: m.Account })));
 // 心相记账页（F5）
 const Ledger = lazy(() => import('@/pages/Ledger').then(m => ({ default: m.Ledger })));
-// 无气力症治疗终端（F3）
 import { BattleArena } from '@/components/battle/BattleArena';
-import { TerminalClearCutIn } from '@/components/terminal/TerminalClearCutIn';
 import { BigDealClearCutIn } from '@/components/bigdeal/BigDealClearCutIn';
 // F6 黑猫对话窗（portal 到 body 的全屏 overlay；入口在 Sidebar / BottomNav 中央 ◈）
 import { NavigatorWindow } from '@/components/navigator/NavigatorWindow';
@@ -712,8 +710,6 @@ function App() {
           {/* 宣告 · 达成 全屏结算屏：放在 App 顶层是为了"完成最后一项 todo 时立即弹出"，
               即便用户当时不在 Dashboard 也能看到 */}
           <GlobalCallingCardCutIn />
-          {/* F3 终端任务「我做到了」结算屏（独立于宣告卡 cut-in） */}
-          <TerminalClearCutIn />
           {/* BIG DEAL 收官结算屏（批4）：collapseBigDeal 落库后全局弹出，不依赖当前页面 */}
           <BigDealClearCutIn />
         </div>

@@ -20,7 +20,6 @@ import { P3R, P3RPage, GhostWords, SectionMark, SlantButton, TitlePeriod, slantC
 import { TodoCompleteModal } from '@/components/TodoCompleteModal';
 import { BattleDashboardWidget } from '@/components/BattleDashboardWidget';
 import { StackCarousel } from '@/components/StackCarousel';
-import { TerminalTaskCard } from '@/components/terminal/TerminalTaskCard';
 import { getAttributeLevelTitle } from '@/utils/attributeLevelTitles';
 import { calcMaxStreak } from '@/utils/streak';
 import { TAROT_BY_ID } from '@/constants/tarot';
@@ -397,9 +396,7 @@ export const DashboardP3 = () => {
     user, todos, activities, achievements, skills, attributes, settings, dailyDivination,
     completeTodo, getTodayTodoProgress, setModalBlocker, setCurrentPage,
     applyCountercurrentDecay, getCountercurrentWarnings, callingCards,
-    getActiveTerminalTask, completeTerminalTask, dismissTerminalTask,
   } = useAppStore();
-  const activeTerminalTask = getActiveTerminalTask();
   const [dossierAttr, setDossierAttr] = useState<AttributeId | null>(null);
   const [completedTitle, setCompletedTitle] = useState<string | null>(null);
   const [completedPoints, setCompletedPoints] = useState(1);
@@ -698,18 +695,6 @@ export const DashboardP3 = () => {
               className="flex h-7 w-7 shrink-0 items-center justify-center text-base leading-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1b57ff]"
               style={{ color: P3R.grey }}
             >×</button>
-          </div>
-        )}
-
-        {/* 进行中的治疗终端 24h 限时任务（特殊风格，原样复用） */}
-        {settings.terminalEnabled && activeTerminalTask && (
-          <div className="mt-5">
-            <TerminalTaskCard
-              card={activeTerminalTask}
-              onComplete={() => completeTerminalTask(activeTerminalTask.id)}
-              onDismiss={() => dismissTerminalTask(activeTerminalTask.id)}
-              compact
-            />
           </div>
         )}
 

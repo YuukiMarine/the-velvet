@@ -359,12 +359,8 @@ export interface Settings {
   ledgerChallengeWonMonths?: string[];
   /** F5 资产页「存款」条目是否隐藏（默认显示）。 */
   ledgerSavingsHidden?: boolean;
-  // ── F3 无气力症治疗终端 ──
-  /** 治疗终端总开关（默认关）：开后首页出现「终端」入口。常驻应急工具，不 gating。 */
-  terminalEnabled?: boolean;
-  /** 终端任务奖励日封顶锚日（YYYY-MM-DD）：每日首次完成才给属性点 + 弹幕机会，防刷。 */
-  terminalRewardDate?: string;
-  /** 已累积但未发送的「鼓励弹幕」机会数（在线发送随 F2b 后端批开放；二合一后由大事收官发放）。 */
+  // ── 弹幕投稿（原 F3 终端遗产，二合一后由大事收官发放；字段名保留兼容存量数据）──
+  /** 已累积但未发送的「鼓励弹幕」投稿机会数。 */
   terminalDanmakuTokens?: number;
   /** 任务×终端二合一迁移完成时间 ISO（TASKS_MERGE_PRD §2）：防重入标记 */
   tasksMergeMigratedAt?: string;
@@ -712,28 +708,6 @@ export interface BigDealClearPayload {
   sp: number;
   /** 触及属性（收官记录里各 +1） */
   attrs: AttributeId[];
-}
-
-/** F3 终端任务完成结算屏（TerminalClearCutIn）的载荷 */
-export interface TerminalClearPayload {
-  stepTitle: string;
-  goalTitle?: string;
-  /** 本次实际加点的属性；当日已领过封顶则为 undefined */
-  rewardAttribute?: AttributeId;
-  /** 本次实发属性点（0 = 当日已领过，仅叙事） */
-  rewardPoints: number;
-  /** 是否解锁了一次发弹幕机会 */
-  danmakuGranted: boolean;
-  /** 同一目标在本次会话内连续完成的次数，用于短期压力的连击反馈 */
-  comboCount?: number;
-  /** 同一父目标下还有排队的小步骤时，可从结算屏直接接下一击 */
-  nextComboTask?: {
-    stepTitle: string;
-    sourceKind: 'wish';
-    sourceId: string;
-    attribute?: AttributeId;
-    goalTitle?: string;
-  };
 }
 
 // 本周目标
