@@ -169,7 +169,7 @@ export const BigDealClearCutIn = () => {
                 transition={{ type: 'spring', stiffness: 420, damping: 22, delay: bold ? 0.08 : 0 }}
                 className="mt-3"
               >
-                <span className={sk.stamp} style={sk.stampStyle}>大事收官</span>
+                <span className={sk.stamp} style={sk.stampStyle}>大功告成</span>
               </motion.div>
 
               <motion.h2
@@ -189,7 +189,7 @@ export const BigDealClearCutIn = () => {
                 transition={{ delay: bold ? 0.36 : 0 }}
                 className="mt-4 flex flex-wrap items-center justify-center gap-2"
               >
-                <span className={sk.statChip}>{bigDealClear.stepsCount} 步全成</span>
+                <span className={sk.statChip}>共 {bigDealClear.stepsCount} 步</span>
                 {bigDealClear.sp > 0 && <span className={sk.statChip}>SP +{bigDealClear.sp}</span>}
                 {bigDealClear.attrs.map(a => (
                   <span key={a} className={sk.statChip}>{attrName(a)} +1</span>
@@ -219,7 +219,7 @@ export const BigDealClearCutIn = () => {
                 className="mt-6 space-y-3"
               >
                 <button type="button" onClick={clearBigDealClear} className={sk.primary}>
-                  收下这一刻
+                  记录这一刻
                 </button>
               </motion.div>
             </div>
