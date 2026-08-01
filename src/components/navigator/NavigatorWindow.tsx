@@ -33,6 +33,7 @@ import {
   ACTION_META, buildPreviewLines, emptyDraft, executeDraft, navAttrName,
   type NavigatorActionKind, type NavigatorDraft,
 } from '@/utils/navigatorRegistry';
+import { themeToChannel } from '@/ui/channel';
 
 /** 当前人格的头像（剪影集/上传双轨；订阅 sessionId——切人格必换会话，借它触发重渲染）
  *
@@ -387,10 +388,12 @@ export const NavigatorWindow = () => {
   const { user, setCurrentPage, getDueTodosToday, getTodayTodoProgress } = useAppStore();
   const nav = useNavigatorStore();
   const bold = useBoldness();
-  // 亮皮 = 蓝/粉/自定义（原 terminalChannel 'board' 口径；终端退役后内联，黄/红走各自暗件）
-  const bright = user?.theme !== 'yellow' && user?.theme !== 'red';
-  const isP4 = user?.theme === 'yellow';
-  const isP5 = user?.theme === 'red';
+  // 皮肤按**频道**分（FS2）：p3=白日水面亮皮（蓝/粉）· p4=节目单 · p5=剪报 ·
+  // neutral（自定义）落第四支 —— 原始未风格化的暗底聊天窗（用户口径：自定义要干净）。
+  const channel = themeToChannel(user?.theme);
+  const bright = channel === 'p3';
+  const isP4 = channel === 'p4';
+  const isP5 = channel === 'p5';
   const sk = skinOf(bright, isP4, isP5);
   const preset = nav.activePreset();
 
@@ -699,7 +702,7 @@ export const NavigatorWindow = () => {
                   </button>
                   <div className="min-w-0 flex-1">
                     <div className={`truncate font-black ${isP4 ? 'text-[22px]' : 'text-base'}`} style={{ ...sk.headerText, ...(isP4 ? { fontFamily: 'var(--p4-display-font, serif)' } : {}) }}>{preset.name}</div>
-                    <div className={`text-[11px] font-bold ${bright ? '' : 'opacity-60'}`} style={bright ? { color: '#1b57ff' } : sk.headerText}>万能记录 · 有事直说</div>
+                    <div className={`text-[11px] font-bold ${bright ? '' : 'opacity-60'}`} style={bright ? { color: 'var(--p3r-blue, #1b57ff)' } : sk.headerText}>万能记录 · 有事直说</div>
                   </div>
                   <button
                     type="button"
@@ -746,17 +749,17 @@ export const NavigatorWindow = () => {
                                   style={{
                                     width: active ? undefined : `calc(100% - ${i * 10}px)`,
                                     marginLeft: active ? 0 : i * 10,
-                                    background: active ? '#1b57ff' : undefined,
+                                    background: active ? 'var(--p3r-blue, #1b57ff)' : undefined,
                                     clipPath: 'polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%)',
                                     boxShadow: active ? '0 10px 26px rgba(27,87,255,.35)' : '0 8px 20px rgba(7,40,120,.14)',
                                   }}
                                 >
-                                  <span className="flex h-6 w-6 shrink-0 items-center justify-center" style={{ color: active ? '#ffffff' : '#35d1e8' }}>
+                                  <span className="flex h-6 w-6 shrink-0 items-center justify-center" style={{ color: active ? '#ffffff' : 'var(--p3r-cyan, #35d1e8)' }}>
                                     <PresetAvatar avatar={p.avatar} className="h-5 w-5" />
                                   </span>
                                   <span className="min-w-0 flex-1 truncate">{p.name}</span>
                                   {active && <span className="shrink-0 text-[11px] font-black text-white/90">当前</span>}
-                                  {active && <span aria-hidden className="absolute bottom-0 right-4 h-[9px] w-[16px]" style={{ background: '#f0417f', clipPath: 'polygon(35% 0, 100% 0, 65% 100%, 0 100%)' }} />}
+                                  {active && <span aria-hidden className="absolute bottom-0 right-4 h-[9px] w-[16px]" style={{ background: 'var(--p3r-magenta, #f0417f)', clipPath: 'polygon(35% 0, 100% 0, 65% 100%, 0 100%)' }} />}
                                 </button>
                               );
                             })}
@@ -897,12 +900,12 @@ export const NavigatorWindow = () => {
                 {(['activity', 'todo', 'ledger', 'completeTodo'] as NavigatorActionKind[]).map((kind, i) => (
                   <button key={kind} type="button" onClick={() => openForm(kind)}
                     className={`shrink-0 ${bright ? 'flex items-center gap-2 py-2 pl-2.5 pr-3.5' : 'px-3.5 py-2'} ${sk.chip}`} style={sk.chipStyle}>
-                    {bright && <span aria-hidden className="h-[16px] w-[7px] shrink-0" style={{ background: i === 0 ? '#1b57ff' : i % 2 ? '#35d1e8' : '#7fd8ee', clipPath: 'polygon(38% 0, 100% 0, 62% 100%, 0 100%)' }} />}
+                    {bright && <span aria-hidden className="h-[16px] w-[7px] shrink-0" style={{ background: i === 0 ? 'var(--p3r-blue, #1b57ff)' : i % 2 ? 'var(--p3r-cyan, #35d1e8)' : '#7fd8ee', clipPath: 'polygon(38% 0, 100% 0, 62% 100%, 0 100%)' }} />}
                     {bright ? ACTION_META[kind].label : <>{ACTION_META[kind].icon} {ACTION_META[kind].label}</>}
                   </button>
                 ))}
                 <button type="button" onClick={() => jump('astrology')} className={`shrink-0 ${bright ? 'flex items-center gap-2 py-2 pl-2.5 pr-3.5' : 'px-3.5 py-2'} ${sk.chip}`} style={sk.chipStyle}>
-                  {bright && <span aria-hidden className="h-[16px] w-[7px] shrink-0" style={{ background: '#35d1e8', clipPath: 'polygon(38% 0, 100% 0, 62% 100%, 0 100%)' }} />}
+                  {bright && <span aria-hidden className="h-[16px] w-[7px] shrink-0" style={{ background: 'var(--p3r-cyan, #35d1e8)', clipPath: 'polygon(38% 0, 100% 0, 62% 100%, 0 100%)' }} />}
                   {bright ? '去抽塔罗' : '🔮 去抽塔罗'}
                 </button>
                 {/* 终端跳转 chip 已退役（TASKS_MERGE_PRD）：批5 黑猫改为「拆小步」递刀 */}
@@ -985,11 +988,13 @@ export const NavigatorWindow = () => {
         )}
       </AnimatePresence>
 
-      {/* 迷你表单（新建 / 编辑确认卡共用）——频道皮随主题：红=剪报 / 黄=综艺 / 其余=P3R 亮蓝 */}
+      {/* 迷你表单（新建 / 编辑确认卡共用）——频道皮：红=剪报 / 黄=综艺 / 其余=P3R 皮。
+          自定义主题没有独立表单皮，暂借 p3 结构；配色由 :root[data-theme="custom"]
+          覆写的 --p3r-* 变量拉回用户主色，不会在中性皮里突然蹦出一片蓝。 */}
       <NavigatorActionForm
         key={formKey}
         draft={formDraft}
-        channel={user?.theme === 'red' ? 'p5' : user?.theme === 'yellow' ? 'p4' : 'p3'}
+        channel={isP5 ? 'p5' : isP4 ? 'p4' : 'p3'}
         onSubmit={onFormSubmit}
         onClose={() => { setFormDraft(null); setEditingCardId(null); }}
       />

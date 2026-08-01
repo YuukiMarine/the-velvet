@@ -58,9 +58,10 @@ export const validateDanmaku = (text: string): { ok: boolean; reason?: string } 
   return { ok: true };
 };
 
-/** 主题 → 弹幕频道标签（蓝=blue / 黄=yellow / 红·粉·自定义=red，与终端频道分桶一致） */
+/** 主题 → 弹幕频道标签（蓝·粉=blue / 黄=yellow / 红·自定义=red，与频道分桶一致；
+ *  粉自 FS2 起是 P3 的换色皮，弹幕跟着走蓝桶） */
 export const danmakuThemeOf = (theme?: ThemeType): DanmakuTheme =>
-  theme === 'blue' ? 'blue' : theme === 'yellow' ? 'yellow' : 'red';
+  theme === 'blue' || theme === 'pink' ? 'blue' : theme === 'yellow' ? 'yellow' : 'red';
 
 /**
  * 拉取已过审弹幕文本。无云 / 集合未建 / 权限未配 / 出错 → 返回空（由 UI 退回种子池）。

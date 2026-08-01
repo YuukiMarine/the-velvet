@@ -696,14 +696,14 @@ export function ConfidantDetailModal({
                     className="relative flex-1 py-2.5 text-[14px] font-black transition-all"
                     style={{
                       clipPath: 'polygon(11px 0, 100% 0, calc(100% - 11px) 100%, 0 100%)',
-                      background: active ? '#1b57ff' : '#eef6fb',
-                      color: active ? '#fff' : '#0a1230',
+                      background: active ? 'var(--p3r-blue, #1b57ff)' : '#eef6fb',
+                      color: active ? '#fff' : 'var(--p3r-ink, #0a1230)',
                       marginLeft: i > 0 ? -6 : 0,
                       zIndex: active ? 2 : 1,
                     }}
                   >
                     {t.label}
-                    {active && <span aria-hidden className="absolute bottom-0 right-2.5 h-[7px] w-[16px]" style={{ background: '#f0417f', clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />}
+                    {active && <span aria-hidden className="absolute bottom-0 right-2.5 h-[7px] w-[16px]" style={{ background: 'var(--p3r-magenta, #f0417f)', clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />}
                   </button>
                 );
               })}
@@ -946,7 +946,7 @@ export function ConfidantDetailModal({
                       ? 'relative w-full py-3.5 text-[16px] font-black text-white disabled:opacity-40'
                       : 'w-full py-3 rounded-xl text-white text-sm font-bold shadow-lg disabled:opacity-40'}
                     style={p3
-                      ? { clipPath: 'polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%)', background: '#1b57ff', boxShadow: '0 12px 28px rgba(27,87,255,0.3)' }
+                      ? { clipPath: 'polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%)', background: 'var(--p3r-blue, #1b57ff)', boxShadow: '0 12px 28px rgba(27,87,255,0.3)' }
                       : { background: `linear-gradient(135deg, ${accent}, ${accent}cc)`, boxShadow: `0 10px 28px -12px ${accent}80` }}
                   >
                     {confidant.intimacy >= MAX_INTIMACY
@@ -955,7 +955,7 @@ export function ConfidantDetailModal({
                       ? '今日已解读'
                       : '今日互动 · 由 AI 解读加点'}
                     {p3 && !(confidant.intimacy >= MAX_INTIMACY || interactedToday) && (
-                      <span aria-hidden className="absolute bottom-0 right-4 h-[7px] w-[18px]" style={{ background: '#f0417f', clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
+                      <span aria-hidden className="absolute bottom-0 right-4 h-[7px] w-[18px]" style={{ background: 'var(--p3r-magenta, #f0417f)', clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
                     )}
                   </motion.button>
 
@@ -989,14 +989,14 @@ export function ConfidantDetailModal({
                 <button
                   onClick={handleArchive}
                   className={p3 ? 'py-2.5 text-xs font-black' : 'py-2 rounded-xl text-xs font-medium bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300'}
-                  style={p3 ? { clipPath: 'polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%)', background: '#cfeaf6', color: '#0a1230' } : undefined}
+                  style={p3 ? { clipPath: 'polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%)', background: 'var(--p3r-cyan-pale, #cfeaf6)', color: 'var(--p3r-ink, #0a1230)' } : undefined}
                 >
                   {confidant.archivedAt ? '恢复关系' : '暂时归档'}
                 </button>
                 <button
                   onClick={() => setDeleteConfirmOpen(true)}
                   className={p3 ? 'py-2.5 text-xs font-black text-white' : 'py-2 rounded-xl text-xs font-medium bg-transparent border border-rose-300 text-rose-500 hover:bg-rose-500/10 transition-colors'}
-                  style={p3 ? { clipPath: 'polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%)', background: '#f0417f' } : undefined}
+                  style={p3 ? { clipPath: 'polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%)', background: 'var(--p3r-magenta, #f0417f)' } : undefined}
                 >
                   彻底删除
                 </button>

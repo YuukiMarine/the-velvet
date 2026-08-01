@@ -293,7 +293,7 @@ export type MarkChannel = 'p5' | 'p4' | 'p3';
 const MARK_SKIN: Record<MarkChannel, { ink: string; edge: string }> = {
   p5: { ink: '#f0e9df', edge: '#050505' },
   p4: { ink: '#131313', edge: '#fff6d0' },
-  p3: { ink: '#ffffff', edge: '#0a1230' },
+  p3: { ink: '#ffffff', edge: 'var(--p3r-ink, #0a1230)' },
 };
 
 /** 蓝频道的 ？/！ 用字体渲染（见 BubbleMark 内的 p3 分支）：白字 + 浅投影 */

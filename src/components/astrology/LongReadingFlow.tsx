@@ -23,7 +23,7 @@ import { P3R, slantClip, SlantButton } from '@/components/p3r/kit';
 /** P3R 青双斜杠（p3-modal-16 稿的节标签尾饰） */
 const CyanSlashes = ({ soft = false }: { soft?: boolean }) => (
   <span aria-hidden className="inline-flex gap-1">
-    <span className="h-[13px] w-[10px]" style={{ background: soft ? 'rgba(53,209,232,0.45)' : '#35d1e8', clipPath: 'polygon(38% 0, 100% 0, 62% 100%, 0 100%)' }} />
+    <span className="h-[13px] w-[10px]" style={{ background: soft ? 'rgba(53,209,232,0.45)' : 'var(--p3r-cyan, #35d1e8)', clipPath: 'polygon(38% 0, 100% 0, 62% 100%, 0 100%)' }} />
     <span className="h-[13px] w-[10px]" style={{ background: soft ? 'rgba(53,209,232,0.25)' : 'rgba(53,209,232,0.55)', clipPath: 'polygon(38% 0, 100% 0, 62% 100%, 0 100%)' }} />
   </span>
 );
@@ -331,7 +331,7 @@ export function LongReadingFlow({ initialReading, onBack }: Props) {
                 className="w-full resize-none px-5 py-4 text-[15px] font-bold leading-relaxed outline-none placeholder:text-[#8fb1dc]"
                 style={{ color: P3R.ink, background: 'linear-gradient(165deg, #ddeef8 0%, #cfe9f6 100%)', clipPath: 'polygon(14px 0, 100% 0, calc(100% - 22px) 100%, 0 100%)' }}
               />
-              <span aria-hidden className="absolute -bottom-1 left-0 right-16 h-[3px]" style={{ background: '#35d1e8' }} />
+              <span aria-hidden className="absolute -bottom-1 left-0 right-16 h-[3px]" style={{ background: 'var(--p3r-cyan, #35d1e8)' }} />
               <span className="absolute -bottom-2.5 right-0 text-[13px] font-black" style={{ color: P3R.blue }}>{question.length}/300</span>
             </div>
           </div>
@@ -402,7 +402,7 @@ export function LongReadingFlow({ initialReading, onBack }: Props) {
             <span className="flex items-center justify-center gap-4">
               <span aria-hidden className="flex gap-1">
                 {[0, 1, 2].map(i => (
-                  <span key={i} className="h-[20px] w-[7px]" style={{ background: '#35d1e8', transform: 'skewX(-20deg)', opacity: 1 - i * 0.25 }} />
+                  <span key={i} className="h-[20px] w-[7px]" style={{ background: 'var(--p3r-cyan, #35d1e8)', transform: 'skewX(-20deg)', opacity: 1 - i * 0.25 }} />
                 ))}
               </span>
               开始洗牌

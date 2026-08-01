@@ -502,6 +502,78 @@
   --color-secondary: #F472B6;
 }
 
+/* ── 粉 = P3 的换色皮（FS2.1）────────────────────────────────────────────
+   粉主题走 data-ui-channel="p3" 的全部结构（水面底/斜切/幽灵大字/白面板），
+   只把色相整体从「深海蓝青」旋到「玫瑰紫」。P3 kit 的颜色本就全是
+   var(--p3r-*, 蓝色 fallback) —— 这里覆盖变量即可，一行组件代码都不用动。
+   角色对照（保持结构语义不变）：
+     亮蓝 CTA→玫红 · 深蓝墨→梅黑 · 青信号→紫罗兰（粉室里留青会读成"蓝主题串味"）
+     洋红刀口→橙（原洋红与粉主色太近，句点会糊在一起） */
+:root[data-theme="pink"] {
+  --p3r-blue: #e11d74;
+  --p3r-blue-deep: #a8105a;
+  --p3r-ink: #2b0a1c;
+  --p3r-ink-soft: #6d4a5c;
+  --p3r-grey: #a68d99;
+  --p3r-cyan: #a855f7;
+  --p3r-cyan-rgb: 168, 85, 247;
+  --p3r-cyan-pale: #fbdcec;
+  --p3r-cyan-faint: #fdeff6;
+  --p3r-magenta: #ff8a3d;
+  --p3r-bg: #fdf2f7;
+  --p3r-panel: #ffffff;
+  --p3r-panel-glass: rgba(255, 255, 255, 0.93);
+  --p3r-ghost: rgba(225, 29, 116, 0.16);
+  --p3r-veil-grad: linear-gradient(180deg, rgba(253, 242, 247, 0.35) 0%, rgba(253, 242, 247, 0.82) 58%, rgba(253, 242, 247, 0.95) 100%);
+  --p3r-wash: 251, 220, 236;
+  --p3r-row: rgba(255, 255, 255, 0.92);
+  --p3r-row-alt: rgba(253, 236, 245, 0.95);
+  --p3r-blank: rgba(253, 236, 245, 0.6);
+  --p3r-track: #f3dbe7;
+  --p3r-chip: #fbe3ef;
+  --p3r-chip-stripe: rgba(255, 255, 255, 0.5);
+  --p3r-skill-locked: #fdf3f8;
+  --p3r-skill-badge: #d8b9c8;
+  --p3r-skill-ready: rgba(225, 29, 116, 0.08);
+  --p3r-star-ring-pale: rgb(253, 236, 245);
+  --p3r-star-ring-deep: rgb(240, 168, 205);
+  --p3r-statstrip: rgba(251, 220, 236, 0.75);
+  --p3r-statstrip-div: rgba(255, 255, 255, 0.7);
+  --p3r-wheel-bar: #ffffff;
+  --p3r-bar-ghost: rgba(225, 29, 116, 0.16);
+  --p3r-velvet: rgba(225, 29, 116, 0.62);
+  --p3r-sheet-grad: linear-gradient(178deg, #fffafc 0%, #fdf1f7 60%, #fbe6f0 100%);
+  --p3r-field: rgba(251, 220, 236, 0.45);
+  --p3r-field-focus: rgba(251, 220, 236, 0.7);
+  --p3r-ph: #bd94a6;
+  --p3-blue: #e11d74;
+  --p3-cyan: #a855f7;
+  --p3-cat: #2b0a1c;
+  --p3nav-root: linear-gradient(168deg, #fef5f9 0%, #fde8f1 52%, #f9d3e6 100%);
+  --p3nav-cat-bub: linear-gradient(315deg, #a855f7 13px, #fbdcec 13px);
+  --p3nav-slab: linear-gradient(180deg, rgba(168, 85, 247, 0.22) 0%, rgba(236, 72, 153, 0.34) 100%);
+  /* 水面照片是蓝青素材：粉室里旋成玫瑰色（日间轻旋，夜间另有压暗档） */
+  --p3nav-water-filter: hue-rotate(255deg) saturate(0.85);
+}
+/* 粉 · 写死蓝字面量的兜底重映射：P3 组件里仍有一批 Tailwind 任意值类
+   （text-[#1b57ff] 之类）够不着变量——按类名逐条改指变量族。
+   值全部走 var()，所以夜间自动跟着 :root.dark[data-theme="pink"] 变，无需再写一份。 */
+:root[data-theme="pink"] [class*="text-[#1b57ff]"] { color: var(--p3r-blue) !important; }
+:root[data-theme="pink"] [class*="text-[#0a3bd6]"] { color: var(--p3r-blue-deep) !important; }
+:root[data-theme="pink"] [class*="text-[#0a1230]"] { color: var(--p3r-ink) !important; }
+:root[data-theme="pink"] [class*="text-[#35d1e8]"] { color: var(--p3r-cyan) !important; }
+:root[data-theme="pink"] [class*="text-[#3c69c9]"] { color: var(--p3r-blue-deep) !important; }
+:root[data-theme="pink"] [class*="text-[#f0417f]"] { color: var(--p3r-magenta) !important; }
+:root[data-theme="pink"] [class*="bg-[#1b57ff]"] { background-color: var(--p3r-blue) !important; }
+:root[data-theme="pink"] [class*="bg-[#35d1e8]"] { background-color: var(--p3r-cyan) !important; }
+:root[data-theme="pink"] [class*="bg-[#cfeaf6]"] { background-color: var(--p3r-cyan-pale) !important; }
+:root[data-theme="pink"] [class*="hover:bg-[#e2f2fa]"]:hover { background-color: var(--p3r-cyan-faint) !important; }
+:root[data-theme="pink"] [class*="active:bg-[#e2f2fa]"]:active { background-color: var(--p3r-cyan-faint) !important; }
+:root[data-theme="pink"] [class*="border-[#35d1e8]"] { border-color: var(--p3r-cyan) !important; }
+:root[data-theme="pink"] [class*="placeholder:text-[#9ab4c9]"]::placeholder { color: var(--p3r-ph) !important; }
+:root[data-theme="pink"] [class*="ring-[#1b57ff]"] { --tw-ring-color: var(--p3r-blue) !important; }
+:root[data-theme="pink"] [class*="ring-[#f0417f]"] { --tw-ring-color: var(--p3r-magenta) !important; }
+
 /* iOS PWA 安全区背景色 — 防止顶部/底部出现白色/黑色条带
    html.dark 由 App.tsx 在 darkMode 变化时同步写入 */
 html, body {
@@ -733,6 +805,29 @@ html[data-ios-standalone="true"] {
   --ui-line-angle: calc(90deg + var(--ui-axis));
   /* 引力线/动线主笔宽度（不乘拨盘——线是信息不是装饰，D0 仍在场） */
   --ui-accent-w: 4px;
+}
+
+/* 自定义主题 = 干净中性皮（FS2.2 用户口径）：不参与斜界世界。
+   与 p3 频道同样的归零手法，只是键在 data-theme 上——菜单/统计/行动/账号
+   等所有 PagePlane 页面一并回正，方正到底。
+   同时把 P3R 变量族拉到用户主色：自定义走 neutral 频道、P3 页面本不会渲染，
+   但少数借 p3 结构的部件（黑猫动作表单）仍读这族变量——不改就会在中性皮里
+   蹦出一片硬编码蓝。 */
+:root[data-theme="custom"] {
+  --ui-axis: 0deg;
+  --ui-skew-ui: 0deg;
+  --p3r-blue: var(--color-primary);
+  --p3r-blue-deep: color-mix(in srgb, var(--color-primary) 78%, #000);
+  --p3r-cyan: color-mix(in srgb, var(--color-primary) 62%, #ffffff);
+  --p3r-cyan-rgb: var(--color-primary-rgb);
+  --p3r-cyan-pale: color-mix(in srgb, var(--color-primary) 14%, #ffffff);
+  --p3r-cyan-faint: color-mix(in srgb, var(--color-primary) 7%, #ffffff);
+  --p3r-magenta: color-mix(in srgb, var(--color-primary) 55%, #f43f5e);
+  --p3r-ink: #111827;
+  --p3r-ink-soft: #4b5563;
+  --p3r-grey: #9ca3af;
+  --p3r-chip: color-mix(in srgb, var(--color-primary) 10%, #ffffff);
+  --p3r-track: color-mix(in srgb, var(--color-primary) 14%, #e5e7eb);
 }
 
 /* D0 通道 1：系统级减少动效偏好 */
@@ -1076,6 +1171,66 @@ html[data-ios-standalone="true"] {
 :root.dark[data-ui-channel="p3"] [class*="bg-[#cfeaf6]"] { background-color: #12382f !important; }
 :root.dark[data-ui-channel="p3"] [class*="active:bg-[#e2f2fa]"]:active { background-color: #1a2d55 !important; }
 :root.dark[data-ui-channel="p3"] [class*="placeholder:text-[#9ab4c9]"]::placeholder { color: #5e7d99 !important; }
+
+/* ── 粉 · 夜间（FS2.1）──────────────────────────────────────────────────
+   粉走 p3 频道，夜间会先吃到上面那套「深海靛蓝 + 青绿」；这里整体旋成
+   「夜玫瑰：梅紫底 + 玫红/紫罗兰」。必须排在 p3 夜间块之后——
+   两者特异度同为 (0,3,0)，靠源码顺序决胜。 */
+:root.dark[data-theme="pink"] {
+  --p3r-panel: #2a1020;
+  --p3r-panel-glass: rgba(42, 16, 32, 0.94);
+  --p3r-ink: #ffeaf4;
+  --p3r-ink-soft: #d9aec4;
+  --p3r-grey: #a3798d;
+  --p3r-bg: #1a0a14;
+  --p3r-blue: #ff5fa2;
+  --p3r-blue-deep: #ff8cbd;
+  --p3r-cyan: #c084fc;
+  --p3r-cyan-rgb: 192, 132, 252;
+  --p3r-cyan-pale: #3d1830;
+  --p3r-cyan-faint: #2f1226;
+  --p3r-row: rgba(42, 16, 32, 0.92);
+  --p3r-row-alt: rgba(35, 13, 27, 0.95);
+  --p3r-field: rgba(192, 132, 252, 0.10);
+  --p3r-field-focus: rgba(192, 132, 252, 0.16);
+  --p3r-ph: #9c6d84;
+  --p3r-chip: #3d1830;
+  --p3r-skill-locked: #33142a;
+  --p3r-skill-badge: #5c3049;
+  --p3r-track: #4a2038;
+  --p3r-blank: rgba(42, 16, 32, 0.6);
+  --p3r-star-ring-pale: #4a2038;
+  --p3r-star-ring-deep: #1c0a16;
+  --p3r-statstrip: rgba(42, 16, 32, 0.9);
+  --p3r-statstrip-div: rgba(255, 234, 244, 0.14);
+  --p3r-wheel-bar: #35162a;
+  --p3r-bar-ghost: rgba(255, 95, 162, 0.2);
+  --p3r-velvet: rgba(255, 95, 162, 0.5);
+  --p3r-wash: 61, 24, 48;
+  --p3r-skill-ready: rgba(255, 95, 162, 0.14);
+  --p3r-ghost: rgba(255, 95, 162, 0.16);
+  --p3r-veil-grad: linear-gradient(180deg, rgba(26, 10, 20, 0.35) 0%, rgba(26, 10, 20, 0.82) 58%, rgba(26, 10, 20, 0.95) 100%);
+  --p3r-sheet-grad: linear-gradient(178deg, #2a1020 0%, #240d1b 60%, #1a0a14 100%);
+  --p3-cat: #ff9ec7;
+  --p3nav-root: linear-gradient(168deg, #2a1020 0%, #200b19 52%, #170711 100%);
+  --p3nav-cat-bub: linear-gradient(315deg, #c084fc 13px, #3d1830 13px);
+  --p3nav-slab: linear-gradient(180deg, rgba(192, 132, 252, 0.08) 0%, rgba(255, 95, 162, 0.18) 100%);
+  --p3nav-water-filter: hue-rotate(255deg) brightness(0.36) saturate(0.7);
+}
+/* 粉 · 夜间毯式：p3 夜间那套把中性灰翻成靛蓝，粉室里改翻梅紫。
+   与 p3 版同特异度，靠源码顺序压过。
+   ⚠️ 写死蓝字面量的那批（text-[#1b57ff] 等）不在这里重复——
+   上面的粉块已按类名改指 var()，变量在本块里已翻成夜色，自动跟随。 */
+:root.dark[data-theme="pink"] :is(.bg-gray-50, .bg-gray-100, [class*="dark:bg-gray-800"]) {
+  background-color: #33142a !important;
+}
+:root.dark[data-theme="pink"] .bg-gray-200 { background-color: #4a2038 !important; }
+:root.dark[data-theme="pink"] :is(.text-gray-900, .text-gray-800, .text-gray-700, .text-black) { color: #ffeaf4 !important; }
+:root.dark[data-theme="pink"] :is(.text-gray-600, .text-gray-500) { color: #c89fb4 !important; }
+:root.dark[data-theme="pink"] .text-gray-400 { color: #a3798d !important; }
+:root.dark[data-theme="pink"] :is(.border-gray-100, .border-gray-200, .border-gray-300, [class*="dark:border-gray-800"], [class*="dark:border-gray-700"]) {
+  border-color: #4a2038 !important;
+}
 
 /* ── 黄 · 新变量 ── */
 :root.dark[data-ui-channel="p4"] {

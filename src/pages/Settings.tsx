@@ -250,7 +250,7 @@ const ThemeColorButton = ({
             </motion.svg>
           )}
         </span>
-        <span className="whitespace-nowrap text-xs font-black" style={{ color: active ? '#1b57ff' : '#0a1230' }}>{theme.label}</span>
+        <span className="whitespace-nowrap text-xs font-black" style={{ color: active ? 'var(--p3r-blue, #1b57ff)' : 'var(--p3r-ink, #0a1230)' }}>{theme.label}</span>
       </motion.button>
     );
   }

@@ -21,6 +21,7 @@ import { PagePlane, PlaneLevel } from '@/components/PagePlane';
 import { LoginModal } from '@/components/auth/LoginModal';
 import { AccountManagePanel } from '@/components/auth/AccountManagePanel';
 import { SyncPrivacyPanel } from '@/components/auth/SyncPrivacyPanel';
+import { CloudConsentModal } from '@/components/auth/CloudConsentNotice';
 import { LVTag } from '@/components/LVTag';
 import { computeTotalLv } from '@/utils/lvTiers';
 import { logout as cloudLogout } from '@/services/auth';
@@ -100,6 +101,10 @@ export const Account = () => {
   const [userIdCopied, setUserIdCopied] = useState(false);
   // 账号管理面板
   const [accountPanelOpen, setAccountPanelOpen] = useState(false);
+  // 免责声明补弹（FS1.2）：声明上线前就登录了的存量用户，进这一页补看一次。
+  // 本次会话内可「先不同意」关掉，不阻断任何功能；下次进来再问。
+  const [consentDismissed, setConsentDismissed] = useState(false);
+  const consentCatchupOpen = cloudEnabled && !!cloudUser && !settings.cloudConsentAt && !consentDismissed;
 
   const handleDownload = async () => {
     try {
@@ -347,6 +352,7 @@ export const Account = () => {
         syncConfidantsToCloud={settings.syncConfidantsToCloud}
         syncCloudApiKey={settings.syncCloudApiKey}
         syncWishesToCloud={settings.syncWishesToCloud}
+        syncNavigatorToCloud={settings.syncNavigatorToCloud}
         onChange={(patch) => updateSettings(patch)}
       />
 
@@ -377,6 +383,13 @@ export const Account = () => {
       >
         <p className="text-center text-sm font-bold text-red-500">此操作无法撤销！</p>
       </ConfirmDialog>
+
+      {/* 云同步免责声明 · 存量用户补弹 */}
+      <CloudConsentModal
+        isOpen={consentCatchupOpen}
+        onAccept={() => { void updateSettings({ cloudConsentAt: new Date().toISOString() }); }}
+        onDecline={() => setConsentDismissed(true)}
+      />
 
       {/* 云同步登录弹窗 */}
       <LoginModal

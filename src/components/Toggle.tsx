@@ -127,7 +127,7 @@ export const Toggle = ({
         <motion.span
           aria-hidden="true"
           className="absolute top-0 left-0 h-6 w-6"
-          style={{ clipPath: 'polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%)', background: checked ? '#1b57ff' : '#9fb4c6' }}
+          style={{ clipPath: 'polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%)', background: checked ? 'var(--p3r-blue, #1b57ff)' : '#9fb4c6' }}
           initial={false}
           animate={{ x: checked ? 24 : 1 }}
           transition={springSnappy}

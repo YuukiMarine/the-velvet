@@ -23,7 +23,7 @@ export function ReadingArchive({ onOpen }: Props) {
       return (
         <div className="relative flex flex-col items-center pb-12 pt-16">
           <div className="relative flex w-full items-center justify-center">
-            <span aria-hidden className="absolute left-[4%] right-[4%] top-1/2 h-[2px] -translate-y-1/2" style={{ background: '#35d1e8' }} />
+            <span aria-hidden className="absolute left-[4%] right-[4%] top-1/2 h-[2px] -translate-y-1/2" style={{ background: 'var(--p3r-cyan, #35d1e8)' }} />
             <span aria-hidden className="pointer-events-none absolute right-[10%] top-[-34px] h-10 w-14" style={{ backgroundImage: 'radial-gradient(circle, rgba(27,87,255,0.35) 1.5px, transparent 2px)', backgroundSize: '9px 9px' }} />
             <span aria-hidden className="pointer-events-none absolute bottom-[-30px] left-[12%] h-9 w-12" style={{ backgroundImage: 'radial-gradient(circle, rgba(53,209,232,0.4) 1.5px, transparent 2px)', backgroundSize: '9px 9px' }} />
             <span className="relative flex gap-2">
@@ -34,13 +34,13 @@ export function ReadingArchive({ onOpen }: Props) {
           </div>
           <div className="mt-12 flex items-center gap-3">
             <span aria-hidden className="flex gap-1">
-              <span className="h-[14px] w-[11px]" style={{ background: '#35d1e8', clipPath: 'polygon(38% 0, 100% 0, 62% 100%, 0 100%)' }} />
+              <span className="h-[14px] w-[11px]" style={{ background: 'var(--p3r-cyan, #35d1e8)', clipPath: 'polygon(38% 0, 100% 0, 62% 100%, 0 100%)' }} />
               <span className="h-[14px] w-[11px]" style={{ background: 'rgba(53,209,232,0.5)', clipPath: 'polygon(38% 0, 100% 0, 62% 100%, 0 100%)' }} />
             </span>
             <span className="text-[20px] font-black" style={{ color: P3R.ink }}>尚未有中长期占卜记录</span>
             <span aria-hidden className="flex gap-1">
               <span className="h-[14px] w-[11px]" style={{ background: 'rgba(53,209,232,0.5)', clipPath: 'polygon(38% 0, 100% 0, 62% 100%, 0 100%)' }} />
-              <span className="h-[14px] w-[11px]" style={{ background: '#35d1e8', clipPath: 'polygon(38% 0, 100% 0, 62% 100%, 0 100%)' }} />
+              <span className="h-[14px] w-[11px]" style={{ background: 'var(--p3r-cyan, #35d1e8)', clipPath: 'polygon(38% 0, 100% 0, 62% 100%, 0 100%)' }} />
             </span>
           </div>
           <p className="mt-2.5 text-[14px] font-bold" style={{ color: '#4b8fd9' }}>发起一次占卜后，此处会保留全部档案</p>
@@ -62,7 +62,7 @@ export function ReadingArchive({ onOpen }: Props) {
         <div>
           {p3 ? (
             <div className="mb-2.5 flex items-center gap-2">
-              <span aria-hidden className="h-[13px] w-[7px]" style={{ background: '#35d1e8', transform: 'skewX(-18deg)' }} />
+              <span aria-hidden className="h-[13px] w-[7px]" style={{ background: 'var(--p3r-cyan, #35d1e8)', transform: 'skewX(-18deg)' }} />
               <span className="text-[13px] font-black tracking-[0.08em]" style={{ color: P3R.blue }}>活跃 · {active.length} / 2</span>
             </div>
           ) : (

@@ -8,16 +8,12 @@
  *     瓷砖本体恒为完整矩形 button（命中区铁律 §7.2）。shadow-sm 挂在
  *     button 上而非装饰盒：clip-path 会把整圈 box-shadow 裁没。
  *
- * 断层几何（v1 近似，注明升级路径）：
- *   · 断层线角度由宫格容器宽高 atan2 计算（offsetWidth/Height 取布局盒——
- *     宫格在斜面内被旋转，getBoundingClientRect 的外接框会引入角度偏差），
- *     ResizeObserver 跟随，并同步写入容器 --fault-angle。
+ * 宫格几何：
  *   · 瓷砖切角方向全部统一：左列切右上角、右列切左下角，尺寸
- *     calc(var(--ui-cut) * 1.6)——视觉上「线切过一刀」的 v1 近似。
- *     严格做法是让每个切角斜边平行于断层角（后续 PR 直接消费容器上
- *     已写好的 --fault-angle 派生 clip-path 顶点即可）。
- *   · D0（--boldness=0）下 --ui-cut 归零、切角自动消失；断层线是信息
- *     （频率分界）不是装饰，D0 仍在场。
+ *     calc(var(--ui-cut) * 1.6)。
+ *   · D0（--boldness=0）下 --ui-cut 归零、切角自动消失。
+ *   · ⚠️ 曾经横贯宫格的「双描断层线」（atan2 量角 + --fault-angle）已于 FS2.2 下架：
+ *     中性皮现在只服务 custom 主题，用户要的是干净方正，不要那条斜线。
  *
  * 过渡期瓷砖集合（行动/羁绊合并与终端/记账未上线，先收编现有页面）：
  *   · 「记录」：行动合并 PR 落地后此瓷砖移除；
@@ -30,7 +26,7 @@
  *     （高度差 ≈140px），再追加横条会把缺口拉到 ≈200px——故改为跨两列的
  *     全宽矮条放宫格底部，且置于 gridRef 之外，断层线 atan2 几何不被拉长。
  */
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { AnimatePresence, motion, type Variants } from 'motion/react';
 import { useAppStore } from '@/store';
@@ -272,26 +268,9 @@ export const Menu = () => {
     return () => clearInterval(interval);
   }, [settings.battleShadowTimeDays, settings.battleShadowTimeStart, settings.battleShadowTimeEnd]);
 
-  // 断层线：角度/长度按宫格布局盒 atan2 计算，--fault-angle 写回容器
-  // 供断层线旋转与后续「切角平行断层」升级消费。
-  const gridRef = useRef<HTMLDivElement>(null);
-  const [fault, setFault] = useState({ angle: 0, length: 0 });
-  useLayoutEffect(() => {
-    const el = gridRef.current;
-    if (!el) return;
-    const measure = () => {
-      const w = el.offsetWidth;
-      const h = el.offsetHeight;
-      if (w <= 0 || h <= 0) return;
-      const angle = (Math.atan2(h, w) * 180) / Math.PI;
-      setFault({ angle, length: Math.hypot(w, h) });
-      el.style.setProperty('--fault-angle', `${angle.toFixed(2)}deg`);
-    };
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
+  // 断层线（对角 atan2 量角 + --fault-angle）已随 FS2.2 下架：
+  // 中性皮现在只剩 custom 主题在用，用户口径是"干净"——那条横贯宫格的斜线连同
+  // 它的测量副作用一起删掉，宫格回归方正。三频道菜单各有自己的分支，不受影响。
 
   const battleVisible = settings.battleEnabled !== false;
   const ledgerVisible = settings.ledgerEnabled !== false; // F5 记账总开关（默认开）
@@ -1321,7 +1300,7 @@ export const Menu = () => {
 
           {/* ── 对角断层宫格 ── */}
           <section aria-label="功能入口">
-            <div ref={gridRef} className="relative grid grid-cols-2 gap-3">
+            <div className="relative grid grid-cols-2 gap-3">
               {/* 左列：断层上方 = 高频 */}
               <div className="flex flex-col gap-3">
                 <Tile
@@ -1451,20 +1430,6 @@ export const Menu = () => {
                 {/* P9-菜单批：「账号与数据」瓷砖下沉进设置页（与主题快切上浮对调） */}
               </div>
 
-              {/* 双描断层线（§2 规则2 制式：2px 主题色 + 偏移 3px 的 1px 中性回声）。
-                  画在瓷砖之上、宫格盒内裁切；纯装饰层不拦截命中。 */}
-              <div aria-hidden className="pointer-events-none absolute inset-0 z-10 overflow-hidden">
-                <div
-                  className="absolute left-1/2 top-1/2"
-                  style={{
-                    width: fault.length || '100%',
-                    transform: 'translate(-50%, -50%) rotate(var(--fault-angle, 0deg))',
-                  }}
-                >
-                  <div className="h-[2px] bg-primary" />
-                  <div className="mt-px h-px bg-gray-400/60 dark:bg-gray-500/60" />
-                </div>
-              </div>
             </div>
 
             {/* ── 「关于」全宽矮条（取舍见文件头注释）──

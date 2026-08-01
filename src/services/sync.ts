@@ -159,12 +159,41 @@ function getSkipSet(): Set<string> {
   if (s.syncWishesToCloud !== true) {
     skip.add('wishes');
   }
+  // 黑猫人格与记忆 opt-in：同上口径（记忆含生活细节，默认不出本机）
+  if (s.syncNavigatorToCloud !== true) {
+    skip.add('navigatorPresets');
+    skip.add('navigatorMemos');
+  }
   return skip;
 }
 
 /**
  * 需要同步到云端的 Dexie 表列表。
  * 每张表作为 user_data 表里的一条 KV 记录存储（key = 表名，value = 序列化后的行数组）。
+ *
+ * ── 字段账本（FS1 审计 2026-08-01）────────────────────────────────────────
+ * 表是同步的最小单位：**只要表在本列表内，行上的所有字段（含后加的）自动上云**，
+ * 除非在 push 的 per-key 豁免段里显式剔除。新增功能时只需回答一个问题：
+ * "它的数据落在哪张表？那张表在不在这里？"
+ *
+ * 逐表归属（含 2026-06 以来新增字段的落点）：
+ *   users/attributes/settings ····· 受保护，恒同步。新增 settings 字段一律随行上云，
+ *                                   例外见下方 push 段（backgroundImage/Orientation 恒豁免、
+ *                                   API Key 按 syncCloudApiKey 开关）。
+ *                                   新字段：fateDrawState / tasksMergeMigratedAt /
+ *                                   terminalDanmakuTokens（投稿权）/ cloudConsentAt。
+ *   todos ························ BIG DEAL 全家：isBigDeal / steps[] / currentState /
+ *                                   deadline / fateDrawnDate / clearedActivityId。
+ *   activities ···················· bigDealId + category 'bigdeal_step'|'bigdeal_clear'。
+ *   battleStates + strata ········· 战场 v2 与影时间高塔区层。**必须成对**——
+ *                                   battleState 记着"我在第几层"，strata 才是层本身，
+ *                                   漏一张就是换设备后塔空了（FS1 修复：strata 补挂）。
+ *   navigatorPresets/Memos ········ 黑猫自定义人格 + 原子记忆，opt-in（syncNavigatorToCloud）。
+ *
+ * 故意不上云（本地专属，改动前先想清楚）：
+ *   counselSessions ··············· 谏言聊天原文（1 小时后本地也销毁）
+ *   navigatorSessions/Messages ···· 黑猫聊天原文，同上口径
+ *   ledgerEntries/budgets/assets ·· F5 财务数据，永不上云（PRD §F5.8）
  */
 const SYNC_TABLES = [
   'users',
@@ -192,6 +221,13 @@ const SYNC_TABLES = [
   // F3 治疗终端「愿望清单」：列入 SYNC_TABLES 使其「可」同步，但 opt-in——
   // getSkipSet 默认把它加入 skip，仅当 settings.syncWishesToCloud === true 才上云（默认不传）。
   'wishes',
+  // 影时间高塔区层（批2）：battleStates 的伴生表，两者必须同进同出——
+  // 只同步 battleState 会让新设备"层数有了、层没了"（FS1 补挂）。
+  'strata',
+  // 黑猫自定义人格 + 原子记忆：opt-in（getSkipSet 默认加入 skip，
+  // 仅 settings.syncNavigatorToCloud === true 才上云）。聊天原文两表不在此列。
+  'navigatorPresets',
+  'navigatorMemos',
   // ⚠️ F5 心相记账（ledgerEntries / budgets / assets）故意不列于此：财务数据始终只存本地、永不上云（PRD §F5.8）。
 ] as const;
 
@@ -244,11 +280,27 @@ const saveLastAutoSync = (date: Date): void => {
 };
 
 /**
+ * 类型上就是 ISO **字符串**的字段（不是 Date）——reviver 必须放过它们。
+ * 否则一次 pull 之后 `step.doneAt` 之流会从 string 变成 Date，类型说谎、
+ * 字符串比较/切片全歪（FS1 审计发现的隐患类，目前尚无消费点，先堵住）。
+ */
+const ISO_STRING_KEYS = new Set<string>([
+  'doneAt',            // TodoStep.doneAt
+  'completedAt',       // Wish.stepHistory[].completedAt
+  'tasksMergeMigratedAt',
+  'lastCounselStartedAt',
+  'cloudConsentAt',
+  'defeatedAt',        // 战场纪念条目（ISO string 口径）
+]);
+
+/**
  * JSON reviver：把 ISO 日期字符串自动还原为 Date 对象。
  * 因为 Dexie 部分字段（如 activities.date、users.createdAt）是 Date，
  * 不做还原会导致 `.getTime()` 等调用失败。
+ * 例外见 ISO_STRING_KEYS：那些字段的类型本身就是 string。
  */
-const dateReviver = (_key: string, value: unknown): unknown => {
+const dateReviver = (key: string, value: unknown): unknown => {
+  if (ISO_STRING_KEYS.has(key)) return value;
   if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z?$/.test(value)) {
     const d = new Date(value);
     return isNaN(d.getTime()) ? value : d;

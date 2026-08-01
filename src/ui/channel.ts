@@ -6,7 +6,11 @@
  *   - data-ui-channel（本模块）：驱动 --ui-* 频道 token（舞台底色/纸面/描边/裁切/噪点），
  *     只有三大频道有完整视觉语言，其余落 neutral（继承 :root 缺省中性值）。
  *
- * 映射关系（guide §12.2）：red→p5 / yellow→p4 / blue→p3 / pink·custom→neutral。
+ * 映射关系（FS2 起）：red→p5 / yellow→p4 / blue·pink→p3 / custom→neutral。
+ *   · 粉不是第四个频道，是 **P3 的换色皮**：走同一套 p3 结构，
+ *     配色由 :root[data-theme="pink"] 覆盖 --p3r-* / --p3nav-* 变量族实现
+ *     （P3 kit 的颜色全是带 fallback 的 CSS 变量，天生就是为换色留的口子）。
+ *   · custom 是唯一的 neutral：无频道戏剧化的干净中性皮（斜界也在那边归零）。
  * 挂载时机与 data-theme 完全同步（store 三个写点），不单独持久化。
  */
 import type { ThemeType } from '@/types';
@@ -18,6 +22,7 @@ export const themeToChannel = (theme: ThemeType | undefined | null): UIChannel =
     case 'red': return 'p5';
     case 'yellow': return 'p4';
     case 'blue': return 'p3';
+    case 'pink': return 'p3';
     default: return 'neutral';
   }
 };

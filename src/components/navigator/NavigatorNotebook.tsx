@@ -70,10 +70,10 @@ export const NavigatorNotebook = ({ isOpen, onClose }: { isOpen: boolean; onClos
                 type="button"
                 onClick={() => void commitProfile()}
                 className={`absolute -top-1 right-0 z-10 bg-white px-4 py-1.5 text-[13px] font-black transition ${profileDirty ? '' : 'opacity-60'}`}
-                style={{ color: '#1b57ff', clipPath: 'polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%)', boxShadow: '0 8px 20px rgba(7,40,120,.14)' }}
+                style={{ color: 'var(--p3r-blue, #1b57ff)', clipPath: 'polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%)', boxShadow: '0 8px 20px rgba(7,40,120,.14)' }}
               >
                 保存画像
-                <span aria-hidden className="absolute bottom-0 right-1 h-[8px] w-[12px]" style={{ background: '#35d1e8', clipPath: 'polygon(35% 0, 100% 0, 65% 100%, 0 100%)' }} />
+                <span aria-hidden className="absolute bottom-0 right-1 h-[8px] w-[12px]" style={{ background: 'var(--p3r-cyan, #35d1e8)', clipPath: 'polygon(35% 0, 100% 0, 65% 100%, 0 100%)' }} />
               </button>
             </>
           )}
@@ -81,7 +81,7 @@ export const NavigatorNotebook = ({ isOpen, onClose }: { isOpen: boolean; onClos
           {/* 画像总览 */}
           <div className="relative">
             <div className={`mb-1.5 flex items-center justify-between ${p3 ? 'pr-[96px]' : ''}`}>
-              <span className={p3 ? 'text-[13px] font-black' : 'text-xs font-bold text-gray-500 dark:text-gray-400'} style={p3 ? { color: '#0a1230' } : undefined}>
+              <span className={p3 ? 'text-[13px] font-black' : 'text-xs font-bold text-gray-500 dark:text-gray-400'} style={p3 ? { color: 'var(--p3r-ink, #0a1230)' } : undefined}>
                 TA 眼里的你（长期画像，可直接修改）
               </span>
               {!p3 && profileDirty && (
@@ -97,9 +97,9 @@ export const NavigatorNotebook = ({ isOpen, onClose }: { isOpen: boolean; onClos
                   placeholder="还没有画像——多聊几天，它会写下对你的整体印象；你也可以现在直接写给它。"
                   rows={7}
                   className="w-full resize-none px-4 py-3.5 text-sm font-semibold leading-relaxed outline-none"
-                  style={{ background: '#dbeff8', color: '#0a1230', clipPath: 'polygon(16px 0, 100% 0, calc(100% - 16px) 100%, 0 100%)' }}
+                  style={{ background: '#dbeff8', color: 'var(--p3r-ink, #0a1230)', clipPath: 'polygon(16px 0, 100% 0, calc(100% - 16px) 100%, 0 100%)' }}
                 />
-                <span aria-hidden className="pointer-events-none absolute bottom-2.5 right-1.5 h-[12px] w-[20px]" style={{ background: '#35d1e8', clipPath: 'polygon(35% 0, 100% 0, 65% 100%, 0 100%)' }} />
+                <span aria-hidden className="pointer-events-none absolute bottom-2.5 right-1.5 h-[12px] w-[20px]" style={{ background: 'var(--p3r-cyan, #35d1e8)', clipPath: 'polygon(35% 0, 100% 0, 65% 100%, 0 100%)' }} />
               </div>
             ) : (
               <textarea
@@ -117,13 +117,13 @@ export const NavigatorNotebook = ({ isOpen, onClose }: { isOpen: boolean; onClos
           </div>
 
           {/* 原子记忆 */}
-          <div className={p3 ? 'mt-5 text-[13px] font-black' : 'mt-4 text-xs font-bold text-gray-500 dark:text-gray-400'} style={p3 ? { color: '#0a1230' } : undefined}>
+          <div className={p3 ? 'mt-5 text-[13px] font-black' : 'mt-4 text-xs font-bold text-gray-500 dark:text-gray-400'} style={p3 ? { color: 'var(--p3r-ink, #0a1230)' } : undefined}>
             零散记忆（按相关性取用；置顶的永不遗忘）
           </div>
           {memos.length === 0 ? (
             p3 ? (
               <div className="relative mt-2">
-                <span aria-hidden className="absolute -top-1.5 left-0 z-10 h-0 w-0 border-r-[18px] border-t-[15px] border-r-transparent" style={{ borderTopColor: '#f0417f' }} />
+                <span aria-hidden className="absolute -top-1.5 left-0 z-10 h-0 w-0 border-r-[18px] border-t-[15px] border-r-transparent" style={{ borderTopColor: 'var(--p3r-magenta, #f0417f)' }} />
                 <p className="px-5 py-7 text-center text-[13px] font-bold leading-relaxed" style={{ background: '#dbeff8', color: '#4b8fd9', clipPath: 'polygon(16px 0, 100% 0, calc(100% - 16px) 100%, 0 100%)' }}>
                   还没有记忆——多聊几天，它会自己记住重要的事。
                 </p>
@@ -155,7 +155,7 @@ export const NavigatorNotebook = ({ isOpen, onClose }: { isOpen: boolean; onClos
                   ) : (
                     <div className="flex items-start gap-2">
                       <div className="min-w-0 flex-1">
-                        <p className={p3 ? 'text-sm font-semibold leading-relaxed' : 'text-sm leading-relaxed text-gray-700 dark:text-gray-200'} style={p3 ? { color: '#0a1230' } : undefined}>
+                        <p className={p3 ? 'text-sm font-semibold leading-relaxed' : 'text-sm leading-relaxed text-gray-700 dark:text-gray-200'} style={p3 ? { color: 'var(--p3r-ink, #0a1230)' } : undefined}>
                           {m.pinned && <span className="mr-1 text-primary" aria-hidden>📌</span>}
                           {m.text}
                         </p>
