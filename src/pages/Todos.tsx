@@ -5,6 +5,7 @@ import { useAppStore, toLocalDateKey } from '@/store';
 import { minimalStep, terminalSkin } from '@/utils/terminalSkin';
 import { BigDealPanel } from '@/components/bigdeal/BigDealPanel';
 import { BigDealHomeCard } from '@/components/bigdeal/BigDealHomeCard';
+import { FateDrawSheet } from '@/components/fate/FateDrawSheet';
 import { AttributeId, TodoFrequency } from '@/types';
 import { triggerNavFeedback } from '@/utils/feedback';
 import { TAP } from '@/utils/motion';
@@ -74,6 +75,9 @@ const ActiveTodoCard = ({
           <div className="flex items-center gap-1.5 flex-wrap mb-1">
             {todo.important && (
               <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-400/20 text-amber-700 dark:text-amber-300 font-semibold">⭐ 重要</span>
+            )}
+            {todo.fateDrawnDate === toLocalDateKey() && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/15 text-primary font-semibold">✦ 签</span>
             )}
             <h4 className="font-semibold text-sm text-gray-800 dark:text-white truncate">{todo.title}</h4>
           </div>
@@ -323,6 +327,8 @@ export const TodosView = () => {
   const [showMore, setShowMore] = useState(false);
   /** BIG DEAL 二级面板（聚合卡点击落点） */
   const [dealPanelId, setDealPanelId] = useState<string | null>(null);
+  /** 抽签仪式面板 */
+  const [fateOpen, setFateOpen] = useState(false);
 
   const handleSave = async () => {
     if (!form.title.trim()) return;
@@ -489,6 +495,25 @@ export const TodosView = () => {
               </span>
             </div>
           )}
+          {/* 抽签入口（TASKS_MERGE_PRD §4.2）：决策短路——不知道先做哪个，交给命运单抽 */}
+          <button
+            type="button"
+            onClick={() => setFateOpen(true)}
+            className={`mb-2 flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-bold transition ${
+              p3
+                ? ''
+                : isP4
+                  ? 'rounded-full border-2 border-[#131313]/70 bg-[var(--p4-paper,#fff7b0)] text-[#131313]'
+                  : p5
+                    ? 'relative z-10 border-2 border-[#050505] bg-[#f0e9df] text-[#131313] shadow-[3px_3px_0_rgba(0,0,0,0.45)]'
+                    : 'mx-3 mt-3 w-[calc(100%-1.5rem)] rounded-xl border border-dashed border-gray-300 text-gray-500 dark:border-gray-600 dark:text-gray-400'
+            }`}
+            style={p3 ? { clipPath: 'polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%)', background: 'var(--p3r-panel-glass, rgba(255,255,255,0.85))', color: P3R.ink, boxShadow: '0 4px 12px rgba(38,96,140,0.08)' } : undefined}
+          >
+            <span aria-hidden className={p5 ? 'text-[#c00008]' : isP4 ? 'text-[#f9a11b]' : 'text-primary'}>✦</span>
+            <span className="min-w-0 flex-1 truncate">不知道从哪开始？抽一张，只做这一件</span>
+            <span aria-hidden className="opacity-50">›</span>
+          </button>
           <div className={isP4 || p3 ? 'space-y-2' : p5 ? 'relative space-y-2 px-3 pb-3 pt-5' : 'p-3 space-y-2'}>
             {p5 && (
               <>
@@ -1309,6 +1334,9 @@ export const TodosView = () => {
 
       {/* BIG DEAL 二级面板（聚合卡统一落点） */}
       <BigDealPanel todoId={dealPanelId} onClose={() => setDealPanelId(null)} />
+
+      {/* 抽签仪式 */}
+      <FateDrawSheet open={fateOpen} onClose={() => setFateOpen(false)} />
 
       {/* ── §4.6 长按上下文菜单：全页单实例，按 menuTodoId 寻址目标任务。
           关闭后 SheetModal 的 AnimatePresence 会用上一帧的子树播 exit，

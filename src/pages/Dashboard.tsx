@@ -1006,6 +1006,9 @@ export const Dashboard = () => {
                         {todo.important && (
                           <span className="text-amber-500 text-xs">⭐</span>
                         )}
+                        {todo.fateDrawnDate === todayKey && (
+                          <span className={`text-[10px] font-black ${isP4 ? 'text-[#131313]' : 'text-primary'}`} title="今日抽签选中">✦</span>
+                        )}
                         <span className={`text-sm truncate ${
                           isP4
                             ? progress.isComplete

@@ -1,5 +1,5 @@
 ﻿import { create } from 'zustand';
-import { User, Attribute, Activity, Achievement, Skill, Settings, ThemeType, AttributeId, AttributeNamesKey, Todo, TodoCompletion, TodoStep, PeriodSummary, SummaryPeriod, SummaryPromptPreset, WeeklyGoal, WeeklyGoalItem, Persona, Shadow, BattleState, TowerStratum, StratumNode, DailyDivination, LongReading, LongReadingFollowUp, Confidant, ConfidantEvent, ConfidantBuff, CounselSession, CounselMessage, CounselArchive, CallingCard, NotifSlot, LedgerEntry, Budget, SpendWorth, LedgerAsset, Wish, TerminalClearPayload, BattleArsenal, ChainKey, AffixKind } from '@/types';
+import { User, Attribute, Activity, Achievement, Skill, Settings, ThemeType, AttributeId, AttributeNamesKey, Todo, TodoCompletion, TodoStep, FateCandidate, PeriodSummary, SummaryPeriod, SummaryPromptPreset, WeeklyGoal, WeeklyGoalItem, Persona, Shadow, BattleState, TowerStratum, StratumNode, DailyDivination, LongReading, LongReadingFollowUp, Confidant, ConfidantEvent, ConfidantBuff, CounselSession, CounselMessage, CounselArchive, CallingCard, NotifSlot, LedgerEntry, Budget, SpendWorth, LedgerAsset, Wish, TerminalClearPayload, BattleArsenal, ChainKey, AffixKind } from '@/types';
 import { TAROT_BY_ID } from '@/constants/tarot';
 import { summarizeCounsel, type CounselContext, type CounselConfidantBrief, type CounselRecentEvent } from '@/utils/counselAI';
 import { db } from '@/db';
@@ -400,6 +400,13 @@ interface AppState {
   decomposeBigDealAI: (todoId: string) => Promise<string[]>;
   /** 一次性迁移：Wish 树根→BIG DEAL / 无子步根→愿望纸片 / 在途终端卡归档（防重入） */
   runTasksMergeMigration: () => Promise<void>;
+  // ── 抽签（TASKS_MERGE_PRD §4.2 批3）──
+  /** 三源奖池：今日未完成待办 + 愿望纸片 + 近 30 天手动记录去重；当日已抽中/已完成剔除 */
+  getFateDrawPool: () => FateCandidate[];
+  /** 纯单抽：从池随机取一张并当日沉底（无重抽；拒绝零惩罚但同条目当日不再出现） */
+  drawFate: (pool?: FateCandidate[]) => Promise<FateCandidate | null>;
+  /** 接受抽中：待办→钉签；愿望→转正为今日一次性任务并归档纸片；历史→同款复刻一条 */
+  acceptFateDraw: (c: FateCandidate) => Promise<void>;
   getTodayTodoProgress: (todoId: string) => { count: number; isComplete: boolean; target: number };
   getTodoDateLabel: (date: Date) => string;
   setLevelUpNotification: (notification: { id: string; displayName: string; level: number } | null) => void;
@@ -2954,6 +2961,14 @@ export const useAppStore = create<AppState>((set, get) => ({
         }
       }
       const result = await get().addActivity(`完成任务: ${todo.title}`, points, 'todo', { important: !!todo.important });
+      // 命运加成（TASKS_MERGE_PRD §4.2）：当日抽中并完成 → 主属性额外 +1。
+      // 独立小记录而非改主记录描述——undoTodayTodoCompletion/deleteActivity 都按
+      // 「完成任务: {title}」逐字匹配，动模板会断撤销链；单删本记录也能正确回档
+      if (todo.fateDrawnDate === today) {
+        const bonus = { knowledge: 0, guts: 0, dexterity: 0, kindness: 0, charm: 0 } as Record<string, number>;
+        bonus[todo.attribute] = 1;
+        await get().addActivity(`命运加成: ${todo.title}`, bonus, 'todo');
+      }
       await get().checkTodoCompletionAchievements({ skipLoad: true });
 
       if (!todo.repeatDaily && !todo.isLongTerm) {
@@ -3250,6 +3265,86 @@ export const useAppStore = create<AppState>((set, get) => ({
     await get().loadCallingCards();
     })();
     return _tasksMergeMigrationPromise;
+  },
+
+  // ── 抽签（TASKS_MERGE_PRD §4.2 批3）────────────────────────────────────
+
+  getFateDrawPool: () => {
+    const today = toLocalDateKey();
+    const st = get().settings.fateDrawState;
+    const sunk = new Set(st && st.date === today ? st.drawnKeys : []);
+    const pool: FateCandidate[] = [];
+
+    // ① 今日未完成待办（义务；大事已被 getDueTodosToday 排除）
+    for (const t of get().getDueTodosToday()) {
+      if (get().getTodayTodoProgress(t.id).isComplete) continue;
+      pool.push({ key: `todo:${t.id}`, kind: 'todo', title: t.title, todoId: t.id });
+    }
+    // ② 愿望纸片（新鲜感；迁移后 wishes 表只剩平铺条目）
+    for (const w of get().wishes) {
+      if (w.parentId || w.status !== 'active') continue;
+      pool.push({ key: `wish:${w.id}`, kind: 'wish', title: w.title, wishId: w.id, attribute: w.attribute ?? 'guts', points: 2 });
+    }
+    // ③ 近 30 天手动记录去重（做过的事，零风险；排除机器记录与加成/升级副记录）
+    const since = Date.now() - 30 * 86400_000;
+    const seen = new Set<string>();
+    for (const a of get().activities) {
+      if (a.method !== 'local' || a.category) continue;
+      if (new Date(a.date).getTime() < since) continue;
+      const title = a.description.trim();
+      const norm = title.replace(/\s+/g, '');
+      if (!norm || seen.has(norm)) continue;
+      seen.add(norm);
+      // 属性/点数建议 = 原记录最大加点维度（无加点则勇气+2）
+      const top = (Object.entries(a.pointsAwarded) as Array<[AttributeId, number]>).sort((x, y) => y[1] - x[1])[0];
+      pool.push({
+        key: `hist:${norm.slice(0, 40)}`,
+        kind: 'history',
+        title,
+        attribute: top && top[1] > 0 ? top[0] : 'guts',
+        points: top && top[1] > 0 ? Math.max(1, Math.min(5, top[1])) : 2,
+      });
+    }
+    return pool.filter(c => !sunk.has(c.key));
+  },
+
+  drawFate: async (pool) => {
+    const today = toLocalDateKey();
+    const candidates = pool ?? get().getFateDrawPool();
+    if (candidates.length === 0) return null;
+    const picked = candidates[Math.floor(Math.random() * candidates.length)];
+    const st = get().settings.fateDrawState;
+    const drawnKeys = st && st.date === today ? [...st.drawnKeys, picked.key] : [picked.key];
+    await get().updateSettings({ fateDrawState: { date: today, drawnKeys } });
+    return picked;
+  },
+
+  acceptFateDraw: async (c) => {
+    const today = toLocalDateKey();
+    if (c.kind === 'todo' && c.todoId) {
+      await db.todos.update(c.todoId, { fateDrawnDate: today });
+      await get().loadData();
+      return;
+    }
+    // 愿望转正 / 历史复刻 → 今日一次性任务（带签）
+    const todo: Todo = {
+      id: uuidv4(),
+      title: c.title,
+      attribute: c.attribute ?? 'guts',
+      points: c.points ?? 2,
+      frequency: 'single',
+      isActive: true,
+      createdAt: new Date(),
+      fateDrawnDate: today,
+    };
+    await db.todos.add(todo);
+    if (c.kind === 'wish' && c.wishId) {
+      // 纸片转正即离场（archived；完成与否由任务本体承接）
+      const w = await db.wishes.get(c.wishId);
+      if (w) await db.wishes.put({ ...w, status: 'archived', archivedAt: new Date() });
+      await get().loadWishes();
+    }
+    await get().loadData();
   },
 
   applySkillBonus: (attributeId: string, points: number) => {
