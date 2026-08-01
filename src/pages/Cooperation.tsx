@@ -50,16 +50,22 @@ export function Cooperation() {
   const [createOpen, setCreateOpen] = useState(false);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
-  // 菜单触发按钮上的红点：unreadCount>0 时点亮；用户**打开**菜单后置 ack=true 暂时熄灭。
-  // 当 unreadCount 再次上涨（来了新通知），自动复燃。
-  // 注意：菜单内"通知"项的红点不受这个 ack 影响（那个由真实 unreadCount 控制）。
-  const [menuDotAck, setMenuDotAck] = useState(false);
-  const lastUnreadRef = useRef(0);
-  useEffect(() => {
-    if (unreadCount > lastUnreadRef.current) setMenuDotAck(false);
-    lastUnreadRef.current = unreadCount;
-  }, [unreadCount]);
-  const showMenuTriggerDot = unreadCount > 0 && !menuDotAck;
+  /**
+   * ✧ 菜单触发按钮上的红点。两处修过（用户上报"有未读却不亮"）：
+   *
+   * ① 数的是 **importantUnreadCount** 而不是全量 unreadCount——
+   *    祈愿是每天都来的日常问候，让它点亮红点等于红点常亮、红点失效。
+   *    按设计口径：好友申请 / COOP / 羁绊之影 / 共享事件这些"关系相关"的才催人，祈愿不催。
+   *
+   * ② ack 记的是**当时的未读数**，不是一个布尔闩。
+   *    旧写法是 `menuDotAck` 布尔 + "只有未读数比历史峰值更高才复燃"：
+   *    有 3 条未读 → 打开菜单（ack=true，灭）→ 在别处读掉 1 条 → 未读变 2 →
+   *    `2 > 3` 不成立 → **ack 永远不解除，剩下的 2 条再也点不亮**，除非涨过 3。
+   *    现在只要"当前重要未读 ≠ 上次确认时的数"，红点就该亮。
+   */
+  const importantUnread = useCloudSocialStore(s => s.importantUnreadCount);
+  const [ackedAt, setAckedAt] = useState<number | null>(null);
+  const showMenuTriggerDot = importantUnread > 0 && ackedAt !== importantUnread;
   const [infoOpen, setInfoOpen] = useState(false);
   const [counselOpen, setCounselOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
@@ -351,8 +357,9 @@ export function Cooperation() {
             <button
               onClick={() => {
                 setMenuOpen(v => !v);
-                // 仅在 "打开" 这个动作上熄灭红点；关闭操作不动 ack
-                if (!menuOpen) setMenuDotAck(true);
+                // 仅在 "打开" 这个动作上熄灭红点；关闭操作不动 ack。
+                // 记下"确认时的重要未读数"——之后这个数一变（涨或跌）红点都会重新亮。
+                if (!menuOpen) setAckedAt(importantUnread);
               }}
               className={
                 p5

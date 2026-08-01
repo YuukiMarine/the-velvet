@@ -179,7 +179,7 @@ function getSkipSet(): Set<string> {
  * 逐表归属（含 2026-06 以来新增字段的落点）：
  *   users/attributes/settings ····· 受保护，恒同步。新增 settings 字段一律随行上云，
  *                                   例外见下方 push 段（backgroundImage/Orientation 恒豁免、
- *                                   API Key 按 syncCloudApiKey 开关）。
+ *                                   API Key 按 syncCloudApiKey 开关，**默认关**）。
  *                                   新字段：fateDrawState / tasksMergeMigratedAt /
  *                                   terminalDanmakuTokens（投稿权）/ cloudConsentAt。
  *   todos ························ BIG DEAL 全家：isBigDeal / steps[] / currentState /
@@ -353,7 +353,9 @@ export const pushAll = async (): Promise<void> => {
 
     const skipSet = getSkipSet();
     const appSettings = useAppStore.getState().settings;
-    const includeApiKey = appSettings.syncCloudApiKey !== false; // 默认上传；开关显式关了才剔除
+    // 默认**不**上传（v2.6 起翻转）：多设备同步 Key 的便利，换不来"服务器上躺着一堆用户付费 Key"的风险。
+    // 存量用户里显式打开过开关的（=== true）维持上传，其余一律剔除。
+    const includeApiKey = appSettings.syncCloudApiKey === true;
     for (const key of SYNC_TABLES) {
       if (skipSet.has(key)) {
         // 用户选择不上传该表。若云端还留着**上次开着开关时**推上去的那份，就顺手删掉——
@@ -391,9 +393,14 @@ export const pushAll = async (): Promise<void> => {
           const {
             backgroundImage: _bg,
             backgroundOrientation: _bgo,
+            // 天气三件套同口径：Key 是凭证、城市是位置语义，都不该离开本机。
+            // 它们照常进本地备份（buildExportJson），只是不上云。
+            weatherApiKey: _wk,
+            weatherApiHost: _wh,
+            weatherCity: _wc,
             ...rest
           } = r as Record<string, unknown>;
-          void _bg; void _bgo;
+          void _bg; void _bgo; void _wk; void _wh; void _wc;
           if (!includeApiKey) {
             // aiProfiles 里存着各家明文 Key，跟生效位的 Key 走同一豁免开关
             const { summaryApiKey: _s, openaiApiKey: _o, aiProfiles: _p, ...leaner } = rest;
@@ -568,6 +575,9 @@ export const pullAll = async (): Promise<void> => {
             aiProfiles: first.aiProfiles,
             backgroundImage: first.backgroundImage,
             backgroundOrientation: first.backgroundOrientation,
+            weatherApiKey: first.weatherApiKey,
+            weatherApiHost: first.weatherApiHost,
+            weatherCity: first.weatherCity,
           };
         }
       }
@@ -605,6 +615,10 @@ export const pullAll = async (): Promise<void> => {
             if (ov.backgroundOrientation) {
               merged.backgroundOrientation = ov.backgroundOrientation;
             }
+            // 天气：同背景图口径，无条件用本地（云端根本不存这几个字段）
+            if (ov.weatherApiKey) merged.weatherApiKey = ov.weatherApiKey;
+            if (ov.weatherApiHost) merged.weatherApiHost = ov.weatherApiHost;
+            if (ov.weatherCity) merged.weatherCity = ov.weatherCity;
             return merged;
           });
         }

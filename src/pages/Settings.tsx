@@ -13,6 +13,7 @@ import { AI_PROVIDERS, getProviderConfig, testAIConnection, fetchAvailableModels
 import { refreshAllProviderModels } from '@/utils/aiModelCatalog';
 import { ModelPickerSheet, type ModelPickerMode } from '@/components/ai/ModelPickerSheet';
 import { BufferedTextInput } from '@/components/ui/BufferedTextInput';
+import { WeatherSettings } from '@/components/settings/WeatherSettings';
 import { Toggle } from '@/components/Toggle';
 import NotificationSettings from '@/components/NotificationSettings';
 import { NavigatorSettings } from '@/components/navigator/NavigatorSettings';
@@ -1389,6 +1390,9 @@ export const Settings = () => {
                         </div>
                       </div>
                     </div>
+
+                    {/* 天气（月相 ⇄ 天气切换的配置入口） */}
+                    <WeatherSettings />
 
                     {/* 背景图片上传 */}
                     <div className="space-y-3">

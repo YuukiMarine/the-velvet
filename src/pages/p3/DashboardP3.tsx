@@ -15,6 +15,8 @@ import type { ReactNode } from 'react';
 import { motion, AnimatePresence, useMotionValue, useTransform, animate as animateValue } from 'motion/react';
 import { useBoldness } from '@/utils/boldness';
 import { useAppStore, toLocalDateKey } from '@/store';
+import { useSkyBadge } from '@/components/sky/useSkyBadge';
+import { weatherEmoji } from '@/utils/weather';
 import type { AttributeId, CallingCard } from '@/types';
 import { P3R, P3RPage, GhostWords, SectionMark, SlantButton, TitlePeriod, slantClip } from '@/components/p3r/kit';
 import { TodoCompleteModal } from '@/components/TodoCompleteModal';
@@ -72,6 +74,45 @@ const moonLitPath = (phase: number, r: number, c: number) => {
   const outer = phase < 0.5 ? 1 : 0; // 盈月亮右缘，亏月亮左缘
   const term = phase > 0.25 && phase < 0.75 ? outer : 1 - outer; // 凸月界线鼓向暗面
   return `M ${c} ${c - r} A ${r} ${r} 0 0 ${outer} ${c} ${c + r} A ${rx} ${r} 0 0 ${term} ${c} ${c - r} Z`;
+};
+
+/**
+ * 天空位：月相 ⇄ 天气。整块可点，点一下换模式，模式记在 settings.homeSkyMode。
+ * 天气没配好时不静默回退——照常切过去并显示「去设置天气」，
+ * 否则用户会以为点击失灵。配置入口在 设置 → 体验个性化 → 天气。
+ */
+const SkyBadge = ({ date }: { date: Date }) => {
+  const { mode, toggle, weather, loading, error, ready } = useSkyBadge();
+  if (mode === 'weather') {
+    return (
+      <button
+        type="button"
+        onClick={toggle}
+        aria-label="天气（点击切回月相）"
+        className="ml-0.5 flex items-center gap-2 text-left"
+      >
+        <span className="relative flex h-11 w-12 shrink-0 items-center justify-center"
+              style={{ background: P3R.cyanFaint, clipPath: slantClip(8) }}>
+          <span className="text-[20px] leading-none">{weatherEmoji(weather?.icon)}</span>
+          <span aria-hidden className="absolute right-[3px] top-[3px] h-[7px] w-[9px]"
+                style={{ background: P3R.magenta, clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
+        </span>
+        <span className="flex flex-col gap-1 leading-none">
+          <span className="text-[13px] font-black" style={{ color: P3R.ink }}>
+            {!ready ? '去设置天气' : error ? '天气取不到' : loading ? '取数中…' : `${weather?.temp}°C ${weather?.text}`}
+          </span>
+          <span className="text-[9px] font-black tracking-[0.16em]" style={{ color: P3R.blue }}>
+            {!ready ? 'SET UP' : error ? 'RETRY' : `FEELS ${weather?.feelsLike ?? '--'}°`}
+          </span>
+        </span>
+      </button>
+    );
+  }
+  return (
+    <button type="button" onClick={toggle} aria-label="月相（点击切到天气）" className="text-left">
+      <MoonPhase date={date} />
+    </button>
+  );
 };
 
 const MoonPhase = ({ date }: { date: Date }) => {
@@ -536,7 +577,7 @@ export const DashboardP3 = () => {
               <span>{WEEKDAYS[now.getDay()]}</span>
             </span>
             <span aria-hidden className="ml-1 h-10 w-[3px]" style={{ background: P3R.blue, transform: 'skewX(-24deg)' }} />
-            <MoonPhase date={now} />
+            <SkyBadge date={now} />
           </div>
         </header>
 
