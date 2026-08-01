@@ -1034,6 +1034,8 @@ html[data-ios-standalone="true"] {
   --p3nav-root: linear-gradient(168deg, #0a1a36 0%, #081226 52%, #060d1e 100%);
   --p3nav-cat-bub: linear-gradient(315deg, #35e0b8 13px, #14294a 13px);
   --p3nav-slab: linear-gradient(180deg, rgba(53, 224, 184, 0.08) 0%, rgba(53, 224, 184, 0.18) 100%);
+  /* 聊天页底部水面照片（亮青素材）：压暗降饱和成深夜海面，别在深底上亮一条蓝 */
+  --p3nav-water-filter: brightness(0.34) saturate(0.72);
   /* 浅青 wash 家族（进度轨/阶梯芯片/迷你成就卡）与青强调的 rgb 三元组：
      透明度留在调用点，色相在此翻深 */
   --p3r-wash: 24, 48, 90;
