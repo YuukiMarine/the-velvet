@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 4×2 ·「征途」：左日期+月相，中塔罗，右宣告卡进度（PRD_V2.6 §8 规格三） -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/velvet_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:padding="12dp"
+    android:background="@drawable/widget_bg_round">
+
+    <!-- 日期柱 -->
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:gravity="center_horizontal"
+        android:layout_marginEnd="10dp">
+
+        <TextView
+            android:id="@+id/velvet_day"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textSize="30sp"
+            android:textStyle="bold"
+            android:includeFontPadding="false"
+            android:text="--" />
+
+        <TextView
+            android:id="@+id/velvet_month"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.14"
+            android:text="" />
+
+        <TextView
+            android:id="@+id/velvet_weekday"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textSize="9sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.14"
+            android:text="" />
+
+        <ImageView
+            android:id="@+id/velvet_moon"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:adjustViewBounds="true"
+            android:contentDescription="月相" />
+    </LinearLayout>
+
+    <ImageView
+        android:id="@+id/velvet_tarot"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginEnd="12dp"
+        android:adjustViewBounds="true"
+        android:contentDescription="今日塔罗" />
+
+    <!-- 宣告卡 -->
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/velvet_hint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="11sp"
+            android:textColor="#6B7280"
+            android:visibility="gone"
+            android:text="打开一次「靛蓝色房间」即可同步" />
+
+        <TextView
+            android:id="@+id/velvet_card_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:maxLines="2"
+            android:ellipsize="end"
+            android:text="宣告卡" />
+
+        <ImageView
+            android:id="@+id/velvet_card_bar"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:adjustViewBounds="true"
+            android:contentDescription="宣告卡进度" />
+
+        <TextView
+            android:id="@+id/velvet_card_pct"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="3dp"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:text="" />
+    </LinearLayout>
+</LinearLayout>

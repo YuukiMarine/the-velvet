@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 4×2 ·「今日」：左塔罗，右侧上任务进度、下记录热力图（PRD_V2.6 §8 规格一） -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/velvet_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:padding="12dp"
+    android:background="@drawable/widget_bg_round">
+
+    <ImageView
+        android:id="@+id/velvet_tarot"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginEnd="12dp"
+        android:adjustViewBounds="true"
+        android:contentDescription="今日塔罗" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <!-- 未同步时的引导；有快照就整条 GONE -->
+        <TextView
+            android:id="@+id/velvet_hint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="12sp"
+            android:textColor="#6B7280"
+            android:visibility="gone"
+            android:text="打开一次「靛蓝色房间」即可同步" />
+
+        <TextView
+            android:id="@+id/velvet_todo_label"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:text="今日任务" />
+
+        <ImageView
+            android:id="@+id/velvet_todo_bar"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="5dp"
+            android:adjustViewBounds="true"
+            android:contentDescription="今日任务进度" />
+
+        <TextView
+            android:id="@+id/velvet_heat_label"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:textSize="10sp"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:text="最近的记录" />
+
+        <ImageView
+            android:id="@+id/velvet_heat"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:adjustViewBounds="true"
+            android:contentDescription="记录热力图" />
+    </LinearLayout>
+</LinearLayout>

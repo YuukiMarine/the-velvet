@@ -4,4 +4,12 @@
     <string name="title_activity_main">靛蓝色房间</string>
     <string name="package_name">com.pgt.app</string>
     <string name="custom_url_scheme">com.pgt.app</string>
+
+    <!-- 小组件（PRD_V2.6 §8）。description 显示在系统的组件选择器里 -->
+    <string name="widget_daily_name">今日</string>
+    <string name="widget_daily_desc">今日塔罗 · 任务进度 · 记录热力图</string>
+    <string name="widget_tarot_name">牌与月</string>
+    <string name="widget_tarot_desc">今日塔罗 · 月相</string>
+    <string name="widget_journey_name">征途</string>
+    <string name="widget_journey_desc">日期 · 月相 · 塔罗 · 宣告卡进度</string>
 </resources>

@@ -24,6 +24,46 @@
 
         </activity>
 
+        <!-- ── 桌面小组件（PRD_V2.6 §8）────────────────────────────────
+             exported="true" 是必须的：AppWidgetProvider 由系统的 AppWidgetHost
+             （启动器进程）发广播驱动，不导出就永远收不到 ACTION_APPWIDGET_UPDATE。
+             它们只读应用私有的 SharedPreferences 快照，不接受任何外部传入的数据。 -->
+        <receiver
+            android:name=".VelvetWidgetDaily"
+            android:label="@string/widget_daily_name"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_daily_info" />
+        </receiver>
+
+        <receiver
+            android:name=".VelvetWidgetTarot"
+            android:label="@string/widget_tarot_name"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_tarot_info" />
+        </receiver>
+
+        <receiver
+            android:name=".VelvetWidgetJourney"
+            android:label="@string/widget_journey_name"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_journey_info" />
+        </receiver>
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

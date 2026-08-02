@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 4×2。updatePeriodMillis 给 0：刷新完全由 App 写快照后的广播驱动，
+     系统周期刷新最短也要 30 分钟，对"勾完任务立刻要看到"毫无用处，白耗电。 -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="250dp"
+    android:minHeight="110dp"
+    android:targetCellWidth="4"
+    android:targetCellHeight="2"
+    android:updatePeriodMillis="0"
+    android:resizeMode="horizontal|vertical"
+    android:widgetCategory="home_screen"
+    android:description="@string/widget_daily_desc"
+    android:initialLayout="@layout/widget_velvet_daily" />

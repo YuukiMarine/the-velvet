@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 2×2 ·「牌与月」：上塔罗，下月相 + 读数（PRD_V2.6 §8 规格二） -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/velvet_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:padding="10dp"
+    android:background="@drawable/widget_bg_round">
+
+    <TextView
+        android:id="@+id/velvet_hint"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textSize="11sp"
+        android:textColor="#6B7280"
+        android:gravity="center"
+        android:visibility="gone"
+        android:text="打开一次「靛蓝色房间」即可同步" />
+
+    <ImageView
+        android:id="@+id/velvet_tarot"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:adjustViewBounds="true"
+        android:contentDescription="今日塔罗" />
+
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <ImageView
+            android:id="@+id/velvet_moon"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="7dp"
+            android:adjustViewBounds="true"
+            android:contentDescription="月相" />
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/velvet_moon_label"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:maxLines="1"
+                android:text="月相" />
+
+            <TextView
+                android:id="@+id/velvet_moon_pct"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="9sp"
+                android:textStyle="bold"
+                android:maxLines="1"
+                android:text="LUNAR" />
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>
