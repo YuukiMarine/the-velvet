@@ -15,42 +15,75 @@ import android.graphics.Typeface;
 import java.io.InputStream;
 
 /**
- * 小组件的 P3R 视觉底座（用户口径：「奇丑，跟在 word 里随便画的一样，用 P3 的视觉语言重做」）。
+ * 小组件的 P3R 视觉底座（用户口径：「用 P3 的视觉语言重做」）。
  *
  * 【为什么整块画成一张位图】
- * 原来三块组件是拿 RemoteViews 的原生控件拼的——LinearLayout + TextView + 几条细进度条。
- * RemoteViews 只认得那有限几种 View，而 P3R 的语言恰恰全在它表达不了的地方：
- * 一切容器都是左上→右下的斜切平行四边形、超大黑斜体数字、幽灵英文大字、洋红角标。
- * 用控件拼永远只能拼出"居中的字 + 灰条"，也就是用户说的那个观感。
- * 所以这里改成**整块组件画成一张 Canvas 位图**，布局退化为一个满幅 ImageView。
+ * RemoteViews 只认得有限几种 View，而 P3R 的语言恰恰全在它表达不了的地方：
+ * 左上→右下的斜切平行四边形、超大黑斜体数字、幽灵英文大字、洋红角标。
+ * 用控件拼永远只能拼出"居中的字 + 灰条"。所以整块组件画成一张 Canvas 位图，
+ * 布局退化为一个满幅 ImageView。
  *
  * 【位图预算】
- * AppWidget 的 RemoteViews 走 Binder，事务缓冲大约 1 MB，位图必须留足余量。
- * 4×2 组件在 3x 屏上按真实像素画是 1050×330 ≈ 1.39 MB，直接超限崩掉。
- * 所以长边统一压到 MAX_EDGE，由 ImageView 拉伸铺满——牺牲一点锐度换取绝对不炸。
+ * AppWidget 的 RemoteViews 走 Binder，事务缓冲约 1 MB。4×2 在 3x 屏上按真实像素
+ * 画是 1050×330 ≈ 1.39 MB，直接超限。长边统一压到 MAX_EDGE，由 ImageView 拉伸铺满。
+ *
+ * 【v2.6.4 三项改动（用户实机反馈）】
+ *   ① 4×2 两块支持缩到 **4×1**：`compact()` 按宽高比分流到单行版式，不是把
+ *      同一套版面压扁——压扁只会得到一堆挤在一起的字。
+ *   ② 「征途」信息密度提高：补了连续天数、五维等级迷你条、今日运势。
+ *   ③ 2×2 改成**牌面满幅 + 底部信息条**，在真正的 2×2 里就装得下
+ *      （原来要 2×3 才不裁），并补了今日运势。
+ *   ④ 全部支持夜间模式：配色收进 Pal，按快照的 dark 位取灯下 / 夜间两套。
  *
  * 【配色】
- * 与 Web 端 p3rKit 的 P3R 常量同值。组件进程读不到 CSS 变量，只能各写一份；
- * 改色时两边一起改（src/components/p3r/kit.tsx）。
+ * 与 Web 端 p3rKit 的 P3R 常量同值（夜间取 index.css 的
+ * `:root.dark[data-ui-channel="p3"]` 覆盖值）。组件进程读不到 CSS，只能各写一份；
+ * 改色时两边一起改。
  */
 class VelvetP3 {
 
-    // ── P3R 调色板（对齐 src/components/p3r/kit.tsx）────────────────────
-    static final int BG        = Color.parseColor("#eef5f9"); // 近白水面
-    static final int PANEL     = Color.parseColor("#ffffff");
-    static final int BLUE      = Color.parseColor("#1b57ff");
-    static final int BLUE_DEEP = Color.parseColor("#0a3bd6");
-    static final int INK       = Color.parseColor("#0a1230");
-    static final int INK_SOFT  = Color.parseColor("#3d4a66");
-    static final int CYAN      = Color.parseColor("#35d1e8");
-    static final int CYAN_PALE = Color.parseColor("#cfeaf6");
-    static final int CYAN_FAINT= Color.parseColor("#e2f2fa");
-    static final int MAGENTA   = Color.parseColor("#f0417f");
+    /**
+     * 调色板。白天 = P3R「白日水面」，夜间 = index.css 里那套深靛底 + 浅绿强调。
+     * 注意夜间的强调色**不是**蓝而是 #3ecf8e —— 这是 Web 端定过的对位，不要改回蓝。
+     */
+    static final class Pal {
+        final int bg, panel, blue, blueDeep, ink, inkSoft, cyan, cyanPale, cyanFaint, magenta, ghost;
+
+        private Pal(int bg, int panel, int blue, int blueDeep, int ink, int inkSoft,
+                    int cyan, int cyanPale, int cyanFaint, int magenta, int ghost) {
+            this.bg = bg; this.panel = panel; this.blue = blue; this.blueDeep = blueDeep;
+            this.ink = ink; this.inkSoft = inkSoft; this.cyan = cyan; this.cyanPale = cyanPale;
+            this.cyanFaint = cyanFaint; this.magenta = magenta; this.ghost = ghost;
+        }
+
+        static final Pal LIGHT = new Pal(
+            Color.parseColor("#eef5f9"), Color.parseColor("#ffffff"),
+            Color.parseColor("#1b57ff"), Color.parseColor("#0a3bd6"),
+            Color.parseColor("#0a1230"), Color.parseColor("#3d4a66"),
+            Color.parseColor("#35d1e8"), Color.parseColor("#cfeaf6"), Color.parseColor("#e2f2fa"),
+            Color.parseColor("#f0417f"), Color.argb(18, 27, 87, 255));
+
+        static final Pal DARK = new Pal(
+            Color.parseColor("#081226"), Color.parseColor("#10203f"),
+            Color.parseColor("#3ecf8e"), Color.parseColor("#2aa974"),
+            Color.parseColor("#e9f6f1"), Color.parseColor("#b9cfdc"),
+            Color.parseColor("#35e0b8"), Color.parseColor("#12382f"), Color.parseColor("#0d2b26"),
+            Color.parseColor("#f0417f"), Color.argb(30, 62, 207, 142));
+
+        static Pal of(VelvetSnapshot s) { return s != null && s.dark ? DARK : LIGHT; }
+    }
 
     /** 位图长边上限（见类注释「位图预算」） */
     private static final int MAX_EDGE = 640;
     /** P3R 的招牌斜度：文字用 skewX，容器用等价的水平位移 */
     private static final float SKEW = -0.20f;
+    /**
+     * 低于这个宽高比就走单行紧凑版（4×1 ≈ 0.22，4×2 ≈ 0.44）。
+     * 取 0.34 是把分界放在两档中间，用户拖到任何中间尺寸都不会来回跳版式。
+     */
+    private static final float COMPACT_RATIO = 0.34f;
+
+    static boolean compact(int w, int h) { return h < w * COMPACT_RATIO; }
 
     // ── 基础画笔 ────────────────────────────────────────────────────────
 
@@ -96,9 +129,9 @@ class VelvetP3 {
         c.drawPath(p, fill(color));
     }
 
-    /** 幽灵大字：极浅蓝的斜体英文词，P3R 页面背景的固定成分 */
-    private static void ghost(Canvas c, String word, float size, float x, float y, int alpha) {
-        Paint p = text(size, Color.argb(alpha, 27, 87, 255), true, true);
+    /** 幽灵大字：极浅的斜体英文词，P3R 页面背景的固定成分 */
+    private static void ghost(Canvas c, Pal pal, String word, float size, float x, float y) {
+        Paint p = text(size, pal.ghost, true, true);
         p.setTextAlign(Paint.Align.LEFT);
         c.drawText(word, x, y, p);
     }
@@ -127,28 +160,24 @@ class VelvetP3 {
     }
 
     /** 水面底 + 顶部薄纱 —— P3RPage 的底在组件上的等价物 */
-    private static Bitmap panel(int w, int h) {
+    private static Bitmap panel(Pal pal, int w, int h) {
         Bitmap bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
         Canvas c = new Canvas(bmp);
         float radius = Math.min(w, h) * 0.085f;
-        c.drawRoundRect(new RectF(0, 0, w, h), radius, radius, fill(BG));
-        // 顶缘一道极淡青，模拟水面反光（Web 端是 caustic 贴图，组件里不值当带素材）
-        Paint veil = fill(CYAN_FAINT);
+        c.drawRoundRect(new RectF(0, 0, w, h), radius, radius, fill(pal.bg));
         Path clip = new Path();
         clip.addRoundRect(new RectF(0, 0, w, h), radius, radius, Path.Direction.CW);
         c.save();
         c.clipPath(clip);
-        c.drawRect(0, 0, w, h * 0.34f, veil);
+        c.drawRect(0, 0, w, h * 0.34f, fill(pal.cyanFaint));
         c.restore();
         return bmp;
     }
 
     /** 洋红角标：P3R 的签名件，永远钉在右下 */
-    private static void magentaCorner(Canvas c, int w, int h, float unit) {
-        tick(c, w - unit * 3.6f, h - unit * 1.5f, unit * 2.2f, unit * 0.72f, MAGENTA);
+    private static void magentaCorner(Canvas c, Pal pal, int w, int h, float unit) {
+        tick(c, w - unit * 3.6f, h - unit * 1.5f, unit * 2.2f, unit * 0.72f, pal.magenta);
     }
-
-    // ── 目标像素尺寸 ────────────────────────────────────────────────────
 
     /** 按 dp 尺寸算位图像素，长边压到 MAX_EDGE 以内（见类注释「位图预算」） */
     static int[] canvasSize(Context ctx, int wDp, int hDp) {
@@ -161,11 +190,10 @@ class VelvetP3 {
     // ── 塔罗牌面 ────────────────────────────────────────────────────────
 
     /**
-     * 读牌面原图。塔罗美术随 Web 构建一起打进 assets/public/tarot/<set>/<id>.webp，
-     * 这里直接按 id 取（用户口径「抽完的塔罗牌就对应图片文件」）。
-     * 组件走 P3 视觉语言，因此固定取 p3 那一套水下牌面。
-     * 小阿卡纳没有配图 / 文件缺失 → 返回 null，调用方退回程序化卡面。
-     * 原图 560×896，按目标宽度做 inSampleSize 降采样，免得为一张小卡解出 2 MB 位图。
+     * 读牌面原图。塔罗美术随 Web 构建一起打进 assets/public/tarot/<set>/<id>.webp。
+     * 组件走 P3 视觉语言，固定取 p3 那一套水下牌面。
+     * 小阿卡纳没有配图 / 文件缺失 → null，调用方退回程序化卡面。
+     * 原图 560×896，按目标宽度做 inSampleSize 降采样。
      */
     static Bitmap tarotArt(Context ctx, String cardId, int targetW) {
         if (cardId == null || cardId.length() == 0) return null;
@@ -195,18 +223,18 @@ class VelvetP3 {
     }
 
     /**
-     * 斜切塔罗卡：白底斜板 + 牌面图（等比裁切填满）+ 罗马数字蓝签 + 牌名。
-     * 逆位整张倒转 180°，与 App 内同口径；逆位再补一枚洋红「逆」标。
+     * 斜切塔罗卡：墨底斜板 + 牌面图（等比裁切填满）+ 罗马数字签 + 牌名。
+     * 逆位整张倒转 180°（与 App 内同口径），另补一枚洋红「逆」标。
+     * mini=true 时只画图与罗马签，不画牌名——4×1 的高度不足以承载两行字。
      */
-    static void tarotCard(Canvas c, Context ctx, VelvetSnapshot s,
-                          float x, float y, float w, float h) {
+    static void tarotCard(Canvas c, Context ctx, Pal pal, VelvetSnapshot s,
+                          float x, float y, float w, float h, boolean mini) {
         float cut = w * 0.09f;
         boolean drawn = s.tarotName != null && s.tarotName.length() > 0;
 
-        // 墨色底板（露出一圈作描边）+ 白卡面
-        slab(c, x, y, x + w, y + h, cut, INK);
+        slab(c, x, y, x + w, y + h, cut, pal.ink);
         float pad = w * 0.045f;
-        slab(c, x + pad, y + pad, x + w - pad, y + h - pad, cut * 0.9f, PANEL);
+        slab(c, x + pad, y + pad, x + w - pad, y + h - pad, cut * 0.9f, pal.panel);
 
         Path clip = new Path();
         clip.moveTo(x + pad + cut * 0.9f, y + pad);
@@ -218,13 +246,17 @@ class VelvetP3 {
         if (!drawn) {
             c.save();
             c.clipPath(clip);
-            c.drawRect(x, y, x + w, y + h, fill(CYAN_FAINT));
+            c.drawRect(x, y, x + w, y + h, fill(pal.cyanFaint));
             c.restore();
-            Paint tp = text(h * 0.115f, INK_SOFT, true, true);
+            Paint tp = text(h * (mini ? 0.17f : 0.115f), pal.inkSoft, true, true);
             tp.setTextAlign(Paint.Align.CENTER);
-            c.drawText("今日", x + w / 2f, y + h * 0.47f, tp);
-            c.drawText("未抽", x + w / 2f, y + h * 0.64f, tp);
-            eyebrow(c, "TAROT", h * 0.055f, x + w * 0.20f, y + h * 0.80f, BLUE);
+            if (mini) {
+                c.drawText("未抽", x + w / 2f, y + h * 0.6f, tp);
+            } else {
+                c.drawText("今日", x + w / 2f, y + h * 0.47f, tp);
+                c.drawText("未抽", x + w / 2f, y + h * 0.64f, tp);
+                eyebrow(c, "TAROT", h * 0.055f, x + w * 0.20f, y + h * 0.80f, pal.blue);
+            }
             return;
         }
 
@@ -234,52 +266,47 @@ class VelvetP3 {
         if (s.tarotReversed) c.rotate(180, x + w / 2f, y + h / 2f);
 
         if (art != null) {
-            // 等比铺满（cover）：牌面竖构图，宽度对齐后上下居中裁
-            float sx = w / art.getWidth(), sy = h / art.getHeight();
-            float k = Math.max(sx, sy);
+            float k = Math.max(w / art.getWidth(), h / art.getHeight());
             Matrix m = new Matrix();
             m.setScale(k, k);
             m.postTranslate(x + (w - art.getWidth() * k) / 2f, y + (h - art.getHeight() * k) / 2f);
             c.drawBitmap(art, m, new Paint(Paint.FILTER_BITMAP_FLAG));
-            // 底部压一道墨色渐隐，保证牌名压得住图
-            Paint shade = fill(Color.argb(150, 10, 18, 48));
-            c.drawRect(x, y + h * 0.68f, x + w, y + h, shade);
+            if (!mini) c.drawRect(x, y + h * 0.68f, x + w, y + h, fill(Color.argb(150, 10, 18, 48)));
         } else {
-            // 没有配图（小阿卡纳）→ 程序化卡面：青白面 + 大罗马数字
-            c.drawRect(x, y, x + w, y + h, fill(CYAN_FAINT));
-            Paint rp = text(h * 0.26f, BLUE, true, true);
+            c.drawRect(x, y, x + w, y + h, fill(pal.cyanFaint));
+            Paint rp = text(h * 0.26f, pal.blue, true, true);
             rp.setTextAlign(Paint.Align.CENTER);
             c.drawText(s.tarotRoman == null ? "" : s.tarotRoman, x + w / 2f, y + h * 0.52f, rp);
         }
 
-        // 牌名（图上/程序化卡面下部）
-        Paint np = text(h * 0.095f, PANEL, true, true);
-        np.setTextAlign(Paint.Align.CENTER);
-        c.drawText(fit(s.tarotName, np, w * 0.86f), x + w / 2f, y + h * 0.87f, np);
+        if (!mini) {
+            Paint np = text(h * 0.095f, Color.WHITE, true, true);
+            np.setTextAlign(Paint.Align.CENTER);
+            c.drawText(fit(s.tarotName, np, w * 0.86f), x + w / 2f, y + h * 0.87f, np);
+        }
         c.restore();
 
-        // 罗马数字蓝签：钉在左上角，**不跟着逆位翻**（它是读数不是画面）
+        // 罗马数字签钉在左上角，**不跟着逆位翻**（它是读数不是画面）
         if (art != null && s.tarotRoman != null && s.tarotRoman.length() > 0) {
-            Paint rp = text(h * 0.085f, PANEL, true, true);
-            float tw = rp.measureText(s.tarotRoman);
-            float bw = tw + w * 0.16f, bh = h * 0.13f;
-            slab(c, x + pad, y + pad, x + pad + bw, y + pad + bh, bh * 0.3f, BLUE);
+            Paint rp = text(h * (mini ? 0.13f : 0.085f), Color.WHITE, true, true);
+            float bw = rp.measureText(s.tarotRoman) + w * 0.16f;
+            float bh = h * (mini ? 0.2f : 0.13f);
+            slab(c, x + pad, y + pad, x + pad + bw, y + pad + bh, bh * 0.3f, pal.blue);
             c.drawText(s.tarotRoman, x + pad + w * 0.09f, y + pad + bh * 0.76f, rp);
         }
-        if (s.tarotReversed) {
-            Paint xp = text(h * 0.075f, MAGENTA, true, true);
-            c.drawText("逆", x + w - pad - w * 0.16f, y + h - pad - h * 0.04f, xp);
+        if (s.tarotReversed && !mini) {
+            c.drawText("逆", x + w - pad - w * 0.16f, y + h - pad - h * 0.04f,
+                       text(h * 0.075f, pal.magenta, true, true));
         }
     }
 
     // ── 数据块 ──────────────────────────────────────────────────────────
 
-    /** 斜切进度条：青白轨 + 蓝填充 + 端头一枚亮青斜签 */
-    static void progress(Canvas c, float x, float y, float w, float h, int percent) {
+    /** 斜切进度条：青白轨 + 强调色填充 */
+    static void progress(Canvas c, Pal pal, float x, float y, float w, float h, int percent) {
         float cut = h * 0.62f;
-        slab(c, x, y, x + w, y + h, cut, CYAN_PALE);
+        slab(c, x, y, x + w, y + h, cut, pal.cyanPale);
         float p = Math.max(0, Math.min(100, percent)) / 100f;
-        float fw = Math.max(h * 1.2f, w * p);
         if (p > 0) {
             c.save();
             Path clip = new Path();
@@ -289,16 +316,17 @@ class VelvetP3 {
             clip.lineTo(x, y + h);
             clip.close();
             c.clipPath(clip);
-            slab(c, x, y, x + fw, y + h, cut, BLUE);
+            slab(c, x, y, x + Math.max(h * 1.2f, w * p), y + h, cut, pal.blue);
             c.restore();
         }
     }
 
     /**
      * 记录热力条：一排斜切小格，颜色深浅 = 当天记录条数。
-     * 用**色阶**而不是透明度——组件底是近白水面，半透明格子会糊成一片灰。
+     * 用**色阶**而不是透明度——组件底是近白水面（夜间是深靛），
+     * 半透明格子在任一边都会糊成一片。
      */
-    static void heatStrip(Canvas c, int[] heat, float x, float y, float w, float h) {
+    static void heatStrip(Canvas c, Pal pal, int[] heat, float x, float y, float w, float h) {
         int n = Math.max(1, heat.length);
         float gap = Math.max(1.2f, w / n * 0.16f);
         float cw = (w - gap * (n - 1)) / n;
@@ -306,25 +334,52 @@ class VelvetP3 {
         for (int i = 0; i < n; i++) {
             int v = i < heat.length ? heat[i] : 0;
             float cx = x + i * (cw + gap);
-            slab(c, cx, y, cx + cw, y + h, cut, v <= 0 ? CYAN_FAINT : shade(v));
+            slab(c, cx, y, cx + cw, y + h, cut, v <= 0 ? pal.cyanFaint : shade(pal, v));
         }
     }
 
-    /** 记录条数 → 蓝的四档明度（往白里兑，不用 alpha） */
-    private static int shade(int count) {
+    /** 记录条数 → 强调色的四档明度（往底色里兑，不用 alpha） */
+    private static int shade(Pal pal, int count) {
         float t = count >= 5 ? 1f : count >= 3 ? 0.76f : count >= 2 ? 0.55f : 0.34f;
-        int r = Color.red(BLUE), g = Color.green(BLUE), b = Color.blue(BLUE);
-        return Color.rgb(Math.round(255 - (255 - r) * t),
-                         Math.round(255 - (255 - g) * t),
-                         Math.round(255 - (255 - b) * t));
+        int br = Color.red(pal.cyanFaint), bg = Color.green(pal.cyanFaint), bb = Color.blue(pal.cyanFaint);
+        return Color.rgb(
+            Math.round(br + (Color.red(pal.blue) - br) * t),
+            Math.round(bg + (Color.green(pal.blue) - bg) * t),
+            Math.round(bb + (Color.blue(pal.blue) - bb) * t));
     }
 
     /**
-     * 月相：暗面圆 + 亮面双弧路径（与 Web 端 moonLitPath 同一套两弧法，
-     * 外缘半圆 + 明暗界线椭圆弧，盈亏自动换边）。
+     * 五维等级迷你条（「征途」的信息密度补充）。
+     * **只画柱子不写字**：属性名是用户自己起的，可能带私人色彩，
+     * 而组件是摊在桌面上给旁人看的（见 widgetSnapshot.ts 的隐私口径）。
+     * 读出来的是一条"能力剖面"，够用了。
      */
-    static void moon(Canvas c, double phase, float cx, float cy, float r) {
-        c.drawCircle(cx, cy, r, fill(CYAN_PALE));
+    static void levelBars(Canvas c, Pal pal, int[] levels, int maxLevel, float x, float y, float w, float h) {
+        int n = Math.max(1, levels.length);
+        float gap = w * 0.06f / n;
+        float bw = (w - gap * (n - 1)) / n;
+        for (int i = 0; i < n; i++) {
+            float bx = x + i * (bw + gap);
+            slab(c, bx, y, bx + bw, y + h, bw * 0.22f, pal.cyanPale);
+            float ratio = Math.max(0.06f, Math.min(1f, levels[i] / (float) Math.max(1, maxLevel)));
+            float bh = h * ratio;
+            slab(c, bx, y + h - bh, bx + bw, y + h, bw * 0.22f, pal.blue);
+        }
+    }
+
+    /** 今日运势小旗（运势自己的色，不吃频道色——大吉是金的，跟主题无关） */
+    static void fortuneChip(Canvas c, VelvetSnapshot s, float x, float y, float size) {
+        if (s.fortuneLabel == null || s.fortuneLabel.length() == 0) return;
+        Paint p = text(size, Color.WHITE, true, true);
+        float w = p.measureText(s.fortuneLabel) + size * 1.5f;
+        float h = size * 1.7f;
+        slab(c, x, y, x + w, y + h, h * 0.28f, s.fortuneAccent);
+        c.drawText(s.fortuneLabel, x + size * 0.85f, y + h * 0.72f, p);
+    }
+
+    /** 月相：暗面圆 + 亮面双弧（与 Web 端 moonLitPath 同一套两弧法） */
+    static void moon(Canvas c, Pal pal, double phase, float cx, float cy, float r) {
+        c.drawCircle(cx, cy, r, fill(pal.cyanPale));
         float rx = (float) Math.max(0.01, Math.abs(Math.cos(2 * Math.PI * phase)) * r);
         boolean waxing = phase < 0.5;
         boolean gibbous = phase > 0.25 && phase < 0.75;
@@ -333,150 +388,301 @@ class VelvetP3 {
         path.arcTo(new RectF(cx - r, cy - r, cx + r, cy + r), -90, waxing ? 180 : -180);
         path.arcTo(new RectF(cx - rx, cy - r, cx + rx, cy + r), 90, (gibbous == waxing) ? 180 : -180);
         path.close();
-        c.drawPath(path, fill(INK));
+        c.drawPath(path, fill(pal.ink));
         Paint ring = new Paint(Paint.ANTI_ALIAS_FLAG);
         ring.setStyle(Paint.Style.STROKE);
         ring.setStrokeWidth(Math.max(1.4f, r * 0.11f));
-        ring.setColor(INK);
+        ring.setColor(pal.ink);
         c.drawCircle(cx, cy, r - ring.getStrokeWidth() / 2f, ring);
     }
 
-    // ── 三块组件的整幅构图 ──────────────────────────────────────────────
+    // ── 整幅构图 ────────────────────────────────────────────────────────
 
     /** 还没写过快照：不给空白，给一句能照着做的话 */
-    static Bitmap notSynced(int w, int h) {
-        Bitmap bmp = panel(w, h);
+    static Bitmap notSynced(Pal pal, int w, int h) {
+        Bitmap bmp = panel(pal, w, h);
         Canvas c = new Canvas(bmp);
         float u = Math.min(w, h) / 20f;
-        ghost(c, "VELVET", h * 0.42f, -u, h * 0.72f, 22);
-        eyebrow(c, "NOT SYNCED", u * 0.82f, u * 1.6f, h * 0.40f, BLUE);
-        Paint p = text(u * 1.35f, INK, true, true);
+        ghost(c, pal, "VELVET", h * 0.42f, -u, h * 0.72f);
+        eyebrow(c, "NOT SYNCED", u * 0.82f, u * 1.6f, h * 0.40f, pal.blue);
+        Paint p = text(u * 1.35f, pal.ink, true, true);
         c.drawText(fit("打开一次靛蓝色房间", p, w - u * 3.2f), u * 1.6f, h * 0.62f, p);
-        magentaCorner(c, w, h, u);
+        magentaCorner(c, pal, w, h, u);
         return bmp;
     }
 
-    /** 4×2「今日」：左塔罗，右侧日期眉标 + 今日任务斜条 + 记录热力条 */
+    /** 4×2「今日」：左塔罗，右侧日期 + 今日任务 + 记录热力 */
     static Bitmap daily(Context ctx, VelvetSnapshot s, int w, int h) {
-        Bitmap bmp = panel(w, h);
+        Pal pal = Pal.of(s);
+        if (compact(w, h)) return dailyCompact(ctx, pal, s, w, h);
+        Bitmap bmp = panel(pal, w, h);
         Canvas c = new Canvas(bmp);
-        float u = h / 14f;                       // 版面基准单位
-        ghost(c, "TODAY", h * 0.52f, w * 0.30f, h * 1.02f, 16);
+        float u = h / 14f;
+        ghost(c, pal, "TODAY", h * 0.52f, w * 0.30f, h * 1.02f);
 
         float cardH = h * 0.80f, cardW = cardH * 0.63f;
         float cardX = u * 1.4f, cardY = (h - cardH) / 2f;
-        tarotCard(c, ctx, s, cardX, cardY, cardW, cardH);
+        tarotCard(c, ctx, pal, s, cardX, cardY, cardW, cardH, false);
 
         float lx = cardX + cardW + u * 1.6f;
         float rx = w - u * 1.6f;
         float colW = rx - lx;
 
-        // 日期行：大号日 + 月/周
-        Paint dayP = text(u * 3.4f, BLUE, true, true);
+        Paint dayP = text(u * 3.4f, pal.blue, true, true);
         c.drawText(s.day == null ? "--" : s.day, lx, u * 3.6f, dayP);
         float dayW = dayP.measureText(s.day == null ? "--" : s.day);
-        eyebrow(c, s.monthEn == null ? "" : s.monthEn, u * 0.86f, lx + dayW + u * 0.7f, u * 2.5f, INK);
-        eyebrow(c, s.weekdayEn == null ? "" : s.weekdayEn, u * 0.74f, lx + dayW + u * 0.7f, u * 3.5f, INK_SOFT);
+        eyebrow(c, s.monthEn == null ? "" : s.monthEn, u * 0.86f, lx + dayW + u * 0.7f, u * 2.5f, pal.ink);
+        eyebrow(c, s.weekdayEn == null ? "" : s.weekdayEn, u * 0.74f, lx + dayW + u * 0.7f, u * 3.5f, pal.inkSoft);
+        // 今日运势顶到右上角（首页也在这个位置附近）
+        fortuneChip(c, s, rx - u * 4.6f, u * 1.5f, u * 0.9f);
 
-        // 今日任务
-        tick(c, lx, u * 4.7f, u * 0.9f, u * 0.62f, CYAN);
-        Paint lab = text(u * 1.05f, INK, true, false);
-        String todo = s.todosTotal > 0 ? "今日任务" : "今日没有安排";
-        c.drawText(todo, lx + u * 1.3f, u * 5.35f, lab);
+        tick(c, lx, u * 4.7f, u * 0.9f, u * 0.62f, pal.cyan);
+        c.drawText(s.todosTotal > 0 ? "今日任务" : "今日没有安排",
+                   lx + u * 1.3f, u * 5.35f, text(u * 1.05f, pal.ink, true, false));
         if (s.todosTotal > 0) {
-            Paint num = text(u * 1.5f, BLUE, true, true);
+            Paint num = text(u * 1.5f, pal.blue, true, true);
             String frac = s.todosDone + "/" + s.todosTotal;
             c.drawText(frac, rx - num.measureText(frac), u * 5.45f, num);
-            int pct = Math.round(s.todosDone * 100f / s.todosTotal);
-            progress(c, lx, u * 6.1f, colW, u * 0.95f, pct);
+            progress(c, pal, lx, u * 6.1f, colW, u * 0.95f,
+                     Math.round(s.todosDone * 100f / s.todosTotal));
         }
 
-        // 记录热力
-        eyebrow(c, "RECORD", u * 0.72f, lx, u * 8.6f, BLUE);
-        Paint days = text(u * 0.78f, INK_SOFT, true, false);
-        String dtxt = "最近 " + Math.max(s.heat.length, 0) + " 天";
-        c.drawText(dtxt, rx - days.measureText(dtxt), u * 8.6f, days);
-        heatStrip(c, s.heat, lx, u * 9.3f, colW, u * 2.1f);
+        eyebrow(c, "RECORD", u * 0.72f, lx, u * 8.6f, pal.blue);
+        Paint days = text(u * 0.78f, pal.inkSoft, true, false);
+        String dtxt = "最近 " + Math.max(s.heat.length, 0) + " 天 · 连续 " + s.streak + " 天";
+        c.drawText(fit(dtxt, days, colW * 0.72f), rx - days.measureText(fit(dtxt, days, colW * 0.72f)), u * 8.6f, days);
+        heatStrip(c, pal, s.heat, lx, u * 9.3f, colW, u * 2.1f);
 
-        magentaCorner(c, w, h, u);
+        magentaCorner(c, pal, w, h, u);
         return bmp;
     }
 
-    /** 2×2「牌与月」：整张牌面顶天立地，底部一条月相读数 */
-    static Bitmap tarotFace(Context ctx, VelvetSnapshot s, int w, int h) {
-        Bitmap bmp = panel(w, h);
+    /**
+     * 4×1「今日」。**不是把 4×2 压扁**——那只会得到一堆挤在一起的字。
+     * 单行重排：迷你塔罗 | 日期 | 今日任务分数 + 进度 | 热力条。
+     * 幽灵大字、洋红角标这些装饰在这个高度只会抢地方，一律不画。
+     */
+    private static Bitmap dailyCompact(Context ctx, Pal pal, VelvetSnapshot s, int w, int h) {
+        Bitmap bmp = panel(pal, w, h);
         Canvas c = new Canvas(bmp);
-        float u = Math.min(w, h) / 16f;
-        ghost(c, "ARCANA", h * 0.30f, -u * 0.5f, h * 0.99f, 14);
+        float pad = h * 0.12f;
+        float cardH = h - pad * 2, cardW = cardH * 0.63f;
+        tarotCard(c, ctx, pal, s, pad, pad, cardW, cardH, true);
 
-        float cardH = h * 0.68f, cardW = Math.min(cardH * 0.63f, w * 0.50f);
-        cardH = cardW / 0.63f;
-        float cardX = u * 1.2f, cardY = (h - cardH) / 2f;
-        tarotCard(c, ctx, s, cardX, cardY, cardW, cardH);
+        float x = pad + cardW + h * 0.14f;
+        Paint dayP = text(h * 0.52f, pal.blue, true, true);
+        c.drawText(s.day == null ? "--" : s.day, x, h * 0.66f, dayP);
+        float dw = dayP.measureText(s.day == null ? "--" : s.day);
+        eyebrow(c, s.monthEn == null ? "" : s.monthEn, h * 0.15f, x + dw + h * 0.1f, h * 0.42f, pal.ink);
+        eyebrow(c, s.weekdayEn == null ? "" : s.weekdayEn, h * 0.13f, x + dw + h * 0.1f, h * 0.64f, pal.inkSoft);
 
-        float lx = cardX + cardW + u * 1.2f;
-        eyebrow(c, "TAROT", u * 0.80f, lx, cardY + u * 1.5f, BLUE);
-
-        Paint np = text(u * 1.5f, INK, true, true);
-        String nm = s.tarotName != null && s.tarotName.length() > 0 ? s.tarotName : "今日未抽";
-        c.drawText(fit(nm, np, w - lx - u * 1.2f), lx, cardY + u * 3.6f, np);
-        if (s.tarotReversed && s.tarotName != null) {
-            Paint xp = text(u * 0.86f, MAGENTA, true, true);
-            c.drawText("逆位", lx, cardY + u * 4.9f, xp);
+        float lx = x + dw + h * 0.95f;
+        float rx = w - pad * 1.6f;
+        if (s.todosTotal > 0) {
+            Paint num = text(h * 0.30f, pal.blue, true, true);
+            String frac = s.todosDone + "/" + s.todosTotal;
+            c.drawText(frac, lx, h * 0.42f, num);
+            float barX = lx + num.measureText(frac) + h * 0.14f;
+            progress(c, pal, barX, h * 0.24f, Math.max(h * 0.6f, rx - barX), h * 0.16f,
+                     Math.round(s.todosDone * 100f / s.todosTotal));
+        } else {
+            c.drawText("今日没有安排", lx, h * 0.42f, text(h * 0.2f, pal.inkSoft, true, false));
         }
-
-        // 月相
-        float mr = u * 1.5f;
-        float my = cardY + cardH - mr - u * 0.2f;
-        moon(c, s.moonPhase, lx + mr, my, mr);
-        Paint mp = text(u * 1.0f, INK, true, false);
-        c.drawText(fit(s.moonName == null ? "" : s.moonName, mp, w - lx - mr * 2 - u * 2f),
-                   lx + mr * 2 + u * 0.8f, my - u * 0.05f, mp);
-        eyebrow(c, "LUNAR " + Math.round(s.moonIllum * 100) + "%", u * 0.66f,
-                lx + mr * 2 + u * 0.8f, my + u * 1.1f, BLUE);
-
-        magentaCorner(c, w, h, u);
+        // 热力只取最近 14 天：4×1 的宽度摊 28 格，每格会细到读不出深浅
+        int keep = Math.min(14, s.heat.length);
+        int[] tail = new int[keep];
+        System.arraycopy(s.heat, s.heat.length - keep, tail, 0, keep);
+        heatStrip(c, pal, tail, lx, h * 0.56f, Math.max(h * 0.6f, rx - lx), h * 0.26f);
         return bmp;
     }
 
-    /** 4×2「征途」：日期柱 + 月相 + 塔罗 + 宣告卡进度 */
+    /**
+     * 4×2「征途」：日期柱 + 月相 + 连续天数 | 塔罗 | 宣告卡 + 五维等级 + 今日运势。
+     * v2.6.4 按用户口径把密度提上来 —— 原来右半边只有一行标题加一个百分比，太空。
+     */
     static Bitmap journey(Context ctx, VelvetSnapshot s, int w, int h) {
-        Bitmap bmp = panel(w, h);
+        Pal pal = Pal.of(s);
+        if (compact(w, h)) return journeyCompact(ctx, pal, s, w, h);
+        Bitmap bmp = panel(pal, w, h);
         Canvas c = new Canvas(bmp);
         float u = h / 14f;
-        ghost(c, "JOURNEY", h * 0.46f, w * 0.24f, h * 1.0f, 15);
+        ghost(c, pal, "JOURNEY", h * 0.46f, w * 0.24f, h * 1.0f);
 
-        // 日期柱
+        // 日期柱 + 月相 + 连续天数
         float lx = u * 1.5f;
-        Paint dayP = text(u * 3.6f, BLUE, true, true);
-        c.drawText(s.day == null ? "--" : s.day, lx, u * 4.0f, dayP);
-        eyebrow(c, s.monthEn == null ? "" : s.monthEn, u * 0.82f, lx + u * 0.15f, u * 5.1f, INK);
-        eyebrow(c, s.weekdayEn == null ? "" : s.weekdayEn, u * 0.72f, lx + u * 0.15f, u * 6.1f, INK_SOFT);
-        float mr = u * 1.25f;
-        moon(c, s.moonPhase, lx + mr, u * 8.6f, mr);
-        Paint mp = text(u * 0.86f, INK_SOFT, true, false);
-        c.drawText(fit(s.moonName == null ? "" : s.moonName, mp, u * 5f), lx, u * 11.2f, mp);
+        Paint dayP = text(u * 3.4f, pal.blue, true, true);
+        c.drawText(s.day == null ? "--" : s.day, lx, u * 3.8f, dayP);
+        eyebrow(c, s.monthEn == null ? "" : s.monthEn, u * 0.8f, lx + u * 0.15f, u * 4.85f, pal.ink);
+        eyebrow(c, s.weekdayEn == null ? "" : s.weekdayEn, u * 0.7f, lx + u * 0.15f, u * 5.8f, pal.inkSoft);
+
+        float mr = u * 1.15f;
+        moon(c, pal, s.moonPhase, lx + mr, u * 8.0f, mr);
+        Paint mp = text(u * 0.8f, pal.inkSoft, true, false);
+        c.drawText(fit(s.moonName == null ? "" : s.moonName, mp, u * 4.6f), lx, u * 10.2f, mp);
+
+        // 连续天数：大数字 + 小字，是这块新加的密度
+        Paint stP = text(u * 1.7f, pal.blue, true, true);
+        String st = String.valueOf(s.streak);
+        c.drawText(st, lx, u * 12.4f, stP);
+        c.drawText("天连续", lx + stP.measureText(st) + u * 0.3f, u * 12.3f,
+                   text(u * 0.75f, pal.inkSoft, true, false));
 
         // 塔罗
         float cardH = h * 0.74f, cardW = cardH * 0.63f;
-        float cardX = lx + u * 5.4f;
-        tarotCard(c, ctx, s, cardX, (h - cardH) / 2f, cardW, cardH);
+        float cardX = lx + u * 5.2f;
+        tarotCard(c, ctx, pal, s, cardX, (h - cardH) / 2f, cardW, cardH, false);
 
-        // 宣告卡
-        float px = cardX + cardW + u * 1.5f;
-        float rx = w - u * 1.5f;
+        // 右栏：宣告卡 + 五维 + 运势
+        float px = cardX + cardW + u * 1.4f;
+        float rx = w - u * 1.4f;
         boolean has = s.cardTitle != null && s.cardTitle.length() > 0;
-        eyebrow(c, "CALLING CARD", u * 0.72f, px, u * 3.0f, BLUE);
-        Paint tp = text(u * 1.25f, has ? INK : INK_SOFT, true, true);
-        c.drawText(fit(has ? s.cardTitle : "还没有宣告卡", tp, rx - px), px, u * 5.0f, tp);
+        eyebrow(c, "CALLING CARD", u * 0.68f, px, u * 2.3f, pal.blue);
+        fortuneChip(c, s, rx - u * 4.4f, u * 1.35f, u * 0.85f);
+        Paint tp = text(u * 1.15f, has ? pal.ink : pal.inkSoft, true, true);
+        c.drawText(fit(has ? s.cardTitle : "还没有宣告卡", tp, rx - px), px, u * 4.1f, tp);
         if (has) {
-            Paint pctP = text(u * 2.4f, BLUE, true, true);
+            Paint pctP = text(u * 2.0f, pal.blue, true, true);
             String pct = s.cardPercent + "%";
-            c.drawText(pct, px, u * 8.2f, pctP);
-            progress(c, px, u * 9.2f, rx - px, u * 0.95f, s.cardPercent);
+            c.drawText(pct, px, u * 6.5f, pctP);
+            float barX = px + pctP.measureText(pct) + u * 0.6f;
+            progress(c, pal, barX, u * 5.85f, Math.max(u * 2f, rx - barX), u * 0.85f, s.cardPercent);
         }
 
-        magentaCorner(c, w, h, u);
+        // 五维等级迷你条（只画柱不写名，见 levelBars 注释）
+        eyebrow(c, "PERSONA", u * 0.68f, px, u * 8.6f, pal.blue);
+        Paint lvP = text(u * 0.75f, pal.inkSoft, true, false);
+        int sum = 0;
+        for (int v : s.levels) sum += v;
+        String lvTxt = "合计 Lv." + sum;
+        c.drawText(lvTxt, rx - lvP.measureText(lvTxt), u * 8.6f, lvP);
+        levelBars(c, pal, s.levels.length > 0 ? s.levels : new int[] { 1, 1, 1, 1, 1 },
+                  s.maxLevel, px, u * 9.2f, rx - px, u * 2.4f);
+
+        magentaCorner(c, pal, w, h, u);
+        return bmp;
+    }
+
+    /** 4×1「征途」：日期 | 月相 + 连续 | 迷你塔罗 | 宣告卡百分比 + 进度 / 五维条 */
+    private static Bitmap journeyCompact(Context ctx, Pal pal, VelvetSnapshot s, int w, int h) {
+        Bitmap bmp = panel(pal, w, h);
+        Canvas c = new Canvas(bmp);
+        float pad = h * 0.12f;
+
+        Paint dayP = text(h * 0.52f, pal.blue, true, true);
+        c.drawText(s.day == null ? "--" : s.day, pad * 1.4f, h * 0.66f, dayP);
+        float dw = dayP.measureText(s.day == null ? "--" : s.day);
+        float x = pad * 1.4f + dw + h * 0.1f;
+        eyebrow(c, s.monthEn == null ? "" : s.monthEn, h * 0.15f, x, h * 0.42f, pal.ink);
+        eyebrow(c, s.weekdayEn == null ? "" : s.weekdayEn, h * 0.13f, x, h * 0.64f, pal.inkSoft);
+
+        float mr = h * 0.17f;
+        float mx = x + h * 0.62f;
+        moon(c, pal, s.moonPhase, mx + mr, h * 0.36f, mr);
+        c.drawText(s.streak + "天", mx, h * 0.86f, text(h * 0.19f, pal.inkSoft, true, false));
+
+        float cardH = h - pad * 2, cardW = cardH * 0.63f;
+        float cardX = mx + mr * 2 + h * 0.16f;
+        tarotCard(c, ctx, pal, s, cardX, pad, cardW, cardH, true);
+
+        float px = cardX + cardW + h * 0.16f;
+        float rx = w - pad * 1.6f;
+        boolean has = s.cardTitle != null && s.cardTitle.length() > 0;
+        if (has) {
+            Paint tp = text(h * 0.19f, pal.ink, true, true);
+            c.drawText(fit(s.cardTitle, tp, rx - px), px, h * 0.36f, tp);
+            Paint pctP = text(h * 0.3f, pal.blue, true, true);
+            String pct = s.cardPercent + "%";
+            c.drawText(pct, px, h * 0.82f, pctP);
+            float barX = px + pctP.measureText(pct) + h * 0.12f;
+            progress(c, pal, barX, h * 0.62f, Math.max(h * 0.5f, rx - barX), h * 0.16f, s.cardPercent);
+        } else {
+            // 没有宣告卡就把五维顶上来，别留一片空白
+            eyebrow(c, "PERSONA", h * 0.13f, px, h * 0.32f, pal.blue);
+            levelBars(c, pal, s.levels.length > 0 ? s.levels : new int[] { 1, 1, 1, 1, 1 },
+                      s.maxLevel, px, h * 0.42f, rx - px, h * 0.44f);
+        }
+        return bmp;
+    }
+
+    /**
+     * 2×2「牌与月」。
+     *
+     * v2.6.4 重做：原来是「左卡片 + 右文字栏」，两栏在真正的 2×2 里根本排不开，
+     * 用户实测要拖到 2×3 才不裁。现在改成**牌面满幅铺底 + 底部一条信息带**——
+     * 正方形本来就该给画面，读数压在底带上，2×2 里绰绰有余，也比原来好看得多。
+     * 底带内容：牌名（含逆位）· 今日运势 · 月相名 + 亮面百分比。
+     */
+    static Bitmap tarotFace(Context ctx, VelvetSnapshot s, int w, int h) {
+        Pal pal = Pal.of(s);
+        Bitmap bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+        Canvas c = new Canvas(bmp);
+        float radius = Math.min(w, h) * 0.085f;
+        Path round = new Path();
+        round.addRoundRect(new RectF(0, 0, w, h), radius, radius, Path.Direction.CW);
+        c.save();
+        c.clipPath(round);
+        c.drawColor(pal.bg);
+
+        boolean drawn = s.tarotName != null && s.tarotName.length() > 0;
+        Bitmap art = drawn ? tarotArt(ctx, s.tarotId, w) : null;
+        float barH = h * 0.30f;   // 底部信息带
+
+        if (art != null) {
+            c.save();
+            if (s.tarotReversed) c.rotate(180, w / 2f, h / 2f);
+            float k = Math.max(w / (float) art.getWidth(), h / (float) art.getHeight());
+            Matrix m = new Matrix();
+            m.setScale(k, k);
+            // 牌面是竖构图，人物多在上半部——对齐顶部而不是居中，免得脸被底带压住
+            m.postTranslate((w - art.getWidth() * k) / 2f, Math.min(0, (h - art.getHeight() * k) * 0.28f));
+            c.drawBitmap(art, m, new Paint(Paint.FILTER_BITMAP_FLAG));
+            c.restore();
+        } else {
+            c.drawColor(pal.cyanFaint);
+            ghost(c, pal, "ARCANA", h * 0.3f, -w * 0.04f, h * 0.55f);
+            Paint tp = text(h * 0.13f, pal.inkSoft, true, true);
+            tp.setTextAlign(Paint.Align.CENTER);
+            c.drawText(drawn ? s.tarotName : "今日未抽", w / 2f, h * 0.36f, tp);
+            if (drawn && s.tarotRoman != null) {
+                Paint rp = text(h * 0.2f, pal.blue, true, true);
+                rp.setTextAlign(Paint.Align.CENTER);
+                c.drawText(s.tarotRoman, w / 2f, h * 0.56f, rp);
+            }
+        }
+
+        // 底部信息带：墨色斜顶，压住画面下缘
+        Path bar = new Path();
+        bar.moveTo(0, h - barH + barH * 0.22f);
+        bar.lineTo(w, h - barH);
+        bar.lineTo(w, h);
+        bar.lineTo(0, h);
+        bar.close();
+        c.drawPath(bar, fill(s.dark ? Color.argb(238, 8, 18, 38) : Color.argb(232, 10, 18, 48)));
+
+        float pad = w * 0.06f;
+        float baseY = h - barH * 0.52f;
+        Paint np = text(barH * 0.38f, Color.WHITE, true, true);
+        String nm = drawn ? (s.tarotName + (s.tarotReversed ? "（逆）" : "")) : "今日未抽";
+        // 运势旗在**顶部**右角，不占底带，牌名可以用满整条宽度
+        c.drawText(fit(nm, np, w - pad * 2), pad, baseY, np);
+
+        Paint sub = text(barH * 0.26f, Color.argb(190, 220, 235, 250), true, false);
+        String moonTxt = (s.moonName == null ? "" : s.moonName) + " · " + Math.round(s.moonIllum * 100) + "%";
+        c.drawText(fit(moonTxt, sub, w - pad * 2), pad, h - barH * 0.16f, sub);
+
+        // 今日运势：右上角小旗（运势自带色，读得出吉凶）
+        if (s.fortuneLabel != null && s.fortuneLabel.length() > 0) {
+            fortuneChip(c, s, w - w * 0.30f, pad, h * 0.075f);
+        }
+        // 罗马数字签：左上
+        if (art != null && s.tarotRoman != null && s.tarotRoman.length() > 0) {
+            Paint rp = text(h * 0.07f, Color.WHITE, true, true);
+            float bw = rp.measureText(s.tarotRoman) + w * 0.1f;
+            float bh = h * 0.105f;
+            slab(c, pad * 0.7f, pad * 0.7f, pad * 0.7f + bw, pad * 0.7f + bh, bh * 0.3f, pal.blue);
+            c.drawText(s.tarotRoman, pad * 0.7f + w * 0.05f, pad * 0.7f + bh * 0.74f, rp);
+        }
+        c.restore();
         return bmp;
     }
 }
