@@ -36,6 +36,7 @@
  */
 
 import { pb, getUserId } from './pocketbase';
+import { watchDanmaku } from './danmakuWatch';
 import type { ThemeType } from '@/types';
 
 export type DanmakuTheme = 'blue' | 'yellow' | 'red';
@@ -111,7 +112,10 @@ export const submitDanmaku = async (text: string, theme: DanmakuTheme): Promise<
   const v = validateDanmaku(text);
   if (!v.ok) throw new Error(v.reason ?? '内容不合法');
   try {
-    await pb.collection('danmaku').create({ text: text.trim(), theme, status: 'pending', isSeed: false, reportCount: 0 });
+    const rec = await pb.collection('danmaku').create({ text: text.trim(), theme, status: 'pending', isSeed: false, reportCount: 0 });
+    // 记下自己这条的 id，供开 App 时自查是否过审（FS4 短期 C 路线）。
+    // 匿名不受影响：id 只留在本机，服务端仍然不知道谁写了哪条。
+    watchDanmaku(String(rec.id ?? ''), text.trim());
   } catch (err) {
     throw new Error(describePbError(err));
   }

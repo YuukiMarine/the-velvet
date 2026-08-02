@@ -81,6 +81,11 @@ export const DanmakuCompose = ({ isOpen, onClose, forceDark }: Props) => {
           <p className="text-sm leading-relaxed text-gray-700 dark:text-gray-200">
             已送出。过审后，它会出现在同样卡住的人面前。
           </p>
+          {/* 说清楚"什么时候会知道结果"——不然用户只能反复回来看有没有变化。
+              过审提醒走开 App 时自查（FS4 C 路线：danmaku 匿名，服务端不知道该推给谁） */}
+          <p className="mt-1.5 text-[11px] leading-relaxed text-gray-400 dark:text-gray-500">
+            过审后下次打开时会告诉你。
+          </p>
           <button
             type="button"
             onClick={close}
