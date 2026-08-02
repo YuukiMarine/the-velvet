@@ -39,6 +39,17 @@ class VelvetSnapshot {
     String cardTitle;     // null = 没有在途宣告卡
     int cardPercent;
 
+    /** 当前连续天数（与首页同口径） */
+    int streak;
+    /** 五项属性等级 + 该档满级；**刻意不带属性名**（用户自定义、可能私密，而组件摊在桌面上） */
+    int[] levels = new int[0];
+    int maxLevel = 5;
+    /** 今日运势档（大吉/中吉/小吉/凶）与它的强调色；null = 今天还没抽 */
+    String fortuneLabel;
+    int fortuneAccent = Color.parseColor("#D4AF37");
+    /** 夜间模式：组件读不到 CSS，只能跟着快照走 */
+    boolean dark;
+
     String channel = "neutral";
     int accent = Color.parseColor("#6366f1");
 
@@ -90,6 +101,22 @@ class VelvetSnapshot {
                 s.cardPercent = c.optInt("percent", 0);
             }
 
+            s.streak = o.optInt("streak", 0);
+            s.maxLevel = Math.max(1, o.optInt("maxLevel", 5));
+            JSONArray lv = o.optJSONArray("levels");
+            if (lv != null) {
+                s.levels = new int[lv.length()];
+                for (int i = 0; i < lv.length(); i++) s.levels[i] = lv.optInt(i, 0);
+            }
+            JSONObject f = o.optJSONObject("fortune");
+            if (f != null) {
+                s.fortuneLabel = f.optString("label", null);
+                try {
+                    s.fortuneAccent = Color.parseColor(f.optString("accent", "#D4AF37"));
+                } catch (IllegalArgumentException ignored) { /* 颜色串脏了用缺省 */ }
+            }
+            s.dark = o.optBoolean("dark", false);
+
             s.channel = o.optString("channel", "neutral");
             try {
                 s.accent = Color.parseColor(o.optString("accent", "#6366f1"));
@@ -101,42 +128,5 @@ class VelvetSnapshot {
             s.present = false;
         }
         return s;
-    }
-
-    // ── 频道配色（与 Web 端 CSS 变量同值；组件读不到 CSS，只能各写一份）──
-
-    /** 卡面底色 */
-    int faceColor() {
-        switch (channel) {
-            case "p5": return Color.parseColor("#f0e9df");   // P5R 纸面
-            case "p4": return Color.parseColor("#fff3c4");   // P4 浅黄
-            case "p3": return Color.parseColor("#ffffff");
-            default:   return Color.parseColor("#ffffff");
-        }
-    }
-
-    /** 正文字色 */
-    int inkColor() {
-        switch (channel) {
-            case "p5": return Color.parseColor("#050505");
-            case "p4": return Color.parseColor("#131313");
-            case "p3": return Color.parseColor("#0a1230");
-            default:   return Color.parseColor("#111827");
-        }
-    }
-
-    /** 次级字色 / 空热力格 */
-    int mutedColor() {
-        switch (channel) {
-            case "p5": return Color.parseColor("#6b6862");
-            case "p4": return Color.parseColor("#9a8a4a");
-            case "p3": return Color.parseColor("#3d4a66");
-            default:   return Color.parseColor("#6b7280");
-        }
-    }
-
-    /** 组件外框圆角是不是要压成直角（P5 的纸片语言不用圆角） */
-    boolean squareCorners() {
-        return "p5".equals(channel);
     }
 }

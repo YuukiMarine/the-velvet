@@ -20,8 +20,9 @@
  */
 import { useAppStore, toLocalDateKey } from '@/store';
 import { themeToChannel } from '@/ui/channel';
-import { TAROT_BY_ID } from '@/constants/tarot';
+import { TAROT_BY_ID, FORTUNE_META } from '@/constants/tarot';
 import { isNative } from '@/utils/native';
+import { calcCurrentStreak, streakDates } from '@/utils/streak';
 
 /** 热力图取多少天（4×2 组件一行放得下 ~28 格） */
 const HEAT_DAYS = 28;
@@ -47,6 +48,19 @@ export interface WidgetSnapshot {
   /** 最近 HEAT_DAYS 天每天的记录条数（旧 → 新） */
   heat: number[];
   card: { title: string; percent: number } | null;
+  /** 当前连续天数（与首页 / 菜单同一口径：补记条目不算） */
+  streak: number;
+  /**
+   * 五项属性的等级 + 该档满级。**只放数字、不放属性名**——
+   * 属性名是用户自己起的，可能带私人色彩，而组件是摊在桌面上给旁人看的。
+   * 组件把它画成五根迷你条，读的是"能力剖面"，不泄露任何文字。
+   */
+  levels: number[];
+  maxLevel: number;
+  /** 今日运势（首页「今日仪式」已经显示的那一档） */
+  fortune: { label: string; accent: string } | null;
+  /** 夜间模式：组件读不到 CSS，只能跟着快照走 */
+  dark: boolean;
   channel: 'p3' | 'p4' | 'p5' | 'neutral';
   /** 强调色 hex（原生侧描边/进度条用） */
   accent: string;
@@ -116,6 +130,13 @@ export function buildWidgetSnapshot(): WidgetSnapshot {
     moon: moonOf(now),
     heat,
     card: hero && prog ? { title: hero.title, percent: Math.round((prog.overallProgress ?? 0) * 100) } : null,
+    streak: calcCurrentStreak(streakDates(s.activities)),
+    levels: s.attributes.slice(0, 5).map(a => a.level),
+    maxLevel: Math.max(1, s.settings.levelThresholds?.length ?? 5),
+    fortune: dd?.fortune
+      ? { label: FORTUNE_META[dd.fortune].label, accent: FORTUNE_META[dd.fortune].accent }
+      : null,
+    dark: !!s.settings.darkMode,
     channel,
     accent: channel === 'neutral' ? (s.settings.customThemeColor || ACCENT.neutral) : ACCENT[channel],
   };

@@ -54,13 +54,14 @@ abstract class VelvetWidgetBase extends AppWidgetProvider {
         if (hDp <= 0) hDp = 110;
 
         int[] px = VelvetP3.canvasSize(ctx, wDp, hDp);
+        VelvetP3.Pal pal = VelvetP3.Pal.of(s);
         try {
             // 从没打开过 App / 快照读不出来：说清楚下一步，别只给一块空白
-            Bitmap bmp = s.present ? face(ctx, s, px[0], px[1]) : VelvetP3.notSynced(px[0], px[1]);
+            Bitmap bmp = s.present ? face(ctx, s, px[0], px[1]) : VelvetP3.notSynced(pal, px[0], px[1]);
             if (bmp != null) rv.setImageViewBitmap(R.id.velvet_face, bmp);
         } catch (Throwable t) {
             // 画崩了也要给出一块能读的组件，而不是让启动器显示「加载中」的灰块
-            try { rv.setImageViewBitmap(R.id.velvet_face, VelvetP3.notSynced(px[0], px[1])); } catch (Throwable ignored) { }
+            try { rv.setImageViewBitmap(R.id.velvet_face, VelvetP3.notSynced(pal, px[0], px[1])); } catch (Throwable ignored) { }
         }
 
         rv.setOnClickPendingIntent(R.id.velvet_root, launchApp(ctx));

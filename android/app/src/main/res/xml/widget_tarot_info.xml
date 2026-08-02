@@ -1,8 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 2×2 -->
+<!-- 2×2「牌与月」。
+     updatePeriodMillis 给 0：刷新完全由 App 写快照后的广播驱动，
+     系统周期刷新最短也要 30 分钟，对"勾完任务立刻要看到"毫无用处，白耗电。
+
+     minWidth/minHeight = 放置时的默认尺寸；minResizeWidth/Height = 用户能拖到多小。
+     两块 4×2 的 minResizeHeight 给到 40dp，才允许被压成 4×1 ——
+     VelvetP3.compact() 会按宽高比换成单行版式，不是把同一套版面压扁。 -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
     android:minWidth="110dp"
     android:minHeight="110dp"
+    android:minResizeWidth="100dp"
+    android:minResizeHeight="100dp"
     android:targetCellWidth="2"
     android:targetCellHeight="2"
     android:updatePeriodMillis="0"
