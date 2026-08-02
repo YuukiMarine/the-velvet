@@ -37,6 +37,8 @@ const Account = lazy(() => import('@/pages/Account').then(m => ({ default: m.Acc
 const Ledger = lazy(() => import('@/pages/Ledger').then(m => ({ default: m.Ledger })));
 import { BattleArena } from '@/components/battle/BattleArena';
 import { BigDealClearCutIn } from '@/components/bigdeal/BigDealClearCutIn';
+import { WishProgressCutIn } from '@/components/wish/WishProgressCutIn';
+import { WishProposalDialog } from '@/components/wish/WishProposalDialog';
 // F6 黑猫对话窗（portal 到 body 的全屏 overlay；入口在 Sidebar / BottomNav 中央 ◈）
 import { NavigatorWindow } from '@/components/navigator/NavigatorWindow';
 import { primeCurrentTheme } from '@/utils/feedback';
@@ -708,6 +710,10 @@ function App() {
           <GlobalCallingCardCutIn />
           {/* BIG DEAL 收官结算屏（批4）：collapseBigDeal 落库后全局弹出，不依赖当前页面 */}
           <BigDealClearCutIn />
+          {/* 愿望进度（PRD_V2.6 §8）：任务完成后的「又近了多少」弹窗 +
+              黑猫在谈话里提议改数值的确认卡。两者都可能在任意页面触发，故挂顶层 */}
+          <WishProgressCutIn />
+          <WishProposalDialog />
         </div>
       </div>
     </div>

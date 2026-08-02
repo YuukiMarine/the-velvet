@@ -19,6 +19,8 @@ import { useAppStore } from '@/store';
 import type { Wish } from '@/types';
 import { DanmakuCompose } from '@/components/danmaku/DanmakuCompose';
 import { WishFulfillDialog } from './WishFulfillDialog';
+import { WishPanel } from './WishPanel';
+import { WishRing } from './WishRing';
 import { BufferedTextInput } from '@/components/ui/BufferedTextInput';
 import { triggerLightHaptic } from '@/utils/feedback';
 
@@ -42,7 +44,7 @@ export function WishBoard({ skin }: { skin: WishBoardSkin }) {
   const wishes = useAppStore(s => s.wishes);
   const settings = useAppStore(s => s.settings);
   const addWish = useAppStore(s => s.addWish);
-  const getWishProgress = useAppStore(s => s.getWishProgress);
+  const getWishRing = useAppStore(s => s.getWishRing);
   const setWishStatus = useAppStore(s => s.setWishStatus);
   const deleteWish = useAppStore(s => s.deleteWish);
 
@@ -51,6 +53,7 @@ export function WishBoard({ skin }: { skin: WishBoardSkin }) {
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const [fulfilling, setFulfilling] = useState<Wish | null>(null);
   const [composeOpen, setComposeOpen] = useState(false);
+  const [panelFor, setPanelFor] = useState<string | null>(null);
 
   const tokens = settings.terminalDanmakuTokens ?? 0;
   // 只显示"在途"愿望；实现/归档的进归档区（Menu → 归档）
@@ -96,7 +99,11 @@ export function WishBoard({ skin }: { skin: WishBoardSkin }) {
         </p>
       ) : (
         active.map((w) => {
-          const times = getWishProgress(w.id);
+          // ring 内部已经数过一遍挂载记录，别再调一次 getWishProgress——
+          // 那是个 O(全部活动) 的扫描，每条愿望每帧跑两遍纯属浪费
+          const ring = getWishRing(w.id);
+          const times = ring.times;
+          const stepsTotal = w.steps?.length ?? 0;
           return (
             <div
               key={w.id}
@@ -104,12 +111,47 @@ export function WishBoard({ skin }: { skin: WishBoardSkin }) {
               style={{ background: skin.rowBg, borderRadius: skin.radius, clipPath: skin.rowClip }}
             >
               <div className="flex items-start gap-2">
-                <div className="min-w-0 flex-1">
+                {/* 距离环：点它进二级面板（拆子任务 / 重新评估）。
+                    环本身就是这个功能的招牌——「看得见自己在靠近」（§1 核心体验目标） */}
+                <button
+                  type="button"
+                  onClick={() => setPanelFor(w.id)}
+                  aria-label={`打开「${w.title}」的进度面板`}
+                  className="mt-0.5 shrink-0"
+                >
+                  <WishRing
+                    pct={ring.pct}
+                    evaluated={ring.evaluated}
+                    size={36}
+                    color={skin.accent}
+                    track={skin.line}
+                    ink={skin.ink}
+                  />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPanelFor(w.id)}
+                  className="min-w-0 flex-1 text-left"
+                >
                   <div className="truncate text-[14px] font-black" style={{ color: skin.ink }}>{w.title}</div>
+                  {/* 副行按"有没有东西可说"三分支。
+                      别把「还没有记录挂到这里」和「子任务 1/3」拼在一起——
+                      前半句在说这条愿望是空的，后半句在说它有进展，读起来自相矛盾 */}
                   <div className="mt-0.5 text-[11px] font-bold" style={{ color: times > 0 ? skin.accent : skin.sub }}>
-                    {times > 0 ? `已完成相关任务 ${times} 次` : '还没有记录挂到这里'}
+                    {times > 0 ? (
+                      <>
+                        已完成相关任务 {times} 次
+                        {stepsTotal > 0 && (
+                          <span style={{ color: skin.sub }}> · 子任务 {ring.done}/{stepsTotal}</span>
+                        )}
+                      </>
+                    ) : stepsTotal > 0 ? (
+                      `子任务 ${ring.done}/${stepsTotal}`
+                    ) : (
+                      '还没有记录挂到这里'
+                    )}
                   </div>
-                </div>
+                </button>
                 <button
                   type="button"
                   onClick={() => setMenuFor(menuFor === w.id ? null : w.id)}
@@ -131,6 +173,14 @@ export function WishBoard({ skin }: { skin: WishBoardSkin }) {
                     className="overflow-hidden"
                   >
                     <div className="mt-2 flex gap-1.5 border-t pt-2" style={{ borderColor: skin.line }}>
+                      <button
+                        type="button"
+                        onClick={() => { setMenuFor(null); setPanelFor(w.id); }}
+                        className="flex-1 py-1.5 text-[11px] font-black"
+                        style={{ border: `1px solid ${skin.accent}`, color: skin.accent, borderRadius: skin.radius }}
+                      >
+                        拆子任务
+                      </button>
                       <button
                         type="button"
                         onClick={() => { setMenuFor(null); setFulfilling(w); }}
@@ -204,6 +254,7 @@ export function WishBoard({ skin }: { skin: WishBoardSkin }) {
       )}
 
       <WishFulfillDialog wish={fulfilling} onClose={() => setFulfilling(null)} />
+      <WishPanel wishId={panelFor} onClose={() => setPanelFor(null)} />
       <DanmakuCompose isOpen={composeOpen} onClose={() => setComposeOpen(false)} />
     </div>
   );

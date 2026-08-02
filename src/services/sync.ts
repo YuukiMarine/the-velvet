@@ -291,6 +291,7 @@ const ISO_STRING_KEYS = new Set<string>([
   'lastCounselStartedAt',
   'cloudConsentAt',
   'defeatedAt',        // 战场纪念条目（ISO string 口径）
+  'at',                // WishProgressPoint.at（PRD_V2.6 §8；全库唯一叫 at 的字段）
 ]);
 
 /**

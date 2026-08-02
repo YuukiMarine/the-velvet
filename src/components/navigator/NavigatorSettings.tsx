@@ -140,6 +140,26 @@ export const NavigatorSettings = () => {
         </div>
       </div>
 
+      {/* ── 愿望进度的主动提议（PRD_V2.6 §8）──
+          关掉之后它照旧读得到愿望（聊天时能自然接话），只是不再弹确认卡 */}
+      <div className="flex items-start justify-between gap-3 rounded-xl border border-gray-200 px-4 py-3 dark:border-gray-700">
+        <div>
+          <div className="text-sm font-semibold text-gray-700 dark:text-gray-200">主动提议更新愿望进度</div>
+          <p className="mt-0.5 text-xs leading-relaxed text-gray-400 dark:text-gray-500">
+            你在对话里提到某个愿望有推进时，它会问一句「要不要更新进度」。
+            只在<b>明确指向单个愿望且确有推进</b>时才问，同一个愿望 6 小时内至多一次；
+            落库永远要你点确认。关掉后它照旧知道你的愿望，只是不再主动问。
+          </p>
+        </div>
+        <div className="mt-0.5 shrink-0">
+          <Toggle
+            checked={settings.wishAgentProposals !== false}
+            onChange={(v) => updateSettings({ wishAgentProposals: v })}
+            aria-label="主动提议更新愿望进度"
+          />
+        </div>
+      </div>
+
       {/* ── 人格管理 ── */}
       <div className="flex items-center gap-2 pb-2 border-b border-gray-200 dark:border-gray-700/80">
         <span className="text-base">◈</span>

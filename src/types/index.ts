@@ -78,6 +78,33 @@ export interface TerminalStepHistoryEntry {
 }
 
 /**
+ * 愿望进度评估的一次落点（PRD_V2.6 §8）。
+ *
+ * 为什么留轨迹而不只存一个当前值：用户要看的是**「涨了多少」**，
+ * 不是"现在是多少"——没有上一次就算不出这一次的意义。
+ */
+export interface WishProgressPoint {
+  /** ISO 时间戳 */
+  at: string;
+  /** 落点百分比 0–100 */
+  pct: number;
+  /** 相对上一次的变化量（首次评估 = pct 本身） */
+  delta: number;
+  /** 一句话依据（AI 给的理由 / 手动填的备注） */
+  reason?: string;
+  source: WishProgressSource;
+}
+
+/**
+ * 进度是谁定的：
+ *   ai     = 面板里主动点「重新评估」，AI 出数
+ *   local  = 无 API Key 时的离线估算（子步占比 + 挂载次数）
+ *   agent  = 黑猫在谈话里提议、**用户点了确认**后写入（绝不静默写）
+ *   manual = 用户自己拖的
+ */
+export type WishProgressSource = 'ai' | 'local' | 'agent' | 'manual';
+
+/**
  * 启动素材库条目。parentId 为空 → 一件卡住的事 / 想做到的方向；
  * 否则为该素材下的小步骤（可手动输入，或由 AI 拆分而来）。
  */
@@ -108,6 +135,25 @@ export interface Wish {
   source: 'manual' | 'ai';
   createdAt: Date;
   archivedAt?: Date;
+
+  // ── 愿望进度（PRD_V2.6 §8）──────────────────────
+  /**
+   * 愿望自己的子任务。结构直接复用 TodoStep，但语义不同：
+   * **勾掉不加点、不进今日任务列表**——愿望是"远处的灯"，不是今天要打的卡。
+   * 想要加点就去今日任务建一条挂到这个愿望上（Todo.wishId）。
+   */
+  steps?: TodoStep[];
+  /**
+   * 「离这个愿望还有多远」的百分比 0–100。
+   * undefined = 从未评估过（环显示未评估态，不是 0%——两者意思差很远）。
+   */
+  progressPct?: number;
+  /** 上次落点的一句话依据 */
+  progressBasis?: string;
+  progressUpdatedAt?: Date;
+  progressSource?: WishProgressSource;
+  /** 评估轨迹（只留最近 12 条，够画小史也不撑爆同步体积） */
+  progressHistory?: WishProgressPoint[];
 }
 
 export type TodoFrequency = 'single' | 'count';
@@ -330,6 +376,17 @@ export interface Settings {
    * 点标题切换，与 homeSkyMode 同口径——切换要被记住，所以进 settings 而不是组件 state。
    */
   homeTaskPane?: 'todos' | 'wishes';
+  /**
+   * 黑猫在谈话里主动提议更新愿望进度（PRD_V2.6 §8）。默认开。
+   * 关掉之后 Agent 只读不提——读取愿望进度作为聊天上下文一直是允许的，
+   * 这个开关管的只是"要不要主动弹确认卡"。
+   */
+  wishAgentProposals?: boolean;
+  /**
+   * 任务完成后自动重估愿望进度并弹窗（PRD_V2.6 §8）。默认开。
+   * 关掉后进度只在面板里手动点「重新评估」时才动。
+   */
+  wishAutoEvaluate?: boolean;
   /** 'qweather'（默认，和风）| 'openmeteo'（免 Key 兜底） */
   weatherProvider?: 'qweather' | 'openmeteo';
   /** 和风 Key。**不上云**（与城市同组豁免），只进本地备份 */
@@ -768,6 +825,34 @@ export interface BigDealClearPayload {
   sp: number;
   /** 触及属性（收官记录里各 +1） */
   attrs: AttributeId[];
+}
+
+/** 任务完成后的愿望进度弹窗载荷（PRD_V2.6 §8） */
+export interface WishProgressCutPayload {
+  wishId: string;
+  wishTitle: string;
+  /** 新落点 */
+  pct: number;
+  /** 相对上次涨了多少（可能为 0——AI 认为这次没推近，照实说） */
+  delta: number;
+  reason?: string;
+  source: WishProgressSource;
+  /** 挂载记录总次数，弹窗里作副信息 */
+  times: number;
+}
+
+/**
+ * 黑猫谈话中的进度提议（PRD_V2.6 §8）。
+ * **只是提议**——必须用户点确认才写库，任何情况下不静默落数。
+ */
+export interface WishProposalPayload {
+  wishId: string;
+  wishTitle: string;
+  /** 现值（undefined = 从未评估过） */
+  fromPct?: number;
+  /** 建议落点 */
+  toPct: number;
+  reason?: string;
 }
 
 // 本周目标

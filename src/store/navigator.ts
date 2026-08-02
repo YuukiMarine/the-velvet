@@ -24,6 +24,7 @@ import {
 import {
   buildWarmthLine, finalizeStaleSessions, getProfile, lazySweepMemos, maybeCompactLive, recallMemories,
 } from '@/utils/navigatorMemory';
+import { buildWishContextLine, maybeProposeWishProgress } from '@/utils/navigatorWishProgress';
 import { BUILTIN_NAVIGATOR_PRESETS, resolveNavigatorPreset } from '@/constants/navigatorPresets';
 import type { NavigatorMessageRow, NavigatorPreset } from '@/types';
 
@@ -335,6 +336,7 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
         profile ? `【用户画像（长期）】${profile}` : '',
         recall.lines.length ? `【关于用户的记忆】\n${recall.lines.join('\n')}` : '',
         buildWarmthLine(),
+        buildWishContextLine(), // 愿望与距离（PRD_V2.6 §8 的"读取"侧；无愿望时返回空串被 filter 掉）
       ].filter(Boolean);
       const persona = get().activePreset().personaPrompt;
       const immersive = !!useAppStore.getState().settings.navigatorImmersive && !isD0();
@@ -366,6 +368,7 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
         result.drafts.forEach((d) => get().pushCard(d));
         set({ phase: 'idle' });
         void runLiveCompact();
+        void maybeProposeWishProgress(batch); // 愿望进度提议（六道闸在模块内，PRD_V2.6 §8）
         return;
       }
 
@@ -386,6 +389,7 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
       result.drafts.forEach((d) => get().pushCard(d));
       set({ phase: 'idle' });
       void runLiveCompact(); // 阈值泵（32k/120 条才动手，平时空转）
+      void maybeProposeWishProgress(batch); // 愿望进度提议（六道闸在模块内，PRD_V2.6 §8）
     } catch (e) {
       if (gen !== generation) return; // 被打断的 abort，静默
       get().pushCat(e instanceof Error && e.message.includes('超时')
