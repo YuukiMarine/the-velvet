@@ -1,5 +1,6 @@
 import { useAppStore } from '@/store';
 import type { ThemeType } from '@/types';
+import { synthesize } from '@/utils/soundSynth';
 
 type FeedbackKind = 'theme_switch' | 'nav' | 'success' | 'level';
 
@@ -94,19 +95,33 @@ async function primeBuffer(src: string): Promise<AudioBuffer | null> {
   const ctx = getContext();
   if (!ctx) return null;
 
+  /**
+   * 拿不到文件就现场合成（soundSynth.ts）。
+   *
+   * 全站 25 个 `playSound('/xxx.mp3')` 请求的文件 public/ 下一个都没有，
+   * 于是这里一直走「404 → 静默 return null」，整套音效从来没响过，
+   * 而且失败被吞掉，连报错都看不见（用户上报「音效似乎没有装载」）。
+   *
+   * **fetch 仍然排在前面**：哪天真把 mp3 放进 public/，它自动接管，
+   * 合成只是兜底。两条路都失败才真的没声音。
+   */
   const promise = (async () => {
     try {
       const resp = await fetch(src);
-      if (!resp.ok) return null;
-      const arrayBuffer = await resp.arrayBuffer();
-      const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
-      touchLRU(src, audioBuffer);
-      return audioBuffer;
+      if (resp.ok) {
+        const arrayBuffer = await resp.arrayBuffer();
+        const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+        touchLRU(src, audioBuffer);
+        return audioBuffer;
+      }
     } catch {
-      return null;
+      // 网络异常 / 解码失败 —— 一律落到下面的合成兜底
     } finally {
       _fetchPromise.delete(src);
     }
+    const synth = synthesize(ctx, src);
+    if (synth) touchLRU(src, synth);
+    return synth;
   })();
 
   _fetchPromise.set(src, promise);
