@@ -73,8 +73,8 @@ const GROUPS: Group[] = [
   },
   {
     id: 'navigator',
-    label: '黑猫 · 人格与记忆',
-    hint: '自定义人格 / 它记住的关于你的事 —— 默认只存本地；勾选后换设备黑猫还认得你。聊天原文永不上云',
+    label: '助手 · 人格与记忆',
+    hint: '自定义人格 / 它记住的关于你的事 —— 默认只存本地；勾选后换设备助手还认得你。聊天原文永不上云',
     field: { settingKey: 'syncNavigatorToCloud', defaultWhenUndefined: false },
   },
 ];

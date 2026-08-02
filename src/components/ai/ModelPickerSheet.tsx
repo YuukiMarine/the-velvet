@@ -158,7 +158,7 @@ export const ModelPickerSheet = ({ mode, isOpen, onClose }: {
         )}
         {audio && (
           <p className="text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">
-            <b>语音转写</b>用这档（走 /audio/transcriptions 端点）。配好后黑猫输入栏会出现话筒，
+            <b>语音转写</b>用这档（走 /audio/transcriptions 端点）。配好后助手输入栏会出现话筒，
             按住说话、松手转成文字填进输入框——发不发还是你决定。
           </p>
         )}
