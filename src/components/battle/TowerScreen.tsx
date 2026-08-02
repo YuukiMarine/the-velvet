@@ -19,7 +19,8 @@ import { rollPrepDraw } from '@/battle/preparation';
 import { buildMirrorQuiz, type MirrorQuestion } from '@/battle/quiz';
 import { playSound } from '@/utils/feedback';
 import { useBackHandler } from '@/utils/useBackHandler';
-import { TowerMap } from '@/components/battle/TowerMap';
+import { TowerMap, TowerMapMini } from '@/components/battle/TowerMap';
+import { useBoldness } from '@/utils/boldness';
 import { TowerEventModal, TowerEchoModal, TowerQuizModal } from '@/components/battle/TowerModals';
 import { IconTower, IconEvilEye, slantPoly, NoiseLayer, paletteFor, ABYSS_PALETTE, SlantGauge, NodeGlyph } from '@/components/battle/warKit';
 
@@ -35,6 +36,62 @@ interface Props {
   interactive: boolean;
 }
 
+/**
+ * 「选择前路」旁的旋转 3D 角标（FS6 §2）。
+ *
+ * 形是一枚地图标记（菱形罗盘 + 中心孔），绕 Y 轴匀速缓转。
+ * 侧面用一片同形的暗色板撑出厚度——只转一个平面的话，转到侧脸会瞬间消失，
+ * 那就不是 3D 是"闪烁"。
+ * D0 直接出静态终帧（红线：装饰动效在 D0 全部静默）。
+ */
+function TowerCompass3D({ accent, accentRgb }: { accent: string; accentRgb: string }) {
+  const anim = useBoldness();
+  const Face = ({ back = false }: { back?: boolean }) => (
+    <svg
+      viewBox="0 0 24 24"
+      width={18}
+      height={18}
+      aria-hidden
+      style={{
+        position: 'absolute',
+        inset: 0,
+        transform: back ? 'rotateY(180deg) translateZ(2px)' : 'translateZ(2px)',
+        backfaceVisibility: 'hidden',
+      }}
+    >
+      <polygon points="12,1.5 22.5,12 12,22.5 1.5,12" fill={`rgba(${accentRgb}, 0.24)`} stroke={accent} strokeWidth="1.6" />
+      <circle cx="12" cy="12" r="3.4" fill="none" stroke={accent} strokeWidth="1.6" />
+    </svg>
+  );
+
+  return (
+    <span
+      aria-hidden
+      className="relative inline-block shrink-0"
+      style={{ width: 18, height: 18, perspective: 90 }}
+    >
+      <motion.span
+        className="absolute inset-0"
+        style={{ transformStyle: 'preserve-3d' }}
+        animate={anim ? { rotateY: 360 } : undefined}
+        transition={anim ? { duration: 5.5, repeat: Infinity, ease: 'linear' } : undefined}
+      >
+        <Face />
+        <Face back />
+        {/* 厚度：夹在两面中间的一片暗板，转到侧脸时它顶住，不至于整枚消失 */}
+        <span
+          className="absolute inset-0"
+          style={{
+            background: `rgba(${accentRgb}, 0.5)`,
+            clipPath: 'polygon(50% 4%, 96% 50%, 50% 96%, 4% 50%)',
+            transform: 'translateZ(0px)',
+          }}
+        />
+      </motion.span>
+    </span>
+  );
+}
+
 export function TowerScreen({ open, onClose, onDescend, onRequestBattle, onToast, interactive }: Props) {
   const {
     stratum, battleState, shadow,
@@ -48,6 +105,8 @@ export function TowerScreen({ open, onClose, onDescend, onRequestBattle, onToast
   const [chestReveal, setChestReveal] = useState<{ drops: LootDrop[]; sp: number } | null>(null);
   // R18 #1（A 案）：状态胶囊点开的作战简报抽屉（buff/弹药/光辉/下塔收进来）
   const [briefOpen, setBriefOpen] = useState(false);
+  // FS6 §1：塔图默认收起（缩略台阶 + 钉住的心魔层），点「展开」才出完整长卷
+  const [mapOpen, setMapOpen] = useState(false);
   const eventPostRef = useRef<{ skip?: boolean; reroll?: boolean; fight?: boolean; quizReward?: number }>({});
 
   useBackHandler(open, () => {
@@ -342,17 +401,51 @@ export function TowerScreen({ open, onClose, onDescend, onRequestBattle, onToast
         </AnimatePresence>
       </div>
 
-      {/* ── 塔图 ── */}
-      <div className="flex-1 min-h-0 px-4">
-        <TowerMap stratum={stratum} interactive={interactive} onSelectNode={handleSelectNode} fill />
+      {/* ── 塔图（FS6 §1：默认收起，点开才是完整长卷）──
+          收起态一屏答完两个问题：我在哪（台阶三层）、顶在哪（钉住的心魔层）。
+          全图仍在，只是从"唯一形态"降级成"二级展开态"。 */}
+      <div className={`min-h-0 px-4 ${mapOpen ? 'flex-1' : 'flex-shrink-0'}`}>
+        {mapOpen ? (
+          <TowerMap stratum={stratum} interactive={interactive} onSelectNode={handleSelectNode} fill />
+        ) : (
+          <TowerMapMini
+            stratum={stratum}
+            interactive={interactive}
+            onSelectNode={handleSelectNode}
+            onExpand={() => { setMapOpen(true); playSound('/ui-menu.mp3', 0.4); }}
+          />
+        )}
       </div>
+      {mapOpen && (
+        <div className="flex-shrink-0 px-4 pt-1.5">
+          <button
+            type="button"
+            onClick={() => { setMapOpen(false); playSound('/ui-menu.mp3', 0.4); }}
+            className="w-full py-1.5 text-[10px] font-black tracking-[0.22em]"
+            style={{
+              clipPath: slantPoly(8),
+              background: `rgba(${pal.accentRgb}, 0.1)`,
+              color: `rgba(${pal.accentRgb}, 0.85)`,
+              boxShadow: `inset 0 0 0 1px rgba(${pal.accentRgb}, 0.34)`,
+            }}
+          >
+            收起塔图 ▴
+          </button>
+        </div>
+      )}
 
       {/* ── 底部（R18 B 案）：房间卡行动条——下一层的选择摆在拇指区 ── */}
       <div className="flex-shrink-0 px-3 pt-1.5" style={{ paddingBottom: 'calc(0.8rem + env(safe-area-inset-bottom))' }}>
         {interactive ? (
           nextNodes.length > 0 ? (
             <>
-              <p className="mb-1 px-1 text-[9px] font-black tracking-[0.34em] text-indigo-200/45">选 择 前 路</p>
+              {/* FS6 §2：标题居中 + 旁边一枚持续缓转的 3D 角标（地图符号语义）。
+                  透视放在外层、rotateY 放在内层——两者同层的话浏览器会把
+                  perspective 当成"每帧重算的父级变换"，转起来会抖。 */}
+              <div className="mb-1.5 flex items-center justify-center gap-2">
+                <TowerCompass3D accent={pal.accent} accentRgb={pal.accentRgb} />
+                <p className="text-[9px] font-black tracking-[0.34em] text-indigo-200/60">选 择 前 路</p>
+              </div>
               <div className="flex gap-2">
                 {nextNodes.map(node => {
                   const danger = node.type === 'boss';
