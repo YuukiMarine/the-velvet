@@ -250,6 +250,11 @@ export interface NavigatorSnapshot {
   tarotCardName?: string;
   activityCountToday: number;
   terminalStepTitle?: string;
+  /**
+   * 离开了多少天（≥7 才有值；PRD_V2.6 §12）。
+   * 猫在这种时候要说的第一句话不是"今天任务还剩几条"，是"你可算回来了"。
+   */
+  daysAway?: number;
 }
 
 export function buildSnapshot(): NavigatorSnapshot {
@@ -268,14 +273,40 @@ export function buildSnapshot(): NavigatorSnapshot {
     tarotDrawn: !!tarot,
     tarotCardName: tarot ? TAROT_BY_ID[tarot.cardId]?.name : undefined,
     activityCountToday,
+    daysAway: daysAwayNow(s.settings.lastOpenedAt),
     // terminalStepTitle 字段保留在类型上（navigatorIntent 仍引用），终端退役后恒 undefined
   };
+}
+
+/**
+ * 距上次打开过去了几天；不足 7 天返回 undefined（PRD_V2.6 §12）。
+ *
+ * 注意读的是 lastOpenedAt 而不是"最后一条记录"：天天打开却什么都不记的人**没有离开**，
+ * 对他说「我还以为你不来了」是荒唐的。
+ */
+function daysAwayNow(lastOpenedAt: string | undefined): number | undefined {
+  if (!lastOpenedAt) return undefined;
+  const d = Math.floor((Date.now() - new Date(lastOpenedAt).getTime()) / 86400000);
+  return Number.isFinite(d) && d >= 7 ? d : undefined;
 }
 
 const pick = (lines: string[]) => lines[Math.floor(Math.random() * lines.length)];
 
 /** 每日首开的完整问候（模板层：无 Key / 有 Key Batch1 统一用它；Batch2 有 Key 换 AI 生成） */
 export function buildDailyGreeting(snap: NavigatorSnapshot): string {
+  // 久别归来：先说想念，别急着报今天的账（PRD_V2.6 §12）。
+  // 只说"我惦记着"，**不催、不问为什么、不提补记**——补记那件事回归面板已经问过一次了，
+  // 猫再问第二遍就成了追债。
+  if (snap.daysAway && snap.daysAway >= 7) {
+    const d = snap.daysAway;
+    return pick([
+      `${snap.userName}……你可算回来了。${d} 天，我数着的。`,
+      `哟。${d} 天没见，我还以为你把这间屋子忘了。\n没忘就好。坐。`,
+      `${d} 天。灯我一直没关。\n不用解释去哪了——回来就行。`,
+      `你回来了。${d} 天里我把你的东西都按原样放着，一件没动。`,
+    ]);
+  }
+
   const hello = snap.hour < 5
     ? pick([`这个点还醒着？行吧，${snap.userName}，正好我也睡不着。`, `凌晨了。夜里想说的话，我都接着。`])
     : snap.hour < 11

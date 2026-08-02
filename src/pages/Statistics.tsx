@@ -1,7 +1,7 @@
 import { motion, AnimatePresence } from 'motion/react';
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useAppStore, toLocalDateKey } from '@/store';
-import { calcMaxStreak } from '@/utils/streak';
+import { calcMaxStreak, streakDates } from '@/utils/streak';
 import { BackButton } from '@/components/BackButton';
 import { PageTitle } from '@/components/PageTitle';
 import { PagePlane, PlaneLevel } from '@/components/PagePlane';
@@ -520,7 +520,7 @@ export const Statistics = () => {
   const totalRecords = activities.length;
   const uniqueDays   = new Set(activities.map(a => new Date(a.date).toDateString())).size;
 
-  const maxStreak = calcMaxStreak(activities.map(a => a.date));
+  const maxStreak = calcMaxStreak(streakDates(activities));
 
   // current streak ending today or yesterday
   const ONE_DAY = 86400000;

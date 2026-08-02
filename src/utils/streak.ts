@@ -1,4 +1,20 @@
 /**
+ * 连续天数的**唯一取数口径**（PRD_V2.6 §12）。
+ *
+ * 补记（`backfilled`）的条目一律不计入连续天数。
+ *
+ * 理由：streak 记的是「没有断过」。如果事后补几条就能把它接上，这个数字
+ * 就再也不代表任何东西了——App 等于对用户撒了个关于他自己历史的谎。
+ * 回归面板上写着"补记不会修复连续天数"，那句承诺就靠这个函数兑现。
+ *
+ * 所有 calcMaxStreak / calcCurrentStreak 的调用点都应当先过这一层，
+ * 而不是各自 `activities.map(a => a.date)`——那样漏一处就破一处。
+ */
+export function streakDates(activities: Array<{ date: string | Date; backfilled?: boolean }>): (string | Date)[] {
+  return activities.filter(a => !a.backfilled).map(a => a.date);
+}
+
+/**
  * Computes the maximum consecutive-day streak from an array of date strings or Date objects.
  * Each entry is normalised to midnight local time so the ONE_DAY gap check is exact.
  */

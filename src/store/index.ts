@@ -1,10 +1,10 @@
 ﻿import { create } from 'zustand';
-import { User, Attribute, Activity, Achievement, Skill, Settings, ThemeType, AttributeId, AttributeNamesKey, DailyEvent, Todo, TodoCompletion, TodoStep, FateCandidate, BigDealClearPayload, PeriodSummary, SummaryPeriod, SummaryPromptPreset, WeeklyGoal, WeeklyGoalItem, Persona, Shadow, BattleState, TowerStratum, StratumNode, DailyDivination, LongReading, LongReadingFollowUp, Confidant, ConfidantEvent, ConfidantBuff, CounselSession, CounselMessage, CounselArchive, CallingCard, NotifSlot, LedgerEntry, Budget, SpendWorth, LedgerAsset, Wish, WishProgressPoint, WishProgressSource, WishProgressCutPayload, WishProposalPayload, BattleArsenal, ChainKey, AffixKind, NavigatorPreset, NavigatorMemo } from '@/types';
+import { User, Attribute, Activity, Achievement, Skill, Settings, ThemeType, AttributeId, AttributeNamesKey, DailyEvent, Todo, TodoCompletion, TodoStep, FateCandidate, BigDealClearPayload, PeriodSummary, SummaryPeriod, SummaryPromptPreset, WeeklyGoal, WeeklyGoalItem, Persona, Shadow, BattleState, TowerStratum, StratumNode, DailyDivination, LongReading, LongReadingFollowUp, Confidant, ConfidantEvent, ConfidantBuff, CounselSession, CounselMessage, CounselArchive, CallingCard, NotifSlot, LedgerEntry, Budget, SpendWorth, LedgerAsset, Wish, WishProgressPoint, WishProgressSource, WishProgressCutPayload, WishProposalPayload, ReturnPayload, ReturnTier, BackfillEntry, BattleArsenal, ChainKey, AffixKind, NavigatorPreset, NavigatorMemo } from '@/types';
 import { TAROT_BY_ID } from '@/constants/tarot';
 import { summarizeCounsel, type CounselContext, type CounselConfidantBrief, type CounselRecentEvent } from '@/utils/counselAI';
 import { db } from '@/db';
 import { v4 as uuidv4 } from 'uuid';
-import { calcMaxStreak } from '@/utils/streak';
+import { calcMaxStreak, streakDates } from '@/utils/streak';
 import { applyUiChannel } from '@/ui/channel';
 import { computeAndSchedule, type NotifSnapshot } from '@/utils/notifications';
 import { pushWidgetSnapshot } from '@/utils/widgetSnapshot';
@@ -108,6 +108,12 @@ const removeWishStepHistory = async (parentId: string, sourceStepId: string) => 
 
 /** bumpWishProgress 的节流表：wishId → 上次泵的时间戳 */
 const wishBumpAt = new Map<string, number>();
+
+// ── 回归面板阈值（PRD_V2.6 §12）────────────────────────────
+/** 离开多少天算"走了"。低于这个数不弹——七天以内的间断是正常生活，不是缺席 */
+const RETURN_MIN_DAYS = 7;
+/** 7–14 天给日历补记；再久就只给一句话概括（逐日回忆超过两周就是在编故事） */
+const RETURN_RECENT_MAX_DAYS = 14;
 
 /**
  * 无 API Key 时的离线估算。
@@ -460,6 +466,24 @@ interface AppState {
   /** 黑猫的进度提议（谈话中触发，必须用户确认才落库；null = 无待决） */
   wishProposal: WishProposalPayload | null;
   setWishProposal: (p: WishProposalPayload | null) => void;
+
+  // ── 回归面板（PRD_V2.6 §12）──────────────────────────────
+  /**
+   * 记一次「打开过」。每次冷启动 / 切回前台调用。
+   * 返回本次是否构成一次**回归**（离开 ≥ 7 天）及其载荷；不构成则返回 null。
+   * 内部只在真的构成回归时才写 lastReturnPanelAt，普通打开只刷新 lastOpenedAt。
+   */
+  markAppOpened: () => Promise<ReturnPayload | null>;
+  /**
+   * 补记候选：从近 60 天的手动记录里按出现频次挑出常做的事。
+   * 回忆很难、认出来很容易——补记面板给 chip 而不是空输入框，靠的就是这份表。
+   */
+  getBackfillSuggestions: (limit?: number) => Array<{ text: string; points: Record<string, number> }>;
+  /**
+   * 完成回归仪式：写补记条目 + 写那条带 tag 的回归记录 + 回归次数 +1。
+   * `entries` 为空也照样成立——「我回来了」本身就是仪式。
+   */
+  commitReturn: (payload: ReturnPayload, entries: BackfillEntry[], summary?: string) => Promise<void>;
 
   /** 今日「应做」的活跃待办（active + 未来启用日排除 + weekdays 不含今天排除）；短路决策候选与入口卡计数共用，统一全站口径。 */
   getDueTodosToday: () => Todo[];
@@ -1188,7 +1212,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           const progress = (() => {
             switch (achievement.condition.type) {
               case 'consecutive_days': {
-                const streak = calcMaxStreak(activities.map(a => a.date));
+                const streak = calcMaxStreak(streakDates(activities));
                 return Math.min(streak, achievement.condition.value);
               }
               case 'total_points': {
@@ -1298,7 +1322,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const progress = (() => {
         switch (achievement.condition.type) {
           case 'consecutive_days':
-            return calcMaxStreak(activities.map(a => a.date));
+            return calcMaxStreak(streakDates(activities));
           case 'total_points':
             return attributes.reduce((sum, attr) => sum + attr.points, 0);
           case 'attribute_level': {
@@ -2081,6 +2105,143 @@ export const useAppStore = create<AppState>((set, get) => ({
   clearWishProgressCut: () => set({ wishProgressCut: null }),
   wishProposal: null,
   setWishProposal: (p) => set({ wishProposal: p }),
+
+  // ── 回归面板（PRD_V2.6 §12）──────────────────────────────
+
+  markAppOpened: async () => {
+    const s = get();
+    const nowIso = new Date().toISOString();
+    const last = s.settings.lastOpenedAt;
+
+    // 第一次打开：只落时间戳。没有"上一次"就谈不上离开
+    if (!last) {
+      await get().updateSettings({ lastOpenedAt: nowIso });
+      return null;
+    }
+
+    const lastMs = new Date(last).getTime();
+    const daysAway = Math.floor((Date.now() - lastMs) / 86400000);
+    await get().updateSettings({ lastOpenedAt: nowIso });
+    if (!Number.isFinite(daysAway) || daysAway < RETURN_MIN_DAYS) return null;
+
+    // 同一次回归只弹一次：面板弹过之后 lastOpenedAt 已被刷新，
+    // 正常不会重入；这一道是防"同一天里反复冷启动"的兜底
+    const panelAt = s.settings.lastReturnPanelAt;
+    if (panelAt && Date.now() - new Date(panelAt).getTime() < 12 * 3600_000) return null;
+    await get().updateSettings({ lastReturnPanelAt: nowIso });
+
+    const tier: ReturnTier = daysAway <= RETURN_RECENT_MAX_DAYS ? 'recent' : 'distant';
+    // 补记范围 = 缺席那几天，上限 14。distant 档不给日历
+    const backfillDays: string[] = [];
+    if (tier === 'recent') {
+      for (let i = daysAway; i >= 1; i--) {
+        backfillDays.push(toLocalDateKey(new Date(Date.now() - i * 86400000)));
+      }
+    }
+
+    const attrs = s.attributes;
+    const top = attrs.length
+      ? attrs.reduce((a, b) => (b.level > a.level ? b : a))
+      : null;
+
+    return {
+      daysAway,
+      tier,
+      returnCount: (s.settings.returnCount ?? 0) + 1,
+      lastSeenKey: toLocalDateKey(new Date(lastMs)),
+      backfillDays,
+      totalRecords: s.activities.length,
+      topAttribute: top
+        ? {
+            id: top.id as AttributeId,
+            name: s.settings.attributeNames[top.id as AttributeNamesKey] ?? top.id,
+            level: top.level,
+          }
+        : null,
+    };
+  },
+
+  getBackfillSuggestions: (limit = 8) => {
+    const since = Date.now() - 60 * 86400000;
+    const freq = new Map<string, { count: number; points: Record<string, number> }>();
+    for (const a of get().activities) {
+      // 只数用户**自己写下的**记录：升级/成就/收官这类副记录不是"我做过的事"
+      if (a.category || a.method !== 'local') continue;
+      // 补记的条目不能反过来喂候选池——否则补过一次的东西会永远挂在 chip 上
+      // 请你再补一次，形成一个自我强化的回路（驱动实测抓到：「补记用·跑步」进了候选）
+      if (a.backfilled) continue;
+      if (new Date(a.date).getTime() < since) continue;
+      const text = a.description.trim();
+      if (!text || text.length > 18) continue;
+      const cur = freq.get(text);
+      if (cur) cur.count++;
+      else freq.set(text, { count: 1, points: a.pointsAwarded ?? {} });
+    }
+    return [...freq.entries()]
+      .sort((a, b) => b[1].count - a[1].count)
+      .slice(0, limit)
+      .map(([text, v]) => ({ text, points: v.points }));
+  },
+
+  commitReturn: async (payload, entries, summary) => {
+    const user = get().user;
+    if (!user) return;
+    const zero = { knowledge: 0, guts: 0, dexterity: 0, kindness: 0, charm: 0 };
+
+    // ① 补记条目。**一律不加点**（§12 红线）：
+    //    追溯性地补发点数就是开了一个可以凭空造点的口子，
+    //    而记录本身的价值——热力图、统计、愿望进度——不需要点数背书。
+    for (const e of entries) {
+      const text = e.text.trim();
+      if (!text) continue;
+      await db.activities.add({
+        id: uuidv4(),
+        userId: user.id,
+        date: new Date(e.dateKey + 'T12:00:00'),
+        description: text,
+        pointsAwarded: { ...zero },
+        method: 'local',
+        backfilled: true,
+      });
+    }
+
+    // ② 一句话概括：distant 档的唯一形态，recent 档也可以选它代替日历
+    if (summary && summary.trim()) {
+      await db.activities.add({
+        id: uuidv4(),
+        userId: user.id,
+        // 落在"离开的最后一天"，而不是今天——它讲的是那段时间的事
+        date: new Date(payload.lastSeenKey + 'T12:00:00'),
+        description: summary.trim().slice(0, 200),
+        pointsAwarded: { ...zero },
+        method: 'local',
+        backfilled: true,
+      });
+    }
+
+    // ③ 那条带 tag 的回归记录。0 加点——milestone 不是 grind（同 wish_fulfilled / calling_card_clear 口径）
+    await db.activities.add({
+      id: uuidv4(),
+      userId: user.id,
+      date: new Date(),
+      description:
+        `你时隔 ${payload.daysAway} 天重新叩响了靛蓝色房间的房门，` +
+        `第 ${payload.returnCount} 次回到了更生的旅途上。`,
+      pointsAwarded: { ...zero },
+      method: 'local',
+      important: true,
+      category: 'return',
+    });
+
+    // ④ 回归的犒赏走**非经济**路径：一次弹幕投稿机会。
+    //    给点数等于在为"离开"付钱；给一次说话的机会，是请他把回来这件事说给别人听。
+    await get().updateSettings({
+      returnCount: payload.returnCount,
+      terminalDanmakuTokens: (get().settings.terminalDanmakuTokens ?? 0) + 1,
+    });
+
+    await get().loadData();
+  },
 
   decomposeWishAI: async (parent: Wish, children: Wish[] = []) => {
     const cfg = getAIConfig(get().settings);

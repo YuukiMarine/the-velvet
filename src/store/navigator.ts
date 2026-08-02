@@ -581,6 +581,14 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
             gapDays !== null && gapDays >= 2 ? `【距上次聊天】已隔 ${gapDays} 天` : '',
             recall.lines.length ? `【关于用户的记忆】\n${recall.lines.join('\n')}` : '',
             buildWarmthLine(),
+            // 久别归来（PRD_V2.6 §12）：这一条要压过上面所有素材。
+            // 明确禁掉三件事——问去哪了、催补记、报今天的账：
+            // 补记那件事回归面板已经问过一次了，猫再问一遍就成了追债。
+            snap.daysAway && snap.daysAway >= 7
+              ? `【久别归来】对方已经 ${snap.daysAway} 天没打开过这个 App 了，现在刚回来。\n`
+                + '这一轮**只说想念**：让他知道你惦记着、位置一直留着。\n'
+                + '禁止追问他去哪了/为什么不来，禁止催他补记录，禁止先报今天的任务与塔罗。'
+              : '',
           ].filter(Boolean);
           // 超时计时只覆盖 AI 调用本身（此前从素材准备就开始计时，预算被前置步骤吃掉）
           const ac = new AbortController();

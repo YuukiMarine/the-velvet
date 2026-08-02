@@ -36,7 +36,7 @@ import { SheetModal } from '@/components/SheetModal';
 import { UserProfileCard } from '@/components/UserProfileCard';
 import { TrophyIcon } from '@/components/Navigation';
 import { isInShadowTime } from '@/constants';
-import { calcCurrentStreak } from '@/utils/streak';
+import { calcCurrentStreak, streakDates } from '@/utils/streak';
 import { triggerNavFeedback } from '@/utils/feedback';
 import { useBoldness } from '@/utils/boldness';
 import { STAGGER, TAP, springSoft, fadeIn } from '@/utils/motion';
@@ -221,7 +221,7 @@ export const Menu = () => {
   const press = useRef({ active: false, key: '', moved: false });
   useEffect(() => () => { if (enterTimer.current) window.clearTimeout(enterTimer.current); }, []);
 
-  const currentStreak = useMemo(() => calcCurrentStreak(activities.map(a => a.date)), [activities]);
+  const currentStreak = useMemo(() => calcCurrentStreak(streakDates(activities)), [activities]);
 
   // 待解锁数：与 Settings.tsx 成就入口同一份轻量判定口径——只算「基础属性条件
   // 已满足但未解锁」的三类（attribute_level / total_points / all_attributes_max），
