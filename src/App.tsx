@@ -698,8 +698,15 @@ function App() {
                  />
                )}
 
-               {/* PWA 新版本更新提示 */}
-               <PWAUpdateToast />
+               {/* PWA 新版本更新提示。
+                   **原生容器里不挂**——useRegisterSW 是在组件里跑的，不渲染即不注册。
+                   Capacitor 的 androidScheme:'https' 让 WebView 从 https://localhost 加载，
+                   Service Worker 在那里是会正常注册的。于是装了新 APK 之后：
+                   新 sw.js 的预缓存清单变了 → 新 SW 进 waiting → registerType:'prompt'
+                   弹出「有新版本可用 · 立即更新」，而在此之前**旧 SW 仍在供旧资源**。
+                   用户刚更新完 App 却被告知有新版本、且实际跑的还是上一版 JS——
+                   这条链在原生里只会添乱，安装包本来就是整包替换。 */}
+               {!isNative() && <PWAUpdateToast />}
             </>
           )}
 

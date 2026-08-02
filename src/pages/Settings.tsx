@@ -2254,6 +2254,29 @@ export const Settings = () => {
                       {connOpen && (
                       <div className="p-4 space-y-4 dark:bg-gray-800/20">
 
+                        {/* 首次引导：一家都没配时，最卡人的一步不是"填哪儿"而是"去哪儿拿"。
+                            这里直接把 DeepSeek 的控制台顶到前面——国内可直连、注册即送额度、
+                            按量计费最便宜，是起步成本最低的一家。其余各家的入口在下面 Key 输入框旁边。 */}
+                        {savedProviderCount === 0 && (
+                          <div className="rounded-xl border border-primary/30 bg-primary/5 p-3">
+                            <p className="text-[12px] font-bold text-gray-700 dark:text-gray-200">还没有 API Key？</p>
+                            <p className="mt-1 text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">
+                              去 DeepSeek 注册一个，复制 Key 回来粘进下面的输入框就能用。
+                              国内可直连，按量计费，日常用量一个月通常也就几块钱。
+                            </p>
+                            <a
+                              href={getProviderConfig('deepseek').keyUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={() => switchProvider('deepseek')}
+                              className="mt-2.5 inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-[12px] font-bold text-white"
+                            >
+                              打开 platform.deepseek.com
+                              <span aria-hidden>↗</span>
+                            </a>
+                          </div>
+                        )}
+
                         {/* 提供商：每家一份独立存档，点即切换（打勾=已存 Key，绿点=测过且成功） */}
                         <div className="space-y-1.5">
                           <div className="flex items-baseline justify-between gap-2">
@@ -2299,7 +2322,18 @@ export const Settings = () => {
 
                         {/* API Key */}
                         <div className="space-y-1.5">
-                          <p className="text-xs font-medium text-gray-500 dark:text-gray-400">{getProviderConfig(provider).label} 的 API 密钥</p>
+                          <div className="flex items-baseline justify-between gap-2">
+                            <p className="text-xs font-medium text-gray-500 dark:text-gray-400">{getProviderConfig(provider).label} 的 API 密钥</p>
+                            {/* 当前这一家的控制台直达。跟着 provider 走，切哪家给哪家的门 */}
+                            <a
+                              href={getProviderConfig(provider).keyUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="shrink-0 text-[11px] font-bold text-primary hover:underline"
+                            >
+                              去申请 ↗
+                            </a>
+                          </div>
                           <div className="flex gap-2">
                             <input
                               type="password"
