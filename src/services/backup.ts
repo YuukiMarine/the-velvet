@@ -85,8 +85,14 @@ export const buildExportJson = async (): Promise<string> => {
     assets: await db.assets.toArray(),
     navigatorPresets: await db.navigatorPresets.toArray(),
     navigatorMemos: await db.navigatorMemos.toArray(),
+    // ── v9（v2.6 上线审计）：dailyEvents 补挂 ──
+    //   这张表已是旧版遗留（全站无任何读写点，SyncDiffDialog 里标着「旧版每日事件」），
+    //   但它**一直在 SYNC_TABLES 里**——也就是说同步层认它是用户数据、备份层不认。
+    //   两层对同一张表的判断相反，总有一层是错的。存量用户手里可能还留着旧行，
+    //   按"备份是一份完整快照"的承诺，这里补上（纯字符串字段，无 Date 需还原）。
+    dailyEvents: await db.dailyEvents.toArray(),
     _exportedAt: new Date().toISOString(),
-    _version: 8,
+    _version: 9,
   };
   const json = JSON.stringify(data);
   // 出口校验：确保产生的 JSON 字符串可被原样解析回来。

@@ -1,5 +1,5 @@
 ﻿import { create } from 'zustand';
-import { User, Attribute, Activity, Achievement, Skill, Settings, ThemeType, AttributeId, AttributeNamesKey, Todo, TodoCompletion, TodoStep, FateCandidate, BigDealClearPayload, PeriodSummary, SummaryPeriod, SummaryPromptPreset, WeeklyGoal, WeeklyGoalItem, Persona, Shadow, BattleState, TowerStratum, StratumNode, DailyDivination, LongReading, LongReadingFollowUp, Confidant, ConfidantEvent, ConfidantBuff, CounselSession, CounselMessage, CounselArchive, CallingCard, NotifSlot, LedgerEntry, Budget, SpendWorth, LedgerAsset, Wish, WishProgressPoint, WishProgressSource, WishProgressCutPayload, WishProposalPayload, BattleArsenal, ChainKey, AffixKind, NavigatorPreset, NavigatorMemo } from '@/types';
+import { User, Attribute, Activity, Achievement, Skill, Settings, ThemeType, AttributeId, AttributeNamesKey, DailyEvent, Todo, TodoCompletion, TodoStep, FateCandidate, BigDealClearPayload, PeriodSummary, SummaryPeriod, SummaryPromptPreset, WeeklyGoal, WeeklyGoalItem, Persona, Shadow, BattleState, TowerStratum, StratumNode, DailyDivination, LongReading, LongReadingFollowUp, Confidant, ConfidantEvent, ConfidantBuff, CounselSession, CounselMessage, CounselArchive, CallingCard, NotifSlot, LedgerEntry, Budget, SpendWorth, LedgerAsset, Wish, WishProgressPoint, WishProgressSource, WishProgressCutPayload, WishProposalPayload, BattleArsenal, ChainKey, AffixKind, NavigatorPreset, NavigatorMemo } from '@/types';
 import { TAROT_BY_ID } from '@/constants/tarot';
 import { summarizeCounsel, type CounselContext, type CounselConfidantBrief, type CounselRecentEvent } from '@/utils/counselAI';
 import { db } from '@/db';
@@ -2656,7 +2656,15 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (data.todos && Array.isArray(data.todos)) {
         for (const todo of data.todos as unknown[]) {
           const t = todo as Todo;
-          await db.todos.add({ ...t, createdAt: new Date(t.createdAt) });
+          // archivedAt / completedAt 此前没还原，导入后它们是**字符串**而类型写着 Date。
+          // 目前所有消费点都恰好套了 new Date(...) 才没炸，但那是运气不是设计——
+          // 下一个直接写 todo.completedAt.getTime() 的人只会在"从备份恢复过的用户"身上崩。
+          await db.todos.add({
+            ...t,
+            createdAt: new Date(t.createdAt),
+            archivedAt: t.archivedAt ? new Date(t.archivedAt) : undefined,
+            completedAt: t.completedAt ? new Date(t.completedAt) : undefined,
+          });
         }
       }
 
@@ -2794,7 +2802,13 @@ export const useAppStore = create<AppState>((set, get) => ({
         }
       }
       if (data.budgets && Array.isArray(data.budgets)) {
-        await db.budgets.bulkPut(data.budgets as Budget[]);
+        // Budget.createdAt 是 Date，bulkPut 原样写回会留下字符串（同 todos 的理由）
+        await db.budgets.bulkPut(
+          (data.budgets as unknown[]).map(b => {
+            const bg = b as Budget;
+            return { ...bg, createdAt: new Date(bg.createdAt) };
+          }),
+        );
       }
       if (data.assets && Array.isArray(data.assets)) {
         for (const a of data.assets as unknown[]) {
@@ -2818,6 +2832,10 @@ export const useAppStore = create<AppState>((set, get) => ({
             lastRecalledAt: nm.lastRecalledAt ? new Date(nm.lastRecalledAt) : undefined,
           });
         }
+      }
+      // v9 补挂：旧版每日事件。全字段字符串，无 Date 需还原（见 backup.ts 同处注释）
+      if (data.dailyEvents && Array.isArray(data.dailyEvents)) {
+        await db.dailyEvents.bulkPut(data.dailyEvents as DailyEvent[]);
       }
 
       // 重新加载应用
