@@ -21,8 +21,13 @@ import type { CSSProperties } from 'react';
 import { motion } from 'motion/react';
 import { prefersReducedMotion } from '@/utils/boldness';
 
-/** 推进段总时长（秒，未乘 s）。实测反馈：门起点太近、整体偏短 → 由 2.5 拉到 3.0 */
-const TRAVEL_SEC = 3.0;
+/**
+ * 推进段总时长（秒，未乘 s）。
+ * 2.5 → 3.0（门起点太近）→ 2.6：用户实机后要求整体提速 0.5 秒，
+ * 0.4 秒从这一段扣（它最长，砍在这里对分镜节奏冲击最小），
+ * 余下 0.1 秒从标题停留扣（见 phase==='title' 的收尾计时）。
+ */
+const TRAVEL_SEC = 2.6;
 
 /**
  * 走廊两侧的**白色门板**（参考图 2：天鹅绒房间长廊里立在两壁的一扇扇白门）。
@@ -106,7 +111,8 @@ export function VelvetRoomSplash({ onComplete, s }: { onComplete: () => void; s:
   useEffect(() => {
     if (phase !== 'title' || doneRef.current) return;
     doneRef.current = true;
-    const t = setTimeout(onComplete, (anim ? 2400 : 1200) * s);
+    // 2400 → 2300：整体提速 0.5s 里的最后 0.1 秒（另 0.4 秒在 TRAVEL_SEC）
+    const t = setTimeout(onComplete, (anim ? 2300 : 1200) * s);
     return () => clearTimeout(t);
   }, [phase, s, onComplete, anim]);
 
@@ -335,7 +341,11 @@ export function VelvetRoomSplash({ onComplete, s }: { onComplete: () => void; s:
                 aria-hidden
                 className="absolute inset-y-0 left-0 w-full"
                 style={{
-                  background: 'radial-gradient(ellipse at 50% 50%, #ffffff 0%, #e2eaff 45%, rgba(180,200,255,0) 78%)',
+                  // 纯白实心（用户口径）。原来是一枚羽化的椭圆渐变，边缘化到透明——
+                  // 门缝张开时看到的不是"一道光"，而是一块中间白、四周虚的椭圆斑，
+                  // 门缝越宽这块斑越明显地暴露出它是个圆。实心白才读得出"门后是光"。
+                  // 外圈的溢光留给 boxShadow，那层本来就是柔的。
+                  background: '#ffffff',
                   boxShadow: '0 0 40px 12px rgba(210,225,255,0.5)',
                   // 必须 linear：timing 函数是**逐段**作用在每两个关键帧之间的，
                   // 原来那个 cubic-bezier(0.7,0,0.9,0.4) 是重度 ease-in，
