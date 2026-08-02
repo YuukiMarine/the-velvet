@@ -54,6 +54,7 @@ import { initBoldnessRuntime, schedulePerfSample, setStraightenMode } from '@/ut
 import { TransitionLayer } from '@/components/transition/HeavyTransition';
 import { consumePendingCircleReveal } from '@/ui/transitionDirector';
 import { P4StageDecor } from '@/ui/p4Kit';
+import { bgAnimStyles } from '@/ui/bgAnim';
 
 /**
  * 页面分包预热清单。
@@ -460,8 +461,10 @@ function App() {
     );
   }
 
-  // 背景动画是否开着（无背景图 + 至少选了一种）——擦除垫底层要按它决定是否复刻
-  const bgAnimOn = !settings.backgroundImage && (settings.backgroundAnimation ?? []).length > 0;
+  // 背景动画是否开着——口径收在 ui/bgAnim.ts（含 P5 的"默认不开"闸）。
+  // 擦除垫底层也按它决定是否复刻，两边必须同源，否则切页时会一层在画一层不画。
+  const bgAnimStyleList = bgAnimStyles(settings, user?.theme);
+  const bgAnimOn = bgAnimStyleList.length > 0;
   // 背景图开着：三个频道的页面壳都要给它让位，擦除垫底层也要把它复刻一份
   const bgImageOn = !!settings.backgroundImage;
   const bgImageLayer = bgImageOn ? (
@@ -605,13 +608,13 @@ function App() {
           {/* 背景图片（与擦除垫底层复刻的是同一个节点，见 bgImageLayer） */}
           {bgImageLayer}
 
-          {/* 背景动画（无背景图时，优先于纹理） */}
-          {!settings.backgroundImage && (settings.backgroundAnimation ?? []).length > 0 && (
+          {/* 背景动画（无背景图时，优先于纹理；红频道默认不开，见 ui/bgAnim.ts） */}
+          {bgAnimOn && (
             // 用独立 will-change 容器包裹，使背景动画层与页面切换（AnimatePresence）
             // 产生的 stacking context 完全隔离，避免页面转场时背景闪烁
-            <div style={{ isolation: 'isolate', willChange: 'transform', position: 'fixed', inset: 0, zIndex: 0 }}>
+            <div data-bg-anim style={{ isolation: 'isolate', willChange: 'transform', position: 'fixed', inset: 0, zIndex: 0 }}>
               <BackgroundAnimation
-                styles={settings.backgroundAnimation as string[]}
+                styles={bgAnimStyleList}
                 darkMode={settings.darkMode}
               />
             </div>
@@ -619,7 +622,7 @@ function App() {
 
           {/* 装饰纹理（无背景图、无动画时；P4 黄舞台要真留白，不铺点阵） */}
           {!settings.backgroundImage
-            && (settings.backgroundAnimation ?? []).length === 0
+            && !bgAnimOn
             && (settings.backgroundPattern ?? true)
             && user?.theme !== 'yellow'
             && (
@@ -680,7 +683,7 @@ function App() {
                     (user?.theme === 'yellow' || bgAnimOn || bgImageOn) ? (
                       <>
                         {user?.theme === 'yellow' && !bgImageOn && <P4StageDecor />}
-                        {bgAnimOn && <BackgroundAnimation styles={settings.backgroundAnimation as string[]} darkMode={settings.darkMode} />}
+                        {bgAnimOn && <BackgroundAnimation styles={bgAnimStyleList} darkMode={settings.darkMode} />}
                         {bgImageLayer}
                       </>
                     ) : undefined
