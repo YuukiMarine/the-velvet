@@ -21,6 +21,8 @@ import { FlowerChart } from '@/components/FlowerChart';
 import { AttrDetailInlineP4 } from '@/components/AttrDetailInlineP4';
 import { BigDealHomeCard } from '@/components/bigdeal/BigDealHomeCard';
 import { BigDealPanel } from '@/components/bigdeal/BigDealPanel';
+import { useSkyBadge } from '@/components/sky/useSkyBadge';
+import { WeatherGlyph } from '@/components/sky/WeatherGlyph';
 
 // Seeded random: picks a stable index per session (changes on every page open)
 const sessionSeed = Math.random();
@@ -498,6 +500,61 @@ const isLightColor = (hex: string): boolean => {
   return luminance > 0.4;
 };
 
+// ── P4 天空角标（PRD_V2.6 §7）────────────────────────────────────────────────
+const P4_MOON_NAMES = ['新月', '娥眉月', '上弦月', '盈凸月', '满月', '亏凸月', '下弦月', '残月'];
+const P4_SYNODIC = 29.530588853;
+const P4_EPOCH = Date.UTC(2000, 0, 6, 18, 14);
+
+/** 月相（与 P3/P5 同一历元同一算法，只是各页各写一份渲染） */
+const p4MoonOf = (date: Date) => {
+  const days = (date.getTime() - P4_EPOCH) / 86400000;
+  const phase = (((days % P4_SYNODIC) + P4_SYNODIC) % P4_SYNODIC) / P4_SYNODIC;
+  const idx = Math.round(phase * 8) % 8;
+  return { phase, name: P4_MOON_NAMES[idx], illum: (1 - Math.cos(2 * Math.PI * phase)) / 2 };
+};
+
+const p4MoonLit = (phase: number, r: number, c: number) => {
+  const rx = Math.max(0.01, Math.abs(Math.cos(2 * Math.PI * phase)) * r);
+  const outer = phase < 0.5 ? 1 : 0;
+  const term = phase > 0.25 && phase < 0.75 ? outer : 1 - outer;
+  return `M ${c} ${c - r} A ${r} ${r} 0 0 ${outer} ${c} ${c + r} A ${rx} ${r} 0 0 ${term} ${c} ${c - r} Z`;
+};
+
+/**
+ * 黑药丸角标，压在大日期牌下沿。做成「角标」而不是像 P3/P5 那样一整块，
+ * 是因为 P4 页头右上已经被日期牌 + 天空圆占满了——再塞一块读数区会把标题挤下去。
+ * p4-onlight：墨字在浅色天空圆上，夜间不许跟全局翻浅（用户 R16 口径）。
+ */
+const P4SkyBadge = () => {
+  const { mode, toggle, weather, loading, error, ready } = useSkyBadge();
+  const m = p4MoonOf(new Date());
+  const label = mode === 'weather'
+    ? (!ready ? '设置天气' : error ? '取不到' : loading ? '取数中' : `${weather?.temp}° ${weather?.text}`)
+    : `${m.name} ${Math.round(m.illum * 100)}%`;
+
+  return (
+    <button
+      type="button"
+      onClick={toggle}
+      aria-label={mode === 'weather' ? '天气（点击切回月相）' : '月相（点击切到天气）'}
+      className="mt-1.5 flex max-w-[112px] items-center gap-1 rounded-full px-2 py-1"
+      style={{ background: '#131313' }}
+    >
+      {mode === 'weather' ? (
+        <WeatherGlyph icon={weather?.icon} size={14} ink="#fff3c4" accent="var(--p4-orange, #f9a11b)" />
+      ) : (
+        <svg viewBox="0 0 36 36" width={14} height={14} aria-hidden>
+          <circle cx="18" cy="18" r="16" fill="#3a3a3a" />
+          <path d={p4MoonLit(m.phase, 16, 18)} fill="#ffd900" />
+        </svg>
+      )}
+      <span className="truncate text-[9px] font-black leading-none tracking-wide" style={{ color: '#fff3c4' }}>
+        {label}
+      </span>
+    </button>
+  );
+};
+
 export const Dashboard = () => {
   const { attributes, user, settings, todos, activities, achievements, skills, completeTodo, getTodayTodoProgress, setModalBlocker, setCurrentPage, applyCountercurrentDecay, getCountercurrentWarnings, callingCards } = useAppStore();
   const [completedTitle, setCompletedTitle] = useState<string | null>(null);
@@ -764,6 +821,10 @@ export const Dashboard = () => {
             <div className="mt-0.5 text-[11px] font-black tracking-[0.2em] text-[#131313]/80">
               {today.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase()}
             </div>
+            {/* 天空角标（PRD_V2.6 §7）：黄频道此前**没有天空位**——
+                天空圆只是张背景图，月相/天气无处可落。这里补一枚压在日期牌下沿的小角标，
+                点一下在月相 ⇄ 天气之间切，模式记进 settings（与 P3/P5 同口径）。 */}
+            <P4SkyBadge />
           </div>
           <h1
             className="relative w-[62%] break-words text-[46px] font-black leading-[1.05] tracking-tight text-[#131313]"
