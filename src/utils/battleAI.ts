@@ -1,5 +1,5 @@
 import { AttributeId, PersonaSkill, Settings } from '@/types';
-import { chatComplete, chatStream, getAIConfig, type AIConfig } from '@/utils/aiClient';
+import { chatComplete, chatStream, getAIConfig, getDeliberateAIConfig, type AIConfig } from '@/utils/aiClient';
 import { SKILL_EFFECT_MAP } from '@/constants';
 
 interface AIMessage { role: 'system' | 'user' | 'assistant'; content: string; }
@@ -210,7 +210,19 @@ export async function generatePersonaSkills(
   usedFallback: boolean;
   errorMessage?: string;
 }> {
-  const cfg = getAIConfig(settings);
+  /**
+   * 人格生成走**深思熟虑档**，不走快速响应档。
+   *
+   * aiClient 里 getDeliberateAIConfig 的注释一直把"人格生成"列在这一档，
+   * 但统一 API Provider 之后这里漏改，还挂在 getAIConfig 上——于是它跟着
+   * 「记账解析 / 塔罗单抽 / 打分」一起被钉死在各家最便宜的那个默认模型上
+   * （deepseek-v4-flash / gemini-3.1-flash-lite / gpt-5.4-mini）。
+   * 而这个请求要的是一份 5 属性 × 5 技能、全中文、纯 JSON 的长输出，
+   * 廉价档既容易吐不完整（validAttrCount<3 → 判失败）也容易破格式，
+   * 就是用户上报的「召唤 Persona 失败几率变得非常高」。
+   * 没单独配深思熟虑档的用户会自动落回快速响应档，行为与改前一致。
+   */
+  const cfg = getDeliberateAIConfig(settings);
   if (!cfg) return {
     personaName: fallbackName,
     skills: generateDefaultSkills(fallbackName, attributeNames),
@@ -269,12 +281,21 @@ ${formatAllAttrsSpecialization(attributeNames)}
 }`;
 
   try {
-    // Persona 生成需要 ~3000-5000 tokens（5属性×5技能中文 JSON），提升上限避免截断
-    // 温度 0.6 —— 保留一些创意但仍相对稳定
-    // 若 caller 传入 onStreamChunk 则使用流式输出，便于 UI 实时呈现
+    /**
+     * 预算给到 9000。
+     *
+     * 这份输出是 5 属性 × 5 技能的中文 JSON：每条技能光 name+description 就 25~35 字，
+     * 25 条约 2600 字，再加 5 段人物描述与整套 JSON 结构，多数分词器上落在
+     * 5000~7000 tokens。原来卡 4000 属于**结构性不够**——模型不是答错，是被砍断，
+     * 于是 validAttrCount<3 判定失败。截断率随模型分词器与用词长短浮动，
+     * 表现就是"时好时坏、失败率很高"。
+     * 温度 0.6 —— 保留一些创意但仍相对稳定。
+     * 若 caller 传入 onStreamChunk 则使用流式输出，便于 UI 实时呈现。
+     */
+    const PERSONA_MAX_TOKENS = 9000;
     const result = onStreamChunk
-      ? await callAIStreamWithRetry(cfg, [{ role: 'user', content: prompt }], onStreamChunk, 0.6, 4000)
-      : await callAIWithRetry(cfg, [{ role: 'user', content: prompt }], 0.6, 4000);
+      ? await callAIStreamWithRetry(cfg, [{ role: 'user', content: prompt }], onStreamChunk, 0.6, PERSONA_MAX_TOKENS)
+      : await callAIWithRetry(cfg, [{ role: 'user', content: prompt }], 0.6, PERSONA_MAX_TOKENS);
     const parsed = extractJSON(result) as Record<string, { name?: string; description?: string; skills?: unknown }>;
 
     const personaName = fallbackName;
@@ -361,7 +382,8 @@ export async function reshuffleAttributePersonaAI(
   attrName: string,
   currentName: string,
 ): Promise<{ name: string; description: string; skills: PersonaSkill[] } | null> {
-  const cfg = getAIConfig(settings);
+  // 与 generatePersonaSkills 同族（人格生成），一起走深思熟虑档
+  const cfg = getDeliberateAIConfig(settings);
   if (!cfg) return null;
   const diversityHint = getDiversityHint();
   const prompt = `你是Persona系列游戏的人格解析师。请为"${attrName}"属性重新匹配一个全新的Persona人物。
@@ -428,7 +450,8 @@ export async function generateAISkillsForPersona(
   attrName: string,
   userDescription?: string,
 ): Promise<PersonaSkill[] | null> {
-  const cfg = getAIConfig(settings);
+  // 与 generatePersonaSkills 同族（人格生成），一起走深思熟虑档
+  const cfg = getDeliberateAIConfig(settings);
   if (!cfg) return null;
   const trimmedDesc = userDescription?.trim();
   const backgroundExtra = trimmedDesc

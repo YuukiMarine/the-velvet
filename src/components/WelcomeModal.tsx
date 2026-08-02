@@ -411,6 +411,9 @@ export const WelcomeModal = () => {
     charm: '',
   });
   const [blessingAttr, setBlessingAttr] = useState<AttributeId | null>(null);
+  /** 建档失败时的可见反馈：以前 createUser 一抛错就是"按钮点了没反应"，用户完全没法自救 */
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   // Import state
   const [importJson, setImportJson] = useState('');
@@ -439,8 +442,16 @@ export const WelcomeModal = () => {
   };
 
   const handleSubmit = async () => {
-    if (!name.trim()) return;
-    await createUser(name.trim(), attrNames, blessingAttr ?? undefined);
+    if (!name.trim() || submitting) return;
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      await createUser(name.trim(), attrNames, blessingAttr ?? undefined);
+      // 成功即 user 落库 → 本组件整体卸载，不需要复位 submitting
+    } catch (e) {
+      setSubmitError(e instanceof Error ? e.message : '建档失败，请重试');
+      setSubmitting(false);
+    }
   };
 
   const canProceedName = name.trim().length > 0;
@@ -1224,6 +1235,17 @@ export const WelcomeModal = () => {
                   })}
                 </div>
 
+                {submitError && (
+                  <div
+                    role="alert"
+                    className="mb-3 rounded-xl px-4 py-3 text-xs leading-relaxed"
+                    style={{ background: 'rgba(239,68,68,0.14)', border: '1px solid rgba(239,68,68,0.35)', color: '#fca5a5' }}
+                  >
+                    <span className="font-bold">建档没能完成：</span>
+                    <span className="break-all">{submitError}</span>
+                  </div>
+                )}
+
                 <div className="flex gap-3">
                   <button
                     onClick={() => setStep('guide')}
@@ -1240,11 +1262,11 @@ export const WelcomeModal = () => {
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
                     onClick={handleSubmit}
-                    disabled={!blessingAttr}
+                    disabled={!blessingAttr || submitting}
                     className="flex-1 py-3 rounded-xl font-semibold text-base text-white disabled:opacity-40 disabled:cursor-not-allowed"
                     style={PRIMARY_BTN_STYLE}
                   >
-                    接受赐福，开始旅程 🦋
+                    {submitting ? '正在建档…' : submitError ? '再试一次 🦋' : '接受赐福，开始旅程 🦋'}
                   </motion.button>
                 </div>
               </motion.div>
