@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 冷启动窗口底色。取 VelvetRoomSplash 的根底色，让系统那层与 Web 开屏无缝接上。
+         详见 drawable/launch_background.xml 的注释。 -->
+    <color name="velvetLaunch">#05030F</color>
+</resources>

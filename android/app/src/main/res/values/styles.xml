@@ -16,7 +16,11 @@
     </style>
 
 
+    <!-- 冷启动窗口。原来挂的是 Capacitor 脚手架自带的 @drawable/splash
+         （白底 + 蓝色 X 的示例图），就是用户看到的「入场动画前那个很丑的 test logo」。
+         换成纯近黑，与随后的 Web 开屏无缝衔接；见 drawable/launch_background.xml。 -->
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
-        <item name="android:background">@drawable/splash</item>
+        <item name="android:background">@drawable/launch_background</item>
+        <item name="android:windowBackground">@drawable/launch_background</item>
     </style>
 </resources>
