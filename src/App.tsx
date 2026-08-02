@@ -13,6 +13,7 @@ import { WelcomeModal } from '@/components/WelcomeModal';
 import { LevelUpModal } from '@/components/LevelUpModal';
 import { SplashScreen } from '@/components/SplashScreen';
 import type { SplashScreenProps } from '@/components/SplashScreen';
+import type { ReturnPayload } from '@/types';
 import { AchievementUnlockModal } from '@/components/AchievementUnlockModal';
 import { SkillUnlockModal } from '@/components/SkillUnlockModal';
 import { db } from '@/db';
@@ -38,6 +39,7 @@ const Ledger = lazy(() => import('@/pages/Ledger').then(m => ({ default: m.Ledge
 import { BattleArena } from '@/components/battle/BattleArena';
 import { BigDealClearCutIn } from '@/components/bigdeal/BigDealClearCutIn';
 import { sweepDanmakuApprovals } from '@/services/danmakuWatch';
+import { ReturnPanel } from '@/components/return/ReturnPanel';
 import { WishProgressCutIn } from '@/components/wish/WishProgressCutIn';
 import { WishProposalDialog } from '@/components/wish/WishProposalDialog';
 // F6 黑猫对话窗（portal 到 body 的全屏 overlay；入口在 Sidebar / BottomNav 中央 ◈）
@@ -252,6 +254,9 @@ function App() {
       // FS4 短期 C 路线：没有厂商推送通道，「你的弹幕过审了」靠开 App 时自查
       // （danmaku 集合刻意匿名，服务端根本不知道该推给谁）
       void sweepDanmakuApprovals();
+      // 回归面板（§12）：也要挂在切回前台上——App 一直没被杀、只是在后台放了十天，
+      // 这种情况冷启动那条 effect 永远不会再跑，只有这里能接住
+      void useAppStore.getState().markAppOpened().then(p => { if (p) setReturnPayload(p); });
     };
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
@@ -407,6 +412,20 @@ function App() {
 
   // 稳定的回调引用，防止 Android 返回键等触发的 re-render 导致开屏动画定时器重启
   const handleSplashComplete = useCallback(() => setShowSplash(false), []);
+
+  // ── 回归面板（PRD_V2.6 §12）────────────────────────────────
+  // 触发时机刻意压到「开屏结束 + 数据加载完 + 有档案」之后：
+  // 这个面板要说的是"你不在的 N 天里，你的◯◯还是 Lv.X"，
+  // 数据没就位就弹，那句话会变成一句空话。
+  const [returnPayload, setReturnPayload] = useState<ReturnPayload | null>(null);
+  useEffect(() => {
+    if (showSplash || isLoading || !user) return;
+    let cancelled = false;
+    void useAppStore.getState().markAppOpened().then(p => {
+      if (!cancelled && p) setReturnPayload(p);
+    });
+    return () => { cancelled = true; };
+  }, [showSplash, isLoading, user]);
 
   if (showSplash) {
     if (!splashPrefs) return null; // 等待开屏设置加载
@@ -727,6 +746,8 @@ function App() {
               黑猫在谈话里提议改数值的确认卡。两者都可能在任意页面触发，故挂顶层 */}
           <WishProgressCutIn />
           <WishProposalDialog />
+          {/* 回归面板（PRD_V2.6 §12）：离开 ≥7 天后的第一次打开 */}
+          <ReturnPanel payload={returnPayload} onClose={() => setReturnPayload(null)} />
         </div>
       </div>
     </div>

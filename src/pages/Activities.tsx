@@ -1175,6 +1175,16 @@ export const ActivitiesView = () => {
                                                 {isBigDealClear && (
                                                   <span className="mr-1.5 inline-block translate-y-[-1px] rounded-full bg-primary/10 px-1.5 py-0.5 align-middle text-[9px] font-black uppercase text-primary">BIG DEAL</span>
                                                 )}
+                                                {/* 回归补记的标记（PRD_V2.6 §12）：这条是事后补上的，不是当天记的。
+                                                    做得很轻——它是一条注脚，不是一枚差评。 */}
+                                                {activity.backfilled && (
+                                                  <span
+                                                    title="回归时补记"
+                                                    className="mr-1.5 inline-block translate-y-[-1px] rounded px-1 py-0.5 align-middle text-[9px] font-black text-gray-400 ring-1 ring-gray-300 dark:text-gray-500 dark:ring-gray-600"
+                                                  >
+                                                    补
+                                                  </span>
+                                                )}
                                                 {activity.description}
                                               </p>
 

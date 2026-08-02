@@ -23,7 +23,7 @@ import { TodoCompleteModal } from '@/components/TodoCompleteModal';
 import { BattleDashboardWidget } from '@/components/BattleDashboardWidget';
 import { StackCarousel } from '@/components/StackCarousel';
 import { getAttributeLevelTitle } from '@/utils/attributeLevelTitles';
-import { calcMaxStreak } from '@/utils/streak';
+import { calcMaxStreak, streakDates } from '@/utils/streak';
 import { TAROT_BY_ID } from '@/constants/tarot';
 import { triggerNavFeedback, playSound } from '@/utils/feedback';
 import { BigDealHomeCard } from '@/components/bigdeal/BigDealHomeCard';
@@ -492,7 +492,7 @@ export const DashboardP3 = () => {
     return {
       totalPoints,
       totalLevel,
-      maxStreak: calcMaxStreak(activities.map((a) => a.date)),
+      maxStreak: calcMaxStreak(streakDates(activities)),
       totalActivities: activities.length,
       unlockedAchievements: achievements.filter((a) => a.unlocked).length,
       unlockedSkills: skills.filter((s) => s.unlocked).length,

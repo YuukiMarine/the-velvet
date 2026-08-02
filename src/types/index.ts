@@ -46,7 +46,16 @@ export interface Activity {
   };
   method: 'local' | 'todo' | 'battle';
   important?: boolean;
-  category?: 'skill_unlock' | 'achievement_unlock' | 'level_up' | 'weekly_goal' | 'countercurrent' | 'shadow_defeat' | 'confidant' | 'calling_card_clear' | 'ledger' | 'terminal_clear' | 'bigdeal_step' | 'bigdeal_clear' | 'wish_fulfilled';
+  category?: 'skill_unlock' | 'achievement_unlock' | 'level_up' | 'weekly_goal' | 'countercurrent' | 'shadow_defeat' | 'confidant' | 'calling_card_clear' | 'ledger' | 'terminal_clear' | 'bigdeal_step' | 'bigdeal_clear' | 'wish_fulfilled' | 'return';
+  /**
+   * 回归补记（PRD_V2.6 §12）：这条是**事后补上的**，不是当天记的。
+   *
+   * 为什么要留这个标记：这个 App 的价值就在于记录是真的。补记仍然是真的，
+   * 但它属于另一个认知类别——半个月后凭印象写下的"我那天跑了步"，
+   * 与当天写下的那条，可信度不一样。用户日后回看应当分得清，
+   * 整段补记也因此可以被整体撤销。
+   */
+  backfilled?: boolean;
   /** BIG DEAL 从属标注（bigdeal_step / bigdeal_clear 都挂）：收束分组键 + Agent 读取时识别非独立任务 */
   bigDealId?: string;
   /**
@@ -376,6 +385,19 @@ export interface Settings {
    * 点标题切换，与 homeSkyMode 同口径——切换要被记住，所以进 settings 而不是组件 state。
    */
   homeTaskPane?: 'todos' | 'wishes';
+
+  // ── 回归面板（PRD_V2.6 §12）─────────────────────────────
+  /**
+   * 上一次**真的打开过** App 的时刻（ISO）。
+   *
+   * 刻意不用"最后一条记录的时间"当代理：天天打开却什么都不记的人**没有离开**，
+   * 他是另一个问题（停滞提示那条线在管）。对他弹「欢迎回来」是荒谬的。
+   */
+  lastOpenedAt?: string;
+  /** 累计回归次数。streak 记的是"从没断过"，这个记的是"断了还愿意回来" */
+  returnCount?: number;
+  /** 上次弹出回归面板的时刻（ISO），防同一次回归重复弹 */
+  lastReturnPanelAt?: string;
   /**
    * 黑猫在谈话里主动提议更新愿望进度（PRD_V2.6 §8）。默认开。
    * 关掉之后 Agent 只读不提——读取愿望进度作为聊天上下文一直是允许的，
@@ -825,6 +847,35 @@ export interface BigDealClearPayload {
   sp: number;
   /** 触及属性（收官记录里各 +1） */
   attrs: AttributeId[];
+}
+
+// ── 回归面板（PRD_V2.6 §12）────────────────────────────────────────────────
+
+/** 回归档位：7–14 天可选日历补记；14 天以上只给一句话——那么久之前的事，逐日回忆是编故事 */
+export type ReturnTier = 'recent' | 'distant';
+
+/** 回归面板要展示的一切。全部是**真实数据**——「欢迎回来」这句话要有分量，就不能是空话 */
+export interface ReturnPayload {
+  /** 离开天数 */
+  daysAway: number;
+  tier: ReturnTier;
+  /** 这是第几次回来（本次已计入） */
+  returnCount: number;
+  /** 上次打开的日期 YYYY-MM-DD */
+  lastSeenKey: string;
+  /** 可补记的日期（旧 → 新，最多 14 天；distant 档为空数组） */
+  backfillDays: string[];
+  /** 记录总条数——「一条都没有少」这句话的依据 */
+  totalRecords: number;
+  /** 最高的那一维：{ id, 名称, 等级 }，用于那句「并没有削减你的◯◯」 */
+  topAttribute: { id: AttributeId; name: string; level: number } | null;
+}
+
+/** 补记的一条：挂在哪天、写了什么。points 从来源条目继承，但落库时一律清零（见 §12 红线） */
+export interface BackfillEntry {
+  /** YYYY-MM-DD */
+  dateKey: string;
+  text: string;
 }
 
 /** 任务完成后的愿望进度弹窗载荷（PRD_V2.6 §8） */
