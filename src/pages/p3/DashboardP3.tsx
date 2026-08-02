@@ -16,7 +16,7 @@ import { motion, AnimatePresence, useMotionValue, useTransform, animate as anima
 import { useBoldness } from '@/utils/boldness';
 import { useAppStore, toLocalDateKey } from '@/store';
 import { useSkyBadge } from '@/components/sky/useSkyBadge';
-import { weatherEmoji } from '@/utils/weather';
+import { WeatherGlyph } from '@/components/sky/WeatherGlyph';
 import type { AttributeId, CallingCard } from '@/types';
 import { P3R, P3RPage, GhostWords, SectionMark, SlantButton, TitlePeriod, slantClip } from '@/components/p3r/kit';
 import { TodoCompleteModal } from '@/components/TodoCompleteModal';
@@ -93,7 +93,8 @@ const SkyBadge = ({ date }: { date: Date }) => {
       >
         <span className="relative flex h-11 w-12 shrink-0 items-center justify-center"
               style={{ background: P3R.cyanFaint, clipPath: slantClip(8) }}>
-          <span className="text-[20px] leading-none">{weatherEmoji(weather?.icon)}</span>
+          {/* 双色 SVG 而不是 emoji：emoji 自带系统彩色，落在频道配色里就是一块补丁（§7） */}
+          <WeatherGlyph icon={weather?.icon} size={24} ink={P3R.ink} accent={P3R.blue} />
           <span aria-hidden className="absolute right-[3px] top-[3px] h-[7px] w-[9px]"
                 style={{ background: P3R.magenta, clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
         </span>

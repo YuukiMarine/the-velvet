@@ -3,6 +3,7 @@ import { motion } from 'motion/react';
 import { TarotCardData, TarotOrientation, SUIT_META } from '@/constants/tarot';
 import { tarotArtUrl } from '@/constants/tarotArt';
 import { useUiChannel } from '@/ui/useUiChannel';
+import { P4Face, P5Face, type TarotFaceProps } from './TarotFaces';
 
 interface TarotCardSVGProps {
   card: TarotCardData;
@@ -92,6 +93,18 @@ export function TarotCardSVG({
     ? (MAJOR_SYMBOLS[card.id] ?? '✦')
     : (card.number >= 11 ? COURT_LETTERS[card.number] : suitSymbol);
 
+  /** 频道卡面共用的一份入参（P5Face / P4Face 只画脸，翻转与角标仍由本组件管） */
+  const faceProps: TarotFaceProps = {
+    cardId: card.id,
+    name: card.name,
+    nameEn: card.nameEn,
+    rankLabel,
+    isMajor,
+    centerSymbol,
+    suitSymbol,
+    accent,
+  };
+
   return (
     <motion.div
       onClick={onClick}
@@ -133,6 +146,24 @@ export function TarotCardSVG({
             transition: 'transform 0.45s ease',
           }}
         />
+      ) : channel === 'p5' || channel === 'p4' ? (
+        /* 红/黄频道的程序化卡面（PRD_V2.6 §5）。
+           走到这里的是**小阿卡纳 56 张**（本来就没实拍图）与实拍图加载失败的兜底——
+           此前这两种情况在所有频道都渲染同一张深紫金框卡，红频道尤其出戏。 */
+        <svg
+          viewBox={`0 0 ${VB_W} ${VB_H}`}
+          width={width}
+          height={height}
+          style={{
+            transform: flipped ? 'rotate(180deg)' : 'none',
+            transition: 'transform 0.45s ease',
+            display: 'block',
+          }}
+        >
+          {channel === 'p5'
+            ? <P5Face {...faceProps} />
+            : <P4Face {...faceProps} />}
+        </svg>
       ) : (
       <svg
         viewBox={`0 0 ${VB_W} ${VB_H}`}

@@ -1228,35 +1228,42 @@ export const Ledger = () => {
           </button>
         }
       >
+        {/* 排布口径（PRD_V2.6 §6）：按**填写频次**排，不按数据结构排。
+            进/出 与金额合成一行（它们本来就是同一个判断），
+            日期提到上方（补记昨天的账是高频动作，此前它在最底下要滚到底），
+            备注沉到最后（可选自由文本，不该卡在渠道和资产中间）。 */}
         {draft && (
-          <div className="p5-ledgerform space-y-4">
-            {/* 进 / 出 */}
-            <div className="grid grid-cols-2 gap-2">
-              {(['expense', 'income'] as const).map(dir => (
-                <button
-                  key={dir}
-                  onClick={() => setDraft({ ...draft, direction: dir })}
-                  className={`py-2 rounded-xl text-sm font-bold border transition-colors ${
-                    draft.direction === dir
-                      ? 'bg-primary/10 border-primary/50 text-primary'
-                      : 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-400'
-                  }`}
-                >
-                  {dir === 'expense' ? '支出' : '收入'}
-                </button>
-              ))}
-            </div>
-
-            {/* 金额 */}
-            <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
-              <span className="text-xl font-black text-gray-400">{$}</span>
-              <input
-                type="number" inputMode="decimal" autoFocus
-                value={draft.amount}
-                onChange={e => setDraft({ ...draft, amount: e.target.value })}
-                placeholder="0"
-                className="flex-1 min-w-0 bg-transparent text-2xl font-black text-gray-900 dark:text-white tabular-nums outline-none"
-              />
+          <div className="p5-ledgerform space-y-3">
+            {/* 进 / 出 + 金额：并成一行，省掉一整块的高度 */}
+            <div className="flex items-stretch gap-2">
+              <div className="flex shrink-0 flex-col gap-1">
+                {(['expense', 'income'] as const).map(dir => (
+                  <button
+                    key={dir}
+                    onClick={() => setDraft({ ...draft, direction: dir })}
+                    /* 选中态用**实底**而不是原来的 primary/10 淡染：
+                       这两枚被压小之后，淡染在黄频道（浅底 + 橙字）几乎读不出选没选中。
+                       进/出 是这张表最不能猜错的一位，值得一个不含糊的对比。 */
+                    className={`w-14 rounded-lg border py-1.5 text-xs font-bold transition-colors ${
+                      draft.direction === dir
+                        ? 'border-primary bg-primary text-white'
+                        : 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-400'
+                    }`}
+                  >
+                    {dir === 'expense' ? '支出' : '收入'}
+                  </button>
+                ))}
+              </div>
+              <div className="flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-4 dark:border-gray-700 dark:bg-gray-800">
+                <span className="text-xl font-black text-gray-400">{$}</span>
+                <input
+                  type="number" inputMode="decimal" autoFocus
+                  value={draft.amount}
+                  onChange={e => setDraft({ ...draft, amount: e.target.value })}
+                  placeholder="0"
+                  className="min-w-0 flex-1 bg-transparent text-2xl font-black tabular-nums text-gray-900 outline-none dark:text-white"
+                />
+              </div>
             </div>
 
             {/* 类别 */}
@@ -1290,6 +1297,14 @@ export const Ledger = () => {
                 )}
               </div>
             )}
+
+            {/* 日期：今天/昨天/前天 快捷 + 选择器。
+                提到这里是因为「补记昨天那笔」是最常见的编辑动作之一——
+                它此前排在整张表的最后，每次都要滚到底 */}
+            <div className="space-y-1.5">
+              <div className="text-xs text-gray-500 dark:text-gray-400">日期</div>
+              <DateQuickPicker value={draft.date} onChange={d => setDraft({ ...draft, date: d })} />
+            </div>
 
             {/* 学习（成长类目）→ 自选属性加点 */}
             {draft.direction === 'expense' && isGrowthCategory(draft.type) && (
@@ -1371,14 +1386,6 @@ export const Ledger = () => {
               </button>
             )}
 
-            {/* 备注 */}
-            <input
-              value={draft.note}
-              onChange={e => setDraft({ ...draft, note: e.target.value })}
-              placeholder="备注（可选）"
-              className="w-full px-4 py-2.5 rounded-xl bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-sm text-gray-800 dark:text-white placeholder-gray-400 outline-none focus:border-primary"
-            />
-
             {/* 支出：渠道 + 细分类目（chips，可手动加） */}
             {draft.direction === 'expense' && (
               <>
@@ -1414,11 +1421,13 @@ export const Ledger = () => {
               </>
             )}
 
-            {/* 日期：今天/昨天/前天 快捷 + 选择器 */}
-            <div className="space-y-1.5">
-              <div className="text-xs text-gray-500 dark:text-gray-400">日期</div>
-              <DateQuickPicker value={draft.date} onChange={d => setDraft({ ...draft, date: d })} />
-            </div>
+            {/* 备注沉底：可选自由文本，不该卡在渠道和资产登记中间打断结构化填写 */}
+            <input
+              value={draft.note}
+              onChange={e => setDraft({ ...draft, note: e.target.value })}
+              placeholder="备注（可选）"
+              className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm text-gray-800 placeholder-gray-400 outline-none focus:border-primary dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+            />
           </div>
         )}
       </SheetModal>

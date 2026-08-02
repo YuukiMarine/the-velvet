@@ -1,6 +1,9 @@
 import { motion } from 'motion/react';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P4_FLOWER_PATH } from '@/ui/p4Kit';
+import { P5R, P5_FONT, starPts } from '@/components/p5r/kit';
+// 卡背与卡面共用同一套撕边轮廓（都是 200×320），形状语言必须同源
+import { roughRectPts as backRectPts } from './TarotFaces';
 
 /** P4 卡背用的六瓣小花（与 P4Flower 同一条并集轮廓，只是内联进 SVG 并按 r 缩放） */
 const P4BackFlower = ({ cx, cy, r = 10, color = '#f0b428' }: { cx: number; cy: number; r?: number; color?: string }) => (
@@ -42,6 +45,80 @@ export function CardBack({
   const channel = useUiChannel();
   const isP4 = channel === 'p4';
   const isP3 = channel === 'p3';
+
+  // ── P5R 卡背（PRD_V2.6 §5）：纸面 + 黑撕边 + 猩红三环星 + 半调网点 ──
+  // 此前红频道没有分支，翻牌前看到的是通用金框深紫卡——整个占卜入口都在破功。
+  if (channel === 'p5') {
+    return (
+      <motion.div
+        onClick={interactive ? onClick : undefined}
+        whileHover={hoverable && interactive ? { y: -4 } : undefined}
+        whileTap={interactive ? { scale: 0.97 } : undefined}
+        className={`relative inline-block select-none ${interactive ? 'cursor-pointer' : ''} ${className}`}
+        style={{ width, height, opacity: disabled ? 0.5 : 1 }}
+      >
+        {selected && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="pointer-events-none absolute inset-0"
+            style={{ boxShadow: `0 0 0 4px ${P5R.red}`, borderRadius: 12 }}
+          />
+        )}
+        <svg viewBox={`0 0 ${VB_W} ${VB_H}`} width={width} height={height} style={{ display: 'block' }}>
+          <defs>
+            <pattern id="p5-back-dots" width="7" height="7" patternUnits="userSpaceOnUse">
+              <circle cx="1.6" cy="1.6" r="1.4" fill={P5R.paper} opacity="0.16" />
+            </pattern>
+            <clipPath id="p5-back-clip">
+              <polygon points={backRectPts(3.1, 5, 5)} />
+            </clipPath>
+          </defs>
+          {/* 硬影 → 纸描边 → 黑卡面（卡背反过来：黑面纸边，与卡面拉开） */}
+          <polygon points={backRectPts(7.7, 0, 6)} fill={P5R.redDeep} transform="translate(4,5)" />
+          <polygon points={backRectPts(2.3, 0, 6)} fill={P5R.paper} />
+          <polygon points={backRectPts(3.1, 5, 5)} fill={P5R.ink} />
+          <g clipPath="url(#p5-back-clip)">
+            <rect x="0" y="0" width={VB_W} height={VB_H} fill="url(#p5-back-dots)" />
+            {/* 斜插红块 */}
+            <polygon points={`0,86 ${VB_W},54 ${VB_W},${VB_H - 54} 0,${VB_H - 86}`} fill={P5R.red} opacity="0.22" />
+          </g>
+          {/* 中央三环星（纸 → 红 → 黑 → 纸小星） */}
+          <polygon points={starPts(VB_W / 2, VB_H / 2, 76, -90 - 6)} fill={P5R.paper} />
+          <polygon points={starPts(VB_W / 2, VB_H / 2, 62, -90 - 6)} fill={P5R.red} />
+          <polygon points={starPts(VB_W / 2, VB_H / 2, 42, -90 - 6)} fill={P5R.ink} />
+          <polygon points={starPts(VB_W / 2, VB_H / 2, 20, -90 - 6)} fill={P5R.paper} />
+          {/* 角落小星 */}
+          <polygon points={starPts(30, 34, 11, -90 + 16)} fill={P5R.red} />
+          <polygon points={starPts(VB_W - 30, VB_H - 34, 11, -90 - 22)} fill={P5R.red} />
+          <text
+            x={VB_W / 2}
+            y="34"
+            textAnchor="middle"
+            fontFamily={P5_FONT}
+            fontSize="11"
+            fontWeight="900"
+            letterSpacing="4"
+            fill={P5R.paper}
+          >
+            THE VELVET
+          </text>
+          <text
+            x={VB_W / 2}
+            y={VB_H - 22}
+            textAnchor="middle"
+            fontFamily={P5_FONT}
+            fontSize="8"
+            fontWeight="900"
+            letterSpacing="3"
+            fill={P5R.grey}
+          >
+            ARCANA
+          </text>
+        </svg>
+      </motion.div>
+    );
+  }
 
   // ── P4 卡背（p4-astrology-reference-v2 1:1）：奶油底黑细框 + 黄圆黑星靶心 + 角落黄花 ──
   if (isP4) {

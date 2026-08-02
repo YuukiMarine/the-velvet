@@ -28,6 +28,9 @@ import { calcMaxStreak } from '@/utils/streak';
 import { TAROT_BY_ID } from '@/constants/tarot';
 import { triggerNavFeedback, playSound } from '@/utils/feedback';
 import { BigDealHomeCard } from '@/components/bigdeal/BigDealHomeCard';
+import { useSkyBadge } from '@/components/sky/useSkyBadge';
+import { WeatherGlyph } from '@/components/sky/WeatherGlyph';
+import type { WeatherIcon } from '@/utils/weather';
 import { BigDealPanel } from '@/components/bigdeal/BigDealPanel';
 
 // 问候副题池（与 Dashboard.tsx SUBTEXTS 同源；设计稿日期卡上按「，」拆成两行）
@@ -97,6 +100,17 @@ const MoonGlyph = ({ date }: { date: Date }) => {
     </span>
   );
 };
+
+/**
+ * P5 天气块（PRD_V2.6 §7 补齐项）：与 MoonGlyph 同尺同形，只换里面画什么。
+ * 尺寸必须一致——两态在同一个位置切换，块一变大整张日期纸卡就会跳。
+ */
+const WeatherGlyphP5 = ({ icon }: { icon: WeatherIcon | undefined }) => (
+  <span aria-hidden className="relative flex h-10 w-10 shrink-0 items-center justify-center" style={{ background: P5R.ink, clipPath: roughQuad(7.3, 4) }}>
+    <WeatherGlyph icon={icon} size={26} ink={P5R.paper} accent={P5R.red} />
+    <span className="absolute -right-[3px] -top-[3px] h-[8px] w-[10px]" style={{ background: P5R.red, clipPath: 'polygon(28% 0, 100% 0, 72% 100%, 0 100%)' }} />
+  </span>
+);
 
 // ── 灰星点轨雷达（角长 = 等级；升级可见地「长角」）────────────────────────────
 const STAR_CX = 180;
@@ -436,6 +450,7 @@ export const DashboardP5 = () => {
 
   const now = new Date();
   const moon = moonPhaseOf(now);
+  const sky = useSkyBadge();
   const subtext = useMemo(() => {
     const pool = SUBTEXTS[getSlot(now.getHours())];
     return pool[Math.floor(Math.random() * pool.length)];
@@ -680,7 +695,14 @@ export const DashboardP5 = () => {
               <div aria-hidden className="absolute inset-0" style={{ background: P5R.paper, clipPath: 'polygon(18px 0, 100% 0, 100% 100%, 0 100%, 0 18px)', boxShadow: `inset 0 0 0 2.5px ${P5R.ink}` }} />
               <div className="relative px-2.5 py-2.5">
                 <div className="flex items-center gap-2">
-                  <MoonGlyph date={now} />
+                  {/* 天空位：整块可点，月相 ⇄ 天气，模式记进 settings（§7 P5 接线） */}
+                  <button
+                    type="button"
+                    onClick={sky.toggle}
+                    aria-label={sky.mode === 'weather' ? '天气（点击切回月相）' : '月相（点击切到天气）'}
+                  >
+                    {sky.mode === 'weather' ? <WeatherGlyphP5 icon={sky.weather?.icon} /> : <MoonGlyph date={now} />}
+                  </button>
                   {subLine2 ? (
                     <div className="min-w-0 text-[12px] font-black leading-[1.35]" style={{ color: P5R.ink }}>
                       <div className="truncate">{subLine1}</div>
@@ -690,12 +712,26 @@ export const DashboardP5 = () => {
                     <div className="line-clamp-2 min-w-0 text-[12px] font-black leading-[1.35]" style={{ color: P5R.ink }}>{subLine1}</div>
                   )}
                 </div>
-                {/* 月相读数：名 + LUNAR 亮面百分比（P3 同口径，只有图形读不出月相） */}
+                {/* 读数行：月相名 + LUNAR%，或温度 + 天气词。
+                    没配好时照说「去设置天气」而不是静默切回月相——静默回退会被读成点击失灵 */}
                 <div className="mt-1.5 flex items-center gap-1.5">
-                  <span className="text-[11px] font-black leading-none" style={{ color: P5R.ink, fontFamily: P5_FONT }}>{moon.name}</span>
-                  <span className="text-[9px] font-black leading-none tracking-[0.14em]" style={{ color: P5R.red }}>
-                    LUNAR {Math.round(moon.illum * 100)}%
-                  </span>
+                  {sky.mode === 'weather' ? (
+                    <>
+                      <span className="truncate text-[11px] font-black leading-none" style={{ color: P5R.ink, fontFamily: P5_FONT }}>
+                        {!sky.ready ? '去设置天气' : sky.error ? '天气取不到' : sky.loading ? '取数中…' : `${sky.weather?.temp}°C ${sky.weather?.text}`}
+                      </span>
+                      <span className="shrink-0 text-[9px] font-black leading-none tracking-[0.14em]" style={{ color: P5R.red }}>
+                        {!sky.ready ? 'SET UP' : sky.error ? 'RETRY' : `FEELS ${sky.weather?.feelsLike ?? '--'}°`}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-[11px] font-black leading-none" style={{ color: P5R.ink, fontFamily: P5_FONT }}>{moon.name}</span>
+                      <span className="text-[9px] font-black leading-none tracking-[0.14em]" style={{ color: P5R.red }}>
+                        LUNAR {Math.round(moon.illum * 100)}%
+                      </span>
+                    </>
+                  )}
                 </div>
                 <div className="mt-1 flex items-end justify-end gap-1.5">
                   <span className="text-[46px] font-black leading-none tabular-nums" style={{ color: P5R.redHot, fontFamily: P5_FONT }}>{now.getDate()}</span>
