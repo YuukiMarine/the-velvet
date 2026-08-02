@@ -9,4 +9,4 @@
     android:resizeMode="horizontal|vertical"
     android:widgetCategory="home_screen"
     android:description="@string/widget_tarot_desc"
-    android:initialLayout="@layout/widget_velvet_tarot" />
+    android:initialLayout="@layout/widget_velvet_face" />

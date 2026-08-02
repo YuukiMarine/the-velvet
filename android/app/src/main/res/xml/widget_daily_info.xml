@@ -10,4 +10,4 @@
     android:resizeMode="horizontal|vertical"
     android:widgetCategory="home_screen"
     android:description="@string/widget_daily_desc"
-    android:initialLayout="@layout/widget_velvet_daily" />
+    android:initialLayout="@layout/widget_velvet_face" />

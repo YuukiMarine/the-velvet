@@ -29,6 +29,18 @@ export default defineConfig({
               cacheableResponse: { statuses: [0, 200] },
             },
           },
+          {
+            // 内嵌中文字体子集（2.6 MB）。与塔罗图同一策略：**不进预缓存**，
+            // 免得把 PWA 的首次安装体积顶上去；首屏用系统字兜底（font-display:swap），
+            // 见过一次即长期离线可用。原生 APK 里这些文件本就打进安装包，走不到这条。
+            urlPattern: ({ url }) => url.pathname.startsWith('/fonts/'),
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'velvet-fonts-v1',
+              expiration: { maxEntries: 8, maxAgeSeconds: 60 * 60 * 24 * 365 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
         ],
         // 导航请求（HTML）→ 预缓存里的 index.html。
         // ⚠️ 这**不是** NetworkFirst（旧注释写错了，FS7 审查核对生成的 dist/sw.js 确认：

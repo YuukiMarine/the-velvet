@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- 圆角底板（P3 / P4 / 中性）。实际填充色由 setBackgroundColor 按频道覆盖。 -->
-<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
-    <corners android:radius="18dp" />
-    <solid android:color="#FFFFFF" />
-</shape>

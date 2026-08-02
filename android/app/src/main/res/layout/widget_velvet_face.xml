@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  三块组件共用的空壳（PRD_V2.6 §8 / v2.6.1 重做）。
+
+  整幅画面由 VelvetP3 在 Canvas 上画成一张位图，这里只负责把它铺满。
+  原因见 VelvetP3 的类注释：P3R 的斜切平行四边形 / 幽灵大字 / 洋红角标
+  没有一样是 RemoteViews 的控件能表达的，用控件拼只能拼出"居中的字 + 灰条"。
+
+  scaleType=fitXY：位图长边被压到 640px（Binder 事务预算），这里再拉回组件实际尺寸。
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/velvet_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <ImageView
+        android:id="@+id/velvet_face"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="fitXY"
+        android:contentDescription="@string/widget_face_desc" />
+</FrameLayout>

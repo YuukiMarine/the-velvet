@@ -6,6 +6,7 @@ import android.appwidget.AppWidgetProvider;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.graphics.Bitmap;
 import android.os.Build;
 import android.util.TypedValue;
 import android.widget.RemoteViews;
@@ -13,14 +14,14 @@ import android.widget.RemoteViews;
 /**
  * 三种规格共用的骨架（PRD_V2.6 §8）。
  *
- * 每个子类只回答两个问题：用哪个 layout、怎么把快照填进去。
+ * v2.6.1 起画法整个换掉：不再用 RemoteViews 控件拼版，改由子类交出**一整张位图**
+ * （见 VelvetP3 的类注释）。子类因此只需回答一个问题：这块组件长什么样。
  * 点击一律拉起 MainActivity——组件是入口不是终点。
  */
 abstract class VelvetWidgetBase extends AppWidgetProvider {
 
-    abstract int layoutId();
-
-    abstract void bind(Context ctx, RemoteViews rv, VelvetSnapshot s, int wDp, int hDp);
+    /** 画出这块组件的整幅画面。wPx/hPx 已按 Binder 预算压过，直接当画布尺寸用。 */
+    abstract Bitmap face(Context ctx, VelvetSnapshot s, int wPx, int hPx);
 
     /** 构造一个指向某个 provider 的更新广播（插件写完快照后用它催刷新） */
     static Intent updateIntent(Context ctx, Class<?> provider, int[] ids) {
@@ -43,12 +44,7 @@ abstract class VelvetWidgetBase extends AppWidgetProvider {
 
     void render(Context ctx, AppWidgetManager mgr, int id) {
         VelvetSnapshot s = VelvetSnapshot.read(ctx);
-        RemoteViews rv = new RemoteViews(ctx.getPackageName(), layoutId());
-
-        // 底板按频道上色（P5 直角纸片 / 其余圆角）
-        rv.setInt(R.id.velvet_root, "setBackgroundResource",
-                  s.squareCorners() ? R.drawable.widget_bg_square : R.drawable.widget_bg_round);
-        rv.setInt(R.id.velvet_root, "setBackgroundColor", s.faceColor());
+        RemoteViews rv = new RemoteViews(ctx.getPackageName(), R.layout.widget_velvet_face);
 
         // 组件实际尺寸（dp）——位图必须按它算，写死 px 在高密度屏上会缩成一团
         android.os.Bundle opts = mgr.getAppWidgetOptions(id);
@@ -57,13 +53,14 @@ abstract class VelvetWidgetBase extends AppWidgetProvider {
         if (wDp <= 0) wDp = 250;
         if (hDp <= 0) hDp = 110;
 
-        if (!s.present) {
+        int[] px = VelvetP3.canvasSize(ctx, wDp, hDp);
+        try {
             // 从没打开过 App / 快照读不出来：说清楚下一步，别只给一块空白
-            rv.setTextViewText(R.id.velvet_hint, "打开一次「靛蓝色房间」即可同步");
-            rv.setViewVisibility(R.id.velvet_hint, android.view.View.VISIBLE);
-        } else {
-            rv.setViewVisibility(R.id.velvet_hint, android.view.View.GONE);
-            bind(ctx, rv, s, wDp, hDp);
+            Bitmap bmp = s.present ? face(ctx, s, px[0], px[1]) : VelvetP3.notSynced(px[0], px[1]);
+            if (bmp != null) rv.setImageViewBitmap(R.id.velvet_face, bmp);
+        } catch (Throwable t) {
+            // 画崩了也要给出一块能读的组件，而不是让启动器显示「加载中」的灰块
+            try { rv.setImageViewBitmap(R.id.velvet_face, VelvetP3.notSynced(px[0], px[1])); } catch (Throwable ignored) { }
         }
 
         rv.setOnClickPendingIntent(R.id.velvet_root, launchApp(ctx));

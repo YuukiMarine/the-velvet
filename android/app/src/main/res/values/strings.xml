@@ -12,4 +12,6 @@
     <string name="widget_tarot_desc">今日塔罗 · 月相</string>
     <string name="widget_journey_name">征途</string>
     <string name="widget_journey_desc">日期 · 月相 · 塔罗 · 宣告卡进度</string>
+    <!-- 整块组件是一张位图，无障碍读屏靠这一条 -->
+    <string name="widget_face_desc">靛蓝色房间小组件</string>
 </resources>
