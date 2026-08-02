@@ -7,6 +7,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { calcMaxStreak } from '@/utils/streak';
 import { applyUiChannel } from '@/ui/channel';
 import { computeAndSchedule, type NotifSnapshot } from '@/utils/notifications';
+import { pushWidgetSnapshot } from '@/utils/widgetSnapshot';
 import { isGrowthCategory, cycleRangeForKey } from '@/utils/ledgerFormat';
 import { resolveProvider } from '@/utils/aiProviders';
 import { chatComplete, getAIConfig, type AIConfig, type AIMessage } from '@/utils/aiClient';
@@ -3648,6 +3649,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     } catch (e) {
       console.warn('[notifications] sync failed', e);
     }
+    // 桌面小组件快照（PRD_V2.6 §8）搭这趟车：
+    // syncNotifications 的触发点（记录/勾任务/抽塔罗/改设置）恰好就是
+    // 组件需要重画的时机，不必再铺一套自己的钩子。内部自带指纹去重与静默失败。
+    void pushWidgetSnapshot();
   },
 
   deleteSummary: async (id: string) => {
