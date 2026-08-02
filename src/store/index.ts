@@ -1,5 +1,5 @@
 ﻿import { create } from 'zustand';
-import { User, Attribute, Activity, Achievement, Skill, Settings, ThemeType, AttributeId, AttributeNamesKey, Todo, TodoCompletion, TodoStep, FateCandidate, BigDealClearPayload, PeriodSummary, SummaryPeriod, SummaryPromptPreset, WeeklyGoal, WeeklyGoalItem, Persona, Shadow, BattleState, TowerStratum, StratumNode, DailyDivination, LongReading, LongReadingFollowUp, Confidant, ConfidantEvent, ConfidantBuff, CounselSession, CounselMessage, CounselArchive, CallingCard, NotifSlot, LedgerEntry, Budget, SpendWorth, LedgerAsset, Wish, BattleArsenal, ChainKey, AffixKind, NavigatorPreset, NavigatorMemo } from '@/types';
+import { User, Attribute, Activity, Achievement, Skill, Settings, ThemeType, AttributeId, AttributeNamesKey, Todo, TodoCompletion, TodoStep, FateCandidate, BigDealClearPayload, PeriodSummary, SummaryPeriod, SummaryPromptPreset, WeeklyGoal, WeeklyGoalItem, Persona, Shadow, BattleState, TowerStratum, StratumNode, DailyDivination, LongReading, LongReadingFollowUp, Confidant, ConfidantEvent, ConfidantBuff, CounselSession, CounselMessage, CounselArchive, CallingCard, NotifSlot, LedgerEntry, Budget, SpendWorth, LedgerAsset, Wish, WishProgressPoint, WishProgressSource, WishProgressCutPayload, WishProposalPayload, BattleArsenal, ChainKey, AffixKind, NavigatorPreset, NavigatorMemo } from '@/types';
 import { TAROT_BY_ID } from '@/constants/tarot';
 import { summarizeCounsel, type CounselContext, type CounselConfidantBrief, type CounselRecentEvent } from '@/utils/counselAI';
 import { db } from '@/db';
@@ -9,7 +9,7 @@ import { applyUiChannel } from '@/ui/channel';
 import { computeAndSchedule, type NotifSnapshot } from '@/utils/notifications';
 import { isGrowthCategory, cycleRangeForKey } from '@/utils/ledgerFormat';
 import { resolveProvider } from '@/utils/aiProviders';
-import { chatComplete, getAIConfig } from '@/utils/aiClient';
+import { chatComplete, getAIConfig, type AIConfig, type AIMessage } from '@/utils/aiClient';
 import {
   pointsToLevel,
   levelBasePoints,
@@ -102,6 +102,62 @@ const removeWishStepHistory = async (parentId: string, sourceStepId: string) => 
     stepHistory: parent.stepHistory.filter((h) => h.sourceStepId !== sourceStepId),
   });
 };
+
+// ── 愿望进度评估（PRD_V2.6 §8）─────────────────────────────
+
+/** bumpWishProgress 的节流表：wishId → 上次泵的时间戳 */
+const wishBumpAt = new Map<string, number>();
+
+/**
+ * 无 API Key 时的离线估算。
+ *
+ * 形状选饱和曲线而不是线性：「离梦想的距离」本来就该越靠后越难推——
+ * 线性会让第 30 条记录和第 3 条一样值钱，那是记账不是靠近。
+ * 也永远够不到 100%：只有用户自己按下「愿望已实现」才算到岸。
+ */
+export function localWishEstimate(done: number, total: number, times: number): number {
+  const act = (cap: number) => cap * (1 - Math.exp(-times / 10));
+  if (total > 0) return Math.min(99, Math.round((done / total) * 60 + act(38)));
+  return Math.min(92, Math.round(act(92)));
+}
+
+const WISH_EVAL_SYS =
+  '你在评估用户距离一个长期愿望还有多远。只输出 JSON：{"pct":<0到100的整数>,"reason":"<不超过24个中文字的依据>"}。' +
+  '判断依据是**实际推进的证据**（子任务完成情况、挂到这个愿望的记录条数与内容、用户自述现状），不是愿望本身听起来难不难。' +
+  '有上次评估值时以它为锚点微调，没有新证据就别大改；证据充分才敢大步走。' +
+  '100 留给"已经实现"，没实现就不要给 100。reason 用第二人称、说人话、不要复述数字。';
+
+/** 空响应自愈：DeepSeek 的 json_object 有概率回空白 content，退一档重来 */
+async function callWishJson(cfg: AIConfig, messages: AIMessage[]): Promise<string> {
+  const opts = { temperature: 0.3, maxTokens: 160 };
+  try {
+    return await chatComplete(cfg, messages, { ...opts, jsonMode: true });
+  } catch (e) {
+    if (e instanceof Error && e.message.includes('空响应')) {
+      return await chatComplete(cfg, messages, { ...opts, jsonMode: false });
+    }
+    throw e;
+  }
+}
+
+/** JSON 优先，失败退化为"抓第一个百分数"——模型加了话头也不至于整次白跑 */
+function parseWishEval(content: string): { pct: number; reason?: string } | null {
+  const raw = content.trim();
+  const jsonText = raw.startsWith('{') ? raw : raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1);
+  try {
+    const o = JSON.parse(jsonText) as Record<string, unknown>;
+    const pct = Number(o.pct);
+    if (Number.isFinite(pct)) {
+      const reason = String(o.reason ?? '').trim().slice(0, 40);
+      return { pct: Math.max(0, Math.min(100, Math.round(pct))), reason: reason || undefined };
+    }
+  } catch { /* 落到下面的正则兜底 */ }
+  const m = raw.match(/(\d{1,3})\s*%/) ?? raw.match(/\b(\d{1,3})\b/);
+  if (!m) return null;
+  const pct = Number(m[1]);
+  if (!Number.isFinite(pct) || pct < 0 || pct > 100) return null;
+  return { pct: Math.round(pct) };
+}
 
 /**
  * 成长总结：category → 中文小标签，方便 AI 识别条目类型。
@@ -372,6 +428,38 @@ interface AppState {
    * 在线走 chatComplete；无 Key 抛错由调用方兜底（手动输入）。返回标题数组，由 UI 确认后再落库。
    */
   decomposeWishAI: (parent: Wish, children?: Wish[]) => Promise<string[]>;
+
+  // ── 愿望进度（PRD_V2.6 §8）──────────────────────────────
+  /** 给愿望加一条子任务（勾掉不加点，见 Wish.steps 注释） */
+  addWishStep: (wishId: string, title: string, opts?: { source?: 'manual' | 'ai' }) => Promise<void>;
+  /** 勾 / 撤勾一条子任务；勾上会顺带触发一次进度重估（受 wishAutoEvaluate 管辖） */
+  toggleWishStep: (wishId: string, stepId: string) => Promise<void>;
+  removeWishStep: (wishId: string, stepId: string) => Promise<void>;
+  /** AI 续拆愿望子任务（复用 decomposeWishAI 管线，避重/限量逻辑免费继承） */
+  decomposeWishStepsAI: (wishId: string) => Promise<string[]>;
+  /**
+   * 评估「离这个愿望还有多远」。
+   * 在线走 AI（带子步/挂载记录/上次落点作上下文）；无 Key 退化为本地估算（source='local'）。
+   * `context` 供 Agent 把谈话里的新信息喂进来；
+   * `dryRun` 只算不写——Agent 的提议必须等用户确认才落库，绝不先斩后奏。
+   */
+  evaluateWishProgress: (wishId: string, opts?: { context?: string; allowDecrease?: boolean; dryRun?: boolean }) => Promise<{ pct: number; delta: number; reason?: string; source: WishProgressSource } | null>;
+  /** 直接落一个百分比（手动拖 / Agent 提议被确认后）。写轨迹、发弹窗由调用方决定 */
+  setWishProgress: (wishId: string, pct: number, opts?: { reason?: string; source?: WishProgressSource }) => Promise<void>;
+  /** 环要画的一切：百分比 + 是否评估过 + 子步计数 + 挂载次数 */
+  getWishRing: (wishId: string) => { pct: number; evaluated: boolean; done: number; total: number; times: number };
+  /**
+   * 任务完成后的进度泵：立刻不阻塞地跑一次重估，出结果再弹窗（§8「每次任务完成都会评估涨了多少」）。
+   * 内部自带节流与状态校验，重复调用安全。
+   */
+  bumpWishProgress: (wishId: string) => Promise<void>;
+  /** 进度弹窗载荷（App 顶层 WishProgressCutIn 消费；null = 无待播） */
+  wishProgressCut: WishProgressCutPayload | null;
+  clearWishProgressCut: () => void;
+  /** 黑猫的进度提议（谈话中触发，必须用户确认才落库；null = 无待决） */
+  wishProposal: WishProposalPayload | null;
+  setWishProposal: (p: WishProposalPayload | null) => void;
+
   /** 今日「应做」的活跃待办（active + 未来启用日排除 + weekdays 不含今天排除）；短路决策候选与入口卡计数共用，统一全站口径。 */
   getDueTodosToday: () => Todo[];
 
@@ -1162,6 +1250,11 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     void get().syncNotifications(); // 已记录 → 重排，撤掉「提醒记录」提醒
 
+    // 挂了愿望的记录 → 泵一次进度（PRD_V2.6 §8「每次任务完成都会评估涨了多少」）。
+    // 不 await：AI 评估要几秒，不能让"记一笔"卡在那里等；结果到了自己弹窗。
+    // 愿望已实现时写的那条纪念记录也带 wishId，但那时 status 已是 'done'，泵内自会挡掉。
+    if (options?.wishId) void get().bumpWishProgress(options.wishId);
+
     return {
       unlockHints: {
         achievements: matchedAchievements.length,
@@ -1808,6 +1901,186 @@ export const useAppStore = create<AppState>((set, get) => ({
     return { title: w.title, timesLogged, archivedTodos };
   },
 
+  // ── 愿望进度（PRD_V2.6 §8）──────────────────────────────
+
+  addWishStep: async (wishId, title, opts) => {
+    const t = title.trim();
+    const w = await db.wishes.get(wishId);
+    if (!w || !t) return;
+    const step: TodoStep = { id: uuidv4(), title: t, source: opts?.source ?? 'manual' };
+    await db.wishes.put({ ...w, steps: [...(w.steps ?? []), step] });
+    await get().loadWishes();
+  },
+
+  toggleWishStep: async (wishId, stepId) => {
+    const w = await db.wishes.get(wishId);
+    if (!w) return;
+    const steps = w.steps ?? [];
+    const target = steps.find(s => s.id === stepId);
+    if (!target) return;
+    const nowDone = !target.done;
+    await db.wishes.put({
+      ...w,
+      steps: steps.map(s => (s.id === stepId
+        ? { ...s, done: nowDone, doneAt: nowDone ? new Date().toISOString() : undefined }
+        : s)),
+    });
+    await get().loadWishes();
+    // 勾上才泵进度：撤勾是纠错动作，不该反过来弹一张"你退步了"的卡
+    if (nowDone) void get().bumpWishProgress(wishId);
+  },
+
+  removeWishStep: async (wishId, stepId) => {
+    const w = await db.wishes.get(wishId);
+    if (!w) return;
+    await db.wishes.put({ ...w, steps: (w.steps ?? []).filter(s => s.id !== stepId) });
+    await get().loadWishes();
+  },
+
+  decomposeWishStepsAI: async (wishId) => {
+    const w = get().wishes.find(x => x.id === wishId);
+    if (!w) return [];
+    // 同 decomposeBigDealAI 的手法：把 steps 映射成伪子 Wish，避重/限量/清洗全部继承
+    const children: Wish[] = (w.steps ?? []).map(s => ({
+      id: s.id,
+      parentId: w.id,
+      title: s.title,
+      status: s.done ? 'done' : 'active',
+      source: s.source,
+      createdAt: new Date(w.createdAt),
+    }));
+    return get().decomposeWishAI(w, children);
+  },
+
+  getWishRing: (wishId) => {
+    const w = get().wishes.find(x => x.id === wishId);
+    const steps = w?.steps ?? [];
+    const done = steps.filter(s => s.done).length;
+    const times = get().getWishProgress(wishId);
+    return {
+      pct: w?.progressPct ?? localWishEstimate(done, steps.length, times),
+      // 「从未评估过」和「评估结果是 0%」是两回事，环要分别画
+      evaluated: typeof w?.progressPct === 'number',
+      done,
+      total: steps.length,
+      times,
+    };
+  },
+
+  setWishProgress: async (wishId, pct, opts) => {
+    const w = await db.wishes.get(wishId);
+    if (!w) return;
+    const next = Math.max(0, Math.min(100, Math.round(pct)));
+    const prev = w.progressPct;
+    const point: WishProgressPoint = {
+      at: new Date().toISOString(),
+      pct: next,
+      delta: next - (prev ?? 0),
+      reason: opts?.reason,
+      source: opts?.source ?? 'manual',
+    };
+    await db.wishes.put({
+      ...w,
+      progressPct: next,
+      progressBasis: opts?.reason ?? w.progressBasis,
+      progressUpdatedAt: point.at ? new Date(point.at) : new Date(),
+      progressSource: point.source,
+      progressHistory: [...(w.progressHistory ?? []), point].slice(-12),
+    });
+    await get().loadWishes();
+  },
+
+  evaluateWishProgress: async (wishId, opts) => {
+    const w = get().wishes.find(x => x.id === wishId) ?? await db.wishes.get(wishId);
+    // 已实现/已归档的愿望不再评估——那条线已经走完了
+    if (!w || w.status !== 'active') return null;
+
+    const steps = w.steps ?? [];
+    const done = steps.filter(s => s.done).length;
+    const times = get().getWishProgress(wishId);
+    const prev = w.progressPct;
+
+    let pct = localWishEstimate(done, steps.length, times);
+    let reason: string | undefined;
+    let source: WishProgressSource = 'local';
+
+    const cfg = getAIConfig(get().settings);
+    if (cfg) {
+      try {
+        const recent = get().activities
+          .filter(a => a.wishId === wishId)
+          .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+          .slice(0, 8)
+          .map(a => `· ${a.description}`.slice(0, 40));
+        const usr = [
+          `愿望：${w.title}`,
+          w.note ? `补充：${w.note.slice(0, 80)}` : '',
+          w.currentState ? `用户自述现状：${w.currentState.slice(0, 90)}` : '',
+          steps.length ? `子任务：已完成 ${done} / 共 ${steps.length}（${steps.slice(0, 8).map(s => `${s.done ? '✓' : '○'}${s.title.slice(0, 18)}`).join('，')}）` : '子任务：还没拆',
+          `挂到这个愿望的记录：${times} 条${recent.length ? `\n${recent.join('\n')}` : ''}`,
+          typeof prev === 'number' ? `上次评估：${prev}%${w.progressBasis ? `（依据：${w.progressBasis}）` : ''}` : '此前没有评估过',
+          opts?.context ? `用户刚刚在对话里说的（重要，优先据此调整）：${opts.context.slice(0, 300)}` : '',
+          '请给出现在的完成度百分比。',
+        ].filter(Boolean).join('\n');
+        const content = await callWishJson(cfg, [
+          { role: 'system', content: WISH_EVAL_SYS },
+          { role: 'user', content: usr },
+        ]);
+        const parsed = parseWishEval(content);
+        if (parsed) {
+          pct = parsed.pct;
+          reason = parsed.reason;
+          source = 'ai';
+        }
+      } catch {
+        // AI 没接通就用本地估算——这个功能不该因为没网就整块消失
+      }
+    }
+
+    // 自动路径（任务完成后的泵）单调不降：刚做完一件事却看见环缩回去，
+    // 是在惩罚用户干活。要下调只能走面板里手动的「重新评估」（allowDecrease）。
+    if (!opts?.allowDecrease && typeof prev === 'number') pct = Math.max(prev, pct);
+    pct = Math.max(0, Math.min(100, Math.round(pct)));
+
+    const delta = pct - (prev ?? 0);
+    // dryRun：Agent 的提议路径只要一个数字去问用户，写库要等确认（§8）
+    if (!opts?.dryRun) await get().setWishProgress(wishId, pct, { reason, source });
+    return { pct, delta, reason, source };
+  },
+
+  bumpWishProgress: async (wishId) => {
+    const s = get();
+    if (s.settings.wishAutoEvaluate === false) return;
+    const w = s.wishes.find(x => x.id === wishId);
+    if (!w || w.status !== 'active') return;
+    // 同一愿望 20 秒内只泵一次：批量补记 / 连勾多条子步时不该弹一串卡
+    const last = wishBumpAt.get(wishId) ?? 0;
+    if (Date.now() - last < 20_000) return;
+    wishBumpAt.set(wishId, Date.now());
+    try {
+      const r = await get().evaluateWishProgress(wishId);
+      if (!r) return;
+      set({
+        wishProgressCut: {
+          wishId,
+          wishTitle: w.title,
+          pct: r.pct,
+          delta: r.delta,
+          reason: r.reason,
+          source: r.source,
+          times: get().getWishProgress(wishId),
+        },
+      });
+    } catch {
+      // 泵失败静默：它是锦上添花，不该把"完成任务"这件事搞出错误提示
+    }
+  },
+
+  wishProgressCut: null,
+  clearWishProgressCut: () => set({ wishProgressCut: null }),
+  wishProposal: null,
+  setWishProposal: (p) => set({ wishProposal: p }),
+
   decomposeWishAI: async (parent: Wish, children: Wish[] = []) => {
     const cfg = getAIConfig(get().settings);
     if (!cfg) throw new Error('未配置 AI，请在「设置 → AI 总结」填入 API 密钥，或手动添加小步骤');
@@ -2150,6 +2423,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       callingCards: [],
       wishes: [],
       bigDealClear: null,
+      wishProgressCut: null,
+      wishProposal: null,
       todos: [],
       todoCompletions: [],
       summaries: [],
@@ -2500,6 +2775,10 @@ export const useAppStore = create<AppState>((set, get) => ({
             ...wi,
             createdAt: new Date(wi.createdAt),
             archivedAt: wi.archivedAt ? new Date(wi.archivedAt) : undefined,
+            // JSON 里这两个是字符串，不还原成 Date 的话归档区的「已实现」标签
+            // 和进度面板的「上次评估」都会拿到 string 去调 Date 方法
+            fulfilledAt: wi.fulfilledAt ? new Date(wi.fulfilledAt) : undefined,
+            progressUpdatedAt: wi.progressUpdatedAt ? new Date(wi.progressUpdatedAt) : undefined,
           });
         }
       }
@@ -2990,7 +3269,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       await get().addActivity(
         `完成小步: ${doneStep.title}（大事「${todo.title}」第 ${doneCount}/${nextSteps.length} 步）`,
         points, 'todo',
-        { category: 'bigdeal_step', bigDealId: todoId },
+        // wishId 随行：大事挂到某个愿望上时，它的每一小步都该算进那个愿望的靠近度（§8）
+        { category: 'bigdeal_step', bigDealId: todoId, wishId: todo.wishId },
       );
 
       if (nextSteps.every(s => s.done)) {
@@ -3034,7 +3314,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const { activityId } = await get().addActivity(
       `大事收官: ${todo.title}（${steps.length} 步全成）`,
       points, 'todo',
-      { important: true, category: 'bigdeal_clear', bigDealId: todoId },
+      { important: true, category: 'bigdeal_clear', bigDealId: todoId, wishId: todo.wishId },
     );
 
     // 收官 SP = min(20, 子步数×3)：战场模块关闭不发；从未初始化战场（无 battleState）也不发
