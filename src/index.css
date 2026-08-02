@@ -2,6 +2,38 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── 内嵌字体（Noto Sans/Serif SC 子集，SIL OFL 1.1，见 public/fonts/OFL.txt）──────
+ *
+ * 为什么必须内嵌：安卓侧原来整套字型全靠系统兜底，后果有两层——
+ *   1. 正文落到各家 ROM 的默认中文字体。安卓 9 一档常见的是 Droid Sans Fallback
+ *      这类老字形，字重也只有一档，设计里大量的 500/600/700/900 全被压平
+ *      （用户上报「用了系统默认字体，有点丑」）。
+ *   2. 更硬的伤：P4 的「标题毯式衬线化」写的是 'Noto Serif SC' / 'Songti SC' /
+ *      SimSun —— **安卓上一个都不存在**，于是落到 generic serif，而 generic serif
+ *      在安卓上没有中文字面，最终又被 fallback 回黑体。也就是说 P4 那批衬线大标题
+ *      在安卓上从来没有真正出现过。
+ *
+ * 体积口径：正文子集 = GB2312 一二级（6763 常用字，日常输入基本全覆盖）+ 源码 UI
+ * 字符集 + 拉丁数字标点，1.86 MB；衬线子集只做标题/演出用，装源码 UI 字符集即可，
+ * 0.77 MB。两份合计 2.63 MB —— 换掉「整包 17.8 + 25.1 MB 原始 VF」这个不可能的选项。
+ * 两份都保留 wght 可变轴，字重是连续的，不再是"只有一档"。
+ * 极冷僻字（子集外）继续走系统 fallback，这是刻意的取舍。
+ */
+@font-face {
+  font-family: 'Velvet Sans SC';
+  src: url('/fonts/velvet-sans-sc.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Velvet Serif SC';
+  src: url('/fonts/velvet-serif-sc.woff2') format('woff2');
+  font-weight: 200 900;
+  font-style: normal;
+  font-display: swap;
+}
+
 /* --color-primary-rgb：primary 的 RGB 三元组，专供 Tailwind 透明度修饰符
    （bg-primary/10、text-primary/20 等）——tailwind.config 的 primary 用
    rgb(var(--color-primary-rgb) / <alpha-value>) 定义；旧式 var(--color-primary)
@@ -361,8 +393,9 @@
   --p4-green: #55c34f;
   --p4-paper-blue: #cde6f7;
   --p4-paper-green: #eef3cf;
-  /* 衬线 display（今日节目单式大标题）：安卓 Noto Serif / iOS 宋体 / Windows 中易宋体 */
-  --p4-display-font: 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', SimSun, serif;
+  /* 衬线 display（今日节目单式大标题）：首选内嵌子集，再退到各平台自带的中文衬线。
+     内嵌之前这条在安卓上整条落空（安卓不装任何中文衬线），标题一直是黑体冒充衬线。 */
+  --p4-display-font: 'Velvet Serif SC', 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', SimSun, serif;
 }
 
 /* ── P4 标题毯式衬线化（用户口径：所有标题类字样都走衬线）────────────────
@@ -602,9 +635,11 @@ html.dark, html.dark body {
 
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
+  /* 内嵌子集排在最前；'Droid Sans' 已从兜底链里删掉——它没有中文字面，
+     却会把拉丁部分抢过去，和后面接的中文字体拼成两种字形 */
+  font-family: 'Velvet Sans SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto',
+    'PingFang SC', 'Noto Sans CJK SC', 'Source Han Sans SC', 'Microsoft YaHei',
+    'Helvetica Neue', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   /* 移动端优化 */

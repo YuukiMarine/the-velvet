@@ -22,6 +22,7 @@ class VelvetSnapshot {
     String monthEn = "";
     String weekdayEn = "";
 
+    String tarotId;       // 牌面图文件名（assets/public/tarot/p3/<id>.webp）；小阿卡纳没有图
     String tarotName;     // null = 今天还没抽
     String tarotRoman = "";
     boolean tarotReversed;
@@ -58,6 +59,7 @@ class VelvetSnapshot {
 
             JSONObject t = o.optJSONObject("tarot");
             if (t != null) {
+                s.tarotId = t.optString("id", null);
                 s.tarotName = t.optString("name", null);
                 s.tarotRoman = t.optString("roman", "");
                 s.tarotReversed = t.optBoolean("reversed", false);

@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- 直角底板（P5 纸片语言：不用圆角）。填充色由 setBackgroundColor 按频道覆盖。 -->
-<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
-    <corners android:radius="0dp" />
-    <solid android:color="#F0E9DF" />
-</shape>

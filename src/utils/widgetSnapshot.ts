@@ -36,7 +36,12 @@ export interface WidgetSnapshot {
   day: string;
   monthEn: string;
   weekdayEn: string;
-  tarot: { name: string; roman: string; reversed: boolean } | null;
+  /**
+   * id 是给原生侧找图用的：小组件按 `assets/public/tarot/p3/<id>.webp` 直接读牌面原图
+   * （用户口径「抽完的塔罗牌就对应图片文件」）。小阿卡纳没有配图，原生侧读不到就退回
+   * 程序化卡面——和 Web 端 tarotArtUrl 的兜底口径一致。
+   */
+  tarot: { id: string; name: string; roman: string; reversed: boolean } | null;
   todos: { done: number; total: number };
   moon: { name: string; illum: number; phase: number };
   /** 最近 HEAT_DAYS 天每天的记录条数（旧 → 新） */
@@ -106,7 +111,7 @@ export function buildWidgetSnapshot(): WidgetSnapshot {
     day: String(now.getDate()).padStart(2, '0'),
     monthEn: now.toLocaleDateString('en-US', { month: 'short' }).toUpperCase(),
     weekdayEn: now.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase(),
-    tarot: card ? { name: card.name, roman: card.roman ?? String(card.number), reversed: dd?.orientation === 'reversed' } : null,
+    tarot: card ? { id: card.id, name: card.name, roman: card.roman ?? String(card.number), reversed: dd?.orientation === 'reversed' } : null,
     todos: { done, total: due.length },
     moon: moonOf(now),
     heat,
