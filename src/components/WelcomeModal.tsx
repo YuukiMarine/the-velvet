@@ -4,6 +4,7 @@ import { useCloudStore } from '@/store/cloud';
 import { useState, useRef } from 'react';
 import { AttributeId, AttributeNames } from '@/types';
 import { isNative } from '@/utils/native';
+import { prefersReducedMotion } from '@/utils/boldness';
 import { LoginModal } from '@/components/auth/LoginModal';
 import { syncOnLogin } from '@/services/sync';
 
@@ -55,79 +56,101 @@ const DEFAULT_ATTR_PLACEHOLDERS: Record<AttributeId, string> = {
   charm: '如：魅力、威望、气质…',
 };
 
+/**
+ * 快速上手的七张卡（2026-08-03 按用户口径重排）。
+ *
+ * 改动口径：
+ *   · 新增「记账」与「助手」两张 —— 上一版只讲到战场就停了，而这两块现在是日常主力；
+ *   · 「愿望」不单开一张，并进任务里一句带过（用户口径）；
+ *   · 爬塔并入「逆影战场」—— 它不是另一个玩法，是战场里往上走的那条线；
+ *   · 全文不再出现「黑猫」：那是开发期的临时代号，对外一律叫「助手」
+ *     （内置人格里那只叫「黑猫」的角色是另一回事，那是它的名字，保留）。
+ */
 const GUIDE_SLIDES = [
   {
-    icon: '📝',
-    title: '记录事项',
-    subtitle: 'Journal — 历史记录',
-    gradient: 'linear-gradient(135deg, rgba(59,130,246,0.14) 0%, rgba(14,165,233,0.07) 100%)',
-    border: 'rgba(59,130,246,0.22)',
-    accent: '#93c5fd',
+    icon: '✍',
+    title: '记录',
+    subtitle: 'JOURNAL',
+    accent: '#7dd3fc',
     points: [
-      { icon: '✍️', text: '点击右下角 + 按钮，用自然语言描述你做了什么' },
-      { icon: '🔍', text: '点击「分析关键词」自动匹配规则加点，也可手动调整每项属性分值（0–5）' },
-      { icon: '📅', text: '支持补充一周以内的历史记录，选择日期后即可回填' },
-      { icon: '⭐', text: '标记为「重要事件」后，日历视图会用琥珀色圆点高亮显示' },
-      { icon: '📊', text: '「统计」页提供每周 / 每月 AI 总结，回顾阶段成长轨迹' },
-      { icon: '🗂️', text: '按年 / 月 / 日归档，支持搜索、属性筛选与日历热力图' },
+      '在「行动」页写下你做了什么，用大白话就行',
+      '点「分析关键词」自动配点，也可以自己调每项属性（0–5）',
+      '忘了记也没关系——一周内的事都能补，选个日期就行',
+      '标成「重要事件」的，日历上会用琥珀色圆点亮出来',
+      '「统计」页有每周 / 每月的 AI 总结，替你回头看一眼',
     ],
   },
   {
-    icon: '✅',
+    icon: '⚡',
     title: '任务',
-    subtitle: 'Todos — 任务',
-    gradient: 'linear-gradient(135deg, rgba(16,185,129,0.14) 0%, rgba(20,184,166,0.07) 100%)',
-    border: 'rgba(16,185,129,0.22)',
+    subtitle: 'TASKS',
     accent: '#6ee7b7',
     points: [
-      { icon: '🎯', text: '创建任务时绑定属性与奖励点数，完成即自动加点' },
-      { icon: '🔁', text: '支持「每日重复」与「长期目标」两种模式，养成习惯' },
-      { icon: '📊', text: '可设置目标次数，记录每日累计进度' },
-      { icon: '📌', text: '标记为重要的任务完成时会在历史记录中特别标注' },
+      '建任务时绑定属性与点数，完成就自动加点',
+      '「每日重复」用来养习惯，「长期目标」记累计次数',
+      '大事可以拆成子步，一步步勾掉，收官时有一次结算',
+      '还没想清楚的事先写成「愿望」，想动手了再转成任务',
     ],
   },
   {
-    icon: '🏆',
-    title: '成就 & 技能',
-    subtitle: 'Achievements & Skills',
-    gradient: 'linear-gradient(135deg, rgba(245,158,11,0.14) 0%, rgba(234,179,8,0.07) 100%)',
-    border: 'rgba(245,158,11,0.22)',
+    icon: '★',
+    title: '成就与技能',
+    subtitle: 'GROWTH',
     accent: '#fcd34d',
     points: [
-      { icon: '🌟', text: '成就在达成条件后，进入「成就」页手动点击解锁，给自己一个仪式感' },
-      { icon: '⚡', text: '技能与属性等级绑定，当等级达标后可在「技能」页解锁' },
-      { icon: '✨', text: '解锁技能后，对应属性的加点会获得额外百分比加成（技能 Buff）' },
-      { icon: '📈', text: '「统计」页查看成长曲线、属性分布与连续打卡天数' },
+      '成就达成后要你自己去点亮 —— 那一下是留给你的仪式',
+      '技能跟属性等级绑定，够级了在「技能」页解锁',
+      '解锁之后，对应属性的每次加点都会多拿一点',
+      '「统计」页看成长曲线、属性分布和连续天数',
     ],
   },
   {
-    icon: '🤝',
+    icon: '🃏',
     title: '同伴',
-    subtitle: 'Confidant — 羁绊系统',
-    gradient: 'linear-gradient(135deg, rgba(236,72,153,0.14) 0%, rgba(168,85,247,0.07) 100%)',
-    border: 'rgba(236,72,153,0.25)',
+    subtitle: 'CONFIDANT',
     accent: '#f9a8d4',
     points: [
-      { icon: '🃏', text: '用 22 张大阿卡纳塔罗代表你身边的重要的人或关系，在「同伴」页创建羁绊' },
-      { icon: '💬', text: '记录与同伴的互动后亲密度增长，等级提升解锁羁绊战斗道具与日常 Buff' },
-      { icon: '✦', text: '每天可向同伴发起祈愿（4AM 重置），获得 SP；互相祈愿额外 +1 SP 反射' },
-      { icon: '☁', text: '登录后输入对方 UserID 可邀请在线好友缔结 COOP；亲密度与历史双向同步' },
-      { icon: '🌟', text: '在线同伴可在 GUEST PROFILE 中查看对方的等级、属性、总点数与已解锁数' },
+      '用 22 张大阿卡纳代表你身边重要的人或关系',
+      '记录互动会涨亲密度，等级上去解锁道具与日常加成',
+      '每天可以向同伴祈愿（凌晨 4 点重置），互相祈愿双方都多拿',
+      '登录后输入对方 UserID 就能缔结 COOP，亲密度与历史双向同步',
     ],
   },
   {
-    icon: '⚔️',
+    icon: '¥',
+    title: '记账',
+    subtitle: 'LEDGER',
+    accent: '#fdba74',
+    points: [
+      '一句话记一笔，AI 替你认出金额和类目',
+      '首页看总余额与本月预算环，还有「今天还可以花多少」',
+      '「成长」类的支出会回过来给属性加点 —— 花在自己身上的不算白花',
+      '可以给一笔标「值 / 不值」，月底回头看的时候最有用',
+    ],
+  },
+  {
+    icon: '⚔',
     title: '逆影战场',
-    subtitle: 'Battle — 影时间',
-    gradient: 'linear-gradient(135deg, rgba(124,58,237,0.14) 0%, rgba(79,70,229,0.07) 100%)',
-    border: 'rgba(124,58,237,0.25)',
+    subtitle: 'BATTLE',
     accent: '#c4b5fd',
     points: [
-      { icon: '🌑', text: '「影时间」降临时（默认周五至周日 20:00），暗影随机出现，等待你的挑战' },
-      { icon: '🎭', text: '在 Persona 标签页召唤并命名专属人格面具，为每项属性绑定技能' },
-      { icon: '⚔️', text: '选择技能发动攻击：伤害、暴击、蓄力、易伤各有战术价值' },
-      { icon: '🏆', text: '击败暗影可获得大量属性点数奖励；每天仅可挑战一次' },
-      { icon: '🔮', text: '暗影血量会随日期自动恢复，越拖越强——把握影时间！' },
+      '「影时间」降临时（默认周五至周日 20:00），暗影出现',
+      '先召唤属于你的 Persona，为五项属性各绑一套技能',
+      '出招看局势：伤害、暴击、蓄力、易伤各有各的用处',
+      '打赢有大量属性点；拖着不打，暗影会自己回血',
+      '想再往深处走，就顺着高塔一层层往上爬，越高奖励越重',
+    ],
+  },
+  {
+    icon: '◈',
+    title: '助手',
+    subtitle: 'NAVIGATOR',
+    accent: '#a5b4fc',
+    points: [
+      '底部中央的 ◈ 随时叫出来，说人话就能记账、加任务、写记录',
+      '它记得你手头在做的事，会在合适的时候提一句',
+      '人格可以换，也可以自己捏一个',
+      '聊天原文只存在你的设备上，永远不上传',
     ],
   },
 ];
@@ -256,77 +279,157 @@ interface GuideStepProps {
   onBack: () => void;
 }
 
+/**
+ * 快速上手（2026-08-03 重做）。
+ *
+ * 上一版是「圆角卡 + 渐变底 + emoji 项目符号 + 左右淡入淡出」——一套 2020 年的
+ * bootstrap 观感，跟 App 里已经成型的三套频道语言完全不搭，用户口径「动效过时」。
+ *
+ * 这版的做法：
+ *   · 左侧一条**进度轨**，走到第几张就点亮到第几段——七张卡不能再用小圆点，数不过来；
+ *   · 巨大的幽灵序号压在背景上，序号本身就是"你走到哪了"的读数；
+ *   · 图标改成单字符徽章（不再是彩色 emoji 拼盘），颜色由当张卡的 accent 决定；
+ *   · 条目逐条错峰揭入（不是整块淡入），读起来有节奏；
+ *   · **可以左右滑**——七张卡全靠点按钮翻太累；
+ *   · 全程只动 transform / opacity；reduced-motion 下直接落终态。
+ */
 const GuideStep = ({ name, onFinish, onBack }: GuideStepProps) => {
   const [slideIndex, setSlideIndex] = useState(0);
+  // dir 只用来决定进出场从哪一侧走，不参与布局
+  const [dir, setDir] = useState(1);
   const slide = GUIDE_SLIDES[slideIndex];
-  const isLast = slideIndex === GUIDE_SLIDES.length - 1;
+  const total = GUIDE_SLIDES.length;
+  const isLast = slideIndex === total - 1;
+  const reduce = prefersReducedMotion();
+
+  const go = (next: number) => {
+    if (next < 0 || next >= total) return;
+    setDir(next > slideIndex ? 1 : -1);
+    setSlideIndex(next);
+  };
 
   return (
     <motion.div key="guide" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-      <h2 className="text-2xl font-bold mb-1 text-white">快速上手</h2>
-      <p className="text-sm mb-5" style={{ color: 'rgba(255,255,255,0.38)' }}>
-        {name}，了解四个核心系统，马上就能开始成长之旅
-      </p>
-
-      {/* Slide indicators */}
-      <div className="flex items-center justify-center gap-2 mb-4">
-        {GUIDE_SLIDES.map((_, i) => (
-          <button
-            key={i}
-            onClick={() => setSlideIndex(i)}
-            className="rounded-full transition-all duration-300"
-            style={{
-              width: i === slideIndex ? 24 : 8,
-              height: 8,
-              background: i === slideIndex ? '#a78bfa' : 'rgba(255,255,255,0.15)',
-              boxShadow: i === slideIndex ? '0 0 10px rgba(167,139,250,0.65)' : 'none',
-            }}
-          />
-        ))}
+      <div className="flex items-end justify-between mb-4">
+        <div>
+          <p className="text-[10px] font-semibold tracking-[0.28em] uppercase mb-1" style={{ color: slide.accent }}>
+            GUIDE
+          </p>
+          <h2 className="text-2xl font-bold text-white leading-none">快速上手</h2>
+          <p className="text-xs mt-1.5" style={{ color: 'rgba(255,255,255,0.35)' }}>
+            {name}，七件事，看完就能开始
+          </p>
+        </div>
+        <button
+          onClick={onFinish}
+          className="text-xs pb-1 transition-colors"
+          style={{ color: 'rgba(255,255,255,0.28)' }}
+        >
+          直接开始 →
+        </button>
       </div>
 
-      {/* Slide content */}
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={slideIndex}
-          initial={{ opacity: 0, x: 24 }}
-          animate={{ opacity: 1, x: 0 }}
-          exit={{ opacity: 0, x: -24 }}
-          transition={{ duration: 0.22, ease: 'easeOut' }}
-          className="rounded-2xl p-5 mb-5"
-          style={{ background: slide.gradient, border: `1px solid ${slide.border}` }}
-        >
-          <div className="flex items-center gap-3 mb-4">
-            <div
-              className="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl flex-shrink-0"
-              style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.1)' }}
-            >
-              {slide.icon}
-            </div>
-            <div>
-              <div className="font-extrabold text-white text-base leading-tight">{slide.title}</div>
-              <div className="text-xs font-medium mt-0.5" style={{ color: slide.accent }}>
-                {slide.subtitle}
-              </div>
-            </div>
+      <div className="flex gap-3.5">
+        {/* 进度轨：七段，走到哪亮到哪；每段都可点，回看不用一路倒退 */}
+        <div className="flex flex-col gap-1.5 pt-1 flex-shrink-0">
+          {GUIDE_SLIDES.map((s, i) => (
+            <button
+              key={i}
+              onClick={() => go(i)}
+              aria-label={`第 ${i + 1} 条：${s.title}`}
+              aria-current={i === slideIndex}
+              className="rounded-full transition-all duration-300"
+              style={{
+                width: 3,
+                height: i === slideIndex ? 26 : 12,
+                background: i === slideIndex ? slide.accent : i < slideIndex ? 'rgba(255,255,255,0.32)' : 'rgba(255,255,255,0.1)',
+                boxShadow: i === slideIndex ? `0 0 8px ${slide.accent}88` : 'none',
+              }}
+            />
+          ))}
+        </div>
+
+        {/* 卡体 */}
+        <div className="relative min-w-0 flex-1 overflow-hidden" style={{ minHeight: 268 }}>
+          {/* 幽灵序号：压在背景上的巨大 0N，本身就是进度读数 */}
+          <div
+            aria-hidden
+            className="pointer-events-none absolute -right-2 -top-6 select-none font-black italic leading-none"
+            style={{ fontSize: '6.5rem', color: `${slide.accent}14` }}
+          >
+            {String(slideIndex + 1).padStart(2, '0')}
           </div>
-          <ul className="space-y-2.5">
-            {slide.points.map((p, i) => (
-              <li key={i} className="flex items-start gap-2.5">
-                <span className="text-base flex-shrink-0 mt-0.5">{p.icon}</span>
-                <span className="text-sm leading-snug" style={{ color: 'rgba(255,255,255,0.68)' }}>
-                  {p.text}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </motion.div>
-      </AnimatePresence>
+
+          <AnimatePresence mode="wait" custom={dir}>
+            <motion.div
+              key={slideIndex}
+              custom={dir}
+              drag={reduce ? false : 'x'}
+              dragConstraints={{ left: 0, right: 0 }}
+              dragElastic={0.16}
+              onDragEnd={(_, info) => {
+                if (info.offset.x < -56) go(slideIndex + 1);
+                else if (info.offset.x > 56) go(slideIndex - 1);
+              }}
+              initial={reduce ? false : { opacity: 0, x: dir * 28 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={reduce ? { opacity: 0 } : { opacity: 0, x: dir * -20 }}
+              transition={{ duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
+              className="relative"
+            >
+              <div className="flex items-center gap-3 mb-4">
+                <div
+                  className="flex h-11 w-11 flex-shrink-0 items-center justify-center text-xl font-black"
+                  style={{
+                    color: slide.accent,
+                    background: `${slide.accent}1a`,
+                    border: `1px solid ${slide.accent}44`,
+                    clipPath: 'polygon(9px 0, 100% 0, calc(100% - 9px) 100%, 0 100%)',
+                  }}
+                >
+                  {slide.icon}
+                </div>
+                <div className="min-w-0">
+                  <div className="text-lg font-extrabold leading-tight text-white">{slide.title}</div>
+                  <div className="mt-0.5 text-[10px] font-bold tracking-[0.22em]" style={{ color: slide.accent }}>
+                    {slide.subtitle}
+                  </div>
+                </div>
+              </div>
+
+              <ul className="space-y-2.5">
+                {slide.points.map((text, i) => (
+                  <motion.li
+                    key={i}
+                    className="flex items-start gap-2.5"
+                    initial={reduce ? false : { opacity: 0, x: 10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: 0.05 + i * 0.055, duration: 0.3, ease: 'easeOut' }}
+                  >
+                    <span
+                      aria-hidden
+                      className="mt-[7px] h-[9px] w-[6px] flex-shrink-0"
+                      style={{ background: slide.accent, clipPath: 'polygon(34% 0, 100% 0, 66% 100%, 0 100%)' }}
+                    />
+                    <span className="text-[13px] leading-relaxed" style={{ color: 'rgba(255,255,255,0.7)' }}>
+                      {text}
+                    </span>
+                  </motion.li>
+                ))}
+              </ul>
+            </motion.div>
+          </AnimatePresence>
+        </div>
+      </div>
+
+      <p className="mb-3 mt-4 text-center text-[10px]" style={{ color: 'rgba(255,255,255,0.18)' }}>
+        左右滑动也能翻页
+      </p>
 
       {/* Navigation */}
       <div className="flex gap-3">
         <button
-          onClick={slideIndex === 0 ? onBack : () => setSlideIndex(i => i - 1)}
+          onClick={slideIndex === 0 ? onBack : () => go(slideIndex - 1)}
           className="px-5 py-3 rounded-xl font-medium transition-colors"
           style={{
             background: 'rgba(255,255,255,0.05)',
@@ -336,33 +439,15 @@ const GuideStep = ({ name, onFinish, onBack }: GuideStepProps) => {
         >
           ←
         </button>
-        {!isLast ? (
-          <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            onClick={() => setSlideIndex(i => i + 1)}
-            className="flex-1 py-3 rounded-xl font-semibold text-white"
-            style={{
-              background: 'linear-gradient(135deg, #7c3aed, #4f46e5)',
-              boxShadow: '0 4px 18px rgba(124,58,237,0.35)',
-            }}
-          >
-            下一条 →
-          </motion.button>
-        ) : (
-          <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            onClick={onFinish}
-            className="flex-1 py-3 rounded-xl font-semibold text-base text-white"
-            style={{
-              background: 'linear-gradient(135deg, #7c3aed, #4f46e5)',
-              boxShadow: '0 4px 18px rgba(124,58,237,0.35)',
-            }}
-          >
-            开始旅程 🦋
-          </motion.button>
-        )}
+        <motion.button
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+          onClick={isLast ? onFinish : () => go(slideIndex + 1)}
+          className="flex-1 py-3 rounded-xl font-semibold text-white"
+          style={PRIMARY_BTN_STYLE}
+        >
+          {isLast ? '开始旅程 🦋' : `下一条 → ${slideIndex + 1} / ${total}`}
+        </motion.button>
       </div>
     </motion.div>
   );

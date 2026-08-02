@@ -69,7 +69,7 @@ export function WishProposalDialog() {
             </p>
           )}
           <p className="mt-1 text-[10px] text-gray-400 dark:text-gray-500">
-            不想被问可以在「设置 → 黑猫」里关掉主动提议。
+            不想被问可以在「设置 → 助手」里关掉主动提议。
           </p>
         </div>
       </div>
