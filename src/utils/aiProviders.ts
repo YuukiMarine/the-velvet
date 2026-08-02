@@ -15,6 +15,14 @@ export interface ProviderConfig {
   defaultModel: string;
   /** Settings 中展示的模型提示 */
   hint: string;
+  /**
+   * 申请 Key 的控制台地址。
+   *
+   * 为什么值得单独存一份：用户第一次配 AI 时最卡的一步不是"填哪儿"，
+   * 而是"去哪儿拿"——他得先知道这家叫什么、官网是哪个、控制台在哪一层菜单里。
+   * 存下来就能在设置里直接给一个「去申请」的口子。
+   */
+  keyUrl: string;
 }
 
 // 默认模型/端点核对于 2026-07（见各 provider 官方 models/pricing/deprecations 页）。
@@ -29,6 +37,7 @@ export const AI_PROVIDERS: ProviderConfig[] = [
     // GPT-5 系列为推理模型：aiClient 会自动改用 max_completion_tokens 并省略 temperature
     defaultModel: 'gpt-5.4-mini',
     hint: 'gpt-5.4-mini',
+    keyUrl: 'https://platform.openai.com/api-keys',
   },
   {
     id: 'deepseek',
@@ -37,6 +46,8 @@ export const AI_PROVIDERS: ProviderConfig[] = [
     // 旧的 deepseek-chat 别名将于 2026-07-24 停服；v4-flash 是其廉价档后继
     defaultModel: 'deepseek-v4-flash',
     hint: 'deepseek-v4-flash',
+    // 用户点名的那一个：国内最省心的起步选择，首次引导会把它顶到前面
+    keyUrl: 'https://platform.deepseek.com/api_keys',
   },
   {
     id: 'kimi',
@@ -44,6 +55,7 @@ export const AI_PROVIDERS: ProviderConfig[] = [
     defaultBaseUrl: 'https://api.moonshot.cn/v1', // 国际 Key 改 https://api.moonshot.ai/v1
     defaultModel: 'kimi-k3',
     hint: 'kimi-k3',
+    keyUrl: 'https://platform.moonshot.cn/console/api-keys',
   },
   {
     id: 'qwen',
@@ -53,6 +65,7 @@ export const AI_PROVIDERS: ProviderConfig[] = [
     // qwen-plus 是稳定别名（始终指向当前 Qwen-Plus），不随版本迭代失效
     defaultModel: 'qwen-plus',
     hint: 'qwen-plus',
+    keyUrl: 'https://bailian.console.aliyun.com/',
   },
   {
     id: 'gemini',
@@ -61,6 +74,7 @@ export const AI_PROVIDERS: ProviderConfig[] = [
     // gemini-1.5-flash 已 EOL（调用 404）；3.1-flash-lite 是当前廉价档且寿命最长
     defaultModel: 'gemini-3.1-flash-lite',
     hint: 'gemini-3.1-flash-lite',
+    keyUrl: 'https://aistudio.google.com/apikey',
   },
   {
     id: 'minimax',
@@ -68,6 +82,7 @@ export const AI_PROVIDERS: ProviderConfig[] = [
     defaultBaseUrl: 'https://api.minimaxi.com/v1', // 国际 Key 改 https://api.minimax.io/v1
     defaultModel: 'MiniMax-M3',
     hint: 'MiniMax-M3',
+    keyUrl: 'https://platform.minimaxi.com/user-center/basic-information/interface-key',
   },
 ];
 
