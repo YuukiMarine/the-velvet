@@ -9,8 +9,8 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         // ⚠️ 每次发布 release 必须把 versionCode 往上加（Google Play 要求严格递增），
         //    versionName 保持与 package.json 同步即可
-        versionCode 7
-        versionName "2.6.3"
+        versionCode 8
+        versionName "2.6.4"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
