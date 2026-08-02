@@ -11,6 +11,7 @@
  */
 import type { MouseEvent as ReactMouseEvent } from 'react';
 import type { AttributeId } from '@/types';
+import { mixSrgb, paint } from '@/utils/cssColor';
 
 const STAR_CX = 180;
 const STAR_CY = 178;
@@ -108,16 +109,28 @@ export const StarChartP3 = ({ items, onSelect, showLabels = true, palette = P3_P
   showLabels?: boolean;
   palette?: StarPalette;
 }) => {
+  // 中性皮那套调色板整族由 color-mix 派生，其中 data / arm 直接喂给 SVG 的
+  // fill / stroke。旧 WebView 不认 color-mix → 非法值 → 落回初始值黑。
+  // 每次渲染过一遍 paint()：原生支持时原样返回，不支持才在 JS 里把混色算实。
+  const P: StarPalette = {
+    data: paint(palette.data), ink: paint(palette.ink), inkSoft: paint(palette.inkSoft),
+    accent: paint(palette.accent), arm: paint(palette.arm),
+    ringPale: palette.ringPale, ringDeep: palette.ringDeep, focus: paint(palette.focus),
+  };
   const dataPath = starPathAt(items.slice(0, 5).map((it) => levelRadius(it.level, it.maxLevel)));
   // 同心等级星环（用户定稿）：每一档一圈同色系五角星、内浅外深（最多 10 档），
   // 由外到内实心覆盖形成环带——升级即数据星角尖走向更深的一圈，档位一眼可读
   const ringCount = Math.min(10, Math.max(1, items[0]?.maxLevel ?? 5));
-  // 内圈浅 → 外圈深：两端点走调色板、中间档 color-mix 插值——JS 不感知亮暗，
-  // 夜间只在 CSS 覆盖两端点，星环整族自动跟随
-  const ringColor = (lvl: number) => {
-    const t = Math.round((lvl / ringCount) * 100);
-    return `color-mix(in srgb, ${palette.ringDeep} ${t}%, ${palette.ringPale})`;
-  };
+  /**
+   * 内圈浅 → 外圈深：两端点走调色板、中间档插值——JS 不感知亮暗，
+   * 夜间只在 CSS 覆盖两端点，星环整族自动跟随。
+   *
+   * ⚠️ 插值**必须在 JS 里算完再交给 fill**，不能吐 `color-mix()` 字符串。
+   * 安卓 9 一档的 WebView（Chrome < 111）不认 color-mix，SVG 的 fill 拿到非法值
+   * 会落回初始值 **black**——整圈等级星环塌成一坨黑压在数据星后面，
+   * 就是用户上报的「五角星底部表示全部等级的那颗变黑了」。见 utils/cssColor.ts。
+   */
+  const ringColor = (lvl: number) => mixSrgb(palette.ringDeep, palette.ringPale, (lvl / ringCount) * 100);
   // 标签锚点：紧贴角端外侧（viewBox 坐标 → 百分比），在同一个变换平面内自动跟随；
   // 按锚点相对中心的方位智能对齐——左角右靠、右角左靠、顶底居中
   const labelAt = (i: number) => {
@@ -144,10 +157,10 @@ export const StarChartP3 = ({ items, onSelect, showLabels = true, palette = P3_P
           {items.slice(0, 5).map((it, i) => {
             const [x1, y1] = pt(armAngle(i), STAR_R * 0.99);
             const [x2, y2] = pt(armAngle(i), STAR_R + 12);
-            return <line key={it.id} x1={x1} y1={y1} x2={x2} y2={y2} stroke={palette.arm} strokeWidth={1.5} />;
+            return <line key={it.id} x1={x1} y1={y1} x2={x2} y2={y2} stroke={P.arm} strokeWidth={1.5} />;
           })}
           {/* 数据星：深色纯色实心（去描边，用户定稿——形状即信息） */}
-          <path d={dataPath} fill={palette.data} strokeLinejoin="miter" />
+          <path d={dataPath} fill={P.data} strokeLinejoin="miter" />
         </svg>
         {/* 五属性标签（可点击 → 属性档案）；反变换把文字转正对屏幕 */}
         {showLabels && items.slice(0, 5).map((it, i) => {
@@ -163,15 +176,15 @@ export const StarChartP3 = ({ items, onSelect, showLabels = true, palette = P3_P
                 top: `${pos.topPct}%`,
                 transform: `translate(${pos.tx}%, ${pos.ty}%) skewX(${-STAR_SKEW}deg) scaleY(${1 / STAR_SCALEY})`,
                 // 焦点环颜色跟调色板（Tailwind 的任意值类拿不到运行期变量）
-                ['--tw-ring-color' as string]: palette.focus,
+                ['--tw-ring-color' as string]: P.focus,
               }}
               aria-label={`${it.name} 等级 ${it.level}，${it.title}`}
             >
               <span className="flex items-baseline gap-1.5">
-                <span className="text-[15px] font-black leading-none" style={{ color: palette.ink }}>{it.name}</span>
-                <span className="text-[26px] font-black italic leading-none" style={{ color: palette.accent }}>{it.level}</span>
+                <span className="text-[15px] font-black leading-none" style={{ color: P.ink }}>{it.name}</span>
+                <span className="text-[26px] font-black italic leading-none" style={{ color: P.accent }}>{it.level}</span>
               </span>
-              <span className="mt-0.5 block text-[11px] font-semibold leading-none" style={{ color: palette.inkSoft }}>{it.title}</span>
+              <span className="mt-0.5 block text-[11px] font-semibold leading-none" style={{ color: P.inkSoft }}>{it.title}</span>
             </button>
           );
         })}

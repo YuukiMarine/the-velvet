@@ -249,8 +249,17 @@ function buildRequestBody(
     body.response_format = { type: 'json_object' };
   }
   if (isReasoningModel(cfg.model)) {
-    // 输出预算 + 一段推理 token 余量，避免极小的 maxTokens（如活动分析的 200）被推理吃光导致空响应
-    body.max_completion_tokens = maxTokens + 1024;
+    /**
+     * 输出预算 + 一段推理 token 余量。
+     *
+     * `max_completion_tokens` 是**推理 + 正文的总额**，推理先花、正文后写，
+     * 花超了就直接截断在半句上。原来固定加 1024：小任务够用，但像人格生成那种
+     * 9000 token 的长 JSON，推理段本身就可能吃掉两三千，1024 的余量等于没加，
+     * 正文照样被砍在中途（表现为"时好时坏的生成失败"）。
+     * 改成按预算等比放余量，同时保留 1024 的下限给 maxTokens 极小的调用
+     * （活动分析只要 200，被推理吃光会直接空响应）。
+     */
+    body.max_completion_tokens = maxTokens + Math.max(1024, Math.round(maxTokens * 0.5));
     body.reasoning_effort = 'minimal'; // 让 GPT-5 尽量接近"非推理"的快/省行为
     // 不发 temperature：推理模型只接受默认 1，自定义会 400
   } else {

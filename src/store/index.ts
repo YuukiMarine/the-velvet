@@ -971,11 +971,21 @@ export const useAppStore = create<AppState>((set, get) => ({
         allSkills = [...skillsWithNames, blessingSkill];
       }
 
+      /**
+       * 三张系统预设表一律 **bulkPut**，settings 用 **put**——不能用 add。
+       *
+       * add 的语义是「这张表此刻必须是空的」，而这个前提在首装时并不成立：
+       * 引导页还开着的时候，启动链里的迁移/补种已经可能往 achievements 写过一轮
+       * （见 runTasksMergeMigration 的注释）。一旦撞上 ConstraintError，
+       * createUser 会在写完 users/attributes 之后半途抛出：档案只建了一半，
+       * 技能表空、赐福丢失、属性名打回默认，而引导页因为 set({user}) 没跑到而卡死。
+       * 这几张表都是按稳定 id 写死的系统预设，覆盖写是幂等的，没有信息损失。
+       */
       await db.users.add(newUser);
-      await db.attributes.bulkAdd(initialAttrsWithNames);
-      await db.achievements.bulkAdd(achievementsWithNames);
-      await db.skills.bulkAdd(allSkills);
-      
+      await db.attributes.bulkPut(initialAttrsWithNames);
+      await db.achievements.bulkPut(achievementsWithNames);
+      await db.skills.bulkPut(allSkills);
+
       const defaultSettings: Settings = {
         id: 'default',
         attributeNames: mergedAttrNames,
@@ -994,9 +1004,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         backgroundAnimation: ['aurora'],
         soundMuted: false
       };
-      await db.settings.add(defaultSettings);
-      
-      set({ 
+      await db.settings.put(defaultSettings);
+
+      set({
         user: newUser, 
         attributes: initialAttrsWithNames,
         achievements: achievementsWithNames,
@@ -2389,8 +2399,33 @@ export const useAppStore = create<AppState>((set, get) => ({
           }
           return { ...ach };
         });
-        await db.achievements.bulkAdd(adaptedMissing);
+        // bulkPut 而非 bulkAdd：这批本来就是"库里没有"的，两者等价，
+        // 但 put 不会在并发重入时炸 ConstraintError 把整个 loadData 拖垮
+        await db.achievements.bulkPut(adaptedMissing);
         achievements.push(...adaptedMissing);
+      }
+
+      /**
+       * 同样补种缺失的系统预设技能。
+       *
+       * 之前这里只迁移描述、从不补条目——于是 v2.6.0 那个首装 bug（createUser 在
+       * achievements 撞 ConstraintError 后半途抛出，skills 一条没写）造出来的残档
+       * **永远修不回来**：技能页空、赐福没了，重装才行。补种是幂等的，
+       * 顺带也让"以后新增系统技能"能自动落到老档上。
+       * 用户自己不会造出这些 id（赐福 id 是 blessing_*，AI 技能另有前缀）。
+       */
+      const existingSkillIds = new Set(skills.map(s => s.id));
+      const missingSystemSkills = SKILLS.filter(s => !existingSkillIds.has(s.id));
+      if (missingSystemSkills.length > 0) {
+        const defaultAttrNames: Record<string, string> = { knowledge: '知识', guts: '胆量', dexterity: '灵巧', kindness: '温柔', charm: '魅力' };
+        const adaptedSkills = missingSystemSkills.map(skill => {
+          const oldName = defaultAttrNames[skill.requiredAttribute] || skill.requiredAttribute;
+          const newName = attrNames[skill.requiredAttribute as keyof typeof attrNames] || oldName;
+          const escaped = oldName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          return { ...skill, description: skill.description.replace(new RegExp(escaped, 'g'), newName) };
+        });
+        await db.skills.bulkPut(adaptedSkills);
+        skills = [...skills, ...adaptedSkills];
       }
 
       const skillsNeedMigration = skills.some(s => s.bonusMultiplier && oldDescPatterns.some(p => p.test(s.description)));
@@ -3584,6 +3619,19 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   runTasksMergeMigration: async () => {
+    /**
+     * 没有档案就直接返回——**这不只是省一次空跑**。
+     *
+     * App 启动时这条紧跟在 initializeApp 后面无条件调用；全新安装那一刻 users 表是空的，
+     * 引导页还开着，可这里照样往下走，末尾的 `loadData()` 会把 24 条系统预设成就
+     * 抢先补种进库（且用的是默认属性名）。等用户走完引导按下「接受赐福」，
+     * createUser 的 `achievements.bulkAdd` 就整批撞 ConstraintError 抛出 ——
+     * users/attributes 已落库、skills 与 settings 全没写成、set({user}) 没执行，
+     * 于是引导页原地卡死（用户上报「点了没反应」），重启却因为 users 表有行直接进首页，
+     * 带着一个没有技能、没有赐福、属性名被打回默认的残档。
+     * createUser 那侧已改 bulkPut 兜底，这里是第一道闸。
+     */
+    if (!get().user) return;
     if (_tasksMergeMigrationPromise) return _tasksMergeMigrationPromise;
     _tasksMergeMigrationPromise = (async () => {
     if (get().settings.tasksMergeMigratedAt) return;

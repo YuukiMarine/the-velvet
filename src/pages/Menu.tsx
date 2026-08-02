@@ -218,8 +218,48 @@ export const Menu = () => {
   // pointerdown 即选中预览、松手延时进入（让滑入动效播完）。默认选中首项「统计」。
   const [selectedKey, setSelectedKey] = useState<string>('statistics');
   const enterTimer = useRef<number | null>(null);
-  const press = useRef({ active: false, key: '', moved: false });
+  const press = useRef({ active: false, key: '', moved: false, x: 0, y: 0 });
   useEffect(() => () => { if (enterTimer.current) window.clearTimeout(enterTimer.current); }, []);
+
+  /**
+   * 入口列的按压手势（p3 / p4 共用）。
+   *
+   * 原来这层挂的是 `touch-action:none` + `setPointerCapture`：两者都在告诉浏览器
+   * 「这块区域的触摸我全包了」。可入口列几乎铺满整屏，结果就是**整个菜单页拖不动**
+   * （用户上报：蓝/粉、黄的菜单没法上下滚）。
+   *
+   * 改成 `pan-y` + 不抢指针：
+   *   · 手指竖着一划 → 浏览器接管成页面滚动，并给我们发 pointercancel，按压自动作废，
+   *     松手不会误跳转；
+   *   · 原地按住 / 轻点 → 照旧高亮预览，松手进入。
+   * 「上下拖拽换行」这个旧交互就此让位给滚动——这正是用户要的口径。
+   * 再加一道位移阈值兜底：个别引擎不发 pointercancel，靠移动距离自己判滚动。
+   */
+  const SCROLL_SLOP = 8;
+  const beginPress = (e: React.PointerEvent) => {
+    const el = (e.target as HTMLElement).closest('[data-menu-key]');
+    if (!el) return null;
+    const key = el.getAttribute('data-menu-key') || '';
+    press.current = { active: true, key, moved: false, x: e.clientX, y: e.clientY };
+    setSelectedKey(key);
+    return key;
+  };
+  const trackPress = (e: React.PointerEvent) => {
+    if (!press.current.active) return;
+    // 走出阈值即认定用户在滚页面，不再当作选择手势
+    if (Math.hypot(e.clientX - press.current.x, e.clientY - press.current.y) > SCROLL_SLOP) {
+      press.current.active = false;
+    }
+  };
+  const endPress = (onEnter: (key: string) => void) => {
+    if (!press.current.active) return;
+    const key = press.current.key;
+    press.current.active = false;
+    triggerNavFeedback();
+    if (enterTimer.current) window.clearTimeout(enterTimer.current);
+    // 留 200ms 让高亮演出走完再跳
+    enterTimer.current = window.setTimeout(() => onEnter(key), 200);
+  };
 
   const currentStreak = useMemo(() => calcCurrentStreak(streakDates(activities)), [activities]);
 
@@ -873,38 +913,14 @@ export const Menu = () => {
             <span aria-hidden className="absolute bottom-[3px] right-4 h-[8px] w-[20px]" style={{ background: P3R.magenta, clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
           </motion.button>
 
-          {/* 游戏化入口列：selectedKey 高亮（深蓝从左揭入 + 长度伸缩）；按下预览、上下拖拽切换、松手进入 */}
+          {/* 游戏化入口列：selectedKey 高亮（深蓝从左揭入 + 长度伸缩）；按下预览、松手进入、竖划滚页 */}
           <nav
             className="relative mt-7 space-y-2.5"
             aria-label="功能入口"
-            style={{ touchAction: 'none' }}
-            onPointerDown={(e) => {
-              const el = (e.target as HTMLElement).closest('[data-menu-key]');
-              if (!el) return;
-              const key = el.getAttribute('data-menu-key') || '';
-              press.current = { active: true, key, moved: false };
-              setSelectedKey(key);
-              try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); } catch { /* noop */ }
-            }}
-            onPointerMove={(e) => {
-              if (!press.current.active) return;
-              const el = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-menu-key]');
-              const key = el?.getAttribute('data-menu-key');
-              if (key && key !== press.current.key) {
-                press.current.key = key;
-                press.current.moved = true;
-                triggerNavFeedback();
-                setSelectedKey(key);
-              }
-            }}
-            onPointerUp={() => {
-              if (!press.current.active) return;
-              const key = press.current.key;
-              press.current.active = false;
-              triggerNavFeedback();
-              if (enterTimer.current) window.clearTimeout(enterTimer.current);
-              enterTimer.current = window.setTimeout(() => { menuItems.find((m) => m.key === key)?.onPress(); }, 200);
-            }}
+            style={{ touchAction: 'pan-y' }}
+            onPointerDown={beginPress}
+            onPointerMove={trackPress}
+            onPointerUp={() => endPress((key) => { menuItems.find((m) => m.key === key)?.onPress(); })}
             onPointerCancel={() => { press.current.active = false; }}
           >
             {menuItems.map((m, i) => {
@@ -1119,36 +1135,10 @@ export const Menu = () => {
               <nav
                 aria-label="功能入口"
                 className="relative overflow-hidden rounded-r-[22px] bg-[var(--ui-paper)] pb-7 pl-[74px] pr-5 pt-6"
-                style={{ touchAction: 'none' }}
-                onPointerDown={(e) => {
-                  const el = (e.target as HTMLElement).closest('[data-menu-key]');
-                  if (!el) return;
-                  const key = el.getAttribute('data-menu-key') || '';
-                  press.current = { active: true, key, moved: false };
-                  setSelectedKey(key);
-                  triggerNavFeedback();
-                  try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); } catch { /* noop */ }
-                }}
-                onPointerMove={(e) => {
-                  if (!press.current.active) return;
-                  const el = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-menu-key]');
-                  const key = el?.getAttribute('data-menu-key');
-                  if (key && key !== press.current.key) {
-                    press.current.key = key;
-                    press.current.moved = true;
-                    triggerNavFeedback();
-                    setSelectedKey(key);
-                  }
-                }}
-                onPointerUp={() => {
-                  if (!press.current.active) return;
-                  const key = press.current.key;
-                  press.current.active = false;
-                  triggerNavFeedback();
-                  if (enterTimer.current) window.clearTimeout(enterTimer.current);
-                  // 留 200ms 让高亮演出走完再跳（与 p3 同口径：按下预览、拖拽换行、松手进入）
-                  enterTimer.current = window.setTimeout(() => { p4Rows.find((r) => r.key === key)?.onPress(); }, 200);
-                }}
+                style={{ touchAction: 'pan-y' }}
+                onPointerDown={(e) => { if (beginPress(e)) triggerNavFeedback(); }}
+                onPointerMove={trackPress}
+                onPointerUp={() => endPress((key) => { p4Rows.find((r) => r.key === key)?.onPress(); })}
                 onPointerCancel={() => { press.current.active = false; }}
               >
                 {/* 装订条 + 打孔（孔洞透出黄舞台色） */}

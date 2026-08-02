@@ -85,38 +85,60 @@ function RisingParticles() {
  * StreamPreview —— 底部居中流式预览
  * - 无背景 / 无边框，仅文字
  * - 文本自然换行（保持位置不变）
- * - 每 ~180ms 提交一次显示（去抖）避免逐字全页重渲染
- * - 新片段 key 变化 → 淡入 + 轻度模糊进入；旧片段淡出 + 模糊退出
+ * - 每 ~200ms 提交一次显示（去抖）避免逐字全页重渲染
  * - 组件内部持有 state，父组件通过 ref.setText() 命令式更新，不触发父 re-render
+ *
+ * ⚠️ 这里**刻意不用 AnimatePresence**。
+ * 原来每段文本一个 key，靠 `mode="wait"` 做进/出的模糊淡入淡出：出场动画 0.45s，
+ * 而流式每 180ms 就换一段——旧片段还没退完新片段就得排队，presence 队列被反复顶掉，
+ * 观感上就是"底下那行字不动了"。而且 filter:blur 的进出场每段都要重建图层，
+ * 正是低端机（骁龙 835 / 安卓 9）最吃不消的一类动画。
+ * 改成一个常驻 <p>，只做 opacity/filter 的 CSS 过渡：换文案时先给一帧轻模糊再落回，
+ * 保留"模糊涌现"的观感，但不再有排队，也不再每段重建节点。
  */
 interface StreamPreviewHandle { setText: (t: string) => void }
 
-const StreamPreview = forwardRef<StreamPreviewHandle>((_props, ref) => {
+const StreamPreview = forwardRef<StreamPreviewHandle, { initial?: () => string }>(({ initial }, ref) => {
   const [display, setDisplay] = useState('');
+  const [settling, setSettling] = useState(false);
   const pendingRef = useRef('');
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const settleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useImperativeHandle(ref, () => ({
-    setText: (raw: string) => {
-      // 语义化清洗：去掉 JSON 噪声 / schema 字段名 / 多余标点
-      const cleaned = raw
-        .replace(/[{}\[\]"]+/g, ' ')
-        .replace(/[,:]+/g, ' · ')
-        .replace(/\s+/g, ' ')
-        .replace(/\b(name|description|skills|type|power|spCost|level)\b/gi, '')
-        .trim();
-      // 仅保留尾部 ~90 字，作为滚动窗口
-      pendingRef.current = cleaned.slice(-90);
-      if (timerRef.current) return; // 去抖：已有待提交
-      timerRef.current = setTimeout(() => {
-        timerRef.current = null;
-        setDisplay(pendingRef.current);
-      }, 180);
-    },
-  }), []);
+  const commit = (raw: string) => {
+    // 语义化清洗：去掉 JSON 噪声 / schema 字段名 / 多余标点
+    const cleaned = raw
+      .replace(/[{}\[\]"]+/g, ' ')
+      .replace(/[,:]+/g, ' · ')
+      .replace(/\s+/g, ' ')
+      .replace(/\b(name|description|skills|type|power|spCost|level)\b/gi, '')
+      .trim();
+    // 仅保留尾部 ~90 字，作为滚动窗口
+    pendingRef.current = cleaned.slice(-90);
+    if (timerRef.current) return; // 去抖：已有待提交
+    timerRef.current = setTimeout(() => {
+      timerRef.current = null;
+      setDisplay(pendingRef.current);
+      setSettling(true);
+      if (settleRef.current) clearTimeout(settleRef.current);
+      settleRef.current = setTimeout(() => setSettling(false), 40);
+    }, 200);
+  };
+
+  useImperativeHandle(ref, () => ({ setText: commit }), []);
+
+  // 挂载时补上"在我出生之前就已经流下来的那段"。父组件 setStage('generating') 之后
+  // 到本组件真正挂载之间有一整个渲染周期，慢机器上足够漏掉开头好几个 chunk——
+  // 而 setStreamText 打在还是 null 的 ref 上是彻底静默的。
+  useEffect(() => {
+    const seed = initial?.();
+    if (seed) commit(seed);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => () => {
     if (timerRef.current) clearTimeout(timerRef.current);
+    if (settleRef.current) clearTimeout(settleRef.current);
   }, []);
 
   return (
@@ -129,35 +151,30 @@ const StreamPreview = forwardRef<StreamPreviewHandle>((_props, ref) => {
         height: '3.6em', // 最多两行高度，保持位置不变
       }}
     >
-      <AnimatePresence mode="wait">
-        {display && (
-          <motion.p
-            key={display}
-            initial={{ opacity: 0, filter: 'blur(5px)', y: 4 }}
-            animate={{ opacity: 0.72, filter: 'blur(0px)', y: 0 }}
-            exit={{ opacity: 0, filter: 'blur(3px)', y: -3 }}
-            transition={{ duration: 0.45, ease: 'easeOut' }}
-            style={{
-              fontFamily: 'ui-monospace, "Cascadia Mono", "SF Mono", Menlo, monospace',
-              fontSize: 11,
-              lineHeight: '1.55em',
-              color: 'rgba(216,195,255,0.9)',
-              textShadow: '0 0 10px rgba(192,132,252,0.55)',
-              letterSpacing: '0.04em',
-              textAlign: 'center',
-              margin: 0,
-              padding: 0,
-              maxWidth: 'min(380px, 82vw)',
-              maxHeight: '3.2em',
-              overflow: 'hidden',
-              wordBreak: 'break-word',
-              whiteSpace: 'pre-wrap',
-            }}
-          >
-            {display}
-          </motion.p>
-        )}
-      </AnimatePresence>
+      <p
+        style={{
+          fontFamily: 'ui-monospace, "Cascadia Mono", "SF Mono", Menlo, monospace',
+          fontSize: 11,
+          lineHeight: '1.55em',
+          color: 'rgba(216,195,255,0.9)',
+          textShadow: '0 0 10px rgba(192,132,252,0.55)',
+          letterSpacing: '0.04em',
+          textAlign: 'center',
+          margin: 0,
+          padding: 0,
+          maxWidth: 'min(380px, 82vw)',
+          maxHeight: '3.2em',
+          overflow: 'hidden',
+          wordBreak: 'break-word',
+          whiteSpace: 'pre-wrap',
+          opacity: display ? (settling ? 0.28 : 0.72) : 0,
+          filter: settling ? 'blur(4px)' : 'blur(0px)',
+          transition: 'opacity .38s ease-out, filter .38s ease-out',
+          willChange: 'opacity, filter',
+        }}
+      >
+        {display}
+      </p>
     </div>
   );
 });
@@ -170,15 +187,25 @@ interface Props {
 
 export const AwakeningOverlay = forwardRef<AwakeningOverlayHandle, Props>(({ isOpen }, ref) => {
   const previewRef = useRef<StreamPreviewHandle>(null);
+  // 最近一次流式全文的缓冲：StreamPreview 还没挂上来时先存这儿，
+  // 它一挂载就把这段补播出去（否则开头那几段 chunk 会被静默丢掉）
+  const bufRef = useRef('');
   useImperativeHandle(ref, () => ({
-    setStreamText: (t: string) => previewRef.current?.setText(t),
+    setStreamText: (t: string) => {
+      bufRef.current = t;
+      previewRef.current?.setText(t);
+    },
   }), []);
-  return <AwakeningOverlayInner isOpen={isOpen} previewRef={previewRef} />;
+  return <AwakeningOverlayInner isOpen={isOpen} previewRef={previewRef} bufRef={bufRef} />;
 });
 
 AwakeningOverlay.displayName = 'AwakeningOverlay';
 
-function AwakeningOverlayInner({ isOpen, previewRef }: { isOpen: boolean; previewRef: React.RefObject<StreamPreviewHandle> }) {
+function AwakeningOverlayInner({ isOpen, previewRef, bufRef }: {
+  isOpen: boolean;
+  previewRef: React.RefObject<StreamPreviewHandle>;
+  bufRef: React.MutableRefObject<string>;
+}) {
   const [currentLine, setCurrentLine] = useState(0);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -257,8 +284,10 @@ function AwakeningOverlayInner({ isOpen, previewRef }: { isOpen: boolean; previe
             <div
               className="space-y-5 text-center max-w-md"
               style={{
+                // 首选内嵌衬线子集：安卓上没有任何中文衬线，不内嵌的话这六句
+                // 「吾即是汝…」在真机上一直是黑体（见 index.css 字体段注释）
                 fontFamily:
-                  '"Noto Serif SC", "Songti SC", "Source Han Serif", "STSong", "SimSun", "Times New Roman", serif',
+                  '"Velvet Serif SC", "Noto Serif SC", "Songti SC", "Source Han Serif", "STSong", "SimSun", "Times New Roman", serif',
               }}
             >
               <AnimatePresence initial={false}>
@@ -313,7 +342,7 @@ function AwakeningOverlayInner({ isOpen, previewRef }: { isOpen: boolean; previe
           </div>
 
           {/* AI 流式输出预览（底部居中，无背景，淡入淡出） */}
-          <StreamPreview ref={previewRef} />
+          <StreamPreview ref={previewRef} initial={() => bufRef.current} />
         </motion.div>
       )}
     </AnimatePresence>
