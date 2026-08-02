@@ -49,17 +49,12 @@ scripts/*.class
 # Misc local files
 *.log
 
-# 音频。曾经整类 ignore（注释写的是「served externally」）——
-# 后果是：部署的网页版有声音（文件在服务器上躺着），而**任何一次干净 clone
-# 构建出来的包都是哑的**，安卓 APK 从来没带过音效。2026-08-03 用户上报
-# 「音效似乎没有装载」查到的就是这一条。
-# 现在只忽略散落在别处的音频，public/ 下的 25 个 UI 反馈音必须进仓库（共 396 KB）。
+# 音频素材不入库（体积/授权考量）。public/ 下的 UI 反馈音需自备，
+# 文件名见 src/utils/feedback.ts 与各处 playSound() 调用；缺失时音效静默。
 *.mp3
 *.wav
-!public/*.mp3
-!public/*.wav
 
-# Claude Code local files
+# 本地 Agent 工具目录
 .claude/
 
 # 塔罗原稿（118 MB PNG）：只提交 public/tarot 下压缩后的 webp，原稿留在本地
