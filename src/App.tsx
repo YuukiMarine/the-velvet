@@ -37,6 +37,7 @@ const Account = lazy(() => import('@/pages/Account').then(m => ({ default: m.Acc
 const Ledger = lazy(() => import('@/pages/Ledger').then(m => ({ default: m.Ledger })));
 import { BattleArena } from '@/components/battle/BattleArena';
 import { BigDealClearCutIn } from '@/components/bigdeal/BigDealClearCutIn';
+import { sweepDanmakuApprovals } from '@/services/danmakuWatch';
 import { WishProgressCutIn } from '@/components/wish/WishProgressCutIn';
 import { WishProposalDialog } from '@/components/wish/WishProposalDialog';
 // F6 黑猫对话窗（portal 到 body 的全屏 overlay；入口在 Sidebar / BottomNav 中央 ◈）
@@ -248,9 +249,14 @@ function App() {
       }
       // F2a：每次切回前台重排本地通知，保持「快照」新鲜（条件已满足的提醒自然不再排程）
       void syncNotifications();
+      // FS4 短期 C 路线：没有厂商推送通道，「你的弹幕过审了」靠开 App 时自查
+      // （danmaku 集合刻意匿名，服务端根本不知道该推给谁）
+      void sweepDanmakuApprovals();
     };
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
+    // 冷启动也扫一次：visibilitychange 只在"切回来"时触发，第一次打开不会响
+    void sweepDanmakuApprovals();
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, []);
 

@@ -13,11 +13,12 @@
  *
  * 愿望**不进今日任务列表**——它是"远处的灯"，不是今天要打的卡。
  */
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore } from '@/store';
 import type { Wish } from '@/types';
 import { DanmakuCompose } from '@/components/danmaku/DanmakuCompose';
+import { pendingDanmakuCount } from '@/services/danmakuWatch';
 import { WishFulfillDialog } from './WishFulfillDialog';
 import { WishPanel } from './WishPanel';
 import { WishRing } from './WishRing';
@@ -56,6 +57,10 @@ export function WishBoard({ skin }: { skin: WishBoardSkin }) {
   const [panelFor, setPanelFor] = useState<string | null>(null);
 
   const tokens = settings.terminalDanmakuTokens ?? 0;
+  // 在审条数存在 localStorage，不进 store——它是本机自查用的凭据表，
+  // 不该上云也不该进备份（见 services/danmakuWatch.ts）。
+  // 靠 composeOpen 做刷新触发点：投完稿关窗时重算一次，够用且不必轮询。
+  const pendingReview = useMemo(() => pendingDanmakuCount(), [composeOpen]);
   // 只显示"在途"愿望；实现/归档的进归档区（Menu → 归档）
   const active = wishes.filter(w => w.status === 'active' && !w.parentId);
 
@@ -70,8 +75,9 @@ export function WishBoard({ skin }: { skin: WishBoardSkin }) {
 
   return (
     <div className="space-y-2">
-      {/* ① 弹幕投稿窄条（§3）——只在真有投稿机会时占位，平时不打扰 */}
-      {tokens > 0 && (
+      {/* ① 弹幕投稿窄条（§3）——有机会、或有在审的稿子时才占位，平时不打扰。
+          在审条目也要显形：投完就没下文的话，用户不知道那条去哪了（FS4 C 路线） */}
+      {(tokens > 0 || pendingReview > 0) && (
         <button
           type="button"
           onClick={() => setComposeOpen(true)}
@@ -85,9 +91,14 @@ export function WishBoard({ skin }: { skin: WishBoardSkin }) {
         >
           <span className="shrink-0 text-[13px]" style={{ color: skin.accent }}>✦</span>
           <span className="min-w-0 flex-1 truncate text-[11px] font-bold" style={{ color: skin.ink }}>
-            你还有 {tokens} 次机会鼓励同样努力的人
+            {tokens > 0
+              ? `你还有 ${tokens} 次机会鼓励同样努力的人`
+              : `${pendingReview} 条鼓励正在审核中`}
+            {tokens > 0 && pendingReview > 0 && (
+              <span style={{ color: skin.sub }}> · {pendingReview} 条审核中</span>
+            )}
           </span>
-          <span className="shrink-0 text-[10px] font-black" style={{ color: skin.accent }}>去写 ›</span>
+          {tokens > 0 && <span className="shrink-0 text-[10px] font-black" style={{ color: skin.accent }}>去写 ›</span>}
         </button>
       )}
 
