@@ -17,6 +17,7 @@ import type { CSSProperties, ReactNode } from 'react';
 import { motion, useMotionValue } from 'motion/react';
 import { useBoldness } from '@/utils/boldness';
 import { useAppStore } from '@/store';
+import { bgAnimOn } from '@/ui/bgAnim';
 
 /**
  * 调色板走 CSS 变量（浅色值为 fallback）：夜间模式只需在
@@ -57,9 +58,11 @@ export const sheetTopClip = 'polygon(0 18px, 100% 0, 100% 100%, 0 100%)';
 export const P3RPage = ({ children, className, active = true }: { children: ReactNode; className?: string; active?: boolean }) => {
   // 开了背景动画就不铺水面底：这层是不透明的 fixed z-0，且比 App 根的动画层后画，
   // 铺上去就把动画整块盖住了（观感 = 蓝主题下"背景动画开关没反应"）。
-  const anims = useAppStore((s) => s.settings.backgroundAnimation);
-  const bgImage = useAppStore((s) => s.settings.backgroundImage);
-  const yieldStage = !!bgImage || (anims ?? []).length > 0;
+  // 与 App 根同源（ui/bgAnim.ts）：让位与否必须两边一致，否则会出现"一层在画、一层不画"
+  const settings = useAppStore((s) => s.settings);
+  const theme = useAppStore((s) => s.user?.theme);
+  const bgImage = settings.backgroundImage;
+  const yieldStage = !!bgImage || bgAnimOn(settings, theme);
   if (!active) return <>{children}</>;
   return (
     <div className={`relative ${className ?? ''}`}>

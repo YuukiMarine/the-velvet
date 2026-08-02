@@ -425,6 +425,12 @@ export interface Settings {
   customLevelThresholds?: number[];
   backgroundPattern?: boolean; // 装饰纹理（无背景图时显示）
   backgroundAnimation?: string[]; // 背景动画风格（可多选：'aurora'|'particles'|'wave'|'pulse'）
+  /**
+   * 红频道（P5）是否**亲手开过**背景动画。默认 undefined = 没开过 = 不渲染。
+   * 见 ui/bgAnim.ts：P5 舞台自带满屏拼贴装饰，再叠动画既糊构图又最先掉帧，
+   * 而新档案默认值是 ['aurora']，所有人切到红主题都会撞上。
+   */
+  p5BgAnimOptIn?: boolean;
   customThemeColor?: string;       // 自定义主题色 hex（theme='custom' 时生效）
   customSoundScheme?: ThemeType;   // 自定义音效方案（custom 主题时使用，默认跟随 blue）
   countercurrentEnabled?: boolean; // 逆流：连续3日无增长属性自动 -1/天

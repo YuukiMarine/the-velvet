@@ -17,6 +17,8 @@ import { WeatherSettings } from '@/components/settings/WeatherSettings';
 import { Toggle } from '@/components/Toggle';
 import NotificationSettings from '@/components/NotificationSettings';
 import { NavigatorSettings } from '@/components/navigator/NavigatorSettings';
+// ⚠️ 临时件：机上性能诊断台，定位完旧机卡顿即删
+import { PerfProbe } from '@/components/dev/PerfProbe';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P3R, P3RPage, GhostWords, P3PageHeader } from '@/components/p3r/kit';
@@ -852,7 +854,10 @@ export const Settings = () => {
     { id: 'summary', label: 'AI 总结', icon: '✨' },
     { id: 'personalize', label: '体验个性化', icon: '⚙️' },
     { id: 'navigator', label: '助手', icon: '◈' },
-    { id: 'notifications', label: '通知提醒', icon: '🔔' }
+    { id: 'notifications', label: '通知提醒', icon: '🔔' },
+    // ⚠️ 临时件：机上性能诊断台（2026-08-03 应用户要求）。旧机卡顿定位完就整块删掉，
+    //    连同 components/dev/PerfProbe.tsx 与 index.css 末尾那组 data-perfprobe 规则。
+    { id: 'perf', label: '性能诊断', icon: '⚡' }
   ];
 
   return (
@@ -1213,7 +1218,11 @@ export const Settings = () => {
                       <div className={p3 ? 'space-y-3' : 'space-y-3 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg'}>
                         <div>
                           <h4 className={p3 ? 'text-[15px] font-black' : 'font-medium text-gray-800 dark:text-white'} style={p3 ? { color: P3R.ink } : undefined}>背景动画</h4>
-                          <p className={p3 ? 'text-[12px] font-semibold' : 'text-sm text-gray-600 dark:text-gray-400'} style={p3 ? { color: P3R.grey } : undefined}>最多同时开启两个，跟随主题色</p>
+                          <p className={p3 ? 'text-[12px] font-semibold' : 'text-sm text-gray-600 dark:text-gray-400'} style={p3 ? { color: P3R.grey } : undefined}>
+                            {user?.theme === 'red'
+                              ? '最多同时开启两个。红主题默认不开——舞台本身已经铺满拼贴装饰，要叠就在这里点开'
+                              : '最多同时开启两个，跟随主题色'}
+                          </p>
                         </div>
                         <div className={p3 ? 'grid grid-cols-4 gap-2' : 'grid grid-cols-2 gap-2'}>
                           {([
@@ -1229,7 +1238,14 @@ export const Settings = () => {
                               const next = active
                                 ? current.filter(v => v !== opt.value)
                                 : [...current, opt.value].slice(-2);
-                              updateSettings({ backgroundAnimation: next });
+                              // 红频道背景动画默认不开（ui/bgAnim.ts）——在红主题下动这几个开关
+                              // 就是"亲手开启"，把 opt-in 记下来；清空则收回。
+                              // 不动 backgroundAnimation 本身，切回蓝/黄时原来的选择还在。
+                              updateSettings(
+                                user?.theme === 'red'
+                                  ? { backgroundAnimation: next, p5BgAnimOptIn: next.length > 0 }
+                                  : { backgroundAnimation: next },
+                              );
                             };
                             if (p3) {
                               return (
@@ -2070,6 +2086,9 @@ export const Settings = () => {
 
                 {section.id === 'navigator' && <NavigatorSettings />}
 
+                {/* ⚠️ 临时件，定位完卡顿即删 —— 见 sections 里那条注释 */}
+                {section.id === 'perf' && <PerfProbe />}
+
                 {section.id === 'notifications' && <NotificationSettings />}
 
                 {section.id === 'summary' && (() => {
@@ -2533,7 +2552,7 @@ export const Settings = () => {
                               <div className="space-y-1.5 pt-3 border-t border-gray-100 dark:border-gray-700/50">
                                 <p className="text-xs font-medium text-gray-500 dark:text-gray-400">🎤 听觉</p>
                                 <p className="text-[11px] text-gray-400 dark:text-gray-500">
-                                  配好后黑猫输入栏出现话筒：按住说话、松手转成文字填进输入框（发不发你决定）。
+                                  配好后助手输入栏出现话筒：按住说话、松手转成文字填进输入框（发不发你决定）。
                                   走 /audio/transcriptions 端点，模型名如 whisper-1 / SenseVoiceSmall / qwen3-asr-flash。
                                   不配也没关系——输入法自带的语音键一直都能用。
                                 </p>

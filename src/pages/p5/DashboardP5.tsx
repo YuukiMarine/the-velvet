@@ -10,7 +10,7 @@
  * 宣言卡三态 / 任务直接打卡 / 今日仪式 StackCarousel / 属性点击就地展开档案（AttrDetailInlineP5）
  * / 逆流衰减弹窗 / 临期 Toast / 终端 24h 卡。数据逻辑与 Dashboard.tsx 同源，口径零改动。
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { MouseEvent as ReactMouseEvent, ReactNode } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useBoldness } from '@/utils/boldness';
@@ -111,6 +111,76 @@ const WeatherGlyphP5 = ({ icon }: { icon: WeatherIcon | undefined }) => (
     <span className="absolute -right-[3px] -top-[3px] h-[8px] w-[10px]" style={{ background: P5R.red, clipPath: 'polygon(28% 0, 100% 0, 72% 100%, 0 100%)' }} />
   </span>
 );
+
+/**
+ * 页头一行的设计宽度：拼贴五块（43 × 1.24 = 53.3，四道 3px 间隙）+ gap-3 + 日期卡 134。
+ * 5 × 53.3 + 4 × 3 + 12 + 134 ≈ 425px。
+ */
+const HEAD_DESIGN_W = 425;
+
+/**
+ * FitRow —— 放不下就整体等比缩小，而不是把右边裁掉。
+ *
+ * 页头是「拼贴标题 + 日期纸卡」两块**都不能压缩**的东西：瓷砖是固定 px 的方块，
+ * 日期卡里塞着月相/天气块、两行问候、大号日数字。两块加起来要 425px，
+ * 而 360dp 的机子扣掉 px-4 只剩 328px —— P5RPage 又是 overflow-hidden，
+ * 于是右边那张卡直接被切掉一角，问候语和天气读数缺一块（用户上报）。
+ * 就算 450dp 宽也只有 418px，仍然差 7px，所以这不是"个别分辨率"，是几乎所有机型。
+ *
+ * 用户建议的「缩小来保全显示」正是对的解法：transform 不参与布局，
+ * 缩放后瓷砖的相对构图、阴影、旋转全都原样保留，只是整块小一号；
+ * 外层再把高度按同一比例收掉，后面的内容不会多出一截空白。
+ * 放得下时 k=1，完全等价于改动前。
+ */
+const FitRow = ({ designWidth, className, children }: {
+  designWidth: number;
+  className?: string;
+  children: ReactNode;
+}) => {
+  const hostRef = useRef<HTMLDivElement>(null);
+  const rowRef = useRef<HTMLDivElement>(null);
+  const [k, setK] = useState(1);
+  const [h, setH] = useState<number | undefined>(undefined);
+
+  useLayoutEffect(() => {
+    const host = hostRef.current;
+    const row = rowRef.current;
+    if (!host || !row) return;
+    const measure = () => {
+      const avail = host.clientWidth;
+      const next = avail > 0 ? Math.min(1, avail / designWidth) : 1;
+      setK(next);
+      // row 的 offsetHeight 不受 transform 影响（transform 不参与布局），
+      // 所以这里量到的始终是"未缩放的自然高度"，乘 k 即缩放后的占位高度
+      setH(row.offsetHeight * next);
+    };
+    measure();
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', measure);
+      return () => window.removeEventListener('resize', measure);
+    }
+    const ro = new ResizeObserver(measure);
+    ro.observe(host);
+    ro.observe(row);
+    return () => ro.disconnect();
+  }, [designWidth]);
+
+  return (
+    <div ref={hostRef} style={{ height: h }}>
+      <div
+        ref={rowRef}
+        className={className}
+        style={{
+          width: k < 1 ? designWidth : undefined,
+          transform: k < 1 ? `scale(${k})` : undefined,
+          transformOrigin: 'top left',
+        }}
+      >
+        {children}
+      </div>
+    </div>
+  );
+};
 
 // ── 灰星点轨雷达（角长 = 等级；升级可见地「长角」）────────────────────────────
 const STAR_CX = 180;
@@ -678,7 +748,7 @@ export const DashboardP5 = () => {
             <P5Star size={128} fill={P5R.redDeep} ring={P5R.ink} ring2="#f0e9df" rot={-10} className="absolute" style={{ left: 14, top: 20 }} />
           </div>
 
-          <div className="flex items-start justify-between gap-3">
+          <FitRow designWidth={HEAD_DESIGN_W} className="flex items-start justify-between gap-3">
             {/* 拼贴大字「靛蓝色房间」（五块瓷砖异色穿插，配色循环沿用稿上口径） */}
             <div className="min-w-0 pt-1">
               {/* 字号 +30%（33→43）；瓷砖变宽后日期卡同步收窄，两块在 450 宽下仍互不挤压 */}
@@ -751,7 +821,7 @@ export const DashboardP5 = () => {
                 </div>
               </div>
             </motion.div>
-          </div>
+          </FitRow>
 
           {/* ── 宣告卡三态提示条（设计稿：✦ 白条嵌在头部纸卡组里）── */}
           {pinned ? (

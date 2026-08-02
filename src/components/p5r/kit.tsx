@@ -18,6 +18,7 @@ import type { CSSProperties, ReactNode } from 'react';
 import { motion } from 'motion/react';
 import { useBoldness } from '@/utils/boldness';
 import { useAppStore } from '@/store';
+import { bgAnimOn } from '@/ui/bgAnim';
 
 export const P5R = {
   red: '#c00008',      // 主红（横幅 / 选中 / 大按钮）
@@ -792,10 +793,14 @@ export const P5RPage = ({ children, className, active = true, decor = true }: {
   // 铺上去就把它整块盖没了（红主题下"背景图片没反应"的根因）。
   // 只开背景动画（无图）时不能整层让位——App 根是白底，直接让位 = 纯白+动画（用户回报 bug）；
   // 改铺半透明暗幕：动画透出暗光，红舞台身份保持。
-  const anims = useAppStore((st) => st.settings.backgroundAnimation);
-  const bgImage = useAppStore((st) => st.settings.backgroundImage);
+  // 走 bgAnimStyles 的统一口径：红频道默认不开动画（ui/bgAnim.ts）。
+  // 这里若还读原始 backgroundAnimation，就会出现"App 根不画动画、舞台却已让位铺暗幕"——
+  // 观感是红主题突然变成一块纯黑，比原来的问题更糟。
+  const settings = useAppStore((st) => st.settings);
+  const theme = useAppStore((st) => st.user?.theme);
+  const bgImage = settings.backgroundImage;
   const yieldStage = !!bgImage;
-  const animVeil = !bgImage && (anims ?? []).length > 0;
+  const animVeil = bgAnimOn(settings, theme);
   if (!active) return <>{children}</>;
   return (
     <div className={`relative ${className ?? ''}`}>
