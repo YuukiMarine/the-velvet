@@ -1395,3 +1395,34 @@ html[data-ios-standalone="true"] {
   background-color: #ffffff !important;
   border-color: rgba(19, 19, 19, 0.25) !important;
 }
+
+/* ── PerfProbe 诊断开关（临时件，随 components/dev/PerfProbe.tsx 一起删）──────────
+   逐项关掉一类效果测帧率，用 <html data-perfprobe="token token"> 驱动。
+   一律 !important + 全选择器：诊断要的是"这一类东西彻底不画"的下限，
+   漏掉任何一处内联样式都会把结论带偏。日常渲染路径上这些规则永不命中。 */
+html[data-perfprobe~="noblur"] *,
+html[data-perfprobe~="noblur"] *::before,
+html[data-perfprobe~="noblur"] *::after {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+html[data-perfprobe~="nofilter"] *,
+html[data-perfprobe~="nofilter"] *::before,
+html[data-perfprobe~="nofilter"] *::after {
+  filter: none !important;
+}
+html[data-perfprobe~="noshadow"] *,
+html[data-perfprobe~="noshadow"] *::before,
+html[data-perfprobe~="noshadow"] *::after {
+  box-shadow: none !important;
+  text-shadow: none !important;
+}
+html[data-perfprobe~="noanim"] *,
+html[data-perfprobe~="noanim"] *::before,
+html[data-perfprobe~="noanim"] *::after {
+  animation: none !important;
+  transition: none !important;
+}
+html[data-perfprobe~="nobg"] [data-bg-anim] {
+  display: none !important;
+}
