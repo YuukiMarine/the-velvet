@@ -120,11 +120,20 @@ const rad = (d: number) => (d * Math.PI) / 180;
 const armAngle = (i: number) => -90 + i * 72;
 const pt = (ang: number, r: number): [number, number] => [STAR_CX + r * Math.cos(rad(ang)), STAR_CY + r * Math.sin(rad(ang))];
 
+/**
+ * 与 StarChartP3.starPathAt 是同一份代码的两个副本，也带着同一个洞：
+ * 循环恒定 5 次而 radii 从 items 映射来，**items 不足 5 条时整条路径全 NaN**，
+ * 浏览器拒绝绘制并报 `<path> attribute d: Expected number`。
+ * 触发点：导入备份时 initializeApp 先清表再写回，中间那一帧属性表是空的；新建档首帧同理。
+ * 缺位取 0.26R 保底（与本页 levelRadius 的起步档一致）。
+ */
+const MIN_R = STAR_R * 0.26;
 const starPathAt = (radii: number[]) => {
+  const rOf = (i: number) => (Number.isFinite(radii[i]) ? radii[i] : MIN_R);
   let d = '';
   for (let i = 0; i < 5; i++) {
-    const [ox, oy] = pt(armAngle(i), radii[i]);
-    const innerR = ((radii[i] + radii[(i + 1) % 5]) / 2) * 0.4;
+    const [ox, oy] = pt(armAngle(i), rOf(i));
+    const innerR = ((rOf(i) + rOf((i + 1) % 5)) / 2) * 0.4;
     const [ix, iy] = pt(armAngle(i) + 36, innerR);
     d += `${i === 0 ? 'M' : 'L'}${ox.toFixed(1)},${oy.toFixed(1)} L${ix.toFixed(1)},${iy.toFixed(1)} `;
   }

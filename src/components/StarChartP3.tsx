@@ -21,12 +21,23 @@ const STAR_SKEW = -13;    // 平行四边形斜切：上边右移、下边左移
 const STAR_SCALEY = 1.16; // 整体高度拉伸一点
 const pt = (ang: number, r: number): [number, number] => [STAR_CX + r * Math.cos(rad(ang)), STAR_CY + r * Math.sin(rad(ang))];
 
-/** 五角星路径：radii[i] 为第 i 个外角半径；凹点随相邻两角联动，保持尖锐星形 */
+/**
+ * 五角星路径：radii[i] 为第 i 个外角半径；凹点随相邻两角联动，保持尖锐星形。
+ *
+ * 循环恒定跑 5 次，而 radii 是从 items 映射来的——**items 不足 5 条时
+ * radii[i] 是 undefined，算出来整条路径全是 NaN**，浏览器直接拒绝绘制并报
+ * `<path> attribute d: Expected number, "MNaN,NaN…"`。
+ * 实际触发点：导入备份时 initializeApp 会先清表再写回，中间那一帧属性表是空的
+ * （上线审计用 setAttribute 钩子抓到，一次导入报两条）。新建档的首帧同理。
+ * 这里对缺位取 0.24R 保底——画一颗最小星，比不画和报错都体面。
+ */
+const MIN_R = STAR_R * 0.24;
 const starPathAt = (radii: number[]) => {
+  const r = (i: number) => (Number.isFinite(radii[i]) ? radii[i] : MIN_R);
   let d = '';
   for (let i = 0; i < 5; i++) {
-    const [ox, oy] = pt(armAngle(i), radii[i]);
-    const innerR = ((radii[i] + radii[(i + 1) % 5]) / 2) * 0.4;
+    const [ox, oy] = pt(armAngle(i), r(i));
+    const innerR = ((r(i) + r((i + 1) % 5)) / 2) * 0.4;
     const [ix, iy] = pt(armAngle(i) + 36, innerR);
     d += `${i === 0 ? 'M' : 'L'}${ox.toFixed(1)},${oy.toFixed(1)} L${ix.toFixed(1)},${iy.toFixed(1)} `;
   }
