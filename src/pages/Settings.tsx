@@ -17,8 +17,6 @@ import { WeatherSettings } from '@/components/settings/WeatherSettings';
 import { Toggle } from '@/components/Toggle';
 import NotificationSettings from '@/components/NotificationSettings';
 import { NavigatorSettings } from '@/components/navigator/NavigatorSettings';
-// ⚠️ 临时件：机上性能诊断台，定位完旧机卡顿即删
-import { PerfProbe } from '@/components/dev/PerfProbe';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P3R, P3RPage, GhostWords, P3PageHeader } from '@/components/p3r/kit';
@@ -854,10 +852,7 @@ export const Settings = () => {
     { id: 'summary', label: 'AI 总结', icon: '✨' },
     { id: 'personalize', label: '体验个性化', icon: '⚙️' },
     { id: 'navigator', label: '助手', icon: '◈' },
-    { id: 'notifications', label: '通知提醒', icon: '🔔' },
-    // ⚠️ 临时件：机上性能诊断台（2026-08-03 应用户要求）。旧机卡顿定位完就整块删掉，
-    //    连同 components/dev/PerfProbe.tsx 与 index.css 末尾那组 data-perfprobe 规则。
-    { id: 'perf', label: '性能诊断', icon: '⚡' }
+    { id: 'notifications', label: '通知提醒', icon: '🔔' }
   ];
 
   return (
@@ -2085,9 +2080,6 @@ export const Settings = () => {
                 )}
 
                 {section.id === 'navigator' && <NavigatorSettings />}
-
-                {/* ⚠️ 临时件，定位完卡顿即删 —— 见 sections 里那条注释 */}
-                {section.id === 'perf' && <PerfProbe />}
 
                 {section.id === 'notifications' && <NotificationSettings />}
 
