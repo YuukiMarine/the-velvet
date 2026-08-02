@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  冷启动窗口背景（`AppTheme.NoActionBarLaunch` 的 android:background）。
+
+  这一层在**进程起来、WebView 还没画出第一帧**的那段空窗期显示。Capacitor 脚手架
+  默认给的是 `@drawable/splash` —— 一张白底 + 蓝色 X 的示例图，也就是用户看到的
+  「入场动画前那个很丑的 test logo」。它跟本作没有任何关系，还会在白 → 近黑之间
+  硬闪一下。
+
+  换成纯色，取值 #05030f = VelvetRoomSplash 的根底色。四套开屏（velvet #05030f /
+  p5 #080808 / p3 #020810 / p4 同为深色）起手都是近黑，所以这一层与随后的 Web 开屏
+  之间不会有色阶跳变——用户感知是"黑屏直接开始动"，而不是"闪一下别人的 logo"。
+  这里刻意**不放任何图形**：真正的品牌演出在 Web 开屏里，重复一次只会拖慢感知速度。
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/velvetLaunch" />
+</layer-list>

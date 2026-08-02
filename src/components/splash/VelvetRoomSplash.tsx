@@ -13,13 +13,13 @@
  * 工程护栏：
  *   · 全程**只动 transform / opacity**；重复类动效走 CSS keyframes（合成器线程）
  *   · 灯带 12 根、星 10 颗、尘埃 16 粒，全部靠 animation-delay 错开复用，不每帧新建
- *   · D0（reduced-motion / 低性能）直接落到 ⑤，不放 ①–④
+ *   · **只有 prefers-reduced-motion** 会直接落到 ⑤；低帧率降级不再跳过 ①–④，见下
  *   · 任意点击立即跳到 ⑤ —— 开屏再好看也不能挡着人用
  */
 import { useState, useEffect, useRef } from 'react';
 import type { CSSProperties } from 'react';
 import { motion } from 'motion/react';
-import { useBoldness } from '@/utils/boldness';
+import { prefersReducedMotion } from '@/utils/boldness';
 
 /** 推进段总时长（秒，未乘 s）。实测反馈：门起点太近、整体偏短 → 由 2.5 拉到 3.0 */
 const TRAVEL_SEC = 3.0;
@@ -67,7 +67,20 @@ const DUST = Array.from({ length: 16 }, (_, i) => ({
 }));
 
 export function VelvetRoomSplash({ onComplete, s }: { onComplete: () => void; s: number }) {
-  const anim = useBoldness();
+  /**
+   * 这里刻意**不**用 useBoldness()。
+   *
+   * useBoldness 把三条 D0 通道并成一个布尔，其中「首开帧率 < 45fps」那条会写一个
+   * 永久单向的 localStorage 标记。于是老机器第一次启动之后，每一次开屏都直接从
+   * ⑤ 起手——用户上报的「默认动画的前半段『进门』没有正常播」就是这个：
+   * 门廊、推进、开门三段整段消失，只剩标题浮出。
+   *
+   * 但开屏与「常驻装饰动画」不是一回事：它一次启动只放一遍、期间没有任何可交互
+   * 的东西，正是最能承受掉帧的时刻；而它恰恰是这个 App 的门面。
+   * 所以这里只认 prefers-reduced-motion —— 那是用户**明确表达**的系统级偏好，
+   * 该尊重；帧率推断不该替他决定要不要看自己 App 的开场。
+   */
+  const anim = !prefersReducedMotion();
   const [phase, setPhase] = useState<'preroll' | 'travel' | 'flood' | 'title'>(anim ? 'preroll' : 'title');
   const doneRef = useRef(false);
 

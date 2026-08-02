@@ -136,6 +136,49 @@ export function setStraightenMode(on: boolean): void {
 
 const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)';
 
+/** 降级闸门的当前状态（PerfProbe 诊断台读它） */
+export function readPerfDegradeState(): { flagged: boolean; sampled: boolean; reducedMotion: boolean } {
+  return {
+    flagged: perfDegraded || readFlag(PERF_DEGRADE_KEY),
+    sampled: readFlag(PERF_SAMPLED_KEY),
+    reducedMotion: prefersReducedMotion(),
+  };
+}
+
+/**
+ * 撤销永久降级并允许下次启动重新采样。
+ *
+ * 这道闸原本是**单向**的：一旦首开采样跌破 45fps 就再也回不去，连「校直模式」开关
+ * 都被显式挡住，用户只能清除应用数据。而采样窗口恰好压在开屏刚结束、入场动效与
+ * 分包预热同时在跑的那 1.2 秒上，误判率并不低（模拟器更是必然命中）。
+ * 给一个撤销入口是最低限度的诚实。属性要一起摘掉，否则本次会话仍是 D0。
+ */
+export function clearPerfDegrade(): void {
+  perfDegraded = false;
+  try {
+    localStorage.removeItem(PERF_DEGRADE_KEY);
+    localStorage.removeItem(PERF_SAMPLED_KEY);
+  } catch { /* 存储不可用：内存镜像已清，本次会话即刻恢复 */ }
+  if (document.documentElement.getAttribute('data-boldness') === '0') {
+    document.documentElement.removeAttribute('data-boldness');
+  }
+}
+
+/**
+ * 只问「用户是否在系统里明确要求减少动效」，不掺帧率推断。
+ *
+ * 给那些**一次性、不可交互期间**的演出用（开屏就是唯一一例）：
+ * 帧率降级是一个替用户做的猜测，不该由它决定要不要放这个 App 的开场；
+ * 而 reduced-motion 是用户自己按下的开关，必须听。
+ */
+export function prefersReducedMotion(): boolean {
+  try {
+    return window.matchMedia(REDUCED_MOTION_QUERY).matches;
+  } catch {
+    return false;
+  }
+}
+
 /** 订阅两个 D0 信号源：<html data-boldness> 属性 + reduce 媒体查询 */
 function subscribeBoldness(onChange: () => void): () => void {
   const observer = new MutationObserver(onChange);
