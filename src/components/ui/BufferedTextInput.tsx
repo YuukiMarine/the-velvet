@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 
 /**
  * 带本地缓冲的受控文本框 —— 专治中文输入法把拼音叠成一坨。
@@ -24,6 +24,8 @@ interface Props {
   onCommit: (next: string) => void;
   placeholder?: string;
   className?: string;
+  /** 频道皮走内联色（愿望面等按 skin 上色的位置），className 表达不了 */
+  style?: CSSProperties;
   type?: 'text' | 'search' | 'url';
   inputMode?: 'text' | 'url' | 'numeric';
   disabled?: boolean;

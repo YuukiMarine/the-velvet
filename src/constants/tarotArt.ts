@@ -19,9 +19,20 @@ const MAJOR_WITH_ART = new Set([
   'moon', 'sun', 'judgement', 'world',
 ]);
 
-/** neutral（默认蓝）与 p3 同用水下那套 */
-const setOf = (channel: UIChannel): 'p3' | 'p4' | 'p5' =>
-  channel === 'p4' ? 'p4' : channel === 'p5' ? 'p5' : 'p3';
+export type TarotArtSet = 'p3' | 'p4' | 'p5';
 
-export const tarotArtUrl = (cardId: string, channel: UIChannel): string | null =>
-  MAJOR_WITH_ART.has(cardId) ? `${import.meta.env.BASE_URL}tarot/${setOf(channel)}/${cardId}.webp` : null;
+/**
+ * 频道 → 卡面套。
+ *
+ * 蓝/黄/红三个频道的卡面是频道视觉的一部分，钉死不可选；只有 neutral（自定义主题）
+ * 本来就没有自己的一套牌——原先它无条件借 p3 那套水下卡，现在改由用户挑
+ * （settings.customTarotSet，缺省仍是 p3，老档案观感不变）。
+ */
+export const tarotSetOf = (channel: UIChannel, custom?: TarotArtSet): TarotArtSet =>
+  channel === 'p4' ? 'p4'
+    : channel === 'p5' ? 'p5'
+      : channel === 'p3' ? 'p3'
+        : (custom ?? 'p3');
+
+export const tarotArtUrl = (cardId: string, set: TarotArtSet): string | null =>
+  MAJOR_WITH_ART.has(cardId) ? `${import.meta.env.BASE_URL}tarot/${set}/${cardId}.webp` : null;

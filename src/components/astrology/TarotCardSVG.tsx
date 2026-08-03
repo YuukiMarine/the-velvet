@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { motion } from 'motion/react';
 import { TarotCardData, TarotOrientation, SUIT_META } from '@/constants/tarot';
 import { tarotArtUrl } from '@/constants/tarotArt';
-import { useUiChannel } from '@/ui/useUiChannel';
+import { useTarotArtSet } from '@/ui/useTarotArtSet';
 import { P4Face, P5Face, type TarotFaceProps } from './TarotFaces';
 
 interface TarotCardSVGProps {
@@ -70,10 +70,13 @@ export function TarotCardSVG({
   const height = Math.round(width * 1.6);
   const flipped = orientation === 'reversed';
 
-  // 大阿卡纳走三频道各自的实拍卡面；无图 / 加载失败则退回下面的程序化卡面
-  const channel = useUiChannel();
-  const [artFailed, setArtFailed] = useState(false);
-  const artSrc = faceOverride ?? (artFailed ? null : tarotArtUrl(card.id, channel));
+  // 大阿卡纳走三套实拍卡面之一；无图 / 加载失败则退回下面的程序化卡面。
+  // 自定义主题下这一套由用户挑（settings.customTarotSet），其余频道钉死。
+  const artSet = useTarotArtSet();
+  // 记住**哪个 URL** 挂了而不是一个 bool：换卡面套时上一套的失败记录不该跟着过来
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  const artUrl = tarotArtUrl(card.id, artSet);
+  const artSrc = faceOverride ?? (artUrl && artUrl !== failedSrc ? artUrl : null);
 
   // 内部使用的 viewBox 尺寸（方便绘制）
   const VB_W = 200;
@@ -135,7 +138,7 @@ export function TarotCardSVG({
           loading="lazy"
           decoding="async"
           draggable={false}
-          onError={() => setArtFailed(true)}
+          onError={() => setFailedSrc(artSrc)}
           style={{
             width,
             height,
@@ -146,8 +149,8 @@ export function TarotCardSVG({
             transition: 'transform 0.45s ease',
           }}
         />
-      ) : channel === 'p5' || channel === 'p4' ? (
-        /* 红/黄频道的程序化卡面（PRD_V2.6 §5）。
+      ) : artSet === 'p5' || artSet === 'p4' ? (
+        /* 红/黄那两套的程序化卡面（PRD_V2.6 §5）。
            走到这里的是**小阿卡纳 56 张**（本来就没实拍图）与实拍图加载失败的兜底——
            此前这两种情况在所有频道都渲染同一张深紫金框卡，红频道尤其出戏。 */
         <svg
@@ -160,7 +163,7 @@ export function TarotCardSVG({
             display: 'block',
           }}
         >
-          {channel === 'p5'
+          {artSet === 'p5'
             ? <P5Face {...faceProps} />
             : <P4Face {...faceProps} />}
         </svg>

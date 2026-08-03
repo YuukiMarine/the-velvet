@@ -1143,6 +1143,41 @@ export const Settings = () => {
                             })}
                           </div>
                         </div>
+                        {/* 塔罗卡面 —— 只有自定义主题需要挑：蓝/黄/红三个频道各自的牌
+                            是频道视觉的一部分，钉死。自定义主题原先无条件借蓝那套水下卡。 */}
+                        <div className="space-y-2">
+                          <p className="text-sm font-medium text-gray-800 dark:text-white">塔罗卡面</p>
+                          <div className="grid grid-cols-3 gap-2">
+                            {([
+                              { value: 'p3', label: '蓝', swatch: '#3B82F6' },
+                              { value: 'p4', label: '黄', swatch: '#F9A11B' },
+                              { value: 'p5', label: '红', swatch: '#C00008' },
+                            ] as { value: 'p3' | 'p4' | 'p5'; label: string; swatch: string }[]).map(opt => {
+                              const active = (settings.customTarotSet ?? 'p3') === opt.value;
+                              return (
+                                <button
+                                  key={opt.value}
+                                  onClick={() => updateSettings({ customTarotSet: opt.value })}
+                                  className={`flex items-center justify-center gap-2 px-3 py-2 rounded-xl border-2 transition-all ${
+                                    active
+                                      ? 'border-primary bg-primary/10 dark:bg-primary/20'
+                                      : 'border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800'
+                                  }`}
+                                >
+                                  <span
+                                    aria-hidden
+                                    className="w-3.5 h-5 rounded-[3px] border border-black/15 shrink-0"
+                                    style={{ background: opt.swatch }}
+                                  />
+                                  <span className={`text-xs font-bold ${active ? 'text-primary' : 'text-gray-700 dark:text-gray-300'}`}>{opt.label}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                          <p className="text-[10px] text-gray-400 dark:text-gray-500">
+                            换的是星象页抽到的牌长什么样。小组件上的牌面不跟随，始终是蓝那套。
+                          </p>
+                        </div>
                       </div>
                     )}
 
