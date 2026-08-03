@@ -285,8 +285,13 @@ export const TodosView = () => {
       const matchesWeekday = !t.weekdays || t.weekdays.length === 0 || t.weekdays.includes(todayWeekday);
       return matchesWeekday;
     });
-    // 重要任务置顶
+    // BIG DEAL 恒在最上（PRD_V2.6 §2.1），其次重要任务。
+    // 这一页是 BigDealHomeCard **唯一真正执行过**的渲染点（三个 Dashboard 那边
+    // 曾被 filter 整个滤掉），但这里偏偏没有置顶——于是十来条日常里，大事就沉在
+    // 中间，卡片式样跟普通行差不多，用户「反正就是没看到」的第二重原因。
     return [...active].sort((a, b) => {
+      if (a.isBigDeal && !b.isBigDeal) return -1;
+      if (!a.isBigDeal && b.isBigDeal) return 1;
       if (a.important && !b.important) return -1;
       if (!a.important && b.important) return 1;
       return 0;
