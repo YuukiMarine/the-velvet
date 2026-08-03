@@ -556,7 +556,23 @@ const P4SkyBadge = () => {
 };
 
 export const Dashboard = () => {
-  const { attributes, user, settings, todos, activities, achievements, skills, completeTodo, getTodayTodoProgress, setModalBlocker, setCurrentPage, applyCountercurrentDecay, getCountercurrentWarnings, callingCards } = useAppStore();
+  // 逐字段订阅（v2.6.5 性能整改 A2）：原来是一句无选择器的 useAppStore()，
+  // 于是订阅目标是**整个 state 对象**——setState 每次都换新对象，任何一次写入
+  // （记账、同步落库、战斗状态…）都会重渲染整张首页。首页是常驻页，代价最大。
+  const attributes = useAppStore(s => s.attributes);
+  const user = useAppStore(s => s.user);
+  const settings = useAppStore(s => s.settings);
+  const todos = useAppStore(s => s.todos);
+  const activities = useAppStore(s => s.activities);
+  const achievements = useAppStore(s => s.achievements);
+  const skills = useAppStore(s => s.skills);
+  const completeTodo = useAppStore(s => s.completeTodo);
+  const getTodayTodoProgress = useAppStore(s => s.getTodayTodoProgress);
+  const setModalBlocker = useAppStore(s => s.setModalBlocker);
+  const setCurrentPage = useAppStore(s => s.setCurrentPage);
+  const applyCountercurrentDecay = useAppStore(s => s.applyCountercurrentDecay);
+  const getCountercurrentWarnings = useAppStore(s => s.getCountercurrentWarnings);
+  const callingCards = useAppStore(s => s.callingCards);
   const [completedTitle, setCompletedTitle] = useState<string | null>(null);
   const [completedPoints, setCompletedPoints] = useState(1);
   const [unlockHint, setUnlockHint] = useState<{ achievements: number; skills: number }>({ achievements: 0, skills: 0 });
@@ -1411,7 +1427,9 @@ export const Dashboard = () => {
 // 已抽：展示牌名 + 属性加成 + 一行建议，仍可点击进入查看详情
 
 function AstrologyEntryCard({ onOpen }: { onOpen: () => void }) {
-  const { dailyDivination, settings } = useAppStore();
+  // 逐字段订阅（A2）：首页常驻件，别让每次 store 写入都把它重算一遍
+  const dailyDivination = useAppStore(s => s.dailyDivination);
+  const settings = useAppStore(s => s.settings);
   const drawn = dailyDivination && dailyDivination.date === toLocalDateKey() ? dailyDivination : null;
   const isP4 = useUiChannel() === 'p4';
 

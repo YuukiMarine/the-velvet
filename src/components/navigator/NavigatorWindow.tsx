@@ -386,7 +386,12 @@ const P5Spine = ({ containerRef, count, phase }: {
 };
 
 export const NavigatorWindow = () => {
-  const { user, setCurrentPage, getDueTodosToday, getTodayTodoProgress } = useAppStore();
+  // 逐字段订阅（A2）：本组件在 App 顶层常驻（多数时间不显形），
+  // 无选择器订阅会让它跟着每一次 store 写入白重渲染一遍，连带整棵子树
+  const user = useAppStore(s => s.user);
+  const setCurrentPage = useAppStore(s => s.setCurrentPage);
+  const getDueTodosToday = useAppStore(s => s.getDueTodosToday);
+  const getTodayTodoProgress = useAppStore(s => s.getTodayTodoProgress);
   const nav = useNavigatorStore();
   const bold = useBoldness();
   // 皮肤按**频道**分（FS2）：p3=白日水面亮皮（蓝/粉）· p4=节目单 · p5=剪报 ·

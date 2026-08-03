@@ -168,7 +168,10 @@ const MoonPhase = ({ date }: { date: Date }) => {
  * 再点「返回」由 AnimatePresence 反向倒放回五角星。数据逻辑与 AttributeDossier 同源。
  */
 const AttrDetailInline = ({ attrId, level: fallbackLevel, onBack }: { attrId: AttributeId; level: number; onBack: () => void }) => {
-  const { attributes, achievements, settings } = useAppStore();
+  // 逐字段订阅（A2）：首页常驻件，别让每次 store 写入都把它重算一遍
+  const attributes = useAppStore(s => s.attributes);
+  const achievements = useAppStore(s => s.achievements);
+  const settings = useAppStore(s => s.settings);
   const attr = attributes.find((a) => a.id === attrId);
   const thresholds = settings.levelThresholds?.length ? settings.levelThresholds : attr?.levelThresholds ?? [];
   const lvlMax = thresholds.length || 5;
@@ -337,11 +340,24 @@ const RitualSlab = ({
 
 // ── 页面 ────────────────────────────────────────────────────────────────────
 export const DashboardP3 = () => {
-  const {
-    user, todos, activities, achievements, skills, attributes, settings, dailyDivination,
-    completeTodo, getTodayTodoProgress, setModalBlocker, setCurrentPage,
-    applyCountercurrentDecay, getCountercurrentWarnings, callingCards,
-  } = useAppStore();
+  // 逐字段订阅（v2.6.5 性能整改 A2）：原来是一句无选择器的 useAppStore()，
+  // 于是订阅目标是**整个 state 对象**——setState 每次都换新对象，任何一次写入
+  // （记账、同步落库、战斗状态…）都会重渲染整张首页。首页是常驻页，代价最大。
+  const user = useAppStore(s => s.user);
+  const todos = useAppStore(s => s.todos);
+  const activities = useAppStore(s => s.activities);
+  const achievements = useAppStore(s => s.achievements);
+  const skills = useAppStore(s => s.skills);
+  const attributes = useAppStore(s => s.attributes);
+  const settings = useAppStore(s => s.settings);
+  const dailyDivination = useAppStore(s => s.dailyDivination);
+  const completeTodo = useAppStore(s => s.completeTodo);
+  const getTodayTodoProgress = useAppStore(s => s.getTodayTodoProgress);
+  const setModalBlocker = useAppStore(s => s.setModalBlocker);
+  const setCurrentPage = useAppStore(s => s.setCurrentPage);
+  const applyCountercurrentDecay = useAppStore(s => s.applyCountercurrentDecay);
+  const getCountercurrentWarnings = useAppStore(s => s.getCountercurrentWarnings);
+  const callingCards = useAppStore(s => s.callingCards);
   const [dossierAttr, setDossierAttr] = useState<AttributeId | null>(null);
   const [completedTitle, setCompletedTitle] = useState<string | null>(null);
   const [completedPoints, setCompletedPoints] = useState(1);

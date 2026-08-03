@@ -37,7 +37,7 @@ import { UserProfileCard } from '@/components/UserProfileCard';
 import { TrophyIcon } from '@/components/Navigation';
 import { isInShadowTime } from '@/constants';
 import { calcCurrentStreak, streakDates } from '@/utils/streak';
-import { triggerNavFeedback } from '@/utils/feedback';
+import { triggerNavFeedback, triggerThemeSwitchFeedback } from '@/utils/feedback';
 import { useBoldness } from '@/utils/boldness';
 import { STAGGER, TAP, springSoft, fadeIn } from '@/utils/motion';
 import { useUiChannel } from '@/ui/useUiChannel';
@@ -456,7 +456,9 @@ export const Menu = () => {
                   type="button"
                   whileTap={TAP}
                   onClick={() => {
-                    triggerNavFeedback();
+                    // 响的是**被选中那个**主题的切换声，不是当前主题的导航声
+                    // ——与设置页的色板同口径（用户口径：跟详细页里切换一样）
+                    triggerThemeSwitchFeedback(t.value);
                     void setTheme(t.value);
                   }}
                   aria-label={`切换主题：${t.label}`}

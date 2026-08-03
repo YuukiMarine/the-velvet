@@ -19,7 +19,10 @@ export interface AttributeDossierProps {
 }
 
 export const AttributeDossier = ({ attrId, onClose, originRef }: AttributeDossierProps) => {
-  const { attributes, achievements, settings } = useAppStore();
+  // 逐字段订阅（A2）：首页常驻件，别让每次 store 写入都把它重算一遍
+  const attributes = useAppStore(s => s.attributes);
+  const achievements = useAppStore(s => s.achievements);
+  const settings = useAppStore(s => s.settings);
 
   const attr = attrId ? attributes.find((a) => a.id === attrId) : undefined;
   const thresholds = settings.levelThresholds?.length ? settings.levelThresholds : attr?.levelThresholds ?? [];

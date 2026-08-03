@@ -31,7 +31,17 @@ const deadlineLabel = (deadline?: string): { text: string; urgent: boolean } | n
 };
 
 export const BigDealPanel = ({ todoId, onClose }: Props) => {
-  const { todos, settings, completeTodoStep, undoTodoStep, addTodoStep, removeTodoStep, collapseBigDeal, decomposeBigDealAI, rebuildBigDeal } = useAppStore();
+  // 逐字段订阅（A2）：面板在首页常驻挂载（关着也在树上），
+  // 无选择器订阅会让它跟着每次 store 写入白重渲染
+  const todos = useAppStore(s => s.todos);
+  const settings = useAppStore(s => s.settings);
+  const completeTodoStep = useAppStore(s => s.completeTodoStep);
+  const undoTodoStep = useAppStore(s => s.undoTodoStep);
+  const addTodoStep = useAppStore(s => s.addTodoStep);
+  const removeTodoStep = useAppStore(s => s.removeTodoStep);
+  const collapseBigDeal = useAppStore(s => s.collapseBigDeal);
+  const decomposeBigDealAI = useAppStore(s => s.decomposeBigDealAI);
+  const rebuildBigDeal = useAppStore(s => s.rebuildBigDeal);
   const [stepCut, setStepCut] = useState<BigDealStepCutInPayload | null>(null);
   const [rebuildAsk, setRebuildAsk] = useState(false);
   const [rebuilding, setRebuilding] = useState(false);

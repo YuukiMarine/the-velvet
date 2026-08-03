@@ -234,8 +234,16 @@ const playThemeSound = (kind: FeedbackKind, themeOverride?: ThemeType): void => 
   void playBuffered(src, clampVolume(baseVolume * getVolume() * THEME_SOUND_BOOST));
 };
 
+/**
+ * 切主题时响**目标主题**的切换声（预听），不是当前主题的。
+ * custom 自己没有声音方案，落到用户选的那套（与 getActiveTheme 同口径）——
+ * 否则点「自定义」永远响蓝的那声，和它实际会用的音效对不上。
+ */
 export const triggerThemeSwitchFeedback = (theme: ThemeType): void => {
-  playThemeSound('theme_switch', theme);
+  const resolved = theme === 'custom'
+    ? (useAppStore.getState().settings.customSoundScheme || 'blue')
+    : theme;
+  playThemeSound('theme_switch', resolved);
 };
 
 export const triggerSuccessFeedback = (): void => {

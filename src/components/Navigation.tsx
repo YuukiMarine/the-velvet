@@ -1,5 +1,5 @@
 import { motion } from 'motion/react';
-import { useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import type { MouseEvent as ReactMouseEvent } from 'react';
 import { useAppStore } from '@/store';
 import { useNavigatorStore } from '@/store/navigator';
@@ -105,8 +105,13 @@ const isNavActive = (itemId: string, currentPage: string): boolean =>
 // 导出供 Settings 页面复用图标（成就入口行）
 export { TrophyIcon };
 
-export const Sidebar = () => {
-  const { currentPage, setCurrentPage, actionsSubTab, setActionsSubTab } = useAppStore();
+const SidebarInner = () => {
+  // 逐字段订阅：无选择器的 useAppStore() 会让**任何**一次 store 写入都重渲染整条侧栏
+  // （记一笔账、勾一个任务、同步落库……）。侧栏真正在意的只有这两个值。
+  const currentPage = useAppStore(s => s.currentPage);
+  const setCurrentPage = useAppStore(s => s.setCurrentPage);
+  const actionsSubTab = useAppStore(s => s.actionsSubTab);
+  const setActionsSubTab = useAppStore(s => s.setActionsSubTab);
   // F6：黑猫对话窗（NavigatorWindow 挂在 App 顶层，这里只负责打开）
   const openNavigator = useNavigatorStore((s) => s.open);
   // P3R：蓝主题侧栏换形（水面底 + 蓝斜块选中 + 洋红角），其余主题不受影响
@@ -348,8 +353,12 @@ const NavTab = ({ item, active, onSelect, p3 = false, p5 = false }: { item: NavI
   );
 };
 
-export const BottomNav = () => {
-  const { currentPage, setCurrentPage, actionsSubTab, setActionsSubTab } = useAppStore();
+const BottomNavInner = () => {
+  // 同 Sidebar：逐字段订阅，别让每次 store 写入都重渲染底导
+  const currentPage = useAppStore(s => s.currentPage);
+  const setCurrentPage = useAppStore(s => s.setCurrentPage);
+  const actionsSubTab = useAppStore(s => s.actionsSubTab);
+  const setActionsSubTab = useAppStore(s => s.setActionsSubTab);
   // F6：黑猫对话窗（NavigatorWindow 挂在 App 顶层，这里只负责打开）
   const openNavigator = useNavigatorStore((s) => s.open);
   const channel = useUiChannel();
@@ -534,3 +543,11 @@ export const BottomNav = () => {
     </motion.nav>
   );
 };
+
+/**
+ * memo 化：两条导航都**不吃 props**，加上上面的逐字段订阅之后，
+ * 它们只在 currentPage / actionsSubTab 变化时重渲染——App 每次重渲染
+ * 不再顺手把整条导航（含 SVG 图标、频道分支、轮盘）一起重算。
+ */
+export const Sidebar = memo(SidebarInner);
+export const BottomNav = memo(BottomNavInner);
