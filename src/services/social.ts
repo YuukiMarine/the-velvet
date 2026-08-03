@@ -21,6 +21,7 @@ import {
 import { useCloudSocialStore } from '@/store/cloudSocial';
 import { useCloudStore } from '@/store/cloud';
 import { useAppStore } from '@/store';
+import { getOnlineCardFace, clearOnlineCardFace } from './onlineCardFace';
 import { interpretLockedArcana, type ConfidantMatchResult } from '@/utils/confidantAI';
 import type { CoopBond, CoopShadow, Friendship, NotificationEntry } from '@/types';
 
@@ -302,8 +303,16 @@ const materializeCoopBonds = async (bonds: CoopBond[]): Promise<void> => {
         initialLevel: initialLv,
         skillAttribute: skillAttr,
       });
-      // 写入 linkedProfile 快照（addConfidant 不接受该字段，用 updateConfidant 补一刀）
-      await appStore.updateConfidant(created.id, { linkedProfile: other });
+      // 写入 linkedProfile 快照（addConfidant 不接受该字段，用 updateConfidant 补一刀）。
+      // 顺带把这位好友在「未缔结」阶段自己裁过的卡面搬过来——那张图是按云端 id 存的
+      // （db.onlineCardFaces），缔结后本地有了 Confidant 行就该归它，否则用户裁过的图
+      // 会在缔结那一刻凭空消失。搬完清掉原行，不留孤儿。
+      const carried = await getOnlineCardFace(other.id);
+      await appStore.updateConfidant(created.id, {
+        linkedProfile: other,
+        ...(carried ? { cardFaceDataUrl: carried, avatarAsCardFace: true } : {}),
+      });
+      if (carried) await clearOnlineCardFace(other.id);
     } catch (err) {
       console.warn('[velvet-social] addConfidant from bond failed', err);
     }

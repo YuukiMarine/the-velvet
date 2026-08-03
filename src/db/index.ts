@@ -1,5 +1,5 @@
 import Dexie, { Table } from 'dexie';
-import { User, Attribute, Activity, Achievement, Skill, DailyEvent, DailyDivination, LongReading, Settings, Todo, TodoCompletion, PeriodSummary, WeeklyGoal, Persona, Shadow, BattleState, Confidant, ConfidantEvent, CounselSession, CounselArchive, CallingCard, LedgerEntry, Budget, LedgerAsset, Wish, NavigatorSessionRow, NavigatorMessageRow, NavigatorMemo, NavigatorPreset, TowerStratum } from '@/types';
+import { User, Attribute, Activity, Achievement, Skill, DailyEvent, DailyDivination, LongReading, Settings, Todo, TodoCompletion, PeriodSummary, WeeklyGoal, Persona, Shadow, BattleState, Confidant, ConfidantEvent, CounselSession, CounselArchive, CallingCard, LedgerEntry, Budget, LedgerAsset, Wish, NavigatorSessionRow, NavigatorMessageRow, NavigatorMemo, NavigatorPreset, TowerStratum, OnlineCardFace } from '@/types';
 
 export class PGTDatabase extends Dexie {
   users!: Table<User>;
@@ -32,6 +32,7 @@ export class PGTDatabase extends Dexie {
   navigatorMemos!: Table<NavigatorMemo>;            // F6 原子记忆（三源 + F8 图片卡共用）
   navigatorPresets!: Table<NavigatorPreset>;        // F6 自定义人格（内置随代码，不入表）
   strata!: Table<TowerStratum>;                     // 批2 影时间高塔·区层
+  onlineCardFaces!: Table<OnlineCardFace>;          // 未缔结在线好友的自裁卡面（本地专属，见 v14 注释）
 
   constructor() {
     super('PGTDatabase');
@@ -274,6 +275,15 @@ export class PGTDatabase extends Dexie {
     // v13（批2 影时间高塔）：新增区层表
     this.version(13).stores({
       strata: 'id, level, status, createdWeekKey, createdAt'
+    });
+
+    // v14：未缔结在线好友的自裁卡面（专辑墙 friend 卡）。
+    // 主键 = 对方云端 user id ——未缔结的好友本地没有 Confidant 行，只能按云端身份索引；
+    // 缔结时 materializeCoopBonds 会把它搬进新建同伴的 cardFaceDataUrl（services/social.ts）。
+    // **故意不进 sync.ts 的 SYNC_TABLES**：与 confidants.customAvatarDataUrl 同口径——
+    // base64 大图 + 他人肖像，只留本机，不上云。
+    this.version(14).stores({
+      onlineCardFaces: 'userId'
     });
   }
 }

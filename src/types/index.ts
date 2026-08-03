@@ -1615,6 +1615,19 @@ export type FriendshipStatus =
   | 'severed'   // 已解除（7 天冷却）
   | 'expired';  // 申请 21 天未响应自动作废
 
+/**
+ * 未缔结在线好友的自裁卡面（专辑墙 friend 卡用，db v14）。
+ * 未缔结的好友本地没有 Confidant 行，卡面只能按对方云端 user id 存；
+ * 缔结时会搬进新建同伴的 cardFaceDataUrl，随后本行清除。
+ * **不上云**（base64 大图 + 他人肖像，与 customAvatarDataUrl 同口径）。
+ */
+export interface OnlineCardFace {
+  /** 对方 PB user.id */
+  userId: string;
+  dataUrl: string;
+  updatedAt: Date;
+}
+
 export interface Friendship {
   id: string;                 // PB record id
   userAId: string;            // 归一化后的较小 id 在前
