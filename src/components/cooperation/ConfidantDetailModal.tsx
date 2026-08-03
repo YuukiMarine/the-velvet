@@ -4,6 +4,7 @@ import { motion, AnimatePresence, type Variants } from 'motion/react';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { useAppStore, toLocalDateKey } from '@/store';
 import { useCloudSocialStore } from '@/store/cloudSocial';
+import { loadSocial } from '@/services/social';
 import { TAROT_BY_ID } from '@/constants/tarot';
 import {
   INTIMACY_LABELS,
@@ -177,6 +178,8 @@ export function ConfidantDetailModal({
   const [avatarErr, setAvatarErr] = useState<string | null>(null);
   const [pendingAvatarFile, setPendingAvatarFile] = useState<File | null>(null);
   const [pendingCardFaceFile, setPendingCardFaceFile] = useState<File | null>(null);
+  // 远端头像要先 fetch 成 blob，慢网下有肉眼可见的等待——按钮得说话，否则又是"点了没反应"
+  const [cardFaceLoading, setCardFaceLoading] = useState(false);
   // 上传完问一句：要不要把塔罗的「卡面」也换成这张图
   const [askCardFace, setAskCardFace] = useState(false);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -355,18 +358,41 @@ export function ConfidantDetailModal({
    *
    * 远端 URL 先 fetch 成 blob 再包成 File：ImageCropDialog 走的是 objectURL，
    * 这样 canvas 不会被跨域图污染（直接给 <img src=远端URL> 会 taint、toDataURL 抛异常）。
+   *
+   * ── 「点了没反应」的根因（用户上报：偶现一次，关掉重开就好了）────────────
+   * 原来第一行是 `if (!src) return;` —— **静默返回**。在线同伴的官方头像地址存在
+   * confidant.linkedProfile 里，而这份快照是 loadSocial 拉完好友列表之后由
+   * syncLinkedProfiles **异步**补写的。刚进页面就点，快照还没落地 → src 为空 →
+   * 函数一声不吭地返回，按钮看起来就是死的；等一会儿（或关掉重开，触发下一轮
+   * loadSocial）快照到位，同一个按钮又好了——正是用户描述的现象。
+   * 现在改成：拿不到就说出来并顺手催一次刷新；另外 fetch 不会因 4xx/5xx 而 reject，
+   * 必须自己查 res.ok，否则把一张错误页当图片塞进裁切框。
    */
   const openCardFaceCrop = async () => {
     const src = confidant.customAvatarDataUrl || confidant.linkedProfile?.avatarUrl;
-    if (!src) return;
+    if (!src) {
+      setAvatarErr('还没取到 Ta 的头像，正在重新拉取…稍后再试一次');
+      setTimeout(() => setAvatarErr(null), 3000);
+      // 催一次社交数据刷新，把 linkedProfile 补上（失败也无所谓，下一轮还会拉）
+      void loadSocial({ force: true }).catch(() => { /* 静默 */ });
+      return;
+    }
+    setCardFaceLoading(true);
     try {
-      const blob = await (await fetch(src)).blob();
+      const res = await fetch(src);
+      // fetch 只在网络层失败时 reject，404/403 也是 resolve —— 不查 ok 就会把
+      // 一张 HTML 错误页当成图片塞进裁切框
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      if (!blob.type.startsWith('image/') && blob.size < 64) throw new Error('不是图片');
       setPendingCardFaceFile(new File([blob], 'card-face', { type: blob.type || 'image/jpeg' }));
     } catch {
-      // 取不到原图（离线 / 跨域被拒）：退回不裁切直接用，至少功能是通的
+      // 取不到原图（离线 / 跨域被拒 / 404）：退回不裁切直接用，至少功能是通的
       await updateConfidant(confidant.id, { avatarAsCardFace: true });
       setAvatarErr('取不到原图，已按默认位置裁切');
       setTimeout(() => setAvatarErr(null), 2600);
+    } finally {
+      setCardFaceLoading(false);
     }
   };
 
@@ -548,10 +574,11 @@ export function ConfidantDetailModal({
                             setAvatarMenuOpen(false);
                             void openCardFaceCrop();
                           }}
-                          className="w-full px-3 py-2 text-left text-xs font-semibold text-gray-800 dark:text-gray-100 hover:bg-black/5 dark:hover:bg-white/10 transition-colors flex items-center gap-2 border-t border-black/5 dark:border-white/10"
+                          disabled={cardFaceLoading}
+                          className="w-full px-3 py-2 text-left text-xs font-semibold text-gray-800 dark:text-gray-100 hover:bg-black/5 dark:hover:bg-white/10 transition-colors flex items-center gap-2 border-t border-black/5 dark:border-white/10 disabled:opacity-50"
                         >
                           <span className="text-base">✂️</span>
-                          重新裁切卡面
+                          {cardFaceLoading ? '正在取原图…' : '重新裁切卡面'}
                         </button>
                       )}
                       {confidant.customAvatarDataUrl && (

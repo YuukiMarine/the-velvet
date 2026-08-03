@@ -60,25 +60,34 @@ import { P4StageDecor } from '@/ui/p4Kit';
 import { bgAnimStyles } from '@/ui/bgAnim';
 
 /**
- * 页面分包预热清单。
+ * 页面分包预热清单，分**烫**与**温**两档。
  *
- * 上面这些页走 lazy()，chunk 直到首次导航才开始下载——用户感知就是"第一次点进某个页
- * 要顿一下、先闪一下『加载中…』"（用户上报的首开卡顿）。这里把同样的动态 import 再列
- * 一份：Vite 对同一模块说明符的 import() 是同一个 chunk，预热完 lazy() 的 promise 立刻
- * resolve，导航零等待。
+ * 这些页走 lazy()，chunk 直到首次导航才开始下载——用户感知就是"第一次点进某个页
+ * 要顿一下、先闪一下『加载中…』"。这里把同样的动态 import 再列一份：Vite 对同一
+ * 模块说明符的 import() 是同一个 chunk，预热完 lazy() 的 promise 立刻 resolve，
+ * 导航零等待。
  *
- * 节奏：首屏画完 + 空闲后才逐个取，一次一个，不和首屏抢带宽/主线程。
- * 顺序按底部导航的使用频度排（行动 / 菜单最常点）。
+ * ── 烫：底部导航的三个去处 ──────────────────────────────
+ * 行动 / 羁绊 / 菜单是用户离开首页的**唯一三个高频落点**，等空闲再取来不及
+ * （用户上报：切页时闪到了"正在加载"）。开屏一结束就连着取，不走 requestIdleCallback
+ * ——闲不闲不重要，这三个反正一定会用到，早取早完事。
  */
-const PAGE_CHUNKS: Array<() => Promise<unknown>> = [
+const HOT_CHUNKS: Array<() => Promise<unknown>> = [
   () => import('@/pages/Actions'),
   () => import('@/pages/Menu'),
   () => import('@/pages/Cooperation'),
+];
+
+/**
+ * ── 温：菜单宫格后面那一层 ────────────────────────────
+ * 进这些页至少要多点一步，用户对"第一次进去顿一下"的容忍度高得多。
+ * 保持原来的节奏：空闲时一次一个，不和首屏抢主线程。
+ */
+const WARM_CHUNKS: Array<() => Promise<unknown>> = [
   () => import('@/pages/Statistics'),
   () => import('@/pages/Astrology'),
   () => import('@/pages/Ledger'),
   () => import('@/pages/Account'),
-  // C10 新分出来的三块：都在菜单宫格后面，按使用频度排在原清单之后
   () => import('@/pages/Settings'),
   () => import('@/pages/Achievements'),
   () => import('@/components/battle/BattleArena'),
@@ -200,31 +209,43 @@ function App() {
     init();
   }, [initializeApp]);
 
-  // 页面分包预热：首屏画完 + 空闲后逐个把 lazy 页的 chunk 拉进模块表，
-  // 消掉"第一次点进某页要等 chunk、先闪一下加载中"的首开卡顿（见 PAGE_CHUNKS 注释）。
+  /**
+   * 页面分包预热。两条时间线，都锚在**开屏结束**那一刻（本 effect 的 showSplash 闸）。
+   *
+   * 烫档（行动/羁绊/菜单）：立刻起跑、连着取，不等空闲。
+   * 温档：5200ms 之后再空闲逐个取。
+   *
+   * 为什么温档要压到 5200ms —— 预热不只是下载：import() 还要在主线程 compile +
+   * 执行模块顶层，单个 chunk 的编译**不可打断**（Cooperation 连带 404K 图表库，
+   * 低端安卓上是个 100~300ms 的 long task）。而 boldness 的首开帧率采样窗就在
+   * 开屏结束之后不远，采到的低帧率若其实是预热造成的，会被写成**永久** D0 标记，
+   * 且「校直模式」开关撤不掉（boldness.ts 的单向闸）——中端机被无辜降级。
+   * 烫档同样绕开采样窗：它跑在窗口**之前**（配套把 SAMPLE_SETTLE_MS 抬到 3000ms，
+   * 见 boldness.ts），温档跑在窗口**之后**，采样窗夹在两者中间的安静地带。
+   */
   useEffect(() => {
     if (isLoading || showSplash || !user) return;
     let cancelled = false;
-    let i = 0;
-    const step = () => {
-      if (cancelled || i >= PAGE_CHUNKS.length) return;
-      PAGE_CHUNKS[i++]()
+
+    // 烫：连着取，取完一个立刻取下一个
+    let h = 0;
+    const hot = () => {
+      if (cancelled || h >= HOT_CHUNKS.length) return;
+      HOT_CHUNKS[h++]()
         .catch(() => { /* 预热失败不影响真正导航时的重试 */ })
-        .then(() => { if (!cancelled) onIdle(step); });
+        .then(() => { if (!cancelled) hot(); });
     };
-    /**
-     * 1200 → 5200ms。
-     *
-     * 预热不只是下载：import() 还要在主线程 compile + 执行模块顶层，单个 chunk 的
-     * 编译**不可打断**（Cooperation 连带 404K 的图表库，在低端安卓上是一个
-     * 100~300ms 的 long task）。而 boldness 的首开帧率采样是在开屏结束后
-     * ≥1.5s 起、窗口 1.2s——两者原来几乎必然重叠。
-     * 结果：采样量到的低帧率其实是预热造成的，却被写成**永久** D0 标记，
-     * 而且「校直模式」开关还撤不掉它（boldness.ts 的单向闸）。
-     * 这是正确性 bug，不只是性能问题：中端机会被无辜降级。
-     * 让预热排在采样窗之后再起跑。
-     */
-    const kick = window.setTimeout(() => onIdle(step), 5200);
+    hot();
+
+    // 温：等采样窗过去，再空闲逐个取
+    let w = 0;
+    const warm = () => {
+      if (cancelled || w >= WARM_CHUNKS.length) return;
+      WARM_CHUNKS[w++]()
+        .catch(() => { /* 同上 */ })
+        .then(() => { if (!cancelled) onIdle(warm); });
+    };
+    const kick = window.setTimeout(() => onIdle(warm), 5200);
     return () => { cancelled = true; clearTimeout(kick); };
   }, [isLoading, showSplash, user]);
 

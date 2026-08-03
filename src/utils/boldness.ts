@@ -27,8 +27,16 @@ const PERF_SAMPLED_KEY = 'sl-perf-sampled';
 const SAMPLE_MS = 1200;
 /** 永久降级阈值 */
 const MIN_FPS = 45;
-/** schedulePerfSample 被调用后（开屏已结束）再静候主界面入场动效播完 */
-const SAMPLE_SETTLE_MS = 1500;
+/**
+ * schedulePerfSample 被调用后（开屏已结束）再静候主界面入场动效播完。
+ *
+ * 1500 → 3000：App 现在会在开屏一结束就连着预热行动/羁绊/菜单三个 chunk
+ * （见 App.tsx HOT_CHUNKS——用户上报切页闪「加载中」，等空闲来不及）。
+ * 编译是不可打断的 long task，撞进采样窗就会把预热的开销记到设备头上，
+ * 一次误判就是**永久** D0。抬到 3000ms 让采样窗落在烫档预热之后、温档（5200ms）之前
+ * 那段安静地带；顺带这个时间点也更接近稳态，比刚进首页时更能代表真实帧率。
+ */
+const SAMPLE_SETTLE_MS = 3000;
 
 /**
  * 永久降级的内存镜像：localStorage 不可写（隐私模式）时 writeFlag 静默失败，
