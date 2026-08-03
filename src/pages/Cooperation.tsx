@@ -17,6 +17,9 @@ import { NotificationsPanel } from '@/components/cooperation/NotificationsPanel'
 import { AddOnlineConfidantModal } from '@/components/cooperation/AddOnlineConfidantModal';
 import { OnlineConfidantProfileCard } from '@/components/cooperation/OnlineConfidantProfileCard';
 import { OnlineStarBadge } from '@/components/cooperation/OnlineStarBadge';
+import type { FriendWallItem } from '@/components/cooperation/ConfidantAlbumWall';
+import { ImageCropDialog } from '@/components/ImageCropDialog';
+import { getAllOnlineCardFaces, setOnlineCardFace } from '@/services/onlineCardFace';
 import { PrayerEffectOverlay, type PrayerEffectKind } from '@/components/cooperation/PrayerEffectOverlay';
 import { CoopProposeModal } from '@/components/cooperation/CoopProposeModal';
 import { CoopAcceptModal } from '@/components/cooperation/CoopAcceptModal';
@@ -77,6 +80,10 @@ export function Cooperation() {
   const [prayerInFlight, setPrayerInFlight] = useState<string | null>(null);
   const [prayerError, setPrayerError] = useState<{ id: string; message: string } | null>(null);
   const [coopProposeTarget, setCoopProposeTarget] = useState<CloudProfile | null>(null);
+  /** 未缔结好友的自裁卡面（db.onlineCardFaces，按对方云端 id 索引；本地专属不上云） */
+  const [friendFaces, setFriendFaces] = useState<Record<string, string>>({});
+  /** 正在裁切卡面的好友 + 已 fetch 成 File 的原图 */
+  const [friendCrop, setFriendCrop] = useState<{ userId: string; name: string; file: File } | null>(null);
   const [coopAcceptBond, setCoopAcceptBond] = useState<CoopBond | null>(null);
   const menuAnchorRef = useRef<HTMLDivElement>(null);
 
@@ -273,6 +280,65 @@ export function Cooperation() {
   }, [linkedFriendships, confidants, cloudUser]);
 
   const showOnlineFriends = filter === 'all' || filter === 'online';
+
+  // 自裁卡面表：进页面读一次；裁完由 setFriendFaces 就地更新，不必重读
+  useEffect(() => {
+    let cancelled = false;
+    void getAllOnlineCardFaces().then(m => { if (!cancelled) setFriendFaces(m); });
+    return () => { cancelled = true; };
+  }, []);
+
+  /**
+   * 未缔结好友 → 牌阵条目（用户口径：占位卡横在墙上方太奇怪，让它们进牌阵）。
+   * 只在**专辑墙**视图用；列表视图仍走上方的 OnlineFriendPlaceholderCard——
+   * 列表本来就是一行行的，占位卡在那儿不违和。
+   */
+  const friendWallItems: FriendWallItem[] = useMemo(() => {
+    if (!showOnlineFriends) return [];
+    return onlineFriendCards.map(f => {
+      const profile = f.otherProfile!;
+      const prayed = hasPrayedToday(profile.id, todayPrayers);
+      const beenPrayedBy = hasBeenPrayedByToday(profile.id, todayPrayers);
+      return {
+        kind: 'friend' as const,
+        id: `friend-${f.id}`,
+        profile,
+        friendship: f,
+        faceDataUrl: friendFaces[profile.id],
+        prayer: {
+          alreadyPrayed: prayed,
+          waitingReciprocity: beenPrayedBy && !prayed,
+          pending: prayerInFlight === profile.id,
+          onPray: () => { void executePrayer(profile); },
+        },
+      };
+    });
+  }, [showOnlineFriends, onlineFriendCards, todayPrayers, friendFaces, prayerInFlight]);
+
+  /**
+   * 裁好友卡面 —— 与同伴卡面同一条路径（ConfidantDetailModal.openCardFaceCrop）：
+   * 远端 URL 先 fetch 成 blob 再包 File，避免 <img src=远端URL> 污染 canvas 导致
+   * toDataURL 抛异常；fetch 不因 4xx/5xx reject，必须自己查 res.ok。
+   */
+  const openFriendCrop = async (item: FriendWallItem) => {
+    const src = item.faceDataUrl || item.profile.avatarUrl;
+    const name = item.profile.nickname || item.profile.userId || '未命名客人';
+    if (!src) {
+      setPrayerError({ id: item.profile.id, message: '还没取到 Ta 的头像，稍后再试' });
+      setTimeout(() => setPrayerError(null), 3000);
+      void loadSocial({ force: true }).catch(() => { /* 静默 */ });
+      return;
+    }
+    try {
+      const res = await fetch(src);
+      if (!res.ok) throw new Error(String(res.status));
+      const blob = await res.blob();
+      setFriendCrop({ userId: item.profile.id, name, file: new File([blob], 'friend-face', { type: blob.type || 'image/jpeg' }) });
+    } catch {
+      setPrayerError({ id: item.profile.id, message: '取不到原图，换个网络再试' });
+      setTimeout(() => setPrayerError(null), 3000);
+    }
+  };
 
   const p5 = useUiChannel() === 'p5';
 
@@ -704,8 +770,10 @@ export function Cooperation() {
             layout
             className="space-y-3"
           >
-            {/* 顶部：在线好友占位卡（已 linked 但未建 COOP） */}
-            {showOnlineFriends && onlineFriendCards.map(f => {
+            {/* 顶部：在线好友占位卡（已 linked 但未建 COOP）。
+                **仅列表视图**——专辑墙下它们已经作为好友牌进了牌阵，
+                再在墙上方横一排就是用户说的「很奇怪」。 */}
+            {showOnlineFriends && viewMode !== 'wall' && onlineFriendCards.map(f => {
               const profile = f.otherProfile!;
               const prayed = hasPrayedToday(profile.id, todayPrayers);
               const beenPrayedBy = hasBeenPrayedByToday(profile.id, todayPrayers);
@@ -741,6 +809,9 @@ export function Cooperation() {
                   const p = buildPrayer(c);
                   return p ? { ...p, onPray: p.onQuickPray } : undefined;
                 }}
+                friends={friendWallItems}
+                onOpenFriend={(f) => setProfileCard({ profile: f.profile, friendship: f.friendship })}
+                onCropFriend={(f) => void openFriendCrop(f)}
               />
             ) : (
             visible.map(c => {
@@ -886,6 +957,24 @@ export function Cooperation() {
         isOpen={addOnlineOpen}
         onClose={() => setAddOnlineOpen(false)}
       />
+      {/* 好友卡面裁切：与同伴卡面同一个 1:1.6 塔罗比例，落库到 db.onlineCardFaces
+          （本地专属，不上云；缔结 COOP 时由 social.ts 搬进新同伴的 cardFaceDataUrl） */}
+      <ImageCropDialog
+        key="friend-crop"
+        isOpen={!!friendCrop}
+        file={friendCrop?.file ?? null}
+        title={friendCrop ? `裁切 ${friendCrop.name} 的卡面` : '裁切卡面'}
+        aspectRatio={1 / 1.6}
+        onCancel={() => setFriendCrop(null)}
+        onConfirm={async (dataUrl) => {
+          const uid = friendCrop?.userId;
+          setFriendCrop(null);
+          if (!uid) return;
+          await setOnlineCardFace(uid, dataUrl);
+          setFriendFaces(prev => ({ ...prev, [uid]: dataUrl }));
+        }}
+      />
+
       <OnlineConfidantProfileCard
         isOpen={!!profileCard}
         onClose={() => setProfileCard(null)}

@@ -13,7 +13,8 @@
  */
 import { useRef, useState } from 'react';
 import { motion } from 'motion/react';
-import type { Confidant } from '@/types';
+import type { CloudProfile, Confidant, Friendship } from '@/types';
+import { OnlineStarBadge } from './OnlineStarBadge';
 import { TAROT_BY_ID } from '@/constants/tarot';
 import { TarotCardSVG } from '@/components/astrology/TarotCardSVG';
 import { useBoldness } from '@/utils/boldness';
@@ -23,7 +24,6 @@ import { useAppStore } from '@/store';
 import { P3R, slantClip } from '@/components/p3r/kit';
 import { starPts } from '@/components/p5r/kit';
 import { P4Sparkle } from '@/ui/p4Kit';
-import { OnlineStarBadge } from './OnlineStarBadge';
 
 const CARD_W = 182;
 const CARD_H = Math.round(CARD_W * 1.6); // TarotCardSVG 比例
@@ -43,6 +43,27 @@ export interface AlbumPrayerState {
   onPray: () => void;
 }
 
+/**
+ * 未缔结 COOP 的在线好友——也进牌阵（用户口径：占位卡横在墙上方太奇怪）。
+ * 本地没有 Confidant 行，所以是独立的一种牌：正面 = 头像卡面（可自裁，
+ * faceDataUrl 来自 db.onlineCardFaces），翻面 = 客人档案背（祈愿 / 缔结 / 裁切）。
+ */
+export interface FriendWallItem {
+  kind: 'friend';
+  /** 稳定 key（friend-<friendship.id>），供锚定与滚动条用 */
+  id: string;
+  profile: CloudProfile;
+  friendship: Friendship;
+  /** 自裁卡面（db.onlineCardFaces），无则退回官方头像 cover */
+  faceDataUrl?: string;
+  prayer?: AlbumPrayerState;
+}
+
+type WallItem = Confidant | FriendWallItem | 'add';
+
+const isFriend = (it: WallItem): it is FriendWallItem =>
+  it !== 'add' && (it as FriendWallItem).kind === 'friend';
+
 export interface ConfidantAlbumWallProps {
   confidants: Confidant[];
   onOpenDetail: (id: string) => void;
@@ -54,6 +75,12 @@ export interface ConfidantAlbumWallProps {
    * 专辑墙成为默认视图后祈愿入口一度整个消失（只有列表视图接了线），这条就是补回来的通道。
    */
   prayerFor?: (c: Confidant) => AlbumPrayerState | undefined;
+  /** 未缔结的在线好友牌（排在同伴之后、空白牌之前） */
+  friends?: FriendWallItem[];
+  /** 打开好友档案抽屉（含缔结 COOP 流程） */
+  onOpenFriend?: (f: FriendWallItem) => void;
+  /** 裁切好友卡面（宿主开 ImageCropDialog；卡背上的 ✂️ 走它） */
+  onCropFriend?: (f: FriendWallItem) => void;
 }
 
 /**
@@ -223,7 +250,163 @@ const BlankCard = () => {
   );
 };
 
-const idOf = (item: Confidant | 'add') => (item === 'add' ? '__add__' : item.id);
+/**
+ * 未缔结好友 · 正面。
+ * 有图（自裁卡面 > 官方头像）= 整张牌面 cover；无图 = 频道纹样的「客人牌背」
+ * （斜纹 + 大 ✦ + 首字母）。右上角恒挂「未缔结」虚线小签——一眼与羁绊牌区分。
+ */
+const FriendCardFace = ({ f }: { f: FriendWallItem }) => {
+  const channel = useUiChannel();
+  const sk = BACK_SKIN[channel];
+  const p5 = channel === 'p5';
+  const src = f.faceDataUrl || f.profile.avatarUrl;
+  const name = f.profile.nickname || f.profile.userId || '未命名客人';
+  return (
+    <div
+      className="relative h-full w-full overflow-hidden"
+      style={{
+        background: sk.face,
+        border: `${p5 ? 3 : 1}px solid ${sk.line}`,
+        borderRadius: sk.radius,
+        boxShadow: sk.shadow,
+      }}
+    >
+      {src ? (
+        <img src={src} alt={name} draggable={false} className="absolute inset-0 h-full w-full object-cover" />
+      ) : (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2" style={{ color: sk.accent }}>
+          {/* 客人牌背纹样：频道色斜纹打底 */}
+          <div
+            aria-hidden
+            className="absolute inset-0 opacity-[0.12]"
+            style={{ background: `repeating-linear-gradient(-45deg, ${typeof sk.accent === 'string' ? sk.accent : '#888'} 0 6px, transparent 6px 16px)` }}
+          />
+          <span className="text-4xl" aria-hidden>✦</span>
+          <span className="text-3xl font-black">{(name[0] || '?').toUpperCase()}</span>
+        </div>
+      )}
+      {/* 底部名条（压在图上要有底衬才立得住） */}
+      <div
+        className="absolute inset-x-0 bottom-0 flex items-center gap-1.5 px-2.5 py-2"
+        style={{ background: 'linear-gradient(transparent, rgba(0,0,0,0.62))' }}
+      >
+        <OnlineStarBadge glow={!!f.prayer?.waitingReciprocity && !f.prayer?.alreadyPrayed} ink="#ffffff" size={11} />
+        <span className="min-w-0 truncate text-[13px] font-black text-white">{name}</span>
+      </div>
+      {/* 未缔结签 */}
+      <span
+        className="absolute right-1.5 top-1.5 px-1.5 py-0.5 text-[9px] font-black tracking-wider"
+        style={{
+          color: p5 ? '#f0e9df' : '#ffffff',
+          background: 'rgba(0,0,0,0.45)',
+          border: `1px dashed ${p5 ? '#f0e9df' : 'rgba(255,255,255,0.75)'}`,
+          borderRadius: p5 ? 0 : 6,
+        }}
+      >
+        未缔结
+      </span>
+    </div>
+  );
+};
+
+/**
+ * 未缔结好友 · 背面（翻面后的客人档案）。
+ * 复用 BACK_SKIN 四频道皮与 CardBackFace 同语言，但内容是客人版：
+ * 无 RANK 条（还没有羁绊等级），换成 LV / @userId；主 CTA 是「缔结 COOP」。
+ */
+const FriendCardBack = ({ f, onOpen, onCrop }: {
+  f: FriendWallItem;
+  onOpen: () => void;
+  onCrop?: () => void;
+}) => {
+  const channel = useUiChannel();
+  const sk = BACK_SKIN[channel];
+  const p5 = channel === 'p5';
+  const name = f.profile.nickname || f.profile.userId || '未命名客人';
+  const prayer = f.prayer;
+  const btnClip = channel === 'p3' ? slantClip(8) : p5 ? 'polygon(3px 0, 100% 2px, calc(100% - 3px) 100%, 0 calc(100% - 2px))' : undefined;
+  const stop = (e: React.SyntheticEvent) => e.stopPropagation();
+  return (
+    <div
+      className="flex h-full w-full flex-col px-4 py-4"
+      style={{
+        background: sk.face,
+        border: `${p5 ? 3 : 1}px solid ${sk.line}`,
+        borderRadius: sk.radius,
+        boxShadow: sk.shadow,
+        color: sk.ink,
+      }}
+    >
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="flex min-w-0 items-center gap-1.5">
+          <OnlineStarBadge glow={!!prayer?.waitingReciprocity && !prayer?.alreadyPrayed} ink={sk.accent} size={13} />
+          <span className="truncate text-lg font-black" style={{ color: sk.ink }}>{name}</span>
+        </span>
+        <span className="shrink-0 text-[10px] font-bold" style={{ color: sk.meta }}>GUEST</span>
+      </div>
+      <div className="mt-0.5 text-xs font-semibold" style={{ color: sk.sub }}>
+        @{f.profile.userId ?? '—'}{typeof f.profile.totalLv === 'number' ? ` · LV ${f.profile.totalLv}` : ''}
+      </div>
+
+      <p className="mt-3 text-[11px] leading-relaxed" style={{ color: sk.sub }}>
+        还未缔结 COOP 契约——两张塔罗尚未互相照亮。递出契约，Ta 就会正式落座这面墙。
+      </p>
+
+      <div className="mt-auto space-y-1.5">
+        <div className="flex gap-1.5">
+          {prayer && (
+            <button
+              type="button"
+              onPointerDown={stop}
+              onPointerUp={stop}
+              onClick={(e) => { e.stopPropagation(); if (!prayer.alreadyPrayed && !prayer.pending) prayer.onPray(); }}
+              disabled={prayer.alreadyPrayed || prayer.pending}
+              aria-label={prayer.alreadyPrayed ? '今日已祈愿' : prayer.waitingReciprocity ? '回敬祈愿' : '为 Ta 祈愿'}
+              className="flex-1 py-2 text-[11px] font-black active:brightness-95 disabled:active:brightness-100"
+              style={{
+                background: prayer.alreadyPrayed ? 'transparent' : prayer.waitingReciprocity ? sk.accent : 'transparent',
+                color: prayer.alreadyPrayed ? sk.sub : prayer.waitingReciprocity ? (p5 || channel === 'p4' ? sk.btnInk : '#ffffff') : sk.accent,
+                border: `${p5 ? 2 : 1}px solid ${prayer.alreadyPrayed ? sk.line : sk.accent}`,
+                borderRadius: p5 ? 0 : 8,
+                clipPath: btnClip,
+              }}
+            >
+              {prayer.pending ? '祈愿中…'
+                : prayer.alreadyPrayed ? '今日已祈愿'
+                : prayer.waitingReciprocity ? '✦ 回敬祈愿'
+                : '✦ 祈愿'}
+            </button>
+          )}
+          <button
+            type="button"
+            onPointerDown={stop}
+            onPointerUp={stop}
+            onClick={(e) => { e.stopPropagation(); onOpen(); }}
+            // 两格并排时字要压到 11px：「缔结 COOP →」在 182px 宽的牌上会顶出卡缘
+            className={`${prayer ? 'flex-1' : 'w-full'} truncate px-1 py-2 text-[11px] font-black active:brightness-95`}
+            style={{ background: sk.btnBg, color: sk.btnInk, borderRadius: p5 ? 0 : 8, clipPath: btnClip }}
+          >
+            缔结 COOP
+          </button>
+        </div>
+        {onCrop && (f.profile.avatarUrl || f.faceDataUrl) && (
+          <button
+            type="button"
+            onPointerDown={stop}
+            onPointerUp={stop}
+            onClick={(e) => { e.stopPropagation(); onCrop(); }}
+            className="w-full py-1.5 text-[11px] font-black active:brightness-95"
+            style={{ color: sk.accent, border: `1px dashed ${sk.line}`, borderRadius: p5 ? 0 : 8, background: 'transparent' }}
+          >
+            ✂️ 裁切卡面
+          </button>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const idOf = (item: WallItem) => (item === 'add' ? '__add__' : item.id);
 
 /** 「卡面用头像」开着时，整张牌面换成头像图（离线=本地上传，在线=对方云端头像） */
 const faceOf = (c: Confidant): string | undefined =>
@@ -271,7 +454,7 @@ const WallScrubber = ({
   index,
   onJump,
 }: {
-  items: (Confidant | 'add')[];
+  items: WallItem[];
   index: number;
   onJump: (i: number) => void;
 }) => {
@@ -333,7 +516,7 @@ const WallScrubber = ({
   );
 };
 
-export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCreate, prayerFor }: ConfidantAlbumWallProps) => {
+export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCreate, prayerFor, friends, onOpenFriend, onCropFriend }: ConfidantAlbumWallProps) => {
   const wallChannel = useUiChannel();
   const isP4 = wallChannel === 'p4';
   const isP5 = wallChannel === 'p5';
@@ -351,8 +534,9 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
   const [dragDown, setDragDown] = useState(0); // 中央卡下滑「往下翻一点点」橡皮筋位移（正值）
   const overDetailRef = useRef(false);         // 上滑是否已越过详情阈值（跨越时触觉一次）
 
-  // 空白牌拼接在末尾
-  const items: (Confidant | 'add')[] = canCreate ? [...confidants, 'add'] : [...confidants];
+  // 好友牌排在同伴之后；空白牌拼接在末尾
+  const wallFriends = friends ?? [];
+  const items: WallItem[] = canCreate ? [...confidants, ...wallFriends, 'add'] : [...confidants, ...wallFriends];
   const count = items.length;
 
   // index 由 centerId 派生：锚卡被移除/筛掉时回落 0
@@ -466,8 +650,11 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
           triggerLightHaptic();
         }
       } else if (g.axis === 'y' && dy > 0) {
-        // 下滑过阈值 → 打开档案（上滑橡皮筋无动作）
-        if (Math.min(DOWN_CAP, dy * 0.5) >= OPEN_ARM && item !== 'add') onOpenDetail(item.id);
+        // 下滑过阈值 → 打开档案（上滑橡皮筋无动作）；好友牌开的是客人档案抽屉
+        if (Math.min(DOWN_CAP, dy * 0.5) >= OPEN_ARM && item !== 'add') {
+          if (isFriend(item)) onOpenFriend?.(item);
+          else onOpenDetail(item.id);
+        }
       } else if (g.axis === 'x') {
         if (flipped) {
           // 背面横拖过阈值 → 翻回正面
@@ -510,6 +697,10 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
             <button key="add" type="button" onClick={onCreate} className="shrink-0" style={{ width: CARD_W * 0.8, height: CARD_H * 0.8, scrollSnapAlign: 'center' }}>
               <BlankCard />
             </button>
+          ) : isFriend(item) ? (
+            <button key={item.id} type="button" onClick={() => onOpenFriend?.(item)} className="shrink-0" style={{ width: CARD_W * 0.8, height: CARD_H * 0.8, scrollSnapAlign: 'center' }}>
+              <FriendCardFace f={item} />
+            </button>
           ) : (
             <button key={item.id} type="button" onClick={() => onOpenDetail(item.id)} className="shrink-0" style={{ scrollSnapAlign: 'center' }}>
               <TarotCardSVG card={TAROT_BY_ID[item.arcanaId]} orientation={item.orientation} width={CARD_W * 0.8} staticCard showOrientationTag={false} faceOverride={faceOf(item)} />
@@ -540,7 +731,10 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
         onKeyDown={(e) => {
           if (e.key === 'ArrowLeft') go(index - 1);
           if (e.key === 'ArrowRight') go(index + 1);
-          if (e.key === 'Enter' && current !== 'add' && current) onOpenDetail(current.id);
+          if (e.key === 'Enter' && current !== 'add' && current) {
+            if (isFriend(current)) onOpenFriend?.(current);
+            else onOpenDetail(current.id);
+          }
         }}
       >
         {items.map((item, i) => {
@@ -564,7 +758,11 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
               data-wall-idx={i}
               role="option"
               aria-selected={isCenter}
-              aria-label={item === 'add' ? '缔结新的羁绊' : `${item.name}（${TAROT_BY_ID[item.arcanaId]?.name ?? ''}，RANK ${item.intimacy}）`}
+              aria-label={item === 'add'
+                ? '缔结新的羁绊'
+                : isFriend(item)
+                  ? `${item.profile.nickname || item.profile.userId || '未命名客人'}（在线好友 · 未缔结 COOP）`
+                  : `${item.name}（${TAROT_BY_ID[item.arcanaId]?.name ?? ''}，RANK ${item.intimacy}）`}
               className="absolute left-1/2 top-4 cursor-pointer"
               style={{ width: CARD_W, height: CARD_H, marginLeft: -CARD_W / 2, transformStyle: 'preserve-3d', zIndex: 100 - Math.abs(offset) }}
               animate={{ x, y, rotateX: rotX, rotateY: rotY, scale: liftScale }}
@@ -574,6 +772,8 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
               <div className="absolute inset-0" style={{ backfaceVisibility: 'hidden' }}>
                 {item === 'add' ? (
                   <BlankCard />
+                ) : isFriend(item) ? (
+                  <FriendCardFace f={item} />
                 ) : (
                   <TarotCardSVG card={TAROT_BY_ID[item.arcanaId]} orientation={item.orientation} width={CARD_W} staticCard showOrientationTag={false} faceOverride={faceOf(item)} />
                 )}
@@ -583,7 +783,15 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
               {/* 背面（仅真实卡） */}
               {item !== 'add' && (
                 <div className="absolute inset-0" style={{ backfaceVisibility: 'hidden', transform: 'rotateY(180deg)' }}>
-                  <CardBackFace c={item} onOpenDetail={() => onOpenDetail(item.id)} prayer={prayerFor?.(item)} />
+                  {isFriend(item) ? (
+                    <FriendCardBack
+                      f={item}
+                      onOpen={() => onOpenFriend?.(item)}
+                      onCrop={onCropFriend ? () => onCropFriend(item) : undefined}
+                    />
+                  ) : (
+                    <CardBackFace c={item} onOpenDetail={() => onOpenDetail(item.id)} prayer={prayerFor?.(item)} />
+                  )}
                 </div>
               )}
             </motion.div>
@@ -655,6 +863,35 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
           <div className="text-center">
             <div className={`text-2xl font-black ${p3 ? '' : 'text-gray-800 dark:text-gray-100'}`} style={p3 ? { color: P3R.ink } : undefined}>缔结新的羁绊</div>
             <div className={`mt-0.5 text-xs font-semibold ${p3 ? '' : 'text-gray-400 dark:text-gray-500'}`} style={p3 ? { color: P3R.grey } : undefined}>点一下这张空白牌开始</div>
+          </div>
+        ) : isFriend(current) ? (
+          /* 好友铭牌：客人版——眉标 GUEST，名字带星，提示缔结。四频道共用一版轻样式 */
+          <div className="text-center">
+            <div className={`text-[11px] font-black tracking-[0.16em] ${p3 ? '' : isP4 ? 'text-[var(--ui-accent)]' : isP5 ? '' : 'text-indigo-400 dark:text-indigo-300'}`}
+                 style={p3 ? { color: P3R.blue } : isP5 ? { color: '#d90008' } : undefined}>
+              GUEST · 未缔结 COOP
+            </div>
+            <div className="mt-0.5 flex items-center justify-center gap-2">
+              <OnlineStarBadge glow={!!current.prayer?.waitingReciprocity && !current.prayer?.alreadyPrayed} size={14} />
+              <motion.h3
+                key={current.id}
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                className={`max-w-[70%] truncate leading-tight ${isP4 ? 'text-[36px] font-black text-[#131313]' : p3 ? 'text-[34px] font-black italic' : 'text-[28px] font-black text-gray-900 dark:text-white'}`}
+                style={isP4 ? { fontFamily: 'var(--p4-display-font, serif)' } : p3 ? { color: P3R.ink, fontFamily: '"Arial Black", "Noto Sans SC", sans-serif' } : undefined}
+              >
+                {current.profile.nickname || current.profile.userId || '未命名客人'}
+              </motion.h3>
+              {typeof current.profile.totalLv === 'number' && (
+                <span className="shrink-0 px-2 py-1 text-[11px] font-black leading-none text-white rounded-lg"
+                      style={p3 ? { background: P3R.blue, borderRadius: 0, clipPath: slantClip(6) } : isP5 ? { background: '#c00008', borderRadius: 0, boxShadow: '0 0 0 2px #f0e9df' } : isP4 ? { background: 'var(--p4-orange, #f9a11b)', borderRadius: 8 } : { background: 'var(--color-primary)' }}>
+                  LV {current.profile.totalLv}
+                </span>
+              )}
+            </div>
+            <p className="mx-auto mt-2 max-w-[21rem] text-[12px] font-semibold leading-relaxed text-gray-500 dark:text-gray-400">
+              翻面可祈愿、递出 COOP 契约，或裁一张自己的卡面
+            </p>
           </div>
         ) : p3 ? (
           <>
