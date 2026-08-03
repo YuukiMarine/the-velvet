@@ -562,7 +562,7 @@ export interface Settings {
   battlePlayerMaxHp?: number;
   /** （引擎v2）Shadow 全局攻击倍率%（金手指），默认 100；攻击基础值走 BOSS_ATTACK_BY_LEVEL 等级表 */
   battleAttackScale?: number;
-  /** （批3）登塔回顾的影之评语（AI 50字点评）。默认 undefined=开；置 false 关闭。 */
+  /** （批3）登塔回顾的影之评语（AI 约100字点评）。默认 undefined=开；置 false 关闭。 */
   battleCommentEnabled?: boolean;
   // 可自定义 Prompt
   battleShadowPromptTemplate?: string;      // Shadow AI生成提示模板

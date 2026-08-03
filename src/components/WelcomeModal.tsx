@@ -354,8 +354,13 @@ const GuideStep = ({ name, onFinish, onBack }: GuideStepProps) => {
           {/* 幽灵序号：压在背景上的巨大 0N，本身就是进度读数 */}
           <div
             aria-hidden
-            className="pointer-events-none absolute -right-2 -top-6 select-none font-black italic leading-none"
-            style={{ fontSize: '6.5rem', color: `${slide.accent}14` }}
+            // 不再用 -right-2/-top-6 往外顶：外层卡体是 overflow-hidden，
+            // 这个 6.5rem 的斜体数字右上角会被整整切掉一角。实测越界量：右 8px、上 41px。
+            // 光贴 right-0/top-0 还不够——leading-none 的行盒只有 1em，
+            // 字形的 ascent 比它高，墨迹仍会探出 17px。所以上下都留内边距：
+            // pr 给斜体的横向探出、pt 给 ascent 的纵向探出（实测改后 右 −14.6 / 上 −3.8，都在框内）。
+            className="pointer-events-none absolute right-0 top-0 select-none font-black italic leading-none"
+            style={{ fontSize: '6.5rem', color: `${slide.accent}14`, paddingRight: '0.14em', paddingTop: '0.2em' }}
           >
             {String(slideIndex + 1).padStart(2, '0')}
           </div>

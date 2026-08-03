@@ -116,6 +116,8 @@ export const BattleArena = () => {
     checkShadowHpRegen();
     // 批3：熟练度/解锁字段惰性迁移（存量技能不回锁，unlocked 缺省按当前属性等级置位）
     void useAppStore.getState().refreshSkillUnlocks();
+    // 战场成就自愈：历史竞态丢过壮举记录（见 store.recordBattleFeat 注释），进战场页时对一次账
+    void useAppStore.getState().repairBattleFeats();
     // 批3 §4.3：召唤台词懒生成——一次批量 5 条并缓存；无 Key 静默留空（cut-in 走模板）
     void (async () => {
       const { persona: p, settings: st, savePersona } = useAppStore.getState();
