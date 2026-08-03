@@ -355,7 +355,7 @@ interface RecapProps {
   reason: 'descend' | 'defeat' | 'clear';
   stats: TowerSessionStats | undefined;
   stratum: TowerStratum;
-  /** 批3 §7.3 影之评语（AI 50字点评；null=未到/已关） */
+  /** 批3 §7.3 影之评语（AI 约100字点评；null=未到/已关） */
   comment?: string | null;
   onClose: () => void;
 }

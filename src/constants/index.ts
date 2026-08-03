@@ -16,7 +16,14 @@ export const DEFAULT_ATTRIBUTE_NAMES = {
   charm: '魅力'
 };
 
-export const DEFAULT_LEVEL_THRESHOLDS = [0, 40, 90, 150, 240];
+/**
+ * 人格指数升级所需累计点数。
+ * R19 用户拍板：
+ *   · LV2-LV5 依次再加 20 / 80 / 150 / 260 —— 40+20 / 90+80 / 150+150 / 240+260
+ *   · 续到 LV10，每级在上一级基础上再 +300（500 → 800 → 1100 → 1400 → 1700 → 2000）
+ * 只影响**新档默认值**；老档用的是自己 settings.levelThresholds 里那份。
+ */
+export const DEFAULT_LEVEL_THRESHOLDS = [0, 60, 170, 300, 500, 800, 1100, 1400, 1700, 2000];
 
 /** 属性主色 — 与 Statistics 页保持一致，供雷达图、Shadow 染色、UI 标识复用 */
 export const ATTR_COLORS: Record<AttributeId, string> = {
@@ -42,7 +49,7 @@ export const INITIAL_ATTRIBUTES = [
     displayName: '知识',
     points: 0,
     level: 1,
-    levelThresholds: [0, 40, 90, 150, 240],
+    levelThresholds: [0, 60, 170, 300, 500, 800, 1100, 1400, 1700, 2000],
     unlocked: true
   },
   {
@@ -50,7 +57,7 @@ export const INITIAL_ATTRIBUTES = [
     displayName: '胆量',
     points: 0,
     level: 1,
-    levelThresholds: [0, 40, 90, 150, 240],
+    levelThresholds: [0, 60, 170, 300, 500, 800, 1100, 1400, 1700, 2000],
     unlocked: true
   },
   {
@@ -58,7 +65,7 @@ export const INITIAL_ATTRIBUTES = [
     displayName: '灵巧',
     points: 0,
     level: 1,
-    levelThresholds: [0, 40, 90, 150, 240],
+    levelThresholds: [0, 60, 170, 300, 500, 800, 1100, 1400, 1700, 2000],
     unlocked: true
   },
   {
@@ -66,7 +73,7 @@ export const INITIAL_ATTRIBUTES = [
     displayName: '温柔',
     points: 0,
     level: 1,
-    levelThresholds: [0, 40, 90, 150, 240],
+    levelThresholds: [0, 60, 170, 300, 500, 800, 1100, 1400, 1700, 2000],
     unlocked: true
   },
   {
@@ -74,7 +81,7 @@ export const INITIAL_ATTRIBUTES = [
     displayName: '魅力',
     points: 0,
     level: 1,
-    levelThresholds: [0, 40, 90, 150, 240],
+    levelThresholds: [0, 60, 170, 300, 500, 800, 1100, 1400, 1700, 2000],
     unlocked: true
   }
 ];

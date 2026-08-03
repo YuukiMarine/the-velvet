@@ -703,6 +703,8 @@ interface AppState {
   claimDiligence: () => Promise<boolean>;
   /** 战场成就壮举：记入 battleFeats 并尝试解锁对应成就 */
   recordBattleFeat: (feat: string) => Promise<void>;
+  /** 战场成就自愈：壮举与成就双向对账（历史竞态丢过记录，见 recordBattleFeat 注释） */
+  repairBattleFeats: () => Promise<void>;
   /** 黑猫败因信：败退当晚生成（AI/模板兜底）→ 存 pendingCatLetter（黑猫打开时投递）+ 写 observation 记忆 */
   deliverDefeatLetter: () => Promise<void>;
   /** 月相祭坛：移除主影随机一条词缀（顽固回落 HP 上限）；返回被移除的词缀或 null */
@@ -853,6 +855,8 @@ const DEFAULT_SETTINGS: Settings = {
 
 /** settings 写入串行锁：见 updateSettings 的注释（并发写会互相吞字段） */
 let settingsWriteLock: Promise<void> = Promise.resolve();
+/** 战场壮举写入串行锁：一场胜利会连发好几笔，见 recordBattleFeat 的注释 */
+let featWriteLock: Promise<void> = Promise.resolve();
 
 export const useAppStore = create<AppState>((set, get) => ({
   user: null,
@@ -5066,13 +5070,50 @@ ${activityLines || '（本期暂无记录）'}
   },
 
   recordBattleFeat: async (feat) => {
-    const bs = get().battleState;
-    if (!bs) return;
-    if (!(bs.battleFeats ?? []).includes(feat)) {
+    /**
+     * ⚠️ 必须在锁**里面**现读 battleState，并且写完才去解锁成就。
+     *
+     * 真实事故：一场胜利会连开好几发 `void recordBattleFeat(...)`
+     * （BattleArena 的 first_clear + night_climb、BattleModal 的 allout /
+     * five_masks / flawless / poison_elite），全都 fire-and-forget。
+     * 旧写法在函数顶部读一次 bs，几发拿到的是**同一份快照**，
+     * 于是 `[...old, feat]` 互相覆盖——只有最后落地的那一发留在 battleFeats 里。
+     * 更糟的是 unlockAchievement 紧接着按 battleFeats 判进度，
+     * 写还没落它就查，progress=0 → 解锁被静默拒绝。
+     * 用户看到的就是「一夜通天有记录，第一层月光和五面之力没有」。
+     */
+    featWriteLock = featWriteLock.then(async () => {
+      const bs = get().battleState;
+      if (!bs) return;
+      if ((bs.battleFeats ?? []).includes(feat)) return;
       await get().saveBattleState({ ...bs, battleFeats: [...(bs.battleFeats ?? []), feat] });
-    }
+    }).catch((err: unknown) => { console.error('[battleFeat] 写入失败', err); });
+    await featWriteLock;
     // 壮举 id 与成就 id 一一对应（constants/ACHIEVEMENTS battle_feat 条目）
     await get().unlockAchievement(`battle_${feat}`);
+  },
+
+  repairBattleFeats: async () => {
+    const bs = get().battleState;
+    if (!bs) return;
+    const feats = new Set(bs.battleFeats ?? []);
+    const before = feats.size;
+    // ① 可从别处推出来的事实：通关过区层 ⇒ 一定拿过「第一层月光」；
+    //    「一夜通天」与它是同一句里记的，有后者必有前者
+    if ((bs.defeatedShadowLog?.length ?? 0) > 0 || (bs.maxStratumLevel ?? 0) > 0) feats.add('first_clear');
+    if (feats.has('night_climb')) feats.add('first_clear');
+    // ② 成就已解锁但壮举丢了 → 按成就补回壮举（竞态里丢的那几发）
+    for (const a of get().achievements) {
+      if (a.unlocked && a.id.startsWith('battle_')) feats.add(a.id.slice('battle_'.length));
+    }
+    if (feats.size !== before) {
+      await get().saveBattleState({ ...bs, battleFeats: [...feats] });
+    }
+    // ③ 反向：壮举在、成就却没解锁（写落地前就被查过进度的那几发）
+    for (const f of feats) {
+      const ach = get().achievements.find(a => a.id === `battle_${f}`);
+      if (ach && !ach.unlocked) await get().unlockAchievement(`battle_${f}`);
+    }
   },
 
   deliverDefeatLetter: async () => {

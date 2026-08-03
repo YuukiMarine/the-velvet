@@ -197,18 +197,25 @@ async function callAIStreamWithRetry(
   maxTokens = 1500,
   json = false,
 ): Promise<string> {
+  /**
+   * 梯子只有两级，而且刻意**不**是「流式再试一遍」。
+   * 每一级最坏都要耗满 90s 空闲超时；人格生成是 9000 token 的大活，
+   * 排三四级下去就是用户说的「一直转、一直完不成」。
+   * 同样的通道重试一次收益很低，换成非流式才是真的换了条路。
+   */
   let lastErr: unknown;
-  for (const t of [temperature, Math.max(0.3, temperature - 0.3)]) {
-    try {
-      return await callAIStream(cfg, messages, onChunk, t, maxTokens);
-    } catch (e) { lastErr = e; }
-  }
   try {
-    const text = await callAIWithRetry(cfg, messages, temperature, maxTokens, json);
+    return await callAIStream(cfg, messages, onChunk, temperature, maxTokens);
+  } catch (e) { lastErr = e; }
+  try {
+    const text = await callAI(cfg, messages, temperature, maxTokens, json);
     onChunk(text, text);   // 一次性把正文交给 UI，打字机退化为整段落地
     return text;
-  } catch { /* 非流式也不行 → 抛流式那次的错误，它更贴近用户看到的现象 */ }
-  throw lastErr instanceof Error ? lastErr : new Error('AI 调用失败');
+  } catch (e) {
+    // 非流式也不行：抛**非流式**那次的错误——它带着 finish_reason / HTTP 状态，
+    // 比流式那句「返回为空」更能指出该改什么
+    throw e instanceof Error ? e : (lastErr instanceof Error ? lastErr : new Error('AI 调用失败'));
+  }
 }
 
 // ── Persona skill validation ────────────────────────────────────────────────
@@ -961,7 +968,8 @@ ${roster}
 }
 
 /**
- * 批3 §7.3：影之评语——登塔回顾的 50 字 AI 点评（复用胜利叙事通道；可在设置关闭）。
+ * 批3 §7.3：影之评语——登塔回顾的 AI 点评（复用胜利叙事通道；可在设置关闭）。
+ * R19 用户拍板：50 字太短，放到 100 字上下。
  */
 export async function generateRecapComment(
   settings: Settings,
@@ -971,11 +979,12 @@ export async function generateRecapComment(
   if (!cfg) return null;
   const reasonText = summary.reason === 'clear' ? '讨伐了区层心魔、通关区层' : summary.reason === 'defeat' ? '力竭败退（进度保留）' : '主动下塔结算';
   const prompt = `你是Persona系游戏中栖息在塔里的神秘影之声。玩家刚结束一晚"影时间高塔"攀登：${reasonText}；区层【${summary.stratumName}】；攀升${summary.floors}层、讨伐${summary.mobs}只Shadow、总伤害${summary.damage}、最大单击${summary.maxHit}、弱点命中${summary.weakHits}次。
-写一句50字以内的点评：以影之声的口吻（低语、略带戏谑或敬意），点出这一晚最亮眼或最遗憾的一处，${summary.reason === 'defeat' ? '败退也要给出一丝不甘的鼓动' : '结尾带一点对更高处的暗示'}。不要用括号和引号，直接输出这句话。`;
+写一段100字左右（90-120字）的点评：以影之声的口吻（低语、略带戏谑或敬意），点出这一晚最亮眼或最遗憾的一处，${summary.reason === 'defeat' ? '败退也要给出一丝不甘的鼓动' : '结尾带一点对更高处的暗示'}。不要用括号和引号，直接输出这句话。`;
   try {
-    const line = await callAIWithRetry(cfg, [{ role: 'user', content: prompt }], 0.85, 200);
+    const line = await callAIWithRetry(cfg, [{ role: 'user', content: prompt }], 0.85, 420);
     const clean = line.trim().replace(/^["「『]|["」』]$/g, '');
-    return clean ? clean.slice(0, 80) : null;
+    // 硬上限跟着放宽：原来 prompt 要 50 字、这里再切 80，模型稍微写长一点就被拦腰截断
+    return clean ? clean.slice(0, 150) : null;
   } catch {
     return null;
   }

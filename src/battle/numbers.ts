@@ -125,7 +125,8 @@ export const SHADOW_STATUS_TURNS = 2;
 /** 小影 HP 区间（按区层等级）。R19 用户拍板：Lv3 起统一 +20（3-5 区层的杂影太脆） */
 export const MOB_HP_BY_LEVEL: Array<[number, number]> = [[32, 40], [43, 55], [88, 106], [116, 140], [138, 170]];
 export const MOB_ATTACK_BY_LEVEL = [3, 4, 5, 6, 7];
-export const ELITE_HP_BY_LEVEL: Array<[number, number]> = [[70, 85], [100, 120], [150, 180], [210, 250], [270, 320]];
+/** 强敌 HP 区间（按区层等级）。R19 用户拍板：每一档血条各 +20 */
+export const ELITE_HP_BY_LEVEL: Array<[number, number]> = [[90, 105], [120, 140], [170, 200], [230, 270], [290, 340]];
 export const ELITE_ATTACK_BY_LEVEL = [4, 5, 6, 7, 8];
 
 /** 区层等级 SP 系数（节点奖励 = 层段基准 × 系数 × 1.1^异变加深） */
