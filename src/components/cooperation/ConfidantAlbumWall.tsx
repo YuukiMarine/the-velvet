@@ -542,9 +542,25 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
   const [dragDown, setDragDown] = useState(0); // 中央卡下滑「往下翻一点点」橡皮筋位移（正值）
   const overDetailRef = useRef(false);         // 上滑是否已越过详情阈值（跨越时触觉一次）
 
-  // 好友牌排在同伴之后；空白牌拼接在末尾
+  /**
+   * 牌序（用户口径）：已缔结 → 未缔结+在线 → 离线 → 归档 → 空白牌。
+   *
+   * 好友牌不能简单地拼在最后：那样翻牌时会变成「在线同伴 → 离线同伴 → 在线好友」，
+   * 中间隔着一堆离线的人，而这三档在语义上是**一条连续的亲疏轴**（已结契 → 在线但
+   * 还没结 → 根本不在线上）。所以在这里按档重排，好友插在两档同伴中间。
+   * 各档内部保持调用方给的次序（filter 稳定），页面那边的 createdAt 倒序不受影响。
+   */
   const wallFriends = friends ?? [];
-  const items: WallItem[] = canCreate ? [...confidants, ...wallFriends, 'add'] : [...confidants, ...wallFriends];
+  const bonded = confidants.filter(c => !c.archivedAt && c.source === 'online');
+  const offline = confidants.filter(c => !c.archivedAt && c.source !== 'online');
+  const archived = confidants.filter(c => !!c.archivedAt);
+  const items: WallItem[] = [
+    ...bonded,
+    ...wallFriends,
+    ...offline,
+    ...archived,
+    ...(canCreate ? ['add' as const] : []),
+  ];
   const count = items.length;
 
   // index 由 centerId 派生：锚卡被移除/筛掉时回落 0
@@ -885,7 +901,17 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
                 key={current.id}
                 initial={{ opacity: 0, y: 4 }}
                 animate={{ opacity: 1, y: 0 }}
-                className={`max-w-[70%] truncate leading-tight ${isP4 ? 'text-[36px] font-black text-[#131313]' : p3 ? 'text-[34px] font-black italic' : 'text-[28px] font-black text-gray-900 dark:text-white'}`}
+                // pr-[0.18em]（仅 p3/粉）：Arial Black 斜体的字形会探出自己的内容盒，
+                // truncate 的 overflow:hidden 正好贴着盒切，末字右侧就被削掉一刀
+                // ——羁绊铭牌早就踩过并留了这道内边距，这块客人铭牌照抄时漏了。
+                // max-w 也跟着放宽到 80%：70% 在长名字上会提前进省略号。
+                className={`truncate leading-tight ${
+                  isP4
+                    ? 'max-w-[70%] text-[36px] font-black text-[#131313]'
+                    : p3
+                      ? 'max-w-[80%] pr-[0.18em] text-[34px] font-black italic'
+                      : 'max-w-[70%] text-[28px] font-black text-gray-900 dark:text-white'
+                }`}
                 style={isP4 ? { fontFamily: 'var(--p4-display-font, serif)' } : p3 ? { color: P3R.ink, fontFamily: '"Arial Black", "Noto Sans SC", sans-serif' } : undefined}
               >
                 {current.profile.nickname || current.profile.userId || '未命名客人'}
