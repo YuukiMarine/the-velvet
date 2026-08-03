@@ -1259,7 +1259,18 @@ export interface BattleState {
   finalBossFlaw?: FinalBossFlaw;
   /** （Lv6）终结日期（YYYY-MM-DD，档案馆「终局」一栏） */
   finalBossDefeatedAt?: string;
+  /** （Lv6 演出）当前阶段：杀进程后重入回到这里，而不是从头再演一遍 */
+  finalePhase?: FinalePhase;
+  /** （Lv6 演出）记录卡已命中数（0..18） */
+  finaleHits?: number;
+  /** （Lv6 演出）援军已发放的 SP 总量（封顶 1000，只发一次） */
+  finaleAllySp?: number;
 }
+
+/** Lv6 终局演出的八段（PRD_FINAL_BOSS §5）；reward = 掉落屏 */
+export type FinalePhase =
+  | 'shock' | 'taunt' | 'forbidden' | 'crush'
+  | 'resolve' | 'allies' | 'awaken' | 'cards' | 'finish' | 'reward';
 
 export interface BattleLogEntry {
   id: string;
