@@ -62,12 +62,15 @@ export const ParticleBurst = ({ count = 24, className = '', colors = DEFAULT_COL
           animate={{ x: p.x, y: p.y, scale: [0, 1, 0.5], opacity: [0, 1, 0] }}
           transition={{ duration: 1.2, delay: p.delay, ease: 'easeOut' }}
           className={`absolute left-1/2 top-1/2 rounded-full ${p.colorClass}`}
+          // 不写 will-change：动的本来就是 transform/opacity，浏览器自会提升，
+          // 而 will-change 是**常驻**声明——粒子 1.2s 就炸完了，元素却要挂到弹窗关闭，
+          // 于是 16~30 个层的后备存储白占三秒多（实测庆祝弹窗期间 will-change 元素
+          // 从 5 个涨到 21/35 个，且直到关窗才回落）
           style={{
             width: p.size,
             height: p.size,
             marginLeft: -p.size / 2,
             marginTop: -p.size / 2,
-            willChange: 'transform, opacity',
           }}
         />
       ))}

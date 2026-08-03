@@ -423,7 +423,6 @@ export interface Settings {
   customAchievements?: Achievement[];
   customSkills?: Skill[];
   customLevelThresholds?: number[];
-  backgroundPattern?: boolean; // 装饰纹理（无背景图时显示）
   backgroundAnimation?: string[]; // 背景动画风格（可多选：'aurora'|'particles'|'wave'|'pulse'）
   /**
    * 红频道（P5）是否**亲手开过**背景动画。默认 undefined = 没开过 = 不渲染。

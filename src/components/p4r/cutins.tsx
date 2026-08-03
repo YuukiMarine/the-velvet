@@ -180,8 +180,10 @@ const P4CutInStage = ({ isOpen, onClose, ariaLabel, autoCloseMs, onShown, ringTo
           exit={{ opacity: 0 }}
           transition={{ duration: 0.18 }}
           className={`fixed inset-0 ${zClass.celebration} flex items-center justify-center overflow-hidden p-5`}
-          // 稿上背景是「页面被压暗」而不是纯色幕布——保留页面轮廓才有贴纸贴在界面上的感觉
-          style={{ background: 'rgba(26,24,22,0.72)', backdropFilter: 'blur(2px)' }}
+          // 稿上背景是「页面被压暗」而不是纯色幕布——保留页面轮廓才有贴纸贴在界面上的感觉。
+          // backdrop-filter 撤掉：全屏毛玻璃压在仍在跑的背景动画上会逐帧重算模糊，
+          // 而"压暗"这件事本来就是那层 0.72 黑在做，2px 模糊几乎不参与观感。
+          style={{ background: 'rgba(26,24,22,0.78)' }}
           onClick={onClose}
         >
           {/* 背后巨大同心环（稿上主徽后面那一圈圈橙/金弧） */}
