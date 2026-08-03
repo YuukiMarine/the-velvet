@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore } from '@/store';
 import { zClass } from '@/utils/zIndex';
+import { useUiChannel } from '@/ui/useUiChannel';
 import { useBackHandler } from '@/utils/useBackHandler';
 import { triggerLightHaptic, playSound } from '@/utils/feedback';
 import type { CallingCard } from '@/types';
@@ -34,14 +35,299 @@ interface Props {
  *   - 主题色径向光晕 1.6s 慢呼吸
  */
 
-// 配色：完全跟随主题 var(--color-primary)
-const PALETTE = {
-  bgGradient:
-    'linear-gradient(135deg, color-mix(in hsl, var(--color-primary) 12%, #0a0a0d) 0%, color-mix(in hsl, var(--color-primary) 22%, #14141a) 60%, #02020a 100%)',
-  stamp: 'var(--color-primary)',
-  flash: 'color-mix(in hsl, var(--color-primary) 60%, transparent)',
-  flashSoft: 'color-mix(in hsl, var(--color-primary) 25%, transparent)',
-  particle: 'color-mix(in hsl, var(--color-primary) 70%, #fff)',
+/**
+ * ── 四频道皮（用户口径：这块要按三个主题 + 粉色各自的风格重做）─────────────
+ *
+ * 这曾是宣告卡里**唯一没有频道分支**的一块：底色、字体、印章、粒子全跟着
+ * var(--color-primary) 换个色调就算数，于是在黄的拼贴舞台和红的报纸舞台上都很出戏
+ * ——四个主题下它长得一模一样，只是色相不同。
+ *
+ * 分镜（六段编排）保持不变，换的是皮：底纹语言、标题字形、卡身形状、印章形制、
+ * 粒子与按钮。粉色**单独成一档**而不是跟着蓝走：p3 那套是硬斜切 + 青洋红对撞，
+ * 粉主题的性格是柔的，硬边在这里读起来像另一个 app。
+ */
+type CutinSkinKey = 'p3' | 'p4' | 'p5' | 'pink' | 'neutral';
+
+interface CutinSkin {
+  /** 全屏底 */
+  bg: string;
+  /** 底纹语言 */
+  texture: 'stripes' | 'halftone' | 'caustics' | 'bokeh';
+  /** 冲击波 / 呼吸光晕的颜色 */
+  flash: string;
+  flashSoft: string;
+  /** 眉标 ✦ CALLING CARD ✦ */
+  eyebrowInk: string;
+  eyebrowTrack: string;
+  /** 主标题（宣告·时之至） */
+  headFont: string;
+  headSize: string;
+  headInk: string;
+  headItalic: boolean;
+  /** 白描边：黄/蓝这种高饱和底上，纯色大字需要描边才立得住 */
+  headStroke?: string;
+  headShadow: string;
+  /** 副标题 */
+  hintInk: string;
+  /** 卡身 */
+  panelBg: string;
+  panelBorder: string;
+  panelRadius: number;
+  panelClip?: string;
+  panelShadow?: string;
+  /** 卡内标题 */
+  titleFont: string;
+  titleInk: string;
+  titleShadow: string;
+  subInk: string;
+  iconInk: string;
+  /** 印章 */
+  stampInk: string;
+  stampBg: string;
+  stampBorder: string;
+  stampRadius: number;
+  stampRotate: number;
+  /** 粒子 / 尘屑 */
+  particle: string;
+  /** 按钮 */
+  btnBg: string;
+  btnInk: string;
+  btnDoneBg: string;
+  ghostBg: string;
+  ghostInk: string;
+  /** 落款 */
+  signInk: string;
+  signFont: string;
+}
+
+const CUTIN_SKIN: Record<CutinSkinKey, CutinSkin> = {
+  /** 蓝 · 水下斜切：深靛底 + 青色焦散 + 硬斜切卡身 + 青/洋红贴角（同 p3-modal 语言） */
+  p3: {
+    bg: 'linear-gradient(150deg, #061437 0%, #0a2358 52%, #02060f 100%)',
+    texture: 'caustics',
+    flash: 'rgba(53,209,232,0.55)',
+    flashSoft: 'rgba(27,87,255,0.28)',
+    eyebrowInk: 'rgba(207,234,246,0.75)',
+    eyebrowTrack: '6px',
+    headFont: '"Arial Black", "Noto Sans SC", sans-serif',
+    headSize: '3.1rem',
+    headInk: '#ffffff',
+    headItalic: true,
+    headStroke: undefined,
+    headShadow: '0 4px 26px rgba(53,209,232,0.6)',
+    hintInk: 'rgba(207,234,246,0.72)',
+    panelBg: 'rgba(255,255,255,0.95)',
+    panelBorder: 'transparent',
+    panelRadius: 0,
+    panelClip: 'polygon(20px 0, 100% 0, calc(100% - 20px) 100%, 0 100%)',
+    panelShadow: '0 22px 50px rgba(3,20,58,0.6)',
+    titleFont: '"Noto Sans SC", sans-serif',
+    titleInk: '#0a3bd6',
+    titleShadow: 'none',
+    subInk: '#3d4a66',
+    iconInk: '#35d1e8',
+    stampInk: '#ffffff',
+    stampBg: '#1b57ff',
+    stampBorder: '#1b57ff',
+    stampRadius: 0,
+    stampRotate: -7,
+    particle: '#7fe3f4',
+    btnBg: '#1b57ff',
+    btnInk: '#ffffff',
+    btnDoneBg: 'rgba(27,87,255,0.35)',
+    ghostBg: 'rgba(255,255,255,0.1)',
+    ghostInk: 'rgba(226,242,250,0.85)',
+    signInk: 'rgba(207,234,246,0.6)',
+    signFont: "'Caveat', cursive",
+  },
+
+  /** 黄 · 拼贴贴纸：奶油底 + 墨色斜章标题 + 硬投影卡身 + 橙星花 */
+  p4: {
+    bg: 'linear-gradient(160deg, #ffd900 0%, #ffb61c 58%, #f08a00 100%)',
+    texture: 'bokeh',
+    flash: 'rgba(255,255,255,0.7)',
+    flashSoft: 'rgba(255,246,208,0.42)',
+    eyebrowInk: 'rgba(19,19,19,0.72)',
+    eyebrowTrack: '5px',
+    headFont: 'var(--p4-display-font, Georgia, serif)',
+    headSize: '3.2rem',
+    headInk: '#131313',
+    headItalic: false,
+    headShadow: '3px 3px 0 rgba(255,255,255,0.55)',
+    hintInk: 'rgba(19,19,19,0.7)',
+    panelBg: '#fff9e3',
+    panelBorder: '#131313',
+    panelRadius: 20,
+    panelShadow: '0 10px 0 rgba(19,19,19,0.32)',
+    titleFont: 'var(--p4-display-font, Georgia, serif)',
+    titleInk: '#131313',
+    titleShadow: 'none',
+    subInk: 'rgba(19,19,19,0.62)',
+    iconInk: '#f9a11b',
+    stampInk: '#ffd900',
+    stampBg: '#131313',
+    stampBorder: '#131313',
+    stampRadius: 8,
+    stampRotate: -10,
+    particle: '#fff6d0',
+    btnBg: '#131313',
+    btnInk: '#ffd900',
+    btnDoneBg: 'rgba(19,19,19,0.35)',
+    ghostBg: 'rgba(19,19,19,0.1)',
+    ghostInk: '#131313',
+    signInk: 'rgba(19,19,19,0.6)',
+    signFont: 'var(--p4-display-font, Georgia, serif)',
+  },
+
+  /** 红 · 报纸撕边：纯黑舞台 + 猩红 + 米白纸卡 + 网点 */
+  p5: {
+    bg: 'linear-gradient(135deg, #000000 0%, #1a0003 55%, #000000 100%)',
+    texture: 'halftone',
+    flash: 'rgba(192,0,8,0.7)',
+    flashSoft: 'rgba(192,0,8,0.3)',
+    eyebrowInk: 'rgba(240,233,223,0.7)',
+    eyebrowTrack: '7px',
+    headFont: '"Arial Black", "Noto Sans SC", sans-serif',
+    headSize: '3.3rem',
+    headInk: '#f0e9df',
+    headItalic: true,
+    headShadow: '4px 4px 0 #c00008',
+    hintInk: 'rgba(240,233,223,0.68)',
+    panelBg: '#f0e9df',
+    panelBorder: '#050505',
+    panelRadius: 0,
+    panelClip: 'polygon(1.5% 0, 100% 2%, 98% 100%, 0 97%)',
+    panelShadow: '7px 8px 0 #c00008',
+    titleFont: '"Noto Sans SC", sans-serif',
+    titleInk: '#050505',
+    titleShadow: 'none',
+    subInk: '#494540',
+    iconInk: '#c00008',
+    stampInk: '#f0e9df',
+    stampBg: '#c00008',
+    stampBorder: '#050505',
+    stampRadius: 0,
+    stampRotate: -14,
+    particle: '#ff5a5a',
+    btnBg: '#c00008',
+    btnInk: '#f0e9df',
+    btnDoneBg: 'rgba(192,0,8,0.38)',
+    ghostBg: 'rgba(240,233,223,0.12)',
+    ghostInk: 'rgba(240,233,223,0.85)',
+    signInk: 'rgba(240,233,223,0.6)',
+    signFont: "'Caveat', cursive",
+  },
+
+  /** 粉 · 独立一档：夜樱紫红底 + 柔光 + 圆角玫瑰金卡，全程无硬边 */
+  pink: {
+    bg: 'linear-gradient(150deg, #2a0c22 0%, #5c1440 55%, #170512 100%)',
+    texture: 'bokeh',
+    flash: 'rgba(255,168,209,0.55)',
+    flashSoft: 'rgba(236,72,153,0.26)',
+    eyebrowInk: 'rgba(255,225,240,0.72)',
+    eyebrowTrack: '6px',
+    headFont: "'Caveat', cursive",
+    headSize: '3.6rem',
+    headInk: '#ffe1ef',
+    headItalic: false,
+    headShadow: '0 4px 26px rgba(255,138,190,0.65)',
+    hintInk: 'rgba(255,225,240,0.7)',
+    panelBg: 'rgba(255,241,247,0.96)',
+    panelBorder: 'rgba(236,72,153,0.5)',
+    panelRadius: 26,
+    panelShadow: '0 22px 48px rgba(90,10,60,0.55)',
+    titleFont: "'Caveat', cursive",
+    titleInk: '#b0296b',
+    titleShadow: 'none',
+    subInk: '#a3707f',
+    iconInk: '#ec4899',
+    stampInk: '#ffffff',
+    stampBg: '#ec4899',
+    stampBorder: 'rgba(255,255,255,0.7)',
+    stampRadius: 999,
+    stampRotate: -8,
+    particle: '#ffc8e0',
+    btnBg: '#ec4899',
+    btnInk: '#ffffff',
+    btnDoneBg: 'rgba(236,72,153,0.35)',
+    ghostBg: 'rgba(255,255,255,0.12)',
+    ghostInk: 'rgba(255,225,240,0.85)',
+    signInk: 'rgba(255,225,240,0.6)',
+    signFont: "'Caveat', cursive",
+  },
+
+  /** 自定义主题：保留原来那套跟随 --color-primary 的中性演出 */
+  neutral: {
+    bg: 'linear-gradient(135deg, color-mix(in hsl, var(--color-primary) 12%, #0a0a0d) 0%, color-mix(in hsl, var(--color-primary) 22%, #14141a) 60%, #02020a 100%)',
+    texture: 'stripes',
+    flash: 'color-mix(in hsl, var(--color-primary) 60%, transparent)',
+    flashSoft: 'color-mix(in hsl, var(--color-primary) 25%, transparent)',
+    eyebrowInk: 'rgba(255,255,255,0.55)',
+    eyebrowTrack: '6px',
+    headFont: "'Caveat', cursive",
+    headSize: '3rem',
+    headInk: 'var(--color-primary)',
+    headItalic: false,
+    headShadow: '0 2px 16px color-mix(in hsl, var(--color-primary) 60%, transparent)',
+    hintInk: 'rgba(255,255,255,0.7)',
+    panelBg: 'rgba(0,0,0,0.32)',
+    panelBorder: 'var(--color-primary)',
+    panelRadius: 12,
+    titleFont: "'Caveat', cursive",
+    titleInk: '#ffffff',
+    titleShadow: '0 0 24px color-mix(in hsl, var(--color-primary) 60%, transparent)',
+    subInk: 'rgba(255,255,255,0.6)',
+    iconInk: 'rgba(255,255,255,0.85)',
+    stampInk: 'var(--color-primary)',
+    stampBg: 'rgba(0,0,0,0.4)',
+    stampBorder: 'var(--color-primary)',
+    stampRadius: 6,
+    stampRotate: -12,
+    particle: 'color-mix(in hsl, var(--color-primary) 70%, #fff)',
+    btnBg: 'var(--color-primary)',
+    btnInk: '#ffffff',
+    btnDoneBg: 'color-mix(in hsl, var(--color-primary) 30%, transparent)',
+    ghostBg: 'rgba(255,255,255,0.06)',
+    ghostInk: 'rgba(255,255,255,0.7)',
+    signInk: 'rgba(255,255,255,0.6)',
+    signFont: "'Caveat', cursive",
+  },
+};
+
+/** 底纹：四种语言各画一张全屏 SVG（都是静态 pattern，零逐帧成本） */
+const CutinTexture = ({ kind, ink }: { kind: CutinSkin['texture']; ink: string }) => {
+  const id = `cutin-tex-${kind}`;
+  return (
+    <svg aria-hidden className="absolute inset-0 h-full w-full pointer-events-none">
+      <defs>
+        {kind === 'stripes' && (
+          <pattern id={id} patternUnits="userSpaceOnUse" width="14" height="14" patternTransform="rotate(-45)">
+            <line x1="0" y1="0" x2="0" y2="14" stroke="rgba(255,255,255,0.04)" strokeWidth="6" />
+          </pattern>
+        )}
+        {kind === 'halftone' && (
+          <pattern id={id} patternUnits="userSpaceOnUse" width="12" height="12">
+            <circle cx="3" cy="3" r="1.9" fill={ink} opacity="0.22" />
+            <circle cx="9" cy="9" r="1.2" fill={ink} opacity="0.14" />
+          </pattern>
+        )}
+        {kind === 'caustics' && (
+          <pattern id={id} patternUnits="userSpaceOnUse" width="90" height="70" patternTransform="rotate(-12)">
+            <path d="M0 40 Q22 18 45 40 T90 40" fill="none" stroke={ink} strokeWidth="1.6" opacity="0.2" />
+            <path d="M0 62 Q22 44 45 62 T90 62" fill="none" stroke={ink} strokeWidth="1" opacity="0.12" />
+          </pattern>
+        )}
+        {kind === 'bokeh' && (
+          <pattern id={id} patternUnits="userSpaceOnUse" width="72" height="72">
+            <circle cx="18" cy="20" r="9" fill={ink} opacity="0.1" />
+            <circle cx="54" cy="52" r="14" fill={ink} opacity="0.07" />
+            <circle cx="60" cy="14" r="4" fill={ink} opacity="0.12" />
+          </pattern>
+        )}
+      </defs>
+      <rect width="100%" height="100%" fill={`url(#${id})`} />
+    </svg>
+  );
 };
 
 export function CallingCardCutIn({ card, onClose }: Props) {
@@ -49,6 +335,16 @@ export function CallingCardCutIn({ card, onClose }: Props) {
   // 无选择器订阅会让它跟着每一次 store 写入白重渲染一遍，连带整棵子树
   const writeCallingCardLedger = useAppStore(s => s.writeCallingCardLedger);
   const markCallingCardCutInShown = useAppStore(s => s.markCallingCardCutInShown);
+  // 皮按频道选，粉色单独一档（它和蓝共用 p3 频道，但性格是柔的，不能共用硬斜切那套）
+  const channel = useUiChannel();
+  const theme = useAppStore(s => s.user?.theme);
+  const S = CUTIN_SKIN[
+    theme === 'pink' ? 'pink'
+      : channel === 'p3' ? 'p3'
+        : channel === 'p4' ? 'p4'
+          : channel === 'p5' ? 'p5'
+            : 'neutral'
+  ];
   const [ledgerWriting, setLedgerWriting] = useState(false);
   const [ledgered, setLedgered] = useState(false);
   // 印章是否已经 SLAM（控制 shockwave 触发时机）
@@ -166,7 +462,7 @@ export function CallingCardCutIn({ card, onClose }: Props) {
           aria-label="宣告卡 · 达成"
         >
           {/* ① 黑底 + 主题色径向冲击波（从中心向外脉冲） */}
-          <div className="absolute inset-0 pointer-events-none" style={{ background: PALETTE.bgGradient }} />
+          <div className="absolute inset-0 pointer-events-none" style={{ background: S.bg }} />
           <motion.div
             aria-hidden
             initial={{ opacity: 0, scale: 0.4 }}
@@ -174,7 +470,7 @@ export function CallingCardCutIn({ card, onClose }: Props) {
             transition={{ duration: 1.4, ease: 'easeOut' }}
             className="absolute inset-0 pointer-events-none"
             style={{
-              background: `radial-gradient(circle at center, ${PALETTE.flash} 0%, transparent 55%)`,
+              background: `radial-gradient(circle at center, ${S.flash} 0%, transparent 55%)`,
             }}
           />
           {/* 慢呼吸（持续） */}
@@ -184,25 +480,20 @@ export function CallingCardCutIn({ card, onClose }: Props) {
             transition={{ duration: 2.6, repeat: Infinity, ease: 'easeInOut' }}
             className="absolute inset-0 pointer-events-none"
             style={{
-              background: `radial-gradient(circle at center, ${PALETTE.flashSoft} 0%, transparent 55%)`,
+              background: `radial-gradient(circle at center, ${S.flashSoft} 0%, transparent 55%)`,
             }}
           />
 
-          {/* 斜条纹底纹（从顶部滑入） */}
-          <motion.svg
+          {/* 底纹（频道语言：蓝焦散 / 黄光斑 / 红网点 / 中性斜条纹），从顶部滑入 */}
+          <motion.div
             aria-hidden
             initial={{ opacity: 0, y: -30 }}
             animate={{ opacity: 0.55, y: 0 }}
             transition={{ duration: 0.8, delay: 0.15, ease: 'easeOut' }}
-            className="absolute inset-0 w-full h-full pointer-events-none"
+            className="absolute inset-0 pointer-events-none"
           >
-            <defs>
-              <pattern id="cutin-stripes" patternUnits="userSpaceOnUse" width="14" height="14" patternTransform="rotate(-45)">
-                <line x1="0" y1="0" x2="0" y2="14" stroke="rgba(255,255,255,0.04)" strokeWidth="6" />
-              </pattern>
-            </defs>
-            <rect width="100%" height="100%" fill="url(#cutin-stripes)" />
-          </motion.svg>
+            <CutinTexture kind={S.texture} ink={S.particle} />
+          </motion.div>
 
           {/* 浮升粒子层（持续） */}
           <div aria-hidden className="absolute inset-0 overflow-hidden pointer-events-none">
@@ -215,9 +506,9 @@ export function CallingCardCutIn({ card, onClose }: Props) {
                   bottom: -8,
                   width: p.size,
                   height: p.size,
-                  background: PALETTE.particle,
+                  background: S.particle,
                   opacity: p.opacity,
-                  boxShadow: `0 0 ${p.size * 3}px ${PALETTE.particle}`,
+                  boxShadow: `0 0 ${p.size * 3}px ${S.particle}`,
                 }}
                 animate={{ y: [0, -window.innerHeight - 40] }}
                 transition={{ duration: p.duration, delay: p.delay, repeat: Infinity, ease: 'linear' }}
@@ -248,7 +539,7 @@ export function CallingCardCutIn({ card, onClose }: Props) {
             className="relative w-full max-w-md text-center"
           >
             {/* ② 顶端 ✦ CALLING CARD ✦ —— 字符 stagger 揭幕 */}
-            <div className="text-[10px] font-black tracking-[6px] mb-2 flex justify-center" style={{ color: 'rgba(255,255,255,0.55)' }}>
+            <div className="text-[10px] font-black mb-2 flex justify-center" style={{ color: S.eyebrowInk, letterSpacing: S.eyebrowTrack }}>
               {headerLetters.map((ch, i) => (
                 <motion.span
                   key={i}
@@ -270,11 +561,13 @@ export function CallingCardCutIn({ card, onClose }: Props) {
               transition={{ duration: 0.55, delay: 0.45, ease: [0.2, 0.8, 0.2, 1] }}
               className="text-3xl font-black mb-1"
               style={{
-                color: 'var(--color-primary)',
-                fontFamily: "'Caveat', cursive",
-                fontSize: '3rem',
+                color: S.headInk,
+                fontFamily: S.headFont,
+                fontSize: S.headSize,
+                fontStyle: S.headItalic ? 'italic' : 'normal',
                 lineHeight: 1.05,
-                textShadow: `0 2px 16px ${PALETTE.flash}`,
+                textShadow: S.headShadow,
+                ...(S.headStroke ? { WebkitTextStroke: S.headStroke, paintOrder: 'stroke fill' as const } : {}),
               }}
             >
               {reasonHeading}
@@ -285,7 +578,7 @@ export function CallingCardCutIn({ card, onClose }: Props) {
               animate={{ opacity: 1 }}
               transition={{ duration: 0.4, delay: 0.65 }}
               className="text-sm mb-6"
-              style={{ color: 'rgba(255,255,255,0.7)' }}
+              style={{ color: S.hintInk }}
             >
               {reasonHint}
             </motion.div>
@@ -302,12 +595,48 @@ export function CallingCardCutIn({ card, onClose }: Props) {
               className="relative mb-6 mx-auto"
               style={{
                 padding: '20px 24px',
-                background: 'rgba(0,0,0,0.32)',
-                border: `2px solid ${PALETTE.stamp}`,
-                borderRadius: 12,
                 maxWidth: 340,
+                // isolation 是**必须**的：形状层用 zIndex:-1 垫在内容之下，而 Framer
+                // 在动画结束后会把 transform/opacity 收回去，卡身就不再自成层叠上下文，
+                // 那个 -1 会一路穿到全屏背景后面（实测：红频道的纸面整张消失、
+                // 深墨标题直接压在暗红底上没法读）。isolate 把它钉在本卡内部。
+                isolation: 'isolate',
+                // 有 clip 的皮（蓝斜切 / 红撕边）：卡身本体**不能**自己 clip，
+                // 否则会把探出边缘的印章一起裁掉（clip-path 连后代一起裁）。
+                // 形状交给下面那层专门的 span，外壳只负责定位与阴影。
+                ...(S.panelClip
+                  ? {}
+                  : {
+                      background: S.panelBg,
+                      border: `2px solid ${S.panelBorder}`,
+                      borderRadius: S.panelRadius,
+                      boxShadow: S.panelShadow,
+                    }),
               }}
             >
+              {/* 形状层（仅 clip 皮走这条）：硬投影用一片同形偏移的实色垫在后面，
+                  因为 clip-path 会连 box-shadow 一起裁掉 */}
+              {S.panelClip && (
+                <>
+                  {S.panelShadow && (
+                    <span
+                      aria-hidden
+                      className="absolute inset-0 pointer-events-none"
+                      style={{
+                        background: S.stampBg,
+                        clipPath: S.panelClip,
+                        transform: 'translate(6px, 7px)',
+                        zIndex: -2,
+                      }}
+                    />
+                  )}
+                  <span
+                    aria-hidden
+                    className="absolute inset-0 pointer-events-none"
+                    style={{ background: S.panelBg, clipPath: S.panelClip, zIndex: -1 }}
+                  />
+                </>
+              )}
               {/* 裁剪子层：仅约束 sweep 光不超出圆角；印章 / shockwave / 尘屑都在这层之外 */}
               <div className="absolute inset-0 rounded-[10px] overflow-hidden pointer-events-none">
                 {/* 斜向 sweep 光：左上 → 右下，宽窄渐变模拟金属反光 */}
@@ -318,7 +647,7 @@ export function CallingCardCutIn({ card, onClose }: Props) {
                   transition={{ duration: 0.9, delay: 0.95, ease: 'easeOut' }}
                   className="absolute inset-0"
                   style={{
-                    background: `linear-gradient(115deg, transparent 30%, ${PALETTE.flash} 48%, rgba(255,255,255,0.55) 50%, ${PALETTE.flash} 52%, transparent 70%)`,
+                    background: `linear-gradient(115deg, transparent 30%, ${S.flash} 48%, rgba(255,255,255,0.55) 50%, ${S.flash} 52%, transparent 70%)`,
                     mixBlendMode: 'screen',
                   }}
                 />
@@ -329,7 +658,7 @@ export function CallingCardCutIn({ card, onClose }: Props) {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.4, delay: 0.85 }}
                 className="text-2xl mb-1 relative"
-                style={{ color: 'rgba(255,255,255,0.85)' }}
+                style={{ color: S.iconInk }}
               >
                 {card.icon || '✦'}
               </motion.div>
@@ -339,11 +668,11 @@ export function CallingCardCutIn({ card, onClose }: Props) {
                 transition={{ duration: 0.5, delay: 0.9 }}
                 className="text-3xl font-black relative"
                 style={{
-                  color: '#fff',
-                  fontFamily: "'Caveat', cursive",
+                  color: S.titleInk,
+                  fontFamily: S.titleFont,
                   fontSize: '2.4rem',
                   lineHeight: 1.1,
-                  textShadow: `0 0 24px ${PALETTE.flash}`,
+                  textShadow: S.titleShadow,
                 }}
               >
                 {card.title}
@@ -354,7 +683,7 @@ export function CallingCardCutIn({ card, onClose }: Props) {
                   animate={{ opacity: 1 }}
                   transition={{ duration: 0.4, delay: 1.05 }}
                   className="text-xs italic mt-2 relative"
-                  style={{ color: 'rgba(255,255,255,0.6)' }}
+                  style={{ color: S.subInk }}
                 >
                   「{card.subtitle}」
                 </motion.div>
@@ -363,14 +692,14 @@ export function CallingCardCutIn({ card, onClose }: Props) {
               {/* ⑤ 印章 SLAM：scale 3 → 1，伴随 shockwave + 尘屑 */}
               <motion.div
                 initial={{ opacity: 0, scale: 3, rotate: -28 }}
-                animate={{ opacity: 0.94, scale: 1, rotate: -12 }}
+                animate={{ opacity: 0.96, scale: 1, rotate: S.stampRotate }}
                 transition={{ duration: 0.45, delay: 1.05, type: 'spring', damping: 12 }}
-                className="absolute -top-2 -right-2 px-2.5 py-1 rounded-md text-[10px] font-black tracking-[3px]"
+                className="absolute -top-2 -right-2 px-2.5 py-1 text-[10px] font-black tracking-[3px]"
                 style={{
-                  color: PALETTE.stamp,
-                  border: `2px solid ${PALETTE.stamp}`,
-                  background: 'rgba(0,0,0,0.4)',
-                  textShadow: `0 0 10px ${PALETTE.stamp}`,
+                  color: S.stampInk,
+                  border: `2px solid ${S.stampBorder}`,
+                  background: S.stampBg,
+                  borderRadius: S.stampRadius,
                 }}
               >
                 {reasonStamp}
@@ -386,7 +715,7 @@ export function CallingCardCutIn({ card, onClose }: Props) {
                     transition={{ duration: 0.7, ease: 'easeOut' }}
                     className="absolute -top-2 -right-2 w-12 h-12 rounded-full pointer-events-none"
                     style={{
-                      border: `2px solid ${PALETTE.stamp}`,
+                      border: `2px solid ${S.stampBg}`,
                       transform: 'translate(50%, -50%)',
                     }}
                   />
@@ -403,8 +732,8 @@ export function CallingCardCutIn({ card, onClose }: Props) {
                         right: 0,
                         width: d.size,
                         height: d.size,
-                        background: PALETTE.particle,
-                        boxShadow: `0 0 ${d.size * 2}px ${PALETTE.particle}`,
+                        background: S.particle,
+                        boxShadow: `0 0 ${d.size * 2}px ${S.particle}`,
                       }}
                     />
                   ))}
@@ -423,21 +752,24 @@ export function CallingCardCutIn({ card, onClose }: Props) {
                 whileTap={{ scale: 0.96 }}
                 onClick={onLedger}
                 disabled={ledgered || ledgerWriting}
-                className={`w-full py-3 rounded-2xl font-bold text-sm transition-all ${
-                  ledgered
-                    ? 'bg-primary/30 text-white/80'
-                    : 'bg-primary text-white shadow-lg shadow-primary/40'
-                }`}
+                className="w-full py-3 font-bold text-sm transition-all"
+                style={{
+                  background: ledgered ? S.btnDoneBg : S.btnBg,
+                  color: S.btnInk,
+                  borderRadius: S.panelRadius >= 20 ? 999 : S.panelRadius === 0 ? 0 : 16,
+                  opacity: ledgered ? 0.85 : 1,
+                }}
               >
                 {ledgered ? '✓ 已留下记录' : ledgerWriting ? '正在落墨…' : '留下记录'}
               </motion.button>
               <motion.button
                 whileTap={{ scale: 0.96 }}
                 onClick={handleClose}
-                className="w-full py-2.5 rounded-2xl text-sm font-medium"
+                className="w-full py-2.5 text-sm font-medium"
                 style={{
-                  color: 'rgba(255,255,255,0.7)',
-                  background: 'rgba(255,255,255,0.06)',
+                  color: S.ghostInk,
+                  background: S.ghostBg,
+                  borderRadius: S.panelRadius >= 20 ? 999 : S.panelRadius === 0 ? 0 : 16,
                 }}
               >
                 收下卡片
@@ -450,7 +782,7 @@ export function CallingCardCutIn({ card, onClose }: Props) {
               animate={{ opacity: 0.6 }}
               transition={{ duration: 0.5, delay: 1.6 }}
               className="mt-4 italic text-sm"
-              style={{ color: 'rgba(255,255,255,0.6)', fontFamily: "'Caveat', cursive" }}
+              style={{ color: S.signInk, fontFamily: S.signFont }}
             >
               ─ Velvet
             </motion.div>

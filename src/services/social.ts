@@ -19,6 +19,7 @@ import {
   retreatExpiredShadow,
 } from './coopShadows';
 import { useCloudSocialStore } from '@/store/cloudSocial';
+import { useCloudStore } from '@/store/cloud';
 import { useAppStore } from '@/store';
 import { interpretLockedArcana, type ConfidantMatchResult } from '@/utils/confidantAI';
 import type { CoopBond, CoopShadow, Friendship, NotificationEntry } from '@/types';
@@ -163,16 +164,38 @@ const syncLinkedProfiles = async (friendships: Friendship[]): Promise<void> => {
  *
  * 跳过情况：
  *   - 本地已有同 linkedCloudUserId 的在线同伴 → 让 syncLinkedProfiles 负责刷新
- *   - 本机上这张塔罗已被其他活跃同伴占用 → 控制台警告，不创建（用户自行归档冲突方后下次自动补齐）
+ *   - 本机上这张塔罗已被**别人**占用 → 控制台警告，不创建（用户自行归档冲突方后下次自动补齐）
  *   - arcanaId 为空（对方还没挑）→ 略过
+ *
+ * ── 并发（用户上报：云同步时偶发误报「已缔结的好友塔罗被占用」）────────────
+ * 本函数一跑就是几秒：每个新 bond 都要 await 一次 AI 解读。原来的写法在开头
+ * 拿一次 `useAppStore.getState()` 当**整轮**的判据，而循环里的 addConfidant
+ * 自己就在改这份状态，pullAll 又会在别的时间线上整表重写 confidants 并随后
+ * 重载 store——判据早就过期了。过期的判据同时喂给「已存在吗」和「这张牌被占了吗」
+ * 两个问题，就可能给出自相矛盾的答案：认不出这位好友已有的卡，却认得出那张卡
+ * 占着牌 → 误报占用。
+ *
+ * 三道防线：
+ *   ① 每个 bond 判定前**重新读一次** store，不用整轮快照；
+ *   ② 占着这张牌的若正是这位好友自己的卡，就不是冲突（口径与 existing 对齐）；
+ *   ③ 云同步在途时（pullAll 正在整表重写）算出来的结论一律不采信，保留上一轮的
+ *      blockers，等同步落定后的下一轮再说。
  */
+/** 防重入：两次 loadSocial 叠在一起时，第二次直接让路（否则会重复物化同一个 bond） */
+let materializing = false;
+
 const materializeCoopBonds = async (bonds: CoopBond[]): Promise<void> => {
   const me = getUserId();
   if (!me) return;
+  if (materializing) {
+    console.warn('[velvet-social] materializeCoopBonds 已在运行，本次跳过');
+    return;
+  }
+  materializing = true;
+  try {
 
   // 先确保本地同伴快照是最新的，避免 race 导致已存在但 store 还没看到 → 重复创建
   await useAppStore.getState().loadConfidants();
-  const appStore = useAppStore.getState();
   const socialStore = useCloudSocialStore.getState();
 
   // 每轮物化前清空上次的 blockers —— 如果冲突仍在，下面会重新加回去
@@ -185,6 +208,9 @@ const materializeCoopBonds = async (bonds: CoopBond[]): Promise<void> => {
 
     const other = bond.otherProfile;
     if (!other) continue;
+
+    // ① 每个 bond 现读现判：上一圈的 addConfidant 已经改过 store 了
+    const appStore = useAppStore.getState();
 
     // 含归档：只要本机存在 link 到这位云端用户的同伴卡（即便已归档），就不再物化
     // —— 防止"删除/归档后又被自动重新建出来"的鬼打墙
@@ -204,12 +230,21 @@ const materializeCoopBonds = async (bonds: CoopBond[]): Promise<void> => {
       continue;
     }
 
-    // 本机塔罗冲突 → 警告并登记到 blockers，让 UI 能提示"先归档冲突的同伴再刷新"
-    const conflict = appStore.confidants.some(
+    // ② 占着这张牌的是谁？是这位好友自己的卡就不算冲突——
+    //    existing 认的是 linkedCloudUserId，这里也认它，两个判据口径必须一致
+    const holder = appStore.confidants.find(
       c => !c.archivedAt && c.arcanaId === view.myArcanaId,
     );
-    if (conflict) {
-      console.warn('[velvet-social] materialize skipped (arcana taken locally):', view.myArcanaId);
+    if (holder && holder.linkedCloudUserId !== other.id) {
+      // 把占位者的身份一起打出来：再复现时能直接看出是谁占的、是不是又一次误报
+      console.warn('[velvet-social] materialize skipped (arcana taken locally):', {
+        arcanaId: view.myArcanaId,
+        holderId: holder.id,
+        holderName: holder.name,
+        holderSource: holder.source,
+        holderLinkedTo: holder.linkedCloudUserId ?? null,
+        wantedBy: other.id,
+      });
       blockers.push({
         bondId: bond.id,
         arcanaId: view.myArcanaId,
@@ -274,8 +309,21 @@ const materializeCoopBonds = async (bonds: CoopBond[]): Promise<void> => {
     }
   }
 
+  // ③ 云同步在途 = pullAll 可能正在整表重写 confidants（它写完才重载 store），
+  //    这一轮的判据建立在半新半旧的视图上，不采信：保留上一轮的 blockers，
+  //    等同步落定后的下一轮再算。宁可晚一轮提示，也不要弹一次假的。
+  if (useCloudStore.getState().syncStatus === 'syncing') {
+    if (blockers.length > 0) {
+      console.warn('[velvet-social] 云同步在途，本轮塔罗占用判定不采信', blockers);
+    }
+    return;
+  }
   // 一次性写回 store —— 即便本轮没有 blockers，也要清空上轮的残留
   socialStore.setMaterializeBlockers(blockers);
+
+  } finally {
+    materializing = false;
+  }
 };
 
 /**
