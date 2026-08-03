@@ -67,8 +67,9 @@ async function callAI(
   messages: AIMessage[],
   temperature = 0.8,
   maxTokens = 1500,
+  jsonMode = false,
 ): Promise<string> {
-  return chatComplete(cfg, messages, { temperature, maxTokens });
+  return chatComplete(cfg, messages, { temperature, maxTokens, jsonMode });
 }
 
 /**
@@ -92,62 +93,122 @@ async function callAIStream(
 
 // ── Robust JSON extraction ──────────────────────────────────────────────────
 
+/**
+ * 把被截断的 JSON 补完：丢掉最后那个残缺的 token，再按栈把没闭的括号补上。
+ *
+ * 为什么值得做：模型被 max_tokens 砍在半句时，返回里根本没有收尾的 `}`，
+ * 旧的 `/\{[\s\S]*\}/` 直接匹配失败 → 抛 'no json found' → 整次生成判失败。
+ * 但前面那 90% 通常是完整可用的（区层显形只要 8 条台词里的前几条也能凑）。
+ * 能救就救，救不动再报错。
+ */
+function repairTruncatedJSON(src: string): string {
+  const stack: string[] = [];
+  let inStr = false, esc = false;
+  let lastSafe = -1;   // 最后一个"结构完整"的位置（逗号 / 闭合括号之后）
+  for (let i = 0; i < src.length; i++) {
+    const ch = src[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (ch === '\\') esc = true;
+      else if (ch === '"') { inStr = false; lastSafe = i; }
+      continue;
+    }
+    if (ch === '"') { inStr = true; continue; }
+    if (ch === '{' || ch === '[') { stack.push(ch); continue; }
+    if (ch === '}' || ch === ']') { stack.pop(); lastSafe = i; continue; }
+    if (ch === ',') lastSafe = i - 1;
+  }
+  if (stack.length === 0) return src;
+  // 截到最后一个安全点，再补齐所有未闭合的括号
+  let out = src.slice(0, lastSafe + 1).replace(/,\s*$/, '');
+  for (let i = stack.length - 1; i >= 0; i--) out += stack[i] === '{' ? '}' : ']';
+  return out;
+}
+
 /** Extract a JSON object from AI response text, tolerating code blocks, trailing commas, comments */
 function extractJSON(text: string): Record<string, unknown> {
   // Strip markdown code blocks
-  let cleaned = text.replace(/```(?:json|JSON)?\s*/g, '').replace(/```\s*/g, '');
-  // Find the outermost JSON object
-  const match = cleaned.match(/\{[\s\S]*\}/);
-  if (!match) throw new Error('no json found');
-  let jsonStr = match[0];
+  const cleaned = text.replace(/```(?:json|JSON)?\s*/g, '').replace(/```\s*/g, '');
+  const start = cleaned.indexOf('{');
+  if (start < 0) throw new Error('no json found');
+  const end = cleaned.lastIndexOf('}');
+  // 有闭合括号就取整段，没有（= 被截断）就从 { 一路取到底交给修补器
+  let jsonStr = end > start ? cleaned.slice(start, end + 1) : cleaned.slice(start);
   // Remove single-line comments (// ...)
   jsonStr = jsonStr.replace(/\/\/[^\n]*/g, '');
   // Remove trailing commas before } or ]
   jsonStr = jsonStr.replace(/,\s*([}\]])/g, '$1');
-  try {
-    return JSON.parse(jsonStr);
-  } catch {
-    // Last resort: try to fix common issues like unescaped newlines in strings
-    jsonStr = jsonStr.replace(/[\r\n]+/g, ' ');
-    return JSON.parse(jsonStr);
+  const attempts = [
+    jsonStr,
+    jsonStr.replace(/[\r\n]+/g, ' '),          // 字符串里裸换行
+    repairTruncatedJSON(jsonStr),               // 被砍在半句
+    repairTruncatedJSON(jsonStr.replace(/[\r\n]+/g, ' ')),
+  ];
+  let lastErr: unknown;
+  for (const a of attempts) {
+    try { return JSON.parse(a); } catch (e) { lastErr = e; }
   }
+  throw lastErr instanceof Error ? lastErr : new Error('json parse failed');
 }
 
-/** Call AI with one automatic retry on failure (lower temperature on retry for more stable output) */
+/**
+ * 带重试的调用。
+ *
+ * json=true 时走三级梯子：严格 JSON 模式 → 关掉 JSON 模式（有些 provider 直接 400，
+ * 或 DeepSeek 那种"开了反而吐空"）→ 降温再试。全站要 JSON 的战场调用都该开，
+ * 这是与 store/navigatorIntent 已有的 jsonMode 兜底同一套口径 ——
+ * battleAI 一直没接，等于把最容易破格式的那几个请求裸奔在便宜模型上。
+ * 抛出的是**最后一次**的错误：第一次多半是「provider 不支持 json_object」，
+ * 那句对用户没用，真正的失败原因在最后一次里。
+ */
 async function callAIWithRetry(
   cfg: AIConfig,
   messages: AIMessage[],
   temperature = 0.8,
   maxTokens = 1500,
+  json = false,
 ): Promise<string> {
-  try {
-    return await callAI(cfg, messages, temperature, maxTokens);
-  } catch (e) {
+  const cooler = Math.max(0.3, temperature - 0.3);
+  const ladder: Array<[number, boolean]> = json
+    ? [[temperature, true], [temperature, false], [cooler, false]]
+    : [[temperature, false], [cooler, false]];
+  let lastErr: unknown;
+  for (const [t, j] of ladder) {
     try {
-      return await callAI(cfg, messages, Math.max(0.3, temperature - 0.3), maxTokens);
-    } catch {
-      throw e;
+      return await callAI(cfg, messages, t, maxTokens, j);
+    } catch (e) {
+      lastErr = e;
     }
   }
+  throw lastErr instanceof Error ? lastErr : new Error('AI 调用失败');
 }
 
-/** 流式调用 + 一次自动重试（第二次温度降低） */
+/**
+ * 流式调用 + 重试。最后一级**退回非流式**：
+ * 有些 provider（网关代理、开了 json_object 的思维链模型）SSE 通道会返回空流或只吐
+ * reasoning，非流式同一个请求却是好的。人格生成失败率高有一部分就栽在这——
+ * 掉一段打字机动画，总比整份人格回退成模板强。
+ */
 async function callAIStreamWithRetry(
   cfg: AIConfig,
   messages: AIMessage[],
   onChunk: (delta: string, fullText: string) => void,
   temperature = 0.8,
   maxTokens = 1500,
+  json = false,
 ): Promise<string> {
-  try {
-    return await callAIStream(cfg, messages, onChunk, temperature, maxTokens);
-  } catch (e) {
+  let lastErr: unknown;
+  for (const t of [temperature, Math.max(0.3, temperature - 0.3)]) {
     try {
-      return await callAIStream(cfg, messages, onChunk, Math.max(0.3, temperature - 0.3), maxTokens);
-    } catch {
-      throw e;
-    }
+      return await callAIStream(cfg, messages, onChunk, t, maxTokens);
+    } catch (e) { lastErr = e; }
   }
+  try {
+    const text = await callAIWithRetry(cfg, messages, temperature, maxTokens, json);
+    onChunk(text, text);   // 一次性把正文交给 UI，打字机退化为整段落地
+    return text;
+  } catch { /* 非流式也不行 → 抛流式那次的错误，它更贴近用户看到的现象 */ }
+  throw lastErr instanceof Error ? lastErr : new Error('AI 调用失败');
 }
 
 // ── Persona skill validation ────────────────────────────────────────────────
@@ -294,8 +355,8 @@ ${formatAllAttrsSpecialization(attributeNames)}
      */
     const PERSONA_MAX_TOKENS = 9000;
     const result = onStreamChunk
-      ? await callAIStreamWithRetry(cfg, [{ role: 'user', content: prompt }], onStreamChunk, 0.6, PERSONA_MAX_TOKENS)
-      : await callAIWithRetry(cfg, [{ role: 'user', content: prompt }], 0.6, PERSONA_MAX_TOKENS);
+      ? await callAIStreamWithRetry(cfg, [{ role: 'user', content: prompt }], onStreamChunk, 0.6, PERSONA_MAX_TOKENS, true)
+      : await callAIWithRetry(cfg, [{ role: 'user', content: prompt }], 0.6, PERSONA_MAX_TOKENS, true);
     const parsed = extractJSON(result) as Record<string, { name?: string; description?: string; skills?: unknown }>;
 
     const personaName = fallbackName;
@@ -407,7 +468,7 @@ ${formatSingleAttrSpecialization(attr, attrName)}
 
   try {
     // 单属性 persona（人物名 + 描述 + 5技能）约 600-1200 tokens，保底 2000
-    const result = await callAIWithRetry(cfg, [{ role: 'user', content: prompt }], 0.6, 2000);
+    const result = await callAIWithRetry(cfg, [{ role: 'user', content: prompt }], 0.6, 2000, true);
     const parsed = extractJSON(result) as { name?: string; description?: string; skills?: unknown };
     const name = (typeof parsed.name === 'string' && parsed.name) ? parsed.name.slice(0, 15) : attrName + '之灵';
     const description = (typeof parsed.description === 'string' && parsed.description) ? parsed.description : `${name}的${attrName}具现`;
@@ -475,7 +536,7 @@ ${formatSingleAttrSpecialization(attr, attrName)}
 {"skills":[{"level":1,"name":"技能名","description":"一句话描述","type":"damage","power":10,"spCost":8},{"level":2,"name":"技能名","description":"一句话描述","type":"crit","power":15,"spCost":12},{"level":3,"name":"技能名","description":"一句话描述","type":"buff","power":22,"spCost":18},{"level":4,"name":"技能名","description":"一句话描述","type":"debuff","power":30,"spCost":25},{"level":5,"name":"技能名","description":"一句话描述","type":"attack_boost","power":40,"spCost":35}]}`;
 
   try {
-    const result = await callAIWithRetry(cfg, [{ role: 'user', content: prompt }], 0.6, 2000);
+    const result = await callAIWithRetry(cfg, [{ role: 'user', content: prompt }], 0.6, 2000, true);
     const parsed = extractJSON(result) as { skills?: unknown };
     return repairSkills(parsed.skills, attrName, personaName);
   } catch {
@@ -548,7 +609,7 @@ ${SHADOW_JSON_FORMAT}`;
     : defaultPrompt;
 
   // Shadow（name + description + 5 反向属性 + 8 台词）约 400-900 tokens，保底 2000
-  const result = await callAIWithRetry(cfg, [{ role: 'user', content: prompt }], 0.7, 2000);
+  const result = await callAIWithRetry(cfg, [{ role: 'user', content: prompt }], 0.7, 2400, true);
   let parsed: Record<string, unknown>;
   try {
     parsed = extractJSON(result);
@@ -602,7 +663,13 @@ export async function generateStratumReveal(
   responseLines: string[];
   weakAttribute: AttributeId;
 }> {
-  const cfg = getAIConfig(settings);
+  /**
+   * 与人格生成同源的问题（见 generatePersonaSkills 的注释）：这也是一份长中文 JSON，
+   * 却一直挂在**快速响应档**（各家最便宜的默认模型）上。上一轮只把人格生成挪到了
+   * 深思熟虑档，区层显形/伪神显形漏改，于是「战场 AI 成功率很低」还在。
+   * 没单配深思熟虑档的用户会自动落回快速响应档，行为与改前一致。
+   */
+  const cfg = getDeliberateAIConfig(settings);
   const weakAttribute = pickWeakAttribute(lastWeakAttribute);
   if (!cfg) throw new Error('未配置 AI API Key，请前往「设置 → AI摘要」填写 API Key 后重试');
 
@@ -627,7 +694,7 @@ ${toneHints.map((t, i) => `${i + 1}. ${t}`).join('\n')}
 - responseLines：8条战斗台词，${levelPersonality}；每条风格各异，至少含1条嘲讽、1条威胁、1条对玩家弱点的点评、1条自我宣言
 ${STRATUM_JSON_FORMAT}`;
 
-  const result = await callAIWithRetry(cfg, [{ role: 'user', content: prompt }], 0.7, 2200);
+  const result = await callAIWithRetry(cfg, [{ role: 'user', content: prompt }], 0.7, 3200, true);
   let parsed: Record<string, unknown>;
   try {
     parsed = extractJSON(result);
@@ -722,7 +789,13 @@ export async function generateFinalBoss(
   responseLines: string[];
   weakAttribute: AttributeId;
 }> {
-  const cfg = getAIConfig(settings);
+  /**
+   * 与人格生成同源的问题（见 generatePersonaSkills 的注释）：这也是一份长中文 JSON，
+   * 却一直挂在**快速响应档**（各家最便宜的默认模型）上。上一轮只把人格生成挪到了
+   * 深思熟虑档，区层显形/伪神显形漏改，于是「战场 AI 成功率很低」还在。
+   * 没单配深思熟虑档的用户会自动落回快速响应档，行为与改前一致。
+   */
+  const cfg = getDeliberateAIConfig(settings);
   if (!cfg) throw new Error('未配置 AI API Key，请前往「设置 → AI摘要」填写 API Key 后重试');
 
   const facts = [
@@ -756,7 +829,7 @@ ${FINAL_FLAW_KEYS.map(k => `- ${k.key}：${k.hint}`).join('\n')}
 - 禁止出现任何现实游戏的专有名词。
 ${FINAL_BOSS_JSON}`;
 
-  const result = await callAIWithRetry(cfg, [{ role: 'user', content: prompt }], 0.75, 2600);
+  const result = await callAIWithRetry(cfg, [{ role: 'user', content: prompt }], 0.75, 3600, true);
   let parsed: Record<string, unknown>;
   try {
     parsed = extractJSON(result);
@@ -873,7 +946,7 @@ ${roster}
 - 五句风格必须彼此不同；禁止出现"Persona/面具"字样
 仅输出 JSON：{"knowledge":"…","guts":"…","dexterity":"…","kindness":"…","charm":"…"}`;
   try {
-    const result = await callAIWithRetry(cfg, [{ role: 'user', content: prompt }], 0.9, 400);
+    const result = await callAIWithRetry(cfg, [{ role: 'user', content: prompt }], 0.9, 600, true);
     const parsed = extractJSON(result);
     const out = {} as Record<AttributeId, string>;
     for (const a of ATTRS) {
@@ -968,7 +1041,7 @@ Persona 人设：${personaDescription || '无描述——从名字与属性气�
 - description：一句话（20字内），以该 Persona 的口吻或意象描述这股力量，末尾自然点出效果
 仅输出 JSON：{"name":"…","description":"…"}`;
   try {
-    const result = await callAIWithRetry(cfg, [{ role: 'user', content: prompt }], 0.8, 300);
+    const result = await callAIWithRetry(cfg, [{ role: 'user', content: prompt }], 0.8, 400, true);
     const parsed = extractJSON(result);
     const name = typeof parsed.name === 'string' && parsed.name.trim() ? parsed.name.trim().slice(0, 12) : null;
     const description = typeof parsed.description === 'string' && parsed.description.trim()

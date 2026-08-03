@@ -15,7 +15,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore, toLocalDateKey } from '@/store';
 import { useBackHandler } from '@/utils/useBackHandler';
 import { AttributeId, PersonaSkill, MobSpec } from '@/types';
-import { triggerLightHaptic, playSound } from '@/utils/feedback';
+import { triggerLightHaptic, triggerSuccessFeedback, playSound } from '@/utils/feedback';
 import { isInShadowTime, SKILL_EFFECT_MAP } from '@/constants';
 import { useBoldness } from '@/utils/boldness';
 import { BattleEngine, PlayerActionInput, FxEvent, TurnResult } from '@/battle/engine';
@@ -626,7 +626,9 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
       case 'oneMore': {
         // 右上角小飘带：短促、不占中心（与 WEAK cut-in 区分）、不阻塞操作
         setOneMoreFlash(true);
-        playSound('/battle-mask-swap.mp3', 0.6);
+        // 音效走「分析完毕」那一声（各主题的 success 音，用户点名要这个）——
+        // 原来的 mask-swap 与换面具撞车，1More 听起来像又切了一次面具
+        triggerSuccessFeedback();
         setTimeout(() => setOneMoreFlash(false), 680);
         break;
       }

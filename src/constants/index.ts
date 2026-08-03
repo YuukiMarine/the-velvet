@@ -442,6 +442,9 @@ export const SHADOW_REGEN_PER_LEVEL = [2, 3, 4, 5, 5, 0];
 /** 击败Shadow后玩家最大HP提升量（按等级）。Lv6 = 0：终局的奖励走「英雄的证明」 */
 export const HP_BONUS_PER_DEFEAT = [2, 3, 4, 5, 5, 0];
 
+/** 击破心魔可选的属性点奖励（按等级）。R19 用户拍板：原本一律 +10 太多，改成 Lv1-5 给 2-6 */
+export const ATTR_REWARD_PER_DEFEAT = [2, 3, 4, 5, 6, 6];
+
 export function isInShadowTime(days: number[] = [5, 6, 0], startHour = 20, endHour = 7): boolean {
   const now = new Date();
   const weekday = now.getDay();

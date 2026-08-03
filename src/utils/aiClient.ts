@@ -301,11 +301,30 @@ export async function chatComplete(
     });
     if (!resp.ok) throw await toHttpError(resp, cfg.provider);
     const data = await resp.json().catch(() => null);
-    const content = data?.choices?.[0]?.message?.content;
-    if (typeof content !== 'string' || !content.trim()) {
-      throw new Error('AI 返回空响应，可能被截断或被内容审查拦截');
+    const choice = data?.choices?.[0];
+    const content = choice?.message?.content;
+    if (typeof content === 'string' && content.trim()) return content;
+    /**
+     * 正文空了，但别急着判失败——两种真实情况：
+     *
+     * ① 思维链模型（DeepSeek-R1 / GLM / Qwen-thinking 一族）会把内容写进
+     *    message.reasoning_content，content 留空。里面若带着 JSON，捞出来照样能用。
+     * ② 预算被推理段吃光 → finish_reason: 'length'，content 是空串。
+     *    这两种都会表现成用户说的「AI 内容根本就没返回」，
+     *    但错误提示只写「空响应」，看不出该调大预算还是该换模型。
+     */
+    const reasoning = choice?.message?.reasoning_content ?? choice?.message?.reasoning;
+    if (typeof reasoning === 'string' && reasoning.includes('{') && reasoning.includes('}')) {
+      return reasoning;
     }
-    return content;
+    const fr = typeof choice?.finish_reason === 'string' ? choice.finish_reason : '';
+    throw new Error(
+      fr === 'length'
+        ? 'AI 输出被 max_tokens 截断（finish_reason=length），正文没写出来——把预算调大或换一个非推理模型'
+        : fr === 'content_filter'
+          ? 'AI 响应被内容审查拦截（finish_reason=content_filter）'
+          : `AI 返回空响应${fr ? `（finish_reason=${fr}）` : ''}，可能被截断或被审查拦截`,
+    );
   } catch (e) {
     rethrowAbortAware(e, ab, opts);
   } finally {
@@ -339,6 +358,9 @@ export async function* chatStream(
     const reader = resp.body.getReader();
     const decoder = new TextDecoder('utf-8');
     let buf = '';
+    /** 只见思维链、不见正文：单独报错，别混进「空响应」里（那句看不出该怎么办） */
+    let sawReasoning = false;
+    let finishReason = '';
     outer: while (true) {
       const { value, done } = await reader.read();
       if (done) break;
@@ -353,16 +375,23 @@ export async function* chatStream(
         if (payload === '[DONE]') break outer;
         try {
           const json = JSON.parse(payload);
-          const delta: string =
-            json?.choices?.[0]?.delta?.content
-            ?? json?.choices?.[0]?.message?.content
-            ?? '';
+          const c = json?.choices?.[0];
+          if (typeof c?.finish_reason === 'string' && c.finish_reason) finishReason = c.finish_reason;
+          // 思维链不 yield 给 UI（那是过程不是答案），只记一笔用于最终报错
+          if (c?.delta?.reasoning_content || c?.delta?.reasoning) sawReasoning = true;
+          const delta: string = c?.delta?.content ?? c?.message?.content ?? '';
           if (delta) { produced = true; yield delta; }
         } catch { /* 半个 / 非法 chunk，跳过 */ }
       }
     }
     if (!produced) {
-      throw new Error('AI 流式返回为空，可能被截断或被内容审查拦截');
+      throw new Error(
+        sawReasoning
+          ? '模型只吐了思维链、没写正文——预算多半被推理段吃光了，调大 max_tokens 或换一个非推理模型'
+          : finishReason === 'length'
+            ? 'AI 输出被 max_tokens 截断（finish_reason=length）'
+            : `AI 流式返回为空${finishReason ? `（finish_reason=${finishReason}）` : ''}，可能被截断或被审查拦截`,
+      );
     }
   } catch (e) {
     rethrowAbortAware(e, ab, opts);

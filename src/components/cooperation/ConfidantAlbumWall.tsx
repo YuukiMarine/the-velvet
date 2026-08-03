@@ -883,6 +883,15 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
         {/* P3 的对位件：不转星，改成每翻一张就从铭牌处推出去的一组水波圆环
             （key=index → 换牌即重挂 = 重新播一遍）。红是转 60°、黄是转 90°。 */}
         {p3 && <P3SwitchRipple key={index} />}
+        {/* 跳卡条（p3 稿：在铭牌文字**上方**）。
+            必须放在铭牌三岔分支之外——原本它嵌在"已缔结同伴"那一支里，
+            于是蓝/粉频道翻到未缔结好友或空白牌时整条就消失了
+            （非 p3 频道的那份在分支外，所以只有 p3 中招）。 */}
+        {p3 && count > 1 && (
+          <div className="mb-3.5">
+            <WallScrubber items={items} index={index} onJump={go} />
+          </div>
+        )}
         {current === 'add' || !current ? (
           <div className="text-center">
             <div className={`text-2xl font-black ${p3 ? '' : 'text-gray-800 dark:text-gray-100'}`} style={p3 ? { color: P3R.ink } : undefined}>缔结新的羁绊</div>
@@ -929,12 +938,6 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
           </div>
         ) : p3 ? (
           <>
-            {/* 滚动条上移到铭牌文字上方（设计稿：先跳卡条、再信息） */}
-            {count > 1 && (
-              <div className="mb-3.5">
-                <WallScrubber items={items} index={index} onJump={go} />
-              </div>
-            )}
           <motion.div
             key={current.id}
             initial={{ opacity: 0, y: 16 }}

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore, SummaryRequestData, toLocalDateKey, DEFAULT_SUMMARY_PROMPT_PRESETS, FAMILIAR_FACE_PRESETS } from '@/store';
 import { PeriodSummary, PeriodSummaryFollowUp, SummaryPeriod } from '@/types';
@@ -790,7 +791,10 @@ export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week' }
      performExit(exitAction);
    };
 
-   return (
+   // R19 修复：整块面板原本渲染在 App 的 `relative z-10` 语境里——
+   // 无论标多少 z 都压不过底导（z-40 是它的兄弟节点），底部内容会被
+   // tab 栏 / 宽屏左侧栏切掉。按 utils/zIndex.ts 的迁移口径 portal 到 body。
+   return createPortal(
      <AnimatePresence>
        {isOpen && (
          <motion.div
@@ -1117,6 +1121,7 @@ export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week' }
           </AnimatePresence>
         </motion.div>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body,
   );
 }

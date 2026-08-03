@@ -279,6 +279,75 @@ export function buildFinalStratum(seed: FinalStratumSeed): TowerStratum {
   };
 }
 
+// ── R19 ·「回头看看」：重游已通关的旧区层 ─────────────────────
+// 零 AI（旧层的心魔早已入档，不该再生成一只新的去占档案），地图照常掷。
+// 数值走该等级的原表；通关只给 SP 与战利品，不推进度、不加 HP 上限、不入档案。
+
+const REVISIT_LINES = [
+  '你回来了。这里已经没有你要的东西了。',
+  '重走一遍旧路，是想确认什么？',
+  '我不过是一段回响——打散我，你也不会更接近塔顶。',
+  '这层的月光你早就见过了。',
+  '再打一次也行。反正疼的是我。',
+];
+
+export interface RevisitSeed {
+  level: number;
+  stratumId: string;
+  bossId: string;
+  baseFloor: number;
+  now: Date;
+  rng?: () => number;
+  eventPoolIds: string[];
+  chestSp: (floor: number) => number;
+  attrNames: Record<AttributeId, string>;
+  /** 该等级的血量档（constants.SHADOW_LEVEL_CONFIG 由调用方取，避免 battle → constants 反向依赖） */
+  hp: { maxHp: number; maxHp2?: number };
+  attackPower: number;
+  /** 旧档案里这一层心魔的名字（有就沿用，做成"残响"） */
+  archivedName?: string;
+}
+
+export function buildRevisitStratum(seed: RevisitSeed): { stratum: TowerStratum; boss: Shadow } {
+  const rng = seed.rng ?? Math.random;
+  const { nodes, floors } = generateStratumNodes({
+    level: seed.level, rng, eventPoolIds: seed.eventPoolIds, chestSp: seed.chestSp,
+  });
+  const weakAttribute = ATTRS[Math.floor(rng() * ATTRS.length)];
+  const base = seed.archivedName?.trim() || `第${seed.level}区层`;
+  const boss: Shadow = {
+    id: seed.bossId,
+    level: seed.level,
+    name: `${base}的残响`,
+    description: '它不是当初那只——只是这层楼还记得它的形状，于是又照着捏了一个出来。',
+    invertedAttributes: Object.fromEntries(ATTRS.map(a => [a, `褪色的${seed.attrNames[a]}`])) as Record<AttributeId, string>,
+    weakAttribute,
+    maxHp: seed.hp.maxHp,
+    currentHp: seed.hp.maxHp,
+    maxHp2: seed.hp.maxHp2,
+    currentHp2: seed.hp.maxHp2,
+    responseLines: [...REVISIT_LINES].sort(() => rng() - 0.5),
+    attackPower: seed.attackPower,
+    createdAt: seed.now,
+  };
+  const stratum: TowerStratum = {
+    id: seed.stratumId,
+    level: seed.level,
+    name: `回望 · 第${seed.level}区层`,
+    description: '你走过的那一层。楼梯还在，只是不再往上通了。',
+    createdWeekKey: weekKeyOf(seed.now),
+    baseFloor: seed.baseFloor,
+    floors,
+    nodes,
+    currentNodeId: null,
+    deepenCount: 0,
+    status: 'climbing',
+    revisit: true,
+    createdAt: seed.now,
+  };
+  return { stratum, boss };
+}
+
 // ── 批5 · 深渊回廊（§13 批5）────────────────────────────────
 // Lv5 通关后解锁的无尽环域：每环 = 5 层直线小图（战斗×2-3 + 事件/回响/月匣 + 顶端守卫）。
 // 零 AI 即时生成；守卫 HP +5%/环、词缀 1→4 条 cap；无月相加深；通关不锁日（同晚可连环）。

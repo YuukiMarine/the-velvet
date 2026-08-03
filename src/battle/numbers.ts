@@ -122,8 +122,8 @@ export const SHADOW_STATUS_TURNS = 2;
 
 // ── 高塔区层 · 小影/精英（§9.2，批2）───────────────────────
 // 批3 验收调整：全敌人最大 HP 上调 Lv1-2 +10 / Lv3 +20 / Lv4-5 +30（用户拍板）
-/** 小影 HP 区间（按区层等级） */
-export const MOB_HP_BY_LEVEL: Array<[number, number]> = [[32, 40], [43, 55], [68, 86], [96, 120], [118, 150]];
+/** 小影 HP 区间（按区层等级）。R19 用户拍板：Lv3 起统一 +20（3-5 区层的杂影太脆） */
+export const MOB_HP_BY_LEVEL: Array<[number, number]> = [[32, 40], [43, 55], [88, 106], [116, 140], [138, 170]];
 export const MOB_ATTACK_BY_LEVEL = [3, 4, 5, 6, 7];
 export const ELITE_HP_BY_LEVEL: Array<[number, number]> = [[70, 85], [100, 120], [150, 180], [210, 250], [270, 320]];
 export const ELITE_ATTACK_BY_LEVEL = [4, 5, 6, 7, 8];
@@ -132,6 +132,9 @@ export const ELITE_ATTACK_BY_LEVEL = [4, 5, 6, 7, 8];
 export const STRATUM_SP_COEF = [1, 1.25, 1.5, 1.85, 2.2];
 /** 层段 SP 基准（区层内层号）：1-4 层 / 5-8 层 / 9+ 层 */
 export const FLOOR_SP_BANDS: Array<[number, number]> = [[3, 5], [6, 9], [10, 14]];
+/** 心魔（区层主影）击破 SP。R19 用户拍板：Lv1-5 逐级 5/10/15/20/25；Lv6 伪神走终局奖励，这里给 25 收口 */
+export const BOSS_SP_BY_LEVEL = [5, 10, 15, 20, 25, 25];
+/** @deprecated 旧口径（30 × 区层系数），仅留给可能的存量引用 */
 export const BOSS_SP_BASE = 30;
 export const DEEPEN_SP_MULT = 1.1;
 
@@ -144,8 +147,9 @@ export function nodeSpReward(level: number, floor: number, deepenCount: number, 
 }
 
 export function bossSpReward(level: number, deepenCount: number): number {
-  const coef = STRATUM_SP_COEF[Math.min(4, Math.max(0, level - 1))];
-  return Math.round(BOSS_SP_BASE * coef * Math.pow(DEEPEN_SP_MULT, deepenCount));
+  // 不再乘区层系数：等级差已经写进 BOSS_SP_BY_LEVEL 本身，再乘一次就是原来那份"太多"
+  const base = BOSS_SP_BY_LEVEL[Math.min(BOSS_SP_BY_LEVEL.length - 1, Math.max(0, level - 1))];
+  return Math.max(1, Math.round(base * Math.pow(DEEPEN_SP_MULT, deepenCount)));
 }
 
 /** 回响节点回复比例（§2.6） */

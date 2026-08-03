@@ -5,7 +5,7 @@ import { useAppStore } from '@/store';
 import { AttributeId } from '@/types';
 import { generateVictoryNarrative } from '@/utils/battleAI';
 import { triggerSuccessFeedback, playSound } from '@/utils/feedback';
-import { HP_BONUS_PER_DEFEAT } from '@/constants';
+import { HP_BONUS_PER_DEFEAT, ATTR_REWARD_PER_DEFEAT } from '@/constants';
 import { db } from '@/db';
 import { useBackHandler } from '@/utils/useBackHandler';
 
@@ -42,9 +42,14 @@ export function VictoryModal({ isOpen, onClose }: Props) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
 
+  /** 击破奖励属性点：按心魔等级 2..6（R19 用户拍板，原本一律 +10 太多） */
+  const attrReward = shadow
+    ? (ATTR_REWARD_PER_DEFEAT[Math.min(shadow.level - 1, ATTR_REWARD_PER_DEFEAT.length - 1)] ?? 2)
+    : 2;
+
   const handleClaim = async () => {
     if (claimed || !persona || !shadow) return;
-    const pts = { [selectedAttr]: 10 } as Record<string, number>;
+    const pts = { [selectedAttr]: attrReward } as Record<string, number>;
     // Only first defeat at this Shadow level counts as important
     const prevAtLevel = (battleState?.defeatedShadowLog ?? []).filter(r => r.level === shadow.level);
     const isFirstAtLevel = prevAtLevel.length === 0;
@@ -136,7 +141,7 @@ export function VictoryModal({ isOpen, onClose }: Props) {
                 HP 上限 +{HP_BONUS_PER_DEFEAT[Math.min(shadow.level - 1, HP_BONUS_PER_DEFEAT.length - 1)] ?? 2}
               </p>
             )}
-            <p className="text-white text-sm font-semibold mb-3">选择奖励属性 (+10点)</p>
+            <p className="text-white text-sm font-semibold mb-3">选择奖励属性 (+{attrReward}点)</p>
             <div className="grid grid-cols-5 gap-1 mb-4">
               {(Object.keys(settings.attributeNames) as AttributeId[]).map(attr => (
                 <button
@@ -168,7 +173,7 @@ export function VictoryModal({ isOpen, onClose }: Props) {
             className="text-center py-4"
           >
             <span className="text-green-400 text-lg">
-              ✓ 已获得 +10 {attrNamesMap[selectedAttr]}
+              ✓ 已获得 +{attrReward} {attrNamesMap[selectedAttr]}
             </span>
             {shadow && (
               <p className="text-emerald-400/70 text-sm mt-1.5">

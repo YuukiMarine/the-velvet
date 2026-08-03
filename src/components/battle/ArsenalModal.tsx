@@ -8,6 +8,7 @@
  *  - 共鸣链：两两缔结，同时生效 1 条，仅战斗内生效
  */
 import { useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore } from '@/store';
 import { AttributeId, MythStone, OathStone, PersonaSkill, RelicInstance } from '@/types';
@@ -152,7 +153,10 @@ export function ArsenalModal({ open, onClose }: { open: boolean; onClose: () => 
   // 誓约技当前所在（attr → 誓约技能）
   const oathSkillOf = (attr: AttributeId) => persona?.skills[attr]?.find(s => s.oath);
 
-  return (
+  // R19 修复：这两块全屏面板原本渲染在 App 的 `relative z-10` 语境里——
+  // 无论标多少 z 都压不过底导（z-40 是它的兄弟节点），最后一条目就被 tab 栏
+  // 和宽屏左侧栏切掉。按 utils/zIndex.ts 的迁移口径 portal 到 body。
+  return createPortal(
     <motion.div
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
       className="fixed inset-0 z-50 flex flex-col overflow-hidden"
@@ -420,7 +424,8 @@ export function ArsenalModal({ open, onClose }: { open: boolean; onClose: () => 
           </motion.div>
         )}
       </AnimatePresence>
-    </motion.div>
+    </motion.div>,
+    document.body,
   );
 }
 
@@ -431,7 +436,10 @@ export function ShadowArchiveModal({ open, onClose }: { open: boolean; onClose: 
   if (!open) return null;
   const records = [...(battleState?.defeatedShadowLog ?? [])].reverse();
   void settings;
-  return (
+  // R19 修复：这两块全屏面板原本渲染在 App 的 `relative z-10` 语境里——
+  // 无论标多少 z 都压不过底导（z-40 是它的兄弟节点），最后一条目就被 tab 栏
+  // 和宽屏左侧栏切掉。按 utils/zIndex.ts 的迁移口径 portal 到 body。
+  return createPortal(
     <motion.div
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
       className="fixed inset-0 z-50 flex flex-col overflow-hidden"
@@ -496,7 +504,8 @@ export function ShadowArchiveModal({ open, onClose }: { open: boolean; onClose: 
           );
         })}
       </div>
-    </motion.div>
+    </motion.div>,
+    document.body,
   );
 }
 
