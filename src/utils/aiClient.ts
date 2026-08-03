@@ -22,8 +22,8 @@ import {
   extractProviderErrorMessage,
   getHttpStatusHint,
   isReasoningModel,
-  type ApiProvider,
-} from '@/utils/aiProviders';
+  isThinkingModel,
+  type ApiProvider, DEFAULT_PROVIDER } from '@/utils/aiProviders';
 
 export type AIRole = 'system' | 'user' | 'assistant';
 
@@ -128,7 +128,7 @@ function applyModelOverride(
   pv: ApiProvider | undefined,
   model: string | undefined,
 ): AIConfig | null {
-  const activeProvider = settings.summaryApiProvider ?? 'openai';
+  const activeProvider = settings.summaryApiProvider ?? DEFAULT_PROVIDER;
   if (pv && pv !== activeProvider) {
     const prof = settings.aiProfiles?.[pv];
     const key = prof?.key?.trim();
@@ -248,22 +248,26 @@ function buildRequestBody(
   if (opts.jsonMode && cfg.provider && JSON_MODE_PROVIDERS.has(cfg.provider)) {
     body.response_format = { type: 'json_object' };
   }
+  /**
+   * 思维链余量。
+   *
+   * `max_completion_tokens` / `max_tokens` 是**推理 + 正文的总额**，推理先花、正文后写。
+   * 原来只加 `max(1024, maxTokens*0.5)`——按比例放余量，对小预算等于没放：
+   * 属性名匹配只要 400，加完 1424，思维链轻轻松松就吃光，正文一个字没写
+   * → finish_reason=length + content 为空 → 调用方看到「AI 返回空响应」。
+   * 这就是用户上报的召唤 Persona / AI 匹配技能名失败。
+   *
+   * 余量必须是**定额**而不是比例：想多久跟你要多长的正文基本无关。
+   * 4096 是各家思维链模型的常见量级，宁可多要——没用完不收费。
+   */
+  const thinking = isThinkingModel(cfg.model);
+  const budget = thinking ? maxTokens + Math.max(4096, maxTokens) : maxTokens;
   if (isReasoningModel(cfg.model)) {
-    /**
-     * 输出预算 + 一段推理 token 余量。
-     *
-     * `max_completion_tokens` 是**推理 + 正文的总额**，推理先花、正文后写，
-     * 花超了就直接截断在半句上。原来固定加 1024：小任务够用，但像人格生成那种
-     * 9000 token 的长 JSON，推理段本身就可能吃掉两三千，1024 的余量等于没加，
-     * 正文照样被砍在中途（表现为"时好时坏的生成失败"）。
-     * 改成按预算等比放余量，同时保留 1024 的下限给 maxTokens 极小的调用
-     * （活动分析只要 200，被推理吃光会直接空响应）。
-     */
-    body.max_completion_tokens = maxTokens + Math.max(1024, Math.round(maxTokens * 0.5));
+    body.max_completion_tokens = budget;
     body.reasoning_effort = 'minimal'; // 让 GPT-5 尽量接近"非推理"的快/省行为
     // 不发 temperature：推理模型只接受默认 1，自定义会 400
   } else {
-    body.max_tokens = maxTokens;
+    body.max_tokens = budget;
     body.temperature = opts.temperature ?? DEFAULT_TEMPERATURE;
   }
   return body;
@@ -286,7 +290,39 @@ function rethrowAbortAware(e: unknown, ab: AbortBundle, opts: ChatOptions): neve
  * 非流式 chat completion，返回 trim 后的文本。
  * 空响应 / HTTP 错误 / 超时都会抛出归一后的 Error。
  */
+/** 「正文为空且 finish_reason=length」——思维链把预算吃光的特征错误 */
+const EMPTY_LENGTH = Symbol('aiEmptyLength');
+function markEmptyLength(e: Error): Error {
+  (e as Error & { [EMPTY_LENGTH]?: true })[EMPTY_LENGTH] = true;
+  return e;
+}
+function isEmptyLengthError(e: unknown): boolean {
+  return !!(e as Error & { [EMPTY_LENGTH]?: true })?.[EMPTY_LENGTH];
+}
+
+/**
+ * 非流式 chat completion。
+ *
+ * 外面这层只做一件事：**撞上「思维链吃光预算」就加倍重来一次**。
+ * isThinkingModel 是名字嗅探，必然有漏网的模型；漏了的表现就是
+ * 正文空 + finish_reason=length。与其让用户自己去调 max_tokens，
+ * 不如当场翻倍再试一发——只在这个特征错误上重试，正常失败不多花一次钱。
+ */
 export async function chatComplete(
+  cfg: AIConfig,
+  messages: AIMessage[],
+  opts: ChatOptions = {},
+): Promise<string> {
+  try {
+    return await chatCompleteOnce(cfg, messages, opts);
+  } catch (e) {
+    if (!isEmptyLengthError(e)) throw e;
+    const bumped = Math.max(4000, (opts.maxTokens ?? DEFAULT_MAX_TOKENS) * 3);
+    return await chatCompleteOnce(cfg, messages, { ...opts, maxTokens: bumped });
+  }
+}
+
+async function chatCompleteOnce(
   cfg: AIConfig,
   messages: AIMessage[],
   opts: ChatOptions = {},
@@ -318,12 +354,16 @@ export async function chatComplete(
       return reasoning;
     }
     const fr = typeof choice?.finish_reason === 'string' ? choice.finish_reason : '';
+    if (fr === 'length' || (!fr && typeof reasoning === 'string' && reasoning.trim())) {
+      // 打上标记：外层 chatComplete 会加倍预算再来一发
+      throw markEmptyLength(new Error(
+        '模型把预算全花在思考上了，正文一个字没写（finish_reason=length）——已在自动加大预算重试',
+      ));
+    }
     throw new Error(
-      fr === 'length'
-        ? 'AI 输出被 max_tokens 截断（finish_reason=length），正文没写出来——把预算调大或换一个非推理模型'
-        : fr === 'content_filter'
-          ? 'AI 响应被内容审查拦截（finish_reason=content_filter）'
-          : `AI 返回空响应${fr ? `（finish_reason=${fr}）` : ''}，可能被截断或被审查拦截`,
+      fr === 'content_filter'
+        ? 'AI 响应被内容审查拦截（finish_reason=content_filter）'
+        : `AI 返回空响应${fr ? `（finish_reason=${fr}）` : ''}，可能被截断或被审查拦截`,
     );
   } catch (e) {
     rethrowAbortAware(e, ab, opts);

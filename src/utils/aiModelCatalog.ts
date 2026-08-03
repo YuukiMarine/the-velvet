@@ -9,7 +9,7 @@
  * 另外聚合平台的大列表里大半是 embedding/语音/图像等非对话模型，默认过滤掉。
  */
 import type { Settings } from '@/types';
-import { AI_PROVIDERS, fetchAvailableModels, getProviderConfig, type ApiProvider } from '@/utils/aiProviders';
+import { AI_PROVIDERS, fetchAvailableModels, getProviderConfig, type ApiProvider, DEFAULT_PROVIDER } from '@/utils/aiProviders';
 
 // ── 对话模型过滤 ─────────────────────────────────────────────────────────────
 // 关键词黑名单：命中即视为非对话用途（embedding/重排/语音/图像/视频/审核等）。
@@ -128,7 +128,7 @@ export async function refreshAllProviderModels(
   settings: Settings,
   activeKeyOverride?: string,
 ): Promise<RefreshModelsOutcome | null> {
-  const active = settings.summaryApiProvider ?? 'openai';
+  const active = settings.summaryApiProvider ?? DEFAULT_PROVIDER;
   const targets = AI_PROVIDERS
     .map((p) => ({
       id: p.id,

@@ -13,6 +13,7 @@ import { TAROT_BY_ID } from '@/constants/tarot';
 import { CallingCardCard } from '@/components/callingCard/CallingCardCard';
 import { CallingCardEmptyHint } from '@/components/callingCard/CallingCardEmptyHint';
 import { playSound } from '@/utils/feedback';
+import { fitOneLine } from '@/utils/fitOneLine';
 import { getAttributeLevelTitle } from '@/utils/attributeLevelTitles';
 import type { AttributeId, CallingCard } from '@/types';
 import { useUiChannel } from '@/ui/useUiChannel';
@@ -128,6 +129,7 @@ export const AttributeGrid = ({ attributes, settings, onEditingChange }: {
   }, [attributes]);
 
   useEffect(() => { localStorage.setItem(ATTR_ORDER_KEY, JSON.stringify(order)); }, [order]);
+
   useEffect(() => {
     if (wideId) localStorage.setItem(ATTR_WIDE_KEY, wideId);
     else localStorage.removeItem(ATTR_WIDE_KEY);
@@ -556,6 +558,21 @@ const P4SkyBadge = () => {
 };
 
 export const Dashboard = () => {
+  /**
+   * P4 页头标题：窄屏下缩字号而不是折行。
+   *
+   * 那个 h1 是 46px 衬线 + w-[62%]（右边留给日期牌与天空圆），实测 390px 宽就开始
+   * 断成两行——390 是相当常见的机型宽度，不算"极端"。其余频道的标题走
+   * BrandTitleReveal 里的同一套探针逻辑，黄频道是自己写的 h1，一直漏在外面。
+   * 基准 46px 每次重量，避免在已经缩过的字号上继续缩。
+   */
+  const p4TitleRef = useRef<HTMLHeadingElement | null>(null);
+  useEffect(() => {
+    const fit = () => fitOneLine(p4TitleRef.current, { min: 24, baseFontSize: 46 });
+    fit();
+    window.addEventListener('resize', fit);
+    return () => window.removeEventListener('resize', fit);
+  });
   // 逐字段订阅（v2.6.5 性能整改 A2）：原来是一句无选择器的 useAppStore()，
   // 于是订阅目标是**整个 state 对象**——setState 每次都换新对象，任何一次写入
   // （记账、同步落库、战斗状态…）都会重渲染整张首页。首页是常驻页，代价最大。
@@ -851,7 +868,9 @@ export const Dashboard = () => {
             <P4SkyBadge />
           </div>
           <h1
-            className="relative w-[62%] break-words text-[46px] font-black leading-[1.05] tracking-tight text-[#131313]"
+            ref={p4TitleRef}
+            // 不再 break-words：宁可缩小也不折行（见上面的 fitOneLine effect）
+            className="relative w-[62%] whitespace-nowrap text-[46px] font-black leading-[1.05] tracking-tight text-[#131313]"
             style={{ fontFamily: 'var(--p4-display-font, serif)' }}
           >
             靛蓝色房间
