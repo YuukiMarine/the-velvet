@@ -265,6 +265,35 @@ function getDiversityHint(): string {
 
 // ── Persona generation ──────────────────────────────────────────────────────
 
+/**
+ * 单属性人格的 prompt —— 规模刻意做成和「设置 → Persona 洗牌」一个量级
+ * （~1600 tokens、非流式、只要一个属性），那条路在用户环境里是实测可用的。
+ * 五属性一次成型失败时用它逐个补，见 generatePersonaSkills ②。
+ */
+function buildOneAttrPrompt(attrName: string, attr: AttributeId, context: string, diversityHint: string): string {
+  return `你是Persona系列游戏的人格解析师。根据反抗者（用户）的问答，为"${attrName}"属性匹配一位最贴切的Persona人物。
+
+【反抗者问答记录】
+${context}
+
+【要求】
+1. 必须是真实存在或有据可查的一位人物（历史人物/神话人物/文学角色/宗教传说人物）
+2. 人物选择必须基于上面的问答内容，而不是套用通识性的大众例子
+3. 文化偏好提示：${diversityHint}
+4. 禁止在名字后加"之灵""之影""化身"这类后缀
+
+技能规格：level 1-5，power=10/15/22/30/40，spCost=8/12/18/25/35
+技能类型（7种）：damage/crit/buff/debuff/charge/heal/attack_boost
+
+${formatSingleAttrSpecialization(attr, attrName)}
+
+五技能分布（level顺序）：damage / crit / buff或heal / debuff / attack_boost或charge
+技能名称和描述须体现该人物的标志性事迹或特质
+
+纯JSON输出，不含代码块和注释：
+{"name":"真实人物名","description":"一句话说明该人物与反抗者${attrName}特质的契合点","skills":[{"level":1,"name":"技能名","description":"技能描述","type":"damage","power":10,"spCost":8},{"level":2,"name":"技能名","description":"技能描述","type":"crit","power":15,"spCost":12},{"level":3,"name":"技能名","description":"技能描述","type":"buff","power":22,"spCost":18},{"level":4,"name":"技能名","description":"技能描述","type":"debuff","power":30,"spCost":25},{"level":5,"name":"技能名","description":"技能描述","type":"attack_boost","power":40,"spCost":35}]}`;
+}
+
 export async function generatePersonaSkills(
   settings: Settings,
   fallbackName: string,
@@ -348,60 +377,83 @@ ${formatAllAttrsSpecialization(attributeNames)}
   "charm":{"name":"真实人物名","description":"一句话说明契合${attributeNames['charm']}的原因","skills":[...同上格式共5个]}
 }`;
 
+  const skills = {} as Record<AttributeId, PersonaSkill[]>;
+  const attributePersonas = {} as Record<AttributeId, { name: string; description: string }>;
+  /** 真正拿到了技能数组的属性（不是被 repairSkills 兜出来的） */
+  const okAttrs = new Set<AttributeId>();
+  let lastErr = '';
+
+  const takeAttr = (attr: AttributeId, d: { name?: string; description?: string; skills?: unknown } | undefined) => {
+    if (Array.isArray(d?.skills) && d.skills.length >= 3) okAttrs.add(attr);
+    skills[attr] = repairSkills(d?.skills, attributeNames[attr], fallbackName);
+    attributePersonas[attr] = {
+      name: (typeof d?.name === 'string' && d.name) ? d.name : `${attributeNames[attr]}之灵`,
+      description: (typeof d?.description === 'string' && d.description) ? d.description : `${fallbackName}的${attributeNames[attr]}具现`,
+    };
+  };
+
+  // ── ① 一次成型：5 属性一把出 ───────────────────────────────
   try {
     /**
-     * 预算给到 9000。
+     * 预算 6000（曾经是 9000）。
      *
-     * 这份输出是 5 属性 × 5 技能的中文 JSON：每条技能光 name+description 就 25~35 字，
-     * 25 条约 2600 字，再加 5 段人物描述与整套 JSON 结构，多数分词器上落在
-     * 5000~7000 tokens。原来卡 4000 属于**结构性不够**——模型不是答错，是被砍断，
-     * 于是 validAttrCount<3 判定失败。截断率随模型分词器与用词长短浮动，
-     * 表现就是"时好时坏、失败率很高"。
-     * 温度 0.6 —— 保留一些创意但仍相对稳定。
-     * 若 caller 传入 onStreamChunk 则使用流式输出，便于 UI 实时呈现。
+     * 这份输出实测落在 4000-5500 tokens（25 条技能的中文 name+description 约 2600 字
+     * 加 JSON 结构）。9000 是"宁可多给"，但**很多服务商的单次输出上限就在 4096/8192**，
+     * 超上限时不是报错、而是回一个空 completion —— 于是用户看到「卡很久 + AI 返回空响应」。
+     * 6000 兜得住正常输出，又不容易撞上限；真被砍了还有 repairTruncatedJSON 和下面的分属性重来。
      */
-    const PERSONA_MAX_TOKENS = 9000;
+    const PERSONA_MAX_TOKENS = 6000;
     const result = onStreamChunk
       ? await callAIStreamWithRetry(cfg, [{ role: 'user', content: prompt }], onStreamChunk, 0.6, PERSONA_MAX_TOKENS, true)
       : await callAIWithRetry(cfg, [{ role: 'user', content: prompt }], 0.6, PERSONA_MAX_TOKENS, true);
     const parsed = extractJSON(result) as Record<string, { name?: string; description?: string; skills?: unknown }>;
-
-    const personaName = fallbackName;
-    const skills = {} as Record<AttributeId, PersonaSkill[]>;
-    const attributePersonas = {} as Record<AttributeId, { name: string; description: string }>;
-
-    // 校验：至少 3 个属性成功解析出 skills 数组（防止 AI 只返回部分属性被当作成功）
-    let validAttrCount = 0;
-    ATTRS.forEach(attr => {
-      const attrData = parsed[attr];
-      if (Array.isArray(attrData?.skills) && attrData.skills.length >= 3) validAttrCount++;
-      skills[attr] = repairSkills(attrData?.skills, attributeNames[attr], personaName);
-      attributePersonas[attr] = {
-        name: (typeof attrData?.name === 'string' && attrData.name) ? attrData.name : `${attributeNames[attr]}之灵`,
-        description: (typeof attrData?.description === 'string' && attrData.description) ? attrData.description : `${personaName}的${attributeNames[attr]}具现`,
-      };
-    });
-
-    if (validAttrCount < 3) {
-      return {
-        personaName: fallbackName,
-        skills: generateDefaultSkills(fallbackName, attributeNames),
-        attributePersonas: generateDefaultAttributePersonas(fallbackName, attributeNames),
-        usedFallback: true,
-        errorMessage: `AI 返回内容不完整（仅 ${validAttrCount}/5 个属性有效），可能被 max_tokens 截断`,
-      };
-    }
-
-    return { personaName, skills, attributePersonas, usedFallback: false };
+    ATTRS.forEach(attr => takeAttr(attr, parsed[attr]));
+    if (okAttrs.size === ATTRS.length) return { personaName: fallbackName, skills, attributePersonas, usedFallback: false };
+    lastErr = `整份返回只解析出 ${okAttrs.size}/5 个属性`;
   } catch (e) {
-    return {
-      personaName: fallbackName,
-      skills: generateDefaultSkills(fallbackName, attributeNames),
-      attributePersonas: generateDefaultAttributePersonas(fallbackName, attributeNames),
-      usedFallback: true,
-      errorMessage: e instanceof Error ? e.message : 'AI 调用失败（未知错误）',
-    };
+    lastErr = e instanceof Error ? e.message : 'AI 调用失败（未知错误）';
   }
+
+  // ── ② 分属性重来：五个小请求 ───────────────────────────────
+  /**
+   * 为什么这条兜底是有依据的，而不是"再试一次撞运气"：
+   *
+   * 同一把 Key、同一个模型、同一个 baseUrl 下，用户环境里
+   * **「设置 → Persona 洗牌」是好的** —— 那个请求是 2000 tokens、非流式、只要一个属性。
+   * 而这里一次成型是 6000+ tokens、流式、要五个属性，且是**唯一**失败的 AI 功能
+   * （区层显形 / 塔罗 / 周总结 / 助手全部正常）。
+   * 变量就剩「请求规模」。所以兜底不该是重发同一个大请求，
+   * 而该退化成五个**已被证实能跑通的**小请求。慢，但能出东西。
+   */
+  let feed = '';
+  const push = (t: string) => { feed += t; onStreamChunk?.(t, feed); };
+  push('\n整份生成没成，改为逐个唤起——\n');
+  // 只补①没拿到的那几个，别把已经成功的覆盖掉
+  for (const attr of ATTRS.filter(a => !okAttrs.has(a))) {
+    push(`\n── 唤起「${attributeNames[attr]}」之面 ──\n`);
+    try {
+      const one = await callAIWithRetry(
+        cfg,
+        [{ role: 'user', content: buildOneAttrPrompt(attributeNames[attr], attr, context, getDiversityHint()) }],
+        0.6, 1600, true,
+      );
+      push(one);
+      takeAttr(attr, extractJSON(one) as { name?: string; description?: string; skills?: unknown });
+      if (!okAttrs.has(attr)) lastErr = `「${attributeNames[attr]}」的返回里没有可用的技能数组`;
+    } catch (e) {
+      lastErr = e instanceof Error ? e.message : String(e);
+      push(`（${attributeNames[attr]} 失败：${lastErr}）\n`);
+    }
+  }
+  if (okAttrs.size >= 3) return { personaName: fallbackName, skills, attributePersonas, usedFallback: false };
+
+  return {
+    personaName: fallbackName,
+    skills: generateDefaultSkills(fallbackName, attributeNames),
+    attributePersonas: generateDefaultAttributePersonas(fallbackName, attributeNames),
+    usedFallback: true,
+    errorMessage: `整份与分属性两条路都没成（${okAttrs.size}/5 有效）。最后一次的原因：${lastErr}`,
+  };
 }
 
 // ── Default Persona data ────────────────────────────────────────────────────
