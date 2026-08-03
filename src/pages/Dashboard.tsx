@@ -697,7 +697,12 @@ export const Dashboard = () => {
   const [dealPanelId, setDealPanelId] = useState<string | null>(null);
 
   const todayTodos = [...todos.filter(todo => {
-    if (todo.isBigDeal) return false; // 大事不进今日清单：走独立聚合卡（批2），混入会被当单次任务误勾
+      // BIG DEAL **必须留在这个列表里**。
+      // 排序把它顶到最前、下面的渲染分支再把它换成 BigDealHomeCard——
+      // 这是「大事并入今日任务内部」那次改动定的形（PRD_V2.6 §2.1 / 反馈 §9）。
+      // 之前这里还留着上一版「大事走列表上方独立板块」时代的排除条件，
+      // 于是 BIG DEAL 被这一行整个滤掉：排序是死代码、BigDealHomeCard 分支永远进不去，
+      // 用户那句「反正就是没看到」说的就是它。完成计数另行排除（见 completedCount）。
     const matchesWeekday = !todo.weekdays || todo.weekdays.length === 0 || todo.weekdays.includes(todayWeekday);
     // 未来启用日期的任务今天不显示
     if (todo.startDate && todo.startDate > todayKey) return false;
@@ -721,8 +726,11 @@ export const Dashboard = () => {
     return 0;
   });
 
-  const completedCount = todayTodos.filter(t => getTodayTodoProgress(t.id).isComplete).length;
-  const totalCount = todayTodos.length;
+  // 「N/M」只统计**可勾选**的普通待办。BIG DEAL 不是靠勾一下完成的（它逐子步推进、
+  // 满步才收官），算进分母会让这个比值永远到不了头。
+  const tickableTodos = todayTodos.filter(t => !t.isBigDeal);
+  const completedCount = tickableTodos.filter(t => getTodayTodoProgress(t.id).isComplete).length;
+  const totalCount = tickableTodos.length;
 
   // 统计数据
   const totalPoints = attributes.reduce((sum, attr) => sum + attr.points, 0);

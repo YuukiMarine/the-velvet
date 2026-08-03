@@ -551,7 +551,12 @@ export const DashboardP5 = () => {
   const todayWeekday = now.getDay();
   const todayKey = toLocalDateKey(now);
   const todayTodos = [...todos.filter((todo) => {
-    if (todo.isBigDeal) return false; // 大事不进今日清单：走独立聚合卡（批2）
+      // BIG DEAL **必须留在这个列表里**。
+      // 排序把它顶到最前、下面的渲染分支再把它换成 BigDealHomeCard——
+      // 这是「大事并入今日任务内部」那次改动定的形（PRD_V2.6 §2.1 / 反馈 §9）。
+      // 之前这里还留着上一版「大事走列表上方独立板块」时代的排除条件，
+      // 于是 BIG DEAL 被这一行整个滤掉：排序是死代码、BigDealHomeCard 分支永远进不去，
+      // 用户那句「反正就是没看到」说的就是它。完成计数另行排除（见 completedCount）。
     const matchesWeekday = !todo.weekdays || todo.weekdays.length === 0 || todo.weekdays.includes(todayWeekday);
     if (todo.startDate && todo.startDate > todayKey) return false;
     if (todo.isActive && matchesWeekday) return true;
@@ -573,8 +578,10 @@ export const DashboardP5 = () => {
     if (!a.important && b.important) return 1;
     return 0;
   });
-  const completedCount = todayTodos.filter((t) => getTodayTodoProgress(t.id).isComplete).length;
-  const totalCount = todayTodos.length;
+  // 「N/M」只统计**可勾选**的普通待办（理由见 Dashboard.tsx 同名处）
+  const tickableTodos = todayTodos.filter((t) => !t.isBigDeal);
+  const completedCount = tickableTodos.filter((t) => getTodayTodoProgress(t.id).isComplete).length;
+  const totalCount = tickableTodos.length;
 
   // ── 宣言卡（钉选三态）─────────────────────────────────────────────────────
   const realCallingCards = callingCards.filter((c) => !c.terminal);

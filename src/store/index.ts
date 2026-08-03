@@ -1652,7 +1652,15 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     const today = toLocalDateKey();
     const todayDate = new Date(today + 'T00:00:00');
-    const startDate = new Date(card.startDate + 'T00:00:00');
+    /**
+     * startDate 类型上是必填，但这条数据来自 IndexedDB —— 运行时没有类型保护。
+     * 早于该字段引入的旧卡片会是 undefined，于是 `new Date('undefinedT00:00:00')`
+     * 得到 Invalid Date，getTime() 是 NaN，一路传到 overallProgress，
+     * 卡面上就显示成 **NaN%**（实测截到过）。缺就退回 createdAt，再退回今天。
+     */
+    const startKey = card.startDate
+      || (card.createdAt ? toLocalDateKey(new Date(card.createdAt)) : today);
+    const startDate = new Date(startKey + 'T00:00:00');
 
     let dateProgress: number | undefined;
     let daysElapsed: number | undefined;
