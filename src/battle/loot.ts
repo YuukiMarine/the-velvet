@@ -13,6 +13,7 @@ import type {
 import {
   CHAIN_DROP_RATE, CHEST_MYTH_RATE, DUP_CHAIN_SP, ELITE_LOOT_RATE, OATH_DROP_RATE,
   OATH_CHARGE_MULT, OATH_HEAL_PCT, OATH_POISON_STACKS, OATH_SHIELD_PCT, OATH_SP_GAIN,
+  HEROPROOF_SP_CUT, HEROPROOF_ATK_PCT,
 } from './numbers';
 
 export const QUALITY_LABEL: Record<LootQuality, string> = { waning: '残月', half: '弦月', full: '满月' };
@@ -26,6 +27,8 @@ export interface RelicDef {
   range: [number, number];
   /** pct=百分比（存小数） flat=整数 */
   unit: 'pct' | 'flat';
+  /** 唯一遗物：只由特定事件发放，不进 rollRelic 的随机池 */
+  unique?: boolean;
 }
 export const RELIC_POOL: Record<RelicKind, RelicDef> = {
   monocle:      { name: '猎手的单片镜', entry: '弱点伤害 +{v}',        range: [0.08, 0.15], unit: 'pct' },
@@ -40,7 +43,11 @@ export const RELIC_POOL: Record<RelicKind, RelicDef> = {
   compass:      { name: '登塔者罗盘',   entry: '塔内节点 SP 收益 +{v}', range: [0.1, 0.2],  unit: 'pct' },
   maskstrap:    { name: '面具挂绳',     entry: '换面具后首次攻击 +{v}', range: [0.08, 0.15], unit: 'pct' },
   handwarmer:   { name: '影之怀炉',     entry: '回响节点回复 +{v}',    range: [0.05, 0.1],  unit: 'pct' },
+  // Lv6 伪神唯一掉落：value 存 SP 减免量（固定 5），攻击 +20% 是词条自带的定值
+  heroproof:    { name: '英雄的证明',   entry: `SP 消耗 −{v} · 攻击 +${Math.round(HEROPROOF_ATK_PCT * 100)}%`, range: [HEROPROOF_SP_CUT, HEROPROOF_SP_CUT], unit: 'flat', unique: true },
 };
+/** 随机掷取可用的遗物档位（排除唯一遗物） */
+export const ROLLABLE_RELIC_KINDS = (Object.keys(RELIC_POOL) as RelicKind[]).filter(k => !RELIC_POOL[k].unique);
 
 // ── 迷思池（§10.3）──────────────────────────────────────────
 export interface MythDef {
@@ -178,7 +185,7 @@ export interface LootContext {
 }
 
 export function rollRelic(ctx: LootContext, forceQuality?: LootQuality): RelicInstance {
-  const kinds = Object.keys(RELIC_POOL) as RelicKind[];
+  const kinds = ROLLABLE_RELIC_KINDS;
   const kind = kinds[Math.floor(ctx.rng() * kinds.length)];
   const quality = forceQuality ?? rollQuality(qualityScore(ctx.stratumLevel, ctx.floorRatio), ctx.rng);
   const def = RELIC_POOL[kind];
@@ -269,6 +276,7 @@ export function aggregateRelicMods(relics: RelicInstance[]): import('./numbers')
   const mods = {
     weaknessAdd: 0, addAll: 0, chargeAdd: 0, oneMoreAdd: 0, maskSwitchAdd: 0,
     critAdd: 0, spPerTurn: 0, blockHeal: 0, poisonAmp: 0, lowHpGuard: 0,
+    spCostCut: 0, atkPct: 0,
   };
   for (const r of relics) {
     if (!r.equipped) continue;
@@ -283,6 +291,8 @@ export function aggregateRelicMods(relics: RelicInstance[]): import('./numbers')
       case 'bulwark':      mods.blockHeal += r.value; break;
       case 'venomfang':    mods.poisonAmp += r.value; break;
       case 'bandage':      mods.lowHpGuard += r.value; break;
+      // 英雄的证明：SP 减免走 value（掉落时固定 5），攻击加成走定值
+      case 'heroproof':    mods.spCostCut += r.value || HEROPROOF_SP_CUT; mods.atkPct += HEROPROOF_ATK_PCT; break;
       case 'compass': case 'handwarmer': break;
     }
   }

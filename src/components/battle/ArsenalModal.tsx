@@ -452,17 +452,25 @@ export function ShadowArchiveModal({ open, onClose }: { open: boolean; onClose: 
         {records.length === 0 && (
           <p className="text-center text-sm text-gray-500 py-12">档案馆空无一物——第一座雕像等待着你的凯旋</p>
         )}
-        {records.map((rec, i) => (
-          <div key={i} style={{ clipPath: slantPoly(12), background: 'rgba(147,51,234,0.35)', padding: 1 }}>
-            <div style={{ clipPath: slantPoly(12), background: 'rgba(16,10,40,0.97)' }} className="px-4 py-3">
+        {records.map((rec, i) => {
+          // Lv6 = 伪神：档案里单独一档「终局」，镀金而不是紫——它不与常规心魔混在一起
+          const isFinal = rec.level >= 6 || rec.stratumLevel === 6;
+          return (
+          <div key={i} style={{ clipPath: slantPoly(12), background: isFinal ? 'rgba(232,182,76,0.5)' : 'rgba(147,51,234,0.35)', padding: 1 }}>
+            <div style={{ clipPath: slantPoly(12), background: isFinal ? 'rgba(26,18,4,0.97)' : 'rgba(16,10,40,0.97)' }} className="px-4 py-3">
+              {isFinal && (
+                <p className="text-[9px] font-black tracking-[0.4em] uppercase mb-1" style={{ color: '#e8b64c' }}>finale</p>
+              )}
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="text-[15px] font-black text-white truncate">{rec.shadowName}</p>
                   {rec.description && <p className="text-[11px] text-indigo-200/60 mt-0.5 line-clamp-2">{rec.description}</p>}
                 </div>
                 <span className="flex-shrink-0 text-[11px] font-black px-1.5 py-0.5"
-                      style={{ clipPath: slantPoly(4), background: 'rgba(239,68,68,0.2)', color: '#fca5a5' }}>
-                  Lv.{rec.level}
+                      style={isFinal
+                        ? { clipPath: slantPoly(4), background: 'rgba(232,182,76,0.22)', color: '#e8b64c' }
+                        : { clipPath: slantPoly(4), background: 'rgba(239,68,68,0.2)', color: '#fca5a5' }}>
+                  {isFinal ? '终局' : `Lv.${rec.level}`}
                 </span>
               </div>
               {(rec.affixes?.length ?? 0) > 0 && (
@@ -479,13 +487,14 @@ export function ShadowArchiveModal({ open, onClose }: { open: boolean; onClose: 
               <div className="flex items-center justify-between mt-2 text-[10px] text-gray-500 font-bold tabular-nums">
                 <span>识破 {rec.breachDate} → 击败 {rec.defeatDate} · 历时 {rec.daysElapsed} 天</span>
                 <span>
-                  {rec.stratumLevel ? `第${rec.stratumLevel}区层 · ` : ''}
+                  {rec.stratumLevel ? `${rec.stratumLevel === 6 ? '顶阙' : `第${rec.stratumLevel}区层`} · ` : ''}
                   {rec.playerTotalLevel ? `讨伐时的你 Lv${rec.playerTotalLevel}` : ''}
                 </span>
               </div>
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
     </motion.div>
   );

@@ -94,10 +94,12 @@ export const QTE_FALLBACK_MULT = 1.5;          // D0 / reduce-motion 直接结�
 // ── Shadow 侧（§9.2）───────────────────────────────────────
 /** 主影攻击力（按区层/Shadow 等级 1-5）。settings.battleAttackScale（%）作用其上
  *  跑测微调：[7,9,11,13,15] → [5,6,7,8,9]——原表下聪明策略胜率仅 1/10，玩家 HP 池只够挨 4-6 击 */
-export const BOSS_ATTACK_BY_LEVEL = [5, 6, 7, 8, 9];
+export const BOSS_ATTACK_BY_LEVEL = [5, 6, 7, 8, 9, 11];
 /** Shadow 暴击率（按等级）。跑测微调：[0,.1,.15,.2,.3] → 减半，暴击×2 在小血池下过于摇摆 */
-export const SHADOW_CRIT_BY_LEVEL = [0, 0.05, 0.08, 0.1, 0.12];
+export const SHADOW_CRIT_BY_LEVEL = [0, 0.05, 0.08, 0.1, 0.12, 0.14];
 export const PHASE2_ATTACK_MULT = 1.2;
+/** Lv6 伪神第三形态：比二形态再上一档（只有最终 BOSS 有第三条血） */
+export const PHASE3_ATTACK_MULT = 1.35;
 export const PHASE2_RESIST_MULT = 0.7;         // 二形态对一形态受击最多的属性产生耐性
 export const BERSERK_ATK_MULT = 1.5;
 export const BERSERK_SELF_DAMAGE = 1;
@@ -202,11 +204,17 @@ export interface RelicMods {
   blockHeal: number;     // 铁壁徽记：防御回合结束回 HP
   poisonAmp: number;     // 蚀骨之牙：玩家施毒强度 ×(1+x)
   lowHpGuard: number;    // 绷带：HP<30% 受伤 ×(1−x)
+  spCostCut: number;     // 英雄的证明：技能/总攻击 SP 消耗 −n（下限 1）
+  atkPct: number;        // 英雄的证明：攻击 +20%（技能进加算段；普攻/总攻击直乘）
 }
 export const ZERO_RELIC_MODS: RelicMods = {
   weaknessAdd: 0, addAll: 0, chargeAdd: 0, oneMoreAdd: 0, maskSwitchAdd: 0,
   critAdd: 0, spPerTurn: 0, blockHeal: 0, poisonAmp: 0, lowHpGuard: 0,
+  spCostCut: 0, atkPct: 0,
 };
+/** 英雄的证明（Lv6 唯一掉落）：SP 消耗 −5、攻击 +20% */
+export const HEROPROOF_SP_CUT = 5;
+export const HEROPROOF_ATK_PCT = 0.2;
 export const BANDAGE_HP_THRESHOLD = 0.3;       // 绷带触发线
 
 // ── 批3 · 共鸣链（§4.5/§10.5，仅战斗内生效）────────────────

@@ -657,6 +657,166 @@ ${STRATUM_JSON_FORMAT}`;
   return { stratumName, stratumDescription, name, description, invertedAttributes, responseLines, weakAttribute };
 }
 
+// ── Lv6 · 最终 BOSS「伪神」（PRD_FINAL_BOSS §3）─────────────────────────────
+// 只喂结构化事实、不喂记录原文（隐私口径与 generateDefeatLetter 一致）。
+// 语气红线：伪神是「指认」不是「羞辱」——每句都必须是数据支持的事实推论。
+
+export interface FinalBossFacts {
+  /** 五维等级 */
+  attrLevels: Record<AttributeId, number>;
+  /** 五维累计点数 */
+  attrPoints: Record<AttributeId, number>;
+  /** 最强属性（= 伪神弱点，叙事：它站在你最得意的地方） */
+  strongest: AttributeId;
+  /** 最短板属性 */
+  weakest: AttributeId;
+  /** 逆流衰减触发次数 */
+  countercurrentCount: number;
+  /** 记录总条数 / 首条记录距今天数 */
+  totalRecords: number;
+  daysSinceFirstRecord: number;
+  /** 当前连续记录天数 / 历史最长断链天数 */
+  currentStreak: number;
+  longestGapDays: number;
+  /** 待办：已完成 / 未完成 */
+  todosDone: number;
+  todosOpen: number;
+  /** 宣告卡：达成 / 时之至（过期） */
+  cardsAchieved: number;
+  cardsExpired: number;
+  /** 愿望：在途数 / 平均停留天数 */
+  wishesOpen: number;
+  wishAvgDays: number;
+  /** 已击败心魔数 */
+  shadowsDefeated: number;
+}
+
+/** 缺点档位（给 AI 的候选表；它必须从中选一个 key，避免 slug 发散到无法归档） */
+export const FINAL_FLAW_KEYS: Array<{ key: string; hint: string }> = [
+  { key: 'inconsistency', hint: '三分钟热度——开得多，续不上' },
+  { key: 'avoidance', hint: '回避——把最重要的那件事一直往后放' },
+  { key: 'perfectionism', hint: '完美主义——不够好就不肯开始/不肯交付' },
+  { key: 'overreach', hint: '贪多——同时铺开太多，哪个都没到底' },
+  { key: 'lopsided', hint: '偏科——只在舒服的方向上用力' },
+  { key: 'selfneglect', hint: '苛待自己——只记账不记人，把自己当工具' },
+  { key: 'drifting', hint: '随波——被日程推着走，没有自己选过' },
+];
+
+const FINAL_BOSS_JSON = `
+纯JSON输出，不要包裹在代码块中，不含任何注释：
+{"stratumName":"顶阙的名字（4-6字，不带"之域"）","stratumDescription":"1-2句这一层的景观","name":"伪神 · xx","flawKey":"从候选表里选一个key","flawTitle":"缺点的名字（4-8字）","verdict":"一句指认，40字以内，第二人称","description":"2句形象描述","responseLines":["台词1","…","台词18"]}`;
+
+export async function generateFinalBoss(
+  settings: Settings,
+  attributeNames: Record<AttributeId, string>,
+  f: FinalBossFacts,
+): Promise<{
+  stratumName: string;
+  stratumDescription: string;
+  name: string;
+  flawKey: string;
+  flawTitle: string;
+  verdict: string;
+  description: string;
+  invertedAttributes: Record<AttributeId, string>;
+  responseLines: string[];
+  weakAttribute: AttributeId;
+}> {
+  const cfg = getAIConfig(settings);
+  if (!cfg) throw new Error('未配置 AI API Key，请前往「设置 → AI摘要」填写 API Key 后重试');
+
+  const facts = [
+    `五维等级：${ATTRS.map(a => `${attributeNames[a]}Lv${f.attrLevels[a]}(${f.attrPoints[a]}点)`).join('，')}`,
+    `最强：${attributeNames[f.strongest]}；最短板：${attributeNames[f.weakest]}`,
+    `记录：共${f.totalRecords}条，第一条在${f.daysSinceFirstRecord}天前；当前连续${f.currentStreak}天，历史最长断链${f.longestGapDays}天`,
+    `逆流衰减触发${f.countercurrentCount}次`,
+    `待办：完成${f.todosDone}，未完成${f.todosOpen}`,
+    `宣告卡：达成${f.cardsAchieved}，过期${f.cardsExpired}`,
+    `愿望：在途${f.wishesOpen}个，平均停留${f.wishAvgDays}天`,
+    `已击败心魔${f.shadowsDefeated}只`,
+  ].join('\n');
+
+  const prompt = `你是Persona系游戏的最终BOSS生成器。玩家已经攻克了影时间高塔的全部五个区层，塔顶之上显形了最后一层——那里站着"伪神"：一个由玩家自己的记录喂养出来的、冒充神明的东西。它读得懂玩家的全部数据，并以玩家最主要的那一个缺点为形。
+
+【玩家的事实档案】
+${facts}
+
+【候选缺点档位】（flawKey 必须严格取其中一个 key）
+${FINAL_FLAW_KEYS.map(k => `- ${k.key}：${k.hint}`).join('\n')}
+
+【任务】
+1. 从上面的事实里推断出玩家最主要的一个缺点，选一个 flawKey，并给它一个 flawTitle（玩家能一眼认出自己的说法）。
+2. verdict 是伪神对玩家的一句指认，40字以内，第二人称。必须能从事实里推出来（可以引用具体数字），冷静、精准、不留情面。
+3. responseLines 需要18条，用于终局演出中它连挨18次记录攻击时的反应：前6条是傲慢与不屑，中6条是开始动摇、试图否认与讨价还价，后6条是气急败坏与崩解。每条不超过25字。
+
+【语气红线 —— 必须遵守】
+- 伪神是"指认"，不是"羞辱"。它说的每句话都要有事实依据，不许人身攻击、不许下"你这个人不行"这类总体否定。
+- 不许绝望化、不许提及自伤或死亡，不许劝退。
+- 它是要被打败的：全程不能出现玩家无法反驳的终局审判语气，最后几条要透出它自己的心虚。
+- 禁止出现任何现实游戏的专有名词。
+${FINAL_BOSS_JSON}`;
+
+  const result = await callAIWithRetry(cfg, [{ role: 'user', content: prompt }], 0.75, 2600);
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = extractJSON(result);
+  } catch {
+    throw new Error('AI 返回的 JSON 格式无效，请重试');
+  }
+  const str = (v: unknown, fallback: string, max = 200) =>
+    typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : fallback;
+
+  const flawKey = FINAL_FLAW_KEYS.some(k => k.key === parsed.flawKey)
+    ? String(parsed.flawKey)
+    : 'inconsistency';
+  let responseLines: string[] = Array.isArray(parsed.responseLines)
+    ? parsed.responseLines.filter((l): l is string => typeof l === 'string' && !!l.trim()).map(l => l.trim())
+    : [];
+  // 终局演出要的是恰好 18 条：不足补池、超出截断
+  while (responseLines.length < 18) {
+    responseLines.push(FINAL_TAUNT_FALLBACK[responseLines.length % FINAL_TAUNT_FALLBACK.length]);
+  }
+  responseLines = responseLines.slice(0, 18);
+
+  return {
+    stratumName: str(parsed.stratumName, '顶阙', 12),
+    stratumDescription: str(parsed.stratumDescription, '再往上没有台阶了。这里只有一张替你写好的结论，和坐在结论上的那个东西。'),
+    name: str(parsed.name, '伪神 · 无名', 20),
+    flawKey,
+    flawTitle: str(parsed.flawTitle, FINAL_FLAW_KEYS.find(k => k.key === flawKey)?.hint.split('——')[0] ?? '未竟', 16),
+    verdict: str(parsed.verdict, '你开始过很多次。你只是很少走到第二次。', 60),
+    description: str(parsed.description, '它戴着神的形状，用的却全是你的材料——你写下的每一条、你没写完的每一条。'),
+    invertedAttributes: (parsed.invertedAttributes && typeof parsed.invertedAttributes === 'object')
+      ? parsed.invertedAttributes as Record<AttributeId, string>
+      : Object.fromEntries(ATTRS.map(a => [a, `冒充成神的${attributeNames[a]}`])) as Record<AttributeId, string>,
+    responseLines,
+    // 弱点 = 玩家最强属性：它站在你最得意的地方，你也只能从那里把它拆下来
+    weakAttribute: f.strongest,
+  };
+}
+
+/** 18 条挑衅的兜底池（AI 少给时补齐；顺序即傲慢→动摇→崩解） */
+export const FINAL_TAUNT_FALLBACK = [
+  '就这些？你翻出来的都是些什么。',
+  '一条记录而已。它救不了你。',
+  '我读过它。写的时候你就已经想放弃了。',
+  '继续啊。反正后面也没有了。',
+  '你在拿过去当武器？过去是我的。',
+  '这些字是你写的，可你早就不认得了。',
+  '……等等。这一条我没有算进去。',
+  '不对。你那天明明已经停了。',
+  '那不算数。那天只是运气。',
+  '你根本不记得这件事——别装。',
+  '住手。你在翻什么？',
+  '这些……你是什么时候写的？',
+  '不可能。这些日子应该是空的！',
+  '别再拿出来了！',
+  '我是从你这里长出来的——你打我，就是打你自己！',
+  '你不是一直觉得自己没做到吗？！',
+  '……那你为什么还留着这些。',
+  '不、不要……我还没有……',
+];
+
 export function getDefaultShadow(
   attrNames: Record<AttributeId, string>,
   level: number

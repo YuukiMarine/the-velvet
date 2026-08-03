@@ -15,6 +15,9 @@ import { BackButton } from '@/components/BackButton';
 import { PageTitle } from '@/components/PageTitle';
 import { PersonaCreateModal } from '@/components/battle/PersonaCreateModal';
 import { StratumRevealModal } from '@/components/battle/StratumRevealModal';
+import { FinalBossRevealModal } from '@/components/battle/FinalBossRevealModal';
+import { FinalBossFinale } from '@/components/battle/FinalBossFinale';
+import { getAIConfig } from '@/utils/aiClient';
 import { BattleModal } from '@/components/battle/BattleModal';
 import { VictoryModal } from '@/components/battle/VictoryModal';
 import { PersonaShuffleModal } from '@/components/battle/PersonaShuffleModal';
@@ -71,6 +74,7 @@ export const BattleArena = () => {
   const battleCard = p3 ? 'p3r-card' : 'rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm';
   const [showPersonaCreate, setShowPersonaCreate] = useState(false);
   const [showReveal, setShowReveal] = useState(false);
+  const [showFinalReveal, setShowFinalReveal] = useState(false);
   const [showBattle, setShowBattle] = useState(false);
   const [showVictory, setShowVictory] = useState(false);
   const [personaCardIdx, setPersonaCardIdx] = useState(0);
@@ -137,18 +141,34 @@ export const BattleArena = () => {
   // 胜利结算恢复：status 'victory' 持久化后（刷新 / PWA 被杀）重新拉起 VictoryModal，
   // 避免奖励悬空、Shadow 尸体被每日回血复活后还得重打一遍
   useEffect(() => {
+    // Lv6 终局：三条血归零后 status 也是 'victory'，但结算归 FinalBossFinale 管，不弹胜利屏
+    if (battleState?.finalBossStage === 'finale') return;
     if (battleState?.status === 'victory' && !showBattle && !showVictory) {
       setShowVictory(true);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [battleState?.status]);
+  }, [battleState?.status, battleState?.finalBossStage]);
 
   const todayKey = toLocalDateKey();
   const enteredToday = battleState?.lastChallengeDate === todayKey;
   const sessionActive = !!enteredToday && battleState?.status !== 'session_end' && battleState?.status !== 'victory';
   const stratumCleared = stratum?.status === 'cleared';
+  // 主塔区层仍钳在 5：Lv6 顶阙不走「显形第 N 区层」这条路，它有自己的仪式
   const nextStratumLevel = stratum ? Math.min(5, stratum.level + 1) : 1;
-  const towerTopReached = !!stratumCleared && (stratum?.level ?? 0) >= 5;
+  // ── Lv6 伪神闸门（PRD_FINAL_BOSS §2.2）──
+  const finalStage = battleState?.finalBossStage;
+  const finalDefeated = finalStage === 'defeated';
+  const inFinale = finalStage === 'finale';
+  /**
+   * Lv5 通关 且 伪神还没显形 → 该它出场了。
+   * 存量存档里已经在深渊回廊的人也算：用户口径是「打败它以后才会开启后续的无尽关卡」，
+   * 先跑进回廊的属于抢跑，塔顶会把他叫回去一次。环数不会丢——enterAbyss 从
+   * abyssHighestRing 续号。
+   */
+  const finalBossDue = !!stratumCleared && (stratum?.level ?? 0) >= 5 && !finalStage;
+  const hasAiKey = !!getAIConfig(settings);
+  // 深渊回廊：伪神倒下之后才开
+  const towerTopReached = !!stratumCleared && (stratum?.level ?? 0) >= 5 && finalDefeated;
 
   const showSpToast = (text: string) => {
     setSpToast(text);
@@ -158,6 +178,7 @@ export const BattleArena = () => {
   const handleBattleClosed = () => {
     setShowBattle(false);
     setActiveEncounter(null);
+    if (useAppStore.getState().battleState?.finalBossStage === 'finale') return; // 交给终局演出
     if (battleState?.status === 'victory') {
       setShowVictory(true);
     }
@@ -165,6 +186,7 @@ export const BattleArena = () => {
 
   const handleVictory = async () => {
     setShowBattle(false);
+    if (useAppStore.getState().battleState?.finalBossStage === 'finale') return; // 伪神不走常规心魔结算
     // 主影节点结算：SP 即发 + 标记通关节点 + 批3 心魔战利品（必得遗物 / 35% 共鸣链 / 25% 誓约石）
     const bossNode = stratum?.nodes.find(n => n.type === 'boss');
     if (bossNode && !bossNode.cleared) {
@@ -268,6 +290,11 @@ export const BattleArena = () => {
   useEffect(() => {
     if (towerOpen && !sessionActive) setTowerOpen(false);
   }, [towerOpen, sessionActive]);
+
+  // Lv6 终局演出的开关要「闩住」：defeatFinalBoss 会把 finalBossStage 推到 'defeated'，
+  // 若直接拿 inFinale 当 isOpen，掉落屏会在结算落库的同一帧被卸掉——玩家根本看不见奖励。
+  const [finaleOpen, setFinaleOpen] = useState(false);
+  useEffect(() => { if (inFinale) setFinaleOpen(true); }, [inFinale]);
 
   // 批4 §6.6 黑猫败因信：败退当晚后台写信（AI/模板兜底）→ 下次打开黑猫时投递
   useEffect(() => {
@@ -801,16 +828,57 @@ export const BattleArena = () => {
                         </AnimatePresence>
 
                         {stratumCleared ? (
-                          towerTopReached ? (
+                          finalBossDue ? (
+                            hasAiKey ? (
+                              /* Lv6 · 伪神显形入口（击败之前深渊入口不出现） */
+                              <div className={`${battleCard} p-6 text-center space-y-3`}>
+                                <p className="text-3xl">✦</p>
+                                <p className="font-black text-gray-900 dark:text-white">塔顶之上还有一层</p>
+                                <p className="text-xs text-gray-400 dark:text-gray-500 leading-relaxed">
+                                  五个区层都空了，可上面的黑暗没有散。<br />
+                                  有个东西一直在那儿——它在等你把塔走完，好把结论念给你听。
+                                </p>
+                                <motion.button
+                                  whileTap={{ scale: 0.96 }}
+                                  onClick={() => { playSound('/battle-impact.mp3', 0.7); setShowFinalReveal(true); }}
+                                  className="w-full py-3 font-black"
+                                  style={{
+                                    clipPath: 'polygon(6% 0, 100% 0, 94% 100%, 0 100%)',
+                                    background: 'linear-gradient(135deg, #92610e, #e8b64c)',
+                                    color: '#160d02',
+                                  }}
+                                >
+                                  ✦ 登上顶阙
+                                </motion.button>
+                              </div>
+                            ) : (
+                              /* 无 AI Key：不开放（用户拍板不做本地兜底——它必须读得懂你） */
+                              <div className={`${battleCard} p-6 text-center space-y-3`}>
+                                <p className="text-3xl opacity-50">🔒</p>
+                                <p className="font-black text-gray-900 dark:text-white">终局将至</p>
+                                <p className="text-xs text-gray-400 dark:text-gray-500 leading-relaxed">
+                                  高塔之上还有一层，但它需要读得懂你。<br />
+                                  去「设置 → AI」配一个 Key，它才会显形。
+                                </p>
+                                <button
+                                  onClick={() => setCurrentPage('settings')}
+                                  className="px-6 py-2.5 rounded-xl text-sm font-bold text-white"
+                                  style={{ background: 'linear-gradient(135deg, #6b7280, #374151)' }}
+                                >
+                                  前往设置
+                                </button>
+                              </div>
+                            )
+                          ) : towerTopReached ? (
                             <div className={`${battleCard} p-6 text-center space-y-3`}>
                               <p className="text-3xl">🌌</p>
                               <p className="font-black text-gray-900 dark:text-white">
-                                {stratum?.abyssRing ? `回廊·第${stratum.abyssRing}环已破` : '第 5 区层已被攻略'}
+                                {stratum?.abyssRing ? `回廊·第${stratum.abyssRing}环已破` : '伪神已被终结'}
                               </p>
                               <p className="text-xs text-gray-400 dark:text-gray-500 leading-relaxed">
                                 {stratum?.abyssRing
                                   ? <>回廊仍在向下盘旋——守卫的词缀会一环比一环更多。<br />最深纪录：第 {Math.max(battleState?.abyssHighestRing ?? 0, stratum.abyssRing)} 环</>
-                                  : <>塔顶之上没有天空——只有向下盘旋的「深渊回廊」。<br />无尽的环域，守卫随深度越发凶恶。</>}
+                                  : <>它替你写的那句结论，已经被你划掉了。<br />塔顶之上没有天空——只有向下盘旋的「深渊回廊」。</>}
                               </p>
                               <motion.button
                                 whileTap={{ scale: 0.96 }}
@@ -1209,6 +1277,17 @@ export const BattleArena = () => {
     {/* Sub-modals */}
     <PersonaCreateModal isOpen={showPersonaCreate} onClose={() => setShowPersonaCreate(false)} />
     <StratumRevealModal isOpen={showReveal} onClose={() => setShowReveal(false)} level={nextStratumLevel} />
+    <FinalBossRevealModal isOpen={showFinalReveal} onClose={() => setShowFinalReveal(false)} />
+    {/* Lv6 终局演出：三条血归零后接管；杀进程重入靠 finalBossStage='finale' 恢复 */}
+    <FinalBossFinale
+      isOpen={finaleOpen}
+      onDone={() => {
+        setFinaleOpen(false);
+        setShowBattle(false);
+        setTowerOpen(false);
+        setRecap('clear');
+      }}
+    />
     <BattleModal
       isOpen={showBattle}
       onClose={handleBattleClosed}
