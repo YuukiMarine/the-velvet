@@ -4,8 +4,46 @@ import path from 'path'
 import { VitePWA } from 'vite-plugin-pwa'
 import pkg from './package.json'
 
+/**
+ * 生产构建时校验云同步后端地址是否配上了。
+ *
+ * `VITE_PB_URL` 来自 `.env.local`，而 `.env.local` 是 gitignore 的、只存在于**主仓根目录**。
+ * 在 git worktree 里构建时 Vite 从 worktree 根找 `.env.local`，找不到 → PB_URL 为空
+ * → `cloudEnabled=false` → App 里显示「云同步功能未配置」。
+ * v2.6.0～v2.6.4 五个安装包就是这么出去的：构建全在 worktree 里做，没人发现，
+ * 因为纯本地模式一切正常，只有点进云同步才看得出来。
+ *
+ * 这里不 fail 构建 —— 无云端的纯本地版是受支持的形态。但必须**吼一声**，
+ * 而不是让它静默产出一个功能残缺的包。
+ */
+function assertCloudEnv() {
+  return {
+    name: 'velvet-assert-cloud-env',
+    apply: 'build' as const,
+    configResolved(cfg: { env: Record<string, string> }) {
+      const url = (cfg.env.VITE_PB_URL ?? '').trim();
+      if (url) {
+        console.log(`\n  ✓ 云同步后端：${url}\n`);
+        return;
+      }
+      console.warn(
+        '\n' +
+        '  ╔════════════════════════════════════════════════════════════════╗\n' +
+        '  ║  ⚠  VITE_PB_URL 为空 —— 这个包的云同步会显示「功能未配置」        ║\n' +
+        '  ║                                                                ║\n' +
+        '  ║  .env.local 只在主仓根目录，git worktree 里要自己复制一份：       ║\n' +
+        '  ║      cp <主仓>/.env.local .env.local                            ║\n' +
+        '  ║                                                                ║\n' +
+        '  ║  如果本来就要出纯本地版，忽略这条。                               ║\n' +
+        '  ╚════════════════════════════════════════════════════════════════╝\n',
+      );
+    },
+  };
+}
+
 export default defineConfig({
   plugins: [
+    assertCloudEnv(),
     react(),
     VitePWA({
       // ⚠️ 这里用 'prompt' 而不是 'autoUpdate'。原因：
