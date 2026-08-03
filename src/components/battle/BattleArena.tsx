@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore } from '@/store';
 import { toLocalDateKey } from '@/store';
-import { isInShadowTime } from '@/constants';
+import { isInShadowTime, SHADOW_LEVEL_CONFIG } from '@/constants';
 import { BOSS_ATTACK_BY_LEVEL } from '@/battle/numbers';
 import { AttributeId, MobSpec, StratumNode } from '@/types';
 import { absoluteFloor } from '@/battle/tower';
@@ -75,6 +76,7 @@ export const BattleArena = () => {
   const [showPersonaCreate, setShowPersonaCreate] = useState(false);
   const [showReveal, setShowReveal] = useState(false);
   const [showFinalReveal, setShowFinalReveal] = useState(false);
+  const [revisitPick, setRevisitPick] = useState(false);
   const [showBattle, setShowBattle] = useState(false);
   const [showVictory, setShowVictory] = useState(false);
   const [personaCardIdx, setPersonaCardIdx] = useState(0);
@@ -165,10 +167,15 @@ export const BattleArena = () => {
    * 先跑进回廊的属于抢跑，塔顶会把他叫回去一次。环数不会丢——enterAbyss 从
    * abyssHighestRing 续号。
    */
-  const finalBossDue = !!stratumCleared && (stratum?.level ?? 0) >= 5 && !finalStage;
+  const finalBossDue = !!stratumCleared && (stratum?.level ?? 0) >= 5 && !finalStage && !stratum?.revisit;
+  // ── R19「回头看看」──
+  const inRevisit = !!stratum?.revisit;
+  const maxCleared = useAppStore(s => s.highestClearedStratum)();
+  /** 塔里没有正在进行的攀登（当前层已通关 / 还没显形）时才给「回头看看」 */
+  const canRevisit = maxCleared >= 1 && !inRevisit && (stratumCleared || !stratum);
   const hasAiKey = !!getAIConfig(settings);
   // 深渊回廊：伪神倒下之后才开
-  const towerTopReached = !!stratumCleared && (stratum?.level ?? 0) >= 5 && finalDefeated;
+  const towerTopReached = !!stratumCleared && (stratum?.level ?? 0) >= 5 && finalDefeated && !stratum?.revisit;
 
   const showSpToast = (text: string) => {
     setSpToast(text);
@@ -192,6 +199,12 @@ export const BattleArena = () => {
     if (bossNode && !bossNode.cleared) {
       const sp = await completeTowerNode(bossNode.id);
       const drops = await useAppStore.getState().rollTowerLoot('boss', 1);
+      // 回头看看：残响不给属性点、不进档案（VictoryModal 就是发属性点的那一屏，跳过）
+      if (stratum?.revisit) {
+        await useAppStore.getState().defeatShadow();
+        setLootReveal({ source: 'boss', drops, sp });
+        return;
+      }
       // 批4 §6.8：通关类壮举——首区层通关 / 一夜通层（本 session 从区层入口爬到心魔）
       const st4 = useAppStore.getState();
       void st4.recordBattleFeat('first_clear');
@@ -827,6 +840,30 @@ export const BattleArena = () => {
                           )}
                         </AnimatePresence>
 
+                        {/* R19「回头看看」：重游期间的回塔顶横幅（压在所有区层卡片之上） */}
+                        {inRevisit && (
+                          <div className={`${battleCard} p-4 text-center space-y-2`}>
+                            <p className="text-xs font-black tracking-[0.24em] text-gray-400 dark:text-gray-500">REVISIT</p>
+                            <p className="text-sm font-bold text-gray-700 dark:text-gray-200">
+                              你在回望第 {stratum?.level} 区层
+                            </p>
+                            <p className="text-[11px] leading-relaxed text-gray-400 dark:text-gray-500">
+                              这里的收获照常进背包，但进度、HP 上限与档案都不动。
+                            </p>
+                            <button
+                              onClick={async () => {
+                                playSound('/ui-menu.mp3', 0.6);
+                                await useAppStore.getState().endRevisit();
+                                setTowerOpen(false);
+                                showSpToast('🗼 已回到塔顶');
+                              }}
+                              className="w-full py-2.5 rounded-xl text-sm font-black text-white"
+                              style={{ background: 'linear-gradient(135deg, #4b5563, #1f2937)' }}
+                            >
+                              ↩ 回到塔顶
+                            </button>
+                          </div>
+                        )}
                         {stratumCleared ? (
                           finalBossDue ? (
                             hasAiKey ? (
@@ -940,6 +977,21 @@ export const BattleArena = () => {
                               : canInfiltrate
                                 ? '🌊 潜入战场'
                                 : <span className="text-gray-400 dark:text-gray-500">🌊 等待影时间</span>}
+                          </motion.button>
+                        )}
+
+                        {/* R19「回头看看」：重开一层走过的区层（只刷战利品与 SP，不推进度） */}
+                        {canRevisit && (
+                          <motion.button
+                            whileTap={{ scale: 0.96 }}
+                            onClick={() => { playSound('/ui-menu.mp3', 0.4); setRevisitPick(true); }}
+                            className={`w-full py-2.5 text-sm font-black ${p3 ? 'text-white' : 'rounded-2xl text-white'}`}
+                            style={p3
+                              ? { clipPath: 'polygon(5% 0, 100% 0, 95% 100%, 0 100%)', background: 'linear-gradient(135deg,#334155,#0f172a)' }
+                              : { background: 'linear-gradient(135deg,#334155,#0f172a)' }}
+                          >
+                            ↩ 回头看看
+                            <span className="ml-1.5 text-[10px] font-bold opacity-70">1–{maxCleared} 区层</span>
                           </motion.button>
                         )}
 
@@ -1273,6 +1325,62 @@ export const BattleArena = () => {
     </motion.div>
     </P3RPage>
     </P5RPage>
+
+    {/* R19「回头看看」：选一层重游。portal 到 body——页面内容层压不过底导（z-40），
+        不 portal 的话弹层底部那颗「先不去」会被 tab 栏切掉 */}
+    {createPortal(
+    <AnimatePresence>
+      {revisitPick && (
+        <motion.div
+          initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+          className="fixed inset-0 z-[55] flex items-end justify-center p-4 sm:items-center"
+          style={{ background: 'rgba(0,0,0,0.86)' }}
+          onClick={e => { if (e.target === e.currentTarget) setRevisitPick(false); }}
+        >
+          <motion.div
+            initial={{ y: 24, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 16, opacity: 0 }}
+            className="w-full max-w-sm rounded-2xl p-5"
+            style={{ background: 'linear-gradient(160deg, #0e1220 0%, #1a2136 60%, #0b0f1a 100%)', border: '1px solid rgba(255,255,255,0.12)' }}
+          >
+            <p className="text-center text-[10px] font-black uppercase tracking-[0.4em] text-gray-500">revisit</p>
+            <h3 className="mt-1 text-center text-lg font-black text-white">回头看看</h3>
+            <p className="mt-2 text-center text-[12px] leading-relaxed text-gray-400">
+              走过的区层还在原处。重游只为再刷一遍战利品与 SP——<br />
+              不推进度、不加 HP 上限，心魔也不会再入档案。
+            </p>
+            <div className="mt-4 space-y-2">
+              {Array.from({ length: maxCleared }, (_, i) => i + 1).map(lv => (
+                <button
+                  key={lv}
+                  onClick={async () => {
+                    setRevisitPick(false);
+                    playSound('/battle-seal.mp3', 0.5);
+                    await useAppStore.getState().startRevisit(lv);
+                    showSpToast(`↩ 回望 · 第 ${lv} 区层已展开`);
+                  }}
+                  className="w-full rounded-xl px-4 py-3 text-left transition-colors"
+                  style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)' }}
+                >
+                  <span className="text-sm font-black text-white">第 {lv} 区层</span>
+                  <span className="ml-2 text-[11px] text-gray-400">
+                    小影 Lv{lv} · 心魔 {SHADOW_LEVEL_CONFIG[lv - 1].maxHp}
+                    {SHADOW_LEVEL_CONFIG[lv - 1].maxHp2 ? `+${SHADOW_LEVEL_CONFIG[lv - 1].maxHp2}` : ''} HP
+                  </span>
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() => setRevisitPick(false)}
+              className="mt-4 w-full rounded-xl py-2.5 text-sm font-bold text-gray-300"
+              style={{ background: 'rgba(255,255,255,0.08)' }}
+            >
+              先不去
+            </button>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>,
+    document.body)}
 
     {/* Sub-modals */}
     <PersonaCreateModal isOpen={showPersonaCreate} onClose={() => setShowPersonaCreate(false)} />

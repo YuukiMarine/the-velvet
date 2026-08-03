@@ -1,4 +1,5 @@
 import { Fragment, useState, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore } from '@/store';
 import { P3R, slantClip, SlantButton } from '@/components/p3r/kit';
@@ -222,7 +223,10 @@ export function PersonaCreateModal({ isOpen, onClose }: Props) {
   // （蓝带压「汝即是吾…」+ 青「吾」+ 点列 + 洋红角）+ 五步三角进度 + 蓝大 CTA；
   // choice / text / reveal 阶段稿上未画，按同语言换装（白斜卡 + 深蓝墨字 + SlantButton）。
   if (p3) {
-    return (
+  // R19 修复：整块面板原本渲染在 App 的 `relative z-10` 语境里——
+  // 无论标多少 z 都压不过底导（z-40 是它的兄弟节点），底部内容会被
+  // tab 栏 / 宽屏左侧栏切掉。按 utils/zIndex.ts 的迁移口径 portal 到 body。
+    return createPortal(
       <>
         <AwakeningOverlay ref={awakeningRef} isOpen={isOpen && stage === 'generating'} />
         <AnimatePresence>
@@ -456,11 +460,15 @@ export function PersonaCreateModal({ isOpen, onClose }: Props) {
             </motion.div>
           )}
         </AnimatePresence>
-      </>
+      </>,
+      document.body,
     );
   }
 
-  return (
+  // R19 修复：整块面板原本渲染在 App 的 `relative z-10` 语境里——
+  // 无论标多少 z 都压不过底导（z-40 是它的兄弟节点），底部内容会被
+  // tab 栏 / 宽屏左侧栏切掉。按 utils/zIndex.ts 的迁移口径 portal 到 body。
+  return createPortal(
     <>
     <AwakeningOverlay ref={awakeningRef} isOpen={isOpen && stage === 'generating'} />
     <AnimatePresence>
@@ -831,6 +839,7 @@ export function PersonaCreateModal({ isOpen, onClose }: Props) {
         </motion.div>
       )}
     </AnimatePresence>
-    </>
+    </>,
+    document.body,
   );
 }

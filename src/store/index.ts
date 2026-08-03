@@ -204,7 +204,7 @@ import {
   SHADOW_LEVEL_CONFIG,
 } from '@/constants';
 import { PLAYER_BASE_HP, nodeSpReward, bossSpReward, RELIC_SALVAGE_SP, RELIC_SLOTS_BY_STRATUM, AFFIX_HP_MULT, masteryStars } from '@/battle/numbers';
-import { buildStratum, buildAbyssRing, buildFinalStratum, migrationStratumName, reachableNodeIds, rollMobSpec, weekKeyOf } from '@/battle/tower';
+import { buildStratum, buildAbyssRing, buildFinalStratum, buildRevisitStratum, migrationStratumName, reachableNodeIds, rollMobSpec, weekKeyOf } from '@/battle/tower';
 import { TOWER_EVENT_IDS } from '@/battle/events';
 import { rollNodeLoot, rollAffixes, buildOathSkill, towerRelicBonus, MYTH_POOL, rollRelic, rollMyth, lootLabel, type LootDrop } from '@/battle/loot';
 import { currentRecordStreak, shouldGrantDiligence } from '@/battle/preparation';
@@ -644,6 +644,13 @@ interface AppState {
   rollTowerLoot: (source: 'chest' | 'elite' | 'boss' | 'golden', floorRatio: number) => Promise<LootDrop[]>;
   /** （批5）踏入深渊回廊 / 深入下一环：零 AI 即时生成环+守卫（Lv5 通关后解锁） */
   enterAbyss: () => Promise<void>;
+  // ── R19 ·「回头看看」──
+  /** 已通关的最高主塔区层（存量档从档案与当前区层推断） */
+  highestClearedStratum: () => number;
+  /** 重游一个已通关区层：主线区层与主影原样寄存在 battleState，零 AI 即时生成旧层 */
+  startRevisit: (level: number) => Promise<void>;
+  /** 回到塔顶：把寄存的主线放回来 */
+  endRevisit: () => Promise<void>;
   // ── Lv6 · 最终 BOSS「伪神」（PRD_FINAL_BOSS）──
   /** 汇总喂给伪神生成器的结构化事实（只出统计量，不出记录原文） */
   collectFinalBossFacts: () => FinalBossFacts;
@@ -843,6 +850,9 @@ const DEFAULT_SETTINGS: Settings = {
   notificationsEnabled: false,
   notificationSlots: DEFAULT_NOTIF_SLOTS,
 };
+
+/** settings 写入串行锁：见 updateSettings 的注释（并发写会互相吞字段） */
+let settingsWriteLock: Promise<void> = Promise.resolve();
 
 export const useAppStore = create<AppState>((set, get) => ({
   user: null,
@@ -1457,17 +1467,36 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   updateSettings: async (newSettings: Partial<Settings>) => {
-    const { settings } = get();
-    const nextThresholds = newSettings.levelThresholds ?? settings.levelThresholds;
-    const updated = { ...settings, ...newSettings };
-    if (newSettings.attributeLevelTitles || newSettings.levelThresholds) {
-      updated.attributeLevelTitles = normalizeAttributeLevelTitles(
-        newSettings.attributeLevelTitles ?? settings.attributeLevelTitles,
-        nextThresholds.length,
-      );
-    }
-    await db.settings.put(updated);
-    set({ settings: updated });
+    /**
+     * ⚠️ 底稿必须取**库里那一行**，不能取内存副本。
+     *
+     * 真实事故：云同步「拉取」把 db.settings 整行换成云端那份之后，
+     * 到 initializeApp() 重载完成之前有一个窗口——这期间只要有任何一处调
+     * updateSettings（已读回填 / 主题 / 各种 lastSeen 标记，开机路径上好几处），
+     * 旧的内存副本就会被 put 回去，把刚拉下来的**自定义五维名与等级阈值**
+     * 一起覆盖成默认。用户看到的现象是「存档拉到本地，定制的五维没了」。
+     * 库是持久事实，内存只是它的缓存；合并方向反了就会丢数据。
+     *
+     * 另外用 mutex 串行化：并发两次 updateSettings 都读到同一份底稿时，
+     * 后写的那次会吞掉先写那次的字段。
+     */
+    settingsWriteLock = settingsWriteLock.then(async () => {
+      const persisted = (await db.settings.toArray())[0];
+      const base = persisted ?? get().settings;
+      const nextThresholds = newSettings.levelThresholds ?? base.levelThresholds;
+      const updated = { ...base, ...newSettings } as Settings;
+      if (newSettings.attributeLevelTitles || newSettings.levelThresholds) {
+        updated.attributeLevelTitles = normalizeAttributeLevelTitles(
+          newSettings.attributeLevelTitles ?? base.attributeLevelTitles,
+          nextThresholds.length,
+        );
+      }
+      await db.settings.put(updated);
+      set({ settings: updated });
+    }).catch((err: unknown) => { console.error('[settings] 写入失败', err); });
+    await settingsWriteLock;
+    const settings = get().settings;
+    const updated = settings;
 
     if (newSettings.levelThresholds) {
       const thresholds = updated.levelThresholds;
@@ -4689,8 +4718,10 @@ ${activityLines || '（本期暂无记录）'}
     const { battleState, shadow, attributes, stratum } = get();
     if (!battleState) return;
     const isAbyss = !!stratum?.abyssRing; // 批5：深渊环击破——不加 HP 上限（无尽模式防膨胀）、更新最深纪录
+    // R19「回头看看」：重游层的心魔只是回响——不进档案、不加 HP 上限、不动进度
+    const isRevisit = !!stratum?.revisit;
     // 批3 阴影档案馆：新藏品带 描述/词缀/代表台词/击败时的你/区层等级（存量记录字段留空 = 首批藏品）
-    const newRecord = shadow ? {
+    const newRecord = shadow && !isRevisit ? {
       shadowName: isAbyss ? `${shadow.name}（回廊第${stratum!.abyssRing}环）` : shadow.name,
       level: shadow.level,
       // 用本地日期口径（toLocalDateKey），不要 toISOString().slice —— 那是 UTC：
@@ -4705,7 +4736,7 @@ ${activityLines || '（本期暂无记录）'}
       stratumLevel: stratum?.level,
     } : null;
     // HP bonus from defeating this shadow（深渊不加）
-    const hpGain = shadow && !isAbyss ? (HP_BONUS_PER_DEFEAT[Math.min(shadow.level - 1, HP_BONUS_PER_DEFEAT.length - 1)] ?? 2) : 0;
+    const hpGain = shadow && !isAbyss && !isRevisit ? (HP_BONUS_PER_DEFEAT[Math.min(shadow.level - 1, HP_BONUS_PER_DEFEAT.length - 1)] ?? 2) : 0;
     const newHpBonus = (battleState.hpBonusFromDefeats ?? 0) + hpGain;
     const updated: BattleState = {
       ...battleState,
@@ -4720,6 +4751,10 @@ ${activityLines || '（本期暂无记录）'}
       abyssHighestRing: isAbyss
         ? Math.max(battleState.abyssHighestRing ?? 0, stratum!.abyssRing!)
         : battleState.abyssHighestRing,
+      // 主塔通关才推进度（重游 / 深渊都不算）
+      maxStratumLevel: !isAbyss && !isRevisit && stratum
+        ? Math.max(battleState.maxStratumLevel ?? 0, Math.min(5, stratum.level))
+        : battleState.maxStratumLevel,
     };
     await get().saveBattleState(updated);
     // 批2：区层主影被击破 → 区层通关（上方新区层随「显形仪式」解锁；深渊环通关 → 同晚可深入下一环）
@@ -5235,6 +5270,83 @@ ${activityLines || '（本期暂无记录）'}
       });
     }
     return relic;
+  },
+
+  highestClearedStratum: () => {
+    const { battleState, stratum } = get();
+    let best = battleState?.maxStratumLevel ?? 0;
+    // 存量档没有 maxStratumLevel：从档案里的心魔等级 + 当前已通关区层反推
+    for (const r of battleState?.defeatedShadowLog ?? []) {
+      const lv = Math.min(5, r.stratumLevel ?? r.level ?? 0);
+      if (lv > best) best = lv;
+    }
+    if (stratum && !stratum.abyssRing && !stratum.revisit && stratum.status === 'cleared') {
+      best = Math.max(best, Math.min(5, stratum.level));
+    }
+    // 打过深渊 / 顶阙的人，主塔五层必然全通
+    if (stratum?.abyssRing || (battleState?.finalBossStage && battleState.finalBossStage !== 'revealed')) best = 5;
+    return Math.min(5, best);
+  },
+
+  startRevisit: async (level) => {
+    const { stratum, shadow, battleState, settings } = get();
+    if (!battleState) return;
+    const lv = Math.max(1, Math.min(5, Math.round(level)));
+    const cfg = SHADOW_LEVEL_CONFIG[lv - 1];
+    // 已寄存过就不要再存一次（否则第二次重游会把「重游层」当主线存进去）
+    const alreadyParked = !!battleState.parkedStratum;
+    const archived = (battleState.defeatedShadowLog ?? [])
+      .filter(r => (r.stratumLevel ?? r.level) === lv)
+      .slice(-1)[0]?.shadowName;
+    const { stratum: rv, boss } = buildRevisitStratum({
+      level: lv,
+      stratumId: uuidv4(),
+      bossId: uuidv4(),
+      baseFloor: 0,
+      now: new Date(),
+      eventPoolIds: TOWER_EVENT_IDS,
+      chestSp: (floor) => nodeSpReward(lv, floor, 0, Math.random) + 5,
+      attrNames: settings.attributeNames as Record<AttributeId, string>,
+      hp: { maxHp: cfg.maxHp, maxHp2: cfg.maxHp2 },
+      attackPower: BOSS_ATTACK_BY_LEVEL[lv - 1],
+      archivedName: archived,
+    });
+    await get().saveBattleState({
+      ...battleState,
+      maxStratumLevel: get().highestClearedStratum(),
+      parkedStratum: alreadyParked ? battleState.parkedStratum : (stratum ?? undefined),
+      parkedShadow: alreadyParked ? battleState.parkedShadow : (shadow ?? undefined),
+      shadowId: boss.id,
+      status: 'idle',
+    });
+    await get().saveShadow(boss);
+    await get().saveStratum(rv);
+  },
+
+  endRevisit: async () => {
+    const bs = get().battleState;
+    if (!bs) return;
+    const parked = bs.parkedStratum;
+    const parkedShadow = bs.parkedShadow;
+    if (parked) {
+      await db.strata.clear();
+      await db.strata.put(parked);
+      set({ stratum: parked });
+    } else {
+      await db.strata.clear();
+      set({ stratum: null });
+    }
+    await db.shadows.clear();
+    if (parkedShadow) {
+      await db.shadows.put(parkedShadow);
+      set({ shadow: parkedShadow });
+    } else {
+      set({ shadow: null });
+    }
+    const next = { ...bs, shadowId: parkedShadow?.id ?? '', status: 'idle' as const };
+    delete next.parkedStratum;
+    delete next.parkedShadow;
+    await get().saveBattleState(next);
   },
 
   enterAbyss: async () => {

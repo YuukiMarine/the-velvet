@@ -147,7 +147,10 @@ const StreamPreview = forwardRef<StreamPreviewHandle, { initial?: () => string }
       style={{
         left: 0,
         right: 0,
-        bottom: 80,
+        // 抬到底导之上：原来固定 80px，正好落在 4rem 底部栏 + home indicator 那条带里，
+        // 加上这层浮层此前没有 portal 到 body（压不过 z-40 的底导），
+        // 观感就是"吟唱词底下那条流式滚动没有了"
+        bottom: 'calc(6rem + env(safe-area-inset-bottom, 0px))',
         height: '3.6em', // 最多两行高度，保持位置不变
       }}
     >

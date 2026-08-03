@@ -1265,6 +1265,16 @@ export interface BattleState {
   finaleHits?: number;
   /** （Lv6 演出）援军已发放的 SP 总量（封顶 1000，只发一次） */
   finaleAllySp?: number;
+  /**
+   * （R19「回头看看」）已通关的最高主塔区层。
+   *
+   * 为什么不直接看 stratum.level：塔与主影都是**单例表**，重游会把它们顶掉。
+   * 进度必须存在 battleState 里，否则「回头打一层 Lv2」会把 Lv5 的进度也一起降级。
+   */
+  maxStratumLevel?: number;
+  /** （R19）重游期间被寄存的主线区层与主影，回塔顶时原样放回 */
+  parkedStratum?: TowerStratum;
+  parkedShadow?: Shadow;
 }
 
 /** Lv6 终局演出的八段（PRD_FINAL_BOSS §5）；reward = 掉落屏 */
@@ -1340,6 +1350,8 @@ export interface TowerStratum {
   status: StratumStatus;
   /** （批5）深渊回廊环数（1 起；undefined = 主塔区层）。深渊环零 AI 即时生成、无月相加深、通关不锁日 */
   abyssRing?: number;
+  /** （R19「回头看看」）重游的旧区层：零 AI 即时生成、不推进度、心魔不入档案、不加 HP 上限 */
+  revisit?: boolean;
   createdAt: Date;
 }
 
