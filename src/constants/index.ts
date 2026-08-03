@@ -426,19 +426,21 @@ export const EVENT_POOL = [
 // 引擎 v2 数值重锚（BATTLE_UPGRADE_PLAN_V2 §9.2，模拟战跑测后定标：
 // 聪明策略下 Lv1-2 单晚可胜、Lv3 五五开、Lv4-5 单晚推 55-70%，两三晚通关）
 // 批3 验收调整（2026-07-19 用户拍板）：全敌人最大 HP 上调 Lv1-2 +10 / Lv3 +20 / Lv4-5 +30（一形态池吃满）
+// Lv6 = 最终 BOSS「伪神」（PRD_FINAL_BOSS §4）：三条血，不吃「顽固」词缀（血池已显式定档）
 export const SHADOW_LEVEL_CONFIG = [
-  { level: 1, maxHp: 160, maxHp2: undefined as number | undefined, label: '之阴影' },
-  { level: 2, maxHp: 210, maxHp2: undefined as number | undefined, label: '之深渊' },
-  { level: 3, maxHp: 280, maxHp2: 80,                              label: '之执念' },
-  { level: 4, maxHp: 370, maxHp2: 110,                             label: '之噩梦' },
-  { level: 5, maxHp: 450, maxHp2: 130,                             label: '之深渊王' },
+  { level: 1, maxHp: 160, maxHp2: undefined as number | undefined, maxHp3: undefined as number | undefined, label: '之阴影' },
+  { level: 2, maxHp: 210, maxHp2: undefined as number | undefined, maxHp3: undefined as number | undefined, label: '之深渊' },
+  { level: 3, maxHp: 280, maxHp2: 80,                              maxHp3: undefined as number | undefined, label: '之执念' },
+  { level: 4, maxHp: 370, maxHp2: 110,                             maxHp3: undefined as number | undefined, label: '之噩梦' },
+  { level: 5, maxHp: 450, maxHp2: 130,                             maxHp3: undefined as number | undefined, label: '之深渊王' },
+  { level: 6, maxHp: 520, maxHp2: 180,                             maxHp3: 180,                             label: '之伪神' },
 ];
 
-/** Shadow每日HP恢复量（按等级） */
-export const SHADOW_REGEN_PER_LEVEL = [2, 3, 4, 5, 5];
+/** Shadow每日HP恢复量（按等级）。Lv6 = 0：终局不给它回血 */
+export const SHADOW_REGEN_PER_LEVEL = [2, 3, 4, 5, 5, 0];
 
-/** 击败Shadow后玩家最大HP提升量（按等级） */
-export const HP_BONUS_PER_DEFEAT = [2, 3, 4, 5, 5];
+/** 击败Shadow后玩家最大HP提升量（按等级）。Lv6 = 0：终局的奖励走「英雄的证明」 */
+export const HP_BONUS_PER_DEFEAT = [2, 3, 4, 5, 5, 0];
 
 export function isInShadowTime(days: number[] = [5, 6, 0], startHour = 20, endHour = 7): boolean {
   const now = new Date();

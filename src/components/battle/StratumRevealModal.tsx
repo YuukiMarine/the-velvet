@@ -55,7 +55,8 @@ export function StratumRevealModal({ isOpen, onClose, level }: Props) {
   const attrNames = settings.attributeNames as Record<AttributeId, string>;
   const attrValues = Object.fromEntries(attributes.map(a => [a.id, a.points])) as Record<AttributeId, number>;
   const lastWeak = battleState?.lastDefeatedWeakAttribute;
-  const cfg = SHADOW_LEVEL_CONFIG[Math.min(level, 5) - 1];
+  // 主塔区层只到 5（Lv6 顶阙走 FinalBossRevealModal）；钳按表长写，别再钉死数字
+  const cfg = SHADOW_LEVEL_CONFIG[Math.min(level, SHADOW_LEVEL_CONFIG.length) - 1];
 
   // 批4 §6.7 主影主题：本周（周一起）五维成长点数最少者 65% 成为主题属性
   const rollTheme = (): AttributeId => {

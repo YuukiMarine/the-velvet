@@ -98,15 +98,16 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
   const weakPreFiredRef = useRef(false);
   /** ⑤ 破段闪光：血条分段数下降时触发一次白闪 */
   const [segFlash, setSegFlash] = useState(0);
-  const prevSegsRef = useRef<{ a: number; b: number }>({ a: -1, b: -1 });
+  const prevSegsRef = useRef<{ a: number; b: number; c: number }>({ a: -1, b: -1, c: -1 });
   useEffect(() => {
     const s = engineRef.current?.snapshot;
-    if (!s) { prevSegsRef.current = { a: -1, b: -1 }; return; }
+    if (!s) { prevSegsRef.current = { a: -1, b: -1, c: -1 }; return; }
     const a = Math.ceil((s.shadowHp / Math.max(1, s.shadowMaxHp)) * 12);
     const b = s.shadowMaxHp2 ? Math.ceil(((s.shadowHp2 ?? 0) / s.shadowMaxHp2) * 12) : 0;
+    const c = s.shadowMaxHp3 ? Math.ceil(((s.shadowHp3 ?? 0) / s.shadowMaxHp3) * 12) : 0;
     const prev = prevSegsRef.current;
-    if ((prev.a >= 0 && a < prev.a) || (prev.b >= 0 && b < prev.b)) setSegFlash(k => k + 1);
-    prevSegsRef.current = { a, b };
+    if ((prev.a >= 0 && a < prev.a) || (prev.b >= 0 && b < prev.b) || (prev.c >= 0 && c < prev.c)) setSegFlash(k => k + 1);
+    prevSegsRef.current = { a, b, c };
   });
 
   // ── 演出状态 ────────────────────────────────────────────
@@ -260,7 +261,11 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
           attribute: sh.attribute,
           hp: sh.currentHp, maxHp: sh.maxHp,
           hp2: sh.currentHp2, maxHp2: sh.maxHp2,
-          phase: (bs.status === 'shadow_phase2' ? 2 : 1) as 1 | 2,
+          hp3: sh.currentHp3, maxHp3: sh.maxHp3,
+          // 形态从 HP 反推而不是从 status 读：伪神有三条血，status 只有 shadow_phase2 一个取值
+          phase: (sh.maxHp3 !== undefined && sh.currentHp <= 0 && (sh.currentHp2 ?? 0) <= 0 ? 3
+            : (sh.maxHp2 !== undefined && sh.currentHp <= 0) || bs.status === 'shadow_phase2' ? 2
+            : 1) as 1 | 2 | 3,
           phase2WeakAttribute: sh.phase2WeakAttribute,
           phase2ResistAttribute: sh.phase2ResistAttribute,
           attackScalePct: settings.battleAttackScale ?? 100,
@@ -339,8 +344,8 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
         `Shadow 的弱点——${weakLabel}${s.weaknessHidden ? '（被月蚀掩藏，洞察可揭示）' : '属性'}！`,
       ];
       if (affixLine) intro.push(affixLine);
-      if (s.phase === 2) {
-        intro.push(`${sh.name} 已进入第二形态……小心！`);
+      if (s.phase >= 2) {
+        intro.push(`${sh.name} 已进入第${s.phase === 3 ? '三' : '二'}形态……小心！`);
       }
       // 批3 §5.3 记忆台词：心魔记得你的撤离/缺席/战绩（60% 概率一句）
       const memLine = pickMemoryLine({
@@ -414,13 +419,14 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
     if (!sh) return;
     const status = res.outcome === 'victory' ? 'victory' as const
       : res.outcome === 'defeat' ? 'session_end' as const
-      : p.phase === 2 ? 'shadow_phase2' as const
+      : p.phase >= 2 ? 'shadow_phase2' as const
       : 'in_battle' as const;
     await useAppStore.getState().saveShadow({
       ...sh,
       currentHp: p.shadowHp,
       currentHp2: p.shadowHp2,
-      weakAttribute: p.phase === 2 ? sh.weakAttribute : p.weakAttribute,
+      currentHp3: p.shadowHp3,
+      weakAttribute: p.phase >= 2 ? sh.weakAttribute : p.weakAttribute,
       phase2WeakAttribute: p.phase2WeakAttribute,
       phase2ResistAttribute: p.phase2ResistAttribute,
     });
@@ -529,6 +535,15 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
           onClose();
           return;
         }
+        // Lv6 伪神：三条血归零不进常规结算——交给终局演出（BattleArena 层的全屏 overlay）。
+        // 阶段落库后才关窗，杀进程重入也会回到演出而不是弹胜利屏。
+        if (useAppStore.getState().shadow?.isFinalBoss) {
+          recordTowerStats();
+          recordVictoryFeats();
+          playSound('/battle-impact.mp3', 0.85);
+          void useAppStore.getState().beginFinalBossFinale().then(() => onClose());
+          return;
+        }
         setShowBattleFinishAnim(true);
         playSound('/battle-fanfare.mp3');
         return;
@@ -542,7 +557,7 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
       setIsAnimating(false);
       setDisplayPlayerHp(null);
     }
-  }, [narIndex, narLines.length, phase, isEncounter, recordTowerStats, onEncounterEnd, onClose]);
+  }, [narIndex, narLines.length, phase, isEncounter, recordTowerStats, recordVictoryFeats, onEncounterEnd, onClose]);
 
   // ── fx 触发（叙事行对齐） ───────────────────────────────
   useEffect(() => {
@@ -679,7 +694,8 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
     // 批3 双条件解锁：unlocked 已迁移置位则以其为准；缺省沿旧规则（属性等级）
     persona.skills[snap.activeMask]?.filter(s => s.unlocked ?? (s.level <= (attrLevels[snap.activeMask] || 1))) || [];
   const isWeakAttr = snap.activeMask === snap.weakAttribute && !snap.weaknessHidden;
-  const isPhase2 = snap.phase === 2;
+  const isPhase2 = snap.phase >= 2;
+  const isPhase3 = snap.phase === 3;
   const visibleHp = displayPlayerHp ?? snap.playerHp;
   const activePersonaName = persona.attributePersonas?.[snap.activeMask]?.name ?? '反抗者';
   const basicPower = BASIC_ATTACK_POWER; // R18：普攻固定 8（可暴击）
@@ -901,7 +917,7 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
           <div className="text-center">
             <span className="text-red-400 font-bold text-sm">👁 {foeName}</span>
             <span className="ml-2 text-gray-500 text-xs">Lv{foeLevel}</span>
-            {isPhase2 && <span className="ml-1 text-xs font-bold text-orange-400"> II</span>}
+            {isPhase2 && <span className="ml-1 text-xs font-bold text-orange-400">{isPhase3 ? ' III' : ' II'}</span>}
           </div>
           <span
             className="text-xs font-bold px-2 py-0.5 rounded-full"
@@ -970,8 +986,27 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
                 max={snap.shadowMaxHp2}
                 segments={12}
                 height={11}
-                onColor={isPhase2 ? 'linear-gradient(90deg, #f97316, #ef4444)' : 'rgba(120,126,140,0.35)'}
-                glow={isPhase2 ? 'rgba(249,115,22,0.55)' : undefined}
+                onColor={snap.phase === 2 ? 'linear-gradient(90deg, #f97316, #ef4444)' : 'rgba(120,126,140,0.35)'}
+                glow={snap.phase === 2 ? 'rgba(249,115,22,0.55)' : undefined}
+              />
+            </div>
+          )}
+          {/* Lv6 伪神专属第三条血 */}
+          {snap.shadowMaxHp3 !== undefined && (
+            <div className="mt-1.5">
+              <div className="flex items-end justify-between mb-1">
+                <span className="text-[9px] font-bold uppercase tracking-[0.22em] text-gray-500">HP·III{isPhase3 ? ' ▶' : ''}</span>
+                <span className="text-sm font-black tabular-nums leading-none text-gray-200">
+                  {snap.shadowHp3 ?? snap.shadowMaxHp3}<span className="text-[10px] text-gray-500 font-bold">/{snap.shadowMaxHp3}</span>
+                </span>
+              </div>
+              <SlantGauge
+                value={snap.shadowHp3 ?? snap.shadowMaxHp3}
+                max={snap.shadowMaxHp3}
+                segments={12}
+                height={11}
+                onColor={isPhase3 ? 'linear-gradient(90deg, #facc15, #f97316)' : 'rgba(120,126,140,0.35)'}
+                glow={isPhase3 ? 'rgba(250,204,21,0.6)' : undefined}
               />
             </div>
           )}

@@ -28,7 +28,7 @@ import {
   STAGGER_MAX, STAGGER_WEAKNESS_GAIN, STAGGER_CRIT_GAIN, STAGGER_TAKEN_MULT,
   STAGGER_IMMUNE_TURNS, ALL_OUT_SP_COST, BOSS_FORCED_WINDOW_HP_RATIO,
   BOSS_ATTACK_BY_LEVEL, MOB_ATTACK_BY_LEVEL, ELITE_ATTACK_BY_LEVEL,
-  SHADOW_CRIT_BY_LEVEL, PHASE2_ATTACK_MULT, PHASE2_RESIST_MULT,
+  SHADOW_CRIT_BY_LEVEL, PHASE2_ATTACK_MULT, PHASE3_ATTACK_MULT, PHASE2_RESIST_MULT,
   BERSERK_ATK_MULT, BERSERK_SELF_DAMAGE, HEAVY_POWER_MULT, HEAVY_WINDUP_TURNS,
   HEAVY_COOLDOWN_TURNS, GUARD_STANCE_MULT, GUARD_INTENT_ATTACK_MULT,
   DEBUFF_INTENT_ATTACK_MULT, SHADOW_ATKUP_MULT, SHADOW_ATKUP_TURNS,
@@ -48,7 +48,7 @@ import {
   deriveShadowAttribute, initialHeavyCooldown,
 } from './intents';
 import {
-  pickByLevel, PHASE2_DIALOGUE, DEFEAT_DIALOGUE, SHADOW_ATTACK_DIALOGUE,
+  pickByLevel, PHASE2_DIALOGUE, PHASE3_DIALOGUE, DEFEAT_DIALOGUE, SHADOW_ATTACK_DIALOGUE,
   SHADOW_CRIT_DIALOGUE, STAGGER_DIALOGUE, HEAVY_RELEASE_DIALOGUE,
   SHADOW_BUFF_DIALOGUE, SHADOW_DEBUFF_DIALOGUE, PLAYER_DEFEAT_MONOLOGUE,
 } from './dialogue';
@@ -92,7 +92,10 @@ export interface EngineSetup {
     id: string;
     hp: number; maxHp: number;
     hp2?: number; maxHp2?: number;
-    phase: 1 | 2;
+    /** （Lv6 伪神）第三条血——只有最终 BOSS 有 */
+    hp3?: number; maxHp3?: number;
+    phase: 1 | 2 | 3;
+    /** 形态切换后的弱点/耐性（每次变身覆写；2→3 也走同两个字段） */
     phase2WeakAttribute?: AttributeId;
     phase2ResistAttribute?: AttributeId;
     /** 攻击倍率%（金手指），默认 100 */
@@ -158,7 +161,8 @@ export interface PersistPatch {
   sp: number;
   shadowHp: number;
   shadowHp2: number | undefined;
-  phase: 1 | 2;
+  shadowHp3: number | undefined;
+  phase: 1 | 2 | 3;
   weakAttribute: AttributeId;
   phase2WeakAttribute?: AttributeId;
   phase2ResistAttribute?: AttributeId;
@@ -225,7 +229,8 @@ export class BattleEngine {
   private shWeak: AttributeId;
   private shHp: number; private shMaxHp: number;
   private shHp2: number | undefined; private shMaxHp2: number | undefined;
-  private phase: 1 | 2;
+  private shHp3: number | undefined; private shMaxHp3: number | undefined;
+  private phase: 1 | 2 | 3;
   private phase2Weak?: AttributeId;
   private phase2Resist?: AttributeId;
   private shadowStatuses: EngineStatus[] = [];
@@ -282,11 +287,13 @@ export class BattleEngine {
 
     const sh = setup.shadow;
     this.shName = sh.name;
-    this.shLevel = Math.min(5, Math.max(1, sh.level));
-    this.shWeak = sh.phase === 2 && sh.phase2WeakAttribute ? sh.phase2WeakAttribute : sh.weakAttribute;
+    // Lv6 伪神在表内（BOSS_ATTACK_BY_LEVEL 等已补到 6 项）——不要再钳到 5
+    this.shLevel = Math.min(BOSS_ATTACK_BY_LEVEL.length, Math.max(1, sh.level));
+    this.shWeak = sh.phase >= 2 && sh.phase2WeakAttribute ? sh.phase2WeakAttribute : sh.weakAttribute;
     this.shAttribute = sh.attribute ?? deriveShadowAttribute(sh.id, sh.weakAttribute);
     this.shHp = sh.hp; this.shMaxHp = sh.maxHp;
     this.shHp2 = sh.hp2; this.shMaxHp2 = sh.maxHp2;
+    this.shHp3 = sh.hp3; this.shMaxHp3 = sh.maxHp3;
     this.phase = sh.phase;
     this.phase2Weak = sh.phase2WeakAttribute;
     this.phase2Resist = sh.phase2ResistAttribute;
@@ -309,6 +316,7 @@ export class BattleEngine {
       defending: this.defending,
       shadowHp: this.shHp, shadowMaxHp: this.shMaxHp,
       shadowHp2: this.shHp2, shadowMaxHp2: this.shMaxHp2,
+      shadowHp3: this.shHp3, shadowMaxHp3: this.shMaxHp3,
       phase: this.phase,
       weakAttribute: this.shWeak,
       shadowAttribute: this.shAttribute,
@@ -318,8 +326,8 @@ export class BattleEngine {
       staggerGauge: this.staggerGauge,
       staggerWindow: this.staggerState === 'window',
       staggerImmune: this.staggerImmune,
-      canAllOut: this.staggerState === 'window' && this.sp >= ALL_OUT_SP_COST,
-      allOutSpCost: ALL_OUT_SP_COST,
+      canAllOut: this.staggerState === 'window' && this.sp >= this.allOutCost(),
+      allOutSpCost: this.allOutCost(),
       insightAvailable: !this.insightUsedThisTurn && this.sp >= this.insightCost(),
       insightCost: this.insightCost(),
       comboCount: this.comboCount,
@@ -349,8 +357,15 @@ export class BattleEngine {
       /** 处决窗口：心魔失衡窗口 + 残血 ≤10% —— 总攻击按钮换「处决」皮 */
       executeReady: this.staggerState === 'window'
         && this.shTier === 'boss'
-        && (this.shHp + (this.shHp2 ?? 0)) / Math.max(1, this.shMaxHp + (this.shMaxHp2 ?? 0)) <= BOSS_FORCED_WINDOW_HP_RATIO,
+        && this.totalHpRatio() <= BOSS_FORCED_WINDOW_HP_RATIO,
     };
+  }
+
+  /** 全部血条合计占比（含伪神第三条） */
+  private totalHpRatio(): number {
+    const cur = this.shHp + (this.shHp2 ?? 0) + (this.shHp3 ?? 0);
+    const max = this.shMaxHp + (this.shMaxHp2 ?? 0) + (this.shMaxHp3 ?? 0);
+    return cur / Math.max(1, max);
   }
 
   private hasAffix(a: AffixKind): boolean { return this.affixes.includes(a); }
@@ -360,7 +375,7 @@ export class BattleEngine {
   private persistPatch(): PersistPatch {
     return {
       playerHp: this.playerHp, sp: this.sp,
-      shadowHp: this.shHp, shadowHp2: this.shHp2,
+      shadowHp: this.shHp, shadowHp2: this.shHp2, shadowHp3: this.shHp3,
       phase: this.phase,
       weakAttribute: this.shWeak,
       phase2WeakAttribute: this.phase2Weak,
@@ -430,14 +445,21 @@ export class BattleEngine {
     return (this.setup.blazingMasks ?? []).includes(this.activeMask) && !this.blazeUsed.has(this.activeMask);
   }
 
-  /** 技能实际 SP 消耗（燃起首技免费 > 魅力面具首次免费；月光余响迷思减耗、下限 1） */
+  /** 技能实际 SP 消耗（燃起首技免费 > 魅力面具首次免费；月光余响迷思 + 英雄的证明叠加减耗、下限 1） */
   skillCost(skill: PersonaSkill): number {
     if (this.blazeFree()) return 0;
     if (this.activeMask === 'charm' && !this.charmFreeUsed) return 0;
-    if (skill.socket?.kind === 'moon_echo' && skill.spCost > 0) {
-      return Math.max(1, skill.spCost - skill.socket.value);
-    }
-    return skill.spCost;
+    if (skill.spCost <= 0) return skill.spCost;
+    const echoCut = skill.socket?.kind === 'moon_echo' ? skill.socket.value : 0;
+    const cut = echoCut + this.relicMods.spCostCut;
+    return cut > 0 ? Math.max(1, skill.spCost - cut) : skill.spCost;
+  }
+
+  /** 总攻击实际 SP 消耗（英雄的证明减耗、下限 1） */
+  private allOutCost(): number {
+    return this.relicMods.spCostCut > 0
+      ? Math.max(1, ALL_OUT_SP_COST - this.relicMods.spCostCut)
+      : ALL_OUT_SP_COST;
   }
 
   /** 当前弱点（二形态会更换） */
@@ -642,6 +664,7 @@ export class BattleEngine {
       const bondTier = this.setup.maskBondTiers?.[this.activeMask] ?? 0;
       if (bondTier > 0) adds.push(bondTier * MASK_BOND_ADD_PER_TIER);
       if (this.relicMods.addAll > 0) adds.push(this.relicMods.addAll);
+      if (this.relicMods.atkPct > 0) adds.push(this.relicMods.atkPct); // 英雄的证明
       if (isWeakness) {
         if (this.relicMods.weaknessAdd > 0) adds.push(this.relicMods.weaknessAdd);
         if (skill.socket?.kind === 'flaw_insight') adds.push(skill.socket.value);
@@ -703,7 +726,7 @@ export class BattleEngine {
       if (this.staggerState === 'window') mults.push(STAGGER_TAKEN_MULT);
       const guardStance = findStatus(this.shadowStatuses, 'guard_stance');
       if (guardStance) { mults.push(guardStance.value); lines.push(`${this.shName} 处于警戒——伤害被削减！`); }
-      if (this.phase === 2 && this.phase2Resist === attr) {
+      if (this.phase >= 2 && this.phase2Resist === attr) {
         mults.push(PHASE2_RESIST_MULT);
         lines.push(`${this.shName} 对${attrName}产生了耐性……伤害 ×0.7`);
       }
@@ -915,7 +938,9 @@ export class BattleEngine {
     if (this.activeMask === 'guts') critChance += GUTS_MASK_CRIT;
     if (this.chain === 'knowledge+dexterity') critChance += CHAIN_CRIT_ADD;
     const isCrit = this.rng() < critChance;
-    const dmg = Math.max(1, Math.round(this.setup.basicAttackPower * (isCrit ? CRIT_MULT : 1)));
+    const dmg = Math.max(1, Math.round(
+      this.setup.basicAttackPower * (1 + this.relicMods.atkPct) * (isCrit ? CRIT_MULT : 1)
+    ));
     lines.push(`你向 ${this.shName} 发起了普通攻击！`);
     this.damageShadow(dmg);
     lines.push(isCrit ? `暴击！造成了 ${dmg} 点伤害！` : `造成了 ${dmg} 点伤害。`);
@@ -933,17 +958,17 @@ export class BattleEngine {
   }
 
   private resolveAllOut(qteMult: number, lines: string[], fx: FxEvent[]) {
-    if (this.staggerState !== 'window' || this.sp < ALL_OUT_SP_COST) {
+    if (this.staggerState !== 'window' || this.sp < this.allOutCost()) {
       lines.push('时机未到——总攻击需要在失衡窗口中发动。');
       return;
     }
-    this.sp -= ALL_OUT_SP_COST;
+    this.sp -= this.allOutCost();
     this.consecutiveWeakness = 0;
     this.allOutUsed = true; // 批4 成就：首次总攻击
     // R19：基数 = 50 + (总等级−1)×4（LV1 时 1.0 倍率 50）；QTE 与失衡受伤倍率照旧
     const totalLv = Object.values(this.setup.attrLevels).reduce((s, v) => s + v, 0);
     const base = ALL_OUT_BASE_AT_LV1 + Math.max(0, totalLv - 1) * ALL_OUT_PER_LEVEL;
-    const dmg = Math.round(base * qteMult * STAGGER_TAKEN_MULT);
+    const dmg = Math.round(base * (1 + this.relicMods.atkPct) * qteMult * STAGGER_TAKEN_MULT);
     lines.push(`${this.shName}：${pickShadowLine('allOutReady', this.shName) || '那是……禁忌的力量！'}`);
     lines.push('总攻击！五副面具的力量汇于一击！');
     fx.push({ atLine: lines.length - 1, type: 'allOut' });
@@ -1070,7 +1095,8 @@ export class BattleEngine {
   private shadowAttack(intentMult: number, forceCrit: boolean, lines: string[], fx: FxEvent[]) {
     let atk = this.baseAttack();
     if (this.berserk) atk *= BERSERK_ATK_MULT;
-    if (this.phase === 2) atk *= PHASE2_ATTACK_MULT;
+    if (this.phase === 3) atk *= PHASE3_ATTACK_MULT;
+    else if (this.phase === 2) atk *= PHASE2_ATTACK_MULT;
     if (this.hasAffix('vengeful') && this.setup.playerEverRetreated) atk *= AFFIX_VENGEFUL_ATK; // 记仇
     const atkUp = findStatus(this.shadowStatuses, 'atk_up');
     if (atkUp) atk *= atkUp.value;
@@ -1213,8 +1239,8 @@ export class BattleEngine {
   private maybeForcedWindow(lines: string[], fx: FxEvent[]) {
     if (this.shTier !== 'boss') return; // 濒死保底窗口是主影专属演出
     if (this.forcedWindowUsed || this.everStaggered || this.staggerState !== 'none') return;
-    const hp = this.phase === 2 ? (this.shHp2 ?? 0) : this.shHp;
-    const maxHp = this.phase === 2 ? (this.shMaxHp2 ?? 1) : this.shMaxHp;
+    const hp = this.phase === 3 ? (this.shHp3 ?? 0) : this.phase === 2 ? (this.shHp2 ?? 0) : this.shHp;
+    const maxHp = this.phase === 3 ? (this.shMaxHp3 ?? 1) : this.phase === 2 ? (this.shMaxHp2 ?? 1) : this.shMaxHp;
     if (hp > 0 && hp / maxHp < BOSS_FORCED_WINDOW_HP_RATIO) {
       this.forcedWindowUsed = true;
       lines.push(`${this.shName} 已是强弩之末——破绽毕现！`);
@@ -1234,25 +1260,32 @@ export class BattleEngine {
   private damageShadow(dmg: number) {
     this.totalDamageDealt += dmg;
     if (dmg > this.maxSingleHit) this.maxSingleHit = dmg;
-    if (this.phase === 2) {
+    if (this.phase === 3) {
+      this.shHp3 = Math.max(0, (this.shHp3 ?? 0) - dmg);
+      if ((this.shHp3 ?? 0) <= 0) this.over = 'victory';
+    } else if (this.phase === 2) {
       this.shHp2 = Math.max(0, (this.shHp2 ?? 0) - dmg);
-      if ((this.shHp2 ?? 0) <= 0) this.over = 'victory';
+      if ((this.shHp2 ?? 0) <= 0) {
+        // Lv6 伪神：二条血破 → 第三形态；常规心魔到此为止
+        if (this.shMaxHp3 !== undefined) this.enterNextPhase(3);
+        else this.over = 'victory';
+      }
     } else {
       this.shHp = Math.max(0, this.shHp - dmg);
       if (this.shHp <= 0) {
-        if (this.shMaxHp2 !== undefined) this.enterPhase2();
+        if (this.shMaxHp2 !== undefined) this.enterNextPhase(2);
         else this.over = 'victory';
       }
     }
   }
 
-  private phase2Pending: { newWeak: AttributeId; resist: AttributeId | null } | null = null;
+  private phase2Pending: { newWeak: AttributeId; resist: AttributeId | null; to: 2 | 3 } | null = null;
   /** 变身消耗 Shadow 下一次行动（实例级：跨 1More 连段仍然生效） */
   private phase2ActionSkip = false;
 
-  private enterPhase2() {
+  private enterNextPhase(to: 2 | 3) {
     this.phase2ActionSkip = true;
-    this.phase = 2;
+    this.phase = to;
     // 新形态新状态：一形态末段的狂化不带入二形态（避免 ×1.5×1.2 叠满的终局压制）
     this.berserk = false;
     // 变身宣言会公开新弱点——月蚀的隐匿到此为止
@@ -1272,7 +1305,7 @@ export class BattleEngine {
     this.shWeak = newWeak;
     this.phase2Weak = newWeak;
     this.phase2Resist = resist ?? undefined;
-    this.phase2Pending = { newWeak, resist };
+    this.phase2Pending = { newWeak, resist, to };
     // 失衡系统重置（新形态重新博弈）
     this.staggerGauge = 0;
     this.staggerImmune = 0;
@@ -1284,11 +1317,15 @@ export class BattleEngine {
   /** phase2 叙事延迟到伤害行之后（UI 时序），由 doTurnAction/endTurn 统一冲洗 */
   private flushPhase2Lines(lines: string[], fx: FxEvent[]) {
     if (!this.phase2Pending) return;
-    const { newWeak, resist } = this.phase2Pending;
+    const { newWeak, resist, to } = this.phase2Pending;
     this.phase2Pending = null;
     const attrNames = this.setup.attrNames;
-    lines.push(`${this.shName} 的形态……发生了变化！`);
-    lines.push(`${this.shName}：${pickShadowLine('phase2Open', this.shName) || pickByLevel(PHASE2_DIALOGUE, this.shLevel, this.rng)}`);
+    lines.push(to === 3
+      ? `${this.shName} 撕开了自己的轮廓——那底下还有一层！`
+      : `${this.shName} 的形态……发生了变化！`);
+    lines.push(`${this.shName}：${to === 3
+      ? PHASE3_DIALOGUE[Math.floor(this.rng() * PHASE3_DIALOGUE.length)]
+      : (pickShadowLine('phase2Open', this.shName) || pickByLevel(PHASE2_DIALOGUE, this.shLevel, this.rng))}`);
     lines.push(`弱点变化了——现在是【${attrNames[newWeak]}】！`);
     if (resist) lines.push(`它对【${attrNames[resist]}】产生了耐性……`);
     lines.push('攻击力提升，小心！');
@@ -1369,8 +1406,8 @@ export class BattleEngine {
 
   private lockIntent(lines: string[], fx: FxEvent[]) {
     void fx;
-    const hp = this.phase === 2 ? (this.shHp2 ?? 0) : this.shHp;
-    const maxHp = this.phase === 2 ? (this.shMaxHp2 ?? 1) : this.shMaxHp;
+    const hp = this.phase === 3 ? (this.shHp3 ?? 0) : this.phase === 2 ? (this.shHp2 ?? 0) : this.shHp;
+    const maxHp = this.phase === 3 ? (this.shMaxHp3 ?? 1) : this.phase === 2 ? (this.shMaxHp2 ?? 1) : this.shMaxHp;
     const kind = decideIntent({
       rng: this.rng,
       turn: this.turn,
@@ -1401,7 +1438,8 @@ export class BattleEngine {
   private previewAttack(kind: IntentKind): number {
     let atk = this.baseAttack();
     if (this.berserk) atk *= BERSERK_ATK_MULT;
-    if (this.phase === 2) atk *= PHASE2_ATTACK_MULT;
+    if (this.phase === 3) atk *= PHASE3_ATTACK_MULT;
+    else if (this.phase === 2) atk *= PHASE2_ATTACK_MULT;
     const atkUp = findStatus(this.shadowStatuses, 'atk_up');
     if (atkUp) atk *= atkUp.value;
     if (kind === 'heavy' || kind === 'heavyRelease') atk *= HEAVY_POWER_MULT;

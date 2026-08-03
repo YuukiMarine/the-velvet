@@ -1,5 +1,5 @@
 ﻿import { create } from 'zustand';
-import { User, Attribute, Activity, Achievement, Skill, Settings, ThemeType, AttributeId, AttributeNamesKey, DailyEvent, Todo, TodoCompletion, TodoStep, FateCandidate, BigDealClearPayload, PeriodSummary, SummaryPeriod, SummaryPromptPreset, WeeklyGoal, WeeklyGoalItem, Persona, Shadow, BattleState, TowerStratum, StratumNode, DailyDivination, LongReading, LongReadingFollowUp, Confidant, ConfidantEvent, ConfidantBuff, CounselSession, CounselMessage, CounselArchive, CallingCard, NotifSlot, LedgerEntry, Budget, SpendWorth, LedgerAsset, Wish, WishProgressPoint, WishProgressSource, WishProgressCutPayload, WishProposalPayload, ReturnPayload, ReturnTier, BackfillEntry, BattleArsenal, ChainKey, AffixKind, NavigatorPreset, NavigatorMemo } from '@/types';
+import { User, Attribute, Activity, Achievement, Skill, Settings, ThemeType, AttributeId, AttributeNamesKey, DailyEvent, Todo, TodoCompletion, TodoStep, FateCandidate, BigDealClearPayload, PeriodSummary, SummaryPeriod, SummaryPromptPreset, WeeklyGoal, WeeklyGoalItem, Persona, Shadow, BattleState, TowerStratum, StratumNode, DailyDivination, LongReading, LongReadingFollowUp, Confidant, ConfidantEvent, ConfidantBuff, CounselSession, CounselMessage, CounselArchive, CallingCard, NotifSlot, LedgerEntry, Budget, SpendWorth, LedgerAsset, Wish, WishProgressPoint, WishProgressSource, WishProgressCutPayload, WishProposalPayload, ReturnPayload, ReturnTier, BackfillEntry, BattleArsenal, ChainKey, AffixKind, NavigatorPreset, NavigatorMemo, RelicInstance, FinalBossFlaw } from '@/types';
 import { TAROT_BY_ID } from '@/constants/tarot';
 import { summarizeCounsel, type CounselContext, type CounselConfidantBrief, type CounselRecentEvent } from '@/utils/counselAI';
 import { db } from '@/db';
@@ -201,14 +201,15 @@ import {
   DEFAULT_LEVEL_THRESHOLDS,
   SHADOW_REGEN_PER_LEVEL,
   HP_BONUS_PER_DEFEAT,
+  SHADOW_LEVEL_CONFIG,
 } from '@/constants';
 import { PLAYER_BASE_HP, nodeSpReward, bossSpReward, RELIC_SALVAGE_SP, RELIC_SLOTS_BY_STRATUM, AFFIX_HP_MULT, masteryStars } from '@/battle/numbers';
-import { buildStratum, buildAbyssRing, migrationStratumName, reachableNodeIds, rollMobSpec, weekKeyOf } from '@/battle/tower';
+import { buildStratum, buildAbyssRing, buildFinalStratum, migrationStratumName, reachableNodeIds, rollMobSpec, weekKeyOf } from '@/battle/tower';
 import { TOWER_EVENT_IDS } from '@/battle/events';
 import { rollNodeLoot, rollAffixes, buildOathSkill, towerRelicBonus, MYTH_POOL, rollRelic, rollMyth, lootLabel, type LootDrop } from '@/battle/loot';
 import { currentRecordStreak, shouldGrantDiligence } from '@/battle/preparation';
-import { DILIGENCE_MAX_CHARGES, GOLDEN_SP_MULT } from '@/battle/numbers';
-import { generateDefeatLetter } from '@/utils/battleAI';
+import { DILIGENCE_MAX_CHARGES, GOLDEN_SP_MULT, BOSS_ATTACK_BY_LEVEL, HEROPROOF_SP_CUT } from '@/battle/numbers';
+import { generateDefeatLetter, type FinalBossFacts } from '@/utils/battleAI';
 import { normalizeAttributeLevelTitles } from '@/utils/attributeLevelTitles';
 
 /** Shared request payload returned by buildSummaryRequest used by both non-streaming generateSummary and streaming modal */
@@ -643,6 +644,21 @@ interface AppState {
   rollTowerLoot: (source: 'chest' | 'elite' | 'boss' | 'golden', floorRatio: number) => Promise<LootDrop[]>;
   /** （批5）踏入深渊回廊 / 深入下一环：零 AI 即时生成环+守卫（Lv5 通关后解锁） */
   enterAbyss: () => Promise<void>;
+  // ── Lv6 · 最终 BOSS「伪神」（PRD_FINAL_BOSS）──
+  /** 汇总喂给伪神生成器的结构化事实（只出统计量，不出记录原文） */
+  collectFinalBossFacts: () => FinalBossFacts;
+  /** 伪神显形：写入 Lv6 顶阙 + 伪神本体（三条血）+ 标记 finalBossStage='revealed' */
+  revealFinalBoss: (params: {
+    stratumName: string; stratumDescription: string;
+    name: string; description: string;
+    invertedAttributes: Record<AttributeId, string>;
+    responseLines: string[]; weakAttribute: AttributeId;
+    flaw: FinalBossFlaw;
+  }) => Promise<void>;
+  /** 三条血击破 → 进入终局演出（持久化，杀进程后重入回到演出） */
+  beginFinalBossFinale: () => Promise<void>;
+  /** 终局演出走完：发「英雄的证明」+ 记档案 + 区层通关 + finalBossStage='defeated' */
+  defeatFinalBoss: () => Promise<RelicInstance | null>;
   /** 事件奖励：残月遗物 / 随机迷思 直接入包；返回展示名（结果文案用） */
   grantEventLoot: (kind: 'relicWaning' | 'randomMyth') => Promise<string>;
   /** 删除遗物 → 转化 SP（10/25/60）；返回转化量 */
@@ -4626,7 +4642,7 @@ ${activityLines || '（本期暂无记录）'}
     if (battleState?.status === 'victory') return;
     const today = toLocalDateKey();
     if (shadow.lastHpRegenDate === today) return;
-    const regenPerDay = SHADOW_REGEN_PER_LEVEL[Math.min(shadow.level - 1, 4)] ?? 2;
+    const regenPerDay = SHADOW_REGEN_PER_LEVEL[Math.min(shadow.level - 1, SHADOW_REGEN_PER_LEVEL.length - 1)] ?? 2;
     const lastRegen = shadow.lastHpRegenDate;
     let daysElapsed = 1;
     if (lastRegen) {
@@ -4685,7 +4701,7 @@ ${activityLines || '（本期暂无记录）'}
       stratumLevel: stratum?.level,
     } : null;
     // HP bonus from defeating this shadow（深渊不加）
-    const hpGain = shadow && !isAbyss ? (HP_BONUS_PER_DEFEAT[Math.min(shadow.level - 1, 4)] ?? 2) : 0;
+    const hpGain = shadow && !isAbyss ? (HP_BONUS_PER_DEFEAT[Math.min(shadow.level - 1, HP_BONUS_PER_DEFEAT.length - 1)] ?? 2) : 0;
     const newHpBonus = (battleState.hpBonusFromDefeats ?? 0) + hpGain;
     const updated: BattleState = {
       ...battleState,
@@ -5053,9 +5069,158 @@ ${activityLines || '（本期暂无记录）'}
     await get().saveBattleState({ ...cur, pendingCatLetter: { text, dateKey: todayKey } });
   },
 
+  // ── Lv6 · 最终 BOSS「伪神」（PRD_FINAL_BOSS §3/§6）───────────
+
+  collectFinalBossFacts: () => {
+    const { attributes, activities, todos, callingCards, wishes, battleState } = get();
+    const ATTR_LIST: AttributeId[] = ['knowledge', 'guts', 'dexterity', 'kindness', 'charm'];
+    const attrLevels = Object.fromEntries(
+      ATTR_LIST.map(a => [a, attributes.find(x => x.id === a)?.level ?? 1]),
+    ) as Record<AttributeId, number>;
+    const attrPoints = Object.fromEntries(
+      ATTR_LIST.map(a => [a, attributes.find(x => x.id === a)?.points ?? 0]),
+    ) as Record<AttributeId, number>;
+    // 强/弱以点数排序（等级会因阈值不同而并列，点数才是连续量）
+    const sorted = [...ATTR_LIST].sort((a, b) => attrPoints[b] - attrPoints[a]);
+
+    // 记录日期序列 → 首条距今 / 当前连续 / 历史最长断链
+    const dayKeys = Array.from(new Set(activities.map(a => toLocalDateKey(new Date(a.date))))).sort();
+    const todayKey = toLocalDateKey();
+    const dayNum = (k: string) => Math.floor(new Date(k + 'T00:00:00').getTime() / 86400000);
+    let longestGapDays = 0;
+    for (let i = 1; i < dayKeys.length; i++) {
+      longestGapDays = Math.max(longestGapDays, dayNum(dayKeys[i]) - dayNum(dayKeys[i - 1]) - 1);
+    }
+    const daysSinceFirstRecord = dayKeys.length > 0 ? Math.max(0, dayNum(todayKey) - dayNum(dayKeys[0])) : 0;
+
+    const activeCards = callingCards ?? [];
+    const openWishes = (wishes ?? []).filter(w => !w.archivedAt && w.status !== 'archived');
+    const wishAges = openWishes.map(w => Math.max(0, dayNum(todayKey) - Math.floor(new Date(w.createdAt).getTime() / 86400000)));
+
+    return {
+      attrLevels,
+      attrPoints,
+      strongest: sorted[0],
+      weakest: sorted[sorted.length - 1],
+      countercurrentCount: activities.filter(a => a.category === 'countercurrent').length,
+      totalRecords: activities.length,
+      daysSinceFirstRecord,
+      currentStreak: currentRecordStreak(activities.map(a => a.date), todayKey),
+      longestGapDays,
+      todosDone: todos.filter(t => !!t.completedAt).length,
+      todosOpen: todos.filter(t => t.isActive && !t.archivedAt && !t.completedAt).length,
+      cardsAchieved: activeCards.filter(c => c.archiveReason === 'auto_todos').length,
+      cardsExpired: activeCards.filter(c => c.archiveReason === 'auto_date').length,
+      wishesOpen: openWishes.length,
+      wishAvgDays: wishAges.length > 0 ? Math.round(wishAges.reduce((s, v) => s + v, 0) / wishAges.length) : 0,
+      shadowsDefeated: battleState?.shadowsDefeated ?? 0,
+    } satisfies FinalBossFacts;
+  },
+
+  revealFinalBoss: async ({ stratumName, stratumDescription, name, description, invertedAttributes, responseLines, weakAttribute, flaw }) => {
+    const prev = get().stratum;
+    const cfg = SHADOW_LEVEL_CONFIG[5];
+    const boss: Shadow = {
+      id: uuidv4(),
+      level: 6,
+      name,
+      description,
+      invertedAttributes,
+      weakAttribute,
+      maxHp: cfg.maxHp, currentHp: cfg.maxHp,
+      maxHp2: cfg.maxHp2, currentHp2: cfg.maxHp2,
+      maxHp3: cfg.maxHp3, currentHp3: cfg.maxHp3,
+      responseLines,
+      attackPower: BOSS_ATTACK_BY_LEVEL[5],
+      // 固定词缀，不走随机 roll：敏锐（更痛）/迅捷（先制）/月蚀（弱点须洞察揭开）。
+      // 刻意不给「顽固」——血池已在 SHADOW_LEVEL_CONFIG[5] 显式定档，再 ×1.3 就成了磨。
+      affixes: ['keen', 'swift', 'eclipse'],
+      isFinalBoss: true,
+      flaw,
+      createdAt: new Date(),
+    };
+    const stratum = buildFinalStratum({
+      stratumId: uuidv4(),
+      baseFloor: prev ? prev.baseFloor + prev.floors : 0,
+      now: new Date(),
+      name: stratumName,
+      description: stratumDescription,
+    });
+    await get().saveShadow(boss);
+    await get().saveStratum(stratum);
+    const bs = get().battleState;
+    if (bs) {
+      await get().saveBattleState({
+        ...bs, shadowId: boss.id, status: 'idle',
+        finalBossStage: 'revealed', finalBossFlaw: flaw,
+      });
+    }
+  },
+
+  beginFinalBossFinale: async () => {
+    const bs = get().battleState;
+    if (!bs || bs.finalBossStage === 'defeated') return;
+    await get().saveBattleState({ ...bs, finalBossStage: 'finale' });
+  },
+
+  defeatFinalBoss: async () => {
+    const { battleState, shadow, attributes, stratum } = get();
+    if (!battleState) return null;
+    if (battleState.finalBossStage === 'defeated') return null;
+    const todayKey = toLocalDateKey();
+    const arsenal: BattleArsenal = battleState.arsenal ?? { relics: [], myths: [], oaths: [], chains: [] };
+    // 英雄的证明：唯一、满月、一生一枚（重入演出不会再发第二枚）
+    const already = arsenal.relics.find(r => r.kind === 'heroproof');
+    const relic: RelicInstance = already ?? {
+      id: uuidv4(),
+      kind: 'heroproof',
+      quality: 'full',
+      value: HEROPROOF_SP_CUT,
+      obtainedAt: todayKey,
+    };
+    const record = shadow ? {
+      shadowName: shadow.name,
+      level: shadow.level,
+      breachDate: toLocalDateKey(new Date(shadow.createdAt)),
+      defeatDate: todayKey,
+      daysElapsed: Math.max(1, Math.floor((Date.now() - new Date(shadow.createdAt).getTime()) / 86400000)),
+      description: shadow.description,
+      affixes: shadow.affixes,
+      quote: battleState.finalBossFlaw?.verdict ?? shadow.responseLines[0],
+      playerTotalLevel: attributes.reduce((s, a) => s + (a.unlocked === false ? 0 : (a.level ?? 1)), 0),
+      stratumLevel: 6,
+    } : null;
+    await get().saveBattleState({
+      ...battleState,
+      status: 'idle',
+      shadowId: '',
+      shadowsDefeated: battleState.shadowsDefeated + 1,
+      lastDefeatedWeakAttribute: shadow?.weakAttribute,
+      defeatedShadowLog: record
+        ? [...(battleState.defeatedShadowLog ?? []), record]
+        : battleState.defeatedShadowLog,
+      arsenal: already ? arsenal : { ...arsenal, relics: [...arsenal.relics, relic] },
+      finalBossStage: 'defeated',
+      finalBossDefeatedAt: todayKey,
+    });
+    // 顶阙通关 → 深渊回廊入口在 BattleArena 恢复显示
+    const st = get().stratum ?? stratum;
+    if (st && st.status === 'climbing') {
+      await get().saveStratum({
+        ...st,
+        status: 'cleared',
+        // 伪神不走 completeTowerNode（它的胜利被终局演出接管），boss 节点在这里补标
+        nodes: st.nodes.map(n => (n.type === 'boss' ? { ...n, cleared: true } : n)),
+      });
+    }
+    return relic;
+  },
+
   enterAbyss: async () => {
-    const { stratum, shadow, settings } = get();
-    const ring = (stratum?.abyssRing ?? 0) + 1;
+    const { stratum, shadow, settings, battleState } = get();
+    // 从「当前环」与「历史最深环」里取大：Lv6 顶阙会顶掉 stratum（塔与区层是单例），
+    // 只看 stratum.abyssRing 会让打完伪神的回廊玩家从第 1 环重开
+    const ring = Math.max(stratum?.abyssRing ?? 0, battleState?.abyssHighestRing ?? 0) + 1;
     const baseFloor = stratum ? stratum.baseFloor + stratum.floors : 0;
     const { stratum: ringStratum, guard } = buildAbyssRing({
       ring,

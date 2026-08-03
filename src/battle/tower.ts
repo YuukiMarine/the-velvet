@@ -244,6 +244,41 @@ export function migrationStratumName(shadowName: string): { name: string; descri
   };
 }
 
+// ── Lv6 · 顶阙（最终 BOSS「伪神」的区层）──────────────────────
+// 五个区层全通后才显形；结构刻意极短：一层回响整备 + 一层对峙。
+// 不做 10-12 层的攀爬——终局的重量在那一战与其后的演出里，不在路上。
+
+export const FINAL_STRATUM_FLOORS = 2;
+
+export interface FinalStratumSeed {
+  stratumId: string;
+  baseFloor: number;
+  now: Date;
+  name: string;
+  description: string;
+}
+
+export function buildFinalStratum(seed: FinalStratumSeed): TowerStratum {
+  const nodes: StratumNode[] = [
+    { id: 'f6-1', floor: 1, lane: 1, type: 'echo', edges: ['f6-2'], cleared: false },
+    { id: 'f6-2', floor: 2, lane: 1, type: 'boss', edges: [], cleared: false },
+  ];
+  return {
+    id: seed.stratumId,
+    level: 6,
+    name: seed.name,
+    description: seed.description,
+    createdWeekKey: weekKeyOf(seed.now),
+    baseFloor: seed.baseFloor,
+    floors: FINAL_STRATUM_FLOORS,
+    nodes,
+    currentNodeId: null,
+    deepenCount: 0,
+    status: 'climbing',
+    createdAt: seed.now,
+  };
+}
+
 // ── 批5 · 深渊回廊（§13 批5）────────────────────────────────
 // Lv5 通关后解锁的无尽环域：每环 = 5 层直线小图（战斗×2-3 + 事件/回响/月匣 + 顶端守卫）。
 // 零 AI 即时生成；守卫 HP +5%/环、词缀 1→4 条 cap；无月相加深；通关不锁日（同晚可连环）。

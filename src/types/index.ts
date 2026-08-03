@@ -1074,7 +1074,8 @@ export type RelicKind =
   | 'lightningrod' // 引雷针：1More 后下次伤害+
   | 'compass'      // 登塔者罗盘：塔内节点 SP 收益+
   | 'maskstrap'    // 面具挂绳：切换面具后首次攻击+
-  | 'handwarmer';  // 影之怀炉：回响节点回复+
+  | 'handwarmer'   // 影之怀炉：回响节点回复+
+  | 'heroproof';   // 英雄的证明：SP消耗−5 · 攻击+20%（Lv6 伪神唯一掉落，不进随机池）
 
 export interface RelicInstance {
   id: string;
@@ -1174,12 +1175,29 @@ export interface Shadow {
   currentHp: number;
   maxHp2?: number;
   currentHp2?: number;
+  /** （Lv6 伪神）第三条血——仅最终 BOSS 拥有；缺省 = 只有两形态 */
+  maxHp3?: number;
+  currentHp3?: number;
   responseLines: string[];
   attackPower: number;
   lastHpRegenDate?: string;
   /** （批3）词缀：显形时 0-1 条，月相日异变加深每次 +1 */
   affixes?: AffixKind[];
+  /** （Lv6）最终 BOSS「伪神」标记：三条血 + 击破后走终局演出而非常规结算 */
+  isFinalBoss?: boolean;
+  /** （Lv6）伪神对你的指认（显形时 AI 生成一次，演出与档案复用，不重复生成） */
+  flaw?: FinalBossFlaw;
   createdAt: Date;
+}
+
+/** （Lv6）伪神的「缺点判词」：它读你的记录后指认的那一件事 */
+export interface FinalBossFlaw {
+  /** 档位 slug，如 'inconsistency' / 'perfectionism'（档案分组用） */
+  key: string;
+  /** 「三分钟热度」 */
+  title: string;
+  /** 一句指认，≤40 字，第二人称 */
+  verdict: string;
 }
 
 export interface DefeatedShadowRecord {
@@ -1232,6 +1250,15 @@ export interface BattleState {
   abyssHighestRing?: number;
   /** （批4）黑猫败因信：待投递（下次打开黑猫时推送并清除） */
   pendingCatLetter?: { text: string; dateKey: string };
+  /**
+   * （Lv6 伪神）终局进度。字段缺省 = 尚未满足条件（不存 'locked'，少一个要迁移的取值）：
+   *  revealed = 已显形未击败 / finale = 三条血已破、终局演出进行中（杀进程后重入回到演出）/ defeated = 已终结
+   */
+  finalBossStage?: 'revealed' | 'finale' | 'defeated';
+  /** （Lv6）伪神对你的指认——显形时生成一次，演出与档案复用 */
+  finalBossFlaw?: FinalBossFlaw;
+  /** （Lv6）终结日期（YYYY-MM-DD，档案馆「终局」一栏） */
+  finalBossDefeatedAt?: string;
 }
 
 export interface BattleLogEntry {

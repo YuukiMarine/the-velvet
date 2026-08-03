@@ -133,7 +133,7 @@ export function VictoryModal({ isOpen, onClose }: Props) {
             <p className="text-gray-400 text-sm italic mb-2">阴影消散，化为了你的力量</p>
             {shadow && (
               <p className="text-emerald-400 text-sm font-semibold mb-1">
-                HP 上限 +{HP_BONUS_PER_DEFEAT[Math.min(shadow.level - 1, 4)] ?? 2}
+                HP 上限 +{HP_BONUS_PER_DEFEAT[Math.min(shadow.level - 1, HP_BONUS_PER_DEFEAT.length - 1)] ?? 2}
               </p>
             )}
             <p className="text-white text-sm font-semibold mb-3">选择奖励属性 (+10点)</p>
@@ -172,7 +172,7 @@ export function VictoryModal({ isOpen, onClose }: Props) {
             </span>
             {shadow && (
               <p className="text-emerald-400/70 text-sm mt-1.5">
-                HP 上限 +{HP_BONUS_PER_DEFEAT[Math.min(shadow.level - 1, 4)] ?? 2}
+                HP 上限 +{HP_BONUS_PER_DEFEAT[Math.min(shadow.level - 1, HP_BONUS_PER_DEFEAT.length - 1)] ?? 2}
               </p>
             )}
           </motion.div>
