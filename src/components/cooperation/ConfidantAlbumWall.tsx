@@ -15,6 +15,8 @@ import { useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import type { CloudProfile, Confidant, Friendship } from '@/types';
 import { OnlineStarBadge } from './OnlineStarBadge';
+import { ConfidantNameFx } from './ConfidantNameFx';
+import { MAX_INTIMACY } from '@/utils/confidantLevels';
 import { TAROT_BY_ID } from '@/constants/tarot';
 import { TarotCardSVG } from '@/components/astrology/TarotCardSVG';
 import { useBoldness } from '@/utils/boldness';
@@ -150,7 +152,13 @@ const CardBackFace = ({ c, onOpenDetail, prayer }: {
               size={13}
             />
           )}
-          <span className="truncate text-lg font-black" style={{ color: sk.ink }}>{c.name}</span>
+          <ConfidantNameFx
+            waiting={!!prayer?.waitingReciprocity && !prayer?.alreadyPrayed}
+            maxBond={c.intimacy >= MAX_INTIMACY}
+            className="text-lg font-black"
+          >
+            <span style={{ color: sk.ink }}>{c.name}</span>
+          </ConfidantNameFx>
         </span>
         <span className="shrink-0 text-[10px] font-bold" style={{ color: sk.meta }}>
           {card?.roman ?? ''} {c.orientation === 'reversed' ? '逆位' : '正位'}
@@ -977,7 +985,12 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
                 }`}
                 style={isP4 ? { fontFamily: 'var(--p4-display-font, serif)' } : undefined}
               >
-                {current.name}
+                <ConfidantNameFx
+                  waiting={!!prayerFor?.(current)?.waitingReciprocity && !prayerFor?.(current)?.alreadyPrayed}
+                  maxBond={current.intimacy >= MAX_INTIMACY}
+                >
+                  {current.name}
+                </ConfidantNameFx>
               </motion.h3>
               <span
                 className={`shrink-0 px-2 py-1 text-[11px] font-black leading-none text-white ${isP4 ? 'italic' : 'rounded-lg'}`}

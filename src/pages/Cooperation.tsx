@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { useAppStore } from '@/store';
+import { useAppStore, toLocalDateKey } from '@/store';
 import { useCloudStore } from '@/store/cloud';
 import { useCloudSocialStore } from '@/store/cloudSocial';
 import { PageTitle } from '@/components/PageTitle';
@@ -17,6 +17,7 @@ import { NotificationsPanel } from '@/components/cooperation/NotificationsPanel'
 import { AddOnlineConfidantModal } from '@/components/cooperation/AddOnlineConfidantModal';
 import { OnlineConfidantProfileCard } from '@/components/cooperation/OnlineConfidantProfileCard';
 import { OnlineStarBadge } from '@/components/cooperation/OnlineStarBadge';
+import { ConfidantNameFx } from '@/components/cooperation/ConfidantNameFx';
 import type { FriendWallItem } from '@/components/cooperation/ConfidantAlbumWall';
 import { ImageCropDialog } from '@/components/ImageCropDialog';
 import { getAllOnlineCardFaces, setOnlineCardFace } from '@/services/onlineCardFace';
@@ -28,6 +29,7 @@ import { CoopVictoryScreen } from '@/components/cooperation/CoopVictoryScreen';
 import { MAJOR_ARCANA_IDS } from '@/utils/confidantLevels';
 import { sendPrayer, hasPrayedToday, hasBeenPrayedByToday } from '@/services/prayers';
 import { loadSocial } from '@/services/social';
+import { nextPrayerStreak, prayerNarrative } from '@/utils/prayerStreak';
 import { playSound } from '@/utils/feedback';
 import type { CloudProfile, CoopBond, CoopShadow, Friendship } from '@/types';
 import { P4Sparkle } from '@/ui/p4Kit';
@@ -36,7 +38,7 @@ type Filter = 'all' | 'offline' | 'online' | 'archived';
 
 export function Cooperation() {
   const isP4 = useUiChannel() === 'p4';
-  const { confidants, counselArchives, getCounselCooldown, hasActiveCounsel, bumpConfidantIntimacy, battleState, saveBattleState, settings, updateSettings } = useAppStore();
+  const { confidants, counselArchives, getCounselCooldown, hasActiveCounsel, bumpConfidantIntimacy, updateConfidant, battleState, saveBattleState, settings, updateSettings } = useAppStore();
   // P9 专辑墙：视图偏好持久记忆（PRD §5.3），默认墙
   const viewMode = settings.confidantViewMode ?? 'wall';
   const cloudUser = useCloudStore(s => s.cloudUser);
@@ -152,12 +154,17 @@ export function Cooperation() {
       );
       if (localOnline) {
         try {
+          // 连续祈愿天数：第 2 天起接管互动记录的默认文案（用户口径）。
+          // 先算再写：streak 依赖 lastPrayerDate，而下面这次 updateConfidant 会覆盖它。
+          const todayKey = toLocalDateKey();
+          const streak = nextPrayerStreak(localOnline.lastPrayerDate, localOnline.prayerStreak, todayKey);
           await bumpConfidantIntimacy(
             localOnline.id,
             1,
             'conversation',
-            reciprocal ? '今日互相祈愿。愿望之光交汇' : '送出今日的祈愿',
+            prayerNarrative(streak, reciprocal),
           );
+          await updateConfidant(localOnline.id, { prayerStreak: streak, lastPrayerDate: todayKey });
         } catch (err) {
           console.warn('[cooperation] bump intimacy on prayer failed', err);
         }
@@ -1101,7 +1108,9 @@ function OnlineFriendPlaceholderCard({
             <div className="flex items-center gap-2">
               {/* 在线好友统一带四角星；今日祈愿没回应就闪（同列表 / 专辑墙口径） */}
               <OnlineStarBadge glow={waitingReciprocity && !alreadyPrayed} />
-              <span className="font-bold text-gray-900 dark:text-white truncate">{name}</span>
+              <ConfidantNameFx waiting={waitingReciprocity && !alreadyPrayed} className="font-bold text-gray-900 dark:text-white min-w-0">
+                <span className="truncate">{name}</span>
+              </ConfidantNameFx>
               <span className="text-[9px] font-bold tracking-widest px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
                 ONLINE
               </span>

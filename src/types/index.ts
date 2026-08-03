@@ -1516,6 +1516,13 @@ export interface Confidant {
   lastInteractionDate?: string; // YYYY-MM-DD
   /** 最后互动时间（用于 decay 与 "已离开" 判定） */
   lastInteractionAt?: Date;
+  /**
+   * 连续祈愿天数（在线同伴专属）。第 2 天起接管互动记录的默认文案。
+   * 判定只认「昨天」：断一天就从 1 重新数（与全站 streak 口径一致，见 utils/prayerStreak.ts）。
+   */
+  prayerStreak?: number;
+  /** 最近一次为 Ta 祈愿的本地日期 YYYY-MM-DD（streak 的推进依据） */
+  lastPrayerDate?: string;
   createdAt: Date;
   archivedAt?: Date;
 }

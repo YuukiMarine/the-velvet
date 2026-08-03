@@ -3,6 +3,7 @@ import { useRef, useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useAppStore } from '@/store';
 import { OnlineStarBadge } from './OnlineStarBadge';
+import { ConfidantNameFx } from './ConfidantNameFx';
 import { useCloudStore } from '@/store/cloud';
 import type { Confidant, CoopShadow } from '@/types';
 import { TAROT_BY_ID } from '@/constants/tarot';
@@ -203,9 +204,13 @@ export function ConfidantCard({ confidant, onClick, prayer, activeShadow, onShad
               {isOnline && (
                 <OnlineStarBadge glow={!!prayer?.waitingReciprocity && !prayer?.alreadyPrayed} />
               )}
-              <span className="font-semibold text-gray-900 dark:text-white truncate">
-                {confidant.name}
-              </span>
+              <ConfidantNameFx
+                waiting={!!prayer?.waitingReciprocity && !prayer?.alreadyPrayed}
+                maxBond={isMax}
+                className="font-semibold text-gray-900 dark:text-white min-w-0"
+              >
+                <span className="truncate">{confidant.name}</span>
+              </ConfidantNameFx>
               {isOnline && (
                 <span className="text-[9px] font-bold tracking-wider px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
                   ONLINE
