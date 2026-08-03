@@ -43,7 +43,9 @@ const LevelUpP3 = ({ attributeName, newLevel, isOpen, onClose }: LevelUpModalPro
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className={`fixed inset-0 ${zClass.celebration} flex items-center justify-center overflow-hidden bg-black/55 p-5 backdrop-blur-sm`}
+          // backdrop-blur 撤掉、黑幕 55% → 65% 补回遮蔽力：
+          // 全屏毛玻璃叠在还在跑的背景动画上 = 每帧重算一次全屏模糊（见 CelebrationCutIn 同处注释）
+          className={`fixed inset-0 ${zClass.celebration} flex items-center justify-center overflow-hidden bg-black/65 p-5`}
           onClick={onClose}
         >
           {/* 紧凑大卡（用户定稿：不占满全屏、四周留出背景）；演出元素全部收进卡内 */}

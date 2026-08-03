@@ -697,21 +697,8 @@ function App() {
             </div>
           )}
 
-          {/* 装饰纹理（无背景图、无动画时；P4 黄舞台要真留白，不铺点阵） */}
-          {!settings.backgroundImage
-            && !bgAnimOn
-            && (settings.backgroundPattern ?? true)
-            && user?.theme !== 'yellow'
-            && (
-              <div
-                className="fixed inset-0 pointer-events-none select-none"
-                style={{
-                  backgroundImage: `radial-gradient(circle, ${settings.darkMode ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.055)'} 1px, transparent 1px)`,
-                  backgroundSize: '24px 24px',
-                }}
-              />
-            )
-          }
+          {/* 「装饰纹理」（无背景图无动画时铺的 24px 点阵）已下架 —— 用户口径「没啥用」。
+              它是全屏一张 24px 平铺渐变，四个频道各自的舞台装饰早就把这层盖过去了。 */}
 
           {/* P4 黄舞台背景装饰：巨型橙弧环 + 大花剪影 + 四角星，缓解纯黄大面积平铺 */}
           {user?.theme === 'yellow' && !bgImageOn && <P4StageDecor />}

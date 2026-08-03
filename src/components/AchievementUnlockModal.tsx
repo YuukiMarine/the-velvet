@@ -62,7 +62,10 @@ const AchievementUnlockP3 = ({ isOpen, onClose, achievementTitle }: AchievementU
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           className={`fixed inset-0 ${zClass.celebration} flex items-center justify-center overflow-hidden p-5`}
-          style={{ background: 'rgba(190,228,244,0.88)', backdropFilter: 'blur(3px)' }}
+          // 撤掉 backdrop-filter：全屏毛玻璃叠在**仍在跑的背景动画**上，等于每帧重算一次
+          // 全屏模糊（实测弹窗期间下面还有 11 个背景动画在跑）。而这层底本来就 88% 不透明，
+          // 3px 模糊只有约一成权重，去掉几乎看不出来。底色补到 0.93 找回一点遮蔽力。
+          style={{ background: 'rgba(190,228,244,0.93)' }}
           onClick={onClose}
         >
           {/* 出场 MG：三圈水波从画面中心推开（蓝频道签名动效，与长按轮盘 / 换牌同一套）。

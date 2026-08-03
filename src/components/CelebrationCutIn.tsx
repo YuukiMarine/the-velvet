@@ -185,7 +185,11 @@ export const CelebrationCutIn = ({
             )}
 
             {/* 自动关闭倒计时：进度条本身也是"还能看多久"的提示，点 backdrop 随时跳过。
-                P4 圆贴纸下沿放短条（圆形卡裁不下全宽直条）。 */}
+                P4 圆贴纸下沿放短条（圆形卡裁不下全宽直条）。
+
+                ⚠️ 走 scaleX 而不是 width：width 是**布局属性**，逐帧改它等于让主线程
+                在弹窗整个 3.5~4.5 秒里每帧重排 + 重绘一次这棵子树。scaleX 只在合成器上
+                跑，观感完全一样（一根从右往左退的实心条）。 */}
             {autoCloseMs > 0 && (
               <div
                 aria-hidden
@@ -194,10 +198,11 @@ export const CelebrationCutIn = ({
                 }`}
               >
                 <motion.div
-                  initial={{ width: '100%' }}
-                  animate={{ width: '0%' }}
+                  initial={{ scaleX: 1 }}
+                  animate={{ scaleX: 0 }}
                   transition={{ duration: autoCloseMs / 1000, ease: 'linear' }}
-                  className={`h-full ${isP4 ? 'rounded-full bg-[#131313]/70' : 'bg-white/80'}`}
+                  style={{ transformOrigin: 'left center' }}
+                  className={`h-full w-full ${isP4 ? 'rounded-full bg-[#131313]/70' : 'bg-white/80'}`}
                 />
               </div>
             )}

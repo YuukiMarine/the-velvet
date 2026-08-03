@@ -31,7 +31,9 @@ export const SkillUnlockModal = ({ isOpen, onClose, skillName }: SkillUnlockModa
       onClose={onClose}
       theme="violet"
       autoCloseMs={4000}
-      particles={30}
+      // 30 → 16，与成就解锁对齐。30 是随手写的数，观感上分不出来，
+      // 但它是弹窗期间层数最多的一处（实测 will-change 元素 35 个 vs 成就的 21 个）
+      particles={16}
       onShown={triggerLevelFeedback}
       icon={
         <motion.span

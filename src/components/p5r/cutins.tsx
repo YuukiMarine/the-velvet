@@ -236,12 +236,14 @@ const P5CutInStage = ({ isOpen, onClose, ariaLabel, autoCloseMs, onShown, maxW =
               {/* 倒计时：黑槽 + 猩红条（也是「还能看多久」的提示） */}
               {autoCloseMs > 0 && (
                 <div aria-hidden className="relative mt-3 h-[7px] overflow-hidden" style={{ background: '#2a2926', clipPath: roughQuad(490, 3) }}>
+                  {/* scaleX 而非 width：width 是布局属性，逐帧改它会让主线程在弹窗
+                      整个生命周期里每帧重排一次（见 CelebrationCutIn 同处注释） */}
                   <motion.div
-                    initial={{ width: '100%' }}
-                    animate={{ width: '0%' }}
+                    initial={{ scaleX: 1 }}
+                    animate={{ scaleX: 0 }}
                     transition={{ duration: autoCloseMs / 1000, ease: 'linear' }}
-                    className="h-full"
-                    style={{ background: P5R.red }}
+                    className="h-full w-full"
+                    style={{ background: P5R.red, transformOrigin: 'left center' }}
                   />
                 </div>
               )}

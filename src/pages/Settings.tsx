@@ -1250,7 +1250,7 @@ export const Settings = () => {
                           <h4 className={p3 ? 'text-[15px] font-black' : 'font-medium text-gray-800 dark:text-white'} style={p3 ? { color: P3R.ink } : undefined}>背景动画</h4>
                           <p className={p3 ? 'text-[12px] font-semibold' : 'text-sm text-gray-600 dark:text-gray-400'} style={p3 ? { color: P3R.grey } : undefined}>
                             {user?.theme === 'red'
-                              ? '最多同时开启两个。红主题默认不开——舞台本身已经铺满拼贴装饰，要叠就在这里点开'
+                              ? '最多同时开启两个。'
                               : '最多同时开启两个，跟随主题色'}
                           </p>
                         </div>
@@ -1312,20 +1312,7 @@ export const Settings = () => {
                       </div>
                     )}
 
-                    {/* 装饰纹理（无动画时才显示开关） */}
-                    {!settings.backgroundImage && ((settings.backgroundAnimation ?? []) as string[]).length === 0 && (
-                      <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                        <div>
-                          <h4 className="font-medium text-gray-800 dark:text-white">装饰纹理</h4>
-                          <p className="text-sm text-gray-600 dark:text-gray-400">无背景图时显示细腻底纹</p>
-                        </div>
-                        <Toggle
-                          checked={settings.backgroundPattern ?? true}
-                          onChange={(v) => updateSettings({ backgroundPattern: v })}
-                          aria-label="装饰纹理"
-                        />
-                      </div>
-                    )}
+                    {/* 「装饰纹理」开关已下架（用户口径「没啥用」），渲染端同步移除 */}
 
                     {/* 开屏动画 */}
                     <div className={p3 ? 'space-y-3' : 'space-y-3 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg'}>

@@ -815,7 +815,6 @@ const DEFAULT_SETTINGS: Settings = {
   backgroundImage: undefined,
   backgroundOrientation: undefined,
   backgroundOpacity: 0.3,
-  backgroundPattern: true,
   backgroundAnimation: ['aurora'],
   soundMuted: false,
   customLevelThresholds: undefined,
@@ -1000,8 +999,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         backgroundImage: undefined,
         backgroundOrientation: undefined,
         backgroundOpacity: 0.3,
-        backgroundPattern: true,
-        backgroundAnimation: ['aurora'],
+              backgroundAnimation: ['aurora'],
         soundMuted: false
       };
       await db.settings.put(defaultSettings);
