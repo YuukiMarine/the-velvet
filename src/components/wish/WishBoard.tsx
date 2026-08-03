@@ -36,6 +36,17 @@ export interface WishBoardSkin {
   line: string;
   /** 行底（列表项背景） */
   rowBg: string;
+  /**
+   * 「直接落在舞台上」的字色 / 线色——空态那段说明、底部「＋ 记下一个愿望」。
+   *
+   * 这两处和上面那批不是一个衬底：ink/sub/line 是画在 rowBg 那张卡**里面**的，
+   * 舞台底则是页面自己的底色。黄频道夜间正好把这两者掰成了相反极性——愿望行仍是
+   * 奶油卡（inline background 不吃夜间毯式规则），舞台却翻成深紫，于是同一个
+   * sub=#131313 在卡里合适、在舞台上直接隐身（用户上报「愿望页字是黑的」）。
+   * 缺省回落到 ink/sub/line，只有需要区分的频道才覆写。
+   */
+  stageSub?: string;
+  stageLine?: string;
   /** 直角/斜切等形状：留给宿主传 clipPath，缺省圆角 */
   rowClip?: string;
   radius: number;
@@ -55,6 +66,9 @@ export function WishBoard({ skin }: { skin: WishBoardSkin }) {
   const [fulfilling, setFulfilling] = useState<Wish | null>(null);
   const [composeOpen, setComposeOpen] = useState(false);
   const [panelFor, setPanelFor] = useState<string | null>(null);
+
+  const stageSub = skin.stageSub ?? skin.sub;
+  const stageLine = skin.stageLine ?? skin.line;
 
   const tokens = settings.terminalDanmakuTokens ?? 0;
   // 在审条数存在 localStorage，不进 store——它是本机自查用的凭据表，
@@ -104,7 +118,7 @@ export function WishBoard({ skin }: { skin: WishBoardSkin }) {
 
       {/* ② 愿望列表 */}
       {active.length === 0 ? (
-        <p className="px-1 py-5 text-center text-[12px] leading-relaxed" style={{ color: skin.sub }}>
+        <p className="px-1 py-5 text-center text-[12px] leading-relaxed" style={{ color: stageSub }}>
           还没有愿望。<br />
           写下一个远一点的——记录时把事挂上去，就能看见自己在靠近它。
         </p>
@@ -234,6 +248,8 @@ export function WishBoard({ skin }: { skin: WishBoardSkin }) {
             debounceMs={150}
             placeholder="想实现的事…"
             className="min-w-0 flex-1 px-3 py-2 text-[13px] font-bold outline-none"
+            // 输入框跟愿望行同一张纸（rowBg + ink），不然它在舞台上是块没有底的透明区
+            style={{ background: skin.rowBg, color: skin.ink, borderRadius: skin.radius }}
             aria-label="愿望标题"
           />
           <button
@@ -248,7 +264,7 @@ export function WishBoard({ skin }: { skin: WishBoardSkin }) {
             type="button"
             onClick={() => { setAdding(false); setDraft(''); }}
             className="shrink-0 px-2 py-2 text-[11px] font-black"
-            style={{ color: skin.sub }}
+            style={{ color: stageSub }}
           >
             ×
           </button>
@@ -258,7 +274,7 @@ export function WishBoard({ skin }: { skin: WishBoardSkin }) {
           type="button"
           onClick={() => setAdding(true)}
           className="w-full py-2 text-[11px] font-black"
-          style={{ border: `1px dashed ${skin.line}`, color: skin.sub, borderRadius: skin.radius }}
+          style={{ border: `1px dashed ${stageLine}`, color: stageSub, borderRadius: skin.radius }}
         >
           ＋ 记下一个愿望
         </button>
@@ -296,8 +312,12 @@ export function wishSkinFor(channel: 'p5' | 'p4' | 'p3' | 'neutral'): WishBoardS
                rowBg: '#f0e9df', radius: 0,
                rowClip: 'polygon(2px 0, 100% 1.5px, calc(100% - 2px) 100%, 0 calc(100% - 1.5px))' };
     case 'p4':
+      // stage* 走两个**只在夜间声明**的变量，回落值即白天值：
+      // --p4-menu-ink 是用户上一轮为黄频道夜间点名的浅蓝（#a9c6ff），--p4-rule 是配套的浅横线。
       return { ink: '#131313', sub: 'rgba(19,19,19,0.6)', accent: 'var(--p4-orange, #f9a11b)',
-               line: 'rgba(19,19,19,0.16)', rowBg: '#fff9e3', radius: 14 };
+               line: 'rgba(19,19,19,0.16)', rowBg: '#fff9e3', radius: 14,
+               stageSub: 'var(--p4-menu-ink, rgba(19,19,19,0.6))',
+               stageLine: 'var(--p4-rule, rgba(19,19,19,0.16))' };
     case 'p3':
       return { ink: 'var(--p3r-ink, #0a1230)', sub: 'var(--p3r-ink-soft, #3d4a66)',
                accent: 'var(--p3r-blue, #1b57ff)', line: 'rgba(147,190,222,0.5)',

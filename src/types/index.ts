@@ -433,6 +433,13 @@ export interface Settings {
   p5BgAnimOptIn?: boolean;
   customThemeColor?: string;       // 自定义主题色 hex（theme='custom' 时生效）
   customSoundScheme?: ThemeType;   // 自定义音效方案（custom 主题时使用，默认跟随 blue）
+  /**
+   * 自定义主题下的塔罗卡面配色（'p3' 蓝 / 'p4' 黄 / 'p5' 红），默认 'p3'。
+   * **只在 custom 主题生效**——蓝/黄/红三个频道各自的卡面是频道视觉的一部分，
+   * 不接受覆写；只有自定义主题本来就没有自己的一套牌，才轮到用户挑。
+   * 三套图的差别不止色调：p5 走 Thoth 序，归位按牌名 slug（见 constants/tarotArt.ts）。
+   */
+  customTarotSet?: 'p3' | 'p4' | 'p5';
   countercurrentEnabled?: boolean; // 逆流：连续3日无增长属性自动 -1/天
   countercurrentEnabledAt?: string; // 逆流开启日期 YYYY-MM-DD，防止开启当天就触发
   // ── F2a 本地通知 ─────────────────────────────────────────

@@ -28,7 +28,9 @@
  *   ③ 粒子父子两层合并成一层（24 → 8 个合成层），删掉常驻 will-change
  *      （MDN 明确点名的反模式：它让浏览器永久保留这些层的后备存储）。
  *      顺带发现 PARTICLE_CONFIG 里的 drift 字段从来没被用过——keyframe 里写死的是 30px。
- *   ④ 新增 frozen / D0：转场垫底层的复刻份与低性能降级下不跑动画，只留静态首帧。
+ *   ④ 新增 frozen / D0：转场垫底层的复刻份与低性能降级下**定格**（paused），不逐帧推进。
+ *      第一版是把 animation 整条摘掉，那会让复刻份停在 0% 而活层在任意相位——
+ *      这正是用户随后上报的「切页时背景闪一下」。定格必须带相位，见 frozen 的注释。
  *
  * 性能护栏（Android 防闪烁，原有口径保留）：
  * - 动画只动 transform / opacity，全部在合成器线程
@@ -43,10 +45,15 @@ interface BackgroundAnimationProps {
   styles: string[];
   darkMode?: boolean;
   /**
-   * 冻结：只画静态首帧，不挂任何 animation。
-   * 用在页面擦除转场的**垫底复刻份**上——那一份只存在 420ms 且全程被圆形蒙版
-   * 一路盖掉，静止的极光肉眼分辨不出来，但能让合成动画数不至于在最需要帧预算
-   * 的那一刻翻倍（3 块变 6 块、8 颗粒子变 16 颗）。
+   * 冻结：动画**定格在与活层同一相位**（animation-play-state: paused），不再逐帧推进。
+   * 用在页面擦除转场的**复刻份**上——让合成动画数不至于在最需要帧预算的那一刻翻倍
+   * （3 块变 6 块、8 颗粒子变 16 颗），但画面与活层逐像素一致。
+   *
+   * ⚠️ v2.6.5 第一版把 animation 整条摘掉了，那是错的（用户上报「切页时背景闪一下」）：
+   * 没有 animation 的极光块停在 0% 偏移、粒子全部堆在屏幕底缘且 opacity 不为 0，
+   * 而活层正处在任意相位——垫层一挂一卸就是两次跳变。定格必须**带相位**，
+   * 而 -sync 的负 delay 正好把 paused 的定格点钉在 (now - 纪元) 上，与活层同帧。
+   * 擦除只有 420ms，对 18~28s 周期而言漂移 <2%，肉眼不可分辨。
    */
   frozen?: boolean;
 }
@@ -140,8 +147,12 @@ function ensureKeyframes() {
   document.head.appendChild(el);
 }
 
-/** frozen 时把 animation 整条摘掉——静态首帧，零合成动画 */
-const anim = (frozen: boolean | undefined, value: string) => (frozen ? undefined : value);
+/**
+ * frozen 时保留 animation 串、只把播放状态设成 paused：
+ * 定格点由各自的负 delay 决定 = 与活层同相位（见 frozen 的注释）。
+ * paused 的动画不上合成器时间线、不逐帧推进，省的是 tick，不是层。
+ */
+const playState = (frozen: boolean | undefined) => (frozen ? ('paused' as const) : undefined);
 
 // ── Aurora ────────────────────────────────────────────────
 function Aurora({ darkMode, frozen }: { darkMode?: boolean; frozen?: boolean }) {
@@ -169,7 +180,8 @@ function Aurora({ darkMode, frozen }: { darkMode?: boolean; frozen?: boolean }) 
             // 用更大的 radial-gradient 中间段模拟 blur，避免实时 filter: blur
             background: 'radial-gradient(circle, var(--color-primary) 0%, var(--color-primary) 15%, transparent 65%)',
             opacity: b.opacity,
-            animation: anim(frozen, b.anim),
+            animation: b.anim,
+            animationPlayState: playState(frozen),
             willChange: frozen ? undefined : 'transform',
             transform: 'translateZ(0)',
             backfaceVisibility: 'hidden',
@@ -211,7 +223,11 @@ function Particles({ darkMode, frozen }: { darkMode?: boolean; frozen?: boolean 
             borderRadius: '50%',
             background: 'var(--color-primary)',
             opacity: op,
-            animation: anim(frozen, `particle-float-${p.v} ${p.dur}s ease-in ${(p.delay - sync).toFixed(2)}s infinite`),
+            animation: `particle-float-${p.v} ${p.dur}s ease-in ${(p.delay - sync).toFixed(2)}s infinite`,
+            animationPlayState: playState(frozen),
+            // both：delay 还没走完时先套 0% 帧（opacity:0）。否则那几颗正 delay 的粒子
+            // 会以 opacity:0.35 干杵在屏幕底缘等自己出场——冷启动那几秒底边一排静止小点
+            animationFillMode: 'both',
             // 不写 will-change：animation 里已经是 transform/opacity，浏览器会自动提升；
             // 常驻 will-change 会让它永久占着后备存储
             transform: 'translateZ(0)',
@@ -242,7 +258,8 @@ function Wave({ darkMode, frozen }: { darkMode?: boolean; frozen?: boolean }) {
             'radial-gradient(ellipse at 50% 50%, var(--color-primary) 0%, transparent 40%)',
           ].join(', '),
           opacity: op,
-          animation: anim(frozen, `wave-shift 20s ease-in-out ${(-sync).toFixed(2)}s infinite`),
+          animation: `wave-shift 20s ease-in-out ${(-sync).toFixed(2)}s infinite`,
+          animationPlayState: playState(frozen),
           willChange: frozen ? undefined : 'transform',
           transform: 'translateZ(0)',
           backfaceVisibility: 'hidden',
@@ -264,7 +281,8 @@ function Pulse({ darkMode, frozen }: { darkMode?: boolean; frozen?: boolean }) {
     backgroundImage: `linear-gradient(${deg}deg, var(--color-primary) 1px, transparent 1px)`,
     backgroundSize: size,
     opacity: initialOpacity,
-    animation: anim(frozen, `${animName} 4s ease-in-out ${delay}s infinite`),
+    animation: `${animName} 4s ease-in-out ${delay}s infinite`,
+    animationPlayState: playState(frozen),
     animationFillMode: 'both' as const,
     willChange: frozen ? undefined : 'opacity',
     transform: 'translateZ(0)',
