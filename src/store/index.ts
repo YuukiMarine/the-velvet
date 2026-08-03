@@ -1,5 +1,5 @@
 ﻿import { create } from 'zustand';
-import { User, Attribute, Activity, Achievement, Skill, Settings, ThemeType, AttributeId, AttributeNamesKey, DailyEvent, Todo, TodoCompletion, TodoStep, FateCandidate, BigDealClearPayload, PeriodSummary, SummaryPeriod, SummaryPromptPreset, WeeklyGoal, WeeklyGoalItem, Persona, Shadow, BattleState, TowerStratum, StratumNode, DailyDivination, LongReading, LongReadingFollowUp, Confidant, ConfidantEvent, ConfidantBuff, CounselSession, CounselMessage, CounselArchive, CallingCard, NotifSlot, LedgerEntry, Budget, SpendWorth, LedgerAsset, Wish, WishProgressPoint, WishProgressSource, WishProgressCutPayload, WishProposalPayload, ReturnPayload, ReturnTier, BackfillEntry, BattleArsenal, ChainKey, AffixKind, NavigatorPreset, NavigatorMemo, RelicInstance, FinalBossFlaw } from '@/types';
+import { User, Attribute, Activity, Achievement, Skill, Settings, ThemeType, AttributeId, AttributeNamesKey, DailyEvent, Todo, TodoCompletion, TodoStep, FateCandidate, BigDealClearPayload, PeriodSummary, SummaryPeriod, SummaryPromptPreset, WeeklyGoal, WeeklyGoalItem, Persona, Shadow, BattleState, TowerStratum, StratumNode, DailyDivination, LongReading, LongReadingFollowUp, Confidant, ConfidantEvent, ConfidantBuff, CounselSession, CounselMessage, CounselArchive, CallingCard, NotifSlot, LedgerEntry, Budget, SpendWorth, LedgerAsset, Wish, WishProgressPoint, WishProgressSource, WishProgressCutPayload, WishProposalPayload, ReturnPayload, ReturnTier, BackfillEntry, BattleArsenal, ChainKey, AffixKind, NavigatorPreset, NavigatorMemo, RelicInstance, FinalBossFlaw, FinalePhase } from '@/types';
 import { TAROT_BY_ID } from '@/constants/tarot';
 import { summarizeCounsel, type CounselContext, type CounselConfidantBrief, type CounselRecentEvent } from '@/utils/counselAI';
 import { db } from '@/db';
@@ -657,6 +657,10 @@ interface AppState {
   }) => Promise<void>;
   /** 三条血击破 → 进入终局演出（持久化，杀进程后重入回到演出） */
   beginFinalBossFinale: () => Promise<void>;
+  /** 终局演出进度落库（阶段 / 命中数 / 援军 SP / 被碾压后的 HP·SP） */
+  saveFinaleProgress: (patch: {
+    phase?: FinalePhase; hits?: number; allySp?: number; playerHp?: number; sp?: number;
+  }) => Promise<void>;
   /** 终局演出走完：发「英雄的证明」+ 记档案 + 区层通关 + finalBossStage='defeated' */
   defeatFinalBoss: () => Promise<RelicInstance | null>;
   /** 事件奖励：残月遗物 / 随机迷思 直接入包；返回展示名（结果文案用） */
@@ -5160,7 +5164,23 @@ ${activityLines || '（本期暂无记录）'}
   beginFinalBossFinale: async () => {
     const bs = get().battleState;
     if (!bs || bs.finalBossStage === 'defeated') return;
-    await get().saveBattleState({ ...bs, finalBossStage: 'finale' });
+    if (bs.finalBossStage === 'finale') return;   // 已在演出中：不要把阶段冲回 shock
+    await get().saveBattleState({
+      ...bs, finalBossStage: 'finale', finalePhase: 'shock', finaleHits: 0, finaleAllySp: 0,
+    });
+  },
+
+  saveFinaleProgress: async ({ phase, hits, allySp, playerHp, sp }) => {
+    const bs = get().battleState;
+    if (!bs) return;
+    await get().saveBattleState({
+      ...bs,
+      finalePhase: phase ?? bs.finalePhase,
+      finaleHits: hits ?? bs.finaleHits,
+      finaleAllySp: allySp ?? bs.finaleAllySp,
+      playerHp: playerHp ?? bs.playerHp,
+      sp: sp ?? bs.sp,
+    });
   },
 
   defeatFinalBoss: async () => {
@@ -5202,6 +5222,7 @@ ${activityLines || '（本期暂无记录）'}
       arsenal: already ? arsenal : { ...arsenal, relics: [...arsenal.relics, relic] },
       finalBossStage: 'defeated',
       finalBossDefeatedAt: todayKey,
+      finalePhase: 'reward',
     });
     // 顶阙通关 → 深渊回廊入口在 BattleArena 恢复显示
     const st = get().stratum ?? stratum;
