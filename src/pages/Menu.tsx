@@ -1136,7 +1136,10 @@ export const Menu = () => {
                 aria-label="功能入口"
                 className="relative overflow-hidden rounded-r-[22px] bg-[var(--ui-paper)] pb-7 pl-[74px] pr-5 pt-6"
                 style={{ touchAction: 'pan-y' }}
-                onPointerDown={(e) => { if (beginPress(e)) triggerNavFeedback(); }}
+                // 音效由 endPress 统一在松手时发一次。这里**不能**再补一次：
+                // 补了就是按下响一声、松手又响一声（用户上报的「黄主题菜单双响」）。
+                // 与 p3 那一列同口径。
+                onPointerDown={beginPress}
                 onPointerMove={trackPress}
                 onPointerUp={() => endPress((key) => { p4Rows.find((r) => r.key === key)?.onPress(); })}
                 onPointerCancel={() => { press.current.active = false; }}

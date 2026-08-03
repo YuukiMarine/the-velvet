@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore } from '@/store';
+import { useUiChannel } from '@/ui/useUiChannel';
 import { useLongPress } from '@/utils/useLongPress';
 import { triggerLightHaptic } from '@/utils/feedback';
 import { CallingCardCard } from './CallingCardCard';
 import { CallingCardEditor } from './CallingCardEditor';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { zClass } from '@/utils/zIndex';
 import type { CallingCard } from '@/types';
 
 /**
@@ -26,6 +29,8 @@ export function CallingCardSection({ sectionId = 'calling-card-section' }: { sec
   const [editingCard, setEditingCard] = useState<CallingCard | null>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [archivedExpanded, setArchivedExpanded] = useState(false);
+  // 红频道：本区块的标题裸露在黑舞台上，需要单独配色（见下方注释）
+  const p5 = useUiChannel() === 'p5';
 
   // F3 终端任务虽存于 callingCards 表，但有专属 TerminalTaskCard 渲染，不应进宣告卡列表
   const active = callingCards.filter(c => !c.archived && !c.terminal).sort((a, b) => {
@@ -46,11 +51,27 @@ export function CallingCardSection({ sectionId = 'calling-card-section' }: { sec
   return (
     <section id={sectionId} className="space-y-2">
       <div className="flex items-center justify-between px-1">
+        {/* 红频道单列：这两行是**裸露在黑舞台上**的区块标题，不在任何纸卡里，
+            所以吃不到 p5 的「灰系转黑」毯式规则——反而正是那条规则把 text-gray-900
+            压成 #050505，黑字压黑底（实测 titleColor rgb(5,5,5) / stageBg 纯黑），
+            用户上报的「calling card 和它左侧的字是黑色和灰色的」就是这里。
+            与 GoalDeck 的「目标」同口径：纸色 + 墨色硬阴影。 */}
         <div className="flex items-baseline gap-2">
-          <h3 className="font-bold text-gray-900 dark:text-white text-sm">倒计时</h3>
-          <span className="text-[10px] font-semibold tracking-widest text-gray-400 dark:text-gray-500 uppercase">
-            Calling Card
-          </span>
+          {p5 ? (
+            <>
+              <h3 className="text-sm font-black" style={{ color: '#f0e9df', textShadow: '2px 2px 0 #000000' }}>倒计时</h3>
+              <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: '#c00008' }}>
+                Calling Card
+              </span>
+            </>
+          ) : (
+            <>
+              <h3 className="font-bold text-gray-900 dark:text-white text-sm">倒计时</h3>
+              <span className="text-[10px] font-semibold tracking-widest text-gray-400 dark:text-gray-500 uppercase">
+                Calling Card
+              </span>
+            </>
+          )}
         </div>
         <motion.button
           whileTap={{ scale: 0.96 }}
@@ -99,7 +120,10 @@ export function CallingCardSection({ sectionId = 'calling-card-section' }: { sec
           <div className="pt-2">
             <button
               onClick={() => setArchivedExpanded(v => !v)}
-              className="w-full flex items-center gap-2 text-xs text-gray-400 dark:text-gray-500 px-1 py-1.5 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+              className={`w-full flex items-center gap-2 text-xs px-1 py-1.5 transition-colors ${
+                p5 ? 'font-black' : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300'
+              }`}
+              style={p5 ? { color: '#9b9791' } : undefined}
               aria-expanded={archivedExpanded}
             >
               <motion.span
@@ -144,6 +168,21 @@ export function CallingCardSection({ sectionId = 'calling-card-section' }: { sec
 }
 
 // ── 卡片右上角 ⋯ 菜单 ───────────────────────────────────
+/**
+ * ⚠️ 下拉层**必须 portal 到 body**，不能留在卡片里。
+ *
+ * 用户上报「⋯ 菜单点不了 / 红主题下被截断看不到 / 归档区的也一样」，实测量到两处裁切：
+ *   ① 归档区外壳是 `overflow-hidden`（AnimatePresence 折叠高度动画要它），
+ *      容器只有 66px 高，而下拉有 76~149px —— 直接被裁掉，且中心点命中的是别的元素；
+ *   ② 红频道 index.css 有一条毯式规则
+ *      `:root[data-ui-channel="p5"] .p5-reskin :is(.shadow-sm, …) { clip-path: polygon(…) }`，
+ *      CallingCardCard 的根正好带 `shadow-sm`，于是整张卡被裁成 58px 高的斜片，
+ *      长在里面的下拉一并被切没。
+ * 这两处都不是"调 z-index 能解决"的问题：clip-path 与 overflow 裁的是**渲染与命中区**。
+ * 唯一稳妥的解法是把浮层挪出这棵子树 —— 与本文件里 ConfirmDialog 早先的结论同源。
+ *
+ * 位置按触发按钮的视口坐标算，右对齐；下方放不下就翻到按钮上方；左右钳进视口。
+ */
 function CardMenu({
   card, open, onToggle, onClose,
   onPin, onEdit, onArchive, onUnarchive, onDelete,
@@ -159,41 +198,88 @@ function CardMenu({
   onDelete: () => void;
 }) {
   const [confirmDel, setConfirmDel] = useState(false);
-  // 点外关闭改 document 级监听：原先的树内 fixed 遮罩会被 GoalDeck 的 drag
-  // transform 捕获成"只罩住卡壳"的局部层（点外面关不掉，全局 bug 的一环）
   const rootRef = useRef<HTMLDivElement>(null);
+  const popRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+
+  const MENU_W = 160;
+  const place = () => {
+    const btn = rootRef.current?.getBoundingClientRect();
+    if (!btn) return;
+    const estH = 44 * [onPin, onEdit, onArchive, onUnarchive, true].filter(Boolean).length;
+    const below = btn.bottom + 6;
+    const flip = below + estH > window.innerHeight - 8;
+    setPos({
+      left: Math.max(8, Math.min(window.innerWidth - MENU_W - 8, btn.right - MENU_W)),
+      top: flip ? Math.max(8, btn.top - estH - 6) : below,
+    });
+  };
+
+  // 开启时定位；滚动/改尺寸时跟随（capture=true 才能收到内层滚动容器的事件）
+  useEffect(() => {
+    if (!open) { setPos(null); return; }
+    place();
+    const onMove = () => place();
+    window.addEventListener('scroll', onMove, true);
+    window.addEventListener('resize', onMove);
+    return () => {
+      window.removeEventListener('scroll', onMove, true);
+      window.removeEventListener('resize', onMove);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  // 点外关闭：浮层已 portal 出去，判定要同时认「触发按钮」与「浮层本体」两棵子树
   useEffect(() => {
     if (!open) return;
     const onDown = (e: PointerEvent) => {
-      if (!rootRef.current?.contains(e.target as Node)) onClose();
+      const t = e.target as Node;
+      if (rootRef.current?.contains(t) || popRef.current?.contains(t)) return;
+      onClose();
     };
     document.addEventListener('pointerdown', onDown);
     return () => document.removeEventListener('pointerdown', onDown);
   }, [open, onClose]);
+
+  const itemCls = 'w-full px-3 py-2.5 text-left text-xs font-semibold text-gray-800 dark:text-gray-100 hover:bg-black/5 dark:hover:bg-white/5';
+
   return (
     <div ref={rootRef} className="relative" onClick={(e) => e.stopPropagation()}>
       <button
+        /**
+         * 必须拦住 pointerdown 不让它冒到 GoalDeck。
+         *
+         * 这个区块整个被 GoalDeck 的 `motion.div drag="x"`（weeklyGoal/GoalDeck.tsx:194）
+         * 包着，用来做「本周目标 ⇄ 倒计时」的横滑切换，容器还挂着 touch-action: pan-y
+         * ——横向位移全归 Framer Motion。手指点这个 28px 的小目标时几乎必然带几 px 横移，
+         * FM 判成拖拽起手，随后就会吃掉这一次 click，表现就是用户说的「蓝/黄主题下点不了」。
+         * 同文件的 WeeklyGoalSection.tsx:247 早就为同一个坑加过这行，这里漏了。
+         */
+        onPointerDown={(e) => e.stopPropagation()}
         onClick={onToggle}
-        className="w-7 h-7 flex items-center justify-center rounded-full text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+        className="w-9 h-9 -my-1 flex items-center justify-center rounded-full text-white/70 hover:text-white hover:bg-white/10 transition-colors"
         aria-label="菜单"
         aria-expanded={open}
       >
         ⋯
       </button>
-      <AnimatePresence>
-        {open && (
-          <>
+      {createPortal(
+        <AnimatePresence>
+          {open && pos && (
             <motion.div
+              ref={popRef}
+              onClick={(e) => e.stopPropagation()}
               initial={{ opacity: 0, y: -4, scale: 0.96 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -4, scale: 0.96 }}
               transition={{ duration: 0.14 }}
-              className="absolute right-0 top-9 z-20 w-40 rounded-xl overflow-hidden shadow-2xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700"
+              style={{ position: 'fixed', left: pos.left, top: pos.top, width: MENU_W }}
+              className={`${zClass.cutin} rounded-xl overflow-hidden shadow-2xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700`}
             >
               {onPin && (
                 <button
                   onClick={onPin}
-                  className="w-full px-3 py-2.5 text-left text-xs font-semibold text-gray-800 dark:text-gray-100 hover:bg-black/5 dark:hover:bg-white/5"
+                  className={itemCls}
                 >
                   {card.pinned ? '取消钉选' : '📌 钉到主页'}
                 </button>
@@ -201,7 +287,7 @@ function CardMenu({
               {onEdit && (
                 <button
                   onClick={onEdit}
-                  className="w-full px-3 py-2.5 text-left text-xs font-semibold text-gray-800 dark:text-gray-100 hover:bg-black/5 dark:hover:bg-white/5 border-t border-black/5 dark:border-white/5"
+                  className={`${itemCls} border-t border-black/5 dark:border-white/5`}
                 >
                   编辑
                 </button>
@@ -209,7 +295,7 @@ function CardMenu({
               {onArchive && (
                 <button
                   onClick={onArchive}
-                  className="w-full px-3 py-2.5 text-left text-xs font-semibold text-gray-800 dark:text-gray-100 hover:bg-black/5 dark:hover:bg-white/5 border-t border-black/5 dark:border-white/5"
+                  className={`${itemCls} border-t border-black/5 dark:border-white/5`}
                 >
                   手动归档
                 </button>
@@ -217,7 +303,7 @@ function CardMenu({
               {onUnarchive && (
                 <button
                   onClick={onUnarchive}
-                  className="w-full px-3 py-2.5 text-left text-xs font-semibold text-gray-800 dark:text-gray-100 hover:bg-black/5 dark:hover:bg-white/5 border-t border-black/5 dark:border-white/5"
+                  className={`${itemCls} border-t border-black/5 dark:border-white/5`}
                 >
                   取消归档
                 </button>
@@ -231,9 +317,10 @@ function CardMenu({
                 {confirmDel ? '确认删除' : '删除'}
               </button>
             </motion.div>
-          </>
-        )}
-      </AnimatePresence>
+          )}
+        </AnimatePresence>,
+        document.body,
+      )}
     </div>
   );
 }
