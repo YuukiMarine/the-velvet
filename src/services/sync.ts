@@ -574,6 +574,13 @@ export const pullAll = async (): Promise<void> => {
             summaryApiKey: first.summaryApiKey,
             openaiApiKey: first.openaiApiKey,
             aiProfiles: first.aiProfiles,
+            // Key 与「它属于哪家」是一个整体，必须一起回填。
+            // 只回填 Key、让 provider/baseUrl/model 跟云端走，会得到一把 DeepSeek 的 Key
+            // 配上 openai 的连接与 gpt-5 的模型名（provider 缺省时更直接落到默认那家）——
+            // 用户上报的「同步后 Key 只填到 openai 里、provider 变成 openai」就是这个。
+            summaryApiProvider: first.summaryApiProvider,
+            summaryApiBaseUrl: first.summaryApiBaseUrl,
+            summaryModel: first.summaryModel,
             backgroundImage: first.backgroundImage,
             backgroundOrientation: first.backgroundOrientation,
             weatherApiKey: first.weatherApiKey,
@@ -608,6 +615,16 @@ export const pullAll = async (): Promise<void> => {
             }
             if (!merged.aiProfiles && ov.aiProfiles) {
               merged.aiProfiles = ov.aiProfiles;
+            }
+            /**
+             * 连接三件套跟着 Key 走：**这一次实际用的是本地 Key**（云端没带）时，
+             * provider / baseUrl / model 也必须用本地那套，否则 Key 与连接错配。
+             * 云端带了 Key（用户开了 Key 上云）才尊重云端的整套连接。
+             */
+            if (!r.summaryApiKey && ov.summaryApiKey) {
+              if (ov.summaryApiProvider) merged.summaryApiProvider = ov.summaryApiProvider;
+              if (ov.summaryApiBaseUrl) merged.summaryApiBaseUrl = ov.summaryApiBaseUrl;
+              if (ov.summaryModel) merged.summaryModel = ov.summaryModel;
             }
             // 背景图：永远用本地（云端既不存也不会带回来，无条件保留设备本地偏好）
             if (ov.backgroundImage) {

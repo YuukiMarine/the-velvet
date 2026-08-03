@@ -86,8 +86,21 @@ export const AI_PROVIDERS: ProviderConfig[] = [
   },
 ];
 
+/**
+ * 未指定服务商时的默认值（R19 用户拍板：openai → deepseek）。
+ *
+ * 这不只是"哪个排第一"的问题：provider 缺省会一路影响到
+ * resolveProvider 的 baseUrl/model —— 之前缺省落到 openai，
+ * 于是一把 DeepSeek 的 Key 会被拿去打 api.openai.com、
+ * 或被当成 gpt-5.4-mini（推理模型）来构造请求体。
+ * 全站的 `?? 'openai'` 都换成它。
+ */
+export const DEFAULT_PROVIDER: ApiProvider = 'deepseek';
+
 export function getProviderConfig(provider: ApiProvider | undefined): ProviderConfig {
-  return AI_PROVIDERS.find(p => p.id === provider) ?? AI_PROVIDERS[0];
+  return AI_PROVIDERS.find(p => p.id === provider)
+    ?? AI_PROVIDERS.find(p => p.id === DEFAULT_PROVIDER)
+    ?? AI_PROVIDERS[0];
 }
 
 /**
@@ -113,6 +126,23 @@ export function resolveProvider(
  */
 export function isReasoningModel(model: string): boolean {
   return /^(gpt-5|o[1-9])/i.test(model.trim());
+}
+
+/**
+ * 「会先想很久再写正文」的模型族（不止 OpenAI）。
+ *
+ * 判断它的意义与 isReasoningModel 不同：后者管**请求结构**（max_completion_tokens /
+ * 不发 temperature），这个管**预算**——思维链是要花 token 的，而且花的是同一份额度。
+ * 预算给少了，模型把它全花在想上，正文一个字没写就 finish_reason=length，
+ * 调用方收到的是「空响应」。用户上报的召唤 Persona / 属性名匹配失败都是这个。
+ *
+ * 名字嗅探必然漏，所以它只是「先给足」的启发式；真漏了还有 aiClient 里
+ * 那一发「空+length 就加倍预算重来」兜底。
+ */
+export function isThinkingModel(model: string): boolean {
+  const m = model.trim().toLowerCase();
+  return isReasoningModel(m)
+    || /reason|think|-r1|\br1\b|qwq|deepseek-v[3-9]|glm-[4-9]\.[5-9]|hunyuan-t|ernie-x|step-r|minimax-m/.test(m);
 }
 
 export type TestResult =

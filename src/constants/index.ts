@@ -20,10 +20,21 @@ export const DEFAULT_ATTRIBUTE_NAMES = {
  * 人格指数升级所需累计点数。
  * R19 用户拍板：
  *   · LV2-LV5 依次再加 20 / 80 / 150 / 260 —— 40+20 / 90+80 / 150+150 / 240+260
- *   · 续到 LV10，每级在上一级基础上再 +300（500 → 800 → 1100 → 1400 → 1700 → 2000）
+ *   · LV6-10 的默认值见 EXTENDED_LEVEL_THRESHOLDS（每级再 +300），
+ *     那是「添加一级」时用的，不属于默认开启的档位
  * 只影响**新档默认值**；老档用的是自己 settings.levelThresholds 里那份。
  */
-export const DEFAULT_LEVEL_THRESHOLDS = [0, 60, 170, 300, 500, 800, 1100, 1400, 1700, 2000];
+export const DEFAULT_LEVEL_THRESHOLDS = [0, 60, 170, 300, 500];
+
+/**
+ * LV6-LV10 的默认阈值（每级在上一级基础上 +300）。
+ *
+ * 单独一张表，**不并进 DEFAULT_LEVEL_THRESHOLDS**：后者是「默认开几级」的事实源，
+ * 「恢复默认」与确认弹窗的示意都读它。把 6-10 塞进去的话，一次恢复默认
+ * 就会替玩家把 LV6-10 全开了，而且没开过的人也会在弹窗里看到十个数字。
+ * 这张表只在玩家自己点「+ 添加一级」时用来算下一级该要多少点。
+ */
+export const EXTENDED_LEVEL_THRESHOLDS = [800, 1100, 1400, 1700, 2000];
 
 /** 属性主色 — 与 Statistics 页保持一致，供雷达图、Shadow 染色、UI 标识复用 */
 export const ATTR_COLORS: Record<AttributeId, string> = {
@@ -49,7 +60,7 @@ export const INITIAL_ATTRIBUTES = [
     displayName: '知识',
     points: 0,
     level: 1,
-    levelThresholds: [0, 60, 170, 300, 500, 800, 1100, 1400, 1700, 2000],
+    levelThresholds: [0, 60, 170, 300, 500],
     unlocked: true
   },
   {
@@ -57,7 +68,7 @@ export const INITIAL_ATTRIBUTES = [
     displayName: '胆量',
     points: 0,
     level: 1,
-    levelThresholds: [0, 60, 170, 300, 500, 800, 1100, 1400, 1700, 2000],
+    levelThresholds: [0, 60, 170, 300, 500],
     unlocked: true
   },
   {
@@ -65,7 +76,7 @@ export const INITIAL_ATTRIBUTES = [
     displayName: '灵巧',
     points: 0,
     level: 1,
-    levelThresholds: [0, 60, 170, 300, 500, 800, 1100, 1400, 1700, 2000],
+    levelThresholds: [0, 60, 170, 300, 500],
     unlocked: true
   },
   {
@@ -73,7 +84,7 @@ export const INITIAL_ATTRIBUTES = [
     displayName: '温柔',
     points: 0,
     level: 1,
-    levelThresholds: [0, 60, 170, 300, 500, 800, 1100, 1400, 1700, 2000],
+    levelThresholds: [0, 60, 170, 300, 500],
     unlocked: true
   },
   {
@@ -81,7 +92,7 @@ export const INITIAL_ATTRIBUTES = [
     displayName: '魅力',
     points: 0,
     level: 1,
-    levelThresholds: [0, 60, 170, 300, 500, 800, 1100, 1400, 1700, 2000],
+    levelThresholds: [0, 60, 170, 300, 500],
     unlocked: true
   }
 ];

@@ -11,7 +11,7 @@ import { useAppStore } from '@/store';
 import { useNavigatorStore } from '@/store/navigator';
 import { v4 as uuidv4 } from 'uuid';
 import { getAIConfig, getDeliberateAIConfig } from '@/utils/aiClient';
-import { getProviderConfig } from '@/utils/aiProviders';
+import { getProviderConfig, DEFAULT_PROVIDER } from '@/utils/aiProviders';
 import { ModelPickerSheet } from '@/components/ai/ModelPickerSheet';
 import { generatePersonaPrompt } from '@/utils/navigatorIntent';
 import { finalizeStaleSessions } from '@/utils/navigatorMemory';
@@ -350,7 +350,7 @@ export const NavigatorSettings = () => {
           <span className="text-sm font-semibold text-gray-700 dark:text-gray-200">对话模型</span>
           <span className="min-w-0 flex-1 truncate text-xs text-gray-400 dark:text-gray-500">
             {settings.assistantModel?.trim()
-              ? `${getProviderConfig(settings.assistantProvider ?? settings.summaryApiProvider ?? 'openai').label} · ${settings.assistantModel.trim()}`
+              ? `${getProviderConfig(settings.assistantProvider ?? settings.summaryApiProvider ?? DEFAULT_PROVIDER).label} · ${settings.assistantModel.trim()}`
               : '跟随深思熟虑档'}
           </span>
           <span aria-hidden className={`shrink-0 text-gray-400 transition-transform ${modelCardOpen ? 'rotate-180' : ''}`}>▾</span>
@@ -372,7 +372,7 @@ export const NavigatorSettings = () => {
             >
               <span className="min-w-0 flex-1 truncate text-left">
                 {settings.assistantModel?.trim()
-                  ? `${getProviderConfig(settings.assistantProvider ?? settings.summaryApiProvider ?? 'openai').label} · ${settings.assistantModel}`
+                  ? `${getProviderConfig(settings.assistantProvider ?? settings.summaryApiProvider ?? DEFAULT_PROVIDER).label} · ${settings.assistantModel}`
                   : `跟随深思熟虑档（${getDeliberateAIConfig(settings)?.model ?? '未配置'}）`}
               </span>
               <span className="shrink-0 text-xs font-bold text-primary">选择模型 ›</span>

@@ -20,7 +20,7 @@
 import { useMemo, useState } from 'react';
 import { useAppStore } from '@/store';
 import { SheetModal } from '@/components/SheetModal';
-import { AI_PROVIDERS, getProviderConfig, type ApiProvider } from '@/utils/aiProviders';
+import { AI_PROVIDERS, getProviderConfig, type ApiProvider, DEFAULT_PROVIDER } from '@/utils/aiProviders';
 import { familyBadge, isAggregatorList, isAudioModel, isChatModel, isVisionModel, refreshAllProviderModels } from '@/utils/aiModelCatalog';
 
 export type ModelPickerMode = 'fast' | 'deliberate' | 'assistant' | 'vision' | 'audio';
@@ -36,7 +36,7 @@ export const ModelPickerSheet = ({ mode, isOpen, onClose }: {
   const [refreshing, setRefreshing] = useState(false);
   const [refreshMsg, setRefreshMsg] = useState('');
 
-  const active = settings.summaryApiProvider ?? 'openai';
+  const active = settings.summaryApiProvider ?? DEFAULT_PROVIDER;
   const fast = mode === 'fast';
   const assistant = mode === 'assistant';
   const vision = mode === 'vision';

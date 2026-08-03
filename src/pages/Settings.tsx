@@ -4,12 +4,12 @@ import type { CSSProperties } from 'react';
 import { useAppStore, DEFAULT_SUMMARY_PROMPT_PRESETS, FAMILIAR_FACE_PRESETS, toLocalDateKey, applyCustomThemeColor } from '@/store';
 import { triggerThemeSwitchFeedback, playSound } from '@/utils/feedback';
 import { ThemeType, AttributeId, SummaryPromptPreset, AttributeLevelTitles } from '@/types';
-import { DEFAULT_LEVEL_THRESHOLDS } from '@/constants';
+import { DEFAULT_LEVEL_THRESHOLDS, EXTENDED_LEVEL_THRESHOLDS } from '@/constants';
 import { db } from '@/db';
 import { PageTitle } from '@/components/PageTitle';
 import { BackButton } from '@/components/BackButton';
 import { useRipple } from '@/components/RippleEffect';
-import { AI_PROVIDERS, getProviderConfig, testAIConnection, fetchAvailableModels, type TestResult, type ApiProvider } from '@/utils/aiProviders';
+import { AI_PROVIDERS, getProviderConfig, testAIConnection, fetchAvailableModels, type TestResult, type ApiProvider, DEFAULT_PROVIDER } from '@/utils/aiProviders';
 import { refreshAllProviderModels } from '@/utils/aiModelCatalog';
 import { ModelPickerSheet, type ModelPickerMode } from '@/components/ai/ModelPickerSheet';
 import { BufferedTextInput } from '@/components/ui/BufferedTextInput';
@@ -722,7 +722,7 @@ export const Settings = () => {
     setApiTestStatus('testing');
     setApiTestMessage('');
     const result: TestResult = await testAIConnection({
-      provider: settings.summaryApiProvider ?? 'openai',
+      provider: settings.summaryApiProvider ?? DEFAULT_PROVIDER,
       apiKey: keyToTest,
       baseUrl: settings.summaryApiBaseUrl,
       model: settings.summaryModel,
@@ -730,7 +730,7 @@ export const Settings = () => {
     if (result.ok) {
       setApiTestStatus('ok');
       // 成功顺手拉一次该家的模型列表（用户口径）；不支持 /models 的注明跳过，不算失败
-      const pv = settings.summaryApiProvider ?? 'openai';
+      const pv = settings.summaryApiProvider ?? DEFAULT_PROVIDER;
       const listed = await fetchAvailableModels({ provider: pv, apiKey: keyToTest, baseUrl: settings.summaryApiBaseUrl });
       setApiTestMessage(
         `连接成功 · ${result.model} · ${result.latencyMs} ms` +
@@ -755,7 +755,7 @@ export const Settings = () => {
   };
 
   // ── 多服务商存档：切胶囊 = 存回旧家 + 载入新家（生效位仍是 summaryApi* 四项）──
-  const activeProvider = settings.summaryApiProvider ?? 'openai';
+  const activeProvider = settings.summaryApiProvider ?? DEFAULT_PROVIDER;
   const switchProvider = (next: ApiProvider) => {
     if (next === activeProvider) return;
     const profiles = { ...(settings.aiProfiles ?? {}) };
@@ -2106,7 +2106,7 @@ export const Settings = () => {
                 {section.id === 'notifications' && <NotificationSettings />}
 
                 {section.id === 'summary' && (() => {
-                  const provider = settings.summaryApiProvider ?? 'openai';
+                  const provider = settings.summaryApiProvider ?? DEFAULT_PROVIDER;
                   // 折叠态摘要：一行报四档现状（收起时唯一的信息来源）
                   const tierSummary = [
                     `⚡ ${settings.summaryModel?.trim() || getProviderConfig(provider).defaultModel}`,
@@ -3157,17 +3157,13 @@ export const Settings = () => {
         confirmText="继续添加"
         cancelText="取消"
         onConfirm={() => {
+          // LV6-10 的默认阈值走 EXTENDED_LEVEL_THRESHOLDS（每级 +300，用户拍板）；
+          // 超出 10 级或阈值被改过、算出来不比上一级大时，退回"上一级 +300"
           const last = settings.levelThresholds[settings.levelThresholds.length - 1] || 0;
           const nextLevel = settings.levelThresholds.length + 1;
-          const incrementMap: Record<number, number> = {
-            6: 250,
-            7: 300,
-            8: 350,
-            9: 400,
-            10: 600
-          };
-          const increment = incrementMap[nextLevel] ?? 50;
-          updateSettings({ levelThresholds: [...settings.levelThresholds, last + increment] });
+          const preset = EXTENDED_LEVEL_THRESHOLDS[nextLevel - 6];
+          const next = preset !== undefined && preset > last ? preset : last + 300;
+          updateSettings({ levelThresholds: [...settings.levelThresholds, next] });
           setShowLevelWarning(false);
         }}
         onCancel={() => setShowLevelWarning(false)}
