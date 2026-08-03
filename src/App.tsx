@@ -17,15 +17,18 @@ import type { ReturnPayload } from '@/types';
 import { AchievementUnlockModal } from '@/components/AchievementUnlockModal';
 import { SkillUnlockModal } from '@/components/SkillUnlockModal';
 import { db } from '@/db';
+// 首页三个频道变体：中性/黄用这份（也是 default 路由的兜底，故静态），
+// 蓝/红各有一份 1:1 重绘稿——**一次会话只可能用到其中一份**，全静态导入等于
+// 让每个用户都下载并解析另外两套自己永远看不到的首页（v2.6.5 性能整改 C10）。
 import { Dashboard } from '@/pages/Dashboard';
 // P3R（蓝主题）页面变体：p3-redraw 设计稿 1:1（channel==='p3' 时替换默认形态）
-import { DashboardP3 } from '@/pages/p3/DashboardP3';
+const DashboardP3 = lazy(() => import('@/pages/p3/DashboardP3').then(m => ({ default: m.DashboardP3 })));
 // P5R（红主题）页面变体：P5UI 设计稿 1:1（channel==='p5' 时替换默认形态）
-import { DashboardP5 } from '@/pages/p5/DashboardP5';
+const DashboardP5 = lazy(() => import('@/pages/p5/DashboardP5').then(m => ({ default: m.DashboardP5 })));
 import { useUiChannel } from '@/ui/useUiChannel';
-import { Achievements } from '@/pages/Achievements';
+const Achievements = lazy(() => import('@/pages/Achievements').then(m => ({ default: m.Achievements })));
 const Statistics = lazy(() => import('@/pages/Statistics').then(m => ({ default: m.Statistics })));
-import { Settings } from '@/pages/Settings';
+const Settings = lazy(() => import('@/pages/Settings').then(m => ({ default: m.Settings })));
 // 行动页（任务+记录合并，v2.5 五格 IA）；旧 'todos'/'activities' 路由也映射到它（见 renderPage）
 const Actions = lazy(() => import('@/pages/Actions').then(m => ({ default: m.Actions })));
 const Astrology = lazy(() => import('@/pages/Astrology').then(m => ({ default: m.Astrology })));
@@ -36,7 +39,7 @@ const Menu = lazy(() => import('@/pages/Menu').then(m => ({ default: m.Menu })))
 const Account = lazy(() => import('@/pages/Account').then(m => ({ default: m.Account })));
 // 心相记账页（F5）
 const Ledger = lazy(() => import('@/pages/Ledger').then(m => ({ default: m.Ledger })));
-import { BattleArena } from '@/components/battle/BattleArena';
+const BattleArena = lazy(() => import('@/components/battle/BattleArena').then(m => ({ default: m.BattleArena })));
 import { BigDealClearCutIn } from '@/components/bigdeal/BigDealClearCutIn';
 import { sweepDanmakuApprovals } from '@/services/danmakuWatch';
 import { ReturnPanel } from '@/components/return/ReturnPanel';
@@ -75,7 +78,23 @@ const PAGE_CHUNKS: Array<() => Promise<unknown>> = [
   () => import('@/pages/Astrology'),
   () => import('@/pages/Ledger'),
   () => import('@/pages/Account'),
+  // C10 新分出来的三块：都在菜单宫格后面，按使用频度排在原清单之后
+  () => import('@/pages/Settings'),
+  () => import('@/pages/Achievements'),
+  () => import('@/components/battle/BattleArena'),
 ];
+
+/**
+ * 首页变体的**即时**预热（与上面那份空闲预热不同）。
+ *
+ * 首页是落地页，不能等空闲——但也不该三份全打进主包。折中：知道频道的那一刻
+ * 立刻取对应那一份。开屏动画有 2.6s，本地读一个 chunk 远用不了那么久，
+ * 用户看到的仍是「开屏结束即首页」。切主题也会走这里，提前把新皮取好。
+ */
+const DASHBOARD_CHUNK: Record<string, (() => Promise<unknown>) | undefined> = {
+  p3: () => import('@/pages/p3/DashboardP3'),
+  p5: () => import('@/pages/p5/DashboardP5'),
+};
 
 const onIdle = (cb: () => void, timeout = 2000) => {
   const w = window as Window & { requestIdleCallback?: (cb: IdleRequestCallback, o?: { timeout: number }) => number };
@@ -90,7 +109,29 @@ const isStandalonePwa = () => (
 );
 
 function App() {
-  const { currentPage, initializeApp, user, levelUpNotification, setLevelUpNotification, achievementNotification, setAchievementNotification, skillNotification, setSkillNotification, settings, modalBlocker } = useAppStore();
+  /**
+   * 逐字段订阅（v2.6.5 性能整改 A2）。
+   *
+   * 这里原本是一句无选择器的 `useAppStore()`：zustand 于是把**整个 state 对象**
+   * 当订阅目标，任何一次 set() 都让 App 重渲染——而 App 是全站的根，它一动，
+   * 侧栏、底导、当前页、背景动画层全部跟着 reconcile。记一笔账、勾一个任务、
+   * 同步落库、逆流衰减……每一下都是一次全树重算。
+   *
+   * 拆开之后每个订阅各自用 Object.is 比对：动作（initializeApp/setXxx）是建 store
+   * 时定死的引用，永远相等；currentPage / modalBlocker 是标量；只有 user / settings
+   * 这两个对象在各自被写时才触发，这是应该的。
+   */
+  const currentPage = useAppStore(s => s.currentPage);
+  const initializeApp = useAppStore(s => s.initializeApp);
+  const user = useAppStore(s => s.user);
+  const settings = useAppStore(s => s.settings);
+  const modalBlocker = useAppStore(s => s.modalBlocker);
+  const levelUpNotification = useAppStore(s => s.levelUpNotification);
+  const setLevelUpNotification = useAppStore(s => s.setLevelUpNotification);
+  const achievementNotification = useAppStore(s => s.achievementNotification);
+  const setAchievementNotification = useAppStore(s => s.setAchievementNotification);
+  const skillNotification = useAppStore(s => s.skillNotification);
+  const setSkillNotification = useAppStore(s => s.setSkillNotification);
   // P3R 页面变体分流：蓝主题 → p3-redraw 设计稿形态
   const uiChannel = useUiChannel();
   const [isLoading, setIsLoading] = useState(true);
@@ -121,6 +162,10 @@ function App() {
       }
     } catch { /* SSR / 异常环境直接忽略 */ }
   }, []);
+
+  // 首页变体即时预热：频道一确定就取那一份（见 DASHBOARD_CHUNK）。
+  // 放在所有提前 return 之上——开屏期间正是最该预热的时候。
+  useEffect(() => { void DASHBOARD_CHUNK[uiChannel]?.(); }, [uiChannel]);
 
   // 快速预加载开屏动画设置，确保 splash 使用用户选中的样式
   useEffect(() => {
@@ -499,34 +544,43 @@ function App() {
       }}
     />
   ) : null;
+  /** lazy 页的统一外壳。首页变体走 lazyPage(..., true)：预热基本保证它已就绪，
+   *  真没就绪也不该闪一行「加载中…」在落地页上，留白比字更安静。 */
+  const lazyPage = (node: ReactNode, blank = false) => (
+    <Suspense fallback={blank ? <div className="h-64" /> : <div className="flex items-center justify-center h-64 text-gray-400">加载中…</div>}>
+      {node}
+    </Suspense>
+  );
   const renderPage = (page: string) => {
     switch (page) {
       case 'dashboard':
-        return uiChannel === 'p3' ? <DashboardP3 /> : uiChannel === 'p5' ? <DashboardP5 /> : <Dashboard />;
+        return uiChannel === 'p3' ? lazyPage(<DashboardP3 />, true)
+          : uiChannel === 'p5' ? lazyPage(<DashboardP5 />, true)
+            : <Dashboard />;
       // 'todos'/'activities' 是合并前的旧路由 id：散落的 setCurrentPage('todos') 调用点
       // （问候卡提示条等）继续可用，Actions 内部会按旧 id 落到对应子页并归一为 'actions'
       case 'actions':
       case 'todos':
       case 'activities':
-        return <Suspense fallback={<div className="flex items-center justify-center h-64 text-gray-400">加载中…</div>}><Actions /></Suspense>;
+        return lazyPage(<Actions />);
       case 'achievements':
-        return <Achievements />;
+        return lazyPage(<Achievements />);
       case 'statistics':
-        return <Suspense fallback={<div className="flex items-center justify-center h-64 text-gray-400">加载中…</div>}><Statistics /></Suspense>;
+        return lazyPage(<Statistics />);
       case 'settings':
-        return <Settings />;
+        return lazyPage(<Settings />);
       case 'battle':
-        return <BattleArena />;
+        return lazyPage(<BattleArena />);
       case 'astrology':
-        return <Suspense fallback={<div className="flex items-center justify-center h-64 text-gray-400">加载中…</div>}><Astrology /></Suspense>;
+        return lazyPage(<Astrology />);
       case 'cooperation':
-        return <Suspense fallback={<div className="flex items-center justify-center h-64 text-gray-400">加载中…</div>}><Cooperation /></Suspense>;
+        return lazyPage(<Cooperation />);
       case 'menu':
-        return <Suspense fallback={<div className="flex items-center justify-center h-64 text-gray-400">加载中…</div>}><Menu /></Suspense>;
+        return lazyPage(<Menu />);
       case 'account':
-        return <Suspense fallback={<div className="flex items-center justify-center h-64 text-gray-400">加载中…</div>}><Account /></Suspense>;
+        return lazyPage(<Account />);
       case 'ledger':
-        return <Suspense fallback={<div className="flex items-center justify-center h-64 text-gray-400">加载中…</div>}><Ledger /></Suspense>;
+        return lazyPage(<Ledger />);
       case 'terminal':
         // F3 终端已并入任务系统（TASKS_MERGE_PRD）：旧跳转一律落回首页
         return <Dashboard />;
@@ -706,10 +760,12 @@ function App() {
                     (user?.theme === 'yellow' || bgAnimOn || bgImageOn) ? (
                       <>
                         {user?.theme === 'yellow' && !bgImageOn && <P4StageDecor />}
-                        {/* frozen：复刻份只画静态首帧。它只存在 420ms 且全程被圆形蒙版
-                            盖着，静止的极光肉眼分辨不出来；但不冻结的话，恰恰在全应用
-                            最需要帧预算的那一刻，合成动画数会翻倍（v2.6.5 性能整改）。 */}
-                        {bgAnimOn && <BackgroundAnimation styles={bgAnimStyleList} darkMode={settings.darkMode} frozen />}
+                        {/* 复刻份原样跟着活层跑，**不冻结**。相位靠 BackgroundAnimation 里
+                            的 -sync 负 delay 对齐，两份逐帧同相，垫层卸载无痕。
+                            v2.6.5 曾为省帧预算把它冻住（先摘 animation、后改 paused），
+                            两版都被用户判为"切页闪一下 / 顿一下再跳"，已撤回：
+                            那 420ms 的帧预算不值得拿每次切页都看得见的闪烁去换。 */}
+                        {bgAnimOn && <BackgroundAnimation styles={bgAnimStyleList} darkMode={settings.darkMode} />}
                         {bgImageLayer}
                       </>
                     ) : undefined

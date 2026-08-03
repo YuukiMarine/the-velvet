@@ -20,7 +20,13 @@ const ScanLines = ({ opacity = 0.5 }: { opacity?: number }) => (
 );
 
 export const BattleDashboardWidget = () => {
-  const { persona, shadow, battleState, settings, stratum, setCurrentPage } = useAppStore();
+  // 逐字段订阅（A2）：首页常驻件，别让每次 store 写入都把它重算一遍
+  const persona = useAppStore(s => s.persona);
+  const shadow = useAppStore(s => s.shadow);
+  const battleState = useAppStore(s => s.battleState);
+  const settings = useAppStore(s => s.settings);
+  const stratum = useAppStore(s => s.stratum);
+  const setCurrentPage = useAppStore(s => s.setCurrentPage);
   const channel = useUiChannel();
   const isP4 = channel === 'p4';
   // P5R：首页「今日仪式」横滑组里的其他卡都是撕边红幅，这张过去还留着圆角灰卡，

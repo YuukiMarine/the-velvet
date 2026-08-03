@@ -96,7 +96,11 @@ const SKINS: Record<'p5' | 'p4' | 'p3' | 'neutral', StageSkin> = {
 };
 
 export const BigDealClearCutIn = () => {
-  const { bigDealClear, clearBigDealClear, settings } = useAppStore();
+  // 逐字段订阅（A2）：本组件在 App 顶层常驻（多数时间不显形），
+  // 无选择器订阅会让它跟着每一次 store 写入白重渲染一遍，连带整棵子树
+  const bigDealClear = useAppStore(s => s.bigDealClear);
+  const clearBigDealClear = useAppStore(s => s.clearBigDealClear);
+  const settings = useAppStore(s => s.settings);
   const cloudUser = useCloudStore((s) => s.cloudUser);
   const bold = useBoldness();
   const channel = useUiChannel();
