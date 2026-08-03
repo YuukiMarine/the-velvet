@@ -16,6 +16,7 @@ import { CounselArchiveModal } from '@/components/cooperation/CounselArchiveModa
 import { NotificationsPanel } from '@/components/cooperation/NotificationsPanel';
 import { AddOnlineConfidantModal } from '@/components/cooperation/AddOnlineConfidantModal';
 import { OnlineConfidantProfileCard } from '@/components/cooperation/OnlineConfidantProfileCard';
+import { OnlineStarBadge } from '@/components/cooperation/OnlineStarBadge';
 import { PrayerEffectOverlay, type PrayerEffectKind } from '@/components/cooperation/PrayerEffectOverlay';
 import { CoopProposeModal } from '@/components/cooperation/CoopProposeModal';
 import { CoopAcceptModal } from '@/components/cooperation/CoopAcceptModal';
@@ -1009,6 +1010,8 @@ function OnlineFriendPlaceholderCard({
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
+              {/* 在线好友统一带四角星；今日祈愿没回应就闪（同列表 / 专辑墙口径） */}
+              <OnlineStarBadge glow={waitingReciprocity && !alreadyPrayed} />
               <span className="font-bold text-gray-900 dark:text-white truncate">{name}</span>
               <span className="text-[9px] font-bold tracking-widest px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
                 ONLINE

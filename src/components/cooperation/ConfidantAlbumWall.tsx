@@ -23,6 +23,7 @@ import { useAppStore } from '@/store';
 import { P3R, slantClip } from '@/components/p3r/kit';
 import { starPts } from '@/components/p5r/kit';
 import { P4Sparkle } from '@/ui/p4Kit';
+import { OnlineStarBadge } from './OnlineStarBadge';
 
 const CARD_W = 182;
 const CARD_H = Math.round(CARD_W * 1.6); // TarotCardSVG 比例
@@ -113,7 +114,17 @@ const CardBackFace = ({ c, onOpenDetail, prayer }: {
       }}
     >
       <div className="flex items-baseline justify-between gap-2">
-        <span className="truncate text-lg font-black" style={{ color: sk.ink }}>{c.name}</span>
+        <span className="flex min-w-0 items-center gap-1.5">
+          {/* 在线好友才有星；卡背自带配色，用 ink 覆盖频道色以免撞底 */}
+          {c.source === 'online' && !!c.linkedCloudUserId && (
+            <OnlineStarBadge
+              glow={!!prayer?.waitingReciprocity && !prayer?.alreadyPrayed}
+              ink={sk.accent}
+              size={13}
+            />
+          )}
+          <span className="truncate text-lg font-black" style={{ color: sk.ink }}>{c.name}</span>
+        </span>
         <span className="shrink-0 text-[10px] font-bold" style={{ color: sk.meta }}>
           {card?.roman ?? ''} {c.orientation === 'reversed' ? '逆位' : '正位'}
         </span>

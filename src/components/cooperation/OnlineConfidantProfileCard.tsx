@@ -13,6 +13,7 @@
  */
 
 import { useMemo, useState } from 'react';
+import { OnlineStarBadge } from './OnlineStarBadge';
 import { motion, AnimatePresence } from 'motion/react';
 import { createPortal } from 'react-dom';
 import {
@@ -190,8 +191,9 @@ export function OnlineConfidantProfileCard({
                 )}
               </div>
               <div className="flex-1 min-w-0 pt-0.5">
-                <div className="text-lg font-serif truncate" style={{ color: '#f5e6ff' }}>
-                  {name}
+                <div className="flex min-w-0 items-center gap-1.5 text-lg font-serif" style={{ color: '#f5e6ff' }}>
+                  <OnlineStarBadge glow={beenPrayedByThem && !alreadyPrayed} ink="#c9a6ff" size={13} />
+                  <span className="truncate">{name}</span>
                 </div>
                 <div className="text-[11px] truncate" style={{ color: '#a89dc0' }}>
                   @{profile.userId ?? '—'}

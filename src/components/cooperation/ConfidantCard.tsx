@@ -2,6 +2,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useRef, useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useAppStore } from '@/store';
+import { OnlineStarBadge } from './OnlineStarBadge';
 import { useCloudStore } from '@/store/cloud';
 import type { Confidant, CoopShadow } from '@/types';
 import { TAROT_BY_ID } from '@/constants/tarot';
@@ -198,6 +199,10 @@ export function ConfidantCard({ confidant, onClick, prayer, activeShadow, onShad
           {/* 主信息 */}
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
+              {/* 在线好友名字左侧的四角星：今日祈愿没回应就闪（见 OnlineStarBadge） */}
+              {isOnline && (
+                <OnlineStarBadge glow={!!prayer?.waitingReciprocity && !prayer?.alreadyPrayed} />
+              )}
               <span className="font-semibold text-gray-900 dark:text-white truncate">
                 {confidant.name}
               </span>
