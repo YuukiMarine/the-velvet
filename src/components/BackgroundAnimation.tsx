@@ -9,20 +9,46 @@
  * wave      — 渐变波：全屏渐变背景位移
  * pulse     — 脉冲：半透明网格线呼吸
  *
- * 性能优化（Android 防闪烁）：
- * - 所有动画元素使用 transform: translateZ(0) 强制独立 GPU 合成层
- * - backface-visibility: hidden 避免层提升时的重绘
- * - contain: strict 限制重绘范围，不影响父文档布局
- * - wave 改用 transform: translate3d 替代 background-position，
- *   确保动画完全在合成器线程（compositor thread）执行，不触发重绘
- * - aurora blur 在移动端降至 40px，减少 GPU 纹理带宽压力
+ * ── v2.6.5 性能整改（多位用户反馈卡顿，蓝/黄尤其明显）──────────────────
+ * 最硬的旁证：红频道因为 ui/bgAnim.ts 的 opt-in 闸**默认不开**背景动画，
+ * 而用户只在蓝/黄上报——等于一次天然对照实验，主因就在这个文件。
+ *
+ * 四项改动：
+ *   ① 极光块 70/65/55vmax → 42/38/32vmax，并删掉 keyframes 里的 scale。
+ *      真正的成本不是 blur（那步早换成 radial-gradient 了，方向是对的），
+ *      而是**填充率与纹理**：三块常驻半透明层意味着合成器每帧要把整屏做三次
+ *      alpha 混合；而 scale(1.12) 会让 Chrome 按动画最大缩放去光栅化，纹理再涨一档。
+ *      尺寸降到 ~60% → 纹理面积约剩 35%，opacity 补 1.15× 保住观感。
+ *   ② 相位锚定的 sync **只在挂载时算一次**。原来是在渲染函数体里求值，
+ *      App 每重渲染一次就产出一份新的 animation 字符串（delay 变了），
+ *      React 就逐个改写 3~27 个元素的 animation 简写——浏览器会因此取消并
+ *      重新提交这整批合成动画，外加一次全量 style recalc。而 App 是无选择器
+ *      订阅，任何一次 store 写入都会触发。锚定语义只需要"挂载那一刻算一次"，
+ *      重渲染时再算纯属浪费。
+ *   ③ 粒子父子两层合并成一层（24 → 8 个合成层），删掉常驻 will-change
+ *      （MDN 明确点名的反模式：它让浏览器永久保留这些层的后备存储）。
+ *      顺带发现 PARTICLE_CONFIG 里的 drift 字段从来没被用过——keyframe 里写死的是 30px。
+ *   ④ 新增 frozen / D0：转场垫底层的复刻份与低性能降级下不跑动画，只留静态首帧。
+ *
+ * 性能护栏（Android 防闪烁，原有口径保留）：
+ * - 动画只动 transform / opacity，全部在合成器线程
+ * - contain 限制重绘范围
+ * - wave 用 transform: translate3d 而不是 background-position
  */
 
-import { useEffect } from 'react';
+import { memo, useEffect, useState } from 'react';
+import { useBoldness } from '@/utils/boldness';
 
 interface BackgroundAnimationProps {
   styles: string[];
   darkMode?: boolean;
+  /**
+   * 冻结：只画静态首帧，不挂任何 animation。
+   * 用在页面擦除转场的**垫底复刻份**上——那一份只存在 420ms 且全程被圆形蒙版
+   * 一路盖掉，静止的极光肉眼分辨不出来，但能让合成动画数不至于在最需要帧预算
+   * 的那一刻翻倍（3 块变 6 块、8 颗粒子变 16 颗）。
+   */
+  frozen?: boolean;
 }
 
 // ── 相位锚定 ──────────────────────────────────────────────
@@ -33,46 +59,64 @@ interface BackgroundAnimationProps {
 const BG_EPOCH = performance.now();
 const syncSeconds = () => (performance.now() - BG_EPOCH) / 1000;
 
+/** 挂载时锚定一次。见文件头 ② —— 渲染期求值会让每次 store 写入都重提交整批动画。 */
+function useSyncOnce(): number {
+  const [sync] = useState(syncSeconds);
+  return sync;
+}
+
 // ── 注入一次性 keyframes CSS（去重）───────────────────────
-const KEYFRAMES_ID = 'bg-anim-keyframes';
+const KEYFRAMES_ID = 'bg-anim-keyframes-v2';
 
 function ensureKeyframes() {
   if (document.getElementById(KEYFRAMES_ID)) return;
+  // 换了 id 就要把旧版那份摘掉，否则同名 keyframes 会按后插入的那份生效
+  document.getElementById('bg-anim-keyframes')?.remove();
   const el = document.createElement('style');
   el.id = KEYFRAMES_ID;
   el.textContent = `
-    /* aurora — 使用 translate3d 确保 compositor 线程执行 */
+    /* aurora — 只平移，**不缩放**：scale 会让 Chrome 按最大倍率光栅化，纹理白涨一档 */
     @keyframes aurora-a {
-      0%   { transform: translate3d(0%,    0%,    0) scale(1);    }
-      33%  { transform: translate3d(8%,   -12%,   0) scale(1.08); }
-      66%  { transform: translate3d(-6%,   8%,    0) scale(0.95); }
-      100% { transform: translate3d(0%,    0%,    0) scale(1);    }
+      0%   { transform: translate3d(0%,    0%,   0); }
+      33%  { transform: translate3d(9%,   -14%,  0); }
+      66%  { transform: translate3d(-7%,   9%,   0); }
+      100% { transform: translate3d(0%,    0%,   0); }
     }
     @keyframes aurora-b {
-      0%   { transform: translate3d(0%,   0%,   0) scale(1);    }
-      40%  { transform: translate3d(-10%,  10%,  0) scale(1.12); }
-      75%  { transform: translate3d(7%,  -6%,   0) scale(0.92); }
-      100% { transform: translate3d(0%,   0%,   0) scale(1);    }
+      0%   { transform: translate3d(0%,   0%,  0); }
+      40%  { transform: translate3d(-12%, 12%, 0); }
+      75%  { transform: translate3d(8%,  -7%,  0); }
+      100% { transform: translate3d(0%,   0%,  0); }
     }
     @keyframes aurora-c {
-      0%   { transform: translate3d(0%,  0%,  0) scale(1);    }
-      50%  { transform: translate3d(5%,  12%, 0) scale(1.06); }
-      80%  { transform: translate3d(-8%, -5%, 0) scale(0.97); }
-      100% { transform: translate3d(0%,  0%,  0) scale(1);    }
+      0%   { transform: translate3d(0%,  0%,  0); }
+      50%  { transform: translate3d(6%,  14%, 0); }
+      80%  { transform: translate3d(-9%, -6%, 0); }
+      100% { transform: translate3d(0%,  0%,  0); }
     }
 
-    /* particles — drift wrapper uses translateX, rise inner uses translateY
-       拆成父子两层各控制一个轴，避免 margin-left 触发 layout */
-    @keyframes particle-drift {
-      0%   { transform: translate3d(0,   0, 0); }
-      50%  { transform: translate3d(30px,0, 0); }
-      100% { transform: translate3d(0,   0, 0); }
-    }
-    @keyframes particle-rise {
-      0%   { transform: translate3d(0, 0, 0)      scale(1);   opacity: 0;   }
+    /* particles — 单层同时排 X 与 Y（原本拆父子两层各控一个轴，层数白翻一倍）。
+       三套变体错开横向摆幅，避免八颗粒子走出同一条轨迹。 */
+    @keyframes particle-float-a {
+      0%   { transform: translate3d(0,     0,       0); opacity: 0; }
       10%  { opacity: 1; }
+      50%  { transform: translate3d(26px, -55vh,    0); }
       85%  { opacity: 0.7; }
-      100% { transform: translate3d(0, -110vh, 0)  scale(0.6); opacity: 0;   }
+      100% { transform: translate3d(0,    -110vh,   0); opacity: 0; }
+    }
+    @keyframes particle-float-b {
+      0%   { transform: translate3d(0,     0,       0); opacity: 0; }
+      10%  { opacity: 1; }
+      50%  { transform: translate3d(-18px, -55vh,   0); }
+      85%  { opacity: 0.7; }
+      100% { transform: translate3d(6px,  -110vh,   0); opacity: 0; }
+    }
+    @keyframes particle-float-c {
+      0%   { transform: translate3d(0,     0,       0); opacity: 0; }
+      10%  { opacity: 1; }
+      50%  { transform: translate3d(12px, -55vh,    0); }
+      85%  { opacity: 0.7; }
+      100% { transform: translate3d(-10px,-110vh,   0); opacity: 0; }
     }
 
     /* wave — 用 translate3d 在独立层上平移，避免 background-position 重绘 */
@@ -96,24 +140,22 @@ function ensureKeyframes() {
   document.head.appendChild(el);
 }
 
+/** frozen 时把 animation 整条摘掉——静态首帧，零合成动画 */
+const anim = (frozen: boolean | undefined, value: string) => (frozen ? undefined : value);
+
 // ── Aurora ────────────────────────────────────────────────
-function Aurora({ darkMode }: { darkMode?: boolean }) {
-  const baseOp = darkMode ? 0.18 : 0.13;
-  const sync = syncSeconds();
+function Aurora({ darkMode, frozen }: { darkMode?: boolean; frozen?: boolean }) {
+  // 尺寸砍到 ~60% 后单块视觉分量变轻，opacity 补 1.15× 找回层次
+  const baseOp = (darkMode ? 0.18 : 0.13) * 1.15;
+  const sync = useSyncOnce();
+  const d = (-sync).toFixed(2);
   const blobs = [
-    { anim: `aurora-a 22s ease-in-out ${(-sync).toFixed(2)}s infinite`, size: '70vmax', top: '-20%', left: '-15%',  opacity: baseOp },
-    { anim: `aurora-b 28s ease-in-out ${(-sync).toFixed(2)}s infinite`, size: '65vmax', top: '30%',  left: '40%',   opacity: baseOp * 0.85 },
-    { anim: `aurora-c 18s ease-in-out ${(-sync).toFixed(2)}s infinite`, size: '55vmax', top: '55%',  left: '-10%',  opacity: baseOp * 0.7 },
+    { anim: `aurora-a 22s ease-in-out ${d}s infinite`, size: '42vmax', top: '-12%', left: '-8%',  opacity: baseOp },
+    { anim: `aurora-b 28s ease-in-out ${d}s infinite`, size: '38vmax', top: '32%',  left: '46%',  opacity: baseOp * 0.85 },
+    { anim: `aurora-c 18s ease-in-out ${d}s infinite`, size: '32vmax', top: '58%',  left: '-4%',  opacity: baseOp * 0.7 },
   ];
   return (
-    <div
-      style={{
-        position: 'absolute',
-        inset: 0,
-        overflow: 'hidden',
-        contain: 'strict',
-      }}
-    >
+    <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', contain: 'strict' }}>
       {blobs.map((b, i) => (
         <div
           key={i}
@@ -125,11 +167,10 @@ function Aurora({ darkMode }: { darkMode?: boolean }) {
             height: b.size,
             borderRadius: '50%',
             // 用更大的 radial-gradient 中间段模拟 blur，避免实时 filter: blur
-            // 比 blur(40px) 性能高一个数量级，视觉上几乎等效
             background: 'radial-gradient(circle, var(--color-primary) 0%, var(--color-primary) 15%, transparent 65%)',
             opacity: b.opacity,
-            animation: b.anim,
-            willChange: 'transform',
+            animation: anim(frozen, b.anim),
+            willChange: frozen ? undefined : 'transform',
             transform: 'translateZ(0)',
             backfaceVisibility: 'hidden',
           }}
@@ -140,87 +181,57 @@ function Aurora({ darkMode }: { darkMode?: boolean }) {
 }
 
 // ── Particles ─────────────────────────────────────────────
+// 12 → 8 颗；父子两层合并成一层。原 config 里的 drift 字段从未生效
+// （keyframe 写死 30px），合并后改由三套 float 变体表达横向摆幅。
 const PARTICLE_CONFIG = [
-  { left: '8%',  size: 4, dur: 18, delay: 0,    drift: 25 },
-  { left: '18%', size: 3, dur: 24, delay: 4,    drift: 18 },
-  { left: '29%', size: 5, dur: 20, delay: 1.5,  drift: 32 },
-  { left: '40%', size: 3, dur: 26, delay: 7,    drift: 20 },
-  { left: '51%', size: 4, dur: 22, delay: 2,    drift: 15 },
-  { left: '62%', size: 3, dur: 30, delay: 9,    drift: 28 },
-  { left: '73%', size: 5, dur: 19, delay: 3,    drift: 22 },
-  { left: '84%', size: 3, dur: 25, delay: 6,    drift: 12 },
-  { left: '91%', size: 4, dur: 21, delay: 11,   drift: 30 },
-  { left: '14%', size: 3, dur: 27, delay: 13,   drift: 18 },
-  { left: '46%', size: 4, dur: 23, delay: 5,    drift: 24 },
-  { left: '77%', size: 3, dur: 29, delay: 8,    drift: 16 },
-];
+  { left: '8%',  size: 4, dur: 18, delay: 0,   v: 'a' },
+  { left: '22%', size: 3, dur: 24, delay: 4,   v: 'b' },
+  { left: '35%', size: 5, dur: 20, delay: 1.5, v: 'c' },
+  { left: '48%', size: 3, dur: 26, delay: 7,   v: 'a' },
+  { left: '61%', size: 4, dur: 22, delay: 2,   v: 'b' },
+  { left: '73%', size: 3, dur: 30, delay: 9,   v: 'c' },
+  { left: '84%', size: 5, dur: 19, delay: 3,   v: 'a' },
+  { left: '93%', size: 3, dur: 25, delay: 6,   v: 'b' },
+] as const;
 
-function Particles({ darkMode }: { darkMode?: boolean }) {
+function Particles({ darkMode, frozen }: { darkMode?: boolean; frozen?: boolean }) {
   const op = darkMode ? 0.5 : 0.35;
-  const sync = syncSeconds();
+  const sync = useSyncOnce();
   return (
-    <div
-      style={{
-        position: 'absolute',
-        inset: 0,
-        contain: 'layout style',
-      }}
-    >
+    <div style={{ position: 'absolute', inset: 0, contain: 'layout style' }}>
       {PARTICLE_CONFIG.map((p, i) => (
-        /* 外层: drift（translateX），独立合成层 */
         <div
           key={i}
           style={{
             position: 'absolute',
             bottom: '-10px',
             left: p.left,
-            animation: `particle-drift ${p.dur * 0.6}s ease-in-out ${(p.delay - sync).toFixed(2)}s infinite`,
-            willChange: 'transform',
+            width: p.size,
+            height: p.size,
+            borderRadius: '50%',
+            background: 'var(--color-primary)',
+            opacity: op,
+            animation: anim(frozen, `particle-float-${p.v} ${p.dur}s ease-in ${(p.delay - sync).toFixed(2)}s infinite`),
+            // 不写 will-change：animation 里已经是 transform/opacity，浏览器会自动提升；
+            // 常驻 will-change 会让它永久占着后备存储
             transform: 'translateZ(0)',
             backfaceVisibility: 'hidden',
           }}
-        >
-          {/* 内层: rise（translateY + scale + opacity） */}
-          <div
-            style={{
-              width: p.size,
-              height: p.size,
-              borderRadius: '50%',
-              background: 'var(--color-primary)',
-              opacity: op,
-              animation: `particle-rise ${p.dur}s ease-in ${(p.delay - sync).toFixed(2)}s infinite`,
-              willChange: 'transform, opacity',
-              transform: 'translateZ(0)',
-              backfaceVisibility: 'hidden',
-            }}
-          />
-        </div>
+        />
       ))}
     </div>
   );
 }
 
 // ── Wave ──────────────────────────────────────────────────
-// 旧实现用 background-position 动画——这在浏览器合成器层面不可加速，
-// 每帧都会触发重绘（paint），在 Android 上尤其严重。
-// 新实现：把渐变画在一个放大的子 div 上（150vmax × 150vmax），
-// 用 translate3d 平移该子 div——translate 是纯合成器操作，零重绘。
-function Wave({ darkMode }: { darkMode?: boolean }) {
+function Wave({ darkMode, frozen }: { darkMode?: boolean; frozen?: boolean }) {
   const op = darkMode ? 0.12 : 0.08;
-  const sync = syncSeconds();
+  const sync = useSyncOnce();
   return (
-    <div
-      style={{
-        position: 'absolute',
-        inset: 0,
-        overflow: 'hidden',
-        contain: 'strict',
-      }}
-    >
+    <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', contain: 'strict' }}>
       <div
         style={{
           position: 'absolute',
-          // 比视口大，使平移时不露白边
           top: '-25%',
           left: '-25%',
           width: '150%',
@@ -231,9 +242,8 @@ function Wave({ darkMode }: { darkMode?: boolean }) {
             'radial-gradient(ellipse at 50% 50%, var(--color-primary) 0%, transparent 40%)',
           ].join(', '),
           opacity: op,
-          animation: `wave-shift 20s ease-in-out ${(-sync).toFixed(2)}s infinite`,
-          willChange: 'transform',
-          // 强制独立合成层
+          animation: anim(frozen, `wave-shift 20s ease-in-out ${(-sync).toFixed(2)}s infinite`),
+          willChange: frozen ? undefined : 'transform',
           transform: 'translateZ(0)',
           backfaceVisibility: 'hidden',
         }}
@@ -243,73 +253,67 @@ function Wave({ darkMode }: { darkMode?: boolean }) {
 }
 
 // ── Pulse ─────────────────────────────────────────────────
-function Pulse({ darkMode }: { darkMode?: boolean }) {
+function Pulse({ darkMode, frozen }: { darkMode?: boolean; frozen?: boolean }) {
   const animName = darkMode ? 'grid-breathe-dark' : 'grid-breathe';
   // 与 keyframes 0% 帧对齐的初始 opacity，避免动画启动前/延迟期间出现"满亮度闪烁"
   const initialOpacity = darkMode ? 0.08 : 0.06;
-  const sync = syncSeconds();
+  const sync = useSyncOnce();
+  const line = (deg: number, size: string, delay: string) => ({
+    position: 'absolute' as const,
+    inset: 0,
+    backgroundImage: `linear-gradient(${deg}deg, var(--color-primary) 1px, transparent 1px)`,
+    backgroundSize: size,
+    opacity: initialOpacity,
+    animation: anim(frozen, `${animName} 4s ease-in-out ${delay}s infinite`),
+    animationFillMode: 'both' as const,
+    willChange: frozen ? undefined : 'opacity',
+    transform: 'translateZ(0)',
+    backfaceVisibility: 'hidden' as const,
+  });
   return (
-    <div
-      style={{
-        position: 'absolute',
-        inset: 0,
-        contain: 'strict',
-      }}
-    >
-      {/* 横线 */}
-      <div
-        style={{
-          position: 'absolute',
-          inset: 0,
-          backgroundImage: 'linear-gradient(0deg, var(--color-primary) 1px, transparent 1px)',
-          backgroundSize: '100% 48px',
-          opacity: initialOpacity,                              // 初始帧锁定，防止首帧拉满
-          animation: `${animName} 4s ease-in-out ${(-sync).toFixed(2)}s infinite`,
-          animationFillMode: 'both',                            // 0% 帧立即生效（含延迟期）
-          willChange: 'opacity',
-          transform: 'translateZ(0)',
-          backfaceVisibility: 'hidden',
-        }}
-      />
-      {/* 竖线 */}
-      <div
-        style={{
-          position: 'absolute',
-          inset: 0,
-          backgroundImage: 'linear-gradient(90deg, var(--color-primary) 1px, transparent 1px)',
-          backgroundSize: '48px 100%',
-          opacity: initialOpacity,                              // 同上：与 2s 延迟期间保持一致
-          animation: `${animName} 4s ease-in-out infinite ${(2 - sync).toFixed(2)}s`,
-          animationFillMode: 'both',                            // backwards 让 0% 帧在 2s 延迟期就锁定
-          willChange: 'opacity',
-          transform: 'translateZ(0)',
-          backfaceVisibility: 'hidden',
-        }}
-      />
+    <div style={{ position: 'absolute', inset: 0, contain: 'strict' }}>
+      <div style={line(0, '100% 48px', (-sync).toFixed(2))} />
+      <div style={line(90, '48px 100%', (2 - sync).toFixed(2))} />
     </div>
   );
 }
 
 // ── 主导出 ─────────────────────────────────────────────────
-export function BackgroundAnimation({ styles, darkMode }: BackgroundAnimationProps) {
+function BackgroundAnimationInner({ styles, darkMode, frozen }: BackgroundAnimationProps) {
   useEffect(() => { ensureKeyframes(); }, []);
+  /**
+   * D0（reduced-motion / 校直模式 / 低帧永久降级）下静止。
+   *
+   * 之前 D0 只停了 animate-pulse 和 CRT 扫描线，最贵的这一层根本不归它管——
+   * 而用户「关掉背景动画就明显改善」恰恰说明：D0 该做没做到的事，用户手动做到了。
+   * 这里选择**静止**而不是**关断**：低端机的界面不会因为降级突然变素，
+   * 但常驻合成动画归零。
+   */
+  const bold = useBoldness();
+  const still = frozen || !bold;
   return (
     <div
       className="fixed inset-0 pointer-events-none select-none"
       style={{
         zIndex: 0,
-        // 整个背景动画容器提升为独立合成层，
-        // 与页面内容（z-10）隔离，页面切换/弹窗时不共享重绘
+        // 整个背景动画容器提升为独立合成层，与页面内容（z-10）隔离
         isolation: 'isolate',
         transform: 'translateZ(0)',
         backfaceVisibility: 'hidden',
       }}
       aria-hidden="true"
     >
-      {styles.includes('aurora')    && <Aurora    darkMode={darkMode} />}
-      {styles.includes('particles') && <Particles darkMode={darkMode} />}
-      {styles.includes('wave')      && <Wave      darkMode={darkMode} />}
-      {styles.includes('pulse')     && <Pulse     darkMode={darkMode} />}
+      {styles.includes('aurora')    && <Aurora    darkMode={darkMode} frozen={still} />}
+      {styles.includes('particles') && <Particles darkMode={darkMode} frozen={still} />}
+      {styles.includes('wave')      && <Wave      darkMode={darkMode} frozen={still} />}
+      {styles.includes('pulse')     && <Pulse     darkMode={darkMode} frozen={still} />}
     </div>
   );
 }
+
+/**
+ * memo 化：App 是无选择器订阅，任何一次 store 写入都会重渲染整棵树。
+ * 没有这道边界，下面每个子组件都会重算 animation 字符串并被 React 写回 DOM
+ * （见文件头 ②）。styles 数组必须由调用方 useMemo 稳定，否则引用每次都变、memo 失效。
+ */
+export const BackgroundAnimation = memo(BackgroundAnimationInner);

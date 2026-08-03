@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useState, useRef, useCallback, lazy, Suspense } from 'react';
+import { useEffect, useLayoutEffect, useState, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
 import type { ReactNode } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useAppStore, toLocalDateKey } from '@/store';
@@ -167,7 +167,19 @@ function App() {
         .catch(() => { /* 预热失败不影响真正导航时的重试 */ })
         .then(() => { if (!cancelled) onIdle(step); });
     };
-    const kick = window.setTimeout(() => onIdle(step), 1200);
+    /**
+     * 1200 → 5200ms。
+     *
+     * 预热不只是下载：import() 还要在主线程 compile + 执行模块顶层，单个 chunk 的
+     * 编译**不可打断**（Cooperation 连带 404K 的图表库，在低端安卓上是一个
+     * 100~300ms 的 long task）。而 boldness 的首开帧率采样是在开屏结束后
+     * ≥1.5s 起、窗口 1.2s——两者原来几乎必然重叠。
+     * 结果：采样量到的低帧率其实是预热造成的，却被写成**永久** D0 标记，
+     * 而且「校直模式」开关还撤不掉它（boldness.ts 的单向闸）。
+     * 这是正确性 bug，不只是性能问题：中端机会被无辜降级。
+     * 让预热排在采样窗之后再起跑。
+     */
+    const kick = window.setTimeout(() => onIdle(step), 5200);
     return () => { cancelled = true; clearTimeout(kick); };
   }, [isLoading, showSplash, user]);
 
@@ -428,6 +440,18 @@ function App() {
     return () => { cancelled = true; };
   }, [showSplash, isLoading, user]);
 
+  // 背景动画是否开着——口径收在 ui/bgAnim.ts（含 P5 的"默认不开"闸）。
+  // 擦除垫底层也按它决定是否复刻，两边必须同源，否则切页时会一层在画一层不画。
+  // **必须 useMemo**：BackgroundAnimation 是 memo 化的，styles 是数组 prop，
+  // 每次渲染新建一个引用就会把那道 memo 边界原地打穿（v2.6.5 性能整改）。
+  // ⚠️ 必须待在**所有提前 return 之上**——下面 showSplash / isLoading / error
+  //    三处会直接 return，hook 写在它们后面就会出现「渲染次数不同、hook 数量不同」，
+  //    React 直接抛 Rendered more hooks than during the previous render。
+  const bgAnimStyleList = useMemo(
+    () => bgAnimStyles(settings, user?.theme),
+    [settings.backgroundImage, settings.backgroundAnimation, settings.p5BgAnimOptIn, user?.theme, settings],
+  );
+
   if (showSplash) {
     if (!splashPrefs) return null; // 等待开屏设置加载
     return <SplashScreen isVisible={showSplash} onComplete={handleSplashComplete} splashStyle={splashPrefs.splashStyle} splashSpeed={splashPrefs.splashSpeed} />;
@@ -461,9 +485,6 @@ function App() {
     );
   }
 
-  // 背景动画是否开着——口径收在 ui/bgAnim.ts（含 P5 的"默认不开"闸）。
-  // 擦除垫底层也按它决定是否复刻，两边必须同源，否则切页时会一层在画一层不画。
-  const bgAnimStyleList = bgAnimStyles(settings, user?.theme);
   const bgAnimOn = bgAnimStyleList.length > 0;
   // 背景图开着：三个频道的页面壳都要给它让位，擦除垫底层也要把它复刻一份
   const bgImageOn = !!settings.backgroundImage;
@@ -612,7 +633,9 @@ function App() {
           {bgAnimOn && (
             // 用独立 will-change 容器包裹，使背景动画层与页面切换（AnimatePresence）
             // 产生的 stacking context 完全隔离，避免页面转场时背景闪烁
-            <div data-bg-anim style={{ isolation: 'isolate', willChange: 'transform', position: 'fixed', inset: 0, zIndex: 0 }}>
+            // 不写 will-change：这个 wrapper 自身没有 transform 动画，钉一次纯属白占
+            // 一层后备存储；BackgroundAnimation 根上的 translateZ(0) 已经完成提升
+            <div data-bg-anim style={{ isolation: 'isolate', position: 'fixed', inset: 0, zIndex: 0 }}>
               <BackgroundAnimation
                 styles={bgAnimStyleList}
                 darkMode={settings.darkMode}
@@ -683,7 +706,10 @@ function App() {
                     (user?.theme === 'yellow' || bgAnimOn || bgImageOn) ? (
                       <>
                         {user?.theme === 'yellow' && !bgImageOn && <P4StageDecor />}
-                        {bgAnimOn && <BackgroundAnimation styles={bgAnimStyleList} darkMode={settings.darkMode} />}
+                        {/* frozen：复刻份只画静态首帧。它只存在 420ms 且全程被圆形蒙版
+                            盖着，静止的极光肉眼分辨不出来；但不冻结的话，恰恰在全应用
+                            最需要帧预算的那一刻，合成动画数会翻倍（v2.6.5 性能整改）。 */}
+                        {bgAnimOn && <BackgroundAnimation styles={bgAnimStyleList} darkMode={settings.darkMode} frozen />}
                         {bgImageLayer}
                       </>
                     ) : undefined

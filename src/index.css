@@ -1395,3 +1395,27 @@ html[data-ios-standalone="true"] {
   background-color: #ffffff !important;
   border-color: rgba(19, 19, 19, 0.25) !important;
 }
+
+/* ── D0 兜底：真正关掉贵的东西（v2.6.5 性能整改）──────────────────────────
+   在此之前 D0 只停了 animate-pulse 与 CRT 扫描线，最吃 GPU 的几类一个都没关，
+   于是低端机命中 D0 之后几乎没有改善——而用户「关掉背景动画就明显好转」正说明：
+   D0 该做没做到的事，用户手动去设置里做到了。这里把清单补齐。
+   （背景动画本体的静止在 BackgroundAnimation.tsx 里按 useBoldness 处理，
+     这条是给它上第二道保险，兼顾那些不经过该组件的装饰层。） */
+:root[data-boldness="0"] [data-bg-anim] *,
+:root[data-boldness="0"] [data-bg-anim] *::before,
+:root[data-boldness="0"] [data-bg-anim] *::after {
+  animation: none !important;
+}
+/* 毛玻璃：全仓 55 处，基本都在弹窗上。弹窗打开时用户没在滚动，正常机器上代价可接受，
+   但低端机开弹窗那一下的卡顿主要就是它。D0 下一律撤掉。 */
+:root[data-boldness="0"] *,
+:root[data-boldness="0"] *::before,
+:root[data-boldness="0"] *::after {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+:root[data-boldness="0"] .animate-bounce,
+:root[data-boldness="0"] .animate-ping {
+  animation: none !important;
+}
