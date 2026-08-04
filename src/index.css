@@ -47,6 +47,13 @@
   --bottom-nav-safe-height: env(safe-area-inset-bottom, 0px);
   --app-bottom-safe-padding: env(safe-area-inset-bottom, 0px);
   --bottom-nav-content-shift: 0px;
+  /* 由 BottomNav 运行时实测写入（见 Navigation.tsx 的 publishNavOverhang）：
+     #root 的底边比 BottomNav 的底边**低**多少。
+     常规平台上两者重合 → 恒为 0px，main 的底部留白一字不变；
+     只有 iOS PWA 那种「#root 按 100vh 铺满整屏、而 fixed 定位却贴在被系统内缩过的
+     视口底边」的错位场景才会 > 0 —— 那时留白差多少就补多少，页面最后一行才不会
+     被压在栏下点不到。静态常量做不到这件事：差值是运行时才知道的。 */
+  --bottom-nav-overhang: 0px;
 }
 
 /* 域色 token（UI_AUDIT_V2.5.md §4.5）：战场紫 / 塔罗金 / 羁绊靛是有意的域身份，
@@ -664,8 +671,11 @@ body {
   }
   
   main {
-    /* 底部留出 BottomNav 高度(4rem) + Home Bar 安全区，防止内容被遮挡 */
-    padding-bottom: calc(4rem + var(--app-bottom-safe-padding, env(safe-area-inset-bottom, 0px)));
+    /* 底部留出 BottomNav 高度(4rem) + Home Bar 安全区 + 实测错位补偿，防止内容被遮挡 */
+    padding-bottom: calc(
+      4rem + var(--app-bottom-safe-padding, env(safe-area-inset-bottom, 0px))
+      + var(--bottom-nav-overhang, 0px)
+    );
   }
 }
 
@@ -735,10 +745,19 @@ body {
  * marks standalone mode from JS and uses compact bottom spacing there.
  */
 html[data-ios-standalone="true"] {
-  --bottom-nav-item-height: 48px;
+  /* 48px → 54px：48 的行高里，图标+间距+10px 标签这一组正好 38px，上下各剩 5px。
+     再叠下面那 5px 的下移，标签的行盒底边就**正好压在栏的底缘**（实测 844.2 vs 844.2，
+     余量 0）——而 10px 字号 + line-height:1 的行盒装不下中文字形的下缘墨迹，
+     于是「首页/行动」这类标签在真机上被削掉一线。加高 6px 换回 8px 余量。
+     顺带：P5 频道的 tab 本身是 h-[54px]，此前在 48px 行里上下各溢出 3px，现在正好装下。 */
+  --bottom-nav-item-height: 54px;
   --bottom-nav-safe-height: 0px;
-  --app-bottom-safe-padding: 0px;
-  --bottom-nav-content-shift: 5px;
+  /* 0px → 12px：iOS 上「最后一行贴在栏下点不到」的第二道保险。
+     栏本身只有 54px 而 main 留了 4rem+12px=76px，任何一档口径下都还剩 20px 以上。 */
+  --app-bottom-safe-padding: 12px;
+  /* 5px → 0px：这个下移是上面标签被削的直接原因。它本是为「行高压到 48px 后视觉重心
+     偏高」而加的，但推的方向正对着栏的底缘——54px 行高下重心自然回正，不再需要。 */
+  --bottom-nav-content-shift: 0px;
 }
 
 @supports (-webkit-touch-callout: none) {

@@ -742,7 +742,9 @@ function App() {
                 //   - 桌面断点（md+）用 Tailwind 的 md:pt-8 覆盖为 2rem，安全区为 0 时无副作用。
                 // 底部 padding 精确匹配 BottomNav 高度（4rem 图标区 + home-indicator 安全区），
                 // 避免 iPhone home bar 设备上出现多余的灰色空白条。
-                className="md:ml-60 px-4 md:px-8 pt-[calc(1rem+env(safe-area-inset-top))] md:pt-8 pb-[calc(4rem+var(--app-bottom-safe-padding,env(safe-area-inset-bottom,0px))+0.5rem)] md:pb-8"
+                // --bottom-nav-overhang 是 BottomNav 运行时实测写入的错位补偿：常规平台恒为
+                // 0px（此式与改动前逐像素相同），只有 iOS PWA 的 100vh/内缩视口错位才 > 0。
+                className="md:ml-60 px-4 md:px-8 pt-[calc(1rem+env(safe-area-inset-top))] md:pt-8 pb-[calc(4rem+var(--app-bottom-safe-padding,env(safe-area-inset-bottom,0px))+var(--bottom-nav-overhang,0px)+0.5rem)] md:pb-8"
                 // 横向兜底：页面的出血装饰（P5 的红斜块、P4 的头图 bleed）用负偏移探出屏缘，
                 // 这些绝对定位层会把 shell 的 scrollWidth 撑大，用户就能把整页往左划出 70~90px 空白。
                 // overflow-x:clip 只裁不滚——不建立滚动容器，不影响 sticky，也不影响页内自己的横滑组件。
