@@ -27,6 +27,10 @@ const profileFromRecord = (r: RecordModel | undefined | null): CloudProfile | un
     nickname: (r.nickname as string | undefined) || undefined,
     avatarUrl,
     totalLv: typeof r.total_lv === 'number' ? (r.total_lv as number) : undefined,
+    // 难度档（R19）：PB 上可能还没这个字段，缺了就是 undefined = 不特殊标记
+    levelDifficulty: r.level_difficulty === 'hard' || r.level_difficulty === 'easy'
+      ? (r.level_difficulty as 'hard' | 'easy')
+      : undefined,
     attributeNames: (r.attribute_names as Record<string, string> | undefined) || undefined,
     attributeLevels: (r.attribute_levels as Record<string, number> | undefined) || undefined,
     attributeLevelTitles: (r.attribute_level_titles as Record<string, string[]> | undefined) || undefined,

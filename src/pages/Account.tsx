@@ -11,6 +11,7 @@ import { motion } from 'motion/react';
 import { useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useAppStore } from '@/store';
+import { resolveLevelDifficulty } from '@/utils/levelDifficulty';
 import { useCloudStore } from '@/store/cloud';
 import { BackButton } from '@/components/BackButton';
 import { isNative } from '@/utils/native';
@@ -248,7 +249,7 @@ export const Account = () => {
             className="focus:outline-none"
             aria-label="查看总点数"
           >
-            <LVTag level={totalLv} size="md" subdued />
+            <LVTag level={totalLv} size="md" subdued difficulty={resolveLevelDifficulty(settings)} theme={user?.theme} />
           </button>
           <span className="text-xs text-gray-600 dark:text-gray-400 truncate">
             {syncStatus === 'syncing' ? '同步中…' : lastSyncAt ? `最近同步：${formatRelative(lastSyncAt)}` : '尚未同步'}

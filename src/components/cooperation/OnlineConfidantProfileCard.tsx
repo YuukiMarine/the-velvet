@@ -31,6 +31,7 @@ import {
 } from '@/services/prayers';
 import { getAttributeLevelTitle } from '@/utils/attributeLevelTitles';
 import type { AttributeId, CloudProfile, Friendship } from '@/types';
+import { GUEST_LV_HARD, GUEST_LV_NORMAL } from '@/utils/levelDifficulty';
 
 const ATTR_ORDER: AttributeId[] = ['knowledge', 'guts', 'dexterity', 'kindness', 'charm'];
 const DEFAULT_ATTR_LABELS: Record<AttributeId, string> = {
@@ -209,7 +210,12 @@ export function OnlineConfidantProfileCard({
                   >
                     ONLINE
                   </span>
-                  <span className="tabular-nums font-bold" style={{ color: '#c4b5fd' }}>
+                  {/* 困难档的人，等级在别人眼里也是红的（R19）。
+                      对方档位靠 CloudProfile.levelDifficulty 带过来；拿不到就按普通显示。 */}
+                  <span
+                    className="tabular-nums font-bold"
+                    style={{ color: profile.levelDifficulty === 'hard' ? GUEST_LV_HARD : GUEST_LV_NORMAL }}
+                  >
                     LV {totalLv}
                   </span>
                 </div>

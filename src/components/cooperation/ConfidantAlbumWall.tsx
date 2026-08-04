@@ -23,6 +23,7 @@ import { useBoldness } from '@/utils/boldness';
 import { triggerLightHaptic } from '@/utils/feedback';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { useAppStore } from '@/store';
+import { hardTagInk } from '@/utils/levelDifficulty';
 import { P3R, slantClip } from '@/components/p3r/kit';
 import { starPts } from '@/components/p5r/kit';
 import { P4Sparkle } from '@/ui/p4Kit';
@@ -322,12 +323,15 @@ const FriendCardFace = ({ f }: { f: FriendWallItem }) => {
  * 复用 BACK_SKIN 四频道皮与 CardBackFace 同语言，但内容是客人版：
  * 无 RANK 条（还没有羁绊等级），换成 LV / @userId；主 CTA 是「缔结 COOP」。
  */
-const FriendCardBack = ({ f, onOpen, onCrop }: {
+const FriendCardBack = ({ f, onOpen, onCrop, onProfile }: {
   f: FriendWallItem;
   onOpen: () => void;
   onCrop?: () => void;
+  /** 点虚线块 → 直接打开 GUEST PROFILE */
+  onProfile?: () => void;
 }) => {
   const channel = useUiChannel();
+  const theme = useAppStore(s => s.user?.theme);
   const sk = BACK_SKIN[channel];
   const p5 = channel === 'p5';
   const name = f.profile.nickname || f.profile.userId || '未命名客人';
@@ -353,12 +357,41 @@ const FriendCardBack = ({ f, onOpen, onCrop }: {
         <span className="shrink-0 text-[10px] font-bold" style={{ color: sk.meta }}>GUEST</span>
       </div>
       <div className="mt-0.5 text-xs font-semibold" style={{ color: sk.sub }}>
-        @{f.profile.userId ?? '—'}{typeof f.profile.totalLv === 'number' ? ` · LV ${f.profile.totalLv}` : ''}
+        @{f.profile.userId ?? '—'}
+        {typeof f.profile.totalLv === 'number' && (
+          <>
+            {' · '}
+            {/* 困难档的客人：LV 换成主题对应的高调色（R19） */}
+            <span style={f.profile.levelDifficulty === 'hard' ? { color: hardTagInk(theme).ink, fontWeight: 900 } : undefined}>
+              LV {f.profile.totalLv}
+            </span>
+          </>
+        )}
       </div>
 
       <p className="mt-3 text-[11px] leading-relaxed" style={{ color: sk.sub }}>
         还未缔结 COOP 契约——两张塔罗尚未互相照亮。递出契约，Ta 就会正式落座这面墙。
       </p>
+
+      {/* 客人档案入口：沿用 COOP 详情页「即将解锁」那块的虚线框语言，点一下直达 GUEST PROFILE */}
+      {onProfile && (
+        <button
+          type="button"
+          onPointerDown={stop}
+          onPointerUp={stop}
+          onClick={(e) => { e.stopPropagation(); onProfile(); }}
+          className="mt-3 w-full px-3 py-2 text-left active:brightness-95"
+          style={{ border: `1px dashed ${sk.line}`, borderRadius: p5 ? 0 : 12, background: 'transparent' }}
+        >
+          <span className="block text-[10px] font-bold tracking-wider" style={{ color: sk.meta }}>
+            客人档案
+          </span>
+          <span className="mt-0.5 flex items-center justify-between gap-2 text-[11px]" style={{ color: sk.sub }}>
+            <span className="truncate">看看 Ta 的五维与称号</span>
+            <span className="shrink-0 font-black" style={{ color: sk.accent }}>→</span>
+          </span>
+        </button>
+      )}
 
       <div className="mt-auto space-y-1.5">
         <div className="flex gap-1.5">
@@ -812,6 +845,7 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
                       f={item}
                       onOpen={() => onOpenFriend?.(item)}
                       onCrop={onCropFriend ? () => onCropFriend(item) : undefined}
+                      onProfile={onOpenFriend ? () => onOpenFriend(item) : undefined}
                     />
                   ) : (
                     <CardBackFace c={item} onOpenDetail={() => onOpenDetail(item.id)} prayer={prayerFor?.(item)} />
