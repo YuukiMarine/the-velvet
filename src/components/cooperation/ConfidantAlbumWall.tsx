@@ -356,16 +356,32 @@ const FriendCardBack = ({ f, onOpen, onCrop, onProfile }: {
         </span>
         <span className="shrink-0 text-[10px] font-bold" style={{ color: sk.meta }}>GUEST</span>
       </div>
-      <div className="mt-0.5 text-xs font-semibold" style={{ color: sk.sub }}>
-        @{f.profile.userId ?? '—'}
+      {/* ID 是入口本身（虚线下划线 = 可点，与 COOP 详情页同一套语言），点开 GUEST PROFILE。
+          flex-wrap：ID 长的时候 LV 自己换到下一行，而不是被卡缘切掉。 */}
+      <div className="mt-0.5 flex flex-wrap items-baseline gap-x-1.5 text-xs font-semibold" style={{ color: sk.sub }}>
+        <button
+          type="button"
+          onPointerDown={stop}
+          onPointerUp={stop}
+          onClick={(e) => { e.stopPropagation(); onProfile?.(); }}
+          disabled={!onProfile}
+          className="min-w-0 max-w-full break-all text-left font-semibold active:brightness-90 disabled:active:brightness-100"
+          style={{
+            color: 'inherit',
+            borderBottom: onProfile ? `1px dashed ${sk.accent}` : undefined,
+            lineHeight: 1.5,
+          }}
+        >
+          @{f.profile.userId ?? '—'}
+        </button>
         {typeof f.profile.totalLv === 'number' && (
-          <>
-            {' · '}
-            {/* 困难档的客人：LV 换成主题对应的高调色（R19） */}
-            <span style={f.profile.levelDifficulty === 'hard' ? { color: hardTagInk(theme).ink, fontWeight: 900 } : undefined}>
-              LV {f.profile.totalLv}
-            </span>
-          </>
+          <span
+            className="shrink-0 tabular-nums"
+            // 困难档的客人：LV 换成主题对应的高调色（R19）
+            style={f.profile.levelDifficulty === 'hard' ? { color: hardTagInk(theme).ink, fontWeight: 900 } : undefined}
+          >
+            LV {f.profile.totalLv}
+          </span>
         )}
       </div>
 
@@ -373,25 +389,6 @@ const FriendCardBack = ({ f, onOpen, onCrop, onProfile }: {
         还未缔结 COOP 契约——两张塔罗尚未互相照亮。递出契约，Ta 就会正式落座这面墙。
       </p>
 
-      {/* 客人档案入口：沿用 COOP 详情页「即将解锁」那块的虚线框语言，点一下直达 GUEST PROFILE */}
-      {onProfile && (
-        <button
-          type="button"
-          onPointerDown={stop}
-          onPointerUp={stop}
-          onClick={(e) => { e.stopPropagation(); onProfile(); }}
-          className="mt-3 w-full px-3 py-2 text-left active:brightness-95"
-          style={{ border: `1px dashed ${sk.line}`, borderRadius: p5 ? 0 : 12, background: 'transparent' }}
-        >
-          <span className="block text-[10px] font-bold tracking-wider" style={{ color: sk.meta }}>
-            客人档案
-          </span>
-          <span className="mt-0.5 flex items-center justify-between gap-2 text-[11px]" style={{ color: sk.sub }}>
-            <span className="truncate">看看 Ta 的五维与称号</span>
-            <span className="shrink-0 font-black" style={{ color: sk.accent }}>→</span>
-          </span>
-        </button>
-      )}
 
       <div className="mt-auto space-y-1.5">
         <div className="flex gap-1.5">

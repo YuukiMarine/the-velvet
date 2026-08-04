@@ -63,6 +63,14 @@ export interface ChatOptions {
    * （openai/deepseek/kimi），其余 provider 静默忽略——prompt 约定仍是兜底。
    */
   jsonMode?: boolean;
+  /**
+   * 思维链增量（仅流式）。**不会**混进 yield 出去的正文里——
+   * 正文要拿去解析 JSON，掺了思维链就废了。这个回调纯粹给 UI 用：
+   * 思维链模型在"想"的那几十秒里一个正文字都不吐，界面上那条滚动预览
+   * 会整段空着（用户上报「流式的滚动窗口没有了」）。把想的过程喂给它，
+   * 那扇窗才一直有东西在动。
+   */
+  onReasoning?: (delta: string) => void;
 }
 
 /**
@@ -261,7 +269,9 @@ function buildRequestBody(
    * 4096 是各家思维链模型的常见量级，宁可多要——没用完不收费。
    */
   const thinking = isThinkingModel(cfg.model);
-  const budget = thinking ? maxTokens + Math.max(4096, maxTokens) : maxTokens;
+  // 余量放到 8192：ceiling 不是 target，没用完不收费，宁可给宽。
+  // 真超过服务商上限时由 chatComplete 的 400 兜底降档重发（见那边注释）。
+  const budget = thinking ? maxTokens + Math.max(8192, maxTokens) : maxTokens;
   if (isReasoningModel(cfg.model)) {
     body.max_completion_tokens = budget;
     body.reasoning_effort = 'minimal'; // 让 GPT-5 尽量接近"非推理"的快/省行为
@@ -300,6 +310,13 @@ function isEmptyLengthError(e: unknown): boolean {
   return !!(e as Error & { [EMPTY_LENGTH]?: true })?.[EMPTY_LENGTH];
 }
 
+/** 服务商嫌 max_tokens / max_completion_tokens 太大而 400（各家措辞不同，按关键词认） */
+function isOverBudgetError(e: unknown): boolean {
+  const m = e instanceof Error ? e.message : '';
+  if (!/HTTP 400|invalid_request|Bad Request/i.test(m)) return false;
+  return /max_tokens|max_completion_tokens|maximum.*tokens|tokens.*exceed|too large|less than or equal/i.test(m);
+}
+
 /**
  * 非流式 chat completion。
  *
@@ -316,9 +333,23 @@ export async function chatComplete(
   try {
     return await chatCompleteOnce(cfg, messages, opts);
   } catch (e) {
-    if (!isEmptyLengthError(e)) throw e;
-    const bumped = Math.max(4000, (opts.maxTokens ?? DEFAULT_MAX_TOKENS) * 3);
-    return await chatCompleteOnce(cfg, messages, { ...opts, maxTokens: bumped });
+    // ① 思维链吃光预算 → 翻三倍重来
+    if (isEmptyLengthError(e)) {
+      const bumped = Math.max(4000, (opts.maxTokens ?? DEFAULT_MAX_TOKENS) * 3);
+      return await chatCompleteOnce(cfg, messages, { ...opts, maxTokens: bumped });
+    }
+    /**
+     * ② 预算**超过服务商上限**被 400 顶回来 → 降到保守档重发。
+     *
+     * 这是"为什么不直接按厂商上限要"的答案：ceiling 不是 target，没用完不收费，
+     * 所以要得宽本身没代价；代价在于**各家上限不一样、也没有可靠的地方查**，
+     * 写死一个大数会让上限较低的模型直接 400。
+     * 于是策略是「先要宽 → 被拒就退」，而不是「先猜一个都能过的小数」。
+     */
+    if (isOverBudgetError(e) && (opts.maxTokens ?? DEFAULT_MAX_TOKENS) > 2048) {
+      return await chatCompleteOnce(cfg, messages, { ...opts, maxTokens: 2048 });
+    }
+    throw e;
   }
 }
 
@@ -418,7 +449,8 @@ export async function* chatStream(
           const c = json?.choices?.[0];
           if (typeof c?.finish_reason === 'string' && c.finish_reason) finishReason = c.finish_reason;
           // 思维链不 yield 给 UI（那是过程不是答案），只记一笔用于最终报错
-          if (c?.delta?.reasoning_content || c?.delta?.reasoning) sawReasoning = true;
+          const rd: string = c?.delta?.reasoning_content ?? c?.delta?.reasoning ?? '';
+          if (rd) { sawReasoning = true; opts.onReasoning?.(rd); }
           const delta: string = c?.delta?.content ?? c?.message?.content ?? '';
           if (delta) { produced = true; yield delta; }
         } catch { /* 半个 / 非法 chunk，跳过 */ }

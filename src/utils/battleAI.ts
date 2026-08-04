@@ -83,10 +83,22 @@ async function callAIStream(
   temperature = 0.8,
   maxTokens = 1500,
 ): Promise<string> {
+  /**
+   * 两个缓冲，别合并：
+   *   full  —— 只装正文，是要拿去 extractJSON 的那份
+   *   shown —— 显示用，思维链也进来
+   * 思维链模型（deepseek-v4-pro 一类）在"想"的那几十秒里一个正文字都不吐，
+   * 只喂 full 的话吟唱屏下面那条滚动预览会整段空着。
+   */
   let full = '';
-  for await (const delta of chatStream(cfg, messages, { temperature, maxTokens })) {
+  let shown = '';
+  const push = (d: string) => { shown += d; onChunk(d, shown); };
+  for await (const delta of chatStream(cfg, messages, {
+    temperature, maxTokens,
+    onReasoning: push,
+  })) {
     full += delta;
-    onChunk(delta, full);
+    push(delta);
   }
   return full;
 }
