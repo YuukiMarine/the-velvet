@@ -17,24 +17,36 @@ export const DEFAULT_ATTRIBUTE_NAMES = {
 };
 
 /**
- * 人格指数升级所需累计点数。
- * R19 用户拍板：
- *   · LV2-LV5 依次再加 20 / 80 / 150 / 260 —— 40+20 / 90+80 / 150+150 / 240+260
- *   · LV6-10 的默认值见 EXTENDED_LEVEL_THRESHOLDS（每级再 +300），
- *     那是「添加一级」时用的，不属于默认开启的档位
- * 只影响**新档默认值**；老档用的是自己 settings.levelThresholds 里那份。
+ * 人格指数的两档难度预设（R19 用户拍板）。
+ *
+ * base = 默认开启的 LV1-5；ext = LV6-10，只在玩家自己点「+ 添加一级」时逐级取用。
+ * 两者分开的理由见下面 DEFAULT_LEVEL_THRESHOLDS 的注释——合在一起会让
+ * 「恢复默认」顺手替玩家把 10 档全开了。
  */
-export const DEFAULT_LEVEL_THRESHOLDS = [0, 60, 170, 300, 500];
+export const LEVEL_PRESETS = {
+  /** 简单：新档默认。LV5 前更快见到成长，LV6-9 每级 +200，LV10 收在 1500 */
+  easy: {
+    base: [0, 40, 100, 200, 300],
+    ext:  [500, 700, 900, 1100, 1500],
+  },
+  /** 困难：R19 之前的口径（LV2-5 各再加 20/80/150/260，LV6-10 每级 +300） */
+  hard: {
+    base: [0, 60, 170, 300, 500],
+    ext:  [800, 1100, 1400, 1700, 2000],
+  },
+} as const;
 
 /**
- * LV6-LV10 的默认阈值（每级在上一级基础上 +300）。
+ * 新档默认阈值 = 简单档的 LV1-5。
  *
- * 单独一张表，**不并进 DEFAULT_LEVEL_THRESHOLDS**：后者是「默认开几级」的事实源，
- * 「恢复默认」与确认弹窗的示意都读它。把 6-10 塞进去的话，一次恢复默认
- * 就会替玩家把 LV6-10 全开了，而且没开过的人也会在弹窗里看到十个数字。
- * 这张表只在玩家自己点「+ 添加一级」时用来算下一级该要多少点。
+ * ⚠️ 这张表同时是「默认开几级」的事实源：「恢复默认」与它的确认弹窗都读它。
+ * 千万别把 LV6-10 并进来——那样一次恢复默认就会替玩家开满 10 档，
+ * 没开过高阶的人还会在弹窗里看到十个数字。LV6-10 走 LEVEL_PRESETS[*].ext。
  */
-export const EXTENDED_LEVEL_THRESHOLDS = [800, 1100, 1400, 1700, 2000];
+export const DEFAULT_LEVEL_THRESHOLDS: number[] = [...LEVEL_PRESETS.easy.base];
+
+/** @deprecated 改用 LEVEL_PRESETS[difficulty].ext；保留别名防漏改 */
+export const EXTENDED_LEVEL_THRESHOLDS: number[] = [...LEVEL_PRESETS.easy.ext];
 
 /** 属性主色 — 与 Statistics 页保持一致，供雷达图、Shadow 染色、UI 标识复用 */
 export const ATTR_COLORS: Record<AttributeId, string> = {
@@ -60,7 +72,7 @@ export const INITIAL_ATTRIBUTES = [
     displayName: '知识',
     points: 0,
     level: 1,
-    levelThresholds: [0, 60, 170, 300, 500],
+    levelThresholds: [0, 40, 100, 200, 300],
     unlocked: true
   },
   {
@@ -68,7 +80,7 @@ export const INITIAL_ATTRIBUTES = [
     displayName: '胆量',
     points: 0,
     level: 1,
-    levelThresholds: [0, 60, 170, 300, 500],
+    levelThresholds: [0, 40, 100, 200, 300],
     unlocked: true
   },
   {
@@ -76,7 +88,7 @@ export const INITIAL_ATTRIBUTES = [
     displayName: '灵巧',
     points: 0,
     level: 1,
-    levelThresholds: [0, 60, 170, 300, 500],
+    levelThresholds: [0, 40, 100, 200, 300],
     unlocked: true
   },
   {
@@ -84,7 +96,7 @@ export const INITIAL_ATTRIBUTES = [
     displayName: '温柔',
     points: 0,
     level: 1,
-    levelThresholds: [0, 60, 170, 300, 500],
+    levelThresholds: [0, 40, 100, 200, 300],
     unlocked: true
   },
   {
@@ -92,7 +104,7 @@ export const INITIAL_ATTRIBUTES = [
     displayName: '魅力',
     points: 0,
     level: 1,
-    levelThresholds: [0, 60, 170, 300, 500],
+    levelThresholds: [0, 40, 100, 200, 300],
     unlocked: true
   }
 ];

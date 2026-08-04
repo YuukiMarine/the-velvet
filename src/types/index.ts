@@ -358,6 +358,11 @@ export interface Settings {
   id?: string;
   attributeNames: AttributeNames;
   levelThresholds: number[];
+  /**
+   * 人格指数难度档（R19）。缺省时由 resolveLevelDifficulty 按阈值反推
+   * （只有与某一档 LV1-5 完全一致才算数，手改过的按简单处理）。
+   */
+  levelDifficulty?: LevelDifficulty;
   /** 五维各等级的四字称号；下标 0 对应 Lv.1。缺失时使用默认兜底。 */
   attributeLevelTitles?: AttributeLevelTitles;
   /** 是否正在使用 AI 按当前属性名匹配过的系统成就/技能名称。 */
@@ -1638,6 +1643,9 @@ export interface CounselArchive {
 // 断网 / 对方长期离线时，对方的 profile 快照会留在 Confidant.linkedProfile 里。
 
 /** 对方的公开档案快照（会被缓存到 Confidant.linkedProfile） */
+/** 人格指数难度档（R19）：简单 = 新档默认；困难 = 旧口径，且等级标签换高调配色 */
+export type LevelDifficulty = 'easy' | 'hard';
+
 export interface CloudProfile {
   /** PB user.id */
   id: string;
@@ -1649,6 +1657,12 @@ export interface CloudProfile {
   avatarUrl?: string;
   /** 总等级（五维 level 之和） */
   totalLv?: number;
+  /**
+   * 对方走的是哪一档难度（R19）。困难档的人，等级在别人眼里也是红的。
+   * 需要 PB users 集合有 level_difficulty 字段；没有就是 undefined，
+   * 表现为"不特殊标记"，不影响其它档案字段。
+   */
+  levelDifficulty?: LevelDifficulty;
   /** 对方自己的属性自定义名 */
   attributeNames?: Partial<Record<AttributeId, string>>;
   /** 对方五维各自的 level */

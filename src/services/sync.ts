@@ -4,6 +4,7 @@ import { useCloudStore } from '@/store/cloud';
 import { useAppStore } from '@/store';
 import { computeTotalLv } from '@/utils/lvTiers';
 import { normalizeAttributeLevelTitles } from '@/utils/attributeLevelTitles';
+import { resolveLevelDifficulty } from '@/utils/levelDifficulty';
 
 /**
  * 哪些表受"同伴"分组开关（syncConfidantsToCloud）管辖——
@@ -133,6 +134,12 @@ export const pushUserProfile = async (): Promise<void> => {
   } catch (err) {
     console.warn('[velvet-sync] pushUserProfile failed', err);
   }
+  // 难度档单发（PB 可能还没这个字段；混进上面会连累整份档案，见 pushAll 里的同款注释）
+  try {
+    await pb.collection('users').update(userId, {
+      level_difficulty: resolveLevelDifficulty(appState.settings),
+    });
+  } catch { /* 字段还没建，跳过 */ }
   // 头像走单独的指纹比对路径
   try {
     await syncAvatarIfChanged(userId);
@@ -472,6 +479,20 @@ export const pushAll = async (): Promise<void> => {
       pb.authStore.save(pb.authStore.token, updated);
     } catch (e) {
       console.warn('[velvet-sync] push: failed to update user profile fields', e);
+    }
+
+    /**
+     * 难度档（R19）**单独发一次**，不并进上面那个 patch。
+     * 理由：它依赖 PB users 集合里有 level_difficulty 字段，而这个字段可能还没建。
+     * 混在一起发的话，缺字段会让**整份档案**（昵称/等级/称号…）一起推不上去。
+     * 拆开之后最坏情况只是"别人看不到你的难度标记"，其余档案照常。
+     */
+    try {
+      await pb.collection('users').update(userId, {
+        level_difficulty: resolveLevelDifficulty(appState.settings),
+      });
+    } catch {
+      // PB 没这个字段就静默跳过——不是错误，是还没建
     }
 
     // 头像同步 —— 只在本地 dataUrl 与"上次上传指纹"不一致时才推

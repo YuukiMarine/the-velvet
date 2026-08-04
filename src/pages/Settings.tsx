@@ -4,7 +4,9 @@ import type { CSSProperties } from 'react';
 import { useAppStore, DEFAULT_SUMMARY_PROMPT_PRESETS, FAMILIAR_FACE_PRESETS, toLocalDateKey, applyCustomThemeColor } from '@/store';
 import { triggerThemeSwitchFeedback, playSound } from '@/utils/feedback';
 import { ThemeType, AttributeId, SummaryPromptPreset, AttributeLevelTitles } from '@/types';
-import { DEFAULT_LEVEL_THRESHOLDS, EXTENDED_LEVEL_THRESHOLDS } from '@/constants';
+import { LEVEL_PRESETS } from '@/constants';
+import { resolveLevelDifficulty } from '@/utils/levelDifficulty';
+import type { LevelDifficulty } from '@/types';
 import { db } from '@/db';
 import { PageTitle } from '@/components/PageTitle';
 import { BackButton } from '@/components/BackButton';
@@ -423,6 +425,22 @@ export const Settings = () => {
   const [showLevelWarning, setShowLevelWarning] = useState(false);
   // 等级阈值：恢复默认 / 删除高等级 的确认弹窗
   const [showResetThresholdsConfirm, setShowResetThresholdsConfirm] = useState(false);
+
+  /**
+   * 人格指数难度档（R19）。
+   * 换档 = 把该档整套阈值套上，**并保留玩家已经开到的级数**：
+   * 开到 LV8 的人换档后还是 8 级，只是每级要的点数换了一套。
+   */
+  const curDifficulty = resolveLevelDifficulty(settings);
+  const applyDifficulty = (d: LevelDifficulty) => {
+    if (d === curDifficulty && settings.levelDifficulty === d) return;
+    const count = settings.levelThresholds.length;
+    const full = [...LEVEL_PRESETS[d].base, ...LEVEL_PRESETS[d].ext];
+    updateSettings({
+      levelDifficulty: d,
+      levelThresholds: full.slice(0, Math.min(Math.max(count, 5), full.length)),
+    });
+  };
   const [deleteLevelIndex, setDeleteLevelIndex] = useState<number | null>(null);
   const [levelTitleRefreshing, setLevelTitleRefreshing] = useState(false);
   const [levelTitleMessage, setLevelTitleMessage] = useState<string | null>(null);
@@ -1707,6 +1725,36 @@ export const Settings = () => {
                       <p className="px-4 pt-3 pb-2 text-[11px] text-gray-500 dark:text-gray-400 leading-relaxed">
                         达到对应等级所需的累计点数（数值可随时调整；建议保持单调递增）。
                       </p>
+                      {/* 难度档（R19）：换档 = 把该档的阈值整套套上（已开到几级就套到几级） */}
+                      <div className="px-3 pb-1">
+                        <div className="flex gap-2">
+                          {(['easy', 'hard'] as const).map(d => {
+                            const on = curDifficulty === d;
+                            return (
+                              <button
+                                key={d}
+                                onClick={() => applyDifficulty(d)}
+                                className={`flex-1 rounded-xl border px-3 py-2 text-left transition-colors ${
+                                  on
+                                    ? 'border-primary/50 bg-primary/10'
+                                    : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40'
+                                }`}
+                              >
+                                <div className={`text-xs font-black ${on ? 'text-primary' : 'text-gray-700 dark:text-gray-200'}`}>
+                                  {d === 'easy' ? '简单' : '困难'}
+                                  {on && <span className="ml-1 text-[10px]">✓</span>}
+                                </div>
+                                <div className="mt-0.5 text-[10px] tabular-nums text-gray-500 dark:text-gray-400">
+                                  LV5 需 {LEVEL_PRESETS[d].base[4]} 点
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <p className="mt-1.5 text-[10px] leading-relaxed text-gray-400 dark:text-gray-500">
+                          困难档的等级标签会换成一套专属配色——菜单、同伴塔罗、以及别人看到的你，都认得出来。
+                        </p>
+                      </div>
                       <div className="p-3 space-y-1.5">
                         {settings.levelThresholds.map((threshold, index) => {
                           const isLast = index === settings.levelThresholds.length - 1;
@@ -3082,11 +3130,11 @@ export const Settings = () => {
         isOpen={showResetThresholdsConfirm}
         icon="↺"
         title="恢复默认等级阈值？"
-        description="将等级阈值恢复为系统默认的 5 级配置。"
+        description={`将等级阈值恢复为${curDifficulty === 'hard' ? '困难' : '简单'}档的 5 级默认配置。`}
         confirmText="恢复默认"
         cancelText="取消"
         onConfirm={() => {
-          updateSettings({ levelThresholds: [...DEFAULT_LEVEL_THRESHOLDS] });
+          updateSettings({ levelThresholds: [...LEVEL_PRESETS[curDifficulty].base] });
           setShowResetThresholdsConfirm(false);
         }}
         onCancel={() => setShowResetThresholdsConfirm(false)}
@@ -3094,7 +3142,7 @@ export const Settings = () => {
         {/* 富内容：默认阈值速览 + 不可逆提示 */}
         <div className="text-center">
           <div className="mx-auto inline-flex flex-wrap gap-1.5 justify-center">
-            {DEFAULT_LEVEL_THRESHOLDS.map((v, i) => (
+            {LEVEL_PRESETS[curDifficulty].base.map((v, i) => (
               <span
                 key={i}
                 className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-primary/10 text-primary tabular-nums"
@@ -3157,11 +3205,11 @@ export const Settings = () => {
         confirmText="继续添加"
         cancelText="取消"
         onConfirm={() => {
-          // LV6-10 的默认阈值走 EXTENDED_LEVEL_THRESHOLDS（每级 +300，用户拍板）；
+          // LV6-10 的默认阈值走当前难度档的 ext 表；
           // 超出 10 级或阈值被改过、算出来不比上一级大时，退回"上一级 +300"
           const last = settings.levelThresholds[settings.levelThresholds.length - 1] || 0;
           const nextLevel = settings.levelThresholds.length + 1;
-          const preset = EXTENDED_LEVEL_THRESHOLDS[nextLevel - 6];
+          const preset = LEVEL_PRESETS[curDifficulty].ext[nextLevel - 6];
           const next = preset !== undefined && preset > last ? preset : last + 300;
           updateSettings({ levelThresholds: [...settings.levelThresholds, next] });
           setShowLevelWarning(false);
