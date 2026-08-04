@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore } from '@/store';
-import { resolveLevelDifficulty } from '@/utils/levelDifficulty';
 import { useCloudStore } from '@/store/cloud';
 import { LVTag } from '@/components/LVTag';
 import { computeTotalLv } from '@/utils/lvTiers';
@@ -308,7 +307,7 @@ export function UserProfileCard() {
             )}
 
             <div className="mt-1.5">
-              <LVTag level={totalLv} size="md" difficulty={resolveLevelDifficulty(settings)} theme={user?.theme} />
+              <LVTag level={totalLv} size="md" />
             </div>
 
             {cloudEnabled && cloudUser && (

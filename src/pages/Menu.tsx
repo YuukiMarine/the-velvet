@@ -34,6 +34,7 @@ import type { ThemeType } from '@/types';
 import { PagePlane, PlaneLevel } from '@/components/PagePlane';
 import { SheetModal } from '@/components/SheetModal';
 import { UserProfileCard } from '@/components/UserProfileCard';
+import { resolveLevelDifficulty, hardTagInk } from '@/utils/levelDifficulty';
 import { TrophyIcon } from '@/components/Navigation';
 import { isInShadowTime } from '@/constants';
 import { calcCurrentStreak, streakDates } from '@/utils/streak';
@@ -318,6 +319,13 @@ export const Menu = () => {
   const orderOf = (side: 'left' | 'right', i: number) => (side === 'left' ? i * 2 : i * 2 + 1);
 
   const streakDigits = String(currentStreak).length;
+
+  /**
+   * 困难档标记（R19）：三张用户证卡上那枚 LV 章换成主题专属色
+   * （蓝→红 / 粉→紫 / 黄→紫 / 红→金）。简单档为 null，一切照旧。
+   * 只染证卡上的 LV 章——资料 Sheet 与账号页那枚渐变 LVTag 用户点名不动。
+   */
+  const hardInk = resolveLevelDifficulty(settings) === 'hard' ? hardTagInk(user?.theme) : null;
 
   // P4 学生证数据：LV = 五维等级和，总点数 = 点数和，入学 = 建号日期
   const totalLevel = attributes.reduce((s, a) => s + a.level, 0);
@@ -659,8 +667,12 @@ export const Menu = () => {
                   <span className="mt-2 flex items-center gap-0">
                     {/* LV 黑斜章 */}
                     <span
-                      className="relative flex items-baseline gap-1.5 py-1 pl-3 pr-4 text-white"
-                      style={{ background: P5R.ink, clipPath: 'polygon(2px 0, 100% 1px, calc(100% - 11px) 100%, 0 calc(100% - 2px))' }}
+                      className="relative flex items-baseline gap-1.5 py-1 pl-3 pr-4"
+                      style={{
+                        background: hardInk ? hardInk.ink : P5R.ink,
+                        color: hardInk ? hardInk.text : '#ffffff',
+                        clipPath: 'polygon(2px 0, 100% 1px, calc(100% - 11px) 100%, 0 calc(100% - 2px))',
+                      }}
                     >
                       <span className="text-[11px] font-black tracking-[0.14em]">LV</span>
                       <span className="text-[20px] font-black leading-none tabular-nums">{totalLv}</span>
@@ -886,8 +898,11 @@ export const Menu = () => {
                     <span className="min-w-0 flex-1 truncate text-[21px] font-black italic leading-none" style={{ color: P3R.ink, fontFamily: '"Arial Black", "Noto Sans SC", sans-serif' }}>
                       {user?.name ?? '旅行者'}
                     </span>
-                    <span className="relative inline-flex shrink-0 items-baseline gap-1 px-3 py-1 text-white" style={{ clipPath: slantClip(7), background: P3R.blue }}>
-                      <span className="text-[10px] font-black tracking-wider text-white/85">LV</span>
+                    <span
+                      className="relative inline-flex shrink-0 items-baseline gap-1 px-3 py-1"
+                      style={{ clipPath: slantClip(7), background: hardInk ? hardInk.ink : P3R.blue, color: hardInk ? hardInk.text : '#ffffff' }}
+                    >
+                      <span className="text-[10px] font-black tracking-wider opacity-85">LV</span>
                       <span className="text-[15px] font-black italic leading-none tabular-nums">{totalLv}</span>
                       <span aria-hidden className="absolute -bottom-[1px] right-1 h-[4px] w-[10px]" style={{ background: P3R.magenta, clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
                     </span>
@@ -1093,7 +1108,10 @@ export const Menu = () => {
                     >
                       {user?.name || '客人'}
                     </span>
-                    <span className="shrink-0 rounded-full bg-[#131313] px-2 py-[4px] text-[12px] font-black leading-none text-white">
+                    <span
+                      className="shrink-0 rounded-full px-2 py-[4px] text-[12px] font-black leading-none"
+                      style={{ background: hardInk ? hardInk.ink : '#131313', color: hardInk ? hardInk.text : '#ffffff' }}
+                    >
                       LV <span className="tabular-nums">{totalLevel}</span>
                     </span>
                   </div>
