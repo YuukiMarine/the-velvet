@@ -963,9 +963,15 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
                 </span>
               )}
             </div>
-            <p className="mx-auto mt-2 max-w-[21rem] text-[12px] font-semibold leading-relaxed text-gray-500 dark:text-gray-400">
-              翻面可祈愿、递出 COOP 契约，或裁一张自己的卡面
-            </p>
+            {/* 原来这里是一行"翻面可祈愿、递出 COOP 契约…"的操作说明——牌背上写着同样的按钮，
+                这行等于把说明书摊在墙上。换成真正有时效的那一件事：对方今天为我祈过、我还没回。
+                回敬之后自然消失。 */}
+            {current.prayer?.waitingReciprocity && !current.prayer.alreadyPrayed && (
+              <p className="mx-auto mt-2 max-w-[21rem] text-[12px] font-black leading-relaxed"
+                 style={{ color: isP4 ? '#b26a00' : isP5 ? '#c00008' : p3 ? P3R.magenta : 'var(--color-primary)' }}>
+                ✦ 今日未回应对方祈愿
+              </p>
+            )}
           </div>
         ) : p3 ? (
           <>

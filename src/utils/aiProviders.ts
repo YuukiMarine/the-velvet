@@ -97,6 +97,30 @@ export const AI_PROVIDERS: ProviderConfig[] = [
  */
 export const DEFAULT_PROVIDER: ApiProvider = 'deepseek';
 
+/**
+ * 各家单次输出上限（tokens），用来给「思维链余量」封顶。
+ *
+ * 核对于 2026-08 官方文档：DeepSeek v4-flash / v4-pro 都是 1M 上下文、**384K 最大输出**，
+ * 且默认开思考模式 —— 也就是说在 DeepSeek 上我们永远不该是那个卡住输出的人。
+ * 其余家按各自公开的保守值；查不到的走 DEFAULT_MAX_OUTPUT。
+ *
+ * 只作为**上限**：实际请求量 = 任务所需 + 思维链余量，再被这里夹一下。
+ * 真撞上服务商更严的限制时，aiClient 里那发「400 就降档重试」会兜住。
+ */
+export const PROVIDER_MAX_OUTPUT: Record<ApiProvider, number> = {
+  deepseek: 384_000,
+  openai:   128_000,
+  kimi:      32_000,
+  qwen:      32_000,
+  gemini:    64_000,
+  minimax:   32_000,
+};
+export const DEFAULT_MAX_OUTPUT = 16_000;
+
+export function providerMaxOutput(provider: ApiProvider | undefined): number {
+  return (provider && PROVIDER_MAX_OUTPUT[provider]) || DEFAULT_MAX_OUTPUT;
+}
+
 export function getProviderConfig(provider: ApiProvider | undefined): ProviderConfig {
   return AI_PROVIDERS.find(p => p.id === provider)
     ?? AI_PROVIDERS.find(p => p.id === DEFAULT_PROVIDER)
