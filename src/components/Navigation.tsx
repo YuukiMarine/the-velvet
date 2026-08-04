@@ -353,6 +353,77 @@ const NavTab = ({ item, active, onSelect, p3 = false, p5 = false }: { item: NavI
   );
 };
 
+/**
+ * 实测「#root 底边 − BottomNav 底边」并写进 --bottom-nav-overhang。
+ *
+ * 为什么需要它：#root 是滚动容器（height:100vh），BottomNav 是 fixed bottom:0。
+ * 绝大多数环境里这两条底边严丝合缝重合，差值恒为 0，main 的底部留白按静态公式算就够。
+ * 但 iOS 的 PWA standalone 会出现两者**不在同一条线上**的情形——系统把可视视口向上内缩
+ * 了一截（Home Indicator 那条），fixed 元素贴的是内缩后的底边，而 100vh 仍是整块屏幕高。
+ * 于是 #root 的底端有一段落在可视区之外：main 按老公式留的白全被这段吃掉，
+ * 滚到底时页面最后一行正好被压在栏下面，看得见、点不到。用户上报「只有 iOS 复现」。
+ *
+ * 静态常量修不了这件事：内缩多少是运行时才知道的。所以这里量一次，差多少补多少。
+ * 其他端量出来就是 0，加出来的 calc 与改动前逐像素相同——这是「别的端不受影响」的保证。
+ */
+const useNavOverhangProbe = (ref: React.RefObject<HTMLElement>) => {
+  useEffect(() => {
+    const write = (px: number) =>
+      document.documentElement.style.setProperty('--bottom-nav-overhang', `${px}px`);
+
+    let raf = 0;
+    let idle = 0;
+    const measure = () => {
+      if (raf) { cancelAnimationFrame(raf); raf = 0; }
+      if (idle) { clearTimeout(idle); idle = 0; }
+      const el = ref.current;
+      const root = document.getElementById('root');
+      // md 断点下底导是 display:none（md:hidden），rect 全 0 —— 那时侧栏当家，不补偿
+      if (!el || !root || el.getBoundingClientRect().height === 0) return write(0);
+      const gap = root.getBoundingClientRect().bottom - el.getBoundingClientRect().bottom;
+      // 只补正向错位；入场动画期间 nav 还在下方（gap 为负）也落到 0，动画结束后再量一次
+      write(Math.max(0, Math.round(gap)));
+    };
+    // rAF 量的是「这一帧布局定稿后」的值，是首选；但它在后台标签页/不合成帧的环境里
+    // 会被彻底饿死（PWA 被切走时就是这样），所以再挂一条定时兜底，谁先到谁量，
+    // measure() 进门先把另一条取消，不会量两次。
+    const schedule = () => {
+      if (!raf) raf = requestAnimationFrame(measure);
+      if (!idle) idle = window.setTimeout(measure, 250);
+    };
+
+    // 入场动画（initial y:100 → 0，弹簧约 500ms）落定前量到的是过程值，
+    // 尾巴上再补两次；期间的中间值因为 max(0,…) 只会是 0，不会闪出错误留白。
+    schedule();
+    const t1 = window.setTimeout(schedule, 600);
+    const t2 = window.setTimeout(schedule, 1400);
+
+    const ro = new ResizeObserver(schedule);
+    ro.observe(document.documentElement);
+    // #root 才是那条会跟栏错位的边（100vh 与内缩视口不一致时它先变），必须盯住
+    const rootEl = document.getElementById('root');
+    if (rootEl) ro.observe(rootEl);
+    if (ref.current) ro.observe(ref.current);
+
+    window.addEventListener('resize', schedule);
+    window.addEventListener('orientationchange', schedule);
+    // iOS 键盘/工具栏伸缩走的是 visualViewport，window.resize 不一定跟着响
+    window.visualViewport?.addEventListener('resize', schedule);
+
+    return () => {
+      if (raf) cancelAnimationFrame(raf);
+      if (idle) clearTimeout(idle);
+      clearTimeout(t1);
+      clearTimeout(t2);
+      ro.disconnect();
+      window.removeEventListener('resize', schedule);
+      window.removeEventListener('orientationchange', schedule);
+      window.visualViewport?.removeEventListener('resize', schedule);
+      write(0);
+    };
+  }, [ref]);
+};
+
 const BottomNavInner = () => {
   // 同 Sidebar：逐字段订阅，别让每次 store 写入都重渲染底导
   const currentPage = useAppStore(s => s.currentPage);
@@ -374,6 +445,10 @@ const BottomNavInner = () => {
   const [wheelOrigin, setWheelOrigin] = useState<{ x: number; y: number } | null>(null);
   const holdTimer = useRef<number | null>(null);
   const suppressClick = useRef(false);
+
+  // iOS PWA 底部错位补偿：量出 #root 与本栏底边的差，写进 --bottom-nav-overhang
+  const navRef = useRef<HTMLElement>(null);
+  useNavOverhangProbe(navRef);
 
   const cancelHold = () => {
     if (holdTimer.current !== null) {
@@ -432,6 +507,7 @@ const BottomNavInner = () => {
 
   return (
     <motion.nav
+      ref={navRef}
       initial={{ y: 100 }}
       animate={{ y: 0 }}
       transition={{ type: 'spring', stiffness: 300, damping: 30 }}

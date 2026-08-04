@@ -20,7 +20,7 @@ import { MAX_INTIMACY } from '@/utils/confidantLevels';
 import { TAROT_BY_ID } from '@/constants/tarot';
 import { TarotCardSVG } from '@/components/astrology/TarotCardSVG';
 import { useBoldness } from '@/utils/boldness';
-import { triggerLightHaptic } from '@/utils/feedback';
+import { playSound, triggerLightHaptic } from '@/utils/feedback';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { useAppStore } from '@/store';
 import { hardTagInk } from '@/utils/levelDifficulty';
@@ -36,6 +36,9 @@ const OPEN_ARM = 12;         // 下滑打开档案的视觉阈值（px）
 const DOWN_CAP = 20;        // 下滑卡片位移上限（px）
 const UP_CAP = 15;          // 上滑橡皮筋位移上限（px）
 const STEP_X = 92;           // 横滑实时切卡步长（px/张，跟手一张张翻）
+/** 翻牌音的最小间隔（ms）。横拖是「实时一张张切」，快速划过十几张会把音效叠成一片糊；
+ *  留 90ms 既能听出一张一响的颗粒感，又不会把总线压出嗡声。 */
+const FLIP_SFX_GAP = 90;
 
 /** 单张卡的祈愿状态（与列表视图 ConfidantCard 同口径，两处共用一个构造函数） */
 export interface AlbumPrayerState {
@@ -597,10 +600,21 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
   const anchored = centerId ? items.findIndex((it) => idOf(it) === centerId) : 0;
   const index = anchored === -1 ? 0 : anchored;
 
+  /** 上一次翻牌音的时刻（见 FLIP_SFX_GAP） */
+  const lastFlipSfx = useRef(0);
+
   const go = (next: number) => {
     const clamped = Math.max(0, Math.min(count - 1, next));
     if (clamped !== index) {
       triggerLightHaptic();
+      // 左右翻牌音。go() 是**唯一**的换牌入口——横拖实时步进、两侧卡起拖、
+      // 松手惯性、scrubber 跳卡、键盘 ←/→ 全走这里，一处挂上即全覆盖。
+      // 音色不分主题（塔罗是跨频道的同一套牌），故不进 THEME_SOUNDS 表。
+      const now = performance.now();
+      if (now - lastFlipSfx.current >= FLIP_SFX_GAP) {
+        lastFlipSfx.current = now;
+        playSound('/tarots.mp3', 0.6);
+      }
       setFlipped(false);
       setCenterId(idOf(items[clamped]));
     }
