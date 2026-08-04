@@ -1,0 +1,25 @@
+<!--
+  通知栏小图标（status bar small icon）。
+
+  Android 要求它是**纯白剪影 + 透明底**：系统只取 alpha 通道，任何颜色都会被抹平。
+  之前没配这个资源，Capacitor 退回用彩色的 launcher mipmap，在状态栏上被压成一坨
+  白方块 —— 用户看到的就是"推送没有软件图标"。
+
+  取站内反复出现的四角星（OnlineStarBadge / P4Sparkle / 文案里的 ✦ 同一个记号）。
+  路径本身按 24×24 画，外面套一层 scale 0.82 + 居中位移，留出通知图标需要的安全边。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <group
+        android:scaleX="0.82"
+        android:scaleY="0.82"
+        android:translateX="2.16"
+        android:translateY="2.16">
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M12,0 L14.6,9.4 L24,12 L14.6,14.6 L12,24 L9.4,14.6 L0,12 L9.4,9.4 Z" />
+    </group>
+</vector>

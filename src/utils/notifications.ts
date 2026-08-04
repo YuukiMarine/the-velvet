@@ -90,9 +90,9 @@ type CopyFn = (ctx: CopyCtx) => NotifText;
 
 const COPY: Record<NotifContentType, CopyFn[]> = {
   tarot: [
-    () => ({ title: '丝绒房间', body: '客人，今日的塔罗尚未翻开……命运在等你抽取。' }),
+    () => ({ title: '靛蓝色房间', body: '客人，今日的塔罗尚未翻开……命运在等你抽取。' }),
     () => ({ title: '今日塔罗', body: '牌阵已为你铺好。来翻开属于今天的那一张吧。' }),
-    () => ({ title: '丝绒房间', body: '黎明的牌面还盖着。今天的指引，要现在揭晓吗？' }),
+    () => ({ title: '靛蓝色房间', body: '黎明的牌面还盖着。今天的指引，要现在揭晓吗？' }),
   ],
   todos: [
     (c) => ({
@@ -119,7 +119,7 @@ const COPY: Record<NotifContentType, CopyFn[]> = {
   record: [
     () => ({ title: '夜间结算', body: '客人，今天还没有在房间里留下一笔……此刻的你，也值得被记下。' }),
     () => ({ title: '今日记录', body: '这一天就要合上了。要不要回来，记下你走过的痕迹？' }),
-    () => ({ title: '丝绒房间', body: '房间为你留着灯。今天的故事，还没有人书写。' }),
+    () => ({ title: '靛蓝色房间', body: '房间为你留着灯。今天的故事，还没有人书写。' }),
   ],
 };
 
@@ -232,7 +232,17 @@ export async function computeAndSchedule(snap: NotifSnapshot): Promise<void> {
   }
 }
 
-/** 取消我们 ID 段内的全部待发通知（含测试通知）。 */
+/**
+ * 取消我们排程窗口内的待发通知。
+ *
+ * ⚠️ **不包括测试通知**（NOTIF_ID_TEST）。
+ * 它原本在取消范围里，于是出现这么一条链路：
+ *   点「发送测试通知」→ 排在 2 秒后 → 用户下拉通知栏去看
+ *   → App 失去前台 → visibilitychange 触发 syncNotifications
+ *   → computeAndSchedule 开头就 cancelOurNotifications → 把还没到点的测试通知一起撤了
+ * 表现就是"点了没反应"。测试通知本来就不属于排程窗口（见 NOTIF_ID_TEST 的注释），
+ * 让它自己活到触发即可。
+ */
 export async function cancelOurNotifications(): Promise<void> {
   if (!isNative()) return;
   try {
@@ -241,7 +251,7 @@ export async function cancelOurNotifications(): Promise<void> {
     const ours = (pending.notifications || []).filter(n =>
       typeof n.id === 'number' &&
       n.id >= NOTIF_ID_BASE &&
-      n.id <= NOTIF_ID_TEST,
+      n.id < NOTIF_ID_TEST,
     );
     if (ours.length > 0) {
       await LocalNotifications.cancel({ notifications: ours.map(n => ({ id: n.id })) });
@@ -258,12 +268,13 @@ export async function sendTestNotification(): Promise<boolean> {
     const { LocalNotifications } = await import('@capacitor/local-notifications');
     const perm = await getNotifPermission();
     if (perm !== 'granted') return false;
+    // 立即发（不再延后 2 秒）：延迟只是给"切后台会不会被撤掉"多开一扇窗，
+    // 而验证链路本身并不需要等。安卓上前台也会正常落进通知栏。
     await LocalNotifications.schedule({
       notifications: [{
         id: NOTIF_ID_TEST,
-        title: '丝绒房间',
+        title: '靛蓝色房间',
         body: '欢迎回来，客人。这是一条测试提醒——通知链路已就绪。',
-        schedule: { at: new Date(Date.now() + 2000) },
         extra: { source: 'f2a-test' },
       }],
     });

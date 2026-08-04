@@ -23,6 +23,7 @@ import {
   getHttpStatusHint,
   isReasoningModel,
   isThinkingModel,
+  providerMaxOutput,
   type ApiProvider, DEFAULT_PROVIDER } from '@/utils/aiProviders';
 
 export type AIRole = 'system' | 'user' | 'assistant';
@@ -268,10 +269,15 @@ function buildRequestBody(
    * 余量必须是**定额**而不是比例：想多久跟你要多长的正文基本无关。
    * 4096 是各家思维链模型的常见量级，宁可多要——没用完不收费。
    */
+  /**
+   * 思维链余量：ceiling 不是 target —— 没用完不收费，所以宁可给宽。
+   * 32K 对本站任何一个任务都绰绰有余（最大的人格生成正文也就 5K 上下），
+   * 再被该服务商的单次输出上限夹一下（DeepSeek 是 384K，等于不夹）。
+   * 真撞上更严的限制，chatComplete 那发「400 就降档」会兜住。
+   */
   const thinking = isThinkingModel(cfg.model);
-  // 余量放到 8192：ceiling 不是 target，没用完不收费，宁可给宽。
-  // 真超过服务商上限时由 chatComplete 的 400 兜底降档重发（见那边注释）。
-  const budget = thinking ? maxTokens + Math.max(8192, maxTokens) : maxTokens;
+  const cap = providerMaxOutput(cfg.provider);
+  const budget = Math.min(cap, thinking ? maxTokens + Math.max(32_768, maxTokens) : maxTokens);
   if (isReasoningModel(cfg.model)) {
     body.max_completion_tokens = budget;
     body.reasoning_effort = 'minimal'; // 让 GPT-5 尽量接近"非推理"的快/省行为

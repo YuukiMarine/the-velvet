@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef, useMemo, useImperativeHandle, forwardRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useBoldness } from '@/utils/boldness';
 
 /**
  * Persona 觉醒全屏动画 —— 覆盖在 PersonaCreateModal 之上，防止 AI 生成期间误触背景关闭
@@ -98,12 +99,29 @@ function RisingParticles() {
  */
 interface StreamPreviewHandle { setText: (t: string) => void }
 
+/** 每行字数：11px 等宽 × min(380px, 82vw) 大约放得下这么多 */
+const LINE_LEN = 24;
+/** 同时挂在 DOM 里的行数（可见 2 行 + 1 行在下面等着滚上来） */
+const KEEP = 3;
+
+/** 把清洗后的长串切成定宽行；**只回完整的行**，半行不出场 */
+function toLines(cleaned: string): string[] {
+  const out: string[] = [];
+  for (let i = 0; i + LINE_LEN <= cleaned.length; i += LINE_LEN) {
+    out.push(cleaned.slice(i, i + LINE_LEN));
+  }
+  return out;
+}
+
 const StreamPreview = forwardRef<StreamPreviewHandle, { initial?: () => string }>(({ initial }, ref) => {
-  const [display, setDisplay] = useState('');
-  const [settling, setSettling] = useState(false);
-  const pendingRef = useRef('');
+  const bold = useBoldness();
+  const [lines, setLines] = useState<string[]>([]);
+  /** 刚进新行 —— 这一帧先把整列压低一行，下一帧回到 0，就是"向上滚一行" */
+  const [rolling, setRolling] = useState(false);
+  const countRef = useRef(0);
+  const pendingRef = useRef<string[]>([]);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const settleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const rollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const commit = (raw: string) => {
     // 语义化清洗：去掉 JSON 噪声 / schema 字段名 / 多余标点
@@ -113,16 +131,20 @@ const StreamPreview = forwardRef<StreamPreviewHandle, { initial?: () => string }
       .replace(/\s+/g, ' ')
       .replace(/\b(name|description|skills|type|power|spCost|level)\b/gi, '')
       .trim();
-    // 仅保留尾部 ~90 字，作为滚动窗口
-    pendingRef.current = cleaned.slice(-90);
-    if (timerRef.current) return; // 去抖：已有待提交
+    const all = toLines(cleaned);
+    if (all.length === countRef.current) return;   // 还没凑满新的一行，不动
+    countRef.current = all.length;
+    pendingRef.current = all.slice(-KEEP);
+    if (timerRef.current) return;                  // 去抖：一次滚一行，别追着 chunk 跑
     timerRef.current = setTimeout(() => {
       timerRef.current = null;
-      setDisplay(pendingRef.current);
-      setSettling(true);
-      if (settleRef.current) clearTimeout(settleRef.current);
-      settleRef.current = setTimeout(() => setSettling(false), 40);
-    }, 200);
+      setLines(pendingRef.current);
+      if (!bold) return;                           // D0：不滚，直接换
+      setRolling(true);
+      if (rollRef.current) clearTimeout(rollRef.current);
+      // 下一帧解除 → transform 从 +1 行过渡回 0，视觉上整列向上滚一行
+      rollRef.current = setTimeout(() => setRolling(false), 16);
+    }, 90);
   };
 
   useImperativeHandle(ref, () => ({ setText: commit }), []);
@@ -138,12 +160,14 @@ const StreamPreview = forwardRef<StreamPreviewHandle, { initial?: () => string }
 
   useEffect(() => () => {
     if (timerRef.current) clearTimeout(timerRef.current);
-    if (settleRef.current) clearTimeout(settleRef.current);
+    if (rollRef.current) clearTimeout(rollRef.current);
   }, []);
+
+  const LH = 1.55; // em
 
   return (
     <div
-      className="absolute pointer-events-none select-none flex items-center justify-center"
+      className="absolute pointer-events-none select-none flex items-end justify-center"
       style={{
         left: 0,
         right: 0,
@@ -151,33 +175,57 @@ const StreamPreview = forwardRef<StreamPreviewHandle, { initial?: () => string }
         // 加上这层浮层此前没有 portal 到 body（压不过 z-40 的底导），
         // 观感就是"吟唱词底下那条流式滚动没有了"
         bottom: 'calc(6rem + env(safe-area-inset-bottom, 0px))',
-        height: '3.6em', // 最多两行高度，保持位置不变
+        height: `${LH * 2}em`,
+        fontSize: 11,
+        overflow: 'hidden',
+        maskImage: 'linear-gradient(180deg, transparent 0%, #000 42%, #000 100%)',
+        WebkitMaskImage: 'linear-gradient(180deg, transparent 0%, #000 42%, #000 100%)',
       }}
     >
-      <p
+      {/**
+        * 整列滚动，而不是每段文字各自淡入淡出。
+        *
+        * 上一版是一个常驻 <p> 显示"最后 90 个字符"，每 200ms 全量换一次内容——
+        * 于是看起来是逐字逐句在抖，而不是一行一行往上走。
+        * 现在把文本切成定宽行、**只在攒够一整行时**推进一次：
+        * 整列 translateY 从 +1 行过渡回 0（compositor-only），最上面那行同时糊掉退场。
+        * 一行一次过渡，不存在上一版 AnimatePresence 那种排队被顶掉的问题。
+        */}
+      <div
         style={{
-          fontFamily: 'ui-monospace, "Cascadia Mono", "SF Mono", Menlo, monospace',
-          fontSize: 11,
-          lineHeight: '1.55em',
-          color: 'rgba(216,195,255,0.9)',
-          textShadow: '0 0 10px rgba(192,132,252,0.55)',
-          letterSpacing: '0.04em',
-          textAlign: 'center',
-          margin: 0,
-          padding: 0,
-          maxWidth: 'min(380px, 82vw)',
-          maxHeight: '3.2em',
-          overflow: 'hidden',
-          wordBreak: 'break-word',
-          whiteSpace: 'pre-wrap',
-          opacity: display ? (settling ? 0.28 : 0.72) : 0,
-          filter: settling ? 'blur(4px)' : 'blur(0px)',
-          transition: 'opacity .38s ease-out, filter .38s ease-out',
-          willChange: 'opacity, filter',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          width: 'min(380px, 82vw)',
+          transform: rolling ? `translateY(${LH}em)` : 'translateY(0)',
+          transition: rolling ? 'none' : `transform .5s cubic-bezier(.22,.61,.36,1)`,
+          willChange: 'transform',
         }}
       >
-        {display}
-      </p>
+        {lines.map((t, i) => {
+          // 越靠上越淡越糊（正在退场的那一行）
+          const fromTop = lines.length - 1 - i;
+          return (
+            <span
+              key={`${countRef.current - (lines.length - 1 - i)}`}
+              style={{
+                fontFamily: 'ui-monospace, "Cascadia Mono", "SF Mono", Menlo, monospace',
+                lineHeight: `${LH}em`,
+                color: 'rgba(216,195,255,0.9)',
+                textShadow: '0 0 10px rgba(192,132,252,0.55)',
+                letterSpacing: '0.04em',
+                textAlign: 'center',
+                whiteSpace: 'pre',
+                opacity: fromTop === 0 ? 0.78 : fromTop === 1 ? 0.42 : 0.16,
+                filter: bold ? `blur(${fromTop === 0 ? 0 : fromTop === 1 ? 1.2 : 3}px)` : undefined,
+                transition: 'opacity .5s ease-out, filter .5s ease-out',
+              }}
+            >
+              {t}
+            </span>
+          );
+        })}
+      </div>
     </div>
   );
 });
