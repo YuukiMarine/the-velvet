@@ -30,6 +30,7 @@ import { ArsenalModal, ShadowArchiveModal } from '@/components/battle/ArsenalMod
 import { PersonaCodex } from '@/components/battle/PersonaCodex';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P3R, P3RPage, GhostWords, P3PageHeader, ShatteredStar, slantClip } from '@/components/p3r/kit';
+import { P4Sparkle, P4Magnifier, P4Scanlines, P4CautionStripes } from '@/ui/p4Kit';
 import { NoiseLayer } from '@/components/battle/warKit';
 import {
   P5R, P5_FONT, roughQuad, roughSlant,
@@ -73,6 +74,9 @@ export const BattleArena = () => {
   // P5R（红频道）：p5-battle-flat-newsprint-v1 稿——页头/段签/玩家条/空态大板照稿重画，
   // 其余（Persona 页、设置页、塔内）走 .p5-reskin 毯式重皮
   const p5 = uiChannel === 'p5';
+  // P4（黄频道）：深夜档「Midnight Channel」——暖黑电视舞台 + VHS 扫描线 + 警戒斜纹，
+  // 页头衬线奶油大字 + 手写体角标，tab/召唤钮翻橙（用户点名补齐频道元素）
+  const p4 = uiChannel === 'p4';
   const battleCard = p3 ? 'p3r-card' : 'rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm';
   const [showPersonaCreate, setShowPersonaCreate] = useState(false);
   const [showReveal, setShowReveal] = useState(false);
@@ -448,13 +452,33 @@ export const BattleArena = () => {
         <div
           aria-hidden
           className="pointer-events-none fixed inset-0 -z-10 overflow-hidden"
-          style={{ background: 'radial-gradient(circle at 50% 10%, #251b4f 0%, #150e33 46%, #0c0722 100%)' }}
+          style={{
+            background: p4
+              // P4：暖黑电视舞台（Midnight Channel 关机屏），黄光从上缘渗入
+              ? 'radial-gradient(circle at 50% 8%, #2b2413 0%, #171208 46%, #0c0905 100%)'
+              : 'radial-gradient(circle at 50% 10%, #251b4f 0%, #150e33 46%, #0c0722 100%)',
+          }}
         >
           <NoiseLayer opacity={0.05} />
-          {/* 虚空装饰：屏外大弧环 + 底部微光地平线 */}
-          <div aria-hidden className="absolute -right-40 -top-44 h-[420px] w-[420px] rounded-full" style={{ border: '30px solid rgba(139,124,246,0.07)' }} />
-          <div aria-hidden className="absolute -left-52 top-1/3 h-[480px] w-[480px] rounded-full" style={{ border: '22px solid rgba(139,124,246,0.05)' }} />
-          <div aria-hidden className="absolute inset-x-0 bottom-0 h-40" style={{ background: 'linear-gradient(0deg, rgba(139,124,246,0.1), transparent)' }} />
+          {p4 ? (
+            <>
+              {/* 深夜档电视语汇：黄弧环 + 黄光地平线 + VHS 扫描线 + 顶/底警戒斜纹 */}
+              <div aria-hidden className="absolute -right-40 -top-44 h-[420px] w-[420px] rounded-full" style={{ border: '30px solid rgba(249,161,27,0.08)' }} />
+              <div aria-hidden className="absolute -left-52 top-1/3 h-[480px] w-[480px] rounded-full" style={{ border: '22px solid rgba(255,217,0,0.05)' }} />
+              <div aria-hidden className="absolute inset-x-0 bottom-0 h-40" style={{ background: 'linear-gradient(0deg, rgba(249,161,27,0.12), transparent)' }} />
+              <P4Sparkle size={20} color="rgba(255,246,208,0.4)" className="absolute" style={{ left: '12%', top: '22%' }} />
+              <P4Sparkle size={14} color="rgba(249,161,27,0.45)" className="absolute" style={{ right: '16%', top: '58%' }} />
+              <P4Scanlines opacity={0.55} line="rgba(255, 246, 208, 0.09)" />
+              <P4CautionStripes height={8} className="absolute inset-x-0 bottom-0 opacity-80" />
+            </>
+          ) : (
+            <>
+              {/* 虚空装饰：屏外大弧环 + 底部微光地平线 */}
+              <div aria-hidden className="absolute -right-40 -top-44 h-[420px] w-[420px] rounded-full" style={{ border: '30px solid rgba(139,124,246,0.07)' }} />
+              <div aria-hidden className="absolute -left-52 top-1/3 h-[480px] w-[480px] rounded-full" style={{ border: '22px solid rgba(139,124,246,0.05)' }} />
+              <div aria-hidden className="absolute inset-x-0 bottom-0 h-40" style={{ background: 'linear-gradient(0deg, rgba(139,124,246,0.1), transparent)' }} />
+            </>
+          )}
         </div>
       )}
       {p3 && <GhostWords words={['BATTLE']} className="right-[8px] top-[-14px] text-right text-[72px]" style={{ color: 'rgba(160,150,255,0.13)' }} />}
@@ -551,6 +575,33 @@ export const BattleArena = () => {
             )}
           </div>
         </div>
+      ) : p4 ? (
+        <div className="battle-void-head relative">
+          {/* 深夜档开播画面：衬线奶油大题 + 手写体台标 + 放大镜台徽 */}
+          <div className="flex items-start gap-3">
+            <BackButton onClick={() => setCurrentPage('menu')} className="mt-1 -ml-1" />
+            <div className="min-w-0 flex-1">
+              <h1 className="text-[40px] font-black leading-none" style={{ color: '#fff6d0', fontFamily: 'var(--p4-display-font, serif)' }}>
+                逆影战场
+              </h1>
+              <div className="-mt-0.5 pl-8 text-[21px] font-bold italic leading-none" style={{ color: 'var(--p4-orange, #f9a11b)', fontFamily: "'Caveat', 'Segoe Script', cursive" }}>
+                Midnight Battle
+              </div>
+            </div>
+            <P4Magnifier size={30} rim="rgba(255,246,208,0.85)" glass="rgba(249,161,27,0.35)" className="mt-1 shrink-0" />
+            {inShadowTime && (
+              <motion.span
+                animate={{ scale: [1, 1.06, 1] }}
+                transition={{ repeat: Infinity, duration: 1.6 }}
+                className="mt-1 flex shrink-0 items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-[12px] font-black text-[#131313]"
+                style={{ background: 'var(--p4-orange, #f9a11b)', transform: 'skewX(-4deg)', boxShadow: '0 3px 0 rgba(0,0,0,0.45)' }}
+              >
+                <P4Sparkle size={12} color="#131313" />
+                影时间
+              </motion.span>
+            )}
+          </div>
+        </div>
       ) : (
         <div className="battle-void-head flex items-start gap-3">
           <BackButton onClick={() => setCurrentPage('menu')} className="mt-1 -ml-1" />
@@ -635,6 +686,32 @@ export const BattleArena = () => {
             );
           })}
         </div>
+      ) : p4 ? (
+        /* 深夜档选台条：暗奶油槽 + 选中橙斜胶囊黑字（节目按钮语言） */
+        <div className="flex gap-1 rounded-2xl p-1" style={{ background: 'rgba(255,246,208,0.09)', border: '1px solid rgba(255,246,208,0.16)' }}>
+          {([
+            { key: 'battle', label: '进入战场' },
+            { key: 'persona', label: 'Persona' },
+            { key: 'settings', label: '设置' },
+          ] as const).map(tab => {
+            const active = activeTab === tab.key;
+            return (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                className="flex-1 py-2 text-sm font-black rounded-xl transition-all"
+                style={{
+                  background: active ? 'var(--p4-orange, #f9a11b)' : 'transparent',
+                  color: active ? '#131313' : 'rgba(255,246,208,0.72)',
+                  transform: active ? 'skewX(-4deg)' : undefined,
+                  boxShadow: active ? '0 3px 0 rgba(0,0,0,0.4)' : 'none',
+                }}
+              >
+                <span className="inline-block" style={{ transform: active ? 'skewX(4deg)' : undefined }}>{tab.label}</span>
+              </button>
+            );
+          })}
+        </div>
       ) : (
         <div className="flex gap-1 p-1 rounded-2xl" style={{ background: 'rgb(var(--color-battle-bright-rgb) / 0.08)', border: '1px solid rgb(var(--color-battle-bright-rgb) / 0.15)' }}>
           {([
@@ -714,14 +791,18 @@ export const BattleArena = () => {
                           <p className="text-gray-400 dark:text-gray-500 text-xs">Lv.{attributes.reduce((s, a) => s + a.level, 0)}</p>
                         </div>
                         <div className={`${battleCard} p-8 text-center space-y-4`}>
-                          <p className="text-4xl">⚔️</p>
+                          {p4
+                            ? <span className="inline-block"><P4Magnifier size={44} rim="#131313" glass="rgba(249,161,27,0.45)" /></span>
+                            : <p className="text-4xl">⚔️</p>}
                           <p className="text-gray-500 dark:text-gray-400 text-sm">你尚未召唤 Persona</p>
                           <button
                             onClick={() => setShowPersonaCreate(true)}
-                            className="px-6 py-3 rounded-xl font-bold text-white transition-colors"
-                            style={{ background: 'linear-gradient(135deg, rgb(var(--color-battle-rgb)), rgb(var(--color-battle-indigo-rgb)))' }}
+                            className={p4 ? 'px-7 py-3 rounded-2xl font-black text-[#131313] transition-colors' : 'px-6 py-3 rounded-xl font-bold text-white transition-colors'}
+                            style={p4
+                              ? { background: 'var(--p4-orange, #f9a11b)', transform: 'skewX(-4deg)', boxShadow: '0 3px 0 rgba(19,19,19,0.3)' }
+                              : { background: 'linear-gradient(135deg, rgb(var(--color-battle-rgb)), rgb(var(--color-battle-indigo-rgb)))' }}
                           >
-                            召唤 Persona
+                            <span className="inline-block" style={p4 ? { transform: 'skewX(4deg)' } : undefined}>召唤 Persona</span>
                           </button>
                         </div>
                       </div>

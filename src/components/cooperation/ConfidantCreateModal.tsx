@@ -270,7 +270,7 @@ export function ConfidantCreateModal({ isOpen, onClose, onCreated, onPickOnline 
           {/* 头部 */}
           <div
             className={`relative px-6 pt-6 pb-3 ${p4 ? '' : 'border-b border-gray-100 dark:border-gray-800'}`}
-            style={p4 ? { borderBottom: '2px solid rgba(19,19,19,0.16)' } : undefined}
+            style={p4 ? { borderBottom: '2px solid color-mix(in srgb, var(--ui-ink, #131313) 16%, transparent)' } : undefined}
           >
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -311,7 +311,8 @@ export function ConfidantCreateModal({ isOpen, onClose, onCreated, onPickOnline 
                   }
                   style={
                     p3 ? { color: 'var(--p3r-ink, #0a1230)', fontFamily: '"Arial Black", "Noto Sans SC Black", "Noto Sans SC", sans-serif' }
-                      : p4 ? { color: '#131313', fontFamily: 'var(--p4-display-font, serif)' }
+                      // 墨色走 --ui-ink：内联写死 #131313 在 P4 夜间纸紫底上是黑字（用户上报）
+                      : p4 ? { color: 'var(--ui-ink, #131313)', fontFamily: 'var(--p4-display-font, serif)' }
                         : undefined
                   }
                 >
@@ -326,7 +327,7 @@ export function ConfidantCreateModal({ isOpen, onClose, onCreated, onPickOnline 
                 aria-label="关闭"
               >✕</button>
             </div>
-            <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1" style={p4 ? { color: 'rgba(19,19,19,0.7)' } : undefined}>
+            <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1" style={p4 ? { color: 'color-mix(in srgb, var(--ui-ink, #131313) 70%, transparent)' } : undefined}>
               剩余阿卡纳：{remaining} / {MAJOR_ARCANA_IDS.length}
             </p>
 
