@@ -668,6 +668,243 @@ class VelvetP3 {
         return bmp;
     }
 
+    // ── 4×2「清单」：未完成任务明细 + BIG DEAL 倒计时（V2.7 新增规格） ────
+    // 唯一把任务标题摊上桌面的组件（其余组件只出聚合数字）：「显示具体任务信息」
+    // 是用户点名要的能力，组件描述里写明会显示标题，加不加由用户自己决定。
+    // 高亮两级：BIG DEAL = 强调色斜板 + 白字 + 倒计时条（≤2 天转洋红急迫态）；
+    // 重要任务 = 琥珀 tick + 琥珀薄底板（对位 App 内「⭐ 重要」的琥珀语言）。
+
+    /** 重要任务的高亮色：App 内 amber-400，跨频道恒定，不吃频道色 */
+    private static final int AMBER = Color.parseColor("#fbbf24");
+    private static final int AMBER_TINT = Color.argb(41, 251, 191, 36);
+
+    static Bitmap agenda(Context ctx, VelvetSnapshot s, int w, int h) {
+        Pal pal = Pal.of(s);
+        if (compact(w, h)) return agendaCompact(pal, s, w, h);
+        Bitmap bmp = panel(pal, w, h);
+        Canvas c = new Canvas(bmp);
+        float u = h / 14f;
+        ghost(c, pal, "AGENDA", h * 0.46f, w * 0.30f, h * 1.0f);
+        float lx = u * 1.4f, rx = w - u * 1.4f;
+
+        // 头部：今日任务分数 + 整体进度（完成进度的总读数）
+        tick(c, lx, u * 1.1f, u * 0.9f, u * 0.62f, pal.cyan);
+        c.drawText(s.todosTotal > 0 ? "今日任务" : "今日没有安排",
+                   lx + u * 1.3f, u * 1.8f, text(u * 1.05f, pal.ink, true, false));
+        if (s.todosTotal > 0) {
+            Paint num = text(u * 1.6f, pal.blue, true, true);
+            String frac = s.todosDone + "/" + s.todosTotal;
+            c.drawText(frac, rx - num.measureText(frac), u * 1.9f, num);
+            progress(c, pal, lx, u * 2.5f, rx - lx, u * 0.9f,
+                     Math.round(s.todosDone * 100f / s.todosTotal));
+        }
+
+        float rowTop = u * 4.15f;
+        int rows = 5;
+        if (s.agendaDeal != null) {
+            agendaDealPlate(c, pal, s.agendaDeal, lx, rx, u * 4.1f, u * 6.9f, u);
+            rowTop = u * 7.55f;
+            rows = 3;
+        }
+
+        // 任务行：塞不下时最后一格让位给「还有 N 项」
+        VelvetSnapshot.AgendaItem[] items = s.agendaItems;
+        float pitch = u * 1.72f;
+        int shown = items.length > rows ? rows - 1 : items.length;
+        for (int i = 0; i < shown; i++) {
+            agendaItemRow(c, pal, items[i], lx, rx, rowTop + pitch * i, u);
+        }
+        if (items.length > rows) {
+            float t = rowTop + pitch * shown;
+            tick(c, lx + u * 0.15f, t + u * 0.32f, u * 0.72f, u * 0.5f, pal.cyanPale);
+            c.drawText("还有 " + (s.agendaLeft - shown) + " 项未完成",
+                       lx + u * 1.25f, t + u * 0.92f, text(u * 0.82f, pal.inkSoft, true, false));
+        } else if (items.length == 0) {
+            if (s.agendaDeal != null) {
+                c.drawText(s.todosTotal > 0 ? "其余任务已全部完成" : "今日没有其他安排",
+                           lx, rowTop + u * 1.0f, text(u * 0.9f, pal.inkSoft, true, false));
+            } else if (s.todosTotal > 0) {
+                eyebrow(c, "ALL CLEAR", u * 0.72f, lx, u * 6.3f, pal.blue);
+                c.drawText("今日任务全部完成", lx, u * 8.2f, text(u * 1.3f, pal.ink, true, true));
+            } else {
+                c.drawText("去安排一件今天的事 →", lx, u * 7.5f, text(u * 0.9f, pal.inkSoft, true, false));
+            }
+        }
+
+        magentaCorner(c, pal, w, h, u);
+        return bmp;
+    }
+
+    /** BIG DEAL 板：强调色斜板反白——清单里最重的一块 */
+    private static void agendaDealPlate(Canvas c, Pal pal, VelvetSnapshot.AgendaDeal deal,
+                                        float lx, float rx, float top, float bottom, float u) {
+        slab(c, lx, top, rx, bottom, u * 0.7f, pal.blue);
+        float ix = lx + u * 1.05f, irx = rx - u * 1.05f;
+        eyebrow(c, "BIG DEAL", u * 0.58f, ix, top + u * 0.85f, Color.argb(217, 255, 255, 255));
+
+        // 剩 N 天：右上。≤2 天急迫态 = 白板 + 洋红字（在强调色板上比反过来醒目）
+        if (deal.daysLeft != null) {
+            int days = deal.daysLeft;
+            String label = days > 0 ? "剩 " + days + " 天" : days == 0 ? "今天截止" : "已过截止";
+            if (days <= 2) {
+                Paint tp = text(u * 0.72f, pal.magenta, true, true);
+                float tw = tp.measureText(label);
+                float cw = tw + u * 0.8f, chH = u * 1.05f;
+                slab(c, irx - cw, top + u * 0.18f, irx, top + u * 0.18f + chH, chH * 0.3f, Color.WHITE);
+                c.drawText(label, irx - cw + u * 0.4f, top + u * 0.18f + chH * 0.74f, tp);
+            } else {
+                Paint tp = text(u * 0.78f, Color.WHITE, true, false);
+                c.drawText(label, irx - tp.measureText(label), top + u * 0.85f, tp);
+            }
+        }
+
+        // 标题 + 步骤进度（同一行，步骤靠右）
+        float reserve = 0;
+        if (deal.total > 0) {
+            Paint fp = text(u * 0.9f, Color.WHITE, true, true);
+            String frac = deal.done + "/" + deal.total;
+            c.drawText(frac, irx - fp.measureText(frac), top + u * 2.0f, fp);
+            reserve = fp.measureText(frac) + u * 0.5f;
+        }
+        Paint tp = text(u * 1.0f, Color.WHITE, true, true);
+        c.drawText(fit(deal.title, tp, irx - ix - reserve), ix, top + u * 2.0f, tp);
+
+        // 倒计时进度条：立项 → 截止已流逝的时间。急迫时填充转洋红
+        if (deal.timeUsed != null) {
+            float by = bottom - u * 0.55f, bh = u * 0.3f;
+            float cut = bh * 0.62f;
+            slab(c, ix, by, irx, by + bh, cut, Color.argb(71, 255, 255, 255));
+            float p = Math.max(0, Math.min(100, deal.timeUsed)) / 100f;
+            if (p > 0) {
+                boolean urgent = deal.daysLeft != null && deal.daysLeft <= 2;
+                c.save();
+                Path clip = new Path();
+                clip.moveTo(ix + cut, by);
+                clip.lineTo(irx, by);
+                clip.lineTo(irx - cut, by + bh);
+                clip.lineTo(ix, by + bh);
+                clip.close();
+                c.clipPath(clip);
+                slab(c, ix, by, ix + Math.max(bh * 1.2f, (irx - ix) * p), by + bh, cut,
+                     urgent ? pal.magenta : Color.WHITE);
+                c.restore();
+            }
+        }
+    }
+
+    /** 一行未完成任务：tick + 标题（重要 = 琥珀 tick + 琥珀薄底板）+ 计次进度 */
+    private static void agendaItemRow(Canvas c, Pal pal, VelvetSnapshot.AgendaItem it,
+                                      float lx, float rx, float top, float u) {
+        if (it.important) {
+            slab(c, lx - u * 0.25f, top - u * 0.12f, rx + u * 0.25f, top + u * 1.42f,
+                 u * 0.45f, AMBER_TINT);
+        }
+        tick(c, lx + u * 0.15f, top + u * 0.32f, u * 0.72f, u * 0.5f, it.important ? AMBER : pal.cyan);
+        float reserve = 0;
+        if (it.target > 1) {
+            Paint fp = text(u * 0.85f, pal.inkSoft, true, true);
+            String frac = it.count + "/" + it.target;
+            c.drawText(frac, rx - u * 0.2f - fp.measureText(frac), top + u * 0.95f, fp);
+            reserve = fp.measureText(frac) + u * 0.55f;
+        }
+        Paint tp = text(u * 0.95f, pal.ink, true, false);
+        c.drawText(fit(it.title, tp, rx - u * 0.2f - reserve - (lx + u * 1.25f)),
+                   lx + u * 1.25f, top + u * 0.95f, tp);
+    }
+
+    /**
+     * 4×1「清单」。整宽两行（v2 重排，用户反馈「完全没有显示全」——
+     * 原版左侧分数锚点占掉一截，标题地皮不够）：这块组件的主角是文字，
+     * 行一整宽放最紧迫的一件（BIG DEAL 板优先，否则第一条任务），
+     * 行二整宽放下一条，分数「2/7 · +N」降格为右下角读数。
+     * 倒计时进度条在这个高度摆不下，「剩 N 天」文字承担倒计时读数。
+     */
+    private static Bitmap agendaCompact(Pal pal, VelvetSnapshot s, int w, int h) {
+        Bitmap bmp = panel(pal, w, h);
+        Canvas c = new Canvas(bmp);
+        float pad = h * 0.14f;
+        float lx = pad, rx = w - pad;
+        VelvetSnapshot.AgendaItem[] items = s.agendaItems;
+
+        // 空态：一句话交代 + 分数
+        if (s.agendaDeal == null && items.length == 0) {
+            Paint ep = text(h * 0.22f, pal.inkSoft, true, true);
+            c.drawText(s.todosTotal > 0 ? "今日任务全部完成" : "今日没有安排",
+                       lx + h * 0.1f, h * 0.58f, ep);
+            if (s.todosTotal > 0) {
+                Paint fp = text(h * 0.22f, pal.blue, true, true);
+                String frac = s.todosDone + "/" + s.todosTotal;
+                c.drawText(frac, rx - fp.measureText(frac), h * 0.58f, fp);
+            }
+            return bmp;
+        }
+
+        // 右下角读数：「2/7 · +N」先占位，行二的右界相应左移
+        String readout = (s.todosTotal > 0 ? s.todosDone + "/" + s.todosTotal : "0/0");
+        Paint rp = text(h * 0.17f, pal.blue, true, true);
+        float readoutW = rp.measureText(readout);
+
+        // 行一（y 0.08h–0.46h）：BIG DEAL 整宽板或第一条任务
+        int drawnItems = 0;
+        if (s.agendaDeal != null) {
+            VelvetSnapshot.AgendaDeal deal = s.agendaDeal;
+            slab(c, lx, h * 0.08f, rx, h * 0.46f, h * 0.11f, pal.blue);
+            float reserve = 0;
+            if (deal.daysLeft != null) {
+                int days = deal.daysLeft;
+                String label = days > 0 ? "剩" + days + "天" : days == 0 ? "今天截止" : "已过截止";
+                boolean urgent = days <= 2;
+                Paint dp = text(h * 0.15f, Color.WHITE, true, false);
+                float dw = dp.measureText(label);
+                if (urgent) {
+                    // 急迫态：板尾一块洋红小板托底，白字不换色也读得出「要到点了」
+                    slab(c, rx - dw - h * 0.24f, h * 0.08f, rx, h * 0.46f, h * 0.11f, pal.magenta);
+                }
+                c.drawText(label, rx - dw - h * 0.12f, h * 0.34f, dp);
+                reserve = dw + h * 0.28f;
+            }
+            Paint tp = text(h * 0.19f, Color.WHITE, true, true);
+            c.drawText(fit(deal.title, tp, rx - h * 0.14f - reserve - (lx + h * 0.14f)),
+                       lx + h * 0.14f, h * 0.34f, tp);
+        } else {
+            agendaCompactRow(c, pal, items[0], lx, rx, h * 0.32f, h);
+            drawnItems = 1;
+        }
+
+        // 行二（基线 0.82h）：下一条任务，右端让位给读数
+        float row2Rx = rx - readoutW - h * 0.24f;
+        if (items.length > drawnItems) {
+            int more = s.agendaLeft - drawnItems - 1;
+            if (more > 0) {
+                readout = readout + " · +" + more;
+                readoutW = rp.measureText(readout);
+                row2Rx = rx - readoutW - h * 0.24f;
+            }
+            agendaCompactRow(c, pal, items[drawnItems], lx, row2Rx, h * 0.82f, h);
+        } else if (s.agendaDeal != null) {
+            c.drawText(s.todosTotal > 0 ? "其余任务已完成" : "今日没有其他安排",
+                       lx + h * 0.26f, h * 0.82f, text(h * 0.16f, pal.inkSoft, true, false));
+        }
+        c.drawText(readout, rx - rp.measureText(readout), h * 0.82f, rp);
+        return bmp;
+    }
+
+    /** 4×1 的任务行：tick + 标题 +（计次任务的）c/n */
+    private static void agendaCompactRow(Canvas c, Pal pal, VelvetSnapshot.AgendaItem it,
+                                         float px, float rx, float baselineY, float h) {
+        tick(c, px, baselineY - h * 0.13f, h * 0.17f, h * 0.12f, it.important ? AMBER : pal.cyan);
+        float reserve = 0;
+        if (it.target > 1) {
+            Paint fp = text(h * 0.15f, pal.inkSoft, true, true);
+            String frac = it.count + "/" + it.target;
+            c.drawText(frac, rx - fp.measureText(frac), baselineY, fp);
+            reserve = fp.measureText(frac) + h * 0.4f;
+        }
+        Paint tp = text(h * 0.19f, pal.ink, true, false);
+        c.drawText(fit(it.title, tp, rx - reserve - (px + h * 0.26f)),
+                   px + h * 0.26f, baselineY, tp);
+    }
+
     /**
      * 2×2「牌与月」。
      *

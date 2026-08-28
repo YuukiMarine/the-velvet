@@ -17,6 +17,9 @@
  * 每日记录条数、宣告卡标题与进度。不放记录正文、不放记账、不放愿望、不放对话。
  * SharedPreferences 是应用私有目录，但小组件数据会出现在桌面上——
  * 能被旁人一眼看到的东西，标准就该比 App 内更严。
+ * V2.7 起「清单」组件是唯一例外：它带任务标题与 BIG DEAL 标题——
+ * 「显示具体任务信息」是用户点名要的能力，组件描述里写明会显示标题，
+ * 加不加这一块由用户自己决定；其余组件维持只出聚合数字的口径。
  */
 import { useAppStore, toLocalDateKey } from '@/store';
 import { themeToChannel } from '@/ui/channel';
@@ -26,6 +29,33 @@ import { calcCurrentStreak, streakDates } from '@/utils/streak';
 
 /** 热力图取多少天（4×2 组件一行放得下 ~28 格） */
 const HEAT_DAYS = 28;
+
+/** 「清单」组件最多带几条任务（4×2 满排也只画得下 5 行，多带只是白占体积） */
+const AGENDA_MAX = 6;
+/** 标题在快照里先粗截一刀；组件绘制时还会按实际像素宽度再截 */
+const AGENDA_TITLE_MAX = 24;
+
+/** 「清单」组件的一行未完成任务 */
+export interface WidgetAgendaItem {
+  title: string;
+  /** App 内「⭐ 重要」旗标——组件侧画琥珀高亮 */
+  important?: boolean;
+  /** 计次任务的当前值 / 目标值（单次任务恒 0/1，组件不画） */
+  count: number;
+  target: number;
+}
+
+/** 最紧迫的一件 BIG DEAL（未收官里截止日最近的） */
+export interface WidgetAgendaDeal {
+  title: string;
+  /** 步骤进度 */
+  done: number;
+  total: number;
+  /** 距截止还有几天（0=今天截止，负=已过期）；null = 没设截止日 */
+  daysLeft: number | null;
+  /** 倒计时进度 0-100：立项日 → 截止日已流逝的时间占比；null = 没设截止日 */
+  timeUsed: number | null;
+}
 
 export interface WidgetSnapshot {
   /** 结构版本：原生侧按它兼容旧快照 */
@@ -59,6 +89,12 @@ export interface WidgetSnapshot {
   maxLevel: number;
   /** 今日运势（首页「今日仪式」已经显示的那一档） */
   fortune: { label: string; accent: string } | null;
+  /**
+   * 「清单」组件（V2.7）：未完成任务明细 + BIG DEAL 倒计时。
+   * 唯一带任务标题的字段——隐私口径见文件头注释的 V2.7 例外说明。
+   * left = 未完成任务总数（可能多于 items 长度，组件画「还有 N 项」用）。
+   */
+  agenda: { items: WidgetAgendaItem[]; left: number; deal: WidgetAgendaDeal | null };
   /** 夜间模式：组件读不到 CSS，只能跟着快照走 */
   dark: boolean;
   channel: 'p3' | 'p4' | 'p5' | 'neutral';
@@ -99,6 +135,53 @@ export function buildWidgetSnapshot(): WidgetSnapshot {
   const due = s.getDueTodosToday();
   const done = due.filter(t => s.getTodayTodoProgress(t.id).isComplete).length;
 
+  // 「清单」明细：未完成的排前面给组件，重要任务优先（与首页排序同口径）
+  const unfinished = due
+    .map(t => ({ t, p: s.getTodayTodoProgress(t.id) }))
+    .filter(x => !x.p.isComplete)
+    .sort((a, b) => (b.t.important ? 1 : 0) - (a.t.important ? 1 : 0));
+  const agendaItems: WidgetAgendaItem[] = unfinished.slice(0, AGENDA_MAX).map(x => ({
+    title: x.t.title.slice(0, AGENDA_TITLE_MAX),
+    ...(x.t.important ? { important: true } : {}),
+    count: x.p.count,
+    target: x.p.target,
+  }));
+
+  // BIG DEAL：未收官的里挑最紧迫的一件——截止日最近优先，没设截止日的排后，再按立项先后
+  const deals = s.todos
+    .filter(t => t.isBigDeal && t.isActive && !t.archivedAt && !t.clearedActivityId)
+    .sort((a, b) => {
+      const da = a.deadline ?? '9999-99-99';
+      const db = b.deadline ?? '9999-99-99';
+      if (da !== db) return da < db ? -1 : 1;
+      return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+    });
+  let agendaDeal: WidgetAgendaDeal | null = null;
+  if (deals[0]) {
+    const d0 = deals[0];
+    const steps = d0.steps ?? [];
+    let daysLeft: number | null = null;
+    let timeUsed: number | null = null;
+    if (d0.deadline) {
+      const today0 = new Date(dateKey + 'T00:00:00').getTime();
+      const dl = new Date(d0.deadline + 'T00:00:00').getTime();
+      daysLeft = Math.round((dl - today0) / 86400000);
+      // 倒计时进度：立项日 → 截止日已流逝比例。当天立项当天截止按用满算
+      const born = new Date(toLocalDateKey(new Date(d0.createdAt)) + 'T00:00:00').getTime();
+      const spanDays = Math.round((dl - born) / 86400000);
+      timeUsed = spanDays <= 0
+        ? 100
+        : Math.max(0, Math.min(100, Math.round(((today0 - born) / 86400000) / spanDays * 100)));
+    }
+    agendaDeal = {
+      title: d0.title.slice(0, AGENDA_TITLE_MAX),
+      done: steps.filter(st => st.done).length,
+      total: steps.length,
+      daysLeft,
+      timeUsed,
+    };
+  }
+
   // 热力图：先按日期 key 计数再展开成定长数组，避免 O(天数 × 活动数)
   const counts = new Map<string, number>();
   for (const a of s.activities) {
@@ -136,6 +219,7 @@ export function buildWidgetSnapshot(): WidgetSnapshot {
     fortune: dd?.fortune
       ? { label: FORTUNE_META[dd.fortune].label, accent: FORTUNE_META[dd.fortune].accent }
       : null,
+    agenda: { items: agendaItems, left: unfinished.length, deal: agendaDeal },
     dark: !!s.settings.darkMode,
     channel,
     accent: channel === 'neutral' ? (s.settings.customThemeColor || ACCENT.neutral) : ACCENT[channel],

@@ -98,6 +98,21 @@ struct VelvetJourneyWidget: Widget {
     }
 }
 
+struct VelvetAgendaWidget: Widget {
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: "VelvetAgenda", provider: VelvetProvider()) { entry in
+            VelvetFamilyView(entry: entry, home: Face.agenda, lock: Face.lockAgenda)
+        }
+        .configurationDisplayName("清单")
+        // 隐私口径：这是唯一显示任务标题的组件，描述里写明，加不加由用户自己决定
+        .description("未完成任务、完成进度与 BIG DEAL 倒计时（会显示任务标题）。")
+        .supportedFamilies([.systemMedium, .accessoryRectangular])
+        // 关掉 iOS 17 起的默认内容边距：我们的 Face 自己画满整块（含底色），
+        // 留着系统边距就会在圆角内再套一圈白边，画面缩成"卡中卡"
+        .contentMarginsDisabled()
+    }
+}
+
 struct VelvetTarotWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "VelvetTarot", provider: VelvetProvider()) { entry in
@@ -116,6 +131,7 @@ struct VelvetWidgetBundle: WidgetBundle {
     var body: some Widget {
         VelvetDailyWidget()
         VelvetJourneyWidget()
+        VelvetAgendaWidget()
         VelvetTarotWidget()
     }
 }

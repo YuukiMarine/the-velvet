@@ -42,13 +42,14 @@ public class VelvetWidgetPlugin extends Plugin {
         call.resolve();
     }
 
-    /** 通知三种规格全部重画。组件没被添加到桌面时 ids 为空，循环自然空转。 */
+    /** 通知全部规格重画。组件没被添加到桌面时 ids 为空，循环自然空转。 */
     static void notifyAllWidgets(Context ctx) {
         AppWidgetManager mgr = AppWidgetManager.getInstance(ctx);
         Class<?>[] providers = new Class<?>[] {
             VelvetWidgetDaily.class,
             VelvetWidgetTarot.class,
             VelvetWidgetJourney.class,
+            VelvetWidgetAgenda.class,
         };
         for (Class<?> p : providers) {
             int[] ids = mgr.getAppWidgetIds(new ComponentName(ctx, p));
