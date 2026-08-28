@@ -956,8 +956,10 @@ export const Settings = () => {
           p3（p3-settings 设计稿）：超大黑斜体 + 青片 + 青斜纹排 + CONFIG/SYSTEM 幽灵字 */}
       {isP4 ? (
         <div className="relative -mx-4 min-h-[146px] px-4 pb-1 pt-1" style={P4_HEADER_BLEED}>
-          <P4ArcRings size={230} className="absolute -right-20 -top-24" />
-          <P4SkyFan size={140} className="absolute right-0 top-0" />
+          {/* 天空扇/弧环向上出血过页面顶部 padding 与刘海安全区：原来 top-0 只到页头
+              上缘，上方露一条舞台底色，看着像实景天空被平切（用户上报）。 */}
+          <P4ArcRings size={230} className="absolute -right-20" style={{ top: 'calc(-6.5rem - env(safe-area-inset-top))' }} />
+          <P4SkyFan size={140} style={{ top: 'calc(-1.25rem - env(safe-area-inset-top))' }} />
           <P4Sparkle size={18} color="#ffffff" className="absolute right-[32%] top-2" />
           <P4Sparkle size={13} color="var(--ui-accent)" className="absolute right-[38%] top-[92px]" />
           <div className="flex items-start gap-2">

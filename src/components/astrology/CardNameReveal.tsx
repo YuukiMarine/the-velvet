@@ -22,7 +22,9 @@ export const CardNameReveal = ({ name, nameEn, reversed, delay = 0 }: {
 
   const skin = {
     p5: { ink: P5R.paper, sub: '#a9a49b', tag: P5R.red, tagInk: P5R.paper, shadow: '3px 3px 0 #050505', font: P5_FONT },
-    p4: { ink: '#131313', sub: 'rgba(19,19,19,0.6)', tag: 'var(--p4-orange, #f9a11b)', tagInk: '#131313', shadow: 'none', font: 'var(--p4-display-font, serif)' },
+    // 墨色走 --ui-ink：内联 style 毯式 CSS 够不着，写死 #131313 在 P4 夜间紫舞台上
+    // 就是黑字压深底（用户上报「塔罗牌下方字体是黑色看不清」）。浅色值与原样相同。
+    p4: { ink: 'var(--ui-ink, #131313)', sub: 'color-mix(in srgb, var(--ui-ink, #131313) 60%, transparent)', tag: 'var(--p4-orange, #f9a11b)', tagInk: '#131313', shadow: 'none', font: 'var(--p4-display-font, serif)' },
     p3: { ink: P3R.blueDeep, sub: P3R.grey, tag: P3R.magenta, tagInk: '#ffffff', shadow: 'none', font: 'inherit' },
     neutral: { ink: 'var(--ui-ink, #111827)', sub: 'var(--ui-muted, #6b7280)', tag: 'var(--ui-accent)', tagInk: '#ffffff', shadow: 'none', font: 'inherit' },
   }[channel];

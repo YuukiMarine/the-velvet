@@ -20,7 +20,7 @@ import {
   ResponsiveContainer
 } from 'recharts';
 import { AttributeId } from '@/types';
-import { P4Flower, P4Sparkle, P4SkyFan, P4ArcRings, P4_HEADER_BLEED } from '@/ui/p4Kit';
+import { P4Flower, P4Sparkle, P4SkyCircle, P4ArcRings, P4_HEADER_BLEED } from '@/ui/p4Kit';
 
 /** P4 属性分布五瓣花牌配色（p4-statistics-reference-v2 采样：绿/蓝/橙/粉/紫） */
 const P4_ATTR_COLORS: Record<AttributeId, string> = {
@@ -604,8 +604,12 @@ export const Statistics = () => {
         </PlaneLevel>
       ) : isP4 ? (
         <PlaneLevel className="relative -mx-4 min-h-[152px] px-4 pb-1 pt-1" style={P4_HEADER_BLEED}>
-          <P4ArcRings size={250} className="absolute -right-20 -top-28" />
-          <P4SkyFan size={148} className="absolute right-0 top-0" />
+          {/* 斜轴页的内容列带出血补偿 padding，贴边的天空扇够不到真实屏幕角——右侧悬空
+              一截被平切（用户上报「实景天空被错误截断」）。换成与首页/行动页同语言的
+              悬浮圆窗：右缘与下方卡片同列对齐，顶部连同弧环一起越过页面 padding 与
+              刘海安全区出血到屏幕顶，哪一侧都不再有平切。 */}
+          <P4ArcRings size={250} className="absolute right-4" style={{ top: 'calc(-7rem - env(safe-area-inset-top))' }} />
+          <P4SkyCircle size={150} className="right-0" style={{ top: 'calc(-2.5rem - env(safe-area-inset-top))' }} />
           <P4Sparkle size={18} color="#ffffff" className="absolute right-[34%] top-2" />
           <div className="flex items-start gap-2">
             <BackButton onClick={() => setCurrentPage('menu')} className="mt-3 -ml-1" />

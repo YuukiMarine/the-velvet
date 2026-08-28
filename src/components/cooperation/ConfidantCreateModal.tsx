@@ -261,7 +261,10 @@ export function ConfidantCreateModal({ isOpen, onClose, onCreated, onPickOnline 
           exit={{ scale: 0.95, opacity: 0 }}
           transition={{ type: 'spring', damping: 22, stiffness: 280 }}
           className={`w-full max-w-md max-h-[92vh] overflow-y-auto ${p4 ? 'p4-onbright' : `bg-white dark:bg-gray-900 rounded-3xl shadow-2xl${p5 ? ' p5-onpaper' : ''}`}`}
-          style={p4 ? { background: '#fff9e3', borderRadius: 28, border: '2px solid #131313', boxShadow: '0 6px 0 rgba(19,19,19,0.35)' } : undefined}
+          // P4 底色/描边走频道 token：夜间紫舞台下自动翻纸紫/紫线（写死奶油色在夜间
+          // 就是一块浅色大板，用户上报「背景颜色没改」）。浅色值 --ui-paper=#fff6d0
+          // 与原 #fff9e3 同为奶油系，观感一致。
+          style={p4 ? { background: 'var(--ui-paper, #fff9e3)', borderRadius: 28, border: '2px solid var(--ui-line, #131313)', boxShadow: '0 6px 0 rgba(19,19,19,0.35)' } : undefined}
           onClick={(e) => e.stopPropagation()}
         >
           {/* 头部 */}
@@ -480,12 +483,17 @@ export function ConfidantCreateModal({ isOpen, onClose, onCreated, onPickOnline 
                     </div>
                   )}
 
+                  {/* P5：红底白字斜钮（不可用转灰）——渐变紫在 p5 纸白弹窗里被洗成白钮不可读（用户点名） */}
                   <motion.button
                     whileTap={{ scale: 0.97 }}
                     onClick={handleNextFromBasic}
                     disabled={!basicValid}
-                    className={p3 ? 'relative w-full py-3.5 text-[15px] font-black text-white disabled:opacity-40' : 'w-full py-3 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-bold text-sm shadow-lg shadow-purple-500/30 disabled:opacity-40'}
-                    style={p3 ? { clipPath: 'polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%)', background: 'var(--p3r-blue, #1b57ff)', boxShadow: '0 12px 28px rgba(27,87,255,0.3)' } : undefined}
+                    className={p3 ? 'relative w-full py-3.5 text-[15px] font-black text-white disabled:opacity-40' : p5 ? 'w-full py-3 rounded-xl text-white font-black text-sm' : 'w-full py-3 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-bold text-sm shadow-lg shadow-purple-500/30 disabled:opacity-40'}
+                    style={p3
+                      ? { clipPath: 'polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%)', background: 'var(--p3r-blue, #1b57ff)', boxShadow: '0 12px 28px rgba(27,87,255,0.3)' }
+                      : p5
+                        ? { background: basicValid ? '#c00008' : '#9b9791', border: '2.5px solid #050505', boxShadow: basicValid ? '3px 3px 0 #050505' : 'none' }
+                        : undefined}
                   >
                     下一步
                   </motion.button>
@@ -522,12 +530,17 @@ export function ConfidantCreateModal({ isOpen, onClose, onCreated, onPickOnline 
                     </div>
                   )}
 
+                  {/* P5：同上，红底白字斜钮（不可用转灰） */}
                   <motion.button
                     whileTap={{ scale: 0.97 }}
                     onClick={handleNextFromDescription}
                     disabled={!descriptionValid}
-                    className={p3 ? 'relative w-full py-3.5 text-[15px] font-black text-white disabled:opacity-40' : 'w-full py-3 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-bold text-sm shadow-lg shadow-purple-500/30 disabled:opacity-40'}
-                    style={p3 ? { clipPath: 'polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%)', background: 'var(--p3r-blue, #1b57ff)', boxShadow: '0 12px 28px rgba(27,87,255,0.3)' } : undefined}
+                    className={p3 ? 'relative w-full py-3.5 text-[15px] font-black text-white disabled:opacity-40' : p5 ? 'w-full py-3 rounded-xl text-white font-black text-sm' : 'w-full py-3 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-bold text-sm shadow-lg shadow-purple-500/30 disabled:opacity-40'}
+                    style={p3
+                      ? { clipPath: 'polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%)', background: 'var(--p3r-blue, #1b57ff)', boxShadow: '0 12px 28px rgba(27,87,255,0.3)' }
+                      : p5
+                        ? { background: descriptionValid ? '#c00008' : '#9b9791', border: '2.5px solid #050505', boxShadow: descriptionValid ? '3px 3px 0 #050505' : 'none' }
+                        : undefined}
                   >
                     下一步（还有 4 个小问题）
                   </motion.button>
