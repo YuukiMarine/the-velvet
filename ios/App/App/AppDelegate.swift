@@ -1,5 +1,6 @@
 import UIKit
 import Capacitor
+import AVFoundation
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -7,8 +8,26 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // Override point for customization after application launch.
+        configureAudioSession()
         return true
+    }
+
+    /// 音频会话（v2.7，用户上报「iOS 端没有音效」）。
+    ///
+    /// Capacitor 从不配置 AVAudioSession，于是 WKWebView 里的 Web Audio 落在系统默认
+    /// 类别上——那个类别**会被机身静音键掐断**。表现就是：文件明明打进包了、网页层
+    /// 一切正常，真机上却一声不响（静音键一拨全没了，而大多数人日常就是静音状态）。
+    ///
+    /// `.playback` = 音效不受静音键影响；`.mixWithOthers` = 不抢占别人的音频，
+    /// 用户在听的歌/播客继续放，我们的提示音叠在上面。UI 音效正是这个诉求。
+    /// 失败不抛：配置不上就回落系统默认，最多是恢复成"静音键能静音"，不该拦住启动。
+    private func configureAudioSession() {
+        do {
+            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.mixWithOthers])
+            try AVAudioSession.sharedInstance().setActive(true)
+        } catch {
+            NSLog("[velvet] AVAudioSession 配置失败，音效将受静音键影响: \(error)")
+        }
     }
 
     func applicationWillResignActive(_ application: UIApplication) {
