@@ -42,20 +42,12 @@ struct VelvetCanvas: View {
         Canvas { ctx, size in
             face(&ctx, snap, art, size.width, size.height)
         }
+        .containerBackground(for: .widget) { Pal.of(snap).bg }
     }
 }
 
-/// iOS 17 起组件必须声明容器背景，否则系统会给一块系统色底并在日志里报警告。
-/// 这里统一交给各 Face 自己画的底色（bg），所以容器背景给透明即可。
-extension View {
-    @ViewBuilder func velvetContainerBackground() -> some View {
-        if #available(iOS 17.0, *) {
-            self.containerBackground(.clear, for: .widget)
-        } else {
-            self
-        }
-    }
-}
+/// 容器背景铺**快照自己的底色**，而不是透明。
+/// 透明的话系统会在圆角外圈露出自己的浅色底，观感就是"内容外面裹了一圈白边"。
 
 // ── 三个组件 ─────────────────────────────────────────────────────────
 
@@ -63,11 +55,13 @@ struct VelvetDailyWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "VelvetDaily", provider: VelvetProvider()) { entry in
             VelvetCanvas(snap: entry.snap, art: entry.art, face: Face.daily)
-                .velvetContainerBackground()
         }
         .configurationDisplayName("今日")
         .description("今日塔罗、日期、任务进度与记录热力。")
         .supportedFamilies([.systemMedium])
+        // 关掉 iOS 17 起的默认内容边距：我们的 Face 自己画满整块（含底色），
+        // 留着系统边距就会在圆角内再套一圈白边，画面缩成"卡中卡"
+        .contentMarginsDisabled()
     }
 }
 
@@ -75,11 +69,13 @@ struct VelvetJourneyWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "VelvetJourney", provider: VelvetProvider()) { entry in
             VelvetCanvas(snap: entry.snap, art: entry.art, face: Face.journey)
-                .velvetContainerBackground()
         }
         .configurationDisplayName("征途")
         .description("连续天数、月相、塔罗与宣告卡进度。")
         .supportedFamilies([.systemMedium])
+        // 关掉 iOS 17 起的默认内容边距：我们的 Face 自己画满整块（含底色），
+        // 留着系统边距就会在圆角内再套一圈白边，画面缩成"卡中卡"
+        .contentMarginsDisabled()
     }
 }
 
@@ -87,11 +83,11 @@ struct VelvetTarotWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "VelvetTarot", provider: VelvetProvider()) { entry in
             VelvetCanvas(snap: entry.snap, art: entry.art, face: Face.tarot)
-                .velvetContainerBackground()
         }
         .configurationDisplayName("牌与月")
         .description("今日塔罗牌面与月相读数。")
         .supportedFamilies([.systemSmall])
+        .contentMarginsDisabled()
     }
 }
 
