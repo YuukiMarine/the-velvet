@@ -681,6 +681,7 @@ class VelvetP3 {
     static Bitmap agenda(Context ctx, VelvetSnapshot s, int w, int h) {
         Pal pal = Pal.of(s);
         if (compact(w, h)) return agendaCompact(pal, s, w, h);
+        if (w < h * 1.5f) return agendaSquare(pal, s, w, h);   // 缩到 2×2 走方形专属构图
         Bitmap bmp = panel(pal, w, h);
         Canvas c = new Canvas(bmp);
         float u = h / 14f;
@@ -695,37 +696,62 @@ class VelvetP3 {
             Paint num = text(u * 1.6f, pal.blue, true, true);
             String frac = s.todosDone + "/" + s.todosTotal;
             c.drawText(frac, rx - num.measureText(frac), u * 1.9f, num);
-            progress(c, pal, lx, u * 2.5f, rx - lx, u * 0.9f,
+            progress(c, pal, lx, u * 2.45f, rx - lx, u * 0.9f,
                      Math.round(s.todosDone * 100f / s.todosTotal));
         }
 
-        float rowTop = u * 4.15f;
+        // 宣告卡倒计时行（有卡才有）：蓝 tick + 卡名 + 剩 N 天 + 右侧完成百分比
+        float shift = 0;
+        if (s.cardTitle != null && s.cardTitle.length() > 0) {
+            float base = u * 4.22f;
+            tick(c, lx + u * 0.15f, base - u * 0.58f, u * 0.68f, u * 0.48f, pal.blue);
+            Paint pctP = text(u * 0.9f, pal.blue, true, true);
+            String pct = s.cardPercent + "%";
+            c.drawText(pct, rx - u * 0.2f - pctP.measureText(pct), base, pctP);
+            String days = "";
+            if (s.cardDaysLeft != null) {
+                int d = s.cardDaysLeft;
+                days = d > 0 ? " · 剩 " + d + " 天" : d == 0 ? " · 今天到期" : " · 已过期";
+            }
+            Paint daysP = text(u * 0.72f, pal.inkSoft, true, false);
+            Paint titleP = text(u * 0.82f, pal.ink, true, false);
+            String t = fit(s.cardTitle, titleP,
+                           rx - u * 0.2f - pctP.measureText(pct) - u * 0.5f
+                             - daysP.measureText(days) - (lx + u * 1.25f));
+            c.drawText(t, lx + u * 1.25f, base, titleP);
+            if (days.length() > 0) {
+                c.drawText(days, lx + u * 1.25f + titleP.measureText(t), base, daysP);
+            }
+            shift = u * 0.95f;
+        }
+
+        float rowTop = u * 4.15f + shift;
         int rows = 5;
         if (s.agendaDeal != null) {
-            agendaDealPlate(c, pal, s.agendaDeal, lx, rx, u * 4.1f, u * 6.9f, u);
-            rowTop = u * 7.55f;
+            agendaDealPlate(c, pal, s.agendaDeal, lx, rx, u * 4.1f + shift, u * 6.9f + shift, u);
+            rowTop = u * 7.45f + shift;
             rows = 3;
         }
 
         // 任务行：塞不下时最后一格让位给「还有 N 项」
         VelvetSnapshot.AgendaItem[] items = s.agendaItems;
-        float pitch = u * 1.72f;
+        float pitch = u * 1.5f;
         int shown = items.length > rows ? rows - 1 : items.length;
         for (int i = 0; i < shown; i++) {
             agendaItemRow(c, pal, items[i], lx, rx, rowTop + pitch * i, u);
         }
         if (items.length > rows) {
             float t = rowTop + pitch * shown;
-            tick(c, lx + u * 0.15f, t + u * 0.32f, u * 0.72f, u * 0.5f, pal.cyanPale);
+            tick(c, lx + u * 0.15f, t + u * 0.28f, u * 0.68f, u * 0.48f, pal.cyanPale);
             c.drawText("还有 " + (s.agendaLeft - shown) + " 项未完成",
-                       lx + u * 1.25f, t + u * 0.92f, text(u * 0.82f, pal.inkSoft, true, false));
+                       lx + u * 1.25f, t + u * 0.85f, text(u * 0.78f, pal.inkSoft, true, false));
         } else if (items.length == 0) {
             if (s.agendaDeal != null) {
                 c.drawText(s.todosTotal > 0 ? "其余任务已全部完成" : "今日没有其他安排",
-                           lx, rowTop + u * 1.0f, text(u * 0.9f, pal.inkSoft, true, false));
+                           lx, rowTop + u * 0.95f, text(u * 0.85f, pal.inkSoft, true, false));
             } else if (s.todosTotal > 0) {
-                eyebrow(c, "ALL CLEAR", u * 0.72f, lx, u * 6.3f, pal.blue);
-                c.drawText("今日任务全部完成", lx, u * 8.2f, text(u * 1.3f, pal.ink, true, true));
+                eyebrow(c, "ALL CLEAR", u * 0.72f, lx, u * 6.3f + shift, pal.blue);
+                c.drawText("今日任务全部完成", lx, u * 8.2f + shift, text(u * 1.3f, pal.ink, true, true));
             } else {
                 c.drawText("去安排一件今天的事 →", lx, u * 7.5f, text(u * 0.9f, pal.inkSoft, true, false));
             }
@@ -733,6 +759,93 @@ class VelvetP3 {
 
         magentaCorner(c, pal, w, h, u);
         return bmp;
+    }
+
+    /**
+     * 2×2「清单」（v2.7 追加规格）：方形装不下宣告卡行与幽灵大字铺陈——
+     * 只留「现在还剩什么」的最小读数：分数、进度条、BIG DEAL（或前两条任务）、还有几项。
+     */
+    private static Bitmap agendaSquare(Pal pal, VelvetSnapshot s, int w, int h) {
+        Bitmap bmp = panel(pal, w, h);
+        Canvas c = new Canvas(bmp);
+        ghost(c, pal, "TASKS", h * 0.26f, w * 0.36f, h * 0.99f);
+        float pad = h * 0.09f;
+        float rx = w - pad;
+        eyebrow(c, "TASKS", h * 0.05f, pad, h * 0.135f, pal.blue);
+
+        // 分数大字 + 整体进度条
+        if (s.todosTotal > 0) {
+            c.drawText(s.todosDone + "/" + s.todosTotal, pad, h * 0.335f,
+                       text(h * 0.19f, pal.blue, true, true));
+            Paint lbl = text(h * 0.075f, pal.inkSoft, true, false);
+            c.drawText("今日任务", rx - lbl.measureText("今日任务"), h * 0.325f, lbl);
+            progress(c, pal, pad, h * 0.40f, rx - pad, h * 0.06f,
+                     Math.round(s.todosDone * 100f / s.todosTotal));
+        } else {
+            c.drawText("今日没有安排", pad, h * 0.33f, text(h * 0.105f, pal.ink, true, true));
+        }
+
+        // 两行：BIG DEAL 优先占行一，其余给任务
+        VelvetSnapshot.AgendaItem[] items = s.agendaItems;
+        int drawnItems = 0;
+        float base1 = h * 0.615f, base2 = h * 0.765f;
+        if (s.agendaDeal != null) {
+            VelvetSnapshot.AgendaDeal deal = s.agendaDeal;
+            slab(c, pad, base1 - h * 0.095f, rx, base1 + h * 0.035f, h * 0.035f, pal.blue);
+            float reserve = 0;
+            if (deal.daysLeft != null) {
+                int d = deal.daysLeft;
+                String label = d > 0 ? "剩" + d + "天" : d == 0 ? "今天截止" : "已过截止";
+                Paint dp = text(h * 0.06f, Color.WHITE, true, false);
+                float dw = dp.measureText(label);
+                if (d <= 2) {
+                    slab(c, rx - dw - h * 0.05f, base1 - h * 0.095f, rx, base1 + h * 0.035f,
+                         h * 0.035f, pal.magenta);
+                }
+                c.drawText(label, rx - h * 0.03f - dw, base1 - h * 0.005f, dp);
+                reserve = dw + h * 0.1f;
+            }
+            Paint tp = text(h * 0.075f, Color.WHITE, true, true);
+            c.drawText(fit(deal.title, tp, rx - h * 0.05f - reserve - (pad + h * 0.05f)),
+                       pad + h * 0.05f, base1 - h * 0.005f, tp);
+        } else if (items.length > 0) {
+            agendaSquareRow(c, pal, items[0], pad, rx, base1, h);
+            drawnItems = 1;
+        } else {
+            boolean done = s.todosTotal > 0;
+            c.drawText(done ? "全部完成" : "去安排一件事 →", pad, base1,
+                       text(h * 0.085f, done ? pal.blue : pal.inkSoft, true, true));
+        }
+        if (items.length > drawnItems) {
+            agendaSquareRow(c, pal, items[drawnItems], pad, rx, base2, h);
+            drawnItems++;
+        }
+
+        // 尾行：还剩几项（放不下逐条列，给个总数）
+        int more = s.agendaLeft - drawnItems;
+        if (more > 0) {
+            c.drawText("还有 " + more + " 项未完成", pad + h * 0.05f, h * 0.90f,
+                       text(h * 0.068f, pal.inkSoft, true, false));
+        }
+
+        magentaCorner(c, pal, w, h, Math.min(w, h) / 14f);
+        return bmp;
+    }
+
+    /** 2×2 的任务行：tick + 标题（重要 = 琥珀）+ 计次 c/n */
+    private static void agendaSquareRow(Canvas c, Pal pal, VelvetSnapshot.AgendaItem it,
+                                        float px, float rx, float baselineY, float h) {
+        tick(c, px, baselineY - h * 0.06f, h * 0.052f, h * 0.038f, it.important ? AMBER : pal.cyan);
+        float reserve = 0;
+        if (it.target > 1) {
+            Paint fp = text(h * 0.065f, pal.inkSoft, true, true);
+            String frac = it.count + "/" + it.target;
+            c.drawText(frac, rx - fp.measureText(frac), baselineY, fp);
+            reserve = fp.measureText(frac) + h * 0.05f;
+        }
+        Paint tp = text(h * 0.078f, pal.ink, true, false);
+        c.drawText(fit(it.title, tp, rx - reserve - (px + h * 0.085f)),
+                   px + h * 0.085f, baselineY, tp);
     }
 
     /** BIG DEAL 板：强调色斜板反白——清单里最重的一块 */
@@ -796,20 +909,20 @@ class VelvetP3 {
     private static void agendaItemRow(Canvas c, Pal pal, VelvetSnapshot.AgendaItem it,
                                       float lx, float rx, float top, float u) {
         if (it.important) {
-            slab(c, lx - u * 0.25f, top - u * 0.12f, rx + u * 0.25f, top + u * 1.42f,
-                 u * 0.45f, AMBER_TINT);
+            slab(c, lx - u * 0.25f, top - u * 0.1f, rx + u * 0.25f, top + u * 1.25f,
+                 u * 0.4f, AMBER_TINT);
         }
-        tick(c, lx + u * 0.15f, top + u * 0.32f, u * 0.72f, u * 0.5f, it.important ? AMBER : pal.cyan);
+        tick(c, lx + u * 0.15f, top + u * 0.26f, u * 0.68f, u * 0.48f, it.important ? AMBER : pal.cyan);
         float reserve = 0;
         if (it.target > 1) {
-            Paint fp = text(u * 0.85f, pal.inkSoft, true, true);
+            Paint fp = text(u * 0.78f, pal.inkSoft, true, true);
             String frac = it.count + "/" + it.target;
-            c.drawText(frac, rx - u * 0.2f - fp.measureText(frac), top + u * 0.95f, fp);
+            c.drawText(frac, rx - u * 0.2f - fp.measureText(frac), top + u * 0.85f, fp);
             reserve = fp.measureText(frac) + u * 0.55f;
         }
-        Paint tp = text(u * 0.95f, pal.ink, true, false);
+        Paint tp = text(u * 0.85f, pal.ink, true, false);
         c.drawText(fit(it.title, tp, rx - u * 0.2f - reserve - (lx + u * 1.25f)),
-                   lx + u * 1.25f, top + u * 0.95f, tp);
+                   lx + u * 1.25f, top + u * 0.85f, tp);
     }
 
     /**

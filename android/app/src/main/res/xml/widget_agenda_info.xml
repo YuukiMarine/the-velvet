@@ -1,10 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 4×2「清单」，可缩到 4×1（与「今日」同一套尺寸口径，注释见 widget_daily_info.xml）。
+<!-- 4×2「清单」，可缩到 4×1 或 2×2（尺寸口径说明见 widget_daily_info.xml；
+     minResizeWidth 放到 110dp 是为了允许 2×2——VelvetP3.agenda() 按宽高比分流：
+     扁条走 agendaCompact，近方形走 agendaSquare，都是专属构图而不是压扁 4×2）。
      这是唯一显示任务标题的组件，description 里写明——加不加由用户知情自选。 -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
     android:minWidth="250dp"
     android:minHeight="110dp"
-    android:minResizeWidth="250dp"
+    android:minResizeWidth="110dp"
     android:minResizeHeight="40dp"
     android:targetCellWidth="4"
     android:targetCellHeight="2"
