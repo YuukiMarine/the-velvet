@@ -8,7 +8,7 @@
 | 项 | 状态 |
 |---|---|
 | Capacitor iOS 平台（`@capacitor/ios@5`，`ios/` 工程） | ✅ 已生成 |
-| App 显示名「靛蓝色房间」/ Bundle ID `com.pgt.app` | ✅ |
+| App 显示名「靛蓝色房间」/ Bundle ID `com.yuuki.pgt`（`com.pgt.app` 已被别的团队注册占用——Bundle ID 是全 Apple 全局唯一；安卓不受影响，applicationId 仍是 `com.pgt.app`，两端 ID 各走各的） | ✅ |
 | 版本号 `MARKETING_VERSION = 2.7.0`，`TARGETED_DEVICE_FAMILY = 1`（iPhone 专注，免 iPad 截图与适配审查） | ✅ |
 | 竖屏锁定；状态栏默认 | ✅ Info.plist |
 | 权限文案：麦克风（语音输入）、相机（头像/账单拍照） | ✅ Info.plist |
@@ -47,11 +47,13 @@ Xcode 里：
 1. 左侧选 App target → Signing & Capabilities → 勾 **Automatically manage signing** → Team 选你的开发者账号（首次需在 Xcode → Settings → Accounts 登录 Apple ID）。
    **VelvetWidget target 也要同样操作一遍**（小组件扩展是独立 target，签名互不继承）。
 1b. **App Groups（小组件必需）**：developer.apple.com → Identifiers → 注册 App Group
-   `group.com.pgt.app`；然后给 `com.pgt.app` 与 `com.pgt.app.VelvetWidget` 两个 App ID
+   `group.com.pgt.app`；然后给 `com.yuuki.pgt` 与 `com.yuuki.pgt.VelvetWidget` 两个 App ID
    都开 App Groups 能力并勾上这个 group。Xcode 自动签名会自行重拉描述文件；
    工程里两份 entitlements（App/App.entitlements、VelvetWidget/VelvetWidget.entitlements）
    已配好，不用再改。漏掉这步的症状：主 App 正常，但组件永远显示「打开一次靛蓝色房间」
    （App Group 容器建不起来，快照写不进去）。
+   ——group 沿用 `group.com.pgt.app` 不改：App Group 与 Bundle ID 是两套独立的
+   全局命名空间，bundle 被占不影响 group，group 也不要求和 bundle 前缀对应。
 2. 顶部设备选一台真机或 “Any iOS Device (arm64)”。
 3. 先 ⌘R 跑真机过一遍冒烟（见 §5 清单），再 Product → **Archive**。
 4. Archive 完成后 Organizer 弹出 → **Distribute App → App Store Connect → Upload**，一路默认。
@@ -61,7 +63,7 @@ Xcode 里：
 [appstoreconnect.apple.com](https://appstoreconnect.apple.com) → 我的 App → ➕ 新建 App：
 
 - 平台 iOS；名称 **靛蓝色房间**（占用则试「靛蓝色房间 - 成长追踪」）；主要语言 **简体中文**；
-  Bundle ID 选 `com.pgt.app`（若列表里没有：先去 developer.apple.com → Identifiers 注册一个 App ID，Bundle ID 填 `com.pgt.app`，capabilities 全默认）；SKU 随意如 `velvet-room-ios`。
+  Bundle ID 选 `com.yuuki.pgt`（若列表里没有：先去 developer.apple.com → Identifiers 注册一个 App ID，Bundle ID 填 `com.yuuki.pgt`，capabilities 全默认）；SKU 随意如 `velvet-room-ios`。
 
 ### 元数据草稿（可直接粘贴改）
 

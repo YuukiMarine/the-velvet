@@ -167,7 +167,6 @@
 				831A12A70B266A1C2DC95CF9 /* Info.plist */,
 				7FF4B50C8A8DC9335E165A5A /* VelvetWidget.entitlements */,
 			);
-			name = VelvetWidget;
 			path = VelvetWidget;
 			sourceTree = "<group>";
 		};
@@ -484,12 +483,13 @@
 				CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = WRD4HU4BW7;
 				INFOPLIST_FILE = App/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 13.0;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
 				MARKETING_VERSION = 2.7.0;
 				OTHER_SWIFT_FLAGS = "$(inherited) \"-D\" \"COCOAPODS\" \"-DDEBUG\"";
-				PRODUCT_BUNDLE_IDENTIFIER = com.pgt.app;
+				PRODUCT_BUNDLE_IDENTIFIER = com.yuuki.pgt;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_VERSION = 5.0;
@@ -505,11 +505,12 @@
 				CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = WRD4HU4BW7;
 				INFOPLIST_FILE = App/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 13.0;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
 				MARKETING_VERSION = 2.7.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.pgt.app;
+				PRODUCT_BUNDLE_IDENTIFIER = com.yuuki.pgt;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "";
 				SWIFT_VERSION = 5.0;
@@ -523,11 +524,12 @@
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_ENTITLEMENTS = VelvetWidget/VelvetWidget.entitlements;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = WRD4HU4BW7;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = VelvetWidget/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MARKETING_VERSION = 2.7.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.pgt.app.VelvetWidget;
+				PRODUCT_BUNDLE_IDENTIFIER = com.yuuki.pgt.VelvetWidget;
 				PRODUCT_NAME = VelvetWidget;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -543,11 +545,12 @@
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_ENTITLEMENTS = VelvetWidget/VelvetWidget.entitlements;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = WRD4HU4BW7;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = VelvetWidget/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MARKETING_VERSION = 2.7.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.pgt.app.VelvetWidget;
+				PRODUCT_BUNDLE_IDENTIFIER = com.yuuki.pgt.VelvetWidget;
 				PRODUCT_NAME = VelvetWidget;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
