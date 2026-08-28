@@ -42,23 +42,42 @@ struct VelvetCanvas: View {
         Canvas { ctx, size in
             face(&ctx, snap, art, size.width, size.height)
         }
-        .containerBackground(for: .widget) { Pal.of(snap).bg }
     }
 }
 
 /// 容器背景铺**快照自己的底色**，而不是透明。
 /// 透明的话系统会在圆角外圈露出自己的浅色底，观感就是"内容外面裹了一圈白边"。
 
+/// 按 family 分发版式：主屏走整幅构图（自带底色），锁屏 accessoryRectangular
+/// 走单色紧凑版（容器背景交给系统的毛玻璃，自己不铺底）。
+struct VelvetFamilyView: View {
+    @Environment(\.widgetFamily) private var family
+    let entry: VelvetEntry
+    let home: (inout GraphicsContext, VelvetSnapshot, UIImage?, CGFloat, CGFloat) -> Void
+    let lock: (inout GraphicsContext, VelvetSnapshot, UIImage?, CGFloat, CGFloat) -> Void
+
+    var body: some View {
+        if family == .accessoryRectangular {
+            VelvetCanvas(snap: entry.snap, art: entry.art, face: lock)
+                .containerBackground(for: .widget) { Color.clear }
+        } else {
+            VelvetCanvas(snap: entry.snap, art: entry.art, face: home)
+                .containerBackground(for: .widget) { Pal.of(entry.snap).bg }
+        }
+    }
+}
+
 // ── 三个组件 ─────────────────────────────────────────────────────────
 
 struct VelvetDailyWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "VelvetDaily", provider: VelvetProvider()) { entry in
-            VelvetCanvas(snap: entry.snap, art: entry.art, face: Face.daily)
+            VelvetFamilyView(entry: entry, home: Face.daily, lock: Face.lockDaily)
         }
         .configurationDisplayName("今日")
         .description("今日塔罗、日期、任务进度与记录热力。")
-        .supportedFamilies([.systemMedium])
+        // accessoryRectangular = 锁屏扁条，iOS 上最接近安卓 4×1 的形态
+        .supportedFamilies([.systemMedium, .accessoryRectangular])
         // 关掉 iOS 17 起的默认内容边距：我们的 Face 自己画满整块（含底色），
         // 留着系统边距就会在圆角内再套一圈白边，画面缩成"卡中卡"
         .contentMarginsDisabled()
@@ -68,11 +87,11 @@ struct VelvetDailyWidget: Widget {
 struct VelvetJourneyWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "VelvetJourney", provider: VelvetProvider()) { entry in
-            VelvetCanvas(snap: entry.snap, art: entry.art, face: Face.journey)
+            VelvetFamilyView(entry: entry, home: Face.journey, lock: Face.lockJourney)
         }
         .configurationDisplayName("征途")
         .description("连续天数、月相、塔罗与宣告卡进度。")
-        .supportedFamilies([.systemMedium])
+        .supportedFamilies([.systemMedium, .accessoryRectangular])
         // 关掉 iOS 17 起的默认内容边距：我们的 Face 自己画满整块（含底色），
         // 留着系统边距就会在圆角内再套一圈白边，画面缩成"卡中卡"
         .contentMarginsDisabled()
@@ -83,6 +102,7 @@ struct VelvetTarotWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "VelvetTarot", provider: VelvetProvider()) { entry in
             VelvetCanvas(snap: entry.snap, art: entry.art, face: Face.tarot)
+                .containerBackground(for: .widget) { Pal.of(entry.snap).bg }
         }
         .configurationDisplayName("牌与月")
         .description("今日塔罗牌面与月相读数。")
