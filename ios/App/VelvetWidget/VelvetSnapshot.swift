@@ -54,6 +54,7 @@ struct VelvetSnapshot {
 
     var cardTitle: String?       // nil = 没有在途宣告卡
     var cardPercent = 0
+    var cardDaysLeft: Int?       // 距宣告卡目标日几天（0=今天，负=已过）；nil = 卡没设目标日
 
     var streak = 0
     var levels: [Int] = []
@@ -105,6 +106,7 @@ struct VelvetSnapshot {
         if let c = o["card"] as? [String: Any] {
             s.cardTitle = c["title"] as? String
             s.cardPercent = c["percent"] as? Int ?? 0
+            s.cardDaysLeft = c["daysLeft"] as? Int   // JSON null → NSNull → 自然落到 nil
         }
         s.streak = o["streak"] as? Int ?? 0
         s.maxLevel = max(1, o["maxLevel"] as? Int ?? 5)

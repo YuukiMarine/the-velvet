@@ -77,7 +77,8 @@ export interface WidgetSnapshot {
   moon: { name: string; illum: number; phase: number };
   /** 最近 HEAT_DAYS 天每天的记录条数（旧 → 新） */
   heat: number[];
-  card: { title: string; percent: number } | null;
+  /** 宣告卡：daysLeft = 距目标日几天（0=今天，负=已过）；null = 卡没设目标日 */
+  card: { title: string; percent: number; daysLeft: number | null } | null;
   /** 当前连续天数（与首页 / 菜单同一口径：补记条目不算） */
   streak: number;
   /**
@@ -194,10 +195,15 @@ export function buildWidgetSnapshot(): WidgetSnapshot {
     heat.push(counts.get(toLocalDateKey(d)) ?? 0);
   }
 
-  // 宣告卡：钉在首页那张优先，否则取第一张未归档的
-  const cards = s.callingCards.filter(c => !c.archived);
+  // 宣告卡：钉在首页那张优先，否则取第一张未归档的。
+  // terminal 是退役的终端任务卡存表残留（TASKS_MERGE_PRD 批5），全 App 都按 !terminal 过滤
+  const cards = s.callingCards.filter(c => !c.archived && !c.terminal);
   const hero = cards.find(c => c.pinned) ?? cards[0] ?? null;
   const prog = hero ? s.getCallingCardProgress(hero.id) : null;
+  const cardDaysLeft = hero?.targetDate
+    ? Math.round((new Date(hero.targetDate + 'T00:00:00').getTime()
+        - new Date(dateKey + 'T00:00:00').getTime()) / 86400000)
+    : null;
 
   const channel = themeToChannel(s.user?.theme);
 
@@ -212,7 +218,9 @@ export function buildWidgetSnapshot(): WidgetSnapshot {
     todos: { done, total: due.length },
     moon: moonOf(now),
     heat,
-    card: hero && prog ? { title: hero.title, percent: Math.round((prog.overallProgress ?? 0) * 100) } : null,
+    card: hero && prog
+      ? { title: hero.title, percent: Math.round((prog.overallProgress ?? 0) * 100), daysLeft: cardDaysLeft }
+      : null,
     streak: calcCurrentStreak(streakDates(s.activities)),
     levels: s.attributes.slice(0, 5).map(a => a.level),
     maxLevel: Math.max(1, s.settings.levelThresholds?.length ?? 5),

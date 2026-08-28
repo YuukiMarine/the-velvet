@@ -55,6 +55,7 @@ class VelvetSnapshot {
 
     String cardTitle;     // null = 没有在途宣告卡
     int cardPercent;
+    Integer cardDaysLeft; // 距宣告卡目标日几天（0=今天，负=已过）；null = 卡没设目标日
 
     /** 当前连续天数（与首页同口径） */
     int streak;
@@ -123,6 +124,8 @@ class VelvetSnapshot {
             if (c != null) {
                 s.cardTitle = c.optString("title", null);
                 s.cardPercent = c.optInt("percent", 0);
+                // JSON null 与字段缺失都要落回 null（没设目标日），不能变成 0（今天到期）
+                if (!c.isNull("daysLeft")) s.cardDaysLeft = c.optInt("daysLeft");
             }
 
             s.streak = o.optInt("streak", 0);

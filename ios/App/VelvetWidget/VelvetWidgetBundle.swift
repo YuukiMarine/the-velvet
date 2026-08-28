@@ -49,17 +49,22 @@ struct VelvetCanvas: View {
 /// 透明的话系统会在圆角外圈露出自己的浅色底，观感就是"内容外面裹了一圈白边"。
 
 /// 按 family 分发版式：主屏走整幅构图（自带底色），锁屏 accessoryRectangular
-/// 走单色紧凑版（容器背景交给系统的毛玻璃，自己不铺底）。
+/// 走单色紧凑版（容器背景交给系统的毛玻璃，自己不铺底）；
+/// 声明了 square 的组件在 systemSmall 用方形专属构图（不是把 4×2 挤扁）。
 struct VelvetFamilyView: View {
     @Environment(\.widgetFamily) private var family
     let entry: VelvetEntry
     let home: (inout GraphicsContext, VelvetSnapshot, UIImage?, CGFloat, CGFloat) -> Void
     let lock: (inout GraphicsContext, VelvetSnapshot, UIImage?, CGFloat, CGFloat) -> Void
+    var square: ((inout GraphicsContext, VelvetSnapshot, UIImage?, CGFloat, CGFloat) -> Void)? = nil
 
     var body: some View {
         if family == .accessoryRectangular {
             VelvetCanvas(snap: entry.snap, art: entry.art, face: lock)
                 .containerBackground(for: .widget) { Color.clear }
+        } else if family == .systemSmall, let square {
+            VelvetCanvas(snap: entry.snap, art: entry.art, face: square)
+                .containerBackground(for: .widget) { Pal.of(entry.snap).bg }
         } else {
             VelvetCanvas(snap: entry.snap, art: entry.art, face: home)
                 .containerBackground(for: .widget) { Pal.of(entry.snap).bg }
@@ -101,12 +106,13 @@ struct VelvetJourneyWidget: Widget {
 struct VelvetAgendaWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "VelvetAgenda", provider: VelvetProvider()) { entry in
-            VelvetFamilyView(entry: entry, home: Face.agenda, lock: Face.lockAgenda)
+            VelvetFamilyView(entry: entry, home: Face.agenda, lock: Face.lockAgenda,
+                             square: Face.agendaSquare)
         }
         .configurationDisplayName("清单")
         // 隐私口径：这是唯一显示任务标题的组件，描述里写明，加不加由用户自己决定
         .description("未完成任务、完成进度与 BIG DEAL 倒计时（会显示任务标题）。")
-        .supportedFamilies([.systemMedium, .accessoryRectangular])
+        .supportedFamilies([.systemSmall, .systemMedium, .accessoryRectangular])
         // 关掉 iOS 17 起的默认内容边距：我们的 Face 自己画满整块（含底色），
         // 留着系统边距就会在圆角内再套一圈白边，画面缩成"卡中卡"
         .contentMarginsDisabled()
