@@ -7,18 +7,56 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		09BA1D013EC2451C9089B581 /* VelvetPalette.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4422B5621D3AF094DC3042DD /* VelvetPalette.swift */; };
+		0C9EDD902D23739A4591FFBE /* VelvetWidgetPlugin.m in Sources */ = {isa = PBXBuildFile; fileRef = F499CAAEE92D01395A0603B3 /* VelvetWidgetPlugin.m */; };
+		2840524120146088FF2FAEBB /* VelvetWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = B4A3298757669DF10F6A8870 /* VelvetWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		2FAD9763203C412B000D30F8 /* config.xml in Resources */ = {isa = PBXBuildFile; fileRef = 2FAD9762203C412B000D30F8 /* config.xml */; };
+		301632A2EFE3969C909143CD /* VelvetDraw.swift in Sources */ = {isa = PBXBuildFile; fileRef = 447D77047469495359B09285 /* VelvetDraw.swift */; };
+		397D613181FF4C32FE191ACB /* VelvetCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 486ABC5FF10D1CF6C4242D69 /* VelvetCard.swift */; };
+		48B479048CFB68CDA7FEE790 /* VelvetWidgetPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5C99D821C2699BA077BB48F /* VelvetWidgetPlugin.swift */; };
 		50379B232058CBB4000EE86E /* capacitor.config.json in Resources */ = {isa = PBXBuildFile; fileRef = 50379B222058CBB4000EE86E /* capacitor.config.json */; };
 		504EC3081FED79650016851F /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 504EC3071FED79650016851F /* AppDelegate.swift */; };
 		504EC30D1FED79650016851F /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30B1FED79650016851F /* Main.storyboard */; };
 		504EC30F1FED79650016851F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30E1FED79650016851F /* Assets.xcassets */; };
 		504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC3101FED79650016851F /* LaunchScreen.storyboard */; };
 		50B271D11FEDC1A000F3C39B /* public in Resources */ = {isa = PBXBuildFile; fileRef = 50B271D01FEDC1A000F3C39B /* public */; };
+		7E4D83A23FBA95D5FAC26F4B /* VelvetWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2E3AEAD82EADD8152DE24EC /* VelvetWidgetBundle.swift */; };
+		8234454BECF8158312A35919 /* VelvetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1701B886CF7D0C374477E65A /* VelvetSnapshot.swift */; };
 		A084ECDBA7D38E1E42DFC39D /* Pods_App.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AF277DCFFFF123FFC6DF26C7 /* Pods_App.framework */; };
+		C171C9B02BBC1C966A10D00A /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F17BE902730A056327CF5C95 /* Foundation.framework */; };
+		FF0FCAC6E77416AB8942FC51 /* VelvetFaces.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9A106331A6EEFC4DE940E04 /* VelvetFaces.swift */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		B2A43A3290CBC720F3B82B2F /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 504EC2FC1FED79650016851F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 9C95083AD30E43CE77DB8547;
+			remoteInfo = VelvetWidget;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		92C876AA844B8E7865D5FDF9 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				2840524120146088FF2FAEBB /* VelvetWidget.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
+		1701B886CF7D0C374477E65A /* VelvetSnapshot.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VelvetSnapshot.swift; sourceTree = "<group>"; };
 		2FAD9762203C412B000D30F8 /* config.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = config.xml; sourceTree = "<group>"; };
+		4422B5621D3AF094DC3042DD /* VelvetPalette.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VelvetPalette.swift; sourceTree = "<group>"; };
+		447D77047469495359B09285 /* VelvetDraw.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VelvetDraw.swift; sourceTree = "<group>"; };
+		486ABC5FF10D1CF6C4242D69 /* VelvetCard.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VelvetCard.swift; sourceTree = "<group>"; };
 		50379B222058CBB4000EE86E /* capacitor.config.json */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.json; path = capacitor.config.json; sourceTree = "<group>"; };
 		504EC3041FED79650016851F /* App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = App.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		504EC3071FED79650016851F /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
@@ -27,12 +65,29 @@
 		504EC3111FED79650016851F /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		504EC3131FED79650016851F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		50B271D01FEDC1A000F3C39B /* public */ = {isa = PBXFileReference; lastKnownFileType = folder; path = public; sourceTree = "<group>"; };
+		7FF4B50C8A8DC9335E165A5A /* VelvetWidget.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = VelvetWidget.entitlements; sourceTree = "<group>"; };
+		831A12A70B266A1C2DC95CF9 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A5C99D821C2699BA077BB48F /* VelvetWidgetPlugin.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VelvetWidgetPlugin.swift; sourceTree = "<group>"; };
 		AF277DCFFFF123FFC6DF26C7 /* Pods_App.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_App.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		AF51FD2D460BCFE21FA515B2 /* Pods-App.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-App.release.xcconfig"; path = "Pods/Target Support Files/Pods-App/Pods-App.release.xcconfig"; sourceTree = "<group>"; };
+		B4A3298757669DF10F6A8870 /* VelvetWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = VelvetWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		B9A106331A6EEFC4DE940E04 /* VelvetFaces.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VelvetFaces.swift; sourceTree = "<group>"; };
+		BA92098934E60433011800AD /* App.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = App.entitlements; sourceTree = "<group>"; };
+		C2E3AEAD82EADD8152DE24EC /* VelvetWidgetBundle.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VelvetWidgetBundle.swift; sourceTree = "<group>"; };
+		F17BE902730A056327CF5C95 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
+		F499CAAEE92D01395A0603B3 /* VelvetWidgetPlugin.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; path = VelvetWidgetPlugin.m; sourceTree = "<group>"; };
 		FC68EB0AF532CFC21C3344DD /* Pods-App.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-App.debug.xcconfig"; path = "Pods/Target Support Files/Pods-App/Pods-App.debug.xcconfig"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		4FE5BD6C3F18AA0400AF2BC6 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C171C9B02BBC1C966A10D00A /* Foundation.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		504EC3011FED79650016851F /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -48,6 +103,7 @@
 			isa = PBXGroup;
 			children = (
 				AF277DCFFFF123FFC6DF26C7 /* Pods_App.framework */,
+				A8241FC461BA214980B0B4CF /* iOS */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -59,6 +115,7 @@
 				504EC3051FED79650016851F /* Products */,
 				7F8756D8B27F46E3366F6CEA /* Pods */,
 				27E2DDA53C4D2A4D1A88CE4A /* Frameworks */,
+				8D152781438B561CAB1C0242 /* VelvetWidget */,
 			);
 			sourceTree = "<group>";
 		};
@@ -66,6 +123,7 @@
 			isa = PBXGroup;
 			children = (
 				504EC3041FED79650016851F /* App.app */,
+				B4A3298757669DF10F6A8870 /* VelvetWidget.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -81,6 +139,9 @@
 				504EC3131FED79650016851F /* Info.plist */,
 				2FAD9762203C412B000D30F8 /* config.xml */,
 				50B271D01FEDC1A000F3C39B /* public */,
+				A5C99D821C2699BA077BB48F /* VelvetWidgetPlugin.swift */,
+				F499CAAEE92D01395A0603B3 /* VelvetWidgetPlugin.m */,
+				BA92098934E60433011800AD /* App.entitlements */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -92,6 +153,30 @@
 				AF51FD2D460BCFE21FA515B2 /* Pods-App.release.xcconfig */,
 			);
 			name = Pods;
+			sourceTree = "<group>";
+		};
+		8D152781438B561CAB1C0242 /* VelvetWidget */ = {
+			isa = PBXGroup;
+			children = (
+				1701B886CF7D0C374477E65A /* VelvetSnapshot.swift */,
+				4422B5621D3AF094DC3042DD /* VelvetPalette.swift */,
+				447D77047469495359B09285 /* VelvetDraw.swift */,
+				486ABC5FF10D1CF6C4242D69 /* VelvetCard.swift */,
+				B9A106331A6EEFC4DE940E04 /* VelvetFaces.swift */,
+				C2E3AEAD82EADD8152DE24EC /* VelvetWidgetBundle.swift */,
+				831A12A70B266A1C2DC95CF9 /* Info.plist */,
+				7FF4B50C8A8DC9335E165A5A /* VelvetWidget.entitlements */,
+			);
+			name = VelvetWidget;
+			path = VelvetWidget;
+			sourceTree = "<group>";
+		};
+		A8241FC461BA214980B0B4CF /* iOS */ = {
+			isa = PBXGroup;
+			children = (
+				F17BE902730A056327CF5C95 /* Foundation.framework */,
+			);
+			name = iOS;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -106,15 +191,34 @@
 				504EC3011FED79650016851F /* Frameworks */,
 				504EC3021FED79650016851F /* Resources */,
 				9592DBEFFC6D2A0C8D5DEB22 /* [CP] Embed Pods Frameworks */,
+				92C876AA844B8E7865D5FDF9 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				5950BE56A79F3EDE1E5A345C /* PBXTargetDependency */,
 			);
 			name = App;
 			productName = App;
 			productReference = 504EC3041FED79650016851F /* App.app */;
 			productType = "com.apple.product-type.application";
+		};
+		9C95083AD30E43CE77DB8547 /* VelvetWidget */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 783980C571C017719B2390FF /* Build configuration list for PBXNativeTarget "VelvetWidget" */;
+			buildPhases = (
+				46883E3572AAA5DBEEDAA9E4 /* Sources */,
+				4FE5BD6C3F18AA0400AF2BC6 /* Frameworks */,
+				BE9E4B0E7457514F12B45FC8 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = VelvetWidget;
+			productName = VelvetWidget;
+			productReference = B4A3298757669DF10F6A8870 /* VelvetWidget.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -146,6 +250,7 @@
 			projectRoot = "";
 			targets = (
 				504EC3031FED79650016851F /* App */,
+				9C95083AD30E43CE77DB8547 /* VelvetWidget */,
 			);
 		};
 /* End PBXProject section */
@@ -161,6 +266,13 @@
 				50379B232058CBB4000EE86E /* capacitor.config.json in Resources */,
 				504EC30D1FED79650016851F /* Main.storyboard in Resources */,
 				2FAD9763203C412B000D30F8 /* config.xml in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		BE9E4B0E7457514F12B45FC8 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -203,15 +315,39 @@
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		46883E3572AAA5DBEEDAA9E4 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8234454BECF8158312A35919 /* VelvetSnapshot.swift in Sources */,
+				09BA1D013EC2451C9089B581 /* VelvetPalette.swift in Sources */,
+				301632A2EFE3969C909143CD /* VelvetDraw.swift in Sources */,
+				397D613181FF4C32FE191ACB /* VelvetCard.swift in Sources */,
+				FF0FCAC6E77416AB8942FC51 /* VelvetFaces.swift in Sources */,
+				7E4D83A23FBA95D5FAC26F4B /* VelvetWidgetBundle.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		504EC3001FED79650016851F /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
+				48B479048CFB68CDA7FEE790 /* VelvetWidgetPlugin.swift in Sources */,
+				0C9EDD902D23739A4591FFBE /* VelvetWidgetPlugin.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		5950BE56A79F3EDE1E5A345C /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = VelvetWidget;
+			target = 9C95083AD30E43CE77DB8547 /* VelvetWidget */;
+			targetProxy = B2A43A3290CBC720F3B82B2F /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin PBXVariantGroup section */
 		504EC30B1FED79650016851F /* Main.storyboard */ = {
@@ -345,6 +481,7 @@
 			baseConfigurationReference = FC68EB0AF532CFC21C3344DD /* Pods-App.debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				INFOPLIST_FILE = App/Info.plist;
@@ -365,6 +502,7 @@
 			baseConfigurationReference = AF51FD2D460BCFE21FA515B2 /* Pods-App.release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				INFOPLIST_FILE = App/Info.plist;
@@ -378,6 +516,45 @@
 				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Release;
+		};
+		89DB188A8E276679D7D8A02A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = VelvetWidget/VelvetWidget.entitlements;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = VelvetWidget/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MARKETING_VERSION = 2.7.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.pgt.app.VelvetWidget;
+				PRODUCT_NAME = VelvetWidget;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		EDB3DE7050C2B90FA442F0EE /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = VelvetWidget/VelvetWidget.entitlements;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = VelvetWidget/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MARKETING_VERSION = 2.7.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.pgt.app.VelvetWidget;
+				PRODUCT_NAME = VelvetWidget;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
 		};
 /* End XCBuildConfiguration section */
 
@@ -396,6 +573,15 @@
 			buildConfigurations = (
 				504EC3171FED79650016851F /* Debug */,
 				504EC3181FED79650016851F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		783980C571C017719B2390FF /* Build configuration list for PBXNativeTarget "VelvetWidget" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				89DB188A8E276679D7D8A02A /* Release */,
+				EDB3DE7050C2B90FA442F0EE /* Debug */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
