@@ -8,6 +8,25 @@ let kVelvetSnapshotKey = "velvet_widget_snapshot"
 /// 当日牌面图在共享容器里的文件名（主 App 推快照时顺带拷进来，见 VelvetWidgetPlugin）
 let kVelvetTarotFile = "tarot_current.webp"
 
+/// 「清单」组件的一行未完成任务（V2.7）
+struct VelvetAgendaItem {
+    var title = ""
+    /// App 内「⭐ 重要」旗标——组件侧画琥珀高亮
+    var important = false
+    /// 计次任务的当前值 / 目标值（单次任务恒 0/1，组件不画）
+    var count = 0
+    var target = 1
+}
+
+/// 最紧迫的一件 BIG DEAL（未收官里截止日最近的）
+struct VelvetAgendaDeal {
+    var title = ""
+    var done = 0        // 步骤进度
+    var total = 0
+    var daysLeft: Int?  // 距截止几天（0=今天截止，负=已过期）；nil = 没设截止日
+    var timeUsed: Int?  // 倒计时进度 0-100：立项→截止已流逝比例；nil = 没设截止日
+}
+
 /// 快照的 iOS 侧读法（对位 Android 的 VelvetSnapshot.java）。
 ///
 /// 全部字段都当作"可能缺失"来读——快照是跨进程、跨版本的数据：用户可能刚升级
@@ -42,6 +61,12 @@ struct VelvetSnapshot {
 
     var fortuneLabel: String?
     var fortuneAccent = Color(hex: "#D4AF37") ?? .yellow
+
+    /// 「清单」组件（V2.7）：未完成任务明细 + BIG DEAL。
+    /// agendaLeft = 未完成总数（可能多于 agendaItems 长度，画「还有 N 项」用）。
+    var agendaItems: [VelvetAgendaItem] = []
+    var agendaLeft = 0
+    var agendaDeal: VelvetAgendaDeal?
 
     var dark = false
     var channel = "neutral"
@@ -87,6 +112,28 @@ struct VelvetSnapshot {
         if let f = o["fortune"] as? [String: Any] {
             s.fortuneLabel = f["label"] as? String
             if let a = f["accent"] as? String, let col = Color(hex: a) { s.fortuneAccent = col }
+        }
+        if let ag = o["agenda"] as? [String: Any] {
+            if let arr = ag["items"] as? [[String: Any]] {
+                s.agendaItems = arr.map { it in
+                    var v = VelvetAgendaItem()
+                    v.title = it["title"] as? String ?? ""
+                    v.important = it["important"] as? Bool ?? false
+                    v.count = it["count"] as? Int ?? 0
+                    v.target = max(1, it["target"] as? Int ?? 1)
+                    return v
+                }
+            }
+            s.agendaLeft = max(ag["left"] as? Int ?? 0, s.agendaItems.count)
+            if let d = ag["deal"] as? [String: Any] {
+                var v = VelvetAgendaDeal()
+                v.title = d["title"] as? String ?? ""
+                v.done = d["done"] as? Int ?? 0
+                v.total = d["total"] as? Int ?? 0
+                v.daysLeft = d["daysLeft"] as? Int   // JSON null → NSNull → as? Int 自然落到 nil
+                v.timeUsed = d["timeUsed"] as? Int
+                s.agendaDeal = v
+            }
         }
         s.dark = o["dark"] as? Bool ?? false
         s.channel = o["channel"] as? String ?? "neutral"

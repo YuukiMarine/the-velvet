@@ -64,6 +64,18 @@
                 android:resource="@xml/widget_journey_info" />
         </receiver>
 
+        <receiver
+            android:name=".VelvetWidgetAgenda"
+            android:label="@string/widget_agenda_name"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_agenda_info" />
+        </receiver>
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

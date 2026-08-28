@@ -16,6 +16,23 @@ import org.json.JSONObject;
  */
 class VelvetSnapshot {
 
+    /** 「清单」组件的一行未完成任务（V2.7） */
+    static final class AgendaItem {
+        String title = "";
+        boolean important;   // App 内「⭐ 重要」旗标——组件侧画琥珀高亮
+        int count;           // 计次任务的当前值 / 目标值（单次任务恒 0/1，组件不画）
+        int target = 1;
+    }
+
+    /** 最紧迫的一件 BIG DEAL（未收官里截止日最近的） */
+    static final class AgendaDeal {
+        String title = "";
+        int done;            // 步骤进度
+        int total;
+        Integer daysLeft;    // 距截止几天（0=今天截止，负=已过期）；null = 没设截止日
+        Integer timeUsed;    // 倒计时进度 0-100：立项→截止已流逝比例；null = 没设截止日
+    }
+
     boolean present;      // 有没有读到快照本体（没有 = 引导用户先打开一次 App）
     long at;
     String day = "--";
@@ -47,6 +64,13 @@ class VelvetSnapshot {
     /** 今日运势档（大吉/中吉/小吉/凶）与它的强调色；null = 今天还没抽 */
     String fortuneLabel;
     int fortuneAccent = Color.parseColor("#D4AF37");
+    /**
+     * 「清单」组件（V2.7）：未完成任务明细 + BIG DEAL。
+     * agendaLeft = 未完成总数（可能多于 agendaItems 长度，画「还有 N 项」用）。
+     */
+    AgendaItem[] agendaItems = new AgendaItem[0];
+    int agendaLeft;
+    AgendaDeal agendaDeal;
     /** 夜间模式：组件读不到 CSS，只能跟着快照走 */
     boolean dark;
 
@@ -114,6 +138,37 @@ class VelvetSnapshot {
                 try {
                     s.fortuneAccent = Color.parseColor(f.optString("accent", "#D4AF37"));
                 } catch (IllegalArgumentException ignored) { /* 颜色串脏了用缺省 */ }
+            }
+
+            JSONObject ag = o.optJSONObject("agenda");
+            if (ag != null) {
+                JSONArray ai = ag.optJSONArray("items");
+                if (ai != null) {
+                    s.agendaItems = new AgendaItem[ai.length()];
+                    for (int i = 0; i < ai.length(); i++) {
+                        AgendaItem it = new AgendaItem();
+                        JSONObject io = ai.optJSONObject(i);
+                        if (io != null) {
+                            it.title = io.optString("title", "");
+                            it.important = io.optBoolean("important", false);
+                            it.count = io.optInt("count", 0);
+                            it.target = Math.max(1, io.optInt("target", 1));
+                        }
+                        s.agendaItems[i] = it;
+                    }
+                }
+                s.agendaLeft = Math.max(ag.optInt("left", 0), s.agendaItems.length);
+                JSONObject dj = ag.optJSONObject("deal");
+                if (dj != null) {
+                    AgendaDeal d = new AgendaDeal();
+                    d.title = dj.optString("title", "");
+                    d.done = dj.optInt("done", 0);
+                    d.total = dj.optInt("total", 0);
+                    // JSON null 与字段缺失都要落回 null（没设截止日），不能变成 0（今天截止）
+                    if (!dj.isNull("daysLeft")) d.daysLeft = dj.optInt("daysLeft");
+                    if (!dj.isNull("timeUsed")) d.timeUsed = dj.optInt("timeUsed");
+                    s.agendaDeal = d;
+                }
             }
             s.dark = o.optBoolean("dark", false);
 
