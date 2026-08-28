@@ -26,6 +26,7 @@ const DashboardP3 = lazy(() => import('@/pages/p3/DashboardP3').then(m => ({ def
 // P5R（红主题）页面变体：P5UI 设计稿 1:1（channel==='p5' 时替换默认形态）
 const DashboardP5 = lazy(() => import('@/pages/p5/DashboardP5').then(m => ({ default: m.DashboardP5 })));
 import { useUiChannel } from '@/ui/useUiChannel';
+import { syncDarkClass, themeToChannel } from '@/ui/channel';
 const Achievements = lazy(() => import('@/pages/Achievements').then(m => ({ default: m.Achievements })));
 const Statistics = lazy(() => import('@/pages/Statistics').then(m => ({ default: m.Statistics })));
 const Settings = lazy(() => import('@/pages/Settings').then(m => ({ default: m.Settings })));
@@ -420,14 +421,12 @@ function App() {
   }, [settings.straightenMode]);
 
   // 同步 dark class 到 <html> 元素，使 index.css 中 html.dark 选择器可控制
-  // body 的背景色 —— 修复 iOS PWA standalone 模式下安全区白色条带
+  // body 的背景色 —— 修复 iOS PWA standalone 模式下安全区白色条带。
+  // 经 syncDarkClass 闸门：红频道（P5）铁律不响应夜间，依赖里挂 theme 是因为
+  // 切进/切出红主题时 .dark 要跟着摘/还（data-ui-channel 由 store 写点先行更新）。
   useEffect(() => {
-    if (settings.darkMode) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  }, [settings.darkMode]);
+    syncDarkClass(settings.darkMode);
+  }, [settings.darkMode, user?.theme]);
 
   // iOS PWA standalone has its own safe-area handling. Mark it from JS because
   // display-mode media queries are not reliable across all iOS 26 PWA launches.
@@ -611,7 +610,8 @@ function App() {
   };
 
   return (
-    <div className={`min-h-screen ${settings.darkMode ? 'dark' : ''}`}>
+    // 红频道（P5）不响应夜间：这层局部 dark 作用域与 <html> 的 .dark 同一口径闸门
+    <div className={`min-h-screen ${settings.darkMode && themeToChannel(user?.theme) !== 'p5' ? 'dark' : ''}`}>
       {/* Android 返回键双击退出 Toast */}
       <AnimatePresence>
         {showBackToast && (

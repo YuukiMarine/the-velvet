@@ -41,6 +41,19 @@ export const applyUiChannel = (theme: ThemeType | undefined | null): void => {
 export const currentChannel = (): UIChannel =>
   (document.documentElement.getAttribute('data-ui-channel') as UIChannel | null) ?? 'neutral';
 
+/**
+ * 全局 .dark class 的唯一闸门 —— 红频道（P5）铁律不响应夜间模式。
+ *
+ * 红主题的设置页已把夜间开关移除，但用户可能在别的主题开着夜间再切回红：
+ * darkMode 设置仍是 true，若照旧把 .dark 挂上 <html>，Tailwind 的 dark: 变体
+ * 就会在红频道整站点火（用户上报：星象页运势文字翻浅色）。
+ * 所有想写 .dark 的写点（App 效应、store 的设置/加载/换肤）一律经过这里；
+ * 依赖 data-ui-channel 已就位，因此必须在 applyUiChannel 之后调用。
+ */
+export const syncDarkClass = (darkMode: boolean): void => {
+  document.documentElement.classList.toggle('dark', darkMode && currentChannel() !== 'p5');
+};
+
 // ── ChannelSkin：频道级语气与文案词典（guide §10.1 / §12.2）──────────────────
 // classes 字段待 P7.3 原语组件落地时填充（避免在没有消费者时臆造类名集）。
 

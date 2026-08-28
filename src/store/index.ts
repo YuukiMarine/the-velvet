@@ -5,7 +5,7 @@ import { summarizeCounsel, type CounselContext, type CounselConfidantBrief, type
 import { db } from '@/db';
 import { v4 as uuidv4 } from 'uuid';
 import { calcMaxStreak, streakDates } from '@/utils/streak';
-import { applyUiChannel } from '@/ui/channel';
+import { applyUiChannel, syncDarkClass } from '@/ui/channel';
 import { computeAndSchedule, type NotifSnapshot } from '@/utils/notifications';
 import { getCachedNotifVoice, refreshNotifVoiceIfNeeded } from '@/utils/notifVoice';
 import { pushWidgetSnapshot } from '@/utils/widgetSnapshot';
@@ -935,6 +935,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       
       document.documentElement.setAttribute('data-theme', user.theme);
       applyUiChannel(user.theme);
+      // 频道就位后立刻按闸门重估 .dark（红频道要摘）；loadData 拿到落盘设置后还会再同步一次
+      syncDarkClass(!!get().settings.darkMode);
 
       await get().loadData();
       // F2a：历史成长总结一次性回填 viewedAt（=createdAt，视为已读），避免开启通知时旧总结被判「未读」刷屏。
@@ -1075,6 +1077,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       
       document.documentElement.setAttribute('data-theme', newUser.theme);
       applyUiChannel(newUser.theme);
+      syncDarkClass(!!get().settings.darkMode);
 
       // 星象：首次创建用户时留白，由用户主动进入星象页抽卡
       await get().loadDailyDivination();
@@ -1117,6 +1120,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ user: { ...user, theme } });
     document.documentElement.setAttribute('data-theme', theme);
     applyUiChannel(theme);
+    // 换肤后按闸门重估 .dark：切进红摘掉、切出红（且夜间开着）挂回
+    syncDarkClass(!!settings.darkMode);
     // 自定义主题：应用 CSS 变量
     if (theme === 'custom' && settings.customThemeColor) {
       applyCustomThemeColor(settings.customThemeColor);
@@ -1585,13 +1590,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ attributes: updatedAttributes });
     }
     
-    // 应用夜间模式设置
+    // 应用夜间模式设置（经闸门：红频道不响应夜间）
     if (updated.darkMode !== undefined) {
-      if (updated.darkMode) {
-        document.documentElement.classList.add('dark');
-      } else {
-        document.documentElement.classList.remove('dark');
-      }
+      syncDarkClass(updated.darkMode);
     }
 
     // F2a：仅当通知相关设置变动时重排（避免每次写设置都触发排程）
@@ -2787,12 +2788,8 @@ export const useAppStore = create<AppState>((set, get) => ({
          weeklyGoals,
        });
       
-      // 应用夜间模式设置
-       if (normalizedSettings.darkMode) {
-         document.documentElement.classList.add('dark');
-       } else {
-         document.documentElement.classList.remove('dark');
-       }
+      // 应用夜间模式设置（经闸门：红频道不响应夜间）
+       syncDarkClass(!!normalizedSettings.darkMode);
        // 自定义主题色
        const currentTheme = get().user?.theme;
        if (currentTheme === 'custom' && normalizedSettings.customThemeColor) {
