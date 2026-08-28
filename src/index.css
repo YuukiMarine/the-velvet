@@ -1488,6 +1488,32 @@ html[data-ios-standalone="true"] {
   animation: none !important;
 }
 
+/* ── P4 · VHS 扫描线（p4Kit.P4Scanlines）────────────────────────────────
+   细横纹层做 3px 周期的 translateY 循环（层本体向上/下各多铺 2px 防露缝），
+   追踪亮带从屏上滚到屏下。都是 transform 动画，不重排不重绘位图。 */
+.p4-vhs-lines {
+  background: repeating-linear-gradient(0deg, var(--p4-vhs-line, rgba(19, 19, 19, 0.13)) 0 1px, transparent 1px 3px);
+  animation: p4-vhs-drift 0.4s linear infinite;
+}
+@keyframes p4-vhs-drift {
+  to { transform: translateY(3px); }
+}
+.p4-vhs-band {
+  height: 90px;
+  background: linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.16), rgba(19, 19, 19, 0.05), transparent);
+  animation: p4-vhs-band 6.5s linear infinite;
+}
+@keyframes p4-vhs-band {
+  from { transform: translateY(-120px); }
+  to { transform: translateY(110vh); }
+}
+:root[data-boldness="0"] .p4-vhs-lines {
+  animation: none !important;
+}
+:root[data-boldness="0"] .p4-vhs-band {
+  display: none; /* 静止的亮带只是一条莫名的白杠，D0 下整条撤掉 */
+}
+
 /* ── 展示字重（v2.7 字体批次）：真 Black 中文面 ─────────────────────────────
    痛点根因（用户上报「Mac 上蓝/红主题字体没 Windows 好看」）：正文有 Velvet Sans SC
    变量字体兜着（100-900 真字重），但**频道标题的内联字体栈**写的是 "Noto Sans SC"——

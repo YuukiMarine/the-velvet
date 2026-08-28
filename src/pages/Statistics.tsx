@@ -571,6 +571,16 @@ export const Statistics = () => {
         </div>
       )}
       {p3 && <GhostWords words={['TRACE']} className="right-[8px] top-[-12px] text-right text-[78px]" style={{ transform: 'rotate(0deg)' }} />}
+      {isP4 && (
+        /* 天空圆窗 + 弧环挂在视差层外（页根）：斜轴内容列带出血补偿 padding，装饰留在
+           层内永远够不到真实屏幕缘；挂到层外后由 App 外壳的 overflow clip 在真实视口边
+           裁切——圆窗与弧环的右上角被屏幕咬掉一角（用户点名要的贴角出血）。
+           圆形装饰旋转不变，脱离斜面不损失「世界斜」。 */
+        <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0" style={{ zIndex: -1 }}>
+          <P4ArcRings size={250} className="absolute" style={{ right: '-4.5rem', top: 'calc(-6.5rem - env(safe-area-inset-top))' }} />
+          <P4SkyCircle size={150} style={{ right: '-2.75rem', top: 'calc(-2.25rem - env(safe-area-inset-top))' }} />
+        </div>
+      )}
       {/* 斜轴世界（§2 规则1）：整页内容平面随世界倾斜 -4°，卡片成平行四边形；
           每张卡的内容包 PlaneLevel 反制回水平（"世界斜、字不斜"）。聚焦输入自动校直。
           p3：频道 token --ui-axis 归零，本容器自动放平。 */}
@@ -604,12 +614,7 @@ export const Statistics = () => {
         </PlaneLevel>
       ) : isP4 ? (
         <PlaneLevel className="relative -mx-4 min-h-[152px] px-4 pb-1 pt-1" style={P4_HEADER_BLEED}>
-          {/* 斜轴页的内容列带出血补偿 padding，贴边的天空扇够不到真实屏幕角——右侧悬空
-              一截被平切（用户上报「实景天空被错误截断」）。换成与首页/行动页同语言的
-              悬浮圆窗：右缘与下方卡片同列对齐，顶部连同弧环一起越过页面 padding 与
-              刘海安全区出血到屏幕顶，哪一侧都不再有平切。 */}
-          <P4ArcRings size={250} className="absolute right-4" style={{ top: 'calc(-7rem - env(safe-area-inset-top))' }} />
-          <P4SkyCircle size={150} className="right-0" style={{ top: 'calc(-2.5rem - env(safe-area-inset-top))' }} />
+          {/* 天空圆窗与弧环在页根（视差层外）贴真实屏幕角出血，见上方 isP4 装饰层 */}
           <P4Sparkle size={18} color="#ffffff" className="absolute right-[34%] top-2" />
           <div className="flex items-start gap-2">
             <BackButton onClick={() => setCurrentPage('menu')} className="mt-3 -ml-1" />

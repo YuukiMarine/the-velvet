@@ -476,6 +476,45 @@ export const P4StageDecor = () => (
   </div>
 );
 
+/** 放大镜（P4 调查队符号：召唤页问题进度等「查明真相」场景用）。
+ *  粗圆框 + 45° 圆头柄 + 弧形高光；rim/glass 分开传色便于做状态区分。 */
+export const P4Magnifier = ({ size = 32, rim = 'var(--ui-ink, #131313)', glass = 'rgba(255,255,255,0.5)', className, style }: {
+  size?: number; rim?: string; glass?: string; className?: string; style?: CSSProperties;
+}) => (
+  <svg
+    aria-hidden
+    className={`pointer-events-none shrink-0 ${className ?? ''}`}
+    width={size}
+    height={size}
+    viewBox="0 0 32 32"
+    style={style}
+  >
+    <line x1="21.5" y1="21.5" x2="28.5" y2="28.5" stroke={rim} strokeWidth="5" strokeLinecap="round" />
+    <circle cx="13.5" cy="13.5" r="9.5" fill={glass} stroke={rim} strokeWidth="4" />
+    <path d="M8.6 12.2 Q9.6 8.8 12.6 7.6" stroke="rgba(255,255,255,0.9)" strokeWidth="2.2" fill="none" strokeLinecap="round" />
+  </svg>
+);
+
+/**
+ * VHS 扫描线（Midnight Channel 电视质感）：细横纹缓慢下滚 + 一条追踪亮带周期扫过。
+ * 两层都是纯 transform 动画（合成器友好）；D0 下由 index.css 的
+ * `:root[data-boldness="0"]` 规则停掉动画、只留静态纹理。
+ * 铺满某块区域使用：父容器 relative/fixed，本组件 absolute inset-0。
+ */
+export const P4Scanlines = ({ className, style, opacity = 0.5, line }: {
+  className?: string; style?: CSSProperties; opacity?: number;
+  /** 扫描线着色：亮底默认墨线；暗底（战场舞台）传浅奶油线才可见 */
+  line?: string;
+}) => (
+  <div aria-hidden className={`pointer-events-none absolute inset-0 overflow-hidden ${className ?? ''}`} style={style}>
+    <div
+      className="p4-vhs-lines absolute inset-x-0 -top-1 -bottom-2"
+      style={{ opacity, ...(line ? ({ '--p4-vhs-line': line } as CSSProperties) : null) }}
+    />
+    <div className="p4-vhs-band absolute inset-x-0 top-0" />
+  </div>
+);
+
 /** 警戒斜纹带（黑黄 DANGER 线）：危险区/重要提醒的边饰 */
 export const P4CautionStripes = ({ className, style, height = 8 }: {
   className?: string; style?: CSSProperties; height?: number;
