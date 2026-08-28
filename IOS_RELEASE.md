@@ -16,7 +16,7 @@
 | 1024 App 图标（无 alpha）、2732 启动屏（靛蓝底 + 印记） | ✅ Assets.xcassets |
 | 应用内**注销账号**（审核指南 5.1.1(v) 硬性要求） | ✅ 账号与数据页 → 永久删除云端账号 |
 | 隐私政策页 | ✅ `public/privacy.html` → 部署后即 `https://the-velvet.com/privacy.html` |
-| 原生桥安全性：小组件推送 iOS 上静默 no-op；备份导出走跨端 Filesystem/Share | ✅ 已核对 |
+| 原生桥安全性：小组件快照通道 iOS 已实装（VelvetWidgetPlugin）；备份导出走跨端 Filesystem/Share | ✅ 已核对 |
 
 图标源是 512px 的 PWA 图标放大到 1024——如果你手里有更大的原稿，替换
 `ios/App/App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png`（1024×1024、**不能带透明通道**）。
@@ -45,6 +45,13 @@ open ios/App/App.xcworkspace  # ⚠️ 打开 .xcworkspace，不是 .xcodeproj
 
 Xcode 里：
 1. 左侧选 App target → Signing & Capabilities → 勾 **Automatically manage signing** → Team 选你的开发者账号（首次需在 Xcode → Settings → Accounts 登录 Apple ID）。
+   **VelvetWidget target 也要同样操作一遍**（小组件扩展是独立 target，签名互不继承）。
+1b. **App Groups（小组件必需）**：developer.apple.com → Identifiers → 注册 App Group
+   `group.com.pgt.app`；然后给 `com.pgt.app` 与 `com.pgt.app.VelvetWidget` 两个 App ID
+   都开 App Groups 能力并勾上这个 group。Xcode 自动签名会自行重拉描述文件；
+   工程里两份 entitlements（App/App.entitlements、VelvetWidget/VelvetWidget.entitlements）
+   已配好，不用再改。漏掉这步的症状：主 App 正常，但组件永远显示「打开一次靛蓝色房间」
+   （App Group 容器建不起来，快照写不进去）。
 2. 顶部设备选一台真机或 “Any iOS Device (arm64)”。
 3. 先 ⌘R 跑真机过一遍冒烟（见 §5 清单），再 Product → **Archive**。
 4. Archive 完成后 Organizer 弹出 → **Distribute App → App Store Connect → Upload**，一路默认。
@@ -107,6 +114,7 @@ Xcode 里：
 - [ ] 通知权限弹窗（设置里开启提醒时才弹）；本地通知可送达
 - [ ] 语音输入弹麦克风权限（配了听觉档才可见）；头像上传弹相册选择器
 - [ ] 注册 / 登录 / 同步 / 退出 / **注销账号**全链路（用测试号）
+- [ ] 主屏加「今日/征途/牌与月」小组件 + 锁屏加「今日/征途」扁条，抽一张塔罗后确认组件跟着刷新
 - [ ] 备份导出唤起系统分享面板；从备份恢复成功
 - [ ] 断网启动：全功能可用（本地优先），AI 报错文案得体
 - [ ] 深色模式跟随系统；三主题切换转场正常

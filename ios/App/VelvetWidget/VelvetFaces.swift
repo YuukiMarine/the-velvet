@@ -213,3 +213,154 @@ enum Face {
         }
     }
 }
+
+// ── 锁屏 accessoryRectangular（对位安卓 4×1 compact 版式） ──────────────
+// 锁屏组件被系统按 vibrancy 渲染：彩色会被抹平成单色调，只有**明暗层次**能活下来。
+// 所以这两个版式全部用白色 + 不透明度分层画，让系统自己去染；
+// P3R 的斜切板/斜体字保留——形状语言在单色下依然认得出来。
+// 空间只有 ~160×72pt，比安卓 4×1 还挤：幽灵字、角标、月相名一律不上。
+extension Face {
+
+    /// 快照缺失时的单行引导（锁屏版 notSynced）
+    private static func lockNotSynced(_ ctx: inout GraphicsContext, _ w: CGFloat, _ h: CGFloat) {
+        Draw.text(&ctx, "打开一次靛蓝色房间", size: h * 0.24, color: .white, bold: true, slant: true,
+                  x: w / 2, baselineY: h * 0.58, align: .center)
+    }
+
+    /// 锁屏「今日」：日期大字 | 任务分数 + 迷你进度 | 热力条（安卓 dailyCompact 的信息序）
+    static func lockDaily(_ ctx: inout GraphicsContext, _ s: VelvetSnapshot, art: UIImage?,
+                          _ w: CGFloat, _ h: CGFloat) {
+        guard s.present else { lockNotSynced(&ctx, w, h); return }
+        let pad = h * 0.10
+
+        // 左：日期大字（28 + FRI 两行小签）
+        let dayW = Draw.measure(ctx, s.day, size: h * 0.56)
+        Draw.text(&ctx, s.day, size: h * 0.56, color: .white, bold: true, slant: true,
+                  x: pad, baselineY: h * 0.60)
+        Draw.text(&ctx, s.monthEn, size: h * 0.15, color: .white.opacity(0.75), bold: true, slant: false,
+                  x: pad + dayW + h * 0.12, baselineY: h * 0.38)
+        Draw.text(&ctx, s.weekdayEn, size: h * 0.15, color: .white.opacity(0.55), bold: true, slant: false,
+                  x: pad + dayW + h * 0.12, baselineY: h * 0.58)
+
+        // 右上：今日任务分数 + 迷你进度条
+        let px = pad + dayW + h * 0.75
+        let rx = w - pad
+        if s.todosTotal > 0 {
+            let frac = "\(s.todosDone)/\(s.todosTotal)"
+            let fw = Draw.measure(ctx, frac, size: h * 0.26)
+            Draw.text(&ctx, frac, size: h * 0.26, color: .white, bold: true, slant: true,
+                      x: px, baselineY: h * 0.40)
+            let barX = px + fw + h * 0.14
+            if rx - barX > h * 0.5 {
+                lockBar(&ctx, x: barX, y: h * 0.22, w: rx - barX, h: h * 0.16,
+                        ratio: Double(s.todosDone) / Double(s.todosTotal))
+            }
+        } else {
+            Draw.text(&ctx, "今日没有安排", size: h * 0.2, color: .white.opacity(0.75), bold: true, slant: false,
+                      x: px, baselineY: h * 0.40)
+        }
+
+        // 右下：热力条（最近 14 天，锁屏放 28 格会糊成噪点）
+        let keep = min(14, s.heat.count)
+        let tail = keep > 0 ? Array(s.heat.suffix(keep)) : [0]
+        lockHeat(&ctx, tail, x: px, y: h * 0.58, w: rx - px, h: h * 0.24)
+    }
+
+    /// 锁屏「征途」：连续大字 | 月相 | 宣告卡进度（安卓 journeyCompact 的信息序）
+    static func lockJourney(_ ctx: inout GraphicsContext, _ s: VelvetSnapshot, art: UIImage?,
+                            _ w: CGFloat, _ h: CGFloat) {
+        guard s.present else { lockNotSynced(&ctx, w, h); return }
+        let pad = h * 0.10
+
+        // 左：连续天数（征途的核心读数）——白斜板 + 反白数字，单色下也立得住
+        let st = String(s.streak)
+        let stW = Draw.measure(ctx, st, size: h * 0.42)
+        let unitW = Draw.measure(ctx, "天连续", size: h * 0.17, bold: true)
+        let plateW = stW + unitW + h * 0.4
+        Draw.slab(&ctx, pad, h * 0.16, pad + plateW, h * 0.62, cut: h * 0.14, color: .white.opacity(0.92))
+        Draw.text(&ctx, st, size: h * 0.42, color: .black, bold: true, slant: true,
+                  x: pad + h * 0.14, baselineY: h * 0.52)
+        Draw.text(&ctx, "天连续", size: h * 0.17, color: .black.opacity(0.8), bold: true, slant: false,
+                  x: pad + h * 0.17 + stW, baselineY: h * 0.50)
+
+        // 左下：月相 + 亮度读数
+        let mr = h * 0.11
+        Draw.moonMono(&ctx, phase: s.moonPhase, cx: pad + mr, cy: h * 0.82, r: mr)
+        Draw.text(&ctx, "\(Int((s.moonIllum * 100).rounded()))%", size: h * 0.16,
+                  color: .white.opacity(0.7), bold: true, slant: false,
+                  x: pad + mr * 2 + h * 0.1, baselineY: h * 0.875)
+
+        // 右：宣告卡（无卡 → 今日任务补位）
+        let px = pad + plateW + h * 0.35
+        let rx = w - pad
+        if let title = s.cardTitle, !title.isEmpty, rx - px > h * 0.8 {
+            let t = Draw.fit(ctx, title, size: h * 0.19, maxW: rx - px)
+            Draw.text(&ctx, t, size: h * 0.19, color: .white.opacity(0.85), bold: true, slant: false,
+                      x: px, baselineY: h * 0.36)
+            let pct = "\(s.cardPercent)%"
+            let pw = Draw.measure(ctx, pct, size: h * 0.26)
+            Draw.text(&ctx, pct, size: h * 0.26, color: .white, bold: true, slant: true,
+                      x: px, baselineY: h * 0.72)
+            let barX = px + pw + h * 0.14
+            if rx - barX > h * 0.5 {
+                lockBar(&ctx, x: barX, y: h * 0.56, w: rx - barX, h: h * 0.16,
+                        ratio: Double(s.cardPercent) / 100)
+            }
+        } else if s.todosTotal > 0, rx - px > h * 0.8 {
+            Draw.text(&ctx, "今日任务", size: h * 0.17, color: .white.opacity(0.7), bold: true, slant: false,
+                      x: px, baselineY: h * 0.36)
+            let frac = "\(s.todosDone)/\(s.todosTotal)"
+            let fw = Draw.measure(ctx, frac, size: h * 0.26)
+            Draw.text(&ctx, frac, size: h * 0.26, color: .white, bold: true, slant: true,
+                      x: px, baselineY: h * 0.72)
+            let barX = px + fw + h * 0.14
+            if rx - barX > h * 0.5 {
+                lockBar(&ctx, x: barX, y: h * 0.56, w: rx - barX, h: h * 0.16,
+                        ratio: Double(s.todosDone) / Double(s.todosTotal))
+            }
+        }
+    }
+
+    /// 锁屏迷你进度条：白轨（低不透明度）+ 白填充，斜切形保留
+    private static func lockBar(_ ctx: inout GraphicsContext,
+                                x: CGFloat, y: CGFloat, w: CGFloat, h: CGFloat, ratio: Double) {
+        let cut = h * 0.62
+        Draw.slab(&ctx, x, y, x + w, y + h, cut: cut, color: .white.opacity(0.28))
+        let p = CGFloat(max(0, min(1, ratio)))
+        if p > 0 {
+            ctx.drawLayer { layer in
+                layer.clip(to: Draw.slabPath(x, y, x + w, y + h, cut: cut))
+                var l = layer
+                Draw.slab(&l, x, y, x + max(h * 1.2, w * p), y + h, cut: cut, color: .white)
+            }
+        }
+    }
+
+    /// 锁屏热力条：白色不透明度四档（彩色 shade 在 vibrancy 下没有意义）
+    private static func lockHeat(_ ctx: inout GraphicsContext, _ heat: [Int],
+                                 x: CGFloat, y: CGFloat, w: CGFloat, h: CGFloat) {
+        let n = max(1, heat.count)
+        let gap = max(1.0, w / CGFloat(n) * 0.16)
+        let cw = (w - gap * CGFloat(n - 1)) / CGFloat(n)
+        let cut = min(cw * 0.42, h * 0.28)
+        for i in 0..<n {
+            let v = i < heat.count ? heat[i] : 0
+            let op: Double = v <= 0 ? 0.22 : v >= 5 ? 1 : v >= 3 ? 0.8 : v >= 2 ? 0.6 : 0.42
+            let cx = x + CGFloat(i) * (cw + gap)
+            Draw.slab(&ctx, cx, y, cx + cw, y + h, cut: cut, color: .white.opacity(op))
+        }
+    }
+}
+
+extension Draw {
+    /// 单色月相：白圈 + 白亮面（锁屏用；彩色版见 moon）
+    static func moonMono(_ ctx: inout GraphicsContext, phase: Double,
+                         cx: CGFloat, cy: CGFloat, r: CGFloat) {
+        ctx.stroke(Path(ellipseIn: CGRect(x: cx - r, y: cy - r, width: r * 2, height: r * 2)),
+                   with: .color(.white.opacity(0.6)), lineWidth: max(1, r * 0.16))
+        let illum = (1 - cos(2 * Double.pi * phase)) / 2
+        let ir = r * 0.62 * CGFloat(max(0.15, illum))
+        ctx.fill(Path(ellipseIn: CGRect(x: cx - ir, y: cy - ir, width: ir * 2, height: ir * 2)),
+                 with: .color(.white))
+    }
+}
