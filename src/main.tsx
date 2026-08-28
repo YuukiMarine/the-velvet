@@ -3,6 +3,29 @@ import ReactDOM from 'react-dom/client'
 import App from './App.tsx'
 import './index.css'
 
+// ── 双指缩放闸（iOS：WKWebView / 主屏 PWA / Safari 标签页三处都拦） ─────────
+// 用户上报「双指向外拉伸整个页面会被放大」，模拟器实测复现：页面被放成碎片、
+// 布局全毁，而且缩回去也不一定复位。这是应用外壳而非可缩放文档，缩放没有意义。
+//   · meta viewport 的 maximum-scale/user-scalable 管住 WKWebView 与主屏 PWA；
+//   · iOS Safari 标签页出于无障碍会忽略那两个属性 —— 得靠这里的手势事件闸：
+//     gesturestart/change/end 是 WebKit 私有的捏合事件，拦掉即不缩放；
+//   · 双指 touchmove 是 **Chromium（安卓 WebView / 安卓 Chrome PWA）那一侧的主力**
+//     —— gesture* 是 WebKit 私有事件，Chromium 根本不派发，指望它拦安卓是拦不住的；
+//   · 捏合与双击缩放还有 CSS 的 touch-action: pan-x pan-y 兜底（见 index.css），
+//     安卓 APK 另在 MainActivity 里把 WebView 的 setSupportZoom 直接关死。
+// passive: false 是必须的 —— 被动监听器里 preventDefault 会被浏览器忽略。
+(() => {
+  const stop = (e: Event) => e.preventDefault();
+  document.addEventListener('gesturestart', stop, { passive: false });
+  document.addEventListener('gesturechange', stop, { passive: false });
+  document.addEventListener('gestureend', stop, { passive: false });
+  document.addEventListener(
+    'touchmove',
+    (e) => { if ((e as TouchEvent).touches.length > 1) e.preventDefault(); },
+    { passive: false },
+  );
+})();
+
 // ── 开发调试：按需加载 eruda（手机上的元素检查器 + 控制台） ───────────────
 // 使用方式：
 //   · 启用：访问 https://the-velvet.com/?debug=1（URL 里带 ?debug=1）
@@ -102,6 +125,15 @@ if (isResetPasswordPath) {
         </ErrorBoundary>
       </React.StrictMode>,
     );
+  }).catch(() => {
+    // chunk 拉取失败（弱网 / 部署后旧哈希失效）：这是从邮件点入的关键路径，
+    // 空白页会被读成"链接坏了"。给一句人话 + 刷新按钮（刷新拿新哈希即可自愈）
+    rootEl.innerHTML =
+      '<div style="min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;font-family:system-ui,sans-serif;color:#374151;padding:24px;text-align:center">' +
+      '<div style="font-size:15px;font-weight:600">页面加载失败</div>' +
+      '<div style="font-size:13px;color:#6b7280">网络不稳或版本已更新，刷新即可重试。</div>' +
+      '<button onclick="location.reload()" style="padding:10px 28px;border-radius:10px;border:none;background:#3b82f6;color:#fff;font-size:14px;font-weight:600;cursor:pointer">刷新</button>' +
+      '</div>';
   });
 } else {
   ReactDOM.createRoot(rootEl).render(

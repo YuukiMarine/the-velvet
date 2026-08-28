@@ -297,6 +297,38 @@ export interface DailyDivination {
   createdAt: Date;
 }
 
+// ── 窥探命运（v2.7）：连续 7 天集齐每日塔罗后的总占卜 ─────────────
+//
+// 触发条件：最近 7 天（含今天）每天都有每日塔罗，且距上一次窥探 ≥7 天
+// （窗口恰为 7 天，两个条件合起来 = 每张牌只被消耗一次）。
+// 奖励 buff 自创建日起连续 3 天（buffStart ≤ 今天 ≤ buffEnd）：
+//   · 逆影战场伤害加算 +10%（battle/numbers.ts FATE_GLIMPSE_ADD）
+//   · 每日首次带加点的记录，加点最高的那项属性额外 +1（store.addActivity）
+
+export interface FateGlimpseDay {
+  date: string;                 // YYYY-MM-DD
+  cardId: string;
+  orientation: TarotOrientation;
+  fortune?: Fortune;
+  /** 当日塔罗选中的加成属性 */
+  attribute: AttributeId;
+}
+
+export interface FateGlimpse {
+  id: string;
+  /** 七日牌阵（date 升序，恰 7 项） */
+  days: FateGlimpseDay[];
+  /** 一句命运结语（翻面亮相用，8~16 字） */
+  verdict: string;
+  summary: string;              // 总结：七日轨迹回望
+  outlook: string;              // 展望：接下来三天走向
+  advice: string;               // 建议：2~3 条（换行分隔）
+  source: 'ai' | 'offline';
+  buffStart: string;            // YYYY-MM-DD（含）
+  buffEnd: string;              // YYYY-MM-DD（含）= buffStart + 2 天
+  createdAt: Date;
+}
+
 export interface LongReadingFollowUp {
   id: string;
   question: string;
@@ -449,6 +481,9 @@ export interface Settings {
   // ── F2a 本地通知 ─────────────────────────────────────────
   /** 本地通知总开关。默认 false = 关；开启需用户授予系统通知权限（仅原生平台生效）。 */
   notificationsEnabled?: boolean;
+  /** 让助手写提醒文案（v2.7 notifVoice）：每天用当前人格口吻生成一套推送文案，
+   *  失败/离线静默退回内置文案库 */
+  notifAIVoice?: boolean;
   /** 每日提醒时段列表；缺省时回退到 DEFAULT_SETTINGS 的两槽（晨/晚）。 */
   notificationSlots?: NotifSlot[];
   /** F2a 一次性回填标记：历史成长总结的 viewedAt 已补齐（视为已读），避免开启通知时旧总结被判未读。 */
@@ -827,6 +862,8 @@ export interface NavigatorMessageRow {
   sessionId: string;
   role: 'cat' | 'user' | 'card' | 'summary';
   text?: string;
+  /** 用户随消息附的图片（降采样 data URL；FS3.4 聊天发图）。可选字段，Dexie 无需升版 */
+  imageDataUrl?: string;
   draftJson?: string;
   cardStatus?: 'pending' | 'done' | 'cancelled';
   /** 用户手改过这张卡（进卡片实录，让模型知道内容已不是它提议的那版） */

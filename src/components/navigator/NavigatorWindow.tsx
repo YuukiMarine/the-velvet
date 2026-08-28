@@ -35,6 +35,9 @@ import {
 } from '@/utils/navigatorRegistry';
 import { themeToChannel } from '@/ui/channel';
 import { speechAvailable, recorderSupported, startRecording, transcribe, type Recording } from '@/utils/speech';
+import { readAsDataUrl, downscaleDataUrl } from '@/utils/imageCrop';
+import { getVisionAIConfig } from '@/utils/aiClient';
+import { CameraIcon, MicIcon } from '@/components/settingsIcons';
 
 /** 当前人格的头像（剪影集/上传双轨；订阅 sessionId——切人格必换会话，借它触发重渲染）
  *
@@ -422,6 +425,21 @@ export const NavigatorWindow = () => {
   // 只在「配了听觉档 + 这个环境能录音」时出现；转写结果**回填输入框**不自动发送。
   const settings = useAppStore((s) => s.settings);
   const micVisible = speechAvailable(settings) && recorderSupported();
+
+  // ── 📷 聊天发图（FS3.4）：配了视觉档才出现；选图 → 降采样 → 预览片 → 随消息发送。
+  // 图在收口时经视觉档转述成文字并入 batch（store 侧），分诊/表演两相都吃转述文本。
+  const camVisible = !!getVisionAIConfig(settings);
+  const [shot, setShot] = useState<string | null>(null);
+  const shotFileRef = useRef<HTMLInputElement | null>(null);
+  const pickShot = async (f: File) => {
+    try {
+      const raw = await readAsDataUrl(f);
+      // 聊天场景比小票更宽容：1280 长边足够视觉模型读清截图/照片，体积也稳
+      setShot(await downscaleDataUrl(raw, 1280, 0.8));
+    } catch {
+      setShot(null);
+    }
+  };
   const [micState, setMicState] = useState<'idle' | 'recording' | 'transcribing'>('idle');
   const [micHint, setMicHint] = useState<string | null>(null);
   const recRef = useRef<Recording | null>(null);
@@ -563,12 +581,13 @@ export const NavigatorWindow = () => {
   };
   const send = () => {
     const text = input.trim();
-    if (!text) return;
-    nav.userSend(text); // 进仲裁器：收口/打断由它裁决
+    if (!text && !shot) return;
+    nav.userSend(text, shot ?? undefined); // 进仲裁器：收口/打断由它裁决
     // 递刀检测（TASKS_MERGE_PRD §4.4）：纯客户端关键词，不给分诊/表演加任何职责。
     // 发送后命中的话，chip 留在场上等这轮倾诉说完
-    setSentStuck(detectStagnation(text) ? text : null);
+    setSentStuck(text && detectStagnation(text) ? text : null);
     setInput('');
+    setShot(null);
     nav.setInputActive(false);
   };
 
@@ -964,7 +983,48 @@ export const NavigatorWindow = () => {
 
               {/* 输入栏 */}
               <div className={`px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-2 ${sk.inputBar ?? ''}`} style={sk.inputBarStyle}>
+                {/* 待发送的图片预览片（点 ✕ 撤下；随下一次发送一并带走） */}
+                {shot && (
+                  <div className="mb-2 flex items-center gap-2">
+                    <span className="relative inline-block">
+                      <img src={shot} alt="待发送的图片" className="h-14 w-14 rounded-lg object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => setShot(null)}
+                        aria-label="移除图片"
+                        className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-black/70 text-[10px] font-black text-white"
+                      >
+                        ✕
+                      </button>
+                    </span>
+                    <span className={`text-[11px] font-bold ${bright ? 'text-[#3c69c9]' : 'text-gray-400'}`}>随下一条消息发出</span>
+                  </div>
+                )}
                 <div className="flex items-center gap-2">
+                  {camVisible && (
+                    <>
+                      <input
+                        ref={shotFileRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          e.target.value = '';
+                          if (f) void pickShot(f);
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => shotFileRef.current?.click()}
+                        aria-label="发送图片"
+                        title="发送图片（票据 / 日程表 / 截图都行）"
+                        className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full ${bright ? 'bg-white/80 text-[#26608c]' : 'bg-white/10 text-gray-300'}`}
+                      >
+                        <CameraIcon className="h-5 w-5" />
+                      </button>
+                    </>
+                  )}
                   <input
                     value={input}
                     onChange={(e) => {
@@ -994,15 +1054,15 @@ export const NavigatorWindow = () => {
                       disabled={micState === 'transcribing'}
                       aria-label={micState === 'recording' ? '松手结束录音' : '按住说话'}
                       title={micState === 'recording' ? '松手结束' : '按住说话'}
-                      className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-lg transition-transform disabled:opacity-50 ${
-                        micState === 'recording' ? 'scale-110 bg-red-500 text-white' : bright ? 'bg-white/80' : 'bg-white/10'
+                      className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition-transform disabled:opacity-50 ${
+                        micState === 'recording' ? 'scale-110 bg-red-500 text-white' : bright ? 'bg-white/80 text-[#26608c]' : 'bg-white/10 text-gray-300'
                       }`}
                       style={{ touchAction: 'none' }}
                     >
-                      {micState === 'transcribing' ? '…' : '🎤'}
+                      {micState === 'transcribing' ? <span className="text-lg">…</span> : <MicIcon className="h-5 w-5" />}
                     </button>
                   )}
-                  <button type="button" onClick={send} disabled={!input.trim()} aria-label="发送" className={sk.send} style={sk.sendStyle}>
+                  <button type="button" onClick={send} disabled={!input.trim() && !shot} aria-label="发送" className={sk.send} style={sk.sendStyle}>
                     ▶
                   </button>
                 </div>
@@ -1140,17 +1200,36 @@ const MessageRow = ({ m, sk, bright, p5 = false, p4 = false, busy, onConfirm, on
     );
   }
   if (m.role === 'user') {
+    // 聊天发图（FS3.4 v2）：图与文字**各开一只泡**、上下堆叠。此前同泡混排，
+    // 气泡宽度被图片撑开后文字被挤到侧边拉成细长条（用户上报）；拆泡后图走图的框、
+    // 字走字的排版，任何皮肤下都不再互相干扰。只有图或只有字则只出对应那只泡。
+    const shotImg = m.imageDataUrl ? (
+      <img src={m.imageDataUrl} alt="发送的图片" className="block max-h-56 w-auto max-w-full rounded-lg" />
+    ) : null;
     return (
-      <div className="flex justify-end" data-spine-side="user">
-        <BubbleIn side="user">
-          {p5 ? (
-            <P5Bubble side="user">{m.text}</P5Bubble>
-          ) : (
-            <div className={`whitespace-pre-wrap px-[18px] py-[11px] text-[15.4px] font-bold leading-relaxed ${sk.userBubble}`} style={{ ...sk.userBubbleStyle, overflowWrap: 'anywhere' }}>
-              {m.text}
-            </div>
-          )}
-        </BubbleIn>
+      <div className="flex flex-col items-end gap-1.5" data-spine-side="user">
+        {shotImg && (
+          <BubbleIn side="user">
+            {p5 ? (
+              <P5Bubble side="user">{shotImg}</P5Bubble>
+            ) : (
+              <div className={`p-[8px] ${sk.userBubble}`} style={sk.userBubbleStyle}>
+                {shotImg}
+              </div>
+            )}
+          </BubbleIn>
+        )}
+        {m.text ? (
+          <BubbleIn side="user">
+            {p5 ? (
+              <P5Bubble side="user">{m.text}</P5Bubble>
+            ) : (
+              <div className={`whitespace-pre-wrap px-[18px] py-[11px] text-[15.4px] font-bold leading-relaxed ${sk.userBubble}`} style={{ ...sk.userBubbleStyle, overflowWrap: 'anywhere' }}>
+                {m.text}
+              </div>
+            )}
+          </BubbleIn>
+        ) : null}
       </div>
     );
   }

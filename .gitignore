@@ -43,6 +43,18 @@ android/app/src/main/assets/capacitor.config.json
 android/app/src/main/assets/capacitor.plugins.json
 android/app/src/main/res/xml/config.xml
 
+# iOS build artifacts / caches（ios/.gitignore 已覆盖同款，这里是根级双保险：
+# 那份文件一旦被误删，`git add ios/` 会把 build/Pods/本机绝对路径整包带上远端）
+ios/App/build/
+ios/App/Pods/
+ios/App/output/
+ios/App/App/public/
+ios/App/App/capacitor.config.json
+ios/App/App/config.xml
+ios/DerivedData/
+ios/capacitor-cordova-ios-plugins/
+xcuserdata/
+
 # Scripts compiled output
 scripts/*.class
 
@@ -59,3 +71,8 @@ scripts/*.class
 
 # 塔罗原稿（118 MB PNG）：只提交 public/tarot 下压缩后的 webp，原稿留在本地
 /tarot/
+
+# 部署配置不入库：域名 / 证书路径 / root 全是特定机器的，且极易与线上脱节。
+# （旧版曾在仓库里躺了几个月、和线上没有一处对得上，排查时反而把人带偏。）
+# 线上那份以部署机上的站点配置为准（证书由 ACME 客户端自动续期）。
+nginx.conf

@@ -20,6 +20,9 @@ import { useUiChannel } from '@/ui/useUiChannel';
 import { P4Sparkle } from '@/ui/p4Kit';
 import { SectionMark, SlantButton } from '@/components/p3r/kit';
 import { P5R, P5_FONT, roughSlant, starPts, P5Star, P5StarFab } from '@/components/p5r/kit';
+import { extractActivitiesFromImage, type ActivityIntakeItem } from '@/utils/visionIntake';
+import { readAsDataUrl, downscaleDataUrl } from '@/utils/imageCrop';
+import { getVisionAIConfig } from '@/utils/aiClient';
 
 /** 成长总结入口：左低右高的平行四边形（P5 反板正口径，四边斜率各不相同） */
 const SUMMARY_SHAPE = 'polygon(7px 0, 100% 2px, calc(100% - 6px) 100%, 0 calc(100% - 3px))';
@@ -495,6 +498,40 @@ export const ActivitiesView = () => {
   // P3R（蓝频道）：p3-modal-03 稿——字段/步进器经基座与通用件自动换装，此处只管按钮与节标
   const p3 = useUiChannel() === 'p3';
   const [description, setDescription] = useState('');
+
+  // ── 📷 战绩截图导入（FS3.4-③，走视觉档）：运动/学习/阅读 App 的截图 → 记录文本。
+  // 读出 1 条直接回填输入框；多条列成 chips 逐条点选追加。给分仍走既有分析流。
+  const shotVision = !!getVisionAIConfig(settings);
+  const shotFileRef = useRef<HTMLInputElement | null>(null);
+  const [shotBusy, setShotBusy] = useState(false);
+  const [shotHint, setShotHint] = useState<string | null>(null);
+  const [shotPicks, setShotPicks] = useState<ActivityIntakeItem[] | null>(null);
+  const appendDescription = (text: string) =>
+    setDescription(prev => (prev.trim() ? `${prev.trim()}；${text}` : text));
+  const handleActivityShot = async (f: File) => {
+    if (shotBusy) return;
+    setShotBusy(true);
+    setShotHint(null);
+    setShotPicks(null);
+    try {
+      const raw = await readAsDataUrl(f);
+      const dataUrl = await downscaleDataUrl(raw);
+      const items = await extractActivitiesFromImage(dataUrl, settings, settings.attributeNames);
+      if (!items.length) {
+        setShotHint('这张截图里没读出可入档的事——换一张试试');
+      } else if (items.length === 1) {
+        appendDescription(items[0].text);
+        setShotHint('已回填，点「分析」给分');
+      } else {
+        setShotPicks(items);
+      }
+    } catch (e) {
+      setShotHint(e instanceof Error ? e.message : '解析失败，稍后再试');
+    } finally {
+      setShotBusy(false);
+    }
+  };
+
   const [analyzedPoints, setAnalyzedPoints] = useState<Record<string, number> | null>(null);
   const [manualPoints, setManualPoints] = useState<Record<string, number>>({
     knowledge: 0, guts: 0, dexterity: 0, kindness: 0, charm: 0
@@ -1428,6 +1465,52 @@ export const ActivitiesView = () => {
           rows={3}
           autoFocus
         />
+
+        {/* 📷 战绩截图导入（配了视觉档才出现）：Keep/背单词/读书 App 的战绩截图直接转记录文本 */}
+        {shotVision && (
+          <div className="mt-2">
+            <input
+              ref={shotFileRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                e.target.value = '';
+                if (f) void handleActivityShot(f);
+              }}
+            />
+            <button
+              type="button"
+              disabled={shotBusy}
+              onClick={() => shotFileRef.current?.click()}
+              className="w-full rounded-xl border border-dashed border-gray-300 px-3 py-2 text-left text-xs font-bold text-gray-500 disabled:opacity-60 dark:border-gray-600 dark:text-gray-400"
+            >
+              {shotBusy ? '📷 正在读取截图…' : '📷 用战绩截图代替打字（运动 / 学习 / 阅读 App 都行）'}
+            </button>
+            {shotHint && <p className="mt-1 text-[11px] text-gray-400 dark:text-gray-500">{shotHint}</p>}
+            {shotPicks && (
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                {shotPicks.map((it, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => {
+                      appendDescription(it.text);
+                      setShotPicks(picks => {
+                        const rest = (picks ?? []).filter((_, j) => j !== i);
+                        return rest.length ? rest : null;
+                      });
+                    }}
+                    className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-bold text-primary"
+                  >
+                    ＋ {it.text}{it.attribute ? ` · ${settings.attributeNames[it.attribute]}` : ''}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/*
           ── 分析按钮：双形态 ─────────────────────────────────────

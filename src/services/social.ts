@@ -608,12 +608,17 @@ const settleFinishedShadows = async (): Promise<void> => {
   const me = getUserId();
   if (!me) return;
   const socialStore = useCloudSocialStore.getState();
-  const appStore = useAppStore.getState();
   const shadows = socialStore.coopShadows;
 
   for (const s of shadows) {
     if (s.status === 'active') continue;
-    // 找到本地对应的 online Confidant（按 bondId 对应的对方 userId）
+    // 找到本地对应的 online Confidant（按 bondId 对应的对方 userId）。
+    // ⚠️ 状态快照必须**每轮重取**：zustand 的 getState() 是一次性快照，此前在循环外
+    // 取一次——同一位同伴名下有多只已结束的影时，第二轮拿到的还是第一轮 claim 之前
+    // 的 confidant，其 coopMemorials 缺第一枚 stamp，追加时把它整个覆盖丢——下次
+    // 同步/进页 settle 又认为第一只"没领过"，奖励重发、结算屏在新设备上重放
+    //（用户上报「shadow retreated 弹窗重复弹出多次」的放大器之一）。
+    const appStore = useAppStore.getState();
     const partnerId = s.userAId === me ? s.userBId : s.userAId;
     const confidant = appStore.confidants.find(
       c => c.source === 'online' && !c.archivedAt && c.linkedCloudUserId === partnerId,
@@ -742,7 +747,10 @@ async function claimVictoryReward(
     myDamage,
   };
   try {
-    const current = confidant.coopMemorials ?? [];
+    // 写前重读最新 coopMemorials：本函数前面几步（加属性/亲密度）都会写 store，
+    // 拿参数里的旧对象追加会把并发新增的 stamp 覆盖丢（见 settleFinishedShadows 注释）
+    const fresh = useAppStore.getState().confidants.find(c => c.id === confidant.id);
+    const current = fresh?.coopMemorials ?? confidant.coopMemorials ?? [];
     await appStore.updateConfidant(confidant.id, {
       coopMemorials: [...current, stamp],
     });
@@ -794,7 +802,9 @@ async function claimRetreatReward(
     winners: [],
   };
   try {
-    const current = confidant.coopMemorials ?? [];
+    // 写前重读最新 coopMemorials（同 claimVictoryReward：防旧对象覆盖并发新增的 stamp）
+    const fresh = useAppStore.getState().confidants.find(c => c.id === confidant.id);
+    const current = fresh?.coopMemorials ?? confidant.coopMemorials ?? [];
     await appStore.updateConfidant(confidant.id, {
       coopMemorials: [...current, retreatStamp],
     });

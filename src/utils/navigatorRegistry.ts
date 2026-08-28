@@ -255,6 +255,11 @@ export interface NavigatorSnapshot {
    * 猫在这种时候要说的第一句话不是"今天任务还剩几条"，是"你可算回来了"。
    */
   daysAway?: number;
+  /**
+   * 最新一份未读成长总结的标签（如「2026年第33周」）；没有未读则 undefined。
+   * 问候顺带提一句（用户需求：有新周报时 Agent 打招呼要能带到）。
+   */
+  unreadSummaryLabel?: string;
 }
 
 export function buildSnapshot(): NavigatorSnapshot {
@@ -264,6 +269,10 @@ export function buildSnapshot(): NavigatorSnapshot {
   const done = due.filter((t) => s.getTodayTodoProgress(t.id).isComplete).length;
   const tarot = s.dailyDivination && s.dailyDivination.date === dateKey ? s.dailyDivination : null;
   const activityCountToday = s.activities.filter((a) => toLocalDateKey(new Date(a.date)) === dateKey).length;
+  // 未读成长总结（loadData 已把 summaries 灌进 store）：取最新一份未读的标签
+  const unread = s.summaries
+    .filter((x) => !x.viewedAt)
+    .sort((a, b) => b.startDate.localeCompare(a.startDate))[0];
   return {
     dateKey,
     hour: new Date().getHours(),
@@ -274,6 +283,7 @@ export function buildSnapshot(): NavigatorSnapshot {
     tarotCardName: tarot ? TAROT_BY_ID[tarot.cardId]?.name : undefined,
     activityCountToday,
     daysAway: daysAwayNow(s.settings.lastOpenedAt),
+    unreadSummaryLabel: unread?.label,
     // terminalStepTitle 字段保留在类型上（navigatorIntent 仍引用），终端退役后恒 undefined
   };
 }
@@ -318,6 +328,10 @@ export function buildDailyGreeting(snap: NavigatorSnapshot): string {
           : pick([`晚上好，${snap.userName}。今天过得怎么样？`, `夜里好。今天的事，记完就放下。`]);
 
   const status: string[] = [];
+  // 未读总结放最前：用户点名要的提醒，不能被 slice(0,2) 挤掉
+  if (snap.unreadSummaryLabel) {
+    status.push(`对了，「${snap.unreadSummaryLabel}」的成长总结写好了还没拆——去统计页看看。`);
+  }
   if (snap.todosTotal > 0) {
     status.push(snap.todosDone >= snap.todosTotal
       ? `今日任务全清了，${snap.todosDone}/${snap.todosTotal}——少见，值得记一笔。`

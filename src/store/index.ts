@@ -1,5 +1,5 @@
-﻿import { create } from 'zustand';
-import { User, Attribute, Activity, Achievement, Skill, Settings, ThemeType, AttributeId, AttributeNamesKey, DailyEvent, Todo, TodoCompletion, TodoStep, FateCandidate, BigDealClearPayload, PeriodSummary, SummaryPeriod, SummaryPromptPreset, WeeklyGoal, WeeklyGoalItem, Persona, Shadow, BattleState, TowerStratum, StratumNode, DailyDivination, LongReading, LongReadingFollowUp, Confidant, ConfidantEvent, ConfidantBuff, CounselSession, CounselMessage, CounselArchive, CallingCard, NotifSlot, LedgerEntry, Budget, SpendWorth, LedgerAsset, Wish, WishProgressPoint, WishProgressSource, WishProgressCutPayload, WishProposalPayload, ReturnPayload, ReturnTier, BackfillEntry, BattleArsenal, ChainKey, AffixKind, NavigatorPreset, NavigatorMemo, RelicInstance, FinalBossFlaw, FinalePhase } from '@/types';
+import { create } from 'zustand';
+import { User, Attribute, Activity, Achievement, Skill, Settings, ThemeType, AttributeId, AttributeNamesKey, DailyEvent, Todo, TodoCompletion, TodoStep, FateCandidate, BigDealClearPayload, PeriodSummary, SummaryPeriod, SummaryPromptPreset, WeeklyGoal, WeeklyGoalItem, Persona, Shadow, BattleState, TowerStratum, StratumNode, DailyDivination, LongReading, LongReadingFollowUp, FateGlimpse, Confidant, ConfidantEvent, ConfidantBuff, CounselSession, CounselMessage, CounselArchive, CallingCard, NotifSlot, LedgerEntry, Budget, SpendWorth, LedgerAsset, Wish, WishProgressPoint, WishProgressSource, WishProgressCutPayload, WishProposalPayload, ReturnPayload, ReturnTier, BackfillEntry, BattleArsenal, ChainKey, AffixKind, NavigatorPreset, NavigatorMemo, RelicInstance, FinalBossFlaw, FinalePhase } from '@/types';
 import { TAROT_BY_ID } from '@/constants/tarot';
 import { summarizeCounsel, type CounselContext, type CounselConfidantBrief, type CounselRecentEvent } from '@/utils/counselAI';
 import { db } from '@/db';
@@ -7,6 +7,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { calcMaxStreak, streakDates } from '@/utils/streak';
 import { applyUiChannel } from '@/ui/channel';
 import { computeAndSchedule, type NotifSnapshot } from '@/utils/notifications';
+import { getCachedNotifVoice, refreshNotifVoiceIfNeeded } from '@/utils/notifVoice';
 import { pushWidgetSnapshot } from '@/utils/widgetSnapshot';
 import { isGrowthCategory, cycleRangeForKey } from '@/utils/ledgerFormat';
 import { resolveProvider } from '@/utils/aiProviders';
@@ -21,7 +22,12 @@ import {
 import type { ConfidantMatchResult } from '@/utils/confidantAI';
 
 /**
- * 返回本地时区YYYY-MM-DD 日期字符串 * 不使toISOString()，避UTC 偏差UTC+8 等时区导致跨天错误 */
+ * 返回本地时区的 YYYY-MM-DD 日期字符串。
+ *
+ * 不使用 toISOString()：那个方法先转成 UTC 再格式化，在 UTC+8 这类时区下
+ * 凌晨 0:00–8:00 会被算成"前一天"，全站的跨天判断（今日塔罗 / 每日任务 /
+ * 同伴祈愿重置）都会跟着错一天。
+ */
 export function toLocalDateKey(date: Date = new Date()): string {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, '0');
@@ -41,7 +47,7 @@ export function toLocalDateKey(date: Date = new Date()): string {
  */
 export const ALL_LOCAL_TABLES = [
   'users', 'attributes', 'activities', 'achievements', 'skills',
-  'dailyEvents', 'dailyDivinations', 'longReadings', 'callingCards',
+  'dailyEvents', 'dailyDivinations', 'longReadings', 'fateGlimpses', 'callingCards',
   'settings', 'todos', 'todoCompletions', 'summaries', 'weeklyGoals',
   'personas', 'shadows', 'battleStates', 'strata',
   'confidants', 'confidantEvents', 'counselSessions', 'counselArchives',
@@ -322,6 +328,8 @@ interface AppState {
   skills: Skill[];
   /** 今日塔罗抽卡结果（未抽则为 null） */
   dailyDivination: DailyDivination | null;
+  /** 窥探命运记录（v2.7；createdAt 降序） */
+  fateGlimpses: FateGlimpse[];
   /** 全部中长期占卜（活跃 + 归档） */
   longReadings: LongReading[];
   /** 全部宣告卡 / 倒计时（含归档） */
@@ -354,6 +362,23 @@ interface AppState {
   // 星象 / 塔罗
   loadDailyDivination: () => Promise<void>;
   saveDailyDivination: (d: DailyDivination) => Promise<void>;
+  // ── 窥探命运（v2.7）────────────────────────────────────────
+  loadFateGlimpses: () => Promise<void>;
+  /** 保存一次窥探（含 buff 生效期）并刷新内存态 */
+  createFateGlimpse: (g: FateGlimpse) => Promise<void>;
+  /** 当前生效中的窥探 buff（buffStart ≤ 今天 ≤ buffEnd）；无则 null */
+  getActiveFateBuff: () => FateGlimpse | null;
+  /**
+   * 七日窗口状态：以当前连抽 streak 起点锚定的 7 天（未到/未抽留空位，收集区从左
+   * 往右逐日点亮）；7 张全齐即可窥探（起点恒晚于上次窥探日，冷却随之自动满足）。
+   * dailyDivinations 不在内存态（只有今日一张），故此查询走 db、返回 Promise。
+   */
+  getFateWindow: () => Promise<{
+    days: Array<{ date: string; drawn: DailyDivination | null }>;
+    complete: boolean;
+    eligible: boolean;
+    lastGlimpse: FateGlimpse | null;
+  }>;
   getRecentActivitiesForDaily: (limit?: number) => Activity[];
   getRecentActivitiesByAttribute: (limit?: number) => Record<AttributeId, Activity[]>;
   loadLongReadings: () => Promise<void>;
@@ -865,6 +890,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   achievements: [],
   skills: [],
   dailyDivination: null,
+  fateGlimpses: [],
   longReadings: [],
   callingCards: [],
   wishes: [],
@@ -922,6 +948,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         await get().updateSettings({ summaryViewedBackfillDone: true });
       }
       await get().loadDailyDivination();
+      await get().loadFateGlimpses();
       await get().loadLongReadings();
       await get().sweepExpiredReadings();
       // 宣告卡：先 load，再 sweep；sweep 内部会再 load 一次刷新已归档项
@@ -936,7 +963,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       // F3 治疗终端：载入启动素材库
       await get().loadWishes();
     } catch (error) {
-      console.error('初始化应用失', error);
+      console.error('初始化应用失败', error);
     }
   },
 
@@ -1126,6 +1153,26 @@ export const useAppStore = create<AppState>((set, get) => ({
       adjustedPoints[equippedMask] = adjustedPoints[equippedMask] + 1;
     }
 
+    // 窥探命运 buff（v2.7，3 天）：当日**首次带加点的手动记录** → 加点最高的那项额外 +1。
+    // 判定纯粹从数据推导（当日尚无带加点的手动记录），无需额外标记位；
+    // 只认 method==='local' 且无 category —— 任务完成 / 战场结算 / 系统行不吃这份馈赠。
+    if (method === 'local' && !options?.category) {
+      const dayKey = toLocalDateKey(activityDate);
+      const buffed = get().fateGlimpses.some(g => g.buffStart <= dayKey && dayKey <= g.buffEnd);
+      if (buffed) {
+        const hasPointedToday = get().activities.some(a =>
+          a.method === 'local' && !a.category &&
+          toLocalDateKey(new Date(a.date)) === dayKey &&
+          Object.values(a.pointsAwarded ?? {}).some(v => (v as number) > 0));
+        const top = (Object.entries(adjustedPoints) as Array<[string, number]>)
+          .filter(([, v]) => v > 0)
+          .sort((a, b) => b[1] - a[1])[0];
+        if (!hasPointedToday && top) {
+          adjustedPoints[top[0]] = top[1] + 1;
+        }
+      }
+    }
+
     // 创建活动记录（事务内填 levelUps 后写入）
     const activity: Activity = {
       id: uuidv4(),
@@ -1238,14 +1285,32 @@ export const useAppStore = create<AppState>((set, get) => ({
         await get().checkAllAttributesMaxAchievement();
 
         // 事务内读快照用于解锁提示（读到的是事务内最新态）
-        const [achievements, attributes, activities, todoCompletions, skills, weeklyGoals] = await Promise.all([
+        const [achievements, attributes, todoCompletions, skills, weeklyGoals] = await Promise.all([
           db.achievements.toArray(),
           db.attributes.toArray(),
-          db.activities.toArray(),
           db.todoCompletions.toArray(),
           db.skills.toArray(),
           db.weeklyGoals.toArray(),
         ]);
+        /**
+         * activities **按需**才读 —— 这是记一笔的热路径上最贵的一步。
+         *
+         * 它在这里只有一个用途：算 consecutive_days 那类成就的连续天数。
+         * 而 activities 是全库唯一无上限增长的表（每天 5 条记录 + 自动写入的 level_up 副记录
+         * ≈ 一年 2500 行），原来无条件 toArray() 意味着**每记一笔就把全部历史反序列化一遍**；
+         * 加上本函数结尾的 loadData() 还要再读一遍，一次加点 = 两次全表扫描。
+         *
+         * 实际上只要"还没解锁的 consecutive_days 成就"一个都不剩，这份数据就完全用不上——
+         * 而这类成就通常在使用早期就全解锁了。于是绝大多数用户的绝大多数记录
+         * 从此只剩 loadData() 那一次扫描。
+         *
+         * 必须判 !unlocked：已解锁的成就在下面 filter 的第一行就被挡掉，
+         * 拿它当理由去读全表纯属白读。
+         */
+        const needsStreak = achievements.some(
+          a => !a.unlocked && a.condition.type === 'consecutive_days',
+        );
+        const activities: Activity[] = needsStreak ? await db.activities.toArray() : [];
         achievementsSnapshot = achievements;
         attributesSnapshot = attributes;
 
@@ -1537,19 +1602,35 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   // ── 星象 / 塔罗 ────────────────────────────────────────────
 
+  /**
+   * 载入今日塔罗。
+   *
+   * **取最早的那一张**，不是 .first()（索引顺序不保证是时间顺序）。
+   * 同一天存在多行是历史遗留：pull 把今天那张擦掉后用户会重抽一次，
+   * 于是库里留下两行同 date、不同 id（根因已在 services/sync.ts 的
+   * todayDivinationFallback 堵住，但存量数据还在）。真正算数的是**第一次抽的那张**
+   * —— 重抽本来就不该发生，认后抽的等于追认那次作弊。
+   */
   loadDailyDivination: async () => {
     const today = toLocalDateKey();
-    const existing = await db.dailyDivinations.where('date').equals(today).first();
-    set({ dailyDivination: existing ?? null });
+    const sameDay = await db.dailyDivinations.where('date').equals(today).toArray();
+    if (sameDay.length === 0) {
+      set({ dailyDivination: null });
+      return;
+    }
+    const earliest = sameDay.reduce((a, b) =>
+      new Date(a.createdAt).getTime() <= new Date(b.createdAt).getTime() ? a : b,
+    );
+    set({ dailyDivination: earliest });
   },
 
   saveDailyDivination: async (d: DailyDivination) => {
-    // 幂等：同日再抽会覆盖（正常不应触发，但保险）
+    // 幂等：同日再抽会覆盖（正常不应触发，但保险）。
+    // 清**全部**同日残留而不只是 .first() —— 存量数据里可能已经不止一行（见 loadDailyDivination）。
     const today = toLocalDateKey();
-    const existing = await db.dailyDivinations.where('date').equals(today).first();
-    if (existing && existing.id !== d.id) {
-      await db.dailyDivinations.delete(existing.id);
-    }
+    const sameDay = await db.dailyDivinations.where('date').equals(today).toArray();
+    const stale = sameDay.filter(x => x.id !== d.id).map(x => x.id);
+    if (stale.length > 0) await db.dailyDivinations.bulkDelete(stale);
     await db.dailyDivinations.put(d);
     set({ dailyDivination: d });
     void get().syncNotifications(); // 今日塔罗已抽 → 重排，撤掉「塔罗未抽」提醒
@@ -1558,6 +1639,92 @@ export const useAppStore = create<AppState>((set, get) => ({
   getRecentActivitiesForDaily: (limit = 7) => {
     const { activities } = get();
     return activities.filter(a => !a.category).slice(0, limit);
+  },
+
+  // ── 窥探命运（v2.7）────────────────────────────────────────
+
+  loadFateGlimpses: async () => {
+    try {
+      const rows = await db.fateGlimpses.orderBy('createdAt').reverse().toArray();
+      set({ fateGlimpses: rows });
+    } catch (e) {
+      console.warn('[fateGlimpse] 加载失败', e);
+    }
+  },
+
+  createFateGlimpse: async (g: FateGlimpse) => {
+    await db.fateGlimpses.put(g);
+    await get().loadFateGlimpses();
+  },
+
+  getActiveFateBuff: () => {
+    const today = toLocalDateKey();
+    return get().fateGlimpses.find(g => g.buffStart <= today && today <= g.buffEnd) ?? null;
+  },
+
+  getFateWindow: async () => {
+    // 本地时区安全的日期位移（Date.parse('YYYY-MM-DD') 是 UTC 半夜，西半球会漂一天）
+    const addDaysKey = (key: string, n: number): string => {
+      const [y, m, d] = key.split('-').map(Number);
+      return toLocalDateKey(new Date(y, m - 1, d + n));
+    };
+    const dayDiff = (a: string, b: string): number => {
+      const [ya, ma, da] = a.split('-').map(Number);
+      const [yb, mb, db2] = b.split('-').map(Number);
+      return Math.round((new Date(ya, ma - 1, da).getTime() - new Date(yb, mb - 1, db2).getTime()) / 86400_000);
+    };
+    const today = toLocalDateKey();
+    const lastGlimpse = get().fateGlimpses[0] ?? null;
+    const lastDay = lastGlimpse ? toLocalDateKey(new Date(lastGlimpse.createdAt)) : null;
+    const sinceLast = lastDay ? dayDiff(today, lastDay) : Infinity;
+    /**
+     * 窗口统一为**连抽锚定**：起点 = 当前连续抽卡 streak 的第一天（最远回看 6 天、
+     * 不越过上次窥探日——那些牌已被消耗），窗口 = 起点开始的 7 天。未到/未抽的
+     * 日子留空位，于是收集区永远**从左往右逐日点亮**（此前滚动「最近 7 天」把
+     * 今天钉在最右格，第一张牌落在最右、一张张向左退，进度感是倒着的——用户上报）。
+     *
+     * 语义与旧口径等价的证明：complete ⇔ 连续 7 天抽满；且 streak 起点 > 上次窥探日
+     * ⇒ 抽满时今天距上次 ≥7 天，冷却自动满足。断签会让 streak 重新锚定（旧口径的
+     * 滚动窗口同样要求 7 天连抽），窥探后重新计数（次日起）也自然落在同一条规则里；
+     * buff 独立走自己的 3 天，每张牌在任何情况下都只可能被消耗一次。
+     */
+    // streak 判定只需回看昨天起最多 7 天（锚点允许是今天或昨天：今天还没抽时，
+    // 昨天收尾的活 streak 不该断——今天就是窗口里下一个待点亮的空位）
+    const lookback: string[] = [];
+    for (let i = 6; i >= 0; i--) lookback.push(addDaysKey(today, -i));
+    let rows: DailyDivination[] = [];
+    try {
+      rows = await db.dailyDivinations.where('date').anyOf(lookback).toArray();
+    } catch { /* 查询失败按未抽处理 */ }
+    // 同日多行的存量数据取最早那张（与 loadDailyDivination 同口径）
+    const byDate = new Map<string, DailyDivination>();
+    for (const r of rows) {
+      const prev = byDate.get(r.date);
+      if (!prev || new Date(r.createdAt).getTime() < new Date(prev.createdAt).getTime()) {
+        byDate.set(r.date, r);
+      }
+    }
+    // 可计入 streak：已抽 且 晚于上次窥探日（YYYY-MM-DD 零填充，字符串比较安全）
+    const usable = (key: string) => byDate.has(key) && (!lastDay || key > lastDay);
+    const yesterday = addDaysKey(today, -1);
+    const anchor = usable(today) ? today : usable(yesterday) ? yesterday : null;
+    let startKey: string;
+    if (anchor) {
+      startKey = anchor;
+      for (let i = 1; i <= 6; i++) {
+        const prev = addDaysKey(anchor, -i);
+        if (!usable(prev)) break;
+        startKey = prev;
+      }
+    } else {
+      // 没有活 streak：刚窥探完（含当天）→ 从窥探次日起显示空窗口；否则从今天起
+      startKey = lastDay && sinceLast < 7 ? addDaysKey(lastDay, 1) : today;
+    }
+    const dates: string[] = [];
+    for (let i = 0; i < 7; i++) dates.push(addDaysKey(startKey, i));
+    const days = dates.map(date => ({ date, drawn: byDate.get(date) ?? null }));
+    const complete = days.every(d => d.drawn);
+    return { days, complete, eligible: complete && sinceLast >= 7, lastGlimpse };
   },
 
   getRecentActivitiesByAttribute: (limit = 4) => {
@@ -2675,6 +2842,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       achievements: [],
       skills: [],
       dailyDivination: null,
+      fateGlimpses: [],
       longReadings: [],
       callingCards: [],
       wishes: [],
@@ -2967,6 +3135,13 @@ export const useAppStore = create<AppState>((set, get) => ({
             createdAt: new Date(lr.createdAt),
             followUps: (lr.followUps ?? []).map(f => ({ ...f, createdAt: new Date(f.createdAt) })),
           });
+        }
+      }
+      // 窥探命运（v2.7，备份 _version 10+；旧备份无此 key 自然跳过）
+      if (data.fateGlimpses && Array.isArray(data.fateGlimpses)) {
+        for (const g of data.fateGlimpses as unknown[]) {
+          const fg = g as FateGlimpse;
+          await db.fateGlimpses.put({ ...fg, createdAt: new Date(fg.createdAt) });
         }
       }
       if (data.callingCards && Array.isArray(data.callingCards)) {
@@ -3929,12 +4104,16 @@ export const useAppStore = create<AppState>((set, get) => ({
       countercurrentWarnings: get().getCountercurrentWarnings(),
       hasUnreadSummary: summaries.some(s => !s.viewedAt),
       loggedToday: activities.some(a => !a.category && toLocalDateKey(new Date(a.date)) === todayKey),
+      // 助手口吻（v2.7 notifVoice）：只取当日缓存，绝不在这里等生成——先排内置文案
+      aiCopy: settings.notifAIVoice ? getCachedNotifVoice(settings.navigatorPresetId ?? 'board') : null,
     };
     try {
       await computeAndSchedule(snapshot);
     } catch (e) {
       console.warn('[notifications] sync failed', e);
     }
+    // 缓存未命中则后台生成，货到重排（幂等：生成成功后缓存命中，不会循环）
+    refreshNotifVoiceIfNeeded(settings, () => void get().syncNotifications());
     // 桌面小组件快照（PRD_V2.6 §8）搭这趟车：
     // syncNotifications 的触发点（记录/勾任务/抽塔罗/改设置）恰好就是
     // 组件需要重画的时机，不必再铺一套自己的钩子。内部自带指纹去重与静默失败。
@@ -4036,7 +4215,7 @@ ${activityLines || '（本期暂无记录）'}
   generateSummary: async (period: SummaryPeriod, startDate: string, endDate: string): Promise<PeriodSummary> => {
     const { settings, attributes } = get();
 
-    // 检API 配置
+    // 检查 API 配置
     if (!settings.summaryApiKey) {
       throw new Error('请先在设置中配置 AI API 密钥');
     }

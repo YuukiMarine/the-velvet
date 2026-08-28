@@ -57,7 +57,33 @@ export default defineConfig({
         // webp 故意不进预缓存：塔罗三套共 66 张（~3.8 MB），全塞进安装包会显著拖慢
         // 首次安装与 iOS 的磁盘占用。改由下面的 runtimeCaching 在首次看到时收编。
         globPatterns: ['**/*.{js,css,html,ico,png,svg,mp3}'],
+        /**
+         * 上面那条 glob 是按**扩展名**扫 dist/ 的，扫不出"谁其实用不到"。
+         * 两类东西因此被卷进了预缓存 —— 而 SW 安装时会把清单里的东西**全部**拉下来存好，
+         * 于是每个装了 PWA 的用户都在为自己永远打不开的东西付下载和磁盘（实测 6.18 MB / 62 条）：
+         *
+         *   · eruda（485 KB）——手机调试台，只有 ?debug=1 才 init。
+         *     main.tsx 那句"不带 ?debug=1 时 chunk 完全不下载"只对**动态 import** 成立，
+         *     预缓存是从它背后绕过去的另一条路。
+         *   · assets/terminal/*.png（p4-cloud-sky.png 单张 1.66 MB）——黄频道的实景云天舞台，
+         *     只有 theme==='yellow' 用得到，却人人预下。
+         *
+         * 云天图改走下面的 runtimeCaching，与塔罗图 / 字体同口径：见过一次即长期离线可用。
+         * eruda 干脆不缓存 —— 会开 ?debug=1 的人不在乎多等一次网络。
+         */
+        globIgnores: ['**/eruda-*.js', 'assets/terminal/*.png'],
         runtimeCaching: [
+          {
+            // 黄频道实景舞台（见上方 globIgnores）。CacheFirst：素材是静态的，
+            // 换图时文件名不变——真要换，改这里的 cacheName 版本号即可。
+            urlPattern: ({ url }) => url.pathname.startsWith('/assets/terminal/'),
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'velvet-terminal-v1',
+              expiration: { maxEntries: 12, maxAgeSeconds: 60 * 60 * 24 * 180 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
           {
             urlPattern: ({ url }) => url.pathname.startsWith('/tarot/'),
             handler: 'CacheFirst',

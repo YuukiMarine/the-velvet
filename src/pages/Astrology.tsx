@@ -5,6 +5,7 @@ import { LongReading } from '@/types';
 import { PageTitle } from '@/components/PageTitle';
 import { BackButton } from '@/components/BackButton';
 import { DailyDraw } from '@/components/astrology/DailyDraw';
+import { FateGlimpseSection } from '@/components/astrology/FateGlimpse';
 import { LongReadingFlow } from '@/components/astrology/LongReadingFlow';
 import { ReadingArchive } from '@/components/astrology/ReadingArchive';
 import { useUiChannel } from '@/ui/useUiChannel';
@@ -66,7 +67,7 @@ export function Astrology() {
 
   if (p3) {
     return (
-      <P3RPage className="overflow-hidden">
+      <P3RPage>
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
@@ -82,6 +83,7 @@ export function Astrology() {
             {tab === 'daily' && (
               <motion.div key="daily" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="pb-4">
                 <DailyDraw />
+                <FateGlimpseSection />
               </motion.div>
             )}
             {tab === 'long' && !detailReading && (
@@ -294,6 +296,7 @@ export function Astrology() {
             className="pb-8"
           >
             <DailyDraw />
+            <FateGlimpseSection />
           </motion.div>
         )}
 

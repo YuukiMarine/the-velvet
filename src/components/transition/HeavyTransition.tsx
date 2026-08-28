@@ -20,7 +20,7 @@ import { gsap } from '@/utils/gsap';
 import { useBoldness } from '@/utils/boldness';
 import { zClass } from '@/utils/zIndex';
 import { buildStar, STAR_SPIKES } from './starPath';
-import { _registerTransitionLayer, type HeavyTransitionRequest } from '@/ui/transitionDirector';
+import { _registerTransitionLayer, _setCurtainCovering, type HeavyTransitionRequest } from '@/ui/transitionDirector';
 
 interface ActProps {
   midpoint: () => void;
@@ -33,6 +33,20 @@ const useTimeline = (steps: [number, () => void][]) => {
   useEffect(() => {
     const ids = stepsRef.current.map(([ms, fn]) => window.setTimeout(fn, ms));
     return () => ids.forEach(clearTimeout);
+  }, []);
+};
+
+/**
+ * 幕布遮屏窗口登记：挂载即视为「即将全遮」（midpoint 一定发生在全遮时刻），
+ * revealAtMs 到点（幕布开始离场）时解除；卸载兜底清零。
+ * PageSwitcher 凭它决定旧页是否可以原子出栈（无淡出）。
+ */
+const useCurtainWindow = (revealAtMs: number) => {
+  useEffect(() => {
+    _setCurtainCovering(true);
+    const id = window.setTimeout(() => _setCurtainCovering(false), revealAtMs);
+    return () => { clearTimeout(id); _setCurtainCovering(false); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 };
 
@@ -53,6 +67,7 @@ const TYT_TILES: (readonly [string, number, number, number] | null)[] = [
 ];
 
 const StarTearAct = ({ midpoint, onDone }: ActProps) => {
+  useCurtainWindow(340); // 0.34s 反撕开始离场
   const curtainRef = useRef<HTMLDivElement>(null);
   const bar1Ref = useRef<HTMLDivElement>(null);
   const bar2Ref = useRef<HTMLDivElement>(null);
@@ -145,7 +160,7 @@ const StarTearAct = ({ midpoint, onDone }: ActProps) => {
                   color: TYT_PALETTE[t[3]].fg,
                   fontSize: t[1],
                   fontWeight: 900,
-                  fontFamily: '"Arial Black", "Noto Sans SC", sans-serif',
+                  fontFamily: '"Arial Black", "Noto Sans SC Black", "Noto Sans SC", sans-serif',
                   lineHeight: 1,
                   transform: `rotate(${t[2]}deg)`,
                   boxShadow: '2.5px 2.5px 0 rgba(0,0,0,0.5)',
@@ -197,6 +212,7 @@ const p4StarD = (() => {
 })();
 
 const WedgeCutAct = ({ midpoint, onDone }: ActProps) => {
+  useCurtainWindow(430);
   const [phase, setPhase] = useState<'in' | 'out'>('in');
   useTimeline([
     [300, midpoint],
@@ -296,6 +312,7 @@ const P3_SLATS = [
 ];
 
 const WaveSliceAct = ({ midpoint, onDone }: ActProps) => {
+  useCurtainWindow(400);
   const [phase, setPhase] = useState<'in' | 'out'>('in');
   useTimeline([
     [300, midpoint],
@@ -335,13 +352,22 @@ const WaveSliceAct = ({ midpoint, onDone }: ActProps) => {
 // 无蒙版无填充：2 圈粗蓝系波纹从点击点外扩、速率各异；切页与波纹**同帧开始**
 // （0ms midpoint，不等波列——先动画后切页会不跟手，用户口径）。新页本体由
 // App 层 CircleRevealOnEnter 以同一原点做扩散圆形蒙版揭示（真正的"蒙版转场"）。
-// 波纹只扩到屏高一半（半径 50%vh）即衰减殆尽；波纹层不拦截指针，连点由 busyRef 兜底。
+// 波纹层不拦截指针，连点由 busyRef 兜底。
 // 环宽与起手直径：initial 的 width/height 是**内径**，外径还要加两倍边框——
-// 旧口径 24px 内径 + 60px 边框 = 起手就是 144px 的近实心大圆盘（用户上报"底部栏
-// 那个圆形填充有点大"）。收到 12 + 2×32 = 76px，一上来就读得出是"环"而不是"盘"。
+// 旧口径 24px 内径 + 60px 边框 = 144px 的近实心大圆盘（用户上报"有点大"），收到 76px。
+//
+// ⚠️ 波纹终径不再按「屏高一半」写死（旧口径 h×1.0 直径）：那是按 19.5:9 长屏调的——
+// 半径 0.5h 在长屏上 ≈ 1.08w，环会扫出左右屏缘、读作满潮；可 3:4 竖屏上 0.5h 只有
+// 0.67w，环在屏中央就衰减没了，正是用户上报的「蒙版扩散到屏幕一半就消失」。
+// 现在终径 = 2×(原点到最远屏角距离)（与新页圆形揭示的 R 同一几何），任意纵横比都铺满；
+// 淡出改成后置关键帧（前 55% 只轻微衰减），环消失时刻贴近满屏时刻。
+// w 是 390px 基准宽（标准手机）下的环宽，实际渲染按短边比例缩放（见 WaterRippleAct 内
+// rippleScale）：此前写死 px，在小窗手机上环粗得抢戏、平板上又细成线，观感不一致（用户上报）。
+// o/衰减：初始透明度压低 + 前 45% 就衰过半（旧口径 55% 处才 0.82），环到中场已经很淡——
+// 「圆环有点抢眼，衰减再快一些」（用户口径）。
 const RIPPLE_LINES = [
-  { w: 32, reach: 1.00, d: 0.45, delay: 0.00, o: 0.85 },
-  { w: 52, reach: 0.88, d: 0.60, delay: 0.07, o: 0.78 },
+  { w: 32, reach: 1.00, d: 0.50, delay: 0.00, o: 0.72 },
+  { w: 52, reach: 0.86, d: 0.62, delay: 0.07, o: 0.62 },
 ];
 
 /** 波纹配色随频道走：P3 蓝青（原口径）／P4 橙黄（黄舞台上蓝波纹是异色，用户口径）／
@@ -357,12 +383,17 @@ const rippleColors = (channel: string): [string, string] =>
 const WaterRippleAct = ({ midpoint, onDone, origin, channel }: ActProps & { origin?: { x: number; y: number }; channel: string }) => {
   useTimeline([
     [0, midpoint],
-    [700, onDone],
+    [760, onDone],
   ]);
   const w = window.innerWidth;
   const h = window.innerHeight;
   const ox = origin?.x ?? w / 2;
   const oy = origin?.y ?? h - 40;
+  // 满潮直径：原点到最远屏角 ×2（与 PageShell 圆形揭示的 R 同一几何，纵横比无关）
+  const fullDia = Math.hypot(Math.max(ox, w - ox), Math.max(oy, h - oy)) * 2.1;
+  // 环宽随屏幕短边等比（390 = 标准手机基准），钳在 [0.8, 1.5]：小窗不糊、平板/桌面不细成线，
+  // 各终端的「环宽 : 屏幕」比例一致（用户口径）
+  const rippleScale = Math.min(1.5, Math.max(0.8, Math.min(w, h) / 390));
   const colors = rippleColors(channel);
   return (
     <div className={`fixed inset-0 ${zClass.transition} pointer-events-none overflow-hidden`} aria-hidden>
@@ -370,10 +401,17 @@ const WaterRippleAct = ({ midpoint, onDone, origin, channel }: ActProps & { orig
         <motion.span
           key={k}
           className="absolute rounded-full"
-          style={{ left: ox, top: oy, x: '-50%', y: '-50%', border: `${ln.w}px solid ${colors[k]}` }}
-          initial={{ width: 12, height: 12, opacity: ln.o }}
-          animate={{ width: h * ln.reach, height: h * ln.reach, opacity: 0 }}
-          transition={{ duration: ln.d, delay: ln.delay, ease: 'easeOut' }}
+          style={{ left: ox, top: oy, x: '-50%', y: '-50%', border: `${Math.round(ln.w * rippleScale)}px solid ${colors[k]}` }}
+          initial={{ width: 12, height: 12 }}
+          // 衰减包络（用户口径 v3）：起手慢衰（15% 处还剩八成——刚点下去环是实的）、
+          // 越到后越快（30% 处剩四成五）、45% 处归零，之后的外扩全程隐形。
+          // 半径是 easeOut（前载），波前约 21% 时到屏幕一半——那时环还有六七成浓度，
+          // 消失点被推后到中场偏外一点，但收尾是加速砸下去的，不拖影
+          animate={{ width: fullDia * ln.reach, height: fullDia * ln.reach, opacity: [ln.o, ln.o * 0.8, ln.o * 0.45, 0, 0] }}
+          transition={{
+            duration: ln.d, delay: ln.delay, ease: 'easeOut',
+            opacity: { duration: ln.d, delay: ln.delay, times: [0, 0.15, 0.3, 0.45, 1], ease: 'linear' },
+          }}
         />
       ))}
     </div>
@@ -382,6 +420,7 @@ const WaterRippleAct = ({ midpoint, onDone, origin, channel }: ActProps & { orig
 
 // ── neutral：黑幕淡切 ──────────────────────────────────────────────────────
 const FadeAct = ({ midpoint, onDone }: ActProps) => {
+  useCurtainWindow(300); // midpoint(220ms) 后留 80ms：切页 effect 在遮屏窗口内执行
   const [phase, setPhase] = useState<'in' | 'out'>('in');
   useTimeline([
     [220, () => { midpoint(); setPhase('out'); }],

@@ -1019,13 +1019,14 @@ export const Ledger = () => {
       )}
 
       {/* 拍照记账（FS3.2）：录入条的副入口——主体仍是上面的 GUI 输入条。
-          相机由原生 file input 承接（capture 提示优先后置摄像头，也可从相册选）。 */}
+          不写 capture：带 capture 的 file input 在 iOS/多数安卓上会**直开后置相机**、
+          没有相册入口（用户上报「拍小票不能打开相册选」）；去掉后系统弹
+          「拍照 / 相册」选择器，两条路都通。 */}
       <motion.section {...riseIn(3)} className="mt-2 flex items-center gap-2">
         <input
           ref={shotInputRef}
           type="file"
           accept="image/*"
-          capture="environment"
           className="hidden"
           onChange={e => {
             const f = e.target.files?.[0];

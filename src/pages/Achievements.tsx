@@ -183,10 +183,12 @@ const AchievementFormFields = ({
 const SkillsTab = () => {
   const { skills, attributes, settings, unlockSkill, updateCustomSkill, deleteCustomSkill, addCustomSkill, toggleSkillUnlock } = useAppStore();
 
-  const savedFilter = typeof window !== 'undefined' ? window.localStorage.getItem('pg_skills_filter') : null;
-  const [filterStatus, setFilterStatus] = useState<'all' | 'locked' | 'unlocked'>(
-    savedFilter === 'locked' || savedFilter === 'unlocked' ? savedFilter : 'all'
-  );
+  const [filterStatus, setFilterStatus] = useState<'all' | 'locked' | 'unlocked'>(() => {
+    try {
+      const saved = window.localStorage.getItem('pg_skills_filter');
+      return saved === 'locked' || saved === 'unlocked' ? saved : 'all';
+    } catch { return 'all'; }
+  });
   const filterCycle: Array<'all' | 'locked' | 'unlocked'> = ['all', 'locked', 'unlocked'];
   const filterLabels: Record<'all' | 'locked' | 'unlocked', string> = { all: '全部', locked: '未解锁', unlocked: '已解锁' };
 
@@ -202,7 +204,7 @@ const SkillsTab = () => {
   const [confirmDialog, setConfirmDialog] = useState<{ open: boolean; skillId: string | null }>({ open: false, skillId: null });
 
   useEffect(() => {
-    if (typeof window !== 'undefined') window.localStorage.setItem('pg_skills_filter', filterStatus);
+    try { window.localStorage.setItem('pg_skills_filter', filterStatus); } catch { /* 存储不可用 */ }
   }, [filterStatus]);
 
   const generateSkillEffect = (attrId: AttributeId, multiplier: number): string => {
@@ -670,10 +672,12 @@ const AchievementsTab = () => {
     unlockAchievement
   } = useAppStore();
 
-  const savedFilter = typeof window !== 'undefined' ? window.localStorage.getItem('pg_achievements_filter') : null;
-  const [filterStatus, setFilterStatus] = useState<'all' | 'locked' | 'unlocked'>(
-    savedFilter === 'locked' || savedFilter === 'unlocked' ? savedFilter : 'all'
-  );
+  const [filterStatus, setFilterStatus] = useState<'all' | 'locked' | 'unlocked'>(() => {
+    try {
+      const saved = window.localStorage.getItem('pg_achievements_filter');
+      return saved === 'locked' || saved === 'unlocked' ? saved : 'all';
+    } catch { return 'all'; }
+  });
   const filterCycle: Array<'all' | 'locked' | 'unlocked'> = ['all', 'locked', 'unlocked'];
   const filterLabels: Record<'all' | 'locked' | 'unlocked', string> = { all: '全部', locked: '未完成', unlocked: '已完成' };
 
@@ -699,7 +703,7 @@ const AchievementsTab = () => {
   const [editForm, setEditForm] = useState(defaultEditForm);
 
   useEffect(() => {
-    if (typeof window !== 'undefined') window.localStorage.setItem('pg_achievements_filter', filterStatus);
+    try { window.localStorage.setItem('pg_achievements_filter', filterStatus); } catch { /* 存储不可用 */ }
   }, [filterStatus]);
 
   const getProgress = (achievement: typeof achievements[0]) => {
@@ -1627,7 +1631,7 @@ export const Achievements = () => {
   // ── P3R（蓝频道）形态：p3-achievements-reference-v2 1:1 ──
   if (p3) {
     return (
-      <P3RPage className="overflow-hidden">
+      <P3RPage>
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="relative space-y-5 pb-8">
           <GhostWords words={['ARCHIVE']} className="left-[6px] top-[-14px] text-[60px]" />
           <P3PageHeader ticks title="成就" onBack={() => setCurrentPage('menu')} className="relative pt-2" />

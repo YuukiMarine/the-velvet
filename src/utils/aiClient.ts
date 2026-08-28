@@ -72,6 +72,12 @@ export interface ChatOptions {
    * 那扇窗才一直有东西在动。
    */
   onReasoning?: (delta: string) => void;
+  /**
+   * 流式结束时的 finish_reason 回传（仅流式）。调用方据此识别「被 max_tokens
+   * 拦腰截断」（'length'）——流式内容已实时上屏无法重试，但至少能把最后那半句
+   * 拦下来不吐（助手拟真泡上屏过半个词，用户上报「把某个词只说一半」）。
+   */
+  onFinishReason?: (reason: string) => void;
 }
 
 /**
@@ -306,14 +312,20 @@ function rethrowAbortAware(e: unknown, ab: AbortBundle, opts: ChatOptions): neve
  * 非流式 chat completion，返回 trim 后的文本。
  * 空响应 / HTTP 错误 / 超时都会抛出归一后的 Error。
  */
-/** 「正文为空且 finish_reason=length」——思维链把预算吃光的特征错误 */
+/** 「finish_reason=length」——预算不够的特征错误（正文可能为空，也可能是半截） */
 const EMPTY_LENGTH = Symbol('aiEmptyLength');
-function markEmptyLength(e: Error): Error {
-  (e as Error & { [EMPTY_LENGTH]?: true })[EMPTY_LENGTH] = true;
+interface LengthMarked { [EMPTY_LENGTH]?: true; aiPartialText?: string }
+function markEmptyLength(e: Error, partialText?: string): Error {
+  (e as Error & LengthMarked)[EMPTY_LENGTH] = true;
+  if (partialText) (e as Error & LengthMarked).aiPartialText = partialText;
   return e;
 }
 function isEmptyLengthError(e: unknown): boolean {
-  return !!(e as Error & { [EMPTY_LENGTH]?: true })?.[EMPTY_LENGTH];
+  return !!(e as Error & LengthMarked)?.[EMPTY_LENGTH];
+}
+/** 截断错误上挂着的半成品正文（重试也失败时的最后退路） */
+function partialOf(e: unknown): string {
+  return (e as Error & LengthMarked)?.aiPartialText ?? '';
 }
 
 /** 服务商嫌 max_tokens / max_completion_tokens 太大而 400（各家措辞不同，按关键词认） */
@@ -339,10 +351,20 @@ export async function chatComplete(
   try {
     return await chatCompleteOnce(cfg, messages, opts);
   } catch (e) {
-    // ① 思维链吃光预算 → 翻三倍重来
+    // ① 预算不够（正文为空 or 半截）→ 翻三倍重来一次
     if (isEmptyLengthError(e)) {
       const bumped = Math.max(4000, (opts.maxTokens ?? DEFAULT_MAX_TOKENS) * 3);
-      return await chatCompleteOnce(cfg, messages, { ...opts, maxTokens: bumped });
+      try {
+        return await chatCompleteOnce(cfg, messages, { ...opts, maxTokens: bumped });
+      } catch (e2) {
+        // 加了预算还是截断：退回两次里更长的那段半成品——半句话好过整轮报错。
+        // （非截断类错误照抛，别把真实故障吞成一段残句。）
+        if (isEmptyLengthError(e2)) {
+          const best = [partialOf(e), partialOf(e2)].sort((a, b) => b.length - a.length)[0];
+          if (best.trim()) return best;
+        }
+        throw e2;
+      }
     }
     /**
      * ② 预算**超过服务商上限**被 400 顶回来 → 降到保守档重发。
@@ -376,7 +398,22 @@ async function chatCompleteOnce(
     const data = await resp.json().catch(() => null);
     const choice = data?.choices?.[0];
     const content = choice?.message?.content;
-    if (typeof content === 'string' && content.trim()) return content;
+    const finishReason = typeof choice?.finish_reason === 'string' ? choice.finish_reason : '';
+    if (typeof content === 'string' && content.trim()) {
+      /**
+       * 正文非空但 finish_reason=length：**拦腰截断**——最后一句多半只写了半截，
+       * 中文里甚至会把一个词切成半个字面（用户上报助手「错误地截断句子/词只说一半」）。
+       * 此前这里直接把半成品返回给调用方；现在与「正文全空」同待遇：
+       * 抛特征错误让外层加预算重来，半成品挂在错误上作最后退路。
+       */
+      if (finishReason === 'length') {
+        throw markEmptyLength(
+          new Error('AI 输出被 max_tokens 拦腰截断（finish_reason=length）——已自动加大预算重试'),
+          content,
+        );
+      }
+      return content;
+    }
     /**
      * 正文空了，但别急着判失败——两种真实情况：
      *
@@ -390,7 +427,7 @@ async function chatCompleteOnce(
     if (typeof reasoning === 'string' && reasoning.includes('{') && reasoning.includes('}')) {
       return reasoning;
     }
-    const fr = typeof choice?.finish_reason === 'string' ? choice.finish_reason : '';
+    const fr = finishReason;
     if (fr === 'length' || (!fr && typeof reasoning === 'string' && reasoning.trim())) {
       // 打上标记：外层 chatComplete 会加倍预算再来一发
       throw markEmptyLength(new Error(
@@ -462,6 +499,7 @@ export async function* chatStream(
         } catch { /* 半个 / 非法 chunk，跳过 */ }
       }
     }
+    if (produced) opts.onFinishReason?.(finishReason);
     if (!produced) {
       throw new Error(
         sawReasoning

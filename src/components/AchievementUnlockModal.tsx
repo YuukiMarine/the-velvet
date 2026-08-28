@@ -182,7 +182,7 @@ const AchievementUnlockP3 = ({ isOpen, onClose, achievementTitle }: AchievementU
                   className="relative text-center text-[44px] font-black italic leading-none"
                   style={{
                     color: 'var(--p3r-blue-deep, #0a3bd6)',
-                    fontFamily: '"Arial Black", "Noto Sans SC", sans-serif',
+                    fontFamily: '"Arial Black", "Noto Sans SC Black", "Noto Sans SC", sans-serif',
                     WebkitTextStroke: '7px #fff',
                     paintOrder: 'stroke fill',
                   }}

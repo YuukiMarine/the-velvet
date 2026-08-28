@@ -1,7 +1,7 @@
 import { db } from '@/db';
 import { pb, getUserId } from './pocketbase';
 import { useCloudStore } from '@/store/cloud';
-import { useAppStore } from '@/store';
+import { useAppStore, toLocalDateKey } from '@/store';
 import { computeTotalLv } from '@/utils/lvTiers';
 import { normalizeAttributeLevelTitles } from '@/utils/attributeLevelTitles';
 import { resolveLevelDifficulty } from '@/utils/levelDifficulty';
@@ -211,6 +211,8 @@ const SYNC_TABLES = [
   'dailyEvents',
   'dailyDivinations',
   'longReadings',
+  // 窥探命运（v2.7）：7 天塔罗总占卜 + buff 生效期，与 dailyDivinations 同口径上云
+  'fateGlimpses',
   'settings',
   'todos',
   'todoCompletions',
@@ -583,6 +585,38 @@ export const pullAll = async (): Promise<void> => {
         );
       }
 
+      /**
+       * 今日塔罗保全（用户上报："云同步 / 回档后已经抽过的今日塔罗被顶掉，可以重抽"）。
+       *
+       * 链路：pushAll 只在 trySyncInBackground 里跑，且 24 小时节流一次，而抽牌本身
+       * **不触发推送** —— 所以云端那份 dailyDivinations 常常还停在抽牌之前。
+       * 此时任何一次 pull 走到下面的 clear() + bulkAdd(云端行)，今天那张就没了；
+       * dailyDivination 变 null 后，DailyDraw 的 init effect（依赖 id/date）重跑，
+       * 落进 rollCandidates() —— 于是又能抽一次。
+       *
+       * 每日一抽是**不可逆的仪式**，重抽等于把这个约束整个作废，比丢一条普通记录严重得多。
+       * 所以这里按 backgroundImage / API Key 的同款口径处理：**云端没有今天这一张时，
+       * 把本地那张原样并回去**。云端有（说明抽完确实推上去过）则尊重云端，多设备照常工作。
+       */
+      let todayDivinationFallback: Record<string, unknown> | null = null;
+      if (key === 'dailyDivinations') {
+        const today = toLocalDateKey();
+        // 取**最早**的那一张，与 store 的 loadDailyDivination 同口径（那里有理由说明）：
+        // 已经踩过这个 bug 的库里同一天可能存着两行（原抽 + 重抽），
+        // 两处若各挑各的，会出现"保下来的是重抽那张、界面显示的是原抽那张"。
+        const sameDay = await db.dailyDivinations.where('date').equals(today).toArray();
+        const localToday = sameDay.length
+          ? sameDay.reduce((a, b) =>
+              new Date(a.createdAt).getTime() <= new Date(b.createdAt).getTime() ? a : b)
+          : undefined;
+        if (localToday) {
+          const cloudHasToday = (rows as Array<Record<string, unknown>>).some(
+            r => r && typeof r === 'object' && r.date === today,
+          );
+          if (!cloudHasToday) todayDivinationFallback = localToday as unknown as Record<string, unknown>;
+        }
+      }
+
       // 隐私豁免：settings 若云端没带某些字段，保留本地版本
       //   · summaryApiKey / openaiApiKey：按"AI 模型 API"开关决定是否上云，拉回来若缺失则回填本地
       //   · backgroundImage / backgroundOrientation：永远不上云，拉回来必须回填，否则会被清掉
@@ -613,6 +647,14 @@ export const pullAll = async (): Promise<void> => {
 
       {
         let toWrite = rows as Array<Record<string, unknown>>;
+        if (todayDivinationFallback) {
+          // 先剔掉同 id 的云端行再追加。表虽然已 clear()，但 toWrite 内部若出现重复主键，
+          // bulkAdd 会抛 ConstraintError —— 而这整段事务是 rw 的，一抛就整表回滚，
+          // 本来是来保数据的反而把这张表清空了。
+          const fbId = todayDivinationFallback.id;
+          toWrite = [...toWrite.filter(r => !(r && typeof r === 'object' && r.id === fbId)), todayDivinationFallback];
+          console.warn('[velvet-sync] pull: 云端没有今日塔罗，保留本地这一张（避免可重抽）');
+        }
         if (localAvatarById) {
           toWrite = toWrite.map(r => {
             const id = (r as { id?: string }).id;
@@ -753,6 +795,21 @@ export interface SyncDiff {
   hasDiff: boolean;
   /** 是否存在较大差异（任一表差 ≥ SIGNIFICANT_DIFF_THRESHOLD 或 一侧空另一侧非空） */
   significant: boolean;
+  /**
+   * 任一表的**云端条数多于本地** —— 即"一次自动推送会毁掉云端已有数据"。
+   *
+   * 与 significant 的区别是**方向**，这是本次自动同步该不该放行的唯一判据：
+   * · 本地多于云端 → 正常使用积累出来的新数据，推上去正是我们要的，不该拦；
+   * · 云端多于本地 → 另一台设备写过东西、或本地被清过，此时静默 push 就是数据丢失。
+   *
+   * 原来 trySyncInBackground 读的是 significant，而 significant 用的是
+   * `Math.abs(diff) >= 10` —— 对称的。后果有两层：
+   *   ① 正常用一阵子（本地比云端多 10 条）就再也不自动推送了，只反复弹「条目差异」，
+   *      后台自动备份形同虚设；
+   *   ② 反过来云端比本地多 9 条时**低于阈值，直接静默推送覆盖**，
+   *      那 9 条无声消失 —— 恰恰是最该拦的那一侧漏了。
+   */
+  cloudExceedsLocal: boolean;
   /** 总本地记录数 */
   localTotal: number;
   /** 总云端记录数 */
@@ -834,10 +891,14 @@ export const computeSyncDiff = async (): Promise<SyncDiff | null> => {
     return false;
   });
 
+  // 方向性判据：只要有**任何一张表**云端比本地多，自动推送就会造成丢失（见字段注释）。
+  // 不设容差 —— 少一条也是丢，且在整表覆盖模型下"云端多出来的是什么"本就无法自动判断。
+  const cloudExceedsLocal = tables.some(t => t.cloudCount > t.localCount);
+
   const recommend: SyncDiff['recommend'] =
     localTotal === cloudTotal ? 'skip' : localTotal > cloudTotal ? 'push' : 'pull';
 
-  return { tables, hasDiff, significant, localTotal, cloudTotal, recommend, localLatest, cloudLatest };
+  return { tables, hasDiff, significant, cloudExceedsLocal, localTotal, cloudTotal, recommend, localLatest, cloudLatest };
 };
 
 /** 从常变动的几张表里采样最近一条记录的 createdAt / date，用作本地"最后活跃时间"。 */
@@ -865,8 +926,12 @@ async function computeLocalLatest(): Promise<Date | null> {
  *
  * 行为：
  *  - 每 24 小时最多触发一次（localStorage 节流）
- *  - 先计算 diff，如果存在"较大差异"则不直接推送，改为写入 cloudStore.diffWarning 提示 UI
+ *  - 先计算 diff，如果**云端某张表比本地多**（推上去会毁掉云端数据）则不推，
+ *    改为写入 cloudStore.diffWarning 交给用户定夺
  *  - 否则静默 pushAll
+ *
+ * 判据用 cloudExceedsLocal 而**不是** significant：后者是对称的，
+ * 会把"本地正常积累出新数据"这种最该推送的情况也拦下来（详见 SyncDiff.cloudExceedsLocal）。
  *
  * 失败不抛出，仅更新 syncStatus。
  */
@@ -878,7 +943,7 @@ export const trySyncInBackground = async (): Promise<void> => {
 
   try {
     const diff = await computeSyncDiff();
-    if (diff && diff.significant) {
+    if (diff && diff.cloudExceedsLocal) {
       // 暂不动数据，让主线程弹窗让用户确认
       const { useCloudStore } = await import('@/store/cloud');
       useCloudStore.getState().setDiffWarning(diff);

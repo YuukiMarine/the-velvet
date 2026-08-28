@@ -59,6 +59,11 @@ export interface SheetModalProps {
    * 局部 `<div className="dark">` 无法染到 portal 出去的子树，必须由基座自己加。
    */
   forceDark?: boolean;
+  /**
+   * 重度背景模糊（opt-in）：仪式性弹窗（回归面板等）用 backdrop-blur-md 把身后
+   * 页面整体虚化。默认关——存量弹窗保持原遮罩（p5 纯黑幕 / 其余 blur-sm）。
+   */
+  backdropBlur?: boolean;
 }
 
 export const SheetModal = ({
@@ -74,6 +79,7 @@ export const SheetModal = ({
   showHandle = true,
   closeOnBackdrop = true,
   forceDark = false,
+  backdropBlur = false,
 }: SheetModalProps) => {
   const titleId = useId();
   const containerRef = useModalA11y(isOpen, onClose, { closeOnEscape: !busy });
@@ -134,7 +140,11 @@ export const SheetModal = ({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className={`fixed inset-0 ${zClass.modal} flex ${p5 ? 'bg-black/72' : 'bg-black/55 backdrop-blur-sm'} ${forceDark ? 'dark' : ''} ${
+          className={`fixed inset-0 ${zClass.modal} flex ${
+            backdropBlur
+              ? p5 ? 'bg-black/60 backdrop-blur-md' : 'bg-black/45 backdrop-blur-md'
+              : p5 ? 'bg-black/72' : 'bg-black/55 backdrop-blur-sm'
+          } ${forceDark ? 'dark' : ''} ${
             isBottom ? 'items-end justify-center' : 'items-center justify-center'
           }`}
           onClick={() => {
@@ -252,7 +262,7 @@ export const SheetModal = ({
                       ? 'text-[26px] font-black italic tracking-tight'
                       : 'text-lg font-bold text-gray-800 dark:text-white'
                 }`}
-                style={isP4 ? { fontFamily: 'var(--p4-display-font, serif)' } : p3 ? { color: 'var(--p3r-ink, #0a1230)', fontFamily: '"Arial Black", "Noto Sans SC", sans-serif' } : undefined}
+                style={isP4 ? { fontFamily: 'var(--p4-display-font, serif)' } : p3 ? { color: 'var(--p3r-ink, #0a1230)', fontFamily: '"Arial Black", "Noto Sans SC Black", "Noto Sans SC", sans-serif' } : undefined}
               >
                 {title}
                 {p3 && <span aria-hidden className="ml-1.5 inline-block h-[10px] w-[13px]" style={{ background: 'var(--p3r-blue, #1b57ff)', clipPath: 'polygon(100% 0, 100% 100%, 0 100%)' }} />}

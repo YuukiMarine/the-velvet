@@ -24,13 +24,13 @@ import { SyncPrivacyPanel } from '@/components/auth/SyncPrivacyPanel';
 import { CloudConsentModal } from '@/components/auth/CloudConsentNotice';
 import { LVTag } from '@/components/LVTag';
 import { computeTotalLv } from '@/utils/lvTiers';
-import { logout as cloudLogout } from '@/services/auth';
+import { logout as cloudLogout, deleteAccount as cloudDeleteAccount } from '@/services/auth';
 import { pushAll, pullAll, syncOnLogin, computeSyncDiff } from '@/services/sync';
 import { downloadBackup, copyBackupToClipboard, readBackupFile } from '@/services/backup';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P4Flower, P4Sparkle } from '@/ui/p4Kit';
 import { P3R, P3RPage, GhostWords, SectionMark, SlantButton, P3PageHeader, CodeChip, slantClip } from '@/components/p3r/kit';
-import { P5R, P5_FONT, roughQuad, P5Panel, P5Collage, P5Rough, P5Star, P5Sparkle, P5Dots, P5Slab, P5RPage } from '@/components/p5r/kit';
+import { P5R, P5_FONT, P5_TITLE_FONT, roughQuad, P5Panel, P5Collage, P5Rough, P5Star, P5Sparkle, P5Dots, P5Slab, P5RPage } from '@/components/p5r/kit';
 
 // P3R 备份双钮图标（设计稿：白色软盘 / 蓝色文档，线稿风）
 const DiskIcon = () => (
@@ -94,6 +94,10 @@ export const Account = () => {
   const lastCloudError = useCloudStore(s => s.lastError);
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  // 应用内注销账号（App Store 5.1.1(v) 合规）：确认弹窗 + 进行中 / 错误态
+  const [showDeleteAccountConfirm, setShowDeleteAccountConfirm] = useState(false);
+  const [deleteAccountBusy, setDeleteAccountBusy] = useState(false);
+  const [deleteAccountError, setDeleteAccountError] = useState<string | null>(null);
   const [syncChoiceOpen, setSyncChoiceOpen] = useState(false);
   // LV 徽章点击展开总点数明细
   const [showPointsBreakdown, setShowPointsBreakdown] = useState(false);
@@ -364,6 +368,20 @@ export const Account = () => {
       >
         退出登录
       </motion.button>
+
+      {/* 注销账号（App Store 5.1.1(v)：应用内能注册就必须能删号）。
+          低调但可发现：文字按钮 + 危险色，误触成本高的操作不做成大实心钮 */}
+      <button
+        onClick={() => { setDeleteAccountError(null); setShowDeleteAccountConfirm(true); }}
+        className="w-full py-2 text-xs font-medium text-red-500/80 hover:text-red-500 transition-colors"
+      >
+        永久删除云端账号
+      </button>
+      {deleteAccountError && (
+        <div className="p-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-xs text-red-700 dark:text-red-300">
+          注销失败：{deleteAccountError}
+        </div>
+      )}
     </>
   ) : null;
 
@@ -449,6 +467,32 @@ export const Account = () => {
         }}
         onCancel={() => setShowLogoutConfirm(false)}
       />
+
+      {/* 注销账号确认（App Store 5.1.1(v)） */}
+      <ConfirmDialog
+        isOpen={showDeleteAccountConfirm}
+        tone="danger"
+        title="永久删除云端账号？"
+        description={'将删除：\n• 云端账号（邮箱 / UserID / 档案）\n• 云端同步的全部数据\n• 与好友的 COOP 关联\n\n本机数据不受影响，仍完整保留在此设备上。'}
+        confirmText={deleteAccountBusy ? '正在删除…' : '永久删除'}
+        cancelText="取消"
+        onConfirm={async () => {
+          if (deleteAccountBusy) return;
+          setDeleteAccountBusy(true);
+          try {
+            await cloudDeleteAccount();
+            setShowDeleteAccountConfirm(false);
+          } catch (err) {
+            setShowDeleteAccountConfirm(false);
+            setDeleteAccountError(err instanceof Error ? err.message : '请稍后再试');
+          } finally {
+            setDeleteAccountBusy(false);
+          }
+        }}
+        onCancel={() => setShowDeleteAccountConfirm(false)}
+      >
+        <p className="text-center text-sm font-bold text-red-500">此操作无法撤销！</p>
+      </ConfirmDialog>
     </>
   );
 
@@ -460,7 +504,7 @@ export const Account = () => {
         <span aria-hidden className="absolute -inset-[2.5px]" style={{ background: P5R.paper, clipPath: 'polygon(14px 0, 100% 0, calc(100% - 18px) 100%, 0 100%)' }} />
         <span className="relative flex items-center gap-2 py-1.5 pl-5 pr-9" style={{ background: '#050505', clipPath: 'polygon(14px 0, 100% 0, calc(100% - 18px) 100%, 0 100%)' }}>
           <P5Star size={15} fill={P5R.red} className="shrink-0" />
-          <span className="text-[17px] font-black leading-none tracking-wide text-white" style={{ fontFamily: P5_FONT }}>{zh}</span>
+          <span className="text-[17px] font-black leading-none tracking-wide text-white" style={{ fontFamily: P5_TITLE_FONT }}>{zh}</span>
           <span className="text-[12px] font-black leading-none" style={{ color: P5R.greyLight }}>· {en}</span>
         </span>
       </div>
@@ -474,7 +518,7 @@ export const Account = () => {
       <code className="px-1.5 py-0.5 font-mono text-[12px] font-bold text-white" style={{ background: '#050505' }}>{children}</code>
     );
     return (
-      <P5RPage className="overflow-hidden">
+      <P5RPage>
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="relative pb-10">
           {/* ── 页头：拼贴「账号与数据」+ ACCOUNT 纸条（O=红星）+ 红斜块星群 ── */}
           <header className="relative pt-2">

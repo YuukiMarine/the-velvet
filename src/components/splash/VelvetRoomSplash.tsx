@@ -111,8 +111,10 @@ export function VelvetRoomSplash({ onComplete, s }: { onComplete: () => void; s:
   useEffect(() => {
     if (phase !== 'title' || doneRef.current) return;
     doneRef.current = true;
-    // 2400 → 2300：整体提速 0.5s 里的最后 0.1 秒（另 0.4 秒在 TRAVEL_SEC）
-    const t = setTimeout(onComplete, (anim ? 2300 : 1200) * s);
+    // 2400 → 2300（整体提速 0.5s 的尾款）→ 1800：后半段再砍 0.5s（用户口径）。
+    // 标题逐字 1.06s、副标题 1.52s 内全部定格，1.8s 停留不截断任何主体，
+    // 只有 marquee/涟漪这类"路过型"装饰被提前带走——它们本来就没有终点。
+    const t = setTimeout(onComplete, (anim ? 1800 : 1200) * s);
     return () => clearTimeout(t);
   }, [phase, s, onComplete, anim]);
 
@@ -206,7 +208,7 @@ export function VelvetRoomSplash({ onComplete, s }: { onComplete: () => void; s:
         }
         .vlv-marquee {
           white-space: nowrap; font-size: clamp(4.2rem, 20vw, 12rem); font-weight: 900; font-style: italic;
-          font-family: "Arial Black", "Noto Sans SC", sans-serif;
+          font-family: "Arial Black", "Noto Sans SC Black", "Noto Sans SC", sans-serif;
           color: transparent; -webkit-text-stroke: 1px rgba(169,188,255,0.5);
           letter-spacing: -0.02em; line-height: 1;
         }
@@ -430,7 +432,7 @@ export function VelvetRoomSplash({ onComplete, s }: { onComplete: () => void; s:
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 1.0 * s, ease: [0.2, 0, 0.1, 1] }}
             className="relative flex text-[clamp(2.1rem,11vw,4rem)] font-black leading-none text-white"
-            style={{ fontFamily: '"Noto Sans SC", "Arial Black", Arial, sans-serif' }}
+            style={{ fontFamily: '"Noto Sans SC Black", "Noto Sans SC", "Arial Black", Arial, sans-serif' }}
             aria-label="靛蓝色房间"
           >
             {'靛蓝色房间'.split('').map((ch, i) => (

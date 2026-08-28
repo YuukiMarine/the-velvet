@@ -213,7 +213,7 @@ const AttrDetailInline = ({ attrId, level: fallbackLevel, onBack }: { attrId: At
         animate={{ x: ['34%', '9%', '0%'], y: [44, -10, 0], scale: [0.56, 0.94, 1], transition: { duration: 0.5, ease: [0.4, 0, 0.2, 1], times: [0, 0.58, 1] } }}
         exit={{ opacity: 0, transition: { duration: 0.2 } }}
       >
-        <div className="text-[52px] font-black italic leading-none" style={{ color: P3R.ink, fontFamily: '"Arial Black", "Noto Sans SC", sans-serif' }}>{name}</div>
+        <div className="text-[52px] font-black italic leading-none" style={{ color: P3R.ink, fontFamily: '"Arial Black", "Noto Sans SC Black", "Noto Sans SC", sans-serif' }}>{name}</div>
         <div className="mt-2.5 flex items-center gap-2.5">
           <span className="relative inline-flex items-baseline gap-1 px-4 py-1 text-white" style={{ clipPath: slantClip(8), background: P3R.blue }}>
             <span className="text-[11px] font-black tracking-wider text-white/85">LV</span>
@@ -571,7 +571,7 @@ export const DashboardP3 = () => {
   }
 
   return (
-    <P3RPage className="overflow-hidden">
+    <P3RPage>
       <motion.div ref={rootRef} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="relative pb-6">
         {/* 斜界引力线已按用户裁决移除（2026-07-12："删除主页背景那条莫名其妙的生长线"） */}
 
@@ -587,7 +587,7 @@ export const DashboardP3 = () => {
         <header className="relative pt-4">
           <h1
             className="inline-flex items-end text-[54px] font-black italic leading-[0.95] tracking-tight"
-            style={{ color: P3R.ink, fontFamily: '"Arial Black", "Noto Sans SC", sans-serif' }}
+            style={{ color: P3R.ink, fontFamily: '"Arial Black", "Noto Sans SC Black", "Noto Sans SC", sans-serif' }}
           >
             靛蓝色房间
             <TitlePeriod className="mb-1.5 ml-1.5" />

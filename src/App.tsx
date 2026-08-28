@@ -53,9 +53,9 @@ import { PWAUpdateToast } from '@/components/PWAUpdateToast';
 import { CallingCardCutIn } from '@/components/callingCard/CallingCardCutIn';
 import { isNative } from '@/utils/native';
 import { tryHandleBack } from '@/utils/useBackHandler';
-import { initBoldnessRuntime, schedulePerfSample, setStraightenMode } from '@/utils/boldness';
+import { initBoldnessRuntime, schedulePerfSample, setStraightenMode, useBoldness } from '@/utils/boldness';
 import { TransitionLayer } from '@/components/transition/HeavyTransition';
-import { consumePendingCircleReveal } from '@/ui/transitionDirector';
+import { consumePendingCircleReveal, isCurtainCovering } from '@/ui/transitionDirector';
 import { P4StageDecor } from '@/ui/p4Kit';
 import { bgAnimStyles } from '@/ui/bgAnim';
 
@@ -828,8 +828,10 @@ function App() {
           <SyncStatusBadge />
           <GlobalConflictDialog />
           <GlobalDiffDialog />
-          {/* dev 临时件（斜界调参/星形撕页演示/原语样品间）已随收官下架（2026-08-01 用户口径）；
-              组件仍在 components/dev/ 备查，需要时挂回来即可 */}
+          {/* dev 临时件已随收官下架（2026-08-01 用户口径）；斜界调参（SlantTuner）仍在
+              components/dev/ 备查。星形撕页演示与原语样品间连同其专属库
+              （StarTearOverlay/motifs）已删（v2.7 审计：生产零引用，星形技法在
+              HeavyTransition 另有实现，starPath.ts 为存活的共用层） */}
           {/* P8.2 重转场演出层：订阅 transitionDirector，轮盘跳转/仪式点经此播频道幕布 */}
           <TransitionLayer />
           {/* 宣告 · 达成 全屏结算屏：放在 App 顶层是为了"完成最后一项 todo 时立即弹出"，
@@ -860,13 +862,19 @@ function App() {
  * 页面、on-mount 数据副作用重跑——逆流衰减等不可重放）。
  */
 const PAGE_HOLD_MS = 520;
+/** 圆形揭示时长（原生 CSS transition 驱动，见 PageShell 内注释） */
+const REVEAL_MS = 460;
 /** 旧路由 id todos/activities 与 actions 同页，归一避免瞬间误 remount */
 const normPageKey = (id: string) => (id === 'todos' || id === 'activities' ? 'actions' : id);
 
 const PageShell = ({ leaving, coveredByWipe, stageBg, stageDecor, onRevealed, children }: {
   leaving: boolean; coveredByWipe: boolean; stageBg: string; stageDecor?: ReactNode; onRevealed?: () => void; children: ReactNode;
 }) => {
-  const [origin] = useState(consumePendingCircleReveal); // 入场时查询一次（读取不清除，StrictMode 双挂载安全）
+  // D0（reduced-motion / 校直 / 低帧永久降级）：圆形揭示是装饰动效，按降级铁律直出
+  // ——origin 置 null 走普通淡切路径（与 TransitionLayer 拒接波纹演出同一口径，
+  // 否则 D0 用户只剩一个没有波纹陪衬的裸 clip 扩散，观感是"莫名其妙的圆"）
+  const bold = useBoldness();
+  const [origin] = useState(() => (bold ? consumePendingCircleReveal() : null)); // 入场时查询一次（读取不清除，StrictMode 双挂载安全）
   // 垫底色以 App 根的**实际计算色**为准：夜间频道毯式规则会把根的 dark:bg-gray-900
   // 翻成频道色（蓝→靛/黄→紫），stageBg 里写死的 #111827 与之差一档——垫层一卸就是
   // 一次底色跳变，即夜间开背景动画/背景图时的"切页背景闪烁"。量不到再退回 stageBg。
@@ -876,10 +884,86 @@ const PageShell = ({ leaving, coveredByWipe, stageBg, stageDecor, onRevealed, ch
     const c = el ? getComputedStyle(el).backgroundColor : '';
     return c && c !== 'transparent' && c !== 'rgba(0, 0, 0, 0)' ? c : null;
   });
-  const [revealing, setRevealing] = useState(!!origin);
+  /**
+   * 圆形揭示改三相：pending（新页隐藏，等首帧画完）→ revealing（圆扩散中）→ done。
+   *
+   * 为什么不再挂载即开擦：clip 动画在低端机上切页那一刻会被新页挂载/布局整段饿死，
+   * 等主线程空出来时进度已 ≥1，蒙版从半截跳到消失（用户上报「圆圈扩散到屏幕一半
+   * 就消失」，3:4 低端机稳定复现）。现在先把挂载成本付掉（双 rAF = 首帧已上屏），
+   * 再开 0.46s 的擦除，全程都有帧可画。
+   *
+   * 坐标系：clip-path 画在**本元素**的 border box 里，而点击原点是视口坐标——开擦前
+   * 量一次自身 rect 做换算（main 的 padding 普通机型 16px，iOS 刘海机安全区 ~60px）。
+   *
+   * 驱动改原生 CSS transition、完成判定改定时器（v2.7.1，用户上报「蒙版一闪而过/
+   * 圆心和波纹圆环对不上」的根因）：此前 clip 走 framer 的 animate 插值 +
+   * onAnimationComplete 收尾，但该回调**分不清完成的是哪段动画**——挂载期 pending
+   * 目标那个零时长动画的完成回调若迟到落在 revealing 相内，守卫照样放行，蒙版开擦
+   * 即被掐成 'none'（本机日志实锤：complete 的 def 还是 pending 值、phase 已是
+   * revealing）。CSS transition 起终点写死同一个本地圆心，半径是唯一变化量，圆心
+   * 恒定；时长已知，定时器收尾没有回调歧义。clip 样式全程手写在 el.style 上，
+   * React/framer 不参与（framer 只管这层的 opacity，按属性写入，互不相扰）。
+   */
+  const shellRef = useRef<HTMLDivElement>(null);
+  const [phase, setPhase] = useState<'pending' | 'revealing' | 'done'>(origin ? 'pending' : 'done');
+  const phaseRef = useRef(phase);
+  phaseRef.current = phase;
+  const onRevealedRef = useRef(onRevealed);
+  onRevealedRef.current = onRevealed;
+  // 首帧即隐藏：paint 前把 r=0 的 clip 写上（r=0 全裁，位置无关紧要）。不写进 JSX
+  // style——那样每次 re-render 都会把手写的 transition 中间值冲掉
+  useLayoutEffect(() => {
+    if (origin && shellRef.current) shellRef.current.style.clipPath = 'circle(0px at 0px 0px)';
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    if (!origin) return;
+    let doneTimer = 0;
+    let started = false;
+    const start = () => {
+      const el = shellRef.current;
+      if (started || phaseRef.current !== 'pending' || !el) return;
+      started = true;
+      const rect = el.getBoundingClientRect();
+      // 半径按**视口**几何算（原点到最远屏角 ×1.1 吸收换算与安全区余量），圆画在本元素坐标系
+      const R = Math.ceil(Math.hypot(
+        Math.max(origin.x, window.innerWidth - origin.x),
+        Math.max(origin.y, window.innerHeight - origin.y),
+      ) * 1.1);
+      const lx = Math.round(origin.x - rect.left);
+      const ly = Math.round(origin.y - rect.top);
+      if (import.meta.env.DEV) console.debug('[reveal] origin=', origin, 'rect=', { l: rect.left, t: rect.top }, 'local=', { lx, ly, R });
+      el.style.transition = 'none';
+      el.style.clipPath = `circle(0px at ${lx}px ${ly}px)`;
+      void el.offsetWidth; // 强制 reflow 钉住起点，下一条赋值才会被当作 transition 终点
+      el.style.transition = `clip-path ${REVEAL_MS}ms cubic-bezier(0.3, 0, 0.2, 1)`;
+      el.style.clipPath = `circle(${R}px at ${lx}px ${ly}px)`;
+      setPhase('revealing');
+      doneTimer = window.setTimeout(() => {
+        if (phaseRef.current !== 'revealing') return;
+        setPhase('done');
+        onRevealedRef.current?.();
+      }, REVEAL_MS + 40);
+    };
+    let r2 = 0;
+    const r1 = requestAnimationFrame(() => { r2 = requestAnimationFrame(start); });
+    // rAF 断供保险丝（后台化/个别 WebView 暂停 rAF）：500ms 内没开擦就强启，
+    // 蒙版宁可少一段扩散，也绝不把新页锁在隐藏态
+    const fuse = window.setTimeout(start, 500);
+    return () => { cancelAnimationFrame(r1); cancelAnimationFrame(r2); clearTimeout(fuse); clearTimeout(doneTimer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   // 连点保护：上一张还没擦完就被顶成 leaving 时立刻收掉它的圆蒙版，
   // 否则它会带着半截圆停在垫底层上，看起来就是"两个界面卡在一起"（用户上报）。
-  useEffect(() => { if (leaving) setRevealing(false); }, [leaving]);
+  useEffect(() => { if (leaving) setPhase('done'); }, [leaving]);
+  // done 的样式收尾（定时器到点 / leaving 截断都汇到这里）：clip 撤干净——
+  // clip-path 会给 fixed 子孙创建 containing block，不撤会让页面背景错位。
+  // layout effect：连点截断的半圆必须在下一次 paint 前消失，不能多挂一帧
+  useLayoutEffect(() => {
+    if (phase !== 'done') return;
+    const el = shellRef.current;
+    if (el) { el.style.transition = ''; el.style.clipPath = ''; }
+  }, [phase]);
   /**
    * 变 leaving 时是否"原样垫底等着被擦掉"。
    *
@@ -898,23 +982,16 @@ const PageShell = ({ leaving, coveredByWipe, stageBg, stageDecor, onRevealed, ch
     const t = setTimeout(() => setForceFade(true), 260);
     return () => clearTimeout(t);
   }, [leaving]);
-  const R = origin
-    ? Math.ceil(Math.hypot(Math.max(origin.x, window.innerWidth - origin.x), Math.max(origin.y, window.innerHeight - origin.y)) * 1.06)
-    : 0;
+  const masked = !!origin && phase !== 'done';
   return (
     <motion.div
+      ref={shellRef}
       className={leaving ? 'pointer-events-none absolute inset-x-0 top-0 z-0' : 'relative z-[1]'}
       aria-hidden={leaving || undefined}
-      initial={origin ? { clipPath: `circle(0px at ${origin.x}px ${origin.y}px)` } : false}
-      animate={{
-        clipPath: origin && revealing ? `circle(${R}px at ${origin.x}px ${origin.y}px)` : 'none',
-        opacity: leaving && (!holdStatic || forceFade) ? 0 : 1,
-      }}
-      transition={{
-        clipPath: revealing ? { duration: 0.42, ease: [0.3, 0, 0.2, 1] } : { duration: 0 },
-        opacity: { duration: 0.18 },
-      }}
-      onAnimationComplete={() => { setRevealing(false); onRevealed?.(); }}
+      // clip-path 不在这里声明：蒙版全程由上方 effect 手写 el.style（原生 CSS
+      // transition），JSX/framer 只碰 opacity——两条通道井水不犯河水
+      animate={{ opacity: leaving && (!holdStatic || forceFade) ? 0 : 1 }}
+      transition={{ opacity: { duration: 0.18 } }}
     >
       {/* 擦除期给新页垫一层不透明舞台底。页面本体自己是透明的（底色由 App 根铺），
           不垫底的话圆内是"新页压在旧页上"的重影而不是擦除。
@@ -923,7 +1000,7 @@ const PageShell = ({ leaving, coveredByWipe, stageBg, stageDecor, onRevealed, ch
           stageDecor：把全局背景装饰层原样复刻一份进来。装饰是 fixed inset-0，两份
           落点完全重合——不复刻的话垫底层会把它盖成纯色，擦除结束垫层一卸，装饰"跳"
           回来就是用户看到的"背景错误闪烁"。 */}
-      {origin && revealing && (
+      {masked && (
         <div
           aria-hidden
           className="pointer-events-none absolute"
@@ -973,10 +1050,20 @@ const PageSwitcher = ({ current, stageBg, stageDecor, render }: {
   }, [current]);
   useEffect(() => {
     const key = normPageKey(current);
+    // 幕布正全遮着屏（频道重转场的 midpoint 窗口）：旧页此刻整个被盖住，
+    // **原子换页**——直接只留新页，不留 leaving 垫底。旧行为是旧页淡出 0.18s，
+    // 而幕布 0.1s 后就开始离场：透明的新页叠着半透明的旧页一起露出来，
+    // 互相透出的那一下就是「切页闪烁/重影」的残留源头。
+    const atomicSwap = isCurtainCovering();
     setStack((prev) => {
       const top = prev[prev.length - 1];
       // 同页（含 todos→actions 归一）：仅同步 id，保持实例
       if (top.key === key) return top.id === current ? prev : [...prev.slice(0, -1), { ...top, id: current }];
+      if (atomicSwap) {
+        // 目标页在栈里则复活其实例（保持内部状态），否则全新；其余全部立即出栈
+        const existing = prev.find((p) => p.key === key);
+        return [existing ? { ...existing, id: current, leaving: false, reviving: true } : { key, id: current, leaving: false, reviving: false }];
+      }
       // 目标页仍在栈里（连点回头）：原地复活它，其余全部标 leaving 且不等擦除
       const existing = prev.find((p) => p.key === key);
       if (existing) {
@@ -999,8 +1086,11 @@ const PageSwitcher = ({ current, stageBg, stageDecor, render }: {
     };
   }, [current, prune]);
   // 本轮切页是否登记过水波纹原点：只在 current 变化时取一次快照，
-  // 不要让每张 shell 各问一遍（各问各的会拿到不同答案，正是叠页的来源之一）
-  const hasPendingWipe = !!consumePendingCircleReveal();
+  // 不要让每张 shell 各问一遍（各问各的会拿到不同答案，正是叠页的来源之一）。
+  // D0 下 PageShell 不放圆擦除（见其 origin 初始化），这里同口径按"无擦除"走，
+  // 否则旧页会垫底空等一个不会来的擦除（虽有 260ms forceFade 兜底，但何必）
+  const bold = useBoldness();
+  const hasPendingWipe = bold && !!consumePendingCircleReveal();
   return (
     <div className="relative">
       {stack.map((p) => (

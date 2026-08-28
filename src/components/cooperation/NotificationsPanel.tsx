@@ -44,12 +44,14 @@ export function NotificationsPanel({ isOpen, onClose, onOpenCoopAccept }: Props)
   const [working, setWorking] = useState<string | null>(null);
   // 是否隐藏"羁绊之影战斗"类通知 —— 持久化到 localStorage，用户切换后保留
   const [hideBattle, setHideBattle] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return false;
-    return window.localStorage.getItem('velvet_hide_battle_notif') === '1';
+    try {
+      return window.localStorage.getItem('velvet_hide_battle_notif') === '1';
+    } catch { return false; }
   });
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    window.localStorage.setItem('velvet_hide_battle_notif', hideBattle ? '1' : '0');
+    try {
+      window.localStorage.setItem('velvet_hide_battle_notif', hideBattle ? '1' : '0');
+    } catch { /* 存储不可用：本次会话内仍生效，只是不跨 session */ }
   }, [hideBattle]);
 
   // 多选模式 + 选中集合

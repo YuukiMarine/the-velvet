@@ -39,7 +39,7 @@ export const Z = {
    * （CounselChat/AiMatch/AllOut/PrayerEffect），200 压不住「永远最顶」不成立。
    */
   toast: 230,
-  /** 重转场幕布（TransitionLayer / StarTearOverlay）：全屏演出，盖过一切 */
+  /** 重转场幕布（TransitionLayer）：全屏演出，盖过一切 */
   transition: 300,
 } as const;
 

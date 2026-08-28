@@ -53,7 +53,9 @@ export function ReturnBackfillCalendar({
         <span className="text-[12px] font-bold text-gray-600 dark:text-gray-300">
           补记 · 已记 {entries.length} 条
         </span>
-        <button type="button" onClick={onBack} className="text-[11px] font-bold text-gray-400 dark:text-gray-500">
+        <button type="button" onClick={onBack} className="inline-flex items-center gap-1 text-[11px] font-bold text-gray-400 dark:text-gray-500">
+          {/* 带回箭头：这是一步「返回」，不带箭头看起来像不可逆的放弃 */}
+          <span aria-hidden>←</span>
           算了
         </button>
       </div>

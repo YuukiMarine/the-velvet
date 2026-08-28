@@ -1,4 +1,5 @@
 import { pb, cloudEnabled, getUserId } from './pocketbase';
+import { pbQuote } from './pbFilter';
 import type { RecordModel } from 'pocketbase';
 
 /** 简单的邮箱格式校验 */
@@ -107,8 +108,6 @@ const callAuthWithOTP = async (otpId: string, code: string): Promise<RecordModel
   return result.record;
 };
 
-const escapePbString = (s: string): string => s.replace(/"/g, '\\"');
-
 /**
  * 生成随机密码（用于 OTP 注册时填充 password 字段——用户永远不会感知）。
  * 长度 16 字符：大小写字母 / 数字 / 后缀 `Aa1!`。
@@ -166,7 +165,7 @@ export const resolveIdentityToEmail = async (identity: string): Promise<string> 
   // 回落：List 查询（仅在 List Rule 公开 或 当前已登录时成功）
   try {
     const result = await pb.collection('users').getList(1, 1, {
-      filter: `username = "${escapePbString(normalized)}"`,
+      filter: `username = ${pbQuote(normalized)}`,
       fields: 'email,username',
       skipTotal: true,
     });
@@ -424,6 +423,23 @@ export const requestPasswordReset = async (identity: string): Promise<void> => {
 /** 登出（清除本地 token，不调用远程） */
 export const logout = (): void => {
   pb?.authStore.clear();
+};
+
+/**
+ * 永久删除云端账号（App Store 审核指南 5.1.1(v)：应用内能注册就必须能注销）。
+ *
+ * 删除 users 记录本身；user_data 各行随 PB 的级联删除一并清掉——
+ * **前提是服务端 user_data 的 user 关系字段勾了 cascadeDelete**，
+ * 且 users 集合的 delete 规则允许本人删除（id = @request.auth.id）。
+ * 这两条在 PB 后台各确认一次，客户端这边才是完整的注销闭环。
+ * 本机数据不动（本地优先应用，注销云端 ≠ 清空本地）。
+ */
+export const deleteAccount = async (): Promise<void> => {
+  if (!pb || !pb.authStore.isValid) throw new Error('未登录');
+  const id = getUserId();
+  if (!id) throw new Error('用户信息缺失');
+  await pb.collection('users').delete(id);
+  pb.authStore.clear();
 };
 
 /** 更新当前用户的 profile 字段 */

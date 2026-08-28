@@ -78,4 +78,12 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- 精确闹钟（v2.7 用户裁决①「吞消息」对策）：Android 12+ 没有此权限时，
+         Capacitor 本地通知会静默退化为**不精确**排程（setAndAllowWhileIdle），
+         被系统合并/推迟——「后台没挂就吞/迟到」的另一半根因。
+         SCHEDULE_EXACT_ALARM 覆盖 Android 12（默认授予，可被用户回收）；
+         USE_EXACT_ALARM 覆盖 13+（安装即授予，闹钟/日程类用途合规；
+         本应用侧载分发，不受 Play 商店对该权限的品类审核限制）。 -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
 </manifest>

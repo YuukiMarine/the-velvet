@@ -35,7 +35,14 @@ export const P5R = {
 } as const;
 
 /** 黑体拉满字重的标题字栈（不引入网络字体，PWA 离线不破坏） */
-export const P5_FONT = '"Noto Sans SC", "Source Han Sans SC", "Microsoft YaHei", sans-serif';
+/** P5 正文字体（v2.7 字体批次，三版定稿）：荆南麦圆体 KN Maiyuan 子集
+ *  （思源黑体**简体字形**的圆角衍生，SIL OFL；小赖太卡通→源泉是台标字形→思源柔黑
+ *  实测纯日文子集缺简体码位，最终落此）。
+ *  Persona5 菜单的字面语言就是粗圆体——正文/标签/按钮走它；单字重，加粗靠合成（圆笔画仿粗不糊）。 */
+export const P5_FONT = '"Velvet Round SC", "Noto Sans SC", "Source Han Sans SC", "Microsoft YaHei", sans-serif';
+/** P5 标题字体：思源黑体 Black 真字重打头（用户口径「左上角标题字重不够」——苹方仿粗撑不起拼贴大字），
+ *  圆体兜底子集外字形。用于拼贴字块 / 段落слab / 大按钮字。 */
+export const P5_TITLE_FONT = '"Noto Sans SC Black", "Velvet Round SC", "Noto Sans SC", sans-serif';
 
 // ── 确定性伪随机 ─────────────────────────────────────────────────────────────
 const mulberry = (seed: number) => {
@@ -522,7 +529,7 @@ export const P5Collage = ({ tiles, size = 52, gap = 5, className, delay = 0 }: {
               marginTop: t.dy ?? TILE_DY[i % TILE_DY.length],
               fontSize: s,
               lineHeight: 1,
-              fontFamily: P5_FONT,
+              fontFamily: P5_TITLE_FONT,
               background: t.bg ?? d.bg,
               color: t.fg ?? d.fg,
               border: `3px solid ${P5R.ink}`,
@@ -570,7 +577,7 @@ export const P5CollageTitle = ({ text, size = 30, star = true, className }: {
         // 例外：！？ 在稿上（成就解锁！/ 恭喜升级！）是实打实的一块瓷砖，不能落成裸字
         if (/[\s·、，。：；（）()「」【】…—-]/.test(ch)) {
           return (
-            <span key={i} className="inline-block font-black" style={{ fontSize: size * 0.9, lineHeight: 1.2, marginTop: 6, color: P5R.ink, fontFamily: P5_FONT }}>
+            <span key={i} className="inline-block font-black" style={{ fontSize: size * 0.9, lineHeight: 1.2, marginTop: 6, color: P5R.ink, fontFamily: P5_TITLE_FONT }}>
               {ch === ' ' ? ' ' : ch}
             </span>
           );
@@ -592,7 +599,7 @@ export const P5CollageTitle = ({ text, size = 30, star = true, className }: {
               marginTop: dy,
               fontSize: size,
               lineHeight: 1,
-              fontFamily: P5_FONT,
+              fontFamily: P5_TITLE_FONT,
               background: c.bg,
               color: c.fg,
               border: `2.5px solid ${P5R.ink}`,
@@ -634,7 +641,7 @@ export const P5SubBar = ({ segs, star = true, rot = -1.6, className }: {
     }}
   >
     {segs.map((s, i) => (
-      <span key={i} className="text-[17px] font-black leading-none tracking-[0.14em]" style={{ color: s.c ?? P5R.white, fontFamily: P5_FONT }}>
+      <span key={i} className="text-[17px] font-black leading-none tracking-[0.14em]" style={{ color: s.c ?? P5R.white, fontFamily: P5_TITLE_FONT }}>
         {s.t}
       </span>
     ))}
@@ -671,7 +678,7 @@ export const P5Wedge = ({ children, star = true, starSide = 'right', tone = 'ink
       )}
       <span className="relative flex items-center gap-2 py-1.5 pl-4 pr-8" style={{ background: bg, clipPath: wedge }}>
         {starSide === 'left' && starEl}
-        <span className="text-[19px] font-black leading-none tracking-wide" style={{ color: fg, fontFamily: P5_FONT }}>{children}</span>
+        <span className="text-[19px] font-black leading-none tracking-wide" style={{ color: fg, fontFamily: P5_TITLE_FONT }}>{children}</span>
         {starSide === 'right' && starEl}
       </span>
     </div>
@@ -762,7 +769,7 @@ export const P5Btn = ({ children, tone = 'red', seed = 9, onClick, disabled = fa
       <span aria-hidden className="pointer-events-none absolute inset-0" style={{ background: P5R.paper, clipPath: roughQuad(seed + 0.29, 6) }} />
       <span aria-hidden className="pointer-events-none absolute inset-[2.5px]" style={{ background: P5R.ink, clipPath: roughQuad(seed + 0.41, 5) }} />
       <span aria-hidden className="pointer-events-none absolute inset-[5.5px]" style={{ background: face, clipPath: roughQuad(seed + 0.57, 4) }} />
-      <span className={`relative flex items-center justify-center gap-2 px-6 py-3 text-[17px] font-black tracking-wider ${bodyClassName ?? ''}`} style={{ color: fg, fontFamily: P5_FONT }}>
+      <span className={`relative flex items-center justify-center gap-2 px-6 py-3 text-[17px] font-black tracking-wider ${bodyClassName ?? ''}`} style={{ color: fg, fontFamily: P5_TITLE_FONT }}>
         {children}
       </span>
     </motion.button>

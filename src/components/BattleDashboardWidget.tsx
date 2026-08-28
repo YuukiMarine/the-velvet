@@ -4,7 +4,7 @@ import { useAppStore } from '@/store';
 import { isInShadowTime } from '@/constants';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P4Flower, P4Sparkle } from '@/ui/p4Kit';
-import { P5R, P5_FONT, roughQuad, roughBanner, P5Star, P5Dots } from '@/components/p5r/kit';
+import { P5R, P5_FONT, P5_TITLE_FONT, roughQuad, roughBanner, P5Star, P5Dots } from '@/components/p5r/kit';
 
 /** 影时间扫描线：CRT 横纹叠层（只在暗底上叠，靠 mix-blend 压出微亮/微暗交替） */
 const ScanLines = ({ opacity = 0.5 }: { opacity?: number }) => (
@@ -89,7 +89,7 @@ export const BattleDashboardWidget = () => {
             </svg>
           </span>
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-[17px] font-black leading-tight" style={{ color: P5R.white, fontFamily: P5_FONT, textShadow: '2px 2px 0 #000000' }}>
+            <span className="block truncate text-[17px] font-black leading-tight" style={{ color: P5R.white, fontFamily: P5_TITLE_FONT, textShadow: '2px 2px 0 #000000' }}>
               逆影战场
             </span>
             <span className="mt-1 block truncate text-[12px] font-bold" style={{ color: P5R.white }}>{status}</span>

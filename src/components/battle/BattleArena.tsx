@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore } from '@/store';
+import { Toggle } from '@/components/Toggle';
 import { toLocalDateKey } from '@/store';
 import { isInShadowTime, SHADOW_LEVEL_CONFIG } from '@/constants';
 import { BOSS_ATTACK_BY_LEVEL } from '@/battle/numbers';
@@ -1069,20 +1070,17 @@ export const BattleArena = () => {
                           <p className="text-sm font-semibold text-gray-800 dark:text-gray-100">启用逆影战场</p>
                           <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">关闭后将隐藏战斗功能及其全部入口（首页与菜单）</p>
                         </div>
-                        <button
-                          onClick={() => {
-                            const next = !battleEnabled;
+                        {/* 统一 Toggle（v2.7）：此前是手搓圆角开关——P5 毯式重皮盖不到它，
+                            黑白斜切世界里孤零零一颗圆角胶囊（用户上报「开关底部不该是圆角」），
+                            顺带没有 role/aria。换制式件后四频道皮肤与可达性全部继承。 */}
+                        <Toggle
+                          checked={battleEnabled}
+                          onChange={(next) => {
                             setBattleEnabled(next);
-                            saveSettings({ battleEnabled: next });
+                            void saveSettings({ battleEnabled: next });
                           }}
-                          className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${battleEnabled ? 'bg-purple-600' : 'bg-gray-200 dark:bg-gray-700'}`}
-                        >
-                          <motion.div
-                            animate={{ x: battleEnabled ? 20 : 2 }}
-                            transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-                            className="absolute top-1 w-4 h-4 rounded-full bg-white shadow"
-                          />
-                        </button>
+                          aria-label="启用逆影战场"
+                        />
                       </div>
                     </div>
 
@@ -1093,16 +1091,11 @@ export const BattleArena = () => {
                           <p className="text-sm font-semibold text-gray-800 dark:text-gray-100">影之评语</p>
                           <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">登塔回顾附一句 AI 点评（需配置 API Key）</p>
                         </div>
-                        <button
-                          onClick={() => void saveSettings({ battleCommentEnabled: settings.battleCommentEnabled === false })}
-                          className="relative w-12 h-6 rounded-full transition-colors flex-shrink-0"
-                          style={{ background: settings.battleCommentEnabled !== false ? 'rgb(var(--color-battle-rgb))' : 'rgba(156,163,175,0.4)' }}
-                        >
-                          <motion.span
-                            animate={{ left: settings.battleCommentEnabled !== false ? 26 : 4 }}
-                            className="absolute top-1 w-4 h-4 rounded-full bg-white shadow"
-                          />
-                        </button>
+                        <Toggle
+                          checked={settings.battleCommentEnabled !== false}
+                          onChange={(v) => void saveSettings({ battleCommentEnabled: v })}
+                          aria-label="影之评语"
+                        />
                       </div>
                     </div>
 

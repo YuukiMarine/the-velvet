@@ -8,6 +8,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { useAppStore } from '@/store';
+import { DiamondMarkIcon, NotebookIcon } from '@/components/settingsIcons';
 import { useNavigatorStore } from '@/store/navigator';
 import { v4 as uuidv4 } from 'uuid';
 import { getAIConfig, getDeliberateAIConfig } from '@/utils/aiClient';
@@ -162,7 +163,7 @@ export const NavigatorSettings = () => {
 
       {/* ── 人格管理 ── */}
       <div className="flex items-center gap-2 pb-2 border-b border-gray-200 dark:border-gray-700/80">
-        <span className="text-base">◈</span>
+        <span aria-hidden className="text-gray-500 dark:text-gray-300"><DiamondMarkIcon className="h-[18px] w-[18px]" /></span>
         <h4 className="text-sm font-bold text-gray-800 dark:text-white tracking-wide">人格</h4>
       </div>
       <p className="-mt-2 text-sm text-gray-500 dark:text-gray-400">切换人格会开启（或恢复）它今天的对话。能力不变，变的只是性格和嘴。</p>
@@ -315,7 +316,7 @@ export const NavigatorSettings = () => {
       {/* ── 记事本（弹窗；含 AI 维护的用户画像 + 原子记忆） ── */}
       <div className="flex items-center justify-between gap-3 rounded-xl border border-gray-200 px-4 py-3 dark:border-gray-700">
         <div>
-          <div className="text-sm font-semibold text-gray-700 dark:text-gray-200">📔 记事本</div>
+          <div className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 dark:text-gray-200"><NotebookIcon className="h-4 w-4" /> 记事本</div>
           <p className="text-xs text-gray-400 dark:text-gray-500">它记住的关于你的事：长期画像 + 零散记忆，可改可删，只存本机。</p>
         </div>
         <button type="button" onClick={() => setNotebookOpen(true)}

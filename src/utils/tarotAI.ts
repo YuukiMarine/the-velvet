@@ -82,7 +82,11 @@ function cardLine(c: TarotCardData, orientation: TarotOrientation): string {
   return `《${c.name} ${c.nameEn}》(${o}) — 关键词：${m.keywords.join('、')}；牌意：${m.meaning}`;
 }
 
-function previousDailyLine(d: DailyDivination | null | undefined, attrNames: Record<AttributeId, string>): string {
+function previousDailyLine(
+  d: DailyDivination | null | undefined,
+  attrNames: Record<AttributeId, string>,
+  gapDays: number | null,
+): string {
   if (!d) return '（无上一张每日塔罗记录）';
   const card = TAROT_BY_ID[d.cardId];
   const cardName = card ? `《${card.name} ${card.nameEn}》` : `《${d.cardId}》`;
@@ -90,8 +94,11 @@ function previousDailyLine(d: DailyDivination | null | undefined, attrNames: Rec
   const fortune = d.fortune ? FORTUNE_META[d.fortune]?.label ?? d.fortune : '未记录';
   const attrName = attrNames[d.effect.attribute] ?? d.effect.attribute;
   const date = d.createdAt ? formatLocalDateTime(new Date(d.createdAt)) : d.date;
+  // 间隔标注放最前：模型此前一律把上一张称为「昨日的××」，用户隔了很多天再抽时
+  // 读到"昨日"就穿帮了。是不是昨天，这里说死，正文措辞跟着走。
+  const gapLabel = gapDays === null ? '' : gapDays <= 1 ? '【就在昨天】' : `【${gapDays} 天前，不是昨天】`;
   return [
-    `[${date}] ${cardName}（${orientation}）`,
+    `${gapLabel}[${date}] ${cardName}（${orientation}）`,
     `运势：${fortune}`,
     `加成：${attrName} × ${d.effect.multiplier}`,
     `上一条短建议：${d.advice || '（无）'}`,
@@ -100,20 +107,25 @@ function previousDailyLine(d: DailyDivination | null | undefined, attrNames: Rec
 
 // ── 每日塔罗：JSON 响应，非流式 ────────────────────────────
 
-const DAILY_SYSTEM_PROMPT = `你是靛蓝色房间的塔罗解读者。你的语气庄严而富有诗意，带着神秘学气息，但从不故弄玄虚。
-用户今日抽到一张塔罗牌，请结合以下信息为其撰写一份每日运势解读：
+const DAILY_SYSTEM_PROMPT = `你是靛蓝色房间的塔罗解读者。语气庄严而富有诗意，带着神秘学气息，但从不故弄玄虚；像一位熟识客人的解读者在桌边落笔，不像自动生成的日报。
+用户今日抽到一张塔罗牌，请结合以下素材为其撰写今日解读：
 1. 抽到的塔罗牌（含正/逆位）的意象
-2. 用户的五维属性名称与等级（这些属性代表用户当下的成长状态）
-3. 用户最近 7 条成长记录（体现近况）
+2. 用户的五维属性名称与等级（代表其当下的成长状态）
+3. 用户最近 7 条成长记录（近况的真实细节——个性化的全部来源）
 4. 当前本地时间与上一张每日塔罗的轻量上下文
 
-请以紧凑但富有意象的笔触，说明：
-- 今日整体走向（2-3 句）
-- 今日"宜"的方向（1-2 条）
-- 今日"忌"或需"慎"的地方（1-2 条）
+解读要覆盖三件事：今天的走向如何、什么值得顺势去做、什么需要收着或避开。
+但**不要用固定的骨架去装它们**——同一位客人天天来抽，昨天"整体走向/宜/忌"三段，
+今天还是同样三段，就成了报表。写法上：
+- 切入点每天该不一样：可以从牌面的一个意象落笔，可以从他某条记录接过来，
+  可以从时辰（深夜/清晨）起头，也可以直接给出那句最要紧的判断。
+- 至少引用一处**具体的**近期记录（换成你的话说，不要照抄原文）；没有记录就坦然只读牌。
+- 结构自由：整段散文、两三个短段、或一小段加两行点拨都可以；小标题可用可不用，
+  用也不要每天同一套。总量 3~9 行之间看内容需要。
+- 判断要落地：说"适合做什么"时给到能做的事，不要停在"保持好心态"这类空话。
 
-并结合牌意（占比较大）与用户当下状态，从五项属性中挑选最契合的一项作为今日加成属性。
-同时，请给出今日的"总体运势吉凶"等级：
+结合牌意（占比较大）与用户当下状态，从五项属性中挑选最契合的一项作为今日加成属性。
+同时给出今日的"总体运势吉凶"等级：
 - "great"（大吉）——牌意积极 + 正位为主 + 与客人近期状态强烈契合
 - "good"（中吉）——基调正向但有条件或保留
 - "small"（小吉）——走势中性偏好，需留心
@@ -121,6 +133,8 @@ const DAILY_SYSTEM_PROMPT = `你是靛蓝色房间的塔罗解读者。你的语
 
 【关于上一张每日塔罗】
 - 上一张牌只是轻量参照，不是今天的主牌。
+- 素材里标了它抽于几天前：**只有标注是「就在昨天」时才可以说"昨日"**；
+  隔了几天就说"几天前/上次"，或者干脆不提——绝不要把久远的那张说成"昨日的牌"。
 - 只有当今天的牌与上一张形成明显的延续、反转或回应时，才自然带一句；否则不要提及。
 - 不要复述上一条解读，也不要让上一张牌覆盖今天这张牌的判断。
 
@@ -133,7 +147,7 @@ const DAILY_SYSTEM_PROMPT = `你是靛蓝色房间的塔罗解读者。你的语
 
 **输出必须是严格的合法 JSON**，结构：
 {
-  "narration": "主解读文字（允许 Markdown 列表、换行），不少于 3 行，不超过 10 行",
+  "narration": "主解读文字（允许 Markdown、换行；结构自便），3~9 行",
   "advice": "一句简短的今日行动建议，不超过 40 字",
   "attribute": "<挑选最契合的一项属性，值必须严格等于客人列表中的属性名原文>",
   "fortune": "<great | good | small | bad 之一>"
@@ -159,6 +173,20 @@ export function buildDailyRequest(params: {
 
   const attrNames = settings.attributeNames as Record<AttributeId, string>;
   const customNameList = ATTRIBUTE_IDS.map(id => attrNames[id] ?? id);
+  /**
+   * 上一张的时距（本地日期差）：
+   * - ≤1 天：素材标「就在昨天」，正文才允许说"昨日"；
+   * - 2~14 天：标「N 天前，不是昨天」；
+   * - >14 天：太久了，参照价值为负（模型总忍不住接旧话茬），直接不喂。
+   */
+  const gapDays = (() => {
+    if (!previousDaily) return null;
+    const [y, m, d] = previousDaily.date.split('-').map(Number);
+    const prev = new Date(y, m - 1, d);
+    const today0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    return Math.round((today0.getTime() - prev.getTime()) / 86400_000);
+  })();
+  const prevForPrompt = gapDays !== null && gapDays <= 14 ? previousDaily : null;
   const userMessage = [
     `当前本地时间：${formatLocalDateTime(now)}`,
     ``,
@@ -176,8 +204,8 @@ export function buildDailyRequest(params: {
       ? recentActivities.slice(0, 7).map(a => formatActivitySnippet(a, attrNames)).join('\n')
       : '（暂无记录）',
     ``,
-    `上一张每日塔罗（轻量上下文，仅在有明显延续/反转时使用）：`,
-    previousDailyLine(previousDaily, attrNames),
+    `上一张每日塔罗（轻量上下文，仅在有明显延续/反转时使用；注意开头的时距标注）：`,
+    previousDailyLine(prevForPrompt, attrNames, gapDays),
     ``,
     `请按要求输出 JSON。`,
   ].join('\n');

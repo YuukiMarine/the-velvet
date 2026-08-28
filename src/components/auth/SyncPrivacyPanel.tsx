@@ -43,8 +43,8 @@ const GROUPS: Group[] = [
   {
     id: 'arcana',
     label: '星象 · 塔罗',
-    hint: '每日塔罗 / 中长期占卜 / 旧版每日事件',
-    tables: ['dailyDivinations', 'longReadings', 'dailyEvents'],
+    hint: '每日塔罗 / 中长期占卜 / 窥探命运 / 旧版每日事件',
+    tables: ['dailyDivinations', 'longReadings', 'fateGlimpses', 'dailyEvents'],
   },
   {
     id: 'todo',

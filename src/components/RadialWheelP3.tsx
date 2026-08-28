@@ -128,7 +128,7 @@ const VelvetTime = ({ cx, cy }: { cx: number; cy: number }) => {
   const line = (text: string, color: string, delay: number, drift: number) => (
     <motion.div
       className="whitespace-nowrap font-black italic leading-[0.84] tracking-[-0.03em]"
-      style={{ fontFamily: '"Arial Black", Arial, "Noto Sans SC", sans-serif', fontSize: size, color }}
+      style={{ fontFamily: '"Arial Black", Arial, "Noto Sans SC Black", "Noto Sans SC", sans-serif', fontSize: size, color }}
       initial={{ clipPath: 'inset(-12% 103% -12% -3%)', x: drift < 0 ? 26 : -26 }}
       animate={{ clipPath: 'inset(-12% -6% -12% -3%)', x: [0, drift, 0] }}
       exit={{ opacity: 0 }}

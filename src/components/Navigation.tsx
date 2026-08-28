@@ -86,6 +86,14 @@ const CatSilhouetteIcon = ({ className = 'w-6 h-6' }: { className?: string }) =>
   </svg>
 );
 
+// 「记账」：¥ 硬币——与设置域 CoinIcon 同一图形语言；filled 态加粗笔画表达选中
+const LedgerCoinIcon = ({ filled }: { filled?: boolean }) => (
+  <svg viewBox="0 0 24 24" fill="none" strokeWidth={filled ? 2.4 : 1.8} stroke="currentColor" className="w-6 h-6" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="8.2" />
+    <path d="M9 9.2l3 3.4 3-3.4M12 12.6v4M9.8 14.4h4.4" />
+  </svg>
+);
+
 // 四格常规导航（B+C 混合 IA 定稿）：首页 / 行动 / 羁绊 / 菜单，中央第 3 槽固定为黑猫 ◈（非路由）。
 // settings 已撤出导航（经「菜单」宫格到达）；任务+记录已合并为「行动」页。
 const navItems = [
@@ -94,6 +102,10 @@ const navItems = [
   { id: 'cooperation', label: '羁绊', Icon: ConfidantIcon },
   { id: 'menu', label: '菜单', Icon: MenuGridIcon },
 ];
+
+// 侧栏专属项（横屏 md+ 才有侧栏；底导保持四格不动）：记账，插在「菜单」上方。
+// 受 F5 记账总开关控制——关了记账的用户侧栏不该再挂死入口。
+const sidebarLedgerItem = { id: 'ledger', label: '记账', Icon: LedgerCoinIcon };
 
 type NavItem = (typeof navItems)[number];
 
@@ -112,6 +124,7 @@ const SidebarInner = () => {
   const setCurrentPage = useAppStore(s => s.setCurrentPage);
   const actionsSubTab = useAppStore(s => s.actionsSubTab);
   const setActionsSubTab = useAppStore(s => s.setActionsSubTab);
+  const ledgerOn = useAppStore(s => s.settings.ledgerEnabled !== false);
   // F6：黑猫对话窗（NavigatorWindow 挂在 App 顶层，这里只负责打开）
   const openNavigator = useNavigatorStore((s) => s.open);
   // P3R：蓝主题侧栏换形（水面底 + 蓝斜块选中 + 洋红角），其余主题不受影响
@@ -194,7 +207,7 @@ const SidebarInner = () => {
           </div>
           <div>
             {p3 ? (
-              <h1 className="inline-flex items-end text-[17px] font-black italic leading-none tracking-tight" style={{ color: P3R.ink, fontFamily: '"Arial Black", "Noto Sans SC", sans-serif' }}>
+              <h1 className="inline-flex items-end text-[17px] font-black italic leading-none tracking-tight" style={{ color: P3R.ink, fontFamily: '"Arial Black", "Noto Sans SC Black", "Noto Sans SC", sans-serif' }}>
                 靛蓝色房间
                 <TitlePeriod className="mb-0 ml-1 scale-[0.6]" style={{ transformOrigin: 'left bottom' }} />
               </h1>
@@ -244,7 +257,9 @@ const SidebarInner = () => {
           <span className={p3 || p5 ? 'text-sm' : 'text-sm font-medium'}>助手</span>
         </motion.button>
 
-        {navItems.slice(2).map(renderItem)}
+        {navItems.slice(2, 3).map(renderItem)}
+        {ledgerOn && renderItem(sidebarLedgerItem)}
+        {navItems.slice(3).map(renderItem)}
       </nav>
     </motion.aside>
   );
@@ -496,8 +511,18 @@ const BottomNavInner = () => {
             if (item.id === 'actions') setActionsSubTab(actionsSubTab === 'activities' ? 'todos' : 'activities');
             return;
           }
+          /**
+           * 涨潮原点：**手指真正落下的点**（clientX/Y）优先。
+           * 此前取按钮 rect 中心——按钮是 motion.button，正处于入场（nav 整条 y:100 弹入）
+           * 或 whileTap 变换中时，rect 会带着变换走（实测入场未落定时 rect 偏出屏外，
+           * 圆心表现为"从边缘扩散"，用户上报"从左侧扩散"）。指针坐标对任何变换免疫。
+           * 键盘/合成 click（detail=0 或坐标 0,0）退回 rect 中心兜底。
+           */
           const rect = e.currentTarget.getBoundingClientRect();
-          const origin = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+          const pointerReal = e.detail > 0 && (e.clientX !== 0 || e.clientY !== 0);
+          const origin = pointerReal
+            ? { x: e.clientX, y: e.clientY }
+            : { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
           // P8.4 试验：底部栏切换走水波纹转场（从点击的 tab 涨潮铺满 → 幕布后切页 → 退潮露新页）
           playHeavyTransition(() => setCurrentPage(item.id), { effect: 'water', origin });
         }}

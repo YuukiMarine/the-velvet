@@ -91,8 +91,10 @@ export const buildExportJson = async (): Promise<string> => {
     //   两层对同一张表的判断相反，总有一层是错的。存量用户手里可能还留着旧行，
     //   按"备份是一份完整快照"的承诺，这里补上（纯字符串字段，无 Date 需还原）。
     dailyEvents: await db.dailyEvents.toArray(),
+    // ── v10（v2.7）：窥探命运（7 天塔罗总占卜 + buff 生效期）──
+    fateGlimpses: await db.fateGlimpses.toArray(),
     _exportedAt: new Date().toISOString(),
-    _version: 9,
+    _version: 10,
   };
   const json = JSON.stringify(data);
   // 出口校验：确保产生的 JSON 字符串可被原样解析回来。

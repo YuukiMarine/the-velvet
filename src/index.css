@@ -33,6 +33,27 @@
   font-style: normal;
   font-display: swap;
 }
+/* P5 圆体（v2.7 字体批次，第四版定稿）：寒蝉全圆体 ChillRoundF v3.200 子集（SIL OFL，
+   基于小杉圆体/粉圆/猫啃糖圆体整理的简体大字符集圆体）。选型史：小赖（太卡通）→
+   源泉圓體（台标字形）→ 思源柔黑实测纯日文子集不可用 → 荆南麦圆体（用户口径仍太
+   卡通）→ 寒蝉全圆体（用户点名）。
+   GB2312 一级字库 + 全部源码用字 + ASCII/标点，~4.4k 字形 / 727KB。
+   单字重：font-weight 声明全域，加粗交给浏览器合成（圆笔画仿粗不糊）。 */
+@font-face {
+  font-family: 'Velvet Round SC';
+  /* ⚠️ /fonts/ 走 SW 的 CacheFirst（vite.config runtimeCaching）：**换字体必须换文件名**。
+     初版同名替换时 SW 命中旧缓存永远不回源（用户上报「没换成功」）——版本号递增制。 */
+  src: url('/fonts/velvet-round-sc.v4.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+/* P5 全域正文走圆体（用户口径：设置页/助手窗/战场设置这些"默认字体"的区域也要圆）。
+   标题不受影响——标题件全部持有内联 P5_TITLE_FONT（内联优先级高于本规则）。 */
+:root[data-ui-channel="p5"] body {
+  font-family: 'Velvet Round SC', 'Velvet Sans SC', -apple-system, BlinkMacSystemFont,
+    'PingFang SC', 'Microsoft YaHei', sans-serif;
+}
 
 /* --color-primary-rgb：primary 的 RGB 三元组，专供 Tailwind 透明度修饰符
    （bg-primary/10、text-primary/20 等）——tailwind.config 的 primary 用
@@ -159,6 +180,14 @@
   background-size: 30px 30px, 100% 100%, 100% 100%, 100% 100%, 100% 100% !important;
   background-repeat: no-repeat !important;
   clip-path: polygon(3px 0, 100% 2px, calc(100% - 4px) 100%, 0 calc(100% - 3px));
+  /* 竖向补偿（用户上报「红色界面文本框太小，字上下卡在一起」）：
+     5px 黑描边带画在**内部**，把原本就不厚的 py 再吃掉一截——可视留白只剩 2~3px。
+     这里把上下 padding 抬到 0.55rem+5px（净留白 ~9px）并给个最低身高；
+     只动竖向——横向不动，免得覆盖调用方的 pr-10（数字输入右侧的「点」后缀就靠它）。 */
+  padding-top: calc(0.55rem + 5px) !important;
+  padding-bottom: calc(0.55rem + 5px) !important;
+  min-height: 44px;
+  line-height: 1.4 !important;
 }
 /* 同屏多个输入件不能一个模子：偶数位反向斜 */
 :root[data-ui-channel="p5"] .p5-reskin :is(input, textarea, select):nth-of-type(2n) {
@@ -635,6 +664,15 @@
    html.dark 由 App.tsx 在 darkMode 变化时同步写入 */
 html, body {
   background-color: #f9fafb; /* 亮色：gray-50 */
+  /* 缩放闸（跨引擎的那一道）。**必须是 pan-x pan-y 而不是 manipulation**：
+     manipulation 只去掉双击缩放，捏合照样放行——安卓上"设置页双指能放大"就漏在这。
+     pan-x pan-y = 只保留横竖平移，捏合缩放与双击缩放一起没了；滚动、页内横滑、
+     自绘拖拽都不受影响（它们要么是平移、要么自己 preventDefault）。
+     touch-action 不继承，但**有效值是元素与各级祖先的交集**，所以钉在 html 上
+     即可覆盖整棵树，后代再写 manipulation 也无法把捏合放回来。
+     另外两道见 index.html 的 viewport（WKWebView / 主屏 PWA）与 main.tsx 的
+     gesture 事件闸（iOS Safari 标签页），以及 MainActivity 的原生 WebView 设置。 */
+  touch-action: pan-x pan-y;
 }
 html.dark, html.dark body {
   background-color: #111827; /* 暗色：gray-900 */
@@ -1146,6 +1184,17 @@ html[data-ios-standalone="true"] {
 }
 /* 页面里手写的墨/奶油任意值类：夜间统一翻色（inline 样式够不着的部分）。
    [class*=] 按字面匹配 Tailwind 任意值类名。 */
+/* 行动域列表卡（ListCard 的 .p4-card 钩子）：黄舞台上纯白卡底发冷（用户反馈
+   「白色底不符合黄色主题」），白天翻成奶油浅黄；夜间跟纸面 token 走紫。 */
+:root[data-ui-channel="p4"] .p4-card {
+  background-color: #fff9e3 !important;
+  border-color: rgba(19, 19, 19, 0.10) !important;
+}
+:root.dark[data-ui-channel="p4"] .p4-card {
+  background-color: var(--ui-paper, #33205f) !important;
+  border-color: var(--ui-line, #47327c) !important;
+}
+
 :root.dark[data-ui-channel="p4"] [class*="text-[#131313]"] { color: #f3ecff !important; }
 :root.dark[data-ui-channel="p4"] [class*="bg-[#fff6d0]"] { background-color: #3a2a68 !important; }
 :root.dark[data-ui-channel="p4"] [class*="bg-[#fff6d0]"] :is([class*="text-[#131313]"]) { color: #f3ecff !important; }
@@ -1437,4 +1486,19 @@ html[data-ios-standalone="true"] {
 :root[data-boldness="0"] .animate-bounce,
 :root[data-boldness="0"] .animate-ping {
   animation: none !important;
+}
+
+/* ── 展示字重（v2.7 字体批次）：真 Black 中文面 ─────────────────────────────
+   痛点根因（用户上报「Mac 上蓝/红主题字体没 Windows 好看」）：正文有 Velvet Sans SC
+   变量字体兜着（100-900 真字重），但**频道标题的内联字体栈**写的是 "Noto Sans SC"——
+   本地并不存在这个族名（内嵌族叫 Velvet Sans SC），中文于是落到系统黑体：
+   苹方没有 Black 字重只能仿粗，且 macOS 的仿粗明显弱于 Windows 雅黑——平台差异即此。
+   方案：自托管思源黑体（Noto Sans SC）Black 分片（/fonts/noto-sc-black.css，
+   unicode-range 按需加载，一页典型 150~400KB），插进各频道展示字体栈 + 这里挂到
+   .font-black（900 专用面，family 命中优先于字重，所以绝不能进正文/font-bold 栈）。
+   Black 分片含拉丁字形，与正文的 Noto 同族——中西文同栈不撕裂；Velvet Sans SC
+   随后兜住分片外生僻字（变量 900 同为真 Black）。 */
+.font-black {
+  font-family: 'Noto Sans SC Black', 'Velvet Sans SC', -apple-system, 'Segoe UI',
+    'PingFang SC', 'Microsoft YaHei', sans-serif;
 }

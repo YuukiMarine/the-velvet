@@ -12,6 +12,7 @@ const TABLE_LABELS: Record<string, string> = {
   dailyEvents: '旧版每日事件',
   dailyDivinations: '每日塔罗',
   longReadings: '中长期塔罗',
+  fateGlimpses: '窥探命运',
   settings: '设置',
   todos: '任务',
   todoCompletions: '任务完成',
