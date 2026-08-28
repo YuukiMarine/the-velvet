@@ -36,13 +36,17 @@ const VISION_HINTS = [
   '-vl', 'vl-', 'vision', 'omni', '4o', 'gpt-5', 'gpt-4.1', 'gpt-4-turbo',
   'gemini', 'claude', 'glm-4v', 'glm-4.', 'internvl', 'llava', 'pixtral',
   'kimi-k', 'moonshot-v1-vision', 'step-1v', 'yi-vision', 'minimax-m', 'abab7',
+  // DeepSeek 视觉线（2026-08 官方视觉模型上线）：janus 是其多模态系列名，
+  // deepseek-ocr 虽带 ocr 字样但走 /chat/completions、能看图能对话
+  'janus', 'deepseek-ocr',
 ];
 
 /** 像不像"能看图"的模型（按命名猜，宁滥勿缺） */
 export function isVisionModel(id: string): boolean {
   const s = id.toLowerCase();
   // 明确的非对话件（embedding/tts…）先排除，再看视觉线索
-  if (!isChatModel(s) && !s.includes('vl') && !s.includes('vision')) return false;
+  // （janus / deepseek-ocr 会撞 NON_CHAT_KEYWORDS 的 'ocr'，需显式豁免）
+  if (!isChatModel(s) && !s.includes('vl') && !s.includes('vision') && !s.includes('janus') && !s.includes('deepseek-ocr')) return false;
   return VISION_HINTS.some((k) => s.includes(k));
 }
 
@@ -117,6 +121,31 @@ export interface RefreshModelsOutcome {
   profiles: NonNullable<Settings['aiProfiles']>;
   okParts: string[];
   skipped: string[];
+}
+
+/**
+ * 视觉档自动填写（用户口径：模型表刷新完，识别到能看图的模型就直接填上）。
+ * 只在视觉档**当前为空**时生效；候选顺序：当前连接家优先，其余按 AI_PROVIDERS 序。
+ * 返回 null = 视觉档已有值 / 没识别到任何视觉模型。调用方把 patch 并进同一次
+ * updateSettings，并用 label 在刷新结果里告知用户（可去视觉档更换/停用）。
+ */
+export function autoFillVisionPatch(
+  settings: Settings,
+  profiles: NonNullable<Settings['aiProfiles']>,
+): { patch: Pick<Settings, 'visionModel' | 'visionProvider'>; label: string } | null {
+  if (settings.visionModel?.trim()) return null;
+  const active = settings.summaryApiProvider ?? DEFAULT_PROVIDER;
+  const order: ApiProvider[] = [active, ...AI_PROVIDERS.map((p) => p.id).filter((id) => id !== active)];
+  for (const pv of order) {
+    const hit = (profiles[pv]?.models ?? []).find(isVisionModel);
+    if (hit) {
+      return {
+        patch: { visionModel: hit, visionProvider: pv === active ? undefined : pv },
+        label: `${getProviderConfig(pv).label} · ${hit}`,
+      };
+    }
+  }
+  return null;
 }
 
 /**

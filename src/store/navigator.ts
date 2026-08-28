@@ -25,6 +25,7 @@ import {
   buildWarmthLine, finalizeStaleSessions, getProfile, lazySweepMemos, maybeCompactLive, recallMemories,
 } from '@/utils/navigatorMemory';
 import { buildWishContextLine, maybeProposeWishProgress } from '@/utils/navigatorWishProgress';
+import { describeImagesForChat } from '@/utils/visionIntake';
 import { BUILTIN_NAVIGATOR_PRESETS, resolveNavigatorPreset } from '@/constants/navigatorPresets';
 import type { NavigatorMessageRow, NavigatorPreset } from '@/types';
 
@@ -36,6 +37,9 @@ export interface NavigatorMessage {
   /** cat=黑猫气泡 / user=用户气泡 / card=待确认动作卡 / summary=compact 摘要占位（Batch3 后段） */
   role: 'cat' | 'user' | 'card' | 'summary';
   text?: string;
+  /** 用户随消息附的图片（降采样后的 data URL；FS3.4 聊天发图）。
+   *  收口时经视觉档转述成文字并入 batch——分诊/表演看到的都是转述文本（半解耦） */
+  imageDataUrl?: string;
   draft?: NavigatorDraft;
   cardStatus?: NavigatorCardStatus;
   /** 用户手改过这张卡：进卡片实录，模型据此知道内容已不是它提议的那版 */
@@ -91,12 +95,12 @@ interface NavigatorState {
   rolloverIfNewDay: () => boolean;
   /** 输入框活动信号（聚焦且非空 / IME 组合中）→ 收口窗口挂起等它说完 */
   setInputActive: (active: boolean) => void;
-  /** 用户发一条消息 → 进入/重置收口，或打断 thinking/replying */
-  userSend: (text: string) => void;
+  /** 用户发一条消息 → 进入/重置收口，或打断 thinking/replying；可随消息附一张图 */
+  userSend: (text: string, imageDataUrl?: string) => void;
   /** 开窗问候：先 hydrate 当日会话，空会话才问候（跨天完整版走 AI + 超时落模板） */
   greet: () => void;
   pushCat: (text: string) => void;
-  pushUser: (text: string) => void;
+  pushUser: (text: string, imageDataUrl?: string) => void;
   pushCard: (draft: NavigatorDraft) => string;
   updateCard: (id: string, patch: Partial<Pick<NavigatorMessage, 'draft' | 'cardStatus' | 'userEdited' | 'receipt'>>) => void;
 }
@@ -120,8 +124,15 @@ let swallowed: string[] = [];
 let pendingWrites: NavigatorMessage[] = [];
 let hydrating: Promise<void> | null = null;
 
-// 推理模型（DeepSeek v4 等）问候常要 3~8s，4s 会高频落模板；打字指示本来就是拟人化等待
-const GREET_TIMEOUT_MS = 9000;
+/**
+ * AI 问候的**总闸**（不再是唯一计时）。
+ * 旧口径：非流式 + 9s 硬超时——推理模型（DeepSeek 思考档）常要想 5~15s，
+ * 超过 9s 整段作废落模板，这就是「每日首次问候回退默认偏多」的主因。
+ * 新口径：generateAIGreeting 内部改走流式、9s **空闲**超时（思维链增量也会重置计时，
+ * 见 aiClient rearm）——连接死了照旧 9s 内落模板；模型确实在想就等它想完，
+ * 这里的 30s 只兜「想个没完」的极端情况。打字指示本来就是拟人化等待。
+ */
+const GREET_TOTAL_MS = 30000;
 const SETTLE_INPUT_POLL_MS = 500;
 const SETTLE_INPUT_MAX_WAIT_MS = 15000;
 
@@ -169,6 +180,7 @@ const toRow = (m: NavigatorMessage, sessionId: string): NavigatorMessageRow => (
   sessionId,
   role: m.role,
   text: m.text,
+  imageDataUrl: m.imageDataUrl,
   draftJson: m.draft ? JSON.stringify(m.draft) : undefined,
   cardStatus: m.cardStatus,
   userEdited: m.userEdited,
@@ -176,11 +188,24 @@ const toRow = (m: NavigatorMessage, sessionId: string): NavigatorMessageRow => (
   createdAt: m.createdAt,
 });
 
+/** 单行解析失败只丢这条的草稿，不能让 rows.map 整批抛掉——
+ *  一条损坏记录若把整日会话恢复炸掉，代价远大于少一张卡片草稿 */
+const parseDraft = (json: string | undefined): NavigatorDraft | undefined => {
+  if (!json) return undefined;
+  try {
+    return JSON.parse(json) as NavigatorDraft;
+  } catch (e) {
+    console.warn('[navigator] draftJson 损坏，跳过该条草稿', e);
+    return undefined;
+  }
+};
+
 const fromRow = (r: NavigatorMessageRow): NavigatorMessage => ({
   id: r.id,
   role: r.role,
   text: r.text,
-  draft: r.draftJson ? (JSON.parse(r.draftJson) as NavigatorDraft) : undefined,
+  imageDataUrl: r.imageDataUrl,
+  draft: parseDraft(r.draftJson),
   cardStatus: r.cardStatus,
   userEdited: r.userEdited,
   receipt: r.receipt,
@@ -273,6 +298,19 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
     return batch.join('\n');
   };
 
+  /** 待收口批里随消息附的图片（与 pendingBatch 同一段尾部用户消息，同口径推导） */
+  const pendingImages = (): string[] => {
+    const ms = currentSessionMessages();
+    const imgs: string[] = [];
+    for (let i = ms.length - 1; i >= 0; i--) {
+      if (ms[i].role === 'user') {
+        const u = ms[i].imageDataUrl;
+        if (u) imgs.unshift(u);
+      } else break;
+    }
+    return imgs;
+  };
+
   /**
    * 历史投影（不含待收口批）。卡片**不进 assistant 历史**——模型会模仿自己
    * "说过"的折叠标记、在 reply 里手画假卡；卡片状态改走动态块的数据区（cardsDigest）。
@@ -284,7 +322,12 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
     while (end > 0 && ms[end - 1].role === 'user') end--;
     return ms.slice(0, end)
       .filter((m) => m.role !== 'card' && m.role !== 'summary')
-      .map((m): TurnHistoryItem => ({ role: m.role === 'user' ? 'user' : 'cat', text: m.text ?? '', createdAt: m.createdAt }))
+      .map((m): TurnHistoryItem => ({
+        role: m.role === 'user' ? 'user' : 'cat',
+        // 只发图没配文的历史消息给个占位，别让模型看到一条空气泡
+        text: m.text || (m.imageDataUrl ? '（发了一张图片）' : ''),
+        createdAt: m.createdAt,
+      }))
       .filter((h) => h.text);
   };
 
@@ -302,6 +345,40 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
         return `- ${ACTION_META[m.draft!.kind].label}【${status}${edited}】${head}${m.receipt ? `（回执：${m.receipt}）` : ''}`;
       });
 
+  /**
+   * 出卡前的机械查重（分诊漏网时的兜底；语义级查重靠分诊的三张清单）：
+   * ① 同批内完全同键的草稿只留一张；
+   * ② activity/todo 与场上**待确认**同类卡同键 → 拦（那张卡还在等确认，一张就够）；
+   * ③ todo 与任务清单里未归档任务同名 → 拦（助手改不了旧任务，重建只会出重复项）。
+   * 已确认生效的卡不在此拦：用户明确说「又做了一次」属于合法重复，交给分诊判断。
+   */
+  const dedupDrafts = (drafts: NavigatorDraft[]): NavigatorDraft[] => {
+    if (drafts.length === 0) return drafts;
+    const norm = (t: string) => t.toLowerCase().replace(/[\s\p{P}\p{S}]/gu, '');
+    const keyOf = (d: NavigatorDraft): string =>
+      d.kind === 'activity' ? `a:${norm(d.text)}` : d.kind === 'todo' ? `t:${norm(d.title)}` : '';
+    const blocked = new Set<string>();
+    for (const m of currentSessionMessages()) {
+      if (m.role === 'card' && m.draft && m.cardStatus === 'pending') {
+        const k = keyOf(m.draft);
+        if (k) blocked.add(k);
+      }
+    }
+    for (const t of useAppStore.getState().todos) {
+      if (t.isActive && !t.archivedAt) blocked.add(`t:${norm(t.title)}`);
+    }
+    return drafts.filter((d) => {
+      const k = keyOf(d);
+      if (!k) return true; // ledger/completeTodo/bigdeal 不做机械查重
+      if (blocked.has(k)) {
+        if (import.meta.env.DEV) console.warn('[navigator] 机械查重拦下重复草稿:', d);
+        return false;
+      }
+      blocked.add(k); // 同批内去重
+      return true;
+    });
+  };
+
   /** 收口 → thinking → replying → idle（gen 凭票，全程可被打断作废） */
   const settleNow = async () => {
     if (get().phase !== 'collecting') return;
@@ -310,7 +387,8 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
       return;
     }
     const batch = pendingBatch().trim();
-    if (!batch) { set({ phase: 'idle' }); return; }
+    const images = pendingImages();
+    if (!batch && !images.length) { set({ phase: 'idle' }); return; }
     const gen = ++generation;
     set({ phase: 'thinking' });
 
@@ -329,6 +407,25 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
     swallowed = [];
     persistSwallowed();
     try {
+      /**
+       * 图片预读（FS3.4）：图先经视觉档转述成文字，再并入 batch 本体——分诊只看
+       * userText，转述并进 batch 两相才都看得见（卡片同款半解耦：视觉挂了不拖垮聊天，
+       * 失败时如实告知模型「你没看到图」，让它向用户交代而不是装看过）。
+       */
+      let turnBatch = batch;
+      if (images.length) {
+        try {
+          const desc = await describeImagesForChat(images, useAppStore.getState().settings, turnAbort.signal);
+          if (gen !== generation) return;
+          if (desc) turnBatch = [batch, `【随消息附上的图片，以下是视觉模型的转述】\n${desc}`].filter(Boolean).join('\n');
+        } catch (e) {
+          if (gen !== generation) return;
+          turnBatch = [
+            batch,
+            `【用户随消息发了 ${images.length} 张图片，但转述失败（${e instanceof Error ? e.message.slice(0, 60) : '视觉调用失败'}）——你没有看到图片内容，请如实告诉用户，并请他用文字补充】`,
+          ].filter(Boolean).join('\n');
+        }
+      }
       // 记忆检索（纯本地，失败返回空不阻断）+ 用户画像常驻 + warmth 语气行
       const recall = await recallMemories(batch);
       const profile = await getProfile();
@@ -346,7 +443,7 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
         const queue: string[] = [];
         let streamEnded = false;
         const turnPromise = runNavigatorTurn(
-          historyForTurn(), batch, mySwallowed, turnAbort.signal, cardsDigest(), persona, extra,
+          historyForTurn(), turnBatch, mySwallowed, turnAbort.signal, cardsDigest(), persona, extra,
           { onSegment: (s) => { queue.push(s); return gen === generation; } },
         ).finally(() => { streamEnded = true; });
         for (;;) {
@@ -365,7 +462,7 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
         }
         const result = await turnPromise;
         if (gen !== generation) return;
-        result.drafts.forEach((d) => get().pushCard(d));
+        dedupDrafts(result.drafts).forEach((d) => get().pushCard(d));
         set({ phase: 'idle' });
         void runLiveCompact();
         void maybeProposeWishProgress(batch); // 愿望进度提议（六道闸在模块内，PRD_V2.6 §8）
@@ -373,7 +470,7 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
       }
 
       const result = await runNavigatorTurn(
-        historyForTurn(), batch, mySwallowed, turnAbort.signal, cardsDigest(), persona, extra,
+        historyForTurn(), turnBatch, mySwallowed, turnAbort.signal, cardsDigest(), persona, extra,
       );
       if (gen !== generation) return;
       // 分段吐泡（段间隙 = 天然插话点）
@@ -386,7 +483,7 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
           if (!alive) { swallowed = result.segments.slice(i + 1); persistSwallowed(); return; }
         }
       }
-      result.drafts.forEach((d) => get().pushCard(d));
+      dedupDrafts(result.drafts).forEach((d) => get().pushCard(d));
       set({ phase: 'idle' });
       void runLiveCompact(); // 阈值泵（32k/120 条才动手，平时空转）
       void maybeProposeWishProgress(batch); // 愿望进度提议（六道闸在模块内，PRD_V2.6 §8）
@@ -529,9 +626,9 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
 
     setInputActive: (active) => { inputActive = active; },
 
-    userSend: (text) => {
+    userSend: (text, imageDataUrl) => {
       const phase = get().phase;
-      get().pushUser(text);
+      get().pushUser(text, imageDataUrl);
       if (phase === 'thinking') {
         generation++;
         turnAbort?.abort();
@@ -555,10 +652,15 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
         const app = useAppStore.getState();
         const preset = get().activePreset();
         const firstToday = app.settings.navigatorLastGreetDate !== snap.dateKey;
-        if (firstToday) void app.updateSettings({ navigatorLastGreetDate: snap.dateKey });
+        // 「今日已问候」的标记改在**问候真正送达后**再写（下方各分支）：
+        // 此前进门就写，AI 问候若被打断/崩溃（gen 作废 return），完整版问候当天就永远消失了。
+        const markGreeted = () => {
+          void useAppStore.getState().updateSettings({ navigatorLastGreetDate: snap.dateKey });
+        };
 
         if (!firstToday || !getAIConfig(app.settings)) {
           get().pushCat(firstToday ? buildDailyGreeting(snap) : buildShortGreeting(snap));
+          if (firstToday) markGreeted();
           return;
         }
         // 有 Key 的跨天首开：打字指示等 AI，超时/失败静默落模板（等待本身就是拟人）
@@ -581,6 +683,10 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
             gapDays !== null && gapDays >= 2 ? `【距上次聊天】已隔 ${gapDays} 天` : '',
             recall.lines.length ? `【关于用户的记忆】\n${recall.lines.join('\n')}` : '',
             buildWarmthLine(),
+            // 未读成长总结：问候顺带提一句（只在这里注入，不进逐轮上下文——免得猫轮轮催）
+            snap.unreadSummaryLabel
+              ? `【未读成长总结】「${snap.unreadSummaryLabel}」的总结已经写好、对方还没看：问候里顺带提一句去统计页看，一句就好，别展开内容。`
+              : '',
             // 久别归来（PRD_V2.6 §12）：这一条要压过上面所有素材。
             // 明确禁掉三件事——问去哪了、催补记、报今天的账：
             // 补记那件事回归面板已经问过一次了，猫再问一遍就成了追债。
@@ -590,19 +696,21 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
                 + '禁止追问他去哪了/为什么不来，禁止催他补记录，禁止先报今天的任务与塔罗。'
               : '',
           ].filter(Boolean);
-          // 超时计时只覆盖 AI 调用本身（此前从素材准备就开始计时，预算被前置步骤吃掉）
+          // 总闸计时只覆盖 AI 调用本身（此前从素材准备就开始计时，预算被前置步骤吃掉）
           const ac = new AbortController();
-          const timer = setTimeout(() => ac.abort(), GREET_TIMEOUT_MS);
+          const timer = setTimeout(() => ac.abort(), GREET_TOTAL_MS);
           const text = await generateAIGreeting(snap, ac.signal, preset.personaPrompt, extra);
           clearTimeout(timer);
           if (gen !== generation) return;
           if (!text && import.meta.env.DEV) console.warn('[navigator] AI 问候失败/超时，落模板');
           splitSegments(text ?? buildDailyGreeting(snap)).forEach((seg) => get().pushCat(seg));
+          markGreeted();
           set({ phase: 'idle' });
         } catch (e) {
           if (gen !== generation) return;
           if (import.meta.env.DEV) console.warn('[navigator] 问候流程异常，落模板', e);
           get().pushCat(buildDailyGreeting(snap));
+          markGreeted();
           set({ phase: 'idle' });
         }
       })();
@@ -613,8 +721,8 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
       set((s) => ({ messages: [...s.messages, m] }));
       persistMessage(m);
     },
-    pushUser: (text) => {
-      const m = msg({ role: 'user', text, sessionId: get().sessionId ?? undefined });
+    pushUser: (text, imageDataUrl) => {
+      const m = msg({ role: 'user', text, imageDataUrl, sessionId: get().sessionId ?? undefined });
       set((s) => ({ messages: [...s.messages, m] }));
       persistMessage(m);
     },

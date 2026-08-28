@@ -4,7 +4,11 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" href="/icon.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!-- maximum-scale/user-scalable：关掉双指缩放。iOS 上「双指外扩把整页放成碎片」
+         （WKWebView 与主屏 PWA 都会）——这是个应用外壳，不是可缩放的网页文档。
+         Safari 标签页里 iOS 会出于无障碍忽略 user-scalable，所以 main.tsx 里还有一道
+         gesture 事件闸做兜底，两边合起来才拦得住。 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
 
     <!-- SEO 基础标签 -->
     <title>靛蓝色房间 - 个人成长追踪器</title>
@@ -41,6 +45,10 @@
     <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Caveat:wght@600&display=swap" />
     <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@600&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
     <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caveat:wght@600&display=swap" /></noscript>
+    <!-- 思源黑体 Black（自托管分片，v2.7 字体批次）：展示字重专用——
+         苹方没有 Black 字重，font-black 的中文在 mac/iOS 只能仿粗（用户上报）。
+         unicode-range 分片按需加载；font-display swap，加载期落系统黑体不白屏。 -->
+    <link rel="stylesheet" href="/fonts/noto-sc-black.css" />
   </head>
   <body>
     <div id="root"></div>

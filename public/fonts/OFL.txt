@@ -1,3 +1,11 @@
+# 本目录字体来源（均为 SIL Open Font License 1.1，全文见下）：
+#   velvet-sans-sc.woff2   —— Noto Sans SC（Google/Adobe 思源黑体）变量字体子集
+#   velvet-serif-sc.woff2  —— Noto Serif SC 子集
+#   noto-sc-black/         —— Noto Sans SC Black（思源黑体 Black）分片自托管
+#   velvet-round-sc.v4.woff2  —— 寒蝉全圆体 ChillRoundF v3.200 子集
+#       （© 2023 ChillType，基于小杉圆体/justfont粉圆/猫啃糖圆体；
+#        https://github.com/Warren2060/ChillRound）
+
 靛蓝色房间 内嵌字体说明 / Bundled font notice
 ================================================
 

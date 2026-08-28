@@ -1,5 +1,5 @@
 import Dexie, { Table } from 'dexie';
-import { User, Attribute, Activity, Achievement, Skill, DailyEvent, DailyDivination, LongReading, Settings, Todo, TodoCompletion, PeriodSummary, WeeklyGoal, Persona, Shadow, BattleState, Confidant, ConfidantEvent, CounselSession, CounselArchive, CallingCard, LedgerEntry, Budget, LedgerAsset, Wish, NavigatorSessionRow, NavigatorMessageRow, NavigatorMemo, NavigatorPreset, TowerStratum, OnlineCardFace } from '@/types';
+import { User, Attribute, Activity, Achievement, Skill, DailyEvent, DailyDivination, LongReading, FateGlimpse, Settings, Todo, TodoCompletion, PeriodSummary, WeeklyGoal, Persona, Shadow, BattleState, Confidant, ConfidantEvent, CounselSession, CounselArchive, CallingCard, LedgerEntry, Budget, LedgerAsset, Wish, NavigatorSessionRow, NavigatorMessageRow, NavigatorMemo, NavigatorPreset, TowerStratum, OnlineCardFace } from '@/types';
 
 export class PGTDatabase extends Dexie {
   users!: Table<User>;
@@ -33,6 +33,7 @@ export class PGTDatabase extends Dexie {
   navigatorPresets!: Table<NavigatorPreset>;        // F6 自定义人格（内置随代码，不入表）
   strata!: Table<TowerStratum>;                     // 批2 影时间高塔·区层
   onlineCardFaces!: Table<OnlineCardFace>;          // 未缔结在线好友的自裁卡面（本地专属，见 v14 注释）
+  fateGlimpses!: Table<FateGlimpse>;                // v2.7 窥探命运（7 天塔罗总占卜）
 
   constructor() {
     super('PGTDatabase');
@@ -284,6 +285,12 @@ export class PGTDatabase extends Dexie {
     // base64 大图 + 他人肖像，只留本机，不上云。
     this.version(14).stores({
       onlineCardFaces: 'userId'
+    });
+
+    // v15：窥探命运（7 天塔罗集齐后的总占卜 + 3 天 buff）。
+    // 小表（每 7 天至多 1 行），列入 SYNC_TABLES 与备份（与 dailyDivinations 同口径）。
+    this.version(15).stores({
+      fateGlimpses: 'id, createdAt'
     });
   }
 }

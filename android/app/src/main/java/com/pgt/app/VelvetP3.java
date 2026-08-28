@@ -497,8 +497,14 @@ class VelvetP3 {
     }
 
     /**
-     * 4×2「征途」：日期柱 + 月相 + 连续天数 | 塔罗 | 宣告卡 + 五维等级 + 今日运势。
-     * v2.6.4 按用户口径把密度提上来 —— 原来右半边只有一行标题加一个百分比，太空。
+     * 4×2「征途」（v2.7 重排，用户口径「排版和信息取舍差点意思 + 设计太难看」）。
+     *
+     * 取舍口径——「征途」讲的是**行进感**，留下的信息都得答"走到哪了"：
+     *   · 连续天数升格为蓝底白字大徽章（旅程的核心读数，此前是裸文字缩在角落）；
+     *   · 新增今日任务进度 + 14 天热力轨迹（行动感与"来时的路"）；
+     *   · 今日运势旗挂回塔罗牌下缘（它是牌面的读数，不该漂在宣告卡栏里）；
+     *   · 五维等级条撤下（抽象难读、与"征途"语义最远；"合计 Lv." 更是无意义数字）。
+     * 版式：左＝时间柱（日期/月相/连续徽章/热力轨迹），中＝塔罗锚点，右＝今日任务 + 宣告卡。
      */
     static Bitmap journey(Context ctx, VelvetSnapshot s, int w, int h) {
         Pal pal = Pal.of(s);
@@ -506,100 +512,158 @@ class VelvetP3 {
         Bitmap bmp = panel(pal, w, h);
         Canvas c = new Canvas(bmp);
         float u = h / 14f;
-        ghost(c, pal, "JOURNEY", h * 0.46f, w * 0.24f, h * 1.0f);
+        ghost(c, pal, "JOURNEY", h * 0.44f, w * 0.30f, h * 0.99f);
 
-        // 日期柱 + 月相 + 连续天数
-        float lx = u * 1.5f;
-        Paint dayP = text(u * 3.4f, pal.blue, true, true);
-        c.drawText(s.day == null ? "--" : s.day, lx, u * 3.8f, dayP);
-        eyebrow(c, s.monthEn == null ? "" : s.monthEn, u * 0.8f, lx + u * 0.15f, u * 4.85f, pal.ink);
-        eyebrow(c, s.weekdayEn == null ? "" : s.weekdayEn, u * 0.7f, lx + u * 0.15f, u * 5.8f, pal.inkSoft);
+        // ── 左：时间柱 ──
+        float lx = u * 1.4f;
+        float colL = u * 7.4f;                    // 左列宽
+        Paint dayP = text(u * 3.6f, pal.blue, true, true);
+        String day = s.day == null ? "--" : s.day;
+        c.drawText(day, lx, u * 3.7f, dayP);
+        float dayW = dayP.measureText(day);
+        eyebrow(c, s.monthEn == null ? "" : s.monthEn, u * 0.82f, lx + dayW + u * 0.55f, u * 2.4f, pal.ink);
+        eyebrow(c, s.weekdayEn == null ? "" : s.weekdayEn, u * 0.72f, lx + dayW + u * 0.55f, u * 3.5f, pal.inkSoft);
 
-        float mr = u * 1.15f;
-        moon(c, pal, s.moonPhase, lx + mr, u * 8.0f, mr);
-        Paint mp = text(u * 0.8f, pal.inkSoft, true, false);
-        c.drawText(fit(s.moonName == null ? "" : s.moonName, mp, u * 4.6f), lx, u * 10.2f, mp);
+        // 月相：小图标 + 名字一行（不再单独占两行）
+        float mr = u * 0.95f;
+        moon(c, pal, s.moonPhase, lx + mr, u * 5.5f, mr);
+        Paint mp = text(u * 0.82f, pal.inkSoft, true, false);
+        c.drawText(fit(s.moonName == null ? "" : s.moonName, mp, colL - mr * 2 - u * 0.6f),
+                   lx + mr * 2 + u * 0.6f, u * 5.8f, mp);
 
-        // 连续天数：大数字 + 小字，是这块新加的密度
-        Paint stP = text(u * 1.7f, pal.blue, true, true);
+        // 连续天数徽章：蓝斜板 + 白大字（征途的核心读数）
+        float bT = u * 7.2f, bB = u * 9.6f;
+        slab(c, lx, bT, lx + colL, bB, u * 0.7f, pal.blue);
+        Paint stNum = text(u * 1.75f, Color.WHITE, true, true);
         String st = String.valueOf(s.streak);
-        c.drawText(st, lx, u * 12.4f, stP);
-        c.drawText("天连续", lx + stP.measureText(st) + u * 0.3f, u * 12.3f,
-                   text(u * 0.75f, pal.inkSoft, true, false));
+        c.drawText(st, lx + u * 0.95f, bB - u * 0.72f, stNum);
+        Paint stTxt = text(u * 0.78f, Color.WHITE, true, false);
+        c.drawText("天连续", lx + u * 0.95f + stNum.measureText(st) + u * 0.35f, bB - u * 0.82f, stTxt);
 
-        // 塔罗
-        float cardH = h * 0.74f, cardW = cardH * 0.63f;
-        float cardX = lx + u * 5.2f;
-        tarotCard(c, ctx, pal, s, cardX, (h - cardH) / 2f, cardW, cardH, false);
+        // 14 天热力轨迹：来时的路（与「今日」组件的 RECORD 条同料不同位）
+        int keep = Math.min(14, s.heat.length);
+        int[] tail = new int[Math.max(1, keep)];
+        if (keep > 0) System.arraycopy(s.heat, s.heat.length - keep, tail, 0, keep);
+        heatStrip(c, pal, tail, lx, u * 10.6f, colL, u * 1.7f);
 
-        // 右栏：宣告卡 + 五维 + 运势
-        float px = cardX + cardW + u * 1.4f;
-        float rx = w - u * 1.4f;
-        boolean has = s.cardTitle != null && s.cardTitle.length() > 0;
-        eyebrow(c, "CALLING CARD", u * 0.68f, px, u * 2.3f, pal.blue);
-        fortuneChip(c, s, rx - u * 4.4f, u * 1.35f, u * 0.85f);
-        Paint tp = text(u * 1.15f, has ? pal.ink : pal.inkSoft, true, true);
-        c.drawText(fit(has ? s.cardTitle : "还没有宣告卡", tp, rx - px), px, u * 4.1f, tp);
-        if (has) {
-            Paint pctP = text(u * 2.0f, pal.blue, true, true);
-            String pct = s.cardPercent + "%";
-            c.drawText(pct, px, u * 6.5f, pctP);
-            float barX = px + pctP.measureText(pct) + u * 0.6f;
-            progress(c, pal, barX, u * 5.85f, Math.max(u * 2f, rx - barX), u * 0.85f, s.cardPercent);
+        // ── 中：塔罗锚点 ──
+        float cardH = h * 0.78f, cardW = cardH * 0.63f;
+        float cardX = lx + colL + u * 1.2f;
+        float cardY = (h - cardH) / 2f;
+        tarotCard(c, ctx, pal, s, cardX, cardY, cardW, cardH, false);
+        // 运势旗贴在牌右上角（与左上罗马签对角呼应；放下缘会压住牌名带）
+        if (s.fortuneLabel != null && s.fortuneLabel.length() > 0) {
+            float chipSize = u * 0.85f;
+            float chipW = chipSize * s.fortuneLabel.length() + chipSize * 1.5f;
+            fortuneChip(c, s, cardX + cardW - chipW - u * 0.45f, cardY + u * 0.5f, chipSize);
         }
 
-        // 五维等级迷你条（只画柱不写名，见 levelBars 注释）
-        eyebrow(c, "PERSONA", u * 0.68f, px, u * 8.6f, pal.blue);
-        Paint lvP = text(u * 0.75f, pal.inkSoft, true, false);
-        int sum = 0;
-        for (int v : s.levels) sum += v;
-        String lvTxt = "合计 Lv." + sum;
-        c.drawText(lvTxt, rx - lvP.measureText(lvTxt), u * 8.6f, lvP);
-        levelBars(c, pal, s.levels.length > 0 ? s.levels : new int[] { 1, 1, 1, 1, 1 },
-                  s.maxLevel, px, u * 9.2f, rx - px, u * 2.4f);
+        // ── 右：今日任务 + 宣告卡 ──
+        float px = cardX + cardW + u * 1.4f;
+        float rx = w - u * 1.4f;
+        float colR = rx - px;
+
+        eyebrow(c, "TODAY", u * 0.7f, px, u * 2.2f, pal.blue);
+        if (s.todosTotal > 0) {
+            Paint num = text(u * 2.1f, pal.ink, true, true);
+            String frac = s.todosDone + "/" + s.todosTotal;
+            c.drawText(frac, px, u * 4.6f, num);
+            Paint lbl = text(u * 0.8f, pal.inkSoft, true, false);
+            c.drawText("今日任务", px + num.measureText(frac) + u * 0.5f, u * 4.5f, lbl);
+            progress(c, pal, px, u * 5.4f, colR, u * 0.95f,
+                     Math.round(s.todosDone * 100f / s.todosTotal));
+        } else {
+            Paint lbl = text(u * 1.05f, pal.inkSoft, true, true);
+            c.drawText("今日没有安排", px, u * 4.4f, lbl);
+        }
+
+        boolean has = s.cardTitle != null && s.cardTitle.length() > 0;
+        eyebrow(c, "CALLING CARD", u * 0.7f, px, u * 8.4f, pal.blue);
+        if (has) {
+            Paint tp = text(u * 1.1f, pal.ink, true, true);
+            c.drawText(fit(s.cardTitle, tp, colR), px, u * 9.9f, tp);
+            Paint pctP = text(u * 1.7f, pal.blue, true, true);
+            String pct = s.cardPercent + "%";
+            c.drawText(pct, px, u * 12.2f, pctP);
+            float barX = px + pctP.measureText(pct) + u * 0.55f;
+            progress(c, pal, barX, u * 11.35f, Math.max(u * 2f, rx - barX), u * 0.9f, s.cardPercent);
+        } else {
+            Paint tp = text(u * 1.0f, pal.inkSoft, true, true);
+            c.drawText("还没有宣告卡", px, u * 9.9f, tp);
+            Paint hint = text(u * 0.8f, pal.inkSoft, true, false);
+            c.drawText("立一个倒计时或目标宣言 →", px, u * 11.3f, hint);
+        }
 
         magentaCorner(c, pal, w, h, u);
         return bmp;
     }
 
-    /** 4×1「征途」：日期 | 月相 + 连续 | 迷你塔罗 | 宣告卡百分比 + 进度 / 五维条 */
+    /**
+     * 4×1「征途」（v2.7 与 4×2 同步重排）：
+     * 日期 | 连续徽章 | 迷你塔罗 | 今日任务分数+条（上）/ 宣告卡名+条（下）。
+     * 月相与热力在这个高度只会挤成噪点，一律不上；没有宣告卡时下行换 14 天热力。
+     */
     private static Bitmap journeyCompact(Context ctx, Pal pal, VelvetSnapshot s, int w, int h) {
         Bitmap bmp = panel(pal, w, h);
         Canvas c = new Canvas(bmp);
         float pad = h * 0.12f;
 
         Paint dayP = text(h * 0.52f, pal.blue, true, true);
-        c.drawText(s.day == null ? "--" : s.day, pad * 1.4f, h * 0.66f, dayP);
-        float dw = dayP.measureText(s.day == null ? "--" : s.day);
+        String day = s.day == null ? "--" : s.day;
+        c.drawText(day, pad * 1.4f, h * 0.66f, dayP);
+        float dw = dayP.measureText(day);
         float x = pad * 1.4f + dw + h * 0.1f;
         eyebrow(c, s.monthEn == null ? "" : s.monthEn, h * 0.15f, x, h * 0.42f, pal.ink);
         eyebrow(c, s.weekdayEn == null ? "" : s.weekdayEn, h * 0.13f, x, h * 0.64f, pal.inkSoft);
 
-        float mr = h * 0.17f;
-        float mx = x + h * 0.62f;
-        moon(c, pal, s.moonPhase, mx + mr, h * 0.36f, mr);
-        c.drawText(s.streak + "天", mx, h * 0.86f, text(h * 0.19f, pal.inkSoft, true, false));
+        // 连续徽章（迷你版：蓝斜板 + 白字；只写「天」，右栏地皮金贵）
+        float bx = x + h * 0.6f;
+        Paint stNum = text(h * 0.26f, Color.WHITE, true, true);
+        Paint stTxt = text(h * 0.15f, Color.WHITE, true, false);
+        String st = String.valueOf(s.streak);
+        float bw = stNum.measureText(st) + stTxt.measureText("天") + h * 0.32f;
+        slab(c, bx, h * 0.28f, bx + bw, h * 0.72f, h * 0.13f, pal.blue);
+        c.drawText(st, bx + h * 0.14f, h * 0.60f, stNum);
+        c.drawText("天", bx + h * 0.17f + stNum.measureText(st), h * 0.585f, stTxt);
 
         float cardH = h - pad * 2, cardW = cardH * 0.63f;
-        float cardX = mx + mr * 2 + h * 0.16f;
+        float cardX = bx + bw + h * 0.16f;
         tarotCard(c, ctx, pal, s, cardX, pad, cardW, cardH, true);
 
         float px = cardX + cardW + h * 0.16f;
         float rx = w - pad * 1.6f;
+        float colR = Math.max(h * 0.5f, rx - px);
+
+        // 上行：今日任务
+        if (s.todosTotal > 0) {
+            Paint num = text(h * 0.24f, pal.ink, true, true);
+            String frac = s.todosDone + "/" + s.todosTotal;
+            c.drawText(frac, px, h * 0.40f, num);
+            float barX = px + num.measureText(frac) + h * 0.12f;
+            progress(c, pal, barX, h * 0.22f, Math.max(h * 0.4f, rx - barX), h * 0.16f,
+                     Math.round(s.todosDone * 100f / s.todosTotal));
+        } else {
+            c.drawText("今日没有安排", px, h * 0.40f, text(h * 0.18f, pal.inkSoft, true, false));
+        }
+
+        // 下行：宣告卡（无卡 → 14 天热力轨迹补位）
         boolean has = s.cardTitle != null && s.cardTitle.length() > 0;
         if (has) {
-            Paint tp = text(h * 0.19f, pal.ink, true, true);
-            c.drawText(fit(s.cardTitle, tp, rx - px), px, h * 0.36f, tp);
-            Paint pctP = text(h * 0.3f, pal.blue, true, true);
+            Paint tp = text(h * 0.18f, pal.ink, true, true);
+            String title = fit(s.cardTitle, tp, colR * 0.5f);
+            c.drawText(title, px, h * 0.84f, tp);
+            Paint pctP = text(h * 0.2f, pal.blue, true, true);
             String pct = s.cardPercent + "%";
-            c.drawText(pct, px, h * 0.82f, pctP);
-            float barX = px + pctP.measureText(pct) + h * 0.12f;
-            progress(c, pal, barX, h * 0.62f, Math.max(h * 0.5f, rx - barX), h * 0.16f, s.cardPercent);
+            float pctW = pctP.measureText(pct);
+            c.drawText(pct, rx - pctW, h * 0.84f, pctP);
+            float barX = px + tp.measureText(title) + h * 0.12f;
+            float barW = rx - pctW - h * 0.12f - barX;
+            if (barW > h * 0.4f) progress(c, pal, barX, h * 0.68f, barW, h * 0.15f, s.cardPercent);
         } else {
-            // 没有宣告卡就把五维顶上来，别留一片空白
-            eyebrow(c, "PERSONA", h * 0.13f, px, h * 0.32f, pal.blue);
-            levelBars(c, pal, s.levels.length > 0 ? s.levels : new int[] { 1, 1, 1, 1, 1 },
-                      s.maxLevel, px, h * 0.42f, rx - px, h * 0.44f);
+            int keep = Math.min(14, s.heat.length);
+            int[] tail = new int[Math.max(1, keep)];
+            if (keep > 0) System.arraycopy(s.heat, s.heat.length - keep, tail, 0, keep);
+            heatStrip(c, pal, tail, px, h * 0.62f, colR, h * 0.24f);
         }
         return bmp;
     }

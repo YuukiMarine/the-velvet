@@ -23,13 +23,15 @@ import { useBoldness } from '@/utils/boldness';
 import { playSound, triggerLightHaptic } from '@/utils/feedback';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { useAppStore } from '@/store';
+import { useShortViewportScale } from '@/utils/useViewportScale';
 import { hardTagInk } from '@/utils/levelDifficulty';
 import { P3R, slantClip } from '@/components/p3r/kit';
 import { starPts } from '@/components/p5r/kit';
 import { P4Sparkle } from '@/ui/p4Kit';
 
+// 基准尺寸（19.5:9 长屏原稿口径）；实际渲染尺寸 = 基准 × useShortViewportScale——
+// 3:4 竖屏（视口高 ~500px）下整墙按比例缩，铭牌/应援行才装得进一屏（v2.7 适配）
 const CARD_W = 182;
-const CARD_H = Math.round(CARD_W * 1.6); // TarotCardSVG 比例
 const SPACING = 88;          // 相邻卡横向间距
 const FLIP_THRESHOLD = 90;   // 中央卡拖拽翻转阈值（px）
 const OPEN_ARM = 12;         // 下滑打开档案的视觉阈值（px）
@@ -564,6 +566,12 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
   const bold = useBoldness();
   const p3 = useUiChannel() === 'p3';
   const attributeNames = useAppStore(s => s.settings.attributeNames);
+  // 3:4 矮视口适配：卡牌/间距/切卡步长同乘缩放（基准 CARD_W 等只是原稿尺寸）
+  const vScale = useShortViewportScale(760, 0.72);
+  const cw = Math.round(CARD_W * vScale);
+  const ch = Math.round(cw * 1.6);
+  const spacing = Math.round(SPACING * vScale);
+  const stepX = Math.round(STEP_X * vScale);
   // 中央卡用【id 锚定】而非数字下标：详情互动/排序变化导致 confidants 重排时，
   // 中央卡跟着原卡平滑走位，而不是「index 指到了别人」（实测踩坑：查看详情
   // 会更新排序权重，关闭弹窗后数字锚让中央卡换人）。
@@ -686,17 +694,17 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
           setSlideX(0);
         } else {
           // 正面横拖 → 实时一张张切卡（跟手，和 scrubber 手感一致）；张内余量做偏移
-          const n = Math.round(-dx / STEP_X);
+          const n = Math.round(-dx / stepX);
           go(g.startIndex + n);
-          setSlideX(dx + n * STEP_X);
+          setSlideX(dx + n * stepX);
           setDragRot(0);
         }
       }
     } else {
       // 两侧卡起拖 → 同样实时一张张切（不等松手）
-      const n = Math.round(-dx / STEP_X);
+      const n = Math.round(-dx / stepX);
       go(g.startIndex + n);
-      setSlideX(dx + n * STEP_X);
+      setSlideX(dx + n * stepX);
     }
   };
 
@@ -762,16 +770,16 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
       <div className="flex gap-4 overflow-x-auto pb-4 pt-2 [scrollbar-width:thin]" style={{ scrollSnapType: 'x mandatory' }}>
         {items.map((item) =>
           item === 'add' ? (
-            <button key="add" type="button" onClick={onCreate} className="shrink-0" style={{ width: CARD_W * 0.8, height: CARD_H * 0.8, scrollSnapAlign: 'center' }}>
+            <button key="add" type="button" onClick={onCreate} className="shrink-0" style={{ width: cw * 0.8, height: ch * 0.8, scrollSnapAlign: 'center' }}>
               <BlankCard />
             </button>
           ) : isFriend(item) ? (
-            <button key={item.id} type="button" onClick={() => onOpenFriend?.(item)} className="shrink-0" style={{ width: CARD_W * 0.8, height: CARD_H * 0.8, scrollSnapAlign: 'center' }}>
+            <button key={item.id} type="button" onClick={() => onOpenFriend?.(item)} className="shrink-0" style={{ width: cw * 0.8, height: ch * 0.8, scrollSnapAlign: 'center' }}>
               <FriendCardFace f={item} />
             </button>
           ) : (
             <button key={item.id} type="button" onClick={() => onOpenDetail(item.id)} className="shrink-0" style={{ scrollSnapAlign: 'center' }}>
-              <TarotCardSVG card={TAROT_BY_ID[item.arcanaId]} orientation={item.orientation} width={CARD_W * 0.8} staticCard showOrientationTag={false} faceOverride={faceOf(item)} />
+              <TarotCardSVG card={TAROT_BY_ID[item.arcanaId]} orientation={item.orientation} width={cw * 0.8} staticCard showOrientationTag={false} faceOverride={faceOf(item)} />
               <div className="mt-1 truncate text-center text-xs font-bold text-gray-700 dark:text-gray-200">{item.name}</div>
             </button>
           ),
@@ -787,7 +795,7 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
       {/* 墙体 */}
       <div
         className="relative touch-none overflow-hidden"
-        style={{ height: CARD_H + (p3 ? 22 : 46), perspective: 1100 }}
+        style={{ height: ch + (p3 ? 22 : 46), perspective: 1100 }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={endGesture}
@@ -810,7 +818,7 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
           if (Math.abs(offset) > 3) return null; // 虚拟化 ±3
           const isCenter = offset === 0;
           const slideShift = slideX * 0.55; // 拖动跟手（磁吸在松手时）
-          const x = offset * SPACING + slideShift;
+          const x = offset * spacing + slideShift;
           const rotY = isCenter ? (flipped ? 180 : 0) + dragRot : offset < 0 ? 38 : -38;
           // 上滑橡皮筋上飘 / 下滑打开预览下沉（二者互斥，axis 锁保证）
           const y = isCenter ? dragY + dragDown : 0;
@@ -832,7 +840,7 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
                   ? `${item.profile.nickname || item.profile.userId || '未命名客人'}（在线好友 · 未缔结 COOP）`
                   : `${item.name}（${TAROT_BY_ID[item.arcanaId]?.name ?? ''}，RANK ${item.intimacy}）`}
               className="absolute left-1/2 top-4 cursor-pointer"
-              style={{ width: CARD_W, height: CARD_H, marginLeft: -CARD_W / 2, transformStyle: 'preserve-3d', zIndex: 100 - Math.abs(offset) }}
+              style={{ width: cw, height: ch, marginLeft: -cw / 2, transformStyle: 'preserve-3d', zIndex: 100 - Math.abs(offset) }}
               animate={{ x, y, rotateX: rotX, rotateY: rotY, scale: liftScale }}
               transition={{ type: 'spring', stiffness: 260, damping: 28 }}
             >
@@ -843,7 +851,7 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
                 ) : isFriend(item) ? (
                   <FriendCardFace f={item} />
                 ) : (
-                  <TarotCardSVG card={TAROT_BY_ID[item.arcanaId]} orientation={item.orientation} width={CARD_W} staticCard showOrientationTag={false} faceOverride={faceOf(item)} />
+                  <TarotCardSVG card={TAROT_BY_ID[item.arcanaId]} orientation={item.orientation} width={cw} staticCard showOrientationTag={false} faceOverride={faceOf(item)} />
                 )}
                 {/* 两侧渐暗罩（transform-only 之外唯一的视觉层，纯透明度；p3 用蓝灰调防白卡发脏） */}
                 {!isCenter && <div aria-hidden className={`absolute inset-0 ${p3 ? 'rounded-[14px]' : 'rounded-xl'}`} style={{ background: p3 ? '#4a7a9c' : '#000', opacity: 0.18 + Math.abs(offset) * 0.16 }} />}
@@ -966,7 +974,7 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
                       ? 'max-w-[80%] pr-[0.18em] text-[34px] font-black italic'
                       : 'max-w-[70%] text-[28px] font-black text-gray-900 dark:text-white'
                 }`}
-                style={isP4 ? { fontFamily: 'var(--p4-display-font, serif)' } : p3 ? { color: P3R.ink, fontFamily: '"Arial Black", "Noto Sans SC", sans-serif' } : undefined}
+                style={isP4 ? { fontFamily: 'var(--p4-display-font, serif)' } : p3 ? { color: P3R.ink, fontFamily: '"Arial Black", "Noto Sans SC Black", "Noto Sans SC", sans-serif' } : undefined}
               >
                 {current.profile.nickname || current.profile.userId || '未命名客人'}
               </motion.h3>
@@ -1012,7 +1020,7 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
               {/* pr-[0.18em]：Arial Black 斜体的字形会探出自己的内容盒，truncate 的
                   overflow:hidden 正好贴着盒切，末字右侧就少一刀。留一点右内边距，
                   让它裁的是空白而不是笔画。 */}
-              <h3 className="max-w-[80%] truncate pr-[0.18em] text-[40px] font-black italic leading-tight" style={{ color: P3R.ink, fontFamily: '"Arial Black", "Noto Sans SC", sans-serif' }}>
+              <h3 className="max-w-[80%] truncate pr-[0.18em] text-[40px] font-black italic leading-tight" style={{ color: P3R.ink, fontFamily: '"Arial Black", "Noto Sans SC Black", "Noto Sans SC", sans-serif' }}>
                 {current.name}
               </h3>
             </div>

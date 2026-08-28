@@ -57,7 +57,10 @@ actions 元素为下列四种之一：
 规则：
 - **只响应【最新消息】里的记录意图**：用户此刻在报告做了什么/要做什么/花了钱/求记录，才出卡。
   闲聊、提问（问时间/问状态/问建议）一律空 actions——即使早前对话提过某件可记的事，最新消息没让你记就不要主动出卡。
-- 「帮我记一下/记上/安排一下」指的是最近对话里提到、且【本会话卡片】里还没有的那件事；若那件事已有待确认卡，输出空 actions。
+- **查重（最重要）**：【本会话卡片】【任务清单已有】【今天已记录的活动】三处列的是 App 里已存在的内容。
+  最新消息再次提到其中某件事——不管是重复叮嘱、追问还是换个说法——**都不要重复出卡**：
+  已有待确认卡的，等用户确认即可；已确认/已在清单/已记录的，就是已经办完了。
+  只有用户明确表示「又做了一次」「再记一笔」「再建一个」时才算新的一件。
 - 【本会话卡片】里标【已取消】的，是用户主动否掉的：**不要再为同一件事出卡**，除非最新消息里他重新要求。
 - 标「用户已手改」的卡，内容以列出的为准（那是用户改后的版本），不要出一张把它改回去的卡。
 - 一句话说了几件事就出几张卡（≤3）。信息足够就出卡；确实拿不准或信息不足才空。
@@ -70,6 +73,8 @@ actions 元素为下列四种之一：
 输入末句：提醒我周五给妈妈打电话 → {"actions":[{"kind":"todo","title":"周五给妈妈打电话","attribute":"kindness","points":2,"attribute2":"charm","points2":1,"repeatDaily":false}],"query":null}
 对话提到想学英语、无相关待确认卡，末句：帮我记一下 → {"actions":[{"kind":"todo","title":"学英语","attribute":"knowledge","points":2,"repeatDaily":true}],"query":null}
 待确认卡已有「学英语」，末句：帮我记一下 → {"actions":[],"query":null}
+卡片已有「记录活动【已确认生效】跑步五公里」，末句：对了我今天跑了五公里来着 → {"actions":[],"query":null}
+任务清单已有「背单词」，末句：帮我加个背单词的任务 → {"actions":[],"query":null}
 输入末句：今天好累啊 → {"actions":[],"query":null}
 对话早前提过想背单词，末句：现在几点了？ → {"actions":[],"query":null}
 输入末句：我上周都做了什么？ → {"actions":[],"query":{"kind":"activities","days":7}}`;
@@ -87,6 +92,13 @@ const PERFORM_RULES = `
   ✗「你现在有 Lv.3 的勇气，可以去做」 ✓「你这阵子胆子练出来了，试试吧」
   ✗「你的知识 Lv.2」 ✓「这方面你还在入门，慢慢来」
   只有用户明确问「我现在几级 / 多少点」时才直接报数字。
+
+## 事实边界（与数值纪律同级）
+- 用户的经历、身份、职业、人际关系，只有四个来源：【用户画像】、【关于用户的记忆】、
+  本次对话里他亲口说的、数据区列出的记录。**四处都没有的事，一个字都不要替他编**——
+  不存在的实习、上学、出差、项目、人名，说出口就是在冒充了解他。
+- 记不清或没依据时就照实说「这个我不记得你提过」，或者直接开口问。
+  对老朋友，问一句永远比编一段更体面。
 
 ## 卡片纪律（最高优先级）
 - 【本轮开出的卡片】列了什么，你就只能提这些卡：请用户看一眼并点「确认」。卡片会自动展示，**绝不在文本里手写卡片内容或画卡**。
@@ -185,7 +197,7 @@ function extractJson(raw: string): Record<string, unknown> | null {
 export function spliceImmersive(buffer: string, isFinal: boolean): { bubbles: string[]; rest: string } {
   const bubbles: string[] = [];
   let cur = '';
-  const flush = () => { const t = cur.trim(); if (t) bubbles.push(t); cur = ''; };
+  const flush = () => { const t = stripStamp(cur.trim()); if (t) bubbles.push(t); cur = ''; };
   for (let i = 0; i < buffer.length; i++) {
     const ch = buffer[i];
     if (ch === '。') { flush(); continue; }
@@ -200,6 +212,11 @@ export function spliceImmersive(buffer: string, isFinal: boolean): { bubbles: st
       if (/\d/.test(buffer[i - 1] ?? '') && /\d/.test(buffer[i + 1] ?? '')) { cur += ch; continue; }
       // 句末的 '.' 若是 buffer 最后一位且非 final，可能是省略号/网址开头——留给下个 chunk
       if (i === buffer.length - 1 && !isFinal) return { bubbles, rest: cur + ch };
+      // 只有后面跟着空白/收尾符（或整段文本就此结束）才算句号；紧跟字母数字的是
+      // Node.js / index.html / 网址一类的词内点，原样保留——此前无条件断句会把
+      // 「config.json」切成「config」「json」两个半截泡（用户上报「词只说一半」来源之一）
+      const nx = buffer[i + 1] ?? '';
+      if (nx && !/[\s"'”』」）)\]】>》]/.test(nx)) { cur += ch; continue; }
       flush(); continue;
     }
     if (ch === '？' || ch === '！' || ch === '?' || ch === '!' || ch === '；' || ch === ';') {
@@ -226,14 +243,22 @@ export interface ImmersiveStreamHooks {
   onSegment: (seg: string) => boolean;
 }
 
-/** reply 文本 → 分段（空行切，≤4 段，去空） */
+/**
+ * 模型偶尔会模仿历史标注、在回复开头自带一个 [HH:mm] 时间戳——那是给它看的注释，
+ * 不是它该说的话，上屏前剥掉。
+ */
+const stripStamp = (s: string): string => s.replace(/^\[\d{1,2}:\d{2}\]\s*/, '');
+
+/** reply 文本 → 分段（空行切，≤4 段，去空；超出的不丢，并入末段） */
 export function splitSegments(reply: string): string[] {
-  const segs = reply
+  const parts = reply
     .split(/\n{2,}/)
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .slice(0, 4);
-  return segs.length ? segs : [reply.trim()].filter(Boolean);
+    .map((s) => stripStamp(s.trim()))
+    .filter(Boolean);
+  // 超过 4 段时不再 slice 丢弃剩余——长回复被无声吃掉后半截，正是用户看到的
+  // 「错误地省略语句」来源之一。改为第 4 段起合并保底。
+  const segs = parts.length > 4 ? [...parts.slice(0, 3), parts.slice(3).join('\n')] : parts;
+  return segs.length ? segs : [stripStamp(reply.trim())].filter(Boolean);
 }
 
 /** action 原始对象 → 校验收口后的 NavigatorDraft（非法则丢弃返回 undefined） */
@@ -343,9 +368,25 @@ async function triageActions(
   const due = s.getDueTodosToday().filter((t) => !s.getTodayTodoProgress(t.id).isComplete);
   // 只带最近 6 条摘录：指代消解够用，且上下文永远短小——判定质量不随对话变长而劣化
   const recent = history.slice(-6).map((h) => `${h.role === 'cat' ? 'AI' : '用户'}：${h.text.slice(0, 80)}`).join('\n');
+  /**
+   * 查重素材（用户上报「重复多提一句就重复生成卡片，也不看任务列表里已有什么」）：
+   * 分诊此前只看得到「今日未完成待办」——排期在别天的任务、今天已记过的活动、
+   * 已确认生效的卡，全在它视野外，于是同一件事聊两遍就开两张卡。
+   * 这里把三样都喂进去（短清单，token 开销可忽略），配合协议里的查重规则。
+   */
+  const todayKey = toLocalDateKey();
+  const openTodos = s.todos.filter((t) => t.isActive && !t.archivedAt);
+  const todoLines = openTodos.slice(0, 15).map((t) => `- 「${t.title}」`);
+  if (openTodos.length > 15) todoLines.push(`- …等共 ${openTodos.length} 项`);
+  const todayActs = s.activities
+    .filter((a) => toLocalDateKey(new Date(a.date)) === todayKey)
+    .slice(-10)
+    .map((a) => `- ${a.description.slice(0, 40)}`);
   const user = [
     recent ? `【最近对话】\n${recent}` : '',
     due.length ? `【今日未完成待办（completeTodo 用）】\n${due.slice(0, 12).map((t) => `- id=${t.id} 「${t.title}」`).join('\n')}` : '【今日无未完成待办】',
+    todoLines.length ? `【任务清单已有】\n${todoLines.join('\n')}` : '',
+    todayActs.length ? `【今天已记录的活动】\n${todayActs.join('\n')}` : '',
     pendingCards.length ? `【本会话卡片（含状态）】\n${pendingCards.join('\n')}` : '【本会话尚无卡片】',
     `【最新消息】${userText}`,
   ].filter(Boolean).join('\n');
@@ -418,9 +459,11 @@ export async function runNavigatorTurn(
 
   // 阶段1：分诊（含 query 判定）。卡片列表帮它判「帮我记一下」是否重复出卡。
   // 已取消的也要喂：只喂待确认时模型看不见用户否掉过什么，会把同一件事一遍遍重开
-  //（用户上报「Agent 不知道我取消了卡片」）。已生效的不喂——那属于历史，不影响本轮判定。
-  const pendingCards = cards.filter((c) => c.includes('待用户确认') || c.includes('已取消'));
-  const { drafts, queryDays } = await triageActions(cfg, history, userText, pendingCards, signal);
+  //（用户上报「Agent 不知道我取消了卡片」）。
+  // 【已确认生效】的同样要喂——此前以「属于历史」为由滤掉，结果同一件事在对话里
+  // 被再次提起时，分诊根本不知道它已经记过，照常重开一张（用户上报「重复多提一句
+  // 就重复生成卡片」的直接原因）。cardsDigest 本身截到最近 10 张，不会撑大上下文。
+  const { drafts, queryDays } = await triageActions(cfg, history, userText, cards, signal);
   const queryResult = queryDays !== null ? runActivitiesQuery(queryDays) : null;
 
   // 阶段2：表演。判定结果作为事实注入——reply 与卡从机制上一致，无 JSON 无失守。
@@ -443,8 +486,13 @@ export async function runNavigatorTurn(
     const emitted: string[] = [];
     let buffer = '';
     let interrupted = false;
+    let finishReason = '';
     try {
-      for await (const delta of chatStream(cfg, messages, { temperature: 0.75, maxTokens: 900, signal })) {
+      const streamOpts = {
+        temperature: 0.75, maxTokens: 1200, signal,
+        onFinishReason: (r: string) => { finishReason = r; },
+      };
+      for await (const delta of chatStream(cfg, messages, streamOpts)) {
         buffer += delta;
         const { bubbles, rest } = spliceImmersive(buffer, false);
         buffer = rest;
@@ -460,7 +508,13 @@ export async function runNavigatorTurn(
       if (import.meta.env.DEV) console.warn('[navigator] 拟真流中途异常，按已吐内容收尾', e);
     }
     if (!interrupted) {
-      const { bubbles } = spliceImmersive(buffer, true);
+      let { bubbles } = spliceImmersive(buffer, true);
+      // finish_reason=length：流式没法像非流式那样加预算重来（前面的泡都上屏了），
+      // 但末尾这段一定是被拦腰砍断的半句/半个词——宁可整段不吐，也别让它上屏。
+      if (finishReason === 'length' && bubbles.length > 0) {
+        if (import.meta.env.DEV) console.warn('[navigator] 拟真流被 max_tokens 截断，丢弃残句:', bubbles[bubbles.length - 1]);
+        bubbles = bubbles.slice(0, -1);
+      }
       for (const b of bubbles) {
         emitted.push(b);
         if (!immersive.onSegment(b)) break;
@@ -471,7 +525,7 @@ export async function runNavigatorTurn(
     return { segments: emitted, drafts };
   }
 
-  let reply = (await chatComplete(cfg, messages, { temperature: 0.75, maxTokens: 900, signal })).trim();
+  let reply = (await chatComplete(cfg, messages, { temperature: 0.75, maxTokens: 1200, signal })).trim();
   if (import.meta.env.DEV) console.debug('[navigator] 表演输出:', reply);
 
   // 万一它输出了 JSON 形态（旧习惯残留），剥出纯文本
@@ -541,13 +595,24 @@ export async function generateAIGreeting(
   const cfg = getAssistantAIConfig(useAppStore.getState().settings);
   if (!cfg) return null;
   try {
-    // 推理模型的 reasoning 也占 completion 预算，问候虽短也要给足（否则必截断→永远落模板）
-    const raw = await chatComplete(cfg, [
-      { role: 'system', content: `${personaPrompt}\n今天第一次见面，说一句自然的问候。像正常人刚见面：简短、贴合时段和对方状态，**不要刻意罗列数据**，不要问候语大礼包。若给了昨日聊天摘要或记忆，可自然接一句昨天的话茬（别复读原文）。可用空行分成最多 2 段。只输出问候本身。` },
+    /**
+     * 走流式而不是一发拿全（问候回退模板偏多的主修复）：
+     * 非流式 + 外部 9s 硬计时，对推理模型（DeepSeek 思考档常想 5~15s）意味着
+     * 「必须 9s 内想完+写完」，超一点就整段作废落模板。改成流式后 timeoutMs 语义
+     * 变为**空闲超时**——思维链增量也会重置计时（aiClient rearm），于是：
+     * 连接死了 9s 没动静 → 照旧快速落模板；模型确实在想 → 等它想完，
+     * 总时长由调用方 signal（30s 总闸）兜底。等待期间打字指示本来就在动，不亏。
+     */
+    const messages: AIMessage[] = [
+      { role: 'system', content: `${personaPrompt}\n今天第一次见面，说一句自然的问候。像正常人刚见面：简短、贴合时段和对方状态，**不要刻意罗列数据**，不要问候语大礼包。只根据给定素材说话，对方没提过的经历不要脑补。若给了昨日聊天摘要或记忆，可自然接一句昨天的话茬（别复读原文）。可用空行分成最多 2 段。只输出问候本身。` },
       { role: 'user', content: [buildDynamicContext(snap, []), ...extraContext].filter(Boolean).join('\n') },
-    ], { temperature: 0.9, maxTokens: 600, signal, timeoutMs: 0 });
-    const text = raw.trim();
-    return text ? text : null;
+    ];
+    let text = '';
+    for await (const delta of chatStream(cfg, messages, { temperature: 0.9, maxTokens: 600, signal, timeoutMs: 9000 })) {
+      text += delta;
+    }
+    const trimmed = text.trim();
+    return trimmed ? trimmed : null;
   } catch {
     return null;
   }

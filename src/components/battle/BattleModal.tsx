@@ -19,7 +19,7 @@ import { triggerLightHaptic, playSound } from '@/utils/feedback';
 import { isInShadowTime, SKILL_EFFECT_MAP } from '@/constants';
 import { useBoldness } from '@/utils/boldness';
 import { BattleEngine, PlayerActionInput, FxEvent, TurnResult } from '@/battle/engine';
-import { QTE_FALLBACK_MULT, healAmount, BASIC_ATTACK_POWER, maskBondTier } from '@/battle/numbers';
+import { QTE_FALLBACK_MULT, healAmount, BASIC_ATTACK_POWER, maskBondTier, FATE_GLIMPSE_ADD } from '@/battle/numbers';
 import { aggregateRelicMods, AFFIX_POOL } from '@/battle/loot';
 import { pickMemoryLine, SUMMON_FALLBACK } from '@/battle/memoryLines';
 import { ammoFromActivities, blazingAttrsToday } from '@/battle/preparation';
@@ -299,6 +299,8 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
       ledgerWard,
       spendCurse,
       companionGuard,
+      // v2.7 窥探命运：buff 生效期内伤害加算 +10%
+      fateGlimpseAdd: stG.getActiveFateBuff() ? FATE_GLIMPSE_ADD : 0,
       // R18：面具羁绊档位（出战场次）/ 燃起（白天该属性待办≥3 → 首技免 SP）
       maskBondTiers: Object.fromEntries(
         (Object.entries(bs.maskBattles ?? {}) as Array<[AttributeId, number]>).map(([a, n]) => [a, maskBondTier(n)])

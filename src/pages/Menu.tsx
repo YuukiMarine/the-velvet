@@ -44,10 +44,13 @@ import { STAGGER, TAP, springSoft, fadeIn } from '@/utils/motion';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P4Flower, P4Sparkle, P4Highlight } from '@/ui/p4Kit';
 import { P3R, P3RPage, slantClip } from '@/components/p3r/kit';
-import { P5R, P5_FONT, starPts, P5Collage, P5SubBar, P5Star, P5StarOutline, P5Dots, P5Slab, P5RPage } from '@/components/p5r/kit';
+import { P5R, P5_FONT, P5_TITLE_FONT, starPts, P5Collage, P5SubBar, P5Star, P5StarOutline, P5Dots, P5Slab, P5RPage } from '@/components/p5r/kit';
 import { computeTotalLv, resolveTier } from '@/utils/lvTiers';
 
 // ── 图标（24px stroke 制式，与 Navigation.tsx 同一套 heroicons outline 风格）──
+
+/** 催更 / 内测群（QQ 群号，用户定稿 v2.7） */
+const QQ_GROUP = '1005276503';
 
 const ChartIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" strokeWidth={1.8} stroke="currentColor" className="w-6 h-6">
@@ -206,6 +209,23 @@ export const Menu = () => {
   // 「关于」Sheet：本页内打开、不跳页；触发器 ref 供 SheetModal 形状记忆生长
   //（面板从横条"长出来"，关闭缩回——UI_DESIGN_BOLD_V2.5.md §4.3）
   const [aboutOpen, setAboutOpen] = useState(false);
+  /** 催更 / 内测群（QQ）。点击走 QQ 的加群 scheme 直达群名片页；
+   *  没装 QQ / 系统拦掉 scheme 时（页面还停在原地）退化为复制群号。 */
+  const [qqCopied, setQqCopied] = useState(false);
+  const joinQQGroup = () => {
+    const uin = QQ_GROUP;
+    try {
+      window.location.href =
+        `mqqapi://card/show_pslcard?src_type=internal&version=1&uin=${uin}&card_type=group&source=qrcode`;
+    } catch { /* scheme 不可用时走下面的兜底 */ }
+    window.setTimeout(() => {
+      // 已经跳去 QQ 了就什么都不做；还在前台说明 scheme 没被接住
+      if (document.visibilityState !== 'visible') return;
+      const done = () => { setQqCopied(true); window.setTimeout(() => setQqCopied(false), 2600); };
+      if (navigator.clipboard?.writeText) navigator.clipboard.writeText(uin).then(done, done);
+      else done();
+    }, 1200);
+  };
   const aboutTriggerRef = useRef<HTMLButtonElement>(null);
   // 「主题」Sheet：主题瓷砖点开的色板选择（快切上浮的第二形态：block 入口 + 面板选色）
   const [themeSheetOpen, setThemeSheetOpen] = useState(false);
@@ -430,6 +450,22 @@ export const Menu = () => {
                 @IIInk
               </a>
             </div>
+            <div className="border-t border-gray-200 dark:border-gray-700"></div>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm text-gray-600 dark:text-gray-400">催更 / 内测群</span>
+              <button
+                type="button"
+                onClick={joinQQGroup}
+                className="text-sm font-medium text-primary hover:underline"
+              >
+                {QQ_GROUP}
+              </button>
+            </div>
+            {qqCopied && (
+              <p className="text-[11px] text-gray-400 dark:text-gray-500">
+                没能唤起 QQ，群号已复制，手动搜一下就行
+              </p>
+            )}
           </div>
           {/* 寄语：逐字保留 */}
           <p className="text-xs text-center text-gray-400 dark:text-gray-500 leading-relaxed">
@@ -577,7 +613,7 @@ export const Menu = () => {
             </span>
           )}
           {watermark !== undefined && (
-            <span aria-hidden className="pointer-events-none absolute bottom-3 right-6 select-none text-[92px] font-black leading-none" style={{ color: '#4a0000', fontFamily: P5_FONT, transform: 'rotate(-9deg)' }}>{watermark}</span>
+            <span aria-hidden className="pointer-events-none absolute bottom-3 right-6 select-none text-[92px] font-black leading-none" style={{ color: '#4a0000', fontFamily: P5_TITLE_FONT, transform: 'rotate(-9deg)' }}>{watermark}</span>
           )}
           {star && (
             <P5Star
@@ -588,9 +624,10 @@ export const Menu = () => {
             />
           )}
           {badge && <span className="pointer-events-none absolute right-3 top-2.5">{badge}</span>}
-          <span className={`relative flex h-full min-h-[inherit] flex-col gap-1.5 px-4 py-3 ${alignTop ? 'justify-start pt-6' : 'justify-center'}`} style={{ color: fg }}>
+          {/* 磁贴文案按次级标题对待（v2.7 用户口径）：标签与角注都走黑体标题栈 */}
+          <span className={`relative flex h-full min-h-[inherit] flex-col gap-1.5 px-4 py-3 ${alignTop ? 'justify-start pt-6' : 'justify-center'}`} style={{ color: fg, fontFamily: P5_TITLE_FONT }}>
             <span aria-hidden>{icon}</span>
-            <span className="text-[23px] font-black leading-tight" style={{ fontFamily: P5_FONT }}>{label}</span>
+            <span className="text-[23px] font-black leading-tight">{label}</span>
             {caption && <span className="text-[12px] font-black leading-none">{caption}</span>}
           </span>
         </motion.button>
@@ -598,7 +635,7 @@ export const Menu = () => {
     };
 
     return (
-      <P5RPage className="overflow-hidden">
+      <P5RPage>
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }} className="relative mx-auto max-w-2xl pb-8">
           {/* ── 页头：拼贴「菜单」+ MENU 黑条 + 红星装饰群 ── */}
           <header className="relative pt-2">
@@ -784,7 +821,7 @@ export const Menu = () => {
             <span aria-hidden className="pointer-events-none absolute inset-[3px]" style={{ background: P5R.greyLight, clipPath: ABOUT_SHAPE }} />
             <span className="relative flex items-center gap-3 py-3 pl-7 pr-6">
               <span aria-hidden className="flex h-6 w-6 items-center justify-center rounded-full text-[15px] font-black text-white" style={{ background: '#050505' }}>i</span>
-              <span className="flex-1 text-[17px] font-black" style={{ color: '#050505', fontFamily: P5_FONT }}>关于</span>
+              <span className="flex-1 text-[17px] font-black" style={{ color: '#050505', fontFamily: P5_TITLE_FONT }}>关于</span>
               <P5Star size={26} fill="#050505" rot={8} className="shrink-0" />
             </span>
           </motion.button>
@@ -841,12 +878,13 @@ export const Menu = () => {
       { key: 'about', label: '关于', icon: <InfoIcon />, onPress: () => setAboutOpen(true), aria: '关于' },
     ];
     return (
-      <P3RPage className="overflow-hidden">
+      <P3RPage>
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }} className="relative mx-auto max-w-2xl pb-8">
           {/* SYSTEM 巨幽灵字（p3-menu 设计稿：整行横排词整体顺时针旋转 90°，沿左缘纵向纵贯中下部——竖屏侧边字样） */}
-          {/* 容器宽必须 ≥ 旋转后字样占的横向尺寸（= 行高 ≈ 9.5rem），否则 overflow-hidden
+          {/* 容器宽必须 ≥ 旋转后字样占的横向尺寸（= 行高 ≈ 9.5rem），否则本容器
               会把字母左右两边齐齐削掉（用户上报"SYSTEM 被错误截断"）。这里放到 168px
-              并撤掉裁切，横向出血交给 P3RPage 自己的 overflow-hidden 兜。 */}
+              并撤掉裁切；横向出血由 App <main> 的 overflow-x:clip 在屏缘兜（页面壳
+              不再裁——它裁在内容盒边缘，会把上探/侧探的装饰切平）。 */}
           <div aria-hidden className="pointer-events-none absolute left-0 top-[300px] flex h-[760px] w-[168px] select-none items-center justify-center">
             <span
               className="whitespace-nowrap font-black italic leading-none"
@@ -895,7 +933,7 @@ export const Menu = () => {
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-2">
-                    <span className="min-w-0 flex-1 truncate text-[21px] font-black italic leading-none" style={{ color: P3R.ink, fontFamily: '"Arial Black", "Noto Sans SC", sans-serif' }}>
+                    <span className="min-w-0 flex-1 truncate text-[21px] font-black italic leading-none" style={{ color: P3R.ink, fontFamily: '"Arial Black", "Noto Sans SC Black", "Noto Sans SC", sans-serif' }}>
                       {user?.name ?? '旅行者'}
                     </span>
                     <span

@@ -18,7 +18,7 @@ import { useAppStore, toLocalDateKey } from '@/store';
 import type { AttributeId, CallingCard } from '@/types';
 import {
   P5R, P5_FONT, roughQuad, roughBanner, starPts,
-  P5Panel, P5Collage, P5SubBar, P5Wedge, P5Chip, P5Star, P5StarOutline, P5Burst, P5Sparkle, P5Dots, P5Slab, P5RPage,
+  P5Panel, P5Collage, P5SubBar, P5Wedge, P5Chip, P5Star, P5StarOutline, P5Burst, P5Sparkle, P5Dots, P5Slab, P5RPage, P5_TITLE_FONT,
 } from '@/components/p5r/kit';
 import { TodoCompleteModal } from '@/components/TodoCompleteModal';
 import { BattleDashboardWidget } from '@/components/BattleDashboardWidget';
@@ -123,7 +123,7 @@ const HEAD_DESIGN_W = 425;
  *
  * 页头是「拼贴标题 + 日期纸卡」两块**都不能压缩**的东西：瓷砖是固定 px 的方块，
  * 日期卡里塞着月相/天气块、两行问候、大号日数字。两块加起来要 425px，
- * 而 360dp 的机子扣掉 px-4 只剩 328px —— P5RPage 又是 overflow-hidden，
+ * 而 360dp 的机子扣掉 px-4 只剩 328px —— P5RPage 又裁横向溢出，
  * 于是右边那张卡直接被切掉一角，问候语和天气读数缺一块（用户上报）。
  * 就算 450dp 宽也只有 418px，仍然差 7px，所以这不是"个别分辨率"，是几乎所有机型。
  *
@@ -468,7 +468,8 @@ const RitualSlabP5 = ({ icon, title, sub, onClick, trailing, seed = 21 }: {
         {icon ?? <P5Star size={30} fill={P5R.paper} />}
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[17px] font-black leading-tight" style={{ color: P5R.white, fontFamily: P5_FONT, textShadow: '2px 2px 0 #000000' }}>{title}</span>
+        {/* 大标题按标题制式走黑体（v2.7.1 用户口径：仪式卡大标题也是标题） */}
+        <span className="block truncate text-[17px] font-black leading-tight" style={{ color: P5R.white, fontFamily: P5_TITLE_FONT, textShadow: '2px 2px 0 #000000' }}>{title}</span>
         {sub && <span className="mt-1 block truncate text-[12px] font-bold" style={{ color: P5R.white }}>{sub}</span>}
       </span>
       {trailing ?? <span aria-hidden className="shrink-0 text-xl font-black" style={{ color: P5R.white }}>›</span>}
@@ -753,7 +754,11 @@ export const DashboardP5 = () => {
   });
 
   return (
-    <P5RPage className="overflow-hidden">
+    // 页面壳不裁任何方向：早年的 overflow-hidden 把上探/侧探的装饰（-top-4 红斜块、
+    // 负偏移的星）在**内容盒边缘**切平——顶部一刀、左右距屏缘 16px 各一刀，就是
+    // "装饰被最外层边框裁切"。出血的兜底在 App 的 <main>（overflow-x:clip，裁在
+    // **屏幕边缘**且不建滚动容器），页面壳再裁一遍纯属有害。
+    <P5RPage>
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="relative pb-6">
         {/* ── 页头：拼贴标题 + 红星爆炸背景 + 日期纸卡 ── */}
         <header className="relative pt-3">

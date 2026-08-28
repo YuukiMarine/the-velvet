@@ -8,6 +8,7 @@
 import { useEffect, useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { useAppStore, DEFAULT_NOTIF_SLOTS } from '@/store';
+import { BellIcon } from '@/components/settingsIcons';
 import { Toggle } from '@/components/Toggle';
 import type { NotifContentType, NotifSlot } from '@/types';
 import {
@@ -90,14 +91,14 @@ export default function NotificationSettings() {
     <div className="space-y-5">
       {/* 子板块标题 */}
       <div className="flex items-center gap-2 pb-2 border-b border-gray-200 dark:border-gray-700/80">
-        <span className="text-base">🔔</span>
+        <span aria-hidden className="text-gray-500 dark:text-gray-300"><BellIcon className="h-[18px] w-[18px]" /></span>
         <h4 className="text-sm font-bold text-gray-800 dark:text-white tracking-wide">本地提醒</h4>
       </div>
 
       {/* 平台降级提示 */}
       {!supported && (
         <div className="rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/60 px-4 py-3 text-xs text-amber-700 dark:text-amber-300 leading-relaxed">
-          本地通知目前仅在 <b>Android 客户端</b> 送达（iOS 待原生化）。你仍可在此预先配置时段与内容，装上 Android 客户端后即生效。
+          本地通知在 <b>Android / iOS 客户端</b> 送达（网页版没有这个能力）。你仍可在此预先配置时段与内容，装上客户端后即生效。
         </div>
       )}
 
@@ -108,7 +109,7 @@ export default function NotificationSettings() {
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1">
             <div className="flex items-center gap-2">
-              <span className="text-base">🔔</span>
+              <span aria-hidden className="text-gray-500 dark:text-gray-300"><BellIcon className="h-[18px] w-[18px]" /></span>
               <h4 className="text-sm font-bold text-gray-800 dark:text-white">每日提醒</h4>
             </div>
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 leading-relaxed">
@@ -133,6 +134,28 @@ export default function NotificationSettings() {
           </div>
         )}
       </div>
+
+      {/* 助手口吻（v2.7 notifVoice）：AI 接管提醒文案。开关随总开关一起出现 */}
+      {enabled && (
+        <div className="rounded-xl border border-gray-200 p-4 dark:border-gray-700">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex-1">
+              <h4 className="text-sm font-bold text-gray-800 dark:text-white">让助手来写提醒文案</h4>
+              <p className="mt-1 text-xs leading-relaxed text-gray-500 dark:text-gray-400">
+                每天用<b>当前人格</b>的口吻生成一套推送文案（走助手档模型，一天一次）。
+                没配 AI、离线或生成失败时自动退回内置文案，提醒本身不受影响。
+              </p>
+            </div>
+            <div className="mt-0.5 flex-shrink-0">
+              <Toggle
+                checked={!!settings.notifAIVoice}
+                onChange={v => updateSettings({ notifAIVoice: v })}
+                aria-label="让助手来写提醒文案"
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 时段列表（仅启用时展开） */}
       {enabled && (

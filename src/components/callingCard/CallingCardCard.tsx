@@ -135,11 +135,15 @@ export function CallingCardCard({
       transition={{ duration: 0.22 }}
       className={`relative rounded-xl shadow-sm ${onClick ? 'cursor-pointer' : ''}`}
     >
-      {/* —— 视觉裁剪层：背景渐变 + 纹理 SVG 都关在这里，rounded-xl 圆角生效 —— */}
+      {/* —— 视觉裁剪层：背景渐变 + 纹理 SVG 都关在这里，rounded-xl 圆角生效 ——
+          backgroundColor 是给老 WebView 的回退：渐变里的 color-mix() 在
+          Chromium <111 上不被识别，整条 background 声明会作废——卡片直接变透明
+          （用户上报「倒计时栏没有背景」）。拆成 color + image 两条：
+          image 无效时至少还有纯色底，新内核则渐变照常盖在纯色上。 */}
       <div
         aria-hidden
         className="absolute inset-0 rounded-xl overflow-hidden pointer-events-none"
-        style={{ background: cardBgStyle }}
+        style={{ backgroundColor: '#15131b', backgroundImage: cardBgStyle }}
       >
         <TexturePattern card={card} />
       </div>

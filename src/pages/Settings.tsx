@@ -12,7 +12,12 @@ import { PageTitle } from '@/components/PageTitle';
 import { BackButton } from '@/components/BackButton';
 import { useRipple } from '@/components/RippleEffect';
 import { AI_PROVIDERS, getProviderConfig, testAIConnection, fetchAvailableModels, type TestResult, type ApiProvider, DEFAULT_PROVIDER } from '@/utils/aiProviders';
-import { refreshAllProviderModels } from '@/utils/aiModelCatalog';
+import { autoFillVisionPatch, refreshAllProviderModels } from '@/utils/aiModelCatalog';
+import {
+  BarsIcon, BellIcon, BoltMiniIcon, CoinIcon, DiamondMarkIcon, EyeIcon, GearIcon,
+  ImageIcon, KeyIcon, MicIcon, MoonIcon, PaletteIcon, SlidersIcon, SparklesIcon,
+  SwordsIcon, TagIcon, WaveIcon,
+} from '@/components/settingsIcons';
 import { ModelPickerSheet, type ModelPickerMode } from '@/components/ai/ModelPickerSheet';
 import { BufferedTextInput } from '@/components/ui/BufferedTextInput';
 import { WeatherSettings } from '@/components/settings/WeatherSettings';
@@ -21,6 +26,7 @@ import NotificationSettings from '@/components/NotificationSettings';
 import { NavigatorSettings } from '@/components/navigator/NavigatorSettings';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { useUiChannel } from '@/ui/useUiChannel';
+import { useBoldness } from '@/utils/boldness';
 import { P3R, P3RPage, GhostWords, P3PageHeader } from '@/components/p3r/kit';
 import { P5R, P5_FONT, roughQuad, P5Collage, P5Rough, P5Star, P5RPage } from '@/components/p5r/kit';
 import {
@@ -72,8 +78,16 @@ const emptyPresetNameSelection = (): PresetNameSelection => ({ achievements: {},
  *   · 组词结束（或非组词直接输入）时才一次性提交
  * 外部 value 变化时，如果当前没在组词，把 draft 同步过来；在组词中则按下不表，避免打断输入
  */
+/**
+ * 属性徽章卡（v2.7.1 重设计，用户口径「华丽、醒目、有动效，信息不减」）：
+ *   - 菱形渐变徽章（属性色 135° 渐变 + 顶部高光 + 同色外晕），emoji 恒正居中；
+ *   - 卡面属性色叙事：左缘色条 + 从左淡入的同色洗地 + 右下斜置英文 ID 幽灵水印；
+ *   - 聚焦演出：边框/光环转属性色、槽底色条从左扫入、徽章微弹；
+ *   - 入场按 index 逐张滑入（stagger）。全部动效走 useBoldness（D0 直出终态）。
+ *   - 输入槽自带 px：P5 皮的 5px 内画黑描边不再吃掉首字（「文字与边框重合」修复）。
+ */
 const AttributeNameField = ({
-  id, icon, color, defaultLabel, value, onCommit,
+  id, icon, color, defaultLabel, value, onCommit, index,
 }: {
   id: AttributeId;
   icon: string;
@@ -81,8 +95,11 @@ const AttributeNameField = ({
   defaultLabel: string;
   value: string;
   onCommit: (v: string) => void;
+  index: number;
 }) => {
+  const anim = useBoldness();
   const [draft, setDraft] = useState(value);
+  const [focused, setFocused] = useState(false);
   const composingRef = useRef(false);
 
   useEffect(() => {
@@ -90,41 +107,88 @@ const AttributeNameField = ({
   }, [value]);
 
   return (
-    <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-gray-50 dark:bg-gray-900/40 border border-gray-200/60 dark:border-gray-700/40">
-      <div
-        className="w-10 h-10 rounded-xl flex items-center justify-center text-lg flex-shrink-0"
-        style={{ background: `${color}1f`, color }}
+    <motion.div
+      initial={anim ? { opacity: 0, x: -16 } : false}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ type: 'spring', stiffness: 320, damping: 28, delay: anim ? index * 0.05 : 0 }}
+      className="relative overflow-hidden rounded-xl border bg-gray-50 dark:bg-gray-900/40 transition-[border-color,box-shadow] duration-200"
+      style={{
+        borderColor: focused ? color : 'rgba(148,163,184,0.28)',
+        boxShadow: focused ? `0 0 0 3px ${color}26, 0 4px 14px ${color}1f` : undefined,
+      }}
+    >
+      {/* 属性色氛围层：左缘色条 + 向右消散的洗地 + 右下幽灵 ID（全装饰，不占布局） */}
+      <span aria-hidden className="absolute inset-y-0 left-0 w-[4px]" style={{ background: `linear-gradient(180deg, ${color}, ${color}80)` }} />
+      <span aria-hidden className="pointer-events-none absolute inset-0" style={{ background: `linear-gradient(105deg, ${color}17 0%, transparent 46%)` }} />
+      <span
+        aria-hidden
+        className="pointer-events-none absolute -bottom-2.5 -right-1 select-none text-[34px] font-black uppercase italic leading-none tracking-tighter"
+        style={{ color: `${color}1a` }}
       >
-        {icon}
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="text-[9px] font-bold tracking-[0.2em] text-gray-400 uppercase">
-          {id}
+        {id}
+      </span>
+
+      <div className="relative flex items-center gap-3.5 py-3 pl-4 pr-3">
+        {/* 菱形徽章：45° 渐变底 + 高光线 + 同色晕，emoji 不随底旋转（字恒水平原则） */}
+        <div className="relative flex h-12 w-12 flex-none items-center justify-center">
+          <motion.span
+            aria-hidden
+            className="absolute h-[33px] w-[33px] rounded-[9px]"
+            // rotate 必须走 motion 的 transform 通道：animate.scale 一接管 transform，
+            // class 里的 rotate-45 就会被整体覆盖（徽章"变回正方块"的坑）
+            style={{
+              rotate: 45,
+              background: `linear-gradient(135deg, ${color} 0%, ${color}b8 100%)`,
+              boxShadow: `0 3px 10px ${color}59, inset 0 1px 0 rgba(255,255,255,0.4)`,
+            }}
+            animate={anim ? { scale: focused ? 1.12 : 1 } : undefined}
+            transition={{ type: 'spring', stiffness: 420, damping: 18 }}
+          />
+          <span className="relative text-lg drop-shadow-sm">{icon}</span>
         </div>
-        <input
-          type="text"
-          value={draft}
-          onChange={(e) => {
-            const next = e.target.value;
-            setDraft(next);
-            if (!composingRef.current) onCommit(next);
-          }}
-          onCompositionStart={() => { composingRef.current = true; }}
-          onCompositionEnd={(e) => {
-            composingRef.current = false;
-            const next = (e.target as HTMLInputElement).value;
-            setDraft(next);
-            onCommit(next);
-          }}
-          onBlur={() => {
-            // 兜底：极少数浏览器/IME 不触发 compositionEnd，用 blur 再提交一次
-            if (draft !== value) onCommit(draft);
-          }}
-          className="w-full mt-0.5 px-0 py-0.5 bg-transparent text-sm font-bold text-gray-800 dark:text-white focus:outline-none border-b border-transparent focus:border-primary transition-colors"
-          placeholder={defaultLabel}
-        />
+
+        <div className="min-w-0 flex-1">
+          <div className="text-[9px] font-black uppercase tracking-[0.24em]" style={{ color }}>
+            {id}
+          </div>
+          {/* 输入槽：显式底座（比裸下划线醒目），px 同时解决 P5 内画描边贴字 */}
+          <div className="relative mt-1">
+            <input
+              type="text"
+              value={draft}
+              onChange={(e) => {
+                const next = e.target.value;
+                setDraft(next);
+                if (!composingRef.current) onCommit(next);
+              }}
+              onCompositionStart={() => { composingRef.current = true; }}
+              onCompositionEnd={(e) => {
+                composingRef.current = false;
+                const next = (e.target as HTMLInputElement).value;
+                setDraft(next);
+                onCommit(next);
+              }}
+              onFocus={() => setFocused(true)}
+              onBlur={() => {
+                setFocused(false);
+                // 兜底：极少数浏览器/IME 不触发 compositionEnd，用 blur 再提交一次
+                if (draft !== value) onCommit(draft);
+              }}
+              className="w-full rounded-lg border border-gray-200/70 bg-white/80 px-2.5 py-1.5 text-sm font-bold text-gray-800 focus:outline-none dark:border-gray-700/60 dark:bg-gray-800/70 dark:text-white"
+              placeholder={defaultLabel}
+            />
+            {/* 聚焦扫光条：属性色从左扫入槽底缘（D0 瞬切） */}
+            <motion.span
+              aria-hidden
+              className="pointer-events-none absolute bottom-0 left-1 right-1 h-[2px] rounded-full"
+              style={{ background: color, transformOrigin: 'left center' }}
+              animate={{ scaleX: focused ? 1 : 0 }}
+              transition={anim ? { type: 'spring', stiffness: 380, damping: 32 } : { duration: 0 }}
+            />
+          </div>
+        </div>
       </div>
-    </div>
+    </motion.div>
   );
 };
 
@@ -722,11 +786,14 @@ export const Settings = () => {
       setModelFetchMessage('还没有任何服务商配好 Key');
       return;
     }
-    updateSettings({ aiProfiles: out.profiles });
+    // 视觉档空缺 + 表里识别到能看图的模型 → 自动填上（用户口径：表更新完就直接填）
+    const auto = autoFillVisionPatch(settings, out.profiles);
+    updateSettings({ aiProfiles: out.profiles, ...(auto?.patch ?? {}) });
     setModelFetchStatus(out.okParts.length ? 'ok' : 'error');
     setModelFetchMessage([
       out.okParts.length ? `已更新：${out.okParts.join('、')}` : '',
       out.skipped.length ? `跳过：${out.skipped.join('；')}` : '',
+      auto ? `👁 视觉档原来空着，已自动填入 ${auto.label}（可在「视觉」档更换或停用）` : '',
     ].filter(Boolean).join('\n'));
   };
 
@@ -865,12 +932,14 @@ export const Settings = () => {
 
   // 「关于」已迁至菜单宫格的 SheetModal（设置拆解 PR）；「数据管理/云同步」迁至账号与数据页
   // 排序（2026-07-27 三次裁决）：AI 总结紧跟主题之后；「账号与数据」入口仍在页底。
+  // 区头图标从 emoji 换 SVG（v2.7 用户口径）：emoji 在蓝/黄频道的界面语言里像贴纸，
+  // 换成与底导同语言的 stroke 图标（settingsIcons）
   const sections = [
-    { id: 'theme', label: '主题', icon: '🎨' },
-    { id: 'summary', label: 'AI 总结', icon: '✨' },
-    { id: 'personalize', label: '体验个性化', icon: '⚙️' },
-    { id: 'navigator', label: '助手', icon: '◈' },
-    { id: 'notifications', label: '通知提醒', icon: '🔔' }
+    { id: 'theme', label: '主题', Icon: PaletteIcon },
+    { id: 'summary', label: 'AI 总结', Icon: SparklesIcon },
+    { id: 'personalize', label: '体验个性化', Icon: SlidersIcon },
+    { id: 'navigator', label: '助手', Icon: DiamondMarkIcon },
+    { id: 'notifications', label: '通知提醒', Icon: BellIcon }
   ];
 
   return (
@@ -911,7 +980,8 @@ export const Settings = () => {
         </div>
       ) : p3 ? (
         <div className="relative">
-          <GhostWords words={['CONFIG', 'SYSTEM']} className="right-[8px] top-[-14px] text-right text-[80px]" style={{ transform: 'rotate(0deg)', lineHeight: 1.04 }} />
+          {/* SYSTEM 比 CONFIG 缩一档（用户口径「缩小一点点」）：0.88em ≈ 70px */}
+          <GhostWords words={['CONFIG', <span style={{ fontSize: '0.88em' }}>SYSTEM</span>]} className="right-[8px] top-[-14px] text-right text-[80px]" style={{ transform: 'rotate(0deg)', lineHeight: 1.04 }} />
           <P3PageHeader ticks title="设置" onBack={() => setCurrentPage('menu')} className="relative pt-2" />
           <div aria-hidden className="mt-2 flex gap-1 pl-1">
             {Array.from({ length: 9 }).map((_, i) => (
@@ -990,9 +1060,8 @@ export const Settings = () => {
                     <span className="relative inline-block" style={{ transform: 'rotate(-1deg)' }}>
                       <span aria-hidden className="absolute -inset-[2.5px]" style={{ background: P5R.paper, clipPath: 'polygon(0 0, 100% 0, calc(100% - 16px) 100%, 0 100%)' }} />
                       <span className="relative flex items-center gap-2 py-2 pl-4 pr-9" style={{ background: P5R.red, clipPath: 'polygon(0 0, 100% 0, calc(100% - 16px) 100%, 0 100%)' }}>
-                        {section.id === 'navigator'
-                          ? <span aria-hidden className="text-[15px] font-black leading-none text-white">◈</span>
-                          : <P5Star size={15} fill="#f8f8f6" className="shrink-0" />}
+                        {/* 区头图标按功能区分（v2.7 用户裁决：星标全场一个样认不出区）——底座仍是频道章 */}
+                        <span aria-hidden className="shrink-0 text-white"><section.Icon className="h-4 w-4" /></span>
                         <span className="text-[17px] font-black leading-none tracking-wide text-white" style={{ fontFamily: P5_FONT }}>{section.label}</span>
                       </span>
                     </span>
@@ -1003,10 +1072,8 @@ export const Settings = () => {
                     <span aria-hidden className="absolute inset-0" style={{ transform: 'translate(3px,4px)', background: '#000000', clipPath: roughQuad(500 + section.id.length * 7, 5) }} />
                     <span aria-hidden className="absolute inset-0" style={{ background: P5R.paper, clipPath: roughQuad(501 + section.id.length * 7, 5) }} />
                     <span className="relative flex items-center gap-3 px-4 py-3">
-                      <span aria-hidden className="flex h-8 w-8 shrink-0 items-center justify-center" style={{ background: '#050505' }}>
-                        {section.id === 'navigator'
-                          ? <span className="text-[14px] font-black leading-none text-white">◈</span>
-                          : <P5Star size={17} fill="#f8f8f6" />}
+                      <span aria-hidden className="flex h-8 w-8 shrink-0 items-center justify-center text-white" style={{ background: '#050505' }}>
+                        <section.Icon className="h-[17px] w-[17px]" />
                       </span>
                       <span className="flex-1 text-[16.5px] font-black" style={{ color: P5R.ink, fontFamily: P5_FONT }}>{section.label}</span>
                       <span aria-hidden className="h-0 w-0 border-y-[7px] border-y-transparent border-l-[11px]" style={{ borderLeftColor: '#050505' }} />
@@ -1025,7 +1092,8 @@ export const Settings = () => {
                   style={{ background: '#131313', borderRadius: 14, transform: 'skewX(-8deg)' }}
                 >
                   <span className="flex items-center gap-2" style={{ transform: 'skewX(8deg)' }}>
-                    <P4Flower size={16} color="var(--ui-bg)" />
+                    {/* 区头图标按功能区分（v2.7 用户裁决）——黑斜章底座保留，花标让位给功能图标 */}
+                    <span aria-hidden className="shrink-0" style={{ color: 'var(--ui-bg)' }}><section.Icon className="h-4 w-4" /></span>
                     {section.label}
                   </span>
                 </span>
@@ -1039,7 +1107,13 @@ export const Settings = () => {
               className={`w-full px-6 py-4 flex items-center justify-between ${p3 ? '' : 'hover:bg-gray-50 dark:hover:bg-gray-700'}`}
             >
               <div className="flex items-center gap-3">
-                <span className="text-2xl">{section.icon}</span>
+                <span
+                  aria-hidden
+                  className={p3 ? '' : 'text-gray-500 dark:text-gray-300'}
+                  style={p3 ? { color: P3R.blue } : undefined}
+                >
+                  <section.Icon className="h-6 w-6" />
+                </span>
                 <span className={p3 ? 'text-[16px] font-black' : 'font-semibold text-gray-800 dark:text-white'} style={p3 ? { color: P3R.ink } : undefined}>{section.label}</span>
               </div>
               {p3 ? (
@@ -1073,7 +1147,7 @@ export const Settings = () => {
                       {p5 ? (
                         <span aria-hidden className="h-0 w-0 border-y-[6px] border-y-transparent border-l-[10px]" style={{ borderLeftColor: '#c00008' }} />
                       ) : (
-                        <span className="text-base">🎨</span>
+                        <span aria-hidden className="text-gray-500 dark:text-gray-300"><PaletteIcon className="h-[18px] w-[18px]" /></span>
                       )}
                       <h4 className="text-sm font-bold text-gray-800 dark:text-white tracking-wide">颜色与声音</h4>
                     </div>
@@ -1256,7 +1330,7 @@ export const Settings = () => {
                       {p5 ? (
                         <span aria-hidden className="h-0 w-0 border-y-[6px] border-y-transparent border-l-[10px]" style={{ borderLeftColor: '#c00008' }} />
                       ) : (
-                        <span className="text-base">🖼️</span>
+                        <span aria-hidden className="text-gray-500 dark:text-gray-300"><ImageIcon className="h-[18px] w-[18px]" /></span>
                       )}
                       <h4 className="text-sm font-bold text-gray-800 dark:text-white tracking-wide">显示</h4>
                     </div>
@@ -1527,7 +1601,7 @@ export const Settings = () => {
                   <div className="space-y-5">
                     {/* ── 子板块：属性 ────────────────────────────── */}
                     <div className="flex items-center gap-2 pb-2 border-b border-gray-200 dark:border-gray-700/80">
-                      <span className="text-base">⚙️</span>
+                      <span aria-hidden className="text-gray-500 dark:text-gray-300"><GearIcon className="h-[18px] w-[18px]" /></span>
                       <h4 className="text-sm font-bold text-gray-800 dark:text-white tracking-wide">属性</h4>
                     </div>
 
@@ -1540,7 +1614,7 @@ export const Settings = () => {
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex-1">
                           <div className="flex items-center gap-2">
-                            <span className="text-base">🌊</span>
+                            <span aria-hidden className="text-gray-500 dark:text-gray-300"><WaveIcon className="h-[18px] w-[18px]" /></span>
                             <h4 className="text-sm font-bold text-gray-800 dark:text-white">逆流</h4>
                             <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 font-semibold">实验性</span>
                           </div>
@@ -1573,7 +1647,7 @@ export const Settings = () => {
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex-1">
                           <div className="flex items-center gap-2">
-                            <span className="text-base">💰</span>
+                            <span aria-hidden className="text-gray-500 dark:text-gray-300"><CoinIcon className="h-[18px] w-[18px]" /></span>
                             <h4 className="text-sm font-bold text-gray-800 dark:text-white">记账</h4>
                             <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 font-semibold">新</span>
                           </div>
@@ -1656,7 +1730,7 @@ export const Settings = () => {
                     {/* ── 属性名称 ───────────────────────────── */}
                     <div className="rounded-2xl border border-gray-200 dark:border-gray-700 bg-white/60 dark:bg-gray-800/30 overflow-hidden">
                       <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-800/60 flex items-center gap-2">
-                        <span className="text-base">🌈</span>
+                        <span aria-hidden className="text-gray-500 dark:text-gray-300"><TagIcon className="h-[18px] w-[18px]" /></span>
                         <h4 className="text-sm font-bold text-gray-800 dark:text-white">属性名称</h4>
                         <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 font-semibold">
                           5 维
@@ -1666,7 +1740,7 @@ export const Settings = () => {
                         给五个维度取个贴合你的名字，命名会立刻在整个房间里生效。
                       </p>
                       <div className="p-3 space-y-2">
-                        {ATTRIBUTE_META.map(meta => (
+                        {ATTRIBUTE_META.map((meta, mi) => (
                           <AttributeNameField
                             key={meta.id}
                             id={meta.id}
@@ -1674,6 +1748,7 @@ export const Settings = () => {
                             color={meta.color}
                             defaultLabel={meta.defaultLabel}
                             value={settings.attributeNames[meta.id]}
+                            index={mi}
                             onCommit={(v) => updateSettings({
                               attributeNames: {
                                 ...settings.attributeNames,
@@ -1716,7 +1791,7 @@ export const Settings = () => {
                     {/* ── 等级需求 ───────────────────────────── */}
                     <div className="rounded-2xl border border-gray-200 dark:border-gray-700 bg-white/60 dark:bg-gray-800/30 overflow-hidden">
                       <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-800/60 flex items-center gap-2">
-                        <span className="text-base">📶</span>
+                        <span aria-hidden className="text-gray-500 dark:text-gray-300"><BarsIcon className="h-[18px] w-[18px]" /></span>
                         <h4 className="text-sm font-bold text-gray-800 dark:text-white">等级需求</h4>
                         <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 font-semibold tabular-nums">
                           {settings.levelThresholds.length} / 10 级
@@ -1949,7 +2024,7 @@ export const Settings = () => {
                       className="w-full flex items-center gap-2 pt-3 pb-2 border-b border-gray-200 dark:border-gray-700/80 cursor-pointer text-left"
                       aria-expanded={keywordRulesExpanded}
                     >
-                      <span className="text-base">🔑</span>
+                      <span aria-hidden className="text-gray-500 dark:text-gray-300"><KeyIcon className="h-[18px] w-[18px]" /></span>
                       <h4 className="text-sm font-bold text-gray-800 dark:text-white tracking-wide">关键词规则</h4>
                       <span className="ml-auto text-[10px] text-gray-400 dark:text-gray-500">命中即加分</span>
                       <motion.svg
@@ -2128,7 +2203,7 @@ export const Settings = () => {
                         <div className="flex items-start justify-between gap-3">
                           <div className="flex-1">
                             <div className="flex items-center gap-2">
-                              <span className="text-base">⚔️</span>
+                              <span aria-hidden className="text-gray-500 dark:text-gray-300"><SwordsIcon className="h-[18px] w-[18px]" /></span>
                               <h4 className="text-sm font-bold text-gray-800 dark:text-white">逆影战场</h4>
                               <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400 font-semibold">已关闭</span>
                             </div>
@@ -2155,13 +2230,23 @@ export const Settings = () => {
 
                 {section.id === 'summary' && (() => {
                   const provider = settings.summaryApiProvider ?? DEFAULT_PROVIDER;
-                  // 折叠态摘要：一行报四档现状（收起时唯一的信息来源）
-                  const tierSummary = [
-                    `⚡ ${settings.summaryModel?.trim() || getProviderConfig(provider).defaultModel}`,
-                    `🌙 ${settings.navigatorModel?.trim() || '跟随'}`,
-                    `👁 ${settings.visionModel?.trim() || '未启用'}`,
-                    `🎤 ${settings.audioModel?.trim() || '未启用'}`,
-                  ].join(' · ');
+                  // 折叠态摘要：一行报四档现状（收起时唯一的信息来源）。
+                  // emoji → SVG（v2.7 用户口径）：改为 [图标+文案] 的 JSX 片段
+                  const tierSummary = (
+                    <span className="inline-flex min-w-0 items-center gap-2">
+                      {([
+                        [BoltMiniIcon, settings.summaryModel?.trim() || getProviderConfig(provider).defaultModel],
+                        [MoonIcon, settings.navigatorModel?.trim() || '跟随'],
+                        [EyeIcon, settings.visionModel?.trim() || '未启用'],
+                        [MicIcon, settings.audioModel?.trim() || '未启用'],
+                      ] as Array<[typeof BoltMiniIcon, string]>).map(([Ic, text], i) => (
+                        <span key={i} className="inline-flex min-w-0 items-center gap-0.5">
+                          <Ic className="h-3 w-3 shrink-0" />
+                          <span className="truncate">{text}</span>
+                        </span>
+                      ))}
+                    </span>
+                  );
                   const activePresetId = settings.summaryActivePresetId ?? 'igor';
                   const activeFamiliar = FAMILIAR_FACE_PRESETS.find(p => p.id === activePresetId);
                   const familiarTaglines: Record<string, string> = {
@@ -2527,7 +2612,7 @@ export const Settings = () => {
                             <>
                               {/* 快速响应：绑定当前连接（换服务商 = 换连接） */}
                               <div className="space-y-1.5">
-                                <p className="text-xs font-medium text-gray-500 dark:text-gray-400">⚡ 快速响应</p>
+                                <p className="flex items-center gap-1 text-xs font-medium text-gray-500 dark:text-gray-400"><BoltMiniIcon className="h-3.5 w-3.5" /> 快速响应</p>
                                 <p className="text-[11px] text-gray-400 dark:text-gray-500">
                                   记账解析、每日塔罗、活动打分、成长总结等批量任务走这档——要快、便宜够用。
                                   跑在当前连接（{getProviderConfig(provider).label}）上。
@@ -2552,7 +2637,7 @@ export const Settings = () => {
 
                               {/* 深思熟虑：可跨服务商（按厂家分组），Key 已配好即可直选别家模型 */}
                               <div className="space-y-1.5 pt-3 border-t border-gray-100 dark:border-gray-700/50">
-                                <p className="text-xs font-medium text-gray-500 dark:text-gray-400">🌙 深思熟虑</p>
+                                <p className="flex items-center gap-1 text-xs font-medium text-gray-500 dark:text-gray-400"><MoonIcon className="h-3.5 w-3.5" /> 深思熟虑</p>
                                 <p className="text-[11px] text-gray-400 dark:text-gray-500">
                                   助手对话、中长期占卜走这档——值得等的深答案，可跨服务商选更强的模型
                                   （用那家已存的 Key 直连）。留空跟随快速响应。
@@ -2585,7 +2670,7 @@ export const Settings = () => {
 
                               {/* 👁 视觉（FS3）：看图。没配就是没配——不回落文本模型（发图过去只会报错） */}
                               <div className="space-y-1.5 pt-3 border-t border-gray-100 dark:border-gray-700/50">
-                                <p className="text-xs font-medium text-gray-500 dark:text-gray-400">👁 视觉</p>
+                                <p className="flex items-center gap-1 text-xs font-medium text-gray-500 dark:text-gray-400"><EyeIcon className="h-3.5 w-3.5" /> 视觉</p>
                                 <p className="text-[11px] text-gray-400 dark:text-gray-500">
                                   拍小票记账等看图任务走这档。没配也能用——记账会退到本机离线识字（需原生 App），
                                   再不行就手输。图片只发给你自己配的服务商。
@@ -2612,7 +2697,7 @@ export const Settings = () => {
 
                               {/* 🎤 听觉（FS3）：语音转写，走 /audio/transcriptions */}
                               <div className="space-y-1.5 pt-3 border-t border-gray-100 dark:border-gray-700/50">
-                                <p className="text-xs font-medium text-gray-500 dark:text-gray-400">🎤 听觉</p>
+                                <p className="flex items-center gap-1 text-xs font-medium text-gray-500 dark:text-gray-400"><MicIcon className="h-3.5 w-3.5" /> 听觉</p>
                                 <p className="text-[11px] text-gray-400 dark:text-gray-500">
                                   配好后助手输入栏出现话筒：按住说话、松手转成文字填进输入框（发不发你决定）。
                                   走 /audio/transcriptions 端点，模型名如 whisper-1 / SenseVoiceSmall / qwen3-asr-flash。

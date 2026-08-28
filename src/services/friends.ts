@@ -11,6 +11,7 @@
 
 import type { RecordModel } from 'pocketbase';
 import { pb, getUserId } from './pocketbase';
+import { pbQuote } from './pbFilter';
 import type { CloudProfile, Friendship, FriendshipStatus } from '@/types';
 
 const FRIEND_REQUEST_TTL_DAYS = 21;
@@ -94,7 +95,7 @@ export const searchUserByUserId = async (userId: string): Promise<CloudProfile |
   if (!normalized) return null;
   try {
     const record = await pb.collection('users').getFirstListItem(
-      `username = "${escapePbString(normalized)}"`,
+      `username = ${pbQuote(normalized)}`,
       { requestKey: null },  // 避免 strict-mode 双触发 / 用户快速重搜时被 autocancel
     );
     return profileFromExpand(record) ?? null;
@@ -103,9 +104,6 @@ export const searchUserByUserId = async (userId: string): Promise<CloudProfile |
     throw err;
   }
 };
-
-/** PB filter 字符串需要转义双引号 */
-const escapePbString = (s: string): string => s.replace(/"/g, '\\"');
 
 // ── 读好友列表 ──────────────────────────────────────────────────
 

@@ -37,6 +37,14 @@ export interface HeavyTransitionOptions {
 let listener: ((req: HeavyTransitionRequest) => boolean) | null = null;
 let seq = 0;
 
+// ── 幕布遮屏窗口：midpoint 前后屏幕被幕布完全盖住的时段 ──
+// PageSwitcher 在 midpoint 触发的切页 effect 里查询：幕布正盖着 → 旧页可以
+// **立即出栈**（原子换页），不必再淡出 0.18s——此前旧页在幕布离场时还剩半透明残影，
+// 与透明的新页互相透出来，就是「切页闪烁/重影」残留的来源之一。
+let curtainCovering = false;
+export const _setCurtainCovering = (v: boolean) => { curtainCovering = v; };
+export const isCurtainCovering = () => curtainCovering;
+
 // ── 水波纹配套：新页圆形揭示原点（App 页面壳 CircleRevealOnEnter 挂载时查询）──
 let circleReveal: { x: number; y: number; until: number } | null = null;
 
@@ -58,9 +66,17 @@ export const _registerTransitionLayer = (fn: (req: HeavyTransitionRequest) => bo
  * false = 无演出（Layer 缺席/忙/降级），midpoint 已被同步执行。
  */
 export const playHeavyTransition = (midpoint: () => void, opts?: HeavyTransitionOptions): boolean => {
+  // 原点夹进视口：来源 rect 处于入场/按压变换中时坐标可能越界（实测底栏入场未落定
+  // 时 y 越出屏底 100px），越界圆心会让涨潮看起来从屏缘冒出来。夹取后永远从屏内开始。
+  const origin = opts?.origin
+    ? {
+        x: Math.min(Math.max(opts.origin.x, 0), window.innerWidth),
+        y: Math.min(Math.max(opts.origin.y, 0), window.innerHeight),
+      }
+    : undefined;
   // 水波纹导航：登记新页圆形揭示原点（即便 Layer 拒接降级，新页揭示仍成立）
-  if (opts?.effect === 'water' && opts.origin) circleReveal = { ...opts.origin, until: Date.now() + 800 };
-  const accepted = listener?.({ id: ++seq, channel: currentChannel(), midpoint, effect: opts?.effect, origin: opts?.origin }) ?? false;
+  if (opts?.effect === 'water' && origin) circleReveal = { ...origin, until: Date.now() + 800 };
+  const accepted = listener?.({ id: ++seq, channel: currentChannel(), midpoint, effect: opts?.effect, origin }) ?? false;
   if (!accepted) midpoint();
   return accepted;
 };

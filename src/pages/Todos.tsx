@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'motion/react';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { useAppStore, toLocalDateKey } from '@/store';
 import { WishBoard, useWishPane, wishSkinFor } from '@/components/wish/WishBoard';
@@ -26,6 +26,9 @@ import { useUiChannel } from '@/ui/useUiChannel';
 import { P4CountPill, P4EmptyBloom, P4SectionTitle, P4Sparkle } from '@/ui/p4Kit';
 import { BigSlantTitle, GhostWords, P3EmptySlab, P3R, SlantButton } from '@/components/p3r/kit';
 import { roughQuad, P5Wedge, P5Chip, P5StarFab } from '@/components/p5r/kit';
+import { extractScheduleFromImage, type ScheduleIntakeItem } from '@/utils/visionIntake';
+import { readAsDataUrl, downscaleDataUrl } from '@/utils/imageCrop';
+import { getVisionAIConfig } from '@/utils/aiClient';
 
 const weekdayLabels = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 
@@ -243,6 +246,54 @@ export const TodosView = () => {
   // P3R（蓝主题）形态：设计稿 p3-actions-reference-v3——节直接铺水面底、大斜体节题、浅青空态板
   const p3 = channel === 'p3';
   const [showAdd, setShowAdd] = useState(false);
+
+  // ── 📷 课表/日程照片批量导入（FS3.4-②，走视觉档）────────────────────────────
+  // 拍/选一张课表 → 视觉模型解析成 {事项, 星期, 时间} 清单 → 勾选确认 → 批量建任务。
+  // 星期条目建为周重复任务（weekdays），无星期信息的建为每日重复。
+  const scheduleVision = !!getVisionAIConfig(settings);
+  const scheduleFileRef = useRef<HTMLInputElement | null>(null);
+  const [scheduleBusy, setScheduleBusy] = useState(false);
+  const [scheduleErr, setScheduleErr] = useState<string | null>(null);
+  const [scheduleItems, setScheduleItems] = useState<Array<ScheduleIntakeItem & { on: boolean }> | null>(null);
+  const [scheduleAttr, setScheduleAttr] = useState<AttributeId>('knowledge');
+
+  const handleScheduleShot = async (f: File) => {
+    if (scheduleBusy) return;
+    setScheduleBusy(true);
+    setScheduleErr(null);
+    try {
+      const raw = await readAsDataUrl(f);
+      const dataUrl = await downscaleDataUrl(raw);
+      const items = await extractScheduleFromImage(dataUrl, settings);
+      if (!items.length) {
+        setScheduleErr('这张图里没读出可导入的条目——换一张更清晰/更正的试试');
+      } else {
+        setScheduleItems(items.map(it => ({ ...it, on: true })));
+        setShowAdd(false);
+      }
+    } catch (e) {
+      setScheduleErr(e instanceof Error ? e.message : '解析失败，稍后再试');
+    } finally {
+      setScheduleBusy(false);
+    }
+  };
+
+  const importSchedule = async () => {
+    const sel = (scheduleItems ?? []).filter(i => i.on);
+    for (const it of sel) {
+      await addTodo({
+        title: (it.time ? `${it.time} ${it.title}` : it.title).slice(0, 30),
+        attribute: scheduleAttr,
+        points: 1,
+        frequency: 'single' as TodoFrequency,
+        repeatDaily: it.weekdays.length === 0,
+        weekdays: it.weekdays,
+        isActive: true,
+      });
+    }
+    setScheduleItems(null);
+    if (sel.length) triggerSuccessFeedback();
+  };
   /**
    * 「今日任务 ⇄ 愿望」（PRD_V2.6 §1.1，位置修正：在**行动-任务**里而不是首页）。
    * 切到愿望后：抽签入口与任务列表让位给 WishBoard，右下 FAB 同步变成「添加愿望」。
@@ -991,6 +1042,73 @@ export const TodosView = () => {
         </div>
       </SheetModal>
 
+      {/* ── 课表导入确认（FS3.4-②）：读出的条目逐条勾选，统一归入一个属性 ── */}
+      <SheetModal
+        isOpen={!!scheduleItems}
+        onClose={() => setScheduleItems(null)}
+        position="bottom"
+        title="课表导入 · 确认"
+        footer={
+          <div className="flex gap-3">
+            <button
+              onClick={() => setScheduleItems(null)}
+              className="flex-1 rounded-xl bg-gray-100 py-2.5 font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-300"
+            >
+              取消
+            </button>
+            <button
+              onClick={() => void importSchedule()}
+              disabled={!(scheduleItems ?? []).some(i => i.on)}
+              className="flex-1 rounded-xl bg-primary py-2.5 font-medium text-white disabled:opacity-50"
+            >
+              导入 {(scheduleItems ?? []).filter(i => i.on).length} 项
+            </button>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          <p className="text-[11px] leading-relaxed text-gray-400 dark:text-gray-500">
+            带星期的条目会建成<b>按周重复</b>的任务，没有星期信息的建成<b>每日</b>任务；点数默认 +1，导入后可逐条编辑。
+          </p>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-xs font-bold text-gray-500 dark:text-gray-400">统一归入：</span>
+            {(['knowledge', 'guts', 'dexterity', 'kindness', 'charm'] as AttributeId[]).map(id => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setScheduleAttr(id)}
+                className={`rounded-full px-2.5 py-1 text-xs font-bold ${
+                  scheduleAttr === id ? 'bg-primary text-white' : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400'
+                }`}
+              >
+                {settings.attributeNames[id]}
+              </button>
+            ))}
+          </div>
+          <div className="max-h-[46vh] space-y-2 overflow-y-auto">
+            {(scheduleItems ?? []).map((it, i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => setScheduleItems(rows => rows ? rows.map((r, j) => (j === i ? { ...r, on: !r.on } : r)) : rows)}
+                className={`flex w-full items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left ${
+                  it.on ? 'border-primary/60 bg-primary/5 dark:bg-primary/10' : 'border-gray-200 opacity-55 dark:border-gray-700'
+                }`}
+              >
+                <span aria-hidden className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-[11px] font-black ${it.on ? 'bg-primary text-white' : 'bg-gray-200 text-transparent dark:bg-gray-700'}`}>✓</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-bold text-gray-800 dark:text-gray-100">{it.title}</span>
+                  <span className="mt-0.5 block text-[11px] text-gray-400 dark:text-gray-500">
+                    {it.weekdays.length ? it.weekdays.map(d => weekdayLabels[d]).join(' ') : '每日'}
+                    {it.time ? ` · ${it.time}` : ''}
+                  </span>
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </SheetModal>
+
       <SheetModal
         isOpen={showAdd}
         onClose={closeForm}
@@ -1024,6 +1142,31 @@ export const TodosView = () => {
         }
       >
               <div className="space-y-5">
+                {/* ── 📷 课表批量导入入口（仅新建 + 配了视觉档时出现）────── */}
+                {!editingTodoId && scheduleVision && (
+                  <div>
+                    <input
+                      ref={scheduleFileRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={e => {
+                        const f = e.target.files?.[0];
+                        e.target.value = '';
+                        if (f) void handleScheduleShot(f);
+                      }}
+                    />
+                    <button
+                      type="button"
+                      disabled={scheduleBusy}
+                      onClick={() => scheduleFileRef.current?.click()}
+                      className="w-full rounded-xl border border-dashed border-gray-300 px-3 py-2.5 text-left text-xs font-bold text-gray-500 disabled:opacity-60 dark:border-gray-600 dark:text-gray-400"
+                    >
+                      {scheduleBusy ? '📷 正在读取课表…' : '📷 拍一张课表 / 日程表，一次导入一批（走视觉档）'}
+                    </button>
+                    {scheduleErr && <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">{scheduleErr}</p>}
+                  </div>
+                )}
                 {/* ── ① 标题 ─────────────────────────────────────────── */}
                 <input
                   type="text"

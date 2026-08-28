@@ -42,6 +42,12 @@ export interface NotifSnapshot {
   hasUnreadSummary: boolean;
   /** 今天是否已有任何记录（非系统类活动）；用于「提醒记录」 */
   loggedToday: boolean;
+  /**
+   * 助手口吻文案（v2.7 notifVoice）：当日缓存的 AI 生成文案，按类覆盖内置文案库。
+   * 只用于 day ≤ 1（今明两天）——一周后的排程还念今天的口吻会串味，远日留给模板；
+   * null/缺类一律回内置库，链路零依赖。
+   */
+  aiCopy?: Partial<Record<NotifContentType, NotifText>> | null;
 }
 
 // ── 平台 / 权限 ────────────────────────────────────────────
@@ -84,7 +90,7 @@ export async function requestNotifPermission(): Promise<NotifPermission> {
 // ── Velvet 文案库 ─────────────────────────────────────────
 // 触发时无法读数据，故内容在排程时烤好。{n}=待办数、{attr}=属性名 经 ctx 注入。
 
-interface NotifText { title: string; body: string; }
+export interface NotifText { title: string; body: string; }
 interface CopyCtx { todoCount: number; attrNames: string; }
 type CopyFn = (ctx: CopyCtx) => NotifText;
 
@@ -167,12 +173,20 @@ function pickContent(
   const chosen = available[0];
   if (ONCE_ONLY.includes(chosen)) placedOnce.add(chosen);
 
-  const variants = COPY[chosen];
-  const idx = stableIndex(dayKey + chosen, variants.length);
   const ctx: CopyCtx = {
     todoCount: snap.incompleteTodoCount,
     attrNames: snap.countercurrentWarnings.map(id => snap.attributeNames[id] ?? id).join('、'),
   };
+
+  // 助手口吻覆盖（v2.7 notifVoice）：只覆盖今明两天，占位符在此注入
+  const ai = day <= 1 ? snap.aiCopy?.[chosen] : undefined;
+  if (ai) {
+    const interp = (s: string) => s.split('{n}').join(String(ctx.todoCount)).split('{attr}').join(ctx.attrNames || '属性');
+    return { title: interp(ai.title), body: interp(ai.body) };
+  }
+
+  const variants = COPY[chosen];
+  const idx = stableIndex(dayKey + chosen, variants.length);
   return variants[idx](ctx);
 }
 

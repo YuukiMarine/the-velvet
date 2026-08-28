@@ -90,7 +90,7 @@ export const P3RPage = ({ children, className, active = true }: { children: Reac
  *  字重口径：Arial 合成加粗（比 Impact / Arial Black 细一档，用户定稿）
  *  动效（A3）：内层随页面滚动慢速视差漂移 + 极低频呼吸透明度；外层结构不变
  *  （调用方经 className/style 传入的定位与 rotate 覆盖全部保留），D0 静止。 */
-export const GhostWords = ({ words, className, style, parallax = true }: { words: string[]; className?: string; style?: CSSProperties; parallax?: boolean }) => {
+export const GhostWords = ({ words, className, style, parallax = true }: { words: ReactNode[]; className?: string; style?: CSSProperties; parallax?: boolean }) => {
   const anim = useBoldness();
   const rootRef = useRef<HTMLDivElement>(null);
   const y = useMotionValue(0);
@@ -115,7 +115,7 @@ export const GhostWords = ({ words, className, style, parallax = true }: { words
       ref={rootRef}
       aria-hidden
       className={`pointer-events-none absolute select-none font-black italic leading-[0.86] tracking-tight ${className ?? ''}`}
-      style={{ fontFamily: 'Arial, "Noto Sans SC", sans-serif', color: 'var(--p3r-ghost, rgba(147,190,222,0.30))', transform: 'rotate(-12deg)', ...style }}
+      style={{ fontFamily: 'Arial, "Noto Sans SC Black", "Noto Sans SC", sans-serif', color: 'var(--p3r-ghost, rgba(147,190,222,0.30))', transform: 'rotate(-12deg)', ...style }}
     >
       <motion.div
         style={anim ? { y } : undefined}
@@ -123,7 +123,7 @@ export const GhostWords = ({ words, className, style, parallax = true }: { words
         transition={{ duration: 8.5, repeat: Infinity, ease: 'easeInOut' }}
       >
         {words.map((w, i) => (
-          <div key={`${w}-${i}`}>{w}</div>
+          <div key={i}>{w}</div>
         ))}
       </motion.div>
     </div>
@@ -281,7 +281,7 @@ export const P3PageHeader = ({
         )}
         <motion.h1
           className="text-[46px] font-black italic leading-[0.95] tracking-tight"
-          style={{ color: P3R.ink, fontFamily: '"Arial Black", "Noto Sans SC", sans-serif' }}
+          style={{ color: P3R.ink, fontFamily: '"Arial Black", "Noto Sans SC Black", "Noto Sans SC", sans-serif' }}
           // 终态用负 inset 外扩:inset(0%) 会贴盒裁掉 Arial Black 斜体的右侧突出部(统计页标题截断根因)
           initial={anim ? { clipPath: 'inset(-8% 102% -8% -3%)', x: -10 } : false}
           animate={{ clipPath: 'inset(-8% -8% -8% -3%)', x: 0 }}
@@ -356,7 +356,7 @@ export const BigSlantTitle = ({ title, count, className, titleSuffix }: { title:
   <div className={`flex items-end justify-between gap-3 ${className ?? ''}`}>
     <h2
       className="flex items-center text-[34px] font-black italic leading-none tracking-tight"
-      style={{ color: P3R.ink, fontFamily: '"Arial Black", "Noto Sans SC", sans-serif' }}
+      style={{ color: P3R.ink, fontFamily: '"Arial Black", "Noto Sans SC Black", "Noto Sans SC", sans-serif' }}
     >
       {title}{titleSuffix}
     </h2>

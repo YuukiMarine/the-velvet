@@ -5,7 +5,7 @@ import { AttributeId, WeeklyGoalItem, WeeklyGoalType } from '@/types';
 import { Stepper } from '@/components/Stepper';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { SlantButton } from '@/components/p3r/kit';
-import { P5R, P5_FONT, roughQuad, roughSlant, starPts } from '@/components/p5r/kit';
+import { P5R, P5_FONT, P5_TITLE_FONT, roughQuad, roughSlant, starPts } from '@/components/p5r/kit';
 import { ALL_GOAL_TYPES, ATTR_IDS, GOAL_TYPE_DESCS, GOAL_TYPE_LABELS, makeDefaultItem } from './weeklyGoalShared';
 
 // ── GoalSetupForm (shared between create & edit) ────────────────────────────
@@ -81,7 +81,7 @@ export const GoalSetupForm = ({
         <span aria-hidden className="pointer-events-none absolute inset-0" style={{ background: '#050505', clipPath: roughQuad(402, 8) }} />
         <span aria-hidden className="pointer-events-none absolute inset-[3.5px]" style={{ background: P5R.paper, clipPath: roughQuad(403, 5) }} />
         <div className="relative px-4 pb-4 pt-5">
-          <h3 className="text-[24px] font-black leading-none" style={{ color: '#050505', fontFamily: P5_FONT }}>设定本周目标</h3>
+          <h3 className="text-[24px] font-black leading-none" style={{ color: '#050505', fontFamily: P5_TITLE_FONT }}>设定本周目标</h3>
           <p className="mt-2 text-[13px] font-black" style={{ color: '#050505' }}>
             {weekStart} ~ {weekEnd}　· 至少选择 2 项
           </p>
@@ -214,7 +214,7 @@ export const GoalSetupForm = ({
         {/* 左上青色大三角装饰（稿） */}
         <span aria-hidden className="absolute -left-2 -top-2 h-0 w-0 border-r-[46px] border-t-[38px] border-r-transparent" style={{ borderTopColor: 'rgba(53,209,232,0.85)' }} />
         <div className="relative px-4 pb-4 pt-5">
-          <h3 className="text-[26px] font-black italic leading-none" style={{ color: 'var(--p3r-ink, #0a1230)', fontFamily: '"Arial Black", "Noto Sans SC", sans-serif' }}>设定本周目标</h3>
+          <h3 className="text-[26px] font-black italic leading-none" style={{ color: 'var(--p3r-ink, #0a1230)', fontFamily: '"Arial Black", "Noto Sans SC Black", "Noto Sans SC", sans-serif' }}>设定本周目标</h3>
           <p className="mt-2 text-[13px] font-bold" style={{ color: 'var(--p3r-blue, #1b57ff)' }}>{weekStart} ~ {weekEnd}　· 至少选择 2 项</p>
 
           <div className="mt-4 space-y-3">

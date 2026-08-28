@@ -352,7 +352,7 @@ export function WeakCutIn() {
           fontSize: 'clamp(3.8rem, 19vw, 7rem)', fontWeight: 900, color: '#fbbf24',
           WebkitTextStroke: '3px #000',
           textShadow: '0 0 30px rgba(251,191,36,0.9), 0 0 60px rgba(239,68,68,0.5), 6px 6px 0 #7f1d1d',
-          fontFamily: '"Impact", "Arial Black", "Noto Sans SC", sans-serif',
+          fontFamily: '"Impact", "Arial Black", "Noto Sans SC Black", "Noto Sans SC", sans-serif',
           fontStyle: 'italic', userSelect: 'none', zIndex: 2,
         }}
       >

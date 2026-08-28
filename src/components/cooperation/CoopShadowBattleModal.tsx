@@ -91,7 +91,9 @@ export function CoopShadowBattleModal({ isOpen, shadow: shadowProp, partnerName,
   const entranceSeenKey = shadow ? `velvet_coop_shadow_entered_${shadow.id}` : null;
   const hasSeenEntrance = (): boolean => {
     if (!entranceSeenKey || typeof window === 'undefined') return false;
-    return window.localStorage.getItem(entranceSeenKey) === '1';
+    try {
+      return window.localStorage.getItem(entranceSeenKey) === '1';
+    } catch { return false; }
   };
   // 初始 phase：双方识破 + 没看过入场 + 还 active → 进入场；其它按当前状态
   const initialPhase = (): 'identifying' | 'entering' | 'battle' => {
@@ -110,7 +112,9 @@ export function CoopShadowBattleModal({ isOpen, shadow: shadowProp, partnerName,
     setPhase('entering');
     playSound('/battle-seal.mp3', 0.7);
     if (entranceSeenKey && typeof window !== 'undefined') {
-      window.localStorage.setItem(entranceSeenKey, '1');
+      try {
+        window.localStorage.setItem(entranceSeenKey, '1');
+      } catch { /* 存储不可用：下次会重放入场动画，可接受 */ }
     }
     window.setTimeout(() => setPhase('battle'), 1800);
   };

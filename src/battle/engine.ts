@@ -129,6 +129,8 @@ export interface EngineSetup {
   maskBondTiers?: Partial<Record<AttributeId, number>>;
   /** （R18 燃起）白天该属性待办 ≥3 → 当晚该面具首个技能免 SP */
   blazingMasks?: AttributeId[];
+  /** （v2.7 窥探命运）buff 生效期内伤害加算（0.10）；进加算段，叙事只报一次 */
+  fateGlimpseAdd?: number;
 }
 
 export type PlayerActionInput =
@@ -254,6 +256,7 @@ export class BattleEngine {
   private ammo: Partial<Record<AttributeId, number>>;
   private wardConsumed = false;          // 结余护壁（每 session 一次，UI 依 snapshot 回写）
   private curseNoticed = false;          // 物欲缠身叙事只报一次
+  private fateNoticed = false;           // 窥探命运叙事只报一次
   private companionGuardConsumed = false;// 同伴庇护（触发即消耗，无论掷骰成败）
   // ── 批4 · 成就计数 ──
   playerHpLost = 0;                      // 无伤讨伐判定
@@ -649,6 +652,14 @@ export class BattleEngine {
       // 批4 弹药：今日该属性记录 → 加算（UI 弹药匣常驻展示，不进叙事）
       const ammoAdd = this.ammo[attr] ?? 0;
       if (ammoAdd > 0) adds.push(ammoAdd);
+      // v2.7 窥探命运 buff（3 天）：伤害加算 +10%，首次出手播报一次
+      if ((this.setup.fateGlimpseAdd ?? 0) > 0) {
+        adds.push(this.setup.fateGlimpseAdd!);
+        if (!this.fateNoticed) {
+          this.fateNoticed = true;
+          lines.push(`【窥探命运】——你已窥见此战的走向，出手格外笃定！（伤害 +${Math.round(this.setup.fateGlimpseAdd! * 100)}%）`);
+        }
+      }
       // 批4 物欲缠身：本月超支 → 心魔开场 2 回合受到的伤害被削
       if (this.setup.spendCurse && this.shTier === 'boss' && this.turn <= SPEND_CURSE_TURNS) {
         mults.push(SPEND_CURSE_MULT);

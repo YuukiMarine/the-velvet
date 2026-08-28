@@ -307,7 +307,7 @@ export function ConfidantCreateModal({ isOpen, onClose, onCreated, onPickOnline 
                         : 'text-base font-bold text-gray-900 dark:text-white'
                   }
                   style={
-                    p3 ? { color: 'var(--p3r-ink, #0a1230)', fontFamily: '"Arial Black", "Noto Sans SC", sans-serif' }
+                    p3 ? { color: 'var(--p3r-ink, #0a1230)', fontFamily: '"Arial Black", "Noto Sans SC Black", "Noto Sans SC", sans-serif' }
                       : p4 ? { color: '#131313', fontFamily: 'var(--p4-display-font, serif)' }
                         : undefined
                   }

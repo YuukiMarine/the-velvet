@@ -128,11 +128,16 @@ export const AttributeGrid = ({ attributes, settings, onEditingChange }: {
     });
   }, [attributes]);
 
-  useEffect(() => { localStorage.setItem(ATTR_ORDER_KEY, JSON.stringify(order)); }, [order]);
+  // 写侧同样要守卫（读侧的 try 惯例见上）：存储被禁时 effect 抛错会把整页崩进 ErrorBoundary
+  useEffect(() => {
+    try { localStorage.setItem(ATTR_ORDER_KEY, JSON.stringify(order)); } catch { /* 存储不可用 */ }
+  }, [order]);
 
   useEffect(() => {
-    if (wideId) localStorage.setItem(ATTR_WIDE_KEY, wideId);
-    else localStorage.removeItem(ATTR_WIDE_KEY);
+    try {
+      if (wideId) localStorage.setItem(ATTR_WIDE_KEY, wideId);
+      else localStorage.removeItem(ATTR_WIDE_KEY);
+    } catch { /* 存储不可用 */ }
   }, [wideId]);
 
   // --- edit mode (tap header button to enter/exit) ---

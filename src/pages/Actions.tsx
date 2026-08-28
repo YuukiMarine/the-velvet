@@ -21,7 +21,7 @@ import { ActivitiesView } from '@/pages/Activities';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P4SkyCircle, P4_HEADER_BLEED } from '@/ui/p4Kit';
 import { P3R, P3RPage, GhostWords, slantClip } from '@/components/p3r/kit';
-import { P5R, P5_FONT, P5Star, P5Dots, P5Slab, P5RPage } from '@/components/p5r/kit';
+import { P5R, P5_TITLE_FONT, P5Star, P5Dots, P5Slab, P5RPage } from '@/components/p5r/kit';
 
 type ActionsSubTab = 'todos' | 'activities';
 
@@ -79,7 +79,7 @@ export const Actions = () => {
   if (channel === 'p5') {
     return (
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-        <P5RPage className="overflow-hidden">
+        <P5RPage>
           <div className="p5-reskin relative">
             {/* 页头装饰（沉底）：右上红斜块 + 大红星 + 半调 */}
             <div aria-hidden className="pointer-events-none absolute -inset-x-4 -top-4 h-[160px]" style={{ zIndex: -1 }}>
@@ -104,7 +104,7 @@ export const Actions = () => {
                 return (
                   <Fragment key={tab.key}>
                     {i > 0 && (
-                      <span aria-hidden className="pb-2 text-[32px] font-black leading-none" style={{ color: P5R.red, fontFamily: P5_FONT, transform: 'rotate(10deg)', textShadow: '2px 2px 0 #000000' }}>
+                      <span aria-hidden className="pb-2 text-[32px] font-black leading-none" style={{ color: P5R.red, fontFamily: P5_TITLE_FONT, transform: 'rotate(10deg)', textShadow: '2px 2px 0 #000000' }}>
                         /
                       </span>
                     )}
@@ -139,7 +139,9 @@ export const Actions = () => {
                                 color: active ? pal.fg : P5R.grey,
                                 border: '3px solid #050505',
                                 boxShadow: '0 0 0 2.5px #f0e9df, 5px 6px 0 #000000',
-                                fontFamily: P5_FONT,
+                                // 页面标题级拼贴砖：走标题字体（思源黑 Black）——曾被并进正文圆体，
+                                // 用户上报「记录/任务 标题被认成正文」
+                                fontFamily: P5_TITLE_FONT,
                               }}
                             >
                               {ch}
@@ -177,7 +179,7 @@ export const Actions = () => {
   if (p3) {
     return (
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-        <P3RPage className="overflow-hidden">
+        <P3RPage>
           <GhostWords words={['ACTION']} className="right-[8px] top-[64px] text-[72px]" />
           <div
             role="tablist"

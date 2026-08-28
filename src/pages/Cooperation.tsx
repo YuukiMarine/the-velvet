@@ -36,6 +36,15 @@ import { P4Sparkle } from '@/ui/p4Kit';
 
 type Filter = 'all' | 'offline' | 'online' | 'archived';
 
+/** 结算弹窗防重标记的读写守卫：存储被禁（隐私模式/配额）时宁可重弹一次结算，
+ *  也不能让扫描 effect 抛错把整个同伴页崩进 ErrorBoundary */
+const lsGetFlag = (key: string): boolean => {
+  try { return window.localStorage.getItem(key) === '1'; } catch { return false; }
+};
+const lsSetFlag = (key: string): void => {
+  try { window.localStorage.setItem(key, '1'); } catch { /* 存储不可用 */ }
+};
+
 export function Cooperation() {
   const isP4 = useUiChannel() === 'p4';
   const { confidants, counselArchives, getCounselCooldown, hasActiveCounsel, bumpConfidantIntimacy, updateConfidant, battleState, saveBattleState, settings, updateSettings } = useAppStore();
@@ -102,12 +111,29 @@ export function Cooperation() {
   //     这里扫 confidants 看有没有"新"的 memorial，弹一次对应的结算屏。
   //
   // 已弹过的用 localStorage 持久化 shadowId，避免重进同伴页重复弹。
+  //
+  // 时效闸（用户上报「shadow retreated 弹窗重复弹出多次」的正主）：
+  // localStorage 标记是**按设备**的——换浏览器/清存储/新装设备后全部失效，而云端的
+  // 历史 defeated/retreated 影一直都在。旧逻辑会把每一只历史影都当"新结局"排队弹，
+  // 关一个弹下一个，观感就是同一个弹窗连环轰炸；每次同步拉回更多历史就再来一轮。
+  // 现在：结局时间超过 3 天的一律**静默盖章**（同一轮全部标完，不弹）；只有新鲜的
+  // 结局才弹，且一次只弹一个。
   useEffect(() => {
     if (shadowVictory || shadowBattle) return; // 当前已有一个弹窗在显示，让它先收掉
+    if (typeof window === 'undefined') return;
+    const FRESH_MS = 3 * 86400_000;
+    const now = Date.now();
     for (const s of coopShadows) {
       if (s.status !== 'defeated' && s.status !== 'retreated') continue;
       const key = `velvet_coop_victory_shown_${s.id}`;
-      if (typeof window !== 'undefined' && window.localStorage.getItem(key) === '1') continue;
+      if (lsGetFlag(key)) continue;
+
+      // 结局时间：击败用 defeatedAt，撤退用 expiresAt（撤退=到期未破）
+      const finishedAt = (s.status === 'defeated' ? s.defeatedAt : s.expiresAt)?.getTime() ?? 0;
+      if (now - finishedAt > FRESH_MS) {
+        lsSetFlag(key); // 陈年旧账：静默盖章，继续扫下一只
+        continue;
+      }
 
       // 找到对应的 Confidant + 确认 memorial 已落到本地（奖励已发放）
       const me = cloudUser?.id as string | undefined;
@@ -125,7 +151,7 @@ export function Cooperation() {
       if (!hasMemorial) continue;
 
       // 标记已弹
-      if (typeof window !== 'undefined') window.localStorage.setItem(key, '1');
+      lsSetFlag(key);
       setShadowVictory(s);
       break; // 一次只弹一个
     }
@@ -872,7 +898,7 @@ export function Cooperation() {
           <span
             className="absolute left-0 top-0 whitespace-nowrap font-black italic leading-none tracking-tight"
             style={{
-              fontFamily: 'Arial, "Noto Sans SC", sans-serif',
+              fontFamily: 'Arial, "Noto Sans SC Black", "Noto Sans SC", sans-serif',
               fontSize: 74,
               color: 'rgba(147,190,222,0.30)',
               transformOrigin: 'left top',
@@ -1027,7 +1053,7 @@ export function Cooperation() {
             setShadowVictory(fresh);
             // 同步标记 localStorage，让 "非终结者自动弹" 那个 effect 不会重复弹
             if (typeof window !== 'undefined') {
-              window.localStorage.setItem(`velvet_coop_victory_shown_${s.id}`, '1');
+              lsSetFlag(`velvet_coop_victory_shown_${s.id}`);
             }
           }
           // 触发一次 loadSocial 把奖励从 settleFinishedShadows 流水出来

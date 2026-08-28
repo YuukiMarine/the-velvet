@@ -109,6 +109,7 @@ export const HEAVY_POWER_MULT = 2.2;
 export const HEAVY_WINDUP_TURNS = 1;           // 前摇 1 回合：预告下回合释放
 export const HEAVY_COOLDOWN_TURNS = 4;
 export const GUARD_STANCE_MULT = 0.6;          // 警戒姿态：受到的伤害 ×0.6（1 回合）
+export const FATE_GLIMPSE_ADD = 0.10;          // 窥探命运 buff（v2.7，3 天）：伤害加算 +10%
 export const GUARD_INTENT_ATTACK_MULT = 0.7;   // 警戒当回合攻击减弱
 export const DEBUFF_INTENT_ATTACK_MULT = 0.5;  // 施异常当回合附带轻击
 export const SHADOW_ATKUP_MULT = 1.25;         // 强化意图：自身攻击 ×1.25（3 回合）

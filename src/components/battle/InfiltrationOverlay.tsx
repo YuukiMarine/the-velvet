@@ -150,7 +150,7 @@ export function InfiltrationOverlay({ onDone }: Props) {
           x: { duration: 0.24, delay: 1.2 },
         }}
         style={{
-          fontFamily: 'system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans SC", sans-serif',
+          fontFamily: 'system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans SC Black", "Noto Sans SC", sans-serif',
           fontWeight: 900,
           fontSize: 'clamp(2.6rem, 13vw, 5.2rem)',
           letterSpacing: '0.14em',

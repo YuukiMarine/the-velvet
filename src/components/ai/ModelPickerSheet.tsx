@@ -21,7 +21,7 @@ import { useMemo, useState } from 'react';
 import { useAppStore } from '@/store';
 import { SheetModal } from '@/components/SheetModal';
 import { AI_PROVIDERS, getProviderConfig, type ApiProvider, DEFAULT_PROVIDER } from '@/utils/aiProviders';
-import { familyBadge, isAggregatorList, isAudioModel, isChatModel, isVisionModel, refreshAllProviderModels } from '@/utils/aiModelCatalog';
+import { autoFillVisionPatch, familyBadge, isAggregatorList, isAudioModel, isChatModel, isVisionModel, refreshAllProviderModels } from '@/utils/aiModelCatalog';
 
 export type ModelPickerMode = 'fast' | 'deliberate' | 'assistant' | 'vision' | 'audio';
 
@@ -102,10 +102,13 @@ export const ModelPickerSheet = ({ mode, isOpen, onClose }: {
     const out = await refreshAllProviderModels(settings);
     setRefreshing(false);
     if (!out) { setRefreshMsg('还没有任何服务商配好 Key——先去「连接」卡填 Key'); return; }
-    updateSettings({ aiProfiles: out.profiles });
+    // 视觉档空缺 + 列表里识别到能看图的模型 → 自动填上（用户口径：表更新完就直接填）
+    const auto = autoFillVisionPatch(settings, out.profiles);
+    updateSettings({ aiProfiles: out.profiles, ...(auto?.patch ?? {}) });
     setRefreshMsg([
       out.okParts.length ? `已更新：${out.okParts.join('、')}` : '',
       out.skipped.length ? `跳过：${out.skipped.join('；')}` : '',
+      auto ? `👁 视觉档原来空着，已自动填入 ${auto.label}（可在「视觉」档更换或停用）` : '',
     ].filter(Boolean).join('\n'));
   };
 
