@@ -58,11 +58,12 @@ const WEEKDAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
  * 蒙版——被三角覆盖到的字变暗红，三角自身在字外不显形。实现走 background-clip:text：
  * 克隆字层的背景 = 此 SVG（路径同 kit TitleTri：M2 32 L296 6 L70 74；底衬的 rotate(-1deg)
  * 直接烘进 path transform），背景只透过字形可见。底角/左角溢出 viewBox 的部分本就没有
- * 字形可染，裁掉零损失。改 TitleTri 形状或姿态时此处需同步。染色取暗蓝 #1c367a；
- * 旋转/偏移与底衬七稿等效变换（translate(-1.6,-6.9) rotate(4°)）对应：旋转烘进
+ * 字形可染，裁掉零损失。改 TitleTri 形状或姿态时此处需同步。染色取暗红 #7a1c36
+ * （八稿配色定稿：藏青字 + 暗红染，试过的白字/浅蓝投影/亮红均已裁决回退）；
+ * 旋转/偏移与底衬八稿等效变换（translate(-1.6,-6.9) rotate(3°)）对应：旋转烘进
  * path，平移并进 backgroundPosition。
  */
-const TRI_MASK_URI = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 60' preserveAspectRatio='none'%3E%3Cpath d='M2 32 L296 6 L70 74 Z' transform='rotate(4 150 30)' fill='%231c367a'/%3E%3C/svg%3E")`;
+const TRI_MASK_URI = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 60' preserveAspectRatio='none'%3E%3Cpath d='M2 32 L296 6 L70 74 Z' transform='rotate(3 150 30)' fill='%237a1c36'/%3E%3C/svg%3E")`;
 
 // ── 真实月相（月龄按 2000-01-06 18:14 UTC 新月历元 + 朔望月 29.5306 天推算）──
 const SYNODIC_DAYS = 29.530588853;
@@ -603,10 +604,9 @@ export const DashboardP3 = () => {
           >
             靛蓝色房间
             <TitlePeriod className="mb-1.5 ml-1.5" />
-            {/* 底衬三角（七稿）：五稿（translateY 5px + rotate -1°）再绕当前显示的右顶点
-                顺时针 5°，等效合成单一 transform：净角 +4°、中心平移 (-1.6, -6.9)px——
-                绕右端顺转、左半上抬，顶边趋平；顶点连续沸腾 */}
-            <TitleTri wobble style={{ left: -10, right: 30, top: 6, bottom: -8, transform: 'translate(-1.6px, -6.9px) rotate(4deg)' }} />
+            {/* 底衬三角（八稿）：七稿（绕右顶点顺 5°，等效中心平移 (-1.6,-6.9)px + 净角 4°）
+                再以中心逆时针回 1°——净角 +3°；顶点连续沸腾 */}
+            <TitleTri wobble style={{ left: -10, right: 30, top: 6, bottom: -8, transform: 'translate(-1.6px, -6.9px) rotate(3deg)' }} />
             {/* 三角蒙版染字层：克隆字继承 h1 全部排版（字体/斜体/字距随继承走），背景三角
                 的定位与底衬 TitleTri 的 span 几何一致（left-10→bgX-10；top6+translateY5→bgY11；
                 size 即 span 盒尺寸），背景只透过字形显示 → 被覆盖的字变暗红 */}
@@ -622,6 +622,10 @@ export const DashboardP3 = () => {
                 backgroundClip: 'text',
                 color: 'transparent',
                 WebkitTextFillColor: 'transparent',
+                // text-shadow 可继承：h1 的投影若漏到这层，即使字面全透明 shadow 也会
+                // 全量绘制（shadow 只认字形轮廓不认填充色），一份投影字形就会盖在
+                // 原字与染色区之上——必须显式关掉
+                textShadow: 'none',
               }}
             >靛蓝色房间</span>
           </h1>
