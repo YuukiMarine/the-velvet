@@ -740,7 +740,7 @@ export const DashboardP3 = () => {
                     className="shrink-0 px-3.5 py-2 text-[13px] font-black text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1b57ff]"
                     style={{ clipPath: slantClip(8), background: P3R.blue }}
                   >
-                    接入信号 ›
+                    去添加 ›
                   </button>
                 </div>
               ) : (
