@@ -6,11 +6,11 @@
 <p align="center"><em>The Other Me — Growth Tracker</em></p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-2.6.4-8B5CF6?style=flat-square" />
+  <img src="https://img.shields.io/badge/version-2.7.0-8B5CF6?style=flat-square" />
   <img src="https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react" />
   <img src="https://img.shields.io/badge/TypeScript-5-3178C6?style=flat-square&logo=typescript" />
   <img src="https://img.shields.io/badge/PWA-ready-5A0FC8?style=flat-square" />
-  <img src="https://img.shields.io/badge/Capacitor-Android-53B0EA?style=flat-square" />
+  <img src="https://img.shields.io/badge/Capacitor-iOS%20%C2%B7%20Android-53B0EA?style=flat-square" />
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" />
 </p>
 
@@ -31,7 +31,7 @@
 和内心的「逆影」对战 → 与 22 位塔罗同伴共度时光 → 让 AI 回望你的成长弧线。
 
 数据默认完全留在本机。云同步是可选的，而且分类目：记账的每一笔、与助手和同伴的聊天原文
-**永远不上传**。
+**永远不上传**。应用内可随时导出备份、也可一键注销并级联删除云端数据。
 
 ---
 
@@ -56,11 +56,16 @@
 
 ### 任务
 
-绑定属性与点数，完成自动加点。「每日重复」养习惯，「长期目标」记累计次数。
-**BIG DEAL** 可以把大事拆成子步逐个勾掉，收官时一次结算。
-还没想清楚的事先写成**愿望**，想动手了再转成任务。
+绑定属性与点数，完成自动加点。「每日重复」养习惯，「长期目标」记累计次数，
+「本周目标」盯住一周的推进。**BIG DEAL** 可以把大事拆成子步逐个勾掉，收官时一次结算。
+还没想清楚的事先写成**愿望**，想动手了再转成任务；选择困难时让「命运抽签」替你挑一件。
 
-### 记账（心相记账）
+### 宣言卡
+
+为重要的事写一张「宣告卡」——立下目标宣言或倒计时，钉到首页后每天映入眼帘，
+临期自动提醒，收官时有专属的庆祝演出。
+
+### 记账
 
 一句话记一笔，AI 认金额与类目；支持一句多笔。
 真实总余额 + 月度预算环 + 「今日还可以花多少」；资产板块与月末结算。
@@ -80,13 +85,23 @@
 ### 星象
 
 每日三选一抽塔罗，给出运势与一句建议，并为某项属性加成。
-另有持续 14 天、可追问一次的中长期占卜。
+另有持续 14 天、可追问一次的中长期占卜。未配置 AI 也能抽——离线解读兜底。
+
+### 统计与 AI 回望
+
+人格指数五角星随成长伸展；连续打卡、热力日历、属性曲线一目了然。
+配置 AI 后可生成**每周 / 每月成长总结**，替你回头看一眼这段时间的弧线。
 
 ### 助手
 
 住在底部中央 ◈ 里的对话式助手。说人话就能记账、加任务、写记录；
 它记得你手头在做的事，会在合适的时候提一句。人格可换，也可以自己捏一个。
 **聊天原文只存在你的设备上，永不上传。**
+
+### 桌面小组件
+
+iOS 与 Android 双端桌面小组件：**清单组件**（今日任务 + 完成进度 + 倒计时，
+4×2 / 2×2 双规格，BIG DEAL 高亮）；iOS 另有**锁屏小组件**。全部跟随夜间模式。
 
 ---
 
@@ -101,14 +116,20 @@
 | 红 | **剪报怪盗** —— 纯黑舞台、猩红斜块碰撞、半调网点、不规则撕纸卡、拼贴瓷砖标题 |
 | 自定义 | 中性皮，整族从你选的主色派生 |
 
-每套都配有各自的长按轮盘、庆祝演出、页对页转场与夜间模式。
+每套都配有各自的长按轮盘、庆祝演出、页对页转场、按压反馈与夜间模式。
 
 ---
 
 ## 版本历程
 
+### v2.7（2026-08）
+**iOS 端落地并提交 App Store 审核** · iOS 清单小组件（4×2 / 2×2）+ 锁屏小组件 ·
+召唤页三频道齐装（黄「深夜档特番」/ 红「怪盗预告信」）· 黄频道战场夜档化 + VHS 扫描线 ·
+全站按压反馈毯 · 羁绊选项卡切换特效 · 首页手稿三角标题（蒙版染字 + 沸腾动效）·
+标题字面统一真栈 · 窄屏适配与一轮 UI 审计修复
+
 ### v2.6（2026-08）
-愿望进度环 · 回归面板「欢迎回来」· **桌面小组件**（4×2 / 4×1 / 2×2，支持夜间模式）·
+愿望进度环 · 回归面板「欢迎回来」· 安卓桌面小组件（4×2 / 4×1 / 2×2，支持夜间模式）·
 爬塔入口重做 · 天气链路 · 内嵌中文字体 · 快速上手重做 · 一轮安卓真机回归修复
 
 ### v2.5（2026-07）
@@ -130,16 +151,16 @@
 ## 技术栈
 
 React 18 · TypeScript 5 · Vite 5 · Tailwind 3 · Zustand · Dexie（IndexedDB）·
-motion/react + GSAP · Capacitor 5（Android）· vite-plugin-pwa · PocketBase（可选云端）
+motion/react + GSAP · Capacitor 5（iOS / Android）· vite-plugin-pwa · PocketBase（可选云端）
 
 ```bash
 npm install
 npm run dev                 # 开发
 npm run build               # 构建到 dist/
+npx cap sync ios            # 同步进 iOS 工程
 npx cap sync android        # 同步进安卓工程
 ```
 
-> 字体（Noto Sans/Serif SC 子集，SIL OFL）与塔罗美术随仓库分发。
 > **音效素材不在仓库内** —— `public/` 下需要自备 25 个 UI 反馈音（文件名见
 > `src/utils/feedback.ts` 与各处 `playSound()` 调用）。缺失时音效静默，不影响其它功能。
 
@@ -150,11 +171,11 @@ npx cap sync android        # 同步进安卓工程
 | | |
 |---|---|
 | Web / PWA | ✅ 可安装、离线可用 |
+| iOS | ✅ Capacitor 打包，清单 + 锁屏小组件（App Store 审核中） |
 | Android | ✅ Capacitor 打包，含三块桌面小组件 |
-| iOS | 🚧 计划中 |
 
 ---
 
 ## License
 
-MIT
+[MIT](LICENSE)
