@@ -128,7 +128,7 @@ const VelvetTime = ({ cx, cy }: { cx: number; cy: number }) => {
   const line = (text: string, color: string, delay: number, drift: number) => (
     <motion.div
       className="whitespace-nowrap font-black italic leading-[0.84] tracking-[-0.03em]"
-      style={{ fontFamily: '"Arial Black", Arial, "Noto Sans SC Black", "Noto Sans SC", sans-serif', fontSize: size, color }}
+      style={{ fontFamily: '"Noto Sans SC Black", "Velvet Sans SC", sans-serif', fontSize: size, color }}
       initial={{ clipPath: 'inset(-12% 103% -12% -3%)', x: drift < 0 ? 26 : -26 }}
       animate={{ clipPath: 'inset(-12% -6% -12% -3%)', x: [0, drift, 0] }}
       exit={{ opacity: 0 }}
@@ -223,7 +223,7 @@ const Bar = ({
           aria-hidden
           className="absolute left-1/2 top-1/2 whitespace-nowrap font-black italic leading-none tracking-[-0.02em]"
           style={{
-            fontFamily: '"Arial Black", Arial, sans-serif',
+            fontFamily: '"Noto Sans SC Black", "Velvet Sans SC", sans-serif',
             fontSize: enSize,
             color: active ? 'rgba(255,255,255,0.34)' : 'var(--p3r-bar-ghost, rgba(27,87,255,0.16))',
             transform: 'translate(-50%,-50%) rotate(90deg)',

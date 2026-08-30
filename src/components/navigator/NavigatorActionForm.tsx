@@ -486,7 +486,7 @@ export const NavigatorActionForm = ({ draft, channel, onSubmit, onClose }: Props
             {bright ? (
               <header className="relative flex items-center gap-2.5 px-5 pt-5">
                 <span aria-hidden className="h-[24px] w-[9px] shrink-0" style={{ background: 'var(--p3r-cyan, #35d1e8)', transform: 'skewX(-18deg)' }} />
-                <h2 className="flex-1 text-[26px] font-black italic leading-none" style={{ color: P3R.ink, fontFamily: '"Arial Black", "Noto Sans SC Black", "Noto Sans SC", sans-serif' }}>
+                <h2 className="flex-1 text-[26px] font-black italic leading-none" style={{ color: P3R.ink, fontFamily: '"Noto Sans SC Black", "Velvet Sans SC", sans-serif' }}>
                   {ACTION_META[d.kind].label}
                 </h2>
                 <button

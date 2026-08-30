@@ -160,7 +160,7 @@ const StarTearAct = ({ midpoint, onDone }: ActProps) => {
                   color: TYT_PALETTE[t[3]].fg,
                   fontSize: t[1],
                   fontWeight: 900,
-                  fontFamily: '"Arial Black", "Noto Sans SC Black", "Noto Sans SC", sans-serif',
+                  fontFamily: '"Noto Sans SC Black", "Velvet Sans SC", sans-serif',
                   lineHeight: 1,
                   transform: `rotate(${t[2]}deg)`,
                   boxShadow: '2.5px 2.5px 0 rgba(0,0,0,0.5)',

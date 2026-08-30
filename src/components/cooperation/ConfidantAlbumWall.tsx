@@ -974,7 +974,7 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
                       ? 'max-w-[80%] pr-[0.18em] text-[34px] font-black italic'
                       : 'max-w-[70%] text-[28px] font-black text-gray-900 dark:text-white'
                 }`}
-                style={isP4 ? { fontFamily: 'var(--p4-display-font, serif)' } : p3 ? { color: P3R.ink, fontFamily: '"Arial Black", "Noto Sans SC Black", "Noto Sans SC", sans-serif' } : undefined}
+                style={isP4 ? { fontFamily: 'var(--p4-display-font, serif)' } : p3 ? { color: P3R.ink, fontFamily: '"Noto Sans SC Black", "Velvet Sans SC", sans-serif' } : undefined}
               >
                 {current.profile.nickname || current.profile.userId || '未命名客人'}
               </motion.h3>
@@ -1020,7 +1020,7 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
               {/* pr-[0.18em]：Arial Black 斜体的字形会探出自己的内容盒，truncate 的
                   overflow:hidden 正好贴着盒切，末字右侧就少一刀。留一点右内边距，
                   让它裁的是空白而不是笔画。 */}
-              <h3 className="max-w-[80%] truncate pr-[0.18em] text-[40px] font-black italic leading-tight" style={{ color: P3R.ink, fontFamily: '"Arial Black", "Noto Sans SC Black", "Noto Sans SC", sans-serif' }}>
+              <h3 className="max-w-[80%] truncate pr-[0.18em] text-[40px] font-black italic leading-tight" style={{ color: P3R.ink, fontFamily: '"Noto Sans SC Black", "Velvet Sans SC", sans-serif' }}>
                 {current.name}
               </h3>
             </div>

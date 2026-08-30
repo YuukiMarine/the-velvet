@@ -208,7 +208,7 @@ export function VelvetRoomSplash({ onComplete, s }: { onComplete: () => void; s:
         }
         .vlv-marquee {
           white-space: nowrap; font-size: clamp(4.2rem, 20vw, 12rem); font-weight: 900; font-style: italic;
-          font-family: "Arial Black", "Noto Sans SC Black", "Noto Sans SC", sans-serif;
+          font-family: "Noto Sans SC Black", "Velvet Sans SC", sans-serif;
           color: transparent; -webkit-text-stroke: 1px rgba(169,188,255,0.5);
           letter-spacing: -0.02em; line-height: 1;
         }
