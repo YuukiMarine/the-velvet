@@ -325,7 +325,7 @@ export function LootReveal({ open, source, drops, sp = 0, onClose }: Props) {
               <motion.div
                 key={line}
                 className="whitespace-nowrap font-black italic leading-[0.92] tracking-[-0.03em] text-white"
-                style={{ fontFamily: '"Arial Black", Arial, sans-serif', fontSize: 64, textShadow: '0 4px 0 rgba(139,124,246,0.45)' }}
+                style={{ fontFamily: '"Noto Sans SC Black", "Velvet Sans SC", sans-serif', fontSize: 64, textShadow: '0 4px 0 rgba(139,124,246,0.45)' }}
                 initial={{ clipPath: 'inset(-10% 102% -10% -2%)', x: 30 }}
                 animate={{ clipPath: 'inset(-10% -4% -10% -2%)', x: 0 }}
                 transition={{ duration: 0.4, delay: 0.1 + i * 0.13, ease: [0.2, 0.9, 0.25, 1] }}

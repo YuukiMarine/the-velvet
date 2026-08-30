@@ -207,7 +207,7 @@ const SidebarInner = () => {
           </div>
           <div>
             {p3 ? (
-              <h1 className="inline-flex items-end text-[17px] font-black italic leading-none tracking-tight" style={{ color: P3R.ink, fontFamily: '"Arial Black", "Noto Sans SC Black", "Noto Sans SC", sans-serif' }}>
+              <h1 className="inline-flex items-end text-[17px] font-black italic leading-none tracking-tight" style={{ color: P3R.ink, fontFamily: '"Noto Sans SC Black", "Velvet Sans SC", sans-serif' }}>
                 靛蓝色房间
                 <TitlePeriod className="mb-0 ml-1 scale-[0.6]" style={{ transformOrigin: 'left bottom' }} />
               </h1>

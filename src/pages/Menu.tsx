@@ -933,7 +933,7 @@ export const Menu = () => {
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-2">
-                    <span className="min-w-0 flex-1 truncate text-[21px] font-black italic leading-none" style={{ color: P3R.ink, fontFamily: '"Arial Black", "Noto Sans SC Black", "Noto Sans SC", sans-serif' }}>
+                    <span className="min-w-0 flex-1 truncate text-[21px] font-black italic leading-none" style={{ color: P3R.ink, fontFamily: '"Noto Sans SC Black", "Velvet Sans SC", sans-serif' }}>
                       {user?.name ?? '旅行者'}
                     </span>
                     <span

@@ -214,7 +214,7 @@ export const GoalSetupForm = ({
         {/* 左上青色大三角装饰（稿） */}
         <span aria-hidden className="absolute -left-2 -top-2 h-0 w-0 border-r-[46px] border-t-[38px] border-r-transparent" style={{ borderTopColor: 'rgba(53,209,232,0.85)' }} />
         <div className="relative px-4 pb-4 pt-5">
-          <h3 className="text-[26px] font-black italic leading-none" style={{ color: 'var(--p3r-ink, #0a1230)', fontFamily: '"Arial Black", "Noto Sans SC Black", "Noto Sans SC", sans-serif' }}>设定本周目标</h3>
+          <h3 className="text-[26px] font-black italic leading-none" style={{ color: 'var(--p3r-ink, #0a1230)', fontFamily: '"Noto Sans SC Black", "Velvet Sans SC", sans-serif' }}>设定本周目标</h3>
           <p className="mt-2 text-[13px] font-bold" style={{ color: 'var(--p3r-blue, #1b57ff)' }}>{weekStart} ~ {weekEnd}　· 至少选择 2 项</p>
 
           <div className="mt-4 space-y-3">

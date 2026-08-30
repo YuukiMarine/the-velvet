@@ -262,7 +262,7 @@ export const SheetModal = ({
                       ? 'text-[26px] font-black italic tracking-tight'
                       : 'text-lg font-bold text-gray-800 dark:text-white'
                 }`}
-                style={isP4 ? { fontFamily: 'var(--p4-display-font, serif)' } : p3 ? { color: 'var(--p3r-ink, #0a1230)', fontFamily: '"Arial Black", "Noto Sans SC Black", "Noto Sans SC", sans-serif' } : undefined}
+                style={isP4 ? { fontFamily: 'var(--p4-display-font, serif)' } : p3 ? { color: 'var(--p3r-ink, #0a1230)', fontFamily: '"Noto Sans SC Black", "Velvet Sans SC", sans-serif' } : undefined}
               >
                 {title}
                 {p3 && <span aria-hidden className="ml-1.5 inline-block h-[10px] w-[13px]" style={{ background: 'var(--p3r-blue, #1b57ff)', clipPath: 'polygon(100% 0, 100% 100%, 0 100%)' }} />}

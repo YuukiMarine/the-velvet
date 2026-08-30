@@ -361,7 +361,7 @@ function P5Splash({ onComplete, s }: { onComplete: () => void; s: number }) {
               }}>
               <span style={{
                 fontSize: 'clamp(2.2rem, 10vw, 4.2rem)',
-                fontFamily: '"Impact", "Arial Black", "Noto Sans SC Black", "Noto Sans SC", sans-serif',
+                fontFamily: '"Impact", "Noto Sans SC Black", "Velvet Sans SC", sans-serif',
                 fontWeight: 900,
                 color: '#ffffff',
                 letterSpacing: '-0.02em',
@@ -381,7 +381,7 @@ function P5Splash({ onComplete, s }: { onComplete: () => void; s: number }) {
               }}>
               <span style={{
                 fontSize: 'clamp(2.2rem, 10vw, 4.2rem)',
-                fontFamily: '"Impact", "Arial Black", "Noto Sans SC Black", "Noto Sans SC", sans-serif',
+                fontFamily: '"Impact", "Noto Sans SC Black", "Velvet Sans SC", sans-serif',
                 fontWeight: 900,
                 color: '#0a0a0a',
                 letterSpacing: '-0.02em',
