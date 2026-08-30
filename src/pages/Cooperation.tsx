@@ -33,6 +33,7 @@ import { nextPrayerStreak, prayerNarrative } from '@/utils/prayerStreak';
 import { playSound } from '@/utils/feedback';
 import type { CloudProfile, CoopBond, CoopShadow, Friendship } from '@/types';
 import { P4Sparkle } from '@/ui/p4Kit';
+import { useBoldness } from '@/utils/boldness';
 
 type Filter = 'all' | 'offline' | 'online' | 'archived';
 
@@ -374,6 +375,7 @@ export function Cooperation() {
   };
 
   const p5 = useUiChannel() === 'p5';
+  const anim = useBoldness();
 
   return (
     <P3RPage active={p3}>
@@ -647,6 +649,8 @@ export function Cooperation() {
       <div className="flex items-center gap-2">
         {p3 ? (
           <div className="flex flex-1 items-center gap-1">
+            {/* 切换特效（V27.1）：选中蓝斜块（含洋红角）经 layoutId 在 tab 间滑动；
+                两态共用同一按钮结构（未选青杠恒占位保持行高），文字色 CSS 过渡；D0 瞬切 */}
             {([
               { id: 'all', label: '全部' },
               { id: 'offline', label: '离线' },
@@ -654,27 +658,27 @@ export function Cooperation() {
               { id: 'archived', label: '归档' },
             ] as const).map(t => {
               const active = filter === t.id;
-              return active ? (
+              return (
                 <button
                   key={t.id}
                   type="button"
                   onClick={() => setFilter(t.id)}
-                  className="relative flex-1 py-2 text-[15px] font-black text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1b57ff]"
-                  style={{ clipPath: slantClip(10), background: P3R.blue }}
+                  className="relative flex flex-1 flex-col items-center gap-1 py-1.5 text-[15px] font-black transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1b57ff]"
+                  style={{ color: active ? '#ffffff' : P3R.ink }}
                 >
-                  {t.label}
-                  <span aria-hidden className="absolute bottom-0 right-2.5 h-[7px] w-[16px]" style={{ background: P3R.magenta, clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
-                </button>
-              ) : (
-                <button
-                  key={t.id}
-                  type="button"
-                  onClick={() => setFilter(t.id)}
-                  className="flex flex-1 flex-col items-center gap-1 py-1.5 text-[15px] font-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1b57ff]"
-                  style={{ color: P3R.ink }}
-                >
-                  {t.label}
-                  <span aria-hidden className="h-[3px] w-5" style={{ background: 'rgba(53,209,232,0.65)', transform: 'skewX(-24deg)' }} />
+                  {active && (
+                    <motion.span
+                      aria-hidden
+                      layoutId={anim ? 'coop-tab-p3' : undefined}
+                      className="absolute inset-0"
+                      style={{ clipPath: slantClip(10), background: P3R.blue }}
+                      transition={{ type: 'spring', stiffness: 520, damping: 38 }}
+                    >
+                      <span aria-hidden className="absolute bottom-0 right-2.5 h-[7px] w-[16px]" style={{ background: P3R.magenta, clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
+                    </motion.span>
+                  )}
+                  <span className="relative">{t.label}</span>
+                  <span aria-hidden className="relative h-[3px] w-5" style={{ background: active ? 'transparent' : 'rgba(53,209,232,0.65)', transform: 'skewX(-24deg)' }} />
                 </button>
               );
             })}
@@ -694,16 +698,24 @@ export function Cooperation() {
             const active = filter === t.id;
             if (p5) {
               // P5UI/p5-cooperation：选中 = 猩红不规则块白字，未选中 = 黑底纸描边块
+              // 切换特效（V27.1）：红块以「戳章」落下（scale 1.25→1），按压 whileTap 斜向 jolt；D0 直出
               return (
-                <button
+                <motion.button
                   key={t.id}
                   onClick={() => setFilter(t.id)}
+                  whileTap={anim ? { x: 1.5, y: 1.5 } : undefined}
                   className={`relative mx-0.5 cursor-pointer py-2 text-[13px] font-black transition-colors ${active ? 'text-white' : 'text-[#d9d3c7]'}`}
                 >
                   <span aria-hidden className="absolute inset-0" style={{ background: '#f0e9df', clipPath: `polygon(${3 + (t.id.length % 3)}px 1px, calc(100% - 1px) 3px, calc(100% - 4px) calc(100% - 1px), 1px calc(100% - 3px))` }} />
-                  <span aria-hidden className="absolute inset-[2px]" style={{ background: active ? '#c00008' : '#050505', clipPath: `polygon(2px 1px, calc(100% - 1px) 2px, calc(100% - 3px) calc(100% - 1px), 1px calc(100% - 2px))` }} />
+                  <motion.span
+                    aria-hidden
+                    className="absolute inset-[2px]"
+                    animate={anim && active ? { scale: [1.25, 1] } : { scale: 1 }}
+                    transition={{ duration: 0.16, ease: 'easeOut' }}
+                    style={{ background: active ? '#c00008' : '#050505', clipPath: `polygon(2px 1px, calc(100% - 1px) 2px, calc(100% - 3px) calc(100% - 1px), 1px calc(100% - 2px))` }}
+                  />
                   <span className="relative">{t.label}</span>
-                </button>
+                </motion.button>
               );
             }
             if (isP4) {
@@ -713,13 +725,23 @@ export function Cooperation() {
                   onClick={() => setFilter(t.id)}
                   className={`relative py-2.5 text-[13px] font-black transition-all ${active ? 'text-[#131313]' : 'text-[#131313]/70'}`}
                 >
+                  {/* 切换特效（V27.1，二稿修卡顿）：layout FLIP 只跑在无造型的外壳上——
+                      rotate/花形 borderRadius 放在 FLIP 元素上会让 framer 的投影测量
+                      产生错误补偿（视觉=blob 拉扯成圆角矩形 + 卡顿），造型全部下沉到
+                      静态子层，外壳纯平移即天然流畅变形；D0 瞬切 */}
                   {active && (
                     <>
-                      <span
+                      <motion.span
                         aria-hidden
+                        layoutId={anim ? 'coop-tab-p4' : undefined}
                         className="absolute inset-x-1 inset-y-0 -z-10"
-                        style={{ background: 'var(--ui-accent)', borderRadius: '62% 38% 55% 45% / 48% 62% 38% 52%', transform: 'rotate(-3deg)' }}
-                      />
+                        transition={{ type: 'spring', stiffness: 480, damping: 36 }}
+                      >
+                        <span
+                          className="absolute inset-0"
+                          style={{ background: 'var(--ui-accent)', borderRadius: '62% 38% 55% 45% / 48% 62% 38% 52%', transform: 'rotate(-3deg)' }}
+                        />
+                      </motion.span>
                       <P4Sparkle size={12} color="#ffffff" className="absolute left-1 top-0.5" />
                     </>
                   )}
@@ -727,17 +749,24 @@ export function Cooperation() {
                 </button>
               );
             }
+            {/* 切换特效（V27.1）：白卡滑块经 layoutId 在槽内滑动，文字色过渡；D0 瞬切 */}
             return (
               <button
                 key={t.id}
                 onClick={() => setFilter(t.id)}
-                className={`py-2 rounded-xl transition-all ${
-                  active
-                    ? 'bg-white dark:bg-gray-900 text-primary shadow-sm'
-                    : 'text-gray-500 dark:text-gray-400'
+                className={`relative py-2 rounded-xl transition-colors duration-150 ${
+                  active ? 'text-primary' : 'text-gray-500 dark:text-gray-400'
                 }`}
               >
-                {t.label}
+                {active && (
+                  <motion.span
+                    aria-hidden
+                    layoutId={anim ? 'coop-tab-neutral' : undefined}
+                    className="absolute inset-0 rounded-xl bg-white shadow-sm dark:bg-gray-900"
+                    transition={{ type: 'spring', stiffness: 520, damping: 40 }}
+                  />
+                )}
+                <span className="relative">{t.label}</span>
               </button>
             );
           })}

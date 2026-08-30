@@ -18,7 +18,7 @@ import { useAppStore, toLocalDateKey } from '@/store';
 import { useSkyBadge } from '@/components/sky/useSkyBadge';
 import { WeatherGlyph } from '@/components/sky/WeatherGlyph';
 import type { AttributeId, CallingCard } from '@/types';
-import { P3R, P3RPage, GhostWords, SectionMark, SlantButton, TitlePeriod, slantClip } from '@/components/p3r/kit';
+import { P3R, P3RPage, GhostWords, SectionMark, SlantButton, TitlePeriod, TitleTri, slantClip } from '@/components/p3r/kit';
 import { TodoCompleteModal } from '@/components/TodoCompleteModal';
 import { BattleDashboardWidget } from '@/components/BattleDashboardWidget';
 import { StackCarousel } from '@/components/StackCarousel';
@@ -52,6 +52,17 @@ const getSlot = (h: number) => {
 
 const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 const WEEKDAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+
+/**
+ * 页头三角蒙版染字（手稿四稿）：与底衬 TitleTri 同形状同位置的暗红三角，作为标题字的
+ * 蒙版——被三角覆盖到的字变暗红，三角自身在字外不显形。实现走 background-clip:text：
+ * 克隆字层的背景 = 此 SVG（路径同 kit TitleTri：M2 32 L296 6 L70 74；底衬的 rotate(-1deg)
+ * 直接烘进 path transform），背景只透过字形可见。底角/左角溢出 viewBox 的部分本就没有
+ * 字形可染，裁掉零损失。改 TitleTri 形状或姿态时此处需同步。染色取暗蓝 #1c367a；
+ * 旋转/偏移与底衬七稿等效变换（translate(-1.6,-6.9) rotate(4°)）对应：旋转烘进
+ * path，平移并进 backgroundPosition。
+ */
+const TRI_MASK_URI = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 60' preserveAspectRatio='none'%3E%3Cpath d='M2 32 L296 6 L70 74 Z' transform='rotate(4 150 30)' fill='%231c367a'/%3E%3C/svg%3E")`;
 
 // ── 真实月相（月龄按 2000-01-06 18:14 UTC 新月历元 + 朔望月 29.5306 天推算）──
 const SYNODIC_DAYS = 29.530588853;
@@ -213,7 +224,7 @@ const AttrDetailInline = ({ attrId, level: fallbackLevel, onBack }: { attrId: At
         animate={{ x: ['34%', '9%', '0%'], y: [44, -10, 0], scale: [0.56, 0.94, 1], transition: { duration: 0.5, ease: [0.4, 0, 0.2, 1], times: [0, 0.58, 1] } }}
         exit={{ opacity: 0, transition: { duration: 0.2 } }}
       >
-        <div className="text-[52px] font-black italic leading-none" style={{ color: P3R.ink, fontFamily: '"Arial Black", "Noto Sans SC Black", "Noto Sans SC", sans-serif' }}>{name}</div>
+        <div className="text-[52px] font-black italic leading-none" style={{ color: P3R.ink, fontFamily: '"Noto Sans SC Black", "Velvet Sans SC", sans-serif' }}>{name}</div>
         <div className="mt-2.5 flex items-center gap-2.5">
           <span className="relative inline-flex items-baseline gap-1 px-4 py-1 text-white" style={{ clipPath: slantClip(8), background: P3R.blue }}>
             <span className="text-[11px] font-black tracking-wider text-white/85">LV</span>
@@ -328,7 +339,8 @@ const RitualSlab = ({
     className="flex h-full min-h-[76px] w-full items-center gap-3 px-5 py-3.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1b57ff]"
     style={{ clipPath: slantClip(12), background: P3R.cyanPale }}
   >
-    <span aria-hidden className="h-9 w-[4px] shrink-0" style={{ background: accent ?? P3R.blue, transform: 'skewX(-20deg)' }} />
+    {/* 斜杠标签的斜度与卡片 slantClip(12) 的斜边锁定：atan(12/76) ≈ 9°（原 -20° 与卡不平行） */}
+    <span aria-hidden className="h-9 w-[4px] shrink-0" style={{ background: accent ?? P3R.blue, transform: 'skewX(-9deg)' }} />
     <span aria-hidden className="shrink-0 text-xl leading-none">{icon}</span>
     <span className="min-w-0 flex-1">
       <span className="block truncate text-[15px] font-black" style={{ color: P3R.ink }}>{title}</span>
@@ -586,11 +598,32 @@ export const DashboardP3 = () => {
         {/* ── 页头 ── */}
         <header className="relative pt-4">
           <h1
-            className="inline-flex items-end text-[54px] font-black italic leading-[0.95] tracking-tight"
-            style={{ color: P3R.ink, fontFamily: '"Arial Black", "Noto Sans SC Black", "Noto Sans SC", sans-serif' }}
+            className="relative inline-flex items-end text-[54px] font-black italic leading-[0.95] tracking-tight"
+            style={{ color: '#021c36', fontSize: 'min(54px, 13.4vw)', isolation: 'isolate' }}
           >
             靛蓝色房间
             <TitlePeriod className="mb-1.5 ml-1.5" />
+            {/* 底衬三角（七稿）：五稿（translateY 5px + rotate -1°）再绕当前显示的右顶点
+                顺时针 5°，等效合成单一 transform：净角 +4°、中心平移 (-1.6, -6.9)px——
+                绕右端顺转、左半上抬，顶边趋平；顶点连续沸腾 */}
+            <TitleTri wobble style={{ left: -10, right: 30, top: 6, bottom: -8, transform: 'translate(-1.6px, -6.9px) rotate(4deg)' }} />
+            {/* 三角蒙版染字层：克隆字继承 h1 全部排版（字体/斜体/字距随继承走），背景三角
+                的定位与底衬 TitleTri 的 span 几何一致（left-10→bgX-10；top6+translateY5→bgY11；
+                size 即 span 盒尺寸），背景只透过字形显示 → 被覆盖的字变暗红 */}
+            <span
+              aria-hidden
+              className="pointer-events-none absolute inset-0 select-none"
+              style={{
+                backgroundImage: TRI_MASK_URI,
+                backgroundRepeat: 'no-repeat',
+                backgroundPosition: '-11.6px -0.9px',
+                backgroundSize: 'calc(100% - 20px) calc(100% + 2px)',
+                WebkitBackgroundClip: 'text',
+                backgroundClip: 'text',
+                color: 'transparent',
+                WebkitTextFillColor: 'transparent',
+              }}
+            >靛蓝色房间</span>
           </h1>
           <p className="mt-2 text-[15px] font-bold" style={{ color: P3R.blue }}>{greeting}</p>
 
@@ -674,6 +707,7 @@ export const DashboardP3 = () => {
         {/* ── 今日任务（白斜卡列表：直接打卡；接入 CTA 探出右缘）── */}
         <section className="mt-7" aria-label="今日任务">
           <SectionMark
+            tri
             title="今日任务"
             meta={
               <button type="button" onClick={() => go('todos')} className="flex items-baseline gap-1.5 text-[14px] font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1b57ff]" style={{ color: P3R.blue }} aria-label="打开任务页">
@@ -692,9 +726,18 @@ export const DashboardP3 = () => {
               style={{ clipPath: slantClip(14), background: P3R.panel, boxShadow: '0 14px 30px rgba(38,96,140,0.10)' }}
             >
               {todayTodos.length === 0 ? (
-                <div className="flex h-full min-h-[96px] items-center gap-2.5 pl-7 pr-4">
+                <div className="flex h-full min-h-[96px] items-center gap-2.5 pl-7 pr-5">
                   <span aria-hidden className="h-2.5 w-2.5 rounded-full" style={{ background: P3R.cyan }} />
-                  <span className="text-[17px] font-black" style={{ color: P3R.ink }}>暂无可追踪的信号</span>
+                  <span className="min-w-0 flex-1 text-[17px] font-black" style={{ color: P3R.ink }}>暂无可追踪的信号</span>
+                  {/* 空态行动出口（UI 审计 U3）：没有它，新用户要自己悟出去「行动」页建任务 */}
+                  <button
+                    type="button"
+                    onClick={() => go('todos')}
+                    className="shrink-0 px-3.5 py-2 text-[13px] font-black text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1b57ff]"
+                    style={{ clipPath: slantClip(8), background: P3R.blue }}
+                  >
+                    接入信号 ›
+                  </button>
                 </div>
               ) : (
                 <div className="flex flex-col gap-0.5 py-3 pl-6 pr-3">
@@ -787,7 +830,7 @@ export const DashboardP3 = () => {
 
         {/* ──「今日仪式」横滑组（逆流预警[条件] / 星象 / 治疗终端[条件] / 逆影战场[条件]）── */}
         <section className="mt-7" aria-label="今日仪式">
-          <SectionMark title="今日仪式" meta={<span className="text-[11px] font-bold" style={{ color: P3R.grey }}>滑动切换</span>} />
+          <SectionMark tri title="今日仪式" meta={<span className="text-[11px] font-bold" style={{ color: P3R.grey }}>滑动切换</span>} />
           <div className="mt-3">
             {/* 全局裁决（2026-07-12）：仪式卡撑满一屏 + 自动轮播（第二张不再探出一截） */}
             <StackCarousel id="ritual-p3" page={ritualPage} itemWidthClass="w-full" autoPlayMs={6000}>
@@ -799,6 +842,7 @@ export const DashboardP3 = () => {
         {/* ── 人格指数（数据驱动五角星）── */}
         <section className="mt-7" aria-label="人格指数">
           <SectionMark
+            tri
             title="人格指数"
             meta={
               <button type="button" onClick={() => go('statistics')} className="text-[14px] font-bold" style={{ color: P3R.blue }}>

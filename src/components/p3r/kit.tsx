@@ -87,7 +87,8 @@ export const P3RPage = ({ children, className, active = true }: { children: Reac
 };
 
 /** 背景幽灵大字（多行，整块斜置；移动端低透明度护栏 §18.1）
- *  字重口径：Arial 合成加粗（比 Impact / Arial Black 细一档，用户定稿）
+ *  字重口径（2026-08-31 用户改稿）：Noto Sans SC Black 真 900——旧稿「Arial 合成加粗、
+ *  比 Arial Black 细一档」被推翻（用户："THE VELVET 字重太小了，让它们粗一点"）
  *  动效（A3）：内层随页面滚动慢速视差漂移 + 极低频呼吸透明度；外层结构不变
  *  （调用方经 className/style 传入的定位与 rotate 覆盖全部保留），D0 静止。 */
 export const GhostWords = ({ words, className, style, parallax = true }: { words: ReactNode[]; className?: string; style?: CSSProperties; parallax?: boolean }) => {
@@ -115,7 +116,7 @@ export const GhostWords = ({ words, className, style, parallax = true }: { words
       ref={rootRef}
       aria-hidden
       className={`pointer-events-none absolute select-none font-black italic leading-[0.86] tracking-tight ${className ?? ''}`}
-      style={{ fontFamily: 'Arial, "Noto Sans SC Black", "Noto Sans SC", sans-serif', color: 'var(--p3r-ghost, rgba(147,190,222,0.30))', transform: 'rotate(-12deg)', ...style }}
+      style={{ fontFamily: '"Noto Sans SC Black", "Velvet Sans SC", sans-serif', color: 'var(--p3r-ghost, rgba(147,190,222,0.30))', transform: 'rotate(-12deg)', ...style }}
     >
       <motion.div
         style={anim ? { y } : undefined}
@@ -132,7 +133,63 @@ export const GhostWords = ({ words, className, style, parallax = true }: { words
 
 /** 节标记：蓝色小斜块 + 标题 + 右侧 meta 槽（variant='blue'：蓝色斜体，account 页「数据管理 · DATA」式；
  *  marker='tri'：蓝色实心倒三角 + 黑粗斜体，p3-modal-03「▼ 关键词分析」式） */
-export const SectionMark = ({ title, meta, variant = 'ink', marker = 'slab', className }: { title: ReactNode; meta?: ReactNode; variant?: 'ink' | 'blue'; marker?: 'slab' | 'tri'; className?: string }) => {
+/**
+ * 标题底衬三角（用户 2026-08-30 手稿二稿）：主题蓝 80% 的实心不规则长扁三角，
+ * 垫在标题文字之下（zIndex -1，需父级 isolation:isolate 兜住负层级）。
+ * 入场从左向右揭示；wobble 时三顶点以 SMIL 离散跳帧做 1-2px 手绘沸腾
+ * （浏览器原生驱动、不占 JS 主线程），D0 关跳帧并直出终态。
+ * 定位（left/right/top/bottom）与旋转平移由调用方经 style 传入。
+ */
+export const TitleTri = ({ wobble = false, delay = 0.35, fill, style }: { wobble?: boolean; delay?: number; fill?: string; style?: CSSProperties }) => {
+  const anim = useBoldness();
+  const pathRef = useRef<SVGPathElement>(null);
+  // 沸腾（七稿：幅度提到肉眼可感）：8 个随机站点环游，站间 smoothstep 连续插值，
+  // 三顶点独立 ±4 单位（≈3.5px 屏幕位移）——±2 的连续缓动隐晦到形同静止（用户
+  // 两度报告"没在运动"，实测循环一直在跑），连续动画要可感知幅度必须比离散跳变大。
+  // rAF 直写 d attr（不经 React；SMIL 的 d 线性插值在 WebKit 系时钟会冻结，不可用）；
+  // 标签页隐藏时 rAF 自动挂起，D0 不启动。
+  useEffect(() => {
+    if (!wobble || !anim) return;
+    const el = pathRef.current;
+    if (!el) return;
+    const N = 8, SEG_MS = 400;
+    const jolt = () => [Math.random() * 8 - 4, Math.random() * 8 - 4];
+    const stops = Array.from({ length: N }, () => [jolt(), jolt(), jolt()]);
+    const base = [[2, 32], [296, 6], [70, 74]];
+    const t0 = performance.now();
+    let raf = 0;
+    const tick = (now: number) => {
+      // rAF 首帧的 timestamp（帧 vsync 时刻）可早于 effect 里取的 t0 几毫秒——负 t 会让
+      // Math.floor 得 -1、stops[-1] 直接炸死整个循环，必须钳到 0
+      const t = Math.max(0, now - t0) / SEG_MS;
+      const i = Math.floor(t) % N;
+      const f0 = t - Math.floor(t);
+      const f = f0 * f0 * (3 - 2 * f0); // smoothstep：进出站减速，保留「到站」节奏
+      const a = stops[i], b = stops[(i + 1) % N];
+      const p = base.map((v, k) => [v[0] + a[k][0] + (b[k][0] - a[k][0]) * f, v[1] + a[k][1] + (b[k][1] - a[k][1]) * f]);
+      el.setAttribute('d', `M${p[0][0].toFixed(1)} ${p[0][1].toFixed(1)} L${p[1][0].toFixed(1)} ${p[1][1].toFixed(1)} L${p[2][0].toFixed(1)} ${p[2][1].toFixed(1)} Z`);
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [wobble, anim]);
+  return (
+    <motion.span
+      aria-hidden
+      className="pointer-events-none absolute"
+      style={{ zIndex: -1, ...style }}
+      initial={anim ? { clipPath: 'inset(-14% 102% -60% -5%)', opacity: 0.35 } : false}
+      animate={{ clipPath: 'inset(-14% -5% -60% -5%)', opacity: 0.8 }}
+      transition={{ duration: 0.55, delay, ease: [0.25, 0.1, 0.25, 1] }}
+    >
+      <svg viewBox="0 0 300 60" preserveAspectRatio="none" className="h-full w-full overflow-visible">
+        <path ref={pathRef} d="M2 32 L296 6 L70 74 Z" fill={fill ?? P3R.blue} />
+      </svg>
+    </motion.span>
+  );
+};
+
+export const SectionMark = ({ title, meta, variant = 'ink', marker = 'slab', tri = false, className }: { title: ReactNode; meta?: ReactNode; variant?: 'ink' | 'blue'; marker?: 'slab' | 'tri'; tri?: boolean; className?: string }) => {
   const anim = useBoldness();
   // 动效（A2）：斜块从左拉出（scaleX 0→1），节题紧随其后从左裁切揭示；D0 直接终态
   const markerMotion = {
@@ -142,7 +199,7 @@ export const SectionMark = ({ title, meta, variant = 'ink', marker = 'slab', cla
   };
   return (
     <div className={`flex items-center justify-between gap-3 ${className ?? ''}`}>
-      <div className="flex items-center gap-2">
+      <div className="relative flex items-center gap-2" style={tri ? { isolation: 'isolate' } : undefined}>
         {marker === 'tri' ? (
           <motion.span aria-hidden className="h-0 w-0 border-x-[8px] border-t-[13px] border-x-transparent" style={{ borderTopColor: P3R.blue, originX: 0 }} {...markerMotion} />
         ) : (
@@ -155,6 +212,9 @@ export const SectionMark = ({ title, meta, variant = 'ink', marker = 'slab', cla
           animate={{ clipPath: 'inset(-10% -8% -10% -3%)', x: 0 }}
           transition={{ duration: 0.38, ease: [0.25, 0.1, 0.25, 1], delay: 0.06 }}
         >{title}</motion.h3>
+        {/* 底衬三角缩小版：left 越过左侧 marker 后从文字区起笔，底角允许下探出行高；三稿：以中心顺时针 6°；
+            五稿：填色调浅（42% 蓝），避免与黑字打架 */}
+        {tri && <TitleTri delay={0.28} fill="color-mix(in srgb, var(--p3r-blue, #1b57ff) 42%, transparent)" style={{ left: 14, right: -6, top: -2, bottom: -5, transform: 'rotate(6deg)' }} />}
       </div>
       {meta}
     </div>
@@ -281,7 +341,7 @@ export const P3PageHeader = ({
         )}
         <motion.h1
           className="text-[46px] font-black italic leading-[0.95] tracking-tight"
-          style={{ color: P3R.ink, fontFamily: '"Arial Black", "Noto Sans SC Black", "Noto Sans SC", sans-serif' }}
+          style={{ color: P3R.ink, fontFamily: '"Noto Sans SC Black", "Velvet Sans SC", sans-serif' }}
           // 终态用负 inset 外扩:inset(0%) 会贴盒裁掉 Arial Black 斜体的右侧突出部(统计页标题截断根因)
           initial={anim ? { clipPath: 'inset(-8% 102% -8% -3%)', x: -10 } : false}
           animate={{ clipPath: 'inset(-8% -8% -8% -3%)', x: 0 }}
@@ -356,7 +416,7 @@ export const BigSlantTitle = ({ title, count, className, titleSuffix }: { title:
   <div className={`flex items-end justify-between gap-3 ${className ?? ''}`}>
     <h2
       className="flex items-center text-[34px] font-black italic leading-none tracking-tight"
-      style={{ color: P3R.ink, fontFamily: '"Arial Black", "Noto Sans SC Black", "Noto Sans SC", sans-serif' }}
+      style={{ color: P3R.ink, fontFamily: '"Noto Sans SC Black", "Velvet Sans SC", sans-serif' }}
     >
       {title}{titleSuffix}
     </h2>

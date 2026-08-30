@@ -1514,6 +1514,35 @@ html[data-ios-standalone="true"] {
   display: none; /* 静止的亮带只是一条莫名的白杠，D0 下整条撤掉 */
 }
 
+/* ── V27.1 按压反馈毯（p3/p4，用户："所有按钮点击时应该拥有特效"）────────────
+   毯式兜底：许多按钮带内联 transform（skewX 斜切）与内联 boxShadow（硬影），
+   CSS 里再写这两个属性必被内联压掉或把斜切砸平——所以按压效果只用
+   **独立变换属性 translate/rotate**（作用在 transform 之外，永不冲突）加 filter。
+   已有 whileTap（framer scale）的按钮会与位移自然叠加，不冲突不重复。
+   过渡（用户追加："非线性、先快后慢"）：easeOutExpo 曲线，但只发给**没有**
+   transition-* 类的按钮——带类的按钮其 transition-all/colors 自会兜住位移过渡，
+   毯式 transition 会砸掉它们的既有过渡属性表，不能碰。 */
+[data-ui-channel='p3'] :is(button, [role='button']):not([class*='transition']),
+[data-ui-channel='p4'] :is(button, [role='button']):not([class*='transition']) {
+  transition:
+    translate 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+    rotate 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+    filter 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+[data-ui-channel='p3'] :is(button, [role='button']):not(:disabled):active {
+  translate: 1px 2px; /* 顺着 P3R 斜轴方向「按进水面」 */
+  filter: brightness(0.93) saturate(1.15);
+}
+[data-ui-channel='p4'] :is(button, [role='button']):not(:disabled):active {
+  translate: 0 2px;
+  rotate: -0.7deg; /* 贴纸被按歪一瞬 */
+  filter: brightness(1.07) contrast(1.05); /* 特摄闪光感：按下瞬间提亮 */
+}
+/* D0（校直模式）：位移反馈保留（交互反馈非装饰动效），但斜轴归零口径下撤掉旋转 */
+:root[data-boldness='0'] [data-ui-channel='p4'] :is(button, [role='button']):active {
+  rotate: none;
+}
+
 /* ── 展示字重（v2.7 字体批次）：真 Black 中文面 ─────────────────────────────
    痛点根因（用户上报「Mac 上蓝/红主题字体没 Windows 好看」）：正文有 Velvet Sans SC
    变量字体兜着（100-900 真字重），但**频道标题的内联字体栈**写的是 "Noto Sans SC"——
