@@ -1523,6 +1523,13 @@ html[data-ios-standalone="true"] {
   display: none; /* 静止的亮带只是一条莫名的白杠，D0 下整条撤掉 */
 }
 
+/* ── 弹幕横飘（DanmakuLayer）：CSS 动画而非 framer——单条可用 animationPlayState
+   定格（长按反馈时），且合成器驱动不占 JS 主线程 ── */
+@keyframes velvet-danmaku-drift {
+  from { transform: translateX(60vw); }
+  to { transform: translateX(-110vw); }
+}
+
 /* ── V27.1 按压反馈毯（p3/p4，用户："所有按钮点击时应该拥有特效"）────────────
    毯式兜底：许多按钮带内联 transform（skewX 斜切）与内联 boxShadow（硬影），
    CSS 里再写这两个属性必被内联压掉或把斜切砸平——所以按压效果只用
