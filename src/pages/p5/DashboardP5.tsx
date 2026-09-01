@@ -252,7 +252,13 @@ const StarRadarP5 = ({ items, onSelect, showLabels = true }: {
     return { leftPct: (x / 360) * 100, topPct: (y / 344) * 100, tx, ty };
   };
   return (
-    <div className="relative mx-auto w-full max-w-[364px]" style={{ paddingTop: 48, paddingBottom: 44 }}>
+    // paddingTop 48 → 64（v2.7.0.5）：最上方那枚属性标签的数字会被外层
+    // `min-h-[442px] overflow-hidden` 削掉顶部 5~7px（320/375/390/430 各宽度实测恒为正）。
+    // 星随容器宽等比缩放、而标签自身高度是固定 px，两者不同步，所以任何宽度下都差这一口气；
+    // 「1」这类字上方留白多，削掉常看不出来，遇到笔画顶到上沿的字就露馅（用户口径「偶尔」）。
+    // 加 16px 净空（实测原本各宽度恒差 5~7px，且这枚数字是斜体、墨迹会探出盒外一点，
+    // 所以留够余量而不是刚好抹平），外层 min-h 同步 +16 保证底部标签不因此被挤出。
+    <div className="relative mx-auto w-full max-w-[364px]" style={{ paddingTop: 64, paddingBottom: 44 }}>
       {/* 星与标签同处一个斜切平面，标签再反变换回正（字恒水平） */}
       <div className="relative" style={{ transform: `skewX(${STAR_SKEW}deg) scaleY(${STAR_SCALEY})` }}>
         <svg viewBox="0 0 360 344" className="w-full overflow-visible" aria-hidden>
@@ -1075,7 +1081,7 @@ export const DashboardP5 = () => {
 
             {/* 五角星 ⇄ 档案：共存 + 纯位移切换（P3 框架同款交互）。
                 min-h 必须 ≥ 雷达总高（svg 348 + 上下 padding 92），否则 absolute 星层底部标签被裁 */}
-            <div ref={starSectionRef} className="relative min-h-[442px] overflow-hidden">
+            <div ref={starSectionRef} className="relative min-h-[458px] overflow-hidden">
               <motion.div
                 className="absolute inset-x-0 top-0 z-0"
                 animate={dossierAttr ? { scale: 1.4, rotate: -118, x: '12%', y: '14%', opacity: 0.1 } : { scale: 1, rotate: 0, x: '0%', y: '0%', opacity: 1 }}

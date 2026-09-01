@@ -857,7 +857,7 @@ export const DashboardP3 = () => {
           />
           {/* 五角星 ⇄ 详情：共存 + 纯位移切换（不淡入淡出，像游戏 UI 移动位置）
               星 absolute 浮在顶层、详情相对流撑开高度（内容不被裁），父只裁水平飞入 */}
-          <div ref={starSectionRef} className="relative min-h-[344px] overflow-hidden">
+          <div ref={starSectionRef} className="relative min-h-[352px] overflow-hidden">
             {/* 五角星层：选中时旋转 + 放大成深蓝大星背景（移动，非淡出；填充随 opacity 沉为衬底） */}
             <motion.div
               className="absolute inset-x-0 top-2 z-0"

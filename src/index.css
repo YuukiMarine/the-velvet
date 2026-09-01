@@ -71,8 +71,22 @@
    刻意保留的圆体）优先级更高，不受影响。后备与 P5_TITLE_FONT 同序：绝不落回圆体。
    :not(.font-medium/.font-normal)：设置页的**行标签**（「夜间模式」这类开关行）语义上
    也是 h4、但字重是 medium——那是正文层级，按用户口径继续圆体，不能被本条卷走。 */
-:root[data-ui-channel="p5"] :is(h1, h2, h3, h4, h5):not(.font-medium):not(.font-normal) {
+:root[data-ui-channel="p5"] :is(h1, h2, h3, h4, h5):not(.font-medium):not(.font-normal):not(.font-semibold):not(.font-bold) {
   font-family: 'Noto Sans SC Black', 'Velvet Sans SC', 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
+}
+/* 非 900 的标题标签改走**变量黑体面**（v2.7.0.5，用户上报「红主题今日任务字体有粗有细」）。
+   病灶：上面那条把 Black 面铺给了所有标题语义标签，而 font-family **会继承**——
+   行动页任务名是 `<h4 class="font-semibold">`（600），照样吃到这个栈。
+   'Noto Sans SC Black' 是 **900 单字重 + 101 片 unicode-range 分片 + font-display:
+   optional** 的展示面：命中已装载分片的字按 900 出（900 是它唯一的面，600 的请求
+   也只能选它），没命中的字落到后备 Velvet Sans SC——那是 100–900 变量面，会老老实实
+   渲染成 600。于是同一个任务名里「有的字 900、有的字 600」，还是两套字形。
+   实测本机只装载 6/101 片，安卓冷启更少，所以安卓上更明显。
+   正解不是调字重，是**别把 900 单字重面交给非 900 的文本**：这些标题改用 Velvet Sans SC
+   （变量 100–900 真字重，GB2312 全覆盖，无分片无回退），字重要多少就是多少，全串一致。
+   .font-medium/.font-normal 仍按原口径留给圆体，不在此列。 */
+:root[data-ui-channel="p5"] :is(h1, h2, h3, h4, h5):is(.font-semibold, .font-bold) {
+  font-family: 'Velvet Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
 }
 
 /* --color-primary-rgb：primary 的 RGB 三元组，专供 Tailwind 透明度修饰符
