@@ -1010,15 +1010,36 @@ const PageShell = ({ leaving, coveredByWipe, stageBg, stageDecor, onRevealed, ch
    * 行动页子 tab 互切（todos⇄activities 同 key 同实例）leaving 不变，effect 不重跑，
    * 阅读位置照旧不被冲掉——与旧行为一致。复活（reviving，leaving→false）也走 ②。
    */
-  const [frozenTop, setFrozenTop] = useState(0);
+  /**
+   * 离场冻结几何（v2.7.0.3 三稿）：离场瞬间量下壳的视口 rect（top/left/width），
+   * fixed 壳就钉在这个几何上——像素级复刻用户离开时看到的画面。
+   * 此前二稿用 fixed inset-x-0 top-0 + 内层 -frozenTop 位移：inset-x-0 是**视口**全宽，
+   * 而壳原本活在 main 的 px-4 / safe-area padding / md:ml-60 内容盒里——转场瞬间旧页
+   * 变宽上移、内容重排，观感就是「切换时莫名其妙的缩放」（用户上报）。量 rect 发生在
+   * 滚动复位之前（离场页 layout effect 树序先于新页，见下方注释），量到的正是离开
+   * 瞬间的几何，frozenTop/内层位移机制随之整体退役。
+   */
+  const [frozenRect, setFrozenRect] = useState<{ top: number; left: number; width: number } | null>(null);
   /** 本壳左上角的视口坐标（滚动复位后量）：垫底层里装饰复刻份的锚点校正用，见下 */
   const [shellPos, setShellPos] = useState<{ x: number; y: number } | null>(null);
   useLayoutEffect(() => {
     const root = document.getElementById('root');
     if (leaving) {
-      setFrozenTop(root ? root.scrollTop : 0);
+      // 量取必须还原到流内几何：本次 render 壳的 className 已切 fixed（style 里的
+      // frozenRect 还是 null），直接量拿到的是"无定位 fixed"的瞬态布局（宽度坍缩）。
+      // layout effect 在 paint 前同步执行——临时改回 relative 量一把再还原，肉眼无感。
+      const el = shellRef.current;
+      if (el) {
+        const prev = el.style.position;
+        el.style.position = 'relative';
+        const r = el.getBoundingClientRect();
+        el.style.position = prev;
+        setFrozenRect({ top: r.top, left: r.left, width: r.width });
+      } else {
+        setFrozenRect({ top: 0, left: 0, width: window.innerWidth });
+      }
     } else {
-      setFrozenTop(0);
+      setFrozenRect(null);
       if (root && root.scrollTop !== 0) root.scrollTop = 0;
       // 量壳位必须在滚动复位**之后**（同一 effect 保序）：壳的视口位置随滚动走
       if (origin && shellRef.current) {
@@ -1061,23 +1082,25 @@ const PageShell = ({ leaving, coveredByWipe, stageBg, stageDecor, onRevealed, ch
        * 旧页出栈 scrollHeight 骤缩、滚动位置超界 = 弹回卡死，且每次切页都有窗口。
        * 一稿用 h-screen+overflow-hidden 裁切壳，过滚是治住了，但矩形硬裁把离场页的
        * 出血装饰切出一圈空白、长页离场画面被切成一屏（用户上报「外圈方形错误裁切/
-       * 羁绊页下半方框」）。二稿正解：**fixed**——fixed 脱离滚动布局、天然不计入
-       * scrollHeight（过滚仍治），且完全不需要裁切（装饰与整页画面原样保留）。
+       * 羁绊页下半方框」）。二稿改 **fixed**——fixed 脱离滚动布局、天然不计入
+       * scrollHeight（过滚仍治），且完全不需要裁切；但 inset-x-0 是视口全宽，丢了
+       * main 内容盒的 padding，旧页转场瞬间变宽上移（「莫名其妙的缩放」）。
+       * 三稿定稿：fixed + **离场瞬间量下的视口 rect**（见 frozenRect 注释）——
+       * 壳钉在离开画面的原几何上，宽度/位置逐像素不变。
        * fixed 的包含块劫持在此无虞：本壳无 transform/clip-path（framer 只动 opacity），
        * 壳内旧页自己的 fixed 装饰仍相对视口，与原 absolute 时代行为一致。
-       * 壳顶=视口顶（scrollTop 已在新页挂载时复位 0），内层 top:-frozenTop 位移出
-       * 用户离开瞬间的那一屏。
        */
-      className={leaving ? 'pointer-events-none fixed inset-x-0 top-0 z-0' : 'relative z-[1]'}
+      className={leaving ? 'pointer-events-none fixed z-0' : 'relative z-[1]'}
+      style={leaving && frozenRect ? { top: frozenRect.top, left: frozenRect.left, width: frozenRect.width } : undefined}
       aria-hidden={leaving || undefined}
       // clip-path 不在这里声明：蒙版全程由上方 effect 手写 el.style（原生 CSS
       // transition），JSX/framer 只碰 opacity——两条通道井水不犯河水
       animate={{ opacity: leaving && (!holdStatic || forceFade) ? 0 : 1 }}
       transition={{ opacity: { duration: 0.18 } }}
     >
-      {/* 冻结位移层（恒存，避免 leaving 切换时子树 remount）：离场时把页面内容上移
-          frozenTop，让视口高的壳里露出的正是用户离开时看到的那一屏 */}
-      <div className={leaving ? 'absolute inset-x-0' : undefined} style={leaving ? { top: -frozenTop } : undefined}>
+      {/* 恒存直通层（避免 leaving 切换时子树 remount）：三稿后壳自身已钉在冻结几何上，
+          此层不再承担位移 */}
+      <div>
       {/* 擦除期给新页垫一层不透明舞台底。页面本体自己是透明的（底色由 App 根铺），
           不垫底的话圆内是"新页压在旧页上"的重影而不是擦除。
           垫层在 clip 之内（跟着圆一起长），所以不会出现整屏白幕；四周出血盖住 main
