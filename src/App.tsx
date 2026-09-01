@@ -1055,16 +1055,20 @@ const PageShell = ({ leaving, coveredByWipe, stageBg, stageDecor, onRevealed, ch
     <motion.div
       ref={shellRef}
       /**
-       * 离场壳（v2.7.0.3 传染性过滚修复）：原先是 absolute + top:-frozenTop 的**整页高**
-       * 盒子——绝对定位元素的溢出计入 #root 的 scrollHeight，于是转场在途的 520~1150ms
-       * 里滚动区被撑到旧页大小：切页后立刻快滑就能滚进透明旧页的"空白区"，旧页出栈
-       * scrollHeight 骤缩、滚动位置超界，表现为"弹回一点并卡死"，且每次切页都有这个
-       * 窗口（用户上报：菜单/羁绊修掉静态源后，首页/行动页仍复现、还会传染）。
-       * 现在改成**视口高裁切壳**（h-screen + overflow-hidden，冻结位移交给内层）：
-       * 显示的还是离开瞬间那一屏（壳顶=视口顶，内层 top:-frozenTop 位移出正确区段），
-       * 但对 scrollHeight 的贡献恒 ≤ 一屏——所有页面都 min-h-screen，永远撑不出空白。
+       * 离场壳（v2.7.0.3 传染性过滚修复，二稿）：原先是 absolute + top:-frozenTop 的
+       * **整页高**盒子——绝对定位元素的溢出计入 #root 的 scrollHeight，转场在途的
+       * 520~1150ms 里滚动区被撑到旧页大小：切页后立刻快滑就滚进透明旧页的"空白区"，
+       * 旧页出栈 scrollHeight 骤缩、滚动位置超界 = 弹回卡死，且每次切页都有窗口。
+       * 一稿用 h-screen+overflow-hidden 裁切壳，过滚是治住了，但矩形硬裁把离场页的
+       * 出血装饰切出一圈空白、长页离场画面被切成一屏（用户上报「外圈方形错误裁切/
+       * 羁绊页下半方框」）。二稿正解：**fixed**——fixed 脱离滚动布局、天然不计入
+       * scrollHeight（过滚仍治），且完全不需要裁切（装饰与整页画面原样保留）。
+       * fixed 的包含块劫持在此无虞：本壳无 transform/clip-path（framer 只动 opacity），
+       * 壳内旧页自己的 fixed 装饰仍相对视口，与原 absolute 时代行为一致。
+       * 壳顶=视口顶（scrollTop 已在新页挂载时复位 0），内层 top:-frozenTop 位移出
+       * 用户离开瞬间的那一屏。
        */
-      className={leaving ? 'pointer-events-none absolute inset-x-0 top-0 z-0 h-screen overflow-hidden' : 'relative z-[1]'}
+      className={leaving ? 'pointer-events-none fixed inset-x-0 top-0 z-0' : 'relative z-[1]'}
       aria-hidden={leaving || undefined}
       // clip-path 不在这里声明：蒙版全程由上方 effect 手写 el.style（原生 CSS
       // transition），JSX/framer 只碰 opacity——两条通道井水不犯河水
