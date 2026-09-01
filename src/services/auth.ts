@@ -353,18 +353,60 @@ export const loginWithPassword = async (
   password: string,
 ): Promise<RecordModel> => {
   if (!cloudEnabled || !pb) throw new Error('云同步未配置');
-  const id = identity.trim().toLowerCase();
-  if (!id) throw new Error('请输入 UserID 或邮箱');
+  const raw = identity.trim().toLowerCase();
+  if (!raw) throw new Error('请输入 UserID 或邮箱');
   if (!password) throw new Error('请输入密码');
-  try {
-    const authData = await pb.collection('users').authWithPassword(id, password);
-    return authData.record;
-  } catch (err) {
-    if ((err as { status?: number })?.status === 400) {
-      throw new Error('账号或密码不正确。\n若你之前仅用过邮箱验证码登录，密码是系统随机生成的——请切到「验证码」Tab，或用"忘记密码"先重置。');
+
+  /*
+   * 身份候选（v2.7.0.5d，用户上报「重置完密码 / 后台改完密码都登不进」）。
+   *
+   * PB 的 authWithPassword 只认集合 `passwordAuth.identityFields` 里列出的字段，
+   * **默认只有 email**。本仓把 UserID 存在 users.username 上，原来这里是把用户
+   * 输入的原值直接丢给 authWithPassword——服务端没把 username 列进 identityFields
+   * 的话，UserID + 正确密码永远 400，表现就是「密码怎么改都不对」，而同一个
+   * UserID 走验证码却能登（requestLoginOTP 早就先 resolveIdentityToEmail 了）。
+   * 现在密码登录也走同一套解析：UserID 先换成邮箱（邮箱一定在 identityFields 里），
+   * 解析不了（hook 未部署 / List Rule 关着）再退回原值试一次，两种服务端配置都能登。
+   */
+  const candidates: string[] = [];
+  let resolveErr: unknown = null;
+  if (!looksLikeEmail(raw)) {
+    try {
+      const email = await resolveIdentityToEmail(raw);
+      if (email && email !== raw) candidates.push(email);
+    } catch (err) {
+      resolveErr = err;
     }
-    throw err;
   }
+  candidates.push(raw);
+
+  let lastErr: unknown = null;
+  for (const id of candidates) {
+    try {
+      const authData = await pb.collection('users').authWithPassword(id, password);
+      return authData.record;
+    } catch (err) {
+      lastErr = err;
+      // 非 400（网络 / 5xx / 限流）直接抛，不要浪费第二次尝试
+      if ((err as { status?: number })?.status !== 400) throw err;
+    }
+  }
+
+  /*
+   * 400 的收尾：**不再把服务端的说法吞掉**。
+   * 原来一律替换成"账号或密码不正确"，于是「密码认证被服务端关了」「Auth API 规则
+   * 挡下未验证邮箱」「identity 压根没匹配到记录」这些完全不同的原因，用户看到的
+   * 都是同一句话，怎么查都查不下去。真实 message 附在括号里带出来。
+   */
+  const detail =
+    firstFieldMessage(lastErr) ||
+    (lastErr instanceof Error ? lastErr.message : '') ||
+    (resolveErr instanceof Error ? resolveErr.message : '');
+  throw new Error(
+    '账号或密码不正确。\n' +
+    '若你之前仅用过邮箱验证码登录，密码是系统随机生成的——请切到「验证码」Tab，或用"忘记密码"先重置。' +
+    (detail ? `\n（服务器返回：${detail}）` : ''),
+  );
 };
 
 // ── 登录 · 验证码 ─────────────────────────────────────────
