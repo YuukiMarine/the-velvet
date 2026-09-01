@@ -320,10 +320,10 @@ export function PersonaCreateModal({ isOpen, onClose }: Props) {
                           <span className="h-[12px] w-[10px]" style={{ background: P3R.cyan, clipPath: 'polygon(38% 0, 100% 0, 62% 100%, 0 100%)' }} />
                           <span className="h-[12px] w-[10px]" style={{ background: 'rgba(53,209,232,0.5)', clipPath: 'polygon(38% 0, 100% 0, 62% 100%, 0 100%)' }} />
                         </span>
-                        <div className="text-center text-[44px] font-black leading-none" style={{ color: P3R.ink, fontFamily: '"Noto Sans SC Black", "Velvet Sans SC", sans-serif' }}>吾即是汝，</div>
+                        <div className="whitespace-nowrap text-center font-black leading-none" style={{ fontSize: 'min(44px, 10.5vw)', color: P3R.ink, fontFamily: '"Noto Sans SC Black", "Velvet Sans SC", sans-serif' }}>吾即是汝，</div>
                       </div>
                       <div className="relative z-10 -mt-7 px-6 py-4" style={{ background: P3R.blue, clipPath: 'polygon(22px 0, 100% 0, calc(100% - 22px) 100%, 0 100%)', boxShadow: '0 14px 32px rgba(27,87,255,0.35)' }}>
-                        <span className="whitespace-nowrap text-[38px] font-black leading-none text-white" style={{ fontFamily: '"Noto Sans SC Black", "Velvet Sans SC", sans-serif' }}>
+                        <span className="whitespace-nowrap font-black leading-none text-white" style={{ fontSize: 'min(38px, 9.2vw)', fontFamily: '"Noto Sans SC Black", "Velvet Sans SC", sans-serif' }}>
                           汝即是<span style={{ color: P3R.cyan }}>吾</span>
                         </span>
                         <span aria-hidden className="absolute bottom-0 right-3 h-[12px] w-[18px]" style={{ background: P3R.magenta, clipPath: 'polygon(35% 0, 100% 0, 65% 100%, 0 100%)' }} />

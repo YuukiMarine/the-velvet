@@ -138,7 +138,19 @@ async function playBuffered(src: string, volume: number): Promise<void> {
     touchLRU(src, buffer);
   } else {
     buffer = (await primeBuffer(src)) ?? undefined;
-    if (!buffer) return;
+    if (!buffer) {
+      // fetch / decode 失败兜底（v2.7.0.3 iOS 实机排查）：Web Audio 管道任何一环
+      // 在 WKWebView 里翻车（capacitor:// 下的 fetch、decodeAudioData 挑剔等）都
+      // 走 HTMLAudioElement——它由 WebKit 原生媒体管道加载本地文件，成熟得多。
+      // 留一条 warn 方便 eruda 排查，不再静默吞掉。
+      console.warn('[velvet-sound] WebAudio 管道取不到 buffer，降级 <audio>：', src);
+      try {
+        const a = new Audio(src);
+        a.volume = Math.min(volume, 1);
+        void a.play();
+      } catch { /* ignore */ }
+      return;
+    }
   }
 
   try {

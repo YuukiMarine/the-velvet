@@ -922,20 +922,25 @@ export function Cooperation() {
           锚点是一个零尺寸的定位点，字以 left/top 为轴转 90°：
           局部 +x（右）→ 屏幕下，局部 +y（下）→ 屏幕左，所以字从锚点向下排、
           字身向左展开，正好贴着右边缘。 */}
+      {/* 裁切罩（v2.7.0.3 过滚修复）：rotate 后的包围盒同样计入 scrollHeight——ARCANA
+          从 top430 向下排 ~500px，空羁绊页内容底不到它，于是能滚进空白区弹回卡死
+          （全端稳定复现）。罩 inset-0 贴内容高裁掉超底部分。 */}
       {p3 && (
-        <div aria-hidden className="pointer-events-none absolute right-[-6px] top-[430px] z-0 h-0 w-0 select-none">
-          <span
-            className="absolute left-0 top-0 whitespace-nowrap font-black italic leading-none tracking-tight"
-            style={{
-              fontFamily: 'Arial, "Noto Sans SC Black", "Noto Sans SC", sans-serif',
-              fontSize: 74,
-              color: 'rgba(147,190,222,0.30)',
-              transformOrigin: 'left top',
-              transform: 'rotate(90deg)',
-            }}
-          >
-            ARCANA
-          </span>
+        <div aria-hidden className="pointer-events-none absolute inset-0 z-0 overflow-hidden">
+          <div className="absolute right-[-6px] top-[430px] h-0 w-0 select-none">
+            <span
+              className="absolute left-0 top-0 whitespace-nowrap font-black italic leading-none tracking-tight"
+              style={{
+                fontFamily: 'Arial, "Noto Sans SC Black", "Noto Sans SC", sans-serif',
+                fontSize: 74,
+                color: 'rgba(147,190,222,0.30)',
+                transformOrigin: 'left top',
+                transform: 'rotate(90deg)',
+              }}
+            >
+              ARCANA
+            </span>
+          </div>
         </div>
       )}
 

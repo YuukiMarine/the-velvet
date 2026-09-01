@@ -1,37 +1,33 @@
-// PageTitle — large Chinese title with a handwritten English subtitle watermark at bottom-right
-// The English text uses Caveat (cursive) in the primary theme color.
+// PageTitle —— neutral（自定义主题）页头：大号中文标题 + 下方手写英文注记。
+//
+// v2.7.0.3 形态改版（用户 iOS 实机上报）：原先手写英文是**绝对定位在标题右下**的
+// 水印，位置靠每页手调 enOffset——Caveat 加载失败回退系统体时字宽突变，注记直接
+// 飘离标题（"错误位移离得有点远"）。现统一为黄主题设置页同款形态：手写字放标题
+// **下方流式排布**（-mt + pl 的错位手写感），主题主色、斜体，字体栈同款
+// 'Caveat','Segoe Script',cursive（Caveat 已自托管，见 index.css）。
+// 流式布局天然不怕字体回退——宽度变了也只是原地伸缩，不会脱离标题。
 
 interface PageTitleProps {
   /** Main Chinese title */
   title: string;
-  /** Handwritten English label shown at the bottom-right in primary color */
+  /** Handwritten English label below the title */
   en: string;
-  /**
-   * 英文副标的相对位移（像素）。默认 right=-4（即 -right-1）对应大多数页面的视觉平衡；
-   * 某些英文单词（Cooperation 等）较长，可传入更正的 right 让它更往右挪
-   */
+  /** 旧接口保留（原绝对定位时代的每页微调）；流式形态下不再需要，忽略。 */
   enOffset?: { right?: number; bottom?: number };
 }
 
-export const PageTitle = ({ title, en, enOffset }: PageTitleProps) => {
-  const right = enOffset?.right ?? -4;   // 默认等价于 -right-1 (4px)
-  const bottom = enOffset?.bottom ?? -8; // 默认等价于 -bottom-2 (8px)
+export const PageTitle = ({ title, en }: PageTitleProps) => {
   return (
     <div className="relative inline-block select-none mb-1">
       <h2 className="text-3xl font-black tracking-tight text-gray-900 dark:text-white leading-none">
         {title}
       </h2>
-      <span
-        className="absolute text-lg leading-none text-primary pointer-events-none"
-        style={{
-          fontFamily: "'Caveat', cursive",
-          fontWeight: 600,
-          right,
-          bottom,
-        }}
+      <div
+        className="-mt-0.5 pl-6 text-[17px] font-bold italic leading-none text-primary pointer-events-none"
+        style={{ fontFamily: "'Caveat', 'Segoe Script', cursive" }}
       >
         {en}
-      </span>
+      </div>
     </div>
   );
 };
