@@ -1025,16 +1025,22 @@ const PageShell = ({ leaving, coveredByWipe, stageBg, stageDecor, onRevealed, ch
   useLayoutEffect(() => {
     const root = document.getElementById('root');
     if (leaving) {
-      // 量取必须还原到流内几何：本次 render 壳的 className 已切 fixed（style 里的
-      // frozenRect 还是 null），直接量拿到的是"无定位 fixed"的瞬态布局（宽度坍缩）。
-      // layout effect 在 paint 前同步执行——临时改回 relative 量一把再还原，肉眼无感。
-      const el = shellRef.current;
-      if (el) {
-        const prev = el.style.position;
-        el.style.position = 'relative';
-        const r = el.getBoundingClientRect();
-        el.style.position = prev;
-        setFrozenRect({ top: r.top, left: r.left, width: r.width });
+      // 几何从 main 的 padding box 推导，而不是量壳自己：本次 render 壳已切 fixed
+      //（直接量是坍缩瞬态），而"临时改回 relative 量一把再还原"的旧法要付两次整树
+      // 强制 reflow——恰好挤在新页挂载最忙的那次 commit 里，P5 首页这类重页的圆擦
+      // 开擦窗口被挤晚，用户感知「红主题首页转场后内容出现变慢」。
+      // 壳的流内几何 ≡ main 内容盒（PageSwitcher 是 main 唯一子、壳是其首子）：
+      // 零样式写、单次读取（这次布局 commit 后本来也要算，只是提前拿现成的）。
+      const main = document.querySelector('main');
+      if (main) {
+        const r = main.getBoundingClientRect();
+        const cs = getComputedStyle(main);
+        const padL = parseFloat(cs.paddingLeft) || 0;
+        setFrozenRect({
+          top: r.top + (parseFloat(cs.paddingTop) || 0),
+          left: r.left + padL,
+          width: main.clientWidth - padL - (parseFloat(cs.paddingRight) || 0),
+        });
       } else {
         setFrozenRect({ top: 0, left: 0, width: window.innerWidth });
       }
