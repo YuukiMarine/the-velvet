@@ -1,4 +1,5 @@
 import { motion, AnimatePresence } from 'motion/react';
+import { ModalPortal } from '@/components/ModalPortal';
 import { useEffect, useRef, useState, useCallback } from 'react';
 import type { CSSProperties } from 'react';
 import { useAppStore, DEFAULT_SUMMARY_PROMPT_PRESETS, FAMILIAR_FACE_PRESETS, toLocalDateKey, applyCustomThemeColor } from '@/store';
@@ -2832,6 +2833,10 @@ export const Settings = () => {
       </motion.button>
       )}
 
+      {/* 属性称号 / 预设命名两个确认弹窗：portal 到 body —— 页内渲染会被 PageShell
+          的 stacking context 压在底部导航之下（见 components/ModalPortal.tsx）。
+          页根的 p4/p5 毯式换肤类跟着搬：那套规则认祖先类，掉出去就是原始白卡 */}
+      <ModalPortal className={`${isP4 ? 'p4-reskin' : ''} ${p5 ? 'p5-reskin' : ''}`.trim()}>
       <AnimatePresence>
         {levelTitleModalOpen && levelTitleSuggestions && (() => {
           const attrName = settings.attributeNames[activeLevelTitleConfirmMeta.id] || activeLevelTitleConfirmMeta.defaultLabel;
@@ -3211,6 +3216,7 @@ export const Settings = () => {
           );
         })()}
       </AnimatePresence>
+      </ModalPortal>
 
       {/* 恢复默认阈值确认 —— 升 ConfirmDialog 基座（AnimatePresence 在基座内，exit 可播，根治 B14） */}
       <ConfirmDialog

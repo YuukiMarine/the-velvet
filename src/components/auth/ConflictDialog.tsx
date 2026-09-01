@@ -1,10 +1,12 @@
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useState } from 'react';
+import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { computeSyncDiff } from '@/services/sync';
 import type { SyncDiff } from '@/services/sync';
 import { useAppStore } from '@/store';
 import { useCloudStore } from '@/store/cloud';
+import { DownloadIcon, UploadIcon } from '@/components/icons';
 
 interface Props {
   isOpen: boolean;
@@ -31,6 +33,9 @@ export const ConflictDialog = ({ isOpen, onKeepLocal, onKeepCloud, onClose }: Pr
 
   const [diff, setDiff] = useState<SyncDiff | null>(null);
   const [loadingDiff, setLoadingDiff] = useState(false);
+  /** 对账读数失败（含 SDK autocancel / 离线 / 权限）；与 diff=null 一起决定是否显示"—" */
+  const [diffError, setDiffError] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
   const localUserName = useAppStore(s => s.user?.name ?? '').toString();
   const cloudUser = useCloudStore(s => s.cloudUser);
@@ -40,19 +45,34 @@ export const ConflictDialog = ({ isOpen, onKeepLocal, onKeepCloud, onClose }: Pr
     (cloudUser?.email as string | undefined) ||
     '云端档案';
 
-  // 打开时加载对比数据
+  // 打开时加载对比数据。
+  //
+  // ⚠️ 失败必须显式记账（v2.7.0.4）：这里原来只 console.warn，diff 保持 null，
+  // 而下面的呈现层是 `n ?? 0` —— 于是"读不到"被渲染成一排理直气壮的 **0**，
+  // 用户看到「本机 0 条」很可能就选"保留云端"，把新设备上刚写的数据一把抹掉。
+  // 现在读不到就是读不到：数字显示 "—"、顶上挂红字警示、给一颗重试。
   useEffect(() => {
     if (!isOpen) return;
+    let alive = true;
     setDiff(null);
     setError('');
+    setDiffError(false);
     setLoadingDiff(true);
     computeSyncDiff()
-      .then(d => setDiff(d))
+      .then(d => {
+        if (!alive) return;
+        setDiff(d);
+        // computeSyncDiff 也会**正常返回 null**（未登录 / 拿不到 userId），
+        // 同样是"没读到数"，一起走失败态
+        if (!d) setDiffError(true);
+      })
       .catch(err => {
         console.warn('[ConflictDialog] computeSyncDiff failed', err);
+        if (alive) setDiffError(true);
       })
-      .finally(() => setLoadingDiff(false));
-  }, [isOpen]);
+      .finally(() => { if (alive) setLoadingDiff(false); });
+    return () => { alive = false; };
+  }, [isOpen, reloadKey]);
 
   const handle = async (choice: 'local' | 'cloud') => {
     setError('');
@@ -158,6 +178,25 @@ export const ConflictDialog = ({ isOpen, onKeepLocal, onKeepCloud, onClose }: Pr
                 />
               </div>
 
+              {/* 读数失败：明说读不到，并把重试放在手边。绝不拿 0 冒充"读到了" */}
+              {diffError && !loadingDiff && (
+                <div
+                  className="mt-3 rounded-lg px-3 py-2 text-[11px] leading-relaxed"
+                  style={{ background: 'rgba(248,113,113,0.12)', border: '1px solid rgba(248,113,113,0.35)', color: '#fca5a5' }}
+                >
+                  没能读到两侧的条目数（网络或登录态问题）。上面的「—」表示
+                  <strong style={{ color: '#fecaca' }}>未知</strong>，不是 0；
+                  在读到数字之前，请不要凭这一屏做覆盖决定。
+                  <button
+                    onClick={() => setReloadKey(k => k + 1)}
+                    className="ml-1 underline underline-offset-2"
+                    style={{ color: '#fecaca' }}
+                  >
+                    重试
+                  </button>
+                </div>
+              )}
+
               {diff?.recommend && diff.recommend !== 'skip' && (
                 <p
                   className="mt-3 text-[11px] text-center leading-relaxed"
@@ -189,21 +228,26 @@ export const ConflictDialog = ({ isOpen, onKeepLocal, onKeepCloud, onClose }: Pr
               )}
 
               <div className="mt-5 space-y-3">
-                <ChoiceButton
-                  disabled={busy !== null}
-                  loading={busy === 'local'}
-                  onClick={() => handle('local')}
-                  title="保留本机档案"
-                  subtitle="上传覆盖云端（云端数据将被本机替换）"
-                  tone="violet"
-                />
+                {/* 文案改成"谁动、往哪动"的一句话（用户口径：原来的"X 覆盖 Y"绕）。
+                    下载在上、上传在下（与 SyncDiffDialog 同序）；两颗钮同色系
+                    **不同深浅** + 方向箭头图标——文案长得像，箭头是最快分辨方向的那一眼 */}
                 <ChoiceButton
                   disabled={busy !== null}
                   loading={busy === 'cloud'}
                   onClick={() => handle('cloud')}
-                  title="保留云端档案"
-                  subtitle="下载覆盖本机（本机数据将被云端替换）"
-                  tone="indigo"
+                  icon={<DownloadIcon className="h-[18px] w-[18px]" />}
+                  title="从云端下载并覆盖"
+                  subtitle="保留云端档案 · 本机现有数据会被替换"
+                  tone="deep"
+                />
+                <ChoiceButton
+                  disabled={busy !== null}
+                  loading={busy === 'local'}
+                  onClick={() => handle('local')}
+                  icon={<UploadIcon className="h-[18px] w-[18px]" />}
+                  title="上传本地数据覆盖云端"
+                  subtitle="保留本机档案 · 云端现有数据会被替换"
+                  tone="light"
                 />
               </div>
 
@@ -303,7 +347,9 @@ function SideColumn({
                   fontWeight: w === 'self' ? 700 : 400,
                 }}
               >
-                {loading ? '…' : n ?? 0}
+                {/* n === undefined = 没读到，显示 — 而非 0（见上方 useEffect 注释：
+                    伪造的 0 会诱导用户按"对面更多"去覆盖，直接丢数据） */}
+                {loading ? '…' : n ?? '—'}
               </span>
             </div>
           );
@@ -332,6 +378,7 @@ const ChoiceButton = ({
   disabled,
   loading,
   onClick,
+  icon,
   title,
   subtitle,
   tone,
@@ -339,14 +386,19 @@ const ChoiceButton = ({
   disabled: boolean;
   loading: boolean;
   onClick: () => void;
+  icon?: ReactNode;
   title: string;
   subtitle: string;
-  tone: 'violet' | 'indigo';
+  tone: 'light' | 'deep';
 }) => {
+  // 同一紫色系的两档深浅（原来是紫/靛两种色相，深浅几乎一样，两颗钮看着像同一颗）。
+  // 浅档配深紫墨字、深档配纸白字——不这么翻，白字压在浅紫上只有 2:1 对比度。
   const bg =
-    tone === 'violet'
-      ? 'linear-gradient(135deg, #7c3aed, #6d28d9)'
-      : 'linear-gradient(135deg, #4f46e5, #4338ca)';
+    tone === 'light'
+      ? 'linear-gradient(135deg, #c4b5fd, #a78bfa)'
+      : 'linear-gradient(135deg, #4c1d95, #35146b)';
+  const ink = tone === 'light' ? '#2e1065' : '#ffffff';
+  const subInk = tone === 'light' ? 'rgba(46,16,101,0.72)' : 'rgba(255,255,255,0.72)';
   return (
     <motion.button
       whileHover={{ scale: disabled ? 1 : 1.01 }}
@@ -356,13 +408,20 @@ const ChoiceButton = ({
       className="w-full rounded-lg overflow-hidden text-left disabled:opacity-50"
       style={{ background: bg, boxShadow: '0 4px 18px rgba(124,58,237,0.25)' }}
     >
-      <div className="px-4 py-3">
-        <div className="text-sm font-medium text-white">
-          {loading ? '处理中…' : title}
-        </div>
-        <div className="text-[11px] mt-0.5" style={{ color: 'rgba(255,255,255,0.7)' }}>
-          {subtitle}
-        </div>
+      <div className="px-4 py-3 flex items-center gap-3">
+        {icon && (
+          <span className="shrink-0" style={{ color: ink }} aria-hidden>
+            {icon}
+          </span>
+        )}
+        <span className="min-w-0">
+          <span className="block text-sm font-bold" style={{ color: ink }}>
+            {loading ? '处理中…' : title}
+          </span>
+          <span className="block text-[11px] mt-0.5" style={{ color: subInk }}>
+            {subtitle}
+          </span>
+        </span>
       </div>
     </motion.button>
   );

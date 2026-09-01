@@ -23,6 +23,8 @@ import { MYTH_POOL, mythEntryText, QUALITY_LABEL } from '@/battle/loot';
 import { blazingAttrsToday } from '@/battle/preparation';
 import { playSound } from '@/utils/feedback';
 import { slantPoly, SlantGauge, SkillGlyph } from '@/components/battle/warKit';
+import { ModalPortal } from '@/components/ModalPortal';
+import { useUiChannel } from '@/ui/useUiChannel';
 
 const ATTR_IDS: AttributeId[] = ['knowledge', 'guts', 'dexterity', 'kindness', 'charm'];
 
@@ -99,6 +101,7 @@ const MasteryStrip = ({ skill, accent, onAwaken }: { skill: PersonaSkill; accent
 };
 
 export function PersonaCodex({ attrIdx, onSelectAttr }: { attrIdx: number; onSelectAttr: (i: number) => void }) {
+  const codexChannel = useUiChannel();
   const { persona, settings, attributes, equipMask, battleState, todos, todoCompletions } = useAppStore();
   const [equipAnim, setEquipAnim] = useState<AttributeId | null>(null);
   // R18 觉醒：目标技能等级（弹层）+ 选中迷思 + 手动改名
@@ -407,7 +410,11 @@ export function PersonaCodex({ attrIdx, onSelectAttr }: { attrIdx: number; onSel
         )}
       </div>
 
-      {/* ── R18 觉醒弹层：满星技 + 一颗迷思 → 词条烧录 + 改名（可手动，留空 = 原名·觉醒） ── */}
+      {/* ── R18 觉醒弹层：满星技 + 一颗迷思 → 词条烧录 + 改名（可手动，留空 = 原名·觉醒） ──
+          portal 到 body：本组件长在战场页正文里，页内浮层被 PageShell 的 stacking
+          context 摁成 z=1，底部导航（z-40）会盖住弹层下缘（见 components/ModalPortal.tsx）。
+          战场页根带 .p5-reskin，红频道下要跟着搬，毯式换肤认祖先类。 */}
+      <ModalPortal className={codexChannel === 'p5' ? 'p5-reskin' : ''}>
       <AnimatePresence>
         {awakenTarget && (
           <motion.div
@@ -489,6 +496,7 @@ export function PersonaCodex({ attrIdx, onSelectAttr }: { attrIdx: number; onSel
           </motion.div>
         )}
       </AnimatePresence>
+      </ModalPortal>
     </div>
   );
 }

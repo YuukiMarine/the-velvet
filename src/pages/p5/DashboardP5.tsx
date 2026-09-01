@@ -13,6 +13,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { MouseEvent as ReactMouseEvent, ReactNode } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { ModalPortal } from '@/components/ModalPortal';
 import { useBoldness } from '@/utils/boldness';
 import { useAppStore, toLocalDateKey } from '@/store';
 import type { AttributeId, CallingCard } from '@/types';
@@ -1193,7 +1194,9 @@ export const DashboardP5 = () => {
           )}
         </AnimatePresence>
 
-        {/* 逆流衰减通知（纸面板 + 黑框） */}
+        {/* 逆流衰减通知（纸面板 + 黑框）。
+            portal 到 body：页内渲染会被 PageShell 的 stacking context 压在底部导航之下 */}
+        <ModalPortal>
         <AnimatePresence>
           {decayedAttrs.length > 0 && (
             <motion.div
@@ -1239,6 +1242,7 @@ export const DashboardP5 = () => {
             </motion.div>
           )}
         </AnimatePresence>
+        </ModalPortal>
 
         {/* 读屏可达的问候（视觉由拼贴标题承担） */}
         <h2 className="sr-only">{user?.name ? `${user.name}的靛蓝色房间` : '靛蓝色房间'}</h2>

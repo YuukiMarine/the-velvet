@@ -869,7 +869,9 @@ function App() {
  */
 const PAGE_HOLD_MS = 520;
 /** 圆形揭示时长（原生 CSS transition 驱动，见 PageShell 内注释） */
-const REVEAL_MS = 460;
+// 圆形擦除时长。v2.7.0.4 由 460 放缓到 540（用户口径「蒙版转场稍微慢一点点」）——
+// 与底部栏波纹的同幅放缓（HeavyTransition 的 0.45→0.53 系数）保持同步，两者是一套演出。
+const REVEAL_MS = 540;
 /** 旧路由 id todos/activities 与 actions 同页，归一避免瞬间误 remount */
 const normPageKey = (id: string) => (id === 'todos' || id === 'activities' ? 'actions' : id);
 
@@ -911,6 +913,8 @@ const PageShell = ({ leaving, coveredByWipe, stageBg, stageDecor, onRevealed, ch
    * React/framer 不参与（framer 只管这层的 opacity，按属性写入，互不相扰）。
    */
   const shellRef = useRef<HTMLDivElement>(null);
+  /** 擦除垫底层：高度在开擦前手写补到视口底，见下方 start() 注释 */
+  const backingRef = useRef<HTMLDivElement>(null);
   const [phase, setPhase] = useState<'pending' | 'revealing' | 'done'>(origin ? 'pending' : 'done');
   const phaseRef = useRef(phase);
   phaseRef.current = phase;
@@ -939,6 +943,28 @@ const PageShell = ({ leaving, coveredByWipe, stageBg, stageDecor, onRevealed, ch
       const lx = Math.round(origin.x - rect.left);
       const ly = Math.round(origin.y - rect.top);
       if (import.meta.env.DEV) console.debug('[reveal] origin=', origin, 'rect=', { l: rect.left, t: rect.top }, 'local=', { lx, ly, R });
+      /**
+       * 垫底层补到视口底（v2.7.0.4，用户上报「羁绊页底部截断依旧」的真根因）。
+       *
+       * 垫层的 JSX 几何是 `top:-40 / bottom:0` —— 贴的是**壳的高度**，而壳只有内容
+       * 那么高。空羁绊页（未添加同伴）整页只有 445px，视口 812px：擦除圆扫过
+       * 「邀请第一位同伴」按钮下方那片空白时，圆内没有任何不透明垫底，直接看穿到
+       * 还没出栈的旧页——就是那条横着的割裂线（下半截显示上一个页面），擦完旧页
+       * 淡出才恢复正常。
+       *
+       * 补法：把垫层高度顶到**视口底**（innerHeight 而非 100vh：iOS 上后者含工具条，
+       * 会多出一截）。用 height 而不是改 bottom —— top/height/bottom 同时非 auto 时
+       * bottom 被忽略，React 仍原样管着 style 里的 bottom:0，两条通道不打架。
+       * 过滚零风险：垫层文档坐标下缘 = 恰好 innerHeight（挂载时 scrollTop 已复位 0），
+       * 而舞台本来就是 min-h-screen，滚动区一寸没长。
+       */
+      const backEl = backingRef.current;
+      if (backEl) {
+        backEl.style.height = `${Math.max(
+          Math.ceil(rect.height) + 40,
+          Math.ceil(window.innerHeight - rect.top) + 40,
+        )}px`;
+      }
       el.style.transition = 'none';
       el.style.clipPath = `circle(0px at ${lx}px ${ly}px)`;
       // ⚠️ 这里不要加 will-change: clip-path（v2.7.0.2 加过、v2.7.0.3 撤回）：
@@ -1123,6 +1149,7 @@ const PageShell = ({ leaving, coveredByWipe, stageBg, stageDecor, onRevealed, ch
           回来就是用户看到的"背景错误闪烁"。 */}
       {masked && (
         <div
+          ref={backingRef}
           aria-hidden
           className="pointer-events-none absolute"
           style={{
@@ -1130,6 +1157,9 @@ const PageShell = ({ leaving, coveredByWipe, stageBg, stageDecor, onRevealed, ch
             // 裁切壳后旧页永不超底，这 2000px 的向下出血反而成了转场期的过滚源
             //（absolute 溢出计入 scrollHeight），收敛到 0；左右/顶部出血照旧（顶部与
             // 横向溢出不产生滚动区，由 main 的 overflow-x:clip 兜横向）。
+            // bottom:0 只是**下限**：短页（如空羁绊页 445px < 812px 视口）会在 start()
+            // 里被手写 height 顶到视口底，否则圆擦扫过内容下方的空白就看穿到旧页
+            //（用户上报的「邀请按钮正下方割裂」）——见 start() 内注释。
             left: -40, right: -40, top: -40, bottom: 0, zIndex: -1,
             background: measuredBg ?? stageBg,
             // 驻留淡出（见上方 backingFade 注释）：done 后 200ms 原样撑住、240ms 融走

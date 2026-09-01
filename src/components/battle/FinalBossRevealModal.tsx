@@ -13,6 +13,7 @@ import { generateFinalBoss } from '@/utils/battleAI';
 import { AttributeId } from '@/types';
 import { playSound } from '@/utils/feedback';
 import { ShadowWarningOverlay } from '@/components/battle/ShadowWarningOverlay';
+import { ModalPortal } from '@/components/ModalPortal';
 import { useBackHandler } from '@/utils/useBackHandler';
 
 interface Props {
@@ -65,8 +66,11 @@ export function FinalBossRevealModal({ isOpen, onClose }: Props) {
     }
   };
 
+  // portal 到 body：战场页活在 PageShell 的 stacking context 里，页内浮层对外
+  // 只等效 z=1，底部导航（z-40）会盖住它（用户上报「区层显形仪式被底部栏挡住」）。
+  // 见 components/ModalPortal.tsx。
   return (
-    <>
+    <ModalPortal>
       <ShadowWarningOverlay
         isOpen={warn}
         shadowName={verdict?.name ?? ''}
@@ -220,6 +224,6 @@ export function FinalBossRevealModal({ isOpen, onClose }: Props) {
           </motion.div>
         )}
       </AnimatePresence>
-    </>
+    </ModalPortal>
   );
 }

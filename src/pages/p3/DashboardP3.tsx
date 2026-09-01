@@ -13,6 +13,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { motion, AnimatePresence, useMotionValue, useTransform, animate as animateValue } from 'motion/react';
+import { ModalPortal } from '@/components/ModalPortal';
 import { useBoldness } from '@/utils/boldness';
 import { useAppStore, toLocalDateKey } from '@/store';
 import { useSkyBadge } from '@/components/sky/useSkyBadge';
@@ -961,7 +962,9 @@ export const DashboardP3 = () => {
           )}
         </AnimatePresence>
 
-        {/* 逆流衰减通知（弹窗基座复用；内容与 Dashboard 相同） */}
+        {/* 逆流衰减通知（弹窗基座复用；内容与 Dashboard 相同）。
+            portal 到 body：页内渲染会被 PageShell 的 stacking context 压在底部导航之下 */}
+        <ModalPortal>
         <AnimatePresence>
           {decayedAttrs.length > 0 && (
             <motion.div
@@ -1000,6 +1003,7 @@ export const DashboardP3 = () => {
             </motion.div>
           )}
         </AnimatePresence>
+        </ModalPortal>
 
         {/* 读屏可达的问候（视觉由上方标题承担） */}
         <h2 className="sr-only">{user?.name ? `${user.name}的靛蓝色房间` : '靛蓝色房间'}</h2>

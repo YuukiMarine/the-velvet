@@ -1,4 +1,5 @@
 import { motion, AnimatePresence } from 'motion/react';
+import { ModalPortal } from '@/components/ModalPortal';
 import { useState, useEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { useAppStore, toLocalDateKey } from '@/store';
@@ -1398,7 +1399,9 @@ export const Dashboard = () => {
         )}
       </AnimatePresence>
 
-      {/* 逆流衰减通知 */}
+      {/* 逆流衰减通知（portal 到 body：页内渲染会被 PageShell 的 stacking context
+          压在底部导航之下，见 components/ModalPortal.tsx） */}
+      <ModalPortal>
       <AnimatePresence>
         {decayedAttrs.length > 0 && (
           <motion.div
@@ -1442,6 +1445,7 @@ export const Dashboard = () => {
           </motion.div>
         )}
       </AnimatePresence>
+      </ModalPortal>
     </motion.div>
   );
 };

@@ -349,9 +349,14 @@ const WaveSliceAct = ({ midpoint, onDone }: ActProps) => {
 // rippleScale）：此前写死 px，在小窗手机上环粗得抢戏、平板上又细成线，观感不一致（用户上报）。
 // o/衰减：初始透明度压低 + 前 45% 就衰过半（旧口径 55% 处才 0.82），环到中场已经很淡——
 // 「圆环有点抢眼，衰减再快一些」（用户口径）。
+// v2.7.0.4：环宽各 +20%（34→41 / 54→65，用户口径「稍微宽一点点」）。外径不受影响——
+// 全站 box-sizing:border-box，width 就是外径，加粗只往内长，满潮直径与揭示圆仍同几何。
+// 「越扩越宽」是元素画成终态环 + 只做 scale 的自然结果（起手 ~7% 的细线 → 满潮时的
+// 全宽），这一轮把淡出关键帧再往后压（见 index.css 的 nav-ripple-fade）：最宽的那一
+// 刻原本已经淡到快看不见，观感就是"没变宽"。
 const RIPPLE_LINES = [
-  { w: 34, reach: 1.00, d: 0.50, delay: 0.00, o: 0.72 },
-  { w: 54, reach: 0.86, d: 0.62, delay: 0.07, o: 0.62 },
+  { w: 41, reach: 1.00, d: 0.50, delay: 0.00, o: 0.72 },
+  { w: 65, reach: 0.86, d: 0.62, delay: 0.07, o: 0.62 },
 ];
 
 /** 波纹配色随频道走：P3 蓝青（原口径）／P4 橙黄（黄舞台上蓝波纹是异色，用户口径）／
@@ -400,7 +405,9 @@ const WaterRippleAct = ({ midpoint, onDone, origin, channel }: ActProps & { orig
               height: dia,
               border: `${Math.round(ln.w * rippleScale)}px solid ${colors[k]}`,
               '--nr-from': Math.max(0.03, 76 / dia).toFixed(3),
-              '--nr-dur': `${Math.round(ln.d * 0.45 * 1000)}ms`,
+              // 0.45 → 0.53：整体放缓约 18%（用户口径「波纹速度稍微慢一点点」），
+              // 与 App.tsx 的 REVEAL_MS 460→540 同幅，蒙版与波纹仍是同一套节奏
+              '--nr-dur': `${Math.round(ln.d * 0.53 * 1000)}ms`,
               '--nr-delay': `${ln.delay}s`,
               '--nr-o': ln.o,
             } as CSSProperties}

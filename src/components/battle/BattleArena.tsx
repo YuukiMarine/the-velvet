@@ -28,6 +28,7 @@ import { InfiltrationOverlay } from '@/components/battle/InfiltrationOverlay';
 import { TowerRecapModal } from '@/components/battle/TowerModals';
 import { ArsenalModal, ShadowArchiveModal } from '@/components/battle/ArsenalModal';
 import { PersonaCodex } from '@/components/battle/PersonaCodex';
+import { ModalPortal } from '@/components/ModalPortal';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P3R, P3RPage, GhostWords, P3PageHeader, ShatteredStar, slantClip } from '@/components/p3r/kit';
 import { P4Sparkle, P4Magnifier, P4Scanlines, P4CautionStripes } from '@/ui/p4Kit';
@@ -1519,7 +1520,9 @@ export const BattleArena = () => {
     <AnimatePresence>
       {infiltrating && <InfiltrationOverlay onDone={() => void handleInfiltrationDone()} />}
     </AnimatePresence>
-    {/* 批4 §6.2：备战抽取 · 抽2选1（今日待办≥3 的犒赏；z 高于塔屏） */}
+    {/* 批4 §6.2：备战抽取 · 抽2选1（今日待办≥3 的犒赏；z 高于塔屏）。
+        portal 到 body：同上，页内浮层被 PageShell 摁成 z=1，压不过底导（z-40） */}
+    <ModalPortal>
     <AnimatePresence>
       {prepChoice && (
         <motion.div
@@ -1552,6 +1555,7 @@ export const BattleArena = () => {
         </motion.div>
       )}
     </AnimatePresence>
+    </ModalPortal>
     {/* 批3：装备库 + 阴影档案馆 */}
     <AnimatePresence>
       {showArsenal && <ArsenalModal open={showArsenal} onClose={() => setShowArsenal(false)} />}

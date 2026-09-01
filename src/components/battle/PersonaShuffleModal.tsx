@@ -4,6 +4,7 @@ import { useAppStore } from '@/store';
 import { AttributeId } from '@/types';
 import { reshuffleAttributePersonaAI, generateSkillsForManualPersona, generateAISkillsForPersona } from '@/utils/battleAI';
 import { triggerLightHaptic, playSound } from '@/utils/feedback';
+import { ModalPortal } from '@/components/ModalPortal';
 
 interface Props {
   isOpen: boolean;
@@ -106,7 +107,10 @@ export function PersonaShuffleModal({ isOpen, onClose }: Props) {
 
   if (!isOpen || !persona) return null;
 
+  // portal 到 body：战场页在 PageShell 的 stacking context 内，页内浮层对外只等效
+  // z=1，底部导航（z-40）会盖在上面（见 components/ModalPortal.tsx）。
   return (
+    <ModalPortal>
     <AnimatePresence>
       <motion.div
         initial={{ opacity: 0 }}
@@ -324,5 +328,6 @@ export function PersonaShuffleModal({ isOpen, onClose }: Props) {
         </motion.div>
       </motion.div>
     </AnimatePresence>
+    </ModalPortal>
   );
 }

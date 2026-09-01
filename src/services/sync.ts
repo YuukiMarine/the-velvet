@@ -335,6 +335,9 @@ export const hasCloudData = async (): Promise<boolean> => {
   try {
     const res = await pb.collection('user_data').getList(1, 1, {
       filter: `user = "${userId}"`,
+      // 同 computeSyncDiff：关掉 SDK 的同路径 autocancel。这一侧被取消的后果更重——
+      // catch 里回 false 就变成「云端没数据」，登录流程会直接判 pushed 静默推送覆盖。
+      requestKey: null,
     });
     return res.totalItems > 0;
   } catch {
@@ -833,9 +836,19 @@ export const computeSyncDiff = async (): Promise<SyncDiff | null> => {
   if (!userId) return null;
 
   // 云端：读所有 user_data 记录（含 updated 字段用于时间戳）
+  //
+  // requestKey: null（v2.7.0.4，用户上报「新设备首次登录，对账窗里条目数全是 0」）：
+  // PocketBase SDK 默认按 method+path 自动生成 requestKey，**同路径的后一个请求会
+  // 取消前一个**。登录那一下 syncOnLogin() 刚用 hasCloudData() 打过
+  // /collections/user_data/records，紧接着弹出的对账窗又打同一条路径——两者一旦
+  // 首尾相接就有一个被判 autocancel，getFullList 抛 ClientResponseError 0，
+  // 上层只 console.warn 掉，于是窗里一个数都没有（详见 ConflictDialog 的呈现修复）。
+  // 第二次登录时请求已被缓存/时序错开，所以"复现一次就好了"。全仓早有同款前科：
+  // friends / coopBonds / notifications / danmaku 都显式关过 autocancel。
   const cloudRecords = await pb.collection('user_data').getFullList({
     filter: `user = "${userId}"`,
     fields: 'key,value,updated,created',
+    requestKey: null,
   });
   const cloudByKey = new Map<string, unknown>();
   let cloudLatest: Date | null = null;

@@ -8,6 +8,7 @@ import { TAROT_BY_ID } from '@/constants/tarot';
 import { INTIMACY_LABELS, MAJOR_ARCANA_IDS, MAX_INTIMACY } from '@/utils/confidantLevels';
 import { TarotCardSVG } from '@/components/astrology/TarotCardSVG';
 import { P5Collage } from '@/components/p5r/kit';
+import { ModalPortal } from '@/components/ModalPortal';
 
 type Stage =
   | 'basic'        // 模式 + 名字（+ 在线邮箱）
@@ -244,13 +245,21 @@ export function ConfidantCreateModal({ isOpen, onClose, onCreated, onPickOnline 
   const resultCard = matchResult ? TAROT_BY_ID[matchResult.arcanaId] : null;
   const accent = resultCard?.accent || 'rgb(var(--color-bond-rgb))';
 
+  // portal 到 body：页内渲染时本弹窗被困在 PageShell 的 `relative z-[1]` 里，
+  // z-[150] 对外只等效 z=1，底部导航（z-40）照样压在它上面——结果就是 result 页
+  // （「塔罗的回响」，全流程最高的一屏）最下方那排按钮钻进底部栏底下点不到。
+  // 详见 components/ModalPortal.tsx 与 utils/zIndex.ts 的头注释。
+  // p5-reskin 跟着搬：羁绊页根带着它，弹窗原本吃的是这层毯式换肤（认祖先类）
   return (
+    <ModalPortal className={p5 ? 'p5-reskin' : ''}>
     <AnimatePresence>
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+        // 底部内边距吃安全区：result 页高到 92vh，居中后离屏底只剩 4vh(≈32px)，
+        // 刘海机的 home indicator 就压在最后那排按钮上（安全区为 0 的平台上此式退化为 p-4）
+        className="fixed inset-0 z-[150] flex items-center justify-center p-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] bg-black/60 backdrop-blur-sm"
         onClick={stage === 'matching' ? undefined : onClose}
       >
         <motion.div
@@ -753,5 +762,6 @@ export function ConfidantCreateModal({ isOpen, onClose, onCreated, onPickOnline 
         </motion.div>
       </motion.div>
     </AnimatePresence>
+    </ModalPortal>
   );
 }

@@ -4,6 +4,7 @@ import { useAppStore } from '@/store';
 import { AttributeId } from '@/types';
 import { triggerSuccessFeedback } from '@/utils/feedback';
 import { ATTR_IDS } from './weeklyGoalShared';
+import { ModalPortal } from '@/components/ModalPortal';
 
 // ── CelebrationModal ────────────────────────────────────────────────────────
 export const CelebrationModal = ({
@@ -47,7 +48,11 @@ export const CelebrationModal = ({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
 
+  // portal 到 body：本弹窗长在首页正文里（WeeklyGoalSection 的 portal 只包了另一个
+  // 浮层，它在外面），被 PageShell 的 stacking context 摁成 z=1，底部导航会盖住
+  // 下半截按钮（见 components/ModalPortal.tsx）。
   return (
+    <ModalPortal>
     <AnimatePresence>
       {isOpen && (
         <motion.div
@@ -173,5 +178,6 @@ export const CelebrationModal = ({
         </motion.div>
       )}
     </AnimatePresence>
+    </ModalPortal>
   );
 };

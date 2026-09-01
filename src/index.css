@@ -1608,17 +1608,27 @@ html[data-ios-standalone="true"] {
    透明度 45% 前缓衰、其后加速滑到 0——结束点是「已经看不见」而不是「突然拿走」。 */
 .nav-ripple {
   will-change: transform, opacity;
+  /* 缓动改**先慢后快**（v2.7.0.4 用户口径）：原来是 ease-out（起手炸开、末段拖着走），
+     现在是 ease-in 族——环先贴着原点缓缓涨开，越到外围越快，像一滴水落下后才荡出去。
+     淡出仍走 linear：跟着 scale 一起加速会在末段整条消失得太突兀。 */
   animation:
-    nav-ripple-scale var(--nr-dur, 0.34s) cubic-bezier(0.17, 0.67, 0.35, 1) var(--nr-delay, 0s) both,
+    nav-ripple-scale var(--nr-dur, 0.34s) cubic-bezier(0.55, 0.06, 0.68, 0.19) var(--nr-delay, 0s) both,
     nav-ripple-fade var(--nr-dur, 0.34s) linear var(--nr-delay, 0s) both;
 }
 @keyframes nav-ripple-scale {
   from { transform: translate(-50%, -50%) scale(var(--nr-from, 0.07)); }
   to { transform: translate(-50%, -50%) scale(1); }
 }
+/* 衰减节奏跟着新的 ease-in scale 重排（v2.7.0.4）：旧口径 45% 就衰过半，是配
+   ease-out（前段已扩到大半屏）的；换成先慢后快后，45% 时环才涨开两成，照旧衰
+   就成了「环还在原点附近就没了」。现在把衰减压到后段——慢涨期保持亮度（那正是
+   触点反馈），加速外扩时才快速淡走，末端与满潮时刻重合。
+   二稿再往后压一档（60/88）：环宽随 scale 等比，最宽的一刻恰在最后 20%，
+   上一版那里只剩 0.34 的透明度，「越扩越宽」就看不出来了（用户口径）。 */
 @keyframes nav-ripple-fade {
   0% { opacity: var(--nr-o, 0.7); }
-  45% { opacity: calc(var(--nr-o, 0.7) * 0.55); }
+  60% { opacity: calc(var(--nr-o, 0.7) * 0.88); }
+  88% { opacity: calc(var(--nr-o, 0.7) * 0.46); }
   100% { opacity: 0; }
 }
 
