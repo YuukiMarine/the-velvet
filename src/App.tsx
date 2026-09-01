@@ -1019,33 +1019,40 @@ const PageShell = ({ leaving, coveredByWipe, stageBg, stageDecor, onRevealed, ch
    * 滚动复位之前（离场页 layout effect 树序先于新页，见下方注释），量到的正是离开
    * 瞬间的几何，frozenTop/内层位移机制随之整体退役。
    */
-  const [frozenRect, setFrozenRect] = useState<{ top: number; left: number; width: number } | null>(null);
   /** 本壳左上角的视口坐标（滚动复位后量）：垫底层里装饰复刻份的锚点校正用，见下 */
   const [shellPos, setShellPos] = useState<{ x: number; y: number } | null>(null);
   useLayoutEffect(() => {
     const root = document.getElementById('root');
+    const el = shellRef.current;
     if (leaving) {
-      // 几何从 main 的 padding box 推导，而不是量壳自己：本次 render 壳已切 fixed
-      //（直接量是坍缩瞬态），而"临时改回 relative 量一把再还原"的旧法要付两次整树
-      // 强制 reflow——恰好挤在新页挂载最忙的那次 commit 里，P5 首页这类重页的圆擦
-      // 开擦窗口被挤晚，用户感知「红主题首页转场后内容出现变慢」。
-      // 壳的流内几何 ≡ main 内容盒（PageSwitcher 是 main 唯一子、壳是其首子）：
-      // 零样式写、单次读取（这次布局 commit 后本来也要算，只是提前拿现成的）。
+      // 冻结几何直接手写到 DOM，**不走 state**（v2.7.0.3 四稿）：此前 setFrozenRect 在
+      // layout effect 里 setState，React 会在 paint 前同步再渲染一整轮——新页（P5 首页
+      // 这类重树）被 double render，framer 的 stagger 入场起步被推后，再叠上圆擦的全页
+      // 重绘，真机上入场块全程停在屏外等主线程（用户截图实锤「内容晚很多才出现」）。
+      // 几何从 main 的 padding box 推导（壳的流内几何 ≡ main 内容盒：PageSwitcher 是
+      // main 唯一子、壳是其首子），零样式还原、单次读取；React 不管理 top/left/width
+      // 这几个键（style prop 从未含有），后续 re-render 不会清掉手写值。
       const main = document.querySelector('main');
-      if (main) {
-        const r = main.getBoundingClientRect();
-        const cs = getComputedStyle(main);
-        const padL = parseFloat(cs.paddingLeft) || 0;
-        setFrozenRect({
-          top: r.top + (parseFloat(cs.paddingTop) || 0),
-          left: r.left + padL,
-          width: main.clientWidth - padL - (parseFloat(cs.paddingRight) || 0),
-        });
-      } else {
-        setFrozenRect({ top: 0, left: 0, width: window.innerWidth });
+      if (el) {
+        if (main) {
+          const r = main.getBoundingClientRect();
+          const cs = getComputedStyle(main);
+          const padL = parseFloat(cs.paddingLeft) || 0;
+          el.style.top = `${r.top + (parseFloat(cs.paddingTop) || 0)}px`;
+          el.style.left = `${r.left + padL}px`;
+          el.style.width = `${main.clientWidth - padL - (parseFloat(cs.paddingRight) || 0)}px`;
+        } else {
+          el.style.top = '0px';
+          el.style.left = '0px';
+          el.style.width = '100vw';
+        }
       }
     } else {
-      setFrozenRect(null);
+      if (el) {
+        el.style.top = '';
+        el.style.left = '';
+        el.style.width = '';
+      }
       if (root && root.scrollTop !== 0) root.scrollTop = 0;
       // 量壳位必须在滚动复位**之后**（同一 effect 保序）：壳的视口位置随滚动走
       if (origin && shellRef.current) {
@@ -1091,13 +1098,13 @@ const PageShell = ({ leaving, coveredByWipe, stageBg, stageDecor, onRevealed, ch
        * 羁绊页下半方框」）。二稿改 **fixed**——fixed 脱离滚动布局、天然不计入
        * scrollHeight（过滚仍治），且完全不需要裁切；但 inset-x-0 是视口全宽，丢了
        * main 内容盒的 padding，旧页转场瞬间变宽上移（「莫名其妙的缩放」）。
-       * 三稿定稿：fixed + **离场瞬间量下的视口 rect**（见 frozenRect 注释）——
-       * 壳钉在离开画面的原几何上，宽度/位置逐像素不变。
+       * 三稿：fixed + **离场瞬间的冻结几何**（四稿起由 layout effect 直接手写
+       * top/left/width 到 DOM，不走 state，见上方 effect 注释）——壳钉在离开画面的
+       * 原几何上，宽度/位置逐像素不变。
        * fixed 的包含块劫持在此无虞：本壳无 transform/clip-path（framer 只动 opacity），
        * 壳内旧页自己的 fixed 装饰仍相对视口，与原 absolute 时代行为一致。
        */
       className={leaving ? 'pointer-events-none fixed z-0' : 'relative z-[1]'}
-      style={leaving && frozenRect ? { top: frozenRect.top, left: frozenRect.left, width: frozenRect.width } : undefined}
       aria-hidden={leaving || undefined}
       // clip-path 不在这里声明：蒙版全程由上方 effect 手写 el.style（原生 CSS
       // transition），JSX/framer 只碰 opacity——两条通道井水不犯河水
