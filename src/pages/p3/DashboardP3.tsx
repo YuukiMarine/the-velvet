@@ -58,12 +58,12 @@ const WEEKDAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
  * 蒙版——被三角覆盖到的字变暗红，三角自身在字外不显形。实现走 background-clip:text：
  * 克隆字层的背景 = 此 SVG（路径同 kit TitleTri：M2 32 L296 6 L70 74；底衬的 rotate(-1deg)
  * 直接烘进 path transform），背景只透过字形可见。底角/左角溢出 viewBox 的部分本就没有
- * 字形可染，裁掉零损失。改 TitleTri 形状或姿态时此处需同步。染色取暗红 #7a1c36
- * （八稿配色定稿：藏青字 + 暗红染，试过的白字/浅蓝投影/亮红均已裁决回退）；
+ * 字形可染，裁掉零损失。改 TitleTri 形状或姿态时此处需同步。染色取 #0e3a63——
+ * 比标题藏青 #021c36 稍浅一档的蓝（v2.7.0.2e 用户口径；此前的暗红 #7a1c36 弃用）；
  * 旋转/偏移与底衬八稿等效变换（translate(-1.6,-6.9) rotate(3°)）对应：旋转烘进
  * path，平移并进 backgroundPosition。
  */
-const TRI_MASK_URI = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 60' preserveAspectRatio='none'%3E%3Cpath d='M2 32 L296 6 L70 74 Z' transform='rotate(3 150 30)' fill='%237a1c36'/%3E%3C/svg%3E")`;
+const TRI_MASK_URI = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 60' preserveAspectRatio='none'%3E%3Cpath d='M2 32 L296 6 L70 74 Z' transform='rotate(3 150 30)' fill='%230e3a63'/%3E%3C/svg%3E")`;
 
 // ── 真实月相（月龄按 2000-01-06 18:14 UTC 新月历元 + 朔望月 29.5306 天推算）──
 const SYNODIC_DAYS = 29.530588853;

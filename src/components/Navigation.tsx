@@ -589,16 +589,23 @@ const BottomNavInner = () => {
             // P4：蓝色正圆 + 白描边 + 头顶三道黄色小放射线，不转菱形。P3R：黑猫去菱形壳——深蓝墨猫头直接坐在栏上，与四格图标同水平。
             // P5R：六边形黑基座 + 纸描边（设计稿中键形制），猫剪影转红——造型稿定、图标保猫（用户裁决）。
             style={{ rotate: isP4 || p3 || p5 ? 0 : 45, touchAction: 'none' }}
+            // v2.7.0.2 尺寸微调（用户口径）：键身各挡 +4px（负 top/ml 同步 +2px 保持圆心
+            // 不动），另有下方的隐形热区子层再向四周扩 6px——触控响应区放大的幅度大于
+            // 可见键身的放大，两者都算小调整。
             className={`absolute left-1/2 flex items-center justify-center cursor-pointer select-none ${
               isP4
-                ? '-top-3 -ml-7 w-14 h-14 rounded-full bg-[var(--ui-accent)] border-[3px] border-white text-[#131313]'
+                ? '-top-3.5 -ml-[30px] w-[60px] h-[60px] rounded-full bg-[var(--ui-accent)] border-[3px] border-white text-[#131313]'
                 : p3
-                  ? 'top-0 bottom-0 my-auto -ml-7 w-14 h-14 text-[color:var(--p3-cat,#0a1230)]'
+                  ? 'top-0 bottom-0 my-auto -ml-[30px] w-[60px] h-[60px] text-[color:var(--p3-cat,#0a1230)]'
                   : p5
-                    ? '-top-3.5 -ml-9 w-[72px] h-[68px] text-[#c00008]'
-                    : '-top-3 -ml-7 w-14 h-14 rounded-2xl bg-primary shadow-lg shadow-primary/30 text-white'
+                    ? '-top-4 -ml-[38px] w-[76px] h-[72px] text-[#c00008]'
+                    : '-top-3.5 -ml-[30px] w-[60px] h-[60px] rounded-2xl bg-primary shadow-lg shadow-primary/30 text-white'
             }`}
           >
+            {/* 隐形热区：长按 ◈ 的可触面积向四周再扩 6px（命中子元素冒泡到按钮，
+                pointerdown/up/leave 全部照常走）。透明无视觉，随外壳一起旋转无碍。
+                P4 多给 3px：inset 从 padding 盒起算，3px 边框会把扩边吃掉一半（实测 66→72）。 */}
+            <span aria-hidden className={`absolute ${isP4 ? '-inset-[9px]' : '-inset-1.5'}`} />
             {p5 && (
               // 六边形基座：纸白外圈 + 纯黑内面（设计稿中键），猫压在其上
               <span aria-hidden className="pointer-events-none absolute inset-0">
@@ -622,7 +629,8 @@ const BottomNavInner = () => {
             )}
             {/* 内层 -rotate-45 回正：菱形是壳，猫保持水平（字恒水平的图形版）；P4 圆壳 / P3 无壳 / P5 六边形壳无需回正 */}
             <span className={`${isP4 || p3 || p5 ? '' : '-rotate-45'} relative flex items-center justify-center`} aria-hidden="true">
-              <CatSilhouetteIcon className={p3 ? 'w-9 h-9' : p5 ? 'w-8 h-8' : 'w-7 h-7'} />
+              {/* P3 无壳裸猫：可见的「键」就是猫本身，键身放大在这一档体现为猫 +2px */}
+              <CatSilhouetteIcon className={p3 ? 'w-[38px] h-[38px]' : p5 ? 'w-8 h-8' : 'w-7 h-7'} />
             </span>
           </motion.button>
         </div>

@@ -11,6 +11,8 @@
  * 手势/选择逻辑在父级 RadialQuickNav（本层纯渲染）；字随碑牌倾斜属 P5 菜单语法
  * （guide §1.4 允许菜单项错位旋转），非正文不受字恒水平约束。
  */
+import { useEffect, useState } from 'react';
+import type { CSSProperties } from 'react';
 import { motion } from 'motion/react';
 import { P5Highlight } from '@/components/p5r/kit';
 import type { WheelItem } from './RadialQuickNav';
@@ -81,33 +83,50 @@ const StarFieldBackdrop = ({ origin }: { origin: { x: number; y: number } }) => 
   </div>
 );
 
-/** 打开波纹：星形描边 5 圈从 ◈ 扩散——铺到上半屏、尾段才渐隐（用户口径「多一轮、晚点消失」） */
-const StarBurstRipple = ({ origin }: { origin: { x: number; y: number } }) => (
-  <div className="pointer-events-none absolute inset-0" aria-hidden>
-    {[0, 1, 2, 3, 4].map((i) => (
-      <motion.svg
-        key={i}
-        width={160}
-        height={160}
-        viewBox="0 0 160 160"
-        className="absolute"
-        style={{ left: origin.x - 80, top: origin.y - 80, overflow: 'visible' }}
-        initial={{ scale: 0.24, opacity: 0.95 }}
-        animate={{ scale: (5.2 + i * 1.1) * S, opacity: [0.95, 0.9, 0.55, 0] }}
-        transition={{ duration: 1.15, delay: i * 0.13, ease: [0.16, 0.7, 0.35, 1], opacity: { duration: 1.15, delay: i * 0.13, times: [0, 0.55, 0.82, 1] } }}
-      >
-        <path
-          d={starD(80, 80, 74)}
-          fill="none"
-          stroke={i % 2 === 1 ? 'var(--color-primary)' : '#f4f1e8'}
-          strokeWidth={i % 2 === 1 ? 4.5 : 3}
-          strokeLinejoin="miter"
-          strokeMiterlimit={12}
-        />
-      </motion.svg>
-    ))}
-  </div>
-);
+/** 打开波纹：星形描边 5 圈从 ◈ 扩散——铺到上半屏、尾段才渐隐（用户口径「多一轮、晚点消失」）。
+ *  v2.7.1 安卓性能：framer 的 JS 逐帧 scale（放大到 ~7 倍 = 合成器反复重栅格化 MB 级纹理，
+ *  安卓上就是闪烁）改 .wheel-burst 的 CSS 合成器动画，参数逐项照搬；播完整组即卸载，
+ *  五张大纹理不再以 opacity 0 挂满轮盘生命期白占显存。 */
+const StarBurstRipple = ({ origin }: { origin: { x: number; y: number } }) => {
+  const [gone, setGone] = useState(false);
+  useEffect(() => {
+    const t = window.setTimeout(() => setGone(true), 1900); // 1.15s + 4×0.13s 延迟 + 余量
+    return () => clearTimeout(t);
+  }, []);
+  if (gone) return null;
+  return (
+    <div className="pointer-events-none absolute inset-0" aria-hidden>
+      {[0, 1, 2, 3, 4].map((i) => (
+        <svg
+          key={i}
+          width={160}
+          height={160}
+          viewBox="0 0 160 160"
+          className="wheel-burst absolute"
+          style={{
+            left: origin.x - 80,
+            top: origin.y - 80,
+            overflow: 'visible',
+            '--wb-from': 0.24,
+            '--wb-to': (5.2 + i * 1.1) * S,
+            '--wb-dur': '1.15s',
+            '--wb-delay': `${i * 0.13}s`,
+            '--wb-fade': 'wheel-burst-fade-p5',
+          } as CSSProperties}
+        >
+          <path
+            d={starD(80, 80, 74)}
+            fill="none"
+            stroke={i % 2 === 1 ? 'var(--color-primary)' : '#f4f1e8'}
+            strokeWidth={i % 2 === 1 ? 4.5 : 3}
+            strokeLinejoin="miter"
+            strokeMiterlimit={12}
+          />
+        </svg>
+      ))}
+    </div>
+  );
+};
 
 // ── 碑牌 ──────────────────────────────────────────────────────────────────
 // 五套不规则裁切轮换（用户口径「五个一模一样太板正」）：每张牌形状各异、边角锐利

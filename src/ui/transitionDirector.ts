@@ -37,13 +37,21 @@ export interface HeavyTransitionOptions {
 let listener: ((req: HeavyTransitionRequest) => boolean) | null = null;
 let seq = 0;
 
-// ── 幕布遮屏窗口：midpoint 前后屏幕被幕布完全盖住的时段 ──
-// PageSwitcher 在 midpoint 触发的切页 effect 里查询：幕布正盖着 → 旧页可以
-// **立即出栈**（原子换页），不必再淡出 0.18s——此前旧页在幕布离场时还剩半透明残影，
-// 与透明的新页互相透出来，就是「切页闪烁/重影」残留的来源之一。
-let curtainCovering = false;
-export const _setCurtainCovering = (v: boolean) => { curtainCovering = v; };
-export const isCurtainCovering = () => curtainCovering;
+// ── 幕布 midpoint 标记：原子换页的判据（v2.7.0.2d，事件驱动替代定时窗口）──
+// 旧方案「幕布遮蔽窗」是两个 setTimeout 赛跑：midpoint（如星撕 300ms）落地后，
+// 切页 commit 的被动 effect 必须在遮蔽窗关闭（星撕 340ms——只剩 40ms 余量）前跑到，
+// 否则退回旧页 0.18s 淡出——而幕布已经开始离场，半透明残影叠在新页上，就是用户
+// 上报的「偶尔切换时上一个页面闪一下」：机器越卡越容易输掉这场竞速。
+// 现在改成：幕布类演出执行 midpoint 时**当场落一枚标记**，PageSwitcher 的 effect
+// 无论被卡到多晚都消费它。判据从「effect 恰好赶上窗口」变成「这次切页是幕布
+// midpoint 引发的」——时序竞速不复存在。保鲜期 1.5s 只防一种泄漏：幕布 midpoint
+// 不改 current（如主题切换）时标记无人消费，不能让它在几分钟后污染无关切页。
+let curtainMidpointAt = 0;
+export const consumeCurtainMidpoint = (): boolean => {
+  const hit = curtainMidpointAt > 0 && Date.now() - curtainMidpointAt < 1500;
+  curtainMidpointAt = 0;
+  return hit;
+};
 
 // ── 水波纹配套：新页圆形揭示原点（App 页面壳 CircleRevealOnEnter 挂载时查询）──
 let circleReveal: { x: number; y: number; until: number } | null = null;
@@ -76,7 +84,17 @@ export const playHeavyTransition = (midpoint: () => void, opts?: HeavyTransition
     : undefined;
   // 水波纹导航：登记新页圆形揭示原点（即便 Layer 拒接降级，新页揭示仍成立）
   if (opts?.effect === 'water' && origin) circleReveal = { ...origin, until: Date.now() + 800 };
-  const accepted = listener?.({ id: ++seq, channel: currentChannel(), midpoint, effect: opts?.effect, origin }) ?? false;
+  // 幕布类演出（非 water）的 midpoint 打上原子换页标记（见 consumeCurtainMidpoint）。
+  // water 不打标：它的旧页要留下来当擦除底衬，走的是垫底路径。
+  const staged =
+    opts?.effect === 'water'
+      ? midpoint
+      : () => {
+          curtainMidpointAt = Date.now();
+          midpoint();
+        };
+  const accepted = listener?.({ id: ++seq, channel: currentChannel(), midpoint: staged, effect: opts?.effect, origin }) ?? false;
+  // 未接演出 = 没有幕布：直接执行原始 midpoint（不打标，走常规淡切）
   if (!accepted) midpoint();
   return accepted;
 };

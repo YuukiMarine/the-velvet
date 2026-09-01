@@ -28,7 +28,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { useBoldness } from '@/utils/boldness';
 import { P3R, P3RPage, GhostWords, P3PageHeader } from '@/components/p3r/kit';
-import { P5R, P5_FONT, roughQuad, P5Collage, P5Rough, P5Star, P5RPage } from '@/components/p5r/kit';
+import { P5R, P5_TITLE_FONT, roughQuad, P5Collage, P5Rough, P5Star, P5RPage } from '@/components/p5r/kit';
 import {
   generateAttributeLevelTitles,
   normalizeAttributeLevelTitles,
@@ -378,7 +378,7 @@ const SplashStyleButton = ({
           </span>
           <span className="block px-3 pb-2.5 pt-1.5">
             <span className="block text-[13px] font-black leading-tight" style={{ color: '#050505' }}>{opt.label}</span>
-            <span className="mt-0.5 block text-[10px] font-bold uppercase tracking-wide" style={{ color: active ? '#c00008' : '#6b6862' }}>{opt.sub}</span>
+            <span className="mt-0.5 block text-[10px] font-bold uppercase tracking-wide" style={{ color: active ? '#c00008' : '#6b6862', fontFamily: P5_TITLE_FONT }}>{opt.sub}</span>
           </span>
         </span>
       </motion.button>
@@ -1022,7 +1022,7 @@ export const Settings = () => {
                 <P5Star size={30} fill={P5R.red} ring2={P5R.paper} rot={-12} className="mt-1" />
               </div>
               <div className="mt-2 pl-12">
-                <span className="inline-flex select-none items-center px-3 py-1 text-[15px] font-black tracking-[0.14em]" style={{ background: P5R.paper, color: '#050505', transform: 'rotate(-1.4deg)', boxShadow: '0 0 0 2.5px #050505, 4px 4px 0 #000000', fontFamily: P5_FONT }}>
+                <span className="inline-flex select-none items-center px-3 py-1 text-[15px] font-black tracking-[0.14em]" style={{ background: P5R.paper, color: '#050505', transform: 'rotate(-1.4deg)', boxShadow: '0 0 0 2.5px #050505, 4px 4px 0 #000000', fontFamily: P5_TITLE_FONT }}>
                   S<span style={{ color: P5R.red }}>E</span>TTINGS
                 </span>
               </div>
@@ -1064,7 +1064,7 @@ export const Settings = () => {
                       <span className="relative flex items-center gap-2 py-2 pl-4 pr-9" style={{ background: P5R.red, clipPath: 'polygon(0 0, 100% 0, calc(100% - 16px) 100%, 0 100%)' }}>
                         {/* 区头图标按功能区分（v2.7 用户裁决：星标全场一个样认不出区）——底座仍是频道章 */}
                         <span aria-hidden className="shrink-0 text-white"><section.Icon className="h-4 w-4" /></span>
-                        <span className="text-[17px] font-black leading-none tracking-wide text-white" style={{ fontFamily: P5_FONT }}>{section.label}</span>
+                        <span className="text-[17px] font-black leading-none tracking-wide text-white" style={{ fontFamily: P5_TITLE_FONT }}>{section.label}</span>
                       </span>
                     </span>
                     <span className="pr-2 font-black" style={{ color: P5R.paper }}>▲</span>
@@ -1077,7 +1077,7 @@ export const Settings = () => {
                       <span aria-hidden className="flex h-8 w-8 shrink-0 items-center justify-center text-white" style={{ background: '#050505' }}>
                         <section.Icon className="h-[17px] w-[17px]" />
                       </span>
-                      <span className="flex-1 text-[16.5px] font-black" style={{ color: P5R.ink, fontFamily: P5_FONT }}>{section.label}</span>
+                      <span className="flex-1 text-[16.5px] font-black" style={{ color: P5R.ink, fontFamily: P5_TITLE_FONT }}>{section.label}</span>
                       <span aria-hidden className="h-0 w-0 border-y-[7px] border-y-transparent border-l-[11px]" style={{ borderLeftColor: '#050505' }} />
                     </span>
                   </span>
@@ -2777,7 +2777,7 @@ export const Settings = () => {
               <P5Star size={22} fill="#f8f8f6" />
             </span>
             <span className="min-w-0 flex-1">
-              <span className="block text-[17px] font-black" style={{ color: P5R.ink, fontFamily: P5_FONT }}>账号与数据</span>
+              <span className="block text-[17px] font-black" style={{ color: P5R.ink, fontFamily: P5_TITLE_FONT }}>账号与数据</span>
               <span className="mt-0.5 block text-xs font-bold" style={{ color: P5R.grey }}>云同步 · 数据管理 · 备份导出</span>
             </span>
             <span aria-hidden className="h-0 w-0 border-y-[8px] border-y-transparent border-l-[12px]" style={{ borderLeftColor: '#050505' }} />

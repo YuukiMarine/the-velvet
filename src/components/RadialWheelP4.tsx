@@ -14,6 +14,8 @@
  * 命中判定沿用父级 RadialQuickNav 的扇形分区；中心星与大字上提 0.42R
  * （◈ 贴屏底，压在其上会被屏缘切半），只挪视觉不动几何。
  */
+import { useEffect, useState } from 'react';
+import type { CSSProperties } from 'react';
 import { motion } from 'motion/react';
 import { P4Flower, P4Sparkle, P4_FLOWER_PATH } from '@/ui/p4Kit';
 import type { WheelItem } from './RadialQuickNav';
@@ -67,6 +69,7 @@ const SkyWedge = () => (
       <img
         src="/assets/terminal/p4-cloud-sky.png"
         alt=""
+        decoding="async"
         className="absolute inset-0 h-full w-full object-cover"
         style={{ objectPosition: '50% 68%', filter: 'saturate(1.18) contrast(1.06)' }}
       />
@@ -96,32 +99,48 @@ const SkyWedge = () => (
 );
 
 // ── 1 · 四角星粗波纹（长按瞬间；尖角，不要 round 的圆头）────────────────────
-const StarBurst = ({ origin }: { origin: { x: number; y: number } }) => (
-  <div className="pointer-events-none absolute inset-0" aria-hidden>
-    {[0, 1, 2, 3].map((i) => (
-      <motion.svg
-        key={i}
-        viewBox="0 0 200 200"
-        width={200}
-        height={200}
-        className="absolute"
-        style={{ left: origin.x - 100, top: origin.y - 100, overflow: 'visible' }}
-        initial={{ scale: 0.18, opacity: 0 }}
-        animate={{ scale: 3.6 + i * 1.2, opacity: [0, 0.95, 0.5, 0] }}
-        transition={{ duration: 1.05, delay: i * 0.1, ease: [0.16, 0.7, 0.35, 1], opacity: { duration: 1.05, delay: i * 0.1, times: [0, 0.1, 0.4, 0.78] } }}
-      >
-        <path
-          d={starD(100, 100, 92)}
-          fill="none"
-          stroke={i % 2 === 1 ? ORANGE : CREAM}
-          strokeWidth={i % 2 === 1 ? 16 : 12}
-          strokeLinejoin="miter"
-          strokeMiterlimit={10}
-        />
-      </motion.svg>
-    ))}
-  </div>
-);
+// v2.7.1 安卓性能：framer 的 JS 逐帧 scale 改 .wheel-burst 的 CSS 合成器动画
+// （参数逐项照搬，见 index.css 注释）；播完整组即卸载——不卸的话四张放大到
+// ~1400px 的透明纹理会以 opacity 0 挂满轮盘整个生命期，白占 GPU 显存。
+const StarBurst = ({ origin }: { origin: { x: number; y: number } }) => {
+  const [gone, setGone] = useState(false);
+  useEffect(() => {
+    const t = window.setTimeout(() => setGone(true), 1500); // 1.05s + 3×0.1s 延迟 + 余量
+    return () => clearTimeout(t);
+  }, []);
+  if (gone) return null;
+  return (
+    <div className="pointer-events-none absolute inset-0" aria-hidden>
+      {[0, 1, 2, 3].map((i) => (
+        <svg
+          key={i}
+          viewBox="0 0 200 200"
+          width={200}
+          height={200}
+          className="wheel-burst absolute"
+          style={{
+            left: origin.x - 100,
+            top: origin.y - 100,
+            overflow: 'visible',
+            '--wb-from': 0.18,
+            '--wb-to': 3.6 + i * 1.2,
+            '--wb-delay': `${i * 0.1}s`,
+            '--wb-fade': 'wheel-burst-fade-p4',
+          } as CSSProperties}
+        >
+          <path
+            d={starD(100, 100, 92)}
+            fill="none"
+            stroke={i % 2 === 1 ? ORANGE : CREAM}
+            strokeWidth={i % 2 === 1 ? 16 : 12}
+            strokeLinejoin="miter"
+            strokeMiterlimit={10}
+          />
+        </svg>
+      ))}
+    </div>
+  );
+};
 
 // ── 2 · 彩虹弧：六色同心弧，拉长到两端探进盘后/天空，平头端点 ────────────────
 const RainbowSweep = ({ origin, R }: { origin: { x: number; y: number }; R: number }) => {
@@ -153,51 +172,57 @@ const RainbowSweep = ({ origin, R }: { origin: { x: number; y: number }; R: numb
 };
 
 // ── 3 · 实心墨盘（黄粗轮缘 + 奶油刻度慢自转 + 细虚线环 + 盘面小花）──────────
-const Dial = ({ origin, R }: { origin: { x: number; y: number }; R: number }) => (
-  <motion.svg
-    aria-hidden
-    className="pointer-events-none absolute"
-    width={R * 2}
-    height={R * 2}
-    viewBox={`0 0 ${R * 2} ${R * 2}`}
-    style={{ left: origin.x - R, top: origin.y - R, overflow: 'visible' }}
-    initial={{ scale: 0.55, opacity: 0, rotate: -18 }}
-    animate={{ scale: 1, opacity: 1, rotate: 0 }}
-    transition={{ type: 'spring', stiffness: 190, damping: 20, delay: 0.14 }}
-  >
-    {/* 实心墨盘（用户口径：中间不透出天空） */}
-    <circle cx={R} cy={R} r={R * 0.985} fill={INK} />
-    {/* 黄粗轮缘 */}
-    <circle cx={R} cy={R} r={R * 0.94} fill="none" stroke={YELLOW} strokeWidth={R * 0.06} />
-    {/* 刻度：奶油细划 + 逢五黄长划，慢自转 */}
-    <motion.g style={{ transformOrigin: `${R}px ${R}px` }} animate={{ rotate: 360 }} transition={{ duration: 80, repeat: Infinity, ease: 'linear' }}>
-      {Array.from({ length: 48 }, (_, i) => {
-        const a = ((i * 7.5 - 90) * Math.PI) / 180;
-        const long = i % 4 === 0;
-        const r1 = R * (long ? 0.75 : 0.785);
-        const r2 = R * 0.865;
-        return (
-          <line
-            key={i}
-            x1={R + r1 * Math.cos(a)}
-            y1={R + r1 * Math.sin(a)}
-            x2={R + r2 * Math.cos(a)}
-            y2={R + r2 * Math.sin(a)}
-            stroke={long ? YELLOW : CREAM}
-            strokeWidth={long ? 5 : 2.5}
-          />
-        );
-      })}
-    </motion.g>
-    {/* 细虚线环（反向慢转） */}
-    <motion.g style={{ transformOrigin: `${R}px ${R}px` }} animate={{ rotate: -360 }} transition={{ duration: 110, repeat: Infinity, ease: 'linear' }}>
-      <circle cx={R} cy={R} r={R * 0.66} fill="none" stroke="rgba(255,246,208,0.55)" strokeWidth={2.5} strokeDasharray="3 7" />
-    </motion.g>
-    {/* 盘面小花（补五瓣花元素）：kit 的花 path 花心在原点、半径 ~12，按需缩放 */}
-    <g transform={`translate(${R * 0.36} ${R * 0.6}) scale(1.5) rotate(14)`}><path d={P4_FLOWER_PATH} fill={YELLOW} fillRule="nonzero" /></g>
-    <g transform={`translate(${R * 1.58} ${R * 0.68}) scale(1.15) rotate(-22)`}><path d={P4_FLOWER_PATH} fill={ORANGE} fillRule="nonzero" /></g>
-  </motion.svg>
-);
+// v2.7.1 安卓性能：两个慢转层原先是 framer 转 svg **子级 <g>**——SVG 子级的
+// transform 不进合成器，每一帧都是整张表盘重绘，轮盘开多久绘多久（用户上报
+// 黄主题长按彩蛋严重闪烁的主源之一）。拆成三张同框叠放的 svg：底盘静止，
+// 刻度/虚线环各占一张、由 CSS 动画转**整个 svg 根**——纹理各自栅格化一次，
+// 之后全程合成器，几何与原版逐像素相同。入场弹簧挪到外层 wrapper，三层同吃。
+const Dial = ({ origin, R }: { origin: { x: number; y: number }; R: number }) => {
+  const box = { width: R * 2, height: R * 2, viewBox: `0 0 ${R * 2} ${R * 2}` } as const;
+  return (
+    <motion.div
+      aria-hidden
+      className="pointer-events-none absolute"
+      style={{ left: origin.x - R, top: origin.y - R, width: R * 2, height: R * 2 }}
+      initial={{ scale: 0.55, opacity: 0, rotate: -18 }}
+      animate={{ scale: 1, opacity: 1, rotate: 0 }}
+      transition={{ type: 'spring', stiffness: 190, damping: 20, delay: 0.14 }}
+    >
+      {/* 底盘：墨盘 + 黄轮缘 + 盘面小花（静止层） */}
+      <svg {...box} className="absolute inset-0" style={{ overflow: 'visible' }}>
+        <circle cx={R} cy={R} r={R * 0.985} fill={INK} />
+        <circle cx={R} cy={R} r={R * 0.94} fill="none" stroke={YELLOW} strokeWidth={R * 0.06} />
+        {/* 盘面小花（补五瓣花元素）：kit 的花 path 花心在原点、半径 ~12，按需缩放 */}
+        <g transform={`translate(${R * 0.36} ${R * 0.6}) scale(1.5) rotate(14)`}><path d={P4_FLOWER_PATH} fill={YELLOW} fillRule="nonzero" /></g>
+        <g transform={`translate(${R * 1.58} ${R * 0.68}) scale(1.15) rotate(-22)`}><path d={P4_FLOWER_PATH} fill={ORANGE} fillRule="nonzero" /></g>
+      </svg>
+      {/* 刻度：奶油细划 + 逢五黄长划，慢自转（CSS 转整张 svg） */}
+      <svg {...box} className="p4-dial-spin absolute inset-0">
+        {Array.from({ length: 48 }, (_, i) => {
+          const a = ((i * 7.5 - 90) * Math.PI) / 180;
+          const long = i % 4 === 0;
+          const r1 = R * (long ? 0.75 : 0.785);
+          const r2 = R * 0.865;
+          return (
+            <line
+              key={i}
+              x1={R + r1 * Math.cos(a)}
+              y1={R + r1 * Math.sin(a)}
+              x2={R + r2 * Math.cos(a)}
+              y2={R + r2 * Math.sin(a)}
+              stroke={long ? YELLOW : CREAM}
+              strokeWidth={long ? 5 : 2.5}
+            />
+          );
+        })}
+      </svg>
+      {/* 细虚线环（反向慢转） */}
+      <svg {...box} className="p4-dial-spin-rev absolute inset-0">
+        <circle cx={R} cy={R} r={R * 0.66} fill="none" stroke="rgba(255,246,208,0.55)" strokeWidth={2.5} strokeDasharray="3 7" />
+      </svg>
+    </motion.div>
+  );
+};
 
 // ── 4 · 中心：奶油细圆环 + 长尖四角星 + 衬线大字 ────────────────────────────
 const Hub = ({ origin, item, R }: { origin: { x: number; y: number }; item: WheelItem | null; R: number }) => (

@@ -63,6 +63,22 @@ export const RadialQuickNav = ({ open, origin, onClose, onNavigate }: RadialQuic
   const gestureRef = useRef({ onClose, onNavigate });
   gestureRef.current = { onClose, onNavigate };
 
+  /**
+   * 开启代号（v2.7.0.3，用户上报「极短时间内触发两次，装饰全消失只剩选项」）。
+   *
+   * 根层淡出只有 0.16s，但 AnimatePresence 要等**子树所有退场动画**（碑牌/菱形徽/
+   * 天空楔的弹簧，0.5~0.9s 才收敛）全部结束才真正卸载。在这个窗口里再次长按，
+   * AnimatePresence 会**复用退场中的旧实例**：波纹的 CSS 一次性动画停在结束帧
+   * （fill both → 透明度 0，不会重播）、播完即卸的波纹组件早已 gone、退场里被设
+   * 成 none 的 pointerEvents 也一并残留——只有带 animate 的选项弹回来，正是
+   * 「只留下轮盘的选项」。每次打开换一个 key = 强制全新挂载：旧树自顾自退完，
+   * 新树从零开演，所有一次性演出（波纹/入场弹簧/CSS 动画）全部照常。
+   */
+  const genRef = useRef(0);
+  const prevOpenRef = useRef(false);
+  if (open && !prevOpenRef.current) genRef.current += 1;
+  prevOpenRef.current = open;
+
   // 手势追踪（bold 模式）：window 级 pointer 监听——手指从 ◈ 长按起从未离屏
   useEffect(() => {
     if (!open || !origin || !bold) return;
@@ -116,10 +132,14 @@ export const RadialQuickNav = ({ open, origin, onClose, onNavigate }: RadialQuic
     <AnimatePresence>
       {open && (
         <motion.div
+          key={genRef.current}
           className={`fixed inset-0 ${zClass.cutin}`}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
+          // pointerEvents:'none' 随 exit 立刻生效（非插值属性）：淡出的 0.16s 里这张
+          // 全屏遮罩还在 DOM 里，此前会把落在它身上的 pointerdown 整个吃掉——刚松手
+          // 又立刻长按 ◈ 的那一下就这么没了，表现为「一次短 CD 触发不了菜单」（用户上报）。
+          exit={{ opacity: 0, pointerEvents: 'none' }}
           transition={{ duration: 0.16 }}
           aria-label="快捷跳转轮盘"
           role="menu"
@@ -129,9 +149,14 @@ export const RadialQuickNav = ({ open, origin, onClose, onNavigate }: RadialQuic
               （…65 / 70 / 75…），72 不在表里、也没走 [0.72] 方括号，于是这层一直是全透明的，
               压暗从来没生效过。用方括号任意值写回去。
               P3 换成「以 ◈ 为心向外渐暗 + 顶部再压一道」的双层渐变：手按住的地方最亮、
-              越往外越沉，色阶拉得很开（羽化高）所以看不出圈层。 */}
+              越往外越沉，色阶拉得很开（羽化高）所以看不出圈层。
+              ⚠️ 不要在这层加 backdrop-blur（v2.7.1 摘除）：全屏 backdrop-filter 在安卓上
+              是重量级渲染面——本层还在父级的 0.16s 透明度进出场里，淡入淡出期间每帧都要
+              按整屏分辨率重算模糊；页面底下但凡有会动的东西（背景动画/战场扫描线），
+              轮盘开着的每一帧都在重算。72% 黑幕背后 2px 的模糊本就看不出来，
+              代价却是用户上报的「长按彩蛋严重闪烁」的主源之一。 */}
           <div
-            className={`absolute inset-0 backdrop-blur-[2px] ${channel === 'p3' ? '' : 'bg-black/[0.72]'}`}
+            className={`absolute inset-0 ${channel === 'p3' ? '' : 'bg-black/[0.72]'}`}
             style={
               channel === 'p3'
                 ? {
