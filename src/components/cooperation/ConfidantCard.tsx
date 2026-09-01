@@ -209,7 +209,13 @@ export function ConfidantCard({ confidant, onClick, prayer, activeShadow, onShad
                 maxBond={isMax}
                 className="font-semibold text-gray-900 dark:text-white min-w-0"
               >
-                <span className="truncate">{confidant.name}</span>
+                {/* block truncate（v2.7.0.5c，用户上报「名字最下方被裁掉几像素」）：
+                    .truncate 的 overflow:hidden 挂在**行内**元素上时，裁的是字体的
+                    内容区（ascent+descent，实测黑体 19px / 圆体 16px），而不是 24px 的
+                    行盒——line-height 多出来的那 5~8px 行距完全用不上。汉字里凡是墨迹
+                    探出字体自报 descent 的（竖钩、长撇捺），下沿就被削掉几像素，三个
+                    主题都中招。改成块级后盒高 = 行盒 24px，上下各多出几像素净空。 */}
+                <span className="block truncate">{confidant.name}</span>
               </ConfidantNameFx>
               {isOnline && (
                 <span className="text-[9px] font-bold tracking-wider px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">

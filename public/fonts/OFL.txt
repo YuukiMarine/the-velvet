@@ -14,6 +14,8 @@
 
   velvet-sans-sc.woff2   ← Noto Sans SC   (NotoSansSC-VF)
   velvet-serif-sc.v2.woff2  ← Noto Serif SC  (NotoSerifSC-VF)
+  velvet-serif-sc-ext.v1.woff2 ← Noto Serif SC（生僻字扩展层，同一母本）
+  velvet-sans-sc-ext.v1.woff2  ← Noto Sans SC（生僻字扩展层，同一母本）
 
 子集范围：
   · sans  —— GB2312 一级 + 二级汉字、应用内全部界面文案用字、拉丁字母数字与常用标点
