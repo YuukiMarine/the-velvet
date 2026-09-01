@@ -15,7 +15,8 @@ import { useBoldness } from '@/utils/boldness';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { triggerSuccessFeedback, triggerLevelFeedback } from '@/utils/feedback';
 import { TERMINAL_DANMAKU_SEEDS } from '@/constants/terminalDanmaku';
-import { listApprovedDanmaku } from '@/services/danmaku';
+import { listApprovedDanmaku, type DanmakuItem } from '@/services/danmaku';
+import { DanmakuLayer } from '@/components/danmaku/DanmakuLayer';
 import { cloudEnabled } from '@/services/pocketbase';
 import { zClass } from '@/utils/zIndex';
 import type { FateCandidate } from '@/types';
@@ -183,7 +184,7 @@ export const FateDrawSheet = ({ open, onClose }: Props) => {
   const [sources, setSources] = useState<Record<FateCandidate['kind'], boolean>>({ todo: true, wish: true, history: true });
   const [picked, setPicked] = useState<FateCandidate | null>(null);
   const [busy, setBusy] = useState(false);
-  const [approved, setApproved] = useState<string[]>([]);
+  const [approved, setApproved] = useState<DanmakuItem[]>([]);
 
   // 环境弹幕 = 官方种子 + 云端已过审（打开时拉一次；离线/未建集合静默回退种子池）
   useEffect(() => {
@@ -204,8 +205,8 @@ export const FateDrawSheet = ({ open, onClose }: Props) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, sources, phase === 'gate']);
 
-  const danmaku = useMemo(
-    () => [...TERMINAL_DANMAKU_SEEDS, ...approved].sort(() => Math.random() - 0.5).slice(0, 2),
+  const danmaku = useMemo<DanmakuItem[]>(
+    () => [...TERMINAL_DANMAKU_SEEDS.map(text => ({ id: '', text })), ...approved].sort(() => Math.random() - 0.5).slice(0, 2),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [open, approved],
   );
@@ -272,20 +273,8 @@ export const FateDrawSheet = ({ open, onClose }: Props) => {
           {sk.texture && (
             <div aria-hidden className="pointer-events-none absolute inset-0" style={{ backgroundImage: sk.texture.backgroundImage, backgroundSize: sk.texture.backgroundSize, opacity: sk.texture.opacity }} />
           )}
-          {/* 弹幕环境层（官方种子 + 云端已过审） */}
-          {bold && phase !== 'reveal' && danmaku.map((line, i) => (
-            <motion.span
-              key={`${i}-${line}`}
-              aria-hidden
-              className={`pointer-events-none absolute whitespace-nowrap ${sk.danmaku}`}
-              style={{ top: `${18 + i * 62}%` }}
-              initial={{ x: '60vw' }}
-              animate={{ x: '-110vw' }}
-              transition={{ duration: 14 + i * 5, ease: 'linear', repeat: Infinity }}
-            >
-              {line}
-            </motion.span>
-          ))}
+          {/* 弹幕环境层（官方种子 + 云端已过审；云端条目可点击举报并隐藏） */}
+          <DanmakuLayer items={danmaku} lineClassName={sk.danmaku} bold={bold && phase !== 'reveal'} topBase={18} topStep={62} durBase={14} durStep={5} />
 
           <div className="w-full max-w-sm" onMouseDown={(e) => e.stopPropagation()}>
             <AnimatePresence mode="wait">
