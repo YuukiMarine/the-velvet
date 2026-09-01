@@ -1054,15 +1054,26 @@ const PageShell = ({ leaving, coveredByWipe, stageBg, stageDecor, onRevealed, ch
   return (
     <motion.div
       ref={shellRef}
-      className={leaving ? 'pointer-events-none absolute inset-x-0 z-0' : 'relative z-[1]'}
-      // top:-frozenTop = 冻结在用户离开时的滚动位置（见上方 frozenTop 注释）
-      style={leaving ? { top: -frozenTop } : undefined}
+      /**
+       * 离场壳（v2.7.0.3 传染性过滚修复）：原先是 absolute + top:-frozenTop 的**整页高**
+       * 盒子——绝对定位元素的溢出计入 #root 的 scrollHeight，于是转场在途的 520~1150ms
+       * 里滚动区被撑到旧页大小：切页后立刻快滑就能滚进透明旧页的"空白区"，旧页出栈
+       * scrollHeight 骤缩、滚动位置超界，表现为"弹回一点并卡死"，且每次切页都有这个
+       * 窗口（用户上报：菜单/羁绊修掉静态源后，首页/行动页仍复现、还会传染）。
+       * 现在改成**视口高裁切壳**（h-screen + overflow-hidden，冻结位移交给内层）：
+       * 显示的还是离开瞬间那一屏（壳顶=视口顶，内层 top:-frozenTop 位移出正确区段），
+       * 但对 scrollHeight 的贡献恒 ≤ 一屏——所有页面都 min-h-screen，永远撑不出空白。
+       */
+      className={leaving ? 'pointer-events-none absolute inset-x-0 top-0 z-0 h-screen overflow-hidden' : 'relative z-[1]'}
       aria-hidden={leaving || undefined}
       // clip-path 不在这里声明：蒙版全程由上方 effect 手写 el.style（原生 CSS
       // transition），JSX/framer 只碰 opacity——两条通道井水不犯河水
       animate={{ opacity: leaving && (!holdStatic || forceFade) ? 0 : 1 }}
       transition={{ opacity: { duration: 0.18 } }}
     >
+      {/* 冻结位移层（恒存，避免 leaving 切换时子树 remount）：离场时把页面内容上移
+          frozenTop，让视口高的壳里露出的正是用户离开时看到的那一屏 */}
+      <div className={leaving ? 'absolute inset-x-0' : undefined} style={leaving ? { top: -frozenTop } : undefined}>
       {/* 擦除期给新页垫一层不透明舞台底。页面本体自己是透明的（底色由 App 根铺），
           不垫底的话圆内是"新页压在旧页上"的重影而不是擦除。
           垫层在 clip 之内（跟着圆一起长），所以不会出现整屏白幕；四周出血盖住 main
@@ -1075,7 +1086,11 @@ const PageShell = ({ leaving, coveredByWipe, stageBg, stageDecor, onRevealed, ch
           aria-hidden
           className="pointer-events-none absolute"
           style={{
-            left: -40, right: -40, top: -40, bottom: -2000, zIndex: -1,
+            // bottom 原是 -2000（盖住"比新页高的旧页从底部露出"）——离场壳改为视口高
+            // 裁切壳后旧页永不超底，这 2000px 的向下出血反而成了转场期的过滚源
+            //（absolute 溢出计入 scrollHeight），收敛到 0；左右/顶部出血照旧（顶部与
+            // 横向溢出不产生滚动区，由 main 的 overflow-x:clip 兜横向）。
+            left: -40, right: -40, top: -40, bottom: 0, zIndex: -1,
             background: measuredBg ?? stageBg,
             // 驻留淡出（见上方 backingFade 注释）：done 后 200ms 原样撑住、240ms 融走
             opacity: backingFade ? 0 : 1,
@@ -1109,6 +1124,7 @@ const PageShell = ({ leaving, coveredByWipe, stageBg, stageDecor, onRevealed, ch
         </div>
       )}
       {children}
+      </div>
     </motion.div>
   );
 };
