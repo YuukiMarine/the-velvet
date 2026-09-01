@@ -9,7 +9,7 @@
  * 造型铁律沿用全站 P5 口径：任何一块都不是板正矩形；未完成/次级一律纯色灰，不用透明度。
  * 装饰全部 aria-hidden + pointer-events-none；D0（boldness=0）直接给终态、零动画。
  */
-import { useId, type ReactNode } from 'react';
+import { useEffect, useId, useState, type CSSProperties, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { createPortal } from 'react-dom';
 import {
@@ -125,6 +125,69 @@ interface StageProps {
   children: ReactNode;
 }
 
+
+/** 开场三圈星涟漪（v2.7.0.2f 抽出）：framer 逐帧 scale 0.22→1.55 会让合成器反复
+ *  重栅格化三张 640px 纹理——弹窗打开那一下的闪烁来源之一（与轮盘星暴同款）。
+ *  改 .wheel-burst CSS 合成器动画（参数逐项照搬），播完整组即卸载释放显存。 */
+const StageStarRipples = () => {
+  const [gone, setGone] = useState(false);
+  useEffect(() => {
+    const t = window.setTimeout(() => setGone(true), 1900); // 1.2s + 2×0.24s 延迟 + 余量
+    return () => clearTimeout(t);
+  }, []);
+  if (gone) return null;
+  return (
+    <>
+      {[0, 1, 2].map((k) => (
+        <svg
+          key={k}
+          aria-hidden
+          viewBox="0 0 100 100"
+          width={640}
+          height={640}
+          className="wheel-burst pointer-events-none absolute left-1/2 top-1/2"
+          style={{
+            marginLeft: -320,
+            marginTop: -320,
+            '--wb-from': 0.22,
+            '--wb-to': 1.55,
+            '--wb-dur': '1.2s',
+            '--wb-delay': `${0.18 + k * 0.24}s`,
+            '--wb-fade': 'wheel-burst-fade-cutin',
+          } as CSSProperties}
+        >
+          <polygon points={starPts(50, 50, 46)} fill="none" stroke="#7d0007" strokeWidth={2.4} strokeLinejoin="miter" />
+        </svg>
+      ))}
+    </>
+  );
+};
+
+/** 集中线（v2.7.0.2f 抽出）：210vmax 的 conic 放射层是全场最大的一张纹理，
+ *  framer 逐帧 scale 一次性动画也会churn出一串重栅格化。改 CSS 关键帧
+ *  （scale/rotate/opacity 合成器三件套），播完卸载。 */
+const CollectLines = () => {
+  const [gone, setGone] = useState(false);
+  useEffect(() => {
+    const t = window.setTimeout(() => setGone(true), 1200); // 0.78s + 0.14s 延迟 + 余量
+    return () => clearTimeout(t);
+  }, []);
+  if (gone) return null;
+  return (
+    <span
+      aria-hidden
+      className="p5-collect-lines pointer-events-none absolute left-1/2 top-1/2 h-[210vmax] w-[210vmax]"
+      style={{
+        marginLeft: '-105vmax',
+        marginTop: '-105vmax',
+        background: 'repeating-conic-gradient(from 0deg at 50% 50%, #050505 0deg 2.2deg, transparent 2.2deg 9deg)',
+        WebkitMaskImage: 'radial-gradient(circle at 50% 50%, transparent 16%, #000 44%)',
+        maskImage: 'radial-gradient(circle at 50% 50%, transparent 16%, #000 44%)',
+      }}
+    />
+  );
+};
+
 const P5CutInStage = ({ isOpen, onClose, ariaLabel, autoCloseMs, onShown, maxW = 384, children }: StageProps) => {
   const containerRef = useModalA11y(isOpen, onClose);
   useBackHandler(isOpen, onClose);
@@ -155,23 +218,8 @@ const P5CutInStage = ({ isOpen, onClose, ariaLabel, autoCloseMs, onShown, maxW =
           >
             <P5RingStar size={780} step={0.085} rings={STAGE_STAR_BANDS} />
           </motion.div>
-          {/* 星形涟漪：三圈描边星接力向外扩，坐实「辐射」这件事 */}
-          {anim && [0, 1, 2].map((k) => (
-            <motion.svg
-              key={k}
-              aria-hidden
-              viewBox="0 0 100 100"
-              width={640}
-              height={640}
-              className="pointer-events-none absolute left-1/2 top-1/2"
-              style={{ marginLeft: -320, marginTop: -320 }}
-              initial={{ scale: 0.22, opacity: 0 }}
-              animate={{ scale: 1.55, opacity: [0, 0.95, 0] }}
-              transition={{ duration: 1.2, delay: 0.18 + k * 0.24, ease: 'easeOut' }}
-            >
-              <polygon points={starPts(50, 50, 46)} fill="none" stroke="#7d0007" strokeWidth={2.4} strokeLinejoin="miter" />
-            </motion.svg>
-          ))}
+          {/* 星形涟漪：三圈描边星接力向外扩，坐实「辐射」这件事（CSS 合成器版，见组件注释） */}
+          {anim && <StageStarRipples />}
           {/* 大圆环（替掉原先左上角那块网点补丁） */}
           <span aria-hidden className="pointer-events-none absolute rounded-full" style={{ left: -78, top: '8%', width: 200, height: 200, border: '14px solid #45000a' }} />
           <span aria-hidden className="pointer-events-none absolute rounded-full" style={{ left: -28, top: 'calc(8% + 52px)', width: 108, height: 108, border: '11px solid #2f2d2a' }} />
@@ -179,22 +227,7 @@ const P5CutInStage = ({ isOpen, onClose, ariaLabel, autoCloseMs, onShown, maxW =
           <span aria-hidden className="pointer-events-none absolute rounded-full" style={{ right: -18, bottom: 'calc(11% + 46px)', width: 84, height: 84, border: '9px solid #45000a' }} />
 
           {/* 集中线：从中心爆开的黑色放射条（P5 的「命中」标点） */}
-          {anim && (
-            <motion.span
-              aria-hidden
-              className="pointer-events-none absolute left-1/2 top-1/2 h-[210vmax] w-[210vmax]"
-              style={{
-                marginLeft: '-105vmax',
-                marginTop: '-105vmax',
-                background: 'repeating-conic-gradient(from 0deg at 50% 50%, #050505 0deg 2.2deg, transparent 2.2deg 9deg)',
-                WebkitMaskImage: 'radial-gradient(circle at 50% 50%, transparent 16%, #000 44%)',
-                maskImage: 'radial-gradient(circle at 50% 50%, transparent 16%, #000 44%)',
-              }}
-              initial={{ scale: 0.3, opacity: 0, rotate: 0 }}
-              animate={{ scale: [0.3, 1, 1.12], opacity: [0, 1, 0], rotate: 7 }}
-              transition={{ duration: 0.78, delay: 0.14, times: [0, 0.32, 1], ease: 'easeOut' }}
-            />
-          )}
+          {anim && <CollectLines />}
           {/* 猩红闸门：一整块红从左掠出画面，是「换幕」那一下 */}
           {anim && (
             <motion.span
@@ -281,18 +314,19 @@ export const LevelUpP5 = ({ attributeName, newLevel, isOpen, onClose }: {
           {/* 红面里的巨大同心圆环：与「今日完成」同一套——半径成 1.5 等比、线宽同比，
               整组放大 1.5× 后与初态自相似，所以 linear 循环看上去就是永远在向外扩散，
               没有接缝。裁在板面内（bodyClassName 的 overflow-hidden）。 */}
-          <motion.svg
+          {/* v2.7.0.2f：framer 逐帧 scale 无限循环 = 合成器反复重栅格化 620px 纹理，
+              弹窗开多久闪多久（与轮盘表盘同款病灶，用户上报「疯狂闪烁」）。
+              改 .p5-rings-zoom CSS 动画：栅格化一次，之后全程合成器。 */}
+          <svg
             aria-hidden
             viewBox="0 0 200 200"
-            className="pointer-events-none absolute left-1/2 top-1/2"
+            className="p5-rings-zoom pointer-events-none absolute left-1/2 top-1/2"
             style={{ width: 620, height: 620, marginLeft: -310, marginTop: -310 }}
-            animate={anim ? { scale: [1, 1.5] } : undefined}
-            transition={anim ? { duration: 9, repeat: Infinity, ease: 'linear' } : undefined}
           >
             {[6, 9, 13.5, 20.3, 30.4, 45.6, 68.4].map((r) => (
               <circle key={r} cx="100" cy="100" r={r} fill="none" stroke="#e8464e" strokeWidth={r * 0.15} />
             ))}
-          </motion.svg>
+          </svg>
           {/* 巨星：灰影星在后、纸白星在前（稿上是错位双层） */}
           {/* 位移写进 motion 的 x（用 -translate-x-1/2 会被 motion 的 transform 覆盖掉） */}
           <motion.div
@@ -336,17 +370,15 @@ export const LevelUpP5 = ({ attributeName, newLevel, isOpen, onClose }: {
                 <span className="relative tabular-nums">Lv.{Math.max(0, newLevel - 1)}</span>
               </span>
               <span aria-hidden className="h-0 w-0 border-y-[10px] border-l-[16px] border-y-transparent" style={{ borderLeftColor: P5R.ink }} />
-              <motion.span
-                className="relative px-3.5 py-1.5 text-[30px] font-black leading-none"
+              <span
+                className="p5-lv-pulse relative px-3.5 py-1.5 text-[30px] font-black leading-none"
                 style={{ color: P5R.paper, fontFamily: P5_FONT }}
-                animate={anim ? { scale: [1, 1.08, 1] } : undefined}
-                transition={{ duration: 1.1, repeat: Infinity, repeatDelay: 0.7, delay: 0.9 }}
               >
                 <span aria-hidden className="absolute inset-0" style={{ transform: 'translate(3px,4px)', background: P5R.ink, clipPath: roughQuad(417, 5) }} />
                 <span aria-hidden className="absolute inset-0" style={{ background: P5R.paper, clipPath: roughQuad(418, 4) }} />
                 <span aria-hidden className="absolute inset-[3px]" style={{ background: P5R.redHot, clipPath: roughQuad(419, 3) }} />
                 <span className="relative tabular-nums">Lv.{newLevel}</span>
-              </motion.span>
+              </span>
             </motion.div>
 
             {/* 底部纸带（左端尖角） */}
@@ -404,17 +436,16 @@ export const TodoCompleteP5 = ({ isOpen, onClose, title, totalPoints, unlockHint
           {/* 半径成 1.5 等比 + 线宽同比 → 整组放大 1.5× 后与初态自相似，
               所以 linear 循环看上去就是「永远在向外扩散的同心圆环」，没有接缝 */}
           <span aria-hidden className="pointer-events-none absolute inset-[7px] overflow-hidden" style={{ clipPath: TODO_PANEL_SHAPE }}>
-            <motion.svg
+            {/* v2.7.0.2f：同升级卡——无限环改 .p5-rings-zoom 合成器动画 */}
+            <svg
               viewBox="0 0 200 200"
-              className="absolute left-1/2 top-1/2"
+              className="p5-rings-zoom absolute left-1/2 top-1/2"
               style={{ width: 640, height: 640, marginLeft: -320, marginTop: -320 }}
-              animate={anim ? { scale: [1, 1.5] } : undefined}
-              transition={anim ? { duration: 9, repeat: Infinity, ease: 'linear' } : undefined}
             >
               {[6, 9, 13.5, 20.3, 30.4, 45.6, 68.4].map((r) => (
                 <circle key={r} cx="100" cy="100" r={r} fill="none" stroke="#e8464e" strokeWidth={r * 0.15} />
               ))}
-            </motion.svg>
+            </svg>
           </span>
 
           {/* 巨星 + 黑勾：整体斜置，贴纸叠层 = 黑硬影 / 纸白不规则粗描边 / 黑粗锁边 / 纸面 */}

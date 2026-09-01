@@ -42,7 +42,11 @@ export const P5R = {
 export const P5_FONT = '"Velvet Round SC", "Noto Sans SC", "Source Han Sans SC", "Microsoft YaHei", sans-serif';
 /** P5 标题字体：思源黑体 Black 真字重打头（用户口径「左上角标题字重不够」——苹方仿粗撑不起拼贴大字），
  *  圆体兜底子集外字形。用于拼贴字块 / 段落слab / 大按钮字。 */
-export const P5_TITLE_FONT = '"Noto Sans SC Black", "Velvet Round SC", "Noto Sans SC", sans-serif';
+/** 标题/大字/数字的黑体栈。⚠️ 后备里**不能出现圆体**：分片是 font-display:optional，
+ *  没赶上 ~100ms 窗口的字整个 session 落在第一后备上——此前第一后备是 Velvet Round，
+ *  P5 全站标题于是成批变圆（用户上报）。现在落到 Velvet Sans 900（同为真 Black），
+ *  任何加载时序下标题都是黑体骨架。 */
+export const P5_TITLE_FONT = '"Noto Sans SC Black", "Velvet Sans SC", "Noto Sans SC", "Microsoft YaHei", sans-serif';
 
 // ── 确定性伪随机 ─────────────────────────────────────────────────────────────
 const mulberry = (seed: number) => {
@@ -704,7 +708,7 @@ export const P5Chip = ({ children, tone = 'red', rot = 0, className, style, onCl
   const st: CSSProperties = {
     clipPath: 'polygon(3px 0, 100% 1px, calc(100% - 3px) 100%, 0 calc(100% - 2px))',
     transform: rot ? `rotate(${rot}deg)` : undefined,
-    fontFamily: P5_FONT,
+    fontFamily: P5_TITLE_FONT, // 章体=标题件（v2.7.0.2c 用户口径：属性章/标签章走黑体）
     ...skin[tone],
     ...style,
   };

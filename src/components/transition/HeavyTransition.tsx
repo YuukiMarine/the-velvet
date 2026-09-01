@@ -14,13 +14,14 @@
  * 演出中再次触发同样拒接（midpoint 直接执行），防双层幕布。
  */
 import { useEffect, useRef, useState } from 'react';
+import type { CSSProperties } from 'react';
 import { motion } from 'motion/react';
 import { MorphSVGPlugin } from 'gsap/MorphSVGPlugin';
 import { gsap } from '@/utils/gsap';
 import { useBoldness } from '@/utils/boldness';
 import { zClass } from '@/utils/zIndex';
 import { buildStar, STAR_SPIKES } from './starPath';
-import { _registerTransitionLayer, _setCurtainCovering, type HeavyTransitionRequest } from '@/ui/transitionDirector';
+import { _registerTransitionLayer, type HeavyTransitionRequest } from '@/ui/transitionDirector';
 
 interface ActProps {
   midpoint: () => void;
@@ -33,20 +34,6 @@ const useTimeline = (steps: [number, () => void][]) => {
   useEffect(() => {
     const ids = stepsRef.current.map(([ms, fn]) => window.setTimeout(fn, ms));
     return () => ids.forEach(clearTimeout);
-  }, []);
-};
-
-/**
- * 幕布遮屏窗口登记：挂载即视为「即将全遮」（midpoint 一定发生在全遮时刻），
- * revealAtMs 到点（幕布开始离场）时解除；卸载兜底清零。
- * PageSwitcher 凭它决定旧页是否可以原子出栈（无淡出）。
- */
-const useCurtainWindow = (revealAtMs: number) => {
-  useEffect(() => {
-    _setCurtainCovering(true);
-    const id = window.setTimeout(() => _setCurtainCovering(false), revealAtMs);
-    return () => { clearTimeout(id); _setCurtainCovering(false); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 };
 
@@ -67,7 +54,6 @@ const TYT_TILES: (readonly [string, number, number, number] | null)[] = [
 ];
 
 const StarTearAct = ({ midpoint, onDone }: ActProps) => {
-  useCurtainWindow(340); // 0.34s 反撕开始离场
   const curtainRef = useRef<HTMLDivElement>(null);
   const bar1Ref = useRef<HTMLDivElement>(null);
   const bar2Ref = useRef<HTMLDivElement>(null);
@@ -212,7 +198,6 @@ const p4StarD = (() => {
 })();
 
 const WedgeCutAct = ({ midpoint, onDone }: ActProps) => {
-  useCurtainWindow(430);
   const [phase, setPhase] = useState<'in' | 'out'>('in');
   useTimeline([
     [300, midpoint],
@@ -312,7 +297,6 @@ const P3_SLATS = [
 ];
 
 const WaveSliceAct = ({ midpoint, onDone }: ActProps) => {
-  useCurtainWindow(400);
   const [phase, setPhase] = useState<'in' | 'out'>('in');
   useTimeline([
     [300, midpoint],
@@ -366,8 +350,8 @@ const WaveSliceAct = ({ midpoint, onDone }: ActProps) => {
 // o/衰减：初始透明度压低 + 前 45% 就衰过半（旧口径 55% 处才 0.82），环到中场已经很淡——
 // 「圆环有点抢眼，衰减再快一些」（用户口径）。
 const RIPPLE_LINES = [
-  { w: 32, reach: 1.00, d: 0.50, delay: 0.00, o: 0.72 },
-  { w: 52, reach: 0.86, d: 0.62, delay: 0.07, o: 0.62 },
+  { w: 34, reach: 1.00, d: 0.50, delay: 0.00, o: 0.72 },
+  { w: 54, reach: 0.86, d: 0.62, delay: 0.07, o: 0.62 },
 ];
 
 /** 波纹配色随频道走：P3 蓝青（原口径）／P4 橙黄（黄舞台上蓝波纹是异色，用户口径）／
@@ -397,30 +381,38 @@ const WaterRippleAct = ({ midpoint, onDone, origin, channel }: ActProps & { orig
   const colors = rippleColors(channel);
   return (
     <div className={`fixed inset-0 ${zClass.transition} pointer-events-none overflow-hidden`} aria-hidden>
-      {RIPPLE_LINES.map((ln, k) => (
-        <motion.span
-          key={k}
-          className="absolute rounded-full"
-          style={{ left: ox, top: oy, x: '-50%', y: '-50%', border: `${Math.round(ln.w * rippleScale)}px solid ${colors[k]}` }}
-          initial={{ width: 12, height: 12 }}
-          // 衰减包络（用户口径 v3）：起手慢衰（15% 处还剩八成——刚点下去环是实的）、
-          // 越到后越快（30% 处剩四成五）、45% 处归零，之后的外扩全程隐形。
-          // 半径是 easeOut（前载），波前约 21% 时到屏幕一半——那时环还有六七成浓度，
-          // 消失点被推后到中场偏外一点，但收尾是加速砸下去的，不拖影
-          animate={{ width: fullDia * ln.reach, height: fullDia * ln.reach, opacity: [ln.o, ln.o * 0.8, ln.o * 0.45, 0, 0] }}
-          transition={{
-            duration: ln.d, delay: ln.delay, ease: 'easeOut',
-            opacity: { duration: ln.d, delay: ln.delay, times: [0, 0.15, 0.3, 0.45, 1], ease: 'linear' },
-          }}
-        />
-      ))}
+      {RIPPLE_LINES.map((ln, k) => {
+        // 元素画成**终态环**（刹车点直径 + 终态描边宽），动画只做合成器 scale+opacity：
+        // 此前 framer 逐帧改 width/height（布局属性），切页挂载把主线程整段吃掉时
+        // 环一帧都动不了——定格成一块半透明圆盘、主线程回来后又瞬移到透明，正是
+        // 用户上报的「圆形没有缩放动画、结束后直接消失」。CSS 合成器动画在主线程
+        // 满载时照常走：起手 ~76px 小环绽出、边扩边淡、到点已全透明，卸载无感。
+        // 描边宽随 scale 等比（起手薄、扩开渐厚）：水纹越荡越宽，观感比恒宽更「水」。
+        const dia = Math.round(fullDia * ln.reach * 0.63);
+        return (
+          <span
+            key={k}
+            className="nav-ripple absolute rounded-full"
+            style={{
+              left: ox,
+              top: oy,
+              width: dia,
+              height: dia,
+              border: `${Math.round(ln.w * rippleScale)}px solid ${colors[k]}`,
+              '--nr-from': Math.max(0.03, 76 / dia).toFixed(3),
+              '--nr-dur': `${Math.round(ln.d * 0.45 * 1000)}ms`,
+              '--nr-delay': `${ln.delay}s`,
+              '--nr-o': ln.o,
+            } as CSSProperties}
+          />
+        );
+      })}
     </div>
   );
 };
 
 // ── neutral：黑幕淡切 ──────────────────────────────────────────────────────
 const FadeAct = ({ midpoint, onDone }: ActProps) => {
-  useCurtainWindow(300); // midpoint(220ms) 后留 80ms：切页 effect 在遮屏窗口内执行
   const [phase, setPhase] = useState<'in' | 'out'>('in');
   useTimeline([
     [220, () => { midpoint(); setPhase('out'); }],

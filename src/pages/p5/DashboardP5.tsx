@@ -17,7 +17,7 @@ import { useBoldness } from '@/utils/boldness';
 import { useAppStore, toLocalDateKey } from '@/store';
 import type { AttributeId, CallingCard } from '@/types';
 import {
-  P5R, P5_FONT, roughQuad, roughBanner, starPts,
+  P5R, roughQuad, roughBanner, starPts,
   P5Panel, P5Collage, P5SubBar, P5Wedge, P5Chip, P5Star, P5StarOutline, P5Burst, P5Sparkle, P5Dots, P5Slab, P5RPage, P5_TITLE_FONT,
 } from '@/components/p5r/kit';
 import { TodoCompleteModal } from '@/components/TodoCompleteModal';
@@ -280,9 +280,9 @@ const StarRadarP5 = ({ items, onSelect, showLabels = true }: {
             >
               <span className="flex items-center gap-1.5">
                 <P5Chip tone="red" rot={-2}>{it.name}</P5Chip>
-                <span className="text-[30px] font-black italic leading-none" style={{ color: P5R.white, fontFamily: P5_FONT, textShadow: '2px 2px 0 #000000' }}>{it.level}</span>
+                <span className="text-[30px] font-black italic leading-none" style={{ color: P5R.white, fontFamily: P5_TITLE_FONT, textShadow: '2px 2px 0 #000000' }}>{it.level}</span>
               </span>
-              <span className="mt-1 block text-[12px] font-bold leading-none" style={{ color: P5R.white, textShadow: '1.5px 1.5px 0 #000000' }}>{it.title}</span>
+              <span className="mt-1 block text-[12px] font-bold leading-none" style={{ color: P5R.white, fontFamily: P5_TITLE_FONT, textShadow: '1.5px 1.5px 0 #000000' }}>{it.title}</span>
             </button>
           );
         })}
@@ -340,7 +340,7 @@ const AttrDetailInlineP5 = ({ attrId, level: fallbackLevel, onBack }: { attrId: 
         animate={{ x: ['34%', '9%', '0%'], y: [44, -10, 0], scale: [0.56, 0.94, 1], transition: { duration: 0.5, ease: [0.4, 0, 0.2, 1], times: [0, 0.58, 1] } }}
         exit={{ opacity: 0, transition: { duration: 0.2 } }}
       >
-        <div className="text-[50px] font-black leading-none" style={{ color: P5R.paper, fontFamily: P5_FONT, textShadow: '4px 4px 0 #8e0000' }}>{name}</div>
+        <div className="text-[50px] font-black leading-none" style={{ color: P5R.paper, fontFamily: P5_TITLE_FONT, textShadow: '4px 4px 0 #8e0000' }}>{name}</div>
         <div className="mt-2.5 flex items-center gap-2.5">
           <span className="relative inline-flex items-baseline gap-1 px-3.5 py-1" style={{ background: P5R.red, clipPath: 'polygon(4px 0, 100% 2px, calc(100% - 4px) 100%, 0 calc(100% - 2px))', boxShadow: `3px 3px 0 ${P5R.ink}` }}>
             <span className="text-[11px] font-black tracking-wider text-white/90">LV</span>
@@ -824,7 +824,7 @@ export const DashboardP5 = () => {
                 <div className="mt-1.5 flex items-center gap-1.5">
                   {sky.mode === 'weather' ? (
                     <>
-                      <span className="truncate text-[11px] font-black leading-none" style={{ color: P5R.ink, fontFamily: P5_FONT }}>
+                      <span className="truncate text-[11px] font-black leading-none" style={{ color: P5R.ink, fontFamily: P5_TITLE_FONT }}>
                         {!sky.ready ? '去设置天气' : sky.error ? '天气取不到' : sky.loading ? '取数中…' : `${sky.weather?.temp}°C ${sky.weather?.text}`}
                       </span>
                       <span className="shrink-0 text-[9px] font-black leading-none tracking-[0.14em]" style={{ color: P5R.red }}>
@@ -833,7 +833,7 @@ export const DashboardP5 = () => {
                     </>
                   ) : (
                     <>
-                      <span className="text-[11px] font-black leading-none" style={{ color: P5R.ink, fontFamily: P5_FONT }}>{moon.name}</span>
+                      <span className="text-[11px] font-black leading-none" style={{ color: P5R.ink, fontFamily: P5_TITLE_FONT }}>{moon.name}</span>
                       <span className="text-[9px] font-black leading-none tracking-[0.14em]" style={{ color: P5R.red }}>
                         LUNAR {Math.round(moon.illum * 100)}%
                       </span>
@@ -841,7 +841,7 @@ export const DashboardP5 = () => {
                   )}
                 </div>
                 <div className="mt-1 flex items-end justify-end gap-1.5">
-                  <span className="text-[46px] font-black leading-none tabular-nums" style={{ color: P5R.redHot, fontFamily: P5_FONT }}>{now.getDate()}</span>
+                  <span className="text-[46px] font-black leading-none tabular-nums" style={{ color: P5R.redHot, fontFamily: P5_TITLE_FONT }}>{now.getDate()}</span>
                   <span className="flex flex-col items-center gap-1 pb-1">
                     <span className="text-[14px] font-black leading-none" style={{ color: P5R.ink }}>{MONTHS[now.getMonth()]}</span>
                     <span className="px-1.5 py-0.5 text-[11px] font-black leading-none text-white" style={{ background: P5R.red }}>{WEEKDAYS[now.getDay()]}</span>
@@ -1153,7 +1153,7 @@ export const DashboardP5 = () => {
                     borderTop: i >= 3 ? `2px solid ${P5R.ink}` : undefined,
                   }}
                 >
-                  <span className="text-[27px] font-black leading-none tabular-nums" style={{ color: s.color, fontFamily: P5_FONT }}>{s.v}</span>
+                  <span className="text-[27px] font-black leading-none tabular-nums" style={{ color: s.color, fontFamily: P5_TITLE_FONT }}>{s.v}</span>
                   <span className="text-center text-[11.5px] font-black leading-tight" style={{ color: P5R.ink }}>{s.label}</span>
                 </div>
               ))}

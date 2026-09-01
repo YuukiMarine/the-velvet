@@ -53,10 +53,11 @@ import { BackgroundAnimation } from '@/components/BackgroundAnimation';
 import { PWAUpdateToast } from '@/components/PWAUpdateToast';
 import { CallingCardCutIn } from '@/components/callingCard/CallingCardCutIn';
 import { isNative } from '@/utils/native';
+import { warmDisplayFontShards } from '@/utils/fontWarmup';
 import { tryHandleBack } from '@/utils/useBackHandler';
 import { initBoldnessRuntime, schedulePerfSample, setStraightenMode, useBoldness } from '@/utils/boldness';
 import { TransitionLayer } from '@/components/transition/HeavyTransition';
-import { consumePendingCircleReveal, isCurtainCovering } from '@/ui/transitionDirector';
+import { consumePendingCircleReveal, consumeCurtainMidpoint } from '@/ui/transitionDirector';
 import { P4StageDecor } from '@/ui/p4Kit';
 import { bgAnimStyles } from '@/ui/bgAnim';
 
@@ -436,6 +437,11 @@ function App() {
     } else {
       delete document.documentElement.dataset.iosStandalone;
     }
+  }, []);
+
+  // 标题字分片预热（仅原生壳，开屏期间后台拉全）：见 fontWarmup.ts 头注释
+  useEffect(() => {
+    warmDisplayFontShards();
   }, []);
 
   // 同步主题色到三个地方：
@@ -935,6 +941,10 @@ const PageShell = ({ leaving, coveredByWipe, stageBg, stageDecor, onRevealed, ch
       if (import.meta.env.DEV) console.debug('[reveal] origin=', origin, 'rect=', { l: rect.left, t: rect.top }, 'local=', { lx, ly, R });
       el.style.transition = 'none';
       el.style.clipPath = `circle(0px at ${lx}px ${ly}px)`;
+      // ⚠️ 这里不要加 will-change: clip-path（v2.7.0.2 加过、v2.7.0.3 撤回）：
+      // 它把**整页**强提成一张巨型合成层，恰在挂载最忙的瞬间要求整层重栅格化，
+      // 低端 GPU 来不及就闪未就绪的白 tile——用户复验「闪烁依旧」且形态是闪不是卡，
+      // 该层嫌疑大于收益。不提层时 clip 过渡走主线程重绘：慢帧表现为擦得钝，不闪。
       void el.offsetWidth; // 强制 reflow 钉住起点，下一条赋值才会被当作 transition 终点
       el.style.transition = `clip-path ${REVEAL_MS}ms cubic-bezier(0.3, 0, 0.2, 1)`;
       el.style.clipPath = `circle(${R}px at ${lx}px ${ly}px)`;
@@ -982,11 +992,71 @@ const PageShell = ({ leaving, coveredByWipe, stageBg, stageDecor, onRevealed, ch
     const t = setTimeout(() => setForceFade(true), 260);
     return () => clearTimeout(t);
   }, [leaving]);
-  const masked = !!origin && phase !== 'done';
+  /**
+   * 滚动复位 + 离场冻结（v2.7.0.2，用户上报「转场时上一个页面突然闪现一帧」的根因）。
+   *
+   * 旧做法是 PageSwitcher 里一个按 current 键控的 layout effect 复位 #root 滚动。
+   * 但 current 变化的那次 commit 里**页面栈还没换**（栈更新在普通 effect 里，晚一拍）：
+   * 于是存在整整一帧——旧页仍是场上唯一一页、却已被拽回 scrollTop 0，滚动过的页面
+   * 就闪出一帧自己的顶部。桌面 Chrome 常把两次 commit 合进一次 paint 看不出来，
+   * 安卓主线程慢、两次分开画，这一帧就露了（「安卓端比 chrome 更明显」的来源）。
+   *
+   * 现在两件事都搬进**换栈那次 commit**、由 PageShell 自理，并且靠兄弟间 layout effect
+   * 的树序保证先后（离场页在栈数组前面，先执行）：
+   *   ① 离场页：在滚动被复位**之前**量下 root.scrollTop，把自己钉在 top:-S ——
+   *      absolute 化后展示的正是用户离开瞬间看到的那一屏，而不是页面顶部；
+   *      擦除揭示的底衬内容从此也是对的（此前垫底的一直是旧页顶部）。
+   *   ② 新页（挂载时 leaving=false）：复位 root.scrollTop。
+   * 行动页子 tab 互切（todos⇄activities 同 key 同实例）leaving 不变，effect 不重跑，
+   * 阅读位置照旧不被冲掉——与旧行为一致。复活（reviving，leaving→false）也走 ②。
+   */
+  const [frozenTop, setFrozenTop] = useState(0);
+  /** 本壳左上角的视口坐标（滚动复位后量）：垫底层里装饰复刻份的锚点校正用，见下 */
+  const [shellPos, setShellPos] = useState<{ x: number; y: number } | null>(null);
+  useLayoutEffect(() => {
+    const root = document.getElementById('root');
+    if (leaving) {
+      setFrozenTop(root ? root.scrollTop : 0);
+    } else {
+      setFrozenTop(0);
+      if (root && root.scrollTop !== 0) root.scrollTop = 0;
+      // 量壳位必须在滚动复位**之后**（同一 effect 保序）：壳的视口位置随滚动走
+      if (origin && shellRef.current) {
+        const r = shellRef.current.getBoundingClientRect();
+        setShellPos({ x: r.left, y: r.top });
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leaving]);
+  /**
+   * 垫底层驻留淡出（v2.7.0.3，「切页闪烁」的收尾针）。
+   *
+   * 此前 done 的同一次 commit 里三件事同时发生：裁切撤除 + 垫底层卸载 + 旧页出栈。
+   * 页面本体是透明的——垫层一卸，页面底下瞬间从「垫层里的复刻舞台」换成「活舞台」，
+   * 复刻份与活层但凡有一点相位/颜色差（背景动画在低端机上会被卡出相位漂移），
+   * 这一换就是一帧全屏闪变；旧页出栈的重排也恰好挤在同一帧。
+   * 现在垫层在 done 后原样多驻留 200ms（旧页在它的不透明掩护下出栈），再用 240ms
+   * 淡出——换底从一帧硬切变成软融，相位差被摊进渐变里。垫层 pointer-events-none
+   * 且在页面内容之下（zIndex -1），驻留期间不挡任何交互。
+   */
+  const [backingFade, setBackingFade] = useState(false);
+  const [backingGone, setBackingGone] = useState(false);
+  useEffect(() => {
+    if (!origin || backingGone) return;
+    if (leaving) { setBackingGone(true); return; }
+    if (phase !== 'done') return;
+    const t1 = window.setTimeout(() => setBackingFade(true), 200);
+    const t2 = window.setTimeout(() => setBackingGone(true), 480);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, leaving]);
+  const masked = !!origin && !backingGone;
   return (
     <motion.div
       ref={shellRef}
-      className={leaving ? 'pointer-events-none absolute inset-x-0 top-0 z-0' : 'relative z-[1]'}
+      className={leaving ? 'pointer-events-none absolute inset-x-0 z-0' : 'relative z-[1]'}
+      // top:-frozenTop = 冻结在用户离开时的滚动位置（见上方 frozenTop 注释）
+      style={leaving ? { top: -frozenTop } : undefined}
       aria-hidden={leaving || undefined}
       // clip-path 不在这里声明：蒙版全程由上方 effect 手写 el.style（原生 CSS
       // transition），JSX/framer 只碰 opacity——两条通道井水不犯河水
@@ -1004,9 +1074,38 @@ const PageShell = ({ leaving, coveredByWipe, stageBg, stageDecor, onRevealed, ch
         <div
           aria-hidden
           className="pointer-events-none absolute"
-          style={{ left: -40, right: -40, top: -40, bottom: -2000, zIndex: -1, background: measuredBg ?? stageBg }}
+          style={{
+            left: -40, right: -40, top: -40, bottom: -2000, zIndex: -1,
+            background: measuredBg ?? stageBg,
+            // 驻留淡出（见上方 backingFade 注释）：done 后 200ms 原样撑住、240ms 融走
+            opacity: backingFade ? 0 : 1,
+            transition: 'opacity 0.24s linear',
+          }}
         >
-          {stageDecor}
+          {/* 复刻装饰的锚点校正（v2.7.0.2g，黄主题残余闪烁的真根因与正解）：
+              复刻份内部是 fixed inset-0，而揭示期间本壳带 clip-path——clip-path 会劫持
+              fixed 后代的包含块：复刻份被错位锚在壳上（右移/下移一个页边距+页头的量），
+              done 撤裁切的瞬间又跳回视口锚——巨弧/花剪影可见地跳一下。装饰本是全页一致
+              的静态层，正解不是遮掩跳变（v2.7.0.2f 曾改成 done 即撤+淡入，用户裁决：
+              「没必要加淡入，它们本来就不该动」），而是让复刻份**始终**与活装饰逐像素
+              重合：套一层带 transform 的包装（任何非 none 的 transform 自身就是 fixed
+              后代的包含块，裁切在与不在都轮不到壳），包装按量得的壳位反偏移、恰好铺满
+              视口——复刻份与活装饰全程重合，垫底层怎么卸怎么淡都不可见。 */}
+          {shellPos && (
+            <div
+              aria-hidden
+              style={{
+                position: 'absolute',
+                left: 40 - shellPos.x,
+                top: 40 - shellPos.y,
+                width: '100vw',
+                height: '100vh',
+                transform: 'translate(0px)',
+              }}
+            >
+              {stageDecor}
+            </div>
+          )}
         </div>
       )}
       {children}
@@ -1034,27 +1133,18 @@ const PageSwitcher = ({ current, stageBg, stageDecor, render }: {
   ]);
   const pruneTimer = useRef<number | null>(null);
   const prune = useCallback(() => setStack((prev) => (prev.some((p) => p.leaving) ? prev.filter((p) => !p.leaving) : prev)), []);
-  // 切页即把滚动容器复位到顶。#root 是唯一滚动容器，跨页不会自动归零——
-  // 从长页滚到底再切到一个不需要滚动的短页时，scrollTop 还停在老位置：新页被顶到
-  // 视口外、下面空出一大截，等旧页出栈、可滚高度塌回去才被浏览器钳回 0，看着就是
-  //「先滚到最底 + 多出空隙 → 卡一下 → 弹回顶部」（用户上报）。
-  // 用 layout effect 在同一帧 paint 前改，不会看到中间态；行动页子 tab 互切（归一后
-  // 同 key）不复位，免得切「任务⇄记录」时把用户的阅读位置冲掉。
-  const lastKeyRef = useRef(normPageKey(current));
-  useLayoutEffect(() => {
-    const key = normPageKey(current);
-    if (key === lastKeyRef.current) return;
-    lastKeyRef.current = key;
-    const root = document.getElementById('root');
-    if (root && root.scrollTop !== 0) root.scrollTop = 0;
-  }, [current]);
+  // 切页的滚动复位不在这里做了（v2.7.0.2）：按 current 键控会比换栈早一拍 commit，
+  // 那一帧旧页还是唯一在场的页、却被拽回顶部——正是「转场时上一个页面闪一帧」。
+  // 现在由 PageShell 在换栈 commit 内自理：离场页先量 scrollTop 冻结自身（top:-S），
+  // 新页挂载再复位——见 PageShell 里 frozenTop 的注释。
   useEffect(() => {
     const key = normPageKey(current);
-    // 幕布正全遮着屏（频道重转场的 midpoint 窗口）：旧页此刻整个被盖住，
-    // **原子换页**——直接只留新页，不留 leaving 垫底。旧行为是旧页淡出 0.18s，
-    // 而幕布 0.1s 后就开始离场：透明的新页叠着半透明的旧页一起露出来，
-    // 互相透出的那一下就是「切页闪烁/重影」的残留源头。
-    const atomicSwap = isCurtainCovering();
+    // 本次 current 变化是否由幕布演出的 midpoint 引发（v2.7.0.2d 事件驱动标记，
+    // 见 transitionDirector.consumeCurtainMidpoint 注释）：是 → **原子换页**，直接
+    // 只留新页、不留 leaving 垫底。旧判据「幕布此刻是否正遮着屏」是定时窗口，
+    // 本 effect 被卡到窗口外就退回旧页 0.18s 淡出——幕布已离场，半透明残影叠在
+    // 新页上，正是「偶尔切页旧页闪一下」。标记不参与竞速：effect 多晚都消费得到。
+    const atomicSwap = consumeCurtainMidpoint();
     setStack((prev) => {
       const top = prev[prev.length - 1];
       // 同页（含 todos→actions 归一）：仅同步 id，保持实例
@@ -1078,9 +1168,15 @@ const PageSwitcher = ({ current, stageBg, stageDecor, render }: {
         { key, id: current, leaving: false, reviving: false },
       ];
     });
-    // 兜底出栈（新页没有圆擦除时走这条）；有擦除时由 onRevealed 提前收
+    // 兜底出栈（新页没有圆擦除时走这条）；有擦除时由 onRevealed 提前收。
+    // ⚠️ 擦除在途时兜底必须让路（v2.7.0.2e）：擦除正常完成在 ~533ms（onRevealed 收），
+    // 被卡时启动保险丝还能再推最多 500ms——而旧口径 520ms 的兜底会**先到**：旧页在
+    // 圆还没扩满时被提前抽走，圆外区域闪一帧裸舞台底。黄主题的亮黄底 + 满屏字卡
+    // 最放大这一闪（用户上报「小标题等元素闪、黄主题尤甚」的一份）。兜底只须兜
+    //「onRevealed 永远不来」的病态场景，擦除在途时放到 1150ms（500+460+40+余量）之外。
     if (pruneTimer.current) clearTimeout(pruneTimer.current);
-    pruneTimer.current = window.setTimeout(prune, PAGE_HOLD_MS);
+    const wipeInFlight = bold && !!consumePendingCircleReveal();
+    pruneTimer.current = window.setTimeout(prune, wipeInFlight ? 1150 : PAGE_HOLD_MS);
     return () => {
       if (pruneTimer.current) clearTimeout(pruneTimer.current);
     };

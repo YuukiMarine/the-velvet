@@ -54,6 +54,15 @@
   font-family: 'Velvet Round SC', 'Velvet Sans SC', -apple-system, BlinkMacSystemFont,
     'PingFang SC', 'Microsoft YaHei', sans-serif;
 }
+/* P5 标题兜底（v2.7.0.2c 用户口径：标题/卡片题/统计数字一律黑体，圆体只留给正文）：
+   语义标题标签在 P5 下统一走黑体栈——设置页「颜色与声音/显示」这类**共享标记**的
+   分区标题没有频道分支可挂内联字体，全靠这一条接住。内联字体（P5_TITLE_FONT /
+   刻意保留的圆体）优先级更高，不受影响。后备与 P5_TITLE_FONT 同序：绝不落回圆体。
+   :not(.font-medium/.font-normal)：设置页的**行标签**（「夜间模式」这类开关行）语义上
+   也是 h4、但字重是 medium——那是正文层级，按用户口径继续圆体，不能被本条卷走。 */
+:root[data-ui-channel="p5"] :is(h1, h2, h3, h4, h5):not(.font-medium):not(.font-normal) {
+  font-family: 'Noto Sans SC Black', 'Velvet Sans SC', 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
+}
 
 /* --color-primary-rgb：primary 的 RGB 三元组，专供 Tailwind 透明度修饰符
    （bg-primary/10、text-primary/20 等）——tailwind.config 的 primary 用
@@ -1543,12 +1552,119 @@ html[data-ios-standalone="true"] {
   rotate: none;
 }
 
+/* ── 轮盘演出 · CSS 合成器驱动（v2.7.1 安卓性能整改）────────────────────────
+   这些动画原先走 framer（JS 每帧写 style）：波纹是 svg 根的 scale 放大、表盘是
+   svg **子级 <g>** 的无限旋转。前者 JS 驱动导致合成器每变一次 scale 就重栅格化
+   一次（波纹要放大到 ~7 倍 = 反复重栅格 MB 级纹理，安卓 WebView 上就是「闪烁」，
+   Chrome 上是掉帧）；后者更糟——SVG 子级 transform 不进合成器，**每帧整张表盘
+   重绘**，轮盘开着就永不停歇。换成 CSS 动画后全程合成器接管：纹理只栅格化一次，
+   主线程一根指头都不用动。几何/时长/缓动与原 framer 参数逐项相同。 */
+.wheel-burst {
+  will-change: transform, opacity;
+  animation:
+    wheel-burst-scale var(--wb-dur, 1.05s) cubic-bezier(0.16, 0.7, 0.35, 1) var(--wb-delay, 0s) both,
+    var(--wb-fade, wheel-burst-fade-p4) var(--wb-dur, 1.05s) linear var(--wb-delay, 0s) both;
+}
+@keyframes wheel-burst-scale {
+  from { transform: scale(var(--wb-from, 0.2)); }
+  to { transform: scale(var(--wb-to, 4)); }
+}
+/* P4 四角星波纹的透明度包络：framer 原 times [0,0.1,0.4,0.78]，值 [0,.95,.5,0] */
+@keyframes wheel-burst-fade-p4 {
+  0% { opacity: 0; }
+  10% { opacity: 0.95; }
+  40% { opacity: 0.5; }
+  78%, 100% { opacity: 0; }
+}
+/* P5 星形波纹的透明度包络：framer 原 times [0,0.55,0.82,1]，值 [.95,.9,.55,0] */
+@keyframes wheel-burst-fade-p5 {
+  0% { opacity: 0.95; }
+  55% { opacity: 0.9; }
+  82% { opacity: 0.55; }
+  100% { opacity: 0; }
+}
+/* 底导水波纹环（v2.7.0.2d）：framer 逐帧 width/height 改 CSS 合成器 scale+opacity。
+   切页挂载把主线程整段吃掉时，JS 驱动的环一帧都动不了——定格成半透明圆盘、
+   主线程回来后瞬移到透明（用户上报「没有缩放动画、结束直接消失」）；合成器动画
+   在主线程满载时照常播。元素以终态尺寸绘制、scale 从 --nr-from 绽到 1，
+   透明度 45% 前缓衰、其后加速滑到 0——结束点是「已经看不见」而不是「突然拿走」。 */
+.nav-ripple {
+  will-change: transform, opacity;
+  animation:
+    nav-ripple-scale var(--nr-dur, 0.34s) cubic-bezier(0.17, 0.67, 0.35, 1) var(--nr-delay, 0s) both,
+    nav-ripple-fade var(--nr-dur, 0.34s) linear var(--nr-delay, 0s) both;
+}
+@keyframes nav-ripple-scale {
+  from { transform: translate(-50%, -50%) scale(var(--nr-from, 0.07)); }
+  to { transform: translate(-50%, -50%) scale(1); }
+}
+@keyframes nav-ripple-fade {
+  0% { opacity: var(--nr-o, 0.7); }
+  45% { opacity: calc(var(--nr-o, 0.7) * 0.55); }
+  100% { opacity: 0; }
+}
+
+/* P5 庆祝 cut-in 的合成器动画（v2.7.0.2f，与轮盘同一病灶同一疗法）：
+   升级/今日完成卡里的巨环是 framer 逐帧 scale 无限循环——合成器反复重栅格化
+   620/640px 纹理，弹窗开多久闪多久（用户上报「任务完成弹窗疯狂闪烁」）。 */
+.p5-rings-zoom {
+  will-change: transform;
+  animation: p5-rings-zoom 9s linear infinite;
+}
+@keyframes p5-rings-zoom {
+  from { transform: scale(1); }
+  to { transform: scale(1.5); }
+}
+:root[data-boldness="0"] .p5-rings-zoom {
+  animation: none;
+}
+/* Lv 徽章脉冲（原 framer 1.1s 动 + 0.7s 停的循环 → 1.8s 周期等价复刻） */
+.p5-lv-pulse {
+  animation: p5-lv-pulse 1.8s ease-in-out 0.9s infinite;
+}
+@keyframes p5-lv-pulse {
+  0% { transform: scale(1); }
+  30.5% { transform: scale(1.08); }
+  61%, 100% { transform: scale(1); }
+}
+:root[data-boldness="0"] .p5-lv-pulse {
+  animation: none;
+}
+/* 舞台三圈星涟漪的透明度包络（.wheel-burst 的 cut-in 变体）：0 → 0.95 → 0 */
+@keyframes wheel-burst-fade-cutin {
+  0% { opacity: 0; }
+  50% { opacity: 0.95; }
+  100% { opacity: 0; }
+}
+/* 集中线：210vmax conic 放射层的一次性绽放（原 framer times [0,0.32,1] 等价复刻） */
+.p5-collect-lines {
+  will-change: transform, opacity;
+  animation: p5-collect-lines 0.78s cubic-bezier(0, 0, 0.58, 1) 0.14s both;
+}
+@keyframes p5-collect-lines {
+  0% { transform: scale(0.3) rotate(0deg); opacity: 0; }
+  32% { transform: scale(1) rotate(2.2deg); opacity: 1; }
+  100% { transform: scale(1.12) rotate(7deg); opacity: 0; }
+}
+
+/* P4 表盘刻度自转（80s）与虚线环反转（110s）：整个 svg 根一起转，几何不变 */
+.p4-dial-spin {
+  transform-origin: 50% 50%;
+  animation: p4-dial-rot 80s linear infinite;
+}
+.p4-dial-spin-rev {
+  transform-origin: 50% 50%;
+  animation: p4-dial-rot-rev 110s linear infinite;
+}
+@keyframes p4-dial-rot { to { transform: rotate(360deg); } }
+@keyframes p4-dial-rot-rev { to { transform: rotate(-360deg); } }
+
 /* ── 展示字重（v2.7 字体批次）：真 Black 中文面 ─────────────────────────────
    痛点根因（用户上报「Mac 上蓝/红主题字体没 Windows 好看」）：正文有 Velvet Sans SC
    变量字体兜着（100-900 真字重），但**频道标题的内联字体栈**写的是 "Noto Sans SC"——
    本地并不存在这个族名（内嵌族叫 Velvet Sans SC），中文于是落到系统黑体：
    苹方没有 Black 字重只能仿粗，且 macOS 的仿粗明显弱于 Windows 雅黑——平台差异即此。
-   方案：自托管思源黑体（Noto Sans SC）Black 分片（/fonts/noto-sc-black.css，
+   方案：自托管思源黑体（Noto Sans SC）Black 分片（/fonts/noto-sc-black.v2.css，
    unicode-range 按需加载，一页典型 150~400KB），插进各频道展示字体栈 + 这里挂到
    .font-black（900 专用面，family 命中优先于字重，所以绝不能进正文/font-bold 栈）。
    Black 分片含拉丁字形，与正文的 Noto 同族——中西文同栈不撕裂；Velvet Sans SC
