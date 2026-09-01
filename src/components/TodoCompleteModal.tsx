@@ -136,7 +136,9 @@ export const BandCutInP3 = ({ isOpen, onClose, title, totalPoints, unlockHint, e
                   <div className="min-w-0 flex-1">
                     {/* 主标题 + 洋红双片 */}
                     <div className="flex items-end gap-2">
-                      <span className="text-[52px] font-black italic leading-[0.9]" style={{ color: 'var(--p3r-ink, #0a1230)', fontFamily: '"Noto Sans SC Black", "Velvet Sans SC", sans-serif', WebkitTextStroke: '5px #ffffff', paintOrder: 'stroke fill' }}>{eyebrow}</span>
+                      {/* 窄屏钳字号 + 禁折行（iPhone Air 实测「今日完成」最后一字被挤下行）：
+                          分辨率不够时整体缩小，绝不换行 */}
+                      <span className="whitespace-nowrap font-black italic leading-[0.9]" style={{ fontSize: 'min(52px, 11.5vw)', color: 'var(--p3r-ink, #0a1230)', fontFamily: '"Noto Sans SC Black", "Velvet Sans SC", sans-serif', WebkitTextStroke: '5px #ffffff', paintOrder: 'stroke fill' }}>{eyebrow}</span>
                       <span aria-hidden className="mb-1 flex gap-[3px]">
                         <span className="h-[10px] w-[12px]" style={{ background: 'var(--p3r-magenta, #f0417f)', clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
                         <span className="h-[8px] w-[9px]" style={{ background: 'rgba(240,65,127,0.55)', clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />

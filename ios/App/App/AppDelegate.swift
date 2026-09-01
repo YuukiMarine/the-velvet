@@ -7,8 +7,11 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     var window: UIWindow?
 
+    private var audioSessionGuard: Timer?
+
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         configureAudioSession()
+        startAudioSessionGuard()
         return true
     }
 
@@ -28,6 +31,32 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         } catch {
             NSLog("[velvet] AVAudioSession 配置失败，音效将受静音键影响: \(error)")
         }
+    }
+
+    /// 会话守护（v2.7.0.3，启动时设置一次治不好的续章）。
+    ///
+    /// iOS 17+ 的 WKWebView 在网页开始出声时会**接管并重设 AVAudioSession**，把
+    /// didFinishLaunching 里设好的 .playback 悄悄换掉——于是「配置代码明明在、
+    /// 实机还是被静音键掐死」。系统没有提供"别动我的会话"的开关，社区通行的
+    /// 兜底就是**发现漂移立刻夺回**：
+    ///   · 前台激活 / 会话中断结束 / 输出路由变化 / 媒体服务重置 → 立即重设；
+    ///   · 2s 守护心跳：读一下 category（开销近零），不是 .playback 才真正 set。
+    private func startAudioSessionGuard() {
+        let center = NotificationCenter.default
+        let reassert: (Notification) -> Void = { [weak self] _ in self?.reassertAudioSessionIfNeeded() }
+        center.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main, using: reassert)
+        center.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main, using: reassert)
+        center.addObserver(forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main, using: reassert)
+        center.addObserver(forName: AVAudioSession.mediaServicesWereResetNotification, object: nil, queue: .main, using: reassert)
+        audioSessionGuard = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+            self?.reassertAudioSessionIfNeeded()
+        }
+    }
+
+    private func reassertAudioSessionIfNeeded() {
+        let session = AVAudioSession.sharedInstance()
+        guard session.category != .playback else { return }
+        configureAudioSession()
     }
 
     func applicationWillResignActive(_ application: UIApplication) {

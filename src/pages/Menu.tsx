@@ -885,13 +885,19 @@ export const Menu = () => {
               会把字母左右两边齐齐削掉（用户上报"SYSTEM 被错误截断"）。这里放到 168px
               并撤掉裁切；横向出血由 App <main> 的 overflow-x:clip 在屏缘兜（页面壳
               不再裁——它裁在内容盒边缘，会把上探/侧探的装饰切平）。 */}
-          <div aria-hidden className="pointer-events-none absolute left-0 top-[300px] flex h-[760px] w-[168px] select-none items-center justify-center">
-            <span
-              className="whitespace-nowrap font-black italic leading-none"
-              style={{ fontFamily: 'Arial, sans-serif', fontSize: '9.5rem', color: 'rgba(53,209,232,0.20)', transform: 'rotate(90deg)' }}
-            >
-              SYSTEM
-            </span>
+          {/* 裁切罩（v2.7.0.3 过滚修复）：这个 top300+h760 的装饰盒 bottom=1060，比菜单页
+              内容底（~876）深 200px——绝对定位元素的溢出**会**计入滚动容器的 scrollHeight，
+              于是可以把页面滚进一片空白再弹回卡住（全端稳定复现）。罩 inset-0 贴内容高、
+              overflow-hidden 把超底部分裁掉，滚动区恢复 = 内容区。 */}
+          <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
+            <div className="absolute left-0 top-[300px] flex h-[760px] w-[168px] select-none items-center justify-center">
+              <span
+                className="whitespace-nowrap font-black italic leading-none"
+                style={{ fontFamily: 'Arial, sans-serif', fontSize: '9.5rem', color: 'rgba(53,209,232,0.20)', transform: 'rotate(90deg)' }}
+              >
+                SYSTEM
+              </span>
+            </div>
           </div>
 
           {/* 蓝斜块大标题 + 洋红角 */}

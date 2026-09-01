@@ -389,8 +389,8 @@ export const LevelUpP4 = ({ isOpen, onClose, attributeName, newLevel }: {
         {/* 属性大字 + Lv 变化：叠在橙盘上（稿上是压在盘心的） */}
         <div className="pointer-events-none absolute inset-x-0 top-[26%] z-20 text-center">
           <motion.div
-            className="text-[64px] font-black leading-none"
-            style={{ color: INK, fontFamily: 'var(--p4-display-font, serif)' }}
+            className="whitespace-nowrap font-black leading-none"
+            style={{ fontSize: 'min(64px, 15vw)', color: INK, fontFamily: 'var(--p4-display-font, serif)' }}
             initial={anim ? { scale: 0.6, opacity: 0 } : false}
             animate={{ scale: 1, opacity: 1 }}
             transition={{ type: 'spring', stiffness: 320, damping: 18, delay: 0.32 }}

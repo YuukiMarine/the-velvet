@@ -179,8 +179,9 @@ const AchievementUnlockP3 = ({ isOpen, onClose, achievementTitle }: AchievementU
                 </motion.span>
                 <div
                   aria-hidden
-                  className="relative text-center text-[44px] font-black italic leading-none"
+                  className="relative whitespace-nowrap text-center font-black italic leading-none"
                   style={{
+                    fontSize: 'min(44px, 10.5vw)',
                     color: 'var(--p3r-blue-deep, #0a3bd6)',
                     fontFamily: '"Noto Sans SC Black", "Velvet Sans SC", sans-serif',
                     WebkitTextStroke: '7px #fff',

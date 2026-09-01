@@ -48,6 +48,17 @@
   font-style: normal;
   font-display: swap;
 }
+/* Caveat 手写体（v2.7.0.3 自托管，拉丁子集 50KB）：页头手写英文注记专用。
+   原 Google Fonts 外链在无网/受限网络（iOS 实机常态）下加载失败——手写字整体
+   回退系统体、宽度变化连带绝对定位错位。自托管后离线必达。 */
+@font-face {
+  font-family: 'Caveat';
+  src: url('/fonts/caveat-latin-600-normal.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
 /* P5 全域正文走圆体（用户口径：设置页/助手窗/战场设置这些"默认字体"的区域也要圆）。
    标题不受影响——标题件全部持有内联 P5_TITLE_FONT（内联优先级高于本规则）。 */
 :root[data-ui-channel="p5"] body {

@@ -505,6 +505,15 @@ const TextInput = forwardRef(
     { type, value, onChange, placeholder, autoComplete, inputMode, onEnter, centered, mono }: TextInputProps,
     ref: ForwardedRef<HTMLInputElement>
   ) => {
+    // iOS WKWebView + 中文输入法的经典坑（iPhone Air 实测拼音重复）：composition
+    // 组合期间受控回写（尤其调用方 onChange 里 toLowerCase 等变换）会打断 IME 会话，
+    // 拼音被反复提交。半受控修法：组合期间由本地 state 驱动、不上报 onChange；
+    // compositionend 一次性上报最终值，调用方的变换结果再经 effect 同步回来。
+    const [inner, setInner] = useState(value);
+    const composingRef = useRef(false);
+    useEffect(() => {
+      if (!composingRef.current) setInner(value);
+    }, [value]);
     const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
       if (e.key === 'Enter' && onEnter) {
         e.preventDefault();
@@ -521,8 +530,21 @@ const TextInput = forwardRef(
       <input
         ref={ref}
         type={type}
-        value={value}
-        onChange={e => onChange(e.target.value)}
+        value={inner}
+        onChange={e => {
+          const v = e.target.value;
+          setInner(v);
+          if (!composingRef.current) onChange(v);
+        }}
+        onCompositionStart={() => {
+          composingRef.current = true;
+        }}
+        onCompositionEnd={e => {
+          composingRef.current = false;
+          const v = e.currentTarget.value;
+          setInner(v);
+          onChange(v);
+        }}
         onKeyDown={onKeyDown}
         placeholder={placeholder}
         autoComplete={autoComplete}
