@@ -68,10 +68,37 @@ export const validateDanmaku = (text: string): { ok: boolean; reason?: string } 
 export const danmakuThemeOf = (theme?: ThemeType): DanmakuTheme =>
   theme === 'blue' || theme === 'pink' ? 'blue' : theme === 'yellow' ? 'yellow' : 'red';
 
+/** 云端弹幕条目：id 用于举报/本地屏蔽；官方种子池条目 id 为空串（非 UGC，不可举报） */
+export type DanmakuItem = { id: string; text: string };
+
 /**
- * 拉取已过审弹幕文本。无云 / 集合未建 / 权限未配 / 出错 → 返回空（由 UI 退回种子池）。
+ * 本地屏蔽名单（App Store UGC 合规的「blocking」半边）：用户举报过的弹幕 id 记在本机，
+ * 拉取时过滤——举报即刻从自己屏幕上消失，不必等服务端下架。
  */
-export const listApprovedDanmaku = async (limit = DANMAKU_MAX_ON_SCREEN): Promise<string[]> => {
+const BLOCK_KEY = 'velvet-danmaku-blocked-v1';
+const readBlocked = (): string[] => {
+  try {
+    const v = JSON.parse(localStorage.getItem(BLOCK_KEY) ?? '[]');
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+};
+export const blockDanmakuLocally = (id: string): void => {
+  if (!id) return;
+  try {
+    const cur = readBlocked();
+    if (!cur.includes(id)) localStorage.setItem(BLOCK_KEY, JSON.stringify([...cur, id].slice(-500)));
+  } catch {
+    /* 隐私模式等写入失败：本次会话内由调用方 state 过滤兜底 */
+  }
+};
+
+/**
+ * 拉取已过审弹幕（带 id，供举报/屏蔽）。无云 / 集合未建 / 权限未配 / 出错 → 返回空
+ * （由 UI 退回种子池）；本地已屏蔽的条目在此处过滤。
+ */
+export const listApprovedDanmaku = async (limit = DANMAKU_MAX_ON_SCREEN): Promise<DanmakuItem[]> => {
   if (!pb) return [];
   try {
     const res = await pb.collection('danmaku').getList(1, limit, {
@@ -79,9 +106,10 @@ export const listApprovedDanmaku = async (limit = DANMAKU_MAX_ON_SCREEN): Promis
       sort: '-created',
       requestKey: null,
     });
+    const blocked = readBlocked();
     return res.items
-      .map(r => String((r as { text?: unknown }).text ?? '').trim())
-      .filter(Boolean);
+      .map(r => ({ id: String((r as { id?: unknown }).id ?? ''), text: String((r as { text?: unknown }).text ?? '').trim() }))
+      .filter(it => it.text && !blocked.includes(it.id));
   } catch (err) {
     console.warn('[velvet-danmaku] listApproved failed', err);
     return [];
@@ -121,7 +149,7 @@ export const submitDanmaku = async (text: string, theme: DanmakuTheme): Promise<
   }
 };
 
-/** 举报一条弹幕（兜底已通过内容；失败静默）。报表 UI 后续接，服务先就绪。 */
+/** 举报一条弹幕（兜底已通过内容；失败静默）。UI 入口见 DanmakuLayer（点击弹幕 → 确认）。 */
 export const reportDanmaku = async (danmakuId: string, reason = ''): Promise<void> => {
   if (!pb || !pb.authStore.isValid) return;
   const me = getUserId();
@@ -130,4 +158,13 @@ export const reportDanmaku = async (danmakuId: string, reason = ''): Promise<voi
   } catch (err) {
     console.warn('[velvet-danmaku] report failed', err);
   }
+};
+
+/**
+ * 举报并本地屏蔽（App Store UGC 合规：report + block 一步到位）。
+ * 屏蔽先行（即刻从本机消失，不依赖网络），举报尽力而为（失败静默，服务端有唯一索引防刷）。
+ */
+export const reportAndBlockDanmaku = async (danmakuId: string, reason = ''): Promise<void> => {
+  blockDanmakuLocally(danmakuId);
+  await reportDanmaku(danmakuId, reason);
 };

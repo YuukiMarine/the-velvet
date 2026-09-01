@@ -15,7 +15,8 @@ import { useBoldness } from '@/utils/boldness';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { triggerLevelFeedback } from '@/utils/feedback';
 import { TERMINAL_DANMAKU_SEEDS } from '@/constants/terminalDanmaku';
-import { listApprovedDanmaku } from '@/services/danmaku';
+import { listApprovedDanmaku, type DanmakuItem } from '@/services/danmaku';
+import { DanmakuLayer } from '@/components/danmaku/DanmakuLayer';
 import { cloudEnabled } from '@/services/pocketbase';
 import { DanmakuCompose } from '@/components/danmaku/DanmakuCompose';
 import { zClass } from '@/utils/zIndex';
@@ -106,7 +107,7 @@ export const BigDealClearCutIn = () => {
   const channel = useUiChannel();
   const sk = SKINS[channel === 'p5' || channel === 'p4' || channel === 'p3' ? channel : 'neutral'];
   const [composeOpen, setComposeOpen] = useState(false);
-  const [approved, setApproved] = useState<string[]>([]);
+  const [approved, setApproved] = useState<DanmakuItem[]>([]);
 
   const open = !!bigDealClear;
   const tokens = settings.terminalDanmakuTokens ?? 0;
@@ -119,8 +120,8 @@ export const BigDealClearCutIn = () => {
     if (cloudEnabled) listApprovedDanmaku().then(setApproved).catch(() => {});
   }, [open]);
 
-  const danmaku = useMemo(
-    () => [...TERMINAL_DANMAKU_SEEDS, ...approved].sort(() => Math.random() - 0.5).slice(0, 3),
+  const danmaku = useMemo<DanmakuItem[]>(
+    () => [...TERMINAL_DANMAKU_SEEDS.map(text => ({ id: '', text })), ...approved].sort(() => Math.random() - 0.5).slice(0, 3),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [open, approved],
   );
@@ -141,20 +142,8 @@ export const BigDealClearCutIn = () => {
             {sk.texture && (
               <div aria-hidden className="pointer-events-none absolute inset-0" style={{ backgroundImage: sk.texture.backgroundImage, backgroundSize: sk.texture.backgroundSize, opacity: sk.texture.opacity }} />
             )}
-            {/* 弹幕环境层（读：官方种子 + 云端已过审） */}
-            {bold && danmaku.map((line, i) => (
-              <motion.span
-                key={`${i}-${line}`}
-                aria-hidden
-                className={`pointer-events-none absolute whitespace-nowrap ${sk.danmaku}`}
-                style={{ top: `${14 + i * 34}%` }}
-                initial={{ x: '60vw' }}
-                animate={{ x: '-110vw' }}
-                transition={{ duration: 13 + i * 4, ease: 'linear', repeat: Infinity }}
-              >
-                {line}
-              </motion.span>
-            ))}
+            {/* 弹幕环境层（读：官方种子 + 云端已过审；云端条目可点击举报并隐藏） */}
+            <DanmakuLayer items={danmaku} lineClassName={sk.danmaku} bold={bold} />
 
             <div className="w-full max-w-sm text-center">
               <motion.div
