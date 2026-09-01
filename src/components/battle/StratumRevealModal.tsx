@@ -15,6 +15,7 @@ import { BOSS_ATTACK_BY_LEVEL } from '@/battle/numbers';
 import { rollThemeAttribute, weekKeyOf } from '@/battle/tower';
 import { playSound } from '@/utils/feedback';
 import { ShadowWarningOverlay } from '@/components/battle/ShadowWarningOverlay';
+import { ModalPortal } from '@/components/ModalPortal';
 import { useBackHandler } from '@/utils/useBackHandler';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -163,8 +164,11 @@ export function StratumRevealModal({ isOpen, onClose, level }: Props) {
     onClose();
   };
 
+  // portal 到 body：战场页活在 PageShell 的 stacking context 里，页内浮层对外
+  // 只等效 z=1，底部导航（z-40）会盖住它（用户上报「区层显形仪式被底部栏挡住」）。
+  // 见 components/ModalPortal.tsx。
   return (
-    <>
+    <ModalPortal>
       <ShadowWarningOverlay
         isOpen={!!warn}
         shadowName={warn?.name ?? ''}
@@ -312,6 +316,6 @@ export function StratumRevealModal({ isOpen, onClose, level }: Props) {
           </motion.div>
         )}
       </AnimatePresence>
-    </>
+    </ModalPortal>
   );
 }

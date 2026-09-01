@@ -5,6 +5,7 @@ import { Achievement, AttributeId } from '@/types';
 import { triggerNavFeedback } from '@/utils/feedback';
 import { PageTitle } from '@/components/PageTitle';
 import { BackButton } from '@/components/BackButton';
+import { ModalPortal } from '@/components/ModalPortal';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P4Flower, P4Sparkle, P4ArcRings, P4SkyCircle, P4_HEADER_BLEED } from '@/ui/p4Kit';
 import { P3R, P3RPage, GhostWords, P3PageHeader, P3EmptySlab, slantClip } from '@/components/p3r/kit';
@@ -293,7 +294,8 @@ const SkillsTab = () => {
     return acc;
   }, {} as Record<string, typeof skills>);
 
-  const p3 = useUiChannel() === 'p3';
+  const skillsChannel = useUiChannel();
+  const p3 = skillsChannel === 'p3';
 
   return (
     <div className="space-y-4">
@@ -490,6 +492,10 @@ const SkillsTab = () => {
         </div>
       )}
 
+      {/* 技能表单 / 删除确认：portal 到 body —— 页内渲染会被 PageShell 的
+          stacking context 压在底部导航之下（见 components/ModalPortal.tsx）。
+          带上页根的 .p5-reskin：那套毯式规则认祖先类，不带就掉出作用域 */}
+      <ModalPortal className={skillsChannel === 'p5' ? 'p5-reskin' : ''}>
       {/* Add / Edit modal */}
       <AnimatePresence>
         {(showAddForm || editingSkill) && (
@@ -648,6 +654,7 @@ const SkillsTab = () => {
           </motion.div>
         )}
       </AnimatePresence>
+      </ModalPortal>
     </div>
   );
 };
@@ -879,11 +886,14 @@ const AchievementsTab = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [attrGroupKeys.join(',')]);
 
-  const p3 = useUiChannel() === 'p3';
+  const achChannel = useUiChannel();
+  const p3 = achChannel === 'p3';
 
   // ── 表单 / 确认弹窗（p3 与默认形态共用；P3R 弹窗形态属 modals 批次）──
   const achievementModalsJsx = (
-    <>
+    // portal 到 body：页内渲染会被 PageShell 的 stacking context 压在底部导航之下。
+    // 同上，页根的 .p5-reskin 要跟着搬过去，否则红主题下退回原始白卡
+    <ModalPortal className={achChannel === 'p5' ? 'p5-reskin' : ''}>
       {/* Add modal */}
       <AnimatePresence>
         {showAddForm && (
@@ -994,7 +1004,7 @@ const AchievementsTab = () => {
           </motion.div>
         )}
       </AnimatePresence>
-    </>
+    </ModalPortal>
   );
 
   // ── P3R（蓝频道）形态：p3-achievements-reference-v2 列表卡（横排：图标斜块+名/描述/进度+右侧 n/m）──

@@ -1,6 +1,7 @@
 import { motion, AnimatePresence } from 'motion/react';
 import { createPortal } from 'react-dom';
 import type { SyncDiff } from '@/services/sync';
+import { DownloadIcon, UploadIcon } from '@/components/icons';
 
 /** 中文表名映射（只展示有差异的条目） */
 const TABLE_LABELS: Record<string, string> = {
@@ -181,18 +182,26 @@ export function SyncDiffDialog({ isOpen, diff, onKeepLocal, onKeepCloud, onDismi
               </button>
             ) : (
               <>
-                <div className="grid grid-cols-2 gap-2 pt-1">
+                {/* 文案与 ConflictDialog 统一成"谁动、往哪动"（用户口径：
+                    「X 覆盖 Y」两句话长得太像，读一遍分不清方向）。
+                    配色改同色系两档深浅：深靛=下载覆盖本机、浅靛=上传覆盖云端 */}
+                {/* 改上下排：两句新文案是 8/10 个汉字，并排塞在半幅按钮里，
+                    小屏（SE 320px 宽）必折行断在「端」上。整幅也让这两个不可撤销的
+                    动作各有一条明确的行动条。 */}
+                <div className="space-y-2 pt-1">
                   <button
                     onClick={() => void onKeepCloud()}
-                    className="py-2.5 rounded-xl border border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300 text-sm font-bold"
+                    className="w-full py-2.5 rounded-xl bg-indigo-700 hover:bg-indigo-800 text-white text-sm font-bold shadow-md shadow-indigo-900/20 flex items-center justify-center gap-2"
                   >
-                    用云端覆盖本地
+                    <DownloadIcon className="h-[18px] w-[18px]" />
+                    从云端下载并覆盖
                   </button>
                   <button
                     onClick={() => void onKeepLocal()}
-                    className="py-2.5 rounded-xl border border-blue-500/40 bg-blue-500/10 text-blue-600 dark:text-blue-300 text-sm font-bold"
+                    className="w-full py-2.5 rounded-xl border border-indigo-300 dark:border-indigo-500/50 bg-indigo-50 dark:bg-indigo-500/15 text-indigo-700 dark:text-indigo-200 text-sm font-bold flex items-center justify-center gap-2"
                   >
-                    用本地覆盖云端
+                    <UploadIcon className="h-[18px] w-[18px]" />
+                    上传本地数据覆盖云端
                   </button>
                 </div>
                 <button

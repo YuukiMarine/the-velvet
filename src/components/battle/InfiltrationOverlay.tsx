@@ -8,6 +8,7 @@ import { useEffect } from 'react';
 import { motion } from 'motion/react';
 import { useBoldness } from '@/utils/boldness';
 import { playSound } from '@/utils/feedback';
+import { ModalPortal } from '@/components/ModalPortal';
 
 interface Props {
   onDone: () => void;
@@ -33,8 +34,11 @@ export function InfiltrationOverlay({ onDone }: Props) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // portal 到 body：战场页在 PageShell 的 stacking context 内，页内浮层对外只等效
+  // z=1，底部导航（z-40）会盖在潜入演出上（见 components/ModalPortal.tsx）。
   if (!bold) {
     return (
+      <ModalPortal>
       <motion.div
         initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
         className="fixed inset-0 z-[55] flex items-center justify-center"
@@ -42,10 +46,12 @@ export function InfiltrationOverlay({ onDone }: Props) {
       >
         <p className="text-white font-black text-3xl tracking-[0.2em]">INFILTRATE</p>
       </motion.div>
+      </ModalPortal>
     );
   }
 
   return (
+    <ModalPortal>
     <motion.div
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
       transition={{ duration: 0.16 }}
@@ -196,5 +202,6 @@ export function InfiltrationOverlay({ onDone }: Props) {
         style={{ background: 'radial-gradient(ellipse at center, rgba(220,240,255,0.95), rgba(120,180,255,0.35) 55%, transparent 80%)' }}
       />
     </motion.div>
+    </ModalPortal>
   );
 }

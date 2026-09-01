@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import type { Settings } from '@/types';
 import { deleteAllCloudData } from '@/services/sync';
+import { ModalPortal } from '@/components/ModalPortal';
+import { useUiChannel } from '@/ui/useUiChannel';
 
 interface Group {
   id: string;
@@ -106,6 +108,7 @@ export function SyncPrivacyPanel({ excluded, syncConfidantsToCloud, syncCloudApi
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [result, setResult] = useState<string | null>(null);
+  const panelChannel = useUiChannel();
 
   const handleDelete = async () => {
     setDeleting(true);
@@ -295,7 +298,10 @@ export function SyncPrivacyPanel({ excluded, syncConfidantsToCloud, syncCloudApi
         )}
       </AnimatePresence>
 
-      {/* 二级确认弹窗 */}
+      {/* 二级确认弹窗（portal 到 body：页内渲染会被 PageShell 的 stacking context
+          压到底部导航之下，z-[200] 也没用——见 components/ModalPortal.tsx）。
+          账号页根上的 p4-reskin 跟着搬，毯式换肤认祖先类 */}
+      <ModalPortal className={panelChannel === 'p4' ? 'p4-reskin' : ''}>
       <AnimatePresence>
         {confirmOpen && (
           <motion.div
@@ -362,6 +368,7 @@ export function SyncPrivacyPanel({ excluded, syncConfidantsToCloud, syncCloudApi
           </motion.div>
         )}
       </AnimatePresence>
+      </ModalPortal>
     </div>
   );
 }

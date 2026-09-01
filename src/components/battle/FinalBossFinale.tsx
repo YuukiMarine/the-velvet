@@ -27,6 +27,7 @@ import { playSound } from '@/utils/feedback';
 import { useBoldness } from '@/utils/boldness';
 import { HoldButton } from '@/components/battle/HoldButton';
 import { CardArena, StarFlash } from '@/components/battle/finaleCards';
+import { ModalPortal } from '@/components/ModalPortal';
 
 interface Props {
   isOpen: boolean;
@@ -200,7 +201,10 @@ export function FinalBossFinale({ isOpen, onDone }: Props) {
     return phase === 'cards' || phase === 'finish' ? 1 - done / Math.max(1, n) : 1;
   });
 
+  // portal 到 body：战场页在 PageShell 的 stacking context 内，页内浮层对外只等效
+  // z=1，底部导航（z-40）会盖在上面（见 components/ModalPortal.tsx）。
   return (
+    <ModalPortal>
     <AnimatePresence>
       <motion.div
         initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
@@ -503,5 +507,6 @@ export function FinalBossFinale({ isOpen, onDone }: Props) {
         </div>
       </motion.div>
     </AnimatePresence>
+    </ModalPortal>
   );
 }

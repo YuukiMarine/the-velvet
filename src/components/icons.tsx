@@ -56,3 +56,45 @@ export const RestoreIcon = ({ className = 'w-3.5 h-3.5' }: IconProps) => (
     </g>
   </svg>
 );
+
+/**
+ * 云端下载（拉取覆盖本机）/ 上传（推送覆盖云端）。
+ *
+ * 这一对只服务同步方向的选择：两颗按钮的文案都是「…覆盖…」，读起来很像，
+ * 箭头方向是最快分辨方向的那一眼（用户口径）。托盘同形、只有箭头反向——
+ * 成对时方向差才读得出来，两个图标各画各的就失去对比意义了。
+ * 与本文件其余图标不同，这两个用 24 网格（线条图标在 16 网格上会糊）。
+ */
+export const DownloadIcon = ({ className = 'w-4 h-4' }: IconProps) => (
+  <svg
+    viewBox="0 0 24 24"
+    className={className}
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M3 15v4a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-4" />
+    <path d="M7 10l5 5 5-5" />
+    <path d="M12 15V3" />
+  </svg>
+);
+
+export const UploadIcon = ({ className = 'w-4 h-4' }: IconProps) => (
+  <svg
+    viewBox="0 0 24 24"
+    className={className}
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M3 15v4a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-4" />
+    <path d="M7 8l5-5 5 5" />
+    <path d="M12 3v12" />
+  </svg>
+);
