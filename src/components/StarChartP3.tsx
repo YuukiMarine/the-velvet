@@ -143,7 +143,11 @@ export const StarChartP3 = ({ items, onSelect, showLabels = true, palette = P3_P
   };
   return (
     // padding 用固定 px：百分比 padding 按父宽解析，宽屏下会把星整体顶下去裁掉底部标签（用户上报）
-    <div className="relative mx-auto w-full max-w-[288px]" style={{ paddingTop: 23, paddingBottom: 32 }}>
+    // paddingTop 23 → 31（v2.7.0.5）：最上方标签的数字会被首页那层
+    // `min-h-[344px] overflow-hidden` 削掉顶部（375 宽实测 1.7px，窄屏更多）。
+    // 星随容器宽等比缩放、标签自身高度固定 px，两者不同步，任何宽度都差一口气；
+    // 加 8px 净空，首页外层 min-h 同步 +8 以免底部标签被挤出。
+    <div className="relative mx-auto w-full max-w-[288px]" style={{ paddingTop: 31, paddingBottom: 32 }}>
       {/* 平行四边形斜切(下左上右) + 高度拉伸；星与标签同处一个 transform，标签再反变换回正 */}
       <div className="relative" style={{ transform: `skewX(${STAR_SKEW}deg) scaleY(${STAR_SCALEY})` }}>
         <svg viewBox="0 0 360 356" className="w-full overflow-visible" aria-hidden>

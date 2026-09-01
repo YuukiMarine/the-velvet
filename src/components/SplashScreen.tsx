@@ -669,13 +669,13 @@ function P3sClockFace({ clockSize, minuteStyle }: { clockSize: string; minuteSty
 function P3Splash({ onComplete, s }: { onComplete: () => void; s: number }) {
   const [phase, setPhase] = useState(0); // 0 影时间 · 1 碎裂+glitch+蓝界 · 2 题字
   useEffect(() => {
-    // v2.7.0.4：总时长 2200 → 2700（用户口径「增加 0.5 秒」）。加的这半秒全部给
-    // 题字段——前两段（影时间敲钟 / 碎裂 glitch 换世界）的节拍是掐着 CSS 关键帧
-    // 调的，一动就散架；题字落定后本来只留 0.55s 就收幕，现在留 1.05s，是"多看一眼
-    // 靛蓝色房间"而不是"某一段变慢"。收幕淡入的起点同步后移（见页尾那层）。
+    // 总时长：2200 →（v2.7.0.4）2700 →（v2.7.0.5）3700。两次都是用户口径「太快了」。
+    // 加的时间全部给题字段——前两段（影时间敲钟 / 碎裂 glitch 换世界）的节拍是掐着
+    // CSS 关键帧调的，一动就散架；题字落定在 ~1.2s，原本只留 0.55s 就收幕，现在留
+    // 2.05s，是"多看一眼靛蓝色房间"而不是"某一段变慢"。收幕淡入起点同步后移（见页尾）。
     const t1 = setTimeout(() => setPhase(1), 380 * s);
     const t2 = setTimeout(() => setPhase(2), 860 * s);
-    const t3 = setTimeout(onComplete, 2700 * s);
+    const t3 = setTimeout(onComplete, 3700 * s);
     return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
   }, [onComplete, s]);
 
@@ -1052,9 +1052,9 @@ function P3Splash({ onComplete, s }: { onComplete: () => void; s: number }) {
 
       </div>
 
-      {/* 收幕（延迟 1.75 → 2.25s：随总时长 +0.5s 后移，仍是「幕落满 = onComplete」） */}
+      {/* 收幕（延迟 1.75 → 2.25 → 3.25s：随总时长两次后移，仍是「幕落满 = onComplete」） */}
       <div className="absolute inset-0 pointer-events-none"
-        style={{ background: 'linear-gradient(180deg, #010510, #000208)', animation: `p3s-fadein ${0.45 * s}s ease-in ${2.25 * s}s both` }} />
+        style={{ background: 'linear-gradient(180deg, #010510, #000208)', animation: `p3s-fadein ${0.45 * s}s ease-in ${3.25 * s}s both` }} />
     </div>
   );
 }
