@@ -7,6 +7,7 @@ import { WeeklyGoalSection } from './WeeklyGoalSection';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P4Sparkle } from '@/ui/p4Kit';
 import { P3R, slantClip } from '@/components/p3r/kit';
+import { P5_TITLE_FONT } from '@/components/p5r/kit';
 
 type GoalPanel = 'weekly' | 'countdown';
 
@@ -117,7 +118,12 @@ export const GoalDeck = (props: GoalDeckProps) => {
           ) : p5 ? (
             /* P5R：黑舞台上的裸区块标题走纸色（毯式的灰转黑只适用于纸卡内） */
             <div>
-              <h3 className="text-[21px] font-black leading-none" style={{ color: '#f0e9df', fontFamily: '"Noto Sans SC", sans-serif', textShadow: '2px 2px 0 #000000' }}>目标</h3>
+              {/* 字体栈原写 '"Noto Sans SC", sans-serif'——本仓自托管的族名是
+                  'Noto Sans SC Black' / 'Velvet Sans SC'，"Noto Sans SC" 这个名字
+                  **不存在任何 @font-face**，于是整条落空、直接掉到系统字体，
+                  与旁边所有 P5 标题不是同一套字（用户上报「行动页字体不一致」的一份）。
+                  改用与全站 P5 标题同源的 P5_TITLE_FONT。 */}
+              <h3 className="text-[21px] font-black leading-none" style={{ color: '#f0e9df', fontFamily: P5_TITLE_FONT, textShadow: '2px 2px 0 #000000' }}>目标</h3>
               <p className="mt-1 text-[11px] font-bold" style={{ color: '#9b9791' }}>本周推进和重要倒计时</p>
             </div>
           ) : (

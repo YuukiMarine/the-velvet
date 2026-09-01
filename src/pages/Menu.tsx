@@ -1271,9 +1271,20 @@ export const Menu = () => {
                         </span>
                       )}
                       {/* 配色（用户定稿）：未高亮黑字、高亮黄字，都不带阴影 */}
+                      {/* 字号随视口收缩、绝不换行（v2.7.0.5 用户口径：极窄竖屏下
+                          「成就 · 技能」会折成两三行把行高撑开，宁可小一点也别换行）。
+                          斜率是实测标定的，不是拍脑袋：这一行留给标题的宽度随视口线性变化
+                          （280→109px / 320→137px / 375→182px，约 0.77px 每 vw px），
+                          而「成就 · 技能」在 32px 下不换行需要 175px。两式相除即下面的
+                          calc()。**375px 恰好仍是满格 32px**（该宽度可用 182 > 需要 175），
+                          常规机型一像素不动；360px 起才开始按需收缩，280px 收到约 19px。
+                          clamp 下限兜住 260px 以下的极端机型。 */}
                       <span
-                        className={`relative font-black leading-none ${row.big ? 'text-[44px]' : 'text-[32px]'}`}
+                        className="relative whitespace-nowrap font-black leading-none"
                         style={{
+                          fontSize: row.big
+                            ? 'clamp(26px, calc(15vw - 12px), 44px)'
+                            : 'clamp(16px, calc(14vw - 20px), 32px)',
                           fontFamily: 'var(--p4-display-font, serif)',
                           // 夜间未高亮翻浅蓝（--p4-menu-ink，用户 R16 点名），高亮仍黄
                           color: selected ? 'var(--ui-bg)' : 'var(--p4-menu-ink, #131313)',

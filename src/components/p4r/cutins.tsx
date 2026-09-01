@@ -26,6 +26,7 @@ import { useBackHandler } from '@/utils/useBackHandler';
 import { useFeedbackOnce } from '@/utils/useFeedbackOnce';
 import { useModalA11y } from '@/utils/useModalA11y';
 import { zClass } from '@/utils/zIndex';
+import { MusicalNotes } from '@/components/MusicalNotes';
 
 const CREAM = '#fff6d0';
 const INK = '#131313';
@@ -161,9 +162,14 @@ const Confetti = ({ anim }: { anim: boolean }) => {
 };
 
 // ── 舞台 ────────────────────────────────────────────────────────────────────
-const P4CutInStage = ({ isOpen, onClose, ariaLabel, autoCloseMs, onShown, ringTone, children }: {
+const P4CutInStage = ({ isOpen, onClose, ariaLabel, autoCloseMs, onShown, ringTone, overlayExtras, children }: {
   isOpen: boolean; onClose: () => void; ariaLabel: string; autoCloseMs: number;
-  onShown: () => void; ringTone?: string; children: ReactNode;
+  onShown: () => void; ringTone?: string;
+  /** 渲染在**幕布层**、卡片之外的附加效果（音符雨）。与中性主题 CelebrationCutIn
+      的 overlayExtras 同位：MusicalNotes 的子层是 absolute left:50%/top:35%，
+      要的就是"相对整块幕布"的锚点，挂进卡片里会被卡片的盒子与变换带偏。 */
+  overlayExtras?: ReactNode;
+  children: ReactNode;
 }) => {
   const containerRef = useModalA11y(isOpen, onClose);
   useBackHandler(isOpen, onClose);
@@ -208,6 +214,8 @@ const P4CutInStage = ({ isOpen, onClose, ariaLabel, autoCloseMs, onShown, ringTo
           >
             {children}
           </div>
+          {/* 幕布层附加效果（音符雨），见 overlayExtras 注释 */}
+          {overlayExtras}
         </motion.div>
       )}
     </AnimatePresence>,
@@ -267,7 +275,17 @@ export const TodoCompleteP4 = ({ isOpen, onClose, title, totalPoints, unlockHint
 }) => {
   const anim = useBoldness();
   return (
-    <P4CutInStage isOpen={isOpen} onClose={onClose} ariaLabel={`${heading}：${title}`} autoCloseMs={3200} onShown={triggerSuccessFeedback}>
+    <P4CutInStage
+      isOpen={isOpen}
+      onClose={onClose}
+      ariaLabel={`${heading}：${title}`}
+      autoCloseMs={3200}
+      onShown={triggerSuccessFeedback}
+      /* 跳音符（数量随加点）：中性/蓝主题一直有（CelebrationCutIn 与 BandCutInP3），
+         黄频道走的是这张演出——一直漏着，从未挂过（用户上报「黄色没有音符」）。
+         MusicalNotes 自己按主题取 /m4.svg，挂幕布层即可，几何与蓝/中性一致。 */
+      overlayExtras={anim && (totalPoints ?? 0) > 0 ? <MusicalNotes count={totalPoints ?? 0} /> : undefined}
+    >
       <div className="relative pb-6 pt-2">
         <Badge anim={anim} size={228}>
           <StarCheck size={228} />

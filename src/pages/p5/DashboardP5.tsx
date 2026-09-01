@@ -777,7 +777,11 @@ export const DashboardP5 = () => {
               <polygon points={starPts(50, 50, 50, -90 + 14)} fill={P5R.red} opacity={0.92} />
             </svg>
             <P5Dots className="absolute" style={{ left: 8, top: 0, width: 90, height: 90 }} color="#000000" />
-            <P5Slab color={P5R.grey} seed={53} rot={20} style={{ right: 100, top: -30, width: 120, height: 90 }} />
+            {/* 灰斜块（v2.7.0.5 归位）：right:100 把它推到了页头**中间**（容器右缘再往里
+                100px，375 屏上落在 x≈171~291），观感像块游离的补丁。改 right:-28 让它
+                贴住右缘并探出屏外，由 main 的 overflow-x:clip 自然切掉一角——与页头其他
+                出血装饰（左侧红斜块 left:-36）同一口径。 */}
+            <P5Slab color={P5R.grey} seed={53} rot={20} style={{ right: -28, top: -30, width: 120, height: 90 }} />
             {/* 暗红同心五角星（用户拍板落位）：标题字正下方第一层——装饰层内画在最后
                 压过红方块群，仅被拼贴标题字（内容层）盖住；暗红叠在红斜块上同心环才读得出 */}
             <P5Star size={128} fill={P5R.redDeep} ring={P5R.ink} ring2="#f0e9df" rot={-10} className="absolute" style={{ left: 14, top: 20 }} />

@@ -1,6 +1,6 @@
 # 本目录字体来源（均为 SIL Open Font License 1.1，全文见下）：
 #   velvet-sans-sc.woff2   —— Noto Sans SC（Google/Adobe 思源黑体）变量字体子集
-#   velvet-serif-sc.woff2  —— Noto Serif SC 子集
+#   velvet-serif-sc.v2.woff2  —— Noto Serif SC 子集
 #   noto-sc-black/         —— Noto Sans SC Black（思源黑体 Black）分片自托管
 #   velvet-round-sc.v4.woff2  —— 寒蝉全圆体 ChillRoundF v3.200 子集
 #       （© 2023 ChillType，基于小杉圆体/justfont粉圆/猫啃糖圆体；
@@ -13,7 +13,7 @@
 （或只有低质量兜底字体）的设备上仍能按设计稿呈现：
 
   velvet-sans-sc.woff2   ← Noto Sans SC   (NotoSansSC-VF)
-  velvet-serif-sc.woff2  ← Noto Serif SC  (NotoSerifSC-VF)
+  velvet-serif-sc.v2.woff2  ← Noto Serif SC  (NotoSerifSC-VF)
 
 子集范围：
   · sans  —— GB2312 一级 + 二级汉字、应用内全部界面文案用字、拉丁字母数字与常用标点
