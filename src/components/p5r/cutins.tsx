@@ -122,6 +122,10 @@ interface StageProps {
   onShown?: () => void;
   /** 卡片最大宽度（今日完成那张要更宽） */
   maxW?: number;
+  /** 渲染在**幕布层**、卡片之外的附加效果（音符雨）。与中性主题 CelebrationCutIn
+      的 overlayExtras 同位：卡片那层带 scale 1.75→1 的砸落 + 震屏位移，挂在里面
+      会被整体缩放拖着走（音符只有十几像素、且锚点变成卡片一角），必须挂在外面。 */
+  overlayExtras?: ReactNode;
   children: ReactNode;
 }
 
@@ -188,7 +192,7 @@ const CollectLines = () => {
   );
 };
 
-const P5CutInStage = ({ isOpen, onClose, ariaLabel, autoCloseMs, onShown, maxW = 384, children }: StageProps) => {
+const P5CutInStage = ({ isOpen, onClose, ariaLabel, autoCloseMs, onShown, maxW = 384, overlayExtras, children }: StageProps) => {
   const containerRef = useModalA11y(isOpen, onClose);
   useBackHandler(isOpen, onClose);
   useAutoClose(isOpen, autoCloseMs, onClose);
@@ -282,6 +286,9 @@ const P5CutInStage = ({ isOpen, onClose, ariaLabel, autoCloseMs, onShown, maxW =
               )}
             </motion.div>
           </motion.div>
+          {/* 幕布层附加效果（音符雨）：在砸落/震屏两层之外，锚点是整块幕布，
+              与中性主题 CelebrationCutIn 的 overlayExtras 同位同几何 */}
+          {overlayExtras}
         </motion.div>
       )}
     </AnimatePresence>,
@@ -423,6 +430,11 @@ export const TodoCompleteP5 = ({ isOpen, onClose, title, totalPoints, unlockHint
       autoCloseMs={3000}
       onShown={triggerSuccessFeedback}
       maxW={424}
+      /* 跳音符（数量随加点）：中性/蓝主题一直有，红频道走的是这张演出。
+         此前挂在卡片内部，被砸落层 scale 1.75→1 与震屏位移一起拖着，
+         音符只有十几像素、锚点也变成卡片一角，实际看不见（用户上报「红黄没有音符」）。
+         改挂幕布层 overlayExtras，几何与蓝/中性完全一致。 */
+      overlayExtras={anim && (totalPoints ?? 0) > 0 ? <MusicalNotes count={totalPoints ?? 0} /> : undefined}
     >
       <div className="relative">
         {/* 幅面：宽 > 高 的不规则四边形（手写四条明确斜边，不用抖动——抖动只会读成毛边矩形）；
@@ -532,13 +544,6 @@ export const TodoCompleteP5 = ({ isOpen, onClose, title, totalPoints, unlockHint
 
         <StraddleTitle text={heading} size={heading.length > 4 ? 50 : 60} />
         <P5CloseKey onClose={onClose} variant="star" style={{ right: -10, top: -90, height: 62, width: 62 }} />
-        {/* 跳音符：中性主题一直有（SaveSuccessModal 的 overlayExtras），红频道走的是
-            这张演出，之前漏掉了。MusicalNotes 自己按主题取 /m5.svg，直接挂即可。 */}
-        {anim && (totalPoints ?? 0) > 0 && (
-          <div aria-hidden className="pointer-events-none absolute left-[18%] top-[26%] z-30">
-            <MusicalNotes count={totalPoints ?? 0} delay={0.45} />
-          </div>
-        )}
       </div>
     </P5CutInStage>
   );

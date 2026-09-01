@@ -165,6 +165,9 @@ export const Actions = () => {
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: panelDir }}
                 transition={{ duration: 0.18 }}
+                // 任务页整块走黑体正文（用户口径）；记录页只有选项按钮与日历要黑体，
+                // 那两处在 ActivitiesView 内部各自挂类，不在这里一刀切
+                className={actionsSubTab === 'todos' ? 'p5-body-sans' : undefined}
               >
                 {actionsSubTab === 'todos' ? <TodosView /> : <ActivitiesView />}
               </motion.div>

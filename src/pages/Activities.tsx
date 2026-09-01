@@ -219,7 +219,8 @@ const CalendarView = ({ activities, selectedDay, onDaySelect }: CalendarViewProp
       initial={{ opacity: 0, height: 0 }}
       animate={{ opacity: 1, height: 'auto' }}
       exit={{ opacity: 0, height: 0 }}
-      className="overflow-hidden"
+      /* p5-body-sans：日历内的月份/星期/日期数字走黑体正文（用户口径） */
+      className="overflow-hidden p5-body-sans"
     >
       <div className="rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden">
         {/* header: month nav */}
@@ -831,7 +832,9 @@ export const ActivitiesView = () => {
 
       {/* 页头 + 搜索（PageTitle 移除：标题职责由宿主 Actions 的大字切换头承担；
           成长总结入口保留并维持右对齐位置） */}
-      <div className="space-y-2.5">
+      {/* p5-body-sans：记录页的选项按钮（成长总结 / 日历切换 / 筛选）走黑体正文，
+          仅 P5 生效（见 index.css 同名规则），其他频道本就是黑体，无副作用 */}
+      <div className="space-y-2.5 p5-body-sans">
         {/* 红点是 -top/-right 的负偏移，会探出按钮边界；行容器一旦被祖先裁掉边缘，
             蓝/粉下就"被切掉一半"，红频道因为偏移更大（-1.5）直接整颗不见。
             这里给行留出等量内边距，让红点始终落在**行的盒子内部**，不再靠边缘运气。 */}
@@ -844,7 +847,9 @@ export const ActivitiesView = () => {
                 ? 'relative flex items-center gap-1.5 px-3.5 py-1.5 text-[13px] font-black'
                 : 'relative flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-black/5 dark:bg-white/10 text-gray-600 dark:text-gray-300 text-xs font-semibold hover:bg-primary/10 hover:text-primary transition-colors'
             }
-            style={p5 ? { color: P5R.ink, fontFamily: P5_FONT } : undefined}
+            /* 字体不再内联圆体：记录页的选项按钮按用户口径走黑体正文，
+               由外层 .p5-body-sans 继承（内联会盖过它） */
+            style={p5 ? { color: P5R.ink } : undefined}
           >
             {/* P5：半透明底色在红频道读成「脏灰块」——换成纸白平行四边形 + 不等宽黑描边 */}
             {p5 && (

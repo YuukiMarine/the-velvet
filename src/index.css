@@ -26,9 +26,17 @@
   font-style: normal;
   font-display: swap;
 }
+/* P4 黄频道展示衬线（v2.7.0.5 重做子集）。
+   旧子集只有 2384 码点、**GB2312 一级常用字缺 1620 个（43%）**——用户手输的同伴名
+   / 任务名一撞上缺字就逐字回退到系统衬线（iOS 有宋体 → 明显撞色撞形，安卓没有则一路
+   掉到黑体），同一行里两套字形，就是「黄主题同伴名称大字字体不一致」的全部原因。
+   v2 从 Noto Serif SC 变量母本（SIL OFL，wght 200–900，轴与旧版一致）重切，字符集取
+   「旧衬线子集 ∪ 黑体子集」= 7563 码点，GB2312 一级+二级全覆盖，旧版所有字形零丢失。
+   ⚠️ /fonts/ 走 SW 的 CacheFirst（vite.config runtimeCaching）：**换字体必须换文件名**，
+   同名替换会永远命中旧缓存不回源——故带 .v2 后缀，与圆体的版本号制同口径。 */
 @font-face {
   font-family: 'Velvet Serif SC';
-  src: url('/fonts/velvet-serif-sc.woff2') format('woff2');
+  src: url('/fonts/velvet-serif-sc.v2.woff2') format('woff2');
   font-weight: 200 900;
   font-style: normal;
   font-display: swap;
@@ -65,6 +73,16 @@
   font-family: 'Velvet Round SC', 'Velvet Sans SC', -apple-system, BlinkMacSystemFont,
     'PingFang SC', 'Microsoft YaHei', sans-serif;
 }
+/* 行动页正文回黑体（v2.7.0.5 用户口径：「任务页所有内容都和之前一样用黑体，
+   记录页的选项按钮和日历内字体也是黑体，字重轻一些的正文字体即可」）。
+   P5 全域正文是圆体（上一条），行动页这几块要单独退回黑体正文面。
+   **只挂在容器上、只换 family**：靠继承往下铺，凡自带字体的后代
+   （.font-black 的展示面、内联 P5_TITLE_FONT 的标题瓷砖、上面那两条标题规则）
+   优先级都更高，原样不动；字重字号一概不碰，各处已定的字阶不受影响。 */
+:root[data-ui-channel="p5"] .p5-body-sans {
+  font-family: 'Velvet Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+}
+
 /* P5 标题兜底（v2.7.0.2c 用户口径：标题/卡片题/统计数字一律黑体，圆体只留给正文）：
    语义标题标签在 P5 下统一走黑体栈——设置页「颜色与声音/显示」这类**共享标记**的
    分区标题没有频道分支可挂内联字体，全靠这一条接住。内联字体（P5_TITLE_FONT /

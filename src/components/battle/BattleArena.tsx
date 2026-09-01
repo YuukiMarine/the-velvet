@@ -35,8 +35,7 @@ import { P4Sparkle, P4Magnifier, P4Scanlines, P4CautionStripes } from '@/ui/p4Ki
 import { NoiseLayer } from '@/components/battle/warKit';
 import {
   P5R, P5_FONT, roughQuad, roughSlant,
-  P5RPage, P5Panel, P5Btn, P5Collage, P5Star, P5StarOutline, P5RingStar, P5Dots, P5Slab,
-} from '@/components/p5r/kit';
+  P5RPage, P5Panel, P5Btn, P5Collage, P5Star, P5StarOutline, P5RingStar, P5Dots, P5Slab, P5_TITLE_FONT,} from '@/components/p5r/kit';
 
 type TabKey = 'battle' | 'persona' | 'settings';
 
@@ -394,8 +393,13 @@ export const BattleArena = () => {
       <P5Panel seed={620} jag={8} frame={3.5} keyline={2.5} shadow={{ x: 5, y: 6 }} bodyClassName="px-4 pb-3 pt-4">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
-            <p className="truncate text-[22px] font-black leading-tight" style={{ color: P5R.ink, fontFamily: P5_FONT }}>{user?.name ?? '旅行者'}</p>
-            <p className="mt-0.5 text-[15px] font-black leading-none" style={{ color: P5R.ink, fontFamily: P5_FONT }}>
+            {/* 玩家名 / LV / PLAYER 标一律走黑体展示面（v2.7.0.5 用户口径）——
+                原本内联的是圆体 P5_FONT，与卡上其余黑体字样撕成两套。
+                三处都是 font-black(900)，P5_TITLE_FONT 首选的思源黑 Black 正是 900
+                单字重面，字重相符；分片没到货时后备 Velvet Sans SC 同为真 900，
+                不会重演「有粗有细」。 */}
+            <p className="truncate text-[22px] font-black leading-tight" style={{ color: P5R.ink, fontFamily: P5_TITLE_FONT }}>{user?.name ?? '旅行者'}</p>
+            <p className="mt-0.5 text-[15px] font-black leading-none" style={{ color: P5R.ink, fontFamily: P5_TITLE_FONT }}>
               LV.{attributes.reduce((s, a) => s + a.level, 0)}
             </p>
           </div>
@@ -427,7 +431,7 @@ export const BattleArena = () => {
       {/* PLAYER 黑标：另一张纸贴在卡的上缘 */}
       <span
         className="absolute -top-2.5 left-3.5 px-2.5 py-[3px] text-[11px] font-black leading-none tracking-[0.2em]"
-        style={{ background: P5R.ink, color: P5R.paper, clipPath: roughQuad(621, 3), boxShadow: `0 0 0 2px ${P5R.paper}`, fontFamily: P5_FONT }}
+        style={{ background: P5R.ink, color: P5R.paper, clipPath: roughQuad(621, 3), boxShadow: `0 0 0 2px ${P5R.paper}`, fontFamily: P5_TITLE_FONT }}
       >
         PLAYER
       </span>
