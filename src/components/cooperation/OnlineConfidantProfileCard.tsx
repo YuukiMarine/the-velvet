@@ -194,7 +194,8 @@ export function OnlineConfidantProfileCard({
               <div className="flex-1 min-w-0 pt-0.5">
                 <div className="flex min-w-0 items-center gap-1.5 text-lg font-serif" style={{ color: '#f5e6ff' }}>
                   <OnlineStarBadge glow={beenPrayedByThem && !alreadyPrayed} ink="#c9a6ff" size={13} />
-                  <span className="truncate">{name}</span>
+                  {/* 同 ConfidantCard：行内 overflow:hidden 会按字体内容区裁掉字的下沿 */}
+                  <span className="block truncate">{name}</span>
                 </div>
                 <div className="text-[11px] truncate" style={{ color: '#a89dc0' }}>
                   @{profile.userId ?? '—'}
