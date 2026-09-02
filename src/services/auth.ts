@@ -1,5 +1,4 @@
 import { pb, cloudEnabled, getUserId } from './pocketbase';
-import { pbQuote } from './pbFilter';
 import type { RecordModel } from 'pocketbase';
 
 /** 简单的邮箱格式校验 */
@@ -122,61 +121,107 @@ const generateRandomPassword = (): string => {
   return out + 'Aa1!';
 };
 
-/**
- * 把 UserID 解析为 email（用于 OTP 登录时，允许用户输入 UserID）。
+/*
+ * ── UserID 侧的服务端代办端点（v2.7.0.5e） ──
  *
- * 解析策略（依次尝试）：
- *  1. 输入含 `@` → 直接当邮箱
- *  2. 调 PB JSVM 自定义端点 `/api/velvet/resolve-email`（由 pb_hooks 提供，
- *     无视 List Rule 限制直接按 username 查 email）—— 推荐部署方式
- *  3. 回落：调 users 集合的 getList（若已登录，或 List Rule 对匿名开放才能成功）
- *  4. 全部失败 → 抛出引导错误，让用户改用邮箱或切到「密码」Tab
+ * 用 UserID 登录时，客户端把 UserID 原样交给服务端；发码 / 发重置邮件 / 密码认证都在
+ * 服务端内部完成，客户端不做 UserID → 邮箱的解析，也不读取用户邮箱。
+ * 邮箱输入不走这里，直接打 PB 原生端点。
+ *
+ * 契约（服务端 pb_hooks/velvet.pb.js）：
+ *   POST /api/velvet/request-otp             {identity}           → 200 {otpId}
+ *   POST /api/velvet/request-password-reset  {identity}           → 200 {}
+ *   POST /api/velvet/auth-with-password      {identity, password} → 200 {token, record}
+ *   前两条对不存在的 UserID 回 404 + {velvet:"not_found"}；hook 未部署时 PB 自身也回 404
+ *   但没有这个标记，据此把「没这个人」和「服务端没装接口」分开提示。
+ *   密码那条对「UserID 不存在」与「密码错」统一回 400。
+ *   密码登录走 hook 而不是把 username 列进 identityFields：username 允许为空
+ *   （未设 UserID 的账号），唯一索引建不起来，identity field 的前提不成立。
  */
-export const resolveIdentityToEmail = async (identity: string): Promise<string> => {
+const VELVET_NOT_FOUND = 'not_found';
+
+const isVelvetNotFound = (err: unknown): boolean => {
+  const anyErr = err as { status?: number; response?: { velvet?: unknown }; data?: { velvet?: unknown } };
+  if (anyErr?.status !== 404) return false;
+  return anyErr?.response?.velvet === VELVET_NOT_FOUND || anyErr?.data?.velvet === VELVET_NOT_FOUND;
+};
+
+/** hook 的错误 → 用户能看懂的话。429 是服务端限流（部署清单要求给 /api/velvet/ 配限流） */
+const translateHookError = (err: unknown): Error => {
+  const status = (err as { status?: number })?.status;
+  if (isVelvetNotFound(err)) return new Error('没找到这个 UserID');
+  if (status === 404) return new Error('服务端尚未部署 UserID 登录接口，请先改用邮箱登录');
+  if (status === 429) return new Error('操作太频繁，请稍后再试');
+  return err instanceof Error ? err : new Error('请求失败');
+};
+
+/** 身份分类：邮箱 / UserID，含格式校验与提示文案 */
+const classifyIdentity = (identity: string): { kind: 'email' | 'userId'; value: string } => {
   const normalized = identity.trim().toLowerCase();
   if (!normalized) throw new Error('请输入 UserID 或邮箱');
   if (looksLikeEmail(normalized)) {
     if (!isValidEmail(normalized)) throw new Error('邮箱格式不正确');
-    return normalized;
+    return { kind: 'email', value: normalized };
   }
   if (!isValidUserId(normalized)) {
     throw new Error('UserID 格式不正确（3-18 位小写字母 / 数字 / ._-）');
   }
-  if (!pb) throw new Error('云同步未配置');
+  return { kind: 'userId', value: normalized };
+};
 
-  // 优先走自定义 hook 端点
+/** UserID → 服务端代发验证码，只回 otpId */
+const requestOTPByUserId = async (userId: string): Promise<string> => {
+  if (!pb) throw new Error('云同步未配置');
   try {
-    const result = await pb.send<{ email?: string }>('/api/velvet/resolve-email', {
+    const result = await pb.send<{ otpId?: string }>('/api/velvet/request-otp', {
       method: 'POST',
-      body: { identity: normalized },
+      body: { identity: userId },
+      requestKey: null,
     });
-    if (result?.email) return result.email;
+    if (!result?.otpId) throw new Error('服务器未返回 OTP id');
+    return result.otpId;
+  } catch (err) {
+    throw translateHookError(err);
+  }
+};
+
+/**
+ * UserID + 密码 → 服务端代办认证，回 PB 原生的 {token, record}（登录者自己的记录）。
+ * 与 callAuthWithOTP 的 raw-HTTP 回落同一收尾：authStore.save 之后 SDK 状态与原生登录无异。
+ */
+const authWithPasswordByUserId = async (userId: string, password: string): Promise<RecordModel> => {
+  if (!pb) throw new Error('云同步未配置');
+  let result: { token?: string; record?: RecordModel };
+  try {
+    result = await pb.send<{ token?: string; record?: RecordModel }>('/api/velvet/auth-with-password', {
+      method: 'POST',
+      body: { identity: userId, password },
+      requestKey: null,
+    });
   } catch (err) {
     const status = (err as { status?: number })?.status;
-    if (status === 404) {
-      // 明确"查过确实没这人" —— 直接告诉用户
-      throw new Error('没找到这个 UserID');
-    }
-    // 404 以外（比如 404 hook 本身没部署时 PB 会返回什么？实际是 404，
-    // 所以走不到这里。这里留作"网络 / 服务器错误"兜底）
-    console.warn('[velvet-auth] /api/velvet/resolve-email failed, falling back', err);
+    if (status === 404) throw new Error('服务端尚未部署 UserID 登录接口，请先改用邮箱登录');
+    if (status === 429) throw new Error('尝试太频繁，请稍后再试');
+    if (status === 400) throw new Error(BAD_CREDENTIALS_HINT);
+    throw err;
   }
+  if (!result?.token || !result?.record) throw new Error('服务器未返回登录凭据');
+  pb.authStore.save(result.token, result.record);
+  return result.record;
+};
 
-  // 回落：List 查询（仅在 List Rule 公开 或 当前已登录时成功）
+/** UserID → 服务端代发重置邮件，200 空体 */
+const requestPasswordResetByUserId = async (userId: string): Promise<void> => {
+  if (!pb) throw new Error('云同步未配置');
   try {
-    const result = await pb.collection('users').getList(1, 1, {
-      filter: `username = ${pbQuote(normalized)}`,
-      fields: 'email,username',
-      skipTotal: true,
+    await pb.send('/api/velvet/request-password-reset', {
+      method: 'POST',
+      body: { identity: userId },
+      requestKey: null,
     });
-    const rec = result.items?.[0];
-    const email = rec ? (rec as unknown as { email?: string }).email : undefined;
-    if (email) return email;
   } catch (err) {
-    console.warn('[velvet-auth] list fallback failed', err);
+    throw translateHookError(err);
   }
-
-  throw new Error('验证码登录请填邮箱；或切到「密码」Tab 用 UserID 登录（需要 PB 端部署 resolve-email hook 才能支持 UserID 收码）');
 };
 
 // ── 登记（仅"验证码"一个路径，UserID 是可选项） ───────────────
@@ -264,10 +309,9 @@ export const requestLoginOrSignupOTP = async (
     throw new Error('邮箱格式不正确');
   }
 
-  // UserID 输入：只可能是老用户，解析到邮箱后直接走 requestOTP
+  // UserID 输入：只可能是老用户，交给服务端代发（邮箱不回到客户端）
   if (!isEmailInput) {
-    const email = await resolveIdentityToEmail(normalized);
-    const otpId = await callRequestOTP(email);
+    const otpId = await requestOTPByUserId(normalized);
     return { otpId, wasSignup: false };
   }
 
@@ -348,76 +392,43 @@ export const requestVerification = async (email: string): Promise<void> => {
  *  - 旧用户用邮箱 OTP 注册的，密码是随机生成的——他们应该走"验证码"Tab，
  *    或先用"忘记密码"重置，才能用密码登录。下面的错误文案会提示这一点。
  */
+const BAD_CREDENTIALS_HINT =
+  '账号或密码不正确。\n' +
+  '若你之前仅用过邮箱验证码登录，密码是系统随机生成的——请切到「验证码」Tab，或用"忘记密码"先重置。';
+
 export const loginWithPassword = async (
   identity: string,
   password: string,
 ): Promise<RecordModel> => {
   if (!cloudEnabled || !pb) throw new Error('云同步未配置');
-  const raw = identity.trim().toLowerCase();
-  if (!raw) throw new Error('请输入 UserID 或邮箱');
+  if (!identity.trim()) throw new Error('请输入 UserID 或邮箱');
   if (!password) throw new Error('请输入密码');
+  const who = classifyIdentity(identity);
 
-  /*
-   * 身份候选（v2.7.0.5d，用户上报「重置完密码 / 后台改完密码都登不进」）。
-   *
-   * PB 的 authWithPassword 只认集合 `passwordAuth.identityFields` 里列出的字段，
-   * **默认只有 email**。本仓把 UserID 存在 users.username 上，原来这里是把用户
-   * 输入的原值直接丢给 authWithPassword——服务端没把 username 列进 identityFields
-   * 的话，UserID + 正确密码永远 400，表现就是「密码怎么改都不对」，而同一个
-   * UserID 走验证码却能登（requestLoginOTP 早就先 resolveIdentityToEmail 了）。
-   * 现在密码登录也走同一套解析：UserID 先换成邮箱（邮箱一定在 identityFields 里），
-   * 解析不了（hook 未部署 / List Rule 关着）再退回原值试一次，两种服务端配置都能登。
-   */
-  const candidates: string[] = [];
-  let resolveErr: unknown = null;
-  if (!looksLikeEmail(raw)) {
-    try {
-      const email = await resolveIdentityToEmail(raw);
-      if (email && email !== raw) candidates.push(email);
-    } catch (err) {
-      resolveErr = err;
-    }
+  // UserID：服务端代办（见文件头契约）。邮箱：PB 原生。两边失败登录都只打一次认证。
+  if (who.kind === 'userId') return await authWithPasswordByUserId(who.value, password);
+
+  try {
+    const authData = await pb.collection('users').authWithPassword(who.value, password);
+    return authData.record;
+  } catch (err) {
+    const status = (err as { status?: number })?.status;
+    if (status === 429) throw new Error('尝试太频繁，请稍后再试');
+    if (status !== 400) throw err;
+    // 400 不吞：服务端原话附在括号里，否则「密码认证被关」「规则挡下」「密码错」是同一句话
+    const detail = firstFieldMessage(err) || (err instanceof Error ? err.message : '');
+    throw new Error(BAD_CREDENTIALS_HINT + (detail ? `\n（服务器返回：${detail}）` : ''));
   }
-  candidates.push(raw);
-
-  let lastErr: unknown = null;
-  for (const id of candidates) {
-    try {
-      const authData = await pb.collection('users').authWithPassword(id, password);
-      return authData.record;
-    } catch (err) {
-      lastErr = err;
-      // 非 400（网络 / 5xx / 限流）直接抛，不要浪费第二次尝试
-      if ((err as { status?: number })?.status !== 400) throw err;
-    }
-  }
-
-  /*
-   * 400 的收尾：**不再把服务端的说法吞掉**。
-   * 原来一律替换成"账号或密码不正确"，于是「密码认证被服务端关了」「Auth API 规则
-   * 挡下未验证邮箱」「identity 压根没匹配到记录」这些完全不同的原因，用户看到的
-   * 都是同一句话，怎么查都查不下去。真实 message 附在括号里带出来。
-   */
-  const detail =
-    firstFieldMessage(lastErr) ||
-    (lastErr instanceof Error ? lastErr.message : '') ||
-    (resolveErr instanceof Error ? resolveErr.message : '');
-  throw new Error(
-    '账号或密码不正确。\n' +
-    '若你之前仅用过邮箱验证码登录，密码是系统随机生成的——请切到「验证码」Tab，或用"忘记密码"先重置。' +
-    (detail ? `\n（服务器返回：${detail}）` : ''),
-  );
 };
 
 // ── 登录 · 验证码 ─────────────────────────────────────────
 
 /**
- * 请求登录验证码。identity 可以是邮箱或 UserID（会尝试 UserID→email 解析）。
- * 若 UserID 解析失败（PB List Rule 不允许公开搜索），会抛带有引导的错误。
+ * 请求登录验证码。邮箱走 PB 原生端点；UserID 交给服务端代发，邮箱不回到客户端。
  */
 export const requestLoginOTP = async (identity: string): Promise<string> => {
-  const email = await resolveIdentityToEmail(identity);
-  return await requestOTPByEmail(email);
+  const who = classifyIdentity(identity);
+  return who.kind === 'email' ? await requestOTPByEmail(who.value) : await requestOTPByUserId(who.value);
 };
 
 /** 邮箱 OTP 发送（内部工具，识别 404 = 未注册） */
@@ -456,8 +467,12 @@ export const verifyOTP = async (otpId: string, code: string): Promise<RecordMode
 /** 向邮箱发送"重置密码"链接 */
 export const requestPasswordReset = async (identity: string): Promise<void> => {
   if (!pb) throw new Error('云同步未配置');
-  const email = await resolveIdentityToEmail(identity);
-  await pb.collection('users').requestPasswordReset(email);
+  const who = classifyIdentity(identity);
+  if (who.kind === 'email') {
+    await pb.collection('users').requestPasswordReset(who.value);
+    return;
+  }
+  await requestPasswordResetByUserId(who.value);
 };
 
 // ── 注销 / profile 更新 ──────────────────────────────────────
