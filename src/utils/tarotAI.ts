@@ -1,7 +1,19 @@
-import { Activity, Attribute, AttributeId, DailyDivination, DrawnCard, Fortune, LongReadingPeriod, Settings, TarotOrientation } from '@/types';
-import { TarotCardData, TAROT_BY_ID, SPREAD_POSITIONS, PERIOD_LABELS, FORTUNE_META } from '@/constants/tarot';
+/**
+ * tarotAI — 每日塔罗 / 中长期占卜 / 追问 的提示词与调用（v2.7.0.6 重做）。
+ *
+ * 这一版改了什么（用户口径：「上一轮改完以后更弱智了」）：
+ *   · 素材换血：不再喂"最新 7 条记录 + Lv 数字"，改喂 tarotContext 算出的近况简报
+ *     （每行带日期、属性只定性、案头只作底色、昨日回声、手记、画像）；
+ *   · 风格改为旁敲侧击：不点名事项、不写数字，让客人"对号入座"；
+ *   · 写法由代码轮转（WRITING_PRESETS），模型只负责判断；
+ *   · 每日改流式：正文先流出来上屏，末尾一行 <<<META>>> 带 JSON（签语 / 属性 / 吉凶 / 手记）；
+ *   · 每日可选走「深思熟虑」档（settings.tarotDailyDeliberate），温度 0.7。
+ */
+import type { AttributeId, Fortune, LongReadingPeriod, Settings, TarotOrientation, DrawnCard } from '@/types';
+import { TAROT_BY_ID, SPREAD_POSITIONS, PERIOD_LABELS, inferFortune, TarotCardData } from '@/constants/tarot';
 import { resolveProvider } from '@/utils/aiProviders';
-import { chatComplete, chatStream, getDeliberateAIConfig } from '@/utils/aiClient';
+import { chatComplete, chatStream, getAIConfig, getDeliberateAIConfig, type AIConfig } from '@/utils/aiClient';
+import { buildDailyBrief, buildLongBrief, formatNowLine, type WritingPreset } from '@/utils/tarotContext';
 
 const ATTRIBUTE_IDS: AttributeId[] = ['knowledge', 'guts', 'dexterity', 'kindness', 'charm'];
 
@@ -12,54 +24,33 @@ export interface AIRequestData {
   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
 }
 
+/** 每日解读的结构化结果（AI 与离线兜底共用） */
 export interface DailyAIResult {
   narration: string;
   advice: string;
   attribute: AttributeId;
   fortune: Fortune;
-}
-
-function attrLines(attributes: Attribute[], attrNames: Record<AttributeId, string>): string {
-  return ATTRIBUTE_IDS.map(id => {
-    const a = attributes.find(x => x.id === id);
-    return `- ${attrNames[id] ?? id}：Lv.${a?.level ?? 1}  总点数 ${a?.points ?? 0}`;
-  }).join('\n');
-}
-
-const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
-
-function pad2(n: number): string {
-  return String(n).padStart(2, '0');
-}
-
-function formatLocalDateTime(d: Date): string {
-  const date = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-  const time = `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
-  return `${date} ${WEEKDAYS[d.getDay()]} ${time}`;
+  memo?: string;
 }
 
 /**
  * 将 LLM 返回的属性名（可能是客制化名字、近似匹配、或退化的英文 ID）映射回
  * 规范的 AttributeId。优先按客人当前的属性名匹配，失败再做一系列兜底。
  */
-function resolveAttributeFromLabel(
+export function resolveAttributeFromLabel(
   raw: string,
   attrNames: Record<AttributeId, string>,
 ): AttributeId | null {
   const trimmed = raw.trim();
   if (!trimmed) return null;
-  // 1) 精确匹配客制化名字
   for (const id of ATTRIBUTE_IDS) {
     if ((attrNames[id] ?? '') === trimmed) return id;
   }
-  // 2) 大小写不敏感
   const lc = trimmed.toLowerCase();
   for (const id of ATTRIBUTE_IDS) {
     if ((attrNames[id] ?? '').toLowerCase() === lc) return id;
   }
-  // 3) 退化为英文 ID（如 LLM 偶尔无视指令直接返回 knowledge）
   if ((ATTRIBUTE_IDS as string[]).includes(lc)) return lc as AttributeId;
-  // 4) 模糊包含（LLM 可能在名字外多包了符号或括号）
   for (const id of ATTRIBUTE_IDS) {
     const name = (attrNames[id] ?? '').trim();
     if (name && (trimmed.includes(name) || name.includes(trimmed))) return id;
@@ -67,226 +58,240 @@ function resolveAttributeFromLabel(
   return null;
 }
 
-function formatActivitySnippet(a: Activity, attrNames: Record<AttributeId, string>): string {
-  const dateStr = formatLocalDateTime(new Date(a.date));
-  const ptsParts = ATTRIBUTE_IDS
-    .filter(k => (a.pointsAwarded?.[k] ?? 0) > 0)
-    .map(k => `${attrNames[k] ?? k}+${a.pointsAwarded[k]}`);
-  const ptsStr = ptsParts.length ? `  [${ptsParts.join(', ')}]` : '';
-  return `[${dateStr}] ${a.description}${ptsStr}`;
-}
-
-function cardLine(c: TarotCardData, orientation: TarotOrientation): string {
+function cardBlock(c: TarotCardData, orientation: TarotOrientation): string {
   const o = orientation === 'upright' ? '正位' : '逆位';
-  const m = orientation === 'upright' ? c.upright : c.reversed;
-  return `《${c.name} ${c.nameEn}》(${o}) — 关键词：${m.keywords.join('、')}；牌意：${m.meaning}`;
-}
-
-function previousDailyLine(
-  d: DailyDivination | null | undefined,
-  attrNames: Record<AttributeId, string>,
-  gapDays: number | null,
-): string {
-  if (!d) return '（无上一张每日塔罗记录）';
-  const card = TAROT_BY_ID[d.cardId];
-  const cardName = card ? `《${card.name} ${card.nameEn}》` : `《${d.cardId}》`;
-  const orientation = d.orientation === 'upright' ? '正位' : '逆位';
-  const fortune = d.fortune ? FORTUNE_META[d.fortune]?.label ?? d.fortune : '未记录';
-  const attrName = attrNames[d.effect.attribute] ?? d.effect.attribute;
-  const date = d.createdAt ? formatLocalDateTime(new Date(d.createdAt)) : d.date;
-  // 间隔标注放最前：模型此前一律把上一张称为「昨日的××」，用户隔了很多天再抽时
-  // 读到"昨日"就穿帮了。是不是昨天，这里说死，正文措辞跟着走。
-  const gapLabel = gapDays === null ? '' : gapDays <= 1 ? '【就在昨天】' : `【${gapDays} 天前，不是昨天】`;
+  const m = c[orientation];
   return [
-    `${gapLabel}[${date}] ${cardName}（${orientation}）`,
-    `运势：${fortune}`,
-    `加成：${attrName} × ${d.effect.multiplier}`,
-    `上一条短建议：${d.advice || '（无）'}`,
-  ].join('；');
+    `《${c.name} ${c.nameEn}》（${o}）`,
+    `- 关键词：${m.keywords.join('、')}`,
+    `- 牌意：${m.meaning}`,
+    `- 牌面写给客人的话（客人在界面上也能读到这段，正文不要照抄）：${m.reflection}`,
+  ].join('\n');
 }
 
-// ── 每日塔罗：JSON 响应，非流式 ────────────────────────────
+const ATTRIBUTE_NAMING_RULES = `【关于五项属性的命名（非常重要）】
+- 客人**自己定义了五项属性的名字**（可能是英文缩写、自创词、领域术语）。素材里给出的名字是唯一规范名。
+- 正文与 JSON 里提到属性时，**必须逐字使用素材里的原文**，不翻译、不意译、不加括号注释；提到时要自然，不要为了提而提。`;
 
-const DAILY_SYSTEM_PROMPT = `你是靛蓝色房间的塔罗解读者。语气庄严而富有诗意，带着神秘学气息，但从不故弄玄虚；像一位熟识客人的解读者在桌边落笔，不像自动生成的日报。
-用户今日抽到一张塔罗牌，请结合以下素材为其撰写今日解读：
-1. 抽到的塔罗牌（含正/逆位）的意象
-2. 用户的五维属性名称与等级（代表其当下的成长状态）
-3. 用户最近 7 条成长记录（近况的真实细节——个性化的全部来源）
-4. 当前本地时间与上一张每日塔罗的轻量上下文
+const OBLIQUE_RULES = `【铁律】
+- 旁敲侧击，不点名。绝不写出任务标题、愿望原文、记录原文；用牌的意象与处境的轮廓去指向它。"那件搁了很久的事"可以，"你的『背单词』任务"不可以。
+- 不出现任何数字：等级、点数、Lv、次数、百分比、天数、金额，一个都不许写。属性名可以出现，但不带等级。
+- 日期是硬约束。素材里每一行都标了是今天、昨天、还是几天前：只有标「今天」的才能说成今天的事，标「昨天」的才能说成昨天的事；三天前及更早的，不要当作近况来提。没有记录的空窗，就把沉默本身读进牌里，不要翻旧账。
+- 不复读上一张牌的解读，不复读案头清单，不复读手记与画像；长期的、反复出现的事项更不要天天提。
+- 不用"整体来看 / 这张牌提醒你 / 你需要注意的是 / 建议你 / 综上"这类模板句。不自称，不提"AI""解读者""塔罗师"。`;
 
-解读要覆盖三件事：今天的走向如何、什么值得顺势去做、什么需要收着或避开。
-但**不要用固定的骨架去装它们**——同一位客人天天来抽，昨天"整体走向/宜/忌"三段，
-今天还是同样三段，就成了报表。写法上：
-- 切入点每天该不一样：可以从牌面的一个意象落笔，可以从他某条记录接过来，
-  可以从时辰（深夜/清晨）起头，也可以直接给出那句最要紧的判断。
-- 至少引用一处**具体的**近期记录（换成你的话说，不要照抄原文）；没有记录就坦然只读牌。
-- 结构自由：整段散文、两三个短段、或一小段加两行点拨都可以；小标题可用可不用，
-  用也不要每天同一套。总量 3~9 行之间看内容需要。
-- 判断要落地：说"适合做什么"时给到能做的事，不要停在"保持好心态"这类空话。
+// ── 每日塔罗：流式正文 + 尾部 META ──────────────────────────
 
-结合牌意（占比较大）与用户当下状态，从五项属性中挑选最契合的一项作为今日加成属性。
-同时给出今日的"总体运势吉凶"等级：
-- "great"（大吉）——牌意积极 + 正位为主 + 与客人近期状态强烈契合
-- "good"（中吉）——基调正向但有条件或保留
-- "small"（小吉）——走势中性偏好，需留心
-- "bad"（凶）——以警示/考验为主，需格外谨慎
+/** 正文与结构化尾巴的分界线。模型另起一行只写它，之后是一个 JSON 对象。 */
+export const DAILY_META_MARK = '<<<META>>>';
 
-【关于上一张每日塔罗】
-- 上一张牌只是轻量参照，不是今天的主牌。
-- 素材里标了它抽于几天前：**只有标注是「就在昨天」时才可以说"昨日"**；
-  隔了几天就说"几天前/上次"，或者干脆不提——绝不要把久远的那张说成"昨日的牌"。
-- 只有当今天的牌与上一张形成明显的延续、反转或回应时，才自然带一句；否则不要提及。
-- 不要复述上一条解读，也不要让上一张牌覆盖今天这张牌的判断。
+const DAILY_SYSTEM_PROMPT = `你是靛蓝色房间的塔罗解读者。语气庄严、克制、有诗意，带一点神秘学气息，从不故弄玄虚；像一位熟识客人的解读者在桌边落笔，不像自动生成的日报。
 
-【关于五项属性的命名约束（非常重要）】
-- 客人**自己定义了五项属性的名字**，这些名字会随客人喜好变化（例如可能是英文缩写、自创词、领域术语等）。
-- 你接下来收到的"客人的五维属性"列表里给出的名字就是**唯一规范名**。
-- 在 narration / advice 等所有正文中提到属性时，**必须严格使用客人列表中的原文**，
-  不允许翻译、意译，不允许加括号注释，也请自然、不刻意地提到。
-- JSON 中 \`attribute\` 字段的取值，也必须严格写成客人列表里的某一个名字（与列表中完全一致）。
+【你会拿到的素材】
+1. 今日抽到的牌（含正/逆位）：关键词、牌意、以及一段"牌面写给客人的话"。
+2. 现在的日期与时辰。
+3. 客人的底色：五项属性只做定性描述，没有数字。
+4. 近况：近两天的记录，每行带日期；没有就明说是空窗。
+5. 案头：今天要做的一次性事项、临近的期限、远处的愿望——只作底色。
+6. 昨日回声：昨天那张牌说了什么、客人那天实际做了什么。
+7. 解读者手记（若有）：你自己此前留下的备忘。
+8. 客人画像（若有）。
+9. 今日写法：今天这篇解读该用的切入角度与体裁。
 
-**输出必须是严格的合法 JSON**，结构：
-{
-  "narration": "主解读文字（允许 Markdown、换行；结构自便），3~9 行",
-  "advice": "一句简短的今日行动建议，不超过 40 字",
-  "attribute": "<挑选最契合的一项属性，值必须严格等于客人列表中的属性名原文>",
-  "fortune": "<great | good | small | bad 之一>"
+【解读的本质】
+牌是主角，客人的近况是底色。你要做的不是把素材复述一遍，而是让牌的语言**擦过**客人的处境——让他读到时心里一动、觉得"这说的是我"，却说不出你是从哪条记录知道的。素材越具体，你的笔越要虚；越像旁敲侧击，越像真正认识他。
+
+${OBLIQUE_RULES}
+
+【必须落到的三件事】（顺序、措辞、是否分段都自由，但缺一不可）
+- 一句判断：今天的走向如何。
+- 一处顺势：什么值得顺着今天的势去做。可以指向案头上的某件事，但只能旁敲侧击。
+- 一处收着：什么该收着、避开、或别急。
+
+【今日写法】
+素材末尾给出了今天的写法，照它写。总量 3～9 行看内容需要；不用小标题；可以用换行分段，可以偶尔加粗一处，不要列表。
+
+【运势与加成属性】
+结合牌意（占比较大）与客人当下状态，从五项属性中挑一项作为今日加成属性，并给出吉凶等级：
+- "great"（大吉）：牌意积极、正位为主、与客人当下状态强烈契合
+- "good"（中吉）：基调正向但有条件或保留
+- "small"（小吉）：走势中性偏好，需留心
+- "bad"（凶）：以警示、考验为主，需格外谨慎
+
+${ATTRIBUTE_NAMING_RULES}
+
+【输出格式（严格）】
+先写解读正文。正文写完后，**另起一行只写 ${DAILY_META_MARK}**，再另起一行给出一个 JSON 对象，形如：
+{"advice":"一句签语","attribute":"属性名原文","fortune":"good","memo":"一句备忘"}
+- advice：一句像签文的话，飘渺、可代入，不超过 24 字；不是行动指令，不点名任何事项，不带数字。它会显示在首页。
+- attribute：逐字等于素材里五项属性名之一。
+- fortune：great / good / small / bad 之一。
+- memo：写给未来的你自己的备忘，不超过 30 字，中性陈述句，记下这张牌落在客人哪件处境上（这一句可以写具体事，它会以小字显示给客人、客人可以删掉）。
+${DAILY_META_MARK} 之后除了这个 JSON 不要有任何别的文字，不要用代码块。`;
+
+/** 每日塔罗走哪一档：开关开且深思熟虑档可用 → 深思熟虑；否则快速响应 */
+export function resolveDailyConfig(settings: Settings): AIConfig | null {
+  if (settings.tarotDailyDeliberate) {
+    const d = getDeliberateAIConfig(settings);
+    if (d) return d;
+  }
+  return getAIConfig(settings);
 }
 
-不要输出 JSON 之外的任何文字，不要用代码块包裹。`;
-
-export function buildDailyRequest(params: {
+export async function buildDailyRequest(params: {
   settings: Settings;
-  attributes: Attribute[];
   card: TarotCardData;
   orientation: TarotOrientation;
-  recentActivities: Activity[];
-  previousDaily?: DailyDivination | null;
   now?: Date;
-}): AIRequestData {
-  const { settings, attributes, card, orientation, recentActivities, previousDaily, now = new Date() } = params;
-  const { baseUrl, model } = resolveProvider(
-    settings.summaryApiProvider,
-    settings.summaryApiBaseUrl,
-    settings.summaryModel,
-  );
+}): Promise<{ req: AIRequestData; preset: WritingPreset }> {
+  const { settings, card, orientation, now = new Date() } = params;
+  const cfg = resolveDailyConfig(settings) ?? {
+    ...resolveProvider(settings.summaryApiProvider, settings.summaryApiBaseUrl, settings.summaryModel),
+    apiKey: settings.summaryApiKey || '',
+  };
+  const brief = await buildDailyBrief({ card, orientation, now });
 
-  const attrNames = settings.attributeNames as Record<AttributeId, string>;
-  const customNameList = ATTRIBUTE_IDS.map(id => attrNames[id] ?? id);
-  /**
-   * 上一张的时距（本地日期差）：
-   * - ≤1 天：素材标「就在昨天」，正文才允许说"昨日"；
-   * - 2~14 天：标「N 天前，不是昨天」；
-   * - >14 天：太久了，参照价值为负（模型总忍不住接旧话茬），直接不喂。
-   */
-  const gapDays = (() => {
-    if (!previousDaily) return null;
-    const [y, m, d] = previousDaily.date.split('-').map(Number);
-    const prev = new Date(y, m - 1, d);
-    const today0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    return Math.round((today0.getTime() - prev.getTime()) / 86400_000);
-  })();
-  const prevForPrompt = gapDays !== null && gapDays <= 14 ? previousDaily : null;
   const userMessage = [
-    `当前本地时间：${formatLocalDateTime(now)}`,
+    `今日抽到的牌：`,
+    cardBlock(card, orientation),
     ``,
-    `今日抽到的塔罗牌：`,
-    cardLine(card, orientation),
+    brief.text,
     ``,
-    `客人的五维属性（属性名为客人自定义，请在正文与 JSON 中逐字使用以下名字，不要替换为默认中文名）：`,
-    attrLines(attributes, attrNames),
-    ``,
-    `合法的属性名集合（attribute 字段只能取以下五个之一，逐字一致）：`,
-    customNameList.map(n => `· ${n}`).join('\n'),
-    ``,
-    `最近 7 条成长记录：`,
-    recentActivities.length > 0
-      ? recentActivities.slice(0, 7).map(a => formatActivitySnippet(a, attrNames)).join('\n')
-      : '（暂无记录）',
-    ``,
-    `上一张每日塔罗（轻量上下文，仅在有明显延续/反转时使用；注意开头的时距标注）：`,
-    previousDailyLine(prevForPrompt, attrNames, gapDays),
-    ``,
-    `请按要求输出 JSON。`,
+    `请按系统指令写今日解读：先正文，再另起一行 ${DAILY_META_MARK}，再一行 JSON。`,
   ].join('\n');
 
   return {
-    baseUrl,
-    model,
-    apiKey: settings.summaryApiKey || '',
-    messages: [
-      { role: 'system', content: DAILY_SYSTEM_PROMPT },
-      { role: 'user',   content: userMessage },
-    ],
+    preset: brief.preset,
+    req: {
+      baseUrl: cfg.baseUrl,
+      model: cfg.model,
+      apiKey: cfg.apiKey,
+      messages: [
+        { role: 'system', content: DAILY_SYSTEM_PROMPT },
+        { role: 'user', content: userMessage },
+      ],
+    },
   };
 }
 
-/** 调用 AI 完成每日解读，返回结构化结果。失败时抛出 */
-export async function callDailyAI(
-  req: AIRequestData,
-  signal?: AbortSignal,
-  attrNames?: Record<AttributeId, string>,
-): Promise<DailyAIResult> {
-  const raw = await chatComplete(req, req.messages, { temperature: 0.85, maxTokens: 800, signal });
+/** 流式期间给 UI 看的正文：截到 META 标记之前，且把尾部可能只到了一半的标记藏起来 */
+export function visibleDailyText(full: string): string {
+  const at = full.indexOf(DAILY_META_MARK);
+  let text = at >= 0 ? full.slice(0, at) : full;
+  if (at < 0) {
+    // 标记正在一个字一个字到达："<<<ME" 这种半截不能上屏
+    for (let k = Math.min(text.length, DAILY_META_MARK.length - 1); k >= 1; k--) {
+      if (text.endsWith(DAILY_META_MARK.slice(0, k))) { text = text.slice(0, -k); break; }
+    }
+  }
+  return text.replace(/\s+$/, '');
+}
 
-  // 模型可能包裹代码块或在前后添加解释文字，尽可能提取 { ... } 主体
-  const stripped = raw.replace(/```(?:json)?/gi, '').trim();
-  const firstBrace = stripped.indexOf('{');
-  const lastBrace  = stripped.lastIndexOf('}');
-  const jsonLike = firstBrace >= 0 && lastBrace > firstBrace
-    ? stripped.slice(firstBrace, lastBrace + 1)
-    : stripped;
-  let parsed: Record<string, unknown>;
-  try {
-    parsed = JSON.parse(jsonLike);
-  } catch {
-    throw new Error('AI 返回不是合法 JSON');
+const FORTUNES: Fortune[] = ['great', 'good', 'small', 'bad'];
+
+/** 取第一句（。！？.!? 之前）作为签语兜底 */
+export const firstSentence = (text: string, max = 24): string => {
+  const m = text.trim().match(/^[^。！？.!?\n]+/);
+  const s = (m ? m[0] : text.trim()).trim();
+  return s.length > max ? s.slice(0, max) : s;
+};
+
+/**
+ * 流式结束后把全文拆成正文 + 结构化尾巴。缺什么补什么：
+ *   · 没有 META（模型忘了）→ 正文照用，签语取牌面首句，属性取牌的亲和，吉凶按规则推断；
+ *   · 老习惯整段回了 JSON（{"narration":…}）→ 也认。
+ */
+export function parseDailyResult(
+  full: string,
+  ctx: { attrNames: Record<AttributeId, string>; card: TarotCardData; orientation: TarotOrientation },
+): { result: DailyAIResult; metaFound: boolean } {
+  const { attrNames, card, orientation } = ctx;
+  const fallbackAttr: AttributeId = card.relatedAttribute ?? 'knowledge';
+  const fallbackFortune = inferFortune(card.id, orientation);
+  const fallbackAdvice = firstSentence(card[orientation].reflection);
+
+  let narration = '';
+  let metaRaw: string | null = null;
+  const at = full.indexOf(DAILY_META_MARK);
+  if (at >= 0) {
+    narration = full.slice(0, at);
+    metaRaw = full.slice(at + DAILY_META_MARK.length);
+  } else {
+    narration = full;
+  }
+  narration = narration.replace(/```(?:json)?/gi, '').trim();
+
+  let parsed: Record<string, unknown> | null = null;
+  const tryParse = (src: string | null) => {
+    if (!src) return null;
+    const stripped = src.replace(/```(?:json)?/gi, '').trim();
+    const a = stripped.indexOf('{');
+    const b = stripped.lastIndexOf('}');
+    if (a < 0 || b <= a) return null;
+    try {
+      const obj = JSON.parse(stripped.slice(a, b + 1));
+      return typeof obj === 'object' && obj !== null ? (obj as Record<string, unknown>) : null;
+    } catch { return null; }
+  };
+  parsed = tryParse(metaRaw);
+  if (!parsed && at < 0) {
+    // 老格式：整段就是一个 JSON
+    const whole = tryParse(full);
+    if (whole && typeof whole.narration === 'string') {
+      parsed = whole;
+      narration = (whole.narration as string).trim();
+    }
   }
 
-  const narration = typeof parsed.narration === 'string' ? parsed.narration.trim() : '';
-  const advice    = typeof parsed.advice    === 'string' ? parsed.advice.trim()    : '';
-  const attrRaw   = typeof parsed.attribute === 'string' ? parsed.attribute : '';
-  // 优先按客人当前的属性名匹配；attrNames 缺省时退化为 ID 集合匹配
-  const attribute: AttributeId | null = attrNames
-    ? resolveAttributeFromLabel(attrRaw, attrNames)
-    : ((ATTRIBUTE_IDS as string[]).includes(attrRaw.trim().toLowerCase())
-        ? (attrRaw.trim().toLowerCase() as AttributeId)
-        : null);
+  const str = (k: string) => (parsed && typeof parsed[k] === 'string' ? (parsed[k] as string).trim() : '');
+  const attribute = resolveAttributeFromLabel(str('attribute'), attrNames) ?? fallbackAttr;
+  const fRaw = str('fortune').toLowerCase();
+  const fortune = (FORTUNES as string[]).includes(fRaw) ? (fRaw as Fortune) : fallbackFortune;
+  const advice = (str('advice') || fallbackAdvice).replace(/[。！!]$/, '').slice(0, 40);
+  const memo = str('memo').slice(0, 60) || undefined;
 
-  const fortRaw = typeof parsed.fortune === 'string' ? parsed.fortune.trim().toLowerCase() : '';
-  const FORTUNES = ['great', 'good', 'small', 'bad'];
-  const fortune: Fortune | null = FORTUNES.includes(fortRaw) ? (fortRaw as Fortune) : null;
+  return {
+    metaFound: !!parsed,
+    result: { narration: narration || card[orientation].reflection, advice, attribute, fortune, memo },
+  };
+}
 
-  if (!narration || !advice || !attribute || !fortune) {
-    throw new Error('AI 返回字段不完整');
-  }
-  return { narration, advice, attribute, fortune };
+export interface StreamOpts {
+  signal?: AbortSignal;
+  onReasoning?: (delta: string) => void;
+  onFinishReason?: (reason: string) => void;
+}
+
+/** 每日解读流式：yield 原始增量，调用方自己累加并用 visibleDailyText 上屏 */
+export async function* streamDaily(req: AIRequestData, opts: StreamOpts = {}): AsyncGenerator<string> {
+  yield* chatStream(req, req.messages, { temperature: 0.7, maxTokens: 1200, ...opts });
 }
 
 // ── 中长期占卜：Markdown 流式 ───────────────────────────────
 
-const LONG_SYSTEM_PROMPT = `你是一位经验丰富、观察敏锐的塔罗师。输出文字本身不要出现任何自称，也不要提到"塔罗师"、"解读者"、"AI"、"助手"、"我"、"我们"、"本次解读"等自我指涉。
-用户此刻提出一个具体问题，并请你依据三张塔罗牌组成的牌阵为其解读。
+const LONG_SYSTEM_PROMPT = `你是一位经验丰富、观察敏锐的塔罗师。输出文字本身不要出现任何自称，也不要提到"塔罗师""解读者""AI""助手""我""我们""本次解读"等自我指涉。
+客人此刻提出一个具体问题，并请你依据三张塔罗牌组成的牌阵为其解读。
 
 这不是三张牌的百科解释，也不是工具报告。你要像一位熟练的人类塔罗师翻开牌后自然落笔：先让空气安静下来，再把三张牌之间的关系讲清楚，最后才给出可走的路。
 
+【问题是主轴】
+一切素材只为回答客人的这个问题服务。与问题无关的素材可以完全不用；素材里的"线索"是让你知道问题落在客人哪件处境上，不是让你把它念出来。
+
 请用 Markdown 输出，并遵守以下顺序：
-1. 先写一段不加标题的简短 intro，1-2 句即可。它应该像牌面刚被翻开后的开场，带一点沉浸感，但不要玄虚堆砌。
+1. 先写一段不加标题的简短 intro，1-2 句即可。像牌面刚被翻开后的开场，带一点沉浸感，但不要玄虚堆砌。
 2. 第二段标题固定为 "## 三张牌共讲的故事"。用 2-3 句说清三张牌合起来讲述的故事，必须写出三张牌之间的递进、冲突或转向。
 3. 然后按牌阵位置顺序逐张深入解读。每张使用二级标题，格式为 "## 位置 · 牌名"；每张 3-5 句。
-4. 每张牌的解读必须同时包含：它在该位置上的作用、这张牌本身的牌意、它与前后牌的关系、它与客人当下属性状态或近期行为的一处连接。
-5. 最后一段标题用自然一点的表达，例如 "## 接下来可以怎样走"。给出 2-3 条具体行动建议，建议必须符合本次占卜周期的时间尺度。
+4. 每张牌的解读要同时有：它在该位置上的作用、这张牌本身的牌意、它与前后牌的关系、以及一处与客人处境的连接——这处连接必须旁敲侧击，不点名、不写数字。
+5. 最后一段标题用自然一点的表达，例如 "## 接下来可以怎样走"。给出 2-3 条方向，必须符合本次占卜周期的时间尺度；写成可以顺着走的路，而不是待办清单。
 
 风格要求：
-- 像经验丰富的人在桌边说话：判断要准，语气要稳，允许含蓄，但不要装腔，耐心、有同理心地解答问题。
-- 少用"整体来看"、"这张牌提醒你"、"你需要注意的是"、"建议你"、"综上"这类模板句。
-- 禁止自称、禁止解释分析过程、禁止把牌意写成报告或清单式结论。
-- 可以有意象，但每段都要落到一个具体判断或具体动作。
+- 像经验丰富的人在桌边说话：判断要准，语气要稳，允许含蓄，但不装腔；耐心、有同理心。
+- 可以有意象，但每段都要落到一个具体判断。
+- 禁止解释分析过程，禁止把牌意写成报告或清单式结论。
 
-【关于五项属性的命名约束（非常重要）】
-- 客人**自己定义了五项属性的名字**，这些名字可能是英文缩写、自创词或领域术语。
-- 在正文中提到任何属性时，**必须严格使用客人给出的原文**，
-  不允许翻译、意译，不允许加括号注释，自然地提到即可。
+${OBLIQUE_RULES}
+
+${ATTRIBUTE_NAMING_RULES}
 
 避免空话套话。`;
 
@@ -296,42 +301,34 @@ const LONG_PERIOD_GUIDANCE: Record<LongReadingPeriod, string> = {
   longterm: `这是长期占卜，时间尺度是数月以上。请避免承诺确定结果，重点写根基、长期惯性、可能累积的风险，以及可以分阶段验证的里程碑。`,
 };
 
-export function buildLongReadingRequest(params: {
+/** 中长期与追问：深思熟虑档（未配置时退回快速响应） */
+function resolveLongConfig(settings: Settings): AIConfig {
+  return getDeliberateAIConfig(settings) ?? getAIConfig(settings) ?? {
+    ...resolveProvider(settings.summaryApiProvider, settings.summaryApiBaseUrl, settings.summaryModel),
+    apiKey: settings.summaryApiKey || '',
+  };
+}
+
+export async function buildLongReadingRequest(params: {
   settings: Settings;
-  attributes: Attribute[];
-  recentByAttribute: Record<AttributeId, Activity[]>;
   question: string;
   period: LongReadingPeriod;
   picked: DrawnCard[];
-}): AIRequestData {
-  const { settings, attributes, recentByAttribute, question, period, picked } = params;
-  // 中长期占卜走「深思熟虑」档（可跨服务商；未配置时自动退回当前连接）
-  const deliberate = getDeliberateAIConfig(settings);
-  const { baseUrl, model } = deliberate ?? resolveProvider(
-    settings.summaryApiProvider,
-    settings.summaryApiBaseUrl,
-    settings.summaryModel,
-  );
-
-  const attrNames = settings.attributeNames as Record<AttributeId, string>;
+  now?: Date;
+}): Promise<AIRequestData> {
+  const { settings, question, period, picked, now = new Date() } = params;
+  const cfg = resolveLongConfig(settings);
   const positions = SPREAD_POSITIONS[period];
   const periodMeta = PERIOD_LABELS[period];
 
   const cardBlocks = picked.map((p, i) => {
     const card = TAROT_BY_ID[p.cardId];
     if (!card) return '';
-    return `### ${positions[i]}（第${i + 1}张）\n${cardLine(card, p.orientation)}`;
+    return `### ${positions[i]}（第${i + 1}张）\n${cardBlock(card, p.orientation)}`;
   }).filter(Boolean).join('\n\n');
 
-  const recentBlocks = ATTRIBUTE_IDS.map(id => {
-    const items = (recentByAttribute[id] ?? []).slice(0, 4);
-    const lines = items.length > 0
-      ? items.map(a => `  - ${formatActivitySnippet(a, attrNames)}`).join('\n')
-      : '  - （无）';
-    return `- **${attrNames[id] ?? id}**：\n${lines}`;
-  }).join('\n');
+  const brief = await buildLongBrief({ question, period, now });
 
-  const customNameList = ATTRIBUTE_IDS.map(id => attrNames[id] ?? id);
   const userMessage = [
     `**客人提出的问题**：${question.trim() || '（未具体描述）'}`,
     `**指向的时间周期**：${periodMeta.label}（${periodMeta.hint}）`,
@@ -340,25 +337,18 @@ export function buildLongReadingRequest(params: {
     `**牌阵（${positions.join(' / ')}）**：`,
     cardBlocks,
     ``,
-    `**客人的五维属性**（属性名为客人自定义，正文中提到属性时请逐字使用以下名字，不要替换为默认中文名）：`,
-    attrLines(attributes, attrNames),
+    brief,
     ``,
-    `合法属性名集合（提到属性时只能从中选取，逐字一致）：`,
-    customNameList.map(n => `· ${n}`).join('\n'),
-    ``,
-    `**客人各属性最近 4 条成长记录**：`,
-    recentBlocks,
-    ``,
-    `请依照系统指令，结合以上信息为客人给出解读。`,
+    `请依照系统指令，围绕客人的问题给出解读。`,
   ].join('\n');
 
   return {
-    baseUrl,
-    model,
-    apiKey: deliberate?.apiKey ?? settings.summaryApiKey ?? '',
+    baseUrl: cfg.baseUrl,
+    model: cfg.model,
+    apiKey: cfg.apiKey,
     messages: [
       { role: 'system', content: LONG_SYSTEM_PROMPT },
-      { role: 'user',   content: userMessage },
+      { role: 'user', content: userMessage },
     ],
   };
 }
@@ -378,30 +368,27 @@ export function buildFollowUpRequest(params: {
   followUpQuestion: string;
   followUpCard: TarotCardData;
   followUpOrientation: TarotOrientation;
+  now?: Date;
 }): AIRequestData {
   const { settings, previousUserMessage, previousAssistantMessage,
-          followUpQuestion, followUpCard, followUpOrientation } = params;
-  // 中长期占卜走「深思熟虑」档（可跨服务商；未配置时自动退回当前连接）
-  const deliberate = getDeliberateAIConfig(settings);
-  const { baseUrl, model } = deliberate ?? resolveProvider(
-    settings.summaryApiProvider,
-    settings.summaryApiBaseUrl,
-    settings.summaryModel,
-  );
+          followUpQuestion, followUpCard, followUpOrientation, now = new Date() } = params;
+  const cfg = resolveLongConfig(settings);
 
   const followUpText = [
+    formatNowLine(now),
+    ``,
     `**追问**：${followUpQuestion.trim()}`,
     ``,
     `**为此追问抽到的牌**：`,
-    cardLine(followUpCard, followUpOrientation),
+    cardBlock(followUpCard, followUpOrientation),
     ``,
     `请结合先前的解读脉络与这张新牌，回应客人的追问。`,
   ].join('\n');
 
   return {
-    baseUrl,
-    model,
-    apiKey: deliberate?.apiKey ?? settings.summaryApiKey ?? '',
+    baseUrl: cfg.baseUrl,
+    model: cfg.model,
+    apiKey: cfg.apiKey,
     messages: [
       { role: 'system', content: LONG_SYSTEM_PROMPT + FOLLOW_UP_SYSTEM_ADDITION },
       { role: 'user',   content: previousUserMessage },
@@ -411,10 +398,38 @@ export function buildFollowUpRequest(params: {
   };
 }
 
+// ── 中长期手记：解读完成后另用一次小调用抽一条备忘 ─────────────
+
+const MEMO_SYSTEM = `你是塔罗解读的归档器。给你一段刚完成的中长期占卜（客人的问题 + 解读全文），
+请写一条**解读者写给未来自己的备忘**：这次占卜落在客人哪件处境上、牌指向了什么方向。
+- 不超过 40 字，中性陈述句，可以写具体事；
+- 不写牌名的百科含义，不写建议清单；
+- 只输出这一句话，不要引号、不要前缀、不要别的文字。`;
+
+export async function extractReadingMemo(
+  settings: Settings,
+  question: string,
+  content: string,
+  signal?: AbortSignal,
+): Promise<string | null> {
+  const cfg = getAIConfig(settings);
+  if (!cfg) return null;
+  try {
+    const raw = await chatComplete(cfg, [
+      { role: 'system', content: MEMO_SYSTEM },
+      { role: 'user', content: `客人的问题：${question.trim()}\n\n解读全文：\n${content.trim().slice(0, 4000)}` },
+    ], { temperature: 0.3, maxTokens: 200, signal });
+    const memo = raw.replace(/^["「『]+|["」』]+$/g, '').trim().split('\n')[0]?.trim() ?? '';
+    return memo ? memo.slice(0, 60) : null;
+  } catch {
+    return null;
+  }
+}
+
 // ── 通用流式读取 ────────────────────────────────────────────
 
-export async function* streamChatSSE(req: AIRequestData, signal?: AbortSignal): AsyncGenerator<string> {
-  yield* chatStream(req, req.messages, { temperature: 0.85, maxTokens: 1600, signal });
+export async function* streamChatSSE(req: AIRequestData, signal?: AbortSignal, opts: Omit<StreamOpts, 'signal'> = {}): AsyncGenerator<string> {
+  yield* chatStream(req, req.messages, { temperature: 0.85, maxTokens: 1600, signal, ...opts });
 }
 
 /** 格式化常见网络错误 */

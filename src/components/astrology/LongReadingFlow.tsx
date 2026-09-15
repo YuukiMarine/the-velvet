@@ -15,7 +15,7 @@ import {
 import { LongReading, LongReadingPeriod, TarotOrientation, DrawnCard, LongReadingFollowUp } from '@/types';
 import { CardBack } from './CardBack';
 import { TarotCardSVG } from './TarotCardSVG';
-import { buildLongReadingRequest, buildFollowUpRequest, streamChatSSE, formatApiError } from '@/utils/tarotAI';
+import { buildLongReadingRequest, buildFollowUpRequest, streamChatSSE, formatApiError, extractReadingMemo } from '@/utils/tarotAI';
 import { renderMarkdown } from '@/utils/markdown';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P3R, slantClip, SlantButton } from '@/components/p3r/kit';
@@ -48,10 +48,10 @@ interface Candidate {
 
 export function LongReadingFlow({ initialReading, onBack }: Props) {
   const {
-    settings, attributes,
-    getRecentActivitiesByAttribute,
+    settings,
     saveLongReading,
     appendLongReadingFollowUp,
+    updateLongReadingMemo,
     countActiveReadings,
   } = useAppStore();
   const noApiKey = !settings.summaryApiKey;
@@ -71,6 +71,8 @@ export function LongReadingFlow({ initialReading, onBack }: Props) {
   // 流式
   const [streamedText, setStreamedText] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
+  // 思维链模型在"想"的那几十秒一个正文字都不吐；有思维链增量到达就换一句状态语
+  const [thinking, setThinking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const prevMessagesRef = useRef<{ user: string; assistant: string } | null>(null);
@@ -148,10 +150,9 @@ export function LongReadingFlow({ initialReading, onBack }: Props) {
       orientation: candidates[i].orientation,
     }));
 
-    const recentByAttribute = getRecentActivitiesByAttribute(4);
-    const req = buildLongReadingRequest({
-      settings, attributes, recentByAttribute,
-      question: question.trim(), period, picked,
+    // 素材由 tarotContext 现算（带日期的足迹 / 与问题相关的线索 / 此前问询 / 手记 / 画像）
+    const req = await buildLongReadingRequest({
+      settings, question: question.trim(), period, picked,
     });
     prevMessagesRef.current = {
       user: req.messages[req.messages.length - 1].content,
@@ -159,14 +160,16 @@ export function LongReadingFlow({ initialReading, onBack }: Props) {
     };
 
     setIsStreaming(true);
+    setThinking(false);
 
     const abortCtrl = new AbortController();
     abortRef.current = abortCtrl;
 
     let full = '';
     try {
-      for await (const chunk of streamChatSSE(req, abortCtrl.signal)) {
+      for await (const chunk of streamChatSSE(req, abortCtrl.signal, { onReasoning: () => setThinking(true) })) {
         full += chunk;
+        setThinking(false);
         setStreamedText(full);
       }
     } catch (e) {
@@ -177,6 +180,7 @@ export function LongReadingFlow({ initialReading, onBack }: Props) {
       }
     } finally {
       setIsStreaming(false);
+      setThinking(false);
     }
 
     if (!full) {
@@ -204,6 +208,13 @@ export function LongReadingFlow({ initialReading, onBack }: Props) {
     await saveLongReading(newReading);
     setReading(newReading);
     setPhase('done');
+
+    // 解读者手记：另用一次快速档小调用抽一条备忘（fire-and-forget；失败就没有手记）
+    void extractReadingMemo(settings, newReading.question, full).then(memo => {
+      if (!memo) return;
+      void updateLongReadingMemo(newReading.id, memo);
+      setReading(r => (r && r.id === newReading.id ? { ...r, memo } : r));
+    });
   };
 
   // ── 追问 ──────────────────────────────────────────────────
@@ -255,9 +266,11 @@ export function LongReadingFlow({ initialReading, onBack }: Props) {
     followAbortRef.current = abortCtrl;
 
     let full = '';
+    setThinking(false);
     try {
-      for await (const chunk of streamChatSSE(req, abortCtrl.signal)) {
+      for await (const chunk of streamChatSSE(req, abortCtrl.signal, { onReasoning: () => setThinking(true) })) {
         full += chunk;
+        setThinking(false);
         setFollowStreamedText(full);
       }
     } catch (e) {
@@ -681,7 +694,7 @@ export function LongReadingFlow({ initialReading, onBack }: Props) {
                 animate={{ rotate: 360 }}
                 transition={{ repeat: Infinity, duration: 1.1, ease: 'linear' }}
               >◌</motion.span>
-              <span>正在展开牌阵…</span>
+              <span>{thinking ? '三张牌正在被放在一起推演…' : '正在展开牌阵…'}</span>
             </div>
           )}
           {isStreaming && (
@@ -731,6 +744,7 @@ export function LongReadingFlow({ initialReading, onBack }: Props) {
             pickedIndex={followPickedIndex}
             streamedText={followStreamedText}
             isStreaming={followStreaming}
+            thinking={thinking}
             error={followError}
             onStartPick={handleFollowPickStart}
             onReveal={handleFollowReveal}
@@ -797,7 +811,7 @@ function FlippingCard({
 
 function FollowUpPanel({
   phase, question, setQuestion, candidates, pickedIndex,
-  streamedText, isStreaming, error,
+  streamedText, isStreaming, thinking, error,
   onStartPick, onReveal, onClose,
 }: {
   phase: 'form' | 'picking' | 'reading' | 'done';
@@ -807,6 +821,7 @@ function FollowUpPanel({
   pickedIndex: number | null;
   streamedText: string;
   isStreaming: boolean;
+  thinking?: boolean;
   error: string | null;
   onStartPick: () => void;
   onReveal: (i: number) => void;
@@ -886,7 +901,7 @@ function FollowUpPanel({
                 }}
               />
             ) : (
-              <div className="text-xs text-gray-400">正在回应…</div>
+              <div className="text-xs text-gray-400">{thinking ? '正在思索…' : '正在回应…'}</div>
             )}
             {isStreaming && (
               <motion.span
@@ -926,7 +941,9 @@ export function ReadingDetail({
   onBack: () => void;
   followUI?: React.ReactNode;
 }) {
-  const { archiveLongReading, deleteLongReading } = useAppStore();
+  const { archiveLongReading, deleteLongReading, updateLongReadingMemo } = useAppStore();
+  // 手记在解读完成后才异步到达（另一次小调用），从 store 里取最新值而不是靠 props
+  const liveMemo = useAppStore(st => st.longReadings.find(r => r.id === reading.id)?.memo) ?? reading.memo;
   const p3 = useUiChannel() === 'p3';
   const positions = SPREAD_POSITIONS[reading.period];
   const today = toLocalDateKey();
@@ -996,6 +1013,21 @@ export function ReadingDetail({
           __html: DOMPurify.sanitize(`<p class="mb-2">${renderMarkdown(reading.content)}</p>`),
         }}
       />
+
+      {/* 解读者手记：这次占卜落在哪件处境上的一句备忘；之后的解读会当"上次问到哪"喂回去。可清除。 */}
+      {liveMemo && (
+        <div className="flex items-start gap-2 px-1">
+          <span className="mt-0.5 shrink-0 text-[10px] font-bold tracking-[2px] uppercase text-gray-400 dark:text-gray-500">手记</span>
+          <span className="flex-1 text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">{liveMemo}</span>
+          <button
+            type="button"
+            onClick={() => void updateLongReadingMemo(reading.id, undefined)}
+            aria-label="清除手记"
+            title="解读者的备忘，会作为之后解读的上下文；点这里清除"
+            className="shrink-0 px-1 text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+          >✕</button>
+        </div>
+      )}
 
       {/* 追问列表 */}
       {(reading.followUps ?? []).map(f => {

@@ -438,6 +438,18 @@
 :root[data-ui-channel="p5"] .p5-onink :is(.bg-white, .bg-gray-50, .bg-gray-100, .p5-card, .p5-ach) .text-gray-400 {
   color: #6b6862 !important;
 }
+/* 舞台页（.p5-onink）里的输入件：上面那条「灰系→纸色」比 .p5-reskin 给输入件定的黑字
+   选择器更深，会把 textarea 的字翻成纸色——纸面上的纸色字 = 白字（用户上报：红主题下
+   中长期占卜的输入内容是白色的）。这里再深一层压回黑，占位符给中灰。 */
+:root[data-ui-channel="p5"] .p5-onink.p5-reskin :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]), textarea, select),
+:root[data-ui-channel="p5"] .p5-onink .p5-reskin :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]), textarea, select),
+:root[data-ui-channel="p5"] .p5-reskin .p5-onink :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]), textarea, select) {
+  color: #050505 !important;
+  caret-color: #c00008;
+}
+:root[data-ui-channel="p5"] .p5-onink :is(input, textarea)::placeholder {
+  color: #6b6862 !important;
+}
 /* 灰面块 / 白卡 → 纸面；边线 → 黑 */
 :root[data-ui-channel="p5"] .p5-reskin :is(.bg-gray-50, .bg-gray-100, .bg-white) {
   background-color: var(--ui-paper) !important;

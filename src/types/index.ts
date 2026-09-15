@@ -294,6 +294,12 @@ export interface DailyDivination {
   /** 总体运势吉凶等级（AI 返回或程序兜底；旧记录可能为 undefined） */
   fortune?: Fortune;
   source: 'ai' | 'offline';
+  /**
+   * 解读者手记（v2.7.0.6）：这次解读落在客人哪件处境上的一句备忘（≤30 字），
+   * 由同一次 AI 调用顺手写下；后续解读把最近几条手记当"上次聊到哪"喂回去，
+   * 形成跨天叙事。给客人可见、可清除。老记录无此字段。
+   */
+  memo?: string;
   createdAt: Date;
 }
 
@@ -349,6 +355,8 @@ export interface LongReading {
   content: string;              // AI 主解读
   followUps: LongReadingFollowUp[];
   archived: boolean;            // 手动归档或过期自动归档
+  /** 解读者手记（v2.7.0.6）：解读完成后另用一次小调用抽出的 ≤40 字备忘；给客人可见、可清除 */
+  memo?: string;
   createdAt: Date;
   /** YYYY-MM-DD — createdAt + 14 天 */
   expiresAt: string;
@@ -476,6 +484,11 @@ export interface Settings {
    * 三套图的差别不止色调：p5 走 Thoth 序，归位按牌名 slug（见 constants/tarotArt.ts）。
    */
   customTarotSet?: 'p3' | 'p4' | 'p5';
+  /**
+   * 每日塔罗改走「深思熟虑」档（v2.7.0.6，默认关）。每日一次，成本可忽略；
+   * 深思熟虑档未配置时自动退回快速响应，不会因此抽不了牌。
+   */
+  tarotDailyDeliberate?: boolean;
   countercurrentEnabled?: boolean; // 逆流：连续3日无增长属性自动 -1/天
   countercurrentEnabledAt?: string; // 逆流开启日期 YYYY-MM-DD，防止开启当天就触发
   // ── F2a 本地通知 ─────────────────────────────────────────

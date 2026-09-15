@@ -2638,6 +2638,21 @@ export const Settings = () => {
                                 />
                               </div>
 
+                              {/* 每日塔罗默认走快速响应；这里可以让它单独升到深思熟虑（v2.7.0.6，默认关） */}
+                              <div className="flex items-center justify-between gap-3 pt-1">
+                                <div className="min-w-0">
+                                  <div className="text-sm font-medium text-gray-800 dark:text-white">每日塔罗改走深思熟虑</div>
+                                  <div className="text-[11px] text-gray-400 dark:text-gray-500">
+                                    每天一次，多等几秒换更贴的解读；深思熟虑没配时自动退回快速响应。
+                                  </div>
+                                </div>
+                                <Toggle
+                                  checked={!!settings.tarotDailyDeliberate}
+                                  onChange={(v) => updateSettings({ tarotDailyDeliberate: v })}
+                                  aria-label="每日塔罗改走深思熟虑"
+                                />
+                              </div>
+
                               {/* 深思熟虑：可跨服务商（按厂家分组），Key 已配好即可直选别家模型 */}
                               <div className="space-y-1.5 pt-3 border-t border-gray-100 dark:border-gray-700/50">
                                 <p className="flex items-center gap-1 text-xs font-medium text-gray-500 dark:text-gray-400"><MoonIcon className="h-3.5 w-3.5" /> 深思熟虑</p>

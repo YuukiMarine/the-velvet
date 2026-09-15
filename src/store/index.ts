@@ -379,8 +379,9 @@ interface AppState {
     eligible: boolean;
     lastGlimpse: FateGlimpse | null;
   }>;
-  getRecentActivitiesForDaily: (limit?: number) => Activity[];
-  getRecentActivitiesByAttribute: (limit?: number) => Record<AttributeId, Activity[]>;
+  /** 解读者手记（v2.7.0.6）：清除或改写今日塔罗 / 中长期占卜上的备忘；memo 传空即清除 */
+  updateDailyMemo: (id: string, memo: string | undefined) => Promise<void>;
+  updateLongReadingMemo: (id: string, memo: string | undefined) => Promise<void>;
   loadLongReadings: () => Promise<void>;
   saveLongReading: (r: LongReading) => Promise<void>;
   appendLongReadingFollowUp: (id: string, followUp: LongReadingFollowUp) => Promise<void>;
@@ -1637,9 +1638,19 @@ export const useAppStore = create<AppState>((set, get) => ({
     void get().syncNotifications(); // 今日塔罗已抽 → 重排，撤掉「塔罗未抽」提醒
   },
 
-  getRecentActivitiesForDaily: (limit = 7) => {
-    const { activities } = get();
-    return activities.filter(a => !a.category).slice(0, limit);
+  updateDailyMemo: async (id, memo) => {
+    const row = await db.dailyDivinations.get(id);
+    if (!row) return;
+    const next: DailyDivination = { ...row, memo: memo?.trim() || undefined };
+    await db.dailyDivinations.put(next);
+    if (get().dailyDivination?.id === id) set({ dailyDivination: next });
+  },
+
+  updateLongReadingMemo: async (id, memo) => {
+    const row = await db.longReadings.get(id);
+    if (!row) return;
+    await db.longReadings.put({ ...row, memo: memo?.trim() || undefined });
+    await get().loadLongReadings();
   },
 
   // ── 窥探命运（v2.7）────────────────────────────────────────
@@ -1726,23 +1737,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     const days = dates.map(date => ({ date, drawn: byDate.get(date) ?? null }));
     const complete = days.every(d => d.drawn);
     return { days, complete, eligible: complete && sinceLast >= 7, lastGlimpse };
-  },
-
-  getRecentActivitiesByAttribute: (limit = 4) => {
-    const { activities } = get();
-    const base: Record<AttributeId, Activity[]> = {
-      knowledge: [], guts: [], dexterity: [], kindness: [], charm: [],
-    };
-    const attrIds: AttributeId[] = ['knowledge', 'guts', 'dexterity', 'kindness', 'charm'];
-    for (const a of activities) {
-      if (a.category) continue;
-      for (const id of attrIds) {
-        if ((a.pointsAwarded?.[id] ?? 0) > 0 && base[id].length < limit) {
-          base[id].push(a);
-        }
-      }
-    }
-    return base;
   },
 
   loadLongReadings: async () => {

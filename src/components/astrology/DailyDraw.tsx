@@ -3,7 +3,6 @@ import { AnimatePresence, motion } from 'motion/react';
 import DOMPurify from 'dompurify';
 import { v4 as uuidv4 } from 'uuid';
 import { useAppStore, toLocalDateKey } from '@/store';
-import { db } from '@/db';
 import {
   MAJOR_ARCANA,
   TAROT_BY_ID,
@@ -14,12 +13,15 @@ import {
   FORTUNE_META,
   TarotCardData,
 } from '@/constants/tarot';
-import { DailyDivination, Fortune, TarotOrientation } from '@/types';
+import { AttributeId, DailyDivination, TarotOrientation } from '@/types';
 import { CardBack } from './CardBack';
 import { TarotCardSVG } from './TarotCardSVG';
 import { CardNameReveal } from './CardNameReveal';
 import { ShuffleAnim } from './ShuffleAnim';
-import { buildDailyRequest, callDailyAI, formatApiError } from '@/utils/tarotAI';
+import {
+  buildDailyRequest, streamDaily, visibleDailyText, parseDailyResult, formatApiError,
+  type DailyAIResult,
+} from '@/utils/tarotAI';
 import { buildOfflineDaily } from '@/utils/tarotOffline';
 import { renderMarkdown } from '@/utils/markdown';
 import { useUiChannel } from '@/ui/useUiChannel';
@@ -52,12 +54,19 @@ const CyanSlashes = () => (
   </span>
 );
 
+const Spinner = () => (
+  <motion.span
+    animate={{ rotate: 360 }}
+    transition={{ repeat: Infinity, duration: 1.1, ease: 'linear' }}
+  >◌</motion.span>
+);
+
 type Phase =
   | 'init'        // 计算初始态
   | 'intro'       // 尚未抽：洗牌入场
   | 'pick'        // 3 张候选待点
   | 'flipping'    // 选中的牌翻转中
-  | 'calling'     // 调用 AI
+  | 'calling'     // 调用 AI（流式落笔中）
   | 'done'        // 完成
   | 'error';
 
@@ -105,12 +114,15 @@ const clearPending = () => {
 };
 
 export function DailyDraw() {
-  const { dailyDivination, settings, attributes, saveDailyDivination, getRecentActivitiesForDaily } = useAppStore();
+  const { dailyDivination, settings, saveDailyDivination } = useAppStore();
 
   const [phase, setPhase] = useState<Phase>('init');
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [pickedIndex, setPickedIndex] = useState<number | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  // 流式：已到达的正文（截到 META 之前）；thinking = 模型在吐思维链、正文还没开始
+  const [streamText, setStreamText] = useState('');
+  const [thinking, setThinking] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const drawChannel = useUiChannel();
   const p3 = drawChannel === 'p3';
@@ -184,45 +196,44 @@ export function DailyDraw() {
 
     // 等翻牌动画约 700ms 后再发起请求（与 UI 同步）
     await new Promise(r => setTimeout(r, 700));
+    setStreamText('');
+    setThinking(false);
     setPhase('calling');
 
     const multiplier = randomBonusMultiplier(orientation);
-    let narration = '';
-    let advice = '';
-    let attribute = picked.card.relatedAttribute ?? 'knowledge';
-    let fortune: Fortune = inferFortune(picked.card.id, orientation);
-    let source: 'ai' | 'offline' = useOffline ? 'offline' : 'ai';
+    let result: DailyAIResult;
+    let source: 'ai' | 'offline';
 
     try {
       if (useOffline || noApiKey) {
-        const offline = buildOfflineDaily(picked.card, orientation);
-        narration = offline.narration;
-        advice = offline.advice;
-        attribute = offline.attribute;
-        fortune = offline.fortune;
+        result = buildOfflineDaily(picked.card, orientation);
         source = 'offline';
       } else {
-        const previousDailyCandidates = await db.dailyDivinations
-          .where('date')
-          .below(toLocalDateKey())
-          .toArray();
-        const previousDaily = previousDailyCandidates
-          .sort((a, b) => b.date.localeCompare(a.date))[0] ?? null;
-        const req = buildDailyRequest({
-          settings,
-          attributes,
-          card: picked.card,
-          orientation,
-          recentActivities: getRecentActivitiesForDaily(7),
-          previousDaily,
-        });
+        const { req } = await buildDailyRequest({ settings, card: picked.card, orientation });
         const abortCtrl = new AbortController();
         abortRef.current = abortCtrl;
-        const result = await callDailyAI(req, abortCtrl.signal, settings.attributeNames);
-        narration = result.narration;
-        advice = result.advice;
-        attribute = result.attribute;
-        fortune = result.fortune;
+        let full = '';
+        let finish = '';
+        // 正文边到边上屏；META 尾巴由 visibleDailyText 藏住，流完再解析
+        for await (const delta of streamDaily(req, {
+          signal: abortCtrl.signal,
+          onReasoning: () => setThinking(true),
+          onFinishReason: r => { finish = r; },
+        })) {
+          full += delta;
+          setThinking(false);
+          setStreamText(visibleDailyText(full));
+        }
+        const parsed = parseDailyResult(full, {
+          attrNames: settings.attributeNames as Record<AttributeId, string>,
+          card: picked.card,
+          orientation,
+        });
+        if (finish === 'length' && !parsed.metaFound) {
+          throw new Error('解读写到一半被截断了（模型输出预算不足）。这张牌还留着，重试即可。');
+        }
+        result = parsed.result;
+        source = 'ai';
       }
     } catch (e) {
       setErrorMsg(formatApiError(e));
@@ -237,10 +248,11 @@ export function DailyDraw() {
       pickedIndex: idx,
       cardId: picked.card.id,
       orientation,
-      effect: { attribute, multiplier },
-      narration,
-      advice,
-      fortune,
+      effect: { attribute: result.attribute, multiplier },
+      narration: result.narration,
+      advice: result.advice,
+      fortune: result.fortune,
+      memo: result.memo,
       source,
       createdAt: new Date(),
     };
@@ -268,6 +280,8 @@ export function DailyDraw() {
     return <DoneView d={dailyDivination} />;
   }
 
+  const streaming = phase === 'calling' && (streamText.length > 0 || thinking);
+
   return (
     <div className="space-y-5">
       {/* AI 未配置提示（p3：浅青斜条 + 左蓝斜片，p3-astrology 设计稿） */}
@@ -277,13 +291,13 @@ export function DailyDraw() {
             <span aria-hidden className="mt-0.5 h-[14px] w-[10px] shrink-0" style={{ background: P3R.blue, clipPath: 'polygon(32% 0, 100% 0, 68% 100%, 0 100%)' }} />
             <p className="text-[12px] font-semibold leading-relaxed" style={{ color: P3R.ink }}>
               尚未配置 AI API。可前往「设置 → AI 总结」配置后获得定制解读；
-              或以离线兜底文案完成今日抽卡——将使用牌意关键词生成通用解读。
+              或以离线兜底文案完成今日抽卡——将使用牌面描述生成通用解读。
             </p>
           </div>
         ) : (
           <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/40 rounded-2xl p-4 text-xs text-amber-700 dark:text-amber-300 leading-relaxed">
             尚未配置 AI API。可前往「设置 → AI 总结」配置后获得定制解读；
-            或以离线兜底文案完成今日抽卡——将使用牌意关键词生成通用解读。
+            或以离线兜底文案完成今日抽卡——将使用牌面描述生成通用解读。
           </div>
         )
       )}
@@ -306,7 +320,7 @@ export function DailyDraw() {
             {phase === 'intro'  && '正在洗牌…'}
             {phase === 'pick'    && '从三张牌中选择一张'}
             {phase === 'flipping' && '揭示命运…'}
-            {phase === 'calling'  && '正在解读星象…'}
+            {phase === 'calling'  && (streamText ? '解读者正在落笔' : '正在解读星象…')}
             {phase === 'error'    && '解读遇到了阻碍'}
           </span>
           {p3 && <CyanSlashes />}
@@ -318,7 +332,7 @@ export function DailyDraw() {
           {phase === 'intro'   && '今日的星象正在汇聚'}
           {phase === 'pick'    && '每日仅一次，慎重选择'}
           {phase === 'flipping' && '正位 / 逆位皆有意义'}
-          {phase === 'calling'  && '结合您近期的成长轨迹'}
+          {phase === 'calling'  && (thinking && !streamText ? '解读者正在思索' : '结合您近期的处境')}
           {phase === 'error'    && '可重试 AI 或改用离线兜底'}
         </p>
       </div>
@@ -377,10 +391,15 @@ export function DailyDraw() {
           <FlipReveal
             candidate={candidates[pickedIndex]}
             revealed={phase !== 'flipping'}
-            loading={phase === 'calling'}
+            loading={phase === 'calling' && !streaming}
           />
         )}
       </div>
+
+      {/* 流式落笔：正文边到边上屏（v2.7.0.6，用户口径：不能让用户干等） */}
+      {streaming && (
+        <StreamPanel text={streamText} thinking={thinking} p5={p5} />
+      )}
 
       {/* 错误态：重试选项 */}
       {phase === 'error' && (
@@ -424,6 +443,48 @@ export function DailyDraw() {
         </div>
       )}
     </div>
+  );
+}
+
+// ── 子组件：流式落笔面板 ───────────────────────────────────
+
+function StreamPanel({ text, thinking, p5 }: { text: string; thinking: boolean; p5: boolean }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      className={p5 ? 'text-sm leading-relaxed' : 'rounded-2xl bg-black/[0.03] dark:bg-white/[0.03] p-4 text-sm text-gray-700 dark:text-gray-200 leading-relaxed min-h-[96px]'}
+    >
+      <Wrap p5={p5} seed={527}>
+        <div className="flex items-center gap-2 mb-2">
+          <span className="text-[10px] font-bold tracking-[2px] uppercase text-primary/80">
+            今日运势
+          </span>
+          <span className="text-[10px] text-gray-400 dark:text-gray-500">
+            {text ? '落笔中' : thinking ? '思索中' : '解读中'}
+          </span>
+        </div>
+        {text ? (
+          <div
+            className="prose-sm"
+            dangerouslySetInnerHTML={{
+              __html: DOMPurify.sanitize(`<p class="mb-2">${renderMarkdown(text)}</p>`),
+            }}
+          />
+        ) : (
+          <div className="flex items-center gap-2 text-xs text-gray-400 dark:text-gray-500">
+            <Spinner />
+            <span>{thinking ? '解读者正在把牌与你的处境放在一起看…' : '正在解读星象…'}</span>
+          </div>
+        )}
+        <motion.span
+          aria-hidden
+          animate={{ opacity: [1, 0] }}
+          transition={{ repeat: Infinity, duration: 0.6 }}
+          className="inline-block w-0.5 h-4 bg-primary align-middle ml-0.5"
+        />
+      </Wrap>
+    </motion.div>
   );
 }
 
@@ -474,10 +535,7 @@ function FlipReveal({
       )}
       {loading && (
         <div className="flex items-center gap-2 text-xs text-primary">
-          <motion.span
-            animate={{ rotate: 360 }}
-            transition={{ repeat: Infinity, duration: 1.1, ease: 'linear' }}
-          >◌</motion.span>
+          <Spinner />
           <span>正在解读星象…</span>
         </div>
       )}
@@ -488,7 +546,7 @@ function FlipReveal({
 // ── 子组件：已完成视图 ──────────────────────────────────────
 
 function DoneView({ d }: { d: DailyDivination }) {
-  const { settings } = useAppStore();
+  const { settings, updateDailyMemo } = useAppStore();
   const doneP5 = useUiChannel() === 'p5';
   const card = TAROT_BY_ID[d.cardId];
   if (!card) return null;
@@ -496,6 +554,7 @@ function DoneView({ d }: { d: DailyDivination }) {
   // 兼容旧记录：若未存 fortune，按规则推断
   const fortune = d.fortune ?? inferFortune(d.cardId, d.orientation);
   const fortuneMeta = FORTUNE_META[fortune];
+  const meaning = card[d.orientation];
 
   return (
     <div className="space-y-5">
@@ -530,7 +589,7 @@ function DoneView({ d }: { d: DailyDivination }) {
         delay={0.18}
       />
 
-      {/* 加成卡 */}
+      {/* 加成卡：属性 × 倍率 + 一句签语（飘渺、可代入；不是待办） */}
       <motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
@@ -577,7 +636,7 @@ function DoneView({ d }: { d: DailyDivination }) {
           </span>
         </div>
         <div className="flex flex-wrap gap-1.5 mb-2">
-          {card[d.orientation].keywords.map((kw, i) => (
+          {meaning.keywords.map((kw, i) => (
             <span
               key={i}
               className="text-[11px] px-2 py-0.5 rounded-full bg-white dark:bg-gray-900/60 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-700"
@@ -586,13 +645,17 @@ function DoneView({ d }: { d: DailyDivination }) {
             </span>
           ))}
         </div>
-        <p className="text-xs leading-relaxed text-gray-600 dark:text-gray-300">
-          {card[d.orientation].meaning}
+        <p className="text-xs leading-relaxed text-gray-500 dark:text-gray-400">
+          {meaning.meaning}
+        </p>
+        {/* 对号入座：写给客人的一段话（tarotReflections），留白让他自己认领 */}
+        <p className="mt-2 text-[12.5px] leading-relaxed text-gray-700 dark:text-gray-200">
+          {meaning.reflection}
         </p>
         </Wrap>
       </motion.div>
 
-      {/* 今日运势（AI 结合近期活动给出的个性化解读） */}
+      {/* 今日运势（AI 结合近期处境给出的个性化解读） */}
       <motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
@@ -616,6 +679,26 @@ function DoneView({ d }: { d: DailyDivination }) {
             __html: DOMPurify.sanitize(`<p class="mb-2">${renderMarkdown(d.narration)}</p>`),
           }}
         />
+        {/* 解读者手记：这次解读落在哪件处境上的一句备忘；下次解读会当"上次聊到哪"喂回去。可清除。 */}
+        {d.memo && (
+          <div className="mt-3 flex items-start gap-2 border-t border-gray-200/70 dark:border-gray-700/50 pt-2.5">
+            <span className="mt-0.5 shrink-0 text-[10px] font-bold tracking-[2px] uppercase text-gray-400 dark:text-gray-500">
+              手记
+            </span>
+            <span className="flex-1 text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">
+              {d.memo}
+            </span>
+            <button
+              type="button"
+              onClick={() => void updateDailyMemo(d.id, undefined)}
+              aria-label="清除手记"
+              title="解读者的备忘，会作为之后解读的上下文；点这里清除"
+              className="shrink-0 px-1 text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+            >
+              ✕
+            </button>
+          </div>
+        )}
         </Wrap>
       </motion.div>
 

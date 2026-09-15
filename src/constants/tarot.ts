@@ -1,8 +1,32 @@
 import type { AttributeId, Fortune } from '@/types';
+import { TAROT_REFLECTIONS } from './tarotReflections';
 
 export type TarotArcana = 'major' | 'minor';
 export type TarotSuit = 'wands' | 'cups' | 'swords' | 'pentacles';
 export type TarotOrientation = 'upright' | 'reversed';
+
+/** 一个方位（正/逆）的牌义三件套：关键词、一句话牌意、对号入座描述 */
+export interface TarotMeaning {
+  keywords: string[];
+  meaning: string;
+  /** 写给客人看的一段话（tarotReflections.ts）：首句像签文，后面留白让他自己认领 */
+  reflection: string;
+}
+
+/** 数据文件里手写的原始牌（不含 reflection，由 attachReflection 补齐） */
+type RawTarotCard = Omit<TarotCardData, 'upright' | 'reversed'> & {
+  upright: Omit<TarotMeaning, 'reflection'>;
+  reversed: Omit<TarotMeaning, 'reflection'>;
+};
+
+function attachReflection(raw: RawTarotCard): TarotCardData {
+  const r = TAROT_REFLECTIONS[raw.id];
+  return {
+    ...raw,
+    upright:  { ...raw.upright,  reflection: r?.upright  ?? raw.upright.meaning },
+    reversed: { ...raw.reversed, reflection: r?.reversed ?? raw.reversed.meaning },
+  };
+}
 
 export interface TarotCardData {
   id: string;
@@ -13,14 +37,8 @@ export interface TarotCardData {
   name: string;        // 中文
   nameEn: string;
   roman?: string;      // 大阿卡纳罗马数字
-  upright: {
-    keywords: string[];
-    meaning: string;
-  };
-  reversed: {
-    keywords: string[];
-    meaning: string;
-  };
+  upright: TarotMeaning;
+  reversed: TarotMeaning;
   /** 离线兜底时的建议（仅大阿卡纳填充较完整，其他兜底用 meaning 拼接） */
   advice?: { upright: string; reversed: string };
   /** 与五维属性的亲和（用于 AI 未命中时兜底选属性） */
@@ -45,7 +63,7 @@ export const SUIT_META: Record<TarotSuit, {
 
 // ── 大阿卡纳 22 张 ──────────────────────────────────────────
 
-export const MAJOR_ARCANA: TarotCardData[] = [
+const RAW_MAJOR: RawTarotCard[] = [
   {
     id: 'fool', arcana: 'major', number: 0, roman: '0',
     name: '愚者', nameEn: 'The Fool',
@@ -422,6 +440,9 @@ export const MAJOR_ARCANA: TarotCardData[] = [
   },
 ];
 
+export const MAJOR_ARCANA: TarotCardData[] = RAW_MAJOR.map(attachReflection);
+
+
 // ── 小阿卡纳 56 张（精简：关键词 + 一句话） ──────────────
 
 const RANK_NAMES: Record<number, string> = {
@@ -518,7 +539,7 @@ const PENTACLES: MinorData[] = [
 
 function buildMinors(suit: TarotSuit, data: MinorData[]): TarotCardData[] {
   const meta = SUIT_META[suit];
-  return data.map(d => ({
+  return data.map(d => attachReflection({
     id: `${suit}_${d.number}`,
     arcana: 'minor' as TarotArcana,
     number: d.number,

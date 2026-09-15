@@ -24,7 +24,7 @@ import { DailyDivination, FateGlimpse, FateGlimpseDay } from '@/types';
 import { CardBack } from './CardBack';
 import { TarotCardSVG } from './TarotCardSVG';
 import {
-  buildFateGlimpseRequest, callFateGlimpseAI, buildOfflineFateGlimpse,
+  buildFateGlimpseRequest, streamFateGlimpse, parseFateGlimpseText, buildOfflineFateGlimpse,
   type FateGlimpseAIResult,
 } from '@/utils/fateGlimpseAI';
 import { formatApiError } from '@/utils/tarotAI';
@@ -402,6 +402,9 @@ function FateRitual({
     glimpse ? { verdict: glimpse.verdict, summary: glimpse.summary, outlook: glimpse.outlook, advice: glimpse.advice } : null,
   );
   const [aiStatus, setAiStatus] = useState<'pending' | 'ready' | 'error'>(glimpse ? 'ready' : 'pending');
+  // 流式半成品：边收边解析，翻面后即刻上屏；result 只在流完整后才写（落库以它为准）
+  const [live, setLive] = useState<FateGlimpseAIResult | null>(null);
+  const [thinking, setThinking] = useState(false);
   const [errMsg, setErrMsg] = useState('');
   const sourceRef = useRef<'ai' | 'offline'>('ai');
   const savedRef = useRef(mode === 'review');
@@ -446,7 +449,17 @@ function FateRitual({
       });
       const ac = new AbortController();
       abortRef.current = ac;
-      const r = await callFateGlimpseAI(req, ac.signal);
+      setLive(null);
+      setThinking(false);
+      let full = '';
+      for await (const delta of streamFateGlimpse(req, { signal: ac.signal, onReasoning: () => setThinking(true) })) {
+        full += delta;
+        setThinking(false);
+        setLive(parseFateGlimpseText(full));
+      }
+      const r = parseFateGlimpseText(full);
+      if (!r.summary && !r.outlook && !r.advice) throw new Error('解读内容为空，请重试');
+      if (!r.verdict) r.verdict = '明暗交织 路在脚下';
       sourceRef.current = 'ai';
       setResult(r);
       setAiStatus('ready');
@@ -644,7 +657,7 @@ function FateRitual({
                   <CardBack width={126} hoverable={false} />
                 </div>
                 <div className="absolute inset-0" style={{ backfaceVisibility: 'hidden', transform: 'rotateY(180deg)' }}>
-                  <FateCardFace verdict={result?.verdict ?? null} width={126} />
+                  <FateCardFace verdict={result?.verdict || live?.verdict || null} width={126} />
                 </div>
               </motion.div>
             </div>
@@ -667,15 +680,30 @@ function FateRitual({
               transition={{ delay: 0.15, duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
               className="mt-4 w-full space-y-3"
             >
-              {aiStatus === 'pending' && (
+              {aiStatus === 'pending' && !(live && (live.summary || live.outlook || live.advice)) && (
                 <PanelShell>
                   <div className="flex items-center justify-center gap-2 py-6 text-[12px]" style={{ color: 'rgba(239,230,200,0.7)' }}>
                     <motion.span animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1.4, ease: 'linear' }}>
                       <FourStar size={14} color={GOLD} />
                     </motion.span>
-                    七张牌的线索正在汇成一段命运……
+                    {thinking ? '七张牌正在被逐一推演……' : '七张牌的线索正在汇成一段命运……'}
                   </div>
                 </PanelShell>
+              )}
+
+              {/* 流式半成品：三段各自到达即上屏（v2.7.0.6） */}
+              {aiStatus === 'pending' && live && (live.summary || live.outlook || live.advice) && (
+                <>
+                  {live.summary && <ReadingBlock label="总结" en="RETROSPECT" delay={0} text={live.summary} />}
+                  {live.outlook && <ReadingBlock label="展望" en="OUTLOOK" delay={0} text={live.outlook} />}
+                  {live.advice && <ReadingBlock label="建议" en="GUIDANCE" delay={0} text={live.advice} />}
+                  <div className="flex items-center justify-center gap-2 py-1 text-[11px]" style={{ color: 'rgba(239,230,200,0.55)' }}>
+                    <motion.span animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1.4, ease: 'linear' }}>
+                      <FourStar size={12} color={GOLD} />
+                    </motion.span>
+                    命运仍在落笔……
+                  </div>
+                </>
               )}
 
               {aiStatus === 'error' && (
