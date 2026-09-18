@@ -300,6 +300,17 @@ export interface DailyDivination {
    * 形成跨天叙事。给客人可见、可清除。老记录无此字段。
    */
   memo?: string;
+  /**
+   * 案头触点（v2.7.0.6）：这一天简报里允许模型触及的那一件案头事项的键
+   * （todo:<id> / deadline:<id> / wish:<id>）。之后三天不再给同一件——
+   * 用户口径：一个未完成的待办天天被提醒，内容就雷同了。'none' = 那天没给案头。
+   */
+  focusKey?: string;
+  /**
+   * 属性提醒键（v2.7.0.6）：这一天简报里允许模型顺带一句的"没动静的属性"（idle:<attrId>），
+   * 之后四天不再给同一项。用户口径：天天提醒某个属性偏低，频率高到背离初衷。'none' = 没给。
+   */
+  nudgeKey?: string;
   createdAt: Date;
 }
 

@@ -1,23 +1,32 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import DOMPurify from 'dompurify';
-import { v4 as uuidv4 } from 'uuid';
 import { useAppStore, toLocalDateKey } from '@/store';
 import {
   ALL_TAROT,
+  MAJOR_ARCANA,
   TAROT_BY_ID,
   drawRandomCards,
   randomOrientation,
   SPREAD_POSITIONS,
   PERIOD_LABELS,
+  BASE_POSITION,
+  periodHasBase,
+  spreadPositionsFor,
   TarotCardData,
 } from '@/constants/tarot';
-import { LongReading, LongReadingPeriod, TarotOrientation, DrawnCard, LongReadingFollowUp } from '@/types';
+import { LongReading, LongReadingPeriod, TarotOrientation, DrawnCard } from '@/types';
 import { CardBack } from './CardBack';
 import { TarotCardSVG } from './TarotCardSVG';
-import { buildLongReadingRequest, buildFollowUpRequest, streamChatSSE, formatApiError, extractReadingMemo } from '@/utils/tarotAI';
 import { renderMarkdown } from '@/utils/markdown';
 import { useUiChannel } from '@/ui/useUiChannel';
+import { useBoldness } from '@/utils/boldness';
+import { triggerLightHaptic } from '@/utils/feedback';
+import { useThinkProgress } from '@/utils/thinkProgress';
+import {
+  useTarotJobs, startLongJob, startFollowJob, ackLongJob, ackFollowJob, readLongPending, clearLongPending, type LongPending,
+} from '@/utils/tarotJobs';
+import { ThinkingCircle } from './ThinkingCircle';
 import { P3R, slantClip, SlantButton } from '@/components/p3r/kit';
 
 /** P3R 青双斜杠（p3-modal-16 稿的节标签尾饰） */
@@ -30,6 +39,7 @@ const CyanSlashes = ({ soft = false }: { soft?: boolean }) => (
 
 type Phase =
   | 'form'        // 问题 + 周期
+  | 'base'        // 长远档：长按注入命运的波纹，抽「底色」牌（先不翻开）
   | 'picking'     // 6 张候选 → 选 3
   | 'revealing'   // 3 张选中牌翻面中（过渡到流式）
   | 'reading'     // AI 流式
@@ -46,14 +56,14 @@ interface Candidate {
   orientation: TarotOrientation;
 }
 
+const toCandidate = (d: DrawnCard): Candidate | null => {
+  const card = TAROT_BY_ID[d.cardId];
+  return card ? { card, orientation: d.orientation } : null;
+};
+const toCandidates = (list: DrawnCard[]): Candidate[] => list.map(toCandidate).filter((c): c is Candidate => !!c);
+
 export function LongReadingFlow({ initialReading, onBack }: Props) {
-  const {
-    settings,
-    saveLongReading,
-    appendLongReadingFollowUp,
-    updateLongReadingMemo,
-    countActiveReadings,
-  } = useAppStore();
+  const { settings, countActiveReadings } = useAppStore();
   const noApiKey = !settings.summaryApiKey;
   const p3 = useUiChannel() === 'p3';
 
@@ -67,15 +77,19 @@ export function LongReadingFlow({ initialReading, onBack }: Props) {
   // 抽卡
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [pickedIndices, setPickedIndices] = useState<number[]>([]);
+  /** 长远档的「底色」牌：长按注入命运时抽出，背面朝上，与三张一起翻开 */
+  const [baseCard, setBaseCard] = useState<Candidate | null>(null);
 
-  // 流式
-  const [streamedText, setStreamedText] = useState('');
-  const [isStreaming, setIsStreaming] = useState(false);
-  // 思维链模型在"想"的那几十秒一个正文字都不吐；有思维链增量到达就换一句状态语
-  const [thinking, setThinking] = useState(false);
+  // 流式：请求跑在模块级任务里（utils/tarotJobs），组件只订阅——切页不打断，回来接着看
+  const job = useTarotJobs(s => s.long);
+  const followJob = useTarotJobs(s => s.follow);
+  const streamedText = job?.text ?? '';
+  const isStreaming = !!job && (job.status === 'thinking' || job.status === 'streaming');
+  const thinking = !!job?.thinking;
+  const progress = useThinkProgress(job?.tracker ?? null, !!job && job.status === 'thinking');
   const [error, setError] = useState<string | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
-  const prevMessagesRef = useRef<{ user: string; assistant: string } | null>(null);
+  // 进程被杀过、参数还在：表单页给「用同一副牌继续」
+  const [pendingLong, setPendingLong] = useState<LongPending | null>(() => (job ? null : readLongPending()));
 
   // 追问
   const [followOpen, setFollowOpen] = useState(false);
@@ -83,36 +97,117 @@ export function LongReadingFlow({ initialReading, onBack }: Props) {
   const [followQuestion, setFollowQuestion] = useState('');
   const [followCandidates, setFollowCandidates] = useState<Candidate[]>([]);
   const [followPickedIndex, setFollowPickedIndex] = useState<number | null>(null);
-  const [followStreamedText, setFollowStreamedText] = useState('');
-  const [followStreaming, setFollowStreaming] = useState(false);
+  const followStreamedText = followJob?.text ?? '';
+  const followStreaming = !!followJob && (followJob.status === 'thinking' || followJob.status === 'streaming');
+  const followThinking = !!followJob?.thinking;
+  const followProgress = useThinkProgress(followJob?.tracker ?? null, !!followJob && followJob.status === 'thinking');
   const [followError, setFollowError] = useState<string | null>(null);
-  const followAbortRef = useRef<AbortController | null>(null);
+
+  // ── 挂载时接回后台任务 ──
+  useEffect(() => {
+    if (initialReading) {
+      // 打开归档详情：这条 reading 若有正在跑 / 刚出错的追问，把追问面板接回来
+      if (followJob && followJob.readingId === initialReading.id && followJob.status !== 'done') {
+        setFollowOpen(true);
+        setFollowQuestion(followJob.question);
+        setFollowCandidates(toCandidates(followJob.candidates));
+        setFollowPickedIndex(followJob.pickedIndex);
+        setFollowPhase('reading');
+        if (followJob.status === 'error') setFollowError(followJob.error ?? '回应失败');
+      }
+      return;
+    }
+    if (!job) return;
+    // 新占卜 tab：有任务就接上（跑着的 → reading；跑完的 → done；出错的 → reading + 错误）
+    setQuestion(job.question);
+    setPeriod(job.period);
+    setCandidates(toCandidates(job.candidates));
+    setPickedIndices(job.pickedIndices);
+    setBaseCard(job.base ? toCandidate(job.base) : null);
+    if (job.status === 'done' && job.result) {
+      setReading(job.result);
+      setPhase('done');
+      return;
+    }
+    if (job.status === 'error') setError(job.error ?? '生成失败');
+    setPhase('reading');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── 任务状态变化 → 视图 ──
+  useEffect(() => {
+    if (!job) return;
+    if (phase !== 'reading' && phase !== 'revealing') return;
+    if (job.status === 'done' && job.result) {
+      setReading(job.result);
+      setPhase('done');
+    } else if (job.status === 'error') {
+      setError(job.error ?? '生成失败');
+      setPhase('reading');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [job?.status]);
+
+  // 手记异步到达：任务里的 result 更新后同步给详情
+  useEffect(() => {
+    if (job?.status === 'done' && job.result && reading && job.result.id === reading.id && job.result.memo !== reading.memo) {
+      setReading(job.result);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [job?.result?.memo]);
 
   useEffect(() => {
-    return () => {
-      abortRef.current?.abort();
-      followAbortRef.current?.abort();
-    };
-  }, []);
+    if (!followJob || !reading || followJob.readingId !== reading.id) return;
+    if (followJob.status === 'done' && followJob.result) {
+      const f = followJob.result;
+      setReading(r => (r && !(r.followUps ?? []).some(x => x.id === f.id) ? { ...r, followUps: [...(r.followUps ?? []), f] } : r));
+      setFollowPhase('done');
+      ackFollowJob();
+    } else if (followJob.status === 'error') {
+      setFollowError(followJob.error ?? '回应失败');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [followJob?.status]);
 
   const activeCount = countActiveReadings();
   const hitConcurrencyCap = !initialReading && activeCount >= 2;
 
+  const liveReading = useAppStore(s => (reading ? s.longReadings.find(r => r.id === reading.id) : undefined)) ?? reading;
   const canFollowUp = useMemo(() => {
-    if (!reading) return false;
-    if (reading.archived) return false;
-    if (reading.expiresAt < toLocalDateKey()) return false;
-    return (reading.followUps?.length ?? 0) < 1;
-  }, [reading]);
+    if (!liveReading) return false;
+    if (liveReading.archived) return false;
+    if (liveReading.expiresAt < toLocalDateKey()) return false;
+    return (liveReading.followUps?.length ?? 0) < 1;
+  }, [liveReading]);
 
   // ── 表单 → 抽卡 ────────────────────────────────────────────
-  const handleStartPicking = () => {
-    if (!question.trim()) return;
-    if (hitConcurrencyCap) return;
+  const rollCandidates = () => {
     const cards = drawRandomCards(6, ALL_TAROT);
     setCandidates(cards.map(c => ({ card: c, orientation: randomOrientation() })));
     setPickedIndices([]);
+  };
+
+  const handleStartPicking = () => {
+    if (!question.trim()) return;
+    if (hitConcurrencyCap) return;
+    setBaseCard(null);
+    if (periodHasBase(period)) {
+      // 长远档：先长按注入命运，抽出底色牌（背面朝上），再从六张里选三张
+      setPhase('base');
+      return;
+    }
+    rollCandidates();
     setPhase('picking');
+  };
+
+  // 长按注满 → 从大阿卡纳里抽一张作底色，先不翻开；停一拍再进选牌
+  const handleBaseDrawn = () => {
+    const [card] = drawRandomCards(1, MAJOR_ARCANA);
+    setBaseCard({ card, orientation: randomOrientation() });
+    window.setTimeout(() => {
+      rollCandidates();
+      setPhase('picking');
+    }, 900);
   };
 
   const togglePick = (idx: number) => {
@@ -124,7 +219,7 @@ export function LongReadingFlow({ initialReading, onBack }: Props) {
     setPickedIndices([...pickedIndices, idx]);
   };
 
-  // ── 抽卡 → 翻面 → 流式解读 ────────────────────────────────
+  // ── 抽卡 → 翻面 → 后台任务流式解读 ────────────────────────
   const handleReveal = () => {
     if (pickedIndices.length !== 3) return;
     if (noApiKey) {
@@ -132,89 +227,38 @@ export function LongReadingFlow({ initialReading, onBack }: Props) {
       return;
     }
     setError(null);
-    setStreamedText('');
     setPhase('revealing');
-
-    // 翻面动画期间并发启动 AI 流式调用；动画完成后切到 reading 视图，
-    // 此时已有部分文本可显示，避免空档。
-    void runReadingStream();
+    // 翻面动画期间任务已经在跑；动画完成后切到 reading 视图（此时多半还在思维链阶段）
+    startLongJob({
+      settings,
+      question: question.trim(),
+      period,
+      candidates: candidates.map(c => ({ cardId: c.card.id, orientation: c.orientation })),
+      pickedIndices,
+      base: baseCard ? { cardId: baseCard.card.id, orientation: baseCard.orientation } : undefined,
+    });
     setTimeout(() => {
-      // 仅当仍处于 revealing 时才过渡（流式失败会把 phase 设回 picking）
       setPhase(p => (p === 'revealing' ? 'reading' : p));
     }, 1500);
   };
 
-  const runReadingStream = async () => {
-    const picked: DrawnCard[] = pickedIndices.map(i => ({
-      cardId: candidates[i].card.id,
-      orientation: candidates[i].orientation,
-    }));
-
-    // 素材由 tarotContext 现算（带日期的足迹 / 与问题相关的线索 / 此前问询 / 手记 / 画像）
-    const req = await buildLongReadingRequest({
-      settings, question: question.trim(), period, picked,
-    });
-    prevMessagesRef.current = {
-      user: req.messages[req.messages.length - 1].content,
-      assistant: '',
-    };
-
-    setIsStreaming(true);
-    setThinking(false);
-
-    const abortCtrl = new AbortController();
-    abortRef.current = abortCtrl;
-
-    let full = '';
-    try {
-      for await (const chunk of streamChatSSE(req, abortCtrl.signal, { onReasoning: () => setThinking(true) })) {
-        full += chunk;
-        setThinking(false);
-        setStreamedText(full);
-      }
-    } catch (e) {
-      if ((e as Error)?.name !== 'AbortError') {
-        setError(formatApiError(e));
-        setIsStreaming(false);
-        return;
-      }
-    } finally {
-      setIsStreaming(false);
-      setThinking(false);
-    }
-
-    if (!full) {
-      setError('解读内容为空，请重试');
-      return;
-    }
-
-    if (prevMessagesRef.current) prevMessagesRef.current.assistant = full;
-
-    const createdAt = new Date();
-    const expires = new Date(createdAt);
-    expires.setDate(expires.getDate() + 14);
-    const newReading: LongReading = {
-      id: uuidv4(),
-      question: question.trim(),
-      period,
-      drawnFrom: candidates.map(c => c.card.id),
-      picked,
-      content: full,
-      followUps: [],
-      archived: false,
-      createdAt,
-      expiresAt: toLocalDateKey(expires),
-    };
-    await saveLongReading(newReading);
-    setReading(newReading);
-    setPhase('done');
-
-    // 解读者手记：另用一次快速档小调用抽一条备忘（fire-and-forget；失败就没有手记）
-    void extractReadingMemo(settings, newReading.question, full).then(memo => {
-      if (!memo) return;
-      void updateLongReadingMemo(newReading.id, memo);
-      setReading(r => (r && r.id === newReading.id ? { ...r, memo } : r));
-    });
+  // 进程被杀后回来：用同一副牌、同一个问题续跑
+  const handleResumePending = () => {
+    const pd = pendingLong;
+    if (!pd) return;
+    setQuestion(pd.question);
+    setPeriod(pd.period);
+    setCandidates(toCandidates(pd.candidates));
+    setPickedIndices(pd.pickedIndices);
+    setBaseCard(pd.base ? toCandidate(pd.base) : null);
+    setError(null);
+    setPendingLong(null);
+    setPhase('reading');
+    startLongJob({ settings, question: pd.question, period: pd.period, candidates: pd.candidates, pickedIndices: pd.pickedIndices, base: pd.base, id: pd.id });
+  };
+  const handleDiscardPending = () => {
+    clearLongPending();
+    setPendingLong(null);
   };
 
   // ── 追问 ──────────────────────────────────────────────────
@@ -232,77 +276,30 @@ export function LongReadingFlow({ initialReading, onBack }: Props) {
     setFollowPhase('picking');
   };
 
-  const handleFollowReveal = async (idx: number) => {
+  const handleFollowReveal = (idx: number) => {
     if (!reading) return;
     setFollowPickedIndex(idx);
     setFollowPhase('reading');
-    setFollowStreamedText('');
     setFollowError(null);
-    setFollowStreaming(true);
-
-    const picked = followCandidates[idx];
-
-    // 恢复先前主解读的上下文（若本次是打开归档详情，则从 reading 重建）
-    const prev = prevMessagesRef.current ?? {
-      user: `**客人提出的问题**：${reading.question}\n**牌阵**：${reading.picked
-        .map((p, i) => {
-          const c = TAROT_BY_ID[p.cardId];
-          return `${SPREAD_POSITIONS[reading.period][i]}：${c?.name ?? p.cardId}（${p.orientation === 'upright' ? '正位' : '逆位'}）`;
-        })
-        .join('；')}`,
-      assistant: reading.content,
-    };
-
-    const req = buildFollowUpRequest({
+    startFollowJob({
       settings,
-      previousUserMessage: prev.user,
-      previousAssistantMessage: prev.assistant,
-      followUpQuestion: followQuestion.trim(),
-      followUpCard: picked.card,
-      followUpOrientation: picked.orientation,
-    });
-
-    const abortCtrl = new AbortController();
-    followAbortRef.current = abortCtrl;
-
-    let full = '';
-    setThinking(false);
-    try {
-      for await (const chunk of streamChatSSE(req, abortCtrl.signal, { onReasoning: () => setThinking(true) })) {
-        full += chunk;
-        setThinking(false);
-        setFollowStreamedText(full);
-      }
-    } catch (e) {
-      if ((e as Error)?.name !== 'AbortError') {
-        setFollowError(formatApiError(e));
-      }
-      setFollowStreaming(false);
-      return;
-    } finally {
-      setFollowStreaming(false);
-    }
-
-    if (!full) {
-      setFollowError('回应内容为空');
-      return;
-    }
-
-    const follow: LongReadingFollowUp = {
-      id: uuidv4(),
+      reading,
       question: followQuestion.trim(),
-      drawnFrom: followCandidates.map(c => c.card.id),
-      cardId: picked.card.id,
-      orientation: picked.orientation,
-      content: full,
-      createdAt: new Date(),
-    };
-    await appendLongReadingFollowUp(reading.id, follow);
-    setReading({ ...reading, followUps: [...(reading.followUps ?? []), follow] });
-    setFollowPhase('done');
+      candidates: followCandidates.map(c => ({ cardId: c.card.id, orientation: c.orientation })),
+      pickedIndex: idx,
+      // 主解读那次请求的 user 消息（带简报）还在任务里就复用；归档详情里没有就按 reading 重建
+      promptUser: job?.result?.id === reading.id ? job.promptUser : undefined,
+    });
   };
 
   // ── 视图 ─────────────────────────────────────────────────
+
+  // 翻面与解读视图里的牌序：底色（若有）在前，其后是牌阵三位
+  const revealCards: Candidate[] = [
+    ...(baseCard ? [baseCard] : []),
+    ...pickedIndices.map(i => candidates[i]).filter((c): c is Candidate => !!c),
+  ];
+  const revealPositions = spreadPositionsFor(period, revealCards.length);
 
   // 1) 表单
   if (phase === 'form') {
@@ -312,6 +309,16 @@ export function LongReadingFlow({ initialReading, onBack }: Props) {
       const periodMetaList = (['recent', 'midterm', 'longterm'] as LongReadingPeriod[]);
       return (
         <div className="space-y-6">
+          {pendingLong && (
+            <div className="space-y-2.5 px-4 py-3" style={{ background: 'rgba(53,209,232,0.14)', clipPath: slantClip(10) }}>
+              <p className="text-[13px] font-black" style={{ color: P3R.ink }}>上次的占卜没有生成完</p>
+              <p className="line-clamp-2 text-[12px] font-semibold" style={{ color: P3R.grey }}>「{pendingLong.question}」· {PERIOD_LABELS[pendingLong.period].label}</p>
+              <div className="flex gap-2">
+                <SlantButton tone="primary" className="flex-1 py-2.5" onClick={handleResumePending}>用同一副牌继续</SlantButton>
+                <SlantButton tone="ghost" className="px-5 py-2.5" onClick={handleDiscardPending}>放弃</SlantButton>
+              </div>
+            </div>
+          )}
           {hitConcurrencyCap && (
             <div className="flex items-start gap-2.5 px-4 py-3" style={{ background: 'rgba(240,65,127,0.08)', clipPath: slantClip(10) }}>
               <span aria-hidden className="mt-0.5 h-[14px] w-[8px] shrink-0" style={{ background: P3R.magenta, transform: 'skewX(-18deg)' }} />
@@ -388,10 +395,10 @@ export function LongReadingFlow({ initialReading, onBack }: Props) {
           <div>
             <div className="flex items-center gap-2.5">
               <span aria-hidden className="h-[14px] w-[8px]" style={{ background: P3R.blue, transform: 'skewX(-18deg)' }} />
-              <span className="text-[15px] font-black" style={{ color: P3R.ink }}>牌阵：{SPREAD_POSITIONS[period].join(' · ')}</span>
+              <span className="text-[15px] font-black" style={{ color: P3R.ink }}>牌阵：{spreadPositionsFor(period, periodHasBase(period) ? 4 : 3).join(' · ')}</span>
             </div>
             <div aria-hidden className="mt-3 flex justify-between gap-5 px-1">
-              {[0, 1, 2].map(i => (
+              {Array.from({ length: periodHasBase(period) ? 4 : 3 }, (_, i) => i).map(i => (
                 <span
                   key={i}
                   className="h-[148px] flex-1"
@@ -431,6 +438,16 @@ export function LongReadingFlow({ initialReading, onBack }: Props) {
     }
     return (
       <div className="space-y-5">
+        {pendingLong && (
+          <div className="rounded-2xl border border-primary/30 bg-primary/5 dark:bg-primary/10 p-4 space-y-2">
+            <div className="text-xs font-black text-primary">上次的占卜没有生成完</div>
+            <div className="text-xs text-gray-600 dark:text-gray-300 line-clamp-2">「{pendingLong.question}」· {PERIOD_LABELS[pendingLong.period].label}</div>
+            <div className="flex gap-2 pt-1">
+              <button type="button" onClick={handleResumePending} className="flex-1 py-2 rounded-xl text-xs font-bold bg-primary text-white">用同一副牌继续</button>
+              <button type="button" onClick={handleDiscardPending} className="px-4 py-2 rounded-xl text-xs font-bold bg-black/5 dark:bg-white/10 text-gray-600 dark:text-gray-300">放弃</button>
+            </div>
+          </div>
+        )}
         {hitConcurrencyCap && (
           <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/40 rounded-2xl p-4 text-xs text-amber-700 dark:text-amber-300 leading-relaxed">
             当前已有 {activeCount} 条活跃占卜（上限 2）。请先归档或等已有占卜过期（14 天）后再发起新的。
@@ -474,7 +491,7 @@ export function LongReadingFlow({ initialReading, onBack }: Props) {
               );
             })}
           </div>
-          <div className="text-[10px] text-gray-400 mt-1.5">牌阵：{SPREAD_POSITIONS[period].join(' · ')}</div>
+          <div className="text-[10px] text-gray-400 mt-1.5">牌阵：{spreadPositionsFor(period, periodHasBase(period) ? 4 : 3).join(' · ')}</div>
         </div>
 
         <button
@@ -498,10 +515,52 @@ export function LongReadingFlow({ initialReading, onBack }: Props) {
   }
 
   // 2) 抽卡（6 选 3）
+  // 1.5) 长远档：长按注入命运的波纹 → 抽出「底色」牌（背面朝上，稍后与三张一起翻开）
+  if (phase === 'base') {
+    return (
+      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6 pt-2">
+        <div className="text-center">
+          <h3
+            className={p3 ? 'text-[19px] font-black tracking-[2px]' : 'text-sm font-bold text-gray-800 dark:text-gray-100 tracking-[3px]'}
+            style={p3 ? { color: P3R.blueDeep } : undefined}
+          >
+            {baseCard ? '命运的波纹已注入' : '请您注入命运的波纹'}
+          </h3>
+          <p
+            className={p3 ? 'mt-1.5 text-[12px] font-semibold' : 'text-[11px] text-gray-400 dark:text-gray-500 mt-1'}
+            style={p3 ? { color: P3R.grey } : undefined}
+          >
+            {baseCard ? `${BASE_POSITION}已定，稍后与三张牌一起翻开` : '长按牌堆，直到波纹注满'}
+          </p>
+        </div>
+        <div className="flex justify-center">
+          <HoldToDraw color={p3 ? '#1b57ff' : '#d4af37'} done={!!baseCard} onDone={handleBaseDrawn} />
+        </div>
+        {!baseCard && (
+          <div className="flex justify-center">
+            {p3 ? (
+              <SlantButton tone="ghost" className="px-8 py-2.5" onClick={() => setPhase('form')}>返回</SlantButton>
+            ) : (
+              <button type="button" onClick={() => setPhase('form')} className="px-6 py-2 rounded-xl text-xs font-bold bg-black/5 dark:bg-white/10 text-gray-600 dark:text-gray-300">
+                返回
+              </button>
+            )}
+          </div>
+        )}
+      </motion.div>
+    );
+  }
+
   if (phase === 'picking') {
     const positions = SPREAD_POSITIONS[period];
     return (
       <div className="space-y-5">
+        {baseCard && (
+          <div className="flex items-center justify-center gap-3">
+            <CardBack width={40} hoverable={false} />
+            <div className="text-[11px] text-gray-500 dark:text-gray-400">{BASE_POSITION}已注入，尚未翻开 · 会与三张牌一起揭示</div>
+          </div>
+        )}
         <div className="text-center">
           <h3 className="text-sm font-bold text-gray-800 dark:text-gray-100 tracking-[3px]">
             从六张牌中选出三张
@@ -601,7 +660,6 @@ export function LongReadingFlow({ initialReading, onBack }: Props) {
 
   // 2.5) 翻面过渡：三张选中牌从背面翻到正面
   if (phase === 'revealing') {
-    const positions = SPREAD_POSITIONS[period];
     return (
       <motion.div
         initial={{ opacity: 0 }}
@@ -618,14 +676,14 @@ export function LongReadingFlow({ initialReading, onBack }: Props) {
           </p>
         </div>
         <div className="flex justify-center gap-3">
-          {pickedIndices.map((i, pos) => (
+          {revealCards.map((c, pos) => (
             <FlippingCard
-              key={i}
-              card={candidates[i].card}
-              orientation={candidates[i].orientation}
-              width={100}
+              key={`${c.card.id}-${pos}`}
+              card={c.card}
+              orientation={c.orientation}
+              width={revealCards.length > 3 ? 78 : 100}
               delay={pos * 0.35}
-              position={positions[pos]}
+              position={revealPositions[pos] ?? ''}
             />
           ))}
         </div>
@@ -647,7 +705,6 @@ export function LongReadingFlow({ initialReading, onBack }: Props) {
 
   // 3) 解读中（流式）
   if (phase === 'reading') {
-    const positions = SPREAD_POSITIONS[period];
     return (
       <motion.div
         initial={{ opacity: 0, y: 14 }}
@@ -656,22 +713,22 @@ export function LongReadingFlow({ initialReading, onBack }: Props) {
         className="space-y-5"
       >
         <div className="flex justify-center gap-3">
-          {pickedIndices.map((i, pos) => (
+          {revealCards.map((c, pos) => (
             <motion.div
-              key={i}
+              key={`${c.card.id}-${pos}`}
               initial={{ opacity: 0, scale: 1.15 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ delay: pos * 0.08, duration: 0.4 }}
               className="flex flex-col items-center"
             >
               <TarotCardSVG
-                card={candidates[i].card}
-                orientation={candidates[i].orientation}
-                width={72}
+                card={c.card}
+                orientation={c.orientation}
+                width={revealCards.length > 3 ? 64 : 72}
                 staticCard
                 showOrientationTag
               />
-              <div className="text-[10px] text-gray-400 mt-1">{positions[pos]}</div>
+              <div className="text-[10px] text-gray-400 mt-1">{revealPositions[pos] ?? ''}</div>
             </motion.div>
           ))}
         </div>
@@ -689,12 +746,15 @@ export function LongReadingFlow({ initialReading, onBack }: Props) {
               }}
             />
           ) : (
-            <div className="text-xs text-gray-400 flex items-center gap-2">
-              <motion.span
-                animate={{ rotate: 360 }}
-                transition={{ repeat: Infinity, duration: 1.1, ease: 'linear' }}
-              >◌</motion.span>
-              <span>{thinking ? '三张牌正在被放在一起推演…' : '正在展开牌阵…'}</span>
+            <div className="flex justify-center py-3">
+              <ThinkingCircle
+                variant="hexagram"
+                progress={progress}
+                size={140}
+                color={p3 ? '#1b57ff' : '#d4af37'}
+                label={thinking ? '三张牌正在被放在一起推演' : '正在展开牌阵'}
+                showPercent={thinking}
+              />
             </div>
           )}
           {isStreaming && (
@@ -711,16 +771,16 @@ export function LongReadingFlow({ initialReading, onBack }: Props) {
             {error}
             <div className="mt-2">
               <button
-                onClick={() => setPhase('picking')}
+                onClick={() => { ackLongJob(); setError(null); setPhase('picking'); }}
                 className="text-xs font-bold underline"
               >返回抽卡重试</button>
             </div>
           </div>
         )}
 
-        {!isStreaming && !error && streamedText && (
+        {isStreaming && (
           <div className="text-center text-[11px] text-gray-400">
-            已归档至档案，14 天内可追问一次。
+            离开这页也不会中断，回来接着看。
           </div>
         )}
       </motion.div>
@@ -734,7 +794,7 @@ export function LongReadingFlow({ initialReading, onBack }: Props) {
         reading={reading}
         canFollowUp={canFollowUp}
         onFollowUp={handleFollowStart}
-        onBack={onBack}
+        onBack={() => { ackLongJob(); onBack(); }}
         followUI={followOpen ? (
           <FollowUpPanel
             phase={followPhase}
@@ -744,7 +804,8 @@ export function LongReadingFlow({ initialReading, onBack }: Props) {
             pickedIndex={followPickedIndex}
             streamedText={followStreamedText}
             isStreaming={followStreaming}
-            thinking={thinking}
+            thinking={followThinking}
+            progress={followProgress}
             error={followError}
             onStartPick={handleFollowPickStart}
             onReveal={handleFollowReveal}
@@ -811,7 +872,7 @@ function FlippingCard({
 
 function FollowUpPanel({
   phase, question, setQuestion, candidates, pickedIndex,
-  streamedText, isStreaming, thinking, error,
+  streamedText, isStreaming, thinking, progress, error,
   onStartPick, onReveal, onClose,
 }: {
   phase: 'form' | 'picking' | 'reading' | 'done';
@@ -822,6 +883,7 @@ function FollowUpPanel({
   streamedText: string;
   isStreaming: boolean;
   thinking?: boolean;
+  progress?: number;
   error: string | null;
   onStartPick: () => void;
   onReveal: (i: number) => void;
@@ -901,7 +963,9 @@ function FollowUpPanel({
                 }}
               />
             ) : (
-              <div className="text-xs text-gray-400">{thinking ? '正在思索…' : '正在回应…'}</div>
+              <div className="flex justify-center py-1">
+                <ThinkingCircle variant="hexagram" progress={progress ?? 0} size={96} color={p3 ? '#1b57ff' : '#d4af37'} label={thinking ? '正在思索' : '正在回应'} showPercent={!!thinking} />
+              </div>
             )}
             {isStreaming && (
               <motion.span
@@ -941,15 +1005,16 @@ export function ReadingDetail({
   onBack: () => void;
   followUI?: React.ReactNode;
 }) {
-  const { archiveLongReading, deleteLongReading, updateLongReadingMemo } = useAppStore();
-  // 手记在解读完成后才异步到达（另一次小调用），从 store 里取最新值而不是靠 props
-  const liveMemo = useAppStore(st => st.longReadings.find(r => r.id === reading.id)?.memo) ?? reading.memo;
+  const { archiveLongReading, deleteLongReading } = useAppStore();
+  // 归档 / 到期都从 store 取最新值，而不是靠 props：
+  // 点「归档」后 store 已更新，但父组件手里那份 reading 还是旧的，按钮与标签要立刻跟着变（用户上报）
+  const live = useAppStore(st => st.longReadings.find(r => r.id === reading.id)) ?? reading;
   const p3 = useUiChannel() === 'p3';
-  const positions = SPREAD_POSITIONS[reading.period];
+  const positions = spreadPositionsFor(reading.period, reading.picked.length);
   const today = toLocalDateKey();
-  const expired = reading.expiresAt < today;
+  const expired = live.expiresAt < today;
   const remainingDays = Math.max(0, Math.ceil(
-    (new Date(reading.expiresAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+    (new Date(live.expiresAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
   ));
   const [confirmDel, setConfirmDel] = useState(false);
 
@@ -966,7 +1031,7 @@ export function ReadingDetail({
             <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-primary/10 text-primary">
               {PERIOD_LABELS[reading.period].label}
             </span>
-            {reading.archived ? (
+            {live.archived ? (
               <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-200 dark:bg-gray-700 text-gray-500">
                 已归档
               </span>
@@ -984,7 +1049,7 @@ export function ReadingDetail({
             {reading.question}
           </div>
           <div className="text-[10px] text-gray-400 mt-0.5">
-            {new Date(reading.createdAt).toLocaleDateString('zh-CN')} · 到期 {reading.expiresAt}
+            {new Date(reading.createdAt).toLocaleDateString('zh-CN')} · 到期 {live.expiresAt}
           </div>
         </div>
       </div>
@@ -996,8 +1061,8 @@ export function ReadingDetail({
           if (!card) return null;
           return (
             <div key={i} className="flex flex-col items-center">
-              <TarotCardSVG card={card} orientation={p.orientation} width={78} staticCard showOrientationTag />
-              <div className="text-[10px] text-gray-500 dark:text-gray-400 mt-1">{positions[i]}</div>
+              <TarotCardSVG card={card} orientation={p.orientation} width={reading.picked.length > 3 ? 70 : 78} staticCard showOrientationTag />
+              <div className="text-[10px] text-gray-500 dark:text-gray-400 mt-1">{positions[i] ?? ''}</div>
             </div>
           );
         })}
@@ -1014,45 +1079,10 @@ export function ReadingDetail({
         }}
       />
 
-      {/* 解读者手记：这次占卜落在哪件处境上的一句备忘；之后的解读会当"上次问到哪"喂回去。可清除。 */}
-      {liveMemo && (
-        <div className="flex items-start gap-2 px-1">
-          <span className="mt-0.5 shrink-0 text-[10px] font-bold tracking-[2px] uppercase text-gray-400 dark:text-gray-500">手记</span>
-          <span className="flex-1 text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">{liveMemo}</span>
-          <button
-            type="button"
-            onClick={() => void updateLongReadingMemo(reading.id, undefined)}
-            aria-label="清除手记"
-            title="解读者的备忘，会作为之后解读的上下文；点这里清除"
-            className="shrink-0 px-1 text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
-          >✕</button>
-        </div>
-      )}
+      {/* 解读者手记（live.memo）不外显：只作为之后解读的"上次问到哪"喂回去（用户口径：内化掉） */}
 
-      {/* 追问列表 */}
-      {(reading.followUps ?? []).map(f => {
-        const card = TAROT_BY_ID[f.cardId];
-        return (
-          <div key={f.id} className="rounded-2xl border border-primary/20 bg-primary/5 dark:bg-primary/10 p-4 space-y-3">
-            <div className="text-xs font-black text-primary tracking-wider uppercase">追问</div>
-            <div className="text-sm font-bold text-gray-800 dark:text-gray-100">{f.question}</div>
-            {card && (
-              <div className="flex justify-center">
-                <TarotCardSVG card={card} orientation={f.orientation} width={64} staticCard showOrientationTag />
-              </div>
-            )}
-            <div
-              className="text-sm text-gray-700 dark:text-gray-200 leading-relaxed"
-              dangerouslySetInnerHTML={{
-                __html: DOMPurify.sanitize(`<p class="mb-2">${renderMarkdown(f.content)}</p>`),
-              }}
-            />
-            <div className="text-[10px] text-gray-400">
-              {new Date(f.createdAt).toLocaleDateString('zh-CN')}
-            </div>
-          </div>
-        );
-      })}
+      {/* 本牌含义：三张牌（及追问牌）各自的关键词 / 牌意 / 对号入座，预设文本，与每日的同款 */}
+      <CardMeanings reading={live} p3={p3} />
 
       {followUI}
 
@@ -1063,10 +1093,10 @@ export function ReadingDetail({
             {canFollowUp && !followUI && (
               <SlantButton tone="primary" magentaCorner className="flex-1 py-3" onClick={onFollowUp}>追问（1/1）</SlantButton>
             )}
-            {!reading.archived && (
+            {!live.archived && (
               <SlantButton tone="ghost" className="flex-1 py-3" onClick={() => archiveLongReading(reading.id, true)}>归档</SlantButton>
             )}
-            {reading.archived && (
+            {live.archived && (
               <SlantButton tone="ghost" className="flex-1 py-3" onClick={() => archiveLongReading(reading.id, false)}>取消归档</SlantButton>
             )}
             {confirmDel ? (
@@ -1092,7 +1122,7 @@ export function ReadingDetail({
                 追问（1/1）
               </button>
             )}
-            {!reading.archived && (
+            {!live.archived && (
               <button
                 onClick={() => archiveLongReading(reading.id, true)}
                 className="flex-1 py-3 rounded-2xl font-bold text-sm bg-black/5 dark:bg-white/10 text-gray-700 dark:text-gray-200"
@@ -1100,7 +1130,7 @@ export function ReadingDetail({
                 归档
               </button>
             )}
-            {reading.archived && (
+            {live.archived && (
               <button
                 onClick={() => archiveLongReading(reading.id, false)}
                 className="flex-1 py-3 rounded-2xl font-bold text-sm bg-black/5 dark:bg-white/10 text-gray-700 dark:text-gray-200"
@@ -1125,6 +1155,163 @@ export function ReadingDetail({
             )}
           </>
         )}
+      </div>
+    </div>
+  );
+}
+
+
+// ── 「窥探命运」：跟在解读之后的预设牌意（关键词 / 牌意 / 对号入座） ─────
+// 牌意那句与对号入座不重复：tarotReflections 已按"不复述牌意"重写
+
+function CardMeanings({ reading, p3 }: { reading: LongReading; p3: boolean }) {
+  const positions = spreadPositionsFor(reading.period, reading.picked.length);
+  const rows = [
+    ...reading.picked.map((p, i) => ({ key: `m${i}`, pos: positions[i] ?? '', card: TAROT_BY_ID[p.cardId], orientation: p.orientation })),
+    ...(reading.followUps ?? []).map((f, i) => ({ key: `f${i}`, pos: '追问', card: TAROT_BY_ID[f.cardId], orientation: f.orientation })),
+  ];
+  return (
+    <div
+      className={p3 ? 'bg-white p-4' : 'rounded-2xl border border-gray-200 dark:border-gray-700/60 bg-gray-50/60 dark:bg-gray-800/30 p-4'}
+      style={p3 ? { clipPath: slantClip(14), boxShadow: '0 8px 22px rgba(7,40,120,.08)' } : undefined}
+    >
+      {/* 小标题层级：主标题 + 一行牌阵位置 */}
+      <div className="mb-3 border-b border-gray-200/70 dark:border-gray-700/50 pb-2.5">
+        <div className="text-[13px] font-black tracking-[4px] text-primary">窥探命运</div>
+        <div className="mt-0.5 text-[10px] tracking-[1px] text-gray-400 dark:text-gray-500">{positions.join(' · ')}</div>
+      </div>
+      <div className="divide-y divide-gray-200/70 dark:divide-gray-700/50">
+        {rows.map(({ key, pos, card, orientation }) => {
+          if (!card) return null;
+          const m = card[orientation];
+          return (
+            <div key={key} className="space-y-2 py-3 first:pt-0 last:pb-0">
+              {/* 牌名 + 位置 + 正逆：牌名最大最黑，位置是小胶囊 */}
+              <div className="flex items-center gap-2">
+                <span className="text-[15px] font-black text-gray-900 dark:text-white">{card.name}</span>
+                {pos && (
+                  <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold text-primary">{pos}</span>
+                )}
+                <span className="text-[10px] text-gray-400 dark:text-gray-500">{orientation === 'upright' ? '正位' : '逆位'}</span>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {m.keywords.map((kw, i) => (
+                  <span key={i} className="text-[11px] px-2 py-0.5 rounded-full bg-white dark:bg-gray-900/60 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-700">{kw}</span>
+                ))}
+              </div>
+              <p className="text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">{m.meaning}</p>
+              <p className="text-[12.5px] leading-relaxed text-gray-700 dark:text-gray-200">{m.reflection}</p>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── 长按注入命运：蓄力环 + 波纹，注满即抽底色牌 ──────────────────
+
+function HoldToDraw({ color, done, onDone }: { color: string; done: boolean; onDone: () => void }) {
+  const d0 = !useBoldness();
+  const HOLD_MS = d0 ? 500 : 1500;
+  const [progress, setProgress] = useState(0);
+  const holdingRef = useRef(false);
+  const rafRef = useRef<number | null>(null);
+  const firedRef = useRef(false);
+
+  const stopRaf = () => {
+    if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+    rafRef.current = null;
+  };
+  useEffect(() => () => stopRaf(), []);
+
+  const begin = (e: React.PointerEvent) => {
+    if (done || firedRef.current) return;
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    holdingRef.current = true;
+    stopRaf();
+    let last = performance.now();
+    const step = (now: number) => {
+      const dt = now - last;
+      last = now;
+      setProgress(p => {
+        const next = Math.min(1, p + dt / HOLD_MS);
+        if (next >= 1 && !firedRef.current) {
+          firedRef.current = true;
+          holdingRef.current = false;
+          stopRaf();
+          triggerLightHaptic();
+          onDone();
+          return 1;
+        }
+        return next;
+      });
+      if (holdingRef.current) rafRef.current = requestAnimationFrame(step);
+    };
+    rafRef.current = requestAnimationFrame(step);
+  };
+
+  const cancel = () => {
+    if (!holdingRef.current) return;
+    holdingRef.current = false;
+    stopRaf();
+    // 松手：蓄力回退
+    let last = performance.now();
+    const back = (now: number) => {
+      const dt = now - last;
+      last = now;
+      let finished = false;
+      setProgress(p => {
+        const next = Math.max(0, p - dt / 400);
+        if (next <= 0) finished = true;
+        return next;
+      });
+      if (!finished) rafRef.current = requestAnimationFrame(back);
+    };
+    rafRef.current = requestAnimationFrame(back);
+  };
+
+  const p = done ? 1 : progress;
+  const soft = color === '#1b57ff' ? 'rgba(27,87,255,0.45)' : 'rgba(212,175,55,0.55)';
+  const R = 96;
+  const circ = 2 * Math.PI * R;
+  return (
+    <div className="relative flex items-center justify-center" style={{ width: 240, height: 240 }}>
+      {/* 波纹：随蓄力从牌堆中心扩散，注满后常亮 */}
+      {[0, 1, 2].map(i => (
+        <motion.span
+          key={i}
+          aria-hidden
+          className="absolute rounded-full"
+          style={{
+            width: 130 + i * 38, height: 130 + i * 38,
+            border: `1.5px solid ${color}`,
+            opacity: Math.max(0, Math.min(0.9, p * 1.4 - i * 0.35)),
+          }}
+          animate={d0 ? undefined : { scale: [1, 1.06, 1] }}
+          transition={d0 ? undefined : { repeat: Infinity, duration: 2.4 + i * 0.5, ease: 'easeInOut' }}
+        />
+      ))}
+      {/* 蓄力环 */}
+      <svg className="absolute" width={220} height={220} viewBox="0 0 220 220" aria-hidden>
+        <circle cx={110} cy={110} r={R} fill="none" stroke={soft} strokeOpacity={0.35} strokeWidth={2} />
+        <circle
+          cx={110} cy={110} r={R} fill="none" stroke={color} strokeWidth={3} strokeLinecap="round"
+          strokeDasharray={`${p * circ} ${circ}`} transform="rotate(-90 110 110)"
+          style={{ filter: `drop-shadow(0 0 ${4 + p * 8}px ${soft})` }}
+        />
+      </svg>
+      <div
+        role="button"
+        aria-label="长按注入命运的波纹"
+        onPointerDown={begin}
+        onPointerUp={cancel}
+        onPointerCancel={cancel}
+        onPointerLeave={cancel}
+        className={`relative z-10 touch-none select-none ${done ? '' : 'cursor-pointer'}`}
+        style={{ transform: `scale(${1 + p * 0.06})`, filter: `drop-shadow(0 0 ${6 + p * 18}px ${soft})` }}
+      >
+        <CardBack width={110} hoverable={false} />
       </div>
     </div>
   );

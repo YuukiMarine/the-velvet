@@ -67,22 +67,16 @@ export interface WritingPreset {
 }
 
 export const WRITING_PRESETS: WritingPreset[] = [
-  { id: 'image', label: '意象起笔', guide: '从牌面上的一个具体意象落笔（一件物、一个动作、一种光线），让它慢慢对上今天的处境；意象只能有一个，不要罗列。' },
+  { id: 'image', label: '意象起笔', guide: '从牌面上的一个具体意象落笔（一件物、一个动作、一种光线），两三句之内就要落到今天的处境上；意象只能有这一个，不要罗列。' },
   { id: 'verdict-first', label: '判断先行', guide: '第一句就是今天最要紧的那句判断，不铺垫；之后往回补两三笔，说清这句判断从哪来。' },
-  { id: 'hour', label: '时辰起笔', guide: '从此刻的时辰与天光起头（素材里给了现在是清晨还是深夜），让时间本身成为解读的一部分。' },
-  { id: 'sidelong', label: '借一件事', guide: '从近况里最近的一件事侧写开去——只写它的轮廓与气味，绝不点名；若近况是空窗，就写空窗本身。' },
+  { id: 'sidelong', label: '借一件事', guide: '从近况里最近的一件事侧写开去，只模糊写它的氛围，不点名；若近况是空窗，就写空窗本身。' },
   { id: 'question', label: '一问一答', guide: '以一个客人此刻心里可能盘旋的问题开头（用他的口吻，不加引号），再用牌来答。' },
   { id: 'hold-release', label: '收放两笔', guide: '先写今天该收着的，再写该放开的，最后一句把两者合拢。' },
-  { id: 'three-short', label: '三短段', guide: '三个各一两行的短段，不加标题、不加序号；三段之间有递进。' },
-  { id: 'prose', label: '一段散文', guide: '一整段不分段的散文，句子长短交错，不用任何列表与加粗。' },
-  { id: 'two-faces', label: '正逆对照', guide: '把这张牌正位与逆位的两副面孔并排摆出来，然后让客人自己认领属于今天的那一面——你只轻轻指一下。' },
-  { id: 'season', label: '物候', guide: '借当下的季节与天气意象带出今天的走向（按素材里的月份判断时节），不要写成天气预报。' },
-  { id: 'motto', label: '签文展开', guide: '先给一句像签文的话（八到十四字，独立成行），再用两三句解释它落在何处。' },
+  { id: 'three-short', label: '俳句', guide: '三个各一两行的短段，不加标题、不加序号；三段之间有递进。' },
+  { id: 'prose', label: '一段话', guide: '一整段不分段的话，句子长短交错，像平常说话，不用任何列表。' },
+  { id: 'two-faces', label: '正逆对照', guide: '把这张牌正位与逆位的两副面孔并排摆出来，然后让客人自己感受属于今天的那一面。' },
   { id: 'echo', label: '接住回声', guide: '从昨日回声接过来：昨天那张牌说的与客人实际做的之间，今天这张牌是回应、反转还是延续。只点到为止，不复述昨天的解读。', needsEcho: true },
-  { id: 'blank', label: '留白', guide: '短。四行以内，每句都要有分量，结尾故意留一个没说完的意思。' },
-  { id: 'figure', label: '牌中人', guide: '以牌面上那个人物（或那件事物）的视角说一小段话，再转回来对客人说一句。' },
-  { id: 'threshold', label: '门槛', guide: '把今天写成一道门槛：门这边是什么、门那边是什么、脚该往哪边——不要用"门槛"两个字直说。' },
-  { id: 'letter', label: '短笺', guide: '写成一张留在桌上的短笺：像是解读者起身离开前留给客人的几行字，语气亲近但克制。' },
+  { id: 'blank', label: '留白', guide: '短。四行以内，每句都要有分量，结尾留一个没说完的意思，但不要写成警句。' },
 ];
 
 /** 按日期 + 牌确定性地挑写法：连续两天不会相同，同一天重抽也稳定 */
@@ -96,26 +90,59 @@ export function pickWritingPreset(now: Date, cardId: string, hasEcho: boolean): 
 
 // ── 属性：只定性、不带数字 ───────────────────────────────────
 
-function attributeBlock(attributes: Attribute[], activities: Activity[], attrNames: AttrNames, now: Date): string {
-  const since = now.getTime() - 7 * DAY_MS;
+/**
+ * "没动静的属性"提醒门控（用户口径：天天提醒某个属性偏低，频率高到背离初衷）。
+ *   · allow：按日期抛的硬币，约三分之一的日子为真；
+ *   · 逆流开启时，近三天零增长的属性明天就要扣减，这种有实际后果的情况不受硬币限制；
+ *   · recentKeys：最近四天已经提过的 idle:<attr>，不重复；
+ *   · 就算给了，也只是一行"这阵子没碰的"，并明说只在牌意正好落上时顺手一句，不劝学。
+ */
+interface NudgeOpts {
+  allow: boolean;
+  pickIndex: number;
+  recentKeys: Set<string>;
+  countercurrent: boolean;
+}
+
+function attributeBlock(
+  attributes: Attribute[], activities: Activity[], attrNames: AttrNames, now: Date, nudge?: NudgeOpts,
+): { text: string; nudgeKey: string } {
+  const since7 = now.getTime() - 7 * DAY_MS;
+  const since3 = now.getTime() - 3 * DAY_MS;
   const gained: Record<AttributeId, number> = { knowledge: 0, guts: 0, dexterity: 0, kindness: 0, charm: 0 };
+  const gained3: Record<AttributeId, number> = { knowledge: 0, guts: 0, dexterity: 0, kindness: 0, charm: 0 };
   for (const a of activities) {
-    if (new Date(a.date).getTime() < since) continue;
-    for (const id of ATTRIBUTE_IDS) gained[id] += a.pointsAwarded?.[id] ?? 0;
+    const t = new Date(a.date).getTime();
+    if (t < since7) continue;
+    for (const id of ATTRIBUTE_IDS) {
+      const v = a.pointsAwarded?.[id] ?? 0;
+      gained[id] += v;
+      if (t >= since3) gained3[id] += v;
+    }
   }
   const name = (id: AttributeId) => attrNames[id] ?? id;
   const byPoints = [...attributes].sort((a, b) => b.points - a.points);
   const strongest = byPoints.filter(a => a.points > 0).slice(0, 2).map(a => name(a.id));
   const rising = ATTRIBUTE_IDS.filter(id => gained[id] > 0).sort((a, b) => gained[b] - gained[a]).slice(0, 2).map(name);
-  const idle = ATTRIBUTE_IDS.filter(id => gained[id] === 0).map(name);
   const lines = [
     `客人的底色（只有这五个属性名可以出现在正文里；等级与点数一律不许写）：`,
     `- 五项属性名：${ATTRIBUTE_IDS.map(name).join('、')}`,
     `- 最厚的底子：${strongest.length ? strongest.join('、') : '尚未分出高下'}`,
     `- 近七天在往上走的：${rising.length ? rising.join('、') : '没有'}`,
-    `- 近七天没什么动静的：${idle.length === ATTRIBUTE_IDS.length ? '全部' : idle.length ? idle.join('、') : '没有'}`,
   ];
-  return lines.join('\n');
+  let nudgeKey = 'none';
+  if (nudge) {
+    const idle = ATTRIBUTE_IDS.filter(id => gained[id] === 0);
+    const decaying = nudge.countercurrent ? ATTRIBUTE_IDS.filter(id => gained3[id] === 0) : [];
+    const pool = [...new Set([...(nudge.allow ? idle : []), ...decaying])]
+      .filter(id => !nudge.recentKeys.has(`idle:${id}`));
+    if (pool.length) {
+      const pick = pool[nudge.pickIndex % pool.length];
+      nudgeKey = `idle:${pick}`;
+      lines.push(`- 这阵子没碰的：${name(pick)}（只在牌意正好落到这一面时顺手带一句；不劝学、不提醒、不说它弱）`);
+    }
+  }
+  return { text: lines.join('\n'), nudgeKey };
 }
 
 // ── 近况：按时间窗取、逐行带日期 ─────────────────────────────
@@ -172,29 +199,62 @@ const isOneOff = (t: Todo) => !t.repeatDaily && !t.isLongTerm && !(t.weekdays &&
 const completedOn = (t: Todo, key: string, completions: TodoCompletion[]) =>
   !!t.completedAt || completions.some(c => c.todoId === t.id && c.date === key && c.count > 0);
 
-function plateBlock(todos: Todo[], completions: TodoCompletion[], wishes: Wish[], now: Date): string {
-  const todayKey = toLocalDateKey(now);
-  const pending = todos.filter(t => isDueOn(t, now) && isOneOff(t) && !completedOn(t, todayKey, completions)).slice(0, 5);
-  const deadlines = todos
-    .filter(t => t.isActive && !t.archivedAt && !t.completedAt && t.deadline && t.deadline >= todayKey)
-    .map(t => ({ t, days: daysAgo(now, fromKey(t.deadline!)) }))
-    .filter(x => x.days <= 3)
-    .sort((a, b) => a.days - b.days)
-    .slice(0, 3);
-  const active = wishes.filter(w => w.status === 'active' && !w.parentId);
-  const longWishes = active.filter(w => (w.kind ?? 'long_term') === 'long_term').slice(0, 3);
-  const pressures = active.filter(w => w.kind === 'pressure').slice(0, 2);
+/** 案头候选：每条带一个稳定键，用来做"三天内不重复" */
+interface PlateItem { key: string; line: string }
 
-  const lines: string[] = [`案头（只作底色；正文里只可旁敲侧击，绝不写出下面任何一条的原文）：`];
-  if (pending.length) lines.push(`- 今天要做、还没做的一次性事项：${pending.map(t => t.title.trim().slice(0, 30)).join('；')}`);
-  if (deadlines.length) {
-    const fmt = (d: number) => d <= 0 ? '就是今天' : d === 1 ? '明天' : d === 2 ? '后天' : `${d} 天后`;
-    lines.push(`- 临近的期限：${deadlines.map(({ t, days }) => `${t.title.trim().slice(0, 30)}（${fmt(days)}）`).join('；')}`);
+function plateCandidates(todos: Todo[], completions: TodoCompletion[], wishes: Wish[], now: Date): PlateItem[] {
+  const todayKey = toLocalDateKey(now);
+  const out: PlateItem[] = [];
+  const fmt = (d: number) => d <= 0 ? '就是今天' : d === 1 ? '明天' : d === 2 ? '后天' : `${d} 天后`;
+  for (const t of todos) {
+    if (isDueOn(t, now) && isOneOff(t) && !completedOn(t, todayKey, completions)) {
+      out.push({ key: `todo:${t.id}`, line: `今天要做、还没做的一件事：${t.title.trim().slice(0, 30)}` });
+    }
   }
-  if (longWishes.length) lines.push(`- 远处的愿望：${longWishes.map(w => w.title.trim().slice(0, 30)).join('；')}`);
-  if (pressures.length) lines.push(`- 压在心上的事：${pressures.map(w => w.title.trim().slice(0, 30)).join('；')}`);
-  if (lines.length === 1) lines.push(`- 案头是空的。`);
-  return lines.join('\n');
+  for (const t of todos) {
+    if (!(t.isActive && !t.archivedAt && !t.completedAt && t.deadline && t.deadline >= todayKey)) continue;
+    const days = daysAgo(now, fromKey(t.deadline));
+    if (days <= 3 && !out.some(o => o.key === `todo:${t.id}`)) {
+      out.push({ key: `deadline:${t.id}`, line: `临近的期限：${t.title.trim().slice(0, 30)}（${fmt(days)}）` });
+    }
+  }
+  for (const w of wishes) {
+    if (w.status !== 'active' || w.parentId) continue;
+    const kind = w.kind === 'pressure' ? '压在心上的事' : '远处的愿望';
+    out.push({ key: `wish:${w.id}`, line: `${kind}：${w.title.trim().slice(0, 30)}${w.currentState ? `（现状：${w.currentState.trim().slice(0, 40)}）` : ''}` });
+  }
+  return out;
+}
+
+/**
+ * 案头：一天最多只给**一件**，且三天内不给同一件（用户口径：一个未完成的待办天天被
+ * 提醒，内容就雷同）。allowPlate=false 的日子一件都不给，明说"今天不碰案头"。
+ */
+async function plateBlock(
+  todos: Todo[], completions: TodoCompletion[], wishes: Wish[], now: Date,
+  allowPlate: boolean, pickIndex: number,
+): Promise<{ text: string; focusKey: string }> {
+  if (!allowPlate) return { text: `案头：今天不碰案头上的事（不要提任何任务、期限或愿望）。`, focusKey: 'none' };
+  const used = await recentKeys(now, 3, 'focusKey');
+  const all = plateCandidates(todos, completions, wishes, now);
+  const fresh = all.filter(c => !used.has(c.key));
+  const pool = fresh.length ? fresh : [];
+  if (pool.length === 0) {
+    return {
+      text: all.length
+        ? `案头：能提的最近几天都提过了，今天不碰案头上的事（不要提任何任务、期限或愿望）。`
+        : `案头是空的。`,
+      focusKey: 'none',
+    };
+  }
+  const pick = pool[pickIndex % pool.length];
+  return {
+    text: [
+      `案头（今天只可触及下面这一件；旁敲侧击、不写原文；其余案头事项今天当作不存在）：`,
+      `- ${pick.line}`,
+    ].join('\n'),
+    focusKey: pick.key,
+  };
 }
 
 // ── 昨日回声：昨天的牌 + 昨天实际发生了什么（本地算，零 AI） ─────────
@@ -290,6 +350,44 @@ export interface DailyBrief {
   text: string;
   preset: WritingPreset;
   hasEcho: boolean;
+  /** 这一天给了哪件案头事项（'none' = 没给）；存进 DailyDivination.focusKey 供三天去重 */
+  focusKey: string;
+  /** 这一天是否允许把近况带进正文 */
+  allowRecent: boolean;
+  /** 这一天给了哪个"没动静的属性"（'none' = 没给）；存进 DailyDivination.nudgeKey 供四天去重 */
+  nudgeKey: string;
+}
+
+/**
+ * 每日触点策略：近况与案头各有一半的日子可用（按日期确定性抛硬币，同一天重抽稳定；
+ * 两枚硬币独立）。用户口径：每篇都点到具体事件，体感会差；有一半日子只读牌。
+ */
+function dailyTouchPolicy(now: Date): { allowRecent: boolean; allowPlate: boolean; allowNudge: boolean; pickIndex: number } {
+  const dayIndex = Math.floor(dayStart(now).getTime() / DAY_MS);
+  const mix = (salt: number) => {
+    let h = (Math.imul(dayIndex, 2654435761) + Math.imul(salt, 40503)) >>> 0;
+    h ^= h >>> 13;
+    h = Math.imul(h, 0x5bd1e995) >>> 0;
+    h ^= h >>> 15;
+    return h >>> 0;
+  };
+  return {
+    allowRecent: (mix(1) & 1) === 0,
+    allowPlate: (mix(2) & 1) === 0,
+    allowNudge: mix(4) % 3 === 0,
+    pickIndex: mix(3) % 1024,
+  };
+}
+
+/** 最近 N 天已经用过的键（focusKey / nudgeKey），读不到就当没有 */
+async function recentKeys(now: Date, days: number, field: 'focusKey' | 'nudgeKey'): Promise<Set<string>> {
+  try {
+    const since = toLocalDateKey(new Date(now.getTime() - days * DAY_MS));
+    const rows = await db.dailyDivinations.where('date').aboveOrEqual(since).toArray();
+    return new Set(rows.map(r => r[field]).filter((k): k is string => !!k && k !== 'none'));
+  } catch {
+    return new Set();
+  }
 }
 
 export async function buildDailyBrief(params: { card: TarotCardData; orientation: TarotOrientation; now?: Date }): Promise<DailyBrief> {
@@ -298,7 +396,20 @@ export async function buildDailyBrief(params: { card: TarotCardData; orientation
   const attrNames = s.settings.attributeNames as AttrNames;
 
   const wishes = await loadWishes(s.wishes);
-  const recent = recentBlock(s.activities, attrNames, now, 2, 6);
+  const policy = dailyTouchPolicy(now);
+  const attrs = attributeBlock(s.attributes, s.activities, attrNames, now, {
+    allow: policy.allowNudge,
+    pickIndex: policy.pickIndex,
+    recentKeys: await recentKeys(now, 4, 'nudgeKey'),
+    countercurrent: !!s.settings.countercurrentEnabled,
+  });
+  const recent = policy.allowRecent
+    ? [
+        recentBlock(s.activities, attrNames, now, 2, 6).text,
+        `- 用法：近况只能以"知道的语气"带过一处，不复述事件本身——记录里有跑步，只说"你为身体花的功夫"，不说"你早上跑了步"。`,
+      ].join('\n')
+    : `近况：今天不把近况带进正文，只读牌（昨日回声与手记照常）。`;
+  const plate = await plateBlock(s.todos, s.todoCompletions, wishes, now, policy.allowPlate, policy.pickIndex);
   const echo = await echoBlock(now, attrNames, s.activities, s.todos, s.todoCompletions);
   const notes = await notesBlock(now, { dailyMax: 5, longMax: 2, excludeDate: toLocalDateKey(now) });
   const profile = await profileBlock();
@@ -307,11 +418,11 @@ export async function buildDailyBrief(params: { card: TarotCardData; orientation
   const text = [
     formatNowLine(now),
     ``,
-    attributeBlock(s.attributes, s.activities, attrNames, now),
+    attrs.text,
     ``,
-    recent.text,
+    recent,
     ``,
-    plateBlock(s.todos, s.todoCompletions, wishes, now),
+    plate.text,
     ``,
     echo.text,
     notes ? `\n${notes}` : '',
@@ -320,7 +431,7 @@ export async function buildDailyBrief(params: { card: TarotCardData; orientation
     `今日写法：【${preset.label}】${preset.guide}`,
   ].filter(l => l !== undefined).join('\n');
 
-  return { text, preset, hasEcho: echo.hasEcho };
+  return { text, preset, hasEcho: echo.hasEcho, focusKey: plate.focusKey, allowRecent: policy.allowRecent, nudgeKey: attrs.nudgeKey };
 }
 
 // ── 中长期简报 ──────────────────────────────────────────────
@@ -402,7 +513,8 @@ export async function buildLongBrief(params: { question: string; period: LongRea
   return [
     formatNowLine(now),
     ``,
-    attributeBlock(s.attributes, s.activities, attrNames, now),
+    // 中长期是问题导向：属性只给底子与在长的，不给"没动静"的提醒
+    attributeBlock(s.attributes, s.activities, attrNames, now).text,
     ``,
     recent.text,
     ``,

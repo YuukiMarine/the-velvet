@@ -28,6 +28,8 @@ import {
   type FateGlimpseAIResult,
 } from '@/utils/fateGlimpseAI';
 import { formatApiError } from '@/utils/tarotAI';
+import { createThinkTracker, useThinkProgress, type ThinkTracker } from '@/utils/thinkProgress';
+import { ThinkingCircle } from './ThinkingCircle';
 import { renderMarkdown } from '@/utils/markdown';
 import { playSound, triggerLightHaptic } from '@/utils/feedback';
 import { useBoldness } from '@/utils/boldness';
@@ -405,6 +407,8 @@ function FateRitual({
   // 流式半成品：边收边解析，翻面后即刻上屏；result 只在流完整后才写（落库以它为准）
   const [live, setLive] = useState<FateGlimpseAIResult | null>(null);
   const [thinking, setThinking] = useState(false);
+  const [tracker, setTracker] = useState<ThinkTracker | null>(null);
+  const thinkProgress = useThinkProgress(tracker, aiStatus === 'pending' && !(live && (live.summary || live.outlook || live.advice)));
   const [errMsg, setErrMsg] = useState('');
   const sourceRef = useRef<'ai' | 'offline'>('ai');
   const savedRef = useRef(mode === 'review');
@@ -435,6 +439,11 @@ function FateRitual({
       setAiStatus('ready');
       return;
     }
+    // 控制器先于 try 建好：catch 里要用**这一次**的信号判断"是不是被自己取消的"。
+    // 之前读 abortRef.current——StrictMode 双跑 / 快速关开时，第二次调用已把 ref 换成
+    // 新控制器，第一次的 AbortError 就被当成真错误，面板闪出「已取消」+ 重试按钮。
+    const ac = new AbortController();
+    abortRef.current = ac;
     try {
       const since = Date.now() - 7 * 86400_000;
       const req = buildFateGlimpseRequest({
@@ -447,24 +456,32 @@ function FateRitual({
           .map(w => ({ title: w.title, currentState: w.currentState })),
         userName: s.user?.name ?? '客人',
       });
-      const ac = new AbortController();
-      abortRef.current = ac;
       setLive(null);
       setThinking(false);
       let full = '';
-      for await (const delta of streamFateGlimpse(req, { signal: ac.signal, onReasoning: () => setThinking(true) })) {
+      let finish = '';
+      const tr = createThinkTracker(req.model);
+      setTracker(tr);
+      for await (const delta of streamFateGlimpse(req, {
+        signal: ac.signal,
+        onReasoning: d => { tr.onReasoning(d); setThinking(true); },
+        onFinishReason: f => { finish = f; },
+      })) {
+        tr.onContent();
         full += delta;
         setThinking(false);
         setLive(parseFateGlimpseText(full));
       }
       const r = parseFateGlimpseText(full);
       if (!r.summary && !r.outlook && !r.advice) throw new Error('解读内容为空，请重试');
+      if (finish === 'length') throw new Error('解读被截断了（模型输出预算不足），请重试');
+      if (finish !== 'stop' && !/[。！？!?…」』"”)）]\s*$/.test(full.trim())) throw new Error('连接中途断开，解读没有收完，请重试');
       if (!r.verdict) r.verdict = '明暗交织 路在脚下';
       sourceRef.current = 'ai';
       setResult(r);
       setAiStatus('ready');
     } catch (e) {
-      if (abortRef.current?.signal.aborted) return;
+      if (ac.signal.aborted) return;
       setErrMsg(formatApiError(e));
       setAiStatus('error');
     }
@@ -682,11 +699,15 @@ function FateRitual({
             >
               {aiStatus === 'pending' && !(live && (live.summary || live.outlook || live.advice)) && (
                 <PanelShell>
-                  <div className="flex items-center justify-center gap-2 py-6 text-[12px]" style={{ color: 'rgba(239,230,200,0.7)' }}>
-                    <motion.span animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1.4, ease: 'linear' }}>
-                      <FourStar size={14} color={GOLD} />
-                    </motion.span>
-                    {thinking ? '七张牌正在被逐一推演……' : '七张牌的线索正在汇成一段命运……'}
+                  <div className="flex justify-center py-3">
+                    <ThinkingCircle
+                      progress={thinkProgress}
+                      size={136}
+                      color={GOLD}
+                      label={thinking ? '七张牌正在被逐一推演' : '七张牌的线索正在汇成一段命运'}
+                      showPercent={thinking}
+                      textColor="rgba(239,230,200,0.7)"
+                    />
                   </div>
                 </PanelShell>
               )}

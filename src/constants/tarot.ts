@@ -157,8 +157,8 @@ const RAW_MAJOR: RawTarotCard[] = [
       meaning: '站在前人的肩膀上，比自己摸索更远。',
     },
     reversed: {
-      keywords: ['权威反叛', '偏见', '墨守成规'],
-      meaning: '要么被规则压住，要么彻底逆反——两种都是不自由。',
+      keywords: ['打破常规', '个人信念', '反叛'],
+      meaning: '不再照规矩走，凭自己的信念行事——自由了，也可能失了准绳。',
     },
     advice: {
       upright: '去读一本公认的经典，别老看最新的。',
@@ -395,8 +395,8 @@ const RAW_MAJOR: RawTarotCard[] = [
       meaning: '没有阴影的一天。享受它，不必心虚。',
     },
     reversed: {
-      keywords: ['虚假的明朗', '自欺的快乐', '过度乐观'],
-      meaning: '别把"看起来都好"当成"真的都好"。',
+      keywords: ['短暂失意', '过度乐观', '自欺的快乐'],
+      meaning: '一时的低落，或者把"看起来都好"当成了"真的都好"。',
     },
     advice: {
       upright: '去晒太阳，真的。',
@@ -454,7 +454,7 @@ const RANK_NAMES: Record<number, string> = {
 const RANK_NAMES_CN: Record<number, string> = {
   1: 'A', 2: '二', 3: '三', 4: '四', 5: '五',
   6: '六', 7: '七', 8: '八', 9: '九', 10: '十',
-  11: '侍从', 12: '骑士', 13: '皇后', 14: '国王',
+  11: '侍从', 12: '骑士', 13: '王后', 14: '国王',
 };
 
 interface MinorData {
@@ -474,7 +474,7 @@ const WANDS: MinorData[] = [
   { number: 5,  upKw: ['冲突', '较劲'],              upMean: '摩擦带来的是进步，不是敌意。', rvKw: ['内耗', '避免冲突'],   rvMean: '假装没事反而让问题长大。' },
   { number: 6,  upKw: ['凯旋', '被认可'],            upMean: '这一次你确实赢了，收下。',   rvKw: ['虚名', '落差'],       rvMean: '掌声响了却没带来满足。' },
   { number: 7,  upKw: ['防守', '坚守'],              upMean: '守住自己的位置，别被吓退。', rvKw: ['退缩', '放弃阵地'],   rvMean: '还没被攻破就先退了。' },
-  { number: 8,  upKw: ['加速', '讯息涌来'],          upMean: '消息、机会、变化一次到位。', rvKw: ['错乱', '信息过载'],   rvMean: '太多信号一起来，反而抓不住。' },
+  { number: 8,  upKw: ['加速', '讯息涌来'],          upMean: '消息、机会、变化一次到位。', rvKw: ['延误', '受阻'],       rvMean: '消息迟迟不来，事情推不动；急也没用，等它到。' },
   { number: 9,  upKw: ['疲惫的坚持', '最后一关'],    upMean: '离完成只差一步，别现在倒。', rvKw: ['透支', '偏执防御'],   rvMean: '撑着但代价是身心俱疲。' },
   { number: 10, upKw: ['重担', '接近终点'],          upMean: '肩上压了很多，但你已经快到了。', rvKw: ['压垮', '不愿放下'], rvMean: '其实可以放下一些，是你不肯。' },
   { number: 11, upKw: ['好奇', '新消息'],            upMean: '一股少年气的热情想出发。',   rvKw: ['浮躁', '空口承诺'],   rvMean: '兴致来得快去得快。' },
@@ -498,13 +498,13 @@ const CUPS: MinorData[] = [
   { number: 11, upKw: ['梦想家', '感性信使'],         upMean: '一个温柔的开始。',           rvKw: ['情绪化', '不成熟'],    rvMean: '心意很纯但撑不起承诺。' },
   { number: 12, upKw: ['浪漫', '追求'],               upMean: '带着真心去追一件事/一个人。', rvKw: ['空想', '不切实'],      rvMean: '只说不做的骑士。' },
   { number: 13, upKw: ['共情', '成熟关怀'],           upMean: '你温柔但不失自己。',         rvKw: ['情绪操控', '耗尽'],    rvMean: '付出太多，反被拖垮。' },
-  { number: 14, upKw: ['心智的掌控', '情感的王'],     upMean: '既温柔又有边界，不被情绪推走。', rvKw: ['冷漠', '情感压抑'],  rvMean: '太会控制感情，几乎感觉不到。' },
+  { number: 14, upKw: ['心智的掌控', '情感的王'],     upMean: '既温柔又有边界，不被情绪推走。', rvKw: ['喜怒无常', '情绪操控'], rvMean: '情绪失了缰，要么翻脸，要么拿感情拿捏人。' },
 ];
 
 // Swords — 宝剑（风/知识：思考、冲突、真理）
 const SWORDS: MinorData[] = [
   { number: 1,  upKw: ['清晰', '洞见'],               upMean: '一把新的剑出鞘，看清楚了。', rvKw: ['混乱', '犹豫'],        rvMean: '想法很多但没有一把是锋利的。' },
-  { number: 2,  upKw: ['僵局', '蒙眼选择'],           upMean: '你选择不看，以维持平衡。',   rvKw: ['打破僵局', '决定'],    rvMean: '终于撤下蒙眼布面对了。' },
+  { number: 2,  upKw: ['僵局', '蒙眼选择'],           upMean: '你选择不看，以维持平衡。',   rvKw: ['犹豫不决', '信息过载'], rvMean: '两边都不敢放，越想越乱，僵局比你以为的更深。' },
   { number: 3,  upKw: ['心碎', '痛的真相'],           upMean: '疼，但是清醒。',             rvKw: ['复原', '释怀'],        rvMean: '剑还在但已不深入。' },
   { number: 4,  upKw: ['休整', '暂停'],               upMean: '剑放下，躺平蓄力。',         rvKw: ['重返战场', '疲累回流'], rvMean: '休息不够就重新上。' },
   { number: 5,  upKw: ['惨胜', '得不偿失'],           upMean: '你赢了但代价太大。',         rvKw: ['放下争执', '愿意和解'], rvMean: '不值得的仗你终于不打了。' },
@@ -524,7 +524,7 @@ const PENTACLES: MinorData[] = [
   { number: 1,  upKw: ['机会落地', '实物开始'],       upMean: '一个实在的机会放到了你手里。', rvKw: ['错失机会', '浪费'],  rvMean: '机会来过，你没接住。' },
   { number: 2,  upKw: ['平衡两件事', '灵活'],         upMean: '同时处理两件事的节奏感。',   rvKw: ['手忙脚乱', '顾此失彼'], rvMean: '球掉了一个。' },
   { number: 3,  upKw: ['协作', '工艺'],               upMean: '和别人一起把事做扎实。',     rvKw: ['分工不清', '草率'],    rvMean: '细节没对齐，返工警告。' },
-  { number: 4,  upKw: ['守成', '积累'],               upMean: '把已有的先攥紧。',           rvKw: ['吝啬', '执着占有'],    rvMean: '抓得太紧反而失去活力。' },
+  { number: 4,  upKw: ['守成', '积累'],               upMean: '把已有的先攥紧。',           rvKw: ['挥霍', '松手'],       rvMean: '攥得太死的手忽然松开：要么花光，要么终于肯放。' },
   { number: 5,  upKw: ['困境', '物质匮乏'],           upMean: '寒冷之中，记得门是开的。',   rvKw: ['走出寒夜', '求助成功'], rvMean: '抬头就能看见温暖的窗。' },
   { number: 6,  upKw: ['给予', '公平交换'],           upMean: '给与收都在平衡中流动。',     rvKw: ['不对等', '施舍感'],    rvMean: '施与受变成了控制。' },
   { number: 7,  upKw: ['耐心', '中段复盘'],           upMean: '种下的还没熟，不必天天挖。', rvKw: ['不耐烦', '重新投入'],  rvMean: '想砍掉重来前先确认不是急躁。' },
@@ -575,6 +575,18 @@ export const SPREAD_POSITIONS: Record<LongReadingPeriod, [string, string, string
   longterm: ['根基', '进程', '结果'],
 };
 
+/**
+ * 长远档的「底色」位（v2.7.0.6）：客人长按"注入命运的波纹"抽出的一张大阿卡纳，
+ * 排在牌阵第一位，与三张一起翻开。它不预测结果，只给这段时期的氛围与基调。
+ * 老记录 picked 仍是三张，按 count 判断即可兼容。
+ */
+export const BASE_POSITION = '底色';
+export const periodHasBase = (period: LongReadingPeriod): boolean => period === 'longterm';
+export function spreadPositionsFor(period: LongReadingPeriod, count: number): string[] {
+  const base = SPREAD_POSITIONS[period] as readonly string[];
+  return count === base.length + 1 ? [BASE_POSITION, ...base] : [...base];
+}
+
 export const PERIOD_LABELS: Record<LongReadingPeriod, { label: string; hint: string; days: string }> = {
   recent:   { label: '最近',       hint: '这几天的走向',     days: '未来 2–3 天' },
   midterm:  { label: '一段时间',   hint: '几周内的脉络',     days: '2–4 周' },
@@ -601,10 +613,18 @@ export function randomOrientation(): TarotOrientation {
 
 // ── 吉凶：规则兜底 + 展示元数据 ─────────────────────────────
 
-type MajorPolarity = 'very_positive' | 'positive' | 'heavy';
+/**
+ * 极性 → 正 / 逆位吉凶（只在离线兜底与老记录补算时使用；AI 路径的吉凶由模型自己给）：
+ *   very_positive  大吉 / 中吉
+ *   positive       中吉 / 小吉
+ *   neutral        小吉 / 小吉   本身不分好坏的牌：僵局、休整、幻象……
+ *   heavy          小吉 / 凶     正位是考验、逆位是卡死：倒吊人、死神、权杖十……
+ *   grim           凶   / 小吉   韦特体系里的重牌，正位最重、逆位反而缓和：塔、恶魔、月亮、宝剑三九十、星币五……
+ */
+type Polarity = 'very_positive' | 'positive' | 'neutral' | 'heavy' | 'grim';
 
-/** 22 张大阿卡纳的基础极性（用于吉凶兜底计算；AI 返回优先使用） */
-const MAJOR_POLARITY: Record<string, MajorPolarity> = {
+/** 22 张大阿卡纳的基础极性 */
+const MAJOR_POLARITY: Record<string, Polarity> = {
   fool:             'positive',
   magician:         'positive',
   high_priestess:   'positive',
@@ -620,30 +640,45 @@ const MAJOR_POLARITY: Record<string, MajorPolarity> = {
   hanged_man:       'heavy',
   death:            'heavy',
   temperance:       'very_positive',
-  devil:            'heavy',
-  tower:            'heavy',
+  devil:            'grim',
+  tower:            'grim',
   star:             'very_positive',
-  moon:             'heavy',
+  moon:             'grim',
   sun:              'very_positive',
   judgement:        'positive',
   world:            'very_positive',
 };
 
-/** 以卡面 + 正/逆位规则计算吉凶（小阿卡纳按花色元素粗略映射） */
+/** 小阿卡纳逐张定极性；没列的按 positive（此前一律按阳性处理，宝剑三九十、星币五这类挑战牌被算成了吉） */
+const MINOR_POLARITY: Record<string, Polarity> = {
+  wands_4: 'very_positive', wands_6: 'very_positive',
+  wands_5: 'neutral', wands_7: 'neutral',
+  wands_9: 'heavy', wands_10: 'heavy',
+  cups_1: 'very_positive', cups_2: 'very_positive', cups_3: 'very_positive', cups_9: 'very_positive', cups_10: 'very_positive',
+  cups_4: 'neutral', cups_7: 'neutral', cups_8: 'neutral',
+  cups_5: 'grim',
+  swords_2: 'neutral', swords_4: 'neutral', swords_7: 'neutral',
+  swords_3: 'grim', swords_5: 'grim', swords_8: 'grim', swords_9: 'grim', swords_10: 'grim',
+  pentacles_9: 'very_positive', pentacles_10: 'very_positive',
+  pentacles_4: 'neutral', pentacles_7: 'neutral',
+  pentacles_5: 'grim',
+};
+
+/** 以卡面 + 正/逆位规则计算吉凶 */
 export function inferFortune(cardId: string, orientation: TarotOrientation): Fortune {
   const card = TAROT_BY_ID[cardId];
-  // 小阿卡纳：按花色给一个中位值
-  let polarity: MajorPolarity;
-  if (card?.arcana === 'minor') {
-    // Wands/Pentacles 偏阳性，Cups/Swords 偏中性
-    polarity = (card.suit === 'wands' || card.suit === 'pentacles') ? 'positive' : 'positive';
-  } else {
-    polarity = MAJOR_POLARITY[cardId] ?? 'positive';
+  const polarity: Polarity = card?.arcana === 'minor'
+    ? (MINOR_POLARITY[cardId] ?? 'positive')
+    : (MAJOR_POLARITY[cardId] ?? 'positive');
+  const up = orientation === 'upright';
+  switch (polarity) {
+    case 'very_positive': return up ? 'great' : 'good';
+    case 'neutral':       return 'small';
+    case 'heavy':         return up ? 'small' : 'bad';
+    case 'grim':          return up ? 'bad' : 'small';
+    case 'positive':
+    default:              return up ? 'good' : 'small';
   }
-
-  if (polarity === 'very_positive') return orientation === 'upright' ? 'great' : 'good';
-  if (polarity === 'positive')      return orientation === 'upright' ? 'good'  : 'small';
-  /* heavy */                       return orientation === 'upright' ? 'small' : 'bad';
 }
 
 export const FORTUNE_ORDER: Fortune[] = ['great', 'good', 'small', 'bad'];

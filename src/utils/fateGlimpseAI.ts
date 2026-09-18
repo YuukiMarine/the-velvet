@@ -14,7 +14,7 @@ import { Activity, Attribute, AttributeId, FateGlimpseDay, Settings, TarotOrient
 import { TAROT_BY_ID, FORTUNE_META, TarotCardData } from '@/constants/tarot';
 import { resolveProvider } from '@/utils/aiProviders';
 import { chatStream, getAIConfig, getDeliberateAIConfig } from '@/utils/aiClient';
-import type { AIRequestData, StreamOpts } from '@/utils/tarotAI';
+import { OBLIQUE_RULES, type AIRequestData, type StreamOpts } from '@/utils/tarotAI';
 
 const ATTRIBUTE_IDS: AttributeId[] = ['knowledge', 'guts', 'dexterity', 'kindness', 'charm'];
 const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
@@ -41,12 +41,14 @@ const cardLine = (c: TarotCardData, orientation: TarotOrientation): string => {
 
 export const FATE_VERDICT_MARK = '【结语】';
 
-const SYSTEM_PROMPT = `你是靛蓝色房间的塔罗解读者。语气庄严而富有诗意，带着神秘学气息，但从不故弄玄虚；判断要准，语气要稳。输出文字不要出现任何自称，也不要提到"解读者""AI""我"。
+const SYSTEM_PROMPT = `你是靛蓝色房间的塔罗解读者。像熟人在桌边把这七天讲给客人听：平实、准确、不装腔；一整篇里有一两处意象就够了。输出文字不要出现任何自称，也不要提到"解读者""AI""我"。
 客人在连续七天里每日抽取一张塔罗。如今七张牌齐聚，客人长按牌阵中央、请求一次「窥探命运」——这是庄重的总占卜仪式，请：
 1. 把七张牌**连成一条线**读：起点在哪、途中如何转折、落点指向何处。必须体现牌与牌之间的递进/冲突/回应，不要逐张平铺百科牌意。
-2. 与七天里的真实足迹相互印证：牌面说的与客人做的，哪里重合、哪里背离——但要旁敲侧击：不写出记录原文，不写任何数字（等级、点数、天数、次数都不许），用处境的轮廓去指。
+2. 与七天里的真实足迹相互印证：牌面说的与客人做的，哪里重合、哪里背离——但只用"知道的语气"带过，不复述记录、不点事件的名字（记录里有跑步，只说"你为身体花的功夫"），不写任何数字（等级、点数、天数、次数都不许）。整篇这样的话最多三四处。
 3. 望向接下来三天（窥探所及的时限），落到远处的愿望上给出方向——愿望原文不要照抄，用它的意象去指。
 4. 日期是硬约束：素材里每一行都标了日期，不要把早前的事说成最近。
+
+${OBLIQUE_RULES}
 
 【关于五项属性的命名（非常重要）】
 客人自己定义了五项属性的名字。正文中提到属性时**必须严格使用素材里的原文**，不允许翻译、意译或加注；只能出现属性名，不能带等级。
@@ -149,7 +151,7 @@ export function buildFateGlimpseRequest(params: {
 
 /** 流式：yield 原始增量；调用方累加后用 parseFateGlimpseText 取半成品 */
 export async function* streamFateGlimpse(req: AIRequestData, opts: StreamOpts = {}): AsyncGenerator<string> {
-  yield* chatStream(req, req.messages, { temperature: 0.85, maxTokens: 1600, ...opts });
+  yield* chatStream(req, req.messages, { temperature: 0.85, maxTokens: 3000, ...opts });
 }
 
 /**

@@ -89,7 +89,10 @@ const JSON_MODE_PROVIDERS: ReadonlySet<string> = new Set(['openai', 'kimi']);
 
 const DEFAULT_TIMEOUT_MS = 90_000;
 const DEFAULT_TEMPERATURE = 0.8;
-const DEFAULT_MAX_TOKENS = 1500;
+/** 调用方没指定正文额度时的缺省（各任务大多自带更贴的数，这里只是兜底） */
+const DEFAULT_MAX_TOKENS = 2048;
+/** 思维链模型的推理余量（在正文额度之外另加）；见 buildRequestBody 注释 */
+const THINKING_ALLOWANCE = 65_536;
 
 /**
  * 从 Settings 解析运行时 AI 配置；未配置 API key 时返回 null。
@@ -277,13 +280,14 @@ function buildRequestBody(
    */
   /**
    * 思维链余量：ceiling 不是 target —— 没用完不收费，所以宁可给宽。
-   * 32K 对本站任何一个任务都绰绰有余（最大的人格生成正文也就 5K 上下），
-   * 再被该服务商的单次输出上限夹一下（DeepSeek 是 384K，等于不夹）。
-   * 真撞上更严的限制，chatComplete 那发「400 就降档」会兜住。
+   * 64K：deepseek-v4-pro 实测一次中长期占卜就能想 8~9K 字、pro 一族偶尔翻倍，
+   * 32K 时代的"绰绰有余"已经不够稳；正文额度仍由各调用点按任务自己定，不统一口径。
+   * 总额再被该服务商的单次输出上限夹一下（DeepSeek 384K 等于不夹；Kimi/Qwen/MiniMax 32K
+   * 会把它压回去）。真撞上更严的限制，chatComplete / chatStream 那发「400 就降档」会兜住。
    */
   const thinking = isThinkingModel(cfg.model);
   const cap = providerMaxOutput(cfg.provider);
-  const budget = Math.min(cap, thinking ? maxTokens + Math.max(32_768, maxTokens) : maxTokens);
+  const budget = Math.min(cap, thinking ? maxTokens + Math.max(THINKING_ALLOWANCE, maxTokens) : maxTokens);
   if (isReasoningModel(cfg.model)) {
     body.max_completion_tokens = budget;
     body.reasoning_effort = 'minimal'; // 让 GPT-5 尽量接近"非推理"的快/省行为
@@ -450,7 +454,12 @@ async function chatCompleteOnce(
  * 流式 chat completion，按 delta 逐段 yield 文本。
  * - 兼容 delta.content 与（少见的）message.content
  * - 缓冲跨 chunk 的半行
- * - 正常结束但一个字都没产出 → 抛空响应错误（交由上层兜底）
+ * - **自愈**：一个字都没产出就结束（流被中途掐断 / 思维链模型偶发空正文 / 预算被推理吃光）
+ *   自动再来一发，最多三发；第三发对 DeepSeek 关掉思维链。服务商嫌 max_tokens 太大而 400
+ *   → 降到 2048 重来。全部失败才把原因抛给上层。
+ *   （用户上报每日塔罗多次「只吐了思维链、没写正文」，断断续续才跑完：正文没到就结束的流，
+ *   此前直接报错让人手点重试，现在自己重来。）
+ * - 结束时把 finish_reason 回传（'' = 服务端没给 / 连接中途断开），调用方据此判断有没有收完
  */
 export async function* chatStream(
   cfg: AIConfig,
@@ -458,60 +467,99 @@ export async function* chatStream(
   opts: ChatOptions = {},
 ): AsyncGenerator<string, void, unknown> {
   const ab = setupAbort(opts);
-  let produced = false;
+  let reducedBudget = false;
+  let last: StreamOutcome = { produced: false, sawReasoning: false, finishReason: '' };
   try {
-    const resp = await fetch(`${cfg.baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: authHeaders(cfg, 'text/event-stream'),
-      body: JSON.stringify(buildRequestBody(cfg, messages, opts, true)),
-      signal: ab.signal,
-    });
-    if (!resp.ok) throw await toHttpError(resp, cfg.provider);
-    if (!resp.body) throw new Error('AI 流式响应无 body');
-
-    const reader = resp.body.getReader();
-    const decoder = new TextDecoder('utf-8');
-    let buf = '';
-    /** 只见思维链、不见正文：单独报错，别混进「空响应」里（那句看不出该怎么办） */
-    let sawReasoning = false;
-    let finishReason = '';
-    outer: while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      ab.rearm(); // 空闲超时：收到数据就重置
-      buf += decoder.decode(value, { stream: true });
-      const lines = buf.split('\n');
-      buf = lines.pop() ?? '';
-      for (const rawLine of lines) {
-        const line = rawLine.trim();
-        if (!line.startsWith('data:')) continue;
-        const payload = line.slice(5).trim();
-        if (payload === '[DONE]') break outer;
-        try {
-          const json = JSON.parse(payload);
-          const c = json?.choices?.[0];
-          if (typeof c?.finish_reason === 'string' && c.finish_reason) finishReason = c.finish_reason;
-          // 思维链不 yield 给 UI（那是过程不是答案），只记一笔用于最终报错
-          const rd: string = c?.delta?.reasoning_content ?? c?.delta?.reasoning ?? '';
-          if (rd) { sawReasoning = true; opts.onReasoning?.(rd); }
-          const delta: string = c?.delta?.content ?? c?.message?.content ?? '';
-          if (delta) { produced = true; yield delta; }
-        } catch { /* 半个 / 非法 chunk，跳过 */ }
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const extra: Record<string, unknown> = {};
+      if (attempt === 2 && cfg.provider === 'deepseek') extra.thinking = { type: 'disabled' };
+      const attemptOpts = reducedBudget ? { ...opts, maxTokens: 2048 } : opts;
+      let outcome: StreamOutcome;
+      try {
+        outcome = yield* streamOnce(cfg, messages, attemptOpts, ab, extra);
+      } catch (e) {
+        if (!reducedBudget && isOverBudgetError(e)) { reducedBudget = true; attempt--; continue; }
+        throw e;
       }
+      if (outcome.produced) {
+        opts.onFinishReason?.(outcome.finishReason);
+        return;
+      }
+      last = outcome;
+      if (ab.signal.aborted) return;
+      if (import.meta.env.DEV) console.warn(`[aiClient] 流式第 ${attempt + 1} 发没有正文（reasoning=${outcome.sawReasoning} finish=${outcome.finishReason || '-'}），自动重试`);
     }
-    if (produced) opts.onFinishReason?.(finishReason);
-    if (!produced) {
-      throw new Error(
-        sawReasoning
-          ? '模型只吐了思维链、没写正文——预算多半被推理段吃光了，调大 max_tokens 或换一个非推理模型'
-          : finishReason === 'length'
-            ? 'AI 输出被 max_tokens 截断（finish_reason=length）'
-            : `AI 流式返回为空${finishReason ? `（finish_reason=${finishReason}）` : ''}，可能被截断或被审查拦截`,
-      );
-    }
+    throw new Error(
+      last.sawReasoning
+        ? '模型连续三次只吐了思维链、没写正文——多半是连接被中途掐断或服务端异常，稍后再试'
+        : last.finishReason === 'length'
+          ? 'AI 输出被 max_tokens 截断（finish_reason=length）'
+          : `AI 流式返回为空${last.finishReason ? `（finish_reason=${last.finishReason}）` : ''}，可能被截断或被审查拦截`,
+    );
   } catch (e) {
     rethrowAbortAware(e, ab, opts);
   } finally {
     ab.cleanup();
   }
+}
+
+interface StreamOutcome {
+  /** 至少收到过一个非空白的正文 delta */
+  produced: boolean;
+  sawReasoning: boolean;
+  finishReason: string;
+}
+
+/** 单发流式：正文 delta 逐段 yield，结束时把本发的结局作为 return 值交回 chatStream */
+async function* streamOnce(
+  cfg: AIConfig,
+  messages: AIMessage[],
+  opts: ChatOptions,
+  ab: AbortBundle,
+  extra: Record<string, unknown>,
+): AsyncGenerator<string, StreamOutcome, unknown> {
+  const resp = await fetch(`${cfg.baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: authHeaders(cfg, 'text/event-stream'),
+    body: JSON.stringify({ ...buildRequestBody(cfg, messages, opts, true), ...extra }),
+    signal: ab.signal,
+  });
+  if (!resp.ok) throw await toHttpError(resp, cfg.provider);
+  if (!resp.body) throw new Error('AI 流式响应无 body');
+
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder('utf-8');
+  let buf = '';
+  let produced = false;
+  let sawReasoning = false;
+  let finishReason = '';
+  outer: while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    ab.rearm(); // 空闲超时：收到数据就重置
+    buf += decoder.decode(value, { stream: true });
+    const lines = buf.split('\n');
+    buf = lines.pop() ?? '';
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      if (!line.startsWith('data:')) continue;
+      const payload = line.slice(5).trim();
+      if (payload === '[DONE]') break outer;
+      try {
+        const json = JSON.parse(payload);
+        const c = json?.choices?.[0];
+        if (typeof c?.finish_reason === 'string' && c.finish_reason) finishReason = c.finish_reason;
+        // 思维链不 yield 给 UI（那是过程不是答案），只回调给进度估算
+        const rd: string = c?.delta?.reasoning_content ?? c?.delta?.reasoning ?? '';
+        if (rd) { sawReasoning = true; opts.onReasoning?.(rd); }
+        const delta: string = c?.delta?.content ?? c?.message?.content ?? '';
+        if (delta) {
+          // 纯空白不算"写了正文"（DeepSeek 推理系偶发 content 为空格）
+          if (delta.trim()) produced = true;
+          yield delta;
+        }
+      } catch { /* 半个 / 非法 chunk，跳过 */ }
+    }
+  }
+  return { produced, sawReasoning, finishReason };
 }

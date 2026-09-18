@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import DOMPurify from 'dompurify';
 import { v4 as uuidv4 } from 'uuid';
@@ -13,17 +13,18 @@ import {
   FORTUNE_META,
   TarotCardData,
 } from '@/constants/tarot';
-import { AttributeId, DailyDivination, TarotOrientation } from '@/types';
+import { DailyDivination, TarotOrientation } from '@/types';
 import { CardBack } from './CardBack';
 import { TarotCardSVG } from './TarotCardSVG';
 import { CardNameReveal } from './CardNameReveal';
 import { ShuffleAnim } from './ShuffleAnim';
-import {
-  buildDailyRequest, streamDaily, visibleDailyText, parseDailyResult, formatApiError,
-  type DailyAIResult,
-} from '@/utils/tarotAI';
 import { buildOfflineDaily } from '@/utils/tarotOffline';
 import { renderMarkdown } from '@/utils/markdown';
+import { useThinkProgress } from '@/utils/thinkProgress';
+import {
+  useTarotJobs, startDailyJob, readDailyPending, writeDailyPending, clearDailyPending,
+} from '@/utils/tarotJobs';
+import { ThinkingCircle } from './ThinkingCircle';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P3R, slantClip } from '@/components/p3r/kit';
 import { roughQuad } from '@/components/p5r/kit';
@@ -54,19 +55,12 @@ const CyanSlashes = () => (
   </span>
 );
 
-const Spinner = () => (
-  <motion.span
-    animate={{ rotate: 360 }}
-    transition={{ repeat: Infinity, duration: 1.1, ease: 'linear' }}
-  >◌</motion.span>
-);
-
 type Phase =
   | 'init'        // 计算初始态
   | 'intro'       // 尚未抽：洗牌入场
   | 'pick'        // 3 张候选待点
   | 'flipping'    // 选中的牌翻转中
-  | 'calling'     // 调用 AI（流式落笔中）
+  | 'calling'     // 后台任务在跑（思维链 / 流式落笔）
   | 'done'        // 完成
   | 'error';
 
@@ -75,55 +69,19 @@ interface Candidate {
   orientation: TarotOrientation;
 }
 
-// ── 未完成抽取的暂存（仪式感保护）──────────────────────────────────────────
-/**
- * 抽牌到完成解读之间会经过一次网络请求。以前这一段是纯内存状态：网络抖动、模型报错、
- * 或者用户切走进程回来，候选牌就重新洗一遍——"我抽到的那张"没了，仪式感直接塌掉。
- * 这里把当日候选与已选下标落到 localStorage：
- *   - 只存牌 id + 正逆位 + 已选下标，几十字节，不进 Dexie 免得为它加一张表；
- *   - 按日期 key，跨日自然失效；
- *   - 解读成功写入 dailyDivination 后清空。
- * 恢复时若已经选过牌，直接回到「重试 / 离线兜底」而不是重抽，牌面保持不变。
- */
-const PENDING_KEY = 'velvet.dailyDraw.pending.v1';
-
-interface PendingDraw {
-  date: string;
-  cards: Array<{ id: string; orientation: TarotOrientation }>;
-  pickedIndex: number | null;
-}
-
-const readPending = (): PendingDraw | null => {
-  try {
-    const raw = localStorage.getItem(PENDING_KEY);
-    if (!raw) return null;
-    const p = JSON.parse(raw) as PendingDraw;
-    if (!p || p.date !== toLocalDateKey() || !Array.isArray(p.cards) || p.cards.length === 0) return null;
-    return p;
-  } catch {
-    return null;
-  }
-};
-
-const writePending = (p: PendingDraw) => {
-  try { localStorage.setItem(PENDING_KEY, JSON.stringify(p)); } catch { /* 隐私模式/配额满：降级为不保留 */ }
-};
-
-const clearPending = () => {
-  try { localStorage.removeItem(PENDING_KEY); } catch { /* 同上 */ }
-};
-
 export function DailyDraw() {
   const { dailyDivination, settings, saveDailyDivination } = useAppStore();
+  // 解读请求跑在模块级任务里（utils/tarotJobs）：切页不打断，回来接着看
+  const job = useTarotJobs(s => s.daily);
+  const today = toLocalDateKey();
+  const jobToday = job && job.date === today ? job : null;
+  const jobRunning = !!jobToday && (jobToday.status === 'thinking' || jobToday.status === 'streaming');
+  const progress = useThinkProgress(jobToday?.tracker ?? null, !!jobToday && jobToday.status === 'thinking');
 
   const [phase, setPhase] = useState<Phase>('init');
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [pickedIndex, setPickedIndex] = useState<number | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  // 流式：已到达的正文（截到 META 之前）；thinking = 模型在吐思维链、正文还没开始
-  const [streamText, setStreamText] = useState('');
-  const [thinking, setThinking] = useState(false);
-  const abortRef = useRef<AbortController | null>(null);
   const drawChannel = useUiChannel();
   const p3 = drawChannel === 'p3';
   const p5 = drawChannel === 'p5';
@@ -138,31 +96,45 @@ export function DailyDraw() {
       orientation: randomOrientation(),
     }));
     setCandidates(list);
-    writePending({
-      date: toLocalDateKey(),
+    writeDailyPending({
+      date: today,
       cards: list.map(c => ({ id: c.card.id, orientation: c.orientation })),
       pickedIndex: null,
     });
   };
 
-  // 初始化：若今日已抽直接 done，否则进入 intro
+  // 初始化：若今日已抽直接 done；有后台任务就接上；否则按暂存 / 重抽
   // 依赖项里加 dailyDivination?.date：跨日时即便 id 没变，date 不再等于 today 也会触发重置；
   // App 入口的 visibilitychange 已经在跨日时调 loadDailyDivination()，这里是双保险。
   useEffect(() => {
-    if (dailyDivination && dailyDivination.date === toLocalDateKey()) {
-      clearPending();
+    if (dailyDivination && dailyDivination.date === today) {
+      clearDailyPending();
       setPhase('done');
       return;
     }
-    // 有当日暂存 → 恢复同一副候选；已经选过牌就直接回到「重试 / 离线兜底」，不重抽
-    const pending = readPending();
+    // 有当日暂存 → 恢复同一副候选
+    const pending = readDailyPending();
     if (pending) {
       const restored = pending.cards
         .map(c => ({ card: TAROT_BY_ID[c.id], orientation: c.orientation }))
         .filter((c): c is Candidate => !!c.card);
       if (restored.length === pending.cards.length) {
         setCandidates(restored);
+        // 后台任务还在跑 / 刚出错：接回它的状态，不重抽也不重跑
+        if (jobToday && restored[jobToday.pickedIndex]) {
+          setPickedIndex(jobToday.pickedIndex);
+          if (jobRunning) {
+            setPhase('calling');
+          } else if (jobToday.status === 'error') {
+            setErrorMsg(jobToday.error ?? '解读失败');
+            setPhase('error');
+          } else {
+            setPhase('calling');
+          }
+          return;
+        }
         if (pending.pickedIndex !== null && restored[pending.pickedIndex]) {
+          // 选过牌但任务不在内存里（进程被杀过）：直接回到「重试 / 离线兜底」，牌面保持不变
           setPickedIndex(pending.pickedIndex);
           setErrorMsg('上次的解读没能完成——这张牌已经为你留着，直接继续就好。');
           setPhase('error');
@@ -174,11 +146,18 @@ export function DailyDraw() {
     }
     rollCandidates();
     setPhase('intro');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dailyDivination?.id, dailyDivination?.date]);
 
+  // 任务出错 → 错误态（任务成功会写 store，由上面的 effect 切到 done）
   useEffect(() => {
-    return () => { abortRef.current?.abort(); };
-  }, []);
+    if (!jobToday || phase !== 'calling') return;
+    if (jobToday.status === 'error') {
+      setErrorMsg(jobToday.error ?? '解读失败');
+      setPhase('error');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jobToday?.status]);
 
   // force：从 error 态重试时用。phase 是闭包里的旧值，先 setPhase 再调这里读到的仍是
   // 'error'，会被守卫挡掉——这也是「重试 AI 解读 / 使用离线兜底」一直点不动的原因。
@@ -186,80 +165,47 @@ export function DailyDraw() {
     if (!force && phase !== 'pick') return;
     setPickedIndex(idx);
     // 先把「选了哪张」落盘：从这一刻起中断都不该丢牌
-    const cur = readPending();
-    if (cur) writePending({ ...cur, pickedIndex: idx });
+    const cur = readDailyPending();
+    if (cur) writeDailyPending({ ...cur, pickedIndex: idx });
     setPhase('flipping');
 
-    // 翻牌动画 + 随后请求
     const picked = candidates[idx];
     const orientation = picked.orientation;
 
     // 等翻牌动画约 700ms 后再发起请求（与 UI 同步）
     await new Promise(r => setTimeout(r, 700));
-    setStreamText('');
-    setThinking(false);
-    setPhase('calling');
 
-    const multiplier = randomBonusMultiplier(orientation);
-    let result: DailyAIResult;
-    let source: 'ai' | 'offline';
-
-    try {
-      if (useOffline || noApiKey) {
-        result = buildOfflineDaily(picked.card, orientation);
-        source = 'offline';
-      } else {
-        const { req } = await buildDailyRequest({ settings, card: picked.card, orientation });
-        const abortCtrl = new AbortController();
-        abortRef.current = abortCtrl;
-        let full = '';
-        let finish = '';
-        // 正文边到边上屏；META 尾巴由 visibleDailyText 藏住，流完再解析
-        for await (const delta of streamDaily(req, {
-          signal: abortCtrl.signal,
-          onReasoning: () => setThinking(true),
-          onFinishReason: r => { finish = r; },
-        })) {
-          full += delta;
-          setThinking(false);
-          setStreamText(visibleDailyText(full));
-        }
-        const parsed = parseDailyResult(full, {
-          attrNames: settings.attributeNames as Record<AttributeId, string>,
-          card: picked.card,
-          orientation,
-        });
-        if (finish === 'length' && !parsed.metaFound) {
-          throw new Error('解读写到一半被截断了（模型输出预算不足）。这张牌还留着，重试即可。');
-        }
-        result = parsed.result;
-        source = 'ai';
-      }
-    } catch (e) {
-      setErrorMsg(formatApiError(e));
-      setPhase('error');
+    if (useOffline || noApiKey) {
+      const offline = buildOfflineDaily(picked.card, orientation);
+      const drawn: DailyDivination = {
+        id: uuidv4(),
+        date: today,
+        drawnFrom: candidates.map(c => c.card.id),
+        pickedIndex: idx,
+        cardId: picked.card.id,
+        orientation,
+        effect: { attribute: offline.attribute, multiplier: randomBonusMultiplier(orientation) },
+        narration: offline.narration,
+        advice: offline.advice,
+        fortune: offline.fortune,
+        source: 'offline',
+        createdAt: new Date(),
+      };
+      await saveDailyDivination(drawn);
+      clearDailyPending();
+      setPhase('done');
       return;
     }
 
-    const drawn: DailyDivination = {
-      id: uuidv4(),
-      date: toLocalDateKey(),
-      drawnFrom: candidates.map(c => c.card.id),
-      pickedIndex: idx,
+    setErrorMsg(null);
+    setPhase('calling');
+    startDailyJob({
+      settings,
       cardId: picked.card.id,
       orientation,
-      effect: { attribute: result.attribute, multiplier },
-      narration: result.narration,
-      advice: result.advice,
-      fortune: result.fortune,
-      memo: result.memo,
-      source,
-      createdAt: new Date(),
-    };
-
-    await saveDailyDivination(drawn);
-    clearPending();
-    setPhase('done');
+      drawnFrom: candidates.map(c => c.card.id),
+      pickedIndex: idx,
+    });
   };
 
   const resume = (useOffline: boolean) => {
@@ -280,7 +226,10 @@ export function DailyDraw() {
     return <DoneView d={dailyDivination} />;
   }
 
-  const streaming = phase === 'calling' && (streamText.length > 0 || thinking);
+  const jobText = jobToday?.text ?? '';
+  const thinking = !!jobToday?.thinking;
+  // 一进 calling 就把面板亮出来：思维链第一段到达之前也有阵图在按时间生长
+  const streaming = phase === 'calling';
 
   return (
     <div className="space-y-5">
@@ -320,7 +269,7 @@ export function DailyDraw() {
             {phase === 'intro'  && '正在洗牌…'}
             {phase === 'pick'    && '从三张牌中选择一张'}
             {phase === 'flipping' && '揭示命运…'}
-            {phase === 'calling'  && (streamText ? '解读者正在落笔' : '正在解读星象…')}
+            {phase === 'calling'  && (jobText ? '解读者正在落笔' : '正在解读星象…')}
             {phase === 'error'    && '解读遇到了阻碍'}
           </span>
           {p3 && <CyanSlashes />}
@@ -332,7 +281,7 @@ export function DailyDraw() {
           {phase === 'intro'   && '今日的星象正在汇聚'}
           {phase === 'pick'    && '每日仅一次，慎重选择'}
           {phase === 'flipping' && '正位 / 逆位皆有意义'}
-          {phase === 'calling'  && (thinking && !streamText ? '解读者正在思索' : '结合您近期的处境')}
+          {phase === 'calling'  && (thinking && !jobText ? '解读者正在思索，离开这页也不会中断' : '结合您近期的处境')}
           {phase === 'error'    && '可重试 AI 或改用离线兜底'}
         </p>
       </div>
@@ -387,18 +336,17 @@ export function DailyDraw() {
           </div>
         )}
 
-        {(phase === 'flipping' || phase === 'calling' || phase === 'error') && pickedIndex !== null && (
+        {(phase === 'flipping' || phase === 'calling' || phase === 'error') && pickedIndex !== null && candidates[pickedIndex] && (
           <FlipReveal
             candidate={candidates[pickedIndex]}
             revealed={phase !== 'flipping'}
-            loading={phase === 'calling' && !streaming}
           />
         )}
       </div>
 
-      {/* 流式落笔：正文边到边上屏（v2.7.0.6，用户口径：不能让用户干等） */}
+      {/* 思维链阵图 / 流式落笔（v2.7.0.6，用户口径：不能让用户干等） */}
       {streaming && (
-        <StreamPanel text={streamText} thinking={thinking} p5={p5} />
+        <StreamPanel text={jobText} thinking={thinking} progress={progress} p5={p5} p3={p3} />
       )}
 
       {/* 错误态：重试选项 */}
@@ -446,9 +394,9 @@ export function DailyDraw() {
   );
 }
 
-// ── 子组件：流式落笔面板 ───────────────────────────────────
+// ── 子组件：思维链阵图 / 流式落笔面板 ───────────────────────
 
-function StreamPanel({ text, thinking, p5 }: { text: string; thinking: boolean; p5: boolean }) {
+function StreamPanel({ text, thinking, progress, p5, p3 }: { text: string; thinking: boolean; progress: number; p5: boolean; p3: boolean }) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
@@ -472,17 +420,26 @@ function StreamPanel({ text, thinking, p5 }: { text: string; thinking: boolean; 
             }}
           />
         ) : (
-          <div className="flex items-center gap-2 text-xs text-gray-400 dark:text-gray-500">
-            <Spinner />
-            <span>{thinking ? '解读者正在把牌与你的处境放在一起看…' : '正在解读星象…'}</span>
+          // 思维链阶段：结阵中的魔法阵按预估进度生长；正文第一个字到达即切到上面的流式正文
+          <div className="flex justify-center py-2">
+            <ThinkingCircle
+              variant="pentagram"
+              progress={progress}
+              size={124}
+              color={p3 ? '#1b57ff' : p5 ? '#c00008' : '#d4af37'}
+              label={thinking ? '解读者正在思索' : '正在解读星象'}
+              textColor={p5 ? '#494540' : undefined}
+            />
           </div>
         )}
-        <motion.span
-          aria-hidden
-          animate={{ opacity: [1, 0] }}
-          transition={{ repeat: Infinity, duration: 0.6 }}
-          className="inline-block w-0.5 h-4 bg-primary align-middle ml-0.5"
-        />
+        {text && (
+          <motion.span
+            aria-hidden
+            animate={{ opacity: [1, 0] }}
+            transition={{ repeat: Infinity, duration: 0.6 }}
+            className="inline-block w-0.5 h-4 bg-primary align-middle ml-0.5"
+          />
+        )}
       </Wrap>
     </motion.div>
   );
@@ -493,11 +450,9 @@ function StreamPanel({ text, thinking, p5 }: { text: string; thinking: boolean; 
 function FlipReveal({
   candidate,
   revealed,
-  loading,
 }: {
   candidate: Candidate;
   revealed: boolean;
-  loading: boolean;
 }) {
   return (
     <div className="flex flex-col items-center gap-3" style={{ perspective: 1200 }}>
@@ -533,12 +488,6 @@ function FlipReveal({
           delay={0.1}
         />
       )}
-      {loading && (
-        <div className="flex items-center gap-2 text-xs text-primary">
-          <Spinner />
-          <span>正在解读星象…</span>
-        </div>
-      )}
     </div>
   );
 }
@@ -546,7 +495,7 @@ function FlipReveal({
 // ── 子组件：已完成视图 ──────────────────────────────────────
 
 function DoneView({ d }: { d: DailyDivination }) {
-  const { settings, updateDailyMemo } = useAppStore();
+  const { settings } = useAppStore();
   const doneP5 = useUiChannel() === 'p5';
   const card = TAROT_BY_ID[d.cardId];
   if (!card) return null;
@@ -679,26 +628,7 @@ function DoneView({ d }: { d: DailyDivination }) {
             __html: DOMPurify.sanitize(`<p class="mb-2">${renderMarkdown(d.narration)}</p>`),
           }}
         />
-        {/* 解读者手记：这次解读落在哪件处境上的一句备忘；下次解读会当"上次聊到哪"喂回去。可清除。 */}
-        {d.memo && (
-          <div className="mt-3 flex items-start gap-2 border-t border-gray-200/70 dark:border-gray-700/50 pt-2.5">
-            <span className="mt-0.5 shrink-0 text-[10px] font-bold tracking-[2px] uppercase text-gray-400 dark:text-gray-500">
-              手记
-            </span>
-            <span className="flex-1 text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">
-              {d.memo}
-            </span>
-            <button
-              type="button"
-              onClick={() => void updateDailyMemo(d.id, undefined)}
-              aria-label="清除手记"
-              title="解读者的备忘，会作为之后解读的上下文；点这里清除"
-              className="shrink-0 px-1 text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
-            >
-              ✕
-            </button>
-          </div>
-        )}
+        {/* 解读者手记（d.memo）不外显：只作为之后解读的"上次聊到哪"喂回去（用户口径：内化掉） */}
         </Wrap>
       </motion.div>
 

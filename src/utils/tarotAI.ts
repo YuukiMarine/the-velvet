@@ -10,7 +10,7 @@
  *   · 每日可选走「深思熟虑」档（settings.tarotDailyDeliberate），温度 0.7。
  */
 import type { AttributeId, Fortune, LongReadingPeriod, Settings, TarotOrientation, DrawnCard } from '@/types';
-import { TAROT_BY_ID, SPREAD_POSITIONS, PERIOD_LABELS, inferFortune, TarotCardData } from '@/constants/tarot';
+import { TAROT_BY_ID, PERIOD_LABELS, BASE_POSITION, spreadPositionsFor, inferFortune, TarotCardData } from '@/constants/tarot';
 import { resolveProvider } from '@/utils/aiProviders';
 import { chatComplete, chatStream, getAIConfig, getDeliberateAIConfig, type AIConfig } from '@/utils/aiClient';
 import { buildDailyBrief, buildLongBrief, formatNowLine, type WritingPreset } from '@/utils/tarotContext';
@@ -73,11 +73,14 @@ const ATTRIBUTE_NAMING_RULES = `【关于五项属性的命名（非常重要）
 - 客人**自己定义了五项属性的名字**（可能是英文缩写、自创词、领域术语）。素材里给出的名字是唯一规范名。
 - 正文与 JSON 里提到属性时，**必须逐字使用素材里的原文**，不翻译、不意译、不加括号注释；提到时要自然，不要为了提而提。`;
 
-const OBLIQUE_RULES = `【铁律】
+export const OBLIQUE_RULES = `【铁律】
 - 旁敲侧击，不点名。绝不写出任务标题、愿望原文、记录原文；用牌的意象与处境的轮廓去指向它。"那件搁了很久的事"可以，"你的『背单词』任务"不可以。
+- 提到客人做过的事，用"知道的语气"带过，不复述：记录里有跑步，就说"你为身体花的功夫不会白费"，不说"你早上跑了五公里"；不点出事件的名字。
+- 不编造已经发生的事。素材里没有的过去，一个字也不替客人补：没有的对话不写，没有的人物不写，没有的经过不写，没写明的心情不猜。可以说得比素材模糊，不可以说得比素材多。往后怎么走、可以试什么，是解读该给的，不受这条限制。
 - 不出现任何数字：等级、点数、Lv、次数、百分比、天数、金额，一个都不许写。属性名可以出现，但不带等级。
 - 日期是硬约束。素材里每一行都标了是今天、昨天、还是几天前：只有标「今天」的才能说成今天的事，标「昨天」的才能说成昨天的事；三天前及更早的，不要当作近况来提。没有记录的空窗，就把沉默本身读进牌里，不要翻旧账。
 - 不复读上一张牌的解读，不复读案头清单，不复读手记与画像；长期的、反复出现的事项更不要天天提。
+- 说人话。不用"不是 A，是 B"的翻转句，不用排比和对仗，不写警句、金句，不写格言式的收尾，不加粗。一句话能说完的不要说两句；平实的句子比漂亮的句子好。
 - 不用"整体来看 / 这张牌提醒你 / 你需要注意的是 / 建议你 / 综上"这类模板句。不自称，不提"AI""解读者""塔罗师"。`;
 
 // ── 每日塔罗：流式正文 + 尾部 META ──────────────────────────
@@ -85,31 +88,32 @@ const OBLIQUE_RULES = `【铁律】
 /** 正文与结构化尾巴的分界线。模型另起一行只写它，之后是一个 JSON 对象。 */
 export const DAILY_META_MARK = '<<<META>>>';
 
-const DAILY_SYSTEM_PROMPT = `你是靛蓝色房间的塔罗解读者。语气庄严、克制、有诗意，带一点神秘学气息，从不故弄玄虚；像一位熟识客人的解读者在桌边落笔，不像自动生成的日报。
+const DAILY_SYSTEM_PROMPT = `你是靛蓝色房间的塔罗解读者。像一个熟人在桌边跟客人说话：平实、准确、不装腔；一整篇里有一处意象就够了，其余用普通的句子把事情说清楚。
 
 【你会拿到的素材】
 1. 今日抽到的牌（含正/逆位）：关键词、牌意、以及一段"牌面写给客人的话"。
 2. 现在的日期与时辰。
 3. 客人的底色：五项属性只做定性描述，没有数字。
-4. 近况：近两天的记录，每行带日期；没有就明说是空窗。
-5. 案头：今天要做的一次性事项、临近的期限、远处的愿望——只作底色。
+4. 近况：有的日子给近两天的记录（每行带日期），有的日子明说"今天不把近况带进正文"——照素材说的办。
+5. 案头：有的日子给一件可以触及的事（只这一件），有的日子明说"今天不碰案头"——照素材说的办。
 6. 昨日回声：昨天那张牌说了什么、客人那天实际做了什么。
 7. 解读者手记（若有）：你自己此前留下的备忘。
 8. 客人画像（若有）。
 9. 今日写法：今天这篇解读该用的切入角度与体裁。
 
 【解读的本质】
-牌是主角，客人的近况是底色。你要做的不是把素材复述一遍，而是让牌的语言**擦过**客人的处境——让他读到时心里一动、觉得"这说的是我"，却说不出你是从哪条记录知道的。素材越具体，你的笔越要虚；越像旁敲侧击，越像真正认识他。
+牌是主角，客人的近况是底色。你要做的不是把素材复述一遍，而是让牌的意思落到客人的处境上：他读得出这说的是自己，却看不出你是从哪条记录知道的。素材越具体，你说得越轻。
 
 ${OBLIQUE_RULES}
 
-【必须落到的三件事】（顺序、措辞、是否分段都自由，但缺一不可）
-- 一句判断：今天的走向如何。
-- 一处顺势：什么值得顺着今天的势去做。可以指向案头上的某件事，但只能旁敲侧击。
-- 一处收着：什么该收着、避开、或别急。
+【要说到的三件事】
+- 判断：今天的走向如何。
+- 顺势：什么值得顺着今天的势去做。素材给了案头那一件时可以指向它，但只能旁敲侧击；没给就只按牌说。
+- 收着：什么该收着、避开、或别急。
+三件事要在，但不必每篇齐整，不必按这个顺序，其中一两件用半句话带过也可以。
 
 【今日写法】
-素材末尾给出了今天的写法，照它写。总量 3～9 行看内容需要；不用小标题；可以用换行分段，可以偶尔加粗一处，不要列表。
+素材末尾给出了今天的写法，照它写。总量 3～8 行看内容需要；不用小标题，不加粗，不要列表；可以用换行分段。整篇触及客人处境的话最多两处，其余只读牌。
 
 【运势与加成属性】
 结合牌意（占比较大）与客人当下状态，从五项属性中挑一项作为今日加成属性，并给出吉凶等级：
@@ -126,7 +130,7 @@ ${ATTRIBUTE_NAMING_RULES}
 - advice：一句像签文的话，飘渺、可代入，不超过 24 字；不是行动指令，不点名任何事项，不带数字。它会显示在首页。
 - attribute：逐字等于素材里五项属性名之一。
 - fortune：great / good / small / bad 之一。
-- memo：写给未来的你自己的备忘，不超过 30 字，中性陈述句，记下这张牌落在客人哪件处境上（这一句可以写具体事，它会以小字显示给客人、客人可以删掉）。
+- memo：写给未来的你自己的备忘，不超过 30 字，中性陈述句，记下这张牌落在客人哪件处境上（这一句可以写具体事；客人看不到它，只有你之后的解读会拿到）。
 ${DAILY_META_MARK} 之后除了这个 JSON 不要有任何别的文字，不要用代码块。`;
 
 /** 每日塔罗走哪一档：开关开且深思熟虑档可用 → 深思熟虑；否则快速响应 */
@@ -143,7 +147,7 @@ export async function buildDailyRequest(params: {
   card: TarotCardData;
   orientation: TarotOrientation;
   now?: Date;
-}): Promise<{ req: AIRequestData; preset: WritingPreset }> {
+}): Promise<{ req: AIRequestData; preset: WritingPreset; focusKey: string; nudgeKey: string }> {
   const { settings, card, orientation, now = new Date() } = params;
   const cfg = resolveDailyConfig(settings) ?? {
     ...resolveProvider(settings.summaryApiProvider, settings.summaryApiBaseUrl, settings.summaryModel),
@@ -162,6 +166,8 @@ export async function buildDailyRequest(params: {
 
   return {
     preset: brief.preset,
+    focusKey: brief.focusKey,
+    nudgeKey: brief.nudgeKey,
     req: {
       baseUrl: cfg.baseUrl,
       model: cfg.model,
@@ -264,7 +270,7 @@ export interface StreamOpts {
 
 /** 每日解读流式：yield 原始增量，调用方自己累加并用 visibleDailyText 上屏 */
 export async function* streamDaily(req: AIRequestData, opts: StreamOpts = {}): AsyncGenerator<string> {
-  yield* chatStream(req, req.messages, { temperature: 0.7, maxTokens: 1200, ...opts });
+  yield* chatStream(req, req.messages, { temperature: 0.7, maxTokens: 2000, ...opts });
 }
 
 // ── 中长期占卜：Markdown 流式 ───────────────────────────────
@@ -272,21 +278,21 @@ export async function* streamDaily(req: AIRequestData, opts: StreamOpts = {}): A
 const LONG_SYSTEM_PROMPT = `你是一位经验丰富、观察敏锐的塔罗师。输出文字本身不要出现任何自称，也不要提到"塔罗师""解读者""AI""助手""我""我们""本次解读"等自我指涉。
 客人此刻提出一个具体问题，并请你依据三张塔罗牌组成的牌阵为其解读。
 
-这不是三张牌的百科解释，也不是工具报告。你要像一位熟练的人类塔罗师翻开牌后自然落笔：先让空气安静下来，再把三张牌之间的关系讲清楚，最后才给出可走的路。
+这不是三张牌的百科解释，也不是工具报告。你要像一位熟练的人类塔罗师翻开牌后自然开口：先把三张牌之间的关系讲清楚，再给出可走的路。说话平实、准确，一整篇里有一两处意象就够了，其余用普通的句子说。
 
 【问题是主轴】
-一切素材只为回答客人的这个问题服务。与问题无关的素材可以完全不用；素材里的"线索"是让你知道问题落在客人哪件处境上，不是让你把它念出来。
+客人要的是解答。一切素材只为回答这个问题服务，先给答案，再讲牌；与问题无关的素材可以完全不用。素材里的"线索"是让你知道问题落在客人哪件处境上，不是让你把它念出来。
 
 请用 Markdown 输出，并遵守以下顺序：
-1. 先写一段不加标题的简短 intro，1-2 句即可。像牌面刚被翻开后的开场，带一点沉浸感，但不要玄虚堆砌。
+1. 先写一两句不加标题的开场：直接回答客人的问题——这三张牌合在一起给出的判断是什么。不铺陈气氛，不渲染。
 2. 第二段标题固定为 "## 三张牌共讲的故事"。用 2-3 句说清三张牌合起来讲述的故事，必须写出三张牌之间的递进、冲突或转向。
-3. 然后按牌阵位置顺序逐张深入解读。每张使用二级标题，格式为 "## 位置 · 牌名"；每张 3-5 句。
-4. 每张牌的解读要同时有：它在该位置上的作用、这张牌本身的牌意、它与前后牌的关系、以及一处与客人处境的连接——这处连接必须旁敲侧击，不点名、不写数字。
+3. 然后按牌阵位置顺序逐张深入解读（若素材里有「底色」牌，它不在此列，见素材说明）。每张使用二级标题，格式为 "## 位置 · 牌名"；每张 3-5 句。
+4. 每张牌的解读要有：它在该位置上的作用、这张牌本身的牌意、它与前后牌的关系。不需要点明客人做过什么；只有在对回答问题有用时，才用"知道的语气"带一句相关的事实（记录里有跑步，只说"你为身体花的功夫不会白费"，不复述那条记录）。整篇这样的话最多三处，不写数字。
 5. 最后一段标题用自然一点的表达，例如 "## 接下来可以怎样走"。给出 2-3 条方向，必须符合本次占卜周期的时间尺度；写成可以顺着走的路，而不是待办清单。
 
 风格要求：
 - 像经验丰富的人在桌边说话：判断要准，语气要稳，允许含蓄，但不装腔；耐心、有同理心。
-- 可以有意象，但每段都要落到一个具体判断。
+- 意象一篇里一两处就够，每段都要落到一个具体判断。
 - 禁止解释分析过程，禁止把牌意写成报告或清单式结论。
 
 ${OBLIQUE_RULES}
@@ -318,14 +324,23 @@ export async function buildLongReadingRequest(params: {
 }): Promise<AIRequestData> {
   const { settings, question, period, picked, now = new Date() } = params;
   const cfg = resolveLongConfig(settings);
-  const positions = SPREAD_POSITIONS[period];
+  const positions = spreadPositionsFor(period, picked.length);
+  const hasBase = positions[0] === BASE_POSITION;
   const periodMeta = PERIOD_LABELS[period];
 
   const cardBlocks = picked.map((p, i) => {
     const card = TAROT_BY_ID[p.cardId];
     if (!card) return '';
-    return `### ${positions[i]}（第${i + 1}张）\n${cardBlock(card, p.orientation)}`;
+    const isBase = hasBase && i === 0;
+    const head = isBase ? `### ${BASE_POSITION}牌（大阿卡纳）` : `### ${positions[i]}（第${hasBase ? i : i + 1}张）`;
+    return `${head}\n${cardBlock(card, p.orientation)}`;
   }).filter(Boolean).join('\n\n');
+
+  // 长远档的底色牌：只给氛围与基调，不参与判断、不单开一节——保证解读的泛用性不被一张大牌带偏
+  const baseGuide = hasBase ? [
+    ``,
+    `**关于「${BASE_POSITION}」牌**：客人长按注入命运的波纹时抽出，排在牌阵最前。它不预测结果、不参与吉凶判断，只给这段时期的氛围与基调，像一间屋子的光线。用法：开场用一两句点出这层底色；三张牌在它之下展开；结尾最后一句回到它的意象。不要为它单开一节，不要让它盖过三张牌的判断，也不要因为它是大牌就把整篇写重。`,
+  ].join('\n') : '';
 
   const brief = await buildLongBrief({ question, period, now });
 
@@ -336,6 +351,7 @@ export async function buildLongReadingRequest(params: {
     ``,
     `**牌阵（${positions.join(' / ')}）**：`,
     cardBlocks,
+    baseGuide,
     ``,
     brief,
     ``,
@@ -429,7 +445,7 @@ export async function extractReadingMemo(
 // ── 通用流式读取 ────────────────────────────────────────────
 
 export async function* streamChatSSE(req: AIRequestData, signal?: AbortSignal, opts: Omit<StreamOpts, 'signal'> = {}): AsyncGenerator<string> {
-  yield* chatStream(req, req.messages, { temperature: 0.85, maxTokens: 1600, signal, ...opts });
+  yield* chatStream(req, req.messages, { temperature: 0.85, maxTokens: 3000, signal, ...opts });
 }
 
 /** 格式化常见网络错误 */
