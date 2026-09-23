@@ -51,7 +51,7 @@ const softShadow: CSSProperties = { filter: 'drop-shadow(0 5px 7px rgba(19,19,19
  * 底下垫一枚放大到 ratio 的奶油同形副本，上面压原色的本体。
  * 形状按比例放大 → 描边宽度天然随形（尖角处更厚），与稿上的收边一致，且完全不走 filter。
  */
-const Outlined = ({ size, color, kind, ratio = 1.32, className, style }: {
+export const Outlined = ({ size, color, kind, ratio = 1.32, className, style }: {
   size: number; color: string; kind: 'star' | 'flower'; ratio?: number;
   className?: string; style?: CSSProperties;
 }) => {
@@ -84,7 +84,7 @@ const P4CloseKey = ({ onClose, tone = INK, className, style }: {
 /** 奶油旗标：两端切角的横幅（稿上副文都在这块上） */
 const RIBBON_CLIP = 'polygon(0 0, 100% 0, calc(100% - 16px) 50%, 100% 100%, 0 100%, 16px 50%)';
 
-const Ribbon = ({ children, delay, anim, rot = -1.5, lift = -14 }: {
+export const Ribbon = ({ children, delay, anim, rot = -1.5, lift = -14 }: {
   children: ReactNode; delay: number; anim: boolean; rot?: number;
   /** 与上一块的纵向咬合量（负=往上压住题板下缘） */
   lift?: number;
@@ -104,7 +104,7 @@ const Ribbon = ({ children, delay, anim, rot = -1.5, lift = -14 }: {
 );
 
 /** 黑（或任意色）圆角题板：自左拉开 + 两侧四角星 */
-const Plate = ({ children, delay, anim, bg = INK, fg = CREAM, size = 34, rot = -2.5, stars = true }: {
+export const Plate = ({ children, delay, anim, bg = INK, fg = CREAM, size = 34, rot = -2.5, stars = true }: {
   children: ReactNode; delay: number; anim: boolean; bg?: string; fg?: string; size?: number; rot?: number; stars?: boolean;
 }) => (
   <motion.div
@@ -352,8 +352,8 @@ const TrophyBadge = ({ size }: { size: number }) => (
   </svg>
 );
 
-export const AchievementUnlockP4 = ({ isOpen, onClose, achievementTitle }: {
-  isOpen: boolean; onClose: () => void; achievementTitle: string;
+export const AchievementUnlockP4 = ({ isOpen, onClose, achievementTitle, message = '恭喜你达成新成就！继续努力解锁更多内容' }: {
+  isOpen: boolean; onClose: () => void; achievementTitle: string; message?: string;
 }) => {
   const anim = useBoldness();
   return (
@@ -372,7 +372,7 @@ export const AchievementUnlockP4 = ({ isOpen, onClose, achievementTitle }: {
           </div>
           {/* 旗标默认 mt-[-14px] 是为了压在题板下缘；成就解锁上面多一块蓝名板，
               再往上叠就把成就名盖住了，这里把它压回正外边距 */}
-          <Ribbon delay={0.62} anim={anim} rot={-1} lift={-6}>恭喜你达成新成就！继续努力解锁更多内容</Ribbon>
+          <Ribbon delay={0.62} anim={anim} rot={-1} lift={-6}>{message}</Ribbon>
         </div>
         <Confetti anim={anim} />
         <P4CloseKey onClose={onClose} tone={ORANGE} style={{ right: -6, top: 30 }} />

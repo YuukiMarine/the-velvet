@@ -38,8 +38,11 @@ export interface NotifSnapshot {
   hasActiveDailyTodos: boolean;
   /** 明日将逆流扣减的属性 id（store.getCountercurrentWarnings 结果） */
   countercurrentWarnings: AttributeId[];
-  /** 是否有未读成长总结 */
-  hasUnreadSummary: boolean;
+  /**
+   * 要提醒「可以查看了」的那份新总结（v2.7.0.6：写好 7 天内、未读、推送还没送达过）。
+   * null = 没有要提醒的。每份报告只推一次——排过的时刻一过就算送达（见 utils/reportNotice）。
+   */
+  summaryNotice?: { id: string } | null;
   /** 今天是否已有任何记录（非系统类活动）；用于「提醒记录」 */
   loggedToday: boolean;
   /**
@@ -119,8 +122,8 @@ const COPY: Record<NotifContentType, CopyFn[]> = {
     (c) => ({ title: '暗流将至', body: `「${c.attrNames}」连日无增长——明天它会逆流而下。现在还来得及。` }),
   ],
   summary: [
-    () => ({ title: '成长总结', body: '一份新的成长总结已在房间里等你查阅。' }),
-    () => ({ title: '新的回响', body: '你的旅程被记成了一篇总结。来读读这段时间的自己吧。' }),
+    () => ({ title: '成长总结', body: '上一段日子的总结写好了，放在记录页等你查阅。' }),
+    () => ({ title: '新的回响', body: '你的旅程被记成了一篇总结。点开读读这段时间的自己吧。' }),
   ],
   record: [
     () => ({ title: '夜间结算', body: '客人，今天还没有在房间里留下一笔……此刻的你，也值得被记下。' }),
@@ -149,7 +152,7 @@ function isActionable(c: NotifContentType, snap: NotifSnapshot, day: number): bo
       // 预警基于「明日扣减」，只对今天的已知预警投递（更远是投机，且换日后会重排）
       return day === 0 && snap.countercurrentWarnings.length > 0;
     case 'summary':
-      return snap.hasUnreadSummary;
+      return !!snap.summaryNotice;
     case 'record':
       // 今天看是否已有记录；未来天换日后必无记录
       return day === 0 ? !snap.loggedToday : true;
@@ -190,24 +193,30 @@ function pickContent(
   return variants[idx](ctx);
 }
 
+/** 本次排程里「只投一次」类内容排到的时刻（调用方据此记账，下次重排就知道它送没送达） */
+export interface ScheduleOutcome {
+  summaryAt?: number;
+}
+
 /**
  * 重排：根据快照算出未来 NOTIF_WINDOW_DAYS 天的提醒并同步给系统。
  * 幂等——每次都先 cancel 我们 ID 段内的旧排程，再 schedule 新的。
  * 关闭 / 无权限 / 无启用时段 → 仅清空我们的排程。
  */
-export async function computeAndSchedule(snap: NotifSnapshot): Promise<void> {
-  if (!isNative()) return;
+export async function computeAndSchedule(snap: NotifSnapshot): Promise<ScheduleOutcome> {
+  const outcome: ScheduleOutcome = {};
+  if (!isNative()) return outcome;
   let LocalNotifications: typeof import('@capacitor/local-notifications').LocalNotifications;
   try {
     ({ LocalNotifications } = await import('@capacitor/local-notifications'));
   } catch {
-    return;
+    return outcome;
   }
 
   await cancelOurNotifications();
 
   const perm = await getNotifPermission();
-  if (!snap.enabled || perm !== 'granted') return;
+  if (!snap.enabled || perm !== 'granted') return outcome;
 
   // 按时间升序排，使「一次性」内容落在最早一个合格时段
   const enabledSlots = snap.slots
@@ -215,7 +224,7 @@ export async function computeAndSchedule(snap: NotifSnapshot): Promise<void> {
     .slice()
     .sort((a, b) => a.time.localeCompare(b.time))
     .slice(0, MAX_SLOTS);
-  if (enabledSlots.length === 0) return;
+  if (enabledSlots.length === 0) return outcome;
 
   const now = new Date();
   const placedOnce = new Set<NotifContentType>();
@@ -228,15 +237,19 @@ export async function computeAndSchedule(snap: NotifSnapshot): Promise<void> {
       // 跳过已过去 / 即将（<60s，避免排进刚好错过的点）
       if (at.getTime() <= now.getTime() + 60_000) continue;
 
+      const hadSummary = placedOnce.has('summary');
       const text = pickContent(slot, snap, day, dateKey(at), placedOnce);
       if (!text) continue;
+      const isSummary = !hadSummary && placedOnce.has('summary');
+      if (isSummary) outcome.summaryAt = at.getTime();
 
       toSchedule.push({
         id: NOTIF_ID_BASE + day * 10 + si,
         title: text.title,
         body: text.body,
         schedule: { at, allowWhileIdle: true },
-        extra: { source: 'f2a', slotId: slot.id },
+        // content / summaryId：点开通知时据此直达那份总结（App 里的 localNotificationActionPerformed）
+        extra: { source: 'f2a', slotId: slot.id, ...(isSummary && snap.summaryNotice ? { content: 'summary', summaryId: snap.summaryNotice.id } : {}) },
       });
     }
   }
@@ -244,6 +257,7 @@ export async function computeAndSchedule(snap: NotifSnapshot): Promise<void> {
   if (toSchedule.length > 0) {
     await LocalNotifications.schedule({ notifications: toSchedule });
   }
+  return outcome;
 }
 
 /**

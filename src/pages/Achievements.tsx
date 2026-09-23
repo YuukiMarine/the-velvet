@@ -10,6 +10,8 @@ import { useUiChannel } from '@/ui/useUiChannel';
 import { P4Flower, P4Sparkle, P4ArcRings, P4SkyCircle, P4_HEADER_BLEED } from '@/ui/p4Kit';
 import { P3R, P3RPage, GhostWords, P3PageHeader, P3EmptySlab, slantClip } from '@/components/p3r/kit';
 import { P5R, P5_FONT, P5SubBar, P5Star, P5Dots, P5Slab, P5RPage } from '@/components/p5r/kit';
+import { calcMaxStreak, daysSinceFirstRecord, streakDates } from '@/utils/streak';
+import { HIDDEN_ACHIEVEMENT_IDS, SEALED_ACHIEVEMENT_IDS } from '@/constants';
 
 /** P4 绶带横幅裁切（p4-achievements-reference-v2）：两端内凹的奖带形 */
 const P4_RIBBON_CLIP = 'polygon(0% 0%, 100% 0%, calc(100% - 14px) 50%, 100% 100%, 0% 100%, 14px 50%)';
@@ -715,16 +717,11 @@ const AchievementsTab = () => {
 
   const getProgress = (achievement: typeof achievements[0]) => {
     switch (achievement.condition.type) {
-      case 'consecutive_days': {
-        const dates = activities.map(a => new Date(a.date).toDateString());
-        const ts = [...new Set(dates)].map(d => new Date(d).getTime()).sort((a, b) => a - b);
-        const ONE_DAY = 86400000;
-        let max = ts.length > 0 ? 1 : 0, cur = 1;
-        for (let i = 1; i < ts.length; i++) {
-          if (ts[i] - ts[i - 1] === ONE_DAY) { cur++; max = Math.max(max, cur); } else cur = 1;
-        }
-        return Math.min(max, achievement.condition.value);
-      }
+      case 'consecutive_days':
+        // 与 store 的解锁判定同一口径：补记不计、按日历日比（之前这里自己算，夏令时一到就断链）
+        return Math.min(calcMaxStreak(streakDates(activities)), achievement.condition.value);
+      case 'days_since_first_record':
+        return Math.min(daysSinceFirstRecord(streakDates(activities)), achievement.condition.value);
       case 'total_points':
         return Math.min(attributes.reduce((sum, a) => sum + a.points, 0), achievement.condition.value);
       case 'attribute_level': {
@@ -758,11 +755,17 @@ const AchievementsTab = () => {
   };
 
   const isCustomAchievement = (a: typeof achievements[0]) => a.id.startsWith('custom_');
-  const isWildHeart = (a: typeof achievements[0]) => a.id === 'wild_heart';
+  /** 终极 / 隐藏成就不给编辑（隐藏的一编辑就露名字了） */
+  const isSealed = (a: typeof achievements[0]) => SEALED_ACHIEVEMENT_IDS.has(a.id);
+  /** 隐藏成就没领之前：卡面只有问号，名字、条件、进度都不露，领取弹窗才揭晓 */
+  const faceOf = (a: typeof achievements[0]) =>
+    HIDDEN_ACHIEVEMENT_IDS.has(a.id) && !a.unlocked
+      ? { title: '？？？', description: '隐藏成就', icon: '❔', masked: true }
+      : { title: a.title, description: a.description, icon: a.icon, masked: false };
 
   const handleEdit = (achievement: typeof achievements[0]) => {
     if (achievement.unlocked && !isCustomAchievement(achievement)) return;
-    if (isWildHeart(achievement)) return;
+    if (isSealed(achievement)) return;
     setEditingAchievement(achievement.id);
     setEditForm({
       title: achievement.title,
@@ -840,6 +843,7 @@ const AchievementsTab = () => {
     const groups: Record<string, typeof filtered> = {};
     const others: typeof filtered = [];
     let wildHeart: typeof filtered[0] | undefined;
+    const hidden: typeof filtered = [];
     filtered.forEach(a => {
       if (a.condition.type === 'attribute_level' && a.condition.attribute && !a.id.startsWith('custom_')) {
         const attr = a.condition.attribute;
@@ -847,6 +851,8 @@ const AchievementsTab = () => {
         groups[attr].push(a);
       } else if (a.id === 'wild_heart') {
         wildHeart = a;
+      } else if (HIDDEN_ACHIEVEMENT_IDS.has(a.id)) {
+        hidden.push(a);
       } else {
         others.push(a);
       }
@@ -855,6 +861,8 @@ const AchievementsTab = () => {
     Object.values(groups).forEach(g => g.sort((a, b) => a.condition.value - b.condition.value));
     // 不羁之心为终极成就，始终置于列表末尾
     if (wildHeart) others.push(wildHeart);
+    // 隐藏成就压在最末
+    others.push(...hidden);
     return { attrGroups: groups, otherAchievements: others };
   }, [filtered]);
 
@@ -1175,9 +1183,9 @@ const AchievementsTab = () => {
             const progress = getProgress(achievement);
             const percentage = (progress / achievement.condition.value) * 100;
             const isCustom = isCustomAchievement(achievement);
-            const isWild = isWildHeart(achievement);
             const canUnlock = !achievement.unlocked && percentage >= 100;
             const unlocked = achievement.unlocked;
+            const face = faceOf(achievement);
             return (
               <motion.div
                 key={achievement.id}
@@ -1200,12 +1208,12 @@ const AchievementsTab = () => {
                     className="flex h-12 w-12 shrink-0 items-center justify-center text-[22px]"
                     style={{ clipPath: slantClip(7), background: unlocked ? 'rgba(255,255,255,0.22)' : (attrGroupKeys.length + i) % 2 ? P3R.cyan : P3R.blue }}
                   >
-                    {achievement.icon}
+                    {face.icon}
                   </span>
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-[16px] font-black" style={{ color: unlocked ? '#fff' : P3R.ink }}>{achievement.title}</div>
-                    <div className="truncate text-[11px] font-semibold" style={{ color: unlocked ? 'rgba(255,255,255,0.85)' : P3R.grey }}>{achievement.description}</div>
-                    {!unlocked && (
+                    <div className="truncate text-[16px] font-black" style={{ color: unlocked ? '#fff' : P3R.ink }}>{face.title}</div>
+                    <div className="truncate text-[11px] font-semibold" style={{ color: unlocked ? 'rgba(255,255,255,0.85)' : P3R.grey }}>{face.description}</div>
+                    {!unlocked && !face.masked && (
                       <div className="mt-1.5 h-[4px] w-[85%] overflow-hidden" style={{ background: 'rgba(53,209,232,0.18)' }}>
                         <motion.div
                           className="h-full"
@@ -1228,14 +1236,16 @@ const AchievementsTab = () => {
                       <span className="text-[20px] font-black text-white" aria-hidden>✓</span>
                     ) : (
                       <span className="text-[18px] font-black italic tabular-nums" style={{ color: canUnlock ? '#e08a00' : P3R.blue }}>
-                        {progress}<span className="mx-px opacity-50">/</span>{achievement.condition.value}
+                        {face.masked
+                          ? (canUnlock ? '！' : '？')
+                          : <>{progress}<span className="mx-px opacity-50">/</span>{achievement.condition.value}</>}
                       </span>
                     )}
                   </div>
                 </div>
                 {/* 编辑 / 删除（自定义） */}
                 <div className="absolute right-1.5 top-1.5 flex gap-0.5">
-                  {!isWild && (
+                  {!isSealed(achievement) && (
                     <button
                       type="button"
                       onClick={(e) => { e.stopPropagation(); handleEdit(achievement); }}
@@ -1485,8 +1495,9 @@ const AchievementsTab = () => {
           const progress = getProgress(achievement);
           const percentage = (progress / achievement.condition.value) * 100;
           const isCustom = isCustomAchievement(achievement);
-          const isWild = isWildHeart(achievement);
+          const sealed = isSealed(achievement);
           const canUnlock = !achievement.unlocked && percentage >= 100;
+          const face = faceOf(achievement);
 
           return (
             <motion.div
@@ -1528,7 +1539,7 @@ const AchievementsTab = () => {
             >
               {/* Edit/Delete buttons */}
               <div className="absolute top-2.5 right-2.5 flex gap-1">
-                {!isWild && (
+                {!sealed && (
                   <motion.button
                     whileTap={{ scale: 0.9 }}
                     onClick={(e) => { e.stopPropagation(); handleEdit(achievement); }}
@@ -1558,24 +1569,24 @@ const AchievementsTab = () => {
 
               {isP4 ? (
                 <span className="mx-auto mb-1.5 flex h-12 w-12 items-center justify-center rounded-full text-2xl" style={{ background: '#fffbe8', border: '3px solid var(--p4-orange, #f9a11b)' }}>
-                  {achievement.icon}
+                  {face.icon}
                 </span>
               ) : (
-                <div className="text-2xl mb-1 text-center">{achievement.icon}</div>
+                <div className="text-2xl mb-1 text-center">{face.icon}</div>
               )}
               <h3
                 className={`font-bold text-sm mb-0.5 text-center ${isP4 ? 'text-[15px] font-black text-[#131313]' : achievement.unlocked ? 'text-white' : 'text-gray-800 dark:text-white'}`}
                 style={isP4 ? { fontFamily: 'var(--p4-display-font, serif)' } : undefined}
               >
-                {achievement.title}
+                {face.title}
               </h3>
               <p className={`text-xs mb-2 text-center leading-snug ${achievement.unlocked ? 'text-white/90' : 'text-gray-500 dark:text-gray-400'}`}>
-                {achievement.description}
+                {face.description}
               </p>
 
               {!achievement.unlocked && (
                 <>
-                  <div className={`w-full rounded-full h-1.5 mb-1.5 overflow-hidden ${isP4 ? 'mx-auto max-w-[75%] bg-[#131313]/15' : 'bg-gray-100 dark:bg-gray-800'}`}>
+                  {!face.masked && <div className={`w-full rounded-full h-1.5 mb-1.5 overflow-hidden ${isP4 ? 'mx-auto max-w-[75%] bg-[#131313]/15' : 'bg-gray-100 dark:bg-gray-800'}`}>
                     <motion.div
                       className={`h-full rounded-full ${isP4 ? '' : canUnlock ? 'bg-amber-500' : 'bg-primary'}`}
                       style={isP4 ? { background: 'var(--ui-danger)' } : undefined}
@@ -1583,9 +1594,9 @@ const AchievementsTab = () => {
                       animate={{ width: `${Math.min(100, percentage)}%` }}
                       transition={{ duration: 0.7, ease: 'easeOut' }}
                     />
-                  </div>
+                  </div>}
                   <div className={`text-[10px] text-center ${isP4 ? 'font-black text-[#131313]/70 tabular-nums' : canUnlock ? 'text-amber-600 dark:text-amber-400 font-semibold' : 'text-gray-400 dark:text-gray-500'}`}>
-                    {canUnlock ? '已达成，点击解锁 ✨' : `${progress} / ${achievement.condition.value}`}
+                    {canUnlock ? '已达成，点击解锁 ✨' : face.masked ? '？？？' : `${progress} / ${achievement.condition.value}`}
                   </div>
                 </>
               )}

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore, toLocalDateKey, DEFAULT_SUMMARY_PROMPT_PRESETS, FAMILIAR_FACE_PRESETS } from '@/store';
-import { PeriodSummary, PeriodSummaryFollowUp, SummaryPeriod } from '@/types';
+import { PeriodSummary, PeriodSummaryFollowUp, SummaryPeriod, YearRecap } from '@/types';
 import DOMPurify from 'dompurify';
 import { useModalA11y } from '@/utils/useModalA11y';
 import { useBackHandler } from '@/utils/useBackHandler';
@@ -12,7 +12,10 @@ import { P3R, slantClip, sheetTopClip } from '@/components/p3r/kit';
 import { renderMarkdown } from '@/utils/markdown';
 import { ThinkingCircle } from '@/components/astrology/ThinkingCircle';
 import { useThinkProgress } from '@/utils/thinkProgress';
-import { FAMILIAR_FACE_ICONS, SUMMARY_FOLLOWUP_LIMIT, SUMMARY_FOLLOWUP_MAX_TOKENS, followUpsOf, visibleSummaryText, parseSummaryResult } from '@/utils/summaryAI';
+import { FAMILIAR_FACE_ICONS, SUMMARY_FOLLOWUP_LIMIT, SUMMARY_FOLLOWUP_MAX_TOKENS, followUpsOf, visibleSummaryText, parseSummaryResult, summaryKindOf, annualWindowYear, annualSummaryOf, yearRangeOf, getActiveSummaryPreset } from '@/utils/summaryAI';
+import { buildYearRecap } from '@/utils/yearRecap';
+import YearRecapStage, { type RecapLetterState } from '@/components/annual/YearRecapStage';
+import { freshUnreadSummary } from '@/utils/reportNotice';
 import {
   useSummaryJobs, startSummaryJob, continueSummaryJob, cancelSummaryJob, discardSummaryJob,
   markSummaryJobSaved, restoreSummaryDraft, attachDraftFollowUp, isSummaryJobRunning, resolveKeyFor,
@@ -150,16 +153,22 @@ function ArchiveList({ summaries, onSelect, onDelete }: {
   }
   return (
     <div className="space-y-2">
-      {summaries.map(s => (
+      {summaries.map(s => { const kind = summaryKindOf(s); return (
         <motion.div key={s.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-          className="relative bg-black/5 dark:bg-white/5 rounded-2xl p-4 flex items-center gap-3 overflow-hidden">
+          className={`relative rounded-2xl p-4 flex items-center gap-3 overflow-hidden ${kind === 'year'
+            ? 'bg-gradient-to-br from-amber-100 via-amber-50 to-white ring-1 ring-amber-300/70 dark:from-amber-900/40 dark:via-amber-900/15 dark:to-transparent dark:ring-amber-700/50'
+            : 'bg-black/5 dark:bg-white/5'}`}>
           <VelvetWatermark />
           <div className="flex-1 min-w-0 cursor-pointer" onClick={() => onSelect(s)}>
             <div className="flex items-center gap-2 mb-1">
-              <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${s.period === 'week' ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300' : 'bg-violet-100 text-violet-600 dark:bg-violet-900/40 dark:text-violet-300'}`}>
-                {s.period === 'week' ? '周' : '月'}
+              <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${
+                kind === 'week' ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300'
+                  : kind === 'year' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
+                    : 'bg-violet-100 text-violet-600 dark:bg-violet-900/40 dark:text-violet-300'}`}>
+                {kind === 'week' ? '周' : kind === 'year' ? '年' : '月'}
               </span>
               <span className="text-sm font-bold text-gray-800 dark:text-gray-100 truncate">{s.label}</span>
+              {s.autoWritten && <span className="text-[10px] px-1.5 py-0.5 rounded-full font-bold bg-black/5 text-gray-500 dark:bg-white/10 dark:text-gray-400 shrink-0">自动</span>}
               {!s.viewedAt && <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" aria-label="未读" />}
             </div>
             <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
@@ -179,21 +188,37 @@ function ArchiveList({ summaries, onSelect, onDelete }: {
             }
           </div>
         </motion.div>
-      ))}
+      ); })}
     </div>
   );
 }
 
 // ── 正文 ──────────────────────────────────────────────────
-function SummaryBody({ text, streaming }: { text: string; streaming: boolean }) {
+/** annual：年度信单独一种信纸（金边、抬头、落款角色名与日期） */
+function SummaryBody({ text, streaming, annual }: { text: string; streaming: boolean; annual?: { year: number; signature: string } }) {
   return (
-    <div className="relative bg-black/[0.03] dark:bg-white/[0.03] rounded-2xl p-4 text-sm text-gray-700 dark:text-gray-200 leading-relaxed overflow-hidden">
+    <div className={`relative rounded-2xl p-4 text-sm text-gray-700 dark:text-gray-200 leading-relaxed overflow-hidden ${
+      annual
+        ? 'border border-amber-300/80 bg-gradient-to-b from-amber-50 via-white to-white dark:border-amber-700/50 dark:from-amber-900/25 dark:via-transparent dark:to-transparent'
+        : 'bg-black/[0.03] dark:bg-white/[0.03]'}`}>
       <VelvetWatermark />
+      {annual && (
+        <div className="relative mb-3 text-center text-[11px] font-black tracking-[0.3em] text-amber-600 dark:text-amber-400">✦ {annual.year} · 年度的信 ✦</div>
+      )}
       <div className="relative md-body" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(renderMarkdown(text)) }} />
       {streaming && <Cursor />}
+      {annual && !streaming && text.trim() && (
+        <div className="relative mt-4 text-right text-xs font-bold text-gray-500 dark:text-gray-400">—— {annual.signature}</div>
+      )}
     </div>
   );
 }
+
+const cnDate = (d: Date | string) => { const x = new Date(d); return `${x.getFullYear()}年${x.getMonth() + 1}月${x.getDate()}日`; };
+const annualPaper = (s: { startDate: string; promptPresetId: string; promptPresetName: string; createdAt: Date | string }) => ({
+  year: Number(s.startDate.slice(0, 4)),
+  signature: `${FAMILIAR_FACE_ICONS[s.promptPresetId] ?? ''}${s.promptPresetName}，${cnDate(s.createdAt)}`,
+});
 
 // ── 追问区（v2.7.0.6：多轮，上限 SUMMARY_FOLLOWUP_LIMIT；角色的问题当默认输入）──
 interface FollowUpAreaProps {
@@ -438,20 +463,6 @@ function VelvetWatermark() {
   );
 }
 
-// ── 年度总结卡片（仅 12月31日 显示）─────────────────────
-function isDecember31() {
-  const now = new Date();
-  return now.getMonth() === 11 && now.getDate() === 31;
-}
-
-function getYearRange() {
-  const year = new Date().getFullYear();
-  return {
-    startDate: `${year}-01-01`,
-    endDate: `${year}-12-31`,
-  };
-}
-
 // ── 风格快速切换器 ────────────────────────────────────────
 
 interface StyleQuickSwitcherProps {
@@ -524,6 +535,8 @@ interface SummaryModalProps {
   isOpen: boolean;
   onClose: () => void;
   defaultPeriod?: SummaryPeriod;
+  /** 打开时直达这份总结（助手的「看总结」/ 通知点击）；找不到就照常进生成页 */
+  openSummaryId?: string;
 }
 
 type ModalView = 'generate' | 'result' | 'archive' | 'view';
@@ -539,7 +552,7 @@ const StatsGrid = ({ items }: { items: Array<{ label: string; value: string }> }
   </div>
 );
 
-export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week' }: SummaryModalProps) {
+export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week', openSummaryId }: SummaryModalProps) {
   const { settings, summaries, saveSummary, deleteSummary, loadSummaries, updateSettings, markSummaryViewed } = useAppStore();
   const job = useSummaryJobs(s => s.job);
   const running = isSummaryJobRunning(job);
@@ -551,11 +564,17 @@ export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week' }
     defaultPeriod === 'month' ? { period: 'month', ...getMonthRange(0) } : { period: 'week', ...getWeekRange(0) }
   );
   const [isAnnual, setIsAnnual] = useState(false);
-  const showAnnualCard = isDecember31();
+  // 年度卡：12/24～1/7 挂出来（一月里写的是去年），由客人自己点生成
+  const annualYear = annualWindowYear();
   const [selectedSummary, setSelectedSummary] = useState<PeriodSummary | null>(null);
   const [confirm, setConfirm] = useState<'regen' | 'discard' | null>(null);
   const [saving, setSaving] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
+  const userName = useAppStore(s => s.user?.name);
+  // 年度开场：生成年度时自动放（开场数字一算好就开），归档 / 草稿里可以「重温开场」
+  const [stage, setStage] = useState<{ recap: YearRecap; live: boolean; presetName: string; presetId: string } | null>(null);
+  const [stageOpen, setStageOpen] = useState(false);
+  const wantStageRef = useRef(false);
 
   // ESC / Android back：确认层开着就先关它；否则直接关弹层（任务在后台继续，草稿自动保留）
   const dialogRef = useModalA11y(isOpen, () => {
@@ -576,10 +595,29 @@ export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week' }
     setConfirm(null);
     setSelectedSummary(null);
     setIsAnnual(false);
-    // 有在跑的任务 / 有草稿 → 直接进结果页
+    // 指定了某份总结（看总结 / 通知点开）→ 由下面那个 effect 直达；否则有在跑的任务 / 草稿就进结果页
+    if (openSummaryId) { setView('generate'); return; }
     const had = !!useSummaryJobs.getState().job || restoreSummaryDraft();
     setView(had ? 'result' : 'generate');
-  }, [isOpen, loadSummaries]);
+  }, [isOpen, loadSummaries, openSummaryId]);
+
+  // 直达指定总结：summaries 加载到了就打开它（只跳一次）
+  const jumpedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!isOpen) { jumpedRef.current = null; return; }
+    if (!openSummaryId || jumpedRef.current === openSummaryId) return;
+    const target = summaries.find(x => x.id === openSummaryId);
+    if (!target) return;
+    jumpedRef.current = openSummaryId;
+    void markSummaryViewed(target.id);
+    setSelectedSummary(target.viewedAt ? target : { ...target, viewedAt: new Date() });
+    setView('view');
+  }, [isOpen, openSummaryId, summaries, markSummaryViewed]);
+
+  const freshReport = freshUnreadSummary(summaries);
+  const writtenAnnual = annualYear !== null ? annualSummaryOf(summaries, annualYear) : undefined;
+  const openArchived = (s: PeriodSummary) => { void markSummaryViewed(s.id); setSelectedSummary(s.viewedAt ? s : { ...s, viewedAt: new Date() }); setView('view'); };
+  const autoWrite = settings.summaryAutoWrite !== false;
 
   // 流式时跟着滚到底
   useEffect(() => {
@@ -589,10 +627,40 @@ export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week' }
   }, [job?.text, job?.status, view]);
 
   const handleGenerate = () => {
-    const range = isAnnual ? { period: 'month' as const, ...getYearRange() } : periodState;
-    startSummaryJob({ settings, period: range.period, startDate: range.startDate, endDate: range.endDate, annual: isAnnual });
+    const range = isAnnual && annualYear !== null ? { period: 'year' as const, ...yearRangeOf(annualYear) } : periodState;
+    wantStageRef.current = range.period === 'year';
+    startSummaryJob({ settings, period: range.period, startDate: range.startDate, endDate: range.endDate });
     setView('result');
   };
+
+  // 年度任务的开场数字到了 → 开场（信在后台接着写）
+  useEffect(() => {
+    if (!wantStageRef.current || !job?.recap || job.period !== 'year') return;
+    wantStageRef.current = false;
+    const preset = getActiveSummaryPreset(settings);
+    setStage({ recap: job.recap, live: true, presetName: preset.name, presetId: preset.id });
+    setStageOpen(true);
+  }, [job?.recap, job?.period, settings]);
+
+  const replayRecap = async (s: { recap?: YearRecap; startDate: string; promptPresetName: string; promptPresetId: string }) => {
+    // 老的年度总结没存开场数字：按现在的数据现算一份（不回写）
+    const recap = s.recap ?? await buildYearRecap(Number(s.startDate.slice(0, 4)), settings).catch(() => null);
+    if (!recap) return;
+    setStage({ recap, live: false, presetName: s.promptPresetName, presetId: s.promptPresetId });
+    setStageOpen(true);
+  };
+
+  const letterState: RecapLetterState = !stage?.live
+    ? { kind: 'ready' }
+    : !job ? { kind: 'error' }
+      : job.status === 'done' ? { kind: 'ready' }
+        : job.status === 'error' ? { kind: 'error', message: job.error }
+          : {
+            kind: 'writing',
+            phase: job.status === 'streaming' ? 'streaming' : job.status === 'thinking' ? 'thinking' : 'preparing',
+            progress: job.status === 'thinking' ? progress : undefined,
+            chars: job.text.length,
+          };
 
   const handleSave = async () => {
     if (!job?.draft || saving) return;
@@ -658,6 +726,7 @@ export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week' }
   // 无论标多少 z 都压不过底导（z-40 是它的兄弟节点），底部内容会被
   // tab 栏 / 宽屏左侧栏切掉。按 utils/zIndex.ts 的迁移口径 portal 到 body。
   return createPortal(
+    <>
     <AnimatePresence>
       {isOpen && (
         <motion.div
@@ -740,20 +809,34 @@ export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week' }
                       </div>
                     </div>
                   )}
-                  {/* 年度总结卡（仅 12/31 显示）*/}
-                  {showAnnualCard && (
+                  {/* 新写好、还没看的总结：顶部一条，点了直接打开 */}
+                  {freshReport && (
+                    <button
+                      type="button"
+                      onClick={() => { void markSummaryViewed(freshReport.id); setSelectedSummary({ ...freshReport, viewedAt: new Date() }); setView('view'); }}
+                      className="flex w-full items-center gap-3 rounded-2xl border border-primary/30 bg-primary/5 px-4 py-3 text-left dark:bg-primary/10"
+                    >
+                      <span className="text-2xl" aria-hidden>📜</span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-sm font-black text-gray-800 dark:text-white">「{freshReport.label}」写好了</span>
+                        <span className="mt-0.5 block text-[11px] text-gray-500 dark:text-gray-400">
+                          {freshReport.autoWritten ? '按你的设置在后台写好的，' : ''}还没看过
+                        </span>
+                      </span>
+                      <span className="shrink-0 text-xs font-bold text-primary">查看 ›</span>
+                    </button>
+                  )}
+
+                  {/* 年度总结卡（12/24～1/7 显示）*/}
+                  {annualYear !== null && (
                     <motion.div
                       initial={{ opacity: 0, y: -6 }}
                       animate={{ opacity: 1, y: 0 }}
-                      onClick={() => {
-                        const yr = getYearRange();
-                        setIsAnnual(true);
-                        setPeriodState({ period: 'month', ...yr });
-                      }}
-                      className={`cursor-pointer rounded-2xl border-2 p-4 transition-all ${
+                      onClick={() => setIsAnnual(true)}
+                      className={`cursor-pointer rounded-2xl border-2 p-4 transition-all bg-gradient-to-br from-amber-100 via-yellow-50 to-white dark:from-amber-900/40 dark:via-amber-900/15 dark:to-transparent ${
                         isAnnual
-                          ? 'border-primary bg-primary/5 dark:bg-primary/10'
-                          : 'border-amber-300 dark:border-amber-600 bg-amber-50 dark:bg-amber-900/20'
+                          ? 'border-amber-500 shadow-[0_8px_24px_rgba(245,158,11,0.28)] dark:border-amber-400'
+                          : 'border-amber-300 dark:border-amber-600'
                       }`}
                     >
                       <div className="flex items-center gap-3">
@@ -761,15 +844,27 @@ export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week' }
                         <div className="flex-1">
                           <div className="flex items-center gap-2">
                             <span className="text-sm font-black text-gray-800 dark:text-white">
-                              {new Date().getFullYear()}年 年度总结
+                              {annualYear}年 年度总结
                             </span>
                             {isAnnual && (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary text-white font-bold">已选</span>
+                              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500 text-white font-bold">已选</span>
                             )}
                           </div>
                           <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                            成功的更生 — 回顾这一年全部成长历程
+                            成功的更生 — 回顾{annualYear === new Date().getFullYear() ? '这一年' : '去年'}全部成长历程
                           </div>
+                          {writtenAnnual && (
+                            <div className="mt-1.5 flex items-center gap-2 text-[11px] text-gray-500 dark:text-gray-400">
+                              <span>{new Date(writtenAnnual.createdAt).toLocaleDateString('zh-CN')} 写过一份，再生成会另存一份</span>
+                              <button
+                                type="button"
+                                onClick={e => { e.stopPropagation(); openArchived(writtenAnnual); }}
+                                className="shrink-0 font-bold text-primary"
+                              >
+                                查看 ›
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </div>
                     </motion.div>
@@ -792,6 +887,27 @@ export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week' }
                       点击切换；在设置「AI 总结」里可新增 / 编辑自定义风格
                       {settings.summaryDeliberate ? '。已开启深思熟虑档：更贴，但要多等一会儿' : ''}
                     </p>
+                  </div>
+
+                  {/* 自动撰写上一期（v2.7.0.6，默认开） */}
+                  <div>
+                    <div className="text-xs font-bold text-gray-400 dark:text-gray-500 mb-2 uppercase tracking-wider">
+                      自动撰写
+                    </div>
+                    <label className="flex items-start gap-3 p-3 rounded-xl bg-black/5 dark:bg-white/5 border border-gray-100 dark:border-gray-700 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={autoWrite}
+                        onChange={e => updateSettings({ summaryAutoWrite: e.target.checked })}
+                        className="mt-0.5 accent-primary"
+                      />
+                      <div className="flex-1">
+                        <div className="text-xs font-bold text-gray-700 dark:text-gray-200">自动撰写上一期总结</div>
+                        <p className="text-[10px] text-gray-500 dark:text-gray-400 leading-relaxed mt-0.5">
+                          新的一周、一个月第一次打开时，上一期还没写就在后台写好，写完提醒你一次。用当前选的风格。
+                        </p>
+                      </div>
+                    </label>
                   </div>
 
                   {/* 是否统计特殊条目 */}
@@ -854,8 +970,16 @@ export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week' }
                     </div>
                   )}
 
+                  {job.period === 'year' && job.status === 'done' && (job.recap || job.draft) && (
+                    <button type="button"
+                      onClick={() => void replayRecap({ recap: job.recap, startDate: job.startDate, promptPresetName: job.draft?.promptPresetName ?? '', promptPresetId: job.draft?.promptPresetId ?? '' })}
+                      className="w-full rounded-2xl border border-amber-300/80 bg-amber-50 py-2 text-xs font-black text-amber-700 dark:border-amber-700/50 dark:bg-amber-900/20 dark:text-amber-300">
+                      ✦ 重温开场
+                    </button>
+                  )}
                   {(job.status === 'streaming' || job.status === 'done') && (
-                    <SummaryBody text={job.text} streaming={job.status === 'streaming'} />
+                    <SummaryBody text={job.text} streaming={job.status === 'streaming'}
+                      annual={job.period === 'year' && job.draft ? annualPaper(job.draft) : job.period === 'year' ? { year: Number(job.startDate.slice(0, 4)), signature: '' } : undefined} />
                   )}
 
                   {job.status === 'error' && (
@@ -919,7 +1043,14 @@ export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week' }
                     {selectedSummary.startDate} ~ {selectedSummary.endDate} · 生成于 {new Date(selectedSummary.createdAt).toLocaleDateString('zh-CN')}
                     {selectedSummary.deliberate ? ' · 深思熟虑' : ''}
                   </div>
-                  <SummaryBody text={selectedSummary.content} streaming={false} />
+                  {summaryKindOf(selectedSummary) === 'year' && (
+                    <button type="button" onClick={() => void replayRecap(selectedSummary)}
+                      className="w-full rounded-2xl border border-amber-300/80 bg-amber-50 py-2 text-xs font-black text-amber-700 dark:border-amber-700/50 dark:bg-amber-900/20 dark:text-amber-300">
+                      ✦ 重温开场
+                    </button>
+                  )}
+                  <SummaryBody text={selectedSummary.content} streaming={false}
+                    annual={summaryKindOf(selectedSummary) === 'year' ? annualPaper(selectedSummary) : undefined} />
                   {/* 归档里的追问：
                       - 已落库的按轮展示
                       - 还有次数 + 有 reqContext → 显示输入框，发送后立即落库 */}
@@ -1003,7 +1134,20 @@ export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week' }
           </AnimatePresence>
         </motion.div>
       )}
-    </AnimatePresence>,
+    </AnimatePresence>
+    {stage && (
+      <YearRecapStage
+        open={stageOpen && isOpen}
+        recap={stage.recap}
+        presetName={stage.presetName}
+        presetIcon={FAMILIAR_FACE_ICONS[stage.presetId]}
+        userName={userName}
+        letter={letterState}
+        onOpenLetter={() => setStageOpen(false)}
+        onClose={() => setStageOpen(false)}
+      />
+    )}
+    </>,
     document.body,
   );
 }

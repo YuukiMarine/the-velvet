@@ -30,6 +30,8 @@ import {
 import { ImageLightbox } from '@/components/ImageLightbox';
 import { ActivityImagesSheet } from '@/components/ActivityImagesSheet';
 import { useSummaryJobs, isSummaryJobRunning } from '@/utils/summaryJobs';
+import { freshUnreadSummary, useSummaryOpenRequest, consumeOpenSummaryRequest } from '@/utils/reportNotice';
+import { summaryKindOf, annualWindowYear, annualSummaryOf } from '@/utils/summaryAI';
 import { slantClip } from '@/components/p3r/kit';
 
 /** 成长总结入口：左低右高的平行四边形（P5 反板正口径，四边斜率各不相同） */
@@ -466,23 +468,40 @@ const CalendarView = ({ activities, selectedDay, onDaySelect }: CalendarViewProp
 };
 
 // ── 总结提醒逻辑 ──────────────────────────────────────────
+/**
+ * 红点口径（v2.7.0.6）：
+ *   · 有新写好、还没看的总结（7 天内）→ 亮，意思是「可以查看了」；
+ *   · 自动撰写关着时，周日 / 每月 1 号 / 12-31 仍按老规矩提醒去写，但当期已经写过就不亮；
+ *   · 年度总结不自动写：12/24～1/7 这一年的还没写就亮（与自动撰写开关无关）；
+ *   · 此前纯按日期亮一整天，写完了也不灭。
+ */
 function useSummaryReminder() {
+  const summaries = useAppStore(s => s.summaries);
+  const autoWrite = useAppStore(s => s.settings.summaryAutoWrite !== false);
   const today = new Date();
   const dow = today.getDay(); // 0=Sun, 6=Sat
   const dom = today.getDate();
   const month = today.getMonth() + 1;
 
-  // 周日（新一周开始前）提醒：显示周总结入口红点
   const isWeekEnd = dow === 0;
-  // 每月1日（新一月开始）提醒：显示月总结红点
   const isMonthStart = dom === 1;
-  // 12月31日（年末）提醒：显示月总结红点
   const isYearEnd = month === 12 && dom === 31;
+  const fresh = freshUnreadSummary(summaries);
 
-  const showWeekDot = isWeekEnd;
-  const showMonthDot = isMonthStart || isYearEnd;
-  const showDot = showWeekDot || showMonthDot;
-  const defaultPeriod: SummaryPeriod = (showMonthDot && !showWeekDot) ? 'month' : 'week';
+  // 当期是否已经写过（周：本周一起；月：上个月）
+  const weekStart = new Date(today); weekStart.setDate(today.getDate() - ((dow + 6) % 7));
+  const weekKey = toLocalDateKey(weekStart);
+  const lastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+  const lastMonthKey = toLocalDateKey(lastMonth);
+  const weekWritten = summaries.some(x => summaryKindOf(x) === 'week' && x.startDate === weekKey);
+  const monthWritten = summaries.some(x => summaryKindOf(x) === 'month' && x.startDate === (isYearEnd ? toLocalDateKey(new Date(today.getFullYear(), 11, 1)) : lastMonthKey));
+
+  const showWeekDot = !autoWrite && isWeekEnd && !weekWritten;
+  const showMonthDot = !autoWrite && (isMonthStart || isYearEnd) && !monthWritten;
+  const annualYear = annualWindowYear(today);
+  const showYearDot = annualYear !== null && !annualSummaryOf(summaries, annualYear);
+  const showDot = !!fresh || showWeekDot || showMonthDot || showYearDot;
+  const defaultPeriod: SummaryPeriod = (isMonthStart || isYearEnd) && !isWeekEnd ? 'month' : 'week';
 
   return { showDot, showWeekDot, showMonthDot, defaultPeriod };
 }
@@ -580,6 +599,16 @@ export const ActivitiesView = () => {
 
   // ---- 总结弹窗 ----
   const [showSummary, setShowSummary] = useState(false);
+  // 别处（助手的「看总结」、通知点击）要求打开某份总结：接住请求，打开弹层直达那一份
+  const openRequest = useSummaryOpenRequest(st => st.request);
+  const [openSummaryId, setOpenSummaryId] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    if (!openRequest) return;
+    const r = consumeOpenSummaryRequest();
+    if (!r) return;
+    setOpenSummaryId(r.summaryId);
+    setShowSummary(true);
+  }, [openRequest]);
   const { showDot, defaultPeriod: summaryDefaultPeriod } = useSummaryReminder();
 
   // ---- 涟漪反馈 ----
@@ -956,8 +985,9 @@ export const ActivitiesView = () => {
       {/* 总结弹窗 */}
       <SummaryModal
         isOpen={showSummary}
-        onClose={() => setShowSummary(false)}
+        onClose={() => { setShowSummary(false); setOpenSummaryId(undefined); }}
         defaultPeriod={summaryDefaultPeriod}
+        openSummaryId={openSummaryId}
       />
 
       {/* 页头 + 搜索（PageTitle 移除：标题职责由宿主 Actions 的大字切换头承担；

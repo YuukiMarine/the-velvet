@@ -37,6 +37,7 @@ import { themeToChannel } from '@/ui/channel';
 import { speechAvailable, recorderSupported, startRecording, transcribe, type Recording } from '@/utils/speech';
 import { readAsDataUrl, downscaleDataUrl } from '@/utils/imageCrop';
 import { getVisionAIConfig } from '@/utils/aiClient';
+import { freshUnreadSummary, requestOpenSummary } from '@/utils/reportNotice';
 import { CameraIcon, MicIcon } from '@/components/settingsIcons';
 
 /** 当前人格的头像（剪影集/上传双轨；订阅 sessionId——切人格必换会话，借它触发重渲染）
@@ -393,6 +394,9 @@ export const NavigatorWindow = () => {
   // 无选择器订阅会让它跟着每一次 store 写入白重渲染一遍，连带整棵子树
   const user = useAppStore(s => s.user);
   const setCurrentPage = useAppStore(s => s.setCurrentPage);
+  const setActionsSubTab = useAppStore(s => s.setActionsSubTab);
+  // 新写好的成长总结（7 天内、未读）：底部快捷条多一个「看总结」，点了直接打开那一份
+  const freshReport = freshUnreadSummary(useAppStore(s => s.summaries));
   const getDueTodosToday = useAppStore(s => s.getDueTodosToday);
   const getTodayTodoProgress = useAppStore(s => s.getTodayTodoProgress);
   const nav = useNavigatorStore();
@@ -978,6 +982,17 @@ export const NavigatorWindow = () => {
                   {bright && <span aria-hidden className="h-[16px] w-[7px] shrink-0" style={{ background: 'var(--p3r-cyan, #35d1e8)', clipPath: 'polygon(38% 0, 100% 0, 62% 100%, 0 100%)' }} />}
                   {bright ? '去抽塔罗' : '🔮 去抽塔罗'}
                 </button>
+                {freshReport && (
+                  <button
+                    type="button"
+                    onClick={() => { nav.close(); requestOpenSummary(freshReport.id); setActionsSubTab('activities'); setCurrentPage('actions'); }}
+                    className={`shrink-0 ${bright ? 'flex items-center gap-2 py-2 pl-2.5 pr-3.5' : 'px-3.5 py-2'} ${sk.chip}`}
+                    style={sk.chipStyle}
+                  >
+                    {bright && <span aria-hidden className="h-[16px] w-[7px] shrink-0" style={{ background: 'var(--p3r-magenta, #f0417f)', clipPath: 'polygon(38% 0, 100% 0, 62% 100%, 0 100%)' }} />}
+                    {bright ? '看总结' : '📜 看总结'}
+                  </button>
+                )}
                 {/* 终端跳转 chip 已退役（TASKS_MERGE_PRD）：批5 黑猫改为「拆小步」递刀 */}
               </div>
 

@@ -20,6 +20,7 @@ import {
   type NavigatorDraft, type NavigatorSnapshot,
 } from '@/utils/navigatorRegistry';
 import type { AIMessage } from '@/utils/aiClient';
+import { buildTopicPermission, noteTopicsMentioned, stanceLine, type Energy, type Stance } from '@/utils/navigatorTopics';
 import type { AttributeId, LedgerExpenseType } from '@/types';
 
 export interface NavigatorTurnResult {
@@ -44,9 +45,12 @@ const DEFAULT_PERSONA =
   '深夜会催你睡觉。你陪伴的是唯一的用户，像老朋友一样说话，不用敬语。';
 
 // ── 阶段1 · 分诊协议（无人格，纯判定；短上下文 + 低温 = 高服从） ──
-const TRIAGE_PROTOCOL = `你是记录意图判定器。根据对话摘录和最新消息，判定本轮要创建的卡片（0~3 张）与是否需要查历史。
+const TRIAGE_PROTOCOL = `你是记录意图判定器。根据对话摘录和最新消息，判定本轮要创建的卡片（0~3 张）、是否需要查历史，以及对方这句话的姿态。
 只输出这一个 JSON 对象（不要代码块、不要任何其它文字）：
-{"actions":[],"query":null}
+{"actions":[],"query":null,"stance":"chat","energy":"normal"}
+
+stance（对方最新这句的姿态，五选一）：vent=倾诉、抱怨、情绪不好；chat=闲聊、分享日常；ask=提问、求助、要建议；report=在说他做了或要做的正事；bye=要走了、去忙了、晚安。
+energy（对方此刻的精力，三选一）：low=疲惫、低落、很短的敷衍句；high=兴奋、得意、分享喜事；其余 normal。
 
 actions 元素为下列四种之一：
 {"kind":"activity","text":"事项描述","points":{"knowledge":0,"guts":0,"dexterity":0,"kindness":0,"charm":0},"important":false}（用户**已经做了**的事；points 每项 0~5）
@@ -57,6 +61,8 @@ actions 元素为下列四种之一：
 规则：
 - **只响应【最新消息】里的记录意图**：用户此刻在报告做了什么/要做什么/花了钱/求记录，才出卡。
   闲聊、提问（问时间/问状态/问建议）一律空 actions——即使早前对话提过某件可记的事，最新消息没让你记就不要主动出卡。
+- **日常琐事不出卡**：吃饭、睡觉、洗澡、躺着、通勤、刷手机、发呆这类，用户没说「记一下 / 帮我记」就不出卡。
+  「做了什么」只指学习、运动、工作成果、阅读、创作、帮助他人、社交这类跟成长有关的事，或用户明确要求记录的事。
 - **查重（最重要）**：【本会话卡片】【任务清单已有】【今天已记录的活动】三处列的是 App 里已存在的内容。
   最新消息再次提到其中某件事——不管是重复叮嘱、追问还是换个说法——**都不要重复出卡**：
   已有待确认卡的，等用户确认即可；已确认/已在清单/已记录的，就是已经办完了。
@@ -75,7 +81,10 @@ actions 元素为下列四种之一：
 待确认卡已有「学英语」，末句：帮我记一下 → {"actions":[],"query":null}
 卡片已有「记录活动【已确认生效】跑步五公里」，末句：对了我今天跑了五公里来着 → {"actions":[],"query":null}
 任务清单已有「背单词」，末句：帮我加个背单词的任务 → {"actions":[],"query":null}
-输入末句：今天好累啊 → {"actions":[],"query":null}
+输入末句：今天好累啊 → {"actions":[],"query":null,"stance":"vent","energy":"low"}
+输入末句：刚吃了碗麻辣烫哈哈 → {"actions":[],"query":null,"stance":"chat","energy":"normal"}
+输入末句：帮我记一下，午饭吃了沙拉 → {"actions":[{"kind":"activity","text":"午饭吃沙拉","points":{"knowledge":0,"guts":0,"dexterity":1,"kindness":0,"charm":0},"important":false}],"query":null,"stance":"report","energy":"normal"}
+输入末句：行吧我先去睡了 → {"actions":[],"query":null,"stance":"bye","energy":"low"}
 对话早前提过想背单词，末句：现在几点了？ → {"actions":[],"query":null}
 输入末句：我上周都做了什么？ → {"actions":[],"query":{"kind":"activities","days":7}}`;
 
@@ -83,7 +92,11 @@ actions 元素为下列四种之一：
 const PERFORM_RULES = `
 ## 说话方式
 - 直接输出你要对用户说的话（纯文本）。可用空行分成 1~4 段，每段 ≤60 字。禁止 markdown 标题/列表/代码块。
-- 动态数据化进话里自然地说，不要像念报表；【】是系统数据区标签，不要把标签名念出来。
+- 【背景资料】是你知道的情况，不是要汇报的清单：只在对方问起、或和他此刻说的事直接相关时才用。
+  想主动提点什么，只能从【主动话题】里挑，每轮最多一件，也可以一件都不提；【】是系统数据区标签，不要把标签名念出来。
+- 先接住再说事：照【这一轮】的提示回应。他倾诉就先接住情绪，别急着给建议；闲聊就顺着聊；要走就简短道别。
+- 说人话：不排比、不喊口号、不写警句；别每条回复都先对时间或时段做反应，也别报出几点几分，除非他问时间；
+  长短跟着他走——他说一句，你别回一大段。
 - 【关于用户的记忆】是你们过往相处攒下的：像老朋友那样自然带出，不要背档案（"记得你说过…"胜过复读原文）；
   带【可自然追问】的话头，合适时顺口问一句，不合适就跳过，同一话头绝不反复问。
 - 【当前语气】是你此刻的状态基调，服从它。
@@ -123,7 +136,7 @@ export function buildDynamicContext(snap: NavigatorSnapshot, swallowed: string[]
   const now = new Date();
   const weekday = ['日', '一', '二', '三', '四', '五', '六'][now.getDay()];
   const lines = [
-    `【今日状态 ${snap.dateKey}】`,
+    `【背景资料 · 今日状态 ${snap.dateKey}】（你知道的情况，不是要汇报的话题）`,
     `用户：${snap.userName}；现在是 ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}，周${weekday}（历史消息前的 [HH:mm] 是其发生时刻；回答时间一律以本行为准）`,
     attrs ? `【属性面板】${attrs}` : '',
     `今日任务 ${snap.todosDone}/${snap.todosTotal}；今日已记 ${snap.activityCountToday} 条活动`,
@@ -339,7 +352,13 @@ function runActivitiesQuery(days: number): string {
 interface TriageResult {
   drafts: NavigatorDraft[];
   queryDays: number | null;
+  /** 对方这句话的姿态 / 精力（v2.7.0.6：先接住再说事）；判不出来为 null */
+  stance: Stance | null;
+  energy: Energy | null;
 }
+
+const STANCES: readonly Stance[] = ['vent', 'chat', 'ask', 'report', 'bye'];
+const ENERGIES: readonly Energy[] = ['low', 'normal', 'high'];
 
 /** 空响应自愈的单次调用（DeepSeek json_object 空白 content 官方已知缺陷） */
 async function callJson(
@@ -398,7 +417,7 @@ async function triageActions(
     ], { temperature: 0.1, maxTokens: 800, signal });
     if (import.meta.env.DEV) console.debug('[navigator] 分诊输出:', raw);
     const parsed = extractJson(raw);
-    if (!parsed) return { drafts: [], queryDays: null };
+    if (!parsed) return { drafts: [], queryDays: null, stance: null, energy: null };
     const rawActions = Array.isArray(parsed.actions) ? (parsed.actions as Array<Record<string, unknown>>) : [];
     const drafts = rawActions.slice(0, 3).map((a) => {
       const d = toDraft(a);
@@ -407,12 +426,14 @@ async function triageActions(
     }).filter((d): d is NavigatorDraft => !!d);
     const q = parsed.query as Record<string, unknown> | null | undefined;
     const queryDays = q && q.kind === 'activities' ? clampInt(q.days, 1, 30, 7) : null;
-    return { drafts, queryDays };
+    const stance = STANCES.includes(parsed.stance as Stance) ? parsed.stance as Stance : null;
+    const energy = ENERGIES.includes(parsed.energy as Energy) ? parsed.energy as Energy : null;
+    return { drafts, queryDays, stance, energy };
   } catch (e) {
     // 分诊失败宁缺勿滥：不出卡、不查询，聊天照常（表演阶段知道"本轮没有开卡"，不会承诺）
     if (signal.aborted) throw e;
     if (import.meta.env.DEV) console.warn('[navigator] 分诊调用失败，本轮不出卡:', e);
-    return { drafts: [], queryDays: null };
+    return { drafts: [], queryDays: null, stance: null, energy: null };
   }
 }
 
@@ -463,7 +484,7 @@ export async function runNavigatorTurn(
   // 【已确认生效】的同样要喂——此前以「属于历史」为由滤掉，结果同一件事在对话里
   // 被再次提起时，分诊根本不知道它已经记过，照常重开一张（用户上报「重复多提一句
   // 就重复生成卡片」的直接原因）。cardsDigest 本身截到最近 10 张，不会撑大上下文。
-  const { drafts, queryDays } = await triageActions(cfg, history, userText, cards, signal);
+  const { drafts, queryDays, stance, energy } = await triageActions(cfg, history, userText, cards, signal);
   const queryResult = queryDays !== null ? runActivitiesQuery(queryDays) : null;
 
   // 阶段2：表演。判定结果作为事实注入——reply 与卡从机制上一致，无 JSON 无失守。
@@ -473,6 +494,8 @@ export async function runNavigatorTurn(
       ? `【本轮你已开出的卡片（用户马上会看到确认卡）】\n${drafts.map(draftLine).join('\n')}`
       : '【本轮没有开卡】',
     queryResult ?? '',
+    stanceLine(stance, energy),
+    buildTopicPermission(stance, energy),
   ].filter(Boolean).join('\n');
   const messages: AIMessage[] = [
     { role: 'system', content: `${personaPrompt}\n${PERFORM_RULES}` },
@@ -521,6 +544,7 @@ export async function runNavigatorTurn(
       }
     }
     if (import.meta.env.DEV) console.debug('[navigator] 拟真流式输出:', emitted);
+    noteTopicsMentioned(emitted.join('\n'));
     // 流式已实时呈现，无法撤回——承诺守卫在此路径降级为观测（分诊先行定卡，嘴瓢概率极小）
     return { segments: emitted, drafts };
   }
@@ -535,15 +559,28 @@ export async function runNavigatorTurn(
     if (inner) reply = inner;
   }
 
-  // 轻量硬兜底：明知无卡还嘴瓢承诺（概率已极小）→ 本地改口，不再补救跳
-  const PROMISE_RE = /卡片?(给你|安排|开|挂|写|办)|安排上了?|记[下上]了|给你记|记一笔|挂上去|开[张好]|建好了|帮你.{0,3}[张开]|加进(清单|待办)/;
+  /**
+   * 轻量硬兜底：明知无卡还声称开了卡 / 记下了 → 本地改口。
+   * v2.7.0.6 收窄：原来的正则把「记下了」「安排上」这类日常说法也当成承诺，
+   * 整段回复被换成「这张卡吾辈没能开出来」（实测闲聊 15 轮误伤 2 次）。
+   * 现在只认明确说「开了卡 / 帮你记上了 / 加进清单了」的句子，问句和假设不算；
+   * 而且只删掉出问题的那一句，其余照常说，删空了才用改口句。
+   */
+  const CLAIM_RE = /(开|建)(好)?了.{0,2}张?(卡|卡片)|卡片?.{0,2}(已经)?(开|建|写)好了|(已经|已)?(帮你|给你)(记|建|加|存)(下|上|好|进)了|加进了?(清单|待办|任务)/;
   const REFER_RE = /已经在|还[晾挂躺放]|待确认|点.{0,3}[「"']?确认|先确认|上面那张|没确认/;
-  if (drafts.length === 0 && PROMISE_RE.test(reply) && !REFER_RE.test(reply)) {
-    if (import.meta.env.DEV) console.warn('[navigator] 表演阶段明知无卡仍承诺，本地改口');
-    reply = '这张卡吾辈没能开出来——你把关键信息再说一遍，或者用下面的快捷项手动建一张，我盯着。';
+  const HEDGE_RE = /[吗？?]|要不要|想不想|的话|如果|可以帮你|要我/;
+  if (drafts.length === 0) {
+    // 按句切（保留句末标点）；不用后行断言——iOS 16.4 以前的 WebKit 不认，整个模块会解析失败
+    const sentences = reply.match(/[^。！？!?\n]+[。！？!?\n]*|[。！？!?\n]+/g) ?? [reply];
+    const kept = sentences.filter(x => !(CLAIM_RE.test(x) && !REFER_RE.test(x) && !HEDGE_RE.test(x)));
+    if (kept.length !== sentences.length) {
+      if (import.meta.env.DEV) console.warn('[navigator] 表演阶段明知无卡仍声称开了卡，删掉那一句');
+      reply = kept.join('').trim() || '这张卡吾辈没能开出来——你把关键信息再说一遍，或者用下面的快捷项手动建一张，我盯着。';
+    }
   }
 
   if (!reply) reply = drafts.length ? '卡片给你，看一眼没问题就确认。' : '嗯。';
+  noteTopicsMentioned(reply);
   return { segments: splitSegments(reply), drafts };
 }
 

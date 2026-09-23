@@ -4,8 +4,9 @@ import { TAROT_BY_ID } from '@/constants/tarot';
 import { summarizeCounsel, type CounselContext, type CounselConfidantBrief, type CounselRecentEvent } from '@/utils/counselAI';
 import { db } from '@/db';
 import { deleteImagesOfActivity } from '@/utils/activityImages';
+import { freshUnreadSummary, reportPushDelivered, markReportPushScheduled } from '@/utils/reportNotice';
 import { v4 as uuidv4 } from 'uuid';
-import { calcMaxStreak, streakDates } from '@/utils/streak';
+import { calcMaxStreak, daysSinceFirstRecord, streakDates } from '@/utils/streak';
 import { applyUiChannel, syncDarkClass } from '@/ui/channel';
 import { computeAndSchedule, type NotifSnapshot } from '@/utils/notifications';
 import { getCachedNotifVoice, refreshNotifVoiceIfNeeded } from '@/utils/notifVoice';
@@ -465,7 +466,7 @@ interface AppState {
   checkAllAttributesMaxAchievement: () => Promise<void>;
   applySkillBonus: (attributeId: string, points: number) => number;
   // 总结功能
-  buildSummaryRequest: (period: SummaryPeriod, startDate: string, endDate: string, opts?: { annual?: boolean; signal?: AbortSignal }) => Promise<SummaryRequestData>;
+  buildSummaryRequest: (period: SummaryPeriod, startDate: string, endDate: string, opts?: { signal?: AbortSignal }) => Promise<SummaryRequestData>;
   saveSummary: (summary: PeriodSummary) => Promise<void>;
   deleteSummary: (id: string) => Promise<void>;
   loadSummaries: () => Promise<void>;
@@ -1196,6 +1197,10 @@ export const useAppStore = create<AppState>((set, get) => ({
           a => !a.unlocked && a.condition.type === 'consecutive_days',
         );
         const activities: Activity[] = needsStreak ? await db.activities.toArray() : [];
+        // 「你的记忆」要第一条记录的日子：用内存里 loadData 读好的全量记录，不为它再扫一遍表
+        // （这条成就要挂一整年，照 needsStreak 那样按需读表等于头一年每记一笔都全表扫描）
+        const needsFirstRecord = achievements.some(a => !a.unlocked && a.condition.type === 'days_since_first_record');
+        const firstRecordDays = needsFirstRecord ? daysSinceFirstRecord(streakDates(get().activities)) : 0;
         achievementsSnapshot = achievements;
         attributesSnapshot = attributes;
 
@@ -1207,6 +1212,8 @@ export const useAppStore = create<AppState>((set, get) => ({
                 const streak = calcMaxStreak(streakDates(activities));
                 return Math.min(streak, achievement.condition.value);
               }
+              case 'days_since_first_record':
+                return Math.min(firstRecordDays, achievement.condition.value);
               case 'total_points': {
                 const total = attributes.reduce((sum, attr) => sum + attr.points, 0);
                 return Math.min(total, achievement.condition.value);
@@ -1315,6 +1322,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         switch (achievement.condition.type) {
           case 'consecutive_days':
             return calcMaxStreak(streakDates(activities));
+          case 'days_since_first_record':
+            return daysSinceFirstRecord(streakDates(activities));
           case 'total_points':
             return attributes.reduce((sum, attr) => sum + attr.points, 0);
           case 'attribute_level': {
@@ -3929,7 +3938,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   getActiveSummaryPreset: (): SummaryPromptPreset => getActiveSummaryPresetAI(get().settings),
 
   loadSummaries: async () => {
-    const summaries = await db.summaries.orderBy('startDate').reverse().toArray();
+    // 按「哪一期最近结束」排、同一天结束的长的在前：按起始日排的话，年度总结（1/1 起）会沉到当年所有月报下面
+    const summaries = (await db.summaries.toArray())
+      .sort((a, b) => b.endDate.localeCompare(a.endDate) || a.startDate.localeCompare(b.startDate));
     set({ summaries });
   },
 
@@ -3963,13 +3974,19 @@ export const useAppStore = create<AppState>((set, get) => ({
       incompleteTodoCount: dueTodos.filter(t => !get().getTodayTodoProgress(t.id).isComplete).length,
       hasActiveDailyTodos: dueTodos.some(t => t.repeatDaily),
       countercurrentWarnings: get().getCountercurrentWarnings(),
-      hasUnreadSummary: summaries.some(s => !s.viewedAt),
+      // 只提醒「新报告」一次（v2.7.0.6）：写好 7 天内、未读、推送还没送达过
+      summaryNotice: (() => {
+        const fresh = freshUnreadSummary(summaries);
+        return fresh && !reportPushDelivered(fresh.id) ? { id: fresh.id } : null;
+      })(),
       loggedToday: activities.some(a => !a.category && toLocalDateKey(new Date(a.date)) === todayKey),
       // 助手口吻（v2.7 notifVoice）：只取当日缓存，绝不在这里等生成——先排内置文案
       aiCopy: settings.notifAIVoice ? getCachedNotifVoice(settings.navigatorPresetId ?? 'board') : null,
     };
     try {
-      await computeAndSchedule(snapshot);
+      const outcome = await computeAndSchedule(snapshot);
+      // 记下这份报告排到了哪一刻：那一刻一过就算送达，之后的重排不再排它
+      if (snapshot.summaryNotice && outcome.summaryAt) markReportPushScheduled(snapshot.summaryNotice.id, outcome.summaryAt);
     } catch (e) {
       console.warn('[notifications] sync failed', e);
     }
@@ -3990,9 +4007,9 @@ export const useAppStore = create<AppState>((set, get) => ({
    * 成长总结的请求组装（v2.7.0.6 迁到 utils/summaryAI）：简报 + 手记 + 写法规则 + 分档。
    * 这里只是把 settings / attributes 递过去，方便组件从 store 一处取。
    */
-  buildSummaryRequest: async (period: SummaryPeriod, startDate: string, endDate: string, opts?: { annual?: boolean; signal?: AbortSignal }): Promise<SummaryRequestData> => {
+  buildSummaryRequest: async (period: SummaryPeriod, startDate: string, endDate: string, opts?: { signal?: AbortSignal }): Promise<SummaryRequestData> => {
     const { settings, attributes } = get();
-    return buildSummaryRequestAI({ settings, attributes, period, startDate, endDate, annual: opts?.annual, signal: opts?.signal });
+    return buildSummaryRequestAI({ settings, attributes, period, startDate, endDate, signal: opts?.signal });
   },
 
   // ── 本周目标 ─────────────────────────────────────────────

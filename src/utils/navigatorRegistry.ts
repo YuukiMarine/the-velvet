@@ -12,6 +12,8 @@
 import { v4 as uuidv4 } from 'uuid';
 import { useAppStore, toLocalDateKey } from '@/store';
 import { TAROT_BY_ID } from '@/constants/tarot';
+import { reportForGreeting } from '@/utils/reportNotice';
+import { topicAllowance } from '@/utils/navigatorTopics';
 import { CATEGORY_META, INCOME_META } from '@/utils/ledgerFormat';
 import type { AttributeId, LedgerExpenseType, LedgerIncomeType } from '@/types';
 
@@ -256,10 +258,11 @@ export interface NavigatorSnapshot {
    */
   daysAway?: number;
   /**
-   * 最新一份未读成长总结的标签（如「2026年第33周」）；没有未读则 undefined。
-   * 问候顺带提一句（用户需求：有新周报时 Agent 打招呼要能带到）。
+   * 要在问候里提一句的新总结（v2.7.0.6 收紧：写好 7 天内、未读、问候还没提过的那一份）。
+   * 之前取「最新一份未读」不看新旧，于是九月的开屏还在念「五月的总结还没拆」。
    */
   unreadSummaryLabel?: string;
+  unreadSummaryId?: string;
 }
 
 export function buildSnapshot(): NavigatorSnapshot {
@@ -269,10 +272,8 @@ export function buildSnapshot(): NavigatorSnapshot {
   const done = due.filter((t) => s.getTodayTodoProgress(t.id).isComplete).length;
   const tarot = s.dailyDivination && s.dailyDivination.date === dateKey ? s.dailyDivination : null;
   const activityCountToday = s.activities.filter((a) => toLocalDateKey(new Date(a.date)) === dateKey).length;
-  // 未读成长总结（loadData 已把 summaries 灌进 store）：取最新一份未读的标签
-  const unread = s.summaries
-    .filter((x) => !x.viewedAt)
-    .sort((a, b) => b.startDate.localeCompare(a.startDate))[0];
+  // 新总结（写好 7 天内、未读、问候还没提过）：每份只在问候里提一次
+  const unread = reportForGreeting(s.summaries);
   return {
     dateKey,
     hour: new Date().getHours(),
@@ -284,6 +285,7 @@ export function buildSnapshot(): NavigatorSnapshot {
     activityCountToday,
     daysAway: daysAwayNow(s.settings.lastOpenedAt),
     unreadSummaryLabel: unread?.label,
+    unreadSummaryId: unread?.id,
     // terminalStepTitle 字段保留在类型上（navigatorIntent 仍引用），终端退役后恒 undefined
   };
 }
@@ -330,15 +332,18 @@ export function buildDailyGreeting(snap: NavigatorSnapshot): string {
   const status: string[] = [];
   // 未读总结放最前：用户点名要的提醒，不能被 slice(0,2) 挤掉
   if (snap.unreadSummaryLabel) {
-    status.push(`对了，「${snap.unreadSummaryLabel}」的成长总结写好了还没拆——去统计页看看。`);
+    status.push(`对了，「${snap.unreadSummaryLabel}」的总结写好了，在记录页的「成长总结」里，下面有个「看总结」也能直接打开。`);
   }
+  // 主动话题配额（v2.7.0.6）：塔罗一天提一次；待办每条只提一次（全清了照样可以夸一句）
+  const allow = topicAllowance();
   if (snap.todosTotal > 0) {
-    status.push(snap.todosDone >= snap.todosTotal
-      ? `今日任务全清了，${snap.todosDone}/${snap.todosTotal}——少见，值得记一笔。`
-      : `今日任务 ${snap.todosDone}/${snap.todosTotal}，还有得做。`);
+    if (snap.todosDone >= snap.todosTotal) status.push(`今日任务全清了，${snap.todosDone}/${snap.todosTotal}——少见，值得记一笔。`);
+    else if (allow.todos) status.push(`今日任务 ${snap.todosDone}/${snap.todosTotal}，还有得做。`);
   }
-  if (snap.tarotDrawn && snap.tarotCardName) status.push(`今天的牌面是「${snap.tarotCardName}」，我瞄过了。`);
-  else if (!snap.tarotDrawn) status.push(`今天的塔罗还没抽。`);
+  if (allow.tarot) {
+    if (snap.tarotDrawn && snap.tarotCardName) status.push(`今天的牌面是「${snap.tarotCardName}」，我瞄过了。`);
+    else if (!snap.tarotDrawn) status.push(`今天的塔罗还没抽。`);
+  }
   if (snap.terminalStepTitle) status.push(`那件「${snap.terminalStepTitle}」还在进行中，别忘了。`);
 
   return [hello, ...status.slice(0, 2)].join('\n');

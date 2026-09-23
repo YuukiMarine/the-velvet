@@ -230,7 +230,7 @@ export interface Achievement {
   unlocked: boolean;
   unlockedDate?: Date;
   condition: {
-    type: 'consecutive_days' | 'total_points' | 'attribute_level' | 'keyword_match' | 'all_attributes_max' | 'todo_completions' | 'weekly_goal_completions' | 'shadow_defeats' | 'confidants_at_level' | 'battle_feat';
+    type: 'consecutive_days' | 'total_points' | 'attribute_level' | 'keyword_match' | 'all_attributes_max' | 'todo_completions' | 'weekly_goal_completions' | 'shadow_defeats' | 'confidants_at_level' | 'battle_feat' | 'days_since_first_record';
     value: number;
     attribute?: AttributeId;
     keywords?: string[];
@@ -505,6 +505,11 @@ export interface Settings {
    * 多等一两分钟换更贴的信；深思熟虑档未配置时自动退回快速响应。
    */
   summaryDeliberate?: boolean;
+  /**
+   * 自动撰写上一期总结（v2.7.0.6，默认开：undefined 视为开）。新的一周 / 一个月第一次打开 App 时，
+   * 上一周 / 上个月的总结还没写过，就在后台写好存档，再按「可以查看了」提醒一次。
+   */
+  summaryAutoWrite?: boolean;
   countercurrentEnabled?: boolean; // 逆流：连续3日无增长属性自动 -1/天
   countercurrentEnabledAt?: string; // 逆流开启日期 YYYY-MM-DD，防止开启当天就触发
   // ── F2a 本地通知 ─────────────────────────────────────────
@@ -703,7 +708,8 @@ export interface Settings {
   straightenMode?: boolean;
 }
 
-export type SummaryPeriod = 'week' | 'month';
+/** year：年度总结（v2.7.0.6 起单列；之前按 'month' 存、标签「YYYY年度总结」，读取处用 summaryKindOf 认回来） */
+export type SummaryPeriod = 'week' | 'month' | 'year';
 
 export interface SummaryPromptPreset {
   id: string;
@@ -721,6 +727,53 @@ export interface PeriodSummaryFollowUp {
   question: string;
   answer: string;
   createdAt: Date;
+}
+
+/** 年度开场一行素材：日期（YYYY-MM-DD）+ 原文 */
+export interface YearRecapLine {
+  date: string;
+  text: string;
+}
+
+/**
+ * 年度开场（v2.7.0.6）的数字，全在本机算（utils/yearRecap），生成年度总结时定格进 PeriodSummary.recap。
+ * 没有数据的项留空，对应的那张卡就跳过。
+ */
+export interface YearRecap {
+  v: 1;
+  year: number;
+  /** 统计截止日：年内生成是当天，过了年是 12/31 */
+  asOf: string;
+  /** 1/1 到截止日一共几天 */
+  spanDays: number;
+  daysRecorded: number;
+  records: number;
+  /** 每月记录数（12 项） */
+  monthly: number[];
+  /** 多半在什么时段写（占四成以上才给） */
+  habit?: { label: string; pct: number };
+  /** 最晚的一夜：23:00～次日 5:00 里最晚写下的一条（at 为 ISO 时间） */
+  lateNight?: { at: string; text: string };
+  points: number;
+  attrs: Array<{ id: AttributeId; name: string; points: number }>;
+  /** 去年的总加点（去年有记录才给） */
+  prevPoints?: number;
+  streak?: { days: number; start: string; end: string };
+  todos?: { checkins: number; top?: { title: string; count: number } };
+  highlights: YearRecapLine[];
+  /** 带配图的记录 id：配图只存本机，重温时本机有图才显示 */
+  photoIds: string[];
+  countdown?: {
+    reached: Array<{ title: string; date: string; how: 'date' | 'todos' }>;
+    created: number;
+    next?: { title: string; days: number };
+  };
+  tarot?: { draws: number; cardId: string; count: number };
+  wishes?: {
+    fulfilled: YearRecapLine[];
+    closer: Array<{ title: string; gained: number; now: number }>;
+  };
+  memory?: { first: YearRecapLine; last: YearRecapLine; days: number; records: number; firstEver: boolean };
 }
 
 export interface PeriodSummary {
@@ -752,6 +805,10 @@ export interface PeriodSummary {
   question?: string;
   /** 这一份是否走了深思熟虑档（只作展示，老记录无） */
   deliberate?: boolean;
+  /** 后台自动撰写的（v2.7.0.6）：归档里打「自动」标 */
+  autoWritten?: boolean;
+  /** 年度开场用的数字（v2.7.0.6）：生成时定格，重温原样放；只有年度总结有 */
+  recap?: YearRecap;
   /** v2.5+：用户首次打开该总结的时间；undefined = 未读（F2a「未读成长总结」提醒源）。 */
   viewedAt?: Date;
   /**

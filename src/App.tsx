@@ -15,6 +15,7 @@ import { SplashScreen } from '@/components/SplashScreen';
 import type { SplashScreenProps } from '@/components/SplashScreen';
 import type { ReturnPayload } from '@/types';
 import { AchievementUnlockModal } from '@/components/AchievementUnlockModal';
+import { ACHIEVEMENT_UNLOCK_LINES } from '@/constants';
 import { SkillUnlockModal } from '@/components/SkillUnlockModal';
 import { db } from '@/db';
 // 首页三个频道变体：中性/黄用这份（也是 default 路由的兜底，故静态），
@@ -200,6 +201,8 @@ function App() {
           console.warn('[velvet] tasks-merge migration failed; will retry next boot', e);
         }
         void useAppStore.getState().syncNotifications(); // F2a：启动后排程本地通知
+        // 自动撰写上一期总结（v2.7.0.6，默认开）：新周期第一次打开时后台补写，写好后各渠道提醒一次
+        void import('@/utils/autoSummary').then(m => m.maybeAutoWriteSummaries());
       } catch (err) {
         console.error('App initialization error:', err);
         setError(err instanceof Error ? err.message : '初始化失败');
@@ -289,6 +292,26 @@ function App() {
       });
   }, []);
 
+  // 点开「成长总结写好了」的通知：直达那一份（v2.7.0.6；仅原生平台有本地通知）
+  useEffect(() => {
+    if (!isNative()) return;
+    let remove: (() => void) | undefined;
+    void import('@capacitor/local-notifications').then(async ({ LocalNotifications }) => {
+      const h = await LocalNotifications.addListener('localNotificationActionPerformed', (evt) => {
+        const extra = evt.notification?.extra as { content?: string; summaryId?: string } | undefined;
+        if (extra?.content !== 'summary') return;
+        const st = useAppStore.getState();
+        void import('@/utils/reportNotice').then(({ requestOpenSummary }) => {
+          requestOpenSummary(extra.summaryId);
+          st.setActionsSubTab('activities');
+          st.setCurrentPage('actions');
+        });
+      });
+      remove = () => { void h.remove(); };
+    }).catch(() => { /* 插件不可用：点通知就只是打开 App */ });
+    return () => remove?.();
+  }, []);
+
   // 恢复上次同步时间 + 监听切到后台时静默推送到云端
   useEffect(() => {
     const last = readLastSync();
@@ -332,6 +355,8 @@ function App() {
       }
       // F2a：每次切回前台重排本地通知，保持「快照」新鲜（条件已满足的提醒自然不再排程）
       void syncNotifications();
+      // 跨周 / 跨月时 App 可能一直在后台没被杀：切回前台也检查一次要不要补写上一期总结
+      void import('@/utils/autoSummary').then(m => m.maybeAutoWriteSummaries());
       // FS4 短期 C 路线：没有厂商推送通道，「你的弹幕过审了」靠开 App 时自查
       // （danmaku 集合刻意匿名，服务端根本不知道该推给谁）
       void sweepDanmakuApprovals();
@@ -804,6 +829,7 @@ function App() {
                {achievementNotification && !modalBlocker && !levelUpNotification && (
                  <AchievementUnlockModal
                    achievementTitle={achievementNotification.title}
+                   lines={ACHIEVEMENT_UNLOCK_LINES[achievementNotification.id]}
                    isOpen={!!achievementNotification}
                    onClose={() => setAchievementNotification(null)}
                  />

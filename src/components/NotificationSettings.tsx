@@ -23,7 +23,7 @@ const CONTENT_META: { id: NotifContentType; icon: string; label: string; hint: s
   { id: 'tarot', icon: '🔮', label: '今日塔罗', hint: '今天还没抽塔罗时提醒' },
   { id: 'todos', icon: '✅', label: '今日待办', hint: '仍有未完成的每日待办时提醒' },
   { id: 'countercurrent', icon: '🌊', label: '逆流预警', hint: '有属性明日将逆流扣减时提醒' },
-  { id: 'summary', icon: '✨', label: '成长总结', hint: '有未读的成长总结时提醒' },
+  { id: 'summary', icon: '✨', label: '成长总结', hint: '新的周报 / 月报写好时提醒一次' },
   { id: 'record', icon: '📝', label: '提醒记录', hint: '今天还没有任何记录时提醒' },
 ];
 

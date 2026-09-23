@@ -2387,6 +2387,21 @@ export const Settings = () => {
                       </div>
                     </div>
 
+                    {/* ── 自动撰写（v2.7.0.6，默认开）：新周期第一次打开时后台补写上一期总结 ── */}
+                    <div className="flex items-center justify-between gap-3 rounded-2xl border border-gray-100 px-4 py-3 dark:border-gray-700/60">
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium text-gray-800 dark:text-white">自动撰写上一期总结</div>
+                        <div className="text-[11px] leading-relaxed text-gray-400 dark:text-gray-500">
+                          新的一周、一个月第一次打开时，上一期还没写就在后台写好，写完提醒你一次「可以查看了」。用当前选的风格。
+                        </div>
+                      </div>
+                      <Toggle
+                        checked={settings.summaryAutoWrite !== false}
+                        onChange={(v) => updateSettings({ summaryAutoWrite: v })}
+                        aria-label="自动撰写上一期总结"
+                      />
+                    </div>
+
                     {/* ── 连接卡（provider / Key / 地址 / 测试 收进一张可折叠卡）──
                         配好后常态收起，只露一行状态；日常操作面是下面的「模型分档」。 */}
                     <div className="rounded-2xl border border-gray-100 dark:border-gray-700/60 overflow-hidden">

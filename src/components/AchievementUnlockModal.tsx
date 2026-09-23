@@ -11,6 +11,7 @@ import { useBackHandler } from '@/utils/useBackHandler';
 import { useFeedbackOnce } from '@/utils/useFeedbackOnce';
 import { useModalA11y } from '@/utils/useModalA11y';
 import { zClass } from '@/utils/zIndex';
+import { DEFAULT_ACHIEVEMENT_UNLOCK_LINES } from '@/constants';
 
 /**
  * 成就解锁庆祝 —— P7.2 第一波收编进 CelebrationCutIn 基座。
@@ -23,6 +24,8 @@ interface AchievementUnlockModalProps {
   isOpen: boolean;
   onClose: () => void;
   achievementTitle: string;
+  /** 副文两行（P5 分行排，其余频道连成一句）；不给就用默认那句 */
+  lines?: [string, string];
 }
 
 /** 青纸鹤徽记（p3-modal-07 面板顶部三角拼贴） */
@@ -47,7 +50,7 @@ const CREST_BURST = [
 ];
 
 /** P3R 成就解锁演出（p3-modal-07 1:1） */
-const AchievementUnlockP3 = ({ isOpen, onClose, achievementTitle }: AchievementUnlockModalProps) => {
+const AchievementUnlockP3 = ({ isOpen, onClose, achievementTitle, lines = DEFAULT_ACHIEVEMENT_UNLOCK_LINES }: AchievementUnlockModalProps) => {
   const containerRef = useModalA11y(isOpen, onClose);
   useBackHandler(isOpen, onClose);
   useAutoClose(isOpen, 4500, onClose);
@@ -220,7 +223,7 @@ const AchievementUnlockP3 = ({ isOpen, onClose, achievementTitle }: AchievementU
                 </span>
               </motion.div>
 
-              <p className="mt-3 text-[14px] font-black" style={{ color: 'var(--p3r-ink, #0a1230)' }}>恭喜你达成新成就！继续努力解锁更多内容</p>
+              <p className="mt-3 text-[14px] font-black" style={{ color: 'var(--p3r-ink, #0a1230)' }}>{lines.join('')}</p>
             </div>
           </motion.div>
         </motion.div>
@@ -232,6 +235,7 @@ const AchievementUnlockP3 = ({ isOpen, onClose, achievementTitle }: AchievementU
 
 export const AchievementUnlockModal = (props: AchievementUnlockModalProps) => {
   const channel = useUiChannel();
+  const lines = props.lines ?? DEFAULT_ACHIEVEMENT_UNLOCK_LINES;
   // P5R（p5-modal-07 稿；面板按用户定稿改成不规则四边形）
   if (channel === 'p5') {
     return (
@@ -240,12 +244,12 @@ export const AchievementUnlockModal = (props: AchievementUnlockModalProps) => {
         onClose={props.onClose}
         heading="成就解锁！"
         name={props.achievementTitle}
-        lines={['恭喜你达成新成就！', '继续努力解锁更多内容']}
+        lines={lines}
       />
     );
   }
   if (channel === 'p3') return <AchievementUnlockP3 {...props} />;
-  if (channel === 'p4') return <AchievementUnlockP4 {...props} />;
+  if (channel === 'p4') return <AchievementUnlockP4 isOpen={props.isOpen} onClose={props.onClose} achievementTitle={props.achievementTitle} message={lines.join('')} />;
   const { isOpen, onClose, achievementTitle } = props;
   return (
   <CelebrationCutIn
@@ -268,7 +272,7 @@ export const AchievementUnlockModal = (props: AchievementUnlockModalProps) => {
     title="成就解锁！"
   >
     <p className="text-2xl font-semibold text-white/95">{achievementTitle}</p>
-    <p className="mt-4 text-base text-white/80">恭喜你达成新成就！继续努力解锁更多内容</p>
+    <p className="mt-4 text-base text-white/80">{lines.join('')}</p>
   </CelebrationCutIn>
   );
 };

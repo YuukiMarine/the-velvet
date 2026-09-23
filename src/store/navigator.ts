@@ -24,6 +24,8 @@ import {
 import {
   buildWarmthLine, finalizeStaleSessions, getProfile, lazySweepMemos, maybeCompactLive, recallMemories,
 } from '@/utils/navigatorMemory';
+import { markReportGreeted } from '@/utils/reportNotice';
+import { buildTopicPermission, noteTopicsMentioned } from '@/utils/navigatorTopics';
 import { buildWishContextLine, maybeProposeWishProgress } from '@/utils/navigatorWishProgress';
 import { describeImagesForChat } from '@/utils/visionIntake';
 import { BUILTIN_NAVIGATOR_PRESETS, resolveNavigatorPreset } from '@/constants/navigatorPresets';
@@ -654,13 +656,17 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
         const firstToday = app.settings.navigatorLastGreetDate !== snap.dateKey;
         // 「今日已问候」的标记改在**问候真正送达后**再写（下方各分支）：
         // 此前进门就写，AI 问候若被打断/崩溃（gen 作废 return），完整版问候当天就永远消失了。
-        const markGreeted = () => {
+        const markGreeted = (text?: string) => {
           void useAppStore.getState().updateSettings({ navigatorLastGreetDate: snap.dateKey });
+          // 新总结只在问候里提一次（v2.7.0.6）；问候里提到的塔罗 / 待办也记账
+          if (snap.unreadSummaryId) markReportGreeted(snap.unreadSummaryId);
+          if (text) noteTopicsMentioned(text);
         };
 
         if (!firstToday || !getAIConfig(app.settings)) {
-          get().pushCat(firstToday ? buildDailyGreeting(snap) : buildShortGreeting(snap));
-          if (firstToday) markGreeted();
+          const text = firstToday ? buildDailyGreeting(snap) : buildShortGreeting(snap);
+          get().pushCat(text);
+          if (firstToday) markGreeted(text);
           return;
         }
         // 有 Key 的跨天首开：打字指示等 AI，超时/失败静默落模板（等待本身就是拟人）
@@ -683,10 +689,12 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
             gapDays !== null && gapDays >= 2 ? `【距上次聊天】已隔 ${gapDays} 天` : '',
             recall.lines.length ? `【关于用户的记忆】\n${recall.lines.join('\n')}` : '',
             buildWarmthLine(),
-            // 未读成长总结：问候顺带提一句（只在这里注入，不进逐轮上下文——免得猫轮轮催）
+            // 新写好的成长总结：问候顺带提一句（每份只提这一次；指向记录页，聊天框下面也有「看总结」）
             snap.unreadSummaryLabel
-              ? `【未读成长总结】「${snap.unreadSummaryLabel}」的总结已经写好、对方还没看：问候里顺带提一句去统计页看，一句就好，别展开内容。`
+              ? `【新写好的成长总结】「${snap.unreadSummaryLabel}」的总结已经写好、对方还没看：问候里顺带提一句，它在记录页的「成长总结」里，聊天框下面的「看总结」也能直接打开。一句就好，别展开内容。`
               : '',
+            // 主动话题配额：问候也算一次主动提起（塔罗一天一次；待办、报告各只提一次）
+            buildTopicPermission(null, null),
             // 久别归来（PRD_V2.6 §12）：这一条要压过上面所有素材。
             // 明确禁掉三件事——问去哪了、催补记、报今天的账：
             // 补记那件事回归面板已经问过一次了，猫再问一遍就成了追债。
@@ -703,14 +711,16 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
           clearTimeout(timer);
           if (gen !== generation) return;
           if (!text && import.meta.env.DEV) console.warn('[navigator] AI 问候失败/超时，落模板');
-          splitSegments(text ?? buildDailyGreeting(snap)).forEach((seg) => get().pushCat(seg));
-          markGreeted();
+          const greeting = text ?? buildDailyGreeting(snap);
+          splitSegments(greeting).forEach((seg) => get().pushCat(seg));
+          markGreeted(greeting);
           set({ phase: 'idle' });
         } catch (e) {
           if (gen !== generation) return;
           if (import.meta.env.DEV) console.warn('[navigator] 问候流程异常，落模板', e);
-          get().pushCat(buildDailyGreeting(snap));
-          markGreeted();
+          const fallback = buildDailyGreeting(snap);
+          get().pushCat(fallback);
+          markGreeted(fallback);
           set({ phase: 'idle' });
         }
       })();

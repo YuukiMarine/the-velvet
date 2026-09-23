@@ -302,8 +302,32 @@ export const ACHIEVEMENTS = [
     icon: '🦋',
     unlocked: false,
     condition: { type: 'all_attributes_max' as const, value: 5 }
+  },
+  // 隐藏成就（v2.7.0.6）：第一条（非补记）记录起满 365 天。领取前卡面只有问号，领取弹窗揭晓
+  {
+    id: 'your_memory',
+    title: '“你的记忆”',
+    description: '从第一条记录起，已经过了 365 天',
+    icon: '🗝️',
+    unlocked: false,
+    condition: { type: 'days_since_first_record' as const, value: 365 }
   }
 ];
+
+/** 隐藏成就：领取前不露名字、条件与进度（成就页画成问号卡） */
+export const HIDDEN_ACHIEVEMENT_IDS = new Set<string>(['your_memory']);
+/** 不给编辑的系统成就：终极成就与隐藏成就 */
+export const SEALED_ACHIEVEMENT_IDS = new Set<string>(['wild_heart', 'your_memory']);
+
+/**
+ * 成就解锁弹窗的副文（两行：P5 分行排，其余频道连成一句）。
+ * 默认那句「继续努力解锁更多内容」放在终极成就上不对——它已经是最后一个了。
+ */
+export const DEFAULT_ACHIEVEMENT_UNLOCK_LINES: [string, string] = ['恭喜你达成新成就！', '继续努力解锁更多内容'];
+export const ACHIEVEMENT_UNLOCK_LINES: Record<string, [string, string]> = {
+  wild_heart: ['感谢您的努力，', '您是最棒的客人。'],
+  your_memory: ['您完成了生命中富有意义的其中一年，', '继续向前吧。'],
+};
 
 export const SKILLS = [
   {

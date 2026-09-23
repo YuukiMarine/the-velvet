@@ -1,7 +1,7 @@
 import { motion, AnimatePresence } from 'motion/react';
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useAppStore, toLocalDateKey } from '@/store';
-import { calcMaxStreak, streakDates } from '@/utils/streak';
+import { calcCurrentStreak, calcMaxStreak, streakDates } from '@/utils/streak';
 import { BackButton } from '@/components/BackButton';
 import { PageTitle } from '@/components/PageTitle';
 import { PagePlane, PlaneLevel } from '@/components/PagePlane';
@@ -522,23 +522,8 @@ export const Statistics = () => {
 
   const maxStreak = calcMaxStreak(streakDates(activities));
 
-  // current streak ending today or yesterday
-  const ONE_DAY = 86400000;
-  const todayStr = new Date().toDateString();
-  const yesterStr = new Date(Date.now() - ONE_DAY).toDateString();
-  const hasTodayOrYesterday = activities.some(a =>
-    new Date(a.date).toDateString() === todayStr || new Date(a.date).toDateString() === yesterStr
-  );
-  let todayStreak = 0;
-  if (hasTodayOrYesterday && activities.length > 0) {
-    const uniqueTimestamps = [...new Set(activities.map(a => new Date(a.date).toDateString()))]
-      .map(d => new Date(d).getTime()).sort((a, b) => a - b);
-    todayStreak = 1;
-    for (let i = uniqueTimestamps.length - 1; i > 0; i--) {
-      if (uniqueTimestamps[i] - uniqueTimestamps[i - 1] === ONE_DAY) todayStreak++;
-      else break;
-    }
-  }
+  // current streak ending today or yesterday（与最长连续同一口径：补记不计、按日历日比，夏令时不断链）
+  const todayStreak = calcCurrentStreak(streakDates(activities));
 
   // avg points per active day
   const avgPerDay = uniqueDays > 0 ? Math.round(totalPoints / uniqueDays) : 0;

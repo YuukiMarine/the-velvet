@@ -11,13 +11,14 @@
 import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
 import { useAppStore } from '@/store';
-import type { PeriodSummary, Settings, SummaryPeriod } from '@/types';
+import type { PeriodSummary, Settings, SummaryPeriod, YearRecap } from '@/types';
+import { buildYearRecap } from '@/utils/yearRecap';
 import { chatStream } from '@/utils/aiClient';
 import { createThinkTracker, type ThinkTracker } from '@/utils/thinkProgress';
 import { formatApiError } from '@/utils/tarotAI';
 import {
-  buildContinueMessages, extractSummaryMemo, parseSummaryResult, visibleSummaryText, looksTruncated,
-  SUMMARY_MAX_TOKENS, type SummaryRequestData,
+  buildContinueMessages, extractSummaryMemo, parseSummaryResult, visibleSummaryText, looksTruncated, trimSeam,
+  summaryKindOf, SUMMARY_MAX_TOKENS, type SummaryRequestData,
 } from '@/utils/summaryAI';
 
 export type SummaryJobStatus = 'preparing' | 'thinking' | 'streaming' | 'done' | 'error';
@@ -29,7 +30,6 @@ export interface SummaryJob {
   period: SummaryPeriod;
   startDate: string;
   endDate: string;
-  annual: boolean;
   /** 组好的请求（preparing 阶段为 null） */
   req: SummaryRequestData | null;
   /** 原始累计正文（含 META 行） */
@@ -44,6 +44,8 @@ export interface SummaryJob {
   continues: number;
   /** done 后的草稿（未归档） */
   draft?: PeriodSummary;
+  /** 年度开场的数字（只有年度任务有；开工就在本机算好，不等信写完） */
+  recap?: YearRecap;
   startedAt: number;
 }
 
@@ -91,7 +93,8 @@ export function restoreSummaryDraft(): boolean {
   if (useSummaryJobs.getState().job) return false;
   const d = readDraft();
   if (!d) return false;
-  const s = d.summary;
+  // 老草稿里的年度总结是按 'month' 存的：按标签认回「年」，归档时就存成年度
+  const s: PeriodSummary = { ...d.summary, period: summaryKindOf(d.summary) };
   useSummaryJobs.setState({
     job: {
       id: s.id,
@@ -99,7 +102,7 @@ export function restoreSummaryDraft(): boolean {
       period: s.period,
       startDate: s.startDate,
       endDate: s.endDate,
-      annual: /年度总结$/.test(s.label),
+      recap: s.recap,
       req: null,
       full: d.full || s.content,
       text: s.content,
@@ -148,6 +151,7 @@ async function finalize(settings: Settings, job: SummaryJob, full: string, finis
     question: parsed.question,
     deliberate: req?.deliberate ?? prevDraft?.deliberate,
     followUps: prevDraft?.followUps,
+    recap: job.recap ?? prevDraft?.recap,
     reqContext: req
       ? { baseUrl: req.baseUrl, model: req.model, provider: req.provider, messages: req.messages }
       : prevDraft?.reqContext,
@@ -199,25 +203,31 @@ async function stream(settings: Settings, job: SummaryJob, messages: SummaryRequ
 }
 
 /** 启动一份总结。已有在跑的任务则忽略（防双击 / StrictMode 双跑）。 */
-export function startSummaryJob(args: { settings: Settings; period: SummaryPeriod; startDate: string; endDate: string; annual?: boolean }): void {
+export function startSummaryJob(args: { settings: Settings; period: SummaryPeriod; startDate: string; endDate: string }): void {
   const cur = useSummaryJobs.getState().job;
   if (isSummaryJobRunning(cur)) return;
-  const { settings, period, startDate, endDate, annual = false } = args;
+  const { settings, period, startDate, endDate } = args;
   controller?.abort();
   clearSummaryDraft();
   const id = uuidv4();
   const job: SummaryJob = {
-    id, status: 'preparing', period, startDate, endDate, annual,
+    id, status: 'preparing', period, startDate, endDate,
     req: null, full: '', text: '', thinking: false, tracker: null,
     truncated: false, continues: 0, startedAt: Date.now(),
   };
   useSummaryJobs.setState({ job });
   const ac = new AbortController();
   controller = ac;
+  // 年度：开场的数字先算（几十毫秒），开场就能先放起来，信在后面慢慢写
+  if (period === 'year') {
+    void buildYearRecap(Number(startDate.slice(0, 4)), settings)
+      .then(recap => { if (useSummaryJobs.getState().job?.id === id) patch({ recap }); })
+      .catch(e => { if (import.meta.env.DEV) console.warn('[summaryJobs] 年度开场数字没算出来，只写信', e); });
+  }
   void (async () => {
     let req: SummaryRequestData;
     try {
-      req = await useAppStore.getState().buildSummaryRequest(period, startDate, endDate, { annual, signal: ac.signal });
+      req = await useAppStore.getState().buildSummaryRequest(period, startDate, endDate, { signal: ac.signal });
     } catch (e) {
       if (ac.signal.aborted) return;
       patch({ status: 'error', error: e instanceof Error ? e.message : '生成失败，请重试' });
@@ -258,15 +268,6 @@ export function continueSummaryJob(settings: Settings): void {
   patch({ continues: job.continues + 1, truncated: false, full: seed, text: visibleSummaryText(seed) });
   const j = useSummaryJobs.getState().job!;
   void stream(settings, j, buildContinueMessages(base, seed), seed, req);
-}
-
-function trimSeam(full: string): string {
-  const t = full.replace(/\s+$/, '');
-  const nl = t.lastIndexOf('\n');
-  if (nl < 0) return t;
-  const tail = t.slice(nl + 1);
-  if (/[。！？!?…」』"”)）]$/.test(tail)) return `${t}\n`;
-  return t.slice(0, nl + 1);
 }
 
 /** 追问 / 归档详情要用的 Key：深思熟虑档可能指向别家 */

@@ -131,8 +131,8 @@ export const SUMMARY_FOLLOWUP_MAX_TOKENS = 2400;
 /** 记录超过这个数走两段式：先挑素材再写 */
 export const HIGHLIGHT_THRESHOLD = 40;
 
-const houseRules = (period: SummaryPeriod, annual: boolean): string => {
-  const length = annual ? '八百到一千二百字' : period === 'month' ? '六百到九百字' : '四百到七百字';
+const houseRules = (period: SummaryPeriod): string => {
+  const length = period === 'year' ? '八百到一千二百字' : period === 'month' ? '六百到九百字' : '四百到七百字';
   return `【写法规则】（优先级高于上面角色描述里的分段建议）
 - 这是写给一位熟客的信，不是报告。角色描述里列的"话题"不必都谈、不必按序，小标题可以不用；用的话也是你自己起的两到四个，别用「本期概览 / 力量倾向 / 建议」这类模板名。
 - 简报里的事只挑两三件最值得说的，具体到哪一天做了什么；不要逐条复述，不要把五个属性挨个点评一遍。
@@ -189,14 +189,47 @@ function eachDay(start: string, end: string): string[] {
 
 export function summaryLabelOf(period: SummaryPeriod, startDate: string): string {
   const d = fromKey(startDate);
+  if (period === 'year') return `${d.getFullYear()}年度总结`;
   if (period === 'month') return `${d.getFullYear()}年${d.getMonth() + 1}月`;
   const jan1 = new Date(d.getFullYear(), 0, 1);
   const weekNo = Math.ceil(((d.getTime() - jan1.getTime()) / 86400000 + jan1.getDay() + 1) / 7);
   return `${d.getFullYear()}年第${weekNo}周`;
 }
 
+/**
+ * 这份总结属于哪一类。v2.7.0.6 之前年度总结是按 period 'month' 存的（标签「YYYY年度总结」），
+ * 归档角标、自动撰写的「写过没有」、记录页红点都要按标签把它认回「年」，别跟一月的月报撞车。
+ */
+export function summaryKindOf(s: Pick<PeriodSummary, 'period' | 'label'>): SummaryPeriod {
+  return s.period === 'year' || /年度总结$/.test(s.label) ? 'year' : s.period;
+}
+
+/**
+ * 年度总结的入口窗口（v2.7.0.6，之前只在 12/31 当天）：12/24～12/31 写今年，1/1～1/7 写去年。
+ * 窗口外返回 null。年度总结不自动撰写，由客人自己点生成。
+ */
+export function annualWindowYear(now: Date = new Date()): number | null {
+  const m = now.getMonth(), d = now.getDate();
+  if (m === 11 && d >= 24) return now.getFullYear();
+  if (m === 0 && d <= 7) return now.getFullYear() - 1;
+  return null;
+}
+
+export const yearRangeOf = (year: number): { startDate: string; endDate: string } =>
+  ({ startDate: `${year}-01-01`, endDate: `${year}-12-31` });
+
+/** 某一年的年度总结（新老格式都认）；没有则 undefined */
+export function annualSummaryOf(summaries: PeriodSummary[], year: number): PeriodSummary | undefined {
+  const start = `${year}-01-01`;
+  return summaries.find(x => summaryKindOf(x) === 'year' && x.startDate === start);
+}
+
 function prevRange(period: SummaryPeriod, startDate: string, endDate: string): { start: string; end: string } {
   const s = fromKey(startDate);
+  if (period === 'year') {
+    const y = s.getFullYear() - 1;
+    return { start: `${y}-01-01`, end: `${y}-12-31` };
+  }
   if (period === 'month') {
     const ps = new Date(s.getFullYear(), s.getMonth() - 1, 1, 12);
     const pe = new Date(s.getFullYear(), s.getMonth(), 0, 12);
@@ -211,14 +244,14 @@ function prevRange(period: SummaryPeriod, startDate: string, endDate: string): {
 // ── 记录筛选（与旧 store 口径一致）──────────────────────────────────────────
 
 const SPECIAL_CATS = new Set<string>(['shadow_defeat', 'weekly_goal', 'countercurrent', 'level_up', 'skill_unlock', 'achievement_unlock']);
-const CATEGORY_TAGS: Record<string, string> = {
+export const CATEGORY_TAGS: Record<string, string> = {
   confidant: '同伴', shadow_defeat: '战场', weekly_goal: '周目标', countercurrent: '逆流', level_up: '升级',
   skill_unlock: '技能', achievement_unlock: '成就', calling_card_clear: '倒计时达成', terminal_clear: '终端',
   bigdeal_clear: '大事收官', wish_fulfilled: '愿望实现', return: '回归',
 };
 const ATTRS: AttributeId[] = ['knowledge', 'guts', 'dexterity', 'kindness', 'charm'];
 
-const includeActivity = (a: Activity, includeSpecial: boolean): boolean => {
+export const includeActivity = (a: Activity, includeSpecial: boolean): boolean => {
   const cat = a.category;
   if (!cat) return true;
   if (cat === 'bigdeal_step') return false;   // 隐藏子步：收官卡已经代表它们
@@ -270,11 +303,11 @@ export async function buildSummaryBrief(params: {
   endDate: string;
   settings: Settings;
   attributes: Attribute[];
-  annual?: boolean;
   presetId: string;
   now?: Date;
 }): Promise<SummaryBrief> {
-  const { period, startDate, endDate, settings, attributes, annual = false, presetId } = params;
+  const { period, startDate, endDate, settings, attributes, presetId } = params;
+  const annual = period === 'year';
   const now = params.now ?? new Date();
   const todayKey = dateKeyOf(now);
   const names = settings.attributeNames as Record<AttributeId, string>;
@@ -314,10 +347,11 @@ export async function buildSummaryBrief(params: {
 
   // 头部：今天 / 本期 / 节令
   lines.push(`今天：${now.getFullYear()}年${mdOf(now)} ${WEEKDAYS[now.getDay()]}（${seasonOf(now)}）`);
-  const label = annual ? `${startD.getFullYear()}年度总结` : summaryLabelOf(period, startDate);
+  const label = summaryLabelOf(period, startDate);
   lines.push(`本期：${label}，${mdOf(startD)} ${WEEKDAYS[startD.getDay()]} ～ ${mdOf(endD)} ${WEEKDAYS[endD.getDay()]}${
     ongoing ? `（本期还没过完，到今天是第 ${dayKeys.length} 天）` : '（本期已结束）'}`);
-  const fest = eachDay(startDate, endDate).map(k => ({ k, f: festivalOf(k) })).filter(x => x.f);
+  // 年度不列：一年二十来个节日排成一串只是噪音（实测模型会挨个点名）
+  const fest = annual ? [] : eachDay(startDate, endDate).map(k => ({ k, f: festivalOf(k) })).filter(x => x.f);
   if (fest.length) lines.push(`本期里的节日：${fest.map(x => `${x.f}（${shortMd(fromKey(x.k))}）`).join('、')}`);
   const after = eachDay(dateKeyOf(new Date(endD.getTime() + 86400000)), dateKeyOf(new Date(endD.getTime() + 10 * 86400000)))
     .map(k => ({ k, f: festivalOf(k) })).filter(x => x.f);
@@ -325,13 +359,20 @@ export async function buildSummaryBrief(params: {
   lines.push('');
 
   // 五维一览
-  lines.push('【五维加点】（表格素材：属性 / 本期 / 上期 / 等级）');
+  // 年度的「上期」是去年；去年一条都没有就别对比（不然模型会说「比去年多了三百点」）
+  const prevWord = annual ? '去年' : '上期';
+  const noPrev = annual && prevActs.length === 0;
+  lines.push(noPrev
+    ? '【五维加点】（表格素材：属性 / 今年 / 等级；去年还没有记录，不做对比）'
+    : `【五维加点】（表格素材：属性 / 本期 / ${prevWord} / 等级）`);
   for (const k of ATTRS) {
     const lv = attributes.find(a => a.id === k)?.level;
-    lines.push(`- ${names[k]}：本期 +${attrPoints[k]}，上期 +${prevPoints[k]}${lv ? `，当前 Lv.${lv}` : ''}`);
+    lines.push(`- ${names[k]}：本期 +${attrPoints[k]}${noPrev ? '' : `，${prevWord} +${prevPoints[k]}`}${lv ? `，当前 Lv.${lv}` : ''}`);
   }
-  const trend = totalPoints === prevTotal ? '与上期持平' : totalPoints > prevTotal ? '比上期多' : '比上期少';
-  lines.push(`合计：本期 +${totalPoints}（${included.length} 条记录），上期 +${prevTotal}（${prevActs.length} 条），${trend}`);
+  const trend = totalPoints === prevTotal ? `与${prevWord}持平` : totalPoints > prevTotal ? `比${prevWord}多` : `比${prevWord}少`;
+  lines.push(noPrev
+    ? `合计：本期 +${totalPoints}（${included.length} 条记录）`
+    : `合计：本期 +${totalPoints}（${included.length} 条记录），${prevWord} +${prevTotal}（${prevActs.length} 条），${trend}`);
   const zeroAttrs = ATTRS.filter(k => attrPoints[k] === 0);
   if (zeroAttrs.length && zeroAttrs.length < 5) lines.push(`本期没有动静的属性：${zeroAttrs.map(k => names[k]).join('、')}`);
   lines.push('');
@@ -378,12 +419,27 @@ export async function buildSummaryBrief(params: {
       lines.push(`${head}${acts.length} 条 · ${shown.join('；')}${acts.length > 4 ? `；…还有 ${acts.length - 4} 条` : ''}`);
     }
   }
-  if (period !== 'week' && emptyDays.length) {
+  if (annual && emptyDays.length) {
+    // 一年的空白日逐个列出来没意义（前十二个全落在一月），改说总数和最长的一段
+    let best = { s: '', e: '', n: 0 };
+    let cur = { s: '', e: '', n: 0 };
+    for (const k of dayKeys) {
+      if (byDay.has(k)) { cur = { s: '', e: '', n: 0 }; continue; }
+      cur = cur.n ? { s: cur.s, e: k, n: cur.n + 1 } : { s: k, e: k, n: 1 };
+      if (cur.n > best.n) best = cur;
+    }
+    lines.push(`有记录的日子 ${dayKeys.length - emptyDays.length}/${dayKeys.length}${
+      best.n >= 3 ? `；最长的一段空白是 ${shortMd(fromKey(best.s))}～${shortMd(fromKey(best.e))}（${best.n} 天）` : ''}`);
+  } else if (period !== 'week' && emptyDays.length) {
     lines.push(`没有记录的日子：${emptyDays.slice(0, 12).map(k => shortMd(fromKey(k))).join('、')}${emptyDays.length > 12 ? '…' : ''}（共 ${emptyDays.length} 天）`);
   }
   // 里程碑 / 重要
   const marks = included.filter(a => a.important || (a.category && a.category !== 'confidant' && CATEGORY_TAGS[a.category]));
-  if (period !== 'week' && marks.length) {
+  if (annual && marks.length) {
+    // 年度的亮点已经逐月挑过（重要 / 里程碑优先），这里只给个数，免得前八条全是一月的
+    const important = marks.filter(a => a.important).length;
+    lines.push(`这一年标了重要的 ${important} 条${marks.length > important ? `、里程碑 ${marks.length - important} 条` : ''}`);
+  } else if (period !== 'week' && marks.length) {
     lines.push(`里程碑 / 标了重要的：${marks.slice(0, 8).map(a => `${shortMd(new Date(a.date))} ${lineOf(a, names)}`).join('；')}`);
   }
   // 时段习惯
@@ -423,7 +479,14 @@ export async function buildSummaryBrief(params: {
   }
   // 塔罗（旁敲侧击的素材：只给牌名，不给解读原文）
   const periodDraws = draws.filter(d => inRange(d.date, startDate, endDate)).sort((a, b) => a.date.localeCompare(b.date));
-  if (periodDraws.length) {
+  if (periodDraws.length && annual) {
+    // 年度只说次数和常客：最后七张全是十二月的，不代表这一年
+    const freq = new Map<string, number>();
+    for (const d of periodDraws) freq.set(d.cardId, (freq.get(d.cardId) ?? 0) + 1);
+    const regulars = [...freq.entries()].filter(([, n]) => n >= 2).sort((a, b) => b[1] - a[1]).slice(0, 3)
+      .map(([id, n]) => `${TAROT_BY_ID[id]?.name ?? '某张牌'}（${n} 次）`);
+    lines.push(`【抽过的牌】这一年抽了 ${periodDraws.length} 次${regulars.length ? `，来得最勤的是 ${regulars.join('、')}` : ''}（可以顺口一提，别解牌）`);
+  } else if (periodDraws.length) {
     const shown = periodDraws.slice(-7).map(d => { const c = TAROT_BY_ID[d.cardId]; return c ? `${c.name}${d.orientation === 'reversed' ? '逆位' : ''}（${shortMd(fromKey(d.date))}）` : null; }).filter(Boolean);
     if (shown.length) lines.push(`【抽过的牌】${shown.join('、')}（可以顺口一提，别解牌）`);
   }
@@ -432,9 +495,9 @@ export async function buildSummaryBrief(params: {
   const imageCount = imageRows.filter(r => includedIds.has(r.activityId)).length;
   if (imageCount) lines.push(`【配图】本期有 ${imageCount} 张照片附在记录上（你看不到图，只知道客人留了影）`);
 
-  // 上次手记
+  // 上次手记（年度只接去年的年度，不拿去年十二月最后一周的话当「上次」）
   const prevSummary = allSummaries
-    .filter(s => s.endDate < startDate && (s.memo || s.question))
+    .filter(s => s.endDate < startDate && (s.memo || s.question) && (!annual || summaryKindOf(s) === 'year'))
     .sort((a, b) => b.endDate.localeCompare(a.endDate))[0];
   const prevMemo = prevSummary
     ? { label: prevSummary.label, presetName: prevSummary.promptPresetName, presetId: prevSummary.promptPresetId, memo: prevSummary.memo, question: prevSummary.question }
@@ -445,6 +508,21 @@ export async function buildSummaryBrief(params: {
     lines.push(`【上次的手记】（${prevMemo.label}，${who}写的）`);
     if (prevMemo.memo) lines.push(`- 说过：${prevMemo.memo}`);
     if (prevMemo.question) lines.push(`- 问过客人：${prevMemo.question}`);
+  }
+  // 年度：这一年各期信末留下的手记，是回看一整年最现成的线索
+  if (annual) {
+    const inYear = allSummaries
+      .filter(s => summaryKindOf(s) !== 'year' && s.memo && s.startDate >= startDate && s.startDate <= endDate)
+      .sort((a, b) => a.startDate.localeCompare(b.startDate));
+    const monthly = inYear.filter(s => s.period === 'month');
+    const pool = monthly.length >= 3 ? monthly : inYear;
+    const step = Math.max(1, Math.ceil(pool.length / 10));
+    const shown = pool.filter((_s, i) => i % step === 0).slice(0, 10);
+    if (shown.length) {
+      lines.push('');
+      lines.push('【这一年留下的手记】（各期信末写给下一期的话，按时间排；挑一两句回看就好，别逐条念）');
+      for (const s of shown) lines.push(`- ${s.label}（${s.promptPresetId === presetId ? '你' : s.promptPresetName}）：${s.memo}`);
+    }
   }
 
   return {
@@ -535,14 +613,13 @@ export async function buildSummaryRequest(params: {
   period: SummaryPeriod;
   startDate: string;
   endDate: string;
-  annual?: boolean;
   signal?: AbortSignal;
 }): Promise<SummaryRequestData> {
-  const { settings, attributes, period, startDate, endDate, annual = false, signal } = params;
+  const { settings, attributes, period, startDate, endDate, signal } = params;
   const resolved = resolveSummaryConfig(settings);
   if (!resolved) throw new Error('请先在「设置 → AI 总结」中配置 API 密钥');
   const preset = getActiveSummaryPreset(settings);
-  const brief = await buildSummaryBrief({ period, startDate, endDate, settings, attributes, annual, presetId: preset.id });
+  const brief = await buildSummaryBrief({ period, startDate, endDate, settings, attributes, presetId: preset.id });
 
   let material = '';
   if (brief.activityCount > HIGHLIGHT_THRESHOLD) {
@@ -550,12 +627,12 @@ export async function buildSummaryRequest(params: {
     if (picked) material = `\n\n${picked}`;
   }
 
-  const periodLabel = annual ? `${fromKey(startDate).getFullYear()}年度总结` : summaryLabelOf(period, startDate);
-  const annualNote = annual
-    ? `\n\n这是一整年的年度盘点，请以"成功的更生"（成功的转变与新生）为主题，给予热情洋溢的年终祝词，以"您已然是最棒的客人，让我们来年继续努力"作为结语。`
+  const periodLabel = summaryLabelOf(period, startDate);
+  const annualNote = period === 'year'
+    ? `\n\n这是一整年的年度盘点，主题是「成功的更生」——这一年的转变与新生（这四个字不必写进信里）。回看这一年、认下它的变化；结尾用你自己的口吻收住，不要套用固定的祝词或口号。`
     : '';
   const characterPrompt = preset.systemPrompt || DEFAULT_SUMMARY_PROMPT_PRESETS[0].systemPrompt;
-  const systemPrompt = `${characterPrompt}\n\n${houseRules(period, annual)}`;
+  const systemPrompt = `${characterPrompt}\n\n${houseRules(period)}`;
   const userMessage = `${brief.text}${material}\n\n---\n请以你的身份读完上面的简报，写这一期（${periodLabel}）的信。${annualNote}`;
 
   return {
@@ -660,6 +737,19 @@ export function followUpsOf(s: PeriodSummary): NonNullable<PeriodSummary['follow
   const list = s.followUps ? [...s.followUps] : [];
   if (s.followUp && !list.some(f => f.createdAt === s.followUp!.createdAt && f.question === s.followUp!.question)) list.unshift(s.followUp);
   return list;
+}
+
+/**
+ * 续写前把最后一行没写完的丢掉：断在表格行 / 半句话中间时，模型接着写会把散文塞进最后一格
+ * （实测：切在「| 魅力 | +2 | +0 |」后面，续写的整段话都进了那个单元格）。丢掉的那行由模型重写。
+ */
+export function trimSeam(full: string): string {
+  const t = full.replace(/\s+$/, '');
+  const nl = t.lastIndexOf('\n');
+  if (nl < 0) return t;
+  const tail = t.slice(nl + 1);
+  if (/[。！？!?…」』"”)）]$/.test(tail)) return `${t}\n`;
+  return t.slice(0, nl + 1);
 }
 
 /** 结尾没收住的特征：末尾不是句末标点 */
