@@ -12,6 +12,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         configureAudioSession()
         startAudioSessionGuard()
+        // 一起进步 · 后台刷新（v2.7.0.6）：BGTask 必须在启动结束前登记（见 PactRefreshPlugin.swift）
+        PactRefresh.register()
         return true
     }
 

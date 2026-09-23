@@ -5,6 +5,8 @@ import { summarizeCounsel, type CounselContext, type CounselConfidantBrief, type
 import { db } from '@/db';
 import { deleteImagesOfActivity } from '@/utils/activityImages';
 import { freshUnreadSummary, reportPushDelivered, markReportPushScheduled } from '@/utils/reportNotice';
+import { useCloudSocialStore } from '@/store/cloudSocial';
+import { pickTogetherReminder } from '@/utils/pactLogic';
 import { v4 as uuidv4 } from 'uuid';
 import { calcMaxStreak, daysSinceFirstRecord, streakDates } from '@/utils/streak';
 import { applyUiChannel, syncDarkClass } from '@/ui/channel';
@@ -20,6 +22,11 @@ import {
   MAX_INTIMACY,
   buffsForLevel,
   isItemOnCooldown,
+  thresholdsFor,
+  remapIntimacyPoints,
+  INTIMACY_THRESHOLDS,
+  ONLINE_INTIMACY_THRESHOLDS,
+  ONLINE_INTIMACY_CURVE,
 } from '@/utils/confidantLevels';
 import type { ConfidantMatchResult } from '@/utils/confidantAI';
 
@@ -720,7 +727,7 @@ export function applyCustomThemeColor(hex: string) {
 /** F2a 默认提醒时段：新用户初始值，且现有用户首次开启通知时（notificationSlots 为 undefined）用它兜底。 */
 export const DEFAULT_NOTIF_SLOTS: NotifSlot[] = [
   { id: 'morning', time: '08:00', enabled: true, label: '晨间序曲', contents: ['tarot', 'summary'] },
-  { id: 'evening', time: '21:30', enabled: true, label: '夜间结算', contents: ['record', 'todos', 'countercurrent'] },
+  { id: 'evening', time: '21:30', enabled: true, label: '夜间结算', contents: ['record', 'todos', 'countercurrent', 'together'] },
 ];
 
 /** F5 记账奖励日封顶状态：锚日不是今天则视作 {0,0}（自然跨日重置）。 */
@@ -3484,6 +3491,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         console.warn('[velvet] sweepCallingCards after completeTodo failed', e);
       }
 
+      // 一起进步（v2.7.0.6）：完成即打卡；离线 / 失败时下次社交同步补上
+      if (todo.pact) {
+        const pactId = todo.pact.id;
+        void import('@/services/pactSync').then(m => m.onPactTodoCompleted(pactId, today));
+      }
+
       void get().syncNotifications(); // 待办完成 → 重排，撤掉已完成的「今日待办」提醒
       return result;
     } else {
@@ -3504,6 +3517,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!todo) return;
 
     const today = toLocalDateKey();
+    // 一起进步：撤销完成也撤回今天的打卡
+    if (todo.pact) {
+      const pactId = todo.pact.id;
+      void import('@/services/pactSync').then(m => m.onPactTodoUndone(pactId, today));
+    }
     const all = await db.activities.toArray();
     // 注意：completeTodo 的 description 模板是 `完成任务: ${todo.title}`，这里逐字匹配
     const expectedDesc = `完成任务: ${todo.title}`;
@@ -3963,12 +3981,20 @@ export const useAppStore = create<AppState>((set, get) => ({
   syncNotifications: async () => {
     const { settings, dailyDivination, todos, summaries, activities } = get();
     const todayKey = toLocalDateKey();
+    // v2.7.0.6：老用户含「今日待办」的时段补上「一起进步」（只补一次；updateSettings 触发的那次重排因标记已置不会再进来）
+    let slots = settings.notificationSlots ?? [];
+    if (!settings.notifTogetherAdded && slots.length) {
+      if (!slots.some(s => s.contents.includes('together'))) {
+        slots = slots.map(s => (s.contents.includes('todos') ? { ...s, contents: [...s.contents, 'together'] } : s));
+      }
+      void get().updateSettings({ notificationSlots: slots, notifTogetherAdded: true });
+    }
     const dueTodos = todos.filter(t =>
       t.isActive && !t.archivedAt && (!t.startDate || t.startDate <= todayKey),
     );
     const snapshot: NotifSnapshot = {
       enabled: !!settings.notificationsEnabled,
-      slots: settings.notificationSlots ?? [],
+      slots,
       attributeNames: settings.attributeNames,
       tarotDrawnToday: !!dailyDivination && dailyDivination.date === todayKey,
       incompleteTodoCount: dueTodos.filter(t => !get().getTodayTodoProgress(t.id).isComplete).length,
@@ -3980,9 +4006,15 @@ export const useAppStore = create<AppState>((set, get) => ({
         return fresh && !reportPushDelivered(fresh.id) ? { id: fresh.id } : null;
       })(),
       loggedToday: activities.some(a => !a.category && toLocalDateKey(new Date(a.date)) === todayKey),
+      // 一起进步（v2.7.0.6）：今天还没完成的约定，被催过的优先
+      together: pickTogetherReminder(todos, useCloudSocialStore.getState().pacts, todayKey, id => get().getTodayTodoProgress(id).isComplete),
       // 助手口吻（v2.7 notifVoice）：只取当日缓存，绝不在这里等生成——先排内置文案
       aiCopy: settings.notifAIVoice ? getCachedNotifVoice(settings.navigatorPresetId ?? 'board') : null,
     };
+    // 后台刷新（档 2）跟着提醒设置走：关了提醒 / 各时段都去掉「一起进步」，后台也不再弹催促
+    void import('@/services/pactBackground').then(m => m.setPactRunnerEnabled(
+      !!settings.notificationsEnabled && slots.some(s => s.enabled && s.contents.includes('together')),
+    ));
     try {
       const outcome = await computeAndSchedule(snapshot);
       // 记下这份报告排到了哪一刻：那一刻一过就算送达，之后的重排不再排它
@@ -5587,10 +5619,23 @@ export const useAppStore = create<AppState>((set, get) => ({
   // ── 同伴 / Confidant ─────────────────────────────────────────
 
   loadConfidants: async () => {
-    const [confidants, events] = await Promise.all([
+    const [loaded, events] = await Promise.all([
       db.confidants.orderBy('createdAt').toArray(),
       db.confidantEvents.orderBy('createdAt').reverse().toArray(),
     ]);
+    // v2.7.0.6：在线同伴换用 ONLINE_INTIMACY_THRESHOLDS。老档案一次性按等级内进度比例换算点数，等级不掉
+    const migrated: Confidant[] = [];
+    const confidants = loaded.map(c => {
+      if (c.source !== 'online' || c.intimacyCurve === ONLINE_INTIMACY_CURVE) return c;
+      const next = {
+        ...c,
+        intimacyPoints: remapIntimacyPoints(c.intimacyPoints, c.intimacy, INTIMACY_THRESHOLDS, ONLINE_INTIMACY_THRESHOLDS),
+        intimacyCurve: ONLINE_INTIMACY_CURVE,
+      };
+      migrated.push(next);
+      return next;
+    });
+    if (migrated.length) await db.confidants.bulkPut(migrated);
     set({ confidants, confidantEvents: events });
   },
 
@@ -5618,7 +5663,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const chosenLv = typeof initialLevel === 'number'
         ? Math.max(1, Math.min(MAX_INTIMACY, Math.floor(initialLevel)))
         : Math.max(1, match.initialIntimacy);
-      const basePts = levelBasePoints(chosenLv);
+      const basePts = levelBasePoints(chosenLv, thresholdsFor({ source }));
       const buffs = buffsForLevel(match.arcanaId, chosenLv, settings.attributeNames, skillAttribute);
       const confidant: Confidant = {
         id: uuidv4(),
@@ -5634,6 +5679,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         aiAdvice: match.advice,
         intimacy: chosenLv,
         intimacyPoints: basePts,
+        ...(source === 'online' ? { intimacyCurve: ONLINE_INTIMACY_CURVE } : {}),
         skillAttribute,
         buffs,
         decayEnabled: false,
@@ -5671,7 +5717,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const { settings } = get();
     const oldLv = current.intimacy;
     const newPoints = Math.max(0, current.intimacyPoints + delta);
-    const newLv = pointsToLevel(newPoints);
+    const newLv = pointsToLevel(newPoints, thresholdsFor(current));
     const leveledUp = newLv > oldLv;
     const buffs = leveledUp ? buffsForLevel(current.arcanaId, newLv, settings.attributeNames, current.skillAttribute) : current.buffs;
     // 每次升级赠送 1 次"星移"次数（Lv 跳跃两级则赠送两次）
@@ -6033,7 +6079,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       const bondsEmpty = useCloudSocialStore.getState().coopBonds.length === 0;
       if (isLogged && hasOnlineConfidant && bondsEmpty) {
         const { loadSocial } = await import('@/services/social');
-        await loadSocial({ force: true });
+        // 不带 force：App 那一轮正在跑就搭它（等它跑完即可），不必在它后面再排一轮拖慢启动
+        await loadSocial();
       }
     } catch { /* 网络失败不阻塞维护：后续分支会对每个在线同伴 fallback 跳过 */ }
     const allBonds = useCloudSocialStore.getState().coopBonds;
@@ -6064,7 +6111,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         .first();
       if (already) continue;
       const newPoints = Math.max(0, c.intimacyPoints - 1);
-      const newLv = pointsToLevel(newPoints);
+      const newLv = pointsToLevel(newPoints, thresholdsFor(c));
       const buffs = newLv < c.intimacy ? buffsForLevel(c.arcanaId, newLv, get().settings.attributeNames) : c.buffs;
       await db.confidants.put({
         ...c,

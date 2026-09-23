@@ -2,6 +2,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useMemo, useRef, useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { useAppStore, toLocalDateKey } from '@/store';
+import { PactTodoTag } from '@/components/cooperation/PactTag';
 import { WishBoard, useWishPane, wishSkinFor } from '@/components/wish/WishBoard';
 import { PaneSwapMark } from '@/components/wish/PaneSwapMark';
 import { BufferedTextInput } from '@/components/ui/BufferedTextInput';
@@ -85,6 +86,7 @@ const ActiveTodoCard = ({
             {todo.fateDrawnDate === toLocalDateKey() && (
               <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/15 text-primary font-semibold">✦ 签</span>
             )}
+            <PactTodoTag todo={todo} />
             <h4 className="font-semibold text-sm text-gray-800 dark:text-white truncate">{todo.title}</h4>
           </div>
           <div className="flex items-center gap-1.5 flex-wrap">

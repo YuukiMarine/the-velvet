@@ -12,7 +12,7 @@
  *   - 解除好友（移到"更多"里，二次确认）
  */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { OnlineStarBadge } from './OnlineStarBadge';
 import { motion, AnimatePresence } from 'motion/react';
 import { createPortal } from 'react-dom';
@@ -32,6 +32,8 @@ import {
 import { getAttributeLevelTitle } from '@/utils/attributeLevelTitles';
 import type { AttributeId, CloudProfile, Friendship } from '@/types';
 import { GUEST_LV_HARD, GUEST_LV_NORMAL } from '@/utils/levelDifficulty';
+import { PactPanel } from './PactPanel';
+import { usePactStatus } from './PactTag';
 
 const ATTR_ORDER: AttributeId[] = ['knowledge', 'guts', 'dexterity', 'kindness', 'charm'];
 const DEFAULT_ATTR_LABELS: Record<AttributeId, string> = {
@@ -65,6 +67,8 @@ export function OnlineConfidantProfileCard({
   const updateFriendship = useCloudSocialStore(s => s.updateFriendship);
   const cloudUser = useCloudStore(s => s.cloudUser);
   const battleState = useAppStore(s => s.battleState);
+  // 一起进步：这位是不是在线同伴（同一天都完成才涨亲密度）
+  const isConfidant = useAppStore(s => !!profile && s.confidants.some(c => c.source === 'online' && !c.archivedAt && c.linkedCloudUserId === profile.id));
 
   // 当前与这位的 COOP bond（最多一条活跃）
   const relatedBond = useMemo(() => {
@@ -96,6 +100,16 @@ export function OnlineConfidantProfileCard({
   const [severConfirm, setSeverConfirm] = useState(false);
   const [severError, setSeverError] = useState('');
   const [selectedAttr, setSelectedAttr] = useState<AttributeId>('knowledge');
+  // 选项卡：五维（默认）/ 一起进步（v2.7.0.6：面板从卡底挪进来，名片不再拉得很长）
+  const [tab, setTab] = useState<'attrs' | 'pact'>('attrs');
+  useEffect(() => { if (isOpen) setTab('attrs'); }, [isOpen, profile?.id]);
+  const pactStatus = usePactStatus(friendship && profile ? profile.id : undefined);
+  // 一起进步那一页至少和五维一样高：切换时下面的按钮不跳
+  const attrsRef = useRef<HTMLDivElement>(null);
+  const [attrsHeight, setAttrsHeight] = useState(0);
+  useLayoutEffect(() => {
+    if (tab === 'attrs' && attrsRef.current) setAttrsHeight(attrsRef.current.offsetHeight);
+  }, [tab, isOpen, profile]);
 
   // ── 衍生状态 ───────────────────────────────────────────
   const alreadyPrayed = profile ? hasPrayedToday(profile.id, todayPrayers) : false;
@@ -235,19 +249,34 @@ export function OnlineConfidantProfileCard({
             style={{ background: 'linear-gradient(90deg, transparent, rgba(196,181,253,0.35), transparent)' }}
           />
 
-          {/* 雷达图 */}
+          {/* 选项卡：FIVE ATTRIBUTES / TOGETHER（不是好友就只有五维） */}
           <div className="px-5 pt-3 pb-2">
-            <div className="flex items-center justify-between mb-1.5">
-              <div
-                className="text-[10px] tracking-[0.3em] font-bold"
-                style={{ color: '#8b84a8' }}
-              >
-                FIVE ATTRIBUTES
-              </div>
-              <div className="text-[9px] tracking-wider" style={{ color: '#6b6591' }}>
-                外圈 = LV {radarMax}
-              </div>
+            <div className="flex items-end justify-between mb-1.5">
+              {friendship ? (
+                <div role="tablist" className="flex items-end gap-4">
+                  <ProfileTab on={tab === 'attrs'} onClick={() => setTab('attrs')}>FIVE ATTRIBUTES</ProfileTab>
+                  <ProfileTab on={tab === 'pact'} onClick={() => setTab('pact')} dot={pactStatus?.tone === 'hot'}>TOGETHER</ProfileTab>
+                </div>
+              ) : (
+                <div
+                  className="text-[10px] tracking-[0.3em] font-bold"
+                  style={{ color: '#8b84a8' }}
+                >
+                  FIVE ATTRIBUTES
+                </div>
+              )}
+              {tab === 'attrs' && (
+                <div className="pb-1.5 text-[9px] tracking-wider" style={{ color: '#6b6591' }}>
+                  外圈 = LV {radarMax}
+                </div>
+              )}
             </div>
+            {tab === 'pact' && friendship ? (
+              <div className="flex flex-col justify-center pt-1" style={{ minHeight: attrsHeight || undefined }}>
+                <PactPanel partnerId={profile.id} partnerName={name} isConfidant={isConfidant} surface="night" bare proposeLabel="发起共同行动" />
+              </div>
+            ) : (
+            <div ref={attrsRef}>
             <div className="h-48 -mx-2">
               <ResponsiveContainer width="100%" height="100%">
                 <RadarChart data={radarData} outerRadius={72}>
@@ -355,6 +384,8 @@ export function OnlineConfidantProfileCard({
               <div className="text-[10px] text-center mt-2" style={{ color: '#6b6591' }}>
                 最近同步：{formatLastSync(profile.lastSyncedAt)}
               </div>
+            )}
+            </div>
             )}
           </div>
 
@@ -558,6 +589,28 @@ export function OnlineConfidantProfileCard({
 }
 
 // ── helpers ─────────────────────────────────────────────
+
+/** 名片上的选项卡：选中的字亮、下面一道战斗色细线；dot = 需要你动一下（待回应 / 被催） */
+function ProfileTab({ on, onClick, dot, children }: { on: boolean; onClick: () => void; dot?: boolean; children: ReactNode }) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={on}
+      onClick={onClick}
+      className="relative pb-1.5 text-[10px] font-bold tracking-[0.22em]"
+      style={{ color: on ? '#f5e6ff' : '#8b84a8' }}
+    >
+      {children}
+      {dot && <span aria-hidden className="absolute -right-2 top-0 h-1.5 w-1.5 rounded-full bg-rose-400" />}
+      <span
+        aria-hidden
+        className="absolute inset-x-0 bottom-0 h-[2px] rounded-full transition-opacity"
+        style={{ background: 'rgb(var(--color-battle-rgb))', opacity: on ? 1 : 0 }}
+      />
+    </button>
+  );
+}
 
 /** radar 数据 + 当前刻度上限。max 跟着对方"最高那维 LV"走（至少 5、至多 10）。 */
 function buildRadarData(profile: CloudProfile | null): {

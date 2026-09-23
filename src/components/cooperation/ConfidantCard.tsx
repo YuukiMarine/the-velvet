@@ -7,7 +7,8 @@ import { ConfidantNameFx } from './ConfidantNameFx';
 import { useCloudStore } from '@/store/cloud';
 import type { Confidant, CoopShadow } from '@/types';
 import { TAROT_BY_ID } from '@/constants/tarot';
-import { INTIMACY_LABELS, MAX_INTIMACY, pointsToNextLevel, levelBasePoints, INTIMACY_THRESHOLDS } from '@/utils/confidantLevels';
+import { PactPartnerTag } from './PactTag';
+import { INTIMACY_LABELS, MAX_INTIMACY, pointsToNextLevel, levelBasePoints, thresholdsFor } from '@/utils/confidantLevels';
 import { TarotCardSVG } from '@/components/astrology/TarotCardSVG';
 
 interface Props {
@@ -38,10 +39,12 @@ export function ConfidantCard({ confidant, onClick, prayer, activeShadow, onShad
   const isLockedOnline = isOnline && !cloudUser;
 
   const isMax = confidant.intimacy >= MAX_INTIMACY;
-  const base = levelBasePoints(confidant.intimacy);
-  const next = isMax ? null : INTIMACY_THRESHOLDS[confidant.intimacy + 1];
+  // 在线同伴与本地同伴的阈值曲线不同（v2.7.0.6），见 utils/confidantLevels.thresholdsFor
+  const th = thresholdsFor(confidant);
+  const base = levelBasePoints(confidant.intimacy, th);
+  const next = isMax ? null : th[confidant.intimacy + 1];
   const pct = isMax ? 100 : Math.max(0, Math.min(100, ((confidant.intimacyPoints - base) / ((next ?? 100) - base)) * 100));
-  const toNext = pointsToNextLevel(confidant.intimacyPoints);
+  const toNext = pointsToNextLevel(confidant.intimacyPoints, th);
 
   // 头像显示策略：
   //   在线同伴 —— preferTarotOverAvatar 优先；否则 linkedProfile.avatarUrl > customAvatarDataUrl > 塔罗
@@ -264,6 +267,10 @@ export function ConfidantCard({ confidant, onClick, prayer, activeShadow, onShad
                 <span className="text-[9px] font-bold tracking-wider px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30">
                   待回应
                 </span>
+              )}
+              {/* 一起进步（v2.7.0.6）：今天还差谁 */}
+              {confidant.source === 'online' && confidant.linkedCloudUserId && !archived && (
+                <PactPartnerTag partnerId={confidant.linkedCloudUserId} />
               )}
             </div>
             <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">

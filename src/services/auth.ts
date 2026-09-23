@@ -1,4 +1,5 @@
 import { pb, cloudEnabled, getUserId } from './pocketbase';
+import { clearPactRunner } from './pactBackground';
 import type { RecordModel } from 'pocketbase';
 
 /** 简单的邮箱格式校验 */
@@ -480,6 +481,7 @@ export const requestPasswordReset = async (identity: string): Promise<void> => {
 /** 登出（清除本地 token，不调用远程） */
 export const logout = (): void => {
   pb?.authStore.clear();
+  void clearPactRunner();
 };
 
 /**
@@ -497,6 +499,7 @@ export const deleteAccount = async (): Promise<void> => {
   if (!id) throw new Error('用户信息缺失');
   await pb.collection('users').delete(id);
   pb.authStore.clear();
+  void clearPactRunner();
 };
 
 /** 更新当前用户的 profile 字段 */

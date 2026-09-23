@@ -31,7 +31,7 @@ import type {
   CoopShadowStatus,
   SharedBuffs,
 } from '@/types';
-import { isMoonPhaseNight } from '@/utils/moonPhase';
+import { isMoonPhaseNight, moonPhaseSlot } from '@/utils/moonPhase';
 
 // ── 参数区 ────────────────────────────────────────────────
 
@@ -198,8 +198,33 @@ function shouldSpawn(
 }
 
 /**
+ * 一对 COOP 在一个月夜里的那只影的记录 id（15 位小写字母数字，PB 允许创建时自带 id）。
+ *
+ * 用户上报「SHADOW RETREATED 偶现重复弹两次」的根因：同一个月夜降临了不止一只。
+ * 冷启动时 App 与同伴衰减维护会各发一次同步、两台设备也可能同时同步，每一路都读到
+ * 「还没有进行中的影」就各建一只；页面只露出其中一只，另一只没人打，十天后照样撤退、
+ * 照样弹结算屏——打没打都会弹。现在同一对、同一个月夜算出同一个 id，
+ * 第二个人再建会被 PB 的主键唯一性挡回，转而读已有的那只。
+ */
+export function shadowSlotId(bondId: string, slot: number): string {
+  const src = `${bondId}:${slot}`;
+  let out = '';
+  for (let seed = 0; out.length < 15; seed++) {
+    // FNV-1a（32 位），换种子拼够 15 位
+    let h = (0x811c9dc5 ^ Math.imul(seed + 1, 0x9e3779b1)) >>> 0;
+    for (let i = 0; i < src.length; i++) {
+      h ^= src.charCodeAt(i);
+      h = Math.imul(h, 0x01000193) >>> 0;
+    }
+    out += h.toString(36).padStart(7, '0');
+  }
+  return out.slice(0, 15);
+}
+
+/**
  * 降临一只新羁绊之影并创建 PB 记录。
  * 失败抛错；上层（social pipeline）会 catch + 下次 loadSocial 重试。
+ * 这个月夜对方（或本机另一路同步）已经建过 → 返回已有的那只，created = false，不再通知对方。
  *
  * hp_max 由双方属性等级之和决定，保证 scale 随玩家成长：
  *   hp_max = (ΣLv_A + ΣLv_B) × archetype.hpFactor + 500
@@ -208,7 +233,7 @@ function shouldSpawn(
 export const spawnCoopShadow = async (
   bond: CoopBond,
   mySumLevels: number,
-): Promise<CoopShadow> => {
+): Promise<{ shadow: CoopShadow; created: boolean }> => {
   if (!pb || !pb.authStore.isValid) throw new Error('未登录');
   const me = getUserId();
   if (!me) throw new Error('用户信息缺失');
@@ -221,7 +246,7 @@ export const spawnCoopShadow = async (
   // 同一个 archetype 从两个候选名里随机抽一个 —— 同对 COOP 每次降临可能是不同名字
   const pickedName = archetype.names[Math.floor(Math.random() * archetype.names.length)];
 
-  const created = await pb.collection('coop_shadows').create({
+  const fields = {
     bond_id: bond.id,
     user_a: bond.userAId,
     user_b: bond.userBId,
@@ -238,7 +263,23 @@ export const spawnCoopShadow = async (
     all_out_by_b: false,
     identified_by_a: false,
     identified_by_b: false,
-  });
+  };
+  // 测试期（随时可降临）不定死 id：同一个月夜里可能先后有好几只
+  const slotId = COOP_SHADOW_ALWAYS_OPEN ? '' : shadowSlotId(bond.id, moonPhaseSlot(now));
+  let created: RecordModel;
+  try {
+    created = await pb.collection('coop_shadows').create(slotId ? { id: slotId, ...fields } : fields);
+  } catch (err) {
+    if (!slotId) throw err;
+    // 这个 id 已经有了 = 对方 / 本机另一路同步抢先建了：用那只，不再重复通知
+    try {
+      const existing = await pb.collection('coop_shadows').getOne(slotId, { requestKey: null });
+      return { shadow: mapCoopShadow(existing), created: false };
+    } catch {
+      // 读不到：不是撞 id，是别的原因（比如服务器不收自带 id）→ 退回不带 id 建
+      created = await pb.collection('coop_shadows').create(fields);
+    }
+  }
 
   // 通知对方 Boss 降临
   const partnerId = bond.userAId === me ? bond.userBId : bond.userAId;
@@ -254,8 +295,38 @@ export const spawnCoopShadow = async (
     console.warn('[velvet-coopShadows] spawn notification failed', err);
   }
 
-  return mapCoopShadow(created);
+  return { shadow: mapCoopShadow(created), created: true };
 };
+
+/**
+ * 同一对 COOP、同一个月夜只认一只影。修复之前（见 shadowSlotId）已经重复降临的，
+ * 在这里挑一只当真：打过的优先（已击败 > 有伤害 / 连击 / 总攻击 > 已识破），
+ * 都没动过就认最早降临的那只（同时刻再比 id，两台设备挑得一样）；其余整只忽略——
+ * 不显示、不撤退、不结算、不弹结算屏。保持原有顺序。
+ */
+export function dedupeShadows(list: CoopShadow[]): CoopShadow[] {
+  if (COOP_SHADOW_ALWAYS_OPEN) return list;
+  const progress = (s: CoopShadow): number =>
+    s.status === 'defeated' ? 3
+      : (s.hpCurrent < s.hpMax || s.comboCount > 0 || s.allOutByA || s.allOutByB) ? 2
+        : (s.identifiedByA || s.identifiedByB) ? 1
+          : 0;
+  const better = (a: CoopShadow, b: CoopShadow): boolean => {
+    const pa = progress(a), pb2 = progress(b);
+    if (pa !== pb2) return pa > pb2;
+    const ta = a.spawnedAt.getTime(), tb = b.spawnedAt.getTime();
+    if (ta !== tb) return ta < tb;
+    return a.id < b.id;
+  };
+  const pick = new Map<string, CoopShadow>();
+  for (const s of list) {
+    const key = `${s.bondId}:${moonPhaseSlot(s.spawnedAt)}`;
+    const cur = pick.get(key);
+    if (!cur || better(s, cur)) pick.set(key, s);
+  }
+  const keep = new Set([...pick.values()].map(s => s.id));
+  return list.filter(s => keep.has(s.id));
+}
 
 /**
  * 为所有 linked 的 bond 逐一检查是否需要降临。
@@ -271,8 +342,8 @@ export const maybeSpawnForBonds = async (
   for (const bond of bonds) {
     if (!shouldSpawn(bond, existingShadows, now)) continue;
     try {
-      const s = await spawnCoopShadow(bond, mySumLevels);
-      newShadows.push(s);
+      const { shadow } = await spawnCoopShadow(bond, mySumLevels);
+      newShadows.push(shadow);
     } catch (err) {
       console.warn('[velvet-coopShadows] spawn failed for bond', bond.id, err);
     }

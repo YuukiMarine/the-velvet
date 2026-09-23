@@ -19,9 +19,12 @@ import {
 import { acceptFriendRequest, rejectFriendRequest } from '@/services/friends';
 import { rejectCoopBond } from '@/services/coopBonds';
 import { loadSocial } from '@/services/social';
+import { pactNoticeKind } from '@/services/coopPacts';
+import { answerPact } from '@/services/pactSync';
+import { PactAcceptModal, describePactTerms } from './PactModals';
 import { useModalA11y } from '@/utils/useModalA11y';
 import { useBackHandler } from '@/utils/useBackHandler';
-import type { CoopBond, NotificationEntry } from '@/types';
+import type { CoopBond, CoopPact, NotificationEntry, PactKind, PactMode } from '@/types';
 
 interface Props {
   isOpen: boolean;
@@ -40,6 +43,28 @@ export function NotificationsPanel({ isOpen, onClose, onOpenCoopAccept }: Props)
   const coopBonds = useCloudSocialStore(s => s.coopBonds);
   const updateCoopBond = useCloudSocialStore(s => s.updateCoopBond);
   const cloudUser = useCloudStore(s => s.cloudUser);
+  const pacts = useCloudSocialStore(s => s.pacts);
+  // 一起进步：点「查看」打开的那份邀请
+  const [pactTarget, setPactTarget] = useState<CoopPact | null>(null);
+  const handlePactOpen = async (n: NotificationEntry) => {
+    const id = n.payload?.pact_id as string | undefined;
+    if (!id) return;
+    let p = useCloudSocialStore.getState().pacts.find(x => x.id === id);
+    if (!p) { await loadSocial({ force: true }); p = useCloudSocialStore.getState().pacts.find(x => x.id === id); }
+    if (p) setPactTarget(p);
+  };
+  const handlePactDecline = async (n: NotificationEntry) => {
+    const id = n.payload?.pact_id as string | undefined;
+    if (!id || working) return;
+    setWorking(n.id);
+    try {
+      await answerPact(id, false);
+    } catch (err) {
+      console.warn('[velvet-pact] decline failed', err);
+    } finally {
+      setWorking(null);
+    }
+  };
 
   const [working, setWorking] = useState<string | null>(null);
   // 是否隐藏"羁绊之影战斗"类通知 —— 持久化到 localStorage，用户切换后保留
@@ -389,6 +414,9 @@ export function NotificationsPanel({ isOpen, onClose, onOpenCoopAccept }: Props)
                 onReject={handleReject}
                 onCoopOpen={handleCoopProposalOpen}
                 onCoopReject={handleCoopProposalReject}
+                pactStatus={resolvePactStatus(n, pacts)}
+                onPactOpen={n2 => void handlePactOpen(n2)}
+                onPactDecline={n2 => void handlePactDecline(n2)}
                 onMarkRead={handleMarkRead}
                 onDelete={handleDelete}
               />
@@ -410,6 +438,9 @@ export function NotificationsPanel({ isOpen, onClose, onOpenCoopAccept }: Props)
                 onReject={handleReject}
                 onCoopOpen={handleCoopProposalOpen}
                 onCoopReject={handleCoopProposalReject}
+                pactStatus={resolvePactStatus(n, pacts)}
+                onPactOpen={n2 => void handlePactOpen(n2)}
+                onPactDecline={n2 => void handlePactDecline(n2)}
                 onMarkRead={handleMarkRead}
                 onDelete={handleDelete}
               />
@@ -417,9 +448,17 @@ export function NotificationsPanel({ isOpen, onClose, onOpenCoopAccept }: Props)
           </div>
         </motion.div>
       </motion.div>
+      <PactAcceptModal key="pact-accept" open={!!pactTarget} onClose={() => setPactTarget(null)} pact={pactTarget ? (pacts.find(p => p.id === pactTarget.id) ?? pactTarget) : null} />
     </AnimatePresence>,
     document.body,
   );
+}
+
+/** 一起进步邀请对应约定的当前状态（没拉到为 null） */
+function resolvePactStatus(n: NotificationEntry, pacts: CoopPact[]): CoopPact['status'] | null {
+  if (pactNoticeKind(n) !== 'pact_invite') return null;
+  const id = n.payload?.pact_id as string | undefined;
+  return pacts.find(p => p.id === id)?.status ?? null;
 }
 
 // ── 子组件 ─────────────────────────────────────────────
@@ -455,6 +494,9 @@ function NotificationItem({
   onReject,
   onCoopOpen,
   onCoopReject,
+  pactStatus,
+  onPactOpen,
+  onPactDecline,
   onMarkRead,
   onDelete,
 }: {
@@ -469,6 +511,9 @@ function NotificationItem({
   onReject: (n: NotificationEntry) => void;
   onCoopOpen: (n: NotificationEntry) => void;
   onCoopReject: (n: NotificationEntry) => void;
+  pactStatus: CoopPact['status'] | null;
+  onPactOpen: (n: NotificationEntry) => void;
+  onPactDecline: (n: NotificationEntry) => void;
   onMarkRead: (n: NotificationEntry) => void;
   onDelete: (n: NotificationEntry) => void;
 }) {
@@ -476,7 +521,10 @@ function NotificationItem({
   const isCoopProposal = n.type === 'coop_proposal';
   const coopPending = isCoopProposal && coopBondStatus === 'pending';
   const coopResolved = isCoopProposal && coopBondStatus != null && coopBondStatus !== 'pending';
-  const title = TITLE_BY_TYPE[n.type] ?? '系统消息';
+  const pactKind = pactNoticeKind(n);
+  const pactInvitePending = pactKind === 'pact_invite' && pactStatus === 'pending';
+  const pactInviteResolved = pactKind === 'pact_invite' && pactStatus != null && pactStatus !== 'pending';
+  const title = pactKind ? PACT_TITLES[pactKind] : (TITLE_BY_TYPE[n.type] ?? '系统消息');
   const fromName = n.fromProfile?.nickname || n.fromProfile?.userId || '陌生人';
   const detail = describePayload(n);
   const timeText = formatRelative(n.createdAt);
@@ -625,7 +673,37 @@ function NotificationItem({
             </div>
           )}
 
-          {!isPendingFriend && !isCoopProposal && !n.read && !selectionMode && (
+          {pactInvitePending && !selectionMode && (
+            <div className="flex gap-2 mt-2">
+              <button
+                onClick={() => onPactOpen(n)}
+                disabled={working}
+                className="flex-1 py-1.5 rounded-lg text-[11px] font-bold text-white shadow-sm disabled:opacity-40"
+                style={{ background: 'linear-gradient(135deg, rgb(var(--color-bond-rgb)), rgb(var(--color-bond-bright-rgb)))' }}
+              >
+                查看
+              </button>
+              <button
+                onClick={() => onPactDecline(n)}
+                disabled={working}
+                className="flex-1 py-1.5 rounded-lg text-[11px] font-semibold bg-rose-500/10 text-rose-500 border border-rose-500/30 disabled:opacity-40"
+              >
+                {working ? '…' : '婉拒'}
+              </button>
+            </div>
+          )}
+
+          {pactInviteResolved && (
+            <div className="mt-2 px-2.5 py-1.5 rounded-lg text-[11px]"
+              style={{ background: 'rgba(148,163,184,0.1)', color: '#64748b', border: '1px dashed rgba(148,163,184,0.3)' }}>
+              {pactStatus === 'active' || pactStatus === 'finished' ? '· 已接受这份约定。'
+                : pactStatus === 'declined' ? '· 已婉拒。'
+                : pactStatus === 'expired' ? '· 邀请已过期。'
+                : '· 这份邀请已撤回。'}
+            </div>
+          )}
+
+          {!isPendingFriend && !isCoopProposal && !pactInvitePending && !n.read && !selectionMode && (
             <div className="flex items-center gap-2 mt-1.5">
               <button
                 onClick={() => onMarkRead(n)}
@@ -681,7 +759,35 @@ const TITLE_BY_TYPE: Record<string, string> = {
   system: '系统消息',
 };
 
+/** 一起进步的消息标题 */
+const PACT_TITLES: Record<string, string> = {
+  pact_invite: '邀请你一起进步',
+  pact_accepted: '接受了一起进步',
+  pact_declined: '婉拒了一起进步',
+  pact_nudge: '催你了',
+  pact_ended: '结束了一起进步',
+};
+
 function describePayload(n: NotificationEntry): string {
+  const pk = pactNoticeKind(n);
+  if (pk) {
+    const t = ((n.payload?.title as string | undefined) || '').trim();
+    const quoted = t ? `「${t.slice(0, 30)}」` : '约定';
+    if (pk === 'pact_invite') {
+      const terms = describePactTerms({
+        kind: (n.payload?.pact_kind === 'once' ? 'once' : 'daily') as PactKind,
+        mode: (n.payload?.mode === 'different' ? 'different' : 'same') as PactMode,
+        days: typeof n.payload?.days === 'number' ? (n.payload.days as number) : 0,
+        deadline: (n.payload?.deadline as string | undefined) || undefined,
+      });
+      const msg = ((n.payload?.message as string | undefined) || '').trim();
+      return `想和你一起：${quoted}（${terms}）${msg ? ` 「${msg.slice(0, 40)}」` : ''}`;
+    }
+    if (pk === 'pact_accepted') return `接受了${quoted}，这件事已经放进你的今日任务。`;
+    if (pk === 'pact_declined') return `这次没接受${quoted}。`;
+    if (pk === 'pact_nudge') return `${quoted}今天还没完成，Ta 在等你。`;
+    return `${quoted}的约定结束了。`;
+  }
   if (n.type === 'friend_request') {
     const msg = (n.payload?.message as string | undefined)?.trim();
     return msg ? `想加你为好友：「${msg.slice(0, 60)}」` : '想加你为好友。';

@@ -25,6 +25,7 @@ const CONTENT_META: { id: NotifContentType; icon: string; label: string; hint: s
   { id: 'countercurrent', icon: '🌊', label: '逆流预警', hint: '有属性明日将逆流扣减时提醒' },
   { id: 'summary', icon: '✨', label: '成长总结', hint: '新的周报 / 月报写好时提醒一次' },
   { id: 'record', icon: '📝', label: '提醒记录', hint: '今天还没有任何记录时提醒' },
+  { id: 'together', icon: '🤝', label: '一起进步', hint: '约好的事今天还没完成时提醒；好友催你、发来邀请也会尽快告诉你' },
 ];
 
 export default function NotificationSettings() {

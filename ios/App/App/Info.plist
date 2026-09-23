@@ -50,5 +50,14 @@
 	<!-- 仅使用标准 HTTPS（豁免加密审查），免去每次提交都答一遍出口合规问卷 -->
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<!-- 一起进步 · 后台刷新（PactRefreshPlugin.swift 用 BGAppRefreshTask，只需「后台获取」；标识同 PactRefresh.taskId） -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>fetch</string>
+	</array>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.yuuki.pgt.pact</string>
+	</array>
 </dict>
 </plist>

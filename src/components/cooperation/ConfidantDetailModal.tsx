@@ -8,10 +8,10 @@ import { loadSocial } from '@/services/social';
 import { TAROT_BY_ID } from '@/constants/tarot';
 import {
   INTIMACY_LABELS,
-  INTIMACY_THRESHOLDS,
   MAX_INTIMACY,
   levelBasePoints,
   pointsToNextLevel,
+  thresholdsFor,
   formatBuffDisplay,
 } from '@/utils/confidantLevels';
 import { useCloudStore } from '@/store/cloud';
@@ -19,6 +19,7 @@ import { ConfidantInteractionModal } from '@/components/cooperation/ConfidantInt
 import { ConfidantStarShiftModal } from '@/components/cooperation/ConfidantStarShiftModal';
 import { CounselChatModal } from '@/components/cooperation/CounselChatModal';
 import { CoopMemorialPanel } from '@/components/cooperation/CoopMemorialPanel';
+import { PactPanelModal, PactQuickEntry } from '@/components/cooperation/PactPanel';
 import { TarotCardSVG } from '@/components/astrology/TarotCardSVG';
 import { triggerLightHaptic } from '@/utils/feedback';
 import { ImageCropDialog } from '@/components/ImageCropDialog';
@@ -172,6 +173,8 @@ export function ConfidantDetailModal({
   const [starShiftMode, setStarShiftMode] = useState<'celebrate' | 'shift'>('celebrate');
   const [counselOpen, setCounselOpen] = useState(false);
   const [memorialOpen, setMemorialOpen] = useState(false);
+  // 一起进步（v2.7.0.6）：在线同伴详情页的快捷入口弹窗
+  const [pactOpen, setPactOpen] = useState(false);
   const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
   const [avatarMenuOpen, setAvatarMenuOpen] = useState(false);
   const [avatarUploading, setAvatarUploading] = useState(false);
@@ -241,10 +244,12 @@ export function ConfidantDetailModal({
   const isReversed = confidant.orientation === 'reversed';
 
   const isMax = confidant.intimacy >= MAX_INTIMACY;
-  const base = levelBasePoints(confidant.intimacy);
-  const next = isMax ? null : INTIMACY_THRESHOLDS[confidant.intimacy + 1];
+  // 在线同伴与本地同伴的阈值曲线不同（v2.7.0.6），见 utils/confidantLevels.thresholdsFor
+  const th = thresholdsFor(confidant);
+  const base = levelBasePoints(confidant.intimacy, th);
+  const next = isMax ? null : th[confidant.intimacy + 1];
   const pct = isMax ? 100 : Math.max(0, Math.min(100, ((confidant.intimacyPoints - base) / ((next ?? 100) - base)) * 100));
-  const toNext = pointsToNextLevel(confidant.intimacyPoints);
+  const toNext = pointsToNextLevel(confidant.intimacyPoints, th);
 
   const interactedToday = confidant.lastInteractionDate === toLocalDateKey();
 
@@ -404,6 +409,33 @@ export function ConfidantDetailModal({
   // portal 到 body（审计 §3.6）：树内 fixed 会被页面容器的 transform/clip 创建的
   // containing block 吃掉——p3 页面壳（转场揭示 clip / 入场 y 位移）下弹窗被裁小、
   // 长按「更换头像」菜单点不到（用户上报蓝主题失灵的根因）
+  // 今日互动按钮：在线同伴时和「一起进步」各占一半，字只留「今日互动」
+  const interactionDisabled = confidant.intimacy >= MAX_INTIMACY || interactedToday;
+  const pactPartnerId = confidant.source === 'online' && !confidant.archivedAt ? confidant.linkedCloudUserId : undefined;
+  const pactPartnerName = confidant.linkedProfile?.nickname || confidant.linkedProfile?.userId || confidant.name;
+  const interactionButton = (half: boolean) => (
+    <motion.button
+      whileTap={{ scale: 0.97 }}
+      onClick={() => setInteractionOpen(true)}
+      disabled={interactionDisabled}
+      className={p3
+        ? `relative w-full ${half ? 'h-[52px] text-[15px]' : 'py-3.5 text-[16px]'} font-black text-white disabled:opacity-40`
+        : `w-full ${half ? 'h-12' : 'py-3'} rounded-xl text-white text-sm font-bold shadow-lg disabled:opacity-40`}
+      style={p3
+        ? { clipPath: 'polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%)', background: 'var(--p3r-blue, #1b57ff)', boxShadow: '0 12px 28px rgba(27,87,255,0.3)' }
+        : { background: `linear-gradient(135deg, ${accent}, ${accent}cc)`, boxShadow: `0 10px 28px -12px ${accent}80` }}
+    >
+      {confidant.intimacy >= MAX_INTIMACY
+        ? '已圆满 ✧'
+        : interactedToday
+        ? '今日已解读'
+        : half ? '今日互动' : '今日互动 · 由 AI 解读加点'}
+      {p3 && !interactionDisabled && (
+        <span aria-hidden className="absolute bottom-0 right-4 h-[7px] w-[18px]" style={{ background: 'var(--p3r-magenta, #f0417f)', clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
+      )}
+    </motion.button>
+  );
+
   return createPortal(
     <AnimatePresence>
       <motion.div
@@ -964,27 +996,13 @@ export function ConfidantDetailModal({
             <div className="space-y-2 pt-2 border-t border-gray-100 dark:border-gray-800">
               {!confidant.archivedAt && (
                 <>
-                  {/* Row 1: 主要 CTA —— 今日互动 */}
-                  <motion.button
-                    whileTap={{ scale: 0.97 }}
-                    onClick={() => setInteractionOpen(true)}
-                    disabled={confidant.intimacy >= MAX_INTIMACY || interactedToday}
-                    className={p3
-                      ? 'relative w-full py-3.5 text-[16px] font-black text-white disabled:opacity-40'
-                      : 'w-full py-3 rounded-xl text-white text-sm font-bold shadow-lg disabled:opacity-40'}
-                    style={p3
-                      ? { clipPath: 'polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%)', background: 'var(--p3r-blue, #1b57ff)', boxShadow: '0 12px 28px rgba(27,87,255,0.3)' }
-                      : { background: `linear-gradient(135deg, ${accent}, ${accent}cc)`, boxShadow: `0 10px 28px -12px ${accent}80` }}
-                  >
-                    {confidant.intimacy >= MAX_INTIMACY
-                      ? '已圆满 ✧'
-                      : interactedToday
-                      ? '今日已解读'
-                      : '今日互动 · 由 AI 解读加点'}
-                    {p3 && !(confidant.intimacy >= MAX_INTIMACY || interactedToday) && (
-                      <span aria-hidden className="absolute bottom-0 right-4 h-[7px] w-[18px]" style={{ background: 'var(--p3r-magenta, #f0417f)', clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
-                    )}
-                  </motion.button>
+                  {/* Row 1: 主要 CTA —— 今日互动；在线同伴右边并排「一起进步」快捷入口（v2.7.0.6，点开弹窗） */}
+                  {pactPartnerId ? (
+                    <div className="grid grid-cols-2 gap-2">
+                      {interactionButton(true)}
+                      <PactQuickEntry partnerId={pactPartnerId} onOpen={() => setPactOpen(true)} p3={p3} />
+                    </div>
+                  ) : interactionButton(false)}
 
                   {/* Row 2: 次要 CTA —— 星移（仅有可用次数时展示） */}
                   {(confidant.starShiftCharges ?? 0) > 0 && (
@@ -1008,6 +1026,7 @@ export function ConfidantDetailModal({
                       <span className="text-[11px] font-normal opacity-80">以当前状态重新落墨</span>
                     </motion.button>
                   )}
+
                 </>
               )}
 
@@ -1101,6 +1120,7 @@ export function ConfidantDetailModal({
           使用塔罗牌比例 1:1.6，避免替换后被 object-cover 再次截取 */}
       {/* 换头像 = 换卡面：二选一确认 */}
       <ConfirmDialog
+        key="cd-ask-cardface"
         isOpen={askCardFace}
         tone="default"
         title="同步换成卡面？"
@@ -1143,8 +1163,21 @@ export function ConfidantDetailModal({
         initialMentionId={confidant.id}
       />
 
+      {/* 一起进步（v2.7.0.6）：快捷入口点开的弹窗 */}
+      {pactPartnerId && (
+        <PactPanelModal
+          key="cd-pact"
+          open={pactOpen}
+          onClose={() => setPactOpen(false)}
+          partnerId={pactPartnerId}
+          partnerName={pactPartnerName}
+          isConfidant
+        />
+      )}
+
       {/* 共战纪念册 */}
       <CoopMemorialPanel
+        key="cd-memorial"
         isOpen={memorialOpen}
         confidant={confidant}
         onClose={() => setMemorialOpen(false)}

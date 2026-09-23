@@ -16,6 +16,7 @@ import { motion, AnimatePresence, useMotionValue, useTransform, animate as anima
 import { ModalPortal } from '@/components/ModalPortal';
 import { useBoldness } from '@/utils/boldness';
 import { useAppStore, toLocalDateKey } from '@/store';
+import { PactTodoTag } from '@/components/cooperation/PactTag';
 import { useSkyBadge } from '@/components/sky/useSkyBadge';
 import { WeatherGlyph } from '@/components/sky/WeatherGlyph';
 import type { AttributeId, CallingCard } from '@/types';
@@ -801,6 +802,7 @@ export const DashboardP3 = () => {
                             <span className={`truncate text-[15px] font-black ${done ? 'line-through' : ''}`} style={{ color: done ? P3R.grey : P3R.ink }}>
                               {todo.title}
                             </span>
+                            <PactTodoTag todo={todo} />
                           </span>
                           <span className="mt-0.5 block truncate text-[11px] font-semibold" style={{ color: P3R.grey }}>
                             {attrName} +{todo.points}

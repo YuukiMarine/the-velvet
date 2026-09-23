@@ -31,6 +31,15 @@ function distanceToNearestMoonPhase(at: Date): number {
 }
 
 /**
+ * 这一刻属于第几个「新月 / 满月」（从参考新月起数半个合朔周期，偶数新月、奇数满月）。
+ * 按 UTC 时刻算，两个时区不同的人在同一个月夜拿到的是同一个编号——
+ * 羁绊之影用它给「一对 COOP、一个月夜」定唯一身份（见 coopShadows.shadowSlotId）。
+ */
+export function moonPhaseSlot(at: Date = new Date()): number {
+  return Math.round((at.getTime() - REFERENCE_NEW_MOON_UTC) / HALF_SYNODIC_MS);
+}
+
+/**
  * 是不是"新月 / 满月之夜"？
  *
  * 为了让一次降临有一整晚的时间被用户看见，用 24h 容差（±12h 以内即算当夜）。

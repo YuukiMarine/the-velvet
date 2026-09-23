@@ -292,13 +292,18 @@ function App() {
       });
   }, []);
 
-  // 点开「成长总结写好了」的通知：直达那一份（v2.7.0.6；仅原生平台有本地通知）
+  // 点开通知：「成长总结写好了」直达那一份；一起进步的去首页 / 羁绊页（v2.7.0.6；仅原生平台有本地通知）
   useEffect(() => {
     if (!isNative()) return;
     let remove: (() => void) | undefined;
     void import('@capacitor/local-notifications').then(async ({ LocalNotifications }) => {
       const h = await LocalNotifications.addListener('localNotificationActionPerformed', (evt) => {
         const extra = evt.notification?.extra as { content?: string; summaryId?: string } | undefined;
+        // 一起进步（v2.7.0.6）：约好的事 / 被催了 → 首页的任务条；邀请 → 羁绊页
+        if (extra?.content === 'together' || extra?.content === 'bond') {
+          useAppStore.getState().setCurrentPage(extra.content === 'bond' ? 'cooperation' : 'dashboard');
+          return;
+        }
         if (extra?.content !== 'summary') return;
         const st = useAppStore.getState();
         void import('@/utils/reportNotice').then(({ requestOpenSummary }) => {

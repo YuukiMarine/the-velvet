@@ -8,6 +8,7 @@ import { useUiChannel } from '@/ui/useUiChannel';
 import { P3R, P3RPage, GhostWords, P3PageHeader, SlantButton, slantClip } from '@/components/p3r/kit';
 import { P5R, P5_FONT, P5Collage, P5SubBar, P5Star, P5Dots, P5Slab, P5RPage, P5StarFab } from '@/components/p5r/kit';
 import { ConfidantCard } from '@/components/cooperation/ConfidantCard';
+import { PactPartnerTag } from '@/components/cooperation/PactTag';
 import { ConfidantAlbumWall } from '@/components/cooperation/ConfidantAlbumWall';
 import { ConfidantCreateModal } from '@/components/cooperation/ConfidantCreateModal';
 import { ConfidantDetailModal } from '@/components/cooperation/ConfidantDetailModal';
@@ -122,6 +123,8 @@ export function Cooperation() {
   useEffect(() => {
     if (shadowVictory || shadowBattle) return; // 当前已有一个弹窗在显示，让它先收掉
     if (typeof window === 'undefined') return;
+    // 刚切走、还在退场动画里的这一页不认领：否则同步恰好这时落地，结算屏标成「已弹」却随页面一起消失，用户一次也没看到
+    if (useAppStore.getState().currentPage !== 'cooperation') return;
     const FRESH_MS = 3 * 86400_000;
     const now = Date.now();
     for (const s of coopShadows) {
@@ -1179,6 +1182,8 @@ function OnlineFriendPlaceholderCard({
                   待回应
                 </span>
               )}
+              {/* 一起进步（v2.7.0.6）：普通好友也能约 */}
+              <PactPartnerTag partnerId={profile.id} />
             </div>
             <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
               @{profile.userId ?? '—'} · LV {lv}

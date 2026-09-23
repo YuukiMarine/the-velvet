@@ -46,6 +46,20 @@ export interface NotifSnapshot {
   /** 今天是否已有任何记录（非系统类活动）；用于「提醒记录」 */
   loggedToday: boolean;
   /**
+   * 一起进步（v2.7.0.6）：要提醒的那份约定（被催过的优先）。null = 没有进行中的约定。
+   * 触发时 App 多半没在跑，对方后来才催的要等下次打开 App 重排才能写进文案（档 2 的后台刷新另补一条）。
+   */
+  together?: {
+    partnerName: string;
+    title: string;
+    /** 今天被对方催过（只影响今天的文案） */
+    nudged: boolean;
+    /** 今天已经完成（只剩以后的日子要提醒） */
+    doneToday: boolean;
+    /** 往后还要提醒几天：每日打卡按剩余天数（不设期限记满窗口），一次性目标按距截止日 */
+    daysAhead: number;
+  } | null;
+  /**
    * 助手口吻文案（v2.7 notifVoice）：当日缓存的 AI 生成文案，按类覆盖内置文案库。
    * 只用于 day ≤ 1（今明两天）——一周后的排程还念今天的口吻会串味，远日留给模板；
    * null/缺类一律回内置库，链路零依赖。
@@ -94,7 +108,14 @@ export async function requestNotifPermission(): Promise<NotifPermission> {
 // 触发时无法读数据，故内容在排程时烤好。{n}=待办数、{attr}=属性名 经 ctx 注入。
 
 export interface NotifText { title: string; body: string; }
-interface CopyCtx { todoCount: number; attrNames: string; }
+interface CopyCtx {
+  todoCount: number;
+  attrNames: string;
+  /** 一起进步：好友名 / 任务 / 今天是否被催过 */
+  pactPartner: string;
+  pactTitle: string;
+  pactNudged: boolean;
+}
 type CopyFn = (ctx: CopyCtx) => NotifText;
 
 const COPY: Record<NotifContentType, CopyFn[]> = {
@@ -125,6 +146,14 @@ const COPY: Record<NotifContentType, CopyFn[]> = {
     () => ({ title: '成长总结', body: '上一段日子的总结写好了，放在记录页等你查阅。' }),
     () => ({ title: '新的回响', body: '你的旅程被记成了一篇总结。点开读读这段时间的自己吧。' }),
   ],
+  together: [
+    (c) => (c.pactNudged
+      ? { title: `${c.pactPartner}催你了`, body: `「${c.pactTitle}」今天还没完成，Ta 在等你。` }
+      : { title: '一起进步', body: `和${c.pactPartner}约好的「${c.pactTitle}」，今天还没完成。` }),
+    (c) => (c.pactNudged
+      ? { title: `${c.pactPartner}催你了`, body: `约好的「${c.pactTitle}」，还差你这一份。` }
+      : { title: '一起进步', body: `${c.pactPartner}在等你——「${c.pactTitle}」今天还差一步。` }),
+  ],
   record: [
     () => ({ title: '夜间结算', body: '客人，今天还没有在房间里留下一笔……此刻的你，也值得被记下。' }),
     () => ({ title: '今日记录', body: '这一天就要合上了。要不要回来，记下你走过的痕迹？' }),
@@ -135,7 +164,7 @@ const COPY: Record<NotifContentType, CopyFn[]> = {
 // ── 排程核心 ──────────────────────────────────────────────
 
 /** 优先级：越靠前越「该提醒」。一个时段内挑出最高优先且可操作的一条。 */
-const PRIORITY: NotifContentType[] = ['countercurrent', 'summary', 'tarot', 'record', 'todos'];
+const PRIORITY: NotifContentType[] = ['countercurrent', 'together', 'summary', 'tarot', 'record', 'todos'];
 /** 状态型内容（非每日重置）：整个排程窗口内只投一次，避免刷屏。 */
 const ONCE_ONLY: NotifContentType[] = ['summary', 'countercurrent'];
 
@@ -156,6 +185,10 @@ function isActionable(c: NotifContentType, snap: NotifSnapshot, day: number): bo
     case 'record':
       // 今天看是否已有记录；未来天换日后必无记录
       return day === 0 ? !snap.loggedToday : true;
+    case 'together':
+      // 今天看是否已完成；以后的日子看约定还剩几天
+      if (!snap.together) return false;
+      return day === 0 ? !snap.together.doneToday : day <= snap.together.daysAhead;
   }
 }
 
@@ -179,6 +212,10 @@ function pickContent(
   const ctx: CopyCtx = {
     todoCount: snap.incompleteTodoCount,
     attrNames: snap.countercurrentWarnings.map(id => snap.attributeNames[id] ?? id).join('、'),
+    pactPartner: snap.together?.partnerName ?? '好友',
+    pactTitle: snap.together?.title ?? '约好的事',
+    // 催促只算当天
+    pactNudged: day === 0 && !!snap.together?.nudged,
   };
 
   // 助手口吻覆盖（v2.7 notifVoice）：只覆盖今明两天，占位符在此注入

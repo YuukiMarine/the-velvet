@@ -40,7 +40,7 @@ export const COOP_SEVER_COOLDOWN_DAYS = 7;
 
 // ── 转换 ─────────────────────────────────────────────────────────
 
-const profileFromRecord = (r: RecordModel | undefined | null): CloudProfile | undefined => {
+export const profileFromRecord = (r: RecordModel | undefined | null): CloudProfile | undefined => {
   if (!r) return undefined;
   const avatarField = r.avatar as string | string[] | undefined;
   let avatarUrl: string | undefined;

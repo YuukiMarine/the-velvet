@@ -8,7 +8,7 @@
  */
 
 import { create } from 'zustand';
-import type { CoopBond, CoopShadow, Friendship, NotificationEntry, Prayer } from '@/types';
+import type { CoopBond, CoopPact, CoopShadow, Friendship, NotificationEntry, Prayer } from '@/types';
 
 /** 一个未能"物化成本地 Confidant"的 COOP 契约 —— 本地塔罗冲突时出现 */
 export interface MaterializeBlocker {
@@ -30,6 +30,10 @@ interface CloudSocialState {
   coopBonds: CoopBond[];
   /** 所有与我相关的羁绊之影（active / defeated / retreated）—— COOP 联机 Boss */
   coopShadows: CoopShadow[];
+  /** 一起进步的约定（进行中 / 等回应，以及 45 天内结束的） */
+  pacts: CoopPact[];
+  /** 约定是否已经拉到过（没拉到时各处不据此判断「没有约定」） */
+  pactsLoaded: boolean;
   /**
    * 对方的 COOP 已 linked，但本机同号塔罗已被其他活跃同伴占用 → 没法在本地建卡。
    * UI 用这个列表提示用户"先把冲突的同伴归档一下再来刷新"。
@@ -53,6 +57,8 @@ interface CloudSocialState {
   updateCoopBond: (id: string, patch: Partial<CoopBond>) => void;
   setCoopShadows: (ss: CoopShadow[]) => void;
   upsertCoopShadow: (s: CoopShadow) => void;
+  setPacts: (ps: CoopPact[]) => void;
+  upsertPact: (p: CoopPact) => void;
   markNotificationRead: (id: string) => void;
   addNotification: (n: NotificationEntry) => void;
   removeNotification: (id: string) => void;
@@ -85,6 +91,8 @@ export const useCloudSocialStore = create<CloudSocialState>(set => ({
   todayPrayers: [],
   coopBonds: [],
   coopShadows: [],
+  pacts: [],
+  pactsLoaded: false,
   materializeBlockers: [],
   loading: false,
   lastLoadedAt: null,
@@ -130,6 +138,19 @@ export const useCloudSocialStore = create<CloudSocialState>(set => ({
       return { coopShadows: next };
     }
     return { coopShadows: [s, ...state.coopShadows] };
+  }),
+
+  setPacts: pacts => set({ pacts, pactsLoaded: true }),
+
+  upsertPact: p => set(state => {
+    const idx = state.pacts.findIndex(x => x.id === p.id);
+    if (idx >= 0) {
+      const next = state.pacts.slice();
+      // 刚写回来的记录可能没带 expand（对方档案），沿用旧的
+      next[idx] = { ...p, otherProfile: p.otherProfile ?? state.pacts[idx].otherProfile };
+      return { pacts: next };
+    }
+    return { pacts: [p, ...state.pacts] };
   }),
 
   markNotificationRead: id => set(state => {
@@ -185,6 +206,8 @@ export const useCloudSocialStore = create<CloudSocialState>(set => ({
     todayPrayers: [],
     coopBonds: [],
     coopShadows: [],
+    pacts: [],
+    pactsLoaded: false,
     materializeBlockers: [],
     loading: false,
     lastLoadedAt: null,

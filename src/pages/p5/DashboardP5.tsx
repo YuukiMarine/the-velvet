@@ -16,6 +16,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { ModalPortal } from '@/components/ModalPortal';
 import { useBoldness } from '@/utils/boldness';
 import { useAppStore, toLocalDateKey } from '@/store';
+import { PactTodoTag } from '@/components/cooperation/PactTag';
 import type { AttributeId, CallingCard } from '@/types';
 import {
   P5R, roughQuad, roughBanner, starPts,
@@ -1027,6 +1028,7 @@ export const DashboardP5 = () => {
                           <span className={`truncate text-[15px] font-black ${done ? 'line-through' : ''}`} style={{ color: done ? P5R.grey : P5R.ink }}>
                             {todo.title}
                           </span>
+                          <PactTodoTag todo={todo} />
                         </span>
                         <span className="mt-0.5 block truncate text-[11px] font-bold" style={{ color: P5R.grey }}>
                           {attrName} +{todo.points}

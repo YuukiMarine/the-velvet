@@ -213,6 +213,11 @@ export interface Todo {
   deadline?: string;
   /** 收官记录的 activity id；存在 = 已收官 */
   clearedActivityId?: string;
+  /**
+   * 一起进步（v2.7.0.6）：这条待办属于和某位好友的约定，完成即打卡。
+   * 伙伴名存在这里，离线也能画出「与 X」的标记；约定的实时状态在 cloudSocial.pacts 里。
+   */
+  pact?: { id: string; partnerId: string; partnerName: string; kind: PactKind };
 }
 
 export interface TodoCompletion {
@@ -387,7 +392,7 @@ export interface KeywordRule {
  *  - summary：有未读的成长总结
  *  - record：今天还没有任何记录（提醒回来记录）
  */
-export type NotifContentType = 'tarot' | 'todos' | 'countercurrent' | 'summary' | 'record';
+export type NotifContentType = 'tarot' | 'todos' | 'countercurrent' | 'summary' | 'record' | 'together';
 
 /**
  * F2a 本地通知——一个「每日时段」。每个时段在自己的时间点检查 contents 里
@@ -520,6 +525,8 @@ export interface Settings {
   notifAIVoice?: boolean;
   /** 每日提醒时段列表；缺省时回退到 DEFAULT_SETTINGS 的两槽（晨/晚）。 */
   notificationSlots?: NotifSlot[];
+  /** v2.7.0.6：老用户含「今日待办」的时段已补上「一起进步」（只补一次，之后随用户设置） */
+  notifTogetherAdded?: boolean;
   /** F2a 一次性回填标记：历史成长总结的 viewedAt 已补齐（视为已读），避免开启通知时旧总结被判未读。 */
   summaryViewedBackfillDone?: boolean;
   // ── F5 心相记账 ──
@@ -1689,6 +1696,11 @@ export interface Confidant {
    * 每次使用 -1。
    */
   starShiftCharges?: number;
+  /**
+   * 在线同伴的点数换算到哪条阈值曲线了（v2.7.0.6 起在线同伴用 ONLINE_INTIMACY_THRESHOLDS）。
+   * 缺省 = 还是老曲线的点数，首次加载时按比例换算并写上 2（见 utils/confidantLevels）。
+   */
+  intimacyCurve?: number;
   /** 情感安全锁：归档前的二次确认标记（用户主动设置） */
   pinned?: boolean;
   /**
@@ -1910,6 +1922,49 @@ export interface NotificationEntry {
   payload?: Record<string, unknown>;  // 附加数据：friendship_id / prayer_id / coop_link_id 等
   read: boolean;
   createdAt: Date;
+}
+
+// ── 一起进步（v2.7.0.6） ─────────────────────────────────
+//
+// 两位好友之间的打卡约定：每日打卡（一段时间内每天各完成一件事）或一次性目标（截止日前各完成一件）。
+// 共同目标 = 同一件事；不同目标 = 各写各的。接受后双方各在本地建一条带 pact 的待办，完成即打卡。
+// 在线同伴（有 COOP 契约）同一天都完成会涨亲密度；普通好友只一起打卡，不涨亲密度。
+// 数据在 PB 集合 coop_pacts（services/coopPacts.ts 顶部有字段与规则）。
+
+export type PactKind = 'daily' | 'once';
+export type PactMode = 'same' | 'different';
+export type PactStatus = 'pending' | 'active' | 'finished' | 'cancelled' | 'declined' | 'expired';
+
+export interface CoopPact {
+  id: string;
+  /** 发起人 / 受邀人（PB users id） */
+  fromId: string;
+  toId: string;
+  kind: PactKind;
+  mode: PactMode;
+  /** 发起人的任务（共同目标时两人都做这件） */
+  titleFrom: string;
+  /** 受邀人的任务（不同目标时接受才填） */
+  titleTo?: string;
+  /** 每日打卡的天数：7 / 14 / 21 / 30；0 = 不设期限。一次性目标为 0 */
+  days: number;
+  /** 一次性目标的截止日 YYYY-MM-DD */
+  deadline?: string;
+  /** 约定开始的日子（受邀人接受当天） */
+  startDay?: string;
+  status: PactStatus;
+  /** 双方各自打卡的日子（YYYY-MM-DD，各自只写自己那一栏） */
+  doneFrom: string[];
+  doneTo: string[];
+  /** 最近一次催对方的日子（发起人催 / 受邀人催） */
+  nudgeFromDay?: string;
+  nudgeToDay?: string;
+  message?: string;
+  endedBy?: string;
+  createdAt: Date;
+  updatedAt: Date;
+  /** 对方的档案快照（expand 出来的） */
+  otherProfile?: CloudProfile;
 }
 
 // ── COOP 契约（在线同伴羁绊） ───────────────────────────

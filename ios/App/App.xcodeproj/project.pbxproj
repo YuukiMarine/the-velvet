@@ -14,6 +14,8 @@
 		301632A2EFE3969C909143CD /* VelvetDraw.swift in Sources */ = {isa = PBXBuildFile; fileRef = 447D77047469495359B09285 /* VelvetDraw.swift */; };
 		397D613181FF4C32FE191ACB /* VelvetCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 486ABC5FF10D1CF6C4242D69 /* VelvetCard.swift */; };
 		48B479048CFB68CDA7FEE790 /* VelvetWidgetPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5C99D821C2699BA077BB48F /* VelvetWidgetPlugin.swift */; };
+		09FAAACF10099408A7DED010 /* PactRefreshPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = B876E6363342A183794357EE /* PactRefreshPlugin.swift */; };
+		2598806A702965F49138DC92 /* PactRefreshPlugin.m in Sources */ = {isa = PBXBuildFile; fileRef = AFE85FCD8AEB8512AA78EFD7 /* PactRefreshPlugin.m */; };
 		50379B232058CBB4000EE86E /* capacitor.config.json in Resources */ = {isa = PBXBuildFile; fileRef = 50379B222058CBB4000EE86E /* capacitor.config.json */; };
 		504EC3081FED79650016851F /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 504EC3071FED79650016851F /* AppDelegate.swift */; };
 		504EC30D1FED79650016851F /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30B1FED79650016851F /* Main.storyboard */; };
@@ -68,6 +70,8 @@
 		7FF4B50C8A8DC9335E165A5A /* VelvetWidget.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = VelvetWidget.entitlements; sourceTree = "<group>"; };
 		831A12A70B266A1C2DC95CF9 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A5C99D821C2699BA077BB48F /* VelvetWidgetPlugin.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VelvetWidgetPlugin.swift; sourceTree = "<group>"; };
+		B876E6363342A183794357EE /* PactRefreshPlugin.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PactRefreshPlugin.swift; sourceTree = "<group>"; };
+		AFE85FCD8AEB8512AA78EFD7 /* PactRefreshPlugin.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; path = PactRefreshPlugin.m; sourceTree = "<group>"; };
 		AF277DCFFFF123FFC6DF26C7 /* Pods_App.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_App.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		AF51FD2D460BCFE21FA515B2 /* Pods-App.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-App.release.xcconfig"; path = "Pods/Target Support Files/Pods-App/Pods-App.release.xcconfig"; sourceTree = "<group>"; };
 		B4A3298757669DF10F6A8870 /* VelvetWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = VelvetWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -141,6 +145,8 @@
 				50B271D01FEDC1A000F3C39B /* public */,
 				A5C99D821C2699BA077BB48F /* VelvetWidgetPlugin.swift */,
 				F499CAAEE92D01395A0603B3 /* VelvetWidgetPlugin.m */,
+				B876E6363342A183794357EE /* PactRefreshPlugin.swift */,
+				AFE85FCD8AEB8512AA78EFD7 /* PactRefreshPlugin.m */,
 				BA92098934E60433011800AD /* App.entitlements */,
 			);
 			path = App;
@@ -334,6 +340,8 @@
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
 				48B479048CFB68CDA7FEE790 /* VelvetWidgetPlugin.swift in Sources */,
 				0C9EDD902D23739A4591FFBE /* VelvetWidgetPlugin.m in Sources */,
+				09FAAACF10099408A7DED010 /* PactRefreshPlugin.swift in Sources */,
+				2598806A702965F49138DC92 /* PactRefreshPlugin.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

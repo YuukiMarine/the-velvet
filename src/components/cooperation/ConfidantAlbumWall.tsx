@@ -16,7 +16,8 @@ import { motion } from 'motion/react';
 import type { CloudProfile, Confidant, Friendship } from '@/types';
 import { OnlineStarBadge } from './OnlineStarBadge';
 import { ConfidantNameFx } from './ConfidantNameFx';
-import { MAX_INTIMACY } from '@/utils/confidantLevels';
+import { MAX_INTIMACY, thresholdsFor } from '@/utils/confidantLevels';
+import { PactPartnerTag } from './PactTag';
 import { TAROT_BY_ID } from '@/constants/tarot';
 import { TarotCardSVG } from '@/components/astrology/TarotCardSVG';
 import { useBoldness } from '@/utils/boldness';
@@ -136,7 +137,12 @@ const CardBackFace = ({ c, onOpenDetail, prayer }: {
   const sk = BACK_SKIN[channel];
   const p5 = channel === 'p5';
   const card = TAROT_BY_ID[c.arcanaId];
-  const nextNeed = 20 + c.intimacy * 10; // 展示用近似值：真实口径在详情页
+  // 等级内进度（v2.7.0.6 改用真实阈值：之前是「20 + 等级×10」的近似值，和详情页对不上）
+  const th = thresholdsFor(c);
+  const lvBase = th[Math.min(c.intimacy, MAX_INTIMACY)];
+  const lvNext = c.intimacy >= MAX_INTIMACY ? lvBase : th[c.intimacy + 1];
+  const inLevel = Math.max(0, c.intimacyPoints - lvBase);
+  const lvSpan = Math.max(1, lvNext - lvBase);
   return (
     <div
       className="flex h-full w-full flex-col px-4 py-4"
@@ -175,7 +181,7 @@ const CardBackFace = ({ c, onOpenDetail, prayer }: {
       <div className="mt-3">
         <div className="flex items-baseline justify-between text-[10px] font-bold" style={{ color: sk.meta }}>
           <span>RANK {c.intimacy}</span>
-          <span className="tabular-nums">{c.intimacyPoints}/{nextNeed}</span>
+          <span className="tabular-nums">{c.intimacy >= MAX_INTIMACY ? 'MAX' : `${inLevel}/${lvSpan}`}</span>
         </div>
         <div
           className="mt-1 h-1.5 overflow-hidden"
@@ -183,10 +189,15 @@ const CardBackFace = ({ c, onOpenDetail, prayer }: {
         >
           <div
             className="h-full"
-            style={{ width: `${Math.min(100, (c.intimacyPoints / nextNeed) * 100)}%`, background: sk.bar, borderRadius: p5 ? 0 : 9999 }}
+            style={{ width: `${c.intimacy >= MAX_INTIMACY ? 100 : Math.min(100, (inLevel / lvSpan) * 100)}%`, background: sk.bar, borderRadius: p5 ? 0 : 9999 }}
           />
         </div>
       </div>
+
+      {/* 一起进步（v2.7.0.6）：今天还差谁 */}
+      {c.source === 'online' && c.linkedCloudUserId && !c.archivedAt && (
+        <div className="mt-2 flex"><PactPartnerTag partnerId={c.linkedCloudUserId} surface={channel === 'neutral' ? 'night' : 'default'} /></div>
+      )}
 
       {c.description && (
         <p className="mt-3 line-clamp-3 text-[11px] leading-relaxed" style={{ color: sk.sub }}>{c.description}</p>
@@ -389,6 +400,9 @@ const FriendCardBack = ({ f, onOpen, onCrop, onProfile }: {
           </span>
         )}
       </div>
+
+      {/* 一起进步（v2.7.0.6）：普通好友也能约 */}
+      <div className="mt-2 flex"><PactPartnerTag partnerId={f.profile.id} surface={channel === 'neutral' ? 'night' : 'default'} /></div>
 
       <p className="mt-3 text-[11px] leading-relaxed" style={{ color: sk.sub }}>
         还未缔结 COOP 契约——两张塔罗尚未互相照亮。递出契约，Ta 就会正式落座这面墙。

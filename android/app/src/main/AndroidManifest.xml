@@ -76,6 +76,13 @@
                 android:resource="@xml/widget_agenda_info" />
         </receiver>
 
+        <!-- 一起进步 · 后台刷新（v2.7.0.6）：JobScheduler 周期任务的入口。
+             BIND_JOB_SERVICE 保证只有系统能绑定它；不导出。 -->
+        <service
+            android:name=".PactRefreshJobService"
+            android:permission="android.permission.BIND_JOB_SERVICE"
+            android:exported="false" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

@@ -17,11 +17,13 @@ import {
   listCoopShadows,
   maybeSpawnForBonds,
   retreatExpiredShadow,
+  dedupeShadows,
 } from './coopShadows';
 import { useCloudSocialStore } from '@/store/cloudSocial';
 import { useCloudStore } from '@/store/cloud';
 import { useAppStore } from '@/store';
 import { getOnlineCardFace, clearOnlineCardFace } from './onlineCardFace';
+import { syncPacts } from './pactSync';
 import { interpretLockedArcana, type ConfidantMatchResult } from '@/utils/confidantAI';
 import type { CoopBond, CoopShadow, Friendship, NotificationEntry } from '@/types';
 
@@ -36,7 +38,33 @@ const MIN_REFRESH_INTERVAL_MS = 30 * 1000;
 const sameJson = (a: unknown, b: unknown): boolean =>
   JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 
-export const loadSocial = async (options: { force?: boolean } = {}): Promise<void> => {
+/**
+ * 同一时间只跑一轮。以前各处（App 登录、同伴衰减维护、切前台、同伴页、各弹层）各发各的，
+ * 冷启动时就有两轮并行——30 秒节流拦不住（lastLoadedAt 要等一轮跑完才记），
+ * 整条流水线（降临 / 撤退 / 结算 / 约定对账）跟着跑两遍：同一个月夜降临两只影、
+ * 撤退慰问的 SP 发两次（用户上报「SHADOW RETREATED 重复弹」的源头之一）。
+ * 现在：正在跑时，普通调用搭这一轮；force 调用（刚改过数据、要新结果）排在这一轮之后
+ * 再跑一轮，多个 force 合并成同一轮。
+ */
+let socialRun: Promise<void> | null = null;
+let socialRerun: Promise<void> | null = null;
+
+export const loadSocial = (options: { force?: boolean } = {}): Promise<void> => {
+  if (!socialRun) {
+    socialRun = loadSocialOnce(options).finally(() => { socialRun = null; });
+    return socialRun;
+  }
+  if (!options.force) return socialRun;
+  if (!socialRerun) {
+    socialRerun = socialRun.catch(() => undefined).then(() => {
+      socialRerun = null;
+      return loadSocial({ force: true });
+    });
+  }
+  return socialRerun;
+};
+
+const loadSocialOnce = async (options: { force?: boolean }): Promise<void> => {
   if (!pb || !pb.authStore.isValid) return;
 
   const store = useCloudSocialStore.getState();
@@ -48,13 +76,15 @@ export const loadSocial = async (options: { force?: boolean } = {}): Promise<voi
   store.setLoading(true);
   store.setLastError(null);
   try {
-    const [friendships, notifications, todayPrayers, coopBonds, coopShadows] = await Promise.all([
+    const [friendships, notifications, todayPrayers, coopBonds, rawShadows] = await Promise.all([
       listFriendships(),
       listNotifications(),
       listTodayPrayers(),
       listCoopBonds(),
       listCoopShadows(),
     ]);
+    // 同一对、同一个月夜重复降临的影只认一只（其余不显示、不撤退、不结算、不弹屏）
+    const coopShadows = dedupeShadows(rawShadows);
     store.setFriendships(friendships);
     store.setNotifications(notifications);
     store.setTodayPrayers(todayPrayers);
@@ -94,6 +124,13 @@ export const loadSocial = async (options: { force?: boolean } = {}): Promise<voi
       await settleFinishedShadows();
     } catch (err) {
       console.warn('[velvet-social] coop pipeline failed', err);
+    }
+    // 一起进步：约定落到本机（建 / 收尾待办、补打卡、在线同伴发亲密度）。
+    // 放在 COOP 物化之后：在线同伴卡要先建好，亲密度才找得到人
+    try {
+      await syncPacts(notifications);
+    } catch (err) {
+      console.warn('[velvet-social] pact sync failed', err);
     }
   } catch (err) {
     console.error('[velvet-social] load failed:', err);

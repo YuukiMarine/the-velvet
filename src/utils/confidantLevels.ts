@@ -77,27 +77,54 @@ export function getArcanaAttribute(arcanaId: string): AttributeId {
   return (card?.relatedAttribute ?? 'knowledge') as AttributeId;
 }
 
+/**
+ * 在线同伴的阈值（v2.7.0.6「一起进步」上线后改用，方案 B「前松后紧」）：Lv1～5 不变，Lv6 起拉长。
+ * 多了一起进步这个来源，按原阈值升满级会快三成左右；拉长后大致回到原来的节奏。
+ * 本地（离线）同伴只有每日解读一个来源，仍用 INTIMACY_THRESHOLDS。
+ * 老档案不掉级：首次加载时按「当前等级内的进度比例」把点数换算到新曲线（remapIntimacyPoints）。
+ */
+export const ONLINE_INTIMACY_THRESHOLDS = [0, 4, 9, 16, 25, 36, 55, 80, 115, 160, 220] as const;
+/** 在线同伴点数已换算到新曲线的标记值（Confidant.intimacyCurve） */
+export const ONLINE_INTIMACY_CURVE = 2;
+
+/** 这位同伴该用哪条阈值曲线 */
+export const thresholdsFor = (c: { source?: string } | null | undefined): readonly number[] =>
+  c?.source === 'online' ? ONLINE_INTIMACY_THRESHOLDS : INTIMACY_THRESHOLDS;
+
 /** 累计点数换算为等级（0..MAX_INTIMACY） */
-export function pointsToLevel(totalPoints: number): number {
+export function pointsToLevel(totalPoints: number, th: readonly number[] = INTIMACY_THRESHOLDS): number {
   let lv = 0;
   for (let i = 1; i <= MAX_INTIMACY; i++) {
-    if (totalPoints >= INTIMACY_THRESHOLDS[i]) lv = i;
+    if (totalPoints >= th[i]) lv = i;
     else break;
   }
   return lv;
 }
 
 /** 当前等级距下一级所需累计点数；已满级返回 null */
-export function pointsToNextLevel(totalPoints: number): { next: number; gap: number } | null {
-  const lv = pointsToLevel(totalPoints);
+export function pointsToNextLevel(totalPoints: number, th: readonly number[] = INTIMACY_THRESHOLDS): { next: number; gap: number } | null {
+  const lv = pointsToLevel(totalPoints, th);
   if (lv >= MAX_INTIMACY) return null;
-  const next = INTIMACY_THRESHOLDS[lv + 1];
+  const next = th[lv + 1];
   return { next, gap: next - totalPoints };
 }
 
 /** 当前等级起点累计点数 */
-export function levelBasePoints(lv: number): number {
-  return INTIMACY_THRESHOLDS[Math.max(0, Math.min(lv, MAX_INTIMACY))];
+export function levelBasePoints(lv: number, th: readonly number[] = INTIMACY_THRESHOLDS): number {
+  return th[Math.max(0, Math.min(lv, MAX_INTIMACY))];
+}
+
+/**
+ * 换曲线时的点数换算：等级保持不变，等级内的进度按比例搬到新曲线上。
+ * 以存储的 level 为准（老档案的点数可能是更早那版阈值攒的，和 level 对不齐）。
+ */
+export function remapIntimacyPoints(points: number, level: number, from: readonly number[], to: readonly number[]): number {
+  const lv = Math.max(0, Math.min(MAX_INTIMACY, Math.floor(level)));
+  if (lv >= MAX_INTIMACY) return Math.max(to[MAX_INTIMACY], points - from[MAX_INTIMACY] + to[MAX_INTIMACY]);
+  const fb = from[lv], fn = from[lv + 1];
+  const ratio = fn > fb ? Math.min(0.999, Math.max(0, (points - fb) / (fn - fb))) : 0;
+  const tb = to[lv], tn = to[lv + 1];
+  return Math.min(tn - 1, Math.round(tb + ratio * (tn - tb)));
 }
 
 /**
