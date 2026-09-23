@@ -60,7 +60,8 @@ function formatAllAttrsSpecialization(attrNames: Record<AttributeId, string>): s
 }
 
 // getAIConfig / 传输 / SSE 解析 / 超时 现已统一由 @/utils/aiClient 提供。
-// callAI / callAIStream 只剩一层薄封装，保留 battleAI 特有的「失败降温重试」语义。
+// callAI 只剩一层薄封装，保留 battleAI 特有的「失败降温重试」语义；
+// 长 JSON 生成（召唤 / 显形 / 伪神）走下面的 streamJSONResilient。
 
 async function callAI(
   cfg: AIConfig,
@@ -70,37 +71,6 @@ async function callAI(
   jsonMode = false,
 ): Promise<string> {
   return chatComplete(cfg, messages, { temperature, maxTokens, jsonMode });
-}
-
-/**
- * 流式调用：onChunk 每接到一段新文本就回调（fullText 为累计文本）。
- * 传输 / SSE 解析 / 超时全部委托给 aiClient.chatStream。
- */
-async function callAIStream(
-  cfg: AIConfig,
-  messages: AIMessage[],
-  onChunk: (delta: string, fullText: string) => void,
-  temperature = 0.8,
-  maxTokens = 1500,
-): Promise<string> {
-  /**
-   * 两个缓冲，别合并：
-   *   full  —— 只装正文，是要拿去 extractJSON 的那份
-   *   shown —— 显示用，思维链也进来
-   * 思维链模型（deepseek-v4-pro 一类）在"想"的那几十秒里一个正文字都不吐，
-   * 只喂 full 的话吟唱屏下面那条滚动预览会整段空着。
-   */
-  let full = '';
-  let shown = '';
-  const push = (d: string) => { shown += d; onChunk(d, shown); };
-  for await (const delta of chatStream(cfg, messages, {
-    temperature, maxTokens,
-    onReasoning: push,
-  })) {
-    full += delta;
-    push(delta);
-  }
-  return full;
 }
 
 // ── Robust JSON extraction ──────────────────────────────────────────────────
@@ -137,6 +107,70 @@ function repairTruncatedJSON(src: string): string {
   return out;
 }
 
+/**
+ * 字符串值里没转义的英文双引号（如 "description":"他说"我思故我在"。"）→ 转义掉。
+ * 判断依据：在字符串里遇到 " 时往后看第一个非空白字符——是 , } ] : 或到头了，
+ * 这个引号才是真的收尾；否则是正文里的引号。
+ */
+function escapeInnerQuotes(src: string): string {
+  let out = '';
+  let inStr = false, esc = false;
+  for (let i = 0; i < src.length; i++) {
+    const ch = src[i];
+    if (!inStr) {
+      if (ch === '"') inStr = true;
+      out += ch;
+      continue;
+    }
+    if (esc) { esc = false; out += ch; continue; }
+    if (ch === '\\') { esc = true; out += ch; continue; }
+    if (ch === '"') {
+      let j = i + 1;
+      while (j < src.length && /\s/.test(src[j])) j++;
+      const nx = src[j];
+      if (nx === undefined || nx === ',' || nx === '}' || nx === ']' || nx === ':') { inStr = false; out += ch; }
+      else out += '\\"';
+      continue;
+    }
+    out += ch;
+  }
+  return out;
+}
+
+/** 相邻元素之间漏了逗号：`} {`、`] [`、`"a" "b"`、`} "key"` 这几种 */
+function fixMissingCommas(src: string): string {
+  return src
+    .replace(/\}\s*\{/g, '},{')
+    .replace(/\]\s*\[/g, '],[')
+    .replace(/"\s+"(?=[^"]*"\s*:)/g, '","')
+    .replace(/([}\]])\s*"/g, '$1,"');
+}
+
+/** extractJSON 的不抛错版本 */
+function tryExtractJSON(text: string): Record<string, unknown> | null {
+  try { return extractJSON(text); } catch { return null; }
+}
+
+/** 粗看 JSON 结构是否闭合（忽略字符串内容）：判断「写完了」还是「被截断了」 */
+function jsonLooksClosed(text: string): boolean {
+  const start = text.indexOf('{');
+  if (start < 0) return false;
+  let depth = 0, inStr = false, esc = false, opened = false;
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (ch === '\\') esc = true;
+      else if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') { inStr = true; continue; }
+    if (ch === '{' || ch === '[') { depth++; opened = true; }
+    else if (ch === '}' || ch === ']') { depth--; if (opened && depth === 0) return true; }
+  }
+  return false;
+}
+
 /** Extract a JSON object from AI response text, tolerating code blocks, trailing commas, comments */
 function extractJSON(text: string): Record<string, unknown> {
   // Strip markdown code blocks
@@ -150,11 +184,15 @@ function extractJSON(text: string): Record<string, unknown> {
   jsonStr = jsonStr.replace(/\/\/[^\n]*/g, '');
   // Remove trailing commas before } or ]
   jsonStr = jsonStr.replace(/,\s*([}\]])/g, '$1');
+  const flat = jsonStr.replace(/[\r\n]+/g, ' ');
   const attempts = [
     jsonStr,
-    jsonStr.replace(/[\r\n]+/g, ' '),          // 字符串里裸换行
+    flat,                                       // 字符串里裸换行
     repairTruncatedJSON(jsonStr),               // 被砍在半句
-    repairTruncatedJSON(jsonStr.replace(/[\r\n]+/g, ' ')),
+    repairTruncatedJSON(flat),
+    // v2.7.0.6：长中文 JSON 的两类常见瑕疵——字符串里没转义的英文双引号、相邻元素漏了逗号
+    escapeInnerQuotes(fixMissingCommas(flat)),
+    repairTruncatedJSON(escapeInnerQuotes(fixMissingCommas(flat))),
   ];
   let lastErr: unknown;
   for (const a of attempts) {
@@ -195,39 +233,153 @@ async function callAIWithRetry(
   throw lastErr instanceof Error ? lastErr : new Error('AI 调用失败');
 }
 
-/**
- * 流式调用 + 重试。最后一级**退回非流式**：
- * 有些 provider（网关代理、开了 json_object 的思维链模型）SSE 通道会返回空流或只吐
- * reasoning，非流式同一个请求却是好的。人格生成失败率高有一部分就栽在这——
- * 掉一段打字机动画，总比整份人格回退成模板强。
- */
-async function callAIStreamWithRetry(
-  cfg: AIConfig,
-  messages: AIMessage[],
-  onChunk: (delta: string, fullText: string) => void,
-  temperature = 0.8,
-  maxTokens = 1500,
-  json = false,
-): Promise<string> {
-  /**
-   * 梯子只有两级，而且刻意**不**是「流式再试一遍」。
-   * 每一级最坏都要耗满 90s 空闲超时；人格生成是 9000 token 的大活，
-   * 排三四级下去就是用户说的「一直转、一直完不成」。
-   * 同样的通道重试一次收益很低，换成非流式才是真的换了条路。
-   */
-  let lastErr: unknown;
-  try {
-    return await callAIStream(cfg, messages, onChunk, temperature, maxTokens);
-  } catch (e) { lastErr = e; }
-  try {
-    const text = await callAI(cfg, messages, temperature, maxTokens, json);
-    onChunk(text, text);   // 一次性把正文交给 UI，打字机退化为整段落地
-    return text;
-  } catch (e) {
-    // 非流式也不行：抛**非流式**那次的错误——它带着 finish_reason / HTTP 状态，
-    // 比流式那句「返回为空」更能指出该改什么
-    throw e instanceof Error ? e : (lastErr instanceof Error ? lastErr : new Error('AI 调用失败'));
+
+// ── 流式 JSON + 续写（v2.7.0.6：区层显形 / 伪神显形改走这条）──────────────────
+//
+// 非流式调用有 90 秒硬超时；深思熟虑档（v4-pro 一类）思考 2～4 分钟一个字节都不来，
+// 于是"仪式失败率高、转圈四分半后报错"。流式通道的超时是**空闲**超时，思维链增量会续命。
+// JSON 被截断（finish_reason=length）时不再整轮报废：抛 JSONTruncatedError 带着半截，
+// 仪式卡出「让它说完」——把半截当 assistant 回传，让模型从断处续，再拼起来解析。
+
+export class JSONTruncatedError extends Error {
+  partial: string;
+  constructor(partial: string) {
+    super('输出在中途被截断，可以让它接着说完');
+    this.name = 'JSONTruncatedError';
+    this.partial = partial;
   }
+}
+
+export interface StreamJSONOpts {
+  /** 显示用的累计文本（思维链 + 正文都进来，喂滚动预览） */
+  onProgress?: (shown: string) => void;
+  signal?: AbortSignal;
+  /** 上一次截断的半截：续写 */
+  resumeFrom?: string;
+  /** 测试 / 特殊场合覆盖正文预算 */
+  maxTokens?: number;
+}
+
+const RESUME_INSTRUCTION = '你的 JSON 输出在中途被截断了。请从截断处直接接着输出剩余部分：不要重复已经输出的内容，不要重新开头，不要解释，直到 JSON 闭合。';
+
+/**
+ * 韧性流式（v2.7.0.6，召唤 / 显形 / 伪神共用）。
+ *
+ * 用户反馈「生成容易在最后卡住然后跳出来失败」，实测拆开是几件事叠在一起：
+ *   ① 手机上等两三分钟，用户切出 App → 系统挂起网页 → 流被掐断。之前断了就整份作废，
+ *      再退到非流式整份重来（思考型模型两三分钟，非流式 90 秒硬超时必挂），画面停在最后几行。
+ *   ② 输出被 max_tokens 截断在结尾（思考吃掉了预算）。
+ *   ③ 写完了但 JSON 有瑕疵（没转义的引号、漏逗号）。
+ * 这里的处理：
+ *   · 已经写出正文 → 把半截当 assistant 回传，从断处续写（最多 maxResumes 次）；
+ *     DeepSeek 续写时关掉思考，几秒就接上，不用再想两分钟；
+ *   · 正文还没开始就断了（死在思考阶段）→ 重新开始一次；流式一个字节都拿不到 → 退非流式一次；
+ *   · 写完了但解析失败 → 先走本地修复（extractJSON 的几种修法），不拿它去续写；
+ *   · 关键字段齐了就收，没齐但写完了就把能用的交回去，由调用方补默认值。
+ */
+async function streamJSONResilient(
+  cfg: AIConfig,
+  prompt: string,
+  temperature: number,
+  maxTokens: number,
+  opts: StreamJSONOpts & { maxResumes?: number; maxRestarts?: number; parse?: (text: string) => Record<string, unknown> | null },
+  essential: (parsed: Record<string, unknown>) => boolean,
+): Promise<Record<string, unknown>> {
+  const parse = opts.parse ?? tryExtractJSON;
+  const maxResumes = opts.maxResumes ?? 2;
+  const maxRestarts = opts.maxRestarts ?? 1;
+  let full = opts.resumeFrom ?? '';
+  let shown = full;
+  let resumes = 0, restarts = 0, triedNonStream = false;
+  const push = (d: string) => { shown += d; opts.onProgress?.(shown); };
+  const note = (t: string) => push(`\n${t}\n`);
+
+  for (;;) {
+    const resuming = full.trim().length > 0;
+    const messages: AIMessage[] = resuming
+      ? [
+          { role: 'user', content: prompt },
+          { role: 'assistant', content: full },
+          { role: 'user', content: RESUME_INSTRUCTION },
+        ]
+      : [{ role: 'user', content: prompt }];
+    let finish = '';
+    let err: unknown = null;
+    let cont = '';
+    let sawAny = false;
+    try {
+      for await (const delta of chatStream(cfg, messages, {
+        temperature,
+        maxTokens: opts.maxTokens ?? maxTokens,
+        signal: opts.signal,
+        onReasoning: d => { sawAny = true; push(d); },
+        onFinishReason: r => { finish = r; },
+        // 续写只是把 JSON 接完，不值得再想一遍（DeepSeek 支持关思考；别家原样）
+        extraBody: resuming && cfg.provider === 'deepseek' ? { thinking: { type: 'disabled' } } : undefined,
+      })) {
+        sawAny = true;
+        cont += delta;
+        push(delta);
+      }
+    } catch (e) {
+      if (opts.signal?.aborted) throw e;
+      err = e;
+    }
+    full = resuming ? mergeContinuation(full, cont) : cont;
+
+    // 续写的模型偶尔会从头重写一份：两份都试
+    let parsed = parse(full);
+    if (resuming && !(parsed && essential(parsed))) {
+      const alone = parse(cont);
+      if (alone && essential(alone)) { full = cont; parsed = alone; }
+    }
+    if (parsed && essential(parsed)) return parsed;
+
+    const hasContent = full.includes('{') && full.trim().length > 20;
+    const truncated = !!err || finish === 'length' || (finish !== 'stop' && !jsonLooksClosed(full));
+    if (truncated && hasContent && resumes < maxResumes) {
+      resumes++;
+      note(`（${err ? '连接断了' : '写到一半被截断'}，从断处接着写 ${resumes}/${maxResumes}）`);
+      continue;
+    }
+    if (!hasContent && err) {
+      if (!sawAny && !triedNonStream) {
+        // 流式通道一个字节都没拿到（部分网关 / 开了 json 模式的思考模型会这样）→ 换非流式试一次
+        triedNonStream = true;
+        note('（流式通道没有返回，换一条路再试）');
+        try {
+          full = await chatComplete(cfg, [{ role: 'user', content: prompt }], { temperature, maxTokens: opts.maxTokens ?? maxTokens, signal: opts.signal });
+          push(full);
+          const p = parse(full);
+          if (p) return p;
+        } catch (e2) {
+          if (opts.signal?.aborted) throw e2;
+          err = e2;
+        }
+      }
+      if (restarts < maxRestarts) {
+        restarts++;
+        full = '';
+        note('（连接断了，重新开始）');
+        continue;
+      }
+      throw err;
+    }
+    if (parsed) return parsed;
+    if (truncated && hasContent) throw new JSONTruncatedError(full);
+    if (err) throw err;
+    throw new Error('AI 返回的 JSON 格式无效，请重试');
+  }
+}
+
+/** 续写拼接：去掉续写开头的代码块标记，以及与前文结尾重叠的那一段 */
+function mergeContinuation(prev: string, cont: string): string {
+  let c = cont.replace(/^\s*```(?:json|JSON)?\s*/, '');
+  const tail = prev.slice(-80);
+  for (let n = Math.min(tail.length, c.length); n >= 4; n--) {
+    if (tail.endsWith(c.slice(0, n))) { c = c.slice(n); break; }
+  }
+  return prev + c;
 }
 
 // ── Persona skill validation ────────────────────────────────────────────────
@@ -304,6 +456,38 @@ ${formatSingleAttrSpecialization(attr, attrName)}
 
 纯JSON输出，不含代码块和注释：
 {"name":"真实人物名","description":"一句话说明该人物与反抗者${attrName}特质的契合点","skills":[{"level":1,"name":"技能名","description":"技能描述","type":"damage","power":10,"spCost":8},{"level":2,"name":"技能名","description":"技能描述","type":"crit","power":15,"spCost":12},{"level":3,"name":"技能名","description":"技能描述","type":"buff","power":22,"spCost":18},{"level":4,"name":"技能名","description":"技能描述","type":"debuff","power":30,"spCost":25},{"level":5,"name":"技能名","description":"技能描述","type":"attack_boost","power":40,"spCost":35}]}`;
+}
+
+/**
+ * 召唤的解析：整份能解析就用整份；解析不了就**按属性逐个抢救**——
+ * 在原文里找到 "knowledge": { … } 这样的块，按括号配平切出来单独解析。
+ * 一条技能描述里多了个没转义的引号，不该连累另外四个属性一起作废。
+ */
+function parsePersonaJSON(text: string): Record<string, unknown> | null {
+  const whole = tryExtractJSON(text);
+  if (whole && ATTRS.some(a => whole[a])) return whole;
+  const out: Record<string, unknown> = {};
+  for (const attr of ATTRS) {
+    const m = new RegExp(`"${attr}"\\s*:\\s*\\{`).exec(text);
+    if (!m) continue;
+    const start = m.index + m[0].length - 1;
+    let depth = 0, inStr = false, esc = false, end = -1;
+    for (let i = start; i < text.length; i++) {
+      const ch = text[i];
+      if (inStr) {
+        if (esc) esc = false;
+        else if (ch === '\\') esc = true;
+        else if (ch === '"') inStr = false;
+        continue;
+      }
+      if (ch === '"') inStr = true;
+      else if (ch === '{') depth++;
+      else if (ch === '}') { depth--; if (depth === 0) { end = i; break; } }
+    }
+    const block = tryExtractJSON(end > 0 ? text.slice(start, end + 1) : text.slice(start));
+    if (block) out[attr] = block;
+  }
+  return Object.keys(out).length ? out : null;
 }
 
 export async function generatePersonaSkills(
@@ -405,6 +589,9 @@ ${formatAllAttrsSpecialization(attributeNames)}
   };
 
   // ── ① 一次成型：5 属性一把出 ───────────────────────────────
+  // 整段展示文本：①的思维链 + 正文，②的逐个唤起都往这里续（滚动预览只看尾巴）
+  let feed = '';
+  const show = (t: string) => { feed = t; onStreamChunk?.('', feed); };
   try {
     /**
      * 预算 6000（曾经是 9000）。
@@ -412,51 +599,55 @@ ${formatAllAttrsSpecialization(attributeNames)}
      * 这份输出实测落在 4000-5500 tokens（25 条技能的中文 name+description 约 2600 字
      * 加 JSON 结构）。9000 是"宁可多给"，但**很多服务商的单次输出上限就在 4096/8192**，
      * 超上限时不是报错、而是回一个空 completion —— 于是用户看到「卡很久 + AI 返回空响应」。
-     * 6000 兜得住正常输出，又不容易撞上限；真被砍了还有 repairTruncatedJSON 和下面的分属性重来。
+     * 6000 兜得住正常输出，又不容易撞上限；真被砍了会从断处续写（streamJSONResilient）。
+     *
+     * v2.7.0.6：改走韧性流式——断线续写、写完有瑕疵本地修、按属性逐个抢救；
+     * 不再「流式失败 → 非流式整份重来」（思考型模型整份要两三分钟，非流式超时必挂）。
      */
     const PERSONA_MAX_TOKENS = 6000;
-    const result = onStreamChunk
-      ? await callAIStreamWithRetry(cfg, [{ role: 'user', content: prompt }], onStreamChunk, 0.6, PERSONA_MAX_TOKENS, true)
-      : await callAIWithRetry(cfg, [{ role: 'user', content: prompt }], 0.6, PERSONA_MAX_TOKENS, true);
-    const parsed = extractJSON(result) as Record<string, { name?: string; description?: string; skills?: unknown }>;
-    ATTRS.forEach(attr => takeAttr(attr, parsed[attr]));
+    const parsed = await streamJSONResilient(
+      cfg, prompt, 0.6, PERSONA_MAX_TOKENS,
+      { onProgress: show, parse: parsePersonaJSON },
+      p => ATTRS.every(a => Array.isArray((p[a] as { skills?: unknown } | undefined)?.skills) && ((p[a] as { skills: unknown[] }).skills.length >= 3)),
+    ) as Record<string, { name?: string; description?: string; skills?: unknown }>;
+    ATTRS.forEach(attr => { if (parsed[attr]) takeAttr(attr, parsed[attr]); });
     if (okAttrs.size === ATTRS.length) return { personaName: fallbackName, skills, attributePersonas, usedFallback: false };
     lastErr = `整份返回只解析出 ${okAttrs.size}/5 个属性`;
   } catch (e) {
     lastErr = e instanceof Error ? e.message : 'AI 调用失败（未知错误）';
   }
 
-  // ── ② 分属性重来：五个小请求 ───────────────────────────────
+  // ── ② 分属性补齐：缺几个补几个，**并行**、流式 ─────────────────────
   /**
    * 为什么这条兜底是有依据的，而不是"再试一次撞运气"：
+   * 同一把 Key、同一个模型下「设置 → Persona 洗牌」（一次只要一个属性）一直是好的，
+   * 变量就剩「请求规模」，所以兜底退化成只要一个属性的小请求。
    *
-   * 同一把 Key、同一个模型、同一个 baseUrl 下，用户环境里
-   * **「设置 → Persona 洗牌」是好的** —— 那个请求是 2000 tokens、非流式、只要一个属性。
-   * 而这里一次成型是 6000+ tokens、流式、要五个属性，且是**唯一**失败的 AI 功能
-   * （区层显形 / 塔罗 / 周总结 / 助手全部正常）。
-   * 变量就剩「请求规模」。所以兜底不该是重发同一个大请求，
-   * 而该退化成五个**已被证实能跑通的**小请求。慢，但能出东西。
+   * v2.7.0.6：原来是五个**串行、非流式**的小请求——思考型模型每个六七十秒，
+   * 串起来五六分钟，画面停在「唤起…之面」不动（用户眼里就是「卡住」），
+   * 每个还顶着 90 秒硬超时。现在并行 + 流式，总耗时约等于一个。
    */
-  let feed = '';
-  const push = (t: string) => { feed += t; onStreamChunk?.(t, feed); };
-  push('\n整份生成没成，改为逐个唤起——\n');
-  // 只补①没拿到的那几个，别把已经成功的覆盖掉
-  for (const attr of ATTRS.filter(a => !okAttrs.has(a))) {
-    push(`\n── 唤起「${attributeNames[attr]}」之面 ──\n`);
+  const missing = ATTRS.filter(a => !okAttrs.has(a));
+  // 预览只看尾巴：前文留最后一段就够，别让每次刷新都拖着两万字走
+  const head = `${feed.slice(-300)}\n整份没有写全，缺的 ${missing.length} 个面分头唤起——\n`;
+  const lanes: Record<string, string> = {};
+  const render = () => show(head + missing.map(a => `\n── 唤起「${attributeNames[a]}」之面 ──\n${(lanes[a] ?? '').slice(-400)}`).join(''));
+  render();
+  await Promise.all(missing.map(async attr => {
     try {
-      const one = await callAIWithRetry(
-        cfg,
-        [{ role: 'user', content: buildOneAttrPrompt(attributeNames[attr], attr, context, getDiversityHint()) }],
-        0.6, 1600, true,
+      const one = await streamJSONResilient(
+        cfg, buildOneAttrPrompt(attributeNames[attr], attr, context, getDiversityHint()), 0.6, 1600,
+        { onProgress: t => { lanes[attr] = t; render(); }, maxResumes: 1 },
+        p => Array.isArray(p.skills) && (p.skills as unknown[]).length >= 3,
       );
-      push(one);
-      takeAttr(attr, extractJSON(one) as { name?: string; description?: string; skills?: unknown });
+      takeAttr(attr, one as { name?: string; description?: string; skills?: unknown });
       if (!okAttrs.has(attr)) lastErr = `「${attributeNames[attr]}」的返回里没有可用的技能数组`;
     } catch (e) {
       lastErr = e instanceof Error ? e.message : String(e);
-      push(`（${attributeNames[attr]} 失败：${lastErr}）\n`);
+      lanes[attr] = `${lanes[attr] ?? ''}\n（${attributeNames[attr]} 失败：${lastErr}）`;
+      render();
     }
-  }
+  }));
   if (okAttrs.size >= 3) return { personaName: fallbackName, skills, attributePersonas, usedFallback: false };
 
   return {
@@ -716,7 +907,25 @@ const STRATUM_JSON_FORMAT = `
 纯JSON输出，不要包裹在代码块中，不含任何注释：
 {"stratumName":"xx之域","stratumDescription":"1-2句区层氛围描述","name":"主影名称（xx之xx）","description":"主影2句描述","invertedAttributes":{"knowledge":"反向描述","guts":"反向描述","dexterity":"反向描述","kindness":"反向描述","charm":"反向描述"},"responseLines":["台词1","台词2","台词3","台词4","台词5","台词6","台词7","台词8"]}`;
 
-export async function generateStratumReveal(
+export interface StratumRevealData {
+  stratumName: string;
+  stratumDescription: string;
+  name: string;
+  description: string;
+  invertedAttributes: Record<AttributeId, string>;
+  responseLines: string[];
+  weakAttribute: AttributeId;
+}
+
+/** 已定稿的仪式材料：提示词与弱点在这一步定下，续写 / 重试都用同一份（提示词里写着弱点名，不能重掷） */
+export interface PreparedStratumReveal {
+  cfg: AIConfig;
+  prompt: string;
+  level: number;
+  weakAttribute: AttributeId;
+}
+
+export function prepareStratumReveal(
   settings: Settings,
   attributeNames: Record<AttributeId, string>,
   level: number,
@@ -725,15 +934,7 @@ export async function generateStratumReveal(
   toneHints: string[],
   /** 批4 §6.7 主影主题属性（本周成长最少者 65%）；缺省不注入主题 */
   themeAttribute?: AttributeId,
-): Promise<{
-  stratumName: string;
-  stratumDescription: string;
-  name: string;
-  description: string;
-  invertedAttributes: Record<AttributeId, string>;
-  responseLines: string[];
-  weakAttribute: AttributeId;
-}> {
+): PreparedStratumReveal {
   /**
    * 与人格生成同源的问题（见 generatePersonaSkills 的注释）：这也是一份长中文 JSON，
    * 却一直挂在**快速响应档**（各家最便宜的默认模型）上。上一轮只把人格生成挪到了
@@ -764,14 +965,20 @@ ${toneHints.map((t, i) => `${i + 1}. ${t}`).join('\n')}
 - description：2句，心魔的阴暗面来源与危险性
 - responseLines：8条战斗台词，${levelPersonality}；每条风格各异，至少含1条嘲讽、1条威胁、1条对玩家弱点的点评、1条自我宣言
 ${STRATUM_JSON_FORMAT}`;
+  return { cfg, prompt, level, weakAttribute };
+}
 
-  const result = await callAIWithRetry(cfg, [{ role: 'user', content: prompt }], 0.7, 3200, true);
-  let parsed: Record<string, unknown>;
-  try {
-    parsed = extractJSON(result);
-  } catch {
-    throw new Error('AI 返回的 JSON 格式无效，请重试');
-  }
+/** 跑仪式（流式；截断抛 JSONTruncatedError，带半截可续写） */
+export async function completeStratumReveal(
+  prep: PreparedStratumReveal,
+  attributeNames: Record<AttributeId, string>,
+  opts: StreamJSONOpts = {},
+): Promise<StratumRevealData> {
+  const { level, weakAttribute } = prep;
+  const parsed = await streamJSONResilient(
+    prep.cfg, prep.prompt, 0.7, 3200, opts,
+    p => typeof p.name === 'string' && !!p.name && Array.isArray(p.responseLines) && p.responseLines.length >= 4,
+  );
   const stratumName = (typeof parsed.stratumName === 'string' && parsed.stratumName) ? parsed.stratumName : `第${level}之域`;
   const stratumDescription = (typeof parsed.stratumDescription === 'string' && parsed.stratumDescription)
     ? parsed.stratumDescription
@@ -793,6 +1000,20 @@ ${STRATUM_JSON_FORMAT}`;
     responseLines = [...DEFAULT_SHADOW_LINES];
   }
   return { stratumName, stratumDescription, name, description, invertedAttributes, responseLines, weakAttribute };
+}
+
+/** 一步到位（老调用方式）：prepare + complete */
+export async function generateStratumReveal(
+  settings: Settings,
+  attributeNames: Record<AttributeId, string>,
+  level: number,
+  attrValues: Record<AttributeId, number>,
+  lastWeakAttribute: AttributeId | undefined,
+  toneHints: string[],
+  themeAttribute?: AttributeId,
+  opts: StreamJSONOpts = {},
+): Promise<StratumRevealData> {
+  return completeStratumReveal(prepareStratumReveal(settings, attributeNames, level, attrValues, lastWeakAttribute, toneHints, themeAttribute), attributeNames, opts);
 }
 
 // ── Lv6 · 最终 BOSS「伪神」（PRD_FINAL_BOSS §3）─────────────────────────────
@@ -844,11 +1065,7 @@ const FINAL_BOSS_JSON = `
 纯JSON输出，不要包裹在代码块中，不含任何注释：
 {"stratumName":"顶阙的名字（4-6字，不带"之域"）","stratumDescription":"1-2句这一层的景观","name":"伪神 · xx","flawKey":"从候选表里选一个key","flawTitle":"缺点的名字（4-8字）","verdict":"一句指认，40字以内，第二人称","description":"2句形象描述","responseLines":["台词1","…","台词18"]}`;
 
-export async function generateFinalBoss(
-  settings: Settings,
-  attributeNames: Record<AttributeId, string>,
-  f: FinalBossFacts,
-): Promise<{
+export interface FinalBossData {
   stratumName: string;
   stratumDescription: string;
   name: string;
@@ -859,13 +1076,20 @@ export async function generateFinalBoss(
   invertedAttributes: Record<AttributeId, string>;
   responseLines: string[];
   weakAttribute: AttributeId;
-}> {
-  /**
-   * 与人格生成同源的问题（见 generatePersonaSkills 的注释）：这也是一份长中文 JSON，
-   * 却一直挂在**快速响应档**（各家最便宜的默认模型）上。上一轮只把人格生成挪到了
-   * 深思熟虑档，区层显形/伪神显形漏改，于是「战场 AI 成功率很低」还在。
-   * 没单配深思熟虑档的用户会自动落回快速响应档，行为与改前一致。
-   */
+}
+
+export interface PreparedFinalBoss {
+  cfg: AIConfig;
+  prompt: string;
+  strongest: AttributeId;
+}
+
+export function prepareFinalBoss(
+  settings: Settings,
+  attributeNames: Record<AttributeId, string>,
+  f: FinalBossFacts,
+): PreparedFinalBoss {
+  /** 同区层显形：深思熟虑档；没配就退回快速响应档 */
   const cfg = getDeliberateAIConfig(settings);
   if (!cfg) throw new Error('未配置 AI API Key，请前往「设置 → AI摘要」填写 API Key 后重试');
 
@@ -899,14 +1123,19 @@ ${FINAL_FLAW_KEYS.map(k => `- ${k.key}：${k.hint}`).join('\n')}
 - 它是要被打败的：全程不能出现玩家无法反驳的终局审判语气，最后几条要透出它自己的心虚。
 - 禁止出现任何现实游戏的专有名词。
 ${FINAL_BOSS_JSON}`;
+  return { cfg, prompt, strongest: f.strongest };
+}
 
-  const result = await callAIWithRetry(cfg, [{ role: 'user', content: prompt }], 0.75, 3600, true);
-  let parsed: Record<string, unknown>;
-  try {
-    parsed = extractJSON(result);
-  } catch {
-    throw new Error('AI 返回的 JSON 格式无效，请重试');
-  }
+export async function completeFinalBoss(
+  prep: PreparedFinalBoss,
+  attributeNames: Record<AttributeId, string>,
+  opts: StreamJSONOpts = {},
+): Promise<FinalBossData> {
+  const f = { strongest: prep.strongest };
+  const parsed = await streamJSONResilient(
+    prep.cfg, prep.prompt, 0.75, 3600, opts,
+    p => typeof p.name === 'string' && !!p.name && typeof p.verdict === 'string' && Array.isArray(p.responseLines) && p.responseLines.length >= 6,
+  );
   const str = (v: unknown, fallback: string, max = 200) =>
     typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : fallback;
 
@@ -937,6 +1166,16 @@ ${FINAL_BOSS_JSON}`;
     // 弱点 = 玩家最强属性：它站在你最得意的地方，你也只能从那里把它拆下来
     weakAttribute: f.strongest,
   };
+}
+
+/** 一步到位（老调用方式）：prepare + complete */
+export async function generateFinalBoss(
+  settings: Settings,
+  attributeNames: Record<AttributeId, string>,
+  f: FinalBossFacts,
+  opts: StreamJSONOpts = {},
+): Promise<FinalBossData> {
+  return completeFinalBoss(prepareFinalBoss(settings, attributeNames, f), attributeNames, opts);
 }
 
 /** 18 条挑衅的兜底池（AI 少给时补齐；顺序即傲慢→动摇→崩解） */

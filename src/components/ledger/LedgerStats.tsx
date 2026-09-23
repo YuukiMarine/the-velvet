@@ -378,7 +378,7 @@ export function LedgerStats() {
                 <>
                   <div
                     className="text-sm text-gray-700 dark:text-gray-200 leading-loose"
-                    dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(`<p class="mb-2">${renderMarkdown(settleResult.reflection)}</p>`) }}
+                    dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(renderMarkdown(settleResult.reflection)) }}
                   />
                   {settleResult.advice.length > 0 && (
                     <div className="rounded-xl bg-indigo-50 dark:bg-indigo-900/15 border border-indigo-100 dark:border-indigo-800/40 p-3 space-y-1.5">

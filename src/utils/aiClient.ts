@@ -23,6 +23,8 @@ import {
   getHttpStatusHint,
   isReasoningModel,
   isThinkingModel,
+  reasoningEffortFor,
+  effectiveModelName,
   providerMaxOutput,
   type ApiProvider, DEFAULT_PROVIDER } from '@/utils/aiProviders';
 
@@ -78,6 +80,15 @@ export interface ChatOptions {
    * 拦下来不吐（助手拟真泡上屏过半个词，用户上报「把某个词只说一半」）。
    */
   onFinishReason?: (reason: string) => void;
+  /**
+   * 追加进请求体的字段（v2.7.0.6）。目前只用于续写时对 DeepSeek 发
+   * `thinking: { type: 'disabled' }`——接着写半截 JSON 不需要再想两分钟。
+   */
+  extraBody?: Record<string, unknown>;
+  /** 不加思维链余量（服务商嫌 max_tokens 太大而 400 之后的降档重发用） */
+  noThinkingAllowance?: boolean;
+  /** 不发 reasoning_effort（服务商不认这个取值而 400 之后的重发用） */
+  noReasoningEffort?: boolean;
 }
 
 /**
@@ -88,6 +99,34 @@ export interface ChatOptions {
 const JSON_MODE_PROVIDERS: ReadonlySet<string> = new Set(['openai', 'kimi']);
 
 const DEFAULT_TIMEOUT_MS = 90_000;
+/**
+ * 思维链模型的非流式超时（v2.7.0.6）：v4-pro 一类思考两三分钟才吐第一个字节，
+ * 90 秒硬超时等于"深思熟虑档必挂"（区层显形 / 伪神显形之前就栽在这）。
+ * 流式路径不受影响——那边是空闲超时，思维链增量会续命。
+ */
+const THINKING_TIMEOUT_MS = 300_000;
+/** 加倍预算之后还是只有思维链没有正文：给用户一句能懂的话，而不是"已在自动重试" */
+const THINK_EXHAUSTED_MSG = '模型把预算全花在思考上了，加大预算重来一次也没写出正文。换个更快的模型，或稍后再试。';
+
+/** 非流式：调用方没指定超时时，思维链模型放宽到 THINKING_TIMEOUT_MS */
+function withThinkingTimeout(cfg: AIConfig, opts: ChatOptions): ChatOptions {
+  if (opts.timeoutMs !== undefined) return opts;
+  return isThinkingModel(cfg.model) ? { ...opts, timeoutMs: THINKING_TIMEOUT_MS } : opts;
+}
+
+/**
+ * 流式的**空闲**超时（v2.7.0.6）：思维链模型放宽到 150s。
+ * DeepSeek / Kimi 会把思维链一路推过来，空闲计时一直在续；但 OpenAI、Gemini 一类
+ * 「闷头想」的模型在想的时候一个字节都不发，90s 会把正在正常思考的请求掐掉。
+ */
+const THINKING_STREAM_IDLE_MS = 150_000;
+function withStreamIdleTimeout(cfg: AIConfig, opts: ChatOptions): ChatOptions {
+  if (opts.timeoutMs !== undefined) return opts;
+  return isThinkingModel(cfg.model) ? { ...opts, timeoutMs: THINKING_STREAM_IDLE_MS } : opts;
+}
+
+/** 收到 finish_reason 之后，最多再等这么久的 [DONE] / 断开；过了就按正常结束算 */
+const FINISH_GRACE_MS = 3_000;
 const DEFAULT_TEMPERATURE = 0.8;
 /** 调用方没指定正文额度时的缺省（各任务大多自带更贴的数，这里只是兜底） */
 const DEFAULT_MAX_TOKENS = 2048;
@@ -159,7 +198,7 @@ function applyModelOverride(
   const base = getAIConfig(settings);
   if (!base) return null;
   const override = model?.trim();
-  return override ? { ...base, model: override } : base;
+  return override ? { ...base, model: effectiveModelName(override) } : base;
 }
 
 /** @deprecated 改名 getDeliberateAIConfig（覆盖面已不止 Navigator）；保留别名防漏改 */
@@ -285,17 +324,24 @@ function buildRequestBody(
    * 总额再被该服务商的单次输出上限夹一下（DeepSeek 384K 等于不夹；Kimi/Qwen/MiniMax 32K
    * 会把它压回去）。真撞上更严的限制，chatComplete / chatStream 那发「400 就降档」会兜住。
    */
-  const thinking = isThinkingModel(cfg.model);
+  const thinking = isThinkingModel(cfg.model) && !opts.noThinkingAllowance;
   const cap = providerMaxOutput(cfg.provider);
   const budget = Math.min(cap, thinking ? maxTokens + Math.max(THINKING_ALLOWANCE, maxTokens) : maxTokens);
   if (isReasoningModel(cfg.model)) {
     body.max_completion_tokens = budget;
-    body.reasoning_effort = 'minimal'; // 让 GPT-5 尽量接近"非推理"的快/省行为
+    /**
+     * 让 OpenAI 推理模型尽量接近"非推理"的快 / 省行为。取值按代际分（v2.7.0.6 修）：
+     * 初代 GPT-5 最低档叫 minimal；GPT-5.1 起（含默认的 gpt-5.4-mini、gpt-6-*）改叫 none，
+     * 再发 minimal 会 400；o 系列没有这两档，最低 low。
+     */
+    const effort = opts.noReasoningEffort ? undefined : reasoningEffortFor(cfg.model);
+    if (effort) body.reasoning_effort = effort;
     // 不发 temperature：推理模型只接受默认 1，自定义会 400
   } else {
     body.max_tokens = budget;
     body.temperature = opts.temperature ?? DEFAULT_TEMPERATURE;
   }
+  if (opts.extraBody) Object.assign(body, opts.extraBody);
   return body;
 }
 
@@ -339,6 +385,13 @@ function isOverBudgetError(e: unknown): boolean {
   return /max_tokens|max_completion_tokens|maximum.*tokens|tokens.*exceed|too large|less than or equal/i.test(m);
 }
 
+/** 服务商不认 reasoning_effort（或它的某个取值）而 400 */
+function isUnsupportedEffortError(e: unknown): boolean {
+  const m = e instanceof Error ? e.message : '';
+  if (!/HTTP 400|invalid_request|Bad Request|unsupported/i.test(m)) return false;
+  return /reasoning[._ ]?effort|reasoning\.effort/i.test(m);
+}
+
 /**
  * 非流式 chat completion。
  *
@@ -366,6 +419,8 @@ export async function chatComplete(
         if (isEmptyLengthError(e2)) {
           const best = [partialOf(e), partialOf(e2)].sort((a, b) => b.length - a.length)[0];
           if (best.trim()) return best;
+          // 一个字都没有：内部那句「已在自动加大预算重试」不该当最终错误弹给用户
+          throw new Error(THINK_EXHAUSTED_MSG);
         }
         throw e2;
       }
@@ -378,8 +433,22 @@ export async function chatComplete(
      * 写死一个大数会让上限较低的模型直接 400。
      * 于是策略是「先要宽 → 被拒就退」，而不是「先猜一个都能过的小数」。
      */
-    if (isOverBudgetError(e) && (opts.maxTokens ?? DEFAULT_MAX_TOKENS) > 2048) {
-      return await chatCompleteOnce(cfg, messages, { ...opts, maxTokens: 2048 });
+    if (isOverBudgetError(e)) {
+      // 先去掉思维链余量（余量才是把总额顶爆的那部分），还不行再退到保守档
+      if (!opts.noThinkingAllowance && isThinkingModel(cfg.model)) {
+        try {
+          return await chatCompleteOnce(cfg, messages, { ...opts, noThinkingAllowance: true });
+        } catch (e2) {
+          if (!isOverBudgetError(e2)) throw e2;
+        }
+      }
+      if ((opts.maxTokens ?? DEFAULT_MAX_TOKENS) > 2048) {
+        return await chatCompleteOnce(cfg, messages, { ...opts, maxTokens: 2048, noThinkingAllowance: true });
+      }
+    }
+    // ③ 服务商不认 reasoning_effort 的取值（各家各代叫法不一）→ 不发这个字段重来
+    if (isUnsupportedEffortError(e) && !opts.noReasoningEffort) {
+      return await chatComplete(cfg, messages, { ...opts, noReasoningEffort: true });
     }
     throw e;
   }
@@ -388,8 +457,9 @@ export async function chatComplete(
 async function chatCompleteOnce(
   cfg: AIConfig,
   messages: AIMessage[],
-  opts: ChatOptions = {},
+  rawOpts: ChatOptions = {},
 ): Promise<string> {
+  const opts = withThinkingTimeout(cfg, rawOpts);
   const ab = setupAbort(opts);
   try {
     const resp = await fetch(`${cfg.baseUrl}/chat/completions`, {
@@ -466,19 +536,29 @@ export async function* chatStream(
   messages: AIMessage[],
   opts: ChatOptions = {},
 ): AsyncGenerator<string, void, unknown> {
+  opts = withStreamIdleTimeout(cfg, opts);
   const ab = setupAbort(opts);
-  let reducedBudget = false;
+  /** 0 = 原样；1 = 去掉思维链余量；2 = 再退到 2048 */
+  let budgetStep = 0;
+  let noEffort = !!opts.noReasoningEffort;
   let last: StreamOutcome = { produced: false, sawReasoning: false, finishReason: '' };
   try {
     for (let attempt = 0; attempt < 3; attempt++) {
       const extra: Record<string, unknown> = {};
       if (attempt === 2 && cfg.provider === 'deepseek') extra.thinking = { type: 'disabled' };
-      const attemptOpts = reducedBudget ? { ...opts, maxTokens: 2048 } : opts;
+      const attemptOpts: ChatOptions = {
+        ...opts,
+        ...(budgetStep >= 1 ? { noThinkingAllowance: true } : {}),
+        ...(budgetStep >= 2 ? { maxTokens: Math.min(opts.maxTokens ?? DEFAULT_MAX_TOKENS, 2048) } : {}),
+        ...(noEffort ? { noReasoningEffort: true } : {}),
+      };
       let outcome: StreamOutcome;
       try {
         outcome = yield* streamOnce(cfg, messages, attemptOpts, ab, extra);
       } catch (e) {
-        if (!reducedBudget && isOverBudgetError(e)) { reducedBudget = true; attempt--; continue; }
+        // 这几类 400 在请求发出去就被拒了，一个字节都没流过来，换参数重发是安全的
+        if (budgetStep < 2 && isOverBudgetError(e)) { budgetStep++; attempt--; continue; }
+        if (!noEffort && isUnsupportedEffortError(e)) { noEffort = true; attempt--; continue; }
         throw e;
       }
       if (outcome.produced) {
@@ -534,8 +614,23 @@ async function* streamOnce(
   let sawReasoning = false;
   let finishReason = '';
   outer: while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
+    /**
+     * 收到 finish_reason 以后不再无限等 [DONE]（v2.7.0.6）。
+     * 有些中转网关 / 代理发完最后一块不关连接，读循环就挂在这里，直到空闲超时把它
+     * 当成失败抛出去——正文明明已经完整（用户上报「生成在最后卡住然后失败」的一种）。
+     * 宽限 FINISH_GRACE_MS 内没有新数据就按正常结束处理，并主动关掉读取。
+     */
+    const next = finishReason
+      ? await Promise.race([
+          reader.read(),
+          new Promise<{ done: true; value: undefined; grace: true }>(r => setTimeout(() => r({ done: true, value: undefined, grace: true }), FINISH_GRACE_MS)),
+        ])
+      : await reader.read();
+    const { value, done } = next;
+    if (done) {
+      if ('grace' in next) reader.cancel().catch(() => { /* 已关 */ });
+      break;
+    }
     ab.rearm(); // 空闲超时：收到数据就重置
     buf += decoder.decode(value, { stream: true });
     const lines = buf.split('\n');

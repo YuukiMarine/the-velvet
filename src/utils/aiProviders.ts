@@ -25,7 +25,8 @@ export interface ProviderConfig {
   keyUrl: string;
 }
 
-// 默认模型/端点核对于 2026-07（见各 provider 官方 models/pricing/deprecations 页）。
+// 默认模型/端点核对于 2026-09（DeepSeek 以其 /models 实际返回为准；其余见各家官方
+// models / deprecations 页）。
 // 注意：Kimi 与 MiniMax 的默认 baseUrl 是「国内端点」；用国际平台申请的 Key 请在
 // 「高级选项」里改成 https://api.moonshot.ai/v1 / https://api.minimax.io/v1，
 // 否则区域不匹配会返回 401。
@@ -34,18 +35,20 @@ export const AI_PROVIDERS: ProviderConfig[] = [
     id: 'openai',
     label: 'OpenAI',
     defaultBaseUrl: 'https://api.openai.com/v1',
-    // GPT-5 系列为推理模型：aiClient 会自动改用 max_completion_tokens 并省略 temperature
-    defaultModel: 'gpt-5.4-mini',
-    hint: 'gpt-5.4-mini',
+    // GPT-6 Luna：官方给的高频 / 省钱档默认（能看图）。推理模型：aiClient 自动改用
+    // max_completion_tokens、省略 temperature、reasoning_effort 取 none
+    defaultModel: 'gpt-6-luna',
+    hint: 'gpt-6-luna',
     keyUrl: 'https://platform.openai.com/api-keys',
   },
   {
     id: 'deepseek',
     label: 'DeepSeek',
     defaultBaseUrl: 'https://api.deepseek.com/v1',
-    // 旧的 deepseek-chat 别名将于 2026-07-24 停服；v4-flash 是其廉价档后继
-    defaultModel: 'deepseek-v4-flash',
-    hint: 'deepseek-v4-flash',
+    // 2026-09-10 起 V4.1-Flash 的正式名是 deepseek-flash（原生多模态，能看图）；
+    // deepseek-v4-flash 已退役，只是暂时转发过去（见 RETIRED_MODEL_SUCCESSORS）
+    defaultModel: 'deepseek-flash',
+    hint: 'deepseek-flash',
     // 用户点名的那一个：国内最省心的起步选择，首次引导会把它顶到前面
     keyUrl: 'https://platform.deepseek.com/api_keys',
   },
@@ -71,9 +74,9 @@ export const AI_PROVIDERS: ProviderConfig[] = [
     id: 'gemini',
     label: 'Gemini',
     defaultBaseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
-    // gemini-1.5-flash 已 EOL（调用 404）；3.1-flash-lite 是当前廉价档且寿命最长
-    defaultModel: 'gemini-3.1-flash-lite',
-    hint: 'gemini-3.1-flash-lite',
+    // 官方给新项目的廉价档推荐（3.1-flash-lite 仍可用，2.0 系 2026-06 已关停）
+    defaultModel: 'gemini-3.5-flash-lite',
+    hint: 'gemini-3.5-flash-lite',
     keyUrl: 'https://aistudio.google.com/apikey',
   },
   {
@@ -128,6 +131,32 @@ export function getProviderConfig(provider: ApiProvider | undefined): ProviderCo
 }
 
 /**
+ * 服务商已退役 / 改名的模型 → 继任者（v2.7.0.6）。
+ *
+ * 只在**发请求时**换名，不改用户的存档：存档里写着 deepseek-v4-flash 的老用户，
+ * 请求实际发 deepseek-flash；设置页的灰字也显示换过的名字（= 真正在用的那个）。
+ * 只收官方公告过下线 / 转发的名字，别拿它做"推荐升级"。
+ */
+export const RETIRED_MODEL_SUCCESSORS: Record<string, string> = {
+  // DeepSeek：2026-09-10 V4.1-Flash 上线，v4-flash / vision-exp 退役并暂时转发；chat / reasoner 2026-07-24 停服
+  'deepseek-v4-flash': 'deepseek-flash',
+  'deepseek-v4-flash-vision-exp': 'deepseek-flash',
+  'deepseek-chat': 'deepseek-flash',
+  'deepseek-reasoner': 'deepseek-v4-pro',
+  // Gemini：3.1 Flash-Lite Preview 2026-05 关停；2.0 系 2026-06 关停；1.5 早已 EOL
+  'gemini-3.1-flash-lite-preview': 'gemini-3.1-flash-lite',
+  'gemini-2.0-flash': 'gemini-3.5-flash-lite',
+  'gemini-2.0-flash-lite': 'gemini-3.5-flash-lite',
+  'gemini-1.5-flash': 'gemini-3.5-flash-lite',
+};
+
+/** 请求实际会用的模型名（退役名换成继任者） */
+export function effectiveModelName(model: string): string {
+  const m = model.trim();
+  return RETIRED_MODEL_SUCCESSORS[m] ?? m;
+}
+
+/**
  * 解析运行时 baseUrl / model：优先使用用户在高级选项中的覆盖值，否则回退到 provider 默认
  */
 export function resolveProvider(
@@ -138,7 +167,7 @@ export function resolveProvider(
   const p = getProviderConfig(provider);
   const rawBase = (overrideBaseUrl?.trim() || p.defaultBaseUrl);
   const baseUrl = rawBase.replace(/\/+$/, '');
-  const model = overrideModel?.trim() || p.defaultModel;
+  const model = effectiveModelName(overrideModel?.trim() || p.defaultModel);
   return { baseUrl, model };
 }
 
@@ -149,7 +178,22 @@ export function resolveProvider(
  * 这样自定义 baseUrl 代理这些模型时也能命中。
  */
 export function isReasoningModel(model: string): boolean {
-  return /^(gpt-5|o[1-9])/i.test(model.trim());
+  // gpt-5.x / gpt-6 起全是推理模型（v2.7.0.6 补 gpt-6：之前没认出来会发 max_tokens + temperature）
+  return /^(gpt-[5-9]|o[1-9])/i.test(model.trim()) && !/-chat(-|$)/i.test(model.trim());
+}
+
+/**
+ * OpenAI 推理模型的「最省」思考档取值（v2.7.0.6）。
+ * 叫法随代际变过：初代 GPT-5 最低是 minimal；GPT-5.1 起（含 gpt-5.4-mini、gpt-6-*）
+ * 改成 none，再发 minimal 会 400（之前线上一直发 minimal，默认模型的测试连接因此失败）；
+ * o 系列没有这两档，最低 low。认不准的交给 aiClient 那发「不认就去掉字段重来」。
+ */
+export function reasoningEffortFor(model: string): string | undefined {
+  const m = model.trim().toLowerCase();
+  if (/^o[1-9]/.test(m)) return 'low';
+  if (/^gpt-5(-(mini|nano))?(-\d{4}-\d{2}-\d{2})?$/.test(m)) return 'minimal';
+  if (/^gpt-([5-9])/.test(m)) return 'none';
+  return undefined;
 }
 
 /**
@@ -166,7 +210,12 @@ export function isReasoningModel(model: string): boolean {
 export function isThinkingModel(model: string): boolean {
   const m = model.trim().toLowerCase();
   return isReasoningModel(m)
-    || /reason|think|-r1|\br1\b|qwq|deepseek-v[3-9]|glm-[4-9]\.[5-9]|hunyuan-t|ernie-x|step-r|minimax-m/.test(m);
+    // deepseek-flash / deepseek-pro：v4 家族的无版本号别名，默认带思维链（实测 reasoning_content 会到）；
+    // 之前没认出来 → 思维链余量没加 → 推理吃光正文预算 → 「只吐了思维链、没写正文」（v2.7.0.6）
+    || /reason|think|-r1|\br1\b|qwq|deepseek-(v[3-9]|flash|pro)|glm-[4-9]\.[5-9]|hunyuan-t|ernie-x|step-r|minimax-m/.test(m)
+    // v2.7.0.6 补：Kimi K2 起、Gemini 2.5 / 3.x、Qwen3 开源系、Grok 4、豆包 Seed 都默认先想再写，
+    // 且思考 token 和正文共用 max_tokens——没加余量时正文会在结尾被截断（召唤 Persona「最后卡住然后失败」）
+    || /kimi-k[2-9]|gemini-(2\.5|[3-9])|qwen3|grok-[4-9]|doubao-seed/.test(m);
 }
 
 export type TestResult =
@@ -206,7 +255,7 @@ export async function testAIConnection(opts: {
         model,
         messages: [{ role: 'user', content: 'ping' }],
         ...(reasoning
-          ? { max_completion_tokens: 16, reasoning_effort: 'minimal' }
+          ? { max_completion_tokens: 16, ...(reasoningEffortFor(model) ? { reasoning_effort: reasoningEffortFor(model) } : {}) }
           : { max_tokens: 1 }),
         stream: false,
       }),
@@ -240,9 +289,42 @@ export async function testAIConnection(opts: {
   }
 }
 
+/**
+ * /models 顺带给出的能力信息（v2.7.0.6）。只有部分服务商会给：
+ * DeepSeek 返回 input_modalities / max_output_tokens，OpenRouter 放在 architecture 里，
+ * Moonshot 用 supports_image_in。给了就以它为准，没给的模型退回按名字猜。
+ */
+export interface ModelCaps {
+  /** 能不能看图（undefined = 接口没说） */
+  image?: boolean;
+  /** 单次最大输出 tokens（undefined = 接口没说） */
+  maxOutput?: number;
+}
+
 export type ModelListResult =
-  | { ok: true; models: string[] }
+  | { ok: true; models: string[]; caps: Record<string, ModelCaps> }
   | { ok: false; error: string };
+
+/** 从 /models 的一行里读能力字段（各家字段名不一，认得的都收） */
+function capsOfRow(row: unknown): ModelCaps | null {
+  if (!row || typeof row !== 'object') return null;
+  const r = row as Record<string, unknown>;
+  const arch = (r.architecture && typeof r.architecture === 'object') ? r.architecture as Record<string, unknown> : {};
+  const modalities = (r.modalities && typeof r.modalities === 'object') ? r.modalities as Record<string, unknown> : {};
+  const inputs = [r.input_modalities, arch.input_modalities, modalities.input]
+    .find((v): v is unknown[] => Array.isArray(v));
+  const caps: ModelCaps = {};
+  if (inputs) caps.image = inputs.some(x => typeof x === 'string' && /image|vision/i.test(x));
+  else if (typeof r.supports_image_in === 'boolean') caps.image = r.supports_image_in;
+  else if (typeof r.vision === 'boolean') caps.image = r.vision;
+  const capObj = (r.capabilities && typeof r.capabilities === 'object') ? r.capabilities as Record<string, unknown> : null;
+  if (caps.image === undefined && capObj && typeof capObj.vision === 'boolean') caps.image = capObj.vision;
+  const topProvider = (r.top_provider && typeof r.top_provider === 'object') ? r.top_provider as Record<string, unknown> : {};
+  const maxOut = [r.max_output_tokens, r.max_completion_tokens, topProvider.max_completion_tokens]
+    .find((v): v is number => typeof v === 'number' && v > 0);
+  if (maxOut) caps.maxOutput = maxOut;
+  return caps.image === undefined && caps.maxOutput === undefined ? null : caps;
+}
 
 /**
  * 按当前 API 配置拉取「这把 Key 能用哪些模型」。
@@ -289,15 +371,20 @@ export async function fetchAvailableModels(opts: {
         : null;
     if (!rows) return { ok: false, error: '响应格式非 OpenAI 兼容（没有 data 数组）' };
 
-    const models = [...new Set(
-      rows
-        .map((row) => (typeof row === 'string' ? row : (row as { id?: unknown } | null)?.id))
-        .filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
-        .map((id) => id.trim().replace(/^models\//, '')),
-    )].sort((a, b) => a.localeCompare(b));
+    const caps: Record<string, ModelCaps> = {};
+    const ids: string[] = [];
+    for (const row of rows) {
+      const raw = typeof row === 'string' ? row : (row as { id?: unknown } | null)?.id;
+      if (typeof raw !== 'string' || !raw.trim()) continue;
+      const id = raw.trim().replace(/^models\//, '');
+      ids.push(id);
+      const c = capsOfRow(row);
+      if (c) caps[id] = c;
+    }
+    const models = [...new Set(ids)].sort((a, b) => a.localeCompare(b));
 
     if (models.length === 0) return { ok: false, error: '接口没有返回任何模型' };
-    return { ok: true, models };
+    return { ok: true, models, caps };
   } catch (e) {
     clearTimeout(timeout);
     if (e instanceof Error && e.name === 'AbortError') return { ok: false, error: '拉取超时（15s 无响应）' };

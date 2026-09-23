@@ -742,7 +742,7 @@ export function LongReadingFlow({ initialReading, onBack }: Props) {
           {streamedText ? (
             <div
               dangerouslySetInnerHTML={{
-                __html: DOMPurify.sanitize(`<p class="mb-2">${renderMarkdown(streamedText)}</p>`),
+                __html: DOMPurify.sanitize(renderMarkdown(streamedText)),
               }}
             />
           ) : (
@@ -959,7 +959,7 @@ function FollowUpPanel({
             {streamedText ? (
               <div
                 dangerouslySetInnerHTML={{
-                  __html: DOMPurify.sanitize(`<p class="mb-2">${renderMarkdown(streamedText)}</p>`),
+                  __html: DOMPurify.sanitize(renderMarkdown(streamedText)),
                 }}
               />
             ) : (
@@ -1075,7 +1075,7 @@ export function ReadingDetail({
           : 'rounded-2xl bg-black/[0.03] dark:bg-white/[0.03] p-4 text-sm text-gray-700 dark:text-gray-200 leading-relaxed'}
         style={p3 ? { color: P3R.ink, clipPath: slantClip(14), boxShadow: '0 10px 26px rgba(7,40,120,.10)' } : undefined}
         dangerouslySetInnerHTML={{
-          __html: DOMPurify.sanitize(`<p class="mb-2">${renderMarkdown(reading.content)}</p>`),
+          __html: DOMPurify.sanitize(renderMarkdown(reading.content)),
         }}
       />
 

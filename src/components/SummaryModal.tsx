@@ -1,29 +1,23 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { useAppStore, SummaryRequestData, toLocalDateKey, DEFAULT_SUMMARY_PROMPT_PRESETS, FAMILIAR_FACE_PRESETS } from '@/store';
+import { useAppStore, toLocalDateKey, DEFAULT_SUMMARY_PROMPT_PRESETS, FAMILIAR_FACE_PRESETS } from '@/store';
 import { PeriodSummary, PeriodSummaryFollowUp, SummaryPeriod } from '@/types';
-import { v4 as uuidv4 } from 'uuid';
 import DOMPurify from 'dompurify';
 import { useModalA11y } from '@/utils/useModalA11y';
 import { useBackHandler } from '@/utils/useBackHandler';
-import { chatStream } from '@/utils/aiClient';
+import { chatStream, type AIConfig } from '@/utils/aiClient';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P3R, slantClip, sheetTopClip } from '@/components/p3r/kit';
-
-// ── 简单 Markdown 渲染 ────────────────────────────────────
-function renderMarkdown(text: string): string {
-  return text
-    .replace(/^### (.+)$/gm, '<h3 class="text-base font-bold mt-4 mb-1 text-primary">$1</h3>')
-    .replace(/^## (.+)$/gm, '<h2 class="text-lg font-extrabold mt-5 mb-2 text-primary">$1</h2>')
-    .replace(/^# (.+)$/gm, '<h1 class="text-xl font-black mt-5 mb-2 text-primary">$1</h1>')
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    .replace(/^- (.+)$/gm, '<li class="ml-4 list-disc">$1</li>')
-    .replace(/^(\d+)\. (.+)$/gm, '<li class="ml-4 list-decimal">$2</li>')
-    .replace(/\n\n/g, '</p><p class="mb-2">')
-    .replace(/\n/g, '<br/>');
-}
+import { renderMarkdown } from '@/utils/markdown';
+import { ThinkingCircle } from '@/components/astrology/ThinkingCircle';
+import { useThinkProgress } from '@/utils/thinkProgress';
+import { FAMILIAR_FACE_ICONS, SUMMARY_FOLLOWUP_LIMIT, SUMMARY_FOLLOWUP_MAX_TOKENS, followUpsOf, visibleSummaryText, parseSummaryResult } from '@/utils/summaryAI';
+import {
+  useSummaryJobs, startSummaryJob, continueSummaryJob, cancelSummaryJob, discardSummaryJob,
+  markSummaryJobSaved, restoreSummaryDraft, attachDraftFollowUp, isSummaryJobRunning, resolveKeyFor,
+  SUMMARY_CONTINUE_LIMIT, type SummaryJob,
+} from '@/utils/summaryJobs';
 
 // ── 错误信息格式化（识别 CORS / 网络类错误）────────────────
 function formatApiError(e: unknown): string {
@@ -35,8 +29,6 @@ function formatApiError(e: unknown): string {
   return e.message;
 }
 
-// SSE 流式读取已统一由 @/utils/aiClient 的 chatStream 提供
-
 // ── 打字光标 ─────────────────────────────────────────────
 function Cursor() {
   return (
@@ -46,6 +38,21 @@ function Cursor() {
       className="inline-block w-0.5 h-4 bg-primary align-middle ml-0.5"
     />
   );
+}
+
+/** 频道主色（魔法阵用 hex；中性频道读 --color-primary） */
+function useAccentHex(): string {
+  const ch = useUiChannel();
+  return useMemo(() => {
+    if (ch === 'p3') return '#1b57ff';
+    if (ch === 'p4') return '#2f6bff';
+    if (ch === 'p5') return '#c00008';
+    try {
+      const v = getComputedStyle(document.documentElement).getPropertyValue('--color-primary').trim();
+      if (/^#[0-9a-f]{6}$/i.test(v)) return v;
+    } catch { /* SSR / 隐私模式 */ }
+    return '#7c3aed';
+  }, [ch]);
 }
 
 // ── 周期选择器 ────────────────────────────────────────────
@@ -153,10 +160,12 @@ function ArchiveList({ summaries, onSelect, onDelete }: {
                 {s.period === 'week' ? '周' : '月'}
               </span>
               <span className="text-sm font-bold text-gray-800 dark:text-gray-100 truncate">{s.label}</span>
+              {!s.viewedAt && <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" aria-label="未读" />}
             </div>
             <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
               <span>+{s.totalPoints} 点</span><span>{s.activityCount} 条记录</span>
-              <span className="truncate">{s.promptPresetName}</span>
+              <span className="truncate">{FAMILIAR_FACE_ICONS[s.promptPresetId] ? `${FAMILIAR_FACE_ICONS[s.promptPresetId]} ` : ''}{s.promptPresetName}</span>
+              {followUpsOf(s).length > 0 && <span>追问 {followUpsOf(s).length}</span>}
             </div>
             <div className="text-xs text-gray-400 dark:text-gray-600 mt-1">
               {new Date(s.createdAt).toLocaleDateString('zh-CN')}
@@ -175,176 +184,158 @@ function ArchiveList({ summaries, onSelect, onDelete }: {
   );
 }
 
-// ── 流式内容展示 + 追问区 ──────────────────────────────────
-//
-// v2.1 重构要点：
-//   1. 接受 initialFollowUp（来自归档），如果存在就直接渲染问答只读形态
-//   2. 没有 initialFollowUp 但有 reqData → 允许新发起一次追问
-//   3. 追问完成时把 (q, a) 通过 onFollowUpComplete 抛给父组件，父组件负责持久化到 summary 上
-//   4. max_tokens 从 1000 提到 2400，避免长追问中段截断
-//   5. 没有 reqData 也没有 initialFollowUp（老归档无 reqContext）→ 显示一行说明，按钮置灰
-interface StreamingContentProps {
-  streamedText: string;
-  isStreaming: boolean;
-  reqData: SummaryRequestData | null;
-  /** 已存在的追问问答（来自归档）。提供时显示只读问答；不再允许新发起。 */
-  initialFollowUp?: PeriodSummaryFollowUp;
-  /** 追问完成（流式结束 + 文本非空）后回调，父组件用来落库 */
-  onFollowUpComplete?: (followUp: PeriodSummaryFollowUp) => void;
+// ── 正文 ──────────────────────────────────────────────────
+function SummaryBody({ text, streaming }: { text: string; streaming: boolean }) {
+  return (
+    <div className="relative bg-black/[0.03] dark:bg-white/[0.03] rounded-2xl p-4 text-sm text-gray-700 dark:text-gray-200 leading-relaxed overflow-hidden">
+      <VelvetWatermark />
+      <div className="relative md-body" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(renderMarkdown(text)) }} />
+      {streaming && <Cursor />}
+    </div>
+  );
 }
 
-function StreamingContent({ streamedText, isStreaming, reqData, initialFollowUp, onFollowUpComplete }: StreamingContentProps) {
-  const [followInput, setFollowInput] = useState('');
-  const [followQuestion, setFollowQuestion] = useState('');
-  const [followAnswer, setFollowAnswer] = useState('');
-  const [followStreaming, setFollowStreaming] = useState(false);
-  const [followError, setFollowError] = useState<string | null>(null);
-  const followAbortRef = useRef<AbortController | null>(null);
-  const bodyRef = useRef<HTMLDivElement>(null);
+// ── 追问区（v2.7.0.6：多轮，上限 SUMMARY_FOLLOWUP_LIMIT；角色的问题当默认输入）──
+interface FollowUpAreaProps {
+  cfg: AIConfig | null;
+  /** system + user 原始消息 */
+  baseMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> | null;
+  content: string;
+  followUps: PeriodSummaryFollowUp[];
+  question?: string;
+  onFollowUpComplete: (fu: PeriodSummaryFollowUp) => void;
+}
 
-  // 自动滚动到底部
-  useEffect(() => {
-    if (bodyRef.current) {
-      bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
-    }
-  }, [streamedText, followAnswer, initialFollowUp]);
+function FollowUpArea({ cfg, baseMessages, content, followUps, question, onFollowUpComplete }: FollowUpAreaProps) {
+  const [input, setInput] = useState('');
+  const [liveQ, setLiveQ] = useState('');
+  const [liveA, setLiveA] = useState('');
+  const [streaming, setStreaming] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  useEffect(() => () => abortRef.current?.abort(), []);
 
-  // 切换归档条目时（initialFollowUp 切换）重置本地草稿
-  useEffect(() => {
-    setFollowInput('');
-    setFollowQuestion('');
-    setFollowAnswer('');
-    setFollowError(null);
-    setFollowStreaming(false);
-  }, [initialFollowUp?.createdAt]);
+  const remaining = SUMMARY_FOLLOWUP_LIMIT - followUps.length;
+  const canAsk = !!cfg && !!baseMessages && remaining > 0;
 
-  // 一旦有"已落库"的追问，把它视为终点态：不允许再追问
-  const lockedByExistingFollowUp = !!initialFollowUp;
-  const lockedByMissingContext = !reqData; // 没原始上下文（老归档）→ 无法重组 prompt
-  // 新 followAnswer 落库后也锁住（防止用户连点）
-  const lockedByJustAsked = !!followAnswer && !followStreaming;
-  const inputLocked = lockedByExistingFollowUp || lockedByMissingContext || lockedByJustAsked;
-
-  const handleFollowUp = useCallback(async () => {
-    const q = followInput.trim();
-    if (!q || !reqData || followStreaming) return;
-    setFollowError(null);
-    setFollowStreaming(true);
-    setFollowAnswer('');
-    setFollowQuestion(q);
-
-    const abortCtrl = new AbortController();
-    followAbortRef.current = abortCtrl;
-
+  const ask = useCallback(async (q: string) => {
+    const question = q.trim();
+    if (!question || !cfg || !baseMessages || streaming) return;
+    setError(null);
+    setStreaming(true);
+    setLiveQ(question);
+    setLiveA('');
+    const ac = new AbortController();
+    abortRef.current = ac;
     let answer = '';
     try {
       const messages = [
-        ...reqData.messages,
-        { role: 'assistant' as const, content: streamedText },
-        { role: 'user' as const, content: q },
+        ...baseMessages,
+        { role: 'assistant' as const, content },
+        ...followUps.flatMap(f => [
+          { role: 'user' as const, content: f.question },
+          { role: 'assistant' as const, content: f.answer },
+        ]),
+        // 系统提示里的写法规则要求正文后带 META 行；追问不需要（就算模型照写了，下面也会剥掉）
+        { role: 'user' as const, content: `${question}\n\n（直接回答即可，不需要 ${'<<<META>>>'} 那两行。）` },
       ];
-
-      // v2.1：max_tokens 2400，避免追问中长答案被截
-      for await (const chunk of chatStream(reqData, messages, {
-        temperature: 0.7,
-        maxTokens: 2400,
-        signal: abortCtrl.signal,
-      })) {
+      for await (const chunk of chatStream(cfg, messages, { temperature: 0.7, maxTokens: SUMMARY_FOLLOWUP_MAX_TOKENS, signal: ac.signal })) {
         answer += chunk;
-        setFollowAnswer(answer);
+        setLiveA(visibleSummaryText(answer));
       }
-    } catch (e: unknown) {
-      if (e instanceof Error && e.name !== 'AbortError') {
-        setFollowError(formatApiError(e));
-      }
+    } catch (e) {
+      if (!(e instanceof Error && e.name === 'AbortError')) setError(formatApiError(e));
     } finally {
-      setFollowStreaming(false);
+      setStreaming(false);
     }
-
-    // 流式正常结束 + 有内容 → 抛给父组件落库
-    if (answer.trim() && onFollowUpComplete) {
-      onFollowUpComplete({
-        question: q,
-        answer,
-        createdAt: new Date(),
-      });
+    const clean = parseSummaryResult(answer).content;
+    if (clean.trim()) {
+      onFollowUpComplete({ question, answer: clean, createdAt: new Date() });
+      setLiveQ('');
+      setLiveA('');
+      setInput('');
     }
-  }, [followInput, reqData, streamedText, followStreaming, onFollowUpComplete]);
+  }, [cfg, baseMessages, content, followUps, streaming, onFollowUpComplete]);
 
-  // ── 决定显示哪份 Q&A：归档已存在的优先；否则用当下流式的 ─────
-  const displayedQuestion = initialFollowUp?.question ?? followQuestion;
-  const displayedAnswer   = initialFollowUp?.answer   ?? followAnswer;
-  const showQAArea = displayedAnswer || followStreaming;
+  const showQuestionChip = followUps.length === 0 && !!question && !input && !streaming;
 
   return (
-    <div ref={bodyRef} className="space-y-4">
-      {/* 主总结内容 */}
-      <div className="relative bg-black/[0.03] dark:bg-white/[0.03] rounded-2xl p-4 text-sm text-gray-700 dark:text-gray-200 leading-relaxed overflow-hidden">
-        <VelvetWatermark />
-        <div className="relative" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(`<p class="mb-2">${renderMarkdown(streamedText)}</p>`) }} />
-        {isStreaming && <Cursor />}
-      </div>
-
-      {/* 追问区 — 流式完成后才显示 */}
-      {!isStreaming && streamedText && (
-        <div className="space-y-3">
-          {!showQAArea && !inputLocked && (
-            <div>
-              <div className="text-xs font-bold text-gray-400 dark:text-gray-500 mb-2 uppercase tracking-wider">
-                还有疑问？向 AI 追问一次
-              </div>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={followInput}
-                  onChange={e => setFollowInput(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && !followStreaming && handleFollowUp()}
-                  placeholder="例如：如何具体提升知识属性？"
-                  className="flex-1 px-3 py-2.5 text-sm border border-gray-200 dark:border-gray-600 rounded-xl dark:bg-gray-800 dark:text-white placeholder-gray-400 focus:outline-none focus:border-primary"
-                />
-                <button
-                  onClick={handleFollowUp}
-                  disabled={!followInput.trim() || followStreaming}
-                  className="px-4 py-2.5 rounded-xl bg-primary text-white text-sm font-bold disabled:opacity-40 transition-all"
-                >
-                  发送
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* 老归档没存原始 prompt 上下文 → 给个友好说明，不画半灰按钮 */}
-          {!showQAArea && lockedByMissingContext && !lockedByExistingFollowUp && (
-            <div className="text-[11px] text-gray-400 dark:text-gray-500 bg-black/[0.03] dark:bg-white/[0.03] rounded-xl px-3 py-2 leading-relaxed">
-              这条归档生成于较早版本，没有保留追问所需的上下文，无法在此追问。
-              在「生成总结 → 归档保存」的新流程下，归档后仍可继续追问一次。
-            </div>
-          )}
-
-          {/* 追问问答展示（归档已落库的 / 当下流式的 共用） */}
-          {showQAArea && (
-            <div className="space-y-2">
-              {displayedQuestion && (
-                <div className="text-sm text-gray-700 dark:text-gray-200 bg-black/[0.03] dark:bg-white/5 rounded-2xl px-3 py-2">
-                  <span className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider mr-1.5">追问</span>
-                  {displayedQuestion}
-                </div>
-              )}
-              <div className="flex items-center gap-2">
-                <div className="text-xs font-bold text-primary uppercase tracking-wider">AI 回答</div>
-                <div className="text-xs text-gray-400 dark:text-gray-500 bg-amber-50 dark:bg-amber-900/20 px-2 py-0.5 rounded-full">已使用追问机会</div>
-              </div>
-              <div className="bg-primary/5 dark:bg-primary/10 border border-primary/20 rounded-2xl p-4 text-sm text-gray-700 dark:text-gray-200 leading-relaxed">
-                <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(`<p class="mb-2">${renderMarkdown(displayedAnswer)}</p>`) }} />
-                {followStreaming && <Cursor />}
-              </div>
-            </div>
-          )}
-
-          {followError && (
-            <div className="text-sm text-red-500 dark:text-red-400 bg-red-50 dark:bg-red-900/20 rounded-xl p-3">{followError}</div>
-          )}
+    <div className="space-y-3">
+      {followUps.map((f, i) => (
+        <div key={`${f.createdAt instanceof Date ? f.createdAt.getTime() : String(f.createdAt)}-${i}`} className="space-y-2">
+          <div className="text-sm text-gray-700 dark:text-gray-200 bg-black/[0.03] dark:bg-white/5 rounded-2xl px-3 py-2">
+            <span className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider mr-1.5">追问 {i + 1}</span>
+            {f.question}
+          </div>
+          <div className="bg-primary/5 dark:bg-primary/10 border border-primary/20 rounded-2xl p-4 text-sm text-gray-700 dark:text-gray-200 leading-relaxed">
+            <div className="md-body" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(renderMarkdown(f.answer)) }} />
+          </div>
         </div>
+      ))}
+
+      {(streaming || liveA) && (
+        <div className="space-y-2">
+          <div className="text-sm text-gray-700 dark:text-gray-200 bg-black/[0.03] dark:bg-white/5 rounded-2xl px-3 py-2">
+            <span className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider mr-1.5">追问 {followUps.length + 1}</span>
+            {liveQ}
+          </div>
+          <div className="bg-primary/5 dark:bg-primary/10 border border-primary/20 rounded-2xl p-4 text-sm text-gray-700 dark:text-gray-200 leading-relaxed">
+            <div className="md-body" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(renderMarkdown(liveA)) }} />
+            {streaming && <Cursor />}
+          </div>
+        </div>
+      )}
+
+      {canAsk && !streaming && (
+        <div>
+          <div className="text-xs font-bold text-gray-400 dark:text-gray-500 mb-2 uppercase tracking-wider">
+            {followUps.length === 0 ? '还有疑问？可以追问' : `还可以追问 ${remaining} 次`}
+          </div>
+          {showQuestionChip && (
+            <button
+              type="button"
+              onClick={() => setInput(question!)}
+              className="mb-2 max-w-full truncate rounded-full bg-primary/10 px-3 py-1 text-left text-[11px] font-bold text-primary"
+              title={question}
+            >
+              回答对方的问题：{question}
+            </button>
+          )}
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && !streaming && void ask(input)}
+              placeholder={question && followUps.length === 0 ? '回答上面的问题，或者问点别的' : '例如：如何具体提升知识属性？'}
+              className="flex-1 px-3 py-2.5 text-sm border border-gray-200 dark:border-gray-600 rounded-xl dark:bg-gray-800 dark:text-white placeholder-gray-400 focus:outline-none focus:border-primary"
+            />
+            <button
+              onClick={() => void ask(input)}
+              disabled={!input.trim()}
+              className="px-4 py-2.5 rounded-xl bg-primary text-white text-sm font-bold disabled:opacity-40 transition-all"
+            >
+              发送
+            </button>
+          </div>
+        </div>
+      )}
+
+      {!cfg && baseMessages && remaining > 0 && (
+        <div className="text-[11px] text-gray-400 dark:text-gray-500 bg-black/[0.03] dark:bg-white/[0.03] rounded-xl px-3 py-2 leading-relaxed">
+          当前没有这份总结所用平台的 API Key，无法在此追问。
+        </div>
+      )}
+      {!baseMessages && (
+        <div className="text-[11px] text-gray-400 dark:text-gray-500 bg-black/[0.03] dark:bg-white/[0.03] rounded-xl px-3 py-2 leading-relaxed">
+          这条归档生成于较早版本，没有保留追问所需的上下文，无法在此追问。
+        </div>
+      )}
+      {remaining <= 0 && followUps.length > 0 && (
+        <div className="text-[11px] text-gray-400 dark:text-gray-500 px-1">追问机会已用完。</div>
+      )}
+      {error && (
+        <div className="text-sm text-red-500 dark:text-red-400 bg-red-50 dark:bg-red-900/20 rounded-xl p-3">{error}</div>
       )}
     </div>
   );
@@ -352,14 +343,16 @@ function StreamingContent({ streamedText, isStreaming, reqData, initialFollowUp,
 
 // ── 流式期间的主题色粒子 ──────────────────────────────────
 function StreamingParticles() {
-  const particles = Array.from({ length: 14 }, (_, i) => ({
+  const particles = useMemo(() => Array.from({ length: 14 }, (_, i) => ({
     id: i,
     leftPct: Math.random() * 100,
     size: 2 + Math.random() * 3,
     duration: 6 + Math.random() * 5,
     delay: Math.random() * 6,
     opacity: 0.22 + Math.random() * 0.28,
-  }));
+    rise: 400 + Math.random() * 200,
+    drift: (Math.random() - 0.5) * 40,
+  })), []);
   return (
     <div
       aria-hidden="true"
@@ -378,9 +371,9 @@ function StreamingParticles() {
             boxShadow: '0 0 8px var(--color-primary)',
           }}
           animate={{
-            y: [0, -400 - Math.random() * 200],
+            y: [0, -p.rise],
             opacity: [0, p.opacity, p.opacity, 0],
-            x: [0, (Math.random() - 0.5) * 40],
+            x: [0, p.drift],
           }}
           transition={{
             duration: p.duration,
@@ -394,12 +387,13 @@ function StreamingParticles() {
   );
 }
 
-// ── 退出确认弹层 ─────────────────────────────────────────
-function ExitConfirm({ kind, onCancel, onDiscard, onSave }: {
-  kind: 'streaming' | 'save';
+// ── 确认弹层（重新生成会丢掉草稿）─────────────────────────
+function ConfirmLayer({ title, body, confirmLabel, onCancel, onConfirm }: {
+  title: string;
+  body: string;
+  confirmLabel: string;
   onCancel: () => void;
-  onDiscard: () => void;
-  onSave?: () => void;
+  onConfirm: () => void;
 }) {
   return (
     <motion.div
@@ -416,46 +410,11 @@ function ExitConfirm({ kind, onCancel, onDiscard, onSave }: {
         onClick={(e) => e.stopPropagation()}
         className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-5 w-full max-w-xs"
       >
-        <h3 className="text-base font-black text-gray-900 dark:text-white mb-1.5">
-          {kind === 'streaming' ? '摘要尚未生成完毕' : '保存本次摘要？'}
-        </h3>
-        <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed mb-4">
-          {kind === 'streaming'
-            ? '现在退出将中断生成并丢弃目前的内容。'
-            : '本次已生成的摘要尚未归档，是否保存到档案？'}
-        </p>
+        <h3 className="text-base font-black text-gray-900 dark:text-white mb-1.5">{title}</h3>
+        <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed mb-4">{body}</p>
         <div className="flex gap-2">
-          <button
-            onClick={onCancel}
-            className="flex-1 py-2.5 rounded-xl text-sm font-bold bg-black/5 dark:bg-white/10 text-gray-700 dark:text-gray-200"
-          >
-            {kind === 'streaming' ? '继续生成' : '取消'}
-          </button>
-          {kind === 'streaming' ? (
-            <button
-              onClick={onDiscard}
-              className="flex-1 py-2.5 rounded-xl text-sm font-bold bg-red-500 text-white"
-            >
-              中断并退出
-            </button>
-          ) : (
-            <>
-              <button
-                onClick={onDiscard}
-                className="flex-1 py-2.5 rounded-xl text-sm font-bold bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200"
-              >
-                不保存
-              </button>
-              {onSave && (
-                <button
-                  onClick={onSave}
-                  className="flex-1 py-2.5 rounded-xl text-sm font-bold bg-primary text-white"
-                >
-                  保存
-                </button>
-              )}
-            </>
-          )}
+          <button onClick={onCancel} className="flex-1 py-2.5 rounded-xl text-sm font-bold bg-black/5 dark:bg-white/10 text-gray-700 dark:text-gray-200">取消</button>
+          <button onClick={onConfirm} className="flex-1 py-2.5 rounded-xl text-sm font-bold bg-red-500 text-white">{confirmLabel}</button>
         </div>
       </motion.div>
     </motion.div>
@@ -502,17 +461,12 @@ interface StyleQuickSwitcherProps {
 }
 
 /**
- * 横向滚动的风格选择条：
- *  - 上方 4 位"熟悉的人"（快捷 icon）
+ * 风格选择条：
+ *  - 上方 4 位"熟悉的人"只留 emoji（用户口径：去掉名字更有意思；按钮尺寸不变，方便按）
  *  - 下方其他内置 / 自定义风格的 chip 列表
  */
 function StyleQuickSwitcher({ activeId, onPick, customPresets }: StyleQuickSwitcherProps) {
-  const familiars: Array<{ id: string; icon: string; name: string }> = [
-    { id: 'elizabeth', icon: '🦋', name: '蓝蝶' },
-    { id: 'theodore', icon: '🌿', name: '青侍' },
-    { id: 'margaret', icon: '📖', name: '典藏' },
-    { id: 'caroline-justine', icon: '⚔️', name: '双子审官' },
-  ];
+  const familiars = FAMILIAR_FACE_PRESETS.filter(p => FAMILIAR_FACE_ICONS[p.id]);
   const familiarIds = new Set(familiars.map(f => f.id));
   const otherPresets = [
     ...FAMILIAR_FACE_PRESETS.filter(p => !familiarIds.has(p.id)),
@@ -524,30 +478,35 @@ function StyleQuickSwitcher({ activeId, onPick, customPresets }: StyleQuickSwitc
     acc.push({ id: p.id, name: p.name });
     return acc;
   }, []);
+  const activeFamiliar = familiars.find(f => f.id === activeId);
 
-  // 所有条目都用统一的 chip pill 样式，保持视觉同级
-  const renderChip = (id: string, label: string) => {
+  const renderChip = (id: string, label: string, opts?: { emoji?: boolean; name?: string }) => {
     const active = activeId === id;
     return (
       <button
         key={id}
         onClick={() => onPick(id)}
-        className={`px-3 py-1.5 rounded-full text-[11px] font-bold transition-all ${
+        aria-label={opts?.name ?? label}
+        title={opts?.name}
+        className={`${opts?.emoji ? 'min-w-[48px] px-3 py-1 text-[17px] leading-[22px]' : 'px-3 py-1.5 text-[11px]'} rounded-full font-bold transition-all ${
           active
             ? 'bg-primary text-white shadow-sm'
             : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
         }`}
       >
-        {label}{active ? ' ✓' : ''}
+        {label}{active && !opts?.emoji ? ' ✓' : ''}
       </button>
     );
   };
 
   return (
     <div className="space-y-1.5">
-      {/* 熟悉的人（保留 icon 用作区分） */}
-      <div className="flex flex-wrap gap-1.5">
-        {familiars.map(f => renderChip(f.id, `${f.icon} ${f.name}`))}
+      {/* 熟悉的人：只留 emoji，名字在 aria-label 与下方一行 */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        {familiars.map(f => renderChip(f.id, FAMILIAR_FACE_ICONS[f.id], { emoji: true, name: f.name }))}
+        {activeFamiliar && (
+          <span className="ml-1 text-[11px] font-bold text-gray-500 dark:text-gray-400">{activeFamiliar.name}</span>
+        )}
       </div>
 
       {/* 其他内置 / 自定义风格 */}
@@ -569,19 +528,23 @@ interface SummaryModalProps {
 
 type ModalView = 'generate' | 'result' | 'archive' | 'view';
 
+const StatsGrid = ({ items }: { items: Array<{ label: string; value: string }> }) => (
+  <div className="grid grid-cols-3 gap-2">
+    {items.map(item => (
+      <div key={item.label} className="bg-black/5 dark:bg-white/5 rounded-2xl p-3 text-center">
+        <div className="text-xs text-gray-400 dark:text-gray-500">{item.label}</div>
+        <div className="text-sm font-bold text-gray-800 dark:text-gray-100 truncate mt-0.5">{item.value}</div>
+      </div>
+    ))}
+  </div>
+);
+
 export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week' }: SummaryModalProps) {
-  const { settings, summaries, buildSummaryRequest, saveSummary, deleteSummary, loadSummaries, getActiveSummaryPreset, updateSettings, markSummaryViewed } = useAppStore();
-  // ESC / Android back：
-  //   - 如果已经在"是否丢弃 / 是否归档"确认态（exitConfirm != null）→ 等同于点 Cancel，关掉确认
-  //   - 否则走 tryExit('close')：流式中 / 未保存会自动弹出对应确认，和点 X 一致
-  const dialogRef = useModalA11y(isOpen, () => {
-    if (exitConfirm) setExitConfirm(null);
-    else tryExit('close');
-  });
-  useBackHandler(isOpen, () => {
-    if (exitConfirm) setExitConfirm(null);
-    else tryExit('close');
-  });
+  const { settings, summaries, saveSummary, deleteSummary, loadSummaries, updateSettings, markSummaryViewed } = useAppStore();
+  const job = useSummaryJobs(s => s.job);
+  const running = isSummaryJobRunning(job);
+  const accent = useAccentHex();
+  const progress = useThinkProgress(job?.tracker ?? null, job?.status === 'thinking');
 
   const [view, setView] = useState<ModalView>('generate');
   const [periodState, setPeriodState] = useState<{ period: SummaryPeriod; startDate: string; endDate: string }>(() =>
@@ -589,219 +552,119 @@ export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week' }
   );
   const [isAnnual, setIsAnnual] = useState(false);
   const showAnnualCard = isDecember31();
-
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [streamedText, setStreamedText] = useState('');
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [reqData, setReqData] = useState<SummaryRequestData | null>(null);
-  const [generatedSummary, setGeneratedSummary] = useState<PeriodSummary | null>(null);
-  // v2.1：本轮追问 Q&A —— 在 'result' 模式下用于一会儿存进归档；'view' 模式下也共用同一变量，
-  // 用户在归档详情里再次追问时立刻持久化到选中的 summary。
-  const [pendingFollowUp, setPendingFollowUp] = useState<PeriodSummaryFollowUp | null>(null);
   const [selectedSummary, setSelectedSummary] = useState<PeriodSummary | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
-  const [exitConfirm, setExitConfirm] = useState<'streaming' | 'save' | null>(null);
-  const [exitAction, setExitAction] = useState<'close' | 'back'>('close');
-  const abortRef = useRef<AbortController | null>(null);
+  const [confirm, setConfirm] = useState<'regen' | 'discard' | null>(null);
+  const [saving, setSaving] = useState(false);
+  const bodyRef = useRef<HTMLDivElement>(null);
 
-  // activePreset 仅为便利值——切换 UI 已使用 settings.summaryActivePresetId 直接控制
-  void getActiveSummaryPreset;
+  // ESC / Android back：确认层开着就先关它；否则直接关弹层（任务在后台继续，草稿自动保留）
+  const dialogRef = useModalA11y(isOpen, () => {
+    if (confirm) setConfirm(null);
+    else onClose();
+  });
+  useBackHandler(isOpen, () => {
+    if (confirm) setConfirm(null);
+    else onClose();
+  });
 
   const noApiKey = !settings.summaryApiKey;
   const p3 = useUiChannel() === 'p3';
 
   useEffect(() => {
-    if (isOpen) {
-      loadSummaries();
-      setView('generate');
-      setStreamedText('');
-      setGeneratedSummary(null);
-      setError(null);
-      setSaved(false);
-      setPendingFollowUp(null);
-      setIsAnnual(false);
-      setExitConfirm(null);
+    if (!isOpen) return;
+    loadSummaries();
+    setConfirm(null);
+    setSelectedSummary(null);
+    setIsAnnual(false);
+    // 有在跑的任务 / 有草稿 → 直接进结果页
+    const had = !!useSummaryJobs.getState().job || restoreSummaryDraft();
+    setView(had ? 'result' : 'generate');
+  }, [isOpen, loadSummaries]);
+
+  // 流式时跟着滚到底
+  useEffect(() => {
+    if (view === 'result' && job?.status === 'streaming' && bodyRef.current) {
+      bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
     }
-    return () => { abortRef.current?.abort(); };
-  }, [isOpen]);
+  }, [job?.text, job?.status, view]);
 
-  const handleGenerate = async () => {
-    setError(null);
-    setStreamedText('');
-    setGeneratedSummary(null);
-    setSaved(false);
-    setPendingFollowUp(null);
-    setIsGenerating(true);
-
-    let req: SummaryRequestData;
-    try {
-      req = await buildSummaryRequest(periodState.period, periodState.startDate, periodState.endDate);
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : '生成失败，请重试');
-      setIsGenerating(false);
-      return;
-    }
-
-    // 年度总结：覆盖标签并在用户消息末尾注入年终祝辞
-    if (isAnnual) {
-      const year = new Date().getFullYear();
-      req = {
-        ...req,
-        period: 'month',
-        periodLabel: `${year}年度总结`,
-        messages: req.messages.map((m, i) => {
-          if (i !== 1) return m;
-          return {
-            ...m,
-            content: m.content.replace(
-              /^本期（[^，]+，/,
-              `本期（${year}年度总结，`
-            ) + `\n\n这是一整年的年度盘点，请以成功的更生（成功的转变与新生）为主题，给予热情洋溢的年终祝词。以"您已然是最棁的客人，让我们来年继续努力"作为结语。`,
-          };
-        }),
-      };
-    }
-
-    setReqData(req);
-    setIsGenerating(false);
-    setIsStreaming(true);
+  const handleGenerate = () => {
+    const range = isAnnual ? { period: 'month' as const, ...getYearRange() } : periodState;
+    startSummaryJob({ settings, period: range.period, startDate: range.startDate, endDate: range.endDate, annual: isAnnual });
     setView('result');
+  };
 
-    const abortCtrl = new AbortController();
-    abortRef.current = abortCtrl;
-
-    let fullText = '';
+  const handleSave = async () => {
+    if (!job?.draft || saving) return;
+    setSaving(true);
     try {
-      for await (const chunk of chatStream(req, req.messages, {
-        temperature: 0.8,
-        maxTokens: 2000,
-        signal: abortCtrl.signal,
-      })) {
-        fullText += chunk;
-        setStreamedText(fullText);
-      }
-    } catch (e: unknown) {
-      if (e instanceof Error && e.name !== 'AbortError') {
-        setError(formatApiError(e));
-        setView('generate');
-      }
+      const toSave: PeriodSummary = { ...job.draft, viewedAt: job.draft.viewedAt ?? new Date() };
+      await saveSummary(toSave);
+      markSummaryJobSaved();
+      setSelectedSummary(toSave);
+      setView('view');
     } finally {
-      setIsStreaming(false);
-    }
-
-    if (fullText) {
-      const summary: PeriodSummary = {
-        id: uuidv4(),
-        period: req.period,
-        startDate: req.startDate,
-        endDate: req.endDate,
-        label: req.periodLabel,
-        content: fullText,
-        promptPresetId: req.preset.id,
-        promptPresetName: req.preset.name,
-        totalPoints: req.totalPoints,
-        attributePoints: req.attributePoints,
-        activityCount: req.activityCount,
-        createdAt: new Date(),
-        // v2.1：把追问需要的最小上下文一并存下
-        // （不带 apiKey —— 重组追问时由当下 settings.summaryApiKey 注入）
-        reqContext: {
-          baseUrl: req.baseUrl,
-          model: req.model,
-          messages: req.messages,
-        },
-      };
-      setGeneratedSummary(summary);
+      setSaving(false);
     }
   };
 
-   const handleSave = async () => {
-     if (!generatedSummary) return;
-     // 把"还在内存里"的追问 Q&A 一并保存（如果用户在 result 视图里追问过的话）
-     const toSave: PeriodSummary = {
-       ...generatedSummary,
-       // 生成后用户已在预览里读过 → 标为已读，避免 F2a「未读成长总结」误报
-       viewedAt: generatedSummary.viewedAt ?? new Date(),
-       ...(pendingFollowUp ? { followUp: pendingFollowUp } : {}),
-     };
-     await saveSummary(toSave);
-     setSaved(true);
-   };
+  const handleRegenerate = () => {
+    if (job?.draft) { setConfirm('regen'); return; }
+    cancelSummaryJob();
+    setView('generate');
+  };
 
-   /**
-    * 归档视图里完成一次追问 → 立刻把 followUp 写回该 summary。
-    * 与 'result' 视图区分点：这里 selectedSummary 已经在 db.summaries 里，直接 put 覆盖。
-    */
-   const handleArchivedFollowUpSaved = async (followUp: PeriodSummaryFollowUp) => {
-     if (!selectedSummary) return;
-     setPendingFollowUp(followUp);
-     const updated: PeriodSummary = { ...selectedSummary, followUp };
-     await saveSummary(updated);
-     setSelectedSummary(updated);
-   };
+  const handleStop = () => {
+    cancelSummaryJob();
+    setView('generate');
+  };
 
-   // 离场目标：执行「真正退出」的动作（关闭 modal 或回到 generate 视图）
-   const performExit = (action: 'close' | 'back') => {
-     abortRef.current?.abort();
-     setIsStreaming(false);
-     if (action === 'close') {
-       onClose();
-     } else {
-       setView('generate');
-       setStreamedText('');
-       setGeneratedSummary(null);
-       setSaved(false);
-       setPendingFollowUp(null);
-     }
-   };
+  /** 归档视图里完成一次追问 → 立刻写回该 summary */
+  const handleArchivedFollowUpSaved = async (fu: PeriodSummaryFollowUp) => {
+    if (!selectedSummary) return;
+    const updated: PeriodSummary = { ...selectedSummary, followUps: [...followUpsOf(selectedSummary), fu], followUp: undefined };
+    await saveSummary(updated);
+    setSelectedSummary(updated);
+  };
 
-   // 关闭逻辑 / 左侧返回统一入口：流式中 / 已生成未保存 → 弹确认
-   const tryExit = (action: 'close' | 'back') => {
-     setExitAction(action);
-     if (isStreaming) {
-       setExitConfirm('streaming');
-       return;
-     }
-     if (generatedSummary && !saved) {
-       setExitConfirm('save');
-       return;
-     }
-     performExit(action);
-   };
+  const cfgFor = (rc: PeriodSummary['reqContext'] | undefined): AIConfig | null => {
+    if (!rc) return null;
+    const key = resolveKeyFor(settings, rc.provider);
+    return key ? { apiKey: key, baseUrl: rc.baseUrl, model: rc.model, provider: rc.provider } : null;
+  };
 
-   const handleClose = () => tryExit('close');
-   const handleBackFromResult = () => tryExit('back');
+  const jobStats = (j: SummaryJob) => {
+    const src = j.req ?? j.draft;
+    return [
+      { label: '总加点', value: src ? `+${src.totalPoints}` : '…' },
+      { label: '记录数', value: src ? `${src.activityCount}` : '…' },
+      { label: '风格', value: j.req ? j.req.preset.name : (j.draft?.promptPresetName ?? '…') },
+    ];
+  };
 
-   const handleExitStreamingDiscard = () => {
-     setExitConfirm(null);
-     performExit(exitAction);
-   };
+  const headerTitle = (() => {
+    if (view === 'generate') return '生成成长总结';
+    if (view === 'archive') return '历史总结归档';
+    if (view === 'view') return selectedSummary?.label ?? '总结详情';
+    if (!job) return '总结预览';
+    if (job.status === 'preparing') return '正在整理简报…';
+    if (job.status === 'thinking') return '✨ 正在读你的记录…';
+    if (job.status === 'streaming') return '✨ AI 正在书写…';
+    if (job.status === 'error') return '生成失败';
+    return job.draft?.label ? `${job.draft.label} · 草稿` : '总结预览';
+  })();
 
-   const handleExitSaveThenProceed = async () => {
-     if (generatedSummary && !saved) {
-       await saveSummary({ ...generatedSummary, viewedAt: generatedSummary.viewedAt ?? new Date() });
-     }
-     setExitConfirm(null);
-     performExit(exitAction);
-   };
-
-   const handleExitDiscardSave = () => {
-     setExitConfirm(null);
-     performExit(exitAction);
-   };
-
-   // R19 修复：整块面板原本渲染在 App 的 `relative z-10` 语境里——
-   // 无论标多少 z 都压不过底导（z-40 是它的兄弟节点），底部内容会被
-   // tab 栏 / 宽屏左侧栏切掉。按 utils/zIndex.ts 的迁移口径 portal 到 body。
-   return createPortal(
-     <AnimatePresence>
-       {isOpen && (
-         <motion.div
-           initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-           className="fixed inset-0 z-50 flex items-end justify-center"
-           onClick={handleClose}
-         >
+  // R19 修复：整块面板原本渲染在 App 的 `relative z-10` 语境里——
+  // 无论标多少 z 都压不过底导（z-40 是它的兄弟节点），底部内容会被
+  // tab 栏 / 宽屏左侧栏切掉。按 utils/zIndex.ts 的迁移口径 portal 到 body。
+  return createPortal(
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+          className="fixed inset-0 z-50 flex items-end justify-center"
+          onClick={onClose}
+        >
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
           <motion.div
             ref={dialogRef}
@@ -817,7 +680,7 @@ export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week' }
               : { maxHeight: '90vh' }}
           >
             {/* 流式期间的主题色粒子 */}
-            {view === 'result' && isStreaming && <StreamingParticles />}
+            {view === 'result' && running && <StreamingParticles />}
             {/* Handle */}
             <div className="flex justify-center pt-4 pb-1">
               {p3 ? (
@@ -831,38 +694,37 @@ export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week' }
 
             {/* Header */}
             <div className="flex items-center gap-2 px-5 py-3 border-b border-black/5 dark:border-white/5">
-              {(view === 'result' || view === 'view' || view === 'archive') && (
+              {(view === 'view' || view === 'archive' || (view === 'result' && !running && !job)) && (
                 <button
                   onClick={() => {
-                    if (view === 'result') handleBackFromResult();
-                    else if (view === 'view') setView('archive');
+                    if (view === 'view') setView('archive');
                     else setView('generate');
                   }}
                   className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-black/5 dark:hover:bg-white/5 text-gray-500 mr-1 text-lg"
                 >‹</button>
               )}
-              <div className="flex-1">
-                <h2 className={p3 ? 'flex items-center gap-2 text-[19px] font-black italic' : 'text-base font-black text-gray-900 dark:text-white'} style={p3 ? { color: P3R.ink } : undefined}>
+              <div className="flex-1 min-w-0">
+                <h2 className={p3 ? 'flex items-center gap-2 text-[19px] font-black italic' : 'text-base font-black text-gray-900 dark:text-white truncate'} style={p3 ? { color: P3R.ink } : undefined}>
                   {p3 && <span aria-hidden className="h-[18px] w-[6px] shrink-0" style={{ background: P3R.blue, transform: 'skewX(-18deg)' }} />}
-                  {view === 'generate' && '生成成长总结'}
-                  {view === 'result' && (isStreaming ? '✨ AI 正在书写…' : '总结预览')}
-                  {view === 'archive' && '历史总结归档'}
-                  {view === 'view' && (selectedSummary?.label ?? '总结详情')}
+                  {headerTitle}
                 </h2>
                 {view === 'generate' && (
                   <p className={p3 ? 'mt-0.5 text-xs font-bold' : 'text-xs text-gray-400 dark:text-gray-500 mt-0.5'} style={p3 ? { color: P3R.blue } : undefined}>由 AI 分析你的成长记录，实时生成总结与建议</p>
+                )}
+                {view === 'result' && running && (
+                  <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">关掉也没关系，它会在后台写完，回来就能看。</p>
                 )}
               </div>
               <div className="flex items-center gap-2">
                 {view === 'generate' && (
                   <button onClick={() => setView('archive')} className="text-xs text-primary font-semibold px-2 py-1 rounded-lg bg-primary/10 hover:bg-primary/20 transition-colors">归档</button>
                 )}
-                 <button onClick={handleClose} className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-black/5 dark:hover:bg-white/5 text-gray-400 text-lg">×</button>
+                <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-black/5 dark:hover:bg-white/5 text-gray-400 text-lg">×</button>
               </div>
             </div>
 
             {/* Body */}
-            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+            <div ref={bodyRef} className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
 
               {/* ── 生成视图 ── */}
               {view === 'generate' && (
@@ -928,6 +790,7 @@ export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week' }
                     />
                     <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">
                       点击切换；在设置「AI 总结」里可新增 / 编辑自定义风格
+                      {settings.summaryDeliberate ? '。已开启深思熟虑档：更贴，但要多等一会儿' : ''}
                     </p>
                   </div>
 
@@ -964,99 +827,112 @@ export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week' }
                       </div>
                     </label>
                   </div>
-                  {error && (
-                    <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700/40 rounded-2xl p-3">
-                      <div className="text-sm text-red-600 dark:text-red-400">{error}</div>
-                    </div>
-                  )}
                 </div>
               )}
 
-              {/* ── 结果视图（流式 + 追问）── */}
-              {view === 'result' && (
+              {/* ── 结果视图（后台任务驱动：流式 / 草稿 / 追问）── */}
+              {view === 'result' && job && (
                 <div className="space-y-4">
-                  {/* 统计数据 */}
-                  {reqData && (
-                    <div className="grid grid-cols-3 gap-2">
-                      {[
-                        { label: '总加点', value: `+${reqData.totalPoints}` },
-                        { label: '记录数', value: `${reqData.activityCount}` },
-                        { label: '风格', value: reqData.preset.name },
-                      ].map(item => (
-                        <div key={item.label} className="bg-black/5 dark:bg-white/5 rounded-2xl p-3 text-center">
-                          <div className="text-xs text-gray-400 dark:text-gray-500">{item.label}</div>
-                          <div className="text-sm font-bold text-gray-800 dark:text-gray-100 truncate mt-0.5">{item.value}</div>
-                        </div>
-                      ))}
+                  <StatsGrid items={jobStats(job)} />
+
+                  {job.status === 'preparing' && (
+                    <div className="flex items-center justify-center gap-2 py-8 text-sm text-gray-500 dark:text-gray-400">
+                      <motion.span animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: 'linear' }} className="inline-block">◌</motion.span>
+                      正在整理这一期的简报…
                     </div>
                   )}
-                  <StreamingContent
-                    streamedText={streamedText}
-                    isStreaming={isStreaming}
-                    reqData={reqData}
-                    initialFollowUp={pendingFollowUp ?? undefined}
-                    onFollowUpComplete={(fu) => setPendingFollowUp(fu)}
-                  />
+
+                  {job.status === 'thinking' && (
+                    <div className="flex flex-col items-center py-4">
+                      <ThinkingCircle
+                        progress={progress}
+                        size={128}
+                        color={accent}
+                        variant="spokes"
+                        label={job.req?.deliberate ? '深思熟虑中' : '正在读你的记录'}
+                      />
+                    </div>
+                  )}
+
+                  {(job.status === 'streaming' || job.status === 'done') && (
+                    <SummaryBody text={job.text} streaming={job.status === 'streaming'} />
+                  )}
+
+                  {job.status === 'error' && (
+                    <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700/40 rounded-2xl p-3 space-y-2">
+                      <div className="text-sm text-red-600 dark:text-red-400 whitespace-pre-line">{job.error}</div>
+                      <div className="flex gap-2">
+                        <button onClick={() => { cancelSummaryJob(); setView('generate'); }} className="flex-1 py-2 rounded-xl text-xs font-bold bg-black/5 dark:bg-white/10 text-gray-600 dark:text-gray-300">返回</button>
+                        <button onClick={() => { cancelSummaryJob(); handleGenerate(); }} className="flex-1 py-2 rounded-xl text-xs font-bold bg-primary text-white">重试</button>
+                      </div>
+                    </div>
+                  )}
+
+                  {job.status === 'done' && job.truncated && (
+                    <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/40 rounded-2xl p-3 flex items-center gap-3">
+                      <div className="flex-1 text-xs text-amber-700 dark:text-amber-300 leading-relaxed">
+                        {job.continues >= SUMMARY_CONTINUE_LIMIT
+                          ? '已经续写了三次，剩下的就这样吧；可以直接归档，或者重新生成。'
+                          : '这封信写到一半断了（输出被截断或连接中途断开）。可以让它从断处接着写。'}
+                      </div>
+                      {job.continues < SUMMARY_CONTINUE_LIMIT && (
+                        <button
+                          onClick={() => continueSummaryJob(settings)}
+                          className="shrink-0 px-3 py-2 rounded-xl text-xs font-bold bg-amber-500 text-white active:scale-95"
+                        >
+                          接着写
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {job.status === 'done' && !job.truncated && job.draft && (
+                    <FollowUpArea
+                      cfg={job.req ? { apiKey: job.req.apiKey, baseUrl: job.req.baseUrl, model: job.req.model, provider: job.req.provider } : cfgFor(job.draft.reqContext)}
+                      baseMessages={job.req?.messages ?? job.draft.reqContext?.messages ?? null}
+                      content={job.draft.content}
+                      followUps={job.draft.followUps ?? []}
+                      question={job.draft.question}
+                      onFollowUpComplete={attachDraftFollowUp}
+                    />
+                  )}
                 </div>
+              )}
+              {view === 'result' && !job && (
+                <div className="py-10 text-center text-sm text-gray-400">没有正在进行的总结。</div>
               )}
 
               {/* ── 归档列表 ── */}
               {view === 'archive' && (
-                <ArchiveList summaries={summaries} onSelect={s => { void markSummaryViewed(s.id); setSelectedSummary(s.viewedAt ? s : { ...s, viewedAt: new Date() }); setPendingFollowUp(null); setView('view'); }} onDelete={id => deleteSummary(id)} />
+                <ArchiveList summaries={summaries} onSelect={s => { void markSummaryViewed(s.id); setSelectedSummary(s.viewedAt ? s : { ...s, viewedAt: new Date() }); setView('view'); }} onDelete={id => deleteSummary(id)} />
               )}
 
               {/* ── 单条查看 ── */}
-              {view === 'view' && selectedSummary && (() => {
-                // 复活原始 prompt 上下文：归档里只存了 baseUrl/model/messages（无 apiKey），
-                // 这里把当下 settings.summaryApiKey 注入回去；如果用户 / 项目当前没配 key，
-                // 重新追问会被 fetch 401 挡掉，对应 UI 直接退化为只读展示。
-                const archivedReqData: SummaryRequestData | null = selectedSummary.reqContext && settings.summaryApiKey
-                  ? {
-                      baseUrl: selectedSummary.reqContext.baseUrl,
-                      model: selectedSummary.reqContext.model,
-                      apiKey: settings.summaryApiKey,
-                      messages: selectedSummary.reqContext.messages,
-                      // 下面这些字段 StreamingContent 不读，只是为了类型完整
-                      periodLabel: selectedSummary.label,
-                      preset: { id: selectedSummary.promptPresetId, name: selectedSummary.promptPresetName, systemPrompt: '', isBuiltin: true },
-                      totalPoints: selectedSummary.totalPoints,
-                      attributePoints: selectedSummary.attributePoints,
-                      activityCount: selectedSummary.activityCount,
-                      period: selectedSummary.period,
-                      startDate: selectedSummary.startDate,
-                      endDate: selectedSummary.endDate,
-                    }
-                  : null;
-                return (
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-3 gap-2">
-                      {[
-                        { label: '总加点', value: `+${selectedSummary.totalPoints}` },
-                        { label: '记录数', value: `${selectedSummary.activityCount}` },
-                        { label: '风格', value: selectedSummary.promptPresetName },
-                      ].map(item => (
-                        <div key={item.label} className="bg-black/5 dark:bg-white/5 rounded-2xl p-3 text-center">
-                          <div className="text-xs text-gray-400 dark:text-gray-500">{item.label}</div>
-                          <div className="text-sm font-bold text-gray-800 dark:text-gray-100 truncate mt-0.5">{item.value}</div>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="text-xs text-gray-400 dark:text-gray-500">
-                      {selectedSummary.startDate} ~ {selectedSummary.endDate} · 生成于 {new Date(selectedSummary.createdAt).toLocaleDateString('zh-CN')}
-                    </div>
-                    {/* 用同一个 StreamingContent 复用追问能力：
-                        - 已落库 followUp → 只读展示
-                        - 没 followUp + 有 reqContext → 显示输入框，发送后立即落库 */}
-                    <StreamingContent
-                      streamedText={selectedSummary.content}
-                      isStreaming={false}
-                      reqData={archivedReqData}
-                      initialFollowUp={selectedSummary.followUp}
-                      onFollowUpComplete={handleArchivedFollowUpSaved}
-                    />
+              {view === 'view' && selectedSummary && (
+                <div className="space-y-4">
+                  <StatsGrid items={[
+                    { label: '总加点', value: `+${selectedSummary.totalPoints}` },
+                    { label: '记录数', value: `${selectedSummary.activityCount}` },
+                    { label: '风格', value: selectedSummary.promptPresetName },
+                  ]} />
+                  <div className="text-xs text-gray-400 dark:text-gray-500">
+                    {selectedSummary.startDate} ~ {selectedSummary.endDate} · 生成于 {new Date(selectedSummary.createdAt).toLocaleDateString('zh-CN')}
+                    {selectedSummary.deliberate ? ' · 深思熟虑' : ''}
                   </div>
-                );
-              })()}
+                  <SummaryBody text={selectedSummary.content} streaming={false} />
+                  {/* 归档里的追问：
+                      - 已落库的按轮展示
+                      - 还有次数 + 有 reqContext → 显示输入框，发送后立即落库 */}
+                  <FollowUpArea
+                    cfg={cfgFor(selectedSummary.reqContext)}
+                    baseMessages={selectedSummary.reqContext?.messages ?? null}
+                    content={selectedSummary.content}
+                    followUps={followUpsOf(selectedSummary)}
+                    question={selectedSummary.question}
+                    onFollowUpComplete={handleArchivedFollowUpSaved}
+                  />
+                </div>
+              )}
             </div>
 
             {/* Footer */}
@@ -1064,58 +940,64 @@ export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week' }
               {view === 'generate' && (
                 <button
                   onClick={handleGenerate}
-                  disabled={isGenerating || noApiKey}
+                  disabled={noApiKey || running}
                   className={p3
-                    ? `relative w-full py-3.5 text-[15px] font-black text-white transition-transform ${isGenerating || noApiKey ? 'opacity-40' : 'active:translate-y-0.5'}`
-                    : `w-full py-3.5 rounded-2xl font-bold text-sm transition-all ${isGenerating || noApiKey ? 'bg-gray-200 dark:bg-gray-700 text-gray-400 cursor-not-allowed' : 'bg-primary text-white shadow-lg active:scale-[0.98]'}`}
-                  style={p3 ? { clipPath: slantClip(12), background: isGenerating || noApiKey ? '#9db4d0' : P3R.blue, boxShadow: '0 10px 24px rgba(27,87,255,0.3)' } : undefined}
+                    ? `relative w-full py-3.5 text-[15px] font-black text-white transition-transform ${noApiKey || running ? 'opacity-40' : 'active:translate-y-0.5'}`
+                    : `w-full py-3.5 rounded-2xl font-bold text-sm transition-all ${noApiKey || running ? 'bg-gray-200 dark:bg-gray-700 text-gray-400 cursor-not-allowed' : 'bg-primary text-white shadow-lg active:scale-[0.98]'}`}
+                  style={p3 ? { clipPath: slantClip(12), background: noApiKey || running ? '#9db4d0' : P3R.blue, boxShadow: '0 10px 24px rgba(27,87,255,0.3)' } : undefined}
                 >
-                  {isGenerating
-                    ? <span className="flex items-center justify-center gap-2"><motion.span animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: 'linear' }} className="inline-block">◌</motion.span>准备中…</span>
-                     : '🦋 生成总结'}
-                  {p3 && !(isGenerating || noApiKey) && <span aria-hidden className="absolute bottom-0 right-4 h-[9px] w-[22px]" style={{ background: P3R.magenta, clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />}
+                  🦋 生成总结
+                  {p3 && !(noApiKey || running) && <span aria-hidden className="absolute bottom-0 right-4 h-[9px] w-[22px]" style={{ background: P3R.magenta, clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />}
                 </button>
               )}
 
-              {view === 'result' && (
+              {view === 'result' && job && (
                 <div className="flex gap-3">
+                  {running ? (
+                    <button
+                      onClick={handleStop}
+                      className="flex-1 py-3.5 rounded-2xl font-bold text-sm bg-black/5 dark:bg-white/10 text-gray-600 dark:text-gray-300"
+                    >
+                      停止
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handleRegenerate}
+                      className="flex-1 py-3.5 rounded-2xl font-bold text-sm bg-black/5 dark:bg-white/10 text-gray-600 dark:text-gray-300"
+                    >
+                      重新生成
+                    </button>
+                  )}
                   <button
-                    onClick={handleBackFromResult}
-                    className="flex-1 py-3.5 rounded-2xl font-bold text-sm bg-black/5 dark:bg-white/10 text-gray-600 dark:text-gray-300"
+                    onClick={() => void handleSave()}
+                    disabled={running || !job.draft || saving}
+                    className="flex-1 py-3.5 rounded-2xl font-bold text-sm transition-all bg-primary text-white shadow-lg active:scale-[0.98] disabled:opacity-50"
                   >
-                    {isStreaming ? '停止' : '重新生成'}
-                  </button>
-                  <button
-                    onClick={handleSave}
-                    disabled={isStreaming || !generatedSummary || saved}
-                    className={`flex-1 py-3.5 rounded-2xl font-bold text-sm transition-all ${saved ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400' : 'bg-primary text-white shadow-lg active:scale-[0.98] disabled:opacity-50'}`}
-                  >
-                    {saved ? '✓ 已归档' : isStreaming ? '生成中…' : '归档保存'}
+                    {running ? '生成中…' : saving ? '保存中…' : '归档保存'}
                   </button>
                 </div>
               )}
-
-              {(view === 'archive' || view === 'view') && (
+              {view === 'result' && !job && (
                 <button onClick={() => setView('generate')} className="w-full py-3.5 rounded-2xl font-bold text-sm bg-primary text-white shadow-lg active:scale-[0.98]">
                   生成新总结
+                </button>
+              )}
+
+              {(view === 'archive' || view === 'view') && (
+                <button onClick={() => setView(job ? 'result' : 'generate')} className="w-full py-3.5 rounded-2xl font-bold text-sm bg-primary text-white shadow-lg active:scale-[0.98]">
+                  {job ? (running ? '回到进行中的总结' : '回到草稿') : '生成新总结'}
                 </button>
               )}
             </div>
           </motion.div>
           <AnimatePresence>
-            {exitConfirm === 'streaming' && (
-              <ExitConfirm
-                kind="streaming"
-                onCancel={() => setExitConfirm(null)}
-                onDiscard={handleExitStreamingDiscard}
-              />
-            )}
-            {exitConfirm === 'save' && (
-              <ExitConfirm
-                kind="save"
-                onCancel={() => setExitConfirm(null)}
-                onDiscard={handleExitDiscardSave}
-                onSave={handleExitSaveThenProceed}
+            {confirm === 'regen' && (
+              <ConfirmLayer
+                title="重新生成？"
+                body="这份草稿还没归档，重新生成会把它丢掉。"
+                confirmLabel="丢弃并重新生成"
+                onCancel={() => setConfirm(null)}
+                onConfirm={() => { setConfirm(null); discardSummaryJob(); setView('generate'); }}
               />
             )}
           </AnimatePresence>

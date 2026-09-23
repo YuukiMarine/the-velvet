@@ -351,7 +351,7 @@ function DayDetailSheet({ d, sk, onClose }: { d: DailyDivination; sk: SectionSki
             <div
               className="prose-sm text-[12.5px] leading-relaxed"
               style={{ color: sk.ink }}
-              dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(`<p class="mb-2">${renderMarkdown(d.narration)}</p>`) }}
+              dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(renderMarkdown(d.narration)) }}
             />
           </div>
         )}

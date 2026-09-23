@@ -20,8 +20,8 @@
 import { useMemo, useState } from 'react';
 import { useAppStore } from '@/store';
 import { SheetModal } from '@/components/SheetModal';
-import { AI_PROVIDERS, getProviderConfig, type ApiProvider, DEFAULT_PROVIDER } from '@/utils/aiProviders';
-import { autoFillVisionPatch, familyBadge, isAggregatorList, isAudioModel, isChatModel, isVisionModel, refreshAllProviderModels } from '@/utils/aiModelCatalog';
+import { AI_PROVIDERS, getProviderConfig, effectiveModelName, type ApiProvider, DEFAULT_PROVIDER } from '@/utils/aiProviders';
+import { autoFillVisionPatch, familyBadge, isAggregatorList, isAudioModel, isChatModel, isVisionModel, liveModelOf, refreshAllProviderModels } from '@/utils/aiModelCatalog';
 
 export type ModelPickerMode = 'fast' | 'deliberate' | 'assistant' | 'vision' | 'audio';
 
@@ -52,8 +52,11 @@ export const ModelPickerSheet = ({ mode, isOpen, onClose }: {
     : audio ? (settings.audioModel ?? '')
     : (settings.navigatorModel ?? '');
 
-  /** 本档的默认筛选器（"只看…"开关按下时生效） */
-  const capabilityFilter = vision ? isVisionModel : audio ? isAudioModel : isChatModel;
+  /** 本档的默认筛选器（"只看…"开关按下时生效）。视觉档先看 /models 给的能力，再按名字猜 */
+  const capabilityFilter = (pv: ApiProvider, m: string) =>
+    vision ? isVisionModel(m, settings.aiProfiles?.[pv]?.modelCaps?.[m])
+    : audio ? isAudioModel(m)
+    : isChatModel(m);
   const filterLabel = vision ? '只看能看图' : audio ? '只看能听写' : '只看对话';
 
   const sections = useMemo(() => {
@@ -64,10 +67,11 @@ export const ModelPickerSheet = ({ mode, isOpen, onClose }: {
           id === active || settings.aiProfiles?.[id]?.key?.trim());
     return pvs.map((pv) => {
       const all = settings.aiProfiles?.[pv]?.models ?? [];
-      const filtered = all.filter((m) => (!chatOnly || capabilityFilter(m)) && (!q || m.toLowerCase().includes(q)));
+      const filtered = all.filter((m) => (!chatOnly || capabilityFilter(pv, m)) && (!q || m.toLowerCase().includes(q)));
       return { pv, all, filtered, aggregator: isAggregatorList(all) };
     });
-  }, [fast, active, settings.aiProfiles, chatOnly, query, capabilityFilter]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fast, active, settings.aiProfiles, chatOnly, query, vision, audio]);
 
   const hasAnyList = sections.some((s) => s.all.length > 0);
 
@@ -109,12 +113,13 @@ export const ModelPickerSheet = ({ mode, isOpen, onClose }: {
       out.okParts.length ? `已更新：${out.okParts.join('、')}` : '',
       out.skipped.length ? `跳过：${out.skipped.join('；')}` : '',
       auto ? `👁 视觉档原来空着，已自动填入 ${auto.label}（可在「视觉」档更换或停用）` : '',
+      out.stale.length ? `⚠ 这些档在用的模型已不在官方最新列表里，可能下线了，建议换一个：${out.stale.join('；')}` : '',
     ].filter(Boolean).join('\n'));
   };
 
-  const fastModel = settings.summaryModel?.trim() || getProviderConfig(active).defaultModel;
+  const fastModel = liveModelOf(settings, active);
   const delibLabel = settings.navigatorModel?.trim()
-    ? `${getProviderConfig(settings.navigatorProvider ?? active).label} · ${settings.navigatorModel.trim()}`
+    ? `${getProviderConfig(settings.navigatorProvider ?? active).label} · ${effectiveModelName(settings.navigatorModel)}`
     : fastModel;
   const followLabel = fast
     ? `默认（${getProviderConfig(active).defaultModel}）`
@@ -155,8 +160,8 @@ export const ModelPickerSheet = ({ mode, isOpen, onClose }: {
         )}
         {vision && (
           <p className="text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">
-            拍小票记账等<b>看图</b>任务用这档。/models 不告诉我们谁能看图，下面是按名字猜的——
-            猜错了调用会报错，不影响别的功能；关掉筛选可以看全量、也能直接手填。
+            拍小票记账等<b>看图</b>任务用这档。服务商在模型列表里标明能看图的（如 DeepSeek）带 👁 徽标、按官方说法筛；
+            没标的按名字猜——猜错了调用会报错，不影响别的功能；关掉筛选可以看全量、也能直接手填。
           </p>
         )}
         {audio && (
@@ -230,10 +235,17 @@ export const ModelPickerSheet = ({ mode, isOpen, onClose }: {
             ) : (
               filtered.map((m) => {
                 const badge = familyBadge(pv, m);
-                const selected = currentModel === m && currentPv === pv;
+                // 存档里若是退役名（如 deepseek-v4-flash），按它的继任者对号
+                const selected = !!currentModel && effectiveModelName(currentModel) === m && currentPv === pv;
+                const seesImages = settings.aiProfiles?.[pv]?.modelCaps?.[m]?.image === true;
                 return (
                   <button key={`${pv}::${m}`} type="button" onClick={() => pick(pv, m)} className={rowCls(selected)}>
                     <span className="min-w-0 flex-1 truncate">{m}</span>
+                    {seesImages && (
+                      <span title="服务商标明能看图" className="shrink-0 rounded-full bg-sky-100 px-1.5 py-px text-[10px] font-semibold text-sky-600 dark:bg-sky-900/30 dark:text-sky-300">
+                        👁 能看图
+                      </span>
+                    )}
                     {badge && (
                       <span className="shrink-0 rounded-full bg-gray-100 px-1.5 py-px text-[10px] font-semibold text-gray-500 dark:bg-gray-700 dark:text-gray-400">
                         {badge}

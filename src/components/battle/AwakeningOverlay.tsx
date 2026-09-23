@@ -113,7 +113,15 @@ function toLines(cleaned: string): string[] {
   return out;
 }
 
-const StreamPreview = forwardRef<StreamPreviewHandle, { initial?: () => string }>(({ initial }, ref) => {
+export interface StreamPreviewProps {
+  initial?: () => string;
+  /** overlay = 觉醒全屏底部居中（默认）；inline = 嵌在卡片里的两行窗口（区层 / 伪神显形复用） */
+  variant?: 'overlay' | 'inline';
+  /** 字色：觉醒紫 / 顶阙金 */
+  tone?: 'violet' | 'gold';
+}
+
+export const StreamPreview = forwardRef<StreamPreviewHandle, StreamPreviewProps>(({ initial, variant = 'overlay', tone = 'violet' }, ref) => {
   const bold = useBoldness();
   const [lines, setLines] = useState<string[]>([]);
   /** 刚进新行 —— 这一帧先把整列压低一行，下一帧回到 0，就是"向上滚一行" */
@@ -129,7 +137,7 @@ const StreamPreview = forwardRef<StreamPreviewHandle, { initial?: () => string }
       .replace(/[{}\[\]"]+/g, ' ')
       .replace(/[,:]+/g, ' · ')
       .replace(/\s+/g, ' ')
-      .replace(/\b(name|description|skills|type|power|spCost|level)\b/gi, '')
+      .replace(/\b(name|description|skills|type|power|spCost|level|stratumName|stratumDescription|invertedAttributes|responseLines|weakAttribute|flawKey|flawTitle|verdict|knowledge|guts|dexterity|kindness|charm)\b/gi, '')
       .trim();
     const all = toLines(cleaned);
     if (all.length === countRef.current) return;   // 还没凑满新的一行，不动
@@ -164,17 +172,23 @@ const StreamPreview = forwardRef<StreamPreviewHandle, { initial?: () => string }
   }, []);
 
   const LH = 1.55; // em
+  const gold = tone === 'gold';
+  const inline = variant === 'inline';
 
   return (
     <div
-      className="absolute pointer-events-none select-none flex items-end justify-center"
+      className={`${inline ? 'relative w-full' : 'absolute'} pointer-events-none select-none flex items-end justify-center`}
       style={{
-        left: 0,
-        right: 0,
-        // 抬到底导之上：原来固定 80px，正好落在 4rem 底部栏 + home indicator 那条带里，
-        // 加上这层浮层此前没有 portal 到 body（压不过 z-40 的底导），
-        // 观感就是"吟唱词底下那条流式滚动没有了"
-        bottom: 'calc(6rem + env(safe-area-inset-bottom, 0px))',
+        ...(inline
+          ? {}
+          : {
+              left: 0,
+              right: 0,
+              // 抬到底导之上：原来固定 80px，正好落在 4rem 底部栏 + home indicator 那条带里，
+              // 加上这层浮层此前没有 portal 到 body（压不过 z-40 的底导），
+              // 观感就是"吟唱词底下那条流式滚动没有了"
+              bottom: 'calc(6rem + env(safe-area-inset-bottom, 0px))',
+            }),
         height: `${LH * 2}em`,
         fontSize: 11,
         overflow: 'hidden',
@@ -211,8 +225,8 @@ const StreamPreview = forwardRef<StreamPreviewHandle, { initial?: () => string }
               style={{
                 fontFamily: 'ui-monospace, "Cascadia Mono", "SF Mono", Menlo, monospace',
                 lineHeight: `${LH}em`,
-                color: 'rgba(216,195,255,0.9)',
-                textShadow: '0 0 10px rgba(192,132,252,0.55)',
+                color: gold ? 'rgba(253,230,138,0.92)' : 'rgba(216,195,255,0.9)',
+                textShadow: gold ? '0 0 10px rgba(232,182,76,0.55)' : '0 0 10px rgba(192,132,252,0.55)',
                 letterSpacing: '0.04em',
                 textAlign: 'center',
                 whiteSpace: 'pre',
@@ -231,6 +245,18 @@ const StreamPreview = forwardRef<StreamPreviewHandle, { initial?: () => string }
 });
 
 StreamPreview.displayName = 'StreamPreview';
+
+/**
+ * 声明式壳：文本从 props 进（后台任务的 shown 文本），内部仍走 ref.setText 的去抖滚动。
+ * 区层显形 / 伪神显形的仪式卡用它——用户口径：复用召唤人格面具时那个滚动窗口。
+ */
+export function LiveStreamPreview({ text, variant = 'inline', tone = 'violet' }: { text: string; variant?: 'overlay' | 'inline'; tone?: 'violet' | 'gold' }) {
+  const ref = useRef<StreamPreviewHandle>(null);
+  const latest = useRef(text);
+  latest.current = text;
+  useEffect(() => { ref.current?.setText(text); }, [text]);
+  return <StreamPreview ref={ref} variant={variant} tone={tone} initial={() => latest.current} />;
+}
 
 interface Props {
   isOpen: boolean;

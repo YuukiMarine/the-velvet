@@ -23,6 +23,14 @@ import { P5R, P5_FONT, roughSlant, starPts, P5Star, P5StarFab } from '@/componen
 import { extractActivitiesFromImage, type ActivityIntakeItem } from '@/utils/visionIntake';
 import { readAsDataUrl, downscaleDataUrl } from '@/utils/imageCrop';
 import { getVisionAIConfig } from '@/utils/aiClient';
+import {
+  useActivityImages, loadActivityImageIndex, prepareActivityImage, addActivityImages, MAX_IMAGES_PER_ACTIVITY,
+  type PreparedImage,
+} from '@/utils/activityImages';
+import { ImageLightbox } from '@/components/ImageLightbox';
+import { ActivityImagesSheet } from '@/components/ActivityImagesSheet';
+import { useSummaryJobs, isSummaryJobRunning } from '@/utils/summaryJobs';
+import { slantClip } from '@/components/p3r/kit';
 
 /** 成长总结入口：左低右高的平行四边形（P5 反板正口径，四边斜率各不相同） */
 const SUMMARY_SHAPE = 'polygon(7px 0, 100% 2px, calc(100% - 6px) 100%, 0 calc(100% - 3px))';
@@ -480,6 +488,90 @@ function useSummaryReminder() {
 }
 
 // 行动页子视图（记录）：页头/页级转场由宿主 Actions.tsx 承担，本组件只渲染内容
+
+/** 灯箱壳：订阅这条记录的图，图被删光就自动收起 */
+function LightboxFor({ activityId, index, onIndexChange, onClose }: { activityId: string; index: number; onIndexChange: (i: number) => void; onClose: () => void }) {
+  const images = useActivityImages(activityId);
+  useEffect(() => { if (!images.length) onClose(); }, [images.length, onClose]);
+  if (!images.length) return null;
+  const safe = Math.min(index, images.length - 1);
+  return <ImageLightbox images={images} index={safe} onIndexChange={onIndexChange} onClose={onClose} />;
+}
+
+// ── 记录配图（v2.7.0.6）：输入框内的附件小按钮 + 卡片缩略图行 ──────────────
+/** 附件条上的小按钮：按频道换装（中性灰胶囊 / P3 斜切 / P4 奶油描边 / P5 黑条纸字） */
+function AttachChip({ icon, label, onClick, disabled, active, seed = 31 }: {
+  icon: string; label: string; onClick: () => void; disabled?: boolean; active?: boolean; seed?: number;
+}) {
+  const ch = useUiChannel();
+  const base = 'inline-flex items-center gap-1 whitespace-nowrap text-[11px] font-bold leading-none transition-transform active:scale-95 disabled:opacity-50';
+  if (ch === 'p3') {
+    return (
+      <button type="button" onClick={onClick} disabled={disabled} className={`${base} px-3 py-1.5`}
+        style={{ clipPath: slantClip(6), background: active ? 'var(--p3r-blue, #1b57ff)' : 'rgba(27,87,255,0.12)', color: active ? '#fff' : 'var(--p3r-ink, #0a1230)' }}>
+        <span aria-hidden>{icon}</span>{label}
+      </button>
+    );
+  }
+  if (ch === 'p4') {
+    return (
+      <button type="button" onClick={onClick} disabled={disabled} className={`${base} rounded-full px-3 py-1.5`}
+        style={{ background: active ? '#131313' : '#fff1a8', color: active ? '#fff1a8' : '#131313', border: '1.5px solid #131313' }}>
+        <P4Sparkle size={10} color={active ? '#fff1a8' : '#131313'} /> {icon} {label}
+      </button>
+    );
+  }
+  if (ch === 'p5') {
+    return (
+      <button type="button" onClick={onClick} disabled={disabled} className={`${base} relative px-3 py-1.5`} style={{ fontFamily: P5_FONT }}>
+        <span aria-hidden className="absolute inset-0" style={{ transform: 'translate(2px,2px)', background: active ? P5R.red : '#000', clipPath: roughSlant(seed, 10, 2) }} />
+        <span aria-hidden className="absolute inset-0" style={{ background: active ? P5R.red : '#050505', clipPath: roughSlant(seed + 1, 10, 2) }} />
+        <span className="relative" style={{ color: P5R.paper }}><span aria-hidden>{icon}</span> {label}</span>
+      </button>
+    );
+  }
+  return (
+    <button type="button" onClick={onClick} disabled={disabled}
+      className={`${base} rounded-full px-2.5 py-1.5 ${active ? 'bg-primary text-white' : 'bg-black/[0.06] text-gray-600 dark:bg-white/10 dark:text-gray-300'}`}>
+      <span aria-hidden>{icon}</span>{label}
+    </button>
+  );
+}
+
+/** 缩略图外框：按频道换边 */
+function thumbFrame(ch: ReturnType<typeof useUiChannel>, seed: number): { className: string; style?: React.CSSProperties } {
+  if (ch === 'p3') return { className: '', style: { clipPath: slantClip(5) } };
+  if (ch === 'p4') return { className: 'rounded-xl', style: { border: '1.5px solid #131313' } };
+  if (ch === 'p5') return { className: '', style: { clipPath: roughSlant(seed, 8, 2), outline: '2px solid #050505', outlineOffset: -2 } };
+  return { className: 'rounded-lg ring-1 ring-black/10 dark:ring-white/10' };
+}
+
+/** 卡片里的缩略图行（无图不渲染；点开灯箱；阻止冒泡免得触发卡片长按 / 点击） */
+function ActivityThumbs({ activityId, onOpen }: { activityId: string; onOpen: (index: number) => void }) {
+  const images = useActivityImages(activityId);
+  const ch = useUiChannel();
+  if (!images.length) return null;
+  return (
+    <div className="mt-2 flex gap-1.5" onPointerDown={e => e.stopPropagation()} onClick={e => e.stopPropagation()}>
+      {images.map((im, i) => {
+        const f = thumbFrame(ch, 40 + i * 7);
+        return (
+          <button
+            key={im.id}
+            type="button"
+            onClick={() => onOpen(i)}
+            aria-label={`查看图片 ${i + 1}`}
+            className={`relative h-14 w-14 shrink-0 overflow-hidden bg-black/5 dark:bg-white/5 ${f.className}`}
+            style={f.style}
+          >
+            <img src={im.thumbDataUrl} alt="" className="h-full w-full object-cover" draggable={false} loading="lazy" />
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export const ActivitiesView = () => {
   const { activities, addActivity, settings, setModalBlocker, deleteActivity, deleteActivityRecordOnly } = useAppStore();
   const isP4 = useUiChannel() === 'p4';
@@ -500,6 +592,38 @@ export const ActivitiesView = () => {
   const p3 = useUiChannel() === 'p3';
   const [description, setDescription] = useState('');
 
+  // ── 记录配图（v2.7.0.6）：新建抽屉里的待存图 / 灯箱 / 管理抽屉 ──
+  useEffect(() => { void loadActivityImageIndex(); }, []);
+  const [pendingImages, setPendingImages] = useState<PreparedImage[]>([]);
+  const [imgBusy, setImgBusy] = useState(false);
+  const [imgHint, setImgHint] = useState<string | null>(null);
+  const attachFileRef = useRef<HTMLInputElement | null>(null);
+  /** 读图代打字之后，这张截图可以顺带附上（默认不附） */
+  const [lastShot, setLastShot] = useState<PreparedImage | null>(null);
+  const [lightbox, setLightbox] = useState<{ activityId: string; index: number } | null>(null);
+  const [manageImagesId, setManageImagesId] = useState<string | null>(null);
+  const summaryJob = useSummaryJobs(st => st.job);
+  const summaryRunning = isSummaryJobRunning(summaryJob);
+  const summaryHasDraft = !!summaryJob && summaryJob.status === 'done';
+  const resetImages = () => { setPendingImages([]); setLastShot(null); setImgHint(null); };
+  const handleAttachFiles = async (files: FileList | null) => {
+    if (!files?.length || imgBusy) return;
+    setImgBusy(true);
+    setImgHint(null);
+    try {
+      const room = MAX_IMAGES_PER_ACTIVITY - pendingImages.length;
+      const take = Array.from(files).slice(0, Math.max(0, room));
+      const prepared: PreparedImage[] = [];
+      for (const f of take) prepared.push(await prepareActivityImage(f));
+      setPendingImages(prev => [...prev, ...prepared].slice(0, MAX_IMAGES_PER_ACTIVITY));
+      if (files.length > take.length) setImgHint(`一条记录最多 ${MAX_IMAGES_PER_ACTIVITY} 张，多出的没有加`);
+    } catch (e) {
+      setImgHint(e instanceof Error ? e.message : '图片处理失败');
+    } finally {
+      setImgBusy(false);
+    }
+  };
+
   // ── 📷 战绩截图导入（FS3.4-③，走视觉档）：运动/学习/阅读 App 的截图 → 记录文本。
   // 读出 1 条直接回填输入框；多条列成 chips 逐条点选追加。给分仍走既有分析流。
   const shotVision = !!getVisionAIConfig(settings);
@@ -517,6 +641,8 @@ export const ActivitiesView = () => {
     try {
       const raw = await readAsDataUrl(f);
       const dataUrl = await downscaleDataUrl(raw);
+      // 顺手把这张截图压成配图规格：读出文字后可以一键「附上这张图」
+      void prepareActivityImage(f).then(setLastShot).catch(() => setLastShot(null));
       const items = await extractActivitiesFromImage(dataUrl, settings, settings.attributeNames);
       if (!items.length) {
         setShotHint('这张截图里没读出可入档的事——换一张试试');
@@ -741,6 +867,10 @@ export const ActivitiesView = () => {
       date: backdateDate,
       wishId: wishMount,
     });
+    if (pendingImages.length) {
+      try { await addActivityImages(result.activityId, pendingImages); } catch (e) { console.warn('[activities] attach images failed', e); }
+    }
+    resetImages();
     setUnlockHint(result.unlockHints);
     setModalBlocker(true);
     setShowSaveSuccess(true);
@@ -860,8 +990,17 @@ export const ActivitiesView = () => {
               </>
             )}
             {p5 ? <P5Star size={13} fill={P5R.red} className="relative shrink-0" /> : <span>✨</span>}
-            <span className="relative">成长总结</span>
-            {showDot && (
+            <span className="relative">{summaryRunning ? '总结书写中…' : summaryHasDraft ? '总结草稿' : '成长总结'}</span>
+            {summaryRunning && (
+              <motion.span
+                aria-hidden
+                animate={{ opacity: [0.3, 1, 0.3] }}
+                transition={{ repeat: Infinity, duration: 1.4 }}
+                className={p5 ? 'relative ml-0.5 h-2 w-2' : 'relative ml-0.5 h-2 w-2 rounded-full bg-primary'}
+                style={p5 ? { background: P5R.red, clipPath: 'polygon(50% 0, 100% 50%, 50% 100%, 0 50%)' } : undefined}
+              />
+            )}
+            {showDot && !summaryRunning && (
               <motion.span
                 initial={{ scale: 0 }}
                 animate={{ scale: 1 }}
@@ -1277,6 +1416,9 @@ export const ActivitiesView = () => {
                                                 );
                                               })()}
 
+                                              {/* 记录配图（v2.7.0.6）：缩略图行，点开灯箱 */}
+                                              <ActivityThumbs activityId={activity.id} onOpen={(i) => setLightbox({ activityId: activity.id, index: i })} />
+
                                               {/* 点数 + 时间 — 次要信息行 */}
                                               <div className="flex items-center gap-2 mt-2 flex-wrap">
                                                 {hasPoints && Object.entries(activity.pointsAwarded).map(([attr, pts]) =>
@@ -1420,7 +1562,7 @@ export const ActivitiesView = () => {
           （portal 到 body、内置 AnimatePresence/焦点陷阱/ESC/安卓返回键；FAB 仍是唯一触发入口） */}
       <SheetModal
         isOpen={showInput}
-        onClose={() => { setShowInput(false); setAnalyzedPoints(null); setBackdateTarget(null); }}
+        onClose={() => { setShowInput(false); setAnalyzedPoints(null); setBackdateTarget(null); resetImages(); }}
         position="bottom"
         title={backdateTarget ? '补录历史记录' : '记录一件事'}
         footer={
@@ -1462,38 +1604,91 @@ export const ActivitiesView = () => {
           </p>
         )}
 
-        <textarea
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          placeholder="描述你刚才做了什么..."
-          className="w-full px-4 py-3 text-sm border border-gray-200 dark:border-gray-700 rounded-2xl focus:outline-none focus:border-primary dark:bg-gray-800 dark:text-white resize-none"
-          rows={3}
-          autoFocus
+        {/* 输入框：附件小按钮做进框内最下方（v2.7.0.6，用户口径：视觉统一；虚线大按钮退役） */}
+        <div className="relative">
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="描述你刚才做了什么..."
+            className="with-toolbar w-full px-4 pt-3 pb-11 text-sm border border-gray-200 dark:border-gray-700 rounded-2xl focus:outline-none focus:border-primary dark:bg-gray-800 dark:text-white resize-none"
+            rows={4}
+            autoFocus
+          />
+          <div className="pointer-events-none absolute inset-x-2.5 bottom-2.5 flex items-center gap-1.5">
+            <div className="pointer-events-auto flex flex-wrap items-center gap-1.5">
+              {/* 📷 读图代打字（配了视觉档才出现）：Keep/背单词/读书 App 的战绩截图直接转记录文本 */}
+              {shotVision && (
+                <AttachChip icon="📷" label={shotBusy ? '正在读图…' : '读图代打字'} disabled={shotBusy} onClick={() => shotFileRef.current?.click()} seed={31} />
+              )}
+              <AttachChip
+                icon="🖼"
+                label={imgBusy ? '处理中…' : pendingImages.length ? `已附 ${pendingImages.length} 张` : '附一张图'}
+                active={pendingImages.length > 0}
+                disabled={imgBusy || pendingImages.length >= MAX_IMAGES_PER_ACTIVITY}
+                onClick={() => attachFileRef.current?.click()}
+                seed={57}
+              />
+            </div>
+          </div>
+        </div>
+        <input
+          ref={attachFileRef}
+          type="file"
+          accept="image/*"
+          multiple
+          className="hidden"
+          onChange={(e) => { const fl = e.target.files; e.target.value = ''; void handleAttachFiles(fl); }}
         />
+        {shotVision && (
+          <input
+            ref={shotFileRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              e.target.value = '';
+              if (f) void handleActivityShot(f);
+            }}
+          />
+        )}
 
-        {/* 📷 战绩截图导入（配了视觉档才出现）：Keep/背单词/读书 App 的战绩截图直接转记录文本 */}
+        {/* 待存的配图：小缩略图 + 移除；保存时随记录落库 */}
+        {(pendingImages.length > 0 || imgHint) && (
+          <div className="mt-2">
+            {pendingImages.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {pendingImages.map((im, i) => (
+                  <div key={i} className="relative h-14 w-14 overflow-hidden rounded-lg ring-1 ring-black/10 dark:ring-white/10">
+                    <img src={im.thumbDataUrl} alt="" className="h-full w-full object-cover" draggable={false} />
+                    <button
+                      type="button"
+                      aria-label="移除这张图"
+                      onClick={() => setPendingImages(prev => prev.filter((_, j) => j !== i))}
+                      className="absolute right-0.5 top-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-black/60 text-[11px] leading-none text-white"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {imgHint && <p className="mt-1 text-[11px] text-gray-400 dark:text-gray-500">{imgHint}</p>}
+          </div>
+        )}
+
         {shotVision && (
           <div className="mt-2">
-            <input
-              ref={shotFileRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                e.target.value = '';
-                if (f) void handleActivityShot(f);
-              }}
-            />
-            <button
-              type="button"
-              disabled={shotBusy}
-              onClick={() => shotFileRef.current?.click()}
-              className="w-full rounded-xl border border-dashed border-gray-300 px-3 py-2 text-left text-xs font-bold text-gray-500 disabled:opacity-60 dark:border-gray-600 dark:text-gray-400"
-            >
-              {shotBusy ? '📷 正在读取截图…' : '📷 用战绩截图代替打字（运动 / 学习 / 阅读 App 都行）'}
-            </button>
-            {shotHint && <p className="mt-1 text-[11px] text-gray-400 dark:text-gray-500">{shotHint}</p>}
+            {shotHint && <p className="text-[11px] text-gray-400 dark:text-gray-500">{shotHint}</p>}
+            {lastShot && pendingImages.length < MAX_IMAGES_PER_ACTIVITY && !pendingImages.includes(lastShot) && (
+              <button
+                type="button"
+                onClick={() => { setPendingImages(prev => [...prev, lastShot].slice(0, MAX_IMAGES_PER_ACTIVITY)); }}
+                className="mt-1 rounded-full bg-black/[0.06] px-2.5 py-1 text-[11px] font-bold text-gray-600 dark:bg-white/10 dark:text-gray-300"
+              >
+                ＋ 顺便把这张截图附上
+              </button>
+            )}
             {shotPicks && (
               <div className="mt-1.5 flex flex-wrap gap-1.5">
                 {shotPicks.map((it, i) => (
@@ -1643,11 +1838,30 @@ export const ActivitiesView = () => {
         三按钮 [取消][仅删除条目][删除并回档] 完整保留旧弹窗的两种删除语义，
         "回档 = 收回该记录获得的点数"的提示并入 description。
       */}
+      {/* 记录配图：灯箱 / 管理抽屉（v2.7.0.6） */}
+      {lightbox && (
+        <LightboxFor
+          activityId={lightbox.activityId}
+          index={lightbox.index}
+          onIndexChange={(i) => setLightbox(l => (l ? { ...l, index: i } : l))}
+          onClose={() => setLightbox(null)}
+        />
+      )}
+      <ActivityImagesSheet
+        activityId={manageImagesId}
+        title={manageImagesId ? `图片 · ${truncateText(activities.find(a => a.id === manageImagesId)?.description ?? '', 16)}` : undefined}
+        onClose={() => setManageImagesId(null)}
+      />
       <ActionSheet
         isOpen={menuActivityId !== null}
         onClose={() => setMenuActivityId(null)}
         title={menuActivity ? truncateText(menuActivity.description, 24) : undefined}
         actions={[
+          {
+            label: '图片',
+            icon: <span aria-hidden className="text-sm leading-none">🖼</span>,
+            onClick: () => setManageImagesId(menuActivityId),
+          },
           {
             label: '删除',
             icon: <TrashIcon className="w-4 h-4" />,

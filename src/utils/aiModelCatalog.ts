@@ -9,7 +9,7 @@
  * 另外聚合平台的大列表里大半是 embedding/语音/图像等非对话模型，默认过滤掉。
  */
 import type { Settings } from '@/types';
-import { AI_PROVIDERS, fetchAvailableModels, getProviderConfig, type ApiProvider, DEFAULT_PROVIDER } from '@/utils/aiProviders';
+import { AI_PROVIDERS, fetchAvailableModels, getProviderConfig, effectiveModelName, type ApiProvider, type ModelCaps, DEFAULT_PROVIDER } from '@/utils/aiProviders';
 
 // ── 对话模型过滤 ─────────────────────────────────────────────────────────────
 // 关键词黑名单：命中即视为非对话用途（embedding/重排/语音/图像/视频/审核等）。
@@ -29,20 +29,26 @@ export function isChatModel(id: string): boolean {
 }
 
 // ── 视觉 / 听觉能力过滤（FS3 两个新档的选择面板用）─────────────────────────────
-// /models 不返回能力元数据，只能按命名约定猜。宁可**多列几个**也不漏：
-// 猜错的代价是用户选中后调用报错（可读的 400/404），漏掉的代价是明明能用却选不到。
+// v2.7.0.6：能看图优先看 /models 给的能力字段（DeepSeek 的 input_modalities 等，
+// 存在 aiProfiles[家].modelCaps）；接口没说的才按命名猜——现在的原生多模态模型名字里
+// 基本不带 vision 了（deepseek-flash、gpt-6-luna、kimi-k3…），名单只是兜底。
+// 宁可**多列几个**也不漏：猜错的代价是调用报错（可读的 400/404），漏掉的代价是选不到。
 // 两个列表都保留「关掉筛选」的开关，手填输入框也一直在。
 const VISION_HINTS = [
-  '-vl', 'vl-', 'vision', 'omni', '4o', 'gpt-5', 'gpt-4.1', 'gpt-4-turbo',
-  'gemini', 'claude', 'glm-4v', 'glm-4.', 'internvl', 'llava', 'pixtral',
-  'kimi-k', 'moonshot-v1-vision', 'step-1v', 'yi-vision', 'minimax-m', 'abab7',
-  // DeepSeek 视觉线（2026-08 官方视觉模型上线）：janus 是其多模态系列名，
+  '-vl', 'vl-', 'vision', 'omni', '4o', 'gpt-5', 'gpt-6', 'gpt-4.1', 'gpt-4-turbo',
+  'gemini', 'gemma-3', 'claude', 'glm-4v', 'glm-4.', 'internvl', 'llava', 'pixtral', 'llama-4',
+  'kimi-k', 'moonshot-v1-vision', 'step-1v', 'step-3', 'yi-vision', 'minimax-m', 'abab7',
+  'qwen3.5', 'qwen3.6', 'grok-4', 'doubao-seed',
+  // DeepSeek：V4.1-Flash（deepseek-flash）起原生多模态；janus 是早年的多模态系列名，
   // deepseek-ocr 虽带 ocr 字样但走 /chat/completions、能看图能对话
-  'janus', 'deepseek-ocr',
+  'deepseek-flash', 'janus', 'deepseek-ocr',
 ];
 
-/** 像不像"能看图"的模型（按命名猜，宁滥勿缺） */
-export function isVisionModel(id: string): boolean {
+/**
+ * 像不像"能看图"的模型。caps 是 /models 给的能力（有就以它为准），没有才按命名猜（宁滥勿缺）。
+ */
+export function isVisionModel(id: string, caps?: ModelCaps): boolean {
+  if (caps?.image !== undefined) return caps.image;
   const s = id.toLowerCase();
   // 明确的非对话件（embedding/tts…）先排除，再看视觉线索
   // （janus / deepseek-ocr 会撞 NON_CHAT_KEYWORDS 的 'ocr'，需显式豁免）
@@ -121,6 +127,24 @@ export interface RefreshModelsOutcome {
   profiles: NonNullable<Settings['aiProfiles']>;
   okParts: string[];
   skipped: string[];
+  /** 正在用、但已不在该家最新列表里的模型（可能下线了）——提示用户换 */
+  stale: string[];
+}
+
+/**
+ * 某家当前「在用」的模型（发请求时实际用的名字，退役名已换成继任者）。
+ * 当前连接那家看 summaryModel，别家看它存档里的 model；都没填 = 预设默认。
+ */
+export function liveModelOf(settings: Settings, pv: ApiProvider): string {
+  const active = settings.summaryApiProvider ?? DEFAULT_PROVIDER;
+  const raw = pv === active ? settings.summaryModel?.trim() : settings.aiProfiles?.[pv]?.model?.trim();
+  return effectiveModelName(raw || getProviderConfig(pv).defaultModel);
+}
+
+/** 这家在用的模型是否已不在它最新拉到的列表里（列表为空 = 没拉过，不算） */
+export function isModelStale(settings: Settings, pv: ApiProvider, model = liveModelOf(settings, pv)): boolean {
+  const list = settings.aiProfiles?.[pv]?.models ?? [];
+  return list.length > 0 && !list.includes(effectiveModelName(model));
 }
 
 /**
@@ -137,7 +161,10 @@ export function autoFillVisionPatch(
   const active = settings.summaryApiProvider ?? DEFAULT_PROVIDER;
   const order: ApiProvider[] = [active, ...AI_PROVIDERS.map((p) => p.id).filter((id) => id !== active)];
   for (const pv of order) {
-    const hit = (profiles[pv]?.models ?? []).find(isVisionModel);
+    const caps = profiles[pv]?.modelCaps ?? {};
+    // 接口明说能看图的排前面，按名字猜的其次
+    const models = profiles[pv]?.models ?? [];
+    const hit = models.find(m => caps[m]?.image === true) ?? models.find(m => isVisionModel(m, caps[m]));
     if (hit) {
       return {
         patch: { visionModel: hit, visionProvider: pv === active ? undefined : pv },
@@ -178,11 +205,21 @@ export async function refreshAllProviderModels(
   const skipped: string[] = [];
   for (const { id, r } of results) {
     if (r.ok) {
-      profiles[id] = { ...(profiles[id] ?? {}), models: r.models };
+      profiles[id] = { ...(profiles[id] ?? {}), models: r.models, modelCaps: r.caps };
       okParts.push(`${getProviderConfig(id).label} ${r.models.length} 个`);
     } else {
       skipped.push(`${getProviderConfig(id).label}（${r.error.slice(0, 60)}）`);
     }
   }
-  return { profiles, okParts, skipped };
+  // 各档在用的模型对照新列表：不在了就提示（快速响应 / 深思熟虑 / 视觉）
+  const after: Settings = { ...settings, aiProfiles: profiles };
+  const stale: string[] = [];
+  const check = (label: string, pv: ApiProvider, model: string | undefined) => {
+    if (!model?.trim() || !results.some(x => x.id === pv && x.r.ok)) return;
+    if (isModelStale(after, pv, model)) stale.push(`${label}：${getProviderConfig(pv).label} · ${effectiveModelName(model)}`);
+  };
+  check('快速响应', active, liveModelOf(after, active));
+  check('深思熟虑', settings.navigatorProvider ?? active, settings.navigatorModel);
+  check('视觉', settings.visionProvider ?? active, settings.visionModel);
+  return { profiles, okParts, skipped, stale };
 }

@@ -416,7 +416,7 @@ function StreamPanel({ text, thinking, progress, p5, p3 }: { text: string; think
           <div
             className="prose-sm"
             dangerouslySetInnerHTML={{
-              __html: DOMPurify.sanitize(`<p class="mb-2">${renderMarkdown(text)}</p>`),
+              __html: DOMPurify.sanitize(renderMarkdown(text)),
             }}
           />
         ) : (
@@ -625,7 +625,7 @@ function DoneView({ d }: { d: DailyDivination }) {
         <div
           className="prose-sm"
           dangerouslySetInnerHTML={{
-            __html: DOMPurify.sanitize(`<p class="mb-2">${renderMarkdown(d.narration)}</p>`),
+            __html: DOMPurify.sanitize(renderMarkdown(d.narration)),
           }}
         />
         {/* 解读者手记（d.memo）不外显：只作为之后解读的"上次聊到哪"喂回去（用户口径：内化掉） */}

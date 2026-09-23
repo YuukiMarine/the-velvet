@@ -1776,3 +1776,80 @@ html[data-ios-standalone="true"] {
   font-family: 'Noto Sans SC Black', 'Velvet Sans SC', -apple-system, 'Segoe UI',
     'PingFang SC', 'Microsoft YaHei', sans-serif;
 }
+
+/* ── Markdown 富文本（utils/markdown.ts，v2.7.0.6）───────────────────────────
+   总结 / 塔罗 / 账本的 AI 正文共用一套块级渲染。表格是这次的主角：模型爱画
+   `| 属性 | 加点 |` 一览表，此前没被解析、竖线原样露出（用户上报）。
+   三频道只换表头与描边的皮，结构不动。 */
+.md-table-wrap { overflow-x: auto; margin: 0.6rem 0; -webkit-overflow-scrolling: touch; }
+.md-table { border-collapse: collapse; width: 100%; font-size: 12.5px; line-height: 1.45; }
+.md-table th, .md-table td {
+  padding: 0.4rem 0.55rem;
+  border: 1px solid rgba(0, 0, 0, 0.09);
+  text-align: left;
+  vertical-align: top;
+}
+.md-table th {
+  font-weight: 700;
+  white-space: nowrap;
+  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+}
+.md-table tbody tr:nth-child(even) td { background: rgba(0, 0, 0, 0.025); }
+.dark .md-table th, .dark .md-table td { border-color: rgba(255, 255, 255, 0.12); }
+.dark .md-table th { background: color-mix(in srgb, var(--color-primary) 18%, transparent); }
+.dark .md-table tbody tr:nth-child(even) td { background: rgba(255, 255, 255, 0.03); }
+.md-code {
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 0.92em;
+  padding: 0.05em 0.3em;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.06);
+}
+.dark .md-code { background: rgba(255, 255, 255, 0.1); }
+.md-pre {
+  overflow-x: auto;
+  margin: 0.5rem 0;
+  padding: 0.6rem 0.75rem;
+  border-radius: 0.6rem;
+  background: rgba(0, 0, 0, 0.06);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.dark .md-pre { background: rgba(255, 255, 255, 0.08); }
+.md-hr { border: 0; border-top: 1px solid rgba(0, 0, 0, 0.1); margin: 0.8rem 0; }
+.dark .md-hr { border-top-color: rgba(255, 255, 255, 0.12); }
+.md-speaker { font-weight: 800; color: var(--color-primary); }
+.md-p:last-child { margin-bottom: 0; }
+/* P5：纸面黑框，表头黑底纸字，不做圆角 */
+:root[data-ui-channel="p5"] .md-table th {
+  background: #000000;
+  color: #f0e9df;
+  border-color: #000000;
+}
+:root[data-ui-channel="p5"] .md-table td {
+  border-color: #050505;
+  background: #f0e9df !important;
+  color: #050505;
+}
+:root[data-ui-channel="p5"] .md-hr { border-top: 2px solid #050505; }
+/* P3：蓝描边，表头浅蓝 */
+:root[data-ui-channel="p3"] .md-table th {
+  background: rgba(27, 87, 255, 0.12);
+  color: var(--p3r-ink, #0a1230);
+  border-color: rgba(27, 87, 255, 0.28);
+}
+:root[data-ui-channel="p3"] .md-table td { border-color: rgba(27, 87, 255, 0.18); }
+/* P4：奶油表头 + 黑描边 */
+:root[data-ui-channel="p4"] .md-table th {
+  background: #fff1a8;
+  color: #131313;
+  border-color: #131313;
+}
+:root[data-ui-channel="p4"] .md-table td { border-color: rgba(19, 19, 19, 0.35); }
+
+/* ── 记录输入框内的附件条（v2.7.0.6）───────────────────────────────────────
+   「读图代打字 / 附一张图」两枚小按钮做进输入框最下方（用户口径：视觉统一）。
+   P5 的输入件把 padding 写成了 !important，这里加一级特异性把底部留白撑出来。 */
+:root[data-ui-channel="p5"] .p5-reskin textarea.with-toolbar {
+  padding-bottom: calc(2.7rem + 5px) !important;
+}

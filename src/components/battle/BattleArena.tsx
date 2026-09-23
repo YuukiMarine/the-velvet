@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore } from '@/store';
+import { useRevealJobs } from '@/utils/revealJobs';
 import { Toggle } from '@/components/Toggle';
 import { toLocalDateKey } from '@/store';
 import { isInShadowTime, SHADOW_LEVEL_CONFIG } from '@/constants';
@@ -81,6 +82,22 @@ export const BattleArena = () => {
   const [showPersonaCreate, setShowPersonaCreate] = useState(false);
   const [showReveal, setShowReveal] = useState(false);
   const [showFinalReveal, setShowFinalReveal] = useState(false);
+  // v2.7.0.6：显形仪式跑在后台任务里（utils/revealJobs）。用户「转到后台」后任务照跑，
+  // 跑完回到战场页就把仪式弹层拉起来放显形演出（演出只在这里放，绝不提前）。
+  const stratumJob = useRevealJobs(s => s.stratum);
+  const finalJob = useRevealJobs(s => s.final);
+  useEffect(() => {
+    if (stratumJob?.status === 'done') setShowReveal(true);
+  }, [stratumJob?.status]);
+  useEffect(() => {
+    if (finalJob?.status === 'done') setShowFinalReveal(true);
+  }, [finalJob?.status]);
+  const revealButtonLabel = (idle: string): string => {
+    if (!stratumJob) return idle;
+    if (stratumJob.status === 'running') return '🗼 区层正在显形…';
+    if (stratumJob.status === 'done') return '🗼 区层已显形，查看';
+    return '🗼 显形中断，点击处理';
+  };
   const [revisitPick, setRevisitPick] = useState(false);
   const [showBattle, setShowBattle] = useState(false);
   const [showVictory, setShowVictory] = useState(false);
@@ -839,7 +856,7 @@ export const BattleArena = () => {
                             className={p3 ? 'px-8 py-3 text-[17px] font-black text-white active:brightness-95' : 'px-6 py-3 rounded-xl font-bold text-white transition-colors'}
                             style={p3 ? { clipPath: slantClip(10), background: P3R.magenta } : { background: 'linear-gradient(135deg, #dc2626, rgb(var(--color-battle-rgb)))' }}
                           >
-                            🗼 区层显形仪式
+                            {revealButtonLabel('🗼 区层显形仪式')}
                           </button>
                         </div>
                       </div>
@@ -974,7 +991,7 @@ export const BattleArena = () => {
                                     color: '#160d02',
                                   }}
                                 >
-                                  ✦ 登上顶阙
+                                  {finalJob?.status === 'running' ? '✦ 它正在读你的记录…' : finalJob && finalJob.status !== 'done' ? '✦ 显形中断，点击处理' : '✦ 登上顶阙'}
                                 </motion.button>
                               </div>
                             ) : (
@@ -1038,7 +1055,7 @@ export const BattleArena = () => {
                                 className={p3 ? 'px-8 py-3 text-[17px] font-black text-white active:brightness-95' : 'px-6 py-3 rounded-xl font-bold text-white transition-colors'}
                                 style={p3 ? { clipPath: slantClip(10), background: P3R.magenta } : { background: 'linear-gradient(135deg, #dc2626, rgb(var(--color-battle-rgb)))' }}
                               >
-                                🗼 显形第 {nextStratumLevel} 区层
+                                {revealButtonLabel(`🗼 显形第 ${nextStratumLevel} 区层`)}
                               </button>
                             </div>
                           )

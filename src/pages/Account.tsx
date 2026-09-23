@@ -27,6 +27,8 @@ import { computeTotalLv } from '@/utils/lvTiers';
 import { logout as cloudLogout, deleteAccount as cloudDeleteAccount } from '@/services/auth';
 import { pushAll, pullAll, syncOnLogin, computeSyncDiff } from '@/services/sync';
 import { downloadBackup, copyBackupToClipboard, readBackupFile } from '@/services/backup';
+import { ImagesBackupBlock } from '@/components/settings/ImagesBackupBlock';
+import { isImagesBundleJson, importImagesBundle } from '@/utils/activityImages';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P4Flower, P4Sparkle } from '@/ui/p4Kit';
 import { P3R, P3RPage, GhostWords, SectionMark, SlantButton, P3PageHeader, CodeChip, slantClip } from '@/components/p3r/kit';
@@ -152,6 +154,13 @@ export const Account = () => {
     if (!importJson.trim()) return;
     setImportLoading(true);
     try {
+      // 图片包误投到主导入：按图片包处理，绝不能当主备份去清空数据
+      if (isImagesBundleJson(importJson)) {
+        const r = await importImagesBundle(importJson);
+        setImportJson('');
+        setExportMessage(`这是图片包：已导入 ${r.imported} 张${r.orphaned ? `，${r.orphaned} 张找不到所属记录` : ''}`);
+        return;
+      }
       await importData(importJson);
       setImportJson('');
       setExportMessage('导入成功！数据已恢复。');
@@ -687,6 +696,7 @@ export const Account = () => {
                   <span aria-hidden>⚠</span>
                   <span>导入会清空并覆盖当前所有数据，操作前请先导出备份。</span>
                 </p>
+                <ImagesBackupBlock />
               </div>
 
               {/* 危险区域 */}
@@ -896,6 +906,7 @@ export const Account = () => {
                 <span aria-hidden>⚠</span>
                 <span>导入会清空并覆盖当前所有数据，操作前请先导出备份。</span>
               </p>
+              <ImagesBackupBlock />
             </div>
 
             {/* 危险区域（洋红实心大钮） */}
@@ -1145,6 +1156,7 @@ export const Account = () => {
               <p className="text-xs text-amber-600 dark:text-amber-400 leading-relaxed">
                 ⚠️ 导入会清空并覆盖当前所有数据，操作前请先导出备份。
               </p>
+              <ImagesBackupBlock />
             </div>
 
             {/* 重置 */}

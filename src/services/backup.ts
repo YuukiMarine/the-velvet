@@ -146,3 +146,17 @@ export const readBackupFile = (file: File): Promise<string> => {
     reader.readAsText(file, 'utf-8');
   });
 };
+
+// ── 记录配图：与主备份分开的「图片包」（v2.7.0.6）────────────────────────────
+// 用户口径：图片叠进主备份会是巨大的 base64，重新导入时拖性能；于是分两份文件——
+// 主备份不含图，图片包只含图，导入图片包时按记录 id 对号挂回去（先导数据、再导图）。
+export const buildImagesBackupFilename = (): string => `velvet-room-images-${toLocalDateKey()}.json`;
+
+export const downloadImagesBackup = async (): Promise<{ url: string; filename: string; size: string; count: number } | null> => {
+  const { buildImagesBundle } = await import('@/utils/activityImages');
+  const bundle = await buildImagesBundle();
+  if (!bundle.images.length) throw new Error('还没有任何记录配图，没什么可导的');
+  const json = JSON.stringify(bundle);
+  const r = await exportBackup(buildImagesBackupFilename(), json);
+  return r ? { ...r, count: bundle.images.length } : null;
+};

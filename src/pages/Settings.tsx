@@ -12,8 +12,8 @@ import { db } from '@/db';
 import { PageTitle } from '@/components/PageTitle';
 import { BackButton } from '@/components/BackButton';
 import { useRipple } from '@/components/RippleEffect';
-import { AI_PROVIDERS, getProviderConfig, testAIConnection, fetchAvailableModels, type TestResult, type ApiProvider, DEFAULT_PROVIDER } from '@/utils/aiProviders';
-import { autoFillVisionPatch, refreshAllProviderModels } from '@/utils/aiModelCatalog';
+import { AI_PROVIDERS, getProviderConfig, testAIConnection, fetchAvailableModels, effectiveModelName, type TestResult, type ApiProvider, DEFAULT_PROVIDER } from '@/utils/aiProviders';
+import { autoFillVisionPatch, refreshAllProviderModels, liveModelOf, isModelStale } from '@/utils/aiModelCatalog';
 import {
   BarsIcon, BellIcon, BoltMiniIcon, CoinIcon, DiamondMarkIcon, EyeIcon, GearIcon,
   ImageIcon, KeyIcon, MicIcon, MoonIcon, PaletteIcon, SlidersIcon, SparklesIcon,
@@ -795,6 +795,7 @@ export const Settings = () => {
       out.okParts.length ? `已更新：${out.okParts.join('、')}` : '',
       out.skipped.length ? `跳过：${out.skipped.join('；')}` : '',
       auto ? `👁 视觉档原来空着，已自动填入 ${auto.label}（可在「视觉」档更换或停用）` : '',
+      out.stale.length ? `⚠ 这些档在用的模型已不在官方最新列表里，可能下线了，建议换一个：${out.stale.join('；')}` : '',
     ].filter(Boolean).join('\n'));
   };
 
@@ -830,7 +831,7 @@ export const Settings = () => {
             ...(settings.aiProfiles?.[pv] ?? {}),
             key: keyToTest,
             verifiedAt: Date.now(),
-            ...(listed.ok ? { models: listed.models } : {}),
+            ...(listed.ok ? { models: listed.models, modelCaps: listed.caps } : {}),
           },
         },
       });
@@ -2238,9 +2239,9 @@ export const Settings = () => {
                   const tierSummary = (
                     <span className="inline-flex min-w-0 items-center gap-2">
                       {([
-                        [BoltMiniIcon, settings.summaryModel?.trim() || getProviderConfig(provider).defaultModel],
-                        [MoonIcon, settings.navigatorModel?.trim() || '跟随'],
-                        [EyeIcon, settings.visionModel?.trim() || '未启用'],
+                        [BoltMiniIcon, liveModelOf(settings, provider)],
+                        [MoonIcon, settings.navigatorModel?.trim() ? effectiveModelName(settings.navigatorModel) : '跟随'],
+                        [EyeIcon, settings.visionModel?.trim() ? effectiveModelName(settings.visionModel) : '未启用'],
                         [MicIcon, settings.audioModel?.trim() || '未启用'],
                       ] as Array<[typeof BoltMiniIcon, string]>).map(([Ic, text], i) => (
                         <span key={i} className="inline-flex min-w-0 items-center gap-0.5">
@@ -2283,23 +2284,24 @@ export const Settings = () => {
                                 <button
                                   key={face.id}
                                   onClick={() => updateSettings({ summaryActivePresetId: face.id })}
-                                  className={`flex flex-col items-center gap-1 py-2.5 px-1 rounded-xl border-2 transition-all ${
+                                  aria-label={face.name}
+                                  title={face.name}
+                                  /* v2.7.0.6：只留 emoji（用户口径），min-h 保住原来"图标 + 名字"的高度，方便按 */
+                                  className={`flex min-h-[58px] items-center justify-center rounded-xl border-2 px-1 transition-all ${
                                     isActive
                                       ? 'border-primary bg-primary/8 dark:bg-primary/15'
                                       : 'border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-700/50 hover:border-gray-200 dark:hover:border-gray-600'
                                   }`}
                                 >
-                                  <span className="text-[22px] leading-none">{face.icon}</span>
-                                  <span className={`text-[11px] font-bold leading-tight text-center ${isActive ? 'text-primary' : 'text-gray-600 dark:text-gray-300'}`}>
-                                    {face.name}
-                                  </span>
+                                  <span className="text-[26px] leading-none">{face.icon}</span>
                                 </button>
                               );
                             })}
                           </div>
                           {activeFamiliar && (
                             <p className="text-[11px] text-gray-400 dark:text-gray-500 px-1">
-                              {familiarTaglines[activeFamiliar.id] ?? ''}
+                              <span className="font-bold text-gray-600 dark:text-gray-300">{activeFamiliar.name}</span>
+                              {familiarTaglines[activeFamiliar.id] ? ` · ${familiarTaglines[activeFamiliar.id]}` : ''}
                             </p>
                           )}
                         </div>
@@ -2482,7 +2484,21 @@ export const Settings = () => {
                                     </span>
                                   )}
                                   <div>{p.label}</div>
-                                  <div className="opacity-55 font-normal mt-0.5">{p.hint}</div>
+                                  {/* 灰字 = 这家**正在用**的模型（v2.7.0.6：原来是写死的预设名；退役名显示继任者）。
+                                      刷新列表后若它已不在官方列表里，前面挂 ⚠ */}
+                                  {(() => {
+                                    const live = liveModelOf(settings, p.id);
+                                    const stale = isModelStale(settings, p.id, live);
+                                    return (
+                                      <div
+                                        /* 三列格子在手机上很窄：字号收一档、允许折两行，名字要能看全（截成 deepseek-fl… 就失去意义了） */
+                                        className={`mt-0.5 line-clamp-2 break-all px-1 text-[10px] font-normal leading-tight ${stale ? 'opacity-90' : 'opacity-60'}`}
+                                        title={stale ? `${live} 已不在这家最新的模型列表里，可能下线了` : live}
+                                      >
+                                        {stale && <span aria-label="可能已下线">⚠ </span>}{live}
+                                      </div>
+                                    );
+                                  })()}
                                 </button>
                               );
                             })}
@@ -2610,7 +2626,7 @@ export const Settings = () => {
                       <div className="p-4 space-y-4 dark:bg-gray-800/20">
                         {(() => {
                           const delibPv = settings.navigatorProvider ?? provider;
-                          const fastFallback = settings.summaryModel?.trim() || getProviderConfig(provider).defaultModel;
+                          const fastFallback = liveModelOf(settings, provider);
                           return (
                             <>
                               {/* 快速响应：绑定当前连接（换服务商 = 换连接） */}
@@ -2626,7 +2642,7 @@ export const Settings = () => {
                                   className="flex w-full items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                                 >
                                   <span className="min-w-0 flex-1 truncate text-left">
-                                    {settings.summaryModel?.trim() || `默认（${getProviderConfig(provider).defaultModel}）`}
+                                    {settings.summaryModel?.trim() ? effectiveModelName(settings.summaryModel) : `默认（${getProviderConfig(provider).defaultModel}）`}
                                   </span>
                                   <span className="shrink-0 text-xs font-bold text-primary">选择模型 ›</span>
                                 </button>
@@ -2650,6 +2666,21 @@ export const Settings = () => {
                                   checked={!!settings.tarotDailyDeliberate}
                                   onChange={(v) => updateSettings({ tarotDailyDeliberate: v })}
                                   aria-label="每日塔罗改走深思熟虑"
+                                />
+                              </div>
+
+                              {/* 成长总结同理（v2.7.0.6，默认关）：一期一封信，多等一两分钟换更贴的写法 */}
+                              <div className="flex items-center justify-between gap-3 pt-1">
+                                <div className="min-w-0">
+                                  <div className="text-sm font-medium text-gray-800 dark:text-white">成长总结改走深思熟虑</div>
+                                  <div className="text-[11px] text-gray-400 dark:text-gray-500">
+                                    周报月报一期一封，多等一两分钟换更贴的信；它在后台写，关掉页面也不会断。
+                                  </div>
+                                </div>
+                                <Toggle
+                                  checked={!!settings.summaryDeliberate}
+                                  onChange={(v) => updateSettings({ summaryDeliberate: v })}
+                                  aria-label="成长总结改走深思熟虑"
                                 />
                               </div>
 
@@ -2708,7 +2739,7 @@ export const Settings = () => {
                                 <BufferedTextInput
                                   value={settings.visionModel ?? ''}
                                   onCommit={v => updateSettings({ visionModel: v || undefined })}
-                                  placeholder="留空 = 不启用（如 qwen-vl-plus / gpt-5.4-mini）"
+                                  placeholder="留空 = 不启用（如 deepseek-flash / qwen-vl-plus / gpt-6-luna）"
                                   className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-primary"
                                 />
                               </div>

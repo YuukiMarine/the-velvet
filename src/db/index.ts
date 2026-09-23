@@ -1,5 +1,5 @@
 import Dexie, { Table } from 'dexie';
-import { User, Attribute, Activity, Achievement, Skill, DailyEvent, DailyDivination, LongReading, FateGlimpse, Settings, Todo, TodoCompletion, PeriodSummary, WeeklyGoal, Persona, Shadow, BattleState, Confidant, ConfidantEvent, CounselSession, CounselArchive, CallingCard, LedgerEntry, Budget, LedgerAsset, Wish, NavigatorSessionRow, NavigatorMessageRow, NavigatorMemo, NavigatorPreset, TowerStratum, OnlineCardFace } from '@/types';
+import { User, Attribute, Activity, Achievement, Skill, DailyEvent, DailyDivination, LongReading, FateGlimpse, Settings, Todo, TodoCompletion, PeriodSummary, WeeklyGoal, Persona, Shadow, BattleState, Confidant, ConfidantEvent, CounselSession, CounselArchive, CallingCard, LedgerEntry, Budget, LedgerAsset, Wish, NavigatorSessionRow, NavigatorMessageRow, NavigatorMemo, NavigatorPreset, TowerStratum, OnlineCardFace, ActivityImage, ActivityImageData } from '@/types';
 
 export class PGTDatabase extends Dexie {
   users!: Table<User>;
@@ -34,6 +34,8 @@ export class PGTDatabase extends Dexie {
   strata!: Table<TowerStratum>;                     // 批2 影时间高塔·区层
   onlineCardFaces!: Table<OnlineCardFace>;          // 未缔结在线好友的自裁卡面（本地专属，见 v14 注释）
   fateGlimpses!: Table<FateGlimpse>;                // v2.7 窥探命运（7 天塔罗总占卜）
+  activityImages!: Table<ActivityImage>;            // v2.7.0.6 记录配图（元数据 + 缩略图；本地专属）
+  activityImageData!: Table<ActivityImageData>;     // v2.7.0.6 记录配图原图（灯箱才取；本地专属）
 
   constructor() {
     super('PGTDatabase');
@@ -291,6 +293,15 @@ export class PGTDatabase extends Dexie {
     // 小表（每 7 天至多 1 行），列入 SYNC_TABLES 与备份（与 dailyDivinations 同口径）。
     this.version(15).stores({
       fateGlimpses: 'id, createdAt'
+    });
+
+    // v16（v2.7.0.6）：记录配图。两张表拆开——列表只读 activityImages（缩略图几 KB 一张），
+    // 原图（≤150KB）放 activityImageData，灯箱打开时按 id 取，避免 toArray 把几十 MB 拉进内存。
+    // **故意不进 SYNC_TABLES 也不进主备份**：与 onlineCardFaces / 同伴自定义头像同口径，
+    // 单独走「图片包」导出导入（services/backup），免得主备份塞满 base64 拖慢导入。
+    this.version(16).stores({
+      activityImages: 'id, activityId, createdAt',
+      activityImageData: 'id'
     });
   }
 }

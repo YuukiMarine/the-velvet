@@ -500,6 +500,11 @@ export interface Settings {
    * 深思熟虑档未配置时自动退回快速响应，不会因此抽不了牌。
    */
   tarotDailyDeliberate?: boolean;
+  /**
+   * 成长总结改走「深思熟虑」档（v2.7.0.6，默认关）。周报月报一期一次，
+   * 多等一两分钟换更贴的信；深思熟虑档未配置时自动退回快速响应。
+   */
+  summaryDeliberate?: boolean;
   countercurrentEnabled?: boolean; // 逆流：连续3日无增长属性自动 -1/天
   countercurrentEnabledAt?: string; // 逆流开启日期 YYYY-MM-DD，防止开启当天就触发
   // ── F2a 本地通知 ─────────────────────────────────────────
@@ -581,7 +586,11 @@ export interface Settings {
    */
   aiProfiles?: Partial<Record<
     'openai' | 'deepseek' | 'kimi' | 'qwen' | 'gemini' | 'minimax',
-    { key?: string; baseUrl?: string; model?: string; navModel?: string; verifiedAt?: number; models?: string[] }
+    {
+      key?: string; baseUrl?: string; model?: string; navModel?: string; verifiedAt?: number; models?: string[];
+      /** /models 顺带给出的能力（v2.7.0.6）：能否看图、最大输出。只有部分服务商给（如 DeepSeek） */
+      modelCaps?: Record<string, { image?: boolean; maxOutput?: number }>;
+    }
   >>;
   summaryApiKey?: string;
   summaryApiBaseUrl?: string;
@@ -729,6 +738,20 @@ export interface PeriodSummary {
   createdAt: Date;
   /** v2.1+：归档时把追问问答一并存下；老记录此字段为 undefined */
   followUp?: PeriodSummaryFollowUp;
+  /**
+   * v2.7.0.6：追问放开到多轮（上限见 utils/summaryAI 的 SUMMARY_FOLLOWUP_LIMIT）。
+   * 老记录只有单个 followUp；读取时两者合并（followUp 视为第一轮）。
+   */
+  followUps?: PeriodSummaryFollowUp[];
+  /**
+   * 角色手记（v2.7.0.6）：这一期角色对客人说过的话 / 留下的期待，一两句（≤60 字），
+   * 由同一次调用顺手写在 <<<META>>> 之后。下一期喂回去，角色才"记得上次说过什么"。
+   */
+  memo?: string;
+  /** 角色在结尾向客人提的那个问题（v2.7.0.6）：追问框拿它当默认输入 */
+  question?: string;
+  /** 这一份是否走了深思熟虑档（只作展示，老记录无） */
+  deliberate?: boolean;
   /** v2.5+：用户首次打开该总结的时间；undefined = 未读（F2a「未读成长总结」提醒源）。 */
   viewedAt?: Date;
   /**
@@ -739,9 +762,35 @@ export interface PeriodSummary {
   reqContext?: {
     baseUrl: string;
     model: string;
+    /** 走的是哪家（v2.7.0.6）：深思熟虑档可能指向别家，追问时要用那家的 Key 重连 */
+    provider?: 'openai' | 'deepseek' | 'kimi' | 'qwen' | 'gemini' | 'minimax';
     /** system + user 原始消息（不含 assistant），重新追问时再 push 上次 streamedText 与新 question */
     messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
   };
+}
+
+/**
+ * 记录配图（v2.7.0.6）。图片**不进 activities 行**：那张表整表常驻内存、整表上云，
+ * 塞 base64 会拖慢首页与同步。这里按记录 id 关联，元数据 + 缩略图一张表（列表只读它），
+ * 原图另一张表（灯箱打开时才取）。两张表都**不上云、不进主备份**（与同伴自定义头像同口径），
+ * 单独走「图片包」导出 / 导入（services/backup）。
+ */
+export interface ActivityImage {
+  id: string;
+  activityId: string;
+  /** 缩略图（长边 ≤ 240，JPEG）——列表 / 管理面板用 */
+  thumbDataUrl: string;
+  width: number;
+  height: number;
+  /** 原图字节数（压缩后） */
+  bytes: number;
+  createdAt: Date;
+}
+
+/** 记录配图的原图（长边 ≤ 1280、≤ 150KB JPEG），主键与 ActivityImage.id 相同 */
+export interface ActivityImageData {
+  id: string;
+  dataUrl: string;
 }
 
 // ── CallingCard / 宣告卡（倒计时） ───────────────────────────

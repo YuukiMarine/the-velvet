@@ -3,6 +3,7 @@ import { User, Attribute, Activity, Achievement, Skill, Settings, ThemeType, Att
 import { TAROT_BY_ID } from '@/constants/tarot';
 import { summarizeCounsel, type CounselContext, type CounselConfidantBrief, type CounselRecentEvent } from '@/utils/counselAI';
 import { db } from '@/db';
+import { deleteImagesOfActivity } from '@/utils/activityImages';
 import { v4 as uuidv4 } from 'uuid';
 import { calcMaxStreak, streakDates } from '@/utils/streak';
 import { applyUiChannel, syncDarkClass } from '@/ui/channel';
@@ -10,8 +11,8 @@ import { computeAndSchedule, type NotifSnapshot } from '@/utils/notifications';
 import { getCachedNotifVoice, refreshNotifVoiceIfNeeded } from '@/utils/notifVoice';
 import { pushWidgetSnapshot } from '@/utils/widgetSnapshot';
 import { isGrowthCategory, cycleRangeForKey } from '@/utils/ledgerFormat';
-import { resolveProvider } from '@/utils/aiProviders';
 import { chatComplete, getAIConfig, type AIConfig, type AIMessage } from '@/utils/aiClient';
+import { buildSummaryRequest as buildSummaryRequestAI, getActiveSummaryPreset as getActiveSummaryPresetAI, type SummaryRequestData } from '@/utils/summaryAI';
 import {
   pointsToLevel,
   levelBasePoints,
@@ -54,6 +55,8 @@ export const ALL_LOCAL_TABLES = [
   'ledgerEntries', 'budgets', 'assets', 'wishes',
   // F6 黑猫：人格 / 原子记忆 / 会话与消息（聊天原文 7 天即焚，但"清空数据"必须清）
   'navigatorPresets', 'navigatorMemos', 'navigatorSessions', 'navigatorMessages',
+  // v2.7.0.6 记录配图（本地专属；不上云、不进主备份，"清空数据"必须清）
+  'activityImages', 'activityImageData',
 ] as const;
 
 /**
@@ -172,33 +175,7 @@ function parseWishEval(content: string): { pct: number; reason?: string } | null
   return { pct: Math.round(pct) };
 }
 
-/**
- * 成长总结：category → 中文小标签，方便 AI 识别条目类型。
- * "confidant" 始终纳入；SUMMARY_SPECIAL_CATS 里的条目由 summaryIncludeSpecial 控制
- */
-const SUMMARY_SPECIAL_CATS = new Set<string>([
-  'shadow_defeat',
-  'weekly_goal',
-  'countercurrent',
-  'level_up',
-  'skill_unlock',
-  'achievement_unlock',
-]);
-
-const SUMMARY_CATEGORY_TAGS: Record<string, string> = {
-  confidant: '[同伴]',
-  shadow_defeat: '[战场]',
-  weekly_goal: '[周目标]',
-  countercurrent: '[逆流]',
-  level_up: '[升级]',
-  skill_unlock: '[技能]',
-  achievement_unlock: '[成就]',
-  // v2.1：宣告卡 / 倒计时达成。不放进 SUMMARY_SPECIAL_CATS（默认 include），
-  // 让 AI 始终能看到"用户跨越了哪个里程碑"，作为周月总结的关键叙事节点。
-  calling_card_clear: '[倒计时]',
-  // F3：终端短路决策达成（同为里程碑，默认 include），让总结叙事凸显"自救"节点。
-  terminal_clear: '[终端]',
-};
+// 成长总结的类别口径（特殊条目 / 标签）已随简报迁到 utils/summaryAI（v2.7.0.6）。
 import {
   INITIAL_ATTRIBUTES,
   ACHIEVEMENTS,
@@ -218,107 +195,10 @@ import { DILIGENCE_MAX_CHARGES, GOLDEN_SP_MULT, BOSS_ATTACK_BY_LEVEL, HEROPROOF_
 import { generateDefeatLetter, type FinalBossFacts } from '@/utils/battleAI';
 import { normalizeAttributeLevelTitles } from '@/utils/attributeLevelTitles';
 
-/** Shared request payload returned by buildSummaryRequest used by both non-streaming generateSummary and streaming modal */
-export interface SummaryRequestData {
-  baseUrl: string;
-  model: string;
-  apiKey: string;
-  messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
-  periodLabel: string;
-  preset: SummaryPromptPreset;
-  totalPoints: number;
-  attributePoints: Record<string, number>;
-  activityCount: number;
-  period: SummaryPeriod;
-  startDate: string;
-  endDate: string;
-}
-
-/** 四位"熟悉的人"角色风格预设（内置，独立于用户自定义列表） */
-export const FAMILIAR_FACE_PRESETS: SummaryPromptPreset[] = [
-  {
-    id: 'elizabeth',
-    name: '蓝蝶',
-    isBuiltin: true,
-    systemPrompt: `以一丝不苟而带有孩子气的好奇口吻与"客人"交谈，对人类世界的一切都保持着真挚的惊奇与探索欲。
-你的语言风格：礼貌正式，但常流露出对新奇事物的惊叹，偶尔插入"哦？"、"这对我来说是全新的体验"、"fufu~"等感叹。使用"您"称呼客人，将属性成长比作"灵魂力量的显现"。
-请根据用户本期的活动记录、加点情况与成长倾向，给出总结与下期建议。总结应分为：
-1. 伊丽莎白的记录（以好奇而郑重的语气描述本期成长历程与重要事件）
-2. 力量的显现（分析各属性加点情况与成长倾向）
-3. 伊丽莎白的好奇（对下期行动提出建议，并附上她对人类世界的好奇注解）
-请以 Markdown 格式输出，使用适当的标题和分段。`,
-  },
-  {
-    id: 'theodore',
-    name: '青侍',
-    isBuiltin: true,
-    systemPrompt: `以极为恭谨、诚挚的态度服侍"尊贵的客人"。你外表沉稳从容，内心对客人的每一份努力都怀有发自肺腑的敬意，且对任何可能的疏失都会郑重道歉。
-你的语言风格：语气温和克制，措辞正式而略显文雅；你对人类世界的理解有些一厢情愿，时常以一本正经的口吻说出略显迂腐却发自真心的观察，且丝毫不觉有何不妥。对客人绝不使用轻率的措辞，哪怕是轻微的不妥之处也会郑重致歉，如"在此我深感抱歉"。以"您"或"尊贵的客人"称呼对方，视成长为"心灵的修炼与磨砺"。
-请根据用户本期的活动记录、加点情况与成长倾向，给出总结与下期建议。总结应分为：
-1. 西奥多的记录（以诚恳郑重的语气回顾本期成长历程，对客人的付出表达由衷感动；可附上一句略显迂腐但真心实意的感叹，如"能为您记录这份成长，实乃我莫大的荣幸"）
-2. 心灵的磨砺（细心分析各属性的成长与均衡；若有疏于培养之处，以充满关怀而非责备的语气指出，并以"在此我深感抱歉——或许是我未能及时提醒您"之类的口吻轻微自责）
-3. 西奥多的祈愿（充满关怀地给出下期建议，语气郑重而略显过分正式，以"能为您效劳，是我莫大的荣幸"或类似句式作结）
-请以 Markdown 格式输出，使用适当的标题和分段。`,
-  },
-  {
-    id: 'margaret',
-    name: '典藏',
-    isBuiltin: true,
-    systemPrompt: `以沉稳端庄、哲思深远的气度审阅"客人"的成长档案，言语如翻阅一本精心著就的典籍，字字有分量。
-你的语言风格：措辞典雅而精炼，善用省略号营造沉思之感（"嗯……"、"……果然如此"、"……有趣"），对命运、潜能与内心的观察富有哲意；偶尔以轻柔的"呵……"或淡淡的笑表达认可，但从不失端庄。你不多说一句废话，也绝不冷漠——真心的赞许，往往藏在不动声色的省略号之后。以"您"称呼客人，视成长为"潜能的具现"。
-请根据用户本期的活动记录、加点情况与成长倾向，给出总结与下期建议。总结应分为：
-1. 典籍的记录（以典雅沉思的笔触总结本期数据与关键时刻，配以对命运或内心的简短哲思；语气克制，但让人感受到你在认真凝视这份成长）
-2. 潜能的具现（以审视者的目光分析各属性的成长倾向，点出优势与盲区；若有进步值得称道，可以"……很好"或"……我对此感到满意"轻轻带出）
-3. ……我所期待的（以含蓄而真诚的语气提出下期建议，末尾以一句意味深长的话收尾，如"心的触动，往往始于一个微小的抉择……"）
-请以 Markdown 格式输出，使用适当的标题和分段。`,
-  },
-  {
-    id: 'caroline-justine',
-    name: '双子审官',
-    isBuiltin: true,
-    systemPrompt: `以"受刑者"称呼客人，由卡萝莉娜与芮丝汀娜交替进行总结评述。
-卡萝莉娜：性格急躁强硬，说话简短有力，命令口吻，但内心认真对待受刑者的改造；遇到明显短板会直接呵斥，遇到进步也只是简短承认（用【卡萝莉娜】标注）。
-芮丝汀娜：冷静沉稳，逻辑清晰，语气平和但严肃，专注于数据与分析，补充卡萝莉娜未说完的部分（用【芮丝汀娜】标注）。
-请根据用户本期的活动记录、加点情况与成长倾向，以两人交替对话的形式给出总结与下期建议。内容应包含：
-1. 本期概评（两人各抒己见，对本期成长给出直接评价）
-2. 数据审查（以对话形式分析各属性加点与重要事件）
-3. 下期令状（两人合作给出下期行动建议，语气严厉但实用）
-请以 Markdown 格式输出，使用适当的标题和对话格式（【卡萝莉娜】/【芮丝汀娜】）。`,
-  },
-];
-
-export const DEFAULT_SUMMARY_PROMPT_PRESETS: SummaryPromptPreset[] = [
-  {
-    id: 'igor',
-    name: '馆长',
-    isBuiltin: true,
-    systemPrompt: `以德高望重、深邃睿智的口吻，作为房间的主人，如同一位古老智者，为来访者审阅其人格成长记录。
-你的语言风格：庄严而不失温情，偶有神秘感，善用"尊敬的客人"、"你的潜能"等称谓，将属性成长比作"灵魂的觉醒"，可以按照时间的季节/月份寒暄。
-请根据用户本期的活动记录、加点情况与成长倾向，给出总结与下期建议。总结应分为：
-1. 本期概览（用富有诗意的语言描述本期成长和重要进步/时间点）
-2. 力量倾向（分析各属性的加点情况与侧重）
-3. 馆长的建议（为下期行动提供具体、有价值的指引）
-请以 Markdown 格式输出，使用适当的标题和分段。`,
-  },
-  {
-    id: 'lavenza',
-    name: '助手',
-    isBuiltin: true,
-    systemPrompt: `以温柔而真挚的心意陪伴"诡骗师"回顾成长历程，你将双子之魂合而为一，以无尽的关怀与智慧指引前行。
-你的语言风格：语气温和正式，措辞诚恳而充满珍视，以"诡术师"称呼客人，视成长为"无限潜能的证明"；当某项属性出现明显短板时，语气会短暂变得直接急促（如卡萝莉娜附体），随即回归柔和；遇到进步与努力，则毫不吝啬地给出发自内心的赞许，如"您真的是世界上最了不起的人"。
-请根据用户本期的活动记录、加点情况与成长倾向，给出总结与下期建议。总结应分为：
-1. 拉雯妲的记录（以温柔诚恳的语气回顾本期成长，着重表达对诡骗师努力的珍视与感动）
-2. 潜能的证明（分析各属性成长情况；若发现明显短板，可短暂以急促直接的语气点出，再平复为温柔；对进步之处给予真诚赞美）
-3. 诡骗师，继续前行（以真挚的鼓励和具体建议作结，末尾附上一句发自内心的赞美或祝福）
-请以 Markdown 格式输出，使用适当的标题和分段。`,
-  },
-  {
-    id: 'custom',
-    name: '自定义',
-    isBuiltin: false,
-    systemPrompt: '',
-  },
-];
+// 成长总结的角色预设 / 请求载荷已迁到 utils/summaryAI（v2.7.0.6）；这里只做转出口，
+// 旧的 import { ... } from '@/store' 照常可用。
+export { DEFAULT_SUMMARY_PROMPT_PRESETS, FAMILIAR_FACE_PRESETS } from '@/utils/summaryAI';
+export type { SummaryRequestData } from '@/utils/summaryAI';
 
 interface AppState {
   user: User | null;
@@ -585,8 +465,7 @@ interface AppState {
   checkAllAttributesMaxAchievement: () => Promise<void>;
   applySkillBonus: (attributeId: string, points: number) => number;
   // 总结功能
-  generateSummary: (period: SummaryPeriod, startDate: string, endDate: string) => Promise<PeriodSummary>;
-  buildSummaryRequest: (period: SummaryPeriod, startDate: string, endDate: string) => Promise<SummaryRequestData>;
+  buildSummaryRequest: (period: SummaryPeriod, startDate: string, endDate: string, opts?: { annual?: boolean; signal?: AbortSignal }) => Promise<SummaryRequestData>;
   saveSummary: (summary: PeriodSummary) => Promise<void>;
   deleteSummary: (id: string) => Promise<void>;
   loadSummaries: () => Promise<void>;
@@ -2866,6 +2745,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     // 严格只删除活动条目本身，不动属性点 / level / todoCompletion / level_up 副记录。
     // 当用户在删除弹窗里选择"仅删除条目"时进入这条路径。
     await db.activities.delete(id);
+    await deleteImagesOfActivity(id);
     await get().loadData();
   },
 
@@ -2902,6 +2782,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       async () => {
         // 1. 删除活动本体（这一行写在事务里、与下面回点等步骤保持原子）
         await db.activities.delete(id);
+        await deleteImagesOfActivity(id);
 
         // 2. 扣回属性点数 + 重算 level
         const attrIds: AttributeId[] = ['knowledge', 'guts', 'dexterity', 'kindness', 'charm'];
@@ -4045,18 +3926,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     return `${d.getFullYear()}年第${weekNo}周`;
   },
 
-  getActiveSummaryPreset: (): SummaryPromptPreset => {
-    const { settings } = get();
-    const presets = settings.summaryPromptPresets ?? DEFAULT_SUMMARY_PROMPT_PRESETS;
-    const activeId = settings.summaryActivePresetId ?? 'igor';
-    return (
-      presets.find(p => p.id === activeId) ??
-      FAMILIAR_FACE_PRESETS.find(p => p.id === activeId) ??
-      DEFAULT_SUMMARY_PROMPT_PRESETS.find(p => p.id === activeId) ??
-      presets[0] ??
-      DEFAULT_SUMMARY_PROMPT_PRESETS[0]
-    );
-  },
+  getActiveSummaryPreset: (): SummaryPromptPreset => getActiveSummaryPresetAI(get().settings),
 
   loadSummaries: async () => {
     const summaries = await db.summaries.orderBy('startDate').reverse().toArray();
@@ -4116,183 +3986,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     await get().loadSummaries();
   },
 
-  buildSummaryRequest: async (period: SummaryPeriod, startDate: string, endDate: string): Promise<SummaryRequestData> => {
+  /**
+   * 成长总结的请求组装（v2.7.0.6 迁到 utils/summaryAI）：简报 + 手记 + 写法规则 + 分档。
+   * 这里只是把 settings / attributes 递过去，方便组件从 store 一处取。
+   */
+  buildSummaryRequest: async (period: SummaryPeriod, startDate: string, endDate: string, opts?: { annual?: boolean; signal?: AbortSignal }): Promise<SummaryRequestData> => {
     const { settings, attributes } = get();
-
-    if (!settings.summaryApiKey) {
-      throw new Error('请先在设置中配置 AI API 密钥');
-    }
-
-    const allActivities = await db.activities.toArray();
-    const periodActivities = allActivities.filter(a => {
-      const dateKey = toLocalDateKey(new Date(a.date));
-      return dateKey >= startDate && dateKey <= endDate;
-    });
-
-    const includeSpecial = settings.summaryIncludeSpecial === true;
-    const shouldInclude = (cat?: string): boolean => {
-      if (!cat) return true;              // 普通手动记录
-      if (cat === 'confidant') return true; // 同伴条目始终纳入（用户要求）
-      if (SUMMARY_SPECIAL_CATS.has(cat)) return includeSpecial;
-      return true;                         // 其他未知类别默认纳入
-    };
-
-    const attrPoints: Record<string, number> = {
-      knowledge: 0, guts: 0, dexterity: 0, kindness: 0, charm: 0
-    };
-    for (const act of periodActivities) {
-      if (!shouldInclude(act.category)) continue;
-      attrPoints.knowledge += act.pointsAwarded.knowledge || 0;
-      attrPoints.guts += act.pointsAwarded.guts || 0;
-      attrPoints.dexterity += act.pointsAwarded.dexterity || 0;
-      attrPoints.kindness += act.pointsAwarded.kindness || 0;
-      attrPoints.charm += act.pointsAwarded.charm || 0;
-    }
-    const totalPoints = Object.values(attrPoints).reduce((s, v) => s + v, 0);
-    const attrNames = settings.attributeNames;
-    const periodLabel = get().getSummaryLabel(period, startDate);
-    const included = periodActivities.filter(a => shouldInclude(a.category));
-    const activityCount = included.length;
-
-    const attrSummaryLines = Object.entries(attrPoints)
-      .map(([id, pts]) => `- ${attrNames[id as keyof typeof attrNames] ?? id}${pts} 点（当前等级 Lv.${attributes.find(a => a.id === id)?.level ?? '?'}）`)
-      .join('\n');
-
-    const activityLines = included
-      .slice(0, 50)
-      .map(a => {
-        const tag = a.category ? (SUMMARY_CATEGORY_TAGS[a.category] ?? '') : '';
-        return `[${new Date(a.date).toLocaleDateString('zh-CN')}]${tag ? ' ' + tag : ''} ${a.description}`;
-      })
-      .join('\n');
-
-     const userMessage = `本期${periodLabel}（${startDate} ~ ${endDate}）成长记录：
-
-## 属性加点统${attrSummaryLines}
-总计${totalPoints} 点，${activityCount} 条记录${includeSpecial ? '（含战场 / 本周目标 / 逆流等特殊条目）' : ''}
-## 活动记录详情
-${activityLines || '（本期暂无记录）'}
-
-请根据以上信息，生成本期成长总结与下期建议。`;
-
-    const preset = get().getActiveSummaryPreset();
-    const systemPrompt = preset.systemPrompt || DEFAULT_SUMMARY_PROMPT_PRESETS[0].systemPrompt;
-
-    const { baseUrl, model } = resolveProvider(
-      settings.summaryApiProvider,
-      settings.summaryApiBaseUrl,
-      settings.summaryModel,
-    );
-
-    return {
-      baseUrl,
-      model,
-      apiKey: settings.summaryApiKey,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userMessage },
-      ],
-      periodLabel,
-      preset,
-      totalPoints,
-      attributePoints: attrPoints,
-      activityCount,
-      period,
-      startDate,
-      endDate,
-    };
-  },
-
-  generateSummary: async (period: SummaryPeriod, startDate: string, endDate: string): Promise<PeriodSummary> => {
-    const { settings, attributes } = get();
-
-    // 检查 API 配置
-    if (!settings.summaryApiKey) {
-      throw new Error('请先在设置中配置 AI API 密钥');
-    }
-
-    // 获取该时间段内的活动记录（用本地日期字符串比较，避免UTC偏移导致跨月首日丢失）
-    const allActivities = await db.activities.toArray();
-    const periodActivities = allActivities.filter(a => {
-      const dateKey = toLocalDateKey(new Date(a.date));
-      return dateKey >= startDate && dateKey <= endDate;
-    });
-
-    const includeSpecial = settings.summaryIncludeSpecial === true;
-    const shouldInclude = (cat?: string): boolean => {
-      if (!cat) return true;
-      if (cat === 'confidant') return true;
-      if (SUMMARY_SPECIAL_CATS.has(cat)) return includeSpecial;
-      return true;
-    };
-
-    // 统计各属性加点
-    const attrPoints: Record<string, number> = {
-      knowledge: 0, guts: 0, dexterity: 0, kindness: 0, charm: 0
-    };
-    for (const act of periodActivities) {
-      if (!shouldInclude(act.category)) continue;
-      attrPoints.knowledge += act.pointsAwarded.knowledge || 0;
-      attrPoints.guts += act.pointsAwarded.guts || 0;
-      attrPoints.dexterity += act.pointsAwarded.dexterity || 0;
-      attrPoints.kindness += act.pointsAwarded.kindness || 0;
-      attrPoints.charm += act.pointsAwarded.charm || 0;
-    }
-    const totalPoints = Object.values(attrPoints).reduce((s, v) => s + v, 0);
-    const attrNames = settings.attributeNames;
-
-    // 构建用户消息
-    const periodLabel = get().getSummaryLabel(period, startDate);
-    const attrSummaryLines = Object.entries(attrPoints)
-      .map(([id, pts]) => `- ${attrNames[id as keyof typeof attrNames] ?? id}${pts} 点（当前等级 Lv.${attributes.find(a => a.id === id)?.level ?? '?'}）`)
-      .join('\n');
-
-    const activityLines = periodActivities
-      .filter(a => shouldInclude(a.category))
-      .slice(0, 50) // 最50 条，防止 token 过多
-      .map(a => {
-        const tag = a.category ? (SUMMARY_CATEGORY_TAGS[a.category] ?? '') : '';
-        return `[${new Date(a.date).toLocaleDateString('zh-CN')}]${tag ? ' ' + tag : ''} ${a.description}`;
-      })
-      .join('\n');
-
-     const userMessage = `本期${periodLabel}（${startDate} ~ ${endDate}）成长记录：
-
-## 属性加点统${attrSummaryLines}
-总计${totalPoints} 点，${periodActivities.filter(a => !a.category).length} 条记
-## 活动记录详情
-${activityLines || '（本期暂无记录）'}
-
-请根据以上信息，生成本期成长总结与下期建议。`;
-
-     // 获取当前 preset
-     const preset = get().getActiveSummaryPreset();
-    const systemPrompt = preset.systemPrompt || DEFAULT_SUMMARY_PROMPT_PRESETS[0].systemPrompt;
-
-    // 确定 API endpoint
-    const cfg = getAIConfig(settings);
-    if (!cfg) throw new Error('请先在「设置 → AI 总结」中配置 API 密钥');
-    const content = await chatComplete(cfg, [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userMessage },
-    ], { temperature: 0.8, maxTokens: 2000 });
-
-    const summary: PeriodSummary = {
-      id: uuidv4(),
-      period,
-      startDate,
-      endDate,
-      label: periodLabel,
-      content,
-      promptPresetId: preset.id,
-      promptPresetName: preset.name,
-      totalPoints,
-      attributePoints: attrPoints,
-      activityCount: periodActivities.filter(a => !a.category).length,
-      createdAt: new Date(),
-    };
-
-    return summary;
+    return buildSummaryRequestAI({ settings, attributes, period, startDate, endDate, annual: opts?.annual, signal: opts?.signal });
   },
 
   // ── 本周目标 ─────────────────────────────────────────────

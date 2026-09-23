@@ -4,19 +4,29 @@
  * 三句审判问答（定调 tone）→ 单次 AI 调用产出 区层名/描述/主影 → 显形。
  * 无 Key / 失败 → 手动模式（名称+弱点，模板区层名）。
  * 替代旧「识破暗影」流程（ShadowCreateModal 已退役）。
+ *
+ * v2.7.0.6：生成挪到 utils/revealJobs（流式 + 后台任务）——
+ *   - 仪式卡里复用召唤人格面具的滚动窗口（LiveStreamPreview）看它在想什么；
+ *   - 30 秒后才露出「转到后台 / 改用手动」，之前和原来一样锁着；
+ *   - 截断 → 「让它说完」续写；
+ *   - 显形动画（封印音 + ShadowWarningOverlay）只在任务真正完成时放，绝不提前。
  */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore } from '@/store';
 import { Shadow, AttributeId } from '@/types';
-import { generateStratumReveal } from '@/utils/battleAI';
 import { SHADOW_LEVEL_CONFIG } from '@/constants';
 import { BOSS_ATTACK_BY_LEVEL } from '@/battle/numbers';
 import { rollThemeAttribute, weekKeyOf } from '@/battle/tower';
 import { playSound } from '@/utils/feedback';
 import { ShadowWarningOverlay } from '@/components/battle/ShadowWarningOverlay';
+import { LiveStreamPreview } from '@/components/battle/AwakeningOverlay';
 import { ModalPortal } from '@/components/ModalPortal';
 import { useBackHandler } from '@/utils/useBackHandler';
+import {
+  useRevealJobs, startStratumJob, resumeStratumJob, retryStratumJob, cancelStratumJob, ackStratumJob,
+  REVEAL_EXIT_AFTER_MS, REVEAL_RESUME_LIMIT,
+} from '@/utils/revealJobs';
 import { v4 as uuidv4 } from 'uuid';
 
 interface Props {
@@ -43,15 +53,38 @@ const FALLBACK_LINES = [
   '小心……我也在变强。',
 ];
 
+/** 生成阶段：每秒刷新一次经过时间（只在 running 时挂计时器） */
+function useElapsed(startedAt: number | undefined, active: boolean): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!active) return;
+    setNow(Date.now());
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [active, startedAt]);
+  return startedAt ? Math.max(0, now - startedAt) : 0;
+}
+
+const fmtElapsed = (ms: number): string => {
+  const s = Math.floor(ms / 1000);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+};
+
 export function StratumRevealModal({ isOpen, onClose, level }: Props) {
   const { settings, attributes, battleState, revealStratum } = useAppStore();
-  const [step, setStep] = useState<'qa' | 'choose' | 'manual' | 'generating'>('qa');
+  const job = useRevealJobs(s => s.stratum);
+  const generating = job?.status === 'running';
+  const [step, setStep] = useState<'qa' | 'choose' | 'manual'>('qa');
   const [qaIndex, setQaIndex] = useState(0);
   const [answers, setAnswers] = useState<string[]>([]);
   const [error, setError] = useState('');
   const [manualName, setManualName] = useState('');
   const [manualWeak, setManualWeak] = useState<AttributeId>('knowledge');
   const [warn, setWarn] = useState<{ name: string; weakAttribute: AttributeId } | null>(null);
+  /** 已经为哪个任务放过显形演出（StrictMode / 重渲染都不该放两遍） */
+  const playedForRef = useRef<string | null>(null);
+  const elapsed = useElapsed(job?.startedAt, !!generating && isOpen);
+  const canLeave = !!generating && elapsed >= REVEAL_EXIT_AFTER_MS;
 
   const attrNames = settings.attributeNames as Record<AttributeId, string>;
   const attrValues = Object.fromEntries(attributes.map(a => [a.id, a.points])) as Record<AttributeId, number>;
@@ -73,15 +106,43 @@ export function StratumRevealModal({ isOpen, onClose, level }: Props) {
   };
 
   useEffect(() => {
-    if (isOpen) {
-      setStep('qa'); setQaIndex(0); setAnswers([]); setError(''); setManualName('');
+    if (!isOpen) return;
+    setError('');
+    setManualName('');
+    const j = useRevealJobs.getState().stratum;
+    if (j && (j.status === 'truncated' || j.status === 'error')) {
+      // 后台跑完但没成：回到选择页，把原因摆出来
+      setStep('choose');
+      setError(j.error ?? '显形失败，请重试');
+      setAnswers(j.answers);
+      setQaIndex(REVEAL_QA.length - 1);
+    } else if (!j) {
+      setStep('qa'); setQaIndex(0); setAnswers([]);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
 
+  // 任务完成 → 只在弹层打开时放演出（封印音 + 预警浮层），且每个任务只放一次
+  useEffect(() => {
+    if (!isOpen || !job || job.status !== 'done' || !job.result) return;
+    if (playedForRef.current === job.id) return;
+    playedForRef.current = job.id;
+    playSound('/battle-seal.mp3');
+    setWarn({ name: job.result.name, weakAttribute: job.result.weakAttribute });
+  }, [isOpen, job]);
+
+  // 后台跑完没成 → 弹层还开着的话，同步到选择页
+  useEffect(() => {
+    if (!isOpen || !job) return;
+    if (job.status === 'truncated' || job.status === 'error') {
+      setStep('choose');
+      setError(job.error ?? '显形失败，请重试');
+    }
+  }, [isOpen, job]);
+
   useBackHandler(isOpen, () => {
     if (warn) { setWarn(null); return; }
-    if (step === 'generating') return;
+    if (generating && !canLeave) return;
     onClose();
   });
 
@@ -112,26 +173,16 @@ export function StratumRevealModal({ isOpen, onClose, level }: Props) {
     if (qaIndex < REVEAL_QA.length - 1) {
       setQaIndex(qaIndex + 1);
     } else {
-      void doGenerate(next);
+      doGenerate(next);
     }
   };
 
-  const doGenerate = async (toneAnswers: string[]) => {
-    setStep('generating');
+  const doGenerate = (toneAnswers: string[]) => {
     setError('');
     try {
-      const themeAttribute = rollTheme();
-      const data = await generateStratumReveal(settings, attrNames, level, attrValues, lastWeak, toneAnswers, themeAttribute);
-      const boss = buildBoss(data);
-      await revealStratum({
-        level,
-        name: data.stratumName,
-        description: data.stratumDescription,
-        themeAttribute,
-        boss,
+      startStratumJob({
+        settings, attrNames, level, attrValues, lastWeak, answers: toneAnswers, themeAttribute: rollTheme(),
       });
-      playSound('/battle-seal.mp3');
-      setWarn({ name: boss.name, weakAttribute: boss.weakAttribute });
     } catch (err) {
       setError(err instanceof Error ? err.message : '显形失败，请重试');
       setStep('choose');
@@ -140,6 +191,7 @@ export function StratumRevealModal({ isOpen, onClose, level }: Props) {
 
   const doManual = async () => {
     if (!manualName.trim()) return;
+    cancelStratumJob();
     const attrs = Object.keys(attrNames) as AttributeId[];
     const boss = buildBoss({
       name: manualName.trim(),
@@ -161,8 +213,11 @@ export function StratumRevealModal({ isOpen, onClose, level }: Props) {
 
   const handleWarnDone = () => {
     setWarn(null);
+    ackStratumJob();
     onClose();
   };
+
+  const canResume = job?.status === 'truncated' && !!job.partial && job.resumes < REVEAL_RESUME_LIMIT;
 
   // portal 到 body：战场页活在 PageShell 的 stacking context 里，页内浮层对外
   // 只等效 z=1，底部导航（z-40）会盖住它（用户上报「区层显形仪式被底部栏挡住」）。
@@ -183,7 +238,7 @@ export function StratumRevealModal({ isOpen, onClose, level }: Props) {
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4"
             style={{ background: 'rgba(0,0,0,0.87)' }}
-            onClick={e => { if (step === 'generating') return; if (e.target === e.currentTarget) onClose(); }}
+            onClick={e => { if (generating && !canLeave) return; if (e.target === e.currentTarget) onClose(); }}
           >
             <motion.div
               initial={{ scale: 0.9, opacity: 0, y: 20 }}
@@ -199,14 +254,43 @@ export function StratumRevealModal({ isOpen, onClose, level }: Props) {
                 <h2 className="text-xl font-bold text-white mb-1 text-center">🗼 区层显形仪式</h2>
                 <p className="text-center text-xs text-indigo-200/60 mb-4">第 {level} 区层 · 高塔上方的黑暗正在成形</p>
 
-                {step === 'generating' ? (
-                  <div className="text-center py-8">
+                {generating ? (
+                  <div className="py-4">
                     <motion.div
                       animate={{ rotate: 360 }}
                       transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
-                      className="w-10 h-10 rounded-full border-2 border-indigo-400 border-t-transparent mx-auto mb-4"
+                      className="w-10 h-10 rounded-full border-2 border-indigo-400 border-t-transparent mx-auto mb-3"
                     />
-                    <p className="text-indigo-200 text-sm">区层正在显形……</p>
+                    <p className="text-indigo-200 text-sm text-center">区层正在显形……</p>
+                    <p className="mt-1 text-center text-[10px] tabular-nums text-indigo-200/40">{fmtElapsed(elapsed)}</p>
+                    {/* 召唤人格面具同款滚动窗口：看它在想什么（思维链 + 正文都进来） */}
+                    <div className="mt-3">
+                      <LiveStreamPreview text={job?.shown ?? ''} variant="inline" tone="violet" />
+                    </div>
+                    {/* 30 秒后才露出出口：纯淡入，不做任何"显形"感的动效，免得像提前弹了 */}
+                    <div
+                      aria-hidden={!canLeave}
+                      className="mt-4 space-y-2 transition-opacity duration-700"
+                      style={{ opacity: canLeave ? 1 : 0, pointerEvents: canLeave ? 'auto' : 'none' }}
+                    >
+                      <p className="text-center text-[11px] text-indigo-200/50">它还在想。可以先去别处，显形时会回来找你。</p>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={onClose}
+                          className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-indigo-100"
+                          style={{ background: 'rgb(var(--color-battle-bright-rgb) / 0.16)', border: '1px solid rgb(var(--color-battle-bright-rgb) / 0.4)' }}
+                        >
+                          转到后台
+                        </button>
+                        <button
+                          onClick={() => { cancelStratumJob(); setStep('manual'); }}
+                          className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-gray-300"
+                          style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.18)' }}
+                        >
+                          改用手动
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 ) : step === 'qa' ? (
                   <div className="space-y-4">
@@ -244,14 +328,29 @@ export function StratumRevealModal({ isOpen, onClose, level }: Props) {
                     {error && (
                       <div className="rounded-xl px-3 py-2 space-y-1" style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.35)' }}>
                         <p className="text-red-300 text-xs leading-relaxed">{error}</p>
-                        <p className="text-red-400/60 text-[10px]">请确认 API 配置可用后重试，或选「手动」自行命名心魔。</p>
+                        <p className="text-red-400/60 text-[10px]">
+                          {canResume
+                            ? '它说到一半断了。可以让它接着说完，或者重来一遍；也可以选「手动」自行命名心魔。'
+                            : '请确认 API 配置可用后重试，或选「手动」自行命名心魔。'}
+                        </p>
                       </div>
+                    )}
+                    {canResume && (
+                      <button
+                        onClick={() => resumeStratumJob()}
+                        className="w-full py-3 rounded-xl text-white text-sm font-semibold"
+                        style={{ background: 'linear-gradient(90deg, rgb(var(--color-battle-rgb)), rgb(var(--color-battle-indigo-rgb)))' }}
+                      >
+                        ▶ 让它说完
+                      </button>
                     )}
                     <div className="flex gap-3">
                       <button
-                        onClick={() => void doGenerate(answers)}
+                        onClick={() => { if (job) retryStratumJob(); else doGenerate(answers); }}
                         className="flex-1 py-3 rounded-xl text-white text-sm font-semibold"
-                        style={{ background: 'linear-gradient(90deg, rgb(var(--color-battle-rgb)), rgb(var(--color-battle-indigo-rgb)))' }}
+                        style={canResume
+                          ? { background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)' }
+                          : { background: 'linear-gradient(90deg, rgb(var(--color-battle-rgb)), rgb(var(--color-battle-indigo-rgb)))' }}
                       >
                         🔄 重试显形
                       </button>

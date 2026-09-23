@@ -69,3 +69,26 @@ export async function exportBackup(
     return { url, filename, size: sizeOf(jsonString) };
   }
 }
+
+/**
+ * 保存 / 分享一张图片（记录配图灯箱的「保存」）：
+ *  - 原生：写进 Cache 后调系统分享面板（iOS 面板里有「存储图像」，安卓可存到相册 / 发给别人）
+ *  - Web：触发下载
+ */
+export async function shareImage(dataUrl: string, filename: string): Promise<void> {
+  if (isNative()) {
+    const { Filesystem, Directory } = await import('@capacitor/filesystem');
+    const { Share } = await import('@capacitor/share');
+    const base64 = dataUrl.split(',')[1] ?? '';
+    await Filesystem.writeFile({ path: filename, data: base64, directory: Directory.Cache });
+    const { uri } = await Filesystem.getUri({ path: filename, directory: Directory.Cache });
+    await Share.share({ title: '记录配图', files: [uri], dialogTitle: '保存 / 分享图片' });
+    return;
+  }
+  const a = document.createElement('a');
+  a.href = dataUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
