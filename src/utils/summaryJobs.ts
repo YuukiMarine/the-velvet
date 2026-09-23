@@ -18,7 +18,7 @@ import { createThinkTracker, type ThinkTracker } from '@/utils/thinkProgress';
 import { formatApiError } from '@/utils/tarotAI';
 import {
   buildContinueMessages, extractSummaryMemo, parseSummaryResult, visibleSummaryText, looksTruncated, trimSeam,
-  summaryKindOf, SUMMARY_MAX_TOKENS, type SummaryRequestData,
+  summaryKindOf, SUMMARY_MAX_TOKENS, SUMMARY_MAX_TOKENS_YEAR, type SummaryRequestData,
 } from '@/utils/summaryAI';
 
 export type SummaryJobStatus = 'preparing' | 'thinking' | 'streaming' | 'done' | 'error';
@@ -175,7 +175,7 @@ async function stream(settings: Settings, job: SummaryJob, messages: SummaryRequ
     const devCap = import.meta.env.DEV ? Number(localStorage.getItem('velvet.dev.summaryMaxTokens') || 0) : 0;
     for await (const delta of chatStream(req, messages, {
       temperature: 0.8,
-      maxTokens: devCap > 0 ? devCap : SUMMARY_MAX_TOKENS,
+      maxTokens: devCap > 0 ? devCap : job.period === 'year' ? SUMMARY_MAX_TOKENS_YEAR : SUMMARY_MAX_TOKENS,
       signal: ac.signal,
       onReasoning: d => { tracker.onReasoning(d); },
       onFinishReason: r => { finish = r; },

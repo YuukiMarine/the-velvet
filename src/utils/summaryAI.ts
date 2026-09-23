@@ -127,21 +127,25 @@ export const SUMMARY_META_MARK = '<<<META>>>';
 export const SUMMARY_FOLLOWUP_LIMIT = 3;
 /** 正文预算：一张表 + 几段正文很容易撞 2000，放到 3000；思维链余量由 aiClient 另加 */
 export const SUMMARY_MAX_TOKENS = 3000;
+/** 年度信更长（一千三到一千七百字 + 一张表 + META），预算另给 */
+export const SUMMARY_MAX_TOKENS_YEAR = 4800;
 export const SUMMARY_FOLLOWUP_MAX_TOKENS = 2400;
 /** 记录超过这个数走两段式：先挑素材再写 */
 export const HIGHLIGHT_THRESHOLD = 40;
 
 const houseRules = (period: SummaryPeriod): string => {
-  const length = period === 'year' ? '八百到一千二百字' : period === 'month' ? '六百到九百字' : '四百到七百字';
+  const year = period === 'year';
+  // 年度 v2.7.0.6 用户验收后加长：比平时丰富，结尾一段抒情（见 buildSummaryRequest 的年度要求）
+  const length = year ? '一千三百到一千七百字' : period === 'month' ? '六百到九百字' : '四百到七百字';
   return `【写法规则】（优先级高于上面角色描述里的分段建议）
 - 这是写给一位熟客的信，不是报告。角色描述里列的"话题"不必都谈、不必按序，小标题可以不用；用的话也是你自己起的两到四个，别用「本期概览 / 力量倾向 / 建议」这类模板名。
-- 简报里的事只挑两三件最值得说的，具体到哪一天做了什么；不要逐条复述，不要把五个属性挨个点评一遍。
+- ${year ? '简报里的事挑四五件，顺着时间把这一年串起来' : '简报里的事只挑两三件最值得说的'}，具体到哪一天做了什么；不要逐条复述，不要把五个属性挨个点评一遍。
 - 数据一览可以画一张表（最多一张、最多四列），正文里就别再堆数字，点到一两个关键数字即可。
 - 「上次的手记」是上一期写下的话：自然地接上——做到了就认，没做到轻轻提一句；别照抄原句，也别每期都翻旧账。若上次是别人写的，可以提一句"某某上次说过"，或者不提。简报里没有「上次的手记」，就不要假装记得上一期想过什么、说过什么。
-- 说人话：不排比、不喊口号、不写警句、少用加粗；不要「首先 / 其次 / 最后」；不要每段都以称呼开头；不要翻转句（"不是……而是……"）。
+- 说人话：不排比、不喊口号、不写警句、少用加粗；不要「首先 / 其次 / 最后」；不要每段都以称呼开头；不要翻转句（"不是……而是……"）。${year ? '年度信的结尾可以抒情，但也要落在具体的人和事上。' : ''}
 - 日期只用简报给的日期和周几，不要自己推算；没记录的日子可以提，不要责备。
 - 篇幅：${length}。
-- 最后一段留一句下期要回看的期待，或向客人提一个问题（一个就够，不加标题，不要加粗）。
+- ${year ? '结尾先写那段抒情的话，之后可以再留一句来年的期待，或向客人提一个问题' : '最后一段留一句下期要回看的期待，或向客人提一个问题'}（一个就够，不加标题，不要加粗）。
 - 正文写完后另起一行输出 ${SUMMARY_META_MARK}，再输出一行 JSON：{"memo":"这一期你对客人说过的最要紧的话或期待，一两句，不超过 60 字，第一人称","question":"结尾那个问题的原文，没有就留空"}。客人看不到这两行。`;
 };
 
@@ -509,6 +513,35 @@ export async function buildSummaryBrief(params: {
     if (prevMemo.memo) lines.push(`- 说过：${prevMemo.memo}`);
     if (prevMemo.question) lines.push(`- 问过客人：${prevMemo.question}`);
   }
+  // 年度：开场放给客人看的那些瞬间，也交给角色当素材（最长连续 / 最晚的一夜 / 倒计时 / 愿望 / 第一条与最近一条）
+  // 动态 import：yearRecap 反过来引用本模块的筛选口径，静态互引会成环
+  if (annual) {
+    try {
+      const { buildYearRecap } = await import('@/utils/yearRecap');
+      const r = await buildYearRecap(startD.getFullYear(), settings, now);
+      const mm: string[] = [];
+      if (r.streak && r.streak.days >= 3) mm.push(`最长连续 ${r.streak.days} 天有记录（${mdOf(fromKey(r.streak.start))}～${mdOf(fromKey(r.streak.end))}）`);
+      if (r.lateNight) {
+        const d = new Date(r.lateNight.at);
+        mm.push(`最晚的一夜：${mdOf(d)}${d.getHours() < 5 ? '凌晨' : '深夜'} ${pad2(d.getHours())}:${pad2(d.getMinutes())}，写下「${r.lateNight.text}」`);
+      }
+      if (r.countdown?.reached.length) {
+        mm.push(`倒计时走到终点：${r.countdown.reached.map(x => `「${x.title}」（${shortMd(fromKey(x.date))}${x.how === 'todos' ? '达成' : '到了'}）`).join('、')}`);
+      }
+      if (r.countdown?.next) mm.push(`还在倒数：「${r.countdown.next.title}」还有 ${r.countdown.next.days} 天`);
+      if (r.wishes?.fulfilled.length) mm.push(`实现了的愿望：${r.wishes.fulfilled.map(x => `「${x.text}」`).join('、')}`);
+      else if (r.wishes?.closer.length) mm.push(`离愿望更近：${r.wishes.closer.map(x => `「${x.title}」近了 ${x.gained}%（现在 ${x.now}%）`).join('、')}`);
+      if (r.memory) {
+        mm.push(`这一年写下的第一条：${mdOf(fromKey(r.memory.first.date))}「${r.memory.first.text}」${r.memory.firstEver ? '（也是客人在这里写下的第一条）' : ''}`);
+        if (r.memory.records > 1) mm.push(`最近的一条：${mdOf(fromKey(r.memory.last.date))}「${r.memory.last.text}」`);
+      }
+      if (mm.length) {
+        lines.push('');
+        lines.push('【这一年的几个瞬间】（开场已经给客人看过这些，信里挑着写、别逐条念；第一条和最近一条放在一起，最能看出这一年的变化）');
+        for (const x of mm) lines.push(`- ${x}`);
+      }
+    } catch { /* 算不出来就不给，信照写 */ }
+  }
   // 年度：这一年各期信末留下的手记，是回看一整年最现成的线索
   if (annual) {
     const inYear = allSummaries
@@ -588,20 +621,28 @@ export function resolveSummaryConfig(settings: Settings): { cfg: AIConfig; delib
  * 两段式的第一段：记录太多时先让快速档挑素材，角色只围绕这几件写。
  * 失败就跳过（角色自己挑），不阻塞主流程。
  */
-async function pickMaterial(settings: Settings, brief: string, signal?: AbortSignal): Promise<string | null> {
+async function pickMaterial(settings: Settings, brief: string, period: SummaryPeriod, signal?: AbortSignal): Promise<string | null> {
   const cfg = getAIConfig(settings);
   if (!cfg) return null;
+  // 年度信要丰富：多挑几件、按时间铺开，避免全挤在某一两个月
+  const year = period === 'year';
+  const ask = year
+    ? '请按时间顺序挑出六到八件最值得在年度信里提的事（具体到日期与做了什么，优先重要 / 里程碑 / 反差 / 坚持，尽量分布在一年里不同的时段），再用一两句话说出这一年从年初到年末最大的变化。'
+    : '请挑出三到五件最值得在信里提的事（具体到日期与做了什么，优先重要 / 里程碑 / 反差 / 坚持），再用一句话说出这一期最大的一个变化或转折。';
   try {
     const raw = await chatComplete(cfg, [
-      { role: 'system', content: '你是编辑。下面是一位客人某一期的成长简报（流水账）。请挑出三到五件最值得在信里提的事（具体到日期与做了什么，优先重要 / 里程碑 / 反差 / 坚持），再用一句话说出这一期最大的一个变化或转折。只输出 JSON：{"highlights":["…","…"],"turn":"…"}' },
+      { role: 'system', content: `你是编辑。下面是一位客人某一期的成长简报（流水账）。${ask}只输出 JSON：{"highlights":["…","…"],"turn":"…"}` },
       { role: 'user', content: brief },
-    ], { temperature: 0.3, maxTokens: 500, jsonMode: true, signal });
+    ], { temperature: 0.3, maxTokens: year ? 900 : 500, jsonMode: true, signal });
     const s = raw.indexOf('{'), e = raw.lastIndexOf('}');
     const parsed = JSON.parse(raw.slice(s, e + 1)) as { highlights?: unknown; turn?: unknown };
-    const hs = Array.isArray(parsed.highlights) ? parsed.highlights.filter((x): x is string => typeof x === 'string' && !!x.trim()).slice(0, 5) : [];
+    const hs = Array.isArray(parsed.highlights) ? parsed.highlights.filter((x): x is string => typeof x === 'string' && !!x.trim()).slice(0, year ? 8 : 5) : [];
     if (!hs.length) return null;
-    const turn = typeof parsed.turn === 'string' && parsed.turn.trim() ? `\n- 这一期的转折：${parsed.turn.trim()}` : '';
-    return `【编辑挑出的素材】（简报太长，已替你挑好；主要围绕这几件写）\n${hs.map(h => `- ${h}`).join('\n')}${turn}`;
+    const turn = typeof parsed.turn === 'string' && parsed.turn.trim() ? `\n- ${year ? '这一年的变化' : '这一期的转折'}：${parsed.turn.trim()}` : '';
+    const head = year
+      ? '【编辑挑出的素材】（这一年的素材多，已替你理出一条主线；以这几件为主，简报里其他内容也可以点到）'
+      : '【编辑挑出的素材】（简报太长，已替你挑好；主要围绕这几件写）';
+    return `${head}\n${hs.map(h => `- ${h}`).join('\n')}${turn}`;
   } catch {
     return null;
   }
@@ -623,13 +664,15 @@ export async function buildSummaryRequest(params: {
 
   let material = '';
   if (brief.activityCount > HIGHLIGHT_THRESHOLD) {
-    const picked = await pickMaterial(settings, brief.text, signal);
+    const picked = await pickMaterial(settings, brief.text, period, signal);
     if (picked) material = `\n\n${picked}`;
   }
 
   const periodLabel = summaryLabelOf(period, startDate);
   const annualNote = period === 'year'
-    ? `\n\n这是一整年的年度盘点，主题是「成功的更生」——这一年的转变与新生（这四个字不必写进信里）。回看这一年、认下它的变化；结尾用你自己的口吻收住，不要套用固定的祝词或口号。`
+    ? `\n\n这是一整年的年度盘点，主题是「成功的更生」——这一年的转变与新生（这四个字不必写进信里）。`
+      + `这封信比平时长一些、也更丰富：顺着月份把这一年的起伏串起来，「这一年的几个瞬间」里的事可以挑着写，也可以把年初写下的第一条和最近的一条放在一起，看出这一年的变化。`
+      + `\n收尾写一段抒情一点的话，用你自己的口吻，不套口号、不用固定的祝词：真诚地夸他——这一年的努力，已经让他和从前的自己判若两人；再鼓励他来年再接再厉。这一段之后，可以再留一句期待或一个问题。`
     : '';
   const characterPrompt = preset.systemPrompt || DEFAULT_SUMMARY_PROMPT_PRESETS[0].systemPrompt;
   const systemPrompt = `${characterPrompt}\n\n${houseRules(period)}`;

@@ -698,7 +698,7 @@ export const Menu = () => {
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-2">
-                    <span className="truncate text-[23px] font-black leading-tight" style={{ color: P5R.ink, fontFamily: P5_FONT }}>{user?.name || '怪盗'}</span>
+                    <span className="truncate text-[23px] font-black leading-tight" style={{ color: P5R.ink, fontFamily: P5_TITLE_FONT }}>{user?.name || '怪盗'}</span>
                     <P5Star size={17} fill={P5R.red} rot={-14} className="shrink-0" />
                   </span>
                   <span className="mt-2 flex items-center gap-0">

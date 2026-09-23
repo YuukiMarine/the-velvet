@@ -13,7 +13,7 @@ import { useEffect, useId, useState, type CSSProperties, type ReactNode } from '
 import { AnimatePresence, motion } from 'motion/react';
 import { createPortal } from 'react-dom';
 import {
-  P5R, P5_FONT, roughQuad, starPts, jitterStarPts,
+  P5R, P5_FONT, P5_TITLE_FONT, roughQuad, starPts, jitterStarPts,
   P5Panel, P5Star, P5StarOutline, P5RingStar, P5CollageTitle,
 } from './kit';
 import { useBoldness } from '@/utils/boldness';
@@ -598,7 +598,7 @@ export const UnlockCutInP5 = ({ isOpen, onClose, heading, name, lines }: {
           >
             <span aria-hidden className="absolute inset-0" style={{ transform: 'translate(4px,5px)', background: P5R.red, clipPath: roughQuad(454, 5) }} />
             <span aria-hidden className="absolute inset-0" style={{ background: P5R.ink, clipPath: roughQuad(455, 4) }} />
-            <span className="relative block truncate text-[24px] font-black leading-none" style={{ color: P5R.paper, fontFamily: P5_FONT }}>{name}</span>
+            <span className="relative block truncate text-[24px] font-black leading-none" style={{ color: P5R.paper, fontFamily: P5_TITLE_FONT }}>{name}</span>
           </motion.div>
 
           <motion.div

@@ -29,7 +29,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { useBoldness } from '@/utils/boldness';
 import { P3R, P3RPage, GhostWords, P3PageHeader } from '@/components/p3r/kit';
-import { P5R, P5_TITLE_FONT, roughQuad, P5Collage, P5Rough, P5Star, P5RPage } from '@/components/p5r/kit';
+import { P5R, P5_TITLE_FONT, roughQuad, P5Collage, P5Rough, P5Star, P5RPage, P5AttrGlyph, P5Btn } from '@/components/p5r/kit';
 import {
   generateAttributeLevelTitles,
   normalizeAttributeLevelTitles,
@@ -99,6 +99,7 @@ const AttributeNameField = ({
   index: number;
 }) => {
   const anim = useBoldness();
+  const p5 = useUiChannel() === 'p5';
   const [draft, setDraft] = useState(value);
   const [focused, setFocused] = useState(false);
   const composingRef = useRef(false);
@@ -106,6 +107,76 @@ const AttributeNameField = ({
   useEffect(() => {
     if (!composingRef.current) setDraft(value);
   }, [value]);
+
+  /** 两套皮共用的输入逻辑（组词中只改草稿，组词结束 / 失焦才提交） */
+  const inputHandlers = {
+    value: draft,
+    onChange: (e: React.ChangeEvent<HTMLInputElement>) => {
+      const next = e.target.value;
+      setDraft(next);
+      if (!composingRef.current) onCommit(next);
+    },
+    onCompositionStart: () => { composingRef.current = true; },
+    onCompositionEnd: (e: React.CompositionEvent<HTMLInputElement>) => {
+      composingRef.current = false;
+      const next = (e.target as HTMLInputElement).value;
+      setDraft(next);
+      onCommit(next);
+    },
+    onFocus: () => setFocused(true),
+    onBlur: () => {
+      setFocused(false);
+      // 兜底：极少数浏览器/IME 不触发 compositionEnd，用 blur 再提交一次
+      if (draft !== value) onCommit(draft);
+    },
+    placeholder: defaultLabel,
+  };
+
+  // 红频道：之前沿用中性皮（彩色渐变圆角卡 + 发光菱形徽章），只有输入框被全局换了黑框，
+  // 整块跟红黑剪报对不上。改成米白碎纸卡 + 黑框硬影 + 黑块属性图形 + 黑体大字，
+  // 与统计页「属性分布」同一套语言；不用属性色，聚焦时影子和图形块翻红。
+  if (p5) {
+    return (
+      <motion.div
+        initial={anim ? { opacity: 0, x: -16, rotate: -1.5 } : false}
+        animate={{ opacity: 1, x: 0, rotate: index % 2 ? 0.6 : -0.6 }}
+        transition={{ type: 'spring', stiffness: 320, damping: 26, delay: anim ? index * 0.05 : 0 }}
+        className="relative"
+      >
+        <P5Rough seed={700 + index} jag={6} frame={3} face={P5R.paper} shadow={{ x: 4, y: 5 }} shadowColor={focused ? P5R.red : P5R.ink} />
+        <div className="relative flex items-center gap-3 py-3 pl-3.5 pr-3">
+          <span
+            aria-hidden
+            className="relative flex h-12 w-12 shrink-0 items-center justify-center transition-colors"
+            style={{ background: focused ? P5R.red : P5R.ink, clipPath: roughQuad(720 + index, 5) }}
+          >
+            <P5AttrGlyph id={id} size={26} color={P5R.paper} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <span
+                className="px-1.5 py-[3px] text-[10px] font-black leading-none tracking-[0.16em]"
+                style={{ background: P5R.ink, color: P5R.paper, fontFamily: P5_TITLE_FONT, clipPath: roughQuad(730 + index, 2) }}
+              >
+                {id.toUpperCase()}
+              </span>
+              <span className="truncate text-[11px] font-bold" style={{ color: P5R.grey }}>默认「{defaultLabel}」</span>
+              <span aria-hidden className="ml-auto text-[13px] font-black leading-none tabular-nums" style={{ color: '#b9b2a4', fontFamily: P5_TITLE_FONT }}>
+                0{index + 1}
+              </span>
+            </div>
+            <input
+              type="text"
+              {...inputHandlers}
+              aria-label={`${defaultLabel}的名称`}
+              className="mt-2 w-full px-3 text-[18px] font-black focus:outline-none"
+              style={{ fontFamily: P5_TITLE_FONT }}
+            />
+          </div>
+        </div>
+      </motion.div>
+    );
+  }
 
   return (
     <motion.div
@@ -156,27 +227,8 @@ const AttributeNameField = ({
           <div className="relative mt-1">
             <input
               type="text"
-              value={draft}
-              onChange={(e) => {
-                const next = e.target.value;
-                setDraft(next);
-                if (!composingRef.current) onCommit(next);
-              }}
-              onCompositionStart={() => { composingRef.current = true; }}
-              onCompositionEnd={(e) => {
-                composingRef.current = false;
-                const next = (e.target as HTMLInputElement).value;
-                setDraft(next);
-                onCommit(next);
-              }}
-              onFocus={() => setFocused(true)}
-              onBlur={() => {
-                setFocused(false);
-                // 兜底：极少数浏览器/IME 不触发 compositionEnd，用 blur 再提交一次
-                if (draft !== value) onCommit(draft);
-              }}
+              {...inputHandlers}
               className="w-full rounded-lg border border-gray-200/70 bg-white/80 px-2.5 py-1.5 text-sm font-bold text-gray-800 focus:outline-none dark:border-gray-700/60 dark:bg-gray-800/70 dark:text-white"
-              placeholder={defaultLabel}
             />
             {/* 聚焦扫光条：属性色从左扫入槽底缘（D0 瞬切） */}
             <motion.span
@@ -1743,7 +1795,7 @@ export const Settings = () => {
                       <p className="px-4 pt-3 pb-1 text-[11px] text-gray-500 dark:text-gray-400 leading-relaxed">
                         给五个维度取个贴合你的名字，命名会立刻在整个房间里生效。
                       </p>
-                      <div className="p-3 space-y-2">
+                      <div className={p5 ? 'space-y-3.5 p-3 pr-4' : 'p-3 space-y-2'}>
                         {ATTRIBUTE_META.map((meta, mi) => (
                           <AttributeNameField
                             key={meta.id}
@@ -1761,6 +1813,16 @@ export const Settings = () => {
                             })}
                           />
                         ))}
+                        {p5 ? (
+                          <div className="flex gap-3 pt-2">
+                            <P5Btn tone="red" seed={741} onClick={handleRefreshPresetNames} disabled={presetNameRefreshing} className="flex-1" bodyClassName="!px-3 !py-2.5 !text-[14px]">
+                              {presetNameRefreshing ? '匹配中…' : 'AI 匹配成就 / 技能名称'}
+                            </P5Btn>
+                            <P5Btn tone="paper" seed={742} onClick={handleRestorePresetNames} disabled={presetNameRefreshing || !hasPresetNameBackup} bodyClassName="!px-4 !py-2.5 !text-[14px]">
+                              还原
+                            </P5Btn>
+                          </div>
+                        ) : (
                         <div className="pt-1 flex gap-2">
                           <button
                             type="button"
@@ -1779,6 +1841,7 @@ export const Settings = () => {
                             还原
                           </button>
                         </div>
+                        )}
                         {presetNameMessage && (
                           <p className="text-[10px] text-gray-500 dark:text-gray-400 leading-relaxed">
                             {presetNameMessage}

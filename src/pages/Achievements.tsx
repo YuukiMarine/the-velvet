@@ -9,7 +9,7 @@ import { ModalPortal } from '@/components/ModalPortal';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P4Flower, P4Sparkle, P4ArcRings, P4SkyCircle, P4_HEADER_BLEED } from '@/ui/p4Kit';
 import { P3R, P3RPage, GhostWords, P3PageHeader, P3EmptySlab, slantClip } from '@/components/p3r/kit';
-import { P5R, P5_FONT, P5SubBar, P5Star, P5Dots, P5Slab, P5RPage } from '@/components/p5r/kit';
+import { P5R, P5_TITLE_FONT, P5SubBar, P5Star, P5Dots, P5Slab, P5RPage } from '@/components/p5r/kit';
 import { calcMaxStreak, daysSinceFirstRecord, streakDates } from '@/utils/streak';
 import { HIDDEN_ACHIEVEMENT_IDS, SEALED_ACHIEVEMENT_IDS } from '@/constants';
 
@@ -1741,7 +1741,8 @@ export const Achievements = () => {
                     color: activeTab === tab.key ? '#ffffff' : P5R.grey,
                     border: '3px solid #050505',
                     boxShadow: '0 0 0 2.5px #f0e9df, 5px 6px 0 #000000',
-                    fontFamily: P5_FONT,
+                    // 黑体真 Black 字重（之前是圆体合成加粗，撑不起页头大字）
+                    fontFamily: P5_TITLE_FONT,
                   }}
                 >
                   {tab.label}
