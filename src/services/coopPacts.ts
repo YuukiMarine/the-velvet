@@ -34,6 +34,7 @@
 import type { RecordModel } from 'pocketbase';
 import { pb, getUserId } from './pocketbase';
 import { profileFromRecord } from './coopBonds';
+import { auditText } from '@/utils/textAudit';
 import type { CoopPact, NotificationEntry, PactKind, PactMode, PactStatus } from '@/types';
 import { isPactLive, sideOf, theirTitle, myTitle, PACT_DAYS_OPTIONS } from '@/utils/pactLogic';
 
@@ -159,6 +160,10 @@ export const createPact = async (input: CreatePactInput, existing: CoopPact[]): 
   if (!to || to === me) throw new Error('对方信息缺失');
   const title = input.title.trim().slice(0, PACT_TITLE_MAX);
   if (!title) throw new Error('写一下要一起做的事');
+  for (const t of [title, input.message ?? '']) {
+    const audit = auditText(t);
+    if (!audit.ok) throw new Error(audit.reason);
+  }
   if (existing.some(p => isPactLive(p) && (p.fromId === to || p.toId === to))) {
     throw new Error('你们已经有一个进行中的约定了');
   }
@@ -206,6 +211,8 @@ export const respondPact = async (
   if (accept) {
     const titleTo = cur.mode === 'different' ? (opts.titleTo ?? '').trim().slice(0, PACT_TITLE_MAX) : '';
     if (cur.mode === 'different' && !titleTo) throw new Error('写一下你这边要做的事');
+    const audit = auditText(titleTo);
+    if (!audit.ok) throw new Error(audit.reason);
     patch = { status: 'active', start_day: opts.today, ...(titleTo ? { title_to: titleTo } : {}) };
   } else {
     patch = { status: 'declined' };

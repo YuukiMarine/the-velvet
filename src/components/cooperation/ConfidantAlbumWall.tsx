@@ -18,6 +18,7 @@ import { OnlineStarBadge } from './OnlineStarBadge';
 import { ConfidantNameFx } from './ConfidantNameFx';
 import { MAX_INTIMACY, thresholdsFor } from '@/utils/confidantLevels';
 import { PactPartnerTag } from './PactTag';
+import { GoalLine, SwapFaces, swapTagProps, useStatusSwap } from '@/components/profile/PresenceLine';
 import { TAROT_BY_ID } from '@/constants/tarot';
 import { TarotCardSVG } from '@/components/astrology/TarotCardSVG';
 import { useBoldness } from '@/utils/boldness';
@@ -143,6 +144,8 @@ const CardBackFace = ({ c, onOpenDetail, prayer }: {
   const lvNext = c.intimacy >= MAX_INTIMACY ? lvBase : th[c.intimacy + 1];
   const inLevel = Math.max(0, c.intimacyPoints - lvBase);
   const lvSpan = Math.max(1, lvNext - lvBase);
+  // RANK 与名片状态共用一枚（第 6 项）
+  const rankSwap = useStatusSwap(c.source === 'online' ? c.linkedProfile?.status : undefined);
   return (
     <div
       className="flex h-full w-full flex-col px-4 py-4"
@@ -177,10 +180,16 @@ const CardBackFace = ({ c, onOpenDetail, prayer }: {
         </span>
       </div>
       <div className="mt-0.5 text-xs font-semibold" style={{ color: sk.sub }}>{card?.name ?? c.arcanaId}</div>
+      {/* 名片目标（第 6 项）：在线同伴的 linkedProfile 里带着；状态在下面 RANK 那枚里轮换 */}
+      {c.source === 'online' && (
+        <GoalLine goal={c.linkedProfile?.goal} compact className="mt-2" colors={{ ink: sk.ink, sub: sk.sub, accent: sk.accent }} />
+      )}
 
       <div className="mt-3">
         <div className="flex items-baseline justify-between text-[10px] font-bold" style={{ color: sk.meta }}>
-          <span>RANK {c.intimacy}</span>
+          <span className={rankSwap.preset ? 'cursor-pointer' : undefined} {...swapTagProps(rankSwap, `RANK ${c.intimacy}`)}>
+            <SwapFaces swap={rankSwap} lv={<>RANK {c.intimacy}</>} />
+          </span>
           <span className="tabular-nums">{c.intimacy >= MAX_INTIMACY ? 'MAX' : `${inLevel}/${lvSpan}`}</span>
         </div>
         <div
@@ -354,6 +363,8 @@ const FriendCardBack = ({ f, onOpen, onCrop, onProfile }: {
   const prayer = f.prayer;
   const btnClip = channel === 'p3' ? slantClip(8) : p5 ? 'polygon(3px 0, 100% 2px, calc(100% - 3px) 100%, 0 calc(100% - 2px))' : undefined;
   const stop = (e: React.SyntheticEvent) => e.stopPropagation();
+  // LV 与名片状态共用一枚（第 6 项）
+  const lvSwap = useStatusSwap(f.profile.status);
   return (
     <div
       className="flex h-full w-full flex-col px-4 py-4"
@@ -390,13 +401,14 @@ const FriendCardBack = ({ f, onOpen, onCrop, onProfile }: {
         >
           @{f.profile.userId ?? '—'}
         </button>
-        {typeof f.profile.totalLv === 'number' && (
+        {(typeof f.profile.totalLv === 'number' || lvSwap.preset) && (
           <span
-            className="shrink-0 tabular-nums"
+            className={`shrink-0 tabular-nums ${lvSwap.preset ? 'cursor-pointer' : ''}`}
             // 困难档的客人：LV 换成主题对应的高调色（R19）
             style={f.profile.levelDifficulty === 'hard' ? { color: hardTagInk(theme).ink, fontWeight: 900 } : undefined}
+            {...swapTagProps(lvSwap, `LV ${f.profile.totalLv ?? ''}`)}
           >
-            LV {f.profile.totalLv}
+            <SwapFaces swap={lvSwap} lv={<>LV {f.profile.totalLv ?? '—'}</>} />
           </span>
         )}
       </div>
@@ -404,9 +416,14 @@ const FriendCardBack = ({ f, onOpen, onCrop, onProfile }: {
       {/* 一起进步（v2.7.0.6）：普通好友也能约 */}
       <div className="mt-2 flex"><PactPartnerTag partnerId={f.profile.id} surface={channel === 'neutral' ? 'night' : 'default'} /></div>
 
+      {/* 名片目标（第 6 项）；没有才放那句「还未缔结」（状态在上面 LV 那枚里轮换） */}
+      {f.profile.goal ? (
+        <GoalLine goal={f.profile.goal} compact className="mt-3" colors={{ ink: sk.ink, sub: sk.sub, accent: sk.accent }} />
+      ) : (
       <p className="mt-3 text-[11px] leading-relaxed" style={{ color: sk.sub }}>
         还未缔结 COOP 契约——两张塔罗尚未互相照亮。递出契约，Ta 就会正式落座这面墙。
       </p>
+      )}
 
 
       <div className="mt-auto space-y-1.5">
@@ -621,6 +638,15 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
   // index 由 centerId 派生：锚卡被移除/筛掉时回落 0
   const anchored = centerId ? items.findIndex((it) => idOf(it) === centerId) : 0;
   const index = anchored === -1 ? 0 : anchored;
+  // 铭牌上的 LV / RANK 与名片状态共用一枚标签（第 6 项）：有状态先显示状态，3 秒或点一下切换
+  const captionItem = items[index];
+  const captionSwap = useStatusSwap(
+    !captionItem || captionItem === 'add'
+      ? undefined
+      : isFriend(captionItem)
+        ? captionItem.profile.status
+        : captionItem.source === 'online' ? captionItem.linkedProfile?.status : undefined,
+  );
 
   /** 上一次翻牌音的时刻（见 FLIP_SFX_GAP） */
   const lastFlipSfx = useRef(0);
@@ -992,10 +1018,11 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
               >
                 {current.profile.nickname || current.profile.userId || '未命名客人'}
               </motion.h3>
-              {typeof current.profile.totalLv === 'number' && (
-                <span className="shrink-0 px-2 py-1 text-[11px] font-black leading-none text-white rounded-lg"
-                      style={p3 ? { background: P3R.blue, borderRadius: 0, clipPath: slantClip(6) } : isP5 ? { background: '#c00008', borderRadius: 0, boxShadow: '0 0 0 2px #f0e9df' } : isP4 ? { background: 'var(--p4-orange, #f9a11b)', borderRadius: 8 } : { background: 'var(--color-primary)' }}>
-                  LV {current.profile.totalLv}
+              {(typeof current.profile.totalLv === 'number' || captionSwap.preset) && (
+                <span className={`shrink-0 px-2 py-1 text-[11px] font-black leading-none text-white rounded-lg ${captionSwap.preset ? 'cursor-pointer' : ''}`}
+                      style={p3 ? { background: P3R.blue, borderRadius: 0, clipPath: slantClip(6) } : isP5 ? { background: '#c00008', borderRadius: 0, boxShadow: '0 0 0 2px #f0e9df' } : isP4 ? { background: 'var(--p4-orange, #f9a11b)', borderRadius: 8 } : { background: 'var(--color-primary)' }}
+                      {...swapTagProps(captionSwap, `LV ${current.profile.totalLv ?? ''}`)}>
+                  <SwapFaces swap={captionSwap} lv={<>LV {current.profile.totalLv ?? '—'}</>} />
                 </span>
               )}
             </div>
@@ -1040,9 +1067,13 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
             </div>
             {/* LV 蓝斜块（洋红角）+ 属性青斜块 */}
             <div className="mt-2.5 flex items-center justify-center gap-2">
-              <span className="relative inline-flex items-baseline gap-1 px-4 py-1 text-white" style={{ clipPath: slantClip(8), background: P3R.blue }}>
-                <span className="text-[11px] font-black tracking-wider text-white/85">LV</span>
-                <span className="text-[18px] font-black italic leading-none tabular-nums">{current.intimacy}</span>
+              <span className={`relative inline-flex items-center px-4 py-1 text-white ${captionSwap.preset ? 'cursor-pointer' : ''}`} style={{ clipPath: slantClip(8), background: P3R.blue }}
+                    {...swapTagProps(captionSwap, `LV ${current.intimacy}`)}>
+                <SwapFaces
+                  swap={captionSwap}
+                  statusClassName="text-[13px] font-black italic"
+                  lv={<><span className="text-[11px] font-black tracking-wider text-white/85">LV</span><span className="ml-1 text-[18px] font-black italic leading-none tabular-nums">{current.intimacy}</span></>}
+                />
                 <span aria-hidden className="absolute -bottom-[2px] right-1 h-[5px] w-[12px]" style={{ background: P3R.magenta, clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
               </span>
               {current.skillAttribute && attributeNames[current.skillAttribute] && (
@@ -1095,7 +1126,8 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
                 </ConfidantNameFx>
               </motion.h3>
               <span
-                className={`shrink-0 px-2 py-1 text-[11px] font-black leading-none text-white ${isP4 ? 'italic' : 'rounded-lg'}`}
+                className={`shrink-0 px-2 py-1 text-[11px] font-black leading-none text-white ${isP4 ? 'italic' : 'rounded-lg'} ${captionSwap.preset ? 'cursor-pointer' : ''}`}
+                {...swapTagProps(captionSwap, `RANK ${current.intimacy}`)}
                 style={
                   isP4
                     ? { background: 'var(--p4-orange, #f9a11b)', borderRadius: 8, transform: 'skewX(-8deg)', boxShadow: '0 2px 0 rgba(19,19,19,0.25)' }
@@ -1104,7 +1136,7 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
                       : { background: 'linear-gradient(135deg, rgb(var(--color-bond-rgb)), rgb(var(--color-bond-bright-rgb)))' }
                 }
               >
-                RANK {current.intimacy}
+                <SwapFaces swap={captionSwap} lv={<>RANK {current.intimacy}</>} />
               </span>
             </div>
             {/* 关系描述（此前只有蓝频道有，红/黄两套铭牌漏了这一行）。

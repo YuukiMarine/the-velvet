@@ -11,6 +11,7 @@
 
 import type { RecordModel } from 'pocketbase';
 import { pb, getUserId } from './pocketbase';
+import { parseGoalSnapshot, parseProfileStatus } from '@/utils/profilePresence';
 import { pbQuote } from './pbFilter';
 import type { CloudProfile, Friendship, FriendshipStatus } from '@/types';
 
@@ -56,6 +57,9 @@ const profileFromExpand = (r: RecordModel | undefined | null): CloudProfile | un
     attributePoints: (r.attribute_points as Record<string, number> | undefined) || undefined,
     totalPoints: typeof r.total_points === 'number' ? (r.total_points as number) : undefined,
     unlockedCount: typeof r.unlocked_count === 'number' ? (r.unlocked_count as number) : undefined,
+    // 名片状态 / 目标（v2.7.0.6 第 6 项）：PB 上可能还没这两个字段，缺了就是 undefined
+    status: parseProfileStatus(r.status),
+    goal: parseGoalSnapshot(r.goal),
     lastSyncedAt: new Date(),
   };
 };

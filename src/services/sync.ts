@@ -5,6 +5,7 @@ import { useAppStore, toLocalDateKey } from '@/store';
 import { computeTotalLv } from '@/utils/lvTiers';
 import { normalizeAttributeLevelTitles } from '@/utils/attributeLevelTitles';
 import { resolveLevelDifficulty } from '@/utils/levelDifficulty';
+import { buildPresencePatch } from '@/utils/profilePresence';
 
 /**
  * 哪些表受"同伴"分组开关（syncConfidantsToCloud）管辖——
@@ -94,6 +95,21 @@ async function syncAvatarIfChanged(userId: string): Promise<void> {
  * 轻量推送：只更新 PB users 表的"公开档案"字段（含头像），不动 user_data 大块同步。
  * 适合用户改了昵称 / 头像这类只影响档案展示的小动作 —— 不要为这点事跑全量。
  */
+/**
+ * 名片状态 / 目标（v2.7.0.6 第 6 项）：只推 users 表的 status / goal 两个字段。
+ * 单发：PB 上没建字段就静默跳过，不连累其它档案；目标算不出来（挂的宣告卡不在本机）就不动云端那份。
+ * 资料页改完立刻调一次，pushUserProfile / pushAll 也都会顺手推。
+ */
+export const pushProfilePresence = async (): Promise<void> => {
+  if (!pb || !pb.authStore.isValid) return;
+  const userId = getUserId();
+  if (!userId) return;
+  const patch = buildPresencePatch(useAppStore.getState());
+  try {
+    await pb.collection('users').update(userId, patch);
+  } catch { /* 字段还没建 / 离线：下次再推 */ }
+};
+
 export const pushUserProfile = async (): Promise<void> => {
   if (!pb || !pb.authStore.isValid) return;
   const userId = getUserId();
@@ -140,6 +156,8 @@ export const pushUserProfile = async (): Promise<void> => {
       level_difficulty: resolveLevelDifficulty(appState.settings),
     });
   } catch { /* 字段还没建，跳过 */ }
+  // 名片状态 / 目标（v2.7.0.6 第 6 项）：同样单发
+  await pushProfilePresence();
   // 头像走单独的指纹比对路径
   try {
     await syncAvatarIfChanged(userId);
@@ -485,6 +503,9 @@ export const pushAll = async (): Promise<void> => {
     } catch (e) {
       console.warn('[velvet-sync] push: failed to update user profile fields', e);
     }
+
+    // 名片状态 / 目标（v2.7.0.6 第 6 项）：同样单发（字段没建就跳过）
+    await pushProfilePresence();
 
     /**
      * 难度档（R19）**单独发一次**，不并进上面那个 patch。

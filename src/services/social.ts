@@ -175,7 +175,9 @@ const syncLinkedProfiles = async (friendships: Friendship[]): Promise<void> => {
       && sameJson(snapshot.attributeLevelTitles, other.attributeLevelTitles)
       && sameJson(snapshot.attributePoints, other.attributePoints)
       && snapshot.totalPoints === other.totalPoints
-      && snapshot.unlockedCount === other.unlockedCount;
+      && snapshot.unlockedCount === other.unlockedCount
+      && sameJson(snapshot.status, other.status)
+      && sameJson(snapshot.goal, other.goal);
     const nameSame = existing.name === newName;
     if (profileSame && nameSame) continue;
 

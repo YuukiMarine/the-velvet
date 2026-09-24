@@ -34,6 +34,7 @@ import type { ThemeType } from '@/types';
 import { PagePlane, PlaneLevel } from '@/components/PagePlane';
 import { SheetModal } from '@/components/SheetModal';
 import { UserProfileCard } from '@/components/UserProfileCard';
+import { P3PassGoal, P3PassStatus, P4PassGoal, P4PassStatus, P5GoalLabel, P5GoalRule, P5StatusStamp } from '@/components/profile/MenuPresence';
 import { resolveLevelDifficulty, hardTagInk } from '@/utils/levelDifficulty';
 import { TrophyIcon } from '@/components/Navigation';
 import { isInShadowTime } from '@/constants';
@@ -721,13 +722,18 @@ export const Menu = () => {
                     >
                       <span className="text-[13px] font-black italic tracking-[0.1em]">{tier.label.toUpperCase()}</span>
                     </span>
+                    {/* 名片状态（第 6 项）：章排最后一枚白底红字小章 */}
+                    <P5StatusStamp />
                   </span>
                 </span>
               </span>
-              <span className="mt-3 flex items-center justify-between border-t-2 pt-2.5" style={{ borderColor: '#0000001f' }}>
+              {/* 底行：上方那道分隔线在有目标时就是红色进度条，中间补 GOAL 百分比（第 6 项） */}
+              <span className="relative mt-3 flex items-center justify-between pt-2.5">
+                <P5GoalRule />
                 <span className="text-[13px] font-black" style={{ color: P5R.ink }}>
                   总点数：<span className="ml-0.5 text-[15px] tabular-nums" style={{ color: P5R.redHot }}>{totalPoints}</span>
                 </span>
+                <P5GoalLabel />
                 <span className="text-[13px] font-black" style={{ color: P5R.ink }}>{totalLv} 级累计 <span aria-hidden className="text-[10px]">▼</span></span>
               </span>
             </span>
@@ -923,8 +929,9 @@ export const Menu = () => {
             {/* 顶条：蓝底斜切 MEMBER PASS */}
             <span className="relative block">
               <span className="flex items-center justify-between py-1.5 pl-8 pr-7" style={{ clipPath: slantClip(20), background: P3R.blue }}>
-                <span className="text-[11px] font-black italic tracking-[0.22em] text-white">MEMBER PASS</span>
-                <span className="text-[11px] font-black tracking-[0.14em] text-white/70">ROOM 03</span>
+                <span className="shrink-0 text-[11px] font-black italic tracking-[0.22em] text-white">MEMBER PASS</span>
+                {/* 名片状态（第 6 项）：有状态时白斜签替掉 ROOM 03 */}
+                <P3PassStatus />
               </span>
               <span className="relative flex items-center gap-3.5 py-3 pl-9 pr-6">
                 {/* 照片位：斜切 + 浅青底；没头像时放大写首字母 */}
@@ -963,12 +970,8 @@ export const Menu = () => {
                   </span>
                 </span>
               </span>
-              {/* 底缘条码：青/蓝细竖条（频道版的磁条） */}
-              <span aria-hidden className="flex h-[14px] items-stretch gap-[3px] pb-2 pl-9 pr-8">
-                {[3, 1, 2, 1, 3, 2, 1, 1, 2, 3, 1, 2, 1, 3, 1, 2, 2, 1, 3, 1].map((w, bi) => (
-                  <span key={bi} style={{ width: w, background: bi % 3 === 2 ? P3R.cyan : P3R.blue }} />
-                ))}
-              </span>
+              {/* 底缘条码：青/蓝细竖条（频道版的磁条）；挂了目标就换成 GOAL 进度条（第 6 项） */}
+              <P3PassGoal />
             </span>
             {/* 右下洋红角（签名件） */}
             <span aria-hidden className="absolute bottom-[3px] right-4 h-[8px] w-[20px]" style={{ background: P3R.magenta, clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
@@ -1131,7 +1134,8 @@ export const Menu = () => {
                   <P4Flower size={12} color="var(--ui-bg)" />
                   STUDENT PASS
                 </span>
-                <span className="text-[12px] font-black tracking-[0.12em] text-white/80">CH 04</span>
+                {/* 名片状态（第 6 项）：有状态时橙色小圆签替掉 CH 04 */}
+                <P4PassStatus />
               </div>
               <div className="flex gap-2.5 px-3 py-2.5">
                 <div
@@ -1171,11 +1175,8 @@ export const Menu = () => {
                   </div>
                 </div>
               </div>
-              <div aria-hidden className="flex h-4 items-stretch gap-[3px] px-3 pb-2.5 opacity-75">
-                {[3, 1, 2, 1, 3, 2, 1, 1, 2, 3, 1, 2, 1, 1, 3].map((w, bi) => (
-                  <span key={bi} className="bg-[#131313]" style={{ width: w }} />
-                ))}
-              </div>
+              {/* 底缘条码；挂了目标就换成 GOAL 进度条（第 6 项） */}
+              <P4PassGoal />
             </motion.button>
           </div>
 

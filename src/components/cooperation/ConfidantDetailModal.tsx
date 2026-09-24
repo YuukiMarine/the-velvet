@@ -20,6 +20,7 @@ import { ConfidantStarShiftModal } from '@/components/cooperation/ConfidantStarS
 import { CounselChatModal } from '@/components/cooperation/CounselChatModal';
 import { CoopMemorialPanel } from '@/components/cooperation/CoopMemorialPanel';
 import { PactPanelModal, PactQuickEntry } from '@/components/cooperation/PactPanel';
+import { GoalLine, SwapFaces, swapTagProps, useStatusSwap } from '@/components/profile/PresenceLine';
 import { TarotCardSVG } from '@/components/astrology/TarotCardSVG';
 import { triggerLightHaptic } from '@/utils/feedback';
 import { ImageCropDialog } from '@/components/ImageCropDialog';
@@ -175,6 +176,8 @@ export function ConfidantDetailModal({
   const [memorialOpen, setMemorialOpen] = useState(false);
   // 一起进步（v2.7.0.6）：在线同伴详情页的快捷入口弹窗
   const [pactOpen, setPactOpen] = useState(false);
+  // 「Lv · 称号」与名片状态共用一枚（第 6 项）
+  const lvSwap = useStatusSwap(confidant?.source === 'online' ? confidant.linkedProfile?.status : undefined);
   const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
   const [avatarMenuOpen, setAvatarMenuOpen] = useState(false);
   const [avatarUploading, setAvatarUploading] = useState(false);
@@ -648,9 +651,10 @@ export function ConfidantDetailModal({
                 <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                   《{card?.name}》{isReversed ? '逆位' : '正位'}
                 </div>
-                <div className="mt-2 inline-block px-3 py-1 rounded-full text-xs font-bold"
-                  style={{ background: `${accent}22`, color: accent }}>
-                  Lv.{confidant.intimacy} · {INTIMACY_LABELS[confidant.intimacy]}
+                <div className={`mt-2 inline-block px-3 py-1 rounded-full text-xs font-bold ${lvSwap.preset ? 'cursor-pointer' : ''}`}
+                  style={{ background: `${accent}22`, color: accent }}
+                  {...swapTagProps(lvSwap, `Lv.${confidant.intimacy} · ${INTIMACY_LABELS[confidant.intimacy]}`)}>
+                  <SwapFaces swap={lvSwap} lv={<>Lv.{confidant.intimacy} · {INTIMACY_LABELS[confidant.intimacy]}</>} />
                 </div>
                 {confidant.source === 'online' && (
                   <div className="mt-1.5 text-[10px] text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5 flex-wrap">
@@ -667,6 +671,10 @@ export function ConfidantDetailModal({
                       <span>{confidant.linkedCloudUserId ? '已缔结 COOP' : '（待绑定）'}</span>
                     )}
                   </div>
+                )}
+                {/* 名片状态 / 目标（v2.7.0.6 第 6 项） */}
+                {confidant.source === 'online' && (
+                  <GoalLine goal={confidant.linkedProfile?.goal} compact className="mt-1.5" />
                 )}
                 {/* 羁绊之影状态行 —— 只有 active 时出现 */}
                 {activeShadow && onOpenCoopShadow && (() => {

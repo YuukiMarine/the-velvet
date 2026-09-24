@@ -8,6 +8,7 @@ import { useCloudStore } from '@/store/cloud';
 import type { Confidant, CoopShadow } from '@/types';
 import { TAROT_BY_ID } from '@/constants/tarot';
 import { PactPartnerTag } from './PactTag';
+import { GoalLine, SwapFaces, swapTagProps, useStatusSwap } from '@/components/profile/PresenceLine';
 import { INTIMACY_LABELS, MAX_INTIMACY, pointsToNextLevel, levelBasePoints, thresholdsFor } from '@/utils/confidantLevels';
 import { TarotCardSVG } from '@/components/astrology/TarotCardSVG';
 
@@ -33,6 +34,8 @@ export function ConfidantCard({ confidant, onClick, prayer, activeShadow, onShad
   const isReversed = confidant.orientation === 'reversed';
   const archived = !!confidant.archivedAt;
   const isOnline = confidant.source === 'online';
+  // 「羁绊 LV」与名片状态共用一枚（第 6 项）
+  const lvSwap = useStatusSwap(isOnline ? confidant.linkedProfile?.status : undefined);
   const updateConfidant = useAppStore(s => s.updateConfidant);
 
   const cloudUser = useCloudStore(s => s.cloudUser);
@@ -276,12 +279,16 @@ export function ConfidantCard({ confidant, onClick, prayer, activeShadow, onShad
             <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
               《{card?.name}》{isReversed ? '逆位' : '正位'} · {INTIMACY_LABELS[confidant.intimacy]}
             </div>
+            {/* 名片状态 / 目标（v2.7.0.6 第 6 项） */}
+            {isOnline && <GoalLine goal={confidant.linkedProfile?.goal} compact className="mt-1" />}
 
             {/* 羁绊等级进度条 */}
             <div className="mt-2.5">
               <div className="flex items-center justify-between mb-1">
                 <span className="text-[10px] font-bold tracking-wider" style={{ color: accent }}>
-                  羁绊 LV {confidant.intimacy}
+                  <span className={lvSwap.preset ? 'cursor-pointer' : undefined} {...swapTagProps(lvSwap, `羁绊 LV ${confidant.intimacy}`)}>
+                    <SwapFaces swap={lvSwap} lv={<>羁绊 LV {confidant.intimacy}</>} />
+                  </span>
                 </span>
                 <span className="text-[10px] text-gray-400">
                   {isMax ? '圆满' : `还差 ${toNext?.gap ?? 0} 点到 Lv ${confidant.intimacy + 1}`}

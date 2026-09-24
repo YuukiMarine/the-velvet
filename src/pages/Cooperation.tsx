@@ -9,6 +9,7 @@ import { P3R, P3RPage, GhostWords, P3PageHeader, SlantButton, slantClip } from '
 import { P5R, P5_FONT, P5Collage, P5SubBar, P5Star, P5Dots, P5Slab, P5RPage, P5StarFab } from '@/components/p5r/kit';
 import { ConfidantCard } from '@/components/cooperation/ConfidantCard';
 import { PactPartnerTag } from '@/components/cooperation/PactTag';
+import { GoalLine, SwapFaces, swapTagProps, useStatusSwap } from '@/components/profile/PresenceLine';
 import { ConfidantAlbumWall } from '@/components/cooperation/ConfidantAlbumWall';
 import { ConfidantCreateModal } from '@/components/cooperation/ConfidantCreateModal';
 import { ConfidantDetailModal } from '@/components/cooperation/ConfidantDetailModal';
@@ -1140,6 +1141,8 @@ function OnlineFriendPlaceholderCard({
 }) {
   const name = profile.nickname || profile.userId || '未命名客人';
   const lv = profile.totalLv ?? 0;
+  // LV 与名片状态共用一枚（第 6 项）
+  const lvSwap = useStatusSwap(profile.status);
 
   const handleCardClick = (e: React.MouseEvent) => {
     // 点到按钮的事件不让它冒泡，这里只响应卡片空白区域
@@ -1186,8 +1189,13 @@ function OnlineFriendPlaceholderCard({
               <PactPartnerTag partnerId={profile.id} />
             </div>
             <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-              @{profile.userId ?? '—'} · LV {lv}
+              @{profile.userId ?? '—'} ·{' '}
+              <span className={lvSwap.preset ? 'cursor-pointer' : undefined} {...swapTagProps(lvSwap, `LV ${lv}`)}>
+                <SwapFaces swap={lvSwap} lv={<>LV {lv}</>} />
+              </span>
             </div>
+            {/* 名片状态 / 目标（v2.7.0.6 第 6 项） */}
+            <GoalLine goal={profile.goal} compact className="mt-1" />
             <div className="text-[10px] text-gray-400 mt-1 leading-relaxed">
               {prayerError
                 ? <span className="text-rose-500">{prayerError}</span>

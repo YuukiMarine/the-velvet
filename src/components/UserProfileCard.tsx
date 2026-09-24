@@ -5,6 +5,7 @@ import { useCloudStore } from '@/store/cloud';
 import { LVTag } from '@/components/LVTag';
 import { computeTotalLv } from '@/utils/lvTiers';
 import { ImageCropDialog } from '@/components/ImageCropDialog';
+import { PresenceEditorProvider, PresenceGoalBar, PresencePanels, PresencePills } from '@/components/profile/ProfilePresenceEditor';
 import type { AttributeId } from '@/types';
 
 /**
@@ -171,6 +172,7 @@ export function UserProfileCard() {
         }}
       />
 
+      <PresenceEditorProvider>
       <div className="relative px-5 py-5">
         <div className="flex items-center gap-4">
           {/* 头像 + 弹出菜单 */}
@@ -306,8 +308,10 @@ export function UserProfileCard() {
               </div>
             )}
 
-            <div className="mt-1.5">
+            {/* LV 与名片状态（第 6 项）同排：状态小胶囊 / 「＋ 状态」「＋ 目标」 */}
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
               <LVTag level={totalLv} size="md" />
+              <PresencePills />
             </div>
 
             {cloudEnabled && cloudUser && (
@@ -354,6 +358,10 @@ export function UserProfileCard() {
             )}
           </div>
         </div>
+
+        {/* 名片目标（第 6 项）：一条 GOAL 进度条；点它或上面的小胶囊展开编辑 */}
+        <PresenceGoalBar />
+        <PresencePanels />
 
         {/* 五维属性：默认折叠 */}
         <div className="mt-3">
@@ -440,6 +448,8 @@ export function UserProfileCard() {
           )}
         </AnimatePresence>
       </div>
+
+      </PresenceEditorProvider>
 
       {/* 裁切弹窗（可取消） */}
       <ImageCropDialog

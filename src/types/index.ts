@@ -414,6 +414,10 @@ export interface Settings {
   id?: string;
   attributeNames: AttributeNames;
   levelThresholds: number[];
+  /** 名片状态（v2.7.0.6 第 6 项）：预设 id + 设定时刻；过了 24 小时按没有算 */
+  profileStatus?: ProfileStatus;
+  /** 名片目标（v2.7.0.6 第 6 项）：挂着的宣告卡（可带对外显示的说法） */
+  profileGoal?: ProfileGoalPick;
   /**
    * 人格指数难度档（R19）。缺省时由 resolveLevelDifficulty 按阈值反推
    * （只有与某一档 LV1-5 完全一致才算数，手改过的按简单处理）。
@@ -1854,8 +1858,48 @@ export interface CloudProfile {
   totalPoints?: number;
   /** 已解锁成就 + 已解锁技能的总数（不含 blessing_*） */
   unlockedCount?: number;
+  /** 名片状态（v2.7.0.6 第 6 项）：预设之一，设定后 24 小时内有效；PB users.status，没建字段就是 undefined */
+  status?: ProfileStatus;
+  /** 名片目标（v2.7.0.6 第 6 项）：对方推上来的快照；PB users.goal */
+  goal?: ProfileGoalSnapshot;
   /** 最近一次拉取到这份档案的时间（用于"上次同步 X 天前"的戳） */
   lastSyncedAt?: Date;
+}
+
+// ── 名片状态 / 目标（v2.7.0.6 第 6 项）──────────────────────────
+
+/** 名片「状态」：从预设里挑一个（constants/profileStatus），设定后 24 小时自动消失 */
+export interface ProfileStatus {
+  /** 预设 id */
+  id: string;
+  /** 设定时刻（ISO） */
+  at: string;
+}
+
+/**
+ * 名片「目标」——本机记的选择：挂一张宣告卡。
+ * alias = 对外显示的说法（别人眼里你的目标叫什么）；只能挂着卡时写，免得又变回个性签名。
+ */
+export interface ProfileGoalPick {
+  kind: 'card';
+  cardId: string;
+  alias?: string;
+}
+
+/** 给好友看的目标快照（随档案推到云端；宣告卡的进度每次推送时重算） */
+export interface ProfileGoalSnapshot {
+  kind: 'text' | 'card';
+  title: string;
+  subtitle?: string;
+  /** 宣告卡的目标日 YYYY-MM-DD */
+  targetDate?: string;
+  /** 0–100 */
+  progress?: number;
+  daysLeft?: number;
+  /** 宣告卡已完成 / 已至期 */
+  done?: boolean;
+  /** 快照时刻（ISO） */
+  at: string;
 }
 
 export type FriendshipStatus =

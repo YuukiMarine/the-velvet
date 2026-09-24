@@ -34,6 +34,7 @@ import type { AttributeId, CloudProfile, Friendship } from '@/types';
 import { GUEST_LV_HARD, GUEST_LV_NORMAL } from '@/utils/levelDifficulty';
 import { PactPanel } from './PactPanel';
 import { usePactStatus } from './PactTag';
+import { GoalLine, PRESENCE_NIGHT, SwapFaces, swapTagProps, useStatusSwap } from '@/components/profile/PresenceLine';
 
 const ATTR_ORDER: AttributeId[] = ['knowledge', 'guts', 'dexterity', 'kindness', 'charm'];
 const DEFAULT_ATTR_LABELS: Record<AttributeId, string> = {
@@ -104,6 +105,8 @@ export function OnlineConfidantProfileCard({
   const [tab, setTab] = useState<'attrs' | 'pact'>('attrs');
   useEffect(() => { if (isOpen) setTab('attrs'); }, [isOpen, profile?.id]);
   const pactStatus = usePactStatus(friendship && profile ? profile.id : undefined);
+  // LV 与名片状态共用一枚（第 6 项）
+  const lvSwap = useStatusSwap(profile?.status);
   // 一起进步那一页至少和五维一样高：切换时下面的按钮不跳
   const attrsRef = useRef<HTMLDivElement>(null);
   const [attrsHeight, setAttrsHeight] = useState(0);
@@ -228,10 +231,11 @@ export function OnlineConfidantProfileCard({
                   {/* 困难档的人，等级在别人眼里也是红的（R19）。
                       对方档位靠 CloudProfile.levelDifficulty 带过来；拿不到就按普通显示。 */}
                   <span
-                    className="tabular-nums font-bold"
+                    className={`tabular-nums font-bold ${lvSwap.preset ? 'cursor-pointer' : ''}`}
                     style={{ color: profile.levelDifficulty === 'hard' ? GUEST_LV_HARD : GUEST_LV_NORMAL }}
+                    {...swapTagProps(lvSwap, `LV ${totalLv}`)}
                   >
-                    LV {totalLv}
+                    <SwapFaces swap={lvSwap} lv={<>LV {totalLv}</>} />
                   </span>
                 </div>
               </div>
@@ -242,6 +246,13 @@ export function OnlineConfidantProfileCard({
                 aria-label="关闭"
               >✕</button>
             </div>
+            {/* 名片目标（v2.7.0.6 第 6 项） */}
+            {profile.goal && (
+              <div className="mt-3 rounded-xl px-3 py-2" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(196,181,253,0.18)' }}>
+                <GoalLine goal={profile.goal} colors={PRESENCE_NIGHT} />
+                {profile.goal.subtitle && <div className="mt-0.5 truncate text-[10px]" style={{ color: '#8f86ad' }}>{profile.goal.subtitle}</div>}
+              </div>
+            )}
           </div>
 
           <div
