@@ -3,6 +3,7 @@ import { useMemo, useRef, useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { useAppStore, toLocalDateKey } from '@/store';
 import { PactTodoTag } from '@/components/cooperation/PactTag';
+import { DeadlineTag } from '@/components/todo/DeadlineTag';
 import { WishBoard, useWishPane, wishSkinFor } from '@/components/wish/WishBoard';
 import { PaneSwapMark } from '@/components/wish/PaneSwapMark';
 import { BufferedTextInput } from '@/components/ui/BufferedTextInput';
@@ -87,6 +88,7 @@ const ActiveTodoCard = ({
               <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/15 text-primary font-semibold">✦ 签</span>
             )}
             <PactTodoTag todo={todo} />
+            <DeadlineTag todo={todo} done={progress.isComplete} />
             <h4 className="font-semibold text-sm text-gray-800 dark:text-white truncate">{todo.title}</h4>
           </div>
           <div className="flex items-center gap-1.5 flex-wrap">
@@ -399,16 +401,19 @@ export const TodosView = () => {
     resetForm();
   };
 
-  /** 更多设置折叠区（重要/每日/周几/启用/启用日期）；编辑带非默认值的任务时自动展开 */
+  /** 更多设置折叠区（重要/每日/截止日/周几/启用/启用日期）；编辑带非默认值的任务时自动展开 */
   const [showMore, setShowMore] = useState(false);
   /** BIG DEAL 二级面板（聚合卡点击落点） */
   const [dealPanelId, setDealPanelId] = useState<string | null>(null);
   /** 抽签仪式面板 */
   const [fateOpen, setFateOpen] = useState(false);
+  /** 正在编辑的是「一起进步」约定的待办：每日重置、截止日、周几、启用日期都由约定决定，表单里锁住（改了会让约定打不了卡） */
+  const editingPactTodo = editingTodoId ? todos.find(t => t.id === editingTodoId && t.pact) : undefined;
 
   const handleSave = async () => {
     if (!form.title.trim()) return;
     const isBig = form.mode === 'big';
+    const pactLocked = !!editingPactTodo;
     const validExtraBoosts = form.extraBoosts
       .filter(b => b.points >= 1)
       .map(b => ({ attribute: b.attribute, points: Math.max(1, Math.min(5, b.points)) }));
@@ -419,16 +424,19 @@ export const TodosView = () => {
       extraBoosts: validExtraBoosts.length > 0 ? validExtraBoosts : undefined,
       frequency: (form.mode === 'count' ? 'count' : 'single') as TodoFrequency,
       targetCount: form.mode === 'count' ? Math.max(1, form.targetCount) : undefined,
-      repeatDaily: isBig ? false : form.repeatDaily,
+      repeatDaily: isBig ? false : pactLocked ? !!editingPactTodo?.repeatDaily : form.repeatDaily,
       isLongTerm: form.mode === 'count' ? form.isLongTerm : false,
-      weekdays: isBig ? [] : form.weekdays.sort(),
+      weekdays: isBig ? [] : pactLocked ? (editingPactTodo?.weekdays ?? []) : form.weekdays.sort(),
       isActive: form.isActive,
       important: form.important,
-      startDate: form.startDate || undefined,
+      startDate: pactLocked ? editingPactTodo?.startDate : form.startDate || undefined,
       // BIG DEAL：已有子步保留 id/done/doneAt（编辑不清进度），新行补 uuid
       isBigDeal: isBig || undefined,
       currentState: isBig ? form.currentState.trim() || undefined : undefined,
-      deadline: isBig ? form.deadline || undefined : undefined,
+      // 截止日：BIG DEAL 的软时限，或单次 / 计数任务的 DDL（与每日重置互斥，勾了每日重置就不存）；约定待办原样保留
+      deadline: pactLocked
+        ? editingPactTodo?.deadline
+        : (isBig || !form.repeatDaily) && form.deadline ? form.deadline : undefined,
       steps: isBig
         ? form.steps
             .map(s => ({ ...s, title: s.title.trim() }))
@@ -469,7 +477,7 @@ export const TodosView = () => {
       steps: (todo.steps ?? []).map(s => ({ ...s })),
     });
     setAiError(null);
-    setShowMore(!!(todo.important || todo.repeatDaily || (todo.weekdays?.length ?? 0) > 0 || !todo.isActive || todo.startDate));
+    setShowMore(!!(todo.important || todo.repeatDaily || (todo.weekdays?.length ?? 0) > 0 || !todo.isActive || todo.startDate || (todo.deadline && !todo.isBigDeal)));
     setShowAdd(true);
   };
 
@@ -1269,7 +1277,8 @@ export const TodosView = () => {
                         type="date"
                         value={form.deadline}
                         min={todayDateKey}
-                        onChange={(e) => setForm(prev => ({ ...prev, deadline: e.target.value }))}
+                        // 同一个 deadline 字段：切回单次 / 计数时也要守住「与每日重置互斥」
+                        onChange={(e) => setForm(prev => ({ ...prev, deadline: e.target.value, repeatDaily: e.target.value ? false : prev.repeatDaily }))}
                         className="flex-1 px-2.5 py-1.5 text-sm border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 dark:text-white"
                       />
                       {form.deadline && (
@@ -1460,7 +1469,7 @@ export const TodosView = () => {
                   })()}
                 </div>
 
-                {/* ── ④ 更多设置（折叠：重要 / 每日 / 周几 / 启用 / 启用日期） ── */}
+                {/* ── ④ 更多设置（折叠：重要 / 每日 / 截止日 / 周几 / 启用 / 启用日期） ── */}
                 <div>
                   <button
                     type="button"
@@ -1534,7 +1543,13 @@ export const TodosView = () => {
                             </label>
                           )}
 
-                          {form.mode !== 'big' && (
+                          {editingPactTodo?.pact && (
+                            <p className="rounded-xl bg-pink-500/10 px-3 py-2.5 text-xs leading-relaxed text-pink-700 dark:text-pink-300">
+                              这条待办跟着和 {editingPactTodo.pact.partnerName} 的「一起进步」约定走：每日重置、截止日和执行日期都由约定决定，这里不能改。
+                            </p>
+                          )}
+
+                          {form.mode !== 'big' && !editingPactTodo && (
                             <label className={`flex items-start gap-2.5 text-sm rounded-xl px-3 py-2.5 cursor-pointer ${
                               form.repeatDaily
                                 ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300'
@@ -1543,7 +1558,8 @@ export const TodosView = () => {
                               <input
                                 type="checkbox"
                                 checked={form.repeatDaily}
-                                onChange={(e) => setForm(prev => ({ ...prev, repeatDaily: e.target.checked, isLongTerm: e.target.checked ? false : prev.isLongTerm }))}
+                                // 每日重置与截止日互斥：勾上就清掉截止日
+                                onChange={(e) => setForm(prev => ({ ...prev, repeatDaily: e.target.checked, isLongTerm: e.target.checked ? false : prev.isLongTerm, deadline: e.target.checked ? '' : prev.deadline }))}
                                 className="w-4 h-4 text-emerald-500 mt-0.5 rounded"
                               />
                               <div>
@@ -1553,7 +1569,30 @@ export const TodosView = () => {
                             </label>
                           )}
 
-                          {form.mode !== 'big' && (
+                          {/* 截止日（DDL）：单次 / 计数任务；BIG DEAL 在模式区自带一个。与每日重置互斥：选了日期就取消每日重置。约定待办不给改 */}
+                          {form.mode !== 'big' && !editingPactTodo && (
+                            <div>
+                              <label htmlFor="todo-deadline" className="block text-sm font-medium mb-1.5 text-gray-700 dark:text-gray-300">截止日 DDL（可选）</label>
+                              <div className="flex items-center gap-2">
+                                <input
+                                  id="todo-deadline"
+                                  type="date"
+                                  value={form.deadline}
+                                  min={form.startDate && form.startDate > todayDateKey ? form.startDate : todayDateKey}
+                                  onChange={(e) => setForm(prev => ({ ...prev, deadline: e.target.value, repeatDaily: e.target.value ? false : prev.repeatDaily }))}
+                                  className="flex-1 px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-xl bg-gray-50 dark:bg-gray-800 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                                />
+                                {form.deadline && (
+                                  <button type="button" onClick={() => setForm(prev => ({ ...prev, deadline: '' }))} className="text-xs text-gray-400 dark:text-gray-500 underline whitespace-nowrap">
+                                    清除
+                                  </button>
+                                )}
+                              </div>
+                              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">首页和今日任务会显示「剩 N 天」；与「每日重置」只能二选一</p>
+                            </div>
+                          )}
+
+                          {form.mode !== 'big' && !editingPactTodo && (
                             <div>
                               <span className="block text-xs font-medium mb-1.5 text-gray-500 dark:text-gray-400">每周几执行（可选）</span>
                               <div className="grid grid-cols-4 gap-1.5">
@@ -1596,6 +1635,7 @@ export const TodosView = () => {
                             />
                           </div>
 
+                          {!editingPactTodo && (
                           <div>
                             <label className="block text-sm font-medium mb-1.5 text-gray-700 dark:text-gray-300">指定启用日期（可选）</label>
                             <div className="flex items-center gap-2">
@@ -1614,6 +1654,7 @@ export const TodosView = () => {
                             </div>
                             <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">设定后，该任务在指定日期前不会出现在今日任务中</p>
                           </div>
+                          )}
                         </div>
                       </motion.div>
                     )}

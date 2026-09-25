@@ -26,9 +26,9 @@ const KEY = 'velvet:danmaku-watch';
 const MAX_WATCH = 12;
 /** 超过这么久还没过审就当被拒了，不再探 */
 const EXPIRE_MS = 14 * 24 * 60 * 60 * 1000;
-/** 通知 id 段：与 utils/notifications.ts 的 41000–41999 错开，
- *  否则 cancelOurNotifications 的区间扫描会把它一起撤掉 */
-const NOTIF_ID_BASE = 42000;
+/** 通知 id 段 42100–42102：与 utils/notifications.ts 的 41000–41999 错开（否则 cancelOurNotifications
+ *  的区间扫描会把它一起撤掉），也与一起进步后台刷新（原生 PactRefresh）的 42000–42099 错开（同 id 会互相顶掉） */
+const NOTIF_ID_BASE = 42100;
 
 interface WatchItem {
   id: string;

@@ -116,23 +116,28 @@ export const listApprovedDanmaku = async (limit = DANMAKU_MAX_ON_SCREEN): Promis
   }
 };
 
-/** 把 PocketBase 的 ClientResponseError 拆成可读的字段级原因，便于定位规则/字段没配对 */
-const describePbError = (err: unknown): string => {
+/**
+ * 投稿失败 → 给用户看的一句中文。失败不扣机会，所以都带一句「机会还在」。
+ * PocketBase 的原始报错（英文、字段级）只进控制台：排查 Create 规则 / 字段没配对时看那里。
+ */
+const describeSubmitError = (err: unknown): string => {
   const e = err as { status?: number; response?: { message?: string; data?: Record<string, { message?: string }> }; message?: string };
-  const data = e?.response?.data;
-  if (data && typeof data === 'object') {
-    const parts = Object.entries(data).map(([k, v]) => (v?.message ? `${k}：${v.message}` : '')).filter(Boolean);
-    if (parts.length) return parts.join('；');
-  }
-  if (e?.status === 403 || e?.status === 400) {
-    return e?.response?.message || '后端拒绝了提交（多半是 danmaku 集合的 Create 规则或字段没配对）';
-  }
-  return e?.response?.message || e?.message || '发送失败';
+  const status = typeof e?.status === 'number' ? e.status : -1;
+  const fields = e?.response?.data && typeof e.response.data === 'object' ? e.response.data : {};
+  console.warn('[velvet-danmaku] submit failed', status, e?.response?.message ?? e?.message, fields);
+  if (status === 0) return '网络没连上，机会还在，稍后再发';
+  if (status === 401) return '登录过期了，重新登录再发；机会还在';
+  if (status === 429) return '发得有点快，机会还在，过会儿再试';
+  if (status >= 500) return '服务器开小差了，机会还在，稍后再试';
+  if (fields.text) return '这句服务器收不下，换短一点试试；机会还在';
+  // 400 且没有字段错误 = Create 规则没放行（本机已先查过登录态，这里多半是后台规则与请求体没对上）
+  if (status === 400 && Object.keys(fields).length === 0) return '服务器没收下这句，机会还在，稍后再试';
+  return '服务器暂时不收投稿，机会还在，稍后再试';
 };
 
 /**
  * 投稿一条弹幕。需登录。**不存作者**（匿名：不写 createdBy），status='pending' 由 Create 规则
- * 强制（先审后发）。抛出可读的字段级错误，由调用方提示、且不消费 token。
+ * 强制（先审后发）。失败抛出一句中文说明（原始报错进控制台），由调用方提示、且不消费 token。
  */
 export const submitDanmaku = async (text: string, theme: DanmakuTheme): Promise<void> => {
   if (!pb || !pb.authStore.isValid) throw new Error('登录后才能把鼓励发给其他人');
@@ -145,7 +150,7 @@ export const submitDanmaku = async (text: string, theme: DanmakuTheme): Promise<
     // 匿名不受影响：id 只留在本机，服务端仍然不知道谁写了哪条。
     watchDanmaku(String(rec.id ?? ''), text.trim());
   } catch (err) {
-    throw new Error(describePbError(err));
+    throw new Error(describeSubmitError(err));
   }
 };
 

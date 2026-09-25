@@ -209,7 +209,10 @@ export interface Todo {
   steps?: TodoStep[];
   /** 现状一句话（喂 AI 拆解上下文；自 Wish.currentState 迁移） */
   currentState?: string;
-  /** 可选截止日 YYYY-MM-DD（压力场景的软时限） */
+  /**
+   * 可选截止日 YYYY-MM-DD：BIG DEAL 的软时限；单次 / 计数任务的 DDL（「更多设置」里设，与 repeatDaily 互斥），
+   * 首页与今日任务显示「剩 N 天」（components/todo/DeadlineTag）
+   */
   deadline?: string;
   /** 收官记录的 activity id；存在 = 已收官 */
   clearedActivityId?: string;

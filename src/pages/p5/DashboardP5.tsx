@@ -17,6 +17,7 @@ import { ModalPortal } from '@/components/ModalPortal';
 import { useBoldness } from '@/utils/boldness';
 import { useAppStore, toLocalDateKey } from '@/store';
 import { PactTodoTag } from '@/components/cooperation/PactTag';
+import { DeadlineTag } from '@/components/todo/DeadlineTag';
 import type { AttributeId, CallingCard } from '@/types';
 import {
   P5R, roughQuad, roughBanner, starPts,
@@ -1029,6 +1030,7 @@ export const DashboardP5 = () => {
                             {todo.title}
                           </span>
                           <PactTodoTag todo={todo} />
+                          <DeadlineTag todo={todo} done={done} />
                         </span>
                         <span className="mt-0.5 block truncate text-[11px] font-bold" style={{ color: P5R.grey }}>
                           {attrName} +{todo.points}

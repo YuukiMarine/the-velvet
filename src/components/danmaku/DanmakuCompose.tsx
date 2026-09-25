@@ -108,11 +108,11 @@ export const DanmakuCompose = ({ isOpen, onClose, forceDark }: Props) => {
             placeholder="比如：我也熬过来了，你可以的"
             className="w-full resize-none rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm outline-none focus:border-primary dark:border-gray-700 dark:bg-gray-800 dark:text-white"
           />
-          <div className="flex items-center justify-between text-xs">
-            <span className={len > DANMAKU_MAX_LEN ? 'text-red-400' : 'text-gray-400 dark:text-gray-500'}>
+          <div className="flex items-center justify-between gap-3 text-xs">
+            <span className={`shrink-0 ${len > DANMAKU_MAX_LEN ? 'text-red-400' : 'text-gray-400 dark:text-gray-500'}`}>
               {len}/{DANMAKU_MAX_LEN}
             </span>
-            {error && <span className="text-red-400">{error}</span>}
+            {error && <span className="text-right leading-snug text-red-400">{error}</span>}
           </div>
           <button
             type="button"

@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { useAppStore, toLocalDateKey } from '@/store';
 import { PactTodoTag } from '@/components/cooperation/PactTag';
+import { DeadlineTag } from '@/components/todo/DeadlineTag';
 import { TodoCompleteModal } from '@/components/TodoCompleteModal';
 import { BattleDashboardWidget } from '@/components/BattleDashboardWidget';
 import { StackCarousel } from '@/components/StackCarousel';
@@ -1126,6 +1127,7 @@ export const Dashboard = () => {
                           {todo.title}
                         </span>
                         <PactTodoTag todo={todo} />
+                        <DeadlineTag todo={todo} done={progress.isComplete} />
                       </div>
                       <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                         <span className="text-xs text-gray-400 dark:text-gray-500">
