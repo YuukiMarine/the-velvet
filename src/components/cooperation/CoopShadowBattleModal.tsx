@@ -15,6 +15,7 @@ import {
   allOutAttack,
   identifyShadow,
   listAttacksFor,
+  hpFromAttackLog,
   COOP_SHADOW_ALWAYS_OPEN,
 } from '@/services/coopShadows';
 import { sumDamagePlus } from '@/utils/confidantLevels';
@@ -161,7 +162,12 @@ export function CoopShadowBattleModal({ isOpen, shadow: shadowProp, partnerName,
     if (!isOpen || !shadow) return;
     setLogLoading(true);
     listAttacksFor(shadow.id)
-      .then(list => setAttackLog(list))
+      .then(list => {
+        setAttackLog(list);
+        // 血量按日志算（对方那一下可能被本机缓存的写回抹掉了）
+        const hp = hpFromAttackLog(shadow.hpMax, list);
+        if (shadow.status === 'active' && hp !== shadow.hpCurrent) upsertCoopShadow({ ...shadow, hpCurrent: hp });
+      })
       .catch(err => {
         console.warn('[CoopShadowBattleModal] listAttacksFor failed', err);
         setAttackLog([]);

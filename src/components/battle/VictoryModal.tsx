@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion } from 'motion/react';
 import { useAppStore } from '@/store';
@@ -47,8 +47,11 @@ export function VictoryModal({ isOpen, onClose }: Props) {
     ? (ATTR_REWARD_PER_DEFEAT[Math.min(shadow.level - 1, ATTR_REWARD_PER_DEFEAT.length - 1)] ?? 2)
     : 2;
 
+  /** 同步在途锁：claimed 是异步 state，挡不住同一 tick 的双击（连点会发双倍属性点和 SP） */
+  const claimingRef = useRef(false);
   const handleClaim = async () => {
-    if (claimed || !persona || !shadow) return;
+    if (claimed || claimingRef.current || !persona || !shadow) return;
+    claimingRef.current = true;
     const pts = { [selectedAttr]: attrReward } as Record<string, number>;
     // Only first defeat at this Shadow level counts as important
     const prevAtLevel = (battleState?.defeatedShadowLog ?? []).filter(r => r.level === shadow.level);
@@ -62,16 +65,21 @@ export function VictoryModal({ isOpen, onClose }: Props) {
     const description = equippedAttr
       ? `使用面具${maskDisplayName}击败了${shadow.name}，${attrDisplayName}属性获得奖励`
       : `击败了${shadow.name}，${attrDisplayName}属性获得奖励`;
-    await addActivity(
-      description,
-      pts,
-      'battle',
-      { important: isFirstAtLevel, category: 'shadow_defeat' }
-    );
-    await defeatShadow();
-    // Clear shadow from store and DB
-    await db.shadows.clear();
-    useAppStore.setState({ shadow: null });
+    try {
+      await addActivity(
+        description,
+        pts,
+        'battle',
+        { important: isFirstAtLevel, category: 'shadow_defeat' }
+      );
+      await defeatShadow();
+      // Clear shadow from store and DB
+      await db.shadows.clear();
+      useAppStore.setState({ shadow: null });
+    } catch (err) {
+      claimingRef.current = false; // 没领成：放开锁让用户再点一次
+      throw err;
+    }
     playSound('/battle-critical.mp3');
     setClaimed(true);
     setTimeout(onClose, 1500);

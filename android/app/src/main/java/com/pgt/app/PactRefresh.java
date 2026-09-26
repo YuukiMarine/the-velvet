@@ -253,10 +253,10 @@ final class PactRefresh {
         if (p == null) return null;
         JSONObject expand = rec.optJSONObject("expand");
         JSONObject from = expand != null ? expand.optJSONObject("from") : null;
-        String who = str(from, "nickname");
-        if (who.isEmpty()) who = str(from, "username");
+        String who = clip(str(from, "nickname"), 12);
+        if (who.isEmpty()) who = clip(str(from, "username"), 12);
         if (who.isEmpty()) who = "好友";
-        String t = str(p, "title").trim();
+        String t = clip(str(p, "title").trim(), 30);
         String quoted = t.isEmpty() ? "约好的事" : "「" + t + "」";
         switch (str(p, "kind")) {
             case "pact_nudge":
@@ -268,6 +268,14 @@ final class PactRefresh {
             default:
                 return null;
         }
+    }
+
+    /** 对方写来的昵称 / 标题不限长，推到锁屏前截一下（按码点截，emoji 不会劈成两半） */
+    static String clip(String s, int max) {
+        if (s == null) return "";
+        int n = s.codePointCount(0, s.length());
+        if (n <= max) return s;
+        return s.substring(0, s.offsetByCodePoints(0, max)) + "…";
     }
 
     private static void post(Context ctx, int id, String title, String body) {

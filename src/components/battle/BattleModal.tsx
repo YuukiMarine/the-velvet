@@ -432,9 +432,14 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
       phase2WeakAttribute: p.phase2WeakAttribute,
       phase2ResistAttribute: p.phase2ResistAttribute,
     });
+    // Lv6 伪神：致命一击落地的这一笔就把演出阶段写上。以前要等死亡叙事播完才由 beginFinalBossFinale 写，
+    // 中间关窗 / 返回 / 进程被杀，存档就停在「status=victory 且 stage=revealed」——BattleArena 按普通心魔弹胜利屏，
+    // 领完奖 stage 永远是 revealed，终局、英雄的证明、深渊都进不去
+    const finaleNow = res.outcome === 'victory' && !!sh.isFinalBoss && bs.finalBossStage === 'revealed';
     await saveBattleState({
       ...bs, playerHp: p.playerHp, sp: p.sp, status,
       everRetreatedDown: bs.everRetreatedDown || res.outcome === 'defeat', // 批3「记仇」事实源
+      ...(finaleNow ? { finalBossStage: 'finale' as const, finalePhase: 'shock' as const, finaleHits: 0, finaleAllySp: 0, finaleSpBefore: p.sp } : {}),
     });
   }, [saveBattleState, isEncounter]);
 

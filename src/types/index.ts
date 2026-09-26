@@ -1451,6 +1451,8 @@ export interface BattleState {
   finaleHits?: number;
   /** （Lv6 演出）援军已发放的 SP 总量（封顶 1000，只发一次） */
   finaleAllySp?: number;
+  /** （Lv6 演出）致命一击落地时的 SP：演出里会被碾到 1，终结后按「这个数 + 援军」还回去 */
+  finaleSpBefore?: number;
   /**
    * （R19「回头看看」）已通关的最高主塔区层。
    *
@@ -2156,6 +2158,8 @@ export interface CoopAttack {
  */
 export interface CoopMemorialStamp {
   shadowId: string;
+  /** 这一只影的 PB 记录 id：结算去重按它认（同一原型会反复降临，光看 shadowId + 时间会认错） */
+  recordId?: string;
   shadowName: string;             // 展示用名
   weaknessAttribute: AttributeId;
   defeatedAt: string;             // ISO string

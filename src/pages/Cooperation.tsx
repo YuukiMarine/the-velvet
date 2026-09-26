@@ -148,6 +148,11 @@ export function Cooperation() {
         c => c.source === 'online' && c.linkedCloudUserId === partnerId,
       );
       if (!confidant) continue;
+      // 撤退的影：我没识破 = 没参战，不弹（也没有奖励）；盖章免得每次进页都扫到
+      if (s.status === 'retreated' && !((s.userAId === me) ? s.identifiedByA : s.identifiedByB)) {
+        lsSetFlag(key);
+        continue;
+      }
       const hasMemorial = (confidant.coopMemorials ?? []).some(m =>
         s.status === 'defeated'
           ? m.shadowId === s.shadowId && m.defeatedAt === (s.defeatedAt?.toISOString() ?? '')

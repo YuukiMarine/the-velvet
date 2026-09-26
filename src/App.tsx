@@ -42,6 +42,7 @@ const Account = lazy(() => import('@/pages/Account').then(m => ({ default: m.Acc
 // 心相记账页（F5）
 const Ledger = lazy(() => import('@/pages/Ledger').then(m => ({ default: m.Ledger })));
 const BattleArena = lazy(() => import('@/components/battle/BattleArena').then(m => ({ default: m.BattleArena })));
+import { OrphanImagesPrompt } from '@/components/OrphanImagesPrompt';
 import { BigDealClearCutIn } from '@/components/bigdeal/BigDealClearCutIn';
 import { sweepDanmakuApprovals } from '@/services/danmakuWatch';
 import { ReturnPanel } from '@/components/return/ReturnPanel';
@@ -876,6 +877,8 @@ function App() {
           <GlobalCallingCardCutIn />
           {/* BIG DEAL 收官结算屏（批4）：collapseBigDeal 落库后全局弹出，不依赖当前页面 */}
           <BigDealClearCutIn />
+          {/* 导入主备份后「记录已不存在的配图」询问窗：导入会切回首页，只能挂顶层 */}
+          <OrphanImagesPrompt />
           {/* 愿望进度（PRD_V2.6 §8）：任务完成后的「又近了多少」弹窗 +
               黑猫在谈话里提议改数值的确认卡。两者都可能在任意页面触发，故挂顶层 */}
           <WishProgressCutIn />

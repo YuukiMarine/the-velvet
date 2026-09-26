@@ -20,7 +20,9 @@ export interface PresenceSource {
 /**
  * 目标快照。
  *   null      = 没有目标 → 云端清掉
- *   undefined = 这台设备算不出来（挂的宣告卡不在本机：宣告卡跟「任务与总结」同步组走，可能没同步）→ 云端不动
+ *   undefined = 这台设备算不出来 → 云端不动。两种情况：挂的宣告卡不在本机（宣告卡跟「任务与总结」同步组走，
+ *               可能没同步）；要展示的文字过不了屏蔽词（卡的标题后来改过、或词库更新了）——
+ *               不静默下架，云端留着上次通过的那一句，资料卡上提示用户改措辞（goalSnapshotIssue）
  */
 export function buildGoalSnapshot(s: PresenceSource): ProfileGoalSnapshot | null | undefined {
   const pick = s.settings.profileGoal;
@@ -31,7 +33,8 @@ export function buildGoalSnapshot(s: PresenceSource): ProfileGoalSnapshot | null
   // 有「对外显示为」就只给别人看那一句（原标题和副标题都不带出去）；没有就用卡上的标题
   const title = alias || card.title.trim();
   const subtitle = alias ? undefined : card.subtitle?.trim() || undefined;
-  if (!title || !auditText(title).ok || (subtitle && !auditText(subtitle).ok)) return null;
+  if (!title) return null;
+  if (!auditText(title).ok || (subtitle && !auditText(subtitle).ok)) return undefined;
   const done = !!card.archived && (card.archiveReason === 'auto_todos' || card.archiveReason === 'auto_date');
   if (card.archived && !done) return null; // 手动收存 = 不再展示
   const prog = card.archived ? null : s.getCallingCardProgress(card.id);
@@ -45,6 +48,19 @@ export function buildGoalSnapshot(s: PresenceSource): ProfileGoalSnapshot | null
     done: done || undefined,
     at: new Date().toISOString(),
   };
+}
+
+/** 快照算不出来的原因：missing = 挂的卡不在本机；audit = 文字过不了屏蔽词；null = 没问题（或没挂目标） */
+export function goalSnapshotIssue(s: PresenceSource): 'missing' | 'audit' | null {
+  const pick = s.settings.profileGoal;
+  if (!pick || pick.kind !== 'card' || !pick.cardId) return null;
+  const card = s.callingCards.find(c => c.id === pick.cardId);
+  if (!card) return 'missing';
+  const alias = pick.alias?.trim().slice(0, PROFILE_GOAL_MAX) || '';
+  const title = alias || card.title.trim();
+  const subtitle = alias ? undefined : card.subtitle?.trim() || undefined;
+  if (title && (!auditText(title).ok || (subtitle && !auditText(subtitle).ok))) return 'audit';
+  return null;
 }
 
 /** 进度条用的百分比（0–100；达成算 100；算不出按 0） */

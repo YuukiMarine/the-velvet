@@ -7,6 +7,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { LocalErrorBoundary } from '@/components/ui/LocalErrorBoundary';
 import { motion, AnimatePresence } from 'motion/react';
 import { createPortal } from 'react-dom';
 import { useCloudSocialStore } from '@/store/cloudSocial';
@@ -401,8 +402,8 @@ export function NotificationsPanel({ isOpen, onClose, onOpenCoopAccept }: Props)
               <SectionHeader label="新消息" />
             )}
             {grouped.unread.map(n => (
+              <LocalErrorBoundary key={n.id} fallback={<BrokenNotice />}>
               <NotificationItem
-                key={n.id}
                 n={n}
                 working={working === n.id}
                 coopBondStatus={resolveCoopBondStatus(n, coopBonds)}
@@ -420,13 +421,14 @@ export function NotificationsPanel({ isOpen, onClose, onOpenCoopAccept }: Props)
                 onMarkRead={handleMarkRead}
                 onDelete={handleDelete}
               />
+              </LocalErrorBoundary>
             ))}
             {grouped.read.length > 0 && (
               <SectionHeader label="已读" />
             )}
             {grouped.read.map(n => (
+              <LocalErrorBoundary key={n.id} fallback={<BrokenNotice />}>
               <NotificationItem
-                key={n.id}
                 n={n}
                 working={working === n.id}
                 coopBondStatus={resolveCoopBondStatus(n, coopBonds)}
@@ -444,6 +446,7 @@ export function NotificationsPanel({ isOpen, onClose, onOpenCoopAccept }: Props)
                 onMarkRead={handleMarkRead}
                 onDelete={handleDelete}
               />
+              </LocalErrorBoundary>
             ))}
           </div>
         </motion.div>
@@ -767,6 +770,11 @@ const PACT_TITLES: Record<string, string> = {
   pact_nudge: '催你了',
   pact_ended: '结束了一起进步',
 };
+
+/** 一条通知的载荷坏到渲染都抛错（别人写来的数据）：只换成一行提示，长按多选照样能删 */
+function BrokenNotice() {
+  return <p className="px-3 py-2 text-[11px] text-gray-400 dark:text-gray-500">这条通知的内容有问题，先跳过了（长按可以删）。</p>;
+}
 
 function describePayload(n: NotificationEntry): string {
   const pk = pactNoticeKind(n);

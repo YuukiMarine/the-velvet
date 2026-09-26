@@ -4,7 +4,7 @@
  * 全屏承载：区层头部 / HP·SP·增益状态 / 塔层攀升图 / 节点交互（事件·回响·月匣）/ 下塔结算。
  * 战斗（Shadow/强敌/心魔）通过 onRequestBattle 委托给 BattleArena（BattleModal z-50 叠于本屏之上）。
  */
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore, toLocalDateKey } from '@/store';
@@ -253,6 +253,13 @@ export function TowerScreen({ open, onClose, onDescend, onRequestBattle, onToast
       }
     }
   };
+
+  // 旧存档里的事件池 id 已经不存在（事件池改版）：弹层出不来、节点却一直是 current → 按「已完成」收掉
+  useEffect(() => {
+    if (!eventNode?.eventPoolId || getTowerEvent(eventNode.eventPoolId)) return;
+    void finishEvent();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [eventNode?.id]);
 
   const handleQuizDone = async (allCorrect: boolean) => {
     const reward = quiz?.reward ?? 0;

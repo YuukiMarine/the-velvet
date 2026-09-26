@@ -634,16 +634,20 @@ export const ActivitiesView = () => {
   const summaryJob = useSummaryJobs(st => st.job);
   const summaryRunning = isSummaryJobRunning(summaryJob);
   const summaryHasDraft = !!summaryJob && summaryJob.status === 'done';
-  const resetImages = () => { setPendingImages([]); setLastShot(null); setImgHint(null); };
+  // 草稿代际：保存 / 清空后 +1，还在处理中的图片回来时对不上就丢掉（否则会挂到下一条记录上）
+  const imgGenRef = useRef(0);
+  const resetImages = () => { imgGenRef.current++; setPendingImages([]); setLastShot(null); setImgHint(null); };
   const handleAttachFiles = async (files: FileList | null) => {
     if (!files?.length || imgBusy) return;
     setImgBusy(true);
     setImgHint(null);
+    const gen = imgGenRef.current;
     try {
       const room = MAX_IMAGES_PER_ACTIVITY - pendingImages.length;
       const take = Array.from(files).slice(0, Math.max(0, room));
       const prepared: PreparedImage[] = [];
       for (const f of take) prepared.push(await prepareActivityImage(f));
+      if (gen !== imgGenRef.current) return; // 处理期间已经保存 / 清空过：这批图不属于现在的草稿
       setPendingImages(prev => [...prev, ...prepared].slice(0, MAX_IMAGES_PER_ACTIVITY));
       if (files.length > take.length) setImgHint(`一条记录最多 ${MAX_IMAGES_PER_ACTIVITY} 张，多出的没有加`);
     } catch (e) {
@@ -670,8 +674,9 @@ export const ActivitiesView = () => {
     try {
       const raw = await readAsDataUrl(f);
       const dataUrl = await downscaleDataUrl(raw);
-      // 顺手把这张截图压成配图规格：读出文字后可以一键「附上这张图」
-      void prepareActivityImage(f).then(setLastShot).catch(() => setLastShot(null));
+      // 顺手把这张截图压成配图规格：读出文字后可以一键「附上这张图」（草稿换代就不要了）
+      const gen = imgGenRef.current;
+      void prepareActivityImage(f).then(img => { if (gen === imgGenRef.current) setLastShot(img); }).catch(() => setLastShot(null));
       const items = await extractActivitiesFromImage(dataUrl, settings, settings.attributeNames);
       if (!items.length) {
         setShotHint('这张截图里没读出可入档的事——换一张试试');
@@ -884,6 +889,7 @@ export const ActivitiesView = () => {
 
   const handleSave = async () => {
     if (!description.trim()) return;
+    if (imgBusy) { setImgHint('图片还在处理，稍等一下再保存'); return; }
     setLastSavedDescription(description);
     setLastSavedPoints(manualPoints);
     setLastSavedImportant(importantOnly);

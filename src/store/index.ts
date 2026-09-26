@@ -3,7 +3,7 @@ import { User, Attribute, Activity, Achievement, Skill, Settings, ThemeType, Att
 import { TAROT_BY_ID } from '@/constants/tarot';
 import { summarizeCounsel, type CounselContext, type CounselConfidantBrief, type CounselRecentEvent } from '@/utils/counselAI';
 import { db } from '@/db';
-import { deleteImagesOfActivity } from '@/utils/activityImages';
+import { deleteImagesOfActivity, loadActivityImageIndex, findOrphanActivityImages, pruneOrphanActivityImages } from '@/utils/activityImages';
 import { freshUnreadSummary, reportPushDelivered, markReportPushScheduled } from '@/utils/reportNotice';
 import { useCloudSocialStore } from '@/store/cloudSocial';
 import { pickTogetherReminder } from '@/utils/pactLogic';
@@ -66,6 +66,11 @@ export const ALL_LOCAL_TABLES = [
   // v2.7.0.6 记录配图（本地专属；不上云、不进主备份，"清空数据"必须清）
   'activityImages', 'activityImageData',
 ] as const;
+
+/** importData 的返回：导入后记录已不存在的配图有几张、占多少字节（0 张 = 不用问） */
+export interface ImportDataResult {
+  orphanImages: { count: number; bytes: number };
+}
 
 /**
  * addConfidant 串行锁：防止两次并发调用绕过"22 arcana 唯一 / 在线同伴唯一"检查。
@@ -458,8 +463,19 @@ interface AppState {
    * 与 deleteActivity 互斥两条路径：deleteActivity = "删除并回档"，本方法 = "仅删除条目"。
    */
   deleteActivityRecordOnly: (id: string) => Promise<void>;
-  resetAllData: () => Promise<void>;
-  importData: (jsonData: string) => Promise<void>;
+  /** keepImages：导入主备份时用——配图不在主备份里也不上云，清掉就再也回不来 */
+  resetAllData: (opts?: { keepImages?: boolean }) => Promise<void>;
+  /** 导入成功后顺便数一数「记录已不存在的配图」；> 0 时置 orphanImagesPrompt，App 顶层弹询问窗 */
+  importData: (jsonData: string) => Promise<ImportDataResult>;
+  /**
+   * 导入主备份后发现的「记录已不存在的配图」。只在导入成功且张数 > 0 时被置上，其余时候恒为 null；
+   * 挂在 store 而不是账号页的原因：导入会 resetAllData（currentPage 回首页、user 置空），账号页当场卸载，
+   * 组件里的状态设了也没人看见——「导入成功」那句提示就是这么丢的
+   */
+  orphanImagesPrompt: { count: number; bytes: number } | null;
+  dismissOrphanImagesPrompt: () => void;
+  /** 用户在询问窗里点了「删除」：删之前再核对一遍记录确实不在；返回删掉的张数 */
+  pruneOrphanImages: () => Promise<number>;
   addCustomAchievement: (achievement: Omit<Achievement, 'unlocked' | 'unlockedDate'>) => Promise<void>;
   addCustomSkill: (skill: Omit<Skill, 'unlocked'>) => Promise<void>;
   updateCustomAchievement: (id: string, achievement: Partial<Achievement>) => Promise<void>;
@@ -783,6 +799,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   callingCards: [],
   wishes: [],
   bigDealClear: null,
+  orphanImagesPrompt: null,
   todos: [],
   todoCompletions: [],
   summaries: [],
@@ -2710,10 +2727,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ modalBlocker: value });
   },
 
-  resetAllData: async () => {
+  resetAllData: async (opts) => {
     for (const t of ALL_LOCAL_TABLES) {
+      if (opts?.keepImages && (t === 'activityImages' || t === 'activityImageData')) continue;
       await db.table(t).clear();
     }
+    if (!opts?.keepImages) await loadActivityImageIndex(true); // 表清了，内存里的缩略图索引也要清
     // 黑猫是独立 store：表清了，内存里的人格列表/消息流还留着，不重置会出现
     //「数据已清空但猫还在接着上一句说」的错乱。
     try {
@@ -2794,7 +2813,9 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     await db.transaction(
       'rw',
-      [db.activities, db.attributes, db.todos, db.todoCompletions],
+      // 配图两张表也要在事务范围里：deleteImagesOfActivity 内部再开事务，父事务不含这两张表会报
+      // NotFound（被它的 catch 吞掉）——原图就成了孤儿，还会被算进图片包
+      [db.activities, db.attributes, db.todos, db.todoCompletions, db.activityImages, db.activityImageData],
       async () => {
         // 1. 删除活动本体（这一行写在事务里、与下面回点等步骤保持原子）
         await db.activities.delete(id);
@@ -2918,8 +2939,9 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     // 3. 写入新数据；若失败则从快照恢复
     try {
-      // 清空现有数据
-      await get().resetAllData();
+      // 清空现有数据。配图留着：它们不在主备份里、也不上云，按 activityId 挂回导入后的记录；
+      // 记录不在了的成孤儿（只占空间，图片包里还能导出），比整批清掉稳妥
+      await get().resetAllData({ keepImages: true });
 
       // 导入用户数据
       if (data.user && Array.isArray(data.user)) {
@@ -3158,13 +3180,19 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       // 重新加载应用
       await get().initializeApp();
+      // 导入成功了才数孤儿图；数不出来也不算导入失败
+      let orphanImages: ImportDataResult['orphanImages'] = { count: 0, bytes: 0 };
+      try { orphanImages = await findOrphanActivityImages(); } catch { /* 只是数一数 */ }
+      if (orphanImages.count > 0) set({ orphanImagesPrompt: orphanImages });
+      return { orphanImages };
     } catch (error) {
       console.error('导入数据失败，正在恢复原有数据', error);
 
-      // 4. 恢复快照：先清空（部分写入可能已发生），再按同一份表清单写回
+      // 4. 恢复快照：先清空（部分写入可能已发生），再按同一份表清单写回（配图没动过，跳过）
       try {
-        await get().resetAllData();
+        await get().resetAllData({ keepImages: true });
         for (const t of ALL_LOCAL_TABLES) {
+          if (t === 'activityImages' || t === 'activityImageData') continue;
           const rows = snapshot[t];
           if (rows && rows.length) await db.table(t).bulkAdd(rows as never[]);
         }
@@ -3694,6 +3722,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   clearBigDealClear: () => set({ bigDealClear: null }),
+
+  dismissOrphanImagesPrompt: () => set({ orphanImagesPrompt: null }),
+  pruneOrphanImages: async () => {
+    set({ orphanImagesPrompt: null });
+    return pruneOrphanActivityImages();
+  },
 
   getBigDealProgress: (todoId) => {
     const todo = get().todos.find(t => t.id === todoId);
@@ -4917,6 +4951,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     const { stratum, shadow } = get();
     if (!stratum || stratum.status !== 'climbing') return false;
     if (stratum.abyssRing) return false; // 批5：深渊环无月相加深（每环短命，压力走词缀递增）
+    // 伪神不加深：它的三条血和「指认」是显形时一次定死的，词缀（尤其「顽固」的回血扩容）会破坏终局的口径
+    if (shadow?.isFinalBoss || stratum.level >= 6) return false;
     const wk = weekKeyOf(new Date());
     if (wk === stratum.createdWeekKey || stratum.lastDeepenWeekKey === wk) return false;
     if (shadow) {
@@ -5162,6 +5198,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (bs.finalBossStage === 'finale') return;   // 已在演出中：不要把阶段冲回 shock
     await get().saveBattleState({
       ...bs, finalBossStage: 'finale', finalePhase: 'shock', finaleHits: 0, finaleAllySp: 0,
+      // 正常路线这个值在致命一击落地时就记了；坏档自愈走到这里时补记，终结后才还得回被碾掉的 SP
+      finaleSpBefore: bs.finaleSpBefore ?? bs.sp,
     });
   },
 
@@ -5215,6 +5253,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         ? [...(battleState.defeatedShadowLog ?? []), record]
         : battleState.defeatedShadowLog,
       arsenal: already ? arsenal : { ...arsenal, relics: [...arsenal.relics, relic] },
+      // 演出里 SP 被碾到 1 再加援军：终结后按「致命一击时的 SP + 援军」还回去，不吞玩家原来的存量
+      sp: Math.max(battleState.sp, (battleState.finaleSpBefore ?? 0) + (battleState.finaleAllySp ?? 0)),
       finalBossStage: 'defeated',
       finalBossDefeatedAt: todayKey,
       finalePhase: 'reward',

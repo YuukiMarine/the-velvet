@@ -18,6 +18,7 @@ import {
   maybeSpawnForBonds,
   retreatExpiredShadow,
   dedupeShadows,
+  reconcileActiveShadow,
 } from './coopShadows';
 import { useCloudSocialStore } from '@/store/cloudSocial';
 import { useCloudStore } from '@/store/cloud';
@@ -83,8 +84,11 @@ const loadSocialOnce = async (options: { force?: boolean }): Promise<void> => {
       listCoopBonds(),
       listCoopShadows(),
     ]);
-    // 同一对、同一个月夜重复降临的影只认一只（其余不显示、不撤退、不结算、不弹屏）
-    const coopShadows = dedupeShadows(rawShadows);
+    // 同一对、同一个月夜重复降临的影只认一只（其余不显示、不撤退、不结算、不弹屏）；
+    // 进行中的按出手日志把血量算准：两端缓存互相覆盖时丢掉的那一下从日志补回来，算到归零就补记击败
+    const coopShadows = await Promise.all(dedupeShadows(rawShadows).map(s => (s.status === 'active'
+      ? reconcileActiveShadow(s).catch(err => { console.warn('[velvet-social] reconcile shadow failed', s.id, err); return s; })
+      : Promise.resolve(s))));
     store.setFriendships(friendships);
     store.setNotifications(notifications);
     store.setTodayPrayers(todayPrayers);
@@ -664,7 +668,9 @@ const settleFinishedShadows = async (): Promise<void> => {
     );
     if (!confidant) continue; // 对方同伴卡已归档或不存在 → 不奖励（避免给"不认识的人"塞奖）
 
-    const alreadyClaimed = (confidant.coopMemorials ?? []).some(m => m.shadowId === s.shadowId && m.defeatedAt === (s.defeatedAt?.toISOString() ?? ''));
+    // 去重先看记录 id；老图章没有 recordId，再按「原型 + 击败时间」认
+    const memorials = confidant.coopMemorials ?? [];
+    const alreadyClaimed = memorials.some(m => m.recordId === s.id || (m.shadowId === s.shadowId && m.defeatedAt === (s.defeatedAt?.toISOString() ?? '')));
     if (s.status === 'defeated') {
       if (alreadyClaimed) continue;
       try {
@@ -673,12 +679,10 @@ const settleFinishedShadows = async (): Promise<void> => {
         console.warn('[velvet-social] claimVictoryReward failed', s.id, err);
       }
     } else if (s.status === 'retreated') {
-      // 撤退用单独的 flag（放 lastInteractionDate 类似位置会太挤）——
-      // 这里用"最近 N 秒内已领过"来粗略去重：同一 shadow 只要 Confidant.coopMemorials
-      // 里有同 shadowId 的 "retreat" stamp 就跳过。
-      const retreatClaimed = (confidant.coopMemorials ?? []).some(
-        m => m.shadowId === `retreat-${s.id}`,
-      );
+      // 没识破 = 没参战：不发安慰奖励、不弹结算屏（用户拍板）。以前不看这个，一对好友谁都没管的影
+      // 也每个月夜各弹一次「撤退」、各发一次奖
+      if (!((s.userAId === me) ? s.identifiedByA : s.identifiedByB)) continue;
+      const retreatClaimed = memorials.some(m => m.recordId === s.id || m.shadowId === `retreat-${s.id}`);
       if (retreatClaimed) continue;
       try {
         await claimRetreatReward(s, confidant);
@@ -693,27 +697,54 @@ async function claimVictoryReward(
   shadow: CoopShadow,
   confidant: import('@/types').Confidant,
 ): Promise<void> {
-  const { REWARD_ATTR_CAP, REWARD_INTIMACY_CAP, REWARD_SP_VICTORY, REWARD_SP_FINISHER } =
+  const { REWARD_ATTR_CAP, REWARD_INTIMACY_CAP, REWARD_SP_VICTORY, REWARD_SP_FINISHER, listAttacksFor } =
     await import('./coopShadows');
   const { archetypeById } = await import('@/constants/coopShadowPool');
   const me = getUserId();
   if (!me) return;
   const appStore = useAppStore.getState();
 
-  // 属性奖励：弱点属性 +min(REWARD_ATTR_CAP, base)。base 先恒定 5（= cap）
-  const baseAttr = 5;
-  const attrPoints = Math.min(REWARD_ATTR_CAP, baseAttr);
-
-  // 我是否终结者：读 memorial_stamp 上的记录不够 —— 改用 coop_attacks 最后一条判断
-  // 这里偷懒：只要 shadow.defeatedAt 存在且我是 resonance_by（最后出手的印记留在我手上）
-  // 就算我终结。阶段 2 可以改成读 attacks 表判定。
-  const isFinisher = shadow.resonanceBy === me;
-  const spGain = REWARD_SP_VICTORY + (isFinisher ? REWARD_SP_FINISHER : 0);
-
   const archetype = archetypeById(shadow.shadowId);
   const shadowName = shadow.nameOverride || archetype?.names?.[0] || '羁绊之影';
 
-  // 1) 加属性（走 addActivity 让记录进活动流）—— method 用 'battle'，走战斗向奖励路径
+  // 0) 先算贡献和终结者：拉一次 coop_attacks（-created 排序，第一条是最后一击）
+  let myDamage = 0;
+  let totalDamage = shadow.hpMax;
+  let isFinisher = shadow.resonanceBy === me; // 拉不到日志时退回旧口径（总攻击不写 resonance_by，会认错）
+  try {
+    const attacks = await listAttacksFor(shadow.id);
+    const sum = attacks.reduce((acc, a) => acc + (a.damageFinal ?? 0), 0);
+    myDamage = attacks.filter(a => a.attackerId === me).reduce((acc, a) => acc + (a.damageFinal ?? 0), 0);
+    totalDamage = sum > 0 ? sum : shadow.hpMax;
+    if (attacks[0]) isFinisher = attacks[0].attackerId === me;
+  } catch (err) {
+    console.warn('[velvet-social] fetch attacks for memorial failed', err);
+    myDamage = Math.round(shadow.hpMax / 2); // 兜底：至少参与了 → 给一个保守的 50%
+  }
+
+  // 1) 先盖章（= 领奖标记），再发奖。反过来的话图章没写成会在下次同步再发一遍奖
+  const stamp: import('@/types').CoopMemorialStamp = {
+    ...(shadow.memorialStamp ?? {
+      shadowId: shadow.shadowId,
+      shadowName,
+      weaknessAttribute: shadow.weaknessAttribute,
+      defeatedAt: shadow.defeatedAt?.toISOString() ?? new Date().toISOString(),
+      winners: [
+        { userId: shadow.userAId, nickname: '' },
+        { userId: shadow.userBId, nickname: '' },
+      ],
+    }),
+    recordId: shadow.id,
+    totalDamage,
+    myDamage,
+  };
+  // 写前重读最新 coopMemorials：拿参数里的旧对象追加会把并发新增的 stamp 覆盖丢（见 settleFinishedShadows 注释）
+  const fresh = useAppStore.getState().confidants.find(c => c.id === confidant.id);
+  const current = fresh?.coopMemorials ?? confidant.coopMemorials ?? [];
+  await appStore.updateConfidant(confidant.id, { coopMemorials: [...current, stamp] }); // 失败就抛：下次同步重来
+
+  // 2) 属性：弱点属性 +min(REWARD_ATTR_CAP, base)。base 先恒定 5（= cap）；走 addActivity 让记录进活动流
+  const attrPoints = Math.min(REWARD_ATTR_CAP, 5);
   try {
     await appStore.addActivity(
       `与 @${confidant.name} 一起击败了 ${shadowName}`,
@@ -725,7 +756,7 @@ async function claimVictoryReward(
     console.warn('[velvet-social] coop victory addActivity failed', err);
   }
 
-  // 2) 亲密度 +4（带 eventId 幂等 —— 以 shadow.id 为锚）
+  // 3) 亲密度 +4（带 eventId 幂等 —— 以 shadow.id 为锚）
   try {
     await appStore.bumpConfidantIntimacy(
       confidant.id,
@@ -738,8 +769,9 @@ async function claimVictoryReward(
     console.warn('[velvet-social] coop victory intimacy bump failed', err);
   }
 
-  // 3) SP
-  const battleState = appStore.battleState;
+  // 4) SP。battleState 要读最新的：上面 addActivity 已经按记录发过 SP，拿函数开头的快照写回会把那份吞掉
+  const spGain = REWARD_SP_VICTORY + (isFinisher ? REWARD_SP_FINISHER : 0);
+  const battleState = useAppStore.getState().battleState;
   if (battleState) {
     try {
       await appStore.saveBattleState({
@@ -751,51 +783,6 @@ async function claimVictoryReward(
       console.warn('[velvet-social] coop victory SP grant failed', err);
     }
   }
-
-  // 4) Memorial stamp（追加到 Confidant.coopMemorials）
-  // 拉一次 coop_attacks 聚合本地侧的贡献值 —— 避免硬编码 myDamage = hpMax
-  let myDamage = 0;
-  let totalDamage = shadow.hpMax;
-  try {
-    const { listAttacksFor } = await import('./coopShadows');
-    const attacks = await listAttacksFor(shadow.id);
-    const sum = attacks.reduce((acc, a) => acc + (a.damageFinal ?? 0), 0);
-    myDamage = attacks
-      .filter(a => a.attackerId === me)
-      .reduce((acc, a) => acc + (a.damageFinal ?? 0), 0);
-    // 若总伤 > hpMax（超伤最后一击等），以总和为准；若拉不到就用 hpMax 兜底
-    totalDamage = sum > 0 ? sum : shadow.hpMax;
-  } catch (err) {
-    console.warn('[velvet-social] fetch attacks for memorial failed', err);
-    // 兜底：我至少有参与 → 给一个保守的 50%
-    myDamage = Math.round(shadow.hpMax / 2);
-  }
-
-  const stamp: import('@/types').CoopMemorialStamp = {
-    ...(shadow.memorialStamp ?? {
-      shadowId: shadow.shadowId,
-      shadowName,
-      weaknessAttribute: shadow.weaknessAttribute,
-      defeatedAt: shadow.defeatedAt?.toISOString() ?? new Date().toISOString(),
-      winners: [
-        { userId: shadow.userAId, nickname: '' },
-        { userId: shadow.userBId, nickname: '' },
-      ],
-    }),
-    totalDamage,
-    myDamage,
-  };
-  try {
-    // 写前重读最新 coopMemorials：本函数前面几步（加属性/亲密度）都会写 store，
-    // 拿参数里的旧对象追加会把并发新增的 stamp 覆盖丢（见 settleFinishedShadows 注释）
-    const fresh = useAppStore.getState().confidants.find(c => c.id === confidant.id);
-    const current = fresh?.coopMemorials ?? confidant.coopMemorials ?? [];
-    await appStore.updateConfidant(confidant.id, {
-      coopMemorials: [...current, stamp],
-    });
-  } catch (err) {
-    console.warn('[velvet-social] coop victory memorial persist failed', err);
-  }
 }
 
 async function claimRetreatReward(
@@ -804,6 +791,19 @@ async function claimRetreatReward(
 ): Promise<void> {
   const { REWARD_SP_RETREAT } = await import('./coopShadows');
   const appStore = useAppStore.getState();
+
+  // 0) 先盖章（领奖标记；不走展示层），再发奖
+  const retreatStamp: import('@/types').CoopMemorialStamp = {
+    shadowId: `retreat-${shadow.id}`,
+    recordId: shadow.id,
+    shadowName: shadow.nameOverride || '（撤退）',
+    weaknessAttribute: shadow.weaknessAttribute,
+    defeatedAt: new Date().toISOString(),
+    winners: [],
+  };
+  const fresh = useAppStore.getState().confidants.find(c => c.id === confidant.id);
+  const current = fresh?.coopMemorials ?? confidant.coopMemorials ?? [];
+  await appStore.updateConfidant(confidant.id, { coopMemorials: [...current, retreatStamp] });
 
   // 1) 亲密度 +1（安慰）
   try {
@@ -818,8 +818,8 @@ async function claimRetreatReward(
     console.warn('[velvet-social] coop retreat intimacy bump failed', err);
   }
 
-  // 2) SP
-  const battleState = appStore.battleState;
+  // 2) SP（读最新的 battleState）
+  const battleState = useAppStore.getState().battleState;
   if (battleState) {
     try {
       await appStore.saveBattleState({
@@ -830,25 +830,6 @@ async function claimRetreatReward(
     } catch (err) {
       console.warn('[velvet-social] coop retreat SP grant failed', err);
     }
-  }
-
-  // 3) 记 retreat stamp 去重（不走展示层）
-  const retreatStamp: import('@/types').CoopMemorialStamp = {
-    shadowId: `retreat-${shadow.id}`,
-    shadowName: shadow.nameOverride || '（撤退）',
-    weaknessAttribute: shadow.weaknessAttribute,
-    defeatedAt: new Date().toISOString(),
-    winners: [],
-  };
-  try {
-    // 写前重读最新 coopMemorials（同 claimVictoryReward：防旧对象覆盖并发新增的 stamp）
-    const fresh = useAppStore.getState().confidants.find(c => c.id === confidant.id);
-    const current = fresh?.coopMemorials ?? confidant.coopMemorials ?? [];
-    await appStore.updateConfidant(confidant.id, {
-      coopMemorials: [...current, retreatStamp],
-    });
-  } catch (err) {
-    console.warn('[velvet-social] coop retreat stamp persist failed', err);
   }
 }
 

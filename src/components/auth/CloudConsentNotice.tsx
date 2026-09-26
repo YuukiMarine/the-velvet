@@ -40,8 +40,8 @@ const CLAUSES: { icon: string; title: string; body: string }[] = [
   },
   {
     icon: '🔑',
-    title: 'AI 的 API Key 默认会跟着走',
-    body: '为了换设备不用重填，Key 默认随设置同步。介意的话在「数据类目选择」里关掉「AI 模型 API」，它就只留在本机。',
+    title: 'AI 的 API Key 默认只留在本机',
+    body: 'Key 默认不上传。想换设备不用重填的话，在「数据类目选择」里打开「AI 模型 API」，它才会随设置同步。',
   },
   {
     icon: '🧺',

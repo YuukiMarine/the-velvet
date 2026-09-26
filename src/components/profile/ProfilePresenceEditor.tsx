@@ -12,7 +12,7 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 import { AnimatePresence, motion } from 'motion/react';
 import { useAppStore } from '@/store';
 import { STATUS_PRESETS, liveStatus, statusAgeText } from '@/constants/profileStatus';
-import { PROFILE_GOAL_MAX, buildGoalSnapshot, goalPercent } from '@/utils/profilePresence';
+import { PROFILE_GOAL_MAX, buildGoalSnapshot, goalPercent, goalSnapshotIssue } from '@/utils/profilePresence';
 import { auditText } from '@/utils/textAudit';
 
 type Panel = 'status' | 'goal' | null;
@@ -86,9 +86,11 @@ export function PresenceGoalBar() {
     );
   }
   if (!goal) {
+    // 两种算不出来：卡不在本机 / 文字过不了屏蔽词（后者不静默下架，云端留着上次那句，这里提示改）
+    const issue = goalSnapshotIssue(useAppStore.getState());
     return (
-      <button type="button" onClick={open} className="mt-3 w-full rounded-xl px-2 py-1.5 text-left text-[11px] text-gray-500 dark:text-gray-400 hover:bg-white/30 dark:hover:bg-white/5">
-        挂着的宣告卡不在这台设备上 · 点这里重新挑
+      <button type="button" onClick={open} className={`mt-3 w-full rounded-xl px-2 py-1.5 text-left text-[11px] hover:bg-white/30 dark:hover:bg-white/5 ${issue === 'audit' ? 'font-semibold text-rose-500' : 'text-gray-500 dark:text-gray-400'}`}>
+        {issue === 'audit' ? '目标的文字需要稍微调整下措辞 · 点这里改' : '挂着的宣告卡不在这台设备上 · 点这里重新挑'}
       </button>
     );
   }
@@ -152,7 +154,7 @@ export function PresencePanels() {
     // 别人看到的是哪几句，就查哪几句
     const shown = a ? [a] : [selected.title, selected.subtitle ?? ''];
     const bad = shown.map(auditText).find(r => !r.ok);
-    if (bad && !bad.ok) { setError(a ? bad.reason : `这张卡的文字${bad.reason.startsWith('不能') ? '里' : ''}${bad.reason}，换张卡或写个对外的说法`); return; }
+    if (bad && !bad.ok) { setError(a ? bad.reason : `${bad.reason}（这是宣告卡上的文字——可以在下面写一个对外的说法）`); return; }
     await updateSettings({ profileGoal: { kind: 'card', cardId: selected.id, ...(a ? { alias: a } : {}) } });
     setPanel(null);
     pushPresence();

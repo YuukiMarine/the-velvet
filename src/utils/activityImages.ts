@@ -162,6 +162,36 @@ export async function deleteImagesOfActivity(activityId: string): Promise<void> 
   }
 }
 
+/**
+ * 记录已经不存在的配图（导入了较旧的主备份之后会有：图按 activityId 挂着，记录却不在了）。
+ * 只数不删；给导入后的询问窗用。
+ */
+export async function findOrphanActivityImages(): Promise<{ count: number; bytes: number }> {
+  const acts = new Set((await db.activities.toArray()).map(a => a.id));
+  const rows = await db.activityImages.toArray();
+  const orphans = rows.filter(r => !acts.has(r.activityId));
+  return { count: orphans.length, bytes: orphans.reduce((s, r) => s + (r.bytes || 0), 0) };
+}
+
+/**
+ * 删掉记录已不存在的配图。用户在询问窗里点了「删除」才会调。
+ * 事务里再核对一遍：只删此刻记录确实不在的那些（数完到点删之间要是又导入了记录，宁可少删）。返回删掉的张数。
+ */
+export async function pruneOrphanActivityImages(): Promise<number> {
+  let deleted = 0;
+  await db.transaction('rw', db.activityImages, db.activityImageData, db.activities, async () => {
+    const acts = new Set((await db.activities.toArray()).map(a => a.id));
+    const rows = await db.activityImages.toArray();
+    const ids = rows.filter(r => !acts.has(r.activityId)).map(r => r.id);
+    if (!ids.length) return;
+    await db.activityImages.bulkDelete(ids);
+    await db.activityImageData.bulkDelete(ids);
+    deleted = ids.length;
+  });
+  if (deleted) await loadActivityImageIndex(true);
+  return deleted;
+}
+
 /** 原图（灯箱用） */
 export async function getActivityImageData(id: string): Promise<string | undefined> {
   const row = await db.activityImageData.get(id);

@@ -169,7 +169,20 @@ export const BattleArena = () => {
   useEffect(() => {
     // Lv6 终局：三条血归零后 status 也是 'victory'，但结算归 FinalBossFinale 管，不弹胜利屏
     if (battleState?.finalBossStage === 'finale') return;
-    if (battleState?.status === 'victory' && !showBattle && !showVictory) {
+    if (!battleState) return;
+    const sh = useAppStore.getState().shadow;
+    // 旧版本留下的坏档：伪神已破（status=victory）但演出阶段没写上 → 补上阶段，交给终局演出，不弹胜利屏
+    if (battleState.status === 'victory' && sh?.isFinalBoss && battleState.finalBossStage === 'revealed') {
+      void useAppStore.getState().beginFinalBossFinale();
+      return;
+    }
+    // 更早的坏档：伪神被当普通心魔领过奖（本体已清、档案里有 Lv6 记录）、阶段停在 revealed → 同样补演终局
+    if (battleState.status === 'idle' && !sh && battleState.finalBossStage === 'revealed'
+      && (battleState.defeatedShadowLog ?? []).some(r => (r.level ?? 0) >= 6)) {
+      void useAppStore.getState().beginFinalBossFinale();
+      return;
+    }
+    if (battleState.status === 'victory' && !showBattle && !showVictory) {
       setShowVictory(true);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -191,15 +204,17 @@ export const BattleArena = () => {
    * 先跑进回廊的属于抢跑，塔顶会把他叫回去一次。环数不会丢——enterAbyss 从
    * abyssHighestRing 续号。
    */
-  const finalBossDue = !!stratumCleared && (stratum?.level ?? 0) >= 5 && !finalStage && !stratum?.revisit;
+  const hasAiKey = !!getAIConfig(settings);
+  // 没有 AI Key 的人显不出伪神：已经在深渊回廊里的存量玩家不能被这道闸叫回塔顶（那会让他们永远进不了下一环）
+  const abyssWithoutKey = !!stratum?.abyssRing && !hasAiKey;
+  const finalBossDue = !!stratumCleared && (stratum?.level ?? 0) >= 5 && !finalStage && !stratum?.revisit && !abyssWithoutKey;
   // ── R19「回头看看」──
   const inRevisit = !!stratum?.revisit;
   const maxCleared = useAppStore(s => s.highestClearedStratum)();
   /** 塔里没有正在进行的攀登（当前层已通关 / 还没显形）时才给「回头看看」 */
   const canRevisit = maxCleared >= 1 && !inRevisit && (stratumCleared || !stratum);
-  const hasAiKey = !!getAIConfig(settings);
-  // 深渊回廊：伪神倒下之后才开
-  const towerTopReached = !!stratumCleared && (stratum?.level ?? 0) >= 5 && finalDefeated && !stratum?.revisit;
+  // 深渊回廊：伪神倒下之后才开（无 Key 又已在回廊里的照常往下）
+  const towerTopReached = !!stratumCleared && (stratum?.level ?? 0) >= 5 && (finalDefeated || abyssWithoutKey) && !stratum?.revisit;
 
   const showSpToast = (text: string) => {
     setSpToast(text);
@@ -209,7 +224,9 @@ export const BattleArena = () => {
   const handleBattleClosed = () => {
     setShowBattle(false);
     setActiveEncounter(null);
-    if (useAppStore.getState().battleState?.finalBossStage === 'finale') return; // 交给终局演出
+    const st = useAppStore.getState();
+    if (st.battleState?.finalBossStage === 'finale') return; // 交给终局演出
+    if (st.battleState?.status === 'victory' && st.shadow?.isFinalBoss) { void st.beginFinalBossFinale(); return; } // 伪神不弹胜利屏
     if (battleState?.status === 'victory') {
       setShowVictory(true);
     }
@@ -331,7 +348,8 @@ export const BattleArena = () => {
   // Lv6 终局演出的开关要「闩住」：defeatFinalBoss 会把 finalBossStage 推到 'defeated'，
   // 若直接拿 inFinale 当 isOpen，掉落屏会在结算落库的同一帧被卸掉——玩家根本看不见奖励。
   const [finaleOpen, setFinaleOpen] = useState(false);
-  useEffect(() => { if (inFinale) setFinaleOpen(true); }, [inFinale]);
+  // 演出阶段现在在致命一击落地时就写上了：战斗窗还开着（死亡叙事没播完）时先不开，关窗后再接管
+  useEffect(() => { if (inFinale && !showBattle) setFinaleOpen(true); }, [inFinale, showBattle]);
 
   // 批4 §6.6 黑猫败因信：败退当晚后台写信（AI/模板兜底）→ 下次打开黑猫时投递
   useEffect(() => {

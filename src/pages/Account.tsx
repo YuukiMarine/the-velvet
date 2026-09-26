@@ -161,6 +161,8 @@ export const Account = () => {
         setExportMessage(`这是图片包：已导入 ${r.imported} 张${r.orphaned ? `，${r.orphaned} 张找不到所属记录` : ''}`);
         return;
       }
+      // 导入成功后 resetAllData 会把页面切回首页、本组件卸载：后面这两句其实没人看得见，
+      // 「记录已不存在的配图」的询问窗因此挂在 App 顶层（OrphanImagesPrompt）
       await importData(importJson);
       setImportJson('');
       setExportMessage('导入成功！数据已恢复。');

@@ -27,6 +27,7 @@ export function ringMultiplier(attacker: AttributeId | null, defender: Attribute
 export const PLAYER_BASE_HP = 40;              // §9.1（旧默认 8 → 40；跑测后 30→40）
 export const DEFEND_DAMAGE_MULT = 0.5;
 export const DEFEND_SP_REGEN = 5;              // 跑测微调 3→5：长战 SP 经济的主要回路
+export const DEFEND_SP_CAP_PER_BATTLE = 30;    // 防御回气单场上限：否则拿 Lv1 杂影拖回合就能无限刷 SP
 export const GUARD_COUNTER_ADD = 0.5;          // 格挡反击：完全吸收后下回合首击 +50%（加算段）
 export const INSIGHT_SP_COST = 2;              // 洞察：免回合，每回合 1 次
 export const ATTACK_BOOST_FLAT = 6;            // 攻击增益平添（旧 +15 → +6）

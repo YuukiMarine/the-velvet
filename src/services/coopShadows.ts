@@ -159,6 +159,48 @@ export const listAttacksFor = async (shadowId: string): Promise<CoopAttack[]> =>
   return records.map(mapCoopAttack);
 };
 
+/**
+ * 血量的事实源是出手日志，不是 hp_current。
+ * 两端各自拿缓存里的 hp_current 减完整值写回，谁后写谁覆盖：对方那一下就被抹掉、血条还会回涨。
+ * 日志是只追加的，按它求和永远一致——写回和读取都从这里算。
+ */
+export const hpFromAttackLog = (hpMax: number, attacks: CoopAttack[]): number =>
+  Math.max(0, hpMax - attacks.reduce((sum, a) => sum + Math.max(0, a.damageFinal || 0), 0));
+
+const fetchFreshShadow = async (id: string): Promise<CoopShadow> =>
+  mapCoopShadow(await pb!.collection('coop_shadows').getOne(id, { requestKey: null }));
+
+/** 出手前的门槛：以服务器上的最新记录为准，不信本机缓存（对方可能已经击杀，或它已经撤退） */
+function assertStillBattling(fresh: CoopShadow, now: Date): void {
+  if (fresh.status === 'defeated') throw new Error('这只羁绊之影已经被封印了，刷新看看结算');
+  if (fresh.status === 'retreated' || now.getTime() >= fresh.expiresAt.getTime()) throw new Error('这只羁绊之影已经撤退了');
+  if (fresh.status !== 'active') throw new Error('这只羁绊之影已经不在战斗中');
+}
+
+/**
+ * 读侧纠偏：进行中的影按出手日志重算血量。
+ * 算出来还有血 → 只改本地显示；算到归零而记录还是 active（对方击杀的那一下被本机的写回抹掉了）→
+ * 再取一次最新记录，仍是 active 就补记击败，终结者 = 日志里最后出手的人。
+ */
+export const reconcileActiveShadow = async (shadow: CoopShadow): Promise<CoopShadow> => {
+  if (!pb || !pb.authStore.isValid || shadow.status !== 'active') return shadow;
+  const attacks = await listAttacksFor(shadow.id);
+  const hp = hpFromAttackLog(shadow.hpMax, attacks);
+  if (hp === shadow.hpCurrent) return shadow;
+  if (hp > 0) return { ...shadow, hpCurrent: hp };
+  const fresh = await fetchFreshShadow(shadow.id);
+  if (fresh.status !== 'active') return fresh;
+  const now = new Date();
+  const finisher = attacks[0]?.attackerId ?? fresh.userAId; // -created 排序：第一条最新
+  const updated = await pb.collection('coop_shadows').update(fresh.id, {
+    hp_current: 0,
+    status: 'defeated',
+    defeated_at: now.toISOString(),
+    memorial_stamp: buildMemorialStamp(fresh, now, finisher),
+  });
+  return mapCoopShadow(updated);
+};
+
 // ── 降临 ───────────────────────────────────────────────────
 
 /**
@@ -473,10 +515,13 @@ export const attackCoopShadow = async (input: AttackInput): Promise<AttackResult
   const me = getUserId();
   if (!me) throw new Error('用户信息缺失');
 
-  const { shadow, damageRaw, skillAttribute, skillKind } = input;
-  if (shadow.status !== 'active') throw new Error('这只羁绊之影已经不在战斗中');
-
+  const { damageRaw, skillAttribute, skillKind } = input;
   const now = new Date();
+  // 以服务器上的最新记录为准：本机缓存可能还停在对方出手之前，甚至它已经被击败 / 撤退
+  const shadow = await fetchFreshShadow(input.shadow.id);
+  assertStillBattling(shadow, now);
+  // 血量按日志算（见 hpFromAttackLog）：先把日志拉下来，写回时用「日志总伤害 + 这一下」
+  const priorLog = await listAttacksFor(shadow.id);
   const day = toLocalDateKey(now);
   const isUtility = isUtilityKind(skillKind);
   const isDamaging = isDamagingKind(skillKind);
@@ -545,7 +590,7 @@ export const attackCoopShadow = async (input: AttackInput): Promise<AttackResult
   }
 
   // 4) 更新 coop_shadows
-  const hpAfter = Math.max(0, shadow.hpCurrent - damageFinal);
+  const hpAfter = Math.max(0, hpFromAttackLog(shadow.hpMax, priorLog) - damageFinal);
   const defeatedNow = isDamaging && hpAfter === 0;
   const comboAfter = weaknessBonus ? shadow.comboCount + 1 : shadow.comboCount;
   const patch: Record<string, unknown> = {
@@ -564,7 +609,14 @@ export const attackCoopShadow = async (input: AttackInput): Promise<AttackResult
     // 写入纪念图章（双方 loadSocial 时都能读到）
     patch.memorial_stamp = buildMemorialStamp(shadow, now, me);
   }
-  const updatedRec = await pb.collection('coop_shadows').update(shadow.id, patch);
+  let updatedRec: RecordModel;
+  try {
+    updatedRec = await pb.collection('coop_shadows').update(shadow.id, patch);
+  } catch (err) {
+    // 两步写不是原子的：第二步没成，把第一步的出手记录撤掉，否则今天的次数被占了却没扣血
+    try { await pb.collection('coop_attacks').delete(attackRec.id); } catch { /* 撤不掉就留着，日志求和仍是对的 */ }
+    throw err;
+  }
   const updatedShadow = mapCoopShadow(updatedRec);
 
   // 4) 通知对方
@@ -611,6 +663,9 @@ export const retreatExpiredShadow = async (shadow: CoopShadow): Promise<CoopShad
   if (shadow.status !== 'active') return shadow;
   const now = new Date();
   if (now.getTime() < shadow.expiresAt.getTime()) return shadow;
+  // 写之前再取一次：对方可能刚在最后一刻击杀了它，盲写会把 defeated 翻成 retreated
+  const fresh = await fetchFreshShadow(shadow.id);
+  if (fresh.status !== 'active') return fresh;
   const updated = await pb.collection('coop_shadows').update(shadow.id, {
     status: 'retreated',
   });
@@ -652,16 +707,18 @@ export const allOutAttack = async (input: AllOutAttackInput): Promise<AllOutAtta
   const me = getUserId();
   if (!me) throw new Error('用户信息缺失');
 
-  const { shadow, myTotalLevels } = input;
-  if (shadow.status !== 'active') throw new Error('这只羁绊之影已经不在战斗中');
+  const { myTotalLevels } = input;
+  const now = new Date();
+  const shadow = await fetchFreshShadow(input.shadow.id);
+  assertStillBattling(shadow, now);
   if (shadow.comboCount < 5) throw new Error('COMBO 未到 5，还不能释放总攻击');
+  const priorLog = await listAttacksFor(shadow.id);
 
   const iAmA = shadow.userAId === me;
   const alreadyUsed = iAmA ? shadow.allOutByA : shadow.allOutByB;
   if (alreadyUsed) throw new Error('你已经对这只羁绊之影释放过总攻击了');
 
   const damage = Math.max(1, Math.floor(myTotalLevels));
-  const now = new Date();
 
   // 1) 写 coop_attacks —— day='allout' 是 magic value，绕开每日唯一索引
   let attackRec: RecordModel;
@@ -684,8 +741,8 @@ export const allOutAttack = async (input: AllOutAttackInput): Promise<AllOutAtta
     throw err;
   }
 
-  // 2) 更新 coop_shadows
-  const hpAfter = Math.max(0, shadow.hpCurrent - damage);
+  // 2) 更新 coop_shadows（血量按日志算）
+  const hpAfter = Math.max(0, hpFromAttackLog(shadow.hpMax, priorLog) - damage);
   const defeatedNow = hpAfter === 0;
   const patch: Record<string, unknown> = {
     hp_current: hpAfter,
@@ -697,7 +754,14 @@ export const allOutAttack = async (input: AllOutAttackInput): Promise<AllOutAtta
     patch.defeated_at = now.toISOString();
     patch.memorial_stamp = buildMemorialStamp(shadow, now, me);
   }
-  const updatedRec = await pb.collection('coop_shadows').update(shadow.id, patch);
+  let updatedRec: RecordModel;
+  try {
+    updatedRec = await pb.collection('coop_shadows').update(shadow.id, patch);
+  } catch (err) {
+    // 第二步没成就撤掉第一步：否则 'allout' 那条占着，all_out_by 却没翻，按钮常亮、每点一次都报冲突
+    try { await pb.collection('coop_attacks').delete(attackRec.id); } catch { /* 同上 */ }
+    throw err;
+  }
   const updatedShadow = mapCoopShadow(updatedRec);
 
   // 3) 通知对方

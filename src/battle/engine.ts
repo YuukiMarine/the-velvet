@@ -21,7 +21,7 @@ import type { AffixKind, AttributeId, ChainKey, PersonaSkill, StatusEffect, Stat
 import { EngineStatus, applyStatus, findStatus, removeStatus, tickTurnStart } from './statusEngine';
 import {
   ringMultiplier, computeDamage, healAmount, turnPressureMult,
-  DEFEND_DAMAGE_MULT, DEFEND_SP_REGEN, GUARD_COUNTER_ADD, INSIGHT_SP_COST,
+  DEFEND_DAMAGE_MULT, DEFEND_SP_REGEN, DEFEND_SP_CAP_PER_BATTLE, GUARD_COUNTER_ADD, INSIGHT_SP_COST,
   ATTACK_BOOST_FLAT, ATTACK_BOOST_TURNS, BUFF_ADD, VULNERABLE_ADD,
   CHARGE_MULT, CRIT_MULT, WEAKNESS_MULT, ONE_MORE_CD_TURNS,
   SKILL_CRIT_BY_LEVEL, GUTS_MASK_CRIT, KNOWLEDGE_MASK_WEAK_FLAT, DEX_MASK_EXTRA_EVERY,
@@ -204,6 +204,7 @@ export class BattleEngine {
   private attackBoostTurns = 0;
   private guardCounterReady = false;
   private defending = false;
+  private defendSpGained = 0;        // 本场防御回气累计（有上限）
   private oneMoreCd = 0;
   private insightUsedThisTurn = false;
   private charmFreeUsed = false;
@@ -1356,7 +1357,9 @@ export class BattleEngine {
 
     // 防御回气（铁壁徽记：格挡回合额外回 HP）
     if (this.defending) {
-      this.sp += DEFEND_SP_REGEN;
+      const regen = Math.max(0, Math.min(DEFEND_SP_REGEN, DEFEND_SP_CAP_PER_BATTLE - this.defendSpGained));
+      this.sp += regen;
+      this.defendSpGained += regen;
       if (this.relicMods.blockHeal > 0 && this.playerHp < this.playerMaxHp && this.playerHp > 0) {
         const healed = Math.min(this.playerMaxHp - this.playerHp, this.relicMods.blockHeal);
         this.playerHp += healed;

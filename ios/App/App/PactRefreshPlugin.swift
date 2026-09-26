@@ -166,10 +166,12 @@ enum PactRefresh {
     static func notice(for rec: [String: Any]) -> Notice? {
         guard let p = rec["payload"] as? [String: Any], let kind = p["kind"] as? String else { return nil }
         let from = (rec["expand"] as? [String: Any])?["from"] as? [String: Any]
-        let nick = (from?["nickname"] as? String) ?? ""
-        let uname = (from?["username"] as? String) ?? ""
+        // 对方写来的昵称 / 标题不限长，推到锁屏前截一下（String.prefix 按字素截，emoji 不会劈开）
+        let clip: (String, Int) -> String = { s, max in s.count > max ? String(s.prefix(max)) + "…" : s }
+        let nick = clip((from?["nickname"] as? String) ?? "", 12)
+        let uname = clip((from?["username"] as? String) ?? "", 12)
         let who = !nick.isEmpty ? nick : (!uname.isEmpty ? uname : "好友")
-        let t = ((p["title"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let t = clip(((p["title"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines), 30)
         let quoted = t.isEmpty ? "约好的事" : "「\(t)」"
         switch kind {
         case "pact_nudge":
