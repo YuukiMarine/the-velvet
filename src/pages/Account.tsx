@@ -319,6 +319,9 @@ export const Account = () => {
           onClick={async () => {
             console.log('[velvet-sync] push clicked');
             try {
+              // 先对一次账：云端某张表比本机多，直接推会把那些行抹掉——交给「条目差异」窗让用户选
+              const diff = await computeSyncDiff().catch(() => null);
+              if (diff?.cloudExceedsLocal) { useCloudStore.getState().setDiffWarning(diff); return; }
               await pushAll();
               console.log('[velvet-sync] push done');
             } catch (err) {

@@ -154,6 +154,8 @@ function App() {
   const primedRef = useRef(false);
   // 记录上次打开时的日期，用于检测隔天回来
   const lastDateRef = useRef(toLocalDateKey());
+  /** 上次续期登录的时间：回前台每 6 小时最多续一次（以前只在冷启动续，App 常驻后台一两周就过期、同步悄悄空转） */
+  const lastAuthRefreshRef = useRef(Date.now());
   // Android 返回键：双击退出提示
   const [showBackToast, setShowBackToast] = useState(false);
   const lastBackPressRef = useRef(0);
@@ -288,8 +290,9 @@ function App() {
     client
       .collection('users')
       .authRefresh()
-      .catch(() => {
-        client.authStore.clear();
+      .catch((err: { status?: number }) => {
+        // 只有服务端明确说 token 无效（401 / 403）才清；离线（status 0）、服务端抖（5xx）不该把人登出
+        if (err?.status === 401 || err?.status === 403) client.authStore.clear();
       });
   }, []);
 
@@ -344,6 +347,13 @@ function App() {
 
     const handleVisibilityChange = async () => {
       if (document.visibilityState !== 'visible') return;
+      const client = pbClient;
+      if (client?.authStore.isValid && Date.now() - lastAuthRefreshRef.current > 6 * 3600_000) {
+        lastAuthRefreshRef.current = Date.now();
+        client.collection('users').authRefresh().catch((err: { status?: number }) => {
+          if (err?.status === 401 || err?.status === 403) client.authStore.clear();
+        });
+      }
       // 切回前台顺手刷新 social（好友 + 通知）；30 秒节流在 loadSocial 内部已做
       if (useCloudStore.getState().cloudUser) {
         import('@/services/social').then(({ loadSocial }) => {

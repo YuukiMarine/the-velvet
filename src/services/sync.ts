@@ -262,6 +262,13 @@ type SyncKey = (typeof SYNC_TABLES)[number];
 
 const LAST_SYNC_KEY = 'velvet:lastSyncAt';
 const LAST_AUTO_SYNC_KEY = 'velvet:lastAutoSyncAt';
+/** 本机这份数据最近是和哪个账号同步的：换账号登录时用来拦「把上一个人的数据推进新账号」 */
+const SYNC_OWNER_KEY = 'velvet:syncOwner';
+/** 后台自动同步失败的退避记录：{ at, n }，第 n 次失败后等 30 分钟 × 2^(n-1)（封顶 24 小时）再试 */
+const AUTO_SYNC_FAIL_KEY = 'velvet:autoSyncFail';
+const AUTO_SYNC_BACKOFF_BASE_MS = 30 * 60 * 1000;
+/** PB 单个 JSON 字段的默认上限约 2MB：超过的表单独报「太大」，不连累其它表 */
+const TABLE_JSON_MAX_BYTES = 1_800_000;
 /** 后台自动同步节流：每 24 小时至多一次 */
 const AUTO_SYNC_INTERVAL_MS = 24 * 60 * 60 * 1000;
 /** 表级计数差 ≥ 阈值即视为"较大差异" */
@@ -306,6 +313,46 @@ const saveLastAutoSync = (date: Date): void => {
   }
 };
 
+export const readSyncOwner = (): string | null => {
+  try { return localStorage.getItem(SYNC_OWNER_KEY); } catch { return null; }
+};
+const saveSyncOwner = (userId: string): void => {
+  try { localStorage.setItem(SYNC_OWNER_KEY, userId); } catch { /* ignore */ }
+};
+
+const readAutoSyncFail = (): { at: number; n: number } | null => {
+  try {
+    const raw = localStorage.getItem(AUTO_SYNC_FAIL_KEY);
+    if (!raw) return null;
+    const v = JSON.parse(raw) as { at?: number; n?: number };
+    return typeof v.at === 'number' && typeof v.n === 'number' ? { at: v.at, n: v.n } : null;
+  } catch { return null; }
+};
+const noteAutoSyncFail = (): void => {
+  const prev = readAutoSyncFail();
+  try { localStorage.setItem(AUTO_SYNC_FAIL_KEY, JSON.stringify({ at: Date.now(), n: (prev?.n ?? 0) + 1 })); } catch { /* ignore */ }
+};
+const clearAutoSyncFail = (): void => {
+  try { localStorage.removeItem(AUTO_SYNC_FAIL_KEY); } catch { /* ignore */ }
+};
+
+/**
+ * 同一时间只跑一件：推、拉、后台自动同步互不并发。
+ * 以前三者可以同时跑，两路 create 同一个 key 会在云端留下重复行，拉到一半推上去的也不知道是哪份。
+ */
+let syncInFlight: Promise<unknown> | null = null;
+export const isSyncInFlight = (): boolean => syncInFlight !== null;
+async function runExclusive<T>(what: string, fn: () => Promise<T>): Promise<T> {
+  if (syncInFlight) throw new Error(`正在同步中，稍等一下再${what}`);
+  const run = fn();
+  syncInFlight = run.then(() => undefined, () => undefined);
+  try {
+    return await run;
+  } finally {
+    syncInFlight = null;
+  }
+}
+
 /**
  * 类型上就是 ISO **字符串**的字段（不是 Date）——reviver 必须放过它们。
  * 否则一次 pull 之后 `step.doneAt` 之流会从 string 变成 Date，类型说谎、
@@ -345,26 +392,31 @@ export const hasLocalData = async (): Promise<boolean> => {
   }
 };
 
-/** 云端 user_data 表里当前登录用户是否已有同步数据 */
-export const hasCloudData = async (): Promise<boolean> => {
-  if (!pb || !pb.authStore.isValid) return false;
+/**
+ * 云端 user_data 表里当前登录用户是否已有同步数据。
+ * 三态：true / false / null（**查不到**——断网、服务端抖、请求被取消）。
+ * 以前查失败也回 false，登录流程就把它当「云端没数据」直接推送覆盖：弱网下等于把云端那份抹了。
+ */
+export const hasCloudData = async (): Promise<boolean | null> => {
+  if (!pb || !pb.authStore.isValid) return null;
   const userId = getUserId();
-  if (!userId) return false;
+  if (!userId) return null;
   try {
     const res = await pb.collection('user_data').getList(1, 1, {
       filter: `user = "${userId}"`,
-      // 同 computeSyncDiff：关掉 SDK 的同路径 autocancel。这一侧被取消的后果更重——
-      // catch 里回 false 就变成「云端没数据」，登录流程会直接判 pushed 静默推送覆盖。
+      // 同 computeSyncDiff：关掉 SDK 的同路径 autocancel
       requestKey: null,
     });
     return res.totalItems > 0;
   } catch {
-    return false;
+    return null;
   }
 };
 
-/** 全量推送：把本地 Dexie 全部数据推到云端（覆盖同 key 记录） */
-export const pushAll = async (): Promise<void> => {
+/** 全量推送：把本地 Dexie 全部数据推到云端（覆盖同 key 记录）。同一时间只跑一件（见 runExclusive） */
+export const pushAll = (): Promise<void> => runExclusive('推送', pushAllInner);
+
+const pushAllInner = async (): Promise<void> => {
   const cloudStore = useCloudStore.getState();
   if (!pb || !pb.authStore.isValid) throw new Error('未登录');
   const userId = getUserId();
@@ -387,6 +439,8 @@ export const pushAll = async (): Promise<void> => {
     // 默认**不**上传（v2.6 起翻转）：多设备同步 Key 的便利，换不来"服务器上躺着一堆用户付费 Key"的风险。
     // 存量用户里显式打开过开关的（=== true）维持上传，其余一律剔除。
     const includeApiKey = appSettings.syncCloudApiKey === true;
+    /** 没传上去的表：一张表失败不中断后面的（以前第一张出错整轮就停，后面的表永远传不上去） */
+    const failed: Array<{ key: string; why: string }> = [];
     for (const key of SYNC_TABLES) {
       if (skipSet.has(key)) {
         // 用户选择不上传该表。若云端还留着**上次开着开关时**推上去的那份，就顺手删掉——
@@ -404,12 +458,12 @@ export const pushAll = async (): Promise<void> => {
         continue;
       }
       let rows = await db.table(key).toArray();
-      // 隐私豁免：confidants 的 customAvatarDataUrl 字段只保留在本地，不上云
+      // 隐私豁免：confidants 的 customAvatarDataUrl（自定义头像）和 cardFaceDataUrl（对方头像裁图）只留本机，不上云
       if (key === 'confidants') {
         rows = rows.map((r: Record<string, unknown>) => {
-          if (r && typeof r === 'object' && 'customAvatarDataUrl' in r) {
-            const { customAvatarDataUrl: _omit, ...rest } = r as Record<string, unknown>;
-            void _omit;
+          if (r && typeof r === 'object' && ('customAvatarDataUrl' in r || 'cardFaceDataUrl' in r)) {
+            const { customAvatarDataUrl: _omit, cardFaceDataUrl: _omit2, ...rest } = r as Record<string, unknown>;
+            void _omit; void _omit2;
             return rest;
           }
           return r;
@@ -449,11 +503,23 @@ export const pushAll = async (): Promise<void> => {
       // 直接传数组：SDK 会用 JSON.stringify 序列化请求体（Date → ISO），
       // PocketBase 的 JSON 字段存为原生数组。
       // 不要先 JSON.stringify 成字符串再传 —— 那会被 PB 解析两次，行为不一致。
-      const existingId = existingByKey.get(key);
-      if (existingId) {
-        await pb.collection('user_data').update(existingId, { value: rows });
-      } else {
-        await pb.collection('user_data').create({ user: userId, key, value: rows });
+      const bytes = JSON.stringify(rows).length;
+      if (bytes > TABLE_JSON_MAX_BYTES) {
+        // 超过 PB 单字段上限：这张表传不上去，但别连累别的表（分片方案排在第 3 轮）
+        failed.push({ key, why: `太大（${(bytes / 1024 / 1024).toFixed(1)} MB）` });
+        continue;
+      }
+      try {
+        const existingId = existingByKey.get(key);
+        if (existingId) {
+          await pb.collection('user_data').update(existingId, { value: rows });
+        } else {
+          await pb.collection('user_data').create({ user: userId, key, value: rows });
+        }
+      } catch (e) {
+        const st = (e as { status?: number })?.status;
+        failed.push({ key, why: st === 413 ? '太大' : st ? `服务器回 ${st}` : '网络错误' });
+        console.warn('[velvet-sync] push: table failed, continuing', key, e);
       }
     }
 
@@ -528,6 +594,11 @@ export const pushAll = async (): Promise<void> => {
       console.warn('[velvet-sync] push: avatar upload failed', e);
     }
 
+    if (failed.length) {
+      // 传上去的表已经在云端了；没传上去的报出来，让用户知道哪几张还留在本机（下次再推）
+      throw new Error(`这几张表没有传上去：${failed.map(f => `${f.key}（${f.why}）`).join('、')}`);
+    }
+    saveSyncOwner(userId);
     const now = new Date();
     saveLastSync(now);
     cloudStore.setLastSyncAt(now);
@@ -540,8 +611,16 @@ export const pushAll = async (): Promise<void> => {
   }
 };
 
-/** 全量拉取：用云端数据覆盖本地 Dexie，然后刷新 Zustand 状态 */
-export const pullAll = async (): Promise<void> => {
+/**
+ * settings 里按设备生效的开关：拉取时一律用本机的值。
+ * 它们随 settings 整行上云，另一台设备一推、这台一拉，「这台设备不上传 Key / 愿望」的选择就被对方的覆盖回来了。
+ */
+const DEVICE_SETTING_KEYS = ['syncExcludedTables', 'syncConfidantsToCloud', 'syncCloudApiKey', 'syncWishesToCloud', 'syncNavigatorToCloud'] as const;
+
+/** 全量拉取：用云端数据覆盖本地 Dexie，然后刷新 Zustand 状态。同一时间只跑一件（见 runExclusive） */
+export const pullAll = (): Promise<void> => runExclusive('拉取', pullAllInner);
+
+const pullAllInner = async (): Promise<void> => {
   const cloudStore = useCloudStore.getState();
   if (!pb || !pb.authStore.isValid) throw new Error('未登录');
   const userId = getUserId();
@@ -558,6 +637,12 @@ export const pullAll = async (): Promise<void> => {
     const skipSet = getSkipSet();
     let tablesRewritten = 0;
     let totalRowsWritten = 0;
+    /**
+     * 两段式：先把每张表要写的行算好（解析、还原日期、本机专属字段回填），
+     * 最后放进**一个**事务写。以前逐表各开事务，某张表中途失败就半新半旧；
+     * 现在任何一张失败整体回滚，本地维持拉取前的样子。
+     */
+    const plans: Array<{ key: SyncKey; rows: Array<Record<string, unknown>> }> = [];
     for (const item of list) {
       const key = item.key as string;
       if (!(SYNC_TABLES as readonly string[]).includes(key)) continue;
@@ -594,12 +679,12 @@ export const pullAll = async (): Promise<void> => {
         continue;
       }
 
-      // 清空后整体写入，实现覆盖
-      const table = db.table(key as SyncKey);
+      // 这张表要写的行先算好，最后和别的表一起放进同一个事务（见下面）
 
-      // 隐私豁免：confidants.customAvatarDataUrl 永远不上云，
-      // 拉取时要保留本地已有的自定义头像（按 id 匹配合并回去）
+      // 隐私豁免：confidants 的 customAvatarDataUrl（自定义头像）和 cardFaceDataUrl（对方头像裁图）永远不上云，
+      // 拉取时按 id 把本地已有的合并回去
       let localAvatarById: Map<string, string> | null = null;
+      let localFaceById: Map<string, string> | null = null;
       if (key === 'confidants') {
         const local = await db.confidants.toArray();
         localAvatarById = new Map(
@@ -607,6 +692,16 @@ export const pullAll = async (): Promise<void> => {
             .filter(c => typeof c.customAvatarDataUrl === 'string' && c.customAvatarDataUrl)
             .map(c => [c.id, c.customAvatarDataUrl as string]),
         );
+        localFaceById = new Map(
+          local
+            .filter(c => typeof c.cardFaceDataUrl === 'string' && c.cardFaceDataUrl)
+            .map(c => [c.id, c.cardFaceDataUrl as string]),
+        );
+      }
+      // 24 小时终端卡只存本机（推送时被过滤掉了）：拉取「清空 + 整表写入」会把它们清掉，这里并回去
+      let localTerminalCards: Array<Record<string, unknown>> = [];
+      if (key === 'callingCards') {
+        localTerminalCards = (await db.callingCards.toArray()).filter(c => !!(c as { terminal?: unknown }).terminal) as unknown as Array<Record<string, unknown>>;
       }
 
       /**
@@ -665,6 +760,7 @@ export const pullAll = async (): Promise<void> => {
             weatherApiKey: first.weatherApiKey,
             weatherApiHost: first.weatherApiHost,
             weatherCity: first.weatherCity,
+            ...Object.fromEntries(DEVICE_SETTING_KEYS.map(k => [k, first[k]])),
           };
         }
       }
@@ -679,14 +775,19 @@ export const pullAll = async (): Promise<void> => {
           toWrite = [...toWrite.filter(r => !(r && typeof r === 'object' && r.id === fbId)), todayDivinationFallback];
           console.warn('[velvet-sync] pull: 云端没有今日塔罗，保留本地这一张（避免可重抽）');
         }
-        if (localAvatarById) {
+        if (localAvatarById || localFaceById) {
           toWrite = toWrite.map(r => {
             const id = (r as { id?: string }).id;
-            if (r && typeof r === 'object' && id && localAvatarById!.has(id)) {
-              return { ...r, customAvatarDataUrl: localAvatarById!.get(id) };
-            }
-            return r;
+            if (!r || typeof r !== 'object' || !id) return r;
+            let next = r;
+            if (localAvatarById?.has(id)) next = { ...next, customAvatarDataUrl: localAvatarById.get(id) };
+            if (localFaceById?.has(id)) next = { ...next, cardFaceDataUrl: localFaceById.get(id) };
+            return next;
           });
+        }
+        if (localTerminalCards.length) {
+          const cloudIds = new Set(toWrite.map(r => (r as { id?: string }).id));
+          toWrite = [...toWrite, ...localTerminalCards.filter(c => !cloudIds.has(c.id as string))];
         }
         if (localSettingsOverrides) {
           toWrite = toWrite.map((r, idx) => {
@@ -724,22 +825,27 @@ export const pullAll = async (): Promise<void> => {
             if (ov.weatherApiKey) merged.weatherApiKey = ov.weatherApiKey;
             if (ov.weatherApiHost) merged.weatherApiHost = ov.weatherApiHost;
             if (ov.weatherCity) merged.weatherCity = ov.weatherCity;
+            // 按设备生效的同步开关：一律用本机的（本机没设过就删掉云端带来的，回到默认）
+            for (const k of DEVICE_SETTING_KEYS) {
+              if (ov[k] === undefined) delete merged[k]; else merged[k] = ov[k];
+            }
             return merged;
           });
         }
-        // 「清空 + 整表写入」必须在同一个事务里（FS7 审查）：
-        // 原来是 clear() 后再 bulkAdd()，中间任何一步失败——重复主键、
-        // 移动端写到一半 QuotaExceeded、Dexie 被浏览器掐断——都会让这张表**停在空表**，
-        // 而外层只是把状态置成「拉取失败」。用户看到的是"同步失败"，实际本地已经被清了。
-        // 放进 rw 事务后，抛错即整体回滚，本地维持拉取前的样子。
-        await db.transaction('rw', table, async () => {
-          await table.clear();
-          if (toWrite.length) await table.bulkAdd(toWrite as never[]);
-        });
+        plans.push({ key: key as SyncKey, rows: toWrite });
       }
       tablesRewritten++;
       totalRowsWritten += rows.length;
     }
+    // 「清空 + 整表写入」全部放进同一个事务：任何一张表失败（重复主键、QuotaExceeded、Dexie 被掐断）
+    // 就整体回滚，本地维持拉取前的样子；不会再出现「前几张换成云端的、后几张还是本地的」
+    await db.transaction('rw', plans.map(p => db.table(p.key)), async () => {
+      for (const p of plans) {
+        const table = db.table(p.key);
+        await table.clear();
+        if (p.rows.length) await table.bulkAdd(p.rows as never[]);
+      }
+    });
     console.log(
       '[velvet-sync] pull: rewrote',
       tablesRewritten,
@@ -758,6 +864,7 @@ export const pullAll = async (): Promise<void> => {
       console.warn('[velvet-sync] pull: tasks-merge 迁移补跑失败，下次启动续跑', e);
     }
 
+    saveSyncOwner(userId);
     const now = new Date();
     saveLastSync(now);
     cloudStore.setLastSyncAt(now);
@@ -781,8 +888,17 @@ export type LoginSyncResult = 'pulled' | 'pushed' | 'conflict' | 'skip';
  */
 export const syncOnLogin = async (): Promise<LoginSyncResult> => {
   const [local, cloud] = await Promise.all([hasLocalData(), hasCloudData()]);
+  if (cloud === null) {
+    // 查不到云端有没有数据：不能当成「没有」去推送（弱网下会把云端那份抹掉）。报出来，让用户稍后手动同步
+    useCloudStore.getState().setLastError('连不上云端，先不同步；网络好了再到账号页手动同步');
+    throw new Error('连不上云端，稍后再试');
+  }
   if (!local && !cloud) return 'skip';
   if (local && !cloud) {
+    // 本机这份数据上次是和另一个账号同步的（换号登录）：不能自动推进新账号，交给用户选
+    const owner = readSyncOwner();
+    const me = getUserId();
+    if (owner && me && owner !== me) return 'conflict';
     await pushAll();
     return 'pushed';
   }
@@ -971,9 +1087,13 @@ async function computeLocalLatest(): Promise<Date | null> {
  */
 export const trySyncInBackground = async (): Promise<void> => {
   if (!pb || !pb.authStore.isValid) return;
+  if (isSyncInFlight()) return; // 用户正在手动推 / 拉：别插队
   // 节流：24 小时内已经自动同步过则跳过
   const last = readLastAutoSync();
   if (last && Date.now() - last.getTime() < AUTO_SYNC_INTERVAL_MS) return;
+  // 退避：上次失败后按 30 分钟 × 2^(n-1) 等（封顶 24 小时），不再每次退后台都全量重来
+  const fail = readAutoSyncFail();
+  if (fail && Date.now() - fail.at < Math.min(AUTO_SYNC_INTERVAL_MS, AUTO_SYNC_BACKOFF_BASE_MS * 2 ** Math.max(0, fail.n - 1))) return;
 
   try {
     const diff = await computeSyncDiff();
@@ -986,8 +1106,9 @@ export const trySyncInBackground = async (): Promise<void> => {
     }
     await pushAll();
     saveLastAutoSync(new Date());
+    clearAutoSyncFail();
   } catch {
-    /* 已由 pushAll 内部 setLastError 记录，静默不扰民 */
+    noteAutoSyncFail(); // 已由 pushAll 内部 setLastError 记录，静默不扰民
   }
 };
 

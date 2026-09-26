@@ -100,19 +100,37 @@ const mapNotification = (r: RecordModel): NotificationEntry => {
   };
 };
 
-/** 拉当前用户的全部通知（最新 100 条） */
+/**
+ * 拉当前用户的通知：最新 100 条，外加**全部未读**（最多再 400 条）。
+ * 结算（祈愿 SP、一起进步事件）只看未读；以前只拉最新 100 条，通知多了以后更早的未读永远轮不到结算。
+ */
 export const listNotifications = async (): Promise<NotificationEntry[]> => {
   if (!pb || !pb.authStore.isValid) throw new Error('未登录');
   const me = getUserId();
   if (!me) throw new Error('用户信息缺失');
   // 只拉 user = 当前登录者的；按 created 倒序；expand from 字段
-  const records = await pb.collection('notifications').getList(1, 100, {
+  const latest = await pb.collection('notifications').getList(1, 100, {
     filter: `user = "${me}"`,
     expand: 'from',
     sort: '-created',
     requestKey: null,
   });
-  return records.items.map(mapNotification);
+  const out = new Map<string, NotificationEntry>();
+  for (const r of latest.items) out.set(r.id, mapNotification(r));
+  if (latest.totalItems > latest.items.length) {
+    try {
+      const unread = await pb.collection('notifications').getList(1, 400, {
+        filter: `user = "${me}" && read = false`,
+        expand: 'from',
+        sort: '-created',
+        requestKey: null,
+      });
+      for (const r of unread.items) if (!out.has(r.id)) out.set(r.id, mapNotification(r));
+    } catch (err) {
+      console.warn('[velvet-notifications] extra unread fetch failed', err); // 最新 100 条照常用
+    }
+  }
+  return [...out.values()].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
 };
 
 /**

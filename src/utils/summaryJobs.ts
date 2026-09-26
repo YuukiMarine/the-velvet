@@ -88,6 +88,12 @@ const readDraft = (): StoredDraft | null => {
   }
 };
 
+/** 本机存着的草稿是哪一期（自动撰写用来判重：写好没归档的也算写过） */
+export function peekSummaryDraft(): { period: SummaryPeriod; startDate: string } | null {
+  const d = readDraft();
+  return d ? { period: summaryKindOf(d.summary), startDate: d.summary.startDate } : null;
+}
+
 /** 弹层打开时：没有在跑的任务、但有草稿 → 以 done 态接回，回来直接看 */
 export function restoreSummaryDraft(): boolean {
   if (useSummaryJobs.getState().job) return false;
@@ -160,7 +166,9 @@ async function finalize(settings: Settings, job: SummaryJob, full: string, finis
     ? { job: { ...s.job, status: 'done', thinking: false, full, text: parsed.content, truncated, draft, error: undefined } }
     : s));
   const cur = useSummaryJobs.getState().job;
-  writeDraft({ summary: draft, truncated, continues: cur?.continues ?? 0, full });
+  // 收尾期间（比如还在抽手记）用户点了「停止」/ 丢弃：任务已经不是这份了，草稿也不能写回去——写了下次开弹层又复活
+  if (!cur || cur.id !== job.id) return;
+  writeDraft({ summary: draft, truncated, continues: cur.continues ?? 0, full });
 }
 
 async function stream(settings: Settings, job: SummaryJob, messages: SummaryRequestData['messages'], seed: string, req: SummaryRequestData): Promise<void> {

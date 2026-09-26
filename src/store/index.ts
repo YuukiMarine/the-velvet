@@ -289,6 +289,7 @@ interface AppState {
   /** 新建 / 覆盖一张 CallingCard。pinned=true 时自动 unpin 其它卡（互斥保证） */
   saveCallingCard: (card: CallingCard) => Promise<void>;
   deleteCallingCard: (id: string) => Promise<void>;
+  dropProfileGoalIfCard: (cardId: string) => Promise<void>;
   /** 手动归档：archiveReason='manual' */
   archiveCallingCard: (id: string) => Promise<void>;
   /** 取消归档（误归档时还原） */
@@ -1719,6 +1720,14 @@ export const useAppStore = create<AppState>((set, get) => ({
   deleteCallingCard: async (id: string) => {
     await db.callingCards.delete(id);
     await get().loadCallingCards();
+    await get().dropProfileGoalIfCard(id);
+  },
+
+  /** 挂在名片上的目标就是这张卡：卡删了 / 手动收了就取下目标并立刻推送，好友那边不会一直看到旧目标 */
+  dropProfileGoalIfCard: async (cardId: string) => {
+    if (get().settings.profileGoal?.cardId !== cardId) return;
+    await get().updateSettings({ profileGoal: undefined });
+    void import('@/services/sync').then(m => m.pushProfilePresence()).catch(() => { /* 离线：下次同步再推 */ });
   },
 
   archiveCallingCard: async (id: string) => {
@@ -1734,6 +1743,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       pinned: false,
     });
     await get().loadCallingCards();
+    await get().dropProfileGoalIfCard(id);
   },
 
   unarchiveCallingCard: async (id: string) => {
@@ -1923,6 +1933,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
     }
     if (newlyArchived.length) await get().loadCallingCards();
+    // 挂在名片上的那张自动达成了：立刻推一次，好友那边显示「已达成」而不是继续倒数
+    if (newlyArchived.some(c => c.id === get().settings.profileGoal?.cardId)) {
+      void import('@/services/sync').then(m => m.pushProfilePresence()).catch(() => { /* 离线：下次同步再推 */ });
+    }
     return newlyArchived;
   },
 
@@ -2811,6 +2825,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     const targetDateKey = toLocalDateKey(new Date(target.date));
     const sameDay = targetDateKey === todayKey;
 
+    // 撤掉的那次完成属于「一起进步」的约定：事务结束后再去服务器撤卡（网络请求不能放在 Dexie 事务里）
+    let pactRetract: { id: string; day: string } | null = null;
     await db.transaction(
       'rw',
       // 配图两张表也要在事务范围里：deleteImagesOfActivity 内部再开事务，父事务不含这两张表会报
@@ -2885,12 +2901,17 @@ export const useAppStore = create<AppState>((set, get) => ({
               if (!todo.isActive && !todo.repeatDaily && !todo.isLongTerm) {
                 await db.todos.update(todo.id, { isActive: true, archivedAt: undefined, completedAt: undefined });
               }
+              if (todo.pact) pactRetract = { id: todo.pact.id, day: todayKey };
             }
           }
         }
       },
     );
     await get().loadData();
+    const retract = pactRetract as { id: string; day: string } | null; // 在事务回调里赋的值，TS 的流程分析看不见
+    if (retract) {
+      void import('@/services/pactSync').then(m => m.onPactTodoUndone(retract.id, retract.day));
+    }
   },
 
   importData: async (jsonData: string) => {
@@ -5752,70 +5773,85 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   bumpConfidantIntimacy: async (id, delta, eventType = 'intimacy_up', narrative, extra) => {
-    const current = await db.confidants.get(id);
-    if (!current) return { leveledUp: false, newIntimacy: 0, starShiftGained: 0, eventId: '' };
     const { settings } = get();
-    const oldLv = current.intimacy;
-    const newPoints = Math.max(0, current.intimacyPoints + delta);
-    const newLv = pointsToLevel(newPoints, thresholdsFor(current));
-    const leveledUp = newLv > oldLv;
-    const buffs = leveledUp ? buffsForLevel(current.arcanaId, newLv, settings.attributeNames, current.skillAttribute) : current.buffs;
-    // 每次升级赠送 1 次"星移"次数（Lv 跳跃两级则赠送两次）
-    const starShiftGained = leveledUp ? (newLv - oldLv) : 0;
-    const newCharges = Math.max(0, (current.starShiftCharges ?? 0) + starShiftGained);
     const now = new Date();
-    await db.confidants.put({
-      ...current,
-      intimacy: newLv,
-      intimacyPoints: newPoints,
-      buffs,
-      starShiftCharges: newCharges,
-      lastInteractionAt: now,
-      // COOP 远端事件应用时把 lastInteractionDate 也同步到当天，让"今日已互动"判定生效
-      ...(extra?.lastInteractionDate ? { lastInteractionDate: extra.lastInteractionDate } : {}),
-    });
-    // 事件记录 —— eventId 可由调用方覆盖（COOP 远端事件需要保持双方 id 一致以便去重）
-    const eventId = extra?.eventId || uuidv4();
-    const eventDate = extra?.eventDate || toLocalDateKey(now);
-    const events: ConfidantEvent[] = [];
-    events.push({
-      id: eventId,
-      confidantId: id,
-      date: eventDate,
-      type: delta >= 0 ? eventType : 'intimacy_down',
-      delta,
-      narrative,
-      userInput: extra?.userInput,
-      advice: extra?.advice,
-      createdAt: now,
-    });
-    if (leveledUp) {
-      events.push({
-        id: uuidv4(),
-        confidantId: id,
-        date: toLocalDateKey(now),
-        type: 'level_up',
-        toLevel: newLv,
-        narrative: `亲密度到达 Lv.${newLv}`,
-        createdAt: new Date(now.getTime() + 1),
+    /**
+     * 带固定 eventId 的加点（COOP 结算 / 一起进步 / 祈愿）：查事件和写点数放进同一个事务，两路并发也只加一次。
+     * 以前是先查内存里的事件列表、再写点数、最后写事件——第二路在第一路写完点数、还没写事件的那一瞬读到新点数，
+     * 就会再加一次；事件主键冲突只拦下事件，点数已经加上去了。
+     */
+    const result = await db.transaction('rw', db.confidants, db.confidantEvents, async () => {
+      if (extra?.eventId && (await db.confidantEvents.get(extra.eventId))) return 'dup' as const;
+      const current = await db.confidants.get(id);
+      if (!current) return null;
+      const oldLv = current.intimacy;
+      const newPoints = Math.max(0, current.intimacyPoints + delta);
+      const newLv = pointsToLevel(newPoints, thresholdsFor(current));
+      const leveledUp = newLv > oldLv;
+      const buffs = leveledUp ? buffsForLevel(current.arcanaId, newLv, settings.attributeNames, current.skillAttribute) : current.buffs;
+      // 每次升级赠送 1 次"星移"次数（Lv 跳跃两级则赠送两次）
+      const starShiftGained = leveledUp ? (newLv - oldLv) : 0;
+      const newCharges = Math.max(0, (current.starShiftCharges ?? 0) + starShiftGained);
+      await db.confidants.put({
+        ...current,
+        intimacy: newLv,
+        intimacyPoints: newPoints,
+        buffs,
+        starShiftCharges: newCharges,
+        lastInteractionAt: now,
+        // COOP 远端事件应用时把 lastInteractionDate 也同步到当天，让"今日已互动"判定生效
+        ...(extra?.lastInteractionDate ? { lastInteractionDate: extra.lastInteractionDate } : {}),
       });
-      // 对比新增 buffs
-      const newKinds = new Set(current.buffs.map(b => b.kind));
-      const unlocked = buffs.filter(b => !newKinds.has(b.kind));
-      for (const b of unlocked) {
+      // 事件记录 —— eventId 可由调用方覆盖（COOP 远端事件需要保持双方 id 一致以便去重）
+      const eventId = extra?.eventId || uuidv4();
+      const eventDate = extra?.eventDate || toLocalDateKey(now);
+      const events: ConfidantEvent[] = [];
+      events.push({
+        id: eventId,
+        confidantId: id,
+        date: eventDate,
+        type: delta >= 0 ? eventType : 'intimacy_down',
+        delta,
+        narrative,
+        userInput: extra?.userInput,
+        advice: extra?.advice,
+        createdAt: now,
+      });
+      if (leveledUp) {
         events.push({
           id: uuidv4(),
           confidantId: id,
           date: toLocalDateKey(now),
-          type: 'buff_unlocked',
-          narrative: `解锁「${b.title}」：${b.description}`,
-          createdAt: new Date(now.getTime() + 2),
+          type: 'level_up',
+          toLevel: newLv,
+          narrative: `亲密度到达 Lv.${newLv}`,
+          createdAt: new Date(now.getTime() + 1),
         });
+        // 对比新增 buffs
+        const newKinds = new Set(current.buffs.map(b => b.kind));
+        const unlocked = buffs.filter(b => !newKinds.has(b.kind));
+        for (const b of unlocked) {
+          events.push({
+            id: uuidv4(),
+            confidantId: id,
+            date: toLocalDateKey(now),
+            type: 'buff_unlocked',
+            narrative: `解锁「${b.title}」：${b.description}`,
+            createdAt: new Date(now.getTime() + 2),
+          });
+        }
       }
+      await db.confidantEvents.bulkAdd(events);
+      return { leveledUp, newLv, starShiftGained, eventId };
+    });
+    if (result === 'dup') {
+      // 这笔已经发过（另一路先到了）：点数不动，把现状报回去
+      const cur = await db.confidants.get(id);
+      return { leveledUp: false, newIntimacy: cur?.intimacy ?? 0, starShiftGained: 0, eventId: extra?.eventId ?? '' };
     }
-    await db.confidantEvents.bulkAdd(events);
+    if (!result) return { leveledUp: false, newIntimacy: 0, starShiftGained: 0, eventId: '' };
     await get().loadConfidants();
-    return { leveledUp, newIntimacy: newLv, starShiftGained, eventId };
+    return { leveledUp: result.leveledUp, newIntimacy: result.newLv, starShiftGained: result.starShiftGained, eventId: result.eventId };
   },
 
   recordConfidantInteraction: async ({ id, description, delta, narrative, advice, createActivity, activityAttribute, activityPoints }) => {
@@ -6150,11 +6186,13 @@ export const useAppStore = create<AppState>((set, get) => ({
         .filter(e => e.type === 'decay' && e.date === today)
         .first();
       if (already) continue;
-      const newPoints = Math.max(0, c.intimacyPoints - 1);
-      const newLv = pointsToLevel(newPoints, thresholdsFor(c));
-      const buffs = newLv < c.intimacy ? buffsForLevel(c.arcanaId, newLv, get().settings.attributeNames) : c.buffs;
+      // 写之前重读：上面 await loadSocial() 期间社交结算可能已经给这位同伴加过点，拿循环开头的旧对象写回会把那份吞掉
+      const fresh = (await db.confidants.get(c.id)) ?? c;
+      const newPoints = Math.max(0, fresh.intimacyPoints - 1);
+      const newLv = pointsToLevel(newPoints, thresholdsFor(fresh));
+      const buffs = newLv < fresh.intimacy ? buffsForLevel(fresh.arcanaId, newLv, get().settings.attributeNames) : fresh.buffs;
       await db.confidants.put({
-        ...c,
+        ...fresh,
         intimacyPoints: newPoints,
         intimacy: newLv,
         buffs,

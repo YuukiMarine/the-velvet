@@ -20,7 +20,7 @@ import { chatStream } from '@/utils/aiClient';
 import {
   buildContinueMessages, extractSummaryMemo, looksTruncated, parseSummaryResult, summaryKindOf, trimSeam, SUMMARY_MAX_TOKENS,
 } from '@/utils/summaryAI';
-import { useSummaryJobs, isSummaryJobRunning } from '@/utils/summaryJobs';
+import { useSummaryJobs, isSummaryJobRunning, peekSummaryDraft } from '@/utils/summaryJobs';
 
 const KEY = 'velvet.autoSummary.v1';
 const MAX_ATTEMPTS = 3;
@@ -77,6 +77,10 @@ async function run(): Promise<void> {
     // 用户正在手动写同一期：这次先不动
     const job = useSummaryJobs.getState().job;
     if (isSummaryJobRunning(job) && job?.period === t.period && job?.startDate === t.start) continue;
+    // 写好了还没归档的（弹层里那份、或存在本机的草稿）也算写过：不然会多出第二份、多花一次调用
+    if (job?.status === 'done' && job.period === t.period && job.startDate === t.start) continue;
+    const draft = peekSummaryDraft();
+    if (draft && draft.period === t.period && draft.startDate === t.start) continue;
     // 那期一条自己的记录都没有：没什么可写的
     const acts = await db.activities.toArray();
     const count = acts.filter(a => { const k = toLocalDateKey(new Date(a.date)); return k >= t.start && k <= t.end && !a.category; }).length;

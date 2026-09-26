@@ -6,6 +6,7 @@
  */
 import { liveStatus } from '@/constants/profileStatus';
 import { auditText } from '@/utils/textAudit';
+import { daysUntilKey } from '@/utils/deadline';
 import type { CallingCard, ProfileGoalSnapshot, ProfileStatus, Settings } from '@/types';
 
 /** 目标「对外显示为」那一句的上限 */
@@ -103,11 +104,19 @@ export function parseGoalSnapshot(v: unknown): ProfileGoalSnapshot | undefined {
 }
 
 /** 目标那一行的补充信息：还有几天 / 进度 / 已达成；自己写的目标没有 */
+/** 本机今天的 YYYY-MM-DD（不引 store，免得循环依赖） */
+const localDayKey = (): string => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
 export function goalLineText(g: ProfileGoalSnapshot): string {
   if (g.done) return '已达成 ✓';
   if (g.kind !== 'card') return '';
   const parts: string[] = [];
-  if (typeof g.daysLeft === 'number') parts.push(g.daysLeft === 0 ? '就是今天' : `还有 ${g.daysLeft} 天`);
+  // 快照里的「还有几天」是对方推送那一刻算的，之后可能好几天不刷新：有截止日就按今天重算
+  const daysLeft = g.targetDate ? daysUntilKey(g.targetDate, localDayKey()) : g.daysLeft;
+  if (typeof daysLeft === 'number') parts.push(daysLeft < 0 ? '已到期' : daysLeft === 0 ? '就是今天' : `还有 ${daysLeft} 天`);
   if (typeof g.progress === 'number' && (parts.length === 0 || g.progress > 0)) parts.push(`${g.progress}%`);
   return parts.join(' · ');
 }
