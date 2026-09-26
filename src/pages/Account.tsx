@@ -25,7 +25,7 @@ import { CloudConsentModal } from '@/components/auth/CloudConsentNotice';
 import { LVTag } from '@/components/LVTag';
 import { computeTotalLv } from '@/utils/lvTiers';
 import { logout as cloudLogout, deleteAccount as cloudDeleteAccount } from '@/services/auth';
-import { pushAll, pullAll, syncOnLogin, computeSyncDiff } from '@/services/sync';
+import { pushAll, pullAll, syncOnLogin, computeSyncDiff, SyncConflictError } from '@/services/sync';
 import { downloadBackup, copyBackupToClipboard, readBackupFile } from '@/services/backup';
 import { ImagesBackupBlock } from '@/components/settings/ImagesBackupBlock';
 import { isImagesBundleJson, importImagesBundle } from '@/utils/activityImages';
@@ -325,6 +325,8 @@ export const Account = () => {
               await pushAll();
               console.log('[velvet-sync] push done');
             } catch (err) {
+              // 云端在别处改过：不覆盖，打开「和云端对一对」
+              if (err instanceof SyncConflictError) { useCloudStore.getState().openMerge(err.tables); return; }
               console.error('[velvet-sync] push failed:', err);
             }
           }}
@@ -349,19 +351,10 @@ export const Account = () => {
 
       <button
         disabled={syncStatus === 'syncing'}
-        onClick={async () => {
-          try {
-            const diff = await computeSyncDiff();
-            if (diff) {
-              useCloudStore.getState().setDiffWarning(diff);
-            }
-          } catch (err) {
-            console.error('[velvet-sync] diff check failed:', err);
-          }
-        }}
+        onClick={() => useCloudStore.getState().openMerge(null)}
         className="w-full py-2 rounded-lg text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors disabled:opacity-50 border border-dashed border-gray-200 dark:border-gray-700"
       >
-        检查条目差异（避免误覆盖）
+        和云端对一对（查阅并合并，避免误覆盖）
       </button>
 
       {/* 同步隐私：按类目选择上传哪些数据 */}

@@ -22,6 +22,11 @@ interface CloudState {
   lastSyncDirection: 'push' | 'pull' | null;
   /** 本地/云端存在较大差异时的待确认提示（自动同步检测到时置为 true） */
   diffWarning: SyncDiff | null;
+  /** 「和云端对一对」弹层是否打开（第 3 轮）；mergeHint = 推送时发现在别处改过的表，弹层顶上提一句 */
+  mergeOpen: boolean;
+  mergeHint: string[] | null;
+  setMergeOpen: (b: boolean) => void;
+  openMerge: (hint: string[] | null) => void;
 
   setCloudUser: (u: AuthRecord | null) => void;
   setSyncStatus: (s: SyncStatus) => void;
@@ -47,6 +52,10 @@ export const useCloudStore = create<CloudState>(set => ({
   conflictPending: false,
   lastSyncDirection: null,
   diffWarning: null,
+  mergeOpen: false,
+  mergeHint: null,
+  setMergeOpen: mergeOpen => set(mergeOpen ? { mergeOpen } : { mergeOpen, mergeHint: null }),
+  openMerge: mergeHint => set({ mergeOpen: true, mergeHint }),
 
   setCloudUser: cloudUser => set({ cloudUser }),
   setSyncStatus: syncStatus => set({ syncStatus }),

@@ -7,6 +7,7 @@ import { readLastSync, trySyncInBackground, resolveConflictKeepLocal, resolveCon
 import { pb as pbClient } from '@/services/pocketbase';
 import { SyncStatusBadge } from '@/components/auth/SyncStatusBadge';
 import { ConflictDialog } from '@/components/auth/ConflictDialog';
+import { SyncMergeSheet } from '@/components/auth/SyncMergeSheet';
 import { SyncDiffDialog } from '@/components/auth/SyncDiffDialog';
 import { Sidebar, BottomNav } from '@/components/Navigation';
 import { WelcomeModal } from '@/components/WelcomeModal';
@@ -875,6 +876,8 @@ function App() {
           {/* 云同步：浮动状态徽章 + 冲突解决弹窗（全局，无论 WelcomeModal 或主界面都可见） */}
           <SyncStatusBadge />
           <GlobalConflictDialog />
+          {/* 「和云端对一对」（查阅并合并）：账号页入口 / 推送发现别处改过时打开 */}
+          <SyncMergeSheet />
           <GlobalDiffDialog />
           {/* dev 临时件已随收官下架（2026-08-01 用户口径）；斜界调参（SlantTuner）仍在
               components/dev/ 备查。星形撕页演示与原语样品间连同其专属库

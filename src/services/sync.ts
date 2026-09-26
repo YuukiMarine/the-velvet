@@ -6,6 +6,7 @@ import { computeTotalLv } from '@/utils/lvTiers';
 import { normalizeAttributeLevelTitles } from '@/utils/attributeLevelTitles';
 import { resolveLevelDifficulty } from '@/utils/levelDifficulty';
 import { buildPresencePatch } from '@/utils/profilePresence';
+import { mergeTable, type MergeOptions, type TableMergeStats } from './syncMerge';
 
 /**
  * 哪些表受"同伴"分组开关（syncConfidantsToCloud）管辖——
@@ -267,8 +268,16 @@ const SYNC_OWNER_KEY = 'velvet:syncOwner';
 /** 后台自动同步失败的退避记录：{ at, n }，第 n 次失败后等 30 分钟 × 2^(n-1)（封顶 24 小时）再试 */
 const AUTO_SYNC_FAIL_KEY = 'velvet:autoSyncFail';
 const AUTO_SYNC_BACKOFF_BASE_MS = 30 * 60 * 1000;
-/** PB 单个 JSON 字段的默认上限约 2MB：超过的表单独报「太大」，不连累其它表 */
-const TABLE_JSON_MAX_BYTES = 1_800_000;
+/** 云端 _meta 记录的 key：格式版本 + 哪些表分了片。老版本 App 不认识这个 key，会直接跳过 */
+const META_KEY = '_meta';
+/** 本客户端认得的云端数据格式版本：2 = 认得分片（key#n）与 _meta。云端 _meta.schema 比这大 = 更新版本的 App 写的，拒绝推拉 */
+export const SYNC_SCHEMA = 2;
+/** 一张表的 JSON 超过这个就分片（PB 单个 JSON 字段默认上限约 2MB） */
+const CHUNK_THRESHOLD_BYTES = 1_500_000;
+/** 每片大约多大 */
+const CHUNK_TARGET_BYTES = 1_000_000;
+/** 上次推 / 拉时看到的云端各表版本：{ key: version }。推送前再看一眼，变了 = 别处改过，不能盲目覆盖 */
+const CLOUD_SEEN_KEY = 'velvet:cloudSeen';
 /** 后台自动同步节流：每 24 小时至多一次 */
 const AUTO_SYNC_INTERVAL_MS = 24 * 60 * 60 * 1000;
 /** 表级计数差 ≥ 阈值即视为"较大差异" */
@@ -353,6 +362,151 @@ async function runExclusive<T>(what: string, fn: () => Promise<T>): Promise<T> {
   }
 }
 
+type Row = Record<string, unknown>;
+
+/** 推送时发现云端有别处的更新：调用方打开「和云端对一对」 */
+export class SyncConflictError extends Error {
+  tables: string[];
+  constructor(tables: string[]) {
+    super(`云端的${tables.join('、')}在别处改过，先对一对再推`);
+    this.name = 'SyncConflictError';
+    this.tables = tables;
+  }
+}
+/** 云端数据是更新版本的 App 写的（_meta.schema 比本机大） */
+export class SyncSchemaError extends Error {
+  constructor(message: string) { super(message); this.name = 'SyncSchemaError'; }
+}
+
+const readCloudSeen = (): Record<string, string> => {
+  try { return JSON.parse(localStorage.getItem(CLOUD_SEEN_KEY) || '{}') as Record<string, string>; } catch { return {}; }
+};
+const rememberCloudSeen = (versions: Record<string, string>): void => {
+  try { localStorage.setItem(CLOUD_SEEN_KEY, JSON.stringify({ ...readCloudSeen(), ...versions })); } catch { /* ignore */ }
+};
+
+// ── 云端快照：认得分片（key#n）与 _meta ──────────────────────────────────────
+interface CloudMeta { schema?: number; chunks?: Record<string, { n: number; at: string }> }
+interface CloudTableRec {
+  /** 拉全量时才有；只拉 id 时为 null */
+  rows: Row[] | null;
+  /** 这张表的版本：整表记录的 updated，或分片的 _meta.chunks[key].at；乐观并发按它比 */
+  version: string;
+  plainId: string | null;
+  plainUpdated: string | null;
+  chunkIds: Map<number, string>;
+}
+interface CloudSnapshot { tables: Map<string, CloudTableRec>; meta: CloudMeta; metaId: string | null }
+
+const parseValue = (v: unknown): Row[] | null => {
+  let parsed = v;
+  if (typeof parsed === 'string') { try { parsed = JSON.parse(parsed); } catch { return null; } }
+  return Array.isArray(parsed) ? (parsed as Row[]) : null;
+};
+/** PB 的 updated 是「YYYY-MM-DD HH:MM:SS.mmmZ」，_meta.at 是 ISO：统一成前者再做字符串比较 */
+const pbStamp = (iso: string): string => iso.replace('T', ' ');
+
+/**
+ * 把当前用户在 user_data 里的记录整理成「按表」的快照。
+ * 分片：`activities#1..n` + `_meta.chunks.activities = { n, at }`。整表记录若比分片新（老版本 App 在分片之后
+ * 又推过一次整表），以整表为准；否则拼分片。老版本 App 只认 SYNC_TABLES 里的 key，分片和 _meta 都会跳过，
+ * 拉取时找不到整表记录就保留本地那张——不会拿到半张表。
+ */
+async function fetchCloudSnapshot(mode: 'ids' | 'full'): Promise<CloudSnapshot> {
+  if (!pb) throw new Error('云同步未配置');
+  const userId = getUserId();
+  if (!userId) throw new Error('用户信息缺失');
+  const records = await pb.collection('user_data').getFullList({
+    filter: `user = "${userId}"`,
+    ...(mode === 'ids' ? { fields: 'id,key,updated,created' } : {}),
+    requestKey: null,
+  });
+  let meta: CloudMeta = {};
+  let metaId: string | null = null;
+  const metaRec = records.find(r => r.key === META_KEY);
+  if (metaRec) {
+    metaId = metaRec.id;
+    let v: unknown = mode === 'ids' ? (await pb.collection('user_data').getOne(metaRec.id, { requestKey: null })).value : metaRec.value;
+    if (typeof v === 'string') { try { v = JSON.parse(v); } catch { v = {}; } }
+    if (v && typeof v === 'object' && !Array.isArray(v)) meta = v as CloudMeta;
+  }
+  if (typeof meta.schema === 'number' && meta.schema > SYNC_SCHEMA) {
+    throw new SyncSchemaError('云端数据是更新版本的 App 写的，先更新 App 再同步');
+  }
+  const tables = new Map<string, CloudTableRec>();
+  const rec = (key: string): CloudTableRec => {
+    let t = tables.get(key);
+    if (!t) { t = { rows: null, version: '', plainId: null, plainUpdated: null, chunkIds: new Map() }; tables.set(key, t); }
+    return t;
+  };
+  const chunkValues = new Map<string, Map<number, Row[]>>();
+  for (const r of records) {
+    const key = r.key as string;
+    if (key === META_KEY) continue;
+    const hash = key.indexOf('#');
+    if (hash < 0) {
+      const t = rec(key);
+      t.plainId = r.id;
+      t.plainUpdated = (r.updated as string) || (r.created as string) || '';
+      if (mode === 'full') t.rows = parseValue(r.value) ?? [];
+      continue;
+    }
+    const base = key.slice(0, hash);
+    const idx = Number(key.slice(hash + 1));
+    if (!Number.isInteger(idx) || idx < 1) continue;
+    rec(base).chunkIds.set(idx, r.id);
+    if (mode === 'full') {
+      let m = chunkValues.get(base);
+      if (!m) { m = new Map(); chunkValues.set(base, m); }
+      m.set(idx, parseValue(r.value) ?? []);
+    }
+  }
+  for (const [key, t] of tables) {
+    const chunkMeta = meta.chunks?.[key];
+    const hasChunks = t.chunkIds.size > 0 && !!chunkMeta;
+    const usePlain = !!t.plainId && (!hasChunks || (t.plainUpdated ?? '') > pbStamp(chunkMeta!.at));
+    if (usePlain || !hasChunks) {
+      t.version = t.plainUpdated ?? '';
+    } else {
+      t.version = chunkMeta!.at;
+      if (mode === 'full') {
+        const parts = chunkValues.get(key) ?? new Map<number, Row[]>();
+        const rows: Row[] = [];
+        for (let i = 1; i <= chunkMeta!.n; i++) rows.push(...(parts.get(i) ?? []));
+        t.rows = rows;
+      }
+    }
+    if (mode === 'full' && !t.rows) t.rows = [];
+  }
+  return { tables, meta, metaId };
+}
+
+const versionsOf = (snap: CloudSnapshot): Record<string, string> =>
+  Object.fromEntries([...snap.tables].filter(([, t]) => !!t.version).map(([k, t]) => [k, t.version]));
+
+/** 按大小切片：每片不超过 targetBytes（单行本身超过也单独成片） */
+function splitRows(rows: Row[], targetBytes: number): Row[][] {
+  const out: Row[][] = [];
+  let cur: Row[] = [];
+  let size = 2;
+  for (const r of rows) {
+    const b = JSON.stringify(r).length + 1;
+    if (cur.length && size + b > targetBytes) { out.push(cur); cur = []; size = 2; }
+    cur.push(r);
+    size += b;
+  }
+  if (cur.length || out.length === 0) out.push(cur);
+  return out;
+}
+
+/** 云端行 → 本机行：用 reviver 把 ISO 字符串还原成 Date */
+const reviveRows = (rows: Row[]): Row[] => {
+  try {
+    const r = JSON.parse(JSON.stringify(rows), dateReviver);
+    return Array.isArray(r) ? (r as Row[]) : [];
+  } catch { return []; }
+};
+
 /**
  * 类型上就是 ISO **字符串**的字段（不是 Date）——reviver 必须放过它们。
  * 否则一次 pull 之后 `step.doneAt` 之流会从 string 变成 Date，类型说谎、
@@ -413,115 +567,142 @@ export const hasCloudData = async (): Promise<boolean | null> => {
   }
 };
 
-/** 全量推送：把本地 Dexie 全部数据推到云端（覆盖同 key 记录）。同一时间只跑一件（见 runExclusive） */
-export const pushAll = (): Promise<void> => runExclusive('推送', pushAllInner);
+/**
+ * 上云前把「只留本机」的字段剥掉：同伴的两张头像图、设置里的背景图 / 天气 / （默认）API Key、24 小时终端卡。
+ * 推送和「查阅并合并」的对账都走这里，两边比较的才是同一口径。
+ */
+function stripForCloud(key: string, rows: Row[], includeApiKey: boolean): Row[] {
+  if (key === 'confidants') {
+    return rows.map(r => {
+      if (r && typeof r === 'object' && ('customAvatarDataUrl' in r || 'cardFaceDataUrl' in r)) {
+        const { customAvatarDataUrl: _omit, cardFaceDataUrl: _omit2, ...rest } = r;
+        void _omit; void _omit2;
+        return rest;
+      }
+      return r;
+    });
+  }
+  if (key === 'settings') {
+    // 默认**不**上传 Key（v2.6 起翻转）：多设备同步 Key 的便利，换不来"服务器上躺着一堆用户付费 Key"的风险。
+    // 存量用户里显式打开过开关的（=== true）维持上传，其余一律剔除。
+    return rows.map(r => {
+      if (!r || typeof r !== 'object') return r;
+      const { backgroundImage: _bg, backgroundOrientation: _bgo, weatherApiKey: _wk, weatherApiHost: _wh, weatherCity: _wc, ...rest } = r;
+      void _bg; void _bgo; void _wk; void _wh; void _wc;
+      if (!includeApiKey) {
+        const { summaryApiKey: _s, openaiApiKey: _o, aiProfiles: _p, ...leaner } = rest;
+        void _s; void _o; void _p;
+        return leaner;
+      }
+      return rest;
+    });
+  }
+  // F3 终端 24h 任务存在 callingCards 表，但属临时态、且 terminal.goalTitle 复刻了愿望标题。
+  // 愿望(wishes)默认本地优先(opt-in 上云)，故终端卡一律不上云，避免从 callingCards 通道泄漏愿望语义。
+  if (key === 'callingCards') return rows.filter(r => !(r && typeof r === 'object' && r.terminal));
+  return rows;
+}
 
-const pushAllInner = async (): Promise<void> => {
+/**
+ * 全量推送：把本地 Dexie 全部数据推到云端（覆盖同 key 记录）。同一时间只跑一件（见 runExclusive）。
+ * 推送前先看云端各表的版本：和上次推 / 拉时看到的不一样 = 别处改过，抛 SyncConflictError 让用户先对一对；
+ * force = 用户已经选了「以本机为准」。
+ */
+export const pushAll = (opts: { force?: boolean } = {}): Promise<void> => runExclusive('推送', () => pushAllInner(opts));
+
+const pushAllInner = async (opts: { force?: boolean } = {}): Promise<void> => {
   const cloudStore = useCloudStore.getState();
   if (!pb || !pb.authStore.isValid) throw new Error('未登录');
   const userId = getUserId();
   if (!userId) throw new Error('用户信息缺失（请退出重新登录）');
+  const client = pb;
 
   cloudStore.setSyncStatus('syncing');
   cloudStore.setLastError(null);
   try {
-    // 一次性拉取已有记录，避免每个 key 各查一次
-    const existing = await pb.collection('user_data').getFullList({
-      filter: `user = "${userId}"`,
-      fields: 'id,key',
-    });
-    const existingByKey = new Map<string, string>(
-      existing.map(r => [r.key as string, r.id as string])
-    );
+    const snap = await fetchCloudSnapshot('ids');
+    const meta: CloudMeta = { ...snap.meta, chunks: { ...(snap.meta.chunks ?? {}) } };
+    /** 这一轮写完后各表的版本（记到 cloudSeen） */
+    const versions: Record<string, string> = {};
 
     const skipSet = getSkipSet();
     const appSettings = useAppStore.getState().settings;
-    // 默认**不**上传（v2.6 起翻转）：多设备同步 Key 的便利，换不来"服务器上躺着一堆用户付费 Key"的风险。
-    // 存量用户里显式打开过开关的（=== true）维持上传，其余一律剔除。
     const includeApiKey = appSettings.syncCloudApiKey === true;
+
+    // 乐观并发：上次推 / 拉时看到的版本和现在不一样 → 别处改过，盲目覆盖会把那些改动抹掉
+    if (!opts.force) {
+      const seen = readCloudSeen();
+      const changed = SYNC_TABLES.filter(k => {
+        if (skipSet.has(k) || !seen[k]) return false;
+        const v = snap.tables.get(k)?.version ?? '';
+        return !!v && v !== seen[k];
+      });
+      if (changed.length) throw new SyncConflictError(changed);
+    }
+
+    const del = async (id: string) => { try { await client.collection('user_data').delete(id, { requestKey: null }); } catch (e) { console.warn('[velvet-sync] push: delete failed', id, e); } };
+    /** 写一张表：小表整条记录；大表切片（key#1..n）并登记到 _meta，同时清掉另一种形态的残留 */
+    const writeTable = async (key: string, rows: Row[]): Promise<void> => {
+      const cur = snap.tables.get(key);
+      if (JSON.stringify(rows).length <= CHUNK_THRESHOLD_BYTES) {
+        const r = cur?.plainId
+          ? await client.collection('user_data').update(cur.plainId, { value: rows }, { requestKey: null })
+          : await client.collection('user_data').create({ user: userId, key, value: rows }, { requestKey: null });
+        versions[key] = (r.updated as string) || '';
+        for (const id of cur?.chunkIds.values() ?? []) await del(id);
+        if (meta.chunks) delete meta.chunks[key];
+        return;
+      }
+      const parts = splitRows(rows, CHUNK_TARGET_BYTES);
+      const at = new Date().toISOString();
+      for (let i = 0; i < parts.length; i++) {
+        const idx = i + 1;
+        const id = cur?.chunkIds.get(idx);
+        if (id) await client.collection('user_data').update(id, { value: parts[i] }, { requestKey: null });
+        else await client.collection('user_data').create({ user: userId, key: `${key}#${idx}`, value: parts[i] }, { requestKey: null });
+      }
+      for (const [idx, id] of cur?.chunkIds ?? []) if (idx > parts.length) await del(id);
+      if (cur?.plainId) await del(cur.plainId);
+      meta.chunks = { ...(meta.chunks ?? {}), [key]: { n: parts.length, at } };
+      versions[key] = at;
+    };
+
     /** 没传上去的表：一张表失败不中断后面的（以前第一张出错整轮就停，后面的表永远传不上去） */
     const failed: Array<{ key: string; why: string }> = [];
     for (const key of SYNC_TABLES) {
       if (skipSet.has(key)) {
-        // 用户选择不上传该表。若云端还留着**上次开着开关时**推上去的那份，就顺手删掉——
+        // 用户选择不上传该表。若云端还留着**上次开着开关时**推上去的那份（整表或分片），就顺手删掉——
         // 否则「关掉开关」只是停止继续上传，历史数据永远躺在服务器上，
         // 与同步隐私面板给用户的承诺（这类数据不出本机）对不上（FS7 审查）。
-        const staleId = existingByKey.get(key);
-        if (staleId) {
-          try {
-            await pb.collection('user_data').delete(staleId);
-            existingByKey.delete(key);
-          } catch (e) {
-            console.warn('[velvet-sync] push: 清理已关闭分类的云端残留失败', key, e);
-          }
-        }
+        const cur = snap.tables.get(key);
+        if (cur?.plainId) await del(cur.plainId);
+        for (const id of cur?.chunkIds.values() ?? []) await del(id);
+        if (meta.chunks) delete meta.chunks[key];
         continue;
       }
       let rows = await db.table(key).toArray();
-      // 隐私豁免：confidants 的 customAvatarDataUrl（自定义头像）和 cardFaceDataUrl（对方头像裁图）只留本机，不上云
-      if (key === 'confidants') {
-        rows = rows.map((r: Record<string, unknown>) => {
-          if (r && typeof r === 'object' && ('customAvatarDataUrl' in r || 'cardFaceDataUrl' in r)) {
-            const { customAvatarDataUrl: _omit, cardFaceDataUrl: _omit2, ...rest } = r as Record<string, unknown>;
-            void _omit; void _omit2;
-            return rest;
-          }
-          return r;
-        });
-      }
-      // settings 的特殊字段处理：
-      //   · backgroundImage 永远不上云（base64 图片体积太大，也是纯设备偏好）
-      //   · AI API Key 按开关决定
-      if (key === 'settings') {
-        rows = rows.map((r: Record<string, unknown>) => {
-          if (!r || typeof r !== 'object') return r;
-          const {
-            backgroundImage: _bg,
-            backgroundOrientation: _bgo,
-            // 天气三件套同口径：Key 是凭证、城市是位置语义，都不该离开本机。
-            // 它们照常进本地备份（buildExportJson），只是不上云。
-            weatherApiKey: _wk,
-            weatherApiHost: _wh,
-            weatherCity: _wc,
-            ...rest
-          } = r as Record<string, unknown>;
-          void _bg; void _bgo; void _wk; void _wh; void _wc;
-          if (!includeApiKey) {
-            // aiProfiles 里存着各家明文 Key，跟生效位的 Key 走同一豁免开关
-            const { summaryApiKey: _s, openaiApiKey: _o, aiProfiles: _p, ...leaner } = rest;
-            void _s; void _o; void _p;
-            return leaner;
-          }
-          return rest;
-        });
-      }
-      // F3 终端 24h 任务存在 callingCards 表，但属临时态、且 terminal.goalTitle 复刻了愿望标题。
-      // 愿望(wishes)默认本地优先(opt-in 上云)，故终端卡一律不上云，避免从 callingCards 通道泄漏愿望语义。
-      if (key === 'callingCards') {
-        rows = rows.filter((r: Record<string, unknown>) => !(r && typeof r === 'object' && (r as Record<string, unknown>).terminal));
-      }
+      rows = stripForCloud(key, rows as Row[], includeApiKey);
       // 直接传数组：SDK 会用 JSON.stringify 序列化请求体（Date → ISO），
       // PocketBase 的 JSON 字段存为原生数组。
       // 不要先 JSON.stringify 成字符串再传 —— 那会被 PB 解析两次，行为不一致。
-      const bytes = JSON.stringify(rows).length;
-      if (bytes > TABLE_JSON_MAX_BYTES) {
-        // 超过 PB 单字段上限：这张表传不上去，但别连累别的表（分片方案排在第 3 轮）
-        failed.push({ key, why: `太大（${(bytes / 1024 / 1024).toFixed(1)} MB）` });
-        continue;
-      }
       try {
-        const existingId = existingByKey.get(key);
-        if (existingId) {
-          await pb.collection('user_data').update(existingId, { value: rows });
-        } else {
-          await pb.collection('user_data').create({ user: userId, key, value: rows });
-        }
+        await writeTable(key, rows as Row[]);
       } catch (e) {
         const st = (e as { status?: number })?.status;
         failed.push({ key, why: st === 413 ? '太大' : st ? `服务器回 ${st}` : '网络错误' });
         console.warn('[velvet-sync] push: table failed, continuing', key, e);
       }
     }
+    // _meta：格式版本 + 分片登记。分片表要靠它才读得到，写不成就当整轮没成（下次再推）
+    try {
+      const metaValue = { schema: SYNC_SCHEMA, chunks: meta.chunks ?? {} };
+      if (snap.metaId) await client.collection('user_data').update(snap.metaId, { value: metaValue }, { requestKey: null });
+      else await client.collection('user_data').create({ user: userId, key: META_KEY, value: metaValue }, { requestKey: null });
+    } catch (e) {
+      failed.push({ key: '_meta', why: '登记分片失败' });
+      console.warn('[velvet-sync] push: meta failed', e);
+    }
+    rememberCloudSeen(versions);
 
     // 把"公开档案"一并同步到 users 表（在线同伴 / 好友页要查的就是这份数据）
     //   total_lv        —— 总等级
@@ -620,6 +801,108 @@ const DEVICE_SETTING_KEYS = ['syncExcludedTables', 'syncConfidantsToCloud', 'syn
 /** 全量拉取：用云端数据覆盖本地 Dexie，然后刷新 Zustand 状态。同一时间只跑一件（见 runExclusive） */
 export const pullAll = (): Promise<void> => runExclusive('拉取', pullAllInner);
 
+/**
+ * 云端行 → 可以写进本机的行：把「只留本机」的东西并回去。
+ *   · settings：云端没带的 API Key（及其连接三件套）、背景图、天气、按设备生效的同步开关，用本机的
+ *   · confidants：自定义头像、对方头像裁图，按 id 并回
+ *   · callingCards：24 小时终端卡只存本机，云端没有，并回去
+ *   · dailyDivinations：云端没有今天这一张时保留本地那张（每日一抽不可逆，丢了等于可以重抽）
+ * 返回 null = 这张表跳过（云端 settings 是空数组：覆盖会把本地设置抹掉）。
+ * 拉取和「查阅并合并」写库前都走这里。
+ */
+async function localizeCloudRows(key: string, rows: Row[]): Promise<Row[] | null> {
+  if (key === 'settings' && rows.length === 0) {
+    console.warn('[velvet-sync] pull: 云端 settings 为空数组，跳过覆盖以保护本地设置');
+    return null;
+  }
+  let toWrite = rows;
+  if (key === 'confidants') {
+    const local = await db.confidants.toArray();
+    const avatarById = new Map(local.filter(c => typeof c.customAvatarDataUrl === 'string' && c.customAvatarDataUrl).map(c => [c.id, c.customAvatarDataUrl as string]));
+    const faceById = new Map(local.filter(c => typeof c.cardFaceDataUrl === 'string' && c.cardFaceDataUrl).map(c => [c.id, c.cardFaceDataUrl as string]));
+    toWrite = toWrite.map(r => {
+      const id = r?.id as string | undefined;
+      if (!r || !id) return r;
+      let next = r;
+      if (avatarById.has(id)) next = { ...next, customAvatarDataUrl: avatarById.get(id) };
+      if (faceById.has(id)) next = { ...next, cardFaceDataUrl: faceById.get(id) };
+      return next;
+    });
+  }
+  if (key === 'callingCards') {
+    const terminal = (await db.callingCards.toArray()).filter(c => !!(c as { terminal?: unknown }).terminal) as unknown as Row[];
+    if (terminal.length) {
+      const ids = new Set(toWrite.map(r => r?.id));
+      toWrite = [...toWrite, ...terminal.filter(c => !ids.has(c.id))];
+    }
+  }
+  if (key === 'dailyDivinations') {
+    const today = toLocalDateKey();
+    // 取**最早**的那一张，与 store 的 loadDailyDivination 同口径：同一天可能存着两行（原抽 + 重抽）
+    const sameDay = await db.dailyDivinations.where('date').equals(today).toArray();
+    const localToday = sameDay.length
+      ? sameDay.reduce((x, y) => (new Date(x.createdAt).getTime() <= new Date(y.createdAt).getTime() ? x : y))
+      : undefined;
+    if (localToday && !toWrite.some(r => r && r.date === today)) {
+      const fb = localToday as unknown as Row;
+      // 先剔掉同 id 的再追加：同一事务里主键重复会让整张表回滚
+      toWrite = [...toWrite.filter(r => !(r && r.id === fb.id)), fb];
+      console.warn('[velvet-sync] pull: 云端没有今日塔罗，保留本地这一张（避免可重抽）');
+    }
+  }
+  if (key === 'settings') {
+    const local = await db.settings.toArray();
+    if (local.length > 0) {
+      const ov = local[0] as unknown as Row;
+      toWrite = toWrite.map((r, idx) => {
+        if (idx !== 0 || !r) return r;
+        const merged: Row = { ...r };
+        // API Key：云端没带才回填（云端有值就尊重它，允许多设备同步）
+        if (!merged.summaryApiKey && ov.summaryApiKey) merged.summaryApiKey = ov.summaryApiKey;
+        if (!merged.openaiApiKey && ov.openaiApiKey) merged.openaiApiKey = ov.openaiApiKey;
+        if (!merged.aiProfiles && ov.aiProfiles) merged.aiProfiles = ov.aiProfiles;
+        // 连接三件套跟着 Key 走：这一次实际用的是本地 Key 时，provider / baseUrl / model 也用本地那套，否则错配
+        if (!r.summaryApiKey && ov.summaryApiKey) {
+          if (ov.summaryApiProvider) merged.summaryApiProvider = ov.summaryApiProvider;
+          if (ov.summaryApiBaseUrl) merged.summaryApiBaseUrl = ov.summaryApiBaseUrl;
+          if (ov.summaryModel) merged.summaryModel = ov.summaryModel;
+        }
+        // 背景图、天气：永远用本地（云端根本不存这几个字段）
+        if (ov.backgroundImage) merged.backgroundImage = ov.backgroundImage;
+        if (ov.backgroundOrientation) merged.backgroundOrientation = ov.backgroundOrientation;
+        if (ov.weatherApiKey) merged.weatherApiKey = ov.weatherApiKey;
+        if (ov.weatherApiHost) merged.weatherApiHost = ov.weatherApiHost;
+        if (ov.weatherCity) merged.weatherCity = ov.weatherCity;
+        // 按设备生效的同步开关：一律用本机的（本机没设过就删掉云端带来的，回到默认）
+        for (const k of DEVICE_SETTING_KEYS) {
+          if (ov[k] === undefined) delete merged[k]; else merged[k] = ov[k];
+        }
+        return merged;
+      });
+    }
+  }
+  return toWrite;
+}
+
+/** 把算好的各表一次性写进本机（一个事务，任何一张失败整体回滚），再重载内存态 */
+async function writePlansLocally(plans: Array<{ key: SyncKey; rows: Row[] }>): Promise<void> {
+  await db.transaction('rw', plans.map(p => db.table(p.key)), async () => {
+    for (const p of plans) {
+      const table = db.table(p.key);
+      await table.clear();
+      if (p.rows.length) await table.bulkAdd(p.rows as never[]);
+    }
+  });
+  // 重载 Zustand in-memory 状态
+  await useAppStore.getState().initializeApp();
+  // 拉回来的可能是**未做过任务×终端合并迁移**的老设备数据，这里补跑一次；已迁移则读到标记瞬时返回
+  try {
+    await useAppStore.getState().runTasksMergeMigration();
+  } catch (e) {
+    console.warn('[velvet-sync] pull: tasks-merge 迁移补跑失败，下次启动续跑', e);
+  }
+}
+
 const pullAllInner = async (): Promise<void> => {
   const cloudStore = useCloudStore.getState();
   if (!pb || !pb.authStore.isValid) throw new Error('未登录');
@@ -629,241 +912,30 @@ const pullAllInner = async (): Promise<void> => {
   cloudStore.setSyncStatus('syncing');
   cloudStore.setLastError(null);
   try {
-    const list = await pb.collection('user_data').getFullList({
-      filter: `user = "${userId}"`,
-    });
-    console.log('[velvet-sync] pull: fetched', list.length, 'cloud records');
+    const snap = await fetchCloudSnapshot('full');
+    console.log('[velvet-sync] pull: fetched', snap.tables.size, 'cloud tables');
 
     const skipSet = getSkipSet();
-    let tablesRewritten = 0;
     let totalRowsWritten = 0;
     /**
      * 两段式：先把每张表要写的行算好（解析、还原日期、本机专属字段回填），
-     * 最后放进**一个**事务写。以前逐表各开事务，某张表中途失败就半新半旧；
-     * 现在任何一张失败整体回滚，本地维持拉取前的样子。
+     * 最后放进**一个**事务写。任何一张失败整体回滚，本地维持拉取前的样子。
      */
-    const plans: Array<{ key: SyncKey; rows: Array<Record<string, unknown>> }> = [];
-    for (const item of list) {
-      const key = item.key as string;
-      if (!(SYNC_TABLES as readonly string[]).includes(key)) continue;
+    const plans: Array<{ key: SyncKey; rows: Row[] }> = [];
+    for (const key of SYNC_TABLES) {
       if (skipSet.has(key)) continue; // 用户选择不从云端覆盖该表
-
-      // PocketBase 的 JSON 字段通常直接返回原生值（数组/对象）。
-      // 兼容一些旧数据可能是 JSON 字符串的情况。
-      let parsedValue: unknown = item.value;
-      if (typeof parsedValue === 'string') {
-        try {
-          parsedValue = JSON.parse(parsedValue);
-        } catch (e) {
-          console.warn('[velvet-sync] pull: failed to parse legacy string', key, e);
-          continue;
-        }
-      }
-      if (!Array.isArray(parsedValue)) continue;
-
-      // 用 stringify + parse+reviver 的技巧把 ISO 字符串还原为 Date
-      let rows: unknown;
-      try {
-        rows = JSON.parse(JSON.stringify(parsedValue), dateReviver);
-      } catch (e) {
-        console.warn('[velvet-sync] pull: failed to revive', key, e);
-        continue;
-      }
-      if (!Array.isArray(rows)) continue;
-
-      // settings 是单行表，云端拿回空数组只可能是异常（推送时本地就是空的 / 记录被截断）。
-      // 这时若照常"清空后写入"，本地设置会被整行抹掉——连永不上云的背景图与 API Key
-      // 都一起没了（回填逻辑只在非空数组的第 0 行上跑）。宁可跳过这一张。
-      if (key === 'settings' && rows.length === 0) {
-        console.warn('[velvet-sync] pull: 云端 settings 为空数组，跳过覆盖以保护本地设置');
-        continue;
-      }
-
-      // 这张表要写的行先算好，最后和别的表一起放进同一个事务（见下面）
-
-      // 隐私豁免：confidants 的 customAvatarDataUrl（自定义头像）和 cardFaceDataUrl（对方头像裁图）永远不上云，
-      // 拉取时按 id 把本地已有的合并回去
-      let localAvatarById: Map<string, string> | null = null;
-      let localFaceById: Map<string, string> | null = null;
-      if (key === 'confidants') {
-        const local = await db.confidants.toArray();
-        localAvatarById = new Map(
-          local
-            .filter(c => typeof c.customAvatarDataUrl === 'string' && c.customAvatarDataUrl)
-            .map(c => [c.id, c.customAvatarDataUrl as string]),
-        );
-        localFaceById = new Map(
-          local
-            .filter(c => typeof c.cardFaceDataUrl === 'string' && c.cardFaceDataUrl)
-            .map(c => [c.id, c.cardFaceDataUrl as string]),
-        );
-      }
-      // 24 小时终端卡只存本机（推送时被过滤掉了）：拉取「清空 + 整表写入」会把它们清掉，这里并回去
-      let localTerminalCards: Array<Record<string, unknown>> = [];
-      if (key === 'callingCards') {
-        localTerminalCards = (await db.callingCards.toArray()).filter(c => !!(c as { terminal?: unknown }).terminal) as unknown as Array<Record<string, unknown>>;
-      }
-
-      /**
-       * 今日塔罗保全（用户上报："云同步 / 回档后已经抽过的今日塔罗被顶掉，可以重抽"）。
-       *
-       * 链路：pushAll 只在 trySyncInBackground 里跑，且 24 小时节流一次，而抽牌本身
-       * **不触发推送** —— 所以云端那份 dailyDivinations 常常还停在抽牌之前。
-       * 此时任何一次 pull 走到下面的 clear() + bulkAdd(云端行)，今天那张就没了；
-       * dailyDivination 变 null 后，DailyDraw 的 init effect（依赖 id/date）重跑，
-       * 落进 rollCandidates() —— 于是又能抽一次。
-       *
-       * 每日一抽是**不可逆的仪式**，重抽等于把这个约束整个作废，比丢一条普通记录严重得多。
-       * 所以这里按 backgroundImage / API Key 的同款口径处理：**云端没有今天这一张时，
-       * 把本地那张原样并回去**。云端有（说明抽完确实推上去过）则尊重云端，多设备照常工作。
-       */
-      let todayDivinationFallback: Record<string, unknown> | null = null;
-      if (key === 'dailyDivinations') {
-        const today = toLocalDateKey();
-        // 取**最早**的那一张，与 store 的 loadDailyDivination 同口径（那里有理由说明）：
-        // 已经踩过这个 bug 的库里同一天可能存着两行（原抽 + 重抽），
-        // 两处若各挑各的，会出现"保下来的是重抽那张、界面显示的是原抽那张"。
-        const sameDay = await db.dailyDivinations.where('date').equals(today).toArray();
-        const localToday = sameDay.length
-          ? sameDay.reduce((a, b) =>
-              new Date(a.createdAt).getTime() <= new Date(b.createdAt).getTime() ? a : b)
-          : undefined;
-        if (localToday) {
-          const cloudHasToday = (rows as Array<Record<string, unknown>>).some(
-            r => r && typeof r === 'object' && r.date === today,
-          );
-          if (!cloudHasToday) todayDivinationFallback = localToday as unknown as Record<string, unknown>;
-        }
-      }
-
-      // 隐私豁免：settings 若云端没带某些字段，保留本地版本
-      //   · summaryApiKey / openaiApiKey：按"AI 模型 API"开关决定是否上云，拉回来若缺失则回填本地
-      //   · backgroundImage / backgroundOrientation：永远不上云，拉回来必须回填，否则会被清掉
-      let localSettingsOverrides: Record<string, unknown> | null = null;
-      if (key === 'settings') {
-        const local = await db.settings.toArray();
-        if (local.length > 0) {
-          const first = local[0] as unknown as Record<string, unknown>;
-          localSettingsOverrides = {
-            summaryApiKey: first.summaryApiKey,
-            openaiApiKey: first.openaiApiKey,
-            aiProfiles: first.aiProfiles,
-            // Key 与「它属于哪家」是一个整体，必须一起回填。
-            // 只回填 Key、让 provider/baseUrl/model 跟云端走，会得到一把 DeepSeek 的 Key
-            // 配上 openai 的连接与 gpt-5 的模型名（provider 缺省时更直接落到默认那家）——
-            // 用户上报的「同步后 Key 只填到 openai 里、provider 变成 openai」就是这个。
-            summaryApiProvider: first.summaryApiProvider,
-            summaryApiBaseUrl: first.summaryApiBaseUrl,
-            summaryModel: first.summaryModel,
-            backgroundImage: first.backgroundImage,
-            backgroundOrientation: first.backgroundOrientation,
-            weatherApiKey: first.weatherApiKey,
-            weatherApiHost: first.weatherApiHost,
-            weatherCity: first.weatherCity,
-            ...Object.fromEntries(DEVICE_SETTING_KEYS.map(k => [k, first[k]])),
-          };
-        }
-      }
-
-      {
-        let toWrite = rows as Array<Record<string, unknown>>;
-        if (todayDivinationFallback) {
-          // 先剔掉同 id 的云端行再追加。表虽然已 clear()，但 toWrite 内部若出现重复主键，
-          // bulkAdd 会抛 ConstraintError —— 而这整段事务是 rw 的，一抛就整表回滚，
-          // 本来是来保数据的反而把这张表清空了。
-          const fbId = todayDivinationFallback.id;
-          toWrite = [...toWrite.filter(r => !(r && typeof r === 'object' && r.id === fbId)), todayDivinationFallback];
-          console.warn('[velvet-sync] pull: 云端没有今日塔罗，保留本地这一张（避免可重抽）');
-        }
-        if (localAvatarById || localFaceById) {
-          toWrite = toWrite.map(r => {
-            const id = (r as { id?: string }).id;
-            if (!r || typeof r !== 'object' || !id) return r;
-            let next = r;
-            if (localAvatarById?.has(id)) next = { ...next, customAvatarDataUrl: localAvatarById.get(id) };
-            if (localFaceById?.has(id)) next = { ...next, cardFaceDataUrl: localFaceById.get(id) };
-            return next;
-          });
-        }
-        if (localTerminalCards.length) {
-          const cloudIds = new Set(toWrite.map(r => (r as { id?: string }).id));
-          toWrite = [...toWrite, ...localTerminalCards.filter(c => !cloudIds.has(c.id as string))];
-        }
-        if (localSettingsOverrides) {
-          toWrite = toWrite.map((r, idx) => {
-            if (idx !== 0 || !r || typeof r !== 'object') return r;
-            const merged: Record<string, unknown> = { ...r };
-            const ov = localSettingsOverrides!;
-            // API Key：云端没带才回填（云端有值就尊重它，允许多设备同步）
-            if (!merged.summaryApiKey && ov.summaryApiKey) {
-              merged.summaryApiKey = ov.summaryApiKey;
-            }
-            if (!merged.openaiApiKey && ov.openaiApiKey) {
-              merged.openaiApiKey = ov.openaiApiKey;
-            }
-            if (!merged.aiProfiles && ov.aiProfiles) {
-              merged.aiProfiles = ov.aiProfiles;
-            }
-            /**
-             * 连接三件套跟着 Key 走：**这一次实际用的是本地 Key**（云端没带）时，
-             * provider / baseUrl / model 也必须用本地那套，否则 Key 与连接错配。
-             * 云端带了 Key（用户开了 Key 上云）才尊重云端的整套连接。
-             */
-            if (!r.summaryApiKey && ov.summaryApiKey) {
-              if (ov.summaryApiProvider) merged.summaryApiProvider = ov.summaryApiProvider;
-              if (ov.summaryApiBaseUrl) merged.summaryApiBaseUrl = ov.summaryApiBaseUrl;
-              if (ov.summaryModel) merged.summaryModel = ov.summaryModel;
-            }
-            // 背景图：永远用本地（云端既不存也不会带回来，无条件保留设备本地偏好）
-            if (ov.backgroundImage) {
-              merged.backgroundImage = ov.backgroundImage;
-            }
-            if (ov.backgroundOrientation) {
-              merged.backgroundOrientation = ov.backgroundOrientation;
-            }
-            // 天气：同背景图口径，无条件用本地（云端根本不存这几个字段）
-            if (ov.weatherApiKey) merged.weatherApiKey = ov.weatherApiKey;
-            if (ov.weatherApiHost) merged.weatherApiHost = ov.weatherApiHost;
-            if (ov.weatherCity) merged.weatherCity = ov.weatherCity;
-            // 按设备生效的同步开关：一律用本机的（本机没设过就删掉云端带来的，回到默认）
-            for (const k of DEVICE_SETTING_KEYS) {
-              if (ov[k] === undefined) delete merged[k]; else merged[k] = ov[k];
-            }
-            return merged;
-          });
-        }
-        plans.push({ key: key as SyncKey, rows: toWrite });
-      }
-      tablesRewritten++;
+      const t = snap.tables.get(key);
+      if (!t || !t.rows) continue;    // 云端没有这张表（老版本分片前的表 / 从没推过）：保留本地
+      const rows = reviveRows(t.rows);
+      const toWrite = await localizeCloudRows(key, rows);
+      if (!toWrite) continue;
+      plans.push({ key, rows: toWrite });
       totalRowsWritten += rows.length;
     }
-    // 「清空 + 整表写入」全部放进同一个事务：任何一张表失败（重复主键、QuotaExceeded、Dexie 被掐断）
-    // 就整体回滚，本地维持拉取前的样子；不会再出现「前几张换成云端的、后几张还是本地的」
-    await db.transaction('rw', plans.map(p => db.table(p.key)), async () => {
-      for (const p of plans) {
-        const table = db.table(p.key);
-        await table.clear();
-        if (p.rows.length) await table.bulkAdd(p.rows as never[]);
-      }
-    });
-    console.log(
-      '[velvet-sync] pull: rewrote',
-      tablesRewritten,
-      'tables,',
-      totalRowsWritten,
-      'total rows'
-    );
+    await writePlansLocally(plans);
+    console.log('[velvet-sync] pull: rewrote', plans.length, 'tables,', totalRowsWritten, 'total rows');
 
-    // 重载 Zustand in-memory 状态
-    await useAppStore.getState().initializeApp();
-    // 拉回来的可能是**未做过任务×终端合并迁移**的老设备数据（settings.tasksMergeMigratedAt 也被一起覆盖了），
-    // 这里补跑一次；已迁移则读到标记瞬时返回。不补的话要等下次冷启动才自愈（FS7 审查）。
-    try {
-      await useAppStore.getState().runTasksMergeMigration();
-    } catch (e) {
-      console.warn('[velvet-sync] pull: tasks-merge 迁移补跑失败，下次启动续跑', e);
-    }
-
+    rememberCloudSeen(versionsOf(snap));
     saveSyncOwner(userId);
     const now = new Date();
     saveLastSync(now);
@@ -876,6 +948,70 @@ const pullAllInner = async (): Promise<void> => {
     throw err;
   }
 };
+
+// ── 查阅并合并（v2.7.0.6 第 3 轮） ────────────────────────────────────────────
+
+export interface MergePreview { tables: TableMergeStats[] }
+export interface MergeTotals { onlyLocal: number; onlyCloud: number; conflict: number }
+
+/** 对一遍账：每张表两边差在哪（不动数据） */
+export const previewMerge = (): Promise<MergePreview> => runExclusive('对账', async () => {
+  if (!pb || !pb.authStore.isValid) throw new Error('未登录');
+  const snap = await fetchCloudSnapshot('full');
+  const skipSet = getSkipSet();
+  const includeApiKey = useAppStore.getState().settings.syncCloudApiKey === true;
+  const tables: TableMergeStats[] = [];
+  for (const key of SYNC_TABLES) {
+    if (skipSet.has(key)) continue;
+    const local = stripForCloud(key, (await db.table(key).toArray()) as Row[], includeApiKey);
+    const cloud = reviveRows(snap.tables.get(key)?.rows ?? []);
+    tables.push(mergeTable(key, local, cloud, { conflictWins: 'local', dropOnlyCloud: new Set() }).stats);
+  }
+  return { tables };
+});
+
+/**
+ * 合并：两边都留（规则见 syncMerge.ts），写进本机，再推到云端。
+ * 推的时候乐观并发照常生效：对账之后云端若又被别处改过，会被拦下来让用户再对一次。
+ */
+export const applyMerge = (opts: MergeOptions): Promise<MergeTotals> => runExclusive('合并', async () => {
+  const cloudStore = useCloudStore.getState();
+  if (!pb || !pb.authStore.isValid) throw new Error('未登录');
+  const userId = getUserId();
+  if (!userId) throw new Error('用户信息缺失（请退出重新登录）');
+  cloudStore.setSyncStatus('syncing');
+  cloudStore.setLastError(null);
+  try {
+    const snap = await fetchCloudSnapshot('full');
+    const skipSet = getSkipSet();
+    const includeApiKey = useAppStore.getState().settings.syncCloudApiKey === true;
+    const totals: MergeTotals = { onlyLocal: 0, onlyCloud: 0, conflict: 0 };
+    const plans: Array<{ key: SyncKey; rows: Row[] }> = [];
+    for (const key of SYNC_TABLES) {
+      if (skipSet.has(key)) continue;
+      const local = stripForCloud(key, (await db.table(key).toArray()) as Row[], includeApiKey);
+      const cloud = reviveRows(snap.tables.get(key)?.rows ?? []);
+      const { rows, stats } = mergeTable(key, local, cloud, opts);
+      totals.onlyLocal += stats.onlyLocal;
+      totals.onlyCloud += opts.dropOnlyCloud.has(key) ? 0 : stats.onlyCloud;
+      totals.conflict += stats.conflict;
+      // 剥掉的本机专属字段并回去（settings 的 Key / 背景图、同伴头像、终端卡…）
+      const localized = await localizeCloudRows(key, rows);
+      if (!localized) continue;
+      plans.push({ key, rows: localized });
+    }
+    await writePlansLocally(plans);
+    rememberCloudSeen(versionsOf(snap));
+    saveSyncOwner(userId);
+    // 推到云端：已经持有 runExclusive 的锁，直接调内层
+    await pushAllInner({ force: false });
+    return totals;
+  } catch (err) {
+    cloudStore.setSyncStatus('error');
+    cloudStore.setLastError(err instanceof Error ? err.message : '合并失败');
+    throw err;
+  }
+});
 
 export type LoginSyncResult = 'pulled' | 'pushed' | 'conflict' | 'skip';
 
@@ -911,7 +1047,7 @@ export const syncOnLogin = async (): Promise<LoginSyncResult> => {
 
 /** 冲突解决：保留本地数据，推送覆盖云端 */
 export const resolveConflictKeepLocal = async (): Promise<void> => {
-  await pushAll();
+  await pushAll({ force: true });
 };
 
 /** 冲突解决：保留云端数据，拉取覆盖本地 */
@@ -969,8 +1105,7 @@ export interface SyncDiff {
  */
 export const computeSyncDiff = async (): Promise<SyncDiff | null> => {
   if (!pb || !pb.authStore.isValid) return null;
-  const userId = getUserId();
-  if (!userId) return null;
+  if (!getUserId()) return null;
 
   // 云端：读所有 user_data 记录（含 updated 字段用于时间戳）
   //
@@ -982,22 +1117,14 @@ export const computeSyncDiff = async (): Promise<SyncDiff | null> => {
   // 上层只 console.warn 掉，于是窗里一个数都没有（详见 ConflictDialog 的呈现修复）。
   // 第二次登录时请求已被缓存/时序错开，所以"复现一次就好了"。全仓早有同款前科：
   // friends / coopBonds / notifications / danmaku 都显式关过 autocancel。
-  const cloudRecords = await pb.collection('user_data').getFullList({
-    filter: `user = "${userId}"`,
-    fields: 'key,value,updated,created',
-    requestKey: null,
-  });
+  const snap = await fetchCloudSnapshot('full');
   const cloudByKey = new Map<string, unknown>();
   let cloudLatest: Date | null = null;
-  for (const r of cloudRecords) {
-    cloudByKey.set(r.key as string, r.value);
-    const u = (r as unknown as { updated?: string; created?: string }).updated
-      ?? (r as unknown as { updated?: string; created?: string }).created;
-    if (u) {
-      const d = new Date(u);
-      if (!isNaN(d.getTime()) && (!cloudLatest || d > cloudLatest)) {
-        cloudLatest = d;
-      }
+  for (const [k, t] of snap.tables) {
+    cloudByKey.set(k, t.rows ?? []);
+    if (t.version) {
+      const d = new Date(t.version.replace(' ', 'T'));
+      if (!isNaN(d.getTime()) && (!cloudLatest || d > cloudLatest)) cloudLatest = d;
     }
   }
 
@@ -1107,14 +1234,20 @@ export const trySyncInBackground = async (): Promise<void> => {
     await pushAll();
     saveLastAutoSync(new Date());
     clearAutoSyncFail();
-  } catch {
+  } catch (err) {
+    if (err instanceof SyncConflictError) {
+      // 云端有别处的更新：不是故障，是要用户对一对
+      useCloudStore.getState().openMerge(err.tables);
+      saveLastAutoSync(new Date()); // 别每次退后台都弹
+      return;
+    }
     noteAutoSyncFail(); // 已由 pushAll 内部 setLastError 记录，静默不扰民
   }
 };
 
 /** 用户在"条目差异"提示中选择"保留本地，覆盖云端" */
 export const acceptDiffKeepLocal = async (): Promise<void> => {
-  await pushAll();
+  await pushAll({ force: true });
   saveLastAutoSync(new Date());
 };
 
