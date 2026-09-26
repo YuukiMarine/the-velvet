@@ -8,6 +8,7 @@
  */
 import { Settings, LedgerExpenseType, LedgerIncomeType } from '@/types';
 import { chatComplete, getAIConfig, getVisionAIConfig } from '@/utils/aiClient';
+import { extractJSON, extractJSONArray } from '@/utils/aiJson';
 import { recognizeText } from '@/utils/ocr';
 
 export interface LedgerAIResult {
@@ -58,17 +59,15 @@ export async function analyzeLedgerAI(
   const cfg = getAIConfig(settings);
   if (!cfg) throw new Error('请先在「设置 → AI 总结」中配置 API 密钥');
 
+  // 瞬发：用户输完一句就在等这笔账落下来（关思考 + 20 秒超时）
   const raw = await chatComplete(cfg, [
     { role: 'system', content: SYSTEM_PROMPT },
     { role: 'user', content: `用户输入：${trimmed}\n\n请按要求输出 JSON。` },
-  ], { temperature: 0.2, maxTokens: 200, signal });
+  ], { temperature: 0.2, maxTokens: 200, signal, instant: true });
 
-  const stripped = raw.replace(/```(?:json)?/gi, '').trim();
-  const fb = stripped.indexOf('{');
-  const lb = stripped.lastIndexOf('}');
   let parsed: Record<string, unknown>;
   try {
-    parsed = JSON.parse(fb >= 0 && lb > fb ? stripped.slice(fb, lb + 1) : stripped);
+    parsed = extractJSON(raw);
   } catch {
     const off = parseLedgerOffline(trimmed);
     if (off) return off;
@@ -191,8 +190,8 @@ export async function parseLedgerBatch(
       const raw = await chatComplete(cfg, [
         { role: 'system', content: SYSTEM_PROMPT_BATCH },
         { role: 'user', content: `用户输入：${trimmed}\n\n请输出 JSON 数组。` },
-      ], { temperature: 0.2, maxTokens: 700, signal });
-      const arr = extractJsonArray(raw);
+      ], { temperature: 0.2, maxTokens: 700, signal, instant: true });
+      const arr = extractJSONArray(raw);
       if (arr.length) {
         const results = arr.map(o => normalizeResult(o)).filter(r => r.amount > 0);
         if (results.length) return results;
@@ -259,7 +258,7 @@ export async function parseLedgerShot(
           ],
         },
       ], { temperature: 0.1, maxTokens: 700, signal });
-      const results = extractJsonArray(raw).map(o => normalizeResult(o)).filter(r => r.amount > 0);
+      const results = extractJSONArray(raw).map(o => normalizeResult(o)).filter(r => r.amount > 0);
       if (results.length) return { results, via: 'vision' };
     } catch {
       /* 视觉失败 → 继续往下降级 */
@@ -274,20 +273,6 @@ export async function parseLedgerShot(
   }
 
   return { results: [], via: 'none' };
-}
-
-/** 从模型输出里抽出 JSON 数组（容错代码块/前后缀文字）。 */
-function extractJsonArray(raw: string): Record<string, unknown>[] {
-  const stripped = raw.replace(/```(?:json)?/gi, '').trim();
-  const fb = stripped.indexOf('[');
-  const lb = stripped.lastIndexOf(']');
-  if (fb < 0 || lb <= fb) return [];
-  try {
-    const parsed = JSON.parse(stripped.slice(fb, lb + 1));
-    return Array.isArray(parsed) ? parsed.filter(x => x && typeof x === 'object') : [];
-  } catch {
-    return [];
-  }
 }
 
 /** 去掉数字与货币词，取前 12 字作摘要。 */

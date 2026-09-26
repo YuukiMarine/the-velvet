@@ -1,6 +1,6 @@
 import { motion, AnimatePresence } from 'motion/react';
 import { ModalPortal } from '@/components/ModalPortal';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import type { ReactNode } from 'react';
 import { useAppStore, toLocalDateKey } from '@/store';
 import { PactTodoTag } from '@/components/cooperation/PactTag';
@@ -386,7 +386,8 @@ export const AttributeGrid = ({ attributes, settings, onEditingChange }: {
           return (
             <motion.div
               key={attr.id}
-              layout
+              // layout 动画只在编辑（拖拽排序）时开：常态下每次重渲染都要测量五张卡的位置（第 4 轮）
+              layout={editMode}
               ref={(el) => { if (el) cardRefs.current.set(attr.id, el); else cardRefs.current.delete(attr.id); }}
               animate={{ opacity: isDragCard ? 0.35 : 1, scale: isOverCard ? 1.03 : 1 }}
               transition={{ duration: 0.15 }}
@@ -575,12 +576,14 @@ export const Dashboard = () => {
    * 基准 46px 每次重量，避免在已经缩过的字号上继续缩。
    */
   const p4TitleRef = useRef<HTMLHeadingElement | null>(null);
+  // 只在挂载 / 换主题时量一次（第 4 轮）：以前没写依赖，每次重渲染都强制回流两次
+  const themeForFit = useAppStore(s => s.user?.theme);
   useEffect(() => {
     const fit = () => fitOneLine(p4TitleRef.current, { min: 24, baseFontSize: 46 });
     fit();
     window.addEventListener('resize', fit);
     return () => window.removeEventListener('resize', fit);
-  });
+  }, [themeForFit]);
   // 逐字段订阅（v2.6.5 性能整改 A2）：原来是一句无选择器的 useAppStore()，
   // 于是订阅目标是**整个 state 对象**——setState 每次都换新对象，任何一次写入
   // （记账、同步落库、战斗状态…）都会重渲染整张首页。首页是常驻页，代价最大。
@@ -588,6 +591,7 @@ export const Dashboard = () => {
   const user = useAppStore(s => s.user);
   const settings = useAppStore(s => s.settings);
   const todos = useAppStore(s => s.todos);
+  const todoCompletions = useAppStore(s => s.todoCompletions);
   const activities = useAppStore(s => s.activities);
   const achievements = useAppStore(s => s.achievements);
   const skills = useAppStore(s => s.skills);
@@ -680,7 +684,12 @@ export const Dashboard = () => {
   }, [settings.countercurrentEnabled]);
 
   // 逆流预警（今天是第3日无增长，明天将扣减）
-  const countercurrentWarnings = settings.countercurrentEnabled ? getCountercurrentWarnings() : [];
+  // 逆流预警是 5 属性 × 3 天 × 全部记录的扫描：只在记录 / 属性 / 开关变了才重算（第 4 轮）
+  const countercurrentWarnings = useMemo(
+    () => (settings.countercurrentEnabled ? getCountercurrentWarnings() : []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [settings.countercurrentEnabled, settings.countercurrentEnabledAt, activities, attributes],
+  );
   const hasCountercurrentWarning = countercurrentWarnings.length > 0;
 
   // ──「今日仪式」叠放：预警条件 false→true 的沿触发自动滑到第一页（预警页恒在第 0 页）。
@@ -737,6 +746,9 @@ export const Dashboard = () => {
   // BIG DEAL 聚合卡数据 + 二级面板（批2）
   const [dealPanelId, setDealPanelId] = useState<string | null>(null);
 
+  // 今日待办与每行进度按 [todos, todoCompletions, 日期] 算一次（第 4 轮）：以前每次渲染都全量扫、每行再各查一遍
+  const { todayTodos, progressById } = useMemo(() => {
+  const progressById = new Map(todos.map(t => [t.id, getTodayTodoProgress(t.id)]));
   const todayTodos = [...todos.filter(todo => {
       // BIG DEAL **必须留在这个列表里**。
       // 排序把它顶到最前、下面的渲染分支再把它换成 BigDealHomeCard——
@@ -766,11 +778,15 @@ export const Dashboard = () => {
     if (!a.important && b.important) return 1;
     return 0;
   });
+  return { todayTodos, progressById };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [todos, todoCompletions, todayWeekday, todayKey]);
+  const progressOf = (id: string) => progressById.get(id) ?? getTodayTodoProgress(id);
 
   // 「N/M」只统计**可勾选**的普通待办。BIG DEAL 不是靠勾一下完成的（它逐子步推进、
   // 满步才收官），算进分母会让这个比值永远到不了头。
   const tickableTodos = todayTodos.filter(t => !t.isBigDeal);
-  const completedCount = tickableTodos.filter(t => getTodayTodoProgress(t.id).isComplete).length;
+  const completedCount = tickableTodos.filter(t => progressOf(t.id).isComplete).length;
   const totalCount = tickableTodos.length;
 
   // 统计数据
@@ -779,20 +795,24 @@ export const Dashboard = () => {
   const totalActivitiesCount = activities.length;
   const unlockedAchievementsCount = achievements.filter(a => a.unlocked).length;
   const unlockedSkillsCount = skills.filter(s => s.unlocked).length;
-  const uniqueDays = new Set(activities.map(a => new Date(a.date).toDateString())).size;
-  const uniqueTimestamps = [...new Set(activities.map(a => new Date(a.date).toDateString()))]
-    .map(d => new Date(d).getTime()).sort((a, b) => a - b);
-  const ONE_DAY = 86400000;
-  let maxStreak = uniqueTimestamps.length > 0 ? 1 : 0;
-  let currentStreak = 1;
-  for (let i = 1; i < uniqueTimestamps.length; i++) {
-    if (uniqueTimestamps[i] - uniqueTimestamps[i - 1] === ONE_DAY) {
-      currentStreak++;
-      if (currentStreak > maxStreak) maxStreak = currentStreak;
-    } else {
-      currentStreak = 1;
+  // 连击天数：全量记录扫描，只在记录变了才重算（第 4 轮）
+  const { uniqueDays, maxStreak } = useMemo(() => {
+    const uniqueDays = new Set(activities.map(a => new Date(a.date).toDateString())).size;
+    const uniqueTimestamps = [...new Set(activities.map(a => new Date(a.date).toDateString()))]
+      .map(d => new Date(d).getTime()).sort((a, b) => a - b);
+    const ONE_DAY = 86400000;
+    let maxStreak = uniqueTimestamps.length > 0 ? 1 : 0;
+    let currentStreak = 1;
+    for (let i = 1; i < uniqueTimestamps.length; i++) {
+      if (uniqueTimestamps[i] - uniqueTimestamps[i - 1] === ONE_DAY) {
+        currentStreak++;
+        if (currentStreak > maxStreak) maxStreak = currentStreak;
+      } else {
+        currentStreak = 1;
+      }
     }
-  }
+    return { uniqueDays, maxStreak };
+  }, [activities]);
 
   // ──「今日仪式」叠放页组装（规格 §3.1 槽位 4）────────────────────────
   // 约束：children 必须用数组按条件组入，不能把"内部可能 return null 的组件"直接
@@ -1046,7 +1066,7 @@ export const Dashboard = () => {
                   />
                 );
               }
-              const progress = getTodayTodoProgress(todo.id);
+              const progress = progressOf(todo.id);
               const attrName = settings.attributeNames[todo.attribute as keyof typeof settings.attributeNames];
               const pct = Math.min(100, (progress.count / progress.target) * 100);
 
@@ -1061,7 +1081,7 @@ export const Dashboard = () => {
                   onClick={async (e) => {
                     if (!progress.isComplete) spawnTodoRipple(todo.id, e);
                     const result = await completeTodo(todo.id);
-                    const updated = getTodayTodoProgress(todo.id);
+                    const updated = progressOf(todo.id);
                     if (updated.isComplete) {
                       setCompletedTitle(todo.title);
                       const pts = todo.points + (todo.extraBoosts?.reduce((s, b) => s + b.points, 0) ?? 0);

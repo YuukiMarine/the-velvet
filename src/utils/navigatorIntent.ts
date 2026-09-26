@@ -75,18 +75,18 @@ actions 元素为下列四种之一：
 - 其它一律 {"actions":[],"query":null}。
 
 示例：
-输入末句：今天跑了五公里 → {"actions":[{"kind":"activity","text":"跑步五公里","points":{"knowledge":0,"guts":2,"dexterity":1,"kindness":0,"charm":0},"important":false}],"query":null}
-输入末句：提醒我周五给妈妈打电话 → {"actions":[{"kind":"todo","title":"周五给妈妈打电话","attribute":"kindness","points":2,"attribute2":"charm","points2":1,"repeatDaily":false}],"query":null}
-对话提到想学英语、无相关待确认卡，末句：帮我记一下 → {"actions":[{"kind":"todo","title":"学英语","attribute":"knowledge","points":2,"repeatDaily":true}],"query":null}
-待确认卡已有「学英语」，末句：帮我记一下 → {"actions":[],"query":null}
-卡片已有「记录活动【已确认生效】跑步五公里」，末句：对了我今天跑了五公里来着 → {"actions":[],"query":null}
-任务清单已有「背单词」，末句：帮我加个背单词的任务 → {"actions":[],"query":null}
+输入末句：今天跑了五公里 → {"actions":[{"kind":"activity","text":"跑步五公里","points":{"knowledge":0,"guts":2,"dexterity":1,"kindness":0,"charm":0},"important":false}],"query":null,"stance":"report","energy":"normal"}
+输入末句：提醒我周五给妈妈打电话 → {"actions":[{"kind":"todo","title":"周五给妈妈打电话","attribute":"kindness","points":2,"attribute2":"charm","points2":1,"repeatDaily":false}],"query":null,"stance":"report","energy":"normal"}
+对话提到想学英语、无相关待确认卡，末句：帮我记一下 → {"actions":[{"kind":"todo","title":"学英语","attribute":"knowledge","points":2,"repeatDaily":true}],"query":null,"stance":"report","energy":"normal"}
+待确认卡已有「学英语」，末句：帮我记一下 → {"actions":[],"query":null,"stance":"report","energy":"normal"}
+卡片已有「记录活动【已确认生效】跑步五公里」，末句：对了我今天跑了五公里来着 → {"actions":[],"query":null,"stance":"chat","energy":"normal"}
+任务清单已有「背单词」，末句：帮我加个背单词的任务 → {"actions":[],"query":null,"stance":"report","energy":"normal"}
 输入末句：今天好累啊 → {"actions":[],"query":null,"stance":"vent","energy":"low"}
 输入末句：刚吃了碗麻辣烫哈哈 → {"actions":[],"query":null,"stance":"chat","energy":"normal"}
 输入末句：帮我记一下，午饭吃了沙拉 → {"actions":[{"kind":"activity","text":"午饭吃沙拉","points":{"knowledge":0,"guts":0,"dexterity":1,"kindness":0,"charm":0},"important":false}],"query":null,"stance":"report","energy":"normal"}
 输入末句：行吧我先去睡了 → {"actions":[],"query":null,"stance":"bye","energy":"low"}
-对话早前提过想背单词，末句：现在几点了？ → {"actions":[],"query":null}
-输入末句：我上周都做了什么？ → {"actions":[],"query":{"kind":"activities","days":7}}`;
+对话早前提过想背单词，末句：现在几点了？ → {"actions":[],"query":null,"stance":"ask","energy":"normal"}
+输入末句：我上周都做了什么？ → {"actions":[],"query":{"kind":"activities","days":7},"stance":"ask","energy":"normal"}`;
 
 // ── 阶段2 · 表演规范（人格侧；输出纯文本，无任何格式负担） ──
 const PERFORM_RULES = `
@@ -360,11 +360,30 @@ interface TriageResult {
 const STANCES: readonly Stance[] = ['vent', 'chat', 'ask', 'report', 'bye'];
 const ENERGIES: readonly Energy[] = ['low', 'normal', 'high'];
 
+/**
+ * 分诊是否按「瞬发」调用（关思考、20 秒超时）。
+ * 用户口径：思考大概率判得更准；只有实测关掉后首字延迟明显改善才值得关。第 4 轮末用真实 Key
+ * 跑过对比后再定——在那之前保持思考（false）。
+ */
+export const TRIAGE_INSTANT = false;
+
+/**
+ * 历史窗口按 8 条一档收缩（第 4 轮）：以前每轮滑一条，发给模型的前缀每轮都不一样，
+ * 服务商的前缀缓存一次都命不中。现在窗口在 25~32 条之间浮动、起点每 8 轮才挪一次。
+ */
+const HISTORY_MAX = 32;
+const HISTORY_STEP = 8;
+export function historyWindow<T>(items: T[]): T[] {
+  if (items.length <= HISTORY_MAX) return items;
+  const start = Math.ceil((items.length - HISTORY_MAX) / HISTORY_STEP) * HISTORY_STEP;
+  return items.slice(start);
+}
+
 /** 空响应自愈的单次调用（DeepSeek json_object 空白 content 官方已知缺陷） */
 async function callJson(
   cfg: NonNullable<ReturnType<typeof getAIConfig>>,
   messages: AIMessage[],
-  opts: { temperature: number; maxTokens: number; signal: AbortSignal },
+  opts: { temperature: number; maxTokens: number; signal: AbortSignal; instant?: boolean },
 ): Promise<string> {
   try {
     return await chatComplete(cfg, messages, { ...opts, jsonMode: true });
@@ -414,7 +433,7 @@ async function triageActions(
     const raw = await callJson(cfg, [
       { role: 'system', content: TRIAGE_PROTOCOL },
       { role: 'user', content: user },
-    ], { temperature: 0.1, maxTokens: 800, signal });
+    ], { temperature: 0.1, maxTokens: 800, signal, instant: TRIAGE_INSTANT });
     if (import.meta.env.DEV) console.debug('[navigator] 分诊输出:', raw);
     const parsed = extractJson(raw);
     if (!parsed) return { drafts: [], queryDays: null, stance: null, energy: null };
@@ -475,8 +494,15 @@ export async function runNavigatorTurn(
   /** 拟真增强：传入即表演层走流式 + 标点切泡（分诊层不变——两阶段红利） */
   immersive?: ImmersiveStreamHooks,
 ): Promise<NavigatorTurnResult> {
-  const cfg = getAssistantAIConfig(useAppStore.getState().settings);
+  const settings = useAppStore.getState().settings;
+  const cfg = getAssistantAIConfig(settings);
   if (!cfg) throw new Error('未配置 AI');
+  /**
+   * 分诊走**快速响应档**（第 4 轮）：它是个短上下文的判定任务，不需要助手档那个（可能更贵更慢的）
+   * 模型；助手档配成深思模型时，每轮先用它做一次非流式分诊，首字延迟直接翻倍。
+   * 快速档没配（只在别家给了助手 Key）就还用助手档。
+   */
+  const triageCfg = getAIConfig(settings) ?? cfg;
 
   // 阶段1：分诊（含 query 判定）。卡片列表帮它判「帮我记一下」是否重复出卡。
   // 已取消的也要喂：只喂待确认时模型看不见用户否掉过什么，会把同一件事一遍遍重开
@@ -484,7 +510,7 @@ export async function runNavigatorTurn(
   // 【已确认生效】的同样要喂——此前以「属于历史」为由滤掉，结果同一件事在对话里
   // 被再次提起时，分诊根本不知道它已经记过，照常重开一张（用户上报「重复多提一句
   // 就重复生成卡片」的直接原因）。cardsDigest 本身截到最近 10 张，不会撑大上下文。
-  const { drafts, queryDays, stance, energy } = await triageActions(cfg, history, userText, cards, signal);
+  const { drafts, queryDays, stance, energy } = await triageActions(triageCfg, history, userText, cards, signal);
   const queryResult = queryDays !== null ? runActivitiesQuery(queryDays) : null;
 
   // 阶段2：表演。判定结果作为事实注入——reply 与卡从机制上一致，无 JSON 无失守。
@@ -499,7 +525,7 @@ export async function runNavigatorTurn(
   ].filter(Boolean).join('\n');
   const messages: AIMessage[] = [
     { role: 'system', content: `${personaPrompt}\n${PERFORM_RULES}` },
-    ...historyToMessages(history).slice(-24),
+    ...historyToMessages(historyWindow(history)),
     { role: 'system', content: [buildDynamicContext(snap, swallowed, cards), ...extraContext, turnFacts].filter(Boolean).join('\n') },
     { role: 'user', content: userText },
   ];

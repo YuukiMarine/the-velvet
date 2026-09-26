@@ -1,5 +1,6 @@
 import { motion } from 'motion/react';
 import { useAppStore, toLocalDateKey } from '@/store';
+import { useShallow } from 'zustand/react/shallow';
 import { LongReading } from '@/types';
 import { TAROT_BY_ID, PERIOD_LABELS } from '@/constants/tarot';
 import { useUiChannel } from '@/ui/useUiChannel';
@@ -10,7 +11,7 @@ interface Props {
 }
 
 export function ReadingArchive({ onOpen }: Props) {
-  const { longReadings } = useAppStore();
+  const { longReadings } = useAppStore(useShallow(s => ({ longReadings: s.longReadings })));
   const p3 = useUiChannel() === 'p3';
   const today = toLocalDateKey();
 

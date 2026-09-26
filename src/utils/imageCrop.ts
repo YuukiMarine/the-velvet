@@ -50,8 +50,13 @@ export function downscaleDataUrl(
     const img = new Image();
     img.onload = () => {
       const long = Math.max(img.width, img.height);
-      if (long <= maxEdge) { resolve(dataUrl); return; } // 本来就小，别二次压
-      const scale = maxEdge / long;
+      /**
+       * 本来就小的图也过一遍 canvas（第 4 轮）：相机出的 JPEG 带着 EXIF（拍摄时间、机型、
+       * 常常还有 GPS 坐标），原样发给视觉模型等于把这些一起交出去。重新编码会把元数据全部抹掉；
+       * 小图用更高的质量重编，肉眼看不出差别。PNG（截图）没有 EXIF，保持 PNG 免得压出色块。
+       */
+      const small = long <= maxEdge;
+      const scale = small ? 1 : maxEdge / long;
       const w = Math.round(img.width * scale);
       const h = Math.round(img.height * scale);
       const canvas = document.createElement('canvas');
@@ -60,7 +65,8 @@ export function downscaleDataUrl(
       const ctx = canvas.getContext('2d');
       if (!ctx) { resolve(dataUrl); return; }
       ctx.drawImage(img, 0, 0, w, h);
-      resolve(canvas.toDataURL('image/jpeg', quality));
+      const isPng = /^data:image\/png/i.test(dataUrl);
+      resolve(isPng ? canvas.toDataURL('image/png') : canvas.toDataURL('image/jpeg', small ? Math.max(quality, 0.92) : quality));
     };
     img.onerror = () => reject(new Error('图片解码失败'));
     img.src = dataUrl;

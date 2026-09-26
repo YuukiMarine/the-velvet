@@ -11,6 +11,7 @@ import { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore } from '@/store';
+import { useShallow } from 'zustand/react/shallow';
 import { AttributeId, MythStone, OathStone, PersonaSkill, RelicInstance } from '@/types';
 import { RELIC_SLOTS_BY_STRATUM, RELIC_SALVAGE_SP, masteryStars, MASTERY_FULL_BY_LEVEL } from '@/battle/numbers';
 import {
@@ -76,7 +77,7 @@ export function ArsenalModal({ open, onClose }: { open: boolean; onClose: () => 
     persona, battleState, stratum, settings,
     toggleEquipRelic, salvageRelic, socketMyth, unsocketMyth,
     equipOathStone, unequipOathStone, renameOathSkill, setActiveChain,
-  } = useAppStore();
+  } = useAppStore(useShallow(s => ({ persona: s.persona, battleState: s.battleState, stratum: s.stratum, settings: s.settings, toggleEquipRelic: s.toggleEquipRelic, salvageRelic: s.salvageRelic, socketMyth: s.socketMyth, unsocketMyth: s.unsocketMyth, equipOathStone: s.equipOathStone, unequipOathStone: s.unequipOathStone, renameOathSkill: s.renameOathSkill, setActiveChain: s.setActiveChain })));
   const [section, setSection] = useState<SectionKey>('relic');
   const [confirmSalvageId, setConfirmSalvageId] = useState<string | null>(null);
   const [pickerMyth, setPickerMyth] = useState<MythStone | null>(null);
@@ -431,7 +432,7 @@ export function ArsenalModal({ open, onClose }: { open: boolean; onClose: () => 
 
 // ── 阴影档案馆（批3 §5.2：替换战场页折叠列表） ────────────────
 export function ShadowArchiveModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { battleState, settings } = useAppStore();
+  const { battleState, settings } = useAppStore(useShallow(s => ({ battleState: s.battleState, settings: s.settings })));
   useBackHandler(open, onClose);
   if (!open) return null;
   const records = [...(battleState?.defeatedShadowLog ?? [])].reverse();

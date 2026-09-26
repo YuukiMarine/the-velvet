@@ -2,6 +2,7 @@ import { Fragment, useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore } from '@/store';
+import { useShallow } from 'zustand/react/shallow';
 import { P3R, slantClip, SlantButton } from '@/components/p3r/kit';
 import { P5R, P5_FONT, P5_TITLE_FONT, roughQuad, starPts, P5Collage, P5SubBar, P5Star, P5Slab, P5Dots } from '@/components/p5r/kit';
 import { P4Flower, P4Sparkle, P4Panel, P4SkyCircle, P4ArcRings, P4CautionStripes, P4Magnifier, P4Scanlines } from '@/ui/p4Kit';
@@ -133,7 +134,7 @@ const P5StepRow = ({ current }: { current: number }) => (
 );
 
 export function PersonaCreateModal({ isOpen, onClose }: Props) {
-  const { settings, savePersona, saveBattleState, battleState, user } = useAppStore();
+  const { settings, savePersona, saveBattleState, battleState, user } = useAppStore(useShallow(s => ({ settings: s.settings, savePersona: s.savePersona, saveBattleState: s.saveBattleState, battleState: s.battleState, user: s.user })));
 
   const hasApi = !!settings.summaryApiKey;
 

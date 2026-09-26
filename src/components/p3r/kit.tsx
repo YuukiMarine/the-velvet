@@ -16,6 +16,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { motion, useMotionValue } from 'motion/react';
 import { useBoldness } from '@/utils/boldness';
+import { startLowFpsLoop, lerpK } from '@/utils/rafThrottle';
 import { useAppStore } from '@/store';
 import { bgAnimOn } from '@/ui/bgAnim';
 
@@ -157,8 +158,8 @@ export const TitleTri = ({ wobble = false, delay = 0.35, fill, style }: { wobble
     const stops = Array.from({ length: N }, () => [jolt(), jolt(), jolt()]);
     const base = [[2, 32], [296, 6], [70, 74]];
     const t0 = performance.now();
-    let raf = 0;
-    const tick = (now: number) => {
+    // 可见时照旧 60fps；移出视口整个停掉（第 4 轮，原来常驻）。顶点按绝对时间算
+    return startLowFpsLoop(el, 60, (now) => {
       // rAF 首帧的 timestamp（帧 vsync 时刻）可早于 effect 里取的 t0 几毫秒——负 t 会让
       // Math.floor 得 -1、stops[-1] 直接炸死整个循环，必须钳到 0
       const t = Math.max(0, now - t0) / SEG_MS;
@@ -168,10 +169,7 @@ export const TitleTri = ({ wobble = false, delay = 0.35, fill, style }: { wobble
       const a = stops[i], b = stops[(i + 1) % N];
       const p = base.map((v, k) => [v[0] + a[k][0] + (b[k][0] - a[k][0]) * f, v[1] + a[k][1] + (b[k][1] - a[k][1]) * f]);
       el.setAttribute('d', `M${p[0][0].toFixed(1)} ${p[0][1].toFixed(1)} L${p[1][0].toFixed(1)} ${p[1][1].toFixed(1)} L${p[2][0].toFixed(1)} ${p[2][1].toFixed(1)} Z`);
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
+    });
   }, [wobble, anim]);
   return (
     <motion.span
@@ -379,23 +377,22 @@ export const P3Highlight = ({ className, color = 'rgba(255,255,255,0.24)', live 
 }) => {
   const bold = useBoldness();
   const ref = useRef<SVGPolygonElement>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
   useEffect(() => {
     if (!bold || !live) return;
-    let cur = p3TriTarget();
+    const cur = p3TriTarget();
     let tgt = p3TriTarget();
     let last = 0;
-    let raf = 0;
-    const loop = (t: number) => {
+    // 可见时照旧 60fps；移出视口整个停掉（第 4 轮，原来常驻）。插值系数按 dt 折算，掉帧时节奏不变
+    return startLowFpsLoop(svgRef.current, 60, (t, dt) => {
       if (t - last > 130) { tgt = p3TriTarget(); last = t; }
-      for (let i = 0; i < 6; i++) cur[i] += (tgt[i] - cur[i]) * 0.18;
+      const k = lerpK(0.18, dt);
+      for (let i = 0; i < 6; i++) cur[i] += (tgt[i] - cur[i]) * k;
       ref.current?.setAttribute('points', p3TriPoints(cur));
-      raf = requestAnimationFrame(loop);
-    };
-    raf = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(raf);
+    });
   }, [bold, live]);
   return (
-    <svg viewBox="0 0 100 50" preserveAspectRatio="none" className={className} aria-hidden>
+    <svg ref={svgRef} viewBox="0 0 100 50" preserveAspectRatio="none" className={className} aria-hidden>
       <polygon ref={ref} fill={color} points="14,4 4,46 95,24" />
     </svg>
   );

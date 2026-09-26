@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { motion, AnimatePresence, type Variants } from 'motion/react';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { useAppStore, toLocalDateKey } from '@/store';
+import { useShallow } from 'zustand/react/shallow';
 import { useCloudSocialStore } from '@/store/cloudSocial';
 import { loadSocial } from '@/services/social';
 import { TAROT_BY_ID } from '@/constants/tarot';
@@ -107,7 +108,7 @@ export function ConfidantDetailModal({
     archiveConfidant,
     unarchiveConfidant,
     deleteConfidant,
-  } = useAppStore();
+  } = useAppStore(useShallow(s => ({ settings: s.settings, confidants: s.confidants, confidantEvents: s.confidantEvents, updateConfidant: s.updateConfidant, archiveConfidant: s.archiveConfidant, unarchiveConfidant: s.unarchiveConfidant, deleteConfidant: s.deleteConfidant })));
 
   const confidant = useMemo(
     () => confidants.find(c => c.id === confidantId) || null,

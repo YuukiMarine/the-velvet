@@ -8,6 +8,7 @@
 import { useMemo, useState } from 'react';
 import { motion } from 'motion/react';
 import { useAppStore, toLocalDateKey } from '@/store';
+import { useShallow } from 'zustand/react/shallow';
 import { SheetModal } from '@/components/SheetModal';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { sym, fmtMoney, ASSET_CATEGORIES, assetIcon, ASSET_STATUS } from '@/utils/ledgerFormat';
@@ -19,7 +20,7 @@ const STATUSES: AssetStatus[] = ['inuse', 'idle', 'soldout'];
 const assetTotal = (a: LedgerAsset) => a.price + (a.addOns?.reduce((s, o) => s + o.amount, 0) ?? 0);
 
 export function AssetBoard() {
-  const { settings, assets, getTotalBalance, getFixedAssetTotal, addAsset, getSavings, updateSettings } = useAppStore();
+  const { settings, assets, getTotalBalance, getFixedAssetTotal, addAsset, getSavings, updateSettings } = useAppStore(useShallow(s => ({ settings: s.settings, assets: s.assets, getTotalBalance: s.getTotalBalance, getFixedAssetTotal: s.getFixedAssetTotal, addAsset: s.addAsset, getSavings: s.getSavings, updateSettings: s.updateSettings })));
   const $ = sym(settings.currency);
   const liquid = getTotalBalance();
   const fixed = getFixedAssetTotal();
@@ -217,7 +218,7 @@ function AssetAddSheet({ isOpen, onClose, $, onSave }: {
 // ── 详情 / 编辑 ───────────────────────────────────────────
 
 function AssetDetailSheet({ assetId, onClose, $ }: { assetId: string | null; onClose: () => void; $: string }) {
-  const { assets, updateAsset, deleteAsset } = useAppStore();
+  const { assets, updateAsset, deleteAsset } = useAppStore(useShallow(s => ({ assets: s.assets, updateAsset: s.updateAsset, deleteAsset: s.deleteAsset })));
   const asset = assets.find(a => a.id === assetId) ?? null;
   const [addonName, setAddonName] = useState('');
   const [addonAmount, setAddonAmount] = useState('');

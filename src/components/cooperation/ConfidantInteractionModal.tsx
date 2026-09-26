@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore, toLocalDateKey } from '@/store';
+import { useShallow } from 'zustand/react/shallow';
 import { useCloudStore } from '@/store/cloud';
 import type { AttributeId, Confidant } from '@/types';
 import { TAROT_BY_ID } from '@/constants/tarot';
@@ -45,7 +46,7 @@ const DELTA_LABELS: Record<number, string> = {
  * 5. 一天仅限一次
  */
 export function ConfidantInteractionModal({ isOpen, onClose, confidant }: Props) {
-  const { settings, recordConfidantInteraction, confidantEvents } = useAppStore();
+  const { settings, recordConfidantInteraction, confidantEvents } = useAppStore(useShallow(s => ({ settings: s.settings, recordConfidantInteraction: s.recordConfidantInteraction, confidantEvents: s.confidantEvents })));
   const cloudUser = useCloudStore(s => s.cloudUser);
   const [stage, setStage] = useState<Stage>('input');
   const [description, setDescription] = useState('');

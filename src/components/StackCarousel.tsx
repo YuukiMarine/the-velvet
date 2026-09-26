@@ -24,6 +24,7 @@ import useEmblaCarousel from 'embla-carousel-react';
 import type { EmblaCarouselType } from 'embla-carousel';
 import { DotIndicator } from '@/components/DotIndicator';
 import { useBoldness } from '@/utils/boldness';
+import { useAnyOverlayOpen } from '@/ui/overlayPause';
 
 interface StackCarouselProps {
   /** 页位记忆 key（组件内部加 'sl-stack-' 前缀） */
@@ -175,8 +176,10 @@ export const StackCarousel = ({
   }, [emblaApi, setTweenNodes, setTweenFactor, applyTween, storageKey]);
 
   // ── 自动轮播（autoPlayMs>0）：循环下一页；指针按下暂停、抬起重续；D0 静止 ──
+  // 不可见时不翻页（第 4 轮）：切到别的标签页 / 滚出视口 / 被弹层盖住时，每 6 秒翻一页纯属白算
+  const overlayOpen = useAnyOverlayOpen();
   useEffect(() => {
-    if (!emblaApi || !autoPlayMs || autoPlayMs <= 0 || locked) return;
+    if (!emblaApi || !autoPlayMs || autoPlayMs <= 0 || locked || overlayOpen) return;
     let timer: number | undefined;
     const stop = () => {
       if (timer !== undefined) {
@@ -192,20 +195,31 @@ export const StackCarousel = ({
         else emblaApi.scrollTo(0);
       }, autoPlayMs);
     };
-    start();
     const node = emblaApi.rootNode();
+    let inView = true;
+    const startIfVisible = () => { if (inView && !document.hidden) start(); else stop(); };
+    startIfVisible();
     const onDown = () => stop();
-    const onUp = () => start();
+    const onUp = () => startIfVisible();
+    const onVis = () => startIfVisible();
+    document.addEventListener('visibilitychange', onVis);
+    let io: IntersectionObserver | null = null;
+    if (typeof IntersectionObserver !== 'undefined') {
+      io = new IntersectionObserver((es) => { inView = es.some(e => e.isIntersecting); startIfVisible(); }, { threshold: 0 });
+      io.observe(node);
+    }
     node.addEventListener('pointerdown', onDown);
     node.addEventListener('pointerup', onUp);
     node.addEventListener('pointercancel', onUp);
     return () => {
       stop();
+      document.removeEventListener('visibilitychange', onVis);
+      io?.disconnect();
       node.removeEventListener('pointerdown', onDown);
       node.removeEventListener('pointerup', onUp);
       node.removeEventListener('pointercancel', onUp);
     };
-  }, [emblaApi, autoPlayMs, locked]);
+  }, [emblaApi, autoPlayMs, locked, overlayOpen]);
 
   // locked 切换：reInit 改 watchDrag，startIndex 取当前位置避免跳页
   useEffect(() => {

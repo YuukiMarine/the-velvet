@@ -1,6 +1,7 @@
 import { AttributeId, PersonaSkill, Settings } from '@/types';
 import { chatComplete, chatStream, getAIConfig, getDeliberateAIConfig, type AIConfig } from '@/utils/aiClient';
 import { SKILL_EFFECT_MAP } from '@/constants';
+import { extractJSON, tryExtractJSON, jsonLooksClosed } from '@/utils/aiJson';
 
 interface AIMessage { role: 'system' | 'user' | 'assistant'; content: string; }
 
@@ -69,136 +70,26 @@ async function callAI(
   temperature = 0.8,
   maxTokens = 1500,
   jsonMode = false,
+  instant = false,
 ): Promise<string> {
-  return chatComplete(cfg, messages, { temperature, maxTokens, jsonMode });
+  return chatComplete(cfg, messages, { temperature, maxTokens, jsonMode, instant });
 }
 
-// ── Robust JSON extraction ──────────────────────────────────────────────────
+// ── JSON 抽取：公共实现在 utils/aiJson（第 4 轮统一，各调用点共用）────────────
+// （旧的 repairTruncatedJSON / escapeInnerQuotes / fixMissingCommas / extractJSON 原样搬过去，行为不变）
 
 /**
- * 把被截断的 JSON 补完：丢掉最后那个残缺的 token，再按栈把没闭的括号补上。
- *
- * 为什么值得做：模型被 max_tokens 砍在半句时，返回里根本没有收尾的 `}`，
- * 旧的 `/\{[\s\S]*\}/` 直接匹配失败 → 抛 'no json found' → 整次生成判失败。
- * 但前面那 90% 通常是完整可用的（区层显形只要 8 条台词里的前几条也能凑）。
- * 能救就救，救不动再报错。
+ * 这些错误再试也是同一个结果，别拿用户的钱和时间去撞：
+ *   401/403 Key 不对、402 余额不足、404 模型不存在、413/422 请求本身不合法、429 已经被限流、
+ *   以及调用方主动取消。400 只在「开着 json_object 模式」那一级放行——有些服务商就是不认这个字段。
  */
-function repairTruncatedJSON(src: string): string {
-  const stack: string[] = [];
-  let inStr = false, esc = false;
-  let lastSafe = -1;   // 最后一个"结构完整"的位置（逗号 / 闭合括号之后）
-  for (let i = 0; i < src.length; i++) {
-    const ch = src[i];
-    if (inStr) {
-      if (esc) esc = false;
-      else if (ch === '\\') esc = true;
-      else if (ch === '"') { inStr = false; lastSafe = i; }
-      continue;
-    }
-    if (ch === '"') { inStr = true; continue; }
-    if (ch === '{' || ch === '[') { stack.push(ch); continue; }
-    if (ch === '}' || ch === ']') { stack.pop(); lastSafe = i; continue; }
-    if (ch === ',') lastSafe = i - 1;
-  }
-  if (stack.length === 0) return src;
-  // 截到最后一个安全点，再补齐所有未闭合的括号
-  let out = src.slice(0, lastSafe + 1).replace(/,\s*$/, '');
-  for (let i = stack.length - 1; i >= 0; i--) out += stack[i] === '{' ? '}' : ']';
-  return out;
-}
-
-/**
- * 字符串值里没转义的英文双引号（如 "description":"他说"我思故我在"。"）→ 转义掉。
- * 判断依据：在字符串里遇到 " 时往后看第一个非空白字符——是 , } ] : 或到头了，
- * 这个引号才是真的收尾；否则是正文里的引号。
- */
-function escapeInnerQuotes(src: string): string {
-  let out = '';
-  let inStr = false, esc = false;
-  for (let i = 0; i < src.length; i++) {
-    const ch = src[i];
-    if (!inStr) {
-      if (ch === '"') inStr = true;
-      out += ch;
-      continue;
-    }
-    if (esc) { esc = false; out += ch; continue; }
-    if (ch === '\\') { esc = true; out += ch; continue; }
-    if (ch === '"') {
-      let j = i + 1;
-      while (j < src.length && /\s/.test(src[j])) j++;
-      const nx = src[j];
-      if (nx === undefined || nx === ',' || nx === '}' || nx === ']' || nx === ':') { inStr = false; out += ch; }
-      else out += '\\"';
-      continue;
-    }
-    out += ch;
-  }
-  return out;
-}
-
-/** 相邻元素之间漏了逗号：`} {`、`] [`、`"a" "b"`、`} "key"` 这几种 */
-function fixMissingCommas(src: string): string {
-  return src
-    .replace(/\}\s*\{/g, '},{')
-    .replace(/\]\s*\[/g, '],[')
-    .replace(/"\s+"(?=[^"]*"\s*:)/g, '","')
-    .replace(/([}\]])\s*"/g, '$1,"');
-}
-
-/** extractJSON 的不抛错版本 */
-function tryExtractJSON(text: string): Record<string, unknown> | null {
-  try { return extractJSON(text); } catch { return null; }
-}
-
-/** 粗看 JSON 结构是否闭合（忽略字符串内容）：判断「写完了」还是「被截断了」 */
-function jsonLooksClosed(text: string): boolean {
-  const start = text.indexOf('{');
-  if (start < 0) return false;
-  let depth = 0, inStr = false, esc = false, opened = false;
-  for (let i = start; i < text.length; i++) {
-    const ch = text[i];
-    if (inStr) {
-      if (esc) esc = false;
-      else if (ch === '\\') esc = true;
-      else if (ch === '"') inStr = false;
-      continue;
-    }
-    if (ch === '"') { inStr = true; continue; }
-    if (ch === '{' || ch === '[') { depth++; opened = true; }
-    else if (ch === '}' || ch === ']') { depth--; if (opened && depth === 0) return true; }
-  }
-  return false;
-}
-
-/** Extract a JSON object from AI response text, tolerating code blocks, trailing commas, comments */
-function extractJSON(text: string): Record<string, unknown> {
-  // Strip markdown code blocks
-  const cleaned = text.replace(/```(?:json|JSON)?\s*/g, '').replace(/```\s*/g, '');
-  const start = cleaned.indexOf('{');
-  if (start < 0) throw new Error('no json found');
-  const end = cleaned.lastIndexOf('}');
-  // 有闭合括号就取整段，没有（= 被截断）就从 { 一路取到底交给修补器
-  let jsonStr = end > start ? cleaned.slice(start, end + 1) : cleaned.slice(start);
-  // Remove single-line comments (// ...)
-  jsonStr = jsonStr.replace(/\/\/[^\n]*/g, '');
-  // Remove trailing commas before } or ]
-  jsonStr = jsonStr.replace(/,\s*([}\]])/g, '$1');
-  const flat = jsonStr.replace(/[\r\n]+/g, ' ');
-  const attempts = [
-    jsonStr,
-    flat,                                       // 字符串里裸换行
-    repairTruncatedJSON(jsonStr),               // 被砍在半句
-    repairTruncatedJSON(flat),
-    // v2.7.0.6：长中文 JSON 的两类常见瑕疵——字符串里没转义的英文双引号、相邻元素漏了逗号
-    escapeInnerQuotes(fixMissingCommas(flat)),
-    repairTruncatedJSON(escapeInnerQuotes(fixMissingCommas(flat))),
-  ];
-  let lastErr: unknown;
-  for (const a of attempts) {
-    try { return JSON.parse(a); } catch (e) { lastErr = e; }
-  }
-  throw lastErr instanceof Error ? lastErr : new Error('json parse failed');
+function shouldRetryAIError(e: unknown, jsonModeWasOn: boolean): boolean {
+  if (e instanceof Error && e.name === 'AbortError') return false;
+  const m = e instanceof Error ? e.message : String(e);
+  if (/HTTP (401|402|403|404|413|422|429)\b/.test(m)) return false;
+  if (/HTTP 400\b/.test(m)) return jsonModeWasOn;
+  // 超时 / 5xx / 网络 / 空响应 / 思维链吃光预算 / 格式坏了 → 值得换个参数再来一发
+  return true;
 }
 
 /**
@@ -206,10 +97,11 @@ function extractJSON(text: string): Record<string, unknown> {
  *
  * json=true 时走三级梯子：严格 JSON 模式 → 关掉 JSON 模式（有些 provider 直接 400，
  * 或 DeepSeek 那种"开了反而吐空"）→ 降温再试。全站要 JSON 的战场调用都该开，
- * 这是与 store/navigatorIntent 已有的 jsonMode 兜底同一套口径 ——
- * battleAI 一直没接，等于把最容易破格式的那几个请求裸奔在便宜模型上。
- * 抛出的是**最后一次**的错误：第一次多半是「provider 不支持 json_object」，
- * 那句对用户没用，真正的失败原因在最后一次里。
+ * 这是与 store/navigatorIntent 已有的 jsonMode 兜底同一套口径。
+ * 第 4 轮改动：只重试值得重试的失败（超时 / 5xx / 网络 / 空响应 / 坏 JSON）；
+ * 401、402、404、429 一类立刻抛，不再连撞三次（最坏一次要等 15 分钟）；
+ * json=true 时每一级都先验一遍抽得出 JSON，抽不出才算失败去下一级。
+ * 抛出的是**最后一次**的错误：真正的失败原因在最后一次里。
  */
 async function callAIWithRetry(
   cfg: AIConfig,
@@ -217,6 +109,7 @@ async function callAIWithRetry(
   temperature = 0.8,
   maxTokens = 1500,
   json = false,
+  instant = false,
 ): Promise<string> {
   const cooler = Math.max(0.3, temperature - 0.3);
   const ladder: Array<[number, boolean]> = json
@@ -225,9 +118,15 @@ async function callAIWithRetry(
   let lastErr: unknown;
   for (const [t, j] of ladder) {
     try {
-      return await callAI(cfg, messages, t, maxTokens, j);
+      const raw = await callAI(cfg, messages, t, maxTokens, j, instant);
+      if (json && !tryExtractJSON(raw)) {
+        lastErr = new Error('AI 返回的 JSON 格式无效，请重试');
+        continue;
+      }
+      return raw;
     } catch (e) {
       lastErr = e;
+      if (!shouldRetryAIError(e, j)) break;
     }
   }
   throw lastErr instanceof Error ? lastErr : new Error('AI 调用失败');
@@ -1063,7 +962,7 @@ export const FINAL_FLAW_KEYS: Array<{ key: string; hint: string }> = [
 
 const FINAL_BOSS_JSON = `
 纯JSON输出，不要包裹在代码块中，不含任何注释：
-{"stratumName":"顶阙的名字（4-6字，不带"之域"）","stratumDescription":"1-2句这一层的景观","name":"伪神 · xx","flawKey":"从候选表里选一个key","flawTitle":"缺点的名字（4-8字）","verdict":"一句指认，40字以内，第二人称","description":"2句形象描述","responseLines":["台词1","…","台词18"]}`;
+{"stratumName":"顶阙的名字（4-6字，不带『之域』）","stratumDescription":"1-2句这一层的景观","name":"伪神 · xx","flawKey":"从候选表里选一个key","flawTitle":"缺点的名字（4-8字）","verdict":"一句指认，40字以内，第二人称","description":"2句形象描述","responseLines":["台词1","…","台词18"]}`;
 
 export interface FinalBossData {
   stratumName: string;
@@ -1353,6 +1252,7 @@ Persona 人设：${personaDescription || '无描述——从名字与属性气�
 - description：一句话（20字内），以该 Persona 的口吻或意象描述这股力量，末尾自然点出效果
 仅输出 JSON：{"name":"…","description":"…"}`;
   try {
+    // 保持思考（用户口径：起名要质量；失败保留模板名，不急）
     const result = await callAIWithRetry(cfg, [{ role: 'user', content: prompt }], 0.8, 400, true);
     const parsed = extractJSON(result);
     const name = typeof parsed.name === 'string' && parsed.name.trim() ? parsed.name.trim().slice(0, 12) : null;

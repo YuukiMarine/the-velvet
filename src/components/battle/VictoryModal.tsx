@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion } from 'motion/react';
 import { useAppStore } from '@/store';
+import { useShallow } from 'zustand/react/shallow';
 import { AttributeId } from '@/types';
 import { generateVictoryNarrative } from '@/utils/battleAI';
 import { triggerSuccessFeedback, playSound } from '@/utils/feedback';
@@ -15,7 +16,7 @@ interface Props {
 }
 
 export function VictoryModal({ isOpen, onClose }: Props) {
-  const { persona, shadow, settings, battleState, defeatShadow, addActivity } = useAppStore();
+  const { persona, shadow, settings, battleState, defeatShadow, addActivity } = useAppStore(useShallow(s => ({ persona: s.persona, shadow: s.shadow, settings: s.settings, battleState: s.battleState, defeatShadow: s.defeatShadow, addActivity: s.addActivity })));
   // VictoryModal 没有 X 按钮、点遮罩也不关 —— 原本就强制让用户点"领取奖励"完成结算。
   // 为保持语义一致，Android 返回键在此阶段也做 no-op（消费事件但不关闭，防止误触跳过结算）。
   useBackHandler(isOpen, () => { /* no-op */ });

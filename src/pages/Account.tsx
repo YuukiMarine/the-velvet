@@ -11,6 +11,7 @@ import { motion } from 'motion/react';
 import { useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useAppStore } from '@/store';
+import { useShallow } from 'zustand/react/shallow';
 import { useCloudStore } from '@/store/cloud';
 import { BackButton } from '@/components/BackButton';
 import { isNative } from '@/utils/native';
@@ -71,7 +72,7 @@ export const Account = () => {
     updateSettings,
     resetAllData,
     importData,
-  } = useAppStore();
+  } = useAppStore(useShallow(s => ({ user: s.user, settings: s.settings, updateSettings: s.updateSettings, resetAllData: s.resetAllData, importData: s.importData })));
   const attributes = useAppStore(s => s.attributes);
   const setCurrentPage = useAppStore(s => s.setCurrentPage);
   const totalLv = computeTotalLv(attributes);

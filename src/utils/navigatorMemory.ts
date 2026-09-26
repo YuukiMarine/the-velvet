@@ -15,7 +15,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { db } from '@/db';
 import { useAppStore, toLocalDateKey } from '@/store';
 import { chatComplete, getAIConfig, type AIConfig, type AIMessage } from '@/utils/aiClient';
-import type { NavigatorMemo, NavigatorMessageRow } from '@/types';
+import { resolveNavigatorPreset } from '@/constants/navigatorPresets';
+import type { NavigatorMemo, NavigatorMessageRow, NavigatorPreset } from '@/types';
 
 // ── token 估算（触发判断用，不求精确；中文≈0.6~0.9 token/字取保守 0.75） ──
 export function estTokens(text: string): number {
@@ -186,11 +187,25 @@ async function persistMemories(result: CompactResult): Promise<void> {
 
 // ── 主泵：会话末 compact（开窗时惰性触发） ──
 
+/** 主泵单飞：开窗、设置页「立即归档」、StrictMode 双跑同时触发时只跑一份（第 4 轮：以前会重复入库同一批记忆） */
+let finalizing: Promise<string | null> | null = null;
+
 /**
  * 归档「今天之前、尚无摘要」的会话（最多 3 条，防积压风暴）。
  * 返回昨日会话的中性摘要（若有/新产出），供跨日叙事问候即取即用。
  */
-export async function finalizeStaleSessions(): Promise<string | null> {
+export function finalizeStaleSessions(): Promise<string | null> {
+  if (finalizing) return finalizing;
+  finalizing = finalizeStaleSessionsInner().finally(() => { finalizing = null; });
+  return finalizing;
+}
+
+/** 会话所属人格的名字（compact 提示词里的「陪伴 AI 的名字」；以前写死成黑猫） */
+async function personaNameOf(presetId: string | undefined, custom: NavigatorPreset[]): Promise<string> {
+  return resolveNavigatorPreset(presetId, custom).name;
+}
+
+async function finalizeStaleSessionsInner(): Promise<string | null> {
   const today = toLocalDateKey();
   let yesterdaySummary: string | null = null;
   try {
@@ -202,6 +217,8 @@ export async function finalizeStaleSessions(): Promise<string | null> {
     yesterdaySummary = stale.find((s) => s.compactedSummary)?.compactedSummary ?? null;
 
     const cfg = getAIConfig(useAppStore.getState().settings);
+    let custom: NavigatorPreset[] = [];
+    try { custom = await db.navigatorPresets.toArray(); } catch { /* 按内置解析 */ }
     for (const session of targets) {
       const rows = await db.navigatorMessages.where('sessionId').equals(session.id).sortBy('createdAt');
       const userMsgs = rows.filter((r) => r.role === 'user');
@@ -209,7 +226,7 @@ export async function finalizeStaleSessions(): Promise<string | null> {
       let summary: string;
       let personaSummary: string | undefined;
       if (cfg && (userMsgs.length >= FINALIZE_MIN_USER_MSGS || userChars >= FINALIZE_MIN_USER_CHARS)) {
-        const result = await compactViaAI(cfg, rowsToLines(rows).slice(-80), '黑猫', await getProfile());
+        const result = await compactViaAI(cfg, rowsToLines(rows).slice(-80), await personaNameOf(session.presetId, custom), await getProfile());
         if (result) {
           summary = result.summary;
           personaSummary = result.personaSummary;
@@ -253,6 +270,9 @@ export interface LiveCompactOutcome {
   removedIds: string[];
 }
 
+/** 阈值泵按会话加锁：一次 AI 摘要要十几秒，期间再来一轮对话不能再开一份（否则同一批消息压两次、记忆入库两次） */
+const liveCompacting = new Set<string>();
+
 /**
  * 检查并压缩活跃会话（fire-and-forget 由 store 调用后自行更新内存流）。
  * 有 Key 走 AI 摘要，无 Key/失败走本地拼接；90k 硬截断永不等 AI。
@@ -260,18 +280,36 @@ export interface LiveCompactOutcome {
 export async function maybeCompactLive(
   sessionId: string,
   rows: NavigatorMessageRow[],
+  personaName = '黑猫',
 ): Promise<LiveCompactOutcome> {
   const total = rows.reduce((n, r) => n + estTokens(r.text ?? '') + 8, 0);
   const over = total > LIVE_COMPACT_TOKENS || rows.length > LIVE_COMPACT_MSGS;
   if (!over) return { summaryText: null, removedIds: [] };
+  if (liveCompacting.has(sessionId)) return { summaryText: null, removedIds: [] };
 
   const squash = rows.slice(0, rows.length - LIVE_KEEP_RECENT);
   if (squash.length === 0) return { summaryText: null, removedIds: [] };
 
+  liveCompacting.add(sessionId);
+  try {
+    return await compactLiveInner(sessionId, rows, squash, total, personaName);
+  } finally {
+    liveCompacting.delete(sessionId);
+  }
+}
+
+async function compactLiveInner(
+  sessionId: string,
+  rows: NavigatorMessageRow[],
+  squash: NavigatorMessageRow[],
+  total: number,
+  personaName: string,
+): Promise<LiveCompactOutcome> {
+  void rows;
   let summaryText: string;
   const cfg = getAIConfig(useAppStore.getState().settings);
   if (cfg && total <= HARD_CAP_TOKENS) {
-    const result = await compactViaAI(cfg, rowsToLines(squash).slice(-100), '黑猫', await getProfile());
+    const result = await compactViaAI(cfg, rowsToLines(squash).slice(-100), personaName, await getProfile());
     if (result) {
       await persistMemories(result);
       summaryText = result.summary;

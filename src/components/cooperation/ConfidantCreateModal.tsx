@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { useAppStore } from '@/store';
+import { useShallow } from 'zustand/react/shallow';
 import { useBackHandler } from '@/utils/useBackHandler';
 import { matchConfidant, type ConfidantMatchResult } from '@/utils/confidantAI';
 import { TAROT_BY_ID } from '@/constants/tarot';
@@ -80,7 +81,7 @@ const TRAIT_QUESTIONS: TraitQ[] = [
 ];
 
 export function ConfidantCreateModal({ isOpen, onClose, onCreated, onPickOnline }: Props) {
-  const { settings, confidants, addConfidant } = useAppStore();
+  const { settings, confidants, addConfidant } = useAppStore(useShallow(s => ({ settings: s.settings, confidants: s.confidants, addConfidant: s.addConfidant })));
 
   const [stage, setStage] = useState<Stage>('basic');
   // P3R（蓝频道，p3-modal-08 稿）：标题斜体 / 选择卡平行四边形 / 下一步蓝斜钮

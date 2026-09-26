@@ -49,7 +49,14 @@ export interface AIConfig {
   model: string;
   /** 仅用于错误提示文案（如 DeepSeek 402 余额提示）；可选 */
   provider?: ApiProvider;
+  /**
+   * 这份配置属于哪一档（v2.7.0.6 第 4 轮）。只影响 OpenAI 推理模型的 reasoning_effort：
+   * 深思熟虑档不再压成最低档（让它按模型默认的力度想），其余档位与「瞬发」调用照旧压最低。
+   */
+  tier?: AITier;
 }
+
+export type AITier = 'fast' | 'deliberate' | 'assistant' | 'vision' | 'audio';
 
 export interface ChatOptions {
   temperature?: number;
@@ -89,6 +96,13 @@ export interface ChatOptions {
   noThinkingAllowance?: boolean;
   /** 不发 reasoning_effort（服务商不认这个取值而 400 之后的重发用） */
   noReasoningEffort?: boolean;
+  /**
+   * 「瞬发」调用（v2.7.0.6 第 4 轮）：用户十秒内就想看到结果的小判定
+   * （记录加点解读、记账解析、设置里的成就 / 技能预设名匹配、属性称号）。
+   * 对 DeepSeek 发 thinking: disabled、OpenAI 推理模型压最低 effort、总超时 20 秒；
+   * 其余调用一律保持思考（质量优先，用户口径）。
+   */
+  instant?: boolean;
 }
 
 /**
@@ -108,9 +122,21 @@ const THINKING_TIMEOUT_MS = 300_000;
 /** 加倍预算之后还是只有思维链没有正文：给用户一句能懂的话，而不是"已在自动重试" */
 const THINK_EXHAUSTED_MSG = '模型把预算全花在思考上了，加大预算重来一次也没写出正文。换个更快的模型，或稍后再试。';
 
-/** 非流式：调用方没指定超时时，思维链模型放宽到 THINKING_TIMEOUT_MS */
+/**
+ * 「瞬发」调用的总超时：思考关得掉（DeepSeek）、或本来就不是思维链模型 → 20 秒；
+ * 关不掉思考的思维链模型（Kimi / Qwen 一类）放宽到 60 秒，别把正常在想的请求掐了。
+ */
+const INSTANT_TIMEOUT_MS = 20_000;
+const INSTANT_THINKING_TIMEOUT_MS = 60_000;
+function instantTimeoutFor(cfg: AIConfig): number {
+  const canSkipThinking = cfg.provider === 'deepseek' || isReasoningModel(cfg.model) || !isThinkingModel(cfg.model);
+  return canSkipThinking ? INSTANT_TIMEOUT_MS : INSTANT_THINKING_TIMEOUT_MS;
+}
+
+/** 非流式：调用方没指定超时时，思维链模型放宽到 THINKING_TIMEOUT_MS；瞬发调用收紧 */
 function withThinkingTimeout(cfg: AIConfig, opts: ChatOptions): ChatOptions {
   if (opts.timeoutMs !== undefined) return opts;
+  if (opts.instant) return { ...opts, timeoutMs: instantTimeoutFor(cfg) };
   return isThinkingModel(cfg.model) ? { ...opts, timeoutMs: THINKING_TIMEOUT_MS } : opts;
 }
 
@@ -122,6 +148,7 @@ function withThinkingTimeout(cfg: AIConfig, opts: ChatOptions): ChatOptions {
 const THINKING_STREAM_IDLE_MS = 150_000;
 function withStreamIdleTimeout(cfg: AIConfig, opts: ChatOptions): ChatOptions {
   if (opts.timeoutMs !== undefined) return opts;
+  if (opts.instant) return { ...opts, timeoutMs: instantTimeoutFor(cfg) };
   return isThinkingModel(cfg.model) ? { ...opts, timeoutMs: THINKING_STREAM_IDLE_MS } : opts;
 }
 
@@ -145,7 +172,7 @@ export function getAIConfig(settings: Settings): AIConfig | null {
     settings.summaryApiBaseUrl,
     settings.summaryModel,
   );
-  return { apiKey, baseUrl, model, provider: settings.summaryApiProvider };
+  return { apiKey, baseUrl, model, provider: settings.summaryApiProvider, tier: 'fast' };
 }
 
 /**
@@ -159,7 +186,8 @@ export function getAIConfig(settings: Settings): AIConfig | null {
  * 属于别家，套在当前连接上必 404）。
  */
 export function getDeliberateAIConfig(settings: Settings): AIConfig | null {
-  return applyModelOverride(settings, settings.navigatorProvider, settings.navigatorModel);
+  const cfg = applyModelOverride(settings, settings.navigatorProvider, settings.navigatorModel);
+  return cfg ? { ...cfg, tier: 'deliberate' } : null;
 }
 
 /**
@@ -171,8 +199,9 @@ export function getDeliberateAIConfig(settings: Settings): AIConfig | null {
  */
 export function getAssistantAIConfig(settings: Settings): AIConfig | null {
   const own = settings.assistantModel?.trim();
-  if (own) return applyModelOverride(settings, settings.assistantProvider, own);
-  return getDeliberateAIConfig(settings);
+  // 对话是要等首字的：不管落到哪一档的连接上，都按「助手」档处理（OpenAI 推理模型压最低 effort）
+  const cfg = own ? applyModelOverride(settings, settings.assistantProvider, own) : getDeliberateAIConfig(settings);
+  return cfg ? { ...cfg, tier: 'assistant' } : null;
 }
 
 /**
@@ -184,6 +213,8 @@ function applyModelOverride(
   settings: Settings,
   pv: ApiProvider | undefined,
   model: string | undefined,
+  /** strict：那家 Key 缺失就返回 null，**不**回落到当前连接（视觉 / 听觉档：模型名属于别家，套错连接只会 404 或胡说） */
+  strict = false,
 ): AIConfig | null {
   const activeProvider = settings.summaryApiProvider ?? DEFAULT_PROVIDER;
   if (pv && pv !== activeProvider) {
@@ -193,12 +224,25 @@ function applyModelOverride(
       const resolved = resolveProvider(pv, prof?.baseUrl, model?.trim() || prof?.model);
       return { apiKey: key, baseUrl: resolved.baseUrl, model: resolved.model, provider: pv };
     }
-    return getAIConfig(settings);
+    return strict ? null : getAIConfig(settings);
   }
   const base = getAIConfig(settings);
   if (!base) return null;
   const override = model?.trim();
   return override ? { ...base, model: effectiveModelName(override) } : base;
+}
+
+/**
+ * 没配 Key 时的兜底连接（请求会以 401 / 空 Key 失败，但至少走的是当前服务商的地址，
+ * 错误提示也能对上号）。塔罗 / 命运 / 同伴 / 谏言在 hasKey 分流之后用。
+ */
+export function fallbackAIConfig(settings: Settings): AIConfig {
+  return {
+    ...resolveProvider(settings.summaryApiProvider, settings.summaryApiBaseUrl, settings.summaryModel),
+    apiKey: settings.summaryApiKey || '',
+    provider: settings.summaryApiProvider,
+    tier: 'fast',
+  };
 }
 
 /** @deprecated 改名 getDeliberateAIConfig（覆盖面已不止 Navigator）；保留别名防漏改 */
@@ -211,7 +255,8 @@ export const getNavigatorAIConfig = getDeliberateAIConfig;
 export function getVisionAIConfig(settings: Settings): AIConfig | null {
   const model = settings.visionModel?.trim();
   if (!model) return null;
-  return applyModelOverride(settings, settings.visionProvider, model);
+  const cfg = applyModelOverride(settings, settings.visionProvider, model, true);
+  return cfg ? { ...cfg, tier: 'vision' } : null;
 }
 
 /**
@@ -222,7 +267,8 @@ export function getVisionAIConfig(settings: Settings): AIConfig | null {
 export function getAudioAIConfig(settings: Settings): AIConfig | null {
   const model = settings.audioModel?.trim();
   if (!model) return null;
-  return applyModelOverride(settings, settings.audioProvider, model);
+  const cfg = applyModelOverride(settings, settings.audioProvider, model, true);
+  return cfg ? { ...cfg, tier: 'audio' } : null;
 }
 
 // ── 内部：超时 + 调用方 signal 合流 ──────────────────────────────────────────
@@ -233,6 +279,8 @@ interface AbortBundle {
   rearm: () => void;
   cleanup: () => void;
   timedOut: () => boolean;
+  /** 主动掐断底层请求（调用方提前退出流式循环时用：不然服务商那边继续生成、继续计费） */
+  abort: () => void;
 }
 
 function setupAbort(opts: ChatOptions): AbortBundle {
@@ -259,6 +307,7 @@ function setupAbort(opts: ChatOptions): AbortBundle {
     rearm,
     cleanup: () => { if (timer) clearTimeout(timer); },
     timedOut: () => didTimeout,
+    abort: () => ac.abort(),
   };
 }
 
@@ -324,17 +373,26 @@ function buildRequestBody(
    * 总额再被该服务商的单次输出上限夹一下（DeepSeek 384K 等于不夹；Kimi/Qwen/MiniMax 32K
    * 会把它压回去）。真撞上更严的限制，chatComplete / chatStream 那发「400 就降档」会兜住。
    */
-  const thinking = isThinkingModel(cfg.model) && !opts.noThinkingAllowance;
+  /**
+   * 「瞬发」调用：DeepSeek 直接关思考（V4 系列吃 thinking 字段）。关掉了就不用再留思维链余量；
+   * 关不掉的（别家思维链模型）余量照留，只靠压 effort / 缩短超时。
+   */
+  const thinkingOff = !!opts.instant && cfg.provider === 'deepseek';
+  if (thinkingOff) body.thinking = { type: 'disabled' };
+  const thinking = isThinkingModel(cfg.model) && !opts.noThinkingAllowance && !thinkingOff;
   const cap = providerMaxOutput(cfg.provider);
   const budget = Math.min(cap, thinking ? maxTokens + Math.max(THINKING_ALLOWANCE, maxTokens) : maxTokens);
   if (isReasoningModel(cfg.model)) {
     body.max_completion_tokens = budget;
     /**
-     * 让 OpenAI 推理模型尽量接近"非推理"的快 / 省行为。取值按代际分（v2.7.0.6 修）：
+     * OpenAI 推理模型的思考力度。取值按代际分（v2.7.0.6 修）：
      * 初代 GPT-5 最低档叫 minimal；GPT-5.1 起（含默认的 gpt-5.4-mini、gpt-6-*）改叫 none，
      * 再发 minimal 会 400；o 系列没有这两档，最低 low。
+     * 第 4 轮：**深思熟虑档不再压成最低**——不发这个字段，让模型按默认力度想（那一档要的就是质量）；
+     * 快速 / 助手档和瞬发调用照旧压最低（要的是首字快）。
      */
-    const effort = opts.noReasoningEffort ? undefined : reasoningEffortFor(cfg.model);
+    const pressLowest = !!opts.instant || cfg.tier !== 'deliberate';
+    const effort = opts.noReasoningEffort || !pressLowest ? undefined : reasoningEffortFor(cfg.model);
     if (effort) body.reasoning_effort = effort;
     // 不发 temperature：推理模型只接受默认 1，自定义会 400
   } else {
@@ -454,6 +512,20 @@ export async function chatComplete(
   }
 }
 
+/** 思维链里若有一段能解析的 JSON 对象，只取那一段（见 chatCompleteOnce 注释 ②） */
+function salvageJsonFromReasoning(reasoning: string): string | null {
+  const a = reasoning.indexOf('{');
+  const b = reasoning.lastIndexOf('}');
+  if (a < 0 || b <= a) return null;
+  const candidate = reasoning.slice(a, b + 1);
+  try {
+    const v = JSON.parse(candidate);
+    return v && typeof v === 'object' ? candidate : null;
+  } catch {
+    return null;
+  }
+}
+
 async function chatCompleteOnce(
   cfg: AIConfig,
   messages: AIMessage[],
@@ -491,21 +563,29 @@ async function chatCompleteOnce(
     /**
      * 正文空了，但别急着判失败——两种真实情况：
      *
-     * ① 思维链模型（DeepSeek-R1 / GLM / Qwen-thinking 一族）会把内容写进
-     *    message.reasoning_content，content 留空。里面若带着 JSON，捞出来照样能用。
-     * ② 预算被推理段吃光 → finish_reason: 'length'，content 是空串。
+     * ① 预算被推理段吃光 → finish_reason: 'length'，content 是空串。
+     *    先按这条走：外层会加大预算重来（第 4 轮把它挪到了 ② 前面——以前 ② 排在前头，
+     *    思维链里恰好出现一对花括号就被当成正文交回去，调用方拿到的是半段思考过程）。
+     * ② 思维链模型（DeepSeek-R1 / GLM / Qwen-thinking 一族）会把内容写进
+     *    message.reasoning_content，content 留空。里面若带着**一段能解析的 JSON 对象**，
+     *    只把那段捞出来照样能用（要 JSON 的调用占绝大多数；不要 JSON 的调用，
+     *    思维链里也很少有恰好能解析的对象）。
      *    这两种都会表现成用户说的「AI 内容根本就没返回」，
      *    但错误提示只写「空响应」，看不出该调大预算还是该换模型。
      */
     const reasoning = choice?.message?.reasoning_content ?? choice?.message?.reasoning;
-    if (typeof reasoning === 'string' && reasoning.includes('{') && reasoning.includes('}')) {
-      return reasoning;
-    }
     const fr = finishReason;
-    if (fr === 'length' || (!fr && typeof reasoning === 'string' && reasoning.trim())) {
+    if (fr === 'length') {
       // 打上标记：外层 chatComplete 会加倍预算再来一发
       throw markEmptyLength(new Error(
         '模型把预算全花在思考上了，正文一个字没写（finish_reason=length）——已在自动加大预算重试',
+      ));
+    }
+    const salvaged = typeof reasoning === 'string' ? salvageJsonFromReasoning(reasoning) : null;
+    if (salvaged) return salvaged;
+    if (!fr && typeof reasoning === 'string' && reasoning.trim()) {
+      throw markEmptyLength(new Error(
+        '模型把预算全花在思考上了，正文一个字没写（连接在思考中途断开）——已在自动加大预算重试',
       ));
     }
     throw new Error(
@@ -542,6 +622,8 @@ export async function* chatStream(
   let budgetStep = 0;
   let noEffort = !!opts.noReasoningEffort;
   let last: StreamOutcome = { produced: false, sawReasoning: false, finishReason: '' };
+  /** 正常收完才置 true；调用方提前 break（generator.return）或中途抛错时仍是 false → finally 里掐断底层请求 */
+  let completed = false;
   try {
     for (let attempt = 0; attempt < 3; attempt++) {
       const extra: Record<string, unknown> = {};
@@ -562,11 +644,12 @@ export async function* chatStream(
         throw e;
       }
       if (outcome.produced) {
+        completed = true;
         opts.onFinishReason?.(outcome.finishReason);
         return;
       }
       last = outcome;
-      if (ab.signal.aborted) return;
+      if (ab.signal.aborted) { completed = true; return; }
       if (import.meta.env.DEV) console.warn(`[aiClient] 流式第 ${attempt + 1} 发没有正文（reasoning=${outcome.sawReasoning} finish=${outcome.finishReason || '-'}），自动重试`);
     }
     throw new Error(
@@ -580,6 +663,12 @@ export async function* chatStream(
     rethrowAbortAware(e, ab, opts);
   } finally {
     ab.cleanup();
+    /**
+     * 调用方提前退出（拟真流被用户打断 / 组件卸载 break 掉 for-await）时，for-await 会调
+     * generator.return()，这里的 finally 是唯一能拿到控制权的地方：不掐断，服务商那边就继续
+     * 生成、继续计费，连接也一直挂着。正常收完（completed）时 abort 是空操作。
+     */
+    if (!completed) ab.abort();
   }
 }
 
@@ -613,6 +702,7 @@ async function* streamOnce(
   let produced = false;
   let sawReasoning = false;
   let finishReason = '';
+  try {
   outer: while (true) {
     /**
      * 收到 finish_reason 以后不再无限等 [DONE]（v2.7.0.6）。
@@ -655,6 +745,10 @@ async function* streamOnce(
         }
       } catch { /* 半个 / 非法 chunk，跳过 */ }
     }
+  }
+  } finally {
+    // [DONE] 之后 / 提前退出：把读取端关掉，连接不再挂着（已关闭的流上 cancel 是空操作）
+    reader.cancel().catch(() => { /* 已关 */ });
   }
   return { produced, sawReasoning, finishReason };
 }

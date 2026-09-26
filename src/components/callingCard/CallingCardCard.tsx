@@ -1,5 +1,6 @@
 import { motion } from 'motion/react';
 import { useAppStore } from '@/store';
+import { useShallow } from 'zustand/react/shallow';
 import type { CallingCard } from '@/types';
 
 /**
@@ -36,7 +37,7 @@ const SUBTLE_INK = 'rgba(255,255,255,0.55)';
 export function CallingCardCard({
   card, variant = 'list', onClick, onProgressClick, menuSlot,
 }: CallingCardCardProps) {
-  const { getCallingCardProgress } = useAppStore();
+  const { getCallingCardProgress } = useAppStore(useShallow(s => ({ getCallingCardProgress: s.getCallingCardProgress })));
   const prog = getCallingCardProgress(card.id);
 
   const overall = Math.round((prog?.overallProgress ?? 0) * 100);

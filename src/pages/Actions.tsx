@@ -14,6 +14,7 @@ import { Fragment, useEffect } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import type { PanInfo } from 'motion/react';
 import { useAppStore } from '@/store';
+import { useShallow } from 'zustand/react/shallow';
 import { springSnappy, TAP } from '@/utils/motion';
 import { triggerNavFeedback } from '@/utils/feedback';
 import { TodosView } from '@/pages/Todos';
@@ -40,7 +41,7 @@ const TABS: Array<{ key: ActionsSubTab; label: string }> = [
 ];
 
 export const Actions = () => {
-  const { actionsSubTab, setActionsSubTab, currentPage, setCurrentPage } = useAppStore();
+  const { actionsSubTab, setActionsSubTab, currentPage, setCurrentPage } = useAppStore(useShallow(s => ({ actionsSubTab: s.actionsSubTab, setActionsSubTab: s.setActionsSubTab, currentPage: s.currentPage, setCurrentPage: s.setCurrentPage })));
   const channel = useUiChannel();
   const isP4 = channel === 'p4';
   // P3R（蓝主题）形态：水面壳 + 设计稿切换头（p3-actions-reference-v3）

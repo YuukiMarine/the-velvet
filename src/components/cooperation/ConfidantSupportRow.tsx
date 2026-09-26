@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore } from '@/store';
+import { useShallow } from 'zustand/react/shallow';
 import { TAROT_BY_ID } from '@/constants/tarot';
 import { CONFIDANT_HEAL_HP_PCT, CONFIDANT_RESTORE_SP } from '@/utils/confidantLevels';
 
@@ -18,7 +19,7 @@ interface Props {
  * 无可用道具时不渲染任何东西。
  */
 export function ConfidantSupportRow({ onHealHp, onRestoreSp, disabled }: Props) {
-  const { getAvailableConfidantItems, useConfidantBattleItem, battleState } = useAppStore();
+  const { getAvailableConfidantItems, useConfidantBattleItem, battleState } = useAppStore(useShallow(s => ({ getAvailableConfidantItems: s.getAvailableConfidantItems, useConfidantBattleItem: s.useConfidantBattleItem, battleState: s.battleState })));
   const [expanded, setExpanded] = useState<'battle_heal' | 'battle_sp' | null>(null);
 
   const healItems = useMemo(() => getAvailableConfidantItems('battle_heal'), [getAvailableConfidantItems]);

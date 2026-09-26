@@ -1008,6 +1008,8 @@ export interface NavigatorMessageRow {
   text?: string;
   /** 用户随消息附的图片（降采样 data URL；FS3.4 聊天发图）。可选字段，Dexie 无需升版 */
   imageDataUrl?: string;
+  /** 视觉档对这张图的转述（第 4 轮）：存下来就不会一轮被打断后再转述一遍，历史里也不再只剩占位符 */
+  imageDesc?: string;
   draftJson?: string;
   cardStatus?: 'pending' | 'done' | 'cancelled';
   /** 用户手改过这张卡（进卡片实录，让模型知道内容已不是它提议的那版） */

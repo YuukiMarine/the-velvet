@@ -9,8 +9,8 @@
  */
 
 import type { CounselMessage, Settings, TarotOrientation } from '@/types';
-import { resolveProvider } from '@/utils/aiProviders';
-import { chatComplete, chatStream, getAIConfig } from '@/utils/aiClient';
+import type { ApiProvider } from '@/utils/aiProviders';
+import { chatComplete, chatStream, fallbackAIConfig, getAIConfig, type AITier } from '@/utils/aiClient';
 
 export interface CounselConfidantBrief {
   id: string;
@@ -93,6 +93,9 @@ interface ChatReq {
   baseUrl: string;
   model: string;
   apiKey: string;
+  /** 走的是哪家 / 哪一档（第 4 轮补：思维链余量、关思考重试、402 提示都靠它对号） */
+  provider?: ApiProvider;
+  tier?: AITier;
   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
 }
 
@@ -148,11 +151,7 @@ function fmtDate(d: Date | string | undefined): string {
 }
 
 function buildCounselRequest(ctx: CounselContext, opts: { greeting?: boolean } = {}): ChatReq {
-  const { baseUrl, model } = resolveProvider(
-    ctx.settings.summaryApiProvider,
-    ctx.settings.summaryApiBaseUrl,
-    ctx.settings.summaryModel,
-  );
+  const cfg = getAIConfig(ctx.settings) ?? fallbackAIConfig(ctx.settings);
 
   const systemMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
     { role: 'system', content: COUNSEL_SYSTEM_PROMPT },
@@ -171,9 +170,11 @@ function buildCounselRequest(ctx: CounselContext, opts: { greeting?: boolean } =
   }
 
   return {
-    baseUrl,
-    model,
-    apiKey: ctx.settings.summaryApiKey || '',
+    baseUrl: cfg.baseUrl,
+    model: cfg.model,
+    apiKey: cfg.apiKey,
+    provider: cfg.provider,
+    tier: cfg.tier,
     messages: [...systemMessages, ...convo, ...trailingSystem],
   };
 }
@@ -252,15 +253,19 @@ export async function* streamCounselReply(
     return;
   }
 
+  let yielded = 0;
   try {
     const req = buildCounselRequest(ctx, opts);
     for await (const chunk of streamSSE(req, signal)) {
+      if (chunk.trim()) yielded++;
       yield chunk;
     }
   } catch (err) {
     if (err instanceof Error && err.name === 'AbortError') throw err;
-    console.warn('[counselAI] stream failed, falling back to offline:', err);
+    console.warn('[counselAI] stream failed' + (yielded ? '（已有输出，按已说的收尾）' : ', falling back to offline') + ':', err);
     opts.onFallback?.('connect-error', err instanceof Error ? err : new Error(String(err)));
+    // 第 4 轮：已经说出口一半了就到此为止——再接一段离线模板，等于同一句话换两副嗓子说
+    if (yielded > 0) return;
     yield '\n\n（网络似乎没接通——我再凭感觉陪你说两句：）\n\n';
     const reply = offlineReply(ctx, opts);
     yield reply;

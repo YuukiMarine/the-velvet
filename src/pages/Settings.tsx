@@ -3,6 +3,7 @@ import { ModalPortal } from '@/components/ModalPortal';
 import { useEffect, useRef, useState, useCallback } from 'react';
 import type { CSSProperties } from 'react';
 import { useAppStore, DEFAULT_SUMMARY_PROMPT_PRESETS, FAMILIAR_FACE_PRESETS, toLocalDateKey, applyCustomThemeColor } from '@/store';
+import { useShallow } from 'zustand/react/shallow';
 import { triggerThemeSwitchFeedback, playSound } from '@/utils/feedback';
 import { ThemeType, AttributeId, SummaryPromptPreset, AttributeLevelTitles } from '@/types';
 import { LEVEL_PRESETS } from '@/constants';
@@ -37,6 +38,7 @@ import {
 } from '@/utils/attributeLevelTitles';
 import { generatePresetNameMatches, type PresetNameMatchResult } from '@/utils/presetNameMatcher';
 import { P4Flower, P4Sparkle, P4SkyFan, P4ArcRings, P4_HEADER_BLEED } from '@/ui/p4Kit';
+import { downscaleDataUrl } from '@/utils/imageCrop';
 
 /** 五维属性的展示元数据（图标 + 主色 + 默认中文名），仅用于设置页 UI */
 const ATTRIBUTE_META: Array<{
@@ -529,7 +531,7 @@ export const Settings = () => {
     updateSettings,
     setTheme,
     loadData
-  } = useAppStore();
+  } = useAppStore(useShallow(s => ({ user: s.user, settings: s.settings, updateSettings: s.updateSettings, setTheme: s.setTheme, loadData: s.loadData })));
   const isP4 = useUiChannel() === 'p4';
   const achievements = useAppStore(s => s.achievements);
   const skills = useAppStore(s => s.skills);
@@ -1587,7 +1589,12 @@ export const Settings = () => {
                             if (file) {
                               const reader = new FileReader();
                               reader.onload = (event) => {
-                                updateSettings({ backgroundImage: event.target?.result as string });
+                                const raw = event.target?.result as string;
+                                // 长边缩到 2400px、质量 0.9（第 4 轮，用户批注：压缩但保住画质）：
+                                // 3 倍屏也够铺满；原图动辄 5MB，settings 每次读写都得搬它一遍
+                                void downscaleDataUrl(raw, 2400, 0.9)
+                                  .catch(() => raw)
+                                  .then(img => updateSettings({ backgroundImage: img }));
                               };
                               reader.readAsDataURL(file);
                             }

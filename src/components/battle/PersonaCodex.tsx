@@ -13,6 +13,7 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore } from '@/store';
+import { useShallow } from 'zustand/react/shallow';
 import type { AttributeId, PersonaSkill } from '@/types';
 import { SKILL_EFFECT_MAP } from '@/constants';
 import {
@@ -102,7 +103,7 @@ const MasteryStrip = ({ skill, accent, onAwaken }: { skill: PersonaSkill; accent
 
 export function PersonaCodex({ attrIdx, onSelectAttr }: { attrIdx: number; onSelectAttr: (i: number) => void }) {
   const codexChannel = useUiChannel();
-  const { persona, settings, attributes, equipMask, battleState, todos, todoCompletions } = useAppStore();
+  const { persona, settings, attributes, equipMask, battleState, todos, todoCompletions } = useAppStore(useShallow(s => ({ persona: s.persona, settings: s.settings, attributes: s.attributes, equipMask: s.equipMask, battleState: s.battleState, todos: s.todos, todoCompletions: s.todoCompletions })));
   const [equipAnim, setEquipAnim] = useState<AttributeId | null>(null);
   // R18 觉醒：目标技能等级（弹层）+ 选中迷思 + 手动改名
   const [awakenLevel, setAwakenLevel] = useState<number | null>(null);

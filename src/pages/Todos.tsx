@@ -2,6 +2,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useMemo, useRef, useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { useAppStore, toLocalDateKey } from '@/store';
+import { useShallow } from 'zustand/react/shallow';
 import { PactTodoTag } from '@/components/cooperation/PactTag';
 import { DeadlineTag } from '@/components/todo/DeadlineTag';
 import { WishBoard, useWishPane, wishSkinFor } from '@/components/wish/WishBoard';
@@ -242,7 +243,7 @@ const ATTR_IDS: AttributeId[] = ['knowledge', 'guts', 'dexterity', 'kindness', '
 
 // 行动页子视图（任务）：页头/页级转场由宿主 Actions.tsx 承担，本组件只渲染内容
 export const TodosView = () => {
-  const { todos, settings, attributes, addTodo, updateTodo, deleteTodo, getTodayTodoProgress, getTodoDateLabel, weeklyGoals, saveWeeklyGoal, deleteWeeklyGoal, completeWeeklyGoal, getWeeklyGoalProgress, undoTodayTodoCompletion, addWish, wishes, setWishStatus} = useAppStore();
+  const { todos, settings, attributes, addTodo, updateTodo, deleteTodo, getTodayTodoProgress, getTodoDateLabel, weeklyGoals, saveWeeklyGoal, deleteWeeklyGoal, completeWeeklyGoal, getWeeklyGoalProgress, undoTodayTodoCompletion, addWish, wishes, setWishStatus} = useAppStore(useShallow(s => ({ todos: s.todos, settings: s.settings, attributes: s.attributes, addTodo: s.addTodo, updateTodo: s.updateTodo, deleteTodo: s.deleteTodo, getTodayTodoProgress: s.getTodayTodoProgress, getTodoDateLabel: s.getTodoDateLabel, weeklyGoals: s.weeklyGoals, saveWeeklyGoal: s.saveWeeklyGoal, deleteWeeklyGoal: s.deleteWeeklyGoal, completeWeeklyGoal: s.completeWeeklyGoal, getWeeklyGoalProgress: s.getWeeklyGoalProgress, undoTodayTodoCompletion: s.undoTodayTodoCompletion, addWish: s.addWish, wishes: s.wishes, setWishStatus: s.setWishStatus })));
   const channel = useUiChannel();
   const isP4 = channel === 'p4';
   // P5R：红主题 FAB 换八角红块（p5-menu 稿「+」形制）
@@ -282,7 +283,18 @@ export const TodosView = () => {
     }
   };
 
+  const importingRef = useRef(false);
   const importSchedule = async () => {
+    // 连点两下会建两遍同样的任务：导入期间忽略后续点击
+    if (importingRef.current) return;
+    importingRef.current = true;
+    try {
+      await importScheduleInner();
+    } finally {
+      importingRef.current = false;
+    }
+  };
+  const importScheduleInner = async () => {
     const sel = (scheduleItems ?? []).filter(i => i.on);
     for (const it of sel) {
       await addTodo({
@@ -332,6 +344,14 @@ export const TodosView = () => {
 
   const todayWeekday = new Date().getDay();
   const todayDateKey = toLocalDateKey();
+  // 今日进度按 id 建一次 Map（第 4 轮）：以前每一行都调 getTodayTodoProgress（内部各 find 一遍）
+  const todoCompletionsForProgress = useAppStore(s => s.todoCompletions);
+  const progressById = useMemo(
+    () => new Map(todos.map(t => [t.id, getTodayTodoProgress(t.id)])),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [todos, todoCompletionsForProgress, todayDateKey],
+  );
+  const progressOf = (id: string) => progressById.get(id) ?? getTodayTodoProgress(id);
   const activeTodos = useMemo(() => {
     const active = todos.filter(t => {
       if (!t.isActive) return false;
@@ -653,7 +673,7 @@ export const TodosView = () => {
                   />
                 );
               }
-              const progress = getTodayTodoProgress(todo.id);
+              const progress = progressOf(todo.id);
               const attrName = settings.attributeNames[todo.attribute];
               const pct = Math.min(100, (progress.count / progress.target) * 100);
               return (
@@ -805,7 +825,7 @@ export const TodosView = () => {
               </>
             )}
             {(expandCompleted ? completedArchivedTodos : completedArchivedTodos.slice(0, 5)).map(todo => {
-              const archivedProgress = getTodayTodoProgress(todo.id);
+              const archivedProgress = progressOf(todo.id);
               const wasCompletedToday = archivedProgress.isComplete;
               return (
                 // 已完成 = dimmed（emerald 满底取消，完成态由 ✓ 徽章 + 删除线表达）

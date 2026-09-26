@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore } from '@/store';
+import { useShallow } from 'zustand/react/shallow';
 import { useCloudStore } from '@/store/cloud';
 import { LVTag } from '@/components/LVTag';
 import { computeTotalLv } from '@/utils/lvTiers';
@@ -13,7 +14,7 @@ import type { AttributeId } from '@/types';
  * 头像点击弹出菜单（更换 / 移除），五维默认折叠。
  */
 export function UserProfileCard() {
-  const { user, settings, updateUser, attributes } = useAppStore();
+  const { user, settings, updateUser, attributes } = useAppStore(useShallow(s => ({ user: s.user, settings: s.settings, updateUser: s.updateUser, attributes: s.attributes })));
   const cloudUser = useCloudStore(s => s.cloudUser);
   const cloudEnabled = useCloudStore(s => s.cloudEnabled);
   const totalLv = computeTotalLv(attributes);

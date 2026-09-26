@@ -10,7 +10,8 @@ import { ConflictDialog } from '@/components/auth/ConflictDialog';
 import { SyncMergeSheet } from '@/components/auth/SyncMergeSheet';
 import { SyncDiffDialog } from '@/components/auth/SyncDiffDialog';
 import { Sidebar, BottomNav } from '@/components/Navigation';
-import { WelcomeModal } from '@/components/WelcomeModal';
+// 欢迎页 / 黑猫窗 / 回归面板改按需分包（第 4 轮，主包瘦身）：都不在首屏关键路径上
+const WelcomeModal = lazy(() => import('@/components/WelcomeModal').then(m => ({ default: m.WelcomeModal })));
 import { LevelUpModal } from '@/components/LevelUpModal';
 import { SplashScreen } from '@/components/SplashScreen';
 import type { SplashScreenProps } from '@/components/SplashScreen';
@@ -46,11 +47,11 @@ const BattleArena = lazy(() => import('@/components/battle/BattleArena').then(m 
 import { OrphanImagesPrompt } from '@/components/OrphanImagesPrompt';
 import { BigDealClearCutIn } from '@/components/bigdeal/BigDealClearCutIn';
 import { sweepDanmakuApprovals } from '@/services/danmakuWatch';
-import { ReturnPanel } from '@/components/return/ReturnPanel';
+const ReturnPanel = lazy(() => import('@/components/return/ReturnPanel').then(m => ({ default: m.ReturnPanel })));
 import { WishProgressCutIn } from '@/components/wish/WishProgressCutIn';
 import { WishProposalDialog } from '@/components/wish/WishProposalDialog';
 // F6 黑猫对话窗（portal 到 body 的全屏 overlay；入口在 Sidebar / BottomNav 中央 ◈）
-import { NavigatorWindow } from '@/components/navigator/NavigatorWindow';
+const NavigatorWindow = lazy(() => import('@/components/navigator/NavigatorWindow').then(m => ({ default: m.NavigatorWindow })));
 import { primeCurrentTheme } from '@/utils/feedback';
 import { BackgroundAnimation } from '@/components/BackgroundAnimation';
 import { PWAUpdateToast } from '@/components/PWAUpdateToast';
@@ -773,14 +774,14 @@ function App() {
           {user?.theme === 'yellow' && !bgImageOn && <P4StageDecor />}
 
         <div className="relative z-10">
-          <WelcomeModal />
+          <Suspense fallback={null}><WelcomeModal /></Suspense>
           
           {user && (
             <>
               <Sidebar />
               <BottomNav />
               {/* F6 黑猫：窗口本体挂一次（portal 到 body），Sidebar/BottomNav 只负责 open() */}
-              <NavigatorWindow />
+              <Suspense fallback={null}><NavigatorWindow /></Suspense>
 
               <main
                 // 顶部 padding 用 calc(1rem + env(safe-area-inset-top)) 保证：
@@ -897,7 +898,11 @@ function App() {
           <WishProgressCutIn />
           <WishProposalDialog />
           {/* 回归面板（PRD_V2.6 §12）：离开 ≥7 天后的第一次打开 */}
-          <ReturnPanel payload={returnPayload} onClose={() => setReturnPayload(null)} />
+          {returnPayload && (
+            <Suspense fallback={null}>
+              <ReturnPanel payload={returnPayload} onClose={() => setReturnPayload(null)} />
+            </Suspense>
+          )}
         </div>
       </div>
     </div>

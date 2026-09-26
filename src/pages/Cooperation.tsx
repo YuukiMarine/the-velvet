@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore, toLocalDateKey } from '@/store';
+import { useShallow } from 'zustand/react/shallow';
 import { useCloudStore } from '@/store/cloud';
 import { useCloudSocialStore } from '@/store/cloudSocial';
 import { PageTitle } from '@/components/PageTitle';
@@ -50,7 +51,7 @@ const lsSetFlag = (key: string): void => {
 
 export function Cooperation() {
   const isP4 = useUiChannel() === 'p4';
-  const { confidants, counselArchives, getCounselCooldown, hasActiveCounsel, bumpConfidantIntimacy, updateConfidant, battleState, saveBattleState, settings, updateSettings } = useAppStore();
+  const { confidants, counselArchives, getCounselCooldown, hasActiveCounsel, bumpConfidantIntimacy, updateConfidant, battleState, saveBattleState, settings, updateSettings } = useAppStore(useShallow(s => ({ confidants: s.confidants, counselArchives: s.counselArchives, getCounselCooldown: s.getCounselCooldown, hasActiveCounsel: s.hasActiveCounsel, bumpConfidantIntimacy: s.bumpConfidantIntimacy, updateConfidant: s.updateConfidant, battleState: s.battleState, saveBattleState: s.saveBattleState, settings: s.settings, updateSettings: s.updateSettings })));
   // P9 专辑墙：视图偏好持久记忆（PRD §5.3），默认墙
   const viewMode = settings.confidantViewMode ?? 'wall';
   const cloudUser = useCloudStore(s => s.cloudUser);
@@ -838,7 +839,6 @@ export function Cooperation() {
         ) : (
           <motion.div
             key="list"
-            layout
             className="space-y-3"
           >
             {/* 顶部：在线好友占位卡（已 linked 但未建 COOP）。

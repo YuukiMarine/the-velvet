@@ -6,6 +6,7 @@ import { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { createPortal } from 'react-dom';
 import { useAppStore } from '@/store';
+import { useShallow } from 'zustand/react/shallow';
 import { TAROT_BY_ID } from '@/constants/tarot';
 
 interface Props {
@@ -14,7 +15,7 @@ interface Props {
 }
 
 export function CounselArchiveModal({ isOpen, onClose }: Props) {
-  const { counselArchives, confidants, deleteCounselArchive } = useAppStore();
+  const { counselArchives, confidants, deleteCounselArchive } = useAppStore(useShallow(s => ({ counselArchives: s.counselArchives, confidants: s.confidants, deleteCounselArchive: s.deleteCounselArchive })));
   const [confirmId, setConfirmId] = useState<string | null>(null);
 
   const sorted = useMemo(

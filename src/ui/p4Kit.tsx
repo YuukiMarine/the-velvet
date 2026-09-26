@@ -12,6 +12,7 @@
 import { useEffect, useRef } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useBoldness } from '@/utils/boldness';
+import { startLowFpsLoop, lerpK } from '@/utils/rafThrottle';
 
 /**
  * P4 页头出血口径（所有 `-mx-4 px-4` 页头共用）：**裁左右与下缘，只朝上放行**。
@@ -135,25 +136,24 @@ const triPoints = (a: number[]) =>
 export const P4Highlight = ({ className, live = true }: { className?: string; live?: boolean }) => {
   const bold = useBoldness();
   const refs = useRef<(SVGPolygonElement | null)[]>([]);
+  const svgRef = useRef<SVGSVGElement>(null);
   useEffect(() => {
     if (!bold || !live) return;
     const layers = refs.current
       .map((ref, i) => (ref ? { ref, box: TRI_BOXES[i], cur: triTarget(TRI_BOXES[i]), tgt: triTarget(TRI_BOXES[i]), last: 0 } : null))
       .filter((l): l is NonNullable<typeof l> => !!l);
-    let raf = 0;
-    const loop = (t: number) => {
+    // 可见时照旧 60fps；移出视口整个停掉（第 4 轮，原来常驻）。插值系数按 dt 折算，掉帧时节奏不变
+    return startLowFpsLoop(svgRef.current, 60, (t, dt) => {
+      const k = lerpK(0.18, dt);
       for (const L of layers) {
         if (t - L.last > 130) { L.tgt = triTarget(L.box); L.last = t; }
-        for (let i = 0; i < 6; i++) L.cur[i] += (L.tgt[i] - L.cur[i]) * 0.18;
+        for (let i = 0; i < 6; i++) L.cur[i] += (L.tgt[i] - L.cur[i]) * k;
         L.ref.setAttribute('points', triPoints(L.cur));
       }
-      raf = requestAnimationFrame(loop);
-    };
-    raf = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(raf);
+    });
   }, [bold, live]);
   return (
-    <svg viewBox="0 0 100 50" preserveAspectRatio="none" className={className} aria-hidden>
+    <svg ref={svgRef} viewBox="0 0 100 50" preserveAspectRatio="none" className={className} aria-hidden>
       <polygon ref={(el) => { refs.current[0] = el; }} fill="var(--ui-accent)" points="15,3 3,47 96,25" />
     </svg>
   );
@@ -210,14 +210,16 @@ export const P4NumberSticker = ({ children, className, style }: {
   </div>
 );
 
-/** 实景天空底（p4-cloud-sky 素材，终端玄关同源）：photo 模式共享的内层 */
+/** 实景天空底（p4-cloud-sky 素材，终端玄关同源）：photo 模式共享的内层。
+ *  素材改成 480px 的 WebP、滤镜已烤进图里（第 4 轮）：原 PNG 1.7MB 只显示在 ≤210px 的扇角上 */
 const P4SkyPhoto = ({ position = '38% 55%' }: { position?: string }) => (
   <>
     <img
-      src="/assets/terminal/p4-cloud-sky.png"
+      src="/assets/terminal/p4-cloud-sky-480.webp"
       alt=""
+      decoding="async"
       className="absolute inset-0 h-full w-full object-cover"
-      style={{ objectPosition: position, filter: 'saturate(1.15) contrast(1.06)' }}
+      style={{ objectPosition: position }}
     />
     <div className="absolute inset-0 bg-[#00a6ff]/10 mix-blend-screen" />
   </>

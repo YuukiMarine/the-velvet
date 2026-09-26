@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore } from '@/store';
+import { useShallow } from 'zustand/react/shallow';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { useLongPress } from '@/utils/useLongPress';
 import { triggerLightHaptic } from '@/utils/feedback';
@@ -23,7 +24,7 @@ import type { CallingCard } from '@/types';
  * 默认提供 id="calling-card-section" 锚点，HERO 卡进度条点击会滚到这里。
  */
 export function CallingCardSection({ sectionId = 'calling-card-section' }: { sectionId?: string } = {}) {
-  const { callingCards, pinCallingCard, archiveCallingCard, unarchiveCallingCard, deleteCallingCard } = useAppStore();
+  const { callingCards, pinCallingCard, archiveCallingCard, unarchiveCallingCard, deleteCallingCard } = useAppStore(useShallow(s => ({ callingCards: s.callingCards, pinCallingCard: s.pinCallingCard, archiveCallingCard: s.archiveCallingCard, unarchiveCallingCard: s.unarchiveCallingCard, deleteCallingCard: s.deleteCallingCard })));
 
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingCard, setEditingCard] = useState<CallingCard | null>(null);

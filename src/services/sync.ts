@@ -597,6 +597,18 @@ function stripForCloud(key: string, rows: Row[], includeApiKey: boolean): Row[] 
       return rest;
     });
   }
+  if (key === 'summaries') {
+    // 追问用的原始 prompt（reqContext）里有愿望标题和记录原文：绕过了「愿望默认只存本地」，上云前剥掉。
+    // 代价是别的设备拉到这份总结后不能再追问（那台没有上下文）；本机拉取时会把自己的补回去。
+    return rows.map(r => {
+      if (r && typeof r === 'object' && 'reqContext' in r) {
+        const { reqContext: _rc, ...rest } = r;
+        void _rc;
+        return rest;
+      }
+      return r;
+    });
+  }
   // F3 终端 24h 任务存在 callingCards 表，但属临时态、且 terminal.goalTitle 复刻了愿望标题。
   // 愿望(wishes)默认本地优先(opt-in 上云)，故终端卡一律不上云，避免从 callingCards 通道泄漏愿望语义。
   if (key === 'callingCards') return rows.filter(r => !(r && typeof r === 'object' && r.terminal));
@@ -827,6 +839,16 @@ async function localizeCloudRows(key: string, rows: Row[]): Promise<Row[] | null
       if (avatarById.has(id)) next = { ...next, customAvatarDataUrl: avatarById.get(id) };
       if (faceById.has(id)) next = { ...next, cardFaceDataUrl: faceById.get(id) };
       return next;
+    });
+  }
+  if (key === 'summaries') {
+    // 云端不存追问上下文（见 stripForCloud）：本机原来有的补回来，追问功能不因一次拉取而失效
+    const local = await db.summaries.toArray();
+    const rcById = new Map(local.filter(s => !!s.reqContext).map(s => [s.id, s.reqContext]));
+    toWrite = toWrite.map(r => {
+      const id = r?.id as string | undefined;
+      if (!r || !id || r.reqContext || !rcById.has(id)) return r;
+      return { ...r, reqContext: rcById.get(id) };
     });
   }
   if (key === 'callingCards') {

@@ -1,5 +1,6 @@
 import type { AttributeId, AttributeLevelTitles, AttributeNames, Settings } from '@/types';
 import { chatComplete, getAIConfig } from '@/utils/aiClient';
+import { tryExtractJSON } from '@/utils/aiJson';
 
 export const ATTRIBUTE_IDS: AttributeId[] = ['knowledge', 'guts', 'dexterity', 'kindness', 'charm'];
 
@@ -74,7 +75,7 @@ export async function generateAttributeLevelTitles(
   const raw = await chatComplete(cfg, [
     { role: 'system', content: LEVEL_TITLE_SYSTEM_PROMPT },
     { role: 'user', content: buildLevelTitlePrompt(settings.attributeNames, levelCount) },
-  ], { temperature: 0.85, maxTokens: 900, signal });
+  ], { temperature: 0.85, maxTokens: 900, signal, instant: true }); // 瞬发：设置页里点一下就等着
 
   const parsed = parseTitleJson(raw);
   if (!hasAnyTitle(parsed)) {
@@ -97,12 +98,12 @@ function buildLevelTitlePrompt(attributeNames: AttributeNames, levelCount: numbe
 }
 
 function parseTitleJson(raw: string): Partial<Record<AttributeId, string[]>> {
-  const text = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
-  try {
-    const parsed = JSON.parse(text) as unknown;
-    if (!parsed || typeof parsed !== 'object') return {};
-    const root = ('titles' in parsed && (parsed as Record<string, unknown>).titles)
-      || parsed;
+  const parsed = tryExtractJSON(raw);
+  if (!parsed) return {};
+  {
+    const root = ('titles' in parsed && parsed.titles && typeof parsed.titles === 'object')
+      ? parsed.titles
+      : parsed;
     const result: Partial<Record<AttributeId, string[]>> = {};
     for (const id of ATTRIBUTE_IDS) {
       const value = (root as Record<string, unknown>)[id];
@@ -111,8 +112,6 @@ function parseTitleJson(raw: string): Partial<Record<AttributeId, string[]>> {
       }
     }
     return result;
-  } catch {
-    return {};
   }
 }
 

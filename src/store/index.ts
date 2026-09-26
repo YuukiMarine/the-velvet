@@ -244,7 +244,8 @@ interface AppState {
   createUser: (name: string, attrNames?: Partial<import('@/types').AttributeNames>, blessingAttribute?: AttributeId) => Promise<void>;
   updateUser: (patch: Partial<Pick<User, 'name' | 'avatarDataUrl'>>) => Promise<void>;
   setTheme: (theme: ThemeType) => Promise<void>;
-  addActivity: (description: string, points: Record<string, number>, method: 'local' | 'todo' | 'battle', options?: { important?: boolean; date?: Date; category?: Activity['category']; bigDealId?: string; wishId?: string }) => Promise<{ unlockHints: { achievements: number; skills: number }; activityId: string }>;
+  /** skipLoad：调用方紧接着还要再记一条时，把内存刷新留给后一条（少跑一整轮 loadData） */
+  addActivity: (description: string, points: Record<string, number>, method: 'local' | 'todo' | 'battle', options?: { important?: boolean; date?: Date; category?: Activity['category']; bigDealId?: string; wishId?: string; skipLoad?: boolean }) => Promise<{ unlockHints: { achievements: number; skills: number }; activityId: string }>;
   updateAttribute: (attributeId: string, points: number) => Promise<void>;
   unlockAchievement: (achievementId: string) => Promise<void>;
   unlockSkill: (skillId: string) => Promise<void>;
@@ -505,7 +506,10 @@ interface AppState {
   applyCountercurrentDecay: () => Promise<AttributeId[]>;
   getCountercurrentWarnings: () => AttributeId[];
   // F2a 本地通知
+  /** 合并 250ms 内的连发后再排（见 syncNotificationsNow） */
   syncNotifications: () => Promise<void>;
+  /** 立刻按当前数据重排本地通知（不合并） */
+  syncNotificationsNow: () => Promise<void>;
   markSummaryViewed: (id: string) => Promise<void>;
   // F5 心相记账
   ledgerEntries: LedgerEntry[];
@@ -785,6 +789,33 @@ const DEFAULT_SETTINGS: Settings = {
 
 /** settings 写入串行锁：见 updateSettings 的注释（并发写会互相吞字段） */
 let settingsWriteLock: Promise<void> = Promise.resolve();
+
+/**
+ * settings 内容没变就沿用旧对象（第 4 轮，界面性能）：loadData 每次都从库里读出一份新对象，
+ * 订阅 settings 的组件（几乎每一页）就全部白渲染一遍——而写库的操作十有八九没碰 settings。
+ * 顶层字段逐个 Object.is；对象 / 数组字段按 JSON 比（都不大，backgroundImage 是字符串走 Object.is）。
+ */
+function settingsEquivalent(a: Settings | undefined, b: Settings): boolean {
+  if (!a) return false;
+  const ra = a as unknown as Record<string, unknown>;
+  const rb = b as unknown as Record<string, unknown>;
+  const ka = Object.keys(ra).filter(k => ra[k] !== undefined);
+  const kb = Object.keys(rb).filter(k => rb[k] !== undefined);
+  if (ka.length !== kb.length) return false;
+  for (const k of kb) {
+    const va = ra[k], vb = rb[k];
+    if (Object.is(va, vb)) continue;
+    if (va && vb && typeof va === 'object' && typeof vb === 'object') {
+      if (JSON.stringify(va) !== JSON.stringify(vb)) return false;
+      continue;
+    }
+    return false;
+  }
+  return true;
+}
+
+/** 通知重排的合并计时（第 4 轮）：记一条 + 完成待办各叫一次 syncNotifications，实际只排一次 */
+let notifSyncPending: { promise: Promise<void>; resolve: () => void; timer: ReturnType<typeof setTimeout> } | null = null;
 /** 战场壮举写入串行锁：一场胜利会连发好几笔，见 recordBattleFeat 的注释 */
 let featWriteLock: Promise<void> = Promise.resolve();
 
@@ -1038,7 +1069,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  addActivity: async (description: string, points: Record<string, number>, method: 'local' | 'todo' | 'battle', options?: { important?: boolean; date?: Date; category?: Activity['category']; bigDealId?: string; wishId?: string }) => {
+  addActivity: async (description: string, points: Record<string, number>, method: 'local' | 'todo' | 'battle', options?: { important?: boolean; date?: Date; category?: Activity['category']; bigDealId?: string; wishId?: string; skipLoad?: boolean }) => {
     const { user, dailyDivination, settings } = get();
     if (!user) return { unlockHints: { achievements: 0, skills: 0 }, activityId: '' };
 
@@ -1288,8 +1319,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     // 引用快照以免 TS 判定为未使用（保留语义，便于未来扩展）
     void achievementsSnapshot; void attributesSnapshot;
 
-    // 事务已提交：一次性刷新所有内存状态（含 confidants）
-    await get().loadData();
+    // 事务已提交：一次性刷新所有内存状态（含 confidants）。skipLoad：调用方紧接着还要再记一条（命运加成），由那条统一刷新
+    if (!options?.skipLoad) await get().loadData();
 
     // 为战场 SP 奖励：活动获得的总点数即为 SP
     const totalPts = Object.values(adjustedPoints).reduce((s, v) => s + (v || 0), 0);
@@ -2450,7 +2481,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const sys =
       '你是停滞诊断后的行动启动教练。用户不是来管理任务，而是从卡住里恢复流动。' +
       '只给一个方向上的下一组行动，不做长计划，不解释背景，不逐条呼应已有步骤。' +
-      '若上下文里有“诊断/处理原则”，必须按它降低门槛；若已有未完成步骤，把它们视为已排队，只补充不重复的新步骤。' +
+      '起步要低门槛：每条都是十分钟内能开始的动作；若已有未完成步骤，把它们视为已排队，只补充不重复的新步骤。' +
       '每条必须是单一动作、可开始、短句，不超过 28 个中文字符；不要冒号、括号、编号、鼓励语、原因说明。' +
       '只输出小步骤本身，每行一个。';
     const usr = [
@@ -2598,6 +2629,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       const now = new Date();
       const yesterdayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
       const yesterdayKey = toLocalDateKey(yesterdayDate);
+      // 今天 / 昨天的完成记录一次查出（第 4 轮）：以前每个一次性待办都串行查两次 IDB
+      const completionByTodoDay = new Map<string, TodoCompletion>();
+      for (const c of todoCompletions) {
+        if (c.date === todayKey || c.date === yesterdayKey) completionByTodoDay.set(`${c.todoId}|${c.date}`, c);
+      }
 
       const todosNeedFormatMigration = todos.some(t => (t.frequency as any) === 'weekdays' || (t.frequency as any) === 'long');
       for (const todo of todos) {
@@ -2618,8 +2654,8 @@ export const useAppStore = create<AppState>((set, get) => ({
 
         if (todo.isActive && !todo.repeatDaily && !todo.isLongTerm) {
           const target = todo.frequency === 'count' ? (todo.targetCount || 1) : 1;
-          const completionToday = await db.todoCompletions.where('todoId').equals(todo.id).filter(c => c.date === todayKey).first();
-          const completionYesterday = await db.todoCompletions.where('todoId').equals(todo.id).filter(c => c.date === yesterdayKey).first();
+          const completionToday = completionByTodoDay.get(`${todo.id}|${todayKey}`);
+          const completionYesterday = completionByTodoDay.get(`${todo.id}|${yesterdayKey}`);
           const shouldArchive = (completionToday && completionToday.count >= target) || (completionYesterday && completionYesterday.count >= target);
 
           if (shouldArchive) {
@@ -2701,7 +2737,8 @@ export const useAppStore = create<AppState>((set, get) => ({
          activities, 
          achievements, 
          skills,
-         settings: normalizedSettings,
+         // 内容没变就沿用旧对象：订阅 settings 的页面不会因为一次记录写库而整页重算
+         settings: settingsEquivalent(get().settings, normalizedSettings) ? get().settings : normalizedSettings,
          todos: migratedTodos,
          todoCompletions,
          summaries,
@@ -3516,11 +3553,13 @@ export const useAppStore = create<AppState>((set, get) => ({
         }
       }
       // 待办挂了愿望 → 完成它产生的活动带上同一个 wishId，愿望进度才数得到（V2.6 §1.3）
-      const result = await get().addActivity(`完成任务: ${todo.title}`, points, 'todo', { important: !!todo.important, wishId: todo.wishId });
+      const fateBonus = todo.fateDrawnDate === today;
+      // 命运加成会紧接着再记一条：两条只在第二条之后刷新一次内存（第 4 轮，以前跑两整轮 loadData）
+      const result = await get().addActivity(`完成任务: ${todo.title}`, points, 'todo', { important: !!todo.important, wishId: todo.wishId, skipLoad: fateBonus });
       // 命运加成（TASKS_MERGE_PRD §4.2）：当日抽中并完成 → 主属性额外 +1。
       // 独立小记录而非改主记录描述——undoTodayTodoCompletion/deleteActivity 都按
       // 「完成任务: {title}」逐字匹配，动模板会断撤销链；单删本记录也能正确回档
-      if (todo.fateDrawnDate === today) {
+      if (fateBonus) {
         const bonus = { knowledge: 0, guts: 0, dexterity: 0, kindness: 0, charm: 0 } as Record<string, number>;
         bonus[todo.attribute] = 1;
         await get().addActivity(`命运加成: ${todo.title}`, bonus, 'todo');
@@ -4033,7 +4072,27 @@ export const useAppStore = create<AppState>((set, get) => ({
     void get().syncNotifications(); // 已读后撤掉「未读成长总结」提醒
   },
 
-  syncNotifications: async () => {
+  syncNotifications: () => {
+    const run = () => {
+      const p = notifSyncPending;
+      notifSyncPending = null;
+      if (!p) return;
+      get().syncNotificationsNow()
+        .catch(e => console.warn('[velvet] syncNotifications failed', e))
+        .finally(() => p.resolve());
+    };
+    if (notifSyncPending) {
+      clearTimeout(notifSyncPending.timer);
+      notifSyncPending.timer = setTimeout(run, 250);
+      return notifSyncPending.promise;
+    }
+    let resolve: () => void = () => {};
+    const promise = new Promise<void>(r => { resolve = r; });
+    notifSyncPending = { promise, resolve, timer: setTimeout(run, 250) };
+    return promise;
+  },
+
+  syncNotificationsNow: async () => {
     const { settings, dailyDivination, todos, summaries, activities } = get();
     const todayKey = toLocalDateKey();
     // v2.7.0.6：老用户含「今日待办」的时段补上「一起进步」（只补一次；updateSettings 触发的那次重排因标记已置不会再进来）

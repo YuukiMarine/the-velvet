@@ -37,8 +37,9 @@
  * - wave 用 transform: translate3d 而不是 background-position
  */
 
-import { memo, useEffect, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import { useBoldness } from '@/utils/boldness';
+import { useAnyOverlayOpen } from '@/ui/overlayPause';
 
 interface BackgroundAnimationProps {
   styles: string[];
@@ -66,9 +67,20 @@ interface BackgroundAnimationProps {
 const BG_EPOCH = performance.now();
 const syncSeconds = () => (performance.now() - BG_EPOCH) / 1000;
 
-/** 挂载时锚定一次。见文件头 ② —— 渲染期求值会让每次 store 写入都重提交整批动画。 */
-function useSyncOnce(): number {
-  const [sync] = useState(syncSeconds);
+/**
+ * 挂载时锚定一次。见文件头 ② —— 渲染期求值会让每次 store 写入都重提交整批动画。
+ * 第 4 轮：弹层盖着时动画会被 paused（见 BackgroundAnimationInner），暂停只停播放不停时间，
+ * 恢复时相位就落后了——resumeKey 变一次就重新锚定一次（一次性重提交，不是每次渲染）。
+ */
+function useSyncOnce(resumeKey = 0): number {
+  const [sync, setSync] = useState(syncSeconds);
+  // 「上一次见到的 key」存 state 而不是 ref：StrictMode 的双次渲染会丢掉第一次里排队的更新，
+  // 用 ref 记的话第二次已经看到新值、不再 set，锚定就丢了（React 文档的 prev-props 写法）
+  const [seenKey, setSeenKey] = useState(resumeKey);
+  if (seenKey !== resumeKey) {
+    setSeenKey(resumeKey);
+    setSync(syncSeconds());
+  }
   return sync;
 }
 
@@ -155,10 +167,10 @@ function ensureKeyframes() {
 const playState = (frozen: boolean | undefined) => (frozen ? ('paused' as const) : undefined);
 
 // ── Aurora ────────────────────────────────────────────────
-function Aurora({ darkMode, frozen }: { darkMode?: boolean; frozen?: boolean }) {
+function Aurora({ darkMode, frozen, resumeKey }: { darkMode?: boolean; frozen?: boolean; resumeKey?: number }) {
   // 尺寸砍到 ~60% 后单块视觉分量变轻，opacity 补 1.15× 找回层次
   const baseOp = (darkMode ? 0.18 : 0.13) * 1.15;
-  const sync = useSyncOnce();
+  const sync = useSyncOnce(resumeKey);
   const d = (-sync).toFixed(2);
   const blobs = [
     { anim: `aurora-a 22s ease-in-out ${d}s infinite`, size: '42vmax', top: '-12%', left: '-8%',  opacity: baseOp },
@@ -206,9 +218,9 @@ const PARTICLE_CONFIG = [
   { left: '93%', size: 3, dur: 25, delay: 6,   v: 'b' },
 ] as const;
 
-function Particles({ darkMode, frozen }: { darkMode?: boolean; frozen?: boolean }) {
+function Particles({ darkMode, frozen, resumeKey }: { darkMode?: boolean; frozen?: boolean; resumeKey?: number }) {
   const op = darkMode ? 0.5 : 0.35;
-  const sync = useSyncOnce();
+  const sync = useSyncOnce(resumeKey);
   return (
     <div style={{ position: 'absolute', inset: 0, contain: 'layout style' }}>
       {PARTICLE_CONFIG.map((p, i) => (
@@ -240,9 +252,9 @@ function Particles({ darkMode, frozen }: { darkMode?: boolean; frozen?: boolean 
 }
 
 // ── Wave ──────────────────────────────────────────────────
-function Wave({ darkMode, frozen }: { darkMode?: boolean; frozen?: boolean }) {
+function Wave({ darkMode, frozen, resumeKey }: { darkMode?: boolean; frozen?: boolean; resumeKey?: number }) {
   const op = darkMode ? 0.12 : 0.08;
-  const sync = useSyncOnce();
+  const sync = useSyncOnce(resumeKey);
   return (
     <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', contain: 'strict' }}>
       <div
@@ -270,11 +282,11 @@ function Wave({ darkMode, frozen }: { darkMode?: boolean; frozen?: boolean }) {
 }
 
 // ── Pulse ─────────────────────────────────────────────────
-function Pulse({ darkMode, frozen }: { darkMode?: boolean; frozen?: boolean }) {
+function Pulse({ darkMode, frozen, resumeKey }: { darkMode?: boolean; frozen?: boolean; resumeKey?: number }) {
   const animName = darkMode ? 'grid-breathe-dark' : 'grid-breathe';
   // 与 keyframes 0% 帧对齐的初始 opacity，避免动画启动前/延迟期间出现"满亮度闪烁"
   const initialOpacity = darkMode ? 0.08 : 0.06;
-  const sync = useSyncOnce();
+  const sync = useSyncOnce(resumeKey);
   const line = (deg: number, size: string, delay: string) => ({
     position: 'absolute' as const,
     inset: 0,
@@ -308,7 +320,20 @@ function BackgroundAnimationInner({ styles, darkMode, frozen }: BackgroundAnimat
    * 但常驻合成动画归零。
    */
   const bold = useBoldness();
-  const still = frozen || !bold;
+  /**
+   * 弹层（抽屉 / 弹窗 / 黑猫窗）开着时也定格（第 4 轮，用户批注：遮罩模糊保留，改暂停背景）：
+   * 遮罩的 backdrop-filter 只在底下变化时重算，背景不动，模糊就只算一次。
+   * 关掉最后一层时 resumeKey +1 → 子层重新锚定相位（不然暂停多久相位就落后多久，
+   * 切页转场的复刻份会对不上）。转场复刻份（frozen 那份）不参与这套，照旧跟活层同相。
+   */
+  const overlay = useAnyOverlayOpen();
+  const [resumeKey, setResumeKey] = useState(0);
+  const prevOverlay = useRef(overlay);
+  useEffect(() => {
+    if (prevOverlay.current && !overlay) setResumeKey(k => k + 1);
+    prevOverlay.current = overlay;
+  }, [overlay]);
+  const still = frozen || !bold || overlay;
   return (
     <div
       className="fixed inset-0 pointer-events-none select-none"
@@ -321,10 +346,10 @@ function BackgroundAnimationInner({ styles, darkMode, frozen }: BackgroundAnimat
       }}
       aria-hidden="true"
     >
-      {styles.includes('aurora')    && <Aurora    darkMode={darkMode} frozen={still} />}
-      {styles.includes('particles') && <Particles darkMode={darkMode} frozen={still} />}
-      {styles.includes('wave')      && <Wave      darkMode={darkMode} frozen={still} />}
-      {styles.includes('pulse')     && <Pulse     darkMode={darkMode} frozen={still} />}
+      {styles.includes('aurora')    && <Aurora    darkMode={darkMode} frozen={still} resumeKey={resumeKey} />}
+      {styles.includes('particles') && <Particles darkMode={darkMode} frozen={still} resumeKey={resumeKey} />}
+      {styles.includes('wave')      && <Wave      darkMode={darkMode} frozen={still} resumeKey={resumeKey} />}
+      {styles.includes('pulse')     && <Pulse     darkMode={darkMode} frozen={still} resumeKey={resumeKey} />}
     </div>
   );
 }

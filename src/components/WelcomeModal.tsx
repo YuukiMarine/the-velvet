@@ -1,5 +1,6 @@
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore } from '@/store';
+import { useShallow } from 'zustand/react/shallow';
 import { useCloudStore } from '@/store/cloud';
 import { useState, useRef } from 'react';
 import { AttributeId, AttributeNames } from '@/types';
@@ -486,7 +487,7 @@ const PRIMARY_BTN_STYLE = {
 };
 
 export const WelcomeModal = () => {
-  const { user, createUser, importData } = useAppStore();
+  const { user, createUser, importData } = useAppStore(useShallow(s => ({ user: s.user, createUser: s.createUser, importData: s.importData })));
   const cloudEnabled = useCloudStore(s => s.cloudEnabled);
 
   const [step, setStep] = useState<Step>('welcome');

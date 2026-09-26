@@ -14,6 +14,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore } from '@/store';
+import { useShallow } from 'zustand/react/shallow';
 import { Shadow, AttributeId } from '@/types';
 import { SHADOW_LEVEL_CONFIG } from '@/constants';
 import { BOSS_ATTACK_BY_LEVEL } from '@/battle/numbers';
@@ -71,7 +72,7 @@ const fmtElapsed = (ms: number): string => {
 };
 
 export function StratumRevealModal({ isOpen, onClose, level }: Props) {
-  const { settings, attributes, battleState, revealStratum } = useAppStore();
+  const { settings, attributes, battleState, revealStratum } = useAppStore(useShallow(s => ({ settings: s.settings, attributes: s.attributes, battleState: s.battleState, revealStratum: s.revealStratum })));
   const job = useRevealJobs(s => s.stratum);
   const generating = job?.status === 'running';
   const [step, setStep] = useState<'qa' | 'choose' | 'manual'>('qa');

@@ -67,11 +67,12 @@ const SkyWedge = () => (
     {/* 实景云天 */}
     <div className="absolute inset-0 overflow-hidden" style={{ clipPath: 'polygon(0 28%, 100% 8%, 100% 100%, 0 100%)' }}>
       <img
-        src="/assets/terminal/p4-cloud-sky.png"
+        src="/assets/terminal/p4-cloud-sky-1200.webp"
         alt=""
         decoding="async"
         className="absolute inset-0 h-full w-full object-cover"
-        style={{ objectPosition: '50% 68%', filter: 'saturate(1.18) contrast(1.06)' }}
+        // 滤镜已烤进 1200px 的 WebP 里（第 4 轮，原 PNG 1.7MB）
+        style={{ objectPosition: '50% 68%' }}
       />
       <div className="absolute inset-0 bg-[#00a6ff]/10 mix-blend-screen" />
       <div className="absolute inset-0" style={{ background: 'linear-gradient(180deg, rgba(19,19,19,0.30) 0%, rgba(19,19,19,0) 46%)' }} />

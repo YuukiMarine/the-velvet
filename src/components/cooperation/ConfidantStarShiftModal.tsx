@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { useAppStore } from '@/store';
+import { useShallow } from 'zustand/react/shallow';
 import { useBackHandler } from '@/utils/useBackHandler';
 import type { Confidant } from '@/types';
 import { TAROT_BY_ID } from '@/constants/tarot';
@@ -22,7 +23,7 @@ interface Props {
 }
 
 export function ConfidantStarShiftModal({ isOpen, confidant, initialMode, onClose }: Props) {
-  const { settings, consumeStarShift, confidantEvents, activities } = useAppStore();
+  const { settings, consumeStarShift, confidantEvents, activities } = useAppStore(useShallow(s => ({ settings: s.settings, consumeStarShift: s.consumeStarShift, confidantEvents: s.confidantEvents, activities: s.activities })));
   const shouldReduceMotion = useReducedMotion();
 
   const [stage, setStage] = useState<Stage>('celebrate');

@@ -11,8 +11,8 @@
  */
 import type { AttributeId, Fortune, LongReadingPeriod, Settings, TarotOrientation, DrawnCard } from '@/types';
 import { TAROT_BY_ID, PERIOD_LABELS, BASE_POSITION, spreadPositionsFor, inferFortune, TarotCardData } from '@/constants/tarot';
-import { resolveProvider } from '@/utils/aiProviders';
-import { chatComplete, chatStream, getAIConfig, getDeliberateAIConfig, type AIConfig } from '@/utils/aiClient';
+import type { ApiProvider } from '@/utils/aiProviders';
+import { chatComplete, chatStream, fallbackAIConfig, getAIConfig, getDeliberateAIConfig, type AIConfig, type AITier } from '@/utils/aiClient';
 import { buildDailyBrief, buildLongBrief, formatNowLine, type WritingPreset } from '@/utils/tarotContext';
 
 const ATTRIBUTE_IDS: AttributeId[] = ['knowledge', 'guts', 'dexterity', 'kindness', 'charm'];
@@ -21,8 +21,23 @@ export interface AIRequestData {
   baseUrl: string;
   model: string;
   apiKey: string;
+  /**
+   * 走的是哪家 / 哪一档（第 4 轮补）。以前手拼的请求丢了这两样：aiClient 不知道服务商，
+   * 思维链余量被按「未知家」夹到 16K（长思考吃光后报废）、第三发关思考的重试不生效、
+   * 402 余额提示也对不上号。
+   */
+  provider?: ApiProvider;
+  tier?: AITier;
   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
 }
+
+/** AIConfig → 请求头字段（provider / tier 一起带上） */
+export function requestHead(cfg: AIConfig): Pick<AIRequestData, 'baseUrl' | 'model' | 'apiKey' | 'provider' | 'tier'> {
+  return { baseUrl: cfg.baseUrl, model: cfg.model, apiKey: cfg.apiKey, provider: cfg.provider, tier: cfg.tier };
+}
+
+/** 没配 Key 时的兜底连接（见 aiClient.fallbackAIConfig） */
+export const fallbackConfig = fallbackAIConfig;
 
 /** 每日解读的结构化结果（AI 与离线兜底共用） */
 export interface DailyAIResult {
@@ -149,10 +164,7 @@ export async function buildDailyRequest(params: {
   now?: Date;
 }): Promise<{ req: AIRequestData; preset: WritingPreset; focusKey: string; nudgeKey: string }> {
   const { settings, card, orientation, now = new Date() } = params;
-  const cfg = resolveDailyConfig(settings) ?? {
-    ...resolveProvider(settings.summaryApiProvider, settings.summaryApiBaseUrl, settings.summaryModel),
-    apiKey: settings.summaryApiKey || '',
-  };
+  const cfg = resolveDailyConfig(settings) ?? fallbackConfig(settings);
   const brief = await buildDailyBrief({ card, orientation, now });
 
   const userMessage = [
@@ -169,9 +181,7 @@ export async function buildDailyRequest(params: {
     focusKey: brief.focusKey,
     nudgeKey: brief.nudgeKey,
     req: {
-      baseUrl: cfg.baseUrl,
-      model: cfg.model,
-      apiKey: cfg.apiKey,
+      ...requestHead(cfg),
       messages: [
         { role: 'system', content: DAILY_SYSTEM_PROMPT },
         { role: 'user', content: userMessage },
@@ -309,10 +319,7 @@ const LONG_PERIOD_GUIDANCE: Record<LongReadingPeriod, string> = {
 
 /** 中长期与追问：深思熟虑档（未配置时退回快速响应） */
 function resolveLongConfig(settings: Settings): AIConfig {
-  return getDeliberateAIConfig(settings) ?? getAIConfig(settings) ?? {
-    ...resolveProvider(settings.summaryApiProvider, settings.summaryApiBaseUrl, settings.summaryModel),
-    apiKey: settings.summaryApiKey || '',
-  };
+  return getDeliberateAIConfig(settings) ?? getAIConfig(settings) ?? fallbackConfig(settings);
 }
 
 export async function buildLongReadingRequest(params: {
@@ -359,9 +366,7 @@ export async function buildLongReadingRequest(params: {
   ].join('\n');
 
   return {
-    baseUrl: cfg.baseUrl,
-    model: cfg.model,
-    apiKey: cfg.apiKey,
+    ...requestHead(cfg),
     messages: [
       { role: 'system', content: LONG_SYSTEM_PROMPT },
       { role: 'user', content: userMessage },
@@ -402,9 +407,7 @@ export function buildFollowUpRequest(params: {
   ].join('\n');
 
   return {
-    baseUrl: cfg.baseUrl,
-    model: cfg.model,
-    apiKey: cfg.apiKey,
+    ...requestHead(cfg),
     messages: [
       { role: 'system', content: LONG_SYSTEM_PROMPT + FOLLOW_UP_SYSTEM_ADDITION },
       { role: 'user',   content: previousUserMessage },

@@ -19,6 +19,7 @@
  */
 import { useMemo, useState } from 'react';
 import { useAppStore } from '@/store';
+import { useShallow } from 'zustand/react/shallow';
 import { SheetModal } from '@/components/SheetModal';
 import { AI_PROVIDERS, getProviderConfig, effectiveModelName, type ApiProvider, DEFAULT_PROVIDER } from '@/utils/aiProviders';
 import { autoFillVisionPatch, familyBadge, isAggregatorList, isAudioModel, isChatModel, isVisionModel, liveModelOf, refreshAllProviderModels } from '@/utils/aiModelCatalog';
@@ -30,7 +31,7 @@ export const ModelPickerSheet = ({ mode, isOpen, onClose }: {
   isOpen: boolean;
   onClose: () => void;
 }) => {
-  const { settings, updateSettings } = useAppStore();
+  const { settings, updateSettings } = useAppStore(useShallow(s => ({ settings: s.settings, updateSettings: s.updateSettings })));
   const [query, setQuery] = useState('');
   const [chatOnly, setChatOnly] = useState(true);
   const [refreshing, setRefreshing] = useState(false);

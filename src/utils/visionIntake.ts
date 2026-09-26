@@ -12,6 +12,7 @@
  */
 import type { Settings, AttributeId } from '@/types';
 import { chatComplete, getVisionAIConfig } from '@/utils/aiClient';
+import { extractJSONArray } from '@/utils/aiJson';
 
 /** 视觉档未配置时抛这个特征错误，调用方据 message 提示去设置 */
 export const VISION_UNCONFIGURED = '还没配「视觉」模型——去 设置 → AI 服务 → 视觉 档选一个能看图的模型';
@@ -22,20 +23,6 @@ const visionCfgOrThrow = (settings: Settings) => {
   return cfg;
 };
 
-/** 从模型输出里抽出 JSON 数组（容错代码块/前后缀文字；与 ledgerAI 同款） */
-function extractJsonArray(raw: string): Record<string, unknown>[] {
-  const stripped = raw.replace(/```(?:json)?/gi, '').trim();
-  const fb = stripped.indexOf('[');
-  const lb = stripped.lastIndexOf(']');
-  if (fb < 0 || lb <= fb) return [];
-  try {
-    const parsed = JSON.parse(stripped.slice(fb, lb + 1));
-    return Array.isArray(parsed) ? parsed.filter(x => x && typeof x === 'object') : [];
-  } catch {
-    return [];
-  }
-}
-
 // ── ① 聊天图片侧写 ───────────────────────────────────────────────────────────
 
 const DESCRIBE_PROMPT = `用户在和 AI 助手聊天时发来了图片。你负责把图片翻译成文字侧写，给后续的纯文本助手用。要求：
@@ -45,31 +32,43 @@ const DESCRIBE_PROMPT = `用户在和 AI 助手聊天时发来了图片。你负
 4. 全文 300 字以内，直接输出侧写文本，不要任何前后缀。`;
 
 /**
- * 把用户发的图片翻译成文字侧写（多图逐张标号拼接）。
+ * 逐张把图片翻译成文字侧写，**并发**发出（第 4 轮：之前多张图串行，三张图等三倍时间）。
  * 任何一张失败都会抛错（调用方决定怎么向用户交代）；未配视觉档抛 VISION_UNCONFIGURED。
  */
-export async function describeImagesForChat(
+export async function describeImagesEach(
   dataUrls: string[],
   settings: Settings,
   signal?: AbortSignal,
-): Promise<string> {
+): Promise<string[]> {
   const cfg = visionCfgOrThrow(settings);
-  const parts: string[] = [];
-  for (let i = 0; i < dataUrls.length; i++) {
+  return Promise.all(dataUrls.map(async url => {
     const raw = await chatComplete(cfg, [
       { role: 'system', content: DESCRIBE_PROMPT },
       {
         role: 'user',
         content: [
           { type: 'text', text: '请按要求输出这张图的文字侧写。' },
-          { type: 'image_url', image_url: { url: dataUrls[i] } },
+          { type: 'image_url', image_url: { url } },
         ],
       },
     ], { temperature: 0.2, maxTokens: 600, signal });
-    const text = raw.trim();
-    if (text) parts.push(dataUrls.length > 1 ? `图${i + 1}：${text}` : text);
-  }
-  return parts.join('\n');
+    return raw.trim();
+  }));
+}
+
+/** 多图侧写拼成一段（逐张标号）；见 describeImagesEach */
+export async function describeImagesForChat(
+  dataUrls: string[],
+  settings: Settings,
+  signal?: AbortSignal,
+): Promise<string> {
+  const parts = await describeImagesEach(dataUrls, settings, signal);
+  return joinImageDescriptions(parts);
+}
+
+export function joinImageDescriptions(parts: string[]): string {
+  const kept = parts.map((t, i) => ({ t: t.trim(), i })).filter(x => x.t);
+  return kept.map(x => (parts.length > 1 ? `图${x.i + 1}：${x.t}` : x.t)).join('\n');
 }
 
 // ── ② 课表 / 日程照片 → 任务 ─────────────────────────────────────────────────
@@ -110,7 +109,7 @@ export async function extractScheduleFromImage(
       ],
     },
   ], { temperature: 0.1, maxTokens: 1400, signal });
-  return extractJsonArray(raw)
+  return extractJSONArray(raw)
     .map((o): ScheduleIntakeItem => ({
       title: String(o.title ?? '').trim().slice(0, 20),
       weekdays: Array.isArray(o.weekdays)
@@ -160,7 +159,7 @@ export async function extractActivitiesFromImage(
       ],
     },
   ], { temperature: 0.1, maxTokens: 600, signal });
-  return extractJsonArray(raw)
+  return extractJSONArray(raw)
     .map((o): ActivityIntakeItem => ({
       text: String(o.text ?? '').trim().slice(0, 40),
       attribute: ATTR_IDS.includes(o.attribute as AttributeId) ? (o.attribute as AttributeId) : null,

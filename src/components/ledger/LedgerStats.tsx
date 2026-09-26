@@ -8,6 +8,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
 import { useAppStore, toLocalDateKey } from '@/store';
+import { useShallow } from 'zustand/react/shallow';
 import { SheetModal } from '@/components/SheetModal';
 import { SegmentTabs } from '@/components/SegmentTabs';
 import { catMeta, CATEGORY_KEYS, sym, fmtMoney, fmtSigned, shiftMonth } from '@/utils/ledgerFormat';
@@ -58,7 +59,7 @@ function BarRow({ label, amount, max, $ }: { label: string; amount: number; max:
 }
 
 export function LedgerStats() {
-  const { settings, ledgerEntries, getBudget, claimLedgerBudgetBonus, claimLedgerChallengeBonus } = useAppStore();
+  const { settings, ledgerEntries, getBudget, claimLedgerBudgetBonus, claimLedgerChallengeBonus } = useAppStore(useShallow(s => ({ settings: s.settings, ledgerEntries: s.ledgerEntries, getBudget: s.getBudget, claimLedgerBudgetBonus: s.claimLedgerBudgetBonus, claimLedgerChallengeBonus: s.claimLedgerChallengeBonus })));
   const $ = sym(settings.currency);
   const [period, setPeriod] = useState(() => toLocalDateKey().slice(0, 7));
   // 结算（周/月，独立于上方统计月份）

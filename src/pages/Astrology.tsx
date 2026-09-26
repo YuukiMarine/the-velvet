@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore } from '@/store';
+import { useShallow } from 'zustand/react/shallow';
 import { LongReading } from '@/types';
 import { PageTitle } from '@/components/PageTitle';
 import { BackButton } from '@/components/BackButton';
@@ -16,7 +17,7 @@ import { P5R, P5_FONT, roughSlant, starPts, P5Collage, P5SubBar, P5Star, P5Dots,
 type Tab = 'daily' | 'long' | 'archive';
 
 export function Astrology() {
-  const { setCurrentPage, loadDailyDivination, loadLongReadings, sweepExpiredReadings, longReadings } = useAppStore();
+  const { setCurrentPage, loadDailyDivination, loadLongReadings, sweepExpiredReadings, longReadings } = useAppStore(useShallow(s => ({ setCurrentPage: s.setCurrentPage, loadDailyDivination: s.loadDailyDivination, loadLongReadings: s.loadLongReadings, sweepExpiredReadings: s.sweepExpiredReadings, longReadings: s.longReadings })));
   const [tab, setTab] = useState<Tab>('daily');
   const channel = useUiChannel();
   const isP4 = channel === 'p4';

@@ -7,6 +7,7 @@
  */
 import { useRef, useState } from 'react';
 import { useAppStore } from '@/store';
+import { useShallow } from 'zustand/react/shallow';
 import { SheetModal } from '@/components/SheetModal';
 import { submitDanmaku, danmakuThemeOf, validateDanmaku, DANMAKU_MAX_LEN, DANMAKU_COOLDOWN_MS } from '@/services/danmaku';
 
@@ -18,7 +19,7 @@ interface Props {
 }
 
 export const DanmakuCompose = ({ isOpen, onClose, forceDark }: Props) => {
-  const { settings, updateSettings, user } = useAppStore();
+  const { settings, updateSettings, user } = useAppStore(useShallow(s => ({ settings: s.settings, updateSettings: s.updateSettings, user: s.user })));
   const tokens = settings.terminalDanmakuTokens ?? 0;
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);

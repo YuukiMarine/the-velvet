@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore } from '@/store';
+import { useShallow } from 'zustand/react/shallow';
 import { AttributeId } from '@/types';
 import { reshuffleAttributePersonaAI, generateSkillsForManualPersona, generateAISkillsForPersona } from '@/utils/battleAI';
 import { triggerLightHaptic, playSound } from '@/utils/feedback';
@@ -14,7 +15,7 @@ interface Props {
 const ATTR_IDS: AttributeId[] = ['knowledge', 'guts', 'dexterity', 'kindness', 'charm'];
 
 export function PersonaShuffleModal({ isOpen, onClose }: Props) {
-  const { persona, settings, savePersona } = useAppStore();
+  const { persona, settings, savePersona } = useAppStore(useShallow(s => ({ persona: s.persona, settings: s.settings, savePersona: s.savePersona })));
   const [selectedAttr, setSelectedAttr] = useState<AttributeId | null>(null);
   const [mode, setMode] = useState<'choose' | 'manual' | 'generating' | 'done'>('choose');
   const [manualName, setManualName] = useState('');

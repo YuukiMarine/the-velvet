@@ -18,6 +18,7 @@
 
 import { AttributeId, AttributeNames, Settings } from '@/types';
 import { chatComplete, getAIConfig } from '@/utils/aiClient';
+import { extractJSON } from '@/utils/aiJson';
 
 const ATTRIBUTE_IDS: AttributeId[] = ['knowledge', 'guts', 'dexterity', 'kindness', 'charm'];
 
@@ -68,22 +69,15 @@ export async function analyzeActivityAI(
     `请按要求输出 JSON。`,
   ].join('\n');
 
-  // 偏稳定、少漂：temperature 0.3
+  // 偏稳定、少漂：temperature 0.3；瞬发（用户在记录页等着看加点，关思考 + 20 秒超时）
   const raw = await chatComplete(cfg, [
     { role: 'system', content: SYSTEM_PROMPT },
     { role: 'user', content: userMessage },
-  ], { temperature: 0.3, maxTokens: 200, signal });
-
-  const stripped = raw.replace(/```(?:json)?/gi, '').trim();
-  const firstBrace = stripped.indexOf('{');
-  const lastBrace = stripped.lastIndexOf('}');
-  const jsonLike = firstBrace >= 0 && lastBrace > firstBrace
-    ? stripped.slice(firstBrace, lastBrace + 1)
-    : stripped;
+  ], { temperature: 0.3, maxTokens: 200, signal, instant: true });
 
   let parsed: Record<string, unknown>;
   try {
-    parsed = JSON.parse(jsonLike);
+    parsed = extractJSON(raw);
   } catch {
     throw new Error('AI 返回不是合法 JSON');
   }

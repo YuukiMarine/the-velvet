@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import DOMPurify from 'dompurify';
 import { v4 as uuidv4 } from 'uuid';
 import { useAppStore, toLocalDateKey } from '@/store';
+import { useShallow } from 'zustand/react/shallow';
 import {
   MAJOR_ARCANA,
   TAROT_BY_ID,
@@ -22,7 +23,7 @@ import { buildOfflineDaily } from '@/utils/tarotOffline';
 import { renderMarkdown } from '@/utils/markdown';
 import { useThinkProgress } from '@/utils/thinkProgress';
 import {
-  useTarotJobs, startDailyJob, readDailyPending, writeDailyPending, clearDailyPending,
+  useTarotJobs, startDailyJob, continueDailyJob, TAROT_CONTINUE_LIMIT, readDailyPending, writeDailyPending, clearDailyPending,
 } from '@/utils/tarotJobs';
 import { ThinkingCircle } from './ThinkingCircle';
 import { useUiChannel } from '@/ui/useUiChannel';
@@ -70,7 +71,7 @@ interface Candidate {
 }
 
 export function DailyDraw() {
-  const { dailyDivination, settings, saveDailyDivination } = useAppStore();
+  const { dailyDivination, settings, saveDailyDivination } = useAppStore(useShallow(s => ({ dailyDivination: s.dailyDivination, settings: s.settings, saveDailyDivination: s.saveDailyDivination })));
   // 解读请求跑在模块级任务里（utils/tarotJobs）：切页不打断，回来接着看
   const job = useTarotJobs(s => s.daily);
   const today = toLocalDateKey();
@@ -215,6 +216,14 @@ export function DailyDraw() {
   };
   const handleTryOffline = () => resume(true);
   const handleRetryAI = () => resume(false);
+  // 第 4 轮：截断 / 断线不作废——半截解读留着，让它从断处接着写（最多三次）
+  const canContinue = !!jobToday && jobToday.status === 'error' && jobToday.truncated && jobToday.continues < TAROT_CONTINUE_LIMIT;
+  const handleContinue = () => {
+    if (!canContinue) return;
+    setErrorMsg(null);
+    setPhase('calling');
+    continueDailyJob(settings);
+  };
 
   // ── 视图 ──────────────────────────────────────────────────
 
@@ -348,6 +357,10 @@ export function DailyDraw() {
       {streaming && (
         <StreamPanel text={jobText} thinking={thinking} progress={progress} p5={p5} p3={p3} />
       )}
+      {/* 截断态：半截解读还在，下面可以「接着写」 */}
+      {phase === 'error' && !!jobToday?.truncated && !!jobText && (
+        <StreamPanel text={jobText} thinking={false} progress={0} p5={p5} p3={p3} />
+      )}
 
       {/* 错误态：重试选项 */}
       {phase === 'error' && (
@@ -359,12 +372,23 @@ export function DailyDraw() {
             {errorMsg}
           </div>
           <div className="flex gap-2">
+            {canContinue && (
+              <button
+                onClick={handleContinue}
+                className={p3 ? 'flex-1 py-3 font-black text-sm text-white' : 'flex-1 py-3 rounded-2xl font-bold text-sm bg-primary text-white shadow-md'}
+                style={p3 ? { clipPath: slantClip(10), background: P3R.blue } : undefined}
+              >
+                接着写
+              </button>
+            )}
             <button
               onClick={handleRetryAI}
-              className={p3 ? 'flex-1 py-3 font-black text-sm text-white' : 'flex-1 py-3 rounded-2xl font-bold text-sm bg-primary text-white shadow-md'}
-              style={p3 ? { clipPath: slantClip(10), background: P3R.blue } : undefined}
+              className={canContinue
+                ? (p3 ? 'flex-1 py-3 font-black text-sm' : 'flex-1 py-3 rounded-2xl font-bold text-sm bg-black/5 dark:bg-white/10 text-gray-700 dark:text-gray-200')
+                : (p3 ? 'flex-1 py-3 font-black text-sm text-white' : 'flex-1 py-3 rounded-2xl font-bold text-sm bg-primary text-white shadow-md')}
+              style={p3 ? (canContinue ? { clipPath: slantClip(10), background: '#dcebf4', color: P3R.ink } : { clipPath: slantClip(10), background: P3R.blue }) : undefined}
             >
-              重试 AI 解读
+              {canContinue ? '重新解读' : '重试 AI 解读'}
             </button>
             <button
               onClick={handleTryOffline}
@@ -495,7 +519,7 @@ function FlipReveal({
 // ── 子组件：已完成视图 ──────────────────────────────────────
 
 function DoneView({ d }: { d: DailyDivination }) {
-  const { settings } = useAppStore();
+  const { settings } = useAppStore(useShallow(s => ({ settings: s.settings })));
   const doneP5 = useUiChannel() === 'p5';
   const card = TAROT_BY_ID[d.cardId];
   if (!card) return null;

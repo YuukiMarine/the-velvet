@@ -12,14 +12,12 @@
  *   - 解除好友（移到"更多"里，二次确认）
  */
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { OnlineStarBadge } from './OnlineStarBadge';
 import { motion, AnimatePresence } from 'motion/react';
 import { createPortal } from 'react-dom';
-import {
-  Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
-  ResponsiveContainer, Tooltip as RechartsTooltip,
-} from 'recharts';
+// 雷达图（recharts，400KB 上下）按需分包：只有打开资料卡才下载（第 4 轮）
+const ConfidantRadar = lazy(() => import('./ConfidantRadar'));
 import { useCloudSocialStore } from '@/store/cloudSocial';
 import { useCloudStore } from '@/store/cloud';
 import { useAppStore } from '@/store';
@@ -289,41 +287,9 @@ export function OnlineConfidantProfileCard({
             ) : (
             <div ref={attrsRef}>
             <div className="h-48 -mx-2">
-              <ResponsiveContainer width="100%" height="100%">
-                <RadarChart data={radarData} outerRadius={72}>
-                  <PolarGrid stroke="rgba(196,181,253,0.22)" />
-                  <PolarAngleAxis
-                    dataKey="axis"
-                    tick={{ fontSize: 11, fill: '#c4b5fd' }}
-                  />
-                  <PolarRadiusAxis
-                    angle={90}
-                    domain={[0, radarMax]}
-                    tick={false}
-                    axisLine={false}
-                  />
-                  <RechartsTooltip
-                    contentStyle={{
-                      background: 'rgba(20,20,40,0.95)',
-                      border: '1px solid rgba(196,181,253,0.3)',
-                      borderRadius: 8,
-                      fontSize: 11,
-                      color: '#f5e6ff',
-                    }}
-                    formatter={(v: number, _name: string, props: { payload?: { title?: string } }) => [
-                      `LV ${v}: ${props.payload?.title ?? ''}`,
-                      '',
-                    ]}
-                  />
-                  <Radar
-                    dataKey="value"
-                    stroke="#a78bfa"
-                    fill="rgb(var(--color-battle-rgb))"
-                    fillOpacity={0.35}
-                    strokeWidth={1.5}
-                  />
-                </RadarChart>
-              </ResponsiveContainer>
+              <Suspense fallback={null}>
+                <ConfidantRadar radarData={radarData} radarMax={radarMax} />
+              </Suspense>
             </div>
             <div className="grid grid-cols-5 gap-1.5 mt-1">
               {radarData.map(axis => {

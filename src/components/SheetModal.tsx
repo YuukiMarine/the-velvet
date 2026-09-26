@@ -7,6 +7,7 @@ import { useBackHandler } from '@/utils/useBackHandler';
 import { useModalA11y } from '@/utils/useModalA11y';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { zClass } from '@/utils/zIndex';
+import { useOverlayPresence } from '@/ui/overlayPause';
 import { P4Flower, P4Sparkle } from '@/ui/p4Kit';
 import { sheetTopClip } from '@/components/p3r/kit';
 import { P5CollageTitle } from '@/components/p5r/kit';
@@ -82,6 +83,8 @@ export const SheetModal = ({
   backdropBlur = false,
 }: SheetModalProps) => {
   const titleId = useId();
+  // 弹层开着 → 背景动画暂停（遮罩的模糊只算一次，见 ui/overlayPause）
+  useOverlayPresence(isOpen);
   const containerRef = useModalA11y(isOpen, onClose, { closeOnEscape: !busy });
   useBackHandler(isOpen, () => {
     if (!busy) onClose();

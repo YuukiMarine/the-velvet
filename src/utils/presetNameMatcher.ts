@@ -1,6 +1,7 @@
 import type { AttributeId, AttributeNames, Settings } from '@/types';
 import { ACHIEVEMENTS, SKILLS } from '@/constants';
 import { chatComplete, getAIConfig } from '@/utils/aiClient';
+import { tryExtractJSON } from '@/utils/aiJson';
 
 export interface PresetNameMatchResult {
   achievements: Record<string, string>;
@@ -40,7 +41,7 @@ export async function generatePresetNameMatches(
   const raw = await chatComplete(cfg, [
     { role: 'system', content: SYSTEM_PROMPT },
     { role: 'user', content: buildPrompt(settings.attributeNames) },
-  ], { temperature: 0.82, maxTokens: 1200, signal });
+  ], { temperature: 0.82, maxTokens: 1200, signal, instant: true }); // 瞬发：设置页里点一下就等着
 
   return normalizeResult(parseJson(raw));
 }
@@ -75,21 +76,15 @@ function buildPrompt(attributeNames: AttributeNames): string {
     attrLines,
     '',
     '需要重命名的属性等级成就：',
-    JSON.stringify(achievements, null, 2),
+    JSON.stringify(achievements),
     '',
     '需要重命名的技能：',
-    JSON.stringify(skills, null, 2),
+    JSON.stringify(skills),
   ].join('\n');
 }
 
 function parseJson(raw: string): Partial<PresetNameMatchResult> {
-  const text = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
-  try {
-    const parsed = JSON.parse(text) as Partial<PresetNameMatchResult>;
-    return parsed && typeof parsed === 'object' ? parsed : {};
-  } catch {
-    return {};
-  }
+  return (tryExtractJSON(raw) as Partial<PresetNameMatchResult> | null) ?? {};
 }
 
 function normalizeResult(input: Partial<PresetNameMatchResult>): PresetNameMatchResult {

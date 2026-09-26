@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore } from '@/store';
+import { useShallow } from 'zustand/react/shallow';
 import { useRevealJobs } from '@/utils/revealJobs';
 import { Toggle } from '@/components/Toggle';
 import { toLocalDateKey } from '@/store';
@@ -13,6 +14,10 @@ import { type LootDrop } from '@/battle/loot';
 import { LootReveal, type LootRevealSource } from '@/components/battle/LootReveal';
 import { rollPrepDraw, type PrepBuff } from '@/battle/preparation';
 import { generateSummonLines, generateRecapComment } from '@/utils/battleAI';
+
+/** 召唤台词生成失败后的重试间隔（按 Persona id 记，进程内） */
+const SUMMON_LINE_RETRY_MS = 6 * 3600_000;
+const summonLineAttemptAt = new Map<string, number>();
 import { playSound } from '@/utils/feedback';
 import { BackButton } from '@/components/BackButton';
 import { PageTitle } from '@/components/PageTitle';
@@ -66,7 +71,7 @@ export const BattleArena = () => {
     user, attributes, persona, shadow, battleState, settings, stratum,
     checkShadowHpRegen, updateSettings: saveSettings, resetBattle, setCurrentPage,
     saveBattleState, enterTowerToday, completeTowerNode, deepenStratumIfNewWeek,
-  } = useAppStore();
+  } = useAppStore(useShallow(s => ({ user: s.user, attributes: s.attributes, persona: s.persona, shadow: s.shadow, battleState: s.battleState, settings: s.settings, stratum: s.stratum, checkShadowHpRegen: s.checkShadowHpRegen, updateSettings: s.updateSettings, resetBattle: s.resetBattle, setCurrentPage: s.setCurrentPage, saveBattleState: s.saveBattleState, enterTowerToday: s.enterTowerToday, completeTowerNode: s.completeTowerNode, deepenStratumIfNewWeek: s.deepenStratumIfNewWeek })));
 
   const [activeTab, setActiveTab] = useState<TabKey>('battle');
   // P3R（蓝频道）：p3-battle-reference-v2 形态；battleCard = 全页 13 处卡壳的统一开关
@@ -141,9 +146,13 @@ export const BattleArena = () => {
     // 战场成就自愈：历史竞态丢过壮举记录（见 store.recordBattleFeat 注释），进战场页时对一次账
     void useAppStore.getState().repairBattleFeats();
     // 批3 §4.3：召唤台词懒生成——一次批量 5 条并缓存；无 Key 静默留空（cut-in 走模板）
+    // 第 4 轮：失败后记一笔，六小时内不再每次进战场都重来一遍（每次都是一次调用、一次等待）
     void (async () => {
       const { persona: p, settings: st, savePersona } = useAppStore.getState();
       if (!p || p.summonLines || !p.attributePersonas) return;
+      const lastTry = summonLineAttemptAt.get(p.id) ?? 0;
+      if (Date.now() - lastTry < SUMMON_LINE_RETRY_MS) return;
+      summonLineAttemptAt.set(p.id, Date.now());
       const lines = await generateSummonLines(
         st,
         st.attributeNames as Record<AttributeId, string>,

@@ -8,6 +8,7 @@
 import { useEffect, useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { useAppStore, DEFAULT_NOTIF_SLOTS } from '@/store';
+import { useShallow } from 'zustand/react/shallow';
 import { BellIcon } from '@/components/settingsIcons';
 import { Toggle } from '@/components/Toggle';
 import type { NotifContentType, NotifSlot } from '@/types';
@@ -29,7 +30,7 @@ const CONTENT_META: { id: NotifContentType; icon: string; label: string; hint: s
 ];
 
 export default function NotificationSettings() {
-  const { settings, updateSettings } = useAppStore();
+  const { settings, updateSettings } = useAppStore(useShallow(s => ({ settings: s.settings, updateSettings: s.updateSettings })));
   const supported = notifPlatformSupported();
   const enabled = !!settings.notificationsEnabled;
   const slots = settings.notificationSlots ?? [];

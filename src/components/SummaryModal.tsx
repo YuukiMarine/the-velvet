@@ -2,11 +2,13 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore, toLocalDateKey, DEFAULT_SUMMARY_PROMPT_PRESETS, FAMILIAR_FACE_PRESETS } from '@/store';
+import { useShallow } from 'zustand/react/shallow';
 import { PeriodSummary, PeriodSummaryFollowUp, SummaryPeriod, YearRecap } from '@/types';
 import DOMPurify from 'dompurify';
 import { useModalA11y } from '@/utils/useModalA11y';
 import { useBackHandler } from '@/utils/useBackHandler';
 import { chatStream, type AIConfig } from '@/utils/aiClient';
+import { effectiveModelName } from '@/utils/aiProviders';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P3R, slantClip, sheetTopClip } from '@/components/p3r/kit';
 import { renderMarkdown } from '@/utils/markdown';
@@ -553,7 +555,7 @@ const StatsGrid = ({ items }: { items: Array<{ label: string; value: string }> }
 );
 
 export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week', openSummaryId }: SummaryModalProps) {
-  const { settings, summaries, saveSummary, deleteSummary, loadSummaries, updateSettings, markSummaryViewed } = useAppStore();
+  const { settings, summaries, saveSummary, deleteSummary, loadSummaries, updateSettings, markSummaryViewed } = useAppStore(useShallow(s => ({ settings: s.settings, summaries: s.summaries, saveSummary: s.saveSummary, deleteSummary: s.deleteSummary, loadSummaries: s.loadSummaries, updateSettings: s.updateSettings, markSummaryViewed: s.markSummaryViewed })));
   const job = useSummaryJobs(s => s.job);
   const running = isSummaryJobRunning(job);
   const accent = useAccentHex();
@@ -698,7 +700,8 @@ export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week', 
   const cfgFor = (rc: PeriodSummary['reqContext'] | undefined): AIConfig | null => {
     if (!rc) return null;
     const key = resolveKeyFor(settings, rc.provider);
-    return key ? { apiKey: key, baseUrl: rc.baseUrl, model: rc.model, provider: rc.provider } : null;
+    // 存档里的模型名可能已退役：追问前换成继任者（effectiveModelName），不然 404
+    return key ? { apiKey: key, baseUrl: rc.baseUrl, model: effectiveModelName(rc.model), provider: rc.provider } : null;
   };
 
   const jobStats = (j: SummaryJob) => {

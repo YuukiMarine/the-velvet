@@ -9,8 +9,9 @@
 
 import type { Settings, TarotOrientation } from '@/types';
 import { MAJOR_ARCANA, TAROT_BY_ID } from '@/constants/tarot';
-import { resolveProvider } from '@/utils/aiProviders';
-import { chatComplete } from '@/utils/aiClient';
+import type { ApiProvider } from '@/utils/aiProviders';
+import { chatComplete, fallbackAIConfig, getAIConfig, type AIConfig, type AITier } from '@/utils/aiClient';
+import { extractJSON } from '@/utils/aiJson';
 
 export interface ConfidantMatchInput {
   settings: Settings;
@@ -70,16 +71,29 @@ export interface AIRequestData {
   baseUrl: string;
   model: string;
   apiKey: string;
+  /** 走的是哪家 / 哪一档（第 4 轮补：思维链余量、关思考重试、402 提示都靠它对号） */
+  provider?: ApiProvider;
+  tier?: AITier;
   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
+}
+
+/** 同伴四项都走快速响应档；没配 Key 时退到兜底连接（调用方在此之前已按 hasKey 分流） */
+function headOf(settings: Settings): Pick<AIRequestData, 'baseUrl' | 'model' | 'apiKey' | 'provider' | 'tier'> {
+  const cfg: AIConfig = getAIConfig(settings) ?? fallbackAIConfig(settings);
+  return { baseUrl: cfg.baseUrl, model: cfg.model, apiKey: cfg.apiKey, provider: cfg.provider, tier: cfg.tier };
+}
+
+/** 模型输出 → 对象（容忍代码块 / 前后缀 / 内引号；抽不出抛「不是合法 JSON」） */
+function parseObject(raw: string): Record<string, unknown> {
+  try {
+    return extractJSON(raw);
+  } catch {
+    throw new Error('AI 返回不是合法 JSON');
+  }
 }
 
 export function buildMatchRequest(input: ConfidantMatchInput): AIRequestData {
   const { settings, name, description, takenArcanaIds, traits } = input;
-  const { baseUrl, model } = resolveProvider(
-    settings.summaryApiProvider,
-    settings.summaryApiBaseUrl,
-    settings.summaryModel,
-  );
 
   const avail = MAJOR_ARCANA
     .filter(c => !takenArcanaIds.includes(c.id))
@@ -107,9 +121,7 @@ export function buildMatchRequest(input: ConfidantMatchInput): AIRequestData {
   ].join('\n');
 
   return {
-    baseUrl,
-    model,
-    apiKey: settings.summaryApiKey || '',
+    ...headOf(settings),
     messages: [
       { role: 'system', content: SYSTEM_PROMPT },
       { role: 'user', content: userMsg },
@@ -119,18 +131,7 @@ export function buildMatchRequest(input: ConfidantMatchInput): AIRequestData {
 
 export async function callMatchAI(req: AIRequestData, signal?: AbortSignal): Promise<ConfidantMatchResult> {
   const raw = await chatComplete(req, req.messages, { temperature: 0.9, maxTokens: 800, signal });
-
-  const stripped = raw.replace(/```(?:json)?/gi, '').trim();
-  const a = stripped.indexOf('{');
-  const b = stripped.lastIndexOf('}');
-  const jsonLike = a >= 0 && b > a ? stripped.slice(a, b + 1) : stripped;
-
-  let parsed: Record<string, unknown>;
-  try {
-    parsed = JSON.parse(jsonLike);
-  } catch {
-    throw new Error('AI 返回不是合法 JSON');
-  }
+  const parsed = parseObject(raw);
 
   const arcanaId = typeof parsed.arcanaId === 'string' ? parsed.arcanaId.trim().toLowerCase() : '';
   const orientationRaw = typeof parsed.orientation === 'string' ? parsed.orientation.trim().toLowerCase() : 'upright';
@@ -286,11 +287,6 @@ const LOCKED_INTERPRET_SYSTEM_PROMPT = `你是「星象」——靛蓝色房间�
 function buildLockedInterpretRequest(input: LockedArcanaInterpretInput): AIRequestData {
   const card = TAROT_BY_ID[input.arcanaId];
   const meaning = input.orientation === 'upright' ? card.upright : card.reversed;
-  const { baseUrl, model } = resolveProvider(
-    input.settings.summaryApiProvider,
-    input.settings.summaryApiBaseUrl,
-    input.settings.summaryModel,
-  );
   const userMsg = [
     `对方：${input.name}`,
     `锁定塔罗：《${card.name}》${input.orientation === 'upright' ? '正位' : '逆位'}`,
@@ -302,9 +298,7 @@ function buildLockedInterpretRequest(input: LockedArcanaInterpretInput): AIReque
     `请输出 JSON。`,
   ].join('\n');
   return {
-    baseUrl,
-    model,
-    apiKey: input.settings.summaryApiKey || '',
+    ...headOf(input.settings),
     messages: [
       { role: 'system', content: LOCKED_INTERPRET_SYSTEM_PROMPT },
       { role: 'user', content: userMsg },
@@ -341,11 +335,7 @@ export async function interpretLockedArcana(
   try {
     const req = buildLockedInterpretRequest(input);
     const raw = await chatComplete(req, req.messages, { temperature: 0.85, maxTokens: 600, signal });
-    const stripped = raw.replace(/```(?:json)?/gi, '').trim();
-    const a = stripped.indexOf('{');
-    const b = stripped.lastIndexOf('}');
-    const jsonLike = a >= 0 && b > a ? stripped.slice(a, b + 1) : stripped;
-    const parsed = JSON.parse(jsonLike) as Record<string, unknown>;
+    const parsed = parseObject(raw);
     const interpretation = typeof parsed.interpretation === 'string' ? parsed.interpretation.trim() : '';
     const advice = typeof parsed.advice === 'string' ? parsed.advice.trim() : '';
     if (!interpretation || !advice) throw new Error('AI 返回字段不完整');
@@ -421,11 +411,6 @@ const EVAL_SYSTEM_PROMPT = `你为客人解读 Ta 今天与一位同伴的互动
 
 export function buildEvalRequest(input: InteractionEvalInput): AIRequestData {
   const { settings, confidantName, arcanaName, orientation, currentLevel, description, relationshipSummary, recentUserInputs } = input;
-  const { baseUrl, model } = resolveProvider(
-    settings.summaryApiProvider,
-    settings.summaryApiBaseUrl,
-    settings.summaryModel,
-  );
 
   const recentLines = recentUserInputs && recentUserInputs.length
     ? recentUserInputs.map(r => `- [${r.date}] ${r.text}`).join('\n')
@@ -448,9 +433,7 @@ export function buildEvalRequest(input: InteractionEvalInput): AIRequestData {
   ].join('\n');
 
   return {
-    baseUrl,
-    model,
-    apiKey: settings.summaryApiKey || '',
+    ...headOf(settings),
     messages: [
       { role: 'system', content: EVAL_SYSTEM_PROMPT },
       { role: 'user', content: userMsg },
@@ -460,12 +443,7 @@ export function buildEvalRequest(input: InteractionEvalInput): AIRequestData {
 
 export async function callEvalAI(req: AIRequestData, signal?: AbortSignal): Promise<InteractionEvalResult> {
   const raw = await chatComplete(req, req.messages, { temperature: 0.85, maxTokens: 600, signal });
-  const stripped = raw.replace(/```(?:json)?/gi, '').trim();
-  const a = stripped.indexOf('{');
-  const b = stripped.lastIndexOf('}');
-  const jsonLike = a >= 0 && b > a ? stripped.slice(a, b + 1) : stripped;
-  let parsed: Record<string, unknown>;
-  try { parsed = JSON.parse(jsonLike); } catch { throw new Error('AI 返回不是合法 JSON'); }
+  const parsed = parseObject(raw);
 
   const deltaRaw = typeof parsed.delta === 'number' ? parsed.delta : parseInt(String(parsed.delta ?? '1'), 10);
   const delta = Math.max(0, Math.min(5, Number.isFinite(deltaRaw) ? deltaRaw : 1));
@@ -566,11 +544,6 @@ const STAR_SHIFT_SYSTEM_PROMPT = `你是「馆长」。这位客人与一位同�
 
 function buildStarShiftRequest(input: StarShiftInput): AIRequestData {
   const { settings } = input;
-  const { baseUrl, model } = resolveProvider(
-    settings.summaryApiProvider,
-    settings.summaryApiBaseUrl,
-    settings.summaryModel,
-  );
   const recentLines = input.recentActivities.length
     ? input.recentActivities.map(a => `- [${a.date}] ${a.text}`).join('\n')
     : '（最近没有新的记录）';
@@ -591,9 +564,7 @@ function buildStarShiftRequest(input: StarShiftInput): AIRequestData {
     `请输出 JSON。`,
   ].join('\n');
   return {
-    baseUrl,
-    model,
-    apiKey: settings.summaryApiKey || '',
+    ...headOf(settings),
     messages: [
       { role: 'system', content: STAR_SHIFT_SYSTEM_PROMPT },
       { role: 'user', content: userMsg },
@@ -603,12 +574,7 @@ function buildStarShiftRequest(input: StarShiftInput): AIRequestData {
 
 async function callStarShiftAI(req: AIRequestData, signal?: AbortSignal): Promise<StarShiftResult> {
   const raw = await chatComplete(req, req.messages, { temperature: 0.85, maxTokens: 900, signal });
-  const stripped = raw.replace(/```(?:json)?/gi, '').trim();
-  const a = stripped.indexOf('{');
-  const b = stripped.lastIndexOf('}');
-  const jsonLike = a >= 0 && b > a ? stripped.slice(a, b + 1) : stripped;
-  let parsed: Record<string, unknown>;
-  try { parsed = JSON.parse(jsonLike); } catch { throw new Error('AI 返回不是合法 JSON'); }
+  const parsed = parseObject(raw);
   const orientationRaw = typeof parsed.orientation === 'string' ? parsed.orientation.trim().toLowerCase() : 'upright';
   const orientation: TarotOrientation = orientationRaw === 'reversed' ? 'reversed' : 'upright';
   const description = typeof parsed.description === 'string' ? parsed.description.trim() : '';

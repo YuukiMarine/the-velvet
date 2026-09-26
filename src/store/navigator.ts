@@ -27,7 +27,7 @@ import {
 import { markReportGreeted } from '@/utils/reportNotice';
 import { buildTopicPermission, noteTopicsMentioned } from '@/utils/navigatorTopics';
 import { buildWishContextLine, maybeProposeWishProgress } from '@/utils/navigatorWishProgress';
-import { describeImagesForChat } from '@/utils/visionIntake';
+import { describeImagesEach, joinImageDescriptions } from '@/utils/visionIntake';
 import { BUILTIN_NAVIGATOR_PRESETS, resolveNavigatorPreset } from '@/constants/navigatorPresets';
 import type { NavigatorMessageRow, NavigatorPreset } from '@/types';
 
@@ -42,6 +42,8 @@ export interface NavigatorMessage {
   /** 用户随消息附的图片（降采样后的 data URL；FS3.4 聊天发图）。
    *  收口时经视觉档转述成文字并入 batch——分诊/表演看到的都是转述文本（半解耦） */
   imageDataUrl?: string;
+  /** 视觉档的转述结果（第 4 轮持久化）：这一轮被打断重来时直接复用，历史里也能带上 */
+  imageDesc?: string;
   draft?: NavigatorDraft;
   cardStatus?: NavigatorCardStatus;
   /** 用户手改过这张卡：进卡片实录，模型据此知道内容已不是它提议的那版 */
@@ -183,6 +185,7 @@ const toRow = (m: NavigatorMessage, sessionId: string): NavigatorMessageRow => (
   role: m.role,
   text: m.text,
   imageDataUrl: m.imageDataUrl,
+  imageDesc: m.imageDesc,
   draftJson: m.draft ? JSON.stringify(m.draft) : undefined,
   cardStatus: m.cardStatus,
   userEdited: m.userEdited,
@@ -207,6 +210,7 @@ const fromRow = (r: NavigatorMessageRow): NavigatorMessage => ({
   role: r.role,
   text: r.text,
   imageDataUrl: r.imageDataUrl,
+  imageDesc: r.imageDesc,
   draft: parseDraft(r.draftJson),
   cardStatus: r.cardStatus,
   userEdited: r.userEdited,
@@ -300,17 +304,23 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
     return batch.join('\n');
   };
 
-  /** 待收口批里随消息附的图片（与 pendingBatch 同一段尾部用户消息，同口径推导） */
-  const pendingImages = (): string[] => {
+  /** 待收口批里带图的消息（与 pendingBatch 同一段尾部用户消息，同口径推导） */
+  const pendingImageMessages = (): NavigatorMessage[] => {
     const ms = currentSessionMessages();
-    const imgs: string[] = [];
+    const out: NavigatorMessage[] = [];
     for (let i = ms.length - 1; i >= 0; i--) {
       if (ms[i].role === 'user') {
-        const u = ms[i].imageDataUrl;
-        if (u) imgs.unshift(u);
+        if (ms[i].imageDataUrl) out.unshift(ms[i]);
       } else break;
     }
-    return imgs;
+    return out;
+  };
+
+  /** 把视觉转述写回消息（内存 + 库），下次收口直接复用 */
+  const rememberImageDesc = (id: string, imageDesc: string) => {
+    set((s) => ({ messages: s.messages.map((m) => (m.id === id ? { ...m, imageDesc } : m)) }));
+    const updated = get().messages.find((m) => m.id === id);
+    if (updated) persistMessage(updated);
   };
 
   /**
@@ -326,8 +336,10 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
       .filter((m) => m.role !== 'card' && m.role !== 'summary')
       .map((m): TurnHistoryItem => ({
         role: m.role === 'user' ? 'user' : 'cat',
-        // 只发图没配文的历史消息给个占位，别让模型看到一条空气泡
-        text: m.text || (m.imageDataUrl ? '（发了一张图片）' : ''),
+        // 带图的历史消息：有转述就把转述带上（第 4 轮，以前只剩「发了一张图片」占位）；没配文的至少给个占位
+        text: m.imageDataUrl
+          ? `${m.text ?? ''}${m.imageDesc ? `（图片：${m.imageDesc.slice(0, 160)}）` : m.text ? '' : '（发了一张图片）'}`
+          : (m.text ?? ''),
         createdAt: m.createdAt,
       }))
       .filter((h) => h.text);
@@ -389,7 +401,8 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
       return;
     }
     const batch = pendingBatch().trim();
-    const images = pendingImages();
+    const imageMsgs = pendingImageMessages();
+    const images = imageMsgs.map((m) => m.imageDataUrl!);
     if (!batch && !images.length) { set({ phase: 'idle' }); return; }
     const gen = ++generation;
     set({ phase: 'thinking' });
@@ -417,8 +430,15 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
       let turnBatch = batch;
       if (images.length) {
         try {
-          const desc = await describeImagesForChat(images, useAppStore.getState().settings, turnAbort.signal);
+          // 已转述过的（上一轮被打断、这轮重来）直接复用；没转述的并发转述（第 4 轮）
+          const todo = imageMsgs.filter((m) => !m.imageDesc);
+          const fresh = todo.length
+            ? await describeImagesEach(todo.map((m) => m.imageDataUrl!), useAppStore.getState().settings, turnAbort.signal)
+            : [];
           if (gen !== generation) return;
+          todo.forEach((m, i) => { if (fresh[i]) rememberImageDesc(m.id, fresh[i]); });
+          const freshById = new Map(todo.map((m, i) => [m.id, fresh[i] ?? '']));
+          const desc = joinImageDescriptions(imageMsgs.map((m) => m.imageDesc ?? freshById.get(m.id) ?? ''));
           if (desc) turnBatch = [batch, `【随消息附上的图片，以下是视觉模型的转述】\n${desc}`].filter(Boolean).join('\n');
         } catch (e) {
           if (gen !== generation) return;
@@ -506,7 +526,7 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
     if (!sid) return;
     try {
       const rows = get().messages.map((m) => toRow(m, sid));
-      const outcome = await maybeCompactLive(sid, rows);
+      const outcome = await maybeCompactLive(sid, rows, get().activePreset().name);
       if (!outcome.summaryText) return;
       const removed = new Set(outcome.removedIds);
       set((s) => {

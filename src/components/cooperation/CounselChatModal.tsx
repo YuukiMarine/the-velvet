@@ -11,6 +11,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { createPortal } from 'react-dom';
 import { v4 as uuidv4 } from 'uuid';
 import { useAppStore } from '@/store';
+import { useShallow } from 'zustand/react/shallow';
 import { TAROT_BY_ID } from '@/constants/tarot';
 import { streamCounselReply } from '@/utils/counselAI';
 import { useBackHandler } from '@/utils/useBackHandler';
@@ -53,7 +54,7 @@ export function CounselChatModal({ isOpen, onClose, initialMentionId }: Props) {
     buildCounselContext,
     getCounselCooldown,
     hasActiveCounsel,
-  } = useAppStore();
+  } = useAppStore(useShallow(s => ({ settings: s.settings, counselSession: s.counselSession, confidants: s.confidants, startCounselSession: s.startCounselSession, appendCounselMessage: s.appendCounselMessage, archiveCounselSession: s.archiveCounselSession, expireCounselIfNeeded: s.expireCounselIfNeeded, buildCounselContext: s.buildCounselContext, getCounselCooldown: s.getCounselCooldown, hasActiveCounsel: s.hasActiveCounsel })));
   const hasApiKey = Boolean(settings.summaryApiKey?.trim());
   const [lastConnectError, setLastConnectError] = useState<string | null>(null);
   useEffect(() => {

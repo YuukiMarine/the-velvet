@@ -12,9 +12,8 @@
  */
 import { Activity, Attribute, AttributeId, FateGlimpseDay, Settings, TarotOrientation } from '@/types';
 import { TAROT_BY_ID, FORTUNE_META, TarotCardData } from '@/constants/tarot';
-import { resolveProvider } from '@/utils/aiProviders';
 import { chatStream, getAIConfig, getDeliberateAIConfig } from '@/utils/aiClient';
-import { OBLIQUE_RULES, type AIRequestData, type StreamOpts } from '@/utils/tarotAI';
+import { OBLIQUE_RULES, fallbackConfig, requestHead, type AIRequestData, type StreamOpts } from '@/utils/tarotAI';
 
 const ATTRIBUTE_IDS: AttributeId[] = ['knowledge', 'guts', 'dexterity', 'kindness', 'charm'];
 const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
@@ -73,10 +72,7 @@ export function buildFateGlimpseRequest(params: {
 }): AIRequestData {
   const { settings, attributes, days, recentActivities, wishes, userName, now = new Date() } = params;
   // 与中长期占卜同档：深思熟虑（可跨服务商；未配置时回落当前连接）
-  const cfg = getDeliberateAIConfig(settings) ?? getAIConfig(settings) ?? {
-    ...resolveProvider(settings.summaryApiProvider, settings.summaryApiBaseUrl, settings.summaryModel),
-    apiKey: settings.summaryApiKey ?? '',
-  };
+  const cfg = getDeliberateAIConfig(settings) ?? getAIConfig(settings) ?? fallbackConfig(settings);
 
   const attrNames = settings.attributeNames as Record<AttributeId, string>;
   const today0 = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
@@ -139,9 +135,7 @@ export function buildFateGlimpseRequest(params: {
   ].join('\n');
 
   return {
-    baseUrl: cfg.baseUrl,
-    model: cfg.model,
-    apiKey: cfg.apiKey,
+    ...requestHead(cfg),
     messages: [
       { role: 'system', content: SYSTEM_PROMPT },
       { role: 'user', content: userMessage },

@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { v4 as uuidv4 } from 'uuid';
 import { useAppStore, toLocalDateKey } from '@/store';
+import { useShallow } from 'zustand/react/shallow';
 import { useModalA11y } from '@/utils/useModalA11y';
 import { useBackHandler } from '@/utils/useBackHandler';
 import { useUiChannel } from '@/ui/useUiChannel';
@@ -30,7 +31,7 @@ const TODOS_PER_PAGE = 5;
 const TODOS_MAX = 7;
 
 export function CallingCardEditor({ isOpen, initialCard, onClose }: Props) {
-  const { saveCallingCard, todos, callingCards } = useAppStore();
+  const { saveCallingCard, todos, callingCards } = useAppStore(useShallow(s => ({ saveCallingCard: s.saveCallingCard, todos: s.todos, callingCards: s.callingCards })));
 
   const dialogRef = useModalA11y(isOpen, onClose);
   // P3R（蓝频道）：sheet 风格化——字段经 p3r-sheet CSS 自动换装

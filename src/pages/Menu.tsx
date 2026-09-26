@@ -30,6 +30,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { AnimatePresence, motion, type Variants } from 'motion/react';
 import { useAppStore } from '@/store';
+import { useShallow } from 'zustand/react/shallow';
 import type { ThemeType } from '@/types';
 import { PagePlane, PlaneLevel } from '@/components/PagePlane';
 import { SheetModal } from '@/components/SheetModal';
@@ -203,7 +204,7 @@ const THEME_SWATCHES: { value: ThemeType; label: string; color?: string }[] = [
 ];
 
 export const Menu = () => {
-  const { activities, achievements, skills, attributes, settings, user, setTheme, setCurrentPage } = useAppStore();
+  const { activities, achievements, skills, attributes, settings, user, setTheme, setCurrentPage } = useAppStore(useShallow(s => ({ activities: s.activities, achievements: s.achievements, skills: s.skills, attributes: s.attributes, settings: s.settings, user: s.user, setTheme: s.setTheme, setCurrentPage: s.setCurrentPage })));
   const bold = useBoldness();
   const isP4 = useUiChannel() === 'p4';
 
@@ -1092,12 +1093,14 @@ export const Menu = () => {
             }}
           >
             <img
-              src="/assets/terminal/p4-cloud-sky.png"
+              src="/assets/terminal/p4-cloud-sky-1200.webp"
               alt=""
+              decoding="async"
               className="absolute inset-0 h-full w-full object-cover"
               // 水平翻转（用户口径：云团往右挪或翻转更合适）：素材云团在左半，
               // 翻转后落到楔形右侧的宽区；objectPosition X 相应取镜像 (100-52)=48%
-              style={{ objectPosition: '48% 74%', filter: 'saturate(1.15) contrast(1.06)', transform: 'scaleX(-1)' }}
+              // 滤镜已烤进 1200px 的 WebP 里（第 4 轮，原 PNG 1.7MB）
+              style={{ objectPosition: '48% 74%', transform: 'scaleX(-1)' }}
             />
             <div className="absolute inset-0 bg-[#00a6ff]/10 mix-blend-screen" />
           </div>

@@ -2,6 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App.tsx'
 import './index.css'
+import { isNative } from '@/utils/native'
 
 // ── 双指缩放闸（iOS：WKWebView / 主屏 PWA / Safari 标签页三处都拦） ─────────
 // 用户上报「双指向外拉伸整个页面会被放大」，模拟器实测复现：页面被放成碎片、
@@ -19,11 +20,16 @@ import './index.css'
   document.addEventListener('gesturestart', stop, { passive: false });
   document.addEventListener('gesturechange', stop, { passive: false });
   document.addEventListener('gestureend', stop, { passive: false });
-  document.addEventListener(
-    'touchmove',
-    (e) => { if ((e as TouchEvent).touches.length > 1) e.preventDefault(); },
-    { passive: false },
-  );
+  // 原生壳（iOS WKWebView / 安卓 WebView）里缩放已由 viewport meta 与 setSupportZoom 关死，
+  // 这个 document 级的非被动 touchmove 就不用注册了：它会让每一次滚动都先等 JS 跑完这个回调
+  // （第 4 轮，界面性能）。浏览器 / PWA 侧照旧。
+  if (!isNative()) {
+    document.addEventListener(
+      'touchmove',
+      (e) => { if ((e as TouchEvent).touches.length > 1) e.preventDefault(); },
+      { passive: false },
+    );
+  }
 })();
 
 // ── 开发调试：按需加载 eruda（手机上的元素检查器 + 控制台） ───────────────

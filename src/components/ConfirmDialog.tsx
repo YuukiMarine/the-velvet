@@ -6,6 +6,7 @@ import { useBackHandler } from '@/utils/useBackHandler';
 import { useModalA11y } from '@/utils/useModalA11y';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { zClass } from '@/utils/zIndex';
+import { useOverlayPresence } from '@/ui/overlayPause';
 import { P4Flower, P4Sparkle, P4StickerPanel } from '@/ui/p4Kit';
 import { PersonaButton } from '@/ui/components/PersonaButton';
 
@@ -82,6 +83,7 @@ export const ConfirmDialog = ({
 }: ConfirmDialogProps) => {
   const titleId = useId();
   const descId = useId();
+  useOverlayPresence(isOpen);
   const containerRef = useModalA11y(isOpen, onCancel, { closeOnEscape: !busy });
   useBackHandler(isOpen, () => {
     if (!busy) onCancel();

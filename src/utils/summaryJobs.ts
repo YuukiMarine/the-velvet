@@ -14,6 +14,7 @@ import { useAppStore } from '@/store';
 import type { PeriodSummary, Settings, SummaryPeriod, YearRecap } from '@/types';
 import { buildYearRecap } from '@/utils/yearRecap';
 import { chatStream } from '@/utils/aiClient';
+import { effectiveModelName } from '@/utils/aiProviders';
 import { createThinkTracker, type ThinkTracker } from '@/utils/thinkProgress';
 import { formatApiError } from '@/utils/tarotAI';
 import {
@@ -262,8 +263,9 @@ export function continueSummaryJob(settings: Settings): void {
     if (!rc) return;
     const key = resolveKeyFor(settings, rc.provider);
     if (!key) { patch({ error: '当前没有可用的 API Key，接不上了' }); return; }
+    // 存档里可能写着已退役的模型名（deepseek-v4-flash 一类）：发请求前换成继任者，不然 404
     req = {
-      baseUrl: rc.baseUrl, model: rc.model, apiKey: key, provider: rc.provider, messages: rc.messages,
+      baseUrl: rc.baseUrl, model: effectiveModelName(rc.model), apiKey: key, provider: rc.provider, messages: rc.messages,
       periodLabel: job.draft!.label, preset: { id: job.draft!.promptPresetId, name: job.draft!.promptPresetName, systemPrompt: '', isBuiltin: true },
       totalPoints: job.draft!.totalPoints, attributePoints: job.draft!.attributePoints, activityCount: job.draft!.activityCount,
       period: job.period, startDate: job.startDate, endDate: job.endDate, deliberate: !!job.draft!.deliberate,

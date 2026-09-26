@@ -7,6 +7,7 @@
  */
 import { Settings, LedgerEntry, LedgerExpenseType } from '@/types';
 import { chatComplete, getAIConfig } from '@/utils/aiClient';
+import { tryExtractJSON } from '@/utils/aiJson';
 import { sym, fmtMoney, CATEGORY_KEYS, catMeta, isGrowthCategory, monthLabel } from '@/utils/ledgerFormat';
 
 export type SettleScope = 'week' | 'month';
@@ -192,11 +193,8 @@ export async function generateSettlement(d: SettlementData, settings: Settings, 
       { role: 'system', content: SYSTEM_PROMPT },
       { role: 'user', content: `${dataLines(d)}\n\n请按要求输出 JSON。` },
     ], { temperature: 0.85, maxTokens: 600, signal });
-    const stripped = raw.replace(/```(?:json)?/gi, '').trim();
-    const fb = stripped.indexOf('{');
-    const lb = stripped.lastIndexOf('}');
-    if (fb >= 0 && lb > fb) {
-      const parsed = JSON.parse(stripped.slice(fb, lb + 1)) as { reflection?: unknown; advice?: unknown };
+    const parsed = tryExtractJSON(raw) as { reflection?: unknown; advice?: unknown } | null;
+    if (parsed) {
       const reflection = typeof parsed.reflection === 'string' ? parsed.reflection.trim() : '';
       const advice = Array.isArray(parsed.advice)
         ? parsed.advice.filter((a): a is string => typeof a === 'string' && a.trim().length > 0).map(a => a.trim()).slice(0, 3)

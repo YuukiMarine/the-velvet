@@ -11,6 +11,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { useAppStore, toLocalDateKey } from '@/store';
+import { useShallow } from 'zustand/react/shallow';
 import { PageTitle } from '@/components/PageTitle';
 import { BackButton } from '@/components/BackButton';
 import { SheetModal } from '@/components/SheetModal';
@@ -184,7 +185,7 @@ export const Ledger = () => {
     settings, ledgerEntries, setCurrentPage, updateSettings,
     addLedgerEntry, deleteLedgerEntry, setBudget, adjustTotalBalance, rewardForLedgerEntry, addAsset,
     getTotalBalance, getPeriodExpense, getPeriodIncome, getBudget, getAdjustCountThisMonth, getSavings,
-  } = useAppStore();
+  } = useAppStore(useShallow(s => ({ settings: s.settings, ledgerEntries: s.ledgerEntries, setCurrentPage: s.setCurrentPage, updateSettings: s.updateSettings, addLedgerEntry: s.addLedgerEntry, deleteLedgerEntry: s.deleteLedgerEntry, setBudget: s.setBudget, adjustTotalBalance: s.adjustTotalBalance, rewardForLedgerEntry: s.rewardForLedgerEntry, addAsset: s.addAsset, getTotalBalance: s.getTotalBalance, getPeriodExpense: s.getPeriodExpense, getPeriodIncome: s.getPeriodIncome, getBudget: s.getBudget, getAdjustCountThisMonth: s.getAdjustCountThisMonth, getSavings: s.getSavings })));
 
   const currency = settings.currency ?? 'CNY';
   const $ = sym(currency);

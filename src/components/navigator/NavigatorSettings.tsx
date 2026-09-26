@@ -8,6 +8,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { useAppStore } from '@/store';
+import { useShallow } from 'zustand/react/shallow';
 import { DiamondMarkIcon, NotebookIcon } from '@/components/settingsIcons';
 import { useNavigatorStore } from '@/store/navigator';
 import { v4 as uuidv4 } from 'uuid';
@@ -45,7 +46,7 @@ const closedGenerator: GeneratorState = {
 };
 
 export const NavigatorSettings = () => {
-  const { settings, updateSettings } = useAppStore();
+  const { settings, updateSettings } = useAppStore(useShallow(s => ({ settings: s.settings, updateSettings: s.updateSettings })));
   const nav = useNavigatorStore();
   const hasAI = !!getAIConfig(settings);
   const activeId = nav.activePreset().id;

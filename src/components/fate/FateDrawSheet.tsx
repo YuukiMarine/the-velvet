@@ -11,6 +11,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import { useAppStore } from '@/store';
+import { useShallow } from 'zustand/react/shallow';
 import { useBoldness } from '@/utils/boldness';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { triggerSuccessFeedback, triggerLevelFeedback } from '@/utils/feedback';
@@ -176,7 +177,7 @@ const SKINS: Record<'p5' | 'p4' | 'p3' | 'neutral', StageSkin> = {
 };
 
 export const FateDrawSheet = ({ open, onClose }: Props) => {
-  const { getFateDrawPool, drawFate, acceptFateDraw } = useAppStore();
+  const { getFateDrawPool, drawFate, acceptFateDraw } = useAppStore(useShallow(s => ({ getFateDrawPool: s.getFateDrawPool, drawFate: s.drawFate, acceptFateDraw: s.acceptFateDraw })));
   const bold = useBoldness();
   const channel = useUiChannel();
   const sk = SKINS[channel === 'p5' || channel === 'p4' || channel === 'p3' ? channel : 'neutral'];

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import DOMPurify from 'dompurify';
 import { useAppStore, toLocalDateKey } from '@/store';
+import { useShallow } from 'zustand/react/shallow';
 import {
   ALL_TAROT,
   MAJOR_ARCANA,
@@ -24,7 +25,8 @@ import { useBoldness } from '@/utils/boldness';
 import { triggerLightHaptic } from '@/utils/feedback';
 import { useThinkProgress } from '@/utils/thinkProgress';
 import {
-  useTarotJobs, startLongJob, startFollowJob, ackLongJob, ackFollowJob, readLongPending, clearLongPending, type LongPending,
+  useTarotJobs, startLongJob, startFollowJob, continueLongJob, continueFollowJob, TAROT_CONTINUE_LIMIT,
+  ackLongJob, ackFollowJob, readLongPending, clearLongPending, type LongPending,
 } from '@/utils/tarotJobs';
 import { ThinkingCircle } from './ThinkingCircle';
 import { P3R, slantClip, SlantButton } from '@/components/p3r/kit';
@@ -63,7 +65,7 @@ const toCandidate = (d: DrawnCard): Candidate | null => {
 const toCandidates = (list: DrawnCard[]): Candidate[] => list.map(toCandidate).filter((c): c is Candidate => !!c);
 
 export function LongReadingFlow({ initialReading, onBack }: Props) {
-  const { settings, countActiveReadings } = useAppStore();
+  const { settings, countActiveReadings } = useAppStore(useShallow(s => ({ settings: s.settings, countActiveReadings: s.countActiveReadings })));
   const noApiKey = !settings.summaryApiKey;
   const p3 = useUiChannel() === 'p3';
 
@@ -769,7 +771,13 @@ export function LongReadingFlow({ initialReading, onBack }: Props) {
         {error && (
           <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700/40 rounded-2xl p-3 text-sm text-red-600 dark:text-red-400 whitespace-pre-wrap">
             {error}
-            <div className="mt-2">
+            <div className="mt-2 flex items-center gap-4">
+              {!!job?.truncated && job.continues < TAROT_CONTINUE_LIMIT && (
+                <button
+                  onClick={() => { setError(null); continueLongJob(settings); }}
+                  className="text-xs font-bold underline"
+                >接着写</button>
+              )}
               <button
                 onClick={() => { ackLongJob(); setError(null); setPhase('picking'); }}
                 className="text-xs font-bold underline"
@@ -807,6 +815,7 @@ export function LongReadingFlow({ initialReading, onBack }: Props) {
             thinking={followThinking}
             progress={followProgress}
             error={followError}
+            onContinue={followJob?.truncated && followJob.continues < TAROT_CONTINUE_LIMIT ? () => { setFollowError(null); continueFollowJob(); } : undefined}
             onStartPick={handleFollowPickStart}
             onReveal={handleFollowReveal}
             onClose={() => setFollowOpen(false)}
@@ -872,7 +881,7 @@ function FlippingCard({
 
 function FollowUpPanel({
   phase, question, setQuestion, candidates, pickedIndex,
-  streamedText, isStreaming, thinking, progress, error,
+  streamedText, isStreaming, thinking, progress, error, onContinue,
   onStartPick, onReveal, onClose,
 }: {
   phase: 'form' | 'picking' | 'reading' | 'done';
@@ -885,6 +894,8 @@ function FollowUpPanel({
   thinking?: boolean;
   progress?: number;
   error: string | null;
+  /** 截断态：可以让它接着写（第 4 轮） */
+  onContinue?: () => void;
   onStartPick: () => void;
   onReveal: (i: number) => void;
   onClose: () => void;
@@ -976,7 +987,12 @@ function FollowUpPanel({
             )}
           </div>
           {error && (
-            <div className="text-xs text-red-500 dark:text-red-400 whitespace-pre-wrap">{error}</div>
+            <div className="text-xs text-red-500 dark:text-red-400 whitespace-pre-wrap">
+              {error}
+              {onContinue && (
+                <button onClick={onContinue} className="ml-3 font-bold underline">接着写</button>
+              )}
+            </div>
           )}
         </div>
       )}
@@ -1005,7 +1021,7 @@ export function ReadingDetail({
   onBack: () => void;
   followUI?: React.ReactNode;
 }) {
-  const { archiveLongReading, deleteLongReading } = useAppStore();
+  const { archiveLongReading, deleteLongReading } = useAppStore(useShallow(s => ({ archiveLongReading: s.archiveLongReading, deleteLongReading: s.deleteLongReading })));
   // 归档 / 到期都从 store 取最新值，而不是靠 props：
   // 点「归档」后 store 已更新，但父组件手里那份 reading 还是旧的，按钮与标签要立刻跟着变（用户上报）
   const live = useAppStore(st => st.longReadings.find(r => r.id === reading.id)) ?? reading;

@@ -15,6 +15,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useAppStore } from '@/store';
 import { useNavigatorStore, formatBubbleTime, TIME_GAP_MS, type NavigatorMessage } from '@/store/navigator';
 import { zClass } from '@/utils/zIndex';
+import { useOverlayPresence } from '@/ui/overlayPause';
 import { useModalA11y } from '@/utils/useModalA11y';
 import { useBackHandler } from '@/utils/useBackHandler';
 import { useBoldness } from '@/utils/boldness';
@@ -412,6 +413,8 @@ export const NavigatorWindow = () => {
 
   const a11yRef = useModalA11y(nav.isOpen, nav.close, { closeOnEscape: true, trapFocus: true });
   useBackHandler(nav.isOpen, nav.close);
+  // 全屏聊天窗开着 → 背景动画暂停（见 ui/overlayPause）
+  useOverlayPresence(nav.isOpen);
 
   const [formDraft, setFormDraft] = useState<NavigatorDraft | null>(null);
   const [formKey, setFormKey] = useState(0);

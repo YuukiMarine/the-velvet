@@ -13,6 +13,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore, toLocalDateKey } from '@/store';
+import { useShallow } from 'zustand/react/shallow';
 import { useBackHandler } from '@/utils/useBackHandler';
 import { AttributeId, PersonaSkill, MobSpec } from '@/types';
 import { triggerLightHaptic, playSound } from '@/utils/feedback';
@@ -76,7 +77,7 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
     user, persona, shadow, battleState, attributes, settings,
     startBattleSession, endBattleSession, saveBattleState, equipMask,
     stratum, towerRecordBattleStats,
-  } = useAppStore();
+  } = useAppStore(useShallow(s => ({ user: s.user, persona: s.persona, shadow: s.shadow, battleState: s.battleState, attributes: s.attributes, settings: s.settings, startBattleSession: s.startBattleSession, endBattleSession: s.endBattleSession, saveBattleState: s.saveBattleState, equipMask: s.equipMask, stratum: s.stratum, towerRecordBattleStats: s.towerRecordBattleStats })));
   const bold = useBoldness();
   const isEncounter = !!encounter;
 

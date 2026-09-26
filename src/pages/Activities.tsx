@@ -1,6 +1,7 @@
 import { motion, AnimatePresence } from 'motion/react';
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { useAppStore, toLocalDateKey } from '@/store';
+import { useShallow } from 'zustand/react/shallow';
 import { WishMountPicker } from '@/components/wish/WishMountPicker';
 import { AttributeId, SummaryPeriod } from '@/types';
 import { SaveSuccessModal } from '@/components/SaveSuccessModal';
@@ -591,8 +592,23 @@ function ActivityThumbs({ activityId, onOpen }: { activityId: string; onOpen: (i
   );
 }
 
+/**
+ * 「9/27 周六」这类日期标签按天缓存（第 4 轮）：toLocaleDateString 一次约 0.05ms，
+ * 搜索时每敲一个键都重分组几百条记录，攒起来就是十几毫秒的输入卡顿。
+ */
+const dayLabelCache = new Map<string, string>();
+const dayLabelOf = (dayKey: string, date: Date): string => {
+  let v = dayLabelCache.get(dayKey);
+  if (!v) {
+    v = date.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric', weekday: 'short' });
+    if (dayLabelCache.size > 4000) dayLabelCache.clear();
+    dayLabelCache.set(dayKey, v);
+  }
+  return v;
+};
+
 export const ActivitiesView = () => {
-  const { activities, addActivity, settings, setModalBlocker, deleteActivity, deleteActivityRecordOnly } = useAppStore();
+  const { activities, addActivity, settings, setModalBlocker, deleteActivity, deleteActivityRecordOnly } = useAppStore(useShallow(s => ({ activities: s.activities, addActivity: s.addActivity, settings: s.settings, setModalBlocker: s.setModalBlocker, deleteActivity: s.deleteActivity, deleteActivityRecordOnly: s.deleteActivityRecordOnly })));
   const isP4 = useUiChannel() === 'p4';
   // P5R：红主题 FAB 换八角红块（p5-menu 稿「+」形制）
   const p5 = useUiChannel() === 'p5';
@@ -819,7 +835,7 @@ export const ActivitiesView = () => {
       const dayKey = toLocalDateKey(date);
       const dateLabel = dayKey === todayKey ? '今天'
         : dayKey === yesterdayKey ? '昨天'
-        : date.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric', weekday: 'short' });
+        : dayLabelOf(dayKey, date);
 
       if (!map.has(yearKey)) map.set(yearKey, { year: date.getFullYear(), months: new Map() });
       const yb = map.get(yearKey)!;

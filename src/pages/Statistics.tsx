@@ -1,6 +1,7 @@
 import { motion, AnimatePresence } from 'motion/react';
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useAppStore, toLocalDateKey } from '@/store';
+import { useShallow } from 'zustand/react/shallow';
 import { calcCurrentStreak, calcMaxStreak, streakDates } from '@/utils/streak';
 import { BackButton } from '@/components/BackButton';
 import { PageTitle } from '@/components/PageTitle';
@@ -487,7 +488,7 @@ const AttrTrendChart = ({
 
 // ── main page ─────────────────────────────────────────────────────────────────
 export const Statistics = () => {
-  const { activities, attributes, settings, achievements, skills, setCurrentPage } = useAppStore();
+  const { activities, attributes, settings, achievements, skills, setCurrentPage } = useAppStore(useShallow(s => ({ activities: s.activities, attributes: s.attributes, settings: s.settings, achievements: s.achievements, skills: s.skills, setCurrentPage: s.setCurrentPage })));
   const [timeRange, setTimeRange] = useState<'7' | '30' | 'all'>('30');
   const channel = useUiChannel();
   const isP4 = channel === 'p4';

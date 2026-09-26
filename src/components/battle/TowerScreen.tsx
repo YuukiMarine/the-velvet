@@ -8,6 +8,7 @@ import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore, toLocalDateKey } from '@/store';
+import { useShallow } from 'zustand/react/shallow';
 import { AttributeId, MobSpec, StratumNode } from '@/types';
 import { ammoFromActivities } from '@/battle/preparation';
 import { rollMobSpec, absoluteFloor, reachableNodeIds } from '@/battle/tower';
@@ -96,7 +97,7 @@ export function TowerScreen({ open, onClose, onDescend, onRequestBattle, onToast
   const {
     stratum, battleState, shadow,
     moveToTowerNode, completeTowerNode, towerAdjust, towerSkipNextFloor, towerRerollNextFloor,
-  } = useAppStore();
+  } = useAppStore(useShallow(s => ({ stratum: s.stratum, battleState: s.battleState, shadow: s.shadow, moveToTowerNode: s.moveToTowerNode, completeTowerNode: s.completeTowerNode, towerAdjust: s.towerAdjust, towerSkipNextFloor: s.towerSkipNextFloor, towerRerollNextFloor: s.towerRerollNextFloor })));
 
   const [eventNode, setEventNode] = useState<StratumNode | null>(null);
   const [echoNode, setEchoNode] = useState<StratumNode | null>(null);

@@ -8,6 +8,8 @@
  *     七张牌上四下三入场 → 中央命运卡背 → **长按**蓄力（魔法阵生长 + 粒子上升 +
  *     四角星迸现，松手回退）→ 蓄满翻面 → 结语烫印在牌上，总结/展望/建议依次展开，
  *     并降下 3 天 buff（战场伤害 +10% / 每日首次记录 +1 点）。
+ *   · 总占卜本身跑在 utils/tarotJobs 的后台任务里（第 4 轮）：弹层关掉不中止，
+ *     写完就落库、祝福就生效，回来直接看；截断可「接着写」。
  *
  * 视觉刻意独立于三频道：仪式发生在「房间之外的命运空间」——深靛蓝星空 + 鎏金，
  * 全频道一致（这里本来就是靛蓝色房间的底色）。D0（校直/低机能）下粒子与星屑静默、
@@ -17,18 +19,16 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import DOMPurify from 'dompurify';
-import { v4 as uuidv4 } from 'uuid';
 import { useAppStore, toLocalDateKey } from '@/store';
 import { TAROT_BY_ID, FORTUNE_META, inferFortune } from '@/constants/tarot';
 import { DailyDivination, FateGlimpse, FateGlimpseDay } from '@/types';
 import { CardBack } from './CardBack';
 import { TarotCardSVG } from './TarotCardSVG';
+import type { FateGlimpseAIResult } from '@/utils/fateGlimpseAI';
 import {
-  buildFateGlimpseRequest, streamFateGlimpse, parseFateGlimpseText, buildOfflineFateGlimpse,
-  type FateGlimpseAIResult,
-} from '@/utils/fateGlimpseAI';
-import { formatApiError } from '@/utils/tarotAI';
-import { createThinkTracker, useThinkProgress, type ThinkTracker } from '@/utils/thinkProgress';
+  useTarotJobs, startFateJob, continueFateJob, resolveFateOffline, ackFateJob, TAROT_CONTINUE_LIMIT,
+} from '@/utils/tarotJobs';
+import { useThinkProgress } from '@/utils/thinkProgress';
 import { ThinkingCircle } from './ThinkingCircle';
 import { renderMarkdown } from '@/utils/markdown';
 import { playSound, triggerLightHaptic } from '@/utils/feedback';
@@ -380,39 +380,49 @@ function FateRitual({
 }) {
   const d0 = !useBoldness(); // bold=false 即 D0：校直/低机能/reduced-motion
   const holdMs = d0 ? HOLD_MS_D0 : HOLD_MS;
-  const a11yRef = useModalA11y(true, onClose, { closeOnEscape: true, trapFocus: true });
-  useBackHandler(true, onClose);
+  // 关掉弹层：已结束的任务清掉；还在跑的留在后台，写完照样落库
+  const handleClose = () => { ackFateJob(); onClose(); };
+  const a11yRef = useModalA11y(true, handleClose, { closeOnEscape: true, trapFocus: true });
+  useBackHandler(true, handleClose);
 
   // 七日牌组：new 用窗口，review 用存档
-  const days: FateGlimpseDay[] = useMemo(() => {
-    if (mode === 'review' && glimpse) return glimpse.days;
-    return win.days
-      .filter((d): d is { date: string; drawn: DailyDivination } => !!d.drawn)
-      .map(d => ({
-        date: d.date,
-        cardId: d.drawn.cardId,
-        orientation: d.drawn.orientation,
-        fortune: d.drawn.fortune,
-        attribute: d.drawn.effect.attribute,
-      }));
-  }, [mode, glimpse, win]);
+  const winDays: FateGlimpseDay[] = useMemo(() => win.days
+    .filter((d): d is { date: string; drawn: DailyDivination } => !!d.drawn)
+    .map(d => ({
+      date: d.date,
+      cardId: d.drawn.cardId,
+      orientation: d.drawn.orientation,
+      fortune: d.drawn.fortune,
+      attribute: d.drawn.effect.attribute,
+    })), [win]);
+
+  // 总占卜是后台任务（tarotJobs）：这里只订阅；开场即起跑（长按仪式的时间刚好用来等 AI）
+  const fateJob = useTarotJobs(s => s.fate);
+  const job = mode === 'new' ? fateJob : null;
+  useEffect(() => {
+    if (mode !== 'new') return;
+    startFateJob({ settings: useAppStore.getState().settings, days: winDays });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const days: FateGlimpseDay[] = mode === 'review' && glimpse ? glimpse.days : (job?.days ?? winDays);
 
   const [stage, setStage] = useState<RitualStage>(mode === 'review' ? 'revealed' : 'gather');
   const [progress, setProgress] = useState(0);      // 长按蓄力 0..1
   const [locked, setLocked] = useState(mode === 'review'); // 蓄满后魔法阵常亮
-  const [result, setResult] = useState<FateGlimpseAIResult | null>(
-    glimpse ? { verdict: glimpse.verdict, summary: glimpse.summary, outlook: glimpse.outlook, advice: glimpse.advice } : null,
-  );
-  const [aiStatus, setAiStatus] = useState<'pending' | 'ready' | 'error'>(glimpse ? 'ready' : 'pending');
-  // 流式半成品：边收边解析，翻面后即刻上屏；result 只在流完整后才写（落库以它为准）
-  const [live, setLive] = useState<FateGlimpseAIResult | null>(null);
-  const [thinking, setThinking] = useState(false);
-  const [tracker, setTracker] = useState<ThinkTracker | null>(null);
-  const thinkProgress = useThinkProgress(tracker, aiStatus === 'pending' && !(live && (live.summary || live.outlook || live.advice)));
-  const [errMsg, setErrMsg] = useState('');
-  const sourceRef = useRef<'ai' | 'offline'>('ai');
-  const savedRef = useRef(mode === 'review');
-  const abortRef = useRef<AbortController | null>(null);
+  const result: FateGlimpseAIResult | null = mode === 'review' && glimpse
+    ? { verdict: glimpse.verdict, summary: glimpse.summary, outlook: glimpse.outlook, advice: glimpse.advice }
+    : (job?.status === 'done' ? job.result ?? null : null);
+  const aiStatus: 'pending' | 'ready' | 'error' = mode === 'review'
+    ? 'ready'
+    : job?.status === 'done' ? 'ready' : job?.status === 'error' ? 'error' : 'pending';
+  // 流式半成品：边收边解析，翻面后即刻上屏；result 只在流完整后才有（落库以它为准）
+  const live = job?.live ?? null;
+  const thinking = !!job?.thinking;
+  const thinkProgress = useThinkProgress(job?.tracker ?? null, aiStatus === 'pending' && !(live && (live.summary || live.outlook || live.advice)));
+  const errMsg = job?.error ?? '';
+  const source: 'ai' | 'offline' = mode === 'review' ? (glimpse?.source ?? 'ai') : (job?.source ?? 'ai');
+  const canContinue = !!job && job.status === 'error' && job.truncated && job.continues < TAROT_CONTINUE_LIMIT;
 
   // ── 入场：gather → await ──
   useEffect(() => {
@@ -421,98 +431,8 @@ function FateRitual({
     return () => clearTimeout(t);
   }, [stage, d0]);
 
-  // ── 占卜请求：开场即预取（长按仪式的时间刚好用来等 AI）──
-  useEffect(() => {
-    if (mode !== 'new') return;
-    void startDivination();
-    return () => abortRef.current?.abort();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const startDivination = async () => {
-    const s = useAppStore.getState();
-    setAiStatus('pending');
-    setErrMsg('');
-    if (!s.settings.summaryApiKey) {
-      sourceRef.current = 'offline';
-      setResult(buildOfflineFateGlimpse(days, s.settings.attributeNames));
-      setAiStatus('ready');
-      return;
-    }
-    // 控制器先于 try 建好：catch 里要用**这一次**的信号判断"是不是被自己取消的"。
-    // 之前读 abortRef.current——StrictMode 双跑 / 快速关开时，第二次调用已把 ref 换成
-    // 新控制器，第一次的 AbortError 就被当成真错误，面板闪出「已取消」+ 重试按钮。
-    const ac = new AbortController();
-    abortRef.current = ac;
-    try {
-      const since = Date.now() - 7 * 86400_000;
-      const req = buildFateGlimpseRequest({
-        settings: s.settings,
-        attributes: s.attributes,
-        days,
-        recentActivities: s.activities.filter(a => !a.category && new Date(a.date).getTime() >= since),
-        wishes: s.wishes
-          .filter(w => w.status === 'active' && !w.parentId)
-          .map(w => ({ title: w.title, currentState: w.currentState })),
-        userName: s.user?.name ?? '客人',
-      });
-      setLive(null);
-      setThinking(false);
-      let full = '';
-      let finish = '';
-      const tr = createThinkTracker(req.model);
-      setTracker(tr);
-      for await (const delta of streamFateGlimpse(req, {
-        signal: ac.signal,
-        onReasoning: d => { tr.onReasoning(d); setThinking(true); },
-        onFinishReason: f => { finish = f; },
-      })) {
-        tr.onContent();
-        full += delta;
-        setThinking(false);
-        setLive(parseFateGlimpseText(full));
-      }
-      const r = parseFateGlimpseText(full);
-      if (!r.summary && !r.outlook && !r.advice) throw new Error('解读内容为空，请重试');
-      if (finish === 'length') throw new Error('解读被截断了（模型输出预算不足），请重试');
-      if (finish !== 'stop' && !/[。！？!?…」』"”)）]\s*$/.test(full.trim())) throw new Error('连接中途断开，解读没有收完，请重试');
-      if (!r.verdict) r.verdict = '明暗交织 路在脚下';
-      sourceRef.current = 'ai';
-      setResult(r);
-      setAiStatus('ready');
-    } catch (e) {
-      if (ac.signal.aborted) return;
-      setErrMsg(formatApiError(e));
-      setAiStatus('error');
-    }
-  };
-
-  const useOffline = () => {
-    const s = useAppStore.getState();
-    sourceRef.current = 'offline';
-    setResult(buildOfflineFateGlimpse(days, s.settings.attributeNames));
-    setAiStatus('ready');
-  };
-
-  // ── 结果落库（翻面完成 + 结果就绪，两条件齐了就存，只存一次）──
-  useEffect(() => {
-    if (mode !== 'new' || savedRef.current || stage !== 'revealed' || !result) return;
-    savedRef.current = true;
-    const today = toLocalDateKey();
-    const g: FateGlimpse = {
-      id: uuidv4(),
-      days,
-      verdict: result.verdict,
-      summary: result.summary,
-      outlook: result.outlook,
-      advice: result.advice,
-      source: sourceRef.current,
-      buffStart: today,
-      buffEnd: toLocalDateKey(new Date(Date.now() + 2 * 86400_000)),
-      createdAt: new Date(),
-    };
-    void useAppStore.getState().createFateGlimpse(g);
-  }, [mode, stage, result, days]);
+  const retryAI = () => startFateJob({ settings: useAppStore.getState().settings, days, force: true });
+  const useOffline = () => { void resolveFateOffline(); };
 
   // ── 长按蓄力（rAF 前进；松手回退）──
   const rafRef = useRef<number | null>(null);
@@ -607,7 +527,7 @@ function FateRitual({
       {/* 关闭 */}
       <button
         type="button"
-        onClick={onClose}
+        onClick={handleClose}
         aria-label="关闭"
         className="fixed right-4 z-20 flex h-9 w-9 items-center justify-center rounded-full text-lg font-black"
         style={{ top: 'calc(env(safe-area-inset-top, 0px) + 12px)', color: GOLD, background: 'rgba(18,14,51,0.6)', boxShadow: `inset 0 0 0 1px ${GOLD_SOFT}` }}
@@ -727,12 +647,24 @@ function FateRitual({
                 </>
               )}
 
+              {aiStatus === 'error' && canContinue && live && (
+                <>
+                  {live.summary && <ReadingBlock label="总结" en="RETROSPECT" delay={0} text={live.summary} />}
+                  {live.outlook && <ReadingBlock label="展望" en="OUTLOOK" delay={0} text={live.outlook} />}
+                  {live.advice && <ReadingBlock label="建议" en="GUIDANCE" delay={0} text={live.advice} />}
+                </>
+              )}
               {aiStatus === 'error' && (
                 <PanelShell>
                   <p className="whitespace-pre-wrap text-[12px] leading-relaxed" style={{ color: '#e8a0a0' }}>{errMsg}</p>
                   <div className="mt-3 flex gap-2">
-                    <button type="button" onClick={() => void startDivination()} className="flex-1 rounded-lg py-2.5 text-[12px] font-black" style={{ background: GOLD, color: '#120e33' }}>
-                      重试 AI 解读
+                    {canContinue && (
+                      <button type="button" onClick={continueFateJob} className="flex-1 rounded-lg py-2.5 text-[12px] font-black" style={{ background: GOLD, color: '#120e33' }}>
+                        接着写
+                      </button>
+                    )}
+                    <button type="button" onClick={retryAI} className="flex-1 rounded-lg py-2.5 text-[12px] font-black" style={canContinue ? { color: GOLD, boxShadow: `inset 0 0 0 1px ${GOLD_SOFT}` } : { background: GOLD, color: '#120e33' }}>
+                      {canContinue ? '重新解读' : '重试 AI 解读'}
                     </button>
                     <button type="button" onClick={useOffline} className="flex-1 rounded-lg py-2.5 text-[12px] font-bold" style={{ color: GOLD, boxShadow: `inset 0 0 0 1px ${GOLD_SOFT}` }}>
                       使用离线兜底
@@ -758,7 +690,7 @@ function FateRitual({
                     <div className="flex items-center gap-2">
                       <FourStar size={14} color={GOLD} />
                       <span className="text-[12px] font-black tracking-[0.14em]" style={{ color: '#efe6c8' }}>命运的祝福 · 三日</span>
-                      {sourceRef.current === 'offline' && (
+                      {source === 'offline' && (
                         <span className="rounded-full px-1.5 py-0.5 text-[9px] font-bold" style={{ color: 'rgba(239,230,200,0.6)', boxShadow: 'inset 0 0 0 1px rgba(239,230,200,0.3)' }}>离线</span>
                       )}
                     </div>
@@ -767,7 +699,7 @@ function FateRitual({
                     </p>
                   </motion.div>
 
-                  <button type="button" onClick={onClose} className="mx-auto block rounded-full px-6 py-2 text-[12px] font-bold" style={{ color: 'rgba(239,230,200,0.65)' }}>
+                  <button type="button" onClick={handleClose} className="mx-auto block rounded-full px-6 py-2 text-[12px] font-bold" style={{ color: 'rgba(239,230,200,0.65)' }}>
                     收下命运的低语
                   </button>
                 </>

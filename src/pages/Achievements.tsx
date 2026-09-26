@@ -1,6 +1,7 @@
 import { motion, AnimatePresence } from 'motion/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAppStore } from '@/store';
+import { useShallow } from 'zustand/react/shallow';
 import { Achievement, AttributeId } from '@/types';
 import { triggerNavFeedback } from '@/utils/feedback';
 import { PageTitle } from '@/components/PageTitle';
@@ -184,7 +185,7 @@ const AchievementFormFields = ({
    Skills sub-page (embedded)
 ───────────────────────────────────────────── */
 const SkillsTab = () => {
-  const { skills, attributes, settings, unlockSkill, updateCustomSkill, deleteCustomSkill, addCustomSkill, toggleSkillUnlock } = useAppStore();
+  const { skills, attributes, settings, unlockSkill, updateCustomSkill, deleteCustomSkill, addCustomSkill, toggleSkillUnlock } = useAppStore(useShallow(s => ({ skills: s.skills, attributes: s.attributes, settings: s.settings, unlockSkill: s.unlockSkill, updateCustomSkill: s.updateCustomSkill, deleteCustomSkill: s.deleteCustomSkill, addCustomSkill: s.addCustomSkill, toggleSkillUnlock: s.toggleSkillUnlock })));
 
   const [filterStatus, setFilterStatus] = useState<'all' | 'locked' | 'unlocked'>(() => {
     try {
@@ -679,7 +680,7 @@ const AchievementsTab = () => {
     deleteCustomAchievement,
     addCustomAchievement,
     unlockAchievement
-  } = useAppStore();
+  } = useAppStore(useShallow(s => ({ achievements: s.achievements, activities: s.activities, attributes: s.attributes, settings: s.settings, todoCompletions: s.todoCompletions, battleState: s.battleState, weeklyGoals: s.weeklyGoals, confidants: s.confidants, updateCustomAchievement: s.updateCustomAchievement, deleteCustomAchievement: s.deleteCustomAchievement, addCustomAchievement: s.addCustomAchievement, unlockAchievement: s.unlockAchievement })));
 
   const [filterStatus, setFilterStatus] = useState<'all' | 'locked' | 'unlocked'>(() => {
     try {
