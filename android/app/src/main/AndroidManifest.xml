@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- 小组件零点闹钟：重启后要重新对表（VelvetWidgetClock） -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
@@ -74,6 +77,18 @@
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/widget_agenda_info" />
+        </receiver>
+
+        <!-- 小组件的时钟（v2.7.0.6 第 5 轮）：零点闹钟 / 改时间时区 / 开机 → 重画 + 重新对表。
+             只响应系统广播与自己的闹钟；不导出给别的 App 调。 -->
+        <receiver
+            android:name=".VelvetWidgetClock"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
         </receiver>
 
         <!-- 一起进步 · 后台刷新（v2.7.0.6）：JobScheduler 周期任务的入口。

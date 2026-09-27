@@ -42,7 +42,7 @@ enum Face {
         }
 
         Draw.eyebrow(&ctx, "RECORD", size: u * 0.72, x: lx, baselineY: u * 8.6, color: pal.blue)
-        let dtxt = Draw.fit(ctx, "最近 \(s.heat.count) 天 · 连续 \(s.streak) 天", size: u * 0.78, maxW: colW * 0.72)
+        let dtxt = Draw.fit(ctx, s.streakPending ? "最近 \(s.heat.count) 天 · 今天待续" : "最近 \(s.heat.count) 天 · 连续 \(s.streak) 天", size: u * 0.78, maxW: colW * 0.72)
         Draw.text(&ctx, dtxt, size: u * 0.78, color: pal.inkSoft, bold: true, slant: false,
                   x: rx, baselineY: u * 8.6, align: .right)
         Draw.heatStrip(&ctx, pal, s.heat, x: lx, y: u * 9.3, w: colW, h: u * 2.1)
@@ -50,7 +50,11 @@ enum Face {
         Draw.magentaCorner(&ctx, pal, w, h, u)
     }
 
-    // ── 4×2「征途」：日期柱 + 月相 + 连续徽章 + 热力 | 塔罗 | 任务 + 宣告卡 ──
+    // ── 4×2「征途」（第 5 轮验收后重排）：顶行小签 ｜ 左：连续天数大字 + 14 天热力 ｜ 中：塔罗 ｜ 右：宣告卡 ──
+    // 原版把日期大字、状态、月相、连续徽章、热力五样叠在左列，右列又并排两块一样大的读数，
+    // 什么都在喊、没有主次（用户口径「全挤在一起、没有层级」）。现在只留一个主角（连续天数），
+    // 日期 / 名片状态 / 月相全收进顶上一行小签；右列只放宣告卡（标题最多两行 + 大读数 + 整宽条），
+    // 没有卡时才用今日任务补位。这一版的文字全部按真实基线摆（Draw.text exact），和安卓同口径。
     static func journey(_ ctx: inout GraphicsContext, _ s: VelvetSnapshot, art: UIImage?,
                         _ w: CGFloat, _ h: CGFloat) {
         let pal = Pal.of(s)
@@ -58,41 +62,64 @@ enum Face {
         Draw.panel(&ctx, pal, w, h)
         let u = h / 14
         Draw.ghost(&ctx, pal, "JOURNEY", size: h * 0.44, x: w * 0.30, baselineY: h * 0.99)
+        let lx = u * 1.4, rx = w - u * 1.4
+        let colL = u * 8.4
 
-        // 左：时间柱
-        let lx = u * 1.4
-        let colL = u * 7.4
-        let dayW = Draw.measure(ctx, s.day, size: u * 3.6)
-        Draw.text(&ctx, s.day, size: u * 3.6, color: pal.blue, bold: true, slant: true,
-                  x: lx, baselineY: u * 3.7)
-        Draw.eyebrow(&ctx, s.monthEn, size: u * 0.82, x: lx + dayW + u * 0.55, baselineY: u * 2.4, color: pal.ink)
-        Draw.eyebrow(&ctx, s.weekdayEn, size: u * 0.72, x: lx + dayW + u * 0.55, baselineY: u * 3.5, color: pal.inkSoft)
+        // ── 顶行小签：日期眉标 · 名片状态小签 · 月相 ──
+        let metaY = u * 1.85
+        let dateW = Draw.eyebrow(&ctx, "\(s.monthEn) \(s.day) · \(s.weekdayEn)", size: u * 0.78,
+                                 x: lx, baselineY: metaY, color: pal.blue, exact: true)
+        let moonTxt = Draw.fit(ctx, s.moonName, size: u * 0.78, maxW: u * 4)
+        let moonW = Draw.measure(ctx, moonTxt, size: u * 0.78)
+        let mr = u * 0.55
+        Draw.moon(&ctx, pal, phase: s.moonPhase, cx: rx - moonW - u * 0.4 - mr, cy: metaY - u * 0.3, r: mr)
+        Draw.text(&ctx, moonTxt, size: u * 0.78, color: pal.inkSoft, bold: true, slant: false,
+                  x: rx, baselineY: metaY, align: .right, exact: true)
+        if let st = s.status {
+            // 名片状态：日期后面一枚小签（青白底），地方不够就截、太窄就不放
+            let chipX = lx + dateW + u * 0.8
+            let room = (rx - moonW - u * 0.4 - mr * 2 - u * 0.8) - chipX - u * 1.0
+            if room > u * 2 {
+                let label = Draw.fit(ctx, "\(st.emoji) \(st.label)", size: u * 0.74, maxW: room)
+                let lw = Draw.measure(ctx, label, size: u * 0.74)
+                Draw.slab(&ctx, chipX, metaY - u * 0.95, chipX + lw + u * 1.0, metaY + u * 0.35,
+                          cut: u * 0.3, color: pal.cyanPale)
+                Draw.text(&ctx, label, size: u * 0.74, color: pal.ink, bold: true, slant: false,
+                          x: chipX + u * 0.5, baselineY: metaY, exact: true)
+            }
+        }
 
-        let mr = u * 0.95
-        Draw.moon(&ctx, pal, phase: s.moonPhase, cx: lx + mr, cy: u * 5.5, r: mr)
-        let mn = Draw.fit(ctx, s.moonName, size: u * 0.82, maxW: colL - mr * 2 - u * 0.6)
-        Draw.text(&ctx, mn, size: u * 0.82, color: pal.inkSoft, bold: true, slant: false,
-                  x: lx + mr * 2 + u * 0.6, baselineY: u * 5.8)
+        // ── 左：连续天数大字（主角）——放不下就先缩单位再缩数字 ──
+        let heroY = u * 7.0
+        let num = String(s.streak)
+        var numSize = u * 4.6
+        var unit = s.streakPending ? "天 · 今天待续" : "天连续"
+        var numW = Draw.measure(ctx, num, size: numSize)
+        var unitW = Draw.measure(ctx, unit, size: u * 0.95)
+        if numW + u * 0.45 + unitW > colL {
+            unit = s.streakPending ? "天 · 待续" : "天"
+            unitW = Draw.measure(ctx, unit, size: u * 0.95)
+        }
+        if numW + u * 0.45 + unitW > colL {
+            numSize = u * 3.4
+            numW = Draw.measure(ctx, num, size: numSize)
+        }
+        Draw.text(&ctx, num, size: numSize, color: pal.blue, bold: true, slant: true,
+                  x: lx, baselineY: heroY, exact: true)
+        Draw.text(&ctx, unit, size: u * 0.95, color: pal.ink, bold: true, slant: false,
+                  x: lx + numW + u * 0.45, baselineY: heroY - u * 0.05, exact: true)
 
-        // 连续天数徽章：蓝斜板 + 白大字
-        let bT = u * 7.2, bB = u * 9.6
-        Draw.slab(&ctx, lx, bT, lx + colL, bB, cut: u * 0.7, color: pal.blue)
-        let st = String(s.streak)
-        let stW = Draw.measure(ctx, st, size: u * 1.75)
-        Draw.text(&ctx, st, size: u * 1.75, color: .white, bold: true, slant: true,
-                  x: lx + u * 0.95, baselineY: bB - u * 0.72)
-        Draw.text(&ctx, "天连续", size: u * 0.78, color: .white, bold: true, slant: false,
-                  x: lx + u * 0.95 + stW + u * 0.35, baselineY: bB - u * 0.82)
-
-        // 14 天热力轨迹
+        // RECORD 眉标 + 14 天热力（来时的路）
         let keep = min(14, s.heat.count)
         let tail = keep > 0 ? Array(s.heat.suffix(keep)) : [0]
-        Draw.heatStrip(&ctx, pal, tail, x: lx, y: u * 10.6, w: colL, h: u * 1.7)
+        Draw.eyebrow(&ctx, "RECORD", size: u * 0.62, x: lx, baselineY: u * 8.55, color: pal.blue, exact: true)
+        Draw.text(&ctx, "最近 \(tail.count) 天", size: u * 0.66, color: pal.inkSoft, bold: true, slant: false,
+                  x: lx + colL, baselineY: u * 8.55, align: .right, exact: true)
+        Draw.heatStrip(&ctx, pal, tail, x: lx, y: u * 9.05, w: colL, h: u * 1.55)
 
-        // 中：塔罗锚点
-        let cardH = h * 0.78, cardW = cardH * 0.63
-        let cardX = lx + colL + u * 1.2
-        let cardY = (h - cardH) / 2
+        // ── 中：塔罗锚点 ──
+        let cardY = u * 3.4, cardH = u * 9.0, cardW = cardH * 0.63
+        let cardX = lx + colL + u * 1.1
         Draw.tarotCard(&ctx, pal, s, art: art, x: cardX, y: cardY, w: cardW, h: cardH, mini: false)
         if let fl = s.fortuneLabel, !fl.isEmpty {
             let chipSize = u * 0.85
@@ -100,43 +127,51 @@ enum Face {
             Draw.fortuneChip(&ctx, s, x: cardX + cardW - chipW - u * 0.45, y: cardY + u * 0.5, size: chipSize)
         }
 
-        // 右：今日任务 + 宣告卡
-        let px = cardX + cardW + u * 1.4
-        let rx = w - u * 1.4
+        // ── 右：宣告卡（次角）：标题最多两行 + 大读数 + 整宽进度条 ──
+        let px = cardX + cardW + u * 1.3
         let colR = rx - px
-
-        Draw.eyebrow(&ctx, "TODAY", size: u * 0.7, x: px, baselineY: u * 2.2, color: pal.blue)
-        if s.todosTotal > 0 {
-            let frac = "\(s.todosDone)/\(s.todosTotal)"
-            let fw = Draw.measure(ctx, frac, size: u * 2.1)
-            Draw.text(&ctx, frac, size: u * 2.1, color: pal.ink, bold: true, slant: true,
-                      x: px, baselineY: u * 4.6)
-            Draw.text(&ctx, "今日任务", size: u * 0.8, color: pal.inkSoft, bold: true, slant: false,
-                      x: px + fw + u * 0.5, baselineY: u * 4.5)
-            Draw.progress(&ctx, pal, x: px, y: u * 5.4, w: colR, h: u * 0.95,
-                          percent: Int((Double(s.todosDone) * 100 / Double(s.todosTotal)).rounded()))
-        } else {
-            Draw.text(&ctx, "今日没有安排", size: u * 1.05, color: pal.inkSoft, bold: true, slant: true,
-                      x: px, baselineY: u * 4.4)
-        }
-
-        Draw.eyebrow(&ctx, "CALLING CARD", size: u * 0.7, x: px, baselineY: u * 8.4, color: pal.blue)
+        Draw.eyebrow(&ctx, "CALLING CARD", size: u * 0.7, x: px, baselineY: u * 3.55, color: pal.blue, exact: true)
         if let title = s.cardTitle, !title.isEmpty {
-            let t = Draw.fit(ctx, title, size: u * 1.1, maxW: colR)
-            Draw.text(&ctx, t, size: u * 1.1, color: pal.ink, bold: true, slant: true,
-                      x: px, baselineY: u * 9.9)
-            let pct = "\(s.cardPercent)%"
-            let pw = Draw.measure(ctx, pct, size: u * 1.7)
-            Draw.text(&ctx, pct, size: u * 1.7, color: pal.blue, bold: true, slant: true,
-                      x: px, baselineY: u * 12.2)
-            let barX = px + pw + u * 0.55
-            Draw.progress(&ctx, pal, x: barX, y: u * 11.35, w: max(u * 2, rx - barX), h: u * 0.9,
-                          percent: s.cardPercent)
+            let lines = Draw.wrapTwo(ctx, title, size: u * 1.05, maxW: colR)
+            Draw.text(&ctx, lines.0, size: u * 1.05, color: pal.ink, bold: true, slant: true,
+                      x: px, baselineY: u * 5.1, exact: true)
+            if let second = lines.1 {
+                Draw.text(&ctx, second, size: u * 1.05, color: pal.ink, bold: true, slant: true,
+                          x: px, baselineY: u * 6.45, exact: true)
+            }
+            // 纯倒计时的卡直接读「剩 N 天」；按完成度的卡读百分比
+            let big: String
+            if s.cardMode == "deadline", let d = s.cardDaysLeft {
+                big = d < 0 ? "已过期" : d == 0 ? "今天" : "\(d) 天"
+            } else {
+                big = "\(s.cardPercent)%"
+            }
+            // 大读数 + 整宽条：条底与左侧热力条底齐平（10.6u），两栏的底边对上；标题占两行时读数缩一号，别顶着标题
+            let two = lines.1 != nil
+            Draw.text(&ctx, big, size: u * (two ? 2.0 : 2.3), color: pal.blue, bold: true, slant: true,
+                      x: px, baselineY: u * (two ? 9.0 : 8.9), exact: true)
+            Draw.progress(&ctx, pal, x: px, y: u * 9.7, w: colR, h: u * 0.9, percent: s.cardPercent)
         } else {
             Draw.text(&ctx, "还没有宣告卡", size: u * 1.0, color: pal.inkSoft, bold: true, slant: true,
-                      x: px, baselineY: u * 9.9)
-            Draw.text(&ctx, "立一个倒计时或目标宣言 →", size: u * 0.8, color: pal.inkSoft, bold: true, slant: false,
-                      x: px, baselineY: u * 11.3)
+                      x: px, baselineY: u * 5.1, exact: true)
+            Draw.text(&ctx, Draw.fit(ctx, "立一个倒计时或目标宣言 →", size: u * 0.78, maxW: colR),
+                      size: u * 0.78, color: pal.inkSoft, bold: true, slant: false,
+                      x: px, baselineY: u * 6.4, exact: true)
+            // 没有卡的时候右下用今日任务补位，别空着
+            Draw.eyebrow(&ctx, "TODAY", size: u * 0.7, x: px, baselineY: u * 7.7, color: pal.blue, exact: true)
+            if s.todosTotal > 0 {
+                let frac = "\(s.todosDone)/\(s.todosTotal)"
+                let fw = Draw.measure(ctx, frac, size: u * 1.7)
+                Draw.text(&ctx, frac, size: u * 1.7, color: pal.ink, bold: true, slant: true,
+                          x: px, baselineY: u * 9.1, exact: true)
+                Draw.text(&ctx, "今日任务", size: u * 0.78, color: pal.inkSoft, bold: true, slant: false,
+                          x: px + fw + u * 0.45, baselineY: u * 9.05, exact: true)
+                Draw.progress(&ctx, pal, x: px, y: u * 9.7, w: colR, h: u * 0.9,
+                              percent: Int((Double(s.todosDone) * 100 / Double(s.todosTotal)).rounded()))
+            } else {
+                Draw.text(&ctx, "今日没有安排", size: u * 1.0, color: pal.inkSoft, bold: true, slant: true,
+                          x: px, baselineY: u * 9.1, exact: true)
+            }
         }
 
         Draw.magentaCorner(&ctx, pal, w, h, u)
@@ -152,7 +187,7 @@ enum Face {
         let drawn = !(s.tarotName ?? "").isEmpty
         let barH = h * 0.30
 
-        if drawn, let art = art {
+        if drawn, let art = art, !pal.mono {   // 色调模式不铺图（不透明图 = 一整块白），走文字版
             ctx.drawLayer { layer in
                 if s.tarotReversed {
                     layer.translateBy(x: w / 2, y: h / 2)
@@ -184,7 +219,7 @@ enum Face {
         bar.addLine(to: CGPoint(x: w, y: h))
         bar.addLine(to: CGPoint(x: 0, y: h))
         bar.closeSubpath()
-        ctx.fill(bar, with: .color(s.dark
+        ctx.fill(bar, with: .color(pal.mono ? .white.opacity(0.22) : s.dark
             ? Color(.sRGB, red: 8/255, green: 18/255, blue: 38/255, opacity: 238/255)
             : Color(.sRGB, red: 10/255, green: 18/255, blue: 48/255, opacity: 232/255)))
 
@@ -203,11 +238,11 @@ enum Face {
         if let fl = s.fortuneLabel, !fl.isEmpty {
             Draw.fortuneChip(&ctx, s, x: w - w * 0.30, y: pad, size: h * 0.075)
         }
-        if art != nil, !s.tarotRoman.isEmpty {
+        if art != nil, !pal.mono, !s.tarotRoman.isEmpty {
             let rs = h * 0.07
             let bw = Draw.measure(ctx, s.tarotRoman, size: rs) + w * 0.1
             let bh = h * 0.105
-            Draw.slab(&ctx, pad * 0.7, pad * 0.7, pad * 0.7 + bw, pad * 0.7 + bh, cut: bh * 0.3, color: pal.blue)
+            Draw.slab(&ctx, pad * 0.7, pad * 0.7, pad * 0.7 + bw, pad * 0.7 + bh, cut: bh * 0.3, color: pal.plate)
             Draw.text(&ctx, s.tarotRoman, size: rs, color: .white, bold: true, slant: true,
                       x: pad * 0.7 + w * 0.05, baselineY: pad * 0.7 + bh * 0.74)
         }
@@ -242,14 +277,14 @@ extension Face {
         if s.todosTotal > 0 {
             Draw.text(&ctx, "\(s.todosDone)/\(s.todosTotal)", size: u * 1.6, color: pal.blue,
                       bold: true, slant: true, x: rx, baselineY: u * 1.9, align: .right)
-            Draw.progress(&ctx, pal, x: lx, y: u * 2.45, w: rx - lx, h: u * 0.9,
+            Draw.progress(&ctx, pal, x: lx, y: u * 2.35, w: rx - lx, h: u * 0.8,
                           percent: Int((Double(s.todosDone) * 100 / Double(s.todosTotal)).rounded()))
         }
 
         // 宣告卡倒计时行（有卡才有）：蓝 tick + 卡名 + 剩 N 天 + 右侧完成百分比
         var shift: CGFloat = 0
         if let title = s.cardTitle, !title.isEmpty {
-            let base = u * 4.22
+            let base = u * 4.0
             Draw.tick(&ctx, x: lx + u * 0.15, y: base - u * 0.58, w: u * 0.68, h: u * 0.48, color: pal.blue)
             let pct = "\(s.cardPercent)%"
             Draw.text(&ctx, pct, size: u * 0.9, color: pal.blue, bold: true, slant: true,
@@ -268,29 +303,49 @@ extension Face {
                 Draw.text(&ctx, days, size: u * 0.72, color: pal.inkSoft, bold: true, slant: false,
                           x: lx + u * 1.25 + tw, baselineY: base)
             }
-            shift = u * 0.95
+            shift = u * 0.85
         }
 
-        var rowTop = u * 4.15 + shift
-        var rows = 5
+        // 行距 1.3u（验收后压紧）；能排几行按剩下的高度算：最后一行基线不超过 12.45u，别压到右下角标
+        let pitch = u * 1.3
+        var rowTop = u * 4.05 + shift
         if let deal = s.agendaDeal {
-            dealPlate(&ctx, pal, deal, lx: lx, rx: rx, top: u * 4.1 + shift, bottom: u * 6.9 + shift, u: u)
-            rowTop = u * 7.45 + shift
-            rows = 3
+            // BIG DEAL 板压矮到 2.3u（用户反馈：板太高、条压到标题脚），省下的高度多排一行
+            dealPlate(&ctx, pal, deal, lx: lx, rx: rx, top: u * 3.95 + shift, bottom: u * 6.25 + shift, u: u)
+            rowTop = u * 6.7 + shift
+        }
+        var rows = max(1, Int(((u * 12.45 - rowTop - u * 0.88) / pitch).rounded(.down)) + 1)
+
+        // 升级后还没打开过 App：快照里没有清单字段，不能画成「全部完成」
+        if !s.agendaKnown {
+            Draw.text(&ctx, "打开 App 同步", size: u * 1.1, color: pal.inkSoft, bold: true, slant: true,
+                      x: lx, baselineY: rowTop + u * 1.1)
+            Draw.magentaCorner(&ctx, pal, w, h, u)
+            return
         }
 
-        // 任务行：塞不下时最后一格让位给「还有 N 项」
+        // 一起进步（第 5 轮）：有约定就占最下面一行（贴着右下角标的那行要给角标让位）
+        if let pact = s.pact {
+            rows -= 1
+            let t = rowTop + pitch * CGFloat(rows)
+            let low = t + u * 0.88 > u * 12.0
+            let line = Draw.fit(ctx, "⇄ \(pact.line) · \(pact.title)", size: u * 0.82,
+                                maxW: rx - lx - u * 0.3 - (low ? u * 2.4 : 0))
+            Draw.text(&ctx, line, size: u * 0.82, color: pact.state == "nudged" ? pal.magenta : pal.inkSoft,
+                      bold: true, slant: false, x: lx + u * 0.15, baselineY: t + u * 0.88, exact: true)
+        }
+
+        // 任务行：塞不下时最后一格让位给「还有 N 项」；前两行带截止日标签（多条截止日的取舍见 widgetSnapshot 排序）
         let items = s.agendaItems
-        let pitch = u * 1.5
-        let shown = items.count > rows ? rows - 1 : items.count
+        let shown = max(0, items.count > rows ? rows - 1 : items.count)
         for i in 0..<shown {
-            itemRow(&ctx, pal, items[i], lx: lx, rx: rx, top: rowTop + pitch * CGFloat(i), u: u)
+            itemRow(&ctx, pal, items[i], lx: lx, rx: rx, top: rowTop + pitch * CGFloat(i), u: u, tag: i < 2)
         }
         if items.count > rows {
             let t = rowTop + pitch * CGFloat(shown)
-            Draw.tick(&ctx, x: lx + u * 0.15, y: t + u * 0.28, w: u * 0.68, h: u * 0.48, color: pal.cyanPale)
+            Draw.tick(&ctx, x: lx + u * 0.15, y: t + u * 0.32, w: u * 0.68, h: u * 0.46, color: pal.cyanPale)
             Draw.text(&ctx, "还有 \(s.agendaLeft - shown) 项未完成", size: u * 0.78, color: pal.inkSoft,
-                      bold: true, slant: false, x: lx + u * 1.25, baselineY: t + u * 0.85)
+                      bold: true, slant: false, x: lx + u * 1.25, baselineY: t + u * 0.88, exact: true)
         } else if items.isEmpty {
             if s.agendaDeal != nil {
                 Draw.text(&ctx, s.todosTotal > 0 ? "其余任务已全部完成" : "今日没有其他安排",
@@ -339,15 +394,21 @@ extension Face {
         let items = s.agendaItems
         var drawnItems = 0
         let base1 = h * 0.615, base2 = h * 0.765
+        if !s.agendaKnown {
+            Draw.text(&ctx, "打开 App 同步", size: h * 0.085, color: pal.inkSoft, bold: true, slant: true,
+                      x: pad, baselineY: base1)
+            Draw.magentaCorner(&ctx, pal, w, h, min(w, h) / 14)
+            return
+        }
         if let deal = s.agendaDeal {
-            Draw.slab(&ctx, pad, base1 - h * 0.095, rx, base1 + h * 0.035, cut: h * 0.035, color: pal.blue)
+            Draw.slab(&ctx, pad, base1 - h * 0.095, rx, base1 + h * 0.035, cut: h * 0.035, color: pal.plate)
             var reserve: CGFloat = 0
             if let d = deal.daysLeft {
                 let label = d > 0 ? "剩\(d)天" : d == 0 ? "今天截止" : "已过截止"
                 let dw = Draw.measure(ctx, label, size: h * 0.06)
                 if d <= 2 {
                     Draw.slab(&ctx, rx - dw - h * 0.05, base1 - h * 0.095, rx, base1 + h * 0.035,
-                              cut: h * 0.035, color: pal.magenta)
+                              cut: h * 0.035, color: pal.urgentPlate)
                 }
                 Draw.text(&ctx, label, size: h * 0.06, color: .white, bold: true, slant: false,
                           x: rx - h * 0.03, baselineY: base1 - h * 0.005, align: .right)
@@ -397,46 +458,49 @@ extension Face {
                   bold: true, slant: false, x: px + h * 0.085, baselineY: baselineY)
     }
 
-    /// BIG DEAL 板：强调色斜板反白——清单里最重的一块
+    /// BIG DEAL 板：强调色斜板反白——清单里最重的一块。
+    /// 验收后压矮到 2.3u：眉标 + 剩 N 天一行，标题 + 步骤一行，最下面一条细倒计时条；
+    /// 文字按真实基线摆（原先按估算基线，中文实际落得更低，标题脚被条压住）。
     private static func dealPlate(_ ctx: inout GraphicsContext, _ pal: Pal, _ deal: VelvetAgendaDeal,
                                   lx: CGFloat, rx: CGFloat, top: CGFloat, bottom: CGFloat, u: CGFloat) {
-        Draw.slab(&ctx, lx, top, rx, bottom, cut: u * 0.7, color: pal.blue)
+        Draw.slab(&ctx, lx, top, rx, bottom, cut: u * 0.7, color: pal.plate)
         let ix = lx + u * 1.05, irx = rx - u * 1.05
-        Draw.eyebrow(&ctx, "BIG DEAL", size: u * 0.58, x: ix, baselineY: top + u * 0.85,
-                     color: .white.opacity(0.85))
+        Draw.eyebrow(&ctx, "BIG DEAL", size: u * 0.55, x: ix, baselineY: top + u * 0.75,
+                     color: .white.opacity(0.85), exact: true)
 
         // 剩 N 天：右上。≤2 天急迫态 = 白板 + 洋红字（在强调色板上比反过来醒目）
         if let days = deal.daysLeft {
             let label = days > 0 ? "剩 \(days) 天" : days == 0 ? "今天截止" : "已过截止"
             if days <= 2 {
-                let ts = u * 0.72
+                let ts = u * 0.68
                 let tw = Draw.measure(ctx, label, size: ts)
-                let cw = tw + u * 0.8, chH = u * 1.05
-                Draw.slab(&ctx, irx - cw, top + u * 0.18, irx, top + u * 0.18 + chH,
-                          cut: chH * 0.3, color: .white)
-                Draw.text(&ctx, label, size: ts, color: pal.magenta, bold: true, slant: true,
-                          x: irx - cw + u * 0.4, baselineY: top + u * 0.18 + chH * 0.74)
+                let cw = tw + u * 0.8, chH = u * 0.92
+                Draw.slab(&ctx, irx - cw, top + u * 0.16, irx, top + u * 0.16 + chH,
+                          cut: chH * 0.3, color: pal.chipBg)
+                Draw.text(&ctx, label, size: ts, color: pal.chipInk, bold: true, slant: true,
+                          x: irx - cw + u * 0.4, baselineY: top + u * 0.16 + chH * 0.74, exact: true)
             } else {
-                Draw.text(&ctx, label, size: u * 0.78, color: .white, bold: true, slant: false,
-                          x: irx, baselineY: top + u * 0.85, align: .right)
+                Draw.text(&ctx, label, size: u * 0.74, color: .white, bold: true, slant: false,
+                          x: irx, baselineY: top + u * 0.78, align: .right, exact: true)
             }
         }
 
         // 标题 + 步骤进度（同一行，步骤靠右）
+        let titleY = top + u * 1.62
         var reserve: CGFloat = 0
         if deal.total > 0 {
             let frac = "\(deal.done)/\(deal.total)"
-            Draw.text(&ctx, frac, size: u * 0.9, color: .white, bold: true, slant: true,
-                      x: irx, baselineY: top + u * 2.0, align: .right)
-            reserve = Draw.measure(ctx, frac, size: u * 0.9) + u * 0.5
+            Draw.text(&ctx, frac, size: u * 0.85, color: .white, bold: true, slant: true,
+                      x: irx, baselineY: titleY, align: .right, exact: true)
+            reserve = Draw.measure(ctx, frac, size: u * 0.85) + u * 0.5
         }
-        let t = Draw.fit(ctx, deal.title, size: u * 1.0, maxW: irx - ix - reserve)
-        Draw.text(&ctx, t, size: u * 1.0, color: .white, bold: true, slant: true,
-                  x: ix, baselineY: top + u * 2.0)
+        let t = Draw.fit(ctx, deal.title, size: u * 0.92, maxW: irx - ix - reserve)
+        Draw.text(&ctx, t, size: u * 0.92, color: .white, bold: true, slant: true,
+                  x: ix, baselineY: titleY, exact: true)
 
         // 倒计时进度条：立项 → 截止已流逝的时间。急迫时填充转洋红
         if let used = deal.timeUsed {
-            let by = bottom - u * 0.55, bh = u * 0.3
+            let by = bottom - u * 0.4, bh = u * 0.22
             let cut = bh * 0.62
             Draw.slab(&ctx, ix, by, irx, by + bh, cut: cut, color: .white.opacity(0.28))
             let p = CGFloat(max(0, min(100, used))) / 100
@@ -452,25 +516,34 @@ extension Face {
         }
     }
 
-    /// 一行未完成任务：tick + 标题（重要 = 琥珀 tick + 琥珀薄底板）+ 计次进度
+    /// 一行未完成任务：tick + 标题（重要 = 琥珀 tick + 琥珀薄底板）+ 计次进度 +（tag=true 时）截止日标签。
+    /// 行距 1.3u（验收后压紧）；文字按真实基线摆，tick 对齐字身中线。
     private static func itemRow(_ ctx: inout GraphicsContext, _ pal: Pal, _ it: VelvetAgendaItem,
-                                lx: CGFloat, rx: CGFloat, top: CGFloat, u: CGFloat) {
+                                lx: CGFloat, rx: CGFloat, top: CGFloat, u: CGFloat, tag: Bool = false) {
         if it.important {
-            Draw.slab(&ctx, lx - u * 0.25, top - u * 0.1, rx + u * 0.25, top + u * 1.25,
+            Draw.slab(&ctx, lx - u * 0.25, top - u * 0.06, rx + u * 0.25, top + u * 1.12,
                       cut: u * 0.4, color: amberTint)
         }
-        Draw.tick(&ctx, x: lx + u * 0.15, y: top + u * 0.26, w: u * 0.68, h: u * 0.48,
+        Draw.tick(&ctx, x: lx + u * 0.15, y: top + u * 0.32, w: u * 0.68, h: u * 0.46,
                   color: it.important ? amber : pal.cyan)
+        let base = top + u * 0.88
         var reserve: CGFloat = 0
         if it.target > 1 {
             let frac = "\(it.count)/\(it.target)"
             Draw.text(&ctx, frac, size: u * 0.78, color: pal.inkSoft, bold: true, slant: true,
-                      x: rx - u * 0.2, baselineY: top + u * 0.85, align: .right)
+                      x: rx - u * 0.2, baselineY: base, align: .right, exact: true)
             reserve = Draw.measure(ctx, frac, size: u * 0.78) + u * 0.55
+        }
+        // 截止日标签（第 5 轮）：逾期 / 今天截止用洋红，其余灰；只给前两行
+        if tag, let d = VelvetSnapshot.deadlineTag(it.daysLeft) {
+            let tw = Draw.measure(ctx, d, size: u * 0.7)
+            Draw.text(&ctx, d, size: u * 0.7, color: (it.daysLeft ?? 99) <= 0 ? pal.magenta : pal.inkSoft,
+                      bold: true, slant: false, x: rx - u * 0.2 - reserve, baselineY: base, align: .right, exact: true)
+            reserve += tw + u * 0.45
         }
         let t = Draw.fit(ctx, it.title, size: u * 0.85, maxW: rx - u * 0.2 - reserve - (lx + u * 1.25))
         Draw.text(&ctx, t, size: u * 0.85, color: pal.ink, bold: true, slant: false,
-                  x: lx + u * 1.25, baselineY: top + u * 0.85)
+                  x: lx + u * 1.25, baselineY: base, exact: true)
     }
 }
 
@@ -478,7 +551,9 @@ extension Face {
 // 锁屏组件被系统按 vibrancy 渲染：彩色会被抹平成单色调，只有**明暗层次**能活下来。
 // 所以这两个版式全部用白色 + 不透明度分层画，让系统自己去染；
 // P3R 的斜切板/斜体字保留——形状语言在单色下依然认得出来。
-// 空间只有 ~160×72pt，比安卓 4×1 还挤：幽灵字、角标、月相名一律不上。
+// 空间只有 ~155×65pt，比安卓 4×1 还挤：幽灵字、角标、月相名一律不上。
+// 第 5 轮重排（模拟器实测：连续天数两位数起「征途」右栏整个画不出；「今日」的
+// 「今日没有安排」超出右缘）：左块按可用宽度收缩，右栏永远有最小地皮。
 extension Face {
 
     /// 快照缺失时的单行引导（锁屏版 notSynced）
@@ -492,31 +567,37 @@ extension Face {
                           _ w: CGFloat, _ h: CGFloat) {
         guard s.present else { lockNotSynced(&ctx, w, h); return }
         let pad = h * 0.10
+        let rx = w - pad
 
-        // 左：日期大字（28 + FRI 两行小签）
-        let dayW = Draw.measure(ctx, s.day, size: h * 0.56)
-        Draw.text(&ctx, s.day, size: h * 0.56, color: .white, bold: true, slant: true,
+        // 左：日期大字（28 + SEP/SUN 两行小签）——右栏至少留 42% 的宽度
+        var daySize = h * 0.56
+        var dayW = Draw.measure(ctx, s.day, size: daySize)
+        if pad + dayW + h * 0.75 > w * 0.5 {
+            daySize = h * 0.46
+            dayW = Draw.measure(ctx, s.day, size: daySize)
+        }
+        Draw.text(&ctx, s.day, size: daySize, color: .white, bold: true, slant: true,
                   x: pad, baselineY: h * 0.60)
         Draw.text(&ctx, s.monthEn, size: h * 0.15, color: .white.opacity(0.75), bold: true, slant: false,
                   x: pad + dayW + h * 0.12, baselineY: h * 0.38)
         Draw.text(&ctx, s.weekdayEn, size: h * 0.15, color: .white.opacity(0.55), bold: true, slant: false,
                   x: pad + dayW + h * 0.12, baselineY: h * 0.58)
 
-        // 右上：今日任务分数 + 迷你进度条
-        let px = pad + dayW + h * 0.75
-        let rx = w - pad
+        // 右上：今日任务分数 + 迷你进度条（放不下条就只放分数；没安排时一句话按宽度截）
+        let px = min(pad + dayW + h * 0.75, w * 0.56)
         if s.todosTotal > 0 {
             let frac = "\(s.todosDone)/\(s.todosTotal)"
             let fw = Draw.measure(ctx, frac, size: h * 0.26)
             Draw.text(&ctx, frac, size: h * 0.26, color: .white, bold: true, slant: true,
                       x: px, baselineY: h * 0.40)
             let barX = px + fw + h * 0.14
-            if rx - barX > h * 0.5 {
+            if rx - barX > h * 0.4 {
                 lockBar(&ctx, x: barX, y: h * 0.22, w: rx - barX, h: h * 0.16,
                         ratio: Double(s.todosDone) / Double(s.todosTotal))
             }
         } else {
-            Draw.text(&ctx, "今日没有安排", size: h * 0.2, color: .white.opacity(0.75), bold: true, slant: false,
+            let t = Draw.fit(ctx, "今日没有安排", size: h * 0.2, maxW: rx - px)
+            Draw.text(&ctx, t.isEmpty ? "无安排" : t, size: h * 0.2, color: .white.opacity(0.75), bold: true, slant: false,
                       x: px, baselineY: h * 0.40)
         }
 
@@ -526,47 +607,71 @@ extension Face {
         lockHeat(&ctx, tail, x: px, y: h * 0.58, w: rx - px, h: h * 0.24)
     }
 
-    /// 锁屏「征途」：连续大字 | 月相 | 宣告卡进度（安卓 journeyCompact 的信息序）
+    /// 锁屏「征途」：连续徽章 + 月相 | 宣告卡 / 今日任务。
+    /// 徽章按可用宽度收缩（先「天连续」，放不下就只写「天」），右栏至少留 40% 宽——
+    /// 以前徽章一宽（两位数起）右栏就被整个跳过，用户看到的是「只有一个连续天数」。
     static func lockJourney(_ ctx: inout GraphicsContext, _ s: VelvetSnapshot, art: UIImage?,
                             _ w: CGFloat, _ h: CGFloat) {
         guard s.present else { lockNotSynced(&ctx, w, h); return }
         let pad = h * 0.10
+        let rx = w - pad
+        let plateMaxW = w * 0.46
 
-        // 左：连续天数（征途的核心读数）——白斜板 + 反白数字，单色下也立得住
-        let st = String(s.streak)
-        let stW = Draw.measure(ctx, st, size: h * 0.42)
-        let unitW = Draw.measure(ctx, "天连续", size: h * 0.17, bold: true)
-        let plateW = stW + unitW + h * 0.4
+        let st = s.streakText
+        var numSize = h * 0.42
+        var unit = s.streakPending ? "" : "天连续"
+        var stW = Draw.measure(ctx, st, size: numSize)
+        var unitW = unit.isEmpty ? 0 : Draw.measure(ctx, unit, size: h * 0.17)
+        var plateW = stW + unitW + h * 0.4
+        if plateW > plateMaxW && !unit.isEmpty {
+            unit = "天"
+            unitW = Draw.measure(ctx, unit, size: h * 0.17)
+            plateW = stW + unitW + h * 0.4
+        }
+        if plateW > plateMaxW {
+            numSize = h * 0.34
+            stW = Draw.measure(ctx, st, size: numSize)
+            plateW = stW + unitW + h * 0.36
+        }
         Draw.slab(&ctx, pad, h * 0.16, pad + plateW, h * 0.62, cut: h * 0.14, color: .white.opacity(0.92))
-        Draw.text(&ctx, st, size: h * 0.42, color: .black, bold: true, slant: true,
+        Draw.text(&ctx, st, size: numSize, color: .black, bold: true, slant: true,
                   x: pad + h * 0.14, baselineY: h * 0.52)
-        Draw.text(&ctx, "天连续", size: h * 0.17, color: .black.opacity(0.8), bold: true, slant: false,
-                  x: pad + h * 0.17 + stW, baselineY: h * 0.50)
+        if !unit.isEmpty {
+            Draw.text(&ctx, unit, size: h * 0.17, color: .black.opacity(0.8), bold: true, slant: false,
+                      x: pad + h * 0.17 + stW, baselineY: h * 0.50)
+        }
 
-        // 左下：月相 + 亮度读数
+        // 左下：月相 + 亮度读数（待续时改写一句提示）
         let mr = h * 0.11
         Draw.moonMono(&ctx, phase: s.moonPhase, cx: pad + mr, cy: h * 0.82, r: mr)
-        Draw.text(&ctx, "\(Int((s.moonIllum * 100).rounded()))%", size: h * 0.16,
-                  color: .white.opacity(0.7), bold: true, slant: false,
+        let moonTxt = s.streakPending ? "今天待续" : "\(Int((s.moonIllum * 100).rounded()))%"
+        Draw.text(&ctx, Draw.fit(ctx, moonTxt, size: h * 0.16, maxW: plateW - mr * 2 - h * 0.1),
+                  size: h * 0.16, color: .white.opacity(0.7), bold: true, slant: false,
                   x: pad + mr * 2 + h * 0.1, baselineY: h * 0.875)
 
-        // 右：宣告卡（无卡 → 今日任务补位）
-        let px = pad + plateW + h * 0.35
-        let rx = w - pad
-        if let title = s.cardTitle, !title.isEmpty, rx - px > h * 0.8 {
-            let t = Draw.fit(ctx, title, size: h * 0.19, maxW: rx - px)
+        // 右：宣告卡（无卡 → 今日任务补位）——右栏永远有地皮
+        let px = pad + plateW + h * 0.3
+        let colR = rx - px
+        if let title = s.cardTitle, !title.isEmpty {
+            let t = Draw.fit(ctx, title, size: h * 0.19, maxW: colR)
             Draw.text(&ctx, t, size: h * 0.19, color: .white.opacity(0.85), bold: true, slant: false,
                       x: px, baselineY: h * 0.36)
-            let pct = "\(s.cardPercent)%"
-            let pw = Draw.measure(ctx, pct, size: h * 0.26)
-            Draw.text(&ctx, pct, size: h * 0.26, color: .white, bold: true, slant: true,
+            // 纯倒计时的卡读「剩 N 天」，其余读百分比
+            let big: String
+            if s.cardMode == "deadline", let d = s.cardDaysLeft {
+                big = d < 0 ? "已过期" : d == 0 ? "今天" : "\(d)天"
+            } else {
+                big = "\(s.cardPercent)%"
+            }
+            let pw = Draw.measure(ctx, big, size: h * 0.26)
+            Draw.text(&ctx, big, size: h * 0.26, color: .white, bold: true, slant: true,
                       x: px, baselineY: h * 0.72)
             let barX = px + pw + h * 0.14
-            if rx - barX > h * 0.5 {
+            if rx - barX > h * 0.4 {
                 lockBar(&ctx, x: barX, y: h * 0.56, w: rx - barX, h: h * 0.16,
                         ratio: Double(s.cardPercent) / 100)
             }
-        } else if s.todosTotal > 0, rx - px > h * 0.8 {
+        } else if s.todosTotal > 0 {
             Draw.text(&ctx, "今日任务", size: h * 0.17, color: .white.opacity(0.7), bold: true, slant: false,
                       x: px, baselineY: h * 0.36)
             let frac = "\(s.todosDone)/\(s.todosTotal)"
@@ -574,10 +679,15 @@ extension Face {
             Draw.text(&ctx, frac, size: h * 0.26, color: .white, bold: true, slant: true,
                       x: px, baselineY: h * 0.72)
             let barX = px + fw + h * 0.14
-            if rx - barX > h * 0.5 {
+            if rx - barX > h * 0.4 {
                 lockBar(&ctx, x: barX, y: h * 0.56, w: rx - barX, h: h * 0.16,
                         ratio: Double(s.todosDone) / Double(s.todosTotal))
             }
+        } else if let st = s.status {
+            // 没卡也没任务：把名片状态放这
+            let t = Draw.fit(ctx, "\(st.emoji) \(st.label)", size: h * 0.19, maxW: colR)
+            Draw.text(&ctx, t, size: h * 0.19, color: .white.opacity(0.85), bold: true, slant: false,
+                      x: px, baselineY: h * 0.5)
         }
     }
 
@@ -585,12 +695,19 @@ extension Face {
     /// v2 重排（用户实机反馈「完全没有显示全」）：原版左侧的大分数锚点吃掉 1/3 宽度，
     /// 标题只剩七八个字的地皮；这块组件的主角是**文字**，分数降格进底行，标题地皮翻倍。
     /// 单色下的高亮层级：白板反转 > 满白实心 tick（重要）> 0.75 白（普通）。
+    /// 第 5 轮：第一行带截止日标签；BIG DEAL 剩 ≤3 天加「!」；一起进步在底行画 ⇄ 加状态。
     static func lockAgenda(_ ctx: inout GraphicsContext, _ s: VelvetSnapshot, art: UIImage?,
                            _ w: CGFloat, _ h: CGFloat) {
         guard s.present else { lockNotSynced(&ctx, w, h); return }
         let pad = h * 0.08
         let rx = w - pad
         let items = s.agendaItems
+
+        if !s.agendaKnown {
+            Draw.text(&ctx, "打开 App 同步", size: h * 0.20, color: .white.opacity(0.85), bold: true, slant: true,
+                      x: w / 2, baselineY: h * 0.56, align: .center)
+            return
+        }
 
         // 空态：一句话居中交代，不摆架子
         if s.agendaDeal == nil && items.isEmpty {
@@ -603,13 +720,14 @@ extension Face {
             return
         }
 
-        // 行一（y 0.04h–0.36h）：BIG DEAL 整宽白板，否则第一条任务
+        // 行一（y 0.04h–0.36h）：BIG DEAL 整宽白板，否则第一条任务（带截止日标签）
         var drawnItems = 0
         if let deal = s.agendaDeal {
             Draw.slab(&ctx, pad, h * 0.04, rx, h * 0.36, cut: h * 0.10, color: .white.opacity(0.92))
             var reserve: CGFloat = 0
             if let days = deal.daysLeft {
-                let label = days > 0 ? "剩\(days)天" : days == 0 ? "今天截止" : "已过截止"
+                // 紧迫态（剩 ≤3 天）加「!」
+                let label = (days > 0 ? "剩\(days)天" : days == 0 ? "今天截止" : "已过截止") + (days <= 3 ? "!" : "")
                 let dw = Draw.measure(ctx, label, size: h * 0.15)
                 Draw.text(&ctx, label, size: h * 0.15, color: .black.opacity(0.75), bold: true, slant: false,
                           x: rx - h * 0.14, baselineY: h * 0.28, align: .right)
@@ -620,13 +738,14 @@ extension Face {
             Draw.text(&ctx, t, size: h * 0.19, color: .black, bold: true, slant: true,
                       x: pad + h * 0.14, baselineY: h * 0.28)
         } else {
-            lockItemRow(&ctx, items[0], px: pad, rx: rx, baselineY: h * 0.26, h: h)
+            lockItemRow(&ctx, items[0], px: pad, rx: rx, baselineY: h * 0.26, h: h, tag: true)
             drawnItems = 1
         }
 
         // 行二（基线 0.58h）：下一条任务，整宽
         if items.count > drawnItems {
-            lockItemRow(&ctx, items[drawnItems], px: pad, rx: rx, baselineY: h * 0.58, h: h)
+            lockItemRow(&ctx, items[drawnItems], px: pad, rx: rx, baselineY: h * 0.58, h: h,
+                        tag: s.agendaDeal != nil)   // 有 BIG DEAL 时这才是第一条任务，标签给它
             drawnItems += 1
         } else if s.agendaDeal != nil {
             Draw.text(&ctx, s.todosTotal > 0 ? "其余任务已完成" : "今日没有其他安排",
@@ -634,17 +753,22 @@ extension Face {
                       x: pad + h * 0.26, baselineY: h * 0.58)
         }
 
-        // 行三（基线 0.90h）：分数 + 整体进度条 + 「+N」
+        // 行三（基线 0.90h）：分数 + 整体进度条 + 「+N」/ 一起进步
         let frac = s.todosTotal > 0 ? "\(s.todosDone)/\(s.todosTotal)" : "0/0"
         let fw = Draw.measure(ctx, frac, size: h * 0.18)
         Draw.text(&ctx, frac, size: h * 0.18, color: .white, bold: true, slant: true,
                   x: pad, baselineY: h * 0.90)
-        let more = s.agendaLeft - drawnItems
         var barRx = rx
-        if more > 0 {
-            let mtxt = "还有 \(more) 项"
-            let mw = Draw.measure(ctx, mtxt, size: h * 0.15)
-            Draw.text(&ctx, mtxt, size: h * 0.15, color: .white.opacity(0.6), bold: true, slant: false,
+        let more = s.agendaLeft - drawnItems
+        var tailTxt = ""
+        if let p = s.pact, p.state == "nudged" || p.state == "partnerDone" {
+            tailTxt = "⇄ " + (p.state == "nudged" ? "催你了" : "Ta 已完成") + (more > 0 ? " +\(more)" : "")
+        } else if more > 0 {
+            tailTxt = "还有 \(more) 项"
+        }
+        if !tailTxt.isEmpty {
+            let mw = Draw.measure(ctx, tailTxt, size: h * 0.15)
+            Draw.text(&ctx, tailTxt, size: h * 0.15, color: .white.opacity(0.6), bold: true, slant: false,
                       x: rx, baselineY: h * 0.895, align: .right)
             barRx = rx - mw - h * 0.16
         }
@@ -655,9 +779,9 @@ extension Face {
         }
     }
 
-    /// 锁屏任务行：tick + 标题 +（计次任务的）c/n。重要任务满白 + 实心感
+    /// 锁屏任务行：tick + 标题 +（计次任务的）c/n +（tag=true 时）截止日标签。重要任务满白 + 实心感
     private static func lockItemRow(_ ctx: inout GraphicsContext, _ it: VelvetAgendaItem,
-                                    px: CGFloat, rx: CGFloat, baselineY: CGFloat, h: CGFloat) {
+                                    px: CGFloat, rx: CGFloat, baselineY: CGFloat, h: CGFloat, tag: Bool = false) {
         Draw.tick(&ctx, x: px, y: baselineY - h * 0.13, w: h * 0.17, h: h * 0.12,
                   color: .white.opacity(it.important ? 1 : 0.5))
         var reserve: CGFloat = 0
@@ -666,6 +790,12 @@ extension Face {
             Draw.text(&ctx, frac, size: h * 0.15, color: .white.opacity(0.65), bold: true, slant: true,
                       x: rx, baselineY: baselineY, align: .right)
             reserve = Draw.measure(ctx, frac, size: h * 0.15) + h * 0.4
+        }
+        if tag, let d = VelvetSnapshot.deadlineTag(it.daysLeft, compact: true) {
+            let dw = Draw.measure(ctx, d, size: h * 0.14)
+            Draw.text(&ctx, d, size: h * 0.14, color: .white.opacity((it.daysLeft ?? 99) <= 0 ? 1 : 0.65),
+                      bold: true, slant: false, x: rx - reserve, baselineY: baselineY, align: .right)
+            reserve += dw + h * 0.2
         }
         let t = Draw.fit(ctx, it.title, size: h * 0.19, maxW: rx - reserve - (px + h * 0.26))
         Draw.text(&ctx, t, size: h * 0.19, color: .white.opacity(it.important ? 1 : 0.78),
@@ -700,6 +830,86 @@ extension Face {
             let cx = x + CGFloat(i) * (cw + gap)
             Draw.slab(&ctx, cx, y, cx + cw, y + h, cut: cut, color: .white.opacity(op))
         }
+    }
+}
+
+// ── 锁屏圆形 / 单行（第 5 轮新规格） ──────────────────────────────────
+// 圆形只放一个读数 + 一圈仪表；单行只放一句话（系统只认 Text）。
+extension Face {
+
+    /// 圆环仪表：轨道 + 进度弧（12 点起顺时针）
+    private static func ring(_ ctx: inout GraphicsContext, cx: CGFloat, cy: CGFloat, r: CGFloat,
+                             ratio: Double, width: CGFloat) {
+        let track = Path(ellipseIn: CGRect(x: cx - r, y: cy - r, width: r * 2, height: r * 2))
+        ctx.stroke(track, with: .color(.white.opacity(0.28)), lineWidth: width)
+        let p = max(0, min(1, ratio))
+        guard p > 0 else { return }
+        var arc = Path()
+        arc.addArc(center: CGPoint(x: cx, y: cy), radius: r, startAngle: .degrees(-90),
+                   endAngle: .degrees(-90 + 360 * p), clockwise: false)
+        ctx.stroke(arc, with: .color(.white), style: StrokeStyle(lineWidth: width, lineCap: .round))
+    }
+
+    /// 圆形「清单」：今日任务仪表（只画进度，不放截止日——圆里塞不下字）
+    static func circularAgenda(_ ctx: inout GraphicsContext, _ s: VelvetSnapshot, _ w: CGFloat, _ h: CGFloat) {
+        let cx = w / 2, cy = h / 2, r = min(w, h) / 2 - h * 0.1
+        guard s.present else {
+            Draw.text(&ctx, "✦", size: h * 0.36, color: .white, bold: true, slant: false, x: cx, baselineY: cy + h * 0.13, align: .center)
+            return
+        }
+        let ratio = s.todosTotal > 0 ? Double(s.todosDone) / Double(s.todosTotal) : 0
+        ring(&ctx, cx: cx, cy: cy, r: r, ratio: ratio, width: h * 0.09)
+        if s.todosTotal > 0 {
+            Draw.text(&ctx, "\(s.todosDone)/\(s.todosTotal)", size: h * 0.26, color: .white, bold: true, slant: true,
+                      x: cx, baselineY: cy + h * 0.06, align: .center)
+            Draw.text(&ctx, "任务", size: h * 0.13, color: .white.opacity(0.7), bold: true, slant: false,
+                      x: cx, baselineY: cy + h * 0.24, align: .center)
+        } else {
+            Draw.text(&ctx, "✦", size: h * 0.3, color: .white, bold: true, slant: false, x: cx, baselineY: cy + h * 0.11, align: .center)
+        }
+    }
+
+    /// 圆形「征途」：宣告卡倒计时（剩 N 天 + 时间弧）；没有卡就是连续天数
+    static func circularJourney(_ ctx: inout GraphicsContext, _ s: VelvetSnapshot, _ w: CGFloat, _ h: CGFloat) {
+        let cx = w / 2, cy = h / 2, r = min(w, h) / 2 - h * 0.1
+        guard s.present else {
+            Draw.text(&ctx, "✦", size: h * 0.36, color: .white, bold: true, slant: false, x: cx, baselineY: cy + h * 0.13, align: .center)
+            return
+        }
+        if s.cardTitle != nil, let d = s.cardDaysLeft {
+            ring(&ctx, cx: cx, cy: cy, r: r, ratio: Double(s.cardPercent) / 100, width: h * 0.09)
+            let big = d < 0 ? "过期" : d == 0 ? "今天" : String(d)
+            Draw.text(&ctx, big, size: d > 0 ? h * 0.3 : h * 0.22, color: .white, bold: true, slant: true,
+                      x: cx, baselineY: cy + h * 0.08, align: .center)
+            Draw.text(&ctx, d > 0 ? "天" : "截止", size: h * 0.13, color: .white.opacity(0.7), bold: true, slant: false,
+                      x: cx, baselineY: cy + h * 0.25, align: .center)
+        } else {
+            let ratio = s.streakPending ? 0 : min(1, Double(s.streak) / 30)
+            ring(&ctx, cx: cx, cy: cy, r: r, ratio: ratio, width: h * 0.09)
+            let big = s.streakText
+            Draw.text(&ctx, big, size: s.streakPending ? h * 0.2 : h * 0.3, color: .white, bold: true, slant: true,
+                      x: cx, baselineY: cy + h * 0.08, align: .center)
+            Draw.text(&ctx, s.streakPending ? "今天" : "天连续", size: h * 0.12, color: .white.opacity(0.7), bold: true, slant: false,
+                      x: cx, baselineY: cy + h * 0.25, align: .center)
+        }
+    }
+
+    /// 单行「清单」：只放最紧的一件事（同一天还有别的截止日就在末尾加「+N」）；没有截止日回落成「✦ 3/5」
+    static func inlineAgenda(_ s: VelvetSnapshot) -> String {
+        guard s.present else { return "✦ 打开一次靛蓝色房间" }
+        guard s.agendaKnown else { return "✦ 打开 App 同步" }
+        if let deal = s.agendaDeal, let d = deal.daysLeft, d <= 3 {
+            let tag = d < 0 ? "已过截止" : d == 0 ? "今天截止" : "剩\(d)天"
+            return "! \(deal.title) · \(tag)"
+        }
+        let dated = s.agendaItems.filter { $0.daysLeft != nil }
+        if let first = dated.first, let d = first.daysLeft {
+            let same = dated.filter { $0.daysLeft == d }.count - 1
+            let tag = VelvetSnapshot.deadlineTag(d, compact: true) ?? ""
+            return "\(first.title) · \(tag)" + (same > 0 ? " +\(same)" : "")
+        }
+        if s.todosTotal > 0 { return "✦ \(s.todosDone)/\(s.todosTotal)" }
+        return "✦ 今日没有安排"
     }
 }
 

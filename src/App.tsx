@@ -332,6 +332,8 @@ function App() {
       if (document.visibilityState === 'hidden') {
         // 切到后台：静默推送本地最新数据（失败不扰民）
         void trySyncInBackground();
+        // 桌面组件也趁这一下刷成最新（第 5 轮：以前切后台不推，组件停在进 App 前的样子）
+        void import('@/utils/widgetSnapshot').then(m => m.pushWidgetSnapshotNow());
       }
     };
     document.addEventListener('visibilitychange', onVisibility);

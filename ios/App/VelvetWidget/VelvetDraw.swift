@@ -49,17 +49,19 @@ enum Draw {
     /// 画一段文字。基线口径与 Android 的 drawText 对齐（传入的 y 是基线，不是顶边）。
     /// slant=true 时施加 P3R 的招牌斜切——iOS 的中文字体同样没有真斜体，
     /// 用剪切变换比让系统合成 italic 更可控，斜度也能和容器对齐。
+    /// exact=true 时按文字的真实首行基线摆（`ResolvedText.firstBaseline`），和安卓 drawText 的基线同口径；
+    /// 默认仍用 0.8 倍字号的估算（老版式都是按这个估算调的，中文实际会落得低 0.2 倍字号左右，不能整体改）。
     @discardableResult
     static func text(_ ctx: inout GraphicsContext, _ s: String,
                      size: CGFloat, color: Color, bold: Bool = true, slant: Bool = false,
                      x: CGFloat, baselineY: CGFloat,
-                     align: TextAlign = .left) -> CGFloat {
+                     align: TextAlign = .left, exact: Bool = false) -> CGFloat {
         guard !s.isEmpty else { return 0 }
         let font = Font.system(size: size, weight: bold ? .bold : .regular)
         let resolved = ctx.resolve(Text(s).font(font).foregroundColor(color))
         let m = resolved.measure(in: CGSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude))
         // 由基线换算到 SwiftUI 的左上角原点：约 0.8 倍字号是这类字体的 ascent 经验值
-        let ascent = size * 0.8
+        let ascent = exact ? resolved.firstBaseline(in: m) : size * 0.8
         var ox = x
         switch align {
         case .left: break
@@ -109,17 +111,38 @@ enum Draw {
         text(&ctx, word, size: size, color: pal.ghost, bold: true, slant: true, x: x, baselineY: baselineY)
     }
 
-    /// 字距展开的微型英文眉标（TODAY / TAROT / JOURNEY…）
+    /// 字距展开的微型英文眉标（TODAY / TAROT / JOURNEY…）；返回画出来的总宽（后面要接东西时用）
+    @discardableResult
     static func eyebrow(_ ctx: inout GraphicsContext, _ s: String,
-                        size: CGFloat, x: CGFloat, baselineY: CGFloat, color: Color) {
-        guard !s.isEmpty else { return }
+                        size: CGFloat, x: CGFloat, baselineY: CGFloat, color: Color,
+                        exact: Bool = false) -> CGFloat {
+        guard !s.isEmpty else { return 0 }
         let tracking = size * 0.22
         var cx = x
         for ch in s {
             let w = text(&ctx, String(ch), size: size, color: color, bold: true, slant: false,
-                         x: cx, baselineY: baselineY)
+                         x: cx, baselineY: baselineY, exact: exact)
             cx += w + tracking
         }
+        return cx - x - tracking
+    }
+
+    /// 最多两行：第一行按字符找最长能放下的前缀，余下的交给第二行（放不下就省略号）
+    static func wrapTwo(_ ctx: GraphicsContext, _ s: String, size: CGFloat, bold: Bool = true,
+                        maxW: CGFloat) -> (String, String?) {
+        guard !s.isEmpty else { return ("", nil) }
+        if measure(ctx, s, size: size, bold: bold) <= maxW { return (s, nil) }
+        let chars = Array(s)
+        var n = chars.count - 1
+        while n > 0 {
+            if measure(ctx, String(chars[0..<n]), size: size, bold: bold) <= maxW { break }
+            n -= 1
+        }
+        if n <= 0 { return (fit(ctx, s, size: size, bold: bold, maxW: maxW), nil) }
+        let head = String(chars[0..<n]).trimmingCharacters(in: .whitespaces)
+        let rest = String(chars[n...]).trimmingCharacters(in: .whitespaces)
+        if rest.isEmpty { return (head, nil) }
+        return (head, fit(ctx, rest, size: size, bold: bold, maxW: maxW))
     }
 
     // ── 底板 ────────────────────────────────────────────────────────
@@ -127,6 +150,8 @@ enum Draw {
     /// 水面底 + 顶部薄纱 —— P3RPage 的底在组件上的等价物。
     /// iOS 组件由系统做圆角裁切，这里只铺色，不再自己画圆角。
     static func panel(_ ctx: inout GraphicsContext, _ pal: Pal, _ w: CGFloat, _ h: CGFloat) {
+        // 色调模式：底交给系统的染色板，水面和薄纱都不上（画了也只是一层白雾）
+        if pal.mono { return }
         ctx.fill(Path(CGRect(x: 0, y: 0, width: w, height: h)), with: .color(pal.bg))
         ctx.fill(Path(CGRect(x: 0, y: 0, width: w, height: h * 0.34)), with: .color(pal.cyanFaint))
     }
@@ -170,10 +195,11 @@ enum Draw {
     static func fortuneChip(_ ctx: inout GraphicsContext, _ s: VelvetSnapshot,
                             x: CGFloat, y: CGFloat, size: CGFloat) {
         guard let label = s.fortuneLabel, !label.isEmpty else { return }
+        let pal = Pal.of(s)
         let tw = measure(ctx, label, size: size)
         let w = tw + size * 1.5
         let h = size * 1.7
-        slab(&ctx, x, y, x + w, y + h, cut: h * 0.28, color: s.fortuneAccent)
+        slab(&ctx, x, y, x + w, y + h, cut: h * 0.28, color: pal.mono ? pal.plate : s.fortuneAccent)
         text(&ctx, label, size: size, color: .white, bold: true, slant: true,
              x: x + size * 0.85, baselineY: y + h * 0.72)
     }
@@ -181,6 +207,8 @@ enum Draw {
     /// 月相：暗面圆 + 亮面双弧（与 Web 端 moonLitPath 同一套两弧法）
     static func moon(_ ctx: inout GraphicsContext, _ pal: Pal, phase: Double,
                      cx: CGFloat, cy: CGFloat, r: CGFloat) {
+        // 单色下暗面 / 亮面的填色会反过来（暗面是 ink = 全亮），改走锁屏那套白圈 + 白亮面
+        if pal.mono { moonMono(&ctx, phase: phase, cx: cx, cy: cy, r: r); return }
         ctx.fill(Path(ellipseIn: CGRect(x: cx - r, y: cy - r, width: r * 2, height: r * 2)),
                  with: .color(pal.cyanPale))
         let rx = max(0.01, CGFloat(abs(cos(2 * Double.pi * phase))) * r)

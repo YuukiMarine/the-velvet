@@ -1055,6 +1055,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     await db.users.update(user.id, { theme });
     set({ user: { ...user, theme } });
+    void pushWidgetSnapshot(); // 换主题：组件的频道色 / 夜间口径跟着变（第 5 轮补漏推）
     document.documentElement.setAttribute('data-theme', theme);
     applyUiChannel(theme);
     // 换肤后按闸门重估 .dark：切进红摘掉、切出红（且夜间开着）挂回
@@ -1516,6 +1517,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     await settingsWriteLock;
     const settings = get().settings;
     const updated = settings;
+    void pushWidgetSnapshot(); // 夜间 / 自定义主题色 / 名片状态都在 settings 里（第 5 轮补漏推）
 
     if (newSettings.levelThresholds) {
       const thresholds = updated.levelThresholds;
@@ -1735,6 +1737,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   loadCallingCards: async () => {
     const cards = await db.callingCards.orderBy('createdAt').reverse().toArray();
     set({ callingCards: cards });
+    // 宣告卡增改钉归档都从这里过：桌面组件跟着刷（第 5 轮补漏推；内部有指纹去重与合并）
+    void pushWidgetSnapshot();
   },
 
   saveCallingCard: async (card: CallingCard) => {
@@ -2747,6 +2751,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       
       // 应用夜间模式设置（经闸门：红频道不响应夜间）
        syncDarkClass(!!normalizedSettings.darkMode);
+       // 增删改任务、撤销完成、改截止日或重要标记……凡是写库后全量重读的操作都经过这里：
+       // 桌面组件一并刷（第 5 轮补漏推；300ms 合并 + 指纹去重，多叫几次不多推）
+       void pushWidgetSnapshot();
        // 自定义主题色
        const currentTheme = get().user?.theme;
        if (currentTheme === 'custom' && normalizedSettings.customThemeColor) {

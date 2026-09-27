@@ -24,8 +24,10 @@ import java.io.InputStream;
  * 布局退化为一个满幅 ImageView。
  *
  * 【位图预算】
- * AppWidget 的 RemoteViews 走 Binder，事务缓冲约 1 MB。4×2 在 3x 屏上按真实像素
- * 画是 1050×330 ≈ 1.39 MB，直接超限。长边统一压到 MAX_EDGE，由 ImageView 拉伸铺满。
+ * 位图在 RemoteViews 里走的是 ashmem（共享内存），不占 1 MB 的 Binder 事务缓冲；
+ * 系统真正的限制是「一次 updateAppWidget 的位图总内存 ≤ 1.5 × 屏幕像素 × 4 字节」
+ * （1080×2400 的机器约 15 MB）。第 5 轮长边上限从 640 放到 1080：以前 4×2 在 3x 屏上
+ * 被压到 640×301 再拉回 1020×480，字发虚；现在按接近真实像素画，横竖两张也才 4 MB 上下。
  *
  * 【v2.6.4 三项改动（用户实机反馈）】
  *   ① 4×2 两块支持缩到 **4×1**：`compact()` 按宽高比分流到单行版式，不是把
@@ -74,7 +76,7 @@ class VelvetP3 {
     }
 
     /** 位图长边上限（见类注释「位图预算」） */
-    private static final int MAX_EDGE = 640;
+    private static final int MAX_EDGE = 1080;
     /** P3R 的招牌斜度：文字用 skewX，容器用等价的水平位移 */
     private static final float SKEW = -0.20f;
     /**
@@ -136,8 +138,8 @@ class VelvetP3 {
         c.drawText(word, x, y, p);
     }
 
-    /** 字距展开的微型英文眉标（TODAY / TAROT / JOURNEY…） */
-    private static void eyebrow(Canvas c, String s, float size, float x, float y, int color) {
+    /** 字距展开的微型英文眉标（TODAY / TAROT / JOURNEY…）；返回画出来的总宽（后面要接东西时用） */
+    private static float eyebrow(Canvas c, String s, float size, float x, float y, int color) {
         Paint p = text(size, color, true, false);
         float tracking = size * 0.22f;
         float cx = x;
@@ -146,14 +148,34 @@ class VelvetP3 {
             c.drawText(ch, cx, y, p);
             cx += p.measureText(ch) + tracking;
         }
+        return s.isEmpty() ? 0 : cx - x - tracking;
     }
 
-    /** 截断到能塞进 maxW 的长度，超出加省略号 */
+    /** 最多两行：第一行按码点找最长能放下的前缀，余下的交给第二行（放不下就省略号）；返回 [行一, 行二或 null] */
+    private static String[] wrapTwo(String s, Paint p, float maxW) {
+        if (s == null || s.isEmpty()) return new String[] { "", null };
+        if (p.measureText(s) <= maxW) return new String[] { s, null };
+        int cps = s.codePointCount(0, s.length());
+        int n = cps - 1;
+        while (n > 0) {
+            if (p.measureText(s.substring(0, s.offsetByCodePoints(0, n))) <= maxW) break;
+            n--;
+        }
+        if (n <= 0) return new String[] { fit(s, p, maxW), null };
+        int cut = s.offsetByCodePoints(0, n);
+        String head = s.substring(0, cut).trim();
+        String rest = s.substring(cut).trim();
+        if (rest.isEmpty()) return new String[] { head, null };
+        return new String[] { head, fit(rest, p, maxW) };
+    }
+
+    /** 截断到能塞进 maxW 的长度，超出加省略号。按码点截：按 UTF-16 单位截会把 emoji 劈成两半（第 5 轮） */
     private static String fit(String s, Paint p, float maxW) {
         if (s == null) return "";
         if (p.measureText(s) <= maxW) return s;
-        for (int n = s.length() - 1; n > 0; n--) {
-            String t = s.substring(0, n) + "…";
+        int cps = s.codePointCount(0, s.length());
+        for (int n = cps - 1; n > 0; n--) {
+            String t = s.substring(0, s.offsetByCodePoints(0, n)) + "…";
             if (p.measureText(t) <= maxW) return t;
         }
         return "";
@@ -449,7 +471,9 @@ class VelvetP3 {
 
         eyebrow(c, "RECORD", u * 0.72f, lx, u * 8.6f, pal.blue);
         Paint days = text(u * 0.78f, pal.inkSoft, true, false);
-        String dtxt = "最近 " + Math.max(s.heat.length, 0) + " 天 · 连续 " + s.streak + " 天";
+        String dtxt = s.streakPending
+            ? "最近 " + Math.max(s.heat.length, 0) + " 天 · 今天待续"
+            : "最近 " + Math.max(s.heat.length, 0) + " 天 · 连续 " + s.streak + " 天";
         c.drawText(fit(dtxt, days, colW * 0.72f), rx - days.measureText(fit(dtxt, days, colW * 0.72f)), u * 8.6f, days);
         heatStrip(c, pal, s.heat, lx, u * 9.3f, colW, u * 2.1f);
 
@@ -497,14 +521,10 @@ class VelvetP3 {
     }
 
     /**
-     * 4×2「征途」（v2.7 重排，用户口径「排版和信息取舍差点意思 + 设计太难看」）。
-     *
-     * 取舍口径——「征途」讲的是**行进感**，留下的信息都得答"走到哪了"：
-     *   · 连续天数升格为蓝底白字大徽章（旅程的核心读数，此前是裸文字缩在角落）；
-     *   · 新增今日任务进度 + 14 天热力轨迹（行动感与"来时的路"）；
-     *   · 今日运势旗挂回塔罗牌下缘（它是牌面的读数，不该漂在宣告卡栏里）；
-     *   · 五维等级条撤下（抽象难读、与"征途"语义最远；"合计 Lv." 更是无意义数字）。
-     * 版式：左＝时间柱（日期/月相/连续徽章/热力轨迹），中＝塔罗锚点，右＝今日任务 + 宣告卡。
+     * 4×2「征途」（第 5 轮验收后重排，与 iOS Face.journey 逐坐标对齐）：
+     * 顶行小签（日期 · 名片状态 · 月相）｜左：连续天数大字 + 14 天热力｜中：塔罗｜右：宣告卡。
+     * 原版左列叠了五样东西、右列并排两块一样大的读数，没有主次（用户口径「全挤在一起、没有层级」）；
+     * 现在只留一个主角（连续天数），小读数全收进顶上一行；右列只放宣告卡，没有卡时才用今日任务补位。
      */
     static Bitmap journey(Context ctx, VelvetSnapshot s, int w, int h) {
         Pal pal = Pal.of(s);
@@ -513,43 +533,67 @@ class VelvetP3 {
         Canvas c = new Canvas(bmp);
         float u = h / 14f;
         ghost(c, pal, "JOURNEY", h * 0.44f, w * 0.30f, h * 0.99f);
+        float lx = u * 1.4f, rx = w - u * 1.4f;
+        float colL = u * 8.4f;
 
-        // ── 左：时间柱 ──
-        float lx = u * 1.4f;
-        float colL = u * 7.4f;                    // 左列宽
-        Paint dayP = text(u * 3.6f, pal.blue, true, true);
-        String day = s.day == null ? "--" : s.day;
-        c.drawText(day, lx, u * 3.7f, dayP);
-        float dayW = dayP.measureText(day);
-        eyebrow(c, s.monthEn == null ? "" : s.monthEn, u * 0.82f, lx + dayW + u * 0.55f, u * 2.4f, pal.ink);
-        eyebrow(c, s.weekdayEn == null ? "" : s.weekdayEn, u * 0.72f, lx + dayW + u * 0.55f, u * 3.5f, pal.inkSoft);
+        // ── 顶行小签：日期眉标 · 名片状态小签 · 月相 ──
+        float metaY = u * 1.85f;
+        String dateTxt = (s.monthEn == null ? "" : s.monthEn) + " " + (s.day == null ? "--" : s.day)
+            + " · " + (s.weekdayEn == null ? "" : s.weekdayEn);
+        float dateW = eyebrow(c, dateTxt, u * 0.78f, lx, metaY, pal.blue);
+        Paint mp = text(u * 0.78f, pal.inkSoft, true, false);
+        String moonTxt = fit(s.moonName == null ? "" : s.moonName, mp, u * 4f);
+        float moonW = mp.measureText(moonTxt);
+        float mr = u * 0.55f;
+        moon(c, pal, s.moonPhase, rx - moonW - u * 0.4f - mr, metaY - u * 0.3f, mr);
+        c.drawText(moonTxt, rx - moonW, metaY, mp);
+        if (s.status != null) {
+            // 名片状态：日期后面一枚小签（青白底），地方不够就截、太窄就不放
+            float chipX = lx + dateW + u * 0.8f;
+            float room = (rx - moonW - u * 0.4f - mr * 2 - u * 0.8f) - chipX - u * 1.0f;
+            if (room > u * 2) {
+                Paint sp = text(u * 0.74f, pal.ink, true, false);
+                String label = fit(s.status.emoji + " " + s.status.label, sp, room);
+                float lw = sp.measureText(label);
+                slab(c, chipX, metaY - u * 0.95f, chipX + lw + u * 1.0f, metaY + u * 0.35f, u * 0.3f, pal.cyanPale);
+                c.drawText(label, chipX + u * 0.5f, metaY, sp);
+            }
+        }
 
-        // 月相：小图标 + 名字一行（不再单独占两行）
-        float mr = u * 0.95f;
-        moon(c, pal, s.moonPhase, lx + mr, u * 5.5f, mr);
-        Paint mp = text(u * 0.82f, pal.inkSoft, true, false);
-        c.drawText(fit(s.moonName == null ? "" : s.moonName, mp, colL - mr * 2 - u * 0.6f),
-                   lx + mr * 2 + u * 0.6f, u * 5.8f, mp);
+        // ── 左：连续天数大字（主角）——放不下就先缩单位再缩数字 ──
+        float heroY = u * 7.0f;
+        String num = String.valueOf(s.streak);
+        float numSize = u * 4.6f;
+        String unit = s.streakPending ? "天 · 今天待续" : "天连续";
+        Paint unitP = text(u * 0.95f, pal.ink, true, false);
+        Paint numP = text(numSize, pal.blue, true, true);
+        float numW = numP.measureText(num);
+        float unitW = unitP.measureText(unit);
+        if (numW + u * 0.45f + unitW > colL) {
+            unit = s.streakPending ? "天 · 待续" : "天";
+            unitW = unitP.measureText(unit);
+        }
+        if (numW + u * 0.45f + unitW > colL) {
+            numSize = u * 3.4f;
+            numP = text(numSize, pal.blue, true, true);
+            numW = numP.measureText(num);
+        }
+        c.drawText(num, lx, heroY, numP);
+        c.drawText(unit, lx + numW + u * 0.45f, heroY - u * 0.05f, unitP);
 
-        // 连续天数徽章：蓝斜板 + 白大字（征途的核心读数）
-        float bT = u * 7.2f, bB = u * 9.6f;
-        slab(c, lx, bT, lx + colL, bB, u * 0.7f, pal.blue);
-        Paint stNum = text(u * 1.75f, Color.WHITE, true, true);
-        String st = String.valueOf(s.streak);
-        c.drawText(st, lx + u * 0.95f, bB - u * 0.72f, stNum);
-        Paint stTxt = text(u * 0.78f, Color.WHITE, true, false);
-        c.drawText("天连续", lx + u * 0.95f + stNum.measureText(st) + u * 0.35f, bB - u * 0.82f, stTxt);
-
-        // 14 天热力轨迹：来时的路（与「今日」组件的 RECORD 条同料不同位）
+        // RECORD 眉标 + 14 天热力（来时的路）
         int keep = Math.min(14, s.heat.length);
         int[] tail = new int[Math.max(1, keep)];
         if (keep > 0) System.arraycopy(s.heat, s.heat.length - keep, tail, 0, keep);
-        heatStrip(c, pal, tail, lx, u * 10.6f, colL, u * 1.7f);
+        eyebrow(c, "RECORD", u * 0.62f, lx, u * 8.55f, pal.blue);
+        Paint cap = text(u * 0.66f, pal.inkSoft, true, false);
+        String capTxt = "最近 " + tail.length + " 天";
+        c.drawText(capTxt, lx + colL - cap.measureText(capTxt), u * 8.55f, cap);
+        heatStrip(c, pal, tail, lx, u * 9.05f, colL, u * 1.55f);
 
         // ── 中：塔罗锚点 ──
-        float cardH = h * 0.78f, cardW = cardH * 0.63f;
-        float cardX = lx + colL + u * 1.2f;
-        float cardY = (h - cardH) / 2f;
+        float cardY = u * 3.4f, cardH = u * 9.0f, cardW = cardH * 0.63f;
+        float cardX = lx + colL + u * 1.1f;
         tarotCard(c, ctx, pal, s, cardX, cardY, cardW, cardH, false);
         // 运势旗贴在牌右上角（与左上罗马签对角呼应；放下缘会压住牌名带）
         if (s.fortuneLabel != null && s.fortuneLabel.length() > 0) {
@@ -558,40 +602,44 @@ class VelvetP3 {
             fortuneChip(c, s, cardX + cardW - chipW - u * 0.45f, cardY + u * 0.5f, chipSize);
         }
 
-        // ── 右：今日任务 + 宣告卡 ──
-        float px = cardX + cardW + u * 1.4f;
-        float rx = w - u * 1.4f;
+        // ── 右：宣告卡（次角）：标题最多两行 + 大读数 + 整宽进度条 ──
+        float px = cardX + cardW + u * 1.3f;
         float colR = rx - px;
-
-        eyebrow(c, "TODAY", u * 0.7f, px, u * 2.2f, pal.blue);
-        if (s.todosTotal > 0) {
-            Paint num = text(u * 2.1f, pal.ink, true, true);
-            String frac = s.todosDone + "/" + s.todosTotal;
-            c.drawText(frac, px, u * 4.6f, num);
-            Paint lbl = text(u * 0.8f, pal.inkSoft, true, false);
-            c.drawText("今日任务", px + num.measureText(frac) + u * 0.5f, u * 4.5f, lbl);
-            progress(c, pal, px, u * 5.4f, colR, u * 0.95f,
-                     Math.round(s.todosDone * 100f / s.todosTotal));
-        } else {
-            Paint lbl = text(u * 1.05f, pal.inkSoft, true, true);
-            c.drawText("今日没有安排", px, u * 4.4f, lbl);
-        }
-
+        eyebrow(c, "CALLING CARD", u * 0.7f, px, u * 3.55f, pal.blue);
         boolean has = s.cardTitle != null && s.cardTitle.length() > 0;
-        eyebrow(c, "CALLING CARD", u * 0.7f, px, u * 8.4f, pal.blue);
         if (has) {
-            Paint tp = text(u * 1.1f, pal.ink, true, true);
-            c.drawText(fit(s.cardTitle, tp, colR), px, u * 9.9f, tp);
-            Paint pctP = text(u * 1.7f, pal.blue, true, true);
-            String pct = s.cardPercent + "%";
-            c.drawText(pct, px, u * 12.2f, pctP);
-            float barX = px + pctP.measureText(pct) + u * 0.55f;
-            progress(c, pal, barX, u * 11.35f, Math.max(u * 2f, rx - barX), u * 0.9f, s.cardPercent);
+            Paint tp = text(u * 1.05f, pal.ink, true, true);
+            String[] lines = wrapTwo(s.cardTitle, tp, colR);
+            c.drawText(lines[0], px, u * 5.1f, tp);
+            if (lines[1] != null) c.drawText(lines[1], px, u * 6.45f, tp);
+            // 纯倒计时的卡直接读「剩 N 天」；按完成度的卡读百分比
+            String big;
+            if ("deadline".equals(s.cardMode) && s.cardDaysLeft != null) {
+                int d = s.cardDaysLeft;
+                big = d < 0 ? "已过期" : d == 0 ? "今天" : d + " 天";
+            } else {
+                big = s.cardPercent + "%";
+            }
+            // 大读数 + 整宽条：条底与左侧热力条底齐平（10.6u），两栏的底边对上；标题占两行时读数缩一号，别顶着标题
+            boolean two = lines[1] != null;
+            c.drawText(big, px, u * (two ? 9.0f : 8.9f), text(u * (two ? 2.0f : 2.3f), pal.blue, true, true));
+            progress(c, pal, px, u * 9.7f, colR, u * 0.9f, s.cardPercent);
         } else {
-            Paint tp = text(u * 1.0f, pal.inkSoft, true, true);
-            c.drawText("还没有宣告卡", px, u * 9.9f, tp);
-            Paint hint = text(u * 0.8f, pal.inkSoft, true, false);
-            c.drawText("立一个倒计时或目标宣言 →", px, u * 11.3f, hint);
+            c.drawText("还没有宣告卡", px, u * 5.1f, text(u * 1.0f, pal.inkSoft, true, true));
+            Paint hint = text(u * 0.78f, pal.inkSoft, true, false);
+            c.drawText(fit("立一个倒计时或目标宣言 →", hint, colR), px, u * 6.4f, hint);
+            // 没有卡的时候右下用今日任务补位，别空着
+            eyebrow(c, "TODAY", u * 0.7f, px, u * 7.7f, pal.blue);
+            if (s.todosTotal > 0) {
+                Paint np = text(u * 1.7f, pal.ink, true, true);
+                String frac = s.todosDone + "/" + s.todosTotal;
+                c.drawText(frac, px, u * 9.1f, np);
+                c.drawText("今日任务", px + np.measureText(frac) + u * 0.45f, u * 9.05f,
+                           text(u * 0.78f, pal.inkSoft, true, false));
+                progress(c, pal, px, u * 9.7f, colR, u * 0.9f, Math.round(s.todosDone * 100f / s.todosTotal));
+            } else {
+                c.drawText("今日没有安排", px, u * 9.1f, text(u * 1.0f, pal.inkSoft, true, true));
+            }
         }
 
         magentaCorner(c, pal, w, h, u);
@@ -620,7 +668,7 @@ class VelvetP3 {
         float bx = x + h * 0.6f;
         Paint stNum = text(h * 0.26f, Color.WHITE, true, true);
         Paint stTxt = text(h * 0.15f, Color.WHITE, true, false);
-        String st = String.valueOf(s.streak);
+        String st = s.streakText();
         float bw = stNum.measureText(st) + stTxt.measureText("天") + h * 0.32f;
         slab(c, bx, h * 0.28f, bx + bw, h * 0.72f, h * 0.13f, pal.blue);
         c.drawText(st, bx + h * 0.14f, h * 0.60f, stNum);
@@ -696,14 +744,14 @@ class VelvetP3 {
             Paint num = text(u * 1.6f, pal.blue, true, true);
             String frac = s.todosDone + "/" + s.todosTotal;
             c.drawText(frac, rx - num.measureText(frac), u * 1.9f, num);
-            progress(c, pal, lx, u * 2.45f, rx - lx, u * 0.9f,
+            progress(c, pal, lx, u * 2.35f, rx - lx, u * 0.8f,
                      Math.round(s.todosDone * 100f / s.todosTotal));
         }
 
         // 宣告卡倒计时行（有卡才有）：蓝 tick + 卡名 + 剩 N 天 + 右侧完成百分比
         float shift = 0;
         if (s.cardTitle != null && s.cardTitle.length() > 0) {
-            float base = u * 4.22f;
+            float base = u * 4.0f;
             tick(c, lx + u * 0.15f, base - u * 0.58f, u * 0.68f, u * 0.48f, pal.blue);
             Paint pctP = text(u * 0.9f, pal.blue, true, true);
             String pct = s.cardPercent + "%";
@@ -722,29 +770,47 @@ class VelvetP3 {
             if (days.length() > 0) {
                 c.drawText(days, lx + u * 1.25f + titleP.measureText(t), base, daysP);
             }
-            shift = u * 0.95f;
+            shift = u * 0.85f;
         }
 
-        float rowTop = u * 4.15f + shift;
-        int rows = 5;
+        // 行距 1.3u（验收后压紧）；能排几行按剩下的高度算：最后一行基线不超过 12.45u，别压到右下角标
+        float pitch = u * 1.3f;
+        float rowTop = u * 4.05f + shift;
         if (s.agendaDeal != null) {
-            agendaDealPlate(c, pal, s.agendaDeal, lx, rx, u * 4.1f + shift, u * 6.9f + shift, u);
-            rowTop = u * 7.45f + shift;
-            rows = 3;
+            // BIG DEAL 板压矮到 2.3u（用户反馈：板太高、条压到标题脚），省下的高度多排一行
+            agendaDealPlate(c, pal, s.agendaDeal, lx, rx, u * 3.95f + shift, u * 6.25f + shift, u);
+            rowTop = u * 6.7f + shift;
+        }
+        int rows = Math.max(1, (int) Math.floor((u * 12.45f - rowTop - u * 0.88f) / pitch) + 1);
+
+        // 升级后还没打开过 App：快照里没有清单字段，不能画成「全部完成」
+        if (!s.agendaKnown) {
+            c.drawText("打开 App 同步", lx, rowTop + u * 1.1f, text(u * 1.1f, pal.inkSoft, true, true));
+            magentaCorner(c, pal, w, h, u);
+            return bmp;
         }
 
-        // 任务行：塞不下时最后一格让位给「还有 N 项」
+        // 一起进步（第 5 轮）：有约定就占最下面一行（贴着右下角标的那行要给角标让位）
+        if (s.pact != null) {
+            rows -= 1;
+            float t = rowTop + pitch * rows;
+            boolean low = t + u * 0.88f > u * 12.0f;
+            Paint pp = text(u * 0.82f, "nudged".equals(s.pact.state) ? pal.magenta : pal.inkSoft, true, false);
+            c.drawText(fit("⇄ " + s.pact.line() + " · " + s.pact.title, pp, rx - lx - u * 0.3f - (low ? u * 2.4f : 0)),
+                       lx + u * 0.15f, t + u * 0.88f, pp);
+        }
+
+        // 任务行：塞不下时最后一格让位给「还有 N 项」；前两行带截止日标签（取舍规则见 widgetSnapshot 排序）
         VelvetSnapshot.AgendaItem[] items = s.agendaItems;
-        float pitch = u * 1.5f;
-        int shown = items.length > rows ? rows - 1 : items.length;
+        int shown = Math.max(0, items.length > rows ? rows - 1 : items.length);
         for (int i = 0; i < shown; i++) {
-            agendaItemRow(c, pal, items[i], lx, rx, rowTop + pitch * i, u);
+            agendaItemRow(c, pal, items[i], lx, rx, rowTop + pitch * i, u, i < 2);
         }
         if (items.length > rows) {
             float t = rowTop + pitch * shown;
-            tick(c, lx + u * 0.15f, t + u * 0.28f, u * 0.68f, u * 0.48f, pal.cyanPale);
+            tick(c, lx + u * 0.15f, t + u * 0.32f, u * 0.68f, u * 0.46f, pal.cyanPale);
             c.drawText("还有 " + (s.agendaLeft - shown) + " 项未完成",
-                       lx + u * 1.25f, t + u * 0.85f, text(u * 0.78f, pal.inkSoft, true, false));
+                       lx + u * 1.25f, t + u * 0.88f, text(u * 0.78f, pal.inkSoft, true, false));
         } else if (items.length == 0) {
             if (s.agendaDeal != null) {
                 c.drawText(s.todosTotal > 0 ? "其余任务已全部完成" : "今日没有其他安排",
@@ -789,6 +855,11 @@ class VelvetP3 {
         VelvetSnapshot.AgendaItem[] items = s.agendaItems;
         int drawnItems = 0;
         float base1 = h * 0.615f, base2 = h * 0.765f;
+        if (!s.agendaKnown) {
+            c.drawText("打开 App 同步", pad, base1, text(h * 0.085f, pal.inkSoft, true, true));
+            magentaCorner(c, pal, w, h, Math.min(w, h) / 14f);
+            return bmp;
+        }
         if (s.agendaDeal != null) {
             VelvetSnapshot.AgendaDeal deal = s.agendaDeal;
             slab(c, pad, base1 - h * 0.095f, rx, base1 + h * 0.035f, h * 0.035f, pal.blue);
@@ -848,43 +919,47 @@ class VelvetP3 {
                    px + h * 0.085f, baselineY, tp);
     }
 
-    /** BIG DEAL 板：强调色斜板反白——清单里最重的一块 */
+    /**
+     * BIG DEAL 板：强调色斜板反白——清单里最重的一块。
+     * 验收后压矮到 2.3u：眉标 + 剩 N 天一行，标题 + 步骤一行，最下面一条细倒计时条（与 iOS 同坐标）。
+     */
     private static void agendaDealPlate(Canvas c, Pal pal, VelvetSnapshot.AgendaDeal deal,
                                         float lx, float rx, float top, float bottom, float u) {
         slab(c, lx, top, rx, bottom, u * 0.7f, pal.blue);
         float ix = lx + u * 1.05f, irx = rx - u * 1.05f;
-        eyebrow(c, "BIG DEAL", u * 0.58f, ix, top + u * 0.85f, Color.argb(217, 255, 255, 255));
+        eyebrow(c, "BIG DEAL", u * 0.55f, ix, top + u * 0.75f, Color.argb(217, 255, 255, 255));
 
         // 剩 N 天：右上。≤2 天急迫态 = 白板 + 洋红字（在强调色板上比反过来醒目）
         if (deal.daysLeft != null) {
             int days = deal.daysLeft;
             String label = days > 0 ? "剩 " + days + " 天" : days == 0 ? "今天截止" : "已过截止";
             if (days <= 2) {
-                Paint tp = text(u * 0.72f, pal.magenta, true, true);
+                Paint tp = text(u * 0.68f, pal.magenta, true, true);
                 float tw = tp.measureText(label);
-                float cw = tw + u * 0.8f, chH = u * 1.05f;
-                slab(c, irx - cw, top + u * 0.18f, irx, top + u * 0.18f + chH, chH * 0.3f, Color.WHITE);
-                c.drawText(label, irx - cw + u * 0.4f, top + u * 0.18f + chH * 0.74f, tp);
+                float cw = tw + u * 0.8f, chH = u * 0.92f;
+                slab(c, irx - cw, top + u * 0.16f, irx, top + u * 0.16f + chH, chH * 0.3f, Color.WHITE);
+                c.drawText(label, irx - cw + u * 0.4f, top + u * 0.16f + chH * 0.74f, tp);
             } else {
-                Paint tp = text(u * 0.78f, Color.WHITE, true, false);
-                c.drawText(label, irx - tp.measureText(label), top + u * 0.85f, tp);
+                Paint tp = text(u * 0.74f, Color.WHITE, true, false);
+                c.drawText(label, irx - tp.measureText(label), top + u * 0.78f, tp);
             }
         }
 
         // 标题 + 步骤进度（同一行，步骤靠右）
+        float titleY = top + u * 1.62f;
         float reserve = 0;
         if (deal.total > 0) {
-            Paint fp = text(u * 0.9f, Color.WHITE, true, true);
+            Paint fp = text(u * 0.85f, Color.WHITE, true, true);
             String frac = deal.done + "/" + deal.total;
-            c.drawText(frac, irx - fp.measureText(frac), top + u * 2.0f, fp);
+            c.drawText(frac, irx - fp.measureText(frac), titleY, fp);
             reserve = fp.measureText(frac) + u * 0.5f;
         }
-        Paint tp = text(u * 1.0f, Color.WHITE, true, true);
-        c.drawText(fit(deal.title, tp, irx - ix - reserve), ix, top + u * 2.0f, tp);
+        Paint tp = text(u * 0.92f, Color.WHITE, true, true);
+        c.drawText(fit(deal.title, tp, irx - ix - reserve), ix, titleY, tp);
 
         // 倒计时进度条：立项 → 截止已流逝的时间。急迫时填充转洋红
         if (deal.timeUsed != null) {
-            float by = bottom - u * 0.55f, bh = u * 0.3f;
+            float by = bottom - u * 0.4f, bh = u * 0.22f;
             float cut = bh * 0.62f;
             slab(c, ix, by, irx, by + bh, cut, Color.argb(71, 255, 255, 255));
             float p = Math.max(0, Math.min(100, deal.timeUsed)) / 100f;
@@ -905,24 +980,37 @@ class VelvetP3 {
         }
     }
 
-    /** 一行未完成任务：tick + 标题（重要 = 琥珀 tick + 琥珀薄底板）+ 计次进度 */
+    /**
+     * 一行未完成任务：tick + 标题（重要 = 琥珀 tick + 琥珀薄底板）+ 计次进度 +（tag 时）截止日标签。
+     * 行距 1.3u（验收后压紧），tick 对齐字身中线。
+     */
     private static void agendaItemRow(Canvas c, Pal pal, VelvetSnapshot.AgendaItem it,
-                                      float lx, float rx, float top, float u) {
+                                      float lx, float rx, float top, float u, boolean tag) {
         if (it.important) {
-            slab(c, lx - u * 0.25f, top - u * 0.1f, rx + u * 0.25f, top + u * 1.25f,
+            slab(c, lx - u * 0.25f, top - u * 0.06f, rx + u * 0.25f, top + u * 1.12f,
                  u * 0.4f, AMBER_TINT);
         }
-        tick(c, lx + u * 0.15f, top + u * 0.26f, u * 0.68f, u * 0.48f, it.important ? AMBER : pal.cyan);
+        tick(c, lx + u * 0.15f, top + u * 0.32f, u * 0.68f, u * 0.46f, it.important ? AMBER : pal.cyan);
+        float base = top + u * 0.88f;
         float reserve = 0;
         if (it.target > 1) {
             Paint fp = text(u * 0.78f, pal.inkSoft, true, true);
             String frac = it.count + "/" + it.target;
-            c.drawText(frac, rx - u * 0.2f - fp.measureText(frac), top + u * 0.85f, fp);
+            c.drawText(frac, rx - u * 0.2f - fp.measureText(frac), base, fp);
             reserve = fp.measureText(frac) + u * 0.55f;
+        }
+        // 截止日标签（第 5 轮）：逾期 / 今天截止用洋红，其余灰
+        String dl = tag ? VelvetSnapshot.deadlineTag(it.daysLeft, false) : null;
+        if (dl != null) {
+            boolean hot = it.daysLeft != null && it.daysLeft <= 0;
+            Paint dp = text(u * 0.7f, hot ? pal.magenta : pal.inkSoft, true, false);
+            float dw = dp.measureText(dl);
+            c.drawText(dl, rx - u * 0.2f - reserve - dw, base, dp);
+            reserve += dw + u * 0.45f;
         }
         Paint tp = text(u * 0.85f, pal.ink, true, false);
         c.drawText(fit(it.title, tp, rx - u * 0.2f - reserve - (lx + u * 1.25f)),
-                   lx + u * 1.25f, top + u * 0.85f, tp);
+                   lx + u * 1.25f, base, tp);
     }
 
     /**
@@ -938,6 +1026,11 @@ class VelvetP3 {
         float pad = h * 0.14f;
         float lx = pad, rx = w - pad;
         VelvetSnapshot.AgendaItem[] items = s.agendaItems;
+
+        if (!s.agendaKnown) {
+            c.drawText("打开 App 同步", lx + h * 0.1f, h * 0.58f, text(h * 0.22f, pal.inkSoft, true, true));
+            return bmp;
+        }
 
         // 空态：一句话交代 + 分数
         if (s.agendaDeal == null && items.length == 0) {
@@ -965,7 +1058,8 @@ class VelvetP3 {
             float reserve = 0;
             if (deal.daysLeft != null) {
                 int days = deal.daysLeft;
-                String label = days > 0 ? "剩" + days + "天" : days == 0 ? "今天截止" : "已过截止";
+                // 紧迫态（剩 ≤3 天）加「!」（第 5 轮，与锁屏同口径）
+                String label = (days > 0 ? "剩" + days + "天" : days == 0 ? "今天截止" : "已过截止") + (days <= 3 ? "!" : "");
                 boolean urgent = days <= 2;
                 Paint dp = text(h * 0.15f, Color.WHITE, true, false);
                 float dw = dp.measureText(label);
@@ -980,7 +1074,7 @@ class VelvetP3 {
             c.drawText(fit(deal.title, tp, rx - h * 0.14f - reserve - (lx + h * 0.14f)),
                        lx + h * 0.14f, h * 0.34f, tp);
         } else {
-            agendaCompactRow(c, pal, items[0], lx, rx, h * 0.32f, h);
+            agendaCompactRow(c, pal, items[0], lx, rx, h * 0.32f, h, true);
             drawnItems = 1;
         }
 
@@ -993,7 +1087,7 @@ class VelvetP3 {
                 readoutW = rp.measureText(readout);
                 row2Rx = rx - readoutW - h * 0.24f;
             }
-            agendaCompactRow(c, pal, items[drawnItems], lx, row2Rx, h * 0.82f, h);
+            agendaCompactRow(c, pal, items[drawnItems], lx, row2Rx, h * 0.82f, h, s.agendaDeal != null);
         } else if (s.agendaDeal != null) {
             c.drawText(s.todosTotal > 0 ? "其余任务已完成" : "今日没有其他安排",
                        lx + h * 0.26f, h * 0.82f, text(h * 0.16f, pal.inkSoft, true, false));
@@ -1002,9 +1096,9 @@ class VelvetP3 {
         return bmp;
     }
 
-    /** 4×1 的任务行：tick + 标题 +（计次任务的）c/n */
+    /** 4×1 的任务行：tick + 标题 +（计次任务的）c/n +（tag 时）截止日标签 */
     private static void agendaCompactRow(Canvas c, Pal pal, VelvetSnapshot.AgendaItem it,
-                                         float px, float rx, float baselineY, float h) {
+                                         float px, float rx, float baselineY, float h, boolean tag) {
         tick(c, px, baselineY - h * 0.13f, h * 0.17f, h * 0.12f, it.important ? AMBER : pal.cyan);
         float reserve = 0;
         if (it.target > 1) {
@@ -1012,6 +1106,14 @@ class VelvetP3 {
             String frac = it.count + "/" + it.target;
             c.drawText(frac, rx - fp.measureText(frac), baselineY, fp);
             reserve = fp.measureText(frac) + h * 0.4f;
+        }
+        String dl = tag ? VelvetSnapshot.deadlineTag(it.daysLeft, true) : null;
+        if (dl != null) {
+            boolean hot = it.daysLeft != null && it.daysLeft <= 0;
+            Paint dp = text(h * 0.14f, hot ? pal.magenta : pal.inkSoft, true, false);
+            float dw = dp.measureText(dl);
+            c.drawText(dl, rx - reserve - dw, baselineY, dp);
+            reserve += dw + h * 0.2f;
         }
         Paint tp = text(h * 0.19f, pal.ink, true, false);
         c.drawText(fit(it.title, tp, rx - reserve - (px + h * 0.26f)),

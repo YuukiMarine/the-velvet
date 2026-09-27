@@ -10,6 +10,40 @@ extension Draw {
         let cut = w * 0.09
         let drawn = !(s.tarotName ?? "").isEmpty
 
+        if pal.mono {
+            // 色调模式：只有 alpha 能活——墨色外板会变成一整块白，牌面图也会（不透明图 = 白块）。
+            // 改成描边外框 + 罗马数字 / 牌名文字；没抽时和彩色版同一组字。
+            let pad = w * 0.045
+            ctx.stroke(slabPath(x + pad * 0.5, y + pad * 0.5, x + w - pad * 0.5, y + h - pad * 0.5, cut: cut),
+                       with: .color(.white.opacity(0.9)), lineWidth: max(1.5, w * 0.045))
+            if drawn {
+                text(&ctx, s.tarotRoman, size: h * (mini ? 0.3 : 0.26), color: .white, bold: true, slant: true,
+                     x: x + w / 2, baselineY: y + h * (mini ? 0.58 : 0.52), align: .center)
+                if !mini {
+                    let nm = fit(ctx, s.tarotName, size: h * 0.095, maxW: w * 0.86)
+                    text(&ctx, nm, size: h * 0.095, color: .white.opacity(0.85), bold: true, slant: true,
+                         x: x + w / 2, baselineY: y + h * 0.87, align: .center)
+                    if s.tarotReversed {
+                        text(&ctx, "逆", size: h * 0.075, color: .white.opacity(0.85), bold: true, slant: true,
+                             x: x + w - pad - w * 0.16, baselineY: y + pad + h * 0.09)
+                    }
+                }
+            } else {
+                let ts = h * (mini ? 0.17 : 0.115)
+                if mini {
+                    text(&ctx, "未抽", size: ts, color: .white.opacity(0.7), bold: true, slant: true,
+                         x: x + w / 2, baselineY: y + h * 0.6, align: .center)
+                } else {
+                    text(&ctx, "今日", size: ts, color: .white.opacity(0.7), bold: true, slant: true,
+                         x: x + w / 2, baselineY: y + h * 0.47, align: .center)
+                    text(&ctx, "未抽", size: ts, color: .white.opacity(0.7), bold: true, slant: true,
+                         x: x + w / 2, baselineY: y + h * 0.64, align: .center)
+                    eyebrow(&ctx, "TAROT", size: h * 0.055, x: x + w * 0.20, baselineY: y + h * 0.80, color: .white)
+                }
+            }
+            return
+        }
+
         slab(&ctx, x, y, x + w, y + h, cut: cut, color: pal.ink)
         let pad = w * 0.045
         slab(&ctx, x + pad, y + pad, x + w - pad, y + h - pad, cut: cut * 0.9, color: pal.panel)
@@ -71,7 +105,7 @@ extension Draw {
             let rs = h * (mini ? 0.13 : 0.085)
             let bw = measure(ctx, s.tarotRoman, size: rs) + w * 0.16
             let bh = h * (mini ? 0.2 : 0.13)
-            slab(&ctx, x + pad, y + pad, x + pad + bw, y + pad + bh, cut: bh * 0.3, color: pal.blue)
+            slab(&ctx, x + pad, y + pad, x + pad + bw, y + pad + bh, cut: bh * 0.3, color: pal.plate)
             text(&ctx, s.tarotRoman, size: rs, color: .white, bold: true, slant: true,
                  x: x + pad + w * 0.09, baselineY: y + pad + bh * 0.76)
         }

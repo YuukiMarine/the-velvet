@@ -67,10 +67,11 @@ export function daysSinceFirstRecord(dates: (string | Date)[], now: Date = new D
  * no entry yet but yesterday has, the streak counts from yesterday (same semantics
  * as the Statistics page). Returns 0 when the most recent entry is older than yesterday.
  */
-export function calcCurrentStreak(dates: (string | Date)[]): number {
+export function calcCurrentStreak(dates: (string | Date)[], now: Date = new Date()): number {
   if (dates.length === 0) return 0;
   const unique = [...new Set(dates.map(localDayNumber))].sort((a, b) => a - b);
-  const today = localDayNumber(new Date());
+  // now 可指定（小组件的「明日预演」按明天零点算：今天没记录的话，到明天这条链就断了）
+  const today = localDayNumber(now);
   const latest = unique[unique.length - 1];
   if (latest !== today && latest !== today - 1) return 0;
   let streak = 1;
