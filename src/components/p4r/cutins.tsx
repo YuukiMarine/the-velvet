@@ -382,12 +382,16 @@ export const AchievementUnlockP4 = ({ isOpen, onClose, achievementTitle, message
 };
 
 // ── 05 · 恭喜升级 ──────────────────────────────────────────────────────────
-export const LevelUpP4 = ({ isOpen, onClose, attributeName, newLevel }: {
+export const LevelUpP4 = ({ isOpen, onClose, attributeName, newLevel, masteryStars }: {
   isOpen: boolean; onClose: () => void; attributeName: string; newLevel: number;
+  /** 精通升星（第 6 轮）：有值时文案换「精通 ★N」 */
+  masteryStars?: number;
 }) => {
   const anim = useBoldness();
+  const stars = masteryStars ?? 0;
+  const isMastery = stars > 0;
   return (
-    <P4CutInStage isOpen={isOpen} onClose={onClose} ariaLabel={`恭喜升级！${attributeName} Lv.${newLevel}`} autoCloseMs={4200} onShown={triggerLevelFeedback}>
+    <P4CutInStage isOpen={isOpen} onClose={onClose} ariaLabel={isMastery ? `精通提升！${attributeName} ★${stars}` : `恭喜升级！${attributeName} Lv.${newLevel}`} autoCloseMs={4200} onShown={triggerLevelFeedback}>
       <div className="relative pb-6 pt-2">
         {/* 橙盘 + 顶部大奶油四角星（稿上主视觉） */}
         <Badge anim={anim} size={260}>
@@ -422,9 +426,9 @@ export const LevelUpP4 = ({ isOpen, onClose, attributeName, newLevel }: {
             animate={{ y: 0, opacity: 1 }}
             transition={{ type: 'spring', stiffness: 360, damping: 24, delay: 0.46 }}
           >
-            <span>Lv.{Math.max(1, newLevel - 1)}</span>
+            <span>{isMastery ? `★${stars - 1}` : `Lv.${Math.max(1, newLevel - 1)}`}</span>
             <span style={{ color: CREAM }}>→</span>
-            <span>Lv.</span>
+            <span>{isMastery ? '★' : 'Lv.'}</span>
             {/* 新等级：蓝圆号（稿上这一枚是黄字蓝底） */}
             <motion.span
               className="flex h-[46px] w-[46px] items-center justify-center rounded-full text-[28px]"
@@ -433,14 +437,14 @@ export const LevelUpP4 = ({ isOpen, onClose, attributeName, newLevel }: {
               animate={{ scale: 1, rotate: 0 }}
               transition={{ type: 'spring', stiffness: 420, damping: 16, delay: 0.62 }}
             >
-              {newLevel}
+              {isMastery ? stars : newLevel}
             </motion.span>
           </motion.div>
         </div>
 
         <div className="relative z-20 -mt-[30px]">
-          <Plate delay={0.28} anim={anim} size={26} rot={-3} stars={false}>恭喜升级！</Plate>
-          <Ribbon delay={0.76} anim={anim}>继续加油，你越来越强了！</Ribbon>
+          <Plate delay={0.28} anim={anim} size={26} rot={-3} stars={false}>{isMastery ? '精通提升！' : '恭喜升级！'}</Plate>
+          <Ribbon delay={0.76} anim={anim}>{isMastery ? '满级之后，你还在往前走。' : '继续加油，你越来越强了！'}</Ribbon>
         </div>
         <Confetti anim={anim} />
         <P4CloseKey onClose={onClose} tone={ORANGE} style={{ right: -6, top: 40 }} />

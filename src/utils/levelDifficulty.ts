@@ -14,16 +14,19 @@ import type { LevelDifficulty, Settings, ThemeType } from '@/types';
 const eq = (a: number[] | undefined, b: readonly number[]) =>
   !!a && a.length >= b.length && b.every((v, i) => a[i] === v);
 
+/** 2.7.0.6 第 6 轮换数字之前的困难档 LV1-5：老账号没写 levelDifficulty 时按它也能认出「困难」 */
+const LEGACY_HARD_BASE = [0, 60, 170, 300, 500] as const;
+
 /**
  * 当前档位。
  *
  * 优先信显式设置；没有（老存档）就按阈值反推——只有和某一档的 LV1-5 **完全一致**
- * 才算数，手改过阈值的人两边都不沾，按简单档处理（不给困难档的高调配色，
+ * 才算数（新旧两组困难数字都认），手改过阈值的人两边都不沾，按简单档处理（不给困难档的高调配色，
  * 那个标记应当只属于真的在走困难档的人）。
  */
 export function resolveLevelDifficulty(settings: Pick<Settings, 'levelDifficulty' | 'levelThresholds'>): LevelDifficulty {
   if (settings.levelDifficulty) return settings.levelDifficulty;
-  if (eq(settings.levelThresholds, LEVEL_PRESETS.hard.base)) return 'hard';
+  if (eq(settings.levelThresholds, LEVEL_PRESETS.hard.base) || eq(settings.levelThresholds, LEGACY_HARD_BASE)) return 'hard';
   return 'easy';
 }
 

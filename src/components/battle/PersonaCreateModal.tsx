@@ -226,13 +226,10 @@ export function PersonaCreateModal({ isOpen, onClose }: Props) {
       if (!battleState) {
         const bs: BattleState = {
           id: 'current',
-          shadowId: '',
-          personaId: persona.id,
           playerHp: settings.battlePlayerMaxHp ?? PLAYER_BASE_HP,
           playerMaxHp: settings.battlePlayerMaxHp ?? PLAYER_BASE_HP,
           sp: 0,
           totalSpEarned: 0,
-          battleLog: [],
           status: 'idle',
           shadowsDefeated: 0,
         };

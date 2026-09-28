@@ -137,8 +137,6 @@ export const STRATUM_SP_COEF = [1, 1.25, 1.5, 1.85, 2.2];
 export const FLOOR_SP_BANDS: Array<[number, number]> = [[3, 5], [6, 9], [10, 14]];
 /** 心魔（区层主影）击破 SP。R19 用户拍板：Lv1-5 逐级 5/10/15/20/25；Lv6 伪神走终局奖励，这里给 25 收口 */
 export const BOSS_SP_BY_LEVEL = [5, 10, 15, 20, 25, 25];
-/** @deprecated 旧口径（30 × 区层系数），仅留给可能的存量引用 */
-export const BOSS_SP_BASE = 30;
 export const DEEPEN_SP_MULT = 1.1;
 
 /** 节点 SP 奖励（rng 注入取整区间） */

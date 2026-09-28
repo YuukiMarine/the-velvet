@@ -11,7 +11,9 @@ import { useRef } from 'react';
 import { motion } from 'motion/react';
 import { useAppStore } from '@/store';
 import type { AttributeId } from '@/types';
-import { getAttributeLevelTitle } from '@/utils/attributeLevelTitles';
+import { getAttributeLevelTitle, getMasteryTitle } from '@/utils/attributeLevelTitles';
+import { masteryOf } from '@/utils/levels';
+import { resolveLevelDifficulty } from '@/utils/levelDifficulty';
 import { P4Flower, P4Sparkle, P4Check } from '@/ui/p4Kit';
 
 const ORANGE = 'var(--p4-orange, #f9a11b)';
@@ -33,9 +35,14 @@ export const AttrDetailInlineP4 = ({ attrId, level: fallbackLevel, onBack }: {
   const curThreshold = level > 1 ? thresholds[level - 1] : 0;
   const nextThreshold = !isMax ? thresholds[level] : thresholds[lvlMax - 1];
   const points = attr?.points ?? 0;
-  const progress = isMax ? 1 : Math.max(0, Math.min(1, (points - curThreshold) / Math.max(1, nextThreshold - curThreshold)));
+  // 精通（第 6 轮）：满 10 级后每 500 / 700 点一颗星；进度条与称号都改走精通口径
+  const mastery = isMax ? masteryOf(points, thresholds, resolveLevelDifficulty(settings)) : null;
+  const stars = mastery?.stars ?? 0;
+  const progress = mastery ? mastery.progress : isMax ? 1 : Math.max(0, Math.min(1, (points - curThreshold) / Math.max(1, nextThreshold - curThreshold)));
+  const progressLabel = isMax ? (mastery ? `精通 ★${stars} · 距下一颗` : '已达最高等级') : `距 Lv.${level + 1}`;
+  const progressValue = isMax ? (mastery ? `${mastery.step - mastery.toNext}/${mastery.step}` : 'MAX') : `${points - curThreshold}/${nextThreshold - curThreshold}`;
   const name = settings.attributeNames?.[attrId] || attr?.displayName || '';
-  const curTitle = getAttributeLevelTitle(settings.attributeLevelTitles, attrId, level);
+  const curTitle = stars > 0 ? getMasteryTitle(attrId, stars) : getAttributeLevelTitle(settings.attributeLevelTitles, attrId, level);
   const related = achievements.filter((a) => a.condition.attribute === attrId || a.condition.type === 'all_attributes_max');
   const unlockedCount = related.filter((a) => a.unlocked).length;
   const achScrollRef = useRef<HTMLDivElement>(null);
@@ -72,7 +79,7 @@ export const AttrDetailInlineP4 = ({ attrId, level: fallbackLevel, onBack }: {
           <span className="relative inline-flex items-baseline gap-1 px-4 py-1" style={{ background: ORANGE, borderRadius: 16, transform: 'skewX(-8deg)' }}>
             <span className="flex items-baseline gap-1" style={{ transform: 'skewX(8deg)' }}>
               <span className="text-[11px] font-black tracking-wider" style={{ color: INK }}>LV</span>
-              <span className="text-[20px] font-black leading-none tabular-nums" style={{ color: INK }}>{level}</span>
+              <span className="text-[20px] font-black leading-none tabular-nums" style={{ color: INK }}>{level}{stars > 0 && <span className="ml-0.5 text-[11px]">★{stars}</span>}</span>
             </span>
           </span>
           <span className="text-[16px] font-black" style={{ color: INK }}>{curTitle}</span>
@@ -83,8 +90,8 @@ export const AttrDetailInlineP4 = ({ attrId, level: fallbackLevel, onBack }: {
       {/* 进度（奶油槽 + 橙填充，斜切胶囊） */}
       <motion.div className="relative mt-4" variants={fromRight} transition={spring}>
         <div className="mb-1 flex items-baseline justify-between text-[11px] font-black" style={{ color: INK }}>
-          <span>{isMax ? '已达最高等级' : `距 Lv.${level + 1}`}</span>
-          <span className="tabular-nums">{isMax ? 'MAX' : `${points - curThreshold}/${nextThreshold - curThreshold}`}</span>
+          <span>{progressLabel}</span>
+          <span className="tabular-nums">{progressValue}</span>
         </div>
         <div className="relative h-[12px] w-full overflow-hidden" style={{ background: PAPER, borderRadius: 8 }}>
           <div className="absolute inset-y-0 left-0" style={{ width: `${progress * 100}%`, background: `linear-gradient(90deg, ${ORANGE}, #ffd043)`, borderRadius: 8 }} />
@@ -121,6 +128,38 @@ export const AttrDetailInlineP4 = ({ attrId, level: fallbackLevel, onBack }: {
           })}
         </div>
       </motion.div>
+
+      {/* 精通星阶（第 6 轮）：只在站上 Lv.10 时出现，样式沿用称号阶梯 */}
+      {mastery && (
+        <motion.div className="relative mt-4" variants={fromRight} transition={spring}>
+          <div className="mb-1.5 flex items-center gap-1.5">
+            <P4Flower size={13} color={INK} />
+            <span className="text-[12px] font-black" style={{ color: INK }}>精通 · 每 {mastery.step} 点一颗星</span>
+          </div>
+          <div className="space-y-1">
+            {Array.from({ length: stars + 1 }, (_, k) => k + 1).map((k) => {
+              const reached = k <= stars;
+              const current = k === stars && reached;
+              return (
+                <div
+                  key={k}
+                  className="flex items-center gap-2.5 px-3 py-1.5 text-[13px]"
+                  style={{
+                    background: current ? INK : reached ? PAPER : 'rgba(19,19,19,0.06)',
+                    borderRadius: 12,
+                    color: current ? PAPER : reached ? INK : 'rgba(19,19,19,0.45)',
+                  }}
+                >
+                  <span className="w-9 shrink-0 text-[11px] font-black tabular-nums">★{k}</span>
+                  <span className="flex-1 font-black">{getMasteryTitle(attrId, k)}</span>
+                  {current && <span className="text-[10px] font-black" style={{ color: ORANGE }}>◀ 现在</span>}
+                  {!reached && <span className="text-[10px] tabular-nums">还差 {mastery.toNext} pt</span>}
+                </div>
+              );
+            })}
+          </div>
+        </motion.div>
+      )}
 
       {/* 关联成就（横滑奶油小卡） */}
       <motion.div className="relative mt-4" variants={fromRight} transition={spring}>

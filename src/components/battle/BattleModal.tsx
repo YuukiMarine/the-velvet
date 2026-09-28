@@ -17,7 +17,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { useBackHandler } from '@/utils/useBackHandler';
 import { AttributeId, PersonaSkill, MobSpec } from '@/types';
 import { triggerLightHaptic, playSound } from '@/utils/feedback';
-import { isInShadowTime, SKILL_EFFECT_MAP } from '@/constants';
+import { SKILL_EFFECT_MAP } from '@/constants';
 import { useBoldness } from '@/utils/boldness';
 import { BattleEngine, PlayerActionInput, FxEvent, TurnResult } from '@/battle/engine';
 import { QTE_FALLBACK_MULT, healAmount, BASIC_ATTACK_POWER, maskBondTier, FATE_GLIMPSE_ADD } from '@/battle/numbers';
@@ -75,9 +75,9 @@ const MASK_PASSIVE_HINT: Record<AttributeId, string> = {
 export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounterEnd }: Props) {
   const {
     user, persona, shadow, battleState, attributes, settings,
-    startBattleSession, endBattleSession, saveBattleState, equipMask,
+    endBattleSession, saveBattleState, equipMask,
     stratum, towerRecordBattleStats,
-  } = useAppStore(useShallow(s => ({ user: s.user, persona: s.persona, shadow: s.shadow, battleState: s.battleState, attributes: s.attributes, settings: s.settings, startBattleSession: s.startBattleSession, endBattleSession: s.endBattleSession, saveBattleState: s.saveBattleState, equipMask: s.equipMask, stratum: s.stratum, towerRecordBattleStats: s.towerRecordBattleStats })));
+  } = useAppStore(useShallow(s => ({ user: s.user, persona: s.persona, shadow: s.shadow, battleState: s.battleState, attributes: s.attributes, settings: s.settings, endBattleSession: s.endBattleSession, saveBattleState: s.saveBattleState, equipMask: s.equipMask, stratum: s.stratum, towerRecordBattleStats: s.towerRecordBattleStats })));
   const bold = useBoldness();
   const isEncounter = !!encounter;
 
@@ -133,12 +133,6 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
   const [actionMenuOpen, setActionMenuOpen] = useState(false);
   const [confidantSupportToast, setConfidantSupportToast] = useState<string | null>(null);
 
-  const shadowTime = isInShadowTime(
-    settings.battleShadowTimeDays ?? [5, 6, 0],
-    settings.battleShadowTimeStart ?? 20,
-    settings.battleShadowTimeEnd ?? 7
-  );
-
   const attrNamesMap = settings.attributeNames as Record<AttributeId, string>;
   const snap = engineRef.current?.snapshot ?? null;
 
@@ -192,11 +186,7 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
     }
     if (!persona || !battleState) return;
     if (!isEncounter && !shadow) return;
-    // 塔模式下 HP 跨节点持续，每日回满只发生在 enterTowerToday；
-    // 仅旧模型（无区层）保留进场自动开 session
-    if (!isEncounter && !stratum && (battleState.status === 'idle' || battleState.status === 'shadow_phase2') && shadowTime) {
-      startBattleSession();
-    }
+    // 塔模式下 HP 跨节点持续，每日回满只发生在 enterTowerToday（旧单影模型的进场自动开 session 已删）
     const bs = useAppStore.getState().battleState!;
     const sh = useAppStore.getState().shadow!;
 
@@ -1078,7 +1068,6 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
                   return;
                 }
                 // 塔模式：败退锁定当晚（status 已是 session_end），不重置为 idle
-                if (!stratum) endBattleSession();
                 onClose();
               }}
               className="px-6 py-3 rounded-xl text-white font-semibold"

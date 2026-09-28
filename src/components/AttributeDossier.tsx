@@ -10,7 +10,9 @@ import { useAppStore } from '@/store';
 import type { AttributeId } from '@/types';
 import { SheetModal } from '@/components/SheetModal';
 import { PersonaProgress } from '@/ui/components/PersonaProgress';
-import { getAttributeLevelTitle } from '@/utils/attributeLevelTitles';
+import { getAttributeLevelTitle, getMasteryTitle } from '@/utils/attributeLevelTitles';
+import { masteryOf } from '@/utils/levels';
+import { resolveLevelDifficulty } from '@/utils/levelDifficulty';
 
 export interface AttributeDossierProps {
   attrId: AttributeId | null;
@@ -33,10 +35,15 @@ export const AttributeDossier = ({ attrId, onClose, originRef }: AttributeDossie
   const curThreshold = level > 1 ? thresholds[level - 1] : 0;
   const nextThreshold = !isMax ? thresholds[level] : thresholds[lvlMax - 1];
   const points = attr?.points ?? 0;
-  const progress = isMax ? 1 : Math.max(0, Math.min(1, (points - curThreshold) / Math.max(1, nextThreshold - curThreshold)));
+  // 精通（第 6 轮）：满 10 级后每 500 / 700 点一颗星；进度条与称号都改走精通口径
+  const mastery = isMax ? masteryOf(points, thresholds, resolveLevelDifficulty(settings)) : null;
+  const stars = mastery?.stars ?? 0;
+  const progress = mastery ? mastery.progress : isMax ? 1 : Math.max(0, Math.min(1, (points - curThreshold) / Math.max(1, nextThreshold - curThreshold)));
+  const progressLabel = isMax ? (mastery ? `精通 ★${stars} · 距下一颗` : '已达最高等级') : `距 Lv.${level + 1}`;
+  const progressValue = isMax ? (mastery ? `${mastery.step - mastery.toNext}/${mastery.step}` : 'MAX') : `${points - curThreshold}/${nextThreshold - curThreshold}`;
 
   const name = attr ? (settings.attributeNames?.[attr.id as AttributeId] || attr.displayName) : '';
-  const curTitle = attrId ? getAttributeLevelTitle(settings.attributeLevelTitles, attrId, level) : '';
+  const curTitle = attrId ? (stars > 0 ? getMasteryTitle(attrId, stars) : getAttributeLevelTitle(settings.attributeLevelTitles, attrId, level)) : '';
 
   const related = attrId
     ? achievements.filter(
@@ -58,7 +65,7 @@ export const AttributeDossier = ({ attrId, onClose, originRef }: AttributeDossie
           <div className="rounded-xl bg-gray-50 px-4 py-3.5 dark:bg-gray-800/60">
             <div className="flex items-baseline justify-between">
               <div className="flex items-baseline gap-2">
-                <span className="text-3xl font-black tabular-nums text-primary">Lv.{level}</span>
+                <span className="text-3xl font-black tabular-nums text-primary">Lv.{level}{stars > 0 && <span className="ml-0.5 text-[13px]">★{stars}</span>}</span>
                 <span className="text-sm font-bold text-gray-700 dark:text-gray-200">{curTitle}</span>
               </div>
               <span className="text-xs tabular-nums text-gray-400">{points} pt</span>
@@ -67,8 +74,8 @@ export const AttributeDossier = ({ attrId, onClose, originRef }: AttributeDossie
               className="mt-2.5"
               channel="neutral"
               value={progress}
-              label={isMax ? '已达最高等级' : `距 Lv.${level + 1}`}
-              valueText={isMax ? 'MAX' : `${points - curThreshold}/${nextThreshold - curThreshold}`}
+              label={progressLabel}
+              valueText={progressValue}
             />
           </div>
 
@@ -101,6 +108,32 @@ export const AttributeDossier = ({ attrId, onClose, originRef }: AttributeDossie
               })}
             </div>
           </div>
+
+          {/* 精通（第 6 轮）：满级后的星阶，只在站上 Lv.10 时出现 */}
+          {mastery && (
+            <div>
+              <div className="mb-2 text-[11px] font-bold tracking-wider text-gray-400 dark:text-gray-500">精通 · 每 {mastery.step} 点一颗星</div>
+              <div className="space-y-1">
+                {Array.from({ length: stars + 1 }, (_, k) => k + 1).map((k) => {
+                  const reached = k <= stars;
+                  const current = k === stars;
+                  return (
+                    <div
+                      key={k}
+                      className={`flex items-center gap-2.5 rounded-lg px-3 py-1.5 text-sm ${
+                        current && reached ? 'bg-primary/10 font-bold text-primary' : reached ? 'text-gray-700 dark:text-gray-200' : 'text-gray-300 dark:text-gray-600'
+                      }`}
+                    >
+                      <span className="w-10 shrink-0 text-[11px] font-bold tabular-nums">★{k}</span>
+                      <span className="flex-1">{getMasteryTitle(attrId, k)}</span>
+                      {current && reached && <span className="text-[10px] font-black">◀ 现在</span>}
+                      {!reached && <span className="text-[10px] tabular-nums">还差 {mastery.toNext} pt</span>}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* 关联成就 */}
           <div>

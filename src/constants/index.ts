@@ -24,15 +24,18 @@ export const DEFAULT_ATTRIBUTE_NAMES = {
  * 「恢复默认」顺手替玩家把 10 档全开了。
  */
 export const LEVEL_PRESETS = {
-  /** 简单：新档默认。LV5 前更快见到成长，LV6-9 每级 +200，LV10 收在 1500 */
+  /**
+   * 简单（2.7.0.6 第 6 轮起的新曲线，用户拍板）：LV2 不动（新用户第一次升级要快），
+   * LV3–5 各 +100 / +150 / +200，LV6–10 顺势拉开，LV10 收在 2100——给重度用户多半年的路。
+   */
   easy: {
-    base: [0, 40, 100, 200, 300],
-    ext:  [500, 700, 900, 1100, 1500],
+    base: [0, 40, 200, 350, 500],
+    ext:  [750, 1000, 1300, 1650, 2100],
   },
-  /** 困难：R19 之前的口径（LV2-5 各再加 20/80/150/260，LV6-10 每级 +300） */
+  /** 困难（同轮拍板：每级比简单档多要三到五成） */
   hard: {
-    base: [0, 60, 170, 300, 500],
-    ext:  [800, 1100, 1400, 1700, 2000],
+    base: [0, 60, 300, 500, 750],
+    ext:  [1100, 1450, 1850, 2300, 2800],
   },
 } as const;
 
@@ -42,11 +45,9 @@ export const LEVEL_PRESETS = {
  * ⚠️ 这张表同时是「默认开几级」的事实源：「恢复默认」与它的确认弹窗都读它。
  * 千万别把 LV6-10 并进来——那样一次恢复默认就会替玩家开满 10 档，
  * 没开过高阶的人还会在弹窗里看到十个数字。LV6-10 走 LEVEL_PRESETS[*].ext。
+ * 2.7.0.6 第 6 轮只换了数字（用户拍板：不做曲线家族 / 迁移，老账号 settings 里的旧阈值原样保留）。
  */
 export const DEFAULT_LEVEL_THRESHOLDS: number[] = [...LEVEL_PRESETS.easy.base];
-
-/** @deprecated 改用 LEVEL_PRESETS[difficulty].ext；保留别名防漏改 */
-export const EXTENDED_LEVEL_THRESHOLDS: number[] = [...LEVEL_PRESETS.easy.ext];
 
 /** 属性主色 — 与 Statistics 页保持一致，供雷达图、Shadow 染色、UI 标识复用 */
 export const ATTR_COLORS: Record<AttributeId, string> = {
@@ -72,7 +73,7 @@ export const INITIAL_ATTRIBUTES = [
     displayName: '知识',
     points: 0,
     level: 1,
-    levelThresholds: [0, 40, 100, 200, 300],
+    levelThresholds: [...LEVEL_PRESETS.easy.base],
     unlocked: true
   },
   {
@@ -80,7 +81,7 @@ export const INITIAL_ATTRIBUTES = [
     displayName: '胆量',
     points: 0,
     level: 1,
-    levelThresholds: [0, 40, 100, 200, 300],
+    levelThresholds: [...LEVEL_PRESETS.easy.base],
     unlocked: true
   },
   {
@@ -88,7 +89,7 @@ export const INITIAL_ATTRIBUTES = [
     displayName: '灵巧',
     points: 0,
     level: 1,
-    levelThresholds: [0, 40, 100, 200, 300],
+    levelThresholds: [...LEVEL_PRESETS.easy.base],
     unlocked: true
   },
   {
@@ -96,7 +97,7 @@ export const INITIAL_ATTRIBUTES = [
     displayName: '温柔',
     points: 0,
     level: 1,
-    levelThresholds: [0, 40, 100, 200, 300],
+    levelThresholds: [...LEVEL_PRESETS.easy.base],
     unlocked: true
   },
   {
@@ -104,7 +105,7 @@ export const INITIAL_ATTRIBUTES = [
     displayName: '魅力',
     points: 0,
     level: 1,
-    levelThresholds: [0, 40, 100, 200, 300],
+    levelThresholds: [...LEVEL_PRESETS.easy.base],
     unlocked: true
   }
 ];
@@ -482,16 +483,14 @@ export const EVENT_POOL = [
 // 批3 验收调整（2026-07-19 用户拍板）：全敌人最大 HP 上调 Lv1-2 +10 / Lv3 +20 / Lv4-5 +30（一形态池吃满）
 // Lv6 = 最终 BOSS「伪神」（PRD_FINAL_BOSS §4）：三条血，不吃「顽固」词缀（血池已显式定档）
 export const SHADOW_LEVEL_CONFIG = [
-  { level: 1, maxHp: 160, maxHp2: undefined as number | undefined, maxHp3: undefined as number | undefined, label: '之阴影' },
-  { level: 2, maxHp: 210, maxHp2: undefined as number | undefined, maxHp3: undefined as number | undefined, label: '之深渊' },
-  { level: 3, maxHp: 280, maxHp2: 80,                              maxHp3: undefined as number | undefined, label: '之执念' },
-  { level: 4, maxHp: 370, maxHp2: 110,                             maxHp3: undefined as number | undefined, label: '之噩梦' },
-  { level: 5, maxHp: 450, maxHp2: 130,                             maxHp3: undefined as number | undefined, label: '之深渊王' },
-  { level: 6, maxHp: 520, maxHp2: 180,                             maxHp3: 180,                             label: '之伪神' },
+  { level: 1, maxHp: 160, maxHp2: undefined as number | undefined, maxHp3: undefined as number | undefined },
+  { level: 2, maxHp: 210, maxHp2: undefined as number | undefined, maxHp3: undefined as number | undefined },
+  { level: 3, maxHp: 280, maxHp2: 80,                              maxHp3: undefined as number | undefined },
+  { level: 4, maxHp: 370, maxHp2: 110,                             maxHp3: undefined as number | undefined },
+  { level: 5, maxHp: 450, maxHp2: 130,                             maxHp3: undefined as number | undefined },
+  { level: 6, maxHp: 520, maxHp2: 180,                             maxHp3: 180 },
 ];
 
-/** Shadow每日HP恢复量（按等级）。Lv6 = 0：终局不给它回血 */
-export const SHADOW_REGEN_PER_LEVEL = [2, 3, 4, 5, 5, 0];
 
 /** 击败Shadow后玩家最大HP提升量（按等级）。Lv6 = 0：终局的奖励走「英雄的证明」 */
 export const HP_BONUS_PER_DEFEAT = [2, 3, 4, 5, 5, 0];

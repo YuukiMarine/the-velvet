@@ -14,6 +14,26 @@ export const DEFAULT_ATTRIBUTE_LEVEL_TITLES: AttributeLevelTitles = {
 
 const GENERIC_EXTRA_TITLES = ['无名新星', '锋芒初现', '高阶觉醒', '极境将至', '命运之冠'];
 
+/**
+ * 满级后的精通称号（第 6 轮）：每颗星一句，★6 起沿用最后一句再带星数。
+ * 不走 AI、不随用户改名——它是满级之后的读数，不是等级本身。
+ */
+export const MASTERY_TITLES: Record<AttributeId, string[]> = {
+  knowledge: ['学海无涯', '穷理尽性', '博古通今', '智照寰宇', '万象归一'],
+  guts: ['百战不殆', '虽千万人', '孤军亦进', '天不能拘', '无畏之极'],
+  dexterity: ['游刃有余', '出神入化', '巧夺天工', '万物皆器', '心手合一'],
+  kindness: ['润物无声', '海纳百川', '慈悲为怀', '光照四方', '万心归暖'],
+  charm: ['光芒万丈', '倾城之姿', '众星拱月', '风华绝代', '万世流芳'],
+};
+
+/** 精通 ★stars 的称号；stars ≤ 0 时回落到 Lv.10 的等级称号（由调用方决定要不要显示） */
+export function getMasteryTitle(attributeId: AttributeId, stars: number): string {
+  const list = MASTERY_TITLES[attributeId] ?? MASTERY_TITLES.knowledge;
+  if (stars <= 0) return list[0];
+  if (stars <= list.length) return list[stars - 1];
+  return `${list[list.length - 1]} ★${stars}`;
+}
+
 const LEVEL_TITLE_SYSTEM_PROMPT = [
   '你是一个沉浸式成长系统的称号设计器。',
   '任务：为用户自定义的五维人格属性生成每一级的四字中文等级称号。',

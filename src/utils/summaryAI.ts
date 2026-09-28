@@ -13,6 +13,7 @@
  *
  * 不 import store（store 反过来 import 这里），日期键等小工具本地实现。
  */
+import { seasonMarkOf } from '@/utils/calendar';
 import { db } from '@/db';
 import type { Activity, Attribute, AttributeId, PeriodSummary, Settings, SummaryPeriod, SummaryPromptPreset } from '@/types';
 import { TAROT_BY_ID } from '@/constants/tarot';
@@ -168,19 +169,9 @@ const seasonOf = (d: Date): string => {
   return m === 12 && early ? '初冬' : m === 2 && late ? '冬末' : '冬天';
 };
 
-const SOLAR_DAYS: Record<string, string> = {
-  '01-01': '元旦', '02-14': '情人节', '03-08': '妇女节', '04-05': '清明（前后）', '05-01': '劳动节',
-  '05-04': '青年节', '06-01': '儿童节', '09-10': '教师节', '10-01': '国庆节', '10-31': '万圣夜',
-  '11-11': '双十一', '12-24': '平安夜', '12-25': '圣诞节', '12-31': '跨年夜',
-};
-/** 农历节日（2026～2028，本地算不出农历，查表；之后的年份只提公历节日） */
-const LUNAR_DAYS: Record<string, string> = {
-  '2026-02-16': '除夕', '2026-02-17': '春节', '2026-03-03': '元宵', '2026-06-19': '端午', '2026-08-19': '七夕', '2026-09-25': '中秋', '2026-10-18': '重阳',
-  '2027-02-05': '除夕', '2027-02-06': '春节', '2027-02-20': '元宵', '2027-06-09': '端午', '2027-08-08': '七夕', '2027-09-15': '中秋', '2027-10-08': '重阳',
-  '2028-01-25': '除夕', '2028-01-26': '春节', '2028-02-09': '元宵', '2028-05-28': '端午', '2028-07-27': '七夕', '2028-10-03': '中秋', '2028-10-26': '重阳',
-};
-
-const festivalOf = (key: string): string | undefined => LUNAR_DAYS[key] ?? SOLAR_DAYS[key.slice(5)];
+// 节日表（公历 + 农历查表）已并入 utils/calendar（第 6 轮：岁时印章与首页节令共用）；
+// 简报里节气也算「节日」——那天的印章就是它。
+const festivalOf = (key: string): string | undefined => seasonMarkOf(key)?.name;
 
 /** 遍历 [start, end] 的日期键 */
 function eachDay(start: string, end: string): string[] {

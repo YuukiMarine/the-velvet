@@ -4,9 +4,10 @@
  * 算法：以一个已知的新月作为参考点（2000-01-06 18:14 UTC），
  * 合朔周期约 29.530588 天，新月 → 满月间隔 ~14.765 天。
  *
- * 本文件只做两件事：
+ * 本文件做三件事：
  *   - 判断某个 `Date` 是不是"新月 / 满月之夜"（24h 窗口）
- *   - 计算下一次新月 / 满月之夜的 18:00 本地时间
+ *   - 月夜编号（羁绊之影按它定唯一身份）
+ *   - 首页 / 小组件共用的月相读数 moonPhaseOf（第 6 轮：原来三套首页 + 小组件各抄一份）
  */
 
 /** 已知的参考新月：2000-01-06 18:14 UTC（NASA ephemeris） */
@@ -50,27 +51,6 @@ export function isMoonPhaseNight(at: Date = new Date()): boolean {
 }
 
 /**
- * 给定时间之后，下一次新月 / 满月"降临时刻"（取该日 18:00 本地时间）。
- * 主要用于 UI 倒计时展示 "下次降临：YYYY-MM-DD HH:mm"。
- */
-export function nextMoonPhaseSpawnAt(after: Date = new Date()): Date {
-  const t = after.getTime() - REFERENCE_NEW_MOON_UTC;
-  const phase = ((t % SYNODIC_MS) + SYNODIC_MS) % SYNODIC_MS;
-  // 下一个新月点 or 满月点（取时间更近的）
-  let nextDelta: number;
-  if (phase < HALF_SYNODIC_MS) {
-    nextDelta = HALF_SYNODIC_MS - phase;   // 下一个满月
-  } else {
-    nextDelta = SYNODIC_MS - phase;        // 下一个新月
-  }
-  const nextPhase = new Date(after.getTime() + nextDelta);
-  // 把时间锚定到该日的本地 18:00
-  const day = new Date(nextPhase);
-  day.setHours(18, 0, 0, 0);
-  return day;
-}
-
-/**
  * 今天的攻击窗口是否开着？—— 每日 18:00 至次日 07:00。
  *
  * 注意：和 `isMoonPhaseNight` 正交 —— 月相决定"有没有 Boss"，这个决定"能不能打"。
@@ -79,4 +59,16 @@ export function isDailyAttackWindow(at: Date = new Date()): boolean {
   const h = at.getHours();
   // [18, 24) ∪ [0, 7)
   return h >= 18 || h < 7;
+}
+
+/** 八个月相名（首页 / 小组件同一份） */
+export const MOON_PHASE_NAMES = ['新月', '娥眉月', '上弦月', '盈凸月', '满月', '亏凸月', '下弦月', '残月'] as const;
+const SYNODIC_DAYS = 29.530588853;
+
+/** 月相读数：phase 0 新月 → 0.5 满月 → 1；name 八分相；illum 亮面比例；full = 满月那一档 */
+export function moonPhaseOf(date: Date = new Date()): { phase: number; name: string; illum: number; full: boolean } {
+  const days = (date.getTime() - REFERENCE_NEW_MOON_UTC) / 86400000;
+  const phase = (((days % SYNODIC_DAYS) + SYNODIC_DAYS) % SYNODIC_DAYS) / SYNODIC_DAYS;
+  const idx = Math.round(phase * 8) % 8;
+  return { phase, name: MOON_PHASE_NAMES[idx], illum: (1 - Math.cos(2 * Math.PI * phase)) / 2, full: idx === 4 };
 }

@@ -12,12 +12,17 @@ import { EyebrowLabel } from '@/components/EyebrowLabel';
 import { BrandTitleReveal } from '@/components/BrandTitleReveal';
 import { StarChartP3, NEUTRAL_STAR_PALETTE } from '@/components/StarChartP3';
 import { AttributeDossier } from '@/components/AttributeDossier';
+import { OnThisDayNeutralCard, OnThisDaySlide, useOnThisDay } from '@/components/dashboard/OnThisDaySheet';
+import { SeasonStampBadge } from '@/components/dashboard/SeasonStampBadge';
+import { moonPhaseOf } from '@/utils/moonPhase';
 import { TAROT_BY_ID } from '@/constants/tarot';
 import { CallingCardCard } from '@/components/callingCard/CallingCardCard';
 import { CallingCardEmptyHint } from '@/components/callingCard/CallingCardEmptyHint';
 import { playSound } from '@/utils/feedback';
 import { fitOneLine } from '@/utils/fitOneLine';
-import { getAttributeLevelTitle } from '@/utils/attributeLevelTitles';
+import { getAttributeLevelTitle, getMasteryTitle } from '@/utils/attributeLevelTitles';
+import { masteryOf } from '@/utils/levels';
+import { resolveLevelDifficulty } from '@/utils/levelDifficulty';
 import type { AttributeId, CallingCard } from '@/types';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P4Flower, P4Sparkle, P4SkyCircle, P4_HEADER_BLEED } from '@/ui/p4Kit';
@@ -377,10 +382,13 @@ export const AttributeGrid = ({ attributes, settings, onEditingChange }: {
           const isMax       = attr.level >= lvlMax;
           const curThreshold  = attr.level > 1 ? attrThresholds[attr.level - 1] : 0;
           const nextThreshold = !isMax ? attrThresholds[attr.level] : attrThresholds[lvlMax - 1];
-          const pct = isMax ? 100 : Math.min(100, ((attr.points - curThreshold) / (nextThreshold - curThreshold)) * 100);
+          // 精通（第 6 轮）：满 10 级后每 500 / 700 点一颗星，进度条改走「距下一颗」
+          const mastery    = isMax ? masteryOf(attr.points, attrThresholds, resolveLevelDifficulty(settings)) : null;
+          const stars      = mastery?.stars ?? 0;
+          const pct = mastery ? mastery.progress * 100 : isMax ? 100 : Math.min(100, ((attr.points - curThreshold) / (nextThreshold - curThreshold)) * 100);
           const attrId     = attr.id as AttributeId;
           const attrName   = settings.attributeNames[attrId];
-          const levelTitle = getAttributeLevelTitle(settings.attributeLevelTitles, attrId, attr.level);
+          const levelTitle = stars > 0 ? getMasteryTitle(attrId, stars) : getAttributeLevelTitle(settings.attributeLevelTitles, attrId, attr.level);
           const colorTier  = LV_COLORS[Math.min(attr.level - 1, LV_COLORS.length - 1)];
 
           return (
@@ -428,11 +436,14 @@ export const AttributeGrid = ({ attributes, settings, onEditingChange }: {
                     >
                       {isMax ? 'MAX' : attr.level}
                     </span>
+                    {stars > 0 && (
+                      <span className={`ml-px text-[11px] font-black tabular-nums ${colorTier.text}`} aria-label={`精通 ${stars} 星`}>★{stars}</span>
+                    )}
                   </div>
                 </div>
                 <div className="text-right mt-1 flex-shrink-0">
                   <span className="text-[11px] text-gray-400 dark:text-gray-500 tabular-nums whitespace-nowrap">
-                    {isMax ? '满级' : `${attr.points}/${nextThreshold}`}
+                    {mastery ? `精通 ★${stars}` : isMax ? '满级' : `${attr.points}/${nextThreshold}`}
                   </span>
                 </div>
               </div>
@@ -458,8 +469,8 @@ export const AttributeGrid = ({ attributes, settings, onEditingChange }: {
                     </p>
                   )}
                   {isMax && (
-                    <p className="text-[10px] text-gray-400 dark:text-gray-500 text-right whitespace-nowrap">
-                      已达满级
+                    <p className="text-[10px] text-gray-400 dark:text-gray-500 text-right whitespace-nowrap tabular-nums">
+                      {mastery ? <>差 <span className="font-semibold">{mastery.toNext}</span> 点亮 ★{stars + 1}</> : '已达满级'}
                     </p>
                   )}
                 </div>
@@ -512,17 +523,8 @@ const isLightColor = (hex: string): boolean => {
 };
 
 // ── P4 天空角标（PRD_V2.6 §7）────────────────────────────────────────────────
-const P4_MOON_NAMES = ['新月', '娥眉月', '上弦月', '盈凸月', '满月', '亏凸月', '下弦月', '残月'];
-const P4_SYNODIC = 29.530588853;
-const P4_EPOCH = Date.UTC(2000, 0, 6, 18, 14);
-
-/** 月相（与 P3/P5 同一历元同一算法，只是各页各写一份渲染） */
-const p4MoonOf = (date: Date) => {
-  const days = (date.getTime() - P4_EPOCH) / 86400000;
-  const phase = (((days % P4_SYNODIC) + P4_SYNODIC) % P4_SYNODIC) / P4_SYNODIC;
-  const idx = Math.round(phase * 8) % 8;
-  return { phase, name: P4_MOON_NAMES[idx], illum: (1 - Math.cos(2 * Math.PI * phase)) / 2 };
-};
+/** 月相读数统一到 utils/moonPhase（第 6 轮），这里只剩渲染 */
+const p4MoonOf = moonPhaseOf;
 
 const p4MoonLit = (phase: number, r: number, c: number) => {
   const rx = Math.max(0.01, Math.abs(Math.cos(2 * Math.PI * phase)) * r);
@@ -729,13 +731,18 @@ export const Dashboard = () => {
   const starItems = attributes.map(attr => {
     const attrThresholds = settings.levelThresholds?.length ? settings.levelThresholds : attr.levelThresholds;
     const attrId = attr.id as AttributeId;
+    // 精通（第 6 轮）：满级后的星数进星象仪 / 花瓣图的读数，称号换成精通称号
+    const stars = attr.level >= (attrThresholds.length || 5)
+      ? (masteryOf(attr.points, attrThresholds, resolveLevelDifficulty(settings))?.stars ?? 0)
+      : 0;
     return {
       id: attrId,
       name: settings.attributeNames[attrId] || attr.displayName,
       level: attr.level,
       maxLevel: attrThresholds.length || 5,
+      stars,
       points: attr.points,
-      title: getAttributeLevelTitle(settings.attributeLevelTitles, attrId, attr.level),
+      title: stars > 0 ? getMasteryTitle(attrId, stars) : getAttributeLevelTitle(settings.attributeLevelTitles, attrId, attr.level),
     };
   });
 
@@ -819,6 +826,7 @@ export const Dashboard = () => {
   // 挂进 StackCarousel——它按 children 个数生成 slide 与圆点，null 会变成空白页。
   // 各 slide 外包 h-full + [&>*]:h-full：carousel 用 items-stretch 把 slide 撑到
   // 最高页等高，arbitrary variant 穿透一层让卡片根元素（button/div）纵向跟满。
+  const onThisDay = useOnThisDay();
   const ritualSlides: ReactNode[] = [];
   if (hasCountercurrentWarning) {
     // 预警条件成立时才入组、且恒为第一页（规格：条件插入并置顶）；JSX 自原全宽预警条原样搬入，视觉不改
@@ -851,6 +859,14 @@ export const Dashboard = () => {
     ritualSlides.push(
       <div key="battle" className="h-full [&>*]:h-full">
         <BattleDashboardWidget />
+      </div>
+    );
+  }
+  // 当年今日（第 6 轮）：满一年且去年今日有记录才有；放在逆影战场那张之后（用户批注：不占首页顶部）
+  if (onThisDay) {
+    ritualSlides.push(
+      <div key="onthisday" className="h-full [&>*]:h-full">
+        <OnThisDaySlide view={onThisDay} render={(p) => <OnThisDayNeutralCard {...p} />} />
       </div>
     );
   }
@@ -887,8 +903,10 @@ export const Dashboard = () => {
             <div className="text-[13px] font-black tracking-[0.2em] text-[#131313]">
               {today.toLocaleDateString('en-US', { month: 'short' }).toUpperCase()}
             </div>
-            <div className="mt-0.5 text-[11px] font-black tracking-[0.2em] text-[#131313]/80">
+            <div className="relative mt-0.5 text-[11px] font-black tracking-[0.2em] text-[#131313]/80">
               {today.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase()}
+              {/* 岁时小签（第 6 轮）：贴在星期那行左侧、一般大（牌下面是天气小签，往下叠会压住它） */}
+              <SeasonStampBadge dateKey={toLocalDateKey(today)} className="absolute right-full top-1/2 mr-1.5 -translate-y-1/2" align="left" />
             </div>
             {/* 天空角标（PRD_V2.6 §7）：黄频道此前**没有天空位**——
                 天空圆只是张背景图，月相/天气无处可落。这里补一枚压在日期牌下沿的小角标，
@@ -936,8 +954,12 @@ export const Dashboard = () => {
               <div className={`text-[10px] font-bold tracking-widest uppercase text-center ${textMutedClass}`}>
                 {today.toLocaleDateString('en-US', { month: 'short' }).toUpperCase()}
               </div>
-              <div className={`text-[10px] font-medium px-1.5 py-0.5 rounded mt-1 ${useLightText ? 'bg-white/15 text-white/90' : 'bg-black/10 text-black/70'}`}>
-                {today.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase()}
+              <div className="mt-1 flex items-center gap-1">
+                <div className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${useLightText ? 'bg-white/15 text-white/90' : 'bg-black/10 text-black/70'}`}>
+                  {today.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase()}
+                </div>
+                {/* 岁时小签（第 6 轮）：和星期几并排、一般大，不把问候卡撑高 */}
+                <SeasonStampBadge dateKey={toLocalDateKey(today)} align="right" />
               </div>
             </div>
           )}
@@ -1259,7 +1281,7 @@ export const Dashboard = () => {
               style={{ transformOrigin: 'center', pointerEvents: dossierAttr ? 'none' : 'auto' }}
             >
               <FlowerChart
-                items={starItems.map(s => ({ id: s.id, name: s.name, level: s.level, maxLevel: s.maxLevel }))}
+                items={starItems.map(s => ({ id: s.id, name: s.name, level: s.level, maxLevel: s.maxLevel, stars: s.stars }))}
                 onSelect={(id, e) => {
                   const rect = petalSectionRef.current?.getBoundingClientRect();
                   if (rect && e) setPetalRipples(rs => [...rs, { id: Date.now(), x: e.clientX - rect.left, y: e.clientY - rect.top }]);

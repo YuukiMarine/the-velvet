@@ -39,8 +39,8 @@ const GROUPS: Group[] = [
   {
     id: 'journal',
     label: '成长记录',
-    hint: '每日活动 / 成就 / 技能',
-    tables: ['activities', 'achievements', 'skills'],
+    hint: '每日活动 / 成就 / 技能 / 岁时印章',
+    tables: ['activities', 'achievements', 'skills', 'stamps'],
   },
   {
     id: 'arcana',

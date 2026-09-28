@@ -617,7 +617,7 @@ const retireExpiredShadows = async (shadows: CoopShadow[]): Promise<void> => {
 
 /**
  * 对 linked 的 bond 逐个判定是否满足降临条件。满足则 spawn 一只新 boss。
- * 通常只有新月 / 满月之夜才会真出来；测试期（COOP_SHADOW_ALWAYS_OPEN）立即上。
+ * 只有新月 / 满月之夜才会真出来。
  */
 const spawnShadowsIfDue = async (bonds: CoopBond[]): Promise<void> => {
   const appStore = useAppStore.getState();

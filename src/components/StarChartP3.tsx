@@ -9,6 +9,7 @@
  * 几何：正立五角星，"上窄下宽"的透视感由容器 skewX + scaleY 承担（不用 3D）。
  * 铁律照旧：SVG 装饰 aria-hidden，五个角是完整 button（命中区），标签反变换回正。
  */
+import { useSideLabelClamp } from '@/components/starLabelClamp';
 import type { MouseEvent as ReactMouseEvent } from 'react';
 import type { AttributeId } from '@/types';
 import { mixSrgb, paint } from '@/utils/cssColor';
@@ -54,6 +55,8 @@ export interface StarItem {
   name: string;
   level: number;
   maxLevel: number;
+  /** 满级后的精通星数（第 6 轮），0 / 缺省 = 不显示 */
+  stars?: number;
   title: string;
 }
 
@@ -133,6 +136,8 @@ export const StarChartP3 = ({ items, onSelect, showLabels = true, palette = P3_P
   const ringColor = (lvl: number) => mixSrgb(palette.ringDeep, palette.ringPale, (lvl / ringCount) * 100);
   // 标签锚点：紧贴角端外侧（viewBox 坐标 → 百分比），在同一个变换平面内自动跟随；
   // 按锚点相对中心的方位智能对齐——左角右靠、右角左靠、顶底居中
+  // 侧边标签量宽防裁切（两位数等级 + 精通星会伸出卡片）
+  const { containerRef, register } = useSideLabelClamp([items.map((it) => `${it.level}/${it.stars ?? 0}/${it.title}`).join('|')]);
   const labelAt = (i: number) => {
     const [x, y] = pt(armAngle(i), STAR_R * 1.04);
     const dx = x - STAR_CX;
@@ -149,7 +154,7 @@ export const StarChartP3 = ({ items, onSelect, showLabels = true, palette = P3_P
     // 加 8px 净空，首页外层 min-h 同步 +8 以免底部标签被挤出。
     <div className="relative mx-auto w-full max-w-[288px]" style={{ paddingTop: 31, paddingBottom: 32 }}>
       {/* 平行四边形斜切(下左上右) + 高度拉伸；星与标签同处一个 transform，标签再反变换回正 */}
-      <div className="relative" style={{ transform: `skewX(${STAR_SKEW}deg) scaleY(${STAR_SCALEY})` }}>
+      <div ref={containerRef} className="relative" style={{ transform: `skewX(${STAR_SKEW}deg) scaleY(${STAR_SCALEY})` }}>
         <svg viewBox="0 0 360 356" className="w-full overflow-visible" aria-hidden>
           {/* 同心星环：从最外档画到最内档，后画的小星盖出环带 */}
           {Array.from({ length: ringCount }).map((_, k) => {
@@ -172,6 +177,7 @@ export const StarChartP3 = ({ items, onSelect, showLabels = true, palette = P3_P
           return (
             <button
               key={it.id}
+              ref={register(i, pos.leftPct, pos.tx)}
               type="button"
               onClick={(e) => onSelect(it.id, e)}
               className="absolute flex flex-col items-center whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
@@ -184,9 +190,10 @@ export const StarChartP3 = ({ items, onSelect, showLabels = true, palette = P3_P
               }}
               aria-label={`${it.name} 等级 ${it.level}，${it.title}`}
             >
+              {/* 精通星（第 6 轮，用户口径）：小一点、贴在数字右下角，四套皮一个位置 */}
               <span className="flex items-baseline gap-1.5">
                 <span className="text-[15px] font-black leading-none" style={{ color: P.ink }}>{it.name}</span>
-                <span className="text-[26px] font-black italic leading-none" style={{ color: P.accent }}>{it.level}</span>
+                <span className="text-[26px] font-black italic leading-none" style={{ color: P.accent }}>{it.level}{it.stars ? <span className="ml-px text-[11px] font-black not-italic">★{it.stars}</span> : null}</span>
               </span>
               <span className="mt-0.5 block text-[11px] font-semibold leading-none" style={{ color: P.inkSoft }}>{it.title}</span>
             </button>

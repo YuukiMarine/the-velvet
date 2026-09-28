@@ -26,7 +26,13 @@ import {
 import { TodoCompleteModal } from '@/components/TodoCompleteModal';
 import { BattleDashboardWidget } from '@/components/BattleDashboardWidget';
 import { StackCarousel } from '@/components/StackCarousel';
-import { getAttributeLevelTitle } from '@/utils/attributeLevelTitles';
+import { getAttributeLevelTitle, getMasteryTitle } from '@/utils/attributeLevelTitles';
+import { OnThisDayGlyph, OnThisDaySlide, useOnThisDay } from '@/components/dashboard/OnThisDaySheet';
+import { SeasonStampBadge } from '@/components/dashboard/SeasonStampBadge';
+import { useSideLabelClamp } from '@/components/starLabelClamp';
+import { moonPhaseOf } from '@/utils/moonPhase';
+import { masteryOf } from '@/utils/levels';
+import { resolveLevelDifficulty } from '@/utils/levelDifficulty';
 import { calcMaxStreak, streakDates } from '@/utils/streak';
 import { TAROT_BY_ID } from '@/constants/tarot';
 import { triggerNavFeedback, playSound } from '@/utils/feedback';
@@ -60,17 +66,9 @@ const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', '
 const WEEKDAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 
 // ── 真实月相（历元推算与 P3 版同源；渲染为设计稿的黑月牙图形）────────────────
-const SYNODIC_DAYS = 29.530588853;
-const NEW_MOON_EPOCH = Date.UTC(2000, 0, 6, 18, 14);
-const MOON_NAMES = ['新月', '娥眉月', '上弦月', '盈凸月', '满月', '亏凸月', '下弦月', '残月'];
 /** 满月专用暖黄（与蓝频道同一个常量口径）：只有月满时亮面翻黄，其余相位仍是纸色 */
 const MOON_YELLOW = '#ffcf1a';
-const moonPhaseOf = (date: Date) => {
-  const days = (date.getTime() - NEW_MOON_EPOCH) / 86400000;
-  const phase = (((days % SYNODIC_DAYS) + SYNODIC_DAYS) % SYNODIC_DAYS) / SYNODIC_DAYS; // 0 新月 → 0.5 满月
-  const idx = Math.round(phase * 8) % 8;
-  return { phase, name: MOON_NAMES[idx], illum: (1 - Math.cos(2 * Math.PI * phase)) / 2, full: idx === 4 };
-};
+// 月相读数统一到 utils/moonPhase（第 6 轮），这里只剩渲染
 const moonLitPath = (phase: number, r: number, c: number) => {
   const rx = Math.max(0.01, Math.abs(Math.cos(2 * Math.PI * phase)) * r);
   const outer = phase < 0.5 ? 1 : 0;
@@ -227,6 +225,8 @@ interface StarItem {
   name: string;
   level: number;
   maxLevel: number;
+  /** 满级后的精通星数（第 6 轮），0 / 缺省 = 不显示 */
+  stars?: number;
   title: string;
 }
 
@@ -245,6 +245,8 @@ const StarRadarP5 = ({ items, onSelect, showLabels = true }: {
   // 红数据星的角尖落在哪一圈 = 该维度当前几级，一眼可读
   const ringCount = Math.min(10, Math.max(1, items[0]?.maxLevel ?? 5));
   // 标签锚点：固定贴在最外圈之外（星环已撑满面板，跟着臂长走会在低等级时挤到中心）
+  // 侧边标签量宽防裁切（两位数等级 + 精通星会伸出面板；「平平无奇」少一个字也是它）
+  const { containerRef, register } = useSideLabelClamp([items.map((it) => `${it.level}/${it.stars ?? 0}/${it.title}`).join('|')]);
   const labelAt = (i: number) => {
     const [x, y] = pt(armAngle(i), STAR_R * 1.03);
     const dx = x - STAR_CX;
@@ -262,7 +264,7 @@ const StarRadarP5 = ({ items, onSelect, showLabels = true }: {
     // 所以留够余量而不是刚好抹平），外层 min-h 同步 +16 保证底部标签不因此被挤出。
     <div className="relative mx-auto w-full max-w-[364px]" style={{ paddingTop: 64, paddingBottom: 44 }}>
       {/* 星与标签同处一个斜切平面，标签再反变换回正（字恒水平） */}
-      <div className="relative" style={{ transform: `skewX(${STAR_SKEW}deg) scaleY(${STAR_SCALEY})` }}>
+      <div ref={containerRef} className="relative" style={{ transform: `skewX(${STAR_SKEW}deg) scaleY(${STAR_SCALEY})` }}>
         <svg viewBox="0 0 360 344" className="w-full overflow-visible" aria-hidden>
           {/* 整组星环的黑硬影（一次性打在最外圈上，内圈不用各自带影） */}
           <path d={starPathAt(Array(5).fill(levelRadius(ringCount, ringCount)))} fill="#000000" transform="translate(7 9)" />
@@ -281,6 +283,7 @@ const StarRadarP5 = ({ items, onSelect, showLabels = true }: {
           return (
             <button
               key={it.id}
+              ref={register(i, pos.leftPct, pos.tx)}
               type="button"
               onClick={(e) => onSelect(it.id, e)}
               className="absolute flex flex-col items-start whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c00008] focus-visible:ring-offset-1"
@@ -289,7 +292,8 @@ const StarRadarP5 = ({ items, onSelect, showLabels = true }: {
             >
               <span className="flex items-center gap-1.5">
                 <P5Chip tone="red" rot={-2}>{it.name}</P5Chip>
-                <span className="text-[30px] font-black italic leading-none" style={{ color: P5R.white, fontFamily: P5_TITLE_FONT, textShadow: '2px 2px 0 #000000' }}>{it.level}</span>
+                {/* 精通星（第 6 轮，用户口径）：与蓝频道同款——小一点、贴数字右下角 */}
+                <span className="text-[30px] font-black italic leading-none" style={{ color: P5R.white, fontFamily: P5_TITLE_FONT, textShadow: '2px 2px 0 #000000' }}>{it.level}{it.stars ? <span className="ml-px text-[11px] not-italic" style={{ textShadow: '1px 1px 0 #000000' }}>★{it.stars}</span> : null}</span>
               </span>
               <span className="mt-1 block text-[12px] font-bold leading-none" style={{ color: P5R.white, fontFamily: P5_TITLE_FONT, textShadow: '1.5px 1.5px 0 #000000' }}>{it.title}</span>
             </button>
@@ -317,9 +321,14 @@ const AttrDetailInlineP5 = ({ attrId, level: fallbackLevel, onBack }: { attrId: 
   const curThreshold = level > 1 ? thresholds[level - 1] : 0;
   const nextThreshold = !isMax ? thresholds[level] : thresholds[lvlMax - 1];
   const points = attr?.points ?? 0;
-  const progress = isMax ? 1 : Math.max(0, Math.min(1, (points - curThreshold) / Math.max(1, nextThreshold - curThreshold)));
+  // 精通（第 6 轮）：满 10 级后每 500 / 700 点一颗星；进度条与称号都改走精通口径
+  const mastery = isMax ? masteryOf(points, thresholds, resolveLevelDifficulty(settings)) : null;
+  const stars = mastery?.stars ?? 0;
+  const progress = mastery ? mastery.progress : isMax ? 1 : Math.max(0, Math.min(1, (points - curThreshold) / Math.max(1, nextThreshold - curThreshold)));
+  const progressLabel = isMax ? (mastery ? `精通 ★${stars} · 距下一颗` : '已达最高等级') : `距 Lv.${level + 1}`;
+  const progressValue = isMax ? (mastery ? `${mastery.step - mastery.toNext}/${mastery.step}` : 'MAX') : `${points - curThreshold}/${nextThreshold - curThreshold}`;
   const name = settings.attributeNames?.[attrId] || attr?.displayName || '';
-  const curTitle = getAttributeLevelTitle(settings.attributeLevelTitles, attrId, level);
+  const curTitle = stars > 0 ? getMasteryTitle(attrId, stars) : getAttributeLevelTitle(settings.attributeLevelTitles, attrId, level);
   const related = achievements.filter((a) => a.condition.attribute === attrId || a.condition.type === 'all_attributes_max');
   const unlockedCount = related.filter((a) => a.unlocked).length;
   const achScrollRef = useRef<HTMLDivElement>(null);
@@ -353,7 +362,7 @@ const AttrDetailInlineP5 = ({ attrId, level: fallbackLevel, onBack }: { attrId: 
         <div className="mt-2.5 flex items-center gap-2.5">
           <span className="relative inline-flex items-baseline gap-1 px-3.5 py-1" style={{ background: P5R.red, clipPath: 'polygon(4px 0, 100% 2px, calc(100% - 4px) 100%, 0 calc(100% - 2px))', boxShadow: `3px 3px 0 ${P5R.ink}` }}>
             <span className="text-[11px] font-black tracking-wider text-white/90">LV</span>
-            <span className="text-[20px] font-black leading-none tabular-nums text-white">{level}</span>
+            <span className="text-[20px] font-black leading-none tabular-nums text-white">{level}{stars > 0 && <span className="ml-0.5 text-[11px]">★{stars}</span>}</span>
           </span>
           <span className="text-[16px] font-black" style={{ color: P5R.paper }}>{curTitle}</span>
           <span className="ml-auto text-[12px] font-bold tabular-nums" style={{ color: P5R.greyLight }}>{points} pt</span>
@@ -363,8 +372,8 @@ const AttrDetailInlineP5 = ({ attrId, level: fallbackLevel, onBack }: { attrId: 
       {/* 进度（从右飞入） */}
       <motion.div className="relative mt-4" variants={fromRight} transition={spring}>
         <div className="mb-1 flex items-baseline justify-between text-[11px] font-black" style={{ color: P5R.greyLight }}>
-          <span>{isMax ? '已达最高等级' : `距 Lv.${level + 1}`}</span>
-          <span className="tabular-nums">{isMax ? 'MAX' : `${points - curThreshold}/${nextThreshold - curThreshold}`}</span>
+          <span>{progressLabel}</span>
+          <span className="tabular-nums">{progressValue}</span>
         </div>
         <div className="relative h-[12px] w-full" style={{ background: '#3a3831', clipPath: roughQuad(41, 3) }}>
           <div className="absolute inset-y-0 left-0" style={{ width: `${progress * 100}%`, background: P5R.red, clipPath: roughQuad(42, 3) }} />
@@ -398,6 +407,35 @@ const AttrDetailInlineP5 = ({ attrId, level: fallbackLevel, onBack }: { attrId: 
           })}
         </div>
       </motion.div>
+
+      {/* 精通星阶（第 6 轮）：只在站上 Lv.10 时出现，样式沿用称号阶梯 */}
+      {mastery && (
+        <motion.div className="relative mt-4" variants={fromRight} transition={spring}>
+          <div className="mb-1.5 text-[12px] font-black" style={{ color: P5R.greyLight }}>精通 · 每 {mastery.step} 点一颗星</div>
+          <div className="space-y-1">
+            {Array.from({ length: stars + 1 }, (_, k) => k + 1).map((k) => {
+              const reached = k <= stars;
+              const current = k === stars && reached;
+              return (
+                <div
+                  key={k}
+                  className="flex items-center gap-2.5 px-3 py-1.5 text-[13px]"
+                  style={{
+                    background: current ? P5R.red : reached ? P5R.paper : '#242320',
+                    clipPath: roughQuad(80 + k, 4),
+                    color: current ? '#fff' : reached ? P5R.ink : P5R.greyLight,
+                  }}
+                >
+                  <span className="w-9 shrink-0 text-[11px] font-black tabular-nums">★{k}</span>
+                  <span className="flex-1 font-black">{getMasteryTitle(attrId, k)}</span>
+                  {current && <span className="text-[10px] font-black">◀ 现在</span>}
+                  {!reached && <span className="text-[10px] tabular-nums">还差 {mastery.toNext} pt</span>}
+                </div>
+              );
+            })}
+          </div>
+        </motion.div>
+      )}
 
       {/* 关联成就（从右飞入；横滑拖拽） */}
       <motion.div className="relative mt-4" variants={fromRight} transition={spring}>
@@ -684,15 +722,17 @@ export const DashboardP5 = () => {
       .map((a) => {
         const th = settings.levelThresholds?.length ? settings.levelThresholds : a.levelThresholds;
         const id = a.id as AttributeId;
+        const stars = a.level >= (th.length || 5) ? (masteryOf(a.points, th, resolveLevelDifficulty(settings))?.stars ?? 0) : 0;
         return {
           id,
           name: settings.attributeNames[id] || a.displayName,
           level: a.level,
           maxLevel: th.length || 5,
-          title: getAttributeLevelTitle(settings.attributeLevelTitles, id, a.level),
+          stars,
+          title: stars > 0 ? getMasteryTitle(id, stars) : getAttributeLevelTitle(settings.attributeLevelTitles, id, a.level),
         };
       });
-  }, [attributes, settings.levelThresholds, settings.attributeNames, settings.attributeLevelTitles]);
+  }, [attributes, settings]);
 
   // 六格统计（2×3 表格卡——p5-dashboard 设计稿布局）
   const stats = useMemo(() => {
@@ -714,6 +754,7 @@ export const DashboardP5 = () => {
   };
 
   // ──「今日仪式」slides（条件在组装处拦截）──────────────────────────────────
+  const onThisDay = useOnThisDay();
   const ritualSlides: ReactNode[] = [];
   if (hasCountercurrentWarning) {
     ritualSlides.push(
@@ -761,6 +802,20 @@ export const DashboardP5 = () => {
     animate: { opacity: 1, y: 0 },
     transition: { type: 'spring' as const, stiffness: 260, damping: 26, delay },
   });
+
+  // 当年今日（第 6 轮）：满一年且去年今日有记录才有；放在逆影战场那张之后
+  if (onThisDay) {
+    ritualSlides.push(
+      <div key="onthisday" className="h-full [&>*]:h-full">
+        <OnThisDaySlide
+          view={onThisDay}
+          render={(p) => (
+            <RitualSlabP5 seed={41} icon={<OnThisDayGlyph color={P5R.paper} size={28} />} onClick={p.onClick} title={p.title} sub={p.sub} />
+          )}
+        />
+      </div>,
+    );
+  }
 
   return (
     // 页面壳不裁任何方向：早年的 overflow-hidden 把上探/侧探的装饰（-top-4 红斜块、
@@ -859,6 +914,8 @@ export const DashboardP5 = () => {
                     <span className="text-[14px] font-black leading-none" style={{ color: P5R.ink }}>{MONTHS[now.getMonth()]}</span>
                     <span className="px-1.5 py-0.5 text-[11px] font-black leading-none text-white" style={{ background: P5R.red }}>{WEEKDAYS[now.getDay()]}</span>
                   </span>
+                  {/* 岁时小签（第 6 轮）：和星期几齐底、一般大 */}
+                  <SeasonStampBadge dateKey={toLocalDateKey(now)} className="mb-1 ml-0.5" align="right" pop="above" />
                 </div>
               </div>
             </motion.div>

@@ -25,13 +25,18 @@ import { P3R, P3RPage, GhostWords, SectionMark, SlantButton, TitlePeriod, TitleT
 import { TodoCompleteModal } from '@/components/TodoCompleteModal';
 import { BattleDashboardWidget } from '@/components/BattleDashboardWidget';
 import { StackCarousel } from '@/components/StackCarousel';
-import { getAttributeLevelTitle } from '@/utils/attributeLevelTitles';
+import { getAttributeLevelTitle, getMasteryTitle } from '@/utils/attributeLevelTitles';
+import { masteryOf } from '@/utils/levels';
+import { resolveLevelDifficulty } from '@/utils/levelDifficulty';
 import { calcMaxStreak, streakDates } from '@/utils/streak';
 import { TAROT_BY_ID } from '@/constants/tarot';
 import { triggerNavFeedback, playSound } from '@/utils/feedback';
 import { BigDealHomeCard } from '@/components/bigdeal/BigDealHomeCard';
 import { BigDealPanel } from '@/components/bigdeal/BigDealPanel';
 import { StarChartP3, type StarItem } from '@/components/StarChartP3';
+import { OnThisDayGlyph, OnThisDaySlide, useOnThisDay } from '@/components/dashboard/OnThisDaySheet';
+import { SeasonStampBadge } from '@/components/dashboard/SeasonStampBadge';
+import { moonPhaseOf } from '@/utils/moonPhase';
 
 // 问候副题池（与 Dashboard.tsx SUBTEXTS 同源；P3R 版去 emoji——设计稿为纯文字蓝副题）
 const SUBTEXTS: Record<string, string[]> = {
@@ -69,19 +74,11 @@ const WEEKDAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 const TRI_MASK_URI = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 60' preserveAspectRatio='none'%3E%3Cpath d='M2 32 L296 6 L70 74 Z' transform='rotate(3 150 30)' fill='%230e3a63'/%3E%3C/svg%3E")`;
 
 // ── 真实月相（月龄按 2000-01-06 18:14 UTC 新月历元 + 朔望月 29.5306 天推算）──
-const SYNODIC_DAYS = 29.530588853;
-const NEW_MOON_EPOCH = Date.UTC(2000, 0, 6, 18, 14);
-const MOON_NAMES = ['新月', '娥眉月', '上弦月', '盈凸月', '满月', '亏凸月', '下弦月', '残月'];
 
 /** 满月专用暖黄：只有月满时亮面才翻黄，其余相位仍走频道色（红/蓝两个首页同款） */
 export const MOON_YELLOW = '#ffcf1a';
 
-const moonPhaseOf = (date: Date) => {
-  const days = (date.getTime() - NEW_MOON_EPOCH) / 86400000;
-  const phase = (((days % SYNODIC_DAYS) + SYNODIC_DAYS) % SYNODIC_DAYS) / SYNODIC_DAYS; // 0 新月 → 0.5 满月
-  const idx = Math.round(phase * 8) % 8;
-  return { phase, name: MOON_NAMES[idx], illum: (1 - Math.cos(2 * Math.PI * phase)) / 2, full: idx === 4 };
-};
+// 月相读数统一到 utils/moonPhase（第 6 轮），这里只剩渲染
 
 /** 亮面路径：外缘半圆 + 明暗界线椭圆弧（两弧法，盈亏自动换边） */
 const moonLitPath = (phase: number, r: number, c: number) => {
@@ -195,9 +192,14 @@ const AttrDetailInline = ({ attrId, level: fallbackLevel, onBack }: { attrId: At
   const curThreshold = level > 1 ? thresholds[level - 1] : 0;
   const nextThreshold = !isMax ? thresholds[level] : thresholds[lvlMax - 1];
   const points = attr?.points ?? 0;
-  const progress = isMax ? 1 : Math.max(0, Math.min(1, (points - curThreshold) / Math.max(1, nextThreshold - curThreshold)));
+  // 精通（第 6 轮）：满 10 级后每 500 / 700 点一颗星；进度条与称号都改走精通口径
+  const mastery = isMax ? masteryOf(points, thresholds, resolveLevelDifficulty(settings)) : null;
+  const stars = mastery?.stars ?? 0;
+  const progress = mastery ? mastery.progress : isMax ? 1 : Math.max(0, Math.min(1, (points - curThreshold) / Math.max(1, nextThreshold - curThreshold)));
+  const progressLabel = isMax ? (mastery ? `精通 ★${stars} · 距下一颗` : '已达最高等级') : `距 Lv.${level + 1}`;
+  const progressValue = isMax ? (mastery ? `${mastery.step - mastery.toNext}/${mastery.step}` : 'MAX') : `${points - curThreshold}/${nextThreshold - curThreshold}`;
   const name = settings.attributeNames?.[attrId] || attr?.displayName || '';
-  const curTitle = getAttributeLevelTitle(settings.attributeLevelTitles, attrId, level);
+  const curTitle = stars > 0 ? getMasteryTitle(attrId, stars) : getAttributeLevelTitle(settings.attributeLevelTitles, attrId, level);
   const related = achievements.filter((a) => a.condition.attribute === attrId || a.condition.type === 'all_attributes_max');
   const unlockedCount = related.filter((a) => a.unlocked).length;
   const achScrollRef = useRef<HTMLDivElement>(null);
@@ -232,7 +234,7 @@ const AttrDetailInline = ({ attrId, level: fallbackLevel, onBack }: { attrId: At
         <div className="mt-2.5 flex items-center gap-2.5">
           <span className="relative inline-flex items-baseline gap-1 px-4 py-1 text-white" style={{ clipPath: slantClip(8), background: P3R.blue }}>
             <span className="text-[11px] font-black tracking-wider text-white/85">LV</span>
-            <span className="text-[20px] font-black italic leading-none tabular-nums">{level}</span>
+            <span className="text-[20px] font-black italic leading-none tabular-nums">{level}{stars > 0 && <span className="ml-0.5 text-[11px] not-italic">★{stars}</span>}</span>
             <span aria-hidden className="absolute -bottom-[2px] right-1 h-[5px] w-[12px]" style={{ background: P3R.magenta, clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
           </span>
           <span className="text-[16px] font-black" style={{ color: P3R.ink }}>{curTitle}</span>
@@ -243,8 +245,8 @@ const AttrDetailInline = ({ attrId, level: fallbackLevel, onBack }: { attrId: At
       {/* 进度（从右飞入） */}
       <motion.div className="relative mt-4" variants={fromRight} transition={spring}>
         <div className="mb-1 flex items-baseline justify-between text-[11px] font-black" style={{ color: P3R.blue }}>
-          <span>{isMax ? '已达最高等级' : `距 Lv.${level + 1}`}</span>
-          <span className="tabular-nums">{isMax ? 'MAX' : `${points - curThreshold}/${nextThreshold - curThreshold}`}</span>
+          <span>{progressLabel}</span>
+          <span className="tabular-nums">{progressValue}</span>
         </div>
         <div className="relative h-[10px] w-full overflow-hidden" style={{ background: 'rgba(var(--p3r-wash, 207,234,246), 0.85)', clipPath: slantClip(3) }}>
           <div className="absolute inset-y-0 left-0" style={{ width: `${progress * 100}%`, background: `linear-gradient(90deg, ${P3R.blue}, ${P3R.cyan})`, clipPath: slantClip(3) }} />
@@ -270,6 +272,27 @@ const AttrDetailInline = ({ attrId, level: fallbackLevel, onBack }: { attrId: At
           })}
         </div>
       </motion.div>
+
+      {/* 精通星阶（第 6 轮）：只在站上 Lv.10 时出现，样式沿用称号阶梯 */}
+      {mastery && (
+        <motion.div className="relative mt-4" variants={fromRight} transition={spring}>
+          <div className="mb-1.5 text-[12px] font-black" style={{ color: P3R.inkSoft }}>精通 · 每 {mastery.step} 点一颗星</div>
+          <div className="space-y-1">
+            {Array.from({ length: stars + 1 }, (_, k) => k + 1).map((k) => {
+              const reached = k <= stars;
+              const current = k === stars && reached;
+              return (
+                <div key={k} className="flex items-center gap-2.5 px-3 py-1.5 text-[13px]" style={{ background: current ? P3R.blue : reached ? 'rgba(var(--p3r-wash, 207,234,246), 0.7)' : 'transparent', clipPath: current || reached ? slantClip(6) : undefined, color: current ? '#fff' : reached ? P3R.ink : P3R.grey }}>
+                  <span className="w-9 shrink-0 text-[11px] font-black tabular-nums">★{k}</span>
+                  <span className="flex-1 font-bold">{getMasteryTitle(attrId, k)}</span>
+                  {current && <span className="text-[10px] font-black">◀ 现在</span>}
+                  {!reached && <span className="text-[10px] tabular-nums">还差 {mastery.toNext} pt</span>}
+                </div>
+              );
+            })}
+          </div>
+        </motion.div>
+      )}
 
       {/* 关联成就（从右飞入） */}
       <motion.div className="relative mt-4" variants={fromRight} transition={spring}>
@@ -513,15 +536,17 @@ export const DashboardP3 = () => {
       .map((a) => {
         const th = settings.levelThresholds?.length ? settings.levelThresholds : a.levelThresholds;
         const id = a.id as AttributeId;
+        const stars = a.level >= (th.length || 5) ? (masteryOf(a.points, th, resolveLevelDifficulty(settings))?.stars ?? 0) : 0;
         return {
           id,
           name: settings.attributeNames[id] || a.displayName,
           level: a.level,
           maxLevel: th.length || 5,
-          title: getAttributeLevelTitle(settings.attributeLevelTitles, id, a.level),
+          stars,
+          title: stars > 0 ? getMasteryTitle(id, stars) : getAttributeLevelTitle(settings.attributeLevelTitles, id, a.level),
         };
       });
-  }, [attributes, settings.levelThresholds, settings.attributeNames, settings.attributeLevelTitles]);
+  }, [attributes, settings]);
 
   // 六格统计（口径同 Dashboard）
   const stats = useMemo(() => {
@@ -545,6 +570,7 @@ export const DashboardP3 = () => {
   };
 
   // ──「今日仪式」slides（约束照旧：条件在组装处拦截，不让内部 return null 的组件变空白页）──
+  const onThisDay = useOnThisDay();
   const ritualSlides: ReactNode[] = [];
   if (hasCountercurrentWarning) {
     ritualSlides.push(
@@ -582,6 +608,20 @@ export const DashboardP3 = () => {
     ritualSlides.push(
       <div key="battle" className="h-full [&>*]:h-full">
         <BattleDashboardWidget />
+      </div>,
+    );
+  }
+
+  // 当年今日（第 6 轮）：满一年且去年今日有记录才有；放在逆影战场那张之后
+  if (onThisDay) {
+    ritualSlides.push(
+      <div key="onthisday" className="h-full [&>*]:h-full">
+        <OnThisDaySlide
+          view={onThisDay}
+          render={(p) => (
+            <RitualSlab icon={<OnThisDayGlyph color={P3R.blue} />} accent={P3R.magenta} onClick={p.onClick} title={p.title} sub={p.sub} />
+          )}
+        />
       </div>,
     );
   }
@@ -643,6 +683,8 @@ export const DashboardP3 = () => {
               <span>{MONTHS[now.getMonth()]}</span>
               <span>{WEEKDAYS[now.getDay()]}</span>
             </span>
+            {/* 岁时小签（第 6 轮）：节气 / 节日当天贴在星期旁，和星期几一般大 */}
+            <SeasonStampBadge dateKey={toLocalDateKey(now)} className="self-center" />
             <span aria-hidden className="ml-1 h-10 w-[3px]" style={{ background: P3R.blue, transform: 'skewX(-24deg)' }} />
             <SkyBadge date={now} />
           </div>

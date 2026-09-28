@@ -178,6 +178,18 @@ export async function fetchWeatherNow(
   return data;
 }
 
+/** 只看缓存、不发请求：记录保存时附天气用——10 分钟内的才算，没有就返回 null，绝不为等天气拖慢保存（第 6 轮） */
+export function peekWeatherNow(cfg: WeatherConfig): WeatherNow | null {
+  if (!weatherReady(cfg)) return null;
+  const hit = cache.get(cacheKey(cfg));
+  return hit && Date.now() - hit.at < CACHE_MS ? hit.data : null;
+}
+
+/** settings 里的四个天气字段 → WeatherConfig（首页天气角标与记录附天气共用一个口径） */
+export const weatherConfigOf = (s: {
+  weatherProvider?: WeatherProvider; weatherApiKey?: string; weatherApiHost?: string; weatherCity?: WeatherCity;
+}): WeatherConfig => ({ provider: s.weatherProvider, apiKey: s.weatherApiKey, host: s.weatherApiHost, city: s.weatherCity });
+
 // ── 城市检索 ──────────────────────────────────────────────────────────
 // 和风有 GeoAPI（同一把 Key，host 是 geoapi.qweather.com 或账号专属域名）；
 // Open-Meteo 有免 Key 的 geocoding。两边统一成 WeatherCity[]。

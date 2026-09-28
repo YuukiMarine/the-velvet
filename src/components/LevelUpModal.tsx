@@ -26,10 +26,14 @@ interface LevelUpModalProps {
   newLevel: number;
   isOpen: boolean;
   onClose: () => void;
+  /** 精通升星（第 6 轮）：有值时整套文案换成「精通 ★N」，newLevel 只当满级数用 */
+  masteryStars?: number;
 }
 
 /** P3R 全屏升级演出（p3-modal-05 1:1） */
-const LevelUpP3 = ({ attributeName, newLevel, isOpen, onClose }: LevelUpModalProps) => {
+const LevelUpP3 = ({ attributeName, newLevel, isOpen, onClose, masteryStars }: LevelUpModalProps) => {
+  const stars = masteryStars ?? 0;
+  const isMastery = stars > 0;
   const containerRef = useModalA11y(isOpen, onClose);
   useBackHandler(isOpen, onClose);
   useAutoClose(isOpen, 3600, onClose);
@@ -53,7 +57,7 @@ const LevelUpP3 = ({ attributeName, newLevel, isOpen, onClose }: LevelUpModalPro
             ref={containerRef}
             role="dialog"
             aria-modal="true"
-            aria-label={`恭喜升级！${attributeName} Lv.${newLevel}`}
+            aria-label={isMastery ? `精通提升！${attributeName} ★${stars}` : `恭喜升级！${attributeName} Lv.${newLevel}`}
             initial={{ scale: 0.6, opacity: 0, y: 26 }}
             animate={{ scale: 1, opacity: 1, y: 0 }}
             exit={{ scale: 0.8, opacity: 0 }}
@@ -74,7 +78,7 @@ const LevelUpP3 = ({ attributeName, newLevel, isOpen, onClose }: LevelUpModalPro
               animate={{ x: 0, opacity: 1 }}
               transition={{ duration: 0.4, delay: 0.14, ease: [0.2, 0.8, 0.3, 1] }}
             >
-              LEVEL
+              {isMastery ? 'MASTERY' : 'LEVEL'}
             </motion.div>
             <motion.div
               aria-hidden
@@ -84,7 +88,7 @@ const LevelUpP3 = ({ attributeName, newLevel, isOpen, onClose }: LevelUpModalPro
               animate={{ scale: 1, opacity: 1 }}
               transition={{ type: 'spring', stiffness: 260, damping: 22, delay: 0.1 }}
             >
-              {String(newLevel).padStart(2, '0')}
+              {String(isMastery ? stars : newLevel).padStart(2, '0')}
             </motion.div>
             {/* 右上蓝角 + 关闭 */}
             <span aria-hidden className="absolute right-0 top-0 h-[84px] w-[96px]" style={{ background: 'var(--p3r-blue, #1b57ff)', clipPath: 'polygon(100% 0, 0 0, 100% 100%)' }} />
@@ -132,7 +136,7 @@ const LevelUpP3 = ({ attributeName, newLevel, isOpen, onClose }: LevelUpModalPro
                   animate={{ y: 0, opacity: 1 }}
                   transition={{ type: 'spring', stiffness: 420, damping: 26, delay: 0.2 }}
                 >
-                  <div className="text-[22px] font-black italic leading-none" style={{ color: 'var(--p3r-blue, #1b57ff)' }}>恭喜升级！</div>
+                  <div className="text-[22px] font-black italic leading-none" style={{ color: 'var(--p3r-blue, #1b57ff)' }}>{isMastery ? '精通提升！' : '恭喜升级！'}</div>
                 </motion.div>
                 {/* 蓝斜带：超大白字属性名 slam 就位 + 白闪一帧（格斗 hit-flash，B2） */}
                 <motion.div
@@ -158,16 +162,16 @@ const LevelUpP3 = ({ attributeName, newLevel, isOpen, onClose }: LevelUpModalPro
 
               {/* Lv.N-1 → Lv.N */}
               <div className="mt-5 flex items-end justify-center gap-3">
-                <span className="text-[20px] font-black italic leading-none" style={{ color: 'rgba(27,87,255,0.55)' }}>Lv.{newLevel - 1}</span>
+                <span className="text-[20px] font-black italic leading-none" style={{ color: 'rgba(27,87,255,0.55)' }}>{isMastery ? `★${stars - 1}` : `Lv.${newLevel - 1}`}</span>
                 <span aria-hidden className="pb-0.5 text-[18px] font-black" style={{ color: 'var(--p3r-blue, #1b57ff)' }}>→</span>
                 <span className="relative text-[34px] font-black italic leading-none" style={{ color: 'var(--p3r-blue, #1b57ff)' }}>
-                  Lv.{newLevel}
+                  {isMastery ? `★${stars}` : `Lv.${newLevel}`}
                   <span aria-hidden className="absolute -bottom-2 left-0 right-0 h-[3px]" style={{ background: 'var(--p3r-cyan, #35d1e8)' }} />
                   <span aria-hidden className="absolute -bottom-2 right-[-12px] h-[3px] w-[9px]" style={{ background: 'var(--p3r-magenta, #f0417f)' }} />
                 </span>
               </div>
 
-              <p className="mt-5 text-[14px] font-black" style={{ color: 'var(--p3r-blue, #1b57ff)' }}>继续加油，你越来越强了！</p>
+              <p className="mt-5 text-[14px] font-black" style={{ color: 'var(--p3r-blue, #1b57ff)' }}>{isMastery ? '满级之后，你还在往前走。' : '继续加油，你越来越强了！'}</p>
             </div>
           </motion.div>
         </motion.div>
@@ -181,10 +185,12 @@ export const LevelUpModal = (props: LevelUpModalProps) => {
   const channel = useUiChannel();
   // P5R（p5-modal-05 稿）：红频道换「猩红大板砸落」全屏演出
   if (channel === 'p5') return <LevelUpP5 {...props} />;
-  if (channel === 'p4') return <LevelUpP4 isOpen={props.isOpen} onClose={props.onClose} attributeName={props.attributeName} newLevel={props.newLevel} />;
+  if (channel === 'p4') return <LevelUpP4 isOpen={props.isOpen} onClose={props.onClose} attributeName={props.attributeName} newLevel={props.newLevel} masteryStars={props.masteryStars} />;
   const p3 = channel === 'p3';
   if (p3) return <LevelUpP3 {...props} />;
-  const { attributeName, newLevel, isOpen, onClose } = props;
+  const { attributeName, newLevel, isOpen, onClose, masteryStars } = props;
+  const stars = masteryStars ?? 0;
+  const isMastery = stars > 0;
   return (
   <CelebrationCutIn
     isOpen={isOpen}
@@ -202,15 +208,15 @@ export const LevelUpModal = (props: LevelUpModalProps) => {
         ⭐
       </motion.span>
     }
-    title="恭喜升级！"
+    title={isMastery ? '精通提升！' : '恭喜升级！'}
   >
     <div className="text-5xl font-bold text-white my-3">{attributeName}</div>
     <div className="flex items-center justify-center gap-4 text-3xl font-bold text-white">
-      <span>Lv.{newLevel - 1}</span>
+      <span>{isMastery ? `★${stars - 1}` : `Lv.${newLevel - 1}`}</span>
       <span>→</span>
-      <span className="text-yellow-200">Lv.{newLevel}</span>
+      <span className="text-yellow-200">{isMastery ? `★${stars}` : `Lv.${newLevel}`}</span>
     </div>
-    <p className="mt-5 text-lg text-white/90">继续加油，你越来越强了！</p>
+    <p className="mt-5 text-lg text-white/90">{isMastery ? '满级之后，你还在往前走。' : '继续加油，你越来越强了！'}</p>
   </CelebrationCutIn>
   );
 };

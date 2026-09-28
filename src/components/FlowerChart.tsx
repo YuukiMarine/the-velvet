@@ -17,6 +17,8 @@ export interface FlowerChartItem {
   name: string;
   level: number;
   maxLevel: number;
+  /** 满级后的精通星数（第 6 轮），0 / 缺省 = 不显示 */
+  stars?: number;
 }
 
 /** 五瓣定色（设计稿采样）：fill 瓣底 / ink 瓣上文字 */
@@ -121,6 +123,7 @@ export const FlowerChart = ({ items, onSelect, showLabels = true }: {
                     style={{ pointerEvents: 'none' }}
                   >
                     {item.level}
+                    {item.stars ? <tspan fontSize={11} dx={1}>★{item.stars}</tspan> : null}
                   </text>
                 </>
               )}

@@ -1,4 +1,5 @@
 import { motion, AnimatePresence } from 'motion/react';
+import { CodexTab } from '@/components/codex/CodexTab';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAppStore } from '@/store';
 import { useShallow } from 'zustand/react/shallow';
@@ -1625,7 +1626,7 @@ const AchievementsTab = () => {
    Main page: tabs
 ───────────────────────────────────────────── */
 export const Achievements = () => {
-  const [activeTab, setActiveTab] = useState<'achievements' | 'skills'>('achievements');
+  const [activeTab, setActiveTab] = useState<'achievements' | 'skills' | 'codex'>('achievements');
   const setCurrentPage = useAppStore(s => s.setCurrentPage);
   const channel = useUiChannel();
   const isP4 = channel === 'p4';
@@ -1634,6 +1635,7 @@ export const Achievements = () => {
   const tabs = [
     { key: 'achievements', label: '成就' },
     { key: 'skills', label: '技能' },
+    { key: 'codex', label: '图鉴' },   // 第 6 轮：塔罗 / 影子 / 岁时三册（用户拍板放这页，不单开）
   ] as const;
 
   const tabContent = (
@@ -1645,7 +1647,7 @@ export const Achievements = () => {
         exit={{ opacity: 0, y: -8 }}
         transition={{ duration: 0.18 }}
       >
-        {activeTab === 'achievements' ? <AchievementsTab /> : <SkillsTab />}
+        {activeTab === 'achievements' ? <AchievementsTab /> : activeTab === 'skills' ? <SkillsTab /> : <CodexTab />}
       </motion.div>
     </AnimatePresence>
   );
@@ -1672,7 +1674,7 @@ export const Achievements = () => {
                     clipPath: slantClip(14),
                     background: active ? P3R.blue : P3R.panel,
                     color: active ? '#fff' : P3R.ink,
-                    marginLeft: tab.key === 'skills' ? -8 : 0,
+                    marginLeft: tab.key === 'achievements' ? 0 : -8,
                     zIndex: active ? 2 : 1,
                   }}
                 >
@@ -1763,10 +1765,7 @@ export const Achievements = () => {
           <P4Sparkle size={16} color="var(--ui-accent)" className="absolute right-[30%] top-16" />
           <div className="relative flex items-end gap-2">
             <BackButton onClick={() => setCurrentPage('menu')} className="mb-3 -ml-1" />
-            {([
-              { key: 'achievements', label: '成就' },
-              { key: 'skills', label: '技能' }
-            ] as const).map(tab => (
+            {tabs.map(tab => (
               <motion.button
                 key={tab.key}
                 onClick={() => { triggerNavFeedback(); setActiveTab(tab.key); }}
@@ -1774,7 +1773,7 @@ export const Achievements = () => {
                 className="relative"
               >
                 <motion.span
-                  animate={{ fontSize: activeTab === tab.key ? '46px' : '28px' }}
+                  animate={{ fontSize: activeTab === tab.key ? '40px' : '24px' }}
                   transition={{ type: 'spring', stiffness: 400, damping: 32 }}
                   className="block px-1 font-black leading-none tracking-tight text-[#131313]"
                   style={{ fontFamily: 'var(--p4-display-font, serif)' }}

@@ -69,9 +69,9 @@ const P5Viewfinder = ({ children }: { children: React.ReactNode }) => {
 export const BattleArena = () => {
   const {
     user, attributes, persona, shadow, battleState, settings, stratum,
-    checkShadowHpRegen, updateSettings: saveSettings, resetBattle, setCurrentPage,
+    updateSettings: saveSettings, resetBattle, setCurrentPage,
     saveBattleState, enterTowerToday, completeTowerNode, deepenStratumIfNewWeek,
-  } = useAppStore(useShallow(s => ({ user: s.user, attributes: s.attributes, persona: s.persona, shadow: s.shadow, battleState: s.battleState, settings: s.settings, stratum: s.stratum, checkShadowHpRegen: s.checkShadowHpRegen, updateSettings: s.updateSettings, resetBattle: s.resetBattle, setCurrentPage: s.setCurrentPage, saveBattleState: s.saveBattleState, enterTowerToday: s.enterTowerToday, completeTowerNode: s.completeTowerNode, deepenStratumIfNewWeek: s.deepenStratumIfNewWeek })));
+  } = useAppStore(useShallow(s => ({ user: s.user, attributes: s.attributes, persona: s.persona, shadow: s.shadow, battleState: s.battleState, settings: s.settings, stratum: s.stratum, updateSettings: s.updateSettings, resetBattle: s.resetBattle, setCurrentPage: s.setCurrentPage, saveBattleState: s.saveBattleState, enterTowerToday: s.enterTowerToday, completeTowerNode: s.completeTowerNode, deepenStratumIfNewWeek: s.deepenStratumIfNewWeek })));
 
   const [activeTab, setActiveTab] = useState<TabKey>('battle');
   // P3R（蓝频道）：p3-battle-reference-v2 形态；battleCard = 全页 13 处卡壳的统一开关
@@ -140,7 +140,6 @@ export const BattleArena = () => {
   );
 
   useEffect(() => {
-    checkShadowHpRegen();
     // 批3：熟练度/解锁字段惰性迁移（存量技能不回锁，unlocked 缺省按当前属性等级置位）
     void useAppStore.getState().refreshSkillUnlocks();
     // 战场成就自愈：历史竞态丢过壮举记录（见 store.recordBattleFeat 注释），进战场页时对一次账
@@ -1290,14 +1289,6 @@ export const BattleArena = () => {
                             className={`${inputCls} !w-20 text-center`}
                             min={10} max={500}
                           />
-                        </div>
-                        {/* HP 回复 */}
-                        <div className="px-4 py-3.5">
-                          <p className="text-sm font-medium text-gray-800 dark:text-gray-100">Shadow HP 每日回复</p>
-                          <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">未挑战时每天自动恢复（按等级递增）</p>
-                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                            Lv1: 2 · Lv2: 3 · Lv3: 4 · Lv4: 5 · Lv5: 5
-                          </p>
                         </div>
                       </div>
                     </div>

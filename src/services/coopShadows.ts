@@ -35,11 +35,8 @@ import { isMoonPhaseNight, moonPhaseSlot } from '@/utils/moonPhase';
 
 // ── 参数区 ────────────────────────────────────────────────
 
-/**
- * 测试期总开关 —— true 则跳过所有降临门槛（月相 / cooldown / 攻击窗口）。
- * 上线前翻成 false。
- */
-export const COOP_SHADOW_ALWAYS_OPEN = false;
+/** 总攻击的 COMBO 门槛（战斗面板与服务同一份，第 6 轮合一） */
+export const ALL_OUT_COMBO = 5;
 
 /** 羁绊之影存活天数 —— 超时自动撤退 */
 export const SHADOW_LIFETIME_DAYS = 10;
@@ -47,11 +44,8 @@ export const SHADOW_LIFETIME_DAYS = 10;
 /** 两次降临之间的冷却（防止每天一只） */
 const SPAWN_COOLDOWN_DAYS = 14;
 
-/**
- * COOP 缔结后多少天才能降临第一次 —— 给新 COOP 一个缓冲期
- * 测试期设为 0
- */
-const BOND_WARMUP_DAYS = COOP_SHADOW_ALWAYS_OPEN ? 0 : 7;
+/** COOP 缔结后多少天才能降临第一次 —— 给新 COOP 一个缓冲期 */
+const BOND_WARMUP_DAYS = 7;
 
 /** 共鸣印记的有效期 */
 const RESONANCE_WINDOW_HOURS = 12;
@@ -128,7 +122,6 @@ function mapCoopAttack(r: RecordModel): CoopAttack {
     damageFinal: r.damage_final as number,
     resonanceBonus: Boolean(r.resonance_bonus),
     weaknessBonus: Boolean(r.weakness_bonus),
-    counterDamage: r.counter_damage as number,
     createdAt: new Date(r.created as string),
   };
 }
@@ -207,12 +200,10 @@ export const reconcileActiveShadow = async (shadow: CoopShadow): Promise<CoopSha
  * 判断"这个时间点是否应该给这个 bond 降临一只羁绊之影"。
  *
  * 规则：
- *   1. 测试期（COOP_SHADOW_ALWAYS_OPEN = true）只保留 "没有 active" 这一条，其它全放行
- *   2. 正式：
- *      - 当天必须是月相之夜（isMoonPhaseNight）
- *      - bond 必须 linked 且已过 BOND_WARMUP_DAYS
- *      - bond 没有 active coop_shadow
- *      - 距离最近一次 coop_shadow（任意状态）≥ SPAWN_COOLDOWN_DAYS
+ *   - 当天必须是月相之夜（isMoonPhaseNight）
+ *   - bond 必须 linked 且已过 BOND_WARMUP_DAYS
+ *   - bond 没有 active coop_shadow
+ *   - 距离最近一次 coop_shadow（任意状态）≥ SPAWN_COOLDOWN_DAYS
  */
 function shouldSpawn(
   bond: CoopBond,
@@ -223,9 +214,8 @@ function shouldSpawn(
   const bondShadows = existingShadows.filter(s => s.bondId === bond.id);
   const hasActive = bondShadows.some(s => s.status === 'active');
   if (hasActive) return false;
-  if (COOP_SHADOW_ALWAYS_OPEN) return true;
 
-  // 正式规则：月相之夜 + cooldown + warmup
+  // 月相之夜 + cooldown + warmup
   if (!isMoonPhaseNight(now)) return false;
   if (bond.createdAt) {
     const ageMs = now.getTime() - bond.createdAt.getTime();
@@ -268,9 +258,8 @@ export function shadowSlotId(bondId: string, slot: number): string {
  * 失败抛错；上层（social pipeline）会 catch + 下次 loadSocial 重试。
  * 这个月夜对方（或本机另一路同步）已经建过 → 返回已有的那只，created = false，不再通知对方。
  *
- * hp_max 由双方属性等级之和决定，保证 scale 随玩家成长：
- *   hp_max = (ΣLv_A + ΣLv_B) × archetype.hpFactor + 500
- * 由于 spawn 时不一定能拿到对方的属性，这里用 bond.otherProfile.totalLv + 我方的 totalLv
+ * hp_max 由双方属性等级之和分档（见 computeShadowHpMax）；spawn 时不一定能拿到对方的属性，
+ * 用 bond.otherProfile.totalLv + 我方的 totalLv。
  */
 export const spawnCoopShadow = async (
   bond: CoopBond,
@@ -306,13 +295,12 @@ export const spawnCoopShadow = async (
     identified_by_a: false,
     identified_by_b: false,
   };
-  // 测试期（随时可降临）不定死 id：同一个月夜里可能先后有好几只
-  const slotId = COOP_SHADOW_ALWAYS_OPEN ? '' : shadowSlotId(bond.id, moonPhaseSlot(now));
+  // 同一对 COOP、同一个月夜只有一只：id 定死，两边同时建也撞成同一条
+  const slotId = shadowSlotId(bond.id, moonPhaseSlot(now));
   let created: RecordModel;
   try {
-    created = await pb.collection('coop_shadows').create(slotId ? { id: slotId, ...fields } : fields);
+    created = await pb.collection('coop_shadows').create({ id: slotId, ...fields });
   } catch (err) {
-    if (!slotId) throw err;
     // 这个 id 已经有了 = 对方 / 本机另一路同步抢先建了：用那只，不再重复通知
     try {
       const existing = await pb.collection('coop_shadows').getOne(slotId, { requestKey: null });
@@ -347,7 +335,6 @@ export const spawnCoopShadow = async (
  * 不显示、不撤退、不结算、不弹结算屏。保持原有顺序。
  */
 export function dedupeShadows(list: CoopShadow[]): CoopShadow[] {
-  if (COOP_SHADOW_ALWAYS_OPEN) return list;
   const progress = (s: CoopShadow): number =>
     s.status === 'defeated' ? 3
       : (s.hpCurrent < s.hpMax || s.comboCount > 0 || s.allOutByA || s.allOutByB) ? 2
@@ -711,7 +698,7 @@ export const allOutAttack = async (input: AllOutAttackInput): Promise<AllOutAtta
   const now = new Date();
   const shadow = await fetchFreshShadow(input.shadow.id);
   assertStillBattling(shadow, now);
-  if (shadow.comboCount < 5) throw new Error('COMBO 未到 5，还不能释放总攻击');
+  if (shadow.comboCount < ALL_OUT_COMBO) throw new Error(`COMBO 未到 ${ALL_OUT_COMBO}，还不能释放总攻击`);
   const priorLog = await listAttacksFor(shadow.id);
 
   const iAmA = shadow.userAId === me;

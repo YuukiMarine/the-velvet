@@ -93,6 +93,8 @@ export const buildExportJson = async (): Promise<string> => {
     dailyEvents: await db.dailyEvents.toArray(),
     // ── v10（v2.7）：窥探命运（7 天塔罗总占卜 + buff 生效期）──
     fateGlimpses: await db.fateGlimpses.toArray(),
+    // ── 第 6 轮：岁时印章 ──
+    stamps: await db.stamps.toArray().catch(() => []),
     _exportedAt: new Date().toISOString(),
     _version: 10,
   };

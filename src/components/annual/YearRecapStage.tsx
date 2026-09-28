@@ -52,11 +52,11 @@ interface YearRecapStageProps {
   onClose: () => void;
 }
 
-type PageKey = 'cover' | 'days' | 'night' | 'growth' | 'streak' | 'highlights' | 'countdown' | 'fate' | 'memory' | 'letter';
+type PageKey = 'cover' | 'days' | 'night' | 'growth' | 'streak' | 'highlights' | 'countdown' | 'fate' | 'weather' | 'memory' | 'letter';
 
 const GHOST: Record<PageKey, string> = {
   cover: 'THE YEAR', days: 'DAYS', night: 'MIDNIGHT', growth: 'GROWTH', streak: 'STREAK',
-  highlights: 'HIGHLIGHTS', countdown: 'COUNTDOWN', fate: 'FATE', memory: 'MEMORIES', letter: 'LETTER',
+  highlights: 'HIGHLIGHTS', countdown: 'COUNTDOWN', fate: 'FATE', weather: 'WEATHER', memory: 'MEMORIES', letter: 'LETTER',
 };
 
 /** 按数据排出这一年要放的卡；没数据的跳过，首尾两张恒在 */
@@ -69,6 +69,7 @@ export function recapPages(r: YearRecap): PageKey[] {
   if (r.highlights.length || r.photoIds.length) p.push('highlights');
   if (r.countdown) p.push('countdown');
   if (r.tarot || r.wishes) p.push('fate');
+  if (r.weather) p.push('weather');
   if (r.memory) p.push('memory');
   p.push('letter');
   return p;
@@ -741,9 +742,41 @@ function LetterPage({ skin, channel, anim, presetName, presetIcon, letter, onOpe
   );
 }
 
+/** 天气页（第 6 轮）：记录上带的天气——「雨天你记了 N 条」 */
+function WeatherPage({ r, skin, channel, anim }: Ctx) {
+  const w = r.weather!;
+  const lead = w.rainy > 0 ? { n: w.rainy, label: '雨天你记了', emoji: '🌧️' }
+    : w.snowy > 0 ? { n: w.snowy, label: '雪天你记了', emoji: '❄️' }
+    : { n: w.sunny, label: '晴天你记了', emoji: '☀️' };
+  return (
+    <Panel channel={channel} seed={11}>
+      <Eyebrow skin={skin} text="WEATHER" />
+      <CardTitle channel={channel} text={`${lead.label} ${lead.n} 条`} anim={anim} />
+      <div className="mt-4 flex items-center gap-4">
+        <motion.span className="shrink-0 text-[56px] leading-none" initial={anim ? { scale: 0.4, opacity: 0 } : false} animate={{ scale: 1, opacity: 1 }} transition={{ delay: 0.2, type: 'spring', stiffness: 260, damping: 18 }} aria-hidden>
+          {lead.emoji}
+        </motion.span>
+        <div className="min-w-0">
+          <div className="flex items-baseline gap-1.5 leading-none" style={{ color: channel === 'p5' ? P5R.redHot : skin.accent }}>
+            <span className="text-[44px] font-black tabular-nums" style={{ fontFamily: skin.numFont, ...skin.numStyle }}>{w.total}</span>
+            <span className="text-[16px] font-black" style={{ color: skin.ink, fontFamily: skin.font }}>条</span>
+          </div>
+          <div className="mt-1 text-[13px] font-bold" style={{ color: skin.sub, fontFamily: skin.font }}>这一年带着天气的记录</div>
+        </div>
+      </div>
+      <motion.div className="mt-4 flex flex-wrap gap-x-4 gap-y-1.5 px-4 py-3 text-[14px] font-bold leading-relaxed" style={{ ...skin.quote, fontFamily: skin.font }} {...stagger(anim, 2)}>
+        <span>☀️ 晴 {w.sunny}</span>
+        <span>🌧️ 雨 {w.rainy}</span>
+        <span>❄️ 雪 {w.snowy}</span>
+        <span>其余 {Math.max(0, w.total - w.sunny - w.rainy - w.snowy)}</span>
+      </motion.div>
+    </Panel>
+  );
+}
+
 const PAGE_VIEW: Record<PageKey, (c: Ctx) => JSX.Element> = {
   cover: CoverPage, days: DaysPage, night: NightPage, growth: GrowthPage, streak: StreakPage,
-  highlights: HighlightsPage, countdown: CountdownPage, fate: FatePage, memory: MemoryPage, letter: LetterPage,
+  highlights: HighlightsPage, countdown: CountdownPage, fate: FatePage, weather: WeatherPage, memory: MemoryPage, letter: LetterPage,
 };
 
 // ── 舞台 ─────────────────────────────────────────────────────────────────────

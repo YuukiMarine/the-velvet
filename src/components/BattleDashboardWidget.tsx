@@ -63,7 +63,7 @@ export const BattleDashboardWidget = () => {
     const status = !persona
       ? '唤醒 Persona →'
       : !shadow
-        ? `${personaName} · 识破暗影 →`
+        ? `${personaName} · 区层显形 →`
         : stratum
           ? `${personaName} · ${stratum.name} ${stratum.baseFloor + (stratum.nodes.find(n => n.id === stratum.currentNodeId)?.floor ?? 0)}F`
           : `${personaName} · ${shadow.name} Lv.${shadow.level}`;
@@ -212,7 +212,7 @@ export const BattleDashboardWidget = () => {
                   ? (persona.attributePersonas?.[persona.equippedMaskAttribute]?.name ?? '反抗者')
                   : '反抗者'}
               </span>
-              <span className={`${statusSize} flex-shrink-0 ${subCls}`}>· 识破暗影 →</span>
+              <span className={`${statusSize} flex-shrink-0 ${subCls}`}>· 区层显形 →</span>
             </>
           ) : (
             <>

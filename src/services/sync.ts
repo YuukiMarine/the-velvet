@@ -232,6 +232,7 @@ const SYNC_TABLES = [
   'longReadings',
   // 窥探命运（v2.7）：7 天塔罗总占卜 + buff 生效期，与 dailyDivinations 同口径上云
   'fateGlimpses',
+  'stamps',
   'settings',
   'todos',
   'todoCompletions',
@@ -572,6 +573,17 @@ export const hasCloudData = async (): Promise<boolean | null> => {
  * 推送和「查阅并合并」的对账都走这里，两边比较的才是同一口径。
  */
 function stripForCloud(key: string, rows: Row[], includeApiKey: boolean): Row[] {
+  if (key === 'activities') {
+    // 记录上的天气只留本机（第 6 轮）：它是"那台设备当时看到的天气"，不是记录内容
+    return rows.map(r => {
+      if (r && typeof r === 'object' && 'weather' in r) {
+        const { weather: _w, ...rest } = r;
+        void _w;
+        return rest;
+      }
+      return r;
+    });
+  }
   if (key === 'confidants') {
     return rows.map(r => {
       if (r && typeof r === 'object' && ('customAvatarDataUrl' in r || 'cardFaceDataUrl' in r)) {
@@ -840,6 +852,18 @@ async function localizeCloudRows(key: string, rows: Row[]): Promise<Row[] | null
       if (faceById.has(id)) next = { ...next, cardFaceDataUrl: faceById.get(id) };
       return next;
     });
+  }
+  if (key === 'activities') {
+    // 云端不存记录天气（见 stripForCloud）：本机原来有的按 id 补回来
+    const local = await db.activities.toArray();
+    const wById = new Map(local.filter(a => !!a.weather).map(a => [a.id, a.weather]));
+    if (wById.size) {
+      toWrite = toWrite.map(r => {
+        const id = r?.id as string | undefined;
+        if (!r || !id || r.weather || !wById.has(id)) return r;
+        return { ...r, weather: wById.get(id) };
+      });
+    }
   }
   if (key === 'summaries') {
     // 云端不存追问上下文（见 stripForCloud）：本机原来有的补回来，追问功能不因一次拉取而失效

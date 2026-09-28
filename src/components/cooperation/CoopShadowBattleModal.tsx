@@ -16,7 +16,7 @@ import {
   identifyShadow,
   listAttacksFor,
   hpFromAttackLog,
-  COOP_SHADOW_ALWAYS_OPEN,
+  ALL_OUT_COMBO,
 } from '@/services/coopShadows';
 import { sumDamagePlus } from '@/utils/confidantLevels';
 import { getUserId } from '@/services/pocketbase';
@@ -55,7 +55,7 @@ const SKILL_TYPE_META: Record<PersonaSkill['type'], { label: string; color: stri
   attack_boost: { label: '攻击强化', color: '#f59e0b' },
 };
 
-const COMBO_THRESHOLD = 5;
+const COMBO_THRESHOLD = ALL_OUT_COMBO;
 
 export function CoopShadowBattleModal({ isOpen, shadow: shadowProp, partnerName, onClose, onVictory }: Props) {
   const persona = useAppStore(s => s.persona);
@@ -245,7 +245,7 @@ export function CoopShadowBattleModal({ isOpen, shadow: shadowProp, partnerName,
   // 与单人战一致的 damagePlus 加成（来自同伴 buff）
   const damagePlusMap = useMemo(() => sumDamagePlus(confidants), [confidants]);
 
-  const windowOpen = COOP_SHADOW_ALWAYS_OPEN || isDailyAttackWindow(new Date());
+  const windowOpen = isDailyAttackWindow(new Date());
 
   // 我是否已识破 / 是否能点识破 —— phase === 'identifying' 时用
   const myIdentified = shadow ? (iAmA ? shadow.identifiedByA : shadow.identifiedByB) : false;
@@ -446,7 +446,7 @@ export function CoopShadowBattleModal({ isOpen, shadow: shadowProp, partnerName,
                   <EntranceCutscene
                     shadowId={shadow.shadowId}
                     displayName={displayName}
-                    line={archetype?.lines?.[0] ?? '"你们终于看清我了。"'}
+                    line={archetype?.line ?? '"你们终于看清我了。"'}
                   />
                 )}
 

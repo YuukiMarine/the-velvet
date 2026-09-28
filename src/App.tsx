@@ -840,6 +840,7 @@ function App() {
                  <LevelUpModal
                    attributeName={levelUpNotification.displayName}
                    newLevel={levelUpNotification.level}
+                   masteryStars={levelUpNotification.masteryStars}
                    isOpen={!!levelUpNotification}
                    onClose={() => setLevelUpNotification(null)}
                  />

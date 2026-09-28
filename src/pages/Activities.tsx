@@ -1,4 +1,5 @@
 import { motion, AnimatePresence } from 'motion/react';
+import { weatherEmoji, type WeatherIcon } from '@/utils/weather';
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { useAppStore, toLocalDateKey } from '@/store';
 import { useShallow } from 'zustand/react/shallow';
@@ -951,6 +952,21 @@ export const ActivitiesView = () => {
 
   // 判断某年某月是否默认展开：今年今月 or 包含今天/昨天
   const isYearOpen = (yearKey: string) => openYears[yearKey] !== false;
+  // 「当年今日」跳过来（第 6 轮）：清掉筛选、展开那个月、滚到那一天，然后把跳转记号消掉
+  const activitiesJumpDate = useAppStore(s => s.activitiesJumpDate);
+  const setActivitiesJumpDate = useAppStore(s => s.setActivitiesJumpDate);
+  useEffect(() => {
+    if (!activitiesJumpDate) return;
+    const [y, m] = activitiesJumpDate.split('-').map(Number);
+    setFilterYear('all'); setFilterMonth('all'); setFilterMethod('all'); setShowImportantOnly(false); setSearchQuery('');
+    setOpenMonths(prev => ({ ...prev, [`${y}-${m}`]: true }));
+    const t = window.setTimeout(() => {
+      document.querySelector(`[data-day-key="${activitiesJumpDate}"]`)?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      setActivitiesJumpDate(null);
+    }, 400);
+    return () => window.clearTimeout(t);
+  }, [activitiesJumpDate, setActivitiesJumpDate]);
+
   const isMonthOpen = (monthKey: string, hasToday: boolean) => {
     if (openMonths[monthKey] !== undefined) return openMonths[monthKey];
     return hasToday;
@@ -1328,6 +1344,7 @@ export const ActivitiesView = () => {
                                   {monthGroup.days.map(dayGroup => (
                                     <div
                                       key={dayGroup.dayKey}
+                                      data-day-key={dayGroup.dayKey}
                                       // content-visibility:auto 让浏览器在该日块滚出视口时跳过渲染/布局；
                                       // contain-intrinsic-size 给出占位尺寸，防止滚动条跳动。
                                       // 单月展开后含大量活动时，可显著降低首屏工作量（支持度：Chrome/Edge/Safari 17.2+；
@@ -1481,6 +1498,12 @@ export const ActivitiesView = () => {
                                                   ) : null
                                                 )}
                                                 <span className="text-[11px] text-gray-400 dark:text-gray-500 tabular-nums ml-auto">
+                                                  {/* 记录时的天气（第 6 轮，只在本机有） */}
+                                                  {activity.weather?.icon && (
+                                                    <span className="mr-1 not-italic" title={activity.weather.text ?? ''} aria-label={activity.weather.text ?? '天气'}>
+                                                      {weatherEmoji(activity.weather.icon as WeatherIcon)}
+                                                    </span>
+                                                  )}
                                                   {new Date(activity.date).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
                                                 </span>
                                               </div>

@@ -46,6 +46,8 @@ export interface Activity {
   };
   method: 'local' | 'todo' | 'battle';
   important?: boolean;
+  /** 记录时的天气（第 6 轮）：保存那一刻 10 分钟内的缓存天气；**只存本机**，上云时剥掉 */
+  weather?: { icon: string; temp?: number; text?: string };
   category?: 'skill_unlock' | 'achievement_unlock' | 'level_up' | 'weekly_goal' | 'countercurrent' | 'shadow_defeat' | 'confidant' | 'calling_card_clear' | 'ledger' | 'terminal_clear' | 'bigdeal_step' | 'bigdeal_clear' | 'wish_fulfilled' | 'return';
   /**
    * 回归补记（PRD_V2.6 §12）：这条是**事后补上的**，不是当天记的。
@@ -657,7 +659,6 @@ export interface Settings {
   /** （批3）登塔回顾的影之评语（AI 约100字点评）。默认 undefined=开；置 false 关闭。 */
   battleCommentEnabled?: boolean;
   // 可自定义 Prompt
-  battleShadowPromptTemplate?: string;      // Shadow AI生成提示模板
   battleVictoryPromptTemplate?: string;     // 胜利叙事提示模板
   // 星象 / 塔罗
   astrologyEnabled?: boolean;               // 默认 true
@@ -753,6 +754,17 @@ export interface YearRecapLine {
  * 年度开场（v2.7.0.6）的数字，全在本机算（utils/yearRecap），生成年度总结时定格进 PeriodSummary.recap。
  * 没有数据的项留空，对应的那张卡就跳过。
  */
+/** 岁时印章（第 6 轮）：节气 / 节日当天记过一条就收一枚；月度心魔与委托的印记也放这张表 */
+export interface SeasonStamp {
+  /** = 岁时键 `${YYYY-MM-DD}-${kind}-${slug}` */
+  id: string;
+  kind: 'term' | 'festival' | 'moon' | 'quest';
+  name: string;
+  date: string;
+  year: number;
+  collectedAt: string;
+}
+
 export interface YearRecap {
   v: 1;
   year: number;
@@ -783,6 +795,8 @@ export interface YearRecap {
     next?: { title: string; days: number };
   };
   tarot?: { draws: number; cardId: string; count: number };
+  /** 记录上带的天气（第 6 轮，只在本机有）：≥ 5 条才给这张卡 */
+  weather?: { total: number; rainy: number; snowy: number; sunny: number };
   wishes?: {
     fulfilled: YearRecapLine[];
     closer: Array<{ title: string; gained: number; now: number }>;
@@ -1368,7 +1382,6 @@ export interface Shadow {
   currentHp3?: number;
   responseLines: string[];
   attackPower: number;
-  lastHpRegenDate?: string;
   /** （批3）词缀：显形时 0-1 条，月相日异变加深每次 +1 */
   affixes?: AffixKind[];
   /** （Lv6）最终 BOSS「伪神」标记：三条血 + 击破后走终局演出而非常规结算 */
@@ -1406,15 +1419,16 @@ export interface DefeatedShadowRecord {
 
 export interface BattleState {
   id: 'current';
-  shadowId: string;
-  personaId: string;
+  /** 旧单影模型遗留（shadowId / personaId / lastBattleDate / battleLog）：不再写入，只为老存档保留 */
+  shadowId?: string;
+  personaId?: string;
   playerHp: number;
   playerMaxHp: number;
   lastBattleDate?: string;
   lastChallengeDate?: string;   // 本次挑战日期（每天只能挑战一次）
   sp: number;
   totalSpEarned: number;
-  battleLog: BattleLogEntry[];
+  battleLog?: BattleLogEntry[];
   status: 'idle' | 'in_battle' | 'shadow_phase2' | 'victory' | 'session_end';
   shadowsDefeated: number;
   lastDefeatedWeakAttribute?: AttributeId;
@@ -2150,7 +2164,6 @@ export interface CoopAttack {
   damageFinal: number;            // 加成后（共鸣 ×1.5 / 弱点 ×1.3 等）
   resonanceBonus: boolean;        // 本次是否吃到共鸣加成
   weaknessBonus: boolean;         // 本次是否吃到弱点加成
-  counterDamage: number;          // Boss 反击造成的伤害
   createdAt: Date;
 }
 

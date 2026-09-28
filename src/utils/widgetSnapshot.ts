@@ -27,6 +27,7 @@
  * 第 5 轮新增的三样也守同一条线：名片状态只有预设 emoji 与两三个字；一起进步只带
  * 伙伴昵称与那条约定的标题（本来就在清单里）；截止日只是日期。
  */
+import { moonPhaseOf } from '@/utils/moonPhase';
 import { useAppStore, toLocalDateKey } from '@/store';
 import { themeToChannel } from '@/ui/channel';
 import { TAROT_BY_ID, FORTUNE_META } from '@/constants/tarot';
@@ -135,16 +136,8 @@ export interface WidgetSnapshot extends WidgetDayView {
   accent: string;
 }
 
-const MOON_NAMES = ['新月', '娥眉月', '上弦月', '盈凸月', '满月', '亏凸月', '下弦月', '残月'];
-const SYNODIC_DAYS = 29.530588853;
-const NEW_MOON_EPOCH = Date.UTC(2000, 0, 6, 18, 14);
-
-const moonOf = (date: Date) => {
-  const days = (date.getTime() - NEW_MOON_EPOCH) / 86400000;
-  const phase = (((days % SYNODIC_DAYS) + SYNODIC_DAYS) % SYNODIC_DAYS) / SYNODIC_DAYS;
-  const idx = Math.round(phase * 8) % 8;
-  return { phase, name: MOON_NAMES[idx], illum: (1 - Math.cos(2 * Math.PI * phase)) / 2 };
-};
+/** 月相读数统一到 utils/moonPhase（第 6 轮） */
+const moonOf = moonPhaseOf;
 
 /** 频道 → 强调色。与各频道 CSS 变量同值，硬编在这里是因为原生侧读不到 CSS。 */
 const ACCENT: Record<WidgetSnapshot['channel'], string> = {

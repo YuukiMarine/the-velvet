@@ -304,15 +304,19 @@ const StraddleTitle = ({ text, size = 50 }: { text: string; size?: number }) => 
 );
 
 // ── 05 · 恭喜升级 ────────────────────────────────────────────────────────────
-export const LevelUpP5 = ({ attributeName, newLevel, isOpen, onClose }: {
+export const LevelUpP5 = ({ attributeName, newLevel, isOpen, onClose, masteryStars }: {
   attributeName: string; newLevel: number; isOpen: boolean; onClose: () => void;
+  /** 精通升星（第 6 轮）：有值时文案换「精通 ★N」 */
+  masteryStars?: number;
 }) => {
   const anim = useBoldness();
+  const stars = masteryStars ?? 0;
+  const isMastery = stars > 0;
   return (
     <P5CutInStage
       isOpen={isOpen}
       onClose={onClose}
-      ariaLabel={`恭喜升级！${attributeName} Lv.${newLevel}`}
+      ariaLabel={isMastery ? `精通提升！${attributeName} ★${stars}` : `恭喜升级！${attributeName} Lv.${newLevel}`}
       autoCloseMs={3600}
       onShown={triggerLevelFeedback}
     >
@@ -374,7 +378,7 @@ export const LevelUpP5 = ({ attributeName, newLevel, isOpen, onClose }: {
                 <span aria-hidden className="absolute inset-0" style={{ transform: 'translate(3px,4px)', background: '#5c0004', clipPath: roughQuad(414, 5) }} />
                 <span aria-hidden className="absolute inset-0" style={{ background: P5R.paper, clipPath: roughQuad(415, 4) }} />
                 <span aria-hidden className="absolute inset-[3px]" style={{ background: P5R.ink, clipPath: roughQuad(416, 3) }} />
-                <span className="relative tabular-nums">Lv.{Math.max(0, newLevel - 1)}</span>
+                <span className="relative tabular-nums">{isMastery ? `★${stars - 1}` : `Lv.${Math.max(0, newLevel - 1)}`}</span>
               </span>
               <span aria-hidden className="h-0 w-0 border-y-[10px] border-l-[16px] border-y-transparent" style={{ borderLeftColor: P5R.ink }} />
               <span
@@ -384,7 +388,7 @@ export const LevelUpP5 = ({ attributeName, newLevel, isOpen, onClose }: {
                 <span aria-hidden className="absolute inset-0" style={{ transform: 'translate(3px,4px)', background: P5R.ink, clipPath: roughQuad(417, 5) }} />
                 <span aria-hidden className="absolute inset-0" style={{ background: P5R.paper, clipPath: roughQuad(418, 4) }} />
                 <span aria-hidden className="absolute inset-[3px]" style={{ background: P5R.redHot, clipPath: roughQuad(419, 3) }} />
-                <span className="relative tabular-nums">Lv.{newLevel}</span>
+                <span className="relative tabular-nums">{isMastery ? `★${stars}` : `Lv.${newLevel}`}</span>
               </span>
             </motion.div>
 
@@ -398,12 +402,12 @@ export const LevelUpP5 = ({ attributeName, newLevel, isOpen, onClose }: {
               <span aria-hidden className="absolute inset-0" style={{ transform: 'translate(4px,5px)', background: P5R.ink, clipPath: 'polygon(0 52%, 16px 2px, 100% 0, calc(100% - 14px) 100%, 12px calc(100% - 3px))' }} />
               <span aria-hidden className="absolute inset-0" style={{ background: P5R.ink, clipPath: 'polygon(0 52%, 16px 2px, 100% 0, calc(100% - 14px) 100%, 12px calc(100% - 3px))' }} />
               <span aria-hidden className="absolute inset-[3px]" style={{ background: P5R.paper, clipPath: 'polygon(0 52%, 15px 2px, 100% 0, calc(100% - 13px) 100%, 11px calc(100% - 3px))' }} />
-              <span className="relative text-[16px] font-black" style={{ color: P5R.ink, fontFamily: P5_FONT }}>继续加油，你越来越强了！</span>
+              <span className="relative text-[16px] font-black" style={{ color: P5R.ink, fontFamily: P5_FONT }}>{isMastery ? '满级之后，你还在往前走。' : '继续加油，你越来越强了！'}</span>
             </motion.div>
           </div>
         </P5Panel>
 
-        <StraddleTitle text="恭喜升级！" size={50} />
+        <StraddleTitle text={isMastery ? '精通提升！' : '恭喜升级！'} size={50} />
         {/* ✕ 让到标题上方：稿上它是整幅构图右上角的独立一块，不压标题 */}
         <P5CloseKey onClose={onClose} style={{ right: -6, top: -86, height: 48, width: 48 }} />
       </div>

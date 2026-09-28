@@ -65,6 +65,8 @@ export const ALL_LOCAL_TABLES = [
   'navigatorPresets', 'navigatorMemos', 'navigatorSessions', 'navigatorMessages',
   // v2.7.0.6 记录配图（本地专属；不上云、不进主备份，"清空数据"必须清）
   'activityImages', 'activityImageData',
+  // 第 6 轮 岁时印章
+  'stamps',
 ] as const;
 
 /** importData 的返回：导入后记录已不存在的配图有几张、占多少字节（0 张 = 不用问） */
@@ -195,7 +197,6 @@ import {
   SKILLS,
   DEFAULT_KEYWORD_RULES,
   DEFAULT_LEVEL_THRESHOLDS,
-  SHADOW_REGEN_PER_LEVEL,
   HP_BONUS_PER_DEFEAT,
   SHADOW_LEVEL_CONFIG,
 } from '@/constants';
@@ -207,6 +208,10 @@ import { currentRecordStreak, shouldGrantDiligence } from '@/battle/preparation'
 import { DILIGENCE_MAX_CHARGES, GOLDEN_SP_MULT, BOSS_ATTACK_BY_LEVEL, HEROPROOF_SP_CUT } from '@/battle/numbers';
 import { generateDefeatLetter, type FinalBossFacts } from '@/utils/battleAI';
 import { normalizeAttributeLevelTitles } from '@/utils/attributeLevelTitles';
+import { levelForPoints, masteryOf, thresholdsOf } from '@/utils/levels';
+import { peekWeatherNow, weatherConfigOf } from '@/utils/weather';
+import { seasonMarkOf } from '@/utils/calendar';
+import { resolveLevelDifficulty } from '@/utils/levelDifficulty';
 
 // 成长总结的角色预设 / 请求载荷已迁到 utils/summaryAI（v2.7.0.6）；这里只做转出口，
 // 旧的 import { ... } from '@/store' 照常可用。
@@ -233,9 +238,12 @@ interface AppState {
   summaries: PeriodSummary[];
   weeklyGoals: WeeklyGoal[];
   currentPage: string;
+  /** 「当年今日」→ 记录页：要定位到的那一天（YYYY-MM-DD），记录页消费后清空（第 6 轮） */
+  activitiesJumpDate: string | null;
   /** 行动页（任务+记录合并）当前子页；菜单/首页等外部入口可在导航前指定 */
   actionsSubTab: 'todos' | 'activities';
-  levelUpNotification: { id: string; displayName: string; level: number } | null;
+  /** masteryStars 有值 = 满级后的精通升星（第 6 轮），弹窗换精通口径 */
+  levelUpNotification: { id: string; displayName: string; level: number; masteryStars?: number } | null;
   achievementNotification: { id: string; title: string } | null;
   skillNotification: { id: string; name: string } | null;
   modalBlocker: boolean;
@@ -250,6 +258,7 @@ interface AppState {
   unlockAchievement: (achievementId: string) => Promise<void>;
   unlockSkill: (skillId: string) => Promise<void>;
   setCurrentPage: (page: string) => void;
+  setActivitiesJumpDate: (key: string | null) => void;
   setActionsSubTab: (tab: 'todos' | 'activities') => void;
   updateSettings: (newSettings: Partial<Settings>) => Promise<void>;
   loadData: () => Promise<void>;
@@ -549,7 +558,6 @@ interface AppState {
   saveShadow: (shadow: Shadow) => Promise<void>;
   saveBattleState: (state: BattleState) => Promise<void>;
   earnSP: (amount: number) => Promise<void>;
-  checkShadowHpRegen: () => Promise<void>;
   startBattleSession: () => void;
   endBattleSession: () => void;
   defeatShadow: () => Promise<void>;
@@ -768,6 +776,7 @@ const DEFAULT_SETTINGS: Settings = {
     charm: '魅力'
   },
   levelThresholds: DEFAULT_LEVEL_THRESHOLDS,
+  levelDifficulty: 'easy',
   attributeLevelTitles: normalizeAttributeLevelTitles(undefined, DEFAULT_LEVEL_THRESHOLDS.length),
   aiMatchedPresetNames: false,
   aiPresetNameBackup: undefined,
@@ -841,6 +850,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   weeklyGoals: [],
   settings: DEFAULT_SETTINGS,
   currentPage: 'dashboard',
+  activitiesJumpDate: null,
   // 每次启动首进「行动」先落记录页（内存态不持久化，会话内仍记忆上次停留）
   actionsSubTab: 'activities',
   levelUpNotification: null,
@@ -988,7 +998,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       const defaultSettings: Settings = {
         id: 'default',
         attributeNames: mergedAttrNames,
-        levelThresholds: DEFAULT_LEVEL_THRESHOLDS,
+        levelThresholds: [...DEFAULT_LEVEL_THRESHOLDS],
+        levelDifficulty: 'easy',
         attributeLevelTitles: normalizeAttributeLevelTitles(undefined, DEFAULT_LEVEL_THRESHOLDS.length),
         aiMatchedPresetNames: false,
         aiPresetNameBackup: undefined,
@@ -1076,6 +1087,9 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     const adjustedPoints = { ...points };
     const levelUps: Array<{ attribute: AttributeId; fromLevel: number; toLevel: number }> = [];
+    /** 精通升星（第 6 轮）：满级后每 500 / 700 点一颗星，星数涨了也算一次「升级」 */
+    const masteryUps: Array<{ attribute: AttributeId; stars: number }> = [];
+    const difficulty = resolveLevelDifficulty(settings);
     const levelUpActivities: Activity[] = [];
     const activityDate = options?.date || new Date();
 
@@ -1095,6 +1109,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (equippedMask && (adjustedPoints[equippedMask] || 0) > 0) {
       adjustedPoints[equippedMask] = adjustedPoints[equippedMask] + 1;
     }
+
+    // 记录天气（第 6 轮）：只给当天、当下记的用户记录附一份 10 分钟内的缓存天气；没缓存就不附，
+    // 绝不为等天气拖慢保存。字段只存本机，上云时 stripForCloud 剥掉。
+    const isTodayUserRecord = method === 'local' && !options?.category && toLocalDateKey(activityDate) === toLocalDateKey();
+    const weatherNow = isTodayUserRecord ? peekWeatherNow(weatherConfigOf(settings)) : null;
 
     // 窥探命运 buff（v2.7，3 天）：当日**首次带加点的手动记录** → 加点最高的那项额外 +1。
     // 判定纯粹从数据推导（当日尚无带加点的手动记录），无需额外标记位；
@@ -1122,6 +1141,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       userId: user.id,
       date: activityDate,
       description,
+      ...(weatherNow ? { weather: { icon: weatherNow.icon, temp: Math.round(weatherNow.temp), text: weatherNow.text } } : {}),
       pointsAwarded: {
         knowledge: adjustedPoints.knowledge || 0,
         guts: adjustedPoints.guts || 0,
@@ -1177,13 +1197,11 @@ export const useAppStore = create<AppState>((set, get) => ({
             if (!attribute) continue;
             const oldLevel = attribute.level;
             const newPoints = attribute.points + pts;
-            let newLevel = attribute.level;
-            const thresholds = get().settings.levelThresholds?.length
-              ? get().settings.levelThresholds
-              : attribute.levelThresholds;
-            while (newLevel < thresholds.length && newPoints >= thresholds[newLevel]) {
-              newLevel++;
-            }
+            const thresholds = thresholdsOf(get().settings, attribute);
+            const newLevel = levelForPoints(newPoints, thresholds);
+            const starsBefore = masteryOf(attribute.points, thresholds, difficulty)?.stars ?? 0;
+            const starsAfter = masteryOf(newPoints, thresholds, difficulty)?.stars ?? 0;
+            if (starsAfter > starsBefore) masteryUps.push({ attribute: attrId as AttributeId, stars: starsAfter });
             if (newLevel > oldLevel) {
               levelUps.push({
                 attribute: attrId as AttributeId,
@@ -1214,6 +1232,33 @@ export const useAppStore = create<AppState>((set, get) => ({
             }
             await db.attributes.update(attrId, { points: newPoints, level: newLevel });
           }
+        }
+
+        // 精通升星（第 6 轮）：留一条 level_up 类记录；没有普通升级时也弹一次庆祝（精通口径）
+        for (const m of masteryUps) {
+          levelUpActivities.push({
+            id: uuidv4(),
+            userId: user.id,
+            date: new Date(),
+            description: `${settings.attributeNames[m.attribute as AttributeNamesKey]} 精通 ★${m.stars}`,
+            pointsAwarded: { knowledge: 0, guts: 0, dexterity: 0, kindness: 0, charm: 0 },
+            method: 'local' as const,
+            category: 'level_up',
+          });
+        }
+        if (levelUps.length === 0 && masteryUps.length > 0) {
+          const m = masteryUps[0];
+          const maxLevel = thresholdsOf(get().settings).length || 10;
+          setTimeout(() => {
+            set({
+              levelUpNotification: {
+                id: m.attribute,
+                displayName: settings.attributeNames[m.attribute as AttributeNamesKey],
+                level: maxLevel,
+                masteryStars: m.stars,
+              },
+            });
+          }, 500);
         }
 
         // 活动写入（包含刚计算好的 levelUps）
@@ -1323,6 +1368,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     // 事务已提交：一次性刷新所有内存状态（含 confidants）。skipLoad：调用方紧接着还要再记一条（命运加成），由那条统一刷新
     if (!options?.skipLoad) await get().loadData();
 
+    // 岁时印章（第 6 轮）：当天是节气 / 节日、且这条是当下记的用户记录 → 收进岁时册（只打开 App 不算，用户口径）
+    if (isTodayUserRecord) {
+      try {
+        const mark = seasonMarkOf(toLocalDateKey(activityDate));
+        if (mark && !(await db.stamps.get(mark.key))) {
+          await db.stamps.put({ id: mark.key, kind: mark.kind, name: mark.name, date: mark.date, year: Number(mark.date.slice(0, 4)), collectedAt: new Date().toISOString() });
+        }
+      } catch { /* 印章收不进不影响记录本身 */ }
+    }
+
     // 为战场 SP 奖励：活动获得的总点数即为 SP
     const totalPts = Object.values(adjustedPoints).reduce((s, v) => s + (v || 0), 0);
     if (totalPts > 0 && get().battleState) {
@@ -1350,14 +1405,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!attribute) return;
     
     const newPoints = attribute.points + points;
-    let newLevel = attribute.level;
-    
-    const thresholds = get().settings.levelThresholds?.length
-      ? get().settings.levelThresholds
-      : attribute.levelThresholds;
-    while (newLevel < thresholds.length && newPoints >= thresholds[newLevel]) {
-      newLevel++;
-    }
+    const newLevel = levelForPoints(newPoints, thresholdsOf(get().settings, attribute));
     
     await db.attributes.update(attributeId, { 
       points: newPoints, 
@@ -1478,6 +1526,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
+  setActivitiesJumpDate: (key: string | null) => set({ activitiesJumpDate: key }),
+
   setCurrentPage: (page: string) => {
     set({ currentPage: page });
   },
@@ -1522,17 +1572,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (newSettings.levelThresholds) {
       const thresholds = updated.levelThresholds;
       const attributes = await db.attributes.toArray();
-      const updatedAttributes = attributes.map((attr) => {
-        let newLevel = 1;
-        while (newLevel < thresholds.length && attr.points >= thresholds[newLevel]) {
-          newLevel++;
-        }
-        return {
-          ...attr,
-          level: newLevel,
-          levelThresholds: thresholds
-        };
-      });
+      const updatedAttributes = attributes.map((attr) => ({
+        ...attr,
+        level: levelForPoints(attr.points, thresholds),
+        levelThresholds: thresholds,
+      }));
       await db.attributes.bulkPut(updatedAttributes);
       set({ attributes: updatedAttributes });
     }
@@ -2818,6 +2862,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       weeklyGoals: [],
       settings: DEFAULT_SETTINGS,
       currentPage: 'dashboard',
+      activitiesJumpDate: null,
       levelUpNotification: null,
       achievementNotification: null,
       skillNotification: null,
@@ -2891,14 +2936,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           if (!attr) continue;
           const newPoints = Math.max(0, attr.points - delta);
           const thresholds = settingsThresholds?.length ? settingsThresholds : attr.levelThresholds;
-          // 从 level 1 起向上累加，直到超过 newPoints
-          let newLevel = 1;
-          for (let lv = 1; lv < thresholds.length; lv++) {
-            if (newPoints >= thresholds[lv]) newLevel = lv + 1;
-            else break;
-          }
-          // 老用户阈值数组可能不含 lv1 入口（thresholds[0]=0），保险起见 clamp
-          if (newLevel < 1) newLevel = 1;
+          const newLevel = levelForPoints(newPoints, thresholds);
           await db.attributes.update(attrId, { points: newPoints, level: newLevel });
         }
 
@@ -4198,13 +4236,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       // 直接加点（不经过 addActivity 的每日事件倍率 / 技能加成）
       if (attr) {
         const newPoints = attr.points + rewardPoints;
-        const attrThresholds = get().settings.levelThresholds?.length
-          ? get().settings.levelThresholds
-          : attr.levelThresholds;
-        let newLevel = attr.level;
-        while (newLevel < attrThresholds.length && newPoints >= attrThresholds[newLevel]) {
-          newLevel++;
-        }
+        const newLevel = levelForPoints(newPoints, thresholdsOf(get().settings, attr));
         await db.attributes.update(attr.id, { points: newPoints, level: newLevel });
       }
 
@@ -4336,11 +4368,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const attr = attributes.find(a => a.id === attrId);
       if (!attr) continue;
       const newPoints = Math.max(0, attr.points - 1);
-      const thresholds = settings.levelThresholds?.length ? settings.levelThresholds : attr.levelThresholds;
-      let newLevel = 1;
-      for (let lv = thresholds.length - 1; lv >= 0; lv--) {
-        if (newPoints >= thresholds[lv]) { newLevel = lv + 1; break; }
-      }
+      const newLevel = levelForPoints(newPoints, thresholdsOf(settings, attr));
       await db.attributes.update(attrId, { points: newPoints, level: newLevel });
 
       const attrName = settings.attributeNames[attrId] || attrId;
@@ -4709,31 +4737,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   // 战斗结算已全部移入 src/battle/engine.ts（引擎 v2）；store 只负责跨 session 持久化。
-
-  checkShadowHpRegen: async () => {
-    const { shadow, battleState, stratum } = get();
-    if (!shadow) return;
-    // 塔模型下（批2）每日回血被「月相日·异变加深」取代——有区层即跳过
-    if (stratum) return;
-    // 已胜利但未领取奖励时不回血：否则击破的 Shadow 会被每日回血"复活"，玩家被迫重打一遍
-    if (battleState?.status === 'victory') return;
-    const today = toLocalDateKey();
-    if (shadow.lastHpRegenDate === today) return;
-    const regenPerDay = SHADOW_REGEN_PER_LEVEL[Math.min(shadow.level - 1, SHADOW_REGEN_PER_LEVEL.length - 1)] ?? 2;
-    const lastRegen = shadow.lastHpRegenDate;
-    let daysElapsed = 1;
-    if (lastRegen) {
-      const lastDate = new Date(lastRegen + 'T00:00:00');
-      const todayDate = new Date(today + 'T00:00:00');
-      daysElapsed = Math.max(1, Math.floor((todayDate.getTime() - lastDate.getTime()) / 86400000));
-    }
-    const totalRegen = regenPerDay * daysElapsed;
-    const newHp1 = Math.min(shadow.maxHp, shadow.currentHp + totalRegen);
-    const newHp2 = shadow.maxHp2 !== undefined
-      ? Math.min(shadow.maxHp2, (shadow.currentHp2 ?? shadow.maxHp2) + totalRegen)
-      : undefined;
-    await get().saveShadow({ ...shadow, currentHp: newHp1, currentHp2: newHp2, lastHpRegenDate: today });
-  },
+  // （旧单影模型的每日回血 checkShadowHpRegen 已删：塔模型下从不生效，第 6 轮清理）
 
   startBattleSession: () => {
     const { battleState, shadow, settings } = get();
@@ -4751,9 +4755,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   endBattleSession: () => {
     const { battleState } = get();
     if (!battleState) return;
-    // Preserve shadow_phase2 across sessions so re-entry detects it via shadow HP
-    const newStatus = battleState.status === 'shadow_phase2' ? 'idle' as const : 'idle' as const;
-    const updated = { ...battleState, status: newStatus };
+    const updated = { ...battleState, status: 'idle' as const };
     set({ battleState: updated });
     get().saveBattleState(updated);
   },
@@ -4786,7 +4788,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       ...battleState,
       status: 'idle',
       shadowsDefeated: battleState.shadowsDefeated + 1,
-      shadowId: '',
       lastDefeatedWeakAttribute: shadow?.weakAttribute,
       defeatedShadowLog: newRecord
         ? [...(battleState.defeatedShadowLog ?? []), newRecord]
@@ -4820,13 +4821,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (preservedSp > 0) {
       const freshState: BattleState = {
         id: 'current',
-        shadowId: '',
-        personaId: '',
         playerHp: 10,
         playerMaxHp: 10,
         sp: preservedSp,
         totalSpEarned: preservedTotalSp,
-        battleLog: [],
         status: 'idle',
         shadowsDefeated: 0,
       };
@@ -4883,7 +4881,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     await get().saveShadow(boss); // shadows 单例 = 当前区层主影
     await get().saveStratum(stratum);
     const bs = get().battleState;
-    if (bs) await get().saveBattleState({ ...bs, shadowId: boss.id, status: 'idle' });
+    if (bs) await get().saveBattleState({ ...bs, status: 'idle' });
   },
 
   enterTowerToday: async () => {
@@ -5273,7 +5271,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const bs = get().battleState;
     if (bs) {
       await get().saveBattleState({
-        ...bs, shadowId: boss.id, status: 'idle',
+        ...bs, status: 'idle',
         finalBossStage: 'revealed', finalBossFlaw: flaw,
       });
     }
@@ -5333,7 +5331,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     await get().saveBattleState({
       ...battleState,
       status: 'idle',
-      shadowId: '',
       shadowsDefeated: battleState.shadowsDefeated + 1,
       lastDefeatedWeakAttribute: shadow?.weakAttribute,
       defeatedShadowLog: record
@@ -5403,7 +5400,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       maxStratumLevel: get().highestClearedStratum(),
       parkedStratum: alreadyParked ? battleState.parkedStratum : (stratum ?? undefined),
       parkedShadow: alreadyParked ? battleState.parkedShadow : (shadow ?? undefined),
-      shadowId: boss.id,
       status: 'idle',
     });
     await get().saveShadow(boss);
@@ -5430,7 +5426,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     } else {
       set({ shadow: null });
     }
-    const next = { ...bs, shadowId: parkedShadow?.id ?? '', status: 'idle' as const };
+    const next = { ...bs, status: 'idle' as const };
     delete next.parkedStratum;
     delete next.parkedShadow;
     await get().saveBattleState(next);
@@ -5456,7 +5452,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     await get().saveShadow(guard);
     await get().saveStratum(ringStratum);
     const bs = get().battleState;
-    if (bs) await get().saveBattleState({ ...bs, shadowId: guard.id, status: 'idle' });
+    if (bs) await get().saveBattleState({ ...bs, status: 'idle' });
   },
 
   removeRandomShadowAffix: async () => {
@@ -6001,11 +5997,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           const attr = attrMap.get(attrId as AttributeId);
           if (!attr) continue;
           const newPoints = attr.points + p;
-          let newLevel = attr.level;
-          const thresholds = get().settings.levelThresholds?.length
-            ? get().settings.levelThresholds
-            : attr.levelThresholds;
-          while (newLevel < thresholds.length && newPoints >= thresholds[newLevel]) newLevel++;
+          const newLevel = levelForPoints(newPoints, thresholdsOf(get().settings, attr));
           await db.attributes.update(attrId, { points: newPoints, level: newLevel });
           if (newLevel > attr.level) {
             // 触发升级通知

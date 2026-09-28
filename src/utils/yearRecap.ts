@@ -147,6 +147,19 @@ export async function buildYearRecap(year: number, settings: Settings, now: Date
     };
   }
 
+  // ── 天气（第 6 轮）：记录上存的当时天气，只在本机有；≥ 5 条才给这张卡 ──
+  let weather: YearRecap['weather'];
+  const ww = own.filter(a => !!a.weather?.icon);
+  if (ww.length >= 5) {
+    const count = (icons: string[]) => ww.filter(a => icons.includes(a.weather!.icon)).length;
+    weather = {
+      total: ww.length,
+      rainy: count(['rain', 'heavy-rain', 'thunder']),
+      snowy: count(['snow']),
+      sunny: count(['clear-day', 'clear-night']),
+    };
+  }
+
   // ── 塔罗：次数 + 来得最勤的一张（同样多取后来的那张） ──
   let tarot: YearRecap['tarot'];
   const yd = draws.filter(d => inYear(d.date)).sort((a, b) => a.date.localeCompare(b.date));
@@ -226,6 +239,7 @@ export async function buildYearRecap(year: number, settings: Settings, now: Date
     photoIds,
     countdown,
     tarot,
+    weather,
     wishes: wishStat,
     memory,
   };
