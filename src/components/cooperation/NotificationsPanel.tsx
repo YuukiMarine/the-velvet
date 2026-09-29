@@ -527,7 +527,10 @@ function NotificationItem({
   const pactKind = pactNoticeKind(n);
   const pactInvitePending = pactKind === 'pact_invite' && pactStatus === 'pending';
   const pactInviteResolved = pactKind === 'pact_invite' && pactStatus != null && pactStatus !== 'pending';
-  const title = pactKind ? PACT_TITLES[pactKind] : (TITLE_BY_TYPE[n.type] ?? '系统消息');
+  // 识破借了「降临」的类型、payload.event='identify' 区分（第 6 轮：以前面板不看 event，识破也显示成「降临」）
+  const isIdentify = n.type === 'coop_shadow_spawned' && n.payload?.event === 'identify';
+  const isAllOut = n.type === 'coop_shadow_attacked' && !!n.payload?.all_out;
+  const title = pactKind ? PACT_TITLES[pactKind] : isIdentify ? '识破了羁绊之影' : isAllOut ? '发动了总攻击' : (TITLE_BY_TYPE[n.type] ?? '系统消息');
   const fromName = n.fromProfile?.nickname || n.fromProfile?.userId || '陌生人';
   const detail = describePayload(n);
   const timeText = formatRelative(n.createdAt);
@@ -817,9 +820,15 @@ function describePayload(n: NotificationEntry): string {
     return narrative ? `在历史里记下：「${narrative.slice(0, 60)}」` : '在 COOP 历史里记下了一笔（已同步到你这边）。';
   }
   if (n.type === 'coop_shadow_spawned') {
+    if (n.payload?.event === 'identify') return 'Ta 已经识破了那只影——你也识破之后，战斗就开始。';
     return '一只羁绊之影降临了。10 天之内，每晚 18:00 到次日 07:00 可以挑战它。';
   }
   if (n.type === 'coop_shadow_attacked') {
+    if (n.payload?.all_out) {
+      const dmg = typeof n.payload?.damage === 'number' ? (n.payload.damage as number) : null;
+      const hpLeft = typeof n.payload?.hp_remaining === 'number' ? (n.payload.hp_remaining as number) : null;
+      return `发动了总攻击${dmg !== null ? `，造成 ${dmg} 伤害` : ''}${hpLeft !== null ? ` · Boss 剩余 HP ${hpLeft}` : ''}。`;
+    }
     const persona = (n.payload?.persona_name as string | undefined)?.trim();
     const skill = (n.payload?.skill_name as string | undefined)?.trim();
     const dmg = typeof n.payload?.damage === 'number' ? (n.payload.damage as number) : null;

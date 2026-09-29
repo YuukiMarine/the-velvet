@@ -182,6 +182,8 @@ export interface LootContext {
   rng: () => number;
   makeId: () => string;
   today: string; // YYYY-MM-DD
+  /** （第 6 轮 深渊周常「贪婪」）概率性掉落的倍率；必得的不动 */
+  rateMult?: number;
 }
 
 export function rollRelic(ctx: LootContext, forceQuality?: LootQuality): RelicInstance {
@@ -220,14 +222,14 @@ export function rollNodeLoot(source: 'chest' | 'elite' | 'boss' | 'golden', ctx:
       ? { kind: 'myth', myth: rollMyth(ctx) }
       : { kind: 'relic', relic: rollRelic(ctx) });
   } else if (source === 'elite') {
-    if (ctx.rng() < ELITE_LOOT_RATE) {
+    if (ctx.rng() < ELITE_LOOT_RATE * (ctx.rateMult ?? 1)) {
       drops.push(ctx.rng() < 0.25
         ? { kind: 'myth', myth: rollMyth(ctx) }
         : { kind: 'relic', relic: rollRelic(ctx) });
     }
   } else {
     drops.push({ kind: 'relic', relic: rollRelic({ ...ctx, floorRatio: 1 }) });
-    if (ctx.rng() < CHAIN_DROP_RATE) {
+    if (ctx.rng() < CHAIN_DROP_RATE * (ctx.rateMult ?? 1)) {
       const pool = CHAIN_KEYS.filter(k => !ctx.ownedChainKeys.includes(k));
       if (pool.length === 0) {
         drops.push({ kind: 'sp', amount: DUP_CHAIN_SP, reason: '共鸣已臻圆满' });
@@ -236,7 +238,7 @@ export function rollNodeLoot(source: 'chest' | 'elite' | 'boss' | 'golden', ctx:
         drops.push({ kind: 'chain', chain: { key, obtainedAt: ctx.today } });
       }
     }
-    if (ctx.rng() < OATH_DROP_RATE) {
+    if (ctx.rng() < OATH_DROP_RATE * (ctx.rateMult ?? 1)) {
       const pool = OATH_KINDS.filter(k => !ctx.ownedOathKinds.includes(k));
       if (pool.length > 0) {
         const kind = pool[Math.floor(ctx.rng() * pool.length)];

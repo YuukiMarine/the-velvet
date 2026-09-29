@@ -13,6 +13,8 @@ import { useCloudSocialStore } from '@/store/cloudSocial';
 import {
   attackCoopShadow,
   allOutAttack,
+  allOutDamage as allOutDamageOf,
+  ALL_OUT_COMBO_CAP,
   identifyShadow,
   listAttacksFor,
   hpFromAttackLog,
@@ -82,6 +84,11 @@ export function CoopShadowBattleModal({ isOpen, shadow: shadowProp, partnerName,
   const [flashDmg, setFlashDmg] = useState<{ n: number; isAllOut?: boolean; isCrit?: boolean } | null>(null);
   const [expandedSkill, setExpandedSkill] = useState<string | null>(null);
   const [allOutFiring, setAllOutFiring] = useState(false);
+  const [allOutDamage, setAllOutDamage] = useState<number | null>(null);
+  // 总攻击（第 6 轮）：两个人的等级和 × COMBO；对方的等级和取 COOP 名片快照，拿不到按我方算
+  const coopBonds = useCloudSocialStore(s => s.coopBonds);
+  const myTotalLevels = attributes.reduce((s, a) => s + (a.level ?? 1), 0);
+  const partnerTotalLevels = (shadowProp && coopBonds.find(b => b.id === shadowProp.bondId)?.otherProfile?.totalLv) || myTotalLevels;
   // COMBO 弹字：未满 5 时，每次变化显示一行"COMBO × N"，2s 后淡出
   const [comboFlash, setComboFlash] = useState<{ n: number; key: number } | null>(null);
   const lastComboRef = useRef<number | null>(null);
@@ -316,6 +323,7 @@ export function CoopShadowBattleModal({ isOpen, shadow: shadowProp, partnerName,
         skillName: skill.name,
         skillAttribute: selectedAttr,
         damageRaw,
+        history: useCloudSocialStore.getState().coopShadows,
       });
 
       // 联机模式玩家没有血条 —— 只扣 SP
@@ -354,15 +362,18 @@ export function CoopShadowBattleModal({ isOpen, shadow: shadowProp, partnerName,
     const piTimer = window.setTimeout(() => playSound('/pi.mp3', 0.75), 1100);
 
     try {
-      const myTotalLevels = attributes.reduce((s, a) => s + (a.level ?? 1), 0);
       const result = await allOutAttack({
         shadow,
         personaId: persona.id,
         personaName: equippedName,
         myTotalLevels,
+        partnerTotalLevels,
+        history: useCloudSocialStore.getState().coopShadows,
       });
       upsertCoopShadow(result.updatedShadow);
       setAttackLog(prev => [result.attack, ...prev]);
+      // 特效里亮出伤害数字（第 6 轮：双人名 + 双斩 + 伤害，1.8 秒）
+      setAllOutDamage(result.attack.damageFinal);
       setFlashDmg({ n: result.attack.damageFinal, isAllOut: true });
       setTimeout(() => setFlashDmg(null), 1600);
 
@@ -370,10 +381,11 @@ export function CoopShadowBattleModal({ isOpen, shadow: shadowProp, partnerName,
         // 让特效播完再进结算
         setTimeout(() => {
           setAllOutFiring(false);
+          setAllOutDamage(null);
           onVictory();
-        }, 1500);
+        }, 1900);
       } else {
-        setTimeout(() => setAllOutFiring(false), 1300);
+        setTimeout(() => { setAllOutFiring(false); setAllOutDamage(null); }, 1800);
       }
     } catch (e) {
       setErr(e instanceof Error ? e.message : '总攻击失败');
@@ -698,8 +710,8 @@ export function CoopShadowBattleModal({ isOpen, shadow: shadowProp, partnerName,
                     }}
                   />
                   <span className="relative">⚡ ALL-OUT ATTACK ⚡</span>
-                  <div className="text-[9px] font-normal tracking-wider opacity-80 mt-0.5">
-                    COMBO × {comboCount} · 不占当日回合
+                  <div className="relative text-[9px] font-normal tracking-wider opacity-80 mt-0.5">
+                    (Lv{myTotalLevels} + Lv{partnerTotalLevels}) × COMBO {Math.min(comboCount, ALL_OUT_COMBO_CAP)} ≈ {allOutDamageOf(myTotalLevels, partnerTotalLevels, comboCount)} · 不占当日回合
                   </div>
                 </motion.button>
               </div>
@@ -810,7 +822,7 @@ export function CoopShadowBattleModal({ isOpen, shadow: shadowProp, partnerName,
       </AnimatePresence>
 
       {/* 总攻击全屏特效 */}
-      <AllOutOverlay isFiring={allOutFiring} personaName={equippedName} />
+      <AllOutOverlay isFiring={allOutFiring} personaName={equippedName} partnerName={partnerName} damage={allOutDamage} />
     </>,
     document.body,
   );

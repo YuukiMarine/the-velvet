@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { User, Attribute, Activity, Achievement, Skill, Settings, ThemeType, AttributeId, AttributeNamesKey, DailyEvent, Todo, TodoCompletion, TodoStep, FateCandidate, BigDealClearPayload, PeriodSummary, SummaryPeriod, SummaryPromptPreset, WeeklyGoal, WeeklyGoalItem, Persona, Shadow, BattleState, TowerStratum, StratumNode, DailyDivination, LongReading, LongReadingFollowUp, FateGlimpse, Confidant, ConfidantEvent, ConfidantBuff, CounselSession, CounselMessage, CounselArchive, CallingCard, NotifSlot, LedgerEntry, Budget, SpendWorth, LedgerAsset, Wish, WishProgressPoint, WishProgressSource, WishProgressCutPayload, WishProposalPayload, ReturnPayload, ReturnTier, BackfillEntry, BattleArsenal, ChainKey, AffixKind, NavigatorPreset, NavigatorMemo, RelicInstance, FinalBossFlaw, FinalePhase } from '@/types';
+import { User, Attribute, Activity, Achievement, Skill, Settings, ThemeType, AttributeId, AttributeNamesKey, DailyEvent, Todo, TodoCompletion, TodoStep, FateCandidate, BigDealClearPayload, PeriodSummary, SummaryPeriod, SummaryPromptPreset, WeeklyGoal, WeeklyGoalItem, Persona, Shadow, BattleState, TowerStratum, StratumNode, DailyDivination, LongReading, LongReadingFollowUp, FateGlimpse, Confidant, ConfidantEvent, ConfidantBuff, CounselSession, CounselMessage, CounselArchive, CallingCard, NotifSlot, LedgerEntry, Budget, SpendWorth, LedgerAsset, Wish, WishProgressPoint, WishProgressSource, WishProgressCutPayload, WishProposalPayload, ReturnPayload, ReturnTier, BackfillEntry, BattleArsenal, ChainKey, AffixKind, NavigatorPreset, NavigatorMemo, RelicInstance, FinalBossFlaw, FinalePhase , MoonShadowState , SeasonStamp, Quest } from '@/types';
 import { TAROT_BY_ID } from '@/constants/tarot';
 import { summarizeCounsel, type CounselContext, type CounselConfidantBrief, type CounselRecentEvent } from '@/utils/counselAI';
 import { db } from '@/db';
@@ -67,6 +67,8 @@ export const ALL_LOCAL_TABLES = [
   'activityImages', 'activityImageData',
   // 第 6 轮 岁时印章
   'stamps',
+  // 第 6 轮 委托板
+  'quests',
 ] as const;
 
 /** importData 的返回：导入后记录已不存在的配图有几张、占多少字节（0 张 = 不用问） */
@@ -200,9 +202,16 @@ import {
   HP_BONUS_PER_DEFEAT,
   SHADOW_LEVEL_CONFIG,
 } from '@/constants';
-import { PLAYER_BASE_HP, nodeSpReward, bossSpReward, RELIC_SALVAGE_SP, RELIC_SLOTS_BY_STRATUM, AFFIX_HP_MULT, masteryStars } from '@/battle/numbers';
+import { PLAYER_BASE_HP, nodeSpReward, bossSpReward, RELIC_SALVAGE_SP, RELIC_SLOTS_BY_STRATUM, AFFIX_HP_MULT, masteryStars,
+  MEMORY_ECHO_MIN_CANDIDATES, MOON_BOSS_SP, ABYSS_RULE_THICK_SP, ABYSS_RULE_GREED_DROP,
+} from '@/battle/numbers';
 import { buildStratum, buildAbyssRing, buildFinalStratum, buildRevisitStratum, migrationStratumName, reachableNodeIds, rollMobSpec, weekKeyOf } from '@/battle/tower';
 import { TOWER_EVENT_IDS } from '@/battle/events';
+import { abyssWeeklyRule, abyssWeeklyWeakAttribute } from '@/battle/abyssRules';
+import { buildMoonShadow, monthKeyOf } from '@/battle/moonBoss';
+import type { MoonRevealData } from '@/battle/moonBoss';
+import { fullMoonSlotOnDay } from '@/utils/moonPhase';
+import { memoryEchoCandidates } from '@/utils/towerMemory';
 import { rollNodeLoot, rollAffixes, buildOathSkill, towerRelicBonus, MYTH_POOL, rollRelic, rollMyth, lootLabel, type LootDrop } from '@/battle/loot';
 import { currentRecordStreak, shouldGrantDiligence } from '@/battle/preparation';
 import { DILIGENCE_MAX_CHARGES, GOLDEN_SP_MULT, BOSS_ATTACK_BY_LEVEL, HEROPROOF_SP_CUT } from '@/battle/numbers';
@@ -211,6 +220,7 @@ import { normalizeAttributeLevelTitles } from '@/utils/attributeLevelTitles';
 import { levelForPoints, masteryOf, thresholdsOf } from '@/utils/levels';
 import { peekWeatherNow, weatherConfigOf } from '@/utils/weather';
 import { seasonMarkOf } from '@/utils/calendar';
+import { generateWeekQuests, previousWeekKey, questBoardUnlocked, questDone, questTitle, weekRangeOf, weekRangeOfKey, type QuestData } from '@/utils/questBoard';
 import { resolveLevelDifficulty } from '@/utils/levelDifficulty';
 
 // 成长总结的角色预设 / 请求载荷已迁到 utils/summaryAI（v2.7.0.6）；这里只做转出口，
@@ -558,6 +568,20 @@ interface AppState {
   saveShadow: (shadow: Shadow) => Promise<void>;
   saveBattleState: (state: BattleState) => Promise<void>;
   earnSP: (amount: number) => Promise<void>;
+  // ── 满月心魔（第 6 轮 · PRD §11.6）──
+  /** 满月当天：建本月的月度心魔并在后台生成；满月那天没进战场的过后作废；生成到一半被杀的接着跑 */
+  ensureMoonShadow: () => Promise<void>;
+  /** 满月当天第一次进战场（新开一环 / 当天第一次潜入）时判定一次：没走过的一环 → 装进顶层；否则这个月忽略 */
+  moonCheckOnEntry: () => Promise<void>;
+  /** 生成完落库；已判定要装、那一环在等 → 立刻换进去 */
+  completeMoonShadow: (slot: number, data: MoonRevealData, offline: boolean) => Promise<void>;
+  // ── 委托板（第 6 轮）──
+  /** 周一后第一次打开：生成本周三张；上周做完没领的自动领取并留一句话在 questNotice */
+  refreshQuests: () => Promise<void>;
+  /** 手动领取：进度够了才发 SP（没开战场只记计数）；一周三张都领了盖一枚「委托全清」印记 */
+  claimQuest: (id: string) => Promise<{ ok: boolean; sp: number }>;
+  questNotice: string | null;
+  clearQuestNotice: () => void;
   startBattleSession: () => void;
   endBattleSession: () => void;
   defeatShadow: () => Promise<void>;
@@ -755,7 +779,7 @@ export function applyCustomThemeColor(hex: string) {
 
 /** F2a 默认提醒时段：新用户初始值，且现有用户首次开启通知时（notificationSlots 为 undefined）用它兜底。 */
 export const DEFAULT_NOTIF_SLOTS: NotifSlot[] = [
-  { id: 'morning', time: '08:00', enabled: true, label: '晨间序曲', contents: ['tarot', 'summary'] },
+  { id: 'morning', time: '08:00', enabled: true, label: '晨间序曲', contents: ['tarot', 'summary', 'quests'] },
   { id: 'evening', time: '21:30', enabled: true, label: '夜间结算', contents: ['record', 'todos', 'countercurrent', 'together'] },
 ];
 
@@ -828,6 +852,42 @@ let notifSyncPending: { promise: Promise<void>; resolve: () => void; timer: Retu
 /** 战场壮举写入串行锁：一场胜利会连发好几笔，见 recordBattleFeat 的注释 */
 let featWriteLock: Promise<void> = Promise.resolve();
 
+/** 满月心魔换进当前回廊环的顶层（shadows 单例 = 这一环的守卫） */
+async function installMoonGuard(get: () => AppState, ms: MoonShadowState): Promise<void> {
+  const st = get().stratum;
+  if (!st || !ms.shadow) return;
+  await get().saveShadow(ms.shadow);
+  await get().saveStratum({ ...st, moonBossPending: false });
+  const bs = get().battleState;
+  if (bs) await get().saveBattleState({ ...bs, moonShadow: { ...ms, status: 'installed', eligible: true, name: ms.shadow.name, shadow: undefined } });
+}
+
+/** 委托板进度要看的那一包数据：store 里有的直接拿，其余按需读表（配图只读本周 / 指定起点之后的） */
+async function questDataOf(get: () => AppState, now: Date, imagesFrom?: Date): Promise<QuestData> {
+  const st = get();
+  const from = imagesFrom ?? weekRangeOf(now).start;
+  const [divinations, images, ledger] = await Promise.all([
+    db.dailyDivinations.toArray(),
+    db.activityImages.where('createdAt').aboveOrEqual(from).toArray(),
+    db.ledgerEntries.toArray(),
+  ]);
+  const { useCloudStore } = await import('@/store/cloud');
+  return {
+    activities: st.activities,
+    todos: st.todos,
+    completions: st.todoCompletions,
+    divinations,
+    images,
+    summaries: st.summaries,
+    ledger,
+    pacts: useCloudSocialStore.getState().pacts,
+    myId: useCloudStore.getState().cloudUser?.id,
+    battleState: st.battleState,
+    aiReady: !!getAIConfig(st.settings),
+    now,
+  };
+}
+
 export const useAppStore = create<AppState>((set, get) => ({
   user: null,
   attributes: [],
@@ -851,6 +911,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   settings: DEFAULT_SETTINGS,
   currentPage: 'dashboard',
   activitiesJumpDate: null,
+  questNotice: null,
   // 每次启动首进「行动」先落记录页（内存态不持久化，会话内仍记忆上次停留）
   actionsSubTab: 'activities',
   levelUpNotification: null,
@@ -1423,8 +1484,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       const todoCompletions = await db.todoCompletions.toArray();
       const activities = await db.activities.toArray();
       const weeklyGoalsAll = await db.weeklyGoals.toArray();
+      const questsAll = await db.quests.toArray();
       const progress = (() => {
         switch (achievement.condition.type) {
+          case 'quests_claimed':
+            return questsAll.filter(q => !!q.claimedAt).length;
           case 'consecutive_days':
             return calcMaxStreak(streakDates(activities));
           case 'days_since_first_record':
@@ -2808,6 +2872,8 @@ export const useAppStore = create<AppState>((set, get) => ({
        await get().loadBattleData();
        // 加载同伴数据
        await get().loadConfidants();
+       // 委托板（第 6 轮）：周一后第一次打开生成本周三张
+       void get().refreshQuests();
     } catch (error) {
       console.error('加载数据失败:', error);
     }
@@ -2863,6 +2929,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       settings: DEFAULT_SETTINGS,
       currentPage: 'dashboard',
       activitiesJumpDate: null,
+  questNotice: null,
       levelUpNotification: null,
       achievementNotification: null,
       skillNotification: null,
@@ -3279,6 +3346,13 @@ export const useAppStore = create<AppState>((set, get) => ({
       // v9 补挂：旧版每日事件。全字段字符串，无 Date 需还原（见 backup.ts 同处注释）
       if (data.dailyEvents && Array.isArray(data.dailyEvents)) {
         await db.dailyEvents.bulkPut(data.dailyEvents as DailyEvent[]);
+      }
+      // 第 6 轮：岁时印章 / 委托板——备份里一直有，导入时漏了写回（导入会先清空本地，漏了就丢）。全字段字符串
+      if (data.stamps && Array.isArray(data.stamps)) {
+        await db.stamps.bulkPut(data.stamps as SeasonStamp[]);
+      }
+      if (data.quests && Array.isArray(data.quests)) {
+        await db.quests.bulkPut(data.quests as Quest[]);
       }
 
       // 重新加载应用
@@ -4148,6 +4222,14 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
       void get().updateSettings({ notificationSlots: slots, notifTogetherAdded: true });
     }
+    // 第 6 轮：老用户含「今日塔罗」的时段补上「委托板」（只补一次）
+    if (!settings.notifQuestsAdded && slots.length) {
+      if (!slots.some(s => s.contents.includes('quests'))) {
+        slots = slots.map(s => (s.contents.includes('tarot') ? { ...s, contents: [...s.contents, 'quests'] } : s));
+      }
+      void get().updateSettings({ notificationSlots: slots, notifQuestsAdded: true });
+    }
+    const questWeek = await db.quests.where('weekKey').equals(weekRangeOf(new Date()).weekKey).toArray();
     const dueTodos = todos.filter(t =>
       t.isActive && !t.archivedAt && (!t.startDate || t.startDate <= todayKey),
     );
@@ -4165,6 +4247,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         return fresh && !reportPushDelivered(fresh.id) ? { id: fresh.id } : null;
       })(),
       loggedToday: activities.some(a => !a.category && toLocalDateKey(new Date(a.date)) === todayKey),
+      // 委托板（第 6 轮）：解锁了才在周一提；本周三张都领了就不提
+      questBoardUnlocked: questBoardUnlocked(activities),
+      questsAllClaimedThisWeek: questWeek.length >= 3 && questWeek.every(q => !!q.claimedAt),
       // 一起进步（v2.7.0.6）：今天还没完成的约定，被催过的优先
       together: pickTogetherReminder(todos, useCloudSocialStore.getState().pacts, todayKey, id => get().getTodayTodoProgress(id).isComplete),
       // 助手口吻（v2.7 notifVoice）：只取当日缓存，绝不在这里等生成——先排内置文案
@@ -4703,11 +4788,14 @@ export const useAppStore = create<AppState>((set, get) => ({
           baseFloor: 0,
           now: new Date(),
           eventPoolIds: TOWER_EVENT_IDS,
+          memoryEcho: memoryEchoCandidates(get().activities).length >= MEMORY_ECHO_MIN_CANDIDATES,
           chestSp: (floor) => nodeSpReward(sh.level, floor, 0, Math.random) + 5,
         });
         await db.strata.put(migrated);
         set({ stratum: migrated });
       }
+      // 满月心魔（第 6 轮）：满月当天第一次打开就在后台开始显形
+      void get().ensureMoonShadow();
     } catch { /* ignore */ }
   },
 
@@ -4735,6 +4823,60 @@ export const useAppStore = create<AppState>((set, get) => ({
     const updated = { ...battleState, sp: battleState.sp + earned, totalSpEarned: battleState.totalSpEarned + earned };
     await get().saveBattleState(updated);
   },
+
+  // ── 委托板（第 6 轮 · PRD §11.3）──────────────────────────────
+  refreshQuests: async () => {
+    const st = get();
+    if (!st.user || !questBoardUnlocked(st.activities)) return;
+    const now = new Date();
+    const range = weekRangeOf(now);
+    const existing = await db.quests.where('weekKey').equals(range.weekKey).toArray();
+    if (existing.length >= 3) return;
+    const data = await questDataOf(get, now);
+    // 上周做完没领的：替你领了，留一句话
+    const prevKey = previousWeekKey(range.weekKey);
+    const prev = await db.quests.where('weekKey').equals(prevKey).toArray();
+    const prevRange = weekRangeOfKey(prevKey);
+    const prevData: QuestData = { ...data, images: await db.activityImages.where('createdAt').aboveOrEqual(prevRange.start).toArray() };
+    const auto: string[] = [];
+    let autoSp = 0;
+    for (const q of prev) {
+      if (q.claimedAt || !questDone(q, prevData, prevRange)) continue;
+      await db.quests.update(q.id, { claimedAt: now.toISOString(), autoClaimed: true });
+      auto.push(questTitle(q, st.settings.attributeNames));
+      autoSp += q.rewardSp;
+    }
+    if (auto.length) {
+      if (get().battleState) await get().earnSP(autoSp);
+      set({ questNotice: `上周的「${auto.join('」「')}」做完了没来得及领，已经替你领了${get().battleState ? `，+${autoSp} SP` : ''}。` });
+    }
+    // 本周三张：周键 + 账号 id 做种，两台设备各自生成也是同一组
+    const { useCloudStore } = await import('@/store/cloud');
+    const seed = useCloudStore.getState().cloudUser?.id ?? st.user.id;
+    const fresh = generateWeekQuests(range, seed, data, now);
+    const have = new Set(existing.map((q) => q.id));
+    await db.quests.bulkPut(fresh.filter((q) => !have.has(q.id)));
+  },
+
+  claimQuest: async (id: string) => {
+    const q = await db.quests.get(id);
+    if (!q || q.claimedAt) return { ok: false, sp: 0 };
+    const now = new Date();
+    const range = weekRangeOfKey(q.weekKey);
+    const data = await questDataOf(get, now, range.start);
+    if (!questDone(q, data, range)) return { ok: false, sp: 0 };
+    await db.quests.update(id, { claimedAt: now.toISOString() });
+    const sp = get().battleState ? q.rewardSp : 0;
+    if (sp > 0) await get().earnSP(sp);
+    // 一周三张都领了：岁时册收一枚「委托全清」印记
+    const week = await db.quests.where('weekKey').equals(q.weekKey).toArray();
+    if (week.length >= 3 && week.every((x) => !!x.claimedAt)) {
+      await db.stamps.put({ id: `${q.weekKey}-quest`, kind: 'quest', name: '委托全清', date: q.weekKey, year: Number(q.weekKey.slice(0, 4)), collectedAt: now.toISOString() });
+    }
+    return { ok: true, sp };
+  },
+
+  clearQuestNotice: () => set({ questNotice: null }),
 
   // 战斗结算已全部移入 src/battle/engine.ts（引擎 v2）；store 只负责跨 session 持久化。
   // （旧单影模型的每日回血 checkShadowHpRegen 已删：塔模型下从不生效，第 6 轮清理）
@@ -4767,8 +4909,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     // R19「回头看看」：重游层的心魔只是回响——不进档案、不加 HP 上限、不动进度
     const isRevisit = !!stratum?.revisit;
     // 批3 阴影档案馆：新藏品带 描述/词缀/代表台词/击败时的你/区层等级（存量记录字段留空 = 首批藏品）
+    // 满月心魔（第 6 轮）：它就是这一环的守卫，额外 +30 SP、档案标月份、岁时册收一枚满月印记
+    const isMoon = isAbyss && !!shadow?.moonSlot;
     const newRecord = shadow && !isRevisit ? {
-      shadowName: isAbyss ? `${shadow.name}（回廊第${stratum!.abyssRing}环）` : shadow.name,
+      shadowName: isMoon ? `${shadow.name}（满月 · 回廊第${stratum!.abyssRing}环）` : isAbyss ? `${shadow.name}（回廊第${stratum!.abyssRing}环）` : shadow.name,
+      ...(isMoon ? { moonMonth: shadow.moonMonth } : {}),
       level: shadow.level,
       // 用本地日期口径（toLocalDateKey），不要 toISOString().slice —— 那是 UTC：
       // 东八区凌晨 0–8 点击破，档案里会写成"昨天"（FS7 审查；全站其余日期都走这个函数）
@@ -4796,12 +4941,33 @@ export const useAppStore = create<AppState>((set, get) => ({
       abyssHighestRing: isAbyss
         ? Math.max(battleState.abyssHighestRing ?? 0, stratum!.abyssRing!)
         : battleState.abyssHighestRing,
+      // 深渊周常（第 6 轮）：本周最好 / 每条规则最好，只和自己比
+      // 「本周」按击破这一刻的周算：上周进的环这周才打完，也算进这周
+      abyssWeekly: isAbyss && stratum!.abyssRuleId
+        ? (() => {
+            const wk = weekKeyOf(new Date());
+            const prev = battleState.abyssWeekly && battleState.abyssWeekly.weekKey === wk ? battleState.abyssWeekly : null;
+            return { weekKey: wk, ruleId: prev?.ruleId ?? abyssWeeklyRule(wk).id, bestRing: Math.max(prev?.bestRing ?? 0, stratum!.abyssRing!) };
+          })()
+        : battleState.abyssWeekly,
+      abyssRuleBest: isAbyss && stratum!.abyssRuleId
+        ? { ...(battleState.abyssRuleBest ?? {}), [stratum!.abyssRuleId]: Math.max(battleState.abyssRuleBest?.[stratum!.abyssRuleId] ?? 0, stratum!.abyssRing!) }
+        : battleState.abyssRuleBest,
       // 主塔通关才推进度（重游 / 深渊都不算）
       maxStratumLevel: !isAbyss && !isRevisit && stratum
         ? Math.max(battleState.maxStratumLevel ?? 0, Math.min(5, stratum.level))
         : battleState.maxStratumLevel,
+      moonDefeats: isMoon ? (battleState.moonDefeats ?? 0) + 1 : battleState.moonDefeats,
+      moonShadow: isMoon && battleState.moonShadow && battleState.moonShadow.slot === shadow!.moonSlot
+        ? { ...battleState.moonShadow, status: 'defeated' as const, name: shadow!.name }
+        : battleState.moonShadow,
     };
     await get().saveBattleState(updated);
+    if (isMoon && shadow) {
+      await get().earnSP(MOON_BOSS_SP);
+      const dk = toLocalDateKey();
+      await db.stamps.put({ id: `${dk}-moon`, kind: 'moon', name: shadow.name, date: dk, year: Number(dk.slice(0, 4)), collectedAt: new Date().toISOString() });
+    }
     // 批2：区层主影被击破 → 区层通关（上方新区层随「显形仪式」解锁；深渊环通关 → 同晚可深入下一环）
     const st = get().stratum;
     if (st && st.status === 'climbing') {
@@ -4876,6 +5042,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       baseFloor,
       now: new Date(),
       eventPoolIds: TOWER_EVENT_IDS,
+      memoryEcho: memoryEchoCandidates(get().activities).length >= MEMORY_ECHO_MIN_CANDIDATES,
       chestSp: (floor) => nodeSpReward(level, floor, 0, Math.random) + 5,
     });
     await get().saveShadow(boss); // shadows 单例 = 当前区层主影
@@ -4885,6 +5052,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   enterTowerToday: async () => {
+    // 满月心魔（第 6 轮）：满月当天第一次潜入时判定这个月的月度心魔（先确保它已建好）
+    await get().ensureMoonShadow();
+    if (get().battleState?.lastChallengeDate !== toLocalDateKey()) await get().moonCheckOnEntry();
     const { stratum, battleState: prevBs, activities } = get();
     // 批3 记忆台词：在 lastChallengeDate 被覆写前快照缺席天数
     const prevKey = prevBs?.lastChallengeDate;
@@ -4942,7 +5112,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     else if (node.type === 'chest') sp = node.lootSp ?? 0;
     else if (node.type === 'mob' || node.type === 'elite') sp = nodeSpReward(stratum.level, node.floor, stratum.deepenCount, Math.random);
     else if (node.type === 'golden') sp = Math.round(nodeSpReward(stratum.level, node.floor, stratum.deepenCount, Math.random) * GOLDEN_SP_MULT); // 批5 金色回响
-    // event / echo 的收益由效果本身发放
+    // 事件引出的遭遇战（第 6 轮修）：打赢了照小影节点发；其余 event / echo 的收益由效果本身发放
+    else if (node.type === 'event' && opts?.wasMob) sp = nodeSpReward(stratum.level, node.floor, stratum.deepenCount, Math.random);
+    // 深渊周常「厚甲」：本环 SP 收益 ×1.5
+    if (sp > 0 && stratum.abyssRing && stratum.abyssRuleId === 'thick_armor') sp = Math.round(sp * ABYSS_RULE_THICK_SP);
     // 批3：贪婪词缀（击败多掉 50% SP）+ 登塔者罗盘（节点 SP 收益+）
     const affixes = node.type === 'boss' ? shadow?.affixes : node.mob?.affixes;
     if (sp > 0 && affixes?.includes('greedy')) sp = Math.round(sp * 1.5);
@@ -5069,6 +5242,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       rng: Math.random,
       makeId: uuidv4,
       today: toLocalDateKey(),
+      // 深渊周常「贪婪」：概率性掉落 ×2
+      rateMult: stratum?.abyssRing && stratum.abyssRuleId === 'greed' ? ABYSS_RULE_GREED_DROP : 1,
     });
     if (drops.length === 0) return drops;
     const next: BattleArsenal = {
@@ -5389,6 +5564,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       baseFloor: 0,
       now: new Date(),
       eventPoolIds: TOWER_EVENT_IDS,
+      memoryEcho: memoryEchoCandidates(get().activities).length >= MEMORY_ECHO_MIN_CANDIDATES,
       chestSp: (floor) => nodeSpReward(lv, floor, 0, Math.random) + 5,
       attrNames: settings.attributeNames as Record<AttributeId, string>,
       hp: { maxHp: cfg.maxHp, maxHp2: cfg.maxHp2 },
@@ -5432,12 +5608,91 @@ export const useAppStore = create<AppState>((set, get) => ({
     await get().saveBattleState(next);
   },
 
+  // ── 满月心魔（第 6 轮 · PRD §11.6）──────────────────────────────
+  ensureMoonShadow: async () => {
+    let bs = get().battleState;
+    if (!bs || bs.finalBossStage !== 'defeated') return;
+    const now = new Date();
+    const today = toLocalDateKey(now);
+    let ms = bs.moonShadow;
+    // 满月那天没进战场（没判定过）→ 过了那天就作废，不回补
+    if (ms && ms.date < today && ms.eligible === undefined && (ms.status === 'generating' || ms.status === 'ready')) {
+      ms = { ...ms, status: 'skipped', eligible: false, shadow: undefined };
+      bs = { ...bs, moonShadow: ms };
+      await get().saveBattleState(bs);
+    }
+    // 生成好了、那一环还在等（中途去「回头看看」了）→ 回来就装
+    if (ms && ms.status === 'ready' && ms.eligible === true && get().stratum?.moonBossPending) {
+      await installMoonGuard(get, ms);
+      return;
+    }
+    const job = await import('@/utils/moonJob');
+    // 还在生成、但没有任务在跑（App 被杀过）：当天的接着跑；隔了天的不再等 AI，直接离线模板收尾
+    if (ms && ms.status === 'generating' && !job.moonJobRunning(ms.slot)) {
+      void job.startMoonJob(ms.slot, { stale: ms.date < today });
+    }
+    const slot = fullMoonSlotOnDay(now);
+    if (slot === null || ms?.slot === slot) return;
+    const month = monthKeyOf(now);
+    // 今天已经进过战场才走到这里（App 跨夜一直开着）：这个月忽略
+    if (bs.lastChallengeDate === today) {
+      await get().saveBattleState({ ...bs, moonShadow: { slot, month, date: today, status: 'skipped', eligible: false } });
+      return;
+    }
+    await get().saveBattleState({ ...bs, moonShadow: { slot, month, date: today, status: 'generating' } });
+    void job.startMoonJob(slot);
+  },
+
+  moonCheckOnEntry: async () => {
+    const bs = get().battleState;
+    const ms = bs?.moonShadow;
+    if (!bs || !ms || ms.eligible !== undefined) return;
+    if (ms.status !== 'generating' && ms.status !== 'ready') return;
+    if (ms.date !== toLocalDateKey()) return;
+    const st = get().stratum;
+    // 「一环还没走过」= 回廊环、不是重游、没踏进第 1 层、没有清过的节点
+    const fresh = !!st && !!st.abyssRing && !st.revisit && st.status === 'climbing' && !st.currentNodeId && st.nodes.every(n => !n.cleared);
+    if (!st || !fresh) {
+      await get().saveBattleState({ ...bs, moonShadow: { ...ms, status: 'skipped', eligible: false, shadow: undefined } });
+      return;
+    }
+    if (ms.status === 'ready' && ms.shadow) {
+      await installMoonGuard(get, ms);
+    } else {
+      // 还在显形：顶层先锁着，生成完再换进来
+      await get().saveStratum({ ...st, moonBossPending: true });
+      await get().saveBattleState({ ...get().battleState!, moonShadow: { ...ms, eligible: true } });
+    }
+  },
+
+  completeMoonShadow: async (slot, data, offline) => {
+    const bs = get().battleState;
+    const ms = bs?.moonShadow;
+    if (!bs || !ms || ms.slot !== slot || ms.status !== 'generating') return;
+    const shadow = buildMoonShadow(data, {
+      id: uuidv4(),
+      slot,
+      month: ms.month,
+      baseHp: SHADOW_LEVEL_CONFIG[4].maxHp,
+      defeatedMoons: bs.moonDefeats ?? 0,
+      now: new Date(),
+    });
+    const ready: MoonShadowState = { ...ms, status: 'ready', shadow, name: shadow.name, offline };
+    await get().saveBattleState({ ...bs, moonShadow: ready });
+    if (ms.eligible === true && get().stratum?.abyssRing && get().stratum?.moonBossPending) await installMoonGuard(get, ready);
+  },
+
   enterAbyss: async () => {
+    // 满月心魔：先确保本月的已经建好（新开的这一环可能就是要装它的那一环）
+    await get().ensureMoonShadow();
     const { stratum, shadow, settings, battleState } = get();
     // 从「当前环」与「历史最深环」里取大：Lv6 顶阙会顶掉 stratum（塔与区层是单例），
     // 只看 stratum.abyssRing 会让打完伪神的回廊玩家从第 1 环重开
     const ring = Math.max(stratum?.abyssRing ?? 0, battleState?.abyssHighestRing ?? 0) + 1;
     const baseFloor = stratum ? stratum.baseFloor + stratum.floors : 0;
+    // 深渊周常（第 6 轮）：进环那一刻定下本周规则，整环有效
+    const weekKey = weekKeyOf(new Date());
+    const rule = abyssWeeklyRule(weekKey);
     const { stratum: ringStratum, guard } = buildAbyssRing({
       ring,
       stratumId: uuidv4(),
@@ -5445,14 +5700,22 @@ export const useAppStore = create<AppState>((set, get) => ({
       baseFloor,
       now: new Date(),
       eventPoolIds: TOWER_EVENT_IDS,
+      memoryEcho: memoryEchoCandidates(get().activities).length >= MEMORY_ECHO_MIN_CANDIDATES,
       chestSp: (floor) => nodeSpReward(5, floor, 0, Math.random) + 5,
       lastWeakAttribute: shadow?.weakAttribute,
       attrNames: settings.attributeNames as Record<AttributeId, string>,
+      rule: rule.id,
+      ruleWeakAttribute: abyssWeeklyWeakAttribute(weekKey),
     });
     await get().saveShadow(guard);
     await get().saveStratum(ringStratum);
     const bs = get().battleState;
-    if (bs) await get().saveBattleState({ ...bs, status: 'idle' });
+    if (bs) {
+      const abyssWeekly = bs.abyssWeekly && bs.abyssWeekly.weekKey === weekKey ? bs.abyssWeekly : { weekKey, ruleId: rule.id, bestRing: 0 };
+      await get().saveBattleState({ ...bs, status: 'idle', abyssWeekly });
+    }
+    // 满月当天新开的这一环：判定一次要不要把顶层换成月度心魔
+    await get().moonCheckOnEntry();
   },
 
   removeRandomShadowAffix: async () => {

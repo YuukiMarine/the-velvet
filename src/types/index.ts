@@ -240,7 +240,7 @@ export interface Achievement {
   unlocked: boolean;
   unlockedDate?: Date;
   condition: {
-    type: 'consecutive_days' | 'total_points' | 'attribute_level' | 'keyword_match' | 'all_attributes_max' | 'todo_completions' | 'weekly_goal_completions' | 'shadow_defeats' | 'confidants_at_level' | 'battle_feat' | 'days_since_first_record';
+    type: 'consecutive_days' | 'total_points' | 'attribute_level' | 'keyword_match' | 'all_attributes_max' | 'todo_completions' | 'weekly_goal_completions' | 'shadow_defeats' | 'confidants_at_level' | 'battle_feat' | 'days_since_first_record' | 'quests_claimed';
     value: number;
     attribute?: AttributeId;
     keywords?: string[];
@@ -397,7 +397,7 @@ export interface KeywordRule {
  *  - summary：有未读的成长总结
  *  - record：今天还没有任何记录（提醒回来记录）
  */
-export type NotifContentType = 'tarot' | 'todos' | 'countercurrent' | 'summary' | 'record' | 'together';
+export type NotifContentType = 'tarot' | 'todos' | 'countercurrent' | 'summary' | 'record' | 'together' | 'quests';
 
 /**
  * F2a 本地通知——一个「每日时段」。每个时段在自己的时间点检查 contents 里
@@ -536,6 +536,8 @@ export interface Settings {
   notificationSlots?: NotifSlot[];
   /** v2.7.0.6：老用户含「今日待办」的时段已补上「一起进步」（只补一次，之后随用户设置） */
   notifTogetherAdded?: boolean;
+  /** 第 6 轮：老用户的提醒时段补过「委托板」（只补一次） */
+  notifQuestsAdded?: boolean;
   /** F2a 一次性回填标记：历史成长总结的 viewedAt 已补齐（视为已读），避免开启通知时旧总结被判未读。 */
   summaryViewedBackfillDone?: boolean;
   // ── F5 心相记账 ──
@@ -1143,6 +1145,33 @@ export interface WeeklyGoal {
   createdAt: Date;
 }
 
+// ── 委托板（2.7.0.6 第 6 轮）────────────────────────────────
+//
+// 每周一刷新三张委托，全部按已有数据现算进度、手动领取。只发 SP（没开战场的账号只记计数），不发属性点。
+// 进度不落库：每次打开按本周数据重算，所以 quests 行只存「这周是哪三张、目标多少、领没领」。
+
+export type QuestTemplateId =
+  | 'attr_least' | 'attr_most' | 'bigdeal_steps' | 'all_todos_3days' | 'record_7days' | 'streak_3days'
+  | 'tarot_3days' | 'pact_once' | 'images_2' | 'summary_1' | 'ledger_3' | 'battle_once' | 'important_2';
+
+export interface Quest {
+  /** `${weekKey}-${slot}`：同一周两台设备生成同一组，同步时天然合并 */
+  id: string;
+  /** 周一 YYYY-MM-DD */
+  weekKey: string;
+  slot: number;
+  templateId: QuestTemplateId;
+  /** 属性委托：本周要记的那一维 */
+  params?: { attribute?: AttributeId };
+  target: number;
+  rewardSp: 5 | 10 | 15;
+  createdAt: string;
+  /** 领取时间（领取即完成） */
+  claimedAt?: string;
+  /** 上周做完没领、这周刷新时替你领的 */
+  autoClaimed?: boolean;
+}
+
 // ── F5 心相记账 ──────────────────────────────────────────
 
 /** 一笔记账的方向：支出 / 收入 / 总余额对账调整 */
@@ -1388,6 +1417,9 @@ export interface Shadow {
   isFinalBoss?: boolean;
   /** （Lv6）伪神对你的指认（显形时 AI 生成一次，演出与档案复用，不重复生成） */
   flaw?: FinalBossFlaw;
+  /** （第 6 轮 满月心魔）它是哪个满月的月度心魔（moonPhaseSlot 的奇数槽）；YYYY-MM 给档案与岁时册 */
+  moonSlot?: number;
+  moonMonth?: string;
   createdAt: Date;
 }
 
@@ -1415,6 +1447,8 @@ export interface DefeatedShadowRecord {
   /** 击败时的你：五维总等级快照 */
   playerTotalLevel?: number;
   stratumLevel?: number;
+  /** （第 6 轮）满月心魔：哪个月的（YYYY-MM） */
+  moonMonth?: string;
 }
 
 export interface BattleState {
@@ -1450,6 +1484,14 @@ export interface BattleState {
   battleFeats?: string[];
   /** （批5）深渊回廊：历史最深环数（本地纪录，验收"层数纪录持久"） */
   abyssHighestRing?: number;
+  /** （第 6 轮 深渊周常）本周的规则与本周最好成绩；只和自己比，不做排行榜 */
+  abyssWeekly?: { weekKey: string; ruleId: AbyssRuleId; bestRing: number };
+  /** （第 6 轮）每条规则下到过的最深环 */
+  abyssRuleBest?: Partial<Record<AbyssRuleId, number>>;
+  /** （第 6 轮 满月心魔）本月的月度心魔（满月当天第一次打开 App 生成；只做当月） */
+  moonShadow?: MoonShadowState;
+  /** 击败过几只月度心魔（血量按它每只 +10%） */
+  moonDefeats?: number;
   /** （批4）黑猫败因信：待投递（下次打开黑猫时推送并清除） */
   pendingCatLetter?: { text: string; dateKey: string };
   /**
@@ -1554,12 +1596,44 @@ export interface TowerStratum {
   status: StratumStatus;
   /** （批5）深渊回廊环数（1 起；undefined = 主塔区层）。深渊环零 AI 即时生成、无月相加深、通关不锁日 */
   abyssRing?: number;
+  /** （第 6 轮 深渊周常）这一环生成时那一周的规则，整环有效 */
+  abyssRuleId?: AbyssRuleId;
+  /** 「只剩 X」那一环的 X（跨周还在爬这一环时，横幅要写的是它生成那周的 X） */
+  abyssRuleAttr?: AttributeId;
+  /** （第 6 轮 满月心魔）顶层守卫要换成月度心魔、但它还在显形：生成好再换进来，之前顶层不能进 */
+  moonBossPending?: boolean;
   /** （R19「回头看看」）重游的旧区层：零 AI 即时生成、不推进度、心魔不入档案、不加 HP 上限 */
   revisit?: boolean;
   createdAt: Date;
 }
 
 /** 当日登塔 session 统计（登塔回顾用；挂在 BattleState 上跨杀进程持久） */
+/** 满月心魔（第 6 轮）：从生成到打完 */
+export type MoonShadowStatus = 'generating' | 'ready' | 'installed' | 'defeated' | 'skipped';
+export interface MoonShadowState {
+  /** 满月编号（moonPhaseSlot 的奇数槽） */
+  slot: number;
+  /** YYYY-MM */
+  month: string;
+  /** 满月那天 YYYY-MM-DD */
+  date: string;
+  status: MoonShadowStatus;
+  /** 生成好、还没装进环的本体（装进环后清掉，本体在 shadows 单例里） */
+  shadow?: Shadow;
+  /** 名字（横幅用；装进环后本体不在这里了） */
+  name?: string;
+  /**
+   * 满月当天第一次进战场时判定：进的是一环还没走过的回廊 → true（装进这一环的顶层）；
+   * 当天之前就在爬的环 / 不在回廊 → false（这个月忽略，不回补）。未判定 = undefined。
+   */
+  eligible?: boolean;
+  /** 生成失败或没配 AI，改用了离线模板 */
+  offline?: boolean;
+}
+
+/** 深渊周常（第 6 轮）：八条规则按周确定性取一条 */
+export type AbyssRuleId = 'single_weak' | 'thick_armor' | 'gale' | 'oath_night' | 'eclipse' | 'greed' | 'silence' | 'echo';
+
 export interface TowerSessionStats {
   dateKey: string;
   startFloor: number;
@@ -2184,4 +2258,10 @@ export interface CoopMemorialStamp {
   myDamage?: number;
   /** 双方合计伤害（= hpMax） */
   totalDamage?: number;
+  /** （第 6 轮）击杀那一刻冻进来的：这对 COOP 连着封印了几只（撤退归零，含这一只） */
+  streak?: number;
+  /** （第 6 轮）最后一击是谁（总攻击收尾也认得出，不再靠共鸣印记猜） */
+  finisherId?: string;
+  /** （第 6 轮）本机实际发了多少（只在本地副本里；结算屏照它显示） */
+  reward?: { attr: number; intimacy: number; sp: number; streak: number; finisher: boolean };
 }

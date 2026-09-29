@@ -697,8 +697,7 @@ async function claimVictoryReward(
   shadow: CoopShadow,
   confidant: import('@/types').Confidant,
 ): Promise<void> {
-  const { REWARD_ATTR_CAP, REWARD_INTIMACY_CAP, REWARD_SP_VICTORY, REWARD_SP_FINISHER, listAttacksFor } =
-    await import('./coopShadows');
+  const { listAttacksFor, bondStreak, coopVictoryReward } = await import('./coopShadows');
   const { archetypeById } = await import('@/constants/coopShadowPool');
   const me = getUserId();
   if (!me) return;
@@ -710,7 +709,8 @@ async function claimVictoryReward(
   // 0) 先算贡献和终结者：拉一次 coop_attacks（-created 排序，第一条是最后一击）
   let myDamage = 0;
   let totalDamage = shadow.hpMax;
-  let isFinisher = shadow.resonanceBy === me; // 拉不到日志时退回旧口径（总攻击不写 resonance_by，会认错）
+  // 拉不到日志时：先信击杀时冻进图章的终结者，再退回共鸣印记（总攻击不写印记，老图章会认错）
+  let isFinisher = shadow.memorialStamp?.finisherId ? shadow.memorialStamp.finisherId === me : shadow.resonanceBy === me;
   try {
     const attacks = await listAttacksFor(shadow.id);
     const sum = attacks.reduce((acc, a) => acc + (a.damageFinal ?? 0), 0);
@@ -721,6 +721,10 @@ async function claimVictoryReward(
     console.warn('[velvet-social] fetch attacks for memorial failed', err);
     myDamage = Math.round(shadow.hpMax / 2); // 兜底：至少参与了 → 给一个保守的 50%
   }
+
+  // 第 6 轮 奖励成长：连胜（击杀时冻进图章；老图章没有就按本机的降临史现算）+ 羁绊等级 + 终结者
+  const streak = shadow.memorialStamp?.streak ?? bondStreak(useCloudSocialStore.getState().coopShadows, shadow.bondId, shadow.id);
+  const reward = coopVictoryReward({ streak, bondLevel: confidant.intimacy ?? 0, isFinisher });
 
   // 1) 先盖章（= 领奖标记），再发奖。反过来的话图章没写成会在下次同步再发一遍奖
   const stamp: import('@/types').CoopMemorialStamp = {
@@ -737,6 +741,8 @@ async function claimVictoryReward(
     recordId: shadow.id,
     totalDamage,
     myDamage,
+    streak: reward.streak,
+    reward: { attr: reward.attr, intimacy: reward.intimacy, sp: reward.sp, streak: reward.streak, finisher: reward.isFinisher },
   };
   // 写前重读最新 coopMemorials：拿参数里的旧对象追加会把并发新增的 stamp 覆盖丢（见 settleFinishedShadows 注释）
   const fresh = useAppStore.getState().confidants.find(c => c.id === confidant.id);
@@ -744,7 +750,7 @@ async function claimVictoryReward(
   await appStore.updateConfidant(confidant.id, { coopMemorials: [...current, stamp] }); // 失败就抛：下次同步重来
 
   // 2) 属性：弱点属性 +min(REWARD_ATTR_CAP, base)。base 先恒定 5（= cap）；走 addActivity 让记录进活动流
-  const attrPoints = Math.min(REWARD_ATTR_CAP, 5);
+  const attrPoints = reward.attr;
   try {
     await appStore.addActivity(
       `与 @${confidant.name} 一起击败了 ${shadowName}`,
@@ -760,9 +766,9 @@ async function claimVictoryReward(
   try {
     await appStore.bumpConfidantIntimacy(
       confidant.id,
-      REWARD_INTIMACY_CAP,
+      reward.intimacy,
       'conversation',
-      `共同封印了 ${shadowName}`,
+      reward.streak >= 2 ? `共同封印了 ${shadowName}（连胜 ×${reward.streak}）` : `共同封印了 ${shadowName}`,
       { eventId: `coop-shadow-victory-${shadow.id}` },
     );
   } catch (err) {
@@ -770,7 +776,7 @@ async function claimVictoryReward(
   }
 
   // 4) SP。battleState 要读最新的：上面 addActivity 已经按记录发过 SP，拿函数开头的快照写回会把那份吞掉
-  const spGain = REWARD_SP_VICTORY + (isFinisher ? REWARD_SP_FINISHER : 0);
+  const spGain = reward.sp;
   const battleState = useAppStore.getState().battleState;
   if (battleState) {
     try {

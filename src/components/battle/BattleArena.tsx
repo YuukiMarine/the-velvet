@@ -140,6 +140,8 @@ export const BattleArena = () => {
   );
 
   useEffect(() => {
+    // 第 6 轮 满月心魔：满月当天（App 跨夜开着也算）进战场页就在后台开始显形
+    void useAppStore.getState().ensureMoonShadow();
     // 批3：熟练度/解锁字段惰性迁移（存量技能不回锁，unlocked 缺省按当前属性等级置位）
     void useAppStore.getState().refreshSkillUnlocks();
     // 战场成就自愈：历史竞态丢过壮举记录（见 store.recordBattleFeat 注释），进战场页时对一次账
@@ -971,6 +973,59 @@ export const BattleArena = () => {
                             </motion.button>
                           )}
                         </AnimatePresence>
+
+                        {/* 第 6 轮 满月心魔：满月当天 / 本环守卫是它时的横幅 */}
+                        {(() => {
+                          const ms = battleState?.moonShadow;
+                          if (!finalDefeated || !ms) return null;
+                          const guardIsMoon = !!shadow?.moonSlot && shadow.moonSlot === ms.slot && !stratumCleared;
+                          let title: string;
+                          let body: string;
+                          if (ms.status === 'installed' && guardIsMoon) {
+                            title = `本环守卫 · ${shadow?.name ?? ms.name ?? '月度心魔'}`;
+                            body = '满月凝成的月度心魔。击败它额外 +30 SP，岁时册会收下这一轮满月。';
+                          } else if (ms.date !== todayKey) {
+                            return null;
+                          } else if (ms.status === 'generating' && ms.eligible === true) {
+                            title = '月度心魔显形中……';
+                            body = '这一环的顶层稍后开放——它正在把这个月凝成形。';
+                          } else if (ms.status === 'generating') {
+                            title = '今晚满月';
+                            body = '回廊底部有什么在凝聚……今晚新开的那一环，守卫会换成这个月的月度心魔。';
+                          } else if (ms.status === 'ready') {
+                            title = `今晚满月 · ${ms.name ?? '月度心魔'}`;
+                            body = '它在回廊底部等你——今晚新开的那一环，守卫会换成它。';
+                          } else if (ms.status === 'skipped') {
+                            title = '今晚满月';
+                            body = '这一环是今天之前就进来的——这个月的月度心魔不会出现，下个满月再见。';
+                          } else if (ms.status === 'defeated') {
+                            title = `${ms.name ?? '月度心魔'} · 已封印`;
+                            body = '这一轮满月已经收进岁时册。';
+                          } else {
+                            return null;
+                          }
+                          return (
+                            <div
+                              data-moon-banner={ms.status}
+                              className="relative overflow-hidden px-4 py-3"
+                              style={{
+                                clipPath: p3 ? 'polygon(3% 0, 100% 0, 97% 100%, 0 100%)' : undefined,
+                                borderRadius: p3 ? 0 : 16,
+                                background: 'linear-gradient(135deg, rgba(24,20,62,0.96), rgba(10,8,30,0.97))',
+                                boxShadow: 'inset 0 0 0 1px rgba(253,230,138,0.32)',
+                              }}
+                            >
+                              <span aria-hidden className="pointer-events-none absolute -right-5 -top-6 h-24 w-24 rounded-full" style={{ background: 'radial-gradient(circle, rgba(253,230,138,0.55) 0%, rgba(253,230,138,0.12) 45%, transparent 70%)' }} />
+                              <div className="relative flex items-start gap-3">
+                                <span aria-hidden className="mt-0.5 text-[22px] leading-none" style={{ filter: 'drop-shadow(0 0 8px rgba(253,230,138,0.7))' }}>🌕</span>
+                                <div className="min-w-0">
+                                  <p className="text-[14px] font-black leading-snug text-amber-100">{title}</p>
+                                  <p className="mt-0.5 text-[11px] leading-relaxed text-indigo-100/70">{body}</p>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })()}
 
                         {/* R19「回头看看」：重游期间的回塔顶横幅（压在所有区层卡片之上） */}
                         {inRevisit && (

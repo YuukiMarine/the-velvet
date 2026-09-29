@@ -4,7 +4,7 @@
  * 在攻击封印的瞬间 / loadSocial 发现对方击败的瞬间弹出。
  * 展示：
  *   - Boss 名 / 弱点属性
- *   - 奖励分解（属性 +N / 亲密度 +4 / SP +10）
+ *   - 奖励分解（第 6 轮：按实际发放显示——连胜 / 羁绊等级 / 终结者各算多少；与结算共用 coopVictoryReward）
  *   - 一枚纪念图章（可以点击进入 CoopMemorialPanel）
  */
 
@@ -14,11 +14,9 @@ import { motion, AnimatePresence } from 'motion/react';
 import type { CoopShadow } from '@/types';
 import { archetypeById } from '@/constants/coopShadowPool';
 import {
-  REWARD_ATTR_CAP,
-  REWARD_INTIMACY_CAP,
   REWARD_SP_VICTORY,
-  REWARD_SP_FINISHER,
   REWARD_SP_RETREAT,
+  coopVictoryReward,
 } from '@/services/coopShadows';
 import { useAppStore } from '@/store';
 import { playSound } from '@/utils/feedback';
@@ -42,6 +40,7 @@ const ATTR_ICON: Record<string, string> = {
 
 export function CoopVictoryScreen({ isOpen, shadow, partnerName, selfPbId, onClose }: Props) {
   const settings = useAppStore(s => s.settings);
+  const confidants = useAppStore(s => s.confidants);
   const playedForRef = useRef<string | null>(null);
 
   // 入场时播一次音（同一只 shadow 只播一次，避免 rerender 重播）
@@ -64,7 +63,26 @@ export function CoopVictoryScreen({ isOpen, shadow, partnerName, selfPbId, onClo
   const shadowName = shadow.nameOverride || archetype?.names?.[0] || '羁绊之影';
   const weakAttr = shadow.weaknessAttribute;
   const attrName = settings.attributeNames[weakAttr] || weakAttr;
-  const isFinisher = isVictory && shadow.resonanceBy === selfPbId;
+  // 本机的同伴卡 + 本机领奖时写下的那枚图章（领过了就照它显示，保证和实际发的一致）
+  const partnerId = shadow.userAId === selfPbId ? shadow.userBId : shadow.userAId;
+  const confidant = confidants.find(c => c.source === 'online' && !c.archivedAt && c.linkedCloudUserId === partnerId);
+  const localStamp = confidant?.coopMemorials?.find(m => m.recordId === shadow.id && !m.shadowId.startsWith('retreat-'));
+  // 终结者：领过奖的看图章，没领的看击杀时冻进去的 finisherId（总攻击收尾也认得出），再退回共鸣印记
+  const isFinisher = isVictory && (localStamp?.reward
+    ? localStamp.reward.finisher
+    : shadow.memorialStamp?.finisherId ? shadow.memorialStamp.finisherId === selfPbId : shadow.resonanceBy === selfPbId);
+  const computed = coopVictoryReward({ streak: localStamp?.reward?.streak ?? shadow.memorialStamp?.streak ?? 1, bondLevel: confidant?.intimacy ?? 0, isFinisher });
+  const reward = localStamp?.reward
+    ? { ...computed, attr: localStamp.reward.attr, intimacy: localStamp.reward.intimacy, sp: localStamp.reward.sp }
+    : computed;
+  // SP 明细：羁绊那份由总数倒推（领奖后等级可能涨了，按现在的等级重算会差 1）
+  const spBond = Math.max(0, reward.sp - REWARD_SP_VICTORY - reward.spStreak - reward.spFinisher);
+  const spParts = [
+    `基础 ${REWARD_SP_VICTORY}`,
+    reward.spStreak > 0 ? `连胜 +${reward.spStreak}` : null,
+    spBond > 0 ? `羁绊 +${spBond}` : null,
+    reward.spFinisher > 0 ? `终结者 +${reward.spFinisher}` : null,
+  ].filter(Boolean).join(' · ');
 
   return createPortal(
     <AnimatePresence>
@@ -134,6 +152,18 @@ export function CoopVictoryScreen({ isOpen, shadow, partnerName, selfPbId, onClo
             >
               与 @{partnerName} 的共战记录
             </motion.p>
+            {isVictory && reward.streak >= 2 && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: 0.5, type: 'spring', stiffness: 320, damping: 18 }}
+                className="mt-2 inline-flex items-center gap-1 rounded-full px-3 py-1 text-[12px] font-black tracking-wider text-amber-100"
+                style={{ background: 'linear-gradient(135deg, rgba(251,191,36,0.22), rgba(220,38,38,0.18))', boxShadow: 'inset 0 0 0 1px rgba(251,191,36,0.45)' }}
+                data-coop-streak={reward.streak}
+              >
+                🔥 连胜 ×{reward.streak}
+              </motion.div>
+            )}
           </div>
 
           {/* 奖励分解 */}
@@ -150,19 +180,20 @@ export function CoopVictoryScreen({ isOpen, shadow, partnerName, selfPbId, onClo
                   <RewardRow
                     icon={ATTR_ICON[weakAttr]}
                     label={`${attrName}（弱点属性）`}
-                    value={`+${REWARD_ATTR_CAP}`}
+                    value={`+${reward.attr}`}
                     valueColor="#fcd34d"
                   />
                   <RewardRow
                     icon="♡"
-                    label={`与 @${partnerName} 的羁绊`}
-                    value={`+${REWARD_INTIMACY_CAP} 亲密度`}
+                    label={`与 @${partnerName} 的羁绊${reward.streak >= 3 ? ' · 连胜加成' : ''}`}
+                    value={`+${reward.intimacy} 亲密度`}
                     valueColor="#f9a8d4"
                   />
                   <RewardRow
                     icon="✦"
                     label="SP · 战斗点数"
-                    value={`+${REWARD_SP_VICTORY}${isFinisher ? ` +${REWARD_SP_FINISHER} 终结者` : ''}`}
+                    sub={spParts}
+                    value={`+${reward.sp}`}
                     valueColor="#67e8f9"
                   />
                   <RewardRow
@@ -238,18 +269,24 @@ export function CoopVictoryScreen({ isOpen, shadow, partnerName, selfPbId, onClo
 function RewardRow({
   icon,
   label,
+  sub,
   value,
   valueColor,
 }: {
   icon: string;
   label: string;
+  /** 第二行小字（第 6 轮：SP 明细） */
+  sub?: string;
   value: string;
   valueColor: string;
 }) {
   return (
     <div className="flex items-center gap-2.5">
       <span className="text-base flex-shrink-0">{icon}</span>
-      <span className="flex-1 text-[12px] text-purple-100/85">{label}</span>
+      <span className="flex-1 min-w-0">
+        <span className="block text-[12px] text-purple-100/85">{label}</span>
+        {sub && <span className="mt-0.5 block text-[10px] leading-snug text-purple-200/55" data-reward-sub>{sub}</span>}
+      </span>
       <span className="text-[13px] font-black tabular-nums" style={{ color: valueColor }}>
         {value}
       </span>

@@ -183,7 +183,7 @@ function recentBlock(activities: Activity[], attrNames: AttrNames, now: Date, wi
 // ── 案头：一次性事项 / 期限 / 愿望 ──────────────────────────────
 
 /** 与 store.getDueTodosToday 同口径，但接受任意日期（回声要算"昨天该做的"） */
-function isDueOn(t: Todo, date: Date): boolean {
+export function isDueOn(t: Todo, date: Date): boolean {
   const key = toLocalDateKey(date);
   const wd = date.getDay();
   return t.isActive
@@ -196,7 +196,7 @@ function isDueOn(t: Todo, date: Date): boolean {
 /** 一次性事项：非每日、非长期、非按周重复——反复出现的事项天天喂只会天天被念（用户口径） */
 const isOneOff = (t: Todo) => !t.repeatDaily && !t.isLongTerm && !(t.weekdays && t.weekdays.length > 0) && t.frequency === 'single';
 
-const completedOn = (t: Todo, key: string, completions: TodoCompletion[]) =>
+export const completedOn = (t: Todo, key: string, completions: TodoCompletion[]) =>
   !!t.completedAt || completions.some(c => c.todoId === t.id && c.date === key && c.count > 0);
 
 /** 案头候选：每条带一个稳定键，用来做"三天内不重复" */

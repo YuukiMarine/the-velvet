@@ -276,3 +276,19 @@ export const OATH_POISON_STACKS = 3;           // 蚀影之誓
 export const OATH_POISON_DOT = 4;              // 蚀影之誓：每层每回合伤害
 export const OATH_SHIELD_PCT = 0.6;            // 铁壁之誓
 export const OATH_SP_GAIN = 18;                // 月光之誓（每场1次）
+
+// ── 第 6 轮：回忆之光 / 深渊周常 ─────────────────────────────
+/** 回忆之光：事件节点有 30% 变成它（近 14 天素材 ≥ 3 条才出） */
+export const MEMORY_ECHO_RATE = 0.3;
+export const MEMORY_ECHO_MIN_CANDIDATES = 3;
+/** 深渊周常各规则的数值 */
+export const ABYSS_RULE_THICK_HP = 1.25;      // 厚甲：守卫血 +25%
+export const ABYSS_RULE_THICK_SP = 1.5;       // 厚甲：本环 SP 收益 ×1.5
+export const ABYSS_RULE_GALE_ATTACK = 11;     // 疾风：守卫攻击 9 → 11
+export const ABYSS_RULE_GREED_HP = 1.15;      // 贪婪：守卫血 +15%
+export const ABYSS_RULE_GREED_DROP = 2;       // 贪婪：掉率 ×2
+export const ABYSS_RULE_OATH_CUT = 0.5;       // 誓约之夜：誓约技 SP −50%
+export const ABYSS_RULE_OATH_OTHERS = 1.5;    // 誓约之夜：其余技能 +50%
+/** 满月心魔（第 6 轮）：击败额外 SP；血量按已击败月数每只 +10% */
+export const MOON_BOSS_SP = 30;
+export const MOON_BOSS_GROWTH = 0.1;

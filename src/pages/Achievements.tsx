@@ -1,6 +1,8 @@
 import { motion, AnimatePresence } from 'motion/react';
 import { CodexTab } from '@/components/codex/CodexTab';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { db } from '@/db';
 import { useAppStore } from '@/store';
 import { useShallow } from 'zustand/react/shallow';
 import { Achievement, AttributeId } from '@/types';
@@ -717,8 +719,12 @@ const AchievementsTab = () => {
     try { window.localStorage.setItem('pg_achievements_filter', filterStatus); } catch { /* 存储不可用 */ }
   }, [filterStatus]);
 
+  // 委托板（第 6 轮）：领取次数直接数表
+  const questsClaimed = useLiveQuery(() => db.quests.filter(q => !!q.claimedAt).count(), []) ?? 0;
   const getProgress = (achievement: typeof achievements[0]) => {
     switch (achievement.condition.type) {
+      case 'quests_claimed':
+        return Math.min(questsClaimed, achievement.condition.value);
       case 'consecutive_days':
         // 与 store 的解锁判定同一口径：补记不计、按日历日比（之前这里自己算，夏令时一到就断链）
         return Math.min(calcMaxStreak(streakDates(activities)), achievement.condition.value);

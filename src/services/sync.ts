@@ -238,6 +238,8 @@ const SYNC_TABLES = [
   'todoCompletions',
   'summaries',
   'weeklyGoals',
+  // 第 6 轮 委托板（每周三行，进度不落库）
+  'quests',
   'personas',
   'shadows',
   'battleStates',

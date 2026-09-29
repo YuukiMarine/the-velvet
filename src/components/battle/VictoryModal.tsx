@@ -7,6 +7,8 @@ import { AttributeId } from '@/types';
 import { generateVictoryNarrative } from '@/utils/battleAI';
 import { triggerSuccessFeedback, playSound } from '@/utils/feedback';
 import { HP_BONUS_PER_DEFEAT, ATTR_REWARD_PER_DEFEAT } from '@/constants';
+import { MOON_BOSS_SP } from '@/battle/numbers';
+import { monthLabelOf } from '@/battle/moonBoss';
 import { db } from '@/db';
 import { useBackHandler } from '@/utils/useBackHandler';
 
@@ -119,6 +121,11 @@ export function VictoryModal({ isOpen, onClose }: Props) {
             <>
               <p className="text-gray-300 text-sm mt-1">反抗者 vs {shadow.name}</p>
               <p className="text-yellow-300/60 text-xs mt-0.5">历经 {daysElapsed} 天</p>
+              {shadow.moonMonth && (
+                <p className="mt-1.5 inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-black text-amber-100" style={{ background: 'rgba(253,230,138,0.12)', boxShadow: 'inset 0 0 0 1px rgba(253,230,138,0.35)' }}>
+                  🌕 月度心魔 · {monthLabelOf(shadow.moonMonth)} · 额外 +{MOON_BOSS_SP} SP
+                </p>
+              )}
             </>
           )}
         </div>

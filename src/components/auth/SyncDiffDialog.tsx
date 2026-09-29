@@ -15,6 +15,7 @@ const TABLE_LABELS: Record<string, string> = {
   longReadings: '中长期塔罗',
   fateGlimpses: '窥探命运',
   stamps: '岁时印章',
+  quests: '委托',
   settings: '设置',
   todos: '任务',
   todoCompletions: '任务完成',

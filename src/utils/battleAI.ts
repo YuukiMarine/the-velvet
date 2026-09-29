@@ -1,5 +1,7 @@
 import { AttributeId, PersonaSkill, Settings } from '@/types';
 import { chatComplete, chatStream, getAIConfig, getDeliberateAIConfig, type AIConfig } from '@/utils/aiClient';
+import type { MoonRevealData } from '@/battle/moonBoss';
+export type { MoonRevealData };
 import { SKILL_EFFECT_MAP } from '@/constants';
 import { extractJSON, tryExtractJSON, jsonLooksClosed } from '@/utils/aiJson';
 
@@ -998,6 +1000,116 @@ export const FINAL_TAUNT_FALLBACK = [
   '……那你为什么还留着这些。',
   '不、不要……我还没有……',
 ];
+
+// ── 满月心魔（第 6 轮 · PRD §11.6）───────────────────────────────────────
+// 只喂当月结构化事实（各维点数 / 记录天数 / 类目计数 / 抽过的牌 / BIG DEAL 进展），不喂记录原文。
+
+export interface MoonShadowFacts {
+  /** YYYY-MM */
+  month: string;
+  attrPoints: Record<AttributeId, number>;
+  recordDays: number;
+  totalRecords: number;
+  categoryCounts: Record<string, number>;
+  tarotNames: string[];
+  bigDeals: Array<{ done: number; total: number }>;
+  /** 当月记得最少的属性 = 弱点 */
+  weakAttribute: AttributeId;
+  defeatedMoons: number;
+}
+
+export interface PreparedMoonReveal {
+  cfg: AIConfig;
+  prompt: string;
+  weakAttribute: AttributeId;
+}
+
+const MOON_JSON_FORMAT = `
+纯JSON输出，不要包裹在代码块中，不含任何注释：
+{"name":"月之xx","description":"2句","invertedAttributes":{"knowledge":"...","guts":"...","dexterity":"...","kindness":"...","charm":"..."},"responseLines":["台词1","台词2","台词3","台词4","台词5","台词6","台词7","台词8"]}`;
+
+const MOON_CATEGORY_LABELS: Record<string, string> = {
+  level_up: '升级', bigdeal_step: 'BIG DEAL 推进', bigdeal_clear: 'BIG DEAL 收官', weekly_goal: '周目标达成', shadow_defeat: '击败心魔',
+  countercurrent: '逆流', confidant: '同伴互动', calling_card_clear: '宣告卡达成', wish_fulfilled: '愿望实现', ledger: '记账', return: '回归',
+};
+
+function moonFactLines(f: MoonShadowFacts, names: Record<AttributeId, string>): string[] {
+  const lines = [
+    `${Number(f.month.slice(0, 4))} 年 ${Number(f.month.slice(5, 7))} 月（到满月这天为止）：记录 ${f.totalRecords} 条，分布在 ${f.recordDays} 天`,
+    `各维点数：${ATTRS.map(a => `${names[a]} ${f.attrPoints[a]}`).join('，')}；记得最少的是「${names[f.weakAttribute]}」`,
+  ];
+  const cats = Object.entries(f.categoryCounts).filter(([, n]) => n > 0).map(([k, n]) => `${MOON_CATEGORY_LABELS[k] ?? k} ${n} 次`);
+  if (cats.length) lines.push(`当月发生：${cats.join('，')}`);
+  if (f.tarotNames.length) lines.push(`当月抽到过的牌：${f.tarotNames.join('、')}`);
+  if (f.bigDeals.length) lines.push(`进行中的 BIG DEAL：${f.bigDeals.map(d => `${d.done}/${d.total} 步`).join('，')}`);
+  if (f.defeatedMoons > 0) lines.push(`此前已击败 ${f.defeatedMoons} 只月度心魔`);
+  return lines;
+}
+
+export function prepareMoonReveal(settings: Settings, attributeNames: Record<AttributeId, string>, facts: MoonShadowFacts): PreparedMoonReveal {
+  const cfg = getDeliberateAIConfig(settings);
+  if (!cfg) throw new Error('未配置 AI API Key');
+  const prompt = `你是Persona系游戏"深渊回廊"的月度心魔生成器。今晚是满月，回廊底部要显形一只"月度心魔"——它由玩家这个月的行为凝成，是这个月的阴影。
+【本月事实】
+${moonFactLines(facts, attributeNames).map((l, i) => `${i + 1}. ${l}`).join('\n')}
+
+心魔弱点属性固定为"${attributeNames[facts.weakAttribute]}"（这个月记得最少的一维）。
+
+【输出要求】
+- name：心魔名，必须是"月之xx"格式（xx 为 1-2 字），要能看出这个月的主题
+- description：2 句，写它由本月的哪些事实凝成、危险在哪；只许引用上面的事实，不要编造具体事件
+- invertedAttributes：五维各一个反向称谓（如"被月光噬去的胆量"）
+- responseLines：8 条战斗台词，语气冷、像月光，简短有力；至少 1 条点评玩家本月最弱的那一维、1 条自我宣言、1 条嘲讽
+${MOON_JSON_FORMAT}`;
+  return { cfg, prompt, weakAttribute: facts.weakAttribute };
+}
+
+/** 跑生成（流式；截断抛 JSONTruncatedError，带半截可续写） */
+export async function completeMoonReveal(prep: PreparedMoonReveal, attributeNames: Record<AttributeId, string>, opts: StreamJSONOpts = {}): Promise<MoonRevealData> {
+  const parsed = await streamJSONResilient(
+    prep.cfg, prep.prompt, 0.7, 2600, opts,
+    p => typeof p.name === 'string' && !!p.name && Array.isArray(p.responseLines) && p.responseLines.length >= 4,
+  );
+  const rawName = typeof parsed.name === 'string' ? parsed.name.trim() : '';
+  const name = rawName ? (rawName.startsWith('月之') ? rawName.slice(0, 5) : `月之${rawName.slice(0, 2)}`) : '月之影';
+  const description = typeof parsed.description === 'string' && parsed.description ? parsed.description : '这个月的阴影在满月下凝成了形。';
+  const invertedAttributes = parsed.invertedAttributes && typeof parsed.invertedAttributes === 'object'
+    ? parsed.invertedAttributes as Record<AttributeId, string>
+    : Object.fromEntries(ATTRS.map(a => [a, `被月光噬去的${attributeNames[a]}`])) as Record<AttributeId, string>;
+  let responseLines: string[];
+  if (Array.isArray(parsed.responseLines) && parsed.responseLines.length >= 4) {
+    responseLines = parsed.responseLines.filter((l): l is string => typeof l === 'string').slice(0, 8);
+    while (responseLines.length < 8) responseLines.push(DEFAULT_SHADOW_LINES[responseLines.length % DEFAULT_SHADOW_LINES.length]);
+  } else {
+    responseLines = [...DEFAULT_SHADOW_LINES];
+  }
+  return { name, description, invertedAttributes, responseLines, weakAttribute: prep.weakAttribute };
+}
+
+const MOON_OFFLINE_NAMES = ['月之噬', '月之潮', '月之蚀', '月之冕', '月之隙', '月之霜', '月之井', '月之钟', '月之茧', '月之棱', '月之烬', '月之渊'];
+const MOON_OFFLINE_LINES = [
+  '满月照着的，都是你没记下的那些夜晚。',
+  '这个月你最少碰的{weak}，现在就在我手里。',
+  '月亮不评判。它只是把一切照得很亮。',
+  '你以为记录会保护你——它只是让影子更清楚。',
+  '再来。月亮还没落。',
+  '这个月的你，凝成了我。',
+  '别急着回头看。回廊里没有过去，只有更深。',
+  '等月亮落下，我们再算这个月的账。',
+];
+
+/** 没配 AI / 生成失败：离线模板（名字按月轮换，描述由事实拼） */
+export function offlineMoonShadow(facts: MoonShadowFacts, attributeNames: Record<AttributeId, string>): MoonRevealData {
+  const m = Number(facts.month.slice(5, 7)) || 1;
+  const weak = attributeNames[facts.weakAttribute];
+  return {
+    name: MOON_OFFLINE_NAMES[(m - 1) % MOON_OFFLINE_NAMES.length],
+    description: `${m} 月的 ${facts.totalRecords} 条记录在满月下凝成了它。它盘踞在你这个月记得最少的那一维——「${weak}」——的空缺处。`,
+    invertedAttributes: Object.fromEntries(ATTRS.map(a => [a, `被月光噬去的${attributeNames[a]}`])) as Record<AttributeId, string>,
+    responseLines: MOON_OFFLINE_LINES.map(l => l.replace('{weak}', `「${weak}」`)),
+    weakAttribute: facts.weakAttribute,
+  };
+}
 
 // ── Victory narrative ───────────────────────────────────────────────────────
 

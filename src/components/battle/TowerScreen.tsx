@@ -23,6 +23,9 @@ import { useBackHandler } from '@/utils/useBackHandler';
 import { TowerMap, TowerMapMini } from '@/components/battle/TowerMap';
 import { useBoldness } from '@/utils/boldness';
 import { TowerEventModal, TowerEchoModal, TowerQuizModal } from '@/components/battle/TowerModals';
+import { abyssRuleById, abyssRuleLabel, abyssWeeklyWeakAttribute } from '@/battle/abyssRules';
+import { weekKeyOf } from '@/battle/tower';
+import { memoryEchoCandidates, memoryEchoText, pickMemoryEcho } from '@/utils/towerMemory';
 import { IconTower, IconEvilEye, slantPoly, NoiseLayer, paletteFor, ABYSS_PALETTE, SlantGauge, NodeGlyph } from '@/components/battle/warKit';
 
 interface Props {
@@ -142,11 +145,18 @@ export function TowerScreen({ open, onClose, onDescend, onRequestBattle, onToast
       case 'chest': return '开匣 · 必得战利品';
       case 'echo': return '回响 · 回复或月辉';
       case 'event': return '未知的遭遇';
-      case 'boss': return shadow ? shadow.name.slice(0, 6) : '决战';
+      case 'boss':
+        if (stratum.moonBossPending) return '🌕 显形中…';
+        return shadow ? `${shadow.moonSlot ? '🌕 ' : ''}${shadow.name.slice(0, 6)}` : '决战';
     }
   };
 
   const handleSelectNode = async (node: StratumNode) => {
+    // 满月心魔还在显形：顶层先锁着（生成完会自动换进来）
+    if (node.type === 'boss' && stratum.moonBossPending) {
+      onToast('🌕 月度心魔还在显形——稍等片刻再来');
+      return;
+    }
     const moved = await moveToTowerNode(node.id);
     if (!moved) return;
     playSound('/ui-menu.mp3', 0.5);
@@ -221,6 +231,11 @@ export function TowerScreen({ open, onClose, onDescend, onRequestBattle, onToast
   };
 
   const materializeEventText = (text: string): string => {
+    // 回忆之光（第 6 轮）：{date} / {title} = 最近 14 天里的一条记录，同一节点每次都是同一条
+    if (text.includes('{title}') || text.includes('{date}')) {
+      const pick = pickMemoryEcho(memoryEchoCandidates(useAppStore.getState().activities), eventNode?.id ?? '');
+      return memoryEchoText(text, pick);
+    }
     if (!text.includes('{echo}')) return text;
     const acts = useAppStore.getState().activities;
     const pick = [...acts].reverse().find(a => a.important) ?? acts[acts.length - 1];
@@ -363,6 +378,29 @@ export function TowerScreen({ open, onClose, onDescend, onRequestBattle, onToast
                   {stratum.name}
                   <span className="text-[10px] font-bold text-indigo-200/60">第{stratum.level}区层{stratum.deepenCount > 0 ? ` · 异变×${stratum.deepenCount}` : ''}</span>
                 </p>
+                {/* 满月心魔（第 6 轮）：本环守卫是它 / 它还在显形 */}
+                {stratum.abyssRing && (stratum.moonBossPending || shadow?.moonSlot) && (
+                  <p className="flex items-center gap-1.5 text-[10px] font-bold text-amber-100/85" data-moon-guard>
+                    <span className="rounded-md px-1.5 py-0.5 text-[9px] font-black" style={{ background: 'rgba(253,230,138,0.14)', color: '#fde68a', border: '1px solid rgba(253,230,138,0.4)', lineHeight: 1.2 }}>🌕 满月</span>
+                    {stratum.moonBossPending ? '月度心魔显形中——顶层稍后开放' : `本环守卫是月度心魔「${shadow?.name}」`}
+                  </p>
+                )}
+                {/* 深渊周常（第 6 轮）：本环规则 + 本周最好 */}
+                {stratum.abyssRing && stratum.abyssRuleId && (() => {
+                  // 规则是这一环生成那周定的：跨周还在爬时，名字里的 X 也按那一周（新环直接记在环上）
+                  const weekKey = weekKeyOf(new Date());
+                  const ruleAttr = stratum.abyssRuleAttr ?? abyssWeeklyWeakAttribute(stratum.createdWeekKey);
+                  const lbl = abyssRuleLabel(abyssRuleById(stratum.abyssRuleId), attrNames[ruleAttr] ?? '');
+                  // 「本周最好」只认这一周的纪录（上周的不带过来）
+                  const best = battleState.abyssWeekly?.weekKey === weekKey ? battleState.abyssWeekly.bestRing : 0;
+                  return (
+                    <p className="flex flex-wrap items-center gap-1.5 text-[10px] font-bold text-amber-100/80" data-abyss-rule={stratum.abyssRuleId}>
+                      <span className="rounded-md px-1.5 py-0.5 text-[9px] font-black" style={{ background: 'rgba(250,204,21,0.14)', color: '#fde047', border: '1px solid rgba(250,204,21,0.35)', lineHeight: 1.2 }}>本周回廊 · {lbl.name}</span>
+                      <span>{lbl.text}</span>
+                      <span className="text-amber-100/50">{best > 0 ? `· 本周最好 第${best}环` : '· 本周还没破过环'}</span>
+                    </p>
+                  );
+                })()}
                 {(buffs.length > 0 || Object.keys(ammo).length > 0) && (
                   <div className="flex flex-wrap items-center gap-1">
                     {buffs.map(b => (

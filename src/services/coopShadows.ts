@@ -62,6 +62,67 @@ export const REWARD_INTIMACY_CAP = 4;   // 亲密度硬顶
 export const REWARD_SP_VICTORY = 10;    // 胜利 SP
 export const REWARD_SP_FINISHER = 2;    // 终结者追加 SP
 export const REWARD_SP_RETREAT = 3;     // 撤退慰问 SP
+/** 连胜三只起亲密度 +5（第 6 轮） */
+export const REWARD_INTIMACY_STREAK = 5;
+/** 总攻击的 COMBO 倍率封顶（第 6 轮） */
+export const ALL_OUT_COMBO_CAP = 10;
+
+// ── 奖励成长（第 6 轮 · PRD §11.9）─────────────────────────────
+
+/**
+ * 这对 COOP 连着封印了几只（含 currentId 这一只）：按降临时间顺着数，撤退归零。
+ * 不改表——历史就是 coop_shadows 本身。
+ */
+export function bondStreak(history: CoopShadow[], bondId: string, currentId: string): number {
+  const list = history.filter(s => s.bondId === bondId).sort((a, b) => a.spawnedAt.getTime() - b.spawnedAt.getTime());
+  let streak = 0;
+  let sawCurrent = false;
+  for (const s of list) {
+    if (s.id === currentId) { streak += 1; sawCurrent = true; break; }
+    if (s.status === 'defeated') streak += 1;
+    else if (s.status === 'retreated') streak = 0;
+  }
+  return sawCurrent ? streak : streak + 1;
+}
+
+export interface CoopVictoryReward {
+  attr: number;
+  intimacy: number;
+  sp: number;
+  spBase: number;
+  spStreak: number;
+  spBond: number;
+  spFinisher: number;
+  streak: number;
+  isFinisher: boolean;
+}
+
+/**
+ * 胜利奖励：SP = 10 + 5 × min(连胜 − 1, 4)（这两项合计封顶 30）+ floor(羁绊等级 / 2)（封顶 5）+ 终结者 2；
+ * 连胜 ≥ 3 亲密度 +5，否则 +4；属性 +5 不变。结算与结算屏共用这一份，数字不会对不上。
+ */
+export function coopVictoryReward(opts: { streak: number; bondLevel: number; isFinisher: boolean }): CoopVictoryReward {
+  const streak = Math.max(1, Math.floor(opts.streak));
+  const spStreak = 5 * Math.min(streak - 1, 4);
+  const spBond = Math.min(5, Math.floor(Math.max(0, opts.bondLevel) / 2));
+  const spFinisher = opts.isFinisher ? REWARD_SP_FINISHER : 0;
+  return {
+    attr: REWARD_ATTR_CAP,
+    intimacy: streak >= 3 ? REWARD_INTIMACY_STREAK : REWARD_INTIMACY_CAP,
+    spBase: REWARD_SP_VICTORY,
+    spStreak,
+    spBond,
+    spFinisher,
+    sp: REWARD_SP_VICTORY + spStreak + spBond + spFinisher,
+    streak,
+    isFinisher: opts.isFinisher,
+  };
+}
+
+/** 总攻击伤害 = (我方等级和 + 对方等级和) × min(COMBO, 10) */
+export function allOutDamage(myTotalLevels: number, partnerTotalLevels: number, combo: number): number {
+  return Math.max(1, Math.floor((Math.max(0, myTotalLevels) + Math.max(0, partnerTotalLevels)) * Math.min(Math.max(0, combo), ALL_OUT_COMBO_CAP)));
+}
 
 // ── Mapper ────────────────────────────────────────────────
 
@@ -402,8 +463,8 @@ export const identifyShadow = async (shadow: CoopShadow): Promise<CoopShadow> =>
   const updated = await pb.collection('coop_shadows').update(shadow.id, patch);
   const next = mapCoopShadow(updated);
 
-  // 通知对方 —— 沿用 coop_shadow_attacked 类型（前端显示"对方已识破"）
-  // 不想新增一种通知 type 污染 NotificationType；payload.event='identify' 区分
+  // 通知对方 —— 借 coop_shadow_spawned 类型、payload.event='identify' 区分（通知面板按 event 显示「识破了」）。
+  // 独立 type 要服务器 notifications.type 先加选项，没加之前发了会被拒，所以先不换。
   const partnerId = shadow.userAId === me ? shadow.userBId : shadow.userAId;
   try {
     await pb.collection('notifications').create({
@@ -430,6 +491,8 @@ export interface AttackInput {
   skillName: string;
   skillAttribute: AttributeId;
   damageRaw: number;
+  /** 这对 COOP 的降临史（算连胜用；击杀时冻进纪念图章） */
+  history?: CoopShadow[];
 }
 
 export interface AttackResult {
@@ -593,8 +656,8 @@ export const attackCoopShadow = async (input: AttackInput): Promise<AttackResult
   if (defeatedNow) {
     patch.status = 'defeated';
     patch.defeated_at = now.toISOString();
-    // 写入纪念图章（双方 loadSocial 时都能读到）
-    patch.memorial_stamp = buildMemorialStamp(shadow, now, me);
+    // 写入纪念图章（双方 loadSocial 时都能读到）：连胜与终结者在这一刻冻住
+    patch.memorial_stamp = buildMemorialStamp(shadow, now, me, bondStreak(input.history ?? [], shadow.bondId, shadow.id));
   }
   let updatedRec: RecordModel;
   try {
@@ -656,6 +719,22 @@ export const retreatExpiredShadow = async (shadow: CoopShadow): Promise<CoopShad
   const updated = await pb.collection('coop_shadows').update(shadow.id, {
     status: 'retreated',
   });
+  // 第 6 轮：撤退通知以前从没发过——翻成 retreated 的这一端告诉对方一声（两端都翻了就各收一条）
+  const me = getUserId();
+  if (me) {
+    const partnerId = shadow.userAId === me ? shadow.userBId : shadow.userAId;
+    try {
+      await pb.collection('notifications').create({
+        user: partnerId,
+        type: 'coop_shadow_retreated',
+        from: me,
+        payload: { shadow_id: shadow.id },
+        read: false,
+      });
+    } catch (err) {
+      console.warn('[velvet-coopShadows] retreat notification failed', err);
+    }
+  }
   return mapCoopShadow(updated);
 };
 
@@ -665,8 +744,12 @@ export interface AllOutAttackInput {
   shadow: CoopShadow;
   personaId: string;
   personaName: string;
-  /** 攻击者本地的属性 level 之和 —— 即总攻击的伤害 */
+  /** 攻击者本地的属性 level 之和 */
   myTotalLevels: number;
+  /** 对方的属性 level 之和（名片快照；拿不到就按我方算） */
+  partnerTotalLevels: number;
+  /** 这对 COOP 的降临史（算连胜用） */
+  history?: CoopShadow[];
 }
 
 export interface AllOutAttackResult {
@@ -683,9 +766,9 @@ export interface AllOutAttackResult {
  *   - 我还没用过（allOutByA / allOutByB 对应我的）
  *   - shadow.status = 'active'
  *
- * 规则：
- *   - 伤害 = 我的属性总等级（可粗略理解为"当前的总 LV"）
- *   - 不吃共鸣、不吃弱点加成（已经是一次大招）
+ * 规则（第 6 轮重做）：
+ *   - 伤害 = (我方等级和 + 对方等级和) × min(COMBO, 10)——两个人的力量叠在一起，COMBO 越高越重
+ *   - 不吃共鸣、不吃弱点加成（已经是一次大招）；不重置 COMBO
  *   - **不占用当日回合数** —— coop_attacks 用 day='allout' 绕开唯一索引
  *   - 用完就把 all_out_by_{a|b} 翻成 true（一位玩家对一只 Boss 只能一次）
  */
@@ -694,7 +777,7 @@ export const allOutAttack = async (input: AllOutAttackInput): Promise<AllOutAtta
   const me = getUserId();
   if (!me) throw new Error('用户信息缺失');
 
-  const { myTotalLevels } = input;
+  const { myTotalLevels, partnerTotalLevels } = input;
   const now = new Date();
   const shadow = await fetchFreshShadow(input.shadow.id);
   assertStillBattling(shadow, now);
@@ -705,7 +788,7 @@ export const allOutAttack = async (input: AllOutAttackInput): Promise<AllOutAtta
   const alreadyUsed = iAmA ? shadow.allOutByA : shadow.allOutByB;
   if (alreadyUsed) throw new Error('你已经对这只羁绊之影释放过总攻击了');
 
-  const damage = Math.max(1, Math.floor(myTotalLevels));
+  const damage = allOutDamage(myTotalLevels, partnerTotalLevels, shadow.comboCount);
 
   // 1) 写 coop_attacks —— day='allout' 是 magic value，绕开每日唯一索引
   let attackRec: RecordModel;
@@ -739,7 +822,7 @@ export const allOutAttack = async (input: AllOutAttackInput): Promise<AllOutAtta
   if (defeatedNow) {
     patch.status = 'defeated';
     patch.defeated_at = now.toISOString();
-    patch.memorial_stamp = buildMemorialStamp(shadow, now, me);
+    patch.memorial_stamp = buildMemorialStamp(shadow, now, me, bondStreak(input.history ?? [], shadow.bondId, shadow.id));
   }
   let updatedRec: RecordModel;
   try {
@@ -790,7 +873,9 @@ export const allOutAttack = async (input: AllOutAttackInput): Promise<AllOutAtta
 function buildMemorialStamp(
   shadow: CoopShadow,
   defeatedAt: Date,
-  _finisherId: string,
+  finisherId: string,
+  /** 修复路径（reconcileActiveShadow）拿不到降临史：不填，结算时按本机历史现算 */
+  streak?: number,
 ): CoopMemorialStamp {
   const archetype = archetypeById(shadow.shadowId);
   return {
@@ -805,6 +890,9 @@ function buildMemorialStamp(
     ],
     // myDamage / totalDamage 由 claimVictoryReward 时各自填入本地副本
     totalDamage: shadow.hpMax,
+    // 第 6 轮：连胜与最后一击在击杀这一刻冻住，两端结算看同一份
+    ...(streak !== undefined ? { streak } : {}),
+    finisherId,
   };
 }
 

@@ -174,6 +174,6 @@ export const TABLE_LABELS: Record<string, string> = {
   settings: '设置', todos: '任务', todoCompletions: '任务完成', summaries: '总结', weeklyGoals: '本周目标',
   personas: '人格面具', shadows: '心魔', battleStates: '战场状态', confidants: '同伴', confidantEvents: '羁绊事件',
   counselArchives: '谏言归档', callingCards: '宣告卡', wishes: '愿望', strata: '区层',
-  navigatorPresets: '助手人格', navigatorMemos: '助手记忆', stamps: '岁时印章',
+  navigatorPresets: '助手人格', navigatorMemos: '助手记忆', stamps: '岁时印章', quests: '委托',
 };
 export const tableLabel = (key: string): string => TABLE_LABELS[key] ?? key;

@@ -17,11 +17,12 @@
  *
  * ⚠️ 只允许相对导入（模拟战脚本用 tsx 直跑，不解析 '@/' 别名）。
  */
-import type { AffixKind, AttributeId, ChainKey, PersonaSkill, StatusEffect, StatusKind } from '../types';
+import type { AffixKind, AttributeId, ChainKey, PersonaSkill, StatusEffect, StatusKind, AbyssRuleId } from '../types';
 import { EngineStatus, applyStatus, findStatus, removeStatus, tickTurnStart } from './statusEngine';
 import {
   ringMultiplier, computeDamage, healAmount, turnPressureMult,
   DEFEND_DAMAGE_MULT, DEFEND_SP_REGEN, DEFEND_SP_CAP_PER_BATTLE, GUARD_COUNTER_ADD, INSIGHT_SP_COST,
+  ABYSS_RULE_OATH_CUT, ABYSS_RULE_OATH_OTHERS,
   ATTACK_BOOST_FLAT, ATTACK_BOOST_TURNS, BUFF_ADD, VULNERABLE_ADD,
   CHARGE_MULT, CRIT_MULT, WEAKNESS_MULT, ONE_MORE_CD_TURNS,
   SKILL_CRIT_BY_LEVEL, GUTS_MASK_CRIT, KNOWLEDGE_MASK_WEAK_FLAT, DEX_MASK_EXTRA_EVERY,
@@ -131,6 +132,11 @@ export interface EngineSetup {
   blazingMasks?: AttributeId[];
   /** （v2.7 窥探命运）buff 生效期内伤害加算（0.10）；进加算段，叙事只报一次 */
   fateGlimpseAdd?: number;
+  /**
+   * （第 6 轮 深渊周常）本环规则。引擎只认四条：疾风 = 你先手（守卫首回合不回手）/ 誓约之夜 = 誓约技 SP 减半、其余 +50%
+   * / 月蚀 = 洞察免费 / 静默 = 防御不回 SP；其余规则在生成与结算层生效。
+   */
+  abyssRule?: AbyssRuleId;
 }
 
 export type PlayerActionInput =
@@ -223,6 +229,7 @@ export class BattleEngine {
   private stageCritUsed = false;
   private chainLethalUsed = false;   // 亡命身法：每场 1 次
   private oathSpUsed = false;        // 月光之誓：每场 1 次
+  private galeFirst = false;         // 疾风：守卫首回合不回手（第 6 轮 深渊周常）
   private ampNextAdd = 0;            // 增幅回路：命中后下次伤害加算
 
   // Shadow 态
@@ -374,7 +381,7 @@ export class BattleEngine {
 
   private hasAffix(a: AffixKind): boolean { return this.affixes.includes(a); }
   private weaknessHidden(): boolean { return this.hasAffix('eclipse') && !this.weaknessRevealed; }
-  private insightCost(): number { return this.chain === 'knowledge+charm' ? 0 : INSIGHT_SP_COST; }
+  private insightCost(): number { return this.chain === 'knowledge+charm' || this.setup.abyssRule === 'eclipse' ? 0 : INSIGHT_SP_COST; }
 
   private persistPatch(): PersistPatch {
     return {
@@ -404,6 +411,10 @@ export class BattleEngine {
       lines.push('先手被夺——它抢先出手了！');
       this.shadowAttack(1, false, lines, fx);
       if (this.over === 'defeat') return this.result(lines, fx, false, false);
+    } else if (this.setup.abyssRule === 'gale' && this.setup.shadow.tier !== 'mob' && this.setup.shadow.tier !== 'elite') {
+      // 疾风周：守卫更快、更疼，但你先手——它这回合不回手
+      this.galeFirst = true;
+      lines.push('【疾风】回廊的风推着你——先手是你的。');
     } else if (this.hasAffix('swift')) {
       lines.push('【迅捷】之影——它比你的思绪更快！');
       this.shadowAttack(1, false, lines, fx);
@@ -456,7 +467,12 @@ export class BattleEngine {
     if (skill.spCost <= 0) return skill.spCost;
     const echoCut = skill.socket?.kind === 'moon_echo' ? skill.socket.value : 0;
     const cut = echoCut + this.relicMods.spCostCut;
-    return cut > 0 ? Math.max(1, skill.spCost - cut) : skill.spCost;
+    let cost = cut > 0 ? Math.max(1, skill.spCost - cut) : skill.spCost;
+    // 誓约之夜（第 6 轮 深渊周常）：誓约技减半、其余 +50%
+    if (this.setup.abyssRule === 'oath_night') {
+      cost = skill.oathEffect ? Math.max(1, Math.round(cost * ABYSS_RULE_OATH_CUT)) : Math.round(cost * ABYSS_RULE_OATH_OTHERS);
+    }
+    return cost;
   }
 
   /** 总攻击实际 SP 消耗（英雄的证明减耗、下限 1） */
@@ -566,6 +582,9 @@ export class BattleEngine {
     } else if (this.windowJustOpened) {
       lines.push(`${this.shName} 失去平衡，无法行动！`);
       lines.push(`${this.shName}：${pickByLevel(STAGGER_DIALOGUE, this.shLevel, this.rng)}`);
+    } else if (this.galeFirst) {
+      this.galeFirst = false;
+      lines.push(`${this.shName} 慢了半拍——这回合它没来得及回手。`);
     } else if (!this.over) {
       this.shadowPhase(lines, fx);
     }
@@ -1357,7 +1376,9 @@ export class BattleEngine {
 
     // 防御回气（铁壁徽记：格挡回合额外回 HP）
     if (this.defending) {
-      const regen = Math.max(0, Math.min(DEFEND_SP_REGEN, DEFEND_SP_CAP_PER_BATTLE - this.defendSpGained));
+      // 静默（第 6 轮 深渊周常）：防御不回 SP
+      const regen = this.setup.abyssRule === 'silence' ? 0 : Math.max(0, Math.min(DEFEND_SP_REGEN, DEFEND_SP_CAP_PER_BATTLE - this.defendSpGained));
+      if (this.setup.abyssRule === 'silence') lines.push('【静默】——回廊吞掉了你的喘息，SP 没有回来。');
       this.sp += regen;
       this.defendSpGained += regen;
       if (this.relicMods.blockHeal > 0 && this.playerHp < this.playerMaxHp && this.playerHp > 0) {

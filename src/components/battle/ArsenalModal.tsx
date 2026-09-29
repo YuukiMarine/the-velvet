@@ -19,6 +19,7 @@ import {
   QUALITY_LABEL, relicEntryText, mythEntryText,
 } from '@/battle/loot';
 import { generateOathSkill } from '@/utils/battleAI';
+import { monthLabelOf } from '@/battle/moonBoss';
 import { playSound } from '@/utils/feedback';
 import { useBackHandler } from '@/utils/useBackHandler';
 import { slantPoly, NoiseLayer, IconOrb, IconMask, IconCrescent, IconBolt } from '@/components/battle/warKit';
@@ -464,11 +465,16 @@ export function ShadowArchiveModal({ open, onClose }: { open: boolean; onClose: 
         {records.map((rec, i) => {
           // Lv6 = 伪神：档案里单独一档「终局」，镀金而不是紫——它不与常规心魔混在一起
           const isFinal = rec.level >= 6 || rec.stratumLevel === 6;
+          // 第 6 轮：满月心魔单独一枚月光标
+          const isMoon = !!rec.moonMonth;
           return (
           <div key={i} style={{ clipPath: slantPoly(12), background: isFinal ? 'rgba(232,182,76,0.5)' : 'rgba(147,51,234,0.35)', padding: 1 }}>
             <div style={{ clipPath: slantPoly(12), background: isFinal ? 'rgba(26,18,4,0.97)' : 'rgba(16,10,40,0.97)' }} className="px-4 py-3">
               {isFinal && (
                 <p className="text-[9px] font-black tracking-[0.4em] uppercase mb-1" style={{ color: '#e8b64c' }}>finale</p>
+              )}
+              {isMoon && (
+                <p className="text-[10px] font-black tracking-[0.2em] mb-1" style={{ color: '#fde68a' }}>🌕 月度心魔 · {monthLabelOf(rec.moonMonth!)}</p>
               )}
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
@@ -478,8 +484,10 @@ export function ShadowArchiveModal({ open, onClose }: { open: boolean; onClose: 
                 <span className="flex-shrink-0 text-[11px] font-black px-1.5 py-0.5"
                       style={isFinal
                         ? { clipPath: slantPoly(4), background: 'rgba(232,182,76,0.22)', color: '#e8b64c' }
-                        : { clipPath: slantPoly(4), background: 'rgba(239,68,68,0.2)', color: '#fca5a5' }}>
-                  {isFinal ? '终局' : `Lv.${rec.level}`}
+                        : isMoon
+                          ? { clipPath: slantPoly(4), background: 'rgba(253,230,138,0.16)', color: '#fde68a' }
+                          : { clipPath: slantPoly(4), background: 'rgba(239,68,68,0.2)', color: '#fca5a5' }}>
+                  {isFinal ? '终局' : isMoon ? '满月' : `Lv.${rec.level}`}
                 </span>
               </div>
               {(rec.affixes?.length ?? 0) > 0 && (
@@ -493,9 +501,10 @@ export function ShadowArchiveModal({ open, onClose }: { open: boolean; onClose: 
                 </div>
               )}
               {rec.quote && <p className="text-[11px] italic text-gray-400 mt-1.5">「{rec.quote}」</p>}
-              <div className="flex items-center justify-between mt-2 text-[10px] text-gray-500 font-bold tabular-nums">
-                <span>识破 {rec.breachDate} → 击败 {rec.defeatDate} · 历时 {rec.daysElapsed} 天</span>
-                <span>
+              {/* 两段各自不断行、放不下就整段换到下一行（窄屏上原来会拆成「历时 1」「天」两截） */}
+              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 mt-2 text-[10px] text-gray-500 font-bold tabular-nums">
+                <span className="whitespace-nowrap">识破 {rec.breachDate} → 击败 {rec.defeatDate} · 历时 {rec.daysElapsed} 天</span>
+                <span className="whitespace-nowrap">
                   {rec.stratumLevel ? `${rec.stratumLevel === 6 ? '顶阙' : `第${rec.stratumLevel}区层`} · ` : ''}
                   {rec.playerTotalLevel ? `讨伐时的你 Lv${rec.playerTotalLevel}` : ''}
                 </span>

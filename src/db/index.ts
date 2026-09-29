@@ -1,5 +1,5 @@
 import Dexie, { Table } from 'dexie';
-import { User, Attribute, Activity, Achievement, Skill, DailyEvent, DailyDivination, LongReading, FateGlimpse, Settings, Todo, TodoCompletion, PeriodSummary, WeeklyGoal, Persona, Shadow, BattleState, Confidant, ConfidantEvent, CounselSession, CounselArchive, CallingCard, LedgerEntry, Budget, LedgerAsset, Wish, NavigatorSessionRow, NavigatorMessageRow, NavigatorMemo, NavigatorPreset, TowerStratum, OnlineCardFace, ActivityImage, ActivityImageData, SeasonStamp } from '@/types';
+import { User, Attribute, Activity, Achievement, Skill, DailyEvent, DailyDivination, LongReading, FateGlimpse, Settings, Todo, TodoCompletion, PeriodSummary, WeeklyGoal, Persona, Shadow, BattleState, Confidant, ConfidantEvent, CounselSession, CounselArchive, CallingCard, LedgerEntry, Budget, LedgerAsset, Wish, NavigatorSessionRow, NavigatorMessageRow, NavigatorMemo, NavigatorPreset, TowerStratum, OnlineCardFace, ActivityImage, ActivityImageData, SeasonStamp, Quest } from '@/types';
 
 export class PGTDatabase extends Dexie {
   users!: Table<User>;
@@ -31,6 +31,7 @@ export class PGTDatabase extends Dexie {
   navigatorMessages!: Table<NavigatorMessageRow>;   // F6 会话消息
   navigatorMemos!: Table<NavigatorMemo>;            // F6 原子记忆（三源 + F8 图片卡共用）
   stamps!: Table<SeasonStamp>;                      // 第 6 轮 岁时印章
+  quests!: Table<Quest>;                            // 第 6 轮 委托板（每周三张）
   navigatorPresets!: Table<NavigatorPreset>;        // F6 自定义人格（内置随代码，不入表）
   strata!: Table<TowerStratum>;                     // 批2 影时间高塔·区层
   onlineCardFaces!: Table<OnlineCardFace>;          // 未缔结在线好友的自裁卡面（本地专属，见 v14 注释）
@@ -308,6 +309,11 @@ export class PGTDatabase extends Dexie {
     // v17（v2.7.0.6 第 6 轮）：岁时印章。小表（一年几十行），进 SYNC_TABLES 与备份。
     this.version(17).stores({
       stamps: 'id, kind, year'
+    });
+
+    // v18（第 6 轮）：委托板。每周三行，进 SYNC_TABLES 与备份；进度不落库。
+    this.version(18).stores({
+      quests: 'id, weekKey'
     });
   }
 }

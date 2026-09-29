@@ -304,6 +304,15 @@ export const ACHIEVEMENTS = [
     unlocked: false,
     condition: { type: 'all_attributes_max' as const, value: 5 }
   },
+  // 委托板（第 6 轮）：领取 10 次委托
+  {
+    id: 'quest_taker',
+    title: '受人之托',
+    description: '在委托板领取 10 次委托',
+    icon: '📜',
+    unlocked: false,
+    condition: { type: 'quests_claimed' as const, value: 10 }
+  },
   // 隐藏成就（v2.7.0.6）：第一条（非补记）记录起满 365 天。领取前卡面只有问号，领取弹窗揭晓
   {
     id: 'your_memory',

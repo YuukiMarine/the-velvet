@@ -45,6 +45,10 @@ export interface NotifSnapshot {
   summaryNotice?: { id: string } | null;
   /** 今天是否已有任何记录（非系统类活动）；用于「提醒记录」 */
   loggedToday: boolean;
+  /** 委托板（第 6 轮）：解锁了才在周一提「本周委托刷新了」 */
+  questBoardUnlocked?: boolean;
+  /** 本周三张都领了就不用提 */
+  questsAllClaimedThisWeek?: boolean;
   /**
    * 一起进步（v2.7.0.6）：要提醒的那份约定（被催过的优先）。null = 没有进行中的约定。
    * 触发时 App 多半没在跑，对方后来才催的要等下次打开 App 重排才能写进文案（档 2 的后台刷新另补一条）。
@@ -119,6 +123,10 @@ interface CopyCtx {
 type CopyFn = (ctx: CopyCtx) => NotifText;
 
 const COPY: Record<NotifContentType, CopyFn[]> = {
+  quests: [
+    () => ({ title: '委托板', body: '新的一周，委托板换了三张新委托——有空来看看。' }),
+    () => ({ title: '本周委托', body: '三张委托已经贴在板上了，做完记得来领。' }),
+  ],
   tarot: [
     () => ({ title: '靛蓝色房间', body: '客人，今日的塔罗尚未翻开……命运在等你抽取。' }),
     () => ({ title: '今日塔罗', body: '牌阵已为你铺好。来翻开属于今天的那一张吧。' }),
@@ -164,7 +172,7 @@ const COPY: Record<NotifContentType, CopyFn[]> = {
 // ── 排程核心 ──────────────────────────────────────────────
 
 /** 优先级：越靠前越「该提醒」。一个时段内挑出最高优先且可操作的一条。 */
-const PRIORITY: NotifContentType[] = ['countercurrent', 'together', 'summary', 'tarot', 'record', 'todos'];
+const PRIORITY: NotifContentType[] = ['countercurrent', 'together', 'summary', 'quests', 'tarot', 'record', 'todos'];
 /** 状态型内容（非每日重置）：整个排程窗口内只投一次，避免刷屏。 */
 const ONCE_ONLY: NotifContentType[] = ['summary', 'countercurrent'];
 
@@ -189,6 +197,13 @@ function isActionable(c: NotifContentType, snap: NotifSnapshot, day: number): bo
       // 今天看是否已完成；以后的日子看约定还剩几天
       if (!snap.together) return false;
       return day === 0 ? !snap.together.doneToday : day <= snap.together.daysAhead;
+    case 'quests': {
+      // 只在周一提（第 day 天是周几按今天推）；今天看本周是否已全领
+      if (!snap.questBoardUnlocked) return false;
+      const weekday = (new Date().getDay() + day) % 7;
+      if (weekday !== 1) return false;
+      return day === 0 ? !snap.questsAllClaimedThisWeek : true;
+    }
   }
 }
 

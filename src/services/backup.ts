@@ -95,6 +95,7 @@ export const buildExportJson = async (): Promise<string> => {
     fateGlimpses: await db.fateGlimpses.toArray(),
     // ── 第 6 轮：岁时印章 ──
     stamps: await db.stamps.toArray().catch(() => []),
+    quests: await db.quests.toArray().catch(() => []),
     _exportedAt: new Date().toISOString(),
     _version: 10,
   };

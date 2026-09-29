@@ -72,3 +72,32 @@ export function moonPhaseOf(date: Date = new Date()): { phase: number; name: str
   const idx = Math.round(phase * 8) % 8;
   return { phase, name: MOON_PHASE_NAMES[idx], illum: (1 - Math.cos(2 * Math.PI * phase)) / 2, full: idx === 4 };
 }
+
+// ── 满月心魔（第 6 轮）──────────────────────────────────────────
+
+/** 某个槽位（奇数 = 满月、偶数 = 新月）的天文时刻（毫秒，按平均朔望月推） */
+export function moonInstantOfSlot(slot: number): number {
+  return REFERENCE_NEW_MOON_UTC + slot * HALF_SYNODIC_MS;
+}
+
+const isOdd = (n: number) => ((n % 2) + 2) % 2 === 1;
+
+/** 这一天（本地日）里有没有满月时刻：有就返回那次满月的槽位编号，没有返回 null */
+export function fullMoonSlotOnDay(date: Date = new Date()): number | null {
+  const near = moonPhaseSlot(date);
+  for (const s of [near - 1, near, near + 1]) {
+    if (!isOdd(s)) continue;
+    const t = new Date(moonInstantOfSlot(s));
+    if (t.getFullYear() === date.getFullYear() && t.getMonth() === date.getMonth() && t.getDate() === date.getDate()) return s;
+  }
+  return null;
+}
+
+/** 下一次满月（含今天）的时刻 */
+export function nextFullMoon(from: Date = new Date()): Date {
+  const dayStart = new Date(from.getFullYear(), from.getMonth(), from.getDate()).getTime();
+  let s = moonPhaseSlot(from) - 1;
+  if (!isOdd(s)) s -= 1;
+  while (moonInstantOfSlot(s) < dayStart) s += 2;
+  return new Date(moonInstantOfSlot(s));
+}

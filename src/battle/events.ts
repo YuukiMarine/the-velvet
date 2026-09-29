@@ -228,7 +228,30 @@ export const TOWER_EVENTS: TowerEvent[] = [
   },
 ];
 
-export const TOWER_EVENT_IDS = TOWER_EVENTS.map(e => e.id);
+/**
+ * 回忆之光（第 6 轮 · PRD §11.7）：从最近 14 天挑一条自己记的记录照亮这一层。
+ * 这是用户自己的塔，引用标题没问题；{date} / {title} 由 TowerScreen 注入，同一节点每次打开都是同一条。
+ * 不进均匀抽取池——生成时事件节点按 MEMORY_ECHO_RATE 变成它（素材不足不出）。
+ */
+export const MEMORY_ECHO_EVENT_ID = 'memory-echo';
+export const MEMORY_ECHO_EVENT: TowerEvent = {
+  id: MEMORY_ECHO_EVENT_ID,
+  title: '回忆之光',
+  icon: '🕯️',
+  text: '墙上的一盏灯忽明忽暗，灯罩里映着一行熟悉的字——{date} 你记下了「{title}」。',
+  options: [
+    {
+      label: '让它照亮这一层',
+      resultText: '灯光稳住了。那天的你在为今天的你举灯。（本次登塔伤害 +6%，+4 SP）',
+      effects: [{ kind: 'sessionBuff', id: 'memory-echo', label: '回忆之光 +6%', addPct: 0.06 }, { kind: 'sp', amount: 4 }],
+    },
+    { label: '只是看看', resultText: '你看了一会儿，继续往上。灯还亮着。', effects: [{ kind: 'nothing' }] },
+  ],
+};
+TOWER_EVENTS.push(MEMORY_ECHO_EVENT);
+
+/** 均匀抽取池（回忆之光不在里面，它按素材另算） */
+export const TOWER_EVENT_IDS = TOWER_EVENTS.filter(e => e.id !== MEMORY_ECHO_EVENT_ID).map(e => e.id);
 
 export function getTowerEvent(id: string): TowerEvent | undefined {
   return TOWER_EVENTS.find(e => e.id === id);

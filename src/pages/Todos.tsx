@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'motion/react';
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { useAppStore, toLocalDateKey } from '@/store';
 import { useShallow } from 'zustand/react/shallow';
@@ -12,6 +12,7 @@ import { minimalStep } from '@/utils/minimalStep';
 import { BigDealPanel } from '@/components/bigdeal/BigDealPanel';
 import { BigDealHomeCard } from '@/components/bigdeal/BigDealHomeCard';
 import { FateDrawSheet } from '@/components/fate/FateDrawSheet';
+import { QuestBoardSheet, useQuestBoard } from '@/components/quests/QuestBoardSheet';
 import { AttributeId, TodoFrequency } from '@/types';
 import { triggerSuccessFeedback, triggerNavFeedback } from '@/utils/feedback';
 import { TAP } from '@/utils/motion';
@@ -427,6 +428,11 @@ export const TodosView = () => {
   const [dealPanelId, setDealPanelId] = useState<string | null>(null);
   /** 抽签仪式面板 */
   const [fateOpen, setFateOpen] = useState(false);
+  // 委托板（第 6 轮）：解锁后与抽签并排；周一后第一次进任务页顺手刷新
+  const [questOpen, setQuestOpen] = useState(false);
+  const questBoard = useQuestBoard();
+  const refreshQuests = useAppStore((s) => s.refreshQuests);
+  useEffect(() => { if (questBoard.unlocked) void refreshQuests(); }, [questBoard.unlocked, refreshQuests]);
   /** 正在编辑的是「一起进步」约定的待办：每日重置、截止日、周几、启用日期都由约定决定，表单里锁住（改了会让约定打不了卡） */
   const editingPactTodo = editingTodoId ? todos.find(t => t.id === editingTodoId && t.pact) : undefined;
 
@@ -616,10 +622,11 @@ export const TodosView = () => {
           {/* 抽签入口（TASKS_MERGE_PRD §4.2）：决策短路——不知道先做哪个，交给命运单抽。
               愿望面下隐藏：抽签抽的是"今天做什么"，与"远处的灯"不是一件事 */}
           {!isWishPane && (
+          <div className={`mb-2 flex items-stretch gap-2 ${p3 || isP4 || p5 ? '' : 'mx-3 mt-3'}`}>
           <button
             type="button"
             onClick={() => setFateOpen(true)}
-            className={`mb-2 flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-bold transition ${
+            className={`flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-left text-xs font-bold transition ${
               p3
                 ? ''
                 : isP4
@@ -627,7 +634,7 @@ export const TodosView = () => {
                   ? 'p4-onlight rounded-full border-2 border-[#131313]/70 bg-[var(--p4-paper,#fff7b0)] text-[#131313]'
                   : p5
                     ? 'relative z-10 border-2 border-[#050505] bg-[#f0e9df] text-[#131313] shadow-[3px_3px_0_rgba(0,0,0,0.45)]'
-                    : 'mx-3 mt-3 w-[calc(100%-1.5rem)] rounded-xl border border-dashed border-gray-300 text-gray-500 dark:border-gray-600 dark:text-gray-400'
+                    : 'rounded-xl border border-dashed border-gray-300 text-gray-500 dark:border-gray-600 dark:text-gray-400'
             }`}
             style={p3 ? { clipPath: 'polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%)', background: 'var(--p3r-panel-glass, rgba(255,255,255,0.85))', color: P3R.ink, boxShadow: '0 4px 12px rgba(38,96,140,0.08)' } : undefined}
           >
@@ -635,6 +642,31 @@ export const TodosView = () => {
             <span className="min-w-0 flex-1 truncate">不知道做什么好？命运会替你选择</span>
             <span aria-hidden className="opacity-50">›</span>
           </button>
+          {/* 委托板入口（第 6 轮）：解锁后才出现，角标 = 可领取张数 */}
+          {questBoard.unlocked && (
+            <button
+              type="button"
+              onClick={() => setQuestOpen(true)}
+              aria-label={`委托板${questBoard.claimable ? `，${questBoard.claimable} 张可领取` : ''}`}
+              className={`relative flex shrink-0 items-center gap-1.5 px-3 py-2 text-xs font-bold transition ${
+                p3
+                  ? ''
+                  : isP4
+                    ? 'p4-onlight rounded-full border-2 border-[#131313]/70 bg-[var(--p4-paper,#fff7b0)] text-[#131313]'
+                    : p5
+                      ? 'relative z-10 border-2 border-[#050505] bg-[#f0e9df] text-[#131313] shadow-[3px_3px_0_rgba(0,0,0,0.45)]'
+                      : 'rounded-xl border border-dashed border-gray-300 text-gray-500 dark:border-gray-600 dark:text-gray-400'
+              }`}
+            style={p3 ? { clipPath: 'polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%)', background: 'var(--p3r-panel-glass, rgba(255,255,255,0.85))', color: P3R.ink, boxShadow: '0 4px 12px rgba(38,96,140,0.08)' } : undefined}
+            >
+              <span aria-hidden className={p5 ? 'text-[#c00008]' : isP4 ? 'text-[#f9a11b]' : 'text-primary'}>📜</span>
+              <span>委托</span>
+              {questBoard.claimable > 0 && (
+                <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#e02020] px-1 text-[10px] font-black leading-none text-white">{questBoard.claimable}</span>
+              )}
+            </button>
+          )}
+          </div>
           )}
           <div className={isP4 || p3 ? 'space-y-2' : p5 ? 'relative space-y-2 px-3 pb-3 pt-5' : 'p-3 space-y-2'}>
             {p5 && (
@@ -1688,6 +1720,7 @@ export const TodosView = () => {
 
       {/* 抽签仪式 */}
       <FateDrawSheet open={fateOpen} onClose={() => setFateOpen(false)} />
+      <QuestBoardSheet open={questOpen} onClose={() => setQuestOpen(false)} />
 
       {/* ── §4.6 长按上下文菜单：全页单实例，按 menuTodoId 寻址目标任务。
           关闭后 SheetModal 的 AnimatePresence 会用上一帧的子树播 exit，

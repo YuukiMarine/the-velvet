@@ -8,12 +8,14 @@
  *
  * ⚠️ 只允许相对导入（模拟战脚本用 tsx 直跑）。
  */
-import type { AttributeId, MobSpec, Shadow, StratumNode, StratumNodeType, TowerStratum } from '../types';
+import type { AbyssRuleId, AttributeId, MobSpec, Shadow, StratumNode, StratumNodeType, TowerStratum } from '../types';
 import { rollAffixes } from './loot';
+import { MEMORY_ECHO_EVENT_ID } from './events';
 import {
   AFFIX_HP_MULT, MOB_HP_BY_LEVEL, ELITE_HP_BY_LEVEL,
   ABYSS_RING_FLOORS, abyssAffixCount, abyssGuardHp, GOLDEN_NODE_RATE, GOLDEN_HP_MULT,
   BOSS_ATTACK_BY_LEVEL,
+  MEMORY_ECHO_RATE, ABYSS_RULE_THICK_HP, ABYSS_RULE_GALE_ATTACK, ABYSS_RULE_GREED_HP,
 } from './numbers';
 
 const ATTRS: AttributeId[] = ['knowledge', 'guts', 'dexterity', 'kindness', 'charm'];
@@ -106,10 +108,18 @@ interface GenOptions {
   eventPoolIds: string[];
   /** 月匣 SP（批2 掉 SP；物品池批3 接入后改掉落表） */
   chestSp: (floor: number) => number;
+  /** （第 6 轮）近 14 天素材够不够出「回忆之光」；够则事件节点按 MEMORY_ECHO_RATE 变成它 */
+  memoryEcho?: boolean;
+}
+
+/** 事件节点抽哪个事件：素材够时按比例出回忆之光，否则均匀抽池子 */
+function pickEventId(rng: () => number, eventPoolIds: string[], memoryEcho?: boolean): string {
+  if (memoryEcho && rng() < MEMORY_ECHO_RATE) return MEMORY_ECHO_EVENT_ID;
+  return eventPoolIds[Math.floor(rng() * eventPoolIds.length)];
 }
 
 export function generateStratumNodes(opts: GenOptions): { nodes: StratumNode[]; floors: number } {
-  const { level, rng, eventPoolIds, chestSp } = opts;
+  const { level, rng, eventPoolIds, chestSp, memoryEcho } = opts;
   const floors = 10 + Math.floor(rng() * 3); // 10-12
   const nodes: StratumNode[] = [];
   let idSeq = 0;
@@ -156,7 +166,7 @@ export function generateStratumNodes(opts: GenOptions): { nodes: StratumNode[]; 
         } else if (type === 'golden') {
           node.mob = rollGoldenSpec(level, rng);
         } else if (type === 'event') {
-          node.eventPoolId = eventPoolIds[Math.floor(rng() * eventPoolIds.length)];
+          node.eventPoolId = pickEventId(rng, eventPoolIds, memoryEcho);
         } else if (type === 'chest') {
           node.lootSp = chestSp(floor);
           chestQuota--;
@@ -194,12 +204,13 @@ export interface StratumSeed {
   rng?: () => number;
   eventPoolIds: string[];
   chestSp: (floor: number) => number;
+  memoryEcho?: boolean;
 }
 
 export function buildStratum(seed: StratumSeed): TowerStratum {
   const rng = seed.rng ?? Math.random;
   const { nodes, floors } = generateStratumNodes({
-    level: seed.level, rng, eventPoolIds: seed.eventPoolIds, chestSp: seed.chestSp,
+    level: seed.level, rng, eventPoolIds: seed.eventPoolIds, chestSp: seed.chestSp, memoryEcho: seed.memoryEcho,
   });
   return {
     id: seed.id,
@@ -306,12 +317,13 @@ export interface RevisitSeed {
   attackPower: number;
   /** 旧档案里这一层心魔的名字（有就沿用，做成"残响"） */
   archivedName?: string;
+  memoryEcho?: boolean;
 }
 
 export function buildRevisitStratum(seed: RevisitSeed): { stratum: TowerStratum; boss: Shadow } {
   const rng = seed.rng ?? Math.random;
   const { nodes, floors } = generateStratumNodes({
-    level: seed.level, rng, eventPoolIds: seed.eventPoolIds, chestSp: seed.chestSp,
+    level: seed.level, rng, eventPoolIds: seed.eventPoolIds, chestSp: seed.chestSp, memoryEcho: seed.memoryEcho,
   });
   const weakAttribute = ATTRS[Math.floor(rng() * ATTRS.length)];
   const base = seed.archivedName?.trim() || `第${seed.level}区层`;
@@ -378,14 +390,29 @@ export interface AbyssRingSeed {
   /** 守卫弱点排除上次（沿主塔口径） */
   lastWeakAttribute?: AttributeId;
   attrNames: Record<AttributeId, string>;
+  /** （第 6 轮）回忆之光素材够不够 */
+  memoryEcho?: boolean;
+  /** （第 6 轮 深渊周常）本周规则；「只剩 X」那一周的 X 由 ruleWeakAttribute 给 */
+  rule?: AbyssRuleId;
+  ruleWeakAttribute?: AttributeId;
 }
 
-/** 深渊环节点：5 层直线（1=Shadow / 2=补给 / 3=Shadow或强敌 / 4=随机 / 5=守卫）；金色掷取同主塔 */
-export function generateAbyssNodes(ring: number, rng: () => number, eventPoolIds: string[], chestSp: (floor: number) => number): StratumNode[] {
+export interface AbyssNodeOptions {
+  memoryEcho?: boolean;
+  rule?: AbyssRuleId;
+}
+
+/**
+ * 深渊环节点：5 层直线（1=Shadow / 2=补给 / 3=Shadow或强敌 / 4=随机 / 5=守卫）；金色掷取同主塔。
+ * 「回响」那一周：2、4 两层都是回忆之光（素材不够就退回普通事件）。
+ */
+export function generateAbyssNodes(ring: number, rng: () => number, eventPoolIds: string[], chestSp: (floor: number) => number, opts: AbyssNodeOptions = {}): StratumNode[] {
   const nodes: StratumNode[] = [];
   let idSeq = 0;
   const nid = () => `a${ring}-${++idSeq}`;
+  const echoWeek = opts.rule === 'echo';
   const supply = (): StratumNodeType => {
+    if (echoWeek) return 'event';
     const r = rng();
     return r < 0.36 ? 'event' : r < 0.7 ? 'echo' : 'chest';
   };
@@ -394,13 +421,13 @@ export function generateAbyssNodes(ring: number, rng: () => number, eventPoolIds
     if (floor === ABYSS_RING_FLOORS) type = 'boss';
     else if (floor === 2) type = supply();
     else if (floor === 3) type = rng() < 0.5 ? 'elite' : 'mob';
-    else if (floor === 4) type = rng() < 0.45 ? supply() : 'mob';
+    else if (floor === 4) type = echoWeek || rng() < 0.45 ? supply() : 'mob';
     else type = 'mob';
     if (type === 'mob' && rng() < GOLDEN_NODE_RATE) type = 'golden';
     const node: StratumNode = { id: nid(), floor, lane: 1, type, edges: [], cleared: false };
     if (type === 'mob' || type === 'elite') node.mob = rollMobSpec(5, type === 'elite' ? 'elite' : 'mob', rng);
     else if (type === 'golden') node.mob = rollGoldenSpec(5, rng);
-    else if (type === 'event') node.eventPoolId = eventPoolIds[Math.floor(rng() * eventPoolIds.length)];
+    else if (type === 'event') node.eventPoolId = echoWeek && opts.memoryEcho ? MEMORY_ECHO_EVENT_ID : pickEventId(rng, eventPoolIds, opts.memoryEcho);
     else if (type === 'chest') node.lootSp = chestSp(floor);
     nodes.push(node);
   }
@@ -412,12 +439,19 @@ export function generateAbyssNodes(ring: number, rng: () => number, eventPoolIds
 export function buildAbyssRing(seed: AbyssRingSeed): { stratum: TowerStratum; guard: Shadow } {
   const rng = seed.rng ?? Math.random;
   const { ring } = seed;
-  const nodes = generateAbyssNodes(ring, rng, seed.eventPoolIds, seed.chestSp);
+  const nodes = generateAbyssNodes(ring, rng, seed.eventPoolIds, seed.chestSp, { memoryEcho: seed.memoryEcho, rule: seed.rule });
   const weakPool = ATTRS.filter(a => a !== seed.lastWeakAttribute);
-  const weakAttribute = weakPool[Math.floor(rng() * weakPool.length)];
+  // 「只剩 X」那一周：守卫弱点全是 X
+  const weakAttribute = seed.rule === 'single_weak' && seed.ruleWeakAttribute
+    ? seed.ruleWeakAttribute
+    : weakPool[Math.floor(rng() * weakPool.length)];
   const affixes = rollAffixes(abyssAffixCount(ring), rng);
+  // 「月蚀」那一周：弱点全隐（复用月蚀词缀；洞察免费在引擎里）
+  if (seed.rule === 'eclipse' && !affixes.includes('eclipse')) affixes.push('eclipse');
   let maxHp = abyssGuardHp(ring);
   if (affixes.includes('stubborn')) maxHp = Math.round(maxHp * AFFIX_HP_MULT);
+  if (seed.rule === 'thick_armor') maxHp = Math.round(maxHp * ABYSS_RULE_THICK_HP);
+  if (seed.rule === 'greed') maxHp = Math.round(maxHp * ABYSS_RULE_GREED_HP);
   const guardBase = ABYSS_GUARD_NAMES[(ring - 1) % ABYSS_GUARD_NAMES.length];
   const guard: Shadow = {
     id: seed.guardId,
@@ -431,7 +465,7 @@ export function buildAbyssRing(seed: AbyssRingSeed): { stratum: TowerStratum; gu
     maxHp2: undefined,
     currentHp2: undefined,
     responseLines: [...ABYSS_GUARD_LINES].sort(() => rng() - 0.5),
-    attackPower: BOSS_ATTACK_BY_LEVEL[4],
+    attackPower: seed.rule === 'gale' ? ABYSS_RULE_GALE_ATTACK : BOSS_ATTACK_BY_LEVEL[4],
     affixes,
     createdAt: seed.now,
   };
@@ -450,6 +484,8 @@ export function buildAbyssRing(seed: AbyssRingSeed): { stratum: TowerStratum; gu
     deepenCount: 0,
     status: 'climbing',
     abyssRing: ring,
+    abyssRuleId: seed.rule,
+    abyssRuleAttr: seed.rule === 'single_weak' ? seed.ruleWeakAttribute : undefined,
     createdAt: seed.now,
   };
   return { stratum, guard };
