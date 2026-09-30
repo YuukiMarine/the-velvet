@@ -25,6 +25,7 @@ import { useCloudStore } from '@/store/cloud';
 import { useAppStore } from '@/store';
 import { getOnlineCardFace, clearOnlineCardFace } from './onlineCardFace';
 import { syncPacts } from './pactSync';
+import { syncOrgs } from './orgSync';
 import { interpretLockedArcana, type ConfidantMatchResult } from '@/utils/confidantAI';
 import type { CoopBond, CoopShadow, Friendship, NotificationEntry } from '@/types';
 
@@ -135,6 +136,12 @@ const loadSocialOnce = async (options: { force?: boolean }): Promise<void> => {
       await syncPacts(notifications);
     } catch (err) {
       console.warn('[velvet-social] pact sync failed', err);
+    }
+    // 组织（第 7 轮）：拉成员、校正位置、推成员牌；放在最后，失败不影响前面任何一步
+    try {
+      await syncOrgs();
+    } catch (err) {
+      console.warn('[velvet-social] org sync failed', err);
     }
   } catch (err) {
     console.error('[velvet-social] load failed:', err);

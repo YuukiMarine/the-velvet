@@ -70,6 +70,15 @@ interface Candidate {
   orientation: TarotOrientation;
 }
 
+/**
+ * 选牌阶段三张牌的宽度：三张 96 + 两道间距 + 倾斜多出来的角约 330px，
+ * 320 宽的屏幕（可用 288）左右两张会被屏幕边裁掉。按视口宽度算，最大仍是 96。
+ */
+const pickCardWidth = (): number => {
+  const vw = typeof window === 'undefined' ? 390 : Math.min(window.innerWidth, 480);
+  return Math.max(72, Math.min(96, Math.floor((vw - 32 - 24 - 20) / 3)));
+};
+
 export function DailyDraw() {
   const { dailyDivination, settings, saveDailyDivination } = useAppStore(useShallow(s => ({ dailyDivination: s.dailyDivination, settings: s.settings, saveDailyDivination: s.saveDailyDivination })));
   // 解读请求跑在模块级任务里（utils/tarotJobs）：切页不打断，回来接着看
@@ -339,7 +348,7 @@ export function DailyDraw() {
                 animate={{ opacity: 1, y: 0, rotate: -6 + i * 6 }}
                 transition={{ delay: i * 0.12, type: 'spring', damping: 18, stiffness: 200 }}
               >
-                <CardBack width={96} onClick={() => handlePick(i)} />
+                <CardBack width={pickCardWidth()} onClick={() => handlePick(i)} />
               </motion.div>
             ))}
           </div>

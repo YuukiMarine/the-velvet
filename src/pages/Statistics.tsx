@@ -214,14 +214,15 @@ const StatCardP5 = ({ label, value, sub, seed, delay = 0 }: {
       transition={{ delay, duration: 0.4 }}
       className="relative"
     >
-      <P5Panel seed={seed} jag={7} frame={3} keyline={2.5} shadow={{ x: 4, y: 5 }} bodyClassName="px-4 pb-2.5 pt-3">
-        <div className="flex items-center gap-2">
+      <P5Panel seed={seed} jag={7} frame={3} keyline={2.5} shadow={{ x: 4, y: 5 }} bodyClassName="px-3 pb-2.5 pt-3 min-[380px]:px-4">
+        {/* 窄屏（380 以下）星章缩一号、间距收一点：原尺寸下 320 宽的卡里标签只剩两个字宽（「累计…」） */}
+        <div className="flex items-center gap-1.5 min-[380px]:gap-2">
           <span
             aria-hidden
-            className="relative flex h-[29px] w-[29px] shrink-0 items-center justify-center"
+            className="relative flex h-[23px] w-[23px] shrink-0 items-center justify-center min-[380px]:h-[29px] min-[380px]:w-[29px]"
             style={{ background: P5R.red, clipPath: roughQuad(seed + 3.1, 4), boxShadow: `2px 2.5px 0 ${P5R.ink}` }}
           >
-            <P5Star size={17} fill={P5R.paper} />
+            <P5Star size={14} fill={P5R.paper} />
           </span>
           <span className="min-w-0 truncate text-[14px] font-black leading-none" style={{ color: P5R.ink, fontFamily: P5_FONT }}>{label}</span>
         </div>

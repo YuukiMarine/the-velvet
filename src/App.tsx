@@ -37,6 +37,7 @@ const Settings = lazy(() => import('@/pages/Settings').then(m => ({ default: m.S
 const Actions = lazy(() => import('@/pages/Actions').then(m => ({ default: m.Actions })));
 const Astrology = lazy(() => import('@/pages/Astrology').then(m => ({ default: m.Astrology })));
 const Cooperation = lazy(() => import('@/pages/Cooperation').then(m => ({ default: m.Cooperation })));
+const Hideout = lazy(() => import('@/pages/Hideout').then(m => ({ default: m.Hideout })));
 // 菜单宫格页（v2.5 五格 IA）：activities / settings / achievements 等入口收纳于此
 const Menu = lazy(() => import('@/pages/Menu').then(m => ({ default: m.Menu })));
 // 账号与数据页（设置拆解 PR）：「数据管理 + 云同步」从 Settings 迁出，入口在菜单宫格
@@ -418,6 +419,11 @@ function App() {
           store.setCurrentPage('menu');
           return;
         }
+        // 据点页（第 7 轮）从羁绊页进，系统返回也回羁绊页
+        if (store.currentPage === 'hideout') {
+          store.setCurrentPage('cooperation');
+          return;
+        }
         if (store.currentPage !== 'dashboard') {
           store.setCurrentPage('dashboard');
           return;
@@ -646,6 +652,8 @@ function App() {
         return lazyPage(<Astrology />);
       case 'cooperation':
         return lazyPage(<Cooperation />);
+      case 'hideout':
+        return lazyPage(<Hideout />);
       case 'menu':
         return lazyPage(<Menu />);
       case 'account':

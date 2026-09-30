@@ -1,0 +1,311 @@
+/**
+ * 成员牌（第 7 轮 · PRD §12.4 / §12.5）：名册格子里的小牌，以及点开后放大翻面的正反两面。
+ *   正面：代号、代表牌牌面、座位、名片状态、连续天数、本周出勤七格、称号（读最新一份纪要，挂一周）；
+ *   背面：展示的面具（名字 / 属性 / 等级 / 三个技能）、本周目标与上周自评（周日会议写，7b）、加入日期。
+ * 四频道各一套皮；我的那张有标记；屏蔽了的人半透明、挂「已屏蔽」；上一场会议没写目标的挂「本周缺席」。
+ */
+import type { CSSProperties, ReactNode } from 'react';
+import { motion } from 'motion/react';
+import { liveStatus } from '@/constants/profileStatus';
+import { DEFAULT_ATTRIBUTE_NAMES } from '@/constants/index';
+import { tarotArtUrl } from '@/constants/tarotArt';
+import { useTarotArtSet } from '@/ui/useTarotArtSet';
+import { P3R, slantClip } from '@/components/p3r/kit';
+import { P5R, P5_FONT, P5_TITLE_FONT, roughQuad } from '@/components/p5r/kit';
+import { P4Sparkle } from '@/ui/p4Kit';
+import { RESULT_LABEL, displayCodename, nextWeekKey, orgWeekKey, shiftDayKey, tarotCardOf, weekDaysOf, zonedDay } from '@/utils/orgLogic';
+import { OrgEmblem, WeekDots, useOrgTone, type OrgTone } from './orgUi';
+import type { OrgMember, OrgMinutesSnapshot, OrgView, PersonaSkill } from '@/types';
+
+const SKILL_TYPE: Record<PersonaSkill['type'], string> = {
+  damage: '伤害', crit: '暴击', buff: '增伤', debuff: '易伤', charge: '蓄力', heal: '回复', attack_boost: '攻击增益',
+};
+
+const seatNo = (n: number) => String(n).padStart(2, '0');
+
+/** 估一行字的宽度（以字号为单位）：汉字 1、W/M 0.95、其余大写 0.72、小写和数字 0.58 */
+const textEm = (s: string): number => [...s].reduce((n, ch) => n + (/[WM]/.test(ch) ? 0.95 : /[A-Z]/.test(ch) ? 0.72 : /[a-z0-9 ._-]/.test(ch) ? 0.58 : 1), 0);
+/** 在 avail 宽度里放下这串字的字号（夹在 min~max 之间） */
+export const fitFont = (s: string, avail: number, max: number, min: number): number =>
+  Math.max(min, Math.min(max, Math.floor(avail / Math.max(1, textEm(s)))));
+const ymd = (d: Date) => `${d.getFullYear()} 年 ${d.getMonth() + 1} 月 ${d.getDate()} 日`;
+
+/** 纪要里的称号 → 名册小签上的短写 */
+const shortTitle = (t: string): string => (t === '本周出勤王' ? '出勤王' : t.replace(/\s+/g, ''));
+
+/** 这个人在最新一份纪要里的称号、是不是缺席 */
+export function memberHonors(minutes: OrgMinutesSnapshot | null | undefined, userId: string): { titles: string[]; absent: boolean } {
+  if (!minutes) return { titles: [], absent: false };
+  return {
+    titles: minutes.titles.filter(t => t.userId === userId).map(t => t.title),
+    absent: minutes.absent.some(a => a.userId === userId),
+  };
+}
+
+/** 背面「目标」一栏：本周 / 下周（会上刚写的）目标，以及这周 / 上周的自评 */
+export function goalFacts(view: OrgView, m: OrgMember, now = new Date()) {
+  const cur = orgWeekKey(now, view.org.tz);
+  const goal = m.goal && m.goalWeek === cur ? { label: '本周目标', text: m.goal }
+    : m.goal && m.goalWeek === nextWeekKey(cur) ? { label: '下周目标', text: m.goal }
+      : null;
+  const result = m.result && m.resultWeek === cur ? `这周自评：${RESULT_LABEL[m.result]}`
+    : m.result && m.resultWeek === shiftDayKey(cur, -7) ? `上周自评：${RESULT_LABEL[m.result]}`
+      : null;
+  return { goal, result };
+}
+
+/** 这张牌此刻要显示的东西（按组织时区算本周） */
+export function memberFacts(view: OrgView, m: OrgMember, now = new Date()) {
+  const weekKey = orgWeekKey(now, view.org.tz);
+  return {
+    codename: displayCodename(m),
+    card: tarotCardOf(m.tarotId),
+    leader: m.userId === view.org.leaderId,
+    mine: m.id === view.me.id,
+    status: liveStatus(m.card.status ?? null, now.getTime()),
+    streak: m.card.streak,
+    week: weekDaysOf(m.card, weekKey),
+    today: zonedDay(now, view.org.tz).weekday - 1,
+  };
+}
+
+function TarotThumb({ id, streak = 0, className, style }: { id?: string; streak?: number; className?: string; style?: CSSProperties }) {
+  const set = useTarotArtSet();
+  const card = tarotCardOf(id);
+  const url = id ? tarotArtUrl(id, set) : null;
+  return (
+    <span className={`relative block overflow-hidden ${className ?? ''}`} style={{ background: card?.accent ?? 'rgba(127,127,127,0.18)', ...style }}>
+      {url
+        ? <img src={url} alt="" loading="lazy" draggable={false} className="absolute inset-0 h-full w-full object-cover" />
+        : <span className="absolute inset-0 flex items-center justify-center text-center text-[10px] font-black leading-tight opacity-70">待选<br />代表牌</span>}
+      {streak > 0 && (
+        <span className="absolute inset-x-0 bottom-0 bg-black/70 py-[2px] text-center text-[9px] font-black leading-tight text-white tabular-nums" aria-label={`连续 ${streak} 天`}>
+          连续 {streak} 天
+        </span>
+      )}
+    </span>
+  );
+}
+
+// ── 名册里的小牌 ───────────────────────────────────────────────────────────────
+
+export function MemberTile({ view, member, minutes, blocked, onOpen, onMore }: {
+  view: OrgView;
+  member: OrgMember;
+  /** 最新一份纪要（称号 / 缺席） */
+  minutes?: OrgMinutesSnapshot | null;
+  blocked: boolean;
+  onOpen: () => void;
+  onMore: () => void;
+}) {
+  const tone = useOrgTone();
+  const f = memberFacts(view, member);
+  const honors = memberHonors(minutes, member.userId);
+  // 黄频道夜间纸面是紫的：出勤格跟着 --ui-ink 走（白天墨黑、夜里浅紫白），空格用中性灰
+  const weekOn = tone.channel === 'p3' ? P3R.blue : tone.channel === 'p4' ? 'var(--ui-ink, #131313)' : tone.channel === 'p5' ? P5R.red : 'var(--ui-accent, #6366f1)';
+  const weekOff = tone.channel === 'p5' ? 'rgba(0,0,0,0.16)' : 'rgba(127,127,127,0.24)';
+
+  const inner = (
+    <div className="flex gap-3" style={{ opacity: blocked ? 0.55 : 1 }}>
+      <TarotThumb id={member.tarotId} streak={f.streak} className="h-[84px] w-[53px] shrink-0" style={{ borderRadius: tone.channel === 'p4' ? 8 : tone.channel === 'neutral' ? 6 : 0, clipPath: tone.channel === 'p5' ? roughQuad(member.seat + 0.3, 2.5) : undefined, boxShadow: tone.channel === 'p4' ? '0 0 0 2px #131313' : undefined }} />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1.5">
+          <SeatNumber tone={tone} n={member.seat} />
+          {f.leader && <span aria-label="队长" className="text-[11px] leading-none">👑</span>}
+          {f.mine && <MineTag tone={tone} />}
+          {blocked && <span className="text-[9px] font-black" style={{ color: tone.sub }}>已屏蔽</span>}
+        </div>
+        <div className="mt-1 truncate text-[15px] font-black leading-tight" style={{ fontFamily: tone.titleFont }}>{f.codename}</div>
+        <div className="mt-0.5 truncate text-[11px] font-bold" style={{ color: tone.sub }}>
+          {f.status ? `${f.status.emoji} ${f.status.label}` : f.card ? `${f.card.roman ?? ''} ${f.card.name}`.trim() : '还没选代表牌'}
+        </div>
+        <div className="mt-2">
+          <WeekDots days={f.week} today={f.today} on={weekOn} off={weekOff} size={8} />
+        </div>
+        {(honors.titles.length > 0 || honors.absent) && (
+          <div className="mt-1.5 flex flex-wrap gap-[3px]">
+            {honors.titles.map(t => <HonorChip key={t} tone={tone}>{shortTitle(t)}</HonorChip>)}
+            {honors.absent && <HonorChip tone={tone} muted>本周缺席</HonorChip>}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  const more = (
+    <button type="button" onClick={(e) => { e.stopPropagation(); onMore(); }} aria-label={`${f.codename} 的更多操作`} className="absolute right-1.5 top-1 z-10 px-1.5 text-[16px] font-black leading-none" style={{ color: tone.sub }}>⋯</button>
+  );
+
+  const shell = (children: ReactNode) => {
+    if (tone.channel === 'p3') {
+      return (
+        <div className="relative px-3 py-2.5" style={{ background: P3R.panelGlass, clipPath: slantClip(9), boxShadow: '0 8px 18px rgba(38,96,140,0.10)', color: tone.ink }}>
+          <span aria-hidden className="absolute left-0 right-0 top-0 h-[3px]" style={{ background: f.mine ? P3R.magenta : P3R.blue }} />
+          {children}
+        </div>
+      );
+    }
+    if (tone.channel === 'p4') {
+      return (
+        <div className="relative px-3 py-2.5" style={{ background: tone.paper, borderRadius: 16, transform: `rotate(${member.seat % 2 ? 0.7 : -0.7}deg)`, boxShadow: `0 0 0 2px ${f.mine ? 'var(--p4-orange, #f9a11b)' : 'var(--ui-line, #131313)'}, 0 3px 0 2px rgba(19,19,19,0.2)`, color: tone.ink }}>
+          {children}
+        </div>
+      );
+    }
+    if (tone.channel === 'p5') {
+      return (
+        <div className="relative" style={{ color: P5R.ink, fontFamily: P5_FONT }}>
+          <span aria-hidden className="pointer-events-none absolute inset-0" style={{ transform: 'translate(3px,4px)', background: f.mine ? P5R.red : P5R.ink, clipPath: roughQuad(member.seat + 0.13, 5) }} />
+          <span aria-hidden className="pointer-events-none absolute inset-0" style={{ background: P5R.ink, clipPath: roughQuad(member.seat + 0.29, 4) }} />
+          <span aria-hidden className="pointer-events-none absolute inset-[2.5px]" style={{ background: P5R.paper, clipPath: roughQuad(member.seat + 0.47, 3) }} />
+          <div className="relative px-3 py-2.5">{children}</div>
+        </div>
+      );
+    }
+    return (
+      <div className="relative rounded-2xl px-3 py-2.5" style={{ background: tone.paper, border: `1px solid ${f.mine ? 'var(--ui-accent, #6366f1)' : 'var(--ui-line, #e5e7eb)'}`, color: tone.ink }}>
+        {children}
+      </div>
+    );
+  };
+
+  return (
+    <motion.div whileTap={{ scale: 0.98 }} className="relative cursor-pointer" onClick={onOpen} role="button" tabIndex={0} aria-label={`${seatNo(member.seat)} 号 ${f.codename}`} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onOpen(); }}>
+      {shell(inner)}
+      {more}
+    </motion.div>
+  );
+}
+
+/** 名册小牌上的称号 / 缺席小签（纸面上；缺席是描边的淡签，不做成红牌） */
+function HonorChip({ tone, muted = false, children }: { tone: OrgTone; muted?: boolean; children: string }) {
+  const style: CSSProperties = muted
+    ? { color: tone.sub, boxShadow: `inset 0 0 0 1px ${tone.channel === 'p5' ? 'rgba(0,0,0,0.3)' : 'rgba(127,127,127,0.45)'}`, borderRadius: tone.channel === 'p4' || tone.channel === 'neutral' ? 999 : 0 }
+    : tone.channel === 'p3'
+      ? { background: P3R.magenta, color: '#ffffff', clipPath: slantClip(3) }
+      : tone.channel === 'p4'
+        ? { background: 'var(--p4-orange, #f9a11b)', color: '#131313', borderRadius: 999, boxShadow: '0 0 0 1px #131313' }
+        : tone.channel === 'p5'
+          ? { background: P5R.red, color: P5R.white, clipPath: roughQuad(children.length + 0.7, 1.2), fontFamily: P5_TITLE_FONT }
+          : { background: 'var(--ui-accent, #6366f1)', color: '#ffffff', borderRadius: 999 };
+  return <span className="inline-flex items-center whitespace-nowrap px-1.5 py-[2px] text-[9px] font-black leading-none" style={style}>{children}</span>;
+}
+
+function SeatNumber({ tone, n }: { tone: OrgTone; n: number }) {
+  if (tone.channel === 'p3') return <span className="text-[12px] font-black italic leading-none" style={{ color: P3R.blue }}>{seatNo(n)}</span>;
+  if (tone.channel === 'p4') return <span className="flex h-[18px] w-[18px] items-center justify-center rounded-full text-[9px] font-black text-[#131313]" style={{ background: 'var(--p4-orange, #f9a11b)', boxShadow: '0 0 0 1.5px #131313' }}>{n}</span>;
+  if (tone.channel === 'p5') return <span className="text-[13px] font-black leading-none" style={{ color: P5R.red, fontFamily: P5_TITLE_FONT }}>{seatNo(n)}</span>;
+  return <span className="text-[11px] font-black leading-none tabular-nums" style={{ color: tone.accent }}>#{n}</span>;
+}
+
+function MineTag({ tone }: { tone: OrgTone }) {
+  if (tone.channel === 'p3') return <span className="px-1 py-[1px] text-[9px] font-black text-white" style={{ background: P3R.magenta, clipPath: slantClip(3) }}>我</span>;
+  if (tone.channel === 'p4') return <span className="rounded-full bg-[#131313] px-1.5 py-[1px] text-[9px] font-black text-[#fff6d0]">我</span>;
+  if (tone.channel === 'p5') return <span className="px-1 py-[1px] text-[9px] font-black" style={{ background: P5R.red, color: P5R.white, clipPath: roughQuad(2.2, 1.5) }}>我</span>;
+  return <span className="rounded-full px-1.5 py-[1px] text-[9px] font-black text-white" style={{ background: tone.accent }}>我</span>;
+}
+
+// ── 放大翻面的正反两面 ───────────────────────────────────────────────────────────
+
+export function MemberCardFront({ view, member, minutes, width, height }: { view: OrgView; member: OrgMember; minutes?: OrgMinutesSnapshot | null; width: number; height: number }) {
+  const tone = useOrgTone();
+  const set = useTarotArtSet();
+  const f = memberFacts(view, member);
+  const honors = memberHonors(minutes, member.userId);
+  const url = member.tarotId ? tarotArtUrl(member.tarotId, set) : null;
+  const frame: CSSProperties = tone.channel === 'p3'
+    ? { boxShadow: `inset 0 0 0 5px ${P3R.blue}` }
+    : tone.channel === 'p4'
+      ? { boxShadow: 'inset 0 0 0 6px #131313, inset 0 0 0 9px #fff6d0' }
+      : tone.channel === 'p5'
+        ? { boxShadow: `inset 0 0 0 5px ${P5R.ink}, inset 0 0 0 9px ${P5R.red}` }
+        : { boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.25)' };
+  return (
+    <div className="relative h-full w-full overflow-hidden text-white" style={{ width, height, background: f.card?.accent ?? '#1f2937' }}>
+      {url ? <img src={url} alt="" draggable={false} className="absolute inset-0 h-full w-full object-cover" /> : <div className="absolute inset-0 flex items-center justify-center text-[14px] font-black opacity-70">还没选代表牌</div>}
+      <div className="absolute inset-x-0 bottom-0 h-[58%] bg-gradient-to-t from-black/90 via-black/60 to-transparent" />
+      <div aria-hidden className="pointer-events-none absolute inset-0" style={frame} />
+      <div className="absolute left-4 top-4 flex items-center gap-2">
+        <span className="px-2 py-1 text-[11px] font-black tracking-[0.18em]" style={{ background: tone.channel === 'p4' ? 'var(--p4-orange, #f9a11b)' : tone.channel === 'p5' ? P5R.red : tone.channel === 'p3' ? P3R.blue : 'rgba(0,0,0,0.55)', color: tone.channel === 'p4' ? '#131313' : '#ffffff', clipPath: tone.channel === 'p3' ? slantClip(5) : tone.channel === 'p5' ? roughQuad(1.7, 2) : undefined, borderRadius: tone.channel === 'p4' ? 999 : tone.channel === 'neutral' ? 8 : 0, fontFamily: tone.titleFont }}>
+          SEAT {seatNo(member.seat)}
+        </span>
+        {f.leader && <span className="text-[16px] leading-none">👑</span>}
+      </div>
+      <div className="absolute inset-x-0 bottom-0 px-5 pb-5">
+        {f.card && <div className="text-[11px] font-black tracking-[0.2em] text-white/70">{f.card.roman} · {f.card.name}</div>}
+        <div className="mt-1 font-black leading-tight" style={{ fontFamily: tone.titleFont, fontSize: fitFont(f.codename, width - 44, 28, 16), overflowWrap: 'anywhere' }}>{f.codename}</div>
+        {f.status && <div className="mt-1 text-[13px] font-bold text-white/90">{f.status.emoji} {f.status.label}</div>}
+        {(honors.titles.length > 0 || honors.absent) && (
+          <div className="mt-2 flex flex-wrap gap-1">
+            {honors.titles.map(t => (
+              <span key={t} className="whitespace-nowrap px-1.5 py-[3px] text-[10px] font-black leading-none" style={{ background: tone.channel === 'p4' ? 'var(--p4-orange, #f9a11b)' : tone.channel === 'p5' ? P5R.red : tone.channel === 'p3' ? P3R.magenta : 'rgba(255,255,255,0.22)', color: tone.channel === 'p4' ? '#131313' : '#ffffff', clipPath: tone.channel === 'p3' ? slantClip(3) : tone.channel === 'p5' ? roughQuad(t.length + 0.9, 1.2) : undefined, borderRadius: tone.channel === 'p4' || tone.channel === 'neutral' ? 999 : 0 }}>{t}</span>
+            ))}
+            {honors.absent && <span className="whitespace-nowrap px-1.5 py-[3px] text-[10px] font-black leading-none text-white/75" style={{ boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.45)', borderRadius: tone.channel === 'p4' || tone.channel === 'neutral' ? 999 : 0 }}>本周缺席</span>}
+          </div>
+        )}
+        <div className="mt-3 flex items-end justify-between">
+          <WeekDots days={f.week} today={f.today} on={tone.channel === 'p4' ? 'var(--p4-orange, #f9a11b)' : tone.channel === 'p5' ? P5R.red : '#ffffff'} off="rgba(255,255,255,0.22)" size={12} labels />
+          <div className="text-right">
+            <div className="text-[26px] font-black leading-none tabular-nums" style={{ fontFamily: tone.titleFont }}>{f.streak}</div>
+            <div className="mt-0.5 text-[10px] font-bold text-white/70">连续天数</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function MemberCardBack({ view, member, width, height }: { view: OrgView; member: OrgMember; width: number; height: number }) {
+  const tone = useOrgTone();
+  const f = memberFacts(view, member);
+  const g = goalFacts(view, member);
+  const p = member.card.persona;
+  const bg = tone.channel === 'p3' ? P3R.panel : tone.channel === 'p4' ? '#fff6d0' : tone.channel === 'p5' ? P5R.paper : '#111827';
+  const ink = tone.channel === 'neutral' ? '#f3f4f6' : tone.channel === 'p5' ? P5R.ink : tone.channel === 'p4' ? '#131313' : P3R.ink;
+  const sub = tone.channel === 'neutral' ? '#9ca3af' : tone.channel === 'p5' ? '#4a4640' : tone.channel === 'p4' ? 'rgba(19,19,19,0.6)' : P3R.inkSoft;
+  const accent = tone.channel === 'p3' ? P3R.blue : tone.channel === 'p4' ? '#2e6be0' : tone.channel === 'p5' ? P5R.red : '#a5b4fc';
+  // 小屏上牌只有两百来宽、三百多高：字号收一档，面具名 / 目标最多两行，日期始终钉在底部
+  const small = height < 420;
+  const heading = (t: string, en: string) => (
+    <div className="flex items-baseline gap-2">
+      <span className={`${small ? 'text-[12px]' : 'text-[13px]'} font-black`} style={{ color: ink, fontFamily: tone.titleFont }}>{t}</span>
+      <span className="text-[9px] font-black tracking-[0.2em]" style={{ color: accent }}>{en}</span>
+    </div>
+  );
+  return (
+    <div className={`relative flex h-full w-full flex-col overflow-hidden ${small ? 'px-4 pb-4 pt-5' : 'px-5 pb-5 pt-6'}`} style={{ width, height, background: bg, color: ink, fontFamily: tone.bodyFont }}>
+      <OrgEmblem id={view.org.emblem} size={Math.round(width * 0.5)} color={accent} className="pointer-events-none absolute -bottom-4 -right-6" style={{ opacity: 0.08 }} />
+      {tone.channel === 'p4' && <P4Sparkle size={18} color="var(--p4-orange, #f9a11b)" className="absolute right-4 top-4" />}
+      <div className="relative shrink-0 truncate pr-5 text-[11px] font-black tracking-[0.2em]" style={{ color: sub }}>SEAT {seatNo(member.seat)} · {f.codename}</div>
+
+      <div className={`relative min-h-0 flex-1 overflow-hidden ${small ? 'mt-3' : 'mt-4'}`}>
+        {heading('展示的面具', 'PERSONA')}
+        {p ? (
+          <div className="mt-1.5">
+            <div className={`line-clamp-2 font-black leading-tight ${small ? 'text-[18px]' : 'text-[22px]'}`} style={{ fontFamily: tone.titleFont }}>{p.name}</div>
+            <div className="mt-0.5 text-[12px] font-bold" style={{ color: sub }}>{DEFAULT_ATTRIBUTE_NAMES[p.attribute] ?? p.attribute} · Lv.{p.level}</div>
+            <ul className={`${small ? 'mt-2 space-y-1' : 'mt-2.5 space-y-1.5'}`}>
+              {p.skills.map((s, i) => (
+                <li key={i} className={`flex items-center justify-between gap-2 font-bold ${small ? 'text-[11px]' : 'text-[12px]'}`}>
+                  <span className="min-w-0 truncate">{s.name}</span>
+                  <span className={`shrink-0 font-black tabular-nums ${small ? 'text-[10px]' : 'text-[11px]'}`} style={{ color: accent }}>{SKILL_TYPE[s.type] ?? s.type} · {s.power}</span>
+                </li>
+              ))}
+              {p.skills.length === 0 && <li className="text-[12px] font-bold" style={{ color: sub }}>还没有解锁的技能</li>}
+            </ul>
+          </div>
+        ) : (
+          <div className="mt-2 text-[12px] font-bold leading-relaxed" style={{ color: sub }}>{f.mine ? '还没展示面具。在据点设置里可以打开。' : 'Ta 没有展示面具。'}</div>
+        )}
+
+        <div className={small ? 'mt-3' : 'mt-5'}>
+          {heading(g.goal?.label ?? '本周目标', 'GOAL')}
+          <div className={`mt-1.5 line-clamp-2 font-bold leading-relaxed ${small ? 'text-[12px]' : 'text-[14px]'}`}>{g.goal ? `「${g.goal.text}」` : <span style={{ color: sub }}>{f.mine ? '周日会议上写一句下周目标，会出现在这里' : '这周还没有目标'}</span>}</div>
+          {g.result && <div className={`mt-1 font-black ${small ? 'text-[11px]' : 'text-[12px]'}`} style={{ color: accent }}>{g.result}</div>}
+        </div>
+      </div>
+
+      <div className="relative mt-2 shrink-0 text-[11px] font-bold" style={{ color: sub }}>加入于 {ymd(member.createdAt)}</div>
+    </div>
+  );
+}

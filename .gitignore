@@ -80,3 +80,6 @@ nginx.conf
 # 文档不入库（用户规则 2026-08-31）：除 README.md 外的 .md 一律不推
 *.md
 !README.md
+
+# 本机测试台（无头浏览器脚本、假 PB、本机 PocketBase 实例）：只放本地，不上 GitHub
+tests-local/

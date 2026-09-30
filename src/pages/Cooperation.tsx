@@ -10,6 +10,8 @@ import { P3R, P3RPage, GhostWords, P3PageHeader, SlantButton, slantClip } from '
 import { P5R, P5_FONT, P5Collage, P5SubBar, P5Star, P5Dots, P5Slab, P5RPage, P5StarFab } from '@/components/p5r/kit';
 import { ConfidantCard } from '@/components/cooperation/ConfidantCard';
 import { PactPartnerTag } from '@/components/cooperation/PactTag';
+import { OrgEntryCard } from '@/components/org/OrgEntryCard';
+import { OrgBadge } from '@/components/org/OrgBadge';
 import { GoalLine, SwapFaces, swapTagProps, useStatusSwap } from '@/components/profile/PresenceLine';
 import { ConfidantAlbumWall } from '@/components/cooperation/ConfidantAlbumWall';
 import { ConfidantCreateModal } from '@/components/cooperation/ConfidantCreateModal';
@@ -653,6 +655,9 @@ export function Cooperation() {
         </div>
       )}
 
+      {/* 组织（第 7 轮）：过滤条上方的入口 */}
+      <OrgEntryCard />
+
       {/* 过滤 Tabs + 视图切换（P9：专辑墙 ⇄ 列表，右上角、持久记忆）。
           P4：激活项 = 蓝色花形 blob（白星闪），其余为黑粗文字；
           p3（设计稿）：选中 = 蓝斜块白字 + 洋红角；未选 = 黑字 + 底部小青杠 */}
@@ -1192,6 +1197,8 @@ function OnlineFriendPlaceholderCard({
               )}
               {/* 一起进步（v2.7.0.6）：普通好友也能约 */}
               <PactPartnerTag partnerId={profile.id} />
+              {/* 组织（第 7 轮）：同在一个组织就挂徽记 */}
+              <OrgBadge userId={profile.id} />
             </div>
             <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
               @{profile.userId ?? '—'} ·{' '}

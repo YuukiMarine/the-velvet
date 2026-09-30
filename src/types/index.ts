@@ -397,7 +397,7 @@ export interface KeywordRule {
  *  - summary：有未读的成长总结
  *  - record：今天还没有任何记录（提醒回来记录）
  */
-export type NotifContentType = 'tarot' | 'todos' | 'countercurrent' | 'summary' | 'record' | 'together' | 'quests';
+export type NotifContentType = 'tarot' | 'todos' | 'countercurrent' | 'summary' | 'record' | 'together' | 'quests' | 'meeting';
 
 /**
  * F2a 本地通知——一个「每日时段」。每个时段在自己的时间点检查 contents 里
@@ -2104,6 +2104,146 @@ export interface CoopPact {
   updatedAt: Date;
   /** 对方的档案快照（expand 出来的） */
   otherProfile?: CloudProfile;
+}
+
+// ── 组织（v2.7.0.6 第 7 轮 · PRD §12）──────────────────────────────────────
+// 组织是单位、据点是它的主页。一人最多自建一个 + 加入一个；每个组织最多 7 人（座位 1–7）。
+// 数据全在 PB 的 orgs / org_members（7b 起加 org_posts / org_reactions / org_reports），不落 Dexie。
+
+/** 这一行成员身份占的是哪个名额：自己建的 / 加入别人的 */
+export type OrgSlot = 'own' | 'joined';
+/** 代号怎么来的：自己写 / 用昵称 / 用代表牌的牌名 */
+export type OrgCodenameKind = 'custom' | 'nickname' | 'tarot';
+
+export interface Org {
+  id: string;
+  name: string;
+  motto: string;
+  /** 徽记 id（components/org/OrgEmblem 里的一套） */
+  emblem: string;
+  leaderId: string;
+  inviteCode: string;
+  /** 建立时记下的创建者时区（IANA）；「本周」、会议日都按它算 */
+  tz: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/** 名册背面展示的面具（本人推上来的快照；第 8 轮借面具直接用这份） */
+export interface OrgPersonaSnapshot {
+  /** 面具名（该属性的人格面具名；没有就是人格名） */
+  name: string;
+  attribute: AttributeId;
+  /** 该属性的等级 */
+  level: number;
+  skills: Array<{ name: string; type: PersonaSkill['type']; power: number; level: number }>;
+}
+
+/** 成员牌上的数字（本人客户端推送；只有这些，不含任何记录内容） */
+export interface OrgMemberCard {
+  /** 连续天数（排除补记） */
+  streak: number;
+  /** 本周出勤：周键（组织时区的周一）+ 七个格子的位图（bit0 = 周一） */
+  week?: { key: string; days: number };
+  /** 上一周的出勤（跨周推送时把 week 挪过来）：周一生成纪要时，有人已经刷成新一周，上周的格子也不丢（7b） */
+  prev?: { key: string; days: number };
+  /** 名片状态（24 小时内有效，过期了就不带） */
+  status?: ProfileStatus;
+  /** 展示中的面具；null = 不展示 */
+  persona?: OrgPersonaSnapshot | null;
+  /** 选定现在这张代表牌的时刻（ISO）：两人撞牌时先选的留下 */
+  tarotAt?: string;
+  /** 推送时刻（ISO） */
+  at?: string;
+}
+
+export interface OrgMember {
+  id: string;
+  orgId: string;
+  userId: string;
+  slot: OrgSlot;
+  /** 1–7；队长建立时坐 1 号 */
+  seat: number;
+  codename: string;
+  codenameKind: OrgCodenameKind;
+  /** 代表牌（大阿卡纳 id）；刚加入、还没选时为空 */
+  tarotId?: string;
+  card: OrgMemberCard;
+  /** 周日会议写的一句话目标，以及它是哪一周的（7b） */
+  goal?: string;
+  goalWeek?: string;
+  /** 对 resultWeek 那周目标的自评（7b） */
+  result?: 'done' | 'partial' | 'missed';
+  resultWeek?: string;
+  /** 加入时间 */
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/** 公告板动态附带的记录快照（7b）：只有这些，不含记录原文 */
+export interface OrgPostSnapshot {
+  v: 1;
+  /** 记录日期 YYYY-MM-DD（分享者本地） */
+  date: string;
+  /** 加点：只带有加点的属性 */
+  pts: Partial<Record<AttributeId, number>>;
+  /** 分享者自己的属性名（只带 pts 里有的） */
+  names: Partial<Record<AttributeId, string>>;
+  /** 类型：重要 / BIG DEAL 收官 / 愿望实现 / 宣告卡达成 / 周目标完成 */
+  kind?: 'important' | 'bigdeal' | 'wish' | 'card' | 'weekly';
+  backfilled?: boolean;
+  /** 分享时的代号与代表牌：人退出以后也能显示是谁分享的 */
+  by: { codename: string; tarotId?: string };
+}
+
+/** 会议纪要（kind = minutes 的动态存这一份，7b）。代号都冻结在里面 */
+export interface OrgMinutesSnapshot {
+  v: 1;
+  /** 记的是哪一周（周一的日键） */
+  week: string;
+  /** 这周的目标：立过目标的人数 / 做到了的人数 */
+  rate: { done: number; total: number };
+  done: Array<{ userId: string; codename: string }>;
+  /** 下周目标（会上写的） */
+  goals: Array<{ userId: string; codename: string; goal: string }>;
+  titles: Array<{ userId: string; codename: string; title: string }>;
+  /** 会议时间里没写下周目标的人 */
+  absent: Array<{ userId: string; codename: string }>;
+}
+
+export interface OrgPost {
+  id: string;
+  orgId: string;
+  userId: string;
+  kind: 'moment' | 'minutes';
+  /** 动态附的一句话（≤20 字）；纪要为空 */
+  text: string;
+  snapshot: OrgPostSnapshot | null;
+  minutes: OrgMinutesSnapshot | null;
+  weekKey?: string;
+  createdAt: Date;
+}
+
+/** 六个预设标签：太强了 / 同款努力 / 稳 / 羡慕 / 我也去做 / 抱抱 */
+export type OrgReactionTag = 'strong' | 'same' | 'steady' | 'envy' | 'metoo' | 'hug';
+
+export interface OrgReaction {
+  id: string;
+  postId: string;
+  orgId: string;
+  userId: string;
+  tag: OrgReactionTag;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/** 本机看到的一个组织：组织本身 + 全体成员 + 我那一行；7b 起带上最近 30 天的动态与标签（还没拉到时为 undefined） */
+export interface OrgView {
+  org: Org;
+  members: OrgMember[];
+  me: OrgMember;
+  posts?: OrgPost[];
+  reactions?: OrgReaction[];
 }
 
 // ── COOP 契约（在线同伴羁绊） ───────────────────────────

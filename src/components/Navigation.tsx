@@ -112,7 +112,8 @@ type NavItem = (typeof navItems)[number];
 /** 行动 tab 的激活判定要兼容旧路由 id（散落的 setCurrentPage('todos'/'activities') 调用点） */
 const isNavActive = (itemId: string, currentPage: string): boolean =>
   currentPage === itemId ||
-  (itemId === 'actions' && (currentPage === 'todos' || currentPage === 'activities'));
+  (itemId === 'actions' && (currentPage === 'todos' || currentPage === 'activities')) ||
+  (itemId === 'cooperation' && currentPage === 'hideout');
 
 // 导出供 Settings 页面复用图标（成就入口行）
 export { TrophyIcon };

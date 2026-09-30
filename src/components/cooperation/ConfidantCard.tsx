@@ -8,6 +8,7 @@ import { useCloudStore } from '@/store/cloud';
 import type { Confidant, CoopShadow } from '@/types';
 import { TAROT_BY_ID } from '@/constants/tarot';
 import { PactPartnerTag } from './PactTag';
+import { OrgBadge } from '@/components/org/OrgBadge';
 import { GoalLine, SwapFaces, swapTagProps, useStatusSwap } from '@/components/profile/PresenceLine';
 import { INTIMACY_LABELS, MAX_INTIMACY, pointsToNextLevel, levelBasePoints, thresholdsFor } from '@/utils/confidantLevels';
 import { TarotCardSVG } from '@/components/astrology/TarotCardSVG';
@@ -275,6 +276,8 @@ export function ConfidantCard({ confidant, onClick, prayer, activeShadow, onShad
               {confidant.source === 'online' && confidant.linkedCloudUserId && !archived && (
                 <PactPartnerTag partnerId={confidant.linkedCloudUserId} />
               )}
+              {/* 组织（第 7 轮）：同在一个组织就挂徽记 */}
+              {confidant.source === 'online' && !archived && <OrgBadge userId={confidant.linkedCloudUserId} />}
             </div>
             <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
               《{card?.name}》{isReversed ? '逆位' : '正位'} · {INTIMACY_LABELS[confidant.intimacy]}

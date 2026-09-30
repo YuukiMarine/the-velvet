@@ -8,7 +8,7 @@
  */
 
 import { create } from 'zustand';
-import type { CoopBond, CoopPact, CoopShadow, Friendship, NotificationEntry, Prayer } from '@/types';
+import type { CoopBond, CoopPact, CoopShadow, Friendship, NotificationEntry, OrgView, Prayer } from '@/types';
 
 /** 一个未能"物化成本地 Confidant"的 COOP 契约 —— 本地塔罗冲突时出现 */
 export interface MaterializeBlocker {
@@ -34,6 +34,22 @@ interface CloudSocialState {
   pacts: CoopPact[];
   /** 约定是否已经拉到过（没拉到时各处不据此判断「没有约定」） */
   pactsLoaded: boolean;
+  /** 组织（第 7 轮）：我所在的组织（最多两个：自建一个 + 加入一个），各带全体成员与我那一行 */
+  orgs: OrgView[];
+  /** 组织是否已经拉到过（没拉到时入口不据此显示「还没有组织」） */
+  orgsLoaded: boolean;
+  /** 本机一次性提示（被请离 / 组织解散 / 在别的设备退出）：羁绊页组织卡上方显示，点掉即清 */
+  orgNotice: string | null;
+  /** 据点页正在看的组织 */
+  hideoutOrgId: string | null;
+  /** 进据点时先打开哪一区（有新动态 → 公告板、会议日没写 → 会议）；据点页读一次就清掉 */
+  hideoutSection: 'roster' | 'board' | 'meeting' | null;
+  /** 本机屏蔽的成员（云端用户 id；只在本机生效） */
+  orgBlocked: string[];
+  /** 举报过、本机不再显示的动态（7b） */
+  orgHiddenPosts: string[];
+  /** 公告板「看到哪儿了」：组织 id → ISO（7b 红点） */
+  orgSeen: Record<string, string>;
   /**
    * 对方的 COOP 已 linked，但本机同号塔罗已被其他活跃同伴占用 → 没法在本地建卡。
    * UI 用这个列表提示用户"先把冲突的同伴归档一下再来刷新"。
@@ -59,6 +75,16 @@ interface CloudSocialState {
   upsertCoopShadow: (s: CoopShadow) => void;
   setPacts: (ps: CoopPact[]) => void;
   upsertPact: (p: CoopPact) => void;
+  setOrgs: (views: OrgView[]) => void;
+  upsertOrgView: (view: OrgView) => void;
+  removeOrgView: (orgId: string) => void;
+  setOrgNotice: (msg: string | null) => void;
+  setHideoutOrgId: (orgId: string | null) => void;
+  setHideoutSection: (section: 'roster' | 'board' | 'meeting' | null) => void;
+  setOrgBlocked: (userIds: string[]) => void;
+  setOrgHiddenPosts: (postIds: string[]) => void;
+  setOrgSeen: (orgId: string, at: string) => void;
+  setOrgSeenAll: (map: Record<string, string>) => void;
   markNotificationRead: (id: string) => void;
   addNotification: (n: NotificationEntry) => void;
   removeNotification: (id: string) => void;
@@ -93,6 +119,14 @@ export const useCloudSocialStore = create<CloudSocialState>(set => ({
   coopShadows: [],
   pacts: [],
   pactsLoaded: false,
+  orgs: [],
+  orgsLoaded: false,
+  orgNotice: null,
+  hideoutOrgId: null,
+  hideoutSection: null,
+  orgBlocked: [],
+  orgHiddenPosts: [],
+  orgSeen: {},
   materializeBlockers: [],
   loading: false,
   lastLoadedAt: null,
@@ -153,6 +187,32 @@ export const useCloudSocialStore = create<CloudSocialState>(set => ({
     return { pacts: [p, ...state.pacts] };
   }),
 
+  setOrgs: orgs => set({ orgs, orgsLoaded: true }),
+
+  upsertOrgView: v => set(state => {
+    const idx = state.orgs.findIndex(x => x.org.id === v.org.id);
+    if (idx < 0) return { orgs: [...state.orgs, v] };
+    const next = state.orgs.slice();
+    next[idx] = v;
+    return { orgs: next };
+  }),
+
+  removeOrgView: orgId => set(state => ({ orgs: state.orgs.filter(v => v.org.id !== orgId) })),
+
+  setOrgNotice: orgNotice => set({ orgNotice }),
+
+  setHideoutOrgId: hideoutOrgId => set({ hideoutOrgId }),
+
+  setHideoutSection: hideoutSection => set({ hideoutSection }),
+
+  setOrgBlocked: orgBlocked => set({ orgBlocked }),
+
+  setOrgHiddenPosts: orgHiddenPosts => set({ orgHiddenPosts }),
+
+  setOrgSeen: (orgId, at) => set(state => ({ orgSeen: { ...state.orgSeen, [orgId]: at } })),
+
+  setOrgSeenAll: orgSeen => set({ orgSeen }),
+
   markNotificationRead: id => set(state => {
     const notifications = state.notifications.map(n =>
       n.id === id ? { ...n, read: true } : n,
@@ -208,6 +268,14 @@ export const useCloudSocialStore = create<CloudSocialState>(set => ({
     coopShadows: [],
     pacts: [],
     pactsLoaded: false,
+    orgs: [],
+    orgsLoaded: false,
+    orgNotice: null,
+    hideoutOrgId: null,
+    hideoutSection: null,
+    orgBlocked: [],
+    orgHiddenPosts: [],
+    orgSeen: {},
     materializeBlockers: [],
     loading: false,
     lastLoadedAt: null,

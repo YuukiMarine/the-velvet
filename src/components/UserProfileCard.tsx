@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { FitText } from '@/components/ui/FitText';
 import { useAppStore } from '@/store';
 import { useShallow } from 'zustand/react/shallow';
 import { useCloudStore } from '@/store/cloud';
@@ -293,9 +294,9 @@ export function UserProfileCard() {
               </div>
             ) : (
               <div className="flex items-center gap-2">
-                <h3 className="text-xl font-black text-gray-900 dark:text-white truncate">
+                <FitText as="h3" max={20} min={12} className="min-w-0 font-black text-gray-900 dark:text-white">
                   {user.name}
-                </h3>
+                </FitText>
                 <button
                   onClick={() => {
                     setNameDraft(user.name);

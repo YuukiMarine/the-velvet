@@ -49,6 +49,8 @@ export interface NotifSnapshot {
   questBoardUnlocked?: boolean;
   /** 本周三张都领了就不用提 */
   questsAllClaimedThisWeek?: boolean;
+  /** 组织（第 7 轮）：还有组织这一场会议没写下周目标（周日提醒用）；不在组织里就是 null */
+  orgMeeting?: { orgName: string } | null;
   /**
    * 一起进步（v2.7.0.6）：要提醒的那份约定（被催过的优先）。null = 没有进行中的约定。
    * 触发时 App 多半没在跑，对方后来才催的要等下次打开 App 重排才能写进文案（档 2 的后台刷新另补一条）。
@@ -119,10 +121,16 @@ interface CopyCtx {
   pactPartner: string;
   pactTitle: string;
   pactNudged: boolean;
+  /** 组织（第 7 轮）：还没写下周目标的那个组织 */
+  orgName: string;
 }
 type CopyFn = (ctx: CopyCtx) => NotifText;
 
 const COPY: Record<NotifContentType, CopyFn[]> = {
+  meeting: [
+    (c) => ({ title: '周日会议', body: `今天是「${c.orgName}」的周日会议：给这周打个分，写一句下周目标。` }),
+    (c) => ({ title: `「${c.orgName}」开会了`, body: '会议只有一件事：写下下周想做到的那一句。' }),
+  ],
   quests: [
     () => ({ title: '委托板', body: '新的一周，委托板换了三张新委托——有空来看看。' }),
     () => ({ title: '本周委托', body: '三张委托已经贴在板上了，做完记得来领。' }),
@@ -172,7 +180,7 @@ const COPY: Record<NotifContentType, CopyFn[]> = {
 // ── 排程核心 ──────────────────────────────────────────────
 
 /** 优先级：越靠前越「该提醒」。一个时段内挑出最高优先且可操作的一条。 */
-const PRIORITY: NotifContentType[] = ['countercurrent', 'together', 'summary', 'quests', 'tarot', 'record', 'todos'];
+const PRIORITY: NotifContentType[] = ['countercurrent', 'together', 'meeting', 'summary', 'quests', 'tarot', 'record', 'todos'];
 /** 状态型内容（非每日重置）：整个排程窗口内只投一次，避免刷屏。 */
 const ONCE_ONLY: NotifContentType[] = ['summary', 'countercurrent'];
 
@@ -204,6 +212,9 @@ function isActionable(c: NotifContentType, snap: NotifSnapshot, day: number): bo
       if (weekday !== 1) return false;
       return day === 0 ? !snap.questsAllClaimedThisWeek : true;
     }
+    case 'meeting':
+      // 组织（第 7 轮）：只在周日；排程时还有组织没写下周目标才提（写完会重排，当天那条随之撤掉）
+      return (new Date().getDay() + day) % 7 === 0 && !!snap.orgMeeting;
   }
 }
 
@@ -231,6 +242,7 @@ function pickContent(
     pactTitle: snap.together?.title ?? '约好的事',
     // 催促只算当天
     pactNudged: day === 0 && !!snap.together?.nudged,
+    orgName: snap.orgMeeting?.orgName ?? '据点',
   };
 
   // 助手口吻覆盖（v2.7 notifVoice）：只覆盖今明两天，占位符在此注入
@@ -248,6 +260,45 @@ function pickContent(
 /** 本次排程里「只投一次」类内容排到的时刻（调用方据此记账，下次重排就知道它送没送达） */
 export interface ScheduleOutcome {
   summaryAt?: number;
+}
+
+/** 排程计划里的一条 */
+export interface PlannedNotif {
+  id: number;
+  at: Date;
+  title: string;
+  body: string;
+  slotId: string;
+  /** 这一条是不是那份新总结的提醒（点开直达那份总结） */
+  isSummary: boolean;
+}
+
+/**
+ * 纯计算：未来 NOTIF_WINDOW_DAYS 天、每个启用时段各排哪一条（不碰系统通知，无头测试也用它）。
+ * 按时间升序排时段，使「一次性」内容落在最早一个合格时段。
+ */
+export function planNotifications(snap: NotifSnapshot, now: Date = new Date()): PlannedNotif[] {
+  const enabledSlots = snap.slots
+    .filter(s => s.enabled && s.contents.length > 0)
+    .slice()
+    .sort((a, b) => a.time.localeCompare(b.time))
+    .slice(0, MAX_SLOTS);
+  const placedOnce = new Set<NotifContentType>();
+  const out: PlannedNotif[] = [];
+  for (let day = 0; day < NOTIF_WINDOW_DAYS; day++) {
+    for (let si = 0; si < enabledSlots.length; si++) {
+      const slot = enabledSlots[si];
+      const at = slotDate(now, day, slot.time);
+      // 跳过已过去 / 即将（<60s，避免排进刚好错过的点）
+      if (at.getTime() <= now.getTime() + 60_000) continue;
+
+      const hadSummary = placedOnce.has('summary');
+      const text = pickContent(slot, snap, day, dateKey(at), placedOnce);
+      if (!text) continue;
+      out.push({ id: NOTIF_ID_BASE + day * 10 + si, at, title: text.title, body: text.body, slotId: slot.id, isSummary: !hadSummary && placedOnce.has('summary') });
+    }
+  }
+  return out;
 }
 
 /**
@@ -270,41 +321,17 @@ export async function computeAndSchedule(snap: NotifSnapshot): Promise<ScheduleO
   const perm = await getNotifPermission();
   if (!snap.enabled || perm !== 'granted') return outcome;
 
-  // 按时间升序排，使「一次性」内容落在最早一个合格时段
-  const enabledSlots = snap.slots
-    .filter(s => s.enabled && s.contents.length > 0)
-    .slice()
-    .sort((a, b) => a.time.localeCompare(b.time))
-    .slice(0, MAX_SLOTS);
-  if (enabledSlots.length === 0) return outcome;
-
-  const now = new Date();
-  const placedOnce = new Set<NotifContentType>();
-  const toSchedule: LocalNotificationSchema[] = [];
-
-  for (let day = 0; day < NOTIF_WINDOW_DAYS; day++) {
-    for (let si = 0; si < enabledSlots.length; si++) {
-      const slot = enabledSlots[si];
-      const at = slotDate(now, day, slot.time);
-      // 跳过已过去 / 即将（<60s，避免排进刚好错过的点）
-      if (at.getTime() <= now.getTime() + 60_000) continue;
-
-      const hadSummary = placedOnce.has('summary');
-      const text = pickContent(slot, snap, day, dateKey(at), placedOnce);
-      if (!text) continue;
-      const isSummary = !hadSummary && placedOnce.has('summary');
-      if (isSummary) outcome.summaryAt = at.getTime();
-
-      toSchedule.push({
-        id: NOTIF_ID_BASE + day * 10 + si,
-        title: text.title,
-        body: text.body,
-        schedule: { at, allowWhileIdle: true },
-        // content / summaryId：点开通知时据此直达那份总结（App 里的 localNotificationActionPerformed）
-        extra: { source: 'f2a', slotId: slot.id, ...(isSummary && snap.summaryNotice ? { content: 'summary', summaryId: snap.summaryNotice.id } : {}) },
-      });
-    }
-  }
+  const toSchedule: LocalNotificationSchema[] = planNotifications(snap, new Date()).map(p => {
+    if (p.isSummary) outcome.summaryAt = p.at.getTime();
+    return {
+      id: p.id,
+      title: p.title,
+      body: p.body,
+      schedule: { at: p.at, allowWhileIdle: true },
+      // content / summaryId：点开通知时据此直达那份总结（App 里的 localNotificationActionPerformed）
+      extra: { source: 'f2a', slotId: p.slotId, ...(p.isSummary && snap.summaryNotice ? { content: 'summary', summaryId: snap.summaryNotice.id } : {}) },
+    };
+  });
 
   if (toSchedule.length > 0) {
     await LocalNotifications.schedule({ notifications: toSchedule });

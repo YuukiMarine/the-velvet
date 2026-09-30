@@ -639,11 +639,17 @@ export const TodosView = () => {
             style={p3 ? { clipPath: 'polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%)', background: 'var(--p3r-panel-glass, rgba(255,255,255,0.85))', color: P3R.ink, boxShadow: '0 4px 12px rgba(38,96,140,0.08)' } : undefined}
           >
             <span aria-hidden className={p5 ? 'text-[#c00008]' : isP4 ? 'text-[#f9a11b]' : 'text-primary'}>✦</span>
-            <span className="min-w-0 flex-1 truncate">不知道做什么好？命运会替你选择</span>
+            {/* 窄屏（和委托按钮并排时）长句会被截成「命运会…」：400px 以下换短句 */}
+            <span className="min-w-0 flex-1 truncate">
+              <span className="min-[400px]:hidden">让命运替你挑一件</span>
+              <span className="hidden min-[400px]:inline">不知道做什么好？命运会替你选择</span>
+            </span>
             <span aria-hidden className="opacity-50">›</span>
           </button>
-          {/* 委托板入口（第 6 轮）：解锁后才出现，角标 = 可领取张数 */}
+          {/* 委托板入口（第 6 轮）：解锁后才出现，角标 = 可领取张数。
+              角标放在按钮外面那层：蓝频道按钮有斜切 clip-path，放在里面会被裁掉一角 */}
           {questBoard.unlocked && (
+            <span className="relative flex shrink-0">
             <button
               type="button"
               onClick={() => setQuestOpen(true)}
@@ -661,10 +667,11 @@ export const TodosView = () => {
             >
               <span aria-hidden className={p5 ? 'text-[#c00008]' : isP4 ? 'text-[#f9a11b]' : 'text-primary'}>📜</span>
               <span>委托</span>
-              {questBoard.claimable > 0 && (
-                <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#e02020] px-1 text-[10px] font-black leading-none text-white">{questBoard.claimable}</span>
-              )}
             </button>
+            {questBoard.claimable > 0 && (
+              <span aria-hidden className="pointer-events-none absolute -right-1.5 -top-1.5 z-20 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#e02020] px-1 text-[10px] font-black leading-none text-white">{questBoard.claimable}</span>
+            )}
+            </span>
           )}
           </div>
           )}

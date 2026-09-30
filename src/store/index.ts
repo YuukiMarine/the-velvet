@@ -221,6 +221,7 @@ import { levelForPoints, masteryOf, thresholdsOf } from '@/utils/levels';
 import { peekWeatherNow, weatherConfigOf } from '@/utils/weather';
 import { seasonMarkOf } from '@/utils/calendar';
 import { generateWeekQuests, previousWeekKey, questBoardUnlocked, questDone, questTitle, weekRangeOf, weekRangeOfKey, type QuestData } from '@/utils/questBoard';
+import { meetingReminder } from '@/utils/orgLogic';
 import { resolveLevelDifficulty } from '@/utils/levelDifficulty';
 
 // 成长总结的角色预设 / 请求载荷已迁到 utils/summaryAI（v2.7.0.6）；这里只做转出口，
@@ -4252,6 +4253,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       questsAllClaimedThisWeek: questWeek.length >= 3 && questWeek.every(q => !!q.claimedAt),
       // 一起进步（v2.7.0.6）：今天还没完成的约定，被催过的优先
       together: pickTogetherReminder(todos, useCloudSocialStore.getState().pacts, todayKey, id => get().getTodayTodoProgress(id).isComplete),
+      // 组织（第 7 轮）：这一场（或下一场）周日会议还没写下周目标的组织；提醒默认不开，用户在提醒设置里勾「据点会议」
+      orgMeeting: meetingReminder(useCloudSocialStore.getState().orgs),
       // 助手口吻（v2.7 notifVoice）：只取当日缓存，绝不在这里等生成——先排内置文案
       aiCopy: settings.notifAIVoice ? getCachedNotifVoice(settings.navigatorPresetId ?? 'board') : null,
     };

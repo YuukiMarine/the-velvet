@@ -28,6 +28,7 @@ const CONTENT_META: { id: NotifContentType; icon: string; label: string; hint: s
   { id: 'record', icon: '📝', label: '提醒记录', hint: '今天还没有任何记录时提醒' },
   { id: 'together', icon: '🤝', label: '一起进步', hint: '约好的事今天还没完成时提醒；好友催你、发来邀请也会尽快告诉你' },
   { id: 'quests', icon: '📜', label: '委托板', hint: '每周一委托刷新时提醒一次（委托板解锁后才会有）' },
+  { id: 'meeting', icon: '🗓️', label: '据点会议', hint: '周日提醒给这周打分、写下周目标（加入组织后才会有；默认不开）' },
 ];
 
 export default function NotificationSettings() {

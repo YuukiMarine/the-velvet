@@ -31,6 +31,7 @@ import type { ReactNode } from 'react';
 import { AnimatePresence, motion, type Variants } from 'motion/react';
 import { useAppStore } from '@/store';
 import { useShallow } from 'zustand/react/shallow';
+import { FitText } from '@/components/ui/FitText';
 import type { ThemeType } from '@/types';
 import { PagePlane, PlaneLevel } from '@/components/PagePlane';
 import { SheetModal } from '@/components/SheetModal';
@@ -629,7 +630,13 @@ export const Menu = () => {
           {/* 磁贴文案按次级标题对待（v2.7 用户口径）：标签与角注都走黑体标题栈 */}
           <span className={`relative flex h-full min-h-[inherit] flex-col gap-1.5 px-4 py-3 ${alignTop ? 'justify-start pt-6' : 'justify-center'}`} style={{ color: fg, fontFamily: P5_TITLE_FONT }}>
             <span aria-hidden>{icon}</span>
-            <span className="text-[23px] font-black leading-tight">{label}</span>
+            {/* 按词不断行：320 宽时「成就 · 技能」会断成「技」「能」两行，现在只在「·」后面换行 */}
+            <span className="text-[23px] font-black leading-tight">
+              {label.split(' · ').map((w, i, arr) => (
+                // 「成就 ·」与「技能」各自不断，二者之间留一个普通空格作为唯一的换行点
+                <span key={i}>{i > 0 ? ' ' : ''}<span className="whitespace-nowrap">{w}{i < arr.length - 1 ? ' ·' : ''}</span></span>
+              ))}
+            </span>
             {caption && <span className="text-[12px] font-black leading-none">{caption}</span>}
           </span>
         </motion.button>
@@ -700,7 +707,7 @@ export const Menu = () => {
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-2">
-                    <span className="truncate text-[23px] font-black leading-tight" style={{ color: P5R.ink, fontFamily: P5_TITLE_FONT }}>{user?.name || '怪盗'}</span>
+                    <FitText max={23} min={15} className="min-w-0 font-black leading-tight" style={{ color: P5R.ink, fontFamily: P5_TITLE_FONT }}>{user?.name || '怪盗'}</FitText>
                     <P5Star size={17} fill={P5R.red} rot={-14} className="shrink-0" />
                   </span>
                   <span className="mt-2 flex items-center gap-0">
@@ -947,9 +954,9 @@ export const Menu = () => {
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-2">
-                    <span className="min-w-0 flex-1 truncate text-[21px] font-black italic leading-none" style={{ color: P3R.ink, fontFamily: '"Noto Sans SC Black", "Velvet Sans SC", sans-serif' }}>
+                    <FitText max={21} min={14} className="min-w-0 flex-1 font-black italic leading-none" style={{ color: P3R.ink, fontFamily: '"Noto Sans SC Black", "Velvet Sans SC", sans-serif' }}>
                       {user?.name ?? '旅行者'}
-                    </span>
+                    </FitText>
                     <span
                       className="relative inline-flex shrink-0 items-baseline gap-1 px-3 py-1"
                       style={{ clipPath: slantClip(7), background: hardInk ? hardInk.ink : P3R.blue, color: hardInk ? hardInk.text : '#ffffff' }}
@@ -1153,12 +1160,14 @@ export const Menu = () => {
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-baseline gap-1">
-                    <span
-                      className="min-w-0 flex-1 truncate text-[19px] font-black leading-tight text-[#131313]"
+                    <FitText
+                      max={19}
+                      min={14}
+                      className="min-w-0 flex-1 font-black leading-tight text-[#131313]"
                       style={{ fontFamily: 'var(--p4-display-font, serif)' }}
                     >
                       {user?.name || '客人'}
-                    </span>
+                    </FitText>
                     <span
                       className="shrink-0 rounded-full px-2 py-[4px] text-[12px] font-black leading-none"
                       style={{ background: hardInk ? hardInk.ink : '#131313', color: hardInk ? hardInk.text : '#ffffff' }}

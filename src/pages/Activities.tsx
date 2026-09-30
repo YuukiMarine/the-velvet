@@ -1,8 +1,11 @@
 import { motion, AnimatePresence } from 'motion/react';
 import { weatherEmoji, type WeatherIcon } from '@/utils/weather';
-import { useState, useMemo, useRef, useEffect } from 'react';
+import { useState, useMemo, useRef, useEffect, lazy, Suspense } from 'react';
 import { useAppStore, toLocalDateKey } from '@/store';
 import { useShallow } from 'zustand/react/shallow';
+import { useCloudStore } from '@/store/cloud';
+import { useCloudSocialStore } from '@/store/cloudSocial';
+import { canShareActivity } from '@/utils/orgLogic';
 import { WishMountPicker } from '@/components/wish/WishMountPicker';
 import { AttributeId, SummaryPeriod } from '@/types';
 import { SaveSuccessModal } from '@/components/SaveSuccessModal';
@@ -35,6 +38,8 @@ import { useSummaryJobs, isSummaryJobRunning } from '@/utils/summaryJobs';
 import { freshUnreadSummary, useSummaryOpenRequest, consumeOpenSummaryRequest } from '@/utils/reportNotice';
 import { summaryKindOf, annualWindowYear, annualSummaryOf } from '@/utils/summaryAI';
 import { slantClip } from '@/components/p3r/kit';
+// 分享到据点（第 7 轮 7b）：只有在组织里的人才会用到，按需分包
+const ShareToOrgSheet = lazy(() => import('@/components/org/ShareToOrgSheet').then(m => ({ default: m.ShareToOrgSheet })));
 
 /** 成长总结入口：左低右高的平行四边形（P5 反板正口径，四边斜率各不相同） */
 const SUMMARY_SHAPE = 'polygon(7px 0, 100% 2px, calc(100% - 6px) 100%, 0 calc(100% - 3px))';
@@ -753,6 +758,11 @@ export const ActivitiesView = () => {
   //   → 「删除」→ ConfirmDialog（z=60，叠在其上）确认后才执行删除。
   const [menuActivityId, setMenuActivityId] = useState<string | null>(null);
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+  // 分享到据点（第 7 轮 7b）：登录了、在组织里，菜单里才有这一项
+  const [shareActivityId, setShareActivityId] = useState<string | null>(null);
+  const [shareMounted, setShareMounted] = useState(false);
+  const cloudSignedIn = useCloudStore(s => !!s.cloudUser);
+  const inOrg = useCloudSocialStore(s => s.orgs.length > 0);
 
   // ---- 折叠状态（年/月）---- 日默认全开 ----
   const [openYears, setOpenYears] = useState<Record<string, boolean>>({});
@@ -949,6 +959,7 @@ export const ActivitiesView = () => {
   // 被长按 / 待删除记录的实体（ActionSheet 标题与确认文案需要描述全文）
   const menuActivity = menuActivityId ? activities.find(a => a.id === menuActivityId) : undefined;
   const deleteTarget = deleteTargetId ? activities.find(a => a.id === deleteTargetId) : undefined;
+  const shareTarget = shareActivityId ? activities.find(a => a.id === shareActivityId) ?? null : null;
 
   // 判断某年某月是否默认展开：今年今月 or 包含今天/昨天
   const isYearOpen = (yearKey: string) => openYears[yearKey] !== false;
@@ -1932,6 +1943,13 @@ export const ActivitiesView = () => {
         onClose={() => setMenuActivityId(null)}
         title={menuActivity ? truncateText(menuActivity.description, 24) : undefined}
         actions={[
+          ...(cloudSignedIn && inOrg && menuActivity && canShareActivity(menuActivity)
+            ? [{
+                label: '分享到据点',
+                icon: <span aria-hidden className="text-sm leading-none">📣</span>,
+                onClick: () => { setShareMounted(true); setShareActivityId(menuActivityId); },
+              }]
+            : []),
           {
             label: '图片',
             icon: <span aria-hidden className="text-sm leading-none">🖼</span>,
@@ -1947,6 +1965,11 @@ export const ActivitiesView = () => {
           },
         ]}
       />
+      {shareMounted && (
+        <Suspense fallback={null}>
+          <ShareToOrgSheet activity={shareTarget} onClose={() => setShareActivityId(null)} />
+        </Suspense>
+      )}
       <ConfirmDialog
         isOpen={deleteTargetId !== null}
         tone="danger"

@@ -1853,3 +1853,22 @@ html[data-ios-standalone="true"] {
 :root[data-ui-channel="p5"] .p5-reskin textarea.with-toolbar {
   padding-bottom: calc(2.7rem + 5px) !important;
 }
+
+/* ── 据点地图（第 7 轮 · 组织）────────────────────────────────────────────
+   中心的脉冲圈 + 选中地标的轻浮动。只用 transform / opacity（合成层，可见时 60fps）；
+   有弹层盖着、地图移出视口、或粗犷度关掉时，容器挂 .org-map-paused 整体暂停。 */
+@keyframes org-map-pulse {
+  0% { transform: scale(0.72); opacity: 0.55; }
+  100% { transform: scale(1.85); opacity: 0; }
+}
+@keyframes org-map-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+.org-map-pulse { animation: org-map-pulse 2.4s cubic-bezier(0.2, 0.6, 0.3, 1) infinite; }
+.org-map-float { animation: org-map-float 2.2s ease-in-out infinite; }
+.org-map-paused .org-map-pulse,
+.org-map-paused .org-map-float { animation-play-state: paused; }
+@media (prefers-reduced-motion: reduce) {
+  .org-map-pulse, .org-map-float { animation: none; }
+}

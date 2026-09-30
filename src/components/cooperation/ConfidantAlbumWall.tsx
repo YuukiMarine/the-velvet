@@ -18,6 +18,7 @@ import { OnlineStarBadge } from './OnlineStarBadge';
 import { ConfidantNameFx } from './ConfidantNameFx';
 import { MAX_INTIMACY, thresholdsFor } from '@/utils/confidantLevels';
 import { PactPartnerTag } from './PactTag';
+import { OrgBadge } from '@/components/org/OrgBadge';
 import { GoalLine, SwapFaces, swapTagProps, useStatusSwap } from '@/components/profile/PresenceLine';
 import { TAROT_BY_ID } from '@/constants/tarot';
 import { TarotCardSVG } from '@/components/astrology/TarotCardSVG';
@@ -205,7 +206,7 @@ const CardBackFace = ({ c, onOpenDetail, prayer }: {
 
       {/* 一起进步（v2.7.0.6）：今天还差谁 */}
       {c.source === 'online' && c.linkedCloudUserId && !c.archivedAt && (
-        <div className="mt-2 flex"><PactPartnerTag partnerId={c.linkedCloudUserId} surface={channel === 'neutral' ? 'night' : 'default'} /></div>
+        <div className="mt-2 flex flex-wrap gap-1"><PactPartnerTag partnerId={c.linkedCloudUserId} surface={channel === 'neutral' ? 'night' : 'default'} /><OrgBadge userId={c.linkedCloudUserId} surface={channel === 'neutral' ? 'night' : 'default'} /></div>
       )}
 
       {c.description && (
@@ -414,7 +415,7 @@ const FriendCardBack = ({ f, onOpen, onCrop, onProfile }: {
       </div>
 
       {/* 一起进步（v2.7.0.6）：普通好友也能约 */}
-      <div className="mt-2 flex"><PactPartnerTag partnerId={f.profile.id} surface={channel === 'neutral' ? 'night' : 'default'} /></div>
+      <div className="mt-2 flex flex-wrap gap-1"><PactPartnerTag partnerId={f.profile.id} surface={channel === 'neutral' ? 'night' : 'default'} /><OrgBadge userId={f.profile.id} surface={channel === 'neutral' ? 'night' : 'default'} /></div>
 
       {/* 名片目标（第 6 项）；没有才放那句「还未缔结」（状态在上面 LV 那枚里轮换） */}
       {f.profile.goal ? (
