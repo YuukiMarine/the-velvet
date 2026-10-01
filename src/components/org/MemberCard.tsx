@@ -176,11 +176,11 @@ export function MemberTile({ view, member, minutes, blocked, onOpen, onMore }: {
   const weekOff = tone.channel === 'p5' ? 'rgba(0,0,0,0.16)' : 'rgba(127,127,127,0.24)';
 
   const inner = (
-    <div className="flex gap-3" style={{ opacity: blocked ? 0.55 : 1 }}>
+    <div className="relative flex gap-3" style={{ opacity: blocked ? 0.55 : 1 }}>
+      <SeatGhost tone={tone} n={member.seat} />
       <MemberFace member={member} toggle streak={f.streak} className="h-[84px] w-[53px] shrink-0" style={{ borderRadius: tone.channel === 'p4' ? 8 : tone.channel === 'neutral' ? 6 : 0, clipPath: tone.channel === 'p5' ? roughQuad(member.seat + 0.3, 2.5) : undefined, boxShadow: tone.channel === 'p4' ? '0 0 0 2px #131313' : undefined }} />
-      <div className="min-w-0 flex-1">
+      <div className="relative min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
-          <SeatNumber tone={tone} n={member.seat} />
           {f.lv && <LvTag tone={tone} lv={f.lv} />}
           {f.leader && <span aria-label="队长" className="text-[11px] leading-none">👑</span>}
           {f.mine && <MineTag tone={tone} />}
@@ -263,11 +263,27 @@ function HonorChip({ tone, muted = false, children }: { tone: OrgTone; muted?: b
   return <span className="inline-flex items-center whitespace-nowrap px-1.5 py-[2px] text-[9px] font-black leading-none" style={style}>{children}</span>;
 }
 
-function SeatNumber({ tone, n }: { tone: OrgTone; n: number }) {
-  if (tone.channel === 'p3') return <span className="text-[12px] font-black italic leading-none" style={{ color: P3R.blue }}>{seatNo(n)}</span>;
-  if (tone.channel === 'p4') return <span className="flex h-[18px] w-[18px] items-center justify-center rounded-full text-[9px] font-black text-[#131313]" style={{ background: 'var(--p4-orange, #f9a11b)', boxShadow: '0 0 0 1.5px #131313' }}>{n}</span>;
-  if (tone.channel === 'p5') return <span className="text-[13px] font-black leading-none" style={{ color: P5R.red, fontFamily: P5_TITLE_FONT }}>{seatNo(n)}</span>;
-  return <span className="text-[11px] font-black leading-none tabular-nums" style={{ color: tone.accent }}>#{n}</span>;
+/**
+ * 名册小牌右侧的大座号：浅灰色的背景装饰，压在文字下面（读屏不念——小牌的 aria-label 里已经有座号）。
+ * 颜色取纸面上的字色再压淡，夜间跟着变；字体按频道：红 = 标题体微斜、蓝 = 斜体、黄 = 衬线、中性 = 无衬线。
+ */
+function SeatGhost({ tone, n }: { tone: OrgTone; n: number }) {
+  const face: CSSProperties = tone.channel === 'p5'
+    ? { fontFamily: P5_TITLE_FONT, transform: 'translateY(-50%) rotate(-6deg)', opacity: 0.1 }
+    : tone.channel === 'p3'
+      ? { fontStyle: 'italic', letterSpacing: '-0.05em', transform: 'translateY(-50%)', opacity: 0.09 }
+      : tone.channel === 'p4'
+        ? { fontFamily: 'var(--p4-display-font, serif)', letterSpacing: '-0.04em', transform: 'translateY(-50%)', opacity: 0.1 }
+        : { letterSpacing: '-0.05em', transform: 'translateY(-50%)', opacity: 0.07 };
+  return (
+    <span
+      aria-hidden
+      className="pointer-events-none absolute right-[-2px] top-1/2 select-none whitespace-nowrap text-[72px] font-black leading-[0.8] tabular-nums min-[380px]:text-[58px]"
+      style={{ color: tone.ink, ...face }}
+    >
+      {seatNo(n)}
+    </span>
+  );
 }
 
 function MineTag({ tone }: { tone: OrgTone }) {

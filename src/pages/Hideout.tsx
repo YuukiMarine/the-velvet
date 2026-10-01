@@ -9,7 +9,7 @@
  *   作战（第 8 轮）：进行中的作战进度板 + 发起 + 最近 30 天的历史；进作战区就算看过了（地标 / 组织入口红点熄灭）。
  */
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { motion } from 'motion/react';
+import { AnimatePresence, motion } from 'motion/react';
 import { useAppStore } from '@/store';
 import { useCloudStore } from '@/store/cloud';
 import { useCloudSocialStore } from '@/store/cloudSocial';
@@ -497,21 +497,52 @@ function SectionTitle({ tone, section, meta, onTitle, alt = false }: { tone: Org
   );
 }
 
+/** 邀请码：默认收起成一行，点一下才展开邀请码和「分享 / 复制」（一直开着太占地方） */
 function InvitePanel({ view, tone, onFlash }: { view: OrgView; tone: OrgTone; onFlash: (s: string) => void }) {
+  const [open, setOpen] = useState(false);
   const code = view.org.inviteCode;
+  const full = view.members.length >= 7;
+  const padX = tone.channel === 'p5' ? 'px-5' : 'px-4';
   return (
-    <OrgPanel seed={33}>
-      <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <div className="text-[11px] font-black tracking-[0.2em]" style={{ color: tone.sub }}>INVITE · 邀请码</div>
-          <div className="mt-1 whitespace-nowrap font-mono text-[20px] font-black tracking-[0.18em] min-[380px]:text-[24px]" style={{ color: tone.channel === 'p5' ? P5R.red : tone.accent }}>{formatInviteCode(code)}</div>
-          <div className="mt-0.5 text-[11px] font-semibold" style={{ color: tone.sub }}>{view.members.length >= 7 ? '已经满 7 人了' : '羁绊页点标题切到「组织」输入'}</div>
-        </div>
-        <div className="flex shrink-0 flex-col gap-2">
-          <OrgButton small onClick={async () => { const r = await shareInvite(view); onFlash(r === 'copied' ? '邀请语已复制，发给朋友吧' : r === 'failed' ? '没复制成，手动抄一下邀请码吧' : ''); }}>分享</OrgButton>
-          <OrgButton small tone="ghost" onClick={async () => onFlash((await copyText(code)) ? '邀请码已复制' : '没复制成，手动抄一下吧')}>复制</OrgButton>
-        </div>
-      </div>
+    <OrgPanel seed={33} padded={false}>
+      <button
+        type="button"
+        onClick={() => { triggerLightHaptic(); setOpen(o => !o); }}
+        aria-expanded={open}
+        aria-controls="org-invite-body"
+        className={`flex w-full items-center justify-between gap-3 py-3 text-left ${padX}`}
+      >
+        <span className="text-[11px] font-black tracking-[0.2em]" style={{ color: tone.sub }}>INVITE · 邀请码</span>
+        <span className="flex shrink-0 items-center gap-1 text-[11px] font-black" style={{ color: tone.sub }}>
+          {open ? '收起' : full ? '已满 7 人' : '展开'}
+          <motion.svg aria-hidden viewBox="0 0 12 12" width={12} height={12} animate={{ rotate: open ? 180 : 0 }} transition={{ duration: 0.2 }}>
+            <path d="M2.5 4.5L6 8L9.5 4.5" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+          </motion.svg>
+        </span>
+      </button>
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            id="org-invite-body"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.22, ease: 'easeOut' }}
+            className="overflow-hidden"
+          >
+            <div className={`flex items-center justify-between gap-3 pb-4 ${padX}`}>
+              <div className="min-w-0">
+                <div className="whitespace-nowrap font-mono text-[20px] font-black tracking-[0.18em] min-[380px]:text-[24px]" style={{ color: tone.channel === 'p5' ? P5R.red : tone.accent }}>{formatInviteCode(code)}</div>
+                <div className="mt-0.5 text-[11px] font-semibold" style={{ color: tone.sub }}>{full ? '已经满 7 人了' : '羁绊页点标题切到「组织」输入'}</div>
+              </div>
+              <div className="flex shrink-0 flex-col gap-2">
+                <OrgButton small onClick={async () => { const r = await shareInvite(view); onFlash(r === 'copied' ? '邀请语已复制，发给朋友吧' : r === 'failed' ? '没复制成，手动抄一下邀请码吧' : ''); }}>分享</OrgButton>
+                <OrgButton small tone="ghost" onClick={async () => onFlash((await copyText(code)) ? '邀请码已复制' : '没复制成，手动抄一下吧')}>复制</OrgButton>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </OrgPanel>
   );
 }
