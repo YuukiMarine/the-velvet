@@ -27,11 +27,11 @@
  *   ⚠️ PB 规则三态：锁定(null)=仅 Admin（安全）；空字符串("")=对所有人公开无过滤（会泄漏
  *      pending/rejected！）；表达式=按条件。务必让 List/View 是 status="approved" 而非空。
  *
- * ── 可选集合 `danmaku_reports`（举报兜底，配合 pb_hooks/danmaku.pb.js）──
+ * ── 可选集合 `danmaku_reports`（举报兜底，配合服务端扩展）──
  *   danmaku     relation → danmaku   required
  *   reason      text
  *   reporterId  relation → users
- *   唯一索引(unique): (danmaku, reporterId) —— ★必须，否则单人可刷多条举报强制下架任意内容
+ *   唯一索引(unique): (danmaku, reporterId) —— ★必须：同一个人对同一条只记一次举报
  *   Create rule : @request.auth.id != "" && @request.body.reporterId = @request.auth.id  (v0.22-: @request.data)
  */
 

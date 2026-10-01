@@ -6,7 +6,7 @@
  *   - 每个 (user_a, user_b) 对在 DB 里只有一条记录（unique index），
  *     status 在 pending / linked / rejected / severed / expired 之间迁移
  *   - 冷却："拒绝后 3 天" / "解除后 7 天" 分别写在 re_request_after / re_link_after 上
- *   - 过期：pending 状态满 21 天自动视为 expired（客户端兜底，后续可挂 PB JSVM hook）
+ *   - 过期：pending 状态满 21 天自动视为 expired（客户端兜底，后续也可以交给服务端定时处理）
  */
 
 import type { RecordModel } from 'pocketbase';

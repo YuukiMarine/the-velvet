@@ -25,12 +25,12 @@ export function ActivityImagesSheet({ activityId, title, onClose }: Props) {
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const room = MAX_IMAGES_PER_ACTIVITY - images.length;
 
-  const handleFiles = async (files: FileList | null) => {
-    if (!activityId || !files?.length || busy) return;
+  const handleFiles = async (files: File[]) => {
+    if (!activityId || !files.length || busy) return;
     setBusy(true);
     setHint(null);
     try {
-      const take = Array.from(files).slice(0, Math.max(0, room));
+      const take = files.slice(0, Math.max(0, room));
       const prepared = [];
       for (const f of take) prepared.push(await prepareActivityImage(f));
       const added = await addActivityImages(activityId, prepared);
@@ -99,7 +99,8 @@ export function ActivityImagesSheet({ activityId, title, onClose }: Props) {
             accept="image/*"
             multiple
             className="hidden"
-            onChange={e => { const fl = e.target.files; e.target.value = ''; void handleFiles(fl); }}
+            // 先拷出文件再清 value（Chromium 清 value 会原地清空 FileList）
+            onChange={e => { const files = Array.from(e.target.files ?? []); e.target.value = ''; void handleFiles(files); }}
           />
         </div>
       </SheetModal>

@@ -659,14 +659,14 @@ export const ActivitiesView = () => {
   // 草稿代际：保存 / 清空后 +1，还在处理中的图片回来时对不上就丢掉（否则会挂到下一条记录上）
   const imgGenRef = useRef(0);
   const resetImages = () => { imgGenRef.current++; setPendingImages([]); setLastShot(null); setImgHint(null); };
-  const handleAttachFiles = async (files: FileList | null) => {
-    if (!files?.length || imgBusy) return;
+  const handleAttachFiles = async (files: File[]) => {
+    if (!files.length || imgBusy) return;
     setImgBusy(true);
     setImgHint(null);
     const gen = imgGenRef.current;
     try {
       const room = MAX_IMAGES_PER_ACTIVITY - pendingImages.length;
-      const take = Array.from(files).slice(0, Math.max(0, room));
+      const take = files.slice(0, Math.max(0, room));
       const prepared: PreparedImage[] = [];
       for (const f of take) prepared.push(await prepareActivityImage(f));
       if (gen !== imgGenRef.current) return; // 处理期间已经保存 / 清空过：这批图不属于现在的草稿
@@ -1388,7 +1388,6 @@ export const ActivitiesView = () => {
                                           const isCallingCardClear = activity.category === 'calling_card_clear';
                                           // BIG DEAL 收束卡：默认重要 + 可展开子步时间线（隐藏记录按需展示）
                                           const isBigDealClear = activity.category === 'bigdeal_clear' && !!activity.bigDealId;
-                                          const isSpecial = isAchievement || isSkill || isLevelUp || isConfidant || isWeeklyGoal || isCallingCardClear || isBigDealClear;
 
                                           // §3.2：原"边框/内联 rgba 底色/强调条"三套联动收敛为
                                           // accentKey → ACTIVITY_ACCENT 单次查表；类型优先级保持旧三元链原序
@@ -1499,8 +1498,49 @@ export const ActivitiesView = () => {
                                               {/* 记录配图（v2.7.0.6）：缩略图行，点开灯箱 */}
                                               <ActivityThumbs activityId={activity.id} onOpen={(i) => setLightbox({ activityId: activity.id, index: i })} />
 
-                                              {/* 点数 + 时间 — 次要信息行 */}
-                                              <div className="flex items-center gap-2 mt-2 flex-wrap">
+                                              {/* 来源 / 特殊标签 + 点数 + 时间 —— 同一行：标签放在加点前面（以前标签单独起一行，
+                                                  「✓ 任务」这类小签总是孤零零掉在卡片最底下）；放不下就自然折行 */}
+                                              <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1.5" data-activity-meta>
+                                                {isConfidant && (
+                                                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-600 dark:text-indigo-300 bg-indigo-100/80 dark:bg-indigo-900/30 px-2 py-0.5 rounded-md">
+                                                    ✧ 同伴
+                                                  </span>
+                                                )}
+                                                {isShadowDefeat && (
+                                                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-red-700 dark:text-red-300 bg-red-100/80 dark:bg-red-900/30 px-2 py-0.5 rounded-md">
+                                                    👁 Shadow击破{isImportant ? ' ★首杀' : ''}
+                                                  </span>
+                                                )}
+                                                {isTodo && (
+                                                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-sky-600 dark:text-sky-300 bg-sky-100/80 dark:bg-sky-900/30 px-2 py-0.5 rounded-md">
+                                                    ✓ 任务
+                                                  </span>
+                                                )}
+                                                {isWeeklyGoal && (
+                                                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-100/80 dark:bg-emerald-900/30 px-2 py-0.5 rounded-md">
+                                                    🏆 本周目标
+                                                  </span>
+                                                )}
+                                                {isLevelUp && activity.levelUps?.map((lu, idx) => (
+                                                  <span key={idx} className="inline-flex items-center gap-1 text-[11px] font-semibold text-orange-600 dark:text-orange-300 bg-orange-100/80 dark:bg-orange-900/30 px-2 py-0.5 rounded-md">
+                                                    🎉 {settings.attributeNames[lu.attribute]} {lu.fromLevel}→{lu.toLevel}
+                                                  </span>
+                                                ))}
+                                                {isSkill && (
+                                                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-violet-600 dark:text-violet-300 bg-violet-100/80 dark:bg-violet-900/30 px-2 py-0.5 rounded-md">
+                                                    ✨ 技能解锁
+                                                  </span>
+                                                )}
+                                                {isAchievement && (
+                                                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-100/80 dark:bg-amber-900/30 px-2 py-0.5 rounded-md">
+                                                    🏆 成就解锁
+                                                  </span>
+                                                )}
+                                                {isCallingCardClear && (
+                                                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-md text-primary bg-primary/15">
+                                                    ✦ 倒计时
+                                                  </span>
+                                                )}
                                                 {hasPoints && Object.entries(activity.pointsAwarded).map(([attr, pts]) =>
                                                   pts > 0 ? (
                                                     <span key={attr} className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold bg-primary/10 text-primary dark:bg-primary/20 tabular-nums">
@@ -1518,55 +1558,6 @@ export const ActivitiesView = () => {
                                                   {new Date(activity.date).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
                                                 </span>
                                               </div>
-
-                                              {/* 特殊 / 来源标签 */}
-                                              {(isSpecial || isTodo || isWeeklyGoal || isShadowDefeat) && (
-                                                <div className="mt-2.5 flex flex-wrap gap-1.5">
-                                                  {isConfidant && (
-                                                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-600 dark:text-indigo-300 bg-indigo-100/80 dark:bg-indigo-900/30 px-2 py-0.5 rounded-md">
-                                                      ✧ 同伴
-                                                    </span>
-                                                  )}
-                                                  {isShadowDefeat && (
-                                                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-red-700 dark:text-red-300 bg-red-100/80 dark:bg-red-900/30 px-2 py-0.5 rounded-md">
-                                                      👁 Shadow击破{isImportant ? ' ★首杀' : ''}
-                                                    </span>
-                                                  )}
-                                                  {isTodo && (
-                                                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-sky-600 dark:text-sky-300 bg-sky-100/80 dark:bg-sky-900/30 px-2 py-0.5 rounded-md">
-                                                      ✓ 任务
-                                                    </span>
-                                                  )}
-                                                  {isWeeklyGoal && (
-                                                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-100/80 dark:bg-emerald-900/30 px-2 py-0.5 rounded-md">
-                                                      🏆 本周目标
-                                                    </span>
-                                                  )}
-                                                  {isLevelUp && activity.levelUps?.map((lu, idx) => (
-                                                    <span key={idx} className="inline-flex items-center gap-1 text-[11px] font-semibold text-orange-600 dark:text-orange-300 bg-orange-100/80 dark:bg-orange-900/30 px-2 py-0.5 rounded-md">
-                                                      🎉 {settings.attributeNames[lu.attribute]} {lu.fromLevel}→{lu.toLevel}
-                                                    </span>
-                                                  ))}
-                                                  {isSkill && (
-                                                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-violet-600 dark:text-violet-300 bg-violet-100/80 dark:bg-violet-900/30 px-2 py-0.5 rounded-md">
-                                                      ✨ 技能解锁
-                                                    </span>
-                                                  )}
-                                                  {isAchievement && (
-                                                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-100/80 dark:bg-amber-900/30 px-2 py-0.5 rounded-md">
-                                                      🏆 成就解锁
-                                                    </span>
-                                                  )}
-                                                  {isCallingCardClear && (
-                                                    <span
-                                                      className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-md text-primary"
-                                                      style={{ background: 'color-mix(in srgb, var(--color-primary) 15%, transparent)' }}
-                                                    >
-                                                      ✦ 倒计时
-                                                    </span>
-                                                  )}
-                                                </div>
-                                              )}
                                             </ListCard>
                                           );
                                         })}
@@ -1723,7 +1714,8 @@ export const ActivitiesView = () => {
           accept="image/*"
           multiple
           className="hidden"
-          onChange={(e) => { const fl = e.target.files; e.target.value = ''; void handleAttachFiles(fl); }}
+          // 先把文件拷出来再清 value：Chromium 的 FileList 是活的，清 value 会把它原地清空（网页端选了图却什么都没附上）
+          onChange={(e) => { const files = Array.from(e.target.files ?? []); e.target.value = ''; void handleAttachFiles(files); }}
         />
         {shotVision && (
           <input

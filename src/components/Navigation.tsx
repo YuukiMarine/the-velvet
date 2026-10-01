@@ -146,6 +146,11 @@ const SidebarInner = () => {
             setActionsSubTab(actionsSubTab === 'activities' ? 'todos' : 'activities');
             return;
           }
+          // 已在「羁绊」再点：同伴 ⇄ 组织 互切（组织模块按需加载，不进主包）
+          if (active && item.id === 'cooperation') {
+            void import('@/components/org/BondTitle').then((m) => m.toggleBondView(currentPage));
+            return;
+          }
           setCurrentPage(item.id);
         }}
         className={p3
@@ -508,8 +513,10 @@ const BottomNavInner = () => {
         onSelect={(e) => {
           triggerNavFeedback();
           if (active) {
-            // 已在「行动」再点：记录 ⇄ 任务 互切（用户口径）；其余 tab 原地点击无操作
+            // 已在「行动」再点：记录 ⇄ 任务 互切（用户口径）；已在「羁绊」再点：同伴 ⇄ 组织 互切（组织模块按需加载）；
+            // 其余 tab 原地点击无操作
             if (item.id === 'actions') setActionsSubTab(actionsSubTab === 'activities' ? 'todos' : 'activities');
+            if (item.id === 'cooperation') void import('@/components/org/BondTitle').then((m) => m.toggleBondView(currentPage));
             return;
           }
           /**

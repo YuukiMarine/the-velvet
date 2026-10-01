@@ -34,6 +34,21 @@ export function useOrgSwitch(): { available: boolean; dot: boolean } {
   return { available, dot };
 }
 
+/** 非 hook 版的「开关能不能用」（底导 / 侧栏再点「羁绊」时用；口径同 useOrgSwitch） */
+export function orgSwitchAvailableNow(): boolean {
+  const signedIn = !!useCloudStore.getState().cloudUser;
+  return cloudEnabled && (!signedIn || useCloudSocialStore.getState().orgsLoaded);
+}
+
+/**
+ * 已在羁绊页再点底导 / 侧栏的「羁绊」：同伴 ⇄ 组织 互切（照「行动」再点 记录 ⇄ 任务 的口径）。
+ * 开关不能用（没配云端 / 组织还没拉到）就原地不动。
+ */
+export function toggleBondView(currentPage: string): void {
+  if (!orgSwitchAvailableNow()) return;
+  goBondView(currentPage === 'hideout' ? 'companions' : 'orgs');
+}
+
 /** 切到另一边。进组织时停在上次看的那个（没有就第一个），并直接打开有新东西的那一区 */
 export function goBondView(to: BondView): void {
   const app = useAppStore.getState();

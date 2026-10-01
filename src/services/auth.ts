@@ -129,7 +129,7 @@ const generateRandomPassword = (): string => {
  * 服务端内部完成，客户端不做 UserID → 邮箱的解析，也不读取用户邮箱。
  * 邮箱输入不走这里，直接打 PB 原生端点。
  *
- * 契约（服务端 pb_hooks/velvet.pb.js）：
+ * 契约（服务端扩展提供的自定义端点）：
  *   POST /api/velvet/request-otp             {identity}           → 200 {otpId}
  *   POST /api/velvet/request-password-reset  {identity}           → 200 {}
  *   POST /api/velvet/auth-with-password      {identity, password} → 200 {token, record}
