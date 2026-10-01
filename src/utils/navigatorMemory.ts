@@ -16,6 +16,8 @@ import { db } from '@/db';
 import { useAppStore, toLocalDateKey } from '@/store';
 import { chatComplete, getAIConfig, type AIConfig, type AIMessage } from '@/utils/aiClient';
 import { resolveNavigatorPreset } from '@/constants/navigatorPresets';
+import { calendarTable, dayLabelCN, keyOfDate, shortMD } from '@/utils/navigatorClock';
+import { followUpCoveredByPromise, isPromise, mentionsTopic, promisePhase, savePromisesFromCompact } from '@/utils/navigatorPromise';
 import type { NavigatorMemo, NavigatorMessageRow, NavigatorPreset } from '@/types';
 
 // ── token 估算（触发判断用，不求精确；中文≈0.6~0.9 token/字取保守 0.75） ──
@@ -46,6 +48,8 @@ interface CompactResult {
   followUp: string | null;
   /** AI 增量维护的用户画像全文（无变化时为原文） */
   profile: string | null;
+  /** 带日子、过后要问结果的事（第二批回访约定：会话末补记漏掉的） */
+  promises: unknown[];
 }
 
 // ── 用户画像（ChatGPT Memory 式总览：常驻注入 + compact 增量维护 + 用户可编辑） ──
@@ -82,7 +86,7 @@ function extractJson(raw: string): Record<string, unknown> | null {
 
 const COMPACT_PROTOCOL = `你是对话归档器。把给定的「用户与陪伴 AI 的对话片段」压缩归档。
 只输出这一个 JSON 对象（不要代码块、不要其它文字）：
-{"summary":"","personaSummary":"","memories":[],"followUp":null,"profile":null}
+{"summary":"","personaSummary":"","memories":[],"followUp":null,"profile":null,"promises":[]}
 - summary：中性第三人称摘要，≤120 字，保留具体事实（做了什么/提到什么/情绪如何）。
 - personaSummary：同样内容，改用陪伴 AI 的第一人称口吻复述，≤100 字。
 - memories：0~2 条值得长期记住的**关于用户的**原子事实（各 ≤40 字，中性陈述句），
@@ -95,19 +99,27 @@ const COMPACT_PROTOCOL = `你是对话归档器。把给定的「用户与陪伴
 - followUp：一个值得下次自然追问的话头（≤30 字），没有就 null。
 - profile：拿【现有用户画像】与本段对话对照，若有值得并入画像的长期信息（身份/长期目标/
   稳定偏好/生活状态变化），输出**更新后的画像全文**（≤200 字，中性第三人称，合并去重）；
-  画像无需变化则 null。不要把短期琐事写进画像。`;
+  画像无需变化则 null。不要把短期琐事写进画像。
+- **日子写具体**：输入第一行写了这段对话发生在哪天。对话里「今天 / 明天 / 后天 / 周五 / 下周一 / 月底」
+  这类说法，写进 summary、memories、followUp 时一律换成具体日子（如「10月3日（周五）」）——
+  这些文字以后会在别的日子被读到，「明天」到那时就错了。实在定不下来的，写「10月1日提到的“下周”」。
+- promises：用户提到的、他自己要经历的、日子明确、过后值得问一句结果的事（面试、考试、体检、答辩、比赛、演出、约会、搬家、出发、手术……），
+  每条 {"topic":"≤8 字","date":"YYYY-MM-DD","when":"morning|day|evening"}；日子按第一行的日期和【日历】查；没有就 []。
+  **这类事只写在 promises 里，不要再写成 memories 或 followUp**——会有专门的回访去问，写两处就会被问两遍。`;
 
 async function compactViaAI(
   cfg: AIConfig,
   lines: string[],
   personaName: string,
   oldProfile: string,
+  /** 这段对话发生在哪天（YYYY-MM-DD）：模型据此把「明天 / 周五」换成具体日子 */
+  dateKey: string,
 ): Promise<CompactResult | null> {
   try {
     let raw: string;
     const messages: AIMessage[] = [
       { role: 'system', content: COMPACT_PROTOCOL },
-      { role: 'user', content: `陪伴 AI 的名字：${personaName}\n【现有用户画像】${oldProfile || '（暂无）'}\n【对话片段】\n${lines.join('\n')}` },
+      { role: 'user', content: `这段对话发生在 ${dayLabelCN(dateKey)}（${dateKey}）。\n【日历】\n${calendarTable(dateKey, 21)}\n陪伴 AI 的名字：${personaName}\n【现有用户画像】${oldProfile || '（暂无）'}\n【对话片段】\n${lines.join('\n')}` },
     ];
     try {
       raw = await chatComplete(cfg, messages, { temperature: 0.3, maxTokens: 900, jsonMode: true });
@@ -140,6 +152,7 @@ async function compactViaAI(
       memories,
       followUp: String(parsed.followUp ?? '').trim().slice(0, 40) || null,
       profile: String(parsed.profile ?? '').trim().slice(0, 400) || null,
+      promises: Array.isArray(parsed.promises) ? parsed.promises : [],
     };
   } catch (e) {
     if (import.meta.env.DEV) console.warn('[navigator] compact 调用失败', e);
@@ -161,9 +174,12 @@ function rowsToLines(rows: NavigatorMessageRow[]): string[] {
     .filter((l) => l.length > 3);
 }
 
-async function persistMemories(result: CompactResult): Promise<void> {
+async function persistMemories(result: CompactResult, sessionDateKey: string): Promise<void> {
   // AI 更新了画像 → 落库（用户手动编辑的版本会在下次 compact 时作为"现有画像"喂回，形成闭环）
   if (result.profile) void saveProfile(result.profile);
+  // 回访约定：会话末补记漏掉的；话头若和约定撞了就不挂（约定那边会问，问两遍就破了「只问一次」）
+  await savePromisesFromCompact(result.promises, sessionDateKey).catch(() => {});
+  if (result.followUp && await followUpCoveredByPromise(result.followUp).catch(() => false)) result.followUp = null;
   const now = new Date();
   const memos: NavigatorMemo[] = result.memories.map((m, i) => ({
     id: uuidv4(),
@@ -187,14 +203,20 @@ async function persistMemories(result: CompactResult): Promise<void> {
 
 // ── 主泵：会话末 compact（开窗时惰性触发） ──
 
+/** 最近一次（今天之前）聊天的摘要和那天的日子：问候里按真实日子标注（不再一律写「昨日」） */
+export interface LastChatSummary {
+  summary: string;
+  dateKey: string;
+}
+
 /** 主泵单飞：开窗、设置页「立即归档」、StrictMode 双跑同时触发时只跑一份（第 4 轮：以前会重复入库同一批记忆） */
-let finalizing: Promise<string | null> | null = null;
+let finalizing: Promise<LastChatSummary | null> | null = null;
 
 /**
  * 归档「今天之前、尚无摘要」的会话（最多 3 条，防积压风暴）。
- * 返回昨日会话的中性摘要（若有/新产出），供跨日叙事问候即取即用。
+ * 返回最近一次（今天之前）会话的中性摘要和日子，供跨日叙事问候即取即用。
  */
-export function finalizeStaleSessions(): Promise<string | null> {
+export function finalizeStaleSessions(): Promise<LastChatSummary | null> {
   if (finalizing) return finalizing;
   finalizing = finalizeStaleSessionsInner().finally(() => { finalizing = null; });
   return finalizing;
@@ -205,16 +227,17 @@ async function personaNameOf(presetId: string | undefined, custom: NavigatorPres
   return resolveNavigatorPreset(presetId, custom).name;
 }
 
-async function finalizeStaleSessionsInner(): Promise<string | null> {
+async function finalizeStaleSessionsInner(): Promise<LastChatSummary | null> {
   const today = toLocalDateKey();
-  let yesterdaySummary: string | null = null;
+  let last: LastChatSummary | null = null;
   try {
     const stale = (await db.navigatorSessions.toArray())
       .filter((s) => s.dateKey < today)
       .sort((a, b) => b.dateKey.localeCompare(a.dateKey));
     const targets = stale.filter((s) => !s.compactedSummary).slice(0, 3);
     // 已归档过的最近一条直接可用
-    yesterdaySummary = stale.find((s) => s.compactedSummary)?.compactedSummary ?? null;
+    const done = stale.find((s) => s.compactedSummary);
+    last = done ? { summary: done.compactedSummary!, dateKey: done.dateKey } : null;
 
     const cfg = getAIConfig(useAppStore.getState().settings);
     let custom: NavigatorPreset[] = [];
@@ -226,11 +249,11 @@ async function finalizeStaleSessionsInner(): Promise<string | null> {
       let summary: string;
       let personaSummary: string | undefined;
       if (cfg && (userMsgs.length >= FINALIZE_MIN_USER_MSGS || userChars >= FINALIZE_MIN_USER_CHARS)) {
-        const result = await compactViaAI(cfg, rowsToLines(rows).slice(-80), await personaNameOf(session.presetId, custom), await getProfile());
+        const result = await compactViaAI(cfg, rowsToLines(rows).slice(-80), await personaNameOf(session.presetId, custom), await getProfile(), session.dateKey);
         if (result) {
           summary = result.summary;
           personaSummary = result.personaSummary;
-          await persistMemories(result);
+          await persistMemories(result, session.dateKey);
         } else {
           summary = localSummary(rows);
         }
@@ -242,15 +265,13 @@ async function finalizeStaleSessionsInner(): Promise<string | null> {
         personaSummary,
         updatedAt: new Date(),
       });
-      // 最近的一条 stale 就是"昨日"叙事素材
-      if (!yesterdaySummary || session.dateKey > (stale.find((s) => s.compactedSummary)?.dateKey ?? '')) {
-        yesterdaySummary = summary;
-      }
+      // 最近的一条 stale 就是跨日叙事素材（带着它自己的日子）
+      if (!last || session.dateKey > last.dateKey) last = { summary, dateKey: session.dateKey };
     }
   } catch (e) {
     if (import.meta.env.DEV) console.warn('[navigator] 会话末 compact 失败', e);
   }
-  return yesterdaySummary;
+  return last;
 }
 
 /** 无 Key / 不足门槛的本地拼接摘要 */
@@ -309,9 +330,9 @@ async function compactLiveInner(
   let summaryText: string;
   const cfg = getAIConfig(useAppStore.getState().settings);
   if (cfg && total <= HARD_CAP_TOKENS) {
-    const result = await compactViaAI(cfg, rowsToLines(squash).slice(-100), personaName, await getProfile());
+    const result = await compactViaAI(cfg, rowsToLines(squash).slice(-100), personaName, await getProfile(), toLocalDateKey());
     if (result) {
-      await persistMemories(result);
+      await persistMemories(result, toLocalDateKey());
       summaryText = result.summary;
     } else {
       summaryText = localSummary(squash);
@@ -354,8 +375,11 @@ const cjkBigrams = (text: string): Set<string> => {
  */
 export async function recallMemories(queryText: string): Promise<RecallResult> {
   try {
-    const memos = (await db.navigatorMemos.where('status').equals('active').toArray())
+    const all = (await db.navigatorMemos.where('status').equals('active').toArray())
       .filter((m) => m.source !== 'profile'); // 画像另行常驻注入，不占检索位
+    // 回访约定由 navigatorPromise 单独注入（什么时候问、只问一次）：还在等着的不进普通检索
+    const promises = all.filter(isPromise);
+    const memos = all.filter((m) => !isPromise(m) || (m.promiseState ?? 'waiting') !== 'waiting');
     if (memos.length === 0) return { lines: [] };
     const q = cjkBigrams(queryText);
     const now = Date.now();
@@ -378,7 +402,17 @@ export async function recallMemories(queryText: string): Promise<RecallResult> {
     const picked = scored.slice(0, 4).filter((s) => s.score > 0.8);
     const lines: string[] = [];
     for (const { m } of picked) {
-      lines.push(`- ${m.text}${m.colorHint ? `（${m.colorHint}）` : ''}${m.followUp ? `【可自然追问：${m.followUp}】` : ''}`);
+      // 带上哪天记下的（第二批 · 时间准确性）：「明天」类的说法即便漏网，模型也能对上日子
+      const day = shortMD(keyOfDate(new Date(m.createdAt)));
+      // 跟回访约定是同一件事的：注明结果另有人问 / 已经聊过（「只问一次」——别让模型从普通记忆里再翻出来问）
+      const related = promises.find((p) => p.id === m.id || mentionsTopic(m.text, p.promiseTopic));
+      const phase = related ? promisePhase(related) : null;
+      const promiseNote = !related ? ''
+        : related.promiseState === 'expired' || phase === 'late' ? '（这件事已经过去了，别再问结果）'
+          : phase === 'closed' ? '（这件事的结果已经聊过了，别再问）'
+            : phase === 'due' ? '（结果会另外问，这里别问）'
+              : '（还没到日子，别追问结果）';
+      lines.push(`- （${day} 记）${m.text}${m.colorHint ? `（${m.colorHint}）` : ''}${promiseNote}${m.followUp && !related ? `【可自然追问：${m.followUp}】` : ''}`);
       const patch: Partial<NavigatorMemo> = {
         lastRecalledAt: new Date(),
         recallCount: (m.recallCount ?? 0) + 1,

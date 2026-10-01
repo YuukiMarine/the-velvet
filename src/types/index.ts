@@ -537,6 +537,11 @@ export interface Settings {
   /** 让助手写提醒文案（v2.7 notifVoice）：每天用当前人格口吻生成一套推送文案，
    *  失败/离线静默退回内置文案库 */
   notifAIVoice?: boolean;
+  /**
+   * 助手主动找你（AI 助手第二批 C）：回访约定 / 纪念日 / 久别想念，一天最多一条，夜里不发；
+   * 锁屏只写「〈助手名〉有话想跟你说」。缺省 = 开（跟着提醒总开关）。
+   */
+  navigatorPushEnabled?: boolean;
   /** 每日提醒时段列表；缺省时回退到 DEFAULT_SETTINGS 的两槽（晨/晚）。 */
   notificationSlots?: NotifSlot[];
   /** v2.7.0.6：老用户含「今日待办」的时段已补上「一起进步」（只补一次，之后随用户设置） */
@@ -1007,6 +1012,15 @@ export interface NavigatorPreset {
   handoffLine?: string;
   isBuiltin: boolean;
   createdAt: Date;
+  /** 固定喜好（第二批「自己的一天」）：内置人格写在代码里；自定义人格第一次用到时 AI 按设定写一份，编辑人格里能改 */
+  traits?: PersonaTraits;
+}
+
+/** 人格的固定喜好：喜欢 / 讨厌 / 跟天气季节节日有关的小习惯 */
+export interface PersonaTraits {
+  likes: string[];
+  dislikes: string[];
+  habits: string[];
 }
 
 /** 会话行：每日每人格最多一条活跃会话（跨天清流、切人格开新会话） */
@@ -1019,6 +1033,8 @@ export interface NavigatorSessionRow {
   personaSummary?: string;
   /** 被打断没说出口的段落（吞话回捞，跨重启存活） */
   swallowed?: string[];
+  /** 这天用户开过口（第二批「相处时长」数聊过几天用；老会话缺这个字段时按消息 / 摘要补算一次） */
+  userSpoke?: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -1059,6 +1075,22 @@ export interface NavigatorMemo {
   createdAt: Date;
   lastRecalledAt?: Date;
   recallCount?: number;
+  /**
+   * 回访约定（第二批）：一件带日子的事（面试、考试、体检……）。那件事过后第一次见面问一次结果，
+   * 只问一次。text 是中性事实（「10月3日（周六）有面试」），下面几个字段管什么时候问、问没问过。
+   */
+  dueDate?: string;
+  /** 那件事在一天里的什么时候：上午的事当天中午后问、白天的事当天 18 点后问、晚上的事第二天早上问 */
+  dueWhen?: 'morning' | 'day' | 'evening';
+  /** 事情的短名（≤12 字，问的时候用、判断提没提也用） */
+  promiseTopic?: string;
+  /** 等着 → 问过了 / 他自己说了结果 / 作废（三天内没机会问或顺延了两次）；后三种永不再进上下文 */
+  promiseState?: 'waiting' | 'asked' | 'resolved' | 'expired';
+  /** 交给模型之后它没问的次数（≥2 作废，不追着问） */
+  promiseDeferred?: number;
+  /** 当天的加油给过了（只一次） */
+  promiseCheered?: boolean;
+  promiseClosedAt?: Date;
 }
 
 /** BIG DEAL 收官结算屏载荷（TASKS_MERGE_PRD 批4） */

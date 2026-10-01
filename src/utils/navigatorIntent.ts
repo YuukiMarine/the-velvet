@@ -20,6 +20,7 @@ import {
   type NavigatorDraft, type NavigatorSnapshot,
 } from '@/utils/navigatorRegistry';
 import type { AIMessage } from '@/utils/aiClient';
+import { stampOf } from '@/utils/navigatorClock';
 import { buildTopicPermission, noteTopicsMentioned, stanceLine, type Energy, type Stance } from '@/utils/navigatorTopics';
 import type { AttributeId, LedgerExpenseType } from '@/types';
 
@@ -137,7 +138,7 @@ export function buildDynamicContext(snap: NavigatorSnapshot, swallowed: string[]
   const weekday = ['日', '一', '二', '三', '四', '五', '六'][now.getDay()];
   const lines = [
     `【背景资料 · 今日状态 ${snap.dateKey}】（你知道的情况，不是要汇报的话题）`,
-    `用户：${snap.userName}；现在是 ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}，周${weekday}（历史消息前的 [HH:mm] 是其发生时刻；回答时间一律以本行为准）`,
+    `用户：${snap.userName}；现在是 ${snap.dateKey}（周${weekday}）${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}（历史消息前的 [时:分]、[昨天 时:分]、[M月D日 时:分] 是那句话说出口的时刻；问到现在的日期、星期、时间一律以本行为准）`,
     attrs ? `【属性面板】${attrs}` : '',
     `今日任务 ${snap.todosDone}/${snap.todosTotal}；今日已记 ${snap.activityCountToday} 条活动`,
     snap.tarotDrawn ? `今日塔罗已抽：「${snap.tarotCardName ?? '?'}」` : '今日塔罗未抽',
@@ -161,10 +162,8 @@ export function buildDynamicContext(snap: NavigatorSnapshot, swallowed: string[]
  * 否则模型眼中整段历史像发生在同一瞬间，问"现在几点"会沿用对话开启时的时间。
  */
 const TIME_GAP_MS = 5 * 60 * 1000;
-const stampOf = (ts: number): string => {
-  const d = new Date(ts);
-  return `[${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}]`;
-};
+// 时间戳带上日子（第二批 · 时间准确性）：规则在 navigatorClock.stampOf（谏言共用）
+export { stampOf };
 
 function historyToMessages(history: TurnHistoryItem[]): AIMessage[] {
   const out: AIMessage[] = [];
@@ -256,11 +255,22 @@ export interface ImmersiveStreamHooks {
   onSegment: (seg: string) => boolean;
 }
 
+/** 回合附加项（AI 助手第二批） */
+export interface TurnExtras {
+  /**
+   * 只在对方没在倾诉 / 道别、精力不低时才放进上下文的行（自己的一天、可以顺口提的旧事、该问的约定）——
+   * 由分诊判的姿态决定，所以只能交给本层在分诊之后拼。
+   */
+  casualContext?: string[];
+  /** 回复定下来后回调整段文本和这一轮的姿态：store 侧据此记账「提没提」、约定要不要顺延 */
+  afterReply?: (text: string, stance: Stance | null, energy: Energy | null, casualShown: boolean) => void;
+}
+
 /**
  * 模型偶尔会模仿历史标注、在回复开头自带一个 [HH:mm] 时间戳——那是给它看的注释，
  * 不是它该说的话，上屏前剥掉。
  */
-const stripStamp = (s: string): string => s.replace(/^\[\d{1,2}:\d{2}\]\s*/, '');
+const stripStamp = (s: string): string => s.replace(/^\[(?:昨天 |\d{1,2}月\d{1,2}日 )?\d{1,2}:\d{2}\]\s*/, '');
 
 /** reply 文本 → 分段（空行切，≤4 段，去空；超出的不丢，并入末段） */
 export function splitSegments(reply: string): string[] {
@@ -493,6 +503,7 @@ export async function runNavigatorTurn(
   extraContext: string[] = [],
   /** 拟真增强：传入即表演层走流式 + 标点切泡（分诊层不变——两阶段红利） */
   immersive?: ImmersiveStreamHooks,
+  turnExtras: TurnExtras = {},
 ): Promise<NavigatorTurnResult> {
   const settings = useAppStore.getState().settings;
   const cfg = getAssistantAIConfig(settings);
@@ -515,6 +526,9 @@ export async function runNavigatorTurn(
 
   // 阶段2：表演。判定结果作为事实注入——reply 与卡从机制上一致，无 JSON 无失守。
   const snap = buildSnapshot();
+  // 倾诉 / 道别 / 精力低：自己的一天、旧事、约定这些「闲话」一律不放进来
+  const casualShown = stance !== 'vent' && stance !== 'bye' && energy !== 'low';
+  const casual = casualShown ? (turnExtras.casualContext ?? []).filter(Boolean) : [];
   const turnFacts = [
     drafts.length
       ? `【本轮你已开出的卡片（用户马上会看到确认卡）】\n${drafts.map(draftLine).join('\n')}`
@@ -526,7 +540,7 @@ export async function runNavigatorTurn(
   const messages: AIMessage[] = [
     { role: 'system', content: `${personaPrompt}\n${PERFORM_RULES}` },
     ...historyToMessages(historyWindow(history)),
-    { role: 'system', content: [buildDynamicContext(snap, swallowed, cards), ...extraContext, turnFacts].filter(Boolean).join('\n') },
+    { role: 'system', content: [buildDynamicContext(snap, swallowed, cards), ...extraContext, ...casual, turnFacts].filter(Boolean).join('\n') },
     { role: 'user', content: userText },
   ];
 
@@ -571,6 +585,7 @@ export async function runNavigatorTurn(
     }
     if (import.meta.env.DEV) console.debug('[navigator] 拟真流式输出:', emitted);
     noteTopicsMentioned(emitted.join('\n'));
+    turnExtras.afterReply?.(emitted.join('\n'), stance, energy, casualShown && casual.length > 0);
     // 流式已实时呈现，无法撤回——承诺守卫在此路径降级为观测（分诊先行定卡，嘴瓢概率极小）
     return { segments: emitted, drafts };
   }
@@ -607,6 +622,7 @@ export async function runNavigatorTurn(
 
   if (!reply) reply = drafts.length ? '卡片给你，看一眼没问题就确认。' : '嗯。';
   noteTopicsMentioned(reply);
+  turnExtras.afterReply?.(reply, stance, energy, casualShown && casual.length > 0);
   return { segments: splitSegments(reply), drafts };
 }
 
@@ -667,7 +683,7 @@ export async function generateAIGreeting(
      * 总时长由调用方 signal（30s 总闸）兜底。等待期间打字指示本来就在动，不亏。
      */
     const messages: AIMessage[] = [
-      { role: 'system', content: `${personaPrompt}\n今天第一次见面，说一句自然的问候。像正常人刚见面：简短、贴合时段和对方状态，**不要刻意罗列数据**，不要问候语大礼包。只根据给定素材说话，对方没提过的经历不要脑补。若给了昨日聊天摘要或记忆，可自然接一句昨天的话茬（别复读原文）。可用空行分成最多 2 段。只输出问候本身。` },
+      { role: 'system', content: `${personaPrompt}\n今天第一次见面，说一句自然的问候。像正常人刚见面：简短、贴合时段和对方状态，**不要刻意罗列数据**，不要问候语大礼包。只根据给定素材说话，对方没提过的经历不要脑补。若给了上次聊天的摘要或记忆，可自然接一句上次的话茬——按标注的日子说（几天前的事别说成昨天），别复读原文。可用空行分成最多 2 段。只输出问候本身。` },
       { role: 'user', content: [buildDynamicContext(snap, []), ...extraContext].filter(Boolean).join('\n') },
     ];
     let text = '';

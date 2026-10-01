@@ -19,8 +19,21 @@ import {
   buildSnapshot, type NavigatorDraft,
 } from '@/utils/navigatorRegistry';
 import {
-  generateAIGreeting, runNavigatorTurn, splitSegments, type TurnHistoryItem,
+  generateAIGreeting, runNavigatorTurn, splitSegments, type TurnExtras, type TurnHistoryItem,
 } from '@/utils/navigatorIntent';
+import {
+  buildOldStoryLine, buildTogetherLine, markMilestoneMentioned, noteOldStoryMentioned, pickOldStory, togetherFacts,
+} from '@/utils/navigatorBond';
+import { buildOwnDayLine, ensureOwnDay, noteOwnDayMentioned } from '@/utils/navigatorDay';
+import {
+  buildAskLine, buildCheerLine, buildUpcomingLine, listPromises, markCheered, noteAskResult, promiseContext, promisePhase,
+  sniffPromises, type PromiseMemo,
+} from '@/utils/navigatorPromise';
+import {
+  openerInstruction, openerTemplate, processDeliveredPushes, takePushOpener, type PushOpener,
+} from '@/utils/navigatorPush';
+import { MILESTONES } from '@/utils/navigatorBond';
+import { dayLabelCN, relativeDayCN } from '@/utils/navigatorClock';
 import {
   buildWarmthLine, finalizeStaleSessions, getProfile, lazySweepMemos, maybeCompactLive, recallMemories,
 } from '@/utils/navigatorMemory';
@@ -225,7 +238,8 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
     const sid = get().sessionId;
     if (!sid) { pendingWrites.push(m); return; }
     void db.navigatorMessages.put(toRow(m, sid)).catch((e) => console.warn('[navigator] 消息写库失败', e));
-    void db.navigatorSessions.update(sid, { updatedAt: new Date() }).catch(() => {});
+    // userSpoke：「相处时长」数一起聊过几天用（这天用户开过口）
+    void db.navigatorSessions.update(sid, { updatedAt: new Date(), ...(m.role === 'user' ? { userSpoke: true } : {}) }).catch(() => {});
   };
 
   const persistSwallowed = () => {
@@ -393,6 +407,40 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
     });
   };
 
+  /** 还在等着、还能问的那条约定（推送开场用） */
+  const openPromiseById = async (id: string): Promise<PromiseMemo | null> => {
+    const m = (await listPromises()).find((x) => x.id === id);
+    if (!m) return null;
+    const phase = promisePhase(m);
+    return phase === 'due' || phase === 'today' ? m : null;
+  };
+
+  /** 今天已经聊过了又从推送进来：开场句接在后面（模板，按人格口吻） */
+  const deliverOpenerInline = async (op: PushOpener) => {
+    const preset = get().activePreset();
+    const today = toLocalDateKey();
+    let line = '';
+    if (op.kind === 'promise') {
+      const m = await openPromiseById(op.ref);
+      if (m) {
+        line = openerTemplate('promise', preset.id, { rel: relativeDayCN(m.dueDate, today), topic: m.promiseTopic });
+        get().pushCat(line);
+        void noteAskResult(m, line).then(() => useAppStore.getState().syncNotifications());
+      }
+      return;
+    }
+    if (op.kind === 'milestone') {
+      const ms = MILESTONES.find((x) => String(x.days) === op.ref);
+      if (ms) {
+        line = openerTemplate('milestone', preset.id, { label: ms.label });
+        get().pushCat(line);
+        markMilestoneMentioned(preset.id, ms.days);
+      }
+      return;
+    }
+    get().pushCat(openerTemplate('missyou', preset.id, {}));
+  };
+
   /** 收口 → thinking → replying → idle（gen 凭票，全程可被打断作废） */
   const settleNow = async () => {
     if (get().phase !== 'collecting') return;
@@ -457,7 +505,28 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
         buildWarmthLine(),
         buildWishContextLine(), // 愿望与距离（PRD_V2.6 §8 的"读取"侧；无愿望时返回空串被 filter 掉）
       ].filter(Boolean);
-      const persona = get().activePreset().personaPrompt;
+      // 第二批：相处时长（纪念日只在问候里提，这里去掉）+ 闲话（自己的一天、这周的旧事：倾诉 / 道别时 intent 层不放）
+      const presetNow = get().activePreset();
+      const together = await togetherFacts(presetNow.id);
+      extra.push(buildTogetherLine({ ...together, milestone: undefined }));
+      // 回访约定：快到的事当背景（别追问）；该问的那一条交给闲聊（倾诉 / 道别时 intent 层不放），这一轮就不翻旧账
+      const todayKey = toLocalDateKey();
+      const pctx = await promiseContext();
+      const upcomingLine = buildUpcomingLine(pctx, todayKey);
+      if (upcomingLine) extra.push(upcomingLine);
+      const ask = pctx.ask;
+      const oldStory = ask ? null : await pickOldStory(together);
+      if (gen !== generation) return;
+      const turnExtras: TurnExtras = {
+        casualContext: [ask ? buildAskLine(ask, todayKey) : '', buildOwnDayLine(presetNow.id), oldStory ? buildOldStoryLine(oldStory) : ''],
+        afterReply: (text, _stance, _energy, casualShown) => {
+          noteOwnDayMentioned(text, presetNow.id);
+          if (oldStory) noteOldStoryMentioned(text, presetNow.id, oldStory);
+          // 交给它了才算一次机会：问了 → 问过了；没问 → 记一次，两次都没问就作废（关了就重排推送：那条不用推了）
+          if (ask && casualShown) void noteAskResult(ask, text).then((r) => { if (r !== 'deferred') void useAppStore.getState().syncNotifications(); });
+        },
+      };
+      const persona = presetNow.personaPrompt;
       const immersive = !!useAppStore.getState().settings.navigatorImmersive && !isD0();
 
       if (immersive) {
@@ -467,6 +536,7 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
         const turnPromise = runNavigatorTurn(
           historyForTurn(), turnBatch, mySwallowed, turnAbort.signal, cardsDigest(), persona, extra,
           { onSegment: (s) => { queue.push(s); return gen === generation; } },
+          turnExtras,
         ).finally(() => { streamEnded = true; });
         for (;;) {
           if (gen !== generation) { swallowed = queue.splice(0); persistSwallowed(); return; }
@@ -486,13 +556,14 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
         if (gen !== generation) return;
         dedupDrafts(result.drafts).forEach((d) => get().pushCard(d));
         set({ phase: 'idle' });
+        void sniffPromises(batch, useAppStore.getState().settings).then((changed) => { if (changed) void useAppStore.getState().syncNotifications(); }); // 回访约定：有日子的说法才判（后台）；记下 / 关了就重排推送
         void runLiveCompact();
         void maybeProposeWishProgress(batch); // 愿望进度提议（六道闸在模块内，PRD_V2.6 §8）
         return;
       }
 
       const result = await runNavigatorTurn(
-        historyForTurn(), turnBatch, mySwallowed, turnAbort.signal, cardsDigest(), persona, extra,
+        historyForTurn(), turnBatch, mySwallowed, turnAbort.signal, cardsDigest(), persona, extra, undefined, turnExtras,
       );
       if (gen !== generation) return;
       // 分段吐泡（段间隙 = 天然插话点）
@@ -507,6 +578,7 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
       }
       dedupDrafts(result.drafts).forEach((d) => get().pushCard(d));
       set({ phase: 'idle' });
+      void sniffPromises(batch, useAppStore.getState().settings).then((changed) => { if (changed) void useAppStore.getState().syncNotifications(); }); // 回访约定：有日子的说法才判（后台）；记下 / 关了就重排推送
       void runLiveCompact(); // 阈值泵（32k/120 条才动手，平时空转）
       void maybeProposeWishProgress(batch); // 愿望进度提议（六道闸在模块内，PRD_V2.6 §8）
     } catch (e) {
@@ -669,22 +741,70 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
         const finalizing = finalizeStaleSessions();
         void lazySweepMemos();
         await hydrateSession();
-        if (get().messages.length > 0) return;
+        // 「助手找你」（第二批 C）：从推送点进来时重排可能还没跑，先判一次送达，取开场
+        processDeliveredPushes();
+        if (get().messages.length > 0) {
+          // 今天已经聊过了：开场接在后面（模板句，不另起一次 AI 问候）
+          const op = takePushOpener();
+          if (op) await deliverOpenerInline(op);
+          return;
+        }
+        const opener = takePushOpener();
         const snap = buildSnapshot();
         const app = useAppStore.getState();
         const preset = get().activePreset();
-        const firstToday = app.settings.navigatorLastGreetDate !== snap.dateKey;
+        // 从推送进来的那一次一定走完整问候（第一句就是推送要说的那件事），哪怕今天已经问候过
+        const firstToday = app.settings.navigatorLastGreetDate !== snap.dateKey || !!opener;
+        // 第二批：今天的小状态（有 Key 一次 AI，没 Key 模板）先跑着；相处时长（纪念日在这里提）
+        const ownDayP = ensureOwnDay(preset, app.settings);
+        const together = await togetherFacts(preset.id);
+        // 久别归来只说想念：小状态、纪念日、约定都先不提（纪念日留到宽限期内的下一次）
+        const away = !!snap.daysAway && snap.daysAway >= 7;
+        // 回访约定：该问的一条 / 当天的加油（问候是第一个机会）；推送开场的那件事优先
+        const pctx = await promiseContext();
+        const openerPromise = opener?.kind === 'promise' ? await openPromiseById(opener.ref) : null;
+        const ask = openerPromise ?? (away ? null : pctx.ask);
+        const cheer = away || openerPromise ? null : pctx.cheer;
+        const openerMilestone = opener?.kind === 'milestone' ? MILESTONES.find((m) => String(m.days) === opener.ref) ?? null : null;
         // 「今日已问候」的标记改在**问候真正送达后**再写（下方各分支）：
         // 此前进门就写，AI 问候若被打断/崩溃（gen 作废 return），完整版问候当天就永远消失了。
         const markGreeted = (text?: string) => {
           void useAppStore.getState().updateSettings({ navigatorLastGreetDate: snap.dateKey });
           // 新总结只在问候里提一次（v2.7.0.6）；问候里提到的塔罗 / 待办也记账
           if (snap.unreadSummaryId) markReportGreeted(snap.unreadSummaryId);
-          if (text) noteTopicsMentioned(text);
+          if (text) {
+            noteTopicsMentioned(text);
+            noteOwnDayMentioned(text, preset.id);
+          }
+          if (together.milestone && !away) markMilestoneMentioned(preset.id, together.milestone.days);
+          if (openerMilestone) markMilestoneMentioned(preset.id, openerMilestone.days);
+          if (ask) void noteAskResult(ask, text ?? '').then((r) => { if (r !== 'deferred') void useAppStore.getState().syncNotifications(); });
+          if (cheer) void markCheered(cheer.id);
         };
+        // 推送开场的模板句（没 Key 时放在最前面）
+        const openerLine = !opener ? ''
+          : opener.kind === 'promise'
+            ? (openerPromise ? openerTemplate('promise', preset.id, { rel: relativeDayCN(openerPromise.dueDate, snap.dateKey), topic: openerPromise.promiseTopic }) : '')
+            : opener.kind === 'milestone'
+              ? (openerMilestone ? openerTemplate('milestone', preset.id, { label: openerMilestone.label }) : '')
+              : openerTemplate('missyou', preset.id, {});
 
         if (!firstToday || !getAIConfig(app.settings)) {
-          const text = firstToday ? buildDailyGreeting(snap) : buildShortGreeting(snap);
+          let text = firstToday ? buildDailyGreeting(snap) : buildShortGreeting(snap);
+          // 推送开场：那件事放第一句（约定已经在这句里问了，下面不再重复）
+          if (openerLine) text = [openerLine, text].join('\n');
+          if (firstToday && !away) {
+            // 没 Key 的跨天首开：纪念日、今天的小状态（模板）也补一句
+            const day = await Promise.race([ownDayP, sleep(400).then(() => null)]);
+            const ms = together.milestone;
+            const lines = [
+              ms ? `对了，${ms.dateKey === snap.dateKey ? '今天' : relativeDayCN(ms.dateKey, snap.dateKey)}是我们认识满${ms.label}的日子。` : '',
+              ask && !openerPromise ? `${relativeDayCN(ask.dueDate, snap.dateKey)}的${ask.promiseTopic}怎么样了？` : '',
+              cheer ? `今天${cheer.promiseTopic}吧？加油。` : '',
+              day?.text ?? '',
+            ].filter(Boolean);
+            if (lines.length) text = [text, ...lines].join('\n');
+          }
           get().pushCat(text);
           if (firstToday) markGreeted(text);
           return;
@@ -693,22 +813,26 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
         const gen = ++generation;
         set({ phase: 'thinking' });
         try {
-          // 跨日叙事素材：昨日摘要（等主泵最多 2.5s，拿不到就不带）+ 记忆 + 语气
-          const yesterday = await Promise.race([finalizing, sleep(2500).then(() => null)]);
+          // 跨日叙事素材：上次聊天的摘要（等主泵最多 2.5s，拿不到就不带）+ 今天的小状态（同样最多等 2.5s）+ 记忆 + 语气
+          const [last] = await Promise.all([
+            Promise.race([finalizing, sleep(2500).then(() => null)]),
+            Promise.race([ownDayP, sleep(2500).then(() => null)]),
+          ]);
           const recall = await recallMemories('');
-          const lastBefore = (await db.navigatorSessions.toArray())
-            .filter((r) => r.dateKey < snap.dateKey)
-            .sort((a, b) => b.dateKey.localeCompare(a.dateKey))[0];
-          const gapDays = lastBefore
-            ? Math.max(0, Math.round((Date.parse(snap.dateKey) - Date.parse(lastBefore.dateKey)) / 86400_000))
-            : null;
           const profile = await getProfile();
           const extra = [
+            // 推送开场：第一句就说那件事（压过别的素材）
+            opener ? openerInstruction(opener.kind, preset.name, { topic: openerPromise?.promiseTopic, label: openerMilestone?.label }) : '',
             profile ? `【用户画像（长期）】${profile}` : '',
-            yesterday ? `【昨日聊天摘要】${yesterday}` : '',
-            gapDays !== null && gapDays >= 2 ? `【距上次聊天】已隔 ${gapDays} 天` : '',
+            // 标真实的日子（以前一律写「昨日」，上次聊天可能是五天前）
+            last ? `【上次聊天（${relativeDayCN(last.dateKey, snap.dateKey)}，${dayLabelCN(last.dateKey, snap.dateKey)}）的摘要】${last.summary}` : '',
+            buildTogetherLine(away ? { ...together, milestone: undefined } : together, snap.dateKey),
+            away ? '' : buildUpcomingLine(pctx, snap.dateKey),
+            ask ? buildAskLine(ask, snap.dateKey) : '',
+            cheer ? buildCheerLine(cheer) : '',
             recall.lines.length ? `【关于用户的记忆】\n${recall.lines.join('\n')}` : '',
             buildWarmthLine(),
+            away ? '' : buildOwnDayLine(preset.id),
             // 新写好的成长总结：问候顺带提一句（每份只提这一次；指向记录页，聊天框下面也有「看总结」）
             snap.unreadSummaryLabel
               ? `【新写好的成长总结】「${snap.unreadSummaryLabel}」的总结已经写好、对方还没看：问候里顺带提一句，它在记录页的「成长总结」里，聊天框下面的「看总结」也能直接打开。一句就好，别展开内容。`
@@ -718,7 +842,7 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
             // 久别归来（PRD_V2.6 §12）：这一条要压过上面所有素材。
             // 明确禁掉三件事——问去哪了、催补记、报今天的账：
             // 补记那件事回归面板已经问过一次了，猫再问一遍就成了追债。
-            snap.daysAway && snap.daysAway >= 7
+            away
               ? `【久别归来】对方已经 ${snap.daysAway} 天没打开过这个 App 了，现在刚回来。\n`
                 + '这一轮**只说想念**：让他知道你惦记着、位置一直留着。\n'
                 + '禁止追问他去哪了/为什么不来，禁止催他补记录，禁止先报今天的任务与塔罗。'

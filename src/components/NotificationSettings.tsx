@@ -161,6 +161,28 @@ export default function NotificationSettings() {
         </div>
       )}
 
+      {/* 助手找你（第二批 C）：默认开，跟着总开关出现 */}
+      {enabled && (
+        <div className="rounded-xl border border-gray-200 p-4 dark:border-gray-700">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex-1">
+              <h4 className="text-sm font-bold text-gray-800 dark:text-white">助手会主动找你</h4>
+              <p className="mt-1 text-xs leading-relaxed text-gray-500 dark:text-gray-400">
+                每天最多一条：约好的事过后问你一句结果、认识满一个月这样的日子、好几天没见时说一次想念。
+                夜里 22:30～08:30 不发；锁屏上只写「{'〈助手的名字〉'}有话想跟你说」，点开再说是什么事。
+              </p>
+            </div>
+            <div className="mt-0.5 flex-shrink-0">
+              <Toggle
+                checked={settings.navigatorPushEnabled !== false}
+                onChange={v => updateSettings({ navigatorPushEnabled: v })}
+                aria-label="助手会主动找你"
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 时段列表（仅启用时展开） */}
       {enabled && (
         <div className="space-y-3">

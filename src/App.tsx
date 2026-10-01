@@ -307,6 +307,11 @@ function App() {
     void import('@capacitor/local-notifications').then(async ({ LocalNotifications }) => {
       const h = await LocalNotifications.addListener('localNotificationActionPerformed', (evt) => {
         const extra = evt.notification?.extra as { content?: string; summaryId?: string } | undefined;
+        // 助手找你（第二批 C）：直接打开助手窗口，第一句就是要说的那件事
+        if (extra?.content === 'assistant') {
+          void import('@/store/navigator').then((m) => m.useNavigatorStore.getState().open());
+          return;
+        }
         // 一起进步（v2.7.0.6）：约好的事 / 被催了 → 首页的任务条；邀请 → 羁绊页
         if (extra?.content === 'together' || extra?.content === 'bond') {
           useAppStore.getState().setCurrentPage(extra.content === 'bond' ? 'cooperation' : 'dashboard');

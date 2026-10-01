@@ -4286,6 +4286,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     } catch (e) {
       console.warn('[notifications] sync failed', e);
     }
+    // 助手找你（第二批 C）：自己一段通知 ID，和时段提醒同一个触发点（判送达 → 重算 → 撤旧排新）
+    void import('@/utils/navigatorPush').then(m => m.syncAssistantPush(get().settings)).catch(() => {});
     // 缓存未命中则后台生成，货到重排（幂等：生成成功后缓存命中，不会循环）
     refreshNotifVoiceIfNeeded(settings, () => void get().syncNotifications());
     // 桌面小组件快照（PRD_V2.6 §8）搭这趟车：

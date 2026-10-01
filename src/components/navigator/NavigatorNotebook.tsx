@@ -12,8 +12,22 @@ import { db } from '@/db';
 import { SheetModal } from '@/components/SheetModal';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { getProfile, saveProfile } from '@/utils/navigatorMemory';
+import { deletePromise, isPromise, listPromises, promisePhase, updatePromiseDate, type PromiseMemo } from '@/utils/navigatorPromise';
+import { dayLabelCN } from '@/utils/navigatorClock';
+import { toLocalDateKey } from '@/store';
 import { useUiChannel } from '@/ui/useUiChannel';
 import type { NavigatorMemo } from '@/types';
+
+/** 约定此刻的状态写法（记事本「约好的事」） */
+function promiseStatusLabel(m: PromiseMemo): string {
+  const state = m.promiseState ?? 'waiting';
+  if (state === 'asked') return '问过了';
+  if (state === 'resolved') return '你说过结果了';
+  if (state === 'expired') return '没来得及问';
+  const phase = promisePhase(m);
+  return phase === 'today' ? '就是今天' : phase === 'due' ? '该问了' : phase === 'late' ? '没来得及问' : '还没到';
+}
+const WHEN_TEXT: Record<string, string> = { morning: '上午', day: '', evening: '晚上' };
 
 export const NavigatorNotebook = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) => {
   const p3 = useUiChannel() === 'p3';
@@ -22,12 +36,22 @@ export const NavigatorNotebook = ({ isOpen, onClose }: { isOpen: boolean; onClos
   const [memos, setMemos] = useState<NavigatorMemo[]>([]);
   const [memoEdit, setMemoEdit] = useState<{ id: string; text: string } | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  // 第二批「回访约定」：静默记下的带日子的事，只在这里看得见（能改日子、能删）
+  const [promises, setPromises] = useState<PromiseMemo[]>([]);
+  const [dateEdit, setDateEdit] = useState<{ id: string; date: string } | null>(null);
+  const [deletePromiseId, setDeletePromiseId] = useState<string | null>(null);
 
   const load = async () => {
     setProfile(await getProfile());
     setProfileDirty(false);
     const rows = await db.navigatorMemos.orderBy('createdAt').reverse().toArray();
-    setMemos(rows.filter((m) => m.status === 'active' && m.source !== 'profile'));
+    setMemos(rows.filter((m) => m.status === 'active' && m.source !== 'profile' && !isPromise(m)));
+    const all = await listPromises();
+    // 还在等着的在前（按日子）；关了的只留最近 5 条
+    const open = all.filter((m) => (m.promiseState ?? 'waiting') === 'waiting');
+    const closed = all.filter((m) => (m.promiseState ?? 'waiting') !== 'waiting')
+      .sort((a, b) => b.dueDate.localeCompare(a.dueDate)).slice(0, 5);
+    setPromises([...open, ...closed]);
   };
   useEffect(() => { if (isOpen) void load(); }, [isOpen]);
 
@@ -52,6 +76,17 @@ export const NavigatorNotebook = ({ isOpen, onClose }: { isOpen: boolean; onClos
     if (deleteId) { await db.navigatorMemos.delete(deleteId); await load(); }
     setDeleteId(null);
   };
+  const saveDateEdit = async () => {
+    if (!dateEdit) return;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateEdit.date)) await updatePromiseDate(dateEdit.id, dateEdit.date);
+    setDateEdit(null);
+    await load();
+  };
+  const confirmDeletePromise = async () => {
+    if (deletePromiseId) { await deletePromise(deletePromiseId); await load(); }
+    setDeletePromiseId(null);
+  };
+  const today = toLocalDateKey();
 
   return (
     <>
@@ -115,6 +150,66 @@ export const NavigatorNotebook = ({ isOpen, onClose }: { isOpen: boolean; onClos
               每次对话都会带上这段画像；它会在整理对话时自动更新，你的手改优先。
             </p>
           </div>
+
+          {/* 约好的事（回访约定） */}
+          <div className={p3 ? 'mt-5 text-[13px] font-black' : 'mt-4 text-xs font-bold text-gray-500 dark:text-gray-400'} style={p3 ? { color: 'var(--p3r-ink, #0a1230)' } : undefined}>
+            约好的事（过后问你一句结果，只问一次）
+          </div>
+          {promises.length === 0 ? (
+            <p
+              className={p3 ? 'mt-2 px-5 py-4 text-center text-[12px] font-bold leading-relaxed' : 'mt-2 rounded-xl border border-dashed border-gray-300 px-4 py-4 text-center text-xs text-gray-400 dark:border-gray-600'}
+              style={p3 ? { background: '#dbeff8', color: '#4b8fd9', clipPath: 'polygon(16px 0, 100% 0, calc(100% - 16px) 100%, 0 100%)' } : undefined}
+            >
+              还没有——聊天时说到带日子的事（面试、考试、体检……），它会记下，过后问你一句结果。
+            </p>
+          ) : (
+            <div className="mt-2 space-y-2" data-promise-list>
+              {promises.map((m) => {
+                const open = (m.promiseState ?? 'waiting') === 'waiting';
+                return (
+                  <div
+                    key={m.id}
+                    data-promise={m.promiseTopic}
+                    className={p3 ? 'bg-white px-3.5 py-2.5' : 'rounded-xl border border-gray-200 px-3 py-2.5 dark:border-gray-700'}
+                    style={p3 ? { clipPath: 'polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%)', boxShadow: '0 6px 16px rgba(7,40,120,.10)', opacity: open ? 1 : 0.6 } : { opacity: open ? 1 : 0.6 }}
+                  >
+                    {dateEdit?.id === m.id ? (
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="date"
+                          autoFocus
+                          value={dateEdit.date}
+                          min={today}
+                          onChange={(e) => setDateEdit({ id: m.id, date: e.target.value })}
+                          aria-label={`「${m.promiseTopic}」改到哪天`}
+                          className="min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm outline-none focus:border-primary dark:border-gray-700 dark:bg-gray-900 dark:text-white"
+                        />
+                        <button type="button" onClick={() => void saveDateEdit()} className="shrink-0 text-xs font-bold text-primary">存</button>
+                        <button type="button" onClick={() => setDateEdit(null)} className="shrink-0 text-xs text-gray-400">取消</button>
+                      </div>
+                    ) : (
+                      <div className="flex items-start gap-2">
+                        <div className="min-w-0 flex-1">
+                          <p className={p3 ? 'text-sm font-semibold leading-relaxed' : 'text-sm leading-relaxed text-gray-700 dark:text-gray-200'} style={p3 ? { color: 'var(--p3r-ink, #0a1230)' } : undefined}>
+                            {m.promiseTopic}
+                          </p>
+                          <p className={p3 ? 'mt-0.5 text-[10px] font-bold' : 'mt-0.5 text-[10px] text-gray-400 dark:text-gray-500'} style={p3 ? { color: '#6a7ba3' } : undefined}>
+                            {dayLabelCN(m.dueDate, today)}{WHEN_TEXT[m.dueWhen ?? 'day']} · {promiseStatusLabel(m)}
+                          </p>
+                        </div>
+                        {open && (
+                          <button type="button" onClick={() => setDateEdit({ id: m.id, date: m.dueDate })} aria-label={`改「${m.promiseTopic}」的日子`}
+                            className="shrink-0 rounded p-1 text-xs text-gray-400 hover:text-primary">改日子</button>
+                        )}
+                        <button type="button" onClick={() => setDeletePromiseId(m.id)} aria-label={`删掉约定「${m.promiseTopic}」`}
+                          className={`shrink-0 rounded p-1 text-xs ${p3 ? 'text-gray-400 hover:text-[#f0417f]' : 'text-gray-400 hover:text-red-400'}`}>删</button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
           {/* 原子记忆 */}
           <div className={p3 ? 'mt-5 text-[13px] font-black' : 'mt-4 text-xs font-bold text-gray-500 dark:text-gray-400'} style={p3 ? { color: 'var(--p3r-ink, #0a1230)' } : undefined}>
@@ -186,6 +281,16 @@ export const NavigatorNotebook = ({ isOpen, onClose }: { isOpen: boolean; onClos
         cancelText="取消"
         onConfirm={() => void confirmDelete()}
         onCancel={() => setDeleteId(null)}
+      />
+      <ConfirmDialog
+        isOpen={!!deletePromiseId}
+        tone="danger"
+        title="删掉这个约定？"
+        description="删掉之后它就不会再问你这件事了。"
+        confirmText="删掉"
+        cancelText="取消"
+        onConfirm={() => void confirmDeletePromise()}
+        onCancel={() => setDeletePromiseId(null)}
       />
     </>
   );

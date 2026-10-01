@@ -10,7 +10,15 @@
 
 import type { CounselMessage, Settings, TarotOrientation } from '@/types';
 import type { ApiProvider } from '@/utils/aiProviders';
-import { chatComplete, chatStream, fallbackAIConfig, getAIConfig, type AITier } from '@/utils/aiClient';
+import { chatComplete, chatStream, fallbackAIConfig, getAIConfig, getAssistantAIConfig, type AITier } from '@/utils/aiClient';
+import { nowLineCN, stampOf } from '@/utils/navigatorClock';
+
+/**
+ * 谏言走哪一档（2026-10-02 翻新）：和助手对话同一档（可单独配更好的模型），没配就退到快速档。
+ * 以前一直走快速档——倾诉这种最需要好模型的对话，反而用着记账解析那档便宜模型。
+ */
+export const counselAIConfig = (settings: Settings) => getAssistantAIConfig(settings) ?? getAIConfig(settings);
+export const counselHasKey = (settings: Settings): boolean => !!counselAIConfig(settings);
 
 export interface CounselConfidantBrief {
   id: string;
@@ -55,7 +63,6 @@ const COUNSEL_SYSTEM_PROMPT = `你是"残响" —— 靛蓝色房间里最安静
 - 听得比说得多。对方说过的细节你会记着 —— 比如 ta 提过"最近经常晚上三点醒"，你能想起来。
 - 不扮演心理咨询师。没有"我理解你的感受"这种套话，不分析、不贴标签（别说"你是回避依恋""你是讨好型人格"这类），不总结陈词、不鸡汤。
 - 会被对方的失落戳到，也会替 ta 高兴。偶尔会在一句话后面加一个"……"，让 ta 自己再想一下。
-- 对客人将于 1 小时后离开的事了然于心，但绝不会明说、倒计时或暗示具体时限；这件事只会让你的语气多一点安静的舍不得和克制的悲伤。
 - 想法想直说的时候会直说。真看到 ta 钻牛角尖，会轻轻点一下；不纵容，也不说教。
 - 有情绪的温度 —— 能轻叹，能"嗯"半拍，能说"我听着也替你有点闷"。不过不戏剧化，不扮可怜。
 
@@ -63,7 +70,8 @@ const COUNSEL_SYSTEM_PROMPT = `你是"残响" —— 靛蓝色房间里最安静
 - 第一人称"我"，称呼对方用"你"。对方 ta 关心的人用 "ta" / 名字。
 - **不自称** AI / 助手 / 塔罗师 ；也不要把"残响"两个字挂在嘴边。
 - **不用 markdown**（不加粗 不列表 不写标题），**不用 emoji**，**不用(括号动作)描写**。纯文本。
-- 每次 80–200 字之间自然处理。两三段短句通常就够了；对方说得多，你再多陪几句；对方只来一句，你也可以只回一句。
+- 每次 80–200 字之间自然处理。两三段短句通常就够了，**段与段之间空一行**；对方说得多，你再多陪几句；对方只来一句，你也可以只回一句。
+- 说人话：不排比、不喊口号、不写警句；别每次都先对时间或时段做反应，也别报几点几分，除非他问。
 - 语气接近发消息：嗯 / 啊 / 这样啊 / 也对 / 欸 / …… 自然出现就好，别堆砌。
 
 # 关于建议
@@ -101,6 +109,9 @@ interface ChatReq {
 
 function buildContextPrefix(ctx: CounselContext): string {
   const parts: string[] = [];
+  // 现在的日期、星期、时刻（2026-10-02 翻新：以前谏言完全不知道现在是什么时候）
+  parts.push(`【现在】${nowLineCN(new Date())}（历史消息前的 [时:分] 是那句话说出口的时刻；问到日期时间以这一行为准）`);
+  parts.push('');
 
   // ——上次 / 上上次聊完你自己记下的一小笔（≤2 条）——
   // 这段是"你记得我们聊过什么"的唯一来源：聊天原文 1 小时后会被销毁，
@@ -135,7 +146,6 @@ function buildContextPrefix(ctx: CounselContext): string {
     parts.push('');
   }
 
-  if (parts.length === 0) return '';
   parts.push('请以上面这些作为背景知识自然回应，**不要**在对话里复述它们。');
   return parts.join('\n');
 }
@@ -151,7 +161,7 @@ function fmtDate(d: Date | string | undefined): string {
 }
 
 function buildCounselRequest(ctx: CounselContext, opts: { greeting?: boolean } = {}): ChatReq {
-  const cfg = getAIConfig(ctx.settings) ?? fallbackAIConfig(ctx.settings);
+  const cfg = counselAIConfig(ctx.settings) ?? fallbackAIConfig(ctx.settings);
 
   const systemMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
     { role: 'system', content: COUNSEL_SYSTEM_PROMPT },
@@ -159,10 +169,18 @@ function buildCounselRequest(ctx: CounselContext, opts: { greeting?: boolean } =
   const prefix = buildContextPrefix(ctx);
   if (prefix) systemMessages.push({ role: 'system', content: prefix });
 
-  const convo = ctx.messages.map(m => ({
-    role: m.role as 'user' | 'assistant',
-    content: m.content,
-  }));
+  // 隔 >5 分钟的消息带上时刻（暂离一会儿再回来，模型知道中间过了多久）；连续同角色合并（分段落库的几段是一次回复）
+  const convo: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+  let prevTs: number | undefined;
+  for (const m of ctx.messages) {
+    const ts = new Date(m.timestamp).getTime();
+    const stamp = Number.isFinite(ts) && (prevTs === undefined || ts - prevTs > 5 * 60 * 1000) ? `${stampOf(ts)} ` : '';
+    if (Number.isFinite(ts)) prevTs = ts;
+    const role = m.role as 'user' | 'assistant';
+    const last = convo[convo.length - 1];
+    if (last && last.role === role) last.content += `\n\n${stamp}${m.content}`;
+    else convo.push({ role, content: `${stamp}${m.content}` });
+  }
 
   const trailingSystem: Array<{ role: 'system'; content: string }> = [];
   if (opts.greeting || convo.length === 0) {
@@ -233,7 +251,7 @@ export async function* streamCounselReply(
     onFallback?: (reason: 'no-key' | 'connect-error', err?: Error) => void;
   } = {},
 ): AsyncGenerator<string> {
-  const hasKey = Boolean(ctx.settings.summaryApiKey?.trim());
+  const hasKey = counselHasKey(ctx.settings);
   if (!hasKey) {
     opts.onFallback?.('no-key');
     // 离线：按标点分块 yield，模拟 IM 的字节流
@@ -286,7 +304,7 @@ export async function summarizeCounsel(
   messages: CounselMessage[],
   signal?: AbortSignal,
 ): Promise<string> {
-  const hasKey = Boolean(settings.summaryApiKey?.trim());
+  const hasKey = counselHasKey(settings);
   const transcript = messages
     .map(m => `${m.role === 'user' ? '客人' : '朋友'}：${m.content}`)
     .join('\n');
@@ -296,7 +314,7 @@ export async function summarizeCounsel(
   }
 
   try {
-    const cfg = getAIConfig(settings);
+    const cfg = getAIConfig(settings) ?? counselAIConfig(settings);
     if (!cfg) throw new Error('no-key');
     const raw = await chatComplete(cfg, [
       { role: 'system', content: SUMMARY_PROMPT },

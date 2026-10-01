@@ -9,7 +9,7 @@
  * thief/tv = 中性深色兜底（其风格化随各自频道批次）。
  * 会话：当日延续、跨天清流（store/navigator，Batch1 仅内存）。
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import { useAppStore } from '@/store';
@@ -28,6 +28,7 @@ import { NavigatorActionForm } from './NavigatorActionForm';
 import { PresetAvatar } from './PresetAvatar';
 import { BubbleMark, bubbleMarkOf, type MarkChannel } from '@/components/p5r/kit';
 import { NavigatorNotebook } from './NavigatorNotebook';
+import { peekOwnDay, subscribeOwnDay } from '@/utils/navigatorDay';
 import { ImageCropDialog } from '@/components/ImageCropDialog';
 import { mergedNavigatorPresets } from '@/constants/navigatorPresets';
 import {
@@ -424,6 +425,9 @@ export const NavigatorWindow = () => {
   const [busyCardId, setBusyCardId] = useState<string | null>(null);
   const [personaMenuOpen, setPersonaMenuOpen] = useState(false);
   const [notebookOpen, setNotebookOpen] = useState(false);
+  // 第二批「自己的一天」：名字下面那行写它今天的小状态（没有就还是原来那句）；点一下展开整句
+  const ownDay = useSyncExternalStore(subscribeOwnDay, () => peekOwnDay(preset.id)?.text ?? '');
+  const [ownDayOpen, setOwnDayOpen] = useState(false);
   const [avatarCropFile, setAvatarCropFile] = useState<File | null>(null);
   const avatarFileRef = useRef<HTMLInputElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
@@ -779,7 +783,20 @@ export const NavigatorWindow = () => {
                   </button>
                   <div className="min-w-0 flex-1">
                     <div className={`truncate font-black ${isP4 ? 'text-[22px]' : 'text-base'}`} style={{ ...sk.headerText, ...(isP4 ? { fontFamily: 'var(--p4-display-font, serif)' } : {}) }}>{preset.name}</div>
-                    <div className={`text-[11px] font-bold ${bright ? '' : 'opacity-60'}`} style={bright ? { color: 'var(--p3r-blue, #1b57ff)' } : sk.headerText}>万能记录 · 有事直说</div>
+                    <div className={`text-[11px] font-bold ${bright ? '' : 'opacity-60'}`} style={bright ? { color: 'var(--p3r-blue, #1b57ff)' } : sk.headerText}>
+                      {ownDay ? (
+                        <button
+                          type="button"
+                          onClick={() => setOwnDayOpen((v) => !v)}
+                          aria-expanded={ownDayOpen}
+                          aria-label={`${preset.name}今天：${ownDay}`}
+                          className={`block w-full text-left leading-snug ${ownDayOpen ? 'whitespace-normal' : 'truncate'}`}
+                          data-own-day
+                        >
+                          {ownDay}
+                        </button>
+                      ) : '万能记录 · 有事直说'}
+                    </div>
                   </div>
                   <button
                     type="button"

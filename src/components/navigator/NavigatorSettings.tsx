@@ -17,7 +17,7 @@ import { getProviderConfig, DEFAULT_PROVIDER } from '@/utils/aiProviders';
 import { ModelPickerSheet } from '@/components/ai/ModelPickerSheet';
 import { generatePersonaPrompt } from '@/utils/navigatorIntent';
 import { finalizeStaleSessions } from '@/utils/navigatorMemory';
-import { mergedNavigatorPresets } from '@/constants/navigatorPresets';
+import { BUILTIN_NAVIGATOR_PRESETS, mergedNavigatorPresets } from '@/constants/navigatorPresets';
 import { Toggle } from '@/components/Toggle';
 import { PresetAvatar, PRESET_GLYPH_IDS } from './PresetAvatar';
 import { NavigatorNotebook } from './NavigatorNotebook';
@@ -37,19 +37,26 @@ interface GeneratorState {
   freeText: string;
   personaPrompt: string;
   avatar: string;
+  /** 固定喜好（第二批「自己的一天」）：逗号 / 顿号分隔；只有自定义人格能改，留空第一次用到时按设定自动写 */
+  likes: string;
+  dislikes: string;
+  habits: string;
   generating: boolean;
   error?: string;
 }
 const closedGenerator: GeneratorState = {
   open: false, name: '', callUser: '', toneWords: [], coach: 'accompany',
-  freeText: '', personaPrompt: '', avatar: 'star', generating: false,
+  freeText: '', personaPrompt: '', avatar: 'star', likes: '', dislikes: '', habits: '', generating: false,
 };
+const splitTraits = (v: string): string[] =>
+  v.split(/[，,、；;\n]+/).map((x) => x.trim().slice(0, 16)).filter(Boolean).slice(0, 4);
 
 export const NavigatorSettings = () => {
   const { settings, updateSettings } = useAppStore(useShallow(s => ({ settings: s.settings, updateSettings: s.updateSettings })));
   const nav = useNavigatorStore();
   const hasAI = !!getAIConfig(settings);
   const activeId = nav.activePreset().id;
+  const activePresetName = nav.activePreset().name;
 
   const [gen, setGen] = useState<GeneratorState>(closedGenerator);
   // 深思熟虑档选择面板（与设置页共用 ModelPickerSheet，列表读 aiProfiles 缓存）
@@ -74,8 +81,13 @@ export const NavigatorSettings = () => {
 
   const openEditor = (p?: NavigatorPreset) =>
     setGen(p
-      ? { ...closedGenerator, open: true, editId: p.id, name: p.name, personaPrompt: p.personaPrompt, avatar: p.avatar ?? 'star' }
+      ? {
+          ...closedGenerator, open: true, editId: p.id, name: p.name, personaPrompt: p.personaPrompt, avatar: p.avatar ?? 'star',
+          likes: p.traits?.likes.join('、') ?? '', dislikes: p.traits?.dislikes.join('、') ?? '', habits: p.traits?.habits.join('、') ?? '',
+        }
       : { ...closedGenerator, open: true });
+  /** 内置人格（改头像时存的是同 id 的影子行）的喜好写在代码里，不在这里改 */
+  const editingBuiltin = !!gen.editId && BUILTIN_NAVIGATOR_PRESETS.some((b) => b.id === gen.editId);
 
   const runGenerate = async () => {
     if (!gen.name.trim()) { setGen((s) => ({ ...s, error: '先给它起个名字' })); return; }
@@ -95,11 +107,15 @@ export const NavigatorSettings = () => {
     const name = gen.name.trim();
     const prompt = gen.personaPrompt.trim();
     if (!name || !prompt) { setGen((s) => ({ ...s, error: '名字和人格设定都不能为空' })); return; }
+    const traits = { likes: splitTraits(gen.likes), dislikes: splitTraits(gen.dislikes), habits: splitTraits(gen.habits) };
+    const hasTraits = traits.likes.length + traits.dislikes.length + traits.habits.length > 0;
     await nav.savePreset({
       id: gen.editId ?? uuidv4(),
       name, personaPrompt: prompt, avatar: gen.avatar,
       isBuiltin: false,
       createdAt: gen.editId ? nav.presets.find((p) => p.id === gen.editId)?.createdAt ?? new Date() : new Date(),
+      // 留空 = 不存，第一次用到时按人格设定自动写一份
+      traits: !editingBuiltin && hasTraits ? traits : undefined,
     });
     setGen(closedGenerator);
   };
@@ -113,9 +129,9 @@ export const NavigatorSettings = () => {
   const runArchive = async () => {
     setArchiving(true);
     setArchiveDone(null);
-    const summary = await finalizeStaleSessions();
+    const last = await finalizeStaleSessions();
     setArchiving(false);
-    setArchiveDone(summary ? '已归档，最近摘要：' + summary.slice(0, 40) + '…' : '没有待归档的会话');
+    setArchiveDone(last ? '已归档，最近摘要：' + last.summary.slice(0, 40) + '…' : '没有待归档的会话');
   };
 
   const chip = (active: boolean) =>
@@ -158,6 +174,25 @@ export const NavigatorSettings = () => {
             checked={settings.wishAgentProposals !== false}
             onChange={(v) => updateSettings({ wishAgentProposals: v })}
             aria-label="主动提议更新愿望进度"
+          />
+        </div>
+      </div>
+
+      {/* ── 助手找你（第二批 C）：和提醒设置里那个是同一个开关 ── */}
+      <div className="flex items-start justify-between gap-3 rounded-xl border border-gray-200 px-4 py-3 dark:border-gray-700">
+        <div>
+          <div className="text-sm font-semibold text-gray-700 dark:text-gray-200">主动找你</div>
+          <p className="mt-0.5 text-xs leading-relaxed text-gray-400 dark:text-gray-500">
+            每天最多一条推送：约好的事过后问你一句结果、认识满一个月这样的日子、好几天没见时说一次想念。
+            夜里不发；锁屏上只写「{activePresetName}有话想跟你说」。
+            {!settings.notificationsEnabled && <b> 要先在「提醒」里打开每日提醒。</b>}
+          </p>
+        </div>
+        <div className="mt-0.5 shrink-0">
+          <Toggle
+            checked={settings.navigatorPushEnabled !== false}
+            onChange={(v) => updateSettings({ navigatorPushEnabled: v })}
+            aria-label="主动找你"
           />
         </div>
       </div>
@@ -298,6 +333,23 @@ export const NavigatorSettings = () => {
                 rows={5}
                 className="w-full resize-none rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm leading-relaxed outline-none focus:border-primary dark:border-gray-700 dark:bg-gray-900 dark:text-white"
               />
+              {!editingBuiltin && (
+                <div className="space-y-2" data-persona-traits>
+                  <div className="text-xs text-gray-400 dark:text-gray-500">喜好（它每天的小状态会用到；用「、」隔开，留空的话第一次用到时按人格设定自动写）</div>
+                  {([['likes', '喜欢'], ['dislikes', '讨厌'], ['habits', '小习惯']] as const).map(([k, label]) => (
+                    <label key={k} className="flex items-center gap-2">
+                      <span className="w-12 shrink-0 text-xs font-bold text-gray-500 dark:text-gray-400">{label}</span>
+                      <input
+                        value={gen[k]}
+                        onChange={(e) => setGen((s) => ({ ...s, [k]: e.target.value }))}
+                        aria-label={`${label}（用「、」隔开）`}
+                        placeholder={k === 'likes' ? '晒太阳、热可可' : k === 'dislikes' ? '下雨、闹钟' : '下雨天话变少'}
+                        className="min-w-0 flex-1 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary dark:border-gray-700 dark:bg-gray-900 dark:text-white"
+                      />
+                    </label>
+                  ))}
+                </div>
+              )}
             </>
           )}
           {gen.error && <p className="text-xs text-red-400">{gen.error}</p>}
