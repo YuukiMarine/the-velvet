@@ -11,7 +11,7 @@
   <img src="https://img.shields.io/badge/TypeScript-5-3178C6?style=flat-square&logo=typescript" />
   <img src="https://img.shields.io/badge/PWA-ready-5A0FC8?style=flat-square" />
   <img src="https://img.shields.io/badge/Capacitor-iOS%20%C2%B7%20Android-53B0EA?style=flat-square" />
-  <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" />
+  <img src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue?style=flat-square" />
 </p>
 
 ---
@@ -176,6 +176,18 @@ npx cap sync android        # 同步进安卓工程
 
 ---
 
-## License
+## 协议
 
-[MIT](LICENSE)
+代码按 **GPL-3.0-or-later** 发布（[LICENSE](LICENSE)），附两条附加许可（[NOTICE](NOTICE)）：
+允许通过应用商店分发；允许与 GSAP 链接。
+
+- 名称「靛蓝色房间」、图标、美术素材和商店宣传素材**不在 GPL 之内**，保留所有权利，见 [ASSETS_LICENSE](ASSETS_LICENSE)。
+  分叉请换用自己的名称和图标。
+- 改协议之前发布的版本与提交（v2.7.0.6 及以前）仍可按原来的 MIT 协议使用。
+- 这是粉丝向的个人作品，界面与命名借鉴了 Persona 系列，与 ATLUS / SEGA 无关，也未获其认可。
+
+### 贡献
+
+欢迎提 PR。请给每个 commit 加上 `Signed-off-by`（`git commit -s`，即 [DCO](https://developercertificate.org/)），
+表示这段代码你有权提交。提交即表示你同意：贡献按 GPL-3.0-or-later（含 NOTICE 里的附加许可）授权，
+并允许维护者以其它协议再授权这部分贡献（用于继续上架应用商店、日后调整协议）。

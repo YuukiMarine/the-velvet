@@ -1,0 +1,50 @@
+靛蓝色房间（The Other Me — Growth Tracker）
+Copyright (C) 2026 YuukiMarine
+
+本程序是自由软件：你可以按照自由软件基金会发布的 GNU 通用公共许可证（GNU GPL）
+第 3 版或（由你选择）任何更新的版本，重新发布和 / 或修改它。全文见 LICENSE。
+下面是 GPL 第 3 版第 7 条允许的两条附加许可（正式文本以英文为准）：
+  1. 允许通过应用商店（如 App Store、Google Play）分发，商店条款里的额外限制不算违反 GPL；
+  2. 允许与 GSAP（GreenSock 动画库）链接、组合后分发，GSAP 本身仍按它自己的协议。
+在本次改协议之前发布的版本与提交（v2.7.0.6 及以前）仍可按原来的 MIT 协议使用。
+名称、图标与美术素材不在 GPL 之内，见 ASSETS_LICENSE。
+
+----------------------------------------------------------------------------
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later
+version. This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License (LICENSE)
+for more details. SPDX-License-Identifier: GPL-3.0-or-later
+
+ADDITIONAL PERMISSIONS UNDER GNU GPL VERSION 3 SECTION 7
+
+1. Application store distribution
+
+   As an additional permission under section 7 of the GNU GPL version 3, you
+   may convey this program, or a work based on it, in object code form through
+   application stores and similar distribution channels (for example the Apple
+   App Store or Google Play) whose terms of service impose additional
+   restrictions on recipients, such as usage rules, device limits or digital
+   rights management, provided that you comply with all other terms of the GPL
+   for the conveyed work, including offering the Corresponding Source as
+   required by section 6. With respect to this program, such store-imposed
+   restrictions are not considered further restrictions under section 10.
+
+2. GreenSock Animation Platform (GSAP)
+
+   If you modify this program, or any covered work, by linking or combining it
+   with the GreenSock Animation Platform ("gsap" and "@gsap/react"), or a
+   modified version of that library, containing parts covered by the terms of
+   the GreenSock Standard License, the licensors of this program grant you
+   additional permission to convey the resulting work. Corresponding Source for
+   a non-source form of such a combination shall include the source code for
+   the parts of GSAP used as well as that of the covered work. GSAP itself is
+   not covered by the GPL and remains under its own license.
+
+PREVIOUS LICENSE
+
+   Versions and commits published before this change of license (v2.7.0.6 and
+   earlier) were released under the MIT License and remain available under it.

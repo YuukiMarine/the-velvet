@@ -1,0 +1,32 @@
+靛蓝色房间 —— 名称、图标与美术素材声明
+Names, icons and artwork — All rights reserved
+
+本仓库的源代码按 GPL-3.0-or-later 发布（见 LICENSE 与 NOTICE）。下列内容不在 GPL 授权范围内：
+
+1. 名称与标识：「靛蓝色房间」「The Other Me」「The Velvet」等应用名称及其标识。
+2. 图标与启动图：icon.png、music.png、public/ 下的应用图标，iOS / Android 工程里的 App 图标与启动图。
+3. 美术素材：public/tarot/、public/assets/ 下的插画与贴图，以及其它随仓库提供的图像。
+4. 商店页与宣传用的文案、宣传图和截图。
+
+其中由作者创作的部分保留所有权利（All rights reserved）；来自第三方的部分归原作者所有，按其原有条款使用。
+未经作者书面许可，不得在衍生作品、分发版本或应用商店上架中使用上述名称、图标与美术素材——
+分叉请换用你自己的名称、图标和美术。
+
+字体等第三方资源各自遵循其原有许可（例如 SIL Open Font License），不受本声明影响。
+
+本作品是粉丝向的个人项目，界面与命名借鉴了 Persona 系列的元素，与 ATLUS / SEGA 无关，也未获其认可；
+相关名称与商标归其各自的所有者所有。
+
+----------------------------------------------------------------------------
+
+The source code in this repository is licensed under GPL-3.0-or-later (see LICENSE and NOTICE).
+The following are NOT covered by the GPL: the application names and marks ("靛蓝色房间", "The Other Me",
+"The Velvet"), app icons and launch images, the artwork under public/tarot/ and public/assets/ and other
+images shipped with the repository, and store listing copy, promotional images and screenshots.
+Parts created by the author are All Rights Reserved; third-party parts belong to their respective owners.
+Do not use these names, icons or artwork in derivative works, redistributions or store listings without
+written permission — please use your own name, icons and art for forks. Fonts and other third-party
+resources remain under their own licenses (e.g. SIL Open Font License).
+
+This is a fan-made personal project inspired by the Persona series. It is not affiliated with,
+endorsed by or sponsored by ATLUS or SEGA. All related names and trademarks belong to their owners.
