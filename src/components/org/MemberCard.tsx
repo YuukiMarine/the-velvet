@@ -3,9 +3,12 @@
  *   正面：代号、代表牌牌面、座位、名片状态、连续天数、本周出勤七格、称号（读最新一份纪要，挂一周）；
  *   背面：展示的面具（名字 / 属性 / 等级 / 三个技能）、本周目标与上周自评（周日会议写，7b）、加入日期。
  * 四频道各一套皮；我的那张有标记；屏蔽了的人半透明、挂「已屏蔽」；上一场会议没写目标的挂「本周缺席」。
+ * 牌面默认是代表牌；点一下小牌的牌面就换成 Ta 的头像（本机偏好，再点换回来），放大牌、公告板跟着用同一个。
  */
-import type { CSSProperties, ReactNode } from 'react';
+import { useEffect, useRef, type CSSProperties, type MouseEvent, type ReactNode } from 'react';
 import { motion } from 'motion/react';
+import { useCloudSocialStore } from '@/store/cloudSocial';
+import { toggleMemberFace } from '@/services/orgSync';
 import { liveStatus } from '@/constants/profileStatus';
 import { DEFAULT_ATTRIBUTE_NAMES } from '@/constants/index';
 import { tarotArtUrl } from '@/constants/tarotArt';
@@ -69,22 +72,81 @@ export function memberFacts(view: OrgView, m: OrgMember, now = new Date()) {
   };
 }
 
-function TarotThumb({ id, streak = 0, className, style }: { id?: string; streak?: number; className?: string; style?: CSSProperties }) {
+/**
+ * 这个人的牌面：代表牌；本机选了「用头像」、或者 Ta 还没选代表牌时用头像（有头像的话）。
+ * fallbackTarot：人已经不在组织里时（公告板上的旧动态），用快照里记下的代表牌。
+ */
+export function useMemberFace(m: Pick<OrgMember, 'userId' | 'tarotId' | 'avatarUrl'> | undefined, fallbackTarot?: string) {
   const set = useTarotArtSet();
-  const card = tarotCardOf(id);
-  const url = id ? tarotArtUrl(id, set) : null;
-  return (
-    <span className={`relative block overflow-hidden ${className ?? ''}`} style={{ background: card?.accent ?? 'rgba(127,127,127,0.18)', ...style }}>
-      {url
-        ? <img src={url} alt="" loading="lazy" draggable={false} className="absolute inset-0 h-full w-full object-cover" />
-        : <span className="absolute inset-0 flex items-center justify-center text-center text-[10px] font-black leading-tight opacity-70">待选<br />代表牌</span>}
+  const prefAvatar = useCloudSocialStore(s => (m ? s.orgAvatarFaces.includes(m.userId) : false));
+  const tarotId = m ? m.tarotId : fallbackTarot;
+  const avatar = m?.avatarUrl && (prefAvatar || !tarotId) ? m.avatarUrl : undefined;
+  return {
+    avatar: !!avatar,
+    url: avatar ?? (tarotId ? tarotArtUrl(tarotId, set) : null),
+    tarotId,
+    /** 头像和代表牌都有，才有得换 */
+    canToggle: !!m?.avatarUrl && !!m?.tarotId,
+  };
+}
+
+/** 牌面：图 + 连续天数角标；toggle 时点一下在代表牌 / 头像之间翻面（右上角挂一枚 ⇄ 提示） */
+export function MemberFace({ member, fallbackTarot, streak = 0, toggle = false, empty, className, style }: {
+  member?: Pick<OrgMember, 'userId' | 'tarotId' | 'avatarUrl'>;
+  fallbackTarot?: string;
+  streak?: number;
+  toggle?: boolean;
+  /** 既没牌也没头像时显示什么（默认「待选代表牌」） */
+  empty?: ReactNode;
+  className?: string;
+  style?: CSSProperties;
+}) {
+  const face = useMemberFace(member, fallbackTarot);
+  const card = tarotCardOf(face.tarotId);
+  // 只有「点了换面」才播翻面，页面刚出来那一下不翻
+  const settled = useRef(false);
+  useEffect(() => { settled.current = true; }, []);
+  const canToggle = toggle && face.canToggle && !!member;
+  const onToggle = (e: MouseEvent) => {
+    e.stopPropagation();
+    if (member) toggleMemberFace(member.userId);
+  };
+  const body = (
+    <>
+      {face.url ? (
+        <motion.img
+          key={face.url}
+          src={face.url}
+          alt=""
+          loading="lazy"
+          draggable={false}
+          className="absolute inset-0 h-full w-full object-cover"
+          initial={settled.current ? { rotateY: 90, opacity: 0.4 } : false}
+          animate={{ rotateY: 0, opacity: 1 }}
+          transition={{ duration: 0.24, ease: 'easeOut' }}
+        />
+      ) : (
+        empty ?? <span className="absolute inset-0 flex items-center justify-center text-center text-[10px] font-black leading-tight opacity-70">待选<br />代表牌</span>
+      )}
       {streak > 0 && (
         <span className="absolute inset-x-0 bottom-0 bg-black/70 py-[2px] text-center text-[9px] font-black leading-tight text-white tabular-nums" aria-label={`连续 ${streak} 天`}>
           连续 {streak} 天
         </span>
       )}
-    </span>
+      {canToggle && (
+        <span aria-hidden className="absolute right-[3px] top-[3px] flex h-[15px] w-[15px] items-center justify-center rounded-full bg-black/55 text-[9px] font-black leading-none text-white">⇄</span>
+      )}
+    </>
   );
+  const boxStyle: CSSProperties = { background: card?.accent ?? 'rgba(127,127,127,0.18)', perspective: 400, ...style };
+  if (canToggle) {
+    return (
+      <button type="button" onClick={onToggle} aria-label={face.avatar ? '牌面换回代表牌' : '牌面换成头像'} className={`relative block overflow-hidden ${className ?? ''}`} style={boxStyle}>
+        {body}
+      </button>
+    );
+  }
+  return <span className={`relative block overflow-hidden ${className ?? ''}`} style={boxStyle}>{body}</span>;
 }
 
 // ── 名册里的小牌 ───────────────────────────────────────────────────────────────
@@ -107,7 +169,7 @@ export function MemberTile({ view, member, minutes, blocked, onOpen, onMore }: {
 
   const inner = (
     <div className="flex gap-3" style={{ opacity: blocked ? 0.55 : 1 }}>
-      <TarotThumb id={member.tarotId} streak={f.streak} className="h-[84px] w-[53px] shrink-0" style={{ borderRadius: tone.channel === 'p4' ? 8 : tone.channel === 'neutral' ? 6 : 0, clipPath: tone.channel === 'p5' ? roughQuad(member.seat + 0.3, 2.5) : undefined, boxShadow: tone.channel === 'p4' ? '0 0 0 2px #131313' : undefined }} />
+      <MemberFace member={member} toggle streak={f.streak} className="h-[84px] w-[53px] shrink-0" style={{ borderRadius: tone.channel === 'p4' ? 8 : tone.channel === 'neutral' ? 6 : 0, clipPath: tone.channel === 'p5' ? roughQuad(member.seat + 0.3, 2.5) : undefined, boxShadow: tone.channel === 'p4' ? '0 0 0 2px #131313' : undefined }} />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
           <SeatNumber tone={tone} n={member.seat} />
@@ -209,10 +271,10 @@ function MineTag({ tone }: { tone: OrgTone }) {
 
 export function MemberCardFront({ view, member, minutes, width, height }: { view: OrgView; member: OrgMember; minutes?: OrgMinutesSnapshot | null; width: number; height: number }) {
   const tone = useOrgTone();
-  const set = useTarotArtSet();
   const f = memberFacts(view, member);
   const honors = memberHonors(minutes, member.userId);
-  const url = member.tarotId ? tarotArtUrl(member.tarotId, set) : null;
+  // 放大牌跟小牌用同一个牌面（本机选了头像就是头像）
+  const url = useMemberFace(member).url;
   const frame: CSSProperties = tone.channel === 'p3'
     ? { boxShadow: `inset 0 0 0 5px ${P3R.blue}` }
     : tone.channel === 'p4'

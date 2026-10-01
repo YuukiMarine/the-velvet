@@ -1,7 +1,7 @@
 /**
  * 据点地图（第 7 轮 · PRD §12.4）：据点页顶部的一张地图，按频道各画一张——
  * 蓝＝校园地图、黄＝商店街、红＝城市夜景、中性＝等高线。
- * 组织在中央；成员按座位号围在四周；名册 / 公告板 / 会议是三个地标，同时也是下面内容的切换页签。
+ * 组织在中央；成员按座位号围在四周（有头像放头像，没有放代号首字）；名册 / 公告板 / 会议是三个地标，同时也是下面内容的切换页签。
  * 背景是 SVG（纯装饰），地标 / 座位 / 中心是叠在上面的 HTML（字清楚、能点、读屏认得）。
  * 动效只有中心脉冲和选中地标的轻浮动（CSS，合成层）；有弹层、移出视口、粗犷度关掉时暂停。
  */
@@ -98,7 +98,7 @@ export function HideoutMap({ view, section, onSection, dots, blocked }: {
         const dim = blocked?.has(m.userId);
         return (
           <span key={m.id} className="absolute" style={{ ...at(p.x, p.y), opacity: dim ? 0.4 : 1 }} aria-hidden>
-            <SeatPin tone={tone} text={[...displayCodename(m)][0] ?? '?'} mine={mine} lead={lead} seat={m.seat} />
+            <SeatPin tone={tone} text={[...displayCodename(m)][0] ?? '?'} avatarUrl={m.avatarUrl} mine={mine} lead={lead} seat={m.seat} />
           </span>
         );
       })}
@@ -178,34 +178,41 @@ function Landmark({ tone, label, en, on, dot }: { tone: OrgTone; label: string; 
   );
 }
 
-function SeatPin({ tone, text, mine, lead, seat }: { tone: OrgTone; text: string; mine: boolean; lead: boolean; seat: number }) {
-  const crown = lead ? <span aria-hidden className="absolute -top-2 left-1/2 -translate-x-1/2 text-[9px] leading-none">👑</span> : null;
+function SeatPin({ tone, text, avatarUrl, mine, lead, seat }: { tone: OrgTone; text: string; avatarUrl?: string; mine: boolean; lead: boolean; seat: number }) {
+  const crown = lead ? <span aria-hidden className="absolute -top-2.5 left-1/2 z-[1] -translate-x-1/2 text-[10px] leading-none">👑</span> : null;
+  const img = (style?: CSSProperties) => (avatarUrl ? <img src={avatarUrl} alt="" draggable={false} loading="lazy" className="absolute inset-[2px] h-[calc(100%-4px)] w-[calc(100%-4px)] object-cover" style={style} /> : null);
   if (tone.channel === 'p3') {
+    // 斜切形状会裁掉王冠：形状画在里层，王冠挂外层
     return (
-      <span className="relative flex h-6 min-w-[26px] items-center justify-center px-1.5 text-[11px] font-black text-white" style={{ background: mine ? P3R.magenta : P3R.blueDeep, clipPath: slantClip(5), boxShadow: '0 3px 8px rgba(10,59,214,0.25)' }} title={`${seat} 号`}>
-        {text}{crown}
+      <span className="relative block" title={`${seat} 号`}>
+        <span className="relative flex h-7 min-w-[28px] items-center justify-center px-1.5 text-[11px] font-black text-white" style={{ background: mine ? P3R.magenta : P3R.blueDeep, clipPath: slantClip(5), boxShadow: '0 3px 8px rgba(10,59,214,0.25)' }}>
+          {avatarUrl ? img({ clipPath: slantClip(4) }) : text}
+        </span>
+        {crown}
       </span>
     );
   }
   if (tone.channel === 'p4') {
     return (
-      <span className="relative flex h-7 w-7 items-center justify-center rounded-full text-[12px] font-black" style={{ background: mine ? 'var(--p4-orange, #f9a11b)' : '#fff6d0', color: '#131313', boxShadow: '0 0 0 2px #131313' }}>
-        {text}{crown}
+      <span className="relative flex h-[30px] w-[30px] items-center justify-center rounded-full text-[12px] font-black" style={{ background: mine ? 'var(--p4-orange, #f9a11b)' : '#fff6d0', color: '#131313', boxShadow: '0 0 0 2px #131313' }}>
+        {avatarUrl ? img({ borderRadius: 999 }) : text}
+        {crown}
       </span>
     );
   }
   if (tone.channel === 'p5') {
     return (
-      <span className="relative flex h-6 min-w-[24px] items-center justify-center px-1 text-[12px] font-black" style={{ fontFamily: P5_TITLE_FONT }}>
-        <span aria-hidden className="absolute inset-0" style={{ background: mine ? P5R.red : P5R.paper, clipPath: roughQuad(seat + 0.9, 2.5), boxShadow: 'none' }} />
-        <span className="relative" style={{ color: mine ? P5R.white : P5R.ink }}>{text}</span>
+      <span className="relative flex h-7 min-w-[28px] items-center justify-center px-1 text-[12px] font-black" style={{ fontFamily: P5_TITLE_FONT }}>
+        <span aria-hidden className="absolute inset-0" style={{ background: mine ? P5R.red : P5R.paper, clipPath: roughQuad(seat + 0.9, 2.5) }} />
+        {avatarUrl ? img({ clipPath: roughQuad(seat + 1.3, 2) }) : <span className="relative" style={{ color: mine ? P5R.white : P5R.ink }}>{text}</span>}
         {crown}
       </span>
     );
   }
   return (
-    <span className="relative flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-black text-white" style={{ background: mine ? '#f43f5e' : tone.accent, boxShadow: '0 0 0 2px var(--ui-paper, #ffffff)' }}>
-      {text}{crown}
+    <span className="relative flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-black text-white" style={{ background: mine ? '#f43f5e' : tone.accent, boxShadow: '0 0 0 2px var(--ui-paper, #ffffff)' }}>
+      {avatarUrl ? img({ borderRadius: 999 }) : text}
+      {crown}
     </span>
   );
 }

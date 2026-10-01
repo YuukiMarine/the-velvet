@@ -314,7 +314,7 @@ export type OrgEmblemId = typeof ORG_EMBLEMS[number]['id'];
 export const isEmblemId = (s: string): s is OrgEmblemId => ORG_EMBLEMS.some(e => e.id === s);
 
 /** 别人能看到什么（加入前的预览、建立时的说明、据点设置里都放这一段） */
-export const ORG_PRIVACY_NOTE = '组织里的其他成员能看到：你的代号、代表牌、名片状态、连续天数、本周哪几天有记录、你写的目标、你选择展示的面具，以及你主动分享的动态。看不到你的属性数值、记录原文和记录列表。';
+export const ORG_PRIVACY_NOTE = '组织里的其他成员能看到：你的代号、头像、代表牌、名片状态、连续天数、本周哪几天有记录、你写的目标、你选择展示的面具，以及你主动分享的动态。看不到你的属性数值、记录原文和记录列表。';
 
 // ── 公告板（7b · PRD §12.16）─────────────────────────────────────────────────
 
@@ -328,7 +328,7 @@ export const ORG_BOARD_LIMIT = 100;
 /** 六个预设标签（顺序即显示顺序） */
 export const ORG_TAGS: ReadonlyArray<{ id: OrgReactionTag; label: string }> = [
   { id: 'strong', label: '太强了' },
-  { id: 'same', label: '同款努力' },
+  { id: 'same', label: '🤣👉' },
   { id: 'steady', label: '稳' },
   { id: 'envy', label: '羡慕' },
   { id: 'metoo', label: '我也去做' },

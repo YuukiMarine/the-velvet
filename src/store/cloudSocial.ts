@@ -48,6 +48,8 @@ interface CloudSocialState {
   orgBlocked: string[];
   /** 举报过、本机不再显示的动态（7b） */
   orgHiddenPosts: string[];
+  /** 卡面用头像的成员（云端用户 id；本机偏好，默认用代表牌） */
+  orgAvatarFaces: string[];
   /** 公告板「看到哪儿了」：组织 id → ISO（7b 红点） */
   orgSeen: Record<string, string>;
   /**
@@ -83,6 +85,7 @@ interface CloudSocialState {
   setHideoutSection: (section: 'roster' | 'board' | 'meeting' | null) => void;
   setOrgBlocked: (userIds: string[]) => void;
   setOrgHiddenPosts: (postIds: string[]) => void;
+  setOrgAvatarFaces: (userIds: string[]) => void;
   setOrgSeen: (orgId: string, at: string) => void;
   setOrgSeenAll: (map: Record<string, string>) => void;
   markNotificationRead: (id: string) => void;
@@ -126,6 +129,7 @@ export const useCloudSocialStore = create<CloudSocialState>(set => ({
   hideoutSection: null,
   orgBlocked: [],
   orgHiddenPosts: [],
+  orgAvatarFaces: [],
   orgSeen: {},
   materializeBlockers: [],
   loading: false,
@@ -209,6 +213,8 @@ export const useCloudSocialStore = create<CloudSocialState>(set => ({
 
   setOrgHiddenPosts: orgHiddenPosts => set({ orgHiddenPosts }),
 
+  setOrgAvatarFaces: orgAvatarFaces => set({ orgAvatarFaces }),
+
   setOrgSeen: (orgId, at) => set(state => ({ orgSeen: { ...state.orgSeen, [orgId]: at } })),
 
   setOrgSeenAll: orgSeen => set({ orgSeen }),
@@ -275,6 +281,7 @@ export const useCloudSocialStore = create<CloudSocialState>(set => ({
     hideoutSection: null,
     orgBlocked: [],
     orgHiddenPosts: [],
+    orgAvatarFaces: [],
     orgSeen: {},
     materializeBlockers: [],
     loading: false,

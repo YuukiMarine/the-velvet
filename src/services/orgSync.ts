@@ -31,7 +31,11 @@ const nickname = (): string => [...(useAppStore.getState().user?.name ?? '').tri
 /** 自建的排前面 */
 const orgOrder = (a: OrgView, b: OrgView): number => (a.me.slot === b.me.slot ? a.org.createdAt.getTime() - b.org.createdAt.getTime() : a.me.slot === 'own' ? -1 : 1);
 
-const withMe = (v: OrgView, me: OrgMember): OrgView => ({ ...v, me, members: v.members.map(m => (m.id === me.id ? me : m)).sort(bySeat) });
+/** 用写回来的我那一行替换视图里的我；写回来的行没展开 user，头像沿用原来的 */
+const withMe = (v: OrgView, next: OrgMember): OrgView => {
+  const me = next.avatarUrl ? next : { ...next, avatarUrl: v.me.avatarUrl };
+  return { ...v, me, members: v.members.map(m => (m.id === me.id ? me : m)).sort(bySeat) };
+};
 
 // ── 本机记账：认识哪些组织（用来发现「你已不在」）、屏蔽名单、守则 ────────────────
 
@@ -71,6 +75,24 @@ export function setMemberBlocked(userId: string, blocked: boolean): void {
   const all = readJson<Record<string, string[]>>(BLOCK_KEY, {});
   all[me] = list;
   writeJson(BLOCK_KEY, all);
+}
+
+/** 卡面用头像的成员（本机偏好，默认用代表牌；点一下牌面就切换） */
+const FACE_KEY = 'velvet.orgFaces.v1';
+const loadFaces = (me: string) => {
+  const list = readJson<Record<string, string[]>>(FACE_KEY, {})[me] ?? [];
+  social().setOrgAvatarFaces(list.filter(x => typeof x === 'string'));
+};
+export function toggleMemberFace(userId: string): void {
+  const me = getUserId();
+  if (!me || !userId) return;
+  const cur = new Set(social().orgAvatarFaces);
+  if (cur.has(userId)) cur.delete(userId); else cur.add(userId);
+  const list = [...cur].slice(-100);
+  social().setOrgAvatarFaces(list);
+  const all = readJson<Record<string, string[]>>(FACE_KEY, {});
+  all[me] = list;
+  writeJson(FACE_KEY, all);
 }
 
 /** 举报过的动态：本机不再显示（7b） */
@@ -237,6 +259,7 @@ async function syncOrgsOnce(): Promise<void> {
   loadBlocked(me);
   loadHidden(me);
   loadSeen(me);
+  loadFaces(me);
   ensureAutoPush();
   const listed = await listMyMemberships();
   if (!listed) return; // 拉取失败：本地什么都不动

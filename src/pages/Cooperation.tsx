@@ -4,13 +4,12 @@ import { useAppStore, toLocalDateKey } from '@/store';
 import { useShallow } from 'zustand/react/shallow';
 import { useCloudStore } from '@/store/cloud';
 import { useCloudSocialStore } from '@/store/cloudSocial';
-import { PageTitle } from '@/components/PageTitle';
 import { useUiChannel } from '@/ui/useUiChannel';
-import { P3R, P3RPage, GhostWords, P3PageHeader, SlantButton, slantClip } from '@/components/p3r/kit';
-import { P5R, P5_FONT, P5Collage, P5SubBar, P5Star, P5Dots, P5Slab, P5RPage, P5StarFab } from '@/components/p5r/kit';
+import { P3R, P3RPage, GhostWords, SlantButton, slantClip } from '@/components/p3r/kit';
+import { P5R, P5_FONT, P5Star, P5Dots, P5Slab, P5RPage, P5StarFab } from '@/components/p5r/kit';
 import { ConfidantCard } from '@/components/cooperation/ConfidantCard';
 import { PactPartnerTag } from '@/components/cooperation/PactTag';
-import { OrgEntryCard } from '@/components/org/OrgEntryCard';
+import { BondTitle } from '@/components/org/BondTitle';
 import { OrgBadge } from '@/components/org/OrgBadge';
 import { GoalLine, SwapFaces, swapTagProps, useStatusSwap } from '@/components/profile/PresenceLine';
 import { ConfidantAlbumWall } from '@/components/cooperation/ConfidantAlbumWall';
@@ -412,39 +411,9 @@ export function Cooperation() {
         </div>
       )}
       <div className="flex items-center gap-2">
-        {p5 ? (
-          /* P5UI/p5-cooperation：拼贴「羁绊」（羁=红底黑字/绊=纸底黑字）+ COOPERATION 黑条 */
-          <div className="min-w-0 pt-1">
-            <P5Collage
-              size={40}
-              tiles={[
-                { ch: '羁', bg: P5R.red, fg: P5R.ink, scale: 1.05, rot: -3.5, dy: 0 },
-                { ch: '绊', bg: P5R.paper, fg: P5R.ink, rot: 2.5, dy: 7 },
-              ]}
-            />
-            <div className="mt-2 pl-8">
-              <P5SubBar segs={[{ t: 'COOPERATION' }]} star={false} rot={-1.2} className="!px-2.5 !py-0.5" />
-            </div>
-          </div>
-        ) : isP4 ? (
-          /* p4-cooperation-reference-v2：衬线特大「同伴」+ COOPERATION FILE 眉标（FILE 橙染） */
-          <div>
-            <h1
-              className="text-[50px] font-black leading-[1.02] tracking-tight text-[#131313]"
-              style={{ fontFamily: 'var(--p4-display-font, serif)' }}
-            >
-              同伴
-            </h1>
-            <div className="mt-1 text-xs font-black tracking-[0.2em] text-[#131313]">
-              COOPERATION <span className="text-[var(--p4-orange,#f9a11b)]">FILE</span>
-            </div>
-          </div>
-        ) : p3 ? (
-          <P3PageHeader ticks title="同伴" className="pt-1" />
-        ) : (
-          <PageTitle title="同伴" en="Cooperation" enOffset={{ right: -32 }} />
-        )}
-        <div className="ml-auto flex items-center gap-2">
+        {/* 页头标题：点一下切到平级的「组织」（第 7 轮验收；没配云端 / 组织还没拉到时就是普通标题） */}
+        <BondTitle view="companions" />
+        <div className="ml-auto flex shrink-0 items-center gap-2 whitespace-nowrap">
           {p5 ? (
             /* P5UI/p5-cooperation：N / 22 黑底斜章 + 白星 */
             <span className="flex items-center gap-1.5 px-2.5 py-1" style={{ background: '#050505', clipPath: 'polygon(6px 0, 100% 2px, calc(100% - 5px) 100%, 0 calc(100% - 3px))', boxShadow: '0 0 0 2px #f0e9df' }} aria-label={`已缔结 ${activeCount} / ${MAJOR_ARCANA_IDS.length}`}>
@@ -654,9 +623,6 @@ export function Cooperation() {
           </div>
         </div>
       )}
-
-      {/* 组织（第 7 轮）：过滤条上方的入口 */}
-      <OrgEntryCard />
 
       {/* 过滤 Tabs + 视图切换（P9：专辑墙 ⇄ 列表，右上角、持久记忆）。
           P4：激活项 = 蓝色花形 blob（白星闪），其余为黑粗文字；

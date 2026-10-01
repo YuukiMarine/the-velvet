@@ -2168,6 +2168,8 @@ export interface OrgMember {
   codenameKind: OrgCodenameKind;
   /** 代表牌（大阿卡纳 id）；刚加入、还没选时为空 */
   tarotId?: string;
+  /** 头像地址（拉成员时展开 user 带出来的，不存在成员行上；没有头像就是空） */
+  avatarUrl?: string;
   card: OrgMemberCard;
   /** 周日会议写的一句话目标，以及它是哪一周的（7b） */
   goal?: string;
@@ -2224,7 +2226,7 @@ export interface OrgPost {
   createdAt: Date;
 }
 
-/** 六个预设标签：太强了 / 同款努力 / 稳 / 羡慕 / 我也去做 / 抱抱 */
+/** 六个预设标签：太强了 / 🤣👉 / 稳 / 羡慕 / 我也去做 / 抱抱（id same 的显示字第 7 轮验收后改成 🤣👉） */
 export type OrgReactionTag = 'strong' | 'same' | 'steady' | 'envy' | 'metoo' | 'hug';
 
 export interface OrgReaction {

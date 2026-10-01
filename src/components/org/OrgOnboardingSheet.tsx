@@ -1,8 +1,9 @@
 /**
  * 建立 / 加入组织的引导（第 7 轮 · PRD §12.4 / §12.5 / §12.9），以及「改我的成员牌」。
- *   create：守则（第一次）→ 组织资料 → 选代表牌 + 定代号 → 入队仪式 → 进据点
- *   join  ：守则（第一次）→ 输邀请码 → 预览组织 → 加入 → 选代表牌 + 定代号 → 入队仪式 → 进据点
+ *   create：守则（第一次）→ 组织资料 → 选代表牌 → 定代号 → 入队仪式 → 进据点
+ *   join  ：守则（第一次）→ 输邀请码 → 预览组织 → 加入 → 选代表牌 → 定代号 → 入队仪式 → 进据点
  *   card  ：只改代表牌与代号（据点里「我的牌」）
+ * 选代表牌是滑动选牌（TarotCoverflow，和同伴专辑墙一个手感），选定之后再定代号。
  * 建好 / 加入之后中途关掉也不要紧：组织已经在了，据点里会提示「还没选代表牌」。
  */
 import { useEffect, useMemo, useState } from 'react';
@@ -27,10 +28,11 @@ import {
   acceptOrgRules, createOrgFromUi, joinOrgFromUi, orgRulesAccepted, previewOrg, saveMyCardFromUi,
 } from '@/services/orgSync';
 import { EmblemBadge, OrgButton, OrgEmblem, useOrgTone } from './orgUi';
+import { TarotCoverflow, coverflowStart } from './TarotCoverflow';
 import type { Org, OrgCodenameKind } from '@/types';
 
 export type OnboardingMode = 'create' | 'join' | 'card';
-type Step = 'rules' | 'form' | 'code' | 'preview' | 'card';
+type Step = 'rules' | 'form' | 'code' | 'preview' | 'card' | 'codename';
 
 const errText = (e: unknown, fallback: string) => (e instanceof Error && e.message ? e.message : fallback);
 
@@ -57,6 +59,8 @@ export function OrgOnboardingSheet({ mode, orgId: editOrgId, onClose, onDone }: 
   // 选牌
   const [orgId, setOrgId] = useState<string | null>(null);
   const [tarotId, setTarotId] = useState('');
+  /** 滑动选牌停在哪一张（MAJOR_ARCANA 下标） */
+  const [pick, setPick] = useState(0);
   const [kind, setKind] = useState<OrgCodenameKind>('nickname');
   const [custom, setCustom] = useState('');
   // 仪式
@@ -74,7 +78,8 @@ export function OrgOnboardingSheet({ mode, orgId: editOrgId, onClose, onDone }: 
       setTarotId(v?.me.tarotId ?? '');
       setKind(v?.me.codenameKind ?? 'nickname');
       setCustom(v?.me.codenameKind === 'custom' ? v.me.codename : '');
-      setStep('card');
+      // 已经有牌：先到「定代号」（只改代号不用再翻一遍牌），要换牌点「换一张」；还没牌就直接选牌
+      setStep(v?.me.tarotId ? 'codename' : 'card');
       return;
     }
     setOrgId(null);
@@ -91,6 +96,13 @@ export function OrgOnboardingSheet({ mode, orgId: editOrgId, onClose, onDone }: 
 
   const view = orgs.find(x => x.org.id === orgId);
   const taken = useMemo(() => (view ? takenTarots(view.members, view.me.userId) : new Set<string>()), [view]);
+  // 进选牌这一步时，停在自己现在那张（没有就是第一张没人持有的）
+  useEffect(() => {
+    if (step === 'card') setPick(coverflowStart(tarotId || undefined, taken));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step]);
+  const pickCard = MAJOR_ARCANA[pick];
+  const pickTaken = !!pickCard && taken.has(pickCard.id);
   const codenamePreview = kind === 'tarot' ? (tarotCardOf(tarotId)?.name ?? '（先选一张牌）') : kind === 'nickname' ? ([...nickname.trim()].slice(0, ORG_CODENAME_MAX).join('') || '（还没有昵称）') : (custom.trim() || '（写一个代号）');
 
   const run = async (fn: () => Promise<void>) => {
@@ -131,7 +143,9 @@ export function OrgOnboardingSheet({ mode, orgId: editOrgId, onClose, onDone }: 
     form: '建立组织',
     code: '加入组织',
     preview: '加入组织',
-    card: mode === 'card' ? '我的成员牌' : '选一张代表牌',
+    // 标题短一点：红 / 黄频道的弹层标题字很大，长了会折成两行，把牌意挤到下面去
+    card: mode === 'card' ? '换代表牌' : '选代表牌',
+    codename: mode === 'card' ? '我的成员牌' : '定代号',
   };
 
   const footer = (() => {
@@ -146,7 +160,19 @@ export function OrgOnboardingSheet({ mode, orgId: editOrgId, onClose, onDone }: 
         </div>
       );
     }
-    return <OrgButton onClick={doSaveCard} disabled={busy || !tarotId} className="w-full">{busy ? '保存中…' : mode === 'card' ? '保存' : '放进名册'}</OrgButton>;
+    if (step === 'card') {
+      return (
+        <OrgButton onClick={() => { if (pickCard && !pickTaken) { setTarotId(pickCard.id); setError(''); setStep('codename'); } }} disabled={!pickCard || pickTaken} className="w-full">
+          {pickTaken ? '这张已经有人了' : `就选「${pickCard?.name ?? ''}」`}
+        </OrgButton>
+      );
+    }
+    return (
+      <div className="flex gap-2.5">
+        <OrgButton tone="ghost" onClick={() => { setStep('card'); setError(''); }} disabled={busy}>换一张</OrgButton>
+        <OrgButton onClick={doSaveCard} disabled={busy || !tarotId} className="flex-1">{busy ? '保存中…' : mode === 'card' ? '保存' : '放进名册'}</OrgButton>
+      </div>
+    );
   })();
 
   return (
@@ -243,9 +269,15 @@ export function OrgOnboardingSheet({ mode, orgId: editOrgId, onClose, onDone }: 
 
           {step === 'card' && (
             <>
-              <Field label="代表牌" count="同一组织里每张只能一个人">
-                <TarotGrid value={tarotId} taken={taken} onPick={setTarotId} />
-              </Field>
+              <TarotCoverflow index={pick} onIndex={setPick} taken={taken} />
+              {/* 提示放在刻度条下面：黄频道弹层右上角有贴纸，放上面会被压住；矮屏上收起来 */}
+              <p className="-mt-2 text-center text-[11px] font-semibold text-gray-500 dark:text-gray-400 [@media(max-height:640px)]:hidden">左右滑动挑一张 · 同一组织里每张只能一个人</p>
+            </>
+          )}
+
+          {step === 'codename' && (
+            <>
+              <ChosenCard tarotId={tarotId} />
               <Field label="代号">
                 <div className="grid grid-cols-3 gap-2">
                   {([['nickname', '用昵称'], ['tarot', '用牌名'], ['custom', '自己写']] as const).map(([k, label]) => {
@@ -305,34 +337,31 @@ function Field({ label, count, children }: { label: string; count?: string; chil
   );
 }
 
-/** 22 张大阿卡纳：已被别人占的灰掉 */
-function TarotGrid({ value, taken, onPick }: { value: string; taken: Set<string>; onPick: (id: string) => void }) {
+/** 选定的那张：小牌面、编号 · 英文名、牌名、一句牌意 */
+function ChosenCard({ tarotId }: { tarotId: string }) {
   const set = useTarotArtSet();
   const tone = useOrgTone();
+  const c = tarotCardOf(tarotId);
+  if (!c) return null;
+  const url = tarotArtUrl(c.id, set);
   return (
-    <div className="grid grid-cols-4 gap-2 sm:grid-cols-6">
-      {MAJOR_ARCANA.map(c => {
-        const on = c.id === value;
-        const off = taken.has(c.id);
-        const url = tarotArtUrl(c.id, set);
-        return (
-          <button
-            key={c.id}
-            type="button"
-            disabled={off}
-            onClick={() => onPick(c.id)}
-            aria-pressed={on}
-            aria-label={`${c.name}${off ? '（已有人持有）' : ''}`}
-            className="relative overflow-hidden text-left disabled:cursor-not-allowed"
-            style={{ aspectRatio: '1 / 1.6', borderRadius: tone.channel === 'p4' ? 10 : tone.channel === 'neutral' ? 8 : 0, outline: on ? `3px solid ${tone.accent}` : undefined, outlineOffset: 1 }}
-          >
-            {url ? <img src={url} alt="" loading="lazy" draggable={false} className="absolute inset-0 h-full w-full object-cover" style={{ filter: off ? 'grayscale(1) brightness(0.55)' : undefined }} /> : <span className="absolute inset-0" style={{ background: c.accent }} />}
-            <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent px-1 pb-1 pt-4 text-center text-[10px] font-black leading-none text-white">{c.name}</span>
-            {off && <span className="absolute inset-x-0 top-1/3 text-center text-[10px] font-black text-white/90">有人了</span>}
-            {on && <span className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-black text-white" style={{ background: tone.accent }}>✓</span>}
-          </button>
-        );
-      })}
+    <div className="flex items-center gap-3.5">
+      <span
+        className="relative block h-[100px] w-[62px] shrink-0 overflow-hidden"
+        style={{
+          background: c.accent,
+          borderRadius: tone.channel === 'p4' ? 10 : tone.channel === 'neutral' ? 8 : 0,
+          clipPath: tone.channel === 'p5' ? roughQuad(2.3, 2.5) : tone.channel === 'p3' ? slantClip(6) : undefined,
+          boxShadow: tone.channel === 'p4' ? '0 0 0 2px #131313' : undefined,
+        }}
+      >
+        {url && <img src={url} alt="" draggable={false} className="absolute inset-0 h-full w-full object-cover" />}
+      </span>
+      <div className="min-w-0">
+        <div className="text-[11px] font-black tracking-[0.18em] text-gray-400">{c.roman} · {c.nameEn.toUpperCase()}</div>
+        <div className="text-[20px] font-black leading-tight text-gray-900 dark:text-white" style={{ fontFamily: tone.titleFont }}>{c.name}</div>
+        <div className="mt-1 text-[12px] font-semibold leading-relaxed text-gray-500 dark:text-gray-400">{c.upright.meaning}</div>
+      </div>
     </div>
   );
 }

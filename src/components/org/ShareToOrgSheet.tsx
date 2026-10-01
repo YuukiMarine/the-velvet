@@ -9,24 +9,22 @@ import { motion } from 'motion/react';
 import { useAppStore } from '@/store';
 import { useCloudSocialStore } from '@/store/cloudSocial';
 import { SheetModal } from '@/components/SheetModal';
-import { tarotArtUrl } from '@/constants/tarotArt';
-import { useTarotArtSet } from '@/ui/useTarotArtSet';
 import { slantClip } from '@/components/p3r/kit';
 import { roughQuad } from '@/components/p5r/kit';
 import { getUserId } from '@/services/pocketbase';
 import { refreshBoard, shareActivity } from '@/services/orgSync';
 import {
-  ORG_POSTS_PER_DAY, ORG_POST_TEXT_MAX, buildPostSnapshot, cleanSnapshotNames, defaultShareText, displayCodename, myPostsToday, tarotCardOf,
+  ORG_POSTS_PER_DAY, ORG_POST_TEXT_MAX, buildPostSnapshot, cleanSnapshotNames, defaultShareText, displayCodename, myPostsToday,
 } from '@/utils/orgLogic';
 import { SnapChip, snapChips } from './BoardSection';
 import { EmblemBadge, OrgButton, OrgPanel, useOrgTone } from './orgUi';
+import { MemberFace } from './MemberCard';
 import type { Activity } from '@/types';
 
 const errText = (e: unknown, fallback: string) => (e instanceof Error && e.message ? e.message : fallback);
 
 export function ShareToOrgSheet({ activity, onClose }: { activity: Activity | null; onClose: () => void }) {
   const tone = useOrgTone();
-  const set = useTarotArtSet();
   const orgs = useCloudSocialStore(s => s.orgs);
   const attributeNames = useAppStore(s => s.settings.attributeNames);
   const setCurrentPage = useAppStore(s => s.setCurrentPage);
@@ -58,7 +56,6 @@ export function ShareToOrgSheet({ activity, onClose }: { activity: Activity | nu
   const left = view ? Math.max(0, ORG_POSTS_PER_DAY - myPostsToday(view.posts, me)) : 0;
   const len = [...text].length;
   const chips = snapChips(snap);
-  const url = view?.me.tarotId ? tarotArtUrl(view.me.tarotId, set) : null;
 
   const submit = async () => {
     if (!activity || !view || busy) return;
@@ -153,9 +150,12 @@ export function ShareToOrgSheet({ activity, onClose }: { activity: Activity | nu
                 <div className="mb-1.5 text-[12px] font-black text-gray-600 dark:text-gray-300">大家会看到</div>
                 <OrgPanel padded={false} seed={63} className="px-4 py-3">
                   <div className="flex items-center gap-2.5">
-                    <span className="relative block h-[42px] w-[26px] shrink-0 overflow-hidden" style={{ background: tarotCardOf(view.me.tarotId)?.accent ?? 'rgba(127,127,127,0.2)', borderRadius: tone.channel === 'p4' ? 5 : tone.channel === 'neutral' ? 4 : 0, clipPath: tone.channel === 'p5' ? roughQuad(0.4, 1.5) : undefined, boxShadow: tone.channel === 'p4' ? '0 0 0 1.5px #131313' : undefined }}>
-                      {url && <img src={url} alt="" draggable={false} className="absolute inset-0 h-full w-full object-cover" />}
-                    </span>
+                    <MemberFace
+                      member={view.me}
+                      empty={<span aria-hidden className="absolute inset-0 flex items-center justify-center text-[13px] font-black" style={{ color: tone.sub }}>{[...displayCodename(view.me)][0] ?? '?'}</span>}
+                      className="h-[42px] w-[26px] shrink-0"
+                      style={{ borderRadius: tone.channel === 'p4' ? 5 : tone.channel === 'neutral' ? 4 : 0, clipPath: tone.channel === 'p5' ? roughQuad(0.4, 1.5) : undefined, boxShadow: tone.channel === 'p4' ? '0 0 0 1.5px #131313' : undefined }}
+                    />
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-[13px] font-black" style={{ fontFamily: tone.titleFont }}>{displayCodename(view.me)}</div>
                       <div className="text-[10px] font-bold" style={{ color: tone.sub }}>刚刚</div>

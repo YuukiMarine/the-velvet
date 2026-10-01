@@ -11,18 +11,17 @@ import { useAppStore } from '@/store';
 import { useCloudSocialStore } from '@/store/cloudSocial';
 import { ActionSheet } from '@/components/ActionSheet';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
-import { tarotArtUrl } from '@/constants/tarotArt';
-import { useTarotArtSet } from '@/ui/useTarotArtSet';
 import { useLongPress } from '@/utils/useLongPress';
 import { P3R, slantClip } from '@/components/p3r/kit';
 import { P5R, P5_TITLE_FONT, roughQuad } from '@/components/p5r/kit';
 import { P4Sparkle } from '@/ui/p4Kit';
 import {
-  ORG_TAGS, RESULT_LABEL, SHARE_KIND_LABEL, displayCodename, orgWeekKey, reactionSummary, shiftDayKey, tarotCardOf, timeAgo,
+  ORG_TAGS, RESULT_LABEL, SHARE_KIND_LABEL, displayCodename, orgWeekKey, reactionSummary, shiftDayKey, timeAgo,
 } from '@/utils/orgLogic';
 import { deletePostFromUi, reactToPost, reportPostFromUi, setMemberBlocked } from '@/services/orgSync';
 import type { OrgReportReason } from '@/services/orgs';
 import { OrgButton, OrgPanel, useOrgTone, type OrgTone } from './orgUi';
+import { MemberFace } from './MemberCard';
 import type { Org, OrgMinutesSnapshot, OrgPost, OrgPostSnapshot, OrgReactionTag, OrgView } from '@/types';
 
 const REPORT_REASONS: Array<{ id: OrgReportReason; label: string }> = [
@@ -136,15 +135,12 @@ function PostCard({ post, view, tone, blocked, index, onReact, onMore }: {
   post: OrgPost; view: OrgView; tone: OrgTone; blocked: Set<string>; index: number;
   onReact: (tag: OrgReactionTag) => void; onMore: () => void;
 }) {
-  const set = useTarotArtSet();
   // 长按 = 「⋯」菜单；长按松手后浏览器还会补一个 click，别让它顺手把标签也点了
   const longFired = useRef(false);
   const { pressing, bindings } = useLongPress(() => { longFired.current = true; onMore(); });
   const author = view.members.find(m => m.userId === post.userId);
   const mine = post.userId === view.me.userId;
   const codename = author ? displayCodename(author) : (post.snapshot?.by.codename || '已退出的成员');
-  const tarotId = author?.tarotId ?? post.snapshot?.by.tarotId;
-  const url = tarotId ? tarotArtUrl(tarotId, set) : null;
   const snap = post.snapshot;
   const { mine: myTag, byTag } = reactionSummary(view.reactions, post.id, view.me.userId, blocked);
   const nameOf = (uid: string) => {
@@ -167,11 +163,13 @@ function PostCard({ post, view, tone, blocked, index, onReact, onMore }: {
     >
       <OrgPanel padded={false} seed={60 + (index % 9)} className="px-4 py-3">
         <div className="flex items-center gap-2.5">
-          <span className="relative block h-[42px] w-[26px] shrink-0 overflow-hidden" style={{ background: tarotCardOf(tarotId)?.accent ?? 'rgba(127,127,127,0.2)', borderRadius: tone.channel === 'p4' ? 5 : tone.channel === 'neutral' ? 4 : 0, clipPath: tone.channel === 'p5' ? roughQuad(index + 0.4, 1.5) : undefined, boxShadow: tone.channel === 'p4' ? '0 0 0 1.5px #131313' : undefined }}>
-            {url
-              ? <img src={url} alt="" loading="lazy" draggable={false} className="absolute inset-0 h-full w-full object-cover" />
-              : <span aria-hidden className="absolute inset-0 flex items-center justify-center text-[13px] font-black" style={{ color: tone.sub, fontFamily: tone.titleFont }}>{[...codename][0] ?? '?'}</span>}
-          </span>
+          <MemberFace
+            member={author}
+            fallbackTarot={post.snapshot?.by.tarotId}
+            empty={<span aria-hidden className="absolute inset-0 flex items-center justify-center text-[13px] font-black" style={{ color: tone.sub, fontFamily: tone.titleFont }}>{[...codename][0] ?? '?'}</span>}
+            className="h-[42px] w-[26px] shrink-0"
+            style={{ borderRadius: tone.channel === 'p4' ? 5 : tone.channel === 'neutral' ? 4 : 0, clipPath: tone.channel === 'p5' ? roughQuad(index + 0.4, 1.5) : undefined, boxShadow: tone.channel === 'p4' ? '0 0 0 1.5px #131313' : undefined }}
+          />
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 items-center gap-1.5">
               <span className="truncate text-[13px] font-black" style={{ fontFamily: tone.titleFont }}>{codename}</span>

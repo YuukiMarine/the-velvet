@@ -43,10 +43,24 @@ export const mapOrg = (r: RecordModel): Org => ({
 const CODENAME_KINDS: readonly OrgCodenameKind[] = ['custom', 'nickname', 'tarot'];
 const RESULTS = ['done', 'partial', 'missed'] as const;
 
+/** 展开的 user 上的头像 → 可以直接放进 <img> 的地址；没展开 / 没头像 → undefined */
+function avatarOf(r: RecordModel): string | undefined {
+  const u = (r.expand as Record<string, RecordModel | undefined> | undefined)?.user;
+  const raw = u?.avatar as string | string[] | undefined;
+  const file = Array.isArray(raw) ? raw[0] : raw;
+  if (!u || !file || !pb) return undefined;
+  const files = (pb as unknown as { files?: { getURL?: (rec: RecordModel, f: string) => string; getUrl?: (rec: RecordModel, f: string) => string } }).files;
+  return files?.getURL?.(u, file) || files?.getUrl?.(u, file) || undefined;
+}
+
+/** 拉成员时顺带展开 user，只要头像需要的几个字段 */
+const MEMBER_QUERY = { expand: 'user', fields: '*,expand.user.id,expand.user.collectionId,expand.user.collectionName,expand.user.avatar' } as const;
+
 export const mapMember = (r: RecordModel): OrgMember => ({
   id: r.id,
   orgId: str(r.org),
   userId: str(r.user),
+  avatarUrl: avatarOf(r),
   slot: r.slot === 'own' ? 'own' : 'joined',
   seat: typeof r.seat === 'number' ? r.seat : Number(r.seat) || 0,
   codename: str(r.codename),
@@ -142,7 +156,7 @@ export async function listMyMemberships(): Promise<Membership[] | null> {
 }
 
 export async function listOrgMembers(orgId: string): Promise<OrgMember[]> {
-  const rows = await pb!.collection('org_members').getFullList({ filter: `org = ${pbQuote(orgId)}`, sort: 'seat', requestKey: null });
+  const rows = await pb!.collection('org_members').getFullList({ filter: `org = ${pbQuote(orgId)}`, sort: 'seat', ...MEMBER_QUERY, requestKey: null });
   return rows.map(mapMember);
 }
 
