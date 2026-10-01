@@ -577,7 +577,7 @@ export const UnlockCutInP5 = ({ isOpen, onClose, heading, name, lines }: {
         <span aria-hidden className="pointer-events-none absolute -bottom-4 left-[12%] h-[26%] w-[70%]" style={{ background: '#5c0004', clipPath: roughQuad(453, 13), transform: 'rotate(-2deg)' }} />
 
         <P5Panel seed={450} jag={13} frame={4} keyline={0} face={P5R.paper} shadow={{ x: 6, y: 8 }} bodyClassName="px-4 pb-4 pt-10">
-          {/* 多环巨星（黑/纸/红/纸/黑）+ 两侧小星与斜刺 */}
+          {/* 多环巨星（黑/纸/红/纸/黑）+ 两侧小星（右边原来还有两根红 / 黑斜刺，验收说看着像两条多余的线，拿掉了） */}
           <motion.div
             aria-hidden
             className="pointer-events-none relative mx-auto"
@@ -589,8 +589,6 @@ export const UnlockCutInP5 = ({ isOpen, onClose, heading, name, lines }: {
             <P5RingStar size={158} className="absolute left-0 top-0" />
             <P5Star size={26} fill={P5R.grey} rot={-14} className="absolute" style={{ left: -12, bottom: 22 }} />
             <P5Star size={21} fill={P5R.red} rot={12} className="absolute" style={{ right: -7, top: 12 }} />
-            <span className="absolute" style={{ right: -12, top: 82, width: 36, height: 5, background: P5R.red, transform: 'rotate(24deg)' }} />
-            <span className="absolute" style={{ right: -15, top: 92, width: 29, height: 5, background: P5R.ink, transform: 'rotate(38deg)' }} />
           </motion.div>
 
           {/* 名称黑条 */}

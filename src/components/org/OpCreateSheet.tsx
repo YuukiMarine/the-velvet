@@ -1,9 +1,9 @@
 /**
- * 发起作战（第 8 轮 · PRD §13.1 / §13.3）。
- *   · 类型：小作战（任何成员）/ 大作战（只有队长）；
- *   · 一句话（小作战）/ 共同目标（大作战），≤20 字、过屏蔽词；截止日（组织时区的今天 ~ 30 天后，带几个快捷档）；
+ * 发起目标 / 作战（第 8 轮 · PRD §13.1 / §13.3；验收后的叫法：small = 目标，big = 作战）。
+ *   · 类型：目标（任何成员）/ 作战（只有队长）；
+ *   · 一句话（目标）/ 作战目标（作战），≤20 字、过屏蔽词；截止日（组织时区的今天 ~ 30 天后，带几个快捷档）；
  *   · 这次练哪个属性（参与者待办的默认属性）；参与者（成员小牌多选，默认全选，至少 2 人）；
- *   · 大作战多一栏「分工」：每人一行子任务，可以空着（空着 = Ta 自己写）；「AI 拆解」一键填（没配 AI 时灰着）。
+ *   · 作战多一栏「分工」：每人一行子任务，可以空着（空着 = Ta 自己写）；「AI 拆解」一键填（没配 AI 时灰着）。
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { SheetModal } from '@/components/SheetModal';
@@ -12,7 +12,7 @@ import { P3R, slantClip } from '@/components/p3r/kit';
 import { roughQuad } from '@/components/p5r/kit';
 import { createOpFromUi } from '@/services/orgOpsSync';
 import {
-  ORG_OP_MIN_PEOPLE, ORG_OP_TASK_MAX, ORG_OP_TITLE_MAX, checkOpDraft, normalizeOpDraft, opDeadlineRange, type OpDraft,
+  OP_KIND_LABEL, ORG_OP_MIN_PEOPLE, ORG_OP_TASK_MAX, ORG_OP_TITLE_MAX, checkOpDraft, normalizeOpDraft, opDeadlineRange, type OpDraft,
 } from '@/utils/orgOps';
 import { hasOpsAI, splitOperationAI } from '@/utils/orgOpsAI';
 import { displayCodename, shiftDayKey } from '@/utils/orgLogic';
@@ -88,7 +88,7 @@ export function OpCreateSheet({ view, open, onClose, onDone }: { view: OrgView; 
       const inIt = op.participants.includes(view.me.userId);
       onDone(inIt ? '发出去了：你的任务里也多了一条' : '发出去了');
     } catch (e) {
-      setError(errText(e, '作战没发出去，稍后再试'));
+      setError(errText(e, '没发出去，稍后再试'));
     } finally {
       setBusy(false);
     }
@@ -107,14 +107,14 @@ export function OpCreateSheet({ view, open, onClose, onDone }: { view: OrgView; 
     <SheetModal
       isOpen={open}
       onClose={() => { if (!busy) onClose(); }}
-      title="发起作战"
+      title={`发起${OP_KIND_LABEL[kind]}`}
       busy={busy}
       maxHeightClass="max-h-[90vh]"
       footer={(
         <div className="px-4 pb-3 pt-2">
           {error && <p role="alert" className="mb-2 text-[12px] font-bold leading-relaxed text-rose-500">{error}</p>}
           <OrgButton onClick={() => void submit()} disabled={busy || !!problem} className="w-full">
-            {busy ? '发出中…' : problem && title.trim() ? problem : `发起${kind === 'big' ? '大' : '小'}作战`}
+            {busy ? '发出中…' : problem && title.trim() ? problem : `发起这个${OP_KIND_LABEL[kind]}`}
           </OrgButton>
         </div>
       )}
@@ -123,23 +123,23 @@ export function OpCreateSheet({ view, open, onClose, onDone }: { view: OrgView; 
         <Field label="类型">
           <div className="grid grid-cols-2 gap-2">
             <button type="button" onClick={() => setKind('small')} aria-pressed={kind === 'small'} className="px-2 py-2 text-left" style={pick(kind === 'small', 1)}>
-              <div className="text-[14px] font-black">小作战</div>
+              <div className="text-[14px] font-black">{OP_KIND_LABEL.small}</div>
               <div className="mt-0.5 text-[11px] font-semibold opacity-80">一句话，大家做同一件事</div>
             </button>
             <button type="button" onClick={() => leader && setKind('big')} aria-pressed={kind === 'big'} disabled={!leader} className="px-2 py-2 text-left disabled:opacity-45" style={pick(kind === 'big', 2)}>
-              <div className="text-[14px] font-black">大作战</div>
-              <div className="mt-0.5 text-[11px] font-semibold opacity-80">{leader ? '共同目标 + 每人一份' : '只有队长能发'}</div>
+              <div className="text-[14px] font-black">{OP_KIND_LABEL.big}</div>
+              <div className="mt-0.5 text-[11px] font-semibold opacity-80">{leader ? '一个作战目标，每人分一份' : '只有队长能发'}</div>
             </button>
           </div>
         </Field>
 
-        <Field label={kind === 'big' ? '共同目标' : '这次一起做什么'} count={`${[...title].length} / ${ORG_OP_TITLE_MAX}`}>
+        <Field label={kind === 'big' ? '作战目标' : '这次一起做什么'} count={`${[...title].length} / ${ORG_OP_TITLE_MAX}`}>
           <input
             value={title}
             onChange={e => setTitle([...e.target.value].slice(0, ORG_OP_TITLE_MAX).join(''))}
             placeholder={kind === 'big' ? '比如：一起做完期末复习' : '比如：这周每人跑一次 5 公里'}
             className={inputCls}
-            aria-label={kind === 'big' ? '共同目标' : '这次一起做什么'}
+            aria-label={kind === 'big' ? '作战目标' : '这次一起做什么'}
           />
         </Field>
 
@@ -193,7 +193,7 @@ export function OpCreateSheet({ view, open, onClose, onDone }: { view: OrgView; 
                 {aiBusy ? '拆解中…' : '✦ AI 拆解分工'}
               </button>
               <span className="min-w-0 text-[11px] font-semibold leading-snug text-gray-500 dark:text-gray-400">
-                {aiOk ? (title.trim() ? '按目标和每个人的代表牌、面具拆，拆完还能改' : '先写共同目标') : '要先在「设置 → AI」里填好 API Key'}
+                {aiOk ? (title.trim() ? '按作战目标和每个人的代表牌、面具拆，拆完还能改' : '先写作战目标') : '要先在「设置 → AI」里填好 API Key'}
               </span>
             </div>
             <div className="space-y-2">
@@ -210,7 +210,7 @@ export function OpCreateSheet({ view, open, onClose, onDone }: { view: OrgView; 
                 </div>
               ))}
             </div>
-            <p className="mt-1.5 text-[11px] font-semibold leading-relaxed text-gray-500 dark:text-gray-400">空着的人会在作战里「写下我的一份」；没写之前，Ta 的任务就是共同目标本身。</p>
+            <p className="mt-1.5 text-[11px] font-semibold leading-relaxed text-gray-500 dark:text-gray-400">空着的人会在作战里「写下我的一份」；没写之前，Ta 的任务就是作战目标本身。</p>
           </Field>
         )}
       </div>

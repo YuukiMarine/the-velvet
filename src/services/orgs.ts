@@ -608,8 +608,8 @@ export async function createOperation(orgId: string, d: OpDraft): Promise<OrgOpe
       participants: d.participants, assignments: d.kind === 'big' ? d.assignments : {}, status: 'active',
     }, { requestKey: null }));
   } catch (err) {
-    if (ruleDenied(err)) throw new OrgError(d.kind === 'big' ? '只有队长能发大作战' : '没发出去：你可能已经不在这个组织里了');
-    throw new OrgError(describeOrgError(err, '作战没发出去，稍后再试'));
+    if (ruleDenied(err)) throw new OrgError(d.kind === 'big' ? '只有队长能发作战' : '没发出去：你可能已经不在这个组织里了');
+    throw new OrgError(describeOrgError(err, '没发出去，稍后再试'));
   }
 }
 

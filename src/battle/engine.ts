@@ -14,8 +14,10 @@
  *  - 意图明牌：回合开始锁定；洞察（2SP 免回合）展开详情
  *  - 双向打断：玩家把前摇中的大招打入失衡=取消；Shadow 打断意图=真取消玩家蓄力
  *  - 状态口径：回合开始衰减 + fresh 免衰减（statusEngine）
- *  - 借来的面具（第 8 轮）：组织队友展示的面具快照，不换出战位、不吃克制 / 弱点 / 自己面具的被动，
+ *  - 借来的面具（第 8 轮）：组织队友展示的面具快照，不吃克制 / 弱点 / 自己面具的被动，
  *    伤害 = 威力 × 据点系数 + 通用增益；每周能带进 3 场，场数由 UI 按 snapshot.borrowUsed 记
+ *  - 第 9 轮：它是第六张面具（wearBorrowed 戴上）。只是戴上不算一场（左右切换会路过这一格），
+ *    戴着它出手或放它的技能才算；本周用完了（这一场也还没用过）就戴不上
  *
  * ⚠️ 只允许相对导入（模拟战脚本用 tsx 直跑，不解析 '@/' 别名）。
  */
@@ -175,7 +177,9 @@ export type PlayerActionInput =
   | { kind: 'insight' }
   | { kind: 'itemHeal'; amount: number; label: string }
   | { kind: 'itemSp'; amount: number; label: string }
-  | { kind: 'borrowed'; index: number };
+  | { kind: 'borrowed'; index: number }
+  /** 第 9 轮：戴上同调来的面具（第六张；自由行动，不吞回合） */
+  | { kind: 'wearBorrowed' };
 
 export type FxType =
   | 'shadowHit' | 'playerHit' | 'weak' | 'stagger' | 'staggerEnd' | 'phase2'
@@ -190,6 +194,8 @@ export interface FxEvent {
   isCrit?: boolean;
   hpAfter?: number;
   attr?: AttributeId;
+  /** maskSwitch：换上的是同调来的第六张 */
+  borrowed?: boolean;
 }
 
 export interface PersistPatch {
@@ -246,7 +252,12 @@ export class BattleEngine {
   private kindnessRevived = false;
   private dexSkillCount = 0;
   private consecutiveWeakness = 0;
+  /** 「召唤过」的面具：用这张面具出过招（技能 / 普攻）才算（第 9 轮：只是路过、切换不算）——面具羁绊进度、「五面具」壮举看它 */
   private masksSummoned = new Set<AttributeId>();
+  /** 这一场切到过的面具（首次切换放完整 cut-in 用；开场那张算切到过） */
+  private masksShown = new Set<AttributeId>();
+  /** 第 9 轮：戴着同调来的第六张面具——万能属性：挨打不吃克制、自己面具的被动不生效、普攻也是万能 */
+  private wearingBorrowed = false;
   comboCount = 0;
   // ── 批3 · 养成侧一次性/待消费标记 ──
   private relicMods: RelicMods;
@@ -323,7 +334,7 @@ export class BattleEngine {
     this.playerMaxHp = setup.playerMaxHp;
     this.sp = setup.sp;
     this.activeMask = setup.initialMask;
-    this.masksSummoned.add(setup.initialMask);
+    this.masksShown.add(setup.initialMask);
 
     const sh = setup.shadow;
     this.shName = sh.name;
@@ -393,6 +404,11 @@ export class BattleEngine {
       allOutUsed: this.allOutUsed,
       // ── 第 8 轮 借来的面具 ──
       borrowUsed: this.borrowUsed,
+      /** 正戴着同调来的第六张面具 */
+      wearingBorrowed: this.wearingBorrowed,
+      /** 防御这一下实际能回多少 SP（静默周 0；单场回 SP 到上限后 0） */
+      defendSpGain: this.setup.abyssRule === 'silence' ? 0 : Math.max(0, Math.min(DEFEND_SP_REGEN, DEFEND_SP_CAP_PER_BATTLE - this.defendSpGained)),
+      defendSilence: this.setup.abyssRule === 'silence',
       /** 这一场能不能用借来的技能（本周还有场数，或者这一场已经用过） */
       borrowAvailable: !!this.setup.borrowed && (this.borrowUsed || this.setup.borrowed.usable),
       // ── R18 ──
@@ -462,6 +478,7 @@ export class BattleEngine {
     if (this.over) return this.result([], [], false, false);
     switch (input.kind) {
       case 'switchMask': return this.doSwitchMask(input.attribute);
+      case 'wearBorrowed': return this.doWearBorrowed();
       case 'insight': return this.doInsight();
       case 'itemHeal': return this.doItemHeal(input.amount, input.label);
       case 'itemSp': return this.doItemSp(input.amount, input.label);
@@ -536,14 +553,31 @@ export class BattleEngine {
   private doSwitchMask(attr: AttributeId): TurnResult {
     const lines: string[] = [];
     const fx: FxEvent[] = [];
-    if (attr === this.activeMask) return this.result(lines, fx, false, false);
+    // 戴着同调来的那张时，换回原来那张也算一次换面具
+    if (attr === this.activeMask && !this.wearingBorrowed) return this.result(lines, fx, false, false);
+    this.wearingBorrowed = false;
     this.activeMask = attr;
-    const first = !this.masksSummoned.has(attr);
-    this.masksSummoned.add(attr);
+    const first = !this.masksShown.has(attr);
+    this.masksShown.add(attr);
     // 批3：面具挂绳（首次攻击加算）/ 舞台魅影（首次攻击必暴击，每场1次）武装
     if (this.relicMods.maskSwitchAdd > 0) this.maskSwitchArmed = true;
     if (this.chain === 'dexterity+charm' && !this.stageCritUsed) this.stageCritArmed = true;
     fx.push({ atLine: 0, type: 'maskSwitch', attr, isCrit: first });
+    return this.result(lines, fx, false, false);
+  }
+
+  /** 第 9 轮：戴上同调来的第六张（不武装遗物 / 共鸣的换面具效果——同调技能本来就不吃这些）。
+   *  只是戴上不记场数，出手时才记（doTurnAction）；本周用完了、这一场也还没用过 → 戴不上 */
+  private doWearBorrowed(): TurnResult {
+    const lines: string[] = [];
+    const fx: FxEvent[] = [];
+    const b = this.setup.borrowed;
+    if (!b || this.wearingBorrowed) return this.result(lines, fx, false, false);
+    if (!this.borrowUsed && !b.usable) {
+      return this.result(['借来的面具本周已经带进 3 场战斗了——下周一再来。'], fx, false, false);
+    }
+    this.wearingBorrowed = true;
+    fx.push({ atLine: 0, type: 'maskSwitch', borrowed: true });
     return this.result(lines, fx, false, false);
   }
 
@@ -590,6 +624,8 @@ export class BattleEngine {
     this.windowJustOpened = false;
     const windowOpenAtStart = this.staggerState === 'window';
     this.defending = false;
+    // 第 9 轮：戴着第六张出手 = 这一场用过它（挨打不吃克制也是用上了；UI 据 borrowUsed 记一场）
+    if (this.wearingBorrowed) this.borrowUsed = true;
 
     let grantedExtra = false;
 
@@ -650,6 +686,8 @@ export class BattleEngine {
   // ── 玩家：技能 ─────────────────────────────────────────
   private resolveSkill(skill: PersonaSkill, lines: string[], fx: FxEvent[]): boolean {
     const attr = this.activeMask;
+    // 用这张面具出过招，才算「召唤过」
+    this.masksSummoned.add(attr);
     const attrName = this.setup.attrNames[attr];
     const personaName = this.setup.personaNames[attr] ?? '反抗者';
 
@@ -1090,7 +1128,9 @@ export class BattleEngine {
     // R18：普攻固定 8 点，享受暴击率加成（连击 buff / 星图遗物 / 胆量面具 / 精算连击）
     const critBuff = findStatus(this.playerStatuses, 'crit_buff')?.value ?? 0;
     let critChance = critBuff + this.relicMods.critAdd;
-    if (this.activeMask === 'guts') critChance += GUTS_MASK_CRIT;
+    // 戴着同调来的那张：万能属性，胆量面具的暴击被动不生效；也不算自己哪张面具「召唤过」
+    if (this.activeMask === 'guts' && !this.wearingBorrowed) critChance += GUTS_MASK_CRIT;
+    if (!this.wearingBorrowed) this.masksSummoned.add(this.activeMask);
     if (this.chain === 'knowledge+dexterity') critChance += CHAIN_CRIT_ADD;
     const isCrit = this.rng() < critChance;
     const dmg = Math.max(1, Math.round(
@@ -1273,7 +1313,8 @@ export class BattleEngine {
     }
 
     // 克制环（承伤侧：Shadow 属性向 vs 出战面具）——提示只在受伤时随叙事出现，不做常驻角标
-    const defRing = ringMultiplier(this.shAttribute, this.activeMask);
+    // 戴着同调来的第六张：万能属性，不吃克制
+    const defRing = this.wearingBorrowed ? 1 : ringMultiplier(this.shAttribute, this.activeMask);
     atk *= defRing;
     if (defRing > 1) {
       lines.push(`属性受克！【${this.setup.attrNames[this.activeMask]}】面具难以招架，来袭伤害 ×1.2……`);
@@ -1327,7 +1368,7 @@ export class BattleEngine {
   }
 
   private handlePlayerLethal(lines: string[]) {
-    if (this.activeMask === 'kindness' && !this.kindnessRevived) {
+    if (this.activeMask === 'kindness' && !this.wearingBorrowed && !this.kindnessRevived) {
       this.kindnessRevived = true;
       this.playerHp = 1;
       lines.push('面具之力：绝境中回复了1点体力！');
@@ -1484,7 +1525,8 @@ export class BattleEngine {
     lines.push(`弱点变化了——现在是【${attrNames[newWeak]}】！`);
     if (resist) lines.push(`它对【${attrNames[resist]}】产生了耐性……`);
     lines.push('攻击力提升，小心！');
-    fx.push({ atLine: lines.length - 1, type: 'phase2' });
+    // value = 变成第几形态（2 / 3）：UI 闪「第二形态」还是「第三形态」
+    fx.push({ atLine: lines.length - 1, type: 'phase2', value: to });
   }
 
   private appendDefeatLines(lines: string[], fx: FxEvent[]) {

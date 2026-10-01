@@ -26,12 +26,15 @@ export const ORG_OP_FETCH_DAYS = 62;
 
 export type OpStatus = 'active' | 'achieved' | 'failed' | 'cancelled';
 
+/** 界面上的叫法（验收后改的）：small = 目标，big = 作战 */
+export const OP_KIND_LABEL: Record<OrgOpKind, string> = { small: '目标', big: '作战' };
+
 const clipText = (s: string, n: number): string => [...s.replace(/\s+/g, ' ').trim()].slice(0, n).join('');
 export const clipOpText = (s: string): string => clipText(s, ORG_OP_TITLE_MAX);
 
 // ── 每个人的那一份 ────────────────────────────────────────────────────────────────
 
-/** 这个人在这场作战里做什么：大作战分到的子任务 > 自己写下的那一份 > 共同目标（小作战人人都是那一句话） */
+/** 这个人在这一项里做什么：作战（big）分到的子任务 > 自己写下的那一份 > 作战目标；目标（small）人人都是那一句话 */
 export function taskOf(op: OrgOperation, checkins: OrgCheckin[] | undefined, userId: string): { text: string; source: 'assigned' | 'plan' | 'goal' } {
   if (op.kind === 'big') {
     const a = (op.assignments[userId] ?? '').trim();
@@ -186,7 +189,7 @@ const auditMessage = (kind: 'contact' | 'blocked') =>
 /** 发起前的检查：通过返回 null，否则返回一句人话 */
 export function checkOpDraft(d: OpDraft, view: Pick<OrgView, 'org' | 'members' | 'me' | 'ops' | 'checkins' | 'posts' | 'ledger'>, now = new Date()): string | null {
   const title = clipOpText(d.title);
-  if (!title) return d.kind === 'big' ? '写一句共同目标' : '写一句这次要一起做的事';
+  if (!title) return d.kind === 'big' ? '写一句作战目标' : '写一句这次要一起做的事';
   const a = auditText(title);
   if (!a.ok) return auditMessage(a.kind);
   const { min, max } = opDeadlineRange(view.org.tz, now);
@@ -195,7 +198,7 @@ export function checkOpDraft(d: OpDraft, view: Pick<OrgView, 'org' | 'members' |
   const ids = new Set(view.members.map(m => m.userId));
   const people = [...new Set(d.participants)].filter(id => ids.has(id));
   if (people.length < ORG_OP_MIN_PEOPLE) return `至少选 ${ORG_OP_MIN_PEOPLE} 个人`;
-  if (d.kind === 'big' && view.org.leaderId !== view.me.userId) return '只有队长能发大作战';
+  if (d.kind === 'big' && view.org.leaderId !== view.me.userId) return '只有队长能发作战';
   if (d.kind === 'big') {
     for (const [uid, t] of Object.entries(d.assignments)) {
       if (!people.includes(uid)) continue;
@@ -206,8 +209,8 @@ export function checkOpDraft(d: OpDraft, view: Pick<OrgView, 'org' | 'members' |
     }
   }
   const active = (view.ops ?? []).filter(op => opProgress(view, op, now).status === 'active');
-  if (active.length >= ORG_OP_ACTIVE_MAX) return `同时进行的作战最多 ${ORG_OP_ACTIVE_MAX} 场，等有一场结束再发`;
-  if (active.filter(op => op.initiatorId === view.me.userId).length >= ORG_OP_MINE_MAX) return `你同时发起的作战最多 ${ORG_OP_MINE_MAX} 场`;
+  if (active.length >= ORG_OP_ACTIVE_MAX) return `同时进行的目标和作战最多 ${ORG_OP_ACTIVE_MAX} 个，等有一个结束再发`;
+  if (active.filter(op => op.initiatorId === view.me.userId).length >= ORG_OP_MINE_MAX) return `你同时发起的最多 ${ORG_OP_MINE_MAX} 个`;
   return null;
 }
 
@@ -301,7 +304,7 @@ export function orgLevelOf(xp: number): OrgLevel {
 }
 
 /**
- * 经验：纪要里每个出席（写了下周目标）的人 +2；每场达成的作战每个参与者 +5（大作战 +8），每周（按达成那天所在的周）最多算 3 场。
+ * 经验：纪要里每个出席（写了下周目标）的人 +2；每个达成的目标 / 作战每个参与者 +5（作战 +8），每周（按达成那天所在的周）最多算 3 个。
  * 输入是纪要和达成卡（同一周 / 同一场作战只认一张）。
  */
 export function orgXpOf(ledger: OrgPost[] | undefined): number {

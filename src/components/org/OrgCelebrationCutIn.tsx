@@ -9,6 +9,7 @@ import { UnlockCutInP5 } from '@/components/p5r/cutins';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { useAnyOverlayOpen } from '@/ui/overlayPause';
 import { triggerSuccessFeedback } from '@/utils/feedback';
+import { OP_KIND_LABEL } from '@/utils/orgOps';
 
 export function OrgCelebrationCutIn() {
   const head = useCloudSocialStore(s => s.orgCelebrations[0]);
@@ -18,12 +19,12 @@ export function OrgCelebrationCutIn() {
   // 有抽屉 / 确认框开着就先等等（比如刚在任务页完成那一条，完成卡还没关）
   const open = !!head && !overlay;
 
-  const heading = head?.kind === 'level' ? '据点升级' : '作战达成';
+  const heading = head?.kind === 'level' ? '据点升级' : `${head ? OP_KIND_LABEL[head.opKind] : '作战'}达成`;
   const name = head ? (head.kind === 'level' ? `「${head.orgName}」Lv.${head.level}` : head.title) : '';
   const reward = head?.kind === 'op'
     ? [head.sp ? `+${head.sp} SP` : '', head.partners.length ? `与 ${head.partners.join('、')} 亲密度 +2` : ''].filter(Boolean).join(' · ') || '大家都做完了'
-    : head ? `借来的面具伤害 ×${head.mult.toFixed(1)}` : '';
-  const sub = head ? (head.kind === 'op' ? `「${head.orgName}」的${head.opKind === 'big' ? '大' : '小'}作战` : '会议和作战攒下的经验') : '';
+    : head ? `同调的面具伤害 ×${head.mult.toFixed(1)}` : '';
+  const sub = head ? (head.kind === 'op' ? `「${head.orgName}」的${OP_KIND_LABEL[head.opKind]}` : '会议、目标和作战攒下的经验') : '';
 
   if (channel === 'p5') {
     return <UnlockCutInP5 isOpen={open} onClose={shift} heading={heading} name={name} lines={[reward, sub]} />;

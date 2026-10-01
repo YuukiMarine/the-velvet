@@ -3,11 +3,12 @@
  *   没登录 → 提示登录；还没有组织 → 建立 / 输入邀请码；加入了两个 → 顶上一条切换；
  *   每个组织：组织名 / 口号 / 人数 → 地图（三个地标即页签）→ 分区内容 → 邀请码。
  *   名册：成员牌按座位排，点一下放大翻面，「⋯」查看 / 屏蔽；空座位提示发邀请码。
+ *     点「名册」标题在两种样式之间切换（格子 / 专辑墙，标题换色表示现在是哪种），记在设置里。
  *   公告板（7b）：分享来的动态 + 标签，最新的会议纪要置顶；进公告板就算看过了（组织卡 / 地图红点熄灭）。
  *   会议（7b）：周日全天到周一凌晨 4 点开；其余时间看这周大家的目标和上一次纪要。
  *   作战（第 8 轮）：进行中的作战进度板 + 发起 + 最近 30 天的历史；进作战区就算看过了（地标 / 组织入口红点熄灭）。
  */
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { motion } from 'motion/react';
 import { useAppStore } from '@/store';
 import { useCloudStore } from '@/store/cloud';
@@ -28,6 +29,8 @@ import { OrgOnboardingSheet } from '@/components/org/OrgOnboardingSheet';
 import { BondTitle } from '@/components/org/BondTitle';
 import { LeaderChip, MeetingDayChip, OrgEmptyPanel, OrgLevelLine, OrgLoginPrompt, OrgNoticeBar, OrgSwitcher, SlotLinks } from '@/components/org/OrgHome';
 import { BorrowMaskSheet } from '@/components/org/BorrowMaskSheet';
+import { RosterWall } from '@/components/org/RosterWall';
+import { triggerLightHaptic } from '@/utils/feedback';
 import { OrgButton, OrgPanel, useOrgTone, type OrgTone } from '@/components/org/orgUi';
 import { markBoardSeen, refreshBoard, refreshOrg, setMemberBlocked } from '@/services/orgSync';
 import { markOpsSeen, refreshOps } from '@/services/orgOpsSync';
@@ -92,6 +95,8 @@ export function Hideout() {
   const orgId = useCloudSocialStore(s => s.hideoutOrgId);
   const blockedList = useCloudSocialStore(s => s.orgBlocked);
   const setCurrentPage = useAppStore(s => s.setCurrentPage);
+  const rosterView = useAppStore(s => s.settings.orgRosterView ?? 'grid');
+  const updateSettings = useAppStore(s => s.updateSettings);
   const view = orgs.find(v => v.org.id === orgId);
   const seenAt = orgId ? orgSeen[orgId] : undefined;
   const opsSeenAt = orgId ? orgOpsSeen[orgId] : undefined;
@@ -100,7 +105,7 @@ export function Hideout() {
   useEffect(() => { useCloudSocialStore.getState().setHideoutSection(null); }, []);
   const [flip, setFlip] = useState<string | null>(null);
   const [menuFor, setMenuFor] = useState<OrgMember | null>(null);
-  // 第 8 轮：借面具（从放大牌下面 /「⋯」打开）
+  // 第 8 轮：同调 = 借面具（从放大牌下面 /「⋯」打开）
   const [borrowFor, setBorrowFor] = useState<OrgMember | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [cardOpen, setCardOpen] = useState(false);
@@ -160,6 +165,16 @@ export function Hideout() {
   const minutes = view ? latestMinutes(view) : null;
   const flipMember = view?.members.find(m => m.id === flip);
 
+  const toggleRosterView = () => {
+    triggerLightHaptic();
+    void updateSettings({ orgRosterView: rosterView === 'wall' ? 'grid' : 'wall' });
+  };
+  const invite = async () => {
+    if (!view) return;
+    const r = await shareInvite(view);
+    setFlash(r === 'copied' ? '邀请语已复制，发给朋友吧' : r === 'failed' ? '没复制成，手动抄一下邀请码吧' : '');
+  };
+
   const refresh = () => {
     if (refreshing || !orgId) return;
     setRefreshing(true);
@@ -176,7 +191,7 @@ export function Hideout() {
       list.push({ label: '修改我的牌', onClick: () => setCardOpen(true) });
     } else {
       const isBlocked = blocked.has(m.userId);
-      if (shownPersonas(m.card).length) list.push({ label: '借 Ta 的面具', onClick: () => setBorrowFor(m) });
+      if (shownPersonas(m.card).length) list.push({ label: '同调', onClick: () => setBorrowFor(m) });
       list.push({ label: isBlocked ? '解除屏蔽' : '屏蔽此人（只在本机生效）', onClick: () => { setMemberBlocked(m.userId, !isBlocked); setFlash(isBlocked ? '已解除屏蔽' : '已屏蔽，之后不再显示 Ta 的动态'); } });
       if (leader) list.push({ label: '转让队长 / 请离…', onClick: () => setSettingsOpen(true) });
     }
@@ -208,9 +223,17 @@ export function Hideout() {
 
         <HideoutMap view={view} section={section} onSection={setSection} blocked={blocked} dots={{ board: section !== 'board' && boardUnread(view, seenAt, blocked), meeting: meetingPending(view), ops: section !== 'ops' && opsUnread(view, opsSeenAt) }} />
 
-        <SectionTitle tone={tone} section={section} meta={section === 'roster' ? `${members.length} / 7` : section === 'meeting' && !meetingState(new Date(), org.tz).open ? '每周日' : undefined} />
+        <SectionTitle
+          tone={tone}
+          section={section}
+          meta={section === 'roster' ? `${members.length} / 7` : section === 'meeting' && !meetingState(new Date(), org.tz).open ? '每周日' : undefined}
+          onTitle={section === 'roster' ? toggleRosterView : undefined}
+          alt={section === 'roster' && rosterView === 'wall'}
+        />
 
-        {section === 'roster' ? (
+        {section === 'roster' && rosterView === 'wall' ? (
+          <RosterWall view={view} minutes={minutes} blocked={blocked} onMore={(m) => setMenuFor(m)} onSync={(m) => setBorrowFor(m)} onInvite={() => void invite()} />
+        ) : section === 'roster' ? (
           <div className="grid grid-cols-1 gap-3 min-[380px]:grid-cols-2">
             {members.map(m => (
               <MemberTile key={m.id} view={view} member={m} minutes={minutes} blocked={blocked.has(m.userId)} onOpen={() => setFlip(m.id)} onMore={() => setMenuFor(m)} />
@@ -218,7 +241,7 @@ export function Hideout() {
             {empty > 0 && (
               <button
                 type="button"
-                onClick={async () => { const r = await shareInvite(view); setFlash(r === 'copied' ? '邀请语已复制，发给朋友吧' : r === 'failed' ? '没复制成，手动抄一下邀请码吧' : ''); }}
+                onClick={() => void invite()}
                 className="flex min-h-[104px] flex-col items-center justify-center gap-1 text-center"
                 style={{ border: `2px dashed ${channel === 'p5' ? 'rgba(240,233,223,0.45)' : tone.line}`, borderRadius: channel === 'p4' ? 16 : channel === 'neutral' ? 16 : 0, color: tone.stageSub }}
               >
@@ -262,9 +285,11 @@ export function Hideout() {
             {view && (
               <div className="ml-auto flex shrink-0 items-center gap-1.5">
                 <HeaderIcon tone={tone} label={refreshing ? '刷新中' : '刷新'} onClick={refresh}>
-                  <motion.span animate={refreshing ? { rotate: 360 } : { rotate: 0 }} transition={refreshing ? { repeat: Infinity, duration: 0.9, ease: 'linear' } : { duration: 0 }} className="inline-block">↻</motion.span>
+                  <motion.span animate={refreshing ? { rotate: 360 } : { rotate: 0 }} transition={refreshing ? { repeat: Infinity, duration: 0.9, ease: 'linear' } : { duration: 0 }} className="flex">
+                    <RefreshGlyph />
+                  </motion.span>
                 </HeaderIcon>
-                <HeaderIcon tone={tone} label="据点设置" onClick={() => setSettingsOpen(true)}>⚙</HeaderIcon>
+                <HeaderIcon tone={tone} label="据点设置" onClick={() => setSettingsOpen(true)}><GearGlyph /></HeaderIcon>
               </div>
             )}
           </div>
@@ -296,7 +321,7 @@ export function Hideout() {
               front={(w, h) => (flipMember ? <MemberCardFront view={view} member={flipMember} minutes={minutes} width={w} height={h} /> : null)}
               back={(w, h) => (flipMember ? <MemberCardBack view={view} member={flipMember} width={w} height={h} /> : null)}
               footer={flipMember && flipMember.id !== view.me.id && shownPersonas(flipMember.card).length > 0
-                ? <OrgButton small onClick={() => { const m = flipMember; setFlip(null); setBorrowFor(m); }}>借 Ta 的面具</OrgButton>
+                ? <OrgButton small onClick={() => { const m = flipMember; setFlip(null); setBorrowFor(m); }}>同调</OrgButton>
                 : undefined}
             />
             <BorrowMaskSheet view={view} member={borrowFor} open={!!borrowFor} onClose={() => setBorrowFor(null)} onFlash={setFlash} />
@@ -326,18 +351,68 @@ export function Hideout() {
   );
 }
 
+/** 页头右上角的图标按钮（刷新 / 据点设置）：几何图标 + 四频道外框（和同伴页右上角的菜单按钮一套做法） */
 function HeaderIcon({ tone, label, onClick, children }: { tone: OrgTone; label: string; onClick: () => void; children: ReactNode }) {
-  const skin = tone.channel === 'p3'
-    ? { background: P3R.cyanPale, color: P3R.blueDeep, clipPath: slantClip(6) }
+  if (tone.channel === 'p5') {
+    return (
+      <motion.button type="button" whileTap={{ scale: 0.92 }} onClick={onClick} aria-label={label} title={label} className="relative flex h-9 w-9 items-center justify-center" style={{ color: P5R.ink }}>
+        <span aria-hidden className="pointer-events-none absolute inset-0">
+          <span className="absolute inset-0" style={{ transform: 'translate(2.5px,3px)', background: '#050505', clipPath: roughQuad(label.length + 0.3, 2) }} />
+          <span className="absolute inset-0" style={{ background: '#050505', clipPath: roughQuad(label.length + 0.6, 2) }} />
+          <span className="absolute inset-[2.5px]" style={{ background: P5R.paper, clipPath: roughQuad(label.length + 0.9, 1.5) }} />
+        </span>
+        <span className="relative">{children}</span>
+      </motion.button>
+    );
+  }
+  const skin: CSSProperties = tone.channel === 'p3'
+    ? { background: P3R.cyanPale, color: P3R.blueDeep, clipPath: slantClip(6), boxShadow: '0 6px 14px rgba(38,96,140,0.08)' }
     : tone.channel === 'p4'
-      ? { background: 'var(--ui-paper, #fff6d0)', color: 'var(--ui-ink, #131313)', borderRadius: 12, boxShadow: '0 0 0 2px var(--ui-line, #131313)' }
-      : tone.channel === 'p5'
-        ? { background: P5R.paper, color: P5R.ink, clipPath: roughQuad(label.length + 0.4, 3) }
-        : { borderRadius: 12 };
+      ? { background: 'var(--ui-paper, #fff6d0)', color: 'var(--ui-ink, #131313)', borderRadius: 12, boxShadow: '0 0 0 2px var(--ui-line, #131313), 3px 3px 0 0 var(--ui-line, #131313)' }
+      : { borderRadius: 12 };
   return (
-    <button type="button" onClick={onClick} aria-label={label} title={label} className={`flex h-9 w-9 items-center justify-center text-[16px] font-black ${tone.channel === 'neutral' ? 'bg-black/5 text-gray-600 dark:bg-white/10 dark:text-gray-300' : ''}`} style={skin}>
+    <motion.button
+      type="button"
+      whileTap={{ scale: 0.92 }}
+      onClick={onClick}
+      aria-label={label}
+      title={label}
+      className={`flex h-9 w-9 items-center justify-center ${tone.channel === 'neutral' ? 'border border-indigo-500/30 bg-indigo-500/10 text-indigo-500 dark:text-indigo-300' : ''}`}
+      style={skin}
+    >
       {children}
-    </button>
+    </motion.button>
+  );
+}
+
+/** 刷新：两段弧 + 箭头 */
+function RefreshGlyph({ size = 17 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M20 11a8 8 0 0 0-14.3-4.9" />
+      <path d="M5.2 2.8v3.6h3.6" />
+      <path d="M4 13a8 8 0 0 0 14.3 4.9" />
+      <path d="M18.8 21.2v-3.6h-3.6" />
+    </svg>
+  );
+}
+
+/** 设置：齿轮（8 个齿 + 中间的孔，按角度算出来） */
+const GEAR_D = (() => {
+  const n = 32;
+  const pts: string[] = [];
+  for (let i = 0; i < n; i++) {
+    const ang = (i / n) * Math.PI * 2 - Math.PI / 2 + Math.PI / n;
+    const r = i % 4 === 0 || i % 4 === 1 ? 10.6 : 8.1;
+    pts.push(`${(12 + r * Math.cos(ang)).toFixed(2)},${(12 + r * Math.sin(ang)).toFixed(2)}`);
+  }
+  return `M${pts.join(' L')} Z M12 8.4 A3.6 3.6 0 1 0 12.01 8.4 Z`;
+})();
+function GearGlyph({ size = 17 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden>
+      <path fill="currentColor" fillRule="evenodd" d={GEAR_D} />
+    </svg>
   );
 }
 
@@ -393,21 +468,30 @@ function TitleBlock({ view, leader, tone }: { view: OrgView; leader: boolean; to
   );
 }
 
-function SectionTitle({ tone, section, meta }: { tone: OrgTone; section: HideoutSection; meta?: string }) {
+/**
+ * 分区标题。名册的标题可以点（onTitle）：在格子 / 专辑墙之间切换，alt = 现在是专辑墙，
+ * 标题换成强调色表示（蓝频道蓝字、黄频道主色、红频道红字、中性主色）。
+ */
+function SectionTitle({ tone, section, meta, onTitle, alt = false }: { tone: OrgTone; section: HideoutSection; meta?: string; onTitle?: () => void; alt?: boolean }) {
   const s = SECTION_TITLE[section];
-  if (tone.channel === 'p3') return <SectionMark title={s.t} meta={meta ? <span className="text-[13px] font-black italic" style={{ color: P3R.blue }}>{meta}</span> : undefined} />;
-  if (tone.channel === 'p4') return <P4SectionTitle meta={meta ? <span className="text-[13px] font-black text-[#131313]">{meta}</span> : undefined}>{s.t}</P4SectionTitle>;
+  const label = onTitle ? `${s.t}：现在是${alt ? '专辑墙' : '格子'}样式，点一下换成${alt ? '格子' : '专辑墙'}` : undefined;
+  const tap = (node: ReactNode, style?: CSSProperties) => (onTitle
+    ? <button type="button" onClick={onTitle} aria-label={label} aria-pressed={alt} className="cursor-pointer text-left" style={{ color: 'inherit', font: 'inherit', ...style }}>{node}</button>
+    : node);
+  if (tone.channel === 'p3') return <SectionMark title={tap(s.t)} variant={alt ? 'blue' : 'ink'} meta={meta ? <span className="text-[13px] font-black italic" style={{ color: P3R.blue }}>{meta}</span> : undefined} />;
+  if (tone.channel === 'p4') return <P4SectionTitle meta={meta ? <span className="text-[13px] font-black text-[#131313]">{meta}</span> : undefined}>{tap(s.t, alt ? { color: 'var(--ui-accent, #2e6be0)' } : undefined)}</P4SectionTitle>;
   if (tone.channel === 'p5') {
+    const bar = <P5SubBar segs={[{ t: s.t, c: alt ? P5R.red : undefined }, { t: s.en, c: alt ? P5R.red : undefined }]} rot={-1} />;
     return (
       <div className="flex items-center justify-between">
-        <P5SubBar segs={[{ t: s.t }, { t: s.en }]} rot={-1} />
+        {onTitle ? <button type="button" onClick={onTitle} aria-label={label} aria-pressed={alt}>{bar}</button> : bar}
         {meta && <span className="text-[14px] font-black" style={{ color: P5R.white, fontFamily: P5_TITLE_FONT }}>{meta}</span>}
       </div>
     );
   }
   return (
     <div className="flex items-baseline justify-between">
-      <h2 className="text-[17px] font-black text-gray-900 dark:text-white">{s.t} <span className="ml-1 text-[10px] font-bold tracking-[0.2em] text-gray-400">{s.en}</span></h2>
+      <h2 className="text-[17px] font-black text-gray-900 dark:text-white">{tap(<>{s.t} <span className="ml-1 text-[10px] font-bold tracking-[0.2em] text-gray-400">{s.en}</span></>, alt ? { color: 'var(--ui-accent, #6366f1)' } : undefined)}</h2>
       {meta && <span className="text-[12px] font-black text-gray-500 dark:text-gray-400">{meta}</span>}
     </div>
   );

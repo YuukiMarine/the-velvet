@@ -8,7 +8,7 @@ import { auditText } from '@/utils/textAudit';
 import { liveStatus } from '@/constants/profileStatus';
 import { calcCurrentStreak, streakDates } from '@/utils/streak';
 import type {
-  Activity, Attribute, AttributeId, AttributeNames, OrgMember, OrgMemberCard, OrgMinutesSnapshot, OrgPersonaSnapshot,
+  Activity, Attribute, AttributeId, AttributeNames, OrgMember, OrgMemberAttr, OrgMemberCard, OrgMinutesSnapshot, OrgPersonaSnapshot,
   OrgPost, OrgPostSnapshot, OrgReaction, OrgReactionTag, OrgView, Persona, ProfileStatus,
 } from '@/types';
 
@@ -179,6 +179,10 @@ export function buildMemberCard(input: {
   tarotAt?: string;
   /** 服务器上现在那张牌：跨周时把它的 week 挪成 prev（7b，纪要要读上周出勤） */
   prevCard?: OrgMemberCard | null;
+  /** 总等级（五维之和） */
+  lv?: number;
+  /** 五维（本人的属性名 + 等级），推之前名字过一道屏蔽词 */
+  attrs?: OrgMemberAttr[];
 }): OrgMemberCard {
   const weekKey = orgWeekKey(input.now, input.tz);
   const status = liveStatus(input.status, input.now.getTime()) ? input.status ?? undefined : undefined;
@@ -198,6 +202,8 @@ export function buildMemberCard(input: {
     persona: input.personas[0] ?? null,
     ...(input.personas.length ? { personas: input.personas.slice(0, ORG_MAX_SHOWN_MASKS) } : {}),
     ...(input.tarotAt ? { tarotAt: input.tarotAt } : {}),
+    ...(input.lv && input.lv > 0 ? { lv: Math.floor(input.lv) } : {}),
+    ...(input.attrs && input.attrs.length ? { attrs: cleanMemberAttrs(input.attrs) } : {}),
     at: input.now.toISOString(),
   };
 }
@@ -246,6 +252,12 @@ export function parseMemberCard(v: unknown): OrgMemberCard {
     if (list.length) card.personas = list;
   }
   if (typeof o.tarotAt === 'string') card.tarotAt = o.tarotAt;
+  // 总等级：五维之和，正常不会过百；夹一下，别让手改的数字把小签撑破
+  if (typeof o.lv === 'number' && Number.isFinite(o.lv) && o.lv >= 1) card.lv = Math.min(999, Math.floor(o.lv));
+  if (Array.isArray(o.attrs)) {
+    const list = parseMemberAttrs(o.attrs);
+    if (list.length) card.attrs = list;
+  }
   if (typeof o.at === 'string') card.at = o.at;
   return card;
 }
@@ -356,8 +368,8 @@ export const ORG_TAGS: ReadonlyArray<{ id: OrgReactionTag; label: string }> = [
   { id: 'same', label: '🤣👉' },
   { id: 'steady', label: '稳' },
   { id: 'envy', label: '羡慕' },
-  { id: 'metoo', label: '我也去做' },
-  { id: 'hug', label: '抱抱' },
+  { id: 'metoo', label: '带我一个' },
+  { id: 'hug', label: '别似' },
 ];
 export const isOrgTag = (s: unknown): s is OrgReactionTag => typeof s === 'string' && ORG_TAGS.some(t => t.id === s);
 
@@ -414,6 +426,55 @@ export function cleanSnapshotNames(snap: OrgPostSnapshot): OrgPostSnapshot {
     names[k] = n && auditText(n).ok ? n : DEFAULT_ATTRIBUTE_NAMES[k] ?? k;
   }
   return { ...snap, names };
+}
+
+/** 一个属性名：本人起的，过不了屏蔽词或是空的就用默认名；最多 12 个字 */
+const cleanAttrName = (id: AttributeId, name: string | undefined): string => {
+  const n = [...(name ?? '').trim()].slice(0, 12).join('');
+  return n && auditText(n).ok ? n : DEFAULT_ATTRIBUTE_NAMES[id] ?? id;
+};
+
+/** 推之前：五维按固定顺序、名字过屏蔽词、等级夹在 0～99 */
+export function cleanMemberAttrs(list: OrgMemberAttr[]): OrgMemberAttr[] {
+  return PERSONA_ATTRS.map(id => list.find(a => a.id === id))
+    .filter((a): a is OrgMemberAttr => !!a)
+    .map(a => attrExtras(a, { id: a.id, name: cleanAttrName(a.id, a.name), level: Math.max(0, Math.min(99, Math.floor(a.level || 0))), ...(a.locked ? { locked: true } : {}) }));
+}
+
+/** 点数 / 满级 / 精通星 / 称号：数字夹一夹，称号过屏蔽词（不过就不带，看的人那边不显示称号） */
+function attrExtras(src: Partial<Record<'points' | 'max' | 'stars' | 'title', unknown>>, out: OrgMemberAttr): OrgMemberAttr {
+  const num = (v: unknown, lo: number, hi: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(lo, Math.min(hi, Math.floor(v))) : undefined);
+  const points = num(src.points, 0, 9_999_999);
+  const max = num(src.max, 1, 99);
+  const stars = num(src.stars, 0, 99);
+  const t = typeof src.title === 'string' ? [...src.title.trim()].slice(0, 10).join('') : '';
+  return {
+    ...out,
+    ...(points !== undefined ? { points } : {}),
+    ...(max !== undefined ? { max } : {}),
+    ...(stars ? { stars } : {}),
+    ...(t && auditText(t).ok ? { title: t } : {}),
+  };
+}
+
+/** 别人推上来的五维：id 在白名单里、名字是字符串、等级是数字；看的时候名字也再过一道屏蔽词 */
+export function parseMemberAttrs(v: unknown[]): OrgMemberAttr[] {
+  const out: OrgMemberAttr[] = [];
+  for (const x of v) {
+    const o = (x && typeof x === 'object' ? x : {}) as Record<string, unknown>;
+    const id = o.id as AttributeId;
+    if (!PERSONA_ATTRS.includes(id) || out.some(a => a.id === id)) continue;
+    const level = typeof o.level === 'number' && Number.isFinite(o.level) ? Math.max(0, Math.min(99, Math.floor(o.level))) : 0;
+    out.push(attrExtras(o, { id, name: cleanAttrName(id, typeof o.name === 'string' ? o.name : undefined), level, ...(o.locked === true ? { locked: true } : {}) }));
+  }
+  return PERSONA_ATTRS.map(id => out.find(a => a.id === id)).filter((a): a is OrgMemberAttr => !!a);
+}
+
+/** 这个人自己起的五维名字（牌子上没有就用默认名）：成员牌背面、同调弹层里写面具属性时用 */
+export function memberAttrNames(card: OrgMemberCard | undefined | null): Record<AttributeId, string> {
+  const names = { ...DEFAULT_ATTRIBUTE_NAMES } as Record<AttributeId, string>;
+  for (const a of card?.attrs ?? []) names[a.id] = a.name;
+  return names;
 }
 
 /** 服务器上的 snapshot json → 结构化（坏数据当没有，不让一条动态拖垮整个公告板） */

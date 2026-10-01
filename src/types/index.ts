@@ -604,6 +604,8 @@ export interface Settings {
   navigatorImmersive?: boolean;
   /** 羁绊页视图：专辑墙（默认）/ 列表；右上角切换、持久记忆（PRD_V2.5_FINAL §5.3） */
   confidantViewMode?: 'wall' | 'list';
+  /** 组织名册的样式：格子（默认）/ 专辑墙；点「名册」标题切换、持久记忆 */
+  orgRosterView?: 'grid' | 'wall';
   // AI 总结功能配置
   summaryApiProvider?: 'openai' | 'deepseek' | 'kimi' | 'qwen' | 'gemini' | 'minimax';
   /**
@@ -2161,6 +2163,22 @@ export interface OrgPersonaSnapshot {
   skills: Array<{ name: string; type: PersonaSkill['type']; power: number; level: number }>;
 }
 
+/** 成员牌上的一维（五维之一）：本人起的名字、等级；没解锁的维度 locked。星形雷达（和首页同一个）要的几样也带上 */
+export interface OrgMemberAttr {
+  id: AttributeId;
+  name: string;
+  level: number;
+  locked?: boolean;
+  /** 这一维累计点数（总点数 = 五维相加） */
+  points?: number;
+  /** 本人的满级（阈值档数；首页星图的满格） */
+  max?: number;
+  /** 满级后的精通星数 */
+  stars?: number;
+  /** 本人这一维现在的称号（等级称号 / 精通称号；过屏蔽词） */
+  title?: string;
+}
+
 /** 成员牌上的数字（本人客户端推送；只有这些，不含任何记录内容） */
 export interface OrgMemberCard {
   /** 连续天数（排除补记） */
@@ -2175,6 +2193,10 @@ export interface OrgMemberCard {
   persona?: OrgPersonaSnapshot | null;
   /** 展示中的面具，最多 3 张（第 8 轮；按本人选的顺序）；没有这个字段的老牌子看 persona */
   personas?: OrgPersonaSnapshot[];
+  /** 总等级（五维等级之和，和同伴页的 LV 同口径）；老版本推的牌子没有 */
+  lv?: number;
+  /** 五维：本人起的属性名 + 等级（名册上展示；名字过屏蔽词，不过就用默认名）；老版本推的牌子没有 */
+  attrs?: OrgMemberAttr[];
   /** 选定现在这张代表牌的时刻（ISO）：两人撞牌时先选的留下 */
   tarotAt?: string;
   /** 推送时刻（ISO） */
@@ -2253,7 +2275,8 @@ export interface OrgPost {
 }
 
 // ── 作战（第 8 轮 · PRD §13）────────────────────────────────────────────────────
-// 小作战：一句话，人人做同一件事，任何成员都能发；大作战：共同目标 + 每人一行子任务（队长写 / AI 拆 / 本人自己填），只有队长能发。
+// 两种（界面上叫「目标」和「作战」；id 是 small / big）：
+//   目标（small）：一句话，人人做同一件事，任何成员都能发；作战（big）：作战目标 + 每人一行子任务（队长写 / AI 拆 / 本人自己填），只有队长能发。
 // 每人做完一次就算；达成 / 未达成都是现算的（org_operations 上只有 active / cancelled）。
 
 export type OrgOpKind = 'small' | 'big';
@@ -2271,7 +2294,7 @@ export interface OrgOperation {
   deadline: string;
   /** 参与者的用户 id（发起时定下，之后不变；本人可以「这次不参加」） */
   participants: string[];
-  /** 大作战的分工：用户 id → 子任务（≤20 字）；没有的人自己填，或者就做共同目标 */
+  /** 作战（big）的分工：用户 id → 子任务（≤20 字）；没有的人自己填，或者就做作战目标 */
   assignments: Record<string, string>;
   status: 'active' | 'cancelled';
   createdAt: Date;
@@ -2304,7 +2327,7 @@ export interface OrgOpCardSnapshot {
   participants: Array<{ userId: string; codename: string; tarotId?: string; task?: string }>;
 }
 
-/** 六个预设标签：太强了 / 🤣👉 / 稳 / 羡慕 / 我也去做 / 抱抱（id same 的显示字第 7 轮验收后改成 🤣👉） */
+/** 六个预设标签：太强了 / 🤣👉 / 稳 / 羡慕 / 带我一个 / 别似（id 不变，显示字按验收改过：same → 🤣👉、metoo → 带我一个、hug → 别似） */
 export type OrgReactionTag = 'strong' | 'same' | 'steady' | 'envy' | 'metoo' | 'hug';
 
 export interface OrgReaction {

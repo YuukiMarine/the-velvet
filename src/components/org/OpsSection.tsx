@@ -1,10 +1,10 @@
 /**
  * 作战（第 8 轮 · PRD §13.3）：据点页「作战」分区。
- *   · 进行中的作战：每场一张进度板——类型、截止倒计时、一句话 / 共同目标、发起人与属性、整体进度条；
- *     参与者一人一行（牌面 + 代号 + 那一份 + 状态），我那一行高亮：没做完「去任务里完成」、大作战里没分到的「写下我的一份」；
- *     最下面「这次不参加」，发起人和队长多一个「取消作战」。
+ *   · 进行中的目标 / 作战（验收后的叫法：small = 目标，big = 作战）：每项一张进度板——类型、截止倒计时、一句话 / 作战目标、
+ *     发起人与属性、整体进度条；参与者一人一行（牌面 + 代号 + 那一份 + 状态），我那一行高亮：没做完「去任务里完成」、
+ *     作战里没分到的「写下我的一份」；最下面「这次不参加」，发起人和队长多一个「取消」。
  *   · 历史：最近 30 天达成 / 未达成 / 取消的，收起来列在下面。
- *   · 右上「发起作战」→ OpCreateSheet。
+ *   · 右上「发起」→ OpCreateSheet。
  */
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import { motion } from 'motion/react';
@@ -16,7 +16,7 @@ import { P5R, P5_TITLE_FONT, roughQuad } from '@/components/p5r/kit';
 import { cancelOpFromUi, optOutFromUi, writeMyPartFromUi } from '@/services/orgOpsSync';
 import { reportPostFromUi, setMemberBlocked } from '@/services/orgSync';
 import type { OrgReportReason } from '@/services/orgs';
-import { ORG_OP_TASK_MAX, opsForBoard, type OpProgress, type OpRow } from '@/utils/orgOps';
+import { OP_KIND_LABEL, ORG_OP_TASK_MAX, opsForBoard, type OpProgress, type OpRow } from '@/utils/orgOps';
 import { displayCodename } from '@/utils/orgLogic';
 import { MemberFace } from './MemberCard';
 import { OpCreateSheet } from './OpCreateSheet';
@@ -65,7 +65,7 @@ export function OpsSection({ view, blocked, onFlash }: { view: OrgView; blocked:
     setConfirm(null);
     if (!c) return;
     if (c.kind === 'out') void run(() => optOutFromUi(view.org.id, c.p.op.id), '这次不参加了，任务里那条已经收起来', '没退出成，稍后再试');
-    else void run(() => cancelOpFromUi(view.org.id, c.p.op.id), '作战已取消', '没取消成，稍后再试');
+    else void run(() => cancelOpFromUi(view.org.id, c.p.op.id), `${OP_KIND_LABEL[c.p.op.kind]}已取消`, '没取消成，稍后再试');
   };
 
   if (!board) {
@@ -79,9 +79,9 @@ export function OpsSection({ view, blocked, onFlash }: { view: OrgView; blocked:
   const head = (
     <div className="flex items-center justify-between gap-3">
       <div className="min-w-0 text-[12px] font-black" style={{ color: tone.stageSub }}>
-        {board.active.length ? `进行中 ${board.active.length} 场` : '现在没有进行中的作战'}
+        {board.active.length ? `进行中 ${board.active.length} 项` : '现在没有进行中的目标或作战'}
       </div>
-      <OrgButton small onClick={() => setCreateOpen(true)}>＋ 发起作战</OrgButton>
+      <OrgButton small onClick={() => setCreateOpen(true)}>＋ 发起</OrgButton>
     </div>
   );
 
@@ -93,8 +93,8 @@ export function OpsSection({ view, blocked, onFlash }: { view: OrgView; blocked:
         <OrgPanel seed={63}>
           <div className="text-[15px] font-black" style={{ fontFamily: tone.titleFont }}>一起做一件事</div>
           <ul className="mt-2 space-y-1.5 text-[12px] font-semibold leading-relaxed" style={{ color: tone.sub }}>
-            <li>· <b style={{ color: tone.ink }}>小作战</b>：一句话 + 截止日，选几个人，谁都能发。</li>
-            <li>· <b style={{ color: tone.ink }}>大作战</b>：一个共同目标，每人分一条子任务（可以让 AI 拆），只有队长能发。</li>
+            <li>· <b style={{ color: tone.ink }}>目标</b>：一句话 + 截止日，选几个人，谁都能发。</li>
+            <li>· <b style={{ color: tone.ink }}>作战</b>：一个作战目标，每人分一条子任务（可以让 AI 拆），只有队长能发。</li>
             <li>· 发出去之后，每个人的任务里会多一条；做完一次就算，全员做完就是达成：每人 +6 SP，公告板上出一张达成卡。</li>
           </ul>
         </OrgPanel>
@@ -119,7 +119,7 @@ export function OpsSection({ view, blocked, onFlash }: { view: OrgView; blocked:
       {board.history.length > 0 && (
         <div>
           <button type="button" onClick={() => setHistoryOpen(v => !v)} aria-expanded={historyOpen} className="flex w-full items-center justify-between py-1 text-left">
-            <span className="text-[11px] font-black tracking-[0.2em]" style={{ color: tone.stageSub }}>最近 30 天结束的 {board.history.length} 场</span>
+            <span className="text-[11px] font-black tracking-[0.2em]" style={{ color: tone.stageSub }}>最近 30 天结束的 {board.history.length} 项</span>
             <span className="text-[12px] font-black" style={{ color: tone.stageSub }}>{historyOpen ? '收起' : '展开'}</span>
           </button>
           {historyOpen && (
@@ -137,7 +137,7 @@ export function OpsSection({ view, blocked, onFlash }: { view: OrgView; blocked:
         onClose={() => setMenuFor(null)}
         title={menuFor ? `「${menuFor.op.title}」` : undefined}
         actions={menuFor ? [
-          { label: '举报这场作战', onClick: () => setReportFor(menuFor) },
+          { label: `举报这个${OP_KIND_LABEL[menuFor.op.kind]}`, onClick: () => setReportFor(menuFor) },
           {
             label: blocked.has(menuFor.op.initiatorId) ? '解除屏蔽发起人' : '屏蔽发起人（只在本机生效）',
             onClick: () => {
@@ -171,12 +171,12 @@ export function OpsSection({ view, blocked, onFlash }: { view: OrgView; blocked:
 
       <ConfirmDialog
         isOpen={!!confirm}
-        title={confirm?.kind === 'out' ? '这次不参加？' : `取消「${confirm?.p.op.title ?? ''}」？`}
+        title={confirm?.kind === 'out' ? '这次不参加？' : `取消这个${confirm ? OP_KIND_LABEL[confirm.p.op.kind] : ''}？`}
         description={confirm?.kind === 'out'
           ? '你会从这场作战的名单里退出，任务里那条会收起来。退出之后不能再回来。'
-          : '所有人任务里的这一条都会收起来，已经做完的不受影响。这一步不能撤销。'}
+          : `「${confirm?.p.op.title ?? ''}」：所有人任务里的这一条都会收起来，已经做完的不受影响。这一步不能撤销。`}
         tone="danger"
-        confirmText={confirm?.kind === 'out' ? '不参加了' : '取消作战'}
+        confirmText={confirm?.kind === 'out' ? '不参加了' : `取消${confirm ? OP_KIND_LABEL[confirm.p.op.kind] : ''}`}
         cancelText="再想想"
         onConfirm={doConfirm}
         onCancel={() => setConfirm(null)}
@@ -227,7 +227,7 @@ function OpBoard({ view, p, tone, attrName, blocked, busy, onOut, onCancel, onWr
         {onMore && <button type="button" onClick={onMore} aria-label="更多操作" className="-mr-1 shrink-0 px-1.5 text-[18px] font-black leading-none" style={{ color: tone.sub }}>⋯</button>}
       </div>
       <div className="mt-2 break-words text-[18px] font-black leading-snug" style={{ fontFamily: tone.titleFont }}>
-        {big && <span className="mr-1 text-[12px] font-black align-middle" style={{ color: accent }}>共同目标</span>}
+        {big && <span className="mr-1 text-[12px] font-black align-middle" style={{ color: accent }}>作战目标</span>}
         {p.op.title}
       </div>
       <div className="mt-1 text-[11px] font-bold" style={{ color: tone.sub }}>
@@ -276,7 +276,7 @@ function OpBoard({ view, p, tone, attrName, blocked, busy, onOut, onCancel, onWr
       {(mine?.state === 'todo' || canCancel) && (
         <div className="mt-3 flex flex-wrap items-center justify-end gap-2 border-t pt-2.5" style={{ borderColor: tone.channel === 'p5' ? 'rgba(0,0,0,0.12)' : 'rgba(127,127,127,0.18)' }}>
           {mine?.state === 'todo' && <TextAction tone={tone} onClick={onOut} disabled={busy}>这次不参加</TextAction>}
-          {canCancel && <TextAction tone={tone} onClick={onCancel} disabled={busy} danger>取消作战</TextAction>}
+          {canCancel && <TextAction tone={tone} onClick={onCancel} disabled={busy} danger>{`取消${OP_KIND_LABEL[p.op.kind]}`}</TextAction>}
         </div>
       )}
     </OrgPanel>
@@ -312,7 +312,7 @@ function OpRowItem({ tone, r, big, mine, dim, children }: { tone: OrgTone; r: Op
           </div>
           {big && !off && (
             <div className="truncate text-[12px] font-bold" style={{ color: r.state === 'done' ? tone.sub : tone.ink }}>
-              {r.source === 'goal' ? <span style={{ color: tone.sub }}>还没写自己那一份（先做共同目标）</span> : r.task}
+              {r.source === 'goal' ? <span style={{ color: tone.sub }}>还没写自己那一份</span> : r.task}
             </div>
           )}
         </div>
@@ -338,7 +338,7 @@ function OpHistoryRow({ p, tone, view }: { p: OpProgress; tone: OrgTone; view: O
   return (
     <div className="flex items-center gap-2.5 py-1" style={{ color: tone.stageInk }}>
       <span className="inline-flex shrink-0 items-center whitespace-nowrap px-1.5 py-[3px] text-[10px] font-black leading-none" style={chip}>{label}</span>
-      <span className="min-w-0 flex-1 truncate text-[13px] font-bold">{p.op.kind === 'big' ? '大作战 · ' : ''}{p.op.title}</span>
+      <span className="min-w-0 flex-1 truncate text-[13px] font-bold">{OP_KIND_LABEL[p.op.kind]} · {p.op.title}</span>
       <span className="shrink-0 text-[11px] font-bold tabular-nums" style={{ color: tone.stageSub }}>
         {p.done}/{Math.max(p.counted, p.done)} 人{day ? ` · ${md(day)}` : ''}{view.org.tz ? '' : ''}
       </span>
@@ -349,7 +349,7 @@ function OpHistoryRow({ p, tone, view }: { p: OpProgress; tone: OrgTone; view: O
 // ── 小件 ─────────────────────────────────────────────────────────────────────────
 
 function KindChip({ tone, big }: { tone: OrgTone; big: boolean }) {
-  const text = big ? '大作战' : '小作战';
+  const text = big ? OP_KIND_LABEL.big : OP_KIND_LABEL.small;
   const style: CSSProperties = tone.channel === 'p3'
     ? { background: big ? P3R.magenta : P3R.blue, color: '#ffffff', clipPath: slantClip(4) }
     : tone.channel === 'p5'

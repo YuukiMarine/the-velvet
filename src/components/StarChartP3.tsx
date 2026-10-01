@@ -106,11 +106,15 @@ export const NEUTRAL_STAR_PALETTE: StarPalette = {
   focus: 'var(--color-primary)',
 };
 
-export const StarChartP3 = ({ items, onSelect, showLabels = true, palette = P3_PALETTE }: {
+export const StarChartP3 = ({ items, onSelect, showLabels = true, palette = P3_PALETTE, compact = false, showTitles = true }: {
   items: StarItem[];
   onSelect: (id: AttributeId, e: ReactMouseEvent) => void;
   showLabels?: boolean;
   palette?: StarPalette;
+  /** 小尺寸（组织成员牌背面）：留白、字号收一档，宽度跟着容器走 */
+  compact?: boolean;
+  /** 角上要不要写称号小字（太窄的地方关掉） */
+  showTitles?: boolean;
 }) => {
   // 中性皮那套调色板整族由 color-mix 派生，其中 data / arm 直接喂给 SVG 的
   // fill / stroke。旧 WebView 不认 color-mix → 非法值 → 落回初始值黑。
@@ -152,9 +156,10 @@ export const StarChartP3 = ({ items, onSelect, showLabels = true, palette = P3_P
     // `min-h-[344px] overflow-hidden` 削掉顶部（375 宽实测 1.7px，窄屏更多）。
     // 星随容器宽等比缩放、标签自身高度固定 px，两者不同步，任何宽度都差一口气；
     // 加 8px 净空，首页外层 min-h 同步 +8 以免底部标签被挤出。
-    <div className="relative mx-auto w-full max-w-[288px]" style={{ paddingTop: 31, paddingBottom: 32 }}>
+    <div className={`relative mx-auto w-full ${compact ? '' : 'max-w-[288px]'}`} style={{ paddingTop: compact ? 20 : 31, paddingBottom: compact ? (showTitles ? 20 : 14) : 32 }}>
       {/* 平行四边形斜切(下左上右) + 高度拉伸；星与标签同处一个 transform，标签再反变换回正 */}
-      <div ref={containerRef} className="relative" style={{ transform: `skewX(${STAR_SKEW}deg) scaleY(${STAR_SCALEY})` }}>
+      {/* compact：星缩到八成宽、居中，两侧角上的字有地方放（成员牌背面很窄，外层还会裁边） */}
+      <div ref={containerRef} className={`relative ${compact ? 'mx-auto w-[78%]' : ''}`} style={{ transform: `skewX(${STAR_SKEW}deg) scaleY(${STAR_SCALEY})` }}>
         <svg viewBox="0 0 360 356" className="w-full overflow-visible" aria-hidden>
           {/* 同心星环：从最外档画到最内档，后画的小星盖出环带 */}
           {Array.from({ length: ringCount }).map((_, k) => {
@@ -192,10 +197,10 @@ export const StarChartP3 = ({ items, onSelect, showLabels = true, palette = P3_P
             >
               {/* 精通星（第 6 轮，用户口径）：小一点、贴在数字右下角，四套皮一个位置 */}
               <span className="flex items-baseline gap-1.5">
-                <span className="text-[15px] font-black leading-none" style={{ color: P.ink }}>{it.name}</span>
-                <span className="text-[26px] font-black italic leading-none" style={{ color: P.accent }}>{it.level}{it.stars ? <span className="ml-px text-[11px] font-black not-italic">★{it.stars}</span> : null}</span>
+                <span className={`${compact ? 'text-[10px]' : 'text-[15px]'} font-black leading-none`} style={{ color: P.ink }}>{it.name}</span>
+                <span className={`${compact ? 'text-[15px]' : 'text-[26px]'} font-black italic leading-none`} style={{ color: P.accent }}>{it.level}{it.stars ? <span className={`ml-px ${compact ? 'text-[8px]' : 'text-[11px]'} font-black not-italic`}>★{it.stars}</span> : null}</span>
               </span>
-              <span className="mt-0.5 block text-[11px] font-semibold leading-none" style={{ color: P.inkSoft }}>{it.title}</span>
+              {showTitles && it.title && <span className={`mt-0.5 block ${compact ? 'text-[8px]' : 'text-[11px]'} font-semibold leading-none`} style={{ color: P.inkSoft }}>{it.title}</span>}
             </button>
           );
         })}

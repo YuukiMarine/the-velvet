@@ -5,7 +5,7 @@
  * 好友卡上（PactPartnerTag）：一起进步 · 还差你 / Ta 还没完成 / 今天已同步 ✓ / 待回应。
  * 约定的实时状态来自 cloudSocial.pacts（社交同步时拉）；没拉到时任务条只显示「与 X」。
  * 四个频道各一套皮；「热」= 需要你动一下（被催 / 待回应），「暖」= 对方已完成、就差你。
- * 组织作战的待办（第 8 轮，OrgOpTodoTag）用同一个壳：作战 · 组织名 · 3/5 / 就差你了 / 已达成 ✓。
+ * 组织的目标 / 作战待办（第 8 轮，OrgOpTodoTag）用同一个壳：目标（或作战）· 组织名 · 3/5 / 就差你了 / 已达成 ✓。
  */
 import type { CSSProperties } from 'react';
 import { useCloudSocialStore } from '@/store/cloudSocial';
@@ -14,7 +14,7 @@ import { useUiChannel } from '@/ui/useUiChannel';
 import { P3R, slantClip } from '@/components/p3r/kit';
 import { P5R, P5_FONT, roughQuad } from '@/components/p5r/kit';
 import { isPactLive, pactStatusWith, pactTodayView } from '@/utils/pactLogic';
-import { opProgress } from '@/utils/orgOps';
+import { OP_KIND_LABEL, opProgress } from '@/utils/orgOps';
 import type { PactTone } from '@/utils/pactLogic';
 import type { CoopPact, Todo } from '@/types';
 
@@ -93,16 +93,17 @@ export function usePactStatus(partnerId: string | undefined): { text: string; to
   return pactStatusWith(pact, partnerId, toLocalDateKey());
 }
 
-/** 作战待办上的标记（第 8 轮）：作战 · 组织名 · 做完几人；别人都做完了只差我 = 暖；达成 = 已达成 ✓。没拉到作战时只写「作战 · 组织名」 */
+/** 目标 / 作战待办上的标记（第 8 轮）：目标（或作战）· 组织名 · 做完几人；别人都做完了只差我 = 暖；达成 = 已达成 ✓。没拉到时只写「目标 · 组织名」 */
 export function OrgOpTodoTag({ todo }: { todo: Todo }) {
   const view = useCloudSocialStore(s => (todo.orgOp ? s.orgs.find(v => v.org.id === todo.orgOp!.orgId) : undefined));
   if (!todo.orgOp) return null;
   const org = [...todo.orgOp.orgName].slice(0, 6).join('') + ([...todo.orgOp.orgName].length > 6 ? '…' : '');
   const op = view?.ops?.find(o => o.id === todo.orgOp!.opId);
-  if (!view || !op) return <TagShell tone="plain" seed={7}>{`作战 · ${org}`}</TagShell>;
+  const label = OP_KIND_LABEL[todo.orgOp.kind];
+  if (!view || !op) return <TagShell tone="plain" seed={7}>{`${label} · ${org}`}</TagShell>;
   const p = opProgress(view, op);
-  if (p.status === 'achieved') return <TagShell tone="done" seed={7}>{`作战 · 已达成 ✓`}</TagShell>;
+  if (p.status === 'achieved') return <TagShell tone="done" seed={7}>{`${label} · 已达成 ✓`}</TagShell>;
   const mine = p.rows.find(r => r.userId === view.me.userId);
-  if (mine?.state === 'todo' && p.counted > 1 && p.done === p.counted - 1) return <TagShell tone="warm" seed={7}>{`作战 · 就差你了`}</TagShell>;
-  return <TagShell tone="plain" seed={7}>{`作战 · ${org} · ${p.done}/${p.counted}`}</TagShell>;
+  if (mine?.state === 'todo' && p.counted > 1 && p.done === p.counted - 1) return <TagShell tone="warm" seed={7}>{`${label} · 就差你了`}</TagShell>;
+  return <TagShell tone="plain" seed={7}>{`${label} · ${org} · ${p.done}/${p.counted}`}</TagShell>;
 }

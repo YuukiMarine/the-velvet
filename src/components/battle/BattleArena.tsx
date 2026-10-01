@@ -1608,6 +1608,7 @@ export const BattleArena = () => {
           onRequestBattle={handleRequestBattle}
           onToast={showSpToast}
           interactive={sessionActive}
+          covered={showBattle || showVictory || !!lootReveal || finaleOpen}
         />
       )}
     </AnimatePresence>

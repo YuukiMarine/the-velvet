@@ -8,7 +8,8 @@
  *
  * 引擎 v2 玩法：出战位面具（B案·自由切换）/ 意图明牌+洞察 / 1More / 失衡→总攻击QTE /
  * 五维克制环 / 双向打断 / 格挡反击 / 回合压力 / 二形态差分
- * 第 8 轮：技能区下面多一段「借来的面具」（组织队友展示的面具，每周带进 3 场；一场里第一次用时记一场）
+ * 第 8 轮：借来的面具（组织队友展示的面具，每周带进 3 场；一场里第一次用时记一场）排在面具切换栏的最后一格，
+ *         ‹ › 或左右划切过去，技能区换成借来的技能；出战位（防御克制、自己面具的被动）不变
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
@@ -21,7 +22,7 @@ import { triggerLightHaptic, playSound } from '@/utils/feedback';
 import { SKILL_EFFECT_MAP } from '@/constants';
 import { useBoldness } from '@/utils/boldness';
 import { BattleEngine, PlayerActionInput, FxEvent, TurnResult, type BorrowedSetup } from '@/battle/engine';
-import { borrowNow, borrowedSkillCost } from '@/utils/orgBorrow';
+import { BORROW_BATTLES_PER_WEEK, borrowNow, borrowedSkillCost } from '@/utils/orgBorrow';
 import { borrowMultNow, markBorrowBattle } from '@/services/borrowMask';
 import { QTE_FALLBACK_MULT, healAmount, BASIC_ATTACK_POWER, maskBondTier, FATE_GLIMPSE_ADD } from '@/battle/numbers';
 import { aggregateRelicMods, AFFIX_POOL } from '@/battle/loot';
@@ -66,6 +67,17 @@ interface Props {
 }
 
 const ATTR_IDS: AttributeId[] = ['knowledge', 'guts', 'dexterity', 'kindness', 'charm'];
+
+/** 借来技能的类型小签（颜色和自己的技能卡一致） */
+const BORROW_TAG: Record<PersonaSkill['type'], { label: string; color: string; bg: string }> = {
+  damage:       { label: '伤害',   color: '#fca5a5', bg: 'rgba(239,68,68,0.2)' },
+  crit:         { label: '暴击',   color: '#fbbf24', bg: 'rgba(245,158,11,0.2)' },
+  buff:         { label: '增伤',   color: '#93c5fd', bg: 'rgba(59,130,246,0.2)' },
+  debuff:       { label: '易伤',   color: '#fdba74', bg: 'rgba(249,115,22,0.2)' },
+  charge:       { label: '蓄力',   color: '#c4b5fd', bg: 'rgb(var(--color-battle-bright-rgb) / 0.2)' },
+  heal:         { label: '回复',   color: '#6ee7b7', bg: 'rgba(16,185,129,0.2)' },
+  attack_boost: { label: '攻击增益', color: '#fda4af', bg: 'rgba(244,63,94,0.2)' },
+};
 
 const MASK_PASSIVE_HINT: Record<AttributeId, string> = {
   knowledge: '弱点攻击 +2',
@@ -128,7 +140,8 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
   const [displayPlayerHp, setDisplayPlayerHp] = useState<number | null>(null);
   const [hpBarFlash, setHpBarFlash] = useState(false);
   const [shadowAttackAnim, setShadowAttackAnim] = useState(false);
-  const [phase2Animation, setPhase2Animation] = useState(false);
+  // 变身闪屏：变成第几形态（2 / 3）；false = 不闪
+  const [phase2Animation, setPhase2Animation] = useState<false | 2 | 3>(false);
   const [showBattleFinishAnim, setShowBattleFinishAnim] = useState(false);
   const [showDeathExplosion, setShowDeathExplosion] = useState(false);
   const [oneMoreFlash, setOneMoreFlash] = useState(false);
@@ -137,6 +150,15 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
   const [qteOpen, setQteOpen] = useState(false);
   const [actionMenuOpen, setActionMenuOpen] = useState(false);
   const [confidantSupportToast, setConfidantSupportToast] = useState<string | null>(null);
+  /** 第 9 轮：面具切换栏的一句提示（同调来的第六张本周用完了，左右切换跳过它时说一声） */
+  const [maskHint, setMaskHint] = useState<string | null>(null);
+  const maskHintTimer = useRef<number | undefined>(undefined);
+  const flashMaskHint = (text: string) => {
+    setMaskHint(text);
+    window.clearTimeout(maskHintTimer.current);
+    maskHintTimer.current = window.setTimeout(() => setMaskHint(null), 1800);
+  };
+  useEffect(() => () => window.clearTimeout(maskHintTimer.current), []);
 
   const attrNamesMap = settings.attributeNames as Record<AttributeId, string>;
   const snap = engineRef.current?.snapshot ?? null;
@@ -485,7 +507,8 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
     if (res.consumedTurn) actionsTakenRef.current++;
     await persistResult(res);
     // 第 8 轮：这一场第一次用借来的面具 → 本周场数 +1（persist 之后再记，读的是最新的战场状态）
-    if (input.kind === 'borrowed' && res.consumedTurn && engine.snapshot.borrowUsed && !borrowCountedRef.current) {
+    // 第 9 轮：戴着第六张出手（普攻 / 防御也算）同样记；只是戴上、路过不记
+    if (res.consumedTurn && engine.snapshot.borrowUsed && !borrowCountedRef.current) {
       borrowCountedRef.current = true;
       void markBorrowBattle();
     }
@@ -657,7 +680,7 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
         break;
       }
       case 'phase2': {
-        setPhase2Animation(true);
+        setPhase2Animation(f.value === 3 ? 3 : 2);
         playSound('/battle-impact.mp3');
         setTimeout(() => setPhase2Animation(false), 1500);
         break;
@@ -682,7 +705,8 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
   const handleSwitchMask = async (attr: AttributeId) => {
     const engine = engineRef.current;
     if (!engine || isAnimating || phase !== 'waiting' || qteOpen) return;
-    if (attr === engine.snapshot.activeMask) return;
+    // 戴着同调来的那张时，换回原来那张也是一次换面具
+    if (attr === engine.snapshot.activeMask && !engine.snapshot.wearingBorrowed) return;
     const res = engine.act({ kind: 'switchMask', attribute: attr });
     bump();
     const fx = res.fx.find(f => f.type === 'maskSwitch');
@@ -692,6 +716,17 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
     setMaskCutIn({ attr, full });
     setTimeout(() => setMaskCutIn(null), full ? 900 : 650);
     equipMask(attr); // 出战面具即佩戴面具（B案）
+  };
+
+  // ── 第六张：戴上同调来的面具（自由行动；万能属性，挨打不吃克制、自己面具的被动不生效） ──
+  const handleWearBorrowed = () => {
+    const engine = engineRef.current;
+    if (!engine || isAnimating || phase !== 'waiting' || qteOpen || engine.snapshot.wearingBorrowed) return;
+    const res = engine.act({ kind: 'wearBorrowed' });
+    bump();
+    if (!engine.snapshot.wearingBorrowed) { if (res.lines[0]) flashMaskHint(res.lines[0]); return; }
+    playSound('/battle-mask-swap.mp3', 0.5);
+    triggerLightHaptic();
   };
 
   // ── 总攻击（QTE 门） ────────────────────────────────────
@@ -731,6 +766,24 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
         skills: lentNow.mask.persona.skills.map(sk => ({ name: sk.name, type: sk.type, power: sk.power, spCost: borrowedSkillCost(sk.level) })),
       }
     : null;
+  /** 正戴着同调来的第六张（引擎里的状态：挨打、普攻都按万能属性算） */
+  const showBorrowed = !!snap.wearingBorrowed && !!borrowView;
+  /** 自己的弱点角标 / 红边：戴着同调来的那张时不亮（万能属性不吃弱点） */
+  const weakShown = isWeakAttr && !showBorrowed;
+  /** ‹ › / 左右划：五张自己的面具 + 最后一格同调来的面具（有的话；本周用完了就跳过这一格，提示一句） */
+  const cycleMask = (dir: 1 | -1) => {
+    if (isAnimating || phase !== 'waiting' || qteOpen) return;
+    playSound('/ui-menu.mp3', 0.5);
+    const slots: Array<AttributeId | 'borrowed'> = borrowView ? [...ATTR_IDS, 'borrowed'] : [...ATTR_IDS];
+    const cur = showBorrowed ? slots.length - 1 : slots.indexOf(snap.activeMask);
+    let next = slots[(cur + dir + slots.length) % slots.length];
+    if (next === 'borrowed' && !snap.borrowAvailable) {
+      flashMaskHint(`「${borrowView!.name}」本周 ${BORROW_BATTLES_PER_WEEK} 场已用完，下周一重置`);
+      next = slots[(cur + dir * 2 + slots.length * 2) % slots.length];
+    }
+    if (next === 'borrowed') { handleWearBorrowed(); return; }
+    void handleSwitchMask(next);
+  };
   const isPhase2 = snap.phase >= 2;
   const isPhase3 = snap.phase === 3;
   const visibleHp = displayPlayerHp ?? snap.playerHp;
@@ -766,6 +819,28 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
             style={{ background: 'rgba(16,185,129,0.25)', border: '1px solid rgba(16,185,129,0.5)' }}
           >
             <span className="text-white font-bold text-sm">{confidantSupportToast}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* 第 9 轮：面具切换栏的提示（同调来的第六张本周用完了） */}
+      <AnimatePresence>
+        {maskHint && (
+          <motion.div
+            role="status"
+            initial={{ opacity: 0, y: -24 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -16 }}
+            className="pointer-events-none absolute inset-x-0 z-40 flex justify-center px-4"
+            style={{ top: 'calc(0.75rem + env(safe-area-inset-top))' }}
+          >
+            <span
+              className="inline-flex max-w-full items-center gap-1.5 rounded-full px-4 py-2 text-center text-[13px] font-bold text-white shadow-xl backdrop-blur-md"
+              style={{ background: 'rgba(76,29,149,0.55)', border: '1px solid rgba(196,181,253,0.55)' }}
+            >
+              <IconMask size={13} className="shrink-0 text-violet-200" />
+              {maskHint}
+            </span>
           </motion.div>
         )}
       </AnimatePresence>
@@ -934,7 +1009,7 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
           >
             <div className="flex items-center justify-center h-full">
               <motion.p initial={{ scale: 0 }} animate={{ scale: [0, 1.5, 1] }} className="text-red-300 text-2xl font-black">
-                ！第二形态！
+                {phase2Animation === 3 ? '！第三形态！' : '！第二形态！'}
               </motion.p>
             </div>
           </motion.div>
@@ -942,7 +1017,7 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
       </AnimatePresence>
 
       {/* ── Header：Shadow 信息 + 意图 + 失衡条 ── */}
-      <div className="p-4 pt-6 space-y-2 flex-shrink-0">
+      <div className="p-4 space-y-2 flex-shrink-0" style={{ paddingTop: 'calc(1.5rem + env(safe-area-inset-top))' }}>
         <div className="flex items-center justify-between">
           <button
             onClick={() => setShowRetreatConfirm(true)}
@@ -1286,7 +1361,7 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
                 <span className="text-gray-400 text-xs whitespace-nowrap">HP {visibleHp}/{snap.playerMaxHp}</span>
-                <span className="text-purple-400/70 text-xs whitespace-nowrap">🎭 {attrNamesMap[snap.activeMask]}</span>
+                <span className="inline-flex items-center gap-1 text-purple-400/70 text-xs whitespace-nowrap"><IconMask size={12} />{showBorrowed && borrowView ? borrowView.name : attrNamesMap[snap.activeMask]}</span>
                 {snap.guardCounterReady && (
                   <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md whitespace-nowrap"
                         style={{ background: 'rgba(59,130,246,0.25)', color: '#93c5fd', border: '1px solid rgba(59,130,246,0.5)', lineHeight: 1.2 }}>
@@ -1397,7 +1472,7 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
                         🔥 增伤+6 ({snap.attackBoostTurns})
                       </motion.span>
                     )}
-                    {isWeakAttr && (
+                    {weakShown && (
                       <motion.span animate={{ opacity: [0.6, 1, 0.6] }} transition={{ duration: 1, repeat: Infinity }}
                         className="text-xs font-bold px-2 py-0.5 rounded-full"
                         style={{ background: 'rgba(239,68,68,0.3)', color: '#fca5a5' }}>
@@ -1407,24 +1482,44 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
                   </div>
                 </div>
 
-                {/* 出战面具切换（B案：即时、免费、锁技能面板） */}
+                {/* 出战面具切换（B案：即时、免费、锁技能面板）；第 8 轮：最后一格是借来的面具，左右划也能切 */}
                 <div className="flex items-center gap-2 mb-2.5">
                   <button
-                    onClick={() => {
-                      playSound('/ui-menu.mp3', 0.5);
-                      const idx = ATTR_IDS.indexOf(snap.activeMask);
-                      void handleSwitchMask(ATTR_IDS[(idx - 1 + ATTR_IDS.length) % ATTR_IDS.length]);
-                    }}
+                    onClick={() => cycleMask(-1)}
+                    aria-label="上一张面具"
                     className="w-8 h-8 flex items-center justify-center rounded-xl text-white/60 hover:text-white transition-colors text-lg flex-shrink-0"
                     style={{ background: 'rgba(255,255,255,0.08)' }}
                   >
                     ‹
                   </button>
+                  <motion.div
+                    className="flex-1 min-w-0"
+                    style={{ touchAction: 'pan-y' }}
+                    onPanEnd={(_, info) => {
+                      if (Math.abs(info.offset.x) > 36 && Math.abs(info.offset.x) > Math.abs(info.offset.y)) cycleMask(info.offset.x < 0 ? 1 : -1);
+                    }}
+                  >
+                  {showBorrowed && borrowView ? (
+                    <SlantCard cut={12} edge="rgba(196,181,253,0.6)" face="rgba(30,12,62,0.94)" className="w-full">
+                      <div className="px-3 py-2 text-center" aria-label={`${borrowView.owner} 的面具：${borrowView.name}`}>
+                        {/* 第六张面具：小签写是谁的，下面只留威力倍率和「万能属性」（不吃克制和弱点）、本周还剩几场 */}
+                        <p className="text-white text-sm font-bold inline-flex max-w-full items-center justify-center gap-1.5">
+                          <IconMask size={14} className="shrink-0 text-violet-300" />
+                          <span className="max-w-[8em] shrink-0 truncate px-1.5 py-[1px] text-[10px] font-black" style={{ background: 'rgba(196,181,253,0.2)', color: '#ddd6fe', clipPath: slantPoly(3) }}>{borrowView.owner}</span>
+                          <span className="min-w-0 truncate">{borrowView.name}</span>
+                        </p>
+                        <p className="text-white/45 text-[11px] mt-0.5">威力 ×{borrowView.mult.toFixed(1)} · 万能属性</p>
+                        <p className="text-violet-200/60 text-[10px] mt-0.5">
+                          本周剩余 {borrowView.left} 场{snap.borrowUsed ? ' · 本场已计入' : borrowView.left > 0 ? ' · 出手才算一场' : ' · 下周一重置'}
+                        </p>
+                      </div>
+                    </SlantCard>
+                  ) : (
                   <SlantCard
                     cut={12}
                     edge={isWeakAttr ? 'rgba(239,68,68,0.55)' : 'rgb(var(--color-battle-bright-rgb) / 0.45)'}
                     face={isWeakAttr ? 'rgba(60,10,22,0.92)' : 'rgba(22,8,50,0.92)'}
-                    className="flex-1"
+                    className="w-full"
                   >
                     {/* 克制关系不做常驻角标（易误解）——只在造成/受到伤害时随叙事行出现 */}
                     <div className="px-3 py-2 text-center">
@@ -1452,18 +1547,26 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
                       </p>
                     </div>
                   </SlantCard>
+                  )}
+                  </motion.div>
                   <button
-                    onClick={() => {
-                      playSound('/ui-menu.mp3', 0.5);
-                      const idx = ATTR_IDS.indexOf(snap.activeMask);
-                      void handleSwitchMask(ATTR_IDS[(idx + 1) % ATTR_IDS.length]);
-                    }}
+                    onClick={() => cycleMask(1)}
+                    aria-label="下一张面具"
                     className="w-8 h-8 flex items-center justify-center rounded-xl text-white/60 hover:text-white transition-colors text-lg flex-shrink-0"
                     style={{ background: 'rgba(255,255,255,0.08)' }}
                   >
                     ›
                   </button>
                 </div>
+                {/* 切换栏下面一排小点：五张自己的 + 借来的那一格（亮的是现在这张） */}
+                {borrowView && (
+                  <div className="-mt-1 mb-2.5 flex justify-center gap-1" aria-hidden>
+                    {[...ATTR_IDS, 'borrowed' as const].map(k => {
+                      const on = k === 'borrowed' ? showBorrowed : !showBorrowed && k === snap.activeMask;
+                      return <span key={k} className="h-1 rounded-full transition-all" style={{ width: on ? 14 : 5, background: k === 'borrowed' ? (on ? '#c4b5fd' : 'rgba(196,181,253,0.4)') : (on ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.22)') }} />;
+                    })}
+                  </div>
+                )}
 
                 {/* 行动 + 总攻击 */}
                 <div className="flex gap-2 mb-3">
@@ -1548,7 +1651,7 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
                             style={{ clipPath: slantPoly(8), background: 'rgba(59,130,246,0.22)', color: '#93c5fd' }}
                           >
                             <span className="inline-flex items-center gap-1"><IconGuard size={12} />防御</span>
-                            <span className="block text-[9px] opacity-60 mt-0.5 font-semibold">0 SP · 减半+回5SP</span>
+                            <span className="block text-[9px] opacity-60 mt-0.5 font-semibold">0 SP · 减半{snap.defendSpGain > 0 ? ` + 回 ${snap.defendSpGain} SP` : snap.defendSilence ? '（静默：不回 SP）' : '（本场回 SP 已满）'}</span>
                           </motion.button>
                         </div>
                         <ConfidantSupportRow
@@ -1576,9 +1679,62 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
                 </AnimatePresence>
               </div>
 
-              {/* 技能面板（出战位锁定当前属性；随外层统一滚动） */}
+              {/* 技能面板（出战位锁定当前属性；随外层统一滚动）；切到借来的面具时换成借来的技能 */}
               <div className="px-4 mt-1 space-y-2">
-                {availableSkills.length === 0 ? (
+                {showBorrowed && borrowView ? (
+                  <>
+                    {!snap.borrowAvailable && (
+                      <p className="text-center text-[12px] font-bold text-violet-200/70 py-1">借来的面具本周已经带进 3 场战斗了，下周一重置。</p>
+                    )}
+                    {borrowView.skills.map((bsk, idx) => {
+                      const canUse = snap.borrowAvailable && snap.sp >= bsk.spCost && !isAnimating;
+                      const dmgType = bsk.type === 'damage' || bsk.type === 'crit' || bsk.type === 'attack_boost';
+                      const tag = BORROW_TAG[bsk.type];
+                      const shown = Math.max(1, Math.round(bsk.power * borrowView.mult));
+                      const hint = bsk.type === 'buff' ? '下次伤害+50%' : bsk.type === 'debuff' ? '易伤：下次+30%' : bsk.type === 'charge' ? '下次伤害×2' : bsk.type === 'heal' ? `回复${Math.max(1, Math.round(shown * 0.3))}HP` : '';
+                      return (
+                        <motion.div key={`${bsk.name}-${idx}`} whileTap={canUse ? { scale: 0.98 } : undefined}>
+                          <SlantCard
+                            as="button"
+                            cut={12}
+                            onClick={() => { if (canUse) { playSound('/themea-nav.mp3'); void runAction({ kind: 'borrowed', index: idx }); } }}
+                            disabled={!canUse}
+                            edge="rgba(196,181,253,0.45)"
+                            face="rgba(26,10,54,0.94)"
+                          >
+                            <div className="flex items-stretch">
+                              <div className="flex w-9 flex-shrink-0 items-center justify-center" style={{ background: tag.bg, color: tag.color }}>
+                                <SkillGlyph type={bsk.type} size={16} />
+                              </div>
+                              <div className="min-w-0 flex-1 px-2.5 py-2">
+                                <span className="inline-flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[15px] font-black text-white leading-tight">
+                                  <span className="truncate">{bsk.name}</span>
+                                  {bsk.type !== 'damage' && (
+                                    <span className="px-1.5 py-0.5 text-[9px] font-bold" style={{ color: tag.color, background: tag.bg, clipPath: slantPoly(4), lineHeight: 1.3 }}>{tag.label}</span>
+                                  )}
+                                </span>
+                                <p className="mt-0.5 text-[11px] leading-snug text-violet-200/70">万能属性 · 威力 ×{borrowView.mult.toFixed(1)}</p>
+                              </div>
+                              <div className="flex flex-shrink-0 flex-col items-end justify-center py-1.5 pr-3">
+                                {dmgType ? (
+                                  <>
+                                    <span className={`font-black tabular-nums leading-none ${(snap.chargeActive || snap.attackBuff) ? 'text-yellow-300' : 'text-white'}`} style={{ fontSize: 24, letterSpacing: '-0.03em' }}>{shown}</span>
+                                    <span className="text-[8px] font-bold uppercase tracking-[0.2em] text-white/35">power</span>
+                                  </>
+                                ) : (
+                                  <span className="text-[11px] font-bold text-emerald-300 text-right leading-tight max-w-[88px]">{hint}</span>
+                                )}
+                                <span className="mt-1 inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-black tabular-nums" style={{ clipPath: slantPoly(4), background: 'rgba(250,204,21,0.16)', color: '#fde047', lineHeight: 1.3 }}>
+                                  SP {bsk.spCost}
+                                </span>
+                              </div>
+                            </div>
+                          </SlantCard>
+                        </motion.div>
+                      );
+                    })}
+                  </>
+                ) : availableSkills.length === 0 ? (
                   <p className="text-gray-500 text-sm text-center py-4">
                     提升{attrNamesMap[snap.activeMask]}等级以解锁技能
                   </p>
@@ -1693,55 +1849,6 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
                   })
                 )}
               </div>
-
-              {/* 第 8 轮：借来的面具（组织队友展示的面具；不换出战位、不吃克制与弱点） */}
-              {borrowView && (
-                <div className="px-4 mt-4 pb-2">
-                  <div className="mb-1.5 flex items-baseline justify-between gap-2">
-                    <span className="min-w-0 truncate text-[12px] font-black text-violet-200">借来的面具 · {borrowView.name}<span className="ml-1 text-[10px] font-bold text-violet-300/70">（{borrowView.owner} 的）</span></span>
-                    <span className="shrink-0 text-[10px] font-black tabular-nums text-violet-300/80">
-                      {snap.borrowUsed ? '这一场随便用' : borrowView.left > 0 ? `本周还能带进 ${borrowView.left} 场` : '本周 3 场已用完'}
-                    </span>
-                  </div>
-                  <div className="space-y-1.5">
-                    {borrowView.skills.map((bsk, idx) => {
-                      const canUse = snap.borrowAvailable && snap.sp >= bsk.spCost && !isAnimating;
-                      const dmgType = bsk.type === 'damage' || bsk.type === 'crit' || bsk.type === 'attack_boost';
-                      const hint = bsk.type === 'buff' ? '下次伤害+50%' : bsk.type === 'debuff' ? '易伤：下次+30%' : bsk.type === 'charge' ? '下次伤害×2' : bsk.type === 'heal' ? `回复${Math.max(1, Math.round(bsk.power * borrowView.mult * 0.3))}HP` : '';
-                      return (
-                        <motion.div key={`${bsk.name}-${idx}`} whileTap={canUse ? { scale: 0.98 } : undefined}>
-                          <SlantCard
-                            as="button"
-                            cut={10}
-                            onClick={() => { if (canUse) { playSound('/themea-nav.mp3'); void runAction({ kind: 'borrowed', index: idx }); } }}
-                            disabled={!canUse}
-                            edge="rgba(196,181,253,0.45)"
-                            face="rgba(30,14,60,0.94)"
-                          >
-                            <div className="flex items-center">
-                              <div className="flex w-8 flex-shrink-0 items-center justify-center self-stretch" style={{ background: 'rgba(196,181,253,0.16)', color: '#ddd6fe' }}>
-                                <SkillGlyph type={bsk.type} size={14} />
-                              </div>
-                              <div className="min-w-0 flex-1 px-2.5 py-1.5">
-                                <span className="block truncate text-[13px] font-black text-white leading-tight">{bsk.name}</span>
-                                <span className="text-[10px] font-bold text-violet-200/70">不吃克制 · 威力 ×{borrowView.mult.toFixed(1)}</span>
-                              </div>
-                              <div className="flex flex-shrink-0 flex-col items-end justify-center py-1 pr-3">
-                                {dmgType ? (
-                                  <span className="text-[18px] font-black tabular-nums leading-none text-white">{Math.max(1, Math.round(bsk.power * borrowView.mult))}</span>
-                                ) : (
-                                  <span className="max-w-[88px] text-right text-[10px] font-bold leading-tight text-emerald-300">{hint}</span>
-                                )}
-                                <span className="mt-0.5 px-1.5 py-0.5 text-[9px] font-black tabular-nums" style={{ clipPath: slantPoly(4), background: 'rgba(250,204,21,0.16)', color: '#fde047', lineHeight: 1.3 }}>SP {bsk.spCost}</span>
-                              </div>
-                            </div>
-                          </SlantCard>
-                        </motion.div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
             </div>
           )}
         </>

@@ -153,7 +153,7 @@ export function OrgSettingsSheet({ view, open, onClose, onEditCard, onGone }: {
                 <div className="text-[14px] font-black text-gray-900 dark:text-white">在名册背面展示的面具</div>
                 <div className="shrink-0 text-[11px] font-black tabular-nums text-gray-400">{shown.length} / {ORG_MAX_SHOWN_MASKS}</div>
               </div>
-              <div className="text-[11px] font-semibold leading-relaxed text-gray-500 dark:text-gray-400">最多 {ORG_MAX_SHOWN_MASKS} 张，按点的顺序排：名字、等级和最强的三个技能。队友可以借走其中一张，在逆影战场里用（每周 3 场）。</div>
+              <div className="text-[11px] font-semibold leading-relaxed text-gray-500 dark:text-gray-400">最多 {ORG_MAX_SHOWN_MASKS} 张。队友可以同调其中一张，在逆影战场里用（每周 3 场）。</div>
               {persona ? (
                 <div className="mt-2 grid grid-cols-1 gap-1.5 min-[380px]:grid-cols-2">
                   {MASK_ATTRS.map((a, i) => {

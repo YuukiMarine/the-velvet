@@ -16,7 +16,7 @@ import { QuestBoardSheet, useQuestBoard } from '@/components/quests/QuestBoardSh
 import { AttributeId, Todo, TodoFrequency } from '@/types';
 import { useCloudSocialStore } from '@/store/cloudSocial';
 import { isPactLive } from '@/utils/pactLogic';
-import { opProgress } from '@/utils/orgOps';
+import { OP_KIND_LABEL, opProgress } from '@/utils/orgOps';
 import { goBondView } from '@/components/org/BondTitle';
 import { triggerSuccessFeedback, triggerNavFeedback } from '@/utils/feedback';
 import { TAP } from '@/utils/motion';
@@ -1310,7 +1310,7 @@ export const TodosView = () => {
                 {editingPactTodo && (
                   <p className="-mt-3 rounded-xl bg-pink-500/10 px-3 py-2.5 text-xs leading-relaxed text-pink-700 dark:text-pink-300">
                     {editingPactTodo.orgOp
-                      ? `这条待办是「${editingPactTodo.orgOp.orgName}」一场作战里你的那一份：标题、截止日由作战决定，这里只能改属性、分值和「重要」。不想参加了，到作战里点「这次不参加」。`
+                      ? `这条待办是「${editingPactTodo.orgOp.orgName}」${editingPactTodo.orgOp.kind === 'big' ? '一场作战' : '一个目标'}里你的那一份：标题、截止日由它决定，这里只能改属性、分值和「重要」。不想参加了，到组织的作战区里点「这次不参加」。`
                       : `这条待办跟着和 ${editingPactTodo.pact?.partnerName ?? 'Ta'} 的「一起进步」约定走：标题、每日重置、截止日和执行日期都由约定决定，这里只能改属性、分值和「重要」。要停下，到羁绊页结束这个约定。`}
                   </p>
                 )}
@@ -1808,7 +1808,7 @@ export const TodosView = () => {
               // 约定 / 作战的待办：不能手动归档 / 删除，给一个去约定 / 作战那边的入口
               ? [
                   { label: '编辑（属性 / 分值）', icon: <EditIcon />, onClick: () => handleEdit(menuTodo.id) },
-                  { label: menuTodo.orgOp ? '打开这场作战' : '打开这个约定', icon: <ArchiveIcon />, onClick: () => openLinked(menuTodo) },
+                  { label: menuTodo.orgOp ? (menuTodo.orgOp.kind === 'big' ? '打开这场作战' : `打开这个${OP_KIND_LABEL.small}`) : '打开这个约定', icon: <ArchiveIcon />, onClick: () => openLinked(menuTodo) },
                 ]
               : [
                   { label: '编辑', icon: <EditIcon />, onClick: () => handleEdit(menuTodo.id) },

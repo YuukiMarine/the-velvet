@@ -1872,3 +1872,21 @@ html[data-ios-standalone="true"] {
 @media (prefers-reduced-motion: reduce) {
   .org-map-pulse, .org-map-float { animation: none; }
 }
+
+/* ── 塔屏（第 9 轮 9a · PRD §14.7）：光轨流动 / 脉冲 / 呼吸 / 转圈 / 上浮光点 / 雾带漂移 / 扫光 / 锁定框 / 光柱。
+   元素挂 .tw-anim；粗犷度关掉时外层挂 .tw-still 全停，被战斗 / 结算盖住时挂 .tw-paused 定格。 */
+@keyframes tw-flow { to { stroke-dashoffset: -24; } }
+@keyframes tw-pulse { 0% { transform: scale(0.7); opacity: 0.85; } 100% { transform: scale(1.9); opacity: 0; } }
+@keyframes tw-rise { 0% { transform: translateY(0); opacity: 0; } 15% { opacity: 0.9; } 100% { transform: translateY(-260px); opacity: 0; } }
+@keyframes tw-drift { 0% { transform: translateX(-12%); } 50% { transform: translateX(12%); } 100% { transform: translateX(-12%); } }
+@keyframes tw-sheen { 0% { transform: translateX(-120%); } 60%, 100% { transform: translateX(220%); } }
+@keyframes tw-breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.07); } }
+@keyframes tw-spin { to { transform: rotate(360deg); } }
+@keyframes tw-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+@keyframes tw-lock { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.08); opacity: 0.75; } }
+@keyframes tw-beam { 0%, 100% { opacity: 0.55; } 50% { opacity: 0.9; } }
+.tw-still .tw-anim { animation: none !important; }
+.tw-paused .tw-anim { animation-play-state: paused !important; }
+@media (prefers-reduced-motion: reduce) {
+  .tw-anim { animation: none !important; }
+}

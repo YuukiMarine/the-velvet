@@ -1,24 +1,26 @@
 /**
  * 成员牌（第 7 轮 · PRD §12.4 / §12.5）：名册格子里的小牌，以及点开后放大翻面的正反两面。
- *   正面：代号、代表牌牌面、座位、名片状态、连续天数、本周出勤七格、称号（读最新一份纪要，挂一周）；
- *   背面：展示的面具（第 8 轮起最多 3 张：一张时列出三个技能，两三张时每张一行写最强一招）、本周目标与上周自评（周日会议写，7b）、加入日期。
+ *   正面：代号、代表牌牌面、座位、总等级 LV、名片状态、连续天数、本周出勤七格、称号（读最新一份纪要，挂一周）；
+ *   背面分两页（页签切换，默认第一页）：「五维」= 和首页同一个星形雷达（本人起的名字、等级、称号）+ LV + 总点数；
+ *     「面具」= 展示的面具（最多 3 张：一张时列出三个技能，两三张时每张一行写最强一招）+ 本周目标与上周自评；底下是加入日期。
+ * 五维和面具的属性名都用这个人自己起的名字（成员牌上推过来的），不是本机的。
  * 四频道各一套皮；我的那张有标记；屏蔽了的人半透明、挂「已屏蔽」；上一场会议没写目标的挂「本周缺席」。
  * 牌面默认是代表牌；点一下小牌的牌面就换成 Ta 的头像（本机偏好，再点换回来），放大牌、公告板跟着用同一个。
  */
-import { useEffect, useRef, type CSSProperties, type MouseEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from 'react';
 import { motion } from 'motion/react';
 import { useCloudSocialStore } from '@/store/cloudSocial';
 import { toggleMemberFace } from '@/services/orgSync';
 import { liveStatus } from '@/constants/profileStatus';
-import { DEFAULT_ATTRIBUTE_NAMES } from '@/constants/index';
 import { tarotArtUrl } from '@/constants/tarotArt';
 import { useTarotArtSet } from '@/ui/useTarotArtSet';
 import { P3R, slantClip } from '@/components/p3r/kit';
 import { P5R, P5_FONT, P5_TITLE_FONT, roughQuad } from '@/components/p5r/kit';
 import { P4Sparkle } from '@/ui/p4Kit';
-import { RESULT_LABEL, displayCodename, nextWeekKey, orgWeekKey, shiftDayKey, shownPersonas, tarotCardOf, weekDaysOf, zonedDay } from '@/utils/orgLogic';
+import { RESULT_LABEL, displayCodename, memberAttrNames, nextWeekKey, orgWeekKey, shiftDayKey, shownPersonas, tarotCardOf, weekDaysOf, zonedDay } from '@/utils/orgLogic';
 import { OrgEmblem, WeekDots, useOrgTone, type OrgTone } from './orgUi';
 import type { OrgMember, OrgMinutesSnapshot, OrgView, PersonaSkill } from '@/types';
+import { StarChartP3, type StarItem, type StarPalette } from '@/components/StarChartP3';
 
 const SKILL_TYPE: Record<PersonaSkill['type'], string> = {
   damage: '伤害', crit: '暴击', buff: '增伤', debuff: '易伤', charge: '蓄力', heal: '回复', attack_boost: '攻击增益',
@@ -67,6 +69,10 @@ export function memberFacts(view: OrgView, m: OrgMember, now = new Date()) {
     mine: m.id === view.me.id,
     status: liveStatus(m.card.status ?? null, now.getTime()),
     streak: m.card.streak,
+    /** 总等级（老版本推的牌子没有 → undefined，不显示） */
+    lv: m.card.lv,
+    /** 五维（本人的名字 + 等级；老版本推的牌子没有） */
+    attrs: m.card.attrs ?? [],
     week: weekDaysOf(m.card, weekKey),
     today: zonedDay(now, view.org.tz).weekday - 1,
   };
@@ -175,6 +181,7 @@ export function MemberTile({ view, member, minutes, blocked, onOpen, onMore }: {
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
           <SeatNumber tone={tone} n={member.seat} />
+          {f.lv && <LvTag tone={tone} lv={f.lv} />}
           {f.leader && <span aria-label="队长" className="text-[11px] leading-none">👑</span>}
           {f.mine && <MineTag tone={tone} />}
           {blocked && <span className="text-[9px] font-black" style={{ color: tone.sub }}>已屏蔽</span>}
@@ -186,6 +193,7 @@ export function MemberTile({ view, member, minutes, blocked, onOpen, onMore }: {
         <div className="mt-2">
           <WeekDots days={f.week} today={f.today} on={weekOn} off={weekOff} size={8} />
         </div>
+
         {(honors.titles.length > 0 || honors.absent) && (
           <div className="mt-1.5 flex flex-wrap gap-[3px]">
             {honors.titles.map(t => <HonorChip key={t} tone={tone}>{shortTitle(t)}</HonorChip>)}
@@ -269,6 +277,33 @@ function MineTag({ tone }: { tone: OrgTone }) {
   return <span className="rounded-full px-1.5 py-[1px] text-[9px] font-black text-white" style={{ background: tone.accent }}>我</span>;
 }
 
+/** 总等级小签（和同伴页铭牌上的 LV 同一套颜色：蓝斜块 / 橙圆角 / 红块纸边 / 主色圆角） */
+export function LvTag({ tone, lv, size = 'sm' }: { tone: OrgTone; lv: number; size?: 'sm' | 'md' | 'lg' }) {
+  const num = size === 'lg' ? 'text-[16px]' : size === 'md' ? 'text-[13px]' : 'text-[10px]';
+  const cap = size === 'lg' ? 'text-[10px]' : size === 'md' ? 'text-[9px]' : 'text-[8px]';
+  const pad = size === 'lg' ? 'px-2.5 py-[3px]' : size === 'md' ? 'px-2 py-[2px]' : 'px-1.5 py-[1px]';
+  const skin: CSSProperties = tone.channel === 'p3'
+    ? { background: P3R.blue, color: '#ffffff', clipPath: slantClip(size === 'sm' ? 3 : 5) }
+    : tone.channel === 'p4'
+      ? { background: 'var(--p4-orange, #f9a11b)', color: '#131313', borderRadius: 999, boxShadow: '0 0 0 1.5px #131313' }
+      : tone.channel === 'p5'
+        ? { background: '#c00008', color: P5R.white, clipPath: 'polygon(2px 0, 100% 1px, calc(100% - 2px) 100%, 0 calc(100% - 1px))', fontFamily: P5_TITLE_FONT }
+        : { background: 'var(--color-primary, #6366f1)', color: '#ffffff', borderRadius: 6 };
+  return (
+    <span className={`inline-flex shrink-0 items-baseline gap-[3px] whitespace-nowrap font-black leading-none ${pad}`} style={skin} aria-label={`等级 ${lv}`}>
+      <span className={`${cap} tracking-wider opacity-85`}>LV</span>
+      <span className={`${num} tabular-nums ${tone.channel === 'p3' ? 'italic' : ''}`}>{lv}</span>
+    </span>
+  );
+}
+
+/** 成员牌背面星形雷达的配色（背面纸色各频道不同：蓝白卡用首页默认那套，其余三套各配一套） */
+const STAR_PALETTES: Partial<Record<OrgTone['channel'], StarPalette>> = {
+  p4: { data: '#f9a11b', ink: '#131313', inkSoft: 'rgba(19,19,19,0.6)', accent: '#2e6be0', arm: 'rgba(19,19,19,0.35)', ringPale: '#fffaf0', ringDeep: '#f2d27a', focus: '#131313' },
+  p5: { data: '#c00008', ink: '#000000', inkSoft: '#4a4640', accent: '#c00008', arm: 'rgba(0,0,0,0.35)', ringPale: '#f7f2ea', ringDeep: '#d9c8b0', focus: '#c00008' },
+  neutral: { data: '#818cf8', ink: '#f3f4f6', inkSoft: '#9ca3af', accent: '#a5b4fc', arm: 'rgba(165,180,252,0.45)', ringPale: '#1f2937', ringDeep: '#4338ca', focus: '#a5b4fc' },
+};
+
 // ── 放大翻面的正反两面 ───────────────────────────────────────────────────────────
 
 export function MemberCardFront({ view, member, minutes, width, height }: { view: OrgView; member: OrgMember; minutes?: OrgMinutesSnapshot | null; width: number; height: number }) {
@@ -293,6 +328,7 @@ export function MemberCardFront({ view, member, minutes, width, height }: { view
         <span className="px-2 py-1 text-[11px] font-black tracking-[0.18em]" style={{ background: tone.channel === 'p4' ? 'var(--p4-orange, #f9a11b)' : tone.channel === 'p5' ? P5R.red : tone.channel === 'p3' ? P3R.blue : 'rgba(0,0,0,0.55)', color: tone.channel === 'p4' ? '#131313' : '#ffffff', clipPath: tone.channel === 'p3' ? slantClip(5) : tone.channel === 'p5' ? roughQuad(1.7, 2) : undefined, borderRadius: tone.channel === 'p4' ? 999 : tone.channel === 'neutral' ? 8 : 0, fontFamily: tone.titleFont }}>
           SEAT {seatNo(member.seat)}
         </span>
+        {f.lv && <LvTag tone={tone} lv={f.lv} size="md" />}
         {f.leader && <span className="text-[16px] leading-none">👑</span>}
       </div>
       <div className="absolute inset-x-0 bottom-0 px-5 pb-5">
@@ -319,12 +355,16 @@ export function MemberCardFront({ view, member, minutes, width, height }: { view
   );
 }
 
-export function MemberCardBack({ view, member, width, height }: { view: OrgView; member: OrgMember; width: number; height: number }) {
+export function MemberCardBack({ view, member, width, height, initialTab = 'stats' }: { view: OrgView; member: OrgMember; width: number; height: number; initialTab?: 'stats' | 'masks' }) {
   const tone = useOrgTone();
   const f = memberFacts(view, member);
   const g = goalFacts(view, member);
   const masks = shownPersonas(member.card);
   const p = masks.length === 1 ? masks[0] : null;
+  // 面具的属性写这个人自己起的名字
+  const names = memberAttrNames(member.card);
+  const attrs = member.card.attrs ?? [];
+  const [tab, setTab] = useState<'stats' | 'masks'>(initialTab);
   // 两三张时每张一行：名字、属性 · 等级、最强的一招
   const best = (m: typeof masks[number]) => [...m.skills].sort((a, b) => b.power - a.power)[0];
   const bg = tone.channel === 'p3' ? P3R.panel : tone.channel === 'p4' ? '#fff6d0' : tone.channel === 'p5' ? P5R.paper : '#111827';
@@ -333,58 +373,121 @@ export function MemberCardBack({ view, member, width, height }: { view: OrgView;
   const accent = tone.channel === 'p3' ? P3R.blue : tone.channel === 'p4' ? '#2e6be0' : tone.channel === 'p5' ? P5R.red : '#a5b4fc';
   // 小屏上牌只有两百来宽、三百多高：字号收一档，面具名 / 目标最多两行，日期始终钉在底部
   const small = height < 420;
+  const totalPoints = attrs.reduce((n, a) => n + (a.points ?? 0), 0);
+  const hasPoints = attrs.some(a => a.points !== undefined);
+  const stars: StarItem[] = attrs.map(a => ({ id: a.id, name: a.name, level: a.locked ? 0 : a.level, maxLevel: a.max ?? 10, stars: a.stars, title: a.title ?? '' }));
   const heading = (t: string, en: string) => (
     <div className="flex items-baseline gap-2">
       <span className={`${small ? 'text-[12px]' : 'text-[13px]'} font-black`} style={{ color: ink, fontFamily: tone.titleFont }}>{t}</span>
       <span className="text-[9px] font-black tracking-[0.2em]" style={{ color: accent }}>{en}</span>
     </div>
   );
+  // 点页签别把牌翻回去（放大牌点哪都翻面；专辑墙按在按钮上本来就不翻）
+  const stop = (e: MouseEvent | React.PointerEvent) => e.stopPropagation();
+  const tabBtn = (id: 'stats' | 'masks', label: string, i: number) => {
+    const on = tab === id;
+    const skin: CSSProperties = tone.channel === 'p3'
+      ? { background: on ? P3R.blue : 'transparent', color: on ? '#ffffff' : sub, clipPath: slantClip(5), boxShadow: on ? undefined : `inset 0 0 0 1px ${P3R.cyanPale}` }
+      : tone.channel === 'p4'
+        ? { background: on ? '#131313' : 'transparent', color: on ? '#fff6d0' : '#131313', borderRadius: 999, boxShadow: '0 0 0 1.5px #131313' }
+        : tone.channel === 'p5'
+          ? { background: on ? P5R.red : P5R.ink, color: P5R.white, clipPath: roughQuad(i + 4.2, 1.6), fontFamily: P5_TITLE_FONT }
+          : { background: on ? '#4f46e5' : 'rgba(255,255,255,0.08)', color: on ? '#ffffff' : '#9ca3af', borderRadius: 999 };
+    return (
+      <button
+        key={id}
+        type="button"
+        role="tab"
+        aria-selected={on}
+        onPointerDown={stop}
+        onClick={(e) => { e.stopPropagation(); setTab(id); }}
+        className={`px-2.5 py-[3px] font-black leading-none ${small ? 'text-[11px]' : 'text-[12px]'}`}
+        style={skin}
+      >
+        {label}
+      </button>
+    );
+  };
   return (
     <div className={`relative flex h-full w-full flex-col overflow-hidden ${small ? 'px-4 pb-4 pt-5' : 'px-5 pb-5 pt-6'}`} style={{ width, height, background: bg, color: ink, fontFamily: tone.bodyFont }}>
       <OrgEmblem id={view.org.emblem} size={Math.round(width * 0.5)} color={accent} className="pointer-events-none absolute -bottom-4 -right-6" style={{ opacity: 0.08 }} />
       {tone.channel === 'p4' && <P4Sparkle size={18} color="var(--p4-orange, #f9a11b)" className="absolute right-4 top-4" />}
       <div className="relative shrink-0 truncate pr-5 text-[11px] font-black tracking-[0.2em]" style={{ color: sub }}>SEAT {seatNo(member.seat)} · {f.codename}</div>
+      <div role="tablist" aria-label="成员牌背面" className={`relative flex shrink-0 gap-1.5 ${small ? 'mt-2' : 'mt-3'}`}>
+        {tabBtn('stats', '五维', 0)}
+        {tabBtn('masks', '面具', 1)}
+      </div>
 
-      <div className={`relative min-h-0 flex-1 overflow-hidden ${small ? 'mt-3' : 'mt-4'}`}>
-        {heading('展示的面具', 'PERSONA')}
-        {masks.length > 1 ? (
-          <ul className={small ? 'mt-1.5 space-y-1.5' : 'mt-2 space-y-2'}>
-            {masks.map((m, i) => {
-              const top = best(m);
-              return (
-                <li key={`${m.attribute}-${i}`} className="min-w-0">
-                  <div className={`truncate font-black leading-tight ${small ? 'text-[14px]' : 'text-[16px]'}`} style={{ fontFamily: tone.titleFont }}>{m.name}</div>
-                  <div className={`truncate font-bold ${small ? 'text-[10px]' : 'text-[11px]'}`} style={{ color: sub }}>
-                    {DEFAULT_ATTRIBUTE_NAMES[m.attribute] ?? m.attribute} · Lv.{m.level}
-                    {top && <span style={{ color: accent }}> · {top.name} {SKILL_TYPE[top.type] ?? top.type} {top.power}</span>}
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        ) : p ? (
-          <div className="mt-1.5">
-            <div className={`line-clamp-2 font-black leading-tight ${small ? 'text-[18px]' : 'text-[22px]'}`} style={{ fontFamily: tone.titleFont }}>{p.name}</div>
-            <div className="mt-0.5 text-[12px] font-bold" style={{ color: sub }}>{DEFAULT_ATTRIBUTE_NAMES[p.attribute] ?? p.attribute} · Lv.{p.level}</div>
-            <ul className={`${small ? 'mt-2 space-y-1' : 'mt-2.5 space-y-1.5'}`}>
-              {p.skills.map((s, i) => (
-                <li key={i} className={`flex items-center justify-between gap-2 font-bold ${small ? 'text-[11px]' : 'text-[12px]'}`}>
-                  <span className="min-w-0 truncate">{s.name}</span>
-                  <span className={`shrink-0 font-black tabular-nums ${small ? 'text-[10px]' : 'text-[11px]'}`} style={{ color: accent }}>{SKILL_TYPE[s.type] ?? s.type} · {s.power}</span>
-                </li>
-              ))}
-              {p.skills.length === 0 && <li className="text-[12px] font-bold" style={{ color: sub }}>还没有解锁的技能</li>}
-            </ul>
-          </div>
+      <div className={`relative min-h-0 flex-1 overflow-hidden ${small ? 'mt-1' : 'mt-2'}`} role="tabpanel">
+        {tab === 'stats' ? (
+          attrs.length > 0 ? (
+            <div className="flex h-full flex-col">
+              <div className="min-h-0 flex-1" onPointerDown={stop}>
+                <StarChartP3
+                  items={stars}
+                  palette={STAR_PALETTES[tone.channel]}
+                  compact
+                  showTitles={!small}
+                  onSelect={(_id, e) => e.stopPropagation()}
+                />
+              </div>
+              <div className={`grid shrink-0 grid-cols-2 gap-2 ${small ? 'mt-0' : 'mt-1'}`}>
+                <div>
+                  <div className="text-[9px] font-black tracking-[0.2em]" style={{ color: sub }}>LV</div>
+                  <div className={`${small ? 'text-[20px]' : 'text-[26px]'} font-black leading-none tabular-nums`} style={{ color: accent, fontFamily: tone.titleFont }}>{f.lv ?? attrs.reduce((n, a) => n + (a.locked ? 0 : a.level), 0)}</div>
+                </div>
+                <div>
+                  <div className="text-[9px] font-black tracking-[0.2em]" style={{ color: sub }}>总点数</div>
+                  <div className={`${small ? 'text-[20px]' : 'text-[26px]'} font-black leading-none tabular-nums`} style={{ fontFamily: tone.titleFont }}>{hasPoints ? totalPoints.toLocaleString() : '—'}</div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="mt-2 text-[12px] font-bold leading-relaxed" style={{ color: sub }}>{f.mine ? '五维会在下次同步时推上来。' : 'Ta 的 App 还没更新，五维要等 Ta 更新后才看得到。'}</div>
+          )
         ) : (
-          <div className="mt-2 text-[12px] font-bold leading-relaxed" style={{ color: sub }}>{f.mine ? '还没展示面具。在据点设置里可以打开。' : 'Ta 没有展示面具。'}</div>
-        )}
+          <>
+            {heading('展示的面具', 'PERSONA')}
+            {masks.length > 1 ? (
+              <ul className={small ? 'mt-1.5 space-y-1.5' : 'mt-2 space-y-2'}>
+                {masks.map((m, i) => {
+                  const top = best(m);
+                  return (
+                    <li key={`${m.attribute}-${i}`} className="min-w-0">
+                      <div className={`truncate font-black leading-tight ${small ? 'text-[14px]' : 'text-[16px]'}`} style={{ fontFamily: tone.titleFont }}>{m.name}</div>
+                      <div className={`truncate font-bold ${small ? 'text-[10px]' : 'text-[11px]'}`} style={{ color: sub }}>
+                        {names[m.attribute] ?? m.attribute} · Lv.{m.level}
+                        {top && <span style={{ color: accent }}> · {top.name} {SKILL_TYPE[top.type] ?? top.type} {top.power}</span>}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : p ? (
+              <div className="mt-1.5">
+                <div className={`line-clamp-2 font-black leading-tight ${small ? 'text-[18px]' : 'text-[22px]'}`} style={{ fontFamily: tone.titleFont }}>{p.name}</div>
+                <div className="mt-0.5 text-[12px] font-bold" style={{ color: sub }}>{names[p.attribute] ?? p.attribute} · Lv.{p.level}</div>
+                <ul className={`${small ? 'mt-2 space-y-1' : 'mt-2.5 space-y-1.5'}`}>
+                  {p.skills.map((s, i) => (
+                    <li key={i} className={`flex items-center justify-between gap-2 font-bold ${small ? 'text-[11px]' : 'text-[12px]'}`}>
+                      <span className="min-w-0 truncate">{s.name}</span>
+                      <span className={`shrink-0 font-black tabular-nums ${small ? 'text-[10px]' : 'text-[11px]'}`} style={{ color: accent }}>{SKILL_TYPE[s.type] ?? s.type} · {s.power}</span>
+                    </li>
+                  ))}
+                  {p.skills.length === 0 && <li className="text-[12px] font-bold" style={{ color: sub }}>还没有解锁的技能</li>}
+                </ul>
+              </div>
+            ) : (
+              <div className="mt-2 text-[12px] font-bold leading-relaxed" style={{ color: sub }}>{f.mine ? '还没展示面具。在据点设置里可以打开。' : 'Ta 没有展示面具。'}</div>
+            )}
 
-        <div className={small ? 'mt-3' : 'mt-5'}>
-          {heading(g.goal?.label ?? '本周目标', 'GOAL')}
-          <div className={`mt-1.5 line-clamp-2 font-bold leading-relaxed ${small ? 'text-[12px]' : 'text-[14px]'}`}>{g.goal ? `「${g.goal.text}」` : <span style={{ color: sub }}>{f.mine ? '周日会议上写一句下周目标，会出现在这里' : '这周还没有目标'}</span>}</div>
-          {g.result && <div className={`mt-1 font-black ${small ? 'text-[11px]' : 'text-[12px]'}`} style={{ color: accent }}>{g.result}</div>}
-        </div>
+            <div className={small ? 'mt-3' : 'mt-5'}>
+              {heading(g.goal?.label ?? '本周目标', 'GOAL')}
+              <div className={`mt-1.5 line-clamp-2 font-bold leading-relaxed ${small ? 'text-[12px]' : 'text-[14px]'}`}>{g.goal ? `「${g.goal.text}」` : <span style={{ color: sub }}>{f.mine ? '周日会议上写一句下周目标，会出现在这里' : '这周还没有目标'}</span>}</div>
+              {g.result && <div className={`mt-1 font-black ${small ? 'text-[11px]' : 'text-[12px]'}`} style={{ color: accent }}>{g.result}</div>}
+            </div>
+          </>
+        )}
       </div>
 
       <div className="relative mt-2 shrink-0 text-[11px] font-bold" style={{ color: sub }}>加入于 {ymd(member.createdAt)}</div>

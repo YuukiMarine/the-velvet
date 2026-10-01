@@ -330,25 +330,25 @@ export async function cancelOpFromUi(orgId: string, opId: string): Promise<void>
 /** 这次不参加：写一条 out，我的待办归档 */
 export async function optOutFromUi(orgId: string, opId: string): Promise<void> {
   const hit = findOp(orgId, opId);
-  if (!hit) throw new OrgError('找不到这场作战了');
+  if (!hit) throw new OrgError('找不到了，可能已经取消');
   const made = await createCheckin(hit.op, 'out');
-  if (!made) throw new OrgError('这场作战已经结束了');
+  if (!made) throw new OrgError('已经结束了');
   putView(withCheckin(viewNow(orgId) ?? hit.view, made));
   await archiveOpTodo(opId);
 }
 
-/** 大作战里没分到子任务的我：写下 / 改写自己那一份（改写 = 删掉旧的再写） */
+/** 作战里没分到子任务的我：写下 / 改写自己那一份（改写 = 删掉旧的再写） */
 export async function writeMyPartFromUi(orgId: string, opId: string, text: string): Promise<void> {
   const me = getUserId();
   const hit = findOp(orgId, opId);
-  if (!me || !hit) throw new OrgError('找不到这场作战了');
+  if (!me || !hit) throw new OrgError('找不到了，可能已经取消');
   const old = (hit.view.checkins ?? []).find(c => c.operationId === opId && c.userId === me && c.kind === 'plan');
   if (old) {
     await deleteCheckin(old.id);
     putView(withoutCheckin(viewNow(orgId) ?? hit.view, old.id));
   }
   const made = await createCheckin(hit.op, 'plan', { text });
-  if (!made) throw new OrgError('这场作战已经结束了');
+  if (!made) throw new OrgError('已经结束了');
   const view = withCheckin(viewNow(orgId) ?? hit.view, made);
   putView(view);
   putView(await reconcileOne(view, hit.op, me));

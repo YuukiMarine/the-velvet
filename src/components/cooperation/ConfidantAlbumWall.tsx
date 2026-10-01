@@ -29,8 +29,7 @@ import { useAppStore } from '@/store';
 import { useShortViewportScale } from '@/utils/useViewportScale';
 import { hardTagInk } from '@/utils/levelDifficulty';
 import { P3R, slantClip } from '@/components/p3r/kit';
-import { starPts } from '@/components/p5r/kit';
-import { P4Sparkle } from '@/ui/p4Kit';
+import { WallSpinBackdrop } from './WallSpinBackdrop';
 
 // 基准尺寸（19.5:9 长屏原稿口径）；实际渲染尺寸 = 基准 × useShortViewportScale——
 // 3:4 竖屏（视口高 ~500px）下整墙按比例缩，铭牌/应援行才装得进一屏（v2.7 适配）
@@ -494,36 +493,6 @@ const faceOf = (c: Confidant): string | undefined =>
  * 每个同伴一根竖刻度、空白牌一个描边点；当前项放大成主题色圆头 pill。
  * 整条轨道可点/拖：按 x 比例取最近刻度，命中区是整轨（刻度细也好点）。
  */
-/**
- * P3 换牌水波：三圈同心圆环从铭牌处推开、扩到最大时化掉。
- * 调用方给 key={index}，翻一张就整块重挂 = 从头播一遍（不必手写播放状态机）。
- * 环用 motion 补间 SVG 的 r 属性画，描边粗细恒定——拿带 border 的 div 去 scale，
- * 边会跟着放大成一圈粗白箍（与长按轮盘的圆环同一套做法）。
- */
-const P3SwitchRipple = () => (
-  <svg
-    aria-hidden
-    className="pointer-events-none absolute left-1/2 top-1/2 -z-10"
-    style={{ width: 460, height: 460, marginLeft: -230, marginTop: -212, overflow: 'visible' }}
-    viewBox="0 0 460 460"
-  >
-    {/* 两圈就够（三圈太吵），再粗一档，并且更早化掉：opacity 的 times 前移 */}
-    {[0, 1].map((i) => (
-      <motion.circle
-        key={i}
-        cx={230}
-        cy={230}
-        fill="none"
-        stroke={i === 1 ? P3R.blue : P3R.cyan}
-        strokeWidth={i === 1 ? 7 : 5.5}
-        initial={{ r: 18, opacity: 0 }}
-        animate={{ r: 158 + i * 70, opacity: [0, 0.5, 0.2, 0] }}
-        transition={{ duration: 0.9, delay: i * 0.11, ease: [0.16, 0.7, 0.35, 1], opacity: { duration: 0.9, delay: i * 0.11, times: [0, 0.1, 0.38, 0.72] } }}
-      />
-    ))}
-  </svg>
-);
-
 const WallScrubber = ({
   items,
   index,
@@ -944,39 +913,8 @@ export const ConfidantAlbumWall = ({ confidants, onOpenDetail, onCreate, canCrea
 
       {/* 档案铭牌 + scrubber（p3：信息已上卡，铭牌只留空白牌文案 + scrubber + 蓝提示行） */}
       <div className={`relative mx-auto max-w-sm px-3 ${p3 ? '-mt-1' : 'mt-2'}`}>
-        {/* P5：铭牌背后压一枚与星象 / 菜单同款的暗红同心五角星；每翻一张牌转 60°
-            （非线性弹簧，跟着 index 走，左右翻分别是 ∓60°） */}
-        {isP4 && (
-          <motion.div
-            aria-hidden
-            className="pointer-events-none absolute left-1/2 top-1/2 -z-10"
-            style={{ width: 300, height: 300, marginLeft: -150, marginTop: -136 }}
-            animate={{ rotate: index * 90 }}
-            transition={{ type: 'spring', stiffness: 140, damping: 15, mass: 0.9 }}
-          >
-            {/* 黄频道的对位件：**实色**四角星（就是频道签名件 P4Sparkle——四条腰是深深
-                内凹的曲线，不是同心描边），每翻一张转 90°（红是同心五角星转 60°） */}
-            <P4Sparkle size={300} color="rgba(19,19,19,0.12)" />
-          </motion.div>
-        )}
-        {isP5 && (
-          <motion.div
-            aria-hidden
-            className="pointer-events-none absolute left-1/2 top-1/2 -z-10"
-            style={{ width: 330, height: 330, marginLeft: -165, marginTop: -150 }}
-            animate={{ rotate: index * 60 }}
-            transition={{ type: 'spring', stiffness: 140, damping: 15, mass: 0.9 }}
-          >
-            <svg viewBox="0 0 100 100" className="h-full w-full">
-              {[50, 39, 28, 17, 6].map((r) => (
-                <polygon key={r} points={starPts(50, 50, r, -90 + 14)} fill="none" stroke="#4a0004" strokeWidth={2.4} strokeLinejoin="miter" />
-              ))}
-            </svg>
-          </motion.div>
-        )}
-        {/* P3 的对位件：不转星，改成每翻一张就从铭牌处推出去的一组水波圆环
-            （key=index → 换牌即重挂 = 重新播一遍）。红是转 60°、黄是转 90°。 */}
-        {p3 && <P3SwitchRipple key={index} />}
+        {/* 铭牌背后那枚跟着翻牌动的背景件（红星转 60° / 黄星转 90° / 蓝水波；组织名册的专辑墙也用它） */}
+        <WallSpinBackdrop channel={isP4 ? 'p4' : isP5 ? 'p5' : p3 ? 'p3' : 'neutral'} index={index} />
         {/* 跳卡条（p3 稿：在铭牌文字**上方**）。
             必须放在铭牌三岔分支之外——原本它嵌在"已缔结同伴"那一支里，
             于是蓝/粉频道翻到未缔结好友或空白牌时整条就消失了

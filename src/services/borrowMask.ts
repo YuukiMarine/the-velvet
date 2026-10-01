@@ -16,7 +16,7 @@ export class BorrowError extends Error {}
 export async function borrowMaskFromUi(view: OrgView, member: OrgMember, persona: OrgPersonaSnapshot): Promise<void> {
   const st = useAppStore.getState();
   const bs = st.battleState;
-  if (!bs) throw new BorrowError('先去逆影战场唤醒你自己的人格面具，才能借用别人的');
+  if (!bs) throw new BorrowError('先去逆影战场唤醒你自己的人格面具，才能同调别人的');
   if (member.userId === view.me.userId) throw new BorrowError('这是你自己的面具');
   const clean = sanitizePersona(persona);
   if (!clean || !clean.skills.length) throw new BorrowError('这张面具还没有能用的技能');

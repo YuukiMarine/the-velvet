@@ -3,8 +3,9 @@
  *   · 动态卡：代表牌小图 / 代号 / 时间，那一句，快照小签（加点用分享者自己的属性名、类型、补记、日期），
  *     六个标签（计数、我贴的高亮），下面一行列出谁贴了什么；长按或点「⋯」：举报 / 屏蔽此人 / 删除；
  *   · 纪要卡：最新一份置顶（出席、完成率、做到了、称号、下周目标、缺席），更早的按时间混在动态里；
- *   · 作战达成卡（第 8 轮）：那句话、大 / 小作战、达成那天、做完的人（大作战带各自那一份），也能贴标签；不能删（据点经验的来源）；
+ *   · 目标 / 作战达成卡（第 8 轮）：那句话、达成那天、做完的人（作战带各自那一份），也能贴标签；不能删（据点经验的来源）；
  *   · 屏蔽的人整条不显示、他贴的标签不计数、纪要里也不列他；举报过的动态本机不再显示。
+ *   · 顶上一排筛选（全部 / 动态 / 作战 / 纪要，带条数），条目按天隔开（今天 / 昨天 / 几月几日 周几）。
  */
 import { useMemo, useRef, useState } from 'react';
 import { motion } from 'motion/react';
@@ -13,6 +14,7 @@ import { useCloudSocialStore } from '@/store/cloudSocial';
 import { ActionSheet } from '@/components/ActionSheet';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { useLongPress } from '@/utils/useLongPress';
+import { OP_KIND_LABEL } from '@/utils/orgOps';
 import { P3R, slantClip } from '@/components/p3r/kit';
 import { P5R, P5_TITLE_FONT, roughQuad } from '@/components/p5r/kit';
 import { P4Sparkle } from '@/ui/p4Kit';
@@ -39,6 +41,26 @@ const localToday = () => {
 };
 const errText = (e: unknown, fallback: string) => (e instanceof Error && e.message ? e.message : fallback);
 
+/** 筛选：动态 = 自己分享的记录；作战 = 目标 / 作战的达成卡；纪要 = 周日会议纪要 */
+type BoardFilter = 'all' | 'moment' | 'operation' | 'minutes';
+const FILTERS: Array<{ id: BoardFilter; label: string }> = [
+  { id: 'all', label: '全部' },
+  { id: 'moment', label: '动态' },
+  { id: 'operation', label: '作战' },
+  { id: 'minutes', label: '纪要' },
+];
+const WEEKDAY = ['日', '一', '二', '三', '四', '五', '六'];
+const dayKeyOf = (d: Date) => `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+/** 分隔条上的字：今天 / 昨天 / 9月28日 周日（跨年带年份） */
+function dayLabel(d: Date, now = new Date()): string {
+  const start = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diff = Math.round((start(now) - start(d)) / 86400000);
+  if (diff === 0) return '今天';
+  if (diff === 1) return '昨天';
+  const md2 = `${d.getMonth() + 1}月${d.getDate()}日 周${WEEKDAY[d.getDay()]}`;
+  return d.getFullYear() === now.getFullYear() ? md2 : `${d.getFullYear()}年${md2}`;
+}
+
 export function BoardSection({ view, blocked, onFlash }: { view: OrgView; blocked: Set<string>; onFlash: (s: string) => void }) {
   const tone = useOrgTone();
   const hidden = useCloudSocialStore(s => s.orgHiddenPosts);
@@ -59,6 +81,16 @@ export function BoardSection({ view, blocked, onFlash }: { view: OrgView; blocke
   const pinned = visible.find(p => p.kind === 'minutes');
   const rest = visible.filter(p => p !== pinned);
   const blockedCount = (posts ?? []).filter(p => p.kind === 'moment' && blocked.has(p.userId)).length;
+  const [filter, setFilter] = useState<BoardFilter>('all');
+  const counts: Record<BoardFilter, number> = {
+    all: visible.length,
+    moment: visible.filter(p => p.kind === 'moment').length,
+    operation: visible.filter(p => p.kind === 'operation').length,
+    minutes: visible.filter(p => p.kind === 'minutes').length,
+  };
+  // 置顶的纪要只在「全部」「纪要」里出现；下面的列表按筛选过一遍
+  const showPinned = !!pinned?.minutes && (filter === 'all' || filter === 'minutes');
+  const list = filter === 'all' ? rest : rest.filter(p => p.kind === filter);
 
   if (!posts) {
     return <OrgPanel seed={41}><div className="text-[13px] font-bold" style={{ color: tone.sub }}>公告板还没拉到，稍后点右上角刷新。</div></OrgPanel>;
@@ -84,12 +116,34 @@ export function BoardSection({ view, blocked, onFlash }: { view: OrgView; blocke
 
   return (
     <div className="space-y-3">
-      {pinned?.minutes && <MinutesCard org={view.org} minutes={pinned.minutes} blocked={blocked} tone={tone} />}
-      {rest.map((p, i) => (p.kind === 'minutes' && p.minutes
-        ? <MinutesCard key={p.id} org={view.org} minutes={p.minutes} blocked={blocked} tone={tone} compact />
-        : p.kind === 'operation' && p.opCard
-          ? <OpWinCard key={p.id} post={p} view={view} tone={tone} blocked={blocked} index={i} onReact={(tag) => react(p.id, tag)} onMore={() => setMenuFor(p)} />
-          : <PostCard key={p.id} post={p} view={view} tone={tone} blocked={blocked} index={i} onReact={(tag) => react(p.id, tag)} onMore={() => setMenuFor(p)} />))}
+      {visible.length > 0 && (
+        <div role="tablist" aria-label="公告板筛选" className="flex flex-wrap gap-1.5">
+          {FILTERS.map((f, i) => (
+            <FilterChip key={f.id} tone={tone} seed={i} label={f.label} count={counts[f.id]} on={filter === f.id} onClick={() => setFilter(f.id)} />
+          ))}
+        </div>
+      )}
+      {showPinned && pinned?.minutes && <MinutesCard org={view.org} minutes={pinned.minutes} blocked={blocked} tone={tone} />}
+      {list.map((p, i) => {
+        const key = dayKeyOf(p.createdAt);
+        const newDay = i === 0 || key !== dayKeyOf(list[i - 1].createdAt);
+        const card = p.kind === 'minutes' && p.minutes
+          ? <MinutesCard org={view.org} minutes={p.minutes} blocked={blocked} tone={tone} compact />
+          : p.kind === 'operation' && p.opCard
+            ? <OpWinCard post={p} view={view} tone={tone} blocked={blocked} index={i} onReact={(tag) => react(p.id, tag)} onMore={() => setMenuFor(p)} />
+            : <PostCard post={p} view={view} tone={tone} blocked={blocked} index={i} onReact={(tag) => react(p.id, tag)} onMore={() => setMenuFor(p)} />;
+        return (
+          <div key={p.id} className="space-y-3">
+            {newDay && <DayDivider tone={tone} label={dayLabel(p.createdAt)} />}
+            {card}
+          </div>
+        );
+      })}
+      {visible.length > 0 && filter !== 'all' && list.length === 0 && !showPinned && (
+        <div className="py-6 text-center text-[12px] font-bold" style={{ color: tone.stageSub }}>
+          {filter === 'moment' ? '最近 30 天没有人分享动态' : filter === 'operation' ? '最近 30 天还没有达成的目标或作战' : '最近 30 天还没有会议纪要'}
+        </div>
+      )}
       {visible.length === 0 && (
         <OrgPanel seed={43}>
           <div className="text-[15px] font-black" style={{ fontFamily: tone.titleFont }}>还没有动态</div>
@@ -131,6 +185,60 @@ export function BoardSection({ view, blocked, onFlash }: { view: OrgView; blocke
           try { await deletePostFromUi(view.org.id, p.id); onFlash('删掉了'); } catch (e) { onFlash(errText(e, '没删掉，稍后再试')); }
         }}
       />
+    </div>
+  );
+}
+
+// ── 筛选与日期分隔 ────────────────────────────────────────────────────────────
+
+function FilterChip({ tone, seed, label, count, on, onClick }: { tone: OrgTone; seed: number; label: string; count: number; on: boolean; onClick: () => void }) {
+  const body = (
+    <>
+      {label}
+      <span className="tabular-nums text-[10px] opacity-75">{count}</span>
+    </>
+  );
+  const common = { type: 'button' as const, role: 'tab', 'aria-selected': on, onClick, whileTap: { scale: 0.94 }, 'aria-label': `${label}，${count} 条` };
+  if (tone.channel === 'p5') {
+    return (
+      <motion.button {...common} className="relative inline-flex items-center whitespace-nowrap px-3 py-1.5 text-[13px] font-black leading-none" style={{ fontFamily: P5_TITLE_FONT }}>
+        {/* 没选中：纸白描边 + 黑底（外层纸白、里层黑压进 2px）；选中：整块红 */}
+        <span aria-hidden className="absolute inset-0" style={{ background: on ? P5R.red : P5R.paper, clipPath: roughQuad(seed + 3.1, 2.2) }} />
+        {!on && <span aria-hidden className="absolute inset-[2px]" style={{ background: P5R.ink, clipPath: roughQuad(seed + 3.3, 1.6) }} />}
+        <span className="relative inline-flex items-center gap-1.5" style={{ color: P5R.white }}>{body}</span>
+      </motion.button>
+    );
+  }
+  const style = tone.channel === 'p3'
+    ? { background: on ? P3R.blue : P3R.panelGlass, color: on ? '#ffffff' : P3R.ink, clipPath: slantClip(6) }
+    : tone.channel === 'p4'
+      ? { background: on ? 'var(--ui-ink, #131313)' : 'var(--ui-paper, #fff6d0)', color: on ? 'var(--ui-paper, #fff6d0)' : 'var(--ui-ink, #131313)', borderRadius: 999, boxShadow: '0 0 0 2px var(--ui-line, #131313)' }
+      : { background: on ? tone.accent : 'rgba(127,127,127,0.12)', color: on ? '#ffffff' : tone.ink, borderRadius: 999 };
+  return (
+    <motion.button {...common} className="relative inline-flex items-center gap-1.5 whitespace-nowrap px-3 py-1.5 text-[13px] font-black leading-none" style={style}>
+      {body}
+      {on && tone.channel === 'p4' && <P4Sparkle size={10} color="var(--p4-orange, #f9a11b)" className="absolute -right-1 -top-1" />}
+    </motion.button>
+  );
+}
+
+/** 不同日子的条目之间一条分隔：今天 / 昨天 / 几月几日 周几 */
+function DayDivider({ tone, label }: { tone: OrgTone; label: string }) {
+  if (tone.channel === 'p5') {
+    return (
+      <div className="flex items-center gap-2 pt-1" role="separator" aria-label={label}>
+        <span className="px-2 py-[3px] text-[12px] font-black leading-none" style={{ background: P5R.ink, color: P5R.white, boxShadow: `0 0 0 2px ${P5R.paper}`, transform: 'rotate(-1.5deg)', fontFamily: P5_TITLE_FONT }}>{label}</span>
+        <span aria-hidden className="h-[3px] flex-1" style={{ background: P5R.paper, opacity: 0.5, clipPath: 'polygon(0 0, 100% 30%, 100% 70%, 0 100%)' }} />
+      </div>
+    );
+  }
+  const line = tone.channel === 'p3' ? P3R.blue : tone.channel === 'p4' ? 'var(--ui-ink, #131313)' : 'rgba(127,127,127,0.35)';
+  return (
+    <div className="flex items-center gap-2 pt-1" role="separator" aria-label={label}>
+      {tone.channel === 'p3' && <span aria-hidden className="h-[12px] w-[8px]" style={{ background: P3R.blue, clipPath: 'polygon(32% 0, 100% 0, 68% 100%, 0 100%)' }} />}
+      {tone.channel === 'p4' && <P4Sparkle size={11} color="var(--p4-orange, #f9a11b)" />}
+      <span className={`text-[12px] font-black leading-none ${tone.channel === 'p3' ? 'italic' : ''}`} style={{ color: tone.channel === 'p3' ? P3R.blue : tone.channel === 'p4' ? 'var(--ui-ink, #131313)' : tone.stageSub }}>{label}</span>
+      <span aria-hidden className="h-px flex-1" style={{ background: line, opacity: tone.channel === 'neutral' ? 1 : 0.35 }} />
     </div>
   );
 }
@@ -226,8 +334,8 @@ function OpWinCard({ post, view, tone, blocked, index, onReact, onMore }: {
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(index, 6) * 0.03, duration: 0.18 }} onContextMenu={(e) => { e.preventDefault(); onMore(); }}>
       <OrgPanel padded={false} seed={80 + (index % 7)} className="px-4 py-3">
         <div className="flex items-center gap-2">
-          <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap px-2 py-[3px] text-[11px] font-black leading-none" style={badge}>✦ 作战达成</span>
-          <span className="min-w-0 truncate text-[11px] font-black" style={{ color: tone.sub }}>{card.kind === 'big' ? '大作战' : '小作战'} · {md(card.day)}</span>
+          <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap px-2 py-[3px] text-[11px] font-black leading-none" style={badge}>✦ {OP_KIND_LABEL[card.kind]}达成</span>
+          <span className="min-w-0 truncate text-[11px] font-black" style={{ color: tone.sub }}>{md(card.day)}</span>
           <button type="button" onClick={onMore} aria-label="更多操作" className="-mr-1 ml-auto shrink-0 px-1.5 py-1 text-[18px] font-black leading-none" style={{ color: tone.sub }}>⋯</button>
         </div>
         <div className="mt-1.5 break-words text-[18px] font-black leading-snug" style={{ fontFamily: tone.titleFont }}>{card.title}</div>

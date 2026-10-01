@@ -13,6 +13,10 @@
 import { useAppStore } from '@/store';
 import { useCloudSocialStore } from '@/store/cloudSocial';
 import { getUserId } from './pocketbase';
+import { computeTotalLv } from '@/utils/lvTiers';
+import { masteryOf } from '@/utils/levels';
+import { resolveLevelDifficulty } from '@/utils/levelDifficulty';
+import { getAttributeLevelTitle, getMasteryTitle } from '@/utils/attributeLevelTitles';
 import {
   createOrg, joinOrg, previewOrg, updateOrgProfile, rotateInviteCode, updateMyMember, setMySlot,
   leaveOrg, kickMember, transferLeader, dissolveOrg, listMyMemberships, listOrgMembers, fetchOrg, safeNickname,
@@ -169,6 +173,23 @@ function myCardFor(view: OrgView): OrgMemberCard {
     personas: maskSnapshots(shownPersonas(view.me.card).map(p => p.attribute)),
     tarotAt: view.me.card.tarotAt,
     prevCard: view.me.card,
+    lv: computeTotalLv(st.attributes),
+    // 五维：用本人起的名字（设置里的属性名），名字推之前过屏蔽词；点数 / 满级 / 精通星 / 称号和首页星图同一口径
+    attrs: st.attributes.map(a => {
+      const thresholds = st.settings.levelThresholds?.length ? st.settings.levelThresholds : a.levelThresholds;
+      const max = thresholds.length || 5;
+      const stars = a.level >= max ? (masteryOf(a.points, thresholds, resolveLevelDifficulty(st.settings))?.stars ?? 0) : 0;
+      return {
+        id: a.id,
+        name: st.settings.attributeNames?.[a.id] ?? '',
+        level: a.unlocked === false ? 0 : a.level || 0,
+        ...(a.unlocked === false ? { locked: true } : {}),
+        points: a.points || 0,
+        max,
+        ...(stars ? { stars } : {}),
+        title: stars > 0 ? getMasteryTitle(a.id, stars) : getAttributeLevelTitle(st.settings.attributeLevelTitles, a.id, a.level),
+      };
+    }),
   });
 }
 
@@ -333,7 +354,7 @@ export async function refreshOrg(orgId: string): Promise<OrgView | null> {
   }
 }
 
-// ── 记完记录 / 改了名片状态：5 秒后顺手推一次成员牌 ─────────────────────────────
+// ── 记完记录 / 升级 / 改了名片状态：5 秒后顺手推一次成员牌 ───────────────────────
 
 let autoPushOn = false;
 let pushTimer: ReturnType<typeof setTimeout> | undefined;
@@ -341,7 +362,8 @@ function ensureAutoPush(): void {
   if (autoPushOn) return;
   autoPushOn = true;
   useAppStore.subscribe((s, prev) => {
-    if (s.activities === prev.activities && s.settings.profileStatus === prev.settings.profileStatus && s.user?.name === prev.user?.name) return;
+    // 等级（LV）和五维跟着属性走：属性、属性名变了也推
+    if (s.activities === prev.activities && s.attributes === prev.attributes && s.settings.attributeNames === prev.settings.attributeNames && s.settings.attributeLevelTitles === prev.settings.attributeLevelTitles && s.settings.profileStatus === prev.settings.profileStatus && s.user?.name === prev.user?.name) return;
     if (!social().orgs.length) return;
     if (pushTimer) clearTimeout(pushTimer);
     pushTimer = setTimeout(() => { void pushCardsNow(); }, 5000);

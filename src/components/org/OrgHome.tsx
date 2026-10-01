@@ -6,7 +6,7 @@
  *   · OrgSwitcher：加入了两个组织时并排两枚，点哪个看哪个（有新动静的亮点、会议日挂小签）；
  *   · SlotLinks：只占了一个名额时底下一行「还可以 建立一个组织 · 加入一个组织」；
  *   · LeaderChip / MeetingDayChip：队长小签、会议日小签；
- *   · OrgLevelLine（第 8 轮）：组织名下面一行「据点 Lv.3」+ 到下一级的进度 + 借面具系数，点开说明经验怎么来。
+ *   · OrgLevelLine（第 8 轮）：组织名下面一行「据点 Lv.3」+ 到下一级的进度 + 同调（借面具）系数，点开说明经验怎么来。
  */
 import { useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
@@ -146,7 +146,7 @@ export function OrgLevelLine({ view }: { view: OrgView }) {
   const track = tone.channel === 'p5' ? 'rgba(240,233,223,0.22)' : tone.channel === 'p4' ? 'rgba(19,19,19,0.14)' : 'rgba(127,127,127,0.2)';
   const fill = tone.channel === 'p3' ? P3R.blue : tone.channel === 'p5' ? P5R.red : tone.channel === 'p4' ? 'var(--p4-orange, #f9a11b)' : 'var(--ui-accent, #6366f1)';
   return (
-    <button type="button" onClick={() => setOpen(v => !v)} aria-expanded={open} aria-label={`据点 Lv.${lv.level}，${lv.next ? `离 Lv.${lv.level + 1} 还差 ${lv.next - lv.xp}` : '已经满级'}，借面具威力 ×${lv.mult.toFixed(1)}`} className="mt-2.5 block w-full text-left">
+    <button type="button" onClick={() => setOpen(v => !v)} aria-expanded={open} aria-label={`据点 Lv.${lv.level}，${lv.next ? `离 Lv.${lv.level + 1} 还差 ${lv.next - lv.xp}` : '已经满级'}，同调威力 ×${lv.mult.toFixed(1)}`} className="mt-2.5 block w-full text-left">
       <span className="flex items-center gap-2">
         <span className="inline-flex shrink-0 items-center whitespace-nowrap px-2 py-[3px] text-[11px] font-black leading-none" style={badge}>据点 Lv.{lv.level}</span>
         <span className="relative h-1.5 min-w-0 flex-1 overflow-hidden rounded-full" style={{ background: track }}>
@@ -155,11 +155,11 @@ export function OrgLevelLine({ view }: { view: OrgView }) {
         <span className="shrink-0 text-[11px] font-black tabular-nums" style={{ color: tone.stageSub }}>{lv.next ? `${lv.xp} / ${lv.next}` : 'MAX'}</span>
       </span>
       <span className="mt-1 block text-[11px] font-bold" style={{ color: tone.stageSub }}>
-        借面具威力 ×{lv.mult.toFixed(1)}{lv.next ? ` · 离 Lv.${lv.level + 1} 还差 ${lv.next - lv.xp}` : ' · 已经满级'} <span aria-hidden>{open ? '▴' : '▾'}</span>
+        同调威力 ×{lv.mult.toFixed(1)}{lv.next ? ` · 离 Lv.${lv.level + 1} 还差 ${lv.next - lv.xp}` : ' · 已经满级'} <span aria-hidden>{open ? '▴' : '▾'}</span>
       </span>
       {open && (
         <span className="mt-1 block text-[11px] font-semibold leading-relaxed" style={{ color: tone.stageSub }}>
-          经验怎么来：周日会议上每个写了下周目标的人 +{ORG_XP_MEETING}；每场达成的作战，每个参与者 +{ORG_XP_OP_SMALL}（大作战 +{ORG_XP_OP_BIG}），每周最多算 {ORG_XP_OPS_PER_WEEK} 场。等级越高，队友借走的面具在战场上越强（Lv.6 ×1.5）。
+          经验怎么来：周日会议上每个写了下周目标的人 +{ORG_XP_MEETING}；每个达成的目标或作战，每个参与者 +{ORG_XP_OP_SMALL}（作战 +{ORG_XP_OP_BIG}），每周最多算 {ORG_XP_OPS_PER_WEEK} 个。等级越高，队友同调走的面具在战场上越强（Lv.6 ×1.5）。
         </span>
       )}
     </button>
