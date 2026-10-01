@@ -1,21 +1,25 @@
 /**
  * 据点设置（第 7 轮 · PRD §12.5 / §12.9）。
- *   · 所有人：我的成员牌（换牌 / 改代号、展示面具）、屏蔽名单、据点守则、退出组织；
+ *   · 所有人：我的成员牌（换牌 / 改代号、展示哪几张面具——第 8 轮起最多 3 张）、屏蔽名单、据点守则、退出组织；
  *   · 队长：组织资料、换邀请码、成员（转让队长 / 请离）、解散组织（队长不能直接退出）。
  * 危险操作都先确认；转让时如果我已经加入了别的组织，说清楚「转让后会退出这里」。
  */
 import { useEffect, useState } from 'react';
 import { SheetModal } from '@/components/SheetModal';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
-import { Toggle } from '@/components/Toggle';
+import { useAppStore } from '@/store';
 import { useCloudSocialStore } from '@/store/cloudSocial';
-import { ORG_EMBLEMS, ORG_MOTTO_MAX, ORG_NAME_MAX, ORG_PRIVACY_NOTE, ORG_RULES, displayCodename } from '@/utils/orgLogic';
+import { ORG_EMBLEMS, ORG_MAX_SHOWN_MASKS, ORG_MOTTO_MAX, ORG_NAME_MAX, ORG_PRIVACY_NOTE, ORG_RULES, displayCodename, shownPersonas } from '@/utils/orgLogic';
 import {
-  dissolveFromUi, kickFromUi, leaveFromUi, rotateCodeFromUi, setMemberBlocked, setShowMaskFromUi,
+  dissolveFromUi, kickFromUi, leaveFromUi, rotateCodeFromUi, setMemberBlocked, setShownMasksFromUi,
   transferFromUi, transferMustLeave, updateOrgFromUi,
 } from '@/services/orgSync';
+import { slantClip } from '@/components/p3r/kit';
+import { roughQuad } from '@/components/p5r/kit';
 import { OrgButton, OrgEmblem, useOrgTone } from './orgUi';
-import type { OrgMember, OrgView } from '@/types';
+import type { AttributeId, OrgMember, OrgView } from '@/types';
+
+const MASK_ATTRS: AttributeId[] = ['knowledge', 'guts', 'dexterity', 'kindness', 'charm'];
 
 type Confirm =
   | { kind: 'rotate' }
@@ -36,6 +40,9 @@ export function OrgSettingsSheet({ view, open, onClose, onEditCard, onGone }: {
 }) {
   const tone = useOrgTone();
   const blocked = useCloudSocialStore(s => s.orgBlocked);
+  const persona = useAppStore(s => s.persona);
+  const attributes = useAppStore(s => s.attributes);
+  const attrNames = useAppStore(s => s.settings.attributeNames);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
@@ -64,7 +71,13 @@ export function OrgSettingsSheet({ view, open, onClose, onEditCard, onGone }: {
   const leader = view.org.leaderId === view.me.userId;
   const others = view.members.filter(m => m.id !== view.me.id);
   const blockedHere = others.filter(m => blocked.includes(m.userId));
-  const showMask = !!view.me.card.persona;
+  // 现在展示的几张（按顺序）；点一下加上 / 去掉，最多 3 张
+  const shown = shownPersonas(view.me.card).map(p => p.attribute);
+  const toggleMask = (a: AttributeId) => {
+    const next = shown.includes(a) ? shown.filter(x => x !== a) : [...shown, a];
+    if (next.length > ORG_MAX_SHOWN_MASKS) { setError(`最多展示 ${ORG_MAX_SHOWN_MASKS} 张：先去掉一张`); return; }
+    void run(async () => { await setShownMasksFromUi(view.org.id, next); });
+  };
 
   const run = async (fn: () => Promise<void>) => {
     if (busy) return;
@@ -135,12 +148,47 @@ export function OrgSettingsSheet({ view, open, onClose, onEditCard, onGone }: {
               </div>
               <OrgButton small tone="ghost" onClick={onEditCard} disabled={busy}>{view.me.tarotId ? '修改' : '去选'}</OrgButton>
             </div>
-            <div className={row}>
-              <div className="min-w-0">
-                <div className="text-[14px] font-black text-gray-900 dark:text-white">在名册背面展示我的面具</div>
-                <div className="text-[11px] font-semibold text-gray-500 dark:text-gray-400">装备中的那张：名字、等级和三个技能</div>
+            <div className="py-2">
+              <div className="flex items-baseline justify-between gap-2">
+                <div className="text-[14px] font-black text-gray-900 dark:text-white">在名册背面展示的面具</div>
+                <div className="shrink-0 text-[11px] font-black tabular-nums text-gray-400">{shown.length} / {ORG_MAX_SHOWN_MASKS}</div>
               </div>
-              <Toggle checked={showMask} disabled={busy} aria-label="展示我的面具" onChange={(v) => void run(async () => { await setShowMaskFromUi(view.org.id, v); })} />
+              <div className="text-[11px] font-semibold leading-relaxed text-gray-500 dark:text-gray-400">最多 {ORG_MAX_SHOWN_MASKS} 张，按点的顺序排：名字、等级和最强的三个技能。队友可以借走其中一张，在逆影战场里用（每周 3 场）。</div>
+              {persona ? (
+                <div className="mt-2 grid grid-cols-1 gap-1.5 min-[380px]:grid-cols-2">
+                  {MASK_ATTRS.map((a, i) => {
+                    const idx = shown.indexOf(a);
+                    const on = idx >= 0;
+                    const lv = attributes.find(x => x.id === a)?.level ?? 1;
+                    const name = persona.attributePersonas?.[a]?.name || persona.name;
+                    return (
+                      <button
+                        key={a}
+                        type="button"
+                        disabled={busy}
+                        onClick={() => toggleMask(a)}
+                        aria-pressed={on}
+                        aria-label={`${name}（${attrNames[a] ?? a}）${on ? `，第 ${idx + 1} 张` : ''}`}
+                        className="flex min-w-0 items-center gap-2 px-2.5 py-2 text-left disabled:opacity-50"
+                        style={{
+                          background: on ? tone.accent : 'rgba(127,127,127,0.10)',
+                          color: on ? '#ffffff' : 'currentColor',
+                          borderRadius: tone.channel === 'p3' || tone.channel === 'p5' ? 0 : 12,
+                          clipPath: tone.channel === 'p3' ? slantClip(6) : tone.channel === 'p5' ? roughQuad(i + 3.4, 2.5) : undefined,
+                        }}
+                      >
+                        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-black" style={{ background: on ? 'rgba(255,255,255,0.28)' : 'rgba(127,127,127,0.18)' }}>{on ? idx + 1 : ''}</span>
+                        <span className="min-w-0">
+                          <span className="block truncate text-[13px] font-black leading-tight">{name}</span>
+                          <span className="block text-[10px] font-bold opacity-75">{attrNames[a] ?? a} · Lv.{lv}</span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="mt-1.5 text-[12px] font-bold text-gray-500 dark:text-gray-400">还没有人格面具：先去逆影战场唤醒一张。</p>
+              )}
             </div>
           </section>
 

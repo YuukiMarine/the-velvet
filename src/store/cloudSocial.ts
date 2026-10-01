@@ -10,6 +10,11 @@
 import { create } from 'zustand';
 import type { CoopBond, CoopPact, CoopShadow, Friendship, NotificationEntry, OrgView, Prayer } from '@/types';
 
+/** 组织的庆祝卡（第 8 轮）：作战达成（+SP / 亲密度）、据点升级；App 顶层排队弹，一次一张 */
+export type OrgCelebration =
+  | { kind: 'op'; opId: string; orgId: string; orgName: string; title: string; opKind: 'small' | 'big'; sp: number; partners: string[] }
+  | { kind: 'level'; orgId: string; orgName: string; level: number; mult: number };
+
 /** 一个未能"物化成本地 Confidant"的 COOP 契约 —— 本地塔罗冲突时出现 */
 export interface MaterializeBlocker {
   bondId: string;
@@ -42,8 +47,8 @@ interface CloudSocialState {
   orgNotice: string | null;
   /** 据点页正在看的组织 */
   hideoutOrgId: string | null;
-  /** 进据点时先打开哪一区（有新动态 → 公告板、会议日没写 → 会议）；据点页读一次就清掉 */
-  hideoutSection: 'roster' | 'board' | 'meeting' | null;
+  /** 进据点时先打开哪一区（有新动态 → 公告板、会议日没写 → 会议、有新作战 → 作战）；据点页读一次就清掉 */
+  hideoutSection: 'roster' | 'board' | 'meeting' | 'ops' | null;
   /** 本机屏蔽的成员（云端用户 id；只在本机生效） */
   orgBlocked: string[];
   /** 举报过、本机不再显示的动态（7b） */
@@ -52,6 +57,10 @@ interface CloudSocialState {
   orgAvatarFaces: string[];
   /** 公告板「看到哪儿了」：组织 id → ISO（7b 红点） */
   orgSeen: Record<string, string>;
+  /** 作战区「看到哪儿了」：组织 id → ISO（第 8 轮红点） */
+  orgOpsSeen: Record<string, string>;
+  /** 待弹的庆祝卡（作战达成 / 据点升级，第 8 轮） */
+  orgCelebrations: OrgCelebration[];
   /**
    * 对方的 COOP 已 linked，但本机同号塔罗已被其他活跃同伴占用 → 没法在本地建卡。
    * UI 用这个列表提示用户"先把冲突的同伴归档一下再来刷新"。
@@ -82,12 +91,16 @@ interface CloudSocialState {
   removeOrgView: (orgId: string) => void;
   setOrgNotice: (msg: string | null) => void;
   setHideoutOrgId: (orgId: string | null) => void;
-  setHideoutSection: (section: 'roster' | 'board' | 'meeting' | null) => void;
+  setHideoutSection: (section: 'roster' | 'board' | 'meeting' | 'ops' | null) => void;
   setOrgBlocked: (userIds: string[]) => void;
   setOrgHiddenPosts: (postIds: string[]) => void;
   setOrgAvatarFaces: (userIds: string[]) => void;
   setOrgSeen: (orgId: string, at: string) => void;
   setOrgSeenAll: (map: Record<string, string>) => void;
+  setOrgOpsSeen: (orgId: string, at: string) => void;
+  setOrgOpsSeenAll: (map: Record<string, string>) => void;
+  pushOrgCelebration: (c: OrgCelebration) => void;
+  shiftOrgCelebration: () => void;
   markNotificationRead: (id: string) => void;
   addNotification: (n: NotificationEntry) => void;
   removeNotification: (id: string) => void;
@@ -131,6 +144,8 @@ export const useCloudSocialStore = create<CloudSocialState>(set => ({
   orgHiddenPosts: [],
   orgAvatarFaces: [],
   orgSeen: {},
+  orgOpsSeen: {},
+  orgCelebrations: [],
   materializeBlockers: [],
   loading: false,
   lastLoadedAt: null,
@@ -219,6 +234,19 @@ export const useCloudSocialStore = create<CloudSocialState>(set => ({
 
   setOrgSeenAll: orgSeen => set({ orgSeen }),
 
+  setOrgOpsSeen: (orgId, at) => set(state => ({ orgOpsSeen: { ...state.orgOpsSeen, [orgId]: at } })),
+
+  setOrgOpsSeenAll: orgOpsSeen => set({ orgOpsSeen }),
+
+  // 同一场作战 / 同一次升级只排一张
+  pushOrgCelebration: c => set(state => {
+    const dup = state.orgCelebrations.some(x => (x.kind === 'op' && c.kind === 'op' && x.opId === c.opId)
+      || (x.kind === 'level' && c.kind === 'level' && x.orgId === c.orgId && x.level === c.level));
+    return dup ? {} : { orgCelebrations: [...state.orgCelebrations, c] };
+  }),
+
+  shiftOrgCelebration: () => set(state => ({ orgCelebrations: state.orgCelebrations.slice(1) })),
+
   markNotificationRead: id => set(state => {
     const notifications = state.notifications.map(n =>
       n.id === id ? { ...n, read: true } : n,
@@ -283,6 +311,8 @@ export const useCloudSocialStore = create<CloudSocialState>(set => ({
     orgHiddenPosts: [],
     orgAvatarFaces: [],
     orgSeen: {},
+    orgOpsSeen: {},
+    orgCelebrations: [],
     materializeBlockers: [],
     loading: false,
     lastLoadedAt: null,

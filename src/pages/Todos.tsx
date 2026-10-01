@@ -3,7 +3,7 @@ import { useMemo, useRef, useState, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { useAppStore, toLocalDateKey } from '@/store';
 import { useShallow } from 'zustand/react/shallow';
-import { PactTodoTag } from '@/components/cooperation/PactTag';
+import { OrgOpTodoTag, PactTodoTag } from '@/components/cooperation/PactTag';
 import { DeadlineTag } from '@/components/todo/DeadlineTag';
 import { WishBoard, useWishPane, wishSkinFor } from '@/components/wish/WishBoard';
 import { PaneSwapMark } from '@/components/wish/PaneSwapMark';
@@ -13,7 +13,11 @@ import { BigDealPanel } from '@/components/bigdeal/BigDealPanel';
 import { BigDealHomeCard } from '@/components/bigdeal/BigDealHomeCard';
 import { FateDrawSheet } from '@/components/fate/FateDrawSheet';
 import { QuestBoardSheet, useQuestBoard } from '@/components/quests/QuestBoardSheet';
-import { AttributeId, TodoFrequency } from '@/types';
+import { AttributeId, Todo, TodoFrequency } from '@/types';
+import { useCloudSocialStore } from '@/store/cloudSocial';
+import { isPactLive } from '@/utils/pactLogic';
+import { opProgress } from '@/utils/orgOps';
+import { goBondView } from '@/components/org/BondTitle';
 import { triggerSuccessFeedback, triggerNavFeedback } from '@/utils/feedback';
 import { TAP } from '@/utils/motion';
 import { GoalDeck } from '@/components/weeklyGoal/GoalDeck';
@@ -90,6 +94,7 @@ const ActiveTodoCard = ({
               <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/15 text-primary font-semibold">✦ 签</span>
             )}
             <PactTodoTag todo={todo} />
+            <OrgOpTodoTag todo={todo} />
             <DeadlineTag todo={todo} done={progress.isComplete} />
             <h4 className="font-semibold text-sm text-gray-800 dark:text-white truncate">{todo.title}</h4>
           </div>
@@ -114,7 +119,8 @@ const ActiveTodoCard = ({
           </div>
         </div>
         <div className="flex items-center gap-1 flex-shrink-0">
-          {/* 归档（不启用）按钮 */}
+          {/* 归档（不启用）按钮；约定 / 作战的待办跟着约定 / 作战走，不能手动归档（第 8 轮） */}
+          {!isLinkedTodo(todo) && (
           <button
             onPointerDown={(e) => e.stopPropagation()}
             onClick={() => onArchive(todo.id)}
@@ -123,6 +129,7 @@ const ActiveTodoCard = ({
           >
             <ArchiveIcon />
           </button>
+          )}
         </div>
       </div>
       {/* Progress bar */}
@@ -211,6 +218,7 @@ const PendingWeekdayTodoCard = ({
             )}
           </div>
         </div>
+        {!isLinkedTodo(todo) && (
         <div className="flex items-center gap-1 flex-shrink-0">
           {/* 归档（禁用）按钮 */}
           <button
@@ -231,6 +239,7 @@ const PendingWeekdayTodoCard = ({
             <TrashIcon />
           </button>
         </div>
+        )}
       </div>
       {pressHint && (
         <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-1.5 text-center">长按打开菜单</p>
@@ -239,6 +248,9 @@ const PendingWeekdayTodoCard = ({
     </div>
   );
 };
+
+/** 跟着「一起进步」约定或组织作战走的待办：标题、日期、归档 / 删除都由约定 / 作战决定（第 8 轮顺带修） */
+const isLinkedTodo = (t: Pick<import('@/types').Todo, 'pact' | 'orgOp'>): boolean => !!t.pact || !!t.orgOp;
 
 const ATTR_IDS: AttributeId[] = ['knowledge', 'guts', 'dexterity', 'kindness', 'charm'];
 
@@ -433,8 +445,48 @@ export const TodosView = () => {
   const questBoard = useQuestBoard();
   const refreshQuests = useAppStore((s) => s.refreshQuests);
   useEffect(() => { if (questBoard.unlocked) void refreshQuests(); }, [questBoard.unlocked, refreshQuests]);
-  /** 正在编辑的是「一起进步」约定的待办：每日重置、截止日、周几、启用日期都由约定决定，表单里锁住（改了会让约定打不了卡） */
-  const editingPactTodo = editingTodoId ? todos.find(t => t.id === editingTodoId && t.pact) : undefined;
+  /**
+   * 正在编辑的是约定（一起进步）或组织作战的待办：标题、每日重置、截止日、周几、启用日期、是否启用都由约定 / 作战决定，表单里锁住
+   * （改了会让约定打不了卡；改了标题「撤销完成」就找不到那条记录——第 8 轮顺带修）。属性、分值、重要照常能改。
+   */
+  const editingPactTodo = editingTodoId ? todos.find(t => t.id === editingTodoId && isLinkedTodo(t)) : undefined;
+  // 约定 / 作战还在进行中吗（删掉已完成的那条会被对账重新建出来，只有结束了的才给删）；没拉到时当作还在进行
+  const pacts = useCloudSocialStore(s => s.pacts);
+  const pactsLoaded = useCloudSocialStore(s => s.pactsLoaded);
+  const orgViews = useCloudSocialStore(s => s.orgs);
+  const orgsLoaded = useCloudSocialStore(s => s.orgsLoaded);
+  const linkLive = (t: Todo): boolean => {
+    if (t.pact) {
+      if (!pactsLoaded) return true;
+      const pact = pacts.find(x => x.id === t.pact!.id);
+      return !!pact && isPactLive(pact);
+    }
+    if (t.orgOp) {
+      const v = orgViews.find(x => x.org.id === t.orgOp!.orgId);
+      const op = v?.ops?.find(x => x.id === t.orgOp!.opId);
+      // 组织还没拉到 / 作战还没拉到：当作还在进行；组织拉到了、这个组织已经不在了：当作结束
+      if (!v) return !orgsLoaded;
+      if (!v.ops) return true;
+      return !!op && opProgress(v, op).status === 'active';
+    }
+    return false;
+  };
+  /** 作战已经达成：那一条的完成不能再撤（服务器上的打卡已经定下来了） */
+  const opAchieved = (t: Todo): boolean => {
+    if (!t.orgOp) return false;
+    const v = orgViews.find(x => x.org.id === t.orgOp!.orgId);
+    const op = v?.ops?.find(x => x.id === t.orgOp!.opId);
+    return !!v && !!op && opProgress(v, op).status === 'achieved';
+  };
+  const openLinked = (t: Todo) => {
+    if (t.orgOp) {
+      useCloudSocialStore.getState().setHideoutOrgId(t.orgOp.orgId);
+      goBondView('orgs');
+      useCloudSocialStore.getState().setHideoutSection('ops');
+    } else {
+      useAppStore.getState().setCurrentPage('cooperation');
+    }
+  };
 
   const handleSave = async () => {
     if (!form.title.trim()) return;
@@ -444,7 +496,7 @@ export const TodosView = () => {
       .filter(b => b.points >= 1)
       .map(b => ({ attribute: b.attribute, points: Math.max(1, Math.min(5, b.points)) }));
     const payload = {
-      title: form.title.trim(),
+      title: pactLocked ? editingPactTodo!.title : form.title.trim(),
       attribute: form.attribute,
       points: Math.max(1, Math.min(5, form.points)),
       extraBoosts: validExtraBoosts.length > 0 ? validExtraBoosts : undefined,
@@ -453,7 +505,7 @@ export const TodosView = () => {
       repeatDaily: isBig ? false : pactLocked ? !!editingPactTodo?.repeatDaily : form.repeatDaily,
       isLongTerm: form.mode === 'count' ? form.isLongTerm : false,
       weekdays: isBig ? [] : pactLocked ? (editingPactTodo?.weekdays ?? []) : form.weekdays.sort(),
-      isActive: form.isActive,
+      isActive: pactLocked ? editingPactTodo!.isActive : form.isActive,
       important: form.important,
       startDate: pactLocked ? editingPactTodo?.startDate : form.startDate || undefined,
       // BIG DEAL：已有子步保留 id/done/doneAt（编辑不清进度），新行补 uuid
@@ -829,6 +881,8 @@ export const TodosView = () => {
                     </div>
                   </div>
                   <div className="flex items-center gap-1 flex-shrink-0">
+                    {/* 约定 / 作战的待办：由约定 / 作战收起来的，不给编辑和恢复；结束了的可以删掉 */}
+                    {!isLinkedTodo(todo) && (
                     <button
                       onClick={() => handleEdit(todo.id)}
                       className="w-7 h-7 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
@@ -836,6 +890,8 @@ export const TodosView = () => {
                     >
                       <EditIcon />
                     </button>
+                    )}
+                    {!(isLinkedTodo(todo) && linkLive(todo)) && (
                     <button
                       onClick={() => setPendingDeleteId(todo.id)}
                       className="w-7 h-7 rounded-full flex items-center justify-center transition-colors bg-red-50 dark:bg-red-900/20 text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40"
@@ -843,6 +899,8 @@ export const TodosView = () => {
                     >
                       <TrashIcon />
                     </button>
+                    )}
+                    {!isLinkedTodo(todo) && (
                     <button
                       onClick={() => updateTodo(todo.id, { isActive: true, archivedAt: undefined })}
                       className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-primary hover:bg-primary/20 transition-colors"
@@ -850,6 +908,7 @@ export const TodosView = () => {
                     >
                       <RestoreIcon />
                     </button>
+                    )}
                   </div>
                 </div>
               </ListCard>
@@ -909,6 +968,7 @@ export const TodosView = () => {
                       </div>
                     </div>
                     <div className="flex items-center gap-1 flex-shrink-0">
+                      {!(isLinkedTodo(todo) && linkLive(todo)) && (
                       <button
                         onClick={() => setPendingDeleteId(todo.id)}
                         className="w-7 h-7 rounded-full flex items-center justify-center transition-colors bg-red-50 dark:bg-red-900/20 text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40"
@@ -916,7 +976,8 @@ export const TodosView = () => {
                       >
                         <TrashIcon />
                       </button>
-                      {wasCompletedToday ? (
+                      )}
+                      {wasCompletedToday && opAchieved(todo) ? null : wasCompletedToday ? (
                         <button
                           // 当天的"恢复" = "撤销"：连点数 + 历史记录 + todoCompletion 一并回滚
                           onClick={() => undoTodayTodoCompletion(todo.id)}
@@ -1240,10 +1301,19 @@ export const TodosView = () => {
                 <input
                   type="text"
                   value={form.title}
-                  onChange={(e) => setForm(prev => ({ ...prev, title: e.target.value }))}
+                  onChange={(e) => { if (!editingPactTodo) setForm(prev => ({ ...prev, title: e.target.value })); }}
+                  readOnly={!!editingPactTodo}
+                  aria-readonly={!!editingPactTodo}
                   placeholder={form.mode === 'big' ? '想搞定的一件大事…' : '今日要完成什么？'}
-                  className="w-full px-3.5 py-3 text-[16px] font-semibold border border-gray-200 dark:border-gray-600 rounded-xl bg-gray-50 dark:bg-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  className={`w-full px-3.5 py-3 text-[16px] font-semibold border border-gray-200 dark:border-gray-600 rounded-xl bg-gray-50 dark:bg-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary/30 ${editingPactTodo ? 'opacity-60' : ''}`}
                 />
+                {editingPactTodo && (
+                  <p className="-mt-3 rounded-xl bg-pink-500/10 px-3 py-2.5 text-xs leading-relaxed text-pink-700 dark:text-pink-300">
+                    {editingPactTodo.orgOp
+                      ? `这条待办是「${editingPactTodo.orgOp.orgName}」一场作战里你的那一份：标题、截止日由作战决定，这里只能改属性、分值和「重要」。不想参加了，到作战里点「这次不参加」。`
+                      : `这条待办跟着和 ${editingPactTodo.pact?.partnerName ?? 'Ta'} 的「一起进步」约定走：标题、每日重置、截止日和执行日期都由约定决定，这里只能改属性、分值和「重要」。要停下，到羁绊页结束这个约定。`}
+                  </p>
+                )}
 
                 {/* ── ② 模式三卡（三段式第二段；编辑中锁定防止子步/计数语义悬空） ── */}
                 <div>
@@ -1602,12 +1672,6 @@ export const TodosView = () => {
                             </label>
                           )}
 
-                          {editingPactTodo?.pact && (
-                            <p className="rounded-xl bg-pink-500/10 px-3 py-2.5 text-xs leading-relaxed text-pink-700 dark:text-pink-300">
-                              这条待办跟着和 {editingPactTodo.pact.partnerName} 的「一起进步」约定走：每日重置、截止日和执行日期都由约定决定，这里不能改。
-                            </p>
-                          )}
-
                           {form.mode !== 'big' && !editingPactTodo && (
                             <label className={`flex items-start gap-2.5 text-sm rounded-xl px-3 py-2.5 cursor-pointer ${
                               form.repeatDaily
@@ -1685,6 +1749,7 @@ export const TodosView = () => {
                             </div>
                           )}
 
+                          {!editingPactTodo && (
                           <div className="flex items-center justify-between py-1">
                             <span className="text-sm text-gray-600 dark:text-gray-400">是否启用</span>
                             <Toggle
@@ -1693,6 +1758,7 @@ export const TodosView = () => {
                               aria-label="是否启用"
                             />
                           </div>
+                          )}
 
                           {!editingPactTodo && (
                           <div>
@@ -1738,12 +1804,18 @@ export const TodosView = () => {
         title={menuTodo?.title}
         actions={
           menuTodo
-            ? [
-                { label: '编辑', icon: <EditIcon />, onClick: () => handleEdit(menuTodo.id) },
-                { label: '归档', icon: <ArchiveIcon />, onClick: () => updateTodo(menuTodo.id, { isActive: false }) },
-                // active 卡此前没有删除入口，按协议补上；真正删除走下方 ConfirmDialog
-                { label: '删除', icon: <TrashIcon />, tone: 'danger', onClick: () => setPendingDeleteId(menuTodo.id) },
-              ]
+            ? isLinkedTodo(menuTodo)
+              // 约定 / 作战的待办：不能手动归档 / 删除，给一个去约定 / 作战那边的入口
+              ? [
+                  { label: '编辑（属性 / 分值）', icon: <EditIcon />, onClick: () => handleEdit(menuTodo.id) },
+                  { label: menuTodo.orgOp ? '打开这场作战' : '打开这个约定', icon: <ArchiveIcon />, onClick: () => openLinked(menuTodo) },
+                ]
+              : [
+                  { label: '编辑', icon: <EditIcon />, onClick: () => handleEdit(menuTodo.id) },
+                  { label: '归档', icon: <ArchiveIcon />, onClick: () => updateTodo(menuTodo.id, { isActive: false }) },
+                  // active 卡此前没有删除入口，按协议补上；真正删除走下方 ConfirmDialog
+                  { label: '删除', icon: <TrashIcon />, tone: 'danger', onClick: () => setPendingDeleteId(menuTodo.id) },
+                ]
             : []
         }
       />

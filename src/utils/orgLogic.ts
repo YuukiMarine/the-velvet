@@ -143,11 +143,17 @@ export const bitCount = (n: number): number => {
   return c;
 };
 
-/** 名册背面的面具快照：装备中的那张（没装备就取第一张），技能取已解锁里等级最高的三个 */
-export function personaSnapshot(persona: Persona | null | undefined, attributes: Pick<Attribute, 'id' | 'level' | 'unlocked'>[]): OrgPersonaSnapshot | null {
+/** 成员牌上最多展示几张面具（第 8 轮：从 1 张改成 3 张） */
+export const ORG_MAX_SHOWN_MASKS = 3;
+
+/**
+ * 名册背面的面具快照：某个属性的那张（不指定就是装备中的那张，没装备取第一张），技能取已解锁里等级最高的三个。
+ * 第 8 轮起可以展示最多 3 张，每张各算一份。
+ */
+export function personaSnapshot(persona: Persona | null | undefined, attributes: Pick<Attribute, 'id' | 'level' | 'unlocked'>[], which?: AttributeId): OrgPersonaSnapshot | null {
   if (!persona) return null;
   const masks = Object.keys(persona.attributePersonas ?? {}) as AttributeId[];
-  const attr: AttributeId = persona.equippedMaskAttribute ?? masks[0] ?? 'knowledge';
+  const attr: AttributeId = which ?? persona.equippedMaskAttribute ?? masks[0] ?? 'knowledge';
   const a = attributes.find(x => x.id === attr);
   const level = a && a.unlocked !== false ? (a.level ?? 1) : 1;
   const skills = (persona.skills?.[attr] ?? [])
@@ -158,13 +164,18 @@ export function personaSnapshot(persona: Persona | null | undefined, attributes:
   return { name: persona.attributePersonas?.[attr]?.name || persona.name, attribute: attr, level, skills };
 }
 
+/** 这张牌上展示的面具（第 8 轮的 personas；老牌子只有 persona 一张） */
+export const shownPersonas = (card: Pick<OrgMemberCard, 'persona' | 'personas'> | undefined | null): OrgPersonaSnapshot[] =>
+  (card?.personas?.length ? card.personas : card?.persona ? [card.persona] : []).slice(0, ORG_MAX_SHOWN_MASKS);
+
 /** 本人这一刻该推上去的成员牌（没有记录内容，只有数字） */
 export function buildMemberCard(input: {
   activities: Array<Pick<Activity, 'date' | 'category' | 'backfilled'>>;
   tz: string;
   now: Date;
   status?: ProfileStatus | null;
-  persona: OrgPersonaSnapshot | null;
+  /** 展示的面具（按选的顺序，最多 3 张；空 = 不展示） */
+  personas: OrgPersonaSnapshot[];
   tarotAt?: string;
   /** 服务器上现在那张牌：跨周时把它的 week 挪成 prev（7b，纪要要读上周出勤） */
   prevCard?: OrgMemberCard | null;
@@ -183,7 +194,9 @@ export function buildMemberCard(input: {
     week: { key: weekKey, days: attendanceBits(input.activities, weekKey) },
     ...(prevDays ? { prev: { key: lastWeek, days: prevDays } } : {}),
     ...(status ? { status: { id: status.id, at: status.at } } : {}),
-    persona: input.persona,
+    // persona 留给只认一张的老版本（= 第一张）；personas 是完整的
+    persona: input.personas[0] ?? null,
+    ...(input.personas.length ? { personas: input.personas.slice(0, ORG_MAX_SHOWN_MASKS) } : {}),
     ...(input.tarotAt ? { tarotAt: input.tarotAt } : {}),
     at: input.now.toISOString(),
   };
@@ -225,26 +238,38 @@ export function parseMemberCard(v: unknown): OrgMemberCard {
   const s = o.status as Record<string, unknown> | undefined;
   if (s && typeof s.id === 'string' && typeof s.at === 'string') card.status = { id: s.id, at: s.at };
   const p = o.persona as Record<string, unknown> | null | undefined;
-  if (p && typeof p.name === 'string' && typeof p.attribute === 'string') {
-    card.persona = {
-      name: p.name.slice(0, 24),
-      attribute: p.attribute as AttributeId,
-      level: typeof p.level === 'number' ? p.level : 1,
-      skills: Array.isArray(p.skills)
-        ? (p.skills as Array<Record<string, unknown>>).slice(0, 3).filter(x => x && typeof x.name === 'string').map(x => ({
-          name: String(x.name).slice(0, 24),
-          type: (typeof x.type === 'string' ? x.type : 'damage') as OrgPersonaSnapshot['skills'][number]['type'],
-          power: typeof x.power === 'number' ? x.power : 0,
-          level: typeof x.level === 'number' ? x.level : 1,
-        }))
-        : [],
-    };
-  } else if (p === null) {
-    card.persona = null;
+  const one = parsePersona(p);
+  if (one) card.persona = one;
+  else if (p === null) card.persona = null;
+  if (Array.isArray(o.personas)) {
+    const list = (o.personas as unknown[]).map(parsePersona).filter((x): x is OrgPersonaSnapshot => !!x).slice(0, ORG_MAX_SHOWN_MASKS);
+    if (list.length) card.personas = list;
   }
   if (typeof o.tarotAt === 'string') card.tarotAt = o.tarotAt;
   if (typeof o.at === 'string') card.at = o.at;
   return card;
+}
+
+/** 一张面具快照：属性 / 技能类型在白名单里，数字夹一夹（别人推上来的东西，别让一张坏牌拖垮整页） */
+const PERSONA_ATTRS: readonly AttributeId[] = ['knowledge', 'guts', 'dexterity', 'kindness', 'charm'];
+const SKILL_TYPES = ['damage', 'buff', 'debuff', 'crit', 'charge', 'heal', 'attack_boost'] as const;
+function parsePersona(v: unknown): OrgPersonaSnapshot | null {
+  const p = (v && typeof v === 'object' ? v : null) as Record<string, unknown> | null;
+  if (!p || typeof p.name !== 'string' || !PERSONA_ATTRS.includes(p.attribute as AttributeId)) return null;
+  const num = (x: unknown, lo: number, hi: number, d: number) => (typeof x === 'number' && Number.isFinite(x) ? Math.max(lo, Math.min(hi, Math.round(x))) : d);
+  return {
+    name: p.name.slice(0, 24),
+    attribute: p.attribute as AttributeId,
+    level: num(p.level, 1, 99, 1),
+    skills: Array.isArray(p.skills)
+      ? (p.skills as Array<Record<string, unknown>>).filter(x => x && typeof x.name === 'string' && (SKILL_TYPES as readonly string[]).includes(String(x.type))).slice(0, 3).map(x => ({
+        name: String(x.name).slice(0, 24),
+        type: x.type as OrgPersonaSnapshot['skills'][number]['type'],
+        power: num(x.power, 0, 60, 0),
+        level: num(x.level, 1, 5, 1),
+      }))
+      : [],
+  };
 }
 
 /** 这张牌上某一周的出勤：周键对得上才算数（别人一周没打开 App，格子停在上周）；上一周也认 prev */
@@ -490,10 +515,11 @@ export const hadGoalFor = (m: Pick<OrgMember, 'goalWeek' | 'resultWeek'>, week: 
  * 纪要（周一 4 点后第一个上线的人生成）：
  *   · 立过目标的人 = 这周有自评的 + 目标还停在这周（会上没来、没自评）的；做到了 = 自评「做到了」；
  *   · 下周目标 = 会上写了的；缺席 = 这周以前加入、会上没写的；
- *   · 称号：出勤王（这周出勤 ≥5 天里最多的，并列都给）、连续 7 / 14 / 30 天（取最高一档）、言出必行。
+ *   · 称号：出勤王（这周出勤 ≥5 天里最多的，并列都给）、连续 7 / 14 / 30 天（取最高一档）、言出必行、
+ *     作战完成者（第 8 轮：那周有作战达成的参与者，读达成卡）。
  *     连续天数是本人客户端推上来的，人不打开 App 就停在旧值：那周周六或周日有记录（到周末还没断）才算数。
  */
-export function computeMinutes(view: Pick<OrgView, 'org' | 'members'>, week: string): OrgMinutesSnapshot {
+export function computeMinutes(view: Pick<OrgView, 'org' | 'members' | 'posts' | 'ledger'>, week: string): OrgMinutesSnapshot {
   const next = nextWeekKey(week);
   const lastDay = shiftDayKey(week, 6);
   const who = (m: OrgMember) => ({ userId: m.userId, codename: displayCodename(m) });
@@ -513,6 +539,12 @@ export function computeMinutes(view: Pick<OrgView, 'org' | 'members'>, week: str
     if (tier) titles.push({ ...who(m), title: `连续 ${tier} 天` });
   }
   for (const m of done) titles.push({ ...who(m), title: '言出必行' });
+  const opWinners = new Set<string>();
+  for (const p of [...(view.ledger ?? []), ...(view.posts ?? [])]) {
+    if (p.kind !== 'operation' || p.opCard?.week !== week) continue;
+    for (const x of p.opCard.participants) opWinners.add(x.userId);
+  }
+  for (const m of members) if (opWinners.has(m.userId)) titles.push({ ...who(m), title: '作战完成者' });
   return {
     v: 1,
     week,
@@ -546,13 +578,14 @@ export function meetingReminder(orgs: Array<Pick<OrgView, 'org' | 'me'>>, now = 
 }
 
 /**
- * 公告板红点：别人在「看到哪儿」之后发的动态、新出的纪要（不管是谁的客户端发的——发纪要的人自己也还没看过），
+ * 公告板红点：别人在「看到哪儿」之后发的动态、新出的纪要 / 作战达成卡（不管是谁的客户端发的——发的人自己也还没看过），
  * 或别人在那之后给我的动态贴的标签（屏蔽的人不算）。
  */
 export function boardUnread(view: Pick<OrgView, 'posts' | 'reactions' | 'me'>, seenIso: string | undefined, blocked: Set<string>): boolean {
   const seen = seenIso ? Date.parse(seenIso) : 0;
   const me = view.me.userId;
-  const fresh = (p: OrgPost) => p.createdAt.getTime() > seen && (p.kind === 'minutes' || (p.userId !== me && !blocked.has(p.userId)));
+  // 纪要和作战达成卡是自动发的：不管是谁的客户端发的都算新（发的人自己也还没看过）
+  const fresh = (p: OrgPost) => p.createdAt.getTime() > seen && (p.kind === 'minutes' || p.kind === 'operation' || (p.userId !== me && !blocked.has(p.userId)));
   if ((view.posts ?? []).some(fresh)) return true;
   const mine = new Set((view.posts ?? []).filter(p => p.userId === me).map(p => p.id));
   return (view.reactions ?? []).some(r => mine.has(r.postId) && r.userId !== me && !blocked.has(r.userId) && r.updatedAt.getTime() > seen);

@@ -10,6 +10,7 @@
  *   · (org, seat) 唯一且 seat 只能 1–7 → 最多 7 人；
  *   · 非成员只能带着 ?code= 读到那一个组织；建成员行时规则拿请求里的码和组织当前的码比。
  * 多步写入：能回滚的回滚；回滚不了的（转让之后自己已经不是队长）由 orgSync 的位置校正兜底。
+ * 第 8 轮（S 节第 14 条）加两张表：org_operations（作战）/ org_checkins（打卡 / 不参加 / 自己写的那一份），见文件末尾。
  */
 import type { RecordModel } from 'pocketbase';
 import { pb, getUserId } from './pocketbase';
@@ -20,8 +21,10 @@ import {
   cleanSnapshotNames, deviceTimeZone, genInviteCode, isEmblemId, isInviteCode, isOrgTag, minutesId, normalizeInviteInput, parseMemberCard,
   parseMinutes, parsePostSnapshot,
 } from '@/utils/orgLogic';
+import { ORG_OP_FETCH_DAYS, ORG_OP_TASK_MAX, parseOpCard, type OpDraft } from '@/utils/orgOps';
 import type {
-  Org, OrgCodenameKind, OrgMember, OrgMemberCard, OrgMinutesSnapshot, OrgPost, OrgPostSnapshot, OrgReaction, OrgReactionTag, OrgView,
+  AttributeId, Org, OrgCheckin, OrgCodenameKind, OrgMember, OrgMemberCard, OrgMinutesSnapshot, OrgOpCardSnapshot, OrgOperation, OrgPost,
+  OrgPostSnapshot, OrgReaction, OrgReactionTag, OrgView,
 } from '@/types';
 
 // ── 映射 ─────────────────────────────────────────────────────────────────────
@@ -387,7 +390,7 @@ export async function dissolveOrg(view: OrgView): Promise<void> {
 //   org_reports    post_id / org_id / target_user（纯文本 id）/ reporter / reason / text_copy；(post_id, reporter) 唯一
 
 export const mapPost = (r: RecordModel): OrgPost => {
-  const kind = r.kind === 'minutes' ? 'minutes' : 'moment';
+  const kind = r.kind === 'minutes' ? 'minutes' : r.kind === 'operation' ? 'operation' : 'moment';
   return {
     id: r.id,
     orgId: str(r.org),
@@ -396,6 +399,7 @@ export const mapPost = (r: RecordModel): OrgPost => {
     text: str(r.text),
     snapshot: kind === 'moment' ? parsePostSnapshot(r.snapshot) : null,
     minutes: kind === 'minutes' ? parseMinutes(r.snapshot) : null,
+    ...(kind === 'operation' ? { opCard: parseOpCard(r.snapshot) } : {}),
     weekKey: str(r.week_key) || undefined,
     createdAt: new Date(str(r.created) || Date.now()),
   };
@@ -531,5 +535,136 @@ export async function deleteUserContent(orgId: string, userId: string): Promise<
     }
   } catch (err) {
     console.warn('[velvet-org] list content to delete failed', orgId, userId, err);
+  }
+}
+
+// ── 作战（第 8 轮 · PRD §13 / S 节第 14 条）─────────────────────────────────────────
+//   org_operations  org / initiator / kind(small|big) / attr / title(≤20) / deadline / participants(多选 ≤7) / assignments(json) / status(active|cancelled)
+//   org_checkins    operation / org / user / kind(done|out|plan) / day / text(≤20)；(operation, user, kind) 唯一
+// 达成 / 未达成都是现算的；达成卡是 org_posts 里 kind = operation 的一条（确定 id）。
+
+const ATTRS: readonly AttributeId[] = ['knowledge', 'guts', 'dexterity', 'kindness', 'charm'];
+const idList = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && !!x) : typeof v === 'string' && v ? [v] : []);
+
+export const mapOperation = (r: RecordModel): OrgOperation => {
+  const raw = (r.assignments && typeof r.assignments === 'object' && !Array.isArray(r.assignments) ? r.assignments : {}) as Record<string, unknown>;
+  const assignments: Record<string, string> = {};
+  for (const [k, v] of Object.entries(raw)) if (typeof v === 'string' && v.trim()) assignments[k] = [...v.trim()].slice(0, ORG_OP_TASK_MAX).join('');
+  return {
+    id: r.id,
+    orgId: str(r.org),
+    initiatorId: str(r.initiator),
+    kind: r.kind === 'big' ? 'big' : 'small',
+    attr: (ATTRS as readonly string[]).includes(str(r.attr)) ? (r.attr as AttributeId) : 'knowledge',
+    title: str(r.title),
+    deadline: str(r.deadline),
+    participants: idList(r.participants),
+    assignments,
+    status: r.status === 'cancelled' ? 'cancelled' : 'active',
+    createdAt: new Date(str(r.created) || Date.now()),
+    updatedAt: new Date(str(r.updated) || str(r.created) || Date.now()),
+  };
+};
+
+export const mapCheckin = (r: RecordModel): OrgCheckin => ({
+  id: r.id,
+  operationId: str(r.operation),
+  orgId: str(r.org),
+  userId: str(r.user),
+  kind: r.kind === 'out' ? 'out' : r.kind === 'plan' ? 'plan' : 'done',
+  day: str(r.day),
+  text: str(r.text),
+  createdAt: new Date(str(r.created) || Date.now()),
+});
+
+/** 最近 62 天建的作战（进行中的最长 30 天，加 30 天的历史）+ 它们的打卡 */
+export async function listOrgOps(orgId: string): Promise<{ ops: OrgOperation[]; checkins: OrgCheckin[] }> {
+  const since = sinceIso(ORG_OP_FETCH_DAYS);
+  const [ops, checkins] = await Promise.all([
+    pb!.collection('org_operations').getFullList({ filter: `org = ${pbQuote(orgId)} && created >= ${pbQuote(since)}`, sort: 'created', requestKey: null }),
+    pb!.collection('org_checkins').getFullList({ filter: `org = ${pbQuote(orgId)} && operation.created >= ${pbQuote(since)}`, requestKey: null }),
+  ]);
+  return { ops: ops.map(mapOperation), checkins: checkins.map(mapCheckin) };
+}
+
+/** 据点经验的来源：这个组织全部的纪要和作战达成卡（不限 30 天；每周几条，很小） */
+export async function listOrgLedger(orgId: string): Promise<OrgPost[]> {
+  const rows = await pb!.collection('org_posts').getFullList({
+    filter: `org = ${pbQuote(orgId)} && (kind = "minutes" || kind = "operation")`,
+    fields: 'id,org,user,kind,snapshot,week_key,created',
+    sort: 'created',
+    requestKey: null,
+  });
+  return rows.map(mapPost);
+}
+
+/** 发起作战（草稿已经 normalizeOpDraft + checkOpDraft 过；这里再过一道屏蔽词） */
+export async function createOperation(orgId: string, d: OpDraft): Promise<OrgOperation> {
+  const me = requireMe();
+  assertClean(d.title, ...Object.values(d.assignments));
+  try {
+    return mapOperation(await pb!.collection('org_operations').create({
+      org: orgId, initiator: me, kind: d.kind, attr: d.attr, title: d.title, deadline: d.deadline,
+      participants: d.participants, assignments: d.kind === 'big' ? d.assignments : {}, status: 'active',
+    }, { requestKey: null }));
+  } catch (err) {
+    if (ruleDenied(err)) throw new OrgError(d.kind === 'big' ? '只有队长能发大作战' : '没发出去：你可能已经不在这个组织里了');
+    throw new OrgError(describeOrgError(err, '作战没发出去，稍后再试'));
+  }
+}
+
+/** 取消作战（发起人或队长） */
+export async function cancelOperation(opId: string): Promise<OrgOperation> {
+  requireMe();
+  try {
+    return mapOperation(await pb!.collection('org_operations').update(opId, { status: 'cancelled' }, { requestKey: null }));
+  } catch (err) {
+    if (statusOf(err) === 404) throw new OrgError('只有发起人或队长能取消');
+    throw new OrgError(describeOrgError(err, '没取消成，稍后再试'));
+  }
+}
+
+/**
+ * 写一条自己的打卡 / 不参加 / 那一份。撞了唯一索引（另一台设备刚写过）→ 读出已有那条返回；
+ * 作战已经取消、我不在名单里 → 规则拒，返回 null（调用方按「不用再写了」处理）。
+ */
+export async function createCheckin(op: Pick<OrgOperation, 'id' | 'orgId'>, kind: OrgCheckin['kind'], extra: { day?: string; text?: string } = {}): Promise<OrgCheckin | null> {
+  const me = requireMe();
+  const text = kind === 'plan' ? [...(extra.text ?? '').trim()].slice(0, ORG_OP_TASK_MAX).join('') : '';
+  if (kind === 'plan') {
+    if (!text) throw new OrgError('写一句你负责的那一份');
+    assertClean(text);
+  }
+  try {
+    return mapCheckin(await pb!.collection('org_checkins').create({ operation: op.id, org: op.orgId, user: me, kind, day: extra.day ?? '', text }, { requestKey: null }));
+  } catch (err) {
+    if (Object.values(fieldCodes(err)).includes('validation_not_unique')) {
+      const cur = await pb!.collection('org_checkins').getFirstListItem(`operation = ${pbQuote(op.id)} && user = ${pbQuote(me)} && kind = ${pbQuote(kind)}`, { requestKey: null });
+      return mapCheckin(cur);
+    }
+    if (ruleDenied(err)) return null;
+    throw err;
+  }
+}
+
+/** 删自己的一条（撤销完成 / 改写那一份）；已经没了也算成功 */
+export async function deleteCheckin(id: string): Promise<void> {
+  requireMe();
+  try {
+    await pb!.collection('org_checkins').delete(id, { requestKey: null });
+  } catch (err) {
+    if (statusOf(err) === 404) return;
+    throw err;
+  }
+}
+
+/** 发作战达成卡：确定 id，两台设备同时发只会留一份——撞了返回 null（调用方重新拉一次） */
+export async function createOpCard(orgId: string, cardId: string, card: OrgOpCardSnapshot): Promise<OrgPost | null> {
+  const me = requireMe();
+  try {
+    return mapPost(await pb!.collection('org_posts').create({ id: cardId, org: orgId, user: me, kind: 'operation', text: '', snapshot: card, week_key: card.week }, { requestKey: null }));
+  } catch (err) {
+    if (fieldCodes(err).id) return null;
+    throw err;
   }
 }

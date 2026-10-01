@@ -2984,6 +2984,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     // 撤掉的那次完成属于「一起进步」的约定：事务结束后再去服务器撤卡（网络请求不能放在 Dexie 事务里）
     let pactRetract: { id: string; day: string } | null = null;
+    let opRetract: { orgId: string; opId: string } | null = null;
     await db.transaction(
       'rw',
       // 配图两张表也要在事务范围里：deleteImagesOfActivity 内部再开事务，父事务不含这两张表会报
@@ -3052,6 +3053,7 @@ export const useAppStore = create<AppState>((set, get) => ({
                 await db.todos.update(todo.id, { isActive: true, archivedAt: undefined, completedAt: undefined });
               }
               if (todo.pact) pactRetract = { id: todo.pact.id, day: todayKey };
+              if (todo.orgOp) opRetract = { orgId: todo.orgOp.orgId, opId: todo.orgOp.opId };
             }
           }
         }
@@ -3061,6 +3063,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     const retract = pactRetract as { id: string; day: string } | null; // 在事务回调里赋的值，TS 的流程分析看不见
     if (retract) {
       void import('@/services/pactSync').then(m => m.onPactTodoUndone(retract.id, retract.day));
+    }
+    // 组织作战（第 8 轮）：撤销完成也撤回这场作战上的打卡（已经达成的不撤）
+    const opUndo = opRetract as { orgId: string; opId: string } | null;
+    if (opUndo) {
+      void import('@/services/orgOpsSync').then(m => m.onOrgOpTodoUndone(opUndo.orgId, opUndo.opId));
     }
   },
 
@@ -3704,6 +3711,11 @@ export const useAppStore = create<AppState>((set, get) => ({
         const pactId = todo.pact.id;
         void import('@/services/pactSync').then(m => m.onPactTodoCompleted(pactId, today));
       }
+      // 组织作战（第 8 轮）：同上，完成即在这场作战上打卡
+      if (todo.orgOp) {
+        const { orgId, opId } = todo.orgOp;
+        void import('@/services/orgOpsSync').then(m => m.onOrgOpTodoCompleted(orgId, opId, today));
+      }
 
       void get().syncNotifications(); // 待办完成 → 重排，撤掉已完成的「今日待办」提醒
       return result;
@@ -3764,6 +3776,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
     });
     await get().loadData();
+    // 组织作战：找到记录的那条路径由 deleteActivity 撤回打卡；这里是兜底路径
+    if (todo.orgOp) {
+      const { orgId, opId } = todo.orgOp;
+      void import('@/services/orgOpsSync').then(m => m.onOrgOpTodoUndone(orgId, opId));
+    }
   },
 
   // ── BIG DEAL（任务×终端二合一，TASKS_MERGE_PRD 批1）───────────────────

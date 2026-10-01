@@ -5,9 +5,12 @@
  *   · OrgEmptyPanel：还没有组织时的说明 + 「建立组织」「输入邀请码」；
  *   · OrgSwitcher：加入了两个组织时并排两枚，点哪个看哪个（有新动静的亮点、会议日挂小签）；
  *   · SlotLinks：只占了一个名额时底下一行「还可以 建立一个组织 · 加入一个组织」；
- *   · LeaderChip / MeetingDayChip：队长小签、会议日小签。
+ *   · LeaderChip / MeetingDayChip：队长小签、会议日小签；
+ *   · OrgLevelLine（第 8 轮）：组织名下面一行「据点 Lv.3」+ 到下一级的进度 + 借面具系数，点开说明经验怎么来。
  */
+import { useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
+import { ORG_XP_MEETING, ORG_XP_OPS_PER_WEEK, ORG_XP_OP_BIG, ORG_XP_OP_SMALL, orgLevelOfView } from '@/utils/orgOps';
 import { useCloudSocialStore } from '@/store/cloudSocial';
 import { P3R, slantClip } from '@/components/p3r/kit';
 import { P5R, P5_TITLE_FONT, roughQuad } from '@/components/p5r/kit';
@@ -124,4 +127,41 @@ export function LeaderChip() {
   if (tone.channel === 'p4') return <span className="shrink-0 rounded-full bg-[#131313] px-2 py-[2px] text-[9px] font-black text-[#fff6d0]">队长</span>;
   if (tone.channel === 'p5') return <span className="shrink-0 px-1.5 py-[2px] text-[9px] font-black text-white" style={{ background: P5R.red, clipPath: roughQuad(4.2, 2), fontFamily: P5_TITLE_FONT }}>LEADER</span>;
   return <span className="shrink-0 rounded-full px-1.5 py-[1px] text-[9px] font-black" style={{ background: 'rgba(99,102,241,0.12)', color: tone.accent }}>队长</span>;
+}
+
+/** 据点等级（第 8 轮 · PRD §13.4）：经验流水没拉到时不显示 */
+export function OrgLevelLine({ view }: { view: OrgView }) {
+  const tone = useOrgTone();
+  const [open, setOpen] = useState(false);
+  if (!view.ledger) return null;
+  const lv = orgLevelOfView(view);
+  const pct = lv.next ? Math.max(0, Math.min(1, (lv.xp - lv.floor) / (lv.next - lv.floor))) : 1;
+  const badge = tone.channel === 'p3'
+    ? { background: P3R.blue, color: '#ffffff', clipPath: slantClip(4) }
+    : tone.channel === 'p5'
+      ? { background: P5R.red, color: P5R.white, clipPath: roughQuad(lv.level + 2.3, 1.5), fontFamily: P5_TITLE_FONT }
+      : tone.channel === 'p4'
+        ? { background: '#131313', color: '#fff6d0', borderRadius: 999 }
+        : { background: 'var(--ui-accent, #6366f1)', color: '#ffffff', borderRadius: 999 };
+  const track = tone.channel === 'p5' ? 'rgba(240,233,223,0.22)' : tone.channel === 'p4' ? 'rgba(19,19,19,0.14)' : 'rgba(127,127,127,0.2)';
+  const fill = tone.channel === 'p3' ? P3R.blue : tone.channel === 'p5' ? P5R.red : tone.channel === 'p4' ? 'var(--p4-orange, #f9a11b)' : 'var(--ui-accent, #6366f1)';
+  return (
+    <button type="button" onClick={() => setOpen(v => !v)} aria-expanded={open} aria-label={`据点 Lv.${lv.level}，${lv.next ? `离 Lv.${lv.level + 1} 还差 ${lv.next - lv.xp}` : '已经满级'}，借面具威力 ×${lv.mult.toFixed(1)}`} className="mt-2.5 block w-full text-left">
+      <span className="flex items-center gap-2">
+        <span className="inline-flex shrink-0 items-center whitespace-nowrap px-2 py-[3px] text-[11px] font-black leading-none" style={badge}>据点 Lv.{lv.level}</span>
+        <span className="relative h-1.5 min-w-0 flex-1 overflow-hidden rounded-full" style={{ background: track }}>
+          <span className="absolute inset-y-0 left-0 rounded-full" style={{ width: `${Math.round(pct * 100)}%`, background: fill }} />
+        </span>
+        <span className="shrink-0 text-[11px] font-black tabular-nums" style={{ color: tone.stageSub }}>{lv.next ? `${lv.xp} / ${lv.next}` : 'MAX'}</span>
+      </span>
+      <span className="mt-1 block text-[11px] font-bold" style={{ color: tone.stageSub }}>
+        借面具威力 ×{lv.mult.toFixed(1)}{lv.next ? ` · 离 Lv.${lv.level + 1} 还差 ${lv.next - lv.xp}` : ' · 已经满级'} <span aria-hidden>{open ? '▴' : '▾'}</span>
+      </span>
+      {open && (
+        <span className="mt-1 block text-[11px] font-semibold leading-relaxed" style={{ color: tone.stageSub }}>
+          经验怎么来：周日会议上每个写了下周目标的人 +{ORG_XP_MEETING}；每场达成的作战，每个参与者 +{ORG_XP_OP_SMALL}（大作战 +{ORG_XP_OP_BIG}），每周最多算 {ORG_XP_OPS_PER_WEEK} 场。等级越高，队友借走的面具在战场上越强（Lv.6 ×1.5）。
+        </span>
+      )}
+    </button>
+  );
 }

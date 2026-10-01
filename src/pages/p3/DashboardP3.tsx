@@ -16,7 +16,7 @@ import { motion, AnimatePresence, useMotionValue, useTransform, animate as anima
 import { ModalPortal } from '@/components/ModalPortal';
 import { useBoldness } from '@/utils/boldness';
 import { useAppStore, toLocalDateKey } from '@/store';
-import { PactTodoTag } from '@/components/cooperation/PactTag';
+import { OrgOpTodoTag, PactTodoTag } from '@/components/cooperation/PactTag';
 import { DeadlineTag } from '@/components/todo/DeadlineTag';
 import { useSkyBadge } from '@/components/sky/useSkyBadge';
 import { WeatherGlyph } from '@/components/sky/WeatherGlyph';
@@ -847,6 +847,7 @@ export const DashboardP3 = () => {
                               {todo.title}
                             </span>
                             <PactTodoTag todo={todo} />
+                            <OrgOpTodoTag todo={todo} />
                             <DeadlineTag todo={todo} done={done} />
                           </span>
                           <span className="mt-0.5 block truncate text-[11px] font-semibold" style={{ color: P3R.grey }}>

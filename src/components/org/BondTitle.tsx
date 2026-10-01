@@ -1,7 +1,7 @@
 /**
  * 羁绊的两个平级视图（第 7 轮验收）：同伴 ⇄ 组织。
  * 页面标题本身就是开关：点「同伴」切到组织，点「组织」切回同伴；标题旁一枚小签写着另一边，
- * 组织里有新动静（新动态 / 新标签 / 会议日还没写 / 被请离之类的提示）时小签亮红点。
+ * 组织里有新动静（新动态 / 新标签 / 会议日还没写 / 有新作战或作战刚达成 / 被请离之类的提示）时小签亮红点。
  * 没配云端的构建不出现开关；登录了但组织还没拉到（包括线上还没建组织的表）时也先不出现。
  */
 import { useMemo, type ReactNode } from 'react';
@@ -14,6 +14,7 @@ import { PageTitle } from '@/components/PageTitle';
 import { P3PageHeader, P3R, slantClip } from '@/components/p3r/kit';
 import { P5Collage, P5R, P5SubBar, P5_TITLE_FONT, roughQuad } from '@/components/p5r/kit';
 import { boardUnread, meetingPending } from '@/utils/orgLogic';
+import { opsUnread } from '@/utils/orgOps';
 import { useOrgTone } from './orgUi';
 
 export type BondView = 'companions' | 'orgs';
@@ -21,12 +22,12 @@ export type BondView = 'companions' | 'orgs';
 /** 开关能不能用、要不要亮红点 */
 export function useOrgSwitch(): { available: boolean; dot: boolean } {
   const signedIn = useCloudStore(s => !!s.cloudUser);
-  const { orgs, orgsLoaded, orgNotice, orgSeen, orgBlocked } = useCloudSocialStore(useShallow(s => ({
-    orgs: s.orgs, orgsLoaded: s.orgsLoaded, orgNotice: s.orgNotice, orgSeen: s.orgSeen, orgBlocked: s.orgBlocked,
+  const { orgs, orgsLoaded, orgNotice, orgSeen, orgOpsSeen, orgBlocked } = useCloudSocialStore(useShallow(s => ({
+    orgs: s.orgs, orgsLoaded: s.orgsLoaded, orgNotice: s.orgNotice, orgSeen: s.orgSeen, orgOpsSeen: s.orgOpsSeen, orgBlocked: s.orgBlocked,
   })));
   const blocked = useMemo(() => new Set(orgBlocked), [orgBlocked]);
   const available = cloudEnabled && (!signedIn || orgsLoaded);
-  const dot = available && (!!orgNotice || orgs.some(v => boardUnread(v, orgSeen[v.org.id], blocked) || meetingPending(v)));
+  const dot = available && (!!orgNotice || orgs.some(v => boardUnread(v, orgSeen[v.org.id], blocked) || meetingPending(v) || opsUnread(v, orgOpsSeen[v.org.id])));
   return { available, dot };
 }
 
@@ -42,7 +43,9 @@ export function goBondView(to: BondView): void {
   if (cur) {
     const blocked = new Set(social.orgBlocked);
     social.setHideoutOrgId(cur.org.id);
-    social.setHideoutSection(meetingPending(cur) ? 'meeting' : boardUnread(cur, social.orgSeen[cur.org.id], blocked) ? 'board' : null);
+    social.setHideoutSection(meetingPending(cur) ? 'meeting'
+      : opsUnread(cur, social.orgOpsSeen[cur.org.id]) ? 'ops'
+        : boardUnread(cur, social.orgSeen[cur.org.id], blocked) ? 'board' : null);
   }
   app.setCurrentPage('hideout');
 }

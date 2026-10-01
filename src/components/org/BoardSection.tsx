@@ -3,6 +3,7 @@
  *   · 动态卡：代表牌小图 / 代号 / 时间，那一句，快照小签（加点用分享者自己的属性名、类型、补记、日期），
  *     六个标签（计数、我贴的高亮），下面一行列出谁贴了什么；长按或点「⋯」：举报 / 屏蔽此人 / 删除；
  *   · 纪要卡：最新一份置顶（出席、完成率、做到了、称号、下周目标、缺席），更早的按时间混在动态里；
+ *   · 作战达成卡（第 8 轮）：那句话、大 / 小作战、达成那天、做完的人（大作战带各自那一份），也能贴标签；不能删（据点经验的来源）；
  *   · 屏蔽的人整条不显示、他贴的标签不计数、纪要里也不列他；举报过的动态本机不再显示。
  */
 import { useMemo, useRef, useState } from 'react';
@@ -51,7 +52,7 @@ export function BoardSection({ view, blocked, onFlash }: { view: OrgView; blocke
 
   const posts = view.posts;
   const visible = useMemo(
-    () => (posts ?? []).filter(p => !hiddenSet.has(p.id) && (p.kind === 'minutes' ? !!p.minutes : !blocked.has(p.userId))),
+    () => (posts ?? []).filter(p => !hiddenSet.has(p.id) && (p.kind === 'minutes' ? !!p.minutes : p.kind === 'operation' ? !!p.opCard : !blocked.has(p.userId))),
     [posts, hiddenSet, blocked],
   );
   // 最新的一份纪要置顶，其余按时间混在动态里（列表本来就是新的在前）
@@ -76,7 +77,8 @@ export function BoardSection({ view, blocked, onFlash }: { view: OrgView; blocke
       list.push({ label: '举报这条', onClick: () => setReportFor(p) });
       list.push({ label: isBlocked ? '解除屏蔽' : '屏蔽此人（只在本机生效）', onClick: () => { setMemberBlocked(p.userId, !isBlocked); onFlash(isBlocked ? '已解除屏蔽' : '已屏蔽，不再显示 Ta 的动态和标签'); } });
     }
-    if (p.userId === me || leader) list.push({ label: p.userId === me ? '删除这条' : '删除这条（队长）', onClick: () => setDeleteFor(p), tone: 'danger' });
+    // 纪要和作战达成卡不能删（据点经验的来源；服务器上也锁着）
+    if (p.kind === 'moment' && (p.userId === me || leader)) list.push({ label: p.userId === me ? '删除这条' : '删除这条（队长）', onClick: () => setDeleteFor(p), tone: 'danger' });
     return list;
   })();
 
@@ -85,7 +87,9 @@ export function BoardSection({ view, blocked, onFlash }: { view: OrgView; blocke
       {pinned?.minutes && <MinutesCard org={view.org} minutes={pinned.minutes} blocked={blocked} tone={tone} />}
       {rest.map((p, i) => (p.kind === 'minutes' && p.minutes
         ? <MinutesCard key={p.id} org={view.org} minutes={p.minutes} blocked={blocked} tone={tone} compact />
-        : <PostCard key={p.id} post={p} view={view} tone={tone} blocked={blocked} index={i} onReact={(tag) => react(p.id, tag)} onMore={() => setMenuFor(p)} />))}
+        : p.kind === 'operation' && p.opCard
+          ? <OpWinCard key={p.id} post={p} view={view} tone={tone} blocked={blocked} index={i} onReact={(tag) => react(p.id, tag)} onMore={() => setMenuFor(p)} />
+          : <PostCard key={p.id} post={p} view={view} tone={tone} blocked={blocked} index={i} onReact={(tag) => react(p.id, tag)} onMore={() => setMenuFor(p)} />))}
       {visible.length === 0 && (
         <OrgPanel seed={43}>
           <div className="text-[15px] font-black" style={{ fontFamily: tone.titleFont }}>还没有动态</div>
@@ -96,7 +100,7 @@ export function BoardSection({ view, blocked, onFlash }: { view: OrgView; blocke
       {blockedCount > 0 && <div className="text-center text-[11px] font-bold" style={{ color: tone.stageSub }}>已屏蔽 {blockedCount} 条（据点设置里可以解除）</div>}
       <div className="text-center text-[11px] font-bold" style={{ color: tone.stageSub }}>公告板只显示最近 30 天 · 长按一条可以举报或屏蔽</div>
 
-      <ActionSheet isOpen={!!menuFor} onClose={() => setMenuFor(null)} title={menuFor ? `「${menuFor.text}」` : undefined} actions={menuActions} />
+      <ActionSheet isOpen={!!menuFor} onClose={() => setMenuFor(null)} title={menuFor ? `「${menuFor.kind === 'operation' ? menuFor.opCard?.title ?? '' : menuFor.text}」` : undefined} actions={menuActions} />
       <ActionSheet
         isOpen={!!reportFor}
         onClose={() => setReportFor(null)}
@@ -106,7 +110,9 @@ export function BoardSection({ view, blocked, onFlash }: { view: OrgView; blocke
           onClick: async () => {
             const p = reportFor;
             if (!p) return;
-            try { await reportPostFromUi(p, r.id); onFlash('已举报，这条不再显示；会在 2 天内处理'); } catch (e) { onFlash(errText(e, '举报没发出去，稍后再试')); }
+            // 达成卡上的字是作战的那句话：举报时带它当原话副本
+            const target = p.kind === 'operation' ? { ...p, text: p.opCard?.title ?? '' } : p;
+            try { await reportPostFromUi(target, r.id); onFlash('已举报，这条不再显示；会在 2 天内处理'); } catch (e) { onFlash(errText(e, '举报没发出去，稍后再试')); }
           },
         }))}
       />
@@ -185,6 +191,60 @@ function PostCard({ post, view, tone, blocked, index, onReact, onMore }: {
             {chips.map((c, i) => <SnapChip key={i} tone={tone}>{c}</SnapChip>)}
           </div>
         )}
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {ORG_TAGS.map((t, i) => (
+            <TagChip key={t.id} tone={tone} seed={i} label={t.label} count={byTag.get(t.id)?.length ?? 0} on={myTag?.tag === t.id} onClick={() => onReact(t.id)} />
+          ))}
+        </div>
+        {whoLine && <div className="mt-1.5 text-[11px] font-bold leading-relaxed" style={{ color: tone.sub }}>{whoLine}</div>}
+      </OrgPanel>
+    </motion.div>
+  );
+}
+
+// ── 作战达成卡（第 8 轮）────────────────────────────────────────────────────────
+
+function OpWinCard({ post, view, tone, blocked, index, onReact, onMore }: {
+  post: OrgPost; view: OrgView; tone: OrgTone; blocked: Set<string>; index: number;
+  onReact: (tag: OrgReactionTag) => void; onMore: () => void;
+}) {
+  const card = post.opCard!;
+  const { mine: myTag, byTag } = reactionSummary(view.reactions, post.id, view.me.userId, blocked);
+  const nameOf = (uid: string) => {
+    const m = view.members.find(x => x.userId === uid);
+    return m ? (m.userId === view.me.userId ? '我' : displayCodename(m)) : '已退出的成员';
+  };
+  const whoLine = ORG_TAGS.filter(t => byTag.get(t.id)?.length).map(t => `${byTag.get(t.id)!.map(nameOf).join('、')}：${t.label}`).join(' · ');
+  const badge = tone.channel === 'p3'
+    ? { background: P3R.magenta, color: '#ffffff', clipPath: slantClip(5) }
+    : tone.channel === 'p5'
+      ? { background: P5R.red, color: P5R.white, clipPath: roughQuad(4.2, 2), fontFamily: P5_TITLE_FONT }
+      : tone.channel === 'p4'
+        ? { background: 'var(--p4-orange, #f9a11b)', color: '#131313', borderRadius: 999, boxShadow: '0 0 0 1.5px #131313' }
+        : { background: '#10b981', color: '#ffffff', borderRadius: 999 };
+  return (
+    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(index, 6) * 0.03, duration: 0.18 }} onContextMenu={(e) => { e.preventDefault(); onMore(); }}>
+      <OrgPanel padded={false} seed={80 + (index % 7)} className="px-4 py-3">
+        <div className="flex items-center gap-2">
+          <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap px-2 py-[3px] text-[11px] font-black leading-none" style={badge}>✦ 作战达成</span>
+          <span className="min-w-0 truncate text-[11px] font-black" style={{ color: tone.sub }}>{card.kind === 'big' ? '大作战' : '小作战'} · {md(card.day)}</span>
+          <button type="button" onClick={onMore} aria-label="更多操作" className="-mr-1 ml-auto shrink-0 px-1.5 py-1 text-[18px] font-black leading-none" style={{ color: tone.sub }}>⋯</button>
+        </div>
+        <div className="mt-1.5 break-words text-[18px] font-black leading-snug" style={{ fontFamily: tone.titleFont }}>{card.title}</div>
+        <ul className="mt-2.5 flex flex-wrap gap-x-3 gap-y-2">
+          {card.participants.filter(x => !blocked.has(x.userId)).map((x) => {
+            const m = view.members.find(y => y.userId === x.userId);
+            return (
+              <li key={x.userId} className="flex min-w-0 max-w-full items-center gap-1.5">
+                <MemberFace member={m} fallbackTarot={x.tarotId} className="h-[30px] w-[19px] shrink-0" style={{ borderRadius: tone.channel === 'p4' || tone.channel === 'neutral' ? 3 : 0 }} empty={<span className="absolute inset-0 flex items-center justify-center text-[9px] font-black">{[...x.codename][0] ?? '?'}</span>} />
+                <span className="min-w-0">
+                  <span className="block truncate text-[12px] font-black leading-tight">{m ? displayCodename(m) : x.codename}</span>
+                  {x.task && <span className="block truncate text-[10px] font-bold leading-tight" style={{ color: tone.sub }}>{x.task}</span>}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
         <div className="mt-3 flex flex-wrap gap-1.5">
           {ORG_TAGS.map((t, i) => (
             <TagChip key={t.id} tone={tone} seed={i} label={t.label} count={byTag.get(t.id)?.length ?? 0} on={myTag?.tag === t.id} onClick={() => onReact(t.id)} />

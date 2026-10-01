@@ -50,6 +50,7 @@ import { BigDealClearCutIn } from '@/components/bigdeal/BigDealClearCutIn';
 import { sweepDanmakuApprovals } from '@/services/danmakuWatch';
 const ReturnPanel = lazy(() => import('@/components/return/ReturnPanel').then(m => ({ default: m.ReturnPanel })));
 import { WishProgressCutIn } from '@/components/wish/WishProgressCutIn';
+import { OrgCelebrationCutIn } from '@/components/org/OrgCelebrationCutIn';
 import { WishProposalDialog } from '@/components/wish/WishProposalDialog';
 // F6 黑猫对话窗（portal 到 body 的全屏 overlay；入口在 Sidebar / BottomNav 中央 ◈）
 const NavigatorWindow = lazy(() => import('@/components/navigator/NavigatorWindow').then(m => ({ default: m.NavigatorWindow })));
@@ -908,6 +909,8 @@ function App() {
               黑猫在谈话里提议改数值的确认卡。两者都可能在任意页面触发，故挂顶层 */}
           <WishProgressCutIn />
           <WishProposalDialog />
+          {/* 组织（第 8 轮）：作战达成 / 据点升级的庆祝卡——对账时在任意页面都可能发现，故挂顶层 */}
+          <OrgCelebrationCutIn />
           {/* 回归面板（PRD_V2.6 §12）：离开 ≥7 天后的第一次打开 */}
           {returnPayload && (
             <Suspense fallback={null}>

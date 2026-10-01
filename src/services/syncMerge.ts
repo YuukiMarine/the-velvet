@@ -104,6 +104,28 @@ function resolveSpecial(table: string, local: Row, cloud: Row): Row | null {
   return null;
 }
 
+/**
+ * 战场状态冲突时按用户选的一边，但两样东西两边都要（第 8 轮）：
+ *   · 借面具：同一周取用得多的那边（借着的面具取新借的），不同周取新的那周——不然两台设备各用一场，合并后又能多用；
+ *   · 领过奖励的作战 id：取并集——不然另一台设备会再领一次。
+ */
+type BorrowRow = { weekKey?: string; battles?: number; mask?: { at?: string } };
+function mergeBattleExtras(pick: Row, other: Row): Row {
+  const a = pick.borrow as BorrowRow | undefined;
+  const b = other.borrow as BorrowRow | undefined;
+  let borrow: BorrowRow | undefined = a ?? b;
+  if (a && b) {
+    if (a.weekKey !== b.weekKey) borrow = String(a.weekKey) > String(b.weekKey) ? a : b;
+    else {
+      const [hi, lo] = (a.battles ?? 0) >= (b.battles ?? 0) ? [a, b] : [b, a];
+      const mask = hi.mask && lo.mask ? (String(hi.mask.at ?? '') >= String(lo.mask.at ?? '') ? hi.mask : lo.mask) : hi.mask ?? lo.mask;
+      borrow = { ...hi, ...(mask ? { mask } : {}) };
+    }
+  }
+  const rewards = [...new Set([...((pick.orgOpRewards as string[] | undefined) ?? []), ...((other.orgOpRewards as string[] | undefined) ?? [])])].slice(-200);
+  return { ...pick, ...(borrow ? { borrow } : {}), ...(rewards.length ? { orgOpRewards: rewards } : {}) };
+}
+
 /** 样本标题：给界面看的一句 */
 export function rowTitle(table: string, row: Row): string {
   const pick = (...keys: string[]): string => {
@@ -162,7 +184,8 @@ export function mergeTable(table: string, localRows: Row[], cloudRows: Row[], op
       if (stableStringify(l) === stableStringify(c)) { stats.same++; rows.push(l); continue; }
       stats.conflict++;
       if (stats.samples.conflict.length < SAMPLE_MAX) stats.samples.conflict.push(rowTitle(table, l));
-      rows.push(resolveSpecial(table, l, c) ?? (opts.conflictWins === 'cloud' ? c : l));
+      const picked = resolveSpecial(table, l, c) ?? (opts.conflictWins === 'cloud' ? c : l);
+      rows.push(table === 'battleStates' ? mergeBattleExtras(picked, picked === l ? c : l) : picked);
     }
   }
   return { rows, stats };

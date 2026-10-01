@@ -302,3 +302,28 @@ export function OrgPanel({ children, className, style, seed = 3, padded = true }
     </div>
   );
 }
+
+/** 单选小块（会议打分、作战类型 / 属性）：选中的实心 */
+export function OrgChoice({ seed = 0, on, onClick, children, disabled = false, small = false }: { seed?: number; on: boolean; onClick: () => void; children: ReactNode; disabled?: boolean; small?: boolean }) {
+  const tone = useOrgTone();
+  const style = tone.channel === 'p3'
+    ? { background: on ? P3R.blue : P3R.cyanFaint, color: on ? '#ffffff' : P3R.ink, clipPath: slantClip(6) }
+    : tone.channel === 'p5'
+      ? { background: on ? P5R.red : 'rgba(0,0,0,0.08)', color: on ? P5R.white : P5R.ink, clipPath: roughQuad(seed + 2.3, 2.5), fontFamily: P5_TITLE_FONT }
+      : tone.channel === 'p4'
+        ? { background: on ? 'var(--p4-orange, #f9a11b)' : 'transparent', color: on ? '#131313' : 'var(--ui-ink, #131313)', borderRadius: 12, boxShadow: `inset 0 0 0 2px ${on ? '#131313' : 'var(--ui-line, #131313)'}` }
+        : { background: on ? tone.accent : 'rgba(127,127,127,0.1)', color: on ? '#ffffff' : tone.ink, borderRadius: 12 };
+  return (
+    <button type="button" onClick={onClick} aria-pressed={on} disabled={disabled} className={`whitespace-nowrap font-black disabled:opacity-40 ${small ? 'px-2.5 py-1.5 text-[12px]' : 'py-2.5 text-[14px]'}`} style={style}>
+      {children}
+    </button>
+  );
+}
+
+/** 输入框的皮（会议目标、作战标题 / 分工） */
+export function orgInputSkin(tone: OrgTone): CSSProperties {
+  if (tone.channel === 'p3') return { background: P3R.cyanFaint, color: P3R.ink, clipPath: slantClip(8) };
+  if (tone.channel === 'p5') return { background: '#ffffff', color: P5R.ink, boxShadow: `inset 0 0 0 2px ${P5R.ink}`, fontFamily: P5_TITLE_FONT };
+  if (tone.channel === 'p4') return { background: 'rgba(127,127,127,0.1)', color: 'var(--ui-ink, #131313)', borderRadius: 12, boxShadow: 'inset 0 0 0 2px var(--ui-line, #131313)' };
+  return { background: 'rgba(127,127,127,0.08)', color: tone.ink, borderRadius: 12, boxShadow: `inset 0 0 0 1px ${tone.line}` };
+}

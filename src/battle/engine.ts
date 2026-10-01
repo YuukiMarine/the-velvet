@@ -14,6 +14,8 @@
  *  - 意图明牌：回合开始锁定；洞察（2SP 免回合）展开详情
  *  - 双向打断：玩家把前摇中的大招打入失衡=取消；Shadow 打断意图=真取消玩家蓄力
  *  - 状态口径：回合开始衰减 + fresh 免衰减（statusEngine）
+ *  - 借来的面具（第 8 轮）：组织队友展示的面具快照，不换出战位、不吃克制 / 弱点 / 自己面具的被动，
+ *    伤害 = 威力 × 据点系数 + 通用增益；每周能带进 3 场，场数由 UI 按 snapshot.borrowUsed 记
  *
  * ⚠️ 只允许相对导入（模拟战脚本用 tsx 直跑，不解析 '@/' 别名）。
  */
@@ -137,6 +139,31 @@ export interface EngineSetup {
    * / 月蚀 = 洞察免费 / 静默 = 防御不回 SP；其余规则在生成与结算层生效。
    */
   abyssRule?: AbyssRuleId;
+  /**
+   * （第 8 轮）借来的面具：队友展示的面具快照（已经校验、夹过值）。usable = 本周还有场数；
+   * 这一场一旦用过，之后这场随便用（场数已经记上了）。
+   */
+  borrowed?: BorrowedSetup | null;
+}
+
+/** 借来的一个技能（快照里的；SP 按等级的标准消耗） */
+export interface BorrowedSkillSpec {
+  name: string;
+  type: PersonaSkill['type'];
+  power: number;
+  level: number;
+  spCost: number;
+}
+export interface BorrowedSetup {
+  /** 面具名 */
+  name: string;
+  /** 借给你的人（代号） */
+  owner: string;
+  /** 据点系数（Lv1 ×1.0 … Lv6 ×1.5） */
+  mult: number;
+  skills: BorrowedSkillSpec[];
+  /** 本周还有场数（没有的话这一场不能用；用过一次之后不再看这个） */
+  usable: boolean;
 }
 
 export type PlayerActionInput =
@@ -147,7 +174,8 @@ export type PlayerActionInput =
   | { kind: 'switchMask'; attribute: AttributeId }
   | { kind: 'insight' }
   | { kind: 'itemHeal'; amount: number; label: string }
-  | { kind: 'itemSp'; amount: number; label: string };
+  | { kind: 'itemSp'; amount: number; label: string }
+  | { kind: 'borrowed'; index: number };
 
 export type FxType =
   | 'shadowHit' | 'playerHit' | 'weak' | 'stagger' | 'staggerEnd' | 'phase2'
@@ -231,6 +259,7 @@ export class BattleEngine {
   private oathSpUsed = false;        // 月光之誓：每场 1 次
   private galeFirst = false;         // 疾风：守卫首回合不回手（第 6 轮 深渊周常）
   private ampNextAdd = 0;            // 增幅回路：命中后下次伤害加算
+  private borrowUsed = false;        // 第 8 轮：这一场用过借来的面具（UI 据此记一场）
 
   // Shadow 态
   private shName: string;
@@ -362,6 +391,10 @@ export class BattleEngine {
       playerHpLost: this.playerHpLost,
       poisonKill: this.poisonKill,
       allOutUsed: this.allOutUsed,
+      // ── 第 8 轮 借来的面具 ──
+      borrowUsed: this.borrowUsed,
+      /** 这一场能不能用借来的技能（本周还有场数，或者这一场已经用过） */
+      borrowAvailable: !!this.setup.borrowed && (this.borrowUsed || this.setup.borrowed.usable),
       // ── R18 ──
       /** 燃起待用面具（UI 火焰角标；用过即摘） */
       blazingReady: (this.setup.blazingMasks ?? []).filter(a => !this.blazeUsed.has(a)),
@@ -446,6 +479,18 @@ export class BattleEngine {
           return this.result(['誓约之力已在本场战斗中兑现——月光不会照两次。'], [], false, false);
         }
         return this.doTurnAction(input);
+      case 'borrowed': {
+        const b = this.setup.borrowed;
+        const skill = b?.skills[input.index];
+        if (!b || !skill) return this.result([], [], false, false);
+        if (!this.borrowUsed && !b.usable) {
+          return this.result(['借来的面具本周已经带进 3 场战斗了——下周一再来。'], [], false, false);
+        }
+        if (this.sp < skill.spCost) {
+          return this.result(['SP 不足，无法施展这个技能。'], [], false, false);
+        }
+        return this.doTurnAction(input);
+      }
       default: return this.doTurnAction(input);
     }
   }
@@ -539,7 +584,7 @@ export class BattleEngine {
   }
 
   // ── 回合行动主流程 ──────────────────────────────────────
-  private doTurnAction(input: Extract<PlayerActionInput, { kind: 'skill' | 'basic' | 'defend' | 'allOut' }>): TurnResult {
+  private doTurnAction(input: Extract<PlayerActionInput, { kind: 'skill' | 'basic' | 'defend' | 'allOut' | 'borrowed' }>): TurnResult {
     const lines: string[] = [];
     const fx: FxEvent[] = [];
     this.windowJustOpened = false;
@@ -551,6 +596,7 @@ export class BattleEngine {
     // ── 玩家阶段
     switch (input.kind) {
       case 'skill': grantedExtra = this.resolveSkill(input.skill, lines, fx); break;
+      case 'borrowed': grantedExtra = this.resolveBorrowed(this.setup.borrowed!, this.setup.borrowed!.skills[input.index], lines, fx); break;
       case 'basic': this.resolveBasic(lines, fx); break;
       case 'defend': this.resolveDefend(lines); break;
       case 'allOut': this.resolveAllOut(input.qteMult, lines, fx); break;
@@ -871,6 +917,84 @@ export class BattleEngine {
       fx.push({ atLine: lines.length - 1, type: 'heal', value: applied, hpAfter: this.playerHp });
     }
 
+    return grantedExtra;
+  }
+
+  /**
+   * 借来的面具（第 8 轮 · PRD §13.5）：不换出战位、不吃属性克制 / 弱点 / 二形态耐性 / 自己面具的被动 / 精通 / 面具羁绊 /
+   * 弹药 / 遗物 / 共鸣链 / 迷思；伤害 = round(威力 × 据点系数)，再吃通用增益（攻击增益、增伤、易伤、蓄力、暴击）
+   * 和它的失衡 / 警戒。暴击型按技能等级有暴击率（加上场上的连击 buff）；增伤 / 易伤 / 蓄力 / 回复照常生效。
+   */
+  private resolveBorrowed(b: BorrowedSetup, skill: BorrowedSkillSpec, lines: string[], fx: FxEvent[]): boolean {
+    this.sp = Math.max(0, this.sp - skill.spCost);
+    this.borrowUsed = true;
+    this.consecutiveWeakness = 0;
+    const base = Math.max(1, Math.round(skill.power * b.mult));
+    lines.push(`借来的面具【${b.name}】（${b.owner} 的）——${skill.name}！`);
+    let grantedExtra = false;
+    if (skill.type === 'damage' || skill.type === 'crit' || skill.type === 'attack_boost') {
+      const critBuff = findStatus(this.playerStatuses, 'crit_buff')?.value ?? 0;
+      const critChance = critBuff + (skill.type === 'crit' ? SKILL_CRIT_BY_LEVEL[Math.min(Math.max(skill.level, 1), 5) - 1] : 0);
+      const isCrit = this.rng() < critChance;
+      const flats: number[] = [];
+      const adds: number[] = [];
+      const mults: number[] = [];
+      if (this.attackBoostTurns > 0 && skill.type !== 'attack_boost') {
+        flats.push(ATTACK_BOOST_FLAT);
+        lines.push(`攻击增益：+${ATTACK_BOOST_FLAT}（剩余${this.attackBoostTurns}回合）`);
+      }
+      if (this.attackBuffAdd !== null) {
+        adds.push(this.attackBuffAdd);
+        lines.push(`攻击强化触发！伤害 +${Math.round(this.attackBuffAdd * 100)}%！`);
+        this.attackBuffAdd = null;
+      }
+      if (this.vulnerableArmed) { adds.push(VULNERABLE_ADD); this.vulnerableArmed = false; lines.push('易伤触发！伤害 +30%！'); }
+      if (this.chargeActive) {
+        const chargeMult = this.chargeMultOverride ?? CHARGE_MULT;
+        mults.push(chargeMult);
+        this.chargeActive = false;
+        this.chargeMultOverride = null;
+        lines.push(chargeMult > CHARGE_MULT ? `蓄雷炸裂！伤害 ×${chargeMult}！` : '蓄力爆发！伤害翻倍！');
+      }
+      if (isCrit) mults.push(CRIT_MULT);
+      if (this.staggerState === 'window') mults.push(STAGGER_TAKEN_MULT);
+      const guardStance = findStatus(this.shadowStatuses, 'guard_stance');
+      if (guardStance) { mults.push(guardStance.value); lines.push(`${this.shName} 处于警戒——伤害被削减！`); }
+      const dmg = computeDamage(base, flats, adds, mults);
+      this.damageShadow(dmg);
+      lines.push(isCrit ? `暴击！造成了 ${dmg} 点伤害！` : `造成了 ${dmg} 点伤害。`);
+      fx.push({ atLine: lines.length - 1, type: 'shadowHit', value: dmg, isWeak: false, isCrit });
+      if (isCrit) this.comboCount++;
+      this.applyThorns(dmg, lines, fx);
+      if (this.over === 'defeat') return false;
+      if (skill.type === 'attack_boost' && this.attackBoostTurns <= 0) {
+        this.attackBoostTurns = ATTACK_BOOST_TURNS;
+        lines.push(`攻击增益发动！接下来${ATTACK_BOOST_TURNS}回合伤害+${ATTACK_BOOST_FLAT}！`);
+      }
+      this.gainStagger(false, isCrit, lines, fx);
+      this.maybeForcedWindow(lines, fx);
+      if (isCrit && this.oneMoreCd <= 0 && this.staggerState !== 'window') {
+        this.oneMoreCd = ONE_MORE_CD_TURNS;
+        lines.push('1 MORE！乘胜追击——再行动一次！');
+        fx.push({ atLine: lines.length - 1, type: 'oneMore' });
+        grantedExtra = true;
+      }
+    } else if (skill.type === 'buff') {
+      this.attackBuffAdd = BUFF_ADD;
+      lines.push(`攻击力强化！下次伤害 +${Math.round(BUFF_ADD * 100)}%！`);
+    } else if (skill.type === 'debuff') {
+      this.vulnerableArmed = true;
+      lines.push(`${this.shName} 陷入易伤！下次攻击 +30%！`);
+    } else if (skill.type === 'charge') {
+      this.chargeActive = true;
+      lines.push('正在蓄力……下次技能伤害将翻倍！（小心 Shadow 的打断）');
+    } else if (skill.type === 'heal') {
+      const amount = Math.max(1, Math.round(base * 0.3));
+      const applied = Math.min(this.playerMaxHp - this.playerHp, amount);
+      this.playerHp += applied;
+      lines.push(`回复了 ${applied} 点体力！`);
+      fx.push({ atLine: lines.length - 1, type: 'heal', value: applied, hpAfter: this.playerHp });
+    }
     return grantedExtra;
   }
 

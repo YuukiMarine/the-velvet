@@ -6,6 +6,7 @@
  *   · 推自己的成员牌（连续天数 / 本周出勤 / 名片状态 / 展示的面具），指纹没变就不推；
  *   · 发现自己不在某个组织了（被请离 / 解散 / 在别的设备退出）→ 本机提示一次。
  *   · 7b：拉最近 30 天的公告板（动态 + 标签）；上一场会议结束了还没有纪要 → 用确定 id 补发一份。
+ *   · 第 8 轮：拉作战 + 打卡 + 经验流水，作战待办 / 达成卡 / 奖励交给 orgOpsSync.reconcileOps。
  * 另有：记完一条记录 5 秒后顺手推一次成员牌；界面动作的包装（做完就写回 store）；本机屏蔽名单、隐藏的动态、
  * 公告板「看到哪儿了」；守则同意记录。离线或服务器报错时一律不动本地。
  */
@@ -20,10 +21,11 @@ import {
 } from './orgs';
 import {
   ORG_CODENAME_MAX, ORG_POSTS_PER_DAY, buildMemberCard, buildPostSnapshot, bySeat, canShareActivity, cardFingerprint, computeMinutes,
-  displayCodename, hadGoalFor, meetingState, myPostsToday, nextWeekKey, personaSnapshot, shiftDayKey, tarotCardOf,
-  tarotConflictLosers, zonedDay,
+  displayCodename, hadGoalFor, meetingState, myPostsToday, nextWeekKey, personaSnapshot, shiftDayKey, shownPersonas, tarotCardOf,
+  tarotConflictLosers, zonedDay, ORG_MAX_SHOWN_MASKS,
 } from '@/utils/orgLogic';
-import type { Activity, Org, OrgCodenameKind, OrgMember, OrgMemberCard, OrgPost, OrgReactionTag, OrgView } from '@/types';
+import { archiveOrphanOpTodos, checkLevelUps, loadOpsSeen, reconcileOps, withOps } from './orgOpsSync';
+import type { Activity, AttributeId, Org, OrgCodenameKind, OrgMember, OrgMemberCard, OrgPersonaSnapshot, OrgPost, OrgReactionTag, OrgView } from '@/types';
 
 const social = () => useCloudSocialStore.getState();
 const nickname = (): string => [...(useAppStore.getState().user?.name ?? '').trim()].slice(0, ORG_CODENAME_MAX).join('');
@@ -120,7 +122,10 @@ const loadSeen = (me: string) => {
 export function markBoardSeen(orgId: string): void {
   const me = getUserId();
   if (!me) return;
-  const at = new Date().toISOString();
+  // 取「现在」和眼前最新一条的服务器时间里较晚的那个：手机时钟比服务器慢几秒时，刚看过的也别再亮
+  const v = social().orgs.find(x => x.org.id === orgId);
+  const newest = Math.max(0, ...(v?.posts ?? []).map(p => p.createdAt.getTime()), ...(v?.reactions ?? []).map(r => r.updatedAt.getTime()));
+  const at = new Date(Math.max(Date.now(), newest)).toISOString();
   social().setOrgSeen(orgId, at);
   const all = readJson<Record<string, Record<string, string>>>(SEEN_KEY, {});
   all[me] = { ...(all[me] ?? {}), [orgId]: at };
@@ -141,16 +146,27 @@ export const acceptOrgRules = (): void => {
 
 // ── 成员牌 ───────────────────────────────────────────────────────────────────
 
-/** 我在这个组织里该推的成员牌。展示面具与否记在服务器那一行上（多台设备不打架） */
+/** 按属性各算一张面具快照（去重，最多 3 张；没有人格就是空） */
+function maskSnapshots(attrs: AttributeId[]): OrgPersonaSnapshot[] {
+  const st = useAppStore.getState();
+  return [...new Set(attrs)]
+    .map(a => personaSnapshot(st.persona, st.attributes, a))
+    .filter((p): p is OrgPersonaSnapshot => !!p)
+    .slice(0, ORG_MAX_SHOWN_MASKS);
+}
+
+/**
+ * 我在这个组织里该推的成员牌。展示哪几张面具记在服务器那一行上（多台设备不打架）：
+ * 每次按现在的人格重算这几张（等级 / 新解锁的技能跟着变）。
+ */
 function myCardFor(view: OrgView): OrgMemberCard {
   const st = useAppStore.getState();
-  const showMask = !!view.me.card.persona;
   return buildMemberCard({
     activities: st.activities,
     tz: view.org.tz,
     now: new Date(),
     status: st.settings.profileStatus,
-    persona: showMask ? personaSnapshot(st.persona, st.attributes) : null,
+    personas: maskSnapshots(shownPersonas(view.me.card).map(p => p.attribute)),
     tarotAt: view.me.card.tarotAt,
     prevCard: view.me.card,
   });
@@ -259,6 +275,7 @@ async function syncOrgsOnce(): Promise<void> {
   loadBlocked(me);
   loadHidden(me);
   loadSeen(me);
+  loadOpsSeen(me);
   loadFaces(me);
   ensureAutoPush();
   const listed = await listMyMemberships();
@@ -277,10 +294,13 @@ async function syncOrgsOnce(): Promise<void> {
   views = await normalizeSlots(me, views);
   for (let i = 0; i < views.length; i++) views[i] = await resolveTarotConflict(views[i]);
   for (let i = 0; i < views.length; i++) views[i] = await pushMyCard(views[i]);
-  // 公告板在推完成员牌之后拉：补纪要要用到大家最新的出勤
-  for (let i = 0; i < views.length; i++) views[i] = await ensureMinutes(await withBoard(views[i]));
+  // 公告板在推完成员牌之后拉：补纪要要用到大家最新的出勤；作战达成卡（「作战完成者」称号）也要先拉到
+  for (let i = 0; i < views.length; i++) views[i] = await ensureMinutes(await withOps(await withBoard(views[i])));
+  for (let i = 0; i < views.length; i++) views[i] = await reconcileOps(views[i]);
   social().setOrgs(views.sort(orgOrder));
   noticeGone(me, views);
+  checkLevelUps(views);
+  await archiveOrphanOpTodos(views);
 }
 
 /** 只刷新一个组织（界面动作之后）；组织没了就从本机拿掉 */
@@ -295,8 +315,10 @@ export async function refreshOrg(orgId: string): Promise<OrgView | null> {
       return null;
     }
     const prev = social().orgs.find(v => v.org.id === orgId);
-    const view: OrgView = await withBoard({ org, members: members.sort(bySeat), me: mine, posts: prev?.posts, reactions: prev?.reactions });
+    const base: OrgView = { org, members: members.sort(bySeat), me: mine, posts: prev?.posts, reactions: prev?.reactions, ops: prev?.ops, checkins: prev?.checkins, ledger: prev?.ledger };
+    const view: OrgView = await reconcileOps(await withOps(await withBoard(base)));
     social().upsertOrgView(view);
+    checkLevelUps([view]);
     social().setOrgs([...social().orgs].sort(orgOrder));
     rememberOrgs(me, social().orgs);
     return view;
@@ -382,16 +404,19 @@ export async function saveMyCardFromUi(orgId: string, input: { tarotId: string; 
   if (changedCard) void refreshOrg(orgId); // 看一眼是不是和谁同时选中了同一张
 }
 
-/** 展示 / 收起面具 */
-export async function setShowMaskFromUi(orgId: string, show: boolean): Promise<boolean> {
+/** 在名册背面展示哪几张面具（第 8 轮：最多 3 张，按选的顺序；空 = 不展示） */
+export async function setShownMasksFromUi(orgId: string, attrs: AttributeId[]): Promise<number> {
   const view = viewOf(orgId);
   const st = useAppStore.getState();
-  const persona = show ? personaSnapshot(st.persona, st.attributes) : null;
-  if (show && !persona) throw new OrgError('还没有人格面具：先去逆影战场唤醒一张');
-  const card = { ...myCardFor(view), persona };
+  if (attrs.length && !st.persona) throw new OrgError('还没有人格面具：先去逆影战场唤醒一张');
+  if (attrs.length > ORG_MAX_SHOWN_MASKS) throw new OrgError(`最多展示 ${ORG_MAX_SHOWN_MASKS} 张`);
+  const personas = maskSnapshots(attrs);
+  const base = myCardFor(view);
+  const { personas: _old, ...rest } = base;
+  const card: OrgMemberCard = { ...rest, persona: personas[0] ?? null, ...(personas.length ? { personas } : {}) };
   const me = await updateMyMember(view.me.id, { card });
   social().upsertOrgView(withMe(view, me));
-  return !!persona;
+  return personas.length;
 }
 
 export async function updateOrgFromUi(orgId: string, draft: OrgDraft): Promise<void> {

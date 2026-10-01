@@ -223,6 +223,11 @@ export interface Todo {
    * 伙伴名存在这里，离线也能画出「与 X」的标记；约定的实时状态在 cloudSocial.pacts 里。
    */
   pact?: { id: string; partnerId: string; partnerName: string; kind: PactKind };
+  /**
+   * 组织作战（v2.7.0.6 第 8 轮）：这条待办是某场作战里我的那一份，完成即打卡。
+   * 组织名存在这里，离线也能画出「作战 · 组织名」的小签；作战的实时进度在 cloudSocial.orgs 里。
+   */
+  orgOp?: { orgId: string; opId: string; orgName: string; kind: OrgOpKind };
 }
 
 export interface TodoCompletion {
@@ -1521,6 +1526,23 @@ export interface BattleState {
   /** （R19）重游期间被寄存的主线区层与主影，回塔顶时原样放回 */
   parkedStratum?: TowerStratum;
   parkedShadow?: Shadow;
+  /** （第 8 轮 组织作战）领过达成奖励（+SP）的作战 id：跟着战场状态同步，换设备也不重复领（只留最近 200 个） */
+  orgOpRewards?: string[];
+  /** （第 8 轮 借面具）本周借着的面具与本周已经带进了几场（周键对不上 = 新的一周：清零、借的还回去） */
+  borrow?: { weekKey: string; battles: number; mask?: BorrowedMask };
+}
+
+/** 借来的面具（第 8 轮 · PRD §13.5）：别人成员牌上展示的那份快照，借的时候校验、夹过值 */
+export interface BorrowedMask {
+  orgId: string;
+  orgName: string;
+  ownerId: string;
+  ownerCodename: string;
+  persona: OrgPersonaSnapshot;
+  /** 借的时候的据点系数（组织不在本机了就用它） */
+  mult: number;
+  /** 借的时刻（ISO；两台设备合并时取新的） */
+  at: string;
 }
 
 /** Lv6 终局演出的八段（PRD_FINAL_BOSS §5）；reward = 掉落屏 */
@@ -2149,8 +2171,10 @@ export interface OrgMemberCard {
   prev?: { key: string; days: number };
   /** 名片状态（24 小时内有效，过期了就不带） */
   status?: ProfileStatus;
-  /** 展示中的面具；null = 不展示 */
+  /** 展示中的面具；null = 不展示（第 8 轮起是 personas 的第一张，留给只认一张的老版本） */
   persona?: OrgPersonaSnapshot | null;
+  /** 展示中的面具，最多 3 张（第 8 轮；按本人选的顺序）；没有这个字段的老牌子看 persona */
+  personas?: OrgPersonaSnapshot[];
   /** 选定现在这张代表牌的时刻（ISO）：两人撞牌时先选的留下 */
   tarotAt?: string;
   /** 推送时刻（ISO） */
@@ -2217,13 +2241,67 @@ export interface OrgPost {
   id: string;
   orgId: string;
   userId: string;
-  kind: 'moment' | 'minutes';
-  /** 动态附的一句话（≤20 字）；纪要为空 */
+  /** moment = 分享的动态；minutes = 会议纪要；operation = 作战达成卡（第 8 轮） */
+  kind: 'moment' | 'minutes' | 'operation';
+  /** 动态附的一句话（≤20 字）；纪要 / 达成卡为空 */
   text: string;
   snapshot: OrgPostSnapshot | null;
   minutes: OrgMinutesSnapshot | null;
+  opCard?: OrgOpCardSnapshot | null;
   weekKey?: string;
   createdAt: Date;
+}
+
+// ── 作战（第 8 轮 · PRD §13）────────────────────────────────────────────────────
+// 小作战：一句话，人人做同一件事，任何成员都能发；大作战：共同目标 + 每人一行子任务（队长写 / AI 拆 / 本人自己填），只有队长能发。
+// 每人做完一次就算；达成 / 未达成都是现算的（org_operations 上只有 active / cancelled）。
+
+export type OrgOpKind = 'small' | 'big';
+
+export interface OrgOperation {
+  id: string;
+  orgId: string;
+  initiatorId: string;
+  kind: OrgOpKind;
+  /** 这次练哪个属性（参与者的待办默认加这个属性） */
+  attr: AttributeId;
+  /** 一句话 / 共同目标（≤20 字） */
+  title: string;
+  /** 截止日 YYYY-MM-DD（组织时区） */
+  deadline: string;
+  /** 参与者的用户 id（发起时定下，之后不变；本人可以「这次不参加」） */
+  participants: string[];
+  /** 大作战的分工：用户 id → 子任务（≤20 字）；没有的人自己填，或者就做共同目标 */
+  assignments: Record<string, string>;
+  status: 'active' | 'cancelled';
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/** 参与者在一场作战上的动作：done = 做完了（撤销就删掉）；out = 这次不参加；plan = 自己写下的那一份 */
+export interface OrgCheckin {
+  id: string;
+  operationId: string;
+  orgId: string;
+  userId: string;
+  kind: 'done' | 'out' | 'plan';
+  /** done 的日子（本人本地日期 YYYY-MM-DD） */
+  day: string;
+  /** plan 的内容（≤20 字） */
+  text: string;
+  createdAt: Date;
+}
+
+/** 作战达成卡（org_posts.kind = operation 的 snapshot）：代号、子任务都冻结在里面 */
+export interface OrgOpCardSnapshot {
+  v: 1;
+  opId: string;
+  kind: OrgOpKind;
+  title: string;
+  /** 达成那天（最后一个人做完的日子）和它所在的周（组织时区的周一） */
+  day: string;
+  week: string;
+  participants: Array<{ userId: string; codename: string; tarotId?: string; task?: string }>;
 }
 
 /** 六个预设标签：太强了 / 🤣👉 / 稳 / 羡慕 / 我也去做 / 抱抱（id same 的显示字第 7 轮验收后改成 🤣👉） */
@@ -2246,6 +2324,13 @@ export interface OrgView {
   me: OrgMember;
   posts?: OrgPost[];
   reactions?: OrgReaction[];
+  /** 第 8 轮：最近 62 天建的作战（含进行中的）与它们的打卡；还没拉到时为 undefined */
+  ops?: OrgOperation[];
+  checkins?: OrgCheckin[];
+  /** 这一轮作战没拉到（离线 / 服务器还没建表）：作战区显示「暂时拉不到」而不是一直转圈 */
+  opsFailed?: boolean;
+  /** 第 8 轮：据点经验的来源——全部纪要与作战达成卡（不限 30 天）；还没拉到时为 undefined */
+  ledger?: OrgPost[];
 }
 
 // ── COOP 契约（在线同伴羁绊） ───────────────────────────

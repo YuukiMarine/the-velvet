@@ -59,10 +59,19 @@ const localTodoInDb = async (pactId: string) => (await db.todos.toArray()).find(
 const BACKFILL_DAYS = 30;
 const shiftDay = (key: string, n: number): string => { const d = new Date(key + 'T12:00:00'); d.setDate(d.getDate() + n); return toLocalDateKey(d); };
 
-/** 进行中的约定：本地还没有对应待办就建一条（归档了的也算有，不重建）；云同步进行中先不建 */
+/**
+ * 进行中的约定：本地还没有对应待办就建一条（归档了的也算有，不重建）；云同步进行中先不建。
+ * 以前待办能被手动归档：归档了、又没完成（completedAt 为空）而约定还在进行 → 放回今日任务，不然再也打不了卡（第 8 轮顺带修）。
+ */
 async function ensureLocalTodo(p: CoopPact, me: string): Promise<void> {
   if (useCloudStore.getState().syncStatus === 'syncing') return; // 拉取正在清表 / 重载：等下一轮
-  if (await localTodoInDb(p.id)) return;
+  const existing = await localTodoInDb(p.id);
+  if (existing) {
+    if (!existing.isActive && !existing.completedAt && p.status === 'active') {
+      await useAppStore.getState().updateTodo(existing.id, { isActive: true, archivedAt: undefined });
+    }
+    return;
+  }
   const prefs = prefsFor(p.id);
   const extra = prefs.extra && prefs.extra.attribute !== prefs.attribute ? prefs.extra : undefined;
   await useAppStore.getState().addTodo({

@@ -5,6 +5,7 @@
  *   名册：成员牌按座位排，点一下放大翻面，「⋯」查看 / 屏蔽；空座位提示发邀请码。
  *   公告板（7b）：分享来的动态 + 标签，最新的会议纪要置顶；进公告板就算看过了（组织卡 / 地图红点熄灭）。
  *   会议（7b）：周日全天到周一凌晨 4 点开；其余时间看这周大家的目标和上一次纪要。
+ *   作战（第 8 轮）：进行中的作战进度板 + 发起 + 最近 30 天的历史；进作战区就算看过了（地标 / 组织入口红点熄灭）。
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { motion } from 'motion/react';
@@ -21,19 +22,24 @@ import { HideoutMap, type HideoutSection } from '@/components/org/HideoutMap';
 import { MemberCardBack, MemberCardFront, MemberTile } from '@/components/org/MemberCard';
 import { BoardSection } from '@/components/org/BoardSection';
 import { MeetingSection } from '@/components/org/MeetingSection';
+import { OpsSection } from '@/components/org/OpsSection';
 import { OrgSettingsSheet } from '@/components/org/OrgSettingsSheet';
 import { OrgOnboardingSheet } from '@/components/org/OrgOnboardingSheet';
 import { BondTitle } from '@/components/org/BondTitle';
-import { LeaderChip, MeetingDayChip, OrgEmptyPanel, OrgLoginPrompt, OrgNoticeBar, OrgSwitcher, SlotLinks } from '@/components/org/OrgHome';
+import { LeaderChip, MeetingDayChip, OrgEmptyPanel, OrgLevelLine, OrgLoginPrompt, OrgNoticeBar, OrgSwitcher, SlotLinks } from '@/components/org/OrgHome';
+import { BorrowMaskSheet } from '@/components/org/BorrowMaskSheet';
 import { OrgButton, OrgPanel, useOrgTone, type OrgTone } from '@/components/org/orgUi';
 import { markBoardSeen, refreshBoard, refreshOrg, setMemberBlocked } from '@/services/orgSync';
-import { boardUnread, displayCodename, formatInviteCode, latestMinutes, meetingPending, meetingState, tarotConflictLosers } from '@/utils/orgLogic';
+import { markOpsSeen, refreshOps } from '@/services/orgOpsSync';
+import { opsUnread } from '@/utils/orgOps';
+import { boardUnread, displayCodename, formatInviteCode, latestMinutes, meetingPending, meetingState, shownPersonas, tarotConflictLosers } from '@/utils/orgLogic';
 import type { OrgMember, OrgView } from '@/types';
 
 const SECTION_TITLE: Record<HideoutSection, { t: string; en: string }> = {
   roster: { t: '名册', en: 'MEMBERS' },
   board: { t: '公告板', en: 'BOARD' },
   meeting: { t: '会议', en: 'MEETING' },
+  ops: { t: '作战', en: 'OPERATIONS' },
 };
 
 async function copyText(text: string): Promise<boolean> {
@@ -82,16 +88,20 @@ export function Hideout() {
   const orgs = useCloudSocialStore(s => s.orgs);
   const orgsLoaded = useCloudSocialStore(s => s.orgsLoaded);
   const orgSeen = useCloudSocialStore(s => s.orgSeen);
+  const orgOpsSeen = useCloudSocialStore(s => s.orgOpsSeen);
   const orgId = useCloudSocialStore(s => s.hideoutOrgId);
   const blockedList = useCloudSocialStore(s => s.orgBlocked);
   const setCurrentPage = useAppStore(s => s.setCurrentPage);
   const view = orgs.find(v => v.org.id === orgId);
   const seenAt = orgId ? orgSeen[orgId] : undefined;
+  const opsSeenAt = orgId ? orgOpsSeen[orgId] : undefined;
   // 从羁绊页切过来 / 分享完「去公告板看看」时，先打开有新东西的那一区（读一次就清掉）
   const [section, setSection] = useState<HideoutSection>(() => useCloudSocialStore.getState().hideoutSection ?? 'roster');
   useEffect(() => { useCloudSocialStore.getState().setHideoutSection(null); }, []);
   const [flip, setFlip] = useState<string | null>(null);
   const [menuFor, setMenuFor] = useState<OrgMember | null>(null);
+  // 第 8 轮：借面具（从放大牌下面 /「⋯」打开）
+  const [borrowFor, setBorrowFor] = useState<OrgMember | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [cardOpen, setCardOpen] = useState(false);
   const [homeMode, setHomeMode] = useState<'create' | 'join' | null>(null);
@@ -122,6 +132,7 @@ export function Hideout() {
   useEffect(() => {
     if (firstSection.current) { firstSection.current = false; return; }
     if (section === 'board' && orgId) void refreshBoard(orgId);
+    if (section === 'ops' && orgId) void refreshOps(orgId);
   }, [section, orgId]);
 
   // 看着公告板就算看过了：新动态 / 新标签到了也跟着记一笔，红点不会在眼皮底下亮起来
@@ -130,11 +141,17 @@ export function Hideout() {
   useEffect(() => {
     if (section === 'board' && orgId && posts) markBoardSeen(orgId);
   }, [section, orgId, posts, reactions]);
+  // 作战区同理：看着就算看过了（新作战 / 刚达成的卡到了也跟着记）
+  const ops = view?.ops;
+  const ledger = view?.ledger;
+  useEffect(() => {
+    if (section === 'ops' && orgId && ops) markOpsSeen(orgId);
+  }, [section, orgId, ops, ledger, posts]);
 
   // 两个组织时切换条上的红点
   const dots = useMemo(
-    () => Object.fromEntries(orgs.map(v => [v.org.id, boardUnread(v, orgSeen[v.org.id], blocked) || meetingPending(v)])),
-    [orgs, orgSeen, blocked],
+    () => Object.fromEntries(orgs.map(v => [v.org.id, boardUnread(v, orgSeen[v.org.id], blocked) || meetingPending(v) || opsUnread(v, orgOpsSeen[v.org.id])])),
+    [orgs, orgSeen, orgOpsSeen, blocked],
   );
 
   const p3 = channel === 'p3';
@@ -159,6 +176,7 @@ export function Hideout() {
       list.push({ label: '修改我的牌', onClick: () => setCardOpen(true) });
     } else {
       const isBlocked = blocked.has(m.userId);
+      if (shownPersonas(m.card).length) list.push({ label: '借 Ta 的面具', onClick: () => setBorrowFor(m) });
       list.push({ label: isBlocked ? '解除屏蔽' : '屏蔽此人（只在本机生效）', onClick: () => { setMemberBlocked(m.userId, !isBlocked); setFlash(isBlocked ? '已解除屏蔽' : '已屏蔽，之后不再显示 Ta 的动态'); } });
       if (leader) list.push({ label: '转让队长 / 请离…', onClick: () => setSettingsOpen(true) });
     }
@@ -188,7 +206,7 @@ export function Hideout() {
           </OrgPanel>
         )}
 
-        <HideoutMap view={view} section={section} onSection={setSection} blocked={blocked} dots={{ board: section !== 'board' && boardUnread(view, seenAt, blocked), meeting: meetingPending(view) }} />
+        <HideoutMap view={view} section={section} onSection={setSection} blocked={blocked} dots={{ board: section !== 'board' && boardUnread(view, seenAt, blocked), meeting: meetingPending(view), ops: section !== 'ops' && opsUnread(view, opsSeenAt) }} />
 
         <SectionTitle tone={tone} section={section} meta={section === 'roster' ? `${members.length} / 7` : section === 'meeting' && !meetingState(new Date(), org.tz).open ? '每周日' : undefined} />
 
@@ -212,6 +230,8 @@ export function Hideout() {
           </div>
         ) : section === 'board' ? (
           <BoardSection view={view} blocked={blocked} onFlash={setFlash} />
+        ) : section === 'ops' ? (
+          <OpsSection view={view} blocked={blocked} onFlash={setFlash} />
         ) : (
           <MeetingSection view={view} blocked={blocked} onFlash={setFlash} />
         )}
@@ -275,7 +295,11 @@ export function Hideout() {
               resetKey={flip ?? undefined}
               front={(w, h) => (flipMember ? <MemberCardFront view={view} member={flipMember} minutes={minutes} width={w} height={h} /> : null)}
               back={(w, h) => (flipMember ? <MemberCardBack view={view} member={flipMember} width={w} height={h} /> : null)}
+              footer={flipMember && flipMember.id !== view.me.id && shownPersonas(flipMember.card).length > 0
+                ? <OrgButton small onClick={() => { const m = flipMember; setFlip(null); setBorrowFor(m); }}>借 Ta 的面具</OrgButton>
+                : undefined}
             />
+            <BorrowMaskSheet view={view} member={borrowFor} open={!!borrowFor} onClose={() => setBorrowFor(null)} onFlash={setFlash} />
             <ActionSheet isOpen={!!menuFor} onClose={() => setMenuFor(null)} title={menuFor ? displayCodename(menuFor) : undefined} actions={menuActions} />
           </>
         )}
@@ -334,6 +358,7 @@ function TitleBlock({ view, leader, tone }: { view: OrgView; leader: boolean; to
         <P5CollageTitle text={org.name} size={26} />
         {org.motto && <div className="mt-3 pl-1"><P5SubBar segs={[{ t: org.motto }]} star={false} rot={-1.2} className="!px-2.5 !py-0.5" /></div>}
         {meta}
+        <OrgLevelLine view={view} />
       </div>
     );
   }
@@ -344,6 +369,7 @@ function TitleBlock({ view, leader, tone }: { view: OrgView; leader: boolean; to
         {org.motto && <div className="mt-1 text-[13px] font-bold text-[#131313]/70">「{org.motto}」</div>}
         <P4Sparkle size={18} color="var(--ui-accent)" className="absolute right-2 top-2" />
         {meta}
+        <OrgLevelLine view={view} />
       </div>
     );
   }
@@ -353,6 +379,7 @@ function TitleBlock({ view, leader, tone }: { view: OrgView; leader: boolean; to
         <h2 className="relative text-[28px] font-black italic leading-tight tracking-tight" style={{ color: P3R.ink, fontFamily: '"Noto Sans SC Black", "Velvet Sans SC", sans-serif' }}>{org.name}</h2>
         {org.motto && <div className="relative mt-0.5 text-[13px] font-bold" style={{ color: P3R.inkSoft }}>{org.motto}</div>}
         {meta}
+        <OrgLevelLine view={view} />
       </div>
     );
   }
@@ -361,6 +388,7 @@ function TitleBlock({ view, leader, tone }: { view: OrgView; leader: boolean; to
       <h2 className="text-[26px] font-black leading-tight text-gray-900 dark:text-white">{org.name}</h2>
       {org.motto && <div className="mt-0.5 text-[13px] font-semibold text-gray-500 dark:text-gray-400">{org.motto}</div>}
       {meta}
+      <OrgLevelLine view={view} />
     </div>
   );
 }

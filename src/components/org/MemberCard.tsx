@@ -1,7 +1,7 @@
 /**
  * 成员牌（第 7 轮 · PRD §12.4 / §12.5）：名册格子里的小牌，以及点开后放大翻面的正反两面。
  *   正面：代号、代表牌牌面、座位、名片状态、连续天数、本周出勤七格、称号（读最新一份纪要，挂一周）；
- *   背面：展示的面具（名字 / 属性 / 等级 / 三个技能）、本周目标与上周自评（周日会议写，7b）、加入日期。
+ *   背面：展示的面具（第 8 轮起最多 3 张：一张时列出三个技能，两三张时每张一行写最强一招）、本周目标与上周自评（周日会议写，7b）、加入日期。
  * 四频道各一套皮；我的那张有标记；屏蔽了的人半透明、挂「已屏蔽」；上一场会议没写目标的挂「本周缺席」。
  * 牌面默认是代表牌；点一下小牌的牌面就换成 Ta 的头像（本机偏好，再点换回来），放大牌、公告板跟着用同一个。
  */
@@ -16,7 +16,7 @@ import { useTarotArtSet } from '@/ui/useTarotArtSet';
 import { P3R, slantClip } from '@/components/p3r/kit';
 import { P5R, P5_FONT, P5_TITLE_FONT, roughQuad } from '@/components/p5r/kit';
 import { P4Sparkle } from '@/ui/p4Kit';
-import { RESULT_LABEL, displayCodename, nextWeekKey, orgWeekKey, shiftDayKey, tarotCardOf, weekDaysOf, zonedDay } from '@/utils/orgLogic';
+import { RESULT_LABEL, displayCodename, nextWeekKey, orgWeekKey, shiftDayKey, shownPersonas, tarotCardOf, weekDaysOf, zonedDay } from '@/utils/orgLogic';
 import { OrgEmblem, WeekDots, useOrgTone, type OrgTone } from './orgUi';
 import type { OrgMember, OrgMinutesSnapshot, OrgView, PersonaSkill } from '@/types';
 
@@ -79,14 +79,16 @@ export function memberFacts(view: OrgView, m: OrgMember, now = new Date()) {
 export function useMemberFace(m: Pick<OrgMember, 'userId' | 'tarotId' | 'avatarUrl'> | undefined, fallbackTarot?: string) {
   const set = useTarotArtSet();
   const prefAvatar = useCloudSocialStore(s => (m ? s.orgAvatarFaces.includes(m.userId) : false));
-  const tarotId = m ? m.tarotId : fallbackTarot;
+  // 服务器上的牌 id 不认识（手改数据 / 以后加的牌）就当没选，退回头像
+  const rawTarot = m ? m.tarotId : fallbackTarot;
+  const tarotId = tarotCardOf(rawTarot) ? rawTarot : undefined;
   const avatar = m?.avatarUrl && (prefAvatar || !tarotId) ? m.avatarUrl : undefined;
   return {
     avatar: !!avatar,
     url: avatar ?? (tarotId ? tarotArtUrl(tarotId, set) : null),
     tarotId,
     /** 头像和代表牌都有，才有得换 */
-    canToggle: !!m?.avatarUrl && !!m?.tarotId,
+    canToggle: !!m?.avatarUrl && !!tarotId,
   };
 }
 
@@ -321,7 +323,10 @@ export function MemberCardBack({ view, member, width, height }: { view: OrgView;
   const tone = useOrgTone();
   const f = memberFacts(view, member);
   const g = goalFacts(view, member);
-  const p = member.card.persona;
+  const masks = shownPersonas(member.card);
+  const p = masks.length === 1 ? masks[0] : null;
+  // 两三张时每张一行：名字、属性 · 等级、最强的一招
+  const best = (m: typeof masks[number]) => [...m.skills].sort((a, b) => b.power - a.power)[0];
   const bg = tone.channel === 'p3' ? P3R.panel : tone.channel === 'p4' ? '#fff6d0' : tone.channel === 'p5' ? P5R.paper : '#111827';
   const ink = tone.channel === 'neutral' ? '#f3f4f6' : tone.channel === 'p5' ? P5R.ink : tone.channel === 'p4' ? '#131313' : P3R.ink;
   const sub = tone.channel === 'neutral' ? '#9ca3af' : tone.channel === 'p5' ? '#4a4640' : tone.channel === 'p4' ? 'rgba(19,19,19,0.6)' : P3R.inkSoft;
@@ -342,7 +347,22 @@ export function MemberCardBack({ view, member, width, height }: { view: OrgView;
 
       <div className={`relative min-h-0 flex-1 overflow-hidden ${small ? 'mt-3' : 'mt-4'}`}>
         {heading('展示的面具', 'PERSONA')}
-        {p ? (
+        {masks.length > 1 ? (
+          <ul className={small ? 'mt-1.5 space-y-1.5' : 'mt-2 space-y-2'}>
+            {masks.map((m, i) => {
+              const top = best(m);
+              return (
+                <li key={`${m.attribute}-${i}`} className="min-w-0">
+                  <div className={`truncate font-black leading-tight ${small ? 'text-[14px]' : 'text-[16px]'}`} style={{ fontFamily: tone.titleFont }}>{m.name}</div>
+                  <div className={`truncate font-bold ${small ? 'text-[10px]' : 'text-[11px]'}`} style={{ color: sub }}>
+                    {DEFAULT_ATTRIBUTE_NAMES[m.attribute] ?? m.attribute} · Lv.{m.level}
+                    {top && <span style={{ color: accent }}> · {top.name} {SKILL_TYPE[top.type] ?? top.type} {top.power}</span>}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        ) : p ? (
           <div className="mt-1.5">
             <div className={`line-clamp-2 font-black leading-tight ${small ? 'text-[18px]' : 'text-[22px]'}`} style={{ fontFamily: tone.titleFont }}>{p.name}</div>
             <div className="mt-0.5 text-[12px] font-bold" style={{ color: sub }}>{DEFAULT_ATTRIBUTE_NAMES[p.attribute] ?? p.attribute} · Lv.{p.level}</div>

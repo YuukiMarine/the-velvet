@@ -14,7 +14,7 @@ import {
   shiftDayKey, wroteMeeting, zonedDay,
 } from '@/utils/orgLogic';
 import { MinutesCard } from './BoardSection';
-import { OrgButton, OrgPanel, useOrgTone, type OrgTone } from './orgUi';
+import { OrgButton, OrgChoice, OrgPanel, orgInputSkin, useOrgTone, type OrgTone } from './orgUi';
 import type { OrgMember, OrgView } from '@/types';
 
 type Result = 'done' | 'partial' | 'missed';
@@ -115,7 +115,7 @@ export function MeetingSection({ view, blocked, onFlash }: { view: OrgView; bloc
                 </div>
                 <div className="mt-2 grid grid-cols-3 gap-2">
                   {RESULTS.map((r, i) => (
-                    <Choice key={r} tone={tone} seed={i} on={result === r} onClick={() => setResult(r)}>{RESULT_LABEL[r]}</Choice>
+                    <OrgChoice key={r} seed={i} on={result === r} onClick={() => setResult(r)}>{RESULT_LABEL[r]}</OrgChoice>
                   ))}
                 </div>
               </div>
@@ -132,7 +132,7 @@ export function MeetingSection({ view, blocked, onFlash }: { view: OrgView; bloc
                 placeholder="比如：每天背 30 个单词"
                 aria-label="下周目标"
                 className="block w-full resize-none px-3 py-2.5 text-[15px] font-bold leading-snug outline-none"
-                style={inputSkin(tone)}
+                style={orgInputSkin(tone)}
               />
             </div>
             {error && <p role="alert" className="text-[12px] font-bold leading-relaxed" style={{ color: tone.channel === 'p5' ? P5R.red : '#f43f5e' }}>{error}</p>}
@@ -243,21 +243,6 @@ function LiveBadge({ tone }: { tone: OrgTone }) {
   );
 }
 
-function Choice({ tone, seed, on, onClick, children }: { tone: OrgTone; seed: number; on: boolean; onClick: () => void; children: string }) {
-  const style = tone.channel === 'p3'
-    ? { background: on ? P3R.blue : P3R.cyanFaint, color: on ? '#ffffff' : P3R.ink, clipPath: slantClip(6) }
-    : tone.channel === 'p5'
-      ? { background: on ? P5R.red : 'rgba(0,0,0,0.08)', color: on ? P5R.white : P5R.ink, clipPath: roughQuad(seed + 2.3, 2.5), fontFamily: P5_TITLE_FONT }
-      : tone.channel === 'p4'
-        ? { background: on ? 'var(--p4-orange, #f9a11b)' : 'transparent', color: on ? '#131313' : 'var(--ui-ink, #131313)', borderRadius: 12, boxShadow: `inset 0 0 0 2px ${on ? '#131313' : 'var(--ui-line, #131313)'}` }
-        : { background: on ? tone.accent : 'rgba(127,127,127,0.1)', color: on ? '#ffffff' : tone.ink, borderRadius: 12 };
-  return (
-    <button type="button" onClick={onClick} aria-pressed={on} className="whitespace-nowrap py-2.5 text-[14px] font-black" style={style}>
-      {children}
-    </button>
-  );
-}
-
 function RollChip({ tone, ok, mine, children }: { tone: OrgTone; ok: boolean; mine: boolean; children: string }) {
   const onBg = tone.channel === 'p3' ? P3R.blue : tone.channel === 'p5' ? P5R.ink : tone.channel === 'p4' ? '#131313' : tone.accent;
   const onFg = tone.channel === 'p4' ? '#fff6d0' : '#ffffff';
@@ -274,13 +259,6 @@ function RollChip({ tone, ok, mine, children }: { tone: OrgTone; ok: boolean; mi
       <span className="truncate">{children}{mine ? '（我）' : ''}</span>
     </span>
   );
-}
-
-function inputSkin(tone: OrgTone): CSSProperties {
-  if (tone.channel === 'p3') return { background: P3R.cyanFaint, color: P3R.ink, clipPath: slantClip(8) };
-  if (tone.channel === 'p5') return { background: '#ffffff', color: P5R.ink, boxShadow: `inset 0 0 0 2px ${P5R.ink}`, fontFamily: P5_TITLE_FONT };
-  if (tone.channel === 'p4') return { background: 'rgba(127,127,127,0.1)', color: 'var(--ui-ink, #131313)', borderRadius: 12, boxShadow: 'inset 0 0 0 2px var(--ui-line, #131313)' };
-  return { background: 'rgba(127,127,127,0.08)', color: tone.ink, borderRadius: 12, boxShadow: `inset 0 0 0 1px ${tone.line}` };
 }
 
 function mineSkin(tone: OrgTone): CSSProperties {

@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion, useMotionValue, useSpring, type PanInfo } from 'motion/react';
 import { useBackHandler } from '@/utils/useBackHandler';
+import { useOverlayPresence } from '@/ui/overlayPause';
 import { zClass } from '@/utils/zIndex';
 
 /**
@@ -9,7 +10,7 @@ import { zClass } from '@/utils/zIndex';
  * CSS perspective + 弹簧曲线，不用 WebGL；点一下或横向拖过 90px 翻面，拖的时候牌跟着手指转（带回弹）。
  * 正反两面由调用方给（拿到卡宽），背面预翻 180°，父层翻过来正读。
  */
-export const FlipCardView = ({ open, onClose, label, resetKey, front, back, hint = '点一下或左右拖动翻面' }: {
+export const FlipCardView = ({ open, onClose, label, resetKey, front, back, hint = '点一下或左右拖动翻面', footer }: {
   open: boolean;
   onClose: () => void;
   /** 无障碍名 */
@@ -19,12 +20,16 @@ export const FlipCardView = ({ open, onClose, label, resetKey, front, back, hint
   front: (width: number, height: number) => ReactNode;
   back: (width: number, height: number) => ReactNode;
   hint?: string;
+  /** 牌下面的动作（成员牌：借 Ta 的面具）；点它不会关掉放大牌 */
+  footer?: ReactNode;
 }) => {
   const [flipped, setFlipped] = useState(false);
   const drag = useMotionValue(0);
   // 阻尼：拖动时牌面跟手转，松手回弹到 0 或翻过去
   const dragSpring = useSpring(drag, { stiffness: 260, damping: 22, mass: 0.9 });
   useBackHandler(open, onClose);
+  // 算一层弹层：背景动画暂停；组织的庆祝卡等它关了再弹（不然两层叠在一起）
+  useOverlayPresence(open);
   useEffect(() => { if (open) { setFlipped(false); drag.set(0); } }, [open, resetKey, drag]);
 
   const width = Math.min(300, Math.round(Math.min(window.innerWidth, 480) * 0.68));
@@ -76,6 +81,7 @@ export const FlipCardView = ({ open, onClose, label, resetKey, front, back, hint
             </motion.div>
           </motion.div>
           <p className="mt-5 text-[12px] font-bold text-white/70">{hint}</p>
+          {footer && <div className="mt-3" onClick={(e) => e.stopPropagation()}>{footer}</div>}
         </motion.div>
       )}
     </AnimatePresence>,

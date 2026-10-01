@@ -1,7 +1,7 @@
 /**
  * 据点地图（第 7 轮 · PRD §12.4）：据点页顶部的一张地图，按频道各画一张——
  * 蓝＝校园地图、黄＝商店街、红＝城市夜景、中性＝等高线。
- * 组织在中央；成员按座位号围在四周（有头像放头像，没有放代号首字）；名册 / 公告板 / 会议是三个地标，同时也是下面内容的切换页签。
+ * 组织在中央；成员按座位号围在四周（有头像放头像，没有放代号首字）；名册 / 公告板 / 会议 / 作战是四个地标（四角），同时也是下面内容的切换页签。
  * 背景是 SVG（纯装饰），地标 / 座位 / 中心是叠在上面的 HTML（字清楚、能点、读屏认得）。
  * 动效只有中心脉冲和选中地标的轻浮动（CSS，合成层）；有弹层、移出视口、粗犷度关掉时暂停。
  */
@@ -15,7 +15,7 @@ import { displayCodename } from '@/utils/orgLogic';
 import { EmblemBadge, useOrgTone, type OrgTone } from './orgUi';
 import type { OrgView } from '@/types';
 
-export type HideoutSection = 'roster' | 'board' | 'meeting';
+export type HideoutSection = 'roster' | 'board' | 'meeting' | 'ops';
 
 const W = 360;
 const H = 220;
@@ -26,9 +26,10 @@ const SEATS = Array.from({ length: 7 }, (_, i) => {
   return { x: HQ.x + 70 * Math.cos(a), y: HQ.y + 42 * Math.sin(a) };
 });
 const LANDMARKS: Array<{ id: HideoutSection; label: string; en: string; x: number; y: number }> = [
-  { id: 'roster', label: '名册', en: 'MEMBERS', x: 62, y: 52 },
-  { id: 'board', label: '公告板', en: 'BOARD', x: 298, y: 52 },
-  { id: 'meeting', label: '会议', en: 'MEETING', x: 180, y: 194 },
+  { id: 'roster', label: '名册', en: 'MEMBERS', x: 62, y: 46 },
+  { id: 'board', label: '公告板', en: 'BOARD', x: 298, y: 46 },
+  { id: 'meeting', label: '会议', en: 'MEETING', x: 62, y: 176 },
+  { id: 'ops', label: '作战', en: 'OPS', x: 298, y: 176 },
 ];
 const pct = (x: number, y: number): CSSProperties => ({ left: `${(x / W) * 100}%`, top: `${(y / H) * 100}%` });
 
@@ -36,7 +37,7 @@ export function HideoutMap({ view, section, onSection, dots, blocked }: {
   view: OrgView;
   section: HideoutSection;
   onSection: (s: HideoutSection) => void;
-  /** 地标上的小红点（7b：公告板有新动态、会议日还没写） */
+  /** 地标上的小红点（7b：公告板有新动态、会议日还没写；第 8 轮：有新作战 / 作战刚达成） */
   dots?: Partial<Record<HideoutSection, boolean>>;
   blocked?: Set<string>;
 }) {
@@ -220,9 +221,10 @@ function SeatPin({ tone, text, avatarUrl, mine, lead, seat }: { tone: OrgTone; t
 // ── 四张底图 ─────────────────────────────────────────────────────────────────
 
 const ROADS = [
-  `M${HQ.x} ${HQ.y} L118 80 L62 52`,
-  `M${HQ.x} ${HQ.y} L242 80 L298 52`,
-  `M${HQ.x} ${HQ.y} L${HQ.x} 194`,
+  `M${HQ.x} ${HQ.y} L118 78 L62 46`,
+  `M${HQ.x} ${HQ.y} L242 78 L298 46`,
+  `M${HQ.x} ${HQ.y} L118 146 L62 176`,
+  `M${HQ.x} ${HQ.y} L242 146 L298 176`,
 ];
 
 /** 蓝：校园地图——浅水面网格、教学楼块、白色道路、泳池 */
@@ -309,7 +311,7 @@ function MapP5() {
       <path d={front} fill="#242424" />
       {windows.map(([x, y, red], i) => <rect key={i} x={x} y={y} width="5" height="7" fill={red ? '#c00008' : '#f0e9df'} fillOpacity={red ? 0.95 : 0.7} />)}
       {ROADS.map((d, i) => <path key={i} d={d} fill="none" stroke="#f0e9df" strokeWidth="3" strokeLinejoin="round" strokeLinecap="round" />)}
-      {[[62, 52], [298, 52], [180, 194]].map(([x, y], i) => <circle key={i} cx={x} cy={y} r="6" fill="#000000" stroke="#f0e9df" strokeWidth="3" />)}
+      {LANDMARKS.map((l) => <circle key={l.id} cx={l.x} cy={l.y} r="6" fill="#000000" stroke="#f0e9df" strokeWidth="3" />)}
     </>
   );
 }
