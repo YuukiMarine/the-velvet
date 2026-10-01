@@ -243,11 +243,11 @@ export const P5StarFab = ({ face = P5R.red, seed = 4 }: { face?: string; seed?: 
   </span>
 );
 
-/** 空心描边星（背景水印 / 装饰） */
+/** 空心描边星（背景水印 / 装饰）。斜接的尖会探出 viewBox 外：不能让 SVG 自己的边框把尖切平（overflow 可见） */
 export const P5StarOutline = ({ size = 24, color = P5R.paper, width = 7, className, style, rot = 0 }: {
   size?: number; color?: string; width?: number; className?: string; style?: CSSProperties; rot?: number;
 }) => (
-  <svg viewBox="0 0 100 100" width={size} height={size} className={className} style={{ transform: rot ? `rotate(${rot}deg)` : undefined, ...style }} aria-hidden>
+  <svg viewBox="0 0 100 100" width={size} height={size} className={className} style={{ overflow: 'visible', transform: rot ? `rotate(${rot}deg)` : undefined, ...style }} aria-hidden>
     <polygon points={starPts(50, 50, 46)} fill="none" stroke={color} strokeWidth={width} strokeLinejoin="miter" />
   </svg>
 );

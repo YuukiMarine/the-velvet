@@ -141,7 +141,7 @@ const SeasonBook = ({ tone }: { tone: Tone }) => {
   const pagerRef = useRef<HTMLDivElement>(null);
   const [openKey, setOpenKey] = useState<string | null>(null);
   const openMark = openKey ? all.find((m) => m.key === openKey) ?? null : null;
-  const kindLabel: Record<string, string> = { moon: '满月', quest: '委托' };
+  const kindLabel: Record<string, string> = { moon: '满月', quest: '委托', raid: '团战' };
 
   const goTo = (i: number) => {
     setPage(i);

@@ -363,7 +363,8 @@ function MemberPlate({ view, member, minutes, tone, accent, blocked, onMore, onS
       </div>
       {(honors.titles.length > 0 || honors.absent) && (
         <div className="mt-2 flex flex-wrap justify-center gap-1">
-          {honors.titles.map(t => <PlateChip key={t} tone={tone}>{t}</PlateChip>)}
+          {honors.titles.slice(0, 4).map(t => <PlateChip key={t} tone={tone}>{t}</PlateChip>)}
+          {honors.titles.length > 4 && <PlateChip tone={tone} muted>{`+${honors.titles.length - 4}`}</PlateChip>}
           {honors.absent && <PlateChip tone={tone} muted>本周缺席</PlateChip>}
         </div>
       )}

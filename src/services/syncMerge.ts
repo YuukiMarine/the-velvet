@@ -107,7 +107,7 @@ function resolveSpecial(table: string, local: Row, cloud: Row): Row | null {
 /**
  * 战场状态冲突时按用户选的一边，但两样东西两边都要（第 8 轮）：
  *   · 借面具：同一周取用得多的那边（借着的面具取新借的），不同周取新的那周——不然两台设备各用一场，合并后又能多用；
- *   · 领过奖励的作战 id：取并集——不然另一台设备会再领一次。
+ *   · 领过奖励的作战 id（组织 P2 起还有团战 id）：取并集——不然另一台设备会再领一次。
  */
 type BorrowRow = { weekKey?: string; battles?: number; mask?: { at?: string } };
 function mergeBattleExtras(pick: Row, other: Row): Row {
@@ -123,7 +123,8 @@ function mergeBattleExtras(pick: Row, other: Row): Row {
     }
   }
   const rewards = [...new Set([...((pick.orgOpRewards as string[] | undefined) ?? []), ...((other.orgOpRewards as string[] | undefined) ?? [])])].slice(-200);
-  return { ...pick, ...(borrow ? { borrow } : {}), ...(rewards.length ? { orgOpRewards: rewards } : {}) };
+  const raidRewards = [...new Set([...((pick.orgRaidRewards as string[] | undefined) ?? []), ...((other.orgRaidRewards as string[] | undefined) ?? [])])].slice(-100);
+  return { ...pick, ...(borrow ? { borrow } : {}), ...(rewards.length ? { orgOpRewards: rewards } : {}), ...(raidRewards.length ? { orgRaidRewards: raidRewards } : {}) };
 }
 
 /** 样本标题：给界面看的一句 */

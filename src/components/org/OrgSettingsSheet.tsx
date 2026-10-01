@@ -15,6 +15,8 @@ import {
   transferFromUi, transferMustLeave, updateOrgFromUi,
 } from '@/services/orgSync';
 import { slantClip } from '@/components/p3r/kit';
+import { orgLevelOfView } from '@/utils/orgOps';
+import { orgLevelName } from '@/utils/orgTitles';
 import { roughQuad } from '@/components/p5r/kit';
 import { OrgButton, OrgEmblem, useOrgTone } from './orgUi';
 import type { AttributeId, OrgMember, OrgView } from '@/types';
@@ -30,11 +32,13 @@ type Confirm =
 
 const errText = (e: unknown, fallback: string) => (e instanceof Error && e.message ? e.message : fallback);
 
-export function OrgSettingsSheet({ view, open, onClose, onEditCard, onGone }: {
+export function OrgSettingsSheet({ view, open, onClose, onEditCard, onEditTitles, onGone }: {
   view: OrgView | undefined;
   open: boolean;
   onClose: () => void;
   onEditCard: () => void;
+  /** 组织 P2：等级与称号（队长编辑、成员查看） */
+  onEditTitles: () => void;
   /** 退出 / 解散 / 转让后退出：组织从本机拿掉了，页面该回羁绊页 */
   onGone: () => void;
 }) {
@@ -189,6 +193,17 @@ export function OrgSettingsSheet({ view, open, onClose, onEditCard, onGone }: {
               ) : (
                 <p className="mt-1.5 text-[12px] font-bold text-gray-500 dark:text-gray-400">还没有人格面具：先去逆影战场唤醒一张。</p>
               )}
+            </div>
+          </section>
+
+          <section>
+            {sectionTitle('等级与称号')}
+            <div className={row}>
+              <div className="min-w-0">
+                <div className="truncate text-[14px] font-black text-gray-900 dark:text-white">据点 Lv.{orgLevelOfView(view).level} · {orgLevelName(view.org.custom, orgLevelOfView(view).level)}</div>
+                <div className="text-[11px] font-semibold text-gray-500 dark:text-gray-400">{leader ? '给每一级起名字、给称号改名、加自己的称号' : '每一级叫什么、每个称号怎么拿'}</div>
+              </div>
+              <OrgButton small tone="ghost" onClick={onEditTitles} disabled={busy}>{leader ? '编辑' : '查看'}</OrgButton>
             </div>
           </section>
 

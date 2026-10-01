@@ -19,7 +19,9 @@ import { P5R, P5_TITLE_FONT, P5CollageTitle, P5RPage, P5Slab, P5SubBar, roughQua
 import { P4SectionTitle, P4Sparkle } from '@/ui/p4Kit';
 import { ActionSheet } from '@/components/ActionSheet';
 import { FlipCardView } from '@/components/codex/FlipCardView';
-import { HideoutMap, type HideoutSection } from '@/components/org/HideoutMap';
+import { HideoutMap, type HideoutSection, type MapRaid } from '@/components/org/HideoutMap';
+import { RaidBanner, RaidSheet, useMinuteTick, useRaidNow } from '@/components/org/RaidSheet';
+import { OrgTitlesSheet } from '@/components/org/OrgTitlesSheet';
 import { MemberCardBack, MemberCardFront, MemberTile } from '@/components/org/MemberCard';
 import { BoardSection } from '@/components/org/BoardSection';
 import { MeetingSection } from '@/components/org/MeetingSection';
@@ -34,7 +36,8 @@ import { triggerLightHaptic } from '@/utils/feedback';
 import { OrgButton, OrgPanel, useOrgTone, type OrgTone } from '@/components/org/orgUi';
 import { markBoardSeen, refreshBoard, refreshOrg, setMemberBlocked } from '@/services/orgSync';
 import { markOpsSeen, refreshOps } from '@/services/orgOpsSync';
-import { opsUnread } from '@/utils/orgOps';
+import { opsUnread, orgLevelOfView } from '@/utils/orgOps';
+import { myRaidOptions, raidStrikeAvailable } from '@/utils/orgRaid';
 import { boardUnread, displayCodename, formatInviteCode, latestMinutes, meetingPending, meetingState, shownPersonas, tarotConflictLosers } from '@/utils/orgLogic';
 import type { OrgMember, OrgView } from '@/types';
 
@@ -112,6 +115,10 @@ export function Hideout() {
   const [homeMode, setHomeMode] = useState<'create' | 'join' | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [flash, setFlash] = useState('');
+  // 组织 P2：满月团战面板、等级与称号；邀请码卡片默认收起
+  const [raidOpen, setRaidOpen] = useState(false);
+  const [titlesOpen, setTitlesOpen] = useState(false);
+  const [inviteOpen, setInviteOpen] = useState(false);
   const blocked = useMemo(() => new Set(blockedList), [blockedList]);
 
   // 选着的组织不在了（退出 / 解散 / 被请离），或者还没选过 → 换成第一个（自建的排前面）
@@ -155,7 +162,7 @@ export function Hideout() {
 
   // 两个组织时切换条上的红点
   const dots = useMemo(
-    () => Object.fromEntries(orgs.map(v => [v.org.id, boardUnread(v, orgSeen[v.org.id], blocked) || meetingPending(v) || opsUnread(v, orgOpsSeen[v.org.id])])),
+    () => Object.fromEntries(orgs.map(v => [v.org.id, boardUnread(v, orgSeen[v.org.id], blocked) || meetingPending(v) || opsUnread(v, orgOpsSeen[v.org.id]) || raidStrikeAvailable(v)])),
     [orgs, orgSeen, orgOpsSeen, blocked],
   );
 
@@ -221,7 +228,15 @@ export function Hideout() {
           </OrgPanel>
         )}
 
-        <HideoutMap view={view} section={section} onSection={setSection} blocked={blocked} dots={{ board: section !== 'board' && boardUnread(view, seenAt, blocked), meeting: meetingPending(view), ops: section !== 'ops' && opsUnread(view, opsSeenAt) }} />
+        <MapBlock
+          view={view}
+          section={section}
+          onSection={setSection}
+          blocked={blocked}
+          dots={{ board: section !== 'board' && boardUnread(view, seenAt, blocked), meeting: meetingPending(view), ops: section !== 'ops' && opsUnread(view, opsSeenAt) }}
+          onSeat={(m) => setFlip(m.id)}
+          onRaid={() => setRaidOpen(true)}
+        />
 
         <SectionTitle
           tone={tone}
@@ -259,7 +274,7 @@ export function Hideout() {
           <MeetingSection view={view} blocked={blocked} onFlash={setFlash} />
         )}
 
-        <InvitePanel view={view} tone={tone} onFlash={setFlash} />
+        <InvitePanel view={view} tone={tone} onFlash={setFlash} open={inviteOpen} onToggle={() => setInviteOpen(o => !o)} />
       </>
     );
   })();
@@ -325,6 +340,8 @@ export function Hideout() {
                 : undefined}
             />
             <BorrowMaskSheet view={view} member={borrowFor} open={!!borrowFor} onClose={() => setBorrowFor(null)} onFlash={setFlash} />
+            <RaidSheet view={view} open={raidOpen} onClose={() => setRaidOpen(false)} onFlash={setFlash} />
+            <OrgTitlesSheet view={view} open={titlesOpen} onClose={() => setTitlesOpen(false)} onFlash={setFlash} />
             <ActionSheet isOpen={!!menuFor} onClose={() => setMenuFor(null)} title={menuFor ? displayCodename(menuFor) : undefined} actions={menuActions} />
           </>
         )}
@@ -333,6 +350,7 @@ export function Hideout() {
           open={settingsOpen && !!view}
           onClose={() => setSettingsOpen(false)}
           onEditCard={() => { setSettingsOpen(false); setCardOpen(true); }}
+          onEditTitles={() => { setSettingsOpen(false); setTitlesOpen(true); }}
           // 退出 / 解散之后留在「组织」：还有别的组织就换过去，没有了就显示建立 / 加入
           onGone={() => setSettingsOpen(false)}
         />
@@ -498,8 +516,13 @@ function SectionTitle({ tone, section, meta, onTitle, alt = false }: { tone: Org
 }
 
 /** 邀请码：默认收起成一行，点一下才展开邀请码和「分享 / 复制」（一直开着太占地方） */
-function InvitePanel({ view, tone, onFlash }: { view: OrgView; tone: OrgTone; onFlash: (s: string) => void }) {
-  const [open, setOpen] = useState(false);
+function InvitePanel({ view, tone, onFlash, open, onToggle }: {
+  view: OrgView;
+  tone: OrgTone;
+  onFlash: (s: string) => void;
+  open: boolean;
+  onToggle: () => void;
+}) {
   const code = view.org.inviteCode;
   const full = view.members.length >= 7;
   const padX = tone.channel === 'p5' ? 'px-5' : 'px-4';
@@ -507,7 +530,7 @@ function InvitePanel({ view, tone, onFlash }: { view: OrgView; tone: OrgTone; on
     <OrgPanel seed={33} padded={false}>
       <button
         type="button"
-        onClick={() => { triggerLightHaptic(); setOpen(o => !o); }}
+        onClick={() => { triggerLightHaptic(); onToggle(); }}
         aria-expanded={open}
         aria-controls="org-invite-body"
         className={`flex w-full items-center justify-between gap-3 py-3 text-left ${padX}`}
@@ -544,5 +567,29 @@ function InvitePanel({ view, tone, onFlash }: { view: OrgView; tone: OrgTone; on
         )}
       </AnimatePresence>
     </OrgPanel>
+  );
+}
+
+/** 地图 + 团战横条：地图随据点等级长；团战那三晚天上升月亮、中心换成首领（每分钟重算一次：跨过 18:00 / 07:00） */
+function MapBlock({ view, section, onSection, blocked, dots, onSeat, onRaid }: {
+  view: OrgView;
+  section: HideoutSection;
+  onSection: (s: HideoutSection) => void;
+  blocked: Set<string>;
+  dots: Partial<Record<HideoutSection, boolean>>;
+  onSeat: (m: OrgMember) => void;
+  onRaid: () => void;
+}) {
+  const tick = useMinuteTick();
+  const { now, raid, state } = useRaidNow(view, tick);
+  const level = orgLevelOfView(view).level;
+  const mapRaid: MapRaid | null = now.phase === 'open' && raid && state
+    ? { boss: raid.boss.name, left: state.left / raid.hpMax, defeated: state.defeated, dot: myRaidOptions(state, view.me.userId, now, view.members.length).canStrike }
+    : null;
+  return (
+    <>
+      <HideoutMap view={view} section={section} onSection={onSection} blocked={blocked} dots={dots} level={level} onSeat={onSeat} raid={mapRaid} onRaid={onRaid} />
+      <RaidBanner view={view} onOpen={onRaid} />
+    </>
   );
 }

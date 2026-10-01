@@ -3,6 +3,8 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/db';
 import { seasonMarkOf } from '@/utils/calendar';
 import { useUiChannel } from '@/ui/useUiChannel';
+import { useAppStore } from '@/store';
+import { P3R } from '@/components/p3r/kit';
 
 /**
  * 首页日期块上的岁时小签（第 6 轮）：当天是节气 / 节日才出现。
@@ -21,6 +23,7 @@ export const SeasonStampBadge = ({ dateKey, className = '', align = 'left', pop 
   const stamp = useLiveQuery(() => (mark ? db.stamps.get(mark.key) : Promise.resolve(undefined)), [mark?.key]);
   const [open, setOpen] = useState(false);
   const channel = useUiChannel();
+  const dark = useAppStore((s) => !!s.settings.darkMode);
   useEffect(() => {
     if (!open) return;
     const t = window.setTimeout(() => setOpen(false), 4500);
@@ -29,18 +32,23 @@ export const SeasonStampBadge = ({ dateKey, className = '', align = 'left', pop 
   if (!mark) return null;
   const collected = !!stamp;
 
-  const P3_BLUE = '#1b57ff', P5_RED = '#c00008', P5_PAPER = '#f0e9df', INK = '#0b0b0b';
+  const P5_RED = '#c00008', P5_PAPER = '#f0e9df', INK = '#0b0b0b';
   let chipStyle: React.CSSProperties;
   let chipClass = 'relative inline-flex h-[18px] shrink-0 items-center whitespace-nowrap px-1.5 text-[10px] font-black leading-none tracking-[0.06em] select-none transition-transform active:scale-95';
   if (channel === 'p3') {
+    // 走 P3R 变量：白天蓝、夜间浅绿、粉皮玫红跟着换（原来钉死 #1b57ff，夜间 / 粉皮里还是一块蓝）；
+    // 收进岁时册的实心签字色用面板色——白天白字、夜间深靛字（浅绿底上白字看不清）
     chipStyle = collected
-      ? { background: P3_BLUE, color: '#fff', clipPath: 'polygon(4px 0, 100% 0, calc(100% - 4px) 100%, 0 100%)' }
-      : { background: 'rgba(27,87,255,0.08)', color: P3_BLUE, outline: `1.5px dashed ${P3_BLUE}`, outlineOffset: -1.5 };
+      ? { background: P3R.blue, color: P3R.panel, clipPath: 'polygon(4px 0, 100% 0, calc(100% - 4px) 100%, 0 100%)' }
+      : { background: 'transparent', color: P3R.blue, outline: `1.5px dashed ${P3R.blue}`, outlineOffset: -1.5 };
   } else if (channel === 'p4') {
+    // 小签挂在黄 / 紫舞台上（不在天空日期牌上了），字和虚线跟着夜间翻浅
     chipClass += ' rounded-full';
     chipStyle = collected
-      ? { background: 'var(--ui-accent, #ff8a2b)', color: '#131313', boxShadow: '0 1.5px 0 rgba(19,19,19,0.25)' }
-      : { background: 'rgba(19,19,19,0.06)', color: '#131313', border: '1.5px dashed rgba(19,19,19,0.6)' };
+      ? { background: 'var(--ui-accent, #2e6be0)', color: '#ffffff', boxShadow: '0 1.5px 0 rgba(19,19,19,0.25)' }
+      : dark
+        ? { background: 'rgba(243,236,255,0.08)', color: '#f3ecff', border: '1.5px dashed rgba(243,236,255,0.55)' }
+        : { background: 'rgba(19,19,19,0.06)', color: '#131313', border: '1.5px dashed rgba(19,19,19,0.6)' };
   } else if (channel === 'p5') {
     chipStyle = collected
       ? { background: P5_RED, color: P5_PAPER, boxShadow: `1.5px 1.5px 0 ${INK}` }
@@ -51,9 +59,13 @@ export const SeasonStampBadge = ({ dateKey, className = '', align = 'left', pop 
       ? { background: 'var(--color-primary)', color: '#fff' }
       : { background: 'color-mix(in srgb, var(--color-primary) 12%, transparent)', color: 'var(--color-primary)', border: '1.5px dashed var(--color-primary)' };
   }
+  // 小注气泡：P3 的 --ui-paper / --ui-ink 白天都是 #f6fbff（ink 是深舞台上的字色，不跟 paper 配对），
+  // 拿它俩配就成了白底白字——P3 改用面板 / 墨两色（夜间、粉皮各自有值）
   const popStyle: React.CSSProperties = channel === 'p5'
     ? { background: P5_PAPER, color: INK, boxShadow: `3px 3px 0 ${INK}` }
-    : { background: 'var(--ui-paper, #fff)', color: 'var(--ui-ink, #111)', boxShadow: '0 10px 28px rgba(0,0,0,0.16)' };
+    : channel === 'p3'
+      ? { background: P3R.panel, color: P3R.ink, boxShadow: '0 10px 28px rgba(0,0,0,0.16)' }
+      : { background: 'var(--ui-paper, #fff)', color: 'var(--ui-ink, #111)', boxShadow: '0 10px 28px rgba(0,0,0,0.16)' };
 
   return (
     <span className={`relative inline-flex ${className}`}>

@@ -7,6 +7,9 @@ import { DEFAULT_ATTRIBUTE_NAMES } from '@/constants/index';
 import { auditText } from '@/utils/textAudit';
 import { liveStatus } from '@/constants/profileStatus';
 import { calcCurrentStreak, streakDates } from '@/utils/streak';
+import { meetingState, nextWeekKey, orgWeekKey, shiftDayKey, weekDayKeys, zonedDay } from './orgTime';
+import { raidStrikesInWeek } from './orgRaid';
+import { resolveWeekTitles, type OrgWeekFacts } from './orgTitles';
 import type {
   Activity, Attribute, AttributeId, AttributeNames, OrgMember, OrgMemberAttr, OrgMemberCard, OrgMinutesSnapshot, OrgPersonaSnapshot,
   OrgPost, OrgPostSnapshot, OrgReaction, OrgReactionTag, OrgView, Persona, ProfileStatus,
@@ -47,79 +50,9 @@ export const isInviteCode = (s: string): boolean => INVITE_RE.test(s);
 /** 显示用：四个一组 */
 export const formatInviteCode = (c: string): string => (c.length === INVITE_LEN ? `${c.slice(0, 4)} ${c.slice(4)}` : c);
 
-// ── 组织时区的日与周 ──────────────────────────────────────────────────────────
+// ── 组织时区的日与周：搬到 utils/orgTime（团战也要用），这里原样转出 ─────────────────────
 
-export function deviceTimeZone(): string {
-  try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
-  } catch {
-    return 'UTC';
-  }
-}
-
-const fmtCache = new Map<string, Intl.DateTimeFormat>();
-function fmtFor(tz: string): Intl.DateTimeFormat {
-  const hit = fmtCache.get(tz);
-  if (hit) return hit;
-  let f: Intl.DateTimeFormat;
-  try {
-    f = new Intl.DateTimeFormat('en-US', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short', hour: '2-digit', hourCycle: 'h23' });
-  } catch {
-    // 时区名不认识（老设备 / 手改数据）：退回 UTC，不让整页崩
-    f = new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short', hour: '2-digit', hourCycle: 'h23' });
-  }
-  fmtCache.set(tz, f);
-  return f;
-}
-
-const WEEKDAY: Record<string, number> = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 };
-
-/** 某一刻在组织时区里是哪一天、周几（周一 = 1 … 周日 = 7）、几点（0–23） */
-export function zonedDay(date: Date, tz: string): { key: string; weekday: number; hour: number } {
-  const parts = fmtFor(tz).formatToParts(date);
-  const get = (t: string) => parts.find(p => p.type === t)?.value ?? '';
-  const hour = Number(get('hour'));
-  return { key: `${get('year')}-${get('month')}-${get('day')}`, weekday: WEEKDAY[get('weekday')] ?? 1, hour: Number.isFinite(hour) ? hour % 24 : 0 };
-}
-
-/** 日键平移 n 天（按日历算，与时区、夏令时无关） */
-export function shiftDayKey(key: string, n: number): string {
-  const [y, m, d] = key.split('-').map(Number);
-  const t = new Date(Date.UTC(y, m - 1, d + n));
-  return `${t.getUTCFullYear()}-${String(t.getUTCMonth() + 1).padStart(2, '0')}-${String(t.getUTCDate()).padStart(2, '0')}`;
-}
-
-/** 组织时区里「这一周」的周键 = 那周周一的日键 */
-export function orgWeekKey(date: Date, tz: string): string {
-  const { key, weekday } = zonedDay(date, tz);
-  return shiftDayKey(key, 1 - weekday);
-}
-
-/** 一周七天的日键（周一起） */
-export const weekDayKeys = (weekKey: string): string[] => Array.from({ length: 7 }, (_, i) => shiftDayKey(weekKey, i));
-
-/** 组织时区里今天是不是周日 */
-export const isMeetingDay = (date: Date, tz: string): boolean => zonedDay(date, tz).weekday === 7;
-
-/** 会议开到周一凌晨几点（和 App 其它地方的 4 点日界一致，给熬夜的人留一点时间） */
-export const MEETING_GRACE_HOUR = 4;
-
-/**
- * 组织时区里此刻的会议状态（7b）：
- *   · open：周日全天，以及周一 0–4 点；week = 这场会议所属的那周（周一的日键）；
- *   · 不在会议时间：week = 本周（下一场会在本周日）；
- *   · lastClosed = 最近一场已经结束的会议属于哪周——纪要就补这一周。
- */
-export function meetingState(now: Date, tz: string): { open: boolean; week: string; lastClosed: string } {
-  const { key, weekday, hour } = zonedDay(now, tz);
-  const cur = shiftDayKey(key, 1 - weekday);
-  if (weekday === 7) return { open: true, week: cur, lastClosed: shiftDayKey(cur, -7) };
-  if (weekday === 1 && hour < MEETING_GRACE_HOUR) return { open: true, week: shiftDayKey(cur, -7), lastClosed: shiftDayKey(cur, -14) };
-  return { open: false, week: cur, lastClosed: shiftDayKey(cur, -7) };
-}
-
-/** 下周的周键 */
-export const nextWeekKey = (weekKey: string): string => shiftDayKey(weekKey, 7);
+export { MEETING_GRACE_HOUR, bitCount, deviceTimeZone, isMeetingDay, meetingState, nextWeekKey, orgWeekKey, shiftDayKey, weekDayKeys, weekKeyOfDay, zonedDay, zonedInstant } from './orgTime';
 
 // ── 出勤与成员牌 ──────────────────────────────────────────────────────────────
 
@@ -136,12 +69,6 @@ export function attendanceBits(activities: Array<Pick<Activity, 'date' | 'catego
   const days = new Set(activities.filter(isOwnRecord).map(a => localKey(a.date)));
   return weekDayKeys(weekKey).reduce((bits, k, i) => (days.has(k) ? bits | (1 << i) : bits), 0);
 }
-
-export const bitCount = (n: number): number => {
-  let c = 0;
-  for (let v = n; v; v &= v - 1) c++;
-  return c;
-};
 
 /** 成员牌上最多展示几张面具（第 8 轮：从 1 张改成 3 张） */
 export const ORG_MAX_SHOWN_MASKS = 3;
@@ -366,7 +293,7 @@ export const ORG_BOARD_LIMIT = 100;
 export const ORG_TAGS: ReadonlyArray<{ id: OrgReactionTag; label: string }> = [
   { id: 'strong', label: '太强了' },
   { id: 'same', label: '🤣👉' },
-  { id: 'steady', label: '稳' },
+  { id: 'steady', label: '中' },
   { id: 'envy', label: '羡慕' },
   { id: 'metoo', label: '带我一个' },
   { id: 'hug', label: '别似' },
@@ -511,7 +438,7 @@ export function parseMinutes(v: unknown): OrgMinutesSnapshot | null {
     rate: { done: Number(rate.done) || 0, total: Number(rate.total) || 0 },
     done: arr(o.done).map(who),
     goals: arr(o.goals).map(i => ({ ...who(i), goal: String(i.goal ?? '').slice(0, 30) })),
-    titles: arr(o.titles).map(i => ({ ...who(i), title: String(i.title ?? '').slice(0, 12) })),
+    titles: arr(o.titles).map(i => ({ ...who(i), title: String(i.title ?? '').slice(0, 12), ...(typeof i.tid === 'string' && /^[a-z0-9]{1,14}$/.test(i.tid) ? { tid: i.tid } : {}) })),
     absent: arr(o.absent).map(who),
   };
 }
@@ -576,11 +503,12 @@ export const hadGoalFor = (m: Pick<OrgMember, 'goalWeek' | 'resultWeek'>, week: 
  * 纪要（周一 4 点后第一个上线的人生成）：
  *   · 立过目标的人 = 这周有自评的 + 目标还停在这周（会上没来、没自评）的；做到了 = 自评「做到了」；
  *   · 下周目标 = 会上写了的；缺席 = 这周以前加入、会上没写的；
- *   · 称号：出勤王（这周出勤 ≥5 天里最多的，并列都给）、连续 7 / 14 / 30 天（取最高一档）、言出必行、
- *     作战完成者（第 8 轮：那周有作战达成的参与者，读达成卡）。
+ *   · 称号（组织 P2 起交给 utils/orgTitles）：出勤王、全勤、周末不打烊、连续 7 / 14 / 30 天、言出必行（· N 周）、
+ *     作战完成者（那周有作战达成的参与者，读达成卡）、月下同行（那周的团战出过手），再加队长自定义的；
+ *     名字用这一刻的（队长改名不影响旧纪要），每条带 tid，称号册按它归类。
  *     连续天数是本人客户端推上来的，人不打开 App 就停在旧值：那周周六或周日有记录（到周末还没断）才算数。
  */
-export function computeMinutes(view: Pick<OrgView, 'org' | 'members' | 'posts' | 'ledger'>, week: string): OrgMinutesSnapshot {
+export function computeMinutes(view: Pick<OrgView, 'org' | 'members' | 'posts' | 'ledger' | 'raids' | 'raidHits'>, week: string): OrgMinutesSnapshot {
   const next = nextWeekKey(week);
   const lastDay = shiftDayKey(week, 6);
   const who = (m: OrgMember) => ({ userId: m.userId, codename: displayCodename(m) });
@@ -589,24 +517,37 @@ export function computeMinutes(view: Pick<OrgView, 'org' | 'members' | 'posts' |
   const hadGoal = members.filter(m => m.resultWeek === week || m.goalWeek === week);
   const done = members.filter(m => m.resultWeek === week && m.result === 'done');
   const attendees = members.filter(m => m.goalWeek === next && !!m.goal);
-  const titles: OrgMinutesSnapshot['titles'] = [];
-  const days = members.map(m => ({ m, n: bitCount(weekDaysOf(m.card, week)) }));
-  const best = Math.max(0, ...days.map(x => x.n));
-  if (best >= 5) for (const x of days) if (x.n === best) titles.push({ ...who(x.m), title: '本周出勤王' });
-  const WEEKEND = (1 << 5) | (1 << 6);
-  for (const m of members) {
-    if (!(weekDaysOf(m.card, week) & WEEKEND)) continue;
-    const tier = m.card.streak >= 30 ? 30 : m.card.streak >= 14 ? 14 : m.card.streak >= 7 ? 7 : 0;
-    if (tier) titles.push({ ...who(m), title: `连续 ${tier} 天` });
+  const history = [...(view.ledger ?? []), ...(view.posts ?? [])];
+  // 那周达成的目标 / 作战（同一场只认一张达成卡）：每人几场
+  const opCount = new Map<string, number>();
+  const seenOps = new Set<string>();
+  for (const p of history) {
+    if (p.kind !== 'operation' || !p.opCard || p.opCard.week !== week || seenOps.has(p.opCard.opId)) continue;
+    seenOps.add(p.opCard.opId);
+    for (const x of p.opCard.participants) opCount.set(x.userId, (opCount.get(x.userId) ?? 0) + 1);
   }
-  for (const m of done) titles.push({ ...who(m), title: '言出必行' });
-  const opWinners = new Set<string>();
-  for (const p of [...(view.ledger ?? []), ...(view.posts ?? [])]) {
-    if (p.kind !== 'operation' || p.opCard?.week !== week) continue;
-    for (const x of p.opCard.participants) opWinners.add(x.userId);
+  // 连续做到目标：往前一周一周翻旧纪要的「做到了」
+  const doneByWeek = new Map<string, Set<string>>();
+  for (const p of history) {
+    if (p.kind === 'minutes' && p.minutes && !doneByWeek.has(p.minutes.week)) doneByWeek.set(p.minutes.week, new Set(p.minutes.done.map(d => d.userId)));
   }
-  for (const m of members) if (opWinners.has(m.userId)) titles.push({ ...who(m), title: '作战完成者' });
-  return {
+  const goalWeeks = (userId: string): number => {
+    let n = 1;
+    for (let w = shiftDayKey(week, -7); doneByWeek.get(w)?.has(userId); w = shiftDayKey(w, -7)) n++;
+    return n;
+  };
+  const raid = raidStrikesInWeek(view, week);
+  const facts: OrgWeekFacts[] = members.map(m => ({
+    ...who(m),
+    days: weekDaysOf(m.card, week),
+    streak: m.card.streak,
+    goalWeeks: done.includes(m) ? goalWeeks(m.userId) : 0,
+    ops: opCount.get(m.userId) ?? 0,
+    raid: raid.get(m.userId) ?? 0,
+    lv: m.card.lv ?? 0,
+  }));
+  const titles = resolveWeekTitles(facts, view.org.custom);
+  const out: OrgMinutesSnapshot = {
     v: 1,
     week,
     rate: { done: done.length, total: hadGoal.length },
@@ -615,7 +556,14 @@ export function computeMinutes(view: Pick<OrgView, 'org' | 'members' | 'posts' |
     titles,
     absent: eligible.filter(m => !attendees.includes(m)).map(who),
   };
+  // 兜底：整份纪要要放进 8KB 的 snapshot（每人最多 8 个称号时最坏约 7.7KB）；万一超了，从后往前去掉称号（自定义的先去）
+  const size = () => new TextEncoder().encode(JSON.stringify(out)).length;
+  while (out.titles.length && size() > MINUTES_MAX_BYTES) out.titles = out.titles.slice(0, -1);
+  return out;
 }
+
+/** 纪要 snapshot 的上限（服务器 8192，留一点余量） */
+export const MINUTES_MAX_BYTES = 7900;
 
 /** 最新一份纪要（上一场会议那周的）：名册上的称号和「本周缺席」读它 */
 export function latestMinutes(view: Pick<OrgView, 'org' | 'posts'>, now = new Date()): OrgMinutesSnapshot | null {

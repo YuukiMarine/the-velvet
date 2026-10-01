@@ -4,6 +4,7 @@
  */
 import { auditText } from '@/utils/textAudit';
 import { bySeat, displayCodename, orgWeekKey, shiftDayKey, zonedDay } from '@/utils/orgLogic';
+import { raidXpOf } from '@/utils/orgRaid';
 import type { AttributeId, OrgCheckin, OrgMember, OrgOpCardSnapshot, OrgOpKind, OrgOperation, OrgPost, OrgView } from '@/types';
 
 export const ORG_OP_TITLE_MAX = 20;
@@ -270,8 +271,12 @@ export function parseOpCard(v: unknown): OrgOpCardSnapshot | null {
 
 // ── 据点等级（PRD §13.4）─────────────────────────────────────────────────────────
 
-/** Lv1 0 / Lv2 30 / Lv3 80 / Lv4 150 / Lv5 240 / Lv6 350（封顶） */
-export const ORG_LEVEL_XP = [0, 30, 80, 150, 240, 350] as const;
+/**
+ * Lv1 0 / Lv2 60 / Lv3 180 / Lv4 380 / Lv5 680 / Lv6 1040（封顶）。
+ * 按「五个人正常用八个月左右满级」定（PRD §18）：每周约 30 经验——会议 4 人写目标 8、两周一个目标 4 人 10、
+ * 一个月一场作战 5 人 9、一个月一次团战击退 5 人约 3——到 Lv2 约 2 周、Lv3 6 周、Lv4 3 个月、Lv5 5 个多月、Lv6 8 个月。
+ */
+export const ORG_LEVEL_XP = [0, 60, 180, 380, 680, 1040] as const;
 export const ORG_MAX_LEVEL = ORG_LEVEL_XP.length;
 export const ORG_XP_MEETING = 2;
 export const ORG_XP_OP_SMALL = 5;
@@ -332,7 +337,8 @@ export function orgXpOf(ledger: OrgPost[] | undefined): number {
   return xp;
 }
 
-export const orgLevelOfView = (view: Pick<OrgView, 'ledger'>): OrgLevel => orgLevelOf(orgXpOf(view.ledger));
+/** 据点等级 = 纪要 + 达成卡的经验，再加团战（组织 P2：击破的团战每个出过手的人 +3；团战没拉到就先不算） */
+export const orgLevelOfView = (view: Pick<OrgView, 'ledger' | 'org' | 'raids' | 'raidHits'>): OrgLevel => orgLevelOf(orgXpOf(view.ledger) + raidXpOf(view));
 
 // ── 红点 ────────────────────────────────────────────────────────────────────────
 

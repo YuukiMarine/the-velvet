@@ -13,7 +13,9 @@ import type { CoopBond, CoopPact, CoopShadow, Friendship, NotificationEntry, Org
 /** 组织的庆祝卡（第 8 轮）：作战达成（+SP / 亲密度）、据点升级；App 顶层排队弹，一次一张 */
 export type OrgCelebration =
   | { kind: 'op'; opId: string; orgId: string; orgName: string; title: string; opKind: 'small' | 'big'; sp: number; partners: string[] }
-  | { kind: 'level'; orgId: string; orgName: string; level: number; mult: number };
+  | { kind: 'level'; orgId: string; orgName: string; level: number; mult: number; levelName?: string }
+  /** 组织 P2：满月团战击破（出过手的人才弹；sp = 这台设备刚领到的） */
+  | { kind: 'raid'; raidId: string; orgId: string; orgName: string; boss: string; sp: number; finisher: boolean; hitters: number };
 
 /** 一个未能"物化成本地 Confidant"的 COOP 契约 —— 本地塔罗冲突时出现 */
 export interface MaterializeBlocker {
@@ -241,7 +243,8 @@ export const useCloudSocialStore = create<CloudSocialState>(set => ({
   // 同一场作战 / 同一次升级只排一张
   pushOrgCelebration: c => set(state => {
     const dup = state.orgCelebrations.some(x => (x.kind === 'op' && c.kind === 'op' && x.opId === c.opId)
-      || (x.kind === 'level' && c.kind === 'level' && x.orgId === c.orgId && x.level === c.level));
+      || (x.kind === 'level' && c.kind === 'level' && x.orgId === c.orgId && x.level === c.level)
+      || (x.kind === 'raid' && c.kind === 'raid' && x.raidId === c.raidId));
     return dup ? {} : { orgCelebrations: [...state.orgCelebrations, c] };
   }),
 

@@ -767,7 +767,7 @@ export interface YearRecapLine {
 export interface SeasonStamp {
   /** = 岁时键 `${YYYY-MM-DD}-${kind}-${slug}` */
   id: string;
-  kind: 'term' | 'festival' | 'moon' | 'quest';
+  kind: 'term' | 'festival' | 'moon' | 'quest' | 'raid';
   name: string;
   date: string;
   year: number;
@@ -1530,6 +1530,8 @@ export interface BattleState {
   parkedShadow?: Shadow;
   /** （第 8 轮 组织作战）领过达成奖励（+SP）的作战 id：跟着战场状态同步，换设备也不重复领（只留最近 200 个） */
   orgOpRewards?: string[];
+  /** （组织 P2 满月团战）领过击破奖励的团战 id：同上，取并集、只留最近 100 个 */
+  orgRaidRewards?: string[];
   /** （第 8 轮 借面具）本周借着的面具与本周已经带进了几场（周键对不上 = 新的一周：清零、借的还回去） */
   borrow?: { weekKey: string; battles: number; mask?: BorrowedMask };
 }
@@ -2149,6 +2151,8 @@ export interface Org {
   inviteCode: string;
   /** 建立时记下的创建者时区（IANA）；「本周」、会议日都按它算 */
   tz: string;
+  /** 队长自定义（组织 P2：等级名字 / 称号改名 / 自定义称号）；没有 = 全用默认 */
+  custom?: OrgCustom;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -2254,7 +2258,8 @@ export interface OrgMinutesSnapshot {
   done: Array<{ userId: string; codename: string }>;
   /** 下周目标（会上写的） */
   goals: Array<{ userId: string; codename: string; goal: string }>;
-  titles: Array<{ userId: string; codename: string; title: string }>;
+  /** 称号：title 是发纪要时的名字（冻结）；tid 是称号的 id（组织 P2 起才有，称号册按它归类，老纪要按名字认） */
+  titles: Array<{ userId: string; codename: string; title: string; tid?: string }>;
   /** 会议时间里没写下周目标的人 */
   absent: Array<{ userId: string; codename: string }>;
 }
@@ -2354,6 +2359,71 @@ export interface OrgView {
   opsFailed?: boolean;
   /** 第 8 轮：据点经验的来源——全部纪要与作战达成卡（不限 30 天）；还没拉到时为 undefined */
   ledger?: OrgPost[];
+  /** 组织 P2：全部满月团战与出手（经验、称号、公告板战报都从这里现算）；还没拉到时为 undefined */
+  raids?: OrgRaid[];
+  raidHits?: OrgRaidHit[];
+  /** 团战没拉到（离线 / 服务器还没建表）：地图上不升月亮，团战面板说「暂时拉不到」 */
+  raidsFailed?: boolean;
+}
+
+// ── 组织 P2（PRD §17）：队长自定义 + 满月团战 ─────────────────────────────────────────
+
+/** 内置称号 id（名字队长可以改；纪要里记 tid，称号册按它归类） */
+export type OrgTitleId = 'attend' | 'full' | 'weekend' | 'streak7' | 'streak14' | 'streak30' | 'promise' | 'ops' | 'moon';
+/** 自定义称号的条件（像自定义成就：选一种，填一个数；weekend 不用数） */
+export type OrgTitleCondType = 'week_days' | 'weekend' | 'streak' | 'goal_weeks' | 'ops' | 'raid' | 'lv';
+export interface OrgCustomTitle {
+  /** c + 随机串（改名不换 id，称号册照样归在一起） */
+  id: string;
+  name: string;
+  cond: { type: OrgTitleCondType; value: number };
+}
+/** 队长自定义（orgs.custom，json ≤ 4KB）：没写的项用默认；名字都过屏蔽词，不过的当没写 */
+export interface OrgCustom {
+  /** 六级的名字（下标 0 = Lv.1；空 = 用默认） */
+  levelNames?: string[];
+  /** 内置称号改名（没写 = 默认名） */
+  titleNames?: Partial<Record<OrgTitleId, string>>;
+  /** 自定义称号（最多 8 个） */
+  titles?: OrgCustomTitle[];
+}
+
+/** 团战首领：开团时按组织 + 满月编号确定生成（名字、弱点），存进 org_raids.boss，之后不变 */
+export interface OrgRaidBoss {
+  v: 1;
+  name: string;
+  /** 弱点：开团时全队五维等级加起来最低的那一维 */
+  weak: AttributeId;
+  /** 开团时的据点等级（1–6）：血量每级 +5%，击退奖励 25 + 5 × (等级 − 1) SP；老数据没有当 1 */
+  lv?: number;
+}
+
+/** 一次满月一场团战（org_raids；第一个打开据点的成员用确定 id 开团，血量开团时定下） */
+export interface OrgRaid {
+  id: string;
+  orgId: string;
+  /** 满月编号（utils/moonPhase 的槽位，奇数） */
+  slot: number;
+  boss: OrgRaidBoss;
+  hpMax: number;
+  createdAt: Date;
+}
+
+/** 一次出手（org_raid_hits）：每人每晚一条（服务器唯一索引），总攻击每人一条（night = allout） */
+export interface OrgRaidHit {
+  id: string;
+  raidId: string;
+  orgId: string;
+  userId: string;
+  kind: 'strike' | 'allout';
+  /** 那一晚（组织时区的晚上日期 YYYY-MM-DD）；总攻击是 allout */
+  night: string;
+  attr?: AttributeId;
+  skill: string;
+  damage: number;
+  weak: boolean;
+  /** 服务器时间：判断是不是在那一晚打的、谁打出了最后一击 */
+  createdAt: Date;
 }
 
 // ── COOP 契约（在线同伴羁绊） ───────────────────────────

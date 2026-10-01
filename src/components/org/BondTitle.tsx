@@ -17,6 +17,7 @@ import { springSnappy, TAP } from '@/utils/motion';
 import { triggerNavFeedback } from '@/utils/feedback';
 import { boardUnread, meetingPending } from '@/utils/orgLogic';
 import { opsUnread } from '@/utils/orgOps';
+import { raidStrikeAvailable } from '@/utils/orgRaid';
 import { useOrgTone } from './orgUi';
 
 export type BondView = 'companions' | 'orgs';
@@ -29,7 +30,7 @@ export function useOrgSwitch(): { available: boolean; dot: boolean } {
   })));
   const blocked = useMemo(() => new Set(orgBlocked), [orgBlocked]);
   const available = cloudEnabled && (!signedIn || orgsLoaded);
-  const dot = available && (!!orgNotice || orgs.some(v => boardUnread(v, orgSeen[v.org.id], blocked) || meetingPending(v) || opsUnread(v, orgOpsSeen[v.org.id])));
+  const dot = available && (!!orgNotice || orgs.some(v => boardUnread(v, orgSeen[v.org.id], blocked) || meetingPending(v) || opsUnread(v, orgOpsSeen[v.org.id]) || raidStrikeAvailable(v)));
   return { available, dot };
 }
 

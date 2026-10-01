@@ -896,7 +896,8 @@ export const Dashboard = () => {
           <P4Sparkle size={14} color="var(--ui-accent)" className="absolute right-[40%] top-[96px]" />
           {/* 大日期牌（压在天空上）：p4-onlight——牌坐在浅色天空圆上，
               夜间墨字不许跟全局翻浅（用户 R16：角标保持黑） */}
-          <div className="p4-onlight absolute right-5 top-1 text-center">
+          {/* z-[1]：标题 / TODAY'S SHOW 两行是后画的 relative 整宽盒子，不抬一层会盖住牌下面的天空小签（点不到） */}
+          <div className="p4-onlight absolute right-5 top-1 z-[1] text-center">
             <div className="text-[40px] font-black leading-none tabular-nums text-[#131313]">
               {String(today.getDate()).padStart(2, '0')}
             </div>
@@ -905,8 +906,6 @@ export const Dashboard = () => {
             </div>
             <div className="relative mt-0.5 text-[11px] font-black tracking-[0.2em] text-[#131313]/80">
               {today.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase()}
-              {/* 岁时小签（第 6 轮）：贴在星期那行左侧、一般大（牌下面是天气小签，往下叠会压住它） */}
-              <SeasonStampBadge dateKey={toLocalDateKey(today)} className="absolute right-full top-1/2 mr-1.5 -translate-y-1/2" align="left" />
             </div>
             {/* 天空角标（PRD_V2.6 §7）：黄频道此前**没有天空位**——
                 天空圆只是张背景图，月相/天气无处可落。这里补一枚压在日期牌下沿的小角标，
@@ -924,6 +923,10 @@ export const Dashboard = () => {
           <div className="relative mt-1.5 text-[13px] font-black tracking-[0.16em] text-[#131313]">
             TODAY&apos;S SHOW · <span className="text-[var(--p4-orange,#f9a11b)]">04</span>
           </div>
+          {/* 岁时小签（第 6 轮）：挂在 TODAY'S SHOW 下面一行。原来贴在右上日期牌的星期左边——
+              夹在标题和日期牌之间，被标题 / TODAY'S SHOW 的盒子盖住点不到，窄屏还压在「04」上。
+              页头本来就有 126 高，这一行不撑高；气泡往上弹（往下会被问候卡盖住） */}
+          <SeasonStampBadge dateKey={toLocalDateKey(today)} className="mt-2" align="left" pop="above" />
         </div>
       ) : (
         <BrandTitleReveal darkMode={settings.darkMode} />

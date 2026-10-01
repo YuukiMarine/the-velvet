@@ -7,6 +7,7 @@
  *   · 发现自己不在某个组织了（被请离 / 解散 / 在别的设备退出）→ 本机提示一次。
  *   · 7b：拉最近 30 天的公告板（动态 + 标签）；上一场会议结束了还没有纪要 → 用确定 id 补发一份。
  *   · 第 8 轮：拉作战 + 打卡 + 经验流水，作战待办 / 达成卡 / 奖励交给 orgOpsSync.reconcileOps。
+ *   · 组织 P2：拉满月团战 + 出手（纪要的「月下同行」要用，所以在补纪要之前拉），开团 / 领奖交给 orgRaidSync.reconcileRaids。
  * 另有：记完一条记录 5 秒后顺手推一次成员牌；界面动作的包装（做完就写回 store）；本机屏蔽名单、隐藏的动态、
  * 公告板「看到哪儿了」；守则同意记录。离线或服务器报错时一律不动本地。
  */
@@ -18,7 +19,7 @@ import { masteryOf } from '@/utils/levels';
 import { resolveLevelDifficulty } from '@/utils/levelDifficulty';
 import { getAttributeLevelTitle, getMasteryTitle } from '@/utils/attributeLevelTitles';
 import {
-  createOrg, joinOrg, previewOrg, updateOrgProfile, rotateInviteCode, updateMyMember, setMySlot,
+  createOrg, joinOrg, previewOrg, updateOrgProfile, updateOrgCustom, rotateInviteCode, updateMyMember, setMySlot,
   leaveOrg, kickMember, transferLeader, dissolveOrg, listMyMemberships, listOrgMembers, fetchOrg, safeNickname,
   listOrgBoard, createMoment, setReaction, deletePost, reportPost, createMinutes, saveMeeting, deleteUserContent,
   OrgError, type OrgDraft, type OrgReportReason,
@@ -29,7 +30,8 @@ import {
   tarotConflictLosers, zonedDay, ORG_MAX_SHOWN_MASKS,
 } from '@/utils/orgLogic';
 import { archiveOrphanOpTodos, checkLevelUps, loadOpsSeen, reconcileOps, withOps } from './orgOpsSync';
-import type { Activity, AttributeId, Org, OrgCodenameKind, OrgMember, OrgMemberCard, OrgPersonaSnapshot, OrgPost, OrgReactionTag, OrgView } from '@/types';
+import { reconcileRaids, withRaids } from './orgRaidSync';
+import type { Activity, AttributeId, Org, OrgCodenameKind, OrgCustom, OrgMember, OrgMemberCard, OrgPersonaSnapshot, OrgPost, OrgReactionTag, OrgView } from '@/types';
 
 const social = () => useCloudSocialStore.getState();
 const nickname = (): string => [...(useAppStore.getState().user?.name ?? '').trim()].slice(0, ORG_CODENAME_MAX).join('');
@@ -315,9 +317,10 @@ async function syncOrgsOnce(): Promise<void> {
   views = await normalizeSlots(me, views);
   for (let i = 0; i < views.length; i++) views[i] = await resolveTarotConflict(views[i]);
   for (let i = 0; i < views.length; i++) views[i] = await pushMyCard(views[i]);
-  // 公告板在推完成员牌之后拉：补纪要要用到大家最新的出勤；作战达成卡（「作战完成者」称号）也要先拉到
-  for (let i = 0; i < views.length; i++) views[i] = await ensureMinutes(await withOps(await withBoard(views[i])));
+  // 公告板在推完成员牌之后拉：补纪要要用到大家最新的出勤；作战达成卡（「作战完成者」称号）、团战出手（「月下同行」）也要先拉到
+  for (let i = 0; i < views.length; i++) views[i] = await ensureMinutes(await withRaids(await withOps(await withBoard(views[i]))));
   for (let i = 0; i < views.length; i++) views[i] = await reconcileOps(views[i]);
+  for (let i = 0; i < views.length; i++) views[i] = await reconcileRaids(views[i]);
   social().setOrgs(views.sort(orgOrder));
   noticeGone(me, views);
   checkLevelUps(views);
@@ -336,8 +339,8 @@ export async function refreshOrg(orgId: string): Promise<OrgView | null> {
       return null;
     }
     const prev = social().orgs.find(v => v.org.id === orgId);
-    const base: OrgView = { org, members: members.sort(bySeat), me: mine, posts: prev?.posts, reactions: prev?.reactions, ops: prev?.ops, checkins: prev?.checkins, ledger: prev?.ledger };
-    const view: OrgView = await reconcileOps(await withOps(await withBoard(base)));
+    const base: OrgView = { org, members: members.sort(bySeat), me: mine, posts: prev?.posts, reactions: prev?.reactions, ops: prev?.ops, checkins: prev?.checkins, ledger: prev?.ledger, raids: prev?.raids, raidHits: prev?.raidHits };
+    const view: OrgView = await reconcileRaids(await reconcileOps(await withRaids(await withOps(await withBoard(base)))));
     social().upsertOrgView(view);
     checkLevelUps([view]);
     social().setOrgs([...social().orgs].sort(orgOrder));
@@ -447,6 +450,13 @@ export async function updateOrgFromUi(orgId: string, draft: OrgDraft): Promise<v
   social().upsertOrgView({ ...view, org });
   const me = getUserId();
   if (me) rememberOrgs(me, social().orgs);
+}
+
+/** 队长改等级名字 / 称号（组织 P2）：存完把本机的组织资料换成服务器回来的那份 */
+export async function updateOrgCustomFromUi(orgId: string, custom: OrgCustom): Promise<void> {
+  const view = viewOf(orgId);
+  const org: Org = await updateOrgCustom(orgId, custom);
+  social().upsertOrgView({ ...(social().orgs.find(v => v.org.id === orgId) ?? view), org });
 }
 
 export async function rotateCodeFromUi(orgId: string): Promise<void> {

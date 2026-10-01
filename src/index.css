@@ -1865,12 +1865,46 @@ html[data-ios-standalone="true"] {
   0%, 100% { transform: translateY(0); }
   50% { transform: translateY(-3px); }
 }
+/* 组织 P2：满月团战那三晚，天上的月亮慢慢呼吸、光晕一圈圈往外散；首领标记轻轻浮动 */
+@keyframes org-moon-glow {
+  0%, 100% { transform: scale(1); opacity: 0.85; }
+  50% { transform: scale(1.12); opacity: 1; }
+}
+@keyframes org-moon-halo {
+  0% { transform: scale(0.9); opacity: 0.5; }
+  100% { transform: scale(2.2); opacity: 0; }
+}
 .org-map-pulse { animation: org-map-pulse 2.4s cubic-bezier(0.2, 0.6, 0.3, 1) infinite; }
 .org-map-float { animation: org-map-float 2.2s ease-in-out infinite; }
+.org-moon-glow { animation: org-moon-glow 3.2s ease-in-out infinite; }
+.org-moon-halo { animation: org-moon-halo 3.2s cubic-bezier(0.2, 0.6, 0.3, 1) infinite; }
 .org-map-paused .org-map-pulse,
-.org-map-paused .org-map-float { animation-play-state: paused; }
+.org-map-paused .org-map-float,
+.org-map-paused .org-moon-glow,
+.org-map-paused .org-moon-halo { animation-play-state: paused; }
 @media (prefers-reduced-motion: reduce) {
-  .org-map-pulse, .org-map-float { animation: none; }
+  .org-map-pulse, .org-map-float, .org-moon-glow, .org-moon-halo { animation: none; }
+}
+
+/* 组织 P2 · 满月团战的小舞台：首领慢慢浮动、眼睛一明一暗、雾气往上飘；挨打时一抖、一闪、一刀划过。
+   粗犷度关掉时舞台挂 .raid-still，常驻的动起来的都停（挨打那一下照常有，只是不抖）。 */
+@keyframes raid-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
+@keyframes raid-eye { 0%, 100% { opacity: 0.7; } 50% { opacity: 1; } }
+@keyframes raid-wisp { 0% { transform: translateY(0); opacity: 0; } 25% { opacity: 0.65; } 100% { transform: translateY(-46px); opacity: 0; } }
+@keyframes raid-hit { 0% { transform: translateX(0); } 14% { transform: translateX(-8px); } 30% { transform: translateX(7px); } 46% { transform: translateX(-5px); } 62% { transform: translateX(3px); } 100% { transform: translateX(0); } }
+@keyframes raid-flash { 0% { opacity: 0; } 18% { opacity: 0.9; } 100% { opacity: 0; } }
+@keyframes raid-slash { 0% { stroke-dashoffset: 260; opacity: 1; } 65% { stroke-dashoffset: 0; opacity: 1; } 100% { stroke-dashoffset: 0; opacity: 0; } }
+@keyframes raid-fade { to { opacity: 0.16; filter: grayscale(1); } }
+.raid-float { animation: raid-float 3.2s ease-in-out infinite; }
+.raid-eye { animation: raid-eye 1.8s ease-in-out infinite; }
+.raid-wisp { animation: raid-wisp 3.6s ease-out infinite; }
+.raid-hit { animation: raid-hit 0.46s ease-out; }
+.raid-flash { animation: raid-flash 0.5s ease-out forwards; }
+.raid-slash { stroke-dasharray: 260; animation: raid-slash 0.42s ease-out forwards; }
+.raid-fade { animation: raid-fade 1.1s ease-out forwards; }
+.raid-still .raid-float, .raid-still .raid-eye, .raid-still .raid-wisp, .raid-still .raid-hit { animation: none; }
+@media (prefers-reduced-motion: reduce) {
+  .raid-float, .raid-eye, .raid-wisp, .raid-hit { animation: none; }
 }
 
 /* ── 塔屏（第 9 轮 9a · PRD §14.7）：光轨流动 / 脉冲 / 呼吸 / 转圈 / 上浮光点 / 雾带漂移 / 扫光 / 锁定框 / 光柱。

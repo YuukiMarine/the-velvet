@@ -19,6 +19,7 @@ import {
   ORG_OP_INTIMACY, ORG_OP_SP, ORG_OP_TODO_POINTS, buildOpCard, checkOpDraft, myOpState, normalizeOpDraft, opCardId, opCardOf, opProgress,
   orgLevelOfView, taskOf, type OpDraft, type OpProgress,
 } from '@/utils/orgOps';
+import { orgLevelName } from '@/utils/orgTitles';
 import type { OrgCheckin, OrgOperation, OrgView } from '@/types';
 
 const social = () => useCloudSocialStore.getState();
@@ -368,7 +369,7 @@ export function checkLevelUps(views: OrgView[]): void {
     const lv = orgLevelOfView(v);
     const prev = mine[v.org.id];
     if (prev !== undefined && lv.level > prev) {
-      social().pushOrgCelebration({ kind: 'level', orgId: v.org.id, orgName: v.org.name, level: lv.level, mult: lv.mult });
+      social().pushOrgCelebration({ kind: 'level', orgId: v.org.id, orgName: v.org.name, level: lv.level, mult: lv.mult, levelName: orgLevelName(v.org.custom, lv.level) });
     }
     // 记见过的最高：卡被删了等级回落、再涨回来不重复弹
     if (prev === undefined || lv.level > prev) { mine[v.org.id] = lv.level; changed = true; }

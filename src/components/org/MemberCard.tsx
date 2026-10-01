@@ -7,7 +7,7 @@
  * 四频道各一套皮；我的那张有标记；屏蔽了的人半透明、挂「已屏蔽」；上一场会议没写目标的挂「本周缺席」。
  * 牌面默认是代表牌；点一下小牌的牌面就换成 Ta 的头像（本机偏好，再点换回来），放大牌、公告板跟着用同一个。
  */
-import { useEffect, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from 'react';
 import { motion } from 'motion/react';
 import { useCloudSocialStore } from '@/store/cloudSocial';
 import { toggleMemberFace } from '@/services/orgSync';
@@ -19,6 +19,7 @@ import { P5R, P5_FONT, P5_TITLE_FONT, roughQuad } from '@/components/p5r/kit';
 import { P4Sparkle } from '@/ui/p4Kit';
 import { RESULT_LABEL, displayCodename, memberAttrNames, nextWeekKey, orgWeekKey, shiftDayKey, shownPersonas, tarotCardOf, weekDaysOf, zonedDay } from '@/utils/orgLogic';
 import { OrgEmblem, WeekDots, useOrgTone, type OrgTone } from './orgUi';
+import { titleBook } from '@/utils/orgTitles';
 import type { OrgMember, OrgMinutesSnapshot, OrgView, PersonaSkill } from '@/types';
 import { StarChartP3, type StarItem, type StarPalette } from '@/components/StarChartP3';
 
@@ -176,31 +177,34 @@ export function MemberTile({ view, member, minutes, blocked, onOpen, onMore }: {
   const weekOff = tone.channel === 'p5' ? 'rgba(0,0,0,0.16)' : 'rgba(127,127,127,0.24)';
 
   const inner = (
-    <div className="relative flex gap-3" style={{ opacity: blocked ? 0.55 : 1 }}>
-      <SeatGhost tone={tone} n={member.seat} />
-      <MemberFace member={member} toggle streak={f.streak} className="h-[84px] w-[53px] shrink-0" style={{ borderRadius: tone.channel === 'p4' ? 8 : tone.channel === 'neutral' ? 6 : 0, clipPath: tone.channel === 'p5' ? roughQuad(member.seat + 0.3, 2.5) : undefined, boxShadow: tone.channel === 'p4' ? '0 0 0 2px #131313' : undefined }} />
-      <div className="relative min-w-0 flex-1">
-        <div className="flex items-center gap-1.5">
-          {f.lv && <LvTag tone={tone} lv={f.lv} />}
-          {f.leader && <span aria-label="队长" className="text-[11px] leading-none">👑</span>}
-          {f.mine && <MineTag tone={tone} />}
-          {blocked && <span className="text-[9px] font-black" style={{ color: tone.sub }}>已屏蔽</span>}
-        </div>
-        <div className="mt-1 truncate text-[15px] font-black leading-tight" style={{ fontFamily: tone.titleFont }}>{f.codename}</div>
-        <div className="mt-0.5 truncate text-[11px] font-bold" style={{ color: tone.sub }}>
-          {f.status ? `${f.status.emoji} ${f.status.label}` : f.card ? `${f.card.roman ?? ''} ${f.card.name}`.trim() : '还没选代表牌'}
-        </div>
-        <div className="mt-2">
-          <WeekDots days={f.week} today={f.today} on={weekOn} off={weekOff} size={8} />
-        </div>
-
-        {(honors.titles.length > 0 || honors.absent) && (
-          <div className="mt-1.5 flex flex-wrap gap-[3px]">
-            {honors.titles.map(t => <HonorChip key={t} tone={tone}>{shortTitle(t)}</HonorChip>)}
-            {honors.absent && <HonorChip tone={tone} muted>本周缺席</HonorChip>}
+    <div style={{ opacity: blocked ? 0.55 : 1 }}>
+      <div className="relative flex gap-3">
+        <SeatGhost tone={tone} n={member.seat} />
+        <MemberFace member={member} toggle streak={f.streak} className="h-[84px] w-[53px] shrink-0" style={{ borderRadius: tone.channel === 'p4' ? 8 : tone.channel === 'neutral' ? 6 : 0, clipPath: tone.channel === 'p5' ? roughQuad(member.seat + 0.3, 2.5) : undefined, boxShadow: tone.channel === 'p4' ? '0 0 0 2px #131313' : undefined }} />
+        <div className="relative min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            {f.lv && <LvTag tone={tone} lv={f.lv} />}
+            {f.leader && <span aria-label="队长" className="text-[11px] leading-none">👑</span>}
+            {f.mine && <MineTag tone={tone} />}
+            {blocked && <span className="text-[9px] font-black" style={{ color: tone.sub }}>已屏蔽</span>}
           </div>
-        )}
+          <div className="mt-1 truncate text-[15px] font-black leading-tight" style={{ fontFamily: tone.titleFont }}>{f.codename}</div>
+          <div className="mt-0.5 truncate text-[11px] font-bold" style={{ color: tone.sub }}>
+            {f.status ? `${f.status.emoji} ${f.status.label}` : f.card ? `${f.card.roman ?? ''} ${f.card.name}`.trim() : '还没选代表牌'}
+          </div>
+          <div className="mt-2">
+            <WeekDots days={f.week} today={f.today} on={weekOn} off={weekOff} size={8} />
+          </div>
+        </div>
       </div>
+
+      {/* 称号：整张牌的宽度横排一行（每人每周最多 3 个，再加「本周缺席」）；放不下就在这一行里横着滑，不往下挤高 */}
+      {(honors.titles.length > 0 || honors.absent) && (
+        <div className="no-scrollbar relative mt-2 flex flex-nowrap gap-[3px] overflow-x-auto" data-honors>
+          {honors.titles.slice(0, 3).map(t => <HonorChip key={t} tone={tone}>{shortTitle(t)}</HonorChip>)}
+          {honors.absent && <HonorChip tone={tone} muted>本周缺席</HonorChip>}
+        </div>
+      )}
     </div>
   );
 
@@ -260,7 +264,7 @@ function HonorChip({ tone, muted = false, children }: { tone: OrgTone; muted?: b
         : tone.channel === 'p5'
           ? { background: P5R.red, color: P5R.white, clipPath: roughQuad(children.length + 0.7, 1.2), fontFamily: P5_TITLE_FONT }
           : { background: 'var(--ui-accent, #6366f1)', color: '#ffffff', borderRadius: 999 };
-  return <span className="inline-flex items-center whitespace-nowrap px-1.5 py-[2px] text-[9px] font-black leading-none" style={style}>{children}</span>;
+  return <span className="inline-flex shrink-0 items-center whitespace-nowrap px-1.5 py-[2px] text-[9px] font-black leading-none" style={style}>{children}</span>;
 }
 
 /**
@@ -371,7 +375,7 @@ export function MemberCardFront({ view, member, minutes, width, height }: { view
   );
 }
 
-export function MemberCardBack({ view, member, width, height, initialTab = 'stats' }: { view: OrgView; member: OrgMember; width: number; height: number; initialTab?: 'stats' | 'masks' }) {
+export function MemberCardBack({ view, member, width, height, initialTab = 'stats' }: { view: OrgView; member: OrgMember; width: number; height: number; initialTab?: 'stats' | 'masks' | 'titles' }) {
   const tone = useOrgTone();
   const f = memberFacts(view, member);
   const g = goalFacts(view, member);
@@ -380,7 +384,12 @@ export function MemberCardBack({ view, member, width, height, initialTab = 'stat
   // 面具的属性写这个人自己起的名字
   const names = memberAttrNames(member.card);
   const attrs = member.card.attrs ?? [];
-  const [tab, setTab] = useState<'stats' | 'masks'>(initialTab);
+  const [tab, setTab] = useState<'stats' | 'masks' | 'titles'>(initialTab);
+  // 组织 P2：称号册——这个人在这个组织拿过的称号和次数（全部纪要现算）
+  const book = useMemo(() => {
+    const minutes = [...(view.ledger ?? []), ...(view.posts ?? [])].filter(x => x.kind === 'minutes' && x.minutes).map(x => x.minutes!);
+    return titleBook(minutes, member.userId, view.org.custom);
+  }, [view.ledger, view.posts, view.org.custom, member.userId]);
   // 两三张时每张一行：名字、属性 · 等级、最强的一招
   const best = (m: typeof masks[number]) => [...m.skills].sort((a, b) => b.power - a.power)[0];
   const bg = tone.channel === 'p3' ? P3R.panel : tone.channel === 'p4' ? '#fff6d0' : tone.channel === 'p5' ? P5R.paper : '#111827';
@@ -400,7 +409,7 @@ export function MemberCardBack({ view, member, width, height, initialTab = 'stat
   );
   // 点页签别把牌翻回去（放大牌点哪都翻面；专辑墙按在按钮上本来就不翻）
   const stop = (e: MouseEvent | React.PointerEvent) => e.stopPropagation();
-  const tabBtn = (id: 'stats' | 'masks', label: string, i: number) => {
+  const tabBtn = (id: 'stats' | 'masks' | 'titles', label: string, i: number) => {
     const on = tab === id;
     const skin: CSSProperties = tone.channel === 'p3'
       ? { background: on ? P3R.blue : 'transparent', color: on ? '#ffffff' : sub, clipPath: slantClip(5), boxShadow: on ? undefined : `inset 0 0 0 1px ${P3R.cyanPale}` }
@@ -432,10 +441,33 @@ export function MemberCardBack({ view, member, width, height, initialTab = 'stat
       <div role="tablist" aria-label="成员牌背面" className={`relative flex shrink-0 gap-1.5 ${small ? 'mt-2' : 'mt-3'}`}>
         {tabBtn('stats', '五维', 0)}
         {tabBtn('masks', '面具', 1)}
+        {tabBtn('titles', '称号', 2)}
       </div>
 
       <div className={`relative min-h-0 flex-1 overflow-hidden ${small ? 'mt-1' : 'mt-2'}`} role="tabpanel">
-        {tab === 'stats' ? (
+        {tab === 'titles' ? (
+          <>
+            {heading('称号册', 'TITLES')}
+            {book.length > 0 ? (
+              <ul className={small ? 'mt-1.5 space-y-1' : 'mt-2 space-y-1.5'} data-title-book>
+                {book.slice(0, small ? 5 : 8).map(t => (
+                  <li key={t.key} className="flex min-w-0 items-baseline justify-between gap-2">
+                    <span className="min-w-0">
+                      <span className={`block truncate font-black leading-tight ${small ? 'text-[13px]' : 'text-[15px]'}`} style={{ fontFamily: tone.titleFont, opacity: t.retired ? 0.6 : 1 }}>{t.name}</span>
+                      <span className={`block truncate font-bold ${small ? 'text-[10px]' : 'text-[11px]'}`} style={{ color: sub }}>
+                        最近：{Number(t.last.slice(5, 7))}月{Number(t.last.slice(8, 10))}日那周{t.bestWeeks && t.bestWeeks > 1 ? ` · 最长连续 ${t.bestWeeks} 周` : ''}{t.retired ? ' · 已停用' : ''}
+                      </span>
+                    </span>
+                    <span className={`shrink-0 font-black tabular-nums ${small ? 'text-[14px]' : 'text-[17px]'}`} style={{ color: accent, fontFamily: tone.titleFont }}>×{t.count}</span>
+                  </li>
+                ))}
+                {book.length > (small ? 5 : 8) && <li className="text-[11px] font-bold" style={{ color: sub }}>还有 {book.length - (small ? 5 : 8)} 种</li>}
+              </ul>
+            ) : (
+              <div className="mt-2 text-[12px] font-bold leading-relaxed" style={{ color: sub }}>{view.ledger ? '还没拿过称号。每周一的会议纪要里发，挂一周，这里记着拿过几次。' : '称号册还没拉到，稍后再看。'}</div>
+            )}
+          </>
+        ) : tab === 'stats' ? (
           attrs.length > 0 ? (
             <div className="flex h-full flex-col">
               <div className="min-h-0 flex-1" onPointerDown={stop}>

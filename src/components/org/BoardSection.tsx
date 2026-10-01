@@ -19,11 +19,12 @@ import { P3R, slantClip } from '@/components/p3r/kit';
 import { P5R, P5_TITLE_FONT, roughQuad } from '@/components/p5r/kit';
 import { P4Sparkle } from '@/ui/p4Kit';
 import {
-  ORG_TAGS, RESULT_LABEL, SHARE_KIND_LABEL, displayCodename, orgWeekKey, reactionSummary, shiftDayKey, timeAgo,
+  ORG_BOARD_DAYS, ORG_TAGS, RESULT_LABEL, SHARE_KIND_LABEL, displayCodename, orgWeekKey, reactionSummary, shiftDayKey, timeAgo,
 } from '@/utils/orgLogic';
+import { fullMoonDayOf, raidStateOf, type RaidState } from '@/utils/orgRaid';
 import { deletePostFromUi, reactToPost, reportPostFromUi, setMemberBlocked } from '@/services/orgSync';
 import type { OrgReportReason } from '@/services/orgs';
-import { OrgButton, OrgPanel, useOrgTone, type OrgTone } from './orgUi';
+import { OrgButton, OrgEmblem, OrgPanel, useOrgTone, type OrgTone } from './orgUi';
 import { MemberFace } from './MemberCard';
 import type { Org, OrgMinutesSnapshot, OrgPost, OrgPostSnapshot, OrgReactionTag, OrgView } from '@/types';
 
@@ -41,7 +42,7 @@ const localToday = () => {
 };
 const errText = (e: unknown, fallback: string) => (e instanceof Error && e.message ? e.message : fallback);
 
-/** 筛选：动态 = 自己分享的记录；作战 = 目标 / 作战的达成卡；纪要 = 周日会议纪要 */
+/** 筛选：动态 = 自己分享的记录；作战 = 目标 / 作战的达成卡（组织 P2 起还有满月团战的战报）；纪要 = 周日会议纪要 */
 type BoardFilter = 'all' | 'moment' | 'operation' | 'minutes';
 const FILTERS: Array<{ id: BoardFilter; label: string }> = [
   { id: 'all', label: '全部' },
@@ -90,7 +91,22 @@ export function BoardSection({ view, blocked, onFlash }: { view: OrgView; blocke
   };
   // 置顶的纪要只在「全部」「纪要」里出现；下面的列表按筛选过一遍
   const showPinned = !!pinned?.minutes && (filter === 'all' || filter === 'minutes');
-  const list = filter === 'all' ? rest : rest.filter(p => p.kind === filter);
+  // 组织 P2：满月团战的战报不是服务器上的动态，是按团战现算的一张卡（打下来了 / 三晚结束了才出现，最近 30 天）
+  const raidCards = useMemo(() => {
+    const t = Date.now();
+    return (view.raids ?? []).map(r => raidStateOf(r, view.raidHits, view.org.tz))
+      .filter(st => (st.defeated || st.window.end.getTime() <= t) && st.hitters.length > 0)
+      .map(st => ({ st, at: st.defeatedAt ?? st.window.end }))
+      .filter(x => t - x.at.getTime() < ORG_BOARD_DAYS * 86400_000);
+  }, [view.raids, view.raidHits, view.org.tz]);
+  counts.all += raidCards.length;
+  counts.operation += raidCards.length;
+  type FeedItem = { kind: 'post'; p: OrgPost; at: Date } | { kind: 'raid'; st: RaidState; at: Date };
+  const feed: FeedItem[] = [
+    ...(filter === 'all' ? rest : rest.filter(p => p.kind === filter)).map(p => ({ kind: 'post' as const, p, at: p.createdAt })),
+    ...(filter === 'all' || filter === 'operation' ? raidCards.map(x => ({ kind: 'raid' as const, st: x.st, at: x.at })) : []),
+  ].sort((a, b) => b.at.getTime() - a.at.getTime());
+  const list = feed;
 
   if (!posts) {
     return <OrgPanel seed={41}><div className="text-[13px] font-bold" style={{ color: tone.sub }}>公告板还没拉到，稍后点右上角刷新。</div></OrgPanel>;
@@ -116,7 +132,7 @@ export function BoardSection({ view, blocked, onFlash }: { view: OrgView; blocke
 
   return (
     <div className="space-y-3">
-      {visible.length > 0 && (
+      {(visible.length > 0 || raidCards.length > 0) && (
         <div role="tablist" aria-label="公告板筛选" className="flex flex-wrap gap-1.5">
           {FILTERS.map((f, i) => (
             <FilterChip key={f.id} tone={tone} seed={i} label={f.label} count={counts[f.id]} on={filter === f.id} onClick={() => setFilter(f.id)} />
@@ -124,9 +140,18 @@ export function BoardSection({ view, blocked, onFlash }: { view: OrgView; blocke
         </div>
       )}
       {showPinned && pinned?.minutes && <MinutesCard org={view.org} minutes={pinned.minutes} blocked={blocked} tone={tone} />}
-      {list.map((p, i) => {
-        const key = dayKeyOf(p.createdAt);
-        const newDay = i === 0 || key !== dayKeyOf(list[i - 1].createdAt);
+      {list.map((item, i) => {
+        const key = dayKeyOf(item.at);
+        const newDay = i === 0 || key !== dayKeyOf(list[i - 1].at);
+        if (item.kind === 'raid') {
+          return (
+            <div key={`raid-${item.st.raid.id}`} className="space-y-3">
+              {newDay && <DayDivider tone={tone} label={dayLabel(item.at)} />}
+              <RaidResultCard view={view} state={item.st} index={i} />
+            </div>
+          );
+        }
+        const p = item.p;
         const card = p.kind === 'minutes' && p.minutes
           ? <MinutesCard org={view.org} minutes={p.minutes} blocked={blocked} tone={tone} compact />
           : p.kind === 'operation' && p.opCard
@@ -139,12 +164,12 @@ export function BoardSection({ view, blocked, onFlash }: { view: OrgView; blocke
           </div>
         );
       })}
-      {visible.length > 0 && filter !== 'all' && list.length === 0 && !showPinned && (
+      {(visible.length > 0 || raidCards.length > 0) && filter !== 'all' && list.length === 0 && !showPinned && (
         <div className="py-6 text-center text-[12px] font-bold" style={{ color: tone.stageSub }}>
-          {filter === 'moment' ? '最近 30 天没有人分享动态' : filter === 'operation' ? '最近 30 天还没有达成的目标或作战' : '最近 30 天还没有会议纪要'}
+          {filter === 'moment' ? '最近 30 天没有人分享动态' : filter === 'operation' ? '最近 30 天还没有达成的目标、作战或团战' : '最近 30 天还没有会议纪要'}
         </div>
       )}
-      {visible.length === 0 && (
+      {visible.length === 0 && raidCards.length === 0 && (
         <OrgPanel seed={43}>
           <div className="text-[15px] font-black" style={{ fontFamily: tone.titleFont }}>还没有动态</div>
           <div className="mt-1 text-[12px] font-semibold leading-relaxed" style={{ color: tone.sub }}>在记录页长按一条记录，选「分享到据点」，就会出现在这里。分享出去的只有你写的那一句和加点，不带记录原文。</div>
@@ -359,6 +384,58 @@ function OpWinCard({ post, view, tone, blocked, index, onReact, onMore }: {
           ))}
         </div>
         {whoLine && <div className="mt-1.5 text-[11px] font-bold leading-relaxed" style={{ color: tone.sub }}>{whoLine}</div>}
+      </OrgPanel>
+    </motion.div>
+  );
+}
+
+/**
+ * 满月团战的战报（组织 P2）：按团战现算的一张卡，不是服务器上的动态（不能贴标签、不能举报）。
+ * 写首领、击退了没有（没打完写还差多少）、满月那天、出过手的人（按第一次出手的时间，不排名次）、最后一击。
+ */
+function RaidResultCard({ view, state, index }: { view: OrgView; state: RaidState; index: number }) {
+  const tone = useOrgTone();
+  const raid = state.raid;
+  const nameOf = (uid: string) => {
+    const m = view.members.find(x => x.userId === uid);
+    return m ? (m.userId === view.me.userId ? '我' : displayCodename(m)) : '已退出的成员';
+  };
+  const left = Math.round((state.left / raid.hpMax) * 100);
+  const badge = tone.channel === 'p3'
+    ? { background: '#1b1240', color: '#ffffff', clipPath: slantClip(5) }
+    : tone.channel === 'p5'
+      ? { background: P5R.ink, color: P5R.white, clipPath: roughQuad(5.2, 2), fontFamily: P5_TITLE_FONT }
+      : tone.channel === 'p4'
+        ? { background: '#131313', color: '#ffe066', borderRadius: 999 }
+        : { background: '#1b1240', color: '#ffffff', borderRadius: 999 };
+  return (
+    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(index, 6) * 0.03, duration: 0.18 }} data-raid-card={raid.id}>
+      <OrgPanel padded={false} seed={60 + (index % 7)} className="px-4 py-3">
+        <div className="flex items-center gap-2">
+          <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap px-2 py-[3px] text-[11px] font-black leading-none" style={badge}>
+            <OrgEmblem id="moon" size={11} color="currentColor" />满月团战 · {state.defeated ? '击退' : `还差 ${left}%`}
+          </span>
+          <span className="min-w-0 truncate text-[11px] font-black" style={{ color: tone.sub }}>{md(fullMoonDayOf(raid.slot, view.org.tz))} 满月</span>
+        </div>
+        <div className="mt-1.5 break-words text-[18px] font-black leading-snug" style={{ fontFamily: tone.titleFont }}>「{raid.boss.name}」</div>
+        <div className="mt-0.5 text-[11px] font-bold" style={{ color: tone.sub }}>
+          全队打掉 {state.dealt} / {raid.hpMax}{state.defeated && state.finisher ? ` · 最后一击：${nameOf(state.finisher)}` : ''}
+        </div>
+        <ul className="mt-2.5 flex flex-wrap gap-x-3 gap-y-2">
+          {state.hitters.map(uid => {
+            const m = view.members.find(y => y.userId === uid);
+            const st = state.stats.get(uid)!;
+            return (
+              <li key={uid} className="flex min-w-0 max-w-full items-center gap-1.5">
+                <MemberFace member={m} className="h-[30px] w-[19px] shrink-0" style={{ borderRadius: tone.channel === 'p4' || tone.channel === 'neutral' ? 3 : 0 }} empty={<span className="absolute inset-0 flex items-center justify-center text-[9px] font-black">{[...nameOf(uid)][0] ?? '?'}</span>} />
+                <span className="min-w-0">
+                  <span className="block truncate text-[12px] font-black leading-tight">{nameOf(uid)}</span>
+                  <span className="block text-[10px] font-bold leading-tight" style={{ color: tone.sub }}>出手 {st.nights.length} 晚{st.allout ? ' · 总攻击' : ''}</span>
+                </span>
+              </li>
+            );
+          })}
+        </ul>
       </OrgPanel>
     </motion.div>
   );

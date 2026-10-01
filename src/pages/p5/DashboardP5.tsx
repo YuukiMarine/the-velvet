@@ -21,7 +21,7 @@ import { DeadlineTag } from '@/components/todo/DeadlineTag';
 import type { AttributeId, CallingCard } from '@/types';
 import {
   P5R, roughQuad, roughBanner, starPts,
-  P5Panel, P5Collage, P5SubBar, P5Wedge, P5Chip, P5Star, P5StarOutline, P5Burst, P5Sparkle, P5Dots, P5Slab, P5RPage, P5_TITLE_FONT,
+  P5Panel, P5Collage, P5SubBar, P5Wedge, P5Chip, P5Star, P5Burst, P5Sparkle, P5Dots, P5Slab, P5RPage, P5_TITLE_FONT,
 } from '@/components/p5r/kit';
 import { TodoCompleteModal } from '@/components/TodoCompleteModal';
 import { BattleDashboardWidget } from '@/components/BattleDashboardWidget';
@@ -117,13 +117,13 @@ const WeatherGlyphP5 = ({ icon }: { icon: WeatherIcon | undefined }) => (
  * 页头一行的设计宽度：拼贴五块（43 × 1.24 = 53.3，四道 3px 间隙）+ gap-3 + 日期卡 134。
  * 5 × 53.3 + 4 × 3 + 12 + 134 ≈ 425px。
  */
-const HEAD_DESIGN_W = 425;
+const HEAD_DESIGN_W = 441;
 
 /**
  * FitRow —— 放不下就整体等比缩小，而不是把右边裁掉。
  *
  * 页头是「拼贴标题 + 日期纸卡」两块**都不能压缩**的东西：瓷砖是固定 px 的方块，
- * 日期卡里塞着月相/天气块、两行问候、大号日数字。两块加起来要 425px，
+ * 日期卡里塞着月相/天气块、两行问候、大号日数字。两块加起来要 441px（日期卡 150：天气读数「23°C 多云」+ FEELS 在 134 宽时偶尔被截），
  * 而 360dp 的机子扣掉 px-4 只剩 328px —— P5RPage 又裁横向溢出，
  * 于是右边那张卡直接被切掉一角，问候语和天气读数缺一块（用户上报）。
  * 就算 450dp 宽也只有 418px，仍然差 7px，所以这不是"个别分辨率"，是几乎所有机型。
@@ -865,7 +865,7 @@ export const DashboardP5 = () => {
             </div>
 
             {/* 日期纸卡：切角 + 月相 + 两行问候 + 大红日数字 + JUL / SAT */}
-            <motion.div className="relative w-[134px] shrink-0" {...enter(0.12)}>
+            <motion.div className="relative w-[150px] shrink-0" {...enter(0.12)}>
               <div aria-hidden className="absolute inset-0" style={{ transform: 'translate(4px,5px)', background: P5R.ink, clipPath: 'polygon(18px 0, 100% 0, 100% 100%, 0 100%, 0 18px)' }} />
               <div aria-hidden className="absolute inset-0" style={{ background: P5R.paper, clipPath: 'polygon(18px 0, 100% 0, 100% 100%, 0 100%, 0 18px)', boxShadow: `inset 0 0 0 2.5px ${P5R.ink}` }} />
               <div className="relative px-2.5 py-2.5">
@@ -895,9 +895,12 @@ export const DashboardP5 = () => {
                       <span className="truncate text-[11px] font-black leading-none" style={{ color: P5R.ink, fontFamily: P5_TITLE_FONT }}>
                         {!sky.ready ? '去设置天气' : sky.error ? '天气取不到' : sky.loading ? '取数中…' : `${sky.weather?.temp}°C ${sky.weather?.text}`}
                       </span>
-                      <span className="shrink-0 text-[9px] font-black leading-none tracking-[0.14em]" style={{ color: P5R.red }}>
-                        {!sky.ready ? 'SET UP' : sky.error ? 'RETRY' : `FEELS ${sky.weather?.feelsLike ?? '--'}°`}
-                      </span>
+                      {/* 天气词长（「强雷阵雨伴冰雹」这种）时让出体感温度那一截，天气词整句放下 */}
+                      {(!sky.ready || sky.error || [...(sky.weather?.text ?? '')].length <= 4) && (
+                        <span className="shrink-0 text-[9px] font-black leading-none tracking-[0.14em]" style={{ color: P5R.red }}>
+                          {!sky.ready ? 'SET UP' : sky.error ? 'RETRY' : `FEELS ${sky.weather?.feelsLike ?? '--'}°`}
+                        </span>
+                      )}
                     </>
                   ) : (
                     <>
@@ -1021,9 +1024,12 @@ export const DashboardP5 = () => {
           </div>
 
           <P5Panel seed={64} jag={9} frame={5} keyline={0} shadow={{ x: 5, y: 6 }} className="mt-2" bodyClassName="px-4 py-4">
-            {/* 纸面右侧大描边星水印 */}
+            {/* 纸面右侧大星水印：实心、尖角（原来是描边星，尖被 SVG 边框切平了，右下角露出一个钝头的灰三角）。
+                位置照旧——星的上沿在纸面一半高度、往右探出去，下面那个尖由纸面切掉一半 */}
             <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden" style={{ clipPath: roughQuad(64.57, 5) }}>
-              <P5StarOutline size={190} color={P5R.paperDim} width={9} rot={-12} className="absolute -right-8 top-1/2 -translate-y-1/2" />
+              <svg viewBox="0 0 100 100" width={190} height={190} className="absolute -right-8 top-1/2" style={{ transform: 'rotate(-12deg)' }} aria-hidden>
+                <polygon points={starPts(50, 50, 48)} fill={P5R.paperDim} />
+              </svg>
             </div>
             {todayTodos.length === 0 ? (
               <div className="relative flex min-h-[150px] flex-col items-center justify-center gap-3 py-3 text-center">

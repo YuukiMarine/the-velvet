@@ -61,7 +61,7 @@ export interface SeasonCollection {
   marksOf: (year: number) => CollectedMark[];
   /** 春夏秋冬四页（岁时册按季翻页） */
   pagesOf: (year: number) => CollectedPage[];
-  /** 月相 / 委托这类不按年历排的印记 */
+  /** 月相 / 委托 / 满月团战这类不按年历排的印记 */
   extras: SeasonStamp[];
   loaded: boolean;
 }
@@ -79,7 +79,7 @@ export function useSeasonCollection(): SeasonCollection {
       years,
       marksOf: (year: number) => seasonMarksOfYear(year).map(decorate),
       pagesOf: (year: number) => seasonPagesOf(year).map((p) => ({ ...p, marks: p.marks.map(decorate) })),
-      extras: list.filter((s) => s.kind === 'moon' || s.kind === 'quest').sort((a, b) => (a.date < b.date ? 1 : -1)),
+      extras: list.filter((s) => s.kind === 'moon' || s.kind === 'quest' || s.kind === 'raid').sort((a, b) => (a.date < b.date ? 1 : -1)),
       loaded: !!stamps,
     };
   }, [stamps]);

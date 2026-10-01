@@ -11,6 +11,7 @@
  *   · 非成员只能带着 ?code= 读到那一个组织；建成员行时规则拿请求里的码和组织当前的码比。
  * 多步写入：能回滚的回滚；回滚不了的（转让之后自己已经不是队长）由 orgSync 的位置校正兜底。
  * 第 8 轮（S 节第 14 条）加两张表：org_operations（作战）/ org_checkins（打卡 / 不参加 / 自己写的那一份），见文件末尾。
+ * 组织 P2（S 节第 15 条）：orgs 加 custom（队长自定义等级名字 / 称号）；两张新表 org_raids（满月团战）/ org_raid_hits（出手），见文件末尾。
  */
 import type { RecordModel } from 'pocketbase';
 import { pb, getUserId } from './pocketbase';
@@ -22,9 +23,11 @@ import {
   parseMinutes, parsePostSnapshot,
 } from '@/utils/orgLogic';
 import { ORG_OP_FETCH_DAYS, ORG_OP_TASK_MAX, parseOpCard, type OpDraft } from '@/utils/orgOps';
+import { ORG_BUILTIN_TITLES, parseOrgCustom } from '@/utils/orgTitles';
+import { RAID_ATTRS, parseRaidBoss } from '@/utils/orgRaid';
 import type {
-  AttributeId, Org, OrgCheckin, OrgCodenameKind, OrgMember, OrgMemberCard, OrgMinutesSnapshot, OrgOpCardSnapshot, OrgOperation, OrgPost,
-  OrgPostSnapshot, OrgReaction, OrgReactionTag, OrgView,
+  AttributeId, Org, OrgCheckin, OrgCodenameKind, OrgCustom, OrgMember, OrgMemberCard, OrgMinutesSnapshot, OrgOpCardSnapshot, OrgOperation, OrgPost,
+  OrgPostSnapshot, OrgRaid, OrgRaidBoss, OrgRaidHit, OrgReaction, OrgReactionTag, OrgView,
 } from '@/types';
 
 // ── 映射 ─────────────────────────────────────────────────────────────────────
@@ -39,6 +42,7 @@ export const mapOrg = (r: RecordModel): Org => ({
   leaderId: str(r.leader),
   inviteCode: str(r.invite_code),
   tz: str(r.tz) || 'UTC',
+  custom: parseOrgCustom(r.custom),
   createdAt: new Date(str(r.created) || Date.now()),
   updatedAt: new Date(str(r.updated) || Date.now()),
 });
@@ -266,6 +270,30 @@ export async function updateOrgProfile(orgId: string, draft: OrgDraft): Promise<
   } catch (err) {
     throw new OrgError(describeOrgError(err, '没改成，稍后再试'));
   }
+}
+
+/**
+ * 队长改自定义（组织 P2：等级名字 / 内置称号改名 / 自定义称号）。名字先过屏蔽词（不过就拦下、告诉队长），
+ * 再按读的时候同一套规则整理一遍（截长度、夹范围、去掉和默认一样的）；全空就清掉。
+ */
+export async function updateOrgCustom(orgId: string, custom: OrgCustom): Promise<Org> {
+  requireMe();
+  const names = [
+    ...(custom.levelNames ?? []),
+    ...ORG_BUILTIN_TITLES.map(t => custom.titleNames?.[t.id] ?? ''),
+    ...(custom.titles ?? []).map(t => t.name),
+  ].map(n => n.trim()).filter(Boolean);
+  assertClean(...names);
+  let rec: RecordModel;
+  try {
+    rec = await pb!.collection('orgs').update(orgId, { custom: parseOrgCustom(custom) ?? null }, { requestKey: null });
+  } catch (err) {
+    if (statusOf(err) === 404) throw new OrgError('只有队长能改');
+    throw new OrgError(describeOrgError(err, '没存上，稍后再试'));
+  }
+  // 服务器还没加 custom 字段时 PB 会默默丢掉这个键：回来的记录里没有它 = 没存上，别跟队长说「改好了」
+  if (!Object.prototype.hasOwnProperty.call(rec, 'custom')) throw new OrgError('服务器这边还没准备好（缺少自定义字段），稍后再试');
+  return mapOrg(rec);
 }
 
 /** 队长换邀请码（旧码立即作废） */
@@ -666,5 +694,76 @@ export async function createOpCard(orgId: string, cardId: string, card: OrgOpCar
   } catch (err) {
     if (fieldCodes(err).id) return null;
     throw err;
+  }
+}
+
+// ── 组织 P2：满月团战（S 节第 15 条）──────────────────────────────────────────────
+
+export const mapRaid = (r: RecordModel): OrgRaid => ({
+  id: r.id,
+  orgId: str(r.org),
+  slot: typeof r.slot === 'number' ? r.slot : Number(r.slot) || 0,
+  boss: parseRaidBoss(r.boss),
+  hpMax: Math.max(1, typeof r.hp_max === 'number' ? r.hp_max : Number(r.hp_max) || 1),
+  createdAt: new Date(str(r.created) || Date.now()),
+});
+
+export const mapRaidHit = (r: RecordModel): OrgRaidHit => ({
+  id: r.id,
+  raidId: str(r.raid),
+  orgId: str(r.org),
+  userId: str(r.user),
+  kind: r.kind === 'allout' ? 'allout' : 'strike',
+  night: str(r.night),
+  ...(RAID_ATTRS.includes(r.attr as AttributeId) ? { attr: r.attr as AttributeId } : {}),
+  skill: str(r.skill),
+  damage: typeof r.damage === 'number' ? r.damage : Number(r.damage) || 0,
+  weak: r.weak === true,
+  createdAt: new Date(str(r.created) || Date.now()),
+});
+
+/** 这个组织全部的团战和出手（一个月一场、每场最多二十几条，很小）；表还没建会抛 404，调用方按「暂时拉不到」处理 */
+export async function listOrgRaids(orgId: string): Promise<{ raids: OrgRaid[]; hits: OrgRaidHit[] }> {
+  const [raids, hits] = await Promise.all([
+    pb!.collection('org_raids').getFullList({ filter: `org = ${pbQuote(orgId)}`, sort: 'slot', requestKey: null }),
+    pb!.collection('org_raid_hits').getFullList({ filter: `org = ${pbQuote(orgId)}`, sort: 'created', requestKey: null }),
+  ]);
+  return { raids: raids.map(mapRaid), hits: hits.map(mapRaidHit) };
+}
+
+/** 开团：确定 id；同一次满月别人刚开过（撞了 id 或 (org, slot) 唯一索引）→ 读出那一条 */
+export async function createRaid(orgId: string, id: string, slot: number, boss: OrgRaidBoss, hpMax: number): Promise<OrgRaid> {
+  requireMe();
+  try {
+    return mapRaid(await pb!.collection('org_raids').create({ id, org: orgId, slot, boss, hp_max: hpMax }, { requestKey: null }));
+  } catch (err) {
+    const codes = fieldCodes(err);
+    if (codes.id || codes.slot || codes.org) {
+      return mapRaid(await pb!.collection('org_raids').getFirstListItem(`org = ${pbQuote(orgId)} && slot = ${Math.round(slot)}`, { requestKey: null }));
+    }
+    if (ruleDenied(err)) throw new OrgError('开不了团：你可能已经不在这个组织里了');
+    throw new OrgError(describeOrgError(err, '团战没开起来，稍后再试'));
+  }
+}
+
+/**
+ * 出手 / 总攻击。撞了唯一索引（这一晚已经打过了 / 总攻击用过了，多半是另一台设备）→ 读出已有那条，dup = true。
+ */
+export async function createRaidHit(raid: Pick<OrgRaid, 'id' | 'orgId'>, hit: { kind: 'strike' | 'allout'; night: string; attr?: AttributeId; skill: string; damage: number; weak: boolean }): Promise<{ hit: OrgRaidHit; dup: boolean }> {
+  const me = requireMe();
+  const night = hit.kind === 'allout' ? 'allout' : hit.night;
+  try {
+    const made = await pb!.collection('org_raid_hits').create({
+      raid: raid.id, org: raid.orgId, user: me, kind: hit.kind, night,
+      ...(hit.attr ? { attr: hit.attr } : {}), skill: [...hit.skill].slice(0, 20).join(''), damage: Math.max(0, Math.round(hit.damage)), weak: hit.weak,
+    }, { requestKey: null });
+    return { hit: mapRaidHit(made), dup: false };
+  } catch (err) {
+    if (Object.values(fieldCodes(err)).includes('validation_not_unique')) {
+      const cur = await pb!.collection('org_raid_hits').getFirstListItem(`raid = ${pbQuote(raid.id)} && user = ${pbQuote(me)} && night = ${pbQuote(night)}`, { requestKey: null });
+      return { hit: mapRaidHit(cur), dup: true };
+    }
+    if (ruleDenied(err)) throw new OrgError('没打出去：你可能已经不在这个组织里了');
+    throw new OrgError(describeOrgError(err, '没打出去，稍后再试'));
   }
 }
