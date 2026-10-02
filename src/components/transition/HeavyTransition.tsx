@@ -13,7 +13,7 @@
  * D0：Layer 拒接请求 → director 同步执行 midpoint，零演出（guide 降级铁律）。
  * 演出中再次触发同样拒接（midpoint 直接执行），防双层幕布。
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { motion } from 'motion/react';
 import { MorphSVGPlugin } from 'gsap/MorphSVGPlugin';
@@ -361,13 +361,53 @@ const RIPPLE_LINES = [
 
 /** 波纹配色随频道走：P3 蓝青（原口径）／P4 橙黄（黄舞台上蓝波纹是异色，用户口径）／
  *  P5 主题红＋墨／neutral 主题色。两条波纹 = [粗内圈, 细外圈]。 */
-const RIPPLE_PALETTE: Record<string, [string, string]> = {
-  p3: ['rgba(27,87,255,0.78)', 'rgba(53,209,232,0.65)'],
-  p4: ['rgba(249,161,27,0.85)', 'rgba(255,246,208,0.72)'],
-  p5: ['rgba(215,25,32,0.78)', 'rgba(19,19,19,0.55)'],
+type RingPaint = [color: string, alpha: number];
+const RIPPLE_PALETTE: Record<string, [RingPaint, RingPaint]> = {
+  p3: [['#1b57ff', 0.78], ['#35d1e8', 0.65]],
+  p4: [['#f9a11b', 0.85], ['#fff6d0', 0.72]],
+  p5: [['#d71920', 0.78], ['#131313', 0.55]],
 };
-const rippleColors = (channel: string): [string, string] =>
-  RIPPLE_PALETTE[channel] ?? ['color-mix(in srgb, var(--color-primary) 78%, transparent)', 'rgba(148,163,184,0.6)'];
+/** 中性皮用主题色：画在 canvas 上，color-mix 用不了，直接读 --color-primary */
+const primaryColor = (): string =>
+  (typeof document !== 'undefined' ? getComputedStyle(document.documentElement).getPropertyValue('--color-primary').trim() : '') || '#6366f1';
+const rippleColors = (channel: string): [RingPaint, RingPaint] =>
+  RIPPLE_PALETTE[channel] ?? [[primaryColor(), 0.78], ['#94a3b8', 0.6]];
+
+/**
+ * 波纹环画在 <canvas> 上，而不是带 border 的 span（第 11 轮，安卓录屏「切页瞬间整页黑一两帧」的减负）。
+ * span 环是合成器里一张按**终态**尺寸（一千多 px 见方）整张光栅的层：两圈环的瓦片数是整页内容的八倍，
+ * 和旧页改 fixed 后的重新光栅挤在同一帧，手机来不及就把旧页那张画成了空的。canvas 是一张固定
+ * 512×512 的纹理，放大缩小全由合成器采样，不光栅、不占瓦片；环本身是半透明软边，放大后看不出差别。
+ * 几何与 border 版完全一致：外缘半径 dia/2，环宽 width（画在 border-box 里侧）。
+ */
+const RIPPLE_TEX = 512;
+const RippleRing = ({ ox, oy, dia, width, paint, from, dur, delay, o }: {
+  ox: number; oy: number; dia: number; width: number; paint: RingPaint; from: string; dur: number; delay: number; o: number;
+}) => {
+  const ref = useRef<HTMLCanvasElement>(null);
+  useLayoutEffect(() => {
+    const c = ref.current;
+    const ctx = c?.getContext('2d');
+    if (!c || !ctx) return;
+    const k = RIPPLE_TEX / dia; // CSS px → 纹理像素
+    ctx.clearRect(0, 0, RIPPLE_TEX, RIPPLE_TEX);
+    ctx.globalAlpha = paint[1];
+    ctx.strokeStyle = paint[0];
+    ctx.lineWidth = width * k;
+    ctx.beginPath();
+    ctx.arc(RIPPLE_TEX / 2, RIPPLE_TEX / 2, RIPPLE_TEX / 2 - (width * k) / 2, 0, Math.PI * 2);
+    ctx.stroke();
+  }, [dia, width, paint]);
+  return (
+    <canvas
+      ref={ref}
+      width={RIPPLE_TEX}
+      height={RIPPLE_TEX}
+      className="nav-ripple absolute"
+      style={{ left: ox, top: oy, width: dia, height: dia, '--nr-from': from, '--nr-dur': `${dur}ms`, '--nr-delay': `${delay}s`, '--nr-o': o } as CSSProperties}
+    />
+  );
+};
 
 const WaterRippleAct = ({ midpoint, onDone, origin, channel }: ActProps & { origin?: { x: number; y: number }; channel: string }) => {
   useTimeline([
@@ -395,22 +435,19 @@ const WaterRippleAct = ({ midpoint, onDone, origin, channel }: ActProps & { orig
         // 描边宽随 scale 等比（起手薄、扩开渐厚）：水纹越荡越宽，观感比恒宽更「水」。
         const dia = Math.round(fullDia * ln.reach * 0.63);
         return (
-          <span
+          <RippleRing
             key={k}
-            className="nav-ripple absolute rounded-full"
-            style={{
-              left: ox,
-              top: oy,
-              width: dia,
-              height: dia,
-              border: `${Math.round(ln.w * rippleScale)}px solid ${colors[k]}`,
-              '--nr-from': Math.max(0.03, 76 / dia).toFixed(3),
-              // 0.45 → 0.53：整体放缓约 18%（用户口径「波纹速度稍微慢一点点」），
-              // 与 App.tsx 的 REVEAL_MS 460→540 同幅，蒙版与波纹仍是同一套节奏
-              '--nr-dur': `${Math.round(ln.d * 0.53 * 1000)}ms`,
-              '--nr-delay': `${ln.delay}s`,
-              '--nr-o': ln.o,
-            } as CSSProperties}
+            ox={ox}
+            oy={oy}
+            dia={dia}
+            width={Math.round(ln.w * rippleScale)}
+            paint={colors[k]}
+            from={Math.max(0.03, 76 / dia).toFixed(3)}
+            // 0.45 → 0.53：整体放缓约 18%（用户口径「波纹速度稍微慢一点点」），
+            // 与 App.tsx 的 REVEAL_MS 460→540 同幅，蒙版与波纹仍是同一套节奏
+            dur={Math.round(ln.d * 0.53 * 1000)}
+            delay={ln.delay}
+            o={ln.o}
           />
         );
       })}

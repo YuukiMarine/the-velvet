@@ -939,6 +939,8 @@ function App() {
  * 页面、on-mount 数据副作用重跑——逆流衰减等不可重放）。
  */
 const PAGE_HOLD_MS = 520;
+/** 换栈前一刻 #root 的真实 scrollTop（PageSwitcher 在 setStack 之前记）：离场页冻结几何用它，不用换栈 commit 里被钳过的那个 */
+let swapScrollTop = 0;
 /** 圆形揭示时长（原生 CSS transition 驱动，见 PageShell 内注释） */
 // 圆形擦除时长。v2.7.0.4 由 460 放缓到 540（用户口径「蒙版转场稍微慢一点点」）——
 // 与底部栏波纹的同幅放缓（HeavyTransition 的 0.45→0.53 系数）保持同步，两者是一套演出。
@@ -1135,7 +1137,13 @@ const PageShell = ({ leaving, coveredByWipe, stageBg, stageDecor, onRevealed, ch
           const r = main.getBoundingClientRect();
           const cs = getComputedStyle(main);
           const padL = parseFloat(cs.paddingLeft) || 0;
-          el.style.top = `${r.top + (parseFloat(cs.paddingTop) || 0)}px`;
+          // 滚动量用换栈前记下的 swapScrollTop，不用此刻的：本壳在这次 commit 里已经 fixed 出流，
+          // main 里只剩刚挂上的新页（往往比旧页矮），滚动容器会把 scrollTop 钳到新上限（实测
+          // 589 → 152，切到短页直接 → 0），此刻量到的 r.top 已经是钳过的——按它钉的旧页会在
+          // 圆擦中途整页跳回自己的顶部（第 11 轮录屏实锤）。r.top + 当前 scrollTop 是 main 在
+          // 滚动内容里的固定位置，减去用户离开时真正的滚动量，才是离开瞬间看到的那一屏。
+          const scrollNow = root ? root.scrollTop : 0;
+          el.style.top = `${r.top + scrollNow - swapScrollTop + (parseFloat(cs.paddingTop) || 0)}px`;
           el.style.left = `${r.left + padL}px`;
           el.style.width = `${main.clientWidth - padL - (parseFloat(cs.paddingRight) || 0)}px`;
         } else {
@@ -1302,6 +1310,8 @@ const PageSwitcher = ({ current, stageBg, stageDecor, render }: {
     // 本 effect 被卡到窗口外就退回旧页 0.18s 淡出——幕布已离场，半透明残影叠在
     // 新页上，正是「偶尔切页旧页闪一下」。标记不参与竞速：effect 多晚都消费得到。
     const atomicSwap = consumeCurtainMidpoint();
+    // 换栈前记下真实滚动量（离场页冻结几何用；换栈 commit 里 scrollTop 会被新页高度钳住，见 PageShell）
+    swapScrollTop = document.getElementById('root')?.scrollTop ?? 0;
     setStack((prev) => {
       const top = prev[prev.length - 1];
       // 同页（含 todos→actions 归一）：仅同步 id，保持实例
