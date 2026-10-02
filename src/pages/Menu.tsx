@@ -420,7 +420,7 @@ export const Menu = () => {
           <div className="text-center py-2">
             <div className="text-5xl mb-4">🦋</div>
             <h3 className="text-xl font-bold text-gray-800 dark:text-white mb-1">靛蓝色房间</h3>
-            <p className="text-sm text-gray-500 dark:text-gray-400">Persona Growth Tracker</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">JRPG Growth Tracker</p>
             <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">v{import.meta.env.PACKAGE_VERSION}</p>
           </div>
           {/* 信息行列表：作者 / GitHub / Bilibili */}
@@ -450,7 +450,7 @@ export const Menu = () => {
                 rel="noopener noreferrer"
                 className="text-sm font-medium text-primary hover:underline"
               >
-                @IIInk
+                @关注阿茗谢谢喵
               </a>
             </div>
             <div className="border-t border-gray-200 dark:border-gray-700"></div>

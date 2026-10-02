@@ -6,7 +6,7 @@
 <p align="center"><em>The Other Me — Growth Tracker</em></p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-2.7.0-8B5CF6?style=flat-square" />
+  <img src="https://img.shields.io/badge/version-2.8.0-8B5CF6?style=flat-square" />
   <img src="https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react" />
   <img src="https://img.shields.io/badge/TypeScript-5-3178C6?style=flat-square&logo=typescript" />
   <img src="https://img.shields.io/badge/PWA-ready-5A0FC8?style=flat-square" />

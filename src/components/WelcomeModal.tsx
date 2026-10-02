@@ -651,7 +651,7 @@ export const WelcomeModal = () => {
                   className="text-[10px] font-semibold tracking-[0.28em] uppercase mb-2"
                   style={{ color: '#a78bfa' }}
                 >
-                  Persona Growth Tracker
+                  JRPG Growth Tracker
                 </p>
 
                 {/* Title */}
