@@ -95,10 +95,10 @@ export const BattleDashboardWidget = () => {
             <span className="mt-1 block truncate text-[12px] font-bold" style={{ color: P5R.white }}>{status}</span>
           </span>
           {inShadowTime ? (
-            <motion.span
-              animate={{ scale: [1, 1.06, 1] }}
-              transition={{ repeat: Infinity, duration: 1.6 }}
-              className="relative flex shrink-0 items-center gap-1 px-2 py-1 text-[12px] font-black leading-none"
+            <span
+              // 呼吸（scale 1→1.06→1 / 1.6s）改 CSS 关键帧 velvet-breathe：Framer 的 scale 循环是 JS 逐帧写
+              // transform，这块又没有自己的层，首页空转时每秒重画 40 多块瓦片（第 12 轮 P0）；CSS 版走合成器
+              className="velvet-breathe relative flex shrink-0 items-center gap-1 px-2 py-1 text-[12px] font-black leading-none"
               style={{ color: P5R.ink, fontFamily: P5_FONT }}
             >
               <span aria-hidden className="absolute inset-0" style={{ background: P5R.paper, clipPath: roughQuad(48.9, 3) }} />
@@ -106,7 +106,7 @@ export const BattleDashboardWidget = () => {
                 <P5Star size={12} fill={P5R.red} />
                 影时间
               </span>
-            </motion.span>
+            </span>
           ) : (
             <span className="shrink-0 text-[10px] font-black leading-none" style={{ color: P5R.white }}>
               {settings.battleShadowTimeStart ?? 20}:00 显形

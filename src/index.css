@@ -1925,6 +1925,34 @@ html[data-ios-standalone="true"] {
 @keyframes tw-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
 @keyframes tw-lock { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.08); opacity: 0.75; } }
 @keyframes tw-beam { 0%, 100% { opacity: 0.55; } 50% { opacity: 0.9; } }
+
+/* 影时间小签的呼吸（第 12 轮 P0）：等价于原 Framer 的 scale:[1,1.06,1] / 1.6s / easeInOut
+   （= cubic-bezier(.42,0,.58,1)，逐段缓动）；改走 CSS 让合成器跑，will-change 给它自己的层，
+   红首页空转不再逐帧重画 */
+@keyframes velvet-breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.06); } }
+.velvet-breathe { animation: velvet-breathe 1.6s ease-in-out infinite; will-change: transform; }
+/* 战场页红皮影时间签的呼吸：幅度 1.05（原 Framer scale:[1,1.05,1] / 1.6s） */
+@keyframes velvet-breathe-sm { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
+.velvet-breathe-sm { animation: velvet-breathe-sm 1.6s ease-in-out infinite; will-change: transform; }
+
+/* 蓝频道的洋红签名件眨眼（第 12 轮 P2）：原来是 Framer 带 times 的关键帧，x / opacity 走 JS 逐帧写，
+   每个蓝页页眉都有一枚，Framer 的帧循环因此在所有蓝页空转。改 CSS：百分比 = 原 times，linear 逐段。
+   · p3-dot-blink：页眉句点，5.2s，延迟 1.2s，times [0,.9,.94,.97,1]，opacity [1,1,.25,1,1]，x [0,0,1.5,0,0]
+   · p3-corner-blink：按钮洋红角，4.6s，times [0,.88,.93,1]，opacity [1,1,.3,1] */
+@keyframes p3-dot-blink {
+  0%, 90% { opacity: 1; transform: translateX(0); }
+  94% { opacity: 0.25; transform: translateX(1.5px); }
+  97%, 100% { opacity: 1; transform: translateX(0); }
+}
+.p3-dot-blink { animation: p3-dot-blink 5.2s linear 1.2s infinite; will-change: transform, opacity; }
+@keyframes p3-corner-blink {
+  0%, 88%, 100% { opacity: 1; }
+  93% { opacity: 0.3; }
+}
+.p3-corner-blink { animation: p3-corner-blink 4.6s linear infinite; will-change: opacity; }
+/* 碎裂星徽碎片的常态悬浮（原 Framer y:[0,-2.4,0] / easeInOut / 逐片时长与延迟由内联 animation-* 给） */
+@keyframes p3-shard-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2.4px); } }
+.p3-shard-float { animation: p3-shard-float 3s ease-in-out infinite; }
 .tw-still .tw-anim { animation: none !important; }
 .tw-paused .tw-anim { animation-play-state: paused !important; }
 @media (prefers-reduced-motion: reduce) {

@@ -385,7 +385,8 @@ export const Menu = () => {
     },
     ...(battleVisible
       ? [{ key: 'battle', label: '逆影战场', indent: 26, icon: <span className="text-[var(--ui-bg)]"><BoltIcon /></span>,
-          badge: inShadowTime ? <span aria-hidden className="animate-pulse text-base leading-none text-[var(--p4-orange,#f9a11b)]">✦</span> : undefined,
+          // inline-block：行内元素没有自己的合成层，animate-pulse 的 opacity 就在主线程逐帧重画（第 12 轮 P0）
+          badge: inShadowTime ? <span aria-hidden className="inline-block animate-pulse text-base leading-none text-[var(--p4-orange,#f9a11b)]">✦</span> : undefined,
           onPress: () => setCurrentPage('battle') }]
       : []),
     {
@@ -1490,7 +1491,7 @@ export const Menu = () => {
                     icon={<BoltIcon />}
                     badge={
                       inShadowTime ? (
-                        <span aria-hidden className="text-sm leading-none text-purple-500 dark:text-purple-400 animate-pulse">
+                        <span aria-hidden className="inline-block text-sm leading-none text-purple-500 dark:text-purple-400 animate-pulse">
                           ✦
                         </span>
                       ) : undefined

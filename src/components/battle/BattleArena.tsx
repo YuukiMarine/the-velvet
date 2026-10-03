@@ -589,10 +589,10 @@ export const BattleArena = () => {
               </div>
             </div>
             {inShadowTime && (
-              <motion.span
-                animate={{ scale: [1, 1.05, 1] }}
-                transition={{ repeat: Infinity, duration: 1.6 }}
-                className="relative mt-1 flex shrink-0 items-center gap-1.5 px-2.5 py-1.5 text-[13px] font-black"
+              <span
+                // 呼吸改 CSS 关键帧 velvet-breathe-sm（index.css）：Framer 的 scale 循环是 JS 逐帧写整条 style，
+                // 这块没有自己的层，战场页空转每秒重画 60 次（第 12 轮 P2）
+                className="velvet-breathe-sm relative mt-1 flex shrink-0 items-center gap-1.5 px-2.5 py-1.5 text-[13px] font-black"
                 style={{ color: P5R.paper, fontFamily: P5_FONT }}
               >
                 <span aria-hidden className="absolute inset-0" style={{ transform: 'translate(3px,3px)', background: P5R.ink, clipPath: roughQuad(604, 4) }} />
@@ -602,7 +602,7 @@ export const BattleArena = () => {
                   <P5Star size={13} fill={P5R.paper} />
                   影时间
                 </span>
-              </motion.span>
+              </span>
             )}
           </div>
         </div>
@@ -640,15 +640,16 @@ export const BattleArena = () => {
             </div>
             <P4Magnifier size={30} rim="rgba(255,246,208,0.85)" glass="rgba(249,161,27,0.35)" className="mt-1 shrink-0" />
             {inShadowTime && (
-              <motion.span
-                animate={{ scale: [1, 1.06, 1] }}
-                transition={{ repeat: Infinity, duration: 1.6 }}
-                className="mt-1 flex shrink-0 items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-[12px] font-black text-[#131313]"
+              <span
+                // 呼吸改 CSS 关键帧 velvet-breathe（第 12 轮 P2）：Framer 版是 JS 逐帧写整条 style、没有自己的层。
+                // 原来 Framer 写出的 transform 只有 scale（内联的 skewX(-4deg) 一直被它盖掉），CSS 动画同样盖掉内联
+                // transform，实际效果与改前一致
+                className="velvet-breathe mt-1 flex shrink-0 items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-[12px] font-black text-[#131313]"
                 style={{ background: 'var(--p4-orange, #f9a11b)', transform: 'skewX(-4deg)', boxShadow: '0 3px 0 rgba(0,0,0,0.45)' }}
               >
                 <P4Sparkle size={12} color="#131313" />
                 影时间
-              </motion.span>
+              </span>
             )}
           </div>
         </div>

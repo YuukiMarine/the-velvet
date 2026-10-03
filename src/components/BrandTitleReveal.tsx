@@ -181,7 +181,10 @@ export const BrandTitleReveal = ({ darkMode }: BrandTitleRevealProps) => {
           -webkit-background-clip: text;
           -webkit-text-fill-color: transparent;
           background-clip: text;
-          animation: vr-flow 5s linear infinite;
+          /* 流光按 20fps 走（steps(100) 铺满 5s）：background-position 动画躲不开主线程逐帧重画，
+             linear 时首页空转主线程 25%、每秒 40 块瓦片；20fps 降到 14% / 18 块，肉眼看不出台阶
+             （每步只挪 2% 的渐变宽度）。第 12 轮 P0 实测。 */
+          animation: vr-flow 5s steps(100, end) infinite;
         }
         /* 拆字需 inline-block 才能受 GSAP transform（yPercent/rotate/scale）驱动 */
         .brand-char { display: inline-block; }

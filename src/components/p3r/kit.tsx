@@ -158,6 +158,10 @@ export const TitleTri = ({ wobble = false, delay = 0.35, fill, style }: { wobble
     const stops = Array.from({ length: N }, () => [jolt(), jolt(), jolt()]);
     const base = [[2, 32], [296, 6], [70, 74]];
     const t0 = performance.now();
+    // 第 12 轮 P0：顶点量化到 0.5 单位（≈0.5px，看不出）、没变的帧不写——每写一次 d 都是一次 SVG 布局 + 重画；
+    // 外面的 svg 给了自己的合成层，重画只落在三角那一小块，不再连累整个页头
+    let lastD = '';
+    const q = (v: number) => (Math.round(v * 2) / 2).toFixed(1);
     // 可见时照旧 60fps；移出视口整个停掉（第 4 轮，原来常驻）。顶点按绝对时间算
     return startLowFpsLoop(el, 60, (now) => {
       // rAF 首帧的 timestamp（帧 vsync 时刻）可早于 effect 里取的 t0 几毫秒——负 t 会让
@@ -168,7 +172,8 @@ export const TitleTri = ({ wobble = false, delay = 0.35, fill, style }: { wobble
       const f = f0 * f0 * (3 - 2 * f0); // smoothstep：进出站减速，保留「到站」节奏
       const a = stops[i], b = stops[(i + 1) % N];
       const p = base.map((v, k) => [v[0] + a[k][0] + (b[k][0] - a[k][0]) * f, v[1] + a[k][1] + (b[k][1] - a[k][1]) * f]);
-      el.setAttribute('d', `M${p[0][0].toFixed(1)} ${p[0][1].toFixed(1)} L${p[1][0].toFixed(1)} ${p[1][1].toFixed(1)} L${p[2][0].toFixed(1)} ${p[2][1].toFixed(1)} Z`);
+      const d = `M${q(p[0][0])} ${q(p[0][1])} L${q(p[1][0])} ${q(p[1][1])} L${q(p[2][0])} ${q(p[2][1])} Z`;
+      if (d !== lastD) { lastD = d; el.setAttribute('d', d); }
     });
   }, [wobble, anim]);
   return (
@@ -180,7 +185,7 @@ export const TitleTri = ({ wobble = false, delay = 0.35, fill, style }: { wobble
       animate={{ clipPath: 'inset(-14% -5% -60% -5%)', opacity: 0.8 }}
       transition={{ duration: 0.55, delay, ease: [0.25, 0.1, 0.25, 1] }}
     >
-      <svg viewBox="0 0 300 60" preserveAspectRatio="none" className="h-full w-full overflow-visible">
+      <svg viewBox="0 0 300 60" preserveAspectRatio="none" className="h-full w-full overflow-visible" style={wobble ? { willChange: 'transform' } : undefined}>
         <path ref={pathRef} d="M2 32 L296 6 L70 74 Z" fill={fill ?? P3R.blue} />
       </svg>
     </motion.span>
@@ -266,12 +271,14 @@ export const ShatteredStar = ({ className = 'mx-auto w-[190px]', magenta = false
             animate={{ x: 0, y: 0, scale: 1, opacity: s.op ?? 1 }}
             transition={{ type: 'spring', stiffness: 300, damping: 19, delay: 0.1 + i * 0.05 }}
           >
-            <motion.g
-              animate={anim ? { y: [0, -2.4, 0] } : undefined}
-              transition={{ duration: 3 + (i % 4) * 0.55, repeat: Infinity, ease: 'easeInOut', delay: i * 0.37 }}
+            {/* 常态悬浮改 CSS 关键帧 p3-shard-float（index.css，第 12 轮 P2）：Framer 的 y 循环是 JS 逐帧写
+                transform，11 片碎片每帧各写一次；时长 / 相位与原来逐片相同，D0 不浮 */}
+            <g
+              className={anim ? 'p3-shard-float' : undefined}
+              style={anim ? { animationDuration: `${3 + (i % 4) * 0.55}s`, animationDelay: `${i * 0.37}s`, transformBox: 'fill-box', transformOrigin: 'center' } : undefined}
             >
               <polygon points={s.pts} fill={s.fill(magenta)} />
-            </motion.g>
+            </g>
           </motion.g>
         );
       })}
@@ -485,13 +492,12 @@ export const SlantButton = ({
           onAnimationComplete={() => setSweep(null)}
         />
       )}
+      {/* 洋红角眨眼改 CSS 关键帧 p3-corner-blink（index.css，第 12 轮 P2）；D0 不眨 */}
       {magentaCorner && (
-        <motion.span
+        <span
           aria-hidden
-          className="absolute bottom-0 right-3 h-[7px] w-[18px]"
+          className={`absolute bottom-0 right-3 h-[7px] w-[18px]${anim ? ' p3-corner-blink' : ''}`}
           style={{ background: P3R.magenta, clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }}
-          animate={anim ? { opacity: [1, 1, 0.3, 1] } : undefined}
-          transition={{ duration: 4.6, times: [0, 0.88, 0.93, 1], repeat: Infinity, ease: 'linear' }}
         />
       )}
     </button>
@@ -527,11 +533,11 @@ export const TitlePeriod = ({ className, style }: { className?: string; style?: 
         animate={{ scale: 1, x: 0, opacity: 1 }}
         transition={{ type: 'spring', stiffness: 520, damping: 20, delay: 0.24 }}
       >
-        <motion.span
-          className="absolute inset-0"
+        {/* 眨眼改 CSS 关键帧 p3-dot-blink（index.css）：Framer 版 x / opacity 是 JS 逐帧写、没有自己的层，
+            每个蓝页页眉一枚，帧循环因此在所有蓝页空转（第 12 轮 P2）；D0 不眨 */}
+        <span
+          className={`absolute inset-0${anim ? ' p3-dot-blink' : ''}`}
           style={{ background: P3R.magenta, clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }}
-          animate={anim ? { opacity: [1, 1, 0.25, 1, 1], x: [0, 0, 1.5, 0, 0] } : undefined}
-          transition={{ duration: 5.2, times: [0, 0.9, 0.94, 0.97, 1], repeat: Infinity, ease: 'linear', delay: 1.2 }}
         />
       </motion.span>
     </span>

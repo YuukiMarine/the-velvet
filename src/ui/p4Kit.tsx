@@ -140,7 +140,7 @@ export const P4Highlight = ({ className, live = true }: { className?: string; li
   useEffect(() => {
     if (!bold || !live) return;
     const layers = refs.current
-      .map((ref, i) => (ref ? { ref, box: TRI_BOXES[i], cur: triTarget(TRI_BOXES[i]), tgt: triTarget(TRI_BOXES[i]), last: 0 } : null))
+      .map((ref, i) => (ref ? { ref, box: TRI_BOXES[i], cur: triTarget(TRI_BOXES[i]), tgt: triTarget(TRI_BOXES[i]), last: 0, lastPts: '' } : null))
       .filter((l): l is NonNullable<typeof l> => !!l);
     // 可见时照旧 60fps；移出视口整个停掉（第 4 轮，原来常驻）。插值系数按 dt 折算，掉帧时节奏不变
     return startLowFpsLoop(svgRef.current, 60, (t, dt) => {
@@ -148,12 +148,15 @@ export const P4Highlight = ({ className, live = true }: { className?: string; li
       for (const L of layers) {
         if (t - L.last > 130) { L.tgt = triTarget(L.box); L.last = t; }
         for (let i = 0; i < 6; i++) L.cur[i] += (L.tgt[i] - L.cur[i]) * k;
-        L.ref.setAttribute('points', triPoints(L.cur));
+        // 第 12 轮 P0：到 0.1 单位没变的帧不写（插值收敛到目标附近时大半帧都没变）——每写一次 points
+        // 都是一次 SVG 重画；svg 自己有合成层，重画只落在高亮条那一块
+        const pts = triPoints(L.cur);
+        if (pts !== L.lastPts) { L.lastPts = pts; L.ref.setAttribute('points', pts); }
       }
     });
   }, [bold, live]);
   return (
-    <svg ref={svgRef} viewBox="0 0 100 50" preserveAspectRatio="none" className={className} aria-hidden>
+    <svg ref={svgRef} viewBox="0 0 100 50" preserveAspectRatio="none" className={className} aria-hidden style={bold && live ? { willChange: 'transform' } : undefined}>
       <polygon ref={(el) => { refs.current[0] = el; }} fill="var(--ui-accent)" points="15,3 3,47 96,25" />
     </svg>
   );
