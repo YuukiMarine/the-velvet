@@ -9,7 +9,7 @@ import { P4Flower, P4Sparkle, P4Panel, P4SkyCircle, P4ArcRings, P4CautionStripes
 import { PersonaButton } from '@/ui/components/PersonaButton';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { Persona, BattleState, AttributeId } from '@/types';
-import { generatePersonaSkills } from '@/utils/battleAI';
+import { generatePersonaSkills, type PersonaSummonPartial } from '@/utils/battleAI';
 import { PLAYER_BASE_HP } from '@/battle/numbers';
 import { triggerSuccessFeedback, playSound } from '@/utils/feedback';
 import { AwakeningOverlay, AwakeningOverlayHandle } from '@/components/battle/AwakeningOverlay';
@@ -144,7 +144,13 @@ export function PersonaCreateModal({ isOpen, onClose }: Props) {
   const [textAnswer, setTextAnswer] = useState('');
   const [error, setError] = useState('');
   const [generatedPersona, setGeneratedPersona] = useState<Persona | null>(null);
-  const [fallbackWarning, setFallbackWarning] = useState(false);
+  /** 收下了（≥3/5）但没唤出来、用默认技能补位的面：揭示页提示一句 */
+  const [missingNote, setMissingNote] = useState('');
+  /** 上一次失败时已唤出的面（第 12 轮 D）：错误框下给「只补缺的」，不必从头再答 */
+  const partialRef = useRef<PersonaSummonPartial | null>(null);
+  const [partialCount, setPartialCount] = useState(0);
+  /** 上一次召唤用的那份问答（补缺时沿用，不看输入框现在的内容） */
+  const lastDialogRef = useRef<string[]>([]);
   /** AI 生成失败且未保存时为 true：需要用户重新回答 Q5 并重试 */
   const [retryMode, setRetryMode] = useState(false);
   /** AwakeningOverlay 的命令式句柄：流式 chunk 通过 ref 直接更新，不触发本组件 re-render */
@@ -157,7 +163,9 @@ export function PersonaCreateModal({ isOpen, onClose }: Props) {
     setTextAnswer('');
     setError('');
     setGeneratedPersona(null);
-    setFallbackWarning(false);
+    setMissingNote('');
+    partialRef.current = null;
+    setPartialCount(0);
     setRetryMode(false);
     awakeningRef.current?.setStreamText('');
   };
@@ -186,30 +194,39 @@ export function PersonaCreateModal({ isOpen, onClose }: Props) {
     }
   };
 
-  const generateAndSave = async (dialog: string[]) => {
+  const generateAndSave = async (dialog: string[], resumeFrom?: PersonaSummonPartial) => {
     setStage('generating');
     setError('');
+    lastDialogRef.current = dialog;
     awakeningRef.current?.setStreamText('');
     try {
       const attrNamesTyped = settings.attributeNames as Record<AttributeId, string>;
 
-      const { personaName, skills, attributePersonas, usedFallback, errorMessage } = await generatePersonaSkills(
+      const { personaName, skills, attributePersonas, usedFallback, errorMessage, missingAttrs, partial } = await generatePersonaSkills(
         settings,
         user?.name ?? '觉醒者',
         attrNamesTyped,
         dialog,
         // 命令式调用：ref 仅更新 AwakeningOverlay 内部状态，不触发本组件 re-render
         (_delta, full) => awakeningRef.current?.setStreamText(full),
+        resumeFrom,
       );
 
-      // AI 失败：不保存默认 persona，回到 Q5 让用户修改后重试
+      // AI 失败：不保存默认 persona，回到 Q5。已唤出的面留在 partialRef，错误框下可以只补缺的；
+      // 答案不清空——想换个说法就改，不想改就补缺（以前清空后只能从头再答）
       if (usedFallback) {
+        partialRef.current = partial && partial.okAttrs.length > 0 ? partial : null;
+        setPartialCount(partialRef.current?.okAttrs.length ?? 0);
         setError(errorMessage ? `AI 召唤失败：${errorMessage}` : 'AI 召唤失败，请重试');
         setRetryMode(true);
-        setTextAnswer(''); // 清空 Q5 答案，引导用户重新表述
         setStage('text');
         return;
       }
+      partialRef.current = null;
+      setPartialCount(0);
+      setMissingNote(missingAttrs.length
+        ? `有 ${missingAttrs.length} 个面没唤出来（${missingAttrs.map(a => attrNamesTyped[a]).join('、')}），先用默认技能补位——可在设置里的 Persona 洗牌重新唤起。`
+        : '');
 
       const persona: Persona = {
         id: uuidv4(),
@@ -238,17 +255,32 @@ export function PersonaCreateModal({ isOpen, onClose }: Props) {
 
       triggerSuccessFeedback();
       playSound('/battle-summon.mp3');
-      setFallbackWarning(false);
       setGeneratedPersona(persona);
       setStage('reveal');
     } catch (e) {
       // 理论上 generatePersonaSkills 内部已捕获，这里是兜底
       setError(e instanceof Error ? `意外错误：${e.message}` : '召唤失败，请重试');
       setRetryMode(true);
-      setTextAnswer('');
       setStage('text');
     }
   };
+
+  /** 只补上次没唤出的面（第 12 轮 D）：沿用上次那份问答，跳过整份 */
+  const retryMissing = () => {
+    if (!partialRef.current) return;
+    void generateAndSave(lastDialogRef.current, partialRef.current);
+  };
+  /** 错误框下的「只补缺的」按钮（四套皮共用；颜色随各皮的告警色） */
+  const partialRetryJsx = (color: string) => partialCount > 0 ? (
+    <button
+      type="button"
+      onClick={retryMissing}
+      className="mt-2 w-full rounded-lg px-3 py-2 text-[12px] font-black transition-transform active:scale-[0.98]"
+      style={{ color, border: `1.5px solid ${color}`, background: 'transparent' }}
+    >
+      已唤出 {partialCount} 个面 · 只补缺的 {5 - partialCount} 个，不用重答
+    </button>
+  ) : null;
 
   const handleTextSubmit = async () => {
     if (!textAnswer.trim()) return;
@@ -386,7 +418,7 @@ export function PersonaCreateModal({ isOpen, onClose }: Props) {
                       {retryMode ? 'RETRY · QUESTION 05' : 'QUESTION 05 / 05'}
                     </p>
                     <h2 className="mt-2 text-[19px] font-black leading-snug" style={{ color: P3R.ink }}>
-                      {retryMode ? '请重新回答第五题，AI 会据此重新召唤 Persona：' : TEXT_QUESTION}
+                      {retryMode ? '可以改一改第五题的回答，再召唤一次：' : TEXT_QUESTION}
                     </h2>
                     {retryMode && (
                       <p className="mt-2 text-[12px] font-bold" style={{ color: P3R.magenta }}>换一种说法或补充细节可能有助于 AI 稳定输出。</p>
@@ -412,6 +444,7 @@ export function PersonaCreateModal({ isOpen, onClose }: Props) {
                         <p className="mt-1 text-[10px] font-bold" style={{ color: 'rgba(240,65,127,0.7)' }}>
                           常见原因：网络超时、模型 token 上限不足、响应被截断。建议换个模型或重试。
                         </p>
+                        {partialRetryJsx(P3R.magenta)}
                       </div>
                     )}
                     <div className="mt-5 flex gap-3">
@@ -484,13 +517,13 @@ export function PersonaCreateModal({ isOpen, onClose }: Props) {
                         })}
                       </div>
 
-                      {fallbackWarning && (
+                      {missingNote && (
                         <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1.0 }} className="mt-4 text-center text-[11px] font-bold leading-relaxed" style={{ color: P3R.magenta }}>
-                          AI 召唤未能成功，已使用默认 Persona。你可以稍后在设置中检查 API 配置后重新召唤。
+                          {missingNote}
                         </motion.p>
                       )}
                       <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1.2 }} className="mt-5 text-center text-[11px] font-semibold italic" style={{ color: P3R.inkSoft }}>
-                        {fallbackWarning ? '默认五灵已就位，征途仍将继续。' : '五灵已集，新的征途即将开启。'}
+                        {missingNote ? '缺的面先以默认之力补位，征途照旧。' : '五灵已集，新的征途即将开启。'}
                       </motion.p>
 
                       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 1.4 }} className="mt-6">
@@ -627,7 +660,7 @@ export function PersonaCreateModal({ isOpen, onClose }: Props) {
                       {retryMode ? 'RETRY · QUESTION 05' : 'QUESTION 05 / 05'}
                     </p>
                     <h2 className="mt-2 text-[19px] font-black leading-snug" style={{ color: 'var(--ui-ink, #131313)', fontFamily: 'var(--p4-display-font, serif)' }}>
-                      {retryMode ? '请重新回答第五题，AI 会据此重新召唤 Persona：' : TEXT_QUESTION}
+                      {retryMode ? '可以改一改第五题的回答，再召唤一次：' : TEXT_QUESTION}
                     </h2>
                     {retryMode && (
                       <p className="mt-2 text-[12px] font-bold" style={{ color: 'var(--ui-danger, #e8452c)' }}>换一种说法或补充细节可能有助于 AI 稳定输出。</p>
@@ -653,6 +686,7 @@ export function PersonaCreateModal({ isOpen, onClose }: Props) {
                         <p className="mt-1 text-[10px] font-bold" style={{ color: 'color-mix(in srgb, var(--ui-danger, #e8452c) 70%, transparent)' }}>
                           常见原因：网络超时、模型 token 上限不足、响应被截断。建议换个模型或重试。
                         </p>
+                        {partialRetryJsx('var(--ui-danger, #e8452c)')}
                       </div>
                     )}
                     <div className="mt-5 flex gap-3">
@@ -735,13 +769,13 @@ export function PersonaCreateModal({ isOpen, onClose }: Props) {
                         })}
                       </div>
 
-                      {fallbackWarning && (
+                      {missingNote && (
                         <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1.0 }} className="mt-4 text-center text-[11px] font-bold leading-relaxed" style={{ color: 'var(--ui-danger, #e8452c)' }}>
-                          AI 召唤未能成功，已使用默认 Persona。你可以稍后在设置中检查 API 配置后重新召唤。
+                          {missingNote}
                         </motion.p>
                       )}
                       <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1.2 }} className="mt-5 text-center text-[11px] font-semibold italic" style={{ color: 'color-mix(in srgb, var(--ui-ink, #131313) 60%, transparent)' }}>
-                        {fallbackWarning ? '默认五灵已就位，征途仍将继续。' : '五灵已集，新的征途即将开启。'}
+                        {missingNote ? '缺的面先以默认之力补位，征途照旧。' : '五灵已集，新的征途即将开启。'}
                       </motion.p>
 
                       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 1.4 }} className="mt-6">
@@ -916,7 +950,7 @@ export function PersonaCreateModal({ isOpen, onClose }: Props) {
                       <P5SubBar segs={[{ t: retryMode ? 'RETRY · QUESTION 05' : 'QUESTION 05 / 05' }]} star={retryMode} rot={-1.2} className="!px-2.5 !py-0.5" />
                     </div>
                     <h2 className="mt-3 text-[19px] font-black leading-snug" style={{ color: P5R.paper, fontFamily: P5_TITLE_FONT }}>
-                      {retryMode ? '请重新回答第五题，AI 会据此重新召唤 Persona：' : TEXT_QUESTION}
+                      {retryMode ? '可以改一改第五题的回答，再召唤一次：' : TEXT_QUESTION}
                     </h2>
                     {retryMode && (
                       <p className="mt-2 text-[12px] font-bold" style={{ color: P5R.redHot }}>换一种说法或补充细节可能有助于 AI 稳定输出。</p>
@@ -942,6 +976,7 @@ export function PersonaCreateModal({ isOpen, onClose }: Props) {
                         <p className="mt-1 text-[10px] font-bold" style={{ color: 'rgba(255,106,112,0.7)' }}>
                           常见原因：网络超时、模型 token 上限不足、响应被截断。建议换个模型或重试。
                         </p>
+                        {partialRetryJsx('#ff6a70')}
                       </div>
                     )}
                     <div className="mt-5 flex gap-3">
@@ -1022,13 +1057,13 @@ export function PersonaCreateModal({ isOpen, onClose }: Props) {
                         })}
                       </div>
 
-                      {fallbackWarning && (
+                      {missingNote && (
                         <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1.0 }} className="mt-4 text-center text-[11px] font-bold leading-relaxed" style={{ color: '#ff6a70' }}>
-                          AI 召唤未能成功，已使用默认 Persona。你可以稍后在设置中检查 API 配置后重新召唤。
+                          {missingNote}
                         </motion.p>
                       )}
                       <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1.2 }} className="mt-5 text-center text-[11px] font-semibold italic" style={{ color: P5R.greyLight }}>
-                        {fallbackWarning ? '默认五灵已就位，征途仍将继续。' : '五灵已集，新的征途即将开启。'}
+                        {missingNote ? '缺的面先以默认之力补位，征途照旧。' : '五灵已集，新的征途即将开启。'}
                       </motion.p>
 
                       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 1.4 }} className="mt-6">
@@ -1178,14 +1213,14 @@ export function PersonaCreateModal({ isOpen, onClose }: Props) {
                     </div>
 
                     {/* Fallback warning */}
-                    {fallbackWarning && (
+                    {missingNote && (
                       <motion.p
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         transition={{ delay: 1.0 }}
                         className="text-center text-amber-400/80 text-xs mt-4 leading-relaxed"
                       >
-                        AI 召唤未能成功，已使用默认 Persona。你可以稍后在设置中检查 API 配置后重新召唤。
+                        {missingNote}
                       </motion.p>
                     )}
 
@@ -1196,7 +1231,7 @@ export function PersonaCreateModal({ isOpen, onClose }: Props) {
                       transition={{ delay: 1.2 }}
                       className="text-center text-white/40 text-xs mt-5 italic"
                     >
-                      {fallbackWarning ? '默认五灵已就位，征途仍将继续。' : '五灵已集，新的征途即将开启。'}
+                      {missingNote ? '缺的面先以默认之力补位，征途照旧。' : '五灵已集，新的征途即将开启。'}
                     </motion.p>
 
                     {/* Dismiss button */}
@@ -1375,7 +1410,7 @@ export function PersonaCreateModal({ isOpen, onClose }: Props) {
                   </div>
 
                   <p className="text-white text-sm font-medium leading-relaxed">
-                    {retryMode ? '请重新回答第五题，AI 会据此重新召唤 Persona：' : TEXT_QUESTION}
+                    {retryMode ? '可以改一改第五题的回答，再召唤一次：' : TEXT_QUESTION}
                   </p>
                   {retryMode && (
                     <p className="text-amber-300/80 text-xs leading-relaxed -mt-2">
@@ -1396,6 +1431,7 @@ export function PersonaCreateModal({ isOpen, onClose }: Props) {
                       <p className="text-red-400/60 text-[10px]">
                         常见原因：网络超时、模型 token 上限不足、响应被截断。建议换个模型或重试。
                       </p>
+                      {partialRetryJsx('#fca5a5')}
                     </div>
                   )}
                   <div className="flex gap-2">

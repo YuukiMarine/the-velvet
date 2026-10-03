@@ -4,6 +4,7 @@ import type { MoonRevealData } from '@/battle/moonBoss';
 export type { MoonRevealData };
 import { SKILL_EFFECT_MAP } from '@/constants';
 import { extractJSON, tryExtractJSON, jsonLooksClosed } from '@/utils/aiJson';
+import { isNetworkError, NET_RETRY_MAX, waitBeforeNetRetry } from '@/utils/aiNet';
 
 interface AIMessage { role: 'system' | 'user' | 'assistant'; content: string; }
 
@@ -159,9 +160,13 @@ export interface StreamJSONOpts {
   resumeFrom?: string;
   /** 测试 / 特殊场合覆盖正文预算 */
   maxTokens?: number;
+  /** DeepSeek 全程关思考：单属性补位这种小请求不值得想两分钟（别家关不掉，原样） */
+  noThinking?: boolean;
 }
 
 const RESUME_INSTRUCTION = '你的 JSON 输出在中途被截断了。请从截断处直接接着输出剩余部分：不要重复已经输出的内容，不要重新开头，不要解释，直到 JSON 闭合。';
+/** 模型答非所问（反问 / 解释 / 客套）时的纠正语：带着它那条回复再要一次 */
+const JSON_ONLY_INSTRUCTION = '上一条回复不是要求的 JSON。不要提问、不要解释、不要客套，直接按要求的格式只输出那一个 JSON 对象。';
 
 /**
  * 韧性流式（v2.7.0.6，召唤 / 显形 / 伪神共用）。
@@ -177,6 +182,11 @@ const RESUME_INSTRUCTION = '你的 JSON 输出在中途被截断了。请从截�
  *   · 正文还没开始就断了（死在思考阶段）→ 重新开始一次；流式一个字节都拿不到 → 退非流式一次；
  *   · 写完了但解析失败 → 先走本地修复（extractJSON 的几种修法），不拿它去续写；
  *   · 关键字段齐了就收，没齐但写完了就把能用的交回去，由调用方补默认值。
+ * 第 12 轮（召唤 0/5「Failed to fetch」实锤）再加两条：
+ *   · 网络层失败（没连上 / 中途断开）→ 退避 1.5s → 3s → 6s 再来，离线 / 在后台时等回来再发，
+ *     不占续写 / 重启的次数（以前是立刻连撞，断网那一秒里全撞光）；
+ *   · 模型答非所问（反问 / 解释，正常收尾却没有 JSON）→ 带着它那条回复再要一次「只输出 JSON」，
+ *     只纠正一次（以前当场判死）。
  */
 async function streamJSONResilient(
   cfg: AIConfig,
@@ -191,19 +201,28 @@ async function streamJSONResilient(
   const maxRestarts = opts.maxRestarts ?? 1;
   let full = opts.resumeFrom ?? '';
   let shown = full;
-  let resumes = 0, restarts = 0, triedNonStream = false;
+  let resumes = 0, restarts = 0, netRetries = 0, triedNonStream = false;
+  /** 模型答非所问（反问 / 解释）的那条回复：带着它再要一次「只输出 JSON」，只纠正一次 */
+  let correction: string | null = null;
+  let corrected = false;
   const push = (d: string) => { shown += d; opts.onProgress?.(shown); };
   const note = (t: string) => push(`\n${t}\n`);
 
   for (;;) {
     const resuming = full.trim().length > 0;
-    const messages: AIMessage[] = resuming
+    const base: AIMessage[] = correction !== null
       ? [
           { role: 'user', content: prompt },
-          { role: 'assistant', content: full },
-          { role: 'user', content: RESUME_INSTRUCTION },
+          { role: 'assistant', content: correction },
+          { role: 'user', content: JSON_ONLY_INSTRUCTION },
         ]
       : [{ role: 'user', content: prompt }];
+    const messages: AIMessage[] = resuming
+      ? [...base, { role: 'assistant', content: full }, { role: 'user', content: RESUME_INSTRUCTION }]
+      : base;
+    // DeepSeek 关思考：续写 / 纠正只是把 JSON 接完或照格式重写，不值得再想一遍；
+    // noThinking 的小请求全程不想（别家关不掉，原样）
+    const skipThinking = cfg.provider === 'deepseek' && (resuming || correction !== null || !!opts.noThinking);
     let finish = '';
     let err: unknown = null;
     let cont = '';
@@ -215,8 +234,7 @@ async function streamJSONResilient(
         signal: opts.signal,
         onReasoning: d => { sawAny = true; push(d); },
         onFinishReason: r => { finish = r; },
-        // 续写只是把 JSON 接完，不值得再想一遍（DeepSeek 支持关思考；别家原样）
-        extraBody: resuming && cfg.provider === 'deepseek' ? { thinking: { type: 'disabled' } } : undefined,
+        extraBody: skipThinking ? { thinking: { type: 'disabled' } } : undefined,
       })) {
         sawAny = true;
         cont += delta;
@@ -237,7 +255,25 @@ async function streamJSONResilient(
     if (parsed && essential(parsed)) return parsed;
 
     const hasContent = full.includes('{') && full.trim().length > 20;
+    // ── 网络层失败（没连上 / 中途断开，见 aiNet）：退避后再来，不占续写 / 重启的次数 ──
+    //    有半截就从断处续（下一轮 resuming），没有就从头来；离线 / 在后台时等回来再发。
+    if (err && isNetworkError(err) && netRetries < NET_RETRY_MAX) {
+      netRetries++;
+      note(`（网络断了，等一下再试 ${netRetries}/${NET_RETRY_MAX}）`);
+      await waitBeforeNetRetry(netRetries - 1, opts.signal);
+      if (opts.signal?.aborted) throw err;
+      continue;
+    }
     const truncated = !!err || finish === 'length' || (finish !== 'stop' && !jsonLooksClosed(full));
+    // ── 答非所问：正常收尾、写了字、却没有可解析的 JSON（反问 / 解释 / 道歉，或整段 JSON 本地修不好）
+    //    → 把它那条当 assistant 回传，再要一次「只输出 JSON」，只纠正一次。
+    if (!err && !resuming && !corrected && finish !== 'length' && cont.trim().length > 0 && !parsed && !(truncated && hasContent)) {
+      corrected = true;
+      correction = cont;
+      full = '';
+      note('（模型没有按 JSON 作答，要求它只输出 JSON 再来一次）');
+      continue;
+    }
     if (truncated && hasContent && resumes < maxResumes) {
       resumes++;
       note(`（${err ? '连接断了' : '写到一半被截断'}，从断处接着写 ${resumes}/${maxResumes}）`);
@@ -249,7 +285,7 @@ async function streamJSONResilient(
         triedNonStream = true;
         note('（流式通道没有返回，换一条路再试）');
         try {
-          full = await chatComplete(cfg, [{ role: 'user', content: prompt }], { temperature, maxTokens: opts.maxTokens ?? maxTokens, signal: opts.signal });
+          full = await chatComplete(cfg, base, { temperature, maxTokens: opts.maxTokens ?? maxTokens, signal: opts.signal, extraBody: skipThinking ? { thinking: { type: 'disabled' } } : undefined });
           push(full);
           const p = parse(full);
           if (p) return p;
@@ -391,19 +427,37 @@ function parsePersonaJSON(text: string): Record<string, unknown> | null {
   return Object.keys(out).length ? out : null;
 }
 
+/** 召唤中途已经唤出的部分：失败时交回界面，下次只补缺的（第 12 轮 D：失败不清零） */
+export interface PersonaSummonPartial {
+  skills: Partial<Record<AttributeId, PersonaSkill[]>>;
+  attributePersonas: Partial<Record<AttributeId, { name: string; description: string }>>;
+  okAttrs: AttributeId[];
+}
+
+export interface PersonaSummonResult {
+  personaName: string;
+  skills: Record<AttributeId, PersonaSkill[]>;
+  attributePersonas: Record<AttributeId, { name: string; description: string }>;
+  usedFallback: boolean;
+  errorMessage?: string;
+  /** 收下了（≥3/5）但没唤出来、用默认技能补位的属性——界面提示一句，别静默 */
+  missingAttrs: AttributeId[];
+  /** 失败时：已经唤出的部分，下次作为 resumeFrom 传回来只补缺的 */
+  partial?: PersonaSummonPartial;
+}
+
+/** 分属性补位的并行路数：以前 5 路齐发，断网那一秒 15 次 fetch 一起撞光；2 路够快也不挤 */
+const LANE_PARALLEL = 2;
+
 export async function generatePersonaSkills(
   settings: Settings,
   fallbackName: string,
   attributeNames: Record<AttributeId, string>,
   dialogHistory: string[],
   onStreamChunk?: (delta: string, fullText: string) => void,
-): Promise<{
-  personaName: string;
-  skills: Record<AttributeId, PersonaSkill[]>;
-  attributePersonas: Record<AttributeId, { name: string; description: string }>;
-  usedFallback: boolean;
-  errorMessage?: string;
-}> {
+  /** 上一次失败交回的部分：跳过整份，只补缺的属性 */
+  resumeFrom?: PersonaSummonPartial,
+): Promise<PersonaSummonResult> {
   /**
    * 人格生成走**深思熟虑档**，不走快速响应档。
    *
@@ -423,6 +477,7 @@ export async function generatePersonaSkills(
     attributePersonas: generateDefaultAttributePersonas(fallbackName, attributeNames),
     usedFallback: true,
     errorMessage: '未配置 AI API Key',
+    missingAttrs: [...ATTRS],
   };
 
   const context = dialogHistory.join('\n\n');
@@ -493,7 +548,19 @@ ${formatAllAttrsSpecialization(attributeNames)}
   // 整段展示文本：①的思维链 + 正文，②的逐个唤起都往这里续（滚动预览只看尾巴）
   let feed = '';
   const show = (t: string) => { feed = t; onStreamChunk?.('', feed); };
-  try {
+  if (resumeFrom) {
+    // 上一次失败留下的面先收进来（第 12 轮 D）：整份不再跑，直接补缺的
+    for (const attr of resumeFrom.okAttrs) {
+      const sk = resumeFrom.skills[attr];
+      const ap = resumeFrom.attributePersonas[attr];
+      if (!sk || !ap) continue;
+      skills[attr] = sk;
+      attributePersonas[attr] = ap;
+      okAttrs.add(attr);
+    }
+    if (okAttrs.size === ATTRS.length) return { personaName: fallbackName, skills, attributePersonas, usedFallback: false, missingAttrs: [] };
+    lastErr = '接着上次没唤出的面继续';
+  } else try {
     /**
      * 预算 6000（曾经是 9000）。
      *
@@ -512,7 +579,7 @@ ${formatAllAttrsSpecialization(attributeNames)}
       p => ATTRS.every(a => Array.isArray((p[a] as { skills?: unknown } | undefined)?.skills) && ((p[a] as { skills: unknown[] }).skills.length >= 3)),
     ) as Record<string, { name?: string; description?: string; skills?: unknown }>;
     ATTRS.forEach(attr => { if (parsed[attr]) takeAttr(attr, parsed[attr]); });
-    if (okAttrs.size === ATTRS.length) return { personaName: fallbackName, skills, attributePersonas, usedFallback: false };
+    if (okAttrs.size === ATTRS.length) return { personaName: fallbackName, skills, attributePersonas, usedFallback: false, missingAttrs: [] };
     lastErr = `整份返回只解析出 ${okAttrs.size}/5 个属性`;
   } catch (e) {
     lastErr = e instanceof Error ? e.message : 'AI 调用失败（未知错误）';
@@ -530,15 +597,16 @@ ${formatAllAttrsSpecialization(attributeNames)}
    */
   const missing = ATTRS.filter(a => !okAttrs.has(a));
   // 预览只看尾巴：前文留最后一段就够，别让每次刷新都拖着两万字走
-  const head = `${feed.slice(-300)}\n整份没有写全，缺的 ${missing.length} 个面分头唤起——\n`;
+  const head = `${feed.slice(-300)}\n${resumeFrom ? '接着上次' : '整份没有写全'}，缺的 ${missing.length} 个面分头唤起（${LANE_PARALLEL} 个一组）——\n`;
   const lanes: Record<string, string> = {};
   const render = () => show(head + missing.map(a => `\n── 唤起「${attributeNames[a]}」之面 ──\n${(lanes[a] ?? '').slice(-400)}`).join(''));
   render();
-  await Promise.all(missing.map(async attr => {
+  const lane = async (attr: AttributeId) => {
     try {
       const one = await streamJSONResilient(
         cfg, buildOneAttrPrompt(attributeNames[attr], attr, context, getDiversityHint()), 0.6, 1600,
-        { onProgress: t => { lanes[attr] = t; render(); }, maxResumes: 1 },
+        // 单属性的小请求不值得再想两分钟：DeepSeek 关思考，几秒就出（第 12 轮 E）；断网退避在 streamJSONResilient 里
+        { onProgress: t => { lanes[attr] = t; render(); }, maxResumes: 1, noThinking: true },
         p => Array.isArray(p.skills) && (p.skills as unknown[]).length >= 3,
       );
       takeAttr(attr, one as { name?: string; description?: string; skills?: unknown });
@@ -548,15 +616,30 @@ ${formatAllAttrsSpecialization(attributeNames)}
       lanes[attr] = `${lanes[attr] ?? ''}\n（${attributeNames[attr]} 失败：${lastErr}）`;
       render();
     }
+  };
+  // LANE_PARALLEL 路并行，跑完一个接下一个
+  const queue = [...missing];
+  await Promise.all(Array.from({ length: Math.min(LANE_PARALLEL, queue.length) }, async () => {
+    for (let attr = queue.shift(); attr; attr = queue.shift()) await lane(attr);
   }));
-  if (okAttrs.size >= 3) return { personaName: fallbackName, skills, attributePersonas, usedFallback: false };
+  const missingAttrs = ATTRS.filter(a => !okAttrs.has(a));
+  if (okAttrs.size >= 3) {
+    // 没唤出来的面用默认技能补位（以前这里直接返回，缺的属性是 undefined，战斗里会踩空）
+    for (const a of missingAttrs) takeAttr(a, undefined);
+    return { personaName: fallbackName, skills, attributePersonas, usedFallback: false, missingAttrs };
+  }
 
+  // 失败：已经唤出的面交回去，下次只补缺的，不让用户从头再答（第 12 轮 D）
+  const partial: PersonaSummonPartial = { skills: {}, attributePersonas: {}, okAttrs: [...okAttrs] };
+  for (const a of okAttrs) { partial.skills[a] = skills[a]; partial.attributePersonas[a] = attributePersonas[a]; }
   return {
     personaName: fallbackName,
     skills: generateDefaultSkills(fallbackName, attributeNames),
     attributePersonas: generateDefaultAttributePersonas(fallbackName, attributeNames),
     usedFallback: true,
     errorMessage: `整份与分属性两条路都没成（${okAttrs.size}/5 有效）。最后一次的原因：${lastErr}`,
+    missingAttrs,
+    partial,
   };
 }
 
