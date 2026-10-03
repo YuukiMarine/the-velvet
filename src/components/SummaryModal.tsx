@@ -748,7 +748,9 @@ export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week', 
             onClick={e => e.stopPropagation()}
             className={`relative flex w-full max-w-lg flex-col overflow-hidden shadow-2xl ${p3 ? '' : 'rounded-t-3xl bg-white dark:bg-gray-900'}`}
             style={p3
-              ? { maxHeight: '90vh', background: 'linear-gradient(178deg, #fbfdff 0%, #f0f8fc 55%, #e8f4fa 100%)', clipPath: sheetTopClip }
+              // 面板底走 --p3r-sheet-grad（与 SheetModal 同源）：夜间 / 粉主题在 index.css 里翻色；
+              // 原来写死白日渐变，蓝夜间正文被毯式翻成浅字后就成了白底白字
+              ? { maxHeight: '90vh', background: 'var(--p3r-sheet-grad, linear-gradient(178deg, #fbfdff 0%, #f0f8fc 55%, #e8f4fa 100%))', clipPath: sheetTopClip }
               : { maxHeight: '90vh' }}
           >
             {/* 流式期间的主题色粒子 */}

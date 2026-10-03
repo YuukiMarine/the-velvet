@@ -1309,6 +1309,12 @@ html[data-ios-standalone="true"] {
   background-color: rgba(27, 15, 58, 0.78) !important;
 }
 :root.dark[data-ui-channel="p4"] [class*="text-[#a35a00]"] { color: #f5c76b !important; }
+/* 夜间 · 黄频道：text-primary 一族还是白天的暗琥珀 #F59E0B——压在紫面上 11px 小字看着发棕发暗
+   （用户上报：总结「归档 / 查看」、名片状态胶囊、总点数）。翻成与 text-[#a35a00] 同一支的柔金，
+   半透明底 / 描边跟着翻；实色 bg-primary 不动（上面压的是白字，翻亮就不可读了）。 */
+:root.dark[data-ui-channel="p4"] .text-primary { color: #f5c76b !important; }
+:root.dark[data-ui-channel="p4"] [class*="bg-primary/"] { background-color: rgba(245, 199, 107, 0.16) !important; }
+:root.dark[data-ui-channel="p4"] [class*="border-primary/"] { border-color: rgba(245, 199, 107, 0.4) !important; }
 :root.dark[data-ui-channel="p3"] {
   --p3r-row: rgba(16, 32, 63, 0.92);
   --p3r-row-alt: rgba(13, 27, 54, 0.95);

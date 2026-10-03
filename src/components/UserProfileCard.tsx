@@ -277,11 +277,13 @@ export function UserProfileCard() {
                     }
                   }}
                   maxLength={20}
-                  className="flex-1 rounded-lg px-2 py-1 font-bold text-lg outline-none bg-white/70 dark:bg-gray-900/60 border border-white/60 dark:border-white/10 text-gray-900 dark:text-white focus:bg-white/90 dark:focus:bg-gray-900/80"
+                  // min-w-0：<input> 的自动最小宽度是它的固有宽度（约 20 个字符、text-lg 下 220px+），
+                  // flex-1 缩不下去，手机上会把「保存 / 取消」顶出卡片外（用户上报：红/蓝/自定义主题都有）
+                  className="min-w-0 flex-1 rounded-lg px-2 py-1 font-bold text-lg outline-none bg-white/70 dark:bg-gray-900/60 border border-white/60 dark:border-white/10 text-gray-900 dark:text-white focus:bg-white/90 dark:focus:bg-gray-900/80"
                 />
                 <button
                   onClick={handleNameSave}
-                  className="px-2 py-1 rounded-lg text-white text-xs font-bold"
+                  className="shrink-0 px-2 py-1 rounded-lg text-white text-xs font-bold"
                   style={{ background: primaryColor }}
                 >保存</button>
                 <button
@@ -289,7 +291,7 @@ export function UserProfileCard() {
                     setEditingName(false);
                     setNameDraft(user.name);
                   }}
-                  className="px-2 py-1 rounded-lg bg-white/60 dark:bg-gray-900/50 text-gray-700 dark:text-gray-200 text-xs font-bold"
+                  className="shrink-0 px-2 py-1 rounded-lg bg-white/60 dark:bg-gray-900/50 text-gray-700 dark:text-gray-200 text-xs font-bold"
                 >取消</button>
               </div>
             ) : (

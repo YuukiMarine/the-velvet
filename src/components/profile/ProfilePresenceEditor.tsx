@@ -55,7 +55,7 @@ export function PresencePills() {
           type="button"
           onClick={() => toggle('status')}
           aria-expanded={panel === 'status'}
-          className={`${pillBase} bg-primary/12 text-primary hover:bg-primary/20`}
+          className={`${pillBase} bg-primary/10 text-primary hover:bg-primary/20`}
           title="改状态"
         >
           <span aria-hidden>{preset.emoji}</span>
@@ -223,7 +223,7 @@ export function PresencePanels() {
                             onClick={() => { setCardId(c.id); setError(''); }}
                             aria-pressed={on}
                             className={`flex w-full items-center gap-2 rounded-xl px-2.5 py-1.5 text-left text-xs transition-colors ${
-                              on ? 'bg-primary/12 ring-1 ring-primary/40' : 'bg-white/60 dark:bg-white/5 hover:bg-white/80 dark:hover:bg-white/10'
+                              on ? 'bg-primary/10 ring-1 ring-primary/40' : 'bg-white/60 dark:bg-white/5 hover:bg-white/80 dark:hover:bg-white/10'
                             }`}
                           >
                             <span aria-hidden>{c.icon || '✦'}</span>

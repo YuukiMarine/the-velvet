@@ -259,7 +259,10 @@ interface AppState {
   skillNotification: { id: string; name: string } | null;
   modalBlocker: boolean;
   
-  initializeApp: () => Promise<void>;
+  /** 启动初始化。deferTail：只读首屏必需的（用户 / 设置 / 核心表 / 今日塔罗），其余由 finishBoot 在首屏之后接着读 */
+  initializeApp: (opts?: { deferTail?: boolean }) => Promise<void>;
+  /** 启动尾巴：命运 / 长占 / 宣告卡清扫 / 同伴维护 / 谏言 / 记账 / 愿望（initializeApp 不 deferTail 时内部自己调） */
+  finishBoot: () => Promise<void>;
   createUser: (name: string, attrNames?: Partial<import('@/types').AttributeNames>, blessingAttribute?: AttributeId) => Promise<void>;
   updateUser: (patch: Partial<Pick<User, 'name' | 'avatarDataUrl'>>) => Promise<void>;
   setTheme: (theme: ThemeType) => Promise<void>;
@@ -778,6 +781,17 @@ export function applyCustomThemeColor(hex: string) {
   document.documentElement.style.setProperty('--color-secondary', lightenHex(hex));
 }
 
+/**
+ * 清掉自定义颜色的内联覆盖，三个变量一起清。以前切出自定义主题时只清了 --color-primary 和
+ * --color-secondary，漏了 --color-primary-rgb——而 Tailwind 的 text-primary / bg-primary/10 一族
+ * 走的正是 rgb 三元组，于是蓝主题记录页上这些件还披着自定义色（用户上报「一块换颜色」）。
+ */
+export function clearCustomThemeColor() {
+  document.documentElement.style.removeProperty('--color-primary');
+  document.documentElement.style.removeProperty('--color-primary-rgb');
+  document.documentElement.style.removeProperty('--color-secondary');
+}
+
 /** F2a 默认提醒时段：新用户初始值，且现有用户首次开启通知时（notificationSlots 为 undefined）用它兜底。 */
 export const DEFAULT_NOTIF_SLOTS: NotifSlot[] = [
   { id: 'morning', time: '08:00', enabled: true, label: '晨间序曲', contents: ['tarot', 'summary', 'quests'] },
@@ -928,7 +942,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   counselSession: null,
   counselArchives: [],
 
-  initializeApp: async () => {
+  initializeApp: async (opts) => {
     // 请求持久化存储，防止浏览器主动驱逐 IndexedDB（Chrome/Firefox 有效，iOS 17+ 部分有效）
     if (navigator.storage?.persist) {
       navigator.storage.persist().catch(() => {/* 不支持时静默忽略 */});
@@ -959,6 +973,17 @@ export const useAppStore = create<AppState>((set, get) => ({
         await get().updateSettings({ summaryViewedBackfillDone: true });
       }
       await get().loadDailyDivination();
+      // 其余表与每日清扫：App 冷启动传 deferTail，首页先画、这些在后台接着读（第 12 轮）；
+      // 云同步 / 导入后的整体重载不传，照旧一口气读完
+      if (!opts?.deferTail) await get().finishBoot();
+    } catch (error) {
+      console.error('初始化应用失败', error);
+    }
+  },
+
+  finishBoot: async () => {
+    if (!get().user) return;
+    try {
       await get().loadFateGlimpses();
       await get().loadLongReadings();
       await get().sweepExpiredReadings();
@@ -974,7 +999,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       // F3 治疗终端：载入启动素材库
       await get().loadWishes();
     } catch (error) {
-      console.error('初始化应用失败', error);
+      console.error('启动尾巴失败', error);
     }
   },
 
@@ -1137,9 +1162,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (theme === 'custom' && settings.customThemeColor) {
       applyCustomThemeColor(settings.customThemeColor);
     } else {
-      // 非自定义主题：清除内联覆盖
-      document.documentElement.style.removeProperty('--color-primary');
-      document.documentElement.style.removeProperty('--color-secondary');
+      // 非自定义主题：清除内联覆盖（三个变量一起清，见 clearCustomThemeColor）
+      clearCustomThemeColor();
     }
   },
 
