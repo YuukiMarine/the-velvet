@@ -24,8 +24,28 @@
 	<true/>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
-	<key>UIMainStoryboardFile</key>
-	<string>Main</string>
+	<!-- UIScene 生命周期（2.8.0.5 b18 被审核打回「启动即崩」）：iOS 27 SDK 起 UIKit 要求 App 走场景，
+	     Capacitor 5 模板的老式 AppDelegate + UIMainStoryboardFile 在 iOS 27 上起不来。窗口与
+	     CAPBridgeViewController 仍由 Main.storyboard 建（UISceneStoryboardFile），场景代理见 AppDelegate.swift。 -->
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<false/>
+		<key>UISceneConfigurations</key>
+		<dict>
+			<key>UIWindowSceneSessionRoleApplication</key>
+			<array>
+				<dict>
+					<key>UISceneConfigurationName</key>
+					<string>Default Configuration</string>
+					<key>UISceneDelegateClassName</key>
+					<string>$(PRODUCT_MODULE_NAME).SceneDelegate</string>
+					<key>UISceneStoryboardFile</key>
+					<string>Main</string>
+				</dict>
+			</array>
+		</dict>
+	</dict>
 	<key>UIRequiredDeviceCapabilities</key>
 	<array>
 		<string>armv7</string>

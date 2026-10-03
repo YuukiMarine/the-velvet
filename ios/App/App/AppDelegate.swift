@@ -97,3 +97,36 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
 }
+
+/// 场景代理（2.8.0.5 b18 被审核打回「iOS 27 启动即崩」）。
+///
+/// iOS 27 SDK 起 UIKit 要求 App 走 UIScene 生命周期，Capacitor 5 的模板还是老式 AppDelegate 建窗口，
+/// 用 Xcode 27 归档后在 iOS 27 上起不来（Xcode 26 打的 b17 没事）。这里补一个最小的场景代理：
+///   · 窗口与 CAPBridgeViewController 仍由 Main.storyboard 建（Info.plist 的 UISceneStoryboardFile），
+///     Capacitor 的桥、插件一个字不用改；
+///   · 走场景后 URL / Universal Link 不再进 AppDelegate 的 open / continue，改从场景回调转给
+///     Capacitor 的代理，App 插件的 appUrlOpen 才收得到；冷启动随 URL 打开的在 willConnectTo 里一并转。
+/// 前后台通知（didBecomeActive 等）场景模式下照样广播，AppDelegate 里的音频会话守护不受影响。
+class SceneDelegate: UIResponder, UIWindowSceneDelegate {
+    var window: UIWindow?
+
+    func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
+        guard scene is UIWindowScene else { return }
+        for context in connectionOptions.urlContexts {
+            _ = ApplicationDelegateProxy.shared.application(UIApplication.shared, open: context.url, options: [:])
+        }
+        if let activity = connectionOptions.userActivities.first {
+            _ = ApplicationDelegateProxy.shared.application(UIApplication.shared, continue: activity, restorationHandler: { _ in })
+        }
+    }
+
+    func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
+        for context in URLContexts {
+            _ = ApplicationDelegateProxy.shared.application(UIApplication.shared, open: context.url, options: [:])
+        }
+    }
+
+    func scene(_ scene: UIScene, continue userActivity: NSUserActivity) {
+        _ = ApplicationDelegateProxy.shared.application(UIApplication.shared, continue: userActivity, restorationHandler: { _ in })
+    }
+}
