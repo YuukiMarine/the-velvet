@@ -26,6 +26,8 @@ import {
   reasoningEffortFor,
   effectiveModelName,
   providerMaxOutput,
+  isOfficialHost,
+  relayHint,
   type ApiProvider, DEFAULT_PROVIDER } from '@/utils/aiProviders';
 
 export type AIRole = 'system' | 'user' | 'assistant';
@@ -103,6 +105,12 @@ export interface ChatOptions {
    * 其余调用一律保持思考（质量优先，用户口径）。
    */
   instant?: boolean;
+  /**
+   * 「中转站保险」（第 12 轮）：去掉只有官方才认的字段（thinking / reasoning_effort / response_format）、
+   * 不加思维链余量。非官方地址上撞到 HTTP 400 时自动带上它重发一次——中转站的 400 措辞五花八门，
+   * 不按措辞认。
+   */
+  relaySafe?: boolean;
 }
 
 /**
@@ -159,6 +167,8 @@ const DEFAULT_TEMPERATURE = 0.8;
 const DEFAULT_MAX_TOKENS = 2048;
 /** 思维链模型的推理余量（在正文额度之外另加）；见 buildRequestBody 注释 */
 const THINKING_ALLOWANCE = 65_536;
+/** 非官方地址（中转站）的思维链余量：它们多按模型上限直接 400，64K 只会撞回来；12K 是用户定的口径 */
+const RELAY_THINKING_ALLOWANCE = 12_000;
 
 /**
  * 从 Settings 解析运行时 AI 配置；未配置 API key 时返回 null。
@@ -320,7 +330,8 @@ function timeoutError(timeoutMs: number): Error {
 async function toHttpError(resp: Response, provider?: ApiProvider): Promise<Error> {
   const body = await resp.text().catch(() => '');
   const detail = extractProviderErrorMessage(body).slice(0, 200).trim();
-  const hint = getHttpStatusHint(resp.status, provider);
+  // 先认中转站的措辞（无可用渠道 / 额度 / 令牌 / 模型不存在），认不出再按状态码
+  const hint = relayHint(detail) || getHttpStatusHint(resp.status, provider);
   const prefix = hint ? `${hint}（HTTP ${resp.status}）` : `HTTP ${resp.status}`;
   return new Error(detail ? `${prefix}: ${detail}` : prefix);
 }
@@ -350,8 +361,9 @@ function buildRequestBody(
   stream: boolean,
 ): Record<string, unknown> {
   const maxTokens = opts.maxTokens ?? DEFAULT_MAX_TOKENS;
+  const relaySafe = !!opts.relaySafe;
   const body: Record<string, unknown> = { model: cfg.model, messages, stream };
-  if (opts.jsonMode && cfg.provider && JSON_MODE_PROVIDERS.has(cfg.provider)) {
+  if (opts.jsonMode && cfg.provider && JSON_MODE_PROVIDERS.has(cfg.provider) && !relaySafe) {
     body.response_format = { type: 'json_object' };
   }
   /**
@@ -377,11 +389,14 @@ function buildRequestBody(
    * 「瞬发」调用：DeepSeek 直接关思考（V4 系列吃 thinking 字段）。关掉了就不用再留思维链余量；
    * 关不掉的（别家思维链模型）余量照留，只靠压 effort / 缩短超时。
    */
-  const thinkingOff = !!opts.instant && cfg.provider === 'deepseek';
+  const thinkingOff = !!opts.instant && cfg.provider === 'deepseek' && !relaySafe;
   if (thinkingOff) body.thinking = { type: 'disabled' };
-  const thinking = isThinkingModel(cfg.model) && !opts.noThinkingAllowance && !thinkingOff;
+  const thinking = isThinkingModel(cfg.model) && !opts.noThinkingAllowance && !thinkingOff && !relaySafe;
   const cap = providerMaxOutput(cfg.provider);
-  const budget = Math.min(cap, thinking ? maxTokens + Math.max(THINKING_ALLOWANCE, maxTokens) : maxTokens);
+  // 思维链余量：官方地址 64K；非官方（中转站）收到 12K（第 12 轮，用户口径）——它们多半按模型上限
+  // 直接 400，余量再大也是撞回来；真撞了还有 relaySafe 那一发兜底
+  const allowance = isOfficialHost(cfg.baseUrl) ? THINKING_ALLOWANCE : RELAY_THINKING_ALLOWANCE;
+  const budget = Math.min(cap, thinking ? maxTokens + Math.max(allowance, maxTokens) : maxTokens);
   if (isReasoningModel(cfg.model)) {
     body.max_completion_tokens = budget;
     /**
@@ -393,13 +408,19 @@ function buildRequestBody(
      */
     const pressLowest = !!opts.instant || cfg.tier !== 'deliberate';
     const effort = opts.noReasoningEffort || !pressLowest ? undefined : reasoningEffortFor(cfg.model);
-    if (effort) body.reasoning_effort = effort;
+    if (effort && !relaySafe) body.reasoning_effort = effort;
     // 不发 temperature：推理模型只接受默认 1，自定义会 400
   } else {
     body.max_tokens = budget;
     body.temperature = opts.temperature ?? DEFAULT_TEMPERATURE;
   }
   if (opts.extraBody) Object.assign(body, opts.extraBody);
+  if (relaySafe) {
+    // 调用方塞进 extraBody 的官方专属字段（如 DeepSeek 的 thinking）一并去掉
+    delete body.thinking;
+    delete body.reasoning_effort;
+    delete body.response_format;
+  }
   return body;
 }
 
@@ -436,6 +457,8 @@ function partialOf(e: unknown): string {
   return (e as Error & LengthMarked)?.aiPartialText ?? '';
 }
 
+const isHttp400 = (e: unknown): boolean => e instanceof Error && /HTTP 400\b/.test(e.message);
+
 /** 服务商嫌 max_tokens / max_completion_tokens 太大而 400（各家措辞不同，按关键词认） */
 function isOverBudgetError(e: unknown): boolean {
   const m = e instanceof Error ? e.message : '';
@@ -466,6 +489,11 @@ export async function chatComplete(
   try {
     return await chatCompleteOnce(cfg, messages, opts);
   } catch (e) {
+    // ⓪ 非官方地址（中转站）撞到 400：先把只有官方才认的字段（thinking / reasoning_effort / response_format）
+    //    和思维链余量全去掉重发一次——它们的 400 措辞五花八门，不按措辞认（第 12 轮）
+    if (!opts.relaySafe && isHttp400(e) && !isOfficialHost(cfg.baseUrl)) {
+      return await chatComplete(cfg, messages, { ...opts, relaySafe: true, noThinkingAllowance: true });
+    }
     // ① 预算不够（正文为空 or 半截）→ 翻三倍重来一次
     if (isEmptyLengthError(e)) {
       const bumped = Math.max(4000, (opts.maxTokens ?? DEFAULT_MAX_TOKENS) * 3);
@@ -621,6 +649,8 @@ export async function* chatStream(
   /** 0 = 原样；1 = 去掉思维链余量；2 = 再退到 2048 */
   let budgetStep = 0;
   let noEffort = !!opts.noReasoningEffort;
+  /** 中转站保险：非官方地址撞到 400 就带上它重发（见 ChatOptions.relaySafe） */
+  let relaySafe = !!opts.relaySafe;
   let last: StreamOutcome = { produced: false, sawReasoning: false, finishReason: '' };
   /** 正常收完才置 true；调用方提前 break（generator.return）或中途抛错时仍是 false → finally 里掐断底层请求 */
   let completed = false;
@@ -633,12 +663,14 @@ export async function* chatStream(
         ...(budgetStep >= 1 ? { noThinkingAllowance: true } : {}),
         ...(budgetStep >= 2 ? { maxTokens: Math.min(opts.maxTokens ?? DEFAULT_MAX_TOKENS, 2048) } : {}),
         ...(noEffort ? { noReasoningEffort: true } : {}),
+        ...(relaySafe ? { relaySafe: true, noThinkingAllowance: true } : {}),
       };
       let outcome: StreamOutcome;
       try {
         outcome = yield* streamOnce(cfg, messages, attemptOpts, ab, extra);
       } catch (e) {
         // 这几类 400 在请求发出去就被拒了，一个字节都没流过来，换参数重发是安全的
+        if (!relaySafe && isHttp400(e) && !isOfficialHost(cfg.baseUrl)) { relaySafe = true; attempt--; continue; }
         if (budgetStep < 2 && isOverBudgetError(e)) { budgetStep++; attempt--; continue; }
         if (!noEffort && isUnsupportedEffortError(e)) { noEffort = true; attempt--; continue; }
         throw e;

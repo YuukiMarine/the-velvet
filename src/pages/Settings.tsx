@@ -870,12 +870,15 @@ export const Settings = () => {
     });
     if (result.ok) {
       setApiTestStatus('ok');
+      // 地址少写了 /v1、补上才通（中转站最常见）：把校正后的地址替换进设置，之后所有请求都用它
+      if (result.corrected) updateSettings({ summaryApiBaseUrl: result.baseUrlUsed });
       // 成功顺手拉一次该家的模型列表（用户口径）；不支持 /models 的注明跳过，不算失败
       const pv = settings.summaryApiProvider ?? DEFAULT_PROVIDER;
-      const listed = await fetchAvailableModels({ provider: pv, apiKey: keyToTest, baseUrl: settings.summaryApiBaseUrl });
+      const listed = await fetchAvailableModels({ provider: pv, apiKey: keyToTest, baseUrl: result.baseUrlUsed });
       setApiTestMessage(
         `连接成功 · ${result.model} · ${result.latencyMs} ms` +
-        (listed.ok ? ` · 模型列表已更新（${listed.models.length} 个）` : ' · 该服务商不支持拉取列表，模型请手填'),
+        (listed.ok ? ` · 模型列表已更新（${listed.models.length} 个）` : ' · 该服务商不支持拉取列表，模型请手填') +
+        (result.corrected ? `\n地址少了 /v1，已自动补上并替换为 ${result.baseUrlUsed}` : ''),
       );
       // 成功即落库：绿灯要能跨刷新/跨切换保留（用户口径「已配置」感知太弱）
       updateSettings({
@@ -2658,6 +2661,9 @@ export const Settings = () => {
                         {/* 高级：自定义地址（连接级配置，跟 provider/Key 同卡） */}
                         <div className="space-y-1.5 pt-1 border-t border-gray-100 dark:border-gray-700/50">
                           <p className="text-xs text-gray-500 dark:text-gray-400">自定义 API 地址（可选）</p>
+                          <p className="text-[11px] leading-relaxed text-gray-400 dark:text-gray-500">
+                            用中转站就填它给的接口地址，一般以 /v1 结尾；多贴的 /chat/completions 会自动去掉，少了 /v1 测试连接时会自动补上。
+                          </p>
                           <input
                             type="text"
                             value={settings.summaryApiBaseUrl ?? ''}

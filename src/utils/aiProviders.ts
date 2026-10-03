@@ -159,14 +159,62 @@ export function effectiveModelName(model: string): string {
 /**
  * 解析运行时 baseUrl / model：优先使用用户在高级选项中的覆盖值，否则回退到 provider 默认
  */
+/**
+ * 把用户贴的地址整理成「不含尾斜杠、不带端点路径」的 base（第 12 轮，境内中转站画像）：
+ *   · 漏了 https:// 的补上（手机上常漏；没有协议的地址 fetch 会当成相对路径）
+ *   · 去掉 ?query / #hash 与尾斜杠
+ *   · 去掉误贴的 /chat/completions、/completions、/models、/embeddings——中转站的文档常给完整端点
+ * 少写的 /v1 不在这里补（有的网关确实不带版本段），交给测试连接去探。
+ */
+export function normalizeBaseUrl(raw: string): string {
+  let u = raw.trim();
+  if (!u) return '';
+  if (!/^https?:\/\//i.test(u)) u = `https://${u.replace(/^\/+/, '')}`;
+  u = u.replace(/[?#].*$/, '').replace(/\/+$/, '');
+  u = u.replace(/\/(chat\/completions|completions|models|embeddings)$/i, '');
+  return u.replace(/\/+$/, '');
+}
+
+/** 各家官方接口的主机名（含国际站别名）：只有打到这些主机的请求才算「官方」，其余都按中转站对待 */
+const OFFICIAL_HOSTS = new Set([
+  'api.openai.com',
+  'api.deepseek.com',
+  'api.moonshot.cn', 'api.moonshot.ai',
+  'dashscope.aliyuncs.com', 'dashscope-intl.aliyuncs.com',
+  'generativelanguage.googleapis.com',
+  'api.minimaxi.com', 'api.minimax.io',
+]);
+export function isOfficialHost(baseUrl: string): boolean {
+  try {
+    return OFFICIAL_HOSTS.has(new URL(baseUrl).host.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 中转站（one-api / new-api 一族）的错误措辞 → 该做什么。按措辞认、不按状态码：它们的状态码不准
+ * （没渠道回 503、额度用尽回 403……），按状态码给的提示（「服务繁忙」「无访问权限」）会把人带偏。
+ * 认不出返回空串，由调用方退回状态码提示。
+ */
+export function relayHint(detail: string): string {
+  const d = detail || '';
+  if (!d) return '';
+  if (/无可用渠道|no available channel|no channel|channel not found|无可用的渠道/i.test(d)) return '这把 Key 的分组里没有这个模型：换个模型名（试试「刷新全部模型列表」），或在中转站把令牌换到有它的分组';
+  if (/额度|余额|quota|balance|insufficient/i.test(d)) return '额度 / 余额用尽：去中转站充值，或换一个令牌';
+  if (/(令牌|token|api[ _-]?key|密钥)/i.test(d) && /(无效|不存在|不可用|invalid|disabled|unavailable|禁用|expired|过期|incorrect|错误)/i.test(d)) return '令牌（Key）无效或已被禁用：回中转站重新复制一个';
+  if (/(模型|model)/i.test(d) && /(不存在|不支持|not found|does not exist|not exist|unknown|unsupported|invalid|未配置)/i.test(d)) return '模型名不对：点「刷新全部模型列表」从里面选';
+  if (/分组|group/i.test(d)) return '令牌分组不对：在中转站把令牌换到有这个模型的分组';
+  return '';
+}
+
 export function resolveProvider(
   provider: ApiProvider | undefined,
   overrideBaseUrl?: string,
   overrideModel?: string
 ): { baseUrl: string; model: string } {
   const p = getProviderConfig(provider);
-  const rawBase = (overrideBaseUrl?.trim() || p.defaultBaseUrl);
-  const baseUrl = rawBase.replace(/\/+$/, '');
+  const baseUrl = overrideBaseUrl?.trim() ? normalizeBaseUrl(overrideBaseUrl) : p.defaultBaseUrl;
   const model = effectiveModelName(overrideModel?.trim() || p.defaultModel);
   return { baseUrl, model };
 }
@@ -219,13 +267,41 @@ export function isThinkingModel(model: string): boolean {
 }
 
 export type TestResult =
-  | { ok: true; latencyMs: number; model: string }
+  | {
+      ok: true;
+      latencyMs: number;
+      model: string;
+      /** 实际连通的地址（填的地址少写了 /v1 时是补过的那个） */
+      baseUrlUsed: string;
+      /** 填的地址不通、补 /v1 才通：界面应把 baseUrlUsed 替换进设置 */
+      corrected: boolean;
+    }
   | { ok: false; error: string };
 
+/** no-cors 探一下地址能不能连上（看不到状态码，只看连不连得上）：区分「跨域被拒」与「根本连不上」 */
+async function probeReachable(url: string): Promise<boolean> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+  try {
+    await fetch(url, { mode: 'no-cors', cache: 'no-store', signal: controller.signal });
+    return true;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+const hostOf = (url: string): string => {
+  try { return new URL(url).host; } catch { return url; }
+};
+
 /**
- * 用最小 payload 探测 API 连接是否可用
+ * 用最小 payload 探测 API 连接是否可用（第 12 轮按境内中转站的画像重做）：
  * - 超时 15 s，防止界面卡死
- * - 对 401 / 402 / 403 / 429 / 网络错误 / CORS 给出可读提示
+ * - 地址少写了 /v1（中转站最常见的「配不上」）：404 / 响应不像 OpenAI 时自动再试一次带 /v1 的，通了就让界面替换
+ * - 网络错误分两种说：能连上但没放行跨域（App 里用不了，换中转或让站长开 CORS）/ 根本连不上
+ * - 错误提示先认中转站的措辞（无可用渠道 / 额度 / 令牌 / 模型不存在），认不出再按状态码
  */
 export async function testAIConnection(opts: {
   provider: ApiProvider;
@@ -238,55 +314,72 @@ export async function testAIConnection(opts: {
   }
 
   const { baseUrl, model } = resolveProvider(opts.provider, opts.baseUrl, opts.model);
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 15000);
-  const start = Date.now();
-
   // 推理模型（GPT-5/o 系列）拒绝 max_tokens，且 max_tokens:1 会被推理 token 吃光
   const reasoning = isReasoningModel(model);
-  try {
-    const resp = await fetch(`${baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${opts.apiKey.trim()}`,
-      },
-      body: JSON.stringify({
-        model,
-        messages: [{ role: 'user', content: 'ping' }],
-        ...(reasoning
-          ? { max_completion_tokens: 16, ...(reasoningEffortFor(model) ? { reasoning_effort: reasoningEffortFor(model) } : {}) }
-          : { max_tokens: 1 }),
-        stream: false,
-      }),
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
-    const latencyMs = Date.now() - start;
+  const body = JSON.stringify({
+    model,
+    messages: [{ role: 'user', content: 'ping' }],
+    ...(reasoning
+      ? { max_completion_tokens: 16, ...(reasoningEffortFor(model) ? { reasoning_effort: reasoningEffortFor(model) } : {}) }
+      : { max_tokens: 1 }),
+    stream: false,
+  });
 
-    if (!resp.ok) {
-      const body = await resp.text().catch(() => '');
-      const detail = extractProviderErrorMessage(body).slice(0, 240).trim();
-      const hint = getHttpStatusHint(resp.status, opts.provider);
-      const prefix = hint ? `${hint} (HTTP ${resp.status})` : `HTTP ${resp.status}`;
-      return { ok: false, error: detail ? `${prefix}: ${detail}` : `${prefix}: ${resp.statusText}` };
+  type Attempt = { ok: true; latencyMs: number } | { ok: false; error: string; retryWithV1: boolean };
+  const attempt = async (base: string): Promise<Attempt> => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+    const start = Date.now();
+    try {
+      const resp = await fetch(`${base}/chat/completions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${opts.apiKey.trim()}` },
+        body,
+        signal: controller.signal,
+      });
+      const latencyMs = Date.now() - start;
+      if (!resp.ok) {
+        const text = await resp.text().catch(() => '');
+        const detail = extractProviderErrorMessage(text).slice(0, 240).trim();
+        const hint = relayHint(detail) || getHttpStatusHint(resp.status, opts.provider);
+        const prefix = hint ? `${hint} (HTTP ${resp.status})` : `HTTP ${resp.status}`;
+        return { ok: false, error: detail ? `${prefix}: ${detail}` : `${prefix}: ${resp.statusText}`, retryWithV1: resp.status === 404 };
+      }
+      const data = await resp.json().catch(() => null);
+      if (!data?.choices?.[0]?.message) {
+        return { ok: false, error: '响应格式非 OpenAI 兼容，请检查 Base URL', retryWithV1: true };
+      }
+      return { ok: true, latencyMs };
+    } catch (e) {
+      if (e instanceof Error && e.name === 'AbortError') {
+        return { ok: false, error: '连接超时（15s 无响应）', retryWithV1: false };
+      }
+      if (e instanceof TypeError) {
+        const host = hostOf(base);
+        const reachable = await probeReachable(`${base}/models`);
+        return {
+          ok: false,
+          retryWithV1: false,
+          error: reachable
+            ? `能连上 ${host}，但它没放行浏览器跨域（CORS）：本 App 是从网页环境直连 API 的，这个中转在 App 里用不了——换一个支持跨域的中转，或请站长开启 CORS`
+            : `连不上 ${host}：检查域名 / 端口 / https 证书，或当前没有网络`,
+        };
+      }
+      return { ok: false, error: e instanceof Error ? e.message : String(e), retryWithV1: false };
+    } finally {
+      clearTimeout(timeout);
     }
+  };
 
-    const data = await resp.json().catch(() => null);
-    if (!data?.choices?.[0]?.message) {
-      return { ok: false, error: '响应格式非 OpenAI 兼容，请检查 Base URL' };
-    }
-    return { ok: true, latencyMs, model };
-  } catch (e) {
-    clearTimeout(timeout);
-    if (e instanceof Error && e.name === 'AbortError') {
-      return { ok: false, error: '连接超时（15s 无响应）' };
-    }
-    if (e instanceof TypeError) {
-      return { ok: false, error: '网络错误：可能是 CORS 被拦截或无网络连接' };
-    }
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  const first = await attempt(baseUrl);
+  if (first.ok) return { ok: true, latencyMs: first.latencyMs, model, baseUrlUsed: baseUrl, corrected: false };
+  // 少写 /v1：404、或回来的东西不像 OpenAI，且地址末尾没有版本段 → 补 /v1 再试一次
+  if (first.retryWithV1 && !/\/v\d+[a-z]*$/i.test(baseUrl)) {
+    const withV1 = `${baseUrl}/v1`;
+    const second = await attempt(withV1);
+    if (second.ok) return { ok: true, latencyMs: second.latencyMs, model, baseUrlUsed: withV1, corrected: true };
   }
+  return { ok: false, error: first.error };
 }
 
 /**
@@ -358,7 +451,7 @@ export async function fetchAvailableModels(opts: {
       const detail = extractProviderErrorMessage(body).slice(0, 200).trim();
       const hint = resp.status === 404
         ? '该地址不支持 /models 列表接口，请手动填写模型名'
-        : getHttpStatusHint(resp.status, opts.provider);
+        : (relayHint(detail) || getHttpStatusHint(resp.status, opts.provider));
       const prefix = hint ? `${hint} (HTTP ${resp.status})` : `HTTP ${resp.status}`;
       return { ok: false, error: detail ? `${prefix}: ${detail}` : prefix };
     }
