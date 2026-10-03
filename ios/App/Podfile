@@ -24,4 +24,14 @@ end
 
 post_install do |installer|
   assertDeploymentTarget(installer)
+  # Xcode 27 起只接受 iOS 15.0+ 的部署目标：Capacitor 5 的 podspec 写的是 13.0，assertDeploymentTarget 也只托到 13.0，
+  # 归档直接报「range of supported deployment target versions is 15.0 to 27.0」。App 自己的最低版本就是 15.0，
+  # 把所有 Pod target 一并抬到 15.0（2026-10-03，2.8.0.5 构建时撞上）。
+  installer.pods_project.targets.each do |target|
+    target.build_configurations.each do |config|
+      if config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'].to_f < 15.0
+        config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
+      end
+    end
+  end
 end
