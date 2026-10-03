@@ -104,6 +104,8 @@ interface NavigatorState {
   /** 当前激活人格（settings.navigatorPresetId 解析；缺省黑猫） */
   activePreset: () => NavigatorPreset;
   loadPresets: () => Promise<void>;
+  /** 第一次用到人格前把表读进来（读过就不再读；正在读就等它）——「聊着聊着变黑猫」修复的根（第 12 轮） */
+  ensurePresets: () => Promise<void>;
   savePreset: (p: NavigatorPreset) => Promise<void>;
   deletePreset: (id: string) => Promise<void>;
   /** 切人格 = 开（或恢复）该人格的今日会话，空会话时播接管语 */
@@ -140,6 +142,9 @@ let swallowed: string[] = [];
 /** hydrate 完成前产生的消息先入内存，这里排队补写 */
 let pendingWrites: NavigatorMessage[] = [];
 let hydrating: Promise<void> | null = null;
+/** 人格表读过一次就算齐（savePreset / deletePreset 会再读）；读失败保持 false，下次用到再试 */
+let presetsLoaded = false;
+let presetsLoading: Promise<void> | null = null;
 
 /**
  * AI 问候的**总闸**（不再是唯一计时）。
@@ -255,6 +260,8 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
     if (hydrating) return hydrating;
     hydrating = (async () => {
       try {
+        // 人格表先读进来：没读到就解析人格，自定义人格会挂到黑猫的会话线上（第 12 轮）
+        await get().ensurePresets();
         const today = toLocalDateKey();
         const preset = get().activePreset();
         const cur = get();
@@ -465,6 +472,9 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
       return;
     }
 
+    // 人格表没读进来之前别开口（否则自定义人格会静默解析成黑猫，第 12 轮）
+    await get().ensurePresets();
+    if (gen !== generation) return;
     turnAbort = new AbortController();
     const mySwallowed = swallowed;
     swallowed = [];
@@ -663,13 +673,28 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
       get().presets,
     ),
 
-    loadPresets: async () => {
-      try {
-        const presets = await db.navigatorPresets.orderBy('createdAt').toArray();
-        set({ presets });
-      } catch (e) {
-        console.warn('[navigator] presets 加载失败', e);
-      }
+    loadPresets: () => {
+      if (presetsLoading) return presetsLoading;
+      const run = (async () => {
+        try {
+          const presets = await db.navigatorPresets.orderBy('createdAt').toArray();
+          set({ presets });
+          presetsLoaded = true;
+        } catch (e) {
+          // 读失败不清空已有的列表（安卓从后台恢复时 IndexedDB 偶发报错）；resolveNavigatorPreset
+          // 另有一份最近解析成功的自定义人格顶着，不会因此变成黑猫
+          console.warn('[navigator] presets 加载失败', e);
+        }
+      })();
+      presetsLoading = run;
+      // 句柄的清理放在 finally 回调里（微任务）而不是 IIFE 的 finally：orderBy 同步抛错时 IIFE 的 finally
+      // 会在上面那句赋值**之前**跑完，句柄就永远卡着，之后再也不读表
+      void run.finally(() => { if (presetsLoading === run) presetsLoading = null; });
+      return run;
+    },
+
+    ensurePresets: async () => {
+      if (!presetsLoaded) await get().loadPresets();
     },
 
     savePreset: async (p) => {
@@ -736,6 +761,7 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
 
     greet: () => {
       void (async () => {
+        await get().ensurePresets();
         get().rolloverIfNewDay();
         // 主泵（昨日会话末 compact）与遗忘清扫：开窗惰性触发
         const finalizing = finalizeStaleSessions();

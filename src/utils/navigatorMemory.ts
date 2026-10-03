@@ -301,7 +301,7 @@ const liveCompacting = new Set<string>();
 export async function maybeCompactLive(
   sessionId: string,
   rows: NavigatorMessageRow[],
-  personaName = '黑猫',
+  personaName = '陪伴 AI',
 ): Promise<LiveCompactOutcome> {
   const total = rows.reduce((n, r) => n + estTokens(r.text ?? '') + 8, 0);
   const over = total > LIVE_COMPACT_TOKENS || rows.length > LIVE_COMPACT_MSGS;

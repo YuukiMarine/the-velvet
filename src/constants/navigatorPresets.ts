@@ -58,9 +58,38 @@ export const BUILTIN_NAVIGATOR_PRESETS: NavigatorPreset[] = [
   },
 ];
 
+// ── 最近一次按表解析成功的自定义人格（第 12 轮「聊着聊着变黑猫」修复）────────────
+// 自定义人格存在 IndexedDB 表里，而 navigatorPresetId 在 settings 里：开窗第一帧表还没读进来、
+// 安卓从后台恢复时读表失败，id 在表里找不到就会**静默**解析成黑猫——头像、口吻全换，设置里却还
+// 显示自定义人格。这里把最近一次解析成功的那份（不含 dataUrl 头像）记在 localStorage，
+// 表里暂时找不到时拿它顶上；只有 id 真的对不上（人格被删了）才回黑猫。
+const STICKY_KEY = 'velvet.navActivePreset.v1';
+let stickySig = '';
+function rememberPreset(p: NavigatorPreset): void {
+  if (p.isBuiltin) return;
+  const sig = `${p.id}|${p.name}|${p.personaPrompt?.length ?? 0}|${p.avatar?.length ?? 0}|${p.handoffLine ?? ''}`;
+  if (sig === stickySig) return;
+  stickySig = sig;
+  try {
+    const slim: NavigatorPreset = { ...p, avatar: p.avatar && p.avatar.startsWith('data:') ? undefined : p.avatar };
+    localStorage.setItem(STICKY_KEY, JSON.stringify(slim));
+  } catch { /* 存不了就算，下次解析再记 */ }
+}
+function recallPreset(id: string): NavigatorPreset | null {
+  try {
+    const raw = localStorage.getItem(STICKY_KEY);
+    if (!raw) return null;
+    const p = JSON.parse(raw) as NavigatorPreset;
+    return p && p.id === id && typeof p.personaPrompt === 'string' ? { ...p, createdAt: new Date(p.createdAt) } : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * 取当前激活 preset：**表内行优先**（同 id 的"影子行"覆盖内置——用于给内置人格换头像等
- * 个性化：savePreset 同 id 即覆盖，删除影子即恢复默认），其次内置；缺省/失配回黑猫。
+ * 个性化：savePreset 同 id 即覆盖，删除影子即恢复默认），其次内置；表里暂时找不到的自定义 id
+ * 用最近一次解析成功的那份顶上（见上）；缺省 / 真失配回黑猫。
  */
 export function resolveNavigatorPreset(
   presetId: string | undefined,
@@ -69,7 +98,9 @@ export function resolveNavigatorPreset(
   if (presetId) {
     const hit = customPresets.find((p) => p.id === presetId)
       ?? BUILTIN_NAVIGATOR_PRESETS.find((p) => p.id === presetId);
-    if (hit) return hit;
+    if (hit) { rememberPreset(hit); return hit; }
+    const sticky = recallPreset(presetId);
+    if (sticky) return sticky;
   }
   return customPresets.find((p) => p.id === BUILTIN_NAVIGATOR_PRESETS[0].id) ?? BUILTIN_NAVIGATOR_PRESETS[0];
 }

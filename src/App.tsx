@@ -60,12 +60,44 @@ import { PWAUpdateToast } from '@/components/PWAUpdateToast';
 import { CallingCardCutIn } from '@/components/callingCard/CallingCardCutIn';
 import { isNative } from '@/utils/native';
 import { warmDisplayFontShards } from '@/utils/fontWarmup';
+import { checkForUpdate } from '@/utils/appUpdate';
 import { tryHandleBack } from '@/utils/useBackHandler';
 import { initBoldnessRuntime, schedulePerfSample, setStraightenMode, useBoldness } from '@/utils/boldness';
 import { TransitionLayer } from '@/components/transition/HeavyTransition';
 import { consumePendingCircleReveal, consumeCurtainMidpoint } from '@/ui/transitionDirector';
 import { P4StageDecor } from '@/ui/p4Kit';
 import { bgAnimStyles } from '@/ui/bgAnim';
+
+/**
+ * 「加载中」页（第 12 轮）：初始化实测 0.03～0.14s，平时根本来不及看见；只有初始化比开屏动画还慢
+ * （升级后第一次建表、安卓旧进程还占着数据库、数据特别多的机器）才轮到它。600ms 内完成就什么都不画——
+ * 一闪而过的字比空白更扎眼；超过才出圈，并写明在等什么。
+ */
+function BootLoading() {
+  const [show, setShow] = useState(false);
+  useEffect(() => { const t = window.setTimeout(() => setShow(true), 600); return () => window.clearTimeout(t); }, []);
+  return (
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
+      {show && (
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+          <p className="text-gray-600 dark:text-gray-400">正在读取本地数据…</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** lazy 页分包没到时的占位：首页变体留白；其它页 400ms 内到了也不闪字 */
+function LazyFallback({ blank }: { blank: boolean }) {
+  const [show, setShow] = useState(false);
+  useEffect(() => {
+    if (blank) return;
+    const t = window.setTimeout(() => setShow(true), 400);
+    return () => window.clearTimeout(t);
+  }, [blank]);
+  return show ? <div className="flex items-center justify-center h-64 text-gray-400">加载中…</div> : <div className="h-64" />;
+}
 
 /**
  * 页面分包预热清单，分**烫**与**温**两档。
@@ -199,7 +231,8 @@ function App() {
       try {
         setIsLoading(true);
         setError(null);
-        await initializeApp();
+        // 首屏必需的那一截：用户 / 设置 / 核心表 / 今日塔罗（实测 0.03～0.14s）；其余见下面 finishBoot
+        await initializeApp({ deferTail: true });
         // 任务×终端二合一（TASKS_MERGE_PRD 批1）：一次性数据迁移（内部防重入，已迁则瞬时返回）。
         // 失败不阻塞启动：按根逐个迁移天然可重入，下次启动续跑
         try {
@@ -207,15 +240,22 @@ function App() {
         } catch (e) {
           console.warn('[velvet] tasks-merge migration failed; will retry next boot', e);
         }
-        void useAppStore.getState().syncNotifications(); // F2a：启动后排程本地通知
-        // 自动撰写上一期总结（v2.7.0.6，默认开）：新周期第一次打开时后台补写，写好后各渠道提醒一次
-        void import('@/utils/autoSummary').then(m => m.maybeAutoWriteSummaries());
       } catch (err) {
         console.error('App initialization error:', err);
         setError(err instanceof Error ? err.message : '初始化失败');
       } finally {
         setIsLoading(false);
       }
+      // 首屏之后的尾巴（第 12 轮）：命运 / 长占 / 宣告卡清扫 / 同伴维护 / 谏言 / 记账 / 愿望——
+      // 以前全串在「加载中」页后面等，现在首页先画、它们在后台接着读；通知排程等它们到齐再排
+      try {
+        await useAppStore.getState().finishBoot();
+      } catch (e) {
+        console.warn('[velvet] boot tail failed', e);
+      }
+      void useAppStore.getState().syncNotifications(); // F2a：启动后排程本地通知
+      // 自动撰写上一期总结（v2.7.0.6，默认开）：新周期第一次打开时后台补写，写好后各渠道提醒一次
+      void import('@/utils/autoSummary').then(m => m.maybeAutoWriteSummaries());
     };
 
     init();
@@ -470,7 +510,11 @@ function App() {
   // 首开帧率采样推迟到开屏动画结束后：采样窗口若撞上 splash 粒子循环
   // 会把启动期掉帧误判成永久降级（boldness.ts 文件头「采样时机」）
   useEffect(() => {
-    if (!showSplash) schedulePerfSample();
+    if (showSplash) return;
+    schedulePerfSample();
+    // 在线版本核验（第 12 轮）：开屏结束 8 秒后查一次（24 小时一次、离线跳过、失败静默），不跟首屏抢
+    const t = window.setTimeout(() => void checkForUpdate(), 8000);
+    return () => window.clearTimeout(t);
   }, [showSplash]);
 
   // 「校直模式」→ <html data-boldness>；perf 永久降级优先级更高（boldness.ts 内保证）
@@ -585,16 +629,7 @@ function App() {
     return <SplashScreen isVisible={showSplash} onComplete={handleSplashComplete} splashStyle={splashPrefs.splashStyle} splashSpeed={splashPrefs.splashSpeed} />;
   }
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
-          <p className="text-gray-600 dark:text-gray-400">加载中...</p>
-        </div>
-      </div>
-    );
-  }
+  if (isLoading) return <BootLoading />;
 
   if (error) {
     return (
@@ -630,7 +665,7 @@ function App() {
   /** lazy 页的统一外壳。首页变体走 lazyPage(..., true)：预热基本保证它已就绪，
    *  真没就绪也不该闪一行「加载中…」在落地页上，留白比字更安静。 */
   const lazyPage = (node: ReactNode, blank = false) => (
-    <Suspense fallback={blank ? <div className="h-64" /> : <div className="flex items-center justify-center h-64 text-gray-400">加载中…</div>}>
+    <Suspense fallback={<LazyFallback blank={blank} />}>
       {node}
     </Suspense>
   );

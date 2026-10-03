@@ -39,11 +39,13 @@ export interface TurnHistoryItem {
   createdAt?: number;
 }
 
-// ── 内置默认人格（Batch3 presets 落地前的唯一人格） ──
-const DEFAULT_PERSONA =
-  '你是「黑猫」——寄居在这款个人成长记录 App 里的引路猫，偶尔自称「吾辈」。' +
-  '性格：有点臭屁、爱下指导棋，说话带刺但都是真心话；嘴上嫌麻烦，实际把对方的事记得很牢；' +
-  '深夜会催你睡觉。你陪伴的是唯一的用户，像老朋友一样说话，不用敬语。';
+// ── 人格缺席时的中性兜底（第 12 轮）──
+// 以前这里是黑猫的人设词，作为 personaPrompt 的默认参数：人格行缺 personaPrompt（同步 / 导入的
+// 旧数据）时，自定义人格就会悄悄开口自称「吾辈」。人格只能来自 presets；这里只保证不会无人格。
+const NEUTRAL_PERSONA =
+  '你是这款个人成长记录 App 里的陪伴 AI。你陪伴的是唯一的用户，像老朋友一样说话，不用敬语。';
+/** 人格词为空（旧数据 / 同步丢字段）时落中性兜底，绝不落到某个内置人格 */
+const personaOrNeutral = (p: string | undefined): string => (p && p.trim()) ? p : NEUTRAL_PERSONA;
 
 // ── 阶段1 · 分诊协议（无人格，纯判定；短上下文 + 低温 = 高服从） ──
 const TRIAGE_PROTOCOL = `你是记录意图判定器。根据对话摘录和最新消息，判定本轮要创建的卡片（0~3 张）、是否需要查历史，以及对方这句话的姿态。
@@ -498,7 +500,7 @@ export async function runNavigatorTurn(
   swallowed: string[],
   signal: AbortSignal,
   cards: string[] = [],
-  personaPrompt: string = DEFAULT_PERSONA,
+  personaPrompt: string = NEUTRAL_PERSONA,
   /** 记忆行 + 语气行等附加数据（store 侧检索/计算后传入，本层只负责注入） */
   extraContext: string[] = [],
   /** 拟真增强：传入即表演层走流式 + 标点切泡（分诊层不变——两阶段红利） */
@@ -538,7 +540,7 @@ export async function runNavigatorTurn(
     buildTopicPermission(stance, energy),
   ].filter(Boolean).join('\n');
   const messages: AIMessage[] = [
-    { role: 'system', content: `${personaPrompt}\n${PERFORM_RULES}` },
+    { role: 'system', content: `${personaOrNeutral(personaPrompt)}\n${PERFORM_RULES}` },
     ...historyToMessages(historyWindow(history)),
     { role: 'system', content: [buildDynamicContext(snap, swallowed, cards), ...extraContext, ...casual, turnFacts].filter(Boolean).join('\n') },
     { role: 'user', content: userText },
@@ -667,7 +669,7 @@ export async function generatePersonaPrompt(input: {
 export async function generateAIGreeting(
   snap: NavigatorSnapshot,
   signal: AbortSignal,
-  personaPrompt: string = DEFAULT_PERSONA,
+  personaPrompt: string = NEUTRAL_PERSONA,
   /** 跨日叙事素材（昨日摘要/记忆/话头/语气行），store 侧准备 */
   extraContext: string[] = [],
 ): Promise<string | null> {
@@ -683,7 +685,7 @@ export async function generateAIGreeting(
      * 总时长由调用方 signal（30s 总闸）兜底。等待期间打字指示本来就在动，不亏。
      */
     const messages: AIMessage[] = [
-      { role: 'system', content: `${personaPrompt}\n今天第一次见面，说一句自然的问候。像正常人刚见面：简短、贴合时段和对方状态，**不要刻意罗列数据**，不要问候语大礼包。只根据给定素材说话，对方没提过的经历不要脑补。若给了上次聊天的摘要或记忆，可自然接一句上次的话茬——按标注的日子说（几天前的事别说成昨天），别复读原文。可用空行分成最多 2 段。只输出问候本身。` },
+      { role: 'system', content: `${personaOrNeutral(personaPrompt)}\n今天第一次见面，说一句自然的问候。像正常人刚见面：简短、贴合时段和对方状态，**不要刻意罗列数据**，不要问候语大礼包。只根据给定素材说话，对方没提过的经历不要脑补。若给了上次聊天的摘要或记忆，可自然接一句上次的话茬——按标注的日子说（几天前的事别说成昨天），别复读原文。可用空行分成最多 2 段。只输出问候本身。` },
       { role: 'user', content: [buildDynamicContext(snap, []), ...extraContext].filter(Boolean).join('\n') },
     ];
     let text = '';

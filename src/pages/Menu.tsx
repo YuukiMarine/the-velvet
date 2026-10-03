@@ -36,6 +36,7 @@ import type { ThemeType } from '@/types';
 import { PagePlane, PlaneLevel } from '@/components/PagePlane';
 import { SheetModal } from '@/components/SheetModal';
 import { UserProfileCard } from '@/components/UserProfileCard';
+import { checkForUpdate, useAppUpdate, UPDATE_LINK } from '@/utils/appUpdate';
 import { P3PassGoal, P3PassStatus, P4PassGoal, P4PassStatus, P5GoalLabel, P5GoalRule, P5StatusStamp } from '@/components/profile/MenuPresence';
 import { resolveLevelDifficulty, hardTagInk } from '@/utils/levelDifficulty';
 import { TrophyIcon } from '@/components/Navigation';
@@ -212,6 +213,12 @@ export const Menu = () => {
   // 「关于」Sheet：本页内打开、不跳页；触发器 ref 供 SheetModal 形状记忆生长
   //（面板从横条"长出来"，关闭缩回——UI_DESIGN_BOLD_V2.5.md §4.3）
   const [aboutOpen, setAboutOpen] = useState(false);
+  // 在线版本核验（第 12 轮）：有新版本 → 「关于」入口亮红点、关于面板里版本号变强调色并给去处
+  const upd = useAppUpdate();
+  useEffect(() => { if (aboutOpen) void checkForUpdate(); }, [aboutOpen]);
+  const updateDot = upd.hasUpdate
+    ? <span aria-label="有新版本" className="inline-block h-2 w-2 shrink-0 rounded-full bg-red-500 shadow-[0_0_0_2px_rgba(255,255,255,0.55)]" />
+    : null;
   /** 催更 / 内测群（QQ）。点击走 QQ 的加群 scheme 直达群名片页；
    *  没装 QQ / 系统拦掉 scheme 时（页面还停在原地）退化为复制群号。 */
   const [qqCopied, setQqCopied] = useState(false);
@@ -399,7 +406,7 @@ export const Menu = () => {
       ? [{ key: 'ledger', label: '心相记账', indent: 38, icon: <P4Flower size={24} color="var(--p4-green, #55c34f)" />, onPress: () => setCurrentPage('ledger') }]
       : []),
     { key: 'settings', label: '设置', indent: 26, icon: <span className="text-[var(--ui-accent)]"><GearIcon /></span>, onPress: () => setCurrentPage('settings') },
-    { key: 'about', label: '关于', indent: 34, icon: <P4Sparkle size={22} color="#ff7a2f" />, onPress: () => setAboutOpen(true), triggerRef: aboutTriggerRef },
+    { key: 'about', label: '关于', indent: 34, icon: <P4Sparkle size={22} color="#ff7a2f" />, onPress: () => setAboutOpen(true), triggerRef: aboutTriggerRef, badge: updateDot ?? undefined },
   ];
 
   // ── 「关于」/「主题」Sheet（p3 与默认形态共用）────────────────────────────
@@ -421,7 +428,24 @@ export const Menu = () => {
             <div className="text-5xl mb-4">🦋</div>
             <h3 className="text-xl font-bold text-gray-800 dark:text-white mb-1">靛蓝色房间</h3>
             <p className="text-sm text-gray-500 dark:text-gray-400">JRPG Growth Tracker</p>
-            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">v{import.meta.env.PACKAGE_VERSION}</p>
+            {upd.hasUpdate ? (
+              // 有新版本：版本号变强调色，下面一行写新版本号，整块点了去 B 站动态（安卓包在那儿发）
+              <a
+                href={UPDATE_LINK}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-1 inline-flex flex-col items-center gap-0.5 text-xs font-bold text-primary hover:underline"
+                aria-label={`当前 v${upd.current}，有新版本 v${upd.latest}，去 B 站动态看看`}
+              >
+                <span>v{upd.current}</span>
+                <span className="inline-flex items-center gap-1">
+                  <span aria-hidden className="inline-block h-1.5 w-1.5 rounded-full bg-red-500" />
+                  有新版本 v{upd.latest} · 去看看 ›
+                </span>
+              </a>
+            ) : (
+              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">v{upd.current}</p>
+            )}
           </div>
           {/* 信息行列表：作者 / GitHub / Bilibili */}
           <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 space-y-3">
@@ -835,7 +859,7 @@ export const Menu = () => {
             <span aria-hidden className="pointer-events-none absolute inset-[3px]" style={{ background: P5R.greyLight, clipPath: ABOUT_SHAPE }} />
             <span className="relative flex items-center gap-3 py-3 pl-7 pr-6">
               <span aria-hidden className="flex h-6 w-6 items-center justify-center rounded-full text-[15px] font-black text-white" style={{ background: '#050505' }}>i</span>
-              <span className="flex-1 text-[17px] font-black" style={{ color: '#050505', fontFamily: P5_TITLE_FONT }}>关于</span>
+              <span className="flex flex-1 items-center gap-2 text-[17px] font-black" style={{ color: '#050505', fontFamily: P5_TITLE_FONT }}>关于{updateDot}</span>
               <P5Star size={26} fill="#050505" rot={8} className="shrink-0" />
             </span>
           </motion.button>
@@ -889,7 +913,7 @@ export const Menu = () => {
       { key: 'astrology', label: '占卜', icon: <MoonIcon />, onPress: () => setCurrentPage('astrology'), aria: '占卜' },
       ...(ledgerVisible ? [{ key: 'ledger', label: '记账', icon: <WalletIcon />, onPress: () => setCurrentPage('ledger'), aria: '记账' }] : []),
       { key: 'settings', label: '设置', icon: <GearIcon />, onPress: () => setCurrentPage('settings'), aria: '设置' },
-      { key: 'about', label: '关于', icon: <InfoIcon />, onPress: () => setAboutOpen(true), aria: '关于' },
+      { key: 'about', label: '关于', icon: <InfoIcon />, onPress: () => setAboutOpen(true), aria: '关于', extra: () => updateDot },
     ];
     return (
       <P3RPage>
@@ -1545,7 +1569,7 @@ export const Menu = () => {
               {/* 内容反制回正：盒斜、字平（与 Tile 同一护栏） */}
               <PlaneLevel className="relative flex items-center gap-3 px-4 py-3">
                 <span className="text-gray-500 dark:text-gray-400"><InfoIcon /></span>
-                <span className="text-sm font-bold text-gray-900 dark:text-white">关于</span>
+                <span className="flex items-center gap-2 text-sm font-bold text-gray-900 dark:text-white">关于{updateDot}</span>
                 <span aria-hidden className="ml-auto text-gray-400 dark:text-gray-500"><ChevronRightIcon /></span>
               </PlaneLevel>
             </motion.button>

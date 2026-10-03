@@ -235,7 +235,9 @@ export async function executeDraft(draft: NavigatorDraft): Promise<string> {
         deadline: draft.deadline || undefined,
         steps: steps.map(t => ({ id: uuidv4(), title: t, source: 'ai' as const })),
       });
-      return `大事立好了，拆成 ${steps.length} 步。从第一步开始——别贪多，吾辈盯着呢。`;
+      // 回执会进【本会话卡片实录】喂给模型：「吾辈」只给黑猫，别的人格看见自己说过吾辈会学过去（第 12 轮）
+      const cat = s.settings.navigatorPresetId === undefined || s.settings.navigatorPresetId === 'builtin-cat';
+      return `大事立好了，拆成 ${steps.length} 步。从第一步开始——别贪多，${cat ? '吾辈' : '我'}盯着呢。`;
     }
   }
 }

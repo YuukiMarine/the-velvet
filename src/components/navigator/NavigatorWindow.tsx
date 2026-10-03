@@ -492,12 +492,11 @@ export const NavigatorWindow = () => {
   // 卸载/关窗时别把麦克风留着
   useEffect(() => () => { recRef.current?.cancel(); recRef.current = null; }, []);
 
-  // 打开：加载自定义人格 + 挂载当日会话 + 问候（逻辑收在 store.greet，内部先 hydrate）
+  // 打开：挂载当日会话 + 问候（逻辑收在 store.greet：内部先把人格表读进来再 hydrate——
+  // 以前这里 loadPresets 不等读完就 greet，自定义人格会在第一帧被解析成黑猫，第 12 轮修）
   useEffect(() => {
     if (!nav.isOpen) return;
-    const st = useNavigatorStore.getState();
-    void st.loadPresets();
-    st.greet();
+    useNavigatorStore.getState().greet();
   }, [nav.isOpen]);
 
   // 批4 §6.6 黑猫败因信：有待投递的信 → 问候落定后作为站内信推送（一次性，投完即清）
@@ -976,7 +975,7 @@ export const NavigatorWindow = () => {
                   >
                     <span aria-hidden className={user?.theme === 'red' ? 'text-[#c00008]' : user?.theme === 'yellow' ? 'text-[#ffe100]' : 'text-primary'}>◆</span>
                     <span className="min-w-0 flex-1 truncate">
-                      {stuckBusy ? '正在拆成能下手的小步…' : '听起来卡住了——要吾辈把它拆成小步吗？'}
+                      {stuckBusy ? '正在拆成能下手的小步…' : `听起来卡住了——要${preset.id === 'builtin-cat' ? '吾辈' : '我'}把它拆成小步吗？`}
                     </span>
                   </button>
                   <button
