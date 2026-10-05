@@ -327,11 +327,13 @@ function timeoutError(timeoutMs: number): Error {
 }
 
 /** 把 !resp.ok 的响应转成可读错误（复用 aiProviders 的提示映射，与连接测试同源） */
-async function toHttpError(resp: Response, provider?: ApiProvider): Promise<Error> {
+async function toHttpError(resp: Response, provider?: ApiProvider, requestUrl?: string): Promise<Error> {
   const body = await resp.text().catch(() => '');
   const detail = extractProviderErrorMessage(body).slice(0, 200).trim();
   // 先认中转站的措辞（无可用渠道 / 额度 / 令牌 / 模型不存在），认不出再按状态码
-  const hint = relayHint(detail) || getHttpStatusHint(resp.status, provider);
+  // 官方主机不用中转措辞，落回按状态码 + 厂商的提示。优先按请求地址判：
+  // 自己 new 出来的 Response（测试桩 / 个别代理层）resp.url 是空串，只靠它会把官方当成中转
+  const hint = relayHint(detail, isOfficialHost(requestUrl || resp.url)) || getHttpStatusHint(resp.status, provider);
   const prefix = hint ? `${hint}（HTTP ${resp.status}）` : `HTTP ${resp.status}`;
   return new Error(detail ? `${prefix}: ${detail}` : prefix);
 }
@@ -568,7 +570,7 @@ async function chatCompleteOnce(
       body: JSON.stringify(buildRequestBody(cfg, messages, opts, false)),
       signal: ab.signal,
     });
-    if (!resp.ok) throw await toHttpError(resp, cfg.provider);
+    if (!resp.ok) throw await toHttpError(resp, cfg.provider, cfg.baseUrl);
     const data = await resp.json().catch(() => null);
     const choice = data?.choices?.[0];
     const content = choice?.message?.content;
@@ -725,7 +727,7 @@ async function* streamOnce(
     body: JSON.stringify({ ...buildRequestBody(cfg, messages, opts, true), ...extra }),
     signal: ab.signal,
   });
-  if (!resp.ok) throw await toHttpError(resp, cfg.provider);
+  if (!resp.ok) throw await toHttpError(resp, cfg.provider, cfg.baseUrl);
   if (!resp.body) throw new Error('AI 流式响应无 body');
 
   const reader = resp.body.getReader();

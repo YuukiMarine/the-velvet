@@ -176,7 +176,9 @@ export function TowerEventModal({ event, materialize, onResolve, onFinish, playe
                 <MerchantFront event={event} playerSp={playerSp} onPick={choose} />
               ) : (
                 <>
-                  <p className="text-gray-300 text-sm leading-relaxed">{event.text}</p>
+                  {/* 开场文案也要过素材注入：回忆之光的 {date} / {title} 原来只在选项结果文案里替换，
+                      开场那句原样露出占位符（用户上报「{date}你记下了「{title}」」） */}
+                  <p className="text-gray-300 text-sm leading-relaxed">{materialize(event.text)}</p>
                   <div className="space-y-2 pt-1">
                     {event.options.map(opt => {
                       const short = opt.costSp !== undefined && playerSp !== undefined && playerSp < opt.costSp;

@@ -197,7 +197,10 @@ export function isOfficialHost(baseUrl: string): boolean {
  * （没渠道回 503、额度用尽回 403……），按状态码给的提示（「服务繁忙」「无访问权限」）会把人带偏。
  * 认不出返回空串，由调用方退回状态码提示。
  */
-export function relayHint(detail: string): string {
+export function relayHint(detail: string, official = false): string {
+  // 官方主机不用中转措辞：DeepSeek 官方 402 的「Insufficient Balance」也会撞上下面的「余额」正则，
+  // 被说成「去中转站充值」（第 13 轮用户反馈）；官方落回按状态码 + 厂商的提示（getHttpStatusHint）
+  if (official) return '';
   const d = detail || '';
   if (!d) return '';
   if (/无可用渠道|no available channel|no channel|channel not found|无可用的渠道/i.test(d)) return '这把 Key 的分组里没有这个模型：换个模型名（试试「刷新全部模型列表」），或在中转站把令牌换到有它的分组';
@@ -341,7 +344,7 @@ export async function testAIConnection(opts: {
       if (!resp.ok) {
         const text = await resp.text().catch(() => '');
         const detail = extractProviderErrorMessage(text).slice(0, 240).trim();
-        const hint = relayHint(detail) || getHttpStatusHint(resp.status, opts.provider);
+        const hint = relayHint(detail, isOfficialHost(base)) || getHttpStatusHint(resp.status, opts.provider);
         const prefix = hint ? `${hint} (HTTP ${resp.status})` : `HTTP ${resp.status}`;
         return { ok: false, error: detail ? `${prefix}: ${detail}` : `${prefix}: ${resp.statusText}`, retryWithV1: resp.status === 404 };
       }
@@ -357,13 +360,22 @@ export async function testAIConnection(opts: {
       if (e instanceof TypeError) {
         const host = hostOf(base);
         const reachable = await probeReachable(`${base}/models`);
-        return {
-          ok: false,
-          retryWithV1: false,
-          error: reachable
-            ? `能连上 ${host}，但它没放行浏览器跨域（CORS）：本 App 是从网页环境直连 API 的，这个中转在 App 里用不了——换一个支持跨域的中转，或请站长开启 CORS`
-            : `连不上 ${host}：检查域名 / 端口 / https 证书，或当前没有网络`,
-        };
+        // 探测是不带预检的简单 GET，真请求带 Authorization 要预检。官方接口（DeepSeek 等）对 App 的
+        // 预检是放行的（本机对 capacitor://localhost 实测），所以官方「探得到 + 真请求失败」几乎只有一种情况：
+        // 这台设备的网络在半路拦了（校园网 / 公司网 / 运营商劫持页、VPN 或 DNS 过滤类 App）——
+        // 简单 GET 拿到了那个页面，带预检的 POST 被它弄坏。别再对官方用户讲「中转 / 站长 / 跨域」（第 13 轮反馈）。
+        const official = isOfficialHost(base);
+        let error: string;
+        if (official) {
+          error = reachable
+            ? `连不上 ${host}：它允许 App 直连，这次请求是在半路被拦下的——常见于校园网 / 公司网，或手机上开着 VPN、DNS 过滤类 App。换个网络（关掉 VPN、切到流量）再试一次`
+            : `连不上 ${host}：当前没有网络，或这个网络到不了它——换个网络再试`;
+        } else {
+          error = reachable
+            ? `能连上 ${host}，但这个中转站没有开放跨域访问（CORS），App 里无法直连它——换一个支持跨域的中转站，或请服务商开启 CORS`
+            : `连不上 ${host}：检查域名 / 端口 / https 证书，或当前没有网络`;
+        }
+        return { ok: false, retryWithV1: false, error };
       }
       return { ok: false, error: e instanceof Error ? e.message : String(e), retryWithV1: false };
     } finally {
@@ -451,7 +463,7 @@ export async function fetchAvailableModels(opts: {
       const detail = extractProviderErrorMessage(body).slice(0, 200).trim();
       const hint = resp.status === 404
         ? '该地址不支持 /models 列表接口，请手动填写模型名'
-        : (relayHint(detail) || getHttpStatusHint(resp.status, opts.provider));
+        : (relayHint(detail, isOfficialHost(baseUrl)) || getHttpStatusHint(resp.status, opts.provider));
       const prefix = hint ? `${hint} (HTTP ${resp.status})` : `HTTP ${resp.status}`;
       return { ok: false, error: detail ? `${prefix}: ${detail}` : prefix };
     }
@@ -481,7 +493,16 @@ export async function fetchAvailableModels(opts: {
   } catch (e) {
     clearTimeout(timeout);
     if (e instanceof Error && e.name === 'AbortError') return { ok: false, error: '拉取超时（15s 无响应）' };
-    if (e instanceof TypeError) return { ok: false, error: '网络错误：可能是 CORS 被拦截或无网络连接' };
+    if (e instanceof TypeError) {
+      // 同 testAIConnection：官方主机讲网络环境，中转站才讲跨域
+      const host = hostOf(baseUrl);
+      return {
+        ok: false,
+        error: isOfficialHost(baseUrl)
+          ? `连不上 ${host}：检查网络——校园网 / 公司网、VPN 或 DNS 过滤类 App 常会拦它，换个网络再试`
+          : `连不上 ${host}，或它没放行跨域访问（CORS）`,
+      };
+    }
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
 }
