@@ -60,7 +60,7 @@ export function PersonaShuffleModal({ isOpen, onClose }: Props) {
       }
       const newAttrPersonas = { ...persona.attributePersonas, [selectedAttr]: { name: result.name, description: result.description } } as Record<AttributeId, { name: string; description: string }>;
       const newSkills = { ...persona.skills, [selectedAttr]: result.skills };
-      await savePersona({ ...persona, attributePersonas: newAttrPersonas, skills: newSkills });
+      await savePersona({ ...persona, attributePersonas: newAttrPersonas, skills: newSkills, summonLines: undefined }); // 紧急修复 #6：面具换了，召唤台词（羁绊卡「」里那句）作废，进战场页时按新面具重新生成
       setResultName(result.name);
       triggerLightHaptic();
       playSound('/battle-summon.mp3');
@@ -99,7 +99,7 @@ export function PersonaShuffleModal({ isOpen, onClose }: Props) {
 
     const newAttrPersonas = { ...persona.attributePersonas, [selectedAttr]: { name, description: desc } } as Record<AttributeId, { name: string; description: string }>;
     const newSkills = { ...persona.skills, [selectedAttr]: skills };
-    await savePersona({ ...persona, attributePersonas: newAttrPersonas, skills: newSkills });
+    await savePersona({ ...persona, attributePersonas: newAttrPersonas, skills: newSkills, summonLines: undefined }); // 紧急修复 #6：面具换了，召唤台词（羁绊卡「」里那句）作废，进战场页时按新面具重新生成
     setResultName(name);
     triggerLightHaptic();
     playSound('/battle-summon.mp3');

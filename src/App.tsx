@@ -55,6 +55,7 @@ import { WishProposalDialog } from '@/components/wish/WishProposalDialog';
 // F6 黑猫对话窗（portal 到 body 的全屏 overlay；入口在 Sidebar / BottomNav 中央 ◈）
 const NavigatorWindow = lazy(() => import('@/components/navigator/NavigatorWindow').then(m => ({ default: m.NavigatorWindow })));
 import { primeCurrentTheme } from '@/utils/feedback';
+import { bootStage, bootDone, getBootInfo, ackBootFailures, collectBootDiagnostics } from '@/utils/bootGuard';
 import { BackgroundAnimation } from '@/components/BackgroundAnimation';
 import { PWAUpdateToast } from '@/components/PWAUpdateToast';
 import { CallingCardCutIn } from '@/components/callingCard/CallingCardCutIn';
@@ -75,13 +76,38 @@ import { bgAnimStyles } from '@/ui/bgAnim';
  */
 function BootLoading() {
   const [show, setShow] = useState(false);
-  useEffect(() => { const t = window.setTimeout(() => setShow(true), 600); return () => window.clearTimeout(t); }, []);
+  // 看门狗（紧急修复 #1）：20 秒还没读完就给出路——重新加载 / 复制诊断信息
+  const [stuck, setStuck] = useState(false);
+  const [copied, setCopied] = useState<null | boolean>(null);
+  useEffect(() => {
+    const t = window.setTimeout(() => setShow(true), 600);
+    const t2 = window.setTimeout(() => setStuck(true), 20000);
+    return () => { window.clearTimeout(t); window.clearTimeout(t2); };
+  }, []);
+  const copy = async () => {
+    try {
+      const d = await collectBootDiagnostics();
+      await navigator.clipboard.writeText(JSON.stringify(d, null, 1));
+      setCopied(true);
+    } catch { setCopied(false); }
+  };
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
       {show && (
-        <div className="text-center">
+        <div className="text-center px-6">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
           <p className="text-gray-600 dark:text-gray-400">正在读取本地数据…</p>
+          {stuck && (
+            <div className="mt-5 text-xs text-gray-500 dark:text-gray-400 space-y-3" data-testid="boot-stuck">
+              <p>已经等了 20 秒还没读完——这不正常。</p>
+              <div className="flex gap-2 justify-center">
+                <button onClick={() => window.location.reload()} className="px-3 py-1.5 rounded-lg bg-blue-500 text-white font-semibold">重新加载</button>
+                <button onClick={() => void copy()} className="px-3 py-1.5 rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 font-semibold">
+                  {copied === true ? '已复制，发给开发者' : copied === false ? '复制失败' : '复制诊断信息'}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -186,6 +212,10 @@ function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showSplash, setShowSplash] = useState(true);
+  // 启动看门狗（紧急修复 #1）：连续两次没走完 → 安全模式（轻开屏、不预热）+ 首页横幅可复制诊断
+  const bootInfo = useMemo(() => getBootInfo(), []);
+  const [bootNotice, setBootNotice] = useState(() => getBootInfo().safeMode);
+  const [bootCopied, setBootCopied] = useState<null | boolean>(null);
   const [splashPrefs, setSplashPrefs] = useState<Pick<SplashScreenProps, 'splashStyle' | 'splashSpeed'> | null>(null);
   const primedRef = useRef(false);
   // 记录上次打开时的日期，用于检测隔天回来
@@ -216,10 +246,11 @@ function App() {
 
   // 首页变体即时预热：频道一确定就取那一份（见 DASHBOARD_CHUNK）。
   // 放在所有提前 return 之上——开屏期间正是最该预热的时候。
-  useEffect(() => { void DASHBOARD_CHUNK[uiChannel]?.(); }, [uiChannel]);
+  useEffect(() => { if (bootInfo.safeMode) return; void DASHBOARD_CHUNK[uiChannel]?.(); }, [uiChannel, bootInfo.safeMode]);
 
   // 快速预加载开屏动画设置，确保 splash 使用用户选中的样式
   useEffect(() => {
+    bootStage('splash');
     db.settings.get('default').then(s => {
       if (s) setSplashPrefs({ splashStyle: s.splashStyle, splashSpeed: s.splashSpeed });
       else setSplashPrefs({});
@@ -232,10 +263,12 @@ function App() {
         setIsLoading(true);
         setError(null);
         // 首屏必需的那一截：用户 / 设置 / 核心表 / 今日塔罗（实测 0.03～0.14s）；其余见下面 finishBoot
+        bootStage('init');
         await initializeApp({ deferTail: true });
         // 任务×终端二合一（TASKS_MERGE_PRD 批1）：一次性数据迁移（内部防重入，已迁则瞬时返回）。
         // 失败不阻塞启动：按根逐个迁移天然可重入，下次启动续跑
         try {
+          bootStage('migrate');
           await useAppStore.getState().runTasksMergeMigration();
         } catch (e) {
           console.warn('[velvet] tasks-merge migration failed; will retry next boot', e);
@@ -249,6 +282,7 @@ function App() {
       // 首屏之后的尾巴（第 12 轮）：命运 / 长占 / 宣告卡清扫 / 同伴维护 / 谏言 / 记账 / 愿望——
       // 以前全串在「加载中」页后面等，现在首页先画、它们在后台接着读；通知排程等它们到齐再排
       try {
+        bootStage('tail');
         await useAppStore.getState().finishBoot();
       } catch (e) {
         console.warn('[velvet] boot tail failed', e);
@@ -276,7 +310,7 @@ function App() {
    * 见 boldness.ts），温档跑在窗口**之后**，采样窗夹在两者中间的安静地带。
    */
   useEffect(() => {
-    if (isLoading || showSplash || !user) return;
+    if (isLoading || showSplash || !user || bootInfo.safeMode) return;
     let cancelled = false;
 
     // 烫：连着取，取完一个立刻取下一个
@@ -619,6 +653,11 @@ function App() {
   // ⚠️ 必须待在**所有提前 return 之上**——下面 showSplash / isLoading / error
   //    三处会直接 return，hook 写在它们后面就会出现「渲染次数不同、hook 数量不同」，
   //    React 直接抛 Rendered more hooks than during the previous render。
+  // 首页画出来了 → 这一次启动算完成（看门狗 failures 清零）
+  useEffect(() => {
+    if (!isLoading && !showSplash) bootDone();
+  }, [isLoading, showSplash]);
+
   const bgAnimStyleList = useMemo(
     () => bgAnimStyles(settings, user?.theme),
     [settings.backgroundImage, settings.backgroundAnimation, settings.p5BgAnimOptIn, user?.theme, settings],
@@ -626,7 +665,7 @@ function App() {
 
   if (showSplash) {
     if (!splashPrefs) return null; // 等待开屏设置加载
-    return <SplashScreen isVisible={showSplash} onComplete={handleSplashComplete} splashStyle={splashPrefs.splashStyle} splashSpeed={splashPrefs.splashSpeed} />;
+    return <SplashScreen isVisible={showSplash} onComplete={handleSplashComplete} splashStyle={splashPrefs.splashStyle} splashSpeed={splashPrefs.splashSpeed} reduced={bootInfo.safeMode} />;
   }
 
   if (isLoading) return <BootLoading />;
@@ -729,15 +768,56 @@ function App() {
         )}
       </AnimatePresence>
 
+      {/* 启动看门狗横幅（紧急修复 #1）：连续两次开屏没走完就重启了——这次安全模式进来，让用户把诊断信息复制给我们 */}
+      <AnimatePresence>
+        {bootNotice && (
+          <motion.div
+            initial={{ opacity: 0, y: -16, x: '-50%' }}
+            animate={{ opacity: 1, y: 0, x: '-50%' }}
+            exit={{ opacity: 0, y: -12, x: '-50%' }}
+            transition={{ duration: 0.22 }}
+            // 居中靠 Framer 的 x: -50%——它写的内联 transform 会盖掉 Tailwind 的 -translate-x-1/2（横幅整条被顶到右半屏）
+            className="fixed left-1/2 z-[210] max-w-md w-[calc(100%-2rem)]"
+            style={{ top: 'calc(1rem + env(safe-area-inset-top))' }}
+            role="alert"
+            data-testid="boot-notice"
+          >
+            <div className="flex items-start gap-3 px-4 py-3 rounded-2xl bg-slate-800/95 text-white shadow-xl backdrop-blur-sm">
+              <span className="text-lg flex-shrink-0">🛟</span>
+              <div className="flex-1 text-xs leading-relaxed">
+                <div className="font-semibold mb-0.5">上次打开没走完就重新开始了（连续 {bootInfo.failures} 次）</div>
+                <div className="opacity-90">
+                  这次用轻量模式进来（开屏不放动画、不预热）。如果反复出现，点下面把诊断信息复制给我们：里面只有机型、系统和各表的条数，没有记录内容。
+                </div>
+                <button
+                  onClick={() => { void (async () => { try { const d = await collectBootDiagnostics(); await navigator.clipboard.writeText(JSON.stringify(d, null, 1)); setBootCopied(true); } catch { setBootCopied(false); } })(); }}
+                  className="mt-2 px-3 py-1.5 rounded-lg bg-white/15 hover:bg-white/25 font-semibold"
+                >
+                  {bootCopied === true ? '已复制，粘贴给开发者即可' : bootCopied === false ? '复制失败，可截图这条' : '复制诊断信息'}
+                </button>
+              </div>
+              <button
+                onClick={() => { ackBootFailures(); setBootNotice(false); }}
+                aria-label="关闭提示"
+                className="w-7 h-7 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center text-sm flex-shrink-0"
+              >
+                ✕
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* 旧版重置密码邮件链接的兜底提示（PB 模板迁移前发出、未点击的链接会落到这里） */}
       <AnimatePresence>
         {staleResetNotice && (
           <motion.div
-            initial={{ opacity: 0, y: -16 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -12 }}
+            initial={{ opacity: 0, y: -16, x: '-50%' }}
+            animate={{ opacity: 1, y: 0, x: '-50%' }}
+            exit={{ opacity: 0, y: -12, x: '-50%' }}
             transition={{ duration: 0.22 }}
-            className="fixed left-1/2 -translate-x-1/2 z-[210] max-w-md w-[calc(100%-2rem)]"
+            // 居中靠 Framer 的 x: -50%——它写的内联 transform 会盖掉 Tailwind 的 -translate-x-1/2（横幅整条被顶到右半屏）
+            className="fixed left-1/2 z-[210] max-w-md w-[calc(100%-2rem)]"
             style={{ top: 'calc(1rem + env(safe-area-inset-top))' }}
             role="alert"
           >

@@ -1,10 +1,13 @@
 import { AttributeId, PersonaSkill, Settings } from '@/types';
-import { chatComplete, chatStream, getAIConfig, getDeliberateAIConfig, type AIConfig } from '@/utils/aiClient';
+import { chatComplete, chatStream, getAIConfig, getDeliberateAIConfig, rateLimitWaitMs, type AIConfig } from '@/utils/aiClient';
 import type { MoonRevealData } from '@/battle/moonBoss';
 export type { MoonRevealData };
 import { SKILL_EFFECT_MAP } from '@/constants';
 import { extractJSON, tryExtractJSON, jsonLooksClosed } from '@/utils/aiJson';
-import { isNetworkError, NET_RETRY_MAX, waitBeforeNetRetry } from '@/utils/aiNet';
+import { isNetworkError, NET_RETRY_MAX, waitBeforeNetRetry, sleepAbortable } from '@/utils/aiNet';
+
+/** 被限流后最多再等几轮（Retry-After 或 10s → 20s → 40s）；紧急修复 #3：Kimi 召唤 429 */
+const RATE_RETRY_MAX = 3;
 
 interface AIMessage { role: 'system' | 'user' | 'assistant'; content: string; }
 
@@ -153,6 +156,8 @@ export class JSONTruncatedError extends Error {
 }
 
 export interface StreamJSONOpts {
+  /** 这条请求被限流（429）了：调用方可据此把并行的几路收成串行 */
+  onRateLimit?: () => void;
   /** 显示用的累计文本（思维链 + 正文都进来，喂滚动预览） */
   onProgress?: (shown: string) => void;
   signal?: AbortSignal;
@@ -201,7 +206,7 @@ async function streamJSONResilient(
   const maxRestarts = opts.maxRestarts ?? 1;
   let full = opts.resumeFrom ?? '';
   let shown = full;
-  let resumes = 0, restarts = 0, netRetries = 0, triedNonStream = false;
+  let resumes = 0, restarts = 0, netRetries = 0, rateRetries = 0, triedNonStream = false;
   /** 模型答非所问（反问 / 解释）的那条回复：带着它再要一次「只输出 JSON」，只纠正一次 */
   let correction: string | null = null;
   let corrected = false;
@@ -264,6 +269,20 @@ async function streamJSONResilient(
       if (opts.signal?.aborted) throw err;
       continue;
     }
+    // ── 被限流（429 / 过载 503）：按 Retry-After 或 10s → 20s → 40s 等，再从同一步接着来（紧急修复 #3）。
+    //    以前 429 落到下面的「换非流式 → 重开」，几秒内连发三次，Moonshot 这种每分钟 3 次、并发 1 的账号越撞越死。
+    //    不占续写 / 重启的次数；通知调用方把并行通道收成串行。
+    {
+      const waitMs = err ? rateLimitWaitMs(err, rateRetries) : null;
+      if (waitMs != null && rateRetries < RATE_RETRY_MAX) {
+        rateRetries++;
+        opts.onRateLimit?.();
+        note(`（服务商限流，等 ${Math.ceil(waitMs / 1000)} 秒再试 ${rateRetries}/${RATE_RETRY_MAX}）`);
+        await sleepAbortable(waitMs, opts.signal);
+        if (opts.signal?.aborted) throw err;
+        continue;
+      }
+    }
     const truncated = !!err || finish === 'length' || (finish !== 'stop' && !jsonLooksClosed(full));
     // ── 答非所问：正常收尾、写了字、却没有可解析的 JSON（反问 / 解释 / 道歉，或整段 JSON 本地修不好）
     //    → 把它那条当 assistant 回传，再要一次「只输出 JSON」，只纠正一次。
@@ -292,6 +311,16 @@ async function streamJSONResilient(
         } catch (e2) {
           if (opts.signal?.aborted) throw e2;
           err = e2;
+          // 非流式那一发也被限流：同样等了再来，别立刻「重新开始」再撞一次
+          const waitMs = rateLimitWaitMs(err, rateRetries);
+          if (waitMs != null && rateRetries < RATE_RETRY_MAX) {
+            rateRetries++;
+            opts.onRateLimit?.();
+            note(`（服务商限流，等 ${Math.ceil(waitMs / 1000)} 秒再试 ${rateRetries}/${RATE_RETRY_MAX}）`);
+            await sleepAbortable(waitMs, opts.signal);
+            if (opts.signal?.aborted) throw err;
+            continue;
+          }
         }
       }
       if (restarts < maxRestarts) {
@@ -471,6 +500,8 @@ export async function generatePersonaSkills(
    * 没单独配深思熟虑档的用户会自动落回快速响应档，行为与改前一致。
    */
   const cfg = getDeliberateAIConfig(settings);
+  /** 紧急修复 #3：整份或某一路被限流后，分属性补缺改为串行 */
+  let serializeLanes = false;
   if (!cfg) return {
     personaName: fallbackName,
     skills: generateDefaultSkills(fallbackName, attributeNames),
@@ -575,7 +606,7 @@ ${formatAllAttrsSpecialization(attributeNames)}
     const PERSONA_MAX_TOKENS = 6000;
     const parsed = await streamJSONResilient(
       cfg, prompt, 0.6, PERSONA_MAX_TOKENS,
-      { onProgress: show, parse: parsePersonaJSON },
+      { onProgress: show, parse: parsePersonaJSON, onRateLimit: () => { serializeLanes = true; } },
       p => ATTRS.every(a => Array.isArray((p[a] as { skills?: unknown } | undefined)?.skills) && ((p[a] as { skills: unknown[] }).skills.length >= 3)),
     ) as Record<string, { name?: string; description?: string; skills?: unknown }>;
     ATTRS.forEach(attr => { if (parsed[attr]) takeAttr(attr, parsed[attr]); });
@@ -601,12 +632,16 @@ ${formatAllAttrsSpecialization(attributeNames)}
   const lanes: Record<string, string> = {};
   const render = () => show(head + missing.map(a => `\n── 唤起「${attributeNames[a]}」之面 ──\n${(lanes[a] ?? '').slice(-400)}`).join(''));
   render();
+  // 紧急修复 #3：任何一路被限流（429）后，剩下的改成逐个唤起——Moonshot 低档位账号并发只有 1，
+  //  两路并行就是一路必 429；serialize 一旦置真，正在跑的那路跑完前其他路都等着
+  let active = 0;
+  const waitTurn = async () => { while (serializeLanes && active > 0) await sleepAbortable(300); };
   const lane = async (attr: AttributeId) => {
     try {
       const one = await streamJSONResilient(
         cfg, buildOneAttrPrompt(attributeNames[attr], attr, context, getDiversityHint()), 0.6, 1600,
         // 单属性的小请求不值得再想两分钟：DeepSeek 关思考，几秒就出（第 12 轮 E）；断网退避在 streamJSONResilient 里
-        { onProgress: t => { lanes[attr] = t; render(); }, maxResumes: 1, noThinking: true },
+        { onProgress: t => { lanes[attr] = t; render(); }, maxResumes: 1, noThinking: true, onRateLimit: () => { if (!serializeLanes) { serializeLanes = true; lanes[attr] = `${lanes[attr] ?? ''}\n（被服务商限流，剩下的面改为逐个唤起）`; render(); } } },
         p => Array.isArray(p.skills) && (p.skills as unknown[]).length >= 3,
       );
       takeAttr(attr, one as { name?: string; description?: string; skills?: unknown });
@@ -617,10 +652,14 @@ ${formatAllAttrsSpecialization(attributeNames)}
       render();
     }
   };
-  // LANE_PARALLEL 路并行，跑完一个接下一个
+  // LANE_PARALLEL 路并行，跑完一个接下一个；限流后收成串行（见 waitTurn）
   const queue = [...missing];
   await Promise.all(Array.from({ length: Math.min(LANE_PARALLEL, queue.length) }, async () => {
-    for (let attr = queue.shift(); attr; attr = queue.shift()) await lane(attr);
+    for (let attr = queue.shift(); attr; attr = queue.shift()) {
+      await waitTurn();
+      active++;
+      try { await lane(attr); } finally { active--; }
+    }
   }));
   const missingAttrs = ATTRS.filter(a => !okAttrs.has(a));
   if (okAttrs.size >= 3) {

@@ -446,6 +446,40 @@ export const bothSidesAgreeOnDecay = (bond: CoopBond): boolean => {
 /**
  * 聚合两侧的初始 LV：都有 → 取 floor((a+b)/2)；只有一侧 → 取那侧；都没 → 1。
  */
+/**
+ * 关系描述的本地暂存（紧急修复 #5「关系描述变成了想说的话」）。
+ * 星象匹配第一页写的「你眼中的 Ta」只是给 AI 参考，云端 coop_bonds 只有 message_a / message_b（写给对方的话），
+ * 没有关系描述字段；提议发出时先按对方云端 id 记在本机，契约建立、物化成本地同伴卡时取走它当「关系描述」。
+ * 以前物化时拿的是 message（我写给对方的话），用户看到自己的「关系描述」变成了那句话。
+ */
+const PENDING_DESC_KEY = 'velvet:coop.pendingDescription.v1';
+type PendingDescMap = Record<string, { text: string; at: number }>;
+const readPendingDesc = (): PendingDescMap => {
+  try { const v = JSON.parse(localStorage.getItem(PENDING_DESC_KEY) || '{}'); return v && typeof v === 'object' ? v as PendingDescMap : {}; } catch { return {}; }
+};
+const writePendingDesc = (m: PendingDescMap): void => {
+  try { localStorage.setItem(PENDING_DESC_KEY, JSON.stringify(m)); } catch { /* 隐私模式写不进就算了 */ }
+};
+export const rememberPendingBondDescription = (targetUserId: string, description: string): void => {
+  const text = description.trim();
+  if (!targetUserId || !text) return;
+  const m = readPendingDesc();
+  // 顺手清掉 90 天前的旧条目（提议被拒 / 过期后不会再物化）
+  const cutoff = Date.now() - 90 * 86400000;
+  for (const [k, v] of Object.entries(m)) if (!v || v.at < cutoff) delete m[k];
+  m[targetUserId] = { text, at: Date.now() };
+  writePendingDesc(m);
+};
+/** 取走并删除（物化只发生一次） */
+export const takePendingBondDescription = (targetUserId: string): string | null => {
+  const m = readPendingDesc();
+  const hit = m[targetUserId];
+  if (!hit) return null;
+  delete m[targetUserId];
+  writePendingDesc(m);
+  return hit.text || null;
+};
+
 export const resolveCoopInitialIntimacy = (bond: CoopBond): number => {
   const a = bond.intimacyALevel;
   const b = bond.intimacyBLevel;

@@ -12,7 +12,7 @@ import { useMemo, useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useAppStore } from '@/store';
 import { useCloudSocialStore } from '@/store/cloudSocial';
-import { proposeCoopBond } from '@/services/coopBonds';
+import { proposeCoopBond, rememberPendingBondDescription } from '@/services/coopBonds';
 import { loadSocial } from '@/services/social';
 import { ArcanaPickerForm, type ArcanaPickerValue } from './ArcanaPickerForm';
 import { CoopAiMatchModal } from './CoopAiMatchModal';
@@ -73,6 +73,8 @@ export function CoopProposeModal({ isOpen, onClose, target }: Props) {
     setSubmitting(true);
     setError('');
     try {
+      // 紧急修复 #5：关系描述只存本机，契约成立物化同伴卡时取走
+      if (v.description?.trim()) rememberPendingBondDescription(target.id, v.description);
       const bond = await proposeCoopBond({
         targetUserId: target.id,
         arcanaId: v.arcanaId,

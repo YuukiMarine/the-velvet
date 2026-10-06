@@ -488,12 +488,16 @@ const versionsOf = (snap: CloudSnapshot): Record<string, string> =>
   Object.fromEntries([...snap.tables].filter(([, t]) => !!t.version).map(([k, t]) => [k, t.version]));
 
 /** 按大小切片：每片不超过 targetBytes（单行本身超过也单独成片） */
+/** JSON 字节数（UTF-8）。紧急修复 #4：以前用 .length（UTF-16 码元数），中文一个字 3 字节，
+ *  一张 150 万「字符」的表其实有 4MB 多，超过 PB JSON 字段 2MB 上限 → 整表 / 每片都被 400 打回。 */
+const jsonBytes = (v: unknown): number => new TextEncoder().encode(JSON.stringify(v)).length;
+
 function splitRows(rows: Row[], targetBytes: number): Row[][] {
   const out: Row[][] = [];
   let cur: Row[] = [];
   let size = 2;
   for (const r of rows) {
-    const b = JSON.stringify(r).length + 1;
+    const b = jsonBytes(r) + 1;
     if (cur.length && size + b > targetBytes) { out.push(cur); cur = []; size = 2; }
     cur.push(r);
     size += b;
@@ -670,7 +674,7 @@ const pushAllInner = async (opts: { force?: boolean } = {}): Promise<void> => {
     /** 写一张表：小表整条记录；大表切片（key#1..n）并登记到 _meta，同时清掉另一种形态的残留 */
     const writeTable = async (key: string, rows: Row[]): Promise<void> => {
       const cur = snap.tables.get(key);
-      if (JSON.stringify(rows).length <= CHUNK_THRESHOLD_BYTES) {
+      if (jsonBytes(rows) <= CHUNK_THRESHOLD_BYTES) {
         const r = cur?.plainId
           ? await client.collection('user_data').update(cur.plainId, { value: rows }, { requestKey: null })
           : await client.collection('user_data').create({ user: userId, key, value: rows }, { requestKey: null });
@@ -715,7 +719,11 @@ const pushAllInner = async (opts: { force?: boolean } = {}): Promise<void> => {
         await writeTable(key, rows as Row[]);
       } catch (e) {
         const st = (e as { status?: number })?.status;
-        failed.push({ key, why: st === 413 ? '太大' : st ? `服务器回 ${st}` : '网络错误' });
+        // 紧急修复 #4：把服务器的话带出来（PB 的 400 会说是哪个字段、为什么），别只剩一个数字
+        const resp = (e as { response?: { message?: string; data?: Record<string, { message?: string }> } })?.response;
+        const fieldMsg = resp?.data ? Object.entries(resp.data).map(([f, d]) => `${f}：${d?.message ?? ''}`).filter(Boolean).join('；') : '';
+        const detail = [resp?.message, fieldMsg].filter(Boolean).join(' ').slice(0, 160);
+        failed.push({ key, why: st === 413 ? '太大（超过服务器单次请求上限）' : st ? `服务器回 ${st}${detail ? `：${detail}` : ''}` : '网络错误' });
         console.warn('[velvet-sync] push: table failed, continuing', key, e);
       }
     }

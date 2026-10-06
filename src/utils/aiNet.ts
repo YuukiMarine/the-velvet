@@ -15,6 +15,8 @@
 export function isNetworkError(e: unknown): boolean {
   if (!e || (e instanceof Error && e.name === 'AbortError')) return false;
   const m = e instanceof Error ? e.message : String(e);
+  // 请求头里有非法字符（密钥混进零宽空格 / 全角字母）：fetch 没发出去就抛 TypeError，不是网络问题，重试也没用
+  if (e instanceof TypeError && /headers|header value|ISO-8859-1|not a valid HTTP|Invalid name/i.test(m)) return false;
   if (/Failed to fetch|Load failed|NetworkError|network error|network connection was lost|net::ERR_|Could not connect|ECONNRESET|ECONNREFUSED|socket hang up/i.test(m)) return true;
   return e instanceof TypeError && !/Cannot read|is not a function|is not defined|is not iterable|undefined|null|Invalid/i.test(m);
 }
@@ -23,7 +25,8 @@ const BACKOFF_MS = [1500, 3000, 6000];
 /** 网络类失败最多再试这么多次（第 i 次前先等 BACKOFF_MS[i]） */
 export const NET_RETRY_MAX = BACKOFF_MS.length;
 
-const sleep = (ms: number, signal?: AbortSignal) => new Promise<void>((resolve) => {
+/** 可取消的等待：取消时也正常返回（成不成由下一次请求说话） */
+export const sleepAbortable = (ms: number, signal?: AbortSignal) => new Promise<void>((resolve) => {
   const t = setTimeout(done, ms);
   function done() { signal?.removeEventListener('abort', done); clearTimeout(t); resolve(); }
   signal?.addEventListener('abort', done, { once: true });
@@ -48,7 +51,7 @@ function waitFor(target: EventTarget, event: string, ok: () => boolean, maxMs: n
  * 都只是「等到更可能成功的时刻」，到点照样放行。
  */
 export async function waitBeforeNetRetry(attempt: number, signal?: AbortSignal): Promise<void> {
-  await sleep(BACKOFF_MS[Math.min(Math.max(attempt, 0), BACKOFF_MS.length - 1)], signal);
+  await sleepAbortable(BACKOFF_MS[Math.min(Math.max(attempt, 0), BACKOFF_MS.length - 1)], signal);
   if (signal?.aborted) return;
   if (typeof navigator !== 'undefined' && navigator.onLine === false) {
     await waitFor(window, 'online', () => navigator.onLine !== false, 30_000, signal);

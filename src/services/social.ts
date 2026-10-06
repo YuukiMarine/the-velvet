@@ -12,7 +12,7 @@ import { pb, getUserId } from './pocketbase';
 import { listFriendships, expireOutdatedPending } from './friends';
 import { listNotifications, markNotificationRead } from './notifications';
 import { listTodayPrayers } from './prayers';
-import { listCoopBonds, expireOutdatedCoopPending, viewFromMySide, resolveCoopInitialIntimacy } from './coopBonds';
+import { listCoopBonds, expireOutdatedCoopPending, viewFromMySide, resolveCoopInitialIntimacy, takePendingBondDescription } from './coopBonds';
 import {
   listCoopShadows,
   maybeSpawnForBonds,
@@ -269,6 +269,15 @@ const materializeCoopBonds = async (bonds: CoopBond[]): Promise<void> => {
       c => c.source === 'online' && c.linkedCloudUserId === other.id,
     );
     if (existing) {
+      // 紧急修复 #5 的回填：以前物化时把「我写给对方的话」当成了关系描述——认出来就清掉
+      //（关系描述显示「（未填写）」，可在详情里补写；原来写的那段描述当时没有被保存下来，无从恢复）
+      if (existing.description && view.myMessage && existing.description.trim() === view.myMessage.trim()) {
+        try {
+          await appStore.updateConfidant(existing.id, { description: '' });
+        } catch (err) {
+          console.warn('[velvet-social] clear message-as-description failed', existing.id, err);
+        }
+      }
       // bond 回到 linked 状态，bondSeverDismissed 的使命已经完成 —— 清掉它，
       // 否则下轮 sever 来时 reflectSeveredBonds 永远不会自动归档（粘滞 flag bug）。
       if (existing.bondSeverDismissed) {
@@ -345,7 +354,8 @@ const materializeCoopBonds = async (bonds: CoopBond[]): Promise<void> => {
     try {
       const created = await appStore.addConfidant({
         name: displayName,
-        description: view.myMessage || '',
+        // 紧急修复 #5：关系描述 = 提议时写的「你眼中的 Ta」（本机暂存）；没写过就留空，不再拿「写给对方的话」顶替
+        description: takePendingBondDescription(other.id) ?? '',
         match,
         source: 'online',
         linkedCloudUserId: other.id,

@@ -3,6 +3,10 @@ import ReactDOM from 'react-dom/client'
 import App from './App.tsx'
 import './index.css'
 import { isNative } from '@/utils/native'
+import { bootBegin } from '@/utils/bootGuard'
+
+// 启动看门狗（紧急修复 #1）：先于一切记这一次启动，判上一次有没有走完
+bootBegin(); // 分号必须有：下一句是 (() => {})() 形式的 IIFE，ASI 会把它接成 bootBegin()(...)
 
 // ── 双指缩放闸（iOS：WKWebView / 主屏 PWA / Safari 标签页三处都拦） ─────────
 // 用户上报「双指向外拉伸整个页面会被放大」，模拟器实测复现：页面被放成碎片、

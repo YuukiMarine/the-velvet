@@ -306,6 +306,33 @@ const hostOf = (url: string): string => {
  * - 网络错误分两种说：能连上但没放行跨域（App 里用不了，换中转或让站长开 CORS）/ 根本连不上
  * - 错误提示先认中转站的措辞（无可用渠道 / 额度 / 令牌 / 模型不存在），认不出再按状态码
  */
+/**
+ * 密钥清洗（紧急修复 #2）：从网页 / 聊天软件复制、或用中文输入法手敲的密钥，常混进零宽空格（U+200B）、
+ * 全角字母（ｓｋ－）、不换行空格、中文标点等。这些字符 fetch 根本发不出去——构造请求头时就抛 TypeError
+ * （Chrome「Failed to read the 'headers' property」、WebKit 也是 TypeError），以前被当成网络 / 跨域失败，
+ * 用户看到的是「没放行 CORS」，而同一把 key 在别的 App 里（原生 HTTP 栈会直接发字节或自行清理）却能用。
+ * 规则：全角 ASCII（U+FF01–U+FF5E）折回半角；其余只保留可见 ASCII（0x21–0x7E）。
+ */
+export function cleanApiKey(raw: string | undefined | null): { key: string; removed: number } {
+  const src = String(raw ?? '');
+  let key = '';
+  let removed = 0;
+  for (const ch of src) {
+    const code = ch.codePointAt(0) ?? 0;
+    if (code >= 0xff01 && code <= 0xff5e) { key += String.fromCharCode(code - 0xfee0); removed++; continue; }
+    if (code >= 0x21 && code <= 0x7e) { key += ch; continue; }
+    if (!/\s/.test(ch)) removed++;           // 首尾空白不算「脏」，trim 本来就会去掉；中间的空白也去掉但不计数
+    else if (key.length > 0 && key.length < src.trim().length) removed++;
+  }
+  return { key, removed };
+}
+
+/** fetch 在构造请求头时就抛的 TypeError（密钥 / 地址里有非法字符），不是网络问题 */
+export function isHeaderValueError(e: unknown): boolean {
+  if (!(e instanceof TypeError)) return false;
+  return /headers|header value|Invalid value|ISO-8859-1|not a valid HTTP|Invalid name/i.test(e.message);
+}
+
 export async function testAIConnection(opts: {
   provider: ApiProvider;
   apiKey: string;
@@ -315,6 +342,7 @@ export async function testAIConnection(opts: {
   if (!opts.apiKey?.trim()) {
     return { ok: false, error: '请先填写 API 密钥' };
   }
+  const apiKey = cleanApiKey(opts.apiKey).key;
 
   const { baseUrl, model } = resolveProvider(opts.provider, opts.baseUrl, opts.model);
   // 推理模型（GPT-5/o 系列）拒绝 max_tokens，且 max_tokens:1 会被推理 token 吃光
@@ -336,7 +364,7 @@ export async function testAIConnection(opts: {
     try {
       const resp = await fetch(`${base}/chat/completions`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${opts.apiKey.trim()}` },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
         body,
         signal: controller.signal,
       });
@@ -357,6 +385,9 @@ export async function testAIConnection(opts: {
       if (e instanceof Error && e.name === 'AbortError') {
         return { ok: false, error: '连接超时（15s 无响应）', retryWithV1: false };
       }
+      if (isHeaderValueError(e)) {
+        return { ok: false, retryWithV1: false, error: '密钥或地址里有发不出去的字符（看不见的空格、全角字母、中文标点）——请删掉重新粘贴，或在密钥框里把它清理后再保存' };
+      }
       if (e instanceof TypeError) {
         const host = hostOf(base);
         const reachable = await probeReachable(`${base}/models`);
@@ -366,10 +397,15 @@ export async function testAIConnection(opts: {
         // 简单 GET 拿到了那个页面，带预检的 POST 被它弄坏。别再对官方用户讲「中转 / 站长 / 跨域」（第 13 轮反馈）。
         const official = isOfficialHost(base);
         let error: string;
+        const raw = e.message ? `（${e.message.slice(0, 60)}）` : '';
         if (official) {
           error = reachable
-            ? `连不上 ${host}：它允许 App 直连，这次请求是在半路被拦下的——常见于校园网 / 公司网，或手机上开着 VPN、DNS 过滤类 App。换个网络（关掉 VPN、切到流量）再试一次`
-            : `连不上 ${host}：当前没有网络，或这个网络到不了它——换个网络再试`;
+            ? `连不上 ${host}：它允许 App 直连，这次请求是在半路被拦下的——常见于校园网 / 公司网，或手机上开着 VPN、DNS 过滤类 App。换个网络（关掉 VPN、切到流量）再试一次${raw}`
+            : `连不上 ${host}：当前没有网络，或这个网络到不了它——换个网络再试${raw}`;
+        } else if (/^coding\.dashscope(-intl)?\.aliyuncs\.com$/i.test(host)) {
+          // 2026-10-06 实测：千问「套餐专属」网关对浏览器的 OPTIONS 预检直接回 401、不带 CORS 头（百炼默认地址是放行的），
+          // 网页 / App 里发不出去，不是密钥的问题，也不是中转站
+          error = `千问的套餐专属地址（${host}）目前不支持从 App / 浏览器直连：它对预检请求也要求鉴权（回 401），没有放行 CORS。请改用百炼默认地址 https://dashscope.aliyuncs.com/compatible-mode/v1（套餐 Key 若不能用于该地址，就只能经中转站）`;
         } else {
           error = reachable
             ? `能连上 ${host}，但这个中转站没有开放跨域访问（CORS），App 里无法直连它——换一个支持跨域的中转站，或请服务商开启 CORS`
@@ -447,13 +483,14 @@ export async function fetchAvailableModels(opts: {
   baseUrl?: string;
 }): Promise<ModelListResult> {
   if (!opts.apiKey?.trim()) return { ok: false, error: '请先填写并保存 API 密钥' };
+  const apiKey = cleanApiKey(opts.apiKey).key;
 
   const { baseUrl } = resolveProvider(opts.provider, opts.baseUrl);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15000);
   try {
     const resp = await fetch(`${baseUrl}/models`, {
-      headers: { Authorization: `Bearer ${opts.apiKey.trim()}` },
+      headers: { Authorization: `Bearer ${apiKey}` },
       signal: controller.signal,
     });
     clearTimeout(timeout);

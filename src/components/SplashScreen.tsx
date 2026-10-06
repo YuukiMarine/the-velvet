@@ -12,6 +12,8 @@ export interface SplashScreenProps {
   onComplete: () => void;
   splashStyle?: SplashStyle;
   splashSpeed?: SplashSpeedOption;
+  /** 安全模式（启动看门狗判定上次没走完）：不放 3D 推进段、整体提速——轻装进门 */
+  reduced?: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -22,8 +24,8 @@ export interface SplashScreenProps {
  * 本体拆到 components/splash/VelvetRoomSplash：那里是一整套 3D 透视场景，
  * 与本文件其余三个频道开屏（纯 2D 拼贴）不是一个量级，混在一起会难以维护。
  */
-function VelvetSplash({ onComplete, s }: { onComplete: () => void; s: number }) {
-  return <VelvetRoomSplash onComplete={onComplete} s={s} />;
+function VelvetSplash({ onComplete, s, reduced }: { onComplete: () => void; s: number; reduced?: boolean }) {
+  return <VelvetRoomSplash onComplete={onComplete} s={s} reduced={reduced} />;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1503,10 +1505,10 @@ function P4Splash({ onComplete, s }: { onComplete: () => void; s: number }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Main export
 // ─────────────────────────────────────────────────────────────────────────────
-export const SplashScreen = ({ isVisible, onComplete, splashStyle = 'velvet', splashSpeed = 'normal' }: SplashScreenProps) => {
+export const SplashScreen = ({ isVisible, onComplete, splashStyle = 'velvet', splashSpeed = 'normal', reduced = false }: SplashScreenProps) => {
   // Capture style on first render so it doesn't change mid-animation
   const styleRef = useRef<SplashStyle>(splashStyle);
-  const s = SPEED_MULT[splashSpeed];
+  const s = reduced ? Math.min(SPEED_MULT[splashSpeed], 0.35) : SPEED_MULT[splashSpeed];
 
   if (!isVisible) return null;
 
@@ -1514,5 +1516,5 @@ export const SplashScreen = ({ isVisible, onComplete, splashStyle = 'velvet', sp
   if (style === 'p5') return <P5Splash onComplete={onComplete} s={s} />;
   if (style === 'p3') return <P3Splash onComplete={onComplete} s={s} />;
   if (style === 'p4') return <P4Splash onComplete={onComplete} s={s} />;
-  return <VelvetSplash onComplete={onComplete} s={s} />;
+  return <VelvetSplash onComplete={onComplete} s={s} reduced={reduced} />;
 };

@@ -21,7 +21,10 @@ export interface ArcanaPickerValue {
   orientation: TarotOrientation;
   intimacyLevel: number;
   skillAttribute: AttributeId;
+  /** 写给对方看的一句话（云端 message_a / message_b） */
   message: string;
+  /** 星象匹配第一页写的「你眼中的 Ta」：只给 AI 参考 + 作为本机同伴卡的「关系描述」；不上云（紧急修复 #5） */
+  description?: string;
 }
 
 interface Props {

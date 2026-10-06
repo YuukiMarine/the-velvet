@@ -49,6 +49,8 @@
   </head>
   <body>
     <div id="root"></div>
+    <!-- 启动看门狗的第一道脚印：模块脚本根本没跑（老 WebView 解析不了产物）时只有这条在，见 utils/bootGuard -->
+    <script>try{localStorage.setItem('velvet:boot.html',String(Date.now()))}catch(e){}</script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

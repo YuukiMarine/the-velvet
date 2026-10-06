@@ -71,7 +71,7 @@ const DUST = Array.from({ length: 16 }, (_, i) => ({
   delay: 0.15 + i * 0.06,
 }));
 
-export function VelvetRoomSplash({ onComplete, s }: { onComplete: () => void; s: number }) {
+export function VelvetRoomSplash({ onComplete, s, reduced = false }: { onComplete: () => void; s: number; reduced?: boolean }) {
   /**
    * 这里刻意**不**用 useBoldness()。
    *
@@ -85,9 +85,12 @@ export function VelvetRoomSplash({ onComplete, s }: { onComplete: () => void; s:
    * 所以这里只认 prefers-reduced-motion —— 那是用户**明确表达**的系统级偏好，
    * 该尊重；帧率推断不该替他决定要不要看自己 App 的开场。
    */
-  const anim = !prefersReducedMotion();
+  // reduced：启动看门狗的安全模式——上一次开屏没走完就被重启了（多半是内容进程被系统杀掉），这次不放 3D 推进段
+  const anim = !reduced && !prefersReducedMotion();
   const [phase, setPhase] = useState<'preroll' | 'travel' | 'flood' | 'title'>(anim ? 'preroll' : 'title');
-  const doneRef = useRef(false);
+  // onComplete 走 ref：标题段的定时器不因回调身份变化而重启 / 被清掉（紧急修复 #1 顺带）
+  const onCompleteRef = useRef(onComplete);
+  onCompleteRef.current = onComplete;
 
   const skip = () => setPhase((p) => (p === 'title' ? p : 'title'));
 
@@ -109,14 +112,16 @@ export function VelvetRoomSplash({ onComplete, s }: { onComplete: () => void; s:
     return () => clearTimeout(t);
   }, [phase, s]);
   useEffect(() => {
-    if (phase !== 'title' || doneRef.current) return;
-    doneRef.current = true;
+    if (phase !== 'title') return;
     // 2400 → 2300（整体提速 0.5s 的尾款）→ 1800：后半段再砍 0.5s（用户口径）。
     // 标题逐字 1.06s、副标题 1.52s 内全部定格，1.8s 停留不截断任何主体，
     // 只有 marquee/涟漪这类"路过型"装饰被提前带走——它们本来就没有终点。
-    const t = setTimeout(onComplete, (anim ? 1800 : 1200) * s);
+    // 以前这里有个 doneRef 一次性守卫：effect 一旦被重跑（StrictMode 开发态必重跑；生产态 anim / s 变了也会），
+    // cleanup 清掉定时器、重跑又被守卫拦下 → onComplete 永远不发、开屏永远停在标题——直接从标题段起手的
+    // 安全模式 / 减少动态效果模式首当其冲。现在重跑就重新上表，回调走 ref。
+    const t = setTimeout(() => onCompleteRef.current(), (anim ? 1800 : 1200) * s);
     return () => clearTimeout(t);
-  }, [phase, s, onComplete, anim]);
+  }, [phase, s, anim]);
 
   const traveling = phase === 'travel';
   const T = TRAVEL_SEC * s;

@@ -28,7 +28,7 @@ import {
   providerMaxOutput,
   isOfficialHost,
   relayHint,
-  type ApiProvider, DEFAULT_PROVIDER } from '@/utils/aiProviders';
+  type ApiProvider, DEFAULT_PROVIDER, cleanApiKey } from '@/utils/aiProviders';
 
 export type AIRole = 'system' | 'user' | 'assistant';
 
@@ -175,7 +175,7 @@ const RELAY_THINKING_ALLOWANCE = 12_000;
  * 取代散落在 battleAI / activityAI 等处各写一遍的 getAIConfig。
  */
 export function getAIConfig(settings: Settings): AIConfig | null {
-  const apiKey = settings.summaryApiKey?.trim();
+  const apiKey = cleanApiKey(settings.summaryApiKey).key;
   if (!apiKey) return null;
   const { baseUrl, model } = resolveProvider(
     settings.summaryApiProvider,
@@ -229,7 +229,7 @@ function applyModelOverride(
   const activeProvider = settings.summaryApiProvider ?? DEFAULT_PROVIDER;
   if (pv && pv !== activeProvider) {
     const prof = settings.aiProfiles?.[pv];
-    const key = prof?.key?.trim();
+    const key = cleanApiKey(prof?.key).key;
     if (key) {
       const resolved = resolveProvider(pv, prof?.baseUrl, model?.trim() || prof?.model);
       return { apiKey: key, baseUrl: resolved.baseUrl, model: resolved.model, provider: pv };
@@ -249,7 +249,7 @@ function applyModelOverride(
 export function fallbackAIConfig(settings: Settings): AIConfig {
   return {
     ...resolveProvider(settings.summaryApiProvider, settings.summaryApiBaseUrl, settings.summaryModel),
-    apiKey: settings.summaryApiKey || '',
+    apiKey: cleanApiKey(settings.summaryApiKey).key,
     provider: settings.summaryApiProvider,
     tier: 'fast',
   };
@@ -326,6 +326,40 @@ function timeoutError(timeoutMs: number): Error {
   return new Error(`AI 请求超时（${secs}秒），请检查网络或更换更快的模型`);
 }
 
+/** HTTP 层失败：带状态码与 Retry-After（毫秒），调用方可据此退避（紧急修复 #3：Kimi 429） */
+export class HttpStatusError extends Error {
+  status: number;
+  retryAfterMs?: number;
+  constructor(message: string, status: number, retryAfterMs?: number) {
+    super(message);
+    this.name = 'HttpStatusError';
+    this.status = status;
+    this.retryAfterMs = retryAfterMs;
+  }
+}
+
+/** Retry-After 头 → 毫秒（秒数或 HTTP 日期）；没有 / 不合法 → undefined */
+function parseRetryAfter(resp: Response): number | undefined {
+  const v = resp.headers.get('retry-after');
+  if (!v) return undefined;
+  const secs = Number(v);
+  if (Number.isFinite(secs) && secs >= 0) return Math.min(secs * 1000, 120_000);
+  const at = Date.parse(v);
+  return Number.isFinite(at) ? Math.max(0, Math.min(at - Date.now(), 120_000)) : undefined;
+}
+
+/**
+ * 被限流（429）/ 服务商说过载（503 且给了 Retry-After）时该等多久再试：
+ * 优先 Retry-After，没有就 10s → 20s → 40s（Moonshot 低档位账号是「每分钟 3 次、并发 1」这种量级）。
+ * 不是限流 → null。
+ */
+export function rateLimitWaitMs(e: unknown, attempt: number): number | null {
+  if (!(e instanceof HttpStatusError)) return null;
+  if (e.status !== 429 && !(e.status === 503 && e.retryAfterMs != null)) return null;
+  const ladder = [10_000, 20_000, 40_000];
+  return e.retryAfterMs ?? ladder[Math.min(Math.max(attempt, 0), ladder.length - 1)];
+}
+
 /** 把 !resp.ok 的响应转成可读错误（复用 aiProviders 的提示映射，与连接测试同源） */
 async function toHttpError(resp: Response, provider?: ApiProvider, requestUrl?: string): Promise<Error> {
   const body = await resp.text().catch(() => '');
@@ -335,7 +369,7 @@ async function toHttpError(resp: Response, provider?: ApiProvider, requestUrl?: 
   // 自己 new 出来的 Response（测试桩 / 个别代理层）resp.url 是空串，只靠它会把官方当成中转
   const hint = relayHint(detail, isOfficialHost(requestUrl || resp.url)) || getHttpStatusHint(resp.status, provider);
   const prefix = hint ? `${hint}（HTTP ${resp.status}）` : `HTTP ${resp.status}`;
-  return new Error(detail ? `${prefix}: ${detail}` : prefix);
+  return new HttpStatusError(detail ? `${prefix}: ${detail}` : prefix, resp.status, parseRetryAfter(resp));
 }
 
 function authHeaders(cfg: AIConfig, accept?: string): Record<string, string> {

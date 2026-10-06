@@ -176,6 +176,8 @@ export function CoopAiMatchModal({ isOpen, onClose, targetName, takenArcanaIds, 
       intimacyLevel: pickedLevel,
       skillAttribute,
       message: userMessage,
+      // 紧急修复 #5：以前这里把第一页的关系描述丢了，物化同伴卡时只好拿「写给对方的话」当关系描述
+      description: description.trim(),
     });
     onClose();
   };
