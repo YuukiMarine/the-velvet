@@ -9,7 +9,7 @@ import { toLocalDateKey } from '@/store';
 import { isInShadowTime, SHADOW_LEVEL_CONFIG } from '@/constants';
 import { BOSS_ATTACK_BY_LEVEL } from '@/battle/numbers';
 import { AttributeId, MobSpec, StratumNode } from '@/types';
-import { absoluteFloor } from '@/battle/tower';
+import { absoluteFloor, orphanBossOf } from '@/battle/tower';
 import { type LootDrop } from '@/battle/loot';
 import { LootReveal, type LootRevealSource } from '@/components/battle/LootReveal';
 import { rollPrepDraw, type PrepBuff } from '@/battle/preparation';
@@ -190,6 +190,13 @@ export const BattleArena = () => {
     if (battleState.status === 'idle' && !sh && battleState.finalBossStage === 'revealed'
       && (battleState.defeatedShadowLog ?? []).some(r => (r.level ?? 0) >= 6)) {
       void useAppStore.getState().beginFinalBossFinale();
+      return;
+    }
+    // 第 13 轮 孤儿胜利：status=victory 但本体没了（旧状态写回滚 / 同步 / 存档损坏）。
+    // 区层已通关或没有区层 = 奖早领过了 → 状态静默修回 idle，不再弹一个按了没反应的奖励屏；
+    // 区层还在爬 = 奖没领过 → 照常弹，VictoryModal 用区层信息拼占位心魔兜底领奖
+    if (battleState.status === 'victory' && !sh && !showBattle && !orphanBossOf(useAppStore.getState().stratum)) {
+      void useAppStore.getState().repairOrphanVictory();
       return;
     }
     if (battleState.status === 'victory' && !showBattle && !showVictory) {

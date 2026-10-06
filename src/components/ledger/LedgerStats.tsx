@@ -11,7 +11,7 @@ import { useAppStore, toLocalDateKey } from '@/store';
 import { useShallow } from 'zustand/react/shallow';
 import { SheetModal } from '@/components/SheetModal';
 import { SegmentTabs } from '@/components/SegmentTabs';
-import { catMeta, CATEGORY_KEYS, sym, fmtMoney, fmtSigned, shiftMonth } from '@/utils/ledgerFormat';
+import { catMeta, CATEGORY_KEYS, sym, fmtMoney, fmtSigned, shiftMonth, ledgerCycle, cycleRangeForKey, roundMoney } from '@/utils/ledgerFormat';
 import { buildSettlementData, generateSettlement, settleRange, shiftSettleAnchor, type SettleScope, type SettlementResult } from '@/utils/ledgerSettlement';
 import { renderMarkdown } from '@/utils/markdown';
 import { Donut } from '@/components/ledger/Donut';
@@ -61,7 +61,16 @@ function BarRow({ label, amount, max, $ }: { label: string; amount: number; max:
 export function LedgerStats() {
   const { settings, ledgerEntries, getBudget, claimLedgerBudgetBonus, claimLedgerChallengeBonus } = useAppStore(useShallow(s => ({ settings: s.settings, ledgerEntries: s.ledgerEntries, getBudget: s.getBudget, claimLedgerBudgetBonus: s.claimLedgerBudgetBonus, claimLedgerChallengeBonus: s.claimLedgerChallengeBonus })));
   const $ = sym(settings.currency);
-  const [period, setPeriod] = useState(() => toLocalDateKey().slice(0, 7));
+  // 第 13 轮 P0：发薪日周期开着时，统计 / 预算对比 / 结算都按周期（原来这里按自然月，预算却按周期键存，对不上）
+  const payCycle = settings.ledgerPayCycleEnabled === true;
+  const resetDay = settings.ledgerResetDay ?? 1;
+  const cycleOpts = useMemo(() => ({ payCycle, resetDay }), [payCycle, resetDay]);
+  const currentKey = ledgerCycle(payCycle, resetDay, toLocalDateKey()).key;
+  const rangeOf = (p: string) => cycleRangeForKey(payCycle, resetDay, p);
+  const mdOf = (k: string) => { const [, m, d] = k.split('-'); return `${Number(m)}/${Number(d)}`; };
+  const periodLabel = (p: string) => { if (!payCycle) return p; const [a, b] = rangeOf(p); return `${mdOf(a)} – ${mdOf(b)}`; };
+  const keyOfAnchor = (anchor: string) => ledgerCycle(payCycle, resetDay, anchor).key;
+  const [period, setPeriod] = useState(() => ledgerCycle(settings.ledgerPayCycleEnabled === true, settings.ledgerResetDay ?? 1, toLocalDateKey()).key);
   // 结算（周/月，独立于上方统计月份）
   const [settleOpen, setSettleOpen] = useState(false);
   const [settleScope, setSettleScope] = useState<SettleScope>('month');
@@ -72,13 +81,13 @@ export function LedgerStats() {
   const [challengeWon, setChallengeWon] = useState<number | null>(null);
 
   const settleData = useMemo(() => {
-    const [, end] = settleRange(settleScope, settleAnchor);
-    return buildSettlementData(ledgerEntries, settleScope, settleAnchor, getBudget(end.slice(0, 7))?.monthlyLimit, settings.currency);
-  }, [ledgerEntries, settleScope, settleAnchor, getBudget, settings.currency]);
+    const [, end] = settleRange(settleScope, settleAnchor, cycleOpts);
+    return buildSettlementData(ledgerEntries, settleScope, settleAnchor, getBudget(ledgerCycle(cycleOpts.payCycle, cycleOpts.resetDay, end).key)?.monthlyLimit, settings.currency, cycleOpts);
+  }, [ledgerEntries, settleScope, settleAnchor, getBudget, settings.currency, cycleOpts]);
 
   const todayKey = toLocalDateKey();
   const atCurrentPeriod = settleScope === 'month'
-    ? settleData.rangeStart.slice(0, 7) >= todayKey.slice(0, 7)
+    ? keyOfAnchor(settleData.rangeStart) >= currentKey
     : settleData.rangeEnd >= todayKey;
 
   const openSettle = () => { setSettleScope('month'); setSettleAnchor(toLocalDateKey()); setSettleOpen(true); };
@@ -90,8 +99,8 @@ export function LedgerStats() {
     (async () => {
       setSettleBusy(true);
       setSettleResult(null);
-      setBonus(settleScope === 'month' ? await claimLedgerBudgetBonus(settleAnchor.slice(0, 7)) : false);
-      setChallengeWon(settleScope === 'month' ? await claimLedgerChallengeBonus(settleAnchor.slice(0, 7)) : null);
+      setBonus(settleScope === 'month' ? await claimLedgerBudgetBonus(keyOfAnchor(settleAnchor)) : false);
+      setChallengeWon(settleScope === 'month' ? await claimLedgerChallengeBonus(keyOfAnchor(settleAnchor)) : null);
       const r = await generateSettlement(settleData, settings);
       if (!cancelled) { setSettleResult(r); setSettleBusy(false); }
     })();
@@ -100,8 +109,8 @@ export function LedgerStats() {
   }, [settleOpen, settleScope, settleAnchor]);
 
   const s = useMemo(() => {
-    const monthOf = (p: string) => ledgerEntries.filter(e => e.date.slice(0, 7) === p);
-    const sum = (rows: typeof ledgerEntries) => rows.reduce((a, e) => a + e.amount, 0);
+    const monthOf = (p: string) => { const [a, b] = cycleRangeForKey(payCycle, resetDay, p); return ledgerEntries.filter(e => e.date >= a && e.date <= b); };
+    const sum = (rows: typeof ledgerEntries) => roundMoney(rows.reduce((a, e) => a + e.amount, 0));
     const cur = monthOf(period);
     const prevExp = monthOf(shiftMonth(period, -1)).filter(e => e.direction === 'expense');
     const curExp = cur.filter(e => e.direction === 'expense');
@@ -128,17 +137,21 @@ export function LedgerStats() {
 
     const incomeLabor = sum(curInc.filter(e => e.incomeType === 'labor'));
 
-    return { totalExpense, totalIncome, prevExpense, byCat, movers, byChannel, incomeLabor, incomeOther: totalIncome - incomeLabor };
-  }, [ledgerEntries, period]);
+    return { totalExpense, totalIncome, prevExpense, byCat, movers, byChannel, incomeLabor, incomeOther: roundMoney(totalIncome - incomeLabor) };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ledgerEntries, period, payCycle, resetDay]);
 
   const trend = useMemo(() => {
     const months: string[] = [];
     for (let i = 5; i >= 0; i--) months.push(shiftMonth(period, -i));
-    return months.map(mk => ({
-      month: mk,
-      expense: ledgerEntries.filter(e => e.direction === 'expense' && e.date.slice(0, 7) === mk).reduce((a, e) => a + e.amount, 0),
-    }));
-  }, [ledgerEntries, period]);
+    return months.map(mk => {
+      const [a, b] = cycleRangeForKey(payCycle, resetDay, mk);
+      return {
+        month: mk,
+        expense: roundMoney(ledgerEntries.filter(e => e.direction === 'expense' && e.date >= a && e.date <= b).reduce((x, e) => x + e.amount, 0)),
+      };
+    });
+  }, [ledgerEntries, period, payCycle, resetDay]);
 
   const budget = getBudget(period)?.monthlyLimit;
   const savingsGoal = getBudget(period)?.savingsGoal;
@@ -154,16 +167,16 @@ export function LedgerStats() {
       {/* 月份导航 */}
       <div className="flex items-center justify-between">
         <button onClick={() => setPeriod(p => shiftMonth(p, -1))} className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700">‹</button>
-        <span className="text-sm font-bold text-gray-800 dark:text-white tabular-nums">{period}</span>
+        <span className="text-sm font-bold text-gray-800 dark:text-white tabular-nums">{periodLabel(period)}</span>
         <button
           onClick={() => setPeriod(p => shiftMonth(p, 1))}
-          disabled={period >= toLocalDateKey().slice(0, 7)}
+          disabled={period >= currentKey}
           className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-30"
         >›</button>
       </div>
 
       {/* 收支总览 */}
-      <Card title="本月收支">
+      <Card title={payCycle ? '本期收支' : '本月收支'}>
         <div className="grid grid-cols-3 gap-2 text-center">
           <div>
             <div className="text-xs text-gray-400">支出</div>
@@ -195,7 +208,7 @@ export function LedgerStats() {
 
       {/* 预算对比 */}
       {budget != null && (
-        <Card title="本月预算">
+        <Card title={payCycle ? '本期预算' : '本月预算'}>
           <div className="flex items-baseline justify-between mb-2 text-sm">
             <span className="text-gray-500 dark:text-gray-400">已花 <b className="text-gray-800 dark:text-gray-100 tabular-nums">{$}{fmtMoney(s.totalExpense)}</b> / {$}{fmtMoney(budget)}</span>
             <span className={`font-bold ${over ? 'text-rose-500' : 'text-emerald-500'}`}>
@@ -275,7 +288,7 @@ export function LedgerStats() {
                 <div key={t.month} className="flex-1 flex flex-col items-center justify-end gap-1 h-full">
                   <span className="text-[10px] tabular-nums text-gray-400">{t.expense > 0 ? fmtMoney(t.expense) : ''}</span>
                   <div className={`w-full rounded-t ${isCur ? 'bg-primary' : 'bg-primary/35'}`} style={{ height: `${t.expense > 0 ? Math.max(h, 4) : 0}%` }} />
-                  <span className={`text-[10px] ${isCur ? 'text-primary font-bold' : 'text-gray-400'}`}>{Number(t.month.slice(5))}月</span>
+                  <span className={`text-[10px] ${isCur ? 'text-primary font-bold' : 'text-gray-400'}`}>{payCycle ? mdOf(rangeOf(t.month)[0]) : `${Number(t.month.slice(5))}月`}</span>
                 </div>
               );
             })}
@@ -314,9 +327,9 @@ export function LedgerStats() {
           />
           {/* 周期导航 */}
           <div className="flex items-center justify-between">
-            <button onClick={() => setSettleAnchor(a => shiftSettleAnchor(settleScope, a, -1))} className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700">‹</button>
+            <button onClick={() => setSettleAnchor(a => shiftSettleAnchor(settleScope, a, -1, cycleOpts))} className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700">‹</button>
             <span className="text-sm font-bold text-gray-800 dark:text-white tabular-nums">{settleData.label}</span>
-            <button onClick={() => setSettleAnchor(a => shiftSettleAnchor(settleScope, a, 1))} disabled={atCurrentPeriod} className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-30">›</button>
+            <button onClick={() => setSettleAnchor(a => shiftSettleAnchor(settleScope, a, 1, cycleOpts))} disabled={atCurrentPeriod} className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-30">›</button>
           </div>
 
           {challengeWon != null && (

@@ -19,6 +19,16 @@ const THEME_SOUNDS: Record<ThemeType, Record<FeedbackKind, string>> = {
 //   3. 播放时 createBufferSource().start() — 完全在内存中，延迟 < 1ms
 //   4. AudioContext 若因长时间不活动被浏览器 suspend，在播放前 resume()
 //   5. 降级：若 Web Audio API 不可用，回退到 new Audio()
+//
+// 第 13 轮（iOS「音量没用」）：
+//   · iOS 的 <audio>.volume 是只读的（系统音量优先），所以凡是走降级路径的音效都调不了音量。
+//     而 iOS App 里 mp3 由 Capacitor 的资源处理器返回，媒体类文件回的是没有状态码的 URLResponse，
+//     fetch 的 resp.ok 为假 → 原来 primeBuffer 一看 !resp.ok 就放弃 → 每个音效都走降级 → 滑块无效。
+//     现在取到非空 arrayBuffer 就算成功，不看状态码。
+//   · 真降级时也尽量挂到 Web Audio：createMediaElementSource → GainNode → 总线，音量照样可调；
+//     只有连 AudioContext 都没有时才靠 .volume。
+//   · iOS 来电 / Siri 后 AudioContext 会进 'interrupted' 态，不只 'suspended'：凡不是 running 都 resume。
+//   · 通道诊断（getSoundPipelineInfo）给设置页显示一行小字，用户截图就能看出走的是哪条路。
 
 let _ctx: AudioContext | null = null;
 /** 总线限幅器：所有音效经它汇入 destination，见 getBus() 说明 */
@@ -29,6 +39,23 @@ const _BUFFER_CACHE_MAX = 48;
 const _bufferCache = new Map<string, AudioBuffer>();
 // fetch 正在进行中的 Promise，避免同一文件并发 fetch
 const _fetchPromise = new Map<string, Promise<AudioBuffer | null>>();
+/** 降级 <audio> 元素在播放期间持引用（接进 Web Audio 图后若被 GC，声音会半路断） */
+const _liveElements = new Set<HTMLAudioElement>();
+
+/** 通道诊断（设置页「音效通道」小字 + 排查用） */
+export interface SoundPipelineInfo {
+  /** 拿得到 AudioContext */
+  webAudio: boolean;
+  /** AudioContext 当前状态（没有就是 'none'） */
+  contextState: string;
+  /** 最近一次播放走的路：缓冲（音量可调）/ 元素+增益（音量可调）/ 裸元素（iOS 上音量不可调） */
+  lastPlayed: 'buffer' | 'element+gain' | 'element' | null;
+  /** 取不到 buffer 走降级的次数 */
+  fallbacks: number;
+  /** 最近一次降级的原因 */
+  lastFallback: { src: string; reason: string } | null;
+}
+const _pipeline: SoundPipelineInfo = { webAudio: false, contextState: 'none', lastPlayed: null, fallbacks: 0, lastFallback: null };
 
 function touchLRU(src: string, buffer: AudioBuffer): void {
   // 重新插入使其位于 Map 队尾（最近使用）
@@ -46,8 +73,10 @@ function getContext(): AudioContext | null {
   if (_ctx) return _ctx;
   try {
     _ctx = new (window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext)();
+    _pipeline.webAudio = true;
     return _ctx;
   } catch {
+    _pipeline.webAudio = false;
     return null;
   }
 }
@@ -82,6 +111,19 @@ function getBus(ctx: AudioContext): AudioNode {
 }
 
 /**
+ * 凡不是 running（suspended / iOS 的 interrupted）都试着拉起来。
+ * resume() 在没有用户手势时不会拒绝、只会一直挂着（Chrome 自动播放策略）——最多等 300ms 就往下走：
+ * 在 suspended 的上下文上 start() 只是排队，上下文一恢复就会响，不会丢。
+ */
+async function ensureRunning(ctx: AudioContext): Promise<void> {
+  _pipeline.contextState = ctx.state;
+  if (ctx.state === 'running') return;
+  const resumed = ctx.resume().catch(() => { /* ignore */ });
+  await Promise.race([resumed, new Promise<void>(r => setTimeout(r, 300))]);
+  _pipeline.contextState = ctx.state;
+}
+
+/**
  * 预解码并缓存指定路径的音频文件。
  * 幂等：同一路径只 fetch + decode 一次。
  */
@@ -95,14 +137,21 @@ async function primeBuffer(src: string): Promise<AudioBuffer | null> {
   if (!ctx) return null;
 
   const promise = (async () => {
+    let stage = 'fetch';
     try {
       const resp = await fetch(src);
-      if (!resp.ok) return null;
+      // 不看 resp.ok：Capacitor iOS 对媒体文件回的是没有状态码的 URLResponse（ok=false、status=0），
+      // 但 body 是完整的；只有明确的 4xx/5xx 才算取不到
+      if (resp.status >= 400) throw new Error(`HTTP ${resp.status}`);
+      stage = 'arrayBuffer';
       const arrayBuffer = await resp.arrayBuffer();
+      if (!arrayBuffer || arrayBuffer.byteLength === 0) throw new Error('空响应');
+      stage = 'decode';
       const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
       touchLRU(src, audioBuffer);
       return audioBuffer;
-    } catch {
+    } catch (err) {
+      _pipeline.lastFallback = { src, reason: `${stage}: ${err instanceof Error ? err.message : String(err)}`.slice(0, 80) };
       return null;
     } finally {
       _fetchPromise.delete(src);
@@ -114,23 +163,56 @@ async function primeBuffer(src: string): Promise<AudioBuffer | null> {
 }
 
 /**
+ * 降级播放：HTMLAudioElement 由 WebKit 原生媒体管道加载文件，成熟得多；
+ * 有 AudioContext 就把它接进 Web Audio 图（GainNode → 总线），音量照样可调——
+ * iOS 的 <audio>.volume 是只读的，不接图就只能听系统音量。
+ */
+function playElement(src: string, volume: number, ctx: AudioContext | null): void {
+  try {
+    const a = new Audio(src);
+    a.preload = 'auto';
+    if (ctx) {
+      try {
+        const node = ctx.createMediaElementSource(a);
+        const gain = ctx.createGain();
+        gain.gain.value = volume;
+        node.connect(gain);
+        gain.connect(getBus(ctx));
+        _liveElements.add(a);
+        const release = () => {
+          try { node.disconnect(); } catch { /* ignore */ }
+          try { gain.disconnect(); } catch { /* ignore */ }
+          _liveElements.delete(a);
+        };
+        a.onended = release;
+        a.onerror = release;
+        void a.play().catch(release);
+        _pipeline.lastPlayed = 'element+gain';
+        return;
+      } catch { /* createMediaElementSource 不可用：退回 .volume */ }
+    }
+    a.volume = Math.min(volume, 1);
+    void a.play().catch(() => { /* ignore */ });
+    _pipeline.lastPlayed = 'element';
+  } catch { /* ignore */ }
+}
+
+/**
  * 用 Web Audio API 播放已缓存的 AudioBuffer。
  * 如果 buffer 尚未缓存，先 prime 再播放（首次仍有少量延迟，但只有一次）。
  */
 async function playBuffered(src: string, volume: number): Promise<void> {
   const ctx = getContext();
   if (!ctx) {
-    // 降级：HTMLAudioElement
-    const a = new Audio(src);
-    a.volume = volume;
-    void a.play();
+    // 降级：HTMLAudioElement（无 AudioContext：iOS 上音量不可调，只能这样）
+    _pipeline.fallbacks += 1;
+    _pipeline.lastFallback = { src, reason: '没有 AudioContext' };
+    playElement(src, volume, null);
     return;
   }
 
-  // AudioContext 被浏览器 suspend 时（长时间不活动）先 resume
-  if (ctx.state === 'suspended') {
-    try { await ctx.resume(); } catch { /* ignore */ }
-  }
+  // AudioContext 被浏览器 suspend（长时间不活动）/ iOS 来电后 interrupted：先拉回 running
+  await ensureRunning(ctx);
 
   let buffer = _bufferCache.get(src);
   if (buffer) {
@@ -140,15 +222,11 @@ async function playBuffered(src: string, volume: number): Promise<void> {
     buffer = (await primeBuffer(src)) ?? undefined;
     if (!buffer) {
       // fetch / decode 失败兜底（v2.7.0.3 iOS 实机排查）：Web Audio 管道任何一环
-      // 在 WKWebView 里翻车（capacitor:// 下的 fetch、decodeAudioData 挑剔等）都
-      // 走 HTMLAudioElement——它由 WebKit 原生媒体管道加载本地文件，成熟得多。
+      // 在 WKWebView 里翻车都走 HTMLAudioElement（接进 Web Audio 图，音量仍可调）。
       // 留一条 warn 方便 eruda 排查，不再静默吞掉。
-      console.warn('[velvet-sound] WebAudio 管道取不到 buffer，降级 <audio>：', src);
-      try {
-        const a = new Audio(src);
-        a.volume = Math.min(volume, 1);
-        void a.play();
-      } catch { /* ignore */ }
+      _pipeline.fallbacks += 1;
+      console.warn('[velvet-sound] WebAudio 管道取不到 buffer，降级 <audio>：', src, _pipeline.lastFallback?.reason);
+      playElement(src, volume, ctx);
       return;
     }
   }
@@ -170,6 +248,7 @@ async function playBuffered(src: string, volume: number): Promise<void> {
     };
 
     source.start(0);
+    _pipeline.lastPlayed = 'buffer';
   } catch {
     // ignore
   }
@@ -238,12 +317,13 @@ export const triggerLightHaptic = (): void => {
   } catch { /* ignore */ }
 };
 
-const playThemeSound = (kind: FeedbackKind, themeOverride?: ThemeType): void => {
+const playThemeSound = (kind: FeedbackKind, themeOverride?: ThemeType, volumeOverride?: number): void => {
   if (isMuted()) return;
   const theme = themeOverride || getActiveTheme();
   const src = THEME_SOUNDS[theme][kind];
   const baseVolume = kind === 'nav' || kind === 'theme_switch' ? 0.48 : 0.54;
-  void playBuffered(src, clampVolume(baseVolume * getVolume() * THEME_SOUND_BOOST));
+  const userVolume = volumeOverride ?? getVolume();
+  void playBuffered(src, clampVolume(baseVolume * userVolume * THEME_SOUND_BOOST));
 };
 
 /**
@@ -276,6 +356,20 @@ export const triggerNavFeedback = (): void => {
 export const triggerWheelOpenFeedback = (): void => {
   triggerLightHaptic();
   playThemeSound('theme_switch');
+};
+
+/**
+ * 音量滑块松手试听（第 13 轮）：按给定音量（0–100）播一声当前主题的成功音——
+ * 不等 settings 落库再读，拖到哪听到哪。
+ */
+export const playVolumePreview = (volumePercent: number): void => {
+  playThemeSound('success', undefined, Math.max(0, Math.min(100, volumePercent)) / 100);
+};
+
+/** 通道诊断快照（设置页小字 + eruda 排查） */
+export const getSoundPipelineInfo = (): SoundPipelineInfo => {
+  if (_ctx) _pipeline.contextState = _ctx.state;
+  return { ..._pipeline, lastFallback: _pipeline.lastFallback ? { ..._pipeline.lastFallback } : null };
 };
 
 /**

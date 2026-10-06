@@ -27,7 +27,7 @@ import { Donut } from '@/components/ledger/Donut';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P3R, P3RPage, GhostWords, P3PageHeader, slantClip } from '@/components/p3r/kit';
 import { P5R, P5_FONT, roughQuad, roughSlant, starPts, P5Collage, P5SubBar, P5Star, P5Dots, P5Slab, P5RPage } from '@/components/p5r/kit';
-import { catMeta, CATEGORY_KEYS, isGrowthCategory, INCOME_META, sym, fmtMoney, fmtSigned, DEFAULT_CHANNELS, DEFAULT_INCOME_SOURCES, incomeTypeFromSource, shiftMonth, weekdayCN, monthLabel, ledgerDateLabel, ledgerCycle } from '@/utils/ledgerFormat';
+import { catMeta, CATEGORY_KEYS, isGrowthCategory, INCOME_META, sym, fmtMoney, fmtSigned, fmtPlain, roundMoney, sanitizeMoneyInput, moneyFromInput, DEFAULT_CHANNELS, DEFAULT_INCOME_SOURCES, incomeTypeFromSource, shiftMonth, weekdayCN, monthLabel, ledgerDateLabel, ledgerCycle } from '@/utils/ledgerFormat';
 import type { LedgerEntry, LedgerExpenseType, AttributeId, SpendWorth, Settings } from '@/types';
 import { P4Flower } from '@/ui/p4Kit';
 
@@ -182,10 +182,10 @@ const popIn = (i: number) => ({
 export const Ledger = () => {
   const isP4 = useUiChannel() === 'p4';
   const {
-    settings, ledgerEntries, setCurrentPage, updateSettings,
+    settings, ledgerEntries, ledgerLoaded, setCurrentPage, updateSettings,
     addLedgerEntry, deleteLedgerEntry, setBudget, adjustTotalBalance, rewardForLedgerEntry, addAsset,
     getTotalBalance, getPeriodExpense, getPeriodIncome, getBudget, getAdjustCountThisMonth, getSavings,
-  } = useAppStore(useShallow(s => ({ settings: s.settings, ledgerEntries: s.ledgerEntries, setCurrentPage: s.setCurrentPage, updateSettings: s.updateSettings, addLedgerEntry: s.addLedgerEntry, deleteLedgerEntry: s.deleteLedgerEntry, setBudget: s.setBudget, adjustTotalBalance: s.adjustTotalBalance, rewardForLedgerEntry: s.rewardForLedgerEntry, addAsset: s.addAsset, getTotalBalance: s.getTotalBalance, getPeriodExpense: s.getPeriodExpense, getPeriodIncome: s.getPeriodIncome, getBudget: s.getBudget, getAdjustCountThisMonth: s.getAdjustCountThisMonth, getSavings: s.getSavings })));
+  } = useAppStore(useShallow(s => ({ settings: s.settings, ledgerEntries: s.ledgerEntries, ledgerLoaded: s.ledgerLoaded, setCurrentPage: s.setCurrentPage, updateSettings: s.updateSettings, addLedgerEntry: s.addLedgerEntry, deleteLedgerEntry: s.deleteLedgerEntry, setBudget: s.setBudget, adjustTotalBalance: s.adjustTotalBalance, rewardForLedgerEntry: s.rewardForLedgerEntry, addAsset: s.addAsset, getTotalBalance: s.getTotalBalance, getPeriodExpense: s.getPeriodExpense, getPeriodIncome: s.getPeriodIncome, getBudget: s.getBudget, getAdjustCountThisMonth: s.getAdjustCountThisMonth, getSavings: s.getSavings })));
 
   const currency = settings.currency ?? 'CNY';
   const $ = sym(currency);
@@ -202,17 +202,30 @@ export const Ledger = () => {
   const budget = getBudget(cycle.key);
   const hasBudget = budget?.monthlyLimit != null;
   const lim = budget?.monthlyLimit ?? 0;
-  const budgetLeft = lim - monthExpense;
+  const budgetLeft = roundMoney(lim - monthExpense);
   const over = hasBudget && budgetLeft < 0;
   const remainingRatio = hasBudget && lim > 0 ? budgetLeft / lim : 1;
   const ringColor = !hasBudget ? '#cbd5e1' : over ? '#ef4444' : remainingRatio <= 0.2 ? '#f59e0b' : '#10b981';
-  // 今日还可花 =（本周期预算剩）/ 周期剩余天数
   const cdt = (k: string) => { const [yy, mm, dd] = k.split('-').map(Number); return new Date(yy, mm - 1, dd); };
   const daysInMonth = Math.max(1, Math.round((cdt(cycle.end).getTime() - cdt(cycle.start).getTime()) / 86400000) + 1);
   const daysLeft = Math.max(1, Math.round((cdt(cycle.end).getTime() - cdt(todayKey < cycle.end ? todayKey : cycle.end).getTime()) / 86400000) + 1);
-  const todayLeft = hasBudget && budgetLeft > 0 ? budgetLeft / daysLeft : 0;
-  // 开局引导：无任何流水时先提示设初始余额（避免首笔变负）
-  const needsSetup = ledgerEntries.length === 0;
+  // 今日还可花（第 13 轮 2.5）=（预算 − 今天之前已花）/ 剩余天数（含今天）− 今天已花，可为负（今日已超）。
+  // 原来是 (预算 − 本期已花) / 剩余天数：今天花 80 只减 80/剩余天数，显示的其实是「剩下每天的平均额度」。
+  // 未来日期的条目不算「已花」；「本月预算剩」（budgetLeft）照旧含全部本期条目。
+  const { spentBeforeToday, spentToday } = useMemo(() => {
+    let before = 0, today = 0;
+    for (const e of ledgerEntries) {
+      if (e.direction !== 'expense' || e.date < cycle.start || e.date > cycle.end) continue;
+      if (e.date < todayKey) before += e.amount;
+      else if (e.date === todayKey) today += e.amount;
+    }
+    return { spentBeforeToday: roundMoney(before), spentToday: roundMoney(today) };
+  }, [ledgerEntries, cycle.start, cycle.end, todayKey]);
+  const todayAllowanceBase = roundMoney(lim - spentBeforeToday);
+  const todayLeft = hasBudget && todayAllowanceBase > 0 ? roundMoney(todayAllowanceBase / daysLeft - spentToday) : 0;
+  const todayOver = hasBudget && todayAllowanceBase > 0 && todayLeft < 0;
+  // 开局引导：无任何流水时先提示设初始余额（避免首笔变负）。三表读完前不判（否则启动早到的人会看到引导一闪）
+  const needsSetup = ledgerLoaded && ledgerEntries.length === 0;
 
   // 月余额（默认显示）= 本周期预算 − 本周期已花（流动资金，下期重算）
   const monthBalance = budgetLeft;
@@ -237,6 +250,9 @@ export const Ledger = () => {
   // 落账庆祝：存摘要文案；非空即弹（复用各频道「今日完成」演出，换标题）
   const [savedNote, setSavedNote] = useState<string | null>(null);
   const [adjustOpen, setAdjustOpen] = useState(false);
+  // 第 13 轮 P0：保存 / 批量保存进行中闸——双击会记两笔。state 给按钮变灰，ref 挡同一 tick 的第二下（state 还没来得及重渲）
+  const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
   const [deleteTarget, setDeleteTarget] = useState<LedgerEntry | null>(null);
   const [mode, setMode] = useState<'ledger' | 'assets'>('ledger');
   const [view, setView] = useState<'list' | 'stats'>('list');
@@ -307,11 +323,12 @@ export const Ledger = () => {
   const resetDay = settings.ledgerResetDay ?? 1;
   const currentCycle = cycle.key;
   useEffect(() => {
+    if (!ledgerLoaded) return; // 三表还没读完：别按「0 条流水」误判成新用户（启动时记账数据在首屏之后才读）
     if (settings.ledgerEnabled === false || ledgerEntries.length === 0) return; // 新用户走开局引导
     if (settings.ledgerCycleConfirmed === currentCycle) return;
     setBudgetMode('newCycle');
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [ledgerLoaded]);
 
   const handleNL = async () => {
     const text = nlText.trim();
@@ -383,12 +400,15 @@ export const Ledger = () => {
   const updateRow = (i: number, patch: Partial<BatchRow>) =>
     setBatch(rows => rows ? rows.map((r, j) => (j === i ? { ...r, ...patch } : r)) : rows);
   const saveBatch = async () => {
-    if (!batch) return;
+    if (!batch || savingRef.current) return;
+    savingRef.current = true;
+    setSaving(true);
+    try {
     const aiSrc: 'manual' | 'ai' = getAIConfig(settings) ? 'ai' : 'manual';
     let lastCh = '';
     for (const r of batch) {
-      const amount = Math.abs(Number(r.amount));
-      if (!amount || !Number.isFinite(amount)) continue;
+      const amount = moneyFromInput(r.amount);
+      if (!amount) continue;
       const saved = r.direction === 'expense'
         ? await addLedgerEntry({ direction: 'expense', amount, date: batchDate, source: aiSrc, type: r.type, channel: r.channel.trim() || undefined, note: r.note.trim() || undefined })
         : await addLedgerEntry({ direction: 'income', amount, date: batchDate, source: aiSrc, incomeType: incomeTypeFromSource(r.incomeSource), category: r.incomeSource.trim() || undefined, note: r.note.trim() || undefined });
@@ -397,16 +417,23 @@ export const Ledger = () => {
     }
     if (lastCh && settings.ledgerLastChannel !== lastCh) updateSettings({ ledgerLastChannel: lastCh });
     setListMonth(batchDate.slice(0, 7));    // 跳到批量记账所在月
-    const n = batch.filter(r => Number(r.amount) > 0).length;
+    const n = batch.filter(r => moneyFromInput(r.amount) > 0).length;
     setBatch(null);
     setNlText('');
     if (n > 0) setSavedNote(`共 ${n} 笔已入账`);
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
   };
 
   const saveDraft = async () => {
-    if (!draft) return;
-    const amount = Math.abs(Number(draft.amount));
-    if (!amount || !Number.isFinite(amount)) return;
+    if (!draft || savingRef.current) return;
+    const amount = moneyFromInput(draft.amount);
+    if (!amount) return;
+    savingRef.current = true;
+    setSaving(true);
+    try {
     const saved = draft.direction === 'expense'
       ? await addLedgerEntry({
           direction: 'expense', amount, date: draft.date, source: draft.source,
@@ -437,6 +464,10 @@ export const Ledger = () => {
     setDraft(null);
     setNlText('');
     setSavedNote(`${draft.direction === 'expense' ? '−' : '+'}${$}${fmtMoney(amount)} · ${label}`);
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
   };
 
   const p5 = useUiChannel() === 'p5';
@@ -647,7 +678,7 @@ export const Ledger = () => {
             {balanceView === 'total'
               ? `收入剩余 ${$}${fmtMoney(fundIncome)} · 结转 ${$}${fmtMoney(fundCarried)}`
               : hasBudget
-                ? (over ? `本月已超 ${$}${fmtMoney(-budgetLeft)}` : `本月预算剩 ${$}${fmtMoney(budgetLeft)}${todayLeft > 0 ? ` · 今日可花 ${$}${fmtMoney(todayLeft)}` : ''}`)
+                ? (over ? `本月已超 ${$}${fmtMoney(-budgetLeft)}` : `本月预算剩 ${$}${fmtMoney(budgetLeft)}${todayLeft > 0 ? ` · 今日可花 ${$}${fmtMoney(todayLeft)}` : todayOver ? ` · 今日已超 ${$}${fmtMoney(-todayLeft)}` : ''}`)
                 : '本月还没设预算'}
           </div>
 
@@ -780,10 +811,10 @@ export const Ledger = () => {
               </div>
             ) : (
               <div className="mt-2.5 flex flex-col items-center gap-1">
-                {todayLeft > 0 && (
-                  <div className="inline-flex items-baseline gap-1.5 px-4 py-1" style={{ clipPath: slantClip(8), background: 'rgba(53,209,232,0.16)' }}>
-                    <span className="text-[12px] font-bold" style={{ color: P3R.blueDeep }}>今日还可花</span>
-                    <span className="text-lg font-black tabular-nums" style={{ color: P3R.blueDeep }}>{$}{fmtMoney(todayLeft)}</span>
+                {(todayLeft > 0 || todayOver) && (
+                  <div className="inline-flex items-baseline gap-1.5 px-4 py-1" style={{ clipPath: slantClip(8), background: todayOver ? 'rgba(240,65,127,0.1)' : 'rgba(53,209,232,0.16)' }}>
+                    <span className="text-[12px] font-bold" style={{ color: todayOver ? P3R.magenta : P3R.blueDeep }}>{todayOver ? '今日已超' : '今日还可花'}</span>
+                    <span className="text-lg font-black tabular-nums" style={{ color: todayOver ? P3R.magenta : P3R.blueDeep }}>{$}{fmtMoney(Math.abs(todayLeft))}</span>
                   </div>
                 )}
                 <span className="text-[12px] font-semibold" style={{ color: P3R.grey }}>本月预算剩 <b className="tabular-nums">{$}{fmtMoney(budgetLeft)}</b> / {$}{fmtMoney(lim)}</span>
@@ -868,18 +899,18 @@ export const Ledger = () => {
           hasBudget ? (
             over ? (
               <div className="-mt-1 flex flex-col items-center gap-1.5">
-                <div className="inline-flex items-baseline gap-1.5 px-3.5 py-1 rounded-full bg-rose-50 dark:bg-rose-900/20 border border-rose-100 dark:border-rose-800/40">
-                  <span className="text-xs text-rose-500/80">本月已超</span>
-                  <span className="text-lg font-black tabular-nums text-rose-500">{$}{fmtMoney(-budgetLeft)}</span>
+                <div className="inline-flex items-baseline gap-1.5 px-3.5 py-1 rounded-full bg-rose-50 dark:bg-rose-500/15 border border-rose-100 dark:border-rose-400/30">
+                  <span className="text-xs text-rose-500/80 dark:text-rose-300/90">本月已超</span>
+                  <span className="text-lg font-black tabular-nums text-rose-500 dark:text-rose-300">{$}{fmtMoney(-budgetLeft)}</span>
                 </div>
                 <span className="text-xs text-gray-400 dark:text-gray-500">预算 {$}{fmtMoney(lim)} · 已花 {$}{fmtMoney(monthExpense)}</span>
               </div>
             ) : (
               <div className="-mt-1 flex flex-col items-center gap-1.5">
-                {todayLeft > 0 && (
-                  <div className="inline-flex items-baseline gap-1.5 px-3.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800/40">
-                    <span className="text-xs text-emerald-600/80 dark:text-emerald-300/80">今日还可花</span>
-                    <span className="text-lg font-black tabular-nums text-emerald-600 dark:text-emerald-300">{$}{fmtMoney(todayLeft)}</span>
+                {(todayLeft > 0 || todayOver) && (
+                  <div className={`inline-flex items-baseline gap-1.5 px-3.5 py-1 rounded-full border ${todayOver ? 'bg-rose-50 dark:bg-rose-500/15 border-rose-100 dark:border-rose-400/30' : 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-100 dark:border-emerald-800/40'}`}>
+                    <span className={`text-xs ${todayOver ? 'text-rose-500/80 dark:text-rose-300/90' : 'text-emerald-600/80 dark:text-emerald-300/80'}`}>{todayOver ? '今日已超' : '今日还可花'}</span>
+                    <span className={`text-lg font-black tabular-nums ${todayOver ? 'text-rose-500 dark:text-rose-300' : 'text-emerald-600 dark:text-emerald-300'}`}>{$}{fmtMoney(Math.abs(todayLeft))}</span>
                   </div>
                 )}
                 <span className="text-xs text-gray-400 dark:text-gray-500">本月预算剩 <b className="tabular-nums text-gray-500 dark:text-gray-400">{$}{fmtMoney(budgetLeft)}</b> / {$}{fmtMoney(lim)}</span>
@@ -1223,10 +1254,10 @@ export const Ledger = () => {
         footer={
           <button
             onClick={saveDraft}
-            disabled={!draft || !Number(draft.amount)}
+            disabled={saving || !draft || !moneyFromInput(draft.amount)}
             className="w-full py-3.5 rounded-2xl font-bold text-sm bg-primary text-white disabled:opacity-40 active:scale-[0.98]"
           >
-            保存
+            {saving ? '保存中…' : '保存'}
           </button>
         }
       >
@@ -1259,9 +1290,9 @@ export const Ledger = () => {
               <div className="flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-4 dark:border-gray-700 dark:bg-gray-800">
                 <span className="text-xl font-black text-gray-400">{$}</span>
                 <input
-                  type="number" inputMode="decimal" autoFocus
+                  type="text" inputMode="decimal" autoFocus
                   value={draft.amount}
-                  onChange={e => setDraft({ ...draft, amount: e.target.value })}
+                  onChange={e => setDraft({ ...draft, amount: sanitizeMoneyInput(e.target.value) })}
                   placeholder="0"
                   className="min-w-0 flex-1 bg-transparent text-2xl font-black tabular-nums text-gray-900 outline-none dark:text-white"
                 />
@@ -1371,7 +1402,7 @@ export const Ledger = () => {
             )}
 
             {/* 流→存桥接：大额支出可登记为固定资产 */}
-            {draft.direction === 'expense' && Number(draft.amount) >= 300 && (
+            {draft.direction === 'expense' && moneyFromInput(draft.amount) >= 300 && (
               <button
                 type="button"
                 onClick={() => setDraft({ ...draft, registerAsset: !draft.registerAsset })}
@@ -1442,10 +1473,10 @@ export const Ledger = () => {
         footer={
           <button
             onClick={saveBatch}
-            disabled={!batch?.some(r => Number(r.amount) > 0)}
+            disabled={saving || !batch?.some(r => moneyFromInput(r.amount) > 0)}
             className="w-full py-3.5 rounded-2xl font-bold text-sm bg-primary text-white disabled:opacity-40 active:scale-[0.98]"
           >
-            全部保存{batch ? `（${batch.filter(r => Number(r.amount) > 0).length}）` : ''}
+            {saving ? '保存中…' : `全部保存${batch ? `（${batch.filter(r => moneyFromInput(r.amount) > 0).length}）` : ''}`}
           </button>
         }
       >
@@ -1471,8 +1502,8 @@ export const Ledger = () => {
                     <div className="flex items-center gap-1 flex-1 min-w-0 px-2.5 py-1.5 rounded-lg bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700">
                       <span className="text-gray-400 text-sm">{$}</span>
                       <input
-                        type="number" inputMode="decimal" value={row.amount} placeholder="0"
-                        onChange={e => updateRow(i, { amount: e.target.value })}
+                        type="text" inputMode="decimal" value={row.amount} placeholder="0"
+                        onChange={e => updateRow(i, { amount: sanitizeMoneyInput(e.target.value) })}
                         className="w-full min-w-0 bg-transparent text-base font-bold tabular-nums text-gray-900 dark:text-white outline-none"
                       />
                     </div>
@@ -1549,6 +1580,7 @@ export const Ledger = () => {
         }}
         $={$}
         current={budget?.monthlyLimit}
+        carriedFrom={budget?.carriedFrom}
         savingsCurrent={budget?.savingsGoal}
         savingsEditsLeft={Math.max(0, 2 - (budget?.savingsGoalEdits ?? 0))}
         days={daysInMonth}
@@ -1557,7 +1589,8 @@ export const Ledger = () => {
         onSave={async (monthly, savings) => {
           const p = cycle.key;
           const cur = getBudget(p);
-          const patch: { monthlyLimit: number; savingsGoal?: number; savingsGoalEdits?: number } = { monthlyLimit: monthly };
+          // 用户亲手定过 → 不再标「沿用上期」
+          const patch: { monthlyLimit: number; savingsGoal?: number; savingsGoalEdits?: number; carriedFrom?: string } = { monthlyLimit: monthly, carriedFrom: undefined };
           // 省钱挑战目标每月限改 2 次：仅当值变化且未超限才写入并计数
           if (savings !== cur?.savingsGoal && (cur?.savingsGoalEdits ?? 0) < 2) {
             patch.savingsGoal = savings;
@@ -1575,6 +1608,8 @@ export const Ledger = () => {
         onClose={() => setAdjustOpen(false)}
         $={$}
         current={total}
+        initial={needsSetup}
+        ready={ledgerLoaded}
         remaining={3 - getAdjustCountThisMonth()}
         onSave={async (target) => { await adjustTotalBalance(target); setAdjustOpen(false); }}
       />
@@ -1627,10 +1662,20 @@ function LedgerRow({ entry: e, $, onClick }: { entry: LedgerEntry; $: string; on
   );
 }
 
-/** 月预算 ⇄ 日均 联动输入：改一个、另一个按当月天数自动算（日均更醒目）。 */
+/**
+ * 月预算 ⇄ 日均 联动输入：改一个、另一个按当月天数自动算（日均更醒目）。
+ * 第 13 轮 2.4：日均不再取整（原来 effect 把 "33.3" 回写成 "33"，小数点永远打不出来）；
+ * 从日均改过去的那次月预算回流不再重写日均框（正在打字的那个框不动）。
+ */
 function BudgetDualInput({ $, days, monthly, setMonthly }: { $: string; days: number; monthly: string; setMonthly: (v: string) => void }) {
-  const [daily, setDaily] = useState(() => { const m = Number(monthly); return m > 0 ? String(Math.round(m / days)) : ''; });
-  useEffect(() => { const m = Number(monthly); setDaily(m > 0 ? String(Math.round(m / days)) : ''); }, [monthly, days]);
+  const dailyOf = (m: string) => { const n = Number(m); return n > 0 ? fmtPlain(n / days) : ''; };
+  const [daily, setDaily] = useState(() => dailyOf(monthly));
+  const fromDaily = useRef<string | null>(null);
+  useEffect(() => {
+    if (fromDaily.current === monthly) { fromDaily.current = null; return; }
+    setDaily(dailyOf(monthly));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [monthly, days]);
   return (
     <div className="grid grid-cols-2 gap-2">
       <label className="rounded-xl bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 px-3 py-2.5 cursor-text">
@@ -1638,8 +1683,8 @@ function BudgetDualInput({ $, days, monthly, setMonthly }: { $: string; days: nu
         <span className="flex items-baseline gap-1">
           <span className="text-sm font-bold text-gray-400">{$}</span>
           <input
-            type="number" inputMode="decimal" value={monthly} placeholder="3000"
-            onChange={e => setMonthly(e.target.value)}
+            type="text" inputMode="decimal" value={monthly} placeholder="3000"
+            onChange={e => setMonthly(sanitizeMoneyInput(e.target.value))}
             className="w-full min-w-0 bg-transparent text-lg font-black text-gray-900 dark:text-white tabular-nums outline-none"
           />
         </span>
@@ -1649,8 +1694,15 @@ function BudgetDualInput({ $, days, monthly, setMonthly }: { $: string; days: nu
         <span className="flex items-baseline gap-1">
           <span className="text-sm font-bold text-primary/60">{$}</span>
           <input
-            type="number" inputMode="decimal" value={daily} placeholder="100"
-            onChange={e => { const v = e.target.value; setDaily(v); const d = Number(v); setMonthly(d > 0 ? String(Math.round(d * days)) : ''); }}
+            type="text" inputMode="decimal" value={daily} placeholder="100"
+            onChange={e => {
+              const v = sanitizeMoneyInput(e.target.value);
+              setDaily(v);
+              const d = Number(v);
+              const next = d > 0 ? fmtPlain(d * days) : '';
+              fromDaily.current = next;
+              setMonthly(next);
+            }}
             className="w-full min-w-0 bg-transparent text-lg font-black text-primary tabular-nums outline-none"
           />
         </span>
@@ -1659,9 +1711,9 @@ function BudgetDualInput({ $, days, monthly, setMonthly }: { $: string; days: nu
   );
 }
 
-function BudgetSheet({ isOpen, onClose, $, current, savingsCurrent, savingsEditsLeft, days, resetDay, onResetDay, onSave, newCycle }: {
+function BudgetSheet({ isOpen, onClose, $, current, carriedFrom, savingsCurrent, savingsEditsLeft, days, resetDay, onResetDay, onSave, newCycle }: {
   isOpen: boolean; onClose: () => void; $: string;
-  current?: number; savingsCurrent?: number; savingsEditsLeft: number; days: number;
+  current?: number; carriedFrom?: string; savingsCurrent?: number; savingsEditsLeft: number; days: number;
   resetDay: number; onResetDay: (d: number) => void;
   onSave: (monthly: number, savings: number | undefined) => void | Promise<void>;
   newCycle?: boolean;
@@ -1699,6 +1751,9 @@ function BudgetSheet({ isOpen, onClose, $, current, savingsCurrent, savingsEdits
           {newCycle
             ? '新的一程开始了——给自己定个花费节奏，和一个想攒下的小目标。'
             : '设一个本月的花费上限——它是你的纪律线，不影响总余额。'}
+          {current != null && carriedFrom && (
+            <span className="block mt-1 text-[11px] text-primary/80">花费目标沿用了上期（{monthLabel(carriedFrom)}）的 {$}{fmtMoney(current)}，可以直接改。</span>
+          )}
         </p>
         {/* 月预算 ⇄ 日均 */}
         <div className="space-y-1.5">
@@ -1715,8 +1770,8 @@ function BudgetSheet({ isOpen, onClose, $, current, savingsCurrent, savingsEdits
             <div className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border ${savingsLocked ? 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700 opacity-70' : 'bg-emerald-50 dark:bg-emerald-900/15 border-emerald-200 dark:border-emerald-800/40'}`}>
               <span className="text-lg font-black text-emerald-500/70">{$}</span>
               <input
-                type="number" inputMode="decimal" value={savings} placeholder="500" disabled={savingsLocked}
-                onChange={e => setSavings(e.target.value)}
+                type="text" inputMode="decimal" value={savings} placeholder="500" disabled={savingsLocked}
+                onChange={e => setSavings(sanitizeMoneyInput(e.target.value))}
                 className="flex-1 min-w-0 bg-transparent text-xl font-black text-emerald-600 dark:text-emerald-300 tabular-nums outline-none disabled:cursor-not-allowed"
               />
             </div>
@@ -1747,40 +1802,56 @@ function BudgetSheet({ isOpen, onClose, $, current, savingsCurrent, savingsEdits
   );
 }
 
-function AdjustSheet({ isOpen, onClose, $, current, remaining, onSave }: {
+function AdjustSheet({ isOpen, onClose, $, current, remaining, onSave, initial = false, ready = true }: {
   isOpen: boolean; onClose: () => void; $: string; current: number; remaining: number; onSave: (target: number) => Promise<void>;
+  /** 开局「设置当前余额」：不占对账次数、文案不同 */
+  initial?: boolean;
+  /** 记账三表读完了才能算差额（读完前总余额是 0） */
+  ready?: boolean;
 }) {
   const [val, setVal] = useState('');
+  const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
   const target = Number(val);
-  const canSave = remaining > 0 && val.trim() !== '' && Number.isFinite(target);
+  const canSave = ready && !busy && (initial || remaining > 0) && val.trim() !== '' && val !== '-' && Number.isFinite(target);
+  const submit = async () => {
+    if (!canSave || busyRef.current) return;
+    busyRef.current = true;
+    setBusy(true);
+    try { await onSave(roundMoney(target)); } finally { busyRef.current = false; setBusy(false); }
+  };
   return (
     <SheetModal
       isOpen={isOpen}
       onClose={onClose}
-      title="余额对账"
+      title={initial ? '设置当前余额' : '余额对账'}
       footer={
         <button
-          onClick={() => canSave && onSave(target)}
+          onClick={() => void submit()}
           disabled={!canSave}
           className="w-full py-3.5 rounded-2xl font-bold text-sm bg-primary text-white disabled:opacity-40 active:scale-[0.98]"
         >
-          {remaining > 0 ? '校准为此余额' : '本月对账已用完'}
+          {!ready ? '账本还在读取…' : busy ? '记录中…' : initial ? '就这么记' : remaining > 0 ? '校准为此余额' : '本月对账已用完'}
         </button>
       }
     >
       <div className="space-y-3">
         <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
-          把总余额校准到你的真实余额（比如对一下支付宝/钱包）。本月还可对账 <b>{Math.max(0, remaining)}</b> 次。
+          {initial
+            ? '告诉我你现在大概有多少钱（支付宝 / 微信 / 银行卡加起来），之后随时可「对账」修正；这一次不占对账次数。'
+            : <>把总余额校准到你的真实余额（比如对一下支付宝/钱包）。本月还可对账 <b>{Math.max(0, remaining)}</b> 次。</>}
         </p>
-        <div className="text-sm text-gray-500 dark:text-gray-400">
-          当前总余额：<span className="font-bold text-gray-800 dark:text-gray-100 tabular-nums">{fmtSigned(current, $)}</span>
-        </div>
+        {!initial && (
+          <div className="text-sm text-gray-500 dark:text-gray-400">
+            当前总余额：<span className="font-bold text-gray-800 dark:text-gray-100 tabular-nums">{fmtSigned(current, $)}</span>
+          </div>
+        )}
         <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
           <span className="text-xl font-black text-gray-400">{$}</span>
           <input
-            type="number" inputMode="decimal" autoFocus
-            value={val} onChange={e => setVal(e.target.value)}
-            placeholder={String(current)}
+            type="text" inputMode="decimal" autoFocus
+            value={val} onChange={e => setVal(sanitizeMoneyInput(e.target.value, { allowNegative: true }))}
+            placeholder={initial ? '0' : String(current)}
             className="flex-1 min-w-0 bg-transparent text-2xl font-black text-gray-900 dark:text-white tabular-nums outline-none"
           />
         </div>

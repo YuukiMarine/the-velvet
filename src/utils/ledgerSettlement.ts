@@ -8,7 +8,10 @@
 import { Settings, LedgerEntry, LedgerExpenseType } from '@/types';
 import { chatComplete, getAIConfig } from '@/utils/aiClient';
 import { tryExtractJSON } from '@/utils/aiJson';
-import { sym, fmtMoney, CATEGORY_KEYS, catMeta, isGrowthCategory, monthLabel } from '@/utils/ledgerFormat';
+import { sym, fmtMoney, CATEGORY_KEYS, catMeta, isGrowthCategory, monthLabel, ledgerCycle, cycleRangeForKey, shiftMonth, roundMoney } from '@/utils/ledgerFormat';
+
+/** 记账周期口径（第 13 轮）：发薪日周期开着时「月」= 周期，不是自然月 */
+export interface CycleOpts { payCycle: boolean; resetDay: number }
 
 export type SettleScope = 'week' | 'month';
 
@@ -37,7 +40,7 @@ export interface SettlementData {
   expectedDailyAvg?: number;
   /** 实际日均 = 总支出 / 已过天数 */
   actualDailyAvg: number;
-  /** 对账调整净额（adjust 之和）作「未计」提示 */
+  /** 对账校准净额（adjust 之和）：不算收入也不算支出，只作「期间校准过余额」的提示 */
   uncounted: number;
   worthCount: number;
   notWorthCount: number;
@@ -52,9 +55,10 @@ const parseKey = (k: string) => { const [y, m, d] = k.split('-').map(Number); re
 const daysInMonth = (period: string) => { const [y, m] = period.split('-').map(Number); return new Date(y, m, 0).getDate(); };
 const daySpan = (a: string, b: string) => Math.round((parseKey(b).getTime() - parseKey(a).getTime()) / 86400000) + 1;
 
-/** 由 scope + 锚点日期得出范围 [start, end]（含端点）。月=自然月；周=周一~周日。 */
-export function settleRange(scope: SettleScope, anchor: string): [string, string] {
+/** 由 scope + 锚点日期得出范围 [start, end]（含端点）。月=自然月（发薪日周期开着时 = 锚点所在周期）；周=周一~周日。 */
+export function settleRange(scope: SettleScope, anchor: string, cycle?: CycleOpts): [string, string] {
   if (scope === 'month') {
+    if (cycle?.payCycle) return cycleRangeForKey(true, cycle.resetDay, ledgerCycle(true, cycle.resetDay, anchor).key);
     const period = anchor.slice(0, 7);
     return [`${period}-01`, `${period}-${pad(daysInMonth(period))}`];
   }
@@ -65,18 +69,19 @@ export function settleRange(scope: SettleScope, anchor: string): [string, string
   return [toKey(start), toKey(end)];
 }
 
-/** 按 scope 把锚点日期前/后挪一个周期（周 ±7 天 / 月 ±1 月）。 */
-export function shiftSettleAnchor(scope: SettleScope, anchor: string, delta: number): string {
+/** 按 scope 把锚点日期前/后挪一个周期（周 ±7 天 / 月 ±1 月；发薪日周期开着时挪到相邻周期的起始日）。 */
+export function shiftSettleAnchor(scope: SettleScope, anchor: string, delta: number, cycle?: CycleOpts): string {
   const [y, m, d] = anchor.split('-').map(Number);
   if (scope === 'month') {
+    if (cycle?.payCycle) return cycleRangeForKey(true, cycle.resetDay, shiftMonth(ledgerCycle(true, cycle.resetDay, anchor).key, delta))[0];
     const nd = new Date(y, m - 1 + delta, 1);
     return `${nd.getFullYear()}-${pad(nd.getMonth() + 1)}-01`;
   }
   return toKey(new Date(y, m - 1, d + 7 * delta));
 }
 
-function rangeLabel(scope: SettleScope, start: string, end: string): string {
-  if (scope === 'month') return monthLabel(start.slice(0, 7));
+function rangeLabel(scope: SettleScope, start: string, end: string, cycle?: CycleOpts): string {
+  if (scope === 'month' && !cycle?.payCycle) return monthLabel(start.slice(0, 7));
   const [, sm, sd] = start.split('-');
   const [, em, ed] = end.split('-');
   return `${Number(sm)}/${Number(sd)} – ${Number(em)}/${Number(ed)}`;
@@ -88,15 +93,16 @@ export function buildSettlementData(
   anchor: string,
   monthlyBudget: number | undefined,
   currency?: string,
+  cycle?: CycleOpts,
 ): SettlementData {
-  const [rangeStart, rangeEnd] = settleRange(scope, anchor);
+  const [rangeStart, rangeEnd] = settleRange(scope, anchor, cycle);
   const inRange = entries.filter(e => e.date >= rangeStart && e.date <= rangeEnd);
   const exp = inRange.filter(e => e.direction === 'expense');
   const inc = inRange.filter(e => e.direction === 'income');
   const adj = inRange.filter(e => e.direction === 'adjust');
 
-  const totalExpense = exp.reduce((s, e) => s + e.amount, 0);
-  const sumCat = (k: LedgerExpenseType) => exp.filter(e => e.type === k).reduce((s, e) => s + e.amount, 0);
+  const totalExpense = roundMoney(exp.reduce((s, e) => s + e.amount, 0));
+  const sumCat = (k: LedgerExpenseType) => roundMoney(exp.filter(e => e.type === k).reduce((s, e) => s + e.amount, 0));
   const byCat = CATEGORY_KEYS
     .map(k => ({ key: k, label: catMeta(k).label, amount: sumCat(k) }))
     .filter(x => x.amount > 0)
@@ -125,25 +131,27 @@ export function buildSettlementData(
   const spentDays = byDay.size;
   const zeroDays = Math.max(0, days - spentDays);
 
-  const period = rangeEnd.slice(0, 7);
-  const dim = daysInMonth(period);
-  const periodBudget = monthlyBudget == null ? undefined : (scope === 'month' ? monthlyBudget : (monthlyBudget / dim) * 7);
+  // 「一个月有几天」：发薪日周期开着时取 rangeEnd 所在周期的长度，否则自然月天数
+  const dim = cycle?.payCycle
+    ? daySpan(...cycleRangeForKey(true, cycle.resetDay, ledgerCycle(true, cycle.resetDay, rangeEnd).key))
+    : daysInMonth(rangeEnd.slice(0, 7));
+  const periodBudget = monthlyBudget == null ? undefined : (scope === 'month' ? monthlyBudget : roundMoney((monthlyBudget / dim) * 7));
 
   return {
     scope,
-    label: rangeLabel(scope, rangeStart, rangeEnd),
+    label: rangeLabel(scope, rangeStart, rangeEnd, cycle),
     rangeStart,
     rangeEnd,
     days,
     totalExpense,
-    totalIncome: inc.reduce((s, e) => s + e.amount, 0),
+    totalIncome: roundMoney(inc.reduce((s, e) => s + e.amount, 0)),
     byCat,
-    growthSpend: exp.filter(e => isGrowthCategory(e.type)).reduce((s, e) => s + e.amount, 0),
+    growthSpend: roundMoney(exp.filter(e => isGrowthCategory(e.type)).reduce((s, e) => s + e.amount, 0)),
     periodBudget,
-    underBudget: periodBudget != null && totalExpense <= periodBudget,
+    underBudget: periodBudget != null && totalExpense <= roundMoney(periodBudget),
     expectedDailyAvg: monthlyBudget != null ? monthlyBudget / dim : undefined,
     actualDailyAvg: totalExpense / days,
-    uncounted: adj.reduce((s, e) => s + e.amount, 0),
+    uncounted: roundMoney(adj.reduce((s, e) => s + e.amount, 0)),
     worthCount: exp.filter(e => e.evalWorth === 'worth').length,
     notWorthCount: exp.filter(e => e.evalWorth === 'notWorth').length,
     extremes: { priciestDay, cheapestDay: spentDays > 1 ? cheapestDay : undefined, priciestEntry, zeroDays },
@@ -159,7 +167,7 @@ const SYSTEM_PROMPT = `你是丝绒房间的主人伊戈尔（Igor）。客人�
   "advice": ["<一条具体、可执行的小建议，≤24 字>", "<第二条>", "<可选第三条>"] }
 
 reflection 关注钱主要流向了哪些生活场景、「学习」这类成长投入多少；未超预算/有盈余则赞许克制，
-超支则温柔提醒而非责备；若有未记流水，可提一句「坦诚即是清醒」。
+超支则温柔提醒而非责备；若期间校准过余额（对账），可提一句「坦诚即是清醒」。
 advice 要落到实处（针对花得最多的类目 / 最贵一笔 / 日均与预期的差距 / 成长投入），像挚友的提点，不空泛。`;
 
 function dataLines(d: SettlementData): string {
@@ -174,7 +182,7 @@ function dataLines(d: SettlementData): string {
     x.priciestEntry ? `最贵一笔：${x.priciestEntry.note} ${d.$}${fmtMoney(x.priciestEntry.amount)}` : '',
     x.priciestDay ? `花得最多的一天：${x.priciestDay.date} ${d.$}${fmtMoney(x.priciestDay.amount)}` : '',
     x.zeroDays > 0 ? `有 ${x.zeroDays} 天零支出` : '',
-    d.uncounted !== 0 ? `另有未记 / 对账流水 ${d.$}${fmtMoney(Math.abs(d.uncounted))}` : '',
+    d.uncounted !== 0 ? `期间做过余额校准（对账）：净 ${d.uncounted > 0 ? '+' : '−'}${d.$}${fmtMoney(Math.abs(d.uncounted))}（不算收入也不算支出）` : '',
     (d.worthCount + d.notWorthCount) > 0 ? `消费评估：值得 ${d.worthCount} 次 / 不值 ${d.notWorthCount} 次` : '',
   ].filter(Boolean).join('\n');
 }
@@ -222,7 +230,7 @@ export function offlineSettlement(d: SettlementData): SettlementResult {
       : `你越过了 ${$}${fmtMoney(d.periodBudget)} 的预算线。无需自责，看见即是开始。`);
   }
   if (d.uncounted !== 0) {
-    parts.push(`还有些未记的流水悄悄滑过——坦诚地承认它们，也是一种清醒。`);
+    parts.push(`这段时间你校准过一次余额——让账目与现实对上表，本身就是一种清醒。`);
   }
   parts.push(`愿你与金钱的关系，如与命运的关系一般，渐渐清明。`);
 

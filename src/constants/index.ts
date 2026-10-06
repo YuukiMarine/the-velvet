@@ -243,7 +243,7 @@ export const ACHIEVEMENTS = [
   {
     id: 'battle_flawless',
     title: '月下无瑕',
-    description: '一场战斗中不损一滴体力讨伐心魔',
+    description: '一场战斗中不损一滴体力讨伐心魔或强敌',
     icon: '🌕',
     unlocked: false,
     condition: { type: 'battle_feat' as const, value: 1, feat: 'flawless' }
@@ -338,6 +338,13 @@ export const ACHIEVEMENT_UNLOCK_LINES: Record<string, [string, string]> = {
   wild_heart: ['感谢您的努力，', '您是最棒的客人。'],
   your_memory: ['您完成了生命中富有意义的其中一年，', '继续向前吧。'],
 };
+
+/**
+ * 技能加成总倍数上限（第 13 轮用户拍板 ×3）：成就页「技能」tab 的 bonusMultiplier 按属性连乘，
+ * 自定义技能每个 ×1.0–3.0 且数量不限，原来两个 ×3 就 ×9、塔罗日再 ×2——这里封顶。
+ * 乘算发生在所有加算（技能 flatBonus / 面具 +1 / 窥探命运 +1 / 同伴日常 +N）之前，与 addActivity 的顺序一致。
+ */
+export const SKILL_BONUS_MULT_CAP = 3;
 
 export const SKILLS = [
   {

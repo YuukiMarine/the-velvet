@@ -1,7 +1,6 @@
 import { motion, AnimatePresence } from 'motion/react';
 import { ModalPortal } from '@/components/ModalPortal';
 import { useEffect, useRef, useState, useCallback } from 'react';
-import type { CSSProperties } from 'react';
 import { useAppStore, DEFAULT_SUMMARY_PROMPT_PRESETS, FAMILIAR_FACE_PRESETS, toLocalDateKey, applyCustomThemeColor } from '@/store';
 import { useShallow } from 'zustand/react/shallow';
 import { triggerThemeSwitchFeedback, playSound } from '@/utils/feedback';
@@ -13,7 +12,7 @@ import { db } from '@/db';
 import { PageTitle } from '@/components/PageTitle';
 import { BackButton } from '@/components/BackButton';
 import { useRipple } from '@/components/RippleEffect';
-import { AI_PROVIDERS, getProviderConfig, testAIConnection, fetchAvailableModels, effectiveModelName, type TestResult, type ApiProvider, DEFAULT_PROVIDER } from '@/utils/aiProviders';
+import { AI_PROVIDERS, getProviderConfig, testAIConnection, fetchAvailableModels, effectiveModelName, cleanApiKey, type TestResult, type ApiProvider, DEFAULT_PROVIDER } from '@/utils/aiProviders';
 import { autoFillVisionPatch, refreshAllProviderModels, liveModelOf, isModelStale } from '@/utils/aiModelCatalog';
 import {
   BarsIcon, BellIcon, BoltMiniIcon, CoinIcon, DiamondMarkIcon, EyeIcon, GearIcon,
@@ -39,6 +38,7 @@ import {
 import { generatePresetNameMatches, type PresetNameMatchResult } from '@/utils/presetNameMatcher';
 import { P4Flower, P4Sparkle, P4SkyFan, P4ArcRings, P4_HEADER_BLEED } from '@/ui/p4Kit';
 import { downscaleDataUrl } from '@/utils/imageCrop';
+import { SoundVolumeRow } from '@/components/SoundVolumeRow';
 
 /** 五维属性的展示元数据（图标 + 主色 + 默认中文名），仅用于设置页 UI */
 const ATTRIBUTE_META: Array<{
@@ -854,20 +854,26 @@ export const Settings = () => {
   };
 
   const handleTestApi = async () => {
-    const keyToTest = summaryApiKeyDraft.trim() || (settings.summaryApiKey ?? '');
-    if (!keyToTest) {
+    const rawKey = summaryApiKeyDraft.trim() || (settings.summaryApiKey ?? '');
+    if (!rawKey) {
       setApiTestStatus('error');
       setApiTestMessage('请先填写 API 密钥');
       return;
     }
+    // 紧急修复 #2：密钥里混进看不见的字符 / 全角字母时，fetch 发都发不出去，以前报成「没放行 CORS」
+    const cleaned = cleanApiKey(rawKey);
+    const keyToTest = cleaned.key;
+    if (cleaned.removed > 0) setSummaryApiKeyDraft(keyToTest);
+    const cleanNote = cleaned.removed > 0 ? `密钥里混进了 ${cleaned.removed} 个看不见的空格 / 全角字符，已自动清理——测完记得点保存。\n` : '';
     setApiTestStatus('testing');
     setApiTestMessage('');
-    const result: TestResult = await testAIConnection({
+    const result0: TestResult = await testAIConnection({
       provider: settings.summaryApiProvider ?? DEFAULT_PROVIDER,
       apiKey: keyToTest,
       baseUrl: settings.summaryApiBaseUrl,
       model: settings.summaryModel,
     });
+    const result: TestResult = result0;
     if (result.ok) {
       setApiTestStatus('ok');
       // 地址少写了 /v1、补上才通（中转站最常见）：把校正后的地址替换进设置，之后所有请求都用它
@@ -876,7 +882,7 @@ export const Settings = () => {
       const pv = settings.summaryApiProvider ?? DEFAULT_PROVIDER;
       const listed = await fetchAvailableModels({ provider: pv, apiKey: keyToTest, baseUrl: result.baseUrlUsed });
       setApiTestMessage(
-        `连接成功 · ${result.model} · ${result.latencyMs} ms` +
+        cleanNote + `连接成功 · ${result.model} · ${result.latencyMs} ms` +
         (listed.ok ? ` · 模型列表已更新（${listed.models.length} 个）` : ' · 该服务商不支持拉取列表，模型请手填') +
         (result.corrected ? `\n地址少了 /v1，已自动补上并替换为 ${result.baseUrlUsed}` : ''),
       );
@@ -894,7 +900,7 @@ export const Settings = () => {
       });
     } else {
       setApiTestStatus('error');
-      setApiTestMessage(result.error);
+      setApiTestMessage(cleanNote + result.error);
     }
   };
 
@@ -905,7 +911,7 @@ export const Settings = () => {
     const profiles = { ...(settings.aiProfiles ?? {}) };
     profiles[activeProvider] = {
       ...(profiles[activeProvider] ?? {}),
-      key: summaryApiKeyDraft.trim() || settings.summaryApiKey || undefined,
+      key: cleanApiKey(summaryApiKeyDraft).key || cleanApiKey(settings.summaryApiKey).key || undefined,
       baseUrl: settings.summaryApiBaseUrl,
       model: settings.summaryModel,
       navModel: settings.navigatorModel,
@@ -938,7 +944,7 @@ export const Settings = () => {
   const savedProviderCount = AI_PROVIDERS.filter(p => providerHasKey(p.id)).length;
   const keyDirty = summaryApiKeyDraft.trim() !== (settings.summaryApiKey ?? '').trim();
   const saveActiveKey = () => {
-    const k = summaryApiKeyDraft.trim();
+    const k = cleanApiKey(summaryApiKeyDraft).key; // 紧急修复 #2：落库前清掉看不见的字符 / 全角字母
     const pv = activeProvider;
     updateSettings({
       summaryApiKey: k,
@@ -1337,7 +1343,7 @@ export const Settings = () => {
                     <div className="flex items-center justify-between bg-gray-50 dark:bg-gray-700 rounded-lg px-4 py-3">
                       <div>
                         <div className="text-sm font-medium text-gray-800 dark:text-white">静音模式</div>
-                        <div className="text-xs text-gray-500 dark:text-gray-400">关闭后将没有声音反馈</div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400">开启后所有音效静音</div>
                       </div>
                       <Toggle
                         checked={!!settings.soundMuted}
@@ -1346,32 +1352,8 @@ export const Settings = () => {
                       />
                     </div>
 
-                    {/* 音量大小滑块：仅非静音时显示 */}
-                    {!settings.soundMuted && (
-                      <div className="bg-gray-50 dark:bg-gray-700 rounded-lg px-4 py-3 space-y-2">
-                        <div className="flex items-center justify-between">
-                          <div className="text-sm font-medium text-gray-800 dark:text-white">音量大小</div>
-                          <span className="text-xs font-semibold tabular-nums text-primary">
-                            {settings.soundVolume ?? 80}%
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <span className="text-base select-none">🔈</span>
-                          <input
-                            type="range"
-                            min={0}
-                            max={100}
-                            step={5}
-                            value={settings.soundVolume ?? 80}
-                            onChange={(e) => updateSettings({ soundVolume: Number(e.target.value) })}
-                            className="flex-1 h-1.5 appearance-none rounded-full bg-gray-200 dark:bg-gray-600 accent-primary cursor-pointer"
-                            // p5 毯式滑杆：红/黑双色轨的分界位跟随当前值
-                            style={p5 ? ({ '--p5-range-fill': `${settings.soundVolume ?? 80}%` } as CSSProperties) : undefined}
-                          />
-                          <span className="text-base select-none">🔊</span>
-                        </div>
-                      </div>
-                    )}
+                    {/* 音量大小滑块：仅非静音时显示（第 13 轮：草稿值 + 松手试听 + 通道小字，见 SoundVolumeRow） */}
+                    {!settings.soundMuted && <SoundVolumeRow p5={p5} />}
 
                     {/* 夜间模式 */}
                     <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">

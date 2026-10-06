@@ -15,7 +15,7 @@ import { P4Flower, P4Sparkle, P4ArcRings, P4SkyCircle, P4_HEADER_BLEED } from '@
 import { P3R, P3RPage, GhostWords, P3PageHeader, P3EmptySlab, slantClip } from '@/components/p3r/kit';
 import { P5R, P5_TITLE_FONT, P5SubBar, P5Star, P5Dots, P5Slab, P5RPage } from '@/components/p5r/kit';
 import { calcMaxStreak, daysSinceFirstRecord, streakDates } from '@/utils/streak';
-import { HIDDEN_ACHIEVEMENT_IDS, SEALED_ACHIEVEMENT_IDS } from '@/constants';
+import { HIDDEN_ACHIEVEMENT_IDS, SEALED_ACHIEVEMENT_IDS, SKILL_BONUS_MULT_CAP } from '@/constants';
 
 /** P4 绶带横幅裁切（p4-achievements-reference-v2）：两端内凹的奖带形 */
 const P4_RIBBON_CLIP = 'polygon(0% 0%, 100% 0%, calc(100% - 14px) 50%, 100% 100%, 0% 100%, 14px 50%)';
@@ -334,6 +334,10 @@ const SkillsTab = () => {
       {/* Skill groups by attribute */}
       {Object.entries(byAttr).map(([attrId, attrSkills]) => {
         const attrName = settings.attributeNames[attrId as keyof typeof settings.attributeNames] || attrId;
+        // 第 13 轮：本属性已解锁技能的合计倍数（与 store.applySkillBonus 同口径：连乘后封顶 ×3）
+        const rawMult = attrSkills.filter(s => s.unlocked && s.bonusMultiplier).reduce((m, s) => m * (s.bonusMultiplier as number), 1);
+        const capped = rawMult > SKILL_BONUS_MULT_CAP;
+        const totalMult = Math.min(SKILL_BONUS_MULT_CAP, rawMult);
         return (
           <div
             key={attrId}
@@ -349,6 +353,15 @@ const SkillsTab = () => {
               >
                 {attrSkills.filter(s => s.unlocked).length}/{attrSkills.length} 已解锁
               </span>
+              {totalMult > 1 && (
+                <span
+                  className={p3 ? 'ml-auto text-[11px] font-black italic tabular-nums' : `ml-auto text-[11px] font-bold tabular-nums px-2 py-0.5 rounded-full ${capped ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300' : 'bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300'}`}
+                  style={p3 ? { color: capped ? 'var(--p3r-blessing-ink, #c07f00)' : P3R.blueDeep } : undefined}
+                  title={capped ? `技能连乘已超过上限，按 ×${SKILL_BONUS_MULT_CAP.toFixed(1)} 生效` : '本属性已解锁技能的合计加成'}
+                >
+                  {capped ? `已达上限 ×${SKILL_BONUS_MULT_CAP.toFixed(1)}` : `合计 ×${totalMult.toFixed(2).replace(/0$/, '')}`}
+                </span>
+              )}
             </div>
             <div className="p-3 space-y-2">
               {attrSkills

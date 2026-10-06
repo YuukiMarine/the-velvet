@@ -484,7 +484,8 @@ export class BattleEngine {
       case 'itemSp': return this.doItemSp(input.amount, input.label);
       case 'allOut':
         // 非法时机 / SP 不足：不吞回合（UI 已做门禁，这里是兜底）
-        if (this.staggerState !== 'window' || this.sp < ALL_OUT_SP_COST) {
+        // 第 13 轮：这里原来用裸常量而不是 allOutCost()，带「英雄的证明」时按钮亮着却被拒
+        if (this.staggerState !== 'window' || this.sp < this.allOutCost()) {
           return this.result(['时机未到——总攻击需要在失衡窗口中发动。'], [], false, false);
         }
         return this.doTurnAction(input);
@@ -537,10 +538,10 @@ export class BattleEngine {
     return cost;
   }
 
-  /** 总攻击实际 SP 消耗（英雄的证明减耗、下限 1） */
+  /** 总攻击实际 SP 消耗（英雄的证明减耗；第 13 轮：基准 5、减到 0 就免费——用户拍板「不花 SP 了就行」） */
   private allOutCost(): number {
     return this.relicMods.spCostCut > 0
-      ? Math.max(1, ALL_OUT_SP_COST - this.relicMods.spCostCut)
+      ? Math.max(0, ALL_OUT_SP_COST - this.relicMods.spCostCut)
       : ALL_OUT_SP_COST;
   }
 

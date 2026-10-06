@@ -8,13 +8,13 @@
  * 浅青斜切字段面 + 属性加点浅青斜条（青三角 ∓ 钮、逐级错位）+ 洋红旗重要事件 +
  * 「写好了」蓝斜块（洋红角）/「取消」白斜块（青角）；其余 = 中性深色兜底。
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import { zClass } from '@/utils/zIndex';
 import { useModalA11y } from '@/utils/useModalA11y';
 import { useBackHandler } from '@/utils/useBackHandler';
-import { CATEGORY_KEYS, CATEGORY_META, INCOME_TYPES, INCOME_META } from '@/utils/ledgerFormat';
+import { CATEGORY_KEYS, CATEGORY_META, INCOME_TYPES, INCOME_META, sanitizeMoneyInput } from '@/utils/ledgerFormat';
 import { WishMountPicker } from '@/components/wish/WishMountPicker';
 import {
   ACTION_META, ATTR_IDS, draftReady, navAttrName,
@@ -81,6 +81,14 @@ export const NavigatorActionForm = ({ draft, channel, onSubmit, onClose }: Props
   const [d, setD] = useState<NavigatorDraft | null>(draft);
   if (draft !== null && d === null) setD(draft);
   if (draft === null && d !== null) setD(null);
+  // 第 13 轮 2.4：金额框持一份文本草稿——原来每键 Number() 回写，"12." 立刻变 12、"0." / "." 被清空，小数点永远打不出来
+  const [amountText, setAmountText] = useState(() => (draft?.kind === 'ledger' && draft.amount ? String(draft.amount) : ''));
+  const ledgerAmount = d?.kind === 'ledger' ? d.amount : undefined;
+  useEffect(() => {
+    if (ledgerAmount === undefined) return;
+    if (Number(amountText) !== ledgerAmount) setAmountText(ledgerAmount ? String(ledgerAmount) : '');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ledgerAmount]);
 
   if (typeof document === 'undefined') return null;
 
@@ -378,10 +386,13 @@ export const NavigatorActionForm = ({ draft, channel, onSubmit, onClose }: Props
             <input
               id="nav-form-amount"
               autoFocus
+              type="text"
               inputMode="decimal"
-              value={d.amount || ''}
+              value={amountText}
               onChange={(e) => {
-                const n = Number(e.target.value);
+                const v = sanitizeMoneyInput(e.target.value);
+                setAmountText(v);
+                const n = Number(v);
                 patch({ amount: Number.isFinite(n) && n >= 0 ? Math.round(n * 100) / 100 : 0 });
               }}
               placeholder="0.00"

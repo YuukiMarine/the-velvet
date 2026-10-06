@@ -255,6 +255,22 @@ export function migrationStratumName(shadowName: string): { name: string; descri
   };
 }
 
+/**
+ * 孤儿胜利的兜底心魔（第 13 轮）：battleState.status 已是 'victory'、主影本体却不在了
+ * （旧状态写回滚 / 同步 / 存档损坏），奖励屏与档案只剩区层可依——用区层名与等级拼一个占位本体，
+ * 让「领取奖励」照常能领、档案照常有记录，而不是按钮静默无反应把人卡死。
+ * 只在主塔区层未通关时用（已通关 = 领过奖了，status 该直接修回 idle）。
+ */
+export function orphanBossOf(stratum: TowerStratum | null | undefined): Pick<Shadow, 'name' | 'level' | 'createdAt' | 'description'> | null {
+  if (!stratum || stratum.status === 'cleared' || stratum.abyssRing || stratum.revisit) return null;
+  return {
+    name: `${stratum.name}的心魔`,
+    level: Math.max(1, Math.min(6, stratum.level)),
+    createdAt: stratum.createdAt,
+    description: stratum.description,
+  };
+}
+
 // ── Lv6 · 顶阙（最终 BOSS「伪神」的区层）──────────────────────
 // 五个区层全通后才显形；结构刻意极短：一层回响整备 + 一层对峙。
 // 不做 10-12 层的攀爬——终局的重量在那一战与其后的演出里，不在路上。

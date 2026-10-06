@@ -1269,6 +1269,8 @@ export interface Budget {
   savingsGoal?: number;
   /** 「省钱挑战」目标已修改次数（每月限 2 次） */
   savingsGoalEdits?: number;
+  /** （第 13 轮）这期的花费上限是从哪一期沿用来的（'YYYY-MM'）；用户改过后清掉 */
+  carriedFrom?: string;
   createdAt: Date;
 }
 

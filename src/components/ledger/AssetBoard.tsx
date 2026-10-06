@@ -11,7 +11,7 @@ import { useAppStore, toLocalDateKey } from '@/store';
 import { useShallow } from 'zustand/react/shallow';
 import { SheetModal } from '@/components/SheetModal';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
-import { sym, fmtMoney, ASSET_CATEGORIES, assetIcon, ASSET_STATUS } from '@/utils/ledgerFormat';
+import { sym, fmtMoney, fmtSigned, ASSET_CATEGORIES, assetIcon, ASSET_STATUS } from '@/utils/ledgerFormat';
 import { Donut } from '@/components/ledger/Donut';
 import type { LedgerAsset } from '@/types';
 
@@ -55,16 +55,17 @@ export function AssetBoard() {
         className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm p-4"
       >
         <div className="flex items-center gap-4">
-          <Donut segments={segs.map(sg => ({ value: sg.amt, color: sg.hex }))} total={net} variant="card" track={false}>
+          {/* 第 13 轮 P0：净值 / 流动资金可能是负的（透支 / 信用卡）——环只画正的部分，数字带符号显示（原来 fmtMoney 取绝对值，负数显示成正数） */}
+          <Donut segments={segs.map(sg => ({ value: Math.max(0, sg.amt), color: sg.hex }))} total={Math.max(0, net)} variant="card" track={false}>
             <span className="text-[10px] text-gray-400">总财富</span>
-            <span className="text-sm font-black text-gray-800 dark:text-white tabular-nums">{$}{fmtMoney(net)}</span>
+            <span className={`text-sm font-black tabular-nums ${net < 0 ? 'text-rose-500' : 'text-gray-800 dark:text-white'}`}>{fmtSigned(net, $)}</span>
           </Donut>
           <div className="flex-1 space-y-2 text-sm">
             {segs.map(sg => (
               <div key={sg.key} className="flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: sg.hex }} />
                 <span className="text-gray-600 dark:text-gray-300">{sg.label}</span>
-                <span className="ml-auto font-bold tabular-nums text-gray-800 dark:text-gray-100">{$}{fmtMoney(sg.amt)}</span>
+                <span className={`ml-auto font-bold tabular-nums ${sg.amt < 0 ? 'text-rose-500' : 'text-gray-800 dark:text-gray-100'}`}>{fmtSigned(sg.amt, $)}</span>
               </div>
             ))}
           </div>

@@ -59,7 +59,7 @@ export const STAGGER_WEAKNESS_GAIN = 34;       // 3 次弱点满条
 export const STAGGER_CRIT_GAIN = 17;           // 暴击半量
 export const STAGGER_TAKEN_MULT = 1.3;         // 失衡期间受伤 +30%
 export const STAGGER_IMMUNE_TURNS = 3;
-export const ALL_OUT_SP_COST = 10;             // R18：20 → 10（处决化，随手可发）
+export const ALL_OUT_SP_COST = 5;              // R18：20 → 10；第 13 轮：10 → 5（用户拍板）
 /** R19：总攻击基数再压——LV1 时 1.0 倍率 50，逐级 +4（R18 的 100@5 溢出过多） */
 export const ALL_OUT_BASE_AT_LV1 = 50;
 export const ALL_OUT_PER_LEVEL = 4;
@@ -209,7 +209,7 @@ export interface RelicMods {
   blockHeal: number;     // 铁壁徽记：防御回合结束回 HP
   poisonAmp: number;     // 蚀骨之牙：玩家施毒强度 ×(1+x)
   lowHpGuard: number;    // 绷带：HP<30% 受伤 ×(1−x)
-  spCostCut: number;     // 英雄的证明：技能/总攻击 SP 消耗 −n（下限 1）
+  spCostCut: number;     // 英雄的证明：技能 SP 消耗 −n（下限 1）；总攻击 −n 可到 0（第 13 轮用户拍板：减到 0 就不花 SP）
   atkPct: number;        // 英雄的证明：攻击 +20%（技能进加算段；普攻/总攻击直乘）
 }
 export const ZERO_RELIC_MODS: RelicMods = {

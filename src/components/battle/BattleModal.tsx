@@ -44,6 +44,7 @@ import {
   SlantGauge, WaterGauge, IconUp, IconDown, IconEvilEye,
 } from '@/components/battle/warKit';
 import type { IntentKind } from '@/battle/intents';
+import { ledgerCycle, roundMoney } from '@/utils/ledgerFormat';
 
 /** 意图 → 几何图标（⑪；替代 INTENT_META emoji） */
 function IntentGlyph({ kind, size = 12 }: { kind: IntentKind; size?: number }) {
@@ -188,7 +189,8 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
     if (s.allOutUsed) feats.push('allout');
     if (s.masksSummoned.size === 5) feats.push('five_masks');
     if (s.poisonKill && s.tier === 'elite') feats.push('poison_elite');
-    if (s.tier === 'boss' && s.playerHpLost === 0) feats.push('flawless');
+    // 第 13 轮：无伤不只认主影——强敌（塔里的 elite 节点）也算（用户拍板）
+    if ((s.tier === 'boss' || s.tier === 'elite') && s.playerHpLost === 0) feats.push('flawless');
     feats.forEach(f => void useAppStore.getState().recordBattleFeat(f));
   }, []);
 
@@ -246,9 +248,10 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
     // ── 批4 日常闭环：弹药 / 记账联动 / 同伴庇护 ──
     const stG = useAppStore.getState();
     const ammoAddPct = ammoFromActivities(stG.activities, toLocalDateKey());
-    const period = toLocalDateKey().slice(0, 7);
+    // 第 13 轮 P0：按记账周期取预算与支出（发薪日周期开着时不是自然月），与记账页同口径
+    const period = ledgerCycle(stG.settings.ledgerPayCycleEnabled === true, stG.settings.ledgerResetDay ?? 1, toLocalDateKey()).key;
     const budgetLimit = stG.getBudget(period)?.monthlyLimit;
-    const withinBudget = budgetLimit != null ? stG.getPeriodExpense(period) <= budgetLimit : null;
+    const withinBudget = budgetLimit != null ? stG.getPeriodExpense(period) <= roundMoney(budgetLimit) : null;
     const ledgerWard = withinBudget === true && !!towerTs && !towerTs.wardUsed;
     const spendCurse = withinBudget === false;
     const guardCandidates = stG.confidants.filter(c => !c.archivedAt && c.intimacy >= 7);

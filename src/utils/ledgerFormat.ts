@@ -51,6 +51,42 @@ export function fmtSigned(n: number, $: string): string {
   return `${n < 0 ? '−' : ''}${$}${fmtMoney(n)}`;
 }
 
+/** 金额取整到分（第 13 轮）：浮点累加 0.01+1.11+10 = 11.120000000000001 这类误差，比较 / 显示 / 落库前统一抹掉。 */
+export function roundMoney(n: number): number {
+  if (!Number.isFinite(n)) return 0;
+  const r = Math.round((Math.abs(n) + Number.EPSILON) * 100) / 100;
+  return n < 0 ? -r : r;
+}
+
+/** 金额不带千分位的纯文本（受控输入框回填用）：整数不带小数，小数去掉末尾 0。 */
+export function fmtPlain(n: number): string {
+  const v = roundMoney(n);
+  return Number.isInteger(v) ? String(v) : v.toFixed(2).replace(/0$/, '');
+}
+
+/**
+ * 金额输入清洗（第 13 轮 2.4）：金额框统一 type="text" inputMode="decimal"，键盘给什么都接——
+ * 中文 / 欧洲区域的小数符号（，、。、,）归一成点；只留数字和一个点；最多两位小数；末尾的点保留（"12." 还在打）。
+ * 原来 type="number"：iOS 区域小数符号是逗号时键盘只给「,」，数字框不认 → 值变空、保存钮灰；部分安卓键盘没有「.」。
+ * allowNegative：对账目标余额可以是负数（透支 / 信用卡）。
+ */
+export function sanitizeMoneyInput(raw: string, opts: { allowNegative?: boolean } = {}): string {
+  let s = String(raw ?? '').replace(/[，,。]/g, '.').replace(/[^\d.\-]/g, '');
+  const neg = !!opts.allowNegative && s.startsWith('-');
+  s = s.replace(/-/g, '');
+  const i = s.indexOf('.');
+  if (i >= 0) s = s.slice(0, i + 1) + s.slice(i + 1).replace(/\./g, '').slice(0, 2);
+  s = s.replace(/^0+(?=\d)/, '');
+  if (s.startsWith('.')) s = '0' + s;
+  return (neg ? '-' : '') + s;
+}
+
+/** 输入串 → 金额（取绝对值、到分）；空 / 非法 → 0。 */
+export function moneyFromInput(s: string): number {
+  const n = Number(String(s ?? '').replace(/[，,。]/g, '.'));
+  return Number.isFinite(n) ? roundMoney(Math.abs(n)) : 0;
+}
+
 /** 把 'YYYY-MM' 偏移 delta 个月。 */
 export function shiftMonth(period: string, delta: number): string {
   const [y, m] = period.split('-').map(Number);

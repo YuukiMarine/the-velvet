@@ -13,7 +13,7 @@ import { applyUiChannel, syncDarkClass } from '@/ui/channel';
 import { computeAndSchedule, type NotifSnapshot } from '@/utils/notifications';
 import { getCachedNotifVoice, refreshNotifVoiceIfNeeded } from '@/utils/notifVoice';
 import { pushWidgetSnapshot } from '@/utils/widgetSnapshot';
-import { isGrowthCategory, cycleRangeForKey } from '@/utils/ledgerFormat';
+import { isGrowthCategory, cycleRangeForKey, ledgerCycle, roundMoney, shiftMonth } from '@/utils/ledgerFormat';
 import { chatComplete, getAIConfig, type AIConfig, type AIMessage } from '@/utils/aiClient';
 import { buildSummaryRequest as buildSummaryRequestAI, getActiveSummaryPreset as getActiveSummaryPresetAI, type SummaryRequestData } from '@/utils/summaryAI';
 import {
@@ -201,11 +201,12 @@ import {
   DEFAULT_LEVEL_THRESHOLDS,
   HP_BONUS_PER_DEFEAT,
   SHADOW_LEVEL_CONFIG,
+  SKILL_BONUS_MULT_CAP,
 } from '@/constants';
 import { PLAYER_BASE_HP, nodeSpReward, bossSpReward, RELIC_SALVAGE_SP, RELIC_SLOTS_BY_STRATUM, AFFIX_HP_MULT, masteryStars,
   MEMORY_ECHO_MIN_CANDIDATES, MOON_BOSS_SP, ABYSS_RULE_THICK_SP, ABYSS_RULE_GREED_DROP,
 } from '@/battle/numbers';
-import { buildStratum, buildAbyssRing, buildFinalStratum, buildRevisitStratum, migrationStratumName, reachableNodeIds, rollMobSpec, weekKeyOf } from '@/battle/tower';
+import { buildStratum, buildAbyssRing, buildFinalStratum, buildRevisitStratum, migrationStratumName, orphanBossOf, reachableNodeIds, rollMobSpec, weekKeyOf } from '@/battle/tower';
 import { TOWER_EVENT_IDS } from '@/battle/events';
 import { abyssWeeklyRule, abyssWeeklyWeakAttribute } from '@/battle/abyssRules';
 import { buildMoonShadow, monthKeyOf } from '@/battle/moonBoss';
@@ -536,15 +537,17 @@ interface AppState {
   markSummaryViewed: (id: string) => Promise<void>;
   // F5 心相记账
   ledgerEntries: LedgerEntry[];
+  /** 记账三表已从本地库读进内存（第 13 轮：读完前「0 条流水」会被当成新用户、对账按 0 算） */
+  ledgerLoaded: boolean;
   budgets: Budget[];
   loadLedger: () => Promise<void>;
   addLedgerEntry: (input: Omit<LedgerEntry, 'id' | 'createdAt' | 'currency'> & { currency?: string }) => Promise<LedgerEntry>;
   deleteLedgerEntry: (id: string) => Promise<void>;
-  setBudget: (period: string, patch: { monthlyLimit?: number; dailyLimit?: number; savingsGoal?: number; savingsGoalEdits?: number }) => Promise<void>;
+  setBudget: (period: string, patch: { monthlyLimit?: number; dailyLimit?: number; savingsGoal?: number; savingsGoalEdits?: number; carriedFrom?: string }) => Promise<void>;
+  /** （第 13 轮）新周期没设预算 → 沿用最近一期的花费上限（记 carriedFrom，可改） */
+  ensureBudgetCarry: () => Promise<void>;
   adjustTotalBalance: (targetTotal: number) => Promise<{ ok: boolean; reason?: string }>;
   getTotalBalance: () => number;
-  getMonthExpense: (period?: string) => number;
-  getMonthIncome: (period?: string) => number;
   getBudget: (period?: string) => Budget | undefined;
   getPeriodExpense: (periodKey: string) => number;
   getPeriodIncome: (periodKey: string) => number;
@@ -589,6 +592,8 @@ interface AppState {
   startBattleSession: () => void;
   endBattleSession: () => void;
   defeatShadow: () => Promise<void>;
+  /** 第 13 轮：status=victory 但本体没了、且已无奖可领（区层已通关 / 没有区层）→ 状态修回 idle，别再弹一个按不动的奖励屏 */
+  repairOrphanVictory: () => Promise<void>;
   resetBattle: () => Promise<void>;
   equipMask: (attr: AttributeId | null) => Promise<void>;
   // 影时间高塔（批2）：区层攀登
@@ -903,6 +908,12 @@ async function questDataOf(get: () => AppState, now: Date, imagesFrom?: Date): P
   };
 }
 
+/** 自定义技能单个倍数钳 1–3（第 13 轮）；非数字回 1 */
+const clampSkillMultiplier = (v: number): number => {
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.min(SKILL_BONUS_MULT_CAP, Math.max(1, n)) : 1;
+};
+
 export const useAppStore = create<AppState>((set, get) => ({
   user: null,
   attributes: [],
@@ -920,6 +931,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   todoCompletions: [],
   summaries: [],
   ledgerEntries: [],
+  ledgerLoaded: false,
   budgets: [],
   assets: [],
   weeklyGoals: [],
@@ -3426,6 +3438,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   addCustomSkill: async (skill) => {
     const newSkill: Skill = {
       ...skill,
+      // 第 13 轮：单个倍数钳 1–3（原来只在页面钳，导入 / 旧数据可绕过）
+      ...(skill.bonusMultiplier != null ? { bonusMultiplier: clampSkillMultiplier(skill.bonusMultiplier) } : {}),
       unlocked: false
     };
     await db.skills.add(newSkill);
@@ -3544,7 +3558,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     await get().loadData();
   },
 
-  updateCustomSkill: async (id: string, skill: Partial<Skill>) => {
+  updateCustomSkill: async (id: string, skillPatch: Partial<Skill>) => {
+    const skill: Partial<Skill> = skillPatch.bonusMultiplier != null
+      ? { ...skillPatch, bonusMultiplier: clampSkillMultiplier(skillPatch.bonusMultiplier) }
+      : skillPatch;
     await db.skills.update(id, skill);
     
     // 同时更新设置中的自定义技能
@@ -4187,6 +4204,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         totalFlat += skill.flatBonus;
       }
     }
+    // 第 13 轮：总倍数封顶（自定义技能可以堆到 ×9、×27……）；乘算先于 flat 加算
+    totalBonus = Math.min(SKILL_BONUS_MULT_CAP, totalBonus);
 
     const boosted = Math.round(points * totalBonus) + totalFlat;
     if (totalBonus > 1 && boosted === points + totalFlat) {
@@ -4529,12 +4548,14 @@ export const useAppStore = create<AppState>((set, get) => ({
       db.budgets.toArray(),
       db.assets.toArray(),
     ]);
-    set({ ledgerEntries, budgets, assets });
+    set({ ledgerEntries, budgets, assets, ledgerLoaded: true });
+    await get().ensureBudgetCarry();
   },
 
   addLedgerEntry: async (input) => {
     const entry: LedgerEntry = {
       ...input,
+      amount: roundMoney(input.amount),
       id: uuidv4(),
       currency: input.currency ?? get().settings.currency ?? 'CNY',
       createdAt: new Date(),
@@ -4574,59 +4595,63 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ budgets: [...get().budgets.filter(b => b.period !== period), budget] });
   },
 
+  ensureBudgetCarry: async () => {
+    const s = get().settings;
+    if (s.ledgerEnabled === false || get().ledgerEntries.length === 0) return; // 没开记账 / 新用户（开局引导）不碰
+    const key = ledgerCycle(s.ledgerPayCycleEnabled === true, s.ledgerResetDay ?? 1, toLocalDateKey()).key;
+    if (get().budgets.some(b => b.period === key)) return;
+    // 往前找最近一期设过的花费上限（最多 12 期）；只沿用上限，省钱挑战每期自己立（用户拍板「新周期沿用上期预算」）
+    for (let i = 1; i <= 12; i++) {
+      const prev = get().budgets.find(b => b.period === shiftMonth(key, -i));
+      if (prev?.monthlyLimit != null && prev.monthlyLimit > 0) {
+        await get().setBudget(key, { monthlyLimit: prev.monthlyLimit, carriedFrom: prev.period });
+        return;
+      }
+    }
+  },
+
   adjustTotalBalance: async (targetTotal) => {
-    if (get().getAdjustCountThisMonth() >= 3) {
+    // 开局「设置当前余额」（还没有任何流水）：不占每月 3 次对账名额，备注区分开（第 13 轮）
+    const initial = get().ledgerEntries.length === 0;
+    if (!initial && get().getAdjustCountThisMonth() >= 3) {
       return { ok: false, reason: '本月对账已用完 3 次' };
     }
-    const delta = targetTotal - get().getTotalBalance();
+    const delta = roundMoney(targetTotal - get().getTotalBalance());
     if (Math.abs(delta) < 0.005) return { ok: true };
     await get().addLedgerEntry({
       direction: 'adjust',
       amount: delta,
       date: toLocalDateKey(),
       source: 'manual',
-      note: '余额对账',
+      note: initial ? '初始余额' : '余额对账',
     });
     return { ok: true };
   },
 
   getTotalBalance: () => {
-    return get().ledgerEntries.reduce((sum, e) => {
+    return roundMoney(get().ledgerEntries.reduce((sum, e) => {
       if (e.direction === 'income') return sum + e.amount;
       if (e.direction === 'expense') return sum - e.amount;
       return sum + e.amount; // adjust：可正可负
-    }, 0);
+    }, 0));
   },
 
-  getMonthExpense: (period) => {
-    const p = period ?? toLocalDateKey().slice(0, 7);
-    return get().ledgerEntries
-      .filter(e => e.direction === 'expense' && e.date.slice(0, 7) === p)
-      .reduce((s, e) => s + e.amount, 0);
-  },
-
-  getMonthIncome: (period) => {
-    const p = period ?? toLocalDateKey().slice(0, 7);
-    // 收入 = 入账 + 本月「对账」转入的正向部分（对账补的钱算当月收入，次月自然结转为余额）
-    return get().ledgerEntries
-      .filter(e => e.date.slice(0, 7) === p && (e.direction === 'income' || (e.direction === 'adjust' && e.amount > 0)))
-      .reduce((s, e) => s + e.amount, 0);
-  },
-
-  // 按「周期」（日历月或发薪日周期，依 settings.ledgerPayCycleEnabled）统计支出/收入（M4）
+  // 按「周期」（日历月或发薪日周期，依 settings.ledgerPayCycleEnabled）统计支出/收入（M4）。
+  // 口径（第 13 轮统一）：对账调整（adjust）既不算收入也不算支出，只进余额——此前页面把正向对账算进收入、
+  // 统计忽略、结算算「未记流水」，三处不一致。
   getPeriodExpense: (periodKey) => {
     const s = get().settings;
     const [start, end] = cycleRangeForKey(!!s.ledgerPayCycleEnabled, s.ledgerResetDay ?? 1, periodKey);
-    return get().ledgerEntries
+    return roundMoney(get().ledgerEntries
       .filter(e => e.direction === 'expense' && e.date >= start && e.date <= end)
-      .reduce((a, e) => a + e.amount, 0);
+      .reduce((a, e) => a + e.amount, 0));
   },
   getPeriodIncome: (periodKey) => {
     const s = get().settings;
     const [start, end] = cycleRangeForKey(!!s.ledgerPayCycleEnabled, s.ledgerResetDay ?? 1, periodKey);
-    return get().ledgerEntries
-      .filter(e => e.date >= start && e.date <= end && (e.direction === 'income' || (e.direction === 'adjust' && e.amount > 0)))
-      .reduce((a, e) => a + e.amount, 0);
+    return roundMoney(get().ledgerEntries
+      .filter(e => e.direction === 'income' && e.date >= start && e.date <= end)
+      .reduce((a, e) => a + e.amount, 0));
   },
 
   getBudget: (period) => {
@@ -4636,7 +4661,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   getAdjustCountThisMonth: () => {
     const p = toLocalDateKey().slice(0, 7);
-    return get().ledgerEntries.filter(e => e.direction === 'adjust' && e.date.slice(0, 7) === p).length;
+    return get().ledgerEntries.filter(e => e.direction === 'adjust' && e.note !== '初始余额' && e.date.slice(0, 7) === p).length;
   },
 
   // 发放记账 SP：bonus=true（劳动/值得/月末）不占每日封顶；普通每笔受 20/日封顶。
@@ -4720,9 +4745,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     const st = get().settings;
     const todayKey = toLocalDateKey();
     // 仅统计「已完整结束」的周期（日历月或发薪日周期）；周期内省下 = 预算 − 该周期支出
-    return get().budgets
+    return roundMoney(get().budgets
       .filter(b => b.monthlyLimit != null && cycleRangeForKey(!!st.ledgerPayCycleEnabled, st.ledgerResetDay ?? 1, b.period)[1] < todayKey)
-      .reduce((acc, b) => acc + Math.max(0, (b.monthlyLimit ?? 0) - get().getPeriodExpense(b.period)), 0);
+      .reduce((acc, b) => acc + Math.max(0, roundMoney((b.monthlyLimit ?? 0) - get().getPeriodExpense(b.period))), 0));
   },
 
   claimLedgerBudgetBonus: async (period) => {
@@ -4730,7 +4755,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if ((s.ledgerBudgetBonusMonths ?? []).includes(period)) return false;
     if (cycleRangeForKey(!!s.ledgerPayCycleEnabled, s.ledgerResetDay ?? 1, period)[1] >= toLocalDateKey()) return false; // 仅已完整结束的周期发放
     const budget = get().getBudget(period)?.monthlyLimit;
-    if (budget == null || get().getPeriodExpense(period) > budget) return false;
+    if (budget == null || get().getPeriodExpense(period) > roundMoney(budget)) return false;
     const granted = await get().earnLedgerSp(10, 'flat');
     if (granted <= 0) return false; // 无战场→SP 没发，不烧名额、不弹横幅（M1）
     // 名额数组必须在 await 之后**重读**再追加：earnLedgerSp 内部也写 settings，
@@ -4747,8 +4772,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (cycleRangeForKey(!!s.ledgerPayCycleEnabled, s.ledgerResetDay ?? 1, period)[1] >= toLocalDateKey()) return null; // 仅已完整结束的周期
     const b = get().getBudget(period);
     if (b?.monthlyLimit == null || b.savingsGoal == null || b.savingsGoal <= 0) return null;
-    const saved = b.monthlyLimit - get().getPeriodExpense(period);
-    if (saved < b.savingsGoal) return null; // 未达成挑战
+    const saved = roundMoney(b.monthlyLimit - get().getPeriodExpense(period));
+    if (saved < roundMoney(b.savingsGoal)) return null; // 未达成挑战
     const granted = await get().earnLedgerSp(10, 'flat');
     if (granted <= 0) return null; // 无战场→不发不烧名额（M1）
     const won = get().settings.ledgerChallengeWonMonths ?? []; // 同上：await 之后重读再追加
@@ -4957,23 +4982,26 @@ export const useAppStore = create<AppState>((set, get) => ({
     // 批3 阴影档案馆：新藏品带 描述/词缀/代表台词/击败时的你/区层等级（存量记录字段留空 = 首批藏品）
     // 满月心魔（第 6 轮）：它就是这一环的守卫，额外 +30 SP、档案标月份、岁时册收一枚满月印记
     const isMoon = isAbyss && !!shadow?.moonSlot;
-    const newRecord = shadow && !isRevisit ? {
-      shadowName: isMoon ? `${shadow.name}（满月 · 回廊第${stratum!.abyssRing}环）` : isAbyss ? `${shadow.name}（回廊第${stratum!.abyssRing}环）` : shadow.name,
-      ...(isMoon ? { moonMonth: shadow.moonMonth } : {}),
-      level: shadow.level,
+    // 第 13 轮：孤儿胜利（status=victory 但本体没了）用区层拼的占位本体兜底——档案照记、HP 上限照加，
+    // 否则奖励屏「领取奖励」一按只清状态不留痕（用户上报「结算卡住领不到奖励」的一种落地形态）
+    const foe = shadow ?? (battleState.status === 'victory' ? orphanBossOf(stratum) : null);
+    const newRecord = foe && !isRevisit ? {
+      shadowName: isMoon ? `${foe.name}（满月 · 回廊第${stratum!.abyssRing}环）` : isAbyss ? `${foe.name}（回廊第${stratum!.abyssRing}环）` : foe.name,
+      ...(isMoon && shadow ? { moonMonth: shadow.moonMonth } : {}),
+      level: foe.level,
       // 用本地日期口径（toLocalDateKey），不要 toISOString().slice —— 那是 UTC：
       // 东八区凌晨 0–8 点击破，档案里会写成"昨天"（FS7 审查；全站其余日期都走这个函数）
-      breachDate: toLocalDateKey(new Date(shadow.createdAt)),
+      breachDate: toLocalDateKey(new Date(foe.createdAt)),
       defeatDate: toLocalDateKey(),
-      daysElapsed: Math.max(1, Math.floor((Date.now() - new Date(shadow.createdAt).getTime()) / 86400000)),
-      description: shadow.description,
-      affixes: shadow.affixes,
-      quote: shadow.responseLines[Math.floor(Math.random() * Math.max(1, shadow.responseLines.length))],
+      daysElapsed: Math.max(1, Math.floor((Date.now() - new Date(foe.createdAt).getTime()) / 86400000)),
+      description: foe.description,
+      affixes: shadow?.affixes,
+      quote: shadow ? shadow.responseLines[Math.floor(Math.random() * Math.max(1, shadow.responseLines.length))] : undefined,
       playerTotalLevel: attributes.reduce((s, a) => s + (a.unlocked === false ? 0 : (a.level ?? 1)), 0),
       stratumLevel: stratum?.level,
     } : null;
     // HP bonus from defeating this shadow（深渊不加）
-    const hpGain = shadow && !isAbyss && !isRevisit ? (HP_BONUS_PER_DEFEAT[Math.min(shadow.level - 1, HP_BONUS_PER_DEFEAT.length - 1)] ?? 2) : 0;
+    const hpGain = foe && !isAbyss && !isRevisit ? (HP_BONUS_PER_DEFEAT[Math.min(foe.level - 1, HP_BONUS_PER_DEFEAT.length - 1)] ?? 2) : 0;
     const newHpBonus = (battleState.hpBonusFromDefeats ?? 0) + hpGain;
     const updated: BattleState = {
       ...battleState,
@@ -5019,6 +5047,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (st && st.status === 'climbing') {
       await get().saveStratum({ ...st, status: 'cleared' });
     }
+  },
+
+  repairOrphanVictory: async () => {
+    const bs = get().battleState;
+    if (!bs || bs.status !== 'victory' || get().shadow) return;
+    if (orphanBossOf(get().stratum)) return; // 区层还在爬 = 奖没领过，交给奖励屏兜底领
+    console.warn('[battle] 孤儿胜利且无奖可领：status 修回 idle');
+    await get().saveBattleState({ ...bs, status: 'idle' });
   },
 
   resetBattle: async () => {
@@ -5254,6 +5290,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   deepenStratumIfNewWeek: async () => {
     const { stratum, shadow } = get();
     if (!stratum || stratum.status !== 'climbing') return false;
+    // 心魔已破、奖还没领（status=victory）：别把尸体回满血再加词缀——奖励屏领完它就清掉了
+    if (get().battleState?.status === 'victory') return false;
     if (stratum.abyssRing) return false; // 批5：深渊环无月相加深（每环短命，压力走词缀递增）
     // 伪神不加深：它的三条血和「指认」是显形时一次定死的，词缀（尤其「顽固」的回血扩容）会破坏终局的口径
     if (shadow?.isFinalBoss || stratum.level >= 6) return false;
