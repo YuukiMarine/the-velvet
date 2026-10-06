@@ -605,8 +605,9 @@ function stripForCloud(key: string, rows: Row[], includeApiKey: boolean): Row[] 
     // 存量用户里显式打开过开关的（=== true）维持上传，其余一律剔除。
     return rows.map(r => {
       if (!r || typeof r !== 'object') return r;
-      const { backgroundImage: _bg, backgroundOrientation: _bgo, weatherApiKey: _wk, weatherApiHost: _wh, weatherCity: _wc, ...rest } = r;
-      void _bg; void _bgo; void _wk; void _wh; void _wc;
+      const { backgroundImage: _bg, backgroundOrientation: _bgo, weatherApiKey: _wk, weatherApiHost: _wh, weatherCity: _wc,
+        bgmEnabled: _b1, bgmVolume: _b2, bgmBattleTrackId: _b3, bgmTowerTrackId: _b4, bgmHomeTrackIds: _b5, bgmNoticeSeen: _b6, bgmBossTrackId: _b7, ...rest } = r;
+      void _bg; void _bgo; void _wk; void _wh; void _wc; void _b1; void _b2; void _b3; void _b4; void _b5; void _b6; void _b7;
       if (!includeApiKey) {
         const { summaryApiKey: _s, openaiApiKey: _o, aiProfiles: _p, ...leaner } = rest;
         void _s; void _o; void _p;
@@ -830,7 +831,9 @@ const pushAllInner = async (opts: { force?: boolean } = {}): Promise<void> => {
  * settings 里按设备生效的开关：拉取时一律用本机的值。
  * 它们随 settings 整行上云，另一台设备一推、这台一拉，「这台设备不上传 Key / 愿望」的选择就被对方的覆盖回来了。
  */
-const DEVICE_SETTING_KEYS = ['syncExcludedTables', 'syncConfidantsToCloud', 'syncCloudApiKey', 'syncWishesToCloud', 'syncNavigatorToCloud'] as const;
+const DEVICE_SETTING_KEYS = ['syncExcludedTables', 'syncConfidantsToCloud', 'syncCloudApiKey', 'syncWishesToCloud', 'syncNavigatorToCloud',
+  // 导入音乐（第 13 轮 B 组）：曲目只在本机，槽位 id 在别的设备上没有意义
+  'bgmEnabled', 'bgmVolume', 'bgmBattleTrackId', 'bgmBossTrackId', 'bgmTowerTrackId', 'bgmHomeTrackIds', 'bgmNoticeSeen'] as const;
 
 /** 全量拉取：用云端数据覆盖本地 Dexie，然后刷新 Zustand 状态。同一时间只跑一件（见 runExclusive） */
 export const pullAll = (): Promise<void> => runExclusive('拉取', pullAllInner);

@@ -539,13 +539,14 @@ const p4MoonLit = (phase: number, r: number, c: number) => {
  * p4-onlight：墨字在浅色天空圆上，夜间不许跟全局翻浅（用户 R16 口径）。
  */
 const P4SkyBadge = () => {
-  const { mode, toggle, weather, loading, error, ready } = useSkyBadge();
+  const { mode, toggle, weather, loading, error, errorKind, ready, attribution } = useSkyBadge();
   const m = p4MoonOf(new Date());
   const label = mode === 'weather'
-    ? (!ready ? '设置天气' : error ? '取不到' : loading ? '取数中' : `${weather?.temp}° ${weather?.text}`)
+    ? (!ready ? '设置天气' : errorKind === 'config' ? '设置有误' : error ? '取不到' : loading ? '取数中' : `${weather?.temp}° ${weather?.text}`)
     : `${m.name} ${Math.round(m.illum * 100)}%`;
 
   return (
+    <span className="flex flex-col items-start">
     <button
       type="button"
       onClick={toggle}
@@ -565,6 +566,14 @@ const P4SkyBadge = () => {
         {label}
       </span>
     </button>
+    {/* 来源标注：和风 / Open-Meteo 要求显示名字 + 链接（按钮外，点它不会切回月相） */}
+    {attribution && (
+      <a href={attribution.url} target="_blank" rel="noopener noreferrer" data-testid="weather-attribution"
+         className="mt-0.5 pl-1 text-[8.5px] font-bold leading-none text-[#131313]/70">
+        数据：{attribution.label}
+      </a>
+    )}
+    </span>
   );
 };
 

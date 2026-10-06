@@ -27,7 +27,7 @@ import { Donut } from '@/components/ledger/Donut';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P3R, P3RPage, GhostWords, P3PageHeader, slantClip } from '@/components/p3r/kit';
 import { P5R, P5_FONT, roughQuad, roughSlant, starPts, P5Collage, P5SubBar, P5Star, P5Dots, P5Slab, P5RPage } from '@/components/p5r/kit';
-import { catMeta, CATEGORY_KEYS, isGrowthCategory, INCOME_META, sym, fmtMoney, fmtSigned, fmtPlain, roundMoney, sanitizeMoneyInput, moneyFromInput, DEFAULT_CHANNELS, DEFAULT_INCOME_SOURCES, incomeTypeFromSource, shiftMonth, weekdayCN, monthLabel, ledgerDateLabel, ledgerCycle } from '@/utils/ledgerFormat';
+import { catMeta, CATEGORY_KEYS, isGrowthCategory, INCOME_META, sym, fmtMoney, fmtSigned, fmtPlain, roundMoney, sanitizeMoneyInput, moneyFromInput, DEFAULT_CHANNELS, DEFAULT_INCOME_SOURCES, incomeTypeFromSource, shiftMonth, weekdayCN, monthLabel, ledgerDateLabel, ledgerCycle, type AccountBalance } from '@/utils/ledgerFormat';
 import type { LedgerEntry, LedgerExpenseType, AttributeId, SpendWorth, Settings } from '@/types';
 import { P4Flower } from '@/ui/p4Kit';
 
@@ -62,7 +62,7 @@ const draftFromAI = (r: LedgerAIResult, source: 'manual' | 'ai'): EntryDraft => 
   category: r.category ?? '',
   channel: '',
   note: r.note ?? '',
-  date: toLocalDateKey(),
+  date: r.date ?? toLocalDateKey(), // 第 13 轮 P1：「昨天买的…」直接落到昨天
   source,
   attrPoints: 1,
   registerAsset: false,
@@ -183,9 +183,9 @@ export const Ledger = () => {
   const isP4 = useUiChannel() === 'p4';
   const {
     settings, ledgerEntries, ledgerLoaded, setCurrentPage, updateSettings,
-    addLedgerEntry, deleteLedgerEntry, setBudget, adjustTotalBalance, rewardForLedgerEntry, addAsset,
-    getTotalBalance, getPeriodExpense, getPeriodIncome, getBudget, getAdjustCountThisMonth, getSavings,
-  } = useAppStore(useShallow(s => ({ settings: s.settings, ledgerEntries: s.ledgerEntries, ledgerLoaded: s.ledgerLoaded, setCurrentPage: s.setCurrentPage, updateSettings: s.updateSettings, addLedgerEntry: s.addLedgerEntry, deleteLedgerEntry: s.deleteLedgerEntry, setBudget: s.setBudget, adjustTotalBalance: s.adjustTotalBalance, rewardForLedgerEntry: s.rewardForLedgerEntry, addAsset: s.addAsset, getTotalBalance: s.getTotalBalance, getPeriodExpense: s.getPeriodExpense, getPeriodIncome: s.getPeriodIncome, getBudget: s.getBudget, getAdjustCountThisMonth: s.getAdjustCountThisMonth, getSavings: s.getSavings })));
+    addLedgerEntry, deleteLedgerEntry, setBudget, adjustAccountBalances, rewardForLedgerEntry, addAsset,
+    getTotalBalance, getPeriodExpense, getPeriodIncome, getBudget, getAdjustCountThisMonth, getSavings, getAccountBalances,
+  } = useAppStore(useShallow(s => ({ settings: s.settings, ledgerEntries: s.ledgerEntries, ledgerLoaded: s.ledgerLoaded, setCurrentPage: s.setCurrentPage, updateSettings: s.updateSettings, addLedgerEntry: s.addLedgerEntry, deleteLedgerEntry: s.deleteLedgerEntry, setBudget: s.setBudget, adjustAccountBalances: s.adjustAccountBalances, rewardForLedgerEntry: s.rewardForLedgerEntry, addAsset: s.addAsset, getTotalBalance: s.getTotalBalance, getPeriodExpense: s.getPeriodExpense, getPeriodIncome: s.getPeriodIncome, getBudget: s.getBudget, getAdjustCountThisMonth: s.getAdjustCountThisMonth, getSavings: s.getSavings, getAccountBalances: s.getAccountBalances })));
 
   const currency = settings.currency ?? 'CNY';
   const $ = sym(currency);
@@ -299,6 +299,8 @@ export const Ledger = () => {
     return { exp, inc };
   }, [monthGrouped]);
   const curMonth = toLocalDateKey().slice(0, 7);
+  // 第 13 轮 P1 #6：有未来日期的条目时允许翻到那个月（原来「下月」钮一律在当月停住，补记到下个月的账看不到）
+  const maxListMonth = useMemo(() => ledgerEntries.reduce((m, e) => (e.date.slice(0, 7) > m ? e.date.slice(0, 7) : m), curMonth), [ledgerEntries, curMonth]);
 
   // 近 9 日支出（p3 预算卡左侧梯级从纯装饰改为迷你日耗图）：宽 ∝ 当日支出
   const last9 = useMemo(() => {
@@ -317,7 +319,9 @@ export const Ledger = () => {
     const max = Math.max(1, ...days.map(d => d.spent));
     const avg = days.reduce((s2, d) => s2 + d.spent, 0) / 9;
     return { days, max, avg };
-  }, [ledgerEntries]);
+    // todayKey 进依赖：跨午夜后窗口要往前挪一天（第 13 轮 P1 #10）
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ledgerEntries, todayKey]);
 
   // 当前预算周期 id = cycle.key（日历月或发薪日周期）；进入新周期且未确认时弹「规划窗」
   const resetDay = settings.ledgerResetDay ?? 1;
@@ -340,7 +344,7 @@ export const Ledger = () => {
       if (results.length >= 2) {
         // 多笔 → 批量确认卡（支出行预选上次渠道）
         const last = settings.ledgerLastChannel ?? '';
-        setBatchDate(toLocalDateKey());
+        setBatchDate(results.find(r => r.date)?.date ?? toLocalDateKey());
         setBatch(results.map(rowFromResult).map(r => (r.direction === 'expense' && !r.channel ? { ...r, channel: last } : r)));
       } else {
         // 单笔（含 0 笔兜底转手动）
@@ -372,7 +376,7 @@ export const Ledger = () => {
       const { results, via, ocrText } = await parseLedgerShot(dataUrl, settings);
       if (results.length >= 2) {
         const last = settings.ledgerLastChannel ?? '';
-        setBatchDate(toLocalDateKey());
+        setBatchDate(results.find(r => r.date)?.date ?? toLocalDateKey());
         setBatch(results.map(rowFromResult).map(r => (r.direction === 'expense' && !r.channel ? { ...r, channel: last } : r)));
         setShotHint(via === 'vision' ? '看图读出多笔，核对一下' : '本机识字读出多笔，核对一下');
       } else if (results.length === 1) {
@@ -411,7 +415,7 @@ export const Ledger = () => {
       if (!amount) continue;
       const saved = r.direction === 'expense'
         ? await addLedgerEntry({ direction: 'expense', amount, date: batchDate, source: aiSrc, type: r.type, channel: r.channel.trim() || undefined, note: r.note.trim() || undefined })
-        : await addLedgerEntry({ direction: 'income', amount, date: batchDate, source: aiSrc, incomeType: incomeTypeFromSource(r.incomeSource), category: r.incomeSource.trim() || undefined, note: r.note.trim() || undefined });
+        : await addLedgerEntry({ direction: 'income', amount, date: batchDate, source: aiSrc, incomeType: incomeTypeFromSource(r.incomeSource), category: r.incomeSource.trim() || undefined, channel: r.channel.trim() || undefined, note: r.note.trim() || undefined });
       await rewardForLedgerEntry(saved);
       if (r.direction === 'expense' && r.channel.trim()) lastCh = r.channel.trim();
     }
@@ -448,6 +452,7 @@ export const Ledger = () => {
           direction: 'income', amount, date: draft.date, source: draft.source,
           incomeType: incomeTypeFromSource(draft.incomeSource),
           category: draft.incomeSource.trim() || undefined,
+          channel: draft.channel.trim() || undefined, // 第 13 轮 2.6：收入也记到账账户
           note: draft.note.trim() || undefined,
         });
     await rewardForLedgerEntry(saved, { attribute: draft.attribute, attrPoints: draft.attrPoints, evalWorth: draft.evalWorth });
@@ -1114,7 +1119,7 @@ export const Ledger = () => {
             </div>
             <button
               onClick={() => setListMonth(shiftMonth(listMonth, 1))}
-              disabled={listMonth >= curMonth}
+              disabled={listMonth >= maxListMonth}
               className="flex h-10 w-10 items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1b57ff]"
               aria-label="下个月"
             >
@@ -1143,7 +1148,7 @@ export const Ledger = () => {
               </div>
               <button
                 onClick={() => setListMonth(shiftMonth(listMonth, 1))}
-                disabled={listMonth >= curMonth}
+                disabled={listMonth >= maxListMonth}
                 aria-label="下个月"
                 className="flex h-9 w-9 cursor-pointer items-center justify-center text-[16px] font-black text-white disabled:cursor-not-allowed"
                 style={{ background: listMonth >= curMonth ? '#9b9791' : '#050505', clipPath: 'polygon(3px 1px, calc(100% - 1px) 3px, calc(100% - 3px) calc(100% - 1px), 1px calc(100% - 3px))' }}
@@ -1168,7 +1173,7 @@ export const Ledger = () => {
           </div>
           <button
             onClick={() => setListMonth(shiftMonth(listMonth, 1))}
-            disabled={listMonth >= curMonth}
+            disabled={listMonth >= maxListMonth}
             className="w-9 h-9 flex items-center justify-center rounded-lg text-gray-500 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             aria-label="下个月"
           >
@@ -1328,6 +1333,16 @@ export const Ledger = () => {
                 {incomeTypeFromSource(draft.incomeSource) === 'labor' && (
                   <div className="text-xs text-emerald-500 font-semibold">劳动所得 · 记账 +10 SP</div>
                 )}
+                {/* 第 13 轮 2.6：收入到哪个账户（渠道即账户），对账按账户算 */}
+                <div className="text-xs text-gray-500 dark:text-gray-400 pt-1">到账账户 <span className="text-gray-400/70 font-normal">可选</span></div>
+                <TagPicker
+                  options={channels} value={draft.channel}
+                  onChange={v => setDraft({ ...draft, channel: v })}
+                  onAdd={addOption('ledgerChannels', channels)}
+                  addPlaceholder="新账户"
+                  collapsedCount={6} expanded={channelsExpanded}
+                  onToggleExpand={() => updateSettings({ ledgerChannelsExpanded: !channelsExpanded })}
+                />
               </div>
             )}
 
@@ -1535,13 +1550,22 @@ export const Ledger = () => {
                         </select>
                       </>
                     ) : (
-                      <select
-                        value={row.incomeSource} onChange={e => updateRow(i, { incomeSource: e.target.value })}
-                        className="flex-1 min-w-0 px-2 py-1.5 rounded-lg bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-xs text-gray-700 dark:text-gray-200 outline-none"
-                      >
-                        <option value="">来源…</option>
-                        {[...new Set([...incomeSources, row.incomeSource].filter(Boolean))].map(s => <option key={s} value={s}>{s}</option>)}
-                      </select>
+                      <>
+                        <select
+                          value={row.incomeSource} onChange={e => updateRow(i, { incomeSource: e.target.value })}
+                          className="flex-1 min-w-0 px-2 py-1.5 rounded-lg bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-xs text-gray-700 dark:text-gray-200 outline-none"
+                        >
+                          <option value="">来源…</option>
+                          {[...new Set([...incomeSources, row.incomeSource].filter(Boolean))].map(s => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                        <select
+                          value={row.channel} onChange={e => updateRow(i, { channel: e.target.value })}
+                          className="flex-1 min-w-0 px-2 py-1.5 rounded-lg bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-xs text-gray-700 dark:text-gray-200 outline-none"
+                        >
+                          <option value="">到账账户…</option>
+                          {[...new Set([...channels, row.channel].filter(Boolean))].map(c => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                      </>
                     )}
                   </div>
                   {/* 行 3：备注 */}
@@ -1607,11 +1631,12 @@ export const Ledger = () => {
         isOpen={adjustOpen}
         onClose={() => setAdjustOpen(false)}
         $={$}
-        current={total}
+        total={total}
+        accounts={adjustOpen ? getAccountBalances() : []}
         initial={needsSetup}
         ready={ledgerLoaded}
         remaining={3 - getAdjustCountThisMonth()}
-        onSave={async (target) => { await adjustTotalBalance(target); setAdjustOpen(false); }}
+        onSave={async (targets) => { const r = await adjustAccountBalances(targets); if (!r.ok) throw new Error(r.reason || '对账失败'); setAdjustOpen(false); }}
       />
 
       {/* 删除确认 */}
@@ -1646,7 +1671,8 @@ function LedgerRow({ entry: e, $, onClick }: { entry: LedgerEntry; $: string; on
   const sign = isIncome ? '+' : isExpense ? '−' : (e.amount < 0 ? '−' : '+');
   const subParts = [meta?.label, e.category, e.channel].filter(Boolean) as string[];
   const incomeLabel = e.category || INCOME_META[e.incomeType ?? 'other'].label;
-  const sub = isIncome ? incomeLabel : (e.direction === 'adjust' ? '余额对账' : subParts.join(' · '));
+  // 第 13 轮 2.6：收入 / 对账也带账户
+  const sub = isIncome ? [incomeLabel, e.channel].filter(Boolean).join(' · ') : (e.direction === 'adjust' ? [e.note || '余额对账', e.channel].filter(Boolean).join(' · ') : subParts.join(' · '));
   const title = e.note || (isIncome ? incomeLabel : (meta?.label ?? '记录'));
   return (
     <button onClick={onClick} className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors first:rounded-t-xl last:rounded-b-xl">
@@ -1746,7 +1772,7 @@ function BudgetSheet({ isOpen, onClose, $, current, carriedFrom, savingsCurrent,
         </button>
       }
     >
-      <div className="space-y-4">
+      <div className="p5-ledgerform space-y-4">
         <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
           {newCycle
             ? '新的一程开始了——给自己定个花费节奏，和一个想攒下的小目标。'
@@ -1802,24 +1828,38 @@ function BudgetSheet({ isOpen, onClose, $, current, carriedFrom, savingsCurrent,
   );
 }
 
-function AdjustSheet({ isOpen, onClose, $, current, remaining, onSave, initial = false, ready = true }: {
-  isOpen: boolean; onClose: () => void; $: string; current: number; remaining: number; onSave: (target: number) => Promise<void>;
-  /** 开局「设置当前余额」：不占对账次数、文案不同 */
+function AdjustSheet({ isOpen, onClose, $, total, accounts, remaining, onSave, initial = false, ready = true }: {
+  isOpen: boolean; onClose: () => void; $: string; total: number; accounts: AccountBalance[]; remaining: number;
+  onSave: (targets: Array<{ account: string | null; target: number }>) => Promise<void>;
+  /** 开局「设置当前余额」：不占对账轮数、文案不同 */
   initial?: boolean;
-  /** 记账三表读完了才能算差额（读完前总余额是 0） */
+  /** 记账三表读完了才能算差额（读完前余额是 0） */
   ready?: boolean;
 }) {
-  const [val, setVal] = useState('');
+  /**
+   * 第 13 轮 2.6 多账户对账：渠道即账户（支付宝 / 微信 / 银行卡 / 信用卡…），每个账户一行：算出来的余额 + 输入框；
+   * 填了几个就校准几个，一次提交 = 一轮（每月 3 轮）；信用卡一类是负债账户，余额为负显示「欠」。
+   * 没填过渠道的老流水归「未分配」，也可以对账。
+   */
+  const [vals, setVals] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
   const busyRef = useRef(false);
-  const target = Number(val);
-  const canSave = ready && !busy && (initial || remaining > 0) && val.trim() !== '' && val !== '-' && Number.isFinite(target);
+  useEffect(() => { if (isOpen) { setVals({}); setErr(null); } }, [isOpen]);
+  const changed = accounts
+    .map(a => ({ a, raw: vals[a.name] ?? '' }))
+    .filter(x => x.raw.trim() !== '' && x.raw !== '-' && Number.isFinite(Number(x.raw)) && roundMoney(Number(x.raw)) !== x.a.balance);
+  const canSave = ready && !busy && (initial || remaining > 0) && changed.length > 0;
   const submit = async () => {
     if (!canSave || busyRef.current) return;
-    busyRef.current = true;
-    setBusy(true);
-    try { await onSave(roundMoney(target)); } finally { busyRef.current = false; setBusy(false); }
+    busyRef.current = true; setBusy(true); setErr(null);
+    try {
+      await onSave(changed.map(x => ({ account: x.a.unassigned ? null : x.a.name, target: roundMoney(Number(x.raw)) })));
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : '对账失败');
+    } finally { busyRef.current = false; setBusy(false); }
   };
+  const balanceText = (a: AccountBalance) => a.isDebt && a.balance < 0 ? `欠 ${$}${fmtMoney(-a.balance)}` : fmtSigned(a.balance, $);
   return (
     <SheetModal
       isOpen={isOpen}
@@ -1831,30 +1871,47 @@ function AdjustSheet({ isOpen, onClose, $, current, remaining, onSave, initial =
           disabled={!canSave}
           className="w-full py-3.5 rounded-2xl font-bold text-sm bg-primary text-white disabled:opacity-40 active:scale-[0.98]"
         >
-          {!ready ? '账本还在读取…' : busy ? '记录中…' : initial ? '就这么记' : remaining > 0 ? '校准为此余额' : '本月对账已用完'}
+          {!ready ? '账本还在读取…' : busy ? '记录中…' : initial ? (changed.length ? `就这么记（${changed.length} 个账户）` : '填一个账户的余额') : remaining > 0 ? (changed.length ? `校准 ${changed.length} 个账户` : '改了哪个账户就校准哪个') : '本月对账已用完'}
         </button>
       }
     >
-      <div className="space-y-3">
+      {/* p5-ledgerform：红频道里输入件已套在框盒内，别再自画一层黑边（否则数字第一位被 5px 边带盖住） */}
+      <div className="p5-ledgerform space-y-3">
         <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
           {initial
-            ? '告诉我你现在大概有多少钱（支付宝 / 微信 / 银行卡加起来），之后随时可「对账」修正；这一次不占对账次数。'
-            : <>把总余额校准到你的真实余额（比如对一下支付宝/钱包）。本月还可对账 <b>{Math.max(0, remaining)}</b> 次。</>}
+            ? '按账户填入你现在的余额（支付宝 / 微信 / 银行卡…，只填一个也行），之后随时可「对账」修正；这一次不占对账轮数。'
+            : <>把各账户校准到真实余额（打开支付宝 / 微信对一下）。一次提交算一轮，本月还可对账 <b>{Math.max(0, remaining)}</b> 轮。信用卡这类负债账户余额可以是负数。</>}
         </p>
         {!initial && (
           <div className="text-sm text-gray-500 dark:text-gray-400">
-            当前总余额：<span className="font-bold text-gray-800 dark:text-gray-100 tabular-nums">{fmtSigned(current, $)}</span>
+            总余额：<span className="font-bold text-gray-800 dark:text-gray-100 tabular-nums">{fmtSigned(total, $)}</span>
           </div>
         )}
-        <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
-          <span className="text-xl font-black text-gray-400">{$}</span>
-          <input
-            type="text" inputMode="decimal" autoFocus
-            value={val} onChange={e => setVal(sanitizeMoneyInput(e.target.value, { allowNegative: true }))}
-            placeholder={initial ? '0' : String(current)}
-            className="flex-1 min-w-0 bg-transparent text-2xl font-black text-gray-900 dark:text-white tabular-nums outline-none"
-          />
+        <div className="space-y-2" data-testid="adjust-accounts">
+          {accounts.map((a, i) => (
+            <div key={a.name} className="rounded-xl bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 px-3 py-2.5">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-semibold text-gray-700 dark:text-gray-200">
+                  {a.name}
+                  {a.isDebt && <span className="ml-1.5 px-1.5 py-0.5 rounded-full bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-300 text-[10px]">负债</span>}
+                  {a.unassigned && <span className="ml-1.5 text-[10px] text-gray-400">没填账户的流水</span>}
+                </span>
+                <span className={`tabular-nums ${a.isDebt && a.balance < 0 ? 'text-rose-500' : 'text-gray-500 dark:text-gray-400'}`}>现在 {balanceText(a)}</span>
+              </div>
+              <div className="mt-1.5 flex items-center gap-2">
+                <span className="text-base font-black text-gray-400">{$}</span>
+                <input
+                  type="text" inputMode="decimal" autoFocus={i === 0}
+                  value={vals[a.name] ?? ''}
+                  onChange={e => setVals(v => ({ ...v, [a.name]: sanitizeMoneyInput(e.target.value, { allowNegative: true }) }))}
+                  placeholder={a.isDebt ? (a.balance < 0 ? `-${fmtPlain(-a.balance)}` : '0（欠款填负数）') : fmtPlain(a.balance)}
+                  className="flex-1 min-w-0 bg-transparent text-lg font-black text-gray-900 dark:text-white tabular-nums outline-none"
+                />
+              </div>
+            </div>
+          ))}
         </div>
+        {err && <p className="text-xs text-rose-500">{err}</p>}
       </div>
     </SheetModal>
   );

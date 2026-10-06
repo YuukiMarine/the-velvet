@@ -488,13 +488,21 @@ export interface Settings {
   weatherProvider?: 'qweather' | 'openmeteo';
   /** 和风 Key。**不上云**（与城市同组豁免），只进本地备份 */
   weatherApiKey?: string;
-  /** 和风账号专属 API Host（控制台里给的那个域名）；留空走 devapi.qweather.com */
+  /** 和风账号专属 API Host（控制台 → 设置里的那个域名，必填；公共域名 2026 年已停服）。存规整后的纯域名 */
   weatherApiHost?: string;
   /** 选定城市。位置语义强，**不上云**，只进本地备份 */
   weatherCity?: { id?: string; name: string; lat: number; lon: number };
   backgroundOpacity?: number;
   soundMuted?: boolean;
   soundVolume?: number;     // 音量大小 0–100，默认 80
+  // ── 导入音乐（第 13 轮 B 组 2.8）：曲目本体在本机 bgmTracks 表（不上云不备份）；这几项按设备生效，上云剥掉 ──
+  bgmEnabled?: boolean;                                  // 默认开（有曲目才有意义）
+  bgmVolume?: number;                                    // 0–100，默认 60
+  bgmBattleTrackId?: string;                             // 战斗曲目（小影 / 强敌）；'' = 跟随主页曲目
+  bgmBossTrackId?: string;                               // Boss 战（每区层关底的心魔）；'' = 跟随战斗曲目
+  bgmTowerTrackId?: string;                              // 爬塔曲目；'' = 跟随主页曲目
+  bgmHomeTrackIds?: Partial<Record<ThemeType, string>>;  // 各主题主页默认曲目
+  bgmNoticeSeen?: boolean;                               // 版权提示已读
   customAchievements?: Achievement[];
   customSkills?: Skill[];
   customLevelThresholds?: number[];
@@ -605,7 +613,7 @@ export interface Settings {
   navigatorLastGreetDate?: string;
   /** 当前激活的人格 preset id（缺省 = 内置黑猫）。切人格 = 开新会话。 */
   navigatorPresetId?: string;
-  /** 拟真增强：回复走流式 + 按标点切碎气泡（句号删并断、——删并断、问叹/括号保留断；逗号不断），泡间 1.2s。 */
+  /** 拟真增强：回复走流式 + 按标点切碎气泡（句号删并断、——删并断、问叹/分号/括号保留断；逗号不断；括号里的标点不断，颜文字整组成泡），泡间 1.2s。 */
   navigatorImmersive?: boolean;
   /** 羁绊页视图：专辑墙（默认）/ 列表；右上角切换、持久记忆（PRD_V2.5_FINAL §5.3） */
   confidantViewMode?: 'wall' | 'list';
@@ -627,6 +635,11 @@ export interface Settings {
       modelCaps?: Record<string, { image?: boolean; maxOutput?: number }>;
     }
   >>;
+  /**
+   * 第 13 轮：不放行浏览器跨域预检、只能走 App 原生通道（CapacitorHttp）的 AI 主机（host[:port]）。
+   * 测试连接时自动登记 / 注销；原生通道没有流式，回复整段出现。网页版没有原生层，登记了也走普通 fetch。
+   */
+  aiNativeHosts?: string[];
   summaryApiKey?: string;
   summaryApiBaseUrl?: string;
   summaryModel?: string;
@@ -887,6 +900,16 @@ export interface ActivityImage {
 }
 
 /** 记录配图的原图（长边 ≤ 1280、≤ 150KB JPEG），主键与 ActivityImage.id 相同 */
+/** 导入音乐（第 13 轮 B 组 2.8）：本机专属，Blob 直接存表；不进 SYNC_TABLES、不进主备份 */
+export interface BgmTrack {
+  id: string;
+  name: string;
+  size: number;
+  mime: string;
+  blob: Blob;
+  createdAt: Date;
+}
+
 export interface ActivityImageData {
   id: string;
   dataUrl: string;
@@ -1010,6 +1033,8 @@ export interface NavigatorPreset {
   personaPrompt: string;
   /** 切换/新会话开场的一句接管语（内置手写；自定义可空走通用） */
   handoffLine?: string;
+  /** 口吻示例（第 13 轮）：两三句这个人格会说的话，只教语气和长短，不是台词库。内置人格自带；自定义可空 */
+  examples?: string[];
   isBuiltin: boolean;
   createdAt: Date;
   /** 固定喜好（第二批「自己的一天」）：内置人格写在代码里；自定义人格第一次用到时 AI 按设定写一份，编辑人格里能改 */
@@ -1248,6 +1273,8 @@ export interface LedgerEntry {
   assetId?: string;
   /** 图片导入回链记忆卡（F8a） */
   sourceMemoId?: string;
+  /** （第 13 轮 2.6）对账轮次：同一轮里按账户写的几条调整共享一个 id，每月 3 次按「轮」算 */
+  adjustRound?: string;
   // ── 收入专属 ──
   incomeType?: LedgerIncomeType;
   // ── 奖励回收（删除时精确逆转）──
@@ -1326,8 +1353,13 @@ export interface Persona {
   skills: Record<AttributeId, PersonaSkill[]>;
   /** （批3）召唤台词：每属性一句，AI 批量生成后缓存；无 Key 用模板 */
   summonLines?: Partial<Record<AttributeId, string>>;
+  /** （第 13 轮）觉醒问答的附加题「力量之源」：最多两类；没答 = 按原规则不限范围。洗牌时沿用 */
+  sources?: PersonaSourceId[];
   createdAt: Date;
 }
+
+/** 力量之源：太初的光芒（神明）/ 文明的墨痕（古代伟人）/ 蒸腾的汽焰（近代名人）/ 二进制之海（近现代）/ 幻想与纹样（文艺作品角色） */
+export type PersonaSourceId = 'primordial' | 'ancient' | 'steam' | 'binary' | 'fantasy';
 
 // ── 批3 · 战利品与养成（遗物/迷思/誓约/共鸣链/词缀） ────────────
 

@@ -16,8 +16,8 @@ import { useAppStore, toLocalDateKey } from '@/store';
 import { chatComplete, chatStream, getAIConfig, getAssistantAIConfig } from '@/utils/aiClient';
 import { CATEGORY_KEYS } from '@/utils/ledgerFormat';
 import {
-  ATTR_IDS, buildSnapshot, navAttrName,
-  type NavigatorDraft, type NavigatorSnapshot,
+  ATTR_IDS, buildPreviewLines, buildSnapshot, editTodoChanges, navAttrName,
+  type EditTodoDraft, type NavigatorDraft, type NavigatorSnapshot,
 } from '@/utils/navigatorRegistry';
 import type { AIMessage } from '@/utils/aiClient';
 import { stampOf } from '@/utils/navigatorClock';
@@ -25,7 +25,7 @@ import { buildTopicPermission, noteTopicsMentioned, stanceLine, type Energy, typ
 import type { AttributeId, LedgerExpenseType } from '@/types';
 
 export interface NavigatorTurnResult {
-  /** 聊天回复分段（空行切分，1~4 段） */
+  /** 聊天回复分段（空行切分，最多 6 段，多出的并入末段） */
   segments: string[];
   /** 解析出的动作草稿（每个一张确认卡；一句话说了几件事就出几张） */
   drafts: NavigatorDraft[];
@@ -55,11 +55,12 @@ const TRIAGE_PROTOCOL = `你是记录意图判定器。根据对话摘录和最�
 stance（对方最新这句的姿态，五选一）：vent=倾诉、抱怨、情绪不好；chat=闲聊、分享日常；ask=提问、求助、要建议；report=在说他做了或要做的正事；bye=要走了、去忙了、晚安。
 energy（对方此刻的精力，三选一）：low=疲惫、低落、很短的敷衍句；high=兴奋、得意、分享喜事；其余 normal。
 
-actions 元素为下列四种之一：
+actions 元素为下列五种之一：
 {"kind":"activity","text":"事项描述","points":{"knowledge":0,"guts":0,"dexterity":0,"kindness":0,"charm":0},"important":false}（用户**已经做了**的事；points 每项 0~5）
 {"kind":"todo","title":"任务名","attribute":"knowledge|guts|dexterity|kindness|charm","points":2,"attribute2":"同属性枚举","points2":1,"repeatDaily":false}（用户**打算做/要提醒**的事；attribute2/points2 是可选副奖励——仅当这件事明显同时锻炼两种属性才给，须与 attribute 不同，否则省略这两个字段）
 {"kind":"ledger","direction":"expense|income","amount":0,"note":"摘要","type":"food|transport|shopping|fun|home|study|other","incomeType":"labor|other","channel":""}（花钱/收入）
 {"kind":"completeTodo","todoId":"待办清单里的 id","todoTitle":"任务名"}（用户说做完了某件今日待办；todoId 必须取自清单，没有匹配就不出）
+{"kind":"editTodo","todoId":"任务清单里的 id","title":"新任务名","attribute":"新属性","points":3,"repeatDaily":true,"deadline":"YYYY-MM-DD","archive":true}（用户要**改一条已有任务**：改名、改点数或属性、改成每日 / 单次、改或取消截止日（deadline 给空串 = 取消）、不做了（archive:true）。todoId 必须取自【任务清单已有】；**只写要改的字段**，其余省略）
 
 规则：
 - **只响应【最新消息】里的记录意图**：用户此刻在报告做了什么/要做什么/花了钱/求记录，才出卡。
@@ -74,6 +75,8 @@ actions 元素为下列四种之一：
 - 标「用户已手改」的卡，内容以列出的为准（那是用户改后的版本），不要出一张把它改回去的卡。
 - 一句话说了几件事就出几张卡（≤3）。信息足够就出卡；确实拿不准或信息不足才空。
 - 修改一张待确认卡 = 出一张修正后的新卡。
+- **改已有任务出 editTodo**（todoId 取自【任务清单已有】），不要再出一张 todo 卡——那会变成两条。说「做完了 / 搞定了」是 completeTodo，不是 editTodo；
+  「不做了 / 删掉 / 取消这个任务」是 editTodo + archive:true。截止日按【今天】换算成具体日期。
 - 需要今天之前的历史记录才能回答时：{"kind":"activities","days":1~30} 填入 query。
 - 其它一律 {"actions":[],"query":null}。
 
@@ -84,6 +87,9 @@ actions 元素为下列四种之一：
 待确认卡已有「学英语」，末句：帮我记一下 → {"actions":[],"query":null,"stance":"report","energy":"normal"}
 卡片已有「记录活动【已确认生效】跑步五公里」，末句：对了我今天跑了五公里来着 → {"actions":[],"query":null,"stance":"chat","energy":"normal"}
 任务清单已有「背单词」，末句：帮我加个背单词的任务 → {"actions":[],"query":null,"stance":"report","energy":"normal"}
+任务清单已有 id=t1「背单词」，末句：背单词那个改成每天背 50 个吧 → {"actions":[{"kind":"editTodo","todoId":"t1","title":"每天背 50 个单词","repeatDaily":true}],"query":null,"stance":"report","energy":"normal"}
+今天 2026-10-06（周二）、任务清单已有 id=t2「写论文初稿」，末句：论文那个截止改到这周五 → {"actions":[{"kind":"editTodo","todoId":"t2","deadline":"2026-10-09"}],"query":null,"stance":"report","energy":"normal"}
+任务清单已有 id=t3「晨跑」，末句：晨跑先不做了，删了吧 → {"actions":[{"kind":"editTodo","todoId":"t3","archive":true}],"query":null,"stance":"report","energy":"normal"}
 输入末句：今天好累啊 → {"actions":[],"query":null,"stance":"vent","energy":"low"}
 输入末句：刚吃了碗麻辣烫哈哈 → {"actions":[],"query":null,"stance":"chat","energy":"normal"}
 输入末句：帮我记一下，午饭吃了沙拉 → {"actions":[{"kind":"activity","text":"午饭吃沙拉","points":{"knowledge":0,"guts":0,"dexterity":1,"kindness":0,"charm":0},"important":false}],"query":null,"stance":"report","energy":"normal"}
@@ -94,12 +100,13 @@ actions 元素为下列四种之一：
 // ── 阶段2 · 表演规范（人格侧；输出纯文本，无任何格式负担） ──
 const PERFORM_RULES = `
 ## 说话方式
-- 直接输出你要对用户说的话（纯文本）。可用空行分成 1~4 段，每段 ≤60 字。禁止 markdown 标题/列表/代码块。
+- 直接输出你要对用户说的话（纯文本）。用空行分段，一段就是一个气泡；别用 markdown 标题 / 列表 / 代码块。
 - 【背景资料】是你知道的情况，不是要汇报的清单：只在对方问起、或和他此刻说的事直接相关时才用。
   想主动提点什么，只能从【主动话题】里挑，每轮最多一件，也可以一件都不提；【】是系统数据区标签，不要把标签名念出来。
 - 先接住再说事：照【这一轮】的提示回应。他倾诉就先接住情绪，别急着给建议；闲聊就顺着聊；要走就简短道别。
 - 说人话：不排比、不喊口号、不写警句；别每条回复都先对时间或时段做反应，也别报出几点几分，除非他问时间；
-  长短跟着他走——他说一句，你别回一大段。
+  长短跟着他这一条走：他发一句，你回一两句；他写了一大段，你就认真回一段，把他说到的几件事都接住，别只挑一句敷衍。
+  段落别太长（一段一屏内），再多就分段。人格设定里明确写了话少或话多的，以人格设定为准。
 - 【关于用户的记忆】是你们过往相处攒下的：像老朋友那样自然带出，不要背档案（"记得你说过…"胜过复读原文）；
   带【可自然追问】的话头，合适时顺口问一句，不合适就跳过，同一话头绝不反复问。
 - 【当前语气】是你此刻的状态基调，服从它。
@@ -120,6 +127,8 @@ const PERFORM_RULES = `
 - 【本轮开出的卡片】列了什么，你就只能提这些卡：请用户看一眼并点「确认」。卡片会自动展示，**绝不在文本里手写卡片内容或画卡**。
 - 【本轮没有开卡】时，绝不声称已记录/已安排/开了卡。用户若在要求记录：坦率说缺什么信息，或请他用下方快捷项手动建。
 - 已有卡片的真实状态只看【本会话卡片实录】：待用户确认=还没生效；已确认生效；已取消。引导确认时就说「点一下确认」。
+- 任务做没做完只看【今日未完成待办】【今日已完成】这两处（此刻的真实状态，用户可能刚在 App 里点过）；
+  对话里早些时候说的完成情况可能已经过时，别照着旧话说。
 - 实录里标了【已取消】的，用户就是不想要：别追问为什么、别重开同一张，除非他再提一次。
 - 标了「用户已手改」的，卡里现在是**他改后的版本**（实录给的就是新内容）：照新内容说话，
   别再复述你原来提议的那版；可以轻轻认一句（"按你改的记"），不用反复确认。
@@ -133,6 +142,11 @@ const PERFORM_RULES = `
 export function buildDynamicContext(snap: NavigatorSnapshot, swallowed: string[], cards: string[] = []): string {
   const s = useAppStore.getState();
   const due = s.getDueTodosToday().filter((t) => !s.getTodayTodoProgress(t.id).isComplete);
+  // 今天完成的（单次任务完成后会归档、不再算「今日待办」，所以按完成记录 / completedAt 找，不能只看 getDueTodosToday）
+  const doneIds = new Set(s.todoCompletions.filter((c) => c.date === snap.dateKey && c.count > 0).map((c) => c.todoId));
+  const doneToday = s.todos.filter((t) =>
+    (t.completedAt && toLocalDateKey(new Date(t.completedAt)) === snap.dateKey)
+    || (doneIds.has(t.id) && s.getTodayTodoProgress(t.id).isComplete));
   const attrs = s.attributes
     .map((a) => `${s.settings.attributeNames?.[a.id] ?? a.displayName} Lv.${a.level}（${a.points} 点）`)
     .join('；');
@@ -146,8 +160,9 @@ export function buildDynamicContext(snap: NavigatorSnapshot, swallowed: string[]
     snap.tarotDrawn ? `今日塔罗已抽：「${snap.tarotCardName ?? '?'}」` : '今日塔罗未抽',
     snap.terminalStepTitle ? `进行中的终端小步：「${snap.terminalStepTitle}」` : '',
     due.length
-      ? `【今日未完成待办】\n${due.slice(0, 12).map((t) => `- 「${t.title}」(${navAttrName(t.attribute)}+${t.points})`).join('\n')}`
+      ? `【今日未完成待办（此刻的真实状态）】\n${due.slice(0, 12).map((t) => `- 「${t.title}」(${navAttrName(t.attribute)}+${t.points})`).join('\n')}`
       : '【今日无未完成待办】',
+    doneToday.length ? `【今日已完成】${doneToday.slice(0, 12).map((t) => `「${t.title}」`).join('、')}` : '',
     cards.length
       ? `【本会话卡片实录（真实状态，以此为准）】\n${cards.join('\n')}`
       : '【本会话尚无卡片】',
@@ -202,11 +217,84 @@ function extractJson(raw: string): Record<string, unknown> | null {
   }
 }
 
+/** 括号：中英文可以混着配对（颜文字常见「(╯°□°）」） */
+const PAREN_OPEN = '(（';
+const PAREN_CLOSE = ')）';
+/** 括号组最长多少字还当它是「一个颜文字 / 一句括注」：再长、没合上或跨了行，就按普通文本断句 */
+const PAREN_GROUP_MAX = 30;
 /**
- * 拟真切泡引擎（体验优化⑤，2026-07-04 二调）：扫描流式 buffer，切出可即时发出的气泡。
- * 规则（用户定稿）：句号 → 删标点断泡；**逗号/顿号保留不断**；问号/感叹号/分号/省略号 →
- * 保留断泡；「——」双破折号 → 删除并断泡；左括号前断（括号内容独立成泡）、右括号后断保留；换行亦断。
- * 返回 rest 保存跨 chunk 的半句（半个省略号/破折号/小数点歧义），isFinal 时全量清空。
+ * 颜文字的「手」：括号外紧贴着的符号——ヽ(✿ﾟ▽ﾟ)ノ、Σ(っ °Д °;)っ、(╯°□°）╯︵ ┻━┻、＼(^o^)／、ლ(╹◡╹ლ)。
+ * 只认符号区（箭头 / 数学 / 制表 / 几何 / 杂项符号 / 装饰符号）、组合附加符和一小撮常见的手部字符；
+ * 汉字、普通假名、字母数字、空白、句读一律不算——宁可漏认，也别把正文吸进颜文字。
+ * 不用 \p{…}：老 WebView 的正则引擎不认，整个模块会解析失败（同下面「不用后行断言」的顾虑）。
+ */
+const KAOMOJI_ARM = /[°´ʰ-˿̀-ͯ←-⏿─-➿ʔʕΣεσψωз٩۶୧୨งლᕕᕗᕤᕦ〃っづゝゞッノヽヾ︵＜＞＼ﾉ\\]/;
+/**
+ * 「软」手：括号前只在整泡就是它们时才吸进去（「好呀~(≧▽≦)」的 ~ 留给前句，「~(￣▽￣)~」「m(_ _)m」才算手）；
+ * 括号后紧贴着就算，但字母后面不能再跟字母数字（「(笑)ok」的 o 是正文）。
+ */
+const KAOMOJI_SOFT_ARM = /[~～\/／_*oOwmdbqp]/;
+
+/** cur 末尾有几个字符是颜文字左边的「手」，要跟着括号组走 */
+function prefixArmLength(cur: string): number {
+  let n = 0;
+  while (n < 3 && n < cur.length && KAOMOJI_ARM.test(cur[cur.length - 1 - n])) n++;
+  if (n > 0) return n;
+  const t = cur.trim();
+  if (t && t.length <= 3 && [...t].every((c) => KAOMOJI_ARM.test(c) || KAOMOJI_SOFT_ARM.test(c))) return cur.length;
+  return 0;
+}
+
+/** 右括号后面紧贴着的「手」到哪儿为止（返回结束下标）；-1 = 扫到 buffer 末尾还定不下来，等下一块 */
+function suffixArmEnd(buf: string, from: number, isFinal: boolean): number {
+  let end = from;
+  let k = from;
+  let afterSpace = false;
+  while (k < buf.length && k - from < 6) {
+    const c = buf[k];
+    if (KAOMOJI_ARM.test(c)) { k++; end = k; afterSpace = false; continue; }
+    if (!afterSpace && KAOMOJI_SOFT_ARM.test(c)) {
+      if (/[A-Za-z]/.test(c)) {
+        const nx = buf[k + 1];
+        if (nx === undefined) { if (!isFinal) return -1; }
+        else if (/[A-Za-z0-9]/.test(nx)) break;
+      }
+      k++; end = k; continue;
+    }
+    // 手中间可以隔一个空格（「╯︵ ┻━┻」），但空格后面只认硬手；结尾的空格不算进来
+    if (c === ' ' && end > from) { afterSpace = true; k++; continue; }
+    break;
+  }
+  if (k >= buf.length && !isFinal && k - from < 6) return -1;
+  return end;
+}
+
+type ParenScan = { kind: 'group'; end: number } | { kind: 'pending' } | { kind: 'open' };
+
+/** 从左括号起找配对的右括号（可嵌套、中英混配）：配上了 → 整组（连同后面的手）；没配上 / 太长 / 跨行 → open；还没收到 → pending */
+function scanParenGroup(buf: string, start: number, isFinal: boolean): ParenScan {
+  let depth = 0;
+  for (let k = start; k < buf.length; k++) {
+    const c = buf[k];
+    if (c === '\n' || k - start >= PAREN_GROUP_MAX) return { kind: 'open' };
+    if (PAREN_OPEN.includes(c)) depth++;
+    else if (PAREN_CLOSE.includes(c) && --depth === 0) {
+      const end = suffixArmEnd(buf, k + 1, isFinal);
+      return end < 0 ? { kind: 'pending' } : { kind: 'group', end };
+    }
+  }
+  return isFinal ? { kind: 'open' } : { kind: 'pending' };
+}
+
+/**
+ * 拟真切泡引擎（体验优化⑤，2026-07-04 二调；第 13 轮加括号组）：扫描流式 buffer，切出可即时发出的气泡。
+ * 规则（用户定稿）：句号 → 删标点断泡；**逗号/顿号保留不断**；问号/感叹号/分号（中英）/省略号 →
+ * 保留断泡；「——」双破折号 → 删除并断泡；换行亦断。
+ * 括号（中英文，可混配）：左括号前断、整组独立成泡、右括号后断；**组内的标点一律不断**——颜文字
+ * 「(；´Д｀)」「(。・ω・。)」「(・_・;)」和括注「（其实我也这么想。）」不再被拆碎；紧贴着的颜文字「手」
+ * （ヽ(✿ﾟ▽ﾟ)ノ）跟着整组走。超过 PAREN_GROUP_MAX 字、没合上或跨行的括号按老规矩逐句断；
+ * 落单的右括号（左半边在前一泡、中间被句号断开）不单独成泡。
+ * 返回 rest 保存跨 chunk 的半句（半个省略号/破折号/小数点歧义/还没合上的括号组），isFinal 时全量清空。
  */
 export function spliceImmersive(buffer: string, isFinal: boolean): { bubbles: string[]; rest: string } {
   const bubbles: string[] = [];
@@ -214,6 +302,22 @@ export function spliceImmersive(buffer: string, isFinal: boolean): { bubbles: st
   const flush = () => { const t = stripStamp(cur.trim()); if (t) bubbles.push(t); cur = ''; };
   for (let i = 0; i < buffer.length; i++) {
     const ch = buffer[i];
+    if (PAREN_OPEN.includes(ch)) {
+      const armLen = prefixArmLength(cur);
+      const arms = cur.slice(cur.length - armLen);
+      cur = cur.slice(0, cur.length - armLen);
+      flush();
+      const g = scanParenGroup(buffer, i, isFinal);
+      // 右括号还没到：连同左边的手原样留到下一块再判（重扫是幂等的）
+      if (g.kind === 'pending') return { bubbles, rest: arms + buffer.slice(i) };
+      if (g.kind === 'group') { cur = arms + buffer.slice(i, g.end); flush(); i = g.end - 1; continue; }
+      cur = arms + ch;
+      continue;
+    }
+    if (PAREN_CLOSE.includes(ch)) {
+      if (cur.trim()) { cur += ch; flush(); }
+      continue;
+    }
     if (ch === '。') { flush(); continue; }
     if (ch === '—') {
       // 双破折号「——」：删除并断泡；末位单个 — 非 final → 挂起等下一块拼对
@@ -243,8 +347,6 @@ export function spliceImmersive(buffer: string, isFinal: boolean): { bubbles: st
       if (buffer[i + 1] === '…') { cur += '…'; i++; }
       flush(); continue;
     }
-    if (ch === '（' || ch === '(') { flush(); cur = ch; continue; }
-    if (ch === '）' || ch === ')') { cur += ch; flush(); continue; }
     if (ch === '\n') { flush(); continue; }
     cur += ch;
   }
@@ -274,15 +376,15 @@ export interface TurnExtras {
  */
 const stripStamp = (s: string): string => s.replace(/^\[(?:昨天 |\d{1,2}月\d{1,2}日 )?\d{1,2}:\d{2}\]\s*/, '');
 
-/** reply 文本 → 分段（空行切，≤4 段，去空；超出的不丢，并入末段） */
+/** reply 文本 → 分段（空行切，≤6 段，去空；超出的不丢，并入末段） */
 export function splitSegments(reply: string): string[] {
   const parts = reply
     .split(/\n{2,}/)
     .map((s) => stripStamp(s.trim()))
     .filter(Boolean);
-  // 超过 4 段时不再 slice 丢弃剩余——长回复被无声吃掉后半截，正是用户看到的
-  // 「错误地省略语句」来源之一。改为第 4 段起合并保底。
-  const segs = parts.length > 4 ? [...parts.slice(0, 3), parts.slice(3).join('\n')] : parts;
+  // 超过上限时不 slice 丢弃剩余——长回复被无声吃掉后半截，正是用户看到的
+  // 「错误地省略语句」来源之一。改为末段合并保底。上限 4 → 6（第 13 轮：回复长短跟着用户走，长回复别硬挤成四泡）
+  const segs = parts.length > 6 ? [...parts.slice(0, 5), parts.slice(5).join('\n')] : parts;
   return segs.length ? segs : [stripStamp(reply.trim())].filter(Boolean);
 }
 
@@ -335,6 +437,30 @@ function toDraft(a: Record<string, unknown> | null | undefined): NavigatorDraft 
     // id 必须真实存在且今日未完成，防幻觉
     if (!todo || s.getTodayTodoProgress(todoId).isComplete) return undefined;
     return { kind: 'completeTodo', todoId, todoTitle: todo.title };
+  }
+  if (kind === 'editTodo') {
+    const todoId = String(a.todoId ?? '');
+    const todo = useAppStore.getState().todos.find((t) => t.id === todoId && t.isActive && !t.archivedAt);
+    // id 必须真实存在且还在清单里（防幻觉）；和好友的约定 / 组织作战的任务名和规则由那边定，不让助手改
+    if (!todo || todo.pact || todo.orgOp) return undefined;
+    const d: EditTodoDraft = { kind: 'editTodo', todoId, todoTitle: todo.title };
+    if (a.archive === true) return { ...d, archive: true };
+    const title = typeof a.title === 'string' ? a.title.trim().slice(0, 40) : '';
+    if (title && title !== todo.title) d.title = title;
+    if (ATTR_IDS.includes(a.attribute as AttributeId) && a.attribute !== todo.attribute) d.attribute = a.attribute as AttributeId;
+    if (a.points !== undefined && a.points !== null) {
+      const p = clampInt(a.points, 1, 5, todo.points);
+      if (p !== todo.points) d.points = p;
+    }
+    if (typeof a.repeatDaily === 'boolean' && !todo.isBigDeal && a.repeatDaily !== !!todo.repeatDaily) d.repeatDaily = a.repeatDaily;
+    if (typeof a.deadline === 'string') {
+      const dl = a.deadline.trim();
+      if (dl === '' ? !!todo.deadline : (/^\d{4}-\d{2}-\d{2}$/.test(dl) && dl !== todo.deadline)) d.deadline = dl;
+    }
+    // 每日重复与截止日互斥（「更多设置」同口径；大事没有每日）：改成每日就清截止，设了截止就回单次
+    if (d.repeatDaily === true && (d.deadline || todo.deadline)) d.deadline = '';
+    if (d.deadline && (d.repeatDaily ?? todo.repeatDaily)) d.repeatDaily = false;
+    return editTodoChanges(d).length ? d : undefined;
   }
   return undefined;
 }
@@ -426,16 +552,20 @@ async function triageActions(
    */
   const todayKey = toLocalDateKey();
   const openTodos = s.todos.filter((t) => t.isActive && !t.archivedAt);
-  const todoLines = openTodos.slice(0, 15).map((t) => `- 「${t.title}」`);
+  // 第 13 轮：带上 id 和现状（属性 / 点数 / 频率 / 截止），editTodo 才知道改的是哪条、改成什么算变化
+  const todoLines = openTodos.slice(0, 15).map((t) =>
+    `- id=${t.id} 「${t.title}」（${navAttrName(t.attribute)}+${t.points}${t.isBigDeal ? '·大事' : t.repeatDaily ? '·每日' : '·单次'}${t.deadline ? `·截止 ${t.deadline}` : ''}）`);
   if (openTodos.length > 15) todoLines.push(`- …等共 ${openTodos.length} 项`);
   const todayActs = s.activities
     .filter((a) => toLocalDateKey(new Date(a.date)) === todayKey)
     .slice(-10)
     .map((a) => `- ${a.description.slice(0, 40)}`);
+  const weekdayCN = ['日', '一', '二', '三', '四', '五', '六'][new Date().getDay()];
   const user = [
+    `【今天】${todayKey}（周${weekdayCN}）`,
     recent ? `【最近对话】\n${recent}` : '',
     due.length ? `【今日未完成待办（completeTodo 用）】\n${due.slice(0, 12).map((t) => `- id=${t.id} 「${t.title}」`).join('\n')}` : '【今日无未完成待办】',
-    todoLines.length ? `【任务清单已有】\n${todoLines.join('\n')}` : '',
+    todoLines.length ? `【任务清单已有（查重 / editTodo 用）】\n${todoLines.join('\n')}` : '',
     todayActs.length ? `【今天已记录的活动】\n${todayActs.join('\n')}` : '',
     pendingCards.length ? `【本会话卡片（含状态）】\n${pendingCards.join('\n')}` : '【本会话尚无卡片】',
     `【最新消息】${userText}`,
@@ -484,6 +614,8 @@ function draftLine(d: NavigatorDraft): string {
       return `- ${d.direction === 'expense' ? '支出' : '收入'} ¥${d.amount}${d.note ? `（${d.note}）` : ''}`;
     case 'completeTodo':
       return `- 完成任务「${d.todoTitle}」`;
+    case 'editTodo':
+      return d.archive ? `- 不做了：「${d.todoTitle}」（移到归档）` : `- 修改任务「${d.todoTitle}」：${buildPreviewLines(d).slice(1).join('；')}`;
   }
 }
 

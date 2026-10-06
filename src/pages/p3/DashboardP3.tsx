@@ -94,9 +94,10 @@ const moonLitPath = (phase: number, r: number, c: number) => {
  * 否则用户会以为点击失灵。配置入口在 设置 → 体验个性化 → 天气。
  */
 const SkyBadge = ({ date }: { date: Date }) => {
-  const { mode, toggle, weather, loading, error, ready } = useSkyBadge();
+  const { mode, toggle, weather, loading, error, errorKind, ready, attribution } = useSkyBadge();
   if (mode === 'weather') {
     return (
+      <span className="flex flex-col items-start gap-1">
       <button
         type="button"
         onClick={toggle}
@@ -112,13 +113,21 @@ const SkyBadge = ({ date }: { date: Date }) => {
         </span>
         <span className="flex flex-col gap-1 leading-none">
           <span className="text-[13px] font-black" style={{ color: P3R.ink }}>
-            {!ready ? '去设置天气' : error ? '天气取不到' : loading ? '取数中…' : `${weather?.temp}°C ${weather?.text}`}
+            {!ready ? '去设置天气' : errorKind === 'config' ? '天气设置有误' : error ? '天气取不到' : loading ? '取数中…' : `${weather?.temp}°C ${weather?.text}`}
           </span>
           <span className="text-[9px] font-black tracking-[0.16em]" style={{ color: P3R.blue }}>
-            {!ready ? 'SET UP' : error ? 'RETRY' : `FEELS ${weather?.feelsLike ?? '--'}°`}
+            {!ready || errorKind === 'config' ? 'SET UP' : error ? 'RETRY' : `FEELS ${weather?.feelsLike ?? '--'}°`}
           </span>
         </span>
       </button>
+      {/* 来源标注（和风 / Open-Meteo 的许可都要求「显示名字 + 链接」）：放在按钮外，免得点它变成切回月相 */}
+      {attribution && (
+        <a href={attribution.url} target="_blank" rel="noopener noreferrer" data-testid="weather-attribution"
+           className="ml-14 text-[9px] font-bold leading-none" style={{ color: P3R.inkSoft }}>
+          数据：{attribution.label}
+        </a>
+      )}
+      </span>
     );
   }
   return (

@@ -35,9 +35,14 @@ const LIVE_COMPACT_TOKENS = 32_000;
 const LIVE_COMPACT_MSGS = 120;
 const LIVE_KEEP_RECENT = 12;
 const HARD_CAP_TOKENS = 90_000;
-/** 会话末 AI compact 的最低门槛：用户消息 ≥4 条或 ≥120 字 */
-const FINALIZE_MIN_USER_MSGS = 4;
-const FINALIZE_MIN_USER_CHARS = 120;
+/** 会话末 AI compact 的最低门槛：用户消息 ≥2 条或 ≥40 字（第 13 轮从 4 条 / 120 字降下来：短聊也该留下记忆，不然「昨天才说过」就忘） */
+const FINALIZE_MIN_USER_MSGS = 2;
+const FINALIZE_MIN_USER_CHARS = 40;
+/** 允许改写用户画像的门槛（第 13 轮之前的归档门槛）：低于它的短会话只收记忆，不动画像 */
+const PROFILE_MIN_USER_MSGS = 4;
+const PROFILE_MIN_USER_CHARS = 120;
+/** 近 7 天记忆保底注入的冷却：同一条 6 小时内最多硬塞一次 */
+const RECENT_MEMO_COOLDOWN_MS = 6 * 3600_000;
 
 // ── compact LLM 调用 ──
 
@@ -174,13 +179,20 @@ function rowsToLines(rows: NavigatorMessageRow[]): string[] {
     .filter((l) => l.length > 3);
 }
 
-async function persistMemories(result: CompactResult, sessionDateKey: string): Promise<void> {
-  // AI 更新了画像 → 落库（用户手动编辑的版本会在下次 compact 时作为"现有画像"喂回，形成闭环）
-  if (result.profile) void saveProfile(result.profile);
+async function persistMemories(result: CompactResult, sessionDateKey: string, allowProfile = true): Promise<void> {
+  // AI 更新了画像 → 落库（用户手动编辑的版本会在下次 compact 时作为"现有画像"喂回，形成闭环）。
+  // 第 13 轮把会话末归档的门槛降到 2 条 / 40 字后，短会话也会走 AI：这类会话只收记忆，不让它改写画像——
+  // 画像是用户能手改的长期档案，几句话的闲聊不该有机会把它重写一遍（allowProfile=false）
+  if (result.profile && allowProfile) void saveProfile(result.profile);
   // 回访约定：会话末补记漏掉的；话头若和约定撞了就不挂（约定那边会问，问两遍就破了「只问一次」）
   await savePromisesFromCompact(result.promises, sessionDateKey).catch(() => {});
   if (result.followUp && await followUpCoveredByPromise(result.followUp).catch(() => false)) result.followUp = null;
+  // 记在那场对话的日子上（第二天开窗才归档时，以前记成了归档那天：「（10/6 记）」其实是 10/5 说的）；
+  // 当天的会话照旧用此刻
   const now = new Date();
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(sessionDateKey) && sessionDateKey < toLocalDateKey()
+    ? new Date(`${sessionDateKey}T21:00:00`)
+    : now;
   const memos: NavigatorMemo[] = result.memories.map((m, i) => ({
     id: uuidv4(),
     source: 'chat',
@@ -190,12 +202,12 @@ async function persistMemories(result: CompactResult, sessionDateKey: string): P
     // followUp 挂在第一条记忆上；没有记忆但有话头 → 建一条 importance 3 的载体
     followUp: i === 0 ? result.followUp ?? undefined : undefined,
     status: 'active',
-    createdAt: now,
+    createdAt: day,
   }));
   if (memos.length === 0 && result.followUp) {
     memos.push({
       id: uuidv4(), source: 'chat', text: result.followUp, importance: 3,
-      followUp: result.followUp, status: 'active', createdAt: now,
+      followUp: result.followUp, status: 'active', createdAt: day,
     });
   }
   if (memos.length) await db.navigatorMemos.bulkPut(memos);
@@ -253,7 +265,8 @@ async function finalizeStaleSessionsInner(): Promise<LastChatSummary | null> {
         if (result) {
           summary = result.summary;
           personaSummary = result.personaSummary;
-          await persistMemories(result, session.dateKey);
+          await persistMemories(result, session.dateKey,
+            userMsgs.length >= PROFILE_MIN_USER_MSGS || userChars >= PROFILE_MIN_USER_CHARS);
         } else {
           summary = localSummary(rows);
         }
@@ -400,8 +413,20 @@ export async function recallMemories(queryText: string): Promise<RecallResult> {
     }).sort((a, b) => b.score - a.score);
 
     const picked = scored.slice(0, 4).filter((s) => s.score > 0.8);
+    // 第 13 轮：近 7 天刚记下的事，即便和这句话没有字面重叠、也没挤进前四，仍带上 1~2 条（按重要度），
+    // 免得「昨天才聊过、今天就忘」。总数 ≤6。保底注入**不计 recall 次数**（不拖低它以后的评分），
+    // 只记 lastRecalledAt，同一条 6 小时内不重复硬塞
+    const pickedIds = new Set(picked.map((s) => s.m.id));
+    const recent = scored
+      .filter((s) => !pickedIds.has(s.m.id)
+        && (s.m.recallCount ?? 0) < 4 // 按相关度已经提过 4 次以上的，不再额外保底
+        && now - new Date(s.m.createdAt).getTime() <= 7 * 86400_000
+        && (!s.m.lastRecalledAt || now - new Date(s.m.lastRecalledAt).getTime() >= RECENT_MEMO_COOLDOWN_MS))
+      .sort((a, b) => b.m.importance - a.m.importance || new Date(b.m.createdAt).getTime() - new Date(a.m.createdAt).getTime())
+      .slice(0, 2);
+    const recentIds = new Set(recent.map((s) => s.m.id));
     const lines: string[] = [];
-    for (const { m } of picked) {
+    for (const { m } of [...picked, ...recent]) {
       // 带上哪天记下的（第二批 · 时间准确性）：「明天」类的说法即便漏网，模型也能对上日子
       const day = shortMD(keyOfDate(new Date(m.createdAt)));
       // 跟回访约定是同一件事的：注明结果另有人问 / 已经聊过（「只问一次」——别让模型从普通记忆里再翻出来问）
@@ -413,10 +438,9 @@ export async function recallMemories(queryText: string): Promise<RecallResult> {
             : phase === 'due' ? '（结果会另外问，这里别问）'
               : '（还没到日子，别追问结果）';
       lines.push(`- （${day} 记）${m.text}${m.colorHint ? `（${m.colorHint}）` : ''}${promiseNote}${m.followUp && !related ? `【可自然追问：${m.followUp}】` : ''}`);
-      const patch: Partial<NavigatorMemo> = {
-        lastRecalledAt: new Date(),
-        recallCount: (m.recallCount ?? 0) + 1,
-      };
+      const patch: Partial<NavigatorMemo> = recentIds.has(m.id)
+        ? { lastRecalledAt: new Date() }
+        : { lastRecalledAt: new Date(), recallCount: (m.recallCount ?? 0) + 1 };
       if (m.followUp) patch.followUp = undefined; // 一次性
       void db.navigatorMemos.update(m.id, patch).catch(() => {});
     }

@@ -1,5 +1,5 @@
 import Dexie, { Table } from 'dexie';
-import { User, Attribute, Activity, Achievement, Skill, DailyEvent, DailyDivination, LongReading, FateGlimpse, Settings, Todo, TodoCompletion, PeriodSummary, WeeklyGoal, Persona, Shadow, BattleState, Confidant, ConfidantEvent, CounselSession, CounselArchive, CallingCard, LedgerEntry, Budget, LedgerAsset, Wish, NavigatorSessionRow, NavigatorMessageRow, NavigatorMemo, NavigatorPreset, TowerStratum, OnlineCardFace, ActivityImage, ActivityImageData, SeasonStamp, Quest } from '@/types';
+import { User, Attribute, Activity, Achievement, Skill, DailyEvent, DailyDivination, LongReading, FateGlimpse, Settings, Todo, TodoCompletion, PeriodSummary, WeeklyGoal, Persona, Shadow, BattleState, Confidant, ConfidantEvent, CounselSession, CounselArchive, CallingCard, LedgerEntry, Budget, LedgerAsset, Wish, NavigatorSessionRow, NavigatorMessageRow, NavigatorMemo, NavigatorPreset, TowerStratum, OnlineCardFace, ActivityImage, ActivityImageData, SeasonStamp, Quest, BgmTrack } from '@/types';
 
 export class PGTDatabase extends Dexie {
   users!: Table<User>;
@@ -38,6 +38,7 @@ export class PGTDatabase extends Dexie {
   fateGlimpses!: Table<FateGlimpse>;                // v2.7 窥探命运（7 天塔罗总占卜）
   activityImages!: Table<ActivityImage>;            // v2.7.0.6 记录配图（元数据 + 缩略图；本地专属）
   activityImageData!: Table<ActivityImageData>;     // v2.7.0.6 记录配图原图（灯箱才取；本地专属）
+  bgmTracks!: Table<BgmTrack>;                      // v19 导入音乐（Blob；本地专属，不上云不备份）
 
   constructor() {
     super('PGTDatabase');
@@ -314,6 +315,12 @@ export class PGTDatabase extends Dexie {
     // v18（第 6 轮）：委托板。每周三行，进 SYNC_TABLES 与备份；进度不落库。
     this.version(18).stores({
       quests: 'id, weekKey'
+    });
+
+    // v19（第 13 轮 B 组 2.8）：导入音乐。第一张存 Blob 的表（≤6 首、单首 ≤20MB）；
+    // 本地专属：不进 SYNC_TABLES、不进主备份；「清空数据」清，导入备份不动它。
+    this.version(19).stores({
+      bgmTracks: 'id, createdAt'
     });
   }
 }

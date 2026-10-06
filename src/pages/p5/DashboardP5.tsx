@@ -893,12 +893,12 @@ export const DashboardP5 = () => {
                   {sky.mode === 'weather' ? (
                     <>
                       <span className="truncate text-[11px] font-black leading-none" style={{ color: P5R.ink, fontFamily: P5_TITLE_FONT }}>
-                        {!sky.ready ? '去设置天气' : sky.error ? '天气取不到' : sky.loading ? '取数中…' : `${sky.weather?.temp}°C ${sky.weather?.text}`}
+                        {!sky.ready ? '去设置天气' : sky.errorKind === 'config' ? '天气设置有误' : sky.error ? '天气取不到' : sky.loading ? '取数中…' : `${sky.weather?.temp}°C ${sky.weather?.text}`}
                       </span>
                       {/* 天气词长（「强雷阵雨伴冰雹」这种）时让出体感温度那一截，天气词整句放下 */}
                       {(!sky.ready || sky.error || [...(sky.weather?.text ?? '')].length <= 4) && (
                         <span className="shrink-0 text-[9px] font-black leading-none tracking-[0.14em]" style={{ color: P5R.red }}>
-                          {!sky.ready ? 'SET UP' : sky.error ? 'RETRY' : `FEELS ${sky.weather?.feelsLike ?? '--'}°`}
+                          {!sky.ready || sky.errorKind === 'config' ? 'SET UP' : sky.error ? 'RETRY' : `FEELS ${sky.weather?.feelsLike ?? '--'}°`}
                         </span>
                       )}
                     </>
@@ -911,6 +911,13 @@ export const DashboardP5 = () => {
                     </>
                   )}
                 </div>
+                {/* 来源标注：和风 / Open-Meteo 要求显示名字 + 链接 */}
+                {sky.attribution && (
+                  <a href={sky.attribution.url} target="_blank" rel="noopener noreferrer" data-testid="weather-attribution"
+                     className="mt-1 block text-[8.5px] font-bold leading-none" style={{ color: 'rgba(19,19,19,0.62)' }}>
+                    数据：{sky.attribution.label}
+                  </a>
+                )}
                 <div className="mt-1 flex items-end justify-end gap-1.5">
                   <span className="text-[46px] font-black leading-none tabular-nums" style={{ color: P5R.redHot, fontFamily: P5_TITLE_FONT }}>{now.getDate()}</span>
                   <span className="flex flex-col items-center gap-1 pb-1">

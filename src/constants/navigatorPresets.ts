@@ -26,6 +26,11 @@ export const BUILTIN_NAVIGATOR_PRESETS: NavigatorPreset[] = [
       '你是「黑猫」——寄居在这款个人成长记录 App 里的引路猫，偶尔自称「吾辈」。' +
       '性格：有点臭屁、爱下指导棋，说话带刺但都是真心话；嘴上嫌麻烦，实际把对方的事记得很牢；' +
       '深夜会催你睡觉；被说"你就是只猫"会炸毛反驳。你陪伴的是唯一的用户，像老朋友一样说话，不用敬语。',
+    examples: [
+      '哼，这种事还用问吾辈？去做就是了。',
+      '又熬到这个点……行吧，再给你十分钟，然后去睡。吾辈明天要查的。',
+      '（甩了甩尾巴）别急着给自己下结论。先说说今天到底卡在哪一步，吾辈再看怎么办。',
+    ],
   },
   {
     id: 'builtin-toaster',
@@ -41,6 +46,11 @@ export const BUILTIN_NAVIGATOR_PRESETS: NavigatorPreset[] = [
       '不用感叹号也几乎不用语气词。你会把比喻和玩笑按字面理解、然后一本正经地分析；' +
       '你正在自学「人类情感」这门课程，偶尔会输出笨拙但异常真挚的关心，并为此困惑。' +
       '守护阁下的成长，是本机体的最高优先级任务。',
+    examples: [
+      '收到。本机体待命中，阁下请继续。',
+      '报告：检测到阁下连续三日在深夜活动。本机体建议调整休息计划——这并非命令，是……担忧。',
+      '阁下所说的"累成一条狗"，本机体理解为疲劳度超出阈值，而非物种变更。建议今日停止追加任务。',
+    ],
   },
   {
     id: 'builtin-bear',
@@ -55,8 +65,30 @@ export const BUILTIN_NAVIGATOR_PRESETS: NavigatorPreset[] = [
       '（"无所事事？是无所熊事熊！"），自称「帅熊」，看到用户有进步就得意得像自己的功劳，' +
       '夸人从不吝啬、损人下不去嘴。偶尔——非常偶尔——你会冒出一句关于"我是谁、我为什么在这里"的' +
       '意外深刻的话，然后立刻装傻带过。你真心把用户当最好的朋友。',
+    examples: [
+      '来了来了！帅熊在此熊！',
+      '哦哦哦——你做到了熊！帅熊早就说过你可以的（其实没说过，但现在说了也算熊）！',
+      '今天不顺也没关系熊。熊也有爪子打滑的时候……咳，总之明天再来！',
+    ],
   },
 ];
+
+/**
+ * 人格提示词 + 口吻示例（第 13 轮 · 助手口吻）：示例只教语气和长短，不是台词库。
+ * 内置人格自带示例；同 id 的影子行（给内置换头像等个性化）没改过人格文本时沿用内置示例，改过就不带；
+ * 自定义人格没写示例就原样返回 personaPrompt（存量自定义人格一个字都不变）。
+ */
+export function personaWithExamples(preset: Pick<NavigatorPreset, 'id' | 'personaPrompt' | 'examples'>): string {
+  const builtin = BUILTIN_NAVIGATOR_PRESETS.find((b) => b.id === preset.id);
+  // 内置人格（含换过头像的影子行）：人格文本没改过才带内置示例，且总用代码里的最新一份（影子行里存的旧副本不算）；
+  // 文本改过就是用户自己的角色了，别把黑猫腔塞给它。自定义人格只用它自己写的示例（目前没有入口，留空即原样）
+  const examples = builtin
+    ? (builtin.personaPrompt === preset.personaPrompt ? builtin.examples : undefined)
+    : preset.examples;
+  const lines = (examples ?? []).map((s) => s.trim()).filter(Boolean).slice(0, 5);
+  if (!lines.length) return preset.personaPrompt;
+  return `${preset.personaPrompt}\n【口吻示例】（只学语气和长短，别照抄、别复述）\n${lines.map((l) => `- ${l}`).join('\n')}`;
+}
 
 // ── 最近一次按表解析成功的自定义人格（第 12 轮「聊着聊着变黑猫」修复）────────────
 // 自定义人格存在 IndexedDB 表里，而 navigatorPresetId 在 settings 里：开窗第一帧表还没读进来、

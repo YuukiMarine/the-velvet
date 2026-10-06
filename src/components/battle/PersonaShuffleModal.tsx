@@ -52,6 +52,7 @@ export function PersonaShuffleModal({ isOpen, onClose }: Props) {
         selectedAttr,
         attrNamesMap[selectedAttr],
         current?.name ?? '',
+        persona.sources, // 召唤时选过「力量之源」就沿用（没选 = 原规则）
       );
       if (!result) {
         setError('AI 不可用，请尝试手动输入');

@@ -21,6 +21,7 @@ import {
   type NavigatorDraft,
 } from '@/utils/navigatorRegistry';
 import { P3R, slantClip, SlantButton } from '@/components/p3r/kit';
+import { useAppStore } from '@/store';
 import { P5Collage } from '@/components/p5r/kit';
 
 /** 表单频道皮：p3=P3R 亮蓝斜面（原 bright）/ p4=黄综艺 / p5=红黑剪报。主题→频道映射在调用方。 */
@@ -40,6 +41,7 @@ const FORM_GHOST: Record<NavigatorDraft['kind'], string> = {
   todo: 'TODO',
   ledger: 'NOTE',
   completeTodo: 'DONE',
+  editTodo: 'EDIT',
   bigdeal: 'DEAL',
 };
 
@@ -49,6 +51,7 @@ const CORNER_GHOST: Record<NavigatorDraft['kind'], string> = {
   todo: 'PLAN',
   ledger: 'YEN',
   completeTodo: 'CLR',
+  editTodo: 'FIX',
   bigdeal: 'BIG',
 };
 
@@ -304,6 +307,106 @@ export const NavigatorActionForm = ({ draft, channel, onSubmit, onClose }: Props
           </div>
         </>
       )}
+
+      {d.kind === 'editTodo' && (() => {
+        // 改待办（第 13 轮）：表单里显示「改后的样子」，跟原任务一样的字段存成 undefined——卡片只列真正改了的
+        const orig = useAppStore.getState().todos.find((t) => t.id === d.todoId);
+        if (!orig) return <p className={labelCls} style={ink}>这条任务已经不在清单里了。</p>;
+        const curTitle = d.title ?? orig.title;
+        const curAttr = d.attribute ?? orig.attribute;
+        const curPoints = d.points ?? orig.points;
+        const curDaily = d.repeatDaily ?? !!orig.repeatDaily;
+        const curDeadline = d.deadline ?? orig.deadline ?? '';
+        const setPoints = (v: number) => patch({ points: v === orig.points ? undefined : v });
+        const setDaily = (v: boolean) => patch({
+          repeatDaily: v === !!orig.repeatDaily ? undefined : v,
+          // 每日与截止互斥：改成每日就清截止
+          ...(v && curDeadline ? { deadline: orig.deadline ? '' : undefined } : {}),
+        });
+        const setDeadline = (v: string) => patch({
+          deadline: v === (orig.deadline ?? '') ? undefined : v,
+          ...(v && curDaily ? { repeatDaily: orig.repeatDaily ? false : undefined } : {}),
+        });
+        return (
+          <>
+            <p className={bright || p5 || p4 ? 'text-[14px] font-black' : 'text-sm font-bold text-gray-300'} style={ink}>
+              修改「{orig.title}」
+            </p>
+            <div>
+              <div className={labelCls} style={ink}>这条任务</div>
+              <div className="flex gap-1.5">
+                <button type="button" onClick={() => patch({ archive: undefined })} className={chipCls(!d.archive)} style={bright && d.archive ? ink : undefined}>继续做</button>
+                <button type="button" onClick={() => patch({ archive: true })} className={chipCls(!!d.archive)} style={bright && !d.archive ? ink : undefined}>不做了（移到归档）</button>
+              </div>
+            </div>
+            {!d.archive && (
+              <>
+                <div>
+                  <label className={labelCls} style={ink} htmlFor="nav-form-edit-title">任务名</label>
+                  <input
+                    id="nav-form-edit-title"
+                    value={curTitle}
+                    onChange={(e) => patch({ title: e.target.value === orig.title ? undefined : e.target.value })}
+                    className={inputCls}
+                    style={inputStyle}
+                  />
+                </div>
+                <div>
+                  <div className={labelCls} style={ink}>绑定属性</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {ATTR_IDS.map((id) => (
+                      <button key={id} type="button" onClick={() => patch({ attribute: id === orig.attribute ? undefined : id })}
+                        className={chipCls(curAttr === id)} style={bright && curAttr !== id ? ink : undefined}>
+                        {navAttrName(id)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-6">
+                  <div>
+                    <div className={labelCls} style={ink}>奖励点数</div>
+                    <div className="flex items-center gap-2">
+                      {bright ? (
+                        <>
+                          <TriStepBtn dir="left" disabled={curPoints <= 1} label="点数减一" onClick={() => setPoints(curPoints - 1)} />
+                          <span className="w-8 text-center text-[22px] font-black italic" style={ink}>{curPoints}</span>
+                          <TriStepBtn dir="right" disabled={curPoints >= 5} label="点数加一" onClick={() => setPoints(curPoints + 1)} />
+                        </>
+                      ) : (
+                        <>
+                          <button type="button" className={stepBtnCls} disabled={curPoints <= 1} onClick={() => setPoints(curPoints - 1)} aria-label="点数减一">−</button>
+                          <span className="w-6 text-center text-sm font-black">{curPoints}</span>
+                          <button type="button" className={stepBtnCls} disabled={curPoints >= 5} onClick={() => setPoints(curPoints + 1)} aria-label="点数加一">＋</button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  {!orig.isBigDeal && (
+                    <div>
+                      <div className={labelCls} style={ink}>频率</div>
+                      <div className="flex gap-1.5">
+                        <button type="button" onClick={() => setDaily(false)} className={chipCls(!curDaily)} style={bright && curDaily ? ink : undefined}>单次</button>
+                        <button type="button" onClick={() => setDaily(true)} className={chipCls(curDaily)} style={bright && !curDaily ? ink : undefined}>每日</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                {!curDaily && (
+                  <div>
+                    <label className={labelCls} style={ink} htmlFor="nav-form-edit-deadline">截止日（可空）</label>
+                    <div className="flex items-center gap-2">
+                      <input id="nav-form-edit-deadline" type="date" value={curDeadline} onChange={(e) => setDeadline(e.target.value)} className={inputCls} style={inputStyle} />
+                      {curDeadline && (
+                        <button type="button" onClick={() => setDeadline('')} className={chipCls(false)} style={bright ? ink : undefined}>清除</button>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </>
+        );
+      })()}
 
       {d.kind === 'bigdeal' && (
         <>

@@ -3,6 +3,7 @@
  * 统一管理各 provider 的 baseUrl / defaultModel，避免分散在 store / Settings / SummaryModal 中重复
  * 所有 provider 均走 OpenAI 兼容的 /chat/completions 端点
  */
+import { aiFetch, hostOfUrl, nativeTransportAvailable } from '@/utils/aiTransport';
 
 export type ApiProvider = 'openai' | 'deepseek' | 'kimi' | 'qwen' | 'gemini' | 'minimax';
 
@@ -184,9 +185,17 @@ const OFFICIAL_HOSTS = new Set([
   'generativelanguage.googleapis.com',
   'api.minimaxi.com', 'api.minimax.io',
 ]);
+/**
+ * 千问「套餐专属」网关（coding plan / token plan）：阿里自家的地址，不是中转站——报错措辞按官方说；
+ * 但它对浏览器的 OPTIONS 预检回 401、不带 CORS 头（2026-10-06 实测），网页版发不出去，App 里走原生通道（aiTransport）。
+ */
+const QWEN_PLAN_HOSTS = [/^coding\.dashscope(-intl)?\.aliyuncs\.com$/i, /^token-plan\.[a-z0-9-]+\.maas\.aliyuncs\.com$/i];
+export const isQwenPlanHost = (host: string): boolean => QWEN_PLAN_HOSTS.some((re) => re.test(host));
+
 export function isOfficialHost(baseUrl: string): boolean {
   try {
-    return OFFICIAL_HOSTS.has(new URL(baseUrl).host.toLowerCase());
+    const host = new URL(baseUrl).host.toLowerCase();
+    return OFFICIAL_HOSTS.has(host) || isQwenPlanHost(host);
   } catch {
     return false;
   }
@@ -278,8 +287,11 @@ export type TestResult =
       baseUrlUsed: string;
       /** 填的地址不通、补 /v1 才通：界面应把 baseUrlUsed 替换进设置 */
       corrected: boolean;
+      /** 浏览器通道发不出去（对方不放行跨域预检）、App 原生通道才通：界面应把 nativeHost 登记进 settings.aiNativeHosts */
+      transport?: 'native';
+      nativeHost?: string;
     }
-  | { ok: false; error: string };
+  | { ok: false; error: string; transport?: 'native'; nativeHost?: string };
 
 /** no-cors 探一下地址能不能连上（看不到状态码，只看连不连得上）：区分「跨域被拒」与「根本连不上」 */
 async function probeReachable(url: string): Promise<boolean> {
@@ -338,6 +350,10 @@ export async function testAIConnection(opts: {
   apiKey: string;
   baseUrl?: string;
   model?: string;
+  /** 已登记走 App 原生通道的主机（settings.aiNativeHosts） */
+  nativeHosts?: string[];
+  /** 浏览器通道发不出去时允许换原生通道再试（默认：原生壳里允许，网页里没有原生层） */
+  allowNativeFallback?: boolean;
 }): Promise<TestResult> {
   if (!opts.apiKey?.trim()) {
     return { ok: false, error: '请先填写 API 密钥' };
@@ -345,6 +361,8 @@ export async function testAIConnection(opts: {
   const apiKey = cleanApiKey(opts.apiKey).key;
 
   const { baseUrl, model } = resolveProvider(opts.provider, opts.baseUrl, opts.model);
+  const nativeSet = new Set((opts.nativeHosts ?? []).map((h) => h.trim().toLowerCase()).filter(Boolean));
+  const allowNative = opts.allowNativeFallback ?? nativeTransportAvailable();
   // 推理模型（GPT-5/o 系列）拒绝 max_tokens，且 max_tokens:1 会被推理 token 吃光
   const reasoning = isReasoningModel(model);
   const body = JSON.stringify({
@@ -356,40 +374,61 @@ export async function testAIConnection(opts: {
     stream: false,
   });
 
-  type Attempt = { ok: true; latencyMs: number } | { ok: false; error: string; retryWithV1: boolean };
-  const attempt = async (base: string): Promise<Attempt> => {
+  type Attempt =
+    | { ok: true; latencyMs: number; native: boolean }
+    | { ok: false; error: string; retryWithV1: boolean; native: boolean; /** 服务器回了 HTTP 状态（不是发不出去） */ http?: boolean };
+  const attempt = async (base: string, forceNative = false): Promise<Attempt> => {
+    // 浏览器通道优先（能流式、也能自愈：登记过的主机哪天放行了跨域，测一次就改回去）；
+    // 只有浏览器发不出去之后的补试才走原生通道（第 13 轮 · 千问套餐专属网关）
+    const viaNative = forceNative;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 15000);
     const start = Date.now();
     try {
-      const resp = await fetch(`${base}/chat/completions`, {
+      const resp = await aiFetch(`${base}/chat/completions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
         body,
         signal: controller.signal,
-      });
+      }, viaNative);
       const latencyMs = Date.now() - start;
       if (!resp.ok) {
         const text = await resp.text().catch(() => '');
         const detail = extractProviderErrorMessage(text).slice(0, 240).trim();
         const hint = relayHint(detail, isOfficialHost(base)) || getHttpStatusHint(resp.status, opts.provider);
         const prefix = hint ? `${hint} (HTTP ${resp.status})` : `HTTP ${resp.status}`;
-        return { ok: false, error: detail ? `${prefix}: ${detail}` : `${prefix}: ${resp.statusText}`, retryWithV1: resp.status === 404 };
+        return { ok: false, error: detail ? `${prefix}: ${detail}` : `${prefix}: ${resp.statusText}`, retryWithV1: resp.status === 404, native: viaNative, http: true };
       }
       const data = await resp.json().catch(() => null);
       if (!data?.choices?.[0]?.message) {
-        return { ok: false, error: '响应格式非 OpenAI 兼容，请检查 Base URL', retryWithV1: true };
+        return { ok: false, error: '响应格式非 OpenAI 兼容，请检查 Base URL', retryWithV1: true, native: viaNative, http: true };
       }
-      return { ok: true, latencyMs };
+      return { ok: true, latencyMs, native: viaNative };
     } catch (e) {
       if (e instanceof Error && e.name === 'AbortError') {
-        return { ok: false, error: '连接超时（15s 无响应）', retryWithV1: false };
+        if (!viaNative && allowNative && nativeSet.has(hostOfUrl(base))) {
+          // 登记过的原生主机：浏览器通道干等 15s 没动静（有的网关对预检不回包），也换原生通道补一次
+          const viaApp = await attempt(base, true);
+          if (viaApp.ok || viaApp.http) return viaApp;
+        }
+        return { ok: false, error: '连接超时（15s 无响应）', retryWithV1: false, native: viaNative };
       }
       if (isHeaderValueError(e)) {
-        return { ok: false, retryWithV1: false, error: '密钥或地址里有发不出去的字符（看不见的空格、全角字母、中文标点）——请删掉重新粘贴，或在密钥框里把它清理后再保存' };
+        return { ok: false, retryWithV1: false, native: viaNative, error: '密钥或地址里有发不出去的字符（看不见的空格、全角字母、中文标点）——请删掉重新粘贴，或在密钥框里把它清理后再保存' };
       }
       if (e instanceof TypeError) {
         const host = hostOf(base);
+        if (viaNative) {
+          // 原生通道也发不出去：多半是真没网 / 域名不对；交回去，让浏览器通道那次的诊断说话
+          return { ok: false, retryWithV1: false, native: true, error: `连不上 ${host}${e.message ? `（${e.message.slice(0, 80)}）` : ''}` };
+        }
+        if (allowNative) {
+          // 浏览器发不出去：多半是对方不放行跨域预检（千问套餐专属网关就是），也可能是半路被拦。App 里换原生通道
+          // 再试一次：通了、或至少拿到了 HTTP 状态（密钥错是另一回事），就把这台主机登记为原生主机；
+          // 原生也发不出去（真没网 / 域名不对）就按下面的网络诊断说
+          const viaApp = await attempt(base, true);
+          if (viaApp.ok || viaApp.http) return viaApp;
+        }
         const reachable = await probeReachable(`${base}/models`);
         // 探测是不带预检的简单 GET，真请求带 Authorization 要预检。官方接口（DeepSeek 等）对 App 的
         // 预检是放行的（本机对 capacitor://localhost 实测），所以官方「探得到 + 真请求失败」几乎只有一种情况：
@@ -398,36 +437,41 @@ export async function testAIConnection(opts: {
         const official = isOfficialHost(base);
         let error: string;
         const raw = e.message ? `（${e.message.slice(0, 60)}）` : '';
-        if (official) {
+        if (isQwenPlanHost(host.toLowerCase())) {
+          // 2026-10-06 实测：千问「套餐专属」网关（coding.dashscope / token-plan.*.maas）对浏览器的 OPTIONS 预检直接回 401、
+          // 不带 CORS 头（百炼默认地址是放行的），不是密钥的问题，也不是中转站。App 里上面已经换原生通道试过了，
+          // 走到这里说明是网页版（没有原生层）或原生也不通
+          error = allowNative
+            ? `连不上千问的套餐专属地址（${host}）：浏览器通道被它拒绝预检（回 401），App 原生通道也没通——检查网络后再试，或改用百炼默认地址 https://dashscope.aliyuncs.com/compatible-mode/v1`
+            : `千问的套餐专属地址（${host}）不放行浏览器跨域：它对预检请求也要求鉴权（回 401），网页版无法直连它（App 里会自动改走原生通道）。网页版请改用百炼默认地址 https://dashscope.aliyuncs.com/compatible-mode/v1（套餐 Key 若不能用于该地址，就只能经中转站）`;
+        } else if (official) {
           error = reachable
             ? `连不上 ${host}：它允许 App 直连，这次请求是在半路被拦下的——常见于校园网 / 公司网，或手机上开着 VPN、DNS 过滤类 App。换个网络（关掉 VPN、切到流量）再试一次${raw}`
             : `连不上 ${host}：当前没有网络，或这个网络到不了它——换个网络再试${raw}`;
-        } else if (/^coding\.dashscope(-intl)?\.aliyuncs\.com$/i.test(host)) {
-          // 2026-10-06 实测：千问「套餐专属」网关对浏览器的 OPTIONS 预检直接回 401、不带 CORS 头（百炼默认地址是放行的），
-          // 网页 / App 里发不出去，不是密钥的问题，也不是中转站
-          error = `千问的套餐专属地址（${host}）目前不支持从 App / 浏览器直连：它对预检请求也要求鉴权（回 401），没有放行 CORS。请改用百炼默认地址 https://dashscope.aliyuncs.com/compatible-mode/v1（套餐 Key 若不能用于该地址，就只能经中转站）`;
         } else {
           error = reachable
             ? `能连上 ${host}，但这个中转站没有开放跨域访问（CORS），App 里无法直连它——换一个支持跨域的中转站，或请服务商开启 CORS`
             : `连不上 ${host}：检查域名 / 端口 / https 证书，或当前没有网络`;
         }
-        return { ok: false, retryWithV1: false, error };
+        return { ok: false, retryWithV1: false, native: viaNative, error };
       }
-      return { ok: false, error: e instanceof Error ? e.message : String(e), retryWithV1: false };
+      return { ok: false, error: e instanceof Error ? e.message : String(e), retryWithV1: false, native: viaNative };
     } finally {
       clearTimeout(timeout);
     }
   };
 
+  /** 走了原生通道的结果打上标记：界面据此登记 / 注销 settings.aiNativeHosts */
+  const viaTag = (a: Attempt, base: string) => (a.native ? { transport: 'native' as const, nativeHost: hostOfUrl(base) } : {});
   const first = await attempt(baseUrl);
-  if (first.ok) return { ok: true, latencyMs: first.latencyMs, model, baseUrlUsed: baseUrl, corrected: false };
+  if (first.ok) return { ok: true, latencyMs: first.latencyMs, model, baseUrlUsed: baseUrl, corrected: false, ...viaTag(first, baseUrl) };
   // 少写 /v1：404、或回来的东西不像 OpenAI，且地址末尾没有版本段 → 补 /v1 再试一次
   if (first.retryWithV1 && !/\/v\d+[a-z]*$/i.test(baseUrl)) {
     const withV1 = `${baseUrl}/v1`;
-    const second = await attempt(withV1);
-    if (second.ok) return { ok: true, latencyMs: second.latencyMs, model, baseUrlUsed: withV1, corrected: true };
+    const second = await attempt(withV1, first.native);
+    if (second.ok) return { ok: true, latencyMs: second.latencyMs, model, baseUrlUsed: withV1, corrected: true, ...viaTag(second, withV1) };
   }
-  return { ok: false, error: first.error };
+  return { ok: false, error: first.error, ...viaTag(first, baseUrl) };
 }
 
 /**
@@ -481,18 +525,22 @@ export async function fetchAvailableModels(opts: {
   provider: ApiProvider;
   apiKey: string;
   baseUrl?: string;
+  /** 已登记走 App 原生通道的主机（settings.aiNativeHosts）；没传则按 aiTransport 里同步过的清单 */
+  nativeHosts?: string[];
 }): Promise<ModelListResult> {
   if (!opts.apiKey?.trim()) return { ok: false, error: '请先填写并保存 API 密钥' };
   const apiKey = cleanApiKey(opts.apiKey).key;
 
   const { baseUrl } = resolveProvider(opts.provider, opts.baseUrl);
+  const nativeSet = new Set((opts.nativeHosts ?? []).map((h) => h.trim().toLowerCase()).filter(Boolean));
+  const viaNative = nativeSet.has(hostOfUrl(baseUrl)) ? nativeTransportAvailable() : undefined;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15000);
   try {
-    const resp = await fetch(`${baseUrl}/models`, {
+    const resp = await aiFetch(`${baseUrl}/models`, {
       headers: { Authorization: `Bearer ${apiKey}` },
       signal: controller.signal,
-    });
+    }, viaNative);
     clearTimeout(timeout);
 
     if (!resp.ok) {
@@ -535,9 +583,11 @@ export async function fetchAvailableModels(opts: {
       const host = hostOf(baseUrl);
       return {
         ok: false,
-        error: isOfficialHost(baseUrl)
-          ? `连不上 ${host}：检查网络——校园网 / 公司网、VPN 或 DNS 过滤类 App 常会拦它，换个网络再试`
-          : `连不上 ${host}，或它没放行跨域访问（CORS）`,
+        error: isQwenPlanHost(host.toLowerCase())
+          ? `连不上 ${host}：千问套餐专属地址不放行浏览器跨域（App 里先点「测试连接」让它改走原生通道）`
+          : isOfficialHost(baseUrl)
+            ? `连不上 ${host}：检查网络——校园网 / 公司网、VPN 或 DNS 过滤类 App 常会拦它，换个网络再试`
+            : `连不上 ${host}，或它没放行跨域访问（CORS）`,
       };
     }
     return { ok: false, error: e instanceof Error ? e.message : String(e) };

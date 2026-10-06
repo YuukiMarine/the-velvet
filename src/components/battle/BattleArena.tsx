@@ -10,6 +10,7 @@ import { isInShadowTime, SHADOW_LEVEL_CONFIG } from '@/constants';
 import { BOSS_ATTACK_BY_LEVEL } from '@/battle/numbers';
 import { AttributeId, MobSpec, StratumNode } from '@/types';
 import { absoluteFloor, orphanBossOf } from '@/battle/tower';
+import { setBgmScene } from '@/utils/bgm';
 import { type LootDrop } from '@/battle/loot';
 import { LootReveal, type LootRevealSource } from '@/components/battle/LootReveal';
 import { rollPrepDraw, type PrepBuff } from '@/battle/preparation';
@@ -124,6 +125,12 @@ export const BattleArena = () => {
   const [towerOpen, setTowerOpen] = useState(false);
   const [infiltrating, setInfiltrating] = useState(false);
   const [prepChoice, setPrepChoice] = useState<PrepBuff[] | null>(null);
+  // 导入音乐（第 13 轮 B 组）：战斗 / 爬塔切到各自的曲目，离开战场页回主页曲目
+  // 关底心魔战（没有 activeEncounter 的那场）单独一档「Boss 战」；小影 / 强敌 / 遭遇战是「战斗」
+  useEffect(() => {
+    setBgmScene(showBattle ? (activeEncounter ? 'battle' : 'boss') : towerOpen ? 'tower' : 'home');
+  }, [showBattle, towerOpen, activeEncounter]);
+  useEffect(() => () => setBgmScene('home'), []);
 
   // Settings local state
   const [battleEnabled, setBattleEnabled] = useState(settings.battleEnabled !== false);

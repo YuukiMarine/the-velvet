@@ -15,7 +15,7 @@ import { TAROT_BY_ID } from '@/constants/tarot';
 import { reportForGreeting } from '@/utils/reportNotice';
 import { topicAllowance } from '@/utils/navigatorTopics';
 import { CATEGORY_META, INCOME_META } from '@/utils/ledgerFormat';
-import type { AttributeId, LedgerExpenseType, LedgerIncomeType } from '@/types';
+import type { AttributeId, LedgerExpenseType, LedgerIncomeType, Todo } from '@/types';
 
 export const ATTR_IDS: AttributeId[] = ['knowledge', 'guts', 'dexterity', 'kindness', 'charm'];
 
@@ -62,6 +62,23 @@ export interface CompleteTodoDraft {
   todoId: string;
   todoTitle: string;
 }
+/**
+ * 改一条已有待办（第 13 轮用户需求「AI 不能通过对话直接改待办」）：只带要改的字段，确认后 updateTodo。
+ * archive = 不做了 → 移到归档（不算完成、不发点数，可在归档里恢复），不是删除。
+ */
+export interface EditTodoDraft {
+  kind: 'editTodo';
+  todoId: string;
+  /** 原任务名（卡片标题用；改名后也靠它认出是哪条） */
+  todoTitle: string;
+  title?: string;
+  attribute?: AttributeId;
+  points?: number;
+  repeatDaily?: boolean;
+  /** 截止日 YYYY-MM-DD；'' = 取消截止 */
+  deadline?: string;
+  archive?: boolean;
+}
 /** 黑猫递刀产物（TASKS_MERGE_PRD §4.4）：一件大事 + AI/离线拆好的子步，确认即立 BIG DEAL */
 export interface BigDealDraft {
   kind: 'bigdeal';
@@ -74,7 +91,11 @@ export interface BigDealDraft {
   deadline: string;
   steps: string[];
 }
-export type NavigatorDraft = ActivityDraft | TodoDraft | LedgerDraft | CompleteTodoDraft | BigDealDraft;
+export type NavigatorDraft = ActivityDraft | TodoDraft | LedgerDraft | CompleteTodoDraft | EditTodoDraft | BigDealDraft;
+
+/** 改待办卡里真正要改的字段（除去 kind / todoId / todoTitle） */
+export const editTodoChanges = (d: EditTodoDraft) =>
+  (['title', 'attribute', 'points', 'repeatDaily', 'deadline', 'archive'] as const).filter((k) => d[k] !== undefined);
 export type NavigatorActionKind = NavigatorDraft['kind'];
 
 export const emptyDraft = (kind: NavigatorActionKind): NavigatorDraft => {
@@ -87,6 +108,8 @@ export const emptyDraft = (kind: NavigatorActionKind): NavigatorDraft => {
       return { kind, direction: 'expense', amount: 0, note: '', type: 'food', incomeType: 'labor', channel: '' };
     case 'completeTodo':
       return { kind, todoId: '', todoTitle: '' };
+    case 'editTodo':
+      return { kind, todoId: '', todoTitle: '' };
     case 'bigdeal':
       return { kind, title: '', attribute: 'guts', points: 2, currentState: '', deadline: '', steps: [] };
   }
@@ -97,6 +120,7 @@ export const ACTION_META: Record<NavigatorActionKind, { label: string; icon: str
   todo: { label: '添加待办', icon: '📌' },
   ledger: { label: '记账', icon: '💰' },
   completeTodo: { label: '完成任务', icon: '✅' },
+  editTodo: { label: '修改待办', icon: '✏️' },
   bigdeal: { label: '拆一件大事', icon: '◆' },
 };
 
@@ -130,6 +154,19 @@ export function buildPreviewLines(draft: NavigatorDraft): string[] {
     }
     case 'completeTodo':
       return [`把「${draft.todoTitle}」标记为完成`, '完成加点与反馈按任务设置发放'];
+    case 'editTodo': {
+      if (draft.archive) return [`「${draft.todoTitle}」不做了`, '移到归档：不算完成、不发点数，想重启可以在归档里恢复'];
+      const t = useAppStore.getState().todos.find((x) => x.id === draft.todoId);
+      const lines = [`修改「${draft.todoTitle}」`];
+      if (draft.title !== undefined) lines.push(`名字 → 「${draft.title}」`);
+      if (draft.attribute !== undefined || draft.points !== undefined) {
+        const before = t ? `${navAttrName(t.attribute)} +${t.points} → ` : '';
+        lines.push(`奖励 ${before}${navAttrName(draft.attribute ?? t?.attribute ?? 'guts')} +${draft.points ?? t?.points ?? 2}`);
+      }
+      if (draft.repeatDaily !== undefined) lines.push(`频率 → ${draft.repeatDaily ? '每日' : '单次'}`);
+      if (draft.deadline !== undefined) lines.push(draft.deadline ? `截止 → ${draft.deadline}` : '截止 → 取消');
+      return lines;
+    }
     case 'bigdeal': {
       const head = draft.steps.slice(0, 3).map((s, i) => `${i + 1}. ${s}`);
       return [
@@ -149,6 +186,8 @@ export function draftReady(draft: NavigatorDraft): boolean {
     case 'todo': return draft.title.trim().length > 0;
     case 'ledger': return draft.amount > 0;
     case 'completeTodo': return draft.todoId.length > 0;
+    case 'editTodo':
+      return draft.todoId.length > 0 && editTodoChanges(draft).length > 0 && (draft.title === undefined || draft.title.trim().length > 0);
     case 'bigdeal': return draft.title.trim().length > 0 && draft.steps.some(s => s.trim());
   }
 }
@@ -221,6 +260,27 @@ export async function executeDraft(draft: NavigatorDraft): Promise<string> {
         ? ' 顺带解锁了点什么，自己去确认。'
         : '';
       return `划掉一件：「${draft.todoTitle}」。加点我亲眼看着到账了。${unlockLine}`;
+    }
+    case 'editTodo': {
+      const t = s.todos.find((x) => x.id === draft.todoId);
+      if (!t || !t.isActive || t.archivedAt) return `「${draft.todoTitle}」已经不在清单里了，这次没改。`;
+      if (draft.archive) {
+        // isActive=false：store 会盖上 archivedAt，不算完成、不发点数（Bug fix #7 同口径）
+        await s.updateTodo(t.id, { isActive: false });
+        return `「${t.title}」收进归档了。哪天想重启，去归档里点一下就回来。`;
+      }
+      const patch: Partial<Todo> = {};
+      if (draft.title !== undefined && draft.title.trim()) patch.title = draft.title.trim();
+      if (draft.attribute !== undefined) {
+        patch.attribute = draft.attribute;
+        // 副奖励和新主属性撞了就去掉那一项（添加待办同口径：同一维不双发）
+        if (t.extraBoosts?.some((b) => b.attribute === draft.attribute)) patch.extraBoosts = t.extraBoosts.filter((b) => b.attribute !== draft.attribute);
+      }
+      if (draft.points !== undefined) patch.points = draft.points;
+      if (draft.repeatDaily !== undefined) patch.repeatDaily = draft.repeatDaily;
+      if (draft.deadline !== undefined) patch.deadline = draft.deadline || undefined;
+      await s.updateTodo(t.id, patch);
+      return `改好了：「${patch.title ?? t.title}」。`;
     }
     case 'bigdeal': {
       const steps = draft.steps.map(t => t.trim()).filter(Boolean);

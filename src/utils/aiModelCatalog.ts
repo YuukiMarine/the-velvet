@@ -198,7 +198,7 @@ export async function refreshAllProviderModels(
 
   const results = await Promise.all(targets.map(async (t) => ({
     id: t.id,
-    r: await fetchAvailableModels({ provider: t.id, apiKey: t.key, baseUrl: t.baseUrl }),
+    r: await fetchAvailableModels({ provider: t.id, apiKey: t.key, baseUrl: t.baseUrl, nativeHosts: settings.aiNativeHosts }),
   })));
   const profiles = { ...(settings.aiProfiles ?? {}) };
   const okParts: string[] = [];

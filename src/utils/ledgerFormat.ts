@@ -29,6 +29,11 @@ export const INCOME_TYPES: LedgerIncomeType[] = ['labor', 'other'];
 
 // ── 录入选项（可在确认卡手动增删、持久化到 settings；undefined 时回退以下默认） ──
 export const DEFAULT_CHANNELS = ['支付宝', '微信', '现金', '银行卡', '信用卡'];
+/** （第 13 轮 2.6）渠道即账户：没填渠道的老数据归这一个 */
+export const UNASSIGNED_ACCOUNT = '未分配';
+/** 信用卡 / 花呗 / 白条这类是负债账户：余额可以为负，显示成「欠 ¥x」 */
+export const isDebtAccount = (name: string): boolean => /信用|花呗|白条|借呗|分期|贷/.test(name);
+export interface AccountBalance { name: string; balance: number; isDebt: boolean; unassigned: boolean }
 export const DEFAULT_INCOME_SOURCES = ['工资', '兼职', '投资理财', '红包', '报销', '退款'];
 /** 收入来源 → 是否算「劳动所得」（记账 +10SP）；匹配 labor 关键词即算。 */
 const LABOR_SOURCE_RE = /工资|薪|兼职|劳务|奖金|提成|外快|加班/;

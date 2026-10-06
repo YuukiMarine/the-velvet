@@ -1,4 +1,4 @@
-import { AttributeId, PersonaSkill, Settings } from '@/types';
+import { AttributeId, PersonaSkill, PersonaSourceId, Settings } from '@/types';
 import { chatComplete, chatStream, getAIConfig, getDeliberateAIConfig, rateLimitWaitMs, type AIConfig } from '@/utils/aiClient';
 import type { MoonRevealData } from '@/battle/moonBoss';
 export type { MoonRevealData };
@@ -393,6 +393,46 @@ function getDiversityHint(): string {
   return CULTURE_POOLS[Math.floor(Math.random() * CULTURE_POOLS.length)];
 }
 
+// ── 力量之源（第 13 轮 · 觉醒问答附加题）──────────────────────────────────
+/**
+ * 用户反馈：召唤出近代军政人物的概率太高，和 P 系列 / 真女神转生「神话 + 古人」的气质不搭。
+ * 折中：问答最后加一道可选题，最多选两类，选了就把五个人物限定在这些范围里（地域依旧不限、保持多元）；
+ * 不答 = 原规则一字不改。近代 / 近现代两类明确不选政治人物与军事将领（反馈的出戏点），近现代再排除在世的人。
+ */
+export const PERSONA_SOURCES: ReadonlyArray<{ id: PersonaSourceId; label: string; hint: string; scope: string }> = [
+  { id: 'primordial', label: '太初的光芒', hint: '神明类', scope: '各文明神话、宗教与民间传说里的神明、神兽、天使、魔神等超凡存在' },
+  { id: 'ancient', label: '文明的墨痕', hint: '古代伟人', scope: '古代到中世纪（约公元 1500 年以前）真实存在过的人物：哲人、诗人、学者、医者、工匠、探险者、君王' },
+  { id: 'steam', label: '蒸腾的汽焰', hint: '近代名人', scope: '近代（约 16–19 世纪）真实存在过的人物：科学家、发明家、艺术家、作家、思想家、探险家；不选政治人物与军事将领' },
+  { id: 'binary', label: '二进制之海', hint: '近现代', scope: '20 世纪以来已故的近现代人物：科学家、工程师、艺术家、作家、运动员、探险者；不选政治人物、军事将领与仍在世的人' },
+  { id: 'fantasy', label: '幻想与纹样', hint: '文艺作品中的传奇角色', scope: '文学、戏剧、史诗、民间故事和经典影视动画里极负盛名的虚构角色（优先经典作品）' },
+];
+
+/** 选了力量之源时只给地域倾向（不带年代——年代由力量之源决定，二者打架会让模型无所适从） */
+const REGION_HINTS = [
+  '东亚（中国 / 日本 / 朝鲜半岛）', '南亚与东南亚', '西亚、波斯与阿拉伯世界', '北欧与凯尔特',
+  '地中海沿岸（希腊、罗马、埃及）', '欧洲大陆', '非洲', '美洲',
+];
+
+const pickedSources = (sources?: readonly PersonaSourceId[]) =>
+  PERSONA_SOURCES.filter((s) => sources?.includes(s.id)).slice(0, 2);
+
+/** 选了力量之源 → 地域倾向；没选 → 原来的文化 / 年代提示 */
+function hintFor(sources?: readonly PersonaSourceId[]): string {
+  return pickedSources(sources).length
+    ? `地域倾向（只是倾向，力量之源的范围优先）：多考虑来自${REGION_HINTS[Math.floor(Math.random() * REGION_HINTS.length)]}的人物或作品`
+    : getDiversityHint();
+}
+
+/** 力量之源的硬约束段落；没选返回 ''（调用方用原文） */
+export function personaSourceRule(sources: readonly PersonaSourceId[] | undefined, count: 'five' | 'one'): string {
+  const sel = pickedSources(sources);
+  if (!sel.length) return '';
+  const lines = sel.map((s) => `- 「${s.label}」（${s.hint}）：${s.scope}`).join('\n');
+  return count === 'five'
+    ? `【力量之源（反抗者亲选，必须遵守）】\n五个人物全部从下面的范围里选：\n${lines}\n${sel.length > 1 ? '两类都要出现，比例按问答内容自定；' : ''}地域与文化依旧不限，五个人物尽量来自不同文明。`
+    : `必须是下面范围里的一位人物（反抗者亲选的力量之源）：\n${lines}`;
+}
+
 // ── Persona generation ──────────────────────────────────────────────────────
 
 /**
@@ -400,14 +440,14 @@ function getDiversityHint(): string {
  * （~1600 tokens、非流式、只要一个属性），那条路在用户环境里是实测可用的。
  * 五属性一次成型失败时用它逐个补，见 generatePersonaSkills ②。
  */
-function buildOneAttrPrompt(attrName: string, attr: AttributeId, context: string, diversityHint: string): string {
+function buildOneAttrPrompt(attrName: string, attr: AttributeId, context: string, diversityHint: string, sources?: readonly PersonaSourceId[]): string {
   return `你是Persona系列游戏的人格解析师。根据反抗者（用户）的问答，为"${attrName}"属性匹配一位最贴切的Persona人物。
 
 【反抗者问答记录】
 ${context}
 
 【要求】
-1. 必须是真实存在或有据可查的一位人物（历史人物/神话人物/文学角色/宗教传说人物）
+1. ${personaSourceRule(sources, 'one') || '必须是真实存在或有据可查的一位人物（历史人物/神话人物/文学角色/宗教传说人物）'}
 2. 人物选择必须基于上面的问答内容，而不是套用通识性的大众例子
 3. 文化偏好提示：${diversityHint}
 4. 禁止在名字后加"之灵""之影""化身"这类后缀
@@ -486,6 +526,8 @@ export async function generatePersonaSkills(
   onStreamChunk?: (delta: string, fullText: string) => void,
   /** 上一次失败交回的部分：跳过整份，只补缺的属性 */
   resumeFrom?: PersonaSummonPartial,
+  /** 力量之源（附加题，最多两类）；没答 = 原规则 */
+  sources?: readonly PersonaSourceId[],
 ): Promise<PersonaSummonResult> {
   /**
    * 人格生成走**深思熟虑档**，不走快速响应档。
@@ -512,7 +554,8 @@ export async function generatePersonaSkills(
   };
 
   const context = dialogHistory.join('\n\n');
-  const diversityHint = getDiversityHint();
+  const diversityHint = hintFor(sources);
+  const sourceRule = personaSourceRule(sources, 'five');
   const prompt = `你是Persona系列游戏的人格解析师。请仔细阅读反抗者（用户）的五轮问答，深度解析其价值观、性格底色、行为倾向，然后从人类历史与文化中找出最精准契合的五个Persona。
 
 【反抗者问答记录】
@@ -521,12 +564,12 @@ ${context}
 【属性与名称对应】
 ${ATTRS.map(a => `${a} → ${attributeNames[a]}`).join('\n')}
 
-【Persona选择原则】
+${sourceRule || `【Persona选择原则】
 每个属性的Persona必须是真实存在或有据可查的一位人物：
 - 历史人物（科学家/哲学家/将领/艺术家等）
 - 神话体系中的神明或英雄（任意文化皆可）
 - 经典文学、史诗、戏剧中的标志性角色
-- 宗教传说中的著名人物
+- 宗教传说中的著名人物`}
 禁止：名字后的任何后缀如"之灵""之影""化身"，禁止输出"某类人"或"某个流派的学者们"之类的复数人。
 
 【关键要求】
@@ -639,7 +682,7 @@ ${formatAllAttrsSpecialization(attributeNames)}
   const lane = async (attr: AttributeId) => {
     try {
       const one = await streamJSONResilient(
-        cfg, buildOneAttrPrompt(attributeNames[attr], attr, context, getDiversityHint()), 0.6, 1600,
+        cfg, buildOneAttrPrompt(attributeNames[attr], attr, context, hintFor(sources), sources), 0.6, 1600,
         // 单属性的小请求不值得再想两分钟：DeepSeek 关思考，几秒就出（第 12 轮 E）；断网退避在 streamJSONResilient 里
         { onProgress: t => { lanes[attr] = t; render(); }, maxResumes: 1, noThinking: true, onRateLimit: () => { if (!serializeLanes) { serializeLanes = true; lanes[attr] = `${lanes[attr] ?? ''}\n（被服务商限流，剩下的面改为逐个唤起）`; render(); } } },
         p => Array.isArray(p.skills) && (p.skills as unknown[]).length >= 3,
@@ -727,15 +770,17 @@ export async function reshuffleAttributePersonaAI(
   attr: AttributeId,
   attrName: string,
   currentName: string,
+  /** 这张 Persona 召唤时选的力量之源（洗牌沿用）；没有 = 原规则 */
+  sources?: readonly PersonaSourceId[],
 ): Promise<{ name: string; description: string; skills: PersonaSkill[] } | null> {
   // 与 generatePersonaSkills 同族（人格生成），一起走深思熟虑档
   const cfg = getDeliberateAIConfig(settings);
   if (!cfg) return null;
-  const diversityHint = getDiversityHint();
+  const diversityHint = hintFor(sources);
   const prompt = `你是Persona系列游戏的人格解析师。请为"${attrName}"属性重新匹配一个全新的Persona人物。
 
 【要求】
-1. 必须是真实存在或有据可查的一位人物（历史人物/神话人物/文学角色/宗教传说人物）
+1. ${personaSourceRule(sources, 'one') || '必须是真实存在或有据可查的一位人物（历史人物/神话人物/文学角色/宗教传说人物）'}
 2. 禁止与当前人物"${currentName}"相同或过于相似
 3. 文化偏好提示：${diversityHint}
 4. 人物要有新意，避免过于大众化的选择

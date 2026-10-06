@@ -56,6 +56,7 @@ import { WishProposalDialog } from '@/components/wish/WishProposalDialog';
 const NavigatorWindow = lazy(() => import('@/components/navigator/NavigatorWindow').then(m => ({ default: m.NavigatorWindow })));
 import { primeCurrentTheme } from '@/utils/feedback';
 import { bootStage, bootDone, getBootInfo, ackBootFailures, collectBootDiagnostics } from '@/utils/bootGuard';
+import { initBgm, unlockBgm } from '@/utils/bgm';
 import { BackgroundAnimation } from '@/components/BackgroundAnimation';
 import { PWAUpdateToast } from '@/components/PWAUpdateToast';
 import { CallingCardCutIn } from '@/components/callingCard/CallingCardCutIn';
@@ -618,6 +619,7 @@ function App() {
       if (primedRef.current) return;
       primedRef.current = true;
       primeCurrentTheme();
+      unlockBgm(); // 导入音乐：首次手势后才允许出声
       window.removeEventListener('pointerdown', handleFirstInteraction);
       window.removeEventListener('keydown', handleFirstInteraction);
     };
@@ -655,7 +657,7 @@ function App() {
   //    React 直接抛 Rendered more hooks than during the previous render。
   // 首页画出来了 → 这一次启动算完成（看门狗 failures 清零）
   useEffect(() => {
-    if (!isLoading && !showSplash) bootDone();
+    if (!isLoading && !showSplash) { bootDone(); initBgm(); }
   }, [isLoading, showSplash]);
 
   const bgAnimStyleList = useMemo(

@@ -13,7 +13,7 @@ import { applyUiChannel, syncDarkClass } from '@/ui/channel';
 import { computeAndSchedule, type NotifSnapshot } from '@/utils/notifications';
 import { getCachedNotifVoice, refreshNotifVoiceIfNeeded } from '@/utils/notifVoice';
 import { pushWidgetSnapshot } from '@/utils/widgetSnapshot';
-import { isGrowthCategory, cycleRangeForKey, ledgerCycle, roundMoney, shiftMonth } from '@/utils/ledgerFormat';
+import { isGrowthCategory, cycleRangeForKey, ledgerCycle, roundMoney, shiftMonth, DEFAULT_CHANNELS, UNASSIGNED_ACCOUNT, isDebtAccount, type AccountBalance } from '@/utils/ledgerFormat';
 import { chatComplete, getAIConfig, type AIConfig, type AIMessage } from '@/utils/aiClient';
 import { buildSummaryRequest as buildSummaryRequestAI, getActiveSummaryPreset as getActiveSummaryPresetAI, type SummaryRequestData } from '@/utils/summaryAI';
 import {
@@ -65,6 +65,8 @@ export const ALL_LOCAL_TABLES = [
   'navigatorPresets', 'navigatorMemos', 'navigatorSessions', 'navigatorMessages',
   // v2.7.0.6 记录配图（本地专属；不上云、不进主备份，"清空数据"必须清）
   'activityImages', 'activityImageData',
+  // 第 13 轮 B 组 导入音乐（本地专属；不上云、不进主备份，"清空数据"必须清；导入备份时不动）
+  'bgmTracks',
   // 第 6 轮 岁时印章
   'stamps',
   // 第 6 轮 委托板
@@ -547,6 +549,10 @@ interface AppState {
   /** （第 13 轮）新周期没设预算 → 沿用最近一期的花费上限（记 carriedFrom，可改） */
   ensureBudgetCarry: () => Promise<void>;
   adjustTotalBalance: (targetTotal: number) => Promise<{ ok: boolean; reason?: string }>;
+  /** （第 13 轮 2.6）各账户余额：渠道即账户；收入 − 支出 + 调整；没渠道的归「未分配」 */
+  getAccountBalances: () => AccountBalance[];
+  /** （第 13 轮 2.6）一轮对账：给出若干账户的目标余额，各写一条带同一轮次 id 的调整；每月 3 轮；开局设余额不占 */
+  adjustAccountBalances: (targets: Array<{ account: string | null; target: number }>) => Promise<{ ok: boolean; reason?: string }>;
   getTotalBalance: () => number;
   getBudget: (period?: string) => Budget | undefined;
   getPeriodExpense: (periodKey: string) => number;
@@ -2934,7 +2940,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   resetAllData: async (opts) => {
     for (const t of ALL_LOCAL_TABLES) {
-      if (opts?.keepImages && (t === 'activityImages' || t === 'activityImageData')) continue;
+      if (opts?.keepImages && (t === 'activityImages' || t === 'activityImageData' || t === 'bgmTracks')) continue;
       await db.table(t).clear();
     }
     if (!opts?.keepImages) await loadActivityImageIndex(true); // 表清了，内存里的缩略图索引也要清
@@ -3148,6 +3154,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     //    这里改成对 ALL_LOCAL_TABLES 循环，与 resetAllData 共用同一份清单，从此不会再漏。
     const snapshot: Record<string, unknown[]> = {};
     for (const t of ALL_LOCAL_TABLES) {
+      if (t === 'bgmTracks') continue; // 导入音乐的 Blob（最多 120MB）不进内存快照：导入时不清它，也不需要恢复
       snapshot[t] = await db.table(t).toArray();
     }
 
@@ -3413,7 +3420,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       try {
         await get().resetAllData({ keepImages: true });
         for (const t of ALL_LOCAL_TABLES) {
-          if (t === 'activityImages' || t === 'activityImageData') continue;
+          if (t === 'activityImages' || t === 'activityImageData' || t === 'bgmTracks') continue;
           const rows = snapshot[t];
           if (rows && rows.length) await db.table(t).bulkAdd(rows as never[]);
         }
@@ -4611,20 +4618,54 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   adjustTotalBalance: async (targetTotal) => {
-    // 开局「设置当前余额」（还没有任何流水）：不占每月 3 次对账名额，备注区分开（第 13 轮）
+    // 老入口（总余额一个数）：差额记到「未分配」，走同一套轮次逻辑
+    const unassigned = get().getAccountBalances().find(a => a.unassigned)?.balance ?? 0;
+    const delta = roundMoney(targetTotal - get().getTotalBalance());
+    return get().adjustAccountBalances([{ account: null, target: roundMoney(unassigned + delta) }]);
+  },
+
+  getAccountBalances: () => {
+    const names = get().settings.ledgerChannels ?? DEFAULT_CHANNELS;
+    const sums = new Map<string, number>();
+    for (const n of names) sums.set(n, 0);
+    let unassigned = 0;
+    let hasUnassigned = false;
+    for (const e of get().ledgerEntries) {
+      const delta = e.direction === 'income' ? e.amount : e.direction === 'expense' ? -e.amount : e.amount;
+      const ch = (e.channel ?? '').trim();
+      if (!ch) { unassigned += delta; hasUnassigned = true; continue; }
+      sums.set(ch, (sums.get(ch) ?? 0) + delta);
+    }
+    const out: AccountBalance[] = [...sums.entries()].map(([name, balance]) => ({ name, balance: roundMoney(balance), isDebt: isDebtAccount(name), unassigned: false }));
+    if (hasUnassigned) out.push({ name: UNASSIGNED_ACCOUNT, balance: roundMoney(unassigned), isDebt: false, unassigned: true });
+    return out;
+  },
+
+  adjustAccountBalances: async (targets) => {
+    // 开局「设置当前余额」（还没有任何流水）：不占每月 3 轮名额，备注区分开
     const initial = get().ledgerEntries.length === 0;
     if (!initial && get().getAdjustCountThisMonth() >= 3) {
-      return { ok: false, reason: '本月对账已用完 3 次' };
+      return { ok: false, reason: '本月对账已用完 3 轮' };
     }
-    const delta = roundMoney(targetTotal - get().getTotalBalance());
-    if (Math.abs(delta) < 0.005) return { ok: true };
-    await get().addLedgerEntry({
-      direction: 'adjust',
-      amount: delta,
-      date: toLocalDateKey(),
-      source: 'manual',
-      note: initial ? '初始余额' : '余额对账',
-    });
+    const balances = get().getAccountBalances();
+    const roundId = uuidv4();
+    const today = toLocalDateKey();
+    for (const t of targets) {
+      const cur = t.account
+        ? (balances.find(a => !a.unassigned && a.name === t.account)?.balance ?? 0)
+        : (balances.find(a => a.unassigned)?.balance ?? 0);
+      const delta = roundMoney(t.target - cur);
+      if (Math.abs(delta) < 0.005) continue;
+      await get().addLedgerEntry({
+        direction: 'adjust',
+        amount: delta,
+        date: today,
+        source: 'manual',
+        note: initial ? '初始余额' : '余额对账',
+        channel: t.account ?? undefined,
+        adjustRound: roundId,
+      });
+    }
     return { ok: true };
   },
 
@@ -4659,9 +4700,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     return get().budgets.find(b => b.period === p);
   },
 
+  // 本月对账用了几轮：同一轮（一次按账户校准）写的几条共享 adjustRound；老数据没有轮次 id 的一条算一轮
   getAdjustCountThisMonth: () => {
     const p = toLocalDateKey().slice(0, 7);
-    return get().ledgerEntries.filter(e => e.direction === 'adjust' && e.note !== '初始余额' && e.date.slice(0, 7) === p).length;
+    const rounds = new Set<string>();
+    let legacy = 0;
+    for (const e of get().ledgerEntries) {
+      if (e.direction !== 'adjust' || e.note === '初始余额' || e.date.slice(0, 7) !== p) continue;
+      if (e.adjustRound) rounds.add(e.adjustRound); else legacy++;
+    }
+    return rounds.size + legacy;
   },
 
   // 发放记账 SP：bonus=true（劳动/值得/月末）不占每日封顶；普通每笔受 20/日封顶。

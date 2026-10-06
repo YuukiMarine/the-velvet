@@ -29,6 +29,7 @@ import {
   isOfficialHost,
   relayHint,
   type ApiProvider, DEFAULT_PROVIDER, cleanApiKey } from '@/utils/aiProviders';
+import { aiFetch, isNativeHost, syncNativeHosts } from '@/utils/aiTransport';
 
 export type AIRole = 'system' | 'user' | 'assistant';
 
@@ -175,6 +176,7 @@ const RELAY_THINKING_ALLOWANCE = 12_000;
  * 取代散落在 battleAI / activityAI 等处各写一遍的 getAIConfig。
  */
 export function getAIConfig(settings: Settings): AIConfig | null {
+  syncNativeHosts(settings.aiNativeHosts);
   const apiKey = cleanApiKey(settings.summaryApiKey).key;
   if (!apiKey) return null;
   const { baseUrl, model } = resolveProvider(
@@ -226,6 +228,7 @@ function applyModelOverride(
   /** strict：那家 Key 缺失就返回 null，**不**回落到当前连接（视觉 / 听觉档：模型名属于别家，套错连接只会 404 或胡说） */
   strict = false,
 ): AIConfig | null {
+  syncNativeHosts(settings.aiNativeHosts);
   const activeProvider = settings.summaryApiProvider ?? DEFAULT_PROVIDER;
   if (pv && pv !== activeProvider) {
     const prof = settings.aiProfiles?.[pv];
@@ -247,6 +250,7 @@ function applyModelOverride(
  * 错误提示也能对上号）。塔罗 / 命运 / 同伴 / 谏言在 hasKey 分流之后用。
  */
 export function fallbackAIConfig(settings: Settings): AIConfig {
+  syncNativeHosts(settings.aiNativeHosts);
   return {
     ...resolveProvider(settings.summaryApiProvider, settings.summaryApiBaseUrl, settings.summaryModel),
     apiKey: cleanApiKey(settings.summaryApiKey).key,
@@ -598,7 +602,7 @@ async function chatCompleteOnce(
   const opts = withThinkingTimeout(cfg, rawOpts);
   const ab = setupAbort(opts);
   try {
-    const resp = await fetch(`${cfg.baseUrl}/chat/completions`, {
+    const resp = await aiFetch(`${cfg.baseUrl}/chat/completions`, {
       method: 'POST',
       headers: authHeaders(cfg),
       body: JSON.stringify(buildRequestBody(cfg, messages, opts, false)),
@@ -680,6 +684,18 @@ export async function* chatStream(
   messages: AIMessage[],
   opts: ChatOptions = {},
 ): AsyncGenerator<string, void, unknown> {
+  if (isNativeHost(cfg.baseUrl)) {
+    // 原生通道（第 13 轮 · 千问套餐专属网关不放行跨域）拿不到流式响应：整段生成完一次性交出去，
+    // 调用方的 for-await 照常收到一段。调用方给的 timeoutMs 多是「多久没新字就算断」的流式口径，
+    // 非流式要等整段，放宽到至少 60s（调用方自己的 signal 仍然说了算）
+    const text = await chatComplete(cfg, messages, {
+      ...opts,
+      ...(opts.timeoutMs !== undefined && opts.timeoutMs > 0 ? { timeoutMs: Math.max(opts.timeoutMs, 60_000) } : {}),
+    });
+    opts.onFinishReason?.('stop');
+    if (text) yield text;
+    return;
+  }
   opts = withStreamIdleTimeout(cfg, opts);
   const ab = setupAbort(opts);
   /** 0 = 原样；1 = 去掉思维链余量；2 = 再退到 2048 */
@@ -755,7 +771,7 @@ async function* streamOnce(
   ab: AbortBundle,
   extra: Record<string, unknown>,
 ): AsyncGenerator<string, StreamOutcome, unknown> {
-  const resp = await fetch(`${cfg.baseUrl}/chat/completions`, {
+  const resp = await aiFetch(`${cfg.baseUrl}/chat/completions`, {
     method: 'POST',
     headers: authHeaders(cfg, 'text/event-stream'),
     body: JSON.stringify({ ...buildRequestBody(cfg, messages, opts, true), ...extra }),

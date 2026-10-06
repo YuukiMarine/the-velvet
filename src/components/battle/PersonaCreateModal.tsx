@@ -8,8 +8,9 @@ import { P5R, P5_FONT, P5_TITLE_FONT, roughQuad, starPts, P5Collage, P5SubBar, P
 import { P4Flower, P4Sparkle, P4Panel, P4SkyCircle, P4ArcRings, P4CautionStripes, P4Magnifier, P4Scanlines } from '@/ui/p4Kit';
 import { PersonaButton } from '@/ui/components/PersonaButton';
 import { useUiChannel } from '@/ui/useUiChannel';
-import { Persona, BattleState, AttributeId } from '@/types';
+import { Persona, BattleState, AttributeId, PersonaSourceId } from '@/types';
 import { generatePersonaSkills, type PersonaSummonPartial } from '@/utils/battleAI';
+import { PersonaSourcePicker } from '@/components/battle/PersonaSourcePicker';
 import { PLAYER_BASE_HP } from '@/battle/numbers';
 import { triggerSuccessFeedback, playSound } from '@/utils/feedback';
 import { AwakeningOverlay, AwakeningOverlayHandle } from '@/components/battle/AwakeningOverlay';
@@ -142,6 +143,8 @@ export function PersonaCreateModal({ isOpen, onClose }: Props) {
   const [choiceStep, setChoiceStep] = useState(0);
   const [choiceAnswers, setChoiceAnswers] = useState<string[]>([]);
   const [textAnswer, setTextAnswer] = useState('');
+  /** 附加题「力量之源」（第 13 轮）：最多两类，空 = 不限范围（原规则） */
+  const [sources, setSources] = useState<PersonaSourceId[]>([]);
   const [error, setError] = useState('');
   const [generatedPersona, setGeneratedPersona] = useState<Persona | null>(null);
   /** 收下了（≥3/5）但没唤出来、用默认技能补位的面：揭示页提示一句 */
@@ -161,6 +164,7 @@ export function PersonaCreateModal({ isOpen, onClose }: Props) {
     setChoiceStep(0);
     setChoiceAnswers([]);
     setTextAnswer('');
+    setSources([]);
     setError('');
     setGeneratedPersona(null);
     setMissingNote('');
@@ -210,6 +214,7 @@ export function PersonaCreateModal({ isOpen, onClose }: Props) {
         // 命令式调用：ref 仅更新 AwakeningOverlay 内部状态，不触发本组件 re-render
         (_delta, full) => awakeningRef.current?.setStreamText(full),
         resumeFrom,
+        sources,
       );
 
       // AI 失败：不保存默认 persona，回到 Q5。已唤出的面留在 partialRef，错误框下可以只补缺的；
@@ -236,6 +241,7 @@ export function PersonaCreateModal({ isOpen, onClose }: Props) {
         equippedMaskAttribute: null,
         createdViaAI: true,
         skills,
+        ...(sources.length ? { sources } : {}),
         createdAt: new Date(),
       };
       await savePersona(persona);
@@ -438,6 +444,7 @@ export function PersonaCreateModal({ isOpen, onClose }: Props) {
                       className="mt-4 w-full resize-none bg-white px-4 py-3 text-[15px] font-bold outline-none placeholder:text-[#8a97ad]"
                       style={{ color: P3R.ink, clipPath: slantClip(12), borderBottom: `4px solid ${P3R.cyan}`, boxShadow: '0 8px 20px rgba(38,96,140,0.10)' }}
                     />
+                    <PersonaSourcePicker value={sources} onChange={setSources} tone="p3" />
                     {error && (
                       <div className="mt-3 px-4 py-2.5" style={{ background: 'rgba(240,65,127,0.10)', clipPath: slantClip(10) }}>
                         <p className="break-all text-[12px] font-bold leading-relaxed" style={{ color: P3R.magenta }}>{error}</p>
@@ -680,6 +687,7 @@ export function PersonaCreateModal({ isOpen, onClose }: Props) {
                       className="mt-4 w-full resize-none rounded-2xl px-4 py-3 text-[15px] font-bold outline-none"
                       style={{ background: 'var(--ui-paper, #fff6d0)', color: 'var(--ui-ink, #131313)', borderBottom: '4px solid var(--p4-orange, #f9a11b)', boxShadow: '0 3px 0 rgba(19,19,19,0.14)' }}
                     />
+                    <PersonaSourcePicker value={sources} onChange={setSources} tone="p4" />
                     {error && (
                       <div className="mt-3 rounded-2xl px-4 py-2.5" style={{ background: 'color-mix(in srgb, var(--ui-danger, #e8452c) 12%, transparent)' }}>
                         <p className="break-all text-[12px] font-bold leading-relaxed" style={{ color: 'var(--ui-danger, #e8452c)' }}>{error}</p>
@@ -970,6 +978,7 @@ export function PersonaCreateModal({ isOpen, onClose }: Props) {
                       className="mt-4 w-full resize-none px-4 py-3 text-[15px] font-bold outline-none placeholder:text-[#8a8579]"
                       style={{ background: P5R.paper, color: '#050505', clipPath: roughQuad(961, 4), borderBottom: `4px solid ${P5R.red}` }}
                     />
+                    <PersonaSourcePicker value={sources} onChange={setSources} tone="p5" />
                     {error && (
                       <div className="mt-3 px-4 py-2.5" style={{ background: 'rgba(192,0,8,0.14)', border: '1.5px solid rgba(192,0,8,0.5)' }}>
                         <p className="break-all text-[12px] font-bold leading-relaxed" style={{ color: '#ff6a70' }}>{error}</p>
@@ -1425,6 +1434,7 @@ export function PersonaCreateModal({ isOpen, onClose }: Props) {
                     className="w-full px-4 py-3 rounded-xl text-white placeholder-gray-500 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-purple-500"
                     style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)' }}
                   />
+                  <PersonaSourcePicker value={sources} onChange={setSources} tone="default" />
                   {error && (
                     <div className="rounded-xl px-3 py-2 space-y-1" style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.35)' }}>
                       <p className="text-red-300 text-xs leading-relaxed break-all">{error}</p>

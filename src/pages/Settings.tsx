@@ -13,6 +13,7 @@ import { PageTitle } from '@/components/PageTitle';
 import { BackButton } from '@/components/BackButton';
 import { useRipple } from '@/components/RippleEffect';
 import { AI_PROVIDERS, getProviderConfig, testAIConnection, fetchAvailableModels, effectiveModelName, cleanApiKey, type TestResult, type ApiProvider, DEFAULT_PROVIDER } from '@/utils/aiProviders';
+import { hostOfUrl } from '@/utils/aiTransport';
 import { autoFillVisionPatch, refreshAllProviderModels, liveModelOf, isModelStale } from '@/utils/aiModelCatalog';
 import {
   BarsIcon, BellIcon, BoltMiniIcon, CoinIcon, DiamondMarkIcon, EyeIcon, GearIcon,
@@ -39,6 +40,7 @@ import { generatePresetNameMatches, type PresetNameMatchResult } from '@/utils/p
 import { P4Flower, P4Sparkle, P4SkyFan, P4ArcRings, P4_HEADER_BLEED } from '@/ui/p4Kit';
 import { downscaleDataUrl } from '@/utils/imageCrop';
 import { SoundVolumeRow } from '@/components/SoundVolumeRow';
+import { BgmSettings } from '@/components/BgmSettings';
 
 /** 五维属性的展示元数据（图标 + 主色 + 默认中文名），仅用于设置页 UI */
 const ATTRIBUTE_META: Array<{
@@ -872,17 +874,31 @@ export const Settings = () => {
       apiKey: keyToTest,
       baseUrl: settings.summaryApiBaseUrl,
       model: settings.summaryModel,
+      nativeHosts: settings.aiNativeHosts,
     });
     const result: TestResult = result0;
+    // 第 13 轮 · 原生通道：浏览器发不出去（对方不放行跨域预检）、App 原生层才通 → 把这台主机登记下来，之后的请求都走原生通道；
+    // 反过来，登记过的主机这次浏览器通道直接通了（对方放行了）→ 注销，恢复流式
+    const hostsNow = settings.aiNativeHosts ?? [];
+    let nativeHosts = hostsNow;
+    let nativeNote = '';
+    if (result.nativeHost) {
+      nativeNote = '这个地址不放行跨域，已改走 App 原生通道（不支持流式，回复会整段出现）。\n';
+      if (!hostsNow.includes(result.nativeHost)) nativeHosts = [...hostsNow, result.nativeHost];
+    } else if (result.ok && hostsNow.includes(hostOfUrl(result.baseUrlUsed))) {
+      nativeNote = '这个地址现在放行跨域了，已改回普通通道（恢复流式）。\n';
+      nativeHosts = hostsNow.filter((h) => h !== hostOfUrl(result.baseUrlUsed));
+    }
+    if (nativeHosts !== hostsNow) updateSettings({ aiNativeHosts: nativeHosts });
     if (result.ok) {
       setApiTestStatus('ok');
       // 地址少写了 /v1、补上才通（中转站最常见）：把校正后的地址替换进设置，之后所有请求都用它
       if (result.corrected) updateSettings({ summaryApiBaseUrl: result.baseUrlUsed });
       // 成功顺手拉一次该家的模型列表（用户口径）；不支持 /models 的注明跳过，不算失败
       const pv = settings.summaryApiProvider ?? DEFAULT_PROVIDER;
-      const listed = await fetchAvailableModels({ provider: pv, apiKey: keyToTest, baseUrl: result.baseUrlUsed });
+      const listed = await fetchAvailableModels({ provider: pv, apiKey: keyToTest, baseUrl: result.baseUrlUsed, nativeHosts });
       setApiTestMessage(
-        cleanNote + `连接成功 · ${result.model} · ${result.latencyMs} ms` +
+        cleanNote + nativeNote + `连接成功 · ${result.model} · ${result.latencyMs} ms` +
         (listed.ok ? ` · 模型列表已更新（${listed.models.length} 个）` : ' · 该服务商不支持拉取列表，模型请手填') +
         (result.corrected ? `\n地址少了 /v1，已自动补上并替换为 ${result.baseUrlUsed}` : ''),
       );
@@ -900,7 +916,7 @@ export const Settings = () => {
       });
     } else {
       setApiTestStatus('error');
-      setApiTestMessage(cleanNote + result.error);
+      setApiTestMessage(cleanNote + nativeNote + result.error);
     }
   };
 
@@ -1642,6 +1658,9 @@ export const Settings = () => {
                         )}
                       </div>
                     </div>
+
+                    {/* ── 子板块：导入音乐（第 13 轮 B 组 2.8，常态折叠，主题分区最下方） ── */}
+                    <BgmSettings p5={p5} />
                   </div>
                 )}
 
@@ -2653,6 +2672,11 @@ export const Settings = () => {
                             placeholder={getProviderConfig(provider).defaultBaseUrl}
                             className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-primary"
                           />
+                          {(settings.aiNativeHosts ?? []).includes(hostOfUrl((settings.summaryApiBaseUrl ?? '').trim() || getProviderConfig(provider).defaultBaseUrl)) && (
+                            <p className="text-[11px] leading-relaxed text-amber-600 dark:text-amber-400" data-testid="native-host-note">
+                              这个地址不放行跨域，App 里走原生通道：能用，但没有流式，回复会整段出现。对方放行后再点一次「测试连接」即可改回。
+                            </p>
+                          )}
                         </div>
 
                       </div>

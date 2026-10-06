@@ -698,9 +698,10 @@ export const TodosView = () => {
             </span>
             <span aria-hidden className="opacity-50">›</span>
           </button>
-          {/* 委托板入口（第 6 轮）：解锁后才出现，角标 = 可领取张数。
+          {/* 委托板入口（第 6 轮）：角标 = 可领取张数。第 13 轮起常驻——里面的「今日生活委托」不需要记录史，
+              「本周委托」没解锁时在抽屉里写明条件。
               角标放在按钮外面那层：蓝频道按钮有斜切 clip-path，放在里面会被裁掉一角 */}
-          {questBoard.unlocked && (
+          {(
             <span className="relative flex shrink-0">
             <button
               type="button"

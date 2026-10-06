@@ -23,6 +23,8 @@ export interface LedgerAIResult {
   category?: string;
   /** ≤12 字摘要 */
   note: string;
+  /** （第 13 轮 P1）句子里说了「昨天 / 前天」→ 对应日期 'YYYY-MM-DD'；没说就不带 */
+  date?: string;
 }
 
 const SYSTEM_PROMPT = `你是一个记账助手。用户给你一句话（如"28 咖啡""买了本书 59""工资 8000"），
@@ -74,8 +76,24 @@ export async function analyzeLedgerAI(
     throw new Error('AI 返回不是合法 JSON');
   }
 
-  return normalizeResult(parsed, trimmed);
+  const out = normalizeResult(parsed, trimmed);
+  const d = relativeDateOf(trimmed);
+  return d ? { ...out, date: d } : out;
 }
+
+/** 「昨天 / 前天 / 大前天」→ 本地日期键；没提就 undefined */
+export function relativeDateOf(text: string): string | undefined {
+  const m = /大前天|前天|昨天|昨日|今天/.exec(text);
+  if (!m) return undefined;
+  const back = m[0] === '大前天' ? 3 : m[0] === '前天' ? 2 : m[0] === '今天' ? 0 : 1;
+  const d = new Date();
+  d.setDate(d.getDate() - back);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/** 千分位合并："1,234.5" → "1234.5"（只合并「逗号后恰好三位数字」的写法，不碰「15,地铁4」这种分隔） */
+export const mergeThousands = (text: string): string => text.replace(/(\d),(?=\d{3}(?!\d))/g, '$1');
 
 /** 把一个 parsed JSON 对象规整为 LedgerAIResult（单笔 / 批量共用）。 */
 function normalizeResult(parsed: Record<string, unknown>, fallbackText = ''): LedgerAIResult {
@@ -110,6 +128,7 @@ const TYPE_KEYWORDS: Array<[LedgerExpenseType, RegExp]> = [
 export function parseLedgerOffline(text: string): LedgerAIResult | null {
   const amount = extractAmount(text);
   if (amount == null) return null;
+  const date = relativeDateOf(text);
 
   if (INCOME_RE.test(text)) {
     return {
@@ -118,13 +137,14 @@ export function parseLedgerOffline(text: string): LedgerAIResult | null {
       incomeType: LABOR_RE.test(text) ? 'labor' : 'other',
       category: '',
       note: shortNote(text),
+      ...(date ? { date } : {}),
     };
   }
   let type: LedgerExpenseType = 'other';
   for (const [t, re] of TYPE_KEYWORDS) {
     if (re.test(text)) { type = t; break; }
   }
-  return { direction: 'expense', amount, type, category: '', note: shortNote(text) };
+  return { direction: 'expense', amount, type, category: '', note: shortNote(text), ...(date ? { date } : {}) };
 }
 
 /** 有 Key 走 AI、失败或无 Key 退离线；离线再抽不出金额返 null（转手动）。 */
@@ -143,11 +163,16 @@ export async function parseLedgerInput(
   return parseLedgerOffline(text);
 }
 
-/** 取文本里最像金额的数字（多个时取最大，覆盖"2本书59"取 59 这类）。 */
+/**
+ * 取文本里最像金额的数字（多个时取最大，覆盖"2本书59"取 59 这类）。
+ * 第 13 轮 P1：先合并千分位；带小数点的、或 ≤6 位的才算金额——7 位以上的纯数字（手机号 / 单号 / 日期串）不当钱。
+ */
 function extractAmount(text: string): number | null {
-  const matches = text.match(/\d+(?:\.\d+)?/g);
+  const matches = mergeThousands(text).match(/\d+(?:\.\d+)?/g);
   if (!matches) return null;
-  const nums = matches.map(Number).filter(n => Number.isFinite(n) && n > 0);
+  const nums = matches
+    .filter(m => m.includes('.') || m.length <= 6)
+    .map(Number).filter(n => Number.isFinite(n) && n > 0);
   return nums.length ? Math.max(...nums) : null;
 }
 
@@ -166,7 +191,7 @@ const SYSTEM_PROMPT_BATCH = `你是一个记账助手。用户可能一句话报
 
 /** 按标点/「和」「还有」切分多笔（无标点的纯空格分隔不切，避免误伤单笔描述）。 */
 export function splitSegments(text: string): string[] {
-  return text
+  return mergeThousands(text)
     .split(/[、，,;；\n]+|\s+和\s+|\s+还有\s+/)
     .map(s => s.trim())
     .filter(Boolean);
@@ -193,18 +218,21 @@ export async function parseLedgerBatch(
       ], { temperature: 0.2, maxTokens: 700, signal, instant: true });
       const arr = extractJSONArray(raw);
       if (arr.length) {
-        const results = arr.map(o => normalizeResult(o)).filter(r => r.amount > 0);
+        const d = relativeDateOf(trimmed);
+        const results = arr.map(o => normalizeResult(o)).filter(r => r.amount > 0).map(r => (d ? { ...r, date: d } : r));
         if (results.length) return results;
       }
     } catch {
       /* 退离线切分 */
     }
   }
-  // 离线：按标点切分逐段；只有切出 ≥1 段能抽出金额才算
+  // 离线：按标点切分逐段；只有切出 ≥1 段能抽出金额才算。整句开头的「昨天」补给没自带日期的各段
   const segs = splitSegments(trimmed);
+  const sentenceDate = relativeDateOf(trimmed);
   const offline = segs
     .map(s => parseLedgerOffline(s))
-    .filter((r): r is LedgerAIResult => !!r && r.amount > 0);
+    .filter((r): r is LedgerAIResult => !!r && r.amount > 0)
+    .map(r => (!r.date && sentenceDate ? { ...r, date: sentenceDate } : r));
   return offline;
 }
 

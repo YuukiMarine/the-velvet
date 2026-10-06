@@ -46,13 +46,16 @@ export interface Recording {
 export async function startRecording(): Promise<Recording> {
   if (!recorderSupported()) throw new Error('这个环境不支持录音');
   const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  // 导入音乐（第 13 轮 B 组）：录音期间暂停 BGM，免得录进去
+  const hold = (on: boolean) => { try { window.dispatchEvent(new CustomEvent('velvet-bgm-hold', { detail: on })); } catch { /* ignore */ } };
+  hold(true);
   // 让浏览器自己挑支持的编码：Safari 给 mp4/aac，Chrome 给 webm/opus
   const rec = new MediaRecorder(stream);
   const chunks: BlobPart[] = [];
   rec.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
   rec.start();
 
-  const release = () => stream.getTracks().forEach((t) => t.stop());
+  const release = () => { stream.getTracks().forEach((t) => t.stop()); hold(false); };
 
   return {
     stop: () =>

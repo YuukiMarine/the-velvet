@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAppStore } from '@/store';
-import { fetchWeatherNow, weatherReady, type WeatherNow } from '@/utils/weather';
+import { attributionLabel, fetchWeatherNow, weatherReady, WeatherError, type WeatherNow } from '@/utils/weather';
 
 /**
  * 首页「天空位」的模式与取数 —— 月相 ⇄ 天气。
@@ -13,6 +13,8 @@ import { fetchWeatherNow, weatherReady, type WeatherNow } from '@/utils/weather'
  *     不做静默回退——静默回退会让用户以为点击没生效。
  *
  * 取数在 utils/weather.ts 里带 10 分钟内存缓存，这里不再自己缓存。
+ * 第 13 轮：配置类错误（Host / KEY / 额度…）之后 weather.ts 不再自动重发，这里只报 errorKind='config'，
+ * 角标改说「天气设置有误」；有数据时给出来源标注（和风要求显示「和风天气」并带链接）。
  */
 export function useSkyBadge() {
   const settings = useAppStore(s => s.settings);
@@ -30,15 +32,21 @@ export function useSkyBadge() {
   const [weather, setWeather] = useState<WeatherNow | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorKind, setErrorKind] = useState<'config' | 'transient' | null>(null);
 
   useEffect(() => {
     if (mode !== 'weather' || !ready) return;
     const ac = new AbortController();
     setLoading(true);
     setError(null);
+    setErrorKind(null);
     fetchWeatherNow(cfg, { signal: ac.signal })
       .then(w => { if (!ac.signal.aborted) setWeather(w); })
-      .catch(e => { if (!ac.signal.aborted) setError(e instanceof Error ? e.message : '天气取不到'); })
+      .catch(e => {
+        if (ac.signal.aborted) return;
+        setError(e instanceof Error ? e.message : '天气取不到');
+        setErrorKind(e instanceof WeatherError && e.config ? 'config' : 'transient');
+      })
       .finally(() => { if (!ac.signal.aborted) setLoading(false); });
     return () => ac.abort();
     // cfg 是每次渲染新建的对象，进依赖会死循环——列出真正的标量来源
@@ -49,5 +57,10 @@ export function useSkyBadge() {
     void updateSettings({ homeSkyMode: mode === 'weather' ? 'moon' : 'weather' });
   }, [mode, updateSettings]);
 
-  return { mode, toggle, weather, loading, error, ready };
+  /** 有数据在显示时才需要来源标注 */
+  const attribution = mode === 'weather' && ready && weather && !error && !loading
+    ? { label: attributionLabel(weather.provider), url: weather.attribution }
+    : null;
+
+  return { mode, toggle, weather, loading, error, errorKind, ready, attribution };
 }

@@ -9,9 +9,13 @@ import { useCloudStore } from '@/store/cloud';
 import { useCloudSocialStore } from '@/store/cloudSocial';
 import { getAIConfig } from '@/utils/aiClient';
 import { triggerNavFeedback, triggerSuccessFeedback } from '@/utils/feedback';
-import { questBoardUnlocked, questHint, questProgress, questTitle, weekRangeOf, type QuestData } from '@/utils/questBoard';
+import { questBoardUnlocked, questHint, questProgress, questTitle, weekRangeOf, QUEST_UNLOCK, type QuestData } from '@/utils/questBoard';
+import {
+  LIFE_QUEST_COUNT, LIFE_QUEST_REROLLS, lifeDayKeyOf, lifeQuestsFor, normTitle, readLifeQuestDay, writeLifeQuestDay,
+  type LifeQuest, type LifeQuestDay,
+} from '@/utils/lifeQuests';
 import { useUiChannel } from '@/ui/useUiChannel';
-import type { Quest } from '@/types';
+import type { AttributeId, Quest } from '@/types';
 
 /**
  * 委托板（2.7.0.6 第 6 轮 · PRD §11.3）：任务页里和「命运会替你选择」并排的入口 + 这张抽屉。
@@ -150,6 +154,92 @@ const QuestCard = ({ item, tone, names, onClaim, flash }: {
   );
 };
 
+
+// ── 今日生活委托（第 13 轮）：每天三张生活小事，点一下进今日任务 ──────────────
+
+type LifeStatus = 'new' | 'added' | 'done';
+
+/** open：抽屉开着才定今天这批（任务页一挂载就会跑这个 hook，那时记录可能还没读完，个性化会落空） */
+export function useLifeQuests(open: boolean) {
+  const { activities, todos, user, addTodo, getTodayTodoProgress } = useAppStore(useShallow((s) => ({
+    activities: s.activities, todos: s.todos, user: s.user, addTodo: s.addTodo, getTodayTodoProgress: s.getTodayTodoProgress,
+  })));
+  const todayKey = toLocalDateKey();
+  const seedKey = user?.id ?? user?.name ?? 'me';
+  const [day, setDay] = useState<LifeQuestDay | null>(() => readLifeQuestDay());
+  // 今天这批：本机记过就用它（同一天卡片不变脸）；没记过按种子算一批，下面的 effect 记下来
+  const current = useMemo<LifeQuestDay>(() => {
+    if (day && day.date === todayKey && day.items.length) return day;
+    return { date: todayKey, reroll: 0, items: lifeQuestsFor({ dateKey: todayKey, seedKey, activities, todos, reroll: 0 }) };
+    // 记录 / 清单不进依赖（同一天不变脸）；open 进依赖：打开那一刻按读完的记录重算一次再记下
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [day, todayKey, seedKey, open]);
+  useEffect(() => {
+    if (!open) return;
+    if (!day || day.date !== current.date || day.items !== current.items) { writeLifeQuestDay(current); setDay(current); }
+  }, [open, current, day]);
+  const statusOf = (q: LifeQuest): LifeStatus => {
+    const t = todos.find((x) => normTitle(x.title) === normTitle(q.title) && lifeDayKeyOf(x.createdAt) === todayKey);
+    if (!t) return 'new';
+    return t.completedAt || getTodayTodoProgress(t.id).isComplete ? 'done' : 'added';
+  };
+  const add = async (q: LifeQuest) => {
+    if (statusOf(q) !== 'new') return;
+    await addTodo({ title: q.title, attribute: q.attribute, points: q.points, frequency: 'single', isActive: true });
+    triggerSuccessFeedback();
+  };
+  const rerollsLeft = Math.max(0, LIFE_QUEST_REROLLS - current.reroll);
+  const reroll = () => {
+    if (rerollsLeft <= 0) return;
+    // 已经加进清单的那几张留着，只换没动过的
+    const kept = current.items.filter((q) => statusOf(q) !== 'new');
+    const fresh = lifeQuestsFor({ dateKey: todayKey, seedKey, activities, todos, reroll: current.reroll + 1, previousIds: current.items.map((q) => q.presetId) })
+      .filter((q) => !kept.some((k) => k.presetId === q.presetId));
+    const next: LifeQuestDay = { date: todayKey, reroll: current.reroll + 1, items: [...kept, ...fresh].slice(0, LIFE_QUEST_COUNT) };
+    triggerNavFeedback();
+    writeLifeQuestDay(next);
+    setDay(next);
+  };
+  return { items: current.items, statusOf, add, reroll, rerollsLeft, allTouched: current.items.every((q) => statusOf(q) !== 'new') };
+}
+
+const LifeQuestCard = ({ q, status, tone, names, onAdd }: {
+  q: LifeQuest;
+  status: LifeStatus;
+  tone: ReturnType<typeof useTone>;
+  names: Record<AttributeId, string>;
+  onAdd: () => void;
+}) => {
+  const p5 = tone.channel === 'p5';
+  return (
+    <div
+      className="flex items-center gap-3 p-3"
+      data-testid="life-quest"
+      style={{ background: tone.card, borderRadius: tone.radius, color: tone.ink, boxShadow: p5 ? '3px 3px 0 #0b0b0b' : undefined, border: p5 ? '2px solid #0b0b0b' : undefined }}
+    >
+      <div className="min-w-0 flex-1">
+        <div className="text-[14.5px] font-black leading-snug">{q.title}</div>
+        <div className="mt-0.5 text-[11px] font-semibold" style={{ color: tone.sub }}>
+          {names[q.attribute] ?? q.attribute} +{q.points} · {q.hint}
+        </div>
+      </div>
+      {status === 'new' ? (
+        <motion.button
+          type="button"
+          whileTap={{ scale: 0.94 }}
+          onClick={onAdd}
+          className="shrink-0 px-3 py-1.5 text-[12.5px] font-black"
+          style={{ background: tone.accent, color: '#fff', clipPath: tone.clip, borderRadius: tone.clip ? 0 : Math.max(6, tone.radius - 6), boxShadow: p5 ? '2px 2px 0 #0b0b0b' : undefined }}
+        >
+          加入今日任务
+        </motion.button>
+      ) : (
+        <span className="shrink-0 text-[12px] font-black" style={{ color: tone.accent }}>{status === 'done' ? '✓ 已完成' : '已加入'}</span>
+      )}
+    </div>
+  );
+};
+
 export const QuestBoardSheet = ({ open, onClose }: { open: boolean; onClose: () => void }) => {
   const board = useQuestBoard();
   const tone = useTone();
@@ -169,10 +259,42 @@ export const QuestBoardSheet = ({ open, onClose }: { open: boolean; onClose: () 
   };
 
   const allClaimed = board.items.length > 0 && board.items.every((i) => i.claimed);
+  const life = useLifeQuests(open);
   return (
     <SheetModal isOpen={open} onClose={onClose} title="委托板">
       <div className="px-4 pb-6" style={{ color: tone.ink }}>
+        {/* 今日生活委托（第 13 轮）：不用解锁，每天换三张 */}
         <div className="flex items-baseline justify-between gap-2">
+          <div className="text-[14px] font-black">今日生活委托</div>
+          <div className="text-[11px] font-bold" style={{ color: tone.sub }}>每天换三张 · 点一下放进今日任务</div>
+        </div>
+        <div className="mt-2.5 space-y-2" data-testid="life-quests">
+          {life.items.map((q) => (
+            <LifeQuestCard key={q.key} q={q} status={life.statusOf(q)} tone={tone} names={board.attributeNames} onAdd={() => void life.add(q)} />
+          ))}
+        </div>
+        {!life.allTouched && (
+          <div className="mt-2 text-right">
+            <button
+              type="button"
+              onClick={life.reroll}
+              disabled={life.rerollsLeft <= 0}
+              className="text-[11.5px] font-black disabled:opacity-40"
+              style={{ color: tone.accent }}
+            >
+              {life.rerollsLeft > 0 ? `换一批（今天还能换 ${life.rerollsLeft} 次）` : '今天换不了了，明天再来'}
+            </button>
+          </div>
+        )}
+
+        <div className="mt-5 text-[14px] font-black">本周委托</div>
+        {!board.unlocked ? (
+          <div className="mt-2 px-3 py-3 text-[12px] font-bold leading-relaxed" style={{ background: tone.card, borderRadius: tone.radius, color: tone.sub }}>
+            自己记满 {QUEST_UNLOCK.minDays} 天、{QUEST_UNLOCK.minRecords} 条记录后解锁：每周一刷新三张，做完来领 SP。
+          </div>
+        ) : (
+        <>
+        <div className="mt-1 flex items-baseline justify-between gap-2">
           <div className="text-[12px] font-bold" style={{ color: tone.sub }}>
             本周 {md(board.range.days[0])} – {md(board.range.days[6])} · 周一刷新
           </div>
@@ -208,6 +330,8 @@ export const QuestBoardSheet = ({ open, onClose }: { open: boolean; onClose: () 
           <br />
           成就「受人之托」：领取 {Math.min(board.claimedTotal, 10)} / 10
         </div>
+        </>
+        )}
       </div>
     </SheetModal>
   );

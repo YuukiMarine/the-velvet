@@ -41,7 +41,7 @@ import { markReportGreeted } from '@/utils/reportNotice';
 import { buildTopicPermission, noteTopicsMentioned } from '@/utils/navigatorTopics';
 import { buildWishContextLine, maybeProposeWishProgress } from '@/utils/navigatorWishProgress';
 import { describeImagesEach, joinImageDescriptions } from '@/utils/visionIntake';
-import { BUILTIN_NAVIGATOR_PRESETS, resolveNavigatorPreset } from '@/constants/navigatorPresets';
+import { BUILTIN_NAVIGATOR_PRESETS, personaWithExamples, resolveNavigatorPreset } from '@/constants/navigatorPresets';
 import type { NavigatorMessageRow, NavigatorPreset } from '@/types';
 
 export type NavigatorCardStatus = 'pending' | 'done' | 'cancelled';
@@ -384,14 +384,18 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
    * 出卡前的机械查重（分诊漏网时的兜底；语义级查重靠分诊的三张清单）：
    * ① 同批内完全同键的草稿只留一张；
    * ② activity/todo 与场上**待确认**同类卡同键 → 拦（那张卡还在等确认，一张就够）；
-   * ③ todo 与任务清单里未归档任务同名 → 拦（助手改不了旧任务，重建只会出重复项）。
+   * ③ todo 与任务清单里未归档任务同名 → 拦（改旧任务走 editTodo，重建只会出重复项）；
+   * ④ editTodo 与场上待确认的同一改法完全相同 → 拦。
    * 已确认生效的卡不在此拦：用户明确说「又做了一次」属于合法重复，交给分诊判断。
    */
   const dedupDrafts = (drafts: NavigatorDraft[]): NavigatorDraft[] => {
     if (drafts.length === 0) return drafts;
     const norm = (t: string) => t.toLowerCase().replace(/[\s\p{P}\p{S}]/gu, '');
     const keyOf = (d: NavigatorDraft): string =>
-      d.kind === 'activity' ? `a:${norm(d.text)}` : d.kind === 'todo' ? `t:${norm(d.title)}` : '';
+      d.kind === 'activity' ? `a:${norm(d.text)}`
+        : d.kind === 'todo' ? `t:${norm(d.title)}`
+          : d.kind === 'editTodo' ? `e:${d.todoId}:${JSON.stringify([d.title, d.attribute, d.points, d.repeatDaily, d.deadline, d.archive])}`
+            : '';
     const blocked = new Set<string>();
     for (const m of currentSessionMessages()) {
       if (m.role === 'card' && m.draft && m.cardStatus === 'pending') {
@@ -536,7 +540,7 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
           if (ask && casualShown) void noteAskResult(ask, text).then((r) => { if (r !== 'deferred') void useAppStore.getState().syncNotifications(); });
         },
       };
-      const persona = presetNow.personaPrompt;
+      const persona = personaWithExamples(presetNow);
       const immersive = !!useAppStore.getState().settings.navigatorImmersive && !isD0();
 
       if (immersive) {
@@ -877,7 +881,7 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
           // 总闸计时只覆盖 AI 调用本身（此前从素材准备就开始计时，预算被前置步骤吃掉）
           const ac = new AbortController();
           const timer = setTimeout(() => ac.abort(), GREET_TOTAL_MS);
-          const text = await generateAIGreeting(snap, ac.signal, preset.personaPrompt, extra);
+          const text = await generateAIGreeting(snap, ac.signal, personaWithExamples(preset), extra);
           clearTimeout(timer);
           if (gen !== generation) return;
           if (!text && import.meta.env.DEV) console.warn('[navigator] AI 问候失败/超时，落模板');
