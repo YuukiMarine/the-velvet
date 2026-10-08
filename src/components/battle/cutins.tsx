@@ -15,15 +15,20 @@ export const DEATH_EXPLOSION_PARTICLES = Array.from({ length: 26 }, (_, i) => ({
   delay: (i % 7) * 0.03,
 }));
 
-export function BattleFinishAnim() {
+/** onSkip：出来 0.9 秒后点一下直接收尾（第 17 批兜底：计时器万一被打断，这层全屏不会一直盖着） */
+export function BattleFinishAnim({ onSkip }: { onSkip?: () => void } = {}) {
+  const [armed, setArmed] = useState(false);
+  useEffect(() => { const t = setTimeout(() => setArmed(true), 900); return () => clearTimeout(t); }, []);
   return (
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
+      exit={{ opacity: 0, pointerEvents: 'none' }}
       transition={{ duration: 0.18 }}
       className="absolute inset-0 z-30 flex flex-col items-center justify-center overflow-hidden"
       style={{ background: 'rgba(5,0,0,0.97)' }}
+      onClick={armed && onSkip ? onSkip : undefined}
+      data-testid="battle-finish"
     >
       <motion.div
         className="absolute inset-0 pointer-events-none"

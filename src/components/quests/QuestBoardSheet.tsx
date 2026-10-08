@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { AnimatePresence, motion } from 'motion/react';
 import { useShallow } from 'zustand/react/shallow';
+import { create } from 'zustand';
 import { SheetModal } from '@/components/SheetModal';
 import { db } from '@/db';
 import { useAppStore, toLocalDateKey } from '@/store';
@@ -11,10 +12,13 @@ import { getAIConfig } from '@/utils/aiClient';
 import { triggerNavFeedback, triggerSuccessFeedback } from '@/utils/feedback';
 import { questBoardUnlocked, questHint, questProgress, questTitle, weekRangeOf, QUEST_UNLOCK, type QuestData } from '@/utils/questBoard';
 import {
-  LIFE_QUEST_COUNT, LIFE_QUEST_REROLLS, lifeDayKeyOf, lifeQuestsFor, normTitle, readLifeQuestDay, writeLifeQuestDay,
+  LIFE_QUEST_COUNT, LIFE_QUEST_REROLLS, lifeContextNow, lifeDayKeyOf, lifeQuestDaySig, lifeQuestsFor, normTitle, readLifeQuestDay, readLifeQuestLog,
+  recordLifeQuestEvent, writeLifeQuestDay,
   type LifeQuest, type LifeQuestDay,
 } from '@/utils/lifeQuests';
+import { fetchWeatherNow, weatherConfigOf, weatherReady } from '@/utils/weather';
 import { useUiChannel } from '@/ui/useUiChannel';
+import { P5R, P5_TITLE_FONT, P5Btn, P5Chip, P5Rough, roughSlant } from '@/components/p5r/kit';
 import type { AttributeId, Quest } from '@/types';
 
 /**
@@ -23,6 +27,17 @@ import type { AttributeId, Quest } from '@/types';
  */
 
 export interface QuestBoardItem { quest: Quest; progress: number; done: boolean; claimed: boolean }
+
+/**
+ * 「本周委托看过了没」（第 14 批）：周一刷出新的三张后，任务页的「委托」入口挂红点，打开抽屉就消。
+ * 记在本机（按设备）；用一个小 store 让入口和抽屉同步刷新。
+ */
+const QUEST_SEEN_KEY = 'velvet:questBoardSeenWeek.v1';
+const readSeenWeek = (): string => { try { return localStorage.getItem(QUEST_SEEN_KEY) ?? ''; } catch { return ''; } };
+export const useQuestSeen = create<{ week: string; mark: (week: string) => void }>((set) => ({
+  week: readSeenWeek(),
+  mark: (week) => { try { localStorage.setItem(QUEST_SEEN_KEY, week); } catch { /* 存不了就只在这次运行里消 */ } set({ week }); },
+}));
 
 export function useQuestBoard() {
   const { activities, todos, todoCompletions, summaries, battleState, settings } = useAppStore(useShallow((s) => ({
@@ -57,7 +72,10 @@ export function useQuestBoard() {
     });
   }, [quests, aux, activities, todos, todoCompletions, summaries, battleState, pacts, myId, settings, range]);
   const claimable = items.filter((i) => i.done && !i.claimed).length;
-  return { unlocked, range, items, claimable, claimedTotal: claimedTotal ?? 0, loaded: !!quests && !!aux, attributeNames: settings.attributeNames };
+  const seenWeek = useQuestSeen((s) => s.week);
+  /** 这周刷出了新委托、还没打开看过 → 入口挂红点 */
+  const unseen = unlocked && items.length > 0 && seenWeek !== range.weekKey;
+  return { unlocked, range, items, claimable, unseen, claimedTotal: claimedTotal ?? 0, loaded: !!quests && !!aux, attributeNames: settings.attributeNames };
 }
 
 const useTone = () => {
@@ -74,7 +92,28 @@ const useTone = () => {
 
 const md = (key: string) => `${Number(key.slice(5, 7))}/${Number(key.slice(8, 10))}`;
 
+/**
+ * 红频道的卡（第 14 批用户口径「方框和按钮太板正」）：守 P5 的反板正铁律——不规则纸面 + 不等宽黑框 + 错位硬影，
+ * 每张再歪一点点（不同 seed / 角度，挨着放也不会一模一样）。其余频道原样。
+ */
+const P5Card = ({ seed, rot = 0, className = '', children, testId, dim = false }: { seed: number; rot?: number; className?: string; children: ReactNode; testId?: string; dim?: boolean }) => (
+  <div className={`relative ${className}`} data-testid={testId} style={{ transform: rot ? `rotate(${rot}deg)` : undefined, opacity: dim ? 0.72 : 1, color: P5R.ink }}>
+    <P5Rough seed={seed} jag={7} frame={3} face={P5R.paper} shadow={{ x: 4, y: 5 }} />
+    <div className="relative p-4">{children}</div>
+  </div>
+);
+
+/** 段标题：红频道是一块歪着的黑底白字楔，其余频道照旧 */
+const SectionTitle = ({ tone, children }: { tone: ReturnType<typeof useTone>; children: ReactNode }) => (
+  tone.channel === 'p5' ? (
+    <span className="inline-block px-3 py-1 text-[14px] font-black leading-none" style={{ background: P5R.ink, color: P5R.white, fontFamily: P5_TITLE_FONT, clipPath: roughSlant(31, 7, 2), transform: 'rotate(-1.5deg)' }}>
+      {children}
+    </span>
+  ) : <div className="text-[14px] font-black">{children}</div>
+);
+
 const TierBadge = ({ sp, tone }: { sp: number; tone: ReturnType<typeof useTone> }) => (
+  tone.channel === 'p5' ? <P5Chip tone="red" rot={-2} className="!px-2 !py-0.5 !text-[11px] tabular-nums">+{sp} SP</P5Chip> :
   <span
     className="inline-flex shrink-0 items-center px-2 py-0.5 text-[11px] font-black tabular-nums"
     style={{ background: tone.accent, color: '#fff', clipPath: tone.clip, borderRadius: tone.clip ? 0 : Math.max(4, tone.radius - 8) }}
@@ -83,58 +122,67 @@ const TierBadge = ({ sp, tone }: { sp: number; tone: ReturnType<typeof useTone> 
   </span>
 );
 
-const QuestCard = ({ item, tone, names, onClaim, flash }: {
+const QuestCard = ({ item, tone, names, onClaim, flash, onSwap }: {
   item: QuestBoardItem;
   tone: ReturnType<typeof useTone>;
   names: Record<'knowledge' | 'guts' | 'dexterity' | 'kindness' | 'charm', string>;
   onClaim: () => void;
   flash: number | null;
+  /** 本周还能换、这张也能换时才给（第 14 批） */
+  onSwap?: () => void;
 }) => {
   const { quest, progress, done, claimed } = item;
   const pct = Math.round((progress / Math.max(1, quest.target)) * 100);
   const p5 = tone.channel === 'p5';
-  return (
-    <div
-      className="relative p-3.5"
-      style={{
-        background: tone.card,
-        borderRadius: tone.radius,
-        color: tone.ink,
-        opacity: claimed ? 0.72 : 1,
-        boxShadow: p5 ? '3px 3px 0 #0b0b0b' : undefined,
-        border: p5 ? '2px solid #0b0b0b' : undefined,
-      }}
-    >
+  const body = (
+    <>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-1.5">
             <TierBadge sp={quest.rewardSp} tone={tone} />
             {quest.autoClaimed && <span className="text-[10px] font-bold" style={{ color: tone.sub }}>上周替你领的</span>}
+            {quest.swapped && <span className="text-[10px] font-bold" style={{ color: tone.sub }} data-testid="quest-swapped">换来的</span>}
           </div>
           <div className="mt-1.5 text-[15px] font-black leading-snug">{questTitle(quest, names)}</div>
           <div className="mt-0.5 text-[11px] font-semibold" style={{ color: tone.sub }}>{questHint(quest)}</div>
+          {onSwap && (
+            <button type="button" onClick={onSwap} data-testid="quest-swap" className="mt-1.5 text-[11px] font-black underline" style={{ color: tone.accent }}>
+              换一张
+            </button>
+          )}
         </div>
         <div className="shrink-0 text-right">
           {claimed ? (
             <span className="inline-flex items-center gap-1 text-[12px] font-black" style={{ color: tone.accent }}>✓ 已领取</span>
           ) : done ? (
+            p5 ? (
+              <P5Btn tone="red" seed={40 + quest.slot} rot={-2} onClick={onClaim} bodyClassName="!px-4 !py-1.5 !text-[14px]">领取</P5Btn>
+            ) : (
             <motion.button
               type="button"
               whileTap={{ scale: 0.94 }}
               onClick={onClaim}
               className="px-3 py-1.5 text-[13px] font-black"
-              style={{ background: tone.accent, color: '#fff', clipPath: tone.clip, borderRadius: tone.clip ? 0 : Math.max(6, tone.radius - 6), boxShadow: p5 ? '2px 2px 0 #0b0b0b' : undefined }}
+              style={{ background: tone.accent, color: '#fff', clipPath: tone.clip, borderRadius: tone.clip ? 0 : Math.max(6, tone.radius - 6) }}
             >
               领取
             </motion.button>
+            )
           ) : (
             <span className="text-[12px] font-black tabular-nums" style={{ color: tone.sub }}>{progress} / {quest.target}</span>
           )}
         </div>
       </div>
+      {p5 ? (
+        // 红频道：斜切的进度条（不是圆头药丸）
+        <div className="mt-3 h-2 w-full overflow-hidden" style={{ background: 'rgba(0,0,0,0.16)', clipPath: roughSlant(50 + quest.slot, 4, 1) }}>
+          <motion.div className="h-full" style={{ background: P5R.red }} initial={{ width: 0 }} animate={{ width: `${claimed ? 100 : pct}%` }} transition={{ duration: 0.5, ease: 'easeOut' }} />
+        </div>
+      ) : (
       <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full" style={{ background: tone.bar }}>
         <motion.div className="h-full rounded-full" style={{ background: tone.accent }} initial={{ width: 0 }} animate={{ width: `${claimed ? 100 : pct}%` }} transition={{ duration: 0.5, ease: 'easeOut' }} />
       </div>
+      )}
       <AnimatePresence>
         {flash !== null && (
           <motion.span
@@ -150,6 +198,12 @@ const QuestCard = ({ item, tone, names, onClaim, flash }: {
           </motion.span>
         )}
       </AnimatePresence>
+    </>
+  );
+  if (p5) return <P5Card seed={20 + quest.slot * 7} rot={[-0.8, 0.6, -0.4][quest.slot % 3]} dim={claimed}>{body}</P5Card>;
+  return (
+    <div className="relative p-3.5" style={{ background: tone.card, borderRadius: tone.radius, color: tone.ink, opacity: claimed ? 0.72 : 1 }}>
+      {body}
     </div>
   );
 };
@@ -159,33 +213,67 @@ const QuestCard = ({ item, tone, names, onClaim, flash }: {
 
 type LifeStatus = 'new' | 'added' | 'done';
 
-/** open：抽屉开着才定今天这批（任务页一挂载就会跑这个 hook，那时记录可能还没读完，个性化会落空） */
+/**
+ * open：抽屉开着才定今天这批（任务页一挂载就会跑这个 hook，那时记录可能还没读完，个性化会落空）。
+ * 第 16 批：出题看情境（几点、天气）和本机记下的取舍；翻到哪张、换掉哪张都记一笔（lifeQuests.ts 的 recordLifeQuestEvent）。
+ */
 export function useLifeQuests(open: boolean) {
-  const { activities, todos, user, addTodo, getTodayTodoProgress } = useAppStore(useShallow((s) => ({
-    activities: s.activities, todos: s.todos, user: s.user, addTodo: s.addTodo, getTodayTodoProgress: s.getTodayTodoProgress,
+  const { activities, todos, todoCompletions, user, settings, addTodo, getTodayTodoProgress } = useAppStore(useShallow((s) => ({
+    activities: s.activities, todos: s.todos, todoCompletions: s.todoCompletions, user: s.user, settings: s.settings,
+    addTodo: s.addTodo, getTodayTodoProgress: s.getTodayTodoProgress,
   })));
   const todayKey = toLocalDateKey();
   const seedKey = user?.id ?? user?.name ?? 'me';
   const [day, setDay] = useState<LifeQuestDay | null>(() => readLifeQuestDay());
-  // 今天这批：本机记过就用它（同一天卡片不变脸）；没记过按种子算一批，下面的 effect 记下来
+  /** 本机记的是不是今天、这个用户的（第 16 批前存的没有 seed：当作本人的，升级当天不变脸） */
+  const isToday = (d: LifeQuestDay | null): d is LifeQuestDay => !!d && d.date === todayKey && (d.seed ?? seedKey) === seedKey && d.items.length > 0;
+  const hasToday = isToday(day);
+  // 今天这批还没定：先把天气取好，打开委托板时情境里就有它（10 分钟缓存；没开天气 / 出错退避中什么都不做）
+  const weatherKey = `${settings.weatherProvider ?? ''}|${settings.weatherApiHost ?? ''}|${settings.weatherCity?.lat ?? ''}|${settings.weatherCity?.lon ?? ''}|${settings.weatherApiKey ? 1 : 0}`;
+  useEffect(() => {
+    if (hasToday) return;
+    const cfg = weatherConfigOf(settings);
+    if (!weatherReady(cfg)) return;
+    fetchWeatherNow(cfg).catch(() => { /* 取不到就不按天气筛 */ });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasToday, weatherKey]);
+  // 今天这批：本机记过就用它（同一天卡片不变脸）；没记过按此刻的情境和取舍算一批，下面的 effect 记下来
   const current = useMemo<LifeQuestDay>(() => {
-    if (day && day.date === todayKey && day.items.length) return day;
-    return { date: todayKey, reroll: 0, items: lifeQuestsFor({ dateKey: todayKey, seedKey, activities, todos, reroll: 0 }) };
-    // 记录 / 清单不进依赖（同一天不变脸）；open 进依赖：打开那一刻按读完的记录重算一次再记下
+    // 抽签可能已经替今天定好了一批（第 17 批）：打开时以本机记的为准；内容和手上这份一样就沿用手上这份（不换对象，免得来回重渲染）
+    const stored = open ? readLifeQuestDay() : null;
+    if (isToday(stored) && !(isToday(day) && lifeQuestDaySig(day) === lifeQuestDaySig(stored))) return stored;
+    if (isToday(day)) return day;
+    return {
+      date: todayKey, seed: seedKey, reroll: 0,
+      items: lifeQuestsFor({
+        dateKey: todayKey, seedKey, activities, todos, completions: todoCompletions, reroll: 0,
+        ctx: lifeContextNow(settings), log: readLifeQuestLog(seedKey),
+      }),
+    };
+    // 记录 / 清单 / 设置不进依赖（同一天不变脸）；open 进依赖：打开那一刻按读完的记录重算一次再记下
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [day, todayKey, seedKey, open]);
   useEffect(() => {
     if (!open) return;
-    if (!day || day.date !== current.date || day.items !== current.items) { writeLifeQuestDay(current); setDay(current); }
-  }, [open, current, day]);
+    if (lifeQuestDaySig(day) !== lifeQuestDaySig(current)) {
+      writeLifeQuestDay(current);
+      setDay(current);
+      recordLifeQuestEvent(seedKey, current.date, 'shown', current.items.map((q) => q.presetId));
+    }
+  }, [open, current, day, seedKey]);
+  /** 轮播翻到哪张记哪张（学取舍：翻到了不加 / 换掉，和根本没翻到是两回事） */
+  const markViewed = useCallback((q: LifeQuest) => {
+    if (open) recordLifeQuestEvent(seedKey, todayKey, 'viewed', [q.presetId]);
+  }, [open, seedKey, todayKey]);
   const statusOf = (q: LifeQuest): LifeStatus => {
-    const t = todos.find((x) => normTitle(x.title) === normTitle(q.title) && lifeDayKeyOf(x.createdAt) === todayKey);
+    const t = todos.find((x) => lifeDayKeyOf(x.createdAt) === todayKey && (x.lifeQuest === q.presetId || normTitle(x.title) === normTitle(q.title)));
     if (!t) return 'new';
     return t.completedAt || getTodayTodoProgress(t.id).isComplete ? 'done' : 'added';
   };
   const add = async (q: LifeQuest) => {
     if (statusOf(q) !== 'new') return;
-    await addTodo({ title: q.title, attribute: q.attribute, points: q.points, frequency: 'single', isActive: true });
+    // lifeQuest 标记：本周委托「完成 3 张今日委托」按它数（第 14 批）
+    await addTodo({ title: q.title, attribute: q.attribute, points: q.points, frequency: 'single', isActive: true, lifeQuest: q.presetId });
     triggerSuccessFeedback();
   };
   const rerollsLeft = Math.max(0, LIFE_QUEST_REROLLS - current.reroll);
@@ -193,48 +281,165 @@ export function useLifeQuests(open: boolean) {
     if (rerollsLeft <= 0) return;
     // 已经加进清单的那几张留着，只换没动过的
     const kept = current.items.filter((q) => statusOf(q) !== 'new');
-    const fresh = lifeQuestsFor({ dateKey: todayKey, seedKey, activities, todos, reroll: current.reroll + 1, previousIds: current.items.map((q) => q.presetId) })
-      .filter((q) => !kept.some((k) => k.presetId === q.presetId));
-    const next: LifeQuestDay = { date: todayKey, reroll: current.reroll + 1, items: [...kept, ...fresh].slice(0, LIFE_QUEST_COUNT) };
+    // 翻到了、没加就换掉的记一笔「不太想要」；没翻到的那几张不算
+    const viewed = new Set(readLifeQuestLog(seedKey).days[todayKey]?.viewed ?? []);
+    const skipped = current.items.filter((q) => statusOf(q) === 'new' && viewed.has(q.presetId)).map((q) => q.presetId);
+    const log = skipped.length ? recordLifeQuestEvent(seedKey, todayKey, 'skipped', skipped) : readLifeQuestLog(seedKey);
+    const fresh = lifeQuestsFor({
+      dateKey: todayKey, seedKey, activities, todos, completions: todoCompletions, reroll: current.reroll + 1,
+      previousIds: current.items.map((q) => q.presetId), ctx: lifeContextNow(settings), log,
+      count: LIFE_QUEST_COUNT - kept.length, avoidAttrs: new Set(kept.map((q) => q.attribute)),
+    }).filter((q) => !kept.some((k) => k.presetId === q.presetId));
+    const next: LifeQuestDay = { date: todayKey, seed: seedKey, reroll: current.reroll + 1, items: [...kept, ...fresh].slice(0, LIFE_QUEST_COUNT) };
+    recordLifeQuestEvent(seedKey, todayKey, 'shown', next.items.map((q) => q.presetId));
     triggerNavFeedback();
     writeLifeQuestDay(next);
     setDay(next);
   };
-  return { items: current.items, statusOf, add, reroll, rerollsLeft, allTouched: current.items.every((q) => statusOf(q) !== 'new') };
+  return { items: current.items, statusOf, add, reroll, rerollsLeft, markViewed, allTouched: current.items.every((q) => statusOf(q) !== 'new') };
 }
 
-const LifeQuestCard = ({ q, status, tone, names, onAdd }: {
+const LifeQuestCard = ({ q, status, tone, names, onAdd, index, total }: {
   q: LifeQuest;
   status: LifeStatus;
   tone: ReturnType<typeof useTone>;
   names: Record<AttributeId, string>;
   onAdd: () => void;
+  index: number;
+  total: number;
 }) => {
   const p5 = tone.channel === 'p5';
-  return (
-    <div
-      className="flex items-center gap-3 p-3"
-      data-testid="life-quest"
-      style={{ background: tone.card, borderRadius: tone.radius, color: tone.ink, boxShadow: p5 ? '3px 3px 0 #0b0b0b' : undefined, border: p5 ? '2px solid #0b0b0b' : undefined }}
-    >
-      <div className="min-w-0 flex-1">
-        <div className="text-[14.5px] font-black leading-snug">{q.title}</div>
-        <div className="mt-0.5 text-[11px] font-semibold" style={{ color: tone.sub }}>
-          {names[q.attribute] ?? q.attribute} +{q.points} · {q.hint}
-        </div>
+  const body = (
+    <>
+      <div className="flex items-center justify-between gap-2 text-[11px] font-black" style={{ color: tone.sub, fontFamily: p5 ? P5_TITLE_FONT : undefined }}>
+        <span>{names[q.attribute] ?? q.attribute} +{q.points}</span>
+        <span className="tabular-nums">{index + 1} / {total}</span>
       </div>
-      {status === 'new' ? (
-        <motion.button
-          type="button"
-          whileTap={{ scale: 0.94 }}
-          onClick={onAdd}
-          className="shrink-0 px-3 py-1.5 text-[12.5px] font-black"
-          style={{ background: tone.accent, color: '#fff', clipPath: tone.clip, borderRadius: tone.clip ? 0 : Math.max(6, tone.radius - 6), boxShadow: p5 ? '2px 2px 0 #0b0b0b' : undefined }}
-        >
-          加入今日任务
-        </motion.button>
-      ) : (
-        <span className="shrink-0 text-[12px] font-black" style={{ color: tone.accent }}>{status === 'done' ? '✓ 已完成' : '已加入'}</span>
+      <div className="mt-1.5 text-[17px] font-black leading-snug" data-testid="life-quest-title">{q.title}</div>
+      <div className="mt-1 text-[12px] font-semibold" style={{ color: tone.sub }}>{q.hint}</div>
+      <div className="mt-3">
+        {status === 'new' ? (
+          p5 ? (
+            <P5Btn tone="red" seed={60 + index} rot={-1} onClick={onAdd} className="w-full" bodyClassName="!py-2 !text-[15px]">加入今日任务</P5Btn>
+          ) : (
+          <motion.button
+            type="button"
+            whileTap={{ scale: 0.97 }}
+            onClick={onAdd}
+            className="w-full py-2 text-[13px] font-black"
+            style={{ background: tone.accent, color: '#fff', clipPath: tone.clip, borderRadius: tone.clip ? 0 : Math.max(6, tone.radius - 6) }}
+          >
+            加入今日任务
+          </motion.button>
+          )
+        ) : (
+          <div className="py-2 text-center text-[13px] font-black" style={{ color: tone.accent, fontFamily: p5 ? P5_TITLE_FONT : undefined }}>{status === 'done' ? '✓ 已完成' : '✓ 已加入今日任务'}</div>
+        )}
+      </div>
+    </>
+  );
+  if (p5) return <P5Card seed={10 + index * 5} rot={[-0.7, 0.5, -0.3][index % 3]} testId="life-quest">{body}</P5Card>;
+  return (
+    <div className="p-4" data-testid="life-quest" style={{ background: tone.card, borderRadius: tone.radius, color: tone.ink }}>
+      {body}
+    </div>
+  );
+};
+
+/**
+ * 今日委托合成一张（第 14 批用户口径）：左右滑 / 点箭头切换，带滑入滑出动画；底下的圆点能直接跳，
+ * 已加入的那张圆点换成实心勾。换一批后回到第一张。
+ */
+const LifeQuestCarousel = ({ items, statusOf, onAdd, onView, tone, names }: {
+  items: LifeQuest[];
+  statusOf: (q: LifeQuest) => LifeStatus;
+  onAdd: (q: LifeQuest) => void;
+  /** 翻到这张（学取舍用） */
+  onView?: (q: LifeQuest) => void;
+  tone: ReturnType<typeof useTone>;
+  names: Record<AttributeId, string>;
+}) => {
+  const n = items.length;
+  const batch = items.map((q) => q.key).join('|');
+  // 页码带着它属于哪一批：换一批后自动回到第一张（不靠 effect 回拨，免得新批的第 N 张闪一帧、还被记成「翻到了」）
+  const [page, setPage] = useState<{ idx: number; dir: number; batch: string }>({ idx: 0, dir: 0, batch });
+  const same = page.batch === batch;
+  const cur = n ? Math.min(same ? page.idx : 0, n - 1) : 0;
+  const dir = same ? page.dir : 0;
+  const q = n ? items[cur] : null;
+  useEffect(() => { if (q) onView?.(q); }, [q?.key, onView]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!n || !q) return null;
+  const go = (d: number) => setPage((p) => ({ idx: (((p.batch === batch ? p.idx : 0) + d) % n + n) % n, dir: d, batch }));
+  const jump = (to: number) => setPage((p) => ({ idx: to, dir: to >= (p.batch === batch ? p.idx : 0) ? 1 : -1, batch }));
+  const p5 = tone.channel === 'p5';
+  const arrowCls = 'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[18px] font-black outline-none focus-visible:ring-2 focus-visible:ring-current disabled:opacity-30';
+  return (
+    <div>
+      <div className="relative overflow-hidden" style={{ touchAction: 'pan-y' }}>
+        <AnimatePresence initial={false} custom={dir} mode="popLayout">
+          <motion.div
+            key={q.key}
+            custom={dir}
+            variants={{
+              enter: (d: number) => ({ x: d >= 0 ? '60%' : '-60%', opacity: 0 }),
+              center: { x: 0, opacity: 1 },
+              exit: (d: number) => ({ x: d >= 0 ? '-60%' : '60%', opacity: 0 }),
+            }}
+            initial="enter"
+            animate="center"
+            exit="exit"
+            transition={{ type: 'spring', stiffness: 380, damping: 34 }}
+            drag={n > 1 ? 'x' : false}
+            dragConstraints={{ left: 0, right: 0 }}
+            dragElastic={0.5}
+            onDragEnd={(_, info) => {
+              if (info.offset.x < -50 || info.velocity.x < -350) go(1);
+              else if (info.offset.x > 50 || info.velocity.x > 350) go(-1);
+            }}
+          >
+            <LifeQuestCard q={q} status={statusOf(q)} tone={tone} names={names} onAdd={() => onAdd(q)} index={cur} total={n} />
+          </motion.div>
+        </AnimatePresence>
+      </div>
+      {n > 1 && (
+        <div className={`flex items-center justify-between gap-2 ${p5 ? 'mt-3' : 'mt-2'}`}>
+          {p5
+            ? <P5Chip tone="ink" rot={-3} onClick={() => go(-1)} ariaLabel="上一张" className="!px-3 !text-[16px]" style={{ fontFamily: P5_TITLE_FONT }}><span data-testid="life-prev">‹</span></P5Chip>
+            : <button type="button" className={arrowCls} style={{ color: tone.accent }} onClick={() => go(-1)} aria-label="上一张" data-testid="life-prev">‹</button>}
+          <div className="flex items-center gap-2">
+            {items.map((x, i) => {
+              const st = statusOf(x);
+              const on = i === cur;
+              return (
+                <button
+                  key={x.key}
+                  type="button"
+                  onClick={() => jump(i)}
+                  aria-label={`第 ${i + 1} 张${st !== 'new' ? '（已加入）' : ''}`}
+                  data-testid="life-dot"
+                  className="flex h-4 items-center justify-center text-[9px] font-black leading-none text-white transition-all"
+                  style={p5 ? {
+                    // 红频道：斜切小块，选中是长红块，已加入是带勾的黑块
+                    width: on ? 24 : st !== 'new' ? 15 : 10,
+                    height: on ? 12 : 9,
+                    background: on ? P5R.red : st !== 'new' ? P5R.ink : 'rgba(0,0,0,0.28)',
+                    clipPath: 'polygon(3px 0, 100% 0, calc(100% - 3px) 100%, 0 100%)',
+                  } : {
+                    width: on ? 22 : st !== 'new' ? 14 : 8,
+                    borderRadius: 999,
+                    background: on || st !== 'new' ? tone.accent : tone.bar,
+                    opacity: on ? 1 : st !== 'new' ? 0.75 : 1,
+                  }}
+                >
+                  {st !== 'new' && !on ? '✓' : ''}
+                </button>
+              );
+            })}
+          </div>
+          {p5
+            ? <P5Chip tone="ink" rot={3} onClick={() => go(1)} ariaLabel="下一张" className="!px-3 !text-[16px]" style={{ fontFamily: P5_TITLE_FONT }}><span data-testid="life-next">›</span></P5Chip>
+            : <button type="button" className={arrowCls} style={{ color: tone.accent }} onClick={() => go(1)} aria-label="下一张" data-testid="life-next">›</button>}
+        </div>
       )}
     </div>
   );
@@ -247,7 +452,18 @@ export const QuestBoardSheet = ({ open, onClose }: { open: boolean; onClose: () 
     claimQuest: s.claimQuest, refreshQuests: s.refreshQuests, questNotice: s.questNotice, clearQuestNotice: s.clearQuestNotice,
   })));
   const [flash, setFlash] = useState<Record<string, number>>({});
+  const [swapNote, setSwapNote] = useState('');
+  const swapQuest = useAppStore((s) => s.swapQuest);
+  const markSeen = useQuestSeen((s) => s.mark);
   useEffect(() => { if (open) void refreshQuests(); }, [open, refreshQuests]);
+  // 打开就算看过本周的委托：入口的红点消掉
+  useEffect(() => { if (open && board.unlocked && board.items.length) markSeen(board.range.weekKey); }, [open, board.unlocked, board.items.length, board.range.weekKey, markSeen]);
+  const swapUsed = board.items.some((i) => i.quest.swapped);
+  const swap = async (id: string) => {
+    triggerNavFeedback();
+    const res = await swapQuest(id);
+    setSwapNote(res.ok ? '' : (res.reason ?? '换不了'));
+  };
 
   const claim = async (id: string) => {
     triggerNavFeedback();
@@ -263,15 +479,13 @@ export const QuestBoardSheet = ({ open, onClose }: { open: boolean; onClose: () 
   return (
     <SheetModal isOpen={open} onClose={onClose} title="委托板">
       <div className="px-4 pb-6" style={{ color: tone.ink }}>
-        {/* 今日生活委托（第 13 轮）：不用解锁，每天换三张 */}
+        {/* 今日委托（第 13 轮加，第 14 批改名并合成一张可左右切的卡）：不用解锁，每天三张 */}
         <div className="flex items-baseline justify-between gap-2">
-          <div className="text-[14px] font-black">今日生活委托</div>
-          <div className="text-[11px] font-bold" style={{ color: tone.sub }}>每天换三张 · 点一下放进今日任务</div>
+          <SectionTitle tone={tone}>今日委托</SectionTitle>
+          <div className="text-[11px] font-bold" style={{ color: tone.sub }}>每天三张 · 左右滑着挑</div>
         </div>
-        <div className="mt-2.5 space-y-2" data-testid="life-quests">
-          {life.items.map((q) => (
-            <LifeQuestCard key={q.key} q={q} status={life.statusOf(q)} tone={tone} names={board.attributeNames} onAdd={() => void life.add(q)} />
-          ))}
+        <div className="mt-2.5" data-testid="life-quests">
+          <LifeQuestCarousel items={life.items} statusOf={life.statusOf} onAdd={(q) => void life.add(q)} onView={life.markViewed} tone={tone} names={board.attributeNames} />
         </div>
         {!life.allTouched && (
           <div className="mt-2 text-right">
@@ -281,17 +495,27 @@ export const QuestBoardSheet = ({ open, onClose }: { open: boolean; onClose: () 
               disabled={life.rerollsLeft <= 0}
               className="text-[11.5px] font-black disabled:opacity-40"
               style={{ color: tone.accent }}
+              data-testid="life-reroll"
             >
-              {life.rerollsLeft > 0 ? `换一批（今天还能换 ${life.rerollsLeft} 次）` : '今天换不了了，明天再来'}
+              {/* 一开始只写「换一批」；换过一次才写剩几次（第 16 批用户口径） */}
+              {life.rerollsLeft <= 0 ? '今天换不了了，明天再来' : life.rerollsLeft < LIFE_QUEST_REROLLS ? `换一批（今天剩 ${life.rerollsLeft} 次）` : '换一批'}
             </button>
           </div>
         )}
 
-        <div className="mt-5 text-[14px] font-black">本周委托</div>
+        <div className="mt-5"><SectionTitle tone={tone}>本周委托</SectionTitle></div>
         {!board.unlocked ? (
+          tone.channel === 'p5' ? (
+            <P5Card seed={77} rot={-0.5} className="mt-3">
+              <div className="text-[12px] font-bold leading-relaxed" style={{ color: tone.sub }}>
+                自己记满 {QUEST_UNLOCK.minDays} 天、{QUEST_UNLOCK.minRecords} 条记录后解锁：每周一刷新三张，做完来领 SP。
+              </div>
+            </P5Card>
+          ) : (
           <div className="mt-2 px-3 py-3 text-[12px] font-bold leading-relaxed" style={{ background: tone.card, borderRadius: tone.radius, color: tone.sub }}>
             自己记满 {QUEST_UNLOCK.minDays} 天、{QUEST_UNLOCK.minRecords} 条记录后解锁：每周一刷新三张，做完来领 SP。
           </div>
+          )
         ) : (
         <>
         <div className="mt-1 flex items-baseline justify-between gap-2">
@@ -307,8 +531,10 @@ export const QuestBoardSheet = ({ open, onClose }: { open: boolean; onClose: () 
               initial={{ opacity: 0, y: -6 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0 }}
-              className="mt-3 flex items-start gap-2 px-3 py-2 text-[12px] font-bold leading-relaxed"
-              style={{ background: tone.card, borderRadius: Math.max(6, tone.radius - 4) }}
+              className="relative mt-3 flex items-start gap-2 px-3 py-2 text-[12px] font-bold leading-relaxed"
+              style={tone.channel === 'p5'
+                ? { background: P5R.ink, color: P5R.white, clipPath: roughSlant(83, 6, 2) }
+                : { background: tone.card, borderRadius: Math.max(6, tone.radius - 4) }}
             >
               <span className="min-w-0 flex-1">{questNotice}</span>
               <button type="button" onClick={clearQuestNotice} aria-label="知道了" className="shrink-0 text-[14px] leading-none opacity-60">×</button>
@@ -318,8 +544,21 @@ export const QuestBoardSheet = ({ open, onClose }: { open: boolean; onClose: () 
 
         <div className="mt-3 space-y-2.5">
           {board.items.map((item) => (
-            <QuestCard key={item.quest.id} item={item} tone={tone} names={board.attributeNames} onClaim={() => claim(item.quest.id)} flash={flash[item.quest.id] ?? null} />
+            <QuestCard
+              key={item.quest.id}
+              item={item}
+              tone={tone}
+              names={board.attributeNames}
+              onClaim={() => claim(item.quest.id)}
+              flash={flash[item.quest.id] ?? null}
+              onSwap={!swapUsed && !item.done && !item.claimed ? () => void swap(item.quest.id) : undefined}
+            />
           ))}
+          {board.items.length > 0 && (
+            <div className="text-right text-[11px] font-bold" style={{ color: tone.sub }} data-testid="quest-swap-note">
+              {swapNote || (swapUsed ? '本周的「换一张」用过了，下周一再来' : '不想做的那张可以「换一张」，每周一次')}
+            </div>
+          )}
           {board.loaded && board.items.length === 0 && (
             <div className="py-8 text-center text-[13px] font-bold" style={{ color: tone.sub }}>本周的委托还在路上，稍后再来。</div>
           )}

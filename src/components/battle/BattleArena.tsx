@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore } from '@/store';
@@ -245,18 +245,33 @@ export const BattleArena = () => {
     setTimeout(() => setSpToast(null), 1900);
   };
 
+  /**
+   * 胜利流程由 handleVictory 接管（第 17 批）：BATTLE FINISH 同一拍先调 onVictory 再调 onClose，
+   * 以前 onClose 一看 status=victory 就先把领奖屏弹出来——领奖屏和战利品层叠在一起（战利品层淡出时吃掉点击），
+   * 「回头看看」的残响战也被发了属性点、心魔结算两次。handleVictory 自己决定：先抽战利品再领奖 / 直接领奖 / 不发奖。
+   */
+  const victoryFlowRef = useRef(false);
   const handleBattleClosed = () => {
     setShowBattle(false);
     setActiveEncounter(null);
     const st = useAppStore.getState();
     if (st.battleState?.finalBossStage === 'finale') return; // 交给终局演出
     if (st.battleState?.status === 'victory' && st.shadow?.isFinalBoss) { void st.beginFinalBossFinale(); return; } // 伪神不弹胜利屏
+    if (victoryFlowRef.current) return; // handleVictory 在接管
     if (battleState?.status === 'victory') {
       setShowVictory(true);
     }
   };
 
   const handleVictory = async () => {
+    victoryFlowRef.current = true;
+    try {
+      await runVictoryFlow();
+    } finally {
+      victoryFlowRef.current = false;
+    }
+  };
+  const runVictoryFlow = async () => {
     setShowBattle(false);
     if (useAppStore.getState().battleState?.finalBossStage === 'finale') return; // 伪神不走常规心魔结算
     // 主影节点结算：SP 即发 + 标记通关节点 + 批3 心魔战利品（必得遗物 / 35% 共鸣链 / 25% 誓约石）
@@ -1097,7 +1112,7 @@ export const BattleArena = () => {
                                 <p className="font-black text-gray-900 dark:text-white">终局将至</p>
                                 <p className="text-xs text-gray-400 dark:text-gray-500 leading-relaxed">
                                   高塔之上还有一层，但它需要读得懂你。<br />
-                                  去「设置 → AI」配一个 Key，它才会显形。
+                                  去「设置 → AI 服务」配一个 Key，它才会显形。
                                 </p>
                                 <button
                                   onClick={() => setCurrentPage('settings')}

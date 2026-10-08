@@ -16,6 +16,7 @@ import { triggerSuccessFeedback, playSound } from '@/utils/feedback';
 import { AwakeningOverlay, AwakeningOverlayHandle } from '@/components/battle/AwakeningOverlay';
 import { useBackHandler } from '@/utils/useBackHandler';
 import { v4 as uuidv4 } from 'uuid';
+import { aiConfigLabel, aiConfigured, getDeliberateAIConfig } from '@/utils/aiClient';
 
 interface Props {
   isOpen: boolean;
@@ -137,7 +138,7 @@ const P5StepRow = ({ current }: { current: number }) => (
 export function PersonaCreateModal({ isOpen, onClose }: Props) {
   const { settings, savePersona, saveBattleState, battleState, user } = useAppStore(useShallow(s => ({ settings: s.settings, savePersona: s.savePersona, saveBattleState: s.saveBattleState, battleState: s.battleState, user: s.user })));
 
-  const hasApi = !!settings.summaryApiKey;
+  const hasApi = aiConfigured(settings);
 
   const [stage, setStage] = useState<Stage>('intro');
   const [choiceStep, setChoiceStep] = useState(0);
@@ -222,7 +223,10 @@ export function PersonaCreateModal({ isOpen, onClose }: Props) {
       if (usedFallback) {
         partialRef.current = partial && partial.okAttrs.length > 0 ? partial : null;
         setPartialCount(partialRef.current?.okAttrs.length ?? 0);
-        setError(errorMessage ? `AI 召唤失败：${errorMessage}` : 'AI 召唤失败，请重试');
+        // 写明这一步用的是哪一档、哪个模型（第 16 批）：召唤走深思熟虑档，用户以前以为跟着快速响应走
+        const dc = getDeliberateAIConfig(settings);
+        const via = dc ? `（这一步用的是「深思熟虑」档：${aiConfigLabel(dc)}，可在「设置 → AI 服务 → 模型分档」换）` : '';
+        setError(`${errorMessage ? `AI 召唤失败：${errorMessage}` : 'AI 召唤失败，请重试'}${via}`);
         setRetryMode(true);
         setStage('text');
         return;

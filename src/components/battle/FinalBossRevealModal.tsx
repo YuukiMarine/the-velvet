@@ -217,6 +217,11 @@ export function FinalBossRevealModal({ isOpen, onClose }: Props) {
                       <p className="text-red-400/60 text-[10px]">
                         {canResume ? '它说到一半断了。可以让它接着说完，或者重来。' : '顶阙不提供手动模式——它必须读得懂你，才能显形。'}
                       </p>
+                      {job?.modelLabel && (
+                        <p className="text-red-400/60 text-[10px]" data-testid="reveal-model">
+                          这一步用的是「深思熟虑」档：{job.modelLabel}。可以在「设置 → AI 服务 → 模型分档」换个模型，重试就会用新的。
+                        </p>
+                      )}
                     </div>
                     {canResume && (
                       <button

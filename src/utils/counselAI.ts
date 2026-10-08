@@ -104,6 +104,8 @@ interface ChatReq {
   /** 走的是哪家 / 哪一档（第 4 轮补：思维链余量、关思考重试、402 提示都靠它对号） */
   provider?: ApiProvider;
   tier?: AITier;
+  /** 请求协议（第 14 批 · 自定义服务商可选 Anthropic） */
+  protocol?: 'openai' | 'anthropic';
   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
 }
 
@@ -193,6 +195,7 @@ function buildCounselRequest(ctx: CounselContext, opts: { greeting?: boolean } =
     apiKey: cfg.apiKey,
     provider: cfg.provider,
     tier: cfg.tier,
+    protocol: cfg.protocol,
     messages: [...systemMessages, ...convo, ...trailingSystem],
   };
 }

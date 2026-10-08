@@ -33,9 +33,16 @@ const KIND_META: Record<FateCandidate['kind'], { tag: string; hint: string }> = 
   todo: { tag: '今日待办', hint: '可能性的辉光折射出了新的方向' },
   wish: { tag: '愿望纸片', hint: '接住就转正成今天的任务，纸片功成身退' },
   history: { tag: '旧日回响', hint: '你做过的事，再做一次不需要勇气' },
+  quest: { tag: '今日委托', hint: '委托板今天给的新鲜事，接住就进今日任务' },
 };
 
-const SOURCE_LABEL: Record<FateCandidate['kind'], string> = { todo: '今日待办', wish: '愿望', history: '旧事' };
+/** 旧事的来由（第 17 批）：「这两个月做过 4 次，上次是 9 天前」——「再做一次」才读得通 */
+const historyReason = (c: FateCandidate): string | null =>
+  c.kind === 'history' && c.historyDays && c.lastDaysAgo !== undefined
+    ? `这两个月做过 ${c.historyDays} 次，上次是 ${c.lastDaysAgo} 天前，再做一次不需要勇气`
+    : null;
+
+const SOURCE_LABEL: Record<FateCandidate['kind'], string> = { todo: '今日待办', wish: '愿望', history: '旧事', quest: '委托' };
 
 /** 频道舞台皮：舞台恒暗（仪式层通用语言），差分在纸/管/水的材质上 */
 interface StageSkin {
@@ -177,12 +184,12 @@ const SKINS: Record<'p5' | 'p4' | 'p3' | 'neutral', StageSkin> = {
 };
 
 export const FateDrawSheet = ({ open, onClose }: Props) => {
-  const { getFateDrawPool, drawFate, acceptFateDraw } = useAppStore(useShallow(s => ({ getFateDrawPool: s.getFateDrawPool, drawFate: s.drawFate, acceptFateDraw: s.acceptFateDraw })));
+  const { getFateDrawPool, drawFate, acceptFateDraw, muteFateHistory } = useAppStore(useShallow(s => ({ getFateDrawPool: s.getFateDrawPool, drawFate: s.drawFate, acceptFateDraw: s.acceptFateDraw, muteFateHistory: s.muteFateHistory })));
   const bold = useBoldness();
   const channel = useUiChannel();
   const sk = SKINS[channel === 'p5' || channel === 'p4' || channel === 'p3' ? channel : 'neutral'];
   const [phase, setPhase] = useState<Phase>('gate');
-  const [sources, setSources] = useState<Record<FateCandidate['kind'], boolean>>({ todo: true, wish: true, history: true });
+  const [sources, setSources] = useState<Record<FateCandidate['kind'], boolean>>({ todo: true, wish: true, history: true, quest: true });
   const [picked, setPicked] = useState<FateCandidate | null>(null);
   const [busy, setBusy] = useState(false);
   const [approved, setApproved] = useState<DanmakuItem[]>([]);
@@ -257,6 +264,19 @@ export const FateDrawSheet = ({ open, onClose }: Props) => {
     }
   };
 
+  /** 「以后别抽这件」（旧事）：拉黑后和「再想想」一样关掉 */
+  const mute = async () => {
+    if (!picked || busy || picked.kind !== 'history') return;
+    setBusy(true);
+    try {
+      await muteFateHistory(picked);
+      reset();
+      onClose();
+    } finally {
+      setBusy(false);
+    }
+  };
+
   if (typeof document === 'undefined') return null;
 
   return createPortal(
@@ -286,7 +306,7 @@ export const FateDrawSheet = ({ open, onClose }: Props) => {
                   <h2 className={sk.title} style={sk.titleFont ? { fontFamily: sk.titleFont } : undefined}>不知道做什么好？</h2>
                   <p className={sk.lead}>命运会替你选择</p>
 
-                  <div className="mt-5 flex justify-center gap-2">
+                  <div className="mt-5 flex flex-wrap justify-center gap-2">
                     {(Object.keys(SOURCE_LABEL) as Array<FateCandidate['kind']>).map(k => (
                       <button
                         key={k}
@@ -377,7 +397,7 @@ export const FateDrawSheet = ({ open, onClose }: Props) => {
                     <span aria-hidden className="pointer-events-none absolute -right-4 -top-6 select-none text-[90px] font-black italic leading-none text-black/5">✦</span>
                     <span className={sk.reveal.tag} style={sk.reveal.tagStyle}>{KIND_META[picked.kind].tag}</span>
                     <h3 className={sk.reveal.title} style={sk.reveal.titleFont ? { fontFamily: sk.reveal.titleFont } : undefined}>{picked.title}</h3>
-                    <p className={sk.reveal.hint}>{KIND_META[picked.kind].hint}</p>
+                    <p className={sk.reveal.hint} data-testid="fate-hint">{historyReason(picked) ?? KIND_META[picked.kind].hint}</p>
                     <p className={sk.reveal.sub}>完成它会有额外奖励</p>
                   </motion.div>
 
@@ -399,6 +419,11 @@ export const FateDrawSheet = ({ open, onClose }: Props) => {
                       再想想
                     </button>
                   </div>
+                  {picked.kind === 'history' && (
+                    <button type="button" onClick={() => void mute()} disabled={busy} className={`mt-3 text-[12px] font-bold underline underline-offset-2 ${channel === 'p5' ? 'text-[#f0e9df]/60' : 'text-white/55'}`} data-testid="fate-mute">
+                      以后别抽这件
+                    </button>
+                  )}
                   <p className={sk.note}>关闭会重新抽取其他的可能性</p>
                 </motion.div>
               )}

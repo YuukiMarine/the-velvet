@@ -21,15 +21,15 @@ import type {
   AttributeId, DailyDivination, DrawnCard, FateGlimpse, FateGlimpseDay, LongReading, LongReadingFollowUp, LongReadingPeriod, Settings, TarotOrientation,
 } from '@/types';
 import { TAROT_BY_ID, spreadPositionsFor, randomBonusMultiplier } from '@/constants/tarot';
-import { chatStream, type AIMessage } from '@/utils/aiClient';
+import { aiConfigured, chatStream, getAIConfig, getDeliberateAIConfig, type AIMessage } from '@/utils/aiClient';
 import {
   buildDailyRequest, visibleDailyText, parseDailyResult, DAILY_META_MARK,
-  buildLongReadingRequest, buildFollowUpRequest, extractReadingMemo, formatApiError, type AIRequestData,
+  buildLongReadingRequest, buildFollowUpRequest, extractReadingMemo, formatApiError, requestHead, type AIRequestData,
 } from '@/utils/tarotAI';
 import {
-  buildFateGlimpseRequest, parseFateGlimpseText, buildOfflineFateGlimpse, type FateGlimpseAIResult,
+  buildFateGlimpseRequest, parseFateGlimpseText, buildOfflineFateGlimpse, FATE_SAMPLING, type FateGlimpseAIResult,
 } from '@/utils/fateGlimpseAI';
-import { trimSeam } from '@/utils/summaryAI';
+import { endsCleanly, trimSeam } from '@/utils/summaryAI';
 import { createThinkTracker, type ThinkTracker } from '@/utils/thinkProgress';
 
 export type JobStatus = 'thinking' | 'streaming' | 'done' | 'error';
@@ -116,11 +116,24 @@ const controllers: { daily?: AbortController; long?: AbortController; follow?: A
 const isRunning = (j: JobBase | null | undefined): boolean =>
   !!j && (j.status === 'thinking' || j.status === 'streaming');
 
-/** 流没收完的特征：结尾不是句末标点。finish_reason 为空（连接中途断开）时靠它兜底判断 */
-const looksTruncated = (t: string): boolean => !/[。！？!?…」』"”)）]\s*$/.test(t.trim());
+/**
+ * 流没收完的特征：结尾不是收得住的符号。finish_reason 为空（连接中途断开）时靠它兜底判断。
+ * 第 14 批放宽（反馈 3「被错误截断」）：英文句点、～、emoji、Markdown 收尾（** ` ] 】 >）都算写完——
+ * 不少中转站流式不给 finish_reason，以前这类正常写完的追问一律被当成没写完。
+ */
+const looksTruncated = (t: string): boolean => !endsCleanly(t);
 const INTERRUPTED = '连接中途断开，正文没有收完。';
 const LENGTH_CUT = '写到一半被截断了（模型输出预算不足）。';
 const CONTINUE_HINT = '已写的部分留着，可以让它接着写。';
+/** 续写一个字都没续上（多半网络还没恢复）：保持截断态，提示别慌 */
+const noProgressMsg = (e: unknown) =>
+  `接着写没连上（${e instanceof TypeError ? '网络还没连上' : formatApiError(e).split('\n')[0]}）。已写的部分还在，网络好了再点「接着写」。`;
+/** 续写没续上：这次不算次数（continue*Job 起跑前已经 +1） */
+const refundContinue = (key: 'daily' | 'long' | 'follow' | 'fate') => () =>
+  useTarotJobs.setState((s) => {
+    const j = s[key];
+    return j ? ({ [key]: { ...j, continues: Math.max(0, j.continues - 1) } } as Partial<JobsState>) : {};
+  });
 
 const patchDaily = (p: Partial<DailyJob>) =>
   useTarotJobs.setState(s => ({ daily: s.daily ? { ...s.daily, ...p } : s.daily }));
@@ -181,7 +194,7 @@ export const clearDailyPending = () => {
 };
 
 /** 每日：流一段（首跑或续写）→ 收尾（解析 META、落库 / 标截断） */
-async function runDaily(settings: Settings, ac: AbortController, req: AIRequestData, messages: AIMessage[], seed: string): Promise<void> {
+async function runDaily(settings: Settings, ac: AbortController, req: AIRequestData, messages: AIMessage[], seed: string, refund?: () => void): Promise<void> {
   const job = useTarotJobs.getState().daily;
   if (!job) return;
   const card = TAROT_BY_ID[job.cardId];
@@ -207,6 +220,12 @@ async function runDaily(settings: Settings, ac: AbortController, req: AIRequestD
     // 已经有半截正文：留着，标成可续写；一个字都没有才算失败
     if (full.trim() && full !== seed) {
       patchDaily({ status: 'error', thinking: false, full, text: visibleDailyText(full), truncated: true, error: `${INTERRUPTED}${CONTINUE_HINT}` });
+      return;
+    }
+    // 续写一个字都没续上：保持截断态、已写的留着，这次不算次数（第 14 批 · 反馈 3：以前这里把截断态清掉，「接着写」就没了）
+    if (seed.trim()) {
+      refund?.();
+      patchDaily({ status: 'error', thinking: false, full: seed, text: visibleDailyText(seed), truncated: true, error: noProgressMsg(e) });
       return;
     }
     patchDaily({ status: 'error', thinking: false, error: formatApiError(e) });
@@ -314,7 +333,7 @@ export function continueDailyJob(settings: Settings): void {
   controllers.daily = ac;
   const seed = trimSeam(job.full);
   patchDaily({ continues: job.continues + 1, truncated: false, full: seed, text: visibleDailyText(seed) });
-  void runDaily(settings, ac, job.req, continueMessages(job.req, seed, 'daily'), seed);
+  void runDaily(settings, ac, job.req, continueMessages(job.req, seed, 'daily'), seed, refundContinue('daily'));
 }
 
 // ── 中长期：参数落盘，进程被杀后可"用同一副牌继续" ─────────────────────
@@ -359,6 +378,8 @@ async function runMarkdown(
   patch: (p: Partial<JobBase>) => void,
   onDone: (full: string) => Promise<void>,
   emptyMsg: string,
+  /** 续写时传：一个字都没续上就退还这次次数 */
+  refund?: () => void,
 ): Promise<void> {
   const tr = createThinkTracker(req.model);
   patch({ tracker: tr, status: 'thinking', thinking: false, error: undefined, truncated: false });
@@ -379,6 +400,12 @@ async function runMarkdown(
     if (ac.signal.aborted) return;
     if (full.trim() && full !== seed) {
       patch({ status: 'error', thinking: false, full, text: full, truncated: true, error: `${INTERRUPTED}${CONTINUE_HINT}` });
+      return;
+    }
+    // 续写一个字都没续上：保持截断态、已写的留着，这次不算次数（第 14 批 · 反馈 3）
+    if (seed.trim()) {
+      refund?.();
+      patch({ status: 'error', thinking: false, full: seed, text: seed, truncated: true, error: noProgressMsg(e) });
       return;
     }
     patch({ status: 'error', thinking: false, error: formatApiError(e) });
@@ -491,7 +518,18 @@ export function continueLongJob(settings: Settings): void {
   const seed = trimSeam(job.full);
   patchLong({ continues: job.continues + 1, truncated: false, full: seed, text: seed });
   const id = job.id;
-  void runMarkdown(ac, job.req, continueMessages(job.req, seed, 'markdown'), seed, patchLong, full => finishLong(settings, id, full), '解读内容为空，请重试');
+  void runMarkdown(ac, job.req, continueMessages(job.req, seed, 'markdown'), seed, patchLong, full => finishLong(settings, id, full), '解读内容为空，请重试', refundContinue('long'));
+}
+
+/**
+ * 截断态「就用这些」（第 14 批 · 反馈 3）：续写次数用完 / 不想再等时，把已写的部分直接存成解读。
+ * 最后一行没写完的丢掉（trimSeam），丢完是空的就整段留着。
+ */
+export async function acceptLongJob(settings: Settings): Promise<void> {
+  const job = useTarotJobs.getState().long;
+  if (!job || job.status !== 'error' || !job.truncated || !job.full.trim()) return;
+  const text = trimSeam(job.full).trim() || job.full.trim();
+  await finishLong(settings, job.id, text);
 }
 
 /** 用户离开完成态 / 放弃：清掉已结束的任务（在跑的保留，回来还能接上） */
@@ -590,7 +628,107 @@ export function continueFollowJob(): void {
   controllers.follow = ac;
   const seed = trimSeam(job.full);
   patchFollow({ continues: job.continues + 1, truncated: false, full: seed, text: seed });
-  void runMarkdown(ac, job.req, continueMessages(job.req, seed, 'markdown'), seed, patchFollow, finishFollow, '回应内容为空');
+  void runMarkdown(ac, job.req, continueMessages(job.req, seed, 'markdown'), seed, patchFollow, finishFollow, '回应内容为空', refundContinue('follow'));
+}
+
+/** 追问截断态「就用这些」：已写的部分直接存成这条追问 */
+export async function acceptFollowJob(): Promise<void> {
+  const job = useTarotJobs.getState().follow;
+  if (!job || job.status !== 'error' || !job.truncated || !job.full.trim()) return;
+  await finishFollow(trimSeam(job.full).trim() || job.full.trim());
+}
+
+/** 追问一开头就没连上（没有半截可续）：同一个问题、同一张牌重新问一次 */
+export function retryFollowJob(settings: Settings, reading: LongReading, promptUser?: string): void {
+  const job = useTarotJobs.getState().follow;
+  if (!job || job.readingId !== reading.id || isRunning(job)) return;
+  startFollowJob({ settings, reading, question: job.question, candidates: job.candidates, pickedIndex: job.pickedIndex, promptUser });
+}
+
+// ── 追问进度落盘（第 14 批 · 反馈 3）──
+// WebView 被系统回收 / 重载后，内存里的追问任务就没了（主解读有 LONG_PENDING_KEY，追问以前没有）。
+// 这里只存问题、牌和已写的正文，不存请求本身（里面有 Key）；打开那条解读时按解读内容把请求重建回来。
+export const FOLLOW_PENDING_KEY = 'velvet.followUp.pending.v1';
+interface FollowPending {
+  readingId: string;
+  question: string;
+  candidates: DrawnCard[];
+  pickedIndex: number;
+  full: string;
+  continues: number;
+  startedAt: number;
+}
+const readFollowPending = (): FollowPending | null => {
+  try {
+    const raw = localStorage.getItem(FOLLOW_PENDING_KEY);
+    if (!raw) return null;
+    const p = JSON.parse(raw) as FollowPending;
+    if (!p || typeof p.readingId !== 'string' || typeof p.question !== 'string' || !Array.isArray(p.candidates)) return null;
+    return p;
+  } catch {
+    return null;
+  }
+};
+const clearFollowPending = () => { try { localStorage.removeItem(FOLLOW_PENDING_KEY); } catch { /* */ } };
+let lastFollowWrite = 0;
+useTarotJobs.subscribe((s, prev) => {
+  const f = s.follow;
+  if (f === prev.follow) return;
+  if (!f || f.status === 'done') { if (prev.follow) clearFollowPending(); return; }
+  // 流式时最多 2 秒落一次；状态变化（出错 / 截断）立刻落
+  const now = Date.now();
+  if (f.status === 'streaming' && prev.follow?.status === 'streaming' && now - lastFollowWrite < 2000) return;
+  lastFollowWrite = now;
+  try {
+    const p: FollowPending = { readingId: f.readingId, question: f.question, candidates: f.candidates, pickedIndex: f.pickedIndex, full: f.full, continues: f.continues, startedAt: f.startedAt };
+    localStorage.setItem(FOLLOW_PENDING_KEY, JSON.stringify(p));
+  } catch { /* 存不下就算了：只是少一层保险 */ }
+});
+
+/**
+ * 打开一条解读时：内存里没有它的追问任务、但盘上有上次没写完的 → 接回来（出错态：有半截就能「接着写 / 就用这些」，
+ * 一个字都没有就「重试」）。这条解读已经有追问了就丢掉旧的。返回是否接回。
+ */
+export function restoreFollowJob(settings: Settings, reading: LongReading): boolean {
+  if (useTarotJobs.getState().follow) return false;
+  const p = readFollowPending();
+  if (!p || p.readingId !== reading.id) return false;
+  if ((reading.followUps?.length ?? 0) >= 1 || Date.now() - (p.startedAt || 0) > 14 * 86400_000) { clearFollowPending(); return false; }
+  const pick = p.candidates[p.pickedIndex];
+  const card = pick ? TAROT_BY_ID[pick.cardId] : undefined;
+  if (!pick || !card) { clearFollowPending(); return false; }
+  const positions = spreadPositionsFor(reading.period, reading.picked.length);
+  const prevUser = `**客人提出的问题**：${reading.question}\n**牌阵**：${reading.picked
+    .map((x, i) => `${positions[i] ?? ''}：${TAROT_BY_ID[x.cardId]?.name ?? x.cardId}（${x.orientation === 'upright' ? '正位' : '逆位'}）`)
+    .join('；')}`;
+  const req = buildFollowUpRequest({
+    settings,
+    previousUserMessage: prevUser,
+    previousAssistantMessage: reading.content,
+    followUpQuestion: p.question,
+    followUpCard: card,
+    followUpOrientation: pick.orientation,
+  });
+  const hasText = !!p.full.trim();
+  useTarotJobs.setState({
+    follow: {
+      readingId: p.readingId,
+      question: p.question,
+      candidates: p.candidates,
+      pickedIndex: p.pickedIndex,
+      status: 'error',
+      text: p.full,
+      full: p.full,
+      thinking: false,
+      tracker: createThinkTracker('pending'),
+      error: hasText ? `上次没写完就断了（App 被关掉或网络中断）。${CONTINUE_HINT}` : '上次没连上就断了，可以重试。',
+      truncated: hasText,
+      continues: Math.min(p.continues ?? 0, TAROT_CONTINUE_LIMIT),
+      req,
+      startedAt: p.startedAt,
+    },
+  });
+  return true;
 }
 
 export function ackFollowJob(): void {
@@ -620,7 +758,7 @@ async function saveFateGlimpse(days: FateGlimpseDay[], r: FateGlimpseAIResult, s
 
 const fateComplete = (r: FateGlimpseAIResult): boolean => !!(r.summary || r.outlook || r.advice);
 
-async function runFate(ac: AbortController, req: AIRequestData, messages: AIMessage[], seed: string): Promise<void> {
+async function runFate(ac: AbortController, req: AIRequestData, messages: AIMessage[], seed: string, refund?: () => void): Promise<void> {
   const job = useTarotJobs.getState().fate;
   if (!job) return;
   const tr = createThinkTracker(req.model);
@@ -629,7 +767,7 @@ async function runFate(ac: AbortController, req: AIRequestData, messages: AIMess
   let finish = '';
   try {
     for await (const delta of chatStream(req, messages, {
-      temperature: 0.85, maxTokens: 3000,
+      ...FATE_SAMPLING,
       signal: ac.signal,
       onReasoning: d => { tr.onReasoning(d); patchFate({ thinking: true }); },
       onFinishReason: f => { finish = f; },
@@ -642,6 +780,12 @@ async function runFate(ac: AbortController, req: AIRequestData, messages: AIMess
     if (ac.signal.aborted) return;
     if (full.trim() && full !== seed) {
       patchFate({ status: 'error', thinking: false, full, text: full, truncated: true, error: `${INTERRUPTED}${CONTINUE_HINT}` });
+      return;
+    }
+    // 续写一个字都没续上：保持截断态、已写的留着，这次不算次数（第 14 批 · 反馈 3）
+    if (seed.trim()) {
+      refund?.();
+      patchFate({ status: 'error', thinking: false, full: seed, text: seed, truncated: true, error: noProgressMsg(e) });
       return;
     }
     patchFate({ status: 'error', thinking: false, error: formatApiError(e) });
@@ -699,7 +843,7 @@ export function startFateJob(args: { settings: Settings; days: FateGlimpseDay[];
     },
   });
 
-  if (!args.settings.summaryApiKey?.trim()) {
+  if (!aiConfigured(args.settings)) {
     void resolveFateOffline();
     return;
   }
@@ -734,8 +878,12 @@ export function continueFateJob(): void {
   const ac = new AbortController();
   controllers.fate = ac;
   const seed = trimSeam(job.full);
-  patchFate({ continues: job.continues + 1, truncated: false, full: seed, text: seed });
-  void runFate(ac, job.req, continueMessages(job.req, seed, 'fate'), seed);
+  // 「接着写」按当前设置取深思熟虑档（第 17 批）：以前沿用开始那一刻的模型，中途去设置换了模型也不生效
+  const settings = useAppStore.getState().settings;
+  const fresh = getDeliberateAIConfig(settings) ?? getAIConfig(settings);
+  const req: AIRequestData = fresh ? { ...job.req, ...requestHead(fresh) } : job.req;
+  patchFate({ continues: job.continues + 1, truncated: false, full: seed, text: seed, req });
+  void runFate(ac, req, continueMessages(req, seed, 'fate'), seed, refundContinue('fate'));
 }
 
 /** 错误态 / 无 Key：用离线兜底完成并落库 */

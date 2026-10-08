@@ -35,7 +35,7 @@ export async function generatePresetNameMatches(
 ): Promise<PresetNameMatchResult> {
   const cfg = getAIConfig(settings);
   if (!cfg) {
-    throw new Error('请先在「AI 总结-API 配置」里填写 API Key，再匹配成就/技能名称');
+    throw new Error('请先在「设置 → AI 服务」里填写 API Key，再匹配成就/技能名称');
   }
 
   const raw = await chatComplete(cfg, [

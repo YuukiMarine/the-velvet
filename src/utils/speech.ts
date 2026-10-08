@@ -13,7 +13,8 @@
  */
 import type { Settings } from '@/types';
 import { getAudioAIConfig } from '@/utils/aiClient';
-import { extractProviderErrorMessage, getHttpStatusHint } from '@/utils/aiProviders';
+import { extractProviderErrorMessage, getHttpStatusHint, moderationHint } from '@/utils/aiProviders';
+import { hostOf, recordAIDiag } from '@/utils/aiDiagnostics';
 
 /** 听觉档是否可用（配了模型 + 有 Key） */
 export const speechAvailable = (settings: Settings): boolean => getAudioAIConfig(settings) !== null;
@@ -89,6 +90,8 @@ export async function transcribe(blob: Blob, settings: Settings, signal?: AbortS
   const timer = setTimeout(() => ac.abort(), 60_000);
   if (signal) signal.addEventListener('abort', () => ac.abort(), { once: true });
 
+  const t0 = Date.now();
+  const diag = { kind: 'audio' as const, tier: 'audio', provider: cfg.provider, host: hostOf(cfg.baseUrl), model: cfg.model };
   try {
     const resp = await fetch(`${cfg.baseUrl}/audio/transcriptions`, {
       method: 'POST',
@@ -100,10 +103,13 @@ export async function transcribe(blob: Blob, settings: Settings, signal?: AbortS
     if (!resp.ok) {
       const body = await resp.text().catch(() => '');
       const detail = extractProviderErrorMessage(body).slice(0, 160).trim();
-      const hint = getHttpStatusHint(resp.status, cfg.provider);
+      const hint = moderationHint(detail) || getHttpStatusHint(resp.status, cfg.provider);
       const prefix = hint ? `${hint}（HTTP ${resp.status}）` : `HTTP ${resp.status}`;
-      throw new Error(detail ? `${prefix}: ${detail}` : prefix);
+      const message = detail ? `${prefix}: ${detail}` : prefix;
+      recordAIDiag({ ...diag, ok: false, status: resp.status, ms: Date.now() - t0, err: message });
+      throw new Error(message);
     }
+    recordAIDiag({ ...diag, ok: true, status: resp.status, ms: Date.now() - t0 });
     // 标准返回 { text }；少数网关直接回字符串
     const raw = await resp.text();
     let text = '';
@@ -117,6 +123,7 @@ export async function transcribe(blob: Blob, settings: Settings, signal?: AbortS
     if (!out) throw new Error('没听清（返回为空）');
     return out;
   } catch (e) {
+    if (e instanceof TypeError) recordAIDiag({ ...diag, ok: false, status: 0, ms: Date.now() - t0, err: e.message });
     if (e instanceof Error && e.name === 'AbortError') throw new Error('转写超时');
     throw e;
   } finally {

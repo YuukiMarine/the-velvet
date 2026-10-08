@@ -1162,14 +1162,16 @@ export const Dashboard = () => {
                     </div>
 
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
+                      {/* 第 14 批：星标 / 签 / 任务名一组，标记放不下时整组留在第一行、标记去第二行 */}
+                      <div className="flex items-center gap-x-2 gap-y-1 flex-wrap">
+                        <span className="flex min-w-0 max-w-full items-center gap-2">
                         {todo.important && (
-                          <span className="text-amber-500 text-xs">⭐</span>
+                          <span className="shrink-0 text-amber-500 text-xs">⭐</span>
                         )}
                         {todo.fateDrawnDate === todayKey && (
-                          <span className={`text-[10px] font-black ${isP4 ? 'text-[#131313]' : 'text-primary'}`} title="今日抽签选中">✦</span>
+                          <span className={`shrink-0 text-[10px] font-black ${isP4 ? 'text-[#131313]' : 'text-primary'}`} title="今日抽签选中">✦</span>
                         )}
-                        <span className={`text-sm truncate ${
+                        <span className={`min-w-0 text-sm truncate ${
                           isP4
                             ? progress.isComplete
                               ? 'font-black line-through text-[#131313]/45'
@@ -1179,6 +1181,7 @@ export const Dashboard = () => {
                               : 'font-medium text-gray-800 dark:text-white'
                         }`}>
                           {todo.title}
+                        </span>
                         </span>
                         <PactTodoTag todo={todo} />
                         <OrgOpTodoTag todo={todo} />

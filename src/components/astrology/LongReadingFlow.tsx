@@ -27,9 +27,11 @@ import { useThinkProgress } from '@/utils/thinkProgress';
 import {
   useTarotJobs, startLongJob, startFollowJob, continueLongJob, continueFollowJob, TAROT_CONTINUE_LIMIT,
   ackLongJob, ackFollowJob, readLongPending, clearLongPending, type LongPending,
+  acceptLongJob, acceptFollowJob, retryFollowJob, restoreFollowJob,
 } from '@/utils/tarotJobs';
 import { ThinkingCircle } from './ThinkingCircle';
 import { P3R, slantClip, SlantButton } from '@/components/p3r/kit';
+import { aiConfigured } from '@/utils/aiClient';
 
 /** P3R 青双斜杠（p3-modal-16 稿的节标签尾饰） */
 const CyanSlashes = ({ soft = false }: { soft?: boolean }) => (
@@ -66,7 +68,7 @@ const toCandidates = (list: DrawnCard[]): Candidate[] => list.map(toCandidate).f
 
 export function LongReadingFlow({ initialReading, onBack }: Props) {
   const { settings, countActiveReadings } = useAppStore(useShallow(s => ({ settings: s.settings, countActiveReadings: s.countActiveReadings })));
-  const noApiKey = !settings.summaryApiKey;
+  const noApiKey = !aiConfigured(settings);
   const p3 = useUiChannel() === 'p3';
 
   const [phase, setPhase] = useState<Phase>(initialReading ? 'done' : 'form');
@@ -108,14 +110,18 @@ export function LongReadingFlow({ initialReading, onBack }: Props) {
   // ── 挂载时接回后台任务 ──
   useEffect(() => {
     if (initialReading) {
-      // 打开归档详情：这条 reading 若有正在跑 / 刚出错的追问，把追问面板接回来
-      if (followJob && followJob.readingId === initialReading.id && followJob.status !== 'done') {
+      // 打开归档详情：这条 reading 若有正在跑 / 刚出错的追问，把追问面板接回来。
+      // 内存里没有、盘上有上次没写完的（App 被关掉 / WebView 重载过）→ 先按解读内容把任务重建回内存（第 14 批 · 反馈 3）
+      const fj = followJob && followJob.readingId === initialReading.id
+        ? followJob
+        : (restoreFollowJob(settings, initialReading) ? useTarotJobs.getState().follow : null);
+      if (fj && fj.readingId === initialReading.id && fj.status !== 'done') {
         setFollowOpen(true);
-        setFollowQuestion(followJob.question);
-        setFollowCandidates(toCandidates(followJob.candidates));
-        setFollowPickedIndex(followJob.pickedIndex);
+        setFollowQuestion(fj.question);
+        setFollowCandidates(toCandidates(fj.candidates));
+        setFollowPickedIndex(fj.pickedIndex);
         setFollowPhase('reading');
-        if (followJob.status === 'error') setFollowError(followJob.error ?? '回应失败');
+        if (fj.status === 'error') setFollowError(fj.error ?? '回应失败');
       }
       return;
     }
@@ -225,7 +231,7 @@ export function LongReadingFlow({ initialReading, onBack }: Props) {
   const handleReveal = () => {
     if (pickedIndices.length !== 3) return;
     if (noApiKey) {
-      setError('请先在「设置 → AI 总结」中配置 API 密钥。中长期占卜无法离线完成。');
+      setError('请先在「设置 → AI 服务」中配置 API 密钥。中长期占卜无法离线完成。');
       return;
     }
     setError(null);
@@ -333,7 +339,7 @@ export function LongReadingFlow({ initialReading, onBack }: Props) {
             <div className="flex items-start gap-2.5 px-4 py-3" style={{ background: P3R.cyanFaint, clipPath: slantClip(10) }}>
               <span aria-hidden className="mt-0.5 h-[14px] w-[8px] shrink-0" style={{ background: P3R.blue, transform: 'skewX(-18deg)' }} />
               <p className="text-[13px] font-bold leading-relaxed" style={{ color: P3R.blue }}>
-                中长期占卜需要 AI 解读，请先在「设置 → AI 总结」中配置 API 密钥。
+                中长期占卜需要 AI 解读，请先在「设置 → AI 服务」中配置 API 密钥。
               </p>
             </div>
           )}
@@ -457,7 +463,7 @@ export function LongReadingFlow({ initialReading, onBack }: Props) {
         )}
         {noApiKey && (
           <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700/40 rounded-2xl p-4 text-xs text-red-700 dark:text-red-300 leading-relaxed">
-            中长期占卜需要 AI 解读，请先在「设置 → AI 总结」中配置 API 密钥。
+            中长期占卜需要 AI 解读，请先在「设置 → AI 服务」中配置 API 密钥。
           </div>
         )}
         <div>
@@ -778,6 +784,14 @@ export function LongReadingFlow({ initialReading, onBack }: Props) {
                   className="text-xs font-bold underline"
                 >接着写</button>
               )}
+              {/* 第 14 批 · 反馈 3：续写用完 / 不想等了，已写的部分直接存成解读 */}
+              {!!job?.truncated && !!job.full.trim() && (
+                <button
+                  onClick={() => { setError(null); void acceptLongJob(settings); }}
+                  className="text-xs font-bold underline"
+                  data-testid="long-accept"
+                >就用这些</button>
+              )}
               <button
                 onClick={() => { ackLongJob(); setError(null); setPhase('picking'); }}
                 className="text-xs font-bold underline"
@@ -816,6 +830,8 @@ export function LongReadingFlow({ initialReading, onBack }: Props) {
             progress={followProgress}
             error={followError}
             onContinue={followJob?.truncated && followJob.continues < TAROT_CONTINUE_LIMIT ? () => { setFollowError(null); continueFollowJob(); } : undefined}
+            onAccept={followJob?.status === 'error' && followJob.truncated && followJob.full.trim() ? () => { setFollowError(null); void acceptFollowJob(); } : undefined}
+            onRetry={followJob?.status === 'error' && !followJob.truncated && reading ? () => { setFollowError(null); retryFollowJob(settings, reading, job?.result?.id === reading.id ? job.promptUser : undefined); } : undefined}
             onStartPick={handleFollowPickStart}
             onReveal={handleFollowReveal}
             onClose={() => setFollowOpen(false)}
@@ -881,7 +897,7 @@ function FlippingCard({
 
 function FollowUpPanel({
   phase, question, setQuestion, candidates, pickedIndex,
-  streamedText, isStreaming, thinking, progress, error, onContinue,
+  streamedText, isStreaming, thinking, progress, error, onContinue, onAccept, onRetry,
   onStartPick, onReveal, onClose,
 }: {
   phase: 'form' | 'picking' | 'reading' | 'done';
@@ -896,6 +912,10 @@ function FollowUpPanel({
   error: string | null;
   /** 截断态：可以让它接着写（第 4 轮） */
   onContinue?: () => void;
+  /** 截断态：已写的部分直接存成追问（第 14 批） */
+  onAccept?: () => void;
+  /** 一开头就没连上：同一个问题、同一张牌重问（第 14 批） */
+  onRetry?: () => void;
   onStartPick: () => void;
   onReveal: (i: number) => void;
   onClose: () => void;
@@ -990,7 +1010,13 @@ function FollowUpPanel({
             <div className="text-xs text-red-500 dark:text-red-400 whitespace-pre-wrap">
               {error}
               {onContinue && (
-                <button onClick={onContinue} className="ml-3 font-bold underline">接着写</button>
+                <button onClick={onContinue} className="ml-3 font-bold underline" data-testid="follow-continue">接着写</button>
+              )}
+              {onAccept && (
+                <button onClick={onAccept} className="ml-3 font-bold underline" data-testid="follow-accept">就用这些</button>
+              )}
+              {onRetry && (
+                <button onClick={onRetry} className="ml-3 font-bold underline" data-testid="follow-retry">重试</button>
               )}
             </div>
           )}

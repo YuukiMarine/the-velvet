@@ -203,6 +203,8 @@ export interface Todo {
   completedAt?: Date;
   /** 抽签（TASKS_MERGE_PRD §4.2）：当日被命运选中的日期 YYYY-MM-DD——当日完成触发命运加成 +1 */
   fateDrawnDate?: string;
+  /** 从委托板「今日委托」加进来的（预设 id，第 14 批）：本周委托「完成 3 张今日委托」按它数 */
+  lifeQuest?: string;
   /** 挂载到哪个愿望（V2.6 §1.3）：完成它时产生的活动会带上同一个 wishId，从而计入愿望进度 */
   wishId?: string;
   // ── BIG DEAL（任务×终端二合一，TASKS_MERGE_PRD §4.1）──
@@ -608,6 +610,8 @@ export interface Settings {
   tasksMergeMigratedAt?: string;
   /** 抽签当日状态：已抽中的候选 key 当日沉底（跨天自动重置） */
   fateDrawState?: { date: string; drawnKeys: string[] };
+  /** 抽签「以后别抽这件」的旧事（同一件事的键，见 utils/fateDraw.fateHistoryKey；第 17 批） */
+  fateHistoryMuted?: string[];
   // ── F6 万能记录 AI「黑猫」（Navigator） ──
   /** 最近一次「每日首开问候」的本地日期（YYYY-MM-DD）：跨天首开播完整问候，当日重开只简短招呼。 */
   navigatorLastGreetDate?: string;
@@ -620,7 +624,13 @@ export interface Settings {
   /** 组织名册的样式：格子（默认）/ 专辑墙；点「名册」标题切换、持久记忆 */
   orgRosterView?: 'grid' | 'wall';
   // AI 总结功能配置
-  summaryApiProvider?: 'openai' | 'deepseek' | 'kimi' | 'qwen' | 'gemini' | 'minimax';
+  summaryApiProvider?: 'openai' | 'deepseek' | 'kimi' | 'qwen' | 'gemini' | 'minimax' | 'custom';
+  /** 第 14 批 · 自定义服务商（第 7 个胶囊）：显示名（「硅基流动」「我的中转站」…）；空 = 预设名或「自定义」 */
+  customProviderName?: string;
+  /** 自定义服务商的请求协议：OpenAI 兼容（默认）/ Anthropic Messages */
+  customProviderProtocol?: 'openai' | 'anthropic';
+  /** 自定义服务商选的预设（取 Key 入口跟着它）：siliconflow / ark / zhipu / openrouter / anthropic / relay */
+  customProviderPreset?: string;
   /**
    * 各服务商独立存档（配好多家、点胶囊即切）。
    * 上面 summaryApiKey / summaryApiBaseUrl / summaryModel / navigatorModel 是**当前生效**的
@@ -628,9 +638,11 @@ export interface Settings {
    * 再把新家的档载入生效位。verifiedAt = 该家最近一次「测试连接」成功的时间戳（亮绿灯用）。
    */
   aiProfiles?: Partial<Record<
-    'openai' | 'deepseek' | 'kimi' | 'qwen' | 'gemini' | 'minimax',
+    'openai' | 'deepseek' | 'kimi' | 'qwen' | 'gemini' | 'minimax' | 'custom',
     {
       key?: string; baseUrl?: string; model?: string; navModel?: string; verifiedAt?: number; models?: string[];
+      /** 这家当生效服务商时，深思熟虑档指向哪家（第 17 批：和 navModel 成对存取，切胶囊不再「模型换了、指向没换」） */
+      navProvider?: 'openai' | 'deepseek' | 'kimi' | 'qwen' | 'gemini' | 'minimax' | 'custom';
       /** /models 顺带给出的能力（v2.7.0.6）：能否看图、最大输出。只有部分服务商给（如 DeepSeek） */
       modelCaps?: Record<string, { image?: boolean; maxOutput?: number }>;
     }
@@ -649,20 +661,20 @@ export interface Settings {
   navigatorModel?: string;
   /** 深思熟虑档跨平台指向：设了且那家在 aiProfiles 有 Key 时，中长期占卜/助手
    *  改用那家的连接跑 navigatorModel；未设 = navigatorModel 属于当前生效服务商。 */
-  navigatorProvider?: 'openai' | 'deepseek' | 'kimi' | 'qwen' | 'gemini' | 'minimax';
+  navigatorProvider?: 'openai' | 'deepseek' | 'kimi' | 'qwen' | 'gemini' | 'minimax' | 'custom';
   /** 助手（Navigator）专属模型：只管对话/问候/人格生成这条线，空 = 跟随深思熟虑档。
    *  与 navigatorModel 分开存，才能做到「换助手的模型不动中长期占卜」（用户口径）。 */
   assistantModel?: string;
   /** 助手专属模型的平台指向（同 navigatorProvider 语义，作用域只有助手） */
-  assistantProvider?: 'openai' | 'deepseek' | 'kimi' | 'qwen' | 'gemini' | 'minimax';
+  assistantProvider?: 'openai' | 'deepseek' | 'kimi' | 'qwen' | 'gemini' | 'minimax' | 'custom';
   /** 👁 视觉档（FS3）：看图的模型（拍照记账 / 图片理解）。空 = 没配，走 OCR 或手输。
    *  与深思熟虑同构：可跨平台指向别家（那家 aiProfiles 有 Key 才生效）。 */
   visionModel?: string;
-  visionProvider?: 'openai' | 'deepseek' | 'kimi' | 'qwen' | 'gemini' | 'minimax';
+  visionProvider?: 'openai' | 'deepseek' | 'kimi' | 'qwen' | 'gemini' | 'minimax' | 'custom';
   /** 🎤 听觉档（FS3）：语音转写模型（走 OpenAI 兼容 /audio/transcriptions）。
    *  空 = 不显示黑猫输入栏的话筒（除非原生识别可用）。 */
   audioModel?: string;
-  audioProvider?: 'openai' | 'deepseek' | 'kimi' | 'qwen' | 'gemini' | 'minimax';
+  audioProvider?: 'openai' | 'deepseek' | 'kimi' | 'qwen' | 'gemini' | 'minimax' | 'custom';
   summaryPromptPresets?: SummaryPromptPreset[];
   summaryActivePresetId?: string;
   /**
@@ -875,7 +887,7 @@ export interface PeriodSummary {
     baseUrl: string;
     model: string;
     /** 走的是哪家（v2.7.0.6）：深思熟虑档可能指向别家，追问时要用那家的 Key 重连 */
-    provider?: 'openai' | 'deepseek' | 'kimi' | 'qwen' | 'gemini' | 'minimax';
+    provider?: 'openai' | 'deepseek' | 'kimi' | 'qwen' | 'gemini' | 'minimax' | 'custom';
     /** system + user 原始消息（不含 assistant），重新追问时再 push 上次 streamedText 与新 question */
     messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
   };
@@ -1011,15 +1023,23 @@ export interface CallingCard {
 
 /** 抽签候选：三源奖池条目（今日待办 / 愿望纸片 / 近 30 天手动记录） */
 export interface FateCandidate {
-  /** 当日沉底键：todo:{id} / wish:{id} / hist:{归一化描述} */
+  /** 当日沉底键：todo:{id} / wish:{id} / hist:{同一件事的键} / quest:{今日委托预设 id} */
   key: string;
-  kind: 'todo' | 'wish' | 'history';
+  /** quest = 今日委托（第 17 批加的第四个来源） */
+  kind: 'todo' | 'wish' | 'history' | 'quest';
   title: string;
   todoId?: string;
   wishId?: string;
-  /** wish/history 接受成任务时的属性与点数建议（history 取原记录最大加点维度） */
+  /** wish/history/quest 接受成任务时的属性与点数建议（history 取最近那条记录最大加点维度） */
   attribute?: AttributeId;
   points?: number;
+  /** 旧事：近 60 天里做过几天、上次是几天前（揭示时写来由，第 17 批） */
+  historyDays?: number;
+  lastDaysAgo?: number;
+  /** 今日委托：预设 id（接受时带 lifeQuest 标记） */
+  presetId?: string;
+  /** 抽取权重（来源权重 × 条目权重；缺省 1） */
+  weight?: number;
 }
 
 // ── F6 黑猫 Navigator · 持久化（Batch3） ──
@@ -1216,7 +1236,8 @@ export interface WeeklyGoal {
 
 export type QuestTemplateId =
   | 'attr_least' | 'attr_most' | 'bigdeal_steps' | 'all_todos_3days' | 'record_7days' | 'streak_3days'
-  | 'tarot_3days' | 'pact_once' | 'images_2' | 'summary_1' | 'ledger_3' | 'battle_once' | 'important_2';
+  | 'tarot_3days' | 'pact_once' | 'images_2' | 'summary_1' | 'ledger_3' | 'battle_once' | 'important_2'
+  | 'life_3';
 
 export interface Quest {
   /** `${weekKey}-${slot}`：同一周两台设备生成同一组，同步时天然合并 */
@@ -1234,6 +1255,8 @@ export interface Quest {
   claimedAt?: string;
   /** 上周做完没领、这周刷新时替你领的 */
   autoClaimed?: boolean;
+  /** 用了本周的「换一张」换来的（每周一次，第 14 批） */
+  swapped?: boolean;
 }
 
 // ── F5 心相记账 ──────────────────────────────────────────

@@ -2,9 +2,10 @@
  * backup.ts — 本地数据备份 / 恢复的纯数据层
  * （UI_AUDIT_V2.5.md §3.4：导出/导入逻辑自 Settings.tsx 下沉 service 层）
  *
- * 脱敏规则（与历史导出行为逐字一致，导入端依赖此约定）：
- *   - settings 表：剥离 backgroundImage（背景图 base64 体积大）与
- *     openaiApiKey / summaryApiKey（密钥绝不写入备份外泄）；
+ * 脱敏规则（导入端依赖此约定）：
+ *   - settings 表：剥离 backgroundImage（背景图 base64 体积大）。API Key 保留（第 13 轮用户口径）：
+ *     备份是用户自己的恢复文件，带着 Key 换设备 / 重装恢复不用重填；要不要上云另由同步里的「AI 模型 API」
+ *     开关管（默认关）。以前只剥了 summaryApiKey、各家档案里的 Key 一直在，恢复后当前那家反而要重填；
  *   - users 表：剥离 avatarDataUrl（base64 头像体积大，导入后可重新上传）；
  *   - confidants 表：剥离 customAvatarDataUrl（长按上传的自定义头像，语义上属本地私有）。
  *
@@ -31,7 +32,7 @@ export const buildExportJson = async (): Promise<string> => {
   const rawSettings = await db.settings.toArray();
   const sanitizedSettings = rawSettings.map(s => {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { backgroundImage: _bg, openaiApiKey: _key, summaryApiKey: _sk, ...rest } = s as typeof s & { backgroundImage?: string; openaiApiKey?: string; summaryApiKey?: string };
+    const { backgroundImage: _bg, ...rest } = s as typeof s & { backgroundImage?: string };
     return rest;
   });
   // 用户表：剔除 base64 头像（体积太大；导入后可重新上传）

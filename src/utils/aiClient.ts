@@ -28,8 +28,16 @@ import {
   providerMaxOutput,
   isOfficialHost,
   relayHint,
-  type ApiProvider, DEFAULT_PROVIDER, cleanApiKey } from '@/utils/aiProviders';
+  moderationHint,
+  MODERATION_HINT,
+  customProtocol,
+  RELAY_CAPACITY_HINT,
+  getProviderConfig,
+  type ApiProvider, type ApiProtocol, DEFAULT_PROVIDER, cleanApiKey } from '@/utils/aiProviders';
 import { aiFetch, isNativeHost, syncNativeHosts } from '@/utils/aiTransport';
+import { effortFixFromMessage, isEnableThinkingMessage, isLegacyThinkingMessage, isUnsupportedTemperatureMessage, quirksFor, rememberQuirk, thinkingSuffixBase } from '@/utils/aiQuirks';
+import { anthropicEndpoint, anthropicHeaders, buildAnthropicBody, mapAnthropicStreamEvent, parseAnthropicResponse } from '@/utils/aiAnthropic';
+import { hostOf as diagHostOf, recordAIDiag } from '@/utils/aiDiagnostics';
 
 export type AIRole = 'system' | 'user' | 'assistant';
 
@@ -57,7 +65,15 @@ export interface AIConfig {
    * 深思熟虑档不再压成最低档（让它按模型默认的力度想），其余档位与「瞬发」调用照旧压最低。
    */
   tier?: AITier;
+  /** 请求协议（第 14 批）：自定义服务商可选 Anthropic；不写 = 自定义按当前设置、其余 OpenAI 兼容 */
+  protocol?: ApiProtocol;
 }
+
+/** 这份配置走哪个协议（复制配置时漏带 protocol 的，自定义服务商按当前设置补上） */
+export function protocolOf(cfg: Pick<AIConfig, 'protocol' | 'provider'>): ApiProtocol {
+  return cfg.protocol ?? (cfg.provider === 'custom' ? customProtocol() : 'openai');
+}
+const isAnthropic = (cfg: Pick<AIConfig, 'protocol' | 'provider'>) => protocolOf(cfg) === 'anthropic';
 
 export type AITier = 'fast' | 'deliberate' | 'assistant' | 'vision' | 'audio';
 
@@ -107,11 +123,13 @@ export interface ChatOptions {
    */
   instant?: boolean;
   /**
-   * 「中转站保险」（第 12 轮）：去掉只有官方才认的字段（thinking / reasoning_effort / response_format）、
+   * 「中转站保险」（第 12 轮）：去掉只有官方才认的字段（thinking / reasoning_effort / response_format，第 14 批起连 temperature 一起）、
    * 不加思维链余量。非官方地址上撞到 HTTP 400 时自动带上它重发一次——中转站的 400 措辞五花八门，
    * 不按措辞认。
    */
   relaySafe?: boolean;
+  /** 内部：5xx 已经自动隔一下重试过一次（第 14 批） */
+  retried5xx?: boolean;
 }
 
 /**
@@ -184,7 +202,20 @@ export function getAIConfig(settings: Settings): AIConfig | null {
     settings.summaryApiBaseUrl,
     settings.summaryModel,
   );
+  // 自定义服务商没有默认地址 / 默认模型：两样都填了才算配好（第 14 批）
+  if (settings.summaryApiProvider === 'custom') {
+    if (!baseUrl || !model) return null;
+    return { apiKey, baseUrl, model, provider: 'custom', tier: 'fast', protocol: settings.customProviderProtocol === 'anthropic' ? 'anthropic' : 'openai' };
+  }
   return { apiKey, baseUrl, model, provider: settings.summaryApiProvider, tier: 'fast' };
+}
+
+/**
+ * AI 能不能用（第 14 批）：以前各处只看「存了 Key 没有」，自定义服务商还得有地址和模型——
+ * 只存了 Key 就当能用，会拿空模型名去请求（中转站回「无可用渠道」）。改成「配置解析得出来」。
+ */
+export function aiConfigured(settings: Settings): boolean {
+  return getAIConfig(settings) !== null;
 }
 
 /**
@@ -198,7 +229,10 @@ export function getAIConfig(settings: Settings): AIConfig | null {
  * 属于别家，套在当前连接上必 404）。
  */
 export function getDeliberateAIConfig(settings: Settings): AIConfig | null {
-  const cfg = applyModelOverride(settings, settings.navigatorProvider, settings.navigatorModel);
+  // 模型留空 = 跟随快速响应（第 17 批）：以前 navigatorProvider 还指着别家时（清空了输入框、或切胶囊只换了模型），
+  // 会落到「那家存档里的快速模型」，设置页却写「跟随快速响应」——用户换了好模型，实际调用的还是旧那家
+  const model = settings.navigatorModel?.trim();
+  const cfg = model ? applyModelOverride(settings, settings.navigatorProvider, model) : getAIConfig(settings);
   return cfg ? { ...cfg, tier: 'deliberate' } : null;
 }
 
@@ -233,9 +267,13 @@ function applyModelOverride(
   if (pv && pv !== activeProvider) {
     const prof = settings.aiProfiles?.[pv];
     const key = cleanApiKey(prof?.key).key;
-    if (key) {
+    // 自定义服务商没有默认地址：存档里没地址 = 当它没配
+    if (key && !(pv === 'custom' && !prof?.baseUrl?.trim())) {
       const resolved = resolveProvider(pv, prof?.baseUrl, model?.trim() || prof?.model);
-      return { apiKey: key, baseUrl: resolved.baseUrl, model: resolved.model, provider: pv };
+      return {
+        apiKey: key, baseUrl: resolved.baseUrl, model: resolved.model, provider: pv,
+        ...(pv === 'custom' ? { protocol: settings.customProviderProtocol === 'anthropic' ? 'anthropic' as const : 'openai' as const } : {}),
+      };
     }
     return strict ? null : getAIConfig(settings);
   }
@@ -257,6 +295,11 @@ export function fallbackAIConfig(settings: Settings): AIConfig {
     provider: settings.summaryApiProvider,
     tier: 'fast',
   };
+}
+
+/** 「服务商 · 模型」：报错时告诉用户这一步实际用的是哪家的哪个模型（第 16 批 · 逆影战场） */
+export function aiConfigLabel(cfg: Pick<AIConfig, 'provider' | 'model'>): string {
+  return `${getProviderConfig(cfg.provider).label} · ${cfg.model}`;
 }
 
 /** @deprecated 改名 getDeliberateAIConfig（覆盖面已不止 Navigator）；保留别名防漏改 */
@@ -282,6 +325,8 @@ export function getAudioAIConfig(settings: Settings): AIConfig | null {
   const model = settings.audioModel?.trim();
   if (!model) return null;
   const cfg = applyModelOverride(settings, settings.audioProvider, model, true);
+  // Anthropic 协议没有 /audio/transcriptions：听觉档落在它上面 = 不可用
+  if (cfg && isAnthropic(cfg)) return null;
   return cfg ? { ...cfg, tier: 'audio' } : null;
 }
 
@@ -371,9 +416,37 @@ async function toHttpError(resp: Response, provider?: ApiProvider, requestUrl?: 
   // 先认中转站的措辞（无可用渠道 / 额度 / 令牌 / 模型不存在），认不出再按状态码
   // 官方主机不用中转措辞，落回按状态码 + 厂商的提示。优先按请求地址判：
   // 自己 new 出来的 Response（测试桩 / 个别代理层）resp.url 是空串，只靠它会把官方当成中转
-  const hint = relayHint(detail, isOfficialHost(requestUrl || resp.url)) || getHttpStatusHint(resp.status, provider);
+  const hint = moderationHint(detail) || relayHint(detail, isOfficialHost(requestUrl || resp.url)) || getHttpStatusHint(resp.status, provider);
   const prefix = hint ? `${hint}（HTTP ${resp.status}）` : `HTTP ${resp.status}`;
   return new HttpStatusError(detail ? `${prefix}: ${detail}` : prefix, resp.status, parseRetryAfter(resp));
+}
+
+/** 被服务商内容审核拦下的错：换参数重发没用（同样的内容还会被拦），别走中转站的去字段重发 */
+const isModerationError = (e: unknown): boolean => e instanceof Error && e.message.includes(MODERATION_HINT);
+
+/**
+ * 发一次 /chat/completions，顺手记诊断（成功 / HTTP 错误 / 连不上）。非 2xx 抛 toHttpError 的结果。
+ * 诊断只记状态、耗时、主机、模型名——不记内容、不记 Key（见 aiDiagnostics）。
+ */
+async function postChat(cfg: AIConfig, body: string, signal: AbortSignal, kind: 'chat' | 'stream', accept?: string): Promise<Response> {
+  const t0 = Date.now();
+  const diag = { kind, tier: cfg.tier, provider: cfg.provider, host: diagHostOf(cfg.baseUrl), model: cfg.model, native: isNativeHost(cfg.baseUrl) };
+  let resp: Response;
+  try {
+    resp = isAnthropic(cfg)
+      ? await aiFetch(anthropicEndpoint(cfg.baseUrl, 'messages'), { method: 'POST', headers: anthropicHeaders(cfg.apiKey, !!accept), body, signal })
+      : await aiFetch(`${cfg.baseUrl}/chat/completions`, { method: 'POST', headers: authHeaders(cfg, accept), body, signal });
+  } catch (e) {
+    recordAIDiag({ ...diag, ok: false, status: 0, ms: Date.now() - t0, err: e instanceof Error ? (e.name === 'AbortError' ? '超时或取消' : e.message) : String(e) });
+    throw e;
+  }
+  if (!resp.ok) {
+    const err = await toHttpError(resp, cfg.provider, cfg.baseUrl);
+    recordAIDiag({ ...diag, ok: false, status: resp.status, ms: Date.now() - t0, err: err.message });
+    throw err;
+  }
+  recordAIDiag({ ...diag, ok: true, status: resp.status, ms: Date.now() - t0 });
+  return resp;
 }
 
 function authHeaders(cfg: AIConfig, accept?: string): Record<string, string> {
@@ -394,6 +467,18 @@ function authHeaders(cfg: AIConfig, accept?: string): Record<string, string> {
  * 其余 provider（DeepSeek/Kimi/Gemini-compat/MiniMax 及旧的 gpt-4o-mini）仍用
  * `max_tokens` + `temperature`——尤其 DeepSeek **只**认 max_tokens，所以不能全局切换。
  */
+/**
+ * Anthropic 协议的输出额度（第 14 批）：和 OpenAI 兼容口同一套思维链余量——DeepSeek 等家的 /anthropic 口
+ * 默认先想再写（回包先是 thinking 块），不留余量正文会被想光。
+ */
+function anthropicBudget(cfg: AIConfig, opts: ChatOptions): number {
+  const maxTokens = opts.maxTokens ?? DEFAULT_MAX_TOKENS;
+  const relaySafe = !!opts.relaySafe || !!quirksFor(cfg.baseUrl, cfg.model).relaySafe;
+  const thinking = isThinkingModel(cfg.model) && !opts.noThinkingAllowance && !relaySafe;
+  const allowance = isOfficialHost(cfg.baseUrl) ? THINKING_ALLOWANCE : RELAY_THINKING_ALLOWANCE;
+  return Math.min(providerMaxOutput(cfg.provider), thinking ? maxTokens + Math.max(allowance, maxTokens) : maxTokens);
+}
+
 function buildRequestBody(
   cfg: AIConfig,
   messages: AIMessage[],
@@ -401,8 +486,11 @@ function buildRequestBody(
   stream: boolean,
 ): Record<string, unknown> {
   const maxTokens = opts.maxTokens ?? DEFAULT_MAX_TOKENS;
-  const relaySafe = !!opts.relaySafe;
-  const body: Record<string, unknown> = { model: cfg.model, messages, stream };
+  // 这个主机上的这个模型撞过的坑（不收 temperature / 不认某档 effort / 只收中转站保险）：直接按记下的发
+  const quirks = quirksFor(cfg.baseUrl, cfg.model);
+  const relaySafe = !!opts.relaySafe || !!quirks.relaySafe;
+  // 中转站把「-thinking」版本改写成新模型不认的旧式思考参数：撞过就去掉后缀发同一个模型（第 16 批）
+  const body: Record<string, unknown> = { model: quirks.sendAs ?? cfg.model, messages, stream };
   if (opts.jsonMode && cfg.provider && JSON_MODE_PROVIDERS.has(cfg.provider) && !relaySafe) {
     body.response_format = { type: 'json_object' };
   }
@@ -447,12 +535,15 @@ function buildRequestBody(
      * 快速 / 助手档和瞬发调用照旧压最低（要的是首字快）。
      */
     const pressLowest = !!opts.instant || cfg.tier !== 'deliberate';
-    const effort = opts.noReasoningEffort || !pressLowest ? undefined : reasoningEffortFor(cfg.model);
+    const effort = opts.noReasoningEffort || !pressLowest || quirks.effort === null
+      ? undefined
+      : (quirks.effort ?? reasoningEffortFor(cfg.model));
     if (effort && !relaySafe) body.reasoning_effort = effort;
     // 不发 temperature：推理模型只接受默认 1，自定义会 400
   } else {
     body.max_tokens = budget;
-    body.temperature = opts.temperature ?? DEFAULT_TEMPERATURE;
+    // 新一代 Claude 等不收 temperature（400「temperature is deprecated」）：撞过就不发；中转站保险也不发
+    if (!quirks.noTemperature && !relaySafe) body.temperature = opts.temperature ?? DEFAULT_TEMPERATURE;
   }
   if (opts.extraBody) Object.assign(body, opts.extraBody);
   if (relaySafe) {
@@ -460,7 +551,10 @@ function buildRequestBody(
     delete body.thinking;
     delete body.reasoning_effort;
     delete body.response_format;
+    delete body.temperature;
   }
+  // 百炼 Qwen3 开源系：一次性调用必须显式关思考（撞过才加，第 14 批）
+  if (!stream && quirks.nonStreamThinkingOff) body.enable_thinking = false;
   return body;
 }
 
@@ -506,6 +600,25 @@ function isOverBudgetError(e: unknown): boolean {
   return /max_tokens|max_completion_tokens|maximum.*tokens|tokens.*exceed|too large|less than or equal/i.test(m);
 }
 
+/**
+ * 中转站这个模型临时没上游（「No available resources」「上游负载已饱和」）：aiClient 已经隔一下重试过一次，
+ * 上层别再换路 / 重开 / 分头补（第 14 批：一次召唤 Persona 能对着没资源的模型撞出三十多发）。
+ */
+export const isRelayCapacityError = (e: unknown): boolean => e instanceof Error && e.message.includes(RELAY_CAPACITY_HINT);
+
+/** 一个字都没收到的 5xx（中转站「No available resources」、网关 502/503/504）：隔一下再试一次 */
+function isRetryable5xx(e: unknown): boolean {
+  return e instanceof HttpStatusError && [500, 502, 503, 504].includes(e.status) && !isModerationError(e);
+}
+const RETRY_5XX_DELAY_MS = 1200;
+function sleepAbortable(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) { reject(new DOMException('Aborted', 'AbortError')); return; }
+    const t = setTimeout(resolve, ms);
+    signal?.addEventListener('abort', () => { clearTimeout(t); reject(new DOMException('Aborted', 'AbortError')); }, { once: true });
+  });
+}
+
 /** 服务商不认 reasoning_effort（或它的某个取值）而 400 */
 function isUnsupportedEffortError(e: unknown): boolean {
   const m = e instanceof Error ? e.message : '';
@@ -529,10 +642,38 @@ export async function chatComplete(
   try {
     return await chatCompleteOnce(cfg, messages, opts);
   } catch (e) {
-    // ⓪ 非官方地址（中转站）撞到 400：先把只有官方才认的字段（thinking / reasoning_effort / response_format）
-    //    和思维链余量全去掉重发一次——它们的 400 措辞五花八门，不按措辞认（第 12 轮）
-    if (!opts.relaySafe && isHttp400(e) && !isOfficialHost(cfg.baseUrl)) {
-      return await chatComplete(cfg, messages, { ...opts, relaySafe: true, noThinkingAllowance: true });
+    const msg = e instanceof Error ? e.message : '';
+    const quirks = quirksFor(cfg.baseUrl, cfg.model);
+    // ⓐ 模型不收 temperature（第 14 批 · 中转站实测新一代 Claude）：记住，不发再来
+    if (isHttp400(e) && isUnsupportedTemperatureMessage(msg) && !quirks.noTemperature) {
+      rememberQuirk(cfg.baseUrl, cfg.model, { noTemperature: true });
+      return await chatComplete(cfg, messages, opts);
+    }
+    // ⓑ 不认这一档 reasoning_effort：换成它列出来的最省一档（列不出就不发），记住
+    const effortFix = isHttp400(e) ? effortFixFromMessage(msg) : undefined;
+    if (effortFix !== undefined && quirks.effort === undefined) {
+      rememberQuirk(cfg.baseUrl, cfg.model, { effort: effortFix });
+      return await chatComplete(cfg, messages, opts);
+    }
+    // ⓒ 一次性调用必须关思考（百炼 Qwen3 开源系）：记住，带上 enable_thinking=false 再来
+    if (isHttp400(e) && isEnableThinkingMessage(msg) && !quirks.nonStreamThinkingOff) {
+      rememberQuirk(cfg.baseUrl, cfg.model, { nonStreamThinkingOff: true });
+      return await chatComplete(cfg, messages, opts);
+    }
+    // ⓓ 中转站把「xxx-thinking」改写成旧式思考参数，新一代 Claude 不认（第 16 批 · 区层显形实测，发什么都一样）：
+    //    去掉后缀发同一个模型，记住。要排在 ⓪ 前面：去字段重发治不了它，还会白白记上「中转站保险」
+    const thinkingBase = isHttp400(e) && isLegacyThinkingMessage(msg) && !quirks.sendAs ? thinkingSuffixBase(cfg.model) : null;
+    if (thinkingBase) {
+      rememberQuirk(cfg.baseUrl, cfg.model, { sendAs: thinkingBase });
+      return await chatComplete(cfg, messages, opts);
+    }
+    // ⓪ 非官方地址（中转站）撞到 400：先把只有官方才认的字段（thinking / reasoning_effort / response_format / temperature）
+    //    和思维链余量全去掉重发一次——它们的 400 措辞五花八门，不按措辞认（第 12 轮）；这样才通的记住，下次直接这么发
+    if (!opts.relaySafe && !quirks.relaySafe && isHttp400(e) && !isModerationError(e) && !isOfficialHost(cfg.baseUrl)) {
+      const out = await chatComplete(cfg, messages, { ...opts, relaySafe: true, noThinkingAllowance: true });
+      // 只记「认不出的 400」：额度超限（max_tokens 太大）那类是预算问题，不该让之后每发都去掉 temperature 等字段
+      if (!isOverBudgetError(e)) rememberQuirk(cfg.baseUrl, cfg.model, { relaySafe: true });
+      return out;
     }
     // ① 预算不够（正文为空 or 半截）→ 翻三倍重来一次
     if (isEmptyLengthError(e)) {
@@ -576,6 +717,11 @@ export async function chatComplete(
     if (isUnsupportedEffortError(e) && !opts.noReasoningEffort) {
       return await chatComplete(cfg, messages, { ...opts, noReasoningEffort: true });
     }
+    // ④ 5xx（一个字都没收到）：隔一下再试一次——中转站临时没资源 / 网关抖一下常常第二发就好
+    if (!opts.retried5xx && isRetryable5xx(e)) {
+      await sleepAbortable(RETRY_5XX_DELAY_MS, opts.signal);
+      return await chatComplete(cfg, messages, { ...opts, retried5xx: true });
+    }
     throw e;
   }
 }
@@ -602,17 +748,17 @@ async function chatCompleteOnce(
   const opts = withThinkingTimeout(cfg, rawOpts);
   const ab = setupAbort(opts);
   try {
-    const resp = await aiFetch(`${cfg.baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: authHeaders(cfg),
-      body: JSON.stringify(buildRequestBody(cfg, messages, opts, false)),
-      signal: ab.signal,
-    });
-    if (!resp.ok) throw await toHttpError(resp, cfg.provider, cfg.baseUrl);
+    const anthropic = isAnthropic(cfg);
+    const reqBody = anthropic
+      ? buildAnthropicBody(cfg, messages, { maxTokens: anthropicBudget(cfg, opts), temperature: opts.relaySafe ? undefined : (opts.temperature ?? DEFAULT_TEMPERATURE), stream: false })
+      : buildRequestBody(cfg, messages, opts, false);
+    const resp = await postChat(cfg, JSON.stringify(reqBody), ab.signal, 'chat');
     const data = await resp.json().catch(() => null);
-    const choice = data?.choices?.[0];
-    const content = choice?.message?.content;
-    const finishReason = typeof choice?.finish_reason === 'string' ? choice.finish_reason : '';
+    // 两种协议的回包统一成「正文 / 结束原因 / 思考」（Anthropic 的 max_tokens 记成 length，共用加预算重试）
+    const parsedA = anthropic ? parseAnthropicResponse(data) : null;
+    const choice = anthropic ? null : data?.choices?.[0];
+    const content = parsedA ? parsedA.text : choice?.message?.content;
+    const finishReason = parsedA ? parsedA.finish : (typeof choice?.finish_reason === 'string' ? choice.finish_reason : '');
     if (typeof content === 'string' && content.trim()) {
       /**
        * 正文非空但 finish_reason=length：**拦腰截断**——最后一句多半只写了半截，
@@ -641,7 +787,7 @@ async function chatCompleteOnce(
      *    这两种都会表现成用户说的「AI 内容根本就没返回」，
      *    但错误提示只写「空响应」，看不出该调大预算还是该换模型。
      */
-    const reasoning = choice?.message?.reasoning_content ?? choice?.message?.reasoning;
+    const reasoning = parsedA ? parsedA.reasoning : (choice?.message?.reasoning_content ?? choice?.message?.reasoning);
     const fr = finishReason;
     if (fr === 'length') {
       // 打上标记：外层 chatComplete 会加倍预算再来一发
@@ -701,15 +847,18 @@ export async function* chatStream(
   /** 0 = 原样；1 = 去掉思维链余量；2 = 再退到 2048 */
   let budgetStep = 0;
   let noEffort = !!opts.noReasoningEffort;
-  /** 中转站保险：非官方地址撞到 400 就带上它重发（见 ChatOptions.relaySafe） */
+  /** 中转站保险：非官方地址撞到 400 就带上它重发（见 ChatOptions.relaySafe）；这样才通的记住 */
   let relaySafe = !!opts.relaySafe;
+  let relaySafeTried = false;
+  let retried5xx = !!opts.retried5xx;
   let last: StreamOutcome = { produced: false, sawReasoning: false, finishReason: '' };
   /** 正常收完才置 true；调用方提前 break（generator.return）或中途抛错时仍是 false → finally 里掐断底层请求 */
   let completed = false;
   try {
     for (let attempt = 0; attempt < 3; attempt++) {
       const extra: Record<string, unknown> = {};
-      if (attempt === 2 && cfg.provider === 'deepseek') extra.thinking = { type: 'disabled' };
+      // 第三发关思考：thinking 字段只有官方 DeepSeek 认；走过中转站保险的别再加回来（第 14 批：以前保险去掉了它，这里又塞回去）
+      if (attempt === 2 && cfg.provider === 'deepseek' && !relaySafe && !quirksFor(cfg.baseUrl, cfg.model).relaySafe && isOfficialHost(cfg.baseUrl)) extra.thinking = { type: 'disabled' };
       const attemptOpts: ChatOptions = {
         ...opts,
         ...(budgetStep >= 1 ? { noThinkingAllowance: true } : {}),
@@ -722,12 +871,29 @@ export async function* chatStream(
         outcome = yield* streamOnce(cfg, messages, attemptOpts, ab, extra);
       } catch (e) {
         // 这几类 400 在请求发出去就被拒了，一个字节都没流过来，换参数重发是安全的
-        if (!relaySafe && isHttp400(e) && !isOfficialHost(cfg.baseUrl)) { relaySafe = true; attempt--; continue; }
+        const msg = e instanceof Error ? e.message : '';
+        const quirks = quirksFor(cfg.baseUrl, cfg.model);
+        if (isHttp400(e) && isUnsupportedTemperatureMessage(msg) && !quirks.noTemperature) {
+          rememberQuirk(cfg.baseUrl, cfg.model, { noTemperature: true }); attempt--; continue;
+        }
+        const effortFix = isHttp400(e) ? effortFixFromMessage(msg) : undefined;
+        if (effortFix !== undefined && quirks.effort === undefined) {
+          rememberQuirk(cfg.baseUrl, cfg.model, { effort: effortFix }); attempt--; continue;
+        }
+        // 「xxx-thinking」被中转站改写成旧式思考参数（见 chatComplete ⓓ）：去掉后缀发同一个模型
+        const thinkingBase = isHttp400(e) && isLegacyThinkingMessage(msg) && !quirks.sendAs ? thinkingSuffixBase(cfg.model) : null;
+        if (thinkingBase) {
+          rememberQuirk(cfg.baseUrl, cfg.model, { sendAs: thinkingBase }); attempt--; continue;
+        }
+        if (!relaySafe && !quirks.relaySafe && isHttp400(e) && !isModerationError(e) && !isOfficialHost(cfg.baseUrl)) { relaySafe = true; relaySafeTried = !isOverBudgetError(e); attempt--; continue; }
         if (budgetStep < 2 && isOverBudgetError(e)) { budgetStep++; attempt--; continue; }
         if (!noEffort && isUnsupportedEffortError(e)) { noEffort = true; attempt--; continue; }
+        // 5xx 也是在发出去时就被拒（一个字节都没流过来）：隔一下再试一次
+        if (!retried5xx && isRetryable5xx(e)) { retried5xx = true; await sleepAbortable(RETRY_5XX_DELAY_MS, ab.signal); attempt--; continue; }
         throw e;
       }
       if (outcome.produced) {
+        if (relaySafeTried) rememberQuirk(cfg.baseUrl, cfg.model, { relaySafe: true });
         completed = true;
         opts.onFinishReason?.(outcome.finishReason);
         return;
@@ -771,13 +937,11 @@ async function* streamOnce(
   ab: AbortBundle,
   extra: Record<string, unknown>,
 ): AsyncGenerator<string, StreamOutcome, unknown> {
-  const resp = await aiFetch(`${cfg.baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: authHeaders(cfg, 'text/event-stream'),
-    body: JSON.stringify({ ...buildRequestBody(cfg, messages, opts, true), ...extra }),
-    signal: ab.signal,
-  });
-  if (!resp.ok) throw await toHttpError(resp, cfg.provider, cfg.baseUrl);
+  const anthropic = isAnthropic(cfg);
+  const reqBody = anthropic
+    ? buildAnthropicBody(cfg, messages, { maxTokens: anthropicBudget(cfg, opts), temperature: opts.relaySafe ? undefined : (opts.temperature ?? DEFAULT_TEMPERATURE), stream: true })
+    : { ...buildRequestBody(cfg, messages, opts, true), ...extra };
+  const resp = await postChat(cfg, JSON.stringify(reqBody), ab.signal, 'stream', 'text/event-stream');
   if (!resp.body) throw new Error('AI 流式响应无 body');
 
   const reader = resp.body.getReader();
@@ -786,6 +950,7 @@ async function* streamOnce(
   let produced = false;
   let sawReasoning = false;
   let finishReason = '';
+  let sawDone = false;
   try {
   outer: while (true) {
     /**
@@ -813,7 +978,26 @@ async function* streamOnce(
       const line = rawLine.trim();
       if (!line.startsWith('data:')) continue;
       const payload = line.slice(5).trim();
-      if (payload === '[DONE]') break outer;
+      if (payload === '[DONE]') { sawDone = true; break outer; }
+      if (anthropic) {
+        // Anthropic：content_block_delta(text / thinking) / message_delta.stop_reason / message_stop / error
+        let json: unknown;
+        try { json = JSON.parse(payload); } catch { continue; }
+        const ev = mapAnthropicStreamEvent(json);
+        if (ev.kind === 'text') {
+          if (ev.text.trim()) produced = true;
+          yield ev.text;
+        } else if (ev.kind === 'reasoning') {
+          sawReasoning = true; opts.onReasoning?.(ev.text);
+        } else if (ev.kind === 'finish') {
+          finishReason = ev.reason;
+        } else if (ev.kind === 'stop') {
+          sawDone = true; break outer;
+        } else if (ev.kind === 'error') {
+          throw new HttpStatusError(`${getHttpStatusHint(ev.status, cfg.provider) || '服务端错误'}（HTTP ${ev.status}）: ${ev.message}`, ev.status);
+        }
+        continue;
+      }
       try {
         const json = JSON.parse(payload);
         const c = json?.choices?.[0];
@@ -834,5 +1018,6 @@ async function* streamOnce(
     // [DONE] 之后 / 提前退出：把读取端关掉，连接不再挂着（已关闭的流上 cancel 是空操作）
     reader.cancel().catch(() => { /* 已关 */ });
   }
-  return { produced, sawReasoning, finishReason };
+  // 正常收到 [DONE] 但服务商没给 finish_reason（不少中转站）：当作正常写完，别让调用方按「结尾不像句末」误判成截断（第 14 批）
+  return { produced, sawReasoning, finishReason: finishReason || (sawDone ? 'stop' : '') };
 }

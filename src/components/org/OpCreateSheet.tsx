@@ -193,7 +193,7 @@ export function OpCreateSheet({ view, open, onClose, onDone }: { view: OrgView; 
                 {aiBusy ? '拆解中…' : '✦ AI 拆解分工'}
               </button>
               <span className="min-w-0 text-[11px] font-semibold leading-snug text-gray-500 dark:text-gray-400">
-                {aiOk ? (title.trim() ? '按作战目标和每个人的代表牌、面具拆，拆完还能改' : '先写作战目标') : '要先在「设置 → AI」里填好 API Key'}
+                {aiOk ? (title.trim() ? '按作战目标和每个人的代表牌、面具拆，拆完还能改' : '先写作战目标') : '要先在「设置 → AI 服务」里填好 API Key'}
               </span>
             </div>
             <div className="space-y-2">

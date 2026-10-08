@@ -458,11 +458,14 @@ export async function fetchWeatherNow(
   }
 }
 
-/** 只看缓存、不发请求：记录保存时附天气用——10 分钟内的才算，没有就返回 null，绝不为等天气拖慢保存（第 6 轮） */
-export function peekWeatherNow(cfg: WeatherConfig): WeatherNow | null {
+/**
+ * 只看缓存、不发请求：记录保存时附天气用——10 分钟内的才算，没有就返回 null，绝不为等天气拖慢保存（第 6 轮）。
+ * maxAgeMs：调用方能接受更旧的（今日委托只问「下没下雨」，90 分钟内取过的就够，第 16 批）
+ */
+export function peekWeatherNow(cfg: WeatherConfig, maxAgeMs: number = CACHE_MS): WeatherNow | null {
   if (!weatherReady(cfg)) return null;
   const hit = cache.get(cacheKey(cfg));
-  return hit && Date.now() - hit.at < CACHE_MS ? hit.data : null;
+  return hit && Date.now() - hit.at < maxAgeMs ? hit.data : null;
 }
 
 /** settings 里的四个天气字段 → WeatherConfig（首页天气角标与记录附天气共用一个口径） */

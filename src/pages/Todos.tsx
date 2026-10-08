@@ -698,7 +698,7 @@ export const TodosView = () => {
             </span>
             <span aria-hidden className="opacity-50">›</span>
           </button>
-          {/* 委托板入口（第 6 轮）：角标 = 可领取张数。第 13 轮起常驻——里面的「今日生活委托」不需要记录史，
+          {/* 委托板入口（第 6 轮）：角标 = 可领取张数；第 14 批：周一刷出新委托、还没打开看过时挂一个红点。第 13 轮起常驻——里面的「今日委托」不需要记录史，
               「本周委托」没解锁时在抽屉里写明条件。
               角标放在按钮外面那层：蓝频道按钮有斜切 clip-path，放在里面会被裁掉一角 */}
           {(
@@ -706,7 +706,7 @@ export const TodosView = () => {
             <button
               type="button"
               onClick={() => setQuestOpen(true)}
-              aria-label={`委托板${questBoard.claimable ? `，${questBoard.claimable} 张可领取` : ''}`}
+              aria-label={`委托板${questBoard.claimable ? `，${questBoard.claimable} 张可领取` : questBoard.unseen ? '，本周有新委托' : ''}`}
               className={`relative flex shrink-0 items-center gap-1.5 px-3 py-2 text-xs font-bold transition ${
                 p3
                   ? ''
@@ -721,9 +721,11 @@ export const TodosView = () => {
               <span aria-hidden className={p5 ? 'text-[#c00008]' : isP4 ? 'text-[#f9a11b]' : 'text-primary'}>📜</span>
               <span>委托</span>
             </button>
-            {questBoard.claimable > 0 && (
+            {questBoard.claimable > 0 ? (
               <span aria-hidden className="pointer-events-none absolute -right-1.5 -top-1.5 z-20 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#e02020] px-1 text-[10px] font-black leading-none text-white">{questBoard.claimable}</span>
-            )}
+            ) : questBoard.unseen ? (
+              <span aria-hidden data-testid="quest-new-dot" className="pointer-events-none absolute -right-1 -top-1 z-20 h-2.5 w-2.5 rounded-full bg-[#e02020] ring-2 ring-white dark:ring-gray-900" />
+            ) : null}
             </span>
           )}
           </div>

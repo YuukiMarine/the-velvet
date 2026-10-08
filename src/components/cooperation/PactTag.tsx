@@ -23,7 +23,8 @@ type Tone = PactTone;
 /** night：放在固定深色底上（专辑墙的卡背），中性频道的浅色皮在那上面发灰，换一套浅字 */
 function TagShell({ tone, children, seed = 3, night = false }: { tone: Tone; children: string; seed?: number; night?: boolean }) {
   const channel = useUiChannel();
-  const base = 'inline-flex shrink-0 items-center whitespace-nowrap text-[10px] font-black leading-none';
+  // max-w-full + truncate：字号被系统放得很大时，标记自己比一行还宽也只截断、不撑破（第 14 批）
+  const base = 'inline-block max-w-full shrink-0 truncate whitespace-nowrap align-middle text-[10px] font-black leading-none';
   if (channel === 'p3') {
     const bg = tone === 'hot' ? P3R.magenta : tone === 'warm' ? P3R.blue : tone === 'done' ? P3R.cyan : P3R.cyanFaint;
     const fg = tone === 'plain' ? P3R.blueDeep : '#fff';

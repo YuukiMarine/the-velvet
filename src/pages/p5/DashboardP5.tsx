@@ -246,7 +246,11 @@ const StarRadarP5 = ({ items, onSelect, showLabels = true }: {
   const ringCount = Math.min(10, Math.max(1, items[0]?.maxLevel ?? 5));
   // 标签锚点：固定贴在最外圈之外（星环已撑满面板，跟着臂长走会在低等级时挤到中心）
   // 侧边标签量宽防裁切（两位数等级 + 精通星会伸出面板；「平平无奇」少一个字也是它）
-  const { containerRef, register } = useSideLabelClamp([items.map((it) => `${it.level}/${it.stars ?? 0}/${it.title}`).join('|')]);
+  // 第 17 批：把斜切平面传进去（以前没算斜切，上半右推、下半左推的标签会被切掉）；showLabels / 名字进 deps（关掉档案后标签重挂要重算）
+  const { containerRef, register } = useSideLabelClamp(
+    [showLabels, items.map((it) => `${it.name}/${it.level}/${it.stars ?? 0}/${it.title}`).join('|')],
+    { skewXDeg: STAR_SKEW, scaleY: STAR_SCALEY },
+  );
   const labelAt = (i: number) => {
     const [x, y] = pt(armAngle(i), STAR_R * 1.03);
     const dx = x - STAR_CX;
@@ -283,7 +287,7 @@ const StarRadarP5 = ({ items, onSelect, showLabels = true }: {
           return (
             <button
               key={it.id}
-              ref={register(i, pos.leftPct, pos.tx)}
+              ref={register(i, pos.leftPct, pos.tx, pos.topPct, pos.ty)}
               type="button"
               onClick={(e) => onSelect(it.id, e)}
               className="absolute flex flex-col items-start whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c00008] focus-visible:ring-offset-1"
@@ -291,7 +295,8 @@ const StarRadarP5 = ({ items, onSelect, showLabels = true }: {
               aria-label={`${it.name} 等级 ${it.level}，${it.title}`}
             >
               <span className="flex items-center gap-1.5">
-                <P5Chip tone="red" rot={-2}>{it.name}</P5Chip>
+                {/* 名字章限宽（第 17 批）：自定义的长名字截断，不把底下两枚标签挤到一起；全名在 aria-label 里 */}
+                <P5Chip tone="red" rot={-2} className="max-w-[6.5em]"><span className="min-w-0 truncate">{it.name}</span></P5Chip>
                 {/* 精通星（第 6 轮，用户口径）：与蓝频道同款——小一点、贴数字右下角 */}
                 <span className="text-[30px] font-black italic leading-none" style={{ color: P5R.white, fontFamily: P5_TITLE_FONT, textShadow: '2px 2px 0 #000000' }}>{it.level}{it.stars ? <span className="ml-px text-[11px] not-italic" style={{ textShadow: '1px 1px 0 #000000' }}>★{it.stars}</span> : null}</span>
               </span>
@@ -1091,13 +1096,16 @@ export const DashboardP5 = () => {
                         )}
                       </span>
                       <span className="min-w-0 flex-1">
-                        <span className="flex items-center gap-1.5">
-                          {todo.important && <P5Star size={12} fill={P5R.red} className="shrink-0" />}
-                          {todo.fateDrawnDate === todayKey && (
-                            <span className="shrink-0 text-[11px] font-black" style={{ color: P5R.red }} title="今日抽签选中">✦</span>
-                          )}
-                          <span className={`truncate text-[15px] font-black ${done ? 'line-through' : ''}`} style={{ color: done ? P5R.grey : P5R.ink }}>
-                            {todo.title}
+                        {/* 第 14 批：允许折行——标记放不下就去第二行，不跟任务名挤成两个省略号（系统字号调很大时） */}
+                        <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
+                          <span className="flex min-w-0 max-w-full items-center gap-1.5">
+                            {todo.important && <P5Star size={12} fill={P5R.red} className="shrink-0" />}
+                            {todo.fateDrawnDate === todayKey && (
+                              <span className="shrink-0 text-[11px] font-black" style={{ color: P5R.red }} title="今日抽签选中">✦</span>
+                            )}
+                            <span className={`min-w-0 truncate text-[15px] font-black ${done ? 'line-through' : ''}`} style={{ color: done ? P5R.grey : P5R.ink }}>
+                              {todo.title}
+                            </span>
                           </span>
                           <PactTodoTag todo={todo} />
                           <OrgOpTodoTag todo={todo} />

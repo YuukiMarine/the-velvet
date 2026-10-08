@@ -141,7 +141,11 @@ export const StarChartP3 = ({ items, onSelect, showLabels = true, palette = P3_P
   // 标签锚点：紧贴角端外侧（viewBox 坐标 → 百分比），在同一个变换平面内自动跟随；
   // 按锚点相对中心的方位智能对齐——左角右靠、右角左靠、顶底居中
   // 侧边标签量宽防裁切（两位数等级 + 精通星会伸出卡片）
-  const { containerRef, register } = useSideLabelClamp([items.map((it) => `${it.level}/${it.stars ?? 0}/${it.title}`).join('|')]);
+  // 第 17 批：斜切平面算进边界（320 宽时同样会切掉两侧），showLabels / 名字进 deps
+  const { containerRef, register } = useSideLabelClamp(
+    [showLabels, items.map((it) => `${it.name}/${it.level}/${it.stars ?? 0}/${it.title}`).join('|')],
+    { skewXDeg: STAR_SKEW, scaleY: STAR_SCALEY },
+  );
   const labelAt = (i: number) => {
     const [x, y] = pt(armAngle(i), STAR_R * 1.04);
     const dx = x - STAR_CX;
@@ -182,7 +186,7 @@ export const StarChartP3 = ({ items, onSelect, showLabels = true, palette = P3_P
           return (
             <button
               key={it.id}
-              ref={register(i, pos.leftPct, pos.tx)}
+              ref={register(i, pos.leftPct, pos.tx, pos.topPct, pos.ty)}
               type="button"
               onClick={(e) => onSelect(it.id, e)}
               className="absolute flex flex-col items-center whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"

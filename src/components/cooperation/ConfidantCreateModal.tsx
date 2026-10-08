@@ -10,6 +10,7 @@ import { INTIMACY_LABELS, MAJOR_ARCANA_IDS, MAX_INTIMACY } from '@/utils/confida
 import { TarotCardSVG } from '@/components/astrology/TarotCardSVG';
 import { P5Collage } from '@/components/p5r/kit';
 import { ModalPortal } from '@/components/ModalPortal';
+import { aiConfigured } from '@/utils/aiClient';
 
 type Stage =
   | 'basic'        // 模式 + 名字（+ 在线邮箱）
@@ -122,7 +123,7 @@ export function ConfidantCreateModal({ isOpen, onClose, onCreated, onPickOnline 
     [confidants]
   );
   const remaining = MAJOR_ARCANA_IDS.length - takenIds.length;
-  const hasApiKey = Boolean(settings.summaryApiKey?.trim());
+  const hasApiKey = aiConfigured(settings);
 
   // 流程节点（用于顶部进度圆点）
   const flowSteps = ['basic', 'description', 'trait'] as const;

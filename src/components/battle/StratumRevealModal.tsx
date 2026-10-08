@@ -329,11 +329,16 @@ export function StratumRevealModal({ isOpen, onClose, level }: Props) {
                     {error && (
                       <div className="rounded-xl px-3 py-2 space-y-1" style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.35)' }}>
                         <p className="text-red-300 text-xs leading-relaxed">{error}</p>
-                        <p className="text-red-400/60 text-[10px]">
-                          {canResume
-                            ? '它说到一半断了。可以让它接着说完，或者重来一遍；也可以选「手动」自行命名心魔。'
-                            : '请确认 API 配置可用后重试，或选「手动」自行命名心魔。'}
-                        </p>
+                        {canResume ? (
+                          <p className="text-red-400/60 text-[10px]">它说到一半断了。可以让它接着说完，或者重来一遍；也可以选「手动」自行命名心魔。</p>
+                        ) : job?.modelLabel ? (
+                          // 写明这一步用的是哪一档、哪个模型（第 16 批）：用户以前以为跟着「快速响应」走，换了那一档还是同一个错
+                          <p className="text-red-400/60 text-[10px]" data-testid="reveal-model">
+                            这一步用的是「深思熟虑」档：{job.modelLabel}。可以在「设置 → AI 服务 → 模型分档」换个模型再点重试（会用新的），或选「手动」自行命名心魔。
+                          </p>
+                        ) : (
+                          <p className="text-red-400/60 text-[10px]">请确认 API 配置可用后重试，或选「手动」自行命名心魔。</p>
+                        )}
                       </div>
                     )}
                     {canResume && (

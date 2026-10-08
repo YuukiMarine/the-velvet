@@ -13,6 +13,7 @@ import { completedOn, isDueOn } from '@/utils/tarotContext';
  *  - 刷新：按周（周一起算）生成三张，用「周键 + 用户 id」做种，两台设备同一周得到同一组。
  *  - 模板：13 个，零 AI，**绝不引用记录标题**；每个模板一个可出条件 + 一个进度函数。
  *  - 三档奖励 SP 5 / 10 / 15，一周尽量一档一张；属性委托每周最多一张。
+ *  - 第 14 批：加模板「完成 3 张今日委托」；每周可「换一张」一次（swapQuestFor）。
  */
 
 export const ATTRS: AttributeId[] = ['knowledge', 'guts', 'dexterity', 'kindness', 'charm'];
@@ -116,6 +117,7 @@ export const QUEST_TEMPLATES: Record<QuestTemplateId, QuestTemplate> = {
   ledger_3: { id: 'ledger_3', tier: 5, target: 3, hint: '在心相记账里记 3 笔' },
   battle_once: { id: 'battle_once', tier: 10, target: 1, hint: '进逆影战场打一晚' },
   important_2: { id: 'important_2', tier: 5, target: 2, hint: '给本周的记录点两颗星' },
+  life_3: { id: 'life_3', tier: 10, target: 3, hint: '在上面的今日委托里挑，加入并做完' },
 };
 export const QUEST_TEMPLATE_IDS = Object.keys(QUEST_TEMPLATES) as QuestTemplateId[];
 
@@ -134,6 +136,7 @@ export function questTitle(q: Quest, names: Record<AttributeId, string>): string
     case 'ledger_3': return '记 3 笔账';
     case 'battle_once': return '本周潜入一次战场';
     case 'important_2': return '标记 2 条重要记录';
+    case 'life_3': return '完成 3 张今日委托';
   }
 }
 
@@ -211,6 +214,12 @@ export function questProgress(q: Quest, d: QuestData, r: WeekRange): number {
     }
     case 'important_2':
       return own.filter((a) => a.important).length;
+    case 'life_3': {
+      // 委托板「今日委托」加进来的待办（带 lifeQuest 标记）、本周做完的
+      const doneThisWeek = (t: Todo) => (!!t.completedAt && inRange(t.completedAt, r))
+        || d.completions.some((c) => c.todoId === t.id && c.count > 0 && r.days.includes(c.date));
+      return d.todos.filter((t) => !!t.lifeQuest && doneThisWeek(t)).length;
+    }
   }
 }
 
@@ -268,6 +277,8 @@ function eligible(id: QuestTemplateId, d: QuestData, r: WeekRange): boolean {
     case 'ledger_3': return d.ledger.length > 0;
     case 'battle_once': return !!d.battleState;
     case 'important_2': return true;
+    // 今日委托不用解锁、天天有，谁都能做
+    case 'life_3': return true;
     default: { void r; return false; }
   }
 }
@@ -293,23 +304,46 @@ export function generateWeekQuests(r: WeekRange, seed: string, d: QuestData, cre
   for (const tier of [15, 10, 5] as const) take(byTier[tier]);
   while (picked.length < QUEST_SLOTS && take(pool) !== null) { /* 补满三张 */ }
 
-  const { perWeek, total } = recentAttrCounts(d, r);
-  const least = [...ATTRS].sort((a, b) => total[a] - total[b])[0];
-  const most = [...ATTRS].sort((a, b) => total[b] - total[a])[0];
-  const targetFor = (attr: AttributeId) => clamp(Math.round(perWeek[attr].reduce((s, v) => s + v, 0) / 4) + 1, 2, 6);
+  return picked.slice(0, QUEST_SLOTS).map((templateId, slot) => buildQuest(templateId, slot, r, d, createdAt));
+}
 
-  return picked.slice(0, QUEST_SLOTS).map((templateId, slot) => {
-    const tpl = QUEST_TEMPLATES[templateId];
-    const attr = templateId === 'attr_least' ? least : templateId === 'attr_most' ? most : undefined;
-    return {
-      id: `${r.weekKey}-${slot}`,
-      weekKey: r.weekKey,
-      slot,
-      templateId,
-      ...(attr ? { params: { attribute: attr } } : {}),
-      target: attr ? targetFor(attr) : (tpl.target ?? 1),
-      rewardSp: tpl.tier,
-      createdAt: createdAt.toISOString(),
-    };
-  });
+/** 模板 → 一张委托（属性委托按最近四周算目标次数） */
+function buildQuest(templateId: QuestTemplateId, slot: number, r: WeekRange, d: QuestData, createdAt: Date): Quest {
+  const tpl = QUEST_TEMPLATES[templateId];
+  let attr: AttributeId | undefined;
+  let target = tpl.target ?? 1;
+  if (templateId === 'attr_least' || templateId === 'attr_most') {
+    const { perWeek, total } = recentAttrCounts(d, r);
+    attr = templateId === 'attr_least'
+      ? [...ATTRS].sort((a, b) => total[a] - total[b])[0]
+      : [...ATTRS].sort((a, b) => total[b] - total[a])[0];
+    target = clamp(Math.round(perWeek[attr].reduce((s, v) => s + v, 0) / 4) + 1, 2, 6);
+  }
+  return {
+    id: `${r.weekKey}-${slot}`,
+    weekKey: r.weekKey,
+    slot,
+    templateId,
+    ...(attr ? { params: { attribute: attr } } : {}),
+    target,
+    rewardSp: tpl.tier,
+    createdAt: createdAt.toISOString(),
+  };
+}
+
+/**
+ * 「换一张」（第 14 批，每周一次）：从本周还没出过的可出模板里挑一张换掉它——同档优先，没有再看别的档；
+ * 属性委托照旧每周最多一张。用「周键 + 账号 + 槽位」做种，同一张在两台设备上换出来也一样。没得换返回 null。
+ */
+export function swapQuestFor(r: WeekRange, seed: string, d: QuestData, week: Quest[], target: Quest, createdAt: Date = d.now): Quest | null {
+  const used = new Set(week.map((q) => q.templateId));
+  const isAttr = (id: QuestTemplateId) => id === 'attr_least' || id === 'attr_most';
+  const othersHaveAttr = week.some((q) => q.id !== target.id && isAttr(q.templateId));
+  const pool = QUEST_TEMPLATE_IDS.filter((id) => !used.has(id) && eligible(id, d, r) && !(isAttr(id) && othersHaveAttr));
+  if (!pool.length) return null;
+  const sameTier = pool.filter((id) => QUEST_TEMPLATES[id].tier === target.rewardSp);
+  const from = sameTier.length ? sameTier : pool;
+  const rnd = mulberry32(fnv1a(`${r.weekKey}|swap|${target.slot}|${seed}`));
+  const id = from[Math.floor(rnd() * from.length)];
+  return { ...buildQuest(id, target.slot, r, d, createdAt), swapped: true };
 }

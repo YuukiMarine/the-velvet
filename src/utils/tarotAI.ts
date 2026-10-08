@@ -28,12 +28,14 @@ export interface AIRequestData {
    */
   provider?: ApiProvider;
   tier?: AITier;
+  /** 请求协议（第 14 批 · 自定义服务商可选 Anthropic） */
+  protocol?: AIConfig['protocol'];
   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
 }
 
-/** AIConfig → 请求头字段（provider / tier 一起带上） */
-export function requestHead(cfg: AIConfig): Pick<AIRequestData, 'baseUrl' | 'model' | 'apiKey' | 'provider' | 'tier'> {
-  return { baseUrl: cfg.baseUrl, model: cfg.model, apiKey: cfg.apiKey, provider: cfg.provider, tier: cfg.tier };
+/** AIConfig → 请求头字段（provider / tier / protocol 一起带上） */
+export function requestHead(cfg: AIConfig): Pick<AIRequestData, 'baseUrl' | 'model' | 'apiKey' | 'provider' | 'tier' | 'protocol'> {
+  return { baseUrl: cfg.baseUrl, model: cfg.model, apiKey: cfg.apiKey, provider: cfg.provider, tier: cfg.tier, protocol: cfg.protocol };
 }
 
 /** 没配 Key 时的兜底连接（见 aiClient.fallbackAIConfig） */
@@ -454,8 +456,12 @@ export async function* streamChatSSE(req: AIRequestData, signal?: AbortSignal, o
 /** 格式化常见网络错误 */
 export function formatApiError(e: unknown): string {
   if (!(e instanceof Error)) return '生成失败，请重试';
-  if (e instanceof TypeError && /failed to fetch|network/i.test(e.message)) {
-    return '网络请求失败：无法连接到 API 服务。\n若在浏览器中使用，部分 API 可能因跨域（CORS）限制无法直接访问，建议在 Android 客户端或支持 CORS 的接口下使用此功能。';
+  // 网络层失败（Chrome「Failed to fetch」/ iOS WebView「Load failed」）。第 14 批：以前一律说「跨域……建议用 Android 客户端」，
+  // 对 App 里断网 / 信号差的用户是误导
+  if (e instanceof TypeError && /failed to fetch|network|load failed/i.test(e.message)) {
+    return typeof navigator !== 'undefined' && navigator.onLine === false
+      ? '网络断开了：连上网后再试一次。'
+      : '连不上 AI 服务：网络断了或不稳定，稍后再试一次。网页版用中转站时，也可能是它没开放跨域访问（CORS）。';
   }
   if (e.name === 'AbortError') return '已取消';
   return e.message;

@@ -15,6 +15,7 @@ import { useAppStore } from '@/store';
 import type { AttributeId, Settings, Shadow } from '@/types';
 import { SHADOW_LEVEL_CONFIG } from '@/constants';
 import { BOSS_ATTACK_BY_LEVEL } from '@/battle/numbers';
+import { aiConfigLabel, getDeliberateAIConfig, type AIConfig } from '@/utils/aiClient';
 import {
   prepareStratumReveal, completeStratumReveal, prepareFinalBoss, completeFinalBoss, JSONTruncatedError,
   type PreparedStratumReveal, type PreparedFinalBoss, type StratumRevealData, type FinalBossFacts,
@@ -33,6 +34,8 @@ interface RevealBase {
   partial?: string;
   /** 续写次数（上限 REVEAL_RESUME_LIMIT） */
   resumes: number;
+  /** 这一发实际用的模型（「服务商 · 模型」）：报错时写给用户看，好知道去改哪一档（第 16 批） */
+  modelLabel?: string;
   attrNames: Record<AttributeId, string>;
 }
 
@@ -84,6 +87,16 @@ function throttledShown(apply: (t: string) => void): (t: string) => void {
 
 const errorText = (e: unknown): string => (e instanceof Error ? e.message : '显形失败，请重试');
 
+/**
+ * 每一发（含重试 / 续写）都按**当前设置**取深思熟虑档的连接（第 16 批）：提示词和弱点照旧（提示词里写着弱点名，不能重掷），
+ * 只换模型。以前整份 prepared 连模型一起定死在开始那一刻——报错后去设置里换了模型、回来点「重试」，发的还是旧模型，
+ * 用户以为「换哪家都是同一个错」。没配深思熟虑档会退回快速响应档（与 prepare 同一口径）；都没配就沿用原来那份。
+ */
+function withCurrentModel<T extends { cfg: AIConfig }>(prepared: T): T {
+  const cfg = getDeliberateAIConfig(useAppStore.getState().settings);
+  return cfg ? { ...prepared, cfg } : prepared;
+}
+
 // ── 区层显形 ───────────────────────────────────────────────────────────────
 
 function buildBoss(level: number, data: StratumRevealData): Shadow {
@@ -112,10 +125,11 @@ async function runStratum(id: string, resumeFrom?: string): Promise<void> {
   const ac = new AbortController();
   controllers.stratum?.abort();
   controllers.stratum = ac;
-  patchStratum({ status: 'running', error: undefined, shown: resumeFrom ?? '' });
+  const prepared = withCurrentModel(job.prepared);
+  patchStratum({ status: 'running', error: undefined, shown: resumeFrom ?? '', prepared, modelLabel: aiConfigLabel(prepared.cfg) });
   const onProgress = throttledShown(t => { if (!ac.signal.aborted) patchStratum({ shown: t }); });
   try {
-    const data = await completeStratumReveal(job.prepared, job.attrNames, { onProgress, signal: ac.signal, resumeFrom });
+    const data = await completeStratumReveal(prepared, job.attrNames, { onProgress, signal: ac.signal, resumeFrom });
     if (ac.signal.aborted) return;
     const boss = buildBoss(job.level, data);
     await useAppStore.getState().revealStratum({
@@ -196,10 +210,11 @@ async function runFinal(id: string, resumeFrom?: string): Promise<void> {
   const ac = new AbortController();
   controllers.final?.abort();
   controllers.final = ac;
-  patchFinal({ status: 'running', error: undefined, shown: resumeFrom ?? '' });
+  const prepared = withCurrentModel(job.prepared);
+  patchFinal({ status: 'running', error: undefined, shown: resumeFrom ?? '', prepared, modelLabel: aiConfigLabel(prepared.cfg) });
   const onProgress = throttledShown(t => { if (!ac.signal.aborted) patchFinal({ shown: t }); });
   try {
-    const data = await completeFinalBoss(job.prepared, job.attrNames, { onProgress, signal: ac.signal, resumeFrom });
+    const data = await completeFinalBoss(prepared, job.attrNames, { onProgress, signal: ac.signal, resumeFrom });
     if (ac.signal.aborted) return;
     await useAppStore.getState().revealFinalBoss({
       stratumName: data.stratumName,

@@ -218,8 +218,15 @@ export function LootReveal({ open, source, drops, sp = 0, onClose }: Props) {
 
   useBackHandler(open, () => { if (phase !== 'case') handleDone(); });
 
+  /**
+   * 收尾中（第 17 批）：这层淡出的那一下还盖在已经弹出的领奖屏上面，点击会被它吃掉；
+   * 切后台时淡出停住，就成了一层看不见、点不透的罩子（用户反馈「结算点不动」的一种）。收尾一开始就让它不接点击。
+   */
+  const [closing, setClosing] = useState(false);
+  useEffect(() => { if (open) setClosing(false); }, [open]);
   const handleDone = () => {
     if (!isChest && phase !== 'finale' && !allFlipped) return; // 战斗来源必须走完仪式
+    setClosing(true);
     onClose();
   };
 
@@ -236,8 +243,9 @@ export function LootReveal({ open, source, drops, sp = 0, onClose }: Props) {
     <motion.div
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
       className="fixed inset-0 z-[70] flex flex-col items-center justify-center overflow-hidden px-6"
-      style={{ background: 'radial-gradient(circle at 50% 38%, rgba(19,23,58,0.97) 0%, rgba(4,3,12,0.99) 62%)' }}
+      style={{ background: 'radial-gradient(circle at 50% 38%, rgba(19,23,58,0.97) 0%, rgba(4,3,12,0.99) 62%)', pointerEvents: closing ? 'none' : undefined }}
       onClick={phase === 'finale' ? handleDone : advanceFinale}
+      data-testid="loot-reveal"
     >
       <NoiseLayer opacity={0.06} />
       {/* 幽灵大字 */}

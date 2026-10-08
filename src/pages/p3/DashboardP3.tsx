@@ -847,13 +847,16 @@ export const DashboardP3 = () => {
                           )}
                         </span>
                         <span className="min-w-0 flex-1">
-                          <span className="flex min-w-0 items-center gap-1.5">
-                            {todo.important && <span aria-hidden className="h-2 w-2 shrink-0" style={{ background: P3R.magenta, clipPath: 'polygon(50% 0, 100% 100%, 0 100%)' }} />}
-                            {todo.fateDrawnDate === todayKey && (
-                              <span className="shrink-0 text-[11px] font-black" style={{ color: P3R.blue }} title="今日抽签选中">✦</span>
-                            )}
-                            <span className={`min-w-0 truncate text-[15px] font-black ${done ? 'line-through' : ''}`} style={{ color: done ? P3R.grey : P3R.ink }}>
-                              {todo.title}
+                          {/* 第 14 批：允许折行——标记放不下就去第二行，不跟任务名挤成两个省略号（系统字号调很大时） */}
+                          <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
+                            <span className="flex min-w-0 max-w-full items-center gap-1.5">
+                              {todo.important && <span aria-hidden className="h-2 w-2 shrink-0" style={{ background: P3R.magenta, clipPath: 'polygon(50% 0, 100% 100%, 0 100%)' }} />}
+                              {todo.fateDrawnDate === todayKey && (
+                                <span className="shrink-0 text-[11px] font-black" style={{ color: P3R.blue }} title="今日抽签选中">✦</span>
+                              )}
+                              <span className={`min-w-0 truncate text-[15px] font-black ${done ? 'line-through' : ''}`} style={{ color: done ? P3R.grey : P3R.ink }}>
+                                {todo.title}
+                              </span>
                             </span>
                             <PactTodoTag todo={todo} />
                             <OrgOpTodoTag todo={todo} />

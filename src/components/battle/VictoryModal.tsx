@@ -34,6 +34,9 @@ export function VictoryModal({ isOpen, onClose }: Props) {
   const claimingRef = useRef(false);
   /** 属性记录已落库：失败后重试只补后半段（档案 / 清本体），不再发第二份属性点 */
   const awardedRef = useRef(false);
+  /** 领取中（第 17 批）：写库要几秒（记录 + 重载 + SP + 档案），以前按钮没有任何反应，用户以为点不动、一直点 */
+  const [claiming, setClaiming] = useState(false);
+  const repairOrphanVictory = useAppStore(s => s.repairOrphanVictory);
 
   /**
    * 第 13 轮 孤儿胜利兜底：status=victory 但本体没了（旧状态写回滚 / 同步 / 存档损坏）。
@@ -45,6 +48,7 @@ export function VictoryModal({ isOpen, onClose }: Props) {
 
   useEffect(() => {
     if (!isOpen || !persona || !foe) return;
+    setClaiming(false);
     triggerSuccessFeedback();
     setLoading(true);
     setNarrative('');
@@ -61,8 +65,9 @@ export function VictoryModal({ isOpen, onClose }: Props) {
       .then(text => setNarrative(text))
       .catch(() => setNarrative(''))
       .finally(() => setLoading(false));
+  // 对手 / 人格晚一步才读到（打开那一刻还是空）时也要初始化，不然会一直转圈（第 17 批）
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen]);
+  }, [isOpen, !!persona && !!foe]);
 
   /** 击破奖励属性点：按心魔等级 2..6（R19 用户拍板，原本一律 +10 太多） */
   const attrReward = foe
@@ -75,6 +80,7 @@ export function VictoryModal({ isOpen, onClose }: Props) {
   const handleClaim = async () => {
     if (claimed || claimingRef.current || !persona || !foe) return;
     claimingRef.current = true;
+    setClaiming(true);
     setClaimError(null);
     const pts = { [selectedAttr]: attrReward } as Record<string, number>;
     // Only first defeat at this Shadow level counts as important
@@ -105,6 +111,7 @@ export function VictoryModal({ isOpen, onClose }: Props) {
       useAppStore.setState({ shadow: null });
     } catch (err) {
       claimingRef.current = false; // 没领成：放开锁让用户再点一次
+      setClaiming(false);
       console.error('[battle] 领取奖励失败', err);
       const msg = err instanceof Error ? err.message : String(err);
       setClaimError(`没领成：${msg.slice(0, 80)}——再点一次试试；还不行就重启 App 再进战场`);
@@ -206,13 +213,31 @@ export function VictoryModal({ isOpen, onClose }: Props) {
                 {claimError}
               </p>
             )}
-            <button
-              onClick={handleClaim}
-              className="w-full py-3 rounded-xl text-black font-black text-sm"
-              style={{ background: 'linear-gradient(90deg, #fde68a, #fbbf24)' }}
-            >
-              ✦ 领取奖励
-            </button>
+            {persona && foe ? (
+              <button
+                onClick={handleClaim}
+                disabled={claiming}
+                aria-busy={claiming}
+                className="w-full py-3 rounded-xl text-black font-black text-sm disabled:opacity-70"
+                style={{ background: 'linear-gradient(90deg, #fde68a, #fbbf24)' }}
+                data-testid="victory-claim"
+              >
+                {claiming ? '领取中…' : '✦ 领取奖励'}
+              </button>
+            ) : (
+              // 没有可领的（对手已经结算过 / 存档里找不到）：以前一直转圈、按钮没反应、也没有出口（第 17 批）
+              <div className="space-y-2 text-center">
+                <p className="text-xs text-gray-400">这场的奖励已经处理过了，或者找不到这场的对手。</p>
+                <button
+                  onClick={() => { void repairOrphanVictory().finally(onClose); }}
+                  className="w-full py-3 rounded-xl text-white font-bold text-sm"
+                  style={{ background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.25)' }}
+                  data-testid="victory-close"
+                >
+                  关闭
+                </button>
+              </div>
+            )}
           </div>
         ) : (
           <motion.div

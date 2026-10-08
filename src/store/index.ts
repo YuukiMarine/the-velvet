@@ -8,6 +8,8 @@ import { freshUnreadSummary, reportPushDelivered, markReportPushScheduled } from
 import { useCloudSocialStore } from '@/store/cloudSocial';
 import { pickTogetherReminder } from '@/utils/pactLogic';
 import { v4 as uuidv4 } from 'uuid';
+import { FATE_SOURCE_WEIGHT, fateHistoryCandidates, pickWeighted } from '@/utils/fateDraw';
+import { ensureLifeQuestDay, lifeDayKeyOf, normTitle, recordLifeQuestEvent } from '@/utils/lifeQuests';
 import { calcMaxStreak, daysSinceFirstRecord, streakDates } from '@/utils/streak';
 import { applyUiChannel, syncDarkClass } from '@/ui/channel';
 import { computeAndSchedule, type NotifSnapshot } from '@/utils/notifications';
@@ -15,6 +17,8 @@ import { getCachedNotifVoice, refreshNotifVoiceIfNeeded } from '@/utils/notifVoi
 import { pushWidgetSnapshot } from '@/utils/widgetSnapshot';
 import { isGrowthCategory, cycleRangeForKey, ledgerCycle, roundMoney, shiftMonth, DEFAULT_CHANNELS, UNASSIGNED_ACCOUNT, isDebtAccount, type AccountBalance } from '@/utils/ledgerFormat';
 import { chatComplete, getAIConfig, type AIConfig, type AIMessage } from '@/utils/aiClient';
+import { keepLocalAISecrets } from '@/utils/aiSecrets';
+import { syncCustomProvider } from '@/utils/aiProviders';
 import { buildSummaryRequest as buildSummaryRequestAI, getActiveSummaryPreset as getActiveSummaryPresetAI, type SummaryRequestData } from '@/utils/summaryAI';
 import {
   pointsToLevel,
@@ -223,7 +227,7 @@ import { normalizeAttributeLevelTitles } from '@/utils/attributeLevelTitles';
 import { levelForPoints, masteryOf, thresholdsOf } from '@/utils/levels';
 import { peekWeatherNow, weatherConfigOf } from '@/utils/weather';
 import { seasonMarkOf } from '@/utils/calendar';
-import { generateWeekQuests, previousWeekKey, questBoardUnlocked, questDone, questTitle, weekRangeOf, weekRangeOfKey, type QuestData } from '@/utils/questBoard';
+import { generateWeekQuests, previousWeekKey, questBoardUnlocked, questDone, questTitle, swapQuestFor, weekRangeOf, weekRangeOfKey, type QuestData } from '@/utils/questBoard';
 import { meetingReminder } from '@/utils/orgLogic';
 import { resolveLevelDifficulty } from '@/utils/levelDifficulty';
 
@@ -478,6 +482,8 @@ interface AppState {
   drawFate: (pool?: FateCandidate[]) => Promise<FateCandidate | null>;
   /** 接受抽中：待办→钉签；愿望→转正为今日一次性任务并归档纸片；历史→同款复刻一条 */
   acceptFateDraw: (c: FateCandidate) => Promise<void>;
+  /** 抽签「以后别抽这件」：旧事拉黑，之后不再进池（第 17 批） */
+  muteFateHistory: (c: FateCandidate) => Promise<void>;
   getTodayTodoProgress: (todoId: string) => { count: number; isComplete: boolean; target: number };
   getTodoDateLabel: (date: Date) => string;
   setLevelUpNotification: (notification: { id: string; displayName: string; level: number } | null) => void;
@@ -593,6 +599,8 @@ interface AppState {
   refreshQuests: () => Promise<void>;
   /** 手动领取：进度够了才发 SP（没开战场只记计数）；一周三张都领了盖一枚「委托全清」印记 */
   claimQuest: (id: string) => Promise<{ ok: boolean; sp: number }>;
+  /** 本周委托「换一张」（每周一次；做完 / 领过的不能换） */
+  swapQuest: (id: string) => Promise<{ ok: boolean; reason?: string }>;
   questNotice: string | null;
   clearQuestNotice: () => void;
   startBattleSession: () => void;
@@ -2588,7 +2596,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   decomposeWishAI: async (parent: Wish, children: Wish[] = []) => {
     const cfg = getAIConfig(get().settings);
-    if (!cfg) throw new Error('未配置 AI，请在「设置 → AI 总结」填入 API 密钥，或手动添加小步骤');
+    if (!cfg) throw new Error('未配置 AI，请在「设置 → AI 服务」填入 API 密钥，或手动添加小步骤');
     const compact = (text: string | undefined, max: number) =>
       (text ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
     const normalizeStep = (text: string) =>
@@ -3201,9 +3209,10 @@ export const useAppStore = create<AppState>((set, get) => ({
         await db.skills.bulkAdd(data.skills as unknown as Skill[]);
       }
 
-      // 导入设置数据
+      // 导入设置数据：备份里带的 Key 优先；备份里缺的（老版本导出的备份不带当前那家的 Key）用本机的补上
       if (data.settings && Array.isArray(data.settings)) {
-        await db.settings.bulkAdd(data.settings as unknown as Settings[]);
+        const localSettings = (snapshot.settings?.[0] ?? undefined) as Settings | undefined;
+        await db.settings.bulkAdd((data.settings as unknown as Settings[]).map((s) => keepLocalAISecrets(s, localSettings)));
       }
 
       // 导入任务数据
@@ -4128,32 +4137,28 @@ export const useAppStore = create<AppState>((set, get) => ({
     // ① 今日未完成待办（义务；大事已被 getDueTodosToday 排除）
     for (const t of get().getDueTodosToday()) {
       if (get().getTodayTodoProgress(t.id).isComplete) continue;
-      pool.push({ key: `todo:${t.id}`, kind: 'todo', title: t.title, todoId: t.id });
+      pool.push({ key: `todo:${t.id}`, kind: 'todo', title: t.title, todoId: t.id, weight: FATE_SOURCE_WEIGHT.todo });
     }
     // ② 愿望纸片（新鲜感；迁移后 wishes 表只剩平铺条目）
     for (const w of get().wishes) {
       if (w.parentId || w.status !== 'active') continue;
-      pool.push({ key: `wish:${w.id}`, kind: 'wish', title: w.title, wishId: w.id, attribute: w.attribute ?? 'guts', points: 2 });
+      pool.push({ key: `wish:${w.id}`, kind: 'wish', title: w.title, wishId: w.id, attribute: w.attribute ?? 'guts', points: 2, weight: FATE_SOURCE_WEIGHT.wish });
     }
-    // ③ 近 30 天手动记录去重（做过的事，零风险；排除机器记录与加成/升级副记录）
-    const since = Date.now() - 30 * 86400_000;
-    const seen = new Set<string>();
-    for (const a of get().activities) {
-      if (a.method !== 'local' || a.category) continue;
-      if (new Date(a.date).getTime() < since) continue;
-      const title = a.description.trim();
-      const norm = title.replace(/\s+/g, '');
-      if (!norm || seen.has(norm)) continue;
-      seen.add(norm);
-      // 属性/点数建议 = 原记录最大加点维度（无加点则勇气+2）
-      const top = (Object.entries(a.pointsAwarded) as Array<[AttributeId, number]>).sort((x, y) => y[1] - x[1])[0];
-      pool.push({
-        key: `hist:${norm.slice(0, 40)}`,
-        kind: 'history',
-        title,
-        attribute: top && top[1] > 0 ? top[0] : 'guts',
-        points: top && top[1] > 0 ? Math.max(1, Math.min(5, top[1])) : 2,
-      });
+    // ③ 旧事（第 17 批重做，见 utils/fateDraw）：近 60 天里至少两天做过的事，今天昨天做过的不出、隔得越久越容易抽到，
+    //    最多 2 张；「以后别抽这件」的不出。以前是近 30 天每条手记都进、不看次数，一次性的事也老被抽到
+    const { user, settings, activities, todos, todoCompletions } = get();
+    const seedKey = user?.id ?? user?.name ?? 'me';
+    pool.push(...fateHistoryCandidates({ activities, today, muted: settings.fateHistoryMuted, sunk, seed: seedKey }));
+    // ④ 今日委托（第 17 批）：今天这批里还没加进清单的。委托板没打开过也替今天定好这一批，和委托板是同一批
+    try {
+      const day = ensureLifeQuestDay({ todayKey: today, seedKey, activities, todos, completions: todoCompletions, settings });
+      for (const q of day.items) {
+        const added = todos.some(t => lifeDayKeyOf(t.createdAt) === today && (t.lifeQuest === q.presetId || normTitle(t.title) === normTitle(q.title)));
+        if (added) continue;
+        pool.push({ key: `quest:${q.presetId}`, kind: 'quest', title: q.title, presetId: q.presetId, attribute: q.attribute, points: q.points, weight: FATE_SOURCE_WEIGHT.quest });
+      }
+    } catch (e) {
+      console.warn('[velvet] 抽签取今日委托失败', e);
     }
     return pool.filter(c => !sunk.has(c.key));
   },
@@ -4162,7 +4167,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     const today = toLocalDateKey();
     const candidates = pool ?? get().getFateDrawPool();
     if (candidates.length === 0) return null;
-    const picked = candidates[Math.floor(Math.random() * candidates.length)];
+    // 按来源加权（第 17 批）：今日待办 > 愿望 > 今日委托 = 旧事；旧事再按「隔了多久」加权
+    const picked = pickWeighted(candidates) ?? candidates[0];
+    // 今日委托被翻到：学取舍记一笔「翻到过」（和委托板轮播里翻到同一口径）
+    if (picked.kind === 'quest' && picked.presetId) {
+      const u = get().user;
+      recordLifeQuestEvent(u?.id ?? u?.name ?? 'me', today, 'viewed', [picked.presetId]);
+    }
     const st = get().settings.fateDrawState;
     const drawnKeys = st && st.date === today ? [...st.drawnKeys, picked.key] : [picked.key];
     await get().updateSettings({ fateDrawState: { date: today, drawnKeys } });
@@ -4176,7 +4187,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       await get().loadData();
       return;
     }
-    // 愿望转正 / 历史复刻 → 今日一次性任务（带签）
+    // 愿望转正 / 历史复刻 / 今日委托 → 今日一次性任务（带签）
     const todo: Todo = {
       id: uuidv4(),
       title: c.title,
@@ -4186,6 +4197,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       isActive: true,
       createdAt: new Date(),
       fateDrawnDate: today,
+      // 今日委托：带上预设 id，委托板显示「已加入」、本周委托「完成 3 张今日委托」也数它（第 17 批）
+      ...(c.kind === 'quest' && c.presetId ? { lifeQuest: c.presetId } : {}),
     };
     await db.todos.add(todo);
     if (c.kind === 'wish' && c.wishId) {
@@ -4195,6 +4208,15 @@ export const useAppStore = create<AppState>((set, get) => ({
       await get().loadWishes();
     }
     await get().loadData();
+  },
+
+  muteFateHistory: async (c) => {
+    if (c.kind !== 'history' || !c.key.startsWith('hist:')) return;
+    const key = c.key.slice(5);
+    const cur = get().settings.fateHistoryMuted ?? [];
+    if (cur.includes(key)) return;
+    // 只留最近 200 条，免得设置越滚越大
+    await get().updateSettings({ fateHistoryMuted: [...cur, key].slice(-200) });
   },
 
   applySkillBonus: (attributeId: string, points: number) => {
@@ -4993,6 +5015,24 @@ export const useAppStore = create<AppState>((set, get) => ({
       await db.stamps.put({ id: `${q.weekKey}-quest`, kind: 'quest', name: '委托全清', date: q.weekKey, year: Number(q.weekKey.slice(0, 4)), collectedAt: now.toISOString() });
     }
     return { ok: true, sp };
+  },
+
+  swapQuest: async (id: string) => {
+    const q = await db.quests.get(id);
+    if (!q) return { ok: false, reason: '这张委托不见了' };
+    if (q.claimedAt) return { ok: false, reason: '领过的不能换' };
+    const week = await db.quests.where('weekKey').equals(q.weekKey).toArray();
+    if (week.some((x) => x.swapped)) return { ok: false, reason: '本周已经换过一张了' };
+    const now = new Date();
+    const range = weekRangeOfKey(q.weekKey);
+    const data = await questDataOf(get, now, range.start);
+    if (questDone(q, data, range)) return { ok: false, reason: '已经做完了，领了吧' };
+    const { useCloudStore } = await import('@/store/cloud');
+    const seed = useCloudStore.getState().cloudUser?.id ?? get().user?.id ?? 'me';
+    const next = swapQuestFor(range, seed, data, week, q, now);
+    if (!next) return { ok: false, reason: '这周没有别的委托可换了' };
+    await db.quests.put(next);
+    return { ok: true };
   },
 
   clearQuestNotice: () => set({ questNotice: null }),
@@ -6902,3 +6942,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     };
   },
 }));
+
+// 自定义服务商的名字 / 协议 / 取 Key 入口跟着设置走（第 14 批）：getProviderConfig('custom') 和没带 protocol 的请求头都读这份
+syncCustomProvider(useAppStore.getState().settings);
+useAppStore.subscribe((s, prev) => { if (s.settings !== prev.settings) syncCustomProvider(s.settings); });

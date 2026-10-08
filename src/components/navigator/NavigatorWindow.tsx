@@ -90,7 +90,7 @@ const skinOf = (bright: boolean, p4 = false, p5 = false) => p5
     chipStyle: { clipPath: 'polygon(10px 1px, calc(100% - 1px) 3px, calc(100% - 8px) calc(100% - 1px), 0 calc(100% - 3px))', boxShadow: '0 0 0 2px #050505, 3px 3.5px 0 #000000', paddingLeft: 16, paddingRight: 16 } as React.CSSProperties,
     inputBar: undefined as string | undefined,
     inputBarStyle: { background: 'transparent' } as React.CSSProperties,
-    input: 'flex-1 bg-[#f0e9df] px-4 py-2.5 text-[16px] font-bold outline-none placeholder:text-[#6b6862]',
+    input: 'min-w-0 flex-1 bg-[#f0e9df] px-4 py-2.5 text-[16px] font-bold outline-none placeholder:text-[#6b6862]',
     inputStyle: { color: '#050505', clipPath: 'polygon(6px 0, 100% 2px, calc(100% - 4px) 100%, 0 calc(100% - 3px))', boxShadow: '0 0 0 2.5px #050505' } as React.CSSProperties,
     send: 'flex h-11 w-14 shrink-0 items-center justify-center text-lg font-black text-white disabled:opacity-40',
     sendStyle: { background: '#c00008', clipPath: 'polygon(11px 2px, calc(100% - 2px) 0, calc(100% - 8px) calc(100% - 2px), 0 100%)', boxShadow: '0 0 0 2.5px #050505, 4px 4px 0 #000000' } as React.CSSProperties,
@@ -121,7 +121,7 @@ const skinOf = (bright: boolean, p4 = false, p5 = false) => p5
     chipStyle: { clipPath: 'polygon(8% 0, 100% 0, 92% 100%, 0 100%)', borderRadius: 10, paddingLeft: 18, paddingRight: 18 } as React.CSSProperties,
     inputBar: undefined as string | undefined,
     inputBarStyle: { background: 'transparent' } as React.CSSProperties,
-    input: 'flex-1 bg-[#fff6d0] px-4 py-2.5 text-[16px] font-bold outline-none placeholder:text-[#131313]/40 rounded-2xl',
+    input: 'min-w-0 flex-1 bg-[#fff6d0] px-4 py-2.5 text-[16px] font-bold outline-none placeholder:text-[#131313]/40 rounded-2xl',
     inputStyle: { color: 'var(--ui-ink, #131313)', clipPath: 'polygon(0 0, 100% 0, 98% 100%, 0 100%)' } as React.CSSProperties,
     send: 'flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-lg font-black text-white disabled:opacity-40',
     sendStyle: { background: 'var(--ui-accent, #2e6be0)', boxShadow: '0 3px 0 rgba(19,19,19,0.25)' } as React.CSSProperties,
@@ -153,7 +153,7 @@ const skinOf = (bright: boolean, p4 = false, p5 = false) => p5
     chipStyle: { color: 'var(--p3r-ink, #0a1230)', clipPath: 'polygon(9px 0, 100% 0, calc(100% - 9px) 100%, 0 100%)' } as React.CSSProperties,
     inputBar: undefined as string | undefined,
     inputBarStyle: undefined as React.CSSProperties | undefined,
-    input: 'flex-1 bg-white px-4 py-3 text-[15px] font-bold outline-none placeholder:text-[#9ab4c9] shadow-[0_8px_18px_rgba(38,96,140,.08)]',
+    input: 'min-w-0 flex-1 bg-white px-4 py-3 text-[15px] font-bold outline-none placeholder:text-[#9ab4c9] shadow-[0_8px_18px_rgba(38,96,140,.08)]',
     inputStyle: { color: 'var(--p3r-ink, #0a1230)', clipPath: 'polygon(12px 0, 100% 0, calc(100% - 12px) 100%, 0 100%)' } as React.CSSProperties,
     send: 'flex h-12 w-16 shrink-0 items-center justify-center text-lg font-black text-white disabled:opacity-40',
     sendStyle: { background: 'var(--p3r-blue, #1b57ff)', clipPath: 'polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%)' } as React.CSSProperties,
@@ -181,11 +181,13 @@ const skinOf = (bright: boolean, p4 = false, p5 = false) => p5
     chipStyle: undefined as React.CSSProperties | undefined,
     inputBar: 'bg-[#12151d]',
     inputBarStyle: undefined as React.CSSProperties | undefined,
-    input: 'flex-1 rounded-xl bg-white/8 px-3 py-2.5 text-[16px] text-white outline-none placeholder:text-gray-500',
+    // 明确的暗色底（第 17 批）：原来的 bg-white/8 不在 Tailwind 透明度刻度里、类没生成，输入框落回浏览器默认白底，配白字就是白底白字。
+    // color-scheme:dark 让浏览器的自动填充 / 输入法候选也按暗色画
+    input: 'min-w-0 flex-1 rounded-xl border border-white/10 bg-[#1f2433] px-3 py-2.5 text-[16px] text-white caret-white outline-none [color-scheme:dark] placeholder:text-gray-500 focus:border-white/25',
     inputStyle: undefined as React.CSSProperties | undefined,
     send: 'flex h-11 w-12 shrink-0 items-center justify-center rounded-xl bg-primary text-lg font-black text-white disabled:opacity-40',
     sendStyle: undefined as React.CSSProperties | undefined,
-    card: 'rounded-2xl border border-white/12 bg-[#171c27] text-gray-100',
+    card: 'rounded-2xl border border-white/10 bg-[#171c27] text-gray-100',
     cardStyle: undefined as React.CSSProperties | undefined,
     cardBtn: 'min-h-10 rounded-xl bg-primary px-4 text-[13px] font-bold text-white disabled:opacity-40',
     cardBtnGhost: 'min-h-10 rounded-xl border border-white/15 px-3.5 text-[13px] font-bold text-gray-200',
@@ -258,7 +260,7 @@ const BubbleIn = ({ side, mark, markCh, children }: {
   return (
     <motion.div
       // max-w 必须挂在这层：挂在内层时百分比参照的是“内容宽”，会把短气泡挤成一列字
-      className="relative max-w-[86%]"
+      className="relative min-w-0 max-w-[86%]"
       style={{ transformOrigin: side === 'cat' ? '0% 100%' : '100% 100%' }}
       initial={anim ? { rotate: 60, opacity: 0 } : false}
       animate={{ rotate: 0, opacity: 1 }}
@@ -666,7 +668,10 @@ export const NavigatorWindow = () => {
             exit={bold ? { opacity: 0, y: 18 } : { opacity: 0 }}
             transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
             className={`fixed inset-0 ${zClass.modal} flex flex-col overflow-hidden ${sk.root ?? ''}`}
-            style={sk.rootStyle}
+            // 第 17 批（用户反馈「字把整个界面顶到左边」）：overflow-hidden 的盒子仍能被光标 / 焦点横向滚动、用户却滚不回来。
+            // clip 不能被滚（老 iOS 不认 clip 会退回 class 里的 hidden）；万一还是被滚了，横向拨回 0（纵向不动，留给键盘顶起）
+            style={{ ...sk.rootStyle, overflow: 'clip' }}
+            onScroll={(e) => { if (e.currentTarget.scrollLeft) e.currentTarget.scrollLeft = 0; }}
           >
             {/* P5 舞台装饰：半调网点 + 四缘暗红巨星粗描边（只在边缘露一截） */}
             {isP5 && (
@@ -789,7 +794,7 @@ export const NavigatorWindow = () => {
                           onClick={() => setOwnDayOpen((v) => !v)}
                           aria-expanded={ownDayOpen}
                           aria-label={`${preset.name}今天：${ownDay}`}
-                          className={`block w-full text-left leading-snug ${ownDayOpen ? 'whitespace-normal' : 'truncate'}`}
+                          className={`block w-full text-left leading-snug ${ownDayOpen ? 'whitespace-normal [overflow-wrap:anywhere]' : 'truncate'}`}
                           data-own-day
                         >
                           {ownDay}
@@ -820,7 +825,7 @@ export const NavigatorWindow = () => {
                         transition={{ duration: 0.16 }}
                         role="menu"
                         aria-label="人格菜单"
-                        className={`absolute left-4 top-full z-20 mt-1 w-64 ${bright ? '' : 'overflow-hidden rounded-2xl border border-white/12 bg-[#171c27] shadow-2xl'}`}
+                        className={`absolute left-4 top-full z-20 mt-1 w-64 ${bright ? '' : 'overflow-hidden rounded-2xl border border-white/10 bg-[#171c27] shadow-2xl'}`}
                         style={bright ? { color: P3.ink } : { color: '#e5e7eb' }}
                       >
                         {/* p3-modal-12 稿：层叠独立斜块菜单——标签白斜片，人格行逐级右移，当前=蓝块+当前+洋红角，
@@ -888,7 +893,7 @@ export const NavigatorWindow = () => {
                                 type="button"
                                 role="menuitem"
                                 onClick={() => { setPersonaMenuOpen(false); if (p.id !== preset.id) void nav.switchPreset(p.id); }}
-                                className="flex w-full items-center gap-2.5 px-4 py-2 text-left text-sm font-bold transition hover:bg-white/8"
+                                className="flex w-full items-center gap-2.5 px-4 py-2 text-left text-sm font-bold transition hover:bg-white/10"
                               >
                                 <span className="flex h-7 w-7 shrink-0 items-center justify-center text-primary" style={{ background: 'rgba(255,255,255,.08)', borderRadius: '0.5rem' }}>
                                   <PresetAvatar avatar={p.avatar} className="h-4 w-4" />
@@ -899,15 +904,15 @@ export const NavigatorWindow = () => {
                             ))}
                             <div className="mx-4 my-1 h-px bg-white/10" aria-hidden />
                             <button type="button" role="menuitem" onClick={() => { setPersonaMenuOpen(false); avatarFileRef.current?.click(); }}
-                              className="block w-full px-4 py-2 text-left text-sm font-bold transition hover:bg-white/8">
+                              className="block w-full px-4 py-2 text-left text-sm font-bold transition hover:bg-white/10">
                               上传头像（{preset.name}）
                             </button>
                             <button type="button" role="menuitem" onClick={() => { setPersonaMenuOpen(false); setNotebookOpen(true); }}
-                              className="block w-full px-4 py-2 text-left text-sm font-bold transition hover:bg-white/8">
+                              className="block w-full px-4 py-2 text-left text-sm font-bold transition hover:bg-white/10">
                               记事本
                             </button>
                             <button type="button" role="menuitem" onClick={() => { setPersonaMenuOpen(false); nav.close(); setCurrentPage('settings'); }}
-                              className="block w-full px-4 pb-3 pt-2 text-left text-sm font-bold transition hover:bg-white/8">
+                              className="block w-full px-4 pb-3 pt-2 text-left text-sm font-bold transition hover:bg-white/10">
                               更多设置…
                             </button>
                           </>
@@ -921,7 +926,7 @@ export const NavigatorWindow = () => {
               </div>
 
               {/* 消息流（顶部上拉加载更早；隔 >5 分钟插居中时间戳） */}
-              <div ref={listRef} onScroll={() => void onListScroll()} className="relative flex-1 space-y-3 overflow-y-auto px-4 pb-3 pt-4">
+              <div ref={listRef} onScroll={() => void onListScroll()} className="relative flex-1 space-y-3 overflow-y-auto overflow-x-hidden px-4 pb-3 pt-4">
                 {isP5 && <P5Spine containerRef={listRef} count={nav.messages.length} phase={nav.phase} />}
                 {nav.hasOlder && (
                   <div className={`pb-1 text-center text-[11px] font-bold ${bright ? 'text-[#3c69c9]' : 'text-gray-500'}`}>
@@ -1073,6 +1078,8 @@ export const NavigatorWindow = () => {
                     onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) send(); }}
                     placeholder={`跟${preset.name}说点什么…`}
                     aria-label={`给${preset.name}的消息`}
+                    // size=1：不让浏览器按「20 个字宽」给输入框定最小宽度（第 17 批 · 助手窗被顶到左边）
+                    size={1}
                     className={sk.input}
                     style={sk.inputStyle}
                   />
@@ -1101,7 +1108,7 @@ export const NavigatorWindow = () => {
                   </button>
                 </div>
                 {micHint && (
-                  <p className={`mt-1 text-center text-[11px] ${bright ? 'text-[#3c69c9]' : 'text-gray-400'}`}>{micHint}</p>
+                  <p className={`mt-1 text-center text-[11px] [overflow-wrap:anywhere] ${bright ? 'text-[#3c69c9]' : 'text-gray-400'}`}>{micHint}</p>
                 )}
               </div>
             </div>
@@ -1137,7 +1144,7 @@ export const NavigatorWindow = () => {
                                 nav.pushCard({ kind: 'completeTodo', todoId: t.id, todoTitle: t.title });
                                 setPickerOpen(false);
                               }}
-                              className={`block w-full px-4 py-3 text-left ${bright ? 'border-2 border-[#cfe4fb] bg-white' : 'rounded-xl border border-white/12 bg-white/5'}`}
+                              className={`block w-full px-4 py-3 text-left ${bright ? 'border-2 border-[#cfe4fb] bg-white' : 'rounded-xl border border-white/10 bg-white/5'}`}
                             >
                               <span className="block truncate text-sm font-black">{t.title}</span>
                               <span className="mt-0.5 block text-[11px] font-bold opacity-60">
@@ -1227,7 +1234,7 @@ const MessageRow = ({ m, sk, bright, p5 = false, p4 = false, busy, onConfirm, on
   if (m.role === 'summary') {
     // compact 产物：早前对话的折叠占位
     return (
-      <div className={`mx-auto max-w-[90%] px-4 py-2 text-center text-[11px] font-bold leading-relaxed ${bright ? 'text-white/75' : 'text-gray-500'}`}>
+      <div className={`mx-auto max-w-[90%] px-4 py-2 text-center text-[11px] font-bold leading-relaxed [overflow-wrap:anywhere] ${bright ? 'text-white/75' : 'text-gray-500'}`}>
         —— 早前的对话已收进记忆 ——
         <span className="mt-0.5 block opacity-80">{m.text}</span>
       </div>
@@ -1258,7 +1265,7 @@ const MessageRow = ({ m, sk, bright, p5 = false, p4 = false, busy, onConfirm, on
             {p5 ? (
               <P5Bubble side="user">{m.text}</P5Bubble>
             ) : (
-              <div className={`whitespace-pre-wrap px-[18px] py-[11px] text-[15.4px] font-bold leading-relaxed ${sk.userBubble}`} style={{ ...sk.userBubbleStyle, overflowWrap: 'anywhere' }}>
+              <div className={`whitespace-pre-wrap break-words px-[18px] py-[11px] text-[15.4px] font-bold leading-relaxed ${sk.userBubble}`} style={{ ...sk.userBubbleStyle, overflowWrap: 'anywhere' }}>
                 {m.text}
               </div>
             )}
@@ -1281,7 +1288,7 @@ const MessageRow = ({ m, sk, bright, p5 = false, p4 = false, busy, onConfirm, on
           {p5 ? (
             <P5Bubble side="cat">{m.text}</P5Bubble>
           ) : (
-            <div className={`whitespace-pre-wrap px-[18px] py-[11px] text-[15.4px] font-bold leading-relaxed ${sk.catBubble}`} style={{ ...sk.catBubbleStyle, overflowWrap: 'anywhere' }}>
+            <div className={`whitespace-pre-wrap break-words px-[18px] py-[11px] text-[15.4px] font-bold leading-relaxed ${sk.catBubble}`} style={{ ...sk.catBubbleStyle, overflowWrap: 'anywhere' }}>
               {m.text}
             </div>
           )}
@@ -1296,7 +1303,7 @@ const MessageRow = ({ m, sk, bright, p5 = false, p4 = false, busy, onConfirm, on
   const cancelled = m.cardStatus === 'cancelled';
   const done = m.cardStatus === 'done';
   return (
-    <div className={`px-4 py-4 ${sk.card} ${cancelled ? 'opacity-55' : ''}`} style={sk.cardStyle}>
+    <div className={`break-words px-4 py-4 [overflow-wrap:anywhere] ${sk.card} ${cancelled ? 'opacity-55' : ''}`} style={sk.cardStyle}>
       <div className="flex items-center gap-2">
         <span aria-hidden>{meta.icon}</span>
         <span className="flex-1 text-[15.4px] font-black">{meta.label}</span>
@@ -1330,7 +1337,7 @@ const MessageRow = ({ m, sk, bright, p5 = false, p4 = false, busy, onConfirm, on
           >
             <CatFace className="h-4 w-4" fillWhenPhoto={false} />
           </span>
-          <p className="text-[13px] font-bold leading-relaxed opacity-80">{m.receipt}</p>
+          <p className="min-w-0 flex-1 text-[13px] font-bold leading-relaxed opacity-80 [overflow-wrap:anywhere]">{m.receipt}</p>
         </div>
       )}
     </div>

@@ -7,7 +7,7 @@ import { PeriodSummary, PeriodSummaryFollowUp, SummaryPeriod, YearRecap } from '
 import DOMPurify from 'dompurify';
 import { useModalA11y } from '@/utils/useModalA11y';
 import { useBackHandler } from '@/utils/useBackHandler';
-import { chatStream, type AIConfig } from '@/utils/aiClient';
+import { aiConfigured, chatStream, type AIConfig } from '@/utils/aiClient';
 import { effectiveModelName } from '@/utils/aiProviders';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P3R, slantClip, sheetTopClip } from '@/components/p3r/kit';
@@ -588,7 +588,7 @@ export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week', 
     else onClose();
   });
 
-  const noApiKey = !settings.summaryApiKey;
+  const noApiKey = !aiConfigured(settings);
   const p3 = useUiChannel() === 'p3';
 
   useEffect(() => {
@@ -809,7 +809,7 @@ export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week', 
                         <span className="text-lg">⚠️</span>
                         <div>
                           <div className="text-sm font-bold text-amber-700 dark:text-amber-300">未配置 AI API</div>
-                          <div className="text-xs text-amber-600 dark:text-amber-400 mt-1">请前往「设置 → AI 总结」配置 API 密钥后再使用此功能</div>
+                          <div className="text-xs text-amber-600 dark:text-amber-400 mt-1">请前往「设置 → AI 服务」配置 API 密钥后再使用此功能</div>
                         </div>
                       </div>
                     </div>

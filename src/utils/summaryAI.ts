@@ -649,7 +649,7 @@ export async function buildSummaryRequest(params: {
 }): Promise<SummaryRequestData> {
   const { settings, attributes, period, startDate, endDate, signal } = params;
   const resolved = resolveSummaryConfig(settings);
-  if (!resolved) throw new Error('请先在「设置 → AI 总结」中配置 API 密钥');
+  if (!resolved) throw new Error('请先在「设置 → AI 服务」中配置 API 密钥');
   const preset = getActiveSummaryPreset(settings);
   const brief = await buildSummaryBrief({ period, startDate, endDate, settings, attributes, presetId: preset.id });
 
@@ -782,9 +782,17 @@ export function trimSeam(full: string): string {
   const nl = t.lastIndexOf('\n');
   if (nl < 0) return t;
   const tail = t.slice(nl + 1);
-  if (/[。！？!?…」』"”)）]$/.test(tail)) return `${t}\n`;
+  if (endsCleanly(tail)) return `${t}\n`;
   return t.slice(0, nl + 1);
 }
 
+/**
+ * 这段话收住了没有：末尾是句末标点、收尾符号或 emoji。
+ * 第 14 批放宽（反馈 3「被错误截断」）：英文句点、～、emoji、Markdown 收尾（** ` ] 】 >）也算收住——
+ * 不少中转站流式不给 finish_reason，以前这类正常写完的内容一律被当成没写完。
+ */
+export const endsCleanly = (t: string): boolean =>
+  /(?:[。！？!?….~～」』"”'’)）】\]*`>]|\p{Extended_Pictographic})\s*$/u.test(t.trim());
+
 /** 结尾没收住的特征：末尾不是句末标点 */
-export const looksTruncated = (t: string): boolean => !/[。！？!?…」』"”)）]\s*$/.test(t.trim());
+export const looksTruncated = (t: string): boolean => !endsCleanly(t);

@@ -1,5 +1,5 @@
 import { AttributeId, PersonaSkill, PersonaSourceId, Settings } from '@/types';
-import { chatComplete, chatStream, getAIConfig, getDeliberateAIConfig, rateLimitWaitMs, type AIConfig } from '@/utils/aiClient';
+import { chatComplete, chatStream, getAIConfig, getDeliberateAIConfig, isRelayCapacityError, rateLimitWaitMs, type AIConfig } from '@/utils/aiClient';
 import type { MoonRevealData } from '@/battle/moonBoss';
 export type { MoonRevealData };
 import { SKILL_EFFECT_MAP } from '@/constants';
@@ -93,6 +93,8 @@ function shouldRetryAIError(e: unknown, jsonModeWasOn: boolean): boolean {
   if (e instanceof Error && e.name === 'AbortError') return false;
   const m = e instanceof Error ? e.message : String(e);
   if (/HTTP (401|402|403|404|413|422|429)\b/.test(m)) return false;
+  // 中转站这个模型临时没上游：aiClient 已经重试过一次，换温度 / 换 JSON 模式再撞没有用（第 14 批）
+  if (isRelayCapacityError(e)) return false;
   if (/HTTP 400\b/.test(m)) return jsonModeWasOn;
   // 超时 / 5xx / 网络 / 空响应 / 思维链吃光预算 / 格式坏了 → 值得换个参数再来一发
   return true;
@@ -260,6 +262,8 @@ async function streamJSONResilient(
     if (parsed && essential(parsed)) return parsed;
 
     const hasContent = full.includes('{') && full.trim().length > 20;
+    // 中转站这个模型临时没上游、又一个字都没写：别再换非流式 / 重开了（aiClient 已经隔一下重试过一次），直接交上去
+    if (err && !hasContent && isRelayCapacityError(err)) throw err;
     // ── 网络层失败（没连上 / 中途断开，见 aiNet）：退避后再来，不占续写 / 重启的次数 ──
     //    有半截就从断处续（下一轮 resuming），没有就从头来；离线 / 在后台时等回来再发。
     if (err && isNetworkError(err) && netRetries < NET_RETRY_MAX) {
@@ -416,6 +420,12 @@ const REGION_HINTS = [
 const pickedSources = (sources?: readonly PersonaSourceId[]) =>
   PERSONA_SOURCES.filter((s) => sources?.includes(s.id)).slice(0, 2);
 
+/**
+ * 名字一律中文（第 14 批 · 真实模型复核）：选「蒸腾的汽焰」时 DeepSeek 一口气给了五个外文原名
+ * （Rifa'a al-Tahtawi、Alexander von Humboldt…）——冷门的外国人物模型就懒得译。
+ */
+export const PERSONA_NAME_RULE = '人物名一律写中文：外国人物用通行的中文译名（如「亚历山大·冯·洪堡」「谢赫拉扎德」），没有通行译名的按读音音译成中文；不要写外文原名、拼音或括注原文。';
+
 /** 选了力量之源 → 地域倾向；没选 → 原来的文化 / 年代提示 */
 function hintFor(sources?: readonly PersonaSourceId[]): string {
   return pickedSources(sources).length
@@ -451,6 +461,7 @@ ${context}
 2. 人物选择必须基于上面的问答内容，而不是套用通识性的大众例子
 3. 文化偏好提示：${diversityHint}
 4. 禁止在名字后加"之灵""之影""化身"这类后缀
+5. ${PERSONA_NAME_RULE}
 
 技能规格：level 1-5，power=10/15/22/30/40，spCost=8/12/18/25/35
 技能类型（7种）：damage/crit/buff/debuff/charge/heal/attack_boost
@@ -461,7 +472,7 @@ ${formatSingleAttrSpecialization(attr, attrName)}
 技能名称和描述须体现该人物的标志性事迹或特质
 
 纯JSON输出，不含代码块和注释：
-{"name":"真实人物名","description":"一句话说明该人物与反抗者${attrName}特质的契合点","skills":[{"level":1,"name":"技能名","description":"技能描述","type":"damage","power":10,"spCost":8},{"level":2,"name":"技能名","description":"技能描述","type":"crit","power":15,"spCost":12},{"level":3,"name":"技能名","description":"技能描述","type":"buff","power":22,"spCost":18},{"level":4,"name":"技能名","description":"技能描述","type":"debuff","power":30,"spCost":25},{"level":5,"name":"技能名","description":"技能描述","type":"attack_boost","power":40,"spCost":35}]}`;
+{"name":"人物中文名","description":"一句话说明该人物与反抗者${attrName}特质的契合点","skills":[{"level":1,"name":"技能名","description":"技能描述","type":"damage","power":10,"spCost":8},{"level":2,"name":"技能名","description":"技能描述","type":"crit","power":15,"spCost":12},{"level":3,"name":"技能名","description":"技能描述","type":"buff","power":22,"spCost":18},{"level":4,"name":"技能名","description":"技能描述","type":"debuff","power":30,"spCost":25},{"level":5,"name":"技能名","description":"技能描述","type":"attack_boost","power":40,"spCost":35}]}`;
 }
 
 /**
@@ -571,6 +582,7 @@ ${sourceRule || `【Persona选择原则】
 - 经典文学、史诗、戏剧中的标志性角色
 - 宗教传说中的著名人物`}
 禁止：名字后的任何后缀如"之灵""之影""化身"，禁止输出"某类人"或"某个流派的学者们"之类的复数人。
+${PERSONA_NAME_RULE}
 
 【关键要求】
 1. 五个人物必须真正基于用户的具体回答来选择——不同的答案应当产生截然不同的人物组合
@@ -596,11 +608,11 @@ ${formatAllAttrsSpecialization(attributeNames)}
 
 必须使用纯JSON输出，不要包裹在代码块中，不含任何注释与额外文字：
 {
-  "knowledge":{"name":"真实人物名","description":"一句话说明该人物与反抗者${attributeNames['knowledge']}特质的契合点","skills":[{"level":1,"name":"技能名","description":"技能描述","type":"damage","power":10,"spCost":8},{"level":2,"name":"技能名","description":"技能描述","type":"crit","power":15,"spCost":12},{"level":3,"name":"技能名","description":"技能描述","type":"buff","power":22,"spCost":18},{"level":4,"name":"技能名","description":"技能描述","type":"debuff","power":30,"spCost":25},{"level":5,"name":"技能名","description":"技能描述","type":"attack_boost","power":40,"spCost":35}]},
-  "guts":{"name":"真实人物名","description":"一句话说明契合${attributeNames['guts']}的原因","skills":[...同上格式共5个]},
-  "dexterity":{"name":"真实人物名","description":"一句话说明契合${attributeNames['dexterity']}的原因","skills":[...同上格式共5个]},
-  "kindness":{"name":"真实人物名","description":"一句话说明契合${attributeNames['kindness']}的原因","skills":[...同上格式共5个]},
-  "charm":{"name":"真实人物名","description":"一句话说明契合${attributeNames['charm']}的原因","skills":[...同上格式共5个]}
+  "knowledge":{"name":"人物中文名","description":"一句话说明该人物与反抗者${attributeNames['knowledge']}特质的契合点","skills":[{"level":1,"name":"技能名","description":"技能描述","type":"damage","power":10,"spCost":8},{"level":2,"name":"技能名","description":"技能描述","type":"crit","power":15,"spCost":12},{"level":3,"name":"技能名","description":"技能描述","type":"buff","power":22,"spCost":18},{"level":4,"name":"技能名","description":"技能描述","type":"debuff","power":30,"spCost":25},{"level":5,"name":"技能名","description":"技能描述","type":"attack_boost","power":40,"spCost":35}]},
+  "guts":{"name":"人物中文名","description":"一句话说明契合${attributeNames['guts']}的原因","skills":[...同上格式共5个]},
+  "dexterity":{"name":"人物中文名","description":"一句话说明契合${attributeNames['dexterity']}的原因","skills":[...同上格式共5个]},
+  "kindness":{"name":"人物中文名","description":"一句话说明契合${attributeNames['kindness']}的原因","skills":[...同上格式共5个]},
+  "charm":{"name":"人物中文名","description":"一句话说明契合${attributeNames['charm']}的原因","skills":[...同上格式共5个]}
 }`;
 
   const skills = {} as Record<AttributeId, PersonaSkill[]>;
@@ -657,6 +669,17 @@ ${formatAllAttrsSpecialization(attributeNames)}
     lastErr = `整份返回只解析出 ${okAttrs.size}/5 个属性`;
   } catch (e) {
     lastErr = e instanceof Error ? e.message : 'AI 调用失败（未知错误）';
+    // 中转站这个模型临时没上游：分头补的五路会撞上同一个没资源的模型，直接交还（第 14 批）
+    if (isRelayCapacityError(e)) {
+      return {
+        personaName: fallbackName,
+        skills: generateDefaultSkills(fallbackName, attributeNames),
+        attributePersonas: generateDefaultAttributePersonas(fallbackName, attributeNames),
+        usedFallback: true,
+        errorMessage: lastErr,
+        missingAttrs: [...ATTRS],
+      };
+    }
   }
 
   // ── ② 分属性补齐：缺几个补几个，**并行**、流式 ─────────────────────
@@ -773,7 +796,7 @@ export async function reshuffleAttributePersonaAI(
   /** 这张 Persona 召唤时选的力量之源（洗牌沿用）；没有 = 原规则 */
   sources?: readonly PersonaSourceId[],
 ): Promise<{ name: string; description: string; skills: PersonaSkill[] } | null> {
-  // 与 generatePersonaSkills 同族（人格生成），一起走深思熟虑档
+  // 与 generatePersonaSkills 同族（人格生成），一起走深思熟虑档。没配 AI 返回 null；请求失败照原样抛
   const cfg = getDeliberateAIConfig(settings);
   if (!cfg) return null;
   const diversityHint = hintFor(sources);
@@ -784,6 +807,7 @@ export async function reshuffleAttributePersonaAI(
 2. 禁止与当前人物"${currentName}"相同或过于相似
 3. 文化偏好提示：${diversityHint}
 4. 人物要有新意，避免过于大众化的选择
+5. ${PERSONA_NAME_RULE}
 
 技能规格：level 1-5，power=10/15/22/30/40，spCost=8/12/18/25/35
 技能类型（7种）：damage/crit/buff/debuff/charge/heal/attack_boost
@@ -794,7 +818,7 @@ ${formatSingleAttrSpecialization(attr, attrName)}
 技能名称和描述须体现该人物的标志性事迹或特质
 
 纯JSON输出，不含代码块和注释：
-{"name":"真实人物名","description":"一句话说明该人物与${attrName}特质的契合点","skills":[{"level":1,"name":"技能名","description":"技能描述","type":"damage","power":10,"spCost":8},{"level":2,"name":"技能名","description":"技能描述","type":"crit","power":15,"spCost":12},{"level":3,"name":"技能名","description":"技能描述","type":"buff","power":22,"spCost":18},{"level":4,"name":"技能名","description":"技能描述","type":"debuff","power":30,"spCost":25},{"level":5,"name":"技能名","description":"技能描述","type":"attack_boost","power":40,"spCost":35}]}`;
+{"name":"人物中文名","description":"一句话说明该人物与${attrName}特质的契合点","skills":[{"level":1,"name":"技能名","description":"技能描述","type":"damage","power":10,"spCost":8},{"level":2,"name":"技能名","description":"技能描述","type":"crit","power":15,"spCost":12},{"level":3,"name":"技能名","description":"技能描述","type":"buff","power":22,"spCost":18},{"level":4,"name":"技能名","description":"技能描述","type":"debuff","power":30,"spCost":25},{"level":5,"name":"技能名","description":"技能描述","type":"attack_boost","power":40,"spCost":35}]}`;
 
   try {
     // 单属性 persona（人物名 + 描述 + 5技能）约 600-1200 tokens，保底 2000
@@ -804,8 +828,9 @@ ${formatSingleAttrSpecialization(attr, attrName)}
     const description = (typeof parsed.description === 'string' && parsed.description) ? parsed.description : `${name}的${attrName}具现`;
     const skills = repairSkills(parsed.skills, attrName, name);
     return { name, description, skills };
-  } catch {
-    return null;
+  } catch (e) {
+    // 照原样抛（第 16 批）：以前吞成 null，界面只会说「AI 不可用」，看不出是哪个模型、为什么失败
+    throw e instanceof Error ? e : new Error('洗牌失败');
   }
 }
 
@@ -935,7 +960,7 @@ export function prepareStratumReveal(
    */
   const cfg = getDeliberateAIConfig(settings);
   const weakAttribute = pickWeakAttribute(lastWeakAttribute);
-  if (!cfg) throw new Error('未配置 AI API Key，请前往「设置 → AI摘要」填写 API Key 后重试');
+  if (!cfg) throw new Error('未配置 AI API Key，请前往「设置 → AI 服务」填写 API Key 后重试');
 
   const levelPersonality = level <= 2
     ? '语气不稳定、带有挑衅和嘲讽，像一个试探性的捣蛋鬼'
@@ -1069,7 +1094,7 @@ export function prepareFinalBoss(
 ): PreparedFinalBoss {
   /** 同区层显形：深思熟虑档；没配就退回快速响应档 */
   const cfg = getDeliberateAIConfig(settings);
-  if (!cfg) throw new Error('未配置 AI API Key，请前往「设置 → AI摘要」填写 API Key 后重试');
+  if (!cfg) throw new Error('未配置 AI API Key，请前往「设置 → AI 服务」填写 API Key 后重试');
 
   const facts = [
     `五维等级：${ATTRS.map(a => `${attributeNames[a]}Lv${f.attrLevels[a]}(${f.attrPoints[a]}点)`).join('，')}`,

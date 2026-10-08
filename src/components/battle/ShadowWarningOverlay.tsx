@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { AttributeId } from '@/types';
 import { SHADOW_ACCENT_BY_WEAKNESS } from '@/constants';
@@ -20,15 +20,18 @@ interface Props {
 
 export function ShadowWarningOverlay({ isOpen, shadowName, level, weakAttribute, weakAttributeName, onDone }: Props) {
   const [phase, setPhase] = useState<'warn' | 'reveal' | 'out'>('warn');
+  // 回调走 ref（第 17 批）：以前 onDone 进依赖，调用方每次渲染都给新的，一重渲染就从头计时，这层全屏迟迟不退
+  const onDoneRef = useRef(onDone);
+  onDoneRef.current = onDone;
 
   useEffect(() => {
     if (!isOpen) return;
     setPhase('warn');
     const t1 = setTimeout(() => setPhase('reveal'), 900);
     const t2 = setTimeout(() => setPhase('out'), 3150); // reveal 停留延长 0.75s
-    const t3 = setTimeout(() => onDone(), 3550);
+    const t3 = setTimeout(() => onDoneRef.current(), 3550);
     return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
-  }, [isOpen, onDone]);
+  }, [isOpen]);
 
   const accent = weakAttribute ? SHADOW_ACCENT_BY_WEAKNESS[weakAttribute].eye : '#ef4444';
 

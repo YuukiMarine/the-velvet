@@ -309,7 +309,7 @@ export function CounselChatModal({ isOpen, onClose, initialMentionId }: Props) {
 
           {/* 提示：没配密钥 / 刚才连不上 */}
           {!hasApiKey ? (
-            <Banner sk={sk} tone="warn" text="尚未配置 AI 密钥。" sub="现在是简版离线回复；到「设置 → AI」填入密钥后，残响才会真正用心听你说。" />
+            <Banner sk={sk} tone="warn" text="尚未配置 AI 密钥。" sub="现在是简版离线回复；到「设置 → AI 服务」填入密钥后，残响才会真正用心听你说。" />
           ) : lastConnectError ? (
             <Banner sk={sk} tone="error" text="无法连接到 AI 服务。" sub="刚才这次临时退回了离线回复。网络恢复后再发一条试试。" detail={lastConnectError} onClose={() => setLastConnectError(null)} />
           ) : null}

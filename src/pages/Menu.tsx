@@ -4,14 +4,12 @@
  * 斜界采用（全站第一个页面级使用者）：
  *   · 整页包 <PagePlane>（世界倾斜 var(--ui-axis)）；瓷砖**内容**包 <PlaneLevel>
  *     反制回正——瓷砖盒边缘随世界斜、字恒水平（护栏 §7.1）。
- *   · 一切裁切（切角 / 出血巨数）只作用于 aria-hidden 的装饰盒；
+ *   · 一切裁切（出血巨数）只作用于 aria-hidden 的装饰盒；
  *     瓷砖本体恒为完整矩形 button（命中区铁律 §7.2）。shadow-sm 挂在
  *     button 上而非装饰盒：clip-path 会把整圈 box-shadow 裁没。
  *
  * 宫格几何：
- *   · 瓷砖切角方向全部统一：左列切右上角、右列切左下角，尺寸
- *     calc(var(--ui-cut) * 1.6)。
- *   · D0（--boldness=0）下 --ui-cut 归零、切角自动消失。
+ *   · 瓷砖是完整的圆角矩形（第 17 批去掉了左列右上 / 右列左下的切角：用户口径「切掉一个角不好看」）。
  *   · ⚠️ 曾经横贯宫格的「双描断层线」（atan2 量角 + --fault-angle）已于 FS2.2 下架：
  *     中性皮现在只服务 custom 主题，用户要的是干净方正，不要那条斜线。
  *
@@ -124,8 +122,6 @@ const tileIn: Variants = {
 // ── 瓷砖 ────────────────────────────────────────────────────────────────────
 
 interface TileProps {
-  /** 决定切角方向：左列切右上角、右列切左下角（朝断层线的那一角） */
-  side: 'left' | 'right';
   /** 对角级联序号（delay = order * STAGGER） */
   order: number;
   /** D0 时改播 fadeIn（无位移） */
@@ -143,13 +139,9 @@ interface TileProps {
   onPress: () => void;
 }
 
-const Tile = ({ side, order, bold, hero, label, ariaLabel, icon, sub, badge, bleed, onPress }: TileProps) => {
-  // 切角尺寸全部派生自 --ui-cut（角度同源纪律）；D0 归零退化为完整矩形
-  const cut = 'calc(var(--ui-cut) * 1.6)';
-  const clipPath =
-    side === 'left'
-      ? `polygon(0 0, calc(100% - ${cut}) 0, 100% ${cut}, 100% 100%, 0 100%)`
-      : `polygon(0 0, 100% 0, 100% 100%, ${cut} 100%, 0 calc(100% - ${cut}))`;
+const Tile = ({ order, bold, hero, label, ariaLabel, icon, sub, badge, bleed, onPress }: TileProps) => {
+  // 第 17 批：不再切角（以前左列切右上、右列切左下），完整的圆角矩形——用户口径：切角把「统计」那张的主题色描边切断了一截，不好看。
+  // 这套瓷砖只在自定义主题用（黄频道有自己的版式）
 
   return (
     <motion.button
@@ -166,7 +158,7 @@ const Tile = ({ side, order, bold, hero, label, ariaLabel, icon, sub, badge, ble
       aria-label={ariaLabel}
       className="relative w-full rounded-2xl text-left shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
     >
-      {/* 装饰盒：承载卡面/边框/出血巨数，被切角；命中区（button 本体）不裁 */}
+      {/* 装饰盒：承载卡面 / 边框 / 出血巨数（overflow-hidden 裁出血）；命中区（button 本体）不裁 */}
       <div
         aria-hidden
         className={`absolute inset-0 overflow-hidden rounded-2xl border ${
@@ -174,7 +166,6 @@ const Tile = ({ side, order, bold, hero, label, ariaLabel, icon, sub, badge, ble
             ? 'bg-primary/10 border-primary/20'
             : 'bg-white dark:bg-gray-900 border-gray-100 dark:border-gray-800'
         }`}
-        style={{ clipPath }}
       >
         {bleed}
       </div>
@@ -1410,7 +1401,6 @@ export const Menu = () => {
               {/* 左列：断层上方 = 高频 */}
               <div className="flex flex-col gap-3">
                 <Tile
-                  side="left"
                   order={orderOf('left', 0)}
                   bold={bold}
                   hero
@@ -1440,7 +1430,6 @@ export const Menu = () => {
                   onPress={() => setCurrentPage('statistics')}
                 />
                 <Tile
-                  side="left"
                   order={orderOf('left', 1)}
                   bold={bold}
                   label="成就·技能"
@@ -1467,7 +1456,6 @@ export const Menu = () => {
                 />
                 {ledgerVisible && (
                   <Tile
-                    side="left"
                     order={orderOf('left', 2)}
                     bold={bold}
                     label="记账"
@@ -1483,7 +1471,6 @@ export const Menu = () => {
               <div className="flex flex-col gap-3 translate-y-7">
                 {battleVisible && (
                   <Tile
-                    side="right"
                     order={orderOf('right', 0)}
                     bold={bold}
                     label="逆影战场"
@@ -1501,7 +1488,6 @@ export const Menu = () => {
                 )}
                 {/* 主题：从设置上浮的入口 block（放逆影战场下方），点开主题色板 Sheet */}
                 <Tile
-                  side="right"
                   order={orderOf('right', battleVisible ? 1 : 0)}
                   bold={bold}
                   label="主题"
@@ -1516,7 +1502,6 @@ export const Menu = () => {
                 />
                 {/* 过渡：羁绊页合并后移入羁绊页 */}
                 <Tile
-                  side="right"
                   order={orderOf('right', battleVisible ? 2 : 1)}
                   bold={bold}
                   label="占卜"
@@ -1525,7 +1510,6 @@ export const Menu = () => {
                   onPress={() => setCurrentPage('astrology')}
                 />
                 <Tile
-                  side="right"
                   order={orderOf('right', battleVisible ? 3 : 2)}
                   bold={bold}
                   label="设置"
@@ -1542,7 +1526,7 @@ export const Menu = () => {
                 · 置于 gridRef 之外：断层线 atan2 只量瓷砖宫格本体，不被横条拉长；
                 · mt-10 = 右列 translate-y-7 的 28px 视觉下探 + 12px 网格间距节奏；
                 · 点击不跳页，打开本页内关于 Sheet；横条位于断层下方（低频区），
-                  沿用右列制式的左下切角，装饰盒被裁、命中区完整（护栏 §7.2）。 */}
+                  和瓷砖一样是完整的圆角矩形（第 17 批去掉了左下切角）。 */}
             <motion.button
               ref={aboutTriggerRef}
               type="button"
@@ -1562,10 +1546,6 @@ export const Menu = () => {
               <div
                 aria-hidden
                 className="absolute inset-0 overflow-hidden rounded-2xl border bg-white dark:bg-gray-900 border-gray-100 dark:border-gray-800"
-                style={{
-                  clipPath:
-                    'polygon(0 0, 100% 0, 100% 100%, calc(var(--ui-cut) * 1.6) 100%, 0 calc(100% - calc(var(--ui-cut) * 1.6)))',
-                }}
               />
               {/* 内容反制回正：盒斜、字平（与 Tile 同一护栏） */}
               <PlaneLevel className="relative flex items-center gap-3 px-4 py-3">

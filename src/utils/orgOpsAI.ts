@@ -30,7 +30,7 @@ function describe(m: OrgMember, i: number): string {
  */
 export async function splitOperationAI(settings: Settings, input: { goal: string; daysLeft: number; deadline: string; people: OrgMember[] }, signal?: AbortSignal): Promise<Record<string, string>> {
   const cfg = getAIConfig(settings);
-  if (!cfg) throw new Error('没配 AI：去「设置 → AI」填好 API Key 就能用');
+  if (!cfg) throw new Error('没配 AI：去「设置 → AI 服务」填好 API Key 就能用');
   const people = input.people.slice(0, 7);
   const when = input.daysLeft <= 0 ? '今天就截止' : `还有 ${input.daysLeft} 天（到 ${Number(input.deadline.slice(5, 7))} 月 ${Number(input.deadline.slice(8, 10))} 日）`;
   const sys = '你是一个小组的参谋。把队长给的共同目标拆成每人一条子任务，并按每个人的特点分配。'

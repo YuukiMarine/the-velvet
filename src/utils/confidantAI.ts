@@ -10,7 +10,7 @@
 import type { Settings, TarotOrientation } from '@/types';
 import { MAJOR_ARCANA, TAROT_BY_ID } from '@/constants/tarot';
 import type { ApiProvider } from '@/utils/aiProviders';
-import { chatComplete, fallbackAIConfig, getAIConfig, type AIConfig, type AITier } from '@/utils/aiClient';
+import { aiConfigured, chatComplete, fallbackAIConfig, getAIConfig, type AIConfig, type AITier } from '@/utils/aiClient';
 import { extractJSON } from '@/utils/aiJson';
 
 export interface ConfidantMatchInput {
@@ -74,13 +74,15 @@ export interface AIRequestData {
   /** 走的是哪家 / 哪一档（第 4 轮补：思维链余量、关思考重试、402 提示都靠它对号） */
   provider?: ApiProvider;
   tier?: AITier;
+  /** 请求协议（第 14 批 · 自定义服务商可选 Anthropic） */
+  protocol?: AIConfig['protocol'];
   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
 }
 
 /** 同伴四项都走快速响应档；没配 Key 时退到兜底连接（调用方在此之前已按 hasKey 分流） */
-function headOf(settings: Settings): Pick<AIRequestData, 'baseUrl' | 'model' | 'apiKey' | 'provider' | 'tier'> {
+function headOf(settings: Settings): Pick<AIRequestData, 'baseUrl' | 'model' | 'apiKey' | 'provider' | 'tier' | 'protocol'> {
   const cfg: AIConfig = getAIConfig(settings) ?? fallbackAIConfig(settings);
-  return { baseUrl: cfg.baseUrl, model: cfg.model, apiKey: cfg.apiKey, provider: cfg.provider, tier: cfg.tier };
+  return { baseUrl: cfg.baseUrl, model: cfg.model, apiKey: cfg.apiKey, provider: cfg.provider, tier: cfg.tier, protocol: cfg.protocol };
 }
 
 /** 模型输出 → 对象（容忍代码块 / 前后缀 / 内引号；抽不出抛「不是合法 JSON」） */
@@ -330,7 +332,7 @@ export async function interpretLockedArcana(
   input: LockedArcanaInterpretInput,
   signal?: AbortSignal,
 ): Promise<LockedArcanaInterpretResult> {
-  const hasKey = Boolean(input.settings.summaryApiKey?.trim());
+  const hasKey = aiConfigured(input.settings);
   if (!hasKey) return lockedInterpretOffline(input);
   try {
     const req = buildLockedInterpretRequest(input);
@@ -348,7 +350,7 @@ export async function interpretLockedArcana(
 
 /** 统一入口：优先走 AI，失败或未配置则降级到离线。 */
 export async function matchConfidant(input: ConfidantMatchInput, signal?: AbortSignal): Promise<ConfidantMatchResult> {
-  const hasKey = Boolean(input.settings.summaryApiKey?.trim());
+  const hasKey = aiConfigured(input.settings);
   if (!hasKey) return matchOffline(input);
   try {
     const req = buildMatchRequest(input);
@@ -487,7 +489,7 @@ export async function evaluateInteraction(
    */
   allowAI: boolean = true,
 ): Promise<InteractionEvalResult> {
-  const hasKey = Boolean(input.settings.summaryApiKey?.trim());
+  const hasKey = aiConfigured(input.settings);
   if (!hasKey || !allowAI) return evalOffline(input);
   try {
     return await callEvalAI(buildEvalRequest(input), signal);
@@ -607,7 +609,7 @@ function starShiftOffline(input: StarShiftInput): StarShiftResult {
 }
 
 export async function starShiftConfidant(input: StarShiftInput, signal?: AbortSignal): Promise<StarShiftResult> {
-  const hasKey = Boolean(input.settings.summaryApiKey?.trim());
+  const hasKey = aiConfigured(input.settings);
   if (!hasKey) return starShiftOffline(input);
   try {
     return await callStarShiftAI(buildStarShiftRequest(input), signal);

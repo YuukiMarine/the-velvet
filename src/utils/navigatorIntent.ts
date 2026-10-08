@@ -418,7 +418,12 @@ function toDraft(a: Record<string, unknown> | null | undefined): NavigatorDraft 
     };
   }
   if (kind === 'ledger') {
-    const amount = Math.round(Number(a.amount) * 100) / 100;
+    // 模型偶尔把金额写成「¥23.5」「23.5元」「1,280」这类字符串（第 17 批）：以前 Number() 得 NaN，整张卡直接丢了。
+    // 数字照用；字符串去掉千分位、全角句点当小数点，取里面第一个数
+    const rawAmount = typeof a.amount === 'number'
+      ? a.amount
+      : Number((/\d+(?:\.\d+)?/.exec(String(a.amount ?? '').replace(/(\d)[,，](?=\d{3}\b)/g, '$1').replace(/[。．]/g, '.')) ?? [''])[0] || NaN);
+    const amount = Math.round(rawAmount * 100) / 100;
     if (!Number.isFinite(amount) || amount <= 0) return undefined;
     const direction = a.direction === 'income' ? 'income' : 'expense';
     const type = CATEGORY_KEYS.includes(a.type as LedgerExpenseType) ? (a.type as LedgerExpenseType) : 'other';
@@ -464,6 +469,9 @@ function toDraft(a: Record<string, unknown> | null | undefined): NavigatorDraft 
   }
   return undefined;
 }
+
+/** 测试用：分诊 action → 卡片草稿（金额容错等） */
+export const _toDraftForTest = toDraft;
 
 // ── 查询执行（v1：近 N 天活动记录） ──
 

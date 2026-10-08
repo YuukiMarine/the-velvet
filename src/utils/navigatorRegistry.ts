@@ -424,7 +424,7 @@ export function buildShortGreeting(snap: NavigatorSnapshot): string {
 export function buildFallbackReply(): string {
   return pick([
     `这句我先记在心里——不过眼下我还接不住自由对话，用下面的快捷项吧。等你配好 AI 密钥，我就能听懂整句话了。`,
-    `唔，我懂你想说话。但我的「翻译水晶」还没接上（设置 → AI 总结 配好密钥就行）。先用下面的快捷项，一样管用。`,
+    `唔，我懂你想说话。但我的「翻译水晶」还没接上（去设置 → AI 服务 配好密钥就行）。先用下面的快捷项，一样管用。`,
     `先别急着跟我聊天——快捷项在下面，点一下就能记。等密钥配好，你说人话我办事。`,
   ]);
 }

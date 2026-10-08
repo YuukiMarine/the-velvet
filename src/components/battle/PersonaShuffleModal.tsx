@@ -4,6 +4,7 @@ import { useAppStore } from '@/store';
 import { useShallow } from 'zustand/react/shallow';
 import { AttributeId } from '@/types';
 import { reshuffleAttributePersonaAI, generateSkillsForManualPersona, generateAISkillsForPersona } from '@/utils/battleAI';
+import { aiConfigLabel, getDeliberateAIConfig } from '@/utils/aiClient';
 import { triggerLightHaptic, playSound } from '@/utils/feedback';
 import { ModalPortal } from '@/components/ModalPortal';
 
@@ -66,8 +67,11 @@ export function PersonaShuffleModal({ isOpen, onClose }: Props) {
       triggerLightHaptic();
       playSound('/battle-summon.mp3');
       setMode('done');
-    } catch {
-      setError('洗牌失败，请重试');
+    } catch (e) {
+      // 写明原因和这一步用的哪一档哪个模型（第 16 批）：洗牌走深思熟虑档
+      const dc = getDeliberateAIConfig(settings);
+      const via = dc ? `（这一步用的是「深思熟虑」档：${aiConfigLabel(dc)}，可在「设置 → AI 服务 → 模型分档」换）` : '';
+      setError(`洗牌失败：${e instanceof Error ? e.message : '请重试'}${via}`);
       setMode('choose');
     }
   };
@@ -139,7 +143,7 @@ export function PersonaShuffleModal({ isOpen, onClose }: Props) {
             <p className="text-purple-300/60 text-xs text-center mb-5">选择要重置的属性Persona</p>
 
             {error && (
-              <p className="text-red-400 text-xs text-center mb-3 px-2">{error}</p>
+              <p className="text-red-400 text-xs text-center mb-3 px-2 break-all">{error}</p>
             )}
 
             {/* Step 1: Select attribute */}

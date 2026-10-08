@@ -16,7 +16,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { db } from '@/db';
 import { useAppStore, toLocalDateKey } from '@/store';
 import type { PeriodSummary, SummaryPeriod } from '@/types';
-import { chatStream } from '@/utils/aiClient';
+import { aiConfigured, chatStream } from '@/utils/aiClient';
 import {
   buildContinueMessages, extractSummaryMemo, looksTruncated, parseSummaryResult, summaryKindOf, trimSeam, SUMMARY_MAX_TOKENS,
 } from '@/utils/summaryAI';
@@ -64,7 +64,7 @@ export function maybeAutoWriteSummaries(): Promise<void> {
 
 async function run(): Promise<void> {
   const st = useAppStore.getState();
-  if (!st.user || st.settings.summaryAutoWrite === false || !st.settings.summaryApiKey?.trim()) return;
+  if (!st.user || st.settings.summaryAutoWrite === false || !aiConfigured(st.settings)) return;
   for (const t of previousPeriods()) {
     const key = `${t.period}:${t.start}`;
     const rec = readAll()[key];

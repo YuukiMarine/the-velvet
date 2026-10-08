@@ -56,7 +56,7 @@ export async function analyzeActivityAI(
 
   const cfg = getAIConfig(settings);
   if (!cfg) {
-    throw new Error('请先在「设置 → AI 总结」中配置 API 密钥');
+    throw new Error('请先在「设置 → AI 服务」中配置 API 密钥');
   }
 
   const userMessage = [

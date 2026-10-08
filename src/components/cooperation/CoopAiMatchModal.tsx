@@ -20,6 +20,7 @@ import { TarotCardSVG } from '@/components/astrology/TarotCardSVG';
 import type { AttributeId, AttributeNames } from '@/types';
 import type { ArcanaPickerValue } from './ArcanaPickerForm';
 import type { ConfidantMatchResult } from '@/utils/confidantAI';
+import { aiConfigured } from '@/utils/aiClient';
 
 const ATTR_ORDER: AttributeId[] = ['knowledge', 'guts', 'dexterity', 'kindness', 'charm'];
 
@@ -121,7 +122,7 @@ export function CoopAiMatchModal({ isOpen, onClose, targetName, takenArcanaIds, 
     setUserMessage('');
   }, [isOpen]);
 
-  const hasApiKey = useMemo(() => Boolean(settings.summaryApiKey?.trim()), [settings]);
+  const hasApiKey = useMemo(() => aiConfigured(settings), [settings]);
 
   const startMatch = async (answers: Array<string | null>) => {
     setErr(null);

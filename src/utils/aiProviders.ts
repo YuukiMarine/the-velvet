@@ -4,8 +4,13 @@
  * 所有 provider 均走 OpenAI 兼容的 /chat/completions 端点
  */
 import { aiFetch, hostOfUrl, nativeTransportAvailable } from '@/utils/aiTransport';
+import { recordAIDiag } from '@/utils/aiDiagnostics';
+import { effortFixFromMessage, isEnableThinkingMessage, isLegacyThinkingMessage, isUnsupportedTemperatureMessage, quirksFor, rememberQuirk, thinkingSuffixBase } from '@/utils/aiQuirks';
+import { anthropicEndpoint, anthropicHeaders } from '@/utils/aiAnthropic';
 
-export type ApiProvider = 'openai' | 'deepseek' | 'kimi' | 'qwen' | 'gemini' | 'minimax';
+export type ApiProvider = 'openai' | 'deepseek' | 'kimi' | 'qwen' | 'gemini' | 'minimax' | 'custom';
+/** 请求协议：OpenAI 兼容（/chat/completions，六家和绝大多数中转站）/ Anthropic Messages（自定义服务商的备用协议） */
+export type ApiProtocol = 'openai' | 'anthropic';
 
 export interface ProviderConfig {
   id: ApiProvider;
@@ -88,7 +93,52 @@ export const AI_PROVIDERS: ProviderConfig[] = [
     hint: 'MiniMax-M3',
     keyUrl: 'https://platform.minimaxi.com/user-center/basic-information/interface-key',
   },
+  /**
+   * 第 14 批 · 自定义服务商（第 7 个胶囊）：中转站和其它 OpenAI 兼容平台（硅基流动 / 火山方舟 / 智谱 / OpenRouter），
+   * 以及 Anthropic 协议。地址、模型都要自己填（没有默认值）；名字、协议、取 Key 入口跟着设置走（见 syncCustomProvider）。
+   * 不带任何一家的专属字段和报错口径。
+   */
+  {
+    id: 'custom',
+    label: '自定义',
+    defaultBaseUrl: '',
+    defaultModel: '',
+    hint: '',
+    keyUrl: '',
+  },
 ];
+
+/** 自定义服务商的预设：一键填地址、协议和取 Key 入口（跨域与 /models 均于 2026-10-07 实测） */
+export interface CustomProviderPreset {
+  id: string;
+  name: string;
+  baseUrl: string;
+  protocol: ApiProtocol;
+  keyUrl: string;
+  hint: string;
+}
+export const CUSTOM_PRESETS: readonly CustomProviderPreset[] = [
+  { id: 'siliconflow', name: '硅基流动', baseUrl: 'https://api.siliconflow.cn/v1', protocol: 'openai', keyUrl: 'https://cloud.siliconflow.cn/account/ak', hint: '国内可直连，开源模型多（DeepSeek / Qwen / GLM…）' },
+  { id: 'ark', name: '火山方舟', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', protocol: 'openai', keyUrl: 'https://console.volcengine.com/ark', hint: '豆包等；模型名填方舟里的模型 ID 或接入点 ID' },
+  { id: 'zhipu', name: '智谱', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', protocol: 'openai', keyUrl: 'https://open.bigmodel.cn/usercenter/apikeys', hint: 'GLM 系列' },
+  { id: 'openrouter', name: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', protocol: 'openai', keyUrl: 'https://openrouter.ai/settings/keys', hint: '一个 Key 用各家模型（国内网络可能不稳）' },
+  { id: 'anthropic', name: 'Anthropic', baseUrl: 'https://api.anthropic.com', protocol: 'anthropic', keyUrl: 'https://console.anthropic.com/settings/keys', hint: '官方 Claude（Anthropic 协议）' },
+  { id: 'relay', name: '中转站', baseUrl: '', protocol: 'openai', keyUrl: '', hint: '填中转站给的地址（一般以 /v1 结尾）；它若只给 Anthropic 格式的地址，协议选 Anthropic' },
+];
+
+/**
+ * 自定义服务商的名字 / 协议 / 取 Key 入口：store 订阅设置变化同步过来（与 aiTransport.syncNativeHosts 同一个思路），
+ * 这样各处 getProviderConfig('custom').label 显示的就是用户起的名字，不用每个调用点都去读设置。
+ */
+const customState = { name: '', protocol: 'openai' as ApiProtocol, keyUrl: '' };
+export function syncCustomProvider(s: { customProviderName?: string; customProviderProtocol?: ApiProtocol; customProviderPreset?: string } | null | undefined): void {
+  const preset = CUSTOM_PRESETS.find((p) => p.id === s?.customProviderPreset);
+  customState.name = s?.customProviderName?.trim() || preset?.name || '';
+  customState.protocol = s?.customProviderProtocol === 'anthropic' ? 'anthropic' : 'openai';
+  customState.keyUrl = preset?.keyUrl ?? '';
+}
+/** 自定义服务商当前用的协议 */
+export const customProtocol = (): ApiProtocol => customState.protocol;
 
 /**
  * 未指定服务商时的默认值（R19 用户拍板：openai → deepseek）。
@@ -118,6 +168,8 @@ export const PROVIDER_MAX_OUTPUT: Record<ApiProvider, number> = {
   qwen:      32_000,
   gemini:    64_000,
   minimax:   32_000,
+  // 自定义：不知道接的是谁，按常见的 32K 封顶；更严的会被「400 就降档」兜住
+  custom:    32_000,
 };
 export const DEFAULT_MAX_OUTPUT = 16_000;
 
@@ -126,6 +178,10 @@ export function providerMaxOutput(provider: ApiProvider | undefined): number {
 }
 
 export function getProviderConfig(provider: ApiProvider | undefined): ProviderConfig {
+  if (provider === 'custom') {
+    const base = AI_PROVIDERS.find(p => p.id === 'custom')!;
+    return { ...base, label: customState.name || base.label, keyUrl: customState.keyUrl };
+  }
   return AI_PROVIDERS.find(p => p.id === provider)
     ?? AI_PROVIDERS.find(p => p.id === DEFAULT_PROVIDER)
     ?? AI_PROVIDERS[0];
@@ -172,7 +228,7 @@ export function normalizeBaseUrl(raw: string): string {
   if (!u) return '';
   if (!/^https?:\/\//i.test(u)) u = `https://${u.replace(/^\/+/, '')}`;
   u = u.replace(/[?#].*$/, '').replace(/\/+$/, '');
-  u = u.replace(/\/(chat\/completions|completions|models|embeddings)$/i, '');
+  u = u.replace(/\/(chat\/completions|completions|models|embeddings|messages)$/i, '');
   return u.replace(/\/+$/, '');
 }
 
@@ -184,6 +240,8 @@ const OFFICIAL_HOSTS = new Set([
   'dashscope.aliyuncs.com', 'dashscope-intl.aliyuncs.com',
   'generativelanguage.googleapis.com',
   'api.minimaxi.com', 'api.minimax.io',
+  // 第 14 批 · 自定义服务商的预设平台：都是官方接口，不按中转站对待（报错按状态码说、思维链余量按官方给）
+  'api.siliconflow.cn', 'api.siliconflow.com', 'ark.cn-beijing.volces.com', 'open.bigmodel.cn', 'openrouter.ai', 'api.anthropic.com',
 ]);
 /**
  * 千问「套餐专属」网关（coding plan / token plan）：阿里自家的地址，不是中转站——报错措辞按官方说；
@@ -206,16 +264,40 @@ export function isOfficialHost(baseUrl: string): boolean {
  * （没渠道回 503、额度用尽回 403……），按状态码给的提示（「服务繁忙」「无访问权限」）会把人带偏。
  * 认不出返回空串，由调用方退回状态码提示。
  */
+/**
+ * 服务商的内容安全审核拦截（千问 data_inspection_failed、DeepSeek Content Exists Risk、Kimi「high risk」…）：
+ * 都回 400，以前被说成「请求格式有误」，用户以为是自己设置坏了（第 13 轮）。认出来就直说。
+ */
+export const MODERATION_HINT = '内容被服务商的安全审核拦下了（不是设置问题）：换个说法或删掉敏感的部分再试';
+export function moderationHint(detail: string): string {
+  return /data[_\s-]?inspection|content[_\s-]?exists[_\s-]?risk|content[_\s-]?filter|considered high risk|high[_\s-]?risk|inappropriate content|敏感|违规|安全审核/i.test(detail || '')
+    ? MODERATION_HINT : '';
+}
+
+/** 中转站对这个模型强开了旧式思考参数，新一代 Claude 不认（第 16 批） */
+export const LEGACY_THINKING_HINT = '中转站给这个模型发了旧式的思考参数，这一代 Claude 不认（不是 Key 或设置的问题）：换成不带「-thinking」的同款模型，或换个模型';
+
+/** 中转站这个模型临时没上游（第 14 批）：aiClient / battleAI 按这句认「别再连撞了」 */
+export const RELAY_CAPACITY_HINT = '中转站这个模型暂时没有可用的上游资源（不是 Key 或设置的问题）：换个模型，或过一会儿再试';
+
 export function relayHint(detail: string, official = false): string {
   // 官方主机不用中转措辞：DeepSeek 官方 402 的「Insufficient Balance」也会撞上下面的「余额」正则，
   // 被说成「去中转站充值」（第 13 轮用户反馈）；官方落回按状态码 + 厂商的提示（getHttpStatusHint）
   if (official) return '';
   const d = detail || '';
   if (!d) return '';
+  // 中转站给这个模型发了旧式思考参数（「-thinking」版本被改写成 thinking.type=enabled），新一代 Claude 不认（第 16 批）：
+  // 带 -thinking 后缀的 aiClient 会自动去掉后缀重发，走到这里说明自动改不了
+  if (isLegacyThinkingMessage(d)) return LEGACY_THINKING_HINT;
+  // 中转站这个模型临时没上游（如「No available resources, please try again later」）：不是 Key / 设置的问题（第 14 批）
+  if (/no available resources?|无可用资源|上游负载已饱和|负载已饱和|上游.*(繁忙|不可用)|系统繁忙|server is busy|temporarily unavailable|overloaded/i.test(d)) return RELAY_CAPACITY_HINT;
   if (/无可用渠道|no available channel|no channel|channel not found|无可用的渠道/i.test(d)) return '这把 Key 的分组里没有这个模型：换个模型名（试试「刷新全部模型列表」），或在中转站把令牌换到有它的分组';
   if (/额度|余额|quota|balance|insufficient/i.test(d)) return '额度 / 余额用尽：去中转站充值，或换一个令牌';
   if (/(令牌|token|api[ _-]?key|密钥)/i.test(d) && /(无效|不存在|不可用|invalid|disabled|unavailable|禁用|expired|过期|incorrect|错误)/i.test(d)) return '令牌（Key）无效或已被禁用：回中转站重新复制一个';
-  if (/(模型|model)/i.test(d) && /(不存在|不支持|not found|does not exist|not exist|unknown|unsupported|invalid|未配置)/i.test(d)) return '模型名不对：点「刷新全部模型列表」从里面选';
+  // 参数被拒（temperature / max_tokens / 思考档…）的报错也常带「model」和「invalid」（Kimi：「invalid temperature: only 1 is allowed for this model」），
+  // 以前被这条说成「模型名不对」（第 17 批 · 用户反馈「400 模型名称不正确」）。说到参数名的不算模型名问题
+  if (/(模型|model)/i.test(d) && /(不存在|不支持|not found|does not exist|not exist|unknown|unsupported|invalid|未配置)/i.test(d)
+    && !/temperature|top_p|max_tokens|max_completion_tokens|reasoning|thinking|parameter|参数/i.test(d)) return '模型名不对：点「刷新全部模型列表」从里面选';
   if (/分组|group/i.test(d)) return '令牌分组不对：在中转站把令牌换到有这个模型的分组';
   return '';
 }
@@ -290,6 +372,8 @@ export type TestResult =
       /** 浏览器通道发不出去（对方不放行跨域预检）、App 原生通道才通：界面应把 nativeHost 登记进 settings.aiNativeHosts */
       transport?: 'native';
       nativeHost?: string;
+      /** 测的时候顺手摸清的脾气（不收 temperature / 不认最省的思考档…）：一句一行，界面附在结果后面 */
+      notes?: string[];
     }
   | { ok: false; error: string; transport?: 'native'; nativeHost?: string };
 
@@ -354,6 +438,8 @@ export async function testAIConnection(opts: {
   nativeHosts?: string[];
   /** 浏览器通道发不出去时允许换原生通道再试（默认：原生壳里允许，网页里没有原生层） */
   allowNativeFallback?: boolean;
+  /** 请求协议（自定义服务商可选 Anthropic）；不传 = 自定义按当前设置、其余 OpenAI 兼容 */
+  protocol?: ApiProtocol;
 }): Promise<TestResult> {
   if (!opts.apiKey?.trim()) {
     return { ok: false, error: '请先填写 API 密钥' };
@@ -363,16 +449,36 @@ export async function testAIConnection(opts: {
   const { baseUrl, model } = resolveProvider(opts.provider, opts.baseUrl, opts.model);
   const nativeSet = new Set((opts.nativeHosts ?? []).map((h) => h.trim().toLowerCase()).filter(Boolean));
   const allowNative = opts.allowNativeFallback ?? nativeTransportAvailable();
+  const anthropic = (opts.protocol ?? (opts.provider === 'custom' ? customProtocol() : 'openai')) === 'anthropic';
+  if (!baseUrl) return { ok: false, error: '自定义服务商要先填 API 地址' };
+  if (!model) return { ok: false, error: '自定义服务商要先填模型名（点「选择模型」从列表里挑，或直接手填）' };
   // 推理模型（GPT-5/o 系列）拒绝 max_tokens，且 max_tokens:1 会被推理 token 吃光
-  const reasoning = isReasoningModel(model);
-  const body = JSON.stringify({
-    model,
-    messages: [{ role: 'user', content: 'ping' }],
-    ...(reasoning
-      ? { max_completion_tokens: 16, ...(reasoningEffortFor(model) ? { reasoning_effort: reasoningEffortFor(model) } : {}) }
-      : { max_tokens: 1 }),
-    stream: false,
-  });
+  const reasoning = !anthropic && isReasoningModel(model);
+  /**
+   * 按真实请求的口径发（第 14 批）：非推理模型也带上 temperature——以前不带，新一代 Claude 这种不收 temperature 的模型
+   * 「测试连接正常、真用起来全挂」（中转站实测）。撞到就记下、去掉再测，真实请求之后也自动不发。
+   */
+  const buildBody = () => {
+    const q = quirksFor(baseUrl, model);
+    const sendModel = q.sendAs ?? model;
+    // 「xxx-thinking」按真实请求的额度测（第 16 批）：中转站只有额度够放下思考预算时才改写成 thinking.type=enabled，
+    // max_tokens: 1 测不出来——中转站上的 claude-opus-5-5-thinking 就是「测试连接正常、真用起来全挂」
+    const probeTokens = !q.sendAs && thinkingSuffixBase(model) ? 2048 : 1;
+    if (anthropic) {
+      return JSON.stringify({ model: sendModel, max_tokens: probeTokens, messages: [{ role: 'user', content: 'ping' }], ...(q.noTemperature ? {} : { temperature: 0.7 }) });
+    }
+    const effort = q.effort === null ? undefined : (q.effort ?? reasoningEffortFor(model));
+    return JSON.stringify({
+      model: sendModel,
+      messages: [{ role: 'user', content: 'ping' }],
+      ...(reasoning
+        ? { max_completion_tokens: 16, ...(effort ? { reasoning_effort: effort } : {}) }
+        : { max_tokens: probeTokens, ...(q.noTemperature ? {} : { temperature: 0.7 }) }),
+      ...(q.nonStreamThinkingOff ? { enable_thinking: false } : {}),
+      stream: false,
+    });
+  };
+  const notes: string[] = [];
 
   type Attempt =
     | { ok: true; latencyMs: number; native: boolean }
@@ -385,24 +491,31 @@ export async function testAIConnection(opts: {
     const timeout = setTimeout(() => controller.abort(), 15000);
     const start = Date.now();
     try {
-      const resp = await aiFetch(`${base}/chat/completions`, {
+      const resp = await aiFetch(anthropic ? anthropicEndpoint(base, 'messages') : `${base}/chat/completions`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-        body,
+        headers: anthropic ? anthropicHeaders(apiKey) : { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+        body: buildBody(),
         signal: controller.signal,
       }, viaNative);
       const latencyMs = Date.now() - start;
+      const diag = { kind: 'test' as const, provider: opts.provider, host: hostOfUrl(base), model, native: viaNative, ms: latencyMs, status: resp.status };
       if (!resp.ok) {
         const text = await resp.text().catch(() => '');
         const detail = extractProviderErrorMessage(text).slice(0, 240).trim();
-        const hint = relayHint(detail, isOfficialHost(base)) || getHttpStatusHint(resp.status, opts.provider);
+        const hint = moderationHint(detail) || relayHint(detail, isOfficialHost(base)) || getHttpStatusHint(resp.status, opts.provider);
         const prefix = hint ? `${hint} (HTTP ${resp.status})` : `HTTP ${resp.status}`;
-        return { ok: false, error: detail ? `${prefix}: ${detail}` : `${prefix}: ${resp.statusText}`, retryWithV1: resp.status === 404, native: viaNative, http: true };
+        const error = detail ? `${prefix}: ${detail}` : `${prefix}: ${resp.statusText}`;
+        recordAIDiag({ ...diag, ok: false, err: error });
+        return { ok: false, error, retryWithV1: resp.status === 404, native: viaNative, http: true };
       }
       const data = await resp.json().catch(() => null);
-      if (!data?.choices?.[0]?.message) {
-        return { ok: false, error: '响应格式非 OpenAI 兼容，请检查 Base URL', retryWithV1: true, native: viaNative, http: true };
+      if (anthropic ? !(Array.isArray(data?.content) || data?.type === 'message') : !data?.choices?.[0]?.message) {
+        recordAIDiag({ ...diag, ok: false, err: anthropic ? '响应格式不像 Anthropic Messages' : '响应格式非 OpenAI 兼容' });
+        return anthropic
+          ? { ok: false, error: '回来的不像 Anthropic Messages 的格式：检查地址，或把协议换回 OpenAI 兼容', retryWithV1: false, native: viaNative, http: true }
+          : { ok: false, error: '响应格式非 OpenAI 兼容，请检查 Base URL', retryWithV1: true, native: viaNative, http: true };
       }
+      recordAIDiag({ ...diag, ok: true });
       return { ok: true, latencyMs, native: viaNative };
     } catch (e) {
       if (e instanceof Error && e.name === 'AbortError') {
@@ -418,6 +531,7 @@ export async function testAIConnection(opts: {
       }
       if (e instanceof TypeError) {
         const host = hostOf(base);
+        recordAIDiag({ kind: 'test', provider: opts.provider, host: hostOfUrl(base), model, native: viaNative, ms: Date.now() - start, status: 0, ok: false, err: e.message || 'TypeError' });
         if (viaNative) {
           // 原生通道也发不出去：多半是真没网 / 域名不对；交回去，让浏览器通道那次的诊断说话
           return { ok: false, retryWithV1: false, native: true, error: `连不上 ${host}${e.message ? `（${e.message.slice(0, 80)}）` : ''}` };
@@ -463,13 +577,37 @@ export async function testAIConnection(opts: {
 
   /** 走了原生通道的结果打上标记：界面据此登记 / 注销 settings.aiNativeHosts */
   const viaTag = (a: Attempt, base: string) => (a.native ? { transport: 'native' as const, nativeHost: hostOfUrl(base) } : {});
-  const first = await attempt(baseUrl);
-  if (first.ok) return { ok: true, latencyMs: first.latencyMs, model, baseUrlUsed: baseUrl, corrected: false, ...viaTag(first, baseUrl) };
+  let first = await attempt(baseUrl);
+  // 模型不收 temperature / 不认这一档 reasoning_effort / 「-thinking」被中转站改写成旧式思考参数…：记下、改掉再测
+  // （真实请求同样会自动这么发）。一个模型可能连着撞好几样（opus-5-5-thinking：先撞思考参数、去掉后缀又撞 temperature），
+  // 每样改一次，最多改 4 回
+  for (let fix = 0; fix < 4 && !first.ok && first.http && /HTTP 400/.test(first.error); fix++) {
+    const q = quirksFor(baseUrl, model);
+    const effortFix = effortFixFromMessage(first.error);
+    const thinkingBase = !q.sendAs && isLegacyThinkingMessage(first.error) ? thinkingSuffixBase(model) : null;
+    if (!q.noTemperature && isUnsupportedTemperatureMessage(first.error)) {
+      rememberQuirk(baseUrl, model, { noTemperature: true });
+      notes.push('这个模型不收 temperature 参数，App 会自动不发');
+    } else if (thinkingBase) {
+      rememberQuirk(baseUrl, model, { sendAs: thinkingBase });
+      notes.push(`中转站把「-thinking」版本转成了这一代 Claude 不认的旧式思考参数，App 会改用「${thinkingBase}」发送（建议直接选它）`);
+    } else if (effortFix !== undefined && q.effort === undefined) {
+      rememberQuirk(baseUrl, model, { effort: effortFix });
+      notes.push(effortFix ? `这个模型不认最省的思考档，已改用「${effortFix}」` : '这个模型不认思考力度参数，App 会自动不发');
+    } else if (!q.nonStreamThinkingOff && isEnableThinkingMessage(first.error)) {
+      rememberQuirk(baseUrl, model, { nonStreamThinkingOff: true });
+      notes.push('这个模型一次性调用要关掉思考，App 会自动带上 enable_thinking=false');
+    } else {
+      break;
+    }
+    first = await attempt(baseUrl, first.native);
+  }
+  if (first.ok) return { ok: true, latencyMs: first.latencyMs, model, baseUrlUsed: baseUrl, corrected: false, ...viaTag(first, baseUrl), ...(notes.length ? { notes } : {}) };
   // 少写 /v1：404、或回来的东西不像 OpenAI，且地址末尾没有版本段 → 补 /v1 再试一次
   if (first.retryWithV1 && !/\/v\d+[a-z]*$/i.test(baseUrl)) {
     const withV1 = `${baseUrl}/v1`;
     const second = await attempt(withV1, first.native);
-    if (second.ok) return { ok: true, latencyMs: second.latencyMs, model, baseUrlUsed: withV1, corrected: true, ...viaTag(second, withV1) };
+    if (second.ok) return { ok: true, latencyMs: second.latencyMs, model, baseUrlUsed: withV1, corrected: true, ...viaTag(second, withV1), ...(notes.length ? { notes } : {}) };
   }
   return { ok: false, error: first.error, ...viaTag(first, baseUrl) };
 }
@@ -527,6 +665,8 @@ export async function fetchAvailableModels(opts: {
   baseUrl?: string;
   /** 已登记走 App 原生通道的主机（settings.aiNativeHosts）；没传则按 aiTransport 里同步过的清单 */
   nativeHosts?: string[];
+  /** 请求协议；不传 = 自定义按当前设置、其余 OpenAI 兼容 */
+  protocol?: ApiProtocol;
 }): Promise<ModelListResult> {
   if (!opts.apiKey?.trim()) return { ok: false, error: '请先填写并保存 API 密钥' };
   const apiKey = cleanApiKey(opts.apiKey).key;
@@ -536,12 +676,16 @@ export async function fetchAvailableModels(opts: {
   const viaNative = nativeSet.has(hostOfUrl(baseUrl)) ? nativeTransportAvailable() : undefined;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15000);
+  const t0 = Date.now();
   try {
-    const resp = await aiFetch(`${baseUrl}/models`, {
-      headers: { Authorization: `Bearer ${apiKey}` },
+    const anthropic = (opts.protocol ?? (opts.provider === 'custom' ? customProtocol() : 'openai')) === 'anthropic';
+    if (!baseUrl) { clearTimeout(timeout); return { ok: false, error: '自定义服务商要先填 API 地址' }; }
+    const resp = await aiFetch(anthropic ? anthropicEndpoint(baseUrl, 'models') : `${baseUrl}/models`, {
+      headers: anthropic ? anthropicHeaders(apiKey) : { Authorization: `Bearer ${apiKey}` },
       signal: controller.signal,
     }, viaNative);
     clearTimeout(timeout);
+    recordAIDiag({ kind: 'models', provider: opts.provider, host: hostOfUrl(baseUrl), ok: resp.ok, status: resp.status, ms: Date.now() - t0, native: !!viaNative });
 
     if (!resp.ok) {
       const body = await resp.text().catch(() => '');
@@ -577,6 +721,7 @@ export async function fetchAvailableModels(opts: {
     return { ok: true, models, caps };
   } catch (e) {
     clearTimeout(timeout);
+    recordAIDiag({ kind: 'models', provider: opts.provider, host: hostOfUrl(baseUrl), ok: false, status: 0, ms: Date.now() - t0, native: !!viaNative, err: e instanceof Error ? (e.name === 'AbortError' ? '超时' : e.message) : String(e) });
     if (e instanceof Error && e.name === 'AbortError') return { ok: false, error: '拉取超时（15s 无响应）' };
     if (e instanceof TypeError) {
       // 同 testAIConnection：官方主机讲网络环境，中转站才讲跨域

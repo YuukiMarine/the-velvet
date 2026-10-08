@@ -59,7 +59,7 @@ export async function analyzeLedgerAI(
   if (!trimmed) throw new Error('描述为空');
 
   const cfg = getAIConfig(settings);
-  if (!cfg) throw new Error('请先在「设置 → AI 总结」中配置 API 密钥');
+  if (!cfg) throw new Error('请先在「设置 → AI 服务」中配置 API 密钥');
 
   // 瞬发：用户输完一句就在等这笔账落下来（关思考 + 20 秒超时）
   const raw = await chatComplete(cfg, [

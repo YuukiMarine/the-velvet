@@ -421,18 +421,29 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
   }, [phase]);
 
   // BATTLE FINISH 收尾（主影战）
+  // 第 17 批（用户反馈「结算偶尔点不动」）：以前这个计时器的依赖里有 onVictory / onClose 等每次渲染都换新的回调，
+  // 战场页一重渲染就从头计时——后台显形任务每 120ms 推一次进度时，2.6 秒永远走不完，全屏的 BATTLE FINISH 一直盖着。
+  // 现在计时器只认动画开关，回调走 ref 取最新的；动画出来一会儿后点一下也能直接收尾（兜底）。
+  const finishCbRef = useRef({ onVictory, onClose, recordTowerStats, recordVictoryFeats });
+  finishCbRef.current = { onVictory, onClose, recordTowerStats, recordVictoryFeats };
+  const finishDoneRef = useRef(false);
+  const runBattleFinish = useCallback(() => {
+    if (finishDoneRef.current) return;
+    finishDoneRef.current = true;
+    const f = finishCbRef.current;
+    setShowBattleFinishAnim(false);
+    setShowDeathExplosion(false);
+    f.recordTowerStats();
+    f.recordVictoryFeats();
+    f.onVictory();
+    f.onClose();
+  }, []);
   useEffect(() => {
     if (!showBattleFinishAnim) return;
-    const t = setTimeout(() => {
-      setShowBattleFinishAnim(false);
-      setShowDeathExplosion(false);
-      recordTowerStats();
-      recordVictoryFeats();
-      onVictory();
-      onClose();
-    }, 2600);
+    finishDoneRef.current = false;
+    const t = setTimeout(runBattleFinish, 2600);
     return () => clearTimeout(t);
-  }, [showBattleFinishAnim, onVictory, onClose, recordTowerStats, recordVictoryFeats]);
+  }, [showBattleFinishAnim, runBattleFinish]);
 
   useEffect(() => {
     if (!showDeathExplosion) return;
@@ -998,7 +1009,7 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
         )}
       </AnimatePresence>
       <AnimatePresence>{phase === 'battle_start' && <BattleStartOverlay />}</AnimatePresence>
-      <AnimatePresence>{showBattleFinishAnim && <BattleFinishAnim />}</AnimatePresence>
+      <AnimatePresence>{showBattleFinishAnim && <BattleFinishAnim onSkip={runBattleFinish} />}</AnimatePresence>
 
       {/* Phase 2 Flash */}
       <AnimatePresence>

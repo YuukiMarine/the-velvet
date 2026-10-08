@@ -75,6 +75,10 @@ export function FinalBossFinale({ isOpen, onDone }: Props) {
   const [bossLine, setBossLine] = useState<string | null>(null);
   const [settling, setSettling] = useState(false);
   const settledRef = useRef(false);
+  /** 结算失败（第 17 批）：以前没接错误，写库一失败 settling 永远是 true、长按按钮也锁死，终局卡在这一屏 */
+  const [finishError, setFinishError] = useState<string | null>(null);
+  /** 换 key 让长按按钮复位（它内部「已完成」的标记不会自己清） */
+  const [finishTry, setFinishTry] = useState(0);
   const hitsRef = useRef(hits);
   const consumedRef = useRef<Set<string>>(new Set());
 
@@ -186,12 +190,23 @@ export function FinalBossFinale({ isOpen, onDone }: Props) {
     if (settling || settledRef.current) return;
     settledRef.current = true;
     setSettling(true);
+    setFinishError(null);
     setFlash('white');
     playSound('/battle-fanfare.mp3');
-    const got = await defeatFinalBoss();
-    setRelic(got);
-    setFlash(null);
-    setPhase('reward');
+    try {
+      // defeatFinalBoss 可重入：已终结就直接返回，英雄的证明一生一枚——失败后再按一次是安全的
+      const got = await defeatFinalBoss();
+      setRelic(got);
+      setPhase('reward');
+    } catch (e) {
+      console.error('[battle] 终局结算失败', e);
+      settledRef.current = false;
+      setSettling(false);
+      setFinishTry((n) => n + 1);
+      setFinishError(`没结算成：${(e instanceof Error ? e.message : String(e)).slice(0, 60)}——再按住一次试试`);
+    } finally {
+      setFlash(null);
+    }
   };
 
   if (!isOpen) return null;
@@ -445,7 +460,8 @@ export function FinalBossFinale({ isOpen, onDone }: Props) {
                   三条血都空了。它跪在那里，还在张嘴。<br />
                   该由你来结束这句话了。
                 </p>
-                <HoldButton label="总 攻 击" holdMs={1400} disabled={settling} onComplete={() => void doFinish()} />
+                <HoldButton key={finishTry} label="总 攻 击" holdMs={1400} disabled={settling} onComplete={() => void doFinish()} />
+                {finishError && <p role="alert" className="px-2 text-[12px] leading-relaxed text-rose-200">{finishError}</p>}
               </div>
             )}
 

@@ -208,11 +208,13 @@ export const ModelPickerSheet = ({ mode, isOpen, onClose }: {
           <p className="whitespace-pre-wrap text-[11px] leading-relaxed text-gray-400 dark:text-gray-500">{refreshMsg}</p>
         )}
 
-        {/* 跟随/默认 */}
-        <button type="button" onClick={() => pick(null, null)} className={rowCls(!currentModel)}>
-          <span className="min-w-0 flex-1 truncate">{followLabel}</span>
-          {!currentModel && <span aria-hidden>✓</span>}
-        </button>
+        {/* 跟随/默认（自定义服务商没有默认模型：快速响应档必须选一个，不给「默认」这一行） */}
+        {!(fast && active === 'custom') && (
+          <button type="button" onClick={() => pick(null, null)} className={rowCls(!currentModel)}>
+            <span className="min-w-0 flex-1 truncate">{followLabel}</span>
+            {!currentModel && <span aria-hidden>✓</span>}
+          </button>
+        )}
 
         {/* 分区列表 */}
         {sections.map(({ pv, all, filtered, aggregator }) => (

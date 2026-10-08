@@ -89,7 +89,7 @@ export async function generateAttributeLevelTitles(
 ): Promise<AttributeLevelTitles> {
   const cfg = getAIConfig(settings);
   if (!cfg) {
-    throw new Error('请先在「AI 总结-API 配置」里填写 API Key，再刷新等级称号');
+    throw new Error('请先在「设置 → AI 服务」里填写 API Key，再刷新等级称号');
   }
   const levelCount = clampLevelCount(maxLevel);
   const raw = await chatComplete(cfg, [

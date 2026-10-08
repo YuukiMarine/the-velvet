@@ -13,7 +13,7 @@
  *
  * 愿望**不进今日任务列表**——它是"远处的灯"，不是今天要打的卡。
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore } from '@/store';
 import type { Wish } from '@/types';
@@ -288,17 +288,20 @@ export function WishBoard({ skin }: { skin: WishBoardSkin }) {
 }
 
 /**
- * 首页任务卡的「今日任务 ⇄ 愿望」开关。三个 Dashboard 变体共用，
- * 状态落 settings.homeTaskPane 因而被记住（口径同 homeSkyMode）。
+ * 任务页的「今日任务 ⇄ 愿望」开关。
+ * 第 17 批（用户口径「愿望容易被搞错」）：不再记住——以前落在 settings.homeTaskPane，切去别的页再回来还停在愿望面，
+ * 用户以为今日任务没了。现在只在这次停留里有效：离开任务页（页面卸载，或切到别的页）再回来一律是今日任务。
+ * settings.homeTaskPane 留着不读（老存档里有这个字段，无害）。
  */
 export function useWishPane() {
-  const settings = useAppStore(s => s.settings);
-  const updateSettings = useAppStore(s => s.updateSettings);
   const wishes = useAppStore(s => s.wishes);
-  const isWishPane = (settings.homeTaskPane ?? 'todos') === 'wishes';
+  const currentPage = useAppStore(s => s.currentPage);
+  const [isWishPane, setWishPane] = useState(false);
+  // 任务页常驻挂载时（行动页的子页切换不一定卸载）也要回到今日任务
+  useEffect(() => { if (currentPage !== 'todos') setWishPane(false); }, [currentPage]);
   return {
     isWishPane,
-    togglePane: () => { void updateSettings({ homeTaskPane: isWishPane ? 'todos' : 'wishes' }); },
+    togglePane: () => setWishPane(v => !v),
     paneLabel: isWishPane ? '愿望（点击切回今日任务）' : '今日任务（点击切到愿望）',
     activeWishCount: wishes.filter(w => w.status === 'active' && !w.parentId).length,
   };

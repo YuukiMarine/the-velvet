@@ -16,6 +16,8 @@ import { AI_PROVIDERS, fetchAvailableModels, getProviderConfig, effectiveModelNa
 // 注意 VL（视觉对话）模型**不在**黑名单——它们仍走 /chat/completions 能聊文本。
 const NON_CHAT_KEYWORDS = [
   'embedding', 'embed-', '-embed', 'rerank', 'similarity',
+  // 中转站列表里常见的向量模型（BAAI bge 系 / moka m3e）：第 14 批实测中转站列表里混在对话模型中
+  'bge-', 'm3e-',
   'tts', 'asr', 'audio', 'speech', 'whisper', 'transcri', 'realtime', 'voice',
   'paraformer', 'sambert', 'cosyvoice', 'music',
   'image', 'img-', '-img', 'wanx', 'dall', 'sora', 'flux', 'stable-diffusion', 'sd-turbo', 'sdxl',
@@ -100,6 +102,8 @@ export function modelFamily(id: string): ModelFamily | null {
 /** 平台品牌自己的血统（同族模型不打徽标） */
 const PROVIDER_HOME_FAMILY: Record<ApiProvider, string> = {
   openai: 'openai', deepseek: 'deepseek', kimi: 'kimi', qwen: 'qwen', gemini: 'gemini', minimax: 'minimax',
+  // 自定义：不知道是谁家，列表里每个模型都按血统打徽标
+  custom: '',
 };
 
 /** 托管的外族模型 → 徽标文案（如千问平台里的 deepseek-r1 → 「DeepSeek 系」）；同族 → null */
@@ -198,7 +202,11 @@ export async function refreshAllProviderModels(
 
   const results = await Promise.all(targets.map(async (t) => ({
     id: t.id,
-    r: await fetchAvailableModels({ provider: t.id, apiKey: t.key, baseUrl: t.baseUrl, nativeHosts: settings.aiNativeHosts }),
+    r: await fetchAvailableModels({
+      provider: t.id, apiKey: t.key, baseUrl: t.baseUrl, nativeHosts: settings.aiNativeHosts,
+      // 自定义服务商按它自己的协议拉（第 14 批）
+      ...(t.id === 'custom' ? { protocol: settings.customProviderProtocol === 'anthropic' ? 'anthropic' as const : 'openai' as const } : {}),
+    }),
   })));
   const profiles = { ...(settings.aiProfiles ?? {}) };
   const okParts: string[] = [];

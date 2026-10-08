@@ -29,6 +29,7 @@ import { ThinkingCircle } from './ThinkingCircle';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P3R, slantClip } from '@/components/p3r/kit';
 import { roughQuad } from '@/components/p5r/kit';
+import { aiConfigured } from '@/utils/aiClient';
 
 /**
  * P5 结果纸卡 —— 抽完之后的三块文字（本牌含义 / 今日运势 / 总体运势）原本是
@@ -96,7 +97,7 @@ export function DailyDraw() {
   const p3 = drawChannel === 'p3';
   const p5 = drawChannel === 'p5';
 
-  const noApiKey = !settings.summaryApiKey;
+  const noApiKey = !aiConfigured(settings);
 
   // 生成候选（每日塔罗仅用 22 张大阿卡纳）——同时落盘，供中断后恢复
   const rollCandidates = () => {
@@ -257,13 +258,13 @@ export function DailyDraw() {
           <div className="flex items-start gap-2.5 px-4 py-3" style={{ clipPath: slantClip(10), background: P3R.cyanPale }}>
             <span aria-hidden className="mt-0.5 h-[14px] w-[10px] shrink-0" style={{ background: P3R.blue, clipPath: 'polygon(32% 0, 100% 0, 68% 100%, 0 100%)' }} />
             <p className="text-[12px] font-semibold leading-relaxed" style={{ color: P3R.ink }}>
-              尚未配置 AI API。可前往「设置 → AI 总结」配置后获得定制解读；
+              尚未配置 AI API。可前往「设置 → AI 服务」配置后获得定制解读；
               或以离线兜底文案完成今日抽卡——将使用牌面描述生成通用解读。
             </p>
           </div>
         ) : (
           <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/40 rounded-2xl p-4 text-xs text-amber-700 dark:text-amber-300 leading-relaxed">
-            尚未配置 AI API。可前往「设置 → AI 总结」配置后获得定制解读；
+            尚未配置 AI API。可前往「设置 → AI 服务」配置后获得定制解读；
             或以离线兜底文案完成今日抽卡——将使用牌面描述生成通用解读。
           </div>
         )

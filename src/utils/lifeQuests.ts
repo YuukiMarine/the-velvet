@@ -1,26 +1,27 @@
-import type { Activity, AttributeId, Todo } from '@/types';
+import type { Activity, AttributeId, Todo, TodoCompletion } from '@/types';
+import { LIFE_QUEST_PRESETS, type LifeQuestPreset, type LifeQuestTag } from '@/constants/lifeQuestPresets';
+import { peekWeatherNow, weatherConfigOf, type WeatherNow } from '@/utils/weather';
+
+export { LIFE_QUEST_PRESETS };
+export type { LifeQuestPreset, LifeQuestTag };
 
 /**
- * 今日生活委托（第 13 轮用户反馈：「别人给的任务比自己设的更有意思，也省了自己设置的麻烦」）——纯逻辑，零 AI。
+ * 今日委托（第 13 轮用户反馈：「别人给的任务比自己设的更有意思，也省了自己设置的麻烦」；第 16 批加「看情境」和「学取舍」）
+ * ——纯逻辑，零 AI。题库在 constants/lifeQuestPresets.ts（人工维护）。
  *
- *  - 每天三张，按「日期 + 用户」做种：跨天自动换，同一天怎么刷新都是这三张（换一批除外）。
- *  - 个性化（轻量）：一张补「最近 14 天记得最少的一维」（只看今天以前，免得今天记了一笔，卡片当场变脸），
- *    另两张从其余几维里挑，三张尽量不同维。
- *  - 每一维一副洗好的牌、一天翻一张：同一维连着两天不会重样，十来天把这一维翻一遍；两台设备同一天是同一批。
- *  - 不出：清单里已经有的同名任务（今天以前建的）；换一批时不和刚才那批重复。
- *  - 点「加入今日任务」= 建一条普通的单次待办，完成照常按它的属性加点；「已加入 / 已完成」由清单推出，不另存表。
- *  - 题库只放泛用、低门槛、不分地域的小事；带 {x} 的按种子从候选里挑一个填进去（「看一部悬疑电影」）。
+ *  - 每天三张、来自三个不同的维度：一张补「最近 14 天记得最少的一维」（只看今天以前，免得今天记一笔卡片当场变脸），
+ *    另两张从其余几维里挑。
+ *  - 看情境：过了 until 那个钟点的不出（凌晨 5 点前打开不管，一整天还在前头）；下雨、下雪、雾霾、体感太热太冷不出户外的，
+ *    暴雨雷暴下雪时要出门的少出；周末多出标了 weekend 的，工作日多出标了 weekday 的。
+ *    情境按当天第一次打开委托板 / 点「换一批」那一刻算，之后同一天不变脸。天气只用 90 分钟内取过的，不为出题专门发请求。
+ *  - 学取舍：本机记下每张卡哪天被翻到、哪天被换掉；加没加、做没做完从清单里数（清单会同步，换设备也算数）。
+ *    翻到常加、加了常做完的多出，总被换掉、翻到不加的少出；同类（要出门 / 花钱 / 社交 / 运动）一起学；
+ *    补短板以外那两张里，常被选的那一维稍多出；加了常做不完就多出 1 点的小事，几乎都做完就多出 2、3 点的。只看最近 60 天。
+ *  - 冷却：最近 6 天出过的不出（含今天换掉的），每维 16 条，够轮；实在轮不开才放宽。
+ *  - 不出：清单里还挂着的同名任务、同一张卡（今天以前加的）；换一批时不出刚才那几张。
+ *  - 点「加入今日任务」= 建一条普通的单次待办（带 lifeQuest 标记），完成照常按它的属性加点。
+ *  - 两台设备可能不是同一批：各按自己打开时的情境和本机记下的取舍算。
  */
-
-export interface LifeQuestPreset {
-  id: string;
-  attribute: AttributeId;
-  /** 可含 {x}，由 slots 填 */
-  title: string;
-  slots?: string[];
-  points: 1 | 2 | 3;
-  hint: string;
-}
 
 export interface LifeQuest {
   /** 预设 id + 填词序号：同一天同一张卡的稳定键 */
@@ -32,78 +33,16 @@ export interface LifeQuest {
   hint: string;
 }
 
-export const LIFE_QUEST_PRESETS: readonly LifeQuestPreset[] = [
-  // ── 知识 ──
-  { id: 'k01', attribute: 'knowledge', title: '学半小时一样新东西', points: 2, hint: '任何你好奇的都算' },
-  { id: 'k02', attribute: 'knowledge', title: '读完一本书里的 20 页', points: 2, hint: '纸书、电子书都行' },
-  { id: 'k03', attribute: 'knowledge', title: '看一部{x}纪录片', slots: ['历史', '自然', '美食', '科技', '人物', '城市'], points: 2, hint: '挑一部短的也行' },
-  { id: 'k04', attribute: 'knowledge', title: '记住 10 个外语单词', points: 1, hint: '睡前再过一遍' },
-  { id: 'k05', attribute: 'knowledge', title: '听一期{x}播客', slots: ['历史', '科普', '商业', '文化', '心理学'], points: 1, hint: '通勤路上就能做' },
-  { id: 'k06', attribute: 'knowledge', title: '查清一个一直好奇的问题', points: 1, hint: '查完用三句话讲给自己听' },
-  { id: 'k07', attribute: 'knowledge', title: '写 100 字今日学习笔记', points: 1, hint: '今天学到的任何一件事' },
-  { id: 'k08', attribute: 'knowledge', title: '去书店或图书馆待半小时', points: 2, hint: '随手翻翻也算' },
-  { id: 'k09', attribute: 'knowledge', title: '学会一个新的软件技巧', points: 1, hint: '快捷键、公式、剪辑都行' },
-  { id: 'k10', attribute: 'knowledge', title: '专注 25 分钟做一件正事', points: 2, hint: '一个番茄钟，手机放远点' },
-  { id: 'k11', attribute: 'knowledge', title: '读一篇{x}长文', slots: ['科普', '历史', '人物', '城市观察'], points: 1, hint: '读完记一句最有意思的' },
-  { id: 'k12', attribute: 'knowledge', title: '认识一种路边的植物', points: 1, hint: '拍下来查查它叫什么' },
-  // ── 胆量 ──
-  { id: 'g01', attribute: 'guts', title: '把拖了一周的那件小事做掉', points: 2, hint: '越小越好，做完就算' },
-  { id: 'g02', attribute: 'guts', title: '去一家没去过的{x}吃一顿', slots: ['面馆', '小吃店', '川菜馆', '粤菜馆', '日料店', '西餐厅', '火锅店'], points: 2, hint: '附近的就行' },
-  { id: 'g03', attribute: 'guts', title: '{x} 20 分钟', slots: ['跑步', '跳绳', '快走', '骑车', '徒手训练'], points: 2, hint: '量力而行，出汗就好' },
-  { id: 'g04', attribute: 'guts', title: '尝一道从没吃过的菜', points: 1, hint: '点外卖也算' },
-  { id: 'g05', attribute: 'guts', title: '一个人去看一场电影', points: 2, hint: '选一部你自己想看的' },
-  { id: 'g06', attribute: 'guts', title: '换一条没走过的路回家', points: 1, hint: '顺便看看沿路有什么' },
-  { id: 'g07', attribute: 'guts', title: '爬一次楼梯代替电梯', points: 1, hint: '几层都算' },
-  { id: 'g08', attribute: 'guts', title: '报名一件一直想试的事', points: 3, hint: '课程、比赛、活动、兴趣班' },
-  { id: 'g09', attribute: 'guts', title: '比平时早起 30 分钟', points: 2, hint: '起来先别刷手机' },
-  { id: 'g10', attribute: 'guts', title: '关掉手机一小时', points: 1, hint: '做点别的，不看也不回' },
-  { id: 'g11', attribute: 'guts', title: '主动提一个问题', points: 2, hint: '课上、会上或群里都行' },
-  { id: 'g12', attribute: 'guts', title: '把一个想了很久的想法说给一个人听', points: 2, hint: '说出来就算' },
-  // ── 灵巧 ──
-  { id: 'd01', attribute: 'dexterity', title: '给自己做一份{x}', slots: ['早餐', '家常菜', '甜点', '便当'], points: 2, hint: '简单的也算' },
-  { id: 'd02', attribute: 'dexterity', title: '收拾好书桌', points: 1, hint: '只收桌面也算' },
-  { id: 'd03', attribute: 'dexterity', title: '拉伸 15 分钟', points: 1, hint: '跟着视频做' },
-  { id: 'd04', attribute: 'dexterity', title: '学一个小手工：{x}', slots: ['折纸', '编手绳', '简笔画', '新的叠衣服方法'], points: 2, hint: '跟着教程做一个' },
-  { id: 'd05', attribute: 'dexterity', title: '拍一组「{x}」主题照片', slots: ['光影', '红色', '窗外', '影子', '街角', '天空'], points: 1, hint: '三张就够' },
-  { id: 'd06', attribute: 'dexterity', title: '练字 15 分钟', points: 1, hint: '抄一段喜欢的话' },
-  { id: 'd07', attribute: 'dexterity', title: '修好一件小东西', points: 2, hint: '松掉的螺丝、开线的扣子' },
-  { id: 'd08', attribute: 'dexterity', title: '画一张速写', points: 1, hint: '画什么都行，十分钟就好' },
-  { id: 'd09', attribute: 'dexterity', title: '清理手机相册', points: 1, hint: '删掉 50 张不要的' },
-  { id: 'd10', attribute: 'dexterity', title: '规划一条周末小路线', points: 1, hint: '把想去的两三个地方连起来' },
-  { id: 'd11', attribute: 'dexterity', title: '跟着视频学一段简单的舞步', points: 2, hint: '一小段就好' },
-  { id: 'd12', attribute: 'dexterity', title: '把衣柜整理出一格', points: 1, hint: '顺手挑出不穿的' },
-  // ── 温柔 ──
-  { id: 'n01', attribute: 'kindness', title: '给家人打个电话', points: 2, hint: '聊聊近况' },
-  { id: 'n02', attribute: 'kindness', title: '给很久没联系的朋友发条消息', points: 1, hint: '问一句最近好吗' },
-  { id: 'n03', attribute: 'kindness', title: '认真夸一个人一次', points: 1, hint: '说具体的地方' },
-  { id: 'n04', attribute: 'kindness', title: '帮身边的人做一件小事', points: 2, hint: '递个东西、搭把手都算' },
-  { id: 'n05', attribute: 'kindness', title: '写下今天感激的三件事', points: 1, hint: '小事也行' },
-  { id: 'n06', attribute: 'kindness', title: '整理出一件可以送人的闲置', points: 1, hint: '给需要的人' },
-  { id: 'n07', attribute: 'kindness', title: '今晚 23 点前睡', points: 2, hint: '对自己温柔一点' },
-  { id: 'n08', attribute: 'kindness', title: '听一个人把一件事说完', points: 1, hint: '不打断，不急着给建议' },
-  { id: 'n09', attribute: 'kindness', title: '照顾一株植物或一只小动物', points: 1, hint: '浇水、喂食、陪它玩' },
-  { id: 'n10', attribute: 'kindness', title: '给明天的自己留一句话', points: 1, hint: '写在便签或备忘录里' },
-  { id: 'n11', attribute: 'kindness', title: '给朋友推荐一样你喜欢的东西', points: 1, hint: '一首歌、一本书、一家店' },
-  { id: 'n12', attribute: 'kindness', title: '认真吃一顿饭，不看手机', points: 1, hint: '慢一点' },
-  // ── 魅力 ──
-  { id: 'c01', attribute: 'charm', title: '看一部{x}电影', slots: ['悬疑', '喜剧', '动画', '科幻', '老', '外语', '高分冷门'], points: 2, hint: '看完想想最喜欢哪一幕' },
-  { id: 'c02', attribute: 'charm', title: '听完一张完整的专辑', points: 1, hint: '按顺序，从头到尾' },
-  { id: 'c03', attribute: 'charm', title: '换一身认真搭配的衣服出门', points: 1, hint: '给自己看的也算' },
-  { id: 'c04', attribute: 'charm', title: '去一家没去过的咖啡店坐坐', points: 2, hint: '奶茶店也行' },
-  { id: 'c05', attribute: 'charm', title: '和一个人好好聊 10 分钟', points: 2, hint: '面对面或打电话' },
-  { id: 'c06', attribute: 'charm', title: '发一条分享生活的动态', points: 1, hint: '分享一件今天的小事' },
-  { id: 'c07', attribute: 'charm', title: '给朋友或自己拍一张好看的照片', points: 1, hint: '找找光' },
-  { id: 'c08', attribute: 'charm', title: '尝一种没喝过的饮品', points: 1, hint: '茶、咖啡、果汁都行' },
-  { id: 'c09', attribute: 'charm', title: '给房间换一个小布置', points: 1, hint: '挪挪摆件、换张海报' },
-  { id: 'c10', attribute: 'charm', title: '去一个线下活动', points: 3, hint: '展览、市集、讲座都行' },
-  { id: 'c11', attribute: 'charm', title: '花 15 分钟打理一下自己', points: 1, hint: '发型、护肤、修指甲' },
-  { id: 'c12', attribute: 'charm', title: '学一首歌，能完整哼下来', points: 1, hint: '挑一首最近在听的' },
-];
-
 export const LIFE_QUEST_ATTRS: readonly AttributeId[] = ['knowledge', 'guts', 'dexterity', 'kindness', 'charm'];
 export const LIFE_QUEST_COUNT = 3;
 /** 一天最多换几批（换的次数记在本机） */
 export const LIFE_QUEST_REROLLS = 2;
+/** 最近几天出过的不再出（含今天前面那几批） */
+export const LIFE_QUEST_COOLDOWN_DAYS = 6;
+/** 学取舍只看最近多少天（老习惯自然淡出） */
+export const LIFE_QUEST_LEARN_DAYS = 60;
+/** 天气只用多久以内取过的 */
+const WEATHER_FRESH_MS = 90 * 60_000;
 
 const pad = (n: number) => String(n).padStart(2, '0');
 export const lifeDayKeyOf = (d: Date | string): string => {
@@ -126,11 +65,6 @@ const mulberry32 = (seed: number) => {
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
-};
-const shuffled = <T,>(arr: readonly T[], rnd: () => number): T[] => {
-  const a = [...arr];
-  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
-  return a;
 };
 
 /** 今天以前 14 天里，自己记的（非系统类目、非补记）各维出现了几次；一条都没有返回 null */
@@ -158,25 +92,13 @@ const dayIndexOf = (dateKey: string): number => {
   const [y, m, d] = dateKey.split('-').map(Number);
   return Math.floor(Date.UTC(y, (m || 1) - 1, d || 1) / 86400_000);
 };
+const isWeekendKey = (dateKey: string): boolean => {
+  const [y, m, d] = dateKey.split('-').map(Number);
+  const wd = new Date(y, (m || 1) - 1, d || 1).getDay();
+  return wd === 0 || wd === 6;
+};
 
-/**
- * 每一维一副「牌」：按（用户, 维度, 第几轮）洗一次，一天翻一张。同一维连着两天被选中也是相邻两张、不会重样；
- * 洗下一轮时，若新一轮第一张恰好是上一轮最后一张，跟第二张换个位置（轮与轮的接缝也不重样）。
- * 跨设备只看日期和用户，所以两台设备同一天看到的是同一批。
- */
 const poolOf = (attr: AttributeId) => LIFE_QUEST_PRESETS.filter((p) => p.attribute === attr);
-function deckOf(attr: AttributeId, seedKey: string, cycle: number): LifeQuestPreset[] {
-  const pool = poolOf(attr);
-  const deck = shuffled(pool, mulberry32(fnv1a(`deck|${seedKey}|${attr}|${cycle}`)));
-  const prev = shuffled(pool, mulberry32(fnv1a(`deck|${seedKey}|${attr}|${cycle - 1}`)));
-  if (deck.length > 1 && deck[0].id === prev[prev.length - 1].id) [deck[0], deck[1]] = [deck[1], deck[0]];
-  return deck;
-}
-function deckAt(attr: AttributeId, seedKey: string, idx: number): LifeQuestPreset {
-  const n = poolOf(attr).length;
-  const cycle = Math.floor(idx / n);
-  return deckOf(attr, seedKey, cycle)[((idx % n) + n) % n];
-}
 
 const render = (p: LifeQuestPreset, seedKey: string, dayIdx: number): { title: string; slot: number } => {
   if (!p.slots?.length) return { title: p.title, slot: -1 };
@@ -184,71 +106,289 @@ const render = (p: LifeQuestPreset, seedKey: string, dayIdx: number): { title: s
   return { title: p.title.replace('{x}', p.slots[slot]), slot };
 };
 
+// ── 情境 ─────────────────────────────────────────────────────────────────
+
+/** 户外天气：ok 照常；bad = 下雨、雾霾、体感 ≥ 35° 或 ≤ -10°；storm = 暴雨、雷暴、下雪 */
+export type OutdoorWeather = 'ok' | 'bad' | 'storm';
+
+export interface LifeContext {
+  /** 本地几点（0–23）；不给 = 不按钟点筛 */
+  hour?: number;
+  /** 户外天气；不给 / null = 不知道（没开天气或取不到），不按天气筛 */
+  weather?: OutdoorWeather | null;
+}
+
+export function outdoorWeatherOf(w: Pick<WeatherNow, 'icon' | 'temp' | 'feelsLike'> | null | undefined): OutdoorWeather | null {
+  if (!w) return null;
+  if (w.icon === 'heavy-rain' || w.icon === 'thunder' || w.icon === 'snow') return 'storm';
+  const feels = Number.isFinite(w.feelsLike) ? w.feelsLike : w.temp;
+  if (w.icon === 'rain' || w.icon === 'haze' || feels >= 35 || feels <= -10) return 'bad';
+  return 'ok';
+}
+
+/** 现在的情境：几点 + 户外天气（只看 90 分钟内取到过的天气，不为出题专门发请求） */
+export function lifeContextNow(settings: Parameters<typeof weatherConfigOf>[0], now: Date = new Date()): LifeContext {
+  return { hour: now.getHours(), weather: outdoorWeatherOf(peekWeatherNow(weatherConfigOf(settings), WEATHER_FRESH_MS)) };
+}
+
+/** outdoor 已经包含 out */
+const tagsOf = (p: LifeQuestPreset): LifeQuestTag[] => {
+  const t = p.tags ?? [];
+  return t.includes('outdoor') && !t.includes('out') ? [...t, 'out'] : [...t];
+};
+
+/** 这张在这个情境下：0 = 不出（过了钟点 / 天气不适合户外）；否则是权重倍数（周末 / 工作日 / 恶劣天气少出门） */
+export function contextWeight(p: LifeQuestPreset, ctx: LifeContext, weekend: boolean): number {
+  const tags = tagsOf(p);
+  // 凌晨 5 点前打开：一整天还在前头，不按钟点筛
+  if (p.until !== undefined && ctx.hour !== undefined && ctx.hour >= 5 && ctx.hour >= p.until) return 0;
+  if (tags.includes('outdoor') && (ctx.weather === 'bad' || ctx.weather === 'storm')) return 0;
+  let w = 1;
+  if (tags.includes('out') && ctx.weather === 'storm') w *= 0.5;
+  if (tags.includes('weekend')) w *= weekend ? 1.6 : 0.5;
+  if (tags.includes('weekday')) w *= weekend ? 0.5 : 1.3;
+  return w;
+}
+
+// ── 学取舍 ───────────────────────────────────────────────────────────────
+
+/** 本机记下的：某天出过 / 翻到过 / 翻到了却换掉的卡（预设 id） */
+export interface LifeQuestLog {
+  days: Record<string, { shown?: string[]; viewed?: string[]; skipped?: string[] }>;
+}
+export type LifeQuestEvent = 'shown' | 'viewed' | 'skipped';
+
+export interface LifeQuestTally {
+  /** 翻到过几天（本机） */
+  seen: number;
+  /** 加进清单几次（清单，会同步） */
+  added: number;
+  /** 其中做完几次 */
+  done: number;
+  /** 翻到了、没加就点了换一批（本机） */
+  skip: number;
+}
+
+export interface LifeLearning {
+  tally: Record<string, LifeQuestTally>;
+  /** 最近 30 天（不含今天）加进清单的今日委托做完了几成；不到 4 张 = null（不调难度） */
+  doneRate: number | null;
+  /** 最近 LIFE_QUEST_COOLDOWN_DAYS 天出过的：预设 id → 几天前（今天 = 0） */
+  recent: Record<string, number>;
+}
+
+export const EMPTY_LEARNING: LifeLearning = { tally: {}, doneRate: null, recent: {} };
+const ZERO: LifeQuestTally = { seen: 0, added: 0, done: 0, skip: 0 };
+
+export function learningOf(opts: {
+  dateKey: string;
+  log?: LifeQuestLog | null;
+  todos: readonly Todo[];
+  completions?: readonly TodoCompletion[];
+}): LifeLearning {
+  const today = dayIndexOf(opts.dateKey);
+  const tally: Record<string, LifeQuestTally> = {};
+  const t = (id: string) => (tally[id] ??= { ...ZERO });
+  const recent: Record<string, number> = {};
+  for (const [d, rec] of Object.entries(opts.log?.days ?? {})) {
+    const ago = today - dayIndexOf(d);
+    if (ago < 0 || ago >= LIFE_QUEST_LEARN_DAYS) continue;
+    for (const id of rec.viewed ?? []) t(id).seen += 1;
+    for (const id of rec.skipped ?? []) t(id).skip += 1;
+    if (ago < LIFE_QUEST_COOLDOWN_DAYS) for (const id of rec.shown ?? []) recent[id] = Math.min(recent[id] ?? ago, ago);
+  }
+  const doneIds = new Set((opts.completions ?? []).filter((c) => c.count > 0).map((c) => c.todoId));
+  let added30 = 0;
+  let done30 = 0;
+  for (const x of opts.todos) {
+    if (!x.lifeQuest) continue;
+    const ago = today - dayIndexOf(lifeDayKeyOf(x.createdAt));
+    if (ago < 0 || ago >= LIFE_QUEST_LEARN_DAYS) continue;
+    const done = !!x.completedAt || doneIds.has(x.id);
+    const s = t(x.lifeQuest);
+    s.added += 1;
+    if (done) s.done += 1;
+    // 难度只看今天以前加的（今天加的还没到时候）
+    if (ago >= 1 && ago <= 30) { added30 += 1; if (done) done30 += 1; }
+  }
+  return { tally, doneRate: added30 >= 4 ? done30 / added30 : null, recent };
+}
+
+/** 一天三张、平均挑一张：默认「接受率」是 1/3 */
+const PRIOR_RATE = 1 / LIFE_QUEST_COUNT;
+
+/**
+ * 平滑后的接受率 ÷ 默认接受率：没数据 = 1；常加常做完 > 1；总被换掉 / 翻到不加 < 1。
+ * strength = 先验当作「已经翻到过几次、按默认率接受」，越大越要更多证据才动。
+ */
+export function affinity(s: LifeQuestTally, strength: number, lo: number, hi: number): number {
+  const shown = Math.max(s.seen, s.added);
+  const rate = (s.added + 0.5 * s.done + strength * PRIOR_RATE) / (shown + 0.5 * s.skip + strength);
+  return Math.min(hi, Math.max(lo, rate / PRIOR_RATE));
+}
+
+/** 用来学偏好的几类（outdoor 并进 out） */
+const LEARN_TAGS: readonly LifeQuestTag[] = ['out', 'spend', 'social', 'move'];
+const addTally = (into: LifeQuestTally, s: LifeQuestTally) => {
+  into.seen += s.seen; into.added += s.added; into.done += s.done; into.skip += s.skip;
+};
+
+/** 每类 / 每维的取舍合计（同一批出题里算一次） */
+function groupTallies(L: LifeLearning): { tag: Record<string, LifeQuestTally>; attr: Record<string, LifeQuestTally> } {
+  const tag: Record<string, LifeQuestTally> = {};
+  const attr: Record<string, LifeQuestTally> = {};
+  for (const p of LIFE_QUEST_PRESETS) {
+    const s = L.tally[p.id];
+    if (!s) continue;
+    addTally(attr[p.attribute] ??= { ...ZERO }, s);
+    for (const g of tagsOf(p)) if (LEARN_TAGS.includes(g)) addTally(tag[g] ??= { ...ZERO }, s);
+  }
+  return { tag, attr };
+}
+
+/** 这张自己的取舍 × 它所属几类的取舍（几何平均，标签多的不会被罚得更重） */
+export function learnWeight(p: LifeQuestPreset, L: LifeLearning, tagTally: Record<string, LifeQuestTally> = groupTallies(L).tag): number {
+  const own = affinity(L.tally[p.id] ?? ZERO, 3, 0.2, 2.5);
+  const tags = tagsOf(p).filter((g) => LEARN_TAGS.includes(g));
+  const byTag = tags.length
+    ? Math.pow(tags.reduce((acc, g) => acc * affinity(tagTally[g] ?? ZERO, 6, 0.4, 2), 1), 1 / tags.length)
+    : 1;
+  return Math.min(3, Math.max(0.15, own * byTag));
+}
+
+/** 加了常做不完 → 多出 1 点的小事；几乎都做完 → 多出 2、3 点的 */
+export function difficultyWeight(points: number, doneRate: number | null): number {
+  if (doneRate === null) return 1;
+  if (doneRate < 0.4) return points <= 1 ? 1.5 : points === 2 ? 0.85 : 0.5;
+  if (doneRate > 0.75) return points <= 1 ? 0.8 : points === 2 ? 1.15 : 1.5;
+  return 1;
+}
+
+// ── 出题 ─────────────────────────────────────────────────────────────────
+
 export interface PickInput {
   dateKey: string;
   /** 用户 id（或名字）：不同人同一天拿到不同的三张 */
   seedKey: string;
   weakest: AttributeId | null;
-  /** 不出的预设 id（换一批前那一批） */
+  /** 不出的预设 id（换一批前那一批、清单里还挂着的） */
   excludeIds?: ReadonlySet<string>;
   /** 清单里已有的任务（规整后的标题） */
   existingTitles?: ReadonlySet<string>;
   /** 今天换过几批 */
   reroll?: number;
+  /** 情境；不给 = 不按钟点 / 天气筛（周末照算，看的是日期） */
+  ctx?: LifeContext;
+  /** 取舍；不给 = 一视同仁、不冷却 */
+  learning?: LifeLearning | null;
+  /** 要几张（换一批时已加入的留着，只补空位）；默认三张 */
+  count?: number;
+  /** 这几维排到最后（已加入的卡占着的维度，补位时尽量不重） */
+  avoidAttrs?: ReadonlySet<AttributeId>;
 }
 
 /**
- * 今天这批：最弱一维先占一张，其余几维按日子洗个顺序再挑两张；每一维从自己那副牌里取今天这张。
- * 撞上清单里已有的同名任务 / 换一批前那张，就往后跳半副牌找（不跳相邻的，免得和明天那张撞）。
+ * 今天这批：最弱一维先占一张，其余几维按「常被选中」加权洗个顺序再挑；每一维在自己的题库里按
+ * 情境 × 取舍 × 难度 的权重抽一张，最近 6 天出过的先躲开。同样的输入抽出同样的结果（按日期、用户、第几批做种）。
  */
 export function pickLifeQuests(input: PickInput): LifeQuest[] {
   const dayIdx = dayIndexOf(input.dateKey);
   const reroll = input.reroll ?? 0;
+  const count = input.count ?? LIFE_QUEST_COUNT;
+  const ctx = input.ctx ?? {};
+  const L = input.learning ?? EMPTY_LEARNING;
+  const weekend = isWeekendKey(input.dateKey);
+  const groups = groupTallies(L);
   const rnd = mulberry32(fnv1a(`life|${input.seedKey}|${input.dateKey}|${reroll}`));
-  const others = shuffled(LIFE_QUEST_ATTRS.filter((k) => k !== input.weakest), rnd);
-  const order = input.weakest ? [input.weakest, ...others] : others;
+  // 加权洗牌（Efraimidis–Spirakis）：权重大的更容易排前面，但不是每次都排前面
+  const others = LIFE_QUEST_ATTRS.filter((k) => k !== input.weakest)
+    .map((k) => ({ k, key: Math.pow(rnd(), 1 / affinity(groups.attr[k] ?? ZERO, 9, 0.6, 1.6)) }))
+    .sort((a, b) => b.key - a.key)
+    .map((x) => x.k);
+  let order = input.weakest ? [input.weakest, ...others] : others;
+  const avoid = input.avoidAttrs;
+  if (avoid?.size) order = [...order.filter((a) => !avoid.has(a)), ...order.filter((a) => avoid.has(a))];
+
   const out: LifeQuest[] = [];
-  for (const attr of order) {
-    if (out.length >= LIFE_QUEST_COUNT) break;
-    const n = poolOf(attr).length;
-    const half = Math.max(1, Math.floor(n / 2));
-    // 换一批往后错 5 张（避开明天的那张：明天是 +1）
-    const base = dayIdx + reroll * 5;
-    for (let step = 0; step < n; step++) {
-      const p = deckAt(attr, input.seedKey, base + step * half + (step >= 2 ? step : 0));
-      if (input.excludeIds?.has(p.id) || out.some((q) => q.presetId === p.id)) continue;
-      const r = render(p, input.seedKey, dayIdx);
-      if (input.existingTitles?.has(normTitle(r.title))) continue;
+  const take = (attr: AttributeId, ignoreWeather: boolean): boolean => {
+    const pool = poolOf(attr)
+      .filter((p) => !input.excludeIds?.has(p.id) && !out.some((q) => q.presetId === p.id))
+      .map((p) => ({ p, r: render(p, input.seedKey, dayIdx) }))
+      .filter(({ r }) => !input.existingTitles?.has(normTitle(r.title)));
+    const c = ignoreWeather ? { ...ctx, weather: null } : ctx;
+    // 先躲开最近 6 天出过的；躲不开就只躲今天和昨天的；再不行谁都行
+    for (const cooldown of [LIFE_QUEST_COOLDOWN_DAYS, 2, 0]) {
+      const ws = pool.map(({ p }) => {
+        const ago = L.recent[p.id];
+        if (ago !== undefined && ago < cooldown) return 0;
+        const cw = contextWeight(p, c, weekend);
+        return cw > 0 ? cw * learnWeight(p, L, groups.tag) * difficultyWeight(p.points, L.doneRate) : 0;
+      });
+      const total = ws.reduce((a, b) => a + b, 0);
+      if (total <= 0) continue;
+      let x = rnd() * total;
+      let idx = -1;
+      for (let i = 0; i < ws.length; i++) {
+        if (ws[i] <= 0) continue;
+        idx = i;
+        x -= ws[i];
+        if (x < 0) break;
+      }
+      const { p, r } = pool[idx];
       out.push({ key: `${p.id}#${r.slot}`, presetId: p.id, title: r.title, attribute: p.attribute, points: p.points, hint: p.hint });
-      break;
+      return true;
     }
+    return false;
+  };
+  for (const attr of order) {
+    if (out.length >= count) break;
+    take(attr, false);
+  }
+  // 极少数凑不满（深夜 + 恶劣天气 + 清单撞名）：还没出牌的维度放宽天气再挑；钟点不放宽（过了点的事今天做不成）
+  for (const attr of order) {
+    if (out.length >= count) break;
+    if (out.some((q) => q.attribute === attr)) continue;
+    take(attr, true);
   }
   return out;
 }
 
-/** 某天（第几批）的三张；清单里今天以前就有的同名任务不出 */
+/** 某天（第几批）的卡；清单里今天以前就有的同名任务 / 同一张卡不出 */
 export function lifeQuestsFor(opts: {
   dateKey: string;
   seedKey: string;
   activities: Activity[];
   todos: Todo[];
+  /** 完成记录（数「做完没有」用；单次待办做完会带 completedAt，这里兜计数类） */
+  completions?: TodoCompletion[];
   reroll: number;
   /** 换一批时：刚才那批的预设 id */
   previousIds?: string[];
+  ctx?: LifeContext;
+  log?: LifeQuestLog | null;
+  count?: number;
+  avoidAttrs?: ReadonlySet<AttributeId>;
 }): LifeQuest[] {
   const weakest = weakestAttribute(opts.activities, opts.dateKey, opts.seedKey);
-  const existingTitles = new Set(
-    opts.todos.filter((t) => t.isActive && !t.archivedAt && lifeDayKeyOf(t.createdAt) < opts.dateKey).map((t) => normTitle(t.title)),
-  );
+  const before = opts.todos.filter((t) => t.isActive && !t.archivedAt && lifeDayKeyOf(t.createdAt) < opts.dateKey);
+  const existingTitles = new Set(before.map((t) => normTitle(t.title)));
+  const excludeIds = new Set([...(opts.previousIds ?? []), ...before.flatMap((t) => (t.lifeQuest ? [t.lifeQuest] : []))]);
   return pickLifeQuests({
-    dateKey: opts.dateKey, seedKey: opts.seedKey, weakest, existingTitles, reroll: opts.reroll,
-    excludeIds: new Set(opts.previousIds ?? []),
+    dateKey: opts.dateKey, seedKey: opts.seedKey, weakest, existingTitles, excludeIds, reroll: opts.reroll,
+    ctx: opts.ctx, count: opts.count, avoidAttrs: opts.avoidAttrs,
+    learning: learningOf({ dateKey: opts.dateKey, log: opts.log, todos: opts.todos, completions: opts.completions }),
   });
 }
 
 // ── 本机记一下今天这批（同一天卡片不变脸；换一批的次数）──
 const STORE_KEY = 'velvet:lifeQuests.v1';
-export interface LifeQuestDay { date: string; reroll: number; items: LifeQuest[] }
+export interface LifeQuestDay {
+  date: string;
+  reroll: number;
+  items: LifeQuest[];
+  /** 哪个用户的（同一台设备换账号不串）；第 16 批前存的没有 */
+  seed?: string;
+}
 
 export function readLifeQuestDay(): LifeQuestDay | null {
   try {
@@ -260,4 +400,73 @@ export function readLifeQuestDay(): LifeQuestDay | null {
 }
 export function writeLifeQuestDay(v: LifeQuestDay): void {
   try { localStorage.setItem(STORE_KEY, JSON.stringify(v)); } catch { /* 存不了就每次现算（种子固定，结果一样） */ }
+}
+
+/** 两批是不是同一批（比内容，不比对象：每次从本机读出来都是新对象） */
+export const lifeQuestDaySig = (d: LifeQuestDay | null | undefined): string =>
+  d ? `${d.date}|${d.seed ?? ''}|${d.reroll}|${d.items.map((q) => q.key).join(',')}` : '';
+
+/**
+ * 今天这批：本机记过就用它；没记过就按此刻的情境和取舍算一批、记下来（第 17 批）。
+ * 委托板和抽签共用：抽签先打开也替今天定好这一批，之后打开委托板看到的是同一批。
+ */
+export function ensureLifeQuestDay(opts: {
+  todayKey: string;
+  seedKey: string;
+  activities: Activity[];
+  todos: Todo[];
+  completions?: TodoCompletion[];
+  settings: Parameters<typeof weatherConfigOf>[0];
+}): LifeQuestDay {
+  const stored = readLifeQuestDay();
+  if (stored && stored.date === opts.todayKey && (stored.seed ?? opts.seedKey) === opts.seedKey && stored.items.length) return stored;
+  const day: LifeQuestDay = {
+    date: opts.todayKey, seed: opts.seedKey, reroll: 0,
+    items: lifeQuestsFor({
+      dateKey: opts.todayKey, seedKey: opts.seedKey, activities: opts.activities, todos: opts.todos, completions: opts.completions,
+      reroll: 0, ctx: lifeContextNow(opts.settings), log: readLifeQuestLog(opts.seedKey),
+    }),
+  };
+  writeLifeQuestDay(day);
+  recordLifeQuestEvent(opts.seedKey, opts.todayKey, 'shown', day.items.map((q) => q.presetId));
+  return day;
+}
+
+// ── 本机记下的取舍（按用户分开；只留最近 60 天；不上云、不进备份）──
+const LOG_KEY = 'velvet:lifeQuestLog.v1';
+const readLogStore = (): Record<string, LifeQuestLog> => {
+  try {
+    const raw = localStorage.getItem(LOG_KEY);
+    const v = raw ? JSON.parse(raw) as unknown : null;
+    return v && typeof v === 'object' ? v as Record<string, LifeQuestLog> : {};
+  } catch { return {}; }
+};
+
+export function readLifeQuestLog(seedKey: string): LifeQuestLog {
+  const v = readLogStore()[seedKey];
+  return v && typeof v === 'object' && v.days && typeof v.days === 'object' ? v : { days: {} };
+}
+
+/** 纯函数：在 log 上记一笔（同一天同一张只记一次），顺手丢掉 60 天以前的 */
+export function withLifeQuestEvent(log: LifeQuestLog, dateKey: string, kind: LifeQuestEvent, ids: readonly string[]): LifeQuestLog {
+  const today = dayIndexOf(dateKey);
+  const days: LifeQuestLog['days'] = {};
+  for (const [d, rec] of Object.entries(log.days ?? {})) {
+    const ago = today - dayIndexOf(d);
+    if (ago >= 0 && ago < LIFE_QUEST_LEARN_DAYS) days[d] = rec;
+  }
+  const rec = { ...(days[dateKey] ?? {}) };
+  rec[kind] = [...new Set([...(rec[kind] ?? []), ...ids])];
+  days[dateKey] = rec;
+  return { days };
+}
+
+export function recordLifeQuestEvent(seedKey: string, dateKey: string, kind: LifeQuestEvent, ids: readonly string[]): LifeQuestLog {
+  const next = withLifeQuestEvent(readLifeQuestLog(seedKey), dateKey, kind, ids);
+  try {
+    const all = readLogStore();
+    all[seedKey] = next;
+    localStorage.setItem(LOG_KEY, JSON.stringify(all));
+  } catch { /* 存不了就这次不学 */ }
+  return next;
 }

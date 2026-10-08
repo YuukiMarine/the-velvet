@@ -329,7 +329,7 @@ export const NavigatorActionForm = ({ draft, channel, onSubmit, onClose }: Props
         });
         return (
           <>
-            <p className={bright || p5 || p4 ? 'text-[14px] font-black' : 'text-sm font-bold text-gray-300'} style={ink}>
+            <p className={`[overflow-wrap:anywhere] ${bright || p5 || p4 ? 'text-[14px] font-black' : 'text-sm font-bold text-gray-300'}`} style={ink}>
               修改「{orig.title}」
             </p>
             <div>
@@ -670,7 +670,7 @@ export const NavigatorActionForm = ({ draft, channel, onSubmit, onClose }: Props
                 </button>
               </header>
             )}
-            <div className={`relative max-h-[62vh] overflow-y-auto py-4 ${bright ? 'pl-8 pr-5' : 'px-5'}`}>{body}</div>
+            <div className={`relative max-h-[62vh] overflow-y-auto overflow-x-hidden py-4 ${bright ? 'pl-8 pr-5' : 'px-5'}`}>{body}</div>
             <footer className={`relative flex gap-2.5 pb-5 ${bright ? 'pl-8 pr-5' : 'px-5'}`}>
               {bright ? (
                 <>

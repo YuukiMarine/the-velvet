@@ -12,17 +12,13 @@ import { db } from '@/db';
 import { PageTitle } from '@/components/PageTitle';
 import { BackButton } from '@/components/BackButton';
 import { useRipple } from '@/components/RippleEffect';
-import { AI_PROVIDERS, getProviderConfig, testAIConnection, fetchAvailableModels, effectiveModelName, cleanApiKey, type TestResult, type ApiProvider, DEFAULT_PROVIDER } from '@/utils/aiProviders';
-import { hostOfUrl } from '@/utils/aiTransport';
-import { autoFillVisionPatch, refreshAllProviderModels, liveModelOf, isModelStale } from '@/utils/aiModelCatalog';
 import {
-  BarsIcon, BellIcon, BoltMiniIcon, CoinIcon, DiamondMarkIcon, EyeIcon, GearIcon,
-  ImageIcon, KeyIcon, MicIcon, MoonIcon, PaletteIcon, SlidersIcon, SparklesIcon,
+  BarsIcon, BellIcon, CoinIcon, DiamondMarkIcon, GearIcon,
+  ImageIcon, KeyIcon, PaletteIcon, SlidersIcon, SparklesIcon,
   SwordsIcon, TagIcon, WaveIcon,
 } from '@/components/settingsIcons';
-import { ModelPickerSheet, type ModelPickerMode } from '@/components/ai/ModelPickerSheet';
-import { BufferedTextInput } from '@/components/ui/BufferedTextInput';
 import { WeatherSettings } from '@/components/settings/WeatherSettings';
+import { AIServiceSettings } from '@/components/settings/AIServiceSettings';
 import { Toggle } from '@/components/Toggle';
 import NotificationSettings from '@/components/NotificationSettings';
 import { NavigatorSettings } from '@/components/navigator/NavigatorSettings';
@@ -539,6 +535,17 @@ export const Settings = () => {
   const skills = useAppStore(s => s.skills);
   const setCurrentPage = useAppStore(s => s.setCurrentPage);
   const [activeSection, setActiveSection] = useState<string | null>('theme');
+  // 第 13 轮：从「AI 总结」里的路标跳到「AI 服务」时，顺手把连接卡展开（老教程都教「在 AI 总结里填 Key」）
+  const [aiJump, setAiJump] = useState(false);
+  useEffect(() => { if (activeSection !== 'ai') setAiJump(false); }, [activeSection]);
+  const jumpToAIService = () => {
+    setAiJump(true);
+    setActiveSection('ai');
+    // 手风琴换区后布局会跳：等这一帧画完再滚到「AI 服务」的区头
+    window.setTimeout(() => {
+      document.querySelector('[data-settings-section="ai"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 80);
+  };
   // P3R（蓝频道）：p3-settings-reference-v2 形态
   const p3 = useUiChannel() === 'p3';
   // P5R（红频道）：p5-settings-flat-newsprint-v1 形态（壳层 + 毯式 .p5-reskin）
@@ -815,166 +822,6 @@ export const Settings = () => {
   // ── AI 总结设置状态 ─────────────────────────────────────
   const [editingPresetId, setEditingPresetId] = useState<string | null>(null);
   const [presetDraft, setPresetDraft] = useState<SummaryPromptPreset | null>(null);
-  const [summaryApiKeySaved, setSummaryApiKeySaved] = useState(false);
-  const [summaryApiKeyDraft, setSummaryApiKeyDraft] = useState(settings.summaryApiKey ?? '');
-  const [apiTestStatus, setApiTestStatus] = useState<'idle' | 'testing' | 'ok' | 'error'>('idle');
-  const [apiTestMessage, setApiTestMessage] = useState<string>('');
-  // 可选模型列表：按当前 provider + Key + baseUrl 从 /models 拉取，拉到就变下拉，
-  // 拉不到（网关不支持 / CORS）保持手填输入框兜底
-  const [modelFetchStatus, setModelFetchStatus] = useState<'idle' | 'loading' | 'ok' | 'error'>('idle');
-  const [modelFetchMessage, setModelFetchMessage] = useState<string>('');
-  // 连接卡折叠：有 Key 时默认收起（配好后日常只跟模型分档打交道），无 Key 展开引导配置
-  const [connOpen, setConnOpen] = useState(() => !settings.summaryApiKey?.trim());
-  // 模型选择面板（四档共用一个 Sheet，靠 mode 区分）
-  const [modelPicker, setModelPicker] = useState<ModelPickerMode | null>(null);
-  // 模型分档整卡收进「高级设置」（FS3.1 用户口径）：默认收起，只留一行摘要。
-  // 日常用户配完连接就不用再来这儿；要调档的人点开即可。
-  const [tiersOpen, setTiersOpen] = useState(false);
-
-  // 一键刷新**所有**已配 Key 的服务商的模型列表，按家落进 aiProfiles[].models
-  //（用户口径：重新拉取 = 全 provider 同步更新；不支持 /models 的跳过并注明）。
-  // 列表持久化在 settings 里，跨刷新/跨服务商切换都在，深思熟虑档的跨平台下拉直接读它。
-  const handleFetchModels = async () => {
-    setModelFetchStatus('loading');
-    setModelFetchMessage('');
-    const out = await refreshAllProviderModels(settings, summaryApiKeyDraft);
-    if (!out) {
-      setModelFetchStatus('error');
-      setModelFetchMessage('还没有任何服务商配好 Key');
-      return;
-    }
-    // 视觉档空缺 + 表里识别到能看图的模型 → 自动填上（用户口径：表更新完就直接填）
-    const auto = autoFillVisionPatch(settings, out.profiles);
-    updateSettings({ aiProfiles: out.profiles, ...(auto?.patch ?? {}) });
-    setModelFetchStatus(out.okParts.length ? 'ok' : 'error');
-    setModelFetchMessage([
-      out.okParts.length ? `已更新：${out.okParts.join('、')}` : '',
-      out.skipped.length ? `跳过：${out.skipped.join('；')}` : '',
-      auto ? `👁 视觉档原来空着，已自动填入 ${auto.label}（可在「视觉」档更换或停用）` : '',
-      out.stale.length ? `⚠ 这些档在用的模型已不在官方最新列表里，可能下线了，建议换一个：${out.stale.join('；')}` : '',
-    ].filter(Boolean).join('\n'));
-  };
-
-  const handleTestApi = async () => {
-    const rawKey = summaryApiKeyDraft.trim() || (settings.summaryApiKey ?? '');
-    if (!rawKey) {
-      setApiTestStatus('error');
-      setApiTestMessage('请先填写 API 密钥');
-      return;
-    }
-    // 紧急修复 #2：密钥里混进看不见的字符 / 全角字母时，fetch 发都发不出去，以前报成「没放行 CORS」
-    const cleaned = cleanApiKey(rawKey);
-    const keyToTest = cleaned.key;
-    if (cleaned.removed > 0) setSummaryApiKeyDraft(keyToTest);
-    const cleanNote = cleaned.removed > 0 ? `密钥里混进了 ${cleaned.removed} 个看不见的空格 / 全角字符，已自动清理——测完记得点保存。\n` : '';
-    setApiTestStatus('testing');
-    setApiTestMessage('');
-    const result0: TestResult = await testAIConnection({
-      provider: settings.summaryApiProvider ?? DEFAULT_PROVIDER,
-      apiKey: keyToTest,
-      baseUrl: settings.summaryApiBaseUrl,
-      model: settings.summaryModel,
-      nativeHosts: settings.aiNativeHosts,
-    });
-    const result: TestResult = result0;
-    // 第 13 轮 · 原生通道：浏览器发不出去（对方不放行跨域预检）、App 原生层才通 → 把这台主机登记下来，之后的请求都走原生通道；
-    // 反过来，登记过的主机这次浏览器通道直接通了（对方放行了）→ 注销，恢复流式
-    const hostsNow = settings.aiNativeHosts ?? [];
-    let nativeHosts = hostsNow;
-    let nativeNote = '';
-    if (result.nativeHost) {
-      nativeNote = '这个地址不放行跨域，已改走 App 原生通道（不支持流式，回复会整段出现）。\n';
-      if (!hostsNow.includes(result.nativeHost)) nativeHosts = [...hostsNow, result.nativeHost];
-    } else if (result.ok && hostsNow.includes(hostOfUrl(result.baseUrlUsed))) {
-      nativeNote = '这个地址现在放行跨域了，已改回普通通道（恢复流式）。\n';
-      nativeHosts = hostsNow.filter((h) => h !== hostOfUrl(result.baseUrlUsed));
-    }
-    if (nativeHosts !== hostsNow) updateSettings({ aiNativeHosts: nativeHosts });
-    if (result.ok) {
-      setApiTestStatus('ok');
-      // 地址少写了 /v1、补上才通（中转站最常见）：把校正后的地址替换进设置，之后所有请求都用它
-      if (result.corrected) updateSettings({ summaryApiBaseUrl: result.baseUrlUsed });
-      // 成功顺手拉一次该家的模型列表（用户口径）；不支持 /models 的注明跳过，不算失败
-      const pv = settings.summaryApiProvider ?? DEFAULT_PROVIDER;
-      const listed = await fetchAvailableModels({ provider: pv, apiKey: keyToTest, baseUrl: result.baseUrlUsed, nativeHosts });
-      setApiTestMessage(
-        cleanNote + nativeNote + `连接成功 · ${result.model} · ${result.latencyMs} ms` +
-        (listed.ok ? ` · 模型列表已更新（${listed.models.length} 个）` : ' · 该服务商不支持拉取列表，模型请手填') +
-        (result.corrected ? `\n地址少了 /v1，已自动补上并替换为 ${result.baseUrlUsed}` : ''),
-      );
-      // 成功即落库：绿灯要能跨刷新/跨切换保留（用户口径「已配置」感知太弱）
-      updateSettings({
-        aiProfiles: {
-          ...(settings.aiProfiles ?? {}),
-          [pv]: {
-            ...(settings.aiProfiles?.[pv] ?? {}),
-            key: keyToTest,
-            verifiedAt: Date.now(),
-            ...(listed.ok ? { models: listed.models, modelCaps: listed.caps } : {}),
-          },
-        },
-      });
-    } else {
-      setApiTestStatus('error');
-      setApiTestMessage(cleanNote + nativeNote + result.error);
-    }
-  };
-
-  // ── 多服务商存档：切胶囊 = 存回旧家 + 载入新家（生效位仍是 summaryApi* 四项）──
-  const activeProvider = settings.summaryApiProvider ?? DEFAULT_PROVIDER;
-  const switchProvider = (next: ApiProvider) => {
-    if (next === activeProvider) return;
-    const profiles = { ...(settings.aiProfiles ?? {}) };
-    profiles[activeProvider] = {
-      ...(profiles[activeProvider] ?? {}),
-      key: cleanApiKey(summaryApiKeyDraft).key || cleanApiKey(settings.summaryApiKey).key || undefined,
-      baseUrl: settings.summaryApiBaseUrl,
-      model: settings.summaryModel,
-      navModel: settings.navigatorModel,
-    };
-    const inc = profiles[next] ?? {};
-    updateSettings({
-      aiProfiles: profiles,
-      summaryApiProvider: next,
-      summaryApiKey: inc.key ?? '',
-      summaryApiBaseUrl: inc.baseUrl,
-      summaryModel: inc.model,
-      navigatorModel: inc.navModel,
-    });
-    setSummaryApiKeyDraft(inc.key ?? '');
-    setApiTestStatus('idle');
-    setApiTestMessage('');
-  };
-
-  /** 该服务商是否已存过 Key（胶囊上打勾） */
-  const providerHasKey = (id: ApiProvider) =>
-    id === activeProvider
-      ? !!(summaryApiKeyDraft.trim() || settings.summaryApiKey?.trim())
-      : !!settings.aiProfiles?.[id]?.key?.trim();
-  /** 该服务商是否验证过（胶囊亮绿点） */
-  const providerVerified = (id: ApiProvider) =>
-    id === activeProvider
-      ? apiTestStatus === 'ok' || !!settings.aiProfiles?.[id]?.verifiedAt
-      : !!settings.aiProfiles?.[id]?.verifiedAt;
-
-  const savedProviderCount = AI_PROVIDERS.filter(p => providerHasKey(p.id)).length;
-  const keyDirty = summaryApiKeyDraft.trim() !== (settings.summaryApiKey ?? '').trim();
-  const saveActiveKey = () => {
-    const k = cleanApiKey(summaryApiKeyDraft).key; // 紧急修复 #2：落库前清掉看不见的字符 / 全角字母
-    const pv = activeProvider;
-    updateSettings({
-      summaryApiKey: k,
-      aiProfiles: {
-        ...(settings.aiProfiles ?? {}),
-        // 改了 Key 就作废这家的绿灯，必须重新测
-        [pv]: { ...(settings.aiProfiles?.[pv] ?? {}), key: k || undefined, verifiedAt: undefined },
-      },
-    });
-    setSummaryApiKeySaved(true);
-    setApiTestStatus('idle');
-    setApiTestMessage('');
-  };
-
   const effectivePresets: SummaryPromptPreset[] = settings.summaryPromptPresets?.length
     ? settings.summaryPromptPresets
     : DEFAULT_SUMMARY_PROMPT_PRESETS;
@@ -1017,6 +864,8 @@ export const Settings = () => {
   // 换成与底导同语言的 stroke 图标（settingsIcons）
   const sections = [
     { id: 'theme', label: '主题', Icon: PaletteIcon },
+    // 第 13 轮：AI 的连接 / 模型 / 数据说明从「AI 总结」拆出来单独成区（全 App 共用，不只是总结在用）
+    { id: 'ai', label: 'AI 服务', Icon: KeyIcon },
     { id: 'summary', label: 'AI 总结', Icon: SparklesIcon },
     { id: 'personalize', label: '体验个性化', Icon: SlidersIcon },
     { id: 'navigator', label: '助手', Icon: DiamondMarkIcon },
@@ -1123,6 +972,7 @@ export const Settings = () => {
         {sections.map(section => (
           <div
             key={section.id}
+            data-settings-section={section.id}
             className={
               isP4 || p5
                 ? 'overflow-visible'
@@ -1130,7 +980,10 @@ export const Settings = () => {
                   ? 'overflow-hidden'
                   : 'bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden'
             }
-            style={p3 ? { clipPath: 'polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%)', background: P3R.panelGlass, boxShadow: '0 8px 18px rgba(38,96,140,0.07)' } : undefined}
+            style={{
+              ...(p3 ? { clipPath: 'polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%)', background: P3R.panelGlass, boxShadow: '0 8px 18px rgba(38,96,140,0.07)' } : {}),
+              scrollMarginTop: 'calc(env(safe-area-inset-top, 0px) + 12px)',
+            }}
           >
             {p5 ? (
               /* P5 分组头：收起 = 纸长条 + 黑星方章 + ▶；展开 = 红楔章（白星 + 白字）+ ▲ */
@@ -2302,29 +2155,13 @@ export const Settings = () => {
                   </div>
                 )}
 
+                {section.id === 'ai' && <AIServiceSettings openConnection={aiJump} />}
+
                 {section.id === 'navigator' && <NavigatorSettings />}
 
                 {section.id === 'notifications' && <NotificationSettings />}
 
                 {section.id === 'summary' && (() => {
-                  const provider = settings.summaryApiProvider ?? DEFAULT_PROVIDER;
-                  // 折叠态摘要：一行报四档现状（收起时唯一的信息来源）。
-                  // emoji → SVG（v2.7 用户口径）：改为 [图标+文案] 的 JSX 片段
-                  const tierSummary = (
-                    <span className="inline-flex min-w-0 items-center gap-2">
-                      {([
-                        [BoltMiniIcon, liveModelOf(settings, provider)],
-                        [MoonIcon, settings.navigatorModel?.trim() ? effectiveModelName(settings.navigatorModel) : '跟随'],
-                        [EyeIcon, settings.visionModel?.trim() ? effectiveModelName(settings.visionModel) : '未启用'],
-                        [MicIcon, settings.audioModel?.trim() || '未启用'],
-                      ] as Array<[typeof BoltMiniIcon, string]>).map(([Ic, text], i) => (
-                        <span key={i} className="inline-flex min-w-0 items-center gap-0.5">
-                          <Ic className="h-3 w-3 shrink-0" />
-                          <span className="truncate">{text}</span>
-                        </span>
-                      ))}
-                    </span>
-                  );
                   const activePresetId = settings.summaryActivePresetId ?? 'igor';
                   const activeFamiliar = FAMILIAR_FACE_PRESETS.find(p => p.id === activePresetId);
                   const familiarTaglines: Record<string, string> = {
@@ -2335,6 +2172,19 @@ export const Settings = () => {
                   };
                   return (
                   <div className="space-y-3 pb-1">
+
+                    {/* 路标（第 13 轮）：Key / 服务商 / 模型搬去了「AI 服务」，教程里还写着「在 AI 总结里填」——点一下直接过去 */}
+                    {/* 一行高（用户口径：路标别占地方） */}
+                    <button
+                      type="button"
+                      onClick={jumpToAIService}
+                      data-testid="summary-to-ai-service"
+                      className="flex w-full items-center gap-2 rounded-xl border border-primary/30 bg-primary/5 px-3 py-2 text-left"
+                    >
+                      <KeyIcon className="h-4 w-4 shrink-0 text-primary" />
+                      <span className="min-w-0 flex-1 truncate text-[12px] font-bold text-gray-700 dark:text-gray-200">API Key 和模型已移到「AI 服务」</span>
+                      <span className="shrink-0 text-[12px] font-bold text-primary">前往 ›</span>
+                    </button>
 
                     {/* ── 沟通风格卡片 ── */}
                     <div className="rounded-2xl border border-gray-100 dark:border-gray-700/60 overflow-hidden">
@@ -2476,422 +2326,6 @@ export const Settings = () => {
                       />
                     </div>
 
-                    {/* ── 连接卡（provider / Key / 地址 / 测试 收进一张可折叠卡）──
-                        配好后常态收起，只露一行状态；日常操作面是下面的「模型分档」。 */}
-                    <div className="rounded-2xl border border-gray-100 dark:border-gray-700/60 overflow-hidden">
-                      <button
-                        type="button"
-                        onClick={() => setConnOpen(v => !v)}
-                        aria-expanded={connOpen}
-                        className={`w-full flex items-center gap-2.5 px-4 py-3 bg-gray-50 dark:bg-gray-800/60 text-left ${connOpen ? 'border-b border-gray-100 dark:border-gray-700/60' : ''}`}
-                      >
-                        <span className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider shrink-0">连接</span>
-                        <span className="flex-1 min-w-0 flex items-center gap-1.5 text-xs font-semibold">
-                          {settings.summaryApiKey?.trim() ? (
-                            <>
-                              {/* 绿灯 = 该服务商测过且成功（落库，跨刷新保留）；灰灯 = 存了 Key 但没验证过 */}
-                              <span
-                                aria-hidden
-                                className={`h-2 w-2 shrink-0 rounded-full ${providerVerified(activeProvider)
-                                  ? 'bg-green-500 shadow-[0_0_5px_rgba(34,197,94,0.9)]'
-                                  : 'bg-gray-300 dark:bg-gray-600'}`}
-                              />
-                              <span className={`truncate ${providerVerified(activeProvider) ? 'text-green-600 dark:text-green-400' : 'text-gray-600 dark:text-gray-300'}`}>
-                                {getProviderConfig(provider).label} · {providerVerified(activeProvider) ? '连接正常' : '待测试'}
-                              </span>
-                              {savedProviderCount > 1 && (
-                                <span className="shrink-0 rounded-full bg-gray-100 px-1.5 py-px text-[10px] font-bold text-gray-500 dark:bg-gray-700 dark:text-gray-400">
-                                  共 {savedProviderCount} 家
-                                </span>
-                              )}
-                            </>
-                          ) : (
-                            <span className="text-amber-600 dark:text-amber-400 truncate">未配置 —— 展开填写 API Key</span>
-                          )}
-                        </span>
-                        <span aria-hidden className={`shrink-0 text-gray-400 transition-transform ${connOpen ? 'rotate-180' : ''}`}>▾</span>
-                      </button>
-                      {connOpen && (
-                      <div className="p-4 space-y-4 dark:bg-gray-800/20">
-
-                        {/* 首次引导：一家都没配时，最卡人的一步不是"填哪儿"而是"去哪儿拿"。
-                            这里直接把 DeepSeek 的控制台顶到前面——国内可直连、注册即送额度、
-                            按量计费最便宜，是起步成本最低的一家。其余各家的入口在下面 Key 输入框旁边。 */}
-                        {savedProviderCount === 0 && (
-                          <div className="rounded-xl border border-primary/30 bg-primary/5 p-3">
-                            <p className="text-[12px] font-bold text-gray-700 dark:text-gray-200">还没有 API Key？</p>
-                            <p className="mt-1 text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">
-                              去 DeepSeek 注册一个，复制 Key 回来粘进下面的输入框就能用。
-                              国内可直连，按量计费，日常用量一个月通常也就几块钱。
-                            </p>
-                            <a
-                              href={getProviderConfig('deepseek').keyUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              onClick={() => switchProvider('deepseek')}
-                              className="mt-2.5 inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-[12px] font-bold text-white"
-                            >
-                              打开 platform.deepseek.com
-                              <span aria-hidden>↗</span>
-                            </a>
-                          </div>
-                        )}
-
-                        {/* 提供商：每家一份独立存档，点即切换（打勾=已存 Key，绿点=测过且成功） */}
-                        <div className="space-y-1.5">
-                          <div className="flex items-baseline justify-between gap-2">
-                            <p className="text-xs font-medium text-gray-500 dark:text-gray-400">提供商</p>
-                            <p className="text-[11px] text-gray-400 dark:text-gray-500">各家 Key 独立保存，点一下即切换</p>
-                          </div>
-                          <div className="grid grid-cols-3 gap-1.5">
-                            {AI_PROVIDERS.map(p => {
-                              const isActive = provider === p.id;
-                              const hasKey = providerHasKey(p.id);
-                              const verified = providerVerified(p.id);
-                              return (
-                                <button
-                                  key={p.id}
-                                  onClick={() => switchProvider(p.id)}
-                                  className={`relative py-2.5 rounded-xl text-xs font-bold transition-all border ${
-                                    isActive
-                                      ? 'bg-primary text-white border-primary shadow-sm'
-                                      : hasKey
-                                      ? 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 border-primary/35'
-                                      : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-600'
-                                  }`}
-                                >
-                                  {hasKey && (
-                                    <span
-                                      aria-hidden
-                                      className={`absolute right-1.5 top-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full text-[9px] font-black leading-none ${
-                                        verified
-                                          ? 'bg-green-500 text-white shadow-[0_0_4px_rgba(34,197,94,0.85)]'
-                                          : isActive ? 'bg-white/30 text-white' : 'bg-gray-200 text-gray-500 dark:bg-gray-600 dark:text-gray-300'
-                                      }`}
-                                    >
-                                      ✓
-                                    </span>
-                                  )}
-                                  <div>{p.label}</div>
-                                  {/* 灰字 = 这家**正在用**的模型（v2.7.0.6：原来是写死的预设名；退役名显示继任者）。
-                                      刷新列表后若它已不在官方列表里，前面挂 ⚠ */}
-                                  {(() => {
-                                    const live = liveModelOf(settings, p.id);
-                                    const stale = isModelStale(settings, p.id, live);
-                                    return (
-                                      <div
-                                        /* 三列格子在手机上很窄：字号收一档、允许折两行，名字要能看全（截成 deepseek-fl… 就失去意义了） */
-                                        className={`mt-0.5 line-clamp-2 break-all px-1 text-[10px] font-normal leading-tight ${stale ? 'opacity-90' : 'opacity-60'}`}
-                                        title={stale ? `${live} 已不在这家最新的模型列表里，可能下线了` : live}
-                                      >
-                                        {stale && <span aria-label="可能已下线">⚠ </span>}{live}
-                                      </div>
-                                    );
-                                  })()}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-
-                        {/* API Key */}
-                        <div className="space-y-1.5">
-                          <div className="flex items-baseline justify-between gap-2">
-                            <p className="text-xs font-medium text-gray-500 dark:text-gray-400">{getProviderConfig(provider).label} 的 API 密钥</p>
-                            {/* 当前这一家的控制台直达。跟着 provider 走，切哪家给哪家的门 */}
-                            <a
-                              href={getProviderConfig(provider).keyUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="shrink-0 text-[11px] font-bold text-primary hover:underline"
-                            >
-                              去申请 ↗
-                            </a>
-                          </div>
-                          <div className="flex gap-2">
-                            <input
-                              type="password"
-                              value={summaryApiKeyDraft}
-                              onChange={e => { setSummaryApiKeyDraft(e.target.value); setSummaryApiKeySaved(false); setApiTestStatus('idle'); setApiTestMessage(''); }}
-                              placeholder="sk-..."
-                              className="flex-1 min-w-0 px-3 py-2.5 text-sm border border-gray-200 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-primary"
-                            />
-                            {/* 保存态由「草稿 vs 已存值」实时推导，不再依赖一次性 state——
-                                否则切页回来按钮又变回「保存」，用户以为没存上（用户上报感知弱） */}
-                            <button
-                              onClick={saveActiveKey}
-                              disabled={!keyDirty && !!settings.summaryApiKey?.trim()}
-                              className={`px-4 py-2.5 rounded-xl text-sm font-bold transition-all flex-shrink-0 whitespace-nowrap ${
-                                !keyDirty && settings.summaryApiKey?.trim()
-                                  ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400'
-                                  : 'bg-primary text-white'
-                              }`}
-                            >
-                              {!keyDirty && settings.summaryApiKey?.trim()
-                                ? (summaryApiKeySaved ? '✓ 已保存' : '✓ 已存')
-                                : '保存'}
-                            </button>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={handleTestApi}
-                              disabled={apiTestStatus === 'testing'}
-                              className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-all ${
-                                apiTestStatus === 'testing'
-                                  ? 'bg-gray-100 dark:bg-gray-700 text-gray-400'
-                                  : apiTestStatus === 'ok'
-                                  ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400'
-                                  : apiTestStatus === 'error'
-                                  ? 'bg-red-100 dark:bg-red-900/30 text-red-500 dark:text-red-400'
-                                  : 'bg-primary/10 text-primary hover:bg-primary/20'
-                              }`}
-                            >
-                              {apiTestStatus === 'testing' ? '测试中…' : apiTestStatus === 'ok' ? '✓ 连接正常' : apiTestStatus === 'error' ? '× 连接失败' : '测试连接'}
-                            </button>
-                            {apiTestMessage && (
-                              <span className={`text-[11px] flex-1 min-w-0 leading-relaxed whitespace-pre-wrap break-words ${apiTestStatus === 'ok' ? 'text-green-600 dark:text-green-400' : 'text-red-500 dark:text-red-400'}`} title={apiTestMessage}>
-                                {apiTestMessage}
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-[11px] text-gray-400 dark:text-gray-500">
-                            Key 仅保存在本地设备，不会上传。测试连接成功后这家会亮绿灯（换 Key 需重新测试）。
-                          </p>
-                        </div>
-
-                        {/* 高级：自定义地址（连接级配置，跟 provider/Key 同卡） */}
-                        <div className="space-y-1.5 pt-1 border-t border-gray-100 dark:border-gray-700/50">
-                          <p className="text-xs text-gray-500 dark:text-gray-400">自定义 API 地址（可选）</p>
-                          <p className="text-[11px] leading-relaxed text-gray-400 dark:text-gray-500">
-                            用中转站就填它给的接口地址，一般以 /v1 结尾；多贴的 /chat/completions 会自动去掉，少了 /v1 测试连接时会自动补上。
-                          </p>
-                          <input
-                            type="text"
-                            value={settings.summaryApiBaseUrl ?? ''}
-                            onChange={e => { updateSettings({ summaryApiBaseUrl: e.target.value || undefined }); setApiTestStatus('idle'); setApiTestMessage(''); }}
-                            placeholder={getProviderConfig(provider).defaultBaseUrl}
-                            className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-primary"
-                          />
-                          {(settings.aiNativeHosts ?? []).includes(hostOfUrl((settings.summaryApiBaseUrl ?? '').trim() || getProviderConfig(provider).defaultBaseUrl)) && (
-                            <p className="text-[11px] leading-relaxed text-amber-600 dark:text-amber-400" data-testid="native-host-note">
-                              这个地址不放行跨域，App 里走原生通道：能用，但没有流式，回复会整段出现。对方放行后再点一次「测试连接」即可改回。
-                            </p>
-                          )}
-                        </div>
-
-                      </div>
-                      )}
-                    </div>
-
-                    {/* ── 模型分档（FS3.1 收进「高级设置」折叠）──
-                        快速响应=当前连接的便宜快模型；深思熟虑=可跨服务商的强模型；
-                        视觉=看图；听觉=听写。默认收起，摘要行直接报当前四档。 */}
-                    <div className="rounded-2xl border border-gray-100 dark:border-gray-700/60 overflow-hidden">
-                      <button
-                        type="button"
-                        onClick={() => setTiersOpen(v => !v)}
-                        aria-expanded={tiersOpen}
-                        className="flex w-full items-center justify-between gap-2 px-4 py-3 bg-gray-50 dark:bg-gray-800/60 text-left"
-                      >
-                        <span className="min-w-0">
-                          <span className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                            高级设置 · 模型分档
-                          </span>
-                          <span className="mt-0.5 block truncate text-[11px] text-gray-400 dark:text-gray-500">
-                            {tierSummary}
-                          </span>
-                        </span>
-                        <span className="shrink-0 text-xs text-gray-400">{tiersOpen ? '▲' : '▼'}</span>
-                      </button>
-                      {tiersOpen && (
-                      <>
-                      <div className="flex items-center justify-end gap-2 px-4 py-2 border-y border-gray-100 dark:border-gray-700/60 dark:bg-gray-800/40">
-                        <button
-                          onClick={handleFetchModels}
-                          disabled={modelFetchStatus === 'loading'}
-                          className={`text-[11px] font-bold px-2.5 py-1 rounded-lg transition-all ${
-                            modelFetchStatus === 'loading'
-                              ? 'bg-gray-100 dark:bg-gray-700 text-gray-400'
-                              : modelFetchStatus === 'error'
-                              ? 'bg-red-100 dark:bg-red-900/30 text-red-500 dark:text-red-400'
-                              : 'bg-primary/10 text-primary hover:bg-primary/20'
-                          }`}
-                        >
-                          {modelFetchStatus === 'loading' ? '拉取中…' : '刷新全部模型列表'}
-                        </button>
-                      </div>
-                      <div className="p-4 space-y-4 dark:bg-gray-800/20">
-                        {(() => {
-                          const delibPv = settings.navigatorProvider ?? provider;
-                          const fastFallback = liveModelOf(settings, provider);
-                          return (
-                            <>
-                              {/* 快速响应：绑定当前连接（换服务商 = 换连接） */}
-                              <div className="space-y-1.5">
-                                <p className="flex items-center gap-1 text-xs font-medium text-gray-500 dark:text-gray-400"><BoltMiniIcon className="h-3.5 w-3.5" /> 快速响应</p>
-                                <p className="text-[11px] text-gray-400 dark:text-gray-500">
-                                  记账解析、每日塔罗、活动打分、成长总结等批量任务走这档——要快、便宜够用。
-                                  跑在当前连接（{getProviderConfig(provider).label}）上。
-                                </p>
-                                <button
-                                  type="button"
-                                  onClick={() => setModelPicker('fast')}
-                                  className="flex w-full items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
-                                >
-                                  <span className="min-w-0 flex-1 truncate text-left">
-                                    {settings.summaryModel?.trim() ? effectiveModelName(settings.summaryModel) : `默认（${getProviderConfig(provider).defaultModel}）`}
-                                  </span>
-                                  <span className="shrink-0 text-xs font-bold text-primary">选择模型 ›</span>
-                                </button>
-                                <BufferedTextInput
-                                  value={settings.summaryModel ?? ''}
-                                  onCommit={v => { updateSettings({ summaryModel: v || undefined }); setApiTestStatus('idle'); setApiTestMessage(''); }}
-                                  placeholder={`留空 = 默认（${getProviderConfig(provider).defaultModel}）`}
-                                  className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-primary"
-                                />
-                              </div>
-
-                              {/* 每日塔罗默认走快速响应；这里可以让它单独升到深思熟虑（v2.7.0.6，默认关） */}
-                              <div className="flex items-center justify-between gap-3 pt-1">
-                                <div className="min-w-0">
-                                  <div className="text-sm font-medium text-gray-800 dark:text-white">每日塔罗改走深思熟虑</div>
-                                  <div className="text-[11px] text-gray-400 dark:text-gray-500">
-                                    每天一次，多等几秒换更贴的解读；深思熟虑没配时自动退回快速响应。
-                                  </div>
-                                </div>
-                                <Toggle
-                                  checked={!!settings.tarotDailyDeliberate}
-                                  onChange={(v) => updateSettings({ tarotDailyDeliberate: v })}
-                                  aria-label="每日塔罗改走深思熟虑"
-                                />
-                              </div>
-
-                              {/* 成长总结同理（v2.7.0.6，默认关）：一期一封信，多等一两分钟换更贴的写法 */}
-                              <div className="flex items-center justify-between gap-3 pt-1">
-                                <div className="min-w-0">
-                                  <div className="text-sm font-medium text-gray-800 dark:text-white">成长总结改走深思熟虑</div>
-                                  <div className="text-[11px] text-gray-400 dark:text-gray-500">
-                                    周报月报一期一封，多等一两分钟换更贴的信；它在后台写，关掉页面也不会断。
-                                  </div>
-                                </div>
-                                <Toggle
-                                  checked={!!settings.summaryDeliberate}
-                                  onChange={(v) => updateSettings({ summaryDeliberate: v })}
-                                  aria-label="成长总结改走深思熟虑"
-                                />
-                              </div>
-
-                              {/* 深思熟虑：可跨服务商（按厂家分组），Key 已配好即可直选别家模型 */}
-                              <div className="space-y-1.5 pt-3 border-t border-gray-100 dark:border-gray-700/50">
-                                <p className="flex items-center gap-1 text-xs font-medium text-gray-500 dark:text-gray-400"><MoonIcon className="h-3.5 w-3.5" /> 深思熟虑</p>
-                                <p className="text-[11px] text-gray-400 dark:text-gray-500">
-                                  助手对话、中长期占卜走这档——值得等的深答案，可跨服务商选更强的模型
-                                  （用那家已存的 Key 直连）。留空跟随快速响应。
-                                </p>
-                                <button
-                                  type="button"
-                                  onClick={() => setModelPicker('deliberate')}
-                                  className="flex w-full items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
-                                >
-                                  <span className="min-w-0 flex-1 truncate text-left">
-                                    {settings.navigatorModel?.trim()
-                                      ? `${getProviderConfig(delibPv).label} · ${settings.navigatorModel}`
-                                      : `跟随快速响应（${fastFallback}）`}
-                                  </span>
-                                  <span className="shrink-0 text-xs font-bold text-primary">选择模型 ›</span>
-                                </button>
-                                <BufferedTextInput
-                                  value={settings.navigatorModel ?? ''}
-                                  onCommit={v => updateSettings({ navigatorModel: v || undefined })}
-                                  placeholder={`留空 = 跟随快速响应（${fastFallback}）`}
-                                  className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-primary"
-                                />
-                                {/* 生效行：跨平台时明确写出实际调用哪家（防"我以为在用A其实在用B"） */}
-                                <p className="text-[11px] text-gray-400 dark:text-gray-500">
-                                  实际调用：{settings.navigatorModel
-                                    ? `${getProviderConfig(delibPv).label} · ${settings.navigatorModel}${settings.navigatorProvider && !settings.aiProfiles?.[settings.navigatorProvider]?.key?.trim() ? '（该家没存 Key，已临时回落快速响应）' : ''}`
-                                    : `跟随快速响应（${getProviderConfig(provider).label} · ${fastFallback}）`}
-                                </p>
-                              </div>
-
-                              {/* 👁 视觉（FS3）：看图。没配就是没配——不回落文本模型（发图过去只会报错） */}
-                              <div className="space-y-1.5 pt-3 border-t border-gray-100 dark:border-gray-700/50">
-                                <p className="flex items-center gap-1 text-xs font-medium text-gray-500 dark:text-gray-400"><EyeIcon className="h-3.5 w-3.5" /> 视觉</p>
-                                <p className="text-[11px] text-gray-400 dark:text-gray-500">
-                                  拍小票记账等看图任务走这档。没配也能用——记账会退到本机离线识字（需原生 App），
-                                  再不行就手输。图片只发给你自己配的服务商。
-                                </p>
-                                <button
-                                  type="button"
-                                  onClick={() => setModelPicker('vision')}
-                                  className="flex w-full items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
-                                >
-                                  <span className="min-w-0 flex-1 truncate text-left">
-                                    {settings.visionModel?.trim()
-                                      ? `${getProviderConfig(settings.visionProvider ?? provider).label} · ${settings.visionModel}`
-                                      : '未启用'}
-                                  </span>
-                                  <span className="shrink-0 text-xs font-bold text-primary">选择模型 ›</span>
-                                </button>
-                                <BufferedTextInput
-                                  value={settings.visionModel ?? ''}
-                                  onCommit={v => updateSettings({ visionModel: v || undefined })}
-                                  placeholder="留空 = 不启用（如 deepseek-flash / qwen-vl-plus / gpt-6-luna）"
-                                  className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-primary"
-                                />
-                              </div>
-
-                              {/* 🎤 听觉（FS3）：语音转写，走 /audio/transcriptions */}
-                              <div className="space-y-1.5 pt-3 border-t border-gray-100 dark:border-gray-700/50">
-                                <p className="flex items-center gap-1 text-xs font-medium text-gray-500 dark:text-gray-400"><MicIcon className="h-3.5 w-3.5" /> 听觉</p>
-                                <p className="text-[11px] text-gray-400 dark:text-gray-500">
-                                  配好后助手输入栏出现话筒：按住说话、松手转成文字填进输入框（发不发你决定）。
-                                  走 /audio/transcriptions 端点，模型名如 whisper-1 / SenseVoiceSmall / qwen3-asr-flash。
-                                  不配也没关系——输入法自带的语音键一直都能用。
-                                </p>
-                                <button
-                                  type="button"
-                                  onClick={() => setModelPicker('audio')}
-                                  className="flex w-full items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
-                                >
-                                  <span className="min-w-0 flex-1 truncate text-left">
-                                    {settings.audioModel?.trim()
-                                      ? `${getProviderConfig(settings.audioProvider ?? provider).label} · ${settings.audioModel}`
-                                      : '未启用'}
-                                  </span>
-                                  <span className="shrink-0 text-xs font-bold text-primary">选择模型 ›</span>
-                                </button>
-                                <BufferedTextInput
-                                  value={settings.audioModel ?? ''}
-                                  onCommit={v => updateSettings({ audioModel: v || undefined })}
-                                  placeholder="留空 = 不启用（如 whisper-1 / qwen3-asr-flash）"
-                                  className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-primary"
-                                />
-                              </div>
-                            </>
-                          );
-                        })()}
-
-                        {modelFetchMessage && (
-                          <p className={`text-[11px] leading-relaxed whitespace-pre-wrap break-words ${modelFetchStatus === 'ok' ? 'text-green-600 dark:text-green-400' : 'text-red-500 dark:text-red-400'}`}>
-                            {modelFetchMessage}
-                          </p>
-                        )}
-                        {!settings.summaryApiKey?.trim() && (
-                          <p className="text-[11px] text-amber-600 dark:text-amber-400">先在上方「连接」卡里配好 API Key，再来选模型。</p>
-                        )}
-
-                      </div>
-                      </>
-                      )}
-                    </div>
-
-                    {/* 模型选择面板（SheetModal，portal 渲染） */}
-                    <ModelPickerSheet
-                      mode={modelPicker ?? 'fast'}
-                      isOpen={modelPicker !== null}
-                      onClose={() => setModelPicker(null)}
-                    />
 
                   </div>
                   );
