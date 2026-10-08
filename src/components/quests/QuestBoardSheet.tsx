@@ -17,6 +17,9 @@ import {
   type LifeQuest, type LifeQuestDay,
 } from '@/utils/lifeQuests';
 import { fetchWeatherNow, weatherConfigOf, weatherReady } from '@/utils/weather';
+import { lifeAttrMapSig, lifeAttrSigOf, resolveLifeAttrs } from '@/utils/lifeQuestAttrMap';
+import { ensureLifeQuestAiCard, ensureLifeQuestAttrMap, lifeAttrMapStatus, readLifeQuestAiCard } from '@/utils/lifeQuestAI';
+import { aiConfigured } from '@/utils/aiClient';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P5R, P5_TITLE_FONT, P5Btn, P5Chip, P5Rough, roughSlant } from '@/components/p5r/kit';
 import type { AttributeId, Quest } from '@/types';
@@ -218,9 +221,9 @@ type LifeStatus = 'new' | 'added' | 'done';
  * 第 16 批：出题看情境（几点、天气）和本机记下的取舍；翻到哪张、换掉哪张都记一笔（lifeQuests.ts 的 recordLifeQuestEvent）。
  */
 export function useLifeQuests(open: boolean) {
-  const { activities, todos, todoCompletions, user, settings, addTodo, getTodayTodoProgress } = useAppStore(useShallow((s) => ({
+  const { activities, todos, todoCompletions, user, settings, addTodo, getTodayTodoProgress, updateSettings } = useAppStore(useShallow((s) => ({
     activities: s.activities, todos: s.todos, todoCompletions: s.todoCompletions, user: s.user, settings: s.settings,
-    addTodo: s.addTodo, getTodayTodoProgress: s.getTodayTodoProgress,
+    addTodo: s.addTodo, getTodayTodoProgress: s.getTodayTodoProgress, updateSettings: s.updateSettings,
   })));
   const todayKey = toLocalDateKey();
   const seedKey = user?.id ?? user?.name ?? 'me';
@@ -237,24 +240,64 @@ export function useLifeQuests(open: boolean) {
     fetchWeatherNow(cfg).catch(() => { /* 取不到就不按天气筛 */ });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasToday, weatherKey]);
-  // 今天这批：本机记过就用它（同一天卡片不变脸）；没记过按此刻的情境和取舍算一批，下面的 effect 记下来
+  /**
+   * 题目 ↔ 自定义属性的对应（第 17 批）：任务页一挂载就在后台要（属性名或题库变了会自动重要，失败的隔一阵再试），
+   * 打开委托板时多半已经好了。要回来 / 失败了都 bump 一下，让下面按新状态重算。
+   */
+  const [mapTick, setMapTick] = useState(0);
+  const mapSig = lifeAttrMapSig(settings.attributeNames);
+  const aiReady = aiConfigured(settings);
+  useEffect(() => {
+    let alive = true;
+    void ensureLifeQuestAttrMap(settings, updateSettings).then(() => { if (alive) setMapTick((t) => t + 1); });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapSig, aiReady, settings.lifeQuestAttrMap?.sig]);
+  const mapStatus = lifeAttrMapStatus(settings);
+  const attrs = resolveLifeAttrs(settings);
+  // 今天这批还没定、对应关系在路上：先等一会儿（最多 12 秒），别用「改过名的几类不出」的残缺版定下一整天
+  const [waitExpired, setWaitExpired] = useState(false);
+  const storedNow = open ? readLifeQuestDay() : null;
+  const waiting = open && !isToday(storedNow) && !hasToday && mapStatus === 'pending' && !waitExpired;
+  useEffect(() => {
+    if (!waiting) return;
+    const t = window.setTimeout(() => setWaitExpired(true), 12_000);
+    return () => window.clearTimeout(t);
+  }, [waiting]);
+  // 今天这批：本机记过就用它（同一天卡片不变脸）；没记过按此刻的情境、取舍和属性对应算一批，下面的 effect 记下来
   const current = useMemo<LifeQuestDay>(() => {
     // 抽签可能已经替今天定好了一批（第 17 批）：打开时以本机记的为准；内容和手上这份一样就沿用手上这份（不换对象，免得来回重渲染）
     const stored = open ? readLifeQuestDay() : null;
-    if (isToday(stored) && !(isToday(day) && lifeQuestDaySig(day) === lifeQuestDaySig(stored))) return stored;
-    if (isToday(day)) return day;
+    const base = isToday(stored) && !(isToday(day) && lifeQuestDaySig(day) === lifeQuestDaySig(stored)) ? stored : isToday(day) ? day : null;
+    const wantSig = lifeAttrSigOf(attrs);
+    if (base) {
+      // 属性名改了、对应变了（第 17 批）：打开时把还没加入的那几张按新的对应重出，已加入的留着；对应还在路上就先不动
+      if (open && mapStatus !== 'pending' && (base.attrSig ?? 'stock') !== wantSig) {
+        const addedToday = (q: LifeQuest) => todos.some((t) => lifeDayKeyOf(t.createdAt) === todayKey && (t.lifeQuest === q.presetId || normTitle(t.title) === normTitle(q.title)));
+        const kept = base.items.filter(addedToday);
+        const fresh = lifeQuestsFor({
+          dateKey: todayKey, seedKey, activities, todos, completions: todoCompletions, reroll: base.reroll,
+          ctx: lifeContextNow(settings), log: readLifeQuestLog(seedKey), attrOf: attrs.attrOf,
+          count: LIFE_QUEST_COUNT - kept.length, avoidAttrs: new Set(kept.map((q) => q.attribute)),
+        }).filter((q) => !kept.some((k) => k.presetId === q.presetId));
+        return { ...base, attrSource: attrs.source, attrSig: wantSig, items: [...kept, ...fresh].slice(0, LIFE_QUEST_COUNT) };
+      }
+      return base;
+    }
+    if (waiting) return { date: todayKey, seed: seedKey, reroll: 0, items: [] };
     return {
-      date: todayKey, seed: seedKey, reroll: 0,
+      date: todayKey, seed: seedKey, reroll: 0, attrSource: attrs.source, attrSig: wantSig,
       items: lifeQuestsFor({
         dateKey: todayKey, seedKey, activities, todos, completions: todoCompletions, reroll: 0,
-        ctx: lifeContextNow(settings), log: readLifeQuestLog(seedKey),
+        ctx: lifeContextNow(settings), log: readLifeQuestLog(seedKey), attrOf: attrs.attrOf,
       }),
     };
-    // 记录 / 清单 / 设置不进依赖（同一天不变脸）；open 进依赖：打开那一刻按读完的记录重算一次再记下
+    // 记录 / 清单 / 设置不进依赖（同一天不变脸）；open 进依赖：打开那一刻按读完的记录重算一次再记下；
+    // 对应关系要回来（mapTick / sig）、等待结束（waiting）时也重算
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [day, todayKey, seedKey, open]);
+  }, [day, todayKey, seedKey, open, waiting, mapTick, settings.lifeQuestAttrMap?.sig, mapSig]);
   useEffect(() => {
-    if (!open) return;
+    if (!open || waiting || !current.items.length) return;
     if (lifeQuestDaySig(day) !== lifeQuestDaySig(current)) {
       writeLifeQuestDay(current);
       setDay(current);
@@ -276,6 +319,28 @@ export function useLifeQuests(open: boolean) {
     await addTodo({ title: q.title, attribute: q.attribute, points: q.points, frequency: 'single', isActive: true, lifeQuest: q.presetId });
     triggerSuccessFeedback();
   };
+  /**
+   * 第四张：AI 按最近记录写的（设置 → 体验个性化，默认关）。等今天这批真正定下来（记进本机）再在后台写——
+   * 打开委托板前那份只是预览，拿它去比「别和另外三张重复」会比错；写好了接在后面
+   */
+  const [aiCard, setAiCard] = useState<LifeQuest | null>(() => readLifeQuestAiCard(seedKey, todayKey));
+  const settled = hasToday ? day : null;
+  const batchKey = settled ? settled.items.map((q) => q.key).join('|') : '';
+  useEffect(() => {
+    setAiCard(readLifeQuestAiCard(seedKey, todayKey));
+    if (!settings.lifeQuestAiCard || !settled) return;
+    let alive = true;
+    void ensureLifeQuestAiCard({ settings, seedKey, todayKey, activities, todos, others: settled.items }).then((q) => { if (alive && q) setAiCard(q); });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seedKey, todayKey, settings.lifeQuestAiCard, batchKey, aiReady]);
+  const showAi = !!settings.lifeQuestAiCard && !!aiCard && !waiting;
+  /** 改过名的属性对不上、AI 又帮不上（没配 / 刚失败）：说一句为什么少了几类 */
+  const attrNote = attrs.source === 'fallback' && mapStatus === 'unavailable' && attrs.custom.length
+    ? (aiReady
+      ? '有几项属性名是你自己起的，题目和属性的对应还没准备好，先不出这几类；过一会儿会自动再试。'
+      : '有几项属性名是你自己起的，题库对不上就先不出这几类；配好 AI 服务后会自动对好。')
+    : '';
   const rerollsLeft = Math.max(0, LIFE_QUEST_REROLLS - current.reroll);
   const reroll = () => {
     if (rerollsLeft <= 0) return;
@@ -288,15 +353,19 @@ export function useLifeQuests(open: boolean) {
     const fresh = lifeQuestsFor({
       dateKey: todayKey, seedKey, activities, todos, completions: todoCompletions, reroll: current.reroll + 1,
       previousIds: current.items.map((q) => q.presetId), ctx: lifeContextNow(settings), log,
-      count: LIFE_QUEST_COUNT - kept.length, avoidAttrs: new Set(kept.map((q) => q.attribute)),
+      count: LIFE_QUEST_COUNT - kept.length, avoidAttrs: new Set(kept.map((q) => q.attribute)), attrOf: attrs.attrOf,
     }).filter((q) => !kept.some((k) => k.presetId === q.presetId));
-    const next: LifeQuestDay = { date: todayKey, seed: seedKey, reroll: current.reroll + 1, items: [...kept, ...fresh].slice(0, LIFE_QUEST_COUNT) };
+    const next: LifeQuestDay = { date: todayKey, seed: seedKey, reroll: current.reroll + 1, attrSource: attrs.source, attrSig: lifeAttrSigOf(attrs), items: [...kept, ...fresh].slice(0, LIFE_QUEST_COUNT) };
     recordLifeQuestEvent(seedKey, todayKey, 'shown', next.items.map((q) => q.presetId));
     triggerNavFeedback();
     writeLifeQuestDay(next);
     setDay(next);
   };
-  return { items: current.items, statusOf, add, reroll, rerollsLeft, markViewed, allTouched: current.items.every((q) => statusOf(q) !== 'new') };
+  return {
+    items: showAi && aiCard ? [...current.items, aiCard] : current.items,
+    statusOf, add, reroll, rerollsLeft, markViewed, waiting, attrNote,
+    allTouched: current.items.length > 0 && current.items.every((q) => statusOf(q) !== 'new'),
+  };
 }
 
 const LifeQuestCard = ({ q, status, tone, names, onAdd, index, total }: {
@@ -312,7 +381,13 @@ const LifeQuestCard = ({ q, status, tone, names, onAdd, index, total }: {
   const body = (
     <>
       <div className="flex items-center justify-between gap-2 text-[11px] font-black" style={{ color: tone.sub, fontFamily: p5 ? P5_TITLE_FONT : undefined }}>
-        <span>{names[q.attribute] ?? q.attribute} +{q.points}</span>
+        <span className="flex items-center gap-1.5">
+          {names[q.attribute] ?? q.attribute} +{q.points}
+          {/* 第四张：AI 按最近记录写的（第 17 批） */}
+          {q.ai && (
+            <span data-testid="life-ai-tag" className="px-1.5 py-[1px] text-[9.5px] font-black leading-none" style={p5 ? { background: P5R.ink, color: P5R.white, clipPath: 'polygon(2px 0, 100% 0, calc(100% - 2px) 100%, 0 100%)' } : { background: tone.accent, color: '#fff', borderRadius: 999 }}>AI</span>
+          )}
+        </span>
         <span className="tabular-nums">{index + 1} / {total}</span>
       </div>
       <div className="mt-1.5 text-[17px] font-black leading-snug" data-testid="life-quest-title">{q.title}</div>
@@ -482,12 +557,23 @@ export const QuestBoardSheet = ({ open, onClose }: { open: boolean; onClose: () 
         {/* 今日委托（第 13 轮加，第 14 批改名并合成一张可左右切的卡）：不用解锁，每天三张 */}
         <div className="flex items-baseline justify-between gap-2">
           <SectionTitle tone={tone}>今日委托</SectionTitle>
-          <div className="text-[11px] font-bold" style={{ color: tone.sub }}>每天三张 · 左右滑着挑</div>
+          <div className="text-[11px] font-bold" style={{ color: tone.sub }}>{life.items.some((q) => q.ai) ? '三张题库 + 一张 AI 写的' : '每天三张 · 左右滑着挑'}</div>
         </div>
         <div className="mt-2.5" data-testid="life-quests">
-          <LifeQuestCarousel items={life.items} statusOf={life.statusOf} onAdd={(q) => void life.add(q)} onView={life.markViewed} tone={tone} names={board.attributeNames} />
+          {life.waiting ? (
+            // 自定义属性名、题目和属性的对应还在路上（第 17 批）：多半一两秒就好
+            <div data-testid="life-waiting" className="flex items-center gap-2.5 px-4 py-6 text-[12.5px] font-bold" style={{ background: tone.card, borderRadius: tone.radius, color: tone.sub }}>
+              <motion.span aria-hidden className="inline-block h-4 w-4 rounded-full border-2 border-current border-t-transparent" animate={{ rotate: 360 }} transition={{ duration: 0.9, repeat: Infinity, ease: 'linear' }} />
+              正在按你的属性准备今日委托…
+            </div>
+          ) : (
+            <LifeQuestCarousel items={life.items} statusOf={life.statusOf} onAdd={(q) => void life.add(q)} onView={life.markViewed} tone={tone} names={board.attributeNames} />
+          )}
         </div>
-        {!life.allTouched && (
+        {life.attrNote && !life.waiting && (
+          <div data-testid="life-attr-note" className="mt-2 text-[11px] font-bold leading-relaxed" style={{ color: tone.sub }}>{life.attrNote}</div>
+        )}
+        {!life.waiting && life.items.length > 0 && !life.allTouched && (
           <div className="mt-2 text-right">
             <button
               type="button"

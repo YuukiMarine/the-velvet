@@ -612,6 +612,13 @@ export interface Settings {
   fateDrawState?: { date: string; drawnKeys: string[] };
   /** 抽签「以后别抽这件」的旧事（同一件事的键，见 utils/fateDraw.fateHistoryKey；第 17 批） */
   fateHistoryMuted?: string[];
+  /**
+   * 今日委托题库 ↔ 自定义属性的 AI 对应结果（第 17 批，utils/lifeQuestAI 后台自动要）：sig = 属性名 + 题库版本，
+   * 不一致就作废重算；map = 预设 id → 属性（null = 五项都不搭，不出）
+   */
+  lifeQuestAttrMap?: { sig: string; map: Record<string, AttributeId | null>; at: number };
+  /** 体验个性化：今日委托多一张 AI 按最近记录写的（默认关；会把最近 7 天的记录标题发给 AI 服务） */
+  lifeQuestAiCard?: boolean;
   // ── F6 万能记录 AI「黑猫」（Navigator） ──
   /** 最近一次「每日首开问候」的本地日期（YYYY-MM-DD）：跨天首开播完整问候，当日重开只简短招呼。 */
   navigatorLastGreetDate?: string;

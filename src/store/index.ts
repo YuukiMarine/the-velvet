@@ -10,6 +10,7 @@ import { pickTogetherReminder } from '@/utils/pactLogic';
 import { v4 as uuidv4 } from 'uuid';
 import { FATE_SOURCE_WEIGHT, fateHistoryCandidates, pickWeighted } from '@/utils/fateDraw';
 import { ensureLifeQuestDay, lifeDayKeyOf, normTitle, recordLifeQuestEvent } from '@/utils/lifeQuests';
+import { ensureLifeQuestAttrMap, lifeAttrMapStatus, readLifeQuestAiCard } from '@/utils/lifeQuestAI';
 import { calcMaxStreak, daysSinceFirstRecord, streakDates } from '@/utils/streak';
 import { applyUiChannel, syncDarkClass } from '@/ui/channel';
 import { computeAndSchedule, type NotifSnapshot } from '@/utils/notifications';
@@ -4149,10 +4150,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     const { user, settings, activities, todos, todoCompletions } = get();
     const seedKey = user?.id ?? user?.name ?? 'me';
     pool.push(...fateHistoryCandidates({ activities, today, muted: settings.fateHistoryMuted, sunk, seed: seedKey }));
-    // ④ 今日委托（第 17 批）：今天这批里还没加进清单的。委托板没打开过也替今天定好这一批，和委托板是同一批
+    // ④ 今日委托（第 17 批）：今天这批里还没加进清单的。委托板没打开过也替今天定好这一批，和委托板是同一批。
+    //    自定义属性名、AI 对应关系还在路上：这次先不放委托（别用「改过名的几类不出」的残缺版定下一整天），顺手催它开工
     try {
-      const day = ensureLifeQuestDay({ todayKey: today, seedKey, activities, todos, completions: todoCompletions, settings });
-      for (const q of day.items) {
+      void ensureLifeQuestAttrMap(settings, (patch) => get().updateSettings(patch));
+      const day = ensureLifeQuestDay({ todayKey: today, seedKey, activities, todos, completions: todoCompletions, settings, waitForAttrMap: lifeAttrMapStatus(settings) === 'pending' });
+      const aiCard = settings.lifeQuestAiCard ? readLifeQuestAiCard(seedKey, today) : null;
+      for (const q of [...(day?.items ?? []), ...(aiCard ? [aiCard] : [])]) {
         const added = todos.some(t => lifeDayKeyOf(t.createdAt) === today && (t.lifeQuest === q.presetId || normTitle(t.title) === normTitle(q.title)));
         if (added) continue;
         pool.push({ key: `quest:${q.presetId}`, kind: 'quest', title: q.title, presetId: q.presetId, attribute: q.attribute, points: q.points, weight: FATE_SOURCE_WEIGHT.quest });

@@ -1948,6 +1948,32 @@ export const Settings = () => {
                       </div>
                     </div>
 
+                    {/* 今日委托 · 第四张 AI 卡（第 17 批，默认关）：按最近 7 天的记录写一张更贴近自己的委托 */}
+                    <div className={`rounded-xl border-2 p-4 transition-all ${
+                      settings.lifeQuestAiCard
+                        ? 'border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/20'
+                        : 'border-gray-200 dark:border-gray-700'
+                    }`}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <span aria-hidden className="text-gray-500 dark:text-gray-300"><SparklesIcon className="h-[18px] w-[18px]" /></span>
+                            <h4 className="text-sm font-bold text-gray-800 dark:text-white">今日委托多一张 AI 写的</h4>
+                          </div>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 leading-relaxed">
+                            委托板的今日委托在三张题库卡之外，每天再多一张按你最近的记录写的。会把最近 7 天的记录标题发给你配的 AI 服务；没配 AI 时不出现。
+                          </p>
+                        </div>
+                        <div className="flex-shrink-0 mt-0.5">
+                          <Toggle
+                            checked={!!settings.lifeQuestAiCard}
+                            onChange={(v) => updateSettings({ lifeQuestAiCard: v })}
+                            aria-label="今日委托多一张 AI 写的"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
                     {/* ── 子板块：关键词规则（默认收起，点击展开） ─────────────────────── */}
                     <button
                       type="button"

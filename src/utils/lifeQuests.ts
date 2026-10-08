@@ -1,6 +1,7 @@
-import type { Activity, AttributeId, Todo, TodoCompletion } from '@/types';
+import type { Activity, AttributeId, Settings, Todo, TodoCompletion } from '@/types';
 import { LIFE_QUEST_PRESETS, type LifeQuestPreset, type LifeQuestTag } from '@/constants/lifeQuestPresets';
 import { peekWeatherNow, weatherConfigOf, type WeatherNow } from '@/utils/weather';
+import { lifeAttrSigOf, resolveLifeAttrs } from '@/utils/lifeQuestAttrMap';
 
 export { LIFE_QUEST_PRESETS };
 export type { LifeQuestPreset, LifeQuestTag };
@@ -31,6 +32,8 @@ export interface LifeQuest {
   attribute: AttributeId;
   points: number;
   hint: string;
+  /** 第四张：AI 按最近记录写的（第 17 批，设置 → 体验个性化里开） */
+  ai?: boolean;
 }
 
 export const LIFE_QUEST_ATTRS: readonly AttributeId[] = ['knowledge', 'guts', 'dexterity', 'kindness', 'charm'];
@@ -98,7 +101,9 @@ const isWeekendKey = (dateKey: string): boolean => {
   return wd === 0 || wd === 6;
 };
 
-const poolOf = (attr: AttributeId) => LIFE_QUEST_PRESETS.filter((p) => p.attribute === attr);
+/** 每条题目归哪一项属性：默认按它写的那一类；自定义属性名时按对应关系（lifeQuestAttrMap），null = 不出 */
+export type LifeAttrOf = (p: LifeQuestPreset) => AttributeId | null;
+const identityAttr: LifeAttrOf = (p) => p.attribute;
 
 const render = (p: LifeQuestPreset, seedKey: string, dayIdx: number): { title: string; slot: number } => {
   if (!p.slots?.length) return { title: p.title, slot: -1 };
@@ -234,13 +239,14 @@ const addTally = (into: LifeQuestTally, s: LifeQuestTally) => {
 };
 
 /** 每类 / 每维的取舍合计（同一批出题里算一次） */
-function groupTallies(L: LifeLearning): { tag: Record<string, LifeQuestTally>; attr: Record<string, LifeQuestTally> } {
+function groupTallies(L: LifeLearning, attrOf: LifeAttrOf = identityAttr): { tag: Record<string, LifeQuestTally>; attr: Record<string, LifeQuestTally> } {
   const tag: Record<string, LifeQuestTally> = {};
   const attr: Record<string, LifeQuestTally> = {};
   for (const p of LIFE_QUEST_PRESETS) {
     const s = L.tally[p.id];
     if (!s) continue;
-    addTally(attr[p.attribute] ??= { ...ZERO }, s);
+    const a = attrOf(p);
+    if (a) addTally(attr[a] ??= { ...ZERO }, s);
     for (const g of tagsOf(p)) if (LEARN_TAGS.includes(g)) addTally(tag[g] ??= { ...ZERO }, s);
   }
   return { tag, attr };
@@ -285,6 +291,8 @@ export interface PickInput {
   count?: number;
   /** 这几维排到最后（已加入的卡占着的维度，补位时尽量不重） */
   avoidAttrs?: ReadonlySet<AttributeId>;
+  /** 每条题目归哪一项属性（自定义属性名时由对应关系决定；null = 不出）；不给 = 按题目原本那一类 */
+  attrOf?: LifeAttrOf;
 }
 
 /**
@@ -298,7 +306,8 @@ export function pickLifeQuests(input: PickInput): LifeQuest[] {
   const ctx = input.ctx ?? {};
   const L = input.learning ?? EMPTY_LEARNING;
   const weekend = isWeekendKey(input.dateKey);
-  const groups = groupTallies(L);
+  const attrOf = input.attrOf ?? identityAttr;
+  const groups = groupTallies(L, attrOf);
   const rnd = mulberry32(fnv1a(`life|${input.seedKey}|${input.dateKey}|${reroll}`));
   // 加权洗牌（Efraimidis–Spirakis）：权重大的更容易排前面，但不是每次都排前面
   const others = LIFE_QUEST_ATTRS.filter((k) => k !== input.weakest)
@@ -311,8 +320,8 @@ export function pickLifeQuests(input: PickInput): LifeQuest[] {
 
   const out: LifeQuest[] = [];
   const take = (attr: AttributeId, ignoreWeather: boolean): boolean => {
-    const pool = poolOf(attr)
-      .filter((p) => !input.excludeIds?.has(p.id) && !out.some((q) => q.presetId === p.id))
+    const pool = LIFE_QUEST_PRESETS
+      .filter((p) => attrOf(p) === attr && !input.excludeIds?.has(p.id) && !out.some((q) => q.presetId === p.id))
       .map((p) => ({ p, r: render(p, input.seedKey, dayIdx) }))
       .filter(({ r }) => !input.existingTitles?.has(normTitle(r.title)));
     const c = ignoreWeather ? { ...ctx, weather: null } : ctx;
@@ -335,7 +344,7 @@ export function pickLifeQuests(input: PickInput): LifeQuest[] {
         if (x < 0) break;
       }
       const { p, r } = pool[idx];
-      out.push({ key: `${p.id}#${r.slot}`, presetId: p.id, title: r.title, attribute: p.attribute, points: p.points, hint: p.hint });
+      out.push({ key: `${p.id}#${r.slot}`, presetId: p.id, title: r.title, attribute: attr, points: p.points, hint: p.hint });
       return true;
     }
     return false;
@@ -368,6 +377,7 @@ export function lifeQuestsFor(opts: {
   log?: LifeQuestLog | null;
   count?: number;
   avoidAttrs?: ReadonlySet<AttributeId>;
+  attrOf?: LifeAttrOf;
 }): LifeQuest[] {
   const weakest = weakestAttribute(opts.activities, opts.dateKey, opts.seedKey);
   const before = opts.todos.filter((t) => t.isActive && !t.archivedAt && lifeDayKeyOf(t.createdAt) < opts.dateKey);
@@ -375,7 +385,7 @@ export function lifeQuestsFor(opts: {
   const excludeIds = new Set([...(opts.previousIds ?? []), ...before.flatMap((t) => (t.lifeQuest ? [t.lifeQuest] : []))]);
   return pickLifeQuests({
     dateKey: opts.dateKey, seedKey: opts.seedKey, weakest, existingTitles, excludeIds, reroll: opts.reroll,
-    ctx: opts.ctx, count: opts.count, avoidAttrs: opts.avoidAttrs,
+    ctx: opts.ctx, count: opts.count, avoidAttrs: opts.avoidAttrs, attrOf: opts.attrOf,
     learning: learningOf({ dateKey: opts.dateKey, log: opts.log, todos: opts.todos, completions: opts.completions }),
   });
 }
@@ -388,6 +398,10 @@ export interface LifeQuestDay {
   items: LifeQuest[];
   /** 哪个用户的（同一台设备换账号不串）；第 16 批前存的没有 */
   seed?: string;
+  /** 出这批时题目和属性怎么对的（stock / ai / fallback，第 17 批） */
+  attrSource?: 'stock' | 'ai' | 'fallback';
+  /** 对应的签名（lifeAttrSigOf）：属性名改了、对应变了，委托板打开时把没加入的几张按新对应重出 */
+  attrSig?: string;
 }
 
 export function readLifeQuestDay(): LifeQuestDay | null {
@@ -416,17 +430,22 @@ export function ensureLifeQuestDay(opts: {
   activities: Activity[];
   todos: Todo[];
   completions?: TodoCompletion[];
-  settings: Parameters<typeof weatherConfigOf>[0];
-}): LifeQuestDay {
+  settings: Settings;
+  /** 自定义属性名、AI 对应关系还在路上：先别出（返回 null），免得这一整天都是「改过名的几类不出」的残缺版 */
+  waitForAttrMap?: boolean;
+}): LifeQuestDay | null {
   const stored = readLifeQuestDay();
   if (stored && stored.date === opts.todayKey && (stored.seed ?? opts.seedKey) === opts.seedKey && stored.items.length) return stored;
+  const attrs = resolveLifeAttrs(opts.settings);
+  if (attrs.source === 'fallback' && opts.waitForAttrMap) return null;
   const day: LifeQuestDay = {
-    date: opts.todayKey, seed: opts.seedKey, reroll: 0,
+    date: opts.todayKey, seed: opts.seedKey, reroll: 0, attrSource: attrs.source, attrSig: lifeAttrSigOf(attrs),
     items: lifeQuestsFor({
       dateKey: opts.todayKey, seedKey: opts.seedKey, activities: opts.activities, todos: opts.todos, completions: opts.completions,
-      reroll: 0, ctx: lifeContextNow(opts.settings), log: readLifeQuestLog(opts.seedKey),
+      reroll: 0, ctx: lifeContextNow(opts.settings), log: readLifeQuestLog(opts.seedKey), attrOf: attrs.attrOf,
     }),
   };
+  if (!day.items.length) return day; // 一张都出不了（改过名的全不出）：不记，下次对应好了再出
   writeLifeQuestDay(day);
   recordLifeQuestEvent(opts.seedKey, opts.todayKey, 'shown', day.items.map((q) => q.presetId));
   return day;
