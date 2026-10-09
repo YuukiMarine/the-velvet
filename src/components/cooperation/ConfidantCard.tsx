@@ -150,7 +150,9 @@ export function ConfidantCard({ confidant, onClick, prayer, activeShadow, onShad
         archived
           ? 'border-gray-200 dark:border-gray-700 bg-white/50 dark:bg-gray-900/40 opacity-60'
           : isOnline
-            ? 'border-emerald-300/60 dark:border-emerald-500/30 bg-gradient-to-br from-emerald-500/[0.04] via-white to-white dark:from-emerald-500/[0.08] dark:via-gray-900 dark:to-gray-900'
+            // 渐变起点几乎透明，底下垫一层 bg-white（第 19 批）：红频道黑舞台以前从左上角透进来，
+            // 而且红频道「白卡里灰字翻回黑」认的是 .bg-white——没有它，名字和「《牌名》正位」是纸色字压在白卡上
+            ? 'border-emerald-300/60 dark:border-emerald-500/30 bg-white dark:bg-gray-900 bg-gradient-to-br from-emerald-500/[0.04] via-white to-white dark:from-emerald-500/[0.08] dark:via-gray-900 dark:to-gray-900'
             : 'border-gray-200/80 dark:border-gray-700/70 bg-white dark:bg-gray-900'
       }`}
       style={{
@@ -272,16 +274,18 @@ export function ConfidantCard({ confidant, onClick, prayer, activeShadow, onShad
                   待回应
                 </span>
               )}
-              {/* 一起进步（v2.7.0.6）：今天还差谁 */}
-              {confidant.source === 'online' && confidant.linkedCloudUserId && !archived && (
-                <PactPartnerTag partnerId={confidant.linkedCloudUserId} />
-              )}
-              {/* 组织（第 7 轮）：同在一个组织就挂徽记 */}
-              {confidant.source === 'online' && !archived && <OrgBadge userId={confidant.linkedCloudUserId} />}
             </div>
             <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
               《{card?.name}》{isReversed ? '逆位' : '正位'} · {INTIMACY_LABELS[confidant.intimacy]}
             </div>
+            {/* 一起进步（v2.7.0.6）：今天还差谁 / 组织（第 7 轮）：同在一个组织就挂徽记。
+                单独一行、放不下就折行（第 19 批，和上面的在线好友卡一个排法）；两样都没有这一行不占位 */}
+            {confidant.source === 'online' && confidant.linkedCloudUserId && !archived && (
+              <div className="mt-1.5 flex flex-wrap items-center gap-1.5 empty:hidden">
+                <PactPartnerTag partnerId={confidant.linkedCloudUserId} />
+                <OrgBadge userId={confidant.linkedCloudUserId} />
+              </div>
+            )}
             {/* 名片状态 / 目标（v2.7.0.6 第 6 项） */}
             {isOnline && <GoalLine goal={confidant.linkedProfile?.goal} compact className="mt-1" />}
 

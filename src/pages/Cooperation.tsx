@@ -1147,30 +1147,33 @@ function OnlineFriendPlaceholderCard({
             )}
           </div>
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
+            {/* 名字这一行只放名字和 ONLINE / 待回应（第 19 批）：名字先省略号、两枚小章不缩；
+                名字连两个字都放不下了（系统字号很大）小章才去第二行。以前名字会压到 ONLINE 底下、待回应被挤成竖条 */}
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
               {/* 在线好友统一带四角星；今日祈愿没回应就闪（同列表 / 专辑墙口径） */}
               <OnlineStarBadge glow={waitingReciprocity && !alreadyPrayed} />
-              <ConfidantNameFx waiting={waitingReciprocity && !alreadyPrayed} className="font-bold text-gray-900 dark:text-white min-w-0">
-                <span className="truncate">{name}</span>
+              <ConfidantNameFx waiting={waitingReciprocity && !alreadyPrayed} className="font-bold text-gray-900 dark:text-white min-w-0 grow basis-[2em] max-w-max">
+                <span className="block truncate">{name}</span>
               </ConfidantNameFx>
-              <span className="text-[9px] font-bold tracking-widest px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
+              <span className="shrink-0 text-[9px] font-bold tracking-widest px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
                 ONLINE
               </span>
               {waitingReciprocity && (
-                <span className="text-[9px] font-bold tracking-wider px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30">
+                <span className="shrink-0 whitespace-nowrap text-[9px] font-bold tracking-wider px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30">
                   待回应
                 </span>
               )}
-              {/* 一起进步（v2.7.0.6）：普通好友也能约 */}
-              <PactPartnerTag partnerId={profile.id} />
-              {/* 组织（第 7 轮）：同在一个组织就挂徽记 */}
-              <OrgBadge userId={profile.id} />
             </div>
             <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
               @{profile.userId ?? '—'} ·{' '}
               <span className={lvSwap.preset ? 'cursor-pointer' : undefined} {...swapTagProps(lvSwap, `LV ${lv}`)}>
                 <SwapFaces swap={lvSwap} lv={<>LV {lv}</>} />
               </span>
+            </div>
+            {/* 一起进步（v2.7.0.6）/ 组织（第 7 轮）单独一行、放不下就折行，组织名能写全（第 19 批）；两样都没有这一行不占位 */}
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5 empty:hidden">
+              <PactPartnerTag partnerId={profile.id} />
+              <OrgBadge userId={profile.id} />
             </div>
             {/* 名片状态 / 目标（v2.7.0.6 第 6 项） */}
             <GoalLine goal={profile.goal} compact className="mt-1" />

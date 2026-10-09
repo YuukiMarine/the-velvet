@@ -11,7 +11,7 @@
  * 工程护栏：只渲染中央 ±3 张；动画全走 transform；D0 降级为横向 snap 列表。
  * 三主题卡面差分后置（PRD 后备层），先做通用塔罗版。
  */
-import { useRef, useState } from 'react';
+import { useRef, useState, type CSSProperties } from 'react';
 import { motion } from 'motion/react';
 import type { CloudProfile, Confidant, Friendship } from '@/types';
 import { OnlineStarBadge } from './OnlineStarBadge';
@@ -129,6 +129,12 @@ const BACK_SKIN = {
   },
 } as const;
 
+/** 底部 10px 淡出（内容没碰到底就看不出来）；老 WebView 只认 -webkit- 前缀 */
+const FADE_TAIL: CSSProperties = {
+  WebkitMaskImage: 'linear-gradient(180deg, #000 calc(100% - 10px), transparent)',
+  maskImage: 'linear-gradient(180deg, #000 calc(100% - 10px), transparent)',
+};
+
 const CardBackFace = ({ c, onOpenDetail, prayer }: {
   c: Confidant;
   onOpenDetail: () => void;
@@ -203,16 +209,22 @@ const CardBackFace = ({ c, onOpenDetail, prayer }: {
         </div>
       </div>
 
-      {/* 一起进步（v2.7.0.6）：今天还差谁 */}
+      {/* 一起进步（v2.7.0.6）：今天还差谁；两样都没有这一行不占位 */}
       {c.source === 'online' && c.linkedCloudUserId && !c.archivedAt && (
-        <div className="mt-2 flex flex-wrap gap-1"><PactPartnerTag partnerId={c.linkedCloudUserId} surface={channel === 'neutral' ? 'night' : 'default'} /><OrgBadge userId={c.linkedCloudUserId} surface={channel === 'neutral' ? 'night' : 'default'} /></div>
+        <div className="mt-2 flex flex-wrap gap-1 empty:hidden"><PactPartnerTag partnerId={c.linkedCloudUserId} surface={channel === 'neutral' ? 'night' : 'default'} /><OrgBadge userId={c.linkedCloudUserId} surface={channel === 'neutral' ? 'night' : 'default'} /></div>
       )}
 
-      {c.description && (
-        <p className="mt-3 line-clamp-3 text-[11px] leading-relaxed" style={{ color: sk.sub }}>{c.description}</p>
-      )}
-      {c.aiAdvice && (
-        <p className="mt-2 line-clamp-2 text-[11px] leading-relaxed" style={{ color: sk.advice }}>✦ {c.aiAdvice}</p>
+      {/* 关系描述 + 谏言：牌面定高，上面的约定 / 组织标记折到三行时这里放不下（第 19 批组织名写全以后）。
+          以前两段 line-clamp 一起被压扁、字从中间横着切开；现在两段照常排，放不下的部分从底下淡出 */}
+      {(c.description || c.aiAdvice) && (
+        <div className={`${c.description ? 'mt-3' : 'mt-2'} min-h-0 flex-1 overflow-hidden`} style={FADE_TAIL}>
+          {c.description && (
+            <p className="line-clamp-3 text-[11px] leading-relaxed" style={{ color: sk.sub }}>{c.description}</p>
+          )}
+          {c.aiAdvice && (
+            <p className={`${c.description ? 'mt-2 ' : ''}line-clamp-2 text-[11px] leading-relaxed`} style={{ color: sk.advice }}>✦ {c.aiAdvice}</p>
+          )}
+        </div>
       )}
 
       {/* 底部动作区。在线同伴 = 祈愿 + 档案两格；本地同伴 = 档案独占一行。
