@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAppStore } from '@/store';
-import { attributionLabel, fetchWeatherNow, weatherReady, WeatherError, type WeatherNow } from '@/utils/weather';
+import { fetchWeatherNow, weatherReady, WeatherError, type WeatherNow } from '@/utils/weather';
 
 /**
  * 首页「天空位」的模式与取数 —— 月相 ⇄ 天气。
@@ -14,7 +14,9 @@ import { attributionLabel, fetchWeatherNow, weatherReady, WeatherError, type Wea
  *
  * 取数在 utils/weather.ts 里带 10 分钟内存缓存，这里不再自己缓存。
  * 第 13 轮：配置类错误（Host / KEY / 额度…）之后 weather.ts 不再自动重发，这里只报 errorKind='config'，
- * 角标改说「天气设置有误」；有数据时给出来源标注（和风要求显示「和风天气」并带链接）。
+ * 角标改说「天气设置有误」。
+ * 来源标注（和风「注明来源」/ Open-Meteo CC BY 4.0）只放在设置页的天气分区（WeatherSettings）：
+ * 第 19 批用户要求首页不写「数据：…」。
  */
 export function useSkyBadge() {
   const settings = useAppStore(s => s.settings);
@@ -57,10 +59,5 @@ export function useSkyBadge() {
     void updateSettings({ homeSkyMode: mode === 'weather' ? 'moon' : 'weather' });
   }, [mode, updateSettings]);
 
-  /** 有数据在显示时才需要来源标注 */
-  const attribution = mode === 'weather' && ready && weather && !error && !loading
-    ? { label: attributionLabel(weather.provider), url: weather.attribution }
-    : null;
-
-  return { mode, toggle, weather, loading, error, errorKind, ready, attribution };
+  return { mode, toggle, weather, loading, error, errorKind, ready };
 }

@@ -926,7 +926,7 @@ function FollowUpPanel({
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       className={p3 ? 'space-y-3 p-4' : 'rounded-2xl border border-primary/30 bg-primary/5 dark:bg-primary/10 p-4 space-y-3'}
-      style={p3 ? { background: '#e6f3fa', clipPath: slantClip(14) } : undefined}
+      style={p3 ? { background: P3R.cyanFaint, clipPath: slantClip(14) } : undefined}
     >
       <div className="flex items-center justify-between">
         <div className="text-xs font-black text-primary tracking-wider uppercase">追问（仅一次）</div>

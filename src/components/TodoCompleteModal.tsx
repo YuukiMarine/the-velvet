@@ -102,9 +102,10 @@ export const BandCutInP3 = ({ isOpen, onClose, title, totalPoints, unlockHint, e
                 initial={{ skewX: -6 }}
                 animate={{ skewX: 0 }}
                 transition={{ type: 'spring', damping: 24, stiffness: 220 }}
-                className="relative overflow-hidden px-6 pb-10 pt-9"
+                // p3-dayface：夜间也用日间浅面板 + 深色大字（白描边配深字才好看），强调色照样是夜间浅绿（第 19 批，index.css）
+                className="p3-dayface relative overflow-hidden px-6 pb-10 pt-9"
                 style={{
-                  background: 'linear-gradient(172deg, #ffffff 0%, #f2f9fd 70%, #e8f4fa 100%)',
+                  background: 'var(--p3r-sheet-grad, linear-gradient(172deg, #ffffff 0%, #f2f9fd 70%, #e8f4fa 100%))',
                   clipPath: 'polygon(0 12%, 100% 0, 100% 88%, 0 100%)',
                   boxShadow: '0 22px 60px rgba(10,18,48,0.35)',
                 }}

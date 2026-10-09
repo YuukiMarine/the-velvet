@@ -110,7 +110,7 @@ const MetaBadge = ({ ch, rot = 0, children }: { ch: Chan; rot?: number; children
     return (
       <span
         className="inline-block px-3 py-1 text-[11px] font-black"
-        style={{ background: '#e4f2fa', color: P3R.ink, clipPath: slantClip(6) }}
+        style={{ background: P3R.cyanFaint, color: P3R.ink, clipPath: slantClip(6) }}
       >
         {children}
       </span>

@@ -409,7 +409,7 @@ export const P3Highlight = ({ className, color = 'rgba(255,255,255,0.24)', live 
 export const CodeChip = ({ children, tone = 'grey' }: { children: ReactNode; tone?: 'grey' | 'cyan' }) => (
   <code
     className="px-1.5 py-0.5 font-mono text-[12px] font-bold"
-    style={tone === 'cyan' ? { background: P3R.cyanPale, color: P3R.blueDeep } : { background: '#e6edf3', color: P3R.ink }}
+    style={tone === 'cyan' ? { background: P3R.cyanPale, color: P3R.blueDeep } : { background: 'var(--p3r-chip, #e6edf3)', color: P3R.ink }}
   >
     {children}
   </code>

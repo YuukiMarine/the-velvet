@@ -180,7 +180,9 @@ export function CallingCardEditor({ isOpen, initialCard, onClose }: Props) {
               ? 'p3r-sheet relative flex w-full max-w-lg flex-col overflow-hidden shadow-2xl'
               : 'relative w-full max-w-lg bg-white dark:bg-gray-900 rounded-t-3xl shadow-2xl flex flex-col overflow-hidden'}
             style={p3
-              ? { maxHeight: '90vh', background: 'linear-gradient(178deg, #fbfdff 0%, #f0f8fc 60%, #e6f3fa 100%)', clipPath: sheetTopClip }
+              // 底色走 --p3r-sheet-grad（与 SheetModal 基座同一个变量）：以前写死浅色渐变，夜间标题字翻浅色 = 白底白字（第 19 批）
+              // 字色也给一个（图标里 ◈ ✧ 这类非 emoji 字形靠继承，夜间不给就是深字压深底）
+              ? { maxHeight: '90vh', background: 'var(--p3r-sheet-grad, linear-gradient(178deg, #fbfdff 0%, #f0f8fc 60%, #e6f3fa 100%))', color: 'var(--p3r-ink, #0a1230)', clipPath: sheetTopClip }
               : { maxHeight: '90vh' }}
           >
             {/* Handle（p3：青色斜片把手，与 SheetModal 基座同款） */}

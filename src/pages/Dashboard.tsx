@@ -539,7 +539,7 @@ const p4MoonLit = (phase: number, r: number, c: number) => {
  * p4-onlight：墨字在浅色天空圆上，夜间不许跟全局翻浅（用户 R16 口径）。
  */
 const P4SkyBadge = () => {
-  const { mode, toggle, weather, loading, error, errorKind, ready, attribution } = useSkyBadge();
+  const { mode, toggle, weather, loading, error, errorKind, ready } = useSkyBadge();
   const m = p4MoonOf(new Date());
   const label = mode === 'weather'
     ? (!ready ? '设置天气' : errorKind === 'config' ? '设置有误' : error ? '取不到' : loading ? '取数中' : `${weather?.temp}° ${weather?.text}`)
@@ -566,13 +566,6 @@ const P4SkyBadge = () => {
         {label}
       </span>
     </button>
-    {/* 来源标注：和风 / Open-Meteo 要求显示名字 + 链接（按钮外，点它不会切回月相） */}
-    {attribution && (
-      <a href={attribution.url} target="_blank" rel="noopener noreferrer" data-testid="weather-attribution"
-         className="mt-0.5 pl-1 text-[8.5px] font-bold leading-none text-[#131313]/70">
-        数据：{attribution.label}
-      </a>
-    )}
     </span>
   );
 };
@@ -1115,7 +1108,10 @@ export const Dashboard = () => {
                   onClick={async (e) => {
                     if (!progress.isComplete) spawnTodoRipple(todo.id, e);
                     const result = await completeTodo(todo.id);
-                    const updated = progressOf(todo.id);
+                    // 打完卡要读 store 里的最新进度（与蓝 / 红首页同口径）。progressOf 读的是这次渲染时算好的
+                    // progressById（第 4 轮 V2.7.0.6k 的 useMemo），await 之后还是点之前的旧值——黄 / 自定义主题首页的
+                    // 「今日完成」从那时起就不弹了（第 19 批）
+                    const updated = getTodayTodoProgress(todo.id);
                     if (updated.isComplete) {
                       setCompletedTitle(todo.title);
                       const pts = todo.points + (todo.extraBoosts?.reduce((s, b) => s + b.points, 0) ?? 0);

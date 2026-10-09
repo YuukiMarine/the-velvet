@@ -444,7 +444,7 @@ export const BattleArena = () => {
       <div className="mt-2.5 flex items-center gap-4">
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <span className="text-[11px] font-black" style={{ color: P3R.ink }}>HP</span>
-          <div className="h-[7px] min-w-0 flex-1 overflow-hidden" style={{ background: '#e4eef5', clipPath: 'polygon(3px 0, 100% 0, calc(100% - 3px) 100%, 0 100%)' }}>
+          <div className="h-[7px] min-w-0 flex-1 overflow-hidden" style={{ background: 'var(--p3r-track, #e4eef5)', clipPath: 'polygon(3px 0, 100% 0, calc(100% - 3px) 100%, 0 100%)' }}>
             <div className="h-full" style={{ width: `${Math.max(0, Math.min(100, (p3Hp / Math.max(1, p3HpMax)) * 100))}%`, background: 'linear-gradient(90deg, #35d1e8, #7fd8ee)' }} />
           </div>
         </div>

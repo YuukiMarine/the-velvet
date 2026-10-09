@@ -1453,6 +1453,21 @@ html[data-ios-standalone="true"] {
   border-color: #4a2038 !important;
 }
 
+/* ── 蓝 / 粉 · 夜间也用日间浅面板（第 19 批，用户：夜间「今日完成」白字 + 白描边不好看）──
+   横贯斜带 cut-in（今日完成 / 记录成功 / 记账完成，BandCutInP3）挂 .p3-dayface：
+   底色与正文墨色拉回日间值，--p3r-blue / --p3r-cyan 这些强调色不动——夜间照样是浅绿（粉是夜玫瑰）。
+   粉那条必须排在后面：两条特异度相同，靠源码顺序。 */
+:root.dark[data-ui-channel="p3"] .p3-dayface {
+  --p3r-sheet-grad: linear-gradient(172deg, #ffffff 0%, #f2f9fd 70%, #e8f4fa 100%);
+  --p3r-ink: #0a1230;
+  --p3r-ink-soft: #3d4a66;
+}
+:root.dark[data-theme="pink"] .p3-dayface {
+  --p3r-sheet-grad: linear-gradient(178deg, #fffafc 0%, #fdf1f7 60%, #fbe6f0 100%);
+  --p3r-ink: #2b0a1c;
+  --p3r-ink-soft: #6d4a5c;
+}
+
 /* ── 黄 · 新变量 ── */
 :root.dark[data-ui-channel="p4"] {
   --p4-menu-ink: #a9c6ff;           /* 菜单未高亮字 → 浅蓝（用户点名） */

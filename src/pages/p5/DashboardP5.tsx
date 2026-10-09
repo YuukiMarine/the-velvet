@@ -916,13 +916,6 @@ export const DashboardP5 = () => {
                     </>
                   )}
                 </div>
-                {/* 来源标注：和风 / Open-Meteo 要求显示名字 + 链接 */}
-                {sky.attribution && (
-                  <a href={sky.attribution.url} target="_blank" rel="noopener noreferrer" data-testid="weather-attribution"
-                     className="mt-1 block text-[8.5px] font-bold leading-none" style={{ color: 'rgba(19,19,19,0.62)' }}>
-                    数据：{sky.attribution.label}
-                  </a>
-                )}
                 <div className="mt-1 flex items-end justify-end gap-1.5">
                   <span className="text-[46px] font-black leading-none tabular-nums" style={{ color: P5R.redHot, fontFamily: P5_TITLE_FONT }}>{now.getDate()}</span>
                   <span className="flex flex-col items-center gap-1 pb-1">

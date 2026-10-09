@@ -201,7 +201,7 @@ const SidebarInner = () => {
         p3 || p5 ? '' : 'bg-white dark:bg-gray-900 border-r border-gray-100 dark:border-gray-800 shadow-sm'
       }`}
       style={p3
-        ? { background: 'linear-gradient(175deg, #f8fcff 0%, #eaf5fb 60%, #dfeff8 100%)', borderRight: '1px solid rgba(53,209,232,0.4)', boxShadow: '0 0 24px rgba(38,96,140,0.08)' }
+        ? { background: 'var(--p3r-sheet-grad, linear-gradient(175deg, #f8fcff 0%, #eaf5fb 60%, #dfeff8 100%))', borderRight: '1px solid rgba(53,209,232,0.4)', boxShadow: '0 0 24px rgba(38,96,140,0.08)' }
         : p5
           ? { background: '#050505', borderRight: '2px solid rgba(240,233,223,0.35)' }
           : undefined}

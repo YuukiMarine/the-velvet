@@ -735,15 +735,16 @@ export const NavigatorWindow = () => {
             {isP4 && (
               <div aria-hidden className="pointer-events-none absolute inset-0 select-none overflow-hidden">
                 {/* 色值走 --p4dec 三元组（R16 口径）：夜间紫舞台上整套装饰随全站翻紫罗兰系，
-                    不然橙环压深紫格外突兀；浅色 fallback 即原字面量，日间零变化 */}
+                    不然橙环压深紫格外突兀；浅色 fallback 即原字面量，日间零变化。
+                    第 19 批：用户觉得弧环和大花太抢，两样的不透明度整体降约三分之一（星闪不动） */}
                 <P4ArcRings
                   size={620}
                   className="absolute"
                   style={{ right: '-34vw', top: '-26vh' }}
                   rings={[
-                    [0.34, 40, 'rgba(var(--p4dec-orange, 249,161,27), 0.22)'],
-                    [0.58, 30, 'rgba(var(--p4dec-yellow, 255,200,60), 0.22)'],
-                    [0.80, 22, 'rgba(var(--p4dec-orange, 249,161,27), 0.14)'],
+                    [0.34, 40, 'rgba(var(--p4dec-orange, 249,161,27), 0.15)'],
+                    [0.58, 30, 'rgba(var(--p4dec-yellow, 255,200,60), 0.15)'],
+                    [0.80, 22, 'rgba(var(--p4dec-orange, 249,161,27), 0.09)'],
                   ]}
                 />
                 <P4ArcRings
@@ -751,12 +752,12 @@ export const NavigatorWindow = () => {
                   className="absolute"
                   style={{ left: '-30vw', bottom: '-20vh' }}
                   rings={[
-                    [0.44, 30, 'rgba(var(--p4dec-orange, 249,161,27), 0.15)'],
-                    [0.72, 20, 'rgba(var(--p4dec-gold, 255,214,90), 0.18)'],
+                    [0.44, 30, 'rgba(var(--p4dec-orange, 249,161,27), 0.10)'],
+                    [0.72, 20, 'rgba(var(--p4dec-gold, 255,214,90), 0.12)'],
                   ]}
                 />
-                <P4Flower size={240} color="rgba(var(--p4dec-cream, 255,248,214), 0.36)" className="absolute" style={{ left: '-70px', top: '26%' }} />
-                <P4Flower size={150} color="rgba(var(--p4dec-cream, 255,248,214), 0.28)" className="absolute" style={{ right: '-28px', bottom: '22%' }} />
+                <P4Flower size={240} color="rgba(var(--p4dec-cream, 255,248,214), 0.24)" className="absolute" style={{ left: '-70px', top: '26%' }} />
+                <P4Flower size={150} color="rgba(var(--p4dec-cream, 255,248,214), 0.18)" className="absolute" style={{ right: '-28px', bottom: '22%' }} />
                 <P4Sparkle size={26} color="rgba(255,255,255,0.5)" className="absolute" style={{ left: '14%', top: '13%' }} />
                 <P4Sparkle size={18} color="rgba(46,107,224,0.3)" className="absolute" style={{ right: '16%', top: '34%' }} />
                 <P4Sparkle size={22} color="rgba(var(--p4dec-orange, 249,161,27), 0.4)" className="absolute" style={{ left: '10%', bottom: '18%' }} />

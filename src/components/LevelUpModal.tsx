@@ -65,7 +65,8 @@ const LevelUpP3 = ({ attributeName, newLevel, isOpen, onClose, masteryStars }: L
             onClick={(e) => e.stopPropagation()}
             className="relative w-full max-w-sm overflow-hidden pb-9 pt-7 shadow-2xl"
             style={{
-              background: 'linear-gradient(170deg, #eef7fc 0%, #dff0f9 55%, #cfeaf6 100%)',
+              // 底色走 --p3r-sheet-grad：以前写死浅色，夜间浅绿强调字压在浅底上看不清（第 19 批）
+              background: 'var(--p3r-sheet-grad, linear-gradient(170deg, #eef7fc 0%, #dff0f9 55%, #cfeaf6 100%))',
               clipPath: 'polygon(18px 0, 100% 0, calc(100% - 18px) 100%, 0 100%)',
             }}
           >
@@ -131,7 +132,7 @@ const LevelUpP3 = ({ attributeName, newLevel, isOpen, onClose, masteryStars }: L
               <div className="relative mt-1 w-[84%]">
                 <motion.div
                   className="px-5 pb-2.5 pt-3 text-center"
-                  style={{ background: 'rgba(255,255,255,0.94)', clipPath: 'polygon(3% 14%, 100% 0, 97% 100%, 0 92%)', boxShadow: '0 12px 30px rgba(38,96,140,0.18)' }}
+                  style={{ background: 'var(--p3r-panel-glass, rgba(255,255,255,0.94))', clipPath: 'polygon(3% 14%, 100% 0, 97% 100%, 0 92%)', boxShadow: '0 12px 30px rgba(38,96,140,0.18)' }}
                   initial={anim ? { y: -18, opacity: 0 } : false}
                   animate={{ y: 0, opacity: 1 }}
                   transition={{ type: 'spring', stiffness: 420, damping: 26, delay: 0.2 }}
@@ -162,7 +163,7 @@ const LevelUpP3 = ({ attributeName, newLevel, isOpen, onClose, masteryStars }: L
 
               {/* Lv.N-1 → Lv.N */}
               <div className="mt-5 flex items-end justify-center gap-3">
-                <span className="text-[20px] font-black italic leading-none" style={{ color: 'rgba(27,87,255,0.55)' }}>{isMastery ? `★${stars - 1}` : `Lv.${newLevel - 1}`}</span>
+                <span className="text-[20px] font-black italic leading-none" style={{ color: 'var(--p3r-ink-soft, rgba(27,87,255,0.55))' }}>{isMastery ? `★${stars - 1}` : `Lv.${newLevel - 1}`}</span>
                 <span aria-hidden className="pb-0.5 text-[18px] font-black" style={{ color: 'var(--p3r-blue, #1b57ff)' }}>→</span>
                 <span className="relative text-[34px] font-black italic leading-none" style={{ color: 'var(--p3r-blue, #1b57ff)' }}>
                   {isMastery ? `★${stars}` : `Lv.${newLevel}`}

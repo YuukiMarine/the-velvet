@@ -323,7 +323,8 @@ export function PersonaCreateModal({ isOpen, onClose }: Props) {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               className="fixed inset-0 z-50 overflow-y-auto overscroll-contain"
-              style={{ background: 'linear-gradient(160deg, #f2f9fd 0%, #e2f0f9 55%, #cfe9f6 100%)' }}
+              // 底色走 --p3nav-root（夜间深蓝 / 粉皮换粉）：以前写死浅蓝，夜间「觉醒协议」等大字翻浅色 = 白底白字（第 19 批）
+              style={{ background: 'var(--p3nav-root, linear-gradient(160deg, #f2f9fd 0%, #e2f0f9 55%, #cfe9f6 100%))' }}
             >
               {/* 幽灵字：05 巨数字 + AWAKEN */}
               <div aria-hidden className="pointer-events-none absolute -left-3 -top-6 select-none font-black italic leading-none" style={{ fontFamily: 'Arial, sans-serif', fontSize: '9.5rem', color: 'rgba(27,87,255,0.10)' }}>05</div>

@@ -279,7 +279,8 @@ export const WeeklyGoalSection = ({
                 className={p3
                   ? 'w-full max-w-lg space-y-2.5 p-5 pb-6'
                   : 'bg-white dark:bg-gray-900 rounded-t-2xl w-full max-w-lg p-5 space-y-2'}
-                style={p3 ? { background: 'linear-gradient(178deg, #fbfdff 0%, #eef7fc 100%)', clipPath: sheetTopClip } : undefined}
+                // 底色走 --p3r-sheet-grad：写死浅色时夜间「本周目标」标题是白底白字（第 19 批）
+                style={p3 ? { background: 'var(--p3r-sheet-grad, linear-gradient(178deg, #fbfdff 0%, #eef7fc 100%))', clipPath: sheetTopClip } : undefined}
                 onClick={e => e.stopPropagation()}
               >
                 <p className={p3 ? 'mb-3 text-[18px] font-black italic' : 'text-sm font-bold text-gray-800 dark:text-white mb-3'} style={p3 ? { color: 'var(--p3r-ink, #0a1230)' } : undefined}>
