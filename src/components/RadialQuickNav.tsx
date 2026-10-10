@@ -11,7 +11,7 @@
  *
  * D0（useBoldness=false）：长按改弹普通垂直菜单（点选跳转、无手势联动、无演出）。
  * 图标暂用 emoji 占位，P9 频道批次换 PersonaIcon（guide §11）。
- * 仅移动端（BottomNav md:hidden 天然限定）；桌面侧栏本就全量入口。
+ * 仅移动端（BottomNav wide:hidden 天然限定）；桌面侧栏本就全量入口。
  */
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';

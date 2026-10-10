@@ -633,7 +633,7 @@ export const TodosView = () => {
         getWeeklyGoalProgress={getWeeklyGoalProgress}
       />
 
-      <div className={isP4 ? 'grid grid-cols-1 lg:grid-cols-2 gap-6' : p3 ? 'relative mt-8 space-y-10' : 'grid grid-cols-1 lg:grid-cols-2 gap-4'}>
+      <div className={isP4 ? 'grid grid-cols-1 wide-lg:grid-cols-2 gap-6' : p3 ? 'relative mt-8 space-y-10' : 'grid grid-cols-1 wide-lg:grid-cols-2 gap-4'}>
         {p3 && <GhostWords words={['PLAN']} className="left-[6px] top-[36%] text-[84px]" />}
         {/* 今日任务：P4 = 无卡壳，衬线区题直压黄底 + 黑胶囊计数（p4-actions-reference-v2）；p3 = 水面底大斜体节题 */}
         <div className={isP4 ? '' : p3 ? 'relative' : p5 ? 'relative' : 'rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden'}>
@@ -1082,7 +1082,7 @@ export const TodosView = () => {
           子页切换时两枚 FAB 静止视觉完全一致、不跳变 */}
       {p3 ? (
         /* P3R：右下蓝色斜切「接入」（设计稿 CTA 形态） */
-        <div className="fixed bottom-24 right-5 z-40 md:bottom-8 md:right-8">
+        <div className="fixed bottom-24 right-5 z-40 wide:bottom-8 wide:right-8">
           <SlantButton
             tone="primary"
             ariaLabel={isWishPane ? '添加愿望' : '添加任务'}
@@ -1111,7 +1111,7 @@ export const TodosView = () => {
             setShowAdd(true);
           }}
           aria-label={isWishPane ? '添加愿望' : '添加任务'}
-          className={`fixed bottom-24 right-5 md:bottom-8 md:right-8 z-40 flex items-center justify-center cursor-pointer ${
+          className={`fixed bottom-24 right-5 wide:bottom-8 wide:right-8 z-40 flex items-center justify-center cursor-pointer ${
             isP4
               ? 'h-16 w-16 text-white' // p4-redraw：蓝色四角星 FAB（星形本体当按钮面）
               : p5

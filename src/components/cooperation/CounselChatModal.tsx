@@ -274,14 +274,14 @@ export function CounselChatModal({ isOpen, onClose, initialMentionId }: Props) {
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, y: 10, scale: 0.98 }}
         transition={{ type: 'spring', damping: 24, stiffness: 280 }}
-        className="pointer-events-none fixed inset-0 z-[201] flex items-center justify-center p-0 md:p-4"
+        className="pointer-events-none fixed inset-0 z-[201] flex items-center justify-center p-0 wide:p-4"
       >
         <div
           role="dialog"
           aria-modal="true"
           aria-label="谏言"
           data-counsel={ch}
-          className={`pointer-events-auto relative flex h-full w-full flex-col overflow-hidden shadow-2xl md:h-[88vh] md:max-w-lg md:rounded-3xl ${sk.root}`}
+          className={`pointer-events-auto relative flex h-full w-full flex-col overflow-hidden shadow-2xl wide:h-[88vh] wide:max-w-lg wide:rounded-3xl ${sk.root}`}
           style={sk.rootStyle}
           onClick={(e) => e.stopPropagation()}
         >
@@ -294,7 +294,7 @@ export function CounselChatModal({ isOpen, onClose, initialMentionId }: Props) {
           )}
 
           {/* 信头 */}
-          <div className="relative px-3 pt-[calc(0.75rem+env(safe-area-inset-top))] md:pt-3">
+          <div className="relative px-3 pt-[calc(0.75rem+env(safe-area-inset-top))] wide:pt-3">
             <div className={`flex items-center gap-3 px-4 py-3 ${sk.header}`} style={sk.headerStyle}>
               <button type="button" onClick={requestExit} disabled={archiving} aria-label="关闭" className={`flex h-8 w-8 shrink-0 items-center justify-center text-lg font-black opacity-70 transition hover:opacity-100 disabled:opacity-30 ${sk.icon}`} style={{ color: sk.titleStyle?.color }}>←</button>
               <div className="min-w-0 flex-1">

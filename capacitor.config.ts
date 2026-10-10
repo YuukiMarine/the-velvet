@@ -7,6 +7,13 @@ const config: CapacitorConfig = {
   server: {
     androidScheme: 'https'
   },
+  ios: {
+    /**
+     * iPad 上 WKWebView 默认按「桌面版网站」渲染（UA 报成 Mac、viewport 的缩放锁可能不生效、能双指缩放），
+     * 强制移动版：和 iPhone 同一套行为，宽屏布局 / 手机布局铺满都靠 viewport 才算得准（第 20 批）。
+     */
+    preferredContentMode: 'mobile',
+  },
   plugins: {
     LocalNotifications: {
       /**

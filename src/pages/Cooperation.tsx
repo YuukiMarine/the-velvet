@@ -929,7 +929,7 @@ export function Cooperation() {
         <motion.button
           whileTap={{ scale: 0.95 }}
           onClick={() => setCreateOpen(true)}
-          className={`fixed bottom-24 md:bottom-8 right-5 md:right-8 z-40 flex items-center justify-center text-white ${
+          className={`fixed bottom-24 wide:bottom-8 right-5 wide:right-8 z-40 flex items-center justify-center text-white ${
             isP4
               ? 'h-16 w-16 text-2xl font-bold'
               : p5

@@ -1102,7 +1102,7 @@ export const Menu = () => {
               又不会掉到 App 根的黄底后面。 */}
           <div
             aria-hidden
-            className="pointer-events-none absolute left-[-1rem] right-[-4rem] md:left-[-2rem] md:right-[-5rem]"
+            className="pointer-events-none absolute left-[-1rem] right-[-4rem] wide:left-[-2rem] wide:right-[-5rem]"
             style={{
               // 上/右多留一截：楔顺时针转 15° 后右上会甩空。位置沿用用户已认可的档位，
               // 右上缺口只靠把楔的两条左边拉长补（48%/46%，见 clipPath）——改 top/height

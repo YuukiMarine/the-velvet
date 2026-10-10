@@ -1,3 +1,5 @@
+import plugin from 'tailwindcss/plugin';
+
 /** @type {import('tailwindcss').Config} */
 export default {
   content: [
@@ -34,5 +36,13 @@ export default {
       },
     },
   },
-  plugins: [],
+  plugins: [
+    // 宽屏布局（左侧栏）只在 <html class="layout-wide"> 时生效（第 20 批 · iPad，src/ui/layoutMode.ts）：
+    // iPad / 宽横屏可以在设置里关掉左侧栏，关掉后不管多宽都是手机布局。
+    // 换布局的样式一律写 wide: / wide-lg:，别再写 md: / lg:——那样手机布局在宽窗口里会半截变成桌面样式。
+    plugin(({ addVariant }) => {
+      addVariant('wide', '@media (min-width: 768px) { :root.layout-wide & }');
+      addVariant('wide-lg', '@media (min-width: 1024px) { :root.layout-wide & }');
+    }),
+  ],
 }

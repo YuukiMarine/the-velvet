@@ -1607,7 +1607,7 @@ export const ActivitiesView = () => {
             aria-label={isPastDaySelected ? '补录历史记录' : '添加记录'}
             // 制式统一（rounded-2xl → rounded-full）：与任务子页 FAB 同款圆形 bg-primary，
             // 子页切换时 FAB 静止视觉不跳变；双态（+/补记）行为与位置保持原样
-            className={`fixed bottom-24 right-5 md:bottom-8 md:right-8 flex items-center justify-center z-40 cursor-pointer transition-colors ${
+            className={`fixed bottom-24 right-5 wide:bottom-8 wide:right-8 flex items-center justify-center z-40 cursor-pointer transition-colors ${
               isP4 && !isPastDaySelected
                 ? 'h-16 w-16 text-white' // p4-redraw：蓝色四角星 FAB（与任务子页一致）
                 : p5
@@ -2006,7 +2006,7 @@ export const ActivitiesView = () => {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed bottom-20 md:bottom-4 left-0 right-0 flex justify-center pointer-events-none z-30"
+            className="fixed bottom-20 wide:bottom-4 left-0 right-0 flex justify-center pointer-events-none z-30"
           >
             <div className="relative flex items-center justify-center">
               {[0, 1, 2].map(i => (

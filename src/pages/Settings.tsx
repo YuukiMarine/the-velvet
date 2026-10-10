@@ -1,6 +1,6 @@
 import { motion, AnimatePresence } from 'motion/react';
 import { ModalPortal } from '@/components/ModalPortal';
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useSyncExternalStore } from 'react';
 import { useAppStore, DEFAULT_SUMMARY_PROMPT_PRESETS, FAMILIAR_FACE_PRESETS, toLocalDateKey, applyCustomThemeColor } from '@/store';
 import { useShallow } from 'zustand/react/shallow';
 import { triggerThemeSwitchFeedback, playSound } from '@/utils/feedback';
@@ -24,6 +24,7 @@ import NotificationSettings from '@/components/NotificationSettings';
 import { NavigatorSettings } from '@/components/navigator/NavigatorSettings';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { useUiChannel } from '@/ui/useUiChannel';
+import { getLayoutModeVersion, setSidebarEnabled, sidebarEnabled, sidebarSettingVisible, subscribeLayoutMode } from '@/ui/layoutMode';
 import { useBoldness } from '@/utils/boldness';
 import { P3R, P3RPage, GhostWords, P3PageHeader } from '@/components/p3r/kit';
 import { P5R, P5_TITLE_FONT, roughQuad, P5Collage, P5Rough, P5Star, P5RPage, P5AttrGlyph, P5Btn } from '@/components/p5r/kit';
@@ -530,6 +531,10 @@ export const Settings = () => {
     setTheme,
     loadData
   } = useAppStore(useShallow(s => ({ user: s.user, settings: s.settings, updateSettings: s.updateSettings, setTheme: s.setTheme, loadData: s.loadData })));
+  // 左侧栏布局（第 20 批 · iPad）：转屏 / 拖窗口 / 切换时版本号变，重读下面两个值
+  useSyncExternalStore(subscribeLayoutMode, getLayoutModeVersion);
+  const sidebarOn = sidebarEnabled();
+  const showSidebarSetting = sidebarSettingVisible();
   const isP4 = useUiChannel() === 'p4';
   const achievements = useAppStore(s => s.achievements);
   const skills = useAppStore(s => s.skills);
@@ -1246,6 +1251,19 @@ export const Settings = () => {
                       )}
                       <h4 className="text-sm font-bold text-gray-800 dark:text-white tracking-wide">显示</h4>
                     </div>
+
+                    {/* 左侧栏布局（第 20 批 · iPad）：只在 iPad 或宽横屏窗口出现；偏好只存这台设备 */}
+                    {showSidebarSetting && (
+                      <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                        <div className="min-w-0 pr-3">
+                          <h4 className="font-medium text-gray-800 dark:text-white">左侧栏布局</h4>
+                          <p className="text-sm text-gray-600 dark:text-gray-400">
+                            {sidebarOn ? '宽屏时导航在左边一列；只影响这台设备' : '改用手机布局（底部导航），平板上按屏幕放大铺满'}
+                          </p>
+                        </div>
+                        <Toggle checked={sidebarOn} onChange={(v) => setSidebarEnabled(v)} aria-label="左侧栏布局" />
+                      </div>
+                    )}
 
                     {/* 背景动画 — 多选 toggle（p3：一行四个斜切预览块 + 块下标签，p3-settings 设计稿） */}
                     {!settings.backgroundImage && (

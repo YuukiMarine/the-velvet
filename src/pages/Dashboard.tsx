@@ -878,7 +878,7 @@ export const Dashboard = () => {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className={`relative mx-auto max-w-2xl md:max-w-none ${isP4 ? 'space-y-3.5' : 'space-y-5'}`}
+      className={`relative mx-auto max-w-2xl wide:max-w-none ${isP4 ? 'space-y-3.5' : 'space-y-5'}`}
     >
       {/* 斜界引力线（问候卡 → 今日任务的"先竖后斜"动线）已随 FS2.2 下架：
           这个分支现在只服务 custom 主题，用户口径是那条线"莫名其妙"——
@@ -1026,7 +1026,7 @@ export const Dashboard = () => {
       <BigDealPanel todoId={dealPanelId} onClose={() => setDealPanelId(null)} />
 
       {/* 今日任务 ×「今日仪式」：竖屏上下排（并排时两栏都太挤，用户口径），宽屏才回双列 */}
-      <div className={isP4 ? 'grid grid-cols-1 items-stretch gap-3 md:grid-cols-2' : 'space-y-5'}>
+      <div className={isP4 ? 'grid grid-cols-1 items-stretch gap-3 wide:grid-cols-2' : 'space-y-5'}>
       <div
         className={
           isP4

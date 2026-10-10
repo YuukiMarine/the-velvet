@@ -9,6 +9,24 @@
          Safari 标签页里 iOS 会出于无障碍忽略 user-scalable，所以 main.tsx 里还有一道
          gesture 事件闸做兜底，两边合起来才拦得住。 -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <!-- 宽屏布局（第 20 批 · iPad）：首帧前定好左侧栏 class 与「手机布局铺满」的 viewport，免得启动先闪一下侧栏。
+         口径与 src/ui/layoutMode.ts 一致，改一处要改两处；ES5 写法（老 WebView 也要能跑）。 -->
+    <script>
+      (function () {
+        try {
+          var d = document.documentElement, pref = null;
+          try { pref = localStorage.getItem('velvet:sidebarLayout.v1'); } catch (e) {}
+          var ipad = /iPad/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+          var wide = pref === 'on' ? true : pref === 'off' ? false : !ipad;
+          if (wide) { d.classList.add('layout-wide'); return; }
+          var w = window.innerWidth;
+          if (!(navigator.maxTouchPoints > 0) || w <= 640) return;
+          var s = Math.min(1.6, Math.max(1.25, w / 768));
+          var m = document.querySelector('meta[name="viewport"]');
+          if (m) m.content = 'width=' + Math.round(w / s) + ', user-scalable=no, viewport-fit=cover';
+        } catch (e) { document.documentElement.classList.add('layout-wide'); }
+      })();
+    </script>
 
     <!-- SEO 基础标签 -->
     <title>靛蓝色房间 - 个人成长追踪器</title>

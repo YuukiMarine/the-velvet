@@ -65,7 +65,7 @@ export const SyncStatusBadge = () => {
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, y: 6, scale: 0.95 }}
         transition={{ type: 'spring', stiffness: 320, damping: 22 }}
-        className="fixed bottom-24 md:bottom-6 right-4 z-[80] pointer-events-none"
+        className="fixed bottom-24 wide:bottom-6 right-4 z-[80] pointer-events-none"
       >
         <div
           className="px-4 py-2.5 rounded-full flex items-center gap-2.5 text-sm font-medium text-white shadow-xl backdrop-blur-sm"

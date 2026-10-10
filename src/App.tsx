@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useState, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
+import { useEffect, useLayoutEffect, useState, useRef, useCallback, useMemo, useSyncExternalStore, lazy, Suspense } from 'react';
 import type { ReactNode } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useAppStore, toLocalDateKey } from '@/store';
@@ -30,6 +30,7 @@ const DashboardP3 = lazy(() => import('@/pages/p3/DashboardP3').then(m => ({ def
 const DashboardP5 = lazy(() => import('@/pages/p5/DashboardP5').then(m => ({ default: m.DashboardP5 })));
 import { useUiChannel } from '@/ui/useUiChannel';
 import { syncDarkClass, themeToChannel } from '@/ui/channel';
+import { getLayoutModeVersion, isPhoneLayout, subscribeLayoutMode } from '@/ui/layoutMode';
 const Achievements = lazy(() => import('@/pages/Achievements').then(m => ({ default: m.Achievements })));
 const Statistics = lazy(() => import('@/pages/Statistics').then(m => ({ default: m.Statistics })));
 const Settings = lazy(() => import('@/pages/Settings').then(m => ({ default: m.Settings })));
@@ -591,6 +592,8 @@ function App() {
   //   · "上下白边" = HTML/Body 自身的 background-color（属于内容缩放范围内的部分）
   //   · index.css 里 html/body 的 bg-color 是写死的 #f9fafb / #111827，不会跟自定义主题色变
   //   · 所以这里用 JS 在运行时动态覆盖，让上下也响应主题
+  // 左侧栏开关 / 转屏会改「是不是手机布局」，下面的安全区着色要跟着重算（第 20 批）
+  const layoutVersion = useSyncExternalStore(subscribeLayoutMode, getLayoutModeVersion);
   useEffect(() => {
     let color = settings.darkMode ? '#111827' : '#f9fafb';
     if (user?.theme === 'custom' && settings.customThemeColor) {
@@ -603,7 +606,7 @@ function App() {
     // iOS standalone + 移动端：html/body 是系统安全区（状态栏/Home Bar）的着色来源，
     // 用中性面色而非主题色，避免顶/底被主题色染出「彩条」——用户真机手改口径
   const isStandalone = isStandalonePwa();
-    const isMobile = window.matchMedia('(max-width: 767px)').matches;
+    const isMobile = isPhoneLayout(); // 手机布局：窗口窄，或宽屏但关了左侧栏（第 20 批，原来是 max-width: 767px）
     const systemAreaColor = isStandalone && isMobile
       ? (settings.darkMode ? '#111827' : '#ffffff')
       : color;
@@ -611,7 +614,7 @@ function App() {
     if (meta) meta.content = color;
     document.documentElement.style.backgroundColor = systemAreaColor;
     document.body.style.backgroundColor = systemAreaColor;
-  }, [settings.darkMode, settings.customThemeColor, user?.theme]);
+  }, [settings.darkMode, settings.customThemeColor, user?.theme, layoutVersion]);
 
   // 在首次用户交互时预加载当前主题音效，之后所有点击都是零延迟播放
   useEffect(() => {
@@ -921,12 +924,12 @@ function App() {
                 //   - 桌面 / Android：env() 为 0，退化为 1rem（=原 p-4 行为）
                 //   - iOS PWA / viewport-fit=cover：自动加上状态栏 / Dynamic Island 的高度，
                 //     防止页面标题钻到"12:25 信号 电池"这条原生 UI 下面。
-                //   - 桌面断点（md+）用 Tailwind 的 md:pt-8 覆盖为 2rem，安全区为 0 时无副作用。
+                //   - 左侧栏布局（宽屏且没关侧栏，wide: 变体）用 wide:pt-8 覆盖为 2rem，安全区为 0 时无副作用。
                 // 底部 padding 精确匹配 BottomNav 高度（4rem 图标区 + home-indicator 安全区），
                 // 避免 iPhone home bar 设备上出现多余的灰色空白条。
                 // --bottom-nav-overhang 是 BottomNav 运行时实测写入的错位补偿：常规平台恒为
                 // 0px（此式与改动前逐像素相同），只有 iOS PWA 的 100vh/内缩视口错位才 > 0。
-                className="md:ml-60 px-4 md:px-8 pt-[calc(1rem+env(safe-area-inset-top))] md:pt-8 pb-[calc(4rem+var(--app-bottom-safe-padding,env(safe-area-inset-bottom,0px))+var(--bottom-nav-overhang,0px)+0.5rem)] md:pb-8"
+                className="wide:ml-60 px-4 wide:px-8 pt-[calc(1rem+env(safe-area-inset-top))] wide:pt-8 pb-[calc(4rem+var(--app-bottom-safe-padding,env(safe-area-inset-bottom,0px))+var(--bottom-nav-overhang,0px)+0.5rem)] wide:pb-8"
                 // 横向兜底：页面的出血装饰（P5 的红斜块、P4 的头图 bleed）用负偏移探出屏缘，
                 // 这些绝对定位层会把 shell 的 scrollWidth 撑大，用户就能把整页往左划出 70~90px 空白。
                 // overflow-x:clip 只裁不滚——不建立滚动容器，不影响 sticky，也不影响页内自己的横滑组件。
@@ -1230,7 +1233,7 @@ const PageShell = ({ leaving, coveredByWipe, stageBg, stageDecor, onRevealed, ch
    * 离场冻结几何（v2.7.0.3 三稿）：离场瞬间量下壳的视口 rect（top/left/width），
    * fixed 壳就钉在这个几何上——像素级复刻用户离开时看到的画面。
    * 此前二稿用 fixed inset-x-0 top-0 + 内层 -frozenTop 位移：inset-x-0 是**视口**全宽，
-   * 而壳原本活在 main 的 px-4 / safe-area padding / md:ml-60 内容盒里——转场瞬间旧页
+   * 而壳原本活在 main 的 px-4 / safe-area padding / wide:ml-60 内容盒里——转场瞬间旧页
    * 变宽上移、内容重排，观感就是「切换时莫名其妙的缩放」（用户上报）。量 rect 发生在
    * 滚动复位之前（离场页 layout effect 树序先于新页，见下方注释），量到的正是离开
    * 瞬间的几何，frozenTop/内层位移机制随之整体退役。

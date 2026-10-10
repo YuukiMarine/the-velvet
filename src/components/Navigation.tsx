@@ -103,7 +103,7 @@ const navItems = [
   { id: 'menu', label: '菜单', Icon: MenuGridIcon },
 ];
 
-// 侧栏专属项（横屏 md+ 才有侧栏；底导保持四格不动）：记账，插在「菜单」上方。
+// 侧栏专属项（宽屏且开着左侧栏才有侧栏，见 ui/layoutMode；底导保持四格不动）：记账，插在「菜单」上方。
 // 受 F5 记账总开关控制——关了记账的用户侧栏不该再挂死入口。
 const sidebarLedgerItem = { id: 'ledger', label: '记账', Icon: LedgerCoinIcon };
 
@@ -197,7 +197,7 @@ const SidebarInner = () => {
       animate={{ x: 0 }}
       transition={{ type: 'spring', stiffness: 300, damping: 30 }}
       // zClass.nav：p3 页面壳带 fixed 全屏水面底（绘制序在侧栏后），无 z 的侧栏会被整条盖住（横屏上报根因）
-      className={`hidden md:flex md:flex-col md:w-60 h-screen fixed left-0 top-0 ${zClass.nav} ${
+      className={`hidden wide:flex wide:flex-col wide:w-60 h-screen fixed left-0 top-0 ${zClass.nav} ${
         p3 || p5 ? '' : 'bg-white dark:bg-gray-900 border-r border-gray-100 dark:border-gray-800 shadow-sm'
       }`}
       style={p3
@@ -399,7 +399,7 @@ const useNavOverhangProbe = (ref: React.RefObject<HTMLElement>) => {
       if (idle) { clearTimeout(idle); idle = 0; }
       const el = ref.current;
       const root = document.getElementById('root');
-      // md 断点下底导是 display:none（md:hidden），rect 全 0 —— 那时侧栏当家，不补偿
+      // 左侧栏布局下底导是 display:none（wide:hidden），rect 全 0 —— 那时侧栏当家，不补偿
       if (!el || !root || el.getBoundingClientRect().height === 0) return write(0);
       const gap = root.getBoundingClientRect().bottom - el.getBoundingClientRect().bottom;
       // 只补正向错位；入场动画期间 nav 还在下方（gap 为负）也落到 0，动画结束后再量一次
@@ -559,7 +559,7 @@ const BottomNavInner = () => {
       //
       // 图标区和 Home Indicator safe-area 分层渲染；iOS standalone 下 safe 层由 CSS 置 0，
       // 避免系统已避让后再叠一层底部空白（iOS 26 bottom chin gap，用户真机手改口径）。
-      className={`md:hidden fixed bottom-0 left-0 right-0 ${zClass.nav} flex flex-col ${
+      className={`wide:hidden fixed bottom-0 left-0 right-0 ${zClass.nav} flex flex-col ${
         isP4
           ? 'bg-transparent px-1' // p4-redraw：瓷砖直接坐在黄底上，缝隙露出舞台色
           : p5

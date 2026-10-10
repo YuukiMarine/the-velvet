@@ -1341,7 +1341,7 @@ const AchievementsTab = () => {
       </div>
 
       {/* Achievement cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 wide:grid-cols-2 wide-lg:grid-cols-3 gap-3">
         {/* ── Attribute level grouped cards ── */}
         {attrGroupKeys.map(attr => {
           const group = attrGroups[attr];

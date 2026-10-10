@@ -155,7 +155,7 @@ export const BrandTitleReveal = ({ darkMode }: BrandTitleRevealProps) => {
   );
 
   return (
-    <div ref={rootRef} className="md:hidden select-none px-1">
+    <div ref={rootRef} className="wide:hidden select-none px-1">
       <style>{`
         @keyframes vr-flow {
           0%   { background-position: 0% 50%; }
