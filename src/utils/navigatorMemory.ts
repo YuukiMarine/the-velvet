@@ -13,10 +13,11 @@
  */
 import { v4 as uuidv4 } from 'uuid';
 import { db } from '@/db';
+import { memoryIsolated, memoVisibleTo, memoOwner } from '@/utils/navigatorMemoryScope';
 import { useAppStore, toLocalDateKey } from '@/store';
 import { chatComplete, getAIConfig, type AIConfig, type AIMessage } from '@/utils/aiClient';
-import { resolveNavigatorPreset } from '@/constants/navigatorPresets';
-import { calendarTable, dayLabelCN, keyOfDate, shortMD } from '@/utils/navigatorClock';
+import { BUILTIN_NAVIGATOR_PRESETS, resolveNavigatorPreset } from '@/constants/navigatorPresets';
+import { calendarTable, dayLabelCN, keyOfDate, relativeDayCN, shortMD } from '@/utils/navigatorClock';
 import { followUpCoveredByPromise, isPromise, mentionsTopic, promisePhase, savePromisesFromCompact } from '@/utils/navigatorPromise';
 import type { NavigatorMemo, NavigatorMessageRow, NavigatorPreset } from '@/types';
 
@@ -61,18 +62,31 @@ interface CompactResult {
 
 const PROFILE_ID = 'navigator-user-profile';
 
-export async function getProfile(): Promise<string> {
+// ── 记忆隔离（第 23 批）：判定在 navigatorMemoryScope；开了之后按人格分，没标人格的是共享 ──
+export { memoryIsolated, memoVisibleTo, memoOwner } from '@/utils/navigatorMemoryScope';
+
+const profileIdFor = (presetId: string | undefined): string => (memoryIsolated() && presetId ? `${PROFILE_ID}:${presetId}` : PROFILE_ID);
+
+/** 用户画像：隔离时先取这个人格自己的，没有就退回共享的那份（老画像大家都读得到） */
+export async function getProfile(presetId?: string): Promise<string> {
   try {
-    const row = await db.navigatorMemos.get(PROFILE_ID);
-    return row?.status === 'active' ? row.text : '';
+    const own = await db.navigatorMemos.get(profileIdFor(presetId));
+    if (own?.status === 'active' && own.text) return own.text;
+    if (profileIdFor(presetId) !== PROFILE_ID) {
+      const shared = await db.navigatorMemos.get(PROFILE_ID);
+      return shared?.status === 'active' ? shared.text : '';
+    }
+    return own?.status === 'active' ? own.text : '';
   } catch { return ''; }
 }
 
-export async function saveProfile(text: string): Promise<void> {
+export async function saveProfile(text: string, presetId?: string): Promise<void> {
   const t = text.trim().slice(0, 400);
+  const id = profileIdFor(presetId);
   await db.navigatorMemos.put({
-    id: PROFILE_ID, source: 'profile', text: t, importance: 5, pinned: true,
+    id, source: 'profile', text: t, importance: 5, pinned: true,
     status: t ? 'active' : 'archived', createdAt: new Date(),
+    ...(id !== PROFILE_ID ? { presetId } : {}),
   });
 }
 
@@ -96,6 +110,7 @@ const COMPACT_PROTOCOL = `你是对话归档器。把给定的「用户与陪伴
 - personaSummary：同样内容，改用陪伴 AI 的第一人称口吻复述，≤100 字。
 - memories：0~2 条值得长期记住的**关于用户的**原子事实（各 ≤40 字，中性陈述句），
   每条 {"text":"","importance":1..5,"colorHint":"提起时的情绪，可空"}。
+  **主语必须是用户**：陪伴 AI 自己说过的话、答应的事、它的心情一概不收（那是它的事，不是用户的事实）。
   只收会影响未来相处的事（在准备的考试/长期困扰/重要偏好/关系变化）；日常流水不收。
   **不收操作痕迹**：对话里 [卡片·…] 这类行是工具调用留下的操作记录，不是关于用户的事实。
   「用户有一条 xxx 的记录」「用户记了一笔 xx 元」「用户加了个待办」一律不要写进 memories——
@@ -127,10 +142,10 @@ async function compactViaAI(
       { role: 'user', content: `这段对话发生在 ${dayLabelCN(dateKey)}（${dateKey}）。\n【日历】\n${calendarTable(dateKey, 21)}\n陪伴 AI 的名字：${personaName}\n【现有用户画像】${oldProfile || '（暂无）'}\n【对话片段】\n${lines.join('\n')}` },
     ];
     try {
-      raw = await chatComplete(cfg, messages, { temperature: 0.3, maxTokens: 900, jsonMode: true });
+      raw = await chatComplete(cfg, messages, { temperature: 0.3, maxTokens: 900, jsonMode: true, purpose: 'compact' });
     } catch (e) {
       if (e instanceof Error && e.message.includes('空响应')) {
-        raw = await chatComplete(cfg, messages, { temperature: 0.3, maxTokens: 900, jsonMode: false });
+        raw = await chatComplete(cfg, messages, { temperature: 0.3, maxTokens: 900, jsonMode: false, purpose: 'compact' });
       } else throw e;
     }
     const parsed = extractJson(raw);
@@ -166,7 +181,7 @@ async function compactViaAI(
 }
 
 /** 消息行 → compact 输入行（卡片折叠为一行事实） */
-function rowsToLines(rows: NavigatorMessageRow[]): string[] {
+export function rowsToLines(rows: NavigatorMessageRow[]): string[] {
   return rows
     .map((r) => {
       if (r.role === 'card') {
@@ -179,14 +194,32 @@ function rowsToLines(rows: NavigatorMessageRow[]): string[] {
     .filter((l) => l.length > 3);
 }
 
-async function persistMemories(result: CompactResult, sessionDateKey: string, allowProfile = true): Promise<void> {
+/**
+ * 这条记忆是不是「关于用户的」（第 23 批 · 串戏排查 ③）：归档器偶尔会把陪伴 AI 自己说的话 / 答应的事当成记忆存下来，
+ * 换个人格读到就会以上一个人格的立场说话。带人格名、第一人称开头、「答应 / 承诺 / 会提醒」一类的都不收。
+ */
+export function isAboutUser(text: string, personaName: string): boolean {
+  const t = text.trim();
+  if (!t) return false;
+  if (personaName && t.includes(personaName)) return false;
+  if (/^(我|吾辈|本喵|本人|俺|咱)(?!们)/.test(t)) return false;
+  if (/(答应|承诺|说好了?要|会提醒|提醒(他|她|你)|我(说过|讲过|会|要|想))/.test(t)) return false;
+  return true;
+}
+
+async function persistMemories(result: CompactResult, sessionDateKey: string, allowProfile = true, presetId?: string, personaName = ''): Promise<void> {
   // AI 更新了画像 → 落库（用户手动编辑的版本会在下次 compact 时作为"现有画像"喂回，形成闭环）。
   // 第 13 轮把会话末归档的门槛降到 2 条 / 40 字后，短会话也会走 AI：这类会话只收记忆，不让它改写画像——
   // 画像是用户能手改的长期档案，几句话的闲聊不该有机会把它重写一遍（allowProfile=false）
-  if (result.profile && allowProfile) void saveProfile(result.profile);
+  if (result.profile && allowProfile) void saveProfile(result.profile, presetId);
   // 回访约定：会话末补记漏掉的；话头若和约定撞了就不挂（约定那边会问，问两遍就破了「只问一次」）
-  await savePromisesFromCompact(result.promises, sessionDateKey).catch(() => {});
-  if (result.followUp && await followUpCoveredByPromise(result.followUp).catch(() => false)) result.followUp = null;
+  await savePromisesFromCompact(result.promises, sessionDateKey, Date.now(), presetId).catch(() => {});
+  if (result.followUp && await followUpCoveredByPromise(result.followUp, presetId).catch(() => false)) result.followUp = null;
+  // 只收关于用户的（第 23 批）
+  const dropped = result.memories.filter((m) => !isAboutUser(m.text, personaName));
+  if (dropped.length && import.meta.env.DEV) console.warn('[navigator] 丢掉不是关于用户的记忆', dropped.map((m) => m.text));
+  result.memories = result.memories.filter((m) => isAboutUser(m.text, personaName));
+  const owner = memoOwner(presetId);
   // 记在那场对话的日子上（第二天开窗才归档时，以前记成了归档那天：「（10/6 记）」其实是 10/5 说的）；
   // 当天的会话照旧用此刻
   const now = new Date();
@@ -203,11 +236,13 @@ async function persistMemories(result: CompactResult, sessionDateKey: string, al
     followUp: i === 0 ? result.followUp ?? undefined : undefined,
     status: 'active',
     createdAt: day,
+    ...(owner ? { presetId: owner } : {}),
   }));
   if (memos.length === 0 && result.followUp) {
     memos.push({
       id: uuidv4(), source: 'chat', text: result.followUp, importance: 3,
       followUp: result.followUp, status: 'active', createdAt: day,
+      ...(owner ? { presetId: owner } : {}),
     });
   }
   if (memos.length) await db.navigatorMemos.bulkPut(memos);
@@ -228,9 +263,14 @@ let finalizing: Promise<LastChatSummary | null> | null = null;
  * 归档「今天之前、尚无摘要」的会话（最多 3 条，防积压风暴）。
  * 返回最近一次（今天之前）会话的中性摘要和日子，供跨日叙事问候即取即用。
  */
-export function finalizeStaleSessions(): Promise<LastChatSummary | null> {
+/**
+ * @param activePresetId 当前人格：返回的「上次聊天摘要」只取**这个人格自己**的会话（第 23 批 · 串戏排查 ①）。
+ *   以前不分人格取最近一条：昨天和 A 聊、今天切到 B，B 的开场会接着 A 的话茬、摘要里还带 A 的名字。
+ *   归档本身仍是所有人格的隔天会话一起整理。
+ */
+export function finalizeStaleSessions(activePresetId?: string): Promise<LastChatSummary | null> {
   if (finalizing) return finalizing;
-  finalizing = finalizeStaleSessionsInner().finally(() => { finalizing = null; });
+  finalizing = finalizeStaleSessionsInner(activePresetId).finally(() => { finalizing = null; });
   return finalizing;
 }
 
@@ -239,16 +279,18 @@ async function personaNameOf(presetId: string | undefined, custom: NavigatorPres
   return resolveNavigatorPreset(presetId, custom).name;
 }
 
-async function finalizeStaleSessionsInner(): Promise<LastChatSummary | null> {
+async function finalizeStaleSessionsInner(activePresetId?: string): Promise<LastChatSummary | null> {
   const today = toLocalDateKey();
   let last: LastChatSummary | null = null;
+  // 「上次聊天」只认当前人格的会话；老数据没有 presetId 的按黑猫算（当年只有黑猫）
+  const mine = (s: { presetId?: string }): boolean => !activePresetId || (s.presetId ?? BUILTIN_NAVIGATOR_PRESETS[0].id) === activePresetId;
   try {
     const stale = (await db.navigatorSessions.toArray())
       .filter((s) => s.dateKey < today)
       .sort((a, b) => b.dateKey.localeCompare(a.dateKey));
     const targets = stale.filter((s) => !s.compactedSummary).slice(0, 3);
-    // 已归档过的最近一条直接可用
-    const done = stale.find((s) => s.compactedSummary);
+    // 已归档过的最近一条（当前人格的）直接可用
+    const done = stale.find((s) => s.compactedSummary && mine(s));
     last = done ? { summary: done.compactedSummary!, dateKey: done.dateKey } : null;
 
     const cfg = getAIConfig(useAppStore.getState().settings);
@@ -261,12 +303,14 @@ async function finalizeStaleSessionsInner(): Promise<LastChatSummary | null> {
       let summary: string;
       let personaSummary: string | undefined;
       if (cfg && (userMsgs.length >= FINALIZE_MIN_USER_MSGS || userChars >= FINALIZE_MIN_USER_CHARS)) {
-        const result = await compactViaAI(cfg, rowsToLines(rows).slice(-80), await personaNameOf(session.presetId, custom), await getProfile(), session.dateKey);
+        const sessionPreset = session.presetId ?? BUILTIN_NAVIGATOR_PRESETS[0].id;
+        const personaName = await personaNameOf(session.presetId, custom);
+        const result = await compactViaAI(cfg, rowsToLines(rows).slice(-80), personaName, await getProfile(sessionPreset), session.dateKey);
         if (result) {
           summary = result.summary;
           personaSummary = result.personaSummary;
           await persistMemories(result, session.dateKey,
-            userMsgs.length >= PROFILE_MIN_USER_MSGS || userChars >= PROFILE_MIN_USER_CHARS);
+            userMsgs.length >= PROFILE_MIN_USER_MSGS || userChars >= PROFILE_MIN_USER_CHARS, sessionPreset, personaName);
         } else {
           summary = localSummary(rows);
         }
@@ -278,8 +322,8 @@ async function finalizeStaleSessionsInner(): Promise<LastChatSummary | null> {
         personaSummary,
         updatedAt: new Date(),
       });
-      // 最近的一条 stale 就是跨日叙事素材（带着它自己的日子）
-      if (!last || session.dateKey > last.dateKey) last = { summary, dateKey: session.dateKey };
+      // 最近的一条 stale（当前人格的）就是跨日叙事素材（带着它自己的日子）
+      if (mine(session) && (!last || session.dateKey > last.dateKey)) last = { summary, dateKey: session.dateKey };
     }
   } catch (e) {
     if (import.meta.env.DEV) console.warn('[navigator] 会话末 compact 失败', e);
@@ -294,6 +338,54 @@ function localSummary(rows: NavigatorMessageRow[]): string {
   return users.length
     ? `简短聊了 ${users.length} 句${first ? `（开头是「${first}…」）` : ''}。`
     : '打了个照面，没聊什么。';
+}
+
+// ── 「今天早些时候」（第 24 批 · A1）：掉出对话窗的早些轮次，压成一段滚动更新的中性摘要 ──
+
+const EARLY_PROTOCOL = `你是对话摘要员。把「今天早些时候」的一段对话压成中性第三人称摘要（≤150 字）：保留具体事实、决定、数字和日子；不写口吻、不评价、不写建议。
+给了【已有摘要】就把新内容并进去，输出更新后的全文（仍 ≤150 字，旧内容可以压得更短）。只输出摘要本身，不要标题、不要引号。`;
+
+/** 有 Key 走 AI（快速档、瞬发）；没 Key / 失败返回 null，调用方用 localEarlySummary */
+export async function summarizeEarlyToday(prev: string, lines: string[], dateKey: string): Promise<string | null> {
+  const cfg = getAIConfig(useAppStore.getState().settings);
+  if (!cfg || !lines.length) return null;
+  try {
+    const raw = await chatComplete(cfg, [
+      { role: 'system', content: EARLY_PROTOCOL },
+      { role: 'user', content: `这段对话发生在 ${dayLabelCN(dateKey)}。\n【已有摘要】${prev || '（无）'}\n【新掉出窗口的对话】\n${lines.join('\n')}` },
+    ], { temperature: 0.2, maxTokens: 400, instant: true, purpose: 'early-summary' });
+    const t = raw.replace(/```[a-z]*/gi, '').trim().replace(/^["“「]|["”」]$/g, '').slice(0, 240);
+    return t || null;
+  } catch (e) {
+    if (import.meta.env.DEV) console.warn('[navigator] 早些时候摘要失败', e);
+    return null;
+  }
+}
+
+/** 没 Key / 失败时的本地拼接：只说又聊了几句、说到什么 */
+export function localEarlySummary(prev: string, rows: NavigatorMessageRow[]): string {
+  const users = rows.filter((r) => r.role === 'user' && r.text);
+  const first = users[0]?.text?.slice(0, 24) ?? '';
+  const piece = users.length ? `又聊了 ${users.length} 句${first ? `（说到「${first}…」）` : ''}` : '';
+  return [prev, piece].filter(Boolean).join('；').slice(0, 300);
+}
+
+// ── 最近几次聊天（第 24 批 · A2）：当前人格今天之前、已归档的几场摘要，一天不变 → 接在人格规范后面吃前缀缓存 ──
+
+export async function recentChatsBlock(presetId: string, todayKey: string, limit = 3): Promise<string> {
+  try {
+    const cat = BUILTIN_NAVIGATOR_PRESETS[0].id;
+    const rows = (await db.navigatorSessions.toArray())
+      .filter((s) => s.dateKey < todayKey && (s.presetId ?? cat) === presetId && !!s.compactedSummary)
+      .sort((a, b) => b.dateKey.localeCompare(a.dateKey))
+      .slice(0, limit);
+    if (!rows.length) return '';
+    return `【最近几次聊天（新的在上；是你知道的背景，不是要汇报的清单）】\n${rows
+      .map((s) => `- ${dayLabelCN(s.dateKey, todayKey)}，${relativeDayCN(s.dateKey, todayKey)}：${s.compactedSummary}`)
+      .join('\n')}`;
+  } catch {
+    return '';
+  }
 }
 
 // ── 阈值泵：活跃会话内 compact ──
@@ -315,6 +407,7 @@ export async function maybeCompactLive(
   sessionId: string,
   rows: NavigatorMessageRow[],
   personaName = '陪伴 AI',
+  presetId?: string,
 ): Promise<LiveCompactOutcome> {
   const total = rows.reduce((n, r) => n + estTokens(r.text ?? '') + 8, 0);
   const over = total > LIVE_COMPACT_TOKENS || rows.length > LIVE_COMPACT_MSGS;
@@ -326,7 +419,7 @@ export async function maybeCompactLive(
 
   liveCompacting.add(sessionId);
   try {
-    return await compactLiveInner(sessionId, rows, squash, total, personaName);
+    return await compactLiveInner(sessionId, rows, squash, total, personaName, presetId);
   } finally {
     liveCompacting.delete(sessionId);
   }
@@ -337,15 +430,15 @@ async function compactLiveInner(
   rows: NavigatorMessageRow[],
   squash: NavigatorMessageRow[],
   total: number,
-  personaName: string,
+  personaName: string,  presetId?: string,
 ): Promise<LiveCompactOutcome> {
   void rows;
   let summaryText: string;
   const cfg = getAIConfig(useAppStore.getState().settings);
   if (cfg && total <= HARD_CAP_TOKENS) {
-    const result = await compactViaAI(cfg, rowsToLines(squash).slice(-100), personaName, await getProfile(), toLocalDateKey());
+    const result = await compactViaAI(cfg, rowsToLines(squash).slice(-100), personaName, await getProfile(presetId), toLocalDateKey());
     if (result) {
-      await persistMemories(result, toLocalDateKey());
+      await persistMemories(result, toLocalDateKey(), true, presetId, personaName);
       summaryText = result.summary;
     } else {
       summaryText = localSummary(squash);
@@ -386,10 +479,11 @@ const cjkBigrams = (text: string): Set<string> => {
  * 评分检索 top≤4 并回写 recall 元数据；followUp **注入即清**（宁可少提醒不重复）。
  * 纯本地零 AI；异常返回空（记忆失效不阻断对话）。
  */
-export async function recallMemories(queryText: string): Promise<RecallResult> {
+export async function recallMemories(queryText: string, presetId?: string): Promise<RecallResult> {
   try {
     const all = (await db.navigatorMemos.where('status').equals('active').toArray())
-      .filter((m) => m.source !== 'profile'); // 画像另行常驻注入，不占检索位
+      .filter((m) => m.source !== 'profile') // 画像另行常驻注入，不占检索位
+      .filter((m) => memoVisibleTo(m, presetId)); // 记忆隔离（第 23 批）：只读共享的和自己的
     // 回访约定由 navigatorPromise 单独注入（什么时候问、只问一次）：还在等着的不进普通检索
     const promises = all.filter(isPromise);
     const memos = all.filter((m) => !isPromise(m) || (m.promiseState ?? 'waiting') !== 'waiting');

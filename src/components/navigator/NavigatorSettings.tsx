@@ -7,6 +7,7 @@
  * 另含手动归档（compact 主泵的手动入口备份）。
  */
 import { useEffect, useRef, useState } from 'react';
+import { snapshotFile } from '@/utils/imageCrop';
 import { useAppStore } from '@/store';
 import { useShallow } from 'zustand/react/shallow';
 import { DiamondMarkIcon, NotebookIcon } from '@/components/settingsIcons';
@@ -16,6 +17,7 @@ import { getAIConfig, getDeliberateAIConfig } from '@/utils/aiClient';
 import { getProviderConfig, DEFAULT_PROVIDER } from '@/utils/aiProviders';
 import { ModelPickerSheet } from '@/components/ai/ModelPickerSheet';
 import { generatePersonaPrompt } from '@/utils/navigatorIntent';
+import { generatePersonaExamples } from '@/utils/navigatorPersona';
 import { finalizeStaleSessions } from '@/utils/navigatorMemory';
 import { BUILTIN_NAVIGATOR_PRESETS, mergedNavigatorPresets } from '@/constants/navigatorPresets';
 import { Toggle } from '@/components/Toggle';
@@ -41,13 +43,18 @@ interface GeneratorState {
   likes: string;
   dislikes: string;
   habits: string;
+  /** 口吻示例（第 24 批 · C3）：一行一句，最多 5 句；只教语气和长短。以前只有内置三位有、自定义人格没入口 */
+  examples: string;
+  examplesBusy: boolean;
   generating: boolean;
   error?: string;
 }
 const closedGenerator: GeneratorState = {
   open: false, name: '', callUser: '', toneWords: [], coach: 'accompany',
-  freeText: '', personaPrompt: '', avatar: 'star', likes: '', dislikes: '', habits: '', generating: false,
+  freeText: '', personaPrompt: '', avatar: 'star', likes: '', dislikes: '', habits: '', examples: '', examplesBusy: false, generating: false,
 };
+const splitExamples = (v: string): string[] =>
+  v.split(/\n+/).map((x) => x.trim().replace(/^[-•·]\s*/, '').slice(0, 60)).filter(Boolean).slice(0, 5);
 const splitTraits = (v: string): string[] =>
   v.split(/[，,、；;\n]+/).map((x) => x.trim().slice(0, 16)).filter(Boolean).slice(0, 4);
 
@@ -84,6 +91,8 @@ export const NavigatorSettings = () => {
       ? {
           ...closedGenerator, open: true, editId: p.id, name: p.name, personaPrompt: p.personaPrompt, avatar: p.avatar ?? 'star',
           likes: p.traits?.likes.join('、') ?? '', dislikes: p.traits?.dislikes.join('、') ?? '', habits: p.traits?.habits.join('、') ?? '',
+          // 内置人格（设定没改过）显示代码里的示例；改过的 / 自定义的显示它自己的
+          examples: (p.examples ?? BUILTIN_NAVIGATOR_PRESETS.find((b) => b.id === p.id && b.personaPrompt === p.personaPrompt)?.examples ?? []).join('\n'),
         }
       : { ...closedGenerator, open: true });
   /** 内置人格（改头像时存的是同 id 的影子行）的喜好写在代码里，不在这里改 */
@@ -103,19 +112,38 @@ export const NavigatorSettings = () => {
     }
   };
 
+  const runExamples = async () => {
+    const name = gen.name.trim();
+    const prompt = gen.personaPrompt.trim();
+    if (!name || !prompt) { setGen((s) => ({ ...s, error: '先把名字和人格设定填好' })); return; }
+    setGen((s) => ({ ...s, examplesBusy: true, error: undefined }));
+    try {
+      const lines = await generatePersonaExamples(name, prompt, settings);
+      setGen((s) => ({ ...s, examplesBusy: false, examples: lines.join('\n') }));
+    } catch (e) {
+      setGen((s) => ({ ...s, examplesBusy: false, error: e instanceof Error ? e.message : '生成失败' }));
+    }
+  };
+
   const savePreset = async () => {
     const name = gen.name.trim();
     const prompt = gen.personaPrompt.trim();
     if (!name || !prompt) { setGen((s) => ({ ...s, error: '名字和人格设定都不能为空' })); return; }
     const traits = { likes: splitTraits(gen.likes), dislikes: splitTraits(gen.dislikes), habits: splitTraits(gen.habits) };
     const hasTraits = traits.likes.length + traits.dislikes.length + traits.habits.length > 0;
+    const prev = gen.editId ? nav.presets.find((p) => p.id === gen.editId) : undefined;
+    const examples = splitExamples(gen.examples);
     await nav.savePreset({
       id: gen.editId ?? uuidv4(),
       name, personaPrompt: prompt, avatar: gen.avatar,
       isBuiltin: false,
-      createdAt: gen.editId ? nav.presets.find((p) => p.id === gen.editId)?.createdAt ?? new Date() : new Date(),
+      createdAt: prev?.createdAt ?? new Date(),
+      handoffLine: prev?.handoffLine,
       // 留空 = 不存，第一次用到时按人格设定自动写一份
       traits: !editingBuiltin && hasTraits ? traits : undefined,
+      examples: examples.length ? examples : undefined,
+      // 末尾人设锚（≤60 字的「你是谁」）跟着设定文本走：文本改了就作废，下次用到时重写（navigatorPersona）
+      anchor: prev && prev.personaPrompt === prompt ? prev.anchor : undefined,
     });
     setGen(closedGenerator);
   };
@@ -203,6 +231,23 @@ export const NavigatorSettings = () => {
         <h4 className="text-sm font-bold text-gray-800 dark:text-white tracking-wide">人格</h4>
       </div>
       <p className="-mt-2 text-sm text-gray-500 dark:text-gray-400">切换人格会开启（或恢复）它今天的对话。能力不变，变的只是性格和嘴。</p>
+      {/* ── 记忆按人格隔离（第 23 批）── */}
+      <div className="flex items-start justify-between gap-3 rounded-xl border border-gray-200 px-4 py-3 dark:border-gray-700">
+        <div>
+          <div className="text-sm font-semibold text-gray-700 dark:text-gray-200">记忆按人格隔离</div>
+          <p className="mt-0.5 text-xs leading-relaxed text-gray-400 dark:text-gray-500">
+            关着：所有人格共用一本记事本（一个助手、几张面孔）。开着：各人格各记各的，像换了个人；以前记下的、没标人格的算「共享」，谁都读得到。
+            记事本里能按人格翻看、改动，也能把一条挪给别的人格或设为共享。关掉不会丢东西，只是又合在一起读。
+          </p>
+        </div>
+        <div className="mt-0.5 shrink-0">
+          <Toggle
+            checked={!!settings.navigatorMemoryIsolated}
+            onChange={(v) => updateSettings({ navigatorMemoryIsolated: v })}
+            aria-label="记忆按人格隔离"
+          />
+        </div>
+      </div>
       <div className="space-y-2">
         {allPresets.map((p) => (
           <div key={p.id} className={`flex items-center gap-3 rounded-xl border-2 px-3 py-2.5 transition ${activeId === p.id ? 'border-primary/60 bg-primary/5 dark:bg-primary/10' : 'border-gray-200 dark:border-gray-700'}`}>
@@ -284,7 +329,7 @@ export const NavigatorSettings = () => {
                 上传
               </button>
               <input ref={fileRef} type="file" accept="image/*" className="hidden"
-                onChange={(e) => { setCropFile(e.target.files?.[0] ?? null); e.target.value = ''; }} />
+                onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void snapshotFile(f).then(setCropFile).catch(() => setCropFile(f)); }} />
             </div>
             <p className="mt-1 text-[10px] text-gray-400 dark:text-gray-500">上传头像只存本机，永不上云。</p>
           </div>
@@ -333,6 +378,25 @@ export const NavigatorSettings = () => {
                 rows={5}
                 className="w-full resize-none rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm leading-relaxed outline-none focus:border-primary dark:border-gray-700 dark:bg-gray-900 dark:text-white"
               />
+              <div className="space-y-1.5" data-persona-examples>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-xs text-gray-400 dark:text-gray-500">口吻示例（一行一句，最多 5 句；只教语气和长短，不是台词库）</div>
+                  {hasAI && (
+                    <button type="button" disabled={gen.examplesBusy || !gen.personaPrompt.trim()} onClick={() => void runExamples()}
+                      className="shrink-0 text-xs font-bold text-primary disabled:opacity-40">
+                      {gen.examplesBusy ? '写着…' : '让 AI 写三句'}
+                    </button>
+                  )}
+                </div>
+                <textarea
+                  value={gen.examples}
+                  onChange={(e) => setGen((s) => ({ ...s, examples: e.target.value }))}
+                  aria-label="口吻示例"
+                  rows={3}
+                  placeholder={'嗯，我在听。\n书架第三排，慢慢找。'}
+                  className="w-full resize-none rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm leading-relaxed outline-none focus:border-primary dark:border-gray-700 dark:bg-gray-900 dark:text-white"
+                />
+              </div>
               {!editingBuiltin && (
                 <div className="space-y-2" data-persona-traits>
                   <div className="text-xs text-gray-400 dark:text-gray-500">喜好（它每天的小状态会用到；用「、」隔开，留空的话第一次用到时按人格设定自动写）</div>

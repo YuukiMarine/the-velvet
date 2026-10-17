@@ -81,7 +81,7 @@ export function refreshNotifVoiceIfNeeded(settings: Settings, onFresh: () => voi
       const raw = await chatComplete(cfg, [
         { role: 'system', content: `${preset.personaPrompt}\n\n${TASK_PROMPT}` },
         { role: 'user', content: '请写今天的 5 条提醒文案，按要求输出 JSON。' },
-      ], { temperature: 0.8, maxTokens: 700 });
+      ], { temperature: 0.8, maxTokens: 700, purpose: 'notifvoice' });
       const stripped = raw.replace(/```(?:json)?/gi, '').trim();
       const fb = stripped.indexOf('{');
       const lb = stripped.lastIndexOf('}');

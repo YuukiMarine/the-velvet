@@ -34,8 +34,8 @@ export function anthropicHeaders(apiKey: string, stream = false): Record<string,
 }
 
 type AnthropicBlock =
-  | { type: 'text'; text: string }
-  | { type: 'image'; source: { type: 'base64'; media_type: string; data: string } | { type: 'url'; url: string } };
+  | { type: 'text'; text: string; cache_control?: { type: 'ephemeral' } }
+  | { type: 'image'; source: { type: 'base64'; media_type: string; data: string } | { type: 'url'; url: string }; cache_control?: { type: 'ephemeral' } };
 
 const textOf = (content: string | ContentPart[]): string =>
   typeof content === 'string' ? content : content.map((p) => (p.type === 'text' ? p.text : '')).join('\n');
@@ -58,36 +58,66 @@ function toBlocks(content: string | ContentPart[]): AnthropicBlock[] {
 
 /**
  * OpenAI 风格的 messages → Messages API 请求体：
- *   - system 不在 messages 里：所有 system（助手那条夹在中间的动态上下文也是）按顺序合并成顶层 system；
+ *   - system 不在 messages 里：**开头**的 system 按顺序合并成顶层 system；夹在对话中间 / 末尾的 system（助手那条
+ *     动态上下文）改成文本块贴到紧随其后的那条 user 消息开头（第 24 批 · D5：以前也并进顶层 system，于是前缀每轮都变，
+ *     一个字的缓存都吃不到）；
  *   - 相邻同角色合并（Messages API 要求一问一答交替）；第一条必须是 user；
  *   - 最后一条若是 assistant（续写时把半截正文当前缀），去掉结尾空白（API 不收以空白结尾的预填）；
- *   - max_tokens 必填；temperature 只收 0–1，模型不收就不发（怪癖记忆，与 OpenAI 兼容口同一份）。
+ *   - max_tokens 必填；temperature 只收 0–1，模型不收就不发（怪癖记忆，与 OpenAI 兼容口同一份）；
+ *   - cache（第 24 批 · D5，只对官方 anthropic.com 开）：system 末尾与历史里最后一条 assistant 各打一个 cache_control
+ *     断点——系统提示词与历史前缀按 5 分钟缓存读 0.1 倍价。
  */
 export function buildAnthropicBody(
   cfg: { baseUrl: string; model: string },
   messages: AIMessage[],
-  opts: { maxTokens: number; temperature?: number; stream: boolean },
+  opts: { maxTokens: number; temperature?: number; stream: boolean; cache?: boolean },
 ): Record<string, unknown> {
   const system: string[] = [];
   const turns: Array<{ role: 'user' | 'assistant'; content: AnthropicBlock[] }> = [];
+  let seenTurn = false;
+  let pendingSystem: string[] = [];
   for (const m of messages) {
     if (m.role === 'system') {
       const t = textOf(m.content);
-      if (t.trim()) system.push(t);
+      if (!t.trim()) continue;
+      if (seenTurn) pendingSystem.push(t);
+      else system.push(t);
       continue;
     }
+    seenTurn = true;
     const role = m.role === 'assistant' ? 'assistant' : 'user';
     const blocks = toBlocks(m.content);
+    if (pendingSystem.length && role === 'user') {
+      blocks.unshift({ type: 'text', text: pendingSystem.join('\n\n') });
+      pendingSystem = [];
+    }
     if (!blocks.length) continue;
     const last = turns[turns.length - 1];
     if (last && last.role === role) last.content.push(...blocks);
     else turns.push({ role, content: blocks });
+  }
+  // 对话末尾还挂着 system（后面没有 user 了）：单独成一条 user
+  if (pendingSystem.length) {
+    const blocks: AnthropicBlock[] = [{ type: 'text', text: pendingSystem.join('\n\n') }];
+    const last = turns[turns.length - 1];
+    if (last && last.role === 'user') last.content.push(...blocks);
+    else turns.push({ role: 'user', content: blocks });
   }
   if (!turns.length || turns[0].role !== 'user') turns.unshift({ role: 'user', content: [{ type: 'text', text: '（请按上面的说明开始。）' }] });
   const tail = turns[turns.length - 1];
   if (tail.role === 'assistant') {
     const lastBlock = tail.content[tail.content.length - 1];
     if (lastBlock?.type === 'text') lastBlock.text = lastBlock.text.replace(/\s+$/, '');
+  }
+  if (opts.cache) {
+    // 历史里最后一条 assistant 的最后一块打断点：到它为止的前缀（系统 + 历史）可复用；之后的动态块与最新一句每轮都变
+    for (let i = turns.length - 1; i >= 0; i--) {
+      if (turns[i].role === 'assistant') {
+        const b = turns[i].content[turns[i].content.length - 1];
+        if (b) b.cache_control = { type: 'ephemeral' };
+        break;
+      }
+    }
   }
   const quirks = quirksFor(cfg.baseUrl, cfg.model);
   const body: Record<string, unknown> = {
@@ -97,44 +127,53 @@ export function buildAnthropicBody(
     messages: turns,
     stream: opts.stream,
   };
-  if (system.length) body.system = system.join('\n\n');
+  if (system.length) {
+    body.system = opts.cache
+      ? [{ type: 'text', text: system.join('\n\n'), cache_control: { type: 'ephemeral' } }]
+      : system.join('\n\n');
+  }
   if (opts.temperature !== undefined && !quirks.noTemperature) {
     body.temperature = Math.min(1, Math.max(0, opts.temperature));
   }
   return body;
 }
 
-/** 非流式回包 → 正文 / 思考 / 结束原因（max_tokens 记成 OpenAI 口径的 length，便于共用加预算重试） */
-export function parseAnthropicResponse(data: unknown): { text: string; reasoning: string; finish: string } {
+/** 非流式回包 → 正文 / 思考 / 结束原因（max_tokens 记成 OpenAI 口径的 length，便于共用加预算重试）/ 用量 */
+export function parseAnthropicResponse(data: unknown): { text: string; reasoning: string; finish: string; usage: unknown } {
   const d = (data && typeof data === 'object') ? data as Record<string, unknown> : {};
   const blocks = Array.isArray(d.content) ? d.content as Array<Record<string, unknown>> : [];
   const text = blocks.filter((b) => b?.type === 'text').map((b) => String(b.text ?? '')).join('');
   const reasoning = blocks.filter((b) => b?.type === 'thinking').map((b) => String(b.thinking ?? '')).join('');
   const stop = typeof d.stop_reason === 'string' ? d.stop_reason : '';
-  return { text, reasoning, finish: stop === 'max_tokens' ? 'length' : stop ? 'stop' : '' };
+  return { text, reasoning, finish: stop === 'max_tokens' ? 'length' : stop ? 'stop' : '', usage: d.usage };
 }
 
 export type AnthropicStreamEvent =
   | { kind: 'text'; text: string }
   | { kind: 'reasoning'; text: string }
-  | { kind: 'finish'; reason: string }
+  | { kind: 'finish'; reason: string; usage?: unknown }
+  | { kind: 'usage'; usage: unknown }
   | { kind: 'stop' }
   | { kind: 'error'; status: number; message: string }
   | { kind: 'other' };
 
-/** 流式里一条 data: JSON → 事件（text_delta / thinking_delta / message_delta.stop_reason / message_stop / error） */
+/** 流式里一条 data: JSON → 事件（message_start.usage / text_delta / thinking_delta / message_delta.stop_reason+usage / message_stop / error） */
 export function mapAnthropicStreamEvent(json: unknown): AnthropicStreamEvent {
   const j = (json && typeof json === 'object') ? json as Record<string, unknown> : {};
   const delta = (j.delta && typeof j.delta === 'object') ? j.delta as Record<string, unknown> : {};
   switch (j.type) {
+    case 'message_start': {
+      const msg = (j.message && typeof j.message === 'object') ? j.message as Record<string, unknown> : {};
+      return msg.usage ? { kind: 'usage', usage: msg.usage } : { kind: 'other' };
+    }
     case 'content_block_delta':
       if (delta.type === 'text_delta' && typeof delta.text === 'string') return { kind: 'text', text: delta.text };
       if (delta.type === 'thinking_delta' && typeof delta.thinking === 'string') return { kind: 'reasoning', text: delta.thinking };
       return { kind: 'other' };
     case 'message_delta':
       return typeof delta.stop_reason === 'string' && delta.stop_reason
-        ? { kind: 'finish', reason: delta.stop_reason === 'max_tokens' ? 'length' : 'stop' }
-        : { kind: 'other' };
+        ? { kind: 'finish', reason: delta.stop_reason === 'max_tokens' ? 'length' : 'stop', usage: j.usage }
+        : (j.usage ? { kind: 'usage', usage: j.usage } : { kind: 'other' });
     case 'message_stop':
       return { kind: 'stop' };
     case 'error': {

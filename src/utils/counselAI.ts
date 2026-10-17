@@ -203,7 +203,7 @@ function buildCounselRequest(ctx: CounselContext, opts: { greeting?: boolean } =
 // ── 流式响应 ─────────────────────────────────────────────────────
 
 async function* streamSSE(req: ChatReq, signal?: AbortSignal): AsyncGenerator<string> {
-  yield* chatStream(req, req.messages, { temperature: 0.9, maxTokens: 500, signal });
+  yield* chatStream(req, req.messages, { temperature: 0.9, maxTokens: 500, signal, purpose: 'counsel' });
 }
 
 // ── 离线兜底 ─────────────────────────────────────────────────────
@@ -322,7 +322,7 @@ export async function summarizeCounsel(
     const raw = await chatComplete(cfg, [
       { role: 'system', content: SUMMARY_PROMPT },
       { role: 'user', content: transcript },
-    ], { temperature: 0.4, maxTokens: 220, signal });
+    ], { temperature: 0.4, maxTokens: 220, signal, purpose: 'counsel-sum' });
     return trimSummary(raw);
   } catch (err) {
     console.warn('[counselAI] summary failed:', err);

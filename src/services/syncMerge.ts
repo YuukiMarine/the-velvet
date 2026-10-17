@@ -82,6 +82,12 @@ const toTime = (v: unknown): number => {
 
 /** 冲突时的特殊规则；返回 null 表示按用户选的一边 */
 function resolveSpecial(table: string, local: Row, cloud: Row): Row | null {
+  if (table === 'skills' && String(local.id ?? '').startsWith('blessing_')) {
+    // 赐福是用户手动开关的（第 22 批）：「解锁优先」会把关掉的又合并回开——改成改动时间新的那份赢；
+    // 两边都没记过时间（老数据）才退回下面的通用规则
+    const lt = toTime(local.updatedAt), ct = toTime(cloud.updatedAt);
+    if (lt || ct) return lt >= ct ? local : cloud;
+  }
   if (table === 'achievements' || table === 'skills') {
     const lu = local.unlocked === true, cu = cloud.unlocked === true;
     if (lu && !cu) return local;

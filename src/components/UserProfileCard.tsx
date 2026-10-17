@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { snapshotFile } from '@/utils/imageCrop';
 import { motion, AnimatePresence } from 'motion/react';
 import { FitText } from '@/components/ui/FitText';
 import { useAppStore } from '@/store';
@@ -98,7 +99,8 @@ export function UserProfileCard() {
       e.target.value = '';
       return;
     }
-    setPendingFile(file);
+    // 先拷进内存再清空文件框（第 22 批：安卓相册的 content:// 引用过一会儿就读不到）
+    void snapshotFile(file).then(setPendingFile).catch((err: Error) => { setErr(err.message); setTimeout(() => setErr(null), 4000); });
     // 允许同一文件再次选择
     e.target.value = '';
   };

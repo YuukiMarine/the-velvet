@@ -10,7 +10,8 @@ import { useCloudStore } from '@/store/cloud';
 import { useCloudSocialStore } from '@/store/cloudSocial';
 import { getAIConfig } from '@/utils/aiClient';
 import { triggerNavFeedback, triggerSuccessFeedback } from '@/utils/feedback';
-import { questBoardUnlocked, questHint, questProgress, questTitle, weekRangeOf, QUEST_UNLOCK, type QuestData } from '@/utils/questBoard';
+import { isKnownQuestTemplate, questBoardUnlocked, questHint, questProgress, questTitle, weekRangeOf, QUEST_UNLOCK, type QuestData } from '@/utils/questBoard';
+import { LocalErrorBoundary } from '@/components/ui/LocalErrorBoundary';
 import {
   LIFE_QUEST_COUNT, LIFE_QUEST_REROLLS, lifeContextNow, lifeDayKeyOf, lifeQuestDaySig, lifeQuestsFor, normTitle, readLifeQuestDay, readLifeQuestLog,
   recordLifeQuestEvent, writeLifeQuestDay,
@@ -69,16 +70,19 @@ export function useQuestBoard() {
       divinations: aux.divinations, images: aux.images, ledger: aux.ledger,
       aiReady: !!getAIConfig(settings), now: new Date(),
     };
-    return quests.map((q) => {
+    // 本版本认不出的模板（新版同步 / 备份带来的）不进列表：不显示、不计可领、不挂红点
+    return quests.filter(isKnownQuestTemplate).map((q) => {
       const progress = questProgress(q, data, range);
       return { quest: q, progress: Math.min(progress, q.target), done: progress >= q.target, claimed: !!q.claimedAt };
     });
   }, [quests, aux, activities, todos, todoCompletions, summaries, battleState, pacts, myId, settings, range]);
+  /** 本周里本版本认不出的委托条数（第 22 批）：委托板上提示一句「更新后可见」 */
+  const foreign = useMemo(() => (quests ?? []).filter((q) => !isKnownQuestTemplate(q)).length, [quests]);
   const claimable = items.filter((i) => i.done && !i.claimed).length;
   const seenWeek = useQuestSeen((s) => s.week);
   /** 这周刷出了新委托、还没打开看过 → 入口挂红点 */
   const unseen = unlocked && items.length > 0 && seenWeek !== range.weekKey;
-  return { unlocked, range, items, claimable, unseen, claimedTotal: claimedTotal ?? 0, loaded: !!quests && !!aux, attributeNames: settings.attributeNames };
+  return { unlocked, range, items, foreign, claimable, unseen, claimedTotal: claimedTotal ?? 0, loaded: !!quests && !!aux, attributeNames: settings.attributeNames };
 }
 
 const useTone = () => {
@@ -553,6 +557,10 @@ export const QuestBoardSheet = ({ open, onClose }: { open: boolean; onClose: () 
   const life = useLifeQuests(open);
   return (
     <SheetModal isOpen={open} onClose={onClose} title="委托板">
+      <LocalErrorBoundary
+        resetKey={`${board.range.weekKey}|${board.items.length}|${life.items.length}`}
+        fallback={<p className="px-6 py-10 text-center text-[13px] font-bold" style={{ color: tone.sub }}>委托板这一块出了问题，先跳过了。更新 App 后再试。</p>}
+      >
       <div className="px-4 pb-6" style={{ color: tone.ink }}>
         {/* 今日委托（第 13 轮加，第 14 批改名并合成一张可左右切的卡）：不用解锁，每天三张 */}
         <div className="flex items-baseline justify-between gap-2">
@@ -645,7 +653,12 @@ export const QuestBoardSheet = ({ open, onClose }: { open: boolean; onClose: () 
               {swapNote || (swapUsed ? '本周的「换一张」用过了，下周一再来' : '不想做的那张可以「换一张」，每周一次')}
             </div>
           )}
-          {board.loaded && board.items.length === 0 && (
+          {board.foreign > 0 && (
+            <div className="px-3 py-2 text-[11.5px] font-bold leading-relaxed" style={{ color: tone.sub, background: tone.card, borderRadius: tone.radius }} data-testid="quest-foreign-note">
+              有 {board.foreign} 条委托来自更新的版本，这个版本还看不懂——更新 App 后就能看到。
+            </div>
+          )}
+          {board.loaded && board.items.length === 0 && board.foreign === 0 && (
             <div className="py-8 text-center text-[13px] font-bold" style={{ color: tone.sub }}>本周的委托还在路上，稍后再来。</div>
           )}
         </div>
@@ -658,6 +671,7 @@ export const QuestBoardSheet = ({ open, onClose }: { open: boolean; onClose: () 
         </>
         )}
       </div>
+      </LocalErrorBoundary>
     </SheetModal>
   );
 };

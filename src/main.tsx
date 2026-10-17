@@ -8,6 +8,8 @@ import { initLayoutMode } from '@/ui/layoutMode'
 
 // 启动看门狗（紧急修复 #1）：先于一切记这一次启动，判上一次有没有走完
 bootBegin(); // 分号必须有：下一句是 (() => {})() 形式的 IIFE，ASI 会把它接成 bootBegin()(...)
+// 旧 WebView 提示屏（第 22 批，见 index.html）：模块脚本能跑到这里 = 内核够新，把它摘掉
+document.getElementById('webview-notice')?.remove();
 // 宽屏布局 / 手机布局铺满（第 20 批 · iPad）：index.html 的内联脚本已经定过首帧，这里接手转屏 / 拖窗口 / 改设置
 initLayoutMode();
 

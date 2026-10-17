@@ -22,9 +22,26 @@ export function readAsDataUrl(file: File | Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result as string);
-    reader.onerror = () => reject(new Error('读取文件失败'));
+    // 带上浏览器给的错误名（NotReadableError / NotFoundError…），用户截图就能看出是哪一类（第 22 批）
+    reader.onerror = () => reject(new Error(`读取文件失败${reader.error?.name ? `（${reader.error.name}）` : ''}`));
     reader.readAsDataURL(file);
   });
+}
+
+/**
+ * 选完图**立刻**把内容读进内存，返回一份纯内存的 File（第 22 批 · 三星 S21 头像「读取文件失败」）。
+ * 安卓相册给网页的是 content:// 引用，WebView 真正读的时候还会再核对一次文件信息；头像流程是先清空
+ * 文件框、等裁切框打开才读，比「附一张图」晚一拍，相册处理过的图这时候就读不出来了。
+ * 这里在 change 事件里就把字节拷出来，之后随便什么时候用都稳；读失败直接抛，调用方给出原因。
+ */
+export async function snapshotFile(file: File): Promise<File> {
+  try {
+    const buf = await file.arrayBuffer();
+    return new File([buf], file.name || 'image', { type: file.type || 'image/jpeg', lastModified: file.lastModified || Date.now() });
+  } catch (e) {
+    const name = (e as { name?: string } | null)?.name;
+    throw new Error(`读取文件失败${name ? `（${name}）` : ''}：换一张图，或从「文件」里选`);
+  }
 }
 
 /** dataURL 的近似字节长度（base64 段 × 3/4） */

@@ -137,10 +137,19 @@ export function questTitle(q: Quest, names: Record<AttributeId, string>): string
     case 'battle_once': return '本周潜入一次战场';
     case 'important_2': return '标记 2 条重要记录';
     case 'life_3': return '完成 3 张今日委托';
+    default: return '来自更新版本的委托';
   }
 }
 
-export const questHint = (q: Quest): string => QUEST_TEMPLATES[q.templateId].hint;
+/**
+ * 这条委托的模板本版本认不认识（10-13 安卓 2.8.0.5 用户上报）：委托随云同步 / 备份走，新版抽到的模板
+ * （如 2.8.0k 加的 life_3）到老版本里查表会是 undefined——以前直接 .hint 把整个 App 崩进错误页。
+ * 认不出的一律不渲染、不计进度、不领取，只在委托板提示「更新后可见」。
+ */
+export const isKnownQuestTemplate = (q: Pick<Quest, 'templateId'>): boolean =>
+  Object.prototype.hasOwnProperty.call(QUEST_TEMPLATES, q.templateId);
+
+export const questHint = (q: Quest): string => QUEST_TEMPLATES[q.templateId]?.hint ?? '这条委托来自更新的版本，更新 App 后可见';
 
 // ── 进度 ─────────────────────────────────────────────────────────────
 
@@ -220,6 +229,7 @@ export function questProgress(q: Quest, d: QuestData, r: WeekRange): number {
         || d.completions.some((c) => c.todoId === t.id && c.count > 0 && r.days.includes(c.date));
       return d.todos.filter((t) => !!t.lifeQuest && doneThisWeek(t)).length;
     }
+    default: return 0; // 认不出的模板：没有进度，也就永远不会「做完」被领
   }
 }
 

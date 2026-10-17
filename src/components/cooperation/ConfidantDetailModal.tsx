@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
+import { snapshotFile } from '@/utils/imageCrop';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence, type Variants } from 'motion/react';
 import { useUiChannel } from '@/ui/useUiChannel';
@@ -334,7 +335,8 @@ export function ConfidantDetailModal({
       e.target.value = '';
       return;
     }
-    setPendingAvatarFile(file);
+    // 先拷进内存再清空文件框（第 22 批，同头像）
+    void snapshotFile(file).then(setPendingAvatarFile).catch((err: Error) => { setAvatarErr(err.message); setTimeout(() => setAvatarErr(null), 4000); });
     setAvatarMenuOpen(false);
     e.target.value = '';
   };

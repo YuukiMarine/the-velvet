@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from 'motion/react';
 import type { Target } from 'motion/react';
-import { ReactNode, RefObject, useId, useRef } from 'react';
+import { ReactNode, RefObject, useId, useRef, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { springSoft } from '@/utils/motion';
 import { useBackHandler } from '@/utils/useBackHandler';
@@ -86,6 +86,50 @@ export const SheetModal = ({
   // 弹层开着 → 背景动画暂停（遮罩的模糊只算一次，见 ui/overlayPause）
   useOverlayPresence(isOpen);
   const containerRef = useModalA11y(isOpen, onClose, { closeOnEscape: !busy });
+
+  /**
+   * iOS 键盘留下的文档偏移（第 22 批 · 用户反馈「点空白处退出后，再点 + 面板不在原位」）：
+   * 页面都在 #root 里滚、html/body 本身 overflow:hidden，文档层的 scrollY 应恒为 0。可 WKWebView 的键盘
+   * 弹起时会把**整个文档**滚上去让输入框露出来；点遮罩关闭，键盘收了、这段滚动量却留着 → 下次 fixed 抽屉按
+   * 偏掉的视口定位，看起来往上跑了。关闭时先让输入框失焦（键盘开始收），隔一拍、再隔一拍把文档滚回 0。
+   * **打开时不能归零**：autoFocus 的输入框一挂载 WebKit 就把文档滚上去让它露出键盘，这时再归零会把抽屉
+   * 又压回键盘底下（模拟器实测）——首次打开本来就靠这一下滚动才看得见输入框。
+   */
+  /**
+   * 键盘避让（第 22 批 · iPhone 13 模拟器实测）：iOS 的键盘不会缩小 WKWebView，只是盖在网页上；WebKit 也
+   * **不会**为 fixed 抽屉里的输入框滚文档——底部抽屉就整个压在键盘底下，用户得「往下翻才找得到输入框」。
+   * 这里按 visualViewport 给遮罩容器加一段底部留白（键盘有多高留多少），抽屉贴着键盘顶边，正文超出就内部滚。
+   * 遮罩本身仍铺满整屏——第一版把容器整个缩到键盘上方，容器外面没有遮罩，输入法那条半透明工具条就把底下的
+   * 日历透出来了（用户看截图发现）。桌面浏览器 visualViewport 不变，等于没这段；键盘收起 inset 归零也回到整屏。
+   */
+  const [kb, setKb] = useState<{ top: number; inset: number; height: number } | null>(null);
+  useEffect(() => {
+    if (!isOpen) { setKb(null); return; }
+    const v = window.visualViewport;
+    if (!v) return;
+    const update = () => {
+      const inset = Math.round(window.innerHeight - v.height - v.offsetTop);
+      setKb(inset > 48 ? { top: Math.max(0, Math.round(v.offsetTop)), inset, height: Math.round(v.height) } : null);
+    };
+    v.addEventListener('resize', update);
+    v.addEventListener('scroll', update);
+    update();
+    return () => { v.removeEventListener('resize', update); v.removeEventListener('scroll', update); };
+  }, [isOpen]);
+
+  useEffect(() => {
+    const resetDocScroll = () => {
+      if (window.scrollY || window.scrollX) window.scrollTo(0, 0);
+      if (document.documentElement.scrollTop) document.documentElement.scrollTop = 0;
+      if (document.body.scrollTop) document.body.scrollTop = 0;
+    };
+    if (isOpen) return;
+    const active = document.activeElement as HTMLElement | null;
+    if (active && containerRef.current?.contains(active)) active.blur();
+    const t1 = window.setTimeout(resetDocScroll, 80);
+    const t2 = window.setTimeout(resetDocScroll, 420);
+    return () => { window.clearTimeout(t1); window.clearTimeout(t2); };
+  }, [isOpen, containerRef]);
   useBackHandler(isOpen, () => {
     if (!busy) onClose();
   });
@@ -153,6 +197,7 @@ export const SheetModal = ({
           onClick={() => {
             if (closeOnBackdrop && !busy) onClose();
           }}
+          style={kb ? { top: kb.top, paddingBottom: kb.inset } : undefined}
         >
 
           <motion.div
@@ -176,8 +221,8 @@ export const SheetModal = ({
                       isBottom ? 'rounded-t-3xl pb-[env(safe-area-inset-bottom)]' : 'mx-4 max-w-md rounded-2xl'
                     }`
             }`}
-            style={
-              isP4
+            style={{
+              ...(isP4
                 ? { border: '5px solid var(--p4-sheet-border, #fff6d0)', boxShadow: '0 10px 0 rgba(19, 19, 19, 0.28)' }
                 : p5
                   ? { background: 'transparent' }
@@ -186,8 +231,10 @@ export const SheetModal = ({
                       background: 'var(--p3r-sheet-grad, linear-gradient(178deg, #fbfdff 0%, #f0f8fc 60%, #e6f3fa 100%))',
                       clipPath: isBottom ? sheetTopClip : 'polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%)',
                     }
-                  : undefined
-            }
+                  : {}),
+              // 键盘在的时候面板不能比可见区域高；底部抽屉贴着键盘，Home 条的安全区留白这时没意义，去掉（第 22 批）
+              ...(kb ? { maxHeight: kb.height - (isBottom ? 0 : 24), ...(isBottom ? { paddingBottom: 0 } : {}) } : {}),
+            }}
           >
             {/* P5 壳层（红衬 / 黑壳 / 纸面）：全部走负层绝对定位——
                 不在面板本体上上 clip-path，标题瓷砖才能骑到上边框之外。 */}

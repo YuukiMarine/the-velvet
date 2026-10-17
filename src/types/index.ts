@@ -268,6 +268,8 @@ export interface Skill {
   unlocked: boolean;
   bonusMultiplier?: number; // 解锁后的额外属性提升倍数
   flatBonus?: number;       // 每次加点额外固定追加点数
+  /** 手动开关最后一次改动的时间（第 22 批）：赐福这类「用户自己开关」的行，两台设备合并时新的那份赢 */
+  updatedAt?: Date;
 }
 
 /** @deprecated 被 DailyDivination 取代，保留类型仅为向前兼容旧 DB 记录 */
@@ -507,6 +509,11 @@ export interface Settings {
   bgmNoticeSeen?: boolean;                               // 版权提示已读
   customAchievements?: Achievement[];
   customSkills?: Skill[];
+  /**
+   * 「馆长的赐福」被用户删掉的时间（ISO；第 22 批）。赐福行随 skills 表上云，以前删掉后一次拉取 /
+   * 合并就会从云端回来、+1 又生效：有这个标记就一律不写回、不计加成。
+   */
+  blessingRemovedAt?: string;
   customLevelThresholds?: number[];
   backgroundAnimation?: string[]; // 背景动画风格（可多选：'aurora'|'particles'|'wave'|'pulse'）
   /**
@@ -624,6 +631,8 @@ export interface Settings {
   navigatorLastGreetDate?: string;
   /** 当前激活的人格 preset id（缺省 = 内置黑猫）。切人格 = 开新会话。 */
   navigatorPresetId?: string;
+  /** 记忆按人格隔离（第 23 批）：开了之后记忆 / 约好的事 / 画像各人格各记各的，共享的那份大家都读；默认关 */
+  navigatorMemoryIsolated?: boolean;
   /** 拟真增强：回复走流式 + 按标点切碎气泡（句号删并断、——删并断、问叹/分号/括号保留断；逗号不断；括号里的标点不断，颜文字整组成泡），泡间 1.2s。 */
   navigatorImmersive?: boolean;
   /** 羁绊页视图：专辑墙（默认）/ 列表；右上角切换、持久记忆（PRD_V2.5_FINAL §5.3） */
@@ -1066,6 +1075,11 @@ export interface NavigatorPreset {
   createdAt: Date;
   /** 固定喜好（第二批「自己的一天」）：内置人格写在代码里；自定义人格第一次用到时 AI 按设定写一份，编辑人格里能改 */
   traits?: PersonaTraits;
+  /**
+   * 末尾人设锚（第 24 批）：≤60 字的「你是谁 · 口吻 · 底线」，每轮贴在最新一句前面，防长对话里口吻漂移。
+   * 内置手写在 navigatorPresets；自定义第一次用到时 AI 写一句存这里；编辑人格改了设定文本就清掉、下次重写。
+   */
+  anchor?: string;
 }
 
 /** 人格的固定喜好：喜欢 / 讨厌 / 跟天气季节节日有关的小习惯 */
@@ -1087,6 +1101,11 @@ export interface NavigatorSessionRow {
   swallowed?: string[];
   /** 这天用户开过口（第二批「相处时长」数聊过几天用；老会话缺这个字段时按消息 / 摘要补算一次） */
   userSpoke?: boolean;
+  /**
+   * 「今天早些时候」（第 24 批）：掉出对话窗的早些轮次压成的中性摘要。turns = 已覆盖到第几轮（从会话开头数），
+   * throughId = 覆盖到的最后一条消息。阈值泵把早些消息压成 summary 行时清掉（内容已在那行里）。
+   */
+  earlySummary?: { text: string; turns: number; throughId: string };
   createdAt: Date;
   updatedAt: Date;
 }
@@ -1127,6 +1146,11 @@ export interface NavigatorMemo {
   createdAt: Date;
   lastRecalledAt?: Date;
   recallCount?: number;
+  /**
+   * 归哪个人格（第 23 批 · 记忆隔离）：开了「记忆按人格隔离」后整理出来的记忆 / 约定 / 画像带上当时的人格 id；
+   * 没有 = 共享，谁都读得到。关掉隔离时这个字段保留（再开还能分），只是取用时不看它。
+   */
+  presetId?: string;
   /**
    * 回访约定（第二批）：一件带日子的事（面试、考试、体检……）。那件事过后第一次见面问一次结果，
    * 只问一次。text 是中性事实（「10月3日（周六）有面试」），下面几个字段管什么时候问、问没问过。

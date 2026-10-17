@@ -17,6 +17,7 @@
  */
 import { v4 as uuidv4 } from 'uuid';
 import { db } from '@/db';
+import { memoOwner, memoVisibleTo } from '@/utils/navigatorMemoryScope';
 import { chatComplete, getAIConfig } from '@/utils/aiClient';
 import { calendarTable, dateOfKey, daysBetween, dayLabelCN, keyOfDate, relativeDayCN, shiftKey, weekdayCN } from '@/utils/navigatorClock';
 import type { NavigatorMemo, Settings } from '@/types';
@@ -63,9 +64,11 @@ export function promisePhase(m: PromiseMemo, now: number = Date.now()): PromiseP
 
 // ── 读写 ────────────────────────────────────────────────────────
 
-export async function listPromises(): Promise<PromiseMemo[]> {
+/** @param presetId 给了就按记忆隔离过滤（第 23 批）：只看共享的和这个人格自己的；不给 = 全部（记事本管理用） */
+export async function listPromises(presetId?: string): Promise<PromiseMemo[]> {
   try {
     return (await db.navigatorMemos.toArray()).filter(isPromise)
+      .filter((m) => memoVisibleTo(m, presetId))
       .sort((a, b) => a.dueDate.localeCompare(b.dueDate) || new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
   } catch {
     return [];
@@ -138,10 +141,11 @@ export interface PromiseDraft {
 }
 
 /** 记下一批约定：同一件事（名字像、日子差一天以内）只留一条，日子以新说的为准 */
-export async function savePromises(drafts: PromiseDraft[], now: number = Date.now()): Promise<number> {
+export async function savePromises(drafts: PromiseDraft[], now: number = Date.now(), presetId?: string): Promise<number> {
   if (!drafts.length) return 0;
   const today = keyOfDate(new Date(now));
-  const existing = (await listPromises()).filter((m) => isOpen(m));
+  const existing = (await listPromises(presetId)).filter((m) => isOpen(m));
+  const owner = memoOwner(presetId);
   let added = 0;
   for (const d of drafts) {
     const dup = existing.find((m) => Math.abs(daysBetween(m.dueDate, d.dueDate)) <= 1
@@ -166,6 +170,7 @@ export async function savePromises(drafts: PromiseDraft[], now: number = Date.no
       promiseTopic: d.topic,
       promiseState: 'waiting',
       promiseDeferred: 0,
+      ...(owner ? { presetId: owner } : {}),
     };
     await db.navigatorMemos.put(memo);
     existing.push(memo as PromiseMemo);
@@ -208,14 +213,17 @@ let sniffing: Promise<boolean> | null = null;
 /**
  * 回复之后（后台）判一次：有日子的说法、或提到了还在等着的约定才调用。
  * 模型用快速档（保持思考：后台跑，不赶时间，日子要算准）。所有失败静默。
+ * @param hint 分诊判的「带日子的个人安排 / 说了约定的结果」（第 24 批 · D4）：给了布尔就按它放行（正则太宽，
+ *   「今天好累」「下午跑了步」都会触发，实测 6 轮多跑 3 次）；null / 不给 = 分诊没这个字段，退回正则
  */
-export function sniffPromises(text: string, settings: Settings, now: number = Date.now()): Promise<boolean> {
+export function sniffPromises(text: string, settings: Settings, now: number = Date.now(), presetId?: string, hint?: boolean | null): Promise<boolean> {
   const run = async (): Promise<boolean> => {
     const t = text.trim();
     if (!t) return false;
-    const open = (await listPromises()).filter((m) => promisePhase(m, now) !== 'closed');
+    const open = (await listPromises(presetId)).filter((m) => promisePhase(m, now) !== 'closed');
     const touchesOpen = open.some((m) => mentionsTopic(t, m.promiseTopic));
-    if (!PROMISE_CUE_RE.test(t) && !touchesOpen) return false;
+    const cue = typeof hint === 'boolean' ? hint : PROMISE_CUE_RE.test(t);
+    if (!cue && !touchesOpen) return false;
     const cfg = getAIConfig(settings);
     if (!cfg) return false;
     const today = keyOfDate(new Date(now));
@@ -236,9 +244,9 @@ export function sniffPromises(text: string, settings: Settings, now: number = Da
         { role: 'user' as const, content: user },
       ];
       try {
-        raw = await chatComplete(cfg, messages, { temperature: 0.1, maxTokens: 400, jsonMode: true });
+        raw = await chatComplete(cfg, messages, { temperature: 0.1, maxTokens: 400, jsonMode: true, purpose: 'sniff' });
       } catch (e) {
-        if (e instanceof Error && e.message.includes('空响应')) raw = await chatComplete(cfg, messages, { temperature: 0.1, maxTokens: 400 });
+        if (e instanceof Error && e.message.includes('空响应')) raw = await chatComplete(cfg, messages, { temperature: 0.1, maxTokens: 400, purpose: 'sniff' });
         else throw e;
       }
       const s = raw.replace(/```(?:json)?/gi, '').trim();
@@ -246,7 +254,7 @@ export function sniffPromises(text: string, settings: Settings, now: number = Da
       const drafts = (Array.isArray(parsed.items) ? parsed.items : []).slice(0, 2)
         .map((x) => toPromiseDraft(x, today))
         .filter((x): x is PromiseDraft => !!x);
-      const added = drafts.length ? await savePromises(drafts, now) : 0;
+      const added = drafts.length ? await savePromises(drafts, now, presetId) : 0;
       const ids = new Set((Array.isArray(parsed.resolved) ? parsed.resolved : []).map((x) => String(x)));
       let resolved = 0;
       for (const m of open) if (ids.has(m.id)) { await closePromise(m.id, 'resolved'); resolved++; }
@@ -274,10 +282,10 @@ export interface PromiseContext {
   ask: PromiseMemo | null;
 }
 
-export async function promiseContext(now: number = Date.now()): Promise<PromiseContext> {
+export async function promiseContext(now: number = Date.now(), presetId?: string): Promise<PromiseContext> {
   await sweepPromises(now);
   const today = keyOfDate(new Date(now));
-  const all = (await listPromises()).filter((m) => m.status === 'active');
+  const all = (await listPromises(presetId)).filter((m) => m.status === 'active');
   const phases = all.map((m) => ({ m, p: promisePhase(m, now) }));
   return {
     upcoming: phases.filter((x) => (x.p === 'upcoming' || x.p === 'today') && daysBetween(today, x.m.dueDate) <= 7).map((x) => x.m),
@@ -346,16 +354,16 @@ export async function deletePromise(id: string): Promise<void> {
 }
 
 /** 会话末整理补记：日子按那段对话发生的那天换算；过了问的窗口的不收（savePromises 里拦） */
-export async function savePromisesFromCompact(raw: unknown, sessionDateKey: string, now: number = Date.now()): Promise<void> {
+export async function savePromisesFromCompact(raw: unknown, sessionDateKey: string, now: number = Date.now(), presetId?: string): Promise<void> {
   const items = (Array.isArray(raw) ? raw : []).slice(0, 3)
     .map((x) => toPromiseDraft(x, sessionDateKey, { allowPast: false }))
     .filter((x): x is PromiseDraft => !!x);
-  if (items.length) await savePromises(items, now);
+  if (items.length) await savePromises(items, now, presetId);
 }
 
 /** 话头和约定撞了（「问问面试结果」）就别再挂话头——约定那边会问，问两遍就破了「只问一次」 */
-export async function followUpCoveredByPromise(followUp: string): Promise<boolean> {
-  const list = await listPromises();
+export async function followUpCoveredByPromise(followUp: string, presetId?: string): Promise<boolean> {
+  const list = await listPromises(presetId);
   return list.some((m) => mentionsTopic(followUp, m.promiseTopic));
 }
 

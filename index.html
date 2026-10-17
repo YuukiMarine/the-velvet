@@ -69,6 +69,36 @@
     <div id="root"></div>
     <!-- 启动看门狗的第一道脚印：模块脚本根本没跑（老 WebView 解析不了产物）时只有这条在，见 utils/bootGuard -->
     <script>try{localStorage.setItem('velvet:boot.html',String(Date.now()))}catch(e){}</script>
+    <!-- 旧 WebView 提示屏（第 22 批 · 安卓 9 华为「纯白」）：产物用了 Chrome 80+ 的语法，老内核上模块脚本根本不跑、
+         只剩一张白纸。这里用 ES5 判内核版本，低于 80 就先画一段说明；模块脚本一跑起来就把它摘掉（main.tsx），
+         所以哪怕 UA 判错也只是闪一下。Safari / WKWebView 的 UA 没有 Chrome 字样，不受影响。 -->
+    <div id="webview-notice" hidden></div>
+    <script>
+      (function () {
+        try {
+          var m = /Chrome\/(\d+)/.exec(navigator.userAgent);
+          if (!m) return;
+          var v = parseInt(m[1], 10);
+          if (!(v < 80)) return;
+          var el = document.getElementById('webview-notice');
+          if (!el) return;
+          el.removeAttribute('hidden');
+          el.setAttribute('style', 'position:fixed;left:0;top:0;right:0;bottom:0;z-index:2147483000;background:#f9fafb;color:#1f2937;font:15px/1.7 -apple-system,"PingFang SC","Noto Sans SC",sans-serif;padding:72px 28px 28px;box-sizing:border-box;overflow:auto');
+          el.innerHTML =
+            '<div style="max-width:420px;margin:0 auto">' +
+              '<div style="font-size:22px;font-weight:800;margin-bottom:14px">这台手机的网页内核太旧了</div>' +
+              '<p style="margin:0 0 12px">靛蓝色房间需要 Chrome 80 以上的系统 WebView 才能运行，这台机器现在是 <b>Chrome ' + v + '</b>，所以打开后只有一片白。</p>' +
+              '<p style="margin:0 0 8px;font-weight:700">怎么更新</p>' +
+              '<ol style="margin:0 0 12px;padding-left:20px">' +
+                '<li>打开应用市场（Google Play / 华为应用市场等），搜索 <b>Android System WebView</b>，点更新；</li>' +
+                '<li>没有这一项的话，在应用市场更新 <b>Chrome</b>，再到 系统设置 → 开发者选项 → <b>WebView 实现</b> 里切成 Chrome；</li>' +
+                '<li>更新完整个关掉本 App 再打开。</li>' +
+              '</ol>' +
+              '<p style="margin:0;color:#6b7280;font-size:13px">如果更新不了，把这一屏截图发给我们，告诉我们机型和系统版本。</p>' +
+            '</div>';
+        } catch (e) {}
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -21,6 +21,11 @@ export const BGM_MAX_TRACKS = 6;
 export const BGM_MAX_BYTES = 20 * 1024 * 1024;
 const ACCEPT_MIME = /^audio\/(mpeg|mp3|mp4|m4a|x-m4a|aac|aacp|wav|x-wav|ogg|flac|webm)$/i;
 const ACCEPT_EXT = /\.(mp3|m4a|aac|wav|ogg|flac)$/i;
+/** 文件没带类型（「文件」App / 微信转存常见）时按扩展名补：iOS 对没类型的 blob 认不出格式 */
+const MIME_BY_EXT: Record<string, string> = { mp3: 'audio/mpeg', m4a: 'audio/mp4', aac: 'audio/aac', wav: 'audio/wav', ogg: 'audio/ogg', flac: 'audio/flac' };
+const mimeFromName = (name: string): string => MIME_BY_EXT[(name.match(/\.([a-z0-9]+)$/i)?.[1] ?? '').toLowerCase()] ?? '';
+/** 44 字节头 + 几个采样的静音 wav：在用户手势里先「播」它一下，这个 <audio> 以后换 src 就不再需要手势（iOS） */
+const SILENT_WAV = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=';
 const THEMES: ThemeType[] = ['blue', 'yellow', 'red', 'pink', 'custom'];
 
 export const bgmVolumeOf = (s: Settings): number => Math.max(0, Math.min(100, s.bgmVolume ?? 60));
@@ -67,13 +72,19 @@ export async function importBgmTrack(file: File): Promise<BgmTrack> {
   if (!(ACCEPT_MIME.test(file.type) || ACCEPT_EXT.test(name))) throw new Error('只支持 mp3 / m4a / aac / wav / ogg / flac');
   if (file.size > BGM_MAX_BYTES) throw new Error(`单首不超过 ${Math.round(BGM_MAX_BYTES / 1048576)} MB`);
   if (file.size === 0) throw new Error('文件是空的');
+  // 这台设备放不放得了这种格式（第 22 批 · iPhone 8 Plus 导入后没声）：iOS 放不了 ogg / webm，导入时就说，别存进去才发现
+  const mime = file.type || mimeFromName(name);
+  if (typeof document !== 'undefined' && mime) {
+    const can = document.createElement('audio').canPlayType(mime);
+    if (can === '') throw new Error(`这台设备放不了 ${(name.match(/\.([a-z0-9]+)$/i)?.[1] ?? mime).toLowerCase()} 格式，换成 mp3 / m4a 再导入`);
+  }
   const existing = await listBgmTracks();
   if (existing.length >= BGM_MAX_TRACKS) throw new Error(`最多存 ${BGM_MAX_TRACKS} 首，先删一首再导入`);
   const track: BgmTrack = {
     id: `bgm_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
     name: name.replace(/\.[a-z0-9]+$/i, '').slice(0, 40) || '未命名',
     size: file.size,
-    mime: file.type || 'audio/mpeg',
+    mime: mime || 'audio/mpeg',
     blob: file,
     createdAt: new Date(),
   };
@@ -121,11 +132,43 @@ export function setBgmScene(next: BgmScene): void {
   void refreshBgm();
 }
 
-/** 首次用户手势：从此允许出声（浏览器 / WebView 自动播放策略） */
+/**
+ * 首次用户手势：从此允许出声（浏览器 / WebView 自动播放策略）。
+ * 第 22 批（iPhone 8 Plus · iOS 16 导入后没声，界面音效正常）：以前这里只是立个 flag，AudioContext 和 <audio>
+ * 都要等 refreshBgm 读完数据库之后才创建 / resume——早就不在手势里了，iOS 会把那个 AudioContext 一直挂在
+ * suspended，音乐「在放」但一个字节也出不来。现在在手势里**同步**做两件事：建好并 resume AudioContext、
+ * 让 <audio> 先播一段静音（之后换 src 不再需要手势）。
+ */
 export function unlockBgm(): void {
   if (unlocked) return;
   unlocked = true;
+  try {
+    const Ctor = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (Ctor && !ctx) ctx = new Ctor();
+    if (ctx && ctx.state !== 'running') void ctx.resume().catch(() => { /* 没手势就挂着，下次点击再试 */ });
+  } catch { /* 没有 Web Audio：退回 .volume */ }
+  try {
+    if (!audio) createAudio();
+    if (audio && !audio.src) {
+      audio.src = SILENT_WAV;
+      void audio.play().then(() => { audio?.pause(); }).catch(() => { /* 不让播也没关系 */ });
+    }
+  } catch { /* ignore */ }
   void refreshBgm();
+}
+
+/** 之后每次点击都看一眼：来电 / 切后台 / Siri 之后 AudioContext 会变成 interrupted / suspended，趁手势拉回来 */
+function keepContextAlive(): void {
+  if (ctx && ctx.state !== 'running') void ctx.resume().catch(() => { /* ignore */ });
+}
+
+function createAudio(): void {
+  audio = new Audio();
+  audio.loop = true;
+  audio.preload = 'auto';
+  audio.addEventListener('error', () => { console.warn('[bgm] 播放失败', audio?.error?.message); notify(); });
+  audio.addEventListener('play', notify);
+  audio.addEventListener('pause', notify);
 }
 
 /** 录音开始 / 结束（speech.ts 派事件）：录音期间暂停 */
@@ -162,6 +205,9 @@ function ensureGraph(): void {
     const Ctor = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (!Ctor) return;
     ctx = ctx ?? new Ctor();
+    // 接进 Web Audio 图之后，声音就只能从图里出来；图没在跑（iOS 没拿到手势）就先不接，<audio> 自己直出
+    // （音量调不了，但至少有声），等哪次点击把它拉成 running 再接（第 22 批）
+    if (ctx.state !== 'running') return;
     const src = ctx.createMediaElementSource(audio);
     gain = ctx.createGain();
     gain.gain.value = 0;
@@ -213,19 +259,15 @@ async function refreshOnce(): Promise<void> {
     stopPlayback();
     return;
   }
-  if (!audio) {
-    audio = new Audio();
-    audio.loop = true;
-    audio.preload = 'auto';
-    audio.addEventListener('error', () => { console.warn('[bgm] 播放失败', audio?.error?.message); notify(); });
-    audio.addEventListener('play', notify);
-    audio.addEventListener('pause', notify);
-  }
+  if (!audio) createAudio();
+  if (!audio) return;
   if (currentId !== want) {
     const track = await db.bgmTracks.get(want);
     if (!track) { stopPlayback(); return; }
     if (objectUrl) { try { URL.revokeObjectURL(objectUrl); } catch { /* ignore */ } }
-    objectUrl = URL.createObjectURL(track.blob);
+    // blob 没带类型（老数据 / 「文件」App 来的）：按记录里的 mime 或扩展名补上，iOS 才认得出格式（第 22 批）
+    const typed = track.blob.type ? track.blob : new Blob([track.blob], { type: track.mime || mimeFromName(track.name) || 'audio/mpeg' });
+    objectUrl = URL.createObjectURL(typed);
     audio.src = objectUrl;
     currentId = want;
   }
@@ -252,5 +294,7 @@ export function initBgm(): void {
   });
   document.addEventListener('visibilitychange', () => { void refreshBgm(); });
   window.addEventListener('velvet-bgm-hold', (e) => { holdBgmForRecording(!!(e as CustomEvent).detail); });
+  // 每次点击顺手把 AudioContext 拉回 running（第 22 批）；passive + capture，不影响任何手势
+  document.addEventListener('pointerdown', keepContextAlive, { capture: true, passive: true });
   void refreshBgm();
 }

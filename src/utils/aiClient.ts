@@ -37,7 +37,7 @@ import {
 import { aiFetch, isNativeHost, syncNativeHosts } from '@/utils/aiTransport';
 import { effortFixFromMessage, isEnableThinkingMessage, isLegacyThinkingMessage, isUnsupportedTemperatureMessage, quirksFor, rememberQuirk, thinkingSuffixBase } from '@/utils/aiQuirks';
 import { anthropicEndpoint, anthropicHeaders, buildAnthropicBody, mapAnthropicStreamEvent, parseAnthropicResponse } from '@/utils/aiAnthropic';
-import { hostOf as diagHostOf, recordAIDiag } from '@/utils/aiDiagnostics';
+import { hostOf as diagHostOf, patchAIDiag, recordAIDiag, usageFromResponse } from '@/utils/aiDiagnostics';
 
 export type AIRole = 'system' | 'user' | 'assistant';
 
@@ -130,6 +130,8 @@ export interface ChatOptions {
   relaySafe?: boolean;
   /** 内部：5xx 已经自动隔一下重试过一次（第 14 批） */
   retried5xx?: boolean;
+  /** 用途标签（第 24 批 · D6）：只进本机诊断 / 用量记录（triage / perform / greet / compact / sniff…），不发给服务商 */
+  purpose?: string;
 }
 
 /**
@@ -428,9 +430,12 @@ const isModerationError = (e: unknown): boolean => e instanceof Error && e.messa
  * 发一次 /chat/completions，顺手记诊断（成功 / HTTP 错误 / 连不上）。非 2xx 抛 toHttpError 的结果。
  * 诊断只记状态、耗时、主机、模型名——不记内容、不记 Key（见 aiDiagnostics）。
  */
-async function postChat(cfg: AIConfig, body: string, signal: AbortSignal, kind: 'chat' | 'stream', accept?: string): Promise<Response> {
+/** 每个成功回包对应的诊断记录时间戳：回包读完后把用量 / 首字 / 总耗时补上去（patchAIDiag） */
+const diagStamp = new WeakMap<Response, { t: number; t0: number }>();
+
+async function postChat(cfg: AIConfig, body: string, signal: AbortSignal, kind: 'chat' | 'stream', accept?: string, purpose?: string): Promise<Response> {
   const t0 = Date.now();
-  const diag = { kind, tier: cfg.tier, provider: cfg.provider, host: diagHostOf(cfg.baseUrl), model: cfg.model, native: isNativeHost(cfg.baseUrl) };
+  const diag = { kind, tier: cfg.tier, provider: cfg.provider, host: diagHostOf(cfg.baseUrl), model: cfg.model, native: isNativeHost(cfg.baseUrl), purpose };
   let resp: Response;
   try {
     resp = isAnthropic(cfg)
@@ -445,9 +450,22 @@ async function postChat(cfg: AIConfig, body: string, signal: AbortSignal, kind: 
     recordAIDiag({ ...diag, ok: false, status: resp.status, ms: Date.now() - t0, err: err.message });
     throw err;
   }
-  recordAIDiag({ ...diag, ok: true, status: resp.status, ms: Date.now() - t0 });
+  const t = recordAIDiag({ ...diag, ok: true, status: resp.status, ms: Date.now() - t0 });
+  diagStamp.set(resp, { t, t0 });
   return resp;
 }
+
+/** 回包读完：把用量（有就记）和总耗时补到诊断记录上；任何异常吞掉 */
+function noteUsage(resp: Response, usage: unknown, firstMs?: number): void {
+  try {
+    const st = diagStamp.get(resp);
+    if (!st) return;
+    patchAIDiag(st.t, { ...usageFromResponse(usage), ms: Date.now() - st.t0, firstMs });
+  } catch { /* */ }
+}
+
+/** 官方 Anthropic（api.anthropic.com）：cache_control 只对它发——DeepSeek 等家的 /anthropic 兼容口认不认未知，它们本来就按前缀自动缓存 */
+const isAnthropicOfficial = (baseUrl: string): boolean => /(^|\.)anthropic\.com$/i.test(diagHostOf(baseUrl));
 
 function authHeaders(cfg: AIConfig, accept?: string): Record<string, string> {
   const h: Record<string, string> = {
@@ -545,6 +563,10 @@ function buildRequestBody(
     // 新一代 Claude 等不收 temperature（400「temperature is deprecated」）：撞过就不发；中转站保险也不发
     if (!quirks.noTemperature && !relaySafe) body.temperature = opts.temperature ?? DEFAULT_TEMPERATURE;
   }
+  // 流式也要用量（第 24 批 · D6）：官方 OpenAI / DeepSeek 认 stream_options.include_usage，最后一块带 usage；中转站不发
+  if (stream && !relaySafe && (cfg.provider === 'openai' || cfg.provider === 'deepseek') && isOfficialHost(cfg.baseUrl)) {
+    body.stream_options = { include_usage: true };
+  }
   if (opts.extraBody) Object.assign(body, opts.extraBody);
   if (relaySafe) {
     // 调用方塞进 extraBody 的官方专属字段（如 DeepSeek 的 thinking）一并去掉
@@ -552,6 +574,7 @@ function buildRequestBody(
     delete body.reasoning_effort;
     delete body.response_format;
     delete body.temperature;
+    delete body.stream_options;
   }
   // 百炼 Qwen3 开源系：一次性调用必须显式关思考（撞过才加，第 14 批）
   if (!stream && quirks.nonStreamThinkingOff) body.enable_thinking = false;
@@ -750,10 +773,11 @@ async function chatCompleteOnce(
   try {
     const anthropic = isAnthropic(cfg);
     const reqBody = anthropic
-      ? buildAnthropicBody(cfg, messages, { maxTokens: anthropicBudget(cfg, opts), temperature: opts.relaySafe ? undefined : (opts.temperature ?? DEFAULT_TEMPERATURE), stream: false })
+      ? buildAnthropicBody(cfg, messages, { maxTokens: anthropicBudget(cfg, opts), temperature: opts.relaySafe ? undefined : (opts.temperature ?? DEFAULT_TEMPERATURE), stream: false, cache: !opts.relaySafe && isAnthropicOfficial(cfg.baseUrl) })
       : buildRequestBody(cfg, messages, opts, false);
-    const resp = await postChat(cfg, JSON.stringify(reqBody), ab.signal, 'chat');
+    const resp = await postChat(cfg, JSON.stringify(reqBody), ab.signal, 'chat', undefined, opts.purpose);
     const data = await resp.json().catch(() => null);
+    noteUsage(resp, data?.usage);
     // 两种协议的回包统一成「正文 / 结束原因 / 思考」（Anthropic 的 max_tokens 记成 length，共用加预算重试）
     const parsedA = anthropic ? parseAnthropicResponse(data) : null;
     const choice = anthropic ? null : data?.choices?.[0];
@@ -939,9 +963,10 @@ async function* streamOnce(
 ): AsyncGenerator<string, StreamOutcome, unknown> {
   const anthropic = isAnthropic(cfg);
   const reqBody = anthropic
-    ? buildAnthropicBody(cfg, messages, { maxTokens: anthropicBudget(cfg, opts), temperature: opts.relaySafe ? undefined : (opts.temperature ?? DEFAULT_TEMPERATURE), stream: true })
+    ? buildAnthropicBody(cfg, messages, { maxTokens: anthropicBudget(cfg, opts), temperature: opts.relaySafe ? undefined : (opts.temperature ?? DEFAULT_TEMPERATURE), stream: true, cache: !opts.relaySafe && isAnthropicOfficial(cfg.baseUrl) })
     : { ...buildRequestBody(cfg, messages, opts, true), ...extra };
-  const resp = await postChat(cfg, JSON.stringify(reqBody), ab.signal, 'stream', 'text/event-stream');
+  const tStart = Date.now();
+  const resp = await postChat(cfg, JSON.stringify(reqBody), ab.signal, 'stream', 'text/event-stream', opts.purpose);
   if (!resp.body) throw new Error('AI 流式响应无 body');
 
   const reader = resp.body.getReader();
@@ -951,6 +976,10 @@ async function* streamOnce(
   let sawReasoning = false;
   let finishReason = '';
   let sawDone = false;
+  // 用量 / 首字（第 24 批 · D6）：OpenAI 口最后一块的 usage；Anthropic 的 message_start（输入）+ message_delta（输出）合起来
+  let usage: Record<string, unknown> | undefined;
+  let firstMs: number | undefined;
+  const mergeUsage = (u: unknown) => { if (u && typeof u === 'object') usage = { ...(usage ?? {}), ...(u as Record<string, unknown>) }; };
   try {
   outer: while (true) {
     /**
@@ -985,12 +1014,14 @@ async function* streamOnce(
         try { json = JSON.parse(payload); } catch { continue; }
         const ev = mapAnthropicStreamEvent(json);
         if (ev.kind === 'text') {
-          if (ev.text.trim()) produced = true;
+          if (ev.text.trim()) { if (!produced) firstMs = Date.now() - tStart; produced = true; }
           yield ev.text;
         } else if (ev.kind === 'reasoning') {
           sawReasoning = true; opts.onReasoning?.(ev.text);
         } else if (ev.kind === 'finish') {
-          finishReason = ev.reason;
+          finishReason = ev.reason; mergeUsage(ev.usage);
+        } else if (ev.kind === 'usage') {
+          mergeUsage(ev.usage);
         } else if (ev.kind === 'stop') {
           sawDone = true; break outer;
         } else if (ev.kind === 'error') {
@@ -1000,6 +1031,7 @@ async function* streamOnce(
       }
       try {
         const json = JSON.parse(payload);
+        if (json?.usage) mergeUsage(json.usage);
         const c = json?.choices?.[0];
         if (typeof c?.finish_reason === 'string' && c.finish_reason) finishReason = c.finish_reason;
         // 思维链不 yield 给 UI（那是过程不是答案），只回调给进度估算
@@ -1008,7 +1040,7 @@ async function* streamOnce(
         const delta: string = c?.delta?.content ?? c?.message?.content ?? '';
         if (delta) {
           // 纯空白不算"写了正文"（DeepSeek 推理系偶发 content 为空格）
-          if (delta.trim()) produced = true;
+          if (delta.trim()) { if (!produced) firstMs = Date.now() - tStart; produced = true; }
           yield delta;
         }
       } catch { /* 半个 / 非法 chunk，跳过 */ }
@@ -1017,6 +1049,7 @@ async function* streamOnce(
   } finally {
     // [DONE] 之后 / 提前退出：把读取端关掉，连接不再挂着（已关闭的流上 cancel 是空操作）
     reader.cancel().catch(() => { /* 已关 */ });
+    noteUsage(resp, usage, firstMs);
   }
   // 正常收到 [DONE] 但服务商没给 finish_reason（不少中转站）：当作正常写完，别让调用方按「结尾不像句末」误判成截断（第 14 批）
   return { produced, sawReasoning, finishReason: finishReason || (sawDone ? 'stop' : '') };

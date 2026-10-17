@@ -9,7 +9,8 @@
  * thief/tv = 中性深色兜底（其风格化随各自频道批次）。
  * 会话：当日延续、跨天清流（store/navigator，Batch1 仅内存）。
  */
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore, useLayoutEffect } from 'react';
+import { snapshotFile } from '@/utils/imageCrop';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import { useAppStore } from '@/store';
@@ -59,6 +60,9 @@ const CatFace = ({ className, fillWhenPhoto = true }: { className?: string; fill
 // 人格名随 activePreset 动态取（Batch3）；'黑猫' 仅作窗口未初始化时的兜底
 
 // ── 皮肤 token（p4 = 黄频道节目窗 / bright = P3R 白日水面（p3-navigator-reference-v2）/ 暗 = 中性兜底） ──
+/** 聊天输入框最高长到这么高（≈5 行 16px 正文 + 内边距），再多就内部滚动 */
+const COMPOSER_MAX_PX = 132;
+
 const skinOf = (bright: boolean, p4 = false, p5 = false) => p5
   ? {
     // p5-navigator-reference-v2：红舞台（黑斜杠装饰）+ 纸信头 + 黑/纸尖角气泡（白圈硬影）+ 红发送
@@ -591,6 +595,15 @@ export const NavigatorWindow = () => {
       setBusyCardId(null);
     }
   };
+  // 输入框自增高（第 22 批）：内容变了就按 scrollHeight 重算，上限 COMPOSER_MAX_PX（约 5 行）
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  useLayoutEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = '0px';
+    el.style.height = `${Math.min(el.scrollHeight, COMPOSER_MAX_PX)}px`;
+  }, [input]);
+
   const send = () => {
     const text = input.trim();
     if (!text && !shot) return;
@@ -923,7 +936,7 @@ export const NavigatorWindow = () => {
                   )}
                 </AnimatePresence>
                 <input ref={avatarFileRef} type="file" accept="image/*" className="hidden"
-                  onChange={(e) => { setAvatarCropFile(e.target.files?.[0] ?? null); e.target.value = ''; }} />
+                  onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void snapshotFile(f).then(setAvatarCropFile).catch(() => setAvatarCropFile(f)); }} />
               </div>
 
               {/* 消息流（顶部上拉加载更早；隔 >5 分钟插居中时间戳） */}
@@ -1040,7 +1053,7 @@ export const NavigatorWindow = () => {
                     <span className={`text-[11px] font-bold ${bright ? 'text-[#3c69c9]' : 'text-gray-400'}`}>随下一条消息发出</span>
                   </div>
                 )}
-                <div className="flex items-center gap-2">
+                <div className="flex items-end gap-2">
                   {camVisible && (
                     <>
                       <input
@@ -1065,8 +1078,12 @@ export const NavigatorWindow = () => {
                       </button>
                     </>
                   )}
-                  <input
+                  {/* 第 22 批（用户反馈「聊天框不换行、难改」）：单行 input 换成自增高 textarea——1 行起、最多 5 行、
+                      再多内部滚动；Enter 仍是发送（手机键盘显示「发送」），Shift+Enter 换行 */}
+                  <textarea
+                    ref={inputRef}
                     value={input}
+                    rows={1}
                     onChange={(e) => {
                       setInput(e.target.value);
                       // 输入活动信号：仲裁器的收口窗口据此挂起，等用户把话说完
@@ -1075,14 +1092,17 @@ export const NavigatorWindow = () => {
                     onFocus={(e) => nav.setInputActive(e.target.value.trim().length > 0)}
                     onBlur={() => nav.setInputActive(false)}
                     onCompositionStart={() => nav.setInputActive(true)}
-                    onCompositionEnd={(e) => nav.setInputActive((e.target as HTMLInputElement).value.trim().length > 0)}
-                    onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) send(); }}
+                    onCompositionEnd={(e) => nav.setInputActive((e.target as HTMLTextAreaElement).value.trim().length > 0)}
+                    onKeyDown={(e) => {
+                      if (e.key !== 'Enter' || e.nativeEvent.isComposing || e.shiftKey) return;
+                      e.preventDefault();
+                      send();
+                    }}
+                    enterKeyHint="send"
                     placeholder={`跟${preset.name}说点什么…`}
                     aria-label={`给${preset.name}的消息`}
-                    // size=1：不让浏览器按「20 个字宽」给输入框定最小宽度（第 17 批 · 助手窗被顶到左边）
-                    size={1}
-                    className={sk.input}
-                    style={sk.inputStyle}
+                    className={`${sk.input} resize-none leading-snug`}
+                    style={{ ...sk.inputStyle, maxHeight: COMPOSER_MAX_PX, overflowY: 'auto' }}
                   />
                   {/* 🎤 语音输入（FS3.3）：配了听觉档才出现。按住说话、松手转写回填输入框，
                       不自动发送——转写有误的时候用户还能改。 */}

@@ -14,7 +14,7 @@ import { autoFillVisionPatch, refreshAllProviderModels, liveModelOf, isModelStal
 import {
   getAIConfig, getAssistantAIConfig, getDeliberateAIConfig, getVisionAIConfig, type AIConfig,
 } from '@/utils/aiClient';
-import { buildAIDiagnostics, readAIDiag } from '@/utils/aiDiagnostics';
+import { buildAIDiagnostics, readAIDiag, summarizeAIUsage } from '@/utils/aiDiagnostics';
 import { balanceEndpoint, fetchProviderBalance, type ProviderBalance } from '@/utils/aiBalance';
 
 /**
@@ -27,6 +27,14 @@ import { balanceEndpoint, fetchProviderBalance, type ProviderBalance } from '@/u
  *   - 诊断：本机最近 40 次 AI 请求的状态，一键复制给开发者（不含内容和 Key）。
  * 连接卡与分档卡的交互保持原样（只是搬家）。
  */
+/** 用途标签的中文名（aiClient ChatOptions.purpose；没打标签的归「其他」） */
+const PURPOSE_LABEL: Record<string, string> = {
+  triage: '助手 · 分诊', perform: '助手 · 对话', greet: '助手 · 问候', compact: '助手 · 归档', sniff: '助手 · 约定嗅探',
+  ownday: '助手 · 自己的一天', 'early-summary': '助手 · 早些时候摘要', 'persona-anchor': '人格 · 人设锚', 'persona-examples': '人格 · 口吻示例',
+  persona: '人格 · 生成', traits: '人格 · 喜好', counsel: '谏言 · 对话', 'counsel-sum': '谏言 · 归档', vision: '视觉 · 看图', notifvoice: '推送 · 文案', 其他: '其他',
+};
+const fmtTok = (n: number): string => (n >= 10000 ? `${(n / 10000).toFixed(1)} 万` : String(n));
+
 export function AIServiceSettings({ openConnection = false }: {
   /** 从「AI 总结」里的路标跳过来：连接卡直接展开（来的人多半是照老教程找填 Key 的地方） */
   openConnection?: boolean;
@@ -230,6 +238,8 @@ export function AIServiceSettings({ openConnection = false }: {
   const [tierResults, setTierResults] = useState<Array<{ id: string; label: string; model: string; ok?: boolean; text: string }> | null>(null);
   const [diagCopied, setDiagCopied] = useState<'idle' | 'ok' | 'fail'>('idle');
   const diagCount = readAIDiag().length;
+  // 最近用量（第 24 批 · D6）：本机算，不上云；用途标签只有助手一类的调用打了，没打的归「其他」
+  const usage = summarizeAIUsage(7);
 
   // 余额（DeepSeek / Kimi / 硅基流动的官方地址才查得到）：有 Key 就取一次，测通后再刷新。
   // 只在快用完（< ¥0.5 / $0.5）时显示——平时不露，免得让人老惦记着看（用户口径）
@@ -856,7 +866,37 @@ export function AIServiceSettings({ openConnection = false }: {
         )}
       </div>
 
-      {/* ── 诊断（第 13 轮）：最近 40 次 AI 请求的状态，一键复制给开发者 ── */}
+      {/* ── 最近用量（第 24 批 · D6）：次数 / token / 缓存命中 / 首字，按用途分 ── */}
+      {usage.calls > 0 && (
+        <div className="rounded-2xl border border-gray-100 px-4 py-3 dark:border-gray-700/60" data-testid="ai-usage">
+          <div className="text-sm font-medium text-gray-800 dark:text-white">最近 7 天用量</div>
+          <div className="mt-0.5 text-[11px] leading-relaxed text-gray-400 dark:text-gray-500">
+            {usage.calls} 次请求
+            {usage.metered > 0 && (
+              <>
+                {' · '}输入 {fmtTok(usage.inTok)}
+                {usage.inTok > 0 && `（命中缓存 ${Math.round((usage.cacheTok / usage.inTok) * 100)}%）`}
+                {' · '}输出 {fmtTok(usage.outTok)}
+                {usage.reasonTok > 0 && `（其中思考 ${fmtTok(usage.reasonTok)}）`}
+              </>
+            )}
+            。只在本机统计，不上云。
+          </div>
+          <div className="mt-2 space-y-1">
+            {usage.byPurpose.slice(0, 8).map((p) => (
+              <div key={p.purpose} className="flex items-baseline justify-between gap-3 text-[11px] text-gray-500 dark:text-gray-400">
+                <span className="shrink-0 font-bold text-gray-700 dark:text-gray-200">{PURPOSE_LABEL[p.purpose] ?? p.purpose}</span>
+                <span className="truncate">
+                  {p.calls} 次 · {p.avgMs >= 1000 ? `${(p.avgMs / 1000).toFixed(1)}s` : `${p.avgMs}ms`}
+                  {p.avgIn > 0 && ` · 输入 ${p.avgIn}${p.hitRate !== null ? `（命中 ${Math.round(p.hitRate * 100)}%）` : ''} · 输出 ${p.avgOut}`}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── 诊断（第 13 轮）：最近请求的状态，一键复制给开发者 ── */}
       <div className="flex items-center justify-between gap-3 rounded-2xl border border-gray-100 px-4 py-3 dark:border-gray-700/60" data-testid="ai-diagnostics">
         <div className="min-w-0">
           <div className="text-sm font-medium text-gray-800 dark:text-white">复制 AI 诊断信息</div>

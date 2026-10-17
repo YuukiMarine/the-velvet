@@ -13,6 +13,7 @@ import { BigDealPanel } from '@/components/bigdeal/BigDealPanel';
 import { BigDealHomeCard } from '@/components/bigdeal/BigDealHomeCard';
 import { FateDrawSheet } from '@/components/fate/FateDrawSheet';
 import { QuestBoardSheet, useQuestBoard } from '@/components/quests/QuestBoardSheet';
+import { useFabDodge } from '@/ui/useFabDodge';
 import { AttributeId, Todo, TodoFrequency } from '@/types';
 import { useCloudSocialStore } from '@/store/cloudSocial';
 import { isPactLive } from '@/utils/pactLogic';
@@ -118,7 +119,7 @@ const ActiveTodoCard = ({
             )}
           </div>
         </div>
-        <div className="flex items-center gap-1 flex-shrink-0">
+        <div className="flex items-center gap-1 flex-shrink-0" data-fab-avoid>
           {/* 归档（不启用）按钮；约定 / 作战的待办跟着约定 / 作战走，不能手动归档（第 8 轮） */}
           {!isLinkedTodo(todo) && (
           <button
@@ -219,7 +220,7 @@ const PendingWeekdayTodoCard = ({
           </div>
         </div>
         {!isLinkedTodo(todo) && (
-        <div className="flex items-center gap-1 flex-shrink-0">
+        <div className="flex items-center gap-1 flex-shrink-0" data-fab-avoid>
           {/* 归档（禁用）按钮 */}
           <button
             onPointerDown={(e) => e.stopPropagation()}
@@ -418,8 +419,11 @@ export const TodosView = () => {
   //                   替代旧"3 秒内再点一次"机制（confirmDeleteId/Timer 已整体移除）
   const [menuTodoId, setMenuTodoId] = useState<string | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  // 归档也要二次确认（第 22 批 · 用户反馈）：长按菜单里「归档」挨着「编辑」，误点就把任务收走了
+  const [pendingArchiveId, setPendingArchiveId] = useState<string | null>(null);
   const menuTodo = menuTodoId ? todos.find(t => t.id === menuTodoId) : undefined;
   const pendingDeleteTodo = pendingDeleteId ? todos.find(t => t.id === pendingDeleteId) : undefined;
+  const pendingArchiveTodo = pendingArchiveId ? todos.find(t => t.id === pendingArchiveId) : undefined;
 
   const resetForm = () => {
     setForm(emptyForm);
@@ -443,6 +447,8 @@ export const TodosView = () => {
   // 委托板（第 6 轮）：解锁后与抽签并排；周一后第一次进任务页顺手刷新
   const [questOpen, setQuestOpen] = useState(false);
   const questBoard = useQuestBoard();
+  // FAB 让位（第 22 批）：归档区卡片右侧的钮被「+」盖住时，「+」往上滑
+  const fabDodge = useFabDodge();
   const refreshQuests = useAppStore((s) => s.refreshQuests);
   useEffect(() => { if (questBoard.unlocked) void refreshQuests(); }, [questBoard.unlocked, refreshQuests]);
   /**
@@ -621,7 +627,7 @@ export const TodosView = () => {
   return (
     // 子视图化：页级 motion 容器（opacity 进出场）移交宿主 Actions 的 tabpanel 包装层，
     // 自身退化为纯 div——若保留 exit 会拖长宿主 AnimatePresence mode="wait" 的 180ms 切换预算
-    <div className="space-y-6">
+    <div className="space-y-6 pb-28">
       {/* ── 目标区：本周目标 / 倒计时 ───────────────────── */}
       <GoalDeck
         settings={settings}
@@ -883,7 +889,7 @@ export const TodosView = () => {
                       )}
                     </div>
                   </div>
-                  <div className="flex items-center gap-1 flex-shrink-0">
+                  <div className="flex items-center gap-1 flex-shrink-0" data-fab-avoid>
                     {/* 约定 / 作战的待办：由约定 / 作战收起来的，不给编辑和恢复；结束了的可以删掉 */}
                     {!isLinkedTodo(todo) && (
                     <button
@@ -970,7 +976,7 @@ export const TodosView = () => {
                         ))}
                       </div>
                     </div>
-                    <div className="flex items-center gap-1 flex-shrink-0">
+                    <div className="flex items-center gap-1 flex-shrink-0" data-fab-avoid>
                       {!(isLinkedTodo(todo) && linkLive(todo)) && (
                       <button
                         onClick={() => setPendingDeleteId(todo.id)}
@@ -1082,7 +1088,7 @@ export const TodosView = () => {
           子页切换时两枚 FAB 静止视觉完全一致、不跳变 */}
       {p3 ? (
         /* P3R：右下蓝色斜切「接入」（设计稿 CTA 形态） */
-        <div className="fixed bottom-24 right-5 z-40 wide:bottom-8 wide:right-8">
+        <div ref={fabDodge.ref} style={fabDodge.style} className="fixed bottom-24 right-5 z-40 wide:bottom-8 wide:right-8">
           <SlantButton
             tone="primary"
             ariaLabel={isWishPane ? '添加愿望' : '添加任务'}
@@ -1100,6 +1106,8 @@ export const TodosView = () => {
           </SlantButton>
         </div>
       ) : (
+        /* 让位壳（第 22 批）：fixed 定位放外壳上，motion.button 自己管 transform 不受影响 */
+        <div ref={fabDodge.ref} style={fabDodge.style} className="fixed bottom-24 right-5 wide:bottom-8 wide:right-8 z-40">
         <motion.button
           whileTap={TAP}
           onClick={() => {
@@ -1111,7 +1119,7 @@ export const TodosView = () => {
             setShowAdd(true);
           }}
           aria-label={isWishPane ? '添加愿望' : '添加任务'}
-          className={`fixed bottom-24 right-5 wide:bottom-8 wide:right-8 z-40 flex items-center justify-center cursor-pointer ${
+          className={`relative flex items-center justify-center cursor-pointer ${
             isP4
               ? 'h-16 w-16 text-white' // p4-redraw：蓝色四角星 FAB（星形本体当按钮面）
               : p5
@@ -1133,6 +1141,7 @@ export const TodosView = () => {
             <path d="M12 4.5v15m7.5-7.5h-15" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </motion.button>
+        </div>
       )}
 
       {/* 添加/编辑任务：SheetModal 底部抽屉——自带 backdrop 点关/ESC/Android back
@@ -1815,7 +1824,7 @@ export const TodosView = () => {
                 ]
               : [
                   { label: '编辑', icon: <EditIcon />, onClick: () => handleEdit(menuTodo.id) },
-                  { label: '归档', icon: <ArchiveIcon />, onClick: () => updateTodo(menuTodo.id, { isActive: false }) },
+                  { label: '归档', icon: <ArchiveIcon />, onClick: () => setPendingArchiveId(menuTodo.id) },
                   // active 卡此前没有删除入口，按协议补上；真正删除走下方 ConfirmDialog
                   { label: '删除', icon: <TrashIcon />, tone: 'danger', onClick: () => setPendingDeleteId(menuTodo.id) },
                 ]
@@ -1835,6 +1844,20 @@ export const TodosView = () => {
           setPendingDeleteId(null);
         }}
         onCancel={() => setPendingDeleteId(null)}
+      />
+
+      {/* ── 归档确认（第 22 批）：归档 = 不启用，不算完成、不发点数；归档区里随时能恢复 ── */}
+      <ConfirmDialog
+        isOpen={!!pendingArchiveTodo}
+        tone="warning"
+        title="归档这条任务？"
+        description={pendingArchiveTodo ? `「${pendingArchiveTodo.title}」会从今日任务里收起：不算完成、不发点数。在归档区里随时可以恢复。` : undefined}
+        confirmText="归档"
+        onConfirm={() => {
+          if (pendingArchiveTodo) void updateTodo(pendingArchiveTodo.id, { isActive: false });
+          setPendingArchiveId(null);
+        }}
+        onCancel={() => setPendingArchiveId(null)}
       />
     </div>
   );

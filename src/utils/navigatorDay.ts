@@ -72,7 +72,7 @@ export async function ensurePersonaTraits(preset: NavigatorPreset, settings: Set
           + 'likes 3 条、dislikes 2 条、habits 2 条（和天气 / 季节 / 节日相关的小习惯最好），每条 ≤12 字，具体、生活化，不写功能、不写用户。',
       },
       { role: 'user', content: `角色名：${preset.name}\n人格设定：${preset.personaPrompt.slice(0, 600)}` },
-    ], { temperature: 0.8, maxTokens: 300, jsonMode: true, instant: true });
+    ], { temperature: 0.8, maxTokens: 300, jsonMode: true, instant: true, purpose: 'traits' });
     const s = raw.replace(/```(?:json)?/gi, '').trim();
     const parsed = JSON.parse(s.slice(s.indexOf('{'), s.lastIndexOf('}') + 1)) as Record<string, unknown>;
     const traits: PersonaTraits = {
@@ -290,7 +290,7 @@ export function ensureOwnDay(preset: NavigatorPreset, settings: Settings, now: D
           const raw = await chatComplete(cfg, [
             { role: 'system', content: `${preset.personaPrompt}\n\n${OWN_DAY_TASK(facts, traits)}` },
             { role: 'user', content: '写今天的这一句。' },
-          ], { temperature: 0.9, maxTokens: 160, instant: true, timeoutMs: 20000 });
+          ], { temperature: 0.9, maxTokens: 160, instant: true, timeoutMs: 20000, purpose: 'ownday' });
           text = raw.trim().replace(/^["“「]|["”」]$/g, '').split('\n')[0].trim().slice(0, 48);
           if (text) source = 'ai';
         } catch { /* 落模板 */ }

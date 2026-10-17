@@ -19,6 +19,7 @@ import { useBoldness } from '@/utils/boldness';
 import { startLowFpsLoop, lerpK } from '@/utils/rafThrottle';
 import { useAppStore } from '@/store';
 import { bgAnimOn } from '@/ui/bgAnim';
+import { useAnyOverlayOpen } from '@/ui/overlayPause';
 
 /**
  * 调色板走 CSS 变量（浅色值为 fallback）：夜间模式只需在
@@ -518,6 +519,9 @@ export const P3EmptySlab = ({ text = '暂无可追踪的信号', className }: { 
  *  动效（A1）：两片先后戳入（spring 回弹），落定后洋红片低频眨动 + 错位小抖——"活着的句点"；D0 静态 */
 export const TitlePeriod = ({ className, style }: { className?: string; style?: CSSProperties }) => {
   const anim = useBoldness();
+  // 弹层盖着时眨眼也停（第 23 批顺手）：第 12 轮把眨眼改成 CSS 关键帧后它不再归背景动画管，
+  // 谏言 / 抽屉开着时蓝页页眉这一枚仍在逐帧动——回归 r11-d 抓到的「12 层 1 层不停」就是它
+  const overlayOpen = useAnyOverlayOpen();
   return (
     <span aria-hidden className={`relative inline-block h-[14px] w-[30px] ${className ?? ''}`} style={style}>
       <motion.span
@@ -537,7 +541,7 @@ export const TitlePeriod = ({ className, style }: { className?: string; style?: 
             每个蓝页页眉一枚，帧循环因此在所有蓝页空转（第 12 轮 P2）；D0 不眨 */}
         <span
           className={`absolute inset-0${anim ? ' p3-dot-blink' : ''}`}
-          style={{ background: P3R.magenta, clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }}
+          style={{ background: P3R.magenta, clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)', ...(overlayOpen ? { animationPlayState: 'paused' } : {}) }}
         />
       </motion.span>
     </span>

@@ -19,8 +19,11 @@ import {
   buildSnapshot, type NavigatorDraft,
 } from '@/utils/navigatorRegistry';
 import {
-  generateAIGreeting, runNavigatorTurn, splitSegments, type TurnExtras, type TurnHistoryItem,
+  generateAIGreeting, runNavigatorTurn, splitSegments, startTriage, turnsOf, windowStartTurn,
+  type TriageResult, type TurnExtras, type TurnHistoryItem,
 } from '@/utils/navigatorIntent';
+import { anchorLine, anchorOf, ensurePersonaAnchor } from '@/utils/navigatorPersona';
+import { buildDayRecall, hasRecallCue, RECALL_GAP_LINE } from '@/utils/navigatorDayRecall';
 import {
   buildOldStoryLine, buildTogetherLine, markMilestoneMentioned, noteOldStoryMentioned, pickOldStory, togetherFacts,
 } from '@/utils/navigatorBond';
@@ -35,14 +38,15 @@ import {
 import { MILESTONES } from '@/utils/navigatorBond';
 import { dayLabelCN, relativeDayCN } from '@/utils/navigatorClock';
 import {
-  buildWarmthLine, finalizeStaleSessions, getProfile, lazySweepMemos, maybeCompactLive, recallMemories,
+  buildWarmthLine, finalizeStaleSessions, getProfile, lazySweepMemos, localEarlySummary, maybeCompactLive, recallMemories,
+  recentChatsBlock, rowsToLines, summarizeEarlyToday,
 } from '@/utils/navigatorMemory';
 import { markReportGreeted } from '@/utils/reportNotice';
 import { buildTopicPermission, noteTopicsMentioned } from '@/utils/navigatorTopics';
 import { buildWishContextLine, maybeProposeWishProgress } from '@/utils/navigatorWishProgress';
 import { describeImagesEach, joinImageDescriptions } from '@/utils/visionIntake';
-import { BUILTIN_NAVIGATOR_PRESETS, personaWithExamples, resolveNavigatorPreset } from '@/constants/navigatorPresets';
-import type { NavigatorMessageRow, NavigatorPreset } from '@/types';
+import { BUILTIN_NAVIGATOR_PRESETS, knownCustomPreset, personaWithExamples, resolveNavigatorPreset } from '@/constants/navigatorPresets';
+import type { NavigatorMessageRow, NavigatorPreset, NavigatorSessionRow } from '@/types';
 
 export type NavigatorCardStatus = 'pending' | 'done' | 'cancelled';
 export type NavigatorPhase = 'idle' | 'collecting' | 'thinking' | 'replying';
@@ -97,6 +101,16 @@ interface NavigatorState {
   loadOlder: () => Promise<boolean>;
   /** 自定义人格（内置在常量里，不入表） */
   presets: NavigatorPreset[];
+  /**
+   * 设置里指着的自定义人格在这台设备上**真的没有**（换设备 / 备份没带人格表）时的一句说明（第 23 批 · 串戏排查 ②）：
+   * 以前静默回落黑猫，用户只觉得「角色突然换了」；现在回落后在对话里明说一次，说完清掉
+   */
+  presetNotice: string | null;
+  /**
+   * 「今天早些时候」（第 24 批 · A1）：掉出对话窗的早些轮次压成的滚动摘要（随会话行持久化）。
+   * 对话窗按轮留最近 12–15 轮，再早的靠它接上——以前窗外的部分什么都没有，聊久了开头说的事全忘
+   */
+  earlySummary: NonNullable<NavigatorSessionRow['earlySummary']> | null;
   /** 仲裁器相位（UI 据此渲染打字指示等） */
   phase: NavigatorPhase;
   open: () => void;
@@ -145,6 +159,22 @@ let hydrating: Promise<void> | null = null;
 /** 人格表读过一次就算齐（savePreset / deletePreset 会再读）；读失败保持 false，下次用到再试 */
 let presetsLoaded = false;
 let presetsLoading: Promise<void> | null = null;
+/**
+ * 收口窗口里预跑的分诊（第 24 批 · D2）：用户发完一句，等 250ms 没再发就开始分诊；收口时批次没变就直接用。
+ * key = 批次文本 + 卡片实录 + 历史长度——任何一样变了都作废重跑。带图的批次要先转述，不预跑。
+ */
+let prefetch: { key: string; promise: Promise<TriageResult>; abort: AbortController } | null = null;
+let prefetchTimer: ReturnType<typeof setTimeout> | null = null;
+const PREFETCH_DEBOUNCE_MS = 250;
+const clearPrefetch = () => {
+  if (prefetchTimer) { clearTimeout(prefetchTimer); prefetchTimer = null; }
+  prefetch?.abort.abort();
+  prefetch = null;
+};
+/** 「今天早些时候」摘要单飞 */
+let earlyBusy = false;
+/** 掉出对话窗、还没被早些时候摘要覆盖的轮次攒到这么多才压一次 */
+const EARLY_SUMMARY_MIN_TURNS = 6;
 
 /**
  * AI 问候的**总闸**（不再是唯一计时）。
@@ -286,7 +316,7 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
         // hydrate 期间产生的内存消息（如无 Key 秒开就发话）追加在库存消息之后并补写
         const inMemoryNew = pendingWrites.slice().map((m) => ({ ...m, sessionId }));
         pendingWrites = [];
-        set({ sessionId, dateKey: today, messages: [...rows.map(fromRow), ...inMemoryNew], oldestLoadedDate: today, hasOlder: true });
+        set({ sessionId, dateKey: today, messages: [...rows.map(fromRow), ...inMemoryNew], oldestLoadedDate: today, hasOlder: true, earlySummary: existing?.earlySummary ?? null });
         for (const m of inMemoryNew) persistMessage(m);
         void purgeExpired(today);
       } catch (e) {
@@ -379,6 +409,76 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
         const head = buildPreviewLines(m.draft!).slice(0, 2).join('；');
         return `- ${ACTION_META[m.draft!.kind].label}【${status}${edited}】${head}${m.receipt ? `（回执：${m.receipt}）` : ''}`;
       });
+
+  /**
+   * 对话窗按轮的原料（与 historyForTurn 同一套过滤：去卡片 / 摘要行、去掉尾部待收口的用户消息），带 id 供摘要记「覆盖到哪」
+   */
+  const turnRows = (): NavigatorMessage[] => {
+    const ms = currentSessionMessages();
+    let end = ms.length;
+    while (end > 0 && ms[end - 1].role === 'user') end--;
+    return ms.slice(0, end).filter((m) => (m.role === 'cat' || m.role === 'user') && (m.text || m.imageDataUrl));
+  };
+
+  /** 「今天早些时候」注入块：阈值泵留下的 summary 行 + 掉出对话窗的早些轮次的滚动摘要 */
+  const earlyTodayBlock = (): string => {
+    const parts = currentSessionMessages().filter((m) => m.role === 'summary' && m.text).map((m) => m.text!.trim());
+    const es = get().earlySummary?.text?.trim();
+    if (es) parts.push(es);
+    if (!parts.length) return '';
+    return `【今天早些时候（已经聊过的，摘要；接着聊就行，别复述）】\n${parts.map((p) => `- ${p}`).join('\n')}`;
+  };
+
+  /**
+   * 「今天早些时候」滚动摘要（第 24 批 · A1）：回复完了算一次——掉出对话窗、还没覆盖的轮次 ≥6 轮就压一段
+   * （有 Key 走 AI 快速档瞬发，没 Key / 失败本地拼），存到会话行上。阈值泵把早些消息压成 summary 行时清掉（内容已在那行里）。
+   */
+  const refreshEarlySummary = async () => {
+    const sid = get().sessionId;
+    if (!sid || earlyBusy) return;
+    const rows = turnRows();
+    const turns = turnsOf(rows.map((m) => ({ role: (m.role === 'user' ? 'user' : 'cat') as 'user' | 'cat', text: m.text ?? '', m })));
+    const start = windowStartTurn(turns);
+    const covered = get().earlySummary?.turns ?? 0;
+    if (start - covered < EARLY_SUMMARY_MIN_TURNS) return;
+    const slice = turns.slice(covered, start).flat().map((t) => t.m);
+    if (!slice.length) return;
+    earlyBusy = true;
+    try {
+      const prev = get().earlySummary?.text ?? '';
+      const asRows = slice.map((m) => toRow(m, sid));
+      const text = (await summarizeEarlyToday(prev, rowsToLines(asRows), get().dateKey)) ?? localEarlySummary(prev, asRows);
+      if (get().sessionId !== sid) return;
+      const next = { text, turns: start, throughId: slice[slice.length - 1].id };
+      set({ earlySummary: next });
+      await db.navigatorSessions.update(sid, { earlySummary: next, updatedAt: new Date() });
+    } catch (e) {
+      if (import.meta.env.DEV) console.warn('[navigator] 早些时候摘要失败', e);
+    } finally {
+      earlyBusy = false;
+    }
+  };
+
+  const prefetchKey = (batch: string): string => `${batch}\u0001${cardsDigest().join('|')}\u0001${historyForTurn().length}`;
+  /** 收口窗口里预跑分诊（第 24 批 · D2）：等 250ms 没再发就开始；批次没变就不重跑 */
+  const schedulePrefetch = () => {
+    if (prefetchTimer) clearTimeout(prefetchTimer);
+    prefetchTimer = setTimeout(() => {
+      prefetchTimer = null;
+      if (get().phase !== 'collecting') return;
+      if (!getAIConfig(useAppStore.getState().settings)) return;
+      if (pendingImageMessages().length) return;
+      const batch = pendingBatch().trim();
+      if (!batch) return;
+      const key = prefetchKey(batch);
+      if (prefetch && prefetch.key === key) return;
+      prefetch?.abort.abort();
+      const abort = new AbortController();
+      const promise = startTriage(historyForTurn(), batch, cardsDigest(), abort.signal);
+      promise.catch(() => { /* 收口时现跑 */ });
+      prefetch = { key, promise, abort };
+    }, PREFETCH_DEBOUNCE_MS);
+  };
 
   /**
    * 出卡前的机械查重（分诊漏网时的兜底；语义级查重靠分诊的三张清单）：
@@ -476,10 +576,17 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
       return;
     }
 
+    // 预跑的分诊对得上这一批就接着用，对不上的取消（第 24 批 · D2）
+    if (prefetchTimer) { clearTimeout(prefetchTimer); prefetchTimer = null; }
+    const pre = prefetch && !images.length && prefetch.key === prefetchKey(batch) ? prefetch : null;
+    if (prefetch && !pre) prefetch.abort.abort();
+    prefetch = null;
+
     // 人格表没读进来之前别开口（否则自定义人格会静默解析成黑猫，第 12 轮）
     await get().ensurePresets();
-    if (gen !== generation) return;
+    if (gen !== generation) { pre?.abort.abort(); return; }
     turnAbort = new AbortController();
+    if (pre) turnAbort.signal.addEventListener('abort', () => pre.abort.abort(), { once: true });
     const mySwallowed = swallowed;
     swallowed = [];
     persistSwallowed();
@@ -510,24 +617,31 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
           ].filter(Boolean).join('\n');
         }
       }
-      // 记忆检索（纯本地，失败返回空不阻断）+ 用户画像常驻 + warmth 语气行
-      const recall = await recallMemories(batch);
-      const profile = await getProfile();
+      // 素材并行取（第 24 批把串行改成并行：记忆 / 画像 / 相处 / 约定 / 最近几次聊天 / 按日子回溯 / 人设锚）
+      const presetNow = get().activePreset();
+      const activeId = presetNow.id;
+      const todayKey = toLocalDateKey();
+      const settingsNow = useAppStore.getState().settings;
+      const [recall, profile, together, pctx, dayLevel, dayRecall, anchor] = await Promise.all([
+        recallMemories(batch, activeId), // 记忆检索（纯本地，失败返回空不阻断）
+        getProfile(activeId),
+        togetherFacts(presetNow.id),
+        promiseContext(Date.now(), presetNow.id),
+        recentChatsBlock(presetNow.id, todayKey), // 最近几次聊天的摘要（天级块，接在人格规范后吃缓存）
+        buildDayRecall(batch, presetNow.id, todayKey), // 他说起「昨天 / 上周三」→ 那几天的摘要和记忆
+        // 人设锚：自定义人格第一次用到要 AI 写一句（≤ 4s，超了这轮先用兜底）
+        Promise.race([ensurePersonaAnchor(presetNow, settingsNow), sleep(4000).then(() => anchorOf(presetNow))]),
+      ]);
       const extra = [
         profile ? `【用户画像（长期）】${profile}` : '',
         recall.lines.length ? `【关于用户的记忆】\n${recall.lines.join('\n')}` : '',
         buildWarmthLine(),
         buildWishContextLine(), // 愿望与距离（PRD_V2.6 §8 的"读取"侧；无愿望时返回空串被 filter 掉）
+        // 第二批：相处时长（纪念日只在问候里提，这里去掉）
+        buildTogetherLine({ ...together, milestone: undefined }),
+        // 回访约定：快到的事当背景（别追问）；该问的那一条交给闲聊（倾诉 / 道别时 intent 层不放），这一轮就不翻旧账
+        buildUpcomingLine(pctx, todayKey),
       ].filter(Boolean);
-      // 第二批：相处时长（纪念日只在问候里提，这里去掉）+ 闲话（自己的一天、这周的旧事：倾诉 / 道别时 intent 层不放）
-      const presetNow = get().activePreset();
-      const together = await togetherFacts(presetNow.id);
-      extra.push(buildTogetherLine({ ...together, milestone: undefined }));
-      // 回访约定：快到的事当背景（别追问）；该问的那一条交给闲聊（倾诉 / 道别时 intent 层不放），这一轮就不翻旧账
-      const todayKey = toLocalDateKey();
-      const pctx = await promiseContext();
-      const upcomingLine = buildUpcomingLine(pctx, todayKey);
-      if (upcomingLine) extra.push(upcomingLine);
       const ask = pctx.ask;
       const oldStory = ask ? null : await pickOldStory(together);
       if (gen !== generation) return;
@@ -539,61 +653,56 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
           // 交给它了才算一次机会：问了 → 问过了；没问 → 记一次，两次都没问就作废（关了就重排推送：那条不用推了）
           if (ask && casualShown) void noteAskResult(ask, text).then((r) => { if (r !== 'deferred') void useAppStore.getState().syncNotifications(); });
         },
+        pretriage: pre?.promise,
+        dayLevel,
+        leading: [earlyTodayBlock()].filter(Boolean),
+        trailing: [
+          dayRecall.block,
+          // 他在问「记不记得」、记忆和日子里都没找到：明说别编（第 24 批 · A2）
+          hasRecallCue(batch) && recall.lines.length === 0 && !dayRecall.found ? RECALL_GAP_LINE : '',
+          anchorLine(anchor), // 人设锚一定在最后一行（第 24 批 · C1）
+        ].filter(Boolean),
       };
       const persona = personaWithExamples(presetNow);
-      const immersive = !!useAppStore.getState().settings.navigatorImmersive && !isD0();
+      const immersive = !!settingsNow.navigatorImmersive && !isD0();
 
-      if (immersive) {
-        // 拟真增强：流式切泡入队，独立 drain 以固定 0.5s 吐泡（吐泡与生成并行）
-        const queue: string[] = [];
-        let streamEnded = false;
-        const turnPromise = runNavigatorTurn(
-          historyForTurn(), turnBatch, mySwallowed, turnAbort.signal, cardsDigest(), persona, extra,
-          { onSegment: (s) => { queue.push(s); return gen === generation; } },
-          turnExtras,
-        ).finally(() => { streamEnded = true; });
-        for (;;) {
-          if (gen !== generation) { swallowed = queue.splice(0); persistSwallowed(); return; }
-          if (queue.length > 0) {
-            if (get().phase !== 'replying') set({ phase: 'replying' });
-            get().pushCat(queue.shift()!);
-            const alive = await sleepUnlessStale(1200, gen);
-            if (!alive) { swallowed = queue.splice(0); persistSwallowed(); return; }
-          } else if (streamEnded) {
-            break;
-          } else {
-            const alive = await sleepUnlessStale(90, gen);
+      // 两种模式都走流式（第 24 批 · D3）：拟真按标点切泡、普通按空行切段；切出来的先入队，这里按节奏吐（吐泡与生成并行）
+      const queue: string[] = [];
+      let streamEnded = false;
+      const turnPromise = runNavigatorTurn(
+        historyForTurn(), turnBatch, mySwallowed, turnAbort.signal, cardsDigest(), persona, extra,
+        { mode: immersive ? 'sentence' : 'paragraph', onSegment: (seg) => { queue.push(seg); return gen === generation; } },
+        turnExtras,
+      ).finally(() => { streamEnded = true; });
+      turnPromise.catch(() => { /* 下面 await 时再处理；这里只防「未处理的拒绝」 */ });
+      for (;;) {
+        if (gen !== generation) { swallowed = queue.splice(0); persistSwallowed(); return; }
+        if (queue.length > 0) {
+          if (get().phase !== 'replying') set({ phase: 'replying' });
+          const seg = queue.shift()!;
+          get().pushCat(seg);
+          if (streamEnded && queue.length === 0) continue;
+          // 拟真固定 1.2s 一泡；普通模式按下一段的长度模拟打字（D0 直出）。段间隙 = 天然插话点
+          const wait = immersive ? 1200 : segmentDelayMs(queue[0] ?? seg);
+          if (wait > 0) {
+            const alive = await sleepUnlessStale(wait, gen);
             if (!alive) { swallowed = queue.splice(0); persistSwallowed(); return; }
           }
+        } else if (streamEnded) {
+          break;
+        } else {
+          const alive = await sleepUnlessStale(90, gen);
+          if (!alive) { swallowed = queue.splice(0); persistSwallowed(); return; }
         }
-        const result = await turnPromise;
-        if (gen !== generation) return;
-        dedupDrafts(result.drafts).forEach((d) => get().pushCard(d));
-        set({ phase: 'idle' });
-        void sniffPromises(batch, useAppStore.getState().settings).then((changed) => { if (changed) void useAppStore.getState().syncNotifications(); }); // 回访约定：有日子的说法才判（后台）；记下 / 关了就重排推送
-        void runLiveCompact();
-        void maybeProposeWishProgress(batch); // 愿望进度提议（六道闸在模块内，PRD_V2.6 §8）
-        return;
       }
-
-      const result = await runNavigatorTurn(
-        historyForTurn(), turnBatch, mySwallowed, turnAbort.signal, cardsDigest(), persona, extra, undefined, turnExtras,
-      );
+      const result = await turnPromise;
       if (gen !== generation) return;
-      // 分段吐泡（段间隙 = 天然插话点）
-      set({ phase: 'replying' });
-      for (let i = 0; i < result.segments.length; i++) {
-        if (gen !== generation) { swallowed = result.segments.slice(i); persistSwallowed(); return; }
-        get().pushCat(result.segments[i]);
-        if (i < result.segments.length - 1) {
-          const alive = await sleepUnlessStale(segmentDelayMs(result.segments[i + 1]), gen);
-          if (!alive) { swallowed = result.segments.slice(i + 1); persistSwallowed(); return; }
-        }
-      }
       dedupDrafts(result.drafts).forEach((d) => get().pushCard(d));
       set({ phase: 'idle' });
-      void sniffPromises(batch, useAppStore.getState().settings).then((changed) => { if (changed) void useAppStore.getState().syncNotifications(); }); // 回访约定：有日子的说法才判（后台）；记下 / 关了就重排推送
+      // 回访约定（后台）：分诊说这句带日子的安排 / 说了约定结果才判（第 24 批 · D4）；分诊没给就按日子词正则；记下 / 关了就重排推送
+      void sniffPromises(batch, useAppStore.getState().settings, Date.now(), get().activePreset().id, result.sniffHint).then((changed) => { if (changed) void useAppStore.getState().syncNotifications(); });
       void runLiveCompact(); // 阈值泵（32k/120 条才动手，平时空转）
+      void refreshEarlySummary(); // 「今天早些时候」滚动摘要（掉出对话窗 ≥6 轮才动手）
       void maybeProposeWishProgress(batch); // 愿望进度提议（六道闸在模块内，PRD_V2.6 §8）
     } catch (e) {
       if (gen !== generation) return; // 被打断的 abort，静默
@@ -612,8 +721,10 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
     if (!sid) return;
     try {
       const rows = get().messages.map((m) => toRow(m, sid));
-      const outcome = await maybeCompactLive(sid, rows, get().activePreset().name);
+      const outcome = await maybeCompactLive(sid, rows, get().activePreset().name, get().activePreset().id);
       if (!outcome.summaryText) return;
+      // 早些时候的摘要覆盖的内容现在都在这条 summary 行里了：清掉，别在注入块里出现两遍
+      if (get().earlySummary) { set({ earlySummary: null }); void db.navigatorSessions.update(sid, { earlySummary: undefined }).catch(() => {}); }
       const removed = new Set(outcome.removedIds);
       set((s) => {
         const firstRemovedIdx = s.messages.findIndex((m) => removed.has(m.id));
@@ -643,6 +754,8 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
     sessionId: null,
     messages: [],
     presets: [],
+    presetNotice: null,
+    earlySummary: null,
     phase: 'idle',
     oldestLoadedDate: toLocalDateKey(),
     hasOlder: true,
@@ -684,6 +797,13 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
           const presets = await db.navigatorPresets.orderBy('createdAt').toArray();
           set({ presets });
           presetsLoaded = true;
+          // 表读到了：设置里指着的自定义人格既不在表里、本机也没有任何一份顶着 → 真缺失，明说后回落黑猫（第 23 批）
+          const wanted = useAppStore.getState().settings.navigatorPresetId;
+          if (wanted && !BUILTIN_NAVIGATOR_PRESETS.some((b) => b.id === wanted) && !presets.some((p) => p.id === wanted) && !knownCustomPreset(wanted)) {
+            const cat = BUILTIN_NAVIGATOR_PRESETS[0];
+            set({ presetNotice: `（这台设备上没有原来那个人格的资料，先由${cat.name}接手。自定义人格默认只存在创建它的设备上；要带过来，在那台设备的 设置 → 云同步 里打开「人格上云」后再拉取一次。）` });
+            await useAppStore.getState().updateSettings({ navigatorPresetId: cat.id });
+          }
         } catch (e) {
           // 读失败不清空已有的列表（安卓从后台恢复时 IndexedDB 偶发报错）；resolveNavigatorPreset
           // 另有一份最近解析成功的自定义人格顶着，不会因此变成黑猫
@@ -720,12 +840,13 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
       if (app.settings.navigatorPresetId === id) return;
       generation++;
       clearSettle();
+      clearPrefetch();
       turnAbort?.abort();
       await app.updateSettings({ navigatorPresetId: id });
       // 换会话：清内存流 → 挂载该人格今日会话（当日切回旧人格 = 恢复旧流）
       swallowed = [];
       pendingWrites = [];
-      set({ sessionId: null, messages: [], phase: 'idle' });
+      set({ sessionId: null, messages: [], phase: 'idle', earlySummary: null });
       await hydrateSession();
       if (get().messages.length === 0) {
         const preset = get().activePreset();
@@ -738,11 +859,12 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
       if (get().dateKey === today) return false;
       generation++;
       clearSettle();
+      clearPrefetch();
       turnAbort?.abort();
       swallowed = [];
       pendingWrites = [];
       // 旧会话留库（compact 主泵在 Batch3 后段接管归档摘要）
-      set({ dateKey: today, sessionId: null, messages: [], phase: 'idle' });
+      set({ dateKey: today, sessionId: null, messages: [], phase: 'idle', earlySummary: null });
       void hydrateSession();
       return true;
     },
@@ -761,6 +883,7 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
       }
       set({ phase: 'collecting' });
       scheduleSettle(text);
+      schedulePrefetch(); // 收口窗口里先把分诊跑起来（第 24 批 · D2）
     },
 
     greet: () => {
@@ -768,9 +891,12 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
         await get().ensurePresets();
         get().rolloverIfNewDay();
         // 主泵（昨日会话末 compact）与遗忘清扫：开窗惰性触发
-        const finalizing = finalizeStaleSessions();
+        const finalizing = finalizeStaleSessions(get().activePreset().id);
         void lazySweepMemos();
         await hydrateSession();
+        // 人格真缺失的那句说明（第 23 批）：挂好会话后说一次
+        const notice = get().presetNotice;
+        if (notice) { set({ presetNotice: null }); get().pushCat(notice); }
         // 「助手找你」（第二批 C）：从推送点进来时重排可能还没跑，先判一次送达，取开场
         processDeliveredPushes();
         if (get().messages.length > 0) {
@@ -791,7 +917,7 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
         // 久别归来只说想念：小状态、纪念日、约定都先不提（纪念日留到宽限期内的下一次）
         const away = !!snap.daysAway && snap.daysAway >= 7;
         // 回访约定：该问的一条 / 当天的加油（问候是第一个机会）；推送开场的那件事优先
-        const pctx = await promiseContext();
+        const pctx = await promiseContext(Date.now(), preset.id);
         const openerPromise = opener?.kind === 'promise' ? await openPromiseById(opener.ref) : null;
         const ask = openerPromise ?? (away ? null : pctx.ask);
         const cheer = away || openerPromise ? null : pctx.cheer;
@@ -848,8 +974,8 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
             Promise.race([finalizing, sleep(2500).then(() => null)]),
             Promise.race([ownDayP, sleep(2500).then(() => null)]),
           ]);
-          const recall = await recallMemories('');
-          const profile = await getProfile();
+          const recall = await recallMemories('', preset.id);
+          const profile = await getProfile(preset.id);
           const extra = [
             // 推送开场：第一句就说那件事（压过别的素材）
             opener ? openerInstruction(opener.kind, preset.name, { topic: openerPromise?.promiseTopic, label: openerMilestone?.label }) : '',

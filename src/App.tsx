@@ -83,7 +83,7 @@ function BootLoading() {
   const [copied, setCopied] = useState<null | boolean>(null);
   useEffect(() => {
     const t = window.setTimeout(() => setShow(true), 600);
-    const t2 = window.setTimeout(() => setStuck(true), 20000);
+    const t2 = window.setTimeout(() => setStuck(true), 15000); // 第 22 批：20 → 15 秒
     return () => { window.clearTimeout(t); window.clearTimeout(t2); };
   }, []);
   const copy = async () => {
@@ -101,7 +101,7 @@ function BootLoading() {
           <p className="text-gray-600 dark:text-gray-400">正在读取本地数据…</p>
           {stuck && (
             <div className="mt-5 text-xs text-gray-500 dark:text-gray-400 space-y-3" data-testid="boot-stuck">
-              <p>已经等了 20 秒还没读完——这不正常。</p>
+              <p>已经等了 15 秒还没读完——这不正常。多半是上一次没关干净的进程还占着本地数据库，重新加载一般就好。</p>
               <div className="flex gap-2 justify-center">
                 <button onClick={() => window.location.reload()} className="px-3 py-1.5 rounded-lg bg-blue-500 text-white font-semibold">重新加载</button>
                 <button onClick={() => void copy()} className="px-3 py-1.5 rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 font-semibold">
@@ -254,9 +254,11 @@ function App() {
   useEffect(() => {
     bootStage('splash');
     db.settings.get('default').then(s => {
+      // 诊断里能看出卡在哪一套开屏（第 22 批）
+      bootStage(`splash:${s?.splashStyle ?? 'velvet'}`);
       if (s) setSplashPrefs({ splashStyle: s.splashStyle, splashSpeed: s.splashSpeed });
       else setSplashPrefs({});
-    }).catch(() => setSplashPrefs({}));
+    }).catch(() => { bootStage('splash:settings-failed'); setSplashPrefs({}); });
   }, []);
 
   useEffect(() => {
@@ -670,7 +672,7 @@ function App() {
 
   if (showSplash) {
     if (!splashPrefs) return null; // 等待开屏设置加载
-    return <SplashScreen isVisible={showSplash} onComplete={handleSplashComplete} splashStyle={splashPrefs.splashStyle} splashSpeed={splashPrefs.splashSpeed} reduced={bootInfo.safeMode} />;
+    return <SplashScreen isVisible={showSplash} onComplete={handleSplashComplete} splashStyle={splashPrefs.splashStyle} splashSpeed={splashPrefs.splashSpeed} reduced={bootInfo.safeMode || bootInfo.lightSplash} />;
   }
 
   if (isLoading) return <BootLoading />;

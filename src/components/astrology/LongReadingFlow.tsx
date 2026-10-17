@@ -16,7 +16,7 @@ import {
   spreadPositionsFor,
   TarotCardData,
 } from '@/constants/tarot';
-import { LongReading, LongReadingPeriod, TarotOrientation, DrawnCard } from '@/types';
+import { LongReading, LongReadingFollowUp, LongReadingPeriod, TarotOrientation, DrawnCard } from '@/types';
 import { CardBack } from './CardBack';
 import { TarotCardSVG } from './TarotCardSVG';
 import { renderMarkdown } from '@/utils/markdown';
@@ -156,10 +156,12 @@ export function LongReadingFlow({ initialReading, onBack }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [job?.status]);
 
-  // 手记异步到达：任务里的 result 更新后同步给详情
+  // 手记异步到达：任务里的 result 更新后同步给详情。只并手记——任务里那份 result 是主解读写完时的快照
+  // （followUps 为空），整份换上会把这期间刚追加的追问从本地这份里冲掉
   useEffect(() => {
-    if (job?.status === 'done' && job.result && reading && job.result.id === reading.id && job.result.memo !== reading.memo) {
-      setReading(job.result);
+    const res = job?.result;
+    if (job?.status === 'done' && res && reading && res.id === reading.id && res.memo !== reading.memo) {
+      setReading(cur => (cur && cur.id === res.id ? { ...cur, memo: res.memo } : cur));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [job?.result?.memo]);
@@ -817,7 +819,8 @@ export function LongReadingFlow({ initialReading, onBack }: Props) {
         canFollowUp={canFollowUp}
         onFollowUp={handleFollowStart}
         onBack={() => { ackLongJob(); onBack(); }}
-        followUI={followOpen ? (
+        // 写完（done）不再留面板：上面的追问列表已经从 store 拿到这条，原地接上
+        followUI={followOpen && followPhase !== 'done' ? (
           <FollowUpPanel
             phase={followPhase}
             question={followQuestion}
@@ -1022,13 +1025,35 @@ function FollowUpPanel({
           )}
         </div>
       )}
+    </motion.div>
+  );
+}
 
-      {phase === 'done' && (
-        <div className="text-xs text-gray-500 dark:text-gray-400 text-center">
-          追问已记录，可在档案中回看。
+// ── 已存下的一条追问：外框与追问面板同款，写完原地从面板换成它 ───────────
+
+function FollowUpEntry({ followUp: f, p3 }: { followUp: LongReadingFollowUp; p3: boolean }) {
+  const card = TAROT_BY_ID[f.cardId];
+  return (
+    <div
+      data-testid="follow-up-entry"
+      className={p3 ? 'space-y-3 p-4' : 'rounded-2xl border border-primary/30 bg-primary/5 dark:bg-primary/10 p-4 space-y-3'}
+      style={p3 ? { background: P3R.cyanFaint, clipPath: slantClip(14) } : undefined}
+    >
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-xs font-black text-primary tracking-wider uppercase">追问</div>
+        <div className="text-[10px] text-gray-400">{new Date(f.createdAt).toLocaleDateString('zh-CN')}</div>
+      </div>
+      <div className="text-sm font-bold text-gray-800 dark:text-gray-100 break-words">{f.question}</div>
+      {card && (
+        <div className="flex justify-center">
+          <TarotCardSVG card={card} orientation={f.orientation} width={80} staticCard showOrientationTag />
         </div>
       )}
-    </motion.div>
+      <div
+        className="bg-white/50 dark:bg-black/20 rounded-xl p-3 text-sm text-gray-700 dark:text-gray-200 leading-relaxed"
+        dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(renderMarkdown(f.content)) }}
+      />
+    </div>
   );
 }
 
@@ -1125,6 +1150,10 @@ export function ReadingDetail({
 
       {/* 本牌含义：三张牌（及追问牌）各自的关键词 / 牌意 / 对号入座，预设文本，与每日的同款 */}
       <CardMeanings reading={live} p3={p3} />
+
+      {/* 已存下的追问（10-12 补回）：9 月塔罗第二批撤掉手记外显时把这一段一起删了——追问照常落库，
+          却哪儿都看不到（写完面板只剩一句「已记录」，档案详情也没有）。从 store 取，写完的那一刻就在这里 */}
+      {(live.followUps ?? []).map(f => <FollowUpEntry key={f.id} followUp={f} p3={p3} />)}
 
       {followUI}
 

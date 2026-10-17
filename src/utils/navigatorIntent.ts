@@ -21,6 +21,7 @@ import {
 } from '@/utils/navigatorRegistry';
 import type { AIMessage } from '@/utils/aiClient';
 import { stampOf } from '@/utils/navigatorClock';
+import { estTokens } from '@/utils/navigatorMemory';
 import { buildTopicPermission, noteTopicsMentioned, stanceLine, type Energy, type Stance } from '@/utils/navigatorTopics';
 import type { AttributeId, LedgerExpenseType } from '@/types';
 
@@ -29,6 +30,11 @@ export interface NavigatorTurnResult {
   segments: string[];
   /** 解析出的动作草稿（每个一张确认卡；一句话说了几件事就出几张） */
   drafts: NavigatorDraft[];
+  /**
+   * 分诊判的「这句里有带日子的个人安排 / 说了某个约定的结果」（第 24 批 · D4）：store 据此决定要不要跑约定嗅探。
+   * null = 分诊没给（旧模型 / 分诊失败）→ store 退回按日子词正则判
+   */
+  sniffHint: boolean | null;
 }
 
 /** 历史消息的最小投影（store 侧转换后传入，避免循环依赖） */
@@ -50,10 +56,12 @@ const personaOrNeutral = (p: string | undefined): string => (p && p.trim()) ? p 
 // ── 阶段1 · 分诊协议（无人格，纯判定；短上下文 + 低温 = 高服从） ──
 const TRIAGE_PROTOCOL = `你是记录意图判定器。根据对话摘录和最新消息，判定本轮要创建的卡片（0~3 张）、是否需要查历史，以及对方这句话的姿态。
 只输出这一个 JSON 对象（不要代码块、不要任何其它文字）：
-{"actions":[],"query":null,"stance":"chat","energy":"normal"}
+{"actions":[],"query":null,"stance":"chat","energy":"normal","dated":false}
 
 stance（对方最新这句的姿态，五选一）：vent=倾诉、抱怨、情绪不好；chat=闲聊、分享日常；ask=提问、求助、要建议；report=在说他做了或要做的正事；bye=要走了、去忙了、晚安。
 energy（对方此刻的精力，三选一）：low=疲惫、低落、很短的敷衍句；high=兴奋、得意、分享喜事；其余 normal。
+dated（布尔）：这句里有没有「他自己要经历的、日子明确、过后值得问一句结果的事」（面试、考试、体检、答辩、比赛、演出、约会、搬家、出发、手术、交稿截止……带日子），
+  或者他说了某件以前约好要问的事的结果（「面试过了」「考完了」）。只是提到时间（「今天好累」「下午跑了步」「晚上吃了火锅」）不算，填 false。
 
 actions 元素为下列五种之一：
 {"kind":"activity","text":"事项描述","points":{"knowledge":0,"guts":0,"dexterity":0,"kindness":0,"charm":0},"important":false}（用户**已经做了**的事；points 每项 0~5）
@@ -81,21 +89,24 @@ actions 元素为下列五种之一：
 - 其它一律 {"actions":[],"query":null}。
 
 示例：
-输入末句：今天跑了五公里 → {"actions":[{"kind":"activity","text":"跑步五公里","points":{"knowledge":0,"guts":2,"dexterity":1,"kindness":0,"charm":0},"important":false}],"query":null,"stance":"report","energy":"normal"}
-输入末句：提醒我周五给妈妈打电话 → {"actions":[{"kind":"todo","title":"周五给妈妈打电话","attribute":"kindness","points":2,"attribute2":"charm","points2":1,"repeatDaily":false}],"query":null,"stance":"report","energy":"normal"}
-对话提到想学英语、无相关待确认卡，末句：帮我记一下 → {"actions":[{"kind":"todo","title":"学英语","attribute":"knowledge","points":2,"repeatDaily":true}],"query":null,"stance":"report","energy":"normal"}
-待确认卡已有「学英语」，末句：帮我记一下 → {"actions":[],"query":null,"stance":"report","energy":"normal"}
-卡片已有「记录活动【已确认生效】跑步五公里」，末句：对了我今天跑了五公里来着 → {"actions":[],"query":null,"stance":"chat","energy":"normal"}
-任务清单已有「背单词」，末句：帮我加个背单词的任务 → {"actions":[],"query":null,"stance":"report","energy":"normal"}
-任务清单已有 id=t1「背单词」，末句：背单词那个改成每天背 50 个吧 → {"actions":[{"kind":"editTodo","todoId":"t1","title":"每天背 50 个单词","repeatDaily":true}],"query":null,"stance":"report","energy":"normal"}
-今天 2026-10-06（周二）、任务清单已有 id=t2「写论文初稿」，末句：论文那个截止改到这周五 → {"actions":[{"kind":"editTodo","todoId":"t2","deadline":"2026-10-09"}],"query":null,"stance":"report","energy":"normal"}
-任务清单已有 id=t3「晨跑」，末句：晨跑先不做了，删了吧 → {"actions":[{"kind":"editTodo","todoId":"t3","archive":true}],"query":null,"stance":"report","energy":"normal"}
-输入末句：今天好累啊 → {"actions":[],"query":null,"stance":"vent","energy":"low"}
-输入末句：刚吃了碗麻辣烫哈哈 → {"actions":[],"query":null,"stance":"chat","energy":"normal"}
-输入末句：帮我记一下，午饭吃了沙拉 → {"actions":[{"kind":"activity","text":"午饭吃沙拉","points":{"knowledge":0,"guts":0,"dexterity":1,"kindness":0,"charm":0},"important":false}],"query":null,"stance":"report","energy":"normal"}
-输入末句：行吧我先去睡了 → {"actions":[],"query":null,"stance":"bye","energy":"low"}
-对话早前提过想背单词，末句：现在几点了？ → {"actions":[],"query":null,"stance":"ask","energy":"normal"}
-输入末句：我上周都做了什么？ → {"actions":[],"query":{"kind":"activities","days":7},"stance":"ask","energy":"normal"}`;
+输入末句：今天跑了五公里 → {"actions":[{"kind":"activity","text":"跑步五公里","points":{"knowledge":0,"guts":2,"dexterity":1,"kindness":0,"charm":0},"important":false}],"query":null,"stance":"report","energy":"normal","dated":false}
+输入末句：提醒我周五给妈妈打电话 → {"actions":[{"kind":"todo","title":"周五给妈妈打电话","attribute":"kindness","points":2,"attribute2":"charm","points2":1,"repeatDaily":false}],"query":null,"stance":"report","energy":"normal","dated":false}
+对话提到想学英语、无相关待确认卡，末句：帮我记一下 → {"actions":[{"kind":"todo","title":"学英语","attribute":"knowledge","points":2,"repeatDaily":true}],"query":null,"stance":"report","energy":"normal","dated":false}
+待确认卡已有「学英语」，末句：帮我记一下 → {"actions":[],"query":null,"stance":"report","energy":"normal","dated":false}
+卡片已有「记录活动【已确认生效】跑步五公里」，末句：对了我今天跑了五公里来着 → {"actions":[],"query":null,"stance":"chat","energy":"normal","dated":false}
+任务清单已有「背单词」，末句：帮我加个背单词的任务 → {"actions":[],"query":null,"stance":"report","energy":"normal","dated":false}
+任务清单已有 id=t1「背单词」，末句：背单词那个改成每天背 50 个吧 → {"actions":[{"kind":"editTodo","todoId":"t1","title":"每天背 50 个单词","repeatDaily":true}],"query":null,"stance":"report","energy":"normal","dated":false}
+今天 2026-10-06（周二）、任务清单已有 id=t2「写论文初稿」，末句：论文那个截止改到这周五 → {"actions":[{"kind":"editTodo","todoId":"t2","deadline":"2026-10-09"}],"query":null,"stance":"report","energy":"normal","dated":false}
+任务清单已有 id=t3「晨跑」，末句：晨跑先不做了，删了吧 → {"actions":[{"kind":"editTodo","todoId":"t3","archive":true}],"query":null,"stance":"report","energy":"normal","dated":false}
+输入末句：今天好累啊 → {"actions":[],"query":null,"stance":"vent","energy":"low","dated":false}
+输入末句：刚吃了碗麻辣烫哈哈 → {"actions":[],"query":null,"stance":"chat","energy":"normal","dated":false}
+输入末句：帮我记一下，午饭吃了沙拉 → {"actions":[{"kind":"activity","text":"午饭吃沙拉","points":{"knowledge":0,"guts":0,"dexterity":1,"kindness":0,"charm":0},"important":false}],"query":null,"stance":"report","energy":"normal","dated":false}
+输入末句：行吧我先去睡了 → {"actions":[],"query":null,"stance":"bye","energy":"low","dated":false}
+对话早前提过想背单词，末句：现在几点了？ → {"actions":[],"query":null,"stance":"ask","energy":"normal","dated":false}
+输入末句：我上周都做了什么？ → {"actions":[],"query":{"kind":"activities","days":7},"stance":"ask","energy":"normal","dated":false}
+输入末句：明天下午三点有个面试，有点紧张 → {"actions":[],"query":null,"stance":"report","energy":"normal","dated":true}
+已记下的约定里有「面试」，末句：面试过了！！ → {"actions":[],"query":null,"stance":"chat","energy":"high","dated":true}
+输入末句：晚上吃了火锅，挺好吃 → {"actions":[],"query":null,"stance":"chat","energy":"normal","dated":false}`;
 
 // ── 阶段2 · 表演规范（人格侧；输出纯文本，无任何格式负担） ──
 const PERFORM_RULES = `
@@ -354,12 +365,17 @@ export function spliceImmersive(buffer: string, isFinal: boolean): { bubbles: st
   return { bubbles, rest: cur };
 }
 
-/** 拟真流式钩子：每切出一泡回调一次；返回 false = 已被打断，停止生成 */
+/** 流式钩子：每切出一泡回调一次；返回 false = 已被打断，停止生成 */
 export interface ImmersiveStreamHooks {
   onSegment: (seg: string) => boolean;
+  /**
+   * sentence = 拟真增强（按标点切泡，流到哪说到哪）；paragraph = 普通模式（按空行切段，段写完就出——第 24 批 · D3，
+   * 以前普通模式是整段写完再切，首字要等全文）。缺省 sentence
+   */
+  mode?: 'sentence' | 'paragraph';
 }
 
-/** 回合附加项（AI 助手第二批） */
+/** 回合附加项（AI 助手第二批；第 24 批扩） */
 export interface TurnExtras {
   /**
    * 只在对方没在倾诉 / 道别、精力不低时才放进上下文的行（自己的一天、可以顺口提的旧事、该问的约定）——
@@ -368,6 +384,14 @@ export interface TurnExtras {
   casualContext?: string[];
   /** 回复定下来后回调整段文本和这一轮的姿态：store 侧据此记账「提没提」、约定要不要顺延 */
   afterReply?: (text: string, stance: Stance | null, energy: Energy | null, casualShown: boolean) => void;
+  /** 收口窗口里预跑的分诊（第 24 批 · D2）：拿到就不再分诊一次；它失败 / 被取消就照常现跑 */
+  pretriage?: Promise<TriageResult>;
+  /** 天级数据块（最近几次聊天的摘要）：接在人格 + 规范后面，一天不变、吃前缀缓存 */
+  dayLevel?: string;
+  /** 动态块开头的行（「今天早些时候」的摘要：叙事顺序上它在历史之前，但放在尾部不打断缓存前缀） */
+  leading?: string[];
+  /** 动态块末尾的行（按日子回溯、「记忆里没有」、人设锚——锚一定放最后） */
+  trailing?: string[];
 }
 
 /**
@@ -387,6 +411,37 @@ export function splitSegments(reply: string): string[] {
   const segs = parts.length > 6 ? [...parts.slice(0, 5), parts.slice(5).join('\n')] : parts;
   return segs.length ? segs : [stripStamp(reply.trim())].filter(Boolean);
 }
+
+/**
+ * 普通模式的流式切段（第 24 批 · D3）：按空行切，一段写完就出；最后一段等 isFinal。
+ * 与 splitSegments 同一口径（去时间戳、去空），只是不设 6 段上限（流式没法提前合并）。
+ */
+export function spliceParagraphs(buffer: string, isFinal: boolean): { bubbles: string[]; rest: string } {
+  const parts = buffer.split(/\n{2,}/);
+  const rest = isFinal ? '' : (parts.pop() ?? '');
+  const bubbles = parts.map((p) => stripStamp(p.trim())).filter(Boolean);
+  return { bubbles, rest };
+}
+
+/**
+ * 轻量硬兜底：明知无卡还声称开了卡 / 记下了 → 本地改口。
+ * v2.7.0.6 收窄：原来的正则把「记下了」「安排上」这类日常说法也当成承诺，
+ * 整段回复被换成「这张卡没能开出来」（实测闲聊 15 轮误伤 2 次）。
+ * 现在只认明确说「开了卡 / 帮你记上了 / 加进清单了」的句子，问句和假设不算；
+ * 而且只删掉出问题的那一句，其余照常说。
+ */
+const CLAIM_RE = /(开|建)(好)?了.{0,2}张?(卡|卡片)|卡片?.{0,2}(已经)?(开|建|写)好了|(已经|已)?(帮你|给你)(记|建|加|存)(下|上|好|进)了|加进了?(清单|待办|任务)/;
+const REFER_RE = /已经在|还[晾挂躺放]|待确认|点.{0,3}[「"']?确认|先确认|上面那张|没确认/;
+const HEDGE_RE = /[吗？?]|要不要|想不想|的话|如果|可以帮你|要我/;
+/** 删掉「明知无卡仍声称开了卡」的句子；dropped = 删过。按句切（保留句末标点）；不用后行断言（iOS 16.4 以前的 WebKit 不认） */
+export function dropFalseClaims(text: string): { text: string; dropped: boolean } {
+  const sentences = text.match(/[^。！？!?\n]+[。！？!?\n]*|[。！？!?\n]+/g) ?? [text];
+  const kept = sentences.filter((x) => !(CLAIM_RE.test(x) && !REFER_RE.test(x) && !HEDGE_RE.test(x)));
+  if (kept.length === sentences.length) return { text, dropped: false };
+  return { text: kept.join('').trim(), dropped: true };
+}
+/** 删空了才用的改口句（中性，不带任何人格的口吻） */
+const NO_CARD_FALLBACK = '这一张没能开出来：把关键信息再说一遍，或者用下面的快捷项手动建一张。';
 
 /** action 原始对象 → 校验收口后的 NavigatorDraft（非法则丢弃返回 undefined） */
 function toDraft(a: Record<string, unknown> | null | undefined): NavigatorDraft | undefined {
@@ -495,23 +550,28 @@ function runActivitiesQuery(days: number): string {
 
 // ── 阶段1 · 分诊 ──
 
-interface TriageResult {
+export interface TriageResult {
   drafts: NavigatorDraft[];
   queryDays: number | null;
   /** 对方这句话的姿态 / 精力（v2.7.0.6：先接住再说事）；判不出来为 null */
   stance: Stance | null;
   energy: Energy | null;
+  /** 带日子的个人安排 / 说了约定的结果（第 24 批 · D4）；分诊没给为 null */
+  dated: boolean | null;
+  /** 模型原始输出（评测用） */
+  raw?: string;
 }
 
 const STANCES: readonly Stance[] = ['vent', 'chat', 'ask', 'report', 'bye'];
 const ENERGIES: readonly Energy[] = ['low', 'normal', 'high'];
 
 /**
- * 分诊是否按「瞬发」调用（关思考、20 秒超时）。
- * 用户口径：思考大概率判得更准；只有实测关掉后首字延迟明显改善才值得关。第 4 轮末用真实 Key
- * 跑过对比后再定——在那之前保持思考（false）。
+ * 分诊按「瞬发」调用（关思考、20 秒超时）。
+ * 第 24 批评测（PRD §24.13，DeepSeek flash，115 题 × 3 遍）：思考开 / 关全对都 94%，关思考三遍全对 94% vs 91%、
+ * p50 877 vs 1207ms、p95 1227 vs 2556ms、输出 token 少 73%——用户 10-18 拍板关掉。
+ * 只对认 thinking 字段的官方 DeepSeek 真正关思考；别家按各自的瞬发口径（压 effort / 缩短超时）。
  */
-export const TRIAGE_INSTANT = false;
+export const TRIAGE_INSTANT = true;
 
 /**
  * 历史窗口按 8 条一档收缩（第 4 轮）：以前每轮滑一条，发给模型的前缀每轮都不一样，
@@ -525,11 +585,49 @@ export function historyWindow<T>(items: T[]): T[] {
   return items.slice(start);
 }
 
+// ── 按轮截窗（第 24 批 · A1）──
+// 以前按「气泡」截 32 条：一条回复是 1–6 个气泡（拟真模式更碎），实测 15 轮后模型只剩第 9–15 轮，开头说的事全忘。
+// 现在先把气泡合成轮，按轮留最近 12–15 轮、起点每 4 轮挪一次（保前缀缓存），再按 6k token 兜一道。
+/** 一轮 = 用户的一段话 + AI 的一段回复（各自可能是多个气泡）。新的一轮从「上一条是 AI、这一条是用户」处开始 */
+export function turnsOf<T extends { role: 'cat' | 'user' }>(items: T[]): T[][] {
+  const turns: T[][] = [];
+  for (const it of items) {
+    const cur = turns[turns.length - 1];
+    if (!cur || (it.role === 'user' && cur[cur.length - 1].role === 'cat')) turns.push([it]);
+    else cur.push(it);
+  }
+  return turns;
+}
+const TURNS_MAX = 12;
+const TURNS_STEP = 4;
+const TURNS_TOKEN_CAP = 6000;
+/** 窗口从第几轮开始：留最近 12–15 轮，超 6k token 再按 4 轮一档往后退，最少留 4 轮 */
+export function windowStartTurn(turns: Array<Array<{ text: string }>>): number {
+  let start = turns.length <= TURNS_MAX ? 0 : Math.ceil((turns.length - TURNS_MAX) / TURNS_STEP) * TURNS_STEP;
+  const tokens = (from: number) => turns.slice(from).reduce((n, t) => n + t.reduce((m, it) => m + estTokens(it.text) + 6, 0), 0);
+  while (turns.length - start > 4 && tokens(start) > TURNS_TOKEN_CAP) start = Math.min(turns.length - 4, start + TURNS_STEP);
+  return start;
+}
+export function historyWindowTurns(items: TurnHistoryItem[]): TurnHistoryItem[] {
+  const turns = turnsOf(items);
+  return turns.slice(windowStartTurn(turns)).flat();
+}
+/** 一轮里连续同角色的气泡合成一行（分诊的「最近对话」用） */
+function turnLines(turn: TurnHistoryItem[], maxChars: number): string[] {
+  const out: Array<{ role: 'cat' | 'user'; text: string }> = [];
+  for (const it of turn) {
+    const last = out[out.length - 1];
+    if (last && last.role === it.role) last.text += ` ${it.text}`;
+    else out.push({ role: it.role, text: it.text });
+  }
+  return out.map((h) => `${h.role === 'cat' ? 'AI' : '用户'}：${h.text.slice(0, maxChars)}`);
+}
+
 /** 空响应自愈的单次调用（DeepSeek json_object 空白 content 官方已知缺陷） */
 async function callJson(
   cfg: NonNullable<ReturnType<typeof getAIConfig>>,
   messages: AIMessage[],
-  opts: { temperature: number; maxTokens: number; signal: AbortSignal; instant?: boolean },
+  opts: { temperature: number; maxTokens: number; signal: AbortSignal; instant?: boolean; purpose?: string },
 ): Promise<string> {
   try {
     return await chatComplete(cfg, messages, { ...opts, jsonMode: true });
@@ -547,11 +645,13 @@ async function triageActions(
   userText: string,
   pendingCards: string[],
   signal: AbortSignal,
+  instant: boolean = TRIAGE_INSTANT,
 ): Promise<TriageResult> {
   const s = useAppStore.getState();
   const due = s.getDueTodosToday().filter((t) => !s.getTodayTodoProgress(t.id).isComplete);
-  // 只带最近 6 条摘录：指代消解够用，且上下文永远短小——判定质量不随对话变长而劣化
-  const recent = history.slice(-6).map((h) => `${h.role === 'cat' ? 'AI' : '用户'}：${h.text.slice(0, 80)}`).join('\n');
+  // 只带最近 3 轮摘录（第 24 批：以前是最后 6 个气泡，常常 5 条都是 AI 自己的话、看不到用户上一句）：
+  // 指代消解够用，且上下文永远短小——判定质量不随对话变长而劣化
+  const recent = turnsOf(history).slice(-3).flatMap((t) => turnLines(t, 120)).join('\n');
   /**
    * 查重素材（用户上报「重复多提一句就重复生成卡片，也不看任务列表里已有什么」）：
    * 分诊此前只看得到「今日未完成待办」——排期在别天的任务、今天已记过的活动、
@@ -583,10 +683,10 @@ async function triageActions(
     const raw = await callJson(cfg, [
       { role: 'system', content: TRIAGE_PROTOCOL },
       { role: 'user', content: user },
-    ], { temperature: 0.1, maxTokens: 800, signal, instant: TRIAGE_INSTANT });
+    ], { temperature: 0.1, maxTokens: 800, signal, instant, purpose: 'triage' });
     if (import.meta.env.DEV) console.debug('[navigator] 分诊输出:', raw);
     const parsed = extractJson(raw);
-    if (!parsed) return { drafts: [], queryDays: null, stance: null, energy: null };
+    if (!parsed) return { drafts: [], queryDays: null, stance: null, energy: null, dated: null, raw };
     const rawActions = Array.isArray(parsed.actions) ? (parsed.actions as Array<Record<string, unknown>>) : [];
     const drafts = rawActions.slice(0, 3).map((a) => {
       const d = toDraft(a);
@@ -597,13 +697,37 @@ async function triageActions(
     const queryDays = q && q.kind === 'activities' ? clampInt(q.days, 1, 30, 7) : null;
     const stance = STANCES.includes(parsed.stance as Stance) ? parsed.stance as Stance : null;
     const energy = ENERGIES.includes(parsed.energy as Energy) ? parsed.energy as Energy : null;
-    return { drafts, queryDays, stance, energy };
+    const dated = typeof parsed.dated === 'boolean' ? parsed.dated : null;
+    return { drafts, queryDays, stance, energy, dated, raw };
   } catch (e) {
     // 分诊失败宁缺勿滥：不出卡、不查询，聊天照常（表演阶段知道"本轮没有开卡"，不会承诺）
     if (signal.aborted) throw e;
     if (import.meta.env.DEV) console.warn('[navigator] 分诊调用失败，本轮不出卡:', e);
-    return { drafts: [], queryDays: null, stance: null, energy: null };
+    return { drafts: [], queryDays: null, stance: null, energy: null, dated: null };
   }
+}
+
+/** 分诊走哪一档：快速档；快速档没配（只在别家给了助手 Key）就用助手档 */
+function triageConfig() {
+  const settings = useAppStore.getState().settings;
+  return getAIConfig(settings) ?? getAssistantAIConfig(settings);
+}
+
+/**
+ * 收口窗口里预跑分诊（第 24 批 · D2）：用户发完一句，store 立刻开始算；收口时直接把这个 promise 交给
+ * runNavigatorTurn（turnExtras.pretriage）。用户又发了一句 → 批次变了，store 取消它、重跑。
+ */
+export function startTriage(history: TurnHistoryItem[], userText: string, cards: string[], signal: AbortSignal): Promise<TriageResult> {
+  const cfg = triageConfig();
+  if (!cfg) return Promise.reject(new Error('未配置 AI'));
+  return triageActions(cfg, history, userText, cards, signal);
+}
+
+/** 评测用（tests-local/evals）：直接跑一次分诊，可指定关 / 开思考 */
+export function _triageForTest(history: TurnHistoryItem[], userText: string, cards: string[], opts: { instant?: boolean } = {}): Promise<TriageResult> {
+  const cfg = triageConfig();
+  if (!cfg) throw new Error('未配置 AI');
+  return triageActions(cfg, history, userText, cards, new AbortController().signal, opts.instant ?? TRIAGE_INSTANT);
 }
 
 /** 卡片草稿 → 表演阶段可读的一行描述 */
@@ -663,7 +787,14 @@ export async function runNavigatorTurn(
   // 【已确认生效】的同样要喂——此前以「属于历史」为由滤掉，结果同一件事在对话里
   // 被再次提起时，分诊根本不知道它已经记过，照常重开一张（用户上报「重复多提一句
   // 就重复生成卡片」的直接原因）。cardsDigest 本身截到最近 10 张，不会撑大上下文。
-  const { drafts, queryDays, stance, energy } = await triageActions(triageCfg, history, userText, cards, signal);
+  let tri: TriageResult | null = null;
+  if (turnExtras.pretriage) {
+    // 收口窗口里预跑的那份（第 24 批 · D2）：拿到就用；失败 / 被取消就现跑一次
+    try { tri = await turnExtras.pretriage; } catch { tri = null; }
+    if (signal.aborted) throw new DOMException('aborted', 'AbortError');
+  }
+  if (!tri) tri = await triageActions(triageCfg, history, userText, cards, signal);
+  const { drafts, queryDays, stance, energy, dated } = tri;
   const queryResult = queryDays !== null ? runActivitiesQuery(queryDays) : null;
 
   // 阶段2：表演。判定结果作为事实注入——reply 与卡从机制上一致，无 JSON 无失守。
@@ -679,60 +810,110 @@ export async function runNavigatorTurn(
     stanceLine(stance, energy),
     buildTopicPermission(stance, energy),
   ].filter(Boolean).join('\n');
+  // 拼装（第 24 批）：［人格 + 规范 + 天级块］［按轮截的历史］［早些时候摘要 + 今日状态 + 素材 + 本轮卡片 + 姿态 + 回溯 + 人设锚］［最新一句］
+  // 天级块一天不变、跟着人格一起吃前缀缓存；会变的全在尾部那条 system 里
   const messages: AIMessage[] = [
-    { role: 'system', content: `${personaOrNeutral(personaPrompt)}\n${PERFORM_RULES}` },
-    ...historyToMessages(historyWindow(history)),
-    { role: 'system', content: [buildDynamicContext(snap, swallowed, cards), ...extraContext, ...casual, turnFacts].filter(Boolean).join('\n') },
+    { role: 'system', content: [personaOrNeutral(personaPrompt), PERFORM_RULES, turnExtras.dayLevel ?? ''].filter(Boolean).join('\n') },
+    ...historyToMessages(historyWindowTurns(history)),
+    {
+      role: 'system',
+      content: [...(turnExtras.leading ?? []), buildDynamicContext(snap, swallowed, cards), ...extraContext, ...casual, turnFacts, ...(turnExtras.trailing ?? [])]
+        .filter(Boolean).join('\n'),
+    },
     { role: 'user', content: userText },
   ];
 
-  // ── 拟真流式路径：边生成边切泡（吐泡与生成并行，总耗时不因逐泡节奏而变长） ──
+  // ── 流式路径：边生成边切泡（吐泡与生成并行，总耗时不因逐泡节奏而变长）──
+  // sentence（拟真）按标点切；paragraph（普通模式，第 24 批 · D3）按空行切段：以前普通模式整段写完再切，首字要等全文
   if (immersive) {
+    const mode = immersive.mode ?? 'sentence';
+    const splice = mode === 'paragraph' ? spliceParagraphs : spliceImmersive;
     const emitted: string[] = [];
     let buffer = '';
     let interrupted = false;
     let finishReason = '';
+    // 模型偶尔以 JSON 开头（旧习惯残留）：普通模式整段收完再剥正文；null = 还没见到第一个非空白字
+    let jsonHead: boolean | null = mode === 'paragraph' ? null : false;
+    let jsonBuf = '';
+    // 承诺守卫只在普通模式按段检查（拟真按句切，一句里看不出前后文；分诊先行定卡，嘴瓢概率本就极小）
+    const guard = mode === 'paragraph' && drafts.length === 0;
+    let droppedAny = false;
+    const emit = (b: string): boolean => {
+      let text = b;
+      if (guard) {
+        const g = dropFalseClaims(b);
+        if (g.dropped) {
+          droppedAny = true;
+          if (import.meta.env.DEV) console.warn('[navigator] 表演阶段明知无卡仍声称开了卡，删掉那一句');
+        }
+        text = g.text;
+        if (!text) return true;
+      }
+      emitted.push(text);
+      return immersive.onSegment(text);
+    };
     try {
       const streamOpts = {
-        temperature: 0.75, maxTokens: 1200, signal,
+        temperature: 0.75, maxTokens: 1200, signal, purpose: 'perform',
         onFinishReason: (r: string) => { finishReason = r; },
       };
       for await (const delta of chatStream(cfg, messages, streamOpts)) {
+        if (jsonHead === null) {
+          const probe = (jsonBuf + delta).trimStart();
+          if (!probe) { jsonBuf += delta; continue; }
+          jsonHead = probe.startsWith('{');
+          if (jsonHead) { jsonBuf += delta; continue; }
+          buffer = jsonBuf;
+          jsonBuf = '';
+        } else if (jsonHead) {
+          jsonBuf += delta;
+          continue;
+        }
         buffer += delta;
-        const { bubbles, rest } = spliceImmersive(buffer, false);
+        const { bubbles, rest } = splice(buffer, false);
         buffer = rest;
         for (const b of bubbles) {
-          emitted.push(b);
-          if (!immersive.onSegment(b)) { interrupted = true; break; }
+          if (!emit(b)) { interrupted = true; break; }
         }
         if (interrupted) break;
       }
     } catch (e) {
       // 已吐出部分泡时的中途错误：不再抛（用户已看到半截回复），静默收尾
       if (emitted.length === 0) throw e;
-      if (import.meta.env.DEV) console.warn('[navigator] 拟真流中途异常，按已吐内容收尾', e);
+      if (import.meta.env.DEV) console.warn('[navigator] 流中途异常，按已吐内容收尾', e);
     }
     if (!interrupted) {
-      let { bubbles } = spliceImmersive(buffer, true);
-      // finish_reason=length：流式没法像非流式那样加预算重来（前面的泡都上屏了），
-      // 但末尾这段一定是被拦腰砍断的半句/半个词——宁可整段不吐，也别让它上屏。
-      if (finishReason === 'length' && bubbles.length > 0) {
-        if (import.meta.env.DEV) console.warn('[navigator] 拟真流被 max_tokens 截断，丢弃残句:', bubbles[bubbles.length - 1]);
-        bubbles = bubbles.slice(0, -1);
+      if (jsonHead) {
+        const parsed = extractJson(jsonBuf);
+        const inner = parsed && typeof parsed.reply === 'string' ? parsed.reply.trim() : jsonBuf.trim();
+        for (const b of splitSegments(inner)) {
+          if (!emit(b)) break;
+        }
+      } else {
+        let { bubbles } = splice(buffer, true);
+        // finish_reason=length：流式没法像非流式那样加预算重来（前面的泡都上屏了），
+        // 但末尾这段一定是被拦腰砍断的半句/半个词——宁可整段不吐，也别让它上屏。
+        if (finishReason === 'length' && bubbles.length > 0) {
+          if (import.meta.env.DEV) console.warn('[navigator] 流被 max_tokens 截断，丢弃残句:', bubbles[bubbles.length - 1]);
+          bubbles = bubbles.slice(0, -1);
+        }
+        for (const b of bubbles) {
+          if (!emit(b)) break;
+        }
       }
-      for (const b of bubbles) {
-        emitted.push(b);
-        if (!immersive.onSegment(b)) break;
+      if (emitted.length === 0) {
+        const fb = guard && droppedAny ? NO_CARD_FALLBACK : drafts.length ? '卡片给你，看一眼没问题就确认。' : '嗯。';
+        emitted.push(fb);
+        immersive.onSegment(fb);
       }
     }
-    if (import.meta.env.DEV) console.debug('[navigator] 拟真流式输出:', emitted);
+    if (import.meta.env.DEV) console.debug('[navigator] 流式输出:', emitted);
     noteTopicsMentioned(emitted.join('\n'));
     turnExtras.afterReply?.(emitted.join('\n'), stance, energy, casualShown && casual.length > 0);
-    // 流式已实时呈现，无法撤回——承诺守卫在此路径降级为观测（分诊先行定卡，嘴瓢概率极小）
-    return { segments: emitted, drafts };
+    return { segments: emitted, drafts, sniffHint: dated };
   }
 
-  let reply = (await chatComplete(cfg, messages, { temperature: 0.75, maxTokens: 1200, signal })).trim();
+  let reply = (await chatComplete(cfg, messages, { temperature: 0.75, maxTokens: 1200, signal, purpose: 'perform' })).trim();
   if (import.meta.env.DEV) console.debug('[navigator] 表演输出:', reply);
 
   // 万一它输出了 JSON 形态（旧习惯残留），剥出纯文本
@@ -742,30 +923,19 @@ export async function runNavigatorTurn(
     if (inner) reply = inner;
   }
 
-  /**
-   * 轻量硬兜底：明知无卡还声称开了卡 / 记下了 → 本地改口。
-   * v2.7.0.6 收窄：原来的正则把「记下了」「安排上」这类日常说法也当成承诺，
-   * 整段回复被换成「这张卡吾辈没能开出来」（实测闲聊 15 轮误伤 2 次）。
-   * 现在只认明确说「开了卡 / 帮你记上了 / 加进清单了」的句子，问句和假设不算；
-   * 而且只删掉出问题的那一句，其余照常说，删空了才用改口句。
-   */
-  const CLAIM_RE = /(开|建)(好)?了.{0,2}张?(卡|卡片)|卡片?.{0,2}(已经)?(开|建|写)好了|(已经|已)?(帮你|给你)(记|建|加|存)(下|上|好|进)了|加进了?(清单|待办|任务)/;
-  const REFER_RE = /已经在|还[晾挂躺放]|待确认|点.{0,3}[「"']?确认|先确认|上面那张|没确认/;
-  const HEDGE_RE = /[吗？?]|要不要|想不想|的话|如果|可以帮你|要我/;
+  // 明知无卡还声称开了卡 / 记下了 → 删掉那一句（规则见 dropFalseClaims）；删空了才用改口句
   if (drafts.length === 0) {
-    // 按句切（保留句末标点）；不用后行断言——iOS 16.4 以前的 WebKit 不认，整个模块会解析失败
-    const sentences = reply.match(/[^。！？!?\n]+[。！？!?\n]*|[。！？!?\n]+/g) ?? [reply];
-    const kept = sentences.filter(x => !(CLAIM_RE.test(x) && !REFER_RE.test(x) && !HEDGE_RE.test(x)));
-    if (kept.length !== sentences.length) {
+    const g = dropFalseClaims(reply);
+    if (g.dropped) {
       if (import.meta.env.DEV) console.warn('[navigator] 表演阶段明知无卡仍声称开了卡，删掉那一句');
-      reply = kept.join('').trim() || '这张卡吾辈没能开出来——你把关键信息再说一遍，或者用下面的快捷项手动建一张，我盯着。';
+      reply = g.text || NO_CARD_FALLBACK;
     }
   }
 
   if (!reply) reply = drafts.length ? '卡片给你，看一眼没问题就确认。' : '嗯。';
   noteTopicsMentioned(reply);
   turnExtras.afterReply?.(reply, stance, energy, casualShown && casual.length > 0);
-  return { segments: splitSegments(reply), drafts };
+  return { segments: splitSegments(reply), drafts, sniffHint: dated };
 }
 
 /**
@@ -799,7 +969,7 @@ export async function generatePersonaPrompt(input: {
         input.freeText ? `补充设定：${input.freeText}` : '',
       ].filter(Boolean).join('\n'),
     },
-  ], { temperature: 0.9, maxTokens: 700 });
+  ], { temperature: 0.9, maxTokens: 700, purpose: 'persona' });
   const text = raw.trim();
   if (!text) throw new Error('生成结果为空，换个说法再试试');
   return text.slice(0, 600);
@@ -829,7 +999,7 @@ export async function generateAIGreeting(
       { role: 'user', content: [buildDynamicContext(snap, []), ...extraContext].filter(Boolean).join('\n') },
     ];
     let text = '';
-    for await (const delta of chatStream(cfg, messages, { temperature: 0.9, maxTokens: 600, signal, timeoutMs: 9000 })) {
+    for await (const delta of chatStream(cfg, messages, { temperature: 0.9, maxTokens: 600, signal, timeoutMs: 9000, purpose: 'greet' })) {
       text += delta;
     }
     const trimmed = text.trim();

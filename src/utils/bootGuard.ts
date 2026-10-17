@@ -29,6 +29,8 @@ export interface BootRecord {
 export interface BootInfo {
   failures: number;
   safeMode: boolean;
+  /** 第一次没走完就先把开屏减配（不放 3D 推进段），预热照旧；第二次才是整套安全模式（第 22 批） */
+  lightSplash: boolean;
   /** 上一次启动最后走到的阶段（没走完时才有意义） */
   prevStage: string | null;
   prevStartedAt: number | null;
@@ -38,12 +40,15 @@ export interface BootInfo {
 
 const KEY = 'velvet:boot.v1';
 const HTML_KEY = 'velvet:boot.html';
-/** 上一次没走完、这么久内又启动 → 算「紧接着的重试」 */
+/**
+ * 上一次没走完、这么久内又启动 → 算「紧接着的重试」。第 22 批一度放到 30 分钟，用户觉得太长（误伤：开屏期间切走被系统杀掉，
+ * 半小时内再开一次就进安全模式）——改回 10 分钟；「等很久才重开」的情形由 lightSplash 兜着（不看窗口，上一次没走完就减配）。
+ */
 const LOOP_WINDOW_MS = 10 * 60 * 1000;
 /** 连续几次没完成后进安全模式 */
 export const SAFE_MODE_AFTER = 2;
 
-let info: BootInfo = { failures: 0, safeMode: false, prevStage: null, prevStartedAt: null, htmlOnlyLastTime: false };
+let info: BootInfo = { failures: 0, safeMode: false, lightSplash: false, prevStage: null, prevStartedAt: null, htmlOnlyLastTime: false };
 let current: BootRecord | null = null;
 
 const read = (): BootRecord | null => {
@@ -70,6 +75,7 @@ export function bootBegin(): BootInfo {
   info = {
     failures,
     safeMode: failures >= SAFE_MODE_AFTER,
+    lightSplash: failures >= 1,
     prevStage: prevUnfinished ? prev!.stage : null,
     prevStartedAt: prev?.startedAt ?? null,
     htmlOnlyLastTime,
@@ -114,8 +120,18 @@ export async function collectBootDiagnostics(): Promise<Record<string, unknown>>
     deviceMemory: (nav as unknown as { deviceMemory?: number } | null)?.deviceMemory ?? null,
     cores: nav?.hardwareConcurrency ?? null,
     reducedMotion: typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches,
+    // Chrome 系才有：JS 堆用量（iOS 没有，留 null）
+    jsHeapMB: (() => { try { const m = (performance as unknown as { memory?: { usedJSHeapSize?: number } }).memory; return m?.usedJSHeapSize != null ? Math.round(m.usedJSHeapSize / 1048576) : null; } catch { return null; } })(),
+    visualViewport: typeof window !== 'undefined' && window.visualViewport ? `${Math.round(window.visualViewport.width)}x${Math.round(window.visualViewport.height)}@${window.visualViewport.scale}` : null,
     boot: { ...info, current },
   };
+  // 开屏样式 / 主题 / 夜间：开屏卡住的机器多半和哪一套开屏有关（第 22 批）
+  try {
+    const { db } = await import('@/db');
+    const st = await db.settings.get('default');
+    const u = (await db.users.toArray())[0];
+    out.splash = { style: st?.splashStyle ?? 'velvet', speed: st?.splashSpeed ?? 'normal', darkMode: !!st?.darkMode, theme: u?.theme ?? null };
+  } catch { /* ignore */ }
   try {
     if (nav?.storage?.estimate) {
       const est = await nav.storage.estimate();

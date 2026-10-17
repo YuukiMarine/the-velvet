@@ -527,6 +527,7 @@ const ISO_STRING_KEYS = new Set<string>([
   'cloudConsentAt',
   'defeatedAt',        // 战场纪念条目（ISO string 口径）
   'at',                // WishProgressPoint.at（PRD_V2.6 §8；全库唯一叫 at 的字段）
+  'blessingRemovedAt', // Settings.blessingRemovedAt（第 22 批：赐福删过了的标记，ISO 字符串）
 ]);
 
 /**
@@ -847,7 +848,7 @@ export const pullAll = (): Promise<void> => runExclusive('拉取', pullAllInner)
  * 返回 null = 这张表跳过（云端 settings 是空数组：覆盖会把本地设置抹掉）。
  * 拉取和「查阅并合并」写库前都走这里。
  */
-async function localizeCloudRows(key: string, rows: Row[]): Promise<Row[] | null> {
+export async function localizeCloudRows(key: string, rows: Row[]): Promise<Row[] | null> {
   if (key === 'settings' && rows.length === 0) {
     console.warn('[velvet-sync] pull: 云端 settings 为空数组，跳过覆盖以保护本地设置');
     return null;
@@ -909,6 +910,28 @@ async function localizeCloudRows(key: string, rows: Row[]): Promise<Row[] | null
       console.warn('[velvet-sync] pull: 云端没有今日塔罗，保留本地这一张（避免可重抽）');
     }
   }
+  if (key === 'skills') {
+    // 赐福（第 22 批）：本机删过（设置里有标记）就不让云端那行回来；本机开关得更新就用本机那行；
+    // 云端没有、本机有（老云端快照 / 还没推过）保留本机的——标记不在时才保留
+    const [localSettings] = await db.settings.toArray();
+    const removedAt = (localSettings as unknown as Row | undefined)?.blessingRemovedAt;
+    const isBlessing = (r: Row | undefined): boolean => !!r && String(r.id ?? '').startsWith('blessing_');
+    const localSkills = (await db.skills.toArray()) as unknown as Row[];
+    const localById = new Map(localSkills.map(r => [String(r.id), r]));
+    const at = (v: unknown): number => { const t = v ? new Date(v as string | number | Date).getTime() : 0; return isNaN(t) ? 0 : t; };
+    toWrite = toWrite
+      .filter(r => !(removedAt && isBlessing(r)))
+      .map(r => {
+        if (!isBlessing(r)) return r;
+        const mine = localById.get(String(r.id));
+        return mine && at(mine.updatedAt) > at(r.updatedAt) ? mine : r;
+      });
+    if (!removedAt) {
+      for (const mine of localSkills) {
+        if (isBlessing(mine) && !toWrite.some(r => r && r.id === mine.id)) toWrite.push(mine);
+      }
+    }
+  }
   if (key === 'settings') {
     const local = await db.settings.toArray();
     if (local.length > 0) {
@@ -916,6 +939,8 @@ async function localizeCloudRows(key: string, rows: Row[]): Promise<Row[] | null
       toWrite = toWrite.map((r, idx) => {
         if (idx !== 0 || !r) return r;
         const merged: Row = { ...r };
+        // 赐福「删过了」的标记（第 22 批）：本机有就不能被云端的空值冲掉
+        if (ov.blessingRemovedAt && !merged.blessingRemovedAt) merged.blessingRemovedAt = ov.blessingRemovedAt;
         // API Key：云端没带才回填（云端有值就尊重它，允许多设备同步）
         if (!merged.summaryApiKey && ov.summaryApiKey) merged.summaryApiKey = ov.summaryApiKey;
         if (!merged.openaiApiKey && ov.openaiApiKey) merged.openaiApiKey = ov.openaiApiKey;

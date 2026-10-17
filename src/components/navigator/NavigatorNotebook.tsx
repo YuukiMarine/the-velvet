@@ -14,9 +14,12 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { getProfile, saveProfile } from '@/utils/navigatorMemory';
 import { deletePromise, isPromise, listPromises, promisePhase, updatePromiseDate, type PromiseMemo } from '@/utils/navigatorPromise';
 import { dayLabelCN } from '@/utils/navigatorClock';
-import { toLocalDateKey } from '@/store';
+import { toLocalDateKey, useAppStore } from '@/store';
+import { useNavigatorStore } from '@/store/navigator';
+import { mergedNavigatorPresets } from '@/constants/navigatorPresets';
+import { PresetAvatar } from './PresetAvatar';
 import { useUiChannel } from '@/ui/useUiChannel';
-import type { NavigatorMemo } from '@/types';
+import type { NavigatorMemo, NavigatorPreset } from '@/types';
 
 /** 约定此刻的状态写法（记事本「约好的事」） */
 function promiseStatusLabel(m: PromiseMemo): string {
@@ -40,26 +43,62 @@ export const NavigatorNotebook = ({ isOpen, onClose }: { isOpen: boolean; onClos
   const [promises, setPromises] = useState<PromiseMemo[]>([]);
   const [dateEdit, setDateEdit] = useState<{ id: string; date: string } | null>(null);
   const [deletePromiseId, setDeletePromiseId] = useState<string | null>(null);
+  // 记忆隔离（第 23 批）：开着时按人格翻看——scope = 人格 id，'' = 只看共享的；默认落在当前人格
+  const isolated = useAppStore((s) => !!s.settings.navigatorMemoryIsolated);
+  const nav = useNavigatorStore();
+  const personas: NavigatorPreset[] = mergedNavigatorPresets(nav.presets);
+  const [scope, setScope] = useState<string>('');
+  useEffect(() => { if (isOpen) setScope(isolated ? nav.activePreset().id : ''); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [isOpen, isolated]);
+  // 人格多了条子会横向滚：打开时把当前那枚滚到看得见的地方（蓝频道右边还让给了「保存画像」，更容易藏在外面）
+  useEffect(() => {
+    if (!isOpen || !isolated) return;
+    const t = window.setTimeout(() => {
+      const bar = document.querySelector<HTMLElement>('[data-testid=memory-scope]');
+      const chip = bar?.querySelector<HTMLElement>('[aria-pressed="true"]');
+      if (bar && chip) bar.scrollLeft = Math.max(0, chip.offsetLeft - 12);
+    }, 350);
+    return () => window.clearTimeout(t);
+  }, [isOpen, isolated, scope]);
+  const inScope = (m: Pick<NavigatorMemo, 'presetId'>): boolean => !isolated || (scope ? (!m.presetId || m.presetId === scope) : !m.presetId);
+  const scopeId = isolated && scope ? scope : undefined;
+  const personaName = (id?: string): string => (id ? personas.find((p) => p.id === id)?.name ?? '（已删的人格）' : '共享');
 
   const load = async () => {
-    setProfile(await getProfile());
+    setProfile(await getProfile(scopeId));
     setProfileDirty(false);
     const rows = await db.navigatorMemos.orderBy('createdAt').reverse().toArray();
-    setMemos(rows.filter((m) => m.status === 'active' && m.source !== 'profile' && !isPromise(m)));
-    const all = await listPromises();
+    setMemos(rows.filter((m) => m.status === 'active' && m.source !== 'profile' && !isPromise(m) && inScope(m)));
+    const all = (await listPromises()).filter(inScope);
     // 还在等着的在前（按日子）；关了的只留最近 5 条
     const open = all.filter((m) => (m.promiseState ?? 'waiting') === 'waiting');
     const closed = all.filter((m) => (m.promiseState ?? 'waiting') !== 'waiting')
       .sort((a, b) => b.dueDate.localeCompare(a.dueDate)).slice(0, 5);
     setPromises([...open, ...closed]);
   };
-  useEffect(() => { if (isOpen) void load(); }, [isOpen]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { if (isOpen) void load(); }, [isOpen, scope, isolated]);
 
   const commitProfile = async () => {
     if (!profileDirty) return;
-    await saveProfile(profile);
+    await saveProfile(profile, scopeId);
     setProfileDirty(false);
   };
+  /** 把一条记忆 / 约定挪给别的人格，或设为共享（'' = 共享） */
+  const moveTo = async (id: string, to: string) => {
+    await db.navigatorMemos.update(id, { presetId: to || undefined });
+    await load();
+  };
+  const OwnerSelect = ({ m }: { m: NavigatorMemo }) => isolated ? (
+    <select
+      value={m.presetId ?? ''}
+      onChange={(e) => void moveTo(m.id, e.target.value)}
+      aria-label="这条归谁"
+      className={`shrink-0 max-w-[6.5em] rounded border bg-transparent px-1 py-0.5 text-[10px] ${p3 ? 'border-[#9cc3e6] text-[#4b8fd9]' : 'border-gray-200 text-gray-500 dark:border-gray-700 dark:text-gray-400'}`}
+    >
+      <option value="">共享</option>
+      {personas.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+    </select>
+  ) : null;
 
   const togglePin = async (m: NavigatorMemo) => {
     await db.navigatorMemos.update(m.id, { pinned: !m.pinned, importance: !m.pinned ? 5 : m.importance });
@@ -92,6 +131,31 @@ export const NavigatorNotebook = ({ isOpen, onClose }: { isOpen: boolean; onClos
     <>
       <SheetModal isOpen={isOpen} onClose={() => { void commitProfile(); onClose(); }} position="bottom" title="记事本">
         <div className="relative pb-2">
+          {isolated && (
+            // 记忆隔离开着：按人格翻看（第 23 批）
+            // 蓝频道右上角有绝对定位的「保存画像」白斜片：条子本身收窄（margin，不是 padding），不从它底下穿过去
+            <div className={`mb-3 flex gap-1.5 overflow-x-auto pb-1 ${p3 ? 'mr-[96px]' : ''}`} data-testid="memory-scope">
+              {[{ id: '', name: '共享', avatar: undefined as string | undefined }, ...personas].map((p) => {
+                const on = scope === p.id;
+                return (
+                  <button
+                    key={p.id || '__shared'}
+                    type="button"
+                    onClick={() => setScope(p.id)}
+                    aria-pressed={on}
+                    className={`flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[12px] font-bold transition ${
+                      on
+                        ? (p3 ? 'border-[#1b57ff] bg-[#1b57ff] text-white' : 'border-primary bg-primary text-white')
+                        : (p3 ? 'border-[#9cc3e6] bg-white text-[#0a1230]' : 'border-gray-200 text-gray-600 dark:border-gray-700 dark:text-gray-300')
+                    }`}
+                  >
+                    {p.id ? <PresetAvatar avatar={p.avatar} className="h-4 w-4" /> : <span aria-hidden>∞</span>}
+                    {p.name}
+                  </button>
+                );
+              })}
+            </div>
+          )}
           {p3 && (
             <>
               {/* MEMORY 竖排幽灵字（整行横排词顺时针 90°，沿左缘自上而下——定稿口径） */}
@@ -147,7 +211,7 @@ export const NavigatorNotebook = ({ isOpen, onClose }: { isOpen: boolean; onClos
               />
             )}
             <p className={p3 ? 'mt-1.5 text-[11px] font-bold leading-relaxed' : 'mt-1 text-[10px] text-gray-400 dark:text-gray-500'} style={p3 ? { color: '#4b8fd9' } : undefined}>
-              每次对话都会带上这段画像；它会在整理对话时自动更新，你的手改优先。
+              每次对话都会带上这段画像；它会在整理对话时自动更新，你的手改优先。{isolated && (scope ? `这是「${personaName(scope)}」自己的画像；它还没写过时会先读共享的那份。` : '这是共享的画像，各人格都读得到。')}
             </p>
           </div>
 
@@ -197,6 +261,7 @@ export const NavigatorNotebook = ({ isOpen, onClose }: { isOpen: boolean; onClos
                             {dayLabelCN(m.dueDate, today)}{WHEN_TEXT[m.dueWhen ?? 'day']} · {promiseStatusLabel(m)}
                           </p>
                         </div>
+                        <OwnerSelect m={m} />
                         {open && (
                           <button type="button" onClick={() => setDateEdit({ id: m.id, date: m.dueDate })} aria-label={`改「${m.promiseTopic}」的日子`}
                             className="shrink-0 rounded p-1 text-xs text-gray-400 hover:text-primary">改日子</button>
@@ -255,9 +320,10 @@ export const NavigatorNotebook = ({ isOpen, onClose }: { isOpen: boolean; onClos
                           {m.text}
                         </p>
                         <p className={p3 ? 'mt-0.5 text-[10px] font-bold' : 'mt-0.5 text-[10px] text-gray-400 dark:text-gray-500'} style={p3 ? { color: '#6a7ba3' } : undefined}>
-                          {new Date(m.createdAt).toLocaleDateString()} · 重要度 {m.importance}{m.followUp ? ' · 有待追问话头' : ''}
+                          {new Date(m.createdAt).toLocaleDateString()} · 重要度 {m.importance}{m.followUp ? ' · 有待追问话头' : ''}{isolated && scope && !m.presetId ? ' · 共享' : ''}
                         </p>
                       </div>
+                      <OwnerSelect m={m} />
                       <button type="button" onClick={() => void togglePin(m)} aria-label={m.pinned ? '取消置顶' : '置顶'}
                         className={`shrink-0 rounded p-1 text-xs ${m.pinned ? 'text-primary' : 'text-gray-300 hover:text-primary dark:text-gray-600'}`}>📌</button>
                       <button type="button" onClick={() => setMemoEdit({ id: m.id, text: m.text })} aria-label="编辑记忆"

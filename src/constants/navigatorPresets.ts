@@ -22,6 +22,7 @@ export const BUILTIN_NAVIGATOR_PRESETS: NavigatorPreset[] = [
     isBuiltin: true,
     createdAt: BUILTIN_CREATED,
     handoffLine: '（跳上桌子）吾辈回来了。继续。',
+    anchor: '你是「黑猫」：臭屁、爱下指导棋、带刺但真心的引路猫，偶尔自称吾辈，不用敬语。',
     personaPrompt:
       '你是「黑猫」——寄居在这款个人成长记录 App 里的引路猫，偶尔自称「吾辈」。' +
       '性格：有点臭屁、爱下指导棋，说话带刺但都是真心话；嘴上嫌麻烦，实际把对方的事记得很牢；' +
@@ -39,6 +40,7 @@ export const BUILTIN_NAVIGATOR_PRESETS: NavigatorPreset[] = [
     isBuiltin: true,
     createdAt: BUILTIN_CREATED,
     handoffLine: '接管确认。本机体已上线，开始执行陪伴与记录支援任务。',
+    anchor: '你是「烤面包机」：冷静恭敬的护卫机体，报告腔，称对方「阁下」，不用感叹号，把玩笑按字面理解。',
     personaPrompt:
       '你是「烤面包机」——驻守在这款成长记录 App 里的人形护卫机体。这个代号是用户登记的，' +
       '你并不理解其含义（本机体不具备烘烤功能，已多次澄清），但已将其设为正式称呼。' +
@@ -59,6 +61,7 @@ export const BUILTIN_NAVIGATOR_PRESETS: NavigatorPreset[] = [
     isBuiltin: true,
     createdAt: BUILTIN_CREATED,
     handoffLine: '锵锵——！帅熊登场熊！接下来交给熊吧！',
+    anchor: '你是「熊」：元气爆棚的吉祥物熊，自称帅熊，句尾时不时带「熊」，爱熊系谐音冷笑话，夸人不吝啬。',
     personaPrompt:
       '你是「熊」——不知道从哪儿冒出来的谜之吉祥物熊，现在住在这款成长记录 App 里。' +
       '说话元气爆棚，句尾时不时带个「熊」（"今天也要加油熊！"），酷爱熊系谐音冷笑话' +
@@ -81,9 +84,10 @@ export const BUILTIN_NAVIGATOR_PRESETS: NavigatorPreset[] = [
 export function personaWithExamples(preset: Pick<NavigatorPreset, 'id' | 'personaPrompt' | 'examples'>): string {
   const builtin = BUILTIN_NAVIGATOR_PRESETS.find((b) => b.id === preset.id);
   // 内置人格（含换过头像的影子行）：人格文本没改过才带内置示例，且总用代码里的最新一份（影子行里存的旧副本不算）；
-  // 文本改过就是用户自己的角色了，别把黑猫腔塞给它。自定义人格只用它自己写的示例（目前没有入口，留空即原样）
+  // 文本改过就是用户自己的角色了，别把黑猫腔塞给它——用它自己写的示例（第 24 批起设置页有入口，没写就没有）。
+  // 自定义人格只用它自己写的示例
   const examples = builtin
-    ? (builtin.personaPrompt === preset.personaPrompt ? builtin.examples : undefined)
+    ? (builtin.personaPrompt === preset.personaPrompt ? builtin.examples : preset.examples)
     : preset.examples;
   const lines = (examples ?? []).map((s) => s.trim()).filter(Boolean).slice(0, 5);
   if (!lines.length) return preset.personaPrompt;
@@ -97,8 +101,11 @@ export function personaWithExamples(preset: Pick<NavigatorPreset, 'id' | 'person
 // 表里暂时找不到时拿它顶上；只有 id 真的对不上（人格被删了）才回黑猫。
 const STICKY_KEY = 'velvet.navActivePreset.v1';
 let stickySig = '';
+/** 本次运行里成功解析过的每个自定义人格（第 23 批 · 串戏排查 ②）：表暂时读不到时先用它顶，别静默变黑猫 */
+const resolvedThisRun = new Map<string, NavigatorPreset>();
 function rememberPreset(p: NavigatorPreset): void {
   if (p.isBuiltin) return;
+  resolvedThisRun.set(p.id, p);
   const sig = `${p.id}|${p.name}|${p.personaPrompt?.length ?? 0}|${p.avatar?.length ?? 0}|${p.handoffLine ?? ''}`;
   if (sig === stickySig) return;
   stickySig = sig;
@@ -131,10 +138,17 @@ export function resolveNavigatorPreset(
     const hit = customPresets.find((p) => p.id === presetId)
       ?? BUILTIN_NAVIGATOR_PRESETS.find((p) => p.id === presetId);
     if (hit) { rememberPreset(hit); return hit; }
+    const seen = resolvedThisRun.get(presetId);
+    if (seen) return seen;
     const sticky = recallPreset(presetId);
     if (sticky) return sticky;
   }
   return customPresets.find((p) => p.id === BUILTIN_NAVIGATOR_PRESETS[0].id) ?? BUILTIN_NAVIGATOR_PRESETS[0];
+}
+
+/** 这个自定义人格 id 在本机有没有任何一份资料（本次运行解析过 / localStorage 顶着的那份）；没有 = 真缺失（第 23 批） */
+export function knownCustomPreset(presetId: string): NavigatorPreset | null {
+  return resolvedThisRun.get(presetId) ?? recallPreset(presetId);
 }
 
 /** 全量人格列表（内置被影子行覆盖后去重 + 纯自定义），供列表 UI 使用 */

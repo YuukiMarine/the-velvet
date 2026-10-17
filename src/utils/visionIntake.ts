@@ -51,7 +51,7 @@ export async function describeImagesEach(
           { type: 'image_url', image_url: { url } },
         ],
       },
-    ], { temperature: 0.2, maxTokens: 600, signal });
+    ], { temperature: 0.2, maxTokens: 600, signal, purpose: 'vision' });
     return raw.trim();
   }));
 }
@@ -108,7 +108,7 @@ export async function extractScheduleFromImage(
         { type: 'image_url', image_url: { url: dataUrl } },
       ],
     },
-  ], { temperature: 0.1, maxTokens: 1400, signal });
+  ], { temperature: 0.1, maxTokens: 1400, signal, purpose: 'vision' });
   return extractJSONArray(raw)
     .map((o): ScheduleIntakeItem => ({
       title: String(o.title ?? '').trim().slice(0, 20),
@@ -158,7 +158,7 @@ export async function extractActivitiesFromImage(
         { type: 'image_url', image_url: { url: dataUrl } },
       ],
     },
-  ], { temperature: 0.1, maxTokens: 600, signal });
+  ], { temperature: 0.1, maxTokens: 600, signal, purpose: 'vision' });
   return extractJSONArray(raw)
     .map((o): ActivityIntakeItem => ({
       text: String(o.text ?? '').trim().slice(0, 40),

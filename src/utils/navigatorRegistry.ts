@@ -206,12 +206,12 @@ export async function executeDraft(draft: NavigatorDraft): Promise<string> {
       const gains = ATTR_IDS.filter((id) => draft.points[id] > 0)
         .map((id) => `${navAttrName(id)} +${draft.points[id]}`)
         .join('、');
-      const unlockLine = unlockHints.achievements + unlockHints.skills > 0
-        ? ' 另外，好像有什么解锁了——去看看。'
-        : '';
+      // 回执写中性事实（第 24 批 · C2）：以前是黑猫腔（「行动比嘴上说说有说服力多了」），所有人格共用，
+      // 还会进卡片实录喂给模型——别的人格看见就学过去了。口吻交给人格自己的回复
+      const unlockLine = unlockHints.achievements + unlockHints.skills > 0 ? '另有新解锁，去看看。' : '';
       return gains
-        ? `记下了，${gains}。行动比嘴上说说有说服力多了。${unlockLine}`
-        : `记下了。没加点也算数——发生过的事就该留个痕。${unlockLine}`;
+        ? `已记录「${draft.text.trim()}」：${gains}。${unlockLine}`.trim()
+        : `已记录「${draft.text.trim()}」（没有加点）。${unlockLine}`.trim();
     }
     case 'todo': {
       await s.addTodo({
@@ -226,8 +226,8 @@ export async function executeDraft(draft: NavigatorDraft): Promise<string> {
         isActive: true,
       });
       return draft.repeatDaily
-        ? `放进每日清单了。我每天都会看着它的，你也是。`
-        : `加进待办了。别让它在清单里积灰。`;
+        ? `已加入每日清单：「${draft.title.trim()}」。`
+        : `已加入待办：「${draft.title.trim()}」。`;
     }
     case 'ledger': {
       const saved = draft.direction === 'expense'
@@ -249,17 +249,16 @@ export async function executeDraft(draft: NavigatorDraft): Promise<string> {
             note: draft.note.trim() || undefined,
           });
       await s.rewardForLedgerEntry(saved);
+      const note = draft.note.trim() ? `（${draft.note.trim()}）` : '';
       return draft.direction === 'expense'
-        ? `记上了，¥${draft.amount}。花都花了，起码账目清楚。`
-        : `进账 ¥${draft.amount}，记好了。不错嘛。`;
+        ? `已记账：支出 ¥${draft.amount}${note}。`
+        : `已记账：收入 ¥${draft.amount}${note}。`;
     }
     case 'completeTodo': {
       const result = await s.completeTodo(draft.todoId);
-      if (!result) return `「${draft.todoTitle}」今天已经完成过了——重复邀功可不行。`;
-      const unlockLine = result.unlockHints.achievements + result.unlockHints.skills > 0
-        ? ' 顺带解锁了点什么，自己去确认。'
-        : '';
-      return `划掉一件：「${draft.todoTitle}」。加点我亲眼看着到账了。${unlockLine}`;
+      if (!result) return `「${draft.todoTitle}」今天已经完成过了，这次没重复记。`;
+      const unlockLine = result.unlockHints.achievements + result.unlockHints.skills > 0 ? '另有新解锁，去看看。' : '';
+      return `已完成「${draft.todoTitle}」，加点到账。${unlockLine}`.trim();
     }
     case 'editTodo': {
       const t = s.todos.find((x) => x.id === draft.todoId);
@@ -267,7 +266,7 @@ export async function executeDraft(draft: NavigatorDraft): Promise<string> {
       if (draft.archive) {
         // isActive=false：store 会盖上 archivedAt，不算完成、不发点数（Bug fix #7 同口径）
         await s.updateTodo(t.id, { isActive: false });
-        return `「${t.title}」收进归档了。哪天想重启，去归档里点一下就回来。`;
+        return `「${t.title}」已收进归档（归档里随时能恢复）。`;
       }
       const patch: Partial<Todo> = {};
       if (draft.title !== undefined && draft.title.trim()) patch.title = draft.title.trim();
@@ -280,7 +279,7 @@ export async function executeDraft(draft: NavigatorDraft): Promise<string> {
       if (draft.repeatDaily !== undefined) patch.repeatDaily = draft.repeatDaily;
       if (draft.deadline !== undefined) patch.deadline = draft.deadline || undefined;
       await s.updateTodo(t.id, patch);
-      return `改好了：「${patch.title ?? t.title}」。`;
+      return `已修改：「${patch.title ?? t.title}」。`;
     }
     case 'bigdeal': {
       const steps = draft.steps.map(t => t.trim()).filter(Boolean);
@@ -295,9 +294,7 @@ export async function executeDraft(draft: NavigatorDraft): Promise<string> {
         deadline: draft.deadline || undefined,
         steps: steps.map(t => ({ id: uuidv4(), title: t, source: 'ai' as const })),
       });
-      // 回执会进【本会话卡片实录】喂给模型：「吾辈」只给黑猫，别的人格看见自己说过吾辈会学过去（第 12 轮）
-      const cat = s.settings.navigatorPresetId === undefined || s.settings.navigatorPresetId === 'builtin-cat';
-      return `大事立好了，拆成 ${steps.length} 步。从第一步开始——别贪多，${cat ? '吾辈' : '我'}盯着呢。`;
+      return `大事「${draft.title.trim()}」已立好，拆成 ${steps.length} 步。`;
     }
   }
 }

@@ -1,4 +1,5 @@
 import { motion, AnimatePresence } from 'motion/react';
+import { useFabDodge } from '@/ui/useFabDodge';
 import { weatherEmoji, type WeatherIcon } from '@/utils/weather';
 import { useState, useMemo, useRef, useEffect, lazy, Suspense } from 'react';
 import { useAppStore, toLocalDateKey } from '@/store';
@@ -614,6 +615,8 @@ const dayLabelOf = (dayKey: string, date: Date): string => {
 };
 
 export const ActivitiesView = () => {
+  // FAB 让位（第 22 批）：和任务子页同一套，参见 ui/useFabDodge
+  const fabDodge = useFabDodge();
   const { activities, addActivity, settings, setModalBlocker, deleteActivity, deleteActivityRecordOnly } = useAppStore(useShallow(s => ({ activities: s.activities, addActivity: s.addActivity, settings: s.settings, setModalBlocker: s.setModalBlocker, deleteActivity: s.deleteActivity, deleteActivityRecordOnly: s.deleteActivityRecordOnly })));
   const isP4 = useUiChannel() === 'p4';
   // P5R：红主题 FAB 换八角红块（p5-menu 稿「+」形制）
@@ -1030,7 +1033,7 @@ export const ActivitiesView = () => {
   return (
     // 子视图化：页级 motion 容器（opacity 进出场）移交宿主 Actions 的 tabpanel 包装层，
     // 自身退化为纯 div——若保留 exit 会拖长宿主 AnimatePresence mode="wait" 的 180ms 切换预算
-    <div className="space-y-4">
+    <div className="space-y-4 pb-28">
       {/* 总结弹窗 */}
       <SummaryModal
         isOpen={showSummary}
@@ -1592,6 +1595,8 @@ export const ActivitiesView = () => {
           calendarSelectedDay < todayKey &&
           calendarSelectedDay >= sevenDaysAgo;
         return (
+          /* 让位壳（第 22 批）：fixed 定位放外壳上；记录卡的钮打 data-fab-avoid 后同样会让 */
+          <div ref={fabDodge.ref} style={fabDodge.style} className="fixed bottom-24 right-5 wide:bottom-8 wide:right-8 z-40">
           <motion.button
             whileHover={{ scale: 1.08 }}
             whileTap={{ scale: 0.92 }}
@@ -1607,7 +1612,7 @@ export const ActivitiesView = () => {
             aria-label={isPastDaySelected ? '补录历史记录' : '添加记录'}
             // 制式统一（rounded-2xl → rounded-full）：与任务子页 FAB 同款圆形 bg-primary，
             // 子页切换时 FAB 静止视觉不跳变；双态（+/补记）行为与位置保持原样
-            className={`fixed bottom-24 right-5 wide:bottom-8 wide:right-8 flex items-center justify-center z-40 cursor-pointer transition-colors ${
+            className={`relative flex items-center justify-center cursor-pointer transition-colors ${
               isP4 && !isPastDaySelected
                 ? 'h-16 w-16 text-white' // p4-redraw：蓝色四角星 FAB（与任务子页一致）
                 : p5
@@ -1632,6 +1637,7 @@ export const ActivitiesView = () => {
               <span className="relative"><PlusIcon /></span>
             )}
           </motion.button>
+          </div>
         );
       })()}
 

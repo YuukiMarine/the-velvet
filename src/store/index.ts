@@ -2720,6 +2720,16 @@ export const useAppStore = create<AppState>((set, get) => ({
        const settingsArray = await db.settings.toArray();
        const settings = settingsArray[0] || get().settings;
 
+      // 赐福删过了（设置里有标记）却又出现在表里 = 从云端 / 备份 / 老版本设备回来的幽灵行：当场清掉（第 22 批）
+      if (settings?.blessingRemovedAt) {
+        const ghosts = skills.filter(s => s.id.startsWith('blessing_')).map(s => s.id);
+        if (ghosts.length) {
+          await db.skills.bulkDelete(ghosts);
+          skills = skills.filter(s => !s.id.startsWith('blessing_'));
+          console.warn('[velvet] 赐福已删过，清掉同步回来的', ghosts.length, '行');
+        }
+      }
+
       // 迁移：将旧格式技能描述统一为新格式「[属性名]积累额外提升 x%」
       const oldDescPatterns = [
         /阅读行为额外\+(\d+)%/, /学习行为额外\+(\d+)%/, /挑战行为额外\+(\d+)%/,
@@ -3611,7 +3621,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     const { settings } = get();
     const customSkills = settings.customSkills || [];
     const updatedSkills = customSkills.filter(s => s.id !== id);
-    await get().updateSettings({ customSkills: updatedSkills });
+    // 赐福（blessing_*）：留一个「删过了」的标记在设置里（设置本来就随云同步走）——
+    // 不然云端那份一拉回来，+1 又悄悄生效（第 22 批 · 用户反馈）
+    const removedBlessing = id.startsWith('blessing_') ? { blessingRemovedAt: new Date().toISOString() } : {};
+    await get().updateSettings({ customSkills: updatedSkills, ...removedBlessing });
     
     await get().loadData();
   },
@@ -3619,7 +3632,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   toggleSkillUnlock: async (id: string) => {
     const skill = await db.skills.get(id);
     if (skill) {
-      await db.skills.update(id, { unlocked: !skill.unlocked });
+      // updatedAt：赐福开关跨设备合并时按「新的那份」算（第 22 批，见 syncMerge.resolveSpecial）
+      await db.skills.update(id, { unlocked: !skill.unlocked, updatedAt: new Date() });
       await get().loadData();
     }
   },
@@ -4224,8 +4238,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   applySkillBonus: (attributeId: string, points: number) => {
-    const { skills } = get();
-    const unlockedSkills = skills.filter(s => s.unlocked && s.requiredAttribute === attributeId);
+    const { skills, settings } = get();
+    // 删过赐福的账号：哪怕幽灵行还没来得及清，也不计它的 +1（第 22 批，双保险）
+    const blessingGone = !!settings.blessingRemovedAt;
+    const unlockedSkills = skills.filter(s => s.unlocked && s.requiredAttribute === attributeId && !(blessingGone && s.id.startsWith('blessing_')));
 
     let totalBonus = 1;
     let totalFlat = 0;
