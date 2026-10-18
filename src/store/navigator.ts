@@ -22,8 +22,12 @@ import {
   generateAIGreeting, runNavigatorTurn, splitSegments, startTriage, turnsOf, windowStartTurn,
   type TriageResult, type TurnExtras, type TurnHistoryItem,
 } from '@/utils/navigatorIntent';
-import { anchorLine, anchorOf, ensurePersonaAnchor } from '@/utils/navigatorPersona';
+import { anchorLine, anchorOf, ensurePersonaAnchor, ensurePersonaSerious, seriousOf } from '@/utils/navigatorPersona';
 import { buildDayRecall, hasRecallCue, RECALL_GAP_LINE } from '@/utils/navigatorDayRecall';
+import { buildHappenings, coachStyleOf, happeningsBlock, happeningsSince } from '@/utils/navigatorHappenings';
+import { recordsBlock, searchRecords } from '@/utils/navigatorIndex';
+import { briefingBlock, FIRST_MEET_LINE, freshIntroLine } from '@/utils/navigatorBriefing';
+import { careTemplateLine, scheduleCare, takeCareLine } from '@/utils/navigatorGravity';
 import {
   buildOldStoryLine, buildTogetherLine, markMilestoneMentioned, noteOldStoryMentioned, pickOldStory, togetherFacts,
 } from '@/utils/navigatorBond';
@@ -42,7 +46,7 @@ import {
   recentChatsBlock, rowsToLines, summarizeEarlyToday,
 } from '@/utils/navigatorMemory';
 import { markReportGreeted } from '@/utils/reportNotice';
-import { buildTopicPermission, noteTopicsMentioned } from '@/utils/navigatorTopics';
+import { buildTopicPermission, noteHappeningsMentioned, noteTopicsMentioned, unmentionedHappenings } from '@/utils/navigatorTopics';
 import { buildWishContextLine, maybeProposeWishProgress } from '@/utils/navigatorWishProgress';
 import { describeImagesEach, joinImageDescriptions } from '@/utils/visionIntake';
 import { BUILTIN_NAVIGATOR_PRESETS, knownCustomPreset, personaWithExamples, resolveNavigatorPreset } from '@/constants/navigatorPresets';
@@ -67,6 +71,8 @@ export interface NavigatorMessage {
   userEdited?: boolean;
   /** 执行成功后的回执文案（渲染在卡片下方的签章行） */
   receipt?: string;
+  /** 沉下来的那一轮（第 25 批）：归档时标 [沉]，归档器不从中出话头 */
+  heavy?: boolean;
   createdAt: number;
   /** 归属会话：上拉加载的历史消息与今日会话共存于 messages，凭它区分（上下文只用今日的） */
   sessionId?: string;
@@ -238,6 +244,7 @@ const toRow = (m: NavigatorMessage, sessionId: string): NavigatorMessageRow => (
   cardStatus: m.cardStatus,
   userEdited: m.userEdited,
   receipt: m.receipt,
+  heavy: m.heavy,
   createdAt: m.createdAt,
 });
 
@@ -263,6 +270,7 @@ const fromRow = (r: NavigatorMessageRow): NavigatorMessage => ({
   cardStatus: r.cardStatus,
   userEdited: r.userEdited,
   receipt: r.receipt,
+  heavy: r.heavy,
   createdAt: r.createdAt,
   sessionId: r.sessionId,
 });
@@ -565,6 +573,9 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
     if (!batch && !images.length) { set({ phase: 'idle' }); return; }
     const gen = ++generation;
     set({ phase: 'thinking' });
+    // 这一轮的用户消息（沉下来时要标记）与起点时刻
+    const batchMsgIds = (() => { const ms = currentSessionMessages(); const ids: string[] = []; for (let i = ms.length - 1; i >= 0; i--) { if (ms[i].role === 'user') ids.unshift(ms[i].id); else break; } return ids; })();
+    const turnStartedAt = Date.now();
 
     const cfg = getAIConfig(useAppStore.getState().settings);
     if (!cfg) {
@@ -622,7 +633,8 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
       const activeId = presetNow.id;
       const todayKey = toLocalDateKey();
       const settingsNow = useAppStore.getState().settings;
-      const [recall, profile, together, pctx, dayLevel, dayRecall, anchor] = await Promise.all([
+      const coach = coachStyleOf(presetNow);
+      const [recall, profile, together, pctx, recentChats, dayRecall, anchor, sinceKey, serious] = await Promise.all([
         recallMemories(batch, activeId), // 记忆检索（纯本地，失败返回空不阻断）
         getProfile(activeId),
         togetherFacts(presetNow.id),
@@ -631,10 +643,20 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
         buildDayRecall(batch, presetNow.id, todayKey), // 他说起「昨天 / 上周三」→ 那几天的摘要和记忆
         // 人设锚：自定义人格第一次用到要 AI 写一句（≤ 4s，超了这轮先用兜底）
         Promise.race([ensurePersonaAnchor(presetNow, settingsNow), sleep(4000).then(() => anchorOf(presetNow))]),
+        happeningsSince(presetNow.id, todayKey), // 近况流：上次聊完是哪天
+        Promise.race([ensurePersonaSerious(presetNow, settingsNow), sleep(4000).then(() => seriousOf(presetNow))]), // 认真模式（沉下来时用）
       ]);
+      // 活用记录（第 25 批）：近况流（本地算，按话题配额去掉提过的）+ 和这句话有关的记录（本地索引）+ 用户简报（天级）
+      const happenings = unmentionedHappenings(buildHappenings(sinceKey, coach, todayKey)).slice(0, 5);
+      const recordHits = searchRecords(batch, 4);
+      const dayLevel = [briefingBlock(presetNow, settingsNow, todayKey), freshIntroLine(presetNow, settingsNow, todayKey), recentChats].filter(Boolean).join('\n');
+      const coachLine = coach === 'push'
+        ? '【相处方式】督促型：ta 没做的事（断了的习惯、快到的截止、没动的任务）可以提，一天最多一次，说事实不说教、不翻旧账。'
+        : '【相处方式】陪伴型：只提好事和快到的事；没做的、断了的不主动提，ta 说起再接。';
       const extra = [
         profile ? `【用户画像（长期）】${profile}` : '',
         recall.lines.length ? `【关于用户的记忆】\n${recall.lines.join('\n')}` : '',
+        recordsBlock(recordHits),
         buildWarmthLine(),
         buildWishContextLine(), // 愿望与距离（PRD_V2.6 §8 的"读取"侧；无愿望时返回空串被 filter 掉）
         // 第二批：相处时长（纪念日只在问候里提，这里去掉）
@@ -646,14 +668,18 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
       const oldStory = ask ? null : await pickOldStory(together);
       if (gen !== generation) return;
       const turnExtras: TurnExtras = {
-        casualContext: [ask ? buildAskLine(ask, todayKey) : '', buildOwnDayLine(presetNow.id), oldStory ? buildOldStoryLine(oldStory) : ''],
+        casualContext: [ask ? buildAskLine(ask, todayKey) : '', happeningsBlock(happenings), buildOwnDayLine(presetNow.id), oldStory ? buildOldStoryLine(oldStory) : ''],
         afterReply: (text, _stance, _energy, casualShown) => {
           noteOwnDayMentioned(text, presetNow.id);
           if (oldStory) noteOldStoryMentioned(text, presetNow.id, oldStory);
+          if (casualShown) noteHappeningsMentioned(text, happenings);
           // 交给它了才算一次机会：问了 → 问过了；没问 → 记一次，两次都没问就作废（关了就重排推送：那条不用推了）
           if (ask && casualShown) void noteAskResult(ask, text).then((r) => { if (r !== 'deferred') void useAppStore.getState().syncNotifications(); });
         },
         pretriage: pre?.promise,
+        presetId: presetNow.id,
+        serious,
+        coachLine,
         dayLevel,
         leading: [earlyTodayBlock()].filter(Boolean),
         trailing: [
@@ -699,11 +725,19 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
       if (gen !== generation) return;
       dedupDrafts(result.drafts).forEach((d) => get().pushCard(d));
       set({ phase: 'idle' });
-      // 回访约定（后台）：分诊说这句带日子的安排 / 说了约定结果才判（第 24 批 · D4）；分诊没给就按日子词正则；记下 / 关了就重排推送
-      void sniffPromises(batch, useAppStore.getState().settings, Date.now(), get().activePreset().id, result.sniffHint).then((changed) => { if (changed) void useAppStore.getState().syncNotifications(); });
+      if (result.heavy) {
+        // 沉下来的那一轮（第 25 批）：这轮的消息标 heavy（归档器不从中出话头）、明天轻轻问一句；不嗅探约定、不提议愿望
+        const ids = new Set([...batchMsgIds, ...currentSessionMessages().filter((m) => m.role === 'cat' && m.createdAt >= turnStartedAt).map((m) => m.id)]);
+        set((st) => ({ messages: st.messages.map((m) => (ids.has(m.id) ? { ...m, heavy: true } : m)) }));
+        for (const m of get().messages) if (ids.has(m.id)) persistMessage(m);
+        scheduleCare(presetNow.id, todayKey);
+      } else {
+        // 回访约定（后台）：分诊说这句带日子的安排 / 说了约定结果才判（第 24 批 · D4）；分诊没给就按日子词正则；记下 / 关了就重排推送
+        void sniffPromises(batch, useAppStore.getState().settings, Date.now(), get().activePreset().id, result.sniffHint).then((changed) => { if (changed) void useAppStore.getState().syncNotifications(); });
+        void maybeProposeWishProgress(batch); // 愿望进度提议（六道闸在模块内，PRD_V2.6 §8）
+      }
       void runLiveCompact(); // 阈值泵（32k/120 条才动手，平时空转）
       void refreshEarlySummary(); // 「今天早些时候」滚动摘要（掉出对话窗 ≥6 轮才动手）
-      void maybeProposeWishProgress(batch); // 愿望进度提议（六道闸在模块内，PRD_V2.6 §8）
     } catch (e) {
       if (gen !== generation) return; // 被打断的 abort，静默
       get().pushCat(e instanceof Error && e.message.includes('超时')
@@ -945,10 +979,13 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
               ? (openerMilestone ? openerTemplate('milestone', preset.id, { label: openerMilestone.label }) : '')
               : openerTemplate('missyou', preset.id, {});
 
+        // 沉下来的第二天（第 25 批）：轻轻问一句——只在今天第一次问候时取走
+        const careLine = firstToday ? takeCareLine(preset.id, snap.dateKey) : null;
         if (!firstToday || !getAIConfig(app.settings)) {
           let text = firstToday ? buildDailyGreeting(snap) : buildShortGreeting(snap);
           // 推送开场：那件事放第一句（约定已经在这句里问了，下面不再重复）
           if (openerLine) text = [openerLine, text].join('\n');
+          if (careLine) text = [careTemplateLine(), text].join('\n');
           if (firstToday && !away) {
             // 没 Key 的跨天首开：纪念日、今天的小状态（模板）也补一句
             const day = await Promise.race([ownDayP, sleep(400).then(() => null)]);
@@ -976,10 +1013,17 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
           ]);
           const recall = await recallMemories('', preset.id);
           const profile = await getProfile(preset.id);
+          const briefing = briefingBlock(preset, app.settings, snap.dateKey);
           const extra = [
             // 推送开场：第一句就说那件事（压过别的素材）
             opener ? openerInstruction(opener.kind, preset.name, { topic: openerPromise?.promiseTopic, label: openerMilestone?.label }) : '',
+            // 沉下来的第二天：轻轻问一句（压过别的闲话）
+            careLine ?? '',
             profile ? `【用户画像（长期）】${profile}` : '',
+            // 用户简报（第 25 批）：记录里的 ta；这个人格第一次见面时另加一句「别炫耀」
+            briefing,
+            freshIntroLine(preset, app.settings, snap.dateKey),
+            briefing && together.chatDays === 0 ? FIRST_MEET_LINE : '',
             // 标真实的日子（以前一律写「昨日」，上次聊天可能是五天前）
             last ? `【上次聊天（${relativeDayCN(last.dateKey, snap.dateKey)}，${dayLabelCN(last.dateKey, snap.dateKey)}）的摘要】${last.summary}` : '',
             buildTogetherLine(away ? { ...together, milestone: undefined } : together, snap.dateKey),

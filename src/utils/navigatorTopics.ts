@@ -27,21 +27,23 @@ interface Ledger {
   todoIds: string[];
   /** 主动提过的总结 id */
   reportIds: string[];
+  /** 提过的近况（第 25 批 · navigatorHappenings 的 key） */
+  happeningKeys: string[];
 }
 
 const read = (): Ledger => {
   try {
     const raw = localStorage.getItem(KEY);
     const p = raw ? JSON.parse(raw) as Partial<Ledger> : {};
-    return { tarotDate: p.tarotDate, todoIds: p.todoIds ?? [], reportIds: p.reportIds ?? [] };
+    return { tarotDate: p.tarotDate, todoIds: p.todoIds ?? [], reportIds: p.reportIds ?? [], happeningKeys: p.happeningKeys ?? [] };
   } catch {
-    return { todoIds: [], reportIds: [] };
+    return { todoIds: [], reportIds: [], happeningKeys: [] };
   }
 };
 
 const write = (l: Ledger) => {
   try {
-    localStorage.setItem(KEY, JSON.stringify({ ...l, todoIds: l.todoIds.slice(-400), reportIds: l.reportIds.slice(-60) }));
+    localStorage.setItem(KEY, JSON.stringify({ ...l, todoIds: l.todoIds.slice(-400), reportIds: l.reportIds.slice(-60), happeningKeys: (l.happeningKeys ?? []).slice(-200) }));
   } catch { /* 存不了就不记，最多多提一次 */ }
 };
 
@@ -70,8 +72,8 @@ export function stanceLine(stance: Stance | null, energy: Energy | null): string
  * 主动话题许可：本轮能主动提什么（每轮最多挑一个，也可以都不提）。
  * 倾诉 / 道别 / 精力低 → 一律不主动提。
  */
-export function buildTopicPermission(stance: Stance | null, energy: Energy | null): string {
-  if (stance === 'vent' || stance === 'bye' || energy === 'low') {
+export function buildTopicPermission(stance: Stance | null, energy: Energy | null, heavy = false): string {
+  if (heavy || stance === 'vent' || stance === 'bye' || energy === 'low') {
     return '【主动话题】这一轮不主动提塔罗、待办、报告，只接他的话；他问起再说。';
   }
   const s = useAppStore.getState();
@@ -135,6 +137,25 @@ export function noteTopicsMentioned(text: string): void {
     changed = true;
   }
   if (changed) write(ledger);
+}
+
+/** 近况（第 25 批）：还没提过的那几条 */
+export function unmentionedHappenings<T extends { key: string }>(items: T[]): T[] {
+  const seen = new Set(read().happeningKeys);
+  return items.filter((h) => !seen.has(h.key));
+}
+
+/** 回复发出后：提到了哪几条近况（回复里出现它的任一探针）就记上 */
+export function noteHappeningsMentioned(text: string, items: Array<{ key: string; probes: string[] }>): void {
+  if (!text.trim() || !items.length) return;
+  const ledger = read();
+  const seen = new Set(ledger.happeningKeys);
+  let changed = false;
+  for (const h of items) {
+    if (seen.has(h.key)) continue;
+    if (h.probes.some((p) => p && p.length >= 2 && text.includes(p))) { seen.add(h.key); changed = true; }
+  }
+  if (changed) { ledger.happeningKeys = [...seen]; write(ledger); }
 }
 
 /** 模板问候用：哪些话题今天还能提 */

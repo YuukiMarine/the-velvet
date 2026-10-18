@@ -46,12 +46,14 @@ interface GeneratorState {
   /** 口吻示例（第 24 批 · C3）：一行一句，最多 5 句；只教语气和长短。以前只有内置三位有、自定义人格没入口 */
   examples: string;
   examplesBusy: boolean;
+  /** 认识你多久了（第 25 批 · 用户简报）：一直都在 / 刚认识 */
+  knowSince: 'always' | 'fresh';
   generating: boolean;
   error?: string;
 }
 const closedGenerator: GeneratorState = {
   open: false, name: '', callUser: '', toneWords: [], coach: 'accompany',
-  freeText: '', personaPrompt: '', avatar: 'star', likes: '', dislikes: '', habits: '', examples: '', examplesBusy: false, generating: false,
+  freeText: '', personaPrompt: '', avatar: 'star', likes: '', dislikes: '', habits: '', examples: '', examplesBusy: false, knowSince: 'always', generating: false,
 };
 const splitExamples = (v: string): string[] =>
   v.split(/\n+/).map((x) => x.trim().replace(/^[-•·]\s*/, '').slice(0, 60)).filter(Boolean).slice(0, 5);
@@ -93,6 +95,8 @@ export const NavigatorSettings = () => {
           likes: p.traits?.likes.join('、') ?? '', dislikes: p.traits?.dislikes.join('、') ?? '', habits: p.traits?.habits.join('、') ?? '',
           // 内置人格（设定没改过）显示代码里的示例；改过的 / 自定义的显示它自己的
           examples: (p.examples ?? BUILTIN_NAVIGATOR_PRESETS.find((b) => b.id === p.id && b.personaPrompt === p.personaPrompt)?.examples ?? []).join('\n'),
+          coach: p.coachStyle ?? BUILTIN_NAVIGATOR_PRESETS.find((b) => b.id === p.id)?.coachStyle ?? 'accompany',
+          knowSince: p.knowSince ?? 'always',
         }
       : { ...closedGenerator, open: true });
   /** 内置人格（改头像时存的是同 id 的影子行）的喜好写在代码里，不在这里改 */
@@ -142,8 +146,11 @@ export const NavigatorSettings = () => {
       // 留空 = 不存，第一次用到时按人格设定自动写一份
       traits: !editingBuiltin && hasTraits ? traits : undefined,
       examples: examples.length ? examples : undefined,
-      // 末尾人设锚（≤60 字的「你是谁」）跟着设定文本走：文本改了就作废，下次用到时重写（navigatorPersona）
+      // 末尾人设锚（≤60 字的「你是谁」）和认真模式跟着设定文本走：文本改了就作废，下次用到时重写（navigatorPersona）
       anchor: prev && prev.personaPrompt === prompt ? prev.anchor : undefined,
+      serious: prev && prev.personaPrompt === prompt ? prev.serious : undefined,
+      coachStyle: gen.coach,
+      knowSince: !editingBuiltin && gen.knowSince === 'fresh' ? 'fresh' : undefined,
     });
     setGen(closedGenerator);
   };
@@ -245,6 +252,23 @@ export const NavigatorSettings = () => {
             checked={!!settings.navigatorMemoryIsolated}
             onChange={(v) => updateSettings({ navigatorMemoryIsolated: v })}
             aria-label="记忆按人格隔离"
+          />
+        </div>
+      </div>
+      {/* ── 让助手了解你的记录（第 25 批 · 用户简报）── */}
+      <div className="flex items-start justify-between gap-3 rounded-xl border border-gray-200 px-4 py-3 dark:border-gray-700">
+        <div>
+          <div className="text-sm font-semibold text-gray-700 dark:text-gray-200">让助手了解你的记录</div>
+          <p className="mt-0.5 text-xs leading-relaxed text-gray-400 dark:text-gray-500">
+            开着：每个人格都知道你用了多久、练得最多的属性、坚持中的习惯、做成过的大事、愿望、倒计时、羁绊里的人和最近总结的数据，聊天时像朋友一样顺口提起（记录是你的，不受「记忆按人格隔离」影响）。
+            关掉：它只知道今天的状态和聊天里记下的事——想要纯净一点的角色陪伴、或让它按你定的世界观来，就关掉。
+          </p>
+        </div>
+        <div className="mt-0.5 shrink-0">
+          <Toggle
+            checked={settings.navigatorBriefing !== false}
+            onChange={(v) => updateSettings({ navigatorBriefing: v })}
+            aria-label="让助手了解你的记录"
           />
         </div>
       </div>
@@ -352,10 +376,6 @@ export const NavigatorSettings = () => {
                   ))}
                 </div>
               </div>
-              <div className="flex gap-1.5">
-                <button type="button" className={chip(gen.coach === 'accompany')} onClick={() => setGen((s) => ({ ...s, coach: 'accompany' }))}>陪伴型</button>
-                <button type="button" className={chip(gen.coach === 'push')} onClick={() => setGen((s) => ({ ...s, coach: 'push' }))}>督促型</button>
-              </div>
               <textarea
                 value={gen.freeText}
                 onChange={(e) => setGen((s) => ({ ...s, freeText: e.target.value }))}
@@ -397,6 +417,23 @@ export const NavigatorSettings = () => {
                   className="w-full resize-none rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm leading-relaxed outline-none focus:border-primary dark:border-gray-700 dark:bg-gray-900 dark:text-white"
                 />
               </div>
+              {/* 相处方式（第 25 批）：督促型会提「断了 / 没做」的事，陪伴型只提好事和快到的事；生成设定时也按它写 */}
+              <div className="space-y-1.5" data-persona-coach>
+                <div className="text-xs text-gray-400 dark:text-gray-500">相处方式（督促型：会提你没做的事，一天一次、只说事实；陪伴型：只提好事和快到的事）</div>
+                <div className="flex gap-1.5">
+                  <button type="button" className={chip(gen.coach === 'accompany')} onClick={() => setGen((s) => ({ ...s, coach: 'accompany' }))}>陪伴型</button>
+                  <button type="button" className={chip(gen.coach === 'push')} onClick={() => setGen((s) => ({ ...s, coach: 'push' }))}>督促型</button>
+                </div>
+              </div>
+              {!editingBuiltin && (
+                <div className="space-y-1.5" data-persona-know-since>
+                  <div className="text-xs text-gray-400 dark:text-gray-500">认识你多久了（「刚认识」的头 7 天它只知道今天的状态，之后才看得到你的记录）</div>
+                  <div className="flex gap-1.5">
+                    <button type="button" className={chip(gen.knowSince === 'always')} onClick={() => setGen((s) => ({ ...s, knowSince: 'always' }))}>一直都在</button>
+                    <button type="button" className={chip(gen.knowSince === 'fresh')} onClick={() => setGen((s) => ({ ...s, knowSince: 'fresh' }))}>刚认识</button>
+                  </div>
+                </div>
+              )}
               {!editingBuiltin && (
                 <div className="space-y-2" data-persona-traits>
                   <div className="text-xs text-gray-400 dark:text-gray-500">喜好（它每天的小状态会用到；用「、」隔开，留空的话第一次用到时按人格设定自动写）</div>

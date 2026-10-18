@@ -117,6 +117,7 @@ const COMPACT_PROTOCOL = `你是对话归档器。把给定的「用户与陪伴
   这些 App 里本来就查得到。只有当那件事本身透露了长期信息（如反复出现的目标、身份、处境）
   才写，且要写成那条事实本身而不是"他记了什么"。
 - followUp：一个值得下次自然追问的话头（≤30 字），没有就 null。
+- 带 [沉] 标记的是对方很沉重时说的话：可以记成关于用户的事实（colorHint 写「沉重」），但**不要**写成 followUp、不要写进 promises、不要当成要回访的事——过几天轻飘飘地问「那天你说不想活了，后来呢」是伤人的。
 - profile：拿【现有用户画像】与本段对话对照，若有值得并入画像的长期信息（身份/长期目标/
   稳定偏好/生活状态变化），输出**更新后的画像全文**（≤200 字，中性第三人称，合并去重）；
   画像无需变化则 null。不要把短期琐事写进画像。
@@ -189,7 +190,7 @@ export function rowsToLines(rows: NavigatorMessageRow[]): string[] {
         return `[卡片·${status}] ${r.receipt ?? r.text ?? ''}`.trim();
       }
       if (r.role === 'summary') return `[早前摘要] ${r.text ?? ''}`;
-      return `${r.role === 'user' ? '用户' : 'AI'}：${r.text ?? ''}`;
+      return `${r.heavy ? '[沉] ' : ''}${r.role === 'user' ? '用户' : 'AI'}：${r.text ?? ''}`;
     })
     .filter((l) => l.length > 3);
 }

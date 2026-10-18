@@ -22,6 +22,8 @@ import {
 import type { AIMessage } from '@/utils/aiClient';
 import { stampOf } from '@/utils/navigatorClock';
 import { estTokens } from '@/utils/navigatorMemory';
+import { parseQueries, QUERY_PROTOCOL, runQueries, type NavigatorQuery } from '@/utils/navigatorQueries';
+import { HEAVY_TURN_LINE, isHeavyText, proofsBlock, SAFETY_RULE, seriousLine } from '@/utils/navigatorGravity';
 import { buildTopicPermission, noteTopicsMentioned, stanceLine, type Energy, type Stance } from '@/utils/navigatorTopics';
 import type { AttributeId, LedgerExpenseType } from '@/types';
 
@@ -35,6 +37,8 @@ export interface NavigatorTurnResult {
    * null = 分诊没给（旧模型 / 分诊失败）→ store 退回按日子词正则判
    */
   sniffHint: boolean | null;
+  /** 这一轮沉下来了（第 25 批）：store 据此标记消息、安排第二天轻轻一问、跳过嗅探和愿望提议 */
+  heavy: boolean;
 }
 
 /** 历史消息的最小投影（store 侧转换后传入，避免循环依赖） */
@@ -56,12 +60,13 @@ const personaOrNeutral = (p: string | undefined): string => (p && p.trim()) ? p 
 // ── 阶段1 · 分诊协议（无人格，纯判定；短上下文 + 低温 = 高服从） ──
 const TRIAGE_PROTOCOL = `你是记录意图判定器。根据对话摘录和最新消息，判定本轮要创建的卡片（0~3 张）、是否需要查历史，以及对方这句话的姿态。
 只输出这一个 JSON 对象（不要代码块、不要任何其它文字）：
-{"actions":[],"query":null,"stance":"chat","energy":"normal","dated":false}
+{"actions":[],"queries":[],"stance":"chat","energy":"normal","dated":false,"gravity":"normal"}
 
 stance（对方最新这句的姿态，五选一）：vent=倾诉、抱怨、情绪不好；chat=闲聊、分享日常；ask=提问、求助、要建议；report=在说他做了或要做的正事；bye=要走了、去忙了、晚安。
 energy（对方此刻的精力，三选一）：low=疲惫、低落、很短的敷衍句；high=兴奋、得意、分享喜事；其余 normal。
 dated（布尔）：这句里有没有「他自己要经历的、日子明确、过后值得问一句结果的事」（面试、考试、体检、答辩、比赛、演出、约会、搬家、出发、手术、交稿截止……带日子），
   或者他说了某件以前约好要问的事的结果（「面试过了」「考完了」）。只是提到时间（「今天好累」「下午跑了步」「晚上吃了火锅」）不算，填 false。
+gravity（分量，二选一）：heavy=对方在说很绝望的话（活着没意思、撑不下去、做什么都没用、没人在乎、想消失、不想活）或明显在崩溃边缘；其余 normal。只是累、烦、低落、抱怨是 normal。
 
 actions 元素为下列五种之一：
 {"kind":"activity","text":"事项描述","points":{"knowledge":0,"guts":0,"dexterity":0,"kindness":0,"charm":0},"important":false}（用户**已经做了**的事；points 每项 0~5）
@@ -85,28 +90,33 @@ actions 元素为下列五种之一：
 - 修改一张待确认卡 = 出一张修正后的新卡。
 - **改已有任务出 editTodo**（todoId 取自【任务清单已有】），不要再出一张 todo 卡——那会变成两条。说「做完了 / 搞定了」是 completeTodo，不是 editTodo；
   「不做了 / 删掉 / 取消这个任务」是 editTodo + archive:true。截止日按【今天】换算成具体日期。
-- 需要今天之前的历史记录才能回答时：{"kind":"activities","days":1~30} 填入 query。
-- 其它一律 {"actions":[],"query":null}。
+${QUERY_PROTOCOL}
+- 其它一律 actions 为 []、queries 为 []。
 
 示例：
-输入末句：今天跑了五公里 → {"actions":[{"kind":"activity","text":"跑步五公里","points":{"knowledge":0,"guts":2,"dexterity":1,"kindness":0,"charm":0},"important":false}],"query":null,"stance":"report","energy":"normal","dated":false}
-输入末句：提醒我周五给妈妈打电话 → {"actions":[{"kind":"todo","title":"周五给妈妈打电话","attribute":"kindness","points":2,"attribute2":"charm","points2":1,"repeatDaily":false}],"query":null,"stance":"report","energy":"normal","dated":false}
-对话提到想学英语、无相关待确认卡，末句：帮我记一下 → {"actions":[{"kind":"todo","title":"学英语","attribute":"knowledge","points":2,"repeatDaily":true}],"query":null,"stance":"report","energy":"normal","dated":false}
-待确认卡已有「学英语」，末句：帮我记一下 → {"actions":[],"query":null,"stance":"report","energy":"normal","dated":false}
-卡片已有「记录活动【已确认生效】跑步五公里」，末句：对了我今天跑了五公里来着 → {"actions":[],"query":null,"stance":"chat","energy":"normal","dated":false}
-任务清单已有「背单词」，末句：帮我加个背单词的任务 → {"actions":[],"query":null,"stance":"report","energy":"normal","dated":false}
-任务清单已有 id=t1「背单词」，末句：背单词那个改成每天背 50 个吧 → {"actions":[{"kind":"editTodo","todoId":"t1","title":"每天背 50 个单词","repeatDaily":true}],"query":null,"stance":"report","energy":"normal","dated":false}
-今天 2026-10-06（周二）、任务清单已有 id=t2「写论文初稿」，末句：论文那个截止改到这周五 → {"actions":[{"kind":"editTodo","todoId":"t2","deadline":"2026-10-09"}],"query":null,"stance":"report","energy":"normal","dated":false}
-任务清单已有 id=t3「晨跑」，末句：晨跑先不做了，删了吧 → {"actions":[{"kind":"editTodo","todoId":"t3","archive":true}],"query":null,"stance":"report","energy":"normal","dated":false}
-输入末句：今天好累啊 → {"actions":[],"query":null,"stance":"vent","energy":"low","dated":false}
-输入末句：刚吃了碗麻辣烫哈哈 → {"actions":[],"query":null,"stance":"chat","energy":"normal","dated":false}
-输入末句：帮我记一下，午饭吃了沙拉 → {"actions":[{"kind":"activity","text":"午饭吃沙拉","points":{"knowledge":0,"guts":0,"dexterity":1,"kindness":0,"charm":0},"important":false}],"query":null,"stance":"report","energy":"normal","dated":false}
-输入末句：行吧我先去睡了 → {"actions":[],"query":null,"stance":"bye","energy":"low","dated":false}
-对话早前提过想背单词，末句：现在几点了？ → {"actions":[],"query":null,"stance":"ask","energy":"normal","dated":false}
-输入末句：我上周都做了什么？ → {"actions":[],"query":{"kind":"activities","days":7},"stance":"ask","energy":"normal","dated":false}
-输入末句：明天下午三点有个面试，有点紧张 → {"actions":[],"query":null,"stance":"report","energy":"normal","dated":true}
-已记下的约定里有「面试」，末句：面试过了！！ → {"actions":[],"query":null,"stance":"chat","energy":"high","dated":true}
-输入末句：晚上吃了火锅，挺好吃 → {"actions":[],"query":null,"stance":"chat","energy":"normal","dated":false}`;
+输入末句：今天跑了五公里 → {"actions":[{"kind":"activity","text":"跑步五公里","points":{"knowledge":0,"guts":2,"dexterity":1,"kindness":0,"charm":0},"important":false}],"queries":[],"stance":"report","energy":"normal","dated":false,"gravity":"normal"}
+输入末句：提醒我周五给妈妈打电话 → {"actions":[{"kind":"todo","title":"周五给妈妈打电话","attribute":"kindness","points":2,"attribute2":"charm","points2":1,"repeatDaily":false}],"queries":[],"stance":"report","energy":"normal","dated":false,"gravity":"normal"}
+对话提到想学英语、无相关待确认卡，末句：帮我记一下 → {"actions":[{"kind":"todo","title":"学英语","attribute":"knowledge","points":2,"repeatDaily":true}],"queries":[],"stance":"report","energy":"normal","dated":false,"gravity":"normal"}
+待确认卡已有「学英语」，末句：帮我记一下 → {"actions":[],"queries":[],"stance":"report","energy":"normal","dated":false,"gravity":"normal"}
+卡片已有「记录活动【已确认生效】跑步五公里」，末句：对了我今天跑了五公里来着 → {"actions":[],"queries":[],"stance":"chat","energy":"normal","dated":false,"gravity":"normal"}
+任务清单已有「背单词」，末句：帮我加个背单词的任务 → {"actions":[],"queries":[],"stance":"report","energy":"normal","dated":false,"gravity":"normal"}
+任务清单已有 id=t1「背单词」，末句：背单词那个改成每天背 50 个吧 → {"actions":[{"kind":"editTodo","todoId":"t1","title":"每天背 50 个单词","repeatDaily":true}],"queries":[],"stance":"report","energy":"normal","dated":false,"gravity":"normal"}
+今天 2026-10-06（周二）、任务清单已有 id=t2「写论文初稿」，末句：论文那个截止改到这周五 → {"actions":[{"kind":"editTodo","todoId":"t2","deadline":"2026-10-09"}],"queries":[],"stance":"report","energy":"normal","dated":false,"gravity":"normal"}
+任务清单已有 id=t3「晨跑」，末句：晨跑先不做了，删了吧 → {"actions":[{"kind":"editTodo","todoId":"t3","archive":true}],"queries":[],"stance":"report","energy":"normal","dated":false,"gravity":"normal"}
+输入末句：今天好累啊 → {"actions":[],"queries":[],"stance":"vent","energy":"low","dated":false,"gravity":"normal"}
+输入末句：刚吃了碗麻辣烫哈哈 → {"actions":[],"queries":[],"stance":"chat","energy":"normal","dated":false,"gravity":"normal"}
+输入末句：帮我记一下，午饭吃了沙拉 → {"actions":[{"kind":"activity","text":"午饭吃沙拉","points":{"knowledge":0,"guts":0,"dexterity":1,"kindness":0,"charm":0},"important":false}],"queries":[],"stance":"report","energy":"normal","dated":false,"gravity":"normal"}
+输入末句：行吧我先去睡了 → {"actions":[],"queries":[],"stance":"bye","energy":"low","dated":false,"gravity":"normal"}
+对话早前提过想背单词，末句：现在几点了？ → {"actions":[],"queries":[],"stance":"ask","energy":"normal","dated":false,"gravity":"normal"}
+输入末句：我上周都做了什么？ → {"actions":[],"queries":[{"kind":"activities","days":7}],"stance":"ask","energy":"normal","dated":false,"gravity":"normal"}
+输入末句：明天下午三点有个面试，有点紧张 → {"actions":[],"queries":[],"stance":"report","energy":"normal","dated":true,"gravity":"normal"}
+已记下的约定里有「面试」，末句：面试过了！！ → {"actions":[],"queries":[],"stance":"chat","energy":"high","dated":true,"gravity":"normal"}
+输入末句：晚上吃了火锅，挺好吃 → {"actions":[],"queries":[],"stance":"chat","energy":"normal","dated":false,"gravity":"normal"}
+今天 2026-10-06，末句：这个月吃饭花了多少？ → {"actions":[],"queries":[{"kind":"ledger","month":"2026-10"}],"stance":"ask","energy":"normal","dated":false,"gravity":"normal"}
+输入末句：本周目标做到哪了 → {"actions":[],"queries":[{"kind":"weeklyGoal"}],"stance":"ask","energy":"normal","dated":false,"gravity":"normal"}
+输入末句：我们前几天聊过什么来着 → {"actions":[],"queries":[{"kind":"chats","days":3}],"stance":"ask","energy":"normal","dated":false,"gravity":"normal"}
+输入末句：感觉做什么都没用，活着也没什么意思 → {"actions":[],"queries":[],"stance":"vent","energy":"low","dated":false,"gravity":"heavy"}
+输入末句：烦死了，今天又被骂 → {"actions":[],"queries":[],"stance":"vent","energy":"low","dated":false,"gravity":"normal"}`;
 
 // ── 阶段2 · 表演规范（人格侧；输出纯文本，无任何格式负担） ──
 const PERFORM_RULES = `
@@ -145,7 +155,8 @@ const PERFORM_RULES = `
   别再复述你原来提议的那版；可以轻轻认一句（"按你改的记"），不用反复确认。
 
 ## 边界
-- 你只能通过卡片替用户操作 App；改设置、删数据、账号、导入导出等请求一律婉拒，说明自己管不到。`;
+- 你只能通过卡片替用户操作 App；改设置、删数据、账号、导入导出等请求一律婉拒，说明自己管不到。
+${SAFETY_RULE}`;
 
 // ── 组装 ──
 
@@ -392,6 +403,12 @@ export interface TurnExtras {
   leading?: string[];
   /** 动态块末尾的行（按日子回溯、「记忆里没有」、人设锚——锚一定放最后） */
   trailing?: string[];
+  /** 当前人格 id（查询「最近聊过什么」要按人格取） */
+  presetId?: string;
+  /** 人格的认真模式那一句（第 25 批 · 沉下来）：对方很沉时用 */
+  serious?: string;
+  /** 相处方式行（督促型 / 陪伴型）：决定敢不敢主动提没做的事 */
+  coachLine?: string;
 }
 
 /**
@@ -528,26 +545,6 @@ function toDraft(a: Record<string, unknown> | null | undefined): NavigatorDraft 
 /** 测试用：分诊 action → 卡片草稿（金额容错等） */
 export const _toDraftForTest = toDraft;
 
-// ── 查询执行（v1：近 N 天活动记录） ──
-
-function runActivitiesQuery(days: number): string {
-  const s = useAppStore.getState();
-  const since = Date.now() - Math.min(30, Math.max(1, days)) * 86400_000;
-  const rows = s.activities
-    .filter((a) => new Date(a.date).getTime() >= since)
-    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-    .slice(0, 40)
-    .map((a) => {
-      const pts = Object.entries(a.pointsAwarded ?? {})
-        .filter(([, v]) => Number(v) > 0)
-        .map(([k, v]) => `${navAttrName(k as AttributeId)}+${v}`)
-        .join(' ');
-      return `${toLocalDateKey(new Date(a.date))} ${a.description}${pts ? `（${pts}）` : ''}`;
-    });
-  const text = rows.join('\n').slice(0, 1600);
-  return rows.length ? `【近 ${days} 天活动记录，共 ${rows.length} 条】\n${text}` : `【近 ${days} 天没有活动记录】`;
-}
-
 // ── 阶段1 · 分诊 ──
 
 export interface TriageResult {
@@ -558,6 +555,10 @@ export interface TriageResult {
   energy: Energy | null;
   /** 带日子的个人安排 / 说了约定的结果（第 24 批 · D4）；分诊没给为 null */
   dated: boolean | null;
+  /** 分量（第 25 批 · 沉下来）：heavy = 很绝望的话；分诊没给为 null（本地词表再兜一道） */
+  gravity: 'normal' | 'heavy' | null;
+  /** 只读查询（第 25 批 · G1）：最多 2 个 */
+  queries: NavigatorQuery[];
   /** 模型原始输出（评测用） */
   raw?: string;
 }
@@ -686,24 +687,26 @@ async function triageActions(
     ], { temperature: 0.1, maxTokens: 800, signal, instant, purpose: 'triage' });
     if (import.meta.env.DEV) console.debug('[navigator] 分诊输出:', raw);
     const parsed = extractJson(raw);
-    if (!parsed) return { drafts: [], queryDays: null, stance: null, energy: null, dated: null, raw };
+    if (!parsed) return { drafts: [], queryDays: null, stance: null, energy: null, dated: null, gravity: null, queries: [], raw };
     const rawActions = Array.isArray(parsed.actions) ? (parsed.actions as Array<Record<string, unknown>>) : [];
     const drafts = rawActions.slice(0, 3).map((a) => {
       const d = toDraft(a);
       if (!d && import.meta.env.DEV) console.warn('[navigator] 分诊 action 校验未通过被丢弃:', a);
       return d;
     }).filter((d): d is NavigatorDraft => !!d);
-    const q = parsed.query as Record<string, unknown> | null | undefined;
-    const queryDays = q && q.kind === 'activities' ? clampInt(q.days, 1, 30, 7) : null;
+    // 查询表（第 25 批）：新字段 queries，兼容旧的单个 query
+    const queries = parseQueries(parsed.queries, parsed.query);
+    const queryDays = queries.find((q): q is Extract<NavigatorQuery, { kind: 'activities' }> => q.kind === 'activities')?.days ?? null;
     const stance = STANCES.includes(parsed.stance as Stance) ? parsed.stance as Stance : null;
     const energy = ENERGIES.includes(parsed.energy as Energy) ? parsed.energy as Energy : null;
     const dated = typeof parsed.dated === 'boolean' ? parsed.dated : null;
-    return { drafts, queryDays, stance, energy, dated, raw };
+    const gravity = parsed.gravity === 'heavy' ? 'heavy' : parsed.gravity === 'normal' ? 'normal' : null;
+    return { drafts, queryDays, stance, energy, dated, gravity, queries, raw };
   } catch (e) {
     // 分诊失败宁缺勿滥：不出卡、不查询，聊天照常（表演阶段知道"本轮没有开卡"，不会承诺）
     if (signal.aborted) throw e;
     if (import.meta.env.DEV) console.warn('[navigator] 分诊调用失败，本轮不出卡:', e);
-    return { drafts: [], queryDays: null, stance: null, energy: null, dated: null };
+    return { drafts: [], queryDays: null, stance: null, energy: null, dated: null, gravity: null, queries: [] };
   }
 }
 
@@ -794,22 +797,35 @@ export async function runNavigatorTurn(
     if (signal.aborted) throw new DOMException('aborted', 'AbortError');
   }
   if (!tri) tri = await triageActions(triageCfg, history, userText, cards, signal);
-  const { drafts, queryDays, stance, energy, dated } = tri;
-  const queryResult = queryDays !== null ? runActivitiesQuery(queryDays) : null;
+  // 沉下来（第 25 批）：分诊判 heavy、或本地词表命中 → 不出卡、不查、不闲聊，换成陪着的那一套
+  const heavy = tri.gravity === 'heavy' || isHeavyText(userText);
+  const drafts = heavy ? [] : tri.drafts;
+  const { stance, energy, dated } = tri;
+  const queryBlocks = heavy || !tri.queries.length ? [] : await runQueries(tri.queries, turnExtras.presetId ?? 'builtin-cat');
+  const proofs = heavy ? await proofsBlock() : '';
 
   // 阶段2：表演。判定结果作为事实注入——reply 与卡从机制上一致，无 JSON 无失守。
   const snap = buildSnapshot();
-  // 倾诉 / 道别 / 精力低：自己的一天、旧事、约定这些「闲话」一律不放进来
-  const casualShown = stance !== 'vent' && stance !== 'bye' && energy !== 'low';
+  // 倾诉 / 道别 / 精力低 / 沉：自己的一天、旧事、约定、近况这些「闲话」一律不放进来
+  const casualShown = !heavy && stance !== 'vent' && stance !== 'bye' && energy !== 'low';
   const casual = casualShown ? (turnExtras.casualContext ?? []).filter(Boolean) : [];
-  const turnFacts = [
-    drafts.length
-      ? `【本轮你已开出的卡片（用户马上会看到确认卡）】\n${drafts.map(draftLine).join('\n')}`
-      : '【本轮没有开卡】',
-    queryResult ?? '',
-    stanceLine(stance, energy),
-    buildTopicPermission(stance, energy),
-  ].filter(Boolean).join('\n');
+  const turnFacts = (heavy
+    ? [
+        '【本轮没有开卡】',
+        HEAVY_TURN_LINE,
+        turnExtras.serious ? seriousLine(turnExtras.serious) : '',
+        proofs,
+        buildTopicPermission(stance, energy, true),
+      ]
+    : [
+        drafts.length
+          ? `【本轮你已开出的卡片（用户马上会看到确认卡）】\n${drafts.map(draftLine).join('\n')}`
+          : '【本轮没有开卡】',
+        ...queryBlocks,
+        stanceLine(stance, energy),
+        buildTopicPermission(stance, energy),
+        turnExtras.coachLine ?? '',
+      ]).filter(Boolean).join('\n');
   // 拼装（第 24 批）：［人格 + 规范 + 天级块］［按轮截的历史］［早些时候摘要 + 今日状态 + 素材 + 本轮卡片 + 姿态 + 回溯 + 人设锚］［最新一句］
   // 天级块一天不变、跟着人格一起吃前缀缓存；会变的全在尾部那条 system 里
   const messages: AIMessage[] = [
@@ -910,7 +926,7 @@ export async function runNavigatorTurn(
     if (import.meta.env.DEV) console.debug('[navigator] 流式输出:', emitted);
     noteTopicsMentioned(emitted.join('\n'));
     turnExtras.afterReply?.(emitted.join('\n'), stance, energy, casualShown && casual.length > 0);
-    return { segments: emitted, drafts, sniffHint: dated };
+    return { segments: emitted, drafts, sniffHint: heavy ? false : dated, heavy };
   }
 
   let reply = (await chatComplete(cfg, messages, { temperature: 0.75, maxTokens: 1200, signal, purpose: 'perform' })).trim();
@@ -935,7 +951,7 @@ export async function runNavigatorTurn(
   if (!reply) reply = drafts.length ? '卡片给你，看一眼没问题就确认。' : '嗯。';
   noteTopicsMentioned(reply);
   turnExtras.afterReply?.(reply, stance, energy, casualShown && casual.length > 0);
-  return { segments: splitSegments(reply), drafts, sniffHint: dated };
+  return { segments: splitSegments(reply), drafts, sniffHint: heavy ? false : dated, heavy };
 }
 
 /**

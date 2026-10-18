@@ -12,6 +12,7 @@ import type { CounselMessage, Settings, TarotOrientation } from '@/types';
 import type { ApiProvider } from '@/utils/aiProviders';
 import { chatComplete, chatStream, fallbackAIConfig, getAIConfig, getAssistantAIConfig, type AITier } from '@/utils/aiClient';
 import { nowLineCN, stampOf } from '@/utils/navigatorClock';
+import { isHeavyText, SAFETY_RULE } from '@/utils/navigatorGravity';
 
 /**
  * 谏言走哪一档（2026-10-02 翻新）：和助手对话同一档（可单独配更好的模型），没配就退到快速档。
@@ -187,6 +188,11 @@ function buildCounselRequest(ctx: CounselContext, opts: { greeting?: boolean } =
   const trailingSystem: Array<{ role: 'system'; content: string }> = [];
   if (opts.greeting || convo.length === 0) {
     trailingSystem.push({ role: 'system', content: COUNSEL_GREETING_NOTE });
+  }
+  // 沉下来（第 25 批）：客人最新一句很沉 → 残响也慢下来；底线同助手
+  const lastUser = [...ctx.messages].reverse().find((m) => m.role === 'user');
+  if (lastUser && isHeavyText(lastUser.content)) {
+    trailingSystem.push({ role: 'system', content: `【这一轮】客人现在很沉。先陪着：不急着解决、不讲道理、不列建议、不说「加油」；短句、慢一点，多听少说。可以问一句他现在人在哪、身边有没有人。\n${SAFETY_RULE}` });
   }
 
   return {

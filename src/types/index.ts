@@ -633,6 +633,12 @@ export interface Settings {
   navigatorPresetId?: string;
   /** 记忆按人格隔离（第 23 批）：开了之后记忆 / 约好的事 / 画像各人格各记各的，共享的那份大家都读；默认关 */
   navigatorMemoryIsolated?: boolean;
+  /**
+   * 让助手了解你的记录（第 25 批 · 用户简报）：默认开——助手知道你用了多久、练得最多的属性、坚持中的习惯、做成过的大事、愿望、
+   * 倒计时、羁绊里的人和最近总结的数据。关掉 = 只知道今天的状态和聊天里记下的事（给想要纯净角色陪伴 / 按自己世界观行动的用户）。
+   * 记录是用户的、记忆是关系的：它不受「记忆按人格隔离」影响。
+   */
+  navigatorBriefing?: boolean;
   /** 拟真增强：回复走流式 + 按标点切碎气泡（句号删并断、——删并断、问叹/分号/括号保留断；逗号不断；括号里的标点不断，颜文字整组成泡），泡间 1.2s。 */
   navigatorImmersive?: boolean;
   /** 羁绊页视图：专辑墙（默认）/ 列表；右上角切换、持久记忆（PRD_V2.5_FINAL §5.3） */
@@ -1080,6 +1086,12 @@ export interface NavigatorPreset {
    * 内置手写在 navigatorPresets；自定义第一次用到时 AI 写一句存这里；编辑人格改了设定文本就清掉、下次重写。
    */
   anchor?: string;
+  /** 相处方式（第 25 批）：督促型会提「断了 / 没做」的事（一天一次、说事实不说教）；陪伴型只提好事和快到的事。缺省：黑猫督促、其余陪伴 */
+  coachStyle?: 'push' | 'accompany';
+  /** 认识你多久了（第 25 批 · 用户简报）：always = 一直都在、全知接手（缺省）；fresh = 刚认识，头 7 天只看得到今天的状态 */
+  knowSince?: 'always' | 'fresh';
+  /** 认真模式（第 25 批 · 沉下来）：对方很沉时「这个角色认真起来是什么样」的一句；内置手写，自定义第一次用到 AI 写一句存这里 */
+  serious?: string;
 }
 
 /** 人格的固定喜好：喜欢 / 讨厌 / 跟天气季节节日有关的小习惯 */
@@ -1125,6 +1137,8 @@ export interface NavigatorMessageRow {
   /** 用户手改过这张卡（进卡片实录，让模型知道内容已不是它提议的那版） */
   userEdited?: boolean;
   receipt?: string;
+  /** 沉下来的那一轮（第 25 批）：归档时标 [沉]，归档器不从中出话头、不进约定 */
+  heavy?: boolean;
   createdAt: number;
 }
 
