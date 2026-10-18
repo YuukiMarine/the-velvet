@@ -43,6 +43,8 @@ const FORM_GHOST: Record<NavigatorDraft['kind'], string> = {
   completeTodo: 'DONE',
   editTodo: 'EDIT',
   bigdeal: 'DEAL',
+  remember: 'MEMO',
+  forget: 'FADE',
 };
 
 /** 右上角装饰性无衬线大字（与左缘竖排词呼应，另择词避免重复） */
@@ -53,6 +55,8 @@ const CORNER_GHOST: Record<NavigatorDraft['kind'], string> = {
   completeTodo: 'CLR',
   editTodo: 'FIX',
   bigdeal: 'BIG',
+  remember: 'KEEP',
+  forget: 'BYE',
 };
 
 /** 青色三角步进钮（p3-modal-14 稿：◀− / ▶＋） */
@@ -138,6 +142,28 @@ export const NavigatorActionForm = ({ draft, channel, onSubmit, onClose }: Props
 
   const body = d && (
     <div className="space-y-4">
+      {d.kind === 'remember' && (
+        <div>
+          <label className={labelCls} style={ink}>要记住的事（写成关于你的一句话）</label>
+          <textarea
+            value={d.text}
+            onChange={(e) => patch({ text: e.target.value.slice(0, 80) })}
+            rows={3}
+            placeholder="例：我对花生过敏"
+            aria-label="要记住的事"
+            className={`${inputCls} resize-none`}
+            style={inputStyle}
+          />
+          <p className={bright ? 'mt-1.5 text-[12px] font-bold text-[#4b8fd9]' : 'mt-1.5 text-[11px] text-gray-400'}>会置顶记下，不会被遗忘；记事本里随时能改、能删。</p>
+        </div>
+      )}
+      {d.kind === 'forget' && (
+        <div>
+          <label className={labelCls} style={ink}>要忘掉的这条</label>
+          <p className={`${inputCls} whitespace-pre-wrap`} style={inputStyle}>{d.memoText}</p>
+          <p className={bright ? 'mt-1.5 text-[12px] font-bold text-[#4b8fd9]' : 'mt-1.5 text-[11px] text-gray-400'}>确认后它不再想起、不再提；记事本的「已作废」里还能看到。</p>
+        </div>
+      )}
       {d.kind === 'activity' && (
         <>
           {/* 挂到愿望（PRD_V2.6 §1.3）：黑猫这张卡也要有，否则从黑猫记的事永远不计入愿望进度 */}

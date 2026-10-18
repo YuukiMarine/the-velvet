@@ -639,6 +639,8 @@ export interface Settings {
    * 记录是用户的、记忆是关系的：它不受「记忆按人格隔离」影响。
    */
   navigatorBriefing?: boolean;
+  /** 走神（第 26 批 · 联想）：闲聊时偶尔顺口想起一条不那么相关的旧事 / 梗。off 不走神；sometimes（缺省）约三成轮次；often 约六成 */
+  navigatorDaydream?: 'off' | 'sometimes' | 'often';
   /** 拟真增强：回复走流式 + 按标点切碎气泡（句号删并断、——删并断、问叹/分号/括号保留断；逗号不断；括号里的标点不断，颜文字整组成泡），泡间 1.2s。 */
   navigatorImmersive?: boolean;
   /** 羁绊页视图：专辑墙（默认）/ 列表；右上角切换、持久记忆（PRD_V2.5_FINAL §5.3） */
@@ -1139,15 +1141,32 @@ export interface NavigatorMessageRow {
   receipt?: string;
   /** 沉下来的那一轮（第 25 批）：归档时标 [沉]，归档器不从中出话头、不进约定 */
   heavy?: boolean;
+  /** 这条回复用到的记忆 id（第 26 批 · 「想起了两件事」小标，挂在一轮回复的第一泡上） */
+  recalled?: string[];
   createdAt: number;
 }
 
 /** 原子记忆（三源：对话沉淀/观察日记/手动；F8 图片记忆卡共用此表 source='image'；
  *  source='profile' 为特殊单行 = AI 维护的用户画像总览（常驻注入，用户可编辑） */
+/** 用户画像的五块（第 26 批）：各有上限，归档器只回有变化的块；记事本按块编辑 */
+export interface ProfileBlocks {
+  /** 身份与处境（≤120 字） */
+  identity?: string;
+  /** 长期目标（≤120 字） */
+  goals?: string;
+  /** 偏好与雷区（≤120 字） */
+  preferences?: string;
+  /** 近况（≤100 字） */
+  recent?: string;
+  /** 相处守则：他希望被怎样对待（≤100 字） */
+  rules?: string;
+}
+
 export interface NavigatorMemo {
   id: string;
-  source: 'chat' | 'observation' | 'manual' | 'image' | 'profile';
-  /** 中性事实文本（不带人格口吻——口吻在 prompt 组装时现场渲染） */
+  /** bit（第 26 批）= 「你们之间的说法」：黑话 / 梗 / 昵称 / 代号，不是关于用户的事实；跟人格走 */
+  source: 'chat' | 'observation' | 'manual' | 'image' | 'profile' | 'bit';
+  /** 中性事实文本（不带人格口吻——口吻在 prompt 组装时现场渲染）；bit 时 = 那个说法本身 */
   text: string;
   /** 情绪元数据（"用户提起时很沮丧"），可选 */
   colorHint?: string;
@@ -1165,6 +1184,24 @@ export interface NavigatorMemo {
    * 没有 = 共享，谁都读得到。关掉隔离时这个字段保留（再开还能分），只是取用时不看它。
    */
   presetId?: string;
+  // ── 第 26 批 · 记忆质量 ──
+  /** 线索词（归档器写的，2~6 个）：以后聊到什么时该想起这条——话题 / 物件 / 情绪 / 场景；召回和联想都靠它 */
+  cues?: string[];
+  /** 作废时刻：被更新的事实替代（supersededBy 指向新的那条）、或用户让它忘掉；status 同时转 archived，记事本能看历史 */
+  invalidAt?: Date;
+  supersededBy?: string;
+  /** 用户说「别再提」：不进召回、不进联想（仍在记事本里） */
+  muted?: boolean;
+  /** 来源会话（归档时记下） */
+  fromSessionId?: string;
+  /** bit：这个说法的意思 / 来历；复用次数与上次用到（久不用就淡出） */
+  bitMeaning?: string;
+  bitOrigin?: string;
+  usedCount?: number;
+  lastUsedAt?: Date;
+  /** profile 行：分块画像与上一版（可撤回） */
+  profileBlocks?: ProfileBlocks;
+  profilePrev?: ProfileBlocks;
   /**
    * 回访约定（第二批）：一件带日子的事（面试、考试、体检……）。那件事过后第一次见面问一次结果，
    * 只问一次。text 是中性事实（「10月3日（周六）有面试」），下面几个字段管什么时候问、问没问过。

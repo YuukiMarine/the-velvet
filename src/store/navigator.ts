@@ -20,8 +20,9 @@ import {
 } from '@/utils/navigatorRegistry';
 import {
   generateAIGreeting, runNavigatorTurn, splitSegments, startTriage, turnsOf, windowStartTurn,
-  type TriageResult, type TurnExtras, type TurnHistoryItem,
+  type MemoRef, type TriageResult, type TurnExtras, type TurnHistoryItem,
 } from '@/utils/navigatorIntent';
+import { assocTick, pickAssociation } from '@/utils/navigatorAssociation';
 import { anchorLine, anchorOf, ensurePersonaAnchor, ensurePersonaSerious, seriousOf } from '@/utils/navigatorPersona';
 import { buildDayRecall, hasRecallCue, RECALL_GAP_LINE } from '@/utils/navigatorDayRecall';
 import { buildHappenings, coachStyleOf, happeningsBlock, happeningsSince } from '@/utils/navigatorHappenings';
@@ -42,8 +43,8 @@ import {
 import { MILESTONES } from '@/utils/navigatorBond';
 import { dayLabelCN, relativeDayCN } from '@/utils/navigatorClock';
 import {
-  buildWarmthLine, finalizeStaleSessions, getProfile, lazySweepMemos, localEarlySummary, maybeCompactLive, recallMemories,
-  recentChatsBlock, rowsToLines, summarizeEarlyToday,
+  bitsBlock, buildWarmthLine, finalizeStaleSessions, getProfile, lazySweepMemos, localEarlySummary, maybeCompactLive, noteBitsUsed,
+  recallMemories, recentChatsBlock, rowsToLines, summarizeEarlyToday,
 } from '@/utils/navigatorMemory';
 import { markReportGreeted } from '@/utils/reportNotice';
 import { buildTopicPermission, noteHappeningsMentioned, noteTopicsMentioned, unmentionedHappenings } from '@/utils/navigatorTopics';
@@ -73,6 +74,8 @@ export interface NavigatorMessage {
   receipt?: string;
   /** 沉下来的那一轮（第 25 批）：归档时标 [沉]，归档器不从中出话头 */
   heavy?: boolean;
+  /** 这条回复用到的记忆 id（第 26 批 · 「想起了两件事」小标，挂在一轮回复的第一泡上） */
+  recalled?: string[];
   createdAt: number;
   /** 归属会话：上拉加载的历史消息与今日会话共存于 messages，凭它区分（上下文只用今日的） */
   sessionId?: string;
@@ -179,6 +182,8 @@ const clearPrefetch = () => {
 };
 /** 「今天早些时候」摘要单飞 */
 let earlyBusy = false;
+/** 上一轮带着的记忆（第 26 批）：分诊的 forget 卡只认这些 id；预跑分诊时也用它 */
+let lastMemoRefs: MemoRef[] = [];
 /** 掉出对话窗、还没被早些时候摘要覆盖的轮次攒到这么多才压一次 */
 const EARLY_SUMMARY_MIN_TURNS = 6;
 
@@ -245,6 +250,7 @@ const toRow = (m: NavigatorMessage, sessionId: string): NavigatorMessageRow => (
   userEdited: m.userEdited,
   receipt: m.receipt,
   heavy: m.heavy,
+  recalled: m.recalled,
   createdAt: m.createdAt,
 });
 
@@ -271,6 +277,7 @@ const fromRow = (r: NavigatorMessageRow): NavigatorMessage => ({
   userEdited: r.userEdited,
   receipt: r.receipt,
   heavy: r.heavy,
+  recalled: r.recalled,
   createdAt: r.createdAt,
   sessionId: r.sessionId,
 });
@@ -482,7 +489,7 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
       if (prefetch && prefetch.key === key) return;
       prefetch?.abort.abort();
       const abort = new AbortController();
-      const promise = startTriage(historyForTurn(), batch, cardsDigest(), abort.signal);
+      const promise = startTriage(historyForTurn(), batch, cardsDigest(), abort.signal, lastMemoRefs);
       promise.catch(() => { /* 收口时现跑 */ });
       prefetch = { key, promise, abort };
     }, PREFETCH_DEBOUNCE_MS);
@@ -634,8 +641,12 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
       const todayKey = toLocalDateKey();
       const settingsNow = useAppStore.getState().settings;
       const coach = coachStyleOf(presetNow);
-      const [recall, profile, together, pctx, recentChats, dayRecall, anchor, sinceKey, serious] = await Promise.all([
-        recallMemories(batch, activeId), // 记忆检索（纯本地，失败返回空不阻断）
+      // 之前几句用户的话（新的在后）：召回时权重减半地一起查，指代（「那个考试」）才接得上
+      const prevUser = historyForTurn().filter((h) => h.role === 'user').slice(-2).map((h) => h.text);
+      const turnNo = assocTick(presetNow.id);
+      void turnNo;
+      const [recall, profile, together, pctx, recentChats, dayRecall, anchor, sinceKey, serious, bits] = await Promise.all([
+        recallMemories(batch, activeId, prevUser), // 记忆检索（纯本地，失败返回空不阻断）
         getProfile(activeId),
         togetherFacts(presetNow.id),
         promiseContext(Date.now(), presetNow.id),
@@ -645,7 +656,15 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
         Promise.race([ensurePersonaAnchor(presetNow, settingsNow), sleep(4000).then(() => anchorOf(presetNow))]),
         happeningsSince(presetNow.id, todayKey), // 近况流：上次聊完是哪天
         Promise.race([ensurePersonaSerious(presetNow, settingsNow), sleep(4000).then(() => seriousOf(presetNow))]), // 认真模式（沉下来时用）
+        bitsBlock(presetNow.id), // 你们之间的说法（第 26 批）
       ]);
+      // 走神位（第 26 批 · §24.11）：概率 + 冷却在模块里；姿态门控在 intent 层（闲话一律跟着 casualContext 走）
+      const assoc = await pickAssociation(presetNow, settingsNow, [...prevUser, batch], new Set(recall.ids));
+      // 这一轮带着的记忆：给分诊的 forget 卡认 id
+      const memoRefs: MemoRef[] = recall.ids.map((id, i) => ({ id, text: recall.lines[i]?.replace(/^- （[^）]*）/, '').replace(/【可自然追问[^】]*】/, '').replace(/（[^（）]*）$/, '') ?? '' })).filter((m) => m.text);
+      lastMemoRefs = memoRefs;
+      // 用户这句里用到了你们的说法 → 计一次
+      void noteBitsUsed(batch, bits.bits);
       // 活用记录（第 25 批）：近况流（本地算，按话题配额去掉提过的）+ 和这句话有关的记录（本地索引）+ 用户简报（天级）
       const happenings = unmentionedHappenings(buildHappenings(sinceKey, coach, todayKey)).slice(0, 5);
       const recordHits = searchRecords(batch, 4);
@@ -657,6 +676,7 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
         profile ? `【用户画像（长期）】${profile}` : '',
         recall.lines.length ? `【关于用户的记忆】\n${recall.lines.join('\n')}` : '',
         recordsBlock(recordHits),
+        bits.block,
         buildWarmthLine(),
         buildWishContextLine(), // 愿望与距离（PRD_V2.6 §8 的"读取"侧；无愿望时返回空串被 filter 掉）
         // 第二批：相处时长（纪念日只在问候里提，这里去掉）
@@ -668,11 +688,12 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
       const oldStory = ask ? null : await pickOldStory(together);
       if (gen !== generation) return;
       const turnExtras: TurnExtras = {
-        casualContext: [ask ? buildAskLine(ask, todayKey) : '', happeningsBlock(happenings), buildOwnDayLine(presetNow.id), oldStory ? buildOldStoryLine(oldStory) : ''],
+        casualContext: [ask ? buildAskLine(ask, todayKey) : '', happeningsBlock(happenings), assoc?.line ?? '', buildOwnDayLine(presetNow.id), oldStory ? buildOldStoryLine(oldStory) : ''],
         afterReply: (text, _stance, _energy, casualShown) => {
           noteOwnDayMentioned(text, presetNow.id);
           if (oldStory) noteOldStoryMentioned(text, presetNow.id, oldStory);
           if (casualShown) noteHappeningsMentioned(text, happenings);
+          void noteBitsUsed(text, bits.bits);
           // 交给它了才算一次机会：问了 → 问过了；没问 → 记一次，两次都没问就作废（关了就重排推送：那条不用推了）
           if (ask && casualShown) void noteAskResult(ask, text).then((r) => { if (r !== 'deferred') void useAppStore.getState().syncNotifications(); });
         },
@@ -680,6 +701,7 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
         presetId: presetNow.id,
         serious,
         coachLine,
+        memoRefs,
         dayLevel,
         leading: [earlyTodayBlock()].filter(Boolean),
         trailing: [
@@ -701,12 +723,21 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
         turnExtras,
       ).finally(() => { streamEnded = true; });
       turnPromise.catch(() => { /* 下面 await 时再处理；这里只防「未处理的拒绝」 */ });
+      let firstBubble = true;
       for (;;) {
         if (gen !== generation) { swallowed = queue.splice(0); persistSwallowed(); return; }
         if (queue.length > 0) {
           if (get().phase !== 'replying') set({ phase: 'replying' });
           const seg = queue.shift()!;
           get().pushCat(seg);
+          if (firstBubble) {
+            firstBubble = false;
+            // 「想起了两件事」（第 26 批）：这轮用到的记忆挂在回复第一泡上，界面上能点开看、改、删、别再提
+            if (recall.ids.length) {
+              const last = get().messages[get().messages.length - 1];
+              if (last && last.role === 'cat') { const upd = { ...last, recalled: recall.ids }; set((st) => ({ messages: st.messages.map((m) => (m.id === last.id ? upd : m)) })); persistMessage(upd); }
+            }
+          }
           if (streamEnded && queue.length === 0) continue;
           // 拟真固定 1.2s 一泡；普通模式按下一段的长度模拟打字（D0 直出）。段间隙 = 天然插话点
           const wait = immersive ? 1200 : segmentDelayMs(queue[0] ?? seg);

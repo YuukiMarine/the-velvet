@@ -74,6 +74,8 @@ actions 元素为下列五种之一：
 {"kind":"ledger","direction":"expense|income","amount":0,"note":"摘要","type":"food|transport|shopping|fun|home|study|other","incomeType":"labor|other","channel":""}（花钱/收入）
 {"kind":"completeTodo","todoId":"待办清单里的 id","todoTitle":"任务名"}（用户说做完了某件今日待办；todoId 必须取自清单，没有匹配就不出）
 {"kind":"editTodo","todoId":"任务清单里的 id","title":"新任务名","attribute":"新属性","points":3,"repeatDaily":true,"deadline":"YYYY-MM-DD","archive":true}（用户要**改一条已有任务**：改名、改点数或属性、改成每日 / 单次、改或取消截止日（deadline 给空串 = 取消）、不做了（archive:true）。todoId 必须取自【任务清单已有】；**只写要改的字段**，其余省略）
+{"kind":"remember","text":"要记住的事（关于用户的中性陈述句，≤40 字）"}（用户**明确**要你记住一件关于他的事：「记住，我对花生过敏」「记一下，我妈生日是 3 月 8 号」——不是待办、不是活动记录）
+{"kind":"forget","memoId":"【这一轮带着的记忆】里的 id"}（用户**明确**要你忘掉 / 别再提某件记着的事：「减肥那事别再提了」「忘了我说过的那个」；memoId 必须取自清单，没有对得上的就不出）
 
 规则：
 - **只响应【最新消息】里的记录意图**：用户此刻在报告做了什么/要做什么/花了钱/求记录，才出卡。
@@ -90,6 +92,7 @@ actions 元素为下列五种之一：
 - 修改一张待确认卡 = 出一张修正后的新卡。
 - **改已有任务出 editTodo**（todoId 取自【任务清单已有】），不要再出一张 todo 卡——那会变成两条。说「做完了 / 搞定了」是 completeTodo，不是 editTodo；
   「不做了 / 删掉 / 取消这个任务」是 editTodo + archive:true。截止日按【今天】换算成具体日期。
+- 「记住…」出 remember、「忘了 / 别再提…」出 forget：只认明确的要求；随口的「记得吗」「你还记得」不算，那是在问你。
 ${QUERY_PROTOCOL}
 - 其它一律 actions 为 []、queries 为 []。
 
@@ -116,7 +119,10 @@ ${QUERY_PROTOCOL}
 输入末句：本周目标做到哪了 → {"actions":[],"queries":[{"kind":"weeklyGoal"}],"stance":"ask","energy":"normal","dated":false,"gravity":"normal"}
 输入末句：我们前几天聊过什么来着 → {"actions":[],"queries":[{"kind":"chats","days":3}],"stance":"ask","energy":"normal","dated":false,"gravity":"normal"}
 输入末句：感觉做什么都没用，活着也没什么意思 → {"actions":[],"queries":[],"stance":"vent","energy":"low","dated":false,"gravity":"heavy"}
-输入末句：烦死了，今天又被骂 → {"actions":[],"queries":[],"stance":"vent","energy":"low","dated":false,"gravity":"normal"}`;
+输入末句：烦死了，今天又被骂 → {"actions":[],"queries":[],"stance":"vent","energy":"low","dated":false,"gravity":"normal"}
+输入末句：记住，我对花生过敏 → {"actions":[{"kind":"remember","text":"用户对花生过敏"}],"queries":[],"stance":"report","energy":"normal","dated":false,"gravity":"normal"}
+这一轮带着的记忆有 id=mm1「用户在减肥」，末句：减肥那事别再提了 → {"actions":[{"kind":"forget","memoId":"mm1"}],"queries":[],"stance":"report","energy":"normal","dated":false,"gravity":"normal"}
+输入末句：你还记得我上次说的那个吗 → {"actions":[],"queries":[],"stance":"ask","energy":"normal","dated":false,"gravity":"normal"}`;
 
 // ── 阶段2 · 表演规范（人格侧；输出纯文本，无任何格式负担） ──
 const PERFORM_RULES = `
@@ -409,6 +415,8 @@ export interface TurnExtras {
   serious?: string;
   /** 相处方式行（督促型 / 陪伴型）：决定敢不敢主动提没做的事 */
   coachLine?: string;
+  /** 这一轮带着的记忆（第 26 批）：分诊的 forget 卡只认这里面的 id */
+  memoRefs?: MemoRef[];
 }
 
 /**
@@ -460,10 +468,24 @@ export function dropFalseClaims(text: string): { text: string; dropped: boolean 
 /** 删空了才用的改口句（中性，不带任何人格的口吻） */
 const NO_CARD_FALLBACK = '这一张没能开出来：把关键信息再说一遍，或者用下面的快捷项手动建一张。';
 
+/** 这一轮带着的记忆（forget 用）：id + 原文 */
+export interface MemoRef { id: string; text: string }
+
 /** action 原始对象 → 校验收口后的 NavigatorDraft（非法则丢弃返回 undefined） */
-function toDraft(a: Record<string, unknown> | null | undefined): NavigatorDraft | undefined {
+function toDraft(a: Record<string, unknown> | null | undefined, memoRefs: MemoRef[] = []): NavigatorDraft | undefined {
   if (!a || typeof a !== 'object') return undefined;
   const kind = a.kind;
+  if (kind === 'remember') {
+    const text = String(a.text ?? '').replace(/\s+/g, ' ').trim().slice(0, 60);
+    if (text.length < 2) return undefined;
+    return { kind: 'remember', text };
+  }
+  if (kind === 'forget') {
+    // 防幻觉：id 必须是这一轮带着的记忆之一
+    const ref = memoRefs.find((m) => m.id === String(a.memoId ?? ''));
+    if (!ref) return undefined;
+    return { kind: 'forget', memoId: ref.id, memoText: ref.text };
+  }
   if (kind === 'activity') {
     const text = String(a.text ?? '').trim();
     if (!text) return undefined;
@@ -647,6 +669,7 @@ async function triageActions(
   pendingCards: string[],
   signal: AbortSignal,
   instant: boolean = TRIAGE_INSTANT,
+  memoRefs: MemoRef[] = [],
 ): Promise<TriageResult> {
   const s = useAppStore.getState();
   const due = s.getDueTodosToday().filter((t) => !s.getTodayTodoProgress(t.id).isComplete);
@@ -677,6 +700,7 @@ async function triageActions(
     todoLines.length ? `【任务清单已有（查重 / editTodo 用）】\n${todoLines.join('\n')}` : '',
     todayActs.length ? `【今天已记录的活动】\n${todayActs.join('\n')}` : '',
     pendingCards.length ? `【本会话卡片（含状态）】\n${pendingCards.join('\n')}` : '【本会话尚无卡片】',
+    memoRefs.length ? `【这一轮带着的记忆（forget 用）】\n${memoRefs.slice(0, 8).map((m) => `- id=${m.id} 「${m.text.slice(0, 40)}」`).join('\n')}` : '',
     `【最新消息】${userText}`,
   ].filter(Boolean).join('\n');
 
@@ -690,7 +714,7 @@ async function triageActions(
     if (!parsed) return { drafts: [], queryDays: null, stance: null, energy: null, dated: null, gravity: null, queries: [], raw };
     const rawActions = Array.isArray(parsed.actions) ? (parsed.actions as Array<Record<string, unknown>>) : [];
     const drafts = rawActions.slice(0, 3).map((a) => {
-      const d = toDraft(a);
+      const d = toDraft(a, memoRefs);
       if (!d && import.meta.env.DEV) console.warn('[navigator] 分诊 action 校验未通过被丢弃:', a);
       return d;
     }).filter((d): d is NavigatorDraft => !!d);
@@ -720,10 +744,10 @@ function triageConfig() {
  * 收口窗口里预跑分诊（第 24 批 · D2）：用户发完一句，store 立刻开始算；收口时直接把这个 promise 交给
  * runNavigatorTurn（turnExtras.pretriage）。用户又发了一句 → 批次变了，store 取消它、重跑。
  */
-export function startTriage(history: TurnHistoryItem[], userText: string, cards: string[], signal: AbortSignal): Promise<TriageResult> {
+export function startTriage(history: TurnHistoryItem[], userText: string, cards: string[], signal: AbortSignal, memoRefs: MemoRef[] = []): Promise<TriageResult> {
   const cfg = triageConfig();
   if (!cfg) return Promise.reject(new Error('未配置 AI'));
-  return triageActions(cfg, history, userText, cards, signal);
+  return triageActions(cfg, history, userText, cards, signal, TRIAGE_INSTANT, memoRefs);
 }
 
 /** 评测用（tests-local/evals）：直接跑一次分诊，可指定关 / 开思考 */
@@ -751,6 +775,10 @@ function draftLine(d: NavigatorDraft): string {
       return `- 完成任务「${d.todoTitle}」`;
     case 'editTodo':
       return d.archive ? `- 不做了：「${d.todoTitle}」（移到归档）` : `- 修改任务「${d.todoTitle}」：${buildPreviewLines(d).slice(1).join('；')}`;
+    case 'remember':
+      return `- 记住「${d.text}」（置顶记忆）`;
+    case 'forget':
+      return `- 忘掉「${d.memoText}」（这条记忆作废）`;
   }
 }
 
@@ -796,7 +824,7 @@ export async function runNavigatorTurn(
     try { tri = await turnExtras.pretriage; } catch { tri = null; }
     if (signal.aborted) throw new DOMException('aborted', 'AbortError');
   }
-  if (!tri) tri = await triageActions(triageCfg, history, userText, cards, signal);
+  if (!tri) tri = await triageActions(triageCfg, history, userText, cards, signal, TRIAGE_INSTANT, turnExtras.memoRefs ?? []);
   // 沉下来（第 25 批）：分诊判 heavy、或本地词表命中 → 不出卡、不查、不闲聊，换成陪着的那一套
   const heavy = tri.gravity === 'heavy' || isHeavyText(userText);
   const drafts = heavy ? [] : tri.drafts;

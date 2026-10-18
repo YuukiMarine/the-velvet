@@ -255,6 +255,28 @@ export const NavigatorSettings = () => {
           />
         </div>
       </div>
+      {/* ── 走神（第 26 批 · 联想）：闲聊时偶尔顺口想起一条不那么相关的旧事 ── */}
+      <div className="rounded-xl border border-gray-200 px-4 py-3 dark:border-gray-700" data-testid="daydream">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="text-sm font-semibold text-gray-700 dark:text-gray-200">走神</div>
+            <p className="mt-0.5 text-xs leading-relaxed text-gray-400 dark:text-gray-500">
+              闲聊时偶尔像真人那样联想：说到咖啡想起你那次把咖啡洒键盘上，下雨天想起上次下雨的事。只在你心情不差、没在倾诉时才会；五轮内不重复。记事本里能看到它想起了什么。
+            </p>
+          </div>
+        </div>
+        <div className="mt-2 flex gap-1.5">
+          {([['off', '不走神'], ['sometimes', '偶尔'], ['often', '经常']] as const).map(([v, label]) => {
+            const on = (settings.navigatorDaydream ?? 'sometimes') === v;
+            return (
+              <button key={v} type="button" aria-pressed={on} onClick={() => updateSettings({ navigatorDaydream: v })}
+                className={`rounded-full px-3 py-1.5 text-xs font-bold transition ${on ? 'bg-primary text-white' : 'border border-gray-200 text-gray-600 dark:border-gray-700 dark:text-gray-300'}`}>
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
       {/* ── 让助手了解你的记录（第 25 批 · 用户简报）── */}
       <div className="flex items-start justify-between gap-3 rounded-xl border border-gray-200 px-4 py-3 dark:border-gray-700">
         <div>

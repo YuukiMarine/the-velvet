@@ -10,7 +10,9 @@
  * 增强反馈免费继承：执行直接调用现有 store action，升级/成就/技能弹窗照常触发。
  */
 import { v4 as uuidv4 } from 'uuid';
+import { db } from '@/db';
 import { useAppStore, toLocalDateKey } from '@/store';
+import { memoOwner } from '@/utils/navigatorMemoryScope';
 import { TAROT_BY_ID } from '@/constants/tarot';
 import { reportForGreeting } from '@/utils/reportNotice';
 import { topicAllowance } from '@/utils/navigatorTopics';
@@ -91,7 +93,18 @@ export interface BigDealDraft {
   deadline: string;
   steps: string[];
 }
-export type NavigatorDraft = ActivityDraft | TodoDraft | LedgerDraft | CompleteTodoDraft | EditTodoDraft | BigDealDraft;
+/** 记住一件事（第 26 批 · B4）：用户说「记住，我对花生过敏」→ 一条置顶记忆（永不遗忘） */
+export interface RememberDraft {
+  kind: 'remember';
+  text: string;
+}
+/** 忘掉一件事（第 26 批 · B4）：用户说「别记那个了」→ 那条记忆作废、不再进召回 */
+export interface ForgetDraft {
+  kind: 'forget';
+  memoId: string;
+  memoText: string;
+}
+export type NavigatorDraft = ActivityDraft | TodoDraft | LedgerDraft | CompleteTodoDraft | EditTodoDraft | BigDealDraft | RememberDraft | ForgetDraft;
 
 /** 改待办卡里真正要改的字段（除去 kind / todoId / todoTitle） */
 export const editTodoChanges = (d: EditTodoDraft) =>
@@ -112,6 +125,10 @@ export const emptyDraft = (kind: NavigatorActionKind): NavigatorDraft => {
       return { kind, todoId: '', todoTitle: '' };
     case 'bigdeal':
       return { kind, title: '', attribute: 'guts', points: 2, currentState: '', deadline: '', steps: [] };
+    case 'remember':
+      return { kind, text: '' };
+    case 'forget':
+      return { kind, memoId: '', memoText: '' };
   }
 };
 
@@ -122,6 +139,8 @@ export const ACTION_META: Record<NavigatorActionKind, { label: string; icon: str
   completeTodo: { label: '完成任务', icon: '✅' },
   editTodo: { label: '修改待办', icon: '✏️' },
   bigdeal: { label: '拆一件大事', icon: '◆' },
+  remember: { label: '记住一件事', icon: '🔖' },
+  forget: { label: '忘掉一件事', icon: '🫥' },
 };
 
 /** 确认卡的参数预览行 */
@@ -176,6 +195,10 @@ export function buildPreviewLines(draft: NavigatorDraft): string[] {
         `${navAttrName(draft.attribute)} 每步 +${draft.points}${draft.deadline ? ` · 截止 ${draft.deadline}` : ''} · 全成有收官奖励`,
       ];
     }
+    case 'remember':
+      return [`「${draft.text}」`, '会置顶记下，以后不会遗忘；记事本里随时能改、能删'];
+    case 'forget':
+      return [`「${draft.memoText}」`, '这条记忆会作废：不再想起、不再提；记事本里还能看到'];
   }
 }
 
@@ -189,6 +212,8 @@ export function draftReady(draft: NavigatorDraft): boolean {
     case 'editTodo':
       return draft.todoId.length > 0 && editTodoChanges(draft).length > 0 && (draft.title === undefined || draft.title.trim().length > 0);
     case 'bigdeal': return draft.title.trim().length > 0 && draft.steps.some(s => s.trim());
+    case 'remember': return draft.text.trim().length > 0;
+    case 'forget': return draft.memoId.length > 0;
   }
 }
 
@@ -295,6 +320,22 @@ export async function executeDraft(draft: NavigatorDraft): Promise<string> {
         steps: steps.map(t => ({ id: uuidv4(), title: t, source: 'ai' as const })),
       });
       return `大事「${draft.title.trim()}」已立好，拆成 ${steps.length} 步。`;
+    }
+    case 'remember': {
+      // 用户亲口让记的：置顶（永不遗忘）、重要度拉满；按记忆隔离规则归当前人格
+      const text = draft.text.trim().slice(0, 80);
+      const owner = memoOwner(s.settings.navigatorPresetId);
+      await db.navigatorMemos.put({
+        id: uuidv4(), source: 'manual', text, importance: 5, pinned: true, status: 'active', createdAt: new Date(),
+        ...(owner ? { presetId: owner } : {}),
+      });
+      return `已记住：「${text}」（置顶，不会遗忘）。`;
+    }
+    case 'forget': {
+      const m = await db.navigatorMemos.get(draft.memoId);
+      if (!m || m.status !== 'active') return `「${draft.memoText}」已经不在记忆里了。`;
+      await db.navigatorMemos.update(m.id, { status: 'archived', invalidAt: new Date(), muted: true, pinned: false });
+      return `已忘掉：「${m.text}」。`;
     }
   }
 }

@@ -14,12 +14,13 @@
 import { v4 as uuidv4 } from 'uuid';
 import { db } from '@/db';
 import { memoryIsolated, memoVisibleTo, memoOwner } from '@/utils/navigatorMemoryScope';
+import { tokenize, queryChars } from '@/utils/navigatorIndex';
 import { useAppStore, toLocalDateKey } from '@/store';
 import { chatComplete, getAIConfig, type AIConfig, type AIMessage } from '@/utils/aiClient';
 import { BUILTIN_NAVIGATOR_PRESETS, resolveNavigatorPreset } from '@/constants/navigatorPresets';
 import { calendarTable, dayLabelCN, keyOfDate, relativeDayCN, shortMD } from '@/utils/navigatorClock';
 import { followUpCoveredByPromise, isPromise, mentionsTopic, promisePhase, savePromisesFromCompact } from '@/utils/navigatorPromise';
-import type { NavigatorMemo, NavigatorMessageRow, NavigatorPreset } from '@/types';
+import type { NavigatorMemo, NavigatorMessageRow, NavigatorPreset, ProfileBlocks } from '@/types';
 
 // ── token 估算（触发判断用，不求精确；中文≈0.6~0.9 token/字取保守 0.75） ──
 export function estTokens(text: string): number {
@@ -47,47 +48,117 @@ const RECENT_MEMO_COOLDOWN_MS = 6 * 3600_000;
 
 // ── compact LLM 调用 ──
 
+/** 归档器对一条记忆的处理（第 26 批 · B1，mem0 的 ADD / UPDATE / DELETE / NOOP）：ref 指【已有的相关记忆】里的短 id */
+export interface CompactMemoryOp {
+  op: 'add' | 'update' | 'supersede' | 'noop';
+  ref?: string;
+  text: string;
+  importance: number;
+  colorHint?: string;
+  /** 线索词：以后聊到什么时该想起这条（召回 / 联想用） */
+  cues?: string[];
+}
+/** 「你们之间的说法」（第 26 批 · §24.11） */
+export interface CompactBit { phrase: string; meaning: string; origin?: string }
+
 interface CompactResult {
   summary: string;
   personaSummary: string;
-  memories: Array<{ text: string; importance: number; colorHint?: string }>;
+  memories: CompactMemoryOp[];
   followUp: string | null;
-  /** AI 增量维护的用户画像全文（无变化时为原文） */
-  profile: string | null;
+  /** 画像：只有变化的块（第 26 批起分块）；无变化为 null */
+  profile: Partial<ProfileBlocks> | null;
   /** 带日子、过后要问结果的事（第二批回访约定：会话末补记漏掉的） */
   promises: unknown[];
+  bits: CompactBit[];
 }
 
-// ── 用户画像（ChatGPT Memory 式总览：常驻注入 + compact 增量维护 + 用户可编辑） ──
+// ── 用户画像（第 26 批起分五块：身份 / 目标 / 偏好与雷区 / 近况 / 相处守则；归档器只回有变化的块，留上一版可撤回） ──
 
 const PROFILE_ID = 'navigator-user-profile';
+export const PROFILE_KEYS: Array<keyof ProfileBlocks> = ['identity', 'goals', 'preferences', 'recent', 'rules'];
+export const PROFILE_LABELS: Record<keyof ProfileBlocks, string> = { identity: '身份与处境', goals: '长期目标', preferences: '偏好与雷区', recent: '近况', rules: '相处守则' };
+export const PROFILE_LIMITS: Record<keyof ProfileBlocks, number> = { identity: 120, goals: 120, preferences: 120, recent: 100, rules: 100 };
 
 // ── 记忆隔离（第 23 批）：判定在 navigatorMemoryScope；开了之后按人格分，没标人格的是共享 ──
 export { memoryIsolated, memoVisibleTo, memoOwner } from '@/utils/navigatorMemoryScope';
 
 const profileIdFor = (presetId: string | undefined): string => (memoryIsolated() && presetId ? `${PROFILE_ID}:${presetId}` : PROFILE_ID);
 
-/** 用户画像：隔离时先取这个人格自己的，没有就退回共享的那份（老画像大家都读得到） */
-export async function getProfile(presetId?: string): Promise<string> {
-  try {
-    const own = await db.navigatorMemos.get(profileIdFor(presetId));
-    if (own?.status === 'active' && own.text) return own.text;
-    if (profileIdFor(presetId) !== PROFILE_ID) {
-      const shared = await db.navigatorMemos.get(PROFILE_ID);
-      return shared?.status === 'active' ? shared.text : '';
-    }
-    return own?.status === 'active' ? own.text : '';
-  } catch { return ''; }
+const trimBlocks = (b: Partial<ProfileBlocks> | undefined | null): ProfileBlocks => {
+  const out: ProfileBlocks = {};
+  if (!b) return out;
+  for (const k of PROFILE_KEYS) {
+    const v = typeof b[k] === 'string' ? b[k]!.replace(/\s+/g, ' ').trim().slice(0, PROFILE_LIMITS[k]) : '';
+    if (v) out[k] = v;
+  }
+  return out;
+};
+const blocksEmpty = (b: ProfileBlocks): boolean => PROFILE_KEYS.every((k) => !b[k]);
+const blocksEqual = (a: ProfileBlocks, b: ProfileBlocks): boolean => PROFILE_KEYS.every((k) => (a[k] ?? '') === (b[k] ?? ''));
+
+/** 注入用的一段：只有「身份」一块时原样给（老画像 / 手写的整段），多块时带标签 */
+export function flattenProfile(b: ProfileBlocks): string {
+  const present = PROFILE_KEYS.filter((k) => b[k]);
+  if (!present.length) return '';
+  if (present.length === 1 && present[0] === 'identity') return b.identity!;
+  return present.map((k) => `${PROFILE_LABELS[k]}：${b[k]}`).join('；');
 }
 
-export async function saveProfile(text: string, presetId?: string): Promise<void> {
-  const t = text.trim().slice(0, 400);
+/** 行 → 块：没分过块的老画像整段算「身份」 */
+const blocksOfRow = (row: NavigatorMemo | undefined): ProfileBlocks => {
+  if (!row || row.status !== 'active') return {};
+  if (row.profileBlocks) return trimBlocks(row.profileBlocks);
+  return row.text ? { identity: row.text.slice(0, PROFILE_LIMITS.identity) } : {};
+};
+
+/** 画像的块：隔离时先取这个人格自己的，没有就退回共享的那份 */
+export async function getProfileBlocks(presetId?: string): Promise<ProfileBlocks> {
+  try {
+    const own = await db.navigatorMemos.get(profileIdFor(presetId));
+    const ownBlocks = blocksOfRow(own);
+    if (!blocksEmpty(ownBlocks)) return ownBlocks;
+    if (profileIdFor(presetId) !== PROFILE_ID) return blocksOfRow(await db.navigatorMemos.get(PROFILE_ID));
+    return ownBlocks;
+  } catch { return {}; }
+}
+
+/** 注入用的整段文字 */
+export async function getProfile(presetId?: string): Promise<string> {
+  return flattenProfile(await getProfileBlocks(presetId));
+}
+
+/** 写画像的块（归档器增量 / 记事本手改）：留上一版，撤回时换回来 */
+export async function saveProfileBlocks(blocks: Partial<ProfileBlocks>, presetId?: string): Promise<void> {
   const id = profileIdFor(presetId);
+  const next = trimBlocks(blocks);
+  let prev: ProfileBlocks | undefined;
+  try {
+    const cur = await db.navigatorMemos.get(id);
+    const curBlocks = blocksOfRow(cur);
+    prev = !blocksEmpty(curBlocks) && !blocksEqual(curBlocks, next) ? curBlocks : cur?.profilePrev;
+  } catch { /* */ }
   await db.navigatorMemos.put({
-    id, source: 'profile', text: t, importance: 5, pinned: true,
-    status: t ? 'active' : 'archived', createdAt: new Date(),
+    id, source: 'profile', text: flattenProfile(next), importance: 5, pinned: true,
+    status: blocksEmpty(next) ? 'archived' : 'active', createdAt: new Date(),
+    profileBlocks: next, ...(prev && !blocksEmpty(prev) ? { profilePrev: prev } : {}),
     ...(id !== PROFILE_ID ? { presetId } : {}),
   });
+}
+
+/** 旧接口：整段文字 = 「身份」一块（老测试 / 记事本整段模式） */
+export async function saveProfile(text: string, presetId?: string): Promise<void> {
+  await saveProfileBlocks({ identity: text.trim().slice(0, 400) }, presetId);
+}
+
+/** 撤回到上一版（有的话） */
+export async function undoProfile(presetId?: string): Promise<boolean> {
+  const id = profileIdFor(presetId);
+  const cur = await db.navigatorMemos.get(id);
+  if (!cur?.profilePrev) return false;
+  const prev = trimBlocks(cur.profilePrev);
+  await db.navigatorMemos.put({ ...cur, text: flattenProfile(prev), profileBlocks: prev, profilePrev: blocksOfRow(cur), status: blocksEmpty(prev) ? 'archived' : 'active' });
+  return true;
 }
 
 function extractJson(raw: string): Record<string, unknown> | null {
@@ -105,12 +176,15 @@ function extractJson(raw: string): Record<string, unknown> | null {
 
 const COMPACT_PROTOCOL = `你是对话归档器。把给定的「用户与陪伴 AI 的对话片段」压缩归档。
 只输出这一个 JSON 对象（不要代码块、不要其它文字）：
-{"summary":"","personaSummary":"","memories":[],"followUp":null,"profile":null,"promises":[]}
+{"summary":"","personaSummary":"","memories":[],"followUp":null,"profile":null,"promises":[],"bits":[]}
 - summary：中性第三人称摘要，≤120 字，保留具体事实（做了什么/提到什么/情绪如何）。
 - personaSummary：同样内容，改用陪伴 AI 的第一人称口吻复述，≤100 字。
 - memories：0~2 条值得长期记住的**关于用户的**原子事实（各 ≤40 字，中性陈述句），
-  每条 {"text":"","importance":1..5,"colorHint":"提起时的情绪，可空"}。
-  **主语必须是用户**：陪伴 AI 自己说过的话、答应的事、它的心情一概不收（那是它的事，不是用户的事实）。
+  每条 {"op":"add|update|supersede|noop","ref":"m1","text":"","importance":1..5,"colorHint":"提起时的情绪，可空","cues":["线索词"]}。
+  先对照【已有的相关记忆】：同一件事已经记过 → op=noop（ref 写那条）；这件事有了新进展、旧说法过时了（「在准备雅思」→「雅思考完了」）→ op=supersede（ref 写旧的那条，text 写新事实）；
+  只是补充细节、旧的仍然对 → op=update（ref 写那条，text 写合并后的全文）；全新的事 → op=add（ref 留空）。ref 只能是列表里给出的 id。
+  cues：2~6 个「以后聊到什么时该想起这条」的词——话题、物件、情绪、场景（如 咖啡、键盘、熬夜、尴尬、下雨天），别重复 text 里已有的词。
+  **主语必须是用户**：陪伴 AI 自己说过的话、答应的事、它的心情一概不收（那是它的事，不是用户的事实）；用户对 AI 的评价（「你又忘了」「记性真差」）也不收。
   只收会影响未来相处的事（在准备的考试/长期困扰/重要偏好/关系变化）；日常流水不收。
   **不收操作痕迹**：对话里 [卡片·…] 这类行是工具调用留下的操作记录，不是关于用户的事实。
   「用户有一条 xxx 的记录」「用户记了一笔 xx 元」「用户加了个待办」一律不要写进 memories——
@@ -118,67 +192,138 @@ const COMPACT_PROTOCOL = `你是对话归档器。把给定的「用户与陪伴
   才写，且要写成那条事实本身而不是"他记了什么"。
 - followUp：一个值得下次自然追问的话头（≤30 字），没有就 null。
 - 带 [沉] 标记的是对方很沉重时说的话：可以记成关于用户的事实（colorHint 写「沉重」），但**不要**写成 followUp、不要写进 promises、不要当成要回访的事——过几天轻飘飘地问「那天你说不想活了，后来呢」是伤人的。
-- profile：拿【现有用户画像】与本段对话对照，若有值得并入画像的长期信息（身份/长期目标/
-  稳定偏好/生活状态变化），输出**更新后的画像全文**（≤200 字，中性第三人称，合并去重）；
-  画像无需变化则 null。不要把短期琐事写进画像。
+- profile：【现有用户画像】分五块——identity 身份与处境 / goals 长期目标 / preferences 偏好与雷区 / recent 近况 / rules 相处守则（他希望你怎么对他）。
+  拿它和本段对话对照，只输出**有变化的块**，每块写更新后的全文（identity / goals / preferences ≤120 字，recent / rules ≤100 字，中性第三人称，合并去重）：如 {"recent":"…"}；都没变化就 null。
+  不要把短期琐事写进画像；rules 只在他明确表达过（「我说累的时候别催我」）时写，写成「他希望…」。
 - **日子写具体**：输入第一行写了这段对话发生在哪天。对话里「今天 / 明天 / 后天 / 周五 / 下周一 / 月底」
   这类说法，写进 summary、memories、followUp 时一律换成具体日子（如「10月3日（周五）」）——
   这些文字以后会在别的日子被读到，「明天」到那时就错了。实在定不下来的，写「10月1日提到的“下周”」。
 - promises：用户提到的、他自己要经历的、日子明确、过后值得问一句结果的事（面试、考试、体检、答辩、比赛、演出、约会、搬家、出发、手术……），
   每条 {"topic":"≤8 字","date":"YYYY-MM-DD","when":"morning|day|evening"}；日子按第一行的日期和【日历】查；没有就 []。
-  **这类事只写在 promises 里，不要再写成 memories 或 followUp**——会有专门的回访去问，写两处就会被问两遍。`;
+  **这类事只写在 promises 里，不要再写成 memories 或 followUp**——会有专门的回访去问，写两处就会被问两遍。
+- bits：0~2 条「你们之间的说法」：这段对话里新出现的、以后还能再用的昵称 / 代号 / 玩笑 / 反复出现的梗，包括用户自己造的词（「把拖延叫『充能』」）。
+  每条 {"phrase":"≤10 字","meaning":"≤30 字","origin":"≤20 字，从哪件事来的"}。这不是关于用户的事实，不要写进 memories；平常的词、只随口说了一次的话不算；没有就 []。`;
+
+/** 【已有的相关记忆】里的一条（短 id → 真 id 的映射由调用方保管） */
+export interface RelatedMemo { ref: string; id: string; text: string; dateKey: string }
+
+/** 归档前挑出和这段对话相关的旧记忆（≤8 条）：用户说的那几句做查询，词 + 二元组 + 字级兜底 */
+export async function relatedMemosFor(lines: string[], presetId: string | undefined, limit = 8): Promise<RelatedMemo[]> {
+  try {
+    const memos = (await db.navigatorMemos.where('status').equals('active').toArray())
+      .filter((m) => m.source !== 'profile' && m.source !== 'bit' && memoVisibleTo(m, presetId));
+    if (!memos.length) return [];
+    const userText = lines.filter((l) => l.startsWith('用户：') || l.startsWith('[沉] 用户：')).join(' ');
+    const q = new Set(tokenize(userText));
+    const qc = new Set(queryChars(userText));
+    const scored = memos.map((m) => {
+      const toks = new Set([...tokenize(m.text), ...(m.cues ?? [])]);
+      let hit = 0;
+      toks.forEach((t) => { if (q.has(t)) hit += 1; });
+      queryChars(m.text).forEach((c) => { if (qc.has(c)) hit += 0.25; });
+      return { m, hit };
+    }).filter((x) => x.hit >= 1).sort((a, b) => b.hit - a.hit || new Date(a.m.createdAt).getTime() - new Date(b.m.createdAt).getTime());
+    // 一字不差的重复只列最早那条（supersede 时会把同文的一起作废）
+    const seen = new Set<string>();
+    const out: RelatedMemo[] = [];
+    for (const x of scored) {
+      const key = normalizeMemoText(x.m.text);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ ref: `m${out.length + 1}`, id: x.m.id, text: x.m.text, dateKey: toLocalDateKey(new Date(x.m.createdAt)) });
+      if (out.length >= limit) break;
+    }
+    return out;
+  } catch { return []; }
+}
+
+const cleanCues = (raw: unknown): string[] | undefined => {
+  const arr = Array.isArray(raw) ? raw : [];
+  const out = [...new Set(arr.map((x) => String(x ?? '').replace(/\s+/g, '').trim().slice(0, 10)).filter((x) => x.length >= 1))].slice(0, 6);
+  return out.length ? out : undefined;
+};
 
 async function compactViaAI(
   cfg: AIConfig,
   lines: string[],
   personaName: string,
-  oldProfile: string,
+  oldProfile: ProfileBlocks,
   /** 这段对话发生在哪天（YYYY-MM-DD）：模型据此把「明天 / 周五」换成具体日子 */
   dateKey: string,
+  related: RelatedMemo[] = [],
 ): Promise<CompactResult | null> {
   try {
     let raw: string;
+    const profileText = PROFILE_KEYS.filter((k) => oldProfile[k]).map((k) => `${k}（${PROFILE_LABELS[k]}）：${oldProfile[k]}`).join('\n') || '（暂无）';
+    const relatedText = related.length ? related.map((r) => `- ${r.ref}（${shortMD(r.dateKey)} 记）：${r.text}`).join('\n') : '（无）';
     const messages: AIMessage[] = [
       { role: 'system', content: COMPACT_PROTOCOL },
-      { role: 'user', content: `这段对话发生在 ${dayLabelCN(dateKey)}（${dateKey}）。\n【日历】\n${calendarTable(dateKey, 21)}\n陪伴 AI 的名字：${personaName}\n【现有用户画像】${oldProfile || '（暂无）'}\n【对话片段】\n${lines.join('\n')}` },
+      { role: 'user', content: `这段对话发生在 ${dayLabelCN(dateKey)}（${dateKey}）。\n【日历】\n${calendarTable(dateKey, 21)}\n陪伴 AI 的名字：${personaName}\n【现有用户画像】\n${profileText}\n【已有的相关记忆】\n${relatedText}\n【对话片段】\n${lines.join('\n')}` },
     ];
     try {
-      raw = await chatComplete(cfg, messages, { temperature: 0.3, maxTokens: 900, jsonMode: true, purpose: 'compact' });
+      raw = await chatComplete(cfg, messages, { temperature: 0.3, maxTokens: 1100, jsonMode: true, purpose: 'compact' });
     } catch (e) {
       if (e instanceof Error && e.message.includes('空响应')) {
-        raw = await chatComplete(cfg, messages, { temperature: 0.3, maxTokens: 900, jsonMode: false, purpose: 'compact' });
+        raw = await chatComplete(cfg, messages, { temperature: 0.3, maxTokens: 1100, jsonMode: false, purpose: 'compact' });
       } else throw e;
     }
     const parsed = extractJson(raw);
     if (!parsed) return null;
+    // noop 不占名额：最多看 6 条，真正写入的在 persistMemories 里限 3 条
     const memories = (Array.isArray(parsed.memories) ? parsed.memories : [])
-      .slice(0, 2)
+      .slice(0, 6)
       .map((m) => {
         const r = m as Record<string, unknown>;
         const text = String(r.text ?? '').trim().slice(0, 60);
-        if (!text) return null;
+        const op = r.op === 'update' || r.op === 'supersede' || r.op === 'noop' ? r.op : 'add';
+        if (!text && op !== 'noop') return null;
         const imp = Math.round(Number(r.importance));
         return {
-          text,
+          op, ref: typeof r.ref === 'string' ? r.ref.trim() : undefined, text,
           importance: Number.isFinite(imp) ? Math.min(5, Math.max(1, imp)) : 3,
           colorHint: String(r.colorHint ?? '').trim().slice(0, 30) || undefined,
-        };
+          cues: cleanCues(r.cues),
+        } as CompactMemoryOp;
       })
-      .filter((m): m is NonNullable<typeof m> => !!m);
+      .filter((m): m is CompactMemoryOp => !!m);
     const summary = String(parsed.summary ?? '').trim().slice(0, 200);
     if (!summary) return null;
+    // 画像：对象（分块）或旧式整段字符串（当作 identity）
+    let profile: Partial<ProfileBlocks> | null = null;
+    if (parsed.profile && typeof parsed.profile === 'object') {
+      const pb = trimBlocks(parsed.profile as Partial<ProfileBlocks>);
+      profile = blocksEmpty(pb) ? null : pb;
+    } else if (typeof parsed.profile === 'string' && parsed.profile.trim()) {
+      profile = { identity: parsed.profile.trim().slice(0, 400) };
+    }
+    const bits: CompactBit[] = [];
+    for (const b of (Array.isArray(parsed.bits) ? parsed.bits : []).slice(0, 2)) {
+      const r = (b && typeof b === 'object') ? b as Record<string, unknown> : {};
+      const phrase = String(r.phrase ?? '').replace(/^[「『"“]|[」』"”]$/g, '').trim().slice(0, 12);
+      if (!phrase) continue;
+      const origin = String(r.origin ?? '').trim().slice(0, 24);
+      bits.push({ phrase, meaning: String(r.meaning ?? '').trim().slice(0, 40), ...(origin ? { origin } : {}) });
+    }
     return {
       summary,
       personaSummary: String(parsed.personaSummary ?? '').trim().slice(0, 180) || summary,
       memories,
       followUp: String(parsed.followUp ?? '').trim().slice(0, 40) || null,
-      profile: String(parsed.profile ?? '').trim().slice(0, 400) || null,
+      profile,
       promises: Array.isArray(parsed.promises) ? parsed.promises : [],
+      bits,
     };
   } catch (e) {
     if (import.meta.env.DEV) console.warn('[navigator] compact 调用失败', e);
     return null;
   }
+}
+
+/** 评测用（tests-local/evals/memory-run.mjs）：直接跑一次归档器，不落库 */
+export async function _compactForTest(lines: string[], personaName: string, oldProfile: ProfileBlocks, dateKey: string, related: RelatedMemo[]): Promise<CompactResult | null> {
+  const cfg = getAIConfig(useAppStore.getState().settings);
+  if (!cfg) throw new Error('未配置 AI');
+  return compactViaAI(cfg, lines, personaName, oldProfile, dateKey, related);
 }
 
 /** 消息行 → compact 输入行（卡片折叠为一行事实） */
@@ -208,45 +353,98 @@ export function isAboutUser(text: string, personaName: string): boolean {
   return true;
 }
 
-async function persistMemories(result: CompactResult, sessionDateKey: string, allowProfile = true, presetId?: string, personaName = ''): Promise<void> {
-  // AI 更新了画像 → 落库（用户手动编辑的版本会在下次 compact 时作为"现有画像"喂回，形成闭环）。
-  // 第 13 轮把会话末归档的门槛降到 2 条 / 40 字后，短会话也会走 AI：这类会话只收记忆，不让它改写画像——
-  // 画像是用户能手改的长期档案，几句话的闲聊不该有机会把它重写一遍（allowProfile=false）
-  if (result.profile && allowProfile) void saveProfile(result.profile, presetId);
+/** 用户对 AI 的评价（第 26 批，Tolan 的教训：别反复说它健忘，否则它把「健忘」当自我形象）：不入库 */
+export function isMetaComment(text: string): boolean {
+  return /(你|AI|助手|机器人|它)(又|总|老是|怎么|真|好)?(忘|记不住|健忘|记性|答非所问|胡说|瞎编|不靠谱|听不懂)/.test(text) || /^用户(觉得|说|认为|抱怨)(AI|助手|它|你)/.test(text);
+}
+
+/** 敏感类（健康 / 心理 / 证件账号）：用户没说「记住」就不入长期记忆 */
+const SENSITIVE_RE = /抑郁症|焦虑症|躁郁|双相|自杀|自残|精神科|心理医生|心理咨询|HIV|艾滋|性病|怀孕|流产|堕胎|身份证号|银行卡|卡号|密码|账号密码|工资卡|社保号|护照号/;
+export const isSensitiveMemory = (text: string): boolean => SENSITIVE_RE.test(text);
+
+/** 去空白与标点后的小写文本（查重用） */
+export const normalizeMemoText = (t: string): string => t.toLowerCase().replace(/[\s\p{P}\p{S}]+/gu, '').replace(/^用户/, '');
+
+async function persistMemories(
+  result: CompactResult,
+  sessionDateKey: string,
+  allowProfile = true,
+  presetId?: string,
+  personaName = '',
+  related: RelatedMemo[] = [],
+  sessionId?: string,
+): Promise<void> {
+  // 画像：归档器只回有变化的块 → 合并进现有的（用户手改的版本会在下次 compact 时作为"现有画像"喂回，形成闭环）。
+  // 短会话（第 13 轮降门槛后）只收记忆、不让它改画像（allowProfile=false）
+  if (result.profile && allowProfile) {
+    const cur = await getProfileBlocks(presetId);
+    await saveProfileBlocks({ ...cur, ...result.profile }, presetId).catch(() => {});
+  }
   // 回访约定：会话末补记漏掉的；话头若和约定撞了就不挂（约定那边会问，问两遍就破了「只问一次」）
   await savePromisesFromCompact(result.promises, sessionDateKey, Date.now(), presetId).catch(() => {});
   if (result.followUp && await followUpCoveredByPromise(result.followUp, presetId).catch(() => false)) result.followUp = null;
-  // 只收关于用户的（第 23 批）
-  const dropped = result.memories.filter((m) => !isAboutUser(m.text, personaName));
-  if (dropped.length && import.meta.env.DEV) console.warn('[navigator] 丢掉不是关于用户的记忆', dropped.map((m) => m.text));
-  result.memories = result.memories.filter((m) => isAboutUser(m.text, personaName));
+  // 「你们之间的说法」跟人格走（带口吻，不受隔离开关影响）
+  if (result.bits.length && presetId) await saveBits(result.bits, presetId, sessionDateKey).catch(() => {});
+
   const owner = memoOwner(presetId);
-  // 记在那场对话的日子上（第二天开窗才归档时，以前记成了归档那天：「（10/6 记）」其实是 10/5 说的）；
-  // 当天的会话照旧用此刻
+  // 记在那场对话的日子上（第二天开窗才归档时，以前记成了归档那天）；当天的会话照旧用此刻
   const now = new Date();
   const day = /^\d{4}-\d{2}-\d{2}$/.test(sessionDateKey) && sessionDateKey < toLocalDateKey()
     ? new Date(`${sessionDateKey}T21:00:00`)
     : now;
-  const memos: NavigatorMemo[] = result.memories.map((m, i) => ({
-    id: uuidv4(),
-    source: 'chat',
-    text: m.text,
-    colorHint: m.colorHint,
-    importance: m.importance,
-    // followUp 挂在第一条记忆上；没有记忆但有话头 → 建一条 importance 3 的载体
-    followUp: i === 0 ? result.followUp ?? undefined : undefined,
-    status: 'active',
-    createdAt: day,
-    ...(owner ? { presetId: owner } : {}),
-  }));
-  if (memos.length === 0 && result.followUp) {
-    memos.push({
-      id: uuidv4(), source: 'chat', text: result.followUp, importance: 3,
-      followUp: result.followUp, status: 'active', createdAt: day,
+  const refToId = new Map(related.map((r) => [r.ref, r.id]));
+  let existing: NavigatorMemo[] = [];
+  try { existing = (await db.navigatorMemos.where('status').equals('active').toArray()).filter((m) => m.source !== 'profile' && m.source !== 'bit' && memoVisibleTo(m, presetId)); } catch { /* */ }
+  const seen = new Set(existing.map((m) => normalizeMemoText(m.text)));
+  let followUp = result.followUp ?? undefined;
+  let wrote = 0;
+  for (const op of result.memories) {
+    if (op.op === 'noop') continue;
+    if (wrote >= 3) break; // 一场对话最多写 3 条（含改写 / 替代）
+    const text = op.text.trim();
+    if (!text) continue;
+    if (!isAboutUser(text, personaName) || isMetaComment(text)) { if (import.meta.env.DEV) console.warn('[navigator] 丢掉不是关于用户的记忆', text); continue; }
+    if (isSensitiveMemory(text)) { if (import.meta.env.DEV) console.warn('[navigator] 敏感内容不入长期记忆', text); continue; }
+    const refId = op.ref ? refToId.get(op.ref) : undefined;
+    const old = refId ? existing.find((m) => m.id === refId) : undefined;
+    if (op.op === 'update' && old) {
+      await db.navigatorMemos.update(old.id, {
+        text, importance: Math.max(old.importance, op.importance), colorHint: op.colorHint ?? old.colorHint,
+        cues: [...new Set([...(old.cues ?? []), ...(op.cues ?? [])])].slice(0, 8), ...(followUp ? { followUp } : {}),
+      });
+      followUp = undefined;
+      seen.add(normalizeMemoText(text));
+      wrote++;
+      continue;
+    }
+    const norm = normalizeMemoText(text);
+    if (seen.has(norm) && !(op.op === 'supersede' && old)) continue; // 一字不差的已经有了
+    const id = uuidv4();
+    const memo: NavigatorMemo = {
+      id, source: 'chat', text, colorHint: op.colorHint, importance: op.importance, cues: op.cues,
+      followUp: followUp, status: 'active', createdAt: day,
+      ...(owner ? { presetId: owner } : {}), ...(sessionId ? { fromSessionId: sessionId } : {}),
+    };
+    followUp = undefined;
+    await db.navigatorMemos.put(memo);
+    seen.add(norm);
+    wrote++;
+    if (op.op === 'supersede' && old) {
+      // 旧说法作废；一字不差的同文（重复条）一起作废，别留一条继续当真
+      const oldKey = normalizeMemoText(old.text);
+      for (const m of existing) {
+        if (m.id === old.id || normalizeMemoText(m.text) === oldKey) await db.navigatorMemos.update(m.id, { status: 'archived', invalidAt: now, supersededBy: id, followUp: undefined });
+      }
+    }
+  }
+  // 没有记忆但有话头 → 建一条 importance 3 的载体
+  if (wrote === 0 && followUp) {
+    await db.navigatorMemos.put({
+      id: uuidv4(), source: 'chat', text: followUp, importance: 3,
+      followUp, status: 'active', createdAt: day,
       ...(owner ? { presetId: owner } : {}),
     });
   }
-  if (memos.length) await db.navigatorMemos.bulkPut(memos);
 }
 
 // ── 主泵：会话末 compact（开窗时惰性触发） ──
@@ -306,12 +504,14 @@ async function finalizeStaleSessionsInner(activePresetId?: string): Promise<Last
       if (cfg && (userMsgs.length >= FINALIZE_MIN_USER_MSGS || userChars >= FINALIZE_MIN_USER_CHARS)) {
         const sessionPreset = session.presetId ?? BUILTIN_NAVIGATOR_PRESETS[0].id;
         const personaName = await personaNameOf(session.presetId, custom);
-        const result = await compactViaAI(cfg, rowsToLines(rows).slice(-80), personaName, await getProfile(sessionPreset), session.dateKey);
+        const lines = rowsToLines(rows).slice(-80);
+        const related = await relatedMemosFor(lines, sessionPreset);
+        const result = await compactViaAI(cfg, lines, personaName, await getProfileBlocks(sessionPreset), session.dateKey, related);
         if (result) {
           summary = result.summary;
           personaSummary = result.personaSummary;
           await persistMemories(result, session.dateKey,
-            userMsgs.length >= PROFILE_MIN_USER_MSGS || userChars >= PROFILE_MIN_USER_CHARS, sessionPreset, personaName);
+            userMsgs.length >= PROFILE_MIN_USER_MSGS || userChars >= PROFILE_MIN_USER_CHARS, sessionPreset, personaName, related, session.id);
         } else {
           summary = localSummary(rows);
         }
@@ -437,9 +637,11 @@ async function compactLiveInner(
   let summaryText: string;
   const cfg = getAIConfig(useAppStore.getState().settings);
   if (cfg && total <= HARD_CAP_TOKENS) {
-    const result = await compactViaAI(cfg, rowsToLines(squash).slice(-100), personaName, await getProfile(presetId), toLocalDateKey());
+    const lines = rowsToLines(squash).slice(-100);
+    const related = await relatedMemosFor(lines, presetId);
+    const result = await compactViaAI(cfg, lines, personaName, await getProfileBlocks(presetId), toLocalDateKey(), related);
     if (result) {
-      await persistMemories(result, toLocalDateKey(), true, presetId, personaName);
+      await persistMemories(result, toLocalDateKey(), true, presetId, personaName, related, sessionId);
       summaryText = result.summary;
     } else {
       summaryText = localSummary(squash);
@@ -462,66 +664,95 @@ async function compactLiveInner(
   return { summaryText, removedIds: squash.map((r) => r.id) };
 }
 
-// ── 检索与注入（§2.4） ──
+// ── 检索与注入（§2.4；第 26 批 · B2 改造：词 + 二元组 + 字级兜底的相关度、近因按上次想起、强度随召回累积、分段预算、去重） ──
 
 export interface RecallResult {
   /** 注入动态块的记忆行（含 colorHint 与话头提示） */
   lines: string[];
+  /** 注入的记忆 id（挂到回复第一泡上：「想起了两件事」） */
+  ids: string[];
 }
 
-const cjkBigrams = (text: string): Set<string> => {
-  const clean = text.replace(/[^一-鿿\w]/g, '');
-  const grams = new Set<string>();
-  for (let i = 0; i < clean.length - 1; i++) grams.add(clean.slice(i, i + 2));
-  return grams;
-};
+/** 两段相关度：查询词 / 二元组命中按 idf 近似加权（记忆少，用简单的 log(N/n)），再加字级兜底 */
+function relevance(q: Set<string>, qc: Set<string>, memo: NavigatorMemo, df: Map<string, number>, N: number): number {
+  const toks = new Set([...tokenize(memo.text), ...(memo.cues ?? []).flatMap((c) => [c, ...tokenize(c)])]);
+  let score = 0;
+  toks.forEach((t) => {
+    if (!q.has(t)) return;
+    const n = df.get(t) ?? 1;
+    // 平滑的 idf：记忆库很小时（N=1、2）经典公式会塌到 0.3 以下，一个词都对上了却过不了相关门槛
+    score += Math.log(1 + (N + 1) / (n + 0.5));
+  });
+  const chars = new Set(queryChars(memo.text + (memo.cues ?? []).join('')));
+  let charHits = 0;
+  chars.forEach((c) => { if (qc.has(c)) charHits++; });
+  score += Math.min(1.0, charHits * 0.35);
+  return score;
+}
 
 /**
- * 评分检索 top≤4 并回写 recall 元数据；followUp **注入即清**（宁可少提醒不重复）。
- * 纯本地零 AI；异常返回空（记忆失效不阻断对话）。
+ * 评分检索：置顶（≤2）常驻 → 近 7 天（≤2）保底 → 相关（≤3）；总数 ≤6，去重；followUp **注入即清**（宁可少提醒不重复）。
+ * 纯本地零 AI；异常返回空（记忆失效不阻断对话）。prevUser = 之前几句用户的话（新的在后），权重减半。
  */
-export async function recallMemories(queryText: string, presetId?: string): Promise<RecallResult> {
+export async function recallMemories(queryText: string, presetId?: string, prevUser: string[] = []): Promise<RecallResult> {
   try {
     const all = (await db.navigatorMemos.where('status').equals('active').toArray())
-      .filter((m) => m.source !== 'profile') // 画像另行常驻注入，不占检索位
+      .filter((m) => m.source !== 'profile' && m.source !== 'bit' && !m.muted) // 画像另行常驻注入，说法另有一块，别再提的不进
       .filter((m) => memoVisibleTo(m, presetId)); // 记忆隔离（第 23 批）：只读共享的和自己的
     // 回访约定由 navigatorPromise 单独注入（什么时候问、只问一次）：还在等着的不进普通检索
     const promises = all.filter(isPromise);
     const memos = all.filter((m) => !isPromise(m) || (m.promiseState ?? 'waiting') !== 'waiting');
-    if (memos.length === 0) return { lines: [] };
-    const q = cjkBigrams(queryText);
+    if (memos.length === 0) return { lines: [], ids: [] };
+    const q = new Set(tokenize(queryText));
+    const qc = new Set(queryChars(queryText));
+    const qPrev = new Set(prevUser.slice(-2).flatMap((t) => tokenize(t)));
+    const df = new Map<string, number>();
+    for (const m of memos) for (const t of new Set([...tokenize(m.text), ...(m.cues ?? [])])) df.set(t, (df.get(t) ?? 0) + 1);
+    const N = memos.length;
     const now = Date.now();
     const scored = memos.map((m) => {
-      const ageDays = (now - new Date(m.createdAt).getTime()) / 86400_000;
-      const overlapSet = cjkBigrams(m.text);
-      let hit = 0;
-      overlapSet.forEach((g) => { if (q.has(g)) hit++; });
-      const overlap = overlapSet.size ? hit / Math.min(overlapSet.size, 12) : 0;
+      const rel = relevance(q, qc, m, df, N) + 0.5 * relevance(qPrev, new Set<string>(), m, df, N);
+      const seenAt = new Date(m.lastRecalledAt ?? m.createdAt).getTime();
+      const ageDays = (now - seenAt) / 86400_000;
       const score =
+        rel * 1.6 +
         m.importance * 0.5 +
-        Math.exp(-ageDays / 14) * 1.2 +
-        overlap * 2.5 +
-        (m.followUp ? 1.5 : 0) -
-        Math.min(1.2, (m.recallCount ?? 0) * 0.15) +
+        Math.exp(-ageDays / 14) * 1.2 +                       // 近因按「上次想起」算（Generative Agents）
+        Math.min(0.6, (m.recallCount ?? 0) * 0.1) +            // 被想起一次就加强一点（MemoryBank）
+        (m.followUp ? 1.5 : 0) +
         (m.pinned ? 2 : 0);
-      return { m, score };
-    }).sort((a, b) => b.score - a.score);
-
-    const picked = scored.slice(0, 4).filter((s) => s.score > 0.8);
-    // 第 13 轮：近 7 天刚记下的事，即便和这句话没有字面重叠、也没挤进前四，仍带上 1~2 条（按重要度），
-    // 免得「昨天才聊过、今天就忘」。总数 ≤6。保底注入**不计 recall 次数**（不拖低它以后的评分），
-    // 只记 lastRecalledAt，同一条 6 小时内不重复硬塞
-    const pickedIds = new Set(picked.map((s) => s.m.id));
+      // 刚提过（30 分钟内）又不特别相关的，这轮歇一歇，别每轮都是同一条
+      const cooling = m.lastRecalledAt && now - new Date(m.lastRecalledAt).getTime() < 30 * 60_000 && rel < 1.0 && !m.pinned;
+      return { m, score: cooling ? score - 2.5 : score, rel };
+    });
+    const picked: typeof scored = [];
+    const seenText = new Set<string>();
+    const take = (list: typeof scored, max: number) => {
+      for (const x of list) {
+        if (picked.length >= 6 || max <= 0) return;
+        const key = normalizeMemoText(x.m.text);
+        if (seenText.has(key) || picked.includes(x)) continue;
+        seenText.add(key); picked.push(x); max--;
+      }
+    };
+    // 分段预算：常驻 + 相关 ≤4（置顶的、或 rel ≥ 0.8 的，按分数；和这句话不沾边的置顶最多占 2 个位）→ 近 7 天保底 ≤2（按重要度；同一条 6 小时内不重复硬塞）
+    // 没有查询（问候）时按分数取：开场带几条最要紧的，和聊到什么无关
+    const noQuery = !queryText.trim();
+    let pinnedIdle = 0;
+    const head = scored
+      .filter((x) => x.m.pinned || x.rel >= 0.8 || (noQuery && x.score > 0.8))
+      .sort((a, b) => b.score - a.score)
+      .filter((x) => { if (x.m.pinned && x.rel < 0.8) { if (pinnedIdle >= 2) return false; pinnedIdle++; } return true; });
+    take(head, 4);
     const recent = scored
-      .filter((s) => !pickedIds.has(s.m.id)
-        && (s.m.recallCount ?? 0) < 4 // 按相关度已经提过 4 次以上的，不再额外保底
-        && now - new Date(s.m.createdAt).getTime() <= 7 * 86400_000
-        && (!s.m.lastRecalledAt || now - new Date(s.m.lastRecalledAt).getTime() >= RECENT_MEMO_COOLDOWN_MS))
-      .sort((a, b) => b.m.importance - a.m.importance || new Date(b.m.createdAt).getTime() - new Date(a.m.createdAt).getTime())
-      .slice(0, 2);
-    const recentIds = new Set(recent.map((s) => s.m.id));
+      .filter((x) => !x.m.pinned && (x.m.recallCount ?? 0) < 4 && now - new Date(x.m.createdAt).getTime() <= 7 * 86400_000
+        && (!x.m.lastRecalledAt || now - new Date(x.m.lastRecalledAt).getTime() >= RECENT_MEMO_COOLDOWN_MS))
+      .sort((a, b) => b.m.importance - a.m.importance || new Date(b.m.createdAt).getTime() - new Date(a.m.createdAt).getTime());
+    const recentIds = new Set(recent.map((x) => x.m.id));
+    take(recent, 2);
     const lines: string[] = [];
-    for (const { m } of [...picked, ...recent]) {
+    const ids: string[] = [];
+    for (const { m, rel } of picked) {
       // 带上哪天记下的（第二批 · 时间准确性）：「明天」类的说法即便漏网，模型也能对上日子
       const day = shortMD(keyOfDate(new Date(m.createdAt)));
       // 跟回访约定是同一件事的：注明结果另有人问 / 已经聊过（「只问一次」——别让模型从普通记忆里再翻出来问）
@@ -533,29 +764,153 @@ export async function recallMemories(queryText: string, presetId?: string): Prom
             : phase === 'due' ? '（结果会另外问，这里别问）'
               : '（还没到日子，别追问结果）';
       lines.push(`- （${day} 记）${m.text}${m.colorHint ? `（${m.colorHint}）` : ''}${promiseNote}${m.followUp && !related ? `【可自然追问：${m.followUp}】` : ''}`);
-      const patch: Partial<NavigatorMemo> = recentIds.has(m.id)
+      ids.push(m.id);
+      // 保底注入**不计 recall 次数**（不拖低它以后的评分），只记 lastRecalledAt；按相关度 / 置顶进来的记一次
+      const patch: Partial<NavigatorMemo> = recentIds.has(m.id) && rel < 0.8
         ? { lastRecalledAt: new Date() }
         : { lastRecalledAt: new Date(), recallCount: (m.recallCount ?? 0) + 1 };
       if (m.followUp) patch.followUp = undefined; // 一次性
       void db.navigatorMemos.update(m.id, patch).catch(() => {});
     }
-    return { lines };
+    return { lines, ids };
   } catch {
-    return { lines: [] };
+    return { lines: [], ids: [] };
   }
 }
 
-/** 惰性遗忘（§2.5）：低价值久未召回 → archived（置顶免疫；不删除） */
+// ── 「你们之间的说法」（第 26 批 · §24.11）：黑话 / 梗 / 昵称 / 代号，跟人格走，不是事实 ──
+
+export async function saveBits(bits: CompactBit[], presetId: string, dateKey: string): Promise<number> {
+  const existing = await listBits(presetId, true);
+  const seen = new Set(existing.map((b) => normalizeMemoText(b.text)));
+  let n = 0;
+  for (const b of bits) {
+    const key = normalizeMemoText(b.phrase);
+    if (!key || seen.has(key)) continue;
+    const created = /^\d{4}-\d{2}-\d{2}$/.test(dateKey) && dateKey < toLocalDateKey() ? new Date(`${dateKey}T21:00:00`) : new Date();
+    await db.navigatorMemos.put({
+      id: uuidv4(), source: 'bit', text: b.phrase, bitMeaning: b.meaning, bitOrigin: b.origin, importance: 3,
+      status: 'active', createdAt: created, presetId, usedCount: 0,
+    });
+    seen.add(key);
+    n++;
+  }
+  return n;
+}
+
+/** 这个人格的说法（只看它自己的；includeArchived 给整理 / 记事本用） */
+export async function listBits(presetId: string, includeArchived = false): Promise<NavigatorMemo[]> {
+  try {
+    return (await db.navigatorMemos.where('source').equals('bit').toArray())
+      .filter((m) => m.presetId === presetId && (includeArchived || m.status === 'active'))
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  } catch { return []; }
+}
+
+/** 注入块：≤3 条，轮换（久没用的先），带用法规则 */
+export async function bitsBlock(presetId: string, rand: () => number = Math.random): Promise<{ block: string; bits: NavigatorMemo[] }> {
+  const all = await listBits(presetId);
+  if (!all.length) return { block: '', bits: [] };
+  const ranked = [...all].sort((a, b) => {
+    const ta = a.lastUsedAt ? new Date(a.lastUsedAt).getTime() : 0;
+    const tb = b.lastUsedAt ? new Date(b.lastUsedAt).getTime() : 0;
+    return ta - tb || rand() - 0.5;
+  }).slice(0, 3);
+  const lines = ranked.map((b) => `- 「${b.text}」${b.bitMeaning ? ` = ${b.bitMeaning}` : ''}${b.bitOrigin ? `（${b.bitOrigin}）` : ''}`);
+  return {
+    bits: ranked,
+    block: `【你们之间的说法（可以自然地用；不解释来历；对方用了你就接；别每轮都用，一轮最多一个）】\n${lines.join('\n')}`,
+  };
+}
+
+/** 回复 / 用户的话里用到了哪条说法：复用计数 +1、记上次用到（久不用的会淡出） */
+export async function noteBitsUsed(text: string, bits: NavigatorMemo[]): Promise<void> {
+  if (!text.trim()) return;
+  for (const b of bits) {
+    if (b.text.length >= 2 && text.includes(b.text)) {
+      await db.navigatorMemos.update(b.id, { usedCount: (b.usedCount ?? 0) + 1, lastUsedAt: new Date() }).catch(() => {});
+    }
+  }
+}
+
+// ── 存量整理（第 26 批 · B1）：一字不差的本地合并；近似的记事本「整理」按钮提议、用户确认 ──
+
+const bigramSet = (t: string): Set<string> => { const n = normalizeMemoText(t); const out = new Set<string>(); for (let i = 0; i < n.length - 1; i++) out.add(n.slice(i, i + 2)); return out; };
+const jaccard = (a: Set<string>, b: Set<string>): number => { if (!a.size || !b.size) return 0; let inter = 0; a.forEach((x) => { if (b.has(x)) inter++; }); return inter / (a.size + b.size - inter); };
+
+export interface MergeProposal { keep: NavigatorMemo; drop: NavigatorMemo; similarity: number }
+
+/** 近似重复（二元组 Jaccard ≥ threshold，或一条包含另一条）：留早的那条（信息多的话留长的） */
+export async function findDuplicateMemos(presetId?: string, threshold = 0.6): Promise<MergeProposal[]> {
+  const memos = (await db.navigatorMemos.where('status').equals('active').toArray())
+    .filter((m) => m.source !== 'profile' && m.source !== 'bit' && !isPromise(m) && (presetId === undefined || memoVisibleTo(m, presetId)))
+    .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+  const out: MergeProposal[] = [];
+  const used = new Set<string>();
+  for (let i = 0; i < memos.length; i++) {
+    for (let j = i + 1; j < memos.length; j++) {
+      const a = memos[i], b = memos[j];
+      if (used.has(a.id) || used.has(b.id)) continue;
+      if ((a.presetId ?? '') !== (b.presetId ?? '')) continue;
+      const na = normalizeMemoText(a.text), nb = normalizeMemoText(b.text);
+      const contains = na.length >= 4 && nb.length >= 4 && (na.includes(nb) || nb.includes(na));
+      const sim = contains ? 1 : jaccard(bigramSet(a.text), bigramSet(b.text));
+      if (sim < threshold) continue;
+      const [keep, drop] = a.text.length >= b.text.length ? [a, b] : [b, a];
+      out.push({ keep, drop, similarity: sim });
+      used.add(a.id); used.add(b.id);
+    }
+  }
+  return out;
+}
+
+/** 合并：被合掉的那条作废（指向留下的那条）；留下的吸收重要度 / 线索 / 置顶 */
+export async function mergeMemos(keepId: string, dropId: string): Promise<void> {
+  const [keep, drop] = await Promise.all([db.navigatorMemos.get(keepId), db.navigatorMemos.get(dropId)]);
+  if (!keep || !drop) return;
+  await db.navigatorMemos.update(keep.id, {
+    importance: Math.max(keep.importance, drop.importance), pinned: keep.pinned || drop.pinned,
+    cues: [...new Set([...(keep.cues ?? []), ...(drop.cues ?? [])])].slice(0, 8),
+    recallCount: (keep.recallCount ?? 0) + (drop.recallCount ?? 0),
+    followUp: keep.followUp ?? drop.followUp,
+  });
+  await db.navigatorMemos.update(drop.id, { status: 'archived', invalidAt: new Date(), supersededBy: keep.id, followUp: undefined });
+}
+
+/**
+ * 惰性遗忘（§2.5）：低价值久未召回 → archived（置顶免疫；不删除）。
+ * 第 26 批加：一字不差的重复本地合并；说法（bit）没人用过 60 天 / 120 天没再用 → 淡出。
+ */
 export async function lazySweepMemos(): Promise<void> {
   try {
     const cutoff = Date.now() - 90 * 86400_000;
     const memos = await db.navigatorMemos.where('status').equals('active').toArray();
     const stale = memos.filter((m) =>
+      m.source !== 'bit' && m.source !== 'profile' &&
       !m.pinned &&
       m.importance <= 2 &&
       new Date(m.lastRecalledAt ?? m.createdAt).getTime() < cutoff,
     );
     for (const m of stale) void db.navigatorMemos.update(m.id, { status: 'archived' });
+    // 一字不差的重复：留最早那条
+    const byKey = new Map<string, NavigatorMemo[]>();
+    for (const m of memos) {
+      if (m.source === 'profile' || m.source === 'bit' || isPromise(m)) continue;
+      const k = `${m.presetId ?? ''}|${normalizeMemoText(m.text)}`;
+      if (!byKey.has(k)) byKey.set(k, []);
+      byKey.get(k)!.push(m);
+    }
+    for (const group of byKey.values()) {
+      if (group.length < 2) continue;
+      group.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+      for (const dup of group.slice(1)) await mergeMemos(group[0].id, dup.id);
+    }
+    const now = Date.now();
+    for (const b of memos.filter((m) => m.source === 'bit')) {
+      const age = now - new Date(b.createdAt).getTime();
+      const idle = now - new Date(b.lastUsedAt ?? b.createdAt).getTime();
+      if (((b.usedCount ?? 0) === 0 && age > 60 * 86400_000) || idle > 120 * 86400_000) void db.navigatorMemos.update(b.id, { status: 'archived', invalidAt: new Date(now) });
+    }
   } catch { /* 静默 */ }
 }
 

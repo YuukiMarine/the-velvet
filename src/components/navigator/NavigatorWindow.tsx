@@ -14,6 +14,7 @@ import { snapshotFile } from '@/utils/imageCrop';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import { useAppStore } from '@/store';
+import { db } from '@/db';
 import { useNavigatorStore, formatBubbleTime, TIME_GAP_MS, type NavigatorMessage } from '@/store/navigator';
 import { zClass } from '@/utils/zIndex';
 import { useOverlayPresence } from '@/ui/overlayPause';
@@ -1244,6 +1245,56 @@ const TypingRow = ({ sk, bright, bold, p5 = false }: { sk: Skin; bright: boolean
   </div>
 );
 
+// ── 「想起了两件事」小标（第 26 批 · B4）：这条回复用到的记忆，点开能看、改、删、别再提 ──
+const RecalledNote = ({ ids, bright }: { ids: string[]; bright: boolean }) => {
+  const [open, setOpen] = useState(false);
+  const [items, setItems] = useState<Array<{ id: string; text: string; gone?: boolean; muted?: boolean }>>([]);
+  const [edit, setEdit] = useState<{ id: string; text: string } | null>(null);
+  const load = async () => {
+    const rows = await Promise.all(ids.map((id) => db.navigatorMemos.get(id)));
+    setItems(rows.filter((r): r is NonNullable<typeof r> => !!r).map((r) => ({ id: r.id, text: r.text, gone: r.status !== 'active', muted: !!r.muted })));
+  };
+  const toggle = () => { if (!open) void load(); setOpen((v) => !v); };
+  const mute = async (id: string) => { await db.navigatorMemos.update(id, { muted: true }); await load(); };
+  const remove = async (id: string) => { await db.navigatorMemos.update(id, { status: 'archived', invalidAt: new Date(), muted: true, pinned: false }); await load(); };
+  const save = async () => { if (!edit) return; const t = edit.text.trim(); if (t) await db.navigatorMemos.update(edit.id, { text: t.slice(0, 80) }); setEdit(null); await load(); };
+  const n = ids.length;
+  return (
+    <div className="mt-1 pl-1" data-recalled-note>
+      <button type="button" onClick={toggle} aria-expanded={open} aria-label={`想起了 ${n} 件事`}
+        className={`text-[11px] font-bold ${bright ? 'text-[#4b8fd9]' : 'text-gray-400'}`}>
+        想起了 {n} 件事 {open ? '▴' : '▾'}
+      </button>
+      {open && (
+        <ul className={`mt-1 space-y-1 ${bright ? 'text-[#0a1230]' : 'text-gray-300'}`}>
+          {items.map((it) => (
+            <li key={it.id} className="flex items-start gap-2 text-[12px] leading-relaxed">
+              {edit?.id === it.id ? (
+                <>
+                  <input autoFocus value={edit.text} onChange={(e) => setEdit({ id: it.id, text: e.target.value })} onKeyDown={(e) => { if (e.key === 'Enter') void save(); }}
+                    className={`min-w-0 flex-1 rounded border px-1.5 py-0.5 text-[12px] outline-none ${bright ? 'border-[#9cc3e6] bg-white' : 'border-white/15 bg-black/30 text-gray-100'}`} aria-label="改这条记忆" />
+                  <button type="button" onClick={() => void save()} className="shrink-0 font-bold text-primary">存</button>
+                </>
+              ) : (
+                <>
+                  <span className={`min-w-0 flex-1 ${it.gone ? 'line-through opacity-50' : it.muted ? 'opacity-60' : 'opacity-85'}`}>· {it.text}{it.muted && !it.gone ? '（不再提）' : ''}</span>
+                  {!it.gone && (
+                    <>
+                      <button type="button" onClick={() => setEdit({ id: it.id, text: it.text })} aria-label="改这条记忆" className="shrink-0 opacity-60 hover:opacity-100">改</button>
+                      {!it.muted && <button type="button" onClick={() => void mute(it.id)} aria-label="别再提这条" className="shrink-0 opacity-60 hover:opacity-100">别再提</button>}
+                      <button type="button" onClick={() => void remove(it.id)} aria-label="删掉这条记忆" className="shrink-0 opacity-60 hover:opacity-100">删</button>
+                    </>
+                  )}
+                </>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+};
+
 // ── 单条消息 ──
 const MessageRow = ({ m, sk, bright, p5 = false, p4 = false, busy, onConfirm, onEdit, onCancel }: {
   m: NavigatorMessage; sk: Skin; bright: boolean; p5?: boolean; p4?: boolean; busy: boolean;
@@ -1305,15 +1356,18 @@ const MessageRow = ({ m, sk, bright, p5 = false, p4 = false, busy, onConfirm, on
             <CatFace className="h-[24px] w-[24px]" />
           </span>
         )}
-        <BubbleIn side="cat" mark={mark} markCh={markCh}>
-          {p5 ? (
-            <P5Bubble side="cat">{m.text}</P5Bubble>
-          ) : (
-            <div className={`whitespace-pre-wrap break-words px-[18px] py-[11px] text-[15.4px] font-bold leading-relaxed ${sk.catBubble}`} style={{ ...sk.catBubbleStyle, overflowWrap: 'anywhere' }}>
-              {m.text}
-            </div>
-          )}
-        </BubbleIn>
+        <div className="min-w-0 max-w-full">
+          <BubbleIn side="cat" mark={mark} markCh={markCh}>
+            {p5 ? (
+              <P5Bubble side="cat">{m.text}</P5Bubble>
+            ) : (
+              <div className={`whitespace-pre-wrap break-words px-[18px] py-[11px] text-[15.4px] font-bold leading-relaxed ${sk.catBubble}`} style={{ ...sk.catBubbleStyle, overflowWrap: 'anywhere' }}>
+                {m.text}
+              </div>
+            )}
+          </BubbleIn>
+          {m.recalled && m.recalled.length > 0 && <RecalledNote ids={m.recalled} bright={bright} />}
+        </div>
       </div>
     );
   }
