@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore } from '@/store';
 import { useShallow } from 'zustand/react/shallow';
 import { useRevealJobs } from '@/utils/revealJobs';
+import { useWatchAIJob, useAIJobFocus, consumeAIJobFocus } from '@/utils/aiJobs';
 import { Toggle } from '@/components/Toggle';
 import { toLocalDateKey } from '@/store';
 import { isInShadowTime, SHADOW_LEVEL_CONFIG } from '@/constants';
@@ -98,6 +99,14 @@ export const BattleArena = () => {
   useEffect(() => {
     if (finalJob?.status === 'done') setShowFinalReveal(true);
   }, [finalJob?.status]);
+  // 第 27 批：战场页挂着 = 在看月度心魔的横幅；顶部横幅 / 通知点开 → 把对应的仪式卡拉起来
+  useWatchAIJob('moon');
+  const jobFocus = useAIJobFocus(s => s.request);
+  useEffect(() => {
+    const f = consumeAIJobFocus(['stratum', 'final', 'moon']);
+    if (f?.key === 'stratum') setShowReveal(true);
+    else if (f?.key === 'final') setShowFinalReveal(true);
+  }, [jobFocus]);
   const revealButtonLabel = (idle: string): string => {
     if (!stratumJob) return idle;
     if (stratumJob.status === 'running') return '🗼 区层正在显形…';

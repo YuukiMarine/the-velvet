@@ -17,6 +17,7 @@ import {
   type MoonShadowFacts, type PreparedMoonReveal,
 } from '@/utils/battleAI';
 import { collectMoonFacts } from '@/utils/moonFacts';
+import { registerAIJobSource, moonJobViews, moonJobLive } from '@/utils/aiJobs';
 
 const KEY = 'velvet:moonJob';
 const RESUME_LIMIT = 3;
@@ -102,9 +103,15 @@ async function runMoonJob(slot: number, ac: AbortController, opts: { stale?: boo
 
   useMoonJob.setState({ slot, running: true, shown: partial ?? '', startedAt: Date.now() });
   const onProgress = throttled((t) => { if (!ac.signal.aborted) useMoonJob.setState({ shown: t }); });
+  // 第 27 批 ⑤：正文写到哪就记到哪（battleAI 每 ~400ms 回调一次）——App 中途被杀，下次从这半截接着写，不再整段重来
+  const onContent = (t: string) => {
+    if (ac.signal.aborted) return;
+    partial = t.trim() ? t : undefined;
+    write({ slot, prompt: prep.prompt, weakAttribute: prep.weakAttribute, facts, partial });
+  };
   for (let attempt = 0; attempt <= RESUME_LIMIT; attempt++) {
     try {
-      const data = await completeMoonReveal(prep, names, { signal: ac.signal, resumeFrom: partial, onProgress });
+      const data = await completeMoonReveal(prep, names, { signal: ac.signal, resumeFrom: partial, onProgress, onContent });
       if (ac.signal.aborted) return;
       clear();
       await useAppStore.getState().completeMoonShadow(slot, data, false);
@@ -129,3 +136,6 @@ export function cancelMoonJob(): void {
   clear();
   useMoonJob.setState({ slot: null, running: false, shown: '' });
 }
+
+// 第 27 批：登记进 AI 后台任务表（底导小圆点 / 顶部横幅）。只订阅，不改上面的流程。
+registerAIJobSource(useMoonJob, moonJobViews, moonJobLive);

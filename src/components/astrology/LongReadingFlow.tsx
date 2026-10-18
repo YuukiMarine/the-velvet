@@ -24,6 +24,7 @@ import { useUiChannel } from '@/ui/useUiChannel';
 import { useBoldness } from '@/utils/boldness';
 import { triggerLightHaptic } from '@/utils/feedback';
 import { useThinkProgress } from '@/utils/thinkProgress';
+import { useWatchAIJob } from '@/utils/aiJobs';
 import {
   useTarotJobs, startLongJob, startFollowJob, continueLongJob, continueFollowJob, TAROT_CONTINUE_LIMIT,
   ackLongJob, ackFollowJob, readLongPending, clearLongPending, type LongPending,
@@ -87,6 +88,9 @@ export function LongReadingFlow({ initialReading, onBack }: Props) {
   // 流式：请求跑在模块级任务里（utils/tarotJobs），组件只订阅——切页不打断，回来接着看
   const job = useTarotJobs(s => s.long);
   const followJob = useTarotJobs(s => s.follow);
+  // 第 27 批：新占卜 tab 挂着 = 在看中长期占卜；归档详情挂着 = 在看这条的追问（顶部横幅不再提、写完不另发通知）
+  useWatchAIJob('long', !initialReading);
+  useWatchAIJob('follow', !!initialReading);
   const streamedText = job?.text ?? '';
   const isStreaming = !!job && (job.status === 'thinking' || job.status === 'streaming');
   const thinking = !!job?.thinking;

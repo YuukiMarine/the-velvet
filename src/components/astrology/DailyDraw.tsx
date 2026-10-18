@@ -22,6 +22,7 @@ import { ShuffleAnim } from './ShuffleAnim';
 import { buildOfflineDaily } from '@/utils/tarotOffline';
 import { renderMarkdown } from '@/utils/markdown';
 import { useThinkProgress } from '@/utils/thinkProgress';
+import { useWatchAIJob } from '@/utils/aiJobs';
 import {
   useTarotJobs, startDailyJob, continueDailyJob, TAROT_CONTINUE_LIMIT, readDailyPending, writeDailyPending, clearDailyPending,
 } from '@/utils/tarotJobs';
@@ -84,6 +85,8 @@ export function DailyDraw() {
   const { dailyDivination, settings, saveDailyDivination } = useAppStore(useShallow(s => ({ dailyDivination: s.dailyDivination, settings: s.settings, saveDailyDivination: s.saveDailyDivination })));
   // 解读请求跑在模块级任务里（utils/tarotJobs）：切页不打断，回来接着看
   const job = useTarotJobs(s => s.daily);
+  // 第 27 批：这块挂着 = 人就在看今日塔罗，顶部横幅不再提它、写完也不另发通知
+  useWatchAIJob('daily');
   const today = toLocalDateKey();
   const jobToday = job && job.date === today ? job : null;
   const jobRunning = !!jobToday && (jobToday.status === 'thinking' || jobToday.status === 'streaming');

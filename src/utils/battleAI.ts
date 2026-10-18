@@ -162,6 +162,11 @@ export interface StreamJSONOpts {
   onRateLimit?: () => void;
   /** 显示用的累计文本（思维链 + 正文都进来，喂滚动预览） */
   onProgress?: (shown: string) => void;
+  /**
+   * 正文写到哪了（只有正文、续写已拼好；每 ~400ms 一次，收尾再一次）：调用方落盘，App 被杀后可从这里接着写（第 27 批 ⑤）。
+   * 空串 = 模型重开了一份 / 答非所问被要求重写，之前的半截作废。
+   */
+  onContent?: (content: string) => void;
   signal?: AbortSignal;
   /** 上一次截断的半截：续写 */
   resumeFrom?: string;
@@ -234,6 +239,15 @@ async function streamJSONResilient(
     let err: unknown = null;
     let cont = '';
     let sawAny = false;
+    // 正文写到哪（给落盘续跑用）：节流 400ms，流结束时再补一次
+    let lastContentAt = 0;
+    const emitContent = (force: boolean) => {
+      if (!opts.onContent) return;
+      const now = Date.now();
+      if (!force && now - lastContentAt < 400) return;
+      lastContentAt = now;
+      opts.onContent(resuming ? mergeContinuation(full, cont) : cont);
+    };
     try {
       for await (const delta of chatStream(cfg, messages, {
         temperature,
@@ -246,11 +260,13 @@ async function streamJSONResilient(
         sawAny = true;
         cont += delta;
         push(delta);
+        emitContent(false);
       }
     } catch (e) {
       if (opts.signal?.aborted) throw e;
       err = e;
     }
+    if (cont) emitContent(true);
     full = resuming ? mergeContinuation(full, cont) : cont;
 
     // 续写的模型偶尔会从头重写一份：两份都试
@@ -294,6 +310,7 @@ async function streamJSONResilient(
       corrected = true;
       correction = cont;
       full = '';
+      opts.onContent?.('');
       note('（模型没有按 JSON 作答，要求它只输出 JSON 再来一次）');
       continue;
     }
@@ -330,6 +347,7 @@ async function streamJSONResilient(
       if (restarts < maxRestarts) {
         restarts++;
         full = '';
+        opts.onContent?.('');
         note('（连接断了，重新开始）');
         continue;
       }

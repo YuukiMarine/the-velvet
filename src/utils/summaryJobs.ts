@@ -16,6 +16,7 @@ import { buildYearRecap } from '@/utils/yearRecap';
 import { chatStream } from '@/utils/aiClient';
 import { effectiveModelName } from '@/utils/aiProviders';
 import { createThinkTracker, type ThinkTracker } from '@/utils/thinkProgress';
+import { registerAIJobSource, summaryJobViews, summaryJobLive } from '@/utils/aiJobs';
 import { formatApiError } from '@/utils/tarotAI';
 import {
   buildContinueMessages, extractSummaryMemo, parseSummaryResult, visibleSummaryText, looksTruncated, trimSeam,
@@ -315,3 +316,6 @@ export function attachDraftFollowUp(fu: NonNullable<PeriodSummary['followUps']>[
   patch({ draft });
   writeDraft({ summary: draft, truncated: job.truncated, continues: job.continues, full: job.full });
 }
+
+// 第 27 批：登记进 AI 后台任务表（底导小圆点 / 顶部横幅 / 写完提醒）。只订阅，不改上面的状态机。
+registerAIJobSource(useSummaryJobs, summaryJobViews, summaryJobLive);

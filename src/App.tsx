@@ -60,6 +60,7 @@ import { bootStage, bootDone, getBootInfo, ackBootFailures, collectBootDiagnosti
 import { initBgm, unlockBgm } from '@/utils/bgm';
 import { BackgroundAnimation } from '@/components/BackgroundAnimation';
 import { PWAUpdateToast } from '@/components/PWAUpdateToast';
+import { AIJobsBanner } from '@/components/AIJobsBanner';
 import { CallingCardCutIn } from '@/components/callingCard/CallingCardCutIn';
 import { isNative } from '@/utils/native';
 import { warmDisplayFontShards } from '@/utils/fontWarmup';
@@ -292,6 +293,8 @@ function App() {
         console.warn('[velvet] boot tail failed', e);
       }
       void useAppStore.getState().syncNotifications(); // F2a：启动后排程本地通知
+      // 第 27 批 ⑤：上次没写完就被关掉的区层 / 伪神显形，按盘上的材料接回内存（战场页会提示「让它说完」）
+      void import('@/utils/revealJobs').then(m => m.restoreRevealJobs());
       // 自动撰写上一期总结（v2.7.0.6，默认开）：新周期第一次打开时后台补写，写好后各渠道提醒一次
       void import('@/utils/autoSummary').then(m => m.maybeAutoWriteSummaries());
     };
@@ -384,7 +387,12 @@ function App() {
     let remove: (() => void) | undefined;
     void import('@capacitor/local-notifications').then(async ({ LocalNotifications }) => {
       const h = await LocalNotifications.addListener('localNotificationActionPerformed', (evt) => {
-        const extra = evt.notification?.extra as { content?: string; summaryId?: string } | undefined;
+        const extra = evt.notification?.extra as { content?: string; summaryId?: string; key?: string; ref?: string | null } | undefined;
+        // AI 后台任务写好了（第 27 批）：直达那个弹层
+        if (extra?.content === 'aijob') {
+          void import('@/utils/aiJobs').then((m) => m.openAIJobFromNotification(extra));
+          return;
+        }
         // 助手找你（第二批 C）：直接打开助手窗口，第一句就是要说的那件事
         if (extra?.content === 'assistant') {
           void import('@/store/navigator').then((m) => m.useNavigatorStore.getState().open());
@@ -920,6 +928,8 @@ function App() {
               <BottomNav />
               {/* F6 黑猫：窗口本体挂一次（portal 到 body），Sidebar/BottomNav 只负责 open() */}
               <Suspense fallback={null}><NavigatorWindow /></Suspense>
+              {/* 第 27 批：AI 后台任务横幅（正在写 / 写好了），portal 到 body */}
+              <AIJobsBanner />
 
               <main
                 // 顶部 padding 用 calc(1rem + env(safe-area-inset-top)) 保证：

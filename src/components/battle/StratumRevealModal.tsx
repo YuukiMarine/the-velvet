@@ -28,6 +28,7 @@ import {
   useRevealJobs, startStratumJob, resumeStratumJob, retryStratumJob, cancelStratumJob, ackStratumJob,
   REVEAL_EXIT_AFTER_MS, REVEAL_RESUME_LIMIT,
 } from '@/utils/revealJobs';
+import { useWatchAIJob } from '@/utils/aiJobs';
 import { v4 as uuidv4 } from 'uuid';
 
 interface Props {
@@ -75,6 +76,8 @@ export function StratumRevealModal({ isOpen, onClose, level }: Props) {
   const { settings, attributes, battleState, revealStratum } = useAppStore(useShallow(s => ({ settings: s.settings, attributes: s.attributes, battleState: s.battleState, revealStratum: s.revealStratum })));
   const job = useRevealJobs(s => s.stratum);
   const generating = job?.status === 'running';
+  // 第 27 批：仪式卡开着 = 人在看显形（顶部横幅不再提、写完不另发通知）
+  useWatchAIJob('stratum', isOpen);
   const [step, setStep] = useState<'qa' | 'choose' | 'manual'>('qa');
   const [qaIndex, setQaIndex] = useState(0);
   const [answers, setAnswers] = useState<string[]>([]);

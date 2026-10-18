@@ -559,6 +559,11 @@ export interface Settings {
    * 锁屏只写「〈助手名〉有话想跟你说」。缺省 = 开（跟着提醒总开关）。
    */
   navigatorPushEnabled?: boolean;
+  /**
+   * AI 写完了提醒（第 27 批）：塔罗 / 总结 / 显形这些后台任务在 App 退后台时写完 → 一条「写好了」本地通知，
+   * 每个任务只一次；缺省 = 开（跟着提醒总开关）。前台只有顶部横幅，网页版也只有横幅。
+   */
+  aiJobDoneNotify?: boolean;
   /** 每日提醒时段列表；缺省时回退到 DEFAULT_SETTINGS 的两槽（晨/晚）。 */
   notificationSlots?: NotifSlot[];
   /** v2.7.0.6：老用户含「今日待办」的时段已补上「一起进步」（只补一次，之后随用户设置） */

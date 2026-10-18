@@ -23,6 +23,7 @@ import {
   markSummaryJobSaved, restoreSummaryDraft, attachDraftFollowUp, isSummaryJobRunning, resolveKeyFor,
   SUMMARY_CONTINUE_LIMIT, type SummaryJob,
 } from '@/utils/summaryJobs';
+import { useWatchAIJob } from '@/utils/aiJobs';
 
 // ── 错误信息格式化（识别 CORS / 网络类错误）────────────────
 function formatApiError(e: unknown): string {
@@ -558,6 +559,8 @@ export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week', 
   const { settings, summaries, saveSummary, deleteSummary, loadSummaries, updateSettings, markSummaryViewed } = useAppStore(useShallow(s => ({ settings: s.settings, summaries: s.summaries, saveSummary: s.saveSummary, deleteSummary: s.deleteSummary, loadSummaries: s.loadSummaries, updateSettings: s.updateSettings, markSummaryViewed: s.markSummaryViewed })));
   const job = useSummaryJobs(s => s.job);
   const running = isSummaryJobRunning(job);
+  // 第 27 批：弹层开着 = 人在看总结（顶部横幅不再提、写完不另发通知）
+  useWatchAIJob('summary', isOpen);
   const accent = useAccentHex();
   const progress = useThinkProgress(job?.tracker ?? null, job?.status === 'thinking');
 

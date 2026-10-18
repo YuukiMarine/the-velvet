@@ -10,6 +10,8 @@ import { FateGlimpseSection } from '@/components/astrology/FateGlimpse';
 import { LongReadingFlow } from '@/components/astrology/LongReadingFlow';
 import { ReadingArchive } from '@/components/astrology/ReadingArchive';
 import { useUiChannel } from '@/ui/useUiChannel';
+import { useAIJobFocus, peekAIJobFocus, consumeAIJobFocus } from '@/utils/aiJobs';
+import { useTarotJobs } from '@/utils/tarotJobs';
 import { P4SkyCircle, P4Sparkle, P4_HEADER_BLEED } from '@/ui/p4Kit';
 import { P3R, P3RPage, GhostWords, P3PageHeader, slantClip } from '@/components/p3r/kit';
 import { P5R, P5_FONT, roughSlant, starPts, P5Collage, P5SubBar, P5Star, P5Dots, P5Slab, P5RPage } from '@/components/p5r/kit';
@@ -30,6 +32,31 @@ export function Astrology() {
     void loadDailyDivination();
     void loadLongReadings().then(() => sweepExpiredReadings());
   }, []);
+
+  // 第 27 批：顶部横幅 / 通知点开 → 切到那个 tab（窥探命运只切 tab，仪式由七日连星区块自己拉起）
+  const jobFocus = useAIJobFocus(s => s.request);
+  useEffect(() => {
+    const r = peekAIJobFocus(['daily', 'long', 'follow', 'fate']);
+    if (!r) return;
+    if (r.key === 'daily' || r.key === 'fate') {
+      if (r.key === 'daily') consumeAIJobFocus(['daily']);
+      setTab('daily'); setDetailReading(null);
+      return;
+    }
+    if (r.key === 'long') {
+      consumeAIJobFocus(['long']);
+      // 任务还在内存里（在跑 / 刚写完）→ 新占卜 tab 接上它；已经归档 → 档案里那一条
+      if (useTarotJobs.getState().long) { setTab('long'); setDetailReading(null); return; }
+      const saved = r.ref ? longReadings.find(x => x.id === r.ref) : undefined;
+      setTab('archive'); setDetailReading(saved ?? null);
+      return;
+    }
+    // follow：所属的那条解读的详情页（归档还没读到就等下一轮）
+    const owner = r.ref ? longReadings.find(x => x.id === r.ref) : undefined;
+    if (r.ref && !owner && longReadings.length === 0) return;
+    consumeAIJobFocus(['follow']);
+    setTab('archive'); setDetailReading(owner ?? null);
+  }, [jobFocus, longReadings]);
 
   const tabs: Array<{ id: Tab; label: string; hint: string }> = [
     { id: 'daily',   label: '今日塔罗', hint: '每日一抽' },

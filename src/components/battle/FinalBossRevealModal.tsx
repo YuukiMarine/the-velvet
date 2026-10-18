@@ -22,6 +22,7 @@ import {
   useRevealJobs, startFinalJob, resumeFinalJob, retryFinalJob, ackFinalJob,
   REVEAL_EXIT_AFTER_MS, REVEAL_RESUME_LIMIT,
 } from '@/utils/revealJobs';
+import { useWatchAIJob } from '@/utils/aiJobs';
 
 interface Props {
   isOpen: boolean;
@@ -51,6 +52,8 @@ export function FinalBossRevealModal({ isOpen, onClose }: Props) {
   const collectFinalBossFacts = useAppStore(s => s.collectFinalBossFacts);
   const job = useRevealJobs(s => s.final);
   const generating = job?.status === 'running';
+  // 第 27 批：仪式卡开着 = 人在看显形（顶部横幅不再提、写完不另发通知）
+  useWatchAIJob('final', isOpen);
 
   const [step, setStep] = useState<Step>('gate');
   const [error, setError] = useState('');

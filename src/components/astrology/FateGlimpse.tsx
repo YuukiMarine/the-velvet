@@ -28,6 +28,7 @@ import type { FateGlimpseAIResult } from '@/utils/fateGlimpseAI';
 import {
   useTarotJobs, startFateJob, continueFateJob, resolveFateOffline, ackFateJob, TAROT_CONTINUE_LIMIT,
 } from '@/utils/tarotJobs';
+import { useWatchAIJob, useAIJobFocus, consumeAIJobFocus } from '@/utils/aiJobs';
 import { useThinkProgress } from '@/utils/thinkProgress';
 import { ThinkingCircle } from './ThinkingCircle';
 import { renderMarkdown } from '@/utils/markdown';
@@ -135,6 +136,13 @@ export function FateGlimpseSection() {
 
   const today = toLocalDateKey();
   const drawnToday = !!dailyDivination && dailyDivination.date === today;
+
+  // 第 27 批：顶部横幅 / 通知「窥探命运写好了」点开 → 直接把仪式拉起来（任务在 tarotJobs 里，仪式只是接上它）
+  const jobFocus = useAIJobFocus(st => st.request);
+  useEffect(() => {
+    if (!drawnToday) return;
+    if (consumeAIJobFocus(['fate'])) setRitual({ mode: 'new' });
+  }, [jobFocus, drawnToday]);
 
   useEffect(() => {
     if (!drawnToday) return;
@@ -399,6 +407,8 @@ function FateRitual({
   // 总占卜是后台任务（tarotJobs）：这里只订阅；开场即起跑（长按仪式的时间刚好用来等 AI）
   const fateJob = useTarotJobs(s => s.fate);
   const job = mode === 'new' ? fateJob : null;
+  // 第 27 批：仪式开着 = 人在看总占卜（顶部横幅不再提、写完不另发通知）
+  useWatchAIJob('fate', mode === 'new');
   useEffect(() => {
     if (mode !== 'new') return;
     startFateJob({ settings: useAppStore.getState().settings, days: winDays });

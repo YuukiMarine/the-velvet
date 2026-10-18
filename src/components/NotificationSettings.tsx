@@ -183,6 +183,28 @@ export default function NotificationSettings() {
         </div>
       )}
 
+      {/* AI 写完了提醒（第 27 批）：默认开，跟着总开关出现 */}
+      {enabled && (
+        <div className="rounded-xl border border-gray-200 p-4 dark:border-gray-700">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex-1">
+              <h4 className="text-sm font-bold text-gray-800 dark:text-white">AI 写完了提醒你</h4>
+              <p className="mt-1 text-xs leading-relaxed text-gray-500 dark:text-gray-400">
+                塔罗解读、成长总结、区层显形这些在后台写，你把 App 切到后台时写完 → 提醒一条「写好了」，每个任务只提醒一次。
+                人在 App 里时只在顶部横幅里提示，不发通知。
+              </p>
+            </div>
+            <div className="mt-0.5 flex-shrink-0">
+              <Toggle
+                checked={settings.aiJobDoneNotify !== false}
+                onChange={v => updateSettings({ aiJobDoneNotify: v })}
+                aria-label="AI 写完了提醒你"
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 时段列表（仅启用时展开） */}
       {enabled && (
         <div className="space-y-3">

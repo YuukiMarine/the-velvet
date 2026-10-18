@@ -3,6 +3,7 @@ import { memo, useEffect, useRef, useState } from 'react';
 import type { MouseEvent as ReactMouseEvent } from 'react';
 import { useAppStore } from '@/store';
 import { useNavigatorStore } from '@/store/navigator';
+import { useAIJobs } from '@/utils/aiJobs';
 import { triggerNavFeedback, triggerWheelOpenFeedback } from '@/utils/feedback';
 import { springSnappy } from '@/utils/motion';
 import { zClass } from '@/utils/zIndex';
@@ -106,6 +107,27 @@ const navItems = [
 // 侧栏专属项（宽屏且开着左侧栏才有侧栏，见 ui/layoutMode；底导保持四格不动）：记账，插在「菜单」上方。
 // 受 F5 记账总开关控制——关了记账的用户侧栏不该再挂死入口。
 const sidebarLedgerItem = { id: 'ledger', label: '记账', Icon: LedgerCoinIcon };
+
+/**
+ * AI 后台任务小圆点（第 27 批）：有任务在跑（呼吸）或写好了还没看（常亮）时，挂在黑猫入口的右上角。
+ * 读 utils/aiJobs 的表；颜色按频道：中性红、P3 洋红、P4 墨黑（蓝圆壳上）、P5 纸白（黑基座上）。
+ */
+const AIJobsDot = ({ channel }: { channel: 'neutral' | 'p3' | 'p4' | 'p5' }) => {
+  const running = useAIJobs(s => s.running.length > 0);
+  const pending = useAIJobs(s => s.notes.length > 0);
+  if (!running && !pending) return null;
+  const color = channel === 'p3' ? P3R.magenta : channel === 'p4' ? '#131313' : channel === 'p5' ? P5R.paper : '#ef4444';
+  const ring = channel === 'p5' ? '#050505' : '#ffffff';
+  return (
+    <span
+      aria-hidden
+      data-aijobs-dot={running ? 'running' : 'done'}
+      className={`pointer-events-none absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full ${running ? 'animate-pulse' : ''}`}
+      style={{ background: color, boxShadow: `0 0 0 2px ${ring}` }}
+    />
+  );
+};
+
 
 type NavItem = (typeof navItems)[number];
 
@@ -245,7 +267,8 @@ const SidebarInner = () => {
               : 'w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150 cursor-pointer text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-200'}
           style={p3 ? { clipPath: slantClip(10), color: P3R.inkSoft } : p5 ? { clipPath: roughQuad(333, 5) } : undefined}
         >
-          <span className="w-6 h-6 flex items-center justify-center flex-none" aria-hidden="true">
+          <span className="relative w-6 h-6 flex items-center justify-center flex-none" aria-hidden="true">
+            <AIJobsDot channel={p3 ? 'p3' : p5 ? 'p5' : 'neutral'} />
             {p3 ? (
               <span className="flex h-[20px] w-[20px] items-center justify-center" style={{ background: P3R.cyan, clipPath: slantClip(4) }}>
                 <CatSilhouetteIcon className="h-3.5 w-3.5 text-[#0a1230]" />
@@ -639,6 +662,7 @@ const BottomNavInner = () => {
             <span className={`${isP4 || p3 || p5 ? '' : '-rotate-45'} relative flex items-center justify-center`} aria-hidden="true">
               {/* P3 无壳裸猫：可见的「键」就是猫本身，键身放大在这一档体现为猫 +2px */}
               <CatSilhouetteIcon className={p3 ? 'w-[38px] h-[38px]' : p5 ? 'w-8 h-8' : 'w-7 h-7'} />
+              <AIJobsDot channel={isP4 ? 'p4' : p3 ? 'p3' : p5 ? 'p5' : 'neutral'} />
             </span>
           </motion.button>
         </div>

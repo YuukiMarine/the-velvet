@@ -20,6 +20,7 @@ import {
   prepareStratumReveal, completeStratumReveal, prepareFinalBoss, completeFinalBoss, JSONTruncatedError,
   type PreparedStratumReveal, type PreparedFinalBoss, type StratumRevealData, type FinalBossFacts,
 } from '@/utils/battleAI';
+import { registerAIJobSource, revealJobViews, revealJobLive } from '@/utils/aiJobs';
 
 export type RevealStatus = 'running' | 'done' | 'truncated' | 'error';
 
@@ -64,6 +65,106 @@ export const REVEAL_EXIT_AFTER_MS = 30_000;
 export const useRevealJobs = create<State>(() => ({ stratum: null, final: null }));
 
 const controllers: { stratum?: AbortController; final?: AbortController } = {};
+
+// ── 落盘续跑（第 27 批 ⑤，照 moonJob / tarot pending 的路子）────────────────────────────────
+// 开跑就把提示词（里面写着弱点名，不能重掷）和材料落 localStorage，正文每隔几百毫秒把写到哪也记一笔；
+// App 生成到一半被杀，下次打开 restoreRevealJobs 按盘上的东西把任务接回内存：有半截 → 'truncated'（仪式卡出「让它说完」），
+// 没半截 → 'error'（出「重试」，同一份提示词）。写完 / 取消 / 演出放完就清。不存 cfg：每一发按当前设置取连接（见 withCurrentModel）。
+const STRATUM_KEY = 'velvet:revealJob.stratum.v1';
+const FINAL_KEY = 'velvet:revealJob.final.v1';
+/** 一周前的半截不再接：那时的塔早就不是这个样子了 */
+const RECORD_TTL_MS = 7 * 86400_000;
+
+interface StratumRecord {
+  id: string; level: number; prompt: string; weakAttribute: AttributeId; themeAttribute: AttributeId; answers: string[];
+  partial?: string; resumes: number; startedAt: number;
+}
+interface FinalRecord { id: string; prompt: string; strongest: AttributeId; partial?: string; resumes: number; startedAt: number }
+
+const readRecord = <T,>(key: string): T | null => {
+  try { const raw = localStorage.getItem(key); return raw ? (JSON.parse(raw) as T) : null; } catch { return null; }
+};
+const writeRecord = (key: string, v: unknown) => { try { localStorage.setItem(key, JSON.stringify(v)); } catch { /* 隐私模式 / 配额满：降级为不可续跑 */ } };
+const clearRecord = (key: string) => { try { localStorage.removeItem(key); } catch { /* 同上 */ } };
+
+/** 按内存里的任务写一份（done / 没任务就清） */
+function saveStratumRecord(partialOverride?: string): void {
+  const j = useRevealJobs.getState().stratum;
+  if (!j || j.status === 'done') { clearRecord(STRATUM_KEY); return; }
+  const prevPartial = readRecord<StratumRecord>(STRATUM_KEY)?.partial;
+  writeRecord(STRATUM_KEY, {
+    id: j.id, level: j.level, prompt: j.prepared.prompt, weakAttribute: j.prepared.weakAttribute, themeAttribute: j.themeAttribute, answers: j.answers,
+    partial: partialOverride ?? j.partial ?? prevPartial, resumes: j.resumes, startedAt: j.startedAt,
+  } satisfies StratumRecord);
+}
+function saveFinalRecord(partialOverride?: string): void {
+  const j = useRevealJobs.getState().final;
+  if (!j || j.status === 'done') { clearRecord(FINAL_KEY); return; }
+  const prevPartial = readRecord<FinalRecord>(FINAL_KEY)?.partial;
+  writeRecord(FINAL_KEY, {
+    id: j.id, prompt: j.prepared.prompt, strongest: j.prepared.strongest,
+    partial: partialOverride ?? j.partial ?? prevPartial, resumes: j.resumes, startedAt: j.startedAt,
+  } satisfies FinalRecord);
+}
+/** 正文写到哪记一笔（battleAI 每 ~400ms 回调一次；空串 = 模型重开了，半截作废） */
+const notePartial = (key: string, content: string) => {
+  const rec = readRecord<StratumRecord | FinalRecord>(key);
+  if (!rec) return;
+  writeRecord(key, { ...rec, partial: content.trim() ? content : undefined });
+};
+
+/**
+ * 开机接回：盘上有上次没写完的显形、而且塔现在正等着它（区层：下一层正好是它那一层；伪神：五层已清、它还没显形）
+ * → 放回内存为 truncated / error，战场页按钮会写「显形中断，点击处理」。没配 AI 时先不接（记录留着，下次再看）。
+ */
+export function restoreRevealJobs(): void {
+  const st = useAppStore.getState();
+  const cfg = getDeliberateAIConfig(st.settings);
+  const attrNames = st.settings.attributeNames as Record<AttributeId, string>;
+  const stratum = st.stratum;
+  const finalStage = st.battleState?.finalBossStage;
+  const cleared = !stratum || stratum.status === 'cleared';
+  const nextLevel = stratum ? Math.min(5, stratum.level + 1) : 1;
+  const bind = (hasPartial: boolean) => ({
+    status: hasPartial ? 'truncated' as const : 'error' as const,
+    error: hasPartial ? '上次没写完 App 就被关掉了，可以让它接着说完。' : '上次没连上 / 没写完 App 就被关掉了，可以重试（同一份提示词与弱点）。',
+  });
+
+  const sr = readRecord<StratumRecord>(STRATUM_KEY);
+  if (sr) {
+    const fresh = Date.now() - (sr.startedAt || 0) <= RECORD_TTL_MS;
+    const due = cleared && !(stratum && stratum.level >= 5) && nextLevel === sr.level && !finalStage;
+    if (!fresh || !due || typeof sr.prompt !== 'string' || !sr.prompt) clearRecord(STRATUM_KEY);
+    else if (cfg && !useRevealJobs.getState().stratum) {
+      useRevealJobs.setState({
+        stratum: {
+          id: sr.id, startedAt: sr.startedAt, shown: sr.partial ?? '', resumes: Math.min(sr.resumes ?? 0, REVEAL_RESUME_LIMIT),
+          attrNames, level: sr.level, prepared: { cfg, prompt: sr.prompt, level: sr.level, weakAttribute: sr.weakAttribute },
+          themeAttribute: sr.themeAttribute, answers: sr.answers ?? [], partial: sr.partial || undefined,
+          ...bind(!!sr.partial),
+        },
+      });
+    }
+  }
+  const fr = readRecord<FinalRecord>(FINAL_KEY);
+  if (fr) {
+    const fresh = Date.now() - (fr.startedAt || 0) <= RECORD_TTL_MS;
+    const due = !!stratum && stratum.status === 'cleared' && stratum.level >= 5 && !finalStage && !stratum.revisit;
+    if (!fresh || !due || typeof fr.prompt !== 'string' || !fr.prompt) clearRecord(FINAL_KEY);
+    else if (cfg && !useRevealJobs.getState().final) {
+      useRevealJobs.setState({
+        final: {
+          id: fr.id, startedAt: fr.startedAt, shown: fr.partial ?? '', resumes: Math.min(fr.resumes ?? 0, REVEAL_RESUME_LIMIT),
+          attrNames, prepared: { cfg, prompt: fr.prompt, strongest: fr.strongest }, partial: fr.partial || undefined,
+          ...bind(!!fr.partial),
+        },
+      });
+    }
+  }
+}
+
+/** 测试用：盘上的续跑材料 */
+export const peekRevealRecords = () => ({ stratum: readRecord<StratumRecord>(STRATUM_KEY), final: readRecord<FinalRecord>(FINAL_KEY) });
 
 const patchStratum = (p: Partial<StratumJob>) =>
   useRevealJobs.setState(s => ({ stratum: s.stratum ? { ...s.stratum, ...p } : s.stratum }));
@@ -128,8 +229,9 @@ async function runStratum(id: string, resumeFrom?: string): Promise<void> {
   const prepared = withCurrentModel(job.prepared);
   patchStratum({ status: 'running', error: undefined, shown: resumeFrom ?? '', prepared, modelLabel: aiConfigLabel(prepared.cfg) });
   const onProgress = throttledShown(t => { if (!ac.signal.aborted) patchStratum({ shown: t }); });
+  const onContent = (t: string) => { if (!ac.signal.aborted) notePartial(STRATUM_KEY, t); };
   try {
-    const data = await completeStratumReveal(prepared, job.attrNames, { onProgress, signal: ac.signal, resumeFrom });
+    const data = await completeStratumReveal(prepared, job.attrNames, { onProgress, onContent, signal: ac.signal, resumeFrom });
     if (ac.signal.aborted) return;
     const boss = buildBoss(job.level, data);
     await useAppStore.getState().revealStratum({
@@ -140,14 +242,17 @@ async function runStratum(id: string, resumeFrom?: string): Promise<void> {
       boss,
     });
     patchStratum({ status: 'done', result: { name: boss.name, weakAttribute: boss.weakAttribute }, partial: undefined });
+    clearRecord(STRATUM_KEY);
   } catch (e) {
     if (ac.signal.aborted) return;
     if (e instanceof Error && e.name === 'AbortError') return;
     if (e instanceof JSONTruncatedError) {
       patchStratum({ status: 'truncated', partial: e.partial, error: e.message });
+      saveStratumRecord(e.partial);
       return;
     }
     patchStratum({ status: 'error', error: errorText(e) });
+    saveStratumRecord();
   }
 }
 
@@ -171,6 +276,8 @@ export function startStratumJob(args: {
       attrNames: args.attrNames, level: args.level, prepared, themeAttribute: args.themeAttribute, answers: args.answers,
     },
   });
+  clearRecord(STRATUM_KEY);
+  saveStratumRecord();
   void runStratum(id);
 }
 
@@ -179,6 +286,7 @@ export function resumeStratumJob(): void {
   const job = useRevealJobs.getState().stratum;
   if (!job || job.status !== 'truncated' || !job.partial || job.resumes >= REVEAL_RESUME_LIMIT) return;
   patchStratum({ resumes: job.resumes + 1 });
+  saveStratumRecord(job.partial);
   void runStratum(job.id, job.partial);
 }
 
@@ -187,6 +295,8 @@ export function retryStratumJob(): void {
   const job = useRevealJobs.getState().stratum;
   if (!job || job.status === 'running') return;
   patchStratum({ startedAt: Date.now(), partial: undefined });
+  clearRecord(STRATUM_KEY);
+  saveStratumRecord();
   void runStratum(job.id);
 }
 
@@ -194,12 +304,14 @@ export function cancelStratumJob(): void {
   controllers.stratum?.abort();
   controllers.stratum = undefined;
   useRevealJobs.setState({ stratum: null });
+  clearRecord(STRATUM_KEY);
 }
 
 /** 显形演出放完：清掉任务 */
 export function ackStratumJob(): void {
   controllers.stratum = undefined;
   useRevealJobs.setState({ stratum: null });
+  clearRecord(STRATUM_KEY);
 }
 
 // ── 伪神显形 ───────────────────────────────────────────────────────────────
@@ -213,8 +325,9 @@ async function runFinal(id: string, resumeFrom?: string): Promise<void> {
   const prepared = withCurrentModel(job.prepared);
   patchFinal({ status: 'running', error: undefined, shown: resumeFrom ?? '', prepared, modelLabel: aiConfigLabel(prepared.cfg) });
   const onProgress = throttledShown(t => { if (!ac.signal.aborted) patchFinal({ shown: t }); });
+  const onContent = (t: string) => { if (!ac.signal.aborted) notePartial(FINAL_KEY, t); };
   try {
-    const data = await completeFinalBoss(prepared, job.attrNames, { onProgress, signal: ac.signal, resumeFrom });
+    const data = await completeFinalBoss(prepared, job.attrNames, { onProgress, onContent, signal: ac.signal, resumeFrom });
     if (ac.signal.aborted) return;
     await useAppStore.getState().revealFinalBoss({
       stratumName: data.stratumName,
@@ -227,14 +340,17 @@ async function runFinal(id: string, resumeFrom?: string): Promise<void> {
       flaw: { key: data.flawKey, title: data.flawTitle, verdict: data.verdict },
     });
     patchFinal({ status: 'done', result: { name: data.name, flawTitle: data.flawTitle, verdict: data.verdict, weak: data.weakAttribute }, partial: undefined });
+    clearRecord(FINAL_KEY);
   } catch (e) {
     if (ac.signal.aborted) return;
     if (e instanceof Error && e.name === 'AbortError') return;
     if (e instanceof JSONTruncatedError) {
       patchFinal({ status: 'truncated', partial: e.partial, error: e.message });
+      saveFinalRecord(e.partial);
       return;
     }
     patchFinal({ status: 'error', error: errorText(e) });
+    saveFinalRecord();
   }
 }
 
@@ -246,6 +362,8 @@ export function startFinalJob(args: { settings: Settings; attrNames: Record<Attr
   useRevealJobs.setState({
     final: { id, status: 'running', startedAt: Date.now(), shown: '', resumes: 0, attrNames: args.attrNames, prepared },
   });
+  clearRecord(FINAL_KEY);
+  saveFinalRecord();
   void runFinal(id);
 }
 
@@ -253,6 +371,7 @@ export function resumeFinalJob(): void {
   const job = useRevealJobs.getState().final;
   if (!job || job.status !== 'truncated' || !job.partial || job.resumes >= REVEAL_RESUME_LIMIT) return;
   patchFinal({ resumes: job.resumes + 1 });
+  saveFinalRecord(job.partial);
   void runFinal(job.id, job.partial);
 }
 
@@ -260,6 +379,8 @@ export function retryFinalJob(): void {
   const job = useRevealJobs.getState().final;
   if (!job || job.status === 'running') return;
   patchFinal({ startedAt: Date.now(), partial: undefined });
+  clearRecord(FINAL_KEY);
+  saveFinalRecord();
   void runFinal(job.id);
 }
 
@@ -267,13 +388,18 @@ export function cancelFinalJob(): void {
   controllers.final?.abort();
   controllers.final = undefined;
   useRevealJobs.setState({ final: null });
+  clearRecord(FINAL_KEY);
 }
 
 export function ackFinalJob(): void {
   controllers.final = undefined;
   useRevealJobs.setState({ final: null });
+  clearRecord(FINAL_KEY);
 }
 
 /** 生成阶段的经过秒数（组件用 1s 计时器刷新） */
 export const elapsedOf = (job: RevealBase | null | undefined): number =>
   job ? Math.max(0, Date.now() - job.startedAt) : 0;
+
+// 第 27 批：登记进 AI 后台任务表（底导小圆点 / 顶部横幅 / 写完提醒）。只订阅，不改上面的状态机。
+registerAIJobSource(useRevealJobs, revealJobViews, revealJobLive);

@@ -31,6 +31,7 @@ import {
 } from '@/utils/fateGlimpseAI';
 import { endsCleanly, trimSeam } from '@/utils/summaryAI';
 import { createThinkTracker, type ThinkTracker } from '@/utils/thinkProgress';
+import { registerAIJobSource, tarotJobViews, tarotJobLive } from '@/utils/aiJobs';
 
 export type JobStatus = 'thinking' | 'streaming' | 'done' | 'error';
 /** 「接着写」最多几次（与成长总结同口径） */
@@ -905,3 +906,6 @@ export async function resolveFateOffline(): Promise<void> {
 export function ackFateJob(): void {
   if (!isRunning(useTarotJobs.getState().fate)) useTarotJobs.setState({ fate: null });
 }
+
+// 第 27 批：登记进 AI 后台任务表（底导小圆点 / 顶部横幅 / 写完提醒）。只订阅，不改上面的状态机。
+registerAIJobSource(useTarotJobs, tarotJobViews, tarotJobLive);
