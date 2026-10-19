@@ -1270,7 +1270,7 @@ export const DashboardP5 = () => {
               exit={{ opacity: 0, y: -8 }}
               transition={{ duration: 0.3 }}
               className="pointer-events-none fixed left-1/2 z-[140] -translate-x-1/2"
-              style={{ top: 'calc(env(safe-area-inset-top) + 12px)' }}
+              style={{ top: 'calc(var(--app-safe-top) + 12px)' }}
             >
               <div className="flex items-center gap-2 whitespace-nowrap px-5 py-2.5 text-sm font-black text-white" style={{ background: P5R.red, clipPath: roughQuad(95, 5), boxShadow: `4px 4px 0 ${P5R.ink}` }}>
                 <span aria-hidden>⏳</span>

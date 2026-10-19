@@ -1447,7 +1447,7 @@ export const Dashboard = () => {
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.3 }}
             className="fixed left-1/2 -translate-x-1/2 z-[140] pointer-events-none"
-            style={{ top: 'calc(env(safe-area-inset-top) + 12px)' }}
+            style={{ top: 'calc(var(--app-safe-top) + 12px)' }}
           >
             <div className="px-4 py-2.5 rounded-2xl bg-gray-900/95 dark:bg-gray-100/95 text-white dark:text-gray-900 text-sm font-bold shadow-2xl backdrop-blur-sm flex items-center gap-2 whitespace-nowrap">
               <span className="text-base">⏳</span>

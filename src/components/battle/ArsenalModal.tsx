@@ -166,7 +166,7 @@ export function ArsenalModal({ open, onClose }: { open: boolean; onClose: () => 
     >
       <NoiseLayer opacity={0.05} />
       {/* 头部 */}
-      <div className="flex-shrink-0 px-4 pb-2" style={{ paddingTop: 'calc(1rem + env(safe-area-inset-top))' }}>
+      <div className="flex-shrink-0 px-4 pb-2" style={{ paddingTop: 'calc(1rem + var(--app-safe-top))' }}>
         <div className="flex items-center justify-between gap-2 mb-3">
           <button onClick={onClose} className="text-gray-400 text-sm px-2 py-1 rounded-lg" style={{ background: 'rgba(255,255,255,0.1)' }}>
             ✕ 返回
@@ -200,7 +200,7 @@ export function ArsenalModal({ open, onClose }: { open: boolean; onClose: () => 
       </div>
 
       {/* 内容 */}
-      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3 space-y-2" style={{ paddingBottom: 'calc(1.2rem + env(safe-area-inset-bottom))' }}>
+      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3 space-y-2" style={{ paddingBottom: 'calc(1.2rem + var(--app-safe-bottom))' }}>
         {/* ── 遗物 ── */}
         {section === 'relic' && (
           <>
@@ -374,7 +374,7 @@ export function ArsenalModal({ open, onClose }: { open: boolean; onClose: () => 
             <motion.div initial={{ y: 60 }} animate={{ y: 0 }} exit={{ y: 60 }}
                         className="w-full max-h-[70%] overflow-y-auto px-4 pt-4 space-y-2"
                         style={{ background: 'rgba(14,8,36,0.98)', borderTop: '1px solid rgba(99,102,241,0.4)',
-                                 paddingBottom: 'calc(1.2rem + env(safe-area-inset-bottom))' }}
+                                 paddingBottom: 'calc(1.2rem + var(--app-safe-bottom))' }}
                         onClick={e => e.stopPropagation()}>
               <p className="text-white font-black text-sm">
                 {pickerMyth ? `镶嵌「${MYTH_POOL[pickerMyth.kind].name}」` : `缔结「${OATH_POOL[pickerOath!.kind].stoneName}」`}
@@ -448,7 +448,7 @@ export function ShadowArchiveModal({ open, onClose }: { open: boolean; onClose: 
       style={{ background: 'linear-gradient(180deg, #0b0620 0%, #17092b 55%, #0b0620 100%)' }}
     >
       <NoiseLayer opacity={0.05} />
-      <div className="flex-shrink-0 px-4 pb-3" style={{ paddingTop: 'calc(1rem + env(safe-area-inset-top))' }}>
+      <div className="flex-shrink-0 px-4 pb-3" style={{ paddingTop: 'calc(1rem + var(--app-safe-top))' }}>
         <div className="flex items-center justify-between gap-2">
           <button onClick={onClose} className="text-gray-400 text-sm px-2 py-1 rounded-lg" style={{ background: 'rgba(255,255,255,0.1)' }}>
             ✕ 返回
@@ -458,7 +458,7 @@ export function ShadowArchiveModal({ open, onClose }: { open: boolean; onClose: 
         </div>
         <p className="text-[11px] text-indigo-200/50 mt-1 text-center">被你击败的心魔在此永久收录——它们曾是你的一部分</p>
       </div>
-      <div className="flex-1 min-h-0 overflow-y-auto px-4 space-y-2.5" style={{ paddingBottom: 'calc(1.2rem + env(safe-area-inset-bottom))' }}>
+      <div className="flex-1 min-h-0 overflow-y-auto px-4 space-y-2.5" style={{ paddingBottom: 'calc(1.2rem + var(--app-safe-bottom))' }}>
         {records.length === 0 && (
           <p className="text-center text-sm text-gray-500 py-12">档案馆空无一物——第一座雕像等待着你的凯旋</p>
         )}

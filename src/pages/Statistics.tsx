@@ -564,8 +564,8 @@ export const Statistics = () => {
            裁切——圆窗与弧环的右上角被屏幕咬掉一角（用户点名要的贴角出血）。
            圆形装饰旋转不变，脱离斜面不损失「世界斜」。 */
         <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0" style={{ zIndex: -1 }}>
-          <P4ArcRings size={250} className="absolute" style={{ right: '-4.5rem', top: 'calc(-6.5rem - env(safe-area-inset-top))' }} />
-          <P4SkyCircle size={150} style={{ right: '-2.75rem', top: 'calc(-2.25rem - env(safe-area-inset-top))' }} />
+          <P4ArcRings size={250} className="absolute" style={{ right: '-4.5rem', top: 'calc(-6.5rem - var(--app-safe-top))' }} />
+          <P4SkyCircle size={150} style={{ right: '-2.75rem', top: 'calc(-2.25rem - var(--app-safe-top))' }} />
         </div>
       )}
       {/* 斜轴世界（§2 规则1）：整页内容平面随世界倾斜 -4°，卡片成平行四边形；

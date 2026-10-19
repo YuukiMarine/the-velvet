@@ -570,7 +570,7 @@ const BottomNavInner = () => {
       // iOS PWA 完整覆盖方案：
       //   · 使用**不透明 bg**（不再 /95），消除 iOS Safari 在 backdrop-filter + padding 区的
       //     渲染不一致（这是之前所有"灰条"的根源）
-      //   · padding-bottom: env(safe-area-inset-bottom) → 让 BottomNav 物理延伸到 home bar 区
+      //   · padding-bottom: var(--app-safe-bottom) → 让 BottomNav 物理延伸到 home bar 区
       //     iOS 的 home indicator pill 会半透明地叠加在 Tab 栏 bg 上，视觉融为一体
       //   · 牺牲：失去原本的毛玻璃半透明感。换来：iOS PWA 上 100% 无分隔条
       //   · 如果要恢复毛玻璃，把下面 bg-white → bg-white/95，加 backdrop-blur-md，
@@ -672,7 +672,7 @@ const BottomNavInner = () => {
       <div
         aria-hidden
         className={isP4 ? 'bg-[var(--ui-paper)]' : p5 ? 'bg-black' : 'bg-white dark:bg-gray-900'}
-        style={{ height: 'var(--bottom-nav-safe-height, env(safe-area-inset-bottom, 0px))' }}
+        style={{ height: 'var(--bottom-nav-safe-height, var(--app-safe-bottom))' }}
       />
       {/* P8.3 轮盘（portal 到 body；手势在 window 级跟踪，与 ◈ 的长按触发配套） */}
       <RadialQuickNav

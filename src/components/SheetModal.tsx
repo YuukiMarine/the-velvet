@@ -211,14 +211,14 @@ export const SheetModal = ({
             className={`flex w-full flex-col ${maxHeightClass} ${
               isP4
                 ? `relative bg-[color:var(--p4-sheet,var(--ui-bg))] ${
-                    isBottom ? 'mx-2 mb-2 rounded-[28px] pb-[env(safe-area-inset-bottom)]' : 'mx-4 max-w-md rounded-[28px]'
+                    isBottom ? 'mx-2 mb-2 rounded-[28px] pb-[var(--app-safe-bottom)]' : 'mx-4 max-w-md rounded-[28px]'
                   }`
                 : p5
-                  ? `p5-reskin relative ${isBottom ? 'pb-[env(safe-area-inset-bottom)]' : 'mx-4 max-w-md'}`
+                  ? `p5-reskin relative ${isBottom ? 'pb-[var(--app-safe-bottom)]' : 'mx-4 max-w-md'}`
                 : p3
-                  ? `p3r-sheet shadow-2xl ${isBottom ? 'pb-[env(safe-area-inset-bottom)]' : 'mx-4 max-w-md'}`
+                  ? `p3r-sheet shadow-2xl ${isBottom ? 'pb-[var(--app-safe-bottom)]' : 'mx-4 max-w-md'}`
                   : `bg-white shadow-2xl dark:bg-gray-900 ${
-                      isBottom ? 'rounded-t-3xl pb-[env(safe-area-inset-bottom)]' : 'mx-4 max-w-md rounded-2xl'
+                      isBottom ? 'rounded-t-3xl pb-[var(--app-safe-bottom)]' : 'mx-4 max-w-md rounded-2xl'
                     }`
             }`}
             style={{

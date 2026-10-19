@@ -1005,7 +1005,7 @@ export const DashboardP3 = () => {
               exit={{ opacity: 0, y: -8 }}
               transition={{ duration: 0.3 }}
               className="fixed left-1/2 -translate-x-1/2 z-[140] pointer-events-none"
-              style={{ top: 'calc(env(safe-area-inset-top) + 12px)' }}
+              style={{ top: 'calc(var(--app-safe-top) + 12px)' }}
             >
               <div className="flex items-center gap-2 whitespace-nowrap px-5 py-2.5 text-sm font-black text-white shadow-2xl" style={{ clipPath: slantClip(8), background: P3R.blue }}>
                 <span aria-hidden>⏳</span>

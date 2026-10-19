@@ -100,7 +100,7 @@ export function AIJobsBanner() {
           exit={{ opacity: 0, y: -16 }}
           transition={{ duration: 0.22 }}
           className={`pointer-events-none fixed inset-x-0 top-0 wide:left-60 ${zClass.nav}`}
-          style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 6px)' }}
+          style={{ paddingTop: 'calc(var(--app-safe-top) + 6px)' }}
         >
           {collapsed ? (
             <div className="flex justify-end px-3">

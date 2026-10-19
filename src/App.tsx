@@ -61,6 +61,9 @@ import { initBgm, unlockBgm } from '@/utils/bgm';
 import { BackgroundAnimation } from '@/components/BackgroundAnimation';
 import { PWAUpdateToast } from '@/components/PWAUpdateToast';
 import { AIJobsBanner } from '@/components/AIJobsBanner';
+import { initSystemBars, setBarStyle } from '@/utils/nativeBars';
+import { initNativeCalendar } from '@/utils/nativeCalendar';
+import { initKeepAlive } from '@/utils/nativeKeepAlive';
 import { CallingCardCutIn } from '@/components/callingCard/CallingCardCutIn';
 import { isNative } from '@/utils/native';
 import { warmDisplayFontShards } from '@/utils/fontWarmup';
@@ -293,6 +296,10 @@ function App() {
         console.warn('[velvet] boot tail failed', e);
       }
       void useAppStore.getState().syncNotifications(); // F2a：启动后排程本地通知
+      // 第 29 批 · 原生桥：安卓沉浸式 inset / 日历闹钟能力 / AI 后台续命（网页版与旧包都静默）
+      void initSystemBars();
+      void initNativeCalendar();
+      initKeepAlive();
       // 第 27 批 ⑤：上次没写完就被关掉的区层 / 伪神显形，按盘上的材料接回内存（战场页会提示「让它说完」）
       void import('@/utils/revealJobs').then(m => m.restoreRevealJobs());
       // 自动撰写上一期总结（v2.7.0.6，默认开）：新周期第一次打开时后台补写，写好后各渠道提醒一次
@@ -624,6 +631,9 @@ function App() {
     if (meta) meta.content = color;
     document.documentElement.style.backgroundColor = systemAreaColor;
     document.body.style.backgroundColor = systemAreaColor;
+    // 安卓沉浸式（第 29 批）：状态栏 / 导航栏图标明暗跟着舞台底色——红频道是黑舞台、黄频道永远是亮的、其余看夜间
+    const darkStage = user?.theme === 'red' || (user?.theme !== 'yellow' && !!settings.darkMode);
+    setBarStyle(darkStage, darkStage);
   }, [settings.darkMode, settings.customThemeColor, user?.theme, layoutVersion]);
 
   // 在首次用户交互时预加载当前主题音效，之后所有点击都是零延迟播放
@@ -793,7 +803,7 @@ function App() {
             transition={{ duration: 0.22 }}
             // 居中靠 Framer 的 x: -50%——它写的内联 transform 会盖掉 Tailwind 的 -translate-x-1/2（横幅整条被顶到右半屏）
             className="fixed left-1/2 z-[210] max-w-md w-[calc(100%-2rem)]"
-            style={{ top: 'calc(1rem + env(safe-area-inset-top))' }}
+            style={{ top: 'calc(1rem + var(--app-safe-top))' }}
             role="alert"
             data-testid="boot-notice"
           >
@@ -833,7 +843,7 @@ function App() {
             transition={{ duration: 0.22 }}
             // 居中靠 Framer 的 x: -50%——它写的内联 transform 会盖掉 Tailwind 的 -translate-x-1/2（横幅整条被顶到右半屏）
             className="fixed left-1/2 z-[210] max-w-md w-[calc(100%-2rem)]"
-            style={{ top: 'calc(1rem + env(safe-area-inset-top))' }}
+            style={{ top: 'calc(1rem + var(--app-safe-top))' }}
             role="alert"
           >
             <div className="flex items-start gap-3 px-4 py-3 rounded-2xl bg-amber-500/95 text-white shadow-xl backdrop-blur-sm">
@@ -932,7 +942,7 @@ function App() {
               <AIJobsBanner />
 
               <main
-                // 顶部 padding 用 calc(1rem + env(safe-area-inset-top)) 保证：
+                // 顶部 padding 用 calc(1rem + var(--app-safe-top)) 保证：
                 //   - 桌面 / Android：env() 为 0，退化为 1rem（=原 p-4 行为）
                 //   - iOS PWA / viewport-fit=cover：自动加上状态栏 / Dynamic Island 的高度，
                 //     防止页面标题钻到"12:25 信号 电池"这条原生 UI 下面。
@@ -941,7 +951,7 @@ function App() {
                 // 避免 iPhone home bar 设备上出现多余的灰色空白条。
                 // --bottom-nav-overhang 是 BottomNav 运行时实测写入的错位补偿：常规平台恒为
                 // 0px（此式与改动前逐像素相同），只有 iOS PWA 的 100vh/内缩视口错位才 > 0。
-                className="wide:ml-60 px-4 wide:px-8 pt-[calc(1rem+env(safe-area-inset-top))] wide:pt-8 pb-[calc(4rem+var(--app-bottom-safe-padding,env(safe-area-inset-bottom,0px))+var(--bottom-nav-overhang,0px)+0.5rem)] wide:pb-8"
+                className="wide:ml-60 px-4 wide:px-8 pt-[calc(1rem+var(--app-safe-top))] wide:pt-8 pb-[calc(4rem+var(--app-bottom-safe-padding,var(--app-safe-bottom))+var(--bottom-nav-overhang,0px)+0.5rem)] wide:pb-8"
                 // 横向兜底：页面的出血装饰（P5 的红斜块、P4 的头图 bleed）用负偏移探出屏缘，
                 // 这些绝对定位层会把 shell 的 scrollWidth 撑大，用户就能把整页往左划出 70~90px 空白。
                 // overflow-x:clip 只裁不滚——不建立滚动容器，不影响 sticky，也不影响页内自己的横滑组件。

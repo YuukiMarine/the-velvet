@@ -54,7 +54,7 @@ export const FlipCardView = ({ open, onClose, label, resetKey, front, back, hint
           aria-modal="true"
           aria-label={label}
         >
-          <button type="button" onClick={onClose} aria-label="关闭" className="absolute right-4 top-4 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-2xl font-black text-white" style={{ marginTop: 'env(safe-area-inset-top)' }}>×</button>
+          <button type="button" onClick={onClose} aria-label="关闭" className="absolute right-4 top-4 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-2xl font-black text-white" style={{ marginTop: 'var(--app-safe-top)' }}>×</button>
           <motion.div
             className="relative touch-pan-y select-none"
             style={{ width, height, perspective: 1200 }}

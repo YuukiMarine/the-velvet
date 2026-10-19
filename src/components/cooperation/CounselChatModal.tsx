@@ -294,7 +294,7 @@ export function CounselChatModal({ isOpen, onClose, initialMentionId }: Props) {
           )}
 
           {/* 信头 */}
-          <div className="relative px-3 pt-[calc(0.75rem+env(safe-area-inset-top))] wide:pt-3">
+          <div className="relative px-3 pt-[calc(0.75rem+var(--app-safe-top))] wide:pt-3">
             <div className={`flex items-center gap-3 px-4 py-3 ${sk.header}`} style={sk.headerStyle}>
               <button type="button" onClick={requestExit} disabled={archiving} aria-label="关闭" className={`flex h-8 w-8 shrink-0 items-center justify-center text-lg font-black opacity-70 transition hover:opacity-100 disabled:opacity-30 ${sk.icon}`} style={{ color: sk.titleStyle?.color }}>←</button>
               <div className="min-w-0 flex-1">
@@ -377,7 +377,7 @@ export function CounselChatModal({ isOpen, onClose, initialMentionId }: Props) {
               )}
 
               {/* 输入区 */}
-              <div className={`relative px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-2.5 ${sk.footer}`} style={sk.footerStyle}>
+              <div className={`relative px-3 pb-[calc(0.75rem+var(--app-safe-bottom))] pt-2.5 ${sk.footer}`} style={sk.footerStyle}>
                 {pickerOpen && (
                   <MentionPicker confidants={activeConfidants} selected={selectedMentions} isActive={isMentionActive} onToggle={toggleMention} onClose={() => setPickerOpen(false)} sk={sk} />
                 )}

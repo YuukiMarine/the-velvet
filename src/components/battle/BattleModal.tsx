@@ -846,7 +846,7 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -16 }}
             className="pointer-events-none absolute inset-x-0 z-40 flex justify-center px-4"
-            style={{ top: 'calc(0.75rem + env(safe-area-inset-top))' }}
+            style={{ top: 'calc(0.75rem + var(--app-safe-top))' }}
           >
             <span
               className="inline-flex max-w-full items-center gap-1.5 rounded-full px-4 py-2 text-center text-[13px] font-bold text-white shadow-xl backdrop-blur-md"
@@ -1031,7 +1031,7 @@ export function BattleModal({ isOpen, onClose, onVictory, encounter, onEncounter
       </AnimatePresence>
 
       {/* ── Header：Shadow 信息 + 意图 + 失衡条 ── */}
-      <div className="p-4 space-y-2 flex-shrink-0" style={{ paddingTop: 'calc(1.5rem + env(safe-area-inset-top))' }}>
+      <div className="p-4 space-y-2 flex-shrink-0" style={{ paddingTop: 'calc(1.5rem + var(--app-safe-top))' }}>
         <div className="flex items-center justify-between">
           <button
             onClick={() => setShowRetreatConfirm(true)}

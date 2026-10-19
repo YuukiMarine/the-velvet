@@ -45,6 +45,7 @@ import { freshUnreadSummary, requestOpenSummary } from '@/utils/reportNotice';
 import { CameraIcon, MicIcon } from '@/components/settingsIcons';
 import { cardImagesOf, setCardImages, takeCardImages, useCardImageList } from '@/utils/navigatorCardImages';
 import { runCardAction, undoCardAction, useActionRow, hydrateAction, canUndo } from '@/utils/navigatorActions';
+import { useCalendarCapabilities, addTodoToCalendar, maybeAutoCalendar, type TodoLike } from '@/utils/nativeCalendar';
 import type { PreparedImage } from '@/utils/activityImages';
 
 /** 当前人格的头像（剪影集/上传双轨；订阅 sessionId——切人格必换会话，借它触发重渲染）
@@ -593,8 +594,12 @@ export const NavigatorWindow = () => {
     setBusyCardId(m.id);
     try {
       // 第 28 批 · G2：走操作日志（同一张卡只执行一次；带撤销材料）
+      const prevTodo = m.draft.kind === 'editTodo' ? useAppStore.getState().todos.find((t) => t.id === (m.draft as { todoId: string }).todoId) : null;
       const { receipt } = await runCardAction({ id: m.id, draft: m.draft }, { sessionId: nav.sessionId ?? undefined, presetId: preset.id });
       nav.updateCard(m.id, { cardStatus: 'done', receipt, actionAt: Date.now() });
+      // 第 29 批：设置开着就顺手拉起系统日历（带截止的新任务 / 改了截止的任务）
+      const after = cardTodoLike(m.draft);
+      if (after) void maybeAutoCalendar(after, prevTodo ? { title: prevTodo.title, deadline: prevTodo.deadline, deadlineTime: prevTodo.deadlineTime } : null);
     } catch (e) {
       nav.pushCat(e instanceof Error ? `没记上：${e.message}` : '没记上，稍后再试一次。');
     } finally {
@@ -798,7 +803,7 @@ export const NavigatorWindow = () => {
             {/* a11y 焦点陷阱挂内层容器（挂 AnimatePresence 直接子元素会触发 framer PopChild 的 ref 警告） */}
             <div ref={a11yRef} className="relative mx-auto flex h-full w-full max-w-2xl flex-col">
               {/* 页头：站内信信头（头像可点开人格菜单） */}
-              <div className="relative px-4 pt-[calc(0.75rem+env(safe-area-inset-top))]">
+              <div className="relative px-4 pt-[calc(0.75rem+var(--app-safe-top))]">
                 <div className={`flex items-center gap-3 px-4 py-3 ${sk.headerSlab}`} style={sk.headerStyle}>
                   <button
                     type="button"
@@ -1053,7 +1058,7 @@ export const NavigatorWindow = () => {
               </div>
 
               {/* 输入栏 */}
-              <div className={`px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-2 ${sk.inputBar ?? ''}`} style={sk.inputBarStyle}>
+              <div className={`px-4 pb-[calc(0.75rem+var(--app-safe-bottom))] pt-2 ${sk.inputBar ?? ''}`} style={sk.inputBarStyle}>
                 {/* 待发送的图片预览片（点 ✕ 撤下；随下一次发送一并带走） */}
                 {shot && (
                   <div className="mb-2 flex items-center gap-2">
@@ -1314,6 +1319,16 @@ const RecalledNote = ({ ids, bright }: { ids: string[]; bright: boolean }) => {
 };
 
 // ── 单条消息 ──
+/** 这张卡落下去之后的任务（标题 / 截止 / 时刻）：建任务卡从草稿取；改任务卡从清单里取改后的那条；其它卡没有 */
+function cardTodoLike(d: NavigatorDraft): TodoLike | null {
+  if (d.kind === 'todo') return d.deadline ? { title: d.title, deadline: d.deadline, deadlineTime: d.deadlineTime } : null;
+  if (d.kind === 'editTodo') {
+    const t = useAppStore.getState().todos.find((x) => x.id === d.todoId);
+    return t?.deadline ? { title: t.title, deadline: t.deadline, deadlineTime: t.deadlineTime } : null;
+  }
+  return null;
+}
+
 const MessageRow = ({ m, sk, bright, p5 = false, p4 = false, busy, onConfirm, onEdit, onCancel, onUndo }: {
   m: NavigatorMessage; sk: Skin; bright: boolean; p5?: boolean; p4?: boolean; busy: boolean;
   onConfirm: () => void; onEdit: () => void; onCancel: () => void; onUndo?: () => void;
@@ -1323,6 +1338,9 @@ const MessageRow = ({ m, sk, bright, p5 = false, p4 = false, busy, onConfirm, on
   const mark = bubbleMarkOf(m.text);
   // 记录卡上挂着的图（第 28 批）：确认前显示缩略图，确认后随记录存走
   const cardImgs = useCardImageList(m.role === 'card' ? m.id : null);
+  // 加到日历（第 29 批）：带截止的任务卡记录之后，回执旁给一个入口（只有原生、且设置没开自动时才需要手点）
+  const calendarCaps = useCalendarCapabilities();
+  const calendarTodo = m.role === 'card' && m.cardStatus === 'done' && !m.undone && m.draft && calendarCaps.calendar ? cardTodoLike(m.draft) : null;
   // 操作日志行（第 28 批 · G2）：已记录的卡从库里恢复出来时补读一次，好判断还能不能撤销
   const isDoneCard = m.role === 'card' && m.cardStatus === 'done' && !m.undone;
   const actionRow = useActionRow(isDoneCard ? m.id : null);
@@ -1453,6 +1471,11 @@ const MessageRow = ({ m, sk, bright, p5 = false, p4 = false, busy, onConfirm, on
             <CatFace className="h-4 w-4" fillWhenPhoto={false} />
           </span>
           <p className={`min-w-0 flex-1 text-[13px] font-bold leading-relaxed opacity-80 [overflow-wrap:anywhere] ${m.undone ? 'line-through' : ''}`}>{m.receipt}</p>
+          {calendarTodo && (
+            <button type="button" disabled={busy} onClick={() => { void addTodoToCalendar(calendarTodo); }} aria-label="加到日历" className={`${sk.cardBtnText} shrink-0`}>
+              加到日历
+            </button>
+          )}
           {undoable && onUndo && (
             <button type="button" disabled={busy} onClick={onUndo} aria-label="撤销这次操作" className={`${sk.cardBtnText} shrink-0`}>
               撤销

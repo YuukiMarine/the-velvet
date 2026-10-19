@@ -261,7 +261,7 @@ export function ConfidantCreateModal({ isOpen, onClose, onCreated, onPickOnline 
         exit={{ opacity: 0 }}
         // 底部内边距吃安全区：result 页高到 92vh，居中后离屏底只剩 4vh(≈32px)，
         // 刘海机的 home indicator 就压在最后那排按钮上（安全区为 0 的平台上此式退化为 p-4）
-        className="fixed inset-0 z-[150] flex items-center justify-center p-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] bg-black/60 backdrop-blur-sm"
+        className="fixed inset-0 z-[150] flex items-center justify-center p-4 pb-[calc(1rem+var(--app-safe-bottom))] bg-black/60 backdrop-blur-sm"
         onClick={stage === 'matching' ? undefined : onClose}
       >
         <motion.div

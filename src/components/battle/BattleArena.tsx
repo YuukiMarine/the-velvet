@@ -1704,7 +1704,7 @@ export const BattleArena = () => {
           initial={{ opacity: 0, y: -18 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
           className="fixed left-1/2 -translate-x-1/2 z-[70] px-5 py-2 rounded-full text-sm font-bold shadow-xl"
           style={{
-            top: 'calc(1rem + env(safe-area-inset-top))',
+            top: 'calc(1rem + var(--app-safe-top))',
             background: 'rgba(30,22,4,0.92)', border: '1px solid rgba(250,204,21,0.5)', color: '#fde047',
             backdropFilter: 'blur(6px)',
           }}

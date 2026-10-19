@@ -11,6 +11,7 @@ import { useAppStore, DEFAULT_NOTIF_SLOTS } from '@/store';
 import { useShallow } from 'zustand/react/shallow';
 import { BellIcon } from '@/components/settingsIcons';
 import { Toggle } from '@/components/Toggle';
+import { useCalendarCapabilities } from '@/utils/nativeCalendar';
 import type { NotifContentType, NotifSlot } from '@/types';
 import {
   notifPlatformSupported,
@@ -35,6 +36,8 @@ export default function NotificationSettings() {
   const { settings, updateSettings } = useAppStore(useShallow(s => ({ settings: s.settings, updateSettings: s.updateSettings })));
   const supported = notifPlatformSupported();
   const enabled = !!settings.notificationsEnabled;
+  // 加到日历（第 29 批）：原生且插件在才有这一块
+  const calendarCaps = useCalendarCapabilities();
   const slots = settings.notificationSlots ?? [];
 
   const [perm, setPerm] = useState<NotifPermission>('prompt');
@@ -103,6 +106,28 @@ export default function NotificationSettings() {
       {!supported && (
         <div className="rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/60 px-4 py-3 text-xs text-amber-700 dark:text-amber-300 leading-relaxed">
           本地通知在 <b>Android / iOS 客户端</b> 送达（网页版没有这个能力）。你仍可在此预先配置时段与内容，装上客户端后即生效。
+        </div>
+      )}
+
+      {/* 加到日历（第 29 批）：任务提醒不走 App 自己的通知，走手机日历；这里只有一个「自动」开关 */}
+      {calendarCaps.calendar && (
+        <div className="rounded-xl border border-gray-200 p-4 dark:border-gray-700" data-testid="auto-calendar">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex-1">
+              <h4 className="text-sm font-bold text-gray-800 dark:text-white">保存带截止日的任务后自动加到日历</h4>
+              <p className="mt-1 text-xs leading-relaxed text-gray-500 dark:text-gray-400">
+                任务页保存、或助手的任务卡确认之后，直接拉起手机日历的新建日程页（标题、截止日、时刻都填好，你点保存就行）。
+                关着的话，任务长按菜单和助手回执旁也有「加到日历」可以手动点。
+              </p>
+            </div>
+            <div className="mt-0.5 flex-shrink-0">
+              <Toggle
+                checked={!!settings.todoAutoCalendar}
+                onChange={v => updateSettings({ todoAutoCalendar: v })}
+                aria-label="保存带截止日的任务后自动加到日历"
+              />
+            </div>
+          </div>
         </div>
       )}
 

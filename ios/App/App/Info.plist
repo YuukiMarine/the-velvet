@@ -65,6 +65,10 @@
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
 	<!-- 语音输入（助手 🎤 转写）需要麦克风；未配置听觉档的用户永远不会触发这条弹窗 -->
+	<key>NSCalendarsUsageDescription</key>
+	<string>把任务加进你的日历时需要（只在你点「加到日历」时打开系统的日程页）。</string>
+	<key>NSCalendarsWriteOnlyAccessUsageDescription</key>
+	<string>把任务加进你的日历时需要（只在你点「加到日历」时打开系统的日程页）。</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>语音输入需要使用麦克风，把你说的话转写成文字。</string>
 	<!-- 头像上传 / 拍照记账走系统拍照时需要相机 -->

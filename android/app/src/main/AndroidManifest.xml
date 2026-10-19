@@ -3,6 +3,10 @@
 
     <!-- 小组件零点闹钟：重启后要重新对表（VelvetWidgetClock） -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- 第 29 批：AI 后台续命的 60 秒唤醒锁（BackgroundKeepAlivePlugin） -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- 第 29 批：「加到闹钟」拉起系统时钟（普通权限，不弹窗；SystemCalendarPlugin） -->
+    <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
 
     <application
         android:allowBackup="true"
@@ -18,6 +22,7 @@
             android:label="@string/title_activity_main"
             android:theme="@style/AppTheme.NoActionBarLaunch"
             android:launchMode="singleTask"
+            android:windowSoftInputMode="adjustResize"
             android:exported="true">
 
             <intent-filter>
@@ -111,6 +116,16 @@
 
     <!-- Permissions -->
 
+    <!-- 第 29 批：Android 11+ 包可见性——「加到日历 / 闹钟」要能解析到系统日历 / 时钟 -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.INSERT" />
+            <data android:mimeType="vnd.android.cursor.item/event" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SET_ALARM" />
+        </intent>
+    </queries>
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- 精确闹钟（v2.7 用户裁决①「吞消息」对策）：Android 12+ 没有此权限时，
          Capacitor 本地通知会静默退化为**不精确**排程（setAndAllowWhileIdle），

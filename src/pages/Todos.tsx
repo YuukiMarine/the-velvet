@@ -28,9 +28,10 @@ import { Stepper } from '@/components/Stepper';
 import { EmptyState } from '@/components/EmptyState';
 import { ListCard } from '@/components/ListCard';
 import { ActionSheet } from '@/components/ActionSheet';
+import { useCalendarCapabilities, addTodoToCalendar, addTodoAlarm, maybeAutoCalendar } from '@/utils/nativeCalendar';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { SheetModal } from '@/components/SheetModal';
-import { ArchiveIcon, EditIcon, RestoreIcon, TrashIcon } from '@/components/icons';
+import { ArchiveIcon, CalendarIcon, EditIcon, RestoreIcon, TrashIcon } from '@/components/icons';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P4CountPill, P4EmptyBloom, P4SectionTitle, P4Sparkle } from '@/ui/p4Kit';
 import { BigSlantTitle, GhostWords, P3EmptySlab, P3R, SlantButton } from '@/components/p3r/kit';
@@ -420,6 +421,8 @@ export const TodosView = () => {
   //   pendingDeleteId 待删除任务：单个 ConfirmDialog 二段确认，
   //                   替代旧"3 秒内再点一次"机制（confirmDeleteId/Timer 已整体移除）
   const [menuTodoId, setMenuTodoId] = useState<string | null>(null);
+  // 加到日历 / 闹钟（第 29 批）：原生才有；长按菜单按能力显示
+  const calendarCaps = useCalendarCapabilities();
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   // 归档也要二次确认（第 22 批 · 用户反馈）：长按菜单里「归档」挨着「编辑」，误点就把任务收走了
   const [pendingArchiveId, setPendingArchiveId] = useState<string | null>(null);
@@ -534,6 +537,7 @@ export const TodosView = () => {
         : undefined,
     };
 
+    const prevTodo = editingTodoId ? todos.find(t => t.id === editingTodoId) : null;
     if (editingTodoId) {
       await updateTodo(editingTodoId, payload);
       setEditingTodoId(null);
@@ -542,6 +546,8 @@ export const TodosView = () => {
     }
     setShowAdd(false);
     resetForm();
+    // 第 29 批：设置开着就顺手拉起系统日历（截止日 / 时刻是新的或变了才拉）
+    void maybeAutoCalendar(payload, prevTodo ? { title: prevTodo.title, deadline: prevTodo.deadline, deadlineTime: prevTodo.deadlineTime } : null);
   };
 
   const handleEdit = (todoId: string) => {
@@ -1849,6 +1855,9 @@ export const TodosView = () => {
                 ]
               : [
                   { label: '编辑', icon: <EditIcon />, onClick: () => handleEdit(menuTodo.id) },
+                  // 加到日历 / 闹钟（第 29 批）：拉起系统日历的新建页 / 系统时钟；只有带截止日的任务才有，闹钟还要有时刻且只有安卓
+                  ...(calendarCaps.calendar && menuTodo.deadline ? [{ label: '加到日历', icon: <CalendarIcon />, onClick: () => { void addTodoToCalendar(menuTodo); } }] : []),
+                  ...(calendarCaps.alarm && menuTodo.deadline && menuTodo.deadlineTime ? [{ label: '加到闹钟', icon: <CalendarIcon />, onClick: () => { void addTodoAlarm(menuTodo); } }] : []),
                   { label: '归档', icon: <ArchiveIcon />, onClick: () => setPendingArchiveId(menuTodo.id) },
                   // active 卡此前没有删除入口，按协议补上；真正删除走下方 ConfirmDialog
                   { label: '删除', icon: <TrashIcon />, tone: 'danger', onClick: () => setPendingDeleteId(menuTodo.id) },

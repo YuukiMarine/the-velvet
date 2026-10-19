@@ -333,7 +333,7 @@ export function PersonaCreateModal({ isOpen, onClose }: Props) {
               <span aria-hidden className="pointer-events-none fixed bottom-8 left-0 h-0 w-0 border-b-[52px] border-r-[76px] border-r-transparent" style={{ borderBottomColor: 'rgba(27,87,255,0.8)' }} />
 
               {/* 顶部让过刘海/状态栏：iOS 上 ✕ 原来顶在 safe-area 里点不到（用户上报） */}
-              <div className="relative mx-auto flex min-h-full w-full max-w-md flex-col px-5 pb-14" style={{ paddingTop: 'calc(1.75rem + env(safe-area-inset-top))' }}>
+              <div className="relative mx-auto flex min-h-full w-full max-w-md flex-col px-5 pb-14" style={{ paddingTop: 'calc(1.75rem + var(--app-safe-top))' }}>
                 {/* 页眉：觉醒协议 + ✕ */}
                 <div className="flex items-center justify-between">
                   <span className="text-[17px] font-black italic" style={{ color: P3R.ink }}>觉醒协议</span>
@@ -574,7 +574,7 @@ export function PersonaCreateModal({ isOpen, onClose }: Props) {
               {/* 舞台装饰：天空圆窗贴右上角出血 + 弧环 + 奶油巨花剪影 + 星闪 + 底部警戒斜纹 */}
               <div aria-hidden className="pointer-events-none fixed inset-0 overflow-hidden">
                 <P4ArcRings size={300} className="absolute" style={{ right: -90, top: -120 }} />
-                <P4SkyCircle size={150} flower={false} style={{ right: -38, top: 'calc(-22px + env(safe-area-inset-top))' }} />
+                <P4SkyCircle size={150} flower={false} style={{ right: -38, top: 'calc(-22px + var(--app-safe-top))' }} />
                 <P4Flower size={210} color="color-mix(in srgb, var(--ui-paper, #fff6d0) 38%, transparent)" className="absolute" style={{ left: -70, top: '36%' }} />
                 <P4Flower size={140} color="color-mix(in srgb, var(--ui-paper, #fff6d0) 30%, transparent)" className="absolute" style={{ right: -40, bottom: '11%' }} />
                 <P4Sparkle size={22} color="#ffffff" className="absolute" style={{ left: '13%', top: '17%' }} />
@@ -585,7 +585,7 @@ export function PersonaCreateModal({ isOpen, onClose }: Props) {
               </div>
 
               {/* 顶部让过刘海/状态栏（与 P3 版同口径） */}
-              <div className="relative mx-auto flex min-h-full w-full max-w-md flex-col px-5 pb-16" style={{ paddingTop: 'calc(1.75rem + env(safe-area-inset-top))' }}>
+              <div className="relative mx-auto flex min-h-full w-full max-w-md flex-col px-5 pb-16" style={{ paddingTop: 'calc(1.75rem + var(--app-safe-top))' }}>
                 <div className="flex items-center justify-between">
                   <span className="text-[20px] font-black" style={{ color: 'var(--ui-ink, #131313)', fontFamily: 'var(--p4-display-font, serif)' }}>觉醒协议</span>
                   <motion.button
@@ -844,7 +844,7 @@ export function PersonaCreateModal({ isOpen, onClose }: Props) {
               </div>
 
               {/* 顶部让过刘海/状态栏（与 P3 版同口径） */}
-              <div className="relative mx-auto flex min-h-full w-full max-w-md flex-col px-5 pb-16" style={{ paddingTop: 'calc(1.75rem + env(safe-area-inset-top))' }}>
+              <div className="relative mx-auto flex min-h-full w-full max-w-md flex-col px-5 pb-16" style={{ paddingTop: 'calc(1.75rem + var(--app-safe-top))' }}>
                 <div className="flex items-start justify-between">
                   <P5Collage
                     size={26}

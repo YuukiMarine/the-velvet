@@ -1107,7 +1107,7 @@ export const Menu = () => {
               // 上/右多留一截：楔顺时针转 15° 后右上会甩空。位置沿用用户已认可的档位，
               // 右上缺口只靠把楔的两条左边拉长补（48%/46%，见 clipPath）——改 top/height
               // 会连带把整个楔挪位，上一轮试过会滑到页面中段。
-              top: 'calc(-1rem - env(safe-area-inset-top, 0px) - 80px)',
+              top: 'calc(-1rem - var(--app-safe-top) - 80px)',
               height: '54vh',
               zIndex: -1,
               // 左边两条边加长：顶点 56%→48%（上边斜线更长）、右点 39%→46%（右缘斜线更长）

@@ -101,7 +101,7 @@ export function ImageLightbox({ images, index, onClose, onIndexChange, onDeleted
           {/* 顶栏 */}
           <div
             className="flex items-center justify-between px-4 pb-2 text-xs"
-            style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 12px)' }}
+            style={{ paddingTop: 'calc(var(--app-safe-top) + 12px)' }}
             onClick={e => e.stopPropagation()}
           >
             <button onClick={onClose} className="h-9 w-9 rounded-full bg-white/10 text-lg leading-none" aria-label="关闭">×</button>
@@ -153,7 +153,7 @@ export function ImageLightbox({ images, index, onClose, onIndexChange, onDeleted
           {/* 底栏 */}
           <div
             className="px-5 pt-2 text-center text-[11px] text-white/60"
-            style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 14px)' }}
+            style={{ paddingBottom: 'calc(var(--app-safe-bottom) + 14px)' }}
             onClick={e => e.stopPropagation()}
           >
             {hint ?? caption ?? (images.length > 1 ? '左右滑动切换 · 点空白处关闭' : '点空白处关闭')}

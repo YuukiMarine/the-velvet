@@ -836,7 +836,7 @@ export default function YearRecapStage({ open, recap, presetName, presetIcon, us
           <PageGhost channel={channel} word={GHOST[page]} />
 
           {/* 顶部：进度段 + 跳过 */}
-          <div className="relative z-10 flex items-center gap-3 px-4" style={{ paddingTop: 'max(env(safe-area-inset-top), 14px)' }}>
+          <div className="relative z-10 flex items-center gap-3 px-4" style={{ paddingTop: 'max(var(--app-safe-top), 14px)' }}>
             <div className="flex flex-1 gap-1" aria-hidden>
               {pages.map((_p, i) => (
                 <span key={i} className="h-[4px] flex-1" style={{
@@ -871,7 +871,7 @@ export default function YearRecapStage({ open, recap, presetName, presetIcon, us
           </div>
 
           {/* 底部提示 */}
-          <div className="relative z-10 h-12 text-center" style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 12px)' }}>
+          <div className="relative z-10 h-12 text-center" style={{ paddingBottom: 'max(var(--app-safe-bottom), 12px)' }}>
             {page !== 'letter' && (
               <motion.span key={idx} className="text-[12px] font-bold" style={{ color: skin.onStageSub, fontFamily: skin.font }}
                 initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.8 }}>

@@ -569,6 +569,8 @@ export interface Settings {
    * 每个任务只一次；缺省 = 开（跟着提醒总开关）。前台只有顶部横幅，网页版也只有横幅。
    */
   aiJobDoneNotify?: boolean;
+  /** 保存带截止日的任务后自动拉起系统日历的新建页（第 29 批；只在原生、缺省关）。截止日 / 时刻没变就不再拉 */
+  todoAutoCalendar?: boolean;
   /** 每日提醒时段列表；缺省时回退到 DEFAULT_SETTINGS 的两槽（晨/晚）。 */
   notificationSlots?: NotifSlot[];
   /** v2.7.0.6：老用户含「今日待办」的时段已补上「一起进步」（只补一次，之后随用户设置） */

@@ -291,7 +291,7 @@ export function TowerScreen({ open, onClose, onDescend, onRequestBattle, onToast
       </div>
 
       {/* ── 顶部状态 ── */}
-      <div className="relative z-20 flex-shrink-0 px-3 pb-2" style={{ paddingTop: 'calc(10px + env(safe-area-inset-top))' }}>
+      <div className="relative z-20 flex-shrink-0 px-3 pb-2" style={{ paddingTop: 'calc(10px + var(--app-safe-top))' }}>
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -400,7 +400,7 @@ export function TowerScreen({ open, onClose, onDescend, onRequestBattle, onToast
       </div>
 
       {/* ── 底部：选择前路 / 侦察卡 ── */}
-      <div className="relative z-30 flex-shrink-0 px-3" style={{ paddingBottom: 'calc(12px + env(safe-area-inset-bottom))' }}>
+      <div className="relative z-30 flex-shrink-0 px-3" style={{ paddingBottom: 'calc(12px + var(--app-safe-bottom))' }}>
         <AnimatePresence mode="wait" initial={false}>
           {selNode ? (
             <TowerScoutCard

@@ -540,12 +540,12 @@ function FateRitual({
         onClick={handleClose}
         aria-label="关闭"
         className="fixed right-4 z-20 flex h-9 w-9 items-center justify-center rounded-full text-lg font-black"
-        style={{ top: 'calc(env(safe-area-inset-top, 0px) + 12px)', color: GOLD, background: 'rgba(18,14,51,0.6)', boxShadow: `inset 0 0 0 1px ${GOLD_SOFT}` }}
+        style={{ top: 'calc(var(--app-safe-top) + 12px)', color: GOLD, background: 'rgba(18,14,51,0.6)', boxShadow: `inset 0 0 0 1px ${GOLD_SOFT}` }}
       >
         ✕
       </button>
 
-      <div className="relative mx-auto flex min-h-full w-full max-w-md flex-col items-center px-4 pb-10" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 40px)' }}>
+      <div className="relative mx-auto flex min-h-full w-full max-w-md flex-col items-center px-4 pb-10" style={{ paddingTop: 'calc(var(--app-safe-top) + 40px)' }}>
         {/* 标题 */}
         <motion.div
           initial={{ opacity: 0, y: -8 }}
