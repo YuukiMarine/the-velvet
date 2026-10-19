@@ -308,7 +308,8 @@ export const ACHIEVEMENTS = [
   {
     id: 'quest_taker',
     title: '受人之托',
-    description: '在委托板领取 10 次委托',
+    // 第 31 批：说清是「本周委托」——今日委托「加入今日任务」不算，以前写「领取 10 次委托」让人以为都算
+    description: '在委托板领取 10 次本周委托',
     icon: '📜',
     unlocked: false,
     condition: { type: 'quests_claimed' as const, value: 10 }

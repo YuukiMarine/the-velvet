@@ -197,7 +197,7 @@ const THEME_SWATCHES: { value: ThemeType; label: string; color?: string }[] = [
 ];
 
 export const Menu = () => {
-  const { activities, achievements, skills, attributes, settings, user, setTheme, setCurrentPage } = useAppStore(useShallow(s => ({ activities: s.activities, achievements: s.achievements, skills: s.skills, attributes: s.attributes, settings: s.settings, user: s.user, setTheme: s.setTheme, setCurrentPage: s.setCurrentPage })));
+  const { activities, achievements, skills, attributes, settings, user, setTheme, setCurrentPage, questClaimedTotal } = useAppStore(useShallow(s => ({ activities: s.activities, achievements: s.achievements, skills: s.skills, attributes: s.attributes, settings: s.settings, user: s.user, setTheme: s.setTheme, setCurrentPage: s.setCurrentPage, questClaimedTotal: s.questClaimedTotal })));
   const bold = useBoldness();
   const isP4 = useUiChannel() === 'p4';
 
@@ -305,12 +305,15 @@ export const Menu = () => {
           return attributes.reduce((s, x) => s + (x.points ?? 0), 0) >= a.condition.value;
         case 'all_attributes_max':
           return attributes.filter(x => x.level >= a.condition.value).length >= attributes.length;
+        // 「受人之托」（第 31 批）：领够数了也算待解锁，菜单角标亮起来
+        case 'quests_claimed':
+          return questClaimedTotal >= a.condition.value;
         default:
           return false;
       }
     }).length;
     return pendingSkills + pendingAchievements;
-  }, [skills, achievements, attributes]);
+  }, [skills, achievements, attributes, questClaimedTotal]);
 
   // 影时间判定：与 BattleDashboardWidget 同一份口径（默认 周五六日 20:00–7:00，
   // 60s 轮询跨界变化）。battleEnabled === false 时瓷砖整块不渲染，hook 仍无条件跑。

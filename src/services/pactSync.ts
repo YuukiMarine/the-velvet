@@ -200,6 +200,8 @@ export async function syncPacts(notifications: NotificationEntry[]): Promise<voi
   const listed = await listMyPacts();
   if (!listed) return; // 拉取失败：本地什么都不动
   useCloudSocialStore.getState().setPacts(listed);
+  // 委托板（第 31 批）：约定拉下来了再刷一次——冷启动那次刷新时约定还是空的，「和搭档一起完成一次」那张判不出来
+  void useAppStore.getState().refreshQuests().catch(() => { /* 下次刷新再说 */ });
   const today = toLocalDateKey();
   // 服务器上已经没有的约定（对方注销级联删除、结束超过 45 天没联网、换了账号）：本地待办归档，别一直挂着、天天提醒
   const ids = new Set(listed.map(p => p.id));

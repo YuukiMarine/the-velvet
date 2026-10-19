@@ -527,6 +527,10 @@ const LifeQuestCarousel = ({ items, statusOf, onAdd, onView, tone, names }: {
 export const QuestBoardSheet = ({ open, onClose }: { open: boolean; onClose: () => void }) => {
   const board = useQuestBoard();
   const tone = useTone();
+  const { achievements, setCurrentPage } = useAppStore(useShallow((s) => ({ achievements: s.achievements, setCurrentPage: s.setCurrentPage })));
+  // 「受人之托」（第 31 批）：目标次数读成就本身（不再写死 10），够数了给一个去成就页领取的入口
+  const taker = achievements.find((a) => a.condition.type === 'quests_claimed');
+  const takerNeed = taker?.condition.value ?? 10;
   const { claimQuest, refreshQuests, questNotice, clearQuestNotice } = useAppStore(useShallow((s) => ({
     claimQuest: s.claimQuest, refreshQuests: s.refreshQuests, questNotice: s.questNotice, clearQuestNotice: s.clearQuestNotice,
   })));
@@ -666,7 +670,21 @@ export const QuestBoardSheet = ({ open, onClose }: { open: boolean; onClose: () 
         <div className="mt-4 text-center text-[11px] font-bold leading-relaxed" style={{ color: tone.sub }}>
           {allClaimed ? '本周三张都收下了，岁时册里多了一枚「委托全清」。' : '做完的委托要自己来领；上周没领的，下周一会替你领。'}
           <br />
-          成就「受人之托」：领取 {Math.min(board.claimedTotal, 10)} / 10
+          {taker?.unlocked ? (
+            <span data-testid="quest-taker-line">成就「受人之托」已解锁。</span>
+          ) : board.claimedTotal >= takerNeed ? (
+            <button
+              type="button"
+              data-testid="quest-taker-line"
+              onClick={() => { onClose(); setCurrentPage('achievements'); }}
+              className="mt-1 inline-block font-black underline underline-offset-2"
+              style={{ color: tone.accent }}
+            >
+              成就「受人之托」达成了，去成就页领取 ›
+            </button>
+          ) : (
+            <span data-testid="quest-taker-line">成就「受人之托」：领取 {Math.min(board.claimedTotal, takerNeed)} / {takerNeed}</span>
+          )}
         </div>
         </>
         )}

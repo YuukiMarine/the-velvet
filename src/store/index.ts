@@ -611,7 +611,10 @@ interface AppState {
   /** 周一后第一次打开：生成本周三张；上周做完没领的自动领取并留一句话在 questNotice */
   refreshQuests: () => Promise<void>;
   /** 手动领取：进度够了才发 SP（没开战场只记计数）；一周三张都领了盖一枚「委托全清」印记 */
-  claimQuest: (id: string) => Promise<{ ok: boolean; sp: number }>;
+  /** achievementReady（第 31 批）：这一领让「受人之托」够数了（还没去成就页领） */
+  claimQuest: (id: string) => Promise<{ ok: boolean; sp: number; achievementReady?: boolean }>;
+  /** 累计领了几张本周委托（「受人之托」的进度；loadData / 领取 / 代领后更新，菜单待解锁角标和记录后的提示用） */
+  questClaimedTotal: number;
   /** 本周委托「换一张」（每周一次；做完 / 领过的不能换） */
   swapQuest: (id: string) => Promise<{ ok: boolean; reason?: string }>;
   questNotice: string | null;
@@ -935,6 +938,65 @@ async function questDataOf(get: () => AppState, now: Date, imagesFrom?: Date): P
   };
 }
 
+/** 往前最多几周的委托会被「替你领」（第 31 批） */
+const QUEST_AUTO_CLAIM_WEEKS = 4;
+
+/** 数一数累计领了几张（「受人之托」的进度） */
+async function recountQuestClaims(set: (partial: Partial<AppState>) => void): Promise<number> {
+  try {
+    const n = await db.quests.filter((q) => !!q.claimedAt).count();
+    set({ questClaimedTotal: n });
+    return n;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * 往前最多四周、做完了没领的委托：替你领了，留一句话（第 31 批）。
+ * 以前只在新的一周第一次刷新时扫上一周、扫完就再也不扫：冷启动那一刻羁绊约定还没从云端拉下来，
+ * 「和搭档一起完成一次」那张就永远代领不到；漏过一次刷新的那周也永远领不到。现在每次刷新都补扫。
+ */
+async function autoClaimPastQuests(get: () => AppState, set: (partial: Partial<AppState>) => void, now: Date, range: { weekKey: string }): Promise<void> {
+  const weeks: string[] = [];
+  let key = range.weekKey;
+  for (let i = 0; i < QUEST_AUTO_CLAIM_WEEKS; i++) { key = previousWeekKey(key); weeks.push(key); }
+  const pending = (await db.quests.where('weekKey').anyOf(weeks).toArray()).filter((q) => !q.claimedAt);
+  if (!pending.length) return;
+  const data = await questDataOf(get, now, weekRangeOfKey(weeks[weeks.length - 1]).start);
+  const names = get().settings.attributeNames;
+  const auto: string[] = [];
+  let autoSp = 0;
+  let lastWeekOnly = true;
+  for (const q of pending) {
+    if (!questDone(q, data, weekRangeOfKey(q.weekKey))) continue;
+    const fresh = await db.quests.get(q.id);
+    if (!fresh || fresh.claimedAt) continue;
+    await db.quests.update(q.id, { claimedAt: now.toISOString(), autoClaimed: true });
+    auto.push(questTitle(q, names));
+    autoSp += q.rewardSp;
+    if (q.weekKey !== weeks[0]) lastWeekOnly = false;
+  }
+  if (auto.length) {
+    if (get().battleState) await get().earnSP(autoSp);
+    set({ questNotice: `${lastWeekOnly ? '上周' : '之前'}的「${auto.join('」「')}」做完了没来得及领，已经替你领了${get().battleState ? `，+${autoSp} SP` : ''}。` });
+  }
+}
+
+/** 委托卡的 createdAt 统一成那一周的周一 0 点（第 31 批）：两台设备各自生成的同一张卡不再因为这个字段对不上、合并时算冲突 */
+async function normalizeQuestCreatedAt(): Promise<void> {
+  try {
+    const rows = await db.quests.toArray();
+    for (const q of rows) {
+      const want = weekRangeOfKey(q.weekKey).start.toISOString();
+      if (q.createdAt !== want) await db.quests.update(q.id, { createdAt: want });
+    }
+  } catch { /* 只是对齐一个字段，失败了下次再对 */ }
+}
+
+/** 刷新委托串行跑：loadData 和羁绊加载完都会触发，两次同时跑会把同一张「替你领」两遍、SP 发两次 */
+let questRefreshChain: Promise<void> = Promise.resolve();
+
 /** 自定义技能单个倍数钳 1–3（第 13 轮）；非数字回 1 */
 const clampSkillMultiplier = (v: number): number => {
   const n = Number(v);
@@ -955,6 +1017,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   bigDealClear: null,
   orphanImagesPrompt: null,
   importKeptNotice: null,
+  questClaimedTotal: 0,
   todos: [],
   todoCompletions: [],
   summaries: [],
@@ -1473,6 +1536,9 @@ export const useAppStore = create<AppState>((set, get) => ({
                 ).length;
                 return Math.min(qualifying, achievement.condition.value);
               }
+              // 第 31 批：「受人之托」也进「新解锁」提示（以前落 default 0，够数了也没人告诉你）
+              case 'quests_claimed':
+                return Math.min(get().questClaimedTotal, achievement.condition.value);
               default:
                 return 0;
             }
@@ -2768,6 +2834,20 @@ export const useAppStore = create<AppState>((set, get) => ({
         // 但 put 不会在并发重入时炸 ConstraintError 把整个 loadData 拖垮
         await db.achievements.bulkPut(adaptedMissing);
         achievements.push(...adaptedMissing);
+      }
+
+      // 少数系统成就的口径跟着代码走（第 31 批）：还没解锁的，描述 / 条件和代码里不一样就更新——存量用户库里存的是
+      // 当初补种时的那份，代码改了也到不了他们那儿。只同步列在这里的几条：别的系统成就的描述会被属性改名改写，不能一刀切
+      const SYNC_DEFINITION_IDS = new Set(['quest_taker']);
+      for (const def of ACHIEVEMENTS) {
+        if (!SYNC_DEFINITION_IDS.has(def.id)) continue;
+        const row = achievements.find(a => a.id === def.id);
+        if (!row || row.unlocked) continue;
+        if (row.description !== def.description || JSON.stringify(row.condition) !== JSON.stringify(def.condition)) {
+          const next = { ...row, description: def.description, condition: { ...def.condition } };
+          await db.achievements.put(next);
+          Object.assign(row, next);
+        }
       }
 
       /**
@@ -5054,37 +5134,28 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   // ── 委托板（第 6 轮 · PRD §11.3）──────────────────────────────
-  refreshQuests: async () => {
-    const st = get();
-    if (!st.user || !questBoardUnlocked(st.activities)) return;
-    const now = new Date();
-    const range = weekRangeOf(now);
-    const existing = await db.quests.where('weekKey').equals(range.weekKey).toArray();
-    if (existing.length >= 3) return;
-    const data = await questDataOf(get, now);
-    // 上周做完没领的：替你领了，留一句话
-    const prevKey = previousWeekKey(range.weekKey);
-    const prev = await db.quests.where('weekKey').equals(prevKey).toArray();
-    const prevRange = weekRangeOfKey(prevKey);
-    const prevData: QuestData = { ...data, images: await db.activityImages.where('createdAt').aboveOrEqual(prevRange.start).toArray() };
-    const auto: string[] = [];
-    let autoSp = 0;
-    for (const q of prev) {
-      if (q.claimedAt || !questDone(q, prevData, prevRange)) continue;
-      await db.quests.update(q.id, { claimedAt: now.toISOString(), autoClaimed: true });
-      auto.push(questTitle(q, st.settings.attributeNames));
-      autoSp += q.rewardSp;
-    }
-    if (auto.length) {
-      if (get().battleState) await get().earnSP(autoSp);
-      set({ questNotice: `上周的「${auto.join('」「')}」做完了没来得及领，已经替你领了${get().battleState ? `，+${autoSp} SP` : ''}。` });
-    }
-    // 本周三张：周键 + 账号 id 做种，两台设备各自生成也是同一组
-    const { useCloudStore } = await import('@/store/cloud');
-    const seed = useCloudStore.getState().cloudUser?.id ?? st.user.id;
-    const fresh = generateWeekQuests(range, seed, data, now);
-    const have = new Set(existing.map((q) => q.id));
-    await db.quests.bulkPut(fresh.filter((q) => !have.has(q.id)));
+  refreshQuests: () => {
+    const run = async () => {
+      const st = get();
+      if (!st.user || !questBoardUnlocked(st.activities)) { await recountQuestClaims(set); return; }
+      const now = new Date();
+      const range = weekRangeOf(now);
+      await autoClaimPastQuests(get, set, now, range);
+      await normalizeQuestCreatedAt();
+      const existing = await db.quests.where('weekKey').equals(range.weekKey).toArray();
+      if (existing.length < 3) {
+        const data = await questDataOf(get, now);
+        // 本周三张：周键 + 账号 id 做种，两台设备各自生成也是同一组；createdAt 取周一 0 点（同上，两台对得上）
+        const { useCloudStore } = await import('@/store/cloud');
+        const seed = useCloudStore.getState().cloudUser?.id ?? st.user.id;
+        const fresh = generateWeekQuests(range, seed, data, range.start);
+        const have = new Set(existing.map((q) => q.id));
+        await db.quests.bulkPut(fresh.filter((q) => !have.has(q.id)));
+      }
+      await recountQuestClaims(set);
+    };
+    questRefreshChain = questRefreshChain.then(run, run);
+    return questRefreshChain;
   },
 
   claimQuest: async (id: string) => {
@@ -5102,7 +5173,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (week.length >= 3 && week.every((x) => !!x.claimedAt)) {
       await db.stamps.put({ id: `${q.weekKey}-quest`, kind: 'quest', name: '委托全清', date: q.weekKey, year: Number(q.weekKey.slice(0, 4)), collectedAt: now.toISOString() });
     }
-    return { ok: true, sp };
+    // 「受人之托」（第 31 批）：以前领到第 10 张什么也不发生，只能自己去成就页翻——现在够数就告诉委托板
+    const total = await recountQuestClaims(set);
+    const achievementReady = get().achievements.some((a) => !a.unlocked && a.condition.type === 'quests_claimed' && total >= a.condition.value);
+    return { ok: true, sp, achievementReady };
   },
 
   swapQuest: async (id: string) => {
@@ -5117,7 +5191,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (questDone(q, data, range)) return { ok: false, reason: '已经做完了，领了吧' };
     const { useCloudStore } = await import('@/store/cloud');
     const seed = useCloudStore.getState().cloudUser?.id ?? get().user?.id ?? 'me';
-    const next = swapQuestFor(range, seed, data, week, q, now);
+    const next = swapQuestFor(range, seed, data, week, q, range.start);
     if (!next) return { ok: false, reason: '这周没有别的委托可换了' };
     await db.quests.put(next);
     return { ok: true };
