@@ -571,6 +571,10 @@ export interface Settings {
   aiJobDoneNotify?: boolean;
   /** 保存带截止日的任务后自动拉起系统日历的新建页（第 29 批；只在原生、缺省关）。截止日 / 时刻没变就不再拉 */
   todoAutoCalendar?: boolean;
+  /** 第 30 批：设置页用旧版（竖排手风琴）；默认走新版宫格 */
+  legacySettings?: boolean;
+  /** 第 30 批：音效 / 音乐是否响应系统静音模式（iOS 静音拨键 / 安卓静音·振动）。undefined = 平台默认（iOS 响应、安卓不响应） */
+  soundRespectSilent?: boolean;
   /** 每日提醒时段列表；缺省时回退到 DEFAULT_SETTINGS 的两槽（晨/晚）。 */
   notificationSlots?: NotifSlot[];
   /** v2.7.0.6：老用户含「今日待办」的时段已补上「一起进步」（只补一次，之后随用户设置） */

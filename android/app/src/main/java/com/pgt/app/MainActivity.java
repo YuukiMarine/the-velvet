@@ -27,6 +27,8 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(SystemBarsPlugin.class);
         registerPlugin(SystemCalendarPlugin.class);
         registerPlugin(BackgroundKeepAlivePlugin.class);
+        // 第 30 批：响应系统静音模式（铃声模式 → 网页压声）
+        registerPlugin(SystemAudioPlugin.class);
         super.onCreate(savedInstanceState);
 
         // 关掉 WebView 缩放（v2.7，用户上报「安卓设置页双指能把整页放大」）。

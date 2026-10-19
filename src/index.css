@@ -248,7 +248,7 @@
    关键约束——clip-path 在 filter 之后应用，任何**朝外**的描边/投影都会被一并裁掉，
    所以黑框只能画在形状内部：用四条 linear-gradient 边带当描边，再被斜边裁一刀，
    于是每条边的可见宽度沿斜度连续变化 = 天然不等宽；右上角另叠一块红角（稿上签名件）。 */
-:root[data-ui-channel="p5"] .p5-reskin input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+:root[data-ui-channel="p5"] .p5-reskin input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([data-plain]),
 :root[data-ui-channel="p5"] .p5-reskin textarea,
 :root[data-ui-channel="p5"] .p5-reskin select {
   border: none !important;

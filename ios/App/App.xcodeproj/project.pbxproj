@@ -20,6 +20,8 @@
 		5A1C29E0B0C1D2E3F4A5B604 /* SystemCalendarPlugin.m in Sources */ = {isa = PBXBuildFile; fileRef = 5A1C29E0B0C1D2E3F4A5B603 /* SystemCalendarPlugin.m */; };
 		5A1C29E0B0C1D2E3F4A5B606 /* BackgroundKeepAlivePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A1C29E0B0C1D2E3F4A5B605 /* BackgroundKeepAlivePlugin.swift */; };
 		5A1C29E0B0C1D2E3F4A5B608 /* BackgroundKeepAlivePlugin.m in Sources */ = {isa = PBXBuildFile; fileRef = 5A1C29E0B0C1D2E3F4A5B607 /* BackgroundKeepAlivePlugin.m */; };
+		5A1C29E0B0C1D2E3F4A5B60A /* SystemAudioPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A1C29E0B0C1D2E3F4A5B609 /* SystemAudioPlugin.swift */; };
+		5A1C29E0B0C1D2E3F4A5B60C /* SystemAudioPlugin.m in Sources */ = {isa = PBXBuildFile; fileRef = 5A1C29E0B0C1D2E3F4A5B60B /* SystemAudioPlugin.m */; };
 		50379B232058CBB4000EE86E /* capacitor.config.json in Resources */ = {isa = PBXBuildFile; fileRef = 50379B222058CBB4000EE86E /* capacitor.config.json */; };
 		504EC3081FED79650016851F /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 504EC3071FED79650016851F /* AppDelegate.swift */; };
 		504EC30D1FED79650016851F /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30B1FED79650016851F /* Main.storyboard */; };
@@ -80,6 +82,8 @@
 		5A1C29E0B0C1D2E3F4A5B603 /* SystemCalendarPlugin.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; path = SystemCalendarPlugin.m; sourceTree = "<group>"; };
 		5A1C29E0B0C1D2E3F4A5B605 /* BackgroundKeepAlivePlugin.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BackgroundKeepAlivePlugin.swift; sourceTree = "<group>"; };
 		5A1C29E0B0C1D2E3F4A5B607 /* BackgroundKeepAlivePlugin.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; path = BackgroundKeepAlivePlugin.m; sourceTree = "<group>"; };
+		5A1C29E0B0C1D2E3F4A5B609 /* SystemAudioPlugin.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SystemAudioPlugin.swift; sourceTree = "<group>"; };
+		5A1C29E0B0C1D2E3F4A5B60B /* SystemAudioPlugin.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; path = SystemAudioPlugin.m; sourceTree = "<group>"; };
 		AF277DCFFFF123FFC6DF26C7 /* Pods_App.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_App.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		AF51FD2D460BCFE21FA515B2 /* Pods-App.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-App.release.xcconfig"; path = "Pods/Target Support Files/Pods-App/Pods-App.release.xcconfig"; sourceTree = "<group>"; };
 		B4A3298757669DF10F6A8870 /* VelvetWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = VelvetWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -159,6 +163,8 @@
 				5A1C29E0B0C1D2E3F4A5B603 /* SystemCalendarPlugin.m */,
 				5A1C29E0B0C1D2E3F4A5B605 /* BackgroundKeepAlivePlugin.swift */,
 				5A1C29E0B0C1D2E3F4A5B607 /* BackgroundKeepAlivePlugin.m */,
+				5A1C29E0B0C1D2E3F4A5B609 /* SystemAudioPlugin.swift */,
+				5A1C29E0B0C1D2E3F4A5B60B /* SystemAudioPlugin.m */,
 				BA92098934E60433011800AD /* App.entitlements */,
 			);
 			path = App;
@@ -358,6 +364,8 @@
 				5A1C29E0B0C1D2E3F4A5B604 /* SystemCalendarPlugin.m in Sources */,
 				5A1C29E0B0C1D2E3F4A5B606 /* BackgroundKeepAlivePlugin.swift in Sources */,
 				5A1C29E0B0C1D2E3F4A5B608 /* BackgroundKeepAlivePlugin.m in Sources */,
+				5A1C29E0B0C1D2E3F4A5B60A /* SystemAudioPlugin.swift in Sources */,
+				5A1C29E0B0C1D2E3F4A5B60C /* SystemAudioPlugin.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

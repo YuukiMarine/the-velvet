@@ -1,4 +1,6 @@
 import { useAppStore } from '@/store';
+import { isSystemMuted } from '@/utils/nativeAudio';
+import { sampleRateMismatch } from '@/utils/audioRoute';
 import type { ThemeType } from '@/types';
 
 type FeedbackKind = 'theme_switch' | 'nav' | 'success' | 'level';
@@ -70,6 +72,14 @@ function touchLRU(src: string, buffer: AudioBuffer): void {
 }
 
 function getContext(): AudioContext | null {
+  // 第 30 批（降调）：硬件采样率变了（蓝牙 / 来电后切路由）→ 旧 Context 作废重建；缓存的 AudioBuffer 不用动，
+  // 源节点播放时会按新 Context 的采样率重采样
+  if (_ctx && sampleRateMismatch(_ctx)) {
+    const stale = _ctx;
+    _ctx = null;
+    _bus = null;
+    void stale.close().catch(() => { /* ignore */ });
+  }
   if (_ctx) return _ctx;
   try {
     _ctx = new (window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext)();
@@ -272,7 +282,8 @@ const getActiveTheme = (): ThemeType => {
 
 const isMuted = (): boolean => {
   try {
-    return !!useAppStore.getState().settings.soundMuted;
+    // 第 30 批：安卓「响应系统静音模式」开着且手机静音 / 振动 → 一并当静音
+    return !!useAppStore.getState().settings.soundMuted || isSystemMuted();
   } catch {
     return false;
   }

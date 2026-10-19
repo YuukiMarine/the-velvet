@@ -12,6 +12,8 @@
  * 版权：App 不带任何音乐、不提供曲库，文件只在本机播放；界面常态提示「请只导入你有权使用的音频」。
  */
 import { db } from '@/db';
+import { isSystemMuted, subscribeSystemMute } from '@/utils/nativeAudio';
+import { sampleRateMismatch } from '@/utils/audioRoute';
 import { useAppStore } from '@/store';
 import type { BgmTrack, Settings, ThemeType } from '@/types';
 
@@ -160,6 +162,40 @@ export function unlockBgm(): void {
 /** 之后每次点击都看一眼：来电 / 切后台 / Siri 之后 AudioContext 会变成 interrupted / suspended，趁手势拉回来 */
 function keepContextAlive(): void {
   if (ctx && ctx.state !== 'running') void ctx.resume().catch(() => { /* ignore */ });
+  checkRoute();
+}
+
+/**
+ * 降调看门狗（第 30 批，用户上报「背景音乐偶现被降调」）：硬件采样率和在用的 Context 对不上就整套重建——
+ * <audio> 一旦接进过 Web Audio 图，输出就归那张图了，旧 Context 关掉后元素自己不会再出声，所以元素也换新的，
+ * 从同一位置接着放。看门狗挂在：回前台、每次点击（探测本身 4 秒内只跑一次）、播放中每 15 秒。
+ */
+function checkRoute(): void {
+  if (!ctx || !audio) return;
+  if (!sampleRateMismatch(ctx)) return;
+  console.warn('[bgm] 硬件采样率变了，重建音频图', ctx.sampleRate);
+  rebuildGraph();
+}
+
+function rebuildGraph(): void {
+  if (!audio) return;
+  const src = audio.src;
+  const at = audio.currentTime;
+  const wasPlaying = !audio.paused && !audio.ended;
+  try { audio.pause(); } catch { /* ignore */ }
+  const stale = ctx;
+  ctx = null;
+  gain = null;
+  if (stale) void stale.close().catch(() => { /* ignore */ });
+  audio = null;
+  createAudio();
+  // createAudio 写的是模块变量，TS 的控制流不知道，重新读一遍
+  const fresh = audio as HTMLAudioElement | null;
+  if (!fresh) return;
+  fresh.src = src;
+  try { fresh.currentTime = at; } catch { /* 还没加载到，忽略 */ }
+  if (wasPlaying) void refreshBgm();
+  else notify();
 }
 
 function createAudio(): void {
@@ -178,7 +214,7 @@ export function holdBgmForRecording(on: boolean): void {
 }
 
 // ── 音量 ──
-const effectiveGain = (s: Settings): number => (s.soundMuted ? 0 : (bgmVolumeOf(s) / 100) * 0.9);
+const effectiveGain = (s: Settings): number => ((s.soundMuted || isSystemMuted()) ? 0 : (bgmVolumeOf(s) / 100) * 0.9);
 
 /** 滑块拖动中：立即生效，不等落库 */
 export function previewBgmVolume(percent: number): void {
@@ -292,8 +328,11 @@ export function initBgm(): void {
     lastKey = key;
     void refreshBgm();
   });
-  document.addEventListener('visibilitychange', () => { void refreshBgm(); });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkRoute(); void refreshBgm(); });
   window.addEventListener('velvet-bgm-hold', (e) => { holdBgmForRecording(!!(e as CustomEvent).detail); });
+  // 第 30 批：系统静音（安卓铃声模式）变了 → 重算增益；播放中每 15 秒看一眼采样率（降调看门狗）
+  subscribeSystemMute(() => { void refreshBgm(); });
+  window.setInterval(() => { if (audio && !audio.paused) checkRoute(); }, 15000);
   // 每次点击顺手把 AudioContext 拉回 running（第 22 批）；passive + capture，不影响任何手势
   document.addEventListener('pointerdown', keepContextAlive, { capture: true, passive: true });
   void refreshBgm();

@@ -34,6 +34,7 @@ import { getLayoutModeVersion, isPhoneLayout, subscribeLayoutMode } from '@/ui/l
 const Achievements = lazy(() => import('@/pages/Achievements').then(m => ({ default: m.Achievements })));
 const Statistics = lazy(() => import('@/pages/Statistics').then(m => ({ default: m.Statistics })));
 const Settings = lazy(() => import('@/pages/Settings').then(m => ({ default: m.Settings })));
+const SettingsHub = lazy(() => import('@/pages/settings/SettingsHub').then(m => ({ default: m.SettingsHub })));
 // 行动页（任务+记录合并，v2.5 五格 IA）；旧 'todos'/'activities' 路由也映射到它（见 renderPage）
 const Actions = lazy(() => import('@/pages/Actions').then(m => ({ default: m.Actions })));
 const Astrology = lazy(() => import('@/pages/Astrology').then(m => ({ default: m.Astrology })));
@@ -64,6 +65,7 @@ import { AIJobsBanner } from '@/components/AIJobsBanner';
 import { initSystemBars, setBarStyle } from '@/utils/nativeBars';
 import { initNativeCalendar } from '@/utils/nativeCalendar';
 import { initKeepAlive } from '@/utils/nativeKeepAlive';
+import { initSystemAudio } from '@/utils/nativeAudio';
 import { CallingCardCutIn } from '@/components/callingCard/CallingCardCutIn';
 import { isNative } from '@/utils/native';
 import { warmDisplayFontShards } from '@/utils/fontWarmup';
@@ -300,6 +302,7 @@ function App() {
       void initSystemBars();
       void initNativeCalendar();
       initKeepAlive();
+      initSystemAudio();
       // 第 27 批 ⑤：上次没写完就被关掉的区层 / 伪神显形，按盘上的材料接回内存（战场页会提示「让它说完」）
       void import('@/utils/revealJobs').then(m => m.restoreRevealJobs());
       // 自动撰写上一期总结（v2.7.0.6，默认开）：新周期第一次打开时后台补写，写好后各渠道提醒一次
@@ -750,7 +753,8 @@ function App() {
       case 'statistics':
         return lazyPage(<Statistics />);
       case 'settings':
-        return lazyPage(<Settings />);
+        // 第 30 批：新版宫格设置页；「使用旧版设置」开着才回到竖排手风琴
+        return lazyPage(settings.legacySettings ? <Settings /> : <SettingsHub />);
       case 'battle':
         return lazyPage(<BattleArena />);
       case 'astrology':

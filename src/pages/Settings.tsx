@@ -1532,6 +1532,19 @@ export const Settings = () => {
 
                     {/* ── 子板块：导入音乐（第 13 轮 B 组 2.8，常态折叠，主题分区最下方） ── */}
                     <BgmSettings p5={p5} />
+
+                    {/* 第 30 批：新版宫格设置页在这里换回去（开着 = 用旧版，也就是本页） */}
+                    <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                      <div>
+                        <h4 className="font-medium text-gray-800 dark:text-white">使用旧版设置</h4>
+                        <p className="text-sm text-gray-600 dark:text-gray-400">关掉就换成新版的宫格设置页；两版改的是同一份数据</p>
+                      </div>
+                      <Toggle
+                        checked={!!settings.legacySettings}
+                        onChange={(v) => updateSettings({ legacySettings: v })}
+                        aria-label="使用旧版设置"
+                      />
+                    </div>
                   </div>
                 )}
 
