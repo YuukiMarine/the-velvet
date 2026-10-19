@@ -15,6 +15,7 @@
  */
 import type { RecordModel } from 'pocketbase';
 import { pb, getUserId } from './pocketbase';
+import { useCloudSocialStore } from '@/store/cloudSocial';
 import { pbQuote } from './pbFilter';
 import { auditText } from '@/utils/textAudit';
 import {
@@ -155,8 +156,11 @@ export async function listMyMemberships(): Promise<Membership[] | null> {
       const org = exp ? mapOrg(exp) : mapOrg(await pb.collection('orgs').getOne(str(r.org), { requestKey: null }));
       out.push({ member: mapMember(r), org });
     }
+    useCloudSocialStore.getState().setOrgsUnsupported(false);
     return out;
   } catch (err) {
+    // 集合不存在（404）= 这个后端还没有组织功能（第 31 批：只有这时才藏「组织」页签）
+    if ((err as { status?: number })?.status === 404) useCloudSocialStore.getState().setOrgsUnsupported(true);
     console.warn('[velvet-org] listMyMemberships failed', err);
     return null;
   }

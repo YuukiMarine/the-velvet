@@ -25,11 +25,15 @@ export type BondView = 'companions' | 'orgs';
 /** 开关能不能用、要不要亮红点 */
 export function useOrgSwitch(): { available: boolean; dot: boolean } {
   const signedIn = useCloudStore(s => !!s.cloudUser);
-  const { orgs, orgsLoaded, orgNotice, orgSeen, orgOpsSeen, orgBlocked } = useCloudSocialStore(useShallow(s => ({
-    orgs: s.orgs, orgsLoaded: s.orgsLoaded, orgNotice: s.orgNotice, orgSeen: s.orgSeen, orgOpsSeen: s.orgOpsSeen, orgBlocked: s.orgBlocked,
+  const { orgs, orgsLoaded, orgsUnsupported, orgNotice, orgSeen, orgOpsSeen, orgBlocked } = useCloudSocialStore(useShallow(s => ({
+    orgs: s.orgs, orgsLoaded: s.orgsLoaded, orgsUnsupported: s.orgsUnsupported, orgNotice: s.orgNotice, orgSeen: s.orgSeen, orgOpsSeen: s.orgOpsSeen, orgBlocked: s.orgBlocked,
   })));
   const blocked = useMemo(() => new Set(orgBlocked), [orgBlocked]);
-  const available = cloudEnabled && (!signedIn || orgsLoaded);
+  // 第 31 批：不再等组织拉完才露出「组织」——以前登录后要等整条社交同步跑完（几秒到几十秒、中间出错就更久），
+  // 这段时间只看得到「同伴」，像是组织没了。还没拉到时据点页自己显示「正在找你的组织…」。
+  // 只有服务器明确没有组织的表（自建的老后端）才藏起来
+  void orgsLoaded;
+  const available = cloudEnabled && !(signedIn && orgsUnsupported);
   const dot = available && (!!orgNotice || orgs.some(v => boardUnread(v, orgSeen[v.org.id], blocked) || meetingPending(v) || opsUnread(v, orgOpsSeen[v.org.id]) || raidStrikeAvailable(v)));
   return { available, dot };
 }
@@ -37,7 +41,7 @@ export function useOrgSwitch(): { available: boolean; dot: boolean } {
 /** 非 hook 版的「开关能不能用」（底导 / 侧栏再点「羁绊」时用；口径同 useOrgSwitch） */
 export function orgSwitchAvailableNow(): boolean {
   const signedIn = !!useCloudStore.getState().cloudUser;
-  return cloudEnabled && (!signedIn || useCloudSocialStore.getState().orgsLoaded);
+  return cloudEnabled && !(signedIn && useCloudSocialStore.getState().orgsUnsupported);
 }
 
 /**

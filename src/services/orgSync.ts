@@ -13,7 +13,7 @@
  */
 import { useAppStore } from '@/store';
 import { useCloudSocialStore } from '@/store/cloudSocial';
-import { getUserId } from './pocketbase';
+import { getUserId, pb } from './pocketbase';
 import { computeTotalLv } from '@/utils/lvTiers';
 import { masteryOf } from '@/utils/levels';
 import { resolveLevelDifficulty } from '@/utils/levelDifficulty';
@@ -65,6 +65,86 @@ const rememberOrgs = (me: string, views: OrgView[]) => {
 const forgetOrg = (me: string, orgId: string) => {
   const all = readJson<Known>(KNOWN_KEY, {});
   if (all[me]) { delete all[me][orgId]; writeJson(KNOWN_KEY, all); }
+};
+
+// ── 组织列表本机缓存（第 31 批 · 「组织页偶尔消失、过一会又好了」）────────────────────
+// 组织数据以前只在内存：每次启动从空开始，要等整轮同步跑完「组织」才出来，中间任何一步慢 / 失败就一直看不到。
+// 现在把上一次的组织 + 成员名册（不含公告板 / 作战这些大块）按账号记在本机，启动时先拿它顶上，同步完再换成最新的。
+const CACHE_KEY = 'velvet.orgCache.v1';
+type OrgCache = Record<string, { at: number; views: OrgView[] }>;
+const slimView = (v: OrgView): OrgView => ({ org: v.org, members: v.members, me: v.me });
+const reviveCacheDates = (key: string, value: unknown): unknown =>
+  (key === 'createdAt' || key === 'updatedAt') && typeof value === 'string' && !isNaN(Date.parse(value)) ? new Date(value) : value;
+const writeOrgCache = (me: string, views: OrgView[]) => {
+  const all = readJson<OrgCache>(CACHE_KEY, {});
+  all[me] = { at: Date.now(), views: views.map(slimView) };
+  writeJson(CACHE_KEY, all);
+};
+const readOrgCache = (me: string): OrgView[] | null => {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (!raw) return null;
+    const all = JSON.parse(raw, reviveCacheDates) as OrgCache;
+    const views = all?.[me]?.views;
+    return Array.isArray(views) && views.length ? views.filter(v => v && v.org && v.me && Array.isArray(v.members)) : null;
+  } catch { return null; }
+};
+/** 现在显示的组织列表是不是只是缓存（还没跟服务器对过） */
+let orgsFromCache = false;
+/** 登录后 / 启动时先把上次的组织列表摆出来（还没拉到时才摆；拉到过就不动） */
+export function primeOrgsFromCache(): void {
+  const me = getUserId();
+  if (!me || social().orgsLoaded) return;
+  const cached = readOrgCache(me);
+  if (!cached) return;
+  social().setOrgs(cached.sort(orgOrder));
+  orgsFromCache = true;
+}
+// 组织列表一变就记一份（只记拉到过之后的；登出时 resetSocial 把 orgsLoaded 置回 false，不会把空表记进去）
+useCloudSocialStore.subscribe((st, prev) => {
+  if (st.orgs === prev.orgs || !st.orgsLoaded) return;
+  const me = getUserId();
+  if (me) writeOrgCache(me, st.orgs);
+});
+
+/** 网络请求的等待上限：PB 请求本身不超时，一个卡住的请求会让整轮同步一直挂着 */
+const ORG_FETCH_TIMEOUT_MS = 15_000;
+function withTimeout<T>(p: Promise<T>, ms: number, onTimeout: T): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => resolve(onTimeout), ms);
+    p.then((v) => { clearTimeout(t); resolve(v); }, (e) => { clearTimeout(t); reject(e); });
+  });
+}
+
+/** 第一次没拉到（或者显示的还只是缓存）：5 / 15 / 45 秒后各补一次，不用等下次切前台 */
+const RETRY_DELAYS_MS = [5_000, 15_000, 45_000];
+let retryN = 0;
+let retryTimer: ReturnType<typeof setTimeout> | undefined;
+function scheduleOrgRetry(): void {
+  if (social().orgsUnsupported) return; // 后端根本没有组织的表：补拉没有意义
+  if (social().orgsLoaded && !orgsFromCache) return;
+  if (retryTimer || retryN >= RETRY_DELAYS_MS.length) return;
+  const delay = RETRY_DELAYS_MS[retryN++];
+  retryTimer = setTimeout(() => { retryTimer = undefined; void syncOrgs(); }, delay);
+}
+
+/**
+ * 成员关系拉回来是空的、本机却记得有组织：先确认这次请求的登录态是真的生效了——PB 对「没带上登录态」的请求
+ * 和「确实不是成员」回的一样（列表 200 空），代理回了非 JSON 的 2xx 时 SDK 也会给出空列表。刷新一次登录：
+ * 成功 = 服务器认得我，空列表可信；失败（离线 / 被拒）= 这次结果不可信，本地什么都不动。
+ */
+async function loginVerified(): Promise<boolean> {
+  try {
+    await withTimeout(pb!.collection('users').authRefresh({ requestKey: null }), ORG_FETCH_TIMEOUT_MS, null);
+    return pb!.authStore.isValid;
+  } catch {
+    return false;
+  }
+}
+
+/** 只在组织还在本机列表里时才更新（异步回来时可能已经退出 / 被移除了，别把它加回来） */
+const putIfPresent = (v: OrgView) => {
+  if (social().orgs.some(x => x.org.id === v.org.id)) social().upsertOrgView(v);
 };
 
 const BLOCK_KEY = 'velvet.orgBlocked.v1';
@@ -301,19 +381,39 @@ async function syncOrgsOnce(): Promise<void> {
   loadOpsSeen(me);
   loadFaces(me);
   ensureAutoPush();
-  const listed = await listMyMemberships();
-  if (!listed) return; // 拉取失败：本地什么都不动
+  // 同步开始时本机有哪些组织：跑的过程中新建 / 加入 / 退出的，结尾要按本机的算（第 31 批）
+  const startIds = new Set(social().orgs.map(v => v.org.id));
+  let listed = await withTimeout(listMyMemberships(), ORG_FETCH_TIMEOUT_MS, null);
+  if (!listed) { scheduleOrgRetry(); return; } // 拉取失败 / 超时：本地什么都不动，过一会儿补一次
+  const knownBefore = Object.keys(readJson<Known>(KNOWN_KEY, {})[me] ?? {});
+  if (listed.length === 0 && (social().orgs.length > 0 || knownBefore.length > 0)) {
+    if (!(await loginVerified())) { scheduleOrgRetry(); return; }
+    listed = await withTimeout(listMyMemberships(), ORG_FETCH_TIMEOUT_MS, null);
+    if (!listed) { scheduleOrgRetry(); return; }
+  }
   let views: OrgView[] = [];
   for (const { org, member } of listed) {
     try {
-      const members = (await listOrgMembers(org.id)).sort(bySeat);
-      views.push({ org, members, me: members.find(m => m.id === member.id) ?? member });
+      const members = (await withTimeout(listOrgMembers(org.id), ORG_FETCH_TIMEOUT_MS, null as OrgMember[] | null));
+      if (!members) throw new Error('timeout');
+      members.sort(bySeat);
+      // 成员表里没有我（成员关系在、名册里却找不到）：当成这次没拉全，用上次的名册
+      const meRow = members.find(m => m.id === member.id);
+      if (!meRow) throw new Error('me missing from roster');
+      views.push({ org, members, me: meRow });
     } catch (err) {
       console.warn('[velvet-org] list members failed', org.id, err);
       const prev = social().orgs.find(v => v.org.id === org.id);
       views.push(prev ? { ...prev, org } : { org, members: [member], me: member });
     }
   }
+  // 先把名册摆出来（保留上次拉到的公告板 / 作战），后面推牌 / 公告板 / 作战慢慢跑——以前要等整轮跑完才出现
+  social().setOrgs(views.map(v => {
+    const prev = social().orgs.find(p => p.org.id === v.org.id);
+    return prev ? { ...prev, org: v.org, members: v.members, me: v.me } : v;
+  }).sort(orgOrder));
+  orgsFromCache = false;
+  retryN = 0;
   views = await normalizeSlots(me, views);
   for (let i = 0; i < views.length; i++) views[i] = await resolveTarotConflict(views[i]);
   for (let i = 0; i < views.length; i++) views[i] = await pushMyCard(views[i]);
@@ -321,6 +421,11 @@ async function syncOrgsOnce(): Promise<void> {
   for (let i = 0; i < views.length; i++) views[i] = await ensureMinutes(await withRaids(await withOps(await withBoard(views[i]))));
   for (let i = 0; i < views.length; i++) views[i] = await reconcileOps(views[i]);
   for (let i = 0; i < views.length; i++) views[i] = await reconcileRaids(views[i]);
+  // 跑的这一阵本机新建 / 加入的留着，本机退出 / 解散的别再加回来（服务器那份快照是开头拉的）
+  const nowIds = new Set(social().orgs.map(v => v.org.id));
+  const leftMeanwhile = new Set([...startIds].filter(id => !nowIds.has(id)));
+  const addedMeanwhile = social().orgs.filter(v => !startIds.has(v.org.id) && !views.some(x => x.org.id === v.org.id));
+  views = [...views.filter(v => !leftMeanwhile.has(v.org.id)), ...addedMeanwhile];
   social().setOrgs(views.sort(orgOrder));
   noticeGone(me, views);
   checkLevelUps(views);
@@ -335,12 +440,16 @@ export async function refreshOrg(orgId: string): Promise<OrgView | null> {
     const [org, members] = await Promise.all([fetchOrg(orgId), listOrgMembers(orgId)]);
     const mine = members.find(m => m.userId === me);
     if (!mine) {
-      social().removeOrgView(orgId);
-      return null;
+      // 名册里没有我：可能真被请离了，也可能这次请求没带上登录态（PB 两种情况长得一样）——不当场拿掉（以前这样拿掉、
+      // 下一轮完整同步又放回来，就是「组织页莫名消失、过一会又好了」），交给完整同步按成员关系确认（第 31 批）
+      void syncOrgs();
+      return social().orgs.find(v => v.org.id === orgId) ?? null;
     }
     const prev = social().orgs.find(v => v.org.id === orgId);
     const base: OrgView = { org, members: members.sort(bySeat), me: mine, posts: prev?.posts, reactions: prev?.reactions, ops: prev?.ops, checkins: prev?.checkins, ledger: prev?.ledger, raids: prev?.raids, raidHits: prev?.raidHits };
     const view: OrgView = await reconcileRaids(await reconcileOps(await withRaids(await withOps(await withBoard(base)))));
+    // 刷新的这一阵本机退出了：别加回来（加入流程是先 upsert 再 refresh，所以加入时它已经在列表里）
+    if (!social().orgs.some(v => v.org.id === orgId)) return null;
     social().upsertOrgView(view);
     checkLevelUps([view]);
     social().setOrgs([...social().orgs].sort(orgOrder));
@@ -349,8 +458,9 @@ export async function refreshOrg(orgId: string): Promise<OrgView | null> {
   } catch (err) {
     const status = (err as { status?: number })?.status;
     if (status === 404) {
-      social().removeOrgView(orgId);
-      return null;
+      // 同上：404 也可能只是这次没带上登录态，交给完整同步确认（真解散了它会拿掉并提示）
+      void syncOrgs();
+      return social().orgs.find(v => v.org.id === orgId) ?? null;
     }
     console.warn('[velvet-org] refresh failed', orgId, err);
     return social().orgs.find(v => v.org.id === orgId) ?? null;
@@ -379,7 +489,7 @@ async function pushCardsNow(): Promise<void> {
   if (orgRun) { try { await orgRun; } catch { /* 对账失败不影响这里 */ } }
   for (const v of social().orgs) {
     const next = await pushMyCard(v);
-    if (next !== v) social().upsertOrgView(next);
+    if (next !== v) putIfPresent(next);
   }
 }
 
@@ -508,7 +618,7 @@ export async function dissolveFromUi(orgId: string): Promise<void> {
 
 // ── 公告板与会议的界面动作（7b）──────────────────────────────────────────────────
 
-const putView = (v: OrgView) => social().upsertOrgView(v);
+const putView = (v: OrgView) => putIfPresent(v);
 
 /** 公告板刷新（进公告板 / 点刷新） */
 export async function refreshBoard(orgId: string): Promise<void> {

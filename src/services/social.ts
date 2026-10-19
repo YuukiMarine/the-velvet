@@ -25,7 +25,7 @@ import { useCloudStore } from '@/store/cloud';
 import { useAppStore } from '@/store';
 import { getOnlineCardFace, clearOnlineCardFace } from './onlineCardFace';
 import { syncPacts } from './pactSync';
-import { syncOrgs } from './orgSync';
+import { primeOrgsFromCache, syncOrgs } from './orgSync';
 import { interpretLockedArcana, type ConfidantMatchResult } from '@/utils/confidantAI';
 import type { CoopBond, CoopShadow, Friendship, NotificationEntry } from '@/types';
 
@@ -68,6 +68,8 @@ export const loadSocial = (options: { force?: boolean } = {}): Promise<void> => 
 
 const loadSocialOnce = async (options: { force?: boolean }): Promise<void> => {
   if (!pb || !pb.authStore.isValid) return;
+  // 组织（第 31 批）：还没拉到过时先把上次的组织列表摆出来，别让「组织」等整轮跑完才出现
+  primeOrgsFromCache();
 
   const store = useCloudSocialStore.getState();
   if (!options.force && store.lastLoadedAt) {
@@ -137,16 +139,17 @@ const loadSocialOnce = async (options: { force?: boolean }): Promise<void> => {
     } catch (err) {
       console.warn('[velvet-social] pact sync failed', err);
     }
-    // 组织（第 7 轮）：拉成员、校正位置、推成员牌；放在最后，失败不影响前面任何一步
+  } catch (err) {
+    console.error('[velvet-social] load failed:', err);
+    store.setLastError(err instanceof Error ? err.message : '拉取失败');
+  } finally {
+    // 组织（第 7 轮）：拉成员、校正位置、推成员牌；放在最后，失败不影响前面任何一步。
+    // 第 31 批：挪到 finally——以前好友 / 通知 / 合作影任一列表抛错，整段（连同组织）跳过，组织要等下次切前台
     try {
       await syncOrgs();
     } catch (err) {
       console.warn('[velvet-social] org sync failed', err);
     }
-  } catch (err) {
-    console.error('[velvet-social] load failed:', err);
-    store.setLastError(err instanceof Error ? err.message : '拉取失败');
-  } finally {
     store.setLoading(false);
   }
 };

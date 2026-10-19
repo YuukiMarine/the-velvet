@@ -45,6 +45,8 @@ interface CloudSocialState {
   orgs: OrgView[];
   /** 组织是否已经拉到过（没拉到时入口不据此显示「还没有组织」） */
   orgsLoaded: boolean;
+  /** 服务器上根本没有组织的表（自建的老版本后端，org_* 回 404；第 31 批）：这时才藏起「组织」页签 */
+  orgsUnsupported: boolean;
   /** 本机一次性提示（被请离 / 组织解散 / 在别的设备退出）：羁绊页组织卡上方显示，点掉即清 */
   orgNotice: string | null;
   /** 据点页正在看的组织 */
@@ -89,6 +91,7 @@ interface CloudSocialState {
   setPacts: (ps: CoopPact[]) => void;
   upsertPact: (p: CoopPact) => void;
   setOrgs: (views: OrgView[]) => void;
+  setOrgsUnsupported: (v: boolean) => void;
   upsertOrgView: (view: OrgView) => void;
   removeOrgView: (orgId: string) => void;
   setOrgNotice: (msg: string | null) => void;
@@ -139,6 +142,7 @@ export const useCloudSocialStore = create<CloudSocialState>(set => ({
   pactsLoaded: false,
   orgs: [],
   orgsLoaded: false,
+  orgsUnsupported: false,
   orgNotice: null,
   hideoutOrgId: null,
   hideoutSection: null,
@@ -209,6 +213,7 @@ export const useCloudSocialStore = create<CloudSocialState>(set => ({
   }),
 
   setOrgs: orgs => set({ orgs, orgsLoaded: true }),
+  setOrgsUnsupported: orgsUnsupported => set({ orgsUnsupported }),
 
   upsertOrgView: v => set(state => {
     const idx = state.orgs.findIndex(x => x.org.id === v.org.id);
@@ -307,6 +312,7 @@ export const useCloudSocialStore = create<CloudSocialState>(set => ({
     pactsLoaded: false,
     orgs: [],
     orgsLoaded: false,
+    orgsUnsupported: false,
     orgNotice: null,
     hideoutOrgId: null,
     hideoutSection: null,

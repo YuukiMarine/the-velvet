@@ -191,6 +191,16 @@ const isStandalonePwa = () => (
   || ('standalone' in window.navigator && (window.navigator as Navigator & { standalone?: boolean }).standalone === true)
 );
 
+/**
+ * 刷新登录被拒到底算不算「登录失效」（第 31 批）：401 算；403 只有 PocketBase 自己回的（带 JSON 错误说明）才算——
+ * 线路上的 CDN / 防火墙拦截也会回 403（HTML 页面，SDK 解析不出说明），以前一并当成登录失效把人登出了。
+ */
+function isAuthRejected(err: { status?: number; response?: { message?: unknown } } | undefined): boolean {
+  if (err?.status === 401) return true;
+  if (err?.status === 403) return typeof err.response?.message === 'string' && err.response.message.length > 0;
+  return false;
+}
+
 function App() {
   /**
    * 逐字段订阅（v2.6.5 性能整改 A2）。
@@ -360,10 +370,14 @@ function App() {
 
   // 登录状态切换时拉 / 清 social 数据（好友 + 通知）
   useEffect(() => {
+    // 退订句柄（第 31 批：以前写成 promise 里 return，effect 清理时拿不到，开发模式下会订两份）
+    let unsub: (() => void) | undefined;
+    let cancelled = false;
     import('@/services/social').then(({ loadSocial, resetSocial }) => {
+      if (cancelled) return;
       let isLogged = useCloudStore.getState().cloudUser !== null;
       if (isLogged) void loadSocial({ force: true });
-      const unsub = useCloudStore.subscribe((state) => {
+      unsub = useCloudStore.subscribe((state) => {
         const nowLogged = state.cloudUser !== null;
         if (nowLogged === isLogged) return;
         isLogged = nowLogged;
@@ -373,8 +387,8 @@ function App() {
           resetSocial();
         }
       });
-      return unsub;
     });
+    return () => { cancelled = true; unsub?.(); };
   }, []);
 
   // 启动时若已有有效 token，静默刷新一次以延长有效期（避免每次进入都要重登）
@@ -385,9 +399,9 @@ function App() {
     client
       .collection('users')
       .authRefresh()
-      .catch((err: { status?: number }) => {
-        // 只有服务端明确说 token 无效（401 / 403）才清；离线（status 0）、服务端抖（5xx）不该把人登出
-        if (err?.status === 401 || err?.status === 403) client.authStore.clear();
+      .catch((err: { status?: number; response?: { message?: unknown } }) => {
+        // 只有服务端明确说 token 无效才清；离线（status 0）、服务端抖（5xx）不该把人登出
+        if (isAuthRejected(err)) client.authStore.clear();
       });
   }, []);
 
@@ -457,8 +471,8 @@ function App() {
       const client = pbClient;
       if (client?.authStore.isValid && Date.now() - lastAuthRefreshRef.current > 6 * 3600_000) {
         lastAuthRefreshRef.current = Date.now();
-        client.collection('users').authRefresh().catch((err: { status?: number }) => {
-          if (err?.status === 401 || err?.status === 403) client.authStore.clear();
+        client.collection('users').authRefresh().catch((err: { status?: number; response?: { message?: unknown } }) => {
+          if (isAuthRejected(err)) client.authStore.clear();
         });
       }
       // 切回前台顺手刷新 social（好友 + 通知）；30 秒节流在 loadSocial 内部已做

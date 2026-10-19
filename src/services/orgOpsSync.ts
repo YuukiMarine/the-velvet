@@ -24,7 +24,8 @@ import type { OrgCheckin, OrgOperation, OrgView } from '@/types';
 
 const social = () => useCloudSocialStore.getState();
 const viewNow = (orgId: string): OrgView | undefined => social().orgs.find(v => v.org.id === orgId);
-const putView = (v: OrgView) => social().upsertOrgView(v);
+// 只在组织还在本机列表里时才更新：异步回来时可能已经退出了，别把它加回来（第 31 批）
+const putView = (v: OrgView) => { if (social().orgs.some(x => x.org.id === v.org.id)) social().upsertOrgView(v); };
 
 const readJson = <T,>(key: string, fallback: T): T => {
   try { return (JSON.parse(localStorage.getItem(key) || 'null') as T) ?? fallback; } catch { return fallback; }
