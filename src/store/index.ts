@@ -68,6 +68,8 @@ export const ALL_LOCAL_TABLES = [
   'ledgerEntries', 'budgets', 'assets', 'wishes',
   // F6 黑猫：人格 / 原子记忆 / 会话与消息（聊天原文 7 天即焚，但"清空数据"必须清）
   'navigatorPresets', 'navigatorMemos', 'navigatorSessions', 'navigatorMessages',
+  // 第 28 批 助手操作日志（本地专属；不上云、不进主备份，"清空数据"必须清）
+  'navigatorActions',
   // v2.7.0.6 记录配图（本地专属；不上云、不进主备份，"清空数据"必须清）
   'activityImages', 'activityImageData',
   // 第 13 轮 B 组 导入音乐（本地专属；不上云、不进主备份，"清空数据"必须清；导入备份时不动）
@@ -441,7 +443,8 @@ interface AppState {
   /** 今日「应做」的活跃待办（active + 未来启用日排除 + weekdays 不含今天排除）；短路决策候选与入口卡计数共用，统一全站口径。 */
   getDueTodosToday: () => Todo[];
 
-  addTodo: (todo: Omit<Todo, 'id' | 'createdAt'>) => Promise<void>;
+  /** 返回新任务 id（第 28 批：助手撤销要用） */
+  addTodo: (todo: Omit<Todo, 'id' | 'createdAt'>) => Promise<string>;
   updateTodo: (id: string, updates: Partial<Todo>) => Promise<void>;
   deleteTodo: (id: string) => Promise<void>;
   completeTodo: (todoId: string) => Promise<{ unlockHints: { achievements: number; skills: number } } | null>;
@@ -3646,6 +3649,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     };
     await db.todos.add(newTodo);
     await get().loadData();
+    return newTodo.id;
   },
 
   updateTodo: async (id, updates) => {

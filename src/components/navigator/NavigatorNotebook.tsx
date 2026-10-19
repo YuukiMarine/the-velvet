@@ -14,6 +14,8 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { findDuplicateMemos, getProfileBlocks, listBits, mergeMemos, PROFILE_KEYS, PROFILE_LABELS, PROFILE_LIMITS, saveProfileBlocks, undoProfile, type MergeProposal } from '@/utils/navigatorMemory';
 import { deletePromise, isPromise, listPromises, promisePhase, updatePromiseDate, type PromiseMemo } from '@/utils/navigatorPromise';
 import { dayLabelCN } from '@/utils/navigatorClock';
+import { listActions } from '@/utils/navigatorActions';
+import type { NavigatorActionRow } from '@/types';
 import { toLocalDateKey, useAppStore } from '@/store';
 import { useNavigatorStore } from '@/store/navigator';
 import { mergedNavigatorPresets } from '@/constants/navigatorPresets';
@@ -42,6 +44,10 @@ export const NavigatorNotebook = ({ isOpen, onClose }: { isOpen: boolean; onClos
   // 已作废的（被新事实替代 / 用户让忘掉 / 合并掉的）：默认收着
   const [archived, setArchived] = useState<NavigatorMemo[]>([]);
   const [showArchived, setShowArchived] = useState(false);
+  // 它替你做过的事（第 28 批 · G2）：最近 50 条操作日志，撤销过的标着
+  const [showActions, setShowActions] = useState(false);
+  const [actions, setActions] = useState<NavigatorActionRow[]>([]);
+  useEffect(() => { if (isOpen) void listActions(50).then(setActions); }, [isOpen]);
   // 你们之间的说法（第 26 批 · §24.11）：跟人格走
   const [bits, setBits] = useState<NavigatorMemo[]>([]);
   // 整理：近似重复的提议
@@ -410,6 +416,28 @@ export const NavigatorNotebook = ({ isOpen, onClose }: { isOpen: boolean; onClos
                       <span className="min-w-0 flex-1 line-through">{m.text}</span>
                       <span className="shrink-0 text-[10px]">{m.supersededBy ? '被新的替代' : m.muted ? '你让它忘的' : '作废'}</span>
                       <button type="button" onClick={() => void restoreMemo(m.id)} aria-label={`恢复记忆：${m.text}`} className="shrink-0 text-[11px] font-bold text-primary">恢复</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          {/* 它替你做过的事（第 28 批 · G2）：卡片确认过的操作，撤销过的标着 */}
+          {actions.length > 0 && (
+            <div className="mt-3">
+              <button type="button" onClick={() => setShowActions((v) => !v)} aria-expanded={showActions} className={`text-xs font-bold ${p3 ? 'text-[#4b8fd9]' : 'text-gray-400'}`}>
+                它替你做过的事（{actions.length}）{showActions ? '▴' : '▾'}
+              </button>
+              {showActions && (
+                <div className="mt-2 space-y-1.5" data-actions-list>
+                  {actions.map((a) => (
+                    <div key={a.id} data-action-row className={`flex items-start gap-2 text-[12px] leading-relaxed ${a.undoneAt ? (p3 ? 'text-[#6a7ba3]' : 'text-gray-400') : (p3 ? 'text-[#0a1230]' : 'text-gray-600 dark:text-gray-300')}`}>
+                      <span className="min-w-0 flex-1">
+                        <span className={`font-bold ${a.undoneAt ? 'line-through' : ''}`}>{a.label}</span>
+                        <span className={`ml-1 ${a.undoneAt ? 'line-through' : ''}`}>{a.summary}</span>
+                        <span className={`ml-1 text-[10px] ${p3 ? 'text-[#6a7ba3]' : 'text-gray-400'}`}>{dayLabelCN(toLocalDateKey(new Date(a.createdAt)), toLocalDateKey())} {new Date(a.createdAt).toTimeString().slice(0, 5)}</span>
+                      </span>
+                      <span className="shrink-0 text-[10px]">{a.undoneAt ? '已撤销' : a.undoError ? '撤销失败' : ''}</span>
                     </div>
                   ))}
                 </div>

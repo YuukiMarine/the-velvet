@@ -1,5 +1,5 @@
 import Dexie, { Table } from 'dexie';
-import { User, Attribute, Activity, Achievement, Skill, DailyEvent, DailyDivination, LongReading, FateGlimpse, Settings, Todo, TodoCompletion, PeriodSummary, WeeklyGoal, Persona, Shadow, BattleState, Confidant, ConfidantEvent, CounselSession, CounselArchive, CallingCard, LedgerEntry, Budget, LedgerAsset, Wish, NavigatorSessionRow, NavigatorMessageRow, NavigatorMemo, NavigatorPreset, TowerStratum, OnlineCardFace, ActivityImage, ActivityImageData, SeasonStamp, Quest, BgmTrack } from '@/types';
+import { User, Attribute, Activity, Achievement, Skill, DailyEvent, DailyDivination, LongReading, FateGlimpse, Settings, Todo, TodoCompletion, PeriodSummary, WeeklyGoal, Persona, Shadow, BattleState, Confidant, ConfidantEvent, CounselSession, CounselArchive, CallingCard, LedgerEntry, Budget, LedgerAsset, Wish, NavigatorSessionRow, NavigatorMessageRow, NavigatorMemo, NavigatorPreset, TowerStratum, OnlineCardFace, ActivityImage, ActivityImageData, SeasonStamp, Quest, BgmTrack, NavigatorActionRow } from '@/types';
 
 export class PGTDatabase extends Dexie {
   users!: Table<User>;
@@ -30,6 +30,7 @@ export class PGTDatabase extends Dexie {
   navigatorSessions!: Table<NavigatorSessionRow>;   // F6 黑猫会话（每日每人格）
   navigatorMessages!: Table<NavigatorMessageRow>;   // F6 会话消息
   navigatorMemos!: Table<NavigatorMemo>;            // F6 原子记忆（三源 + F8 图片卡共用）
+  navigatorActions!: Table<NavigatorActionRow>;     // 第 28 批 助手替你做过的事（操作日志 + 撤销材料；本地专属）
   stamps!: Table<SeasonStamp>;                      // 第 6 轮 岁时印章
   quests!: Table<Quest>;                            // 第 6 轮 委托板（每周三张）
   navigatorPresets!: Table<NavigatorPreset>;        // F6 自定义人格（内置随代码，不入表）
@@ -321,6 +322,12 @@ export class PGTDatabase extends Dexie {
     // 本地专属：不进 SYNC_TABLES、不进主备份；「清空数据」清，导入备份不动它。
     this.version(19).stores({
       bgmTracks: 'id, createdAt'
+    });
+
+    // v20（第 28 批 · G2）：助手操作日志。一张卡一行（id = 卡片消息 id），撤销要用的改前值在 undoJson；
+    // 本地专属：不进 SYNC_TABLES、不进主备份；「清空数据」清（在 ALL_LOCAL_TABLES 里）。
+    this.version(20).stores({
+      navigatorActions: 'id, kind, createdAt, undoneAt'
     });
   }
 }

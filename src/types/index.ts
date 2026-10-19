@@ -1153,7 +1153,30 @@ export interface NavigatorMessageRow {
   heavy?: boolean;
   /** 这条回复用到的记忆 id（第 26 批 · 「想起了两件事」小标，挂在一轮回复的第一泡上） */
   recalled?: string[];
+  /** 这张卡执行过又被撤销了（第 28 批 · G2）：卡片标「已撤销」，实录写【已撤销】 */
+  undone?: boolean;
+  /** 执行成功的时刻（第 28 批）：回执旁的「撤销」按它算 10 分钟 */
+  actionAt?: number;
   createdAt: number;
+}
+
+/**
+ * 助手替你做过的事（第 28 批 · G2）：一张卡一行，id = 卡片消息 id（天然幂等）。
+ * 本机表：不上云、不进主备份；「清空数据」清。undoJson 是撤销要用的改前值（没有 = 这步没法撤）。
+ */
+export interface NavigatorActionRow {
+  id: string;
+  sessionId?: string;
+  presetId?: string;
+  kind: string;
+  label: string;
+  summary: string;
+  draftJson: string;
+  undoJson?: string;
+  receipt: string;
+  createdAt: number;
+  undoneAt?: number;
+  undoError?: string;
 }
 
 /** 原子记忆（三源：对话沉淀/观察日记/手动；F8 图片记忆卡共用此表 source='image'；

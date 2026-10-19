@@ -9,7 +9,7 @@
  * thief/tv = 中性深色兜底（其风格化随各自频道批次）。
  * 会话：当日延续、跨天清流（store/navigator，Batch1 仅内存）。
  */
-import { useEffect, useRef, useState, useSyncExternalStore, useLayoutEffect } from 'react';
+import { useEffect, useReducer, useRef, useState, useSyncExternalStore, useLayoutEffect } from 'react';
 import { snapshotFile } from '@/utils/imageCrop';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
@@ -34,7 +34,7 @@ import { peekOwnDay, subscribeOwnDay } from '@/utils/navigatorDay';
 import { ImageCropDialog } from '@/components/ImageCropDialog';
 import { mergedNavigatorPresets } from '@/constants/navigatorPresets';
 import {
-  ACTION_META, buildPreviewLines, emptyDraft, executeDraft, navAttrName,
+  ACTION_META, buildPreviewLines, emptyDraft, navAttrName,
   type NavigatorActionKind, type NavigatorDraft,
 } from '@/utils/navigatorRegistry';
 import { themeToChannel } from '@/ui/channel';
@@ -44,6 +44,7 @@ import { getVisionAIConfig } from '@/utils/aiClient';
 import { freshUnreadSummary, requestOpenSummary } from '@/utils/reportNotice';
 import { CameraIcon, MicIcon } from '@/components/settingsIcons';
 import { cardImagesOf, setCardImages, takeCardImages, useCardImageList } from '@/utils/navigatorCardImages';
+import { runCardAction, undoCardAction, useActionRow, hydrateAction, canUndo } from '@/utils/navigatorActions';
 import type { PreparedImage } from '@/utils/activityImages';
 
 /** 当前人格的头像（剪影集/上传双轨；订阅 sessionId——切人格必换会话，借它触发重渲染）
@@ -591,10 +592,23 @@ export const NavigatorWindow = () => {
     if (!m.draft || busyCardId) return;
     setBusyCardId(m.id);
     try {
-      const receipt = await executeDraft(m.draft, { cardId: m.id });
-      nav.updateCard(m.id, { cardStatus: 'done', receipt });
+      // 第 28 批 · G2：走操作日志（同一张卡只执行一次；带撤销材料）
+      const { receipt } = await runCardAction({ id: m.id, draft: m.draft }, { sessionId: nav.sessionId ?? undefined, presetId: preset.id });
+      nav.updateCard(m.id, { cardStatus: 'done', receipt, actionAt: Date.now() });
     } catch (e) {
       nav.pushCat(e instanceof Error ? `没记上：${e.message}` : '没记上，稍后再试一次。');
+    } finally {
+      setBusyCardId(null);
+    }
+  };
+  // 撤销（第 28 批 · G2）：10 分钟内把改前值写回去；卡片标「已撤销」，回一句中性的结果
+  const undoCard = async (m: NavigatorMessage) => {
+    if (busyCardId) return;
+    setBusyCardId(m.id);
+    try {
+      const r = await undoCardAction(m.id);
+      if (r.ok) nav.updateCard(m.id, { undone: true });
+      nav.pushCat(r.message);
     } finally {
       setBusyCardId(null);
     }
@@ -969,7 +983,7 @@ export const NavigatorWindow = () => {
                         </div>
                       )}
                       <MessageRow m={m} sk={sk} bright={bright} p5={isP5} p4={isP4} busy={busyCardId === m.id}
-                        onConfirm={() => void confirmCard(m)} onEdit={() => editCard(m)}
+                        onConfirm={() => void confirmCard(m)} onEdit={() => editCard(m)} onUndo={() => void undoCard(m)}
                         onCancel={() => { takeCardImages(m.id); nav.updateCard(m.id, { cardStatus: 'cancelled' }); }} />
                     </div>
                   );
@@ -1300,15 +1314,27 @@ const RecalledNote = ({ ids, bright }: { ids: string[]; bright: boolean }) => {
 };
 
 // ── 单条消息 ──
-const MessageRow = ({ m, sk, bright, p5 = false, p4 = false, busy, onConfirm, onEdit, onCancel }: {
+const MessageRow = ({ m, sk, bright, p5 = false, p4 = false, busy, onConfirm, onEdit, onCancel, onUndo }: {
   m: NavigatorMessage; sk: Skin; bright: boolean; p5?: boolean; p4?: boolean; busy: boolean;
-  onConfirm: () => void; onEdit: () => void; onCancel: () => void;
+  onConfirm: () => void; onEdit: () => void; onCancel: () => void; onUndo?: () => void;
 }) => {
   // 角标频道：红 / 黄 / 蓝（其余中性也借蓝套配色）
   const markCh: MarkChannel = p5 ? 'p5' : p4 ? 'p4' : 'p3';
   const mark = bubbleMarkOf(m.text);
   // 记录卡上挂着的图（第 28 批）：确认前显示缩略图，确认后随记录存走
   const cardImgs = useCardImageList(m.role === 'card' ? m.id : null);
+  // 操作日志行（第 28 批 · G2）：已记录的卡从库里恢复出来时补读一次，好判断还能不能撤销
+  const isDoneCard = m.role === 'card' && m.cardStatus === 'done' && !m.undone;
+  const actionRow = useActionRow(isDoneCard ? m.id : null);
+  useEffect(() => { if (isDoneCard && !actionRow) void hydrateAction(m.id); }, [isDoneCard, actionRow, m.id]);
+  // 10 分钟窗口到了按钮自己消失：有按钮时每半分钟看一眼
+  const [, tickUndo] = useReducer((x: number) => x + 1, 0);
+  const undoable = isDoneCard && canUndo(actionRow);
+  useEffect(() => {
+    if (!undoable) return;
+    const t = window.setInterval(tickUndo, 30_000);
+    return () => window.clearInterval(t);
+  }, [undoable]);
   if (m.role === 'summary') {
     // compact 产物：早前对话的折叠占位
     return (
@@ -1388,8 +1414,9 @@ const MessageRow = ({ m, sk, bright, p5 = false, p4 = false, busy, onConfirm, on
       <div className="flex items-center gap-2">
         <span aria-hidden>{meta.icon}</span>
         <span className="flex-1 text-[15.4px] font-black">{meta.label}</span>
-        {done && <span className={sk.stamp} style={sk.stampStyle}>已记录 ✓</span>}
-        {cancelled && <span className="text-[11px] font-bold opacity-60">已取消</span>}
+        {done && !m.undone && <span className={sk.stamp} style={sk.stampStyle}>已记录 ✓</span>}
+        {m.undone && <span className="text-[11px] font-bold opacity-60">已撤销</span>}
+        {cancelled && !m.undone && <span className="text-[11px] font-bold opacity-60">已取消</span>}
       </div>
       <div className="mt-2 space-y-1">
         {lines.map((l, i) => (
@@ -1425,7 +1452,12 @@ const MessageRow = ({ m, sk, bright, p5 = false, p4 = false, busy, onConfirm, on
           >
             <CatFace className="h-4 w-4" fillWhenPhoto={false} />
           </span>
-          <p className="min-w-0 flex-1 text-[13px] font-bold leading-relaxed opacity-80 [overflow-wrap:anywhere]">{m.receipt}</p>
+          <p className={`min-w-0 flex-1 text-[13px] font-bold leading-relaxed opacity-80 [overflow-wrap:anywhere] ${m.undone ? 'line-through' : ''}`}>{m.receipt}</p>
+          {undoable && onUndo && (
+            <button type="button" disabled={busy} onClick={onUndo} aria-label="撤销这次操作" className={`${sk.cardBtnText} shrink-0`}>
+              撤销
+            </button>
+          )}
         </div>
       )}
     </div>

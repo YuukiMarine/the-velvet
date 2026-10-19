@@ -77,6 +77,10 @@ export interface NavigatorMessage {
   heavy?: boolean;
   /** 这条回复用到的记忆 id（第 26 批 · 「想起了两件事」小标，挂在一轮回复的第一泡上） */
   recalled?: string[];
+  /** 执行过又撤销了（第 28 批 · G2）：卡片标「已撤销」，实录写【已撤销】 */
+  undone?: boolean;
+  /** 执行成功的时刻（第 28 批）：回执旁「撤销」按它算 10 分钟 */
+  actionAt?: number;
   createdAt: number;
   /** 归属会话：上拉加载的历史消息与今日会话共存于 messages，凭它区分（上下文只用今日的） */
   sessionId?: string;
@@ -145,7 +149,7 @@ interface NavigatorState {
   pushCat: (text: string) => void;
   pushUser: (text: string, imageDataUrl?: string) => void;
   pushCard: (draft: NavigatorDraft) => string;
-  updateCard: (id: string, patch: Partial<Pick<NavigatorMessage, 'draft' | 'cardStatus' | 'userEdited' | 'receipt'>>) => void;
+  updateCard: (id: string, patch: Partial<Pick<NavigatorMessage, 'draft' | 'cardStatus' | 'userEdited' | 'receipt' | 'undone' | 'actionAt'>>) => void;
 }
 
 const msg = (partial: Omit<NavigatorMessage, 'id' | 'createdAt'>): NavigatorMessage => ({
@@ -252,6 +256,8 @@ const toRow = (m: NavigatorMessage, sessionId: string): NavigatorMessageRow => (
   receipt: m.receipt,
   heavy: m.heavy,
   recalled: m.recalled,
+  undone: m.undone,
+  actionAt: m.actionAt,
   createdAt: m.createdAt,
 });
 
@@ -279,6 +285,8 @@ const fromRow = (r: NavigatorMessageRow): NavigatorMessage => ({
   receipt: r.receipt,
   heavy: r.heavy,
   recalled: r.recalled,
+  undone: r.undone,
+  actionAt: r.actionAt,
   createdAt: r.createdAt,
   sessionId: r.sessionId,
 });
@@ -418,7 +426,8 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
       .filter((m) => m.role === 'card' && m.draft)
       .slice(-10)
       .map((m) => {
-        const status = m.cardStatus === 'done' ? '已确认生效' : m.cardStatus === 'cancelled' ? '已取消' : '待用户确认';
+        // 撤销过的（第 28 批）：模型得知道它已经不生效了，别再当成办完了
+        const status = m.undone ? '已撤销' : m.cardStatus === 'done' ? '已确认生效' : m.cardStatus === 'cancelled' ? '已取消' : '待用户确认';
         // 用户手改过就显式标出来：否则改后的卡和模型自己提议的那版在实录里长得一模一样，
         // 模型无从得知内容被动过（用户上报「Agent 不知道我改没改 / 取消没取消卡片」）
         const edited = m.userEdited ? ' · 用户已手改' : '';

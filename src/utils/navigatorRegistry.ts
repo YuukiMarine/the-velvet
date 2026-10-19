@@ -239,8 +239,27 @@ export function draftReady(draft: NavigatorDraft): boolean {
   }
 }
 
-/** 执行草稿 → 黑猫口吻的回执文案。直接调用现有 store action，反馈弹窗免费继承。 */
+/**
+ * 撤销要用的改前值（第 28 批 · G2）：随操作日志存成 JSON，`navigatorActions.undoCardAction` 按它写回去。
+ * null = 这一步没法撤（比如「今天已经完成过了」什么都没做）。
+ */
+export type UndoSpec =
+  | { kind: 'activity'; activityId: string }
+  | { kind: 'todo'; todoId: string }
+  | { kind: 'ledger'; entryId: string }
+  | { kind: 'completeTodo'; todoId: string }
+  /** before 里「原来没有」的字段存 null（JSON 会丢 undefined；写回时换回 undefined） */
+  | { kind: 'editTodo'; todoId: string; before: Record<string, unknown> }
+  | { kind: 'memoDelete'; memoId: string }
+  | { kind: 'memoRestore'; memoId: string; before: { muted?: boolean; pinned?: boolean } };
+
+/** 执行草稿 → 回执文案（直接调用现有 store action，反馈弹窗免费继承）。日志 / 撤销走 executeDraftDetailed */
 export async function executeDraft(draft: NavigatorDraft, opts: { cardId?: string } = {}): Promise<string> {
+  return (await executeDraftDetailed(draft, opts)).receipt;
+}
+
+/** 执行草稿，连同撤销要用的改前值一起回（第 28 批 · G2）。回执写中性事实，口吻交给人格自己的回复 */
+export async function executeDraftDetailed(draft: NavigatorDraft, opts: { cardId?: string } = {}): Promise<{ receipt: string; undo: UndoSpec | null }> {
   const s = useAppStore.getState();
   switch (draft.kind) {
     case 'activity': {
@@ -263,15 +282,16 @@ export async function executeDraft(draft: NavigatorDraft, opts: { cardId?: strin
       // 还会进卡片实录喂给模型——别的人格看见就学过去了。口吻交给人格自己的回复
       const unlockLine = unlockHints.achievements + unlockHints.skills > 0 ? '另有新解锁，去看看。' : '';
       const imageLine = imageCount ? `附了 ${imageCount} 张图。` : '';
-      return gains
+      const receipt = gains
         ? `已记录「${draft.text.trim()}」：${gains}。${imageLine}${unlockLine}`.trim()
         : `已记录「${draft.text.trim()}」（没有加点）。${imageLine}${unlockLine}`.trim();
+      return { receipt, undo: { kind: 'activity', activityId } };
     }
     case 'todo': {
       // 截止与每日互斥（任务页「更多设置」同口径）：带截止的一律单次
       const deadline = draft.deadline || undefined;
       const repeatDaily = draft.repeatDaily && !deadline;
-      await s.addTodo({
+      const todoId = await s.addTodo({
         title: draft.title.trim(),
         attribute: draft.attribute,
         points: draft.points,
@@ -285,9 +305,10 @@ export async function executeDraft(draft: NavigatorDraft, opts: { cardId?: strin
         deadlineTime: deadline && isDeadlineTime(draft.deadlineTime) ? draft.deadlineTime : undefined,
       });
       const due = deadline ? `，截止 ${deadlineLabelCN(deadline, toLocalDateKey(), isDeadlineTime(draft.deadlineTime) ? draft.deadlineTime : undefined)}` : '';
-      return repeatDaily
+      const receipt = repeatDaily
         ? `已加入每日清单：「${draft.title.trim()}」。`
         : `已加入待办：「${draft.title.trim()}」${due}。`;
+      return { receipt, undo: { kind: 'todo', todoId } };
     }
     case 'ledger': {
       const saved = draft.direction === 'expense'
@@ -310,23 +331,24 @@ export async function executeDraft(draft: NavigatorDraft, opts: { cardId?: strin
           });
       await s.rewardForLedgerEntry(saved);
       const note = draft.note.trim() ? `（${draft.note.trim()}）` : '';
-      return draft.direction === 'expense'
+      const receipt = draft.direction === 'expense'
         ? `已记账：支出 ¥${draft.amount}${note}。`
         : `已记账：收入 ¥${draft.amount}${note}。`;
+      return { receipt, undo: { kind: 'ledger', entryId: saved.id } };
     }
     case 'completeTodo': {
       const result = await s.completeTodo(draft.todoId);
-      if (!result) return `「${draft.todoTitle}」今天已经完成过了，这次没重复记。`;
+      if (!result) return { receipt: `「${draft.todoTitle}」今天已经完成过了，这次没重复记。`, undo: null };
       const unlockLine = result.unlockHints.achievements + result.unlockHints.skills > 0 ? '另有新解锁，去看看。' : '';
-      return `已完成「${draft.todoTitle}」，加点到账。${unlockLine}`.trim();
+      return { receipt: `已完成「${draft.todoTitle}」，加点到账。${unlockLine}`.trim(), undo: { kind: 'completeTodo', todoId: draft.todoId } };
     }
     case 'editTodo': {
       const t = s.todos.find((x) => x.id === draft.todoId);
-      if (!t || !t.isActive || t.archivedAt) return `「${draft.todoTitle}」已经不在清单里了，这次没改。`;
+      if (!t || !t.isActive || t.archivedAt) return { receipt: `「${draft.todoTitle}」已经不在清单里了，这次没改。`, undo: null };
       if (draft.archive) {
         // isActive=false：store 会盖上 archivedAt，不算完成、不发点数（Bug fix #7 同口径）
         await s.updateTodo(t.id, { isActive: false });
-        return `「${t.title}」已收进归档（归档里随时能恢复）。`;
+        return { receipt: `「${t.title}」已收进归档（归档里随时能恢复）。`, undo: { kind: 'editTodo', todoId: t.id, before: { isActive: true, archivedAt: undefined } } };
       }
       const patch: Partial<Todo> = {};
       if (draft.title !== undefined && draft.title.trim()) patch.title = draft.title.trim();
@@ -343,12 +365,15 @@ export async function executeDraft(draft: NavigatorDraft, opts: { cardId?: strin
         if (!draft.deadline) patch.deadlineTime = undefined;
       }
       if (draft.deadlineTime !== undefined) patch.deadlineTime = isDeadlineTime(draft.deadlineTime) && (patch.deadline ?? t.deadline) ? draft.deadlineTime : undefined;
+      // 改前值：只记真正要改的那几个字段（第 28 批 · 撤销）；原来没有的存 null，JSON 才不会把它丢掉
+      const before: Record<string, unknown> = {};
+      for (const k of Object.keys(patch) as Array<keyof Todo>) before[k] = t[k] === undefined ? null : t[k];
       await s.updateTodo(t.id, patch);
-      return `已修改：「${patch.title ?? t.title}」。`;
+      return { receipt: `已修改：「${patch.title ?? t.title}」。`, undo: { kind: 'editTodo', todoId: t.id, before } };
     }
     case 'bigdeal': {
       const steps = draft.steps.map(t => t.trim()).filter(Boolean);
-      await s.addTodo({
+      const todoId = await s.addTodo({
         title: draft.title.trim(),
         attribute: draft.attribute,
         points: draft.points,
@@ -359,23 +384,24 @@ export async function executeDraft(draft: NavigatorDraft, opts: { cardId?: strin
         deadline: draft.deadline || undefined,
         steps: steps.map(t => ({ id: uuidv4(), title: t, source: 'ai' as const })),
       });
-      return `大事「${draft.title.trim()}」已立好，拆成 ${steps.length} 步。`;
+      return { receipt: `大事「${draft.title.trim()}」已立好，拆成 ${steps.length} 步。`, undo: { kind: 'todo', todoId } };
     }
     case 'remember': {
       // 用户亲口让记的：置顶（永不遗忘）、重要度拉满；按记忆隔离规则归当前人格
       const text = draft.text.trim().slice(0, 80);
       const owner = memoOwner(s.settings.navigatorPresetId);
+      const memoId = uuidv4();
       await db.navigatorMemos.put({
-        id: uuidv4(), source: 'manual', text, importance: 5, pinned: true, status: 'active', createdAt: new Date(),
+        id: memoId, source: 'manual', text, importance: 5, pinned: true, status: 'active', createdAt: new Date(),
         ...(owner ? { presetId: owner } : {}),
       });
-      return `已记住：「${text}」（置顶，不会遗忘）。`;
+      return { receipt: `已记住：「${text}」（置顶，不会遗忘）。`, undo: { kind: 'memoDelete', memoId } };
     }
     case 'forget': {
       const m = await db.navigatorMemos.get(draft.memoId);
-      if (!m || m.status !== 'active') return `「${draft.memoText}」已经不在记忆里了。`;
+      if (!m || m.status !== 'active') return { receipt: `「${draft.memoText}」已经不在记忆里了。`, undo: null };
       await db.navigatorMemos.update(m.id, { status: 'archived', invalidAt: new Date(), muted: true, pinned: false });
-      return `已忘掉：「${m.text}」。`;
+      return { receipt: `已忘掉：「${m.text}」。`, undo: { kind: 'memoRestore', memoId: m.id, before: { muted: !!m.muted, pinned: !!m.pinned } } };
     }
   }
 }
