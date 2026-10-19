@@ -15,6 +15,9 @@ const formatBytes = (bytes: number): string =>
 export function OrphanImagesPrompt() {
   const prompt = useAppStore(s => s.orphanImagesPrompt);
   const dismiss = useAppStore(s => s.dismissOrphanImagesPrompt);
+  // 导入后：备份里没有、保留了本机原样的几项（第 31 批）。配图询问窗先问，这句排在它后面
+  const kept = useAppStore(s => s.importKeptNotice);
+  const dismissKept = useAppStore(s => s.dismissImportKeptNotice);
   const prune = useAppStore(s => s.pruneOrphanImages);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<string | null>(null);
@@ -44,6 +47,15 @@ export function OrphanImagesPrompt() {
         busy={busy}
         onConfirm={() => void onDelete()}
         onCancel={dismiss}
+      />
+      <ConfirmDialog
+        isOpen={!prompt && result === null && !!kept?.length}
+        title="导入完成"
+        description={`这份备份里没有「${(kept ?? []).join('」「')}」——多半是旧版本导出的。这几项保留了这台设备原来的，没有清空。`}
+        confirmText="好"
+        cancelText="关闭"
+        onConfirm={dismissKept}
+        onCancel={dismissKept}
       />
       <ConfirmDialog
         isOpen={result !== null}

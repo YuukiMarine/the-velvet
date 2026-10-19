@@ -6,7 +6,9 @@ import { computeTotalLv } from '@/utils/lvTiers';
 import { normalizeAttributeLevelTitles } from '@/utils/attributeLevelTitles';
 import { resolveLevelDifficulty } from '@/utils/levelDifficulty';
 import { buildPresencePatch } from '@/utils/profilePresence';
-import { mergeTable, type MergeOptions, type TableMergeStats } from './syncMerge';
+import { mergeTable, mergeSessionRows, sessionPairKey, type MergeOptions, type TableMergeStats } from './syncMerge';
+import { slimSessionRow } from './backupFormat';
+import type { NavigatorSessionRow } from '@/types';
 
 /**
  * 哪些表受"同伴"分组开关（syncConfidantsToCloud）管辖——
@@ -189,6 +191,7 @@ function getSkipSet(): Set<string> {
   if (s.syncNavigatorToCloud !== true) {
     skip.add('navigatorPresets');
     skip.add('navigatorMemos');
+    skip.add('navigatorSessions');
   }
   return skip;
 }
@@ -215,10 +218,12 @@ function getSkipSet(): Set<string> {
  *                                   battleState 记着"我在第几层"，strata 才是层本身，
  *                                   漏一张就是换设备后塔空了（FS1 修复：strata 补挂）。
  *   navigatorPresets/Memos ········ 黑猫自定义人格 + 原子记忆，opt-in（syncNavigatorToCloud）。
+ *   navigatorSessions ············· 助手会话行（第 31 批，同一个 opt-in）：只带每天的摘要和「这天开没开口」，
+ *                                   相处阶段 / 认识第几天 / 上次聊到哪靠它；拉取按（日期, 人格）合并，见 localizeCloudRows。
  *
  * 故意不上云（本地专属，改动前先想清楚）：
  *   counselSessions ··············· 谏言聊天原文（1 小时后本地也销毁）
- *   navigatorSessions/Messages ···· 黑猫聊天原文，同上口径
+ *   navigatorMessages ············· 黑猫聊天原文，同上口径（会话行本身见上，只带摘要）
  *   ledgerEntries/budgets/assets ·· F5 财务数据，永不上云（PRD §F5.8）
  */
 const SYNC_TABLES = [
@@ -259,6 +264,9 @@ const SYNC_TABLES = [
   // 仅 settings.syncNavigatorToCloud === true 才上云）。聊天原文两表不在此列。
   'navigatorPresets',
   'navigatorMemos',
+  // 第 31 批：助手会话行（只带摘要 / 这天开没开口；同一个 opt-in）。每台设备每天各建各的一行，
+  // 拉取时按（日期, 人格）合并而不是整表覆盖（本机那行挂着本机的聊天原文），见 localizeCloudRows
+  'navigatorSessions',
   // ⚠️ F5 心相记账（ledgerEntries / budgets / assets）故意不列于此：财务数据始终只存本地、永不上云（PRD §F5.8）。
 ] as const;
 
@@ -617,6 +625,10 @@ function stripForCloud(key: string, rows: Row[], includeApiKey: boolean): Row[] 
       return rest;
     });
   }
+  if (key === 'navigatorSessions') {
+    // 吞话片段 / 今天早些时候的压缩是本机聊天的一部分，不上云（第 31 批）
+    return rows.map(r => (r && typeof r === 'object' ? slimSessionRow(r as unknown as NavigatorSessionRow) as unknown as Row : r));
+  }
   if (key === 'summaries') {
     // 追问用的原始 prompt（reqContext）里有愿望标题和记录原文：绕过了「愿望默认只存本地」，上云前剥掉。
     // 代价是别的设备拉到这份总结后不能再追问（那台没有上下文）；本机拉取时会把自己的补回去。
@@ -834,7 +846,10 @@ const pushAllInner = async (opts: { force?: boolean } = {}): Promise<void> => {
  */
 const DEVICE_SETTING_KEYS = ['syncExcludedTables', 'syncConfidantsToCloud', 'syncCloudApiKey', 'syncWishesToCloud', 'syncNavigatorToCloud',
   // 导入音乐（第 13 轮 B 组）：曲目只在本机，槽位 id 在别的设备上没有意义
-  'bgmEnabled', 'bgmVolume', 'bgmBattleTrackId', 'bgmBossTrackId', 'bgmTowerTrackId', 'bgmHomeTrackIds', 'bgmNoticeSeen'] as const;
+  'bgmEnabled', 'bgmVolume', 'bgmBattleTrackId', 'bgmBossTrackId', 'bgmTowerTrackId', 'bgmHomeTrackIds', 'bgmNoticeSeen',
+  // 第 31 批：只对这台设备有意义的几个开关——自动加到系统日历（原生才有）、AI 写完的本机通知、
+  // 原生工具调用试验（看这台设备配的服务商）、响应系统静音（iOS / 安卓默认值不同）
+  'todoAutoCalendar', 'aiJobDoneNotify', 'navigatorNativeTools', 'soundRespectSilent'] as const;
 
 /** 全量拉取：用云端数据覆盖本地 Dexie，然后刷新 Zustand 状态。同一时间只跑一件（见 runExclusive） */
 export const pullAll = (): Promise<void> => runExclusive('拉取', pullAllInner);
@@ -878,6 +893,35 @@ export async function localizeCloudRows(key: string, rows: Row[]): Promise<Row[]
         return { ...r, weather: wById.get(id) };
       });
     }
+  }
+  if (key === 'navigatorSessions') {
+    // 会话行按（日期, 人格）对齐（第 31 批）：每台设备每天各建各的一行、id 不同，本机那行挂着本机的聊天原文——
+    // 本机有的那天一律留本机那行（只把云端多出来的摘要 / 开口标记补进去），本机没有的那天才用云端的
+    const local = (await db.navigatorSessions.toArray()) as unknown as Row[];
+    const cloudByPair = new Map<string, Row>();
+    for (const r of toWrite) if (r && !cloudByPair.has(sessionPairKey(r))) cloudByPair.set(sessionPairKey(r), r);
+    const pairs = new Set<string>();
+    const ids = new Set<string>();
+    const merged: Row[] = [];
+    for (const l of local) {
+      const c = cloudByPair.get(sessionPairKey(l));
+      merged.push(c ? mergeSessionRows(l, c) : l);
+      pairs.add(sessionPairKey(l));
+      ids.add(String(l.id));
+    }
+    for (const c of toWrite) {
+      if (!c || pairs.has(sessionPairKey(c)) || ids.has(String(c.id))) continue;
+      merged.push(c);
+      pairs.add(sessionPairKey(c));
+      ids.add(String(c.id));
+    }
+    toWrite = merged;
+  }
+  if (key === 'todos' || key === 'weeklyGoals') {
+    // completedAt 在 ISO_STRING_KEYS 里（为了愿望步骤的字符串字段），任务 / 本周目标的 completedAt 却是 Date：
+    // 拉取后成了字符串（老问题，第 31 批补）——按表还原
+    toWrite = toWrite.map(r => (r && typeof r.completedAt === 'string' && !isNaN(new Date(r.completedAt).getTime())
+      ? { ...r, completedAt: new Date(r.completedAt) } : r));
   }
   if (key === 'summaries') {
     // 云端不存追问上下文（见 stripForCloud）：本机原来有的补回来，追问功能不因一次拉取而失效
@@ -979,6 +1023,14 @@ async function writePlansLocally(plans: Array<{ key: SyncKey; rows: Row[] }>): P
   });
   // 重载 Zustand in-memory 状态
   await useAppStore.getState().initializeApp();
+  // 拉回来的可能有新的自定义人格：人格表「读过了」的标记作废，下次用到时重读（第 31 批）
+  if (plans.some(p => p.key === 'navigatorPresets')) {
+    try {
+      const { invalidateNavigatorPresets, useNavigatorStore } = await import('@/store/navigator');
+      invalidateNavigatorPresets();
+      void useNavigatorStore.getState().loadPresets();
+    } catch { /* 黑猫模块没加载过：下次加载自然读最新的 */ }
+  }
   // 拉回来的可能是**未做过任务×终端合并迁移**的老设备数据，这里补跑一次；已迁移则读到标记瞬时返回
   try {
     await useAppStore.getState().runTasksMergeMigration();
@@ -1245,7 +1297,10 @@ export const computeSyncDiff = async (): Promise<SyncDiff | null> => {
   const localLatest = await computeLocalLatest();
 
   const hasDiff = tables.some(t => t.diff !== 0);
-  const significant = tables.some(t => {
+  // 助手会话行（第 31 批）按（日期, 人格）合并、每台设备各有各的行，两边条数本来就对不上——
+  // 不让它触发「条目差异」拦截（真有别处的改动由推送前的版本比对拦下、走查阅合并）
+  const guarded = tables.filter(t => t.key !== 'navigatorSessions');
+  const significant = guarded.some(t => {
     if (Math.abs(t.diff) >= SIGNIFICANT_DIFF_THRESHOLD) return true;
     if (t.localCount === 0 && t.cloudCount > 0) return true;
     if (t.cloudCount === 0 && t.localCount > 0) return true;
@@ -1254,7 +1309,7 @@ export const computeSyncDiff = async (): Promise<SyncDiff | null> => {
 
   // 方向性判据：只要有**任何一张表**云端比本地多，自动推送就会造成丢失（见字段注释）。
   // 不设容差 —— 少一条也是丢，且在整表覆盖模型下"云端多出来的是什么"本就无法自动判断。
-  const cloudExceedsLocal = tables.some(t => t.cloudCount > t.localCount);
+  const cloudExceedsLocal = guarded.some(t => t.cloudCount > t.localCount);
 
   const recommend: SyncDiff['recommend'] =
     localTotal === cloudTotal ? 'skip' : localTotal > cloudTotal ? 'push' : 'pull';

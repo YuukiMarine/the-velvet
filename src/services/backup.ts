@@ -7,7 +7,9 @@
  *     备份是用户自己的恢复文件，带着 Key 换设备 / 重装恢复不用重填；要不要上云另由同步里的「AI 模型 API」
  *     开关管（默认关）。以前只剥了 summaryApiKey、各家档案里的 Key 一直在，恢复后当前那家反而要重填；
  *   - users 表：剥离 avatarDataUrl（base64 头像体积大，导入后可重新上传）；
- *   - confidants 表：剥离 customAvatarDataUrl（长按上传的自定义头像，语义上属本地私有）。
+ *   - confidants 表：剥离 customAvatarDataUrl（长按上传的自定义头像，语义上属本地私有）；
+ *   - navigatorSessions 表（v11 起带）：只带每天的摘要和「这天开没开口」（相处时长、上次聊到哪靠它），
+ *     不带聊天原文和吞话片段（navigatorMessages 永不进备份）。
  *
  * 本文件只做纯函数 / IO（IndexedDB 读取、文件下载/分享、剪贴板、FileReader）；
  * 一切 UI 状态（提示文案、复制成功标记等 setState）由调用方（pages/Account.tsx）自行维护。
@@ -15,6 +17,7 @@
 import { db } from '@/db';
 import { toLocalDateKey } from '@/store';
 import { exportBackup } from '@/utils/native';
+import { BACKUP_VERSION, slimSessionRow } from '@/services/backupFormat';
 
 /** 计算字符串体积的人类可读标签（KB / MB） */
 export const sizeOf = (s: string): string => {
@@ -79,7 +82,8 @@ export const buildExportJson = async (): Promise<string> => {
     //     若备份也不带，用户就一条迁移路径都没有——换机/重装即全灭。
     //     它只落本地文件、由用户自己保管，与"不上云"的承诺不冲突。
     //   · navigatorPresets/navigatorMemos：黑猫人格与原子记忆默认 opt-out 不上云，同上理由。
-    //     （navigatorSessions/Messages 是 7 天即焚的聊天原文，与 counselSessions 同口径，故意不带。）
+    //     （navigatorMessages 是 7 天即焚的聊天原文，与 counselSessions 同口径，故意不带；
+    //       navigatorSessions 的会话行不是原文——v11 起只带摘要那几个字段，见下）
     callingCards: await db.callingCards.toArray(),
     ledgerEntries: await db.ledgerEntries.toArray(),
     budgets: await db.budgets.toArray(),
@@ -97,8 +101,11 @@ export const buildExportJson = async (): Promise<string> => {
     // ── 第 6 轮：岁时印章 ──
     stamps: await db.stamps.toArray().catch(() => []),
     quests: await db.quests.toArray().catch(() => []),
+    // ── v11（第 31 批）：助手会话行（只带摘要 / 这天开没开口）。相处阶段、认识第几天、上次聊到哪都按它算，
+    //    不带的话恢复备份 = 助手回到「初次见面」 ──
+    navigatorSessions: (await db.navigatorSessions.toArray().catch(() => [])).map(slimSessionRow),
     _exportedAt: new Date().toISOString(),
-    _version: 10,
+    _version: BACKUP_VERSION,
   };
   const json = JSON.stringify(data);
   // 出口校验：确保产生的 JSON 字符串可被原样解析回来。

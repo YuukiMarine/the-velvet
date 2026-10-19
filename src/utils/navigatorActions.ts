@@ -122,6 +122,17 @@ async function applyUndo(spec: UndoSpec): Promise<string> {
       if (!t) return '那条任务已经不在了。';
       // null = 原来没有这个字段：写回 undefined（Dexie update 会把它清掉）
       const before = Object.fromEntries(Object.entries(spec.before).map(([k, v]) => [k, v === null ? undefined : v])) as Partial<Todo>;
+      // 第 31 批：改完之后别处又动过的字段（另一台设备同步过来、任务页手改）不往回改，免得把那次改动冲掉
+      if (spec.after) {
+        const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+        const changed = Object.keys(spec.after).filter((k) => !same((t as unknown as Record<string, unknown>)[k], spec.after?.[k]));
+        for (const k of changed) delete (before as Record<string, unknown>)[k];
+        // 归档那次：别处已经把它恢复了（isActive 变了），archivedAt 也别再动
+        if (changed.includes('isActive')) delete (before as Record<string, unknown>).archivedAt;
+        if (!Object.keys(before).length) return `「${t.title}」后来又被改过了，这次就不往回改了。`;
+        await s.updateTodo(spec.todoId, before);
+        return changed.length ? `「${t.title}」改回去了；后来别处又改过的那几项没动。` : `「${t.title}」改回原来的样子了。`;
+      }
       await s.updateTodo(spec.todoId, before);
       return `「${t.title}」改回原来的样子了。`;
     }

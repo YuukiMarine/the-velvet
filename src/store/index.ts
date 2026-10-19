@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { User, Attribute, Activity, Achievement, Skill, Settings, ThemeType, AttributeId, AttributeNamesKey, DailyEvent, Todo, TodoCompletion, TodoStep, FateCandidate, BigDealClearPayload, PeriodSummary, SummaryPeriod, SummaryPromptPreset, WeeklyGoal, WeeklyGoalItem, Persona, Shadow, BattleState, TowerStratum, StratumNode, DailyDivination, LongReading, LongReadingFollowUp, FateGlimpse, Confidant, ConfidantEvent, ConfidantBuff, CounselSession, CounselMessage, CounselArchive, CallingCard, NotifSlot, LedgerEntry, Budget, SpendWorth, LedgerAsset, Wish, WishProgressPoint, WishProgressSource, WishProgressCutPayload, WishProposalPayload, ReturnPayload, ReturnTier, BackfillEntry, BattleArsenal, ChainKey, AffixKind, NavigatorPreset, NavigatorMemo, RelicInstance, FinalBossFlaw, FinalePhase , MoonShadowState , SeasonStamp, Quest } from '@/types';
+import { User, Attribute, Activity, Achievement, Skill, Settings, ThemeType, AttributeId, AttributeNamesKey, DailyEvent, Todo, TodoCompletion, TodoStep, FateCandidate, BigDealClearPayload, PeriodSummary, SummaryPeriod, SummaryPromptPreset, WeeklyGoal, WeeklyGoalItem, Persona, Shadow, BattleState, TowerStratum, StratumNode, DailyDivination, LongReading, LongReadingFollowUp, FateGlimpse, Confidant, ConfidantEvent, ConfidantBuff, CounselSession, CounselMessage, CounselArchive, CallingCard, NotifSlot, LedgerEntry, Budget, SpendWorth, LedgerAsset, Wish, WishProgressPoint, WishProgressSource, WishProgressCutPayload, WishProposalPayload, ReturnPayload, ReturnTier, BackfillEntry, BattleArsenal, ChainKey, AffixKind, NavigatorPreset, NavigatorMemo, NavigatorSessionRow, RelicInstance, FinalBossFlaw, FinalePhase , MoonShadowState , SeasonStamp, Quest } from '@/types';
 import { TAROT_BY_ID } from '@/constants/tarot';
 import { summarizeCounsel, type CounselContext, type CounselConfidantBrief, type CounselRecentEvent } from '@/utils/counselAI';
 import { db } from '@/db';
@@ -19,6 +19,8 @@ import { pushWidgetSnapshot } from '@/utils/widgetSnapshot';
 import { isGrowthCategory, cycleRangeForKey, ledgerCycle, roundMoney, shiftMonth, DEFAULT_CHANNELS, UNASSIGNED_ACCOUNT, isDebtAccount, type AccountBalance } from '@/utils/ledgerFormat';
 import { chatComplete, getAIConfig, type AIConfig, type AIMessage } from '@/utils/aiClient';
 import { keepLocalAISecrets } from '@/utils/aiSecrets';
+import { clearLocalDataCaches } from '@/utils/localCaches';
+import { BACKUP_VERSION, BACKUP_TABLE_KEYS, slimSessionRow } from '@/services/backupFormat';
 import { syncCustomProvider } from '@/utils/aiProviders';
 import { buildSummaryRequest as buildSummaryRequestAI, getActiveSummaryPreset as getActiveSummaryPresetAI, type SummaryRequestData } from '@/utils/summaryAI';
 import {
@@ -78,11 +80,15 @@ export const ALL_LOCAL_TABLES = [
   'stamps',
   // 第 6 轮 委托板
   'quests',
+  // 未缔结在线好友的自裁卡面（本地缓存；第 31 批补进来：以前「清空数据」清不掉别人的头像）
+  'onlineCardFaces',
 ] as const;
 
 /** importData 的返回：导入后记录已不存在的配图有几张、占多少字节（0 张 = 不用问） */
 export interface ImportDataResult {
   orphanImages: { count: number; bytes: number };
+  /** 备份里没有、所以保留了本机原样的几项（第 31 批：老备份不再把它们清空） */
+  keptLocal: string[];
 }
 
 /**
@@ -512,6 +518,9 @@ interface AppState {
    */
   orphanImagesPrompt: { count: number; bytes: number } | null;
   dismissOrphanImagesPrompt: () => void;
+  /** 导入成功后：备份里没有、保留了本机原样的几项（App 顶层弹一句说明；第 31 批） */
+  importKeptNotice: string[] | null;
+  dismissImportKeptNotice: () => void;
   /** 用户在询问窗里点了「删除」：删之前再核对一遍记录确实不在；返回删掉的张数 */
   pruneOrphanImages: () => Promise<number>;
   addCustomAchievement: (achievement: Omit<Achievement, 'unlocked' | 'unlockedDate'>) => Promise<void>;
@@ -945,6 +954,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   wishes: [],
   bigDealClear: null,
   orphanImagesPrompt: null,
+  importKeptNotice: null,
   todos: [],
   todoCompletions: [],
   summaries: [],
@@ -2966,11 +2976,15 @@ export const useAppStore = create<AppState>((set, get) => ({
       await db.table(t).clear();
     }
     if (!opts?.keepImages) await loadActivityImageIndex(true); // 表清了，内存里的缩略图索引也要清
+    // 「清空数据」（不带 keepImages 的那次）：localStorage 里从数据派生的缓存一并清（第 31 批）；
+    // 导入备份不清——助手的「提过没有」账本按记录 id 记，导入后对得上的照样有用
+    if (!opts?.keepImages) clearLocalDataCaches();
     // 黑猫是独立 store：表清了，内存里的人格列表/消息流还留着，不重置会出现
-    //「数据已清空但猫还在接着上一句说」的错乱。
+    //「数据已清空但猫还在接着上一句说」的错乱。人格表「读过了」的标记也要撤掉，不然导入回来的自定义人格要重启才读得到
     try {
-      const { useNavigatorStore } = await import('@/store/navigator');
+      const { useNavigatorStore, invalidateNavigatorPresets } = await import('@/store/navigator');
       useNavigatorStore.setState({ messages: [], presets: [], sessionId: null, phase: 'idle' });
+      invalidateNavigatorPresets();
     } catch { /* 尚未加载过黑猫模块则无需重置 */ }
 
     set({
@@ -3170,6 +3184,22 @@ export const useAppStore = create<AppState>((set, get) => ({
       throw new Error(`JSON 格式错误：${msg}${context}`);
     }
 
+    // 1.5 认一认是不是一份能导的备份（第 31 批 · PRD §25.3 第 3 条）：以前任何能解析的 JSON 都会先清空本地再写，
+    //     回滚只在抛异常时——空的 / 残缺的 / 别的东西的 JSON 会把数据清掉还报成功
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+      throw new Error('这不是靛蓝色房间的备份文件（内容不是一份备份），本机数据没动');
+    }
+    if (Array.isArray((data as { images?: unknown }).images) && !Array.isArray(data.user)) {
+      throw new Error('这是「记录配图」图片包，不是主备份：先导入主备份（velvet-room-backup-日期.json），再到「账号与数据」导入图片包。本机数据没动');
+    }
+    const fileVersion = typeof data._version === 'number' ? data._version : 0;
+    if (fileVersion > BACKUP_VERSION) {
+      throw new Error(`这份备份来自更新版本的 App（格式 v${fileVersion}，这一版只认到 v${BACKUP_VERSION}），请先更新 App 再导入。本机数据没动`);
+    }
+    if (!Array.isArray(data.user) || data.user.length === 0 || !Array.isArray(data.attributes)) {
+      throw new Error('这份备份里没有客人档案或属性，不像是完整的备份，没有导入（本机数据没动）');
+    }
+
     // 2. 快照当前所有数据，用于失败时恢复。
     //    ⚠️ 逐表手写会漂（FS7 审查实证：旧版快照漏了 ledgerEntries/budgets/assets，
     //    而 resetAllData 会清它们 —— 于是"导入失败自动恢复"反而把整本账吃掉）。
@@ -3180,11 +3210,31 @@ export const useAppStore = create<AppState>((set, get) => ({
       snapshot[t] = await db.table(t).toArray();
     }
 
+    // 2.5 文件里缺的表保留本机那张（第 31 批）：老版本导出的备份没有记账 / 人格 / 记忆 / 宣告卡 / 窥探命运 / 助手相处记录，
+    //     以前导进来会把本机这几张悄悄清空。本机专属（永不进备份）的几张各有口径：
+    //       · 聊天原文跟着会话行走——备份带了会话行就换掉（不换就成了没主的消息），没带就连会话一起留着；
+    //       · 在线好友的自裁卡面是缓存，留着；
+    //       · 助手操作日志（撤销材料）和谏言原文不留：撤销要是作用到导入后的数据上会改错东西。
+    const hasKey = (k: string) => Array.isArray((data as Record<string, unknown>)[k]);
+    const keepTables = new Set<string>();
+    const keptLocal: string[] = [];
+    for (const { key, table, label } of BACKUP_TABLE_KEYS) {
+      if (hasKey(key)) continue;
+      keepTables.add(table);
+      if ((snapshot[table]?.length ?? 0) > 0) keptLocal.push(label);
+    }
+    if (!hasKey('navigatorSessions')) keepTables.add('navigatorMessages');
+    keepTables.add('onlineCardFaces');
+
     // 3. 写入新数据；若失败则从快照恢复
     try {
       // 清空现有数据。配图留着：它们不在主备份里、也不上云，按 activityId 挂回导入后的记录；
       // 记录不在了的成孤儿（只占空间，图片包里还能导出），比整批清掉稳妥
       await get().resetAllData({ keepImages: true });
+      for (const t of keepTables) {
+        const rows = snapshot[t];
+        if (rows && rows.length) await db.table(t).bulkAdd(rows as never[]);
+      }
 
       // 导入用户数据
       if (data.user && Array.isArray(data.user)) {
@@ -3414,7 +3464,19 @@ export const useAppStore = create<AppState>((set, get) => ({
             ...nm,
             createdAt: new Date(nm.createdAt),
             lastRecalledAt: nm.lastRecalledAt ? new Date(nm.lastRecalledAt) : undefined,
+            // 第 26 批起的几个时间字段（第 31 批补还原：以前导进来是字符串，类型写着 Date）
+            invalidAt: nm.invalidAt ? new Date(nm.invalidAt) : undefined,
+            lastUsedAt: nm.lastUsedAt ? new Date(nm.lastUsedAt) : undefined,
+            promiseClosedAt: nm.promiseClosedAt ? new Date(nm.promiseClosedAt) : undefined,
           });
+        }
+      }
+      // v11（第 31 批）：助手会话行（只有摘要 / 这天开没开口；相处阶段、认识第几天靠它）
+      if (data.navigatorSessions && Array.isArray(data.navigatorSessions)) {
+        for (const r of data.navigatorSessions as unknown[]) {
+          const ns = slimSessionRow(r as NavigatorSessionRow);
+          if (!ns || typeof ns.id !== 'string' || typeof ns.dateKey !== 'string') continue;
+          await db.navigatorSessions.put({ ...ns, createdAt: new Date(ns.createdAt), updatedAt: new Date(ns.updatedAt ?? ns.createdAt) });
         }
       }
       // v9 补挂：旧版每日事件。全字段字符串，无 Date 需还原（见 backup.ts 同处注释）
@@ -3435,7 +3497,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       let orphanImages: ImportDataResult['orphanImages'] = { count: 0, bytes: 0 };
       try { orphanImages = await findOrphanActivityImages(); } catch { /* 只是数一数 */ }
       if (orphanImages.count > 0) set({ orphanImagesPrompt: orphanImages });
-      return { orphanImages };
+      if (keptLocal.length) set({ importKeptNotice: keptLocal });
+      return { orphanImages, keptLocal };
     } catch (error) {
       console.error('导入数据失败，正在恢复原有数据', error);
 
@@ -3997,6 +4060,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   clearBigDealClear: () => set({ bigDealClear: null }),
 
   dismissOrphanImagesPrompt: () => set({ orphanImagesPrompt: null }),
+  dismissImportKeptNotice: () => set({ importKeptNotice: null }),
   pruneOrphanImages: async () => {
     set({ orphanImagesPrompt: null });
     return pruneOrphanActivityImages();

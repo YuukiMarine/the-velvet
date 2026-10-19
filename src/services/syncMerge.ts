@@ -9,7 +9,10 @@
  *   · 冲突 → 行上没有修改时间，分不出谁新：按用户选的一边（默认本机）；几张表有更好的规则：
  *       成就 / 技能 = 解锁的一边赢；任务完成 = 同一天取次数大的；每日塔罗 = 同一天取最早抽的那张
  * 行键：绝大多数表是 id；任务完成按 (todoId, date)（两台设备各自完成同一天会生成两个 id，不能都留）；
- * 每日塔罗按 date；设置 / 客人档案 / 战场状态是单行表，整表当一行。
+ * 每日塔罗按 date；助手会话行按 (dateKey, presetId)（第 31 批：每台设备每天各建一行）；
+ * 设置 / 客人档案 / 战场状态是单行表，整表当一行。
+ * 第 31 批又加了三张表的规则：助手记忆按字段合（「别再提」「作废」这类粘性标记哪边有都算、用过几次取大）；
+ * 委托板领了的一边赢、没领就换过的一边赢；助手会话行留本机那行、补上云端多出来的摘要。
  */
 
 export type MergeSide = 'local' | 'cloud';
@@ -66,9 +69,65 @@ function normalize(v: unknown): unknown {
   return v;
 }
 
+/** 助手会话行的对齐键：同一天、同一个人格就是同一行（两台设备各有各的 id） */
+export const sessionPairKey = (row: Row): string => `${String(row.dateKey ?? '')}|${String(row.presetId ?? '')}`;
+
+/** 同一天同一人格的两行会话：留 base（本机那行，消息挂在它的 id 上），缺的摘要从 other 补，开过口哪边算都算 */
+export function mergeSessionRows(base: Row, other: Row): Row {
+  const out: Row = { ...base };
+  for (const f of ['compactedSummary', 'personaSummary'] as const) {
+    if (!out[f] && other[f]) out[f] = other[f];
+  }
+  if (base.userSpoke === true || other.userSpoke === true) out.userSpoke = true;
+  else if (out.userSpoke === undefined && other.userSpoke !== undefined) out.userSpoke = other.userSpoke;
+  const bc = toTime(base.createdAt), oc = toTime(other.createdAt);
+  if (oc && (!bc || oc < bc)) out.createdAt = other.createdAt;
+  const bu = toTime(base.updatedAt), ou = toTime(other.updatedAt);
+  if (ou > bu) out.updatedAt = other.updatedAt;
+  return out;
+}
+
+/** 助手记忆的「簿记字段」：每轮召回都会动，比较两边是不是同一条时不看它们（不然几乎每条都算冲突） */
+const MEMO_BOOKKEEPING = ['lastRecalledAt', 'recallCount', 'usedCount', 'lastUsedAt'] as const;
+const withoutBookkeeping = (row: Row): Row => {
+  const out: Row = { ...row };
+  for (const k of MEMO_BOOKKEEPING) delete out[k];
+  return out;
+};
+const PROMISE_RANK: Record<string, number> = { waiting: 0, asked: 1, resolved: 2, expired: 2 };
+
+/**
+ * 同一条记忆两边不一样（第 31 批）：以用户选的那边为底，再按字段合——
+ *   · 「别再提」（muted）、作废（invalidAt / supersededBy）这类用户或整理器做过的标记，哪边有都留，有了就归档；
+ *   · 未完话头（followUp）是一次性的：哪边已经用掉（没了），合并后也没有；
+ *   · 用过几次 / 上次想起：取大的；约定问到哪一步：走得远的那边算。
+ * 人格归属、置顶、文字按底的那边（用户选的）。
+ */
+function mergeMemoRows(base: Row, other: Row): Row {
+  const out: Row = { ...base };
+  if (base.muted === true || other.muted === true) out.muted = true;
+  if (!out.invalidAt && other.invalidAt) out.invalidAt = other.invalidAt;
+  if (!out.supersededBy && other.supersededBy) out.supersededBy = other.supersededBy;
+  if (out.invalidAt || out.supersededBy) out.status = 'archived';
+  if (!base.followUp || !other.followUp) delete out.followUp;
+  for (const k of ['recallCount', 'usedCount', 'promiseDeferred'] as const) {
+    const v = Math.max(Number(base[k] ?? 0), Number(other[k] ?? 0));
+    if (v > 0) out[k] = v;
+  }
+  for (const k of ['lastRecalledAt', 'lastUsedAt', 'promiseClosedAt'] as const) {
+    if (toTime(other[k]) > toTime(out[k])) out[k] = other[k];
+  }
+  if (base.promiseCheered === true || other.promiseCheered === true) out.promiseCheered = true;
+  const br = PROMISE_RANK[String(base.promiseState ?? '')] ?? -1;
+  const or = PROMISE_RANK[String(other.promiseState ?? '')] ?? -1;
+  if (or > br) out.promiseState = other.promiseState;
+  return out;
+}
+
 /** 行键 */
 export function rowKeyOf(table: string, row: Row): string {
   if (SINGLE_ROW_TABLES.has(table)) return '__single__';
+  if (table === 'navigatorSessions') return sessionPairKey(row);
   if (table === 'todoCompletions') return `${String(row.todoId ?? '')}|${String(row.date ?? '')}`;
   if (table === 'dailyDivinations' || table === 'dailyEvents') return String(row.date ?? row.id ?? '');
   return String(row.id ?? stableStringify(row));
@@ -106,6 +165,17 @@ function resolveSpecial(table: string, local: Row, cloud: Row): Row | null {
   if (table === 'dailyDivinations') {
     const lt = toTime(local.createdAt), ct = toTime(cloud.createdAt);
     return lt && ct ? (lt <= ct ? local : cloud) : null;
+  }
+  if (table === 'quests') {
+    // 委托板（第 31 批）：领了的一边赢（两台设备各领一张不能合并后又变回没领）；都领了取早领的；
+    // 都没领、一边「换过一张」——换过的那边是用户操作过的
+    const lc = toTime(local.claimedAt), cc = toTime(cloud.claimedAt);
+    if (lc && !cc) return local;
+    if (cc && !lc) return cloud;
+    if (lc && cc) return lc <= cc ? local : cloud;
+    if (local.swapped && !cloud.swapped) return local;
+    if (cloud.swapped && !local.swapped) return cloud;
+    return null;
   }
   return null;
 }
@@ -155,6 +225,7 @@ export function rowTitle(table: string, row: Row): string {
     case 'settings': return '设置';
     case 'users': return pick('name') || '客人档案';
     case 'battleStates': return '战场状态';
+    case 'navigatorSessions': return `${String(row.dateKey ?? '')} ${String(row.presetId ?? '')}`.trim();
     case 'attributes': return String(row.id ?? '');
     default: {
       const t = pick('title', 'name', 'label', 'description', 'narrative', 'content');
@@ -189,8 +260,20 @@ export function mergeTable(table: string, localRows: Row[], cloudRows: Row[], op
       if (keep) rows.push(c);
     } else if (l && c) {
       if (stableStringify(l) === stableStringify(c)) { stats.same++; rows.push(l); continue; }
+      // 助手记忆：只差在召回簿记上的不算冲突，簿记取大的（第 31 批）
+      if (table === 'navigatorMemos' && stableStringify(withoutBookkeeping(l)) === stableStringify(withoutBookkeeping(c))) {
+        stats.same++;
+        rows.push(mergeMemoRows(l, c));
+        continue;
+      }
       stats.conflict++;
       if (stats.samples.conflict.length < SAMPLE_MAX) stats.samples.conflict.push(rowTitle(table, l));
+      if (table === 'navigatorSessions') { rows.push(mergeSessionRows(l, c)); continue; }
+      if (table === 'navigatorMemos') {
+        const base = opts.conflictWins === 'cloud' ? c : l;
+        rows.push(mergeMemoRows(base, base === l ? c : l));
+        continue;
+      }
       const picked = resolveSpecial(table, l, c) ?? (opts.conflictWins === 'cloud' ? c : l);
       rows.push(table === 'battleStates' ? mergeBattleExtras(picked, picked === l ? c : l) : picked);
     }
@@ -204,6 +287,6 @@ export const TABLE_LABELS: Record<string, string> = {
   settings: '设置', todos: '任务', todoCompletions: '任务完成', summaries: '总结', weeklyGoals: '本周目标',
   personas: '人格面具', shadows: '心魔', battleStates: '战场状态', confidants: '同伴', confidantEvents: '羁绊事件',
   counselArchives: '谏言归档', callingCards: '宣告卡', wishes: '愿望', strata: '区层',
-  navigatorPresets: '助手人格', navigatorMemos: '助手记忆', stamps: '岁时印章', quests: '委托',
+  navigatorPresets: '助手人格', navigatorMemos: '助手记忆', navigatorSessions: '助手相处记录', stamps: '岁时印章', quests: '委托',
 };
 export const tableLabel = (key: string): string => TABLE_LABELS[key] ?? key;

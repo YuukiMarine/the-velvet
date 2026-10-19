@@ -51,7 +51,7 @@ import { markReportGreeted } from '@/utils/reportNotice';
 import { buildTopicPermission, noteHappeningsMentioned, noteTopicsMentioned, unmentionedHappenings } from '@/utils/navigatorTopics';
 import { buildWishContextLine, maybeProposeWishProgress } from '@/utils/navigatorWishProgress';
 import { describeImagesEach, joinImageDescriptions } from '@/utils/visionIntake';
-import { BUILTIN_NAVIGATOR_PRESETS, knownCustomPreset, personaWithExamples, resolveNavigatorPreset } from '@/constants/navigatorPresets';
+import { BUILTIN_NAVIGATOR_PRESETS, knownCustomPreset, markPresetMissing, personaWithExamples, resolveNavigatorPreset } from '@/constants/navigatorPresets';
 import type { NavigatorMessageRow, NavigatorPreset, NavigatorSessionRow } from '@/types';
 
 export type NavigatorCardStatus = 'pending' | 'done' | 'cancelled';
@@ -172,6 +172,18 @@ let pendingWrites: NavigatorMessage[] = [];
 let hydrating: Promise<void> | null = null;
 /** 人格表读过一次就算齐（savePreset / deletePreset 会再读）；读失败保持 false，下次用到再试 */
 let presetsLoaded = false;
+/** 人格表「读过了」的标记作废（导入备份 / 拉取 / 清空数据之后）：下次用到时重读，不然要重启才看得到新的人格 */
+export function invalidateNavigatorPresets(): void {
+  presetsLoaded = false;
+}
+/** 缺失人格的提示只说一次（每个人格 id 一次；第 31 批：设置不再被改写，不记一下的话每次启动都会说） */
+const MISSING_NOTICE_KEY = 'velvet.navMissingPresetNotice.v1';
+function missingNoticeShown(id: string): boolean {
+  try { return localStorage.getItem(MISSING_NOTICE_KEY) === id; } catch { return false; }
+}
+function rememberMissingNotice(id: string | null): void {
+  try { if (id) localStorage.setItem(MISSING_NOTICE_KEY, id); else localStorage.removeItem(MISSING_NOTICE_KEY); } catch { /* */ }
+}
 let presetsLoading: Promise<void> | null = null;
 /**
  * 收口窗口里预跑的分诊（第 24 批 · D2）：用户发完一句，等 250ms 没再发就开始分诊；收口时批次没变就直接用。
@@ -876,12 +888,18 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
           const presets = await db.navigatorPresets.orderBy('createdAt').toArray();
           set({ presets });
           presetsLoaded = true;
-          // 表读到了：设置里指着的自定义人格既不在表里、本机也没有任何一份顶着 → 真缺失，明说后回落黑猫（第 23 批）
+          // 表读到了：设置里指着的自定义人格既不在表里、本机也没有任何一份顶着 → 真缺失，明说后回落黑猫（第 23 批）。
+          // 第 31 批：**不再改写设置**——设置整行上云，改成黑猫会把有这个人格的那台设备也换掉；只在内存里记缺失，
+          // 解析时自然回落黑猫，提示每个人格只说一次。人格回来了（开了人格上云再拉取）就自动恢复。
           const wanted = useAppStore.getState().settings.navigatorPresetId;
-          if (wanted && !BUILTIN_NAVIGATOR_PRESETS.some((b) => b.id === wanted) && !presets.some((p) => p.id === wanted) && !knownCustomPreset(wanted)) {
+          const missing = !!wanted && !BUILTIN_NAVIGATOR_PRESETS.some((b) => b.id === wanted) && !presets.some((p) => p.id === wanted) && !knownCustomPreset(wanted);
+          if (wanted) markPresetMissing(wanted, missing);
+          if (missing && wanted && !missingNoticeShown(wanted)) {
             const cat = BUILTIN_NAVIGATOR_PRESETS[0];
             set({ presetNotice: `（这台设备上没有原来那个人格的资料，先由${cat.name}接手。自定义人格默认只存在创建它的设备上；要带过来，在那台设备的 设置 → 云同步 里打开「人格上云」后再拉取一次。）` });
-            await useAppStore.getState().updateSettings({ navigatorPresetId: cat.id });
+            rememberMissingNotice(wanted);
+          } else if (!missing && wanted && missingNoticeShown(wanted)) {
+            rememberMissingNotice(null);
           }
         } catch (e) {
           // 读失败不清空已有的列表（安卓从后台恢复时 IndexedDB 偶发报错）；resolveNavigatorPreset

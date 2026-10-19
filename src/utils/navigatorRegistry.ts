@@ -13,6 +13,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { db } from '@/db';
 import { useAppStore, toLocalDateKey } from '@/store';
 import { memoOwner } from '@/utils/navigatorMemoryScope';
+import { effectivePresetId } from '@/constants/navigatorPresets';
 import { TAROT_BY_ID } from '@/constants/tarot';
 import { reportForGreeting } from '@/utils/reportNotice';
 import { topicAllowance } from '@/utils/navigatorTopics';
@@ -249,7 +250,8 @@ export type UndoSpec =
   | { kind: 'ledger'; entryId: string }
   | { kind: 'completeTodo'; todoId: string }
   /** before 里「原来没有」的字段存 null（JSON 会丢 undefined；写回时换回 undefined） */
-  | { kind: 'editTodo'; todoId: string; before: Record<string, unknown> }
+  /** after（第 31 批）：改成了什么；撤销前对一下，别处（另一台设备同步过来 / 任务页）又改过的字段就不往回改 */
+  | { kind: 'editTodo'; todoId: string; before: Record<string, unknown>; after?: Record<string, unknown> }
   | { kind: 'memoDelete'; memoId: string }
   | { kind: 'memoRestore'; memoId: string; before: { muted?: boolean; pinned?: boolean } };
 
@@ -348,7 +350,7 @@ export async function executeDraftDetailed(draft: NavigatorDraft, opts: { cardId
       if (draft.archive) {
         // isActive=false：store 会盖上 archivedAt，不算完成、不发点数（Bug fix #7 同口径）
         await s.updateTodo(t.id, { isActive: false });
-        return { receipt: `「${t.title}」已收进归档（归档里随时能恢复）。`, undo: { kind: 'editTodo', todoId: t.id, before: { isActive: true, archivedAt: undefined } } };
+        return { receipt: `「${t.title}」已收进归档（归档里随时能恢复）。`, undo: { kind: 'editTodo', todoId: t.id, before: { isActive: true, archivedAt: undefined }, after: { isActive: false } } };
       }
       const patch: Partial<Todo> = {};
       if (draft.title !== undefined && draft.title.trim()) patch.title = draft.title.trim();
@@ -367,9 +369,13 @@ export async function executeDraftDetailed(draft: NavigatorDraft, opts: { cardId
       if (draft.deadlineTime !== undefined) patch.deadlineTime = isDeadlineTime(draft.deadlineTime) && (patch.deadline ?? t.deadline) ? draft.deadlineTime : undefined;
       // 改前值：只记真正要改的那几个字段（第 28 批 · 撤销）；原来没有的存 null，JSON 才不会把它丢掉
       const before: Record<string, unknown> = {};
-      for (const k of Object.keys(patch) as Array<keyof Todo>) before[k] = t[k] === undefined ? null : t[k];
+      const after: Record<string, unknown> = {};
+      for (const k of Object.keys(patch) as Array<keyof Todo>) {
+        before[k] = t[k] === undefined ? null : t[k];
+        after[k] = patch[k] === undefined ? null : patch[k];
+      }
       await s.updateTodo(t.id, patch);
-      return { receipt: `已修改：「${patch.title ?? t.title}」。`, undo: { kind: 'editTodo', todoId: t.id, before } };
+      return { receipt: `已修改：「${patch.title ?? t.title}」。`, undo: { kind: 'editTodo', todoId: t.id, before, after } };
     }
     case 'bigdeal': {
       const steps = draft.steps.map(t => t.trim()).filter(Boolean);
@@ -389,7 +395,8 @@ export async function executeDraftDetailed(draft: NavigatorDraft, opts: { cardId
     case 'remember': {
       // 用户亲口让记的：置顶（永不遗忘）、重要度拉满；按记忆隔离规则归当前人格
       const text = draft.text.trim().slice(0, 80);
-      const owner = memoOwner(s.settings.navigatorPresetId);
+      // 归实际在说话的那个人格（设置里那个在本机缺失时是黑猫在接手，第 31 批）
+      const owner = memoOwner(effectivePresetId(s.settings.navigatorPresetId));
       const memoId = uuidv4();
       await db.navigatorMemos.put({
         id: memoId, source: 'manual', text, importance: 5, pinned: true, status: 'active', createdAt: new Date(),

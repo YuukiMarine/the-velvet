@@ -24,6 +24,7 @@ import { stampOf, calendarTable, deadlineLabelCN } from '@/utils/navigatorClock'
 import { isDeadlineTime } from '@/utils/deadline';
 import { PROMISE_CUE_RE } from '@/utils/navigatorPromise';
 import { triageViaTools, toolsBackendUsable } from '@/utils/navigatorTools';
+import { effectivePresetId } from '@/constants/navigatorPresets';
 import { estTokens } from '@/utils/navigatorMemory';
 import { parseQueries, QUERY_PROTOCOL, runQueries, type NavigatorQuery } from '@/utils/navigatorQueries';
 import { HEAVY_TURN_LINE, isHeavyText, proofsBlock, SAFETY_RULE, seriousLine } from '@/utils/navigatorGravity';
@@ -735,7 +736,7 @@ async function triageActions(
     let raw = '';
     if (s.settings.navigatorNativeTools && toolsBackendUsable(cfg)) {
       try {
-        const out = await triageViaTools(cfg, user, s.settings.navigatorPresetId || 'builtin-cat', { signal, instant, purpose: 'triage-tools' });
+        const out = await triageViaTools(cfg, user, effectivePresetId(s.settings.navigatorPresetId), { signal, instant, purpose: 'triage-tools' });
         parsed = out.parsed;
         raw = JSON.stringify(out.parsed);
         if (import.meta.env.DEV) console.debug('[navigator] 分诊（工具版）:', out.trace, out.parsed);

@@ -157,6 +157,20 @@ export function knownCustomPreset(presetId: string): NavigatorPreset | null {
   return resolvedThisRun.get(presetId) ?? recallPreset(presetId);
 }
 
+// ── 设置里指着、本机却确认没有的自定义人格（第 31 批）──────────────────────────
+// 以前确认缺失后会把 settings.navigatorPresetId **写成黑猫**：settings 整行上云，有那个人格的设备一拉取也被换成黑猫。
+// 现在设置不动，只在内存里记一笔「这台设备上它缺着」，解析时回落黑猫（resolveNavigatorPreset 本来就会）；
+// 归属类的读点（记忆归谁、分诊的口吻）用 effectivePresetId，跟实际在说话的那个对上。
+const missingThisRun = new Set<string>();
+export function markPresetMissing(presetId: string, missing: boolean): void {
+  if (missing) missingThisRun.add(presetId); else missingThisRun.delete(presetId);
+}
+/** 实际在说话的人格 id：设置里那个在本机确认缺失 → 黑猫；否则就是设置里那个（缺省黑猫） */
+export function effectivePresetId(presetId: string | undefined): string {
+  if (!presetId) return BUILTIN_NAVIGATOR_PRESETS[0].id;
+  return missingThisRun.has(presetId) ? BUILTIN_NAVIGATOR_PRESETS[0].id : presetId;
+}
+
 /** 全量人格列表（内置被影子行覆盖后去重 + 纯自定义），供列表 UI 使用 */
 export function mergedNavigatorPresets(customPresets: NavigatorPreset[]): NavigatorPreset[] {
   const builtinIds = new Set(BUILTIN_NAVIGATOR_PRESETS.map((b) => b.id));
