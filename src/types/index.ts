@@ -651,6 +651,11 @@ export interface Settings {
   navigatorBriefing?: boolean;
   /** 走神（第 26 批 · 联想）：闲聊时偶尔顺口想起一条不那么相关的旧事 / 梗。off 不走神；sometimes（缺省）约三成轮次；often 约六成 */
   navigatorDaydream?: 'off' | 'sometimes' | 'often';
+  /**
+   * 实验：原生工具调用（第 28 批 · PRD §24.10.4，缺省关）。开着时分诊改走厂商的 tool calling：出卡 = 调工具、查数据 = 调查询工具再判一轮；
+   * 表演层照旧纯文本。服务商不认 tools 会自动回落文本版并记住。
+   */
+  navigatorNativeTools?: boolean;
   /** 拟真增强：回复走流式 + 按标点切碎气泡（句号删并断、——删并断、问叹/分号/括号保留断；逗号不断；括号里的标点不断，颜文字整组成泡），泡间 1.2s。 */
   navigatorImmersive?: boolean;
   /** 羁绊页视图：专辑墙（默认）/ 列表；右上角切换、持久记忆（PRD_V2.5_FINAL §5.3） */

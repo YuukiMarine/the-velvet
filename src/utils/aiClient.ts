@@ -39,7 +39,8 @@ import { effortFixFromMessage, isEnableThinkingMessage, isLegacyThinkingMessage,
 import { anthropicEndpoint, anthropicHeaders, buildAnthropicBody, mapAnthropicStreamEvent, parseAnthropicResponse } from '@/utils/aiAnthropic';
 import { hostOf as diagHostOf, patchAIDiag, recordAIDiag, usageFromResponse } from '@/utils/aiDiagnostics';
 
-export type AIRole = 'system' | 'user' | 'assistant';
+/** tool = 工具调用的结果回传（第 28 批 · 原生工具试验模式，只有 OpenAI 兼容口会发） */
+export type AIRole = 'system' | 'user' | 'assistant' | 'tool';
 
 /**
  * 多模态内容块（FS3 视觉专线）。OpenAI 兼容的 content 数组形态，
@@ -51,7 +52,19 @@ export type ContentPart =
   | { type: 'image_url'; image_url: { url: string; detail?: 'auto' | 'low' | 'high' } };
 
 /** content 为字符串 = 纯文本（老路径，绝大多数调用）；为数组 = 多模态 */
-export interface AIMessage { role: AIRole; content: string | ContentPart[]; }
+export interface AIMessage {
+  role: AIRole;
+  content: string | ContentPart[];
+  /** assistant 这一条带的工具调用（回传给模型时原样带上） */
+  tool_calls?: ToolCallWire[];
+  /** role=tool：对应哪一次调用 */
+  tool_call_id?: string;
+}
+
+/** OpenAI 兼容口的工具定义 / 调用（第 28 批 · 24.10.4 试验模式） */
+export interface ToolDef { type: 'function'; function: { name: string; description?: string; parameters: Record<string, unknown> } }
+export interface ToolCallWire { id: string; type: 'function'; function: { name: string; arguments: string } }
+export interface ToolCall { id: string; name: string; /** 原样的 JSON 字符串 */ args: string }
 
 export interface AIConfig {
   apiKey: string;
@@ -73,7 +86,7 @@ export interface AIConfig {
 export function protocolOf(cfg: Pick<AIConfig, 'protocol' | 'provider'>): ApiProtocol {
   return cfg.protocol ?? (cfg.provider === 'custom' ? customProtocol() : 'openai');
 }
-const isAnthropic = (cfg: Pick<AIConfig, 'protocol' | 'provider'>) => protocolOf(cfg) === 'anthropic';
+export const isAnthropic = (cfg: Pick<AIConfig, 'protocol' | 'provider'>) => protocolOf(cfg) === 'anthropic';
 
 export type AITier = 'fast' | 'deliberate' | 'assistant' | 'vision' | 'audio';
 
@@ -128,6 +141,9 @@ export interface ChatOptions {
    * 不按措辞认。
    */
   relaySafe?: boolean;
+  /** 原生工具（第 28 批 · 试验模式）：只有 chatCompleteRaw 会用；中转站保险那一发不带 */
+  tools?: ToolDef[];
+  toolChoice?: 'auto' | 'none';
   /** 内部：5xx 已经自动隔一下重试过一次（第 14 批） */
   retried5xx?: boolean;
   /** 用途标签（第 24 批 · D6）：只进本机诊断 / 用量记录（triage / perform / greet / compact / sniff…），不发给服务商 */
@@ -512,6 +528,11 @@ function buildRequestBody(
   if (opts.jsonMode && cfg.provider && JSON_MODE_PROVIDERS.has(cfg.provider) && !relaySafe) {
     body.response_format = { type: 'json_object' };
   }
+  // 原生工具（第 28 批）：只发 auto，开思考的 DeepSeek / Kimi 收到 required 会 400
+  if (opts.tools?.length && !relaySafe) {
+    body.tools = opts.tools;
+    body.tool_choice = opts.toolChoice ?? 'auto';
+  }
   /**
    * 思维链余量。
    *
@@ -831,6 +852,47 @@ async function chatCompleteOnce(
         ? 'AI 响应被内容审查拦截（finish_reason=content_filter）'
         : `AI 返回空响应${fr ? `（finish_reason=${fr}）` : ''}，可能被截断或被审查拦截`,
     );
+  } catch (e) {
+    rethrowAbortAware(e, ab, opts);
+  } finally {
+    ab.cleanup();
+  }
+}
+
+/**
+ * 带原生工具的一次性调用（第 28 批 · 24.10.4 试验模式）：把正文和 tool_calls 原样交回去，不做 JSON 挽救、不自动重试
+ * （调用方失败就回落文本版）。第一阶段只做 OpenAI 兼容口，Anthropic 协议直接抛。
+ */
+export async function chatCompleteRaw(
+  cfg: AIConfig,
+  messages: AIMessage[],
+  rawOpts: ChatOptions = {},
+): Promise<{ content: string; toolCalls: ToolCall[]; reasoning?: string; finish: string }> {
+  if (isAnthropic(cfg)) throw new Error('原生工具调用第一阶段只支持 OpenAI 兼容接口');
+  const opts = withThinkingTimeout(cfg, rawOpts);
+  const ab = setupAbort(opts);
+  try {
+    const reqBody = buildRequestBody(cfg, messages, opts, false);
+    const resp = await postChat(cfg, JSON.stringify(reqBody), ab.signal, 'chat', undefined, opts.purpose);
+    const data = await resp.json().catch(() => null);
+    noteUsage(resp, data?.usage);
+    const choice = data?.choices?.[0];
+    const msg = choice?.message ?? {};
+    const rawCalls = Array.isArray(msg.tool_calls) ? msg.tool_calls as Array<Record<string, unknown>> : [];
+    const toolCalls: ToolCall[] = rawCalls.map((c, i) => {
+      const fn = (c.function ?? {}) as Record<string, unknown>;
+      const args = fn.arguments;
+      return {
+        id: typeof c.id === 'string' && c.id ? c.id : `call_${i}`,
+        name: typeof fn.name === 'string' ? fn.name : '',
+        args: typeof args === 'string' ? args : JSON.stringify(args ?? {}),
+      };
+    }).filter((c) => c.name);
+    const content = typeof msg.content === 'string' ? msg.content : '';
+    const reasoning = typeof msg.reasoning_content === 'string' ? msg.reasoning_content : (typeof msg.reasoning === 'string' ? msg.reasoning : undefined);
+    const finish = typeof choice?.finish_reason === 'string' ? choice.finish_reason : '';
+    if (!toolCalls.length && !content.trim()) throw new Error(`AI 返回空响应${finish ? `（finish_reason=${finish}）` : ''}`);
+    return { content, toolCalls, reasoning, finish };
   } catch (e) {
     rethrowAbortAware(e, ab, opts);
   } finally {

@@ -294,6 +294,23 @@ export const NavigatorSettings = () => {
           />
         </div>
       </div>
+      {/* ── 实验：原生工具调用（第 28 批 · PRD §24.10.4，默认关）── */}
+      <div className="flex items-start justify-between gap-3 rounded-xl border border-dashed border-gray-300 px-4 py-3 dark:border-gray-600" data-testid="native-tools">
+        <div>
+          <div className="text-sm font-semibold text-gray-700 dark:text-gray-200">实验：原生工具调用</div>
+          <p className="mt-0.5 text-xs leading-relaxed text-gray-400 dark:text-gray-500">
+            开着：助手判断「要不要开卡、要不要先查你的记录」时改用模型厂商的工具调用接口，理论上判得更准、能先查再出卡（最多两步）。
+            回复本身不受影响。服务商不支持会自动退回现在的方式并记住。只在 OpenAI 兼容接口上生效，默认关。
+          </p>
+        </div>
+        <div className="mt-0.5 shrink-0">
+          <Toggle
+            checked={!!settings.navigatorNativeTools}
+            onChange={(v) => updateSettings({ navigatorNativeTools: v })}
+            aria-label="实验：原生工具调用"
+          />
+        </div>
+      </div>
       <div className="space-y-2">
         {allPresets.map((p) => (
           <div key={p.id} className={`flex items-center gap-3 rounded-xl border-2 px-3 py-2.5 transition ${activeId === p.id ? 'border-primary/60 bg-primary/5 dark:bg-primary/10' : 'border-gray-200 dark:border-gray-700'}`}>

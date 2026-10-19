@@ -23,6 +23,7 @@ import type { AIMessage } from '@/utils/aiClient';
 import { stampOf, calendarTable, deadlineLabelCN } from '@/utils/navigatorClock';
 import { isDeadlineTime } from '@/utils/deadline';
 import { PROMISE_CUE_RE } from '@/utils/navigatorPromise';
+import { triageViaTools, toolsBackendUsable } from '@/utils/navigatorTools';
 import { estTokens } from '@/utils/navigatorMemory';
 import { parseQueries, QUERY_PROTOCOL, runQueries, type NavigatorQuery } from '@/utils/navigatorQueries';
 import { HEAVY_TURN_LINE, isHeavyText, proofsBlock, SAFETY_RULE, seriousLine } from '@/utils/navigatorGravity';
@@ -729,12 +730,28 @@ async function triageActions(
   ].filter(Boolean).join('\n');
 
   try {
-    const raw = await callJson(cfg, [
-      { role: 'system', content: TRIAGE_PROTOCOL },
-      { role: 'user', content: user },
-    ], { temperature: 0.1, maxTokens: 800, signal, instant, purpose: 'triage' });
-    if (import.meta.env.DEV) console.debug('[navigator] 分诊输出:', raw);
-    const parsed = extractJson(raw);
+    // 原生工具试验模式（第 28 批 · 24.10.4，默认关）：两种后端产出同形的原始对象，下面的校验一个样；工具版失败就回落文本版
+    let parsed: Record<string, unknown> | null = null;
+    let raw = '';
+    if (s.settings.navigatorNativeTools && toolsBackendUsable(cfg)) {
+      try {
+        const out = await triageViaTools(cfg, user, s.settings.navigatorPresetId || 'builtin-cat', { signal, instant, purpose: 'triage-tools' });
+        parsed = out.parsed;
+        raw = JSON.stringify(out.parsed);
+        if (import.meta.env.DEV) console.debug('[navigator] 分诊（工具版）:', out.trace, out.parsed);
+      } catch (e) {
+        if (signal.aborted) throw e;
+        if (import.meta.env.DEV) console.warn('[navigator] 工具版分诊失败，回落文本版', e);
+      }
+    }
+    if (!parsed) {
+      raw = await callJson(cfg, [
+        { role: 'system', content: TRIAGE_PROTOCOL },
+        { role: 'user', content: user },
+      ], { temperature: 0.1, maxTokens: 800, signal, instant, purpose: 'triage' });
+      if (import.meta.env.DEV) console.debug('[navigator] 分诊输出:', raw);
+      parsed = extractJson(raw);
+    }
     if (!parsed) return { drafts: [], queryDays: null, stance: null, energy: null, dated: null, gravity: null, queries: [], raw };
     const rawActions = Array.isArray(parsed.actions) ? (parsed.actions as Array<Record<string, unknown>>) : [];
     const drafts = rawActions.slice(0, 3).map((a) => {

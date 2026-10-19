@@ -29,6 +29,8 @@ export interface ModelQuirks {
    * 而且不管我们发什么都一样；去掉后缀发同一个模型就通。
    */
   sendAs?: string;
+  /** 原生工具调用（第 28 批 · 试验模式）：ok = 用过没问题；none = 报过 400 不认 tools，以后不再试 */
+  tools?: 'ok' | 'none';
 }
 
 const store = new Map<string, ModelQuirks>();
