@@ -17,6 +17,10 @@ import { TAROT_BY_ID } from '@/constants/tarot';
 import { reportForGreeting } from '@/utils/reportNotice';
 import { topicAllowance } from '@/utils/navigatorTopics';
 import { CATEGORY_META, INCOME_META } from '@/utils/ledgerFormat';
+import { deadlineLabelCN } from '@/utils/navigatorClock';
+import { isDeadlineTime } from '@/utils/deadline';
+import { addActivityImages } from '@/utils/activityImages';
+import { takeCardImages } from '@/utils/navigatorCardImages';
 import type { AttributeId, LedgerExpenseType, LedgerIncomeType, Todo } from '@/types';
 
 export const ATTR_IDS: AttributeId[] = ['knowledge', 'guts', 'dexterity', 'kindness', 'charm'];
@@ -49,6 +53,10 @@ export interface TodoDraft {
   extraAttribute: AttributeId | null;
   extraPoints: number;
   repeatDaily: boolean;
+  /** 截止日 YYYY-MM-DD（第 28 批，可选）；「提醒我明早七点背单词」= 明天 + 07:00。与每日重复互斥 */
+  deadline?: string;
+  /** 截止时刻 HH:MM（只在有 deadline 时有意义） */
+  deadlineTime?: string;
 }
 export interface LedgerDraft {
   kind: 'ledger';
@@ -79,6 +87,8 @@ export interface EditTodoDraft {
   repeatDaily?: boolean;
   /** 截止日 YYYY-MM-DD；'' = 取消截止 */
   deadline?: string;
+  /** 截止时刻 HH:MM（第 28 批）；'' = 取消时刻（日子留着） */
+  deadlineTime?: string;
   archive?: boolean;
 }
 /** 黑猫递刀产物（TASKS_MERGE_PRD §4.4）：一件大事 + AI/离线拆好的子步，确认即立 BIG DEAL */
@@ -108,7 +118,7 @@ export type NavigatorDraft = ActivityDraft | TodoDraft | LedgerDraft | CompleteT
 
 /** 改待办卡里真正要改的字段（除去 kind / todoId / todoTitle） */
 export const editTodoChanges = (d: EditTodoDraft) =>
-  (['title', 'attribute', 'points', 'repeatDaily', 'deadline', 'archive'] as const).filter((k) => d[k] !== undefined);
+  (['title', 'attribute', 'points', 'repeatDaily', 'deadline', 'deadlineTime', 'archive'] as const).filter((k) => d[k] !== undefined);
 export type NavigatorActionKind = NavigatorDraft['kind'];
 
 export const emptyDraft = (kind: NavigatorActionKind): NavigatorDraft => {
@@ -159,7 +169,9 @@ export function buildPreviewLines(draft: NavigatorDraft): string[] {
     case 'todo':
       return [
         `「${draft.title}」`,
-        `${navAttrName(draft.attribute)} +${draft.points}${draft.extraAttribute ? ` · ${navAttrName(draft.extraAttribute)} +${draft.extraPoints}` : ''} · ${draft.repeatDaily ? '每日重复' : '单次完成'}`,
+        `${navAttrName(draft.attribute)} +${draft.points}${draft.extraAttribute ? ` · ${navAttrName(draft.extraAttribute)} +${draft.extraPoints}` : ''} · ${draft.repeatDaily && !draft.deadline ? '每日重复' : '单次完成'}`,
+        // 截止（第 28 批 · G3）：把解析出来的日子 / 时刻写清楚，听错了一眼能看出来
+        ...(draft.deadline ? [`截止 ${deadlineLabelCN(draft.deadline, toLocalDateKey(), draft.deadlineTime)}`] : []),
       ];
     case 'ledger': {
       const head = draft.direction === 'expense'
@@ -183,7 +195,17 @@ export function buildPreviewLines(draft: NavigatorDraft): string[] {
         lines.push(`奖励 ${before}${navAttrName(draft.attribute ?? t?.attribute ?? 'guts')} +${draft.points ?? t?.points ?? 2}`);
       }
       if (draft.repeatDaily !== undefined) lines.push(`频率 → ${draft.repeatDaily ? '每日' : '单次'}`);
-      if (draft.deadline !== undefined) lines.push(draft.deadline ? `截止 → ${draft.deadline}` : '截止 → 取消');
+      {
+        // 截止日 / 时刻（第 28 批）：合成一行「截止 → 明天 07:00（10/3 周六）」；只改时刻时日子取原任务的
+        const today = toLocalDateKey();
+        const day = draft.deadline !== undefined ? draft.deadline : (t?.deadline ?? '');
+        const time = draft.deadlineTime !== undefined ? draft.deadlineTime : (t?.deadlineTime ?? '');
+        if (draft.deadline === '') lines.push('截止 → 取消');
+        else if (draft.deadline !== undefined || draft.deadlineTime !== undefined) {
+          if (day) lines.push(`截止 → ${deadlineLabelCN(day, today, time || undefined)}${draft.deadline === undefined && draft.deadlineTime === '' ? '（时刻取消）' : ''}`);
+          else if (draft.deadlineTime) lines.push(`截止时刻 → ${draft.deadlineTime}（这条任务还没有截止日，先设日子）`);
+        }
+      }
       return lines;
     }
     case 'bigdeal': {
@@ -218,27 +240,37 @@ export function draftReady(draft: NavigatorDraft): boolean {
 }
 
 /** 执行草稿 → 黑猫口吻的回执文案。直接调用现有 store action，反馈弹窗免费继承。 */
-export async function executeDraft(draft: NavigatorDraft): Promise<string> {
+export async function executeDraft(draft: NavigatorDraft, opts: { cardId?: string } = {}): Promise<string> {
   const s = useAppStore.getState();
   switch (draft.kind) {
     case 'activity': {
-      const { unlockHints } = await s.addActivity(
+      const { unlockHints, activityId } = await s.addActivity(
         draft.text.trim(),
         draft.points,
         'local',
         { important: draft.important, wishId: draft.wishId },
       );
+      // 卡片上挂着的图（第 28 批）：记录落库后随它存进图片表（记录页同一套，最多 3 张）
+      let imageCount = 0;
+      const imgs = opts.cardId ? takeCardImages(opts.cardId) : [];
+      if (imgs.length) {
+        try { imageCount = (await addActivityImages(activityId, imgs)).length; } catch (e) { console.warn('[navigator] 记录配图没存上', e); }
+      }
       const gains = ATTR_IDS.filter((id) => draft.points[id] > 0)
         .map((id) => `${navAttrName(id)} +${draft.points[id]}`)
         .join('、');
       // 回执写中性事实（第 24 批 · C2）：以前是黑猫腔（「行动比嘴上说说有说服力多了」），所有人格共用，
       // 还会进卡片实录喂给模型——别的人格看见就学过去了。口吻交给人格自己的回复
       const unlockLine = unlockHints.achievements + unlockHints.skills > 0 ? '另有新解锁，去看看。' : '';
+      const imageLine = imageCount ? `附了 ${imageCount} 张图。` : '';
       return gains
-        ? `已记录「${draft.text.trim()}」：${gains}。${unlockLine}`.trim()
-        : `已记录「${draft.text.trim()}」（没有加点）。${unlockLine}`.trim();
+        ? `已记录「${draft.text.trim()}」：${gains}。${imageLine}${unlockLine}`.trim()
+        : `已记录「${draft.text.trim()}」（没有加点）。${imageLine}${unlockLine}`.trim();
     }
     case 'todo': {
+      // 截止与每日互斥（任务页「更多设置」同口径）：带截止的一律单次
+      const deadline = draft.deadline || undefined;
+      const repeatDaily = draft.repeatDaily && !deadline;
       await s.addTodo({
         title: draft.title.trim(),
         attribute: draft.attribute,
@@ -247,12 +279,15 @@ export async function executeDraft(draft: NavigatorDraft): Promise<string> {
           ? [{ attribute: draft.extraAttribute, points: draft.extraPoints }]
           : undefined,
         frequency: 'single',
-        repeatDaily: draft.repeatDaily,
+        repeatDaily,
         isActive: true,
+        deadline,
+        deadlineTime: deadline && isDeadlineTime(draft.deadlineTime) ? draft.deadlineTime : undefined,
       });
-      return draft.repeatDaily
+      const due = deadline ? `，截止 ${deadlineLabelCN(deadline, toLocalDateKey(), isDeadlineTime(draft.deadlineTime) ? draft.deadlineTime : undefined)}` : '';
+      return repeatDaily
         ? `已加入每日清单：「${draft.title.trim()}」。`
-        : `已加入待办：「${draft.title.trim()}」。`;
+        : `已加入待办：「${draft.title.trim()}」${due}。`;
     }
     case 'ledger': {
       const saved = draft.direction === 'expense'
@@ -302,7 +337,12 @@ export async function executeDraft(draft: NavigatorDraft): Promise<string> {
       }
       if (draft.points !== undefined) patch.points = draft.points;
       if (draft.repeatDaily !== undefined) patch.repeatDaily = draft.repeatDaily;
-      if (draft.deadline !== undefined) patch.deadline = draft.deadline || undefined;
+      if (draft.deadline !== undefined) {
+        patch.deadline = draft.deadline || undefined;
+        // 取消截止日 → 时刻一起清；改了日子、时刻没说 → 时刻保留
+        if (!draft.deadline) patch.deadlineTime = undefined;
+      }
+      if (draft.deadlineTime !== undefined) patch.deadlineTime = isDeadlineTime(draft.deadlineTime) && (patch.deadline ?? t.deadline) ? draft.deadlineTime : undefined;
       await s.updateTodo(t.id, patch);
       return `已修改：「${patch.title ?? t.title}」。`;
     }
@@ -363,6 +403,11 @@ export interface NavigatorSnapshot {
    */
   unreadSummaryLabel?: string;
   unreadSummaryId?: string;
+  /**
+   * 今天截止、还没做完的任务（第 28 批）：带时刻的在前、按时刻排。问候在塔罗那句之后顺口提一句（只这一次）；
+   * 不发通知——「助手记得」止于开口提一句。
+   */
+  todayDeadlines: Array<{ title: string; time?: string }>;
 }
 
 export function buildSnapshot(): NavigatorSnapshot {
@@ -374,7 +419,13 @@ export function buildSnapshot(): NavigatorSnapshot {
   const activityCountToday = s.activities.filter((a) => toLocalDateKey(new Date(a.date)) === dateKey).length;
   // 新总结（写好 7 天内、未读、问候还没提过）：每份只在问候里提一次
   const unread = reportForGreeting(s.summaries);
+  const todayDeadlines = s.todos
+    .filter((t) => t.isActive && !t.archivedAt && t.deadline === dateKey && !(t.completedAt && toLocalDateKey(new Date(t.completedAt)) === dateKey) && !s.getTodayTodoProgress(t.id).isComplete)
+    .map((t) => ({ title: t.title, time: t.deadlineTime || undefined }))
+    .sort((a, b) => (a.time ?? '99').localeCompare(b.time ?? '99'))
+    .slice(0, 4);
   return {
+    todayDeadlines,
     dateKey,
     hour: new Date().getHours(),
     userName: s.user?.name ?? '客人',
@@ -444,9 +495,14 @@ export function buildDailyGreeting(snap: NavigatorSnapshot): string {
     if (snap.tarotDrawn && snap.tarotCardName) status.push(`今天的牌面是「${snap.tarotCardName}」，我瞄过了。`);
     else if (!snap.tarotDrawn) status.push(`今天的塔罗还没抽。`);
   }
+  // 今天截止的任务（第 28 批）：塔罗那句之后顺口提一句，带几点的说几点。只提这一次，不催
+  const dueLine = snap.todayDeadlines.length
+    ? `今天到期的：${snap.todayDeadlines.map((d) => `${d.time ? `${d.time} ` : ''}${d.title}`).join('、')}。我记着呢。`
+    : '';
+  if (dueLine) status.push(dueLine);
   if (snap.terminalStepTitle) status.push(`那件「${snap.terminalStepTitle}」还在进行中，别忘了。`);
 
-  return [hello, ...status.slice(0, 2)].join('\n');
+  return [hello, ...status.slice(0, dueLine ? 3 : 2)].join('\n');
 }
 
 /** 当日再次打开（会话被清空 / App 重启）时的简短招呼 */

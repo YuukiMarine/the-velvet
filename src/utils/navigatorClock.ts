@@ -58,6 +58,16 @@ export function relativeDayCN(key: string, todayKey: string): string {
   return n < 0 ? `${-n} 天前` : `${n} 天后`;
 }
 
+/**
+ * 截止日（+ 时刻）的说法（第 28 批，卡片预览 / 问候 / 背景块共用）：
+ * 「今天 21:00」「明天 07:00（10/3 周六）」「5 天后 09:00（10/7 周三）」「昨天（10/1 周四）」
+ */
+export function deadlineLabelCN(deadline: string, todayKey: string, time?: string): string {
+  const rel = relativeDayCN(deadline, todayKey);
+  const t = time ? ` ${time}` : '';
+  return rel === '今天' ? `今天${t}` : `${rel}${t}（${shortMD(deadline)} ${weekdayCN(deadline)}）`;
+}
+
 /** 「M/D」短写（记忆注入行用） */
 export const shortMD = (key: string): string => {
   const d = dateOfKey(key);

@@ -218,6 +218,11 @@ export interface Todo {
    * 首页与今日任务显示「剩 N 天」（components/todo/DeadlineTag）
    */
   deadline?: string;
+  /**
+   * 截止时刻 'HH:MM'（第 28 批：截止日的细化）。只在有 deadline 时有意义——「提醒我明早七点背单词」= 明天 07:00 截止；
+   * 不发通知：任务卡 / 首页标 ⏰，助手问候时顺口提一句、聊天里记得几点。
+   */
+  deadlineTime?: string;
   /** 收官记录的 activity id；存在 = 已收官 */
   clearedActivityId?: string;
   /**

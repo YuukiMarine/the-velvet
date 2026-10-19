@@ -8,7 +8,7 @@
  * 浅青斜切字段面 + 属性加点浅青斜条（青三角 ∓ 钮、逐级错位）+ 洋红旗重要事件 +
  * 「写好了」蓝斜块（洋红角）/「取消」白斜块（青角）；其余 = 中性深色兜底。
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import { zClass } from '@/utils/zIndex';
@@ -21,8 +21,9 @@ import {
   type NavigatorDraft,
 } from '@/utils/navigatorRegistry';
 import { P3R, slantClip, SlantButton } from '@/components/p3r/kit';
-import { useAppStore } from '@/store';
+import { useAppStore, toLocalDateKey } from '@/store';
 import { P5Collage } from '@/components/p5r/kit';
+import { prepareActivityImage, MAX_IMAGES_PER_ACTIVITY, type PreparedImage } from '@/utils/activityImages';
 
 /** 表单频道皮：p3=P3R 亮蓝斜面（原 bright）/ p4=黄综艺 / p5=红黑剪报。主题→频道映射在调用方。 */
 export type NavFormChannel = 'p3' | 'p4' | 'p5';
@@ -31,7 +32,9 @@ interface Props {
   /** null = 关闭 */
   draft: NavigatorDraft | null;
   channel: NavFormChannel;
-  onSubmit: (d: NavigatorDraft) => void;
+  /** 记录卡随草稿一起回传的图片（第 28 批）：没确认前只在内存里，确认时随记录存 */
+  images?: PreparedImage[];
+  onSubmit: (d: NavigatorDraft, images: PreparedImage[]) => void;
   onClose: () => void;
 }
 
@@ -80,7 +83,7 @@ const TriStepBtn = ({ dir, disabled, onClick, label }: {
   </button>
 );
 
-export const NavigatorActionForm = ({ draft, channel, onSubmit, onClose }: Props) => {
+export const NavigatorActionForm = ({ draft, channel, images, onSubmit, onClose }: Props) => {
   const open = draft !== null;
   const a11yRef = useModalA11y(open, onClose, { closeOnEscape: true, trapFocus: true });
   useBackHandler(open, onClose);
@@ -88,6 +91,33 @@ export const NavigatorActionForm = ({ draft, channel, onSubmit, onClose }: Props
   const [d, setD] = useState<NavigatorDraft | null>(draft);
   if (draft !== null && d === null) setD(draft);
   if (draft === null && d !== null) setD(null);
+  // 记录卡的图片（第 28 批）：表单打开时从卡上现有的接过来；最多 3 张；选图时压成配图规格（与记录页同一套）
+  const imagesRef = useRef(images);
+  imagesRef.current = images;
+  const [imgs, setImgs] = useState<PreparedImage[]>(() => images ?? []);
+  const [imgBusy, setImgBusy] = useState(false);
+  const [imgHint, setImgHint] = useState<string | null>(null);
+  const imgFileRef = useRef<HTMLInputElement | null>(null);
+  useEffect(() => {
+    if (draft) { setImgs(imagesRef.current ?? []); setImgHint(null); }
+  }, [draft]);
+  const addImages = async (files: File[]) => {
+    if (!files.length || imgBusy) return;
+    setImgBusy(true);
+    setImgHint(null);
+    try {
+      const room = MAX_IMAGES_PER_ACTIVITY - imgs.length;
+      const take = files.slice(0, Math.max(0, room));
+      const prepared: PreparedImage[] = [];
+      for (const f of take) prepared.push(await prepareActivityImage(f));
+      setImgs((prev) => [...prev, ...prepared].slice(0, MAX_IMAGES_PER_ACTIVITY));
+      if (files.length > take.length) setImgHint(`一条记录最多 ${MAX_IMAGES_PER_ACTIVITY} 张，多出的没有加`);
+    } catch (e) {
+      setImgHint(e instanceof Error ? e.message : '图片处理失败');
+    } finally {
+      setImgBusy(false);
+    }
+  };
   // 第 13 轮 2.4：金额框持一份文本草稿——原来每键 Number() 回写，"12." 立刻变 12、"0." / "." 被清空，小数点永远打不出来
   const [amountText, setAmountText] = useState(() => (draft?.kind === 'ledger' && draft.amount ? String(draft.amount) : ''));
   const ledgerAmount = d?.kind === 'ledger' ? d.amount : undefined;
@@ -233,6 +263,42 @@ export const NavigatorActionForm = ({ draft, channel, onSubmit, onClose }: Props
               ⭐ 重要事件{d.important ? '（已标记）' : ''}
             </button>
           )}
+          {/* 图片（第 28 批）：最多 3 张，确认时随记录存进图片表（卡片没确认就只在内存里） */}
+          <div>
+            <div className={labelCls} style={ink}>图片（可选，最多 {MAX_IMAGES_PER_ACTIVITY} 张）</div>
+            <div className="flex flex-wrap items-center gap-2" data-form-images>
+              {imgs.map((im, i) => (
+                <span key={i} className="relative inline-block">
+                  <img src={im.thumbDataUrl} alt={`附图 ${i + 1}`} className="h-14 w-14 rounded-lg object-cover" draggable={false} />
+                  <button
+                    type="button"
+                    aria-label="移除这张图"
+                    onClick={() => setImgs((prev) => prev.filter((_, j) => j !== i))}
+                    className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-black/70 text-[10px] font-black text-white"
+                  >
+                    ✕
+                  </button>
+                </span>
+              ))}
+              {imgs.length < MAX_IMAGES_PER_ACTIVITY && (
+                <>
+                  <input
+                    ref={imgFileRef}
+                    data-testid="card-image-input"
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    className="hidden"
+                    onChange={(e) => { const files = Array.from(e.target.files ?? []); e.target.value = ''; void addImages(files); }}
+                  />
+                  <button type="button" onClick={() => imgFileRef.current?.click()} disabled={imgBusy} className={chipCls(false)} style={bright ? ink : undefined}>
+                    {imgBusy ? '处理中…' : imgs.length ? '＋ 再加一张' : '＋ 添加图片'}
+                  </button>
+                </>
+              )}
+            </div>
+            {imgHint && <p className={bright ? 'mt-1.5 text-[12px] font-bold text-[#4b8fd9]' : 'mt-1.5 text-[11px] text-gray-400'}>{imgHint}</p>}
+          </div>
         </>
       )}
 
@@ -331,6 +397,36 @@ export const NavigatorActionForm = ({ draft, channel, onSubmit, onClose }: Props
               </div>
             )}
           </div>
+          {/* 截止日 / 时刻（第 28 批）：只记日子和几点，不发通知；与每日互斥（填了日子就按单次） */}
+          {!d.repeatDaily && (
+            <div>
+              <label className={labelCls} style={ink} htmlFor="nav-form-todo-deadline">截止（可选）</label>
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  id="nav-form-todo-deadline"
+                  type="date"
+                  value={d.deadline ?? ''}
+                  min={toLocalDateKey()}
+                  onChange={(e) => patch({ deadline: e.target.value || undefined, ...(e.target.value ? {} : { deadlineTime: undefined }) })}
+                  className={inputCls}
+                  style={inputStyle}
+                />
+                {d.deadline && (
+                  <input
+                    type="time"
+                    aria-label="截止时刻"
+                    value={d.deadlineTime ?? ''}
+                    onChange={(e) => patch({ deadlineTime: e.target.value || undefined })}
+                    className={inputCls}
+                    style={inputStyle}
+                  />
+                )}
+                {d.deadline && (
+                  <button type="button" onClick={() => patch({ deadline: undefined, deadlineTime: undefined })} className={chipCls(false)} style={bright ? ink : undefined}>清除</button>
+                )}
+              </div>
+            </div>
+          )}
         </>
       )}
 
@@ -343,6 +439,8 @@ export const NavigatorActionForm = ({ draft, channel, onSubmit, onClose }: Props
         const curPoints = d.points ?? orig.points;
         const curDaily = d.repeatDaily ?? !!orig.repeatDaily;
         const curDeadline = d.deadline ?? orig.deadline ?? '';
+        const curTime = d.deadlineTime ?? orig.deadlineTime ?? '';
+        const setTime = (v: string) => patch({ deadlineTime: v === (orig.deadlineTime ?? '') ? undefined : v });
         const setPoints = (v: number) => patch({ points: v === orig.points ? undefined : v });
         const setDaily = (v: boolean) => patch({
           repeatDaily: v === !!orig.repeatDaily ? undefined : v,
@@ -423,7 +521,10 @@ export const NavigatorActionForm = ({ draft, channel, onSubmit, onClose }: Props
                     <div className="flex items-center gap-2">
                       <input id="nav-form-edit-deadline" type="date" value={curDeadline} onChange={(e) => setDeadline(e.target.value)} className={inputCls} style={inputStyle} />
                       {curDeadline && (
-                        <button type="button" onClick={() => setDeadline('')} className={chipCls(false)} style={bright ? ink : undefined}>清除</button>
+                        <input type="time" aria-label="截止时刻" value={curTime} onChange={(e) => setTime(e.target.value)} className={inputCls} style={inputStyle} />
+                      )}
+                      {curDeadline && (
+                        <button type="button" onClick={() => { setDeadline(''); if (orig.deadlineTime) patch({ deadlineTime: '' }); }} className={chipCls(false)} style={bright ? ink : undefined}>清除</button>
                       )}
                     </div>
                   </div>
@@ -705,7 +806,7 @@ export const NavigatorActionForm = ({ draft, channel, onSubmit, onClose }: Props
                     magentaCorner
                     disabled={!draftReady(d)}
                     className="min-h-12 flex-1 text-[17px]"
-                    onClick={() => { onSubmit(d); }}
+                    onClick={() => { onSubmit(d, d.kind === 'activity' ? imgs : []); }}
                   >
                     写好了
                   </SlantButton>
@@ -724,7 +825,7 @@ export const NavigatorActionForm = ({ draft, channel, onSubmit, onClose }: Props
                   <button
                     type="button"
                     disabled={!draftReady(d)}
-                    onClick={() => { onSubmit(d); }}
+                    onClick={() => { onSubmit(d, d.kind === 'activity' ? imgs : []); }}
                     className="min-h-11 flex-1 border-[3px] border-[#050505] bg-[#c00008] px-4 text-[15px] font-black text-white shadow-[4px_4px_0_#050505] transition active:translate-x-0.5 active:translate-y-0.5 active:shadow-[1px_1px_0_#050505] disabled:opacity-40"
                   >
                     写好了
@@ -742,7 +843,7 @@ export const NavigatorActionForm = ({ draft, channel, onSubmit, onClose }: Props
                   <button
                     type="button"
                     disabled={!draftReady(d)}
-                    onClick={() => { onSubmit(d); }}
+                    onClick={() => { onSubmit(d, d.kind === 'activity' ? imgs : []); }}
                     className="min-h-11 flex-1 rounded-full border-[3px] border-[#131313] bg-[#131313] px-4 text-[15px] font-black tracking-[0.08em] text-[#ffe100] shadow-[0_5px_0_#ff6a00] transition active:translate-y-0.5 active:shadow-[0_1px_0_#ff6a00] disabled:opacity-40"
                   >
                     写好了
@@ -760,7 +861,7 @@ export const NavigatorActionForm = ({ draft, channel, onSubmit, onClose }: Props
                   <button
                     type="button"
                     disabled={!draftReady(d)}
-                    onClick={() => { onSubmit(d); }}
+                    onClick={() => { onSubmit(d, d.kind === 'activity' ? imgs : []); }}
                     className="min-h-11 flex-1 rounded-xl bg-primary px-4 text-sm font-bold text-white disabled:opacity-40"
                   >
                     写好了

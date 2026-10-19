@@ -350,6 +350,8 @@ export const TodosView = () => {
     // BIG DEAL 专属
     currentState: '' as string,
     deadline: '' as string,
+    /** 截止时刻 'HH:MM'（第 28 批）：只在有截止日时存 */
+    deadlineTime: '' as string,
     steps: [] as Array<{ id?: string; title: string; attribute?: AttributeId; done?: boolean; doneAt?: string; source: 'manual' | 'ai' }>,
   };
   const [form, setForm] = useState(emptyForm);
@@ -521,6 +523,9 @@ export const TodosView = () => {
       deadline: pactLocked
         ? editingPactTodo?.deadline
         : (isBig || !form.repeatDaily) && form.deadline ? form.deadline : undefined,
+      deadlineTime: pactLocked
+        ? editingPactTodo?.deadlineTime
+        : (isBig || !form.repeatDaily) && form.deadline && form.deadlineTime ? form.deadlineTime : undefined,
       steps: isBig
         ? form.steps
             .map(s => ({ ...s, title: s.title.trim() }))
@@ -558,6 +563,7 @@ export const TodosView = () => {
       startDate: todo.startDate || '',
       currentState: todo.currentState || '',
       deadline: todo.deadline || '',
+      deadlineTime: todo.deadlineTime || '',
       steps: (todo.steps ?? []).map(s => ({ ...s })),
     });
     setAiError(null);
@@ -1419,11 +1425,20 @@ export const TodosView = () => {
                         value={form.deadline}
                         min={todayDateKey}
                         // 同一个 deadline 字段：切回单次 / 计数时也要守住「与每日重置互斥」
-                        onChange={(e) => setForm(prev => ({ ...prev, deadline: e.target.value, repeatDaily: e.target.value ? false : prev.repeatDaily }))}
+                        onChange={(e) => setForm(prev => ({ ...prev, deadline: e.target.value, deadlineTime: e.target.value ? prev.deadlineTime : '', repeatDaily: e.target.value ? false : prev.repeatDaily }))}
                         className="flex-1 px-2.5 py-1.5 text-sm border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 dark:text-white"
                       />
                       {form.deadline && (
-                        <button type="button" onClick={() => setForm(prev => ({ ...prev, deadline: '' }))} className="text-xs text-gray-400 underline">清除</button>
+                        <input
+                          type="time"
+                          aria-label="截止时刻"
+                          value={form.deadlineTime}
+                          onChange={(e) => setForm(prev => ({ ...prev, deadlineTime: e.target.value }))}
+                          className="w-[7.5rem] px-2.5 py-1.5 text-sm border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 dark:text-white"
+                        />
+                      )}
+                      {form.deadline && (
+                        <button type="button" onClick={() => setForm(prev => ({ ...prev, deadline: '', deadlineTime: '' }))} className="text-xs text-gray-400 underline">清除</button>
                       )}
                     </div>
 
@@ -1714,16 +1729,26 @@ export const TodosView = () => {
                                   type="date"
                                   value={form.deadline}
                                   min={form.startDate && form.startDate > todayDateKey ? form.startDate : todayDateKey}
-                                  onChange={(e) => setForm(prev => ({ ...prev, deadline: e.target.value, repeatDaily: e.target.value ? false : prev.repeatDaily }))}
+                                  onChange={(e) => setForm(prev => ({ ...prev, deadline: e.target.value, deadlineTime: e.target.value ? prev.deadlineTime : '', repeatDaily: e.target.value ? false : prev.repeatDaily }))}
                                   className="flex-1 px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-xl bg-gray-50 dark:bg-gray-800 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
                                 />
                                 {form.deadline && (
-                                  <button type="button" onClick={() => setForm(prev => ({ ...prev, deadline: '' }))} className="text-xs text-gray-400 dark:text-gray-500 underline whitespace-nowrap">
+                                  // 截止时刻（第 28 批）：截止日的细化。只记着几点，不发通知——首页 / 任务卡标 ⏰，助手问候时顺口提
+                                  <input
+                                    type="time"
+                                    aria-label="截止时刻"
+                                    value={form.deadlineTime}
+                                    onChange={(e) => setForm(prev => ({ ...prev, deadlineTime: e.target.value }))}
+                                    className="w-[7.5rem] px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-xl bg-gray-50 dark:bg-gray-800 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                                  />
+                                )}
+                                {form.deadline && (
+                                  <button type="button" onClick={() => setForm(prev => ({ ...prev, deadline: '', deadlineTime: '' }))} className="text-xs text-gray-400 dark:text-gray-500 underline whitespace-nowrap">
                                     清除
                                   </button>
                                 )}
                               </div>
-                              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">首页和今日任务会显示「剩 N 天」；与「每日重置」只能二选一</p>
+                              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">首页和今日任务会显示「剩 N 天」，填了时刻就显示几点；与「每日重置」只能二选一。不会弹通知——助手记着就行</p>
                             </div>
                           )}
 

@@ -17,11 +17,11 @@ const hot = (t: DeadlineTone) => t === 'due' || t === 'over';
 export function DeadlineTag({ todo, done = false }: { todo: Todo; done?: boolean }) {
   const channel = useUiChannel();
   if (todo.isBigDeal || done) return null;
-  const st = deadlineStatus(todo.deadline, toLocalDateKey());
+  const st = deadlineStatus(todo.deadline, toLocalDateKey(), todo.deadlineTime);
   if (!st) return null;
   const { text, tone } = st;
   const base = 'inline-flex shrink-0 items-center whitespace-nowrap text-[10px] font-black leading-none tabular-nums';
-  const label = `截止日 ${todo.deadline}，${text}`;
+  const label = `截止日 ${todo.deadline}${todo.deadlineTime ? ` ${todo.deadlineTime}` : ''}，${text}`;
 
   if (channel === 'p3') {
     const bg = hot(tone) ? P3R.magenta : tone === 'soon' ? P3R.blue : P3R.cyanFaint;

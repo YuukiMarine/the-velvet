@@ -28,6 +28,7 @@ import { buildDayRecall, hasRecallCue, RECALL_GAP_LINE } from '@/utils/navigator
 import { buildHappenings, coachStyleOf, happeningsBlock, happeningsSince } from '@/utils/navigatorHappenings';
 import { recordsBlock, searchRecords } from '@/utils/navigatorIndex';
 import { briefingBlock, FIRST_MEET_LINE, freshIntroLine } from '@/utils/navigatorBriefing';
+import { attachDataUrlsToCard } from '@/utils/navigatorCardImages';
 import { careTemplateLine, scheduleCare, takeCareLine } from '@/utils/navigatorGravity';
 import {
   buildOldStoryLine, buildTogetherLine, markMilestoneMentioned, noteOldStoryMentioned, pickOldStory, togetherFacts,
@@ -754,7 +755,11 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
       }
       const result = await turnPromise;
       if (gen !== generation) return;
-      dedupDrafts(result.drafts).forEach((d) => get().pushCard(d));
+      const pushed = dedupDrafts(result.drafts).map((d) => ({ id: get().pushCard(d), kind: d.kind }));
+      // 这一批里用户随消息发了图（第 28 批）：第一张记录卡自动带上它，确认时随记录存（卡片上能看到缩略图）
+      const sentImages = currentSessionMessages().filter((m) => batchMsgIds.includes(m.id) && m.imageDataUrl).map((m) => m.imageDataUrl!);
+      const firstActivity = pushed.find((p) => p.kind === 'activity');
+      if (sentImages.length && firstActivity) void attachDataUrlsToCard(firstActivity.id, sentImages);
       set({ phase: 'idle' });
       if (result.heavy) {
         // 沉下来的那一轮（第 25 批）：这轮的消息标 heavy（归档器不从中出话头）、明天轻轻问一句；不嗅探约定、不提议愿望

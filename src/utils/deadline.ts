@@ -12,11 +12,19 @@ export const daysUntilKey = (deadline: string, todayKey: string): number =>
 /** plain = 还早；soon = 三天内；due = 今天截止；over = 已逾期 */
 export type DeadlineTone = 'plain' | 'soon' | 'due' | 'over';
 
-/** 任务条上的一句：剩 N 天 / 今天截止 / 逾期 N 天；没设或格式不对返回 null */
-export function deadlineStatus(deadline: string | undefined, todayKey: string): { days: number; text: string; tone: DeadlineTone } | null {
+const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+/** 截止时刻 'HH:MM' 合法与否（第 28 批） */
+export const isDeadlineTime = (t: unknown): t is string => typeof t === 'string' && TIME_RE.test(t);
+
+/**
+ * 任务条上的一句：剩 N 天 / 今天截止 / 逾期 N 天；没设或格式不对返回 null。
+ * 带截止时刻（第 28 批）：「剩 2 天 · 09:00」「今天 21:00 截止」；逾期不再写时刻。
+ */
+export function deadlineStatus(deadline: string | undefined, todayKey: string, time?: string): { days: number; text: string; tone: DeadlineTone } | null {
   if (!deadline || !DAY_RE.test(deadline)) return null;
   const days = daysUntilKey(deadline, todayKey);
-  if (days > 0) return { days, text: `剩 ${days} 天`, tone: days <= 3 ? 'soon' : 'plain' };
-  if (days === 0) return { days, text: '今天截止', tone: 'due' };
+  const t = isDeadlineTime(time) ? time : '';
+  if (days > 0) return { days, text: `剩 ${days} 天${t ? ` · ${t}` : ''}`, tone: days <= 3 ? 'soon' : 'plain' };
+  if (days === 0) return { days, text: t ? `今天 ${t} 截止` : '今天截止', tone: 'due' };
   return { days, text: `逾期 ${-days} 天`, tone: 'over' };
 }

@@ -20,7 +20,9 @@ import {
   type EditTodoDraft, type NavigatorDraft, type NavigatorSnapshot,
 } from '@/utils/navigatorRegistry';
 import type { AIMessage } from '@/utils/aiClient';
-import { stampOf } from '@/utils/navigatorClock';
+import { stampOf, calendarTable, deadlineLabelCN } from '@/utils/navigatorClock';
+import { isDeadlineTime } from '@/utils/deadline';
+import { PROMISE_CUE_RE } from '@/utils/navigatorPromise';
 import { estTokens } from '@/utils/navigatorMemory';
 import { parseQueries, QUERY_PROTOCOL, runQueries, type NavigatorQuery } from '@/utils/navigatorQueries';
 import { HEAVY_TURN_LINE, isHeavyText, proofsBlock, SAFETY_RULE, seriousLine } from '@/utils/navigatorGravity';
@@ -70,10 +72,10 @@ gravity（分量，二选一）：heavy=对方在说很绝望的话（活着没�
 
 actions 元素为下列五种之一：
 {"kind":"activity","text":"事项描述","points":{"knowledge":0,"guts":0,"dexterity":0,"kindness":0,"charm":0},"important":false}（用户**已经做了**的事；points 每项 0~5）
-{"kind":"todo","title":"任务名","attribute":"knowledge|guts|dexterity|kindness|charm","points":2,"attribute2":"同属性枚举","points2":1,"repeatDaily":false}（用户**打算做/要提醒**的事；attribute2/points2 是可选副奖励——仅当这件事明显同时锻炼两种属性才给，须与 attribute 不同，否则省略这两个字段）
+{"kind":"todo","title":"任务名","attribute":"knowledge|guts|dexterity|kindness|charm","points":2,"attribute2":"同属性枚举","points2":1,"repeatDaily":false,"deadline":"YYYY-MM-DD","time":"HH:MM"}（用户**打算做/要提醒**的事；attribute2/points2 是可选副奖励——仅当这件事明显同时锻炼两种属性才给，须与 attribute 不同，否则省略这两个字段；deadline/time 可选：用户说了哪天 / 几点要做完或要提醒就填（「明早七点」= 明天 + "07:00"），time 必须配 deadline，没说日子只说几点就按今天；带 deadline 的不能 repeatDaily）
 {"kind":"ledger","direction":"expense|income","amount":0,"note":"摘要","type":"food|transport|shopping|fun|home|study|other","incomeType":"labor|other","channel":""}（花钱/收入）
 {"kind":"completeTodo","todoId":"待办清单里的 id","todoTitle":"任务名"}（用户说做完了某件今日待办；todoId 必须取自清单，没有匹配就不出）
-{"kind":"editTodo","todoId":"任务清单里的 id","title":"新任务名","attribute":"新属性","points":3,"repeatDaily":true,"deadline":"YYYY-MM-DD","archive":true}（用户要**改一条已有任务**：改名、改点数或属性、改成每日 / 单次、改或取消截止日（deadline 给空串 = 取消）、不做了（archive:true）。todoId 必须取自【任务清单已有】；**只写要改的字段**，其余省略）
+{"kind":"editTodo","todoId":"任务清单里的 id","title":"新任务名","attribute":"新属性","points":3,"repeatDaily":true,"deadline":"YYYY-MM-DD","time":"HH:MM","archive":true}（用户要**改一条已有任务**：改名、改点数或属性、改成每日 / 单次、改或取消截止日（deadline 给空串 = 取消）、改或取消截止时刻（time 给空串 = 取消时刻，日子留着）、不做了（archive:true）。todoId 必须取自【任务清单已有】；**只写要改的字段**，其余省略）
 {"kind":"remember","text":"要记住的事（关于用户的中性陈述句，≤40 字）"}（用户**明确**要你记住一件关于他的事：「记住，我对花生过敏」「记一下，我妈生日是 3 月 8 号」——不是待办、不是活动记录）
 {"kind":"forget","memoId":"【这一轮带着的记忆】里的 id"}（用户**明确**要你忘掉 / 别再提某件记着的事：「减肥那事别再提了」「忘了我说过的那个」；memoId 必须取自清单，没有对得上的就不出）
 
@@ -91,7 +93,8 @@ actions 元素为下列五种之一：
 - 一句话说了几件事就出几张卡（≤3）。信息足够就出卡；确实拿不准或信息不足才空。
 - 修改一张待确认卡 = 出一张修正后的新卡。
 - **改已有任务出 editTodo**（todoId 取自【任务清单已有】），不要再出一张 todo 卡——那会变成两条。说「做完了 / 搞定了」是 completeTodo，不是 editTodo；
-  「不做了 / 删掉 / 取消这个任务」是 editTodo + archive:true。截止日按【今天】换算成具体日期。
+  「不做了 / 删掉 / 取消这个任务」是 editTodo + archive:true。截止日按【今天】换算成具体日期（给了【日历】就查表）。
+- 「提醒我 X」「几点要做 X」：App 不发通知，只是把日子 / 几点记在任务上——清单里没有这件事就出 todo（带 deadline/time），已有就出 editTodo 改它的 deadline/time；「别提醒了 / 不用提醒了」= editTodo + time 给空串（只说不要时间）或 deadline 给空串（整个截止都不要）。
 - 「记住…」出 remember、「忘了 / 别再提…」出 forget：只认明确的要求；随口的「记得吗」「你还记得」不算，那是在问你。
 ${QUERY_PROTOCOL}
 - 其它一律 actions 为 []、queries 为 []。
@@ -106,6 +109,10 @@ ${QUERY_PROTOCOL}
 任务清单已有 id=t1「背单词」，末句：背单词那个改成每天背 50 个吧 → {"actions":[{"kind":"editTodo","todoId":"t1","title":"每天背 50 个单词","repeatDaily":true}],"queries":[],"stance":"report","energy":"normal","dated":false,"gravity":"normal"}
 今天 2026-10-06（周二）、任务清单已有 id=t2「写论文初稿」，末句：论文那个截止改到这周五 → {"actions":[{"kind":"editTodo","todoId":"t2","deadline":"2026-10-09"}],"queries":[],"stance":"report","energy":"normal","dated":false,"gravity":"normal"}
 任务清单已有 id=t3「晨跑」，末句：晨跑先不做了，删了吧 → {"actions":[{"kind":"editTodo","todoId":"t3","archive":true}],"queries":[],"stance":"report","energy":"normal","dated":false,"gravity":"normal"}
+今天 2026-10-02（周五），末句：提醒我明早七点背单词 → {"actions":[{"kind":"todo","title":"背单词","attribute":"knowledge","points":2,"repeatDaily":false,"deadline":"2026-10-03","time":"07:00"}],"queries":[],"stance":"report","energy":"normal","dated":false,"gravity":"normal"}
+今天 2026-10-02、任务清单已有 id=t1「背单词」（截止 2026-10-03 07:00），末句：背单词改到八点吧 → {"actions":[{"kind":"editTodo","todoId":"t1","time":"08:00"}],"queries":[],"stance":"report","energy":"normal","dated":false,"gravity":"normal"}
+任务清单已有 id=t1「背单词」（截止 2026-10-03 07:00），末句：背单词不用提醒我了 → {"actions":[{"kind":"editTodo","todoId":"t1","time":""}],"queries":[],"stance":"report","energy":"normal","dated":false,"gravity":"normal"}
+今天 2026-10-02（周五），末句：下周二九点前要交材料，记一下 → {"actions":[{"kind":"todo","title":"交材料","attribute":"guts","points":2,"repeatDaily":false,"deadline":"2026-10-06","time":"09:00"}],"queries":[],"stance":"report","energy":"normal","dated":false,"gravity":"normal"}
 输入末句：今天好累啊 → {"actions":[],"queries":[],"stance":"vent","energy":"low","dated":false,"gravity":"normal"}
 输入末句：刚吃了碗麻辣烫哈哈 → {"actions":[],"queries":[],"stance":"chat","energy":"normal","dated":false,"gravity":"normal"}
 输入末句：帮我记一下，午饭吃了沙拉 → {"actions":[{"kind":"activity","text":"午饭吃沙拉","points":{"knowledge":0,"guts":0,"dexterity":1,"kindness":0,"charm":0},"important":false}],"queries":[],"stance":"report","energy":"normal","dated":false,"gravity":"normal"}
@@ -188,7 +195,7 @@ export function buildDynamicContext(snap: NavigatorSnapshot, swallowed: string[]
     snap.tarotDrawn ? `今日塔罗已抽：「${snap.tarotCardName ?? '?'}」` : '今日塔罗未抽',
     snap.terminalStepTitle ? `进行中的终端小步：「${snap.terminalStepTitle}」` : '',
     due.length
-      ? `【今日未完成待办（此刻的真实状态）】\n${due.slice(0, 12).map((t) => `- 「${t.title}」(${navAttrName(t.attribute)}+${t.points})`).join('\n')}`
+      ? `【今日未完成待办（此刻的真实状态）】\n${due.slice(0, 12).map((t) => `- 「${t.title}」(${navAttrName(t.attribute)}+${t.points})${t.deadline ? `（截止 ${deadlineLabelCN(t.deadline, snap.dateKey, t.deadlineTime)}）` : ''}`).join('\n')}`
       : '【今日无未完成待办】',
     doneToday.length ? `【今日已完成】${doneToday.slice(0, 12).map((t) => `「${t.title}」`).join('、')}` : '',
     cards.length
@@ -503,12 +510,18 @@ function toDraft(a: Record<string, unknown> | null | undefined, memoRefs: MemoRe
     const extraAttribute = ATTR_IDS.includes(a.attribute2 as AttributeId) && a.attribute2 !== attribute
       ? (a.attribute2 as AttributeId)
       : null;
+    // 截止日 / 时刻（第 28 批）：日子必须是今天或以后（过去的丢掉，任务照建）；时刻只认 HH:MM 且必须配日子；带截止的不每日
+    const todayKey = toLocalDateKey();
+    const deadline = typeof a.deadline === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(a.deadline.trim()) && a.deadline.trim() >= todayKey ? a.deadline.trim() : undefined;
+    const deadlineTime = deadline && isDeadlineTime(typeof a.time === 'string' ? a.time.trim() : '') ? String(a.time).trim() : undefined;
     return {
       kind: 'todo', title, attribute,
       points: clampInt(a.points, 1, 5, 2),
       extraAttribute,
       extraPoints: clampInt(a.points2, 1, 5, 1),
-      repeatDaily: a.repeatDaily === true,
+      repeatDaily: a.repeatDaily === true && !deadline,
+      ...(deadline ? { deadline } : {}),
+      ...(deadlineTime ? { deadlineTime } : {}),
     };
   }
   if (kind === 'ledger') {
@@ -556,8 +569,16 @@ function toDraft(a: Record<string, unknown> | null | undefined, memoRefs: MemoRe
       const dl = a.deadline.trim();
       if (dl === '' ? !!todo.deadline : (/^\d{4}-\d{2}-\d{2}$/.test(dl) && dl !== todo.deadline)) d.deadline = dl;
     }
+    // 截止时刻（第 28 批）：'' = 取消时刻；合法 HH:MM 且（改后）有截止日才算改动
+    if (typeof a.time === 'string') {
+      const tm = a.time.trim();
+      const dayAfter = d.deadline !== undefined ? d.deadline : (todo.deadline ?? '');
+      if (tm === '') { if (todo.deadlineTime) d.deadlineTime = ''; }
+      else if (isDeadlineTime(tm) && dayAfter && tm !== todo.deadlineTime) d.deadlineTime = tm;
+    }
     // 每日重复与截止日互斥（「更多设置」同口径；大事没有每日）：改成每日就清截止，设了截止就回单次
-    if (d.repeatDaily === true && (d.deadline || todo.deadline)) d.deadline = '';
+    if (d.repeatDaily === true && (d.deadline || todo.deadline)) { d.deadline = ''; delete d.deadlineTime; }
+    if (d.deadline === '') delete d.deadlineTime;
     if (d.deadline && (d.repeatDaily ?? todo.repeatDaily)) d.repeatDaily = false;
     return editTodoChanges(d).length ? d : undefined;
   }
@@ -686,15 +707,18 @@ async function triageActions(
   const openTodos = s.todos.filter((t) => t.isActive && !t.archivedAt);
   // 第 13 轮：带上 id 和现状（属性 / 点数 / 频率 / 截止），editTodo 才知道改的是哪条、改成什么算变化
   const todoLines = openTodos.slice(0, 15).map((t) =>
-    `- id=${t.id} 「${t.title}」（${navAttrName(t.attribute)}+${t.points}${t.isBigDeal ? '·大事' : t.repeatDaily ? '·每日' : '·单次'}${t.deadline ? `·截止 ${t.deadline}` : ''}）`);
+    `- id=${t.id} 「${t.title}」（${navAttrName(t.attribute)}+${t.points}${t.isBigDeal ? '·大事' : t.repeatDaily ? '·每日' : '·单次'}${t.deadline ? `·截止 ${t.deadline}${t.deadlineTime ? ` ${t.deadlineTime}` : ''}` : ''}）`);
   if (openTodos.length > 15) todoLines.push(`- …等共 ${openTodos.length} 项`);
   const todayActs = s.activities
     .filter((a) => toLocalDateKey(new Date(a.date)) === todayKey)
     .slice(-10)
     .map((a) => `- ${a.description.slice(0, 40)}`);
   const weekdayCN = ['日', '一', '二', '三', '四', '五', '六'][new Date().getDay()];
+  // 时间线索词（明早 / 下周二 / 几点…）出现时才给 14 天日历表换算日子（第 28 批；与回访约定嗅探同一套口径），平时不常驻省 token
+  const calendar = PROMISE_CUE_RE.test(userText) ? `【日历（换算日子用）】\n${calendarTable(todayKey, 14)}` : '';
   const user = [
     `【今天】${todayKey}（周${weekdayCN}）`,
+    calendar,
     recent ? `【最近对话】\n${recent}` : '',
     due.length ? `【今日未完成待办（completeTodo 用）】\n${due.slice(0, 12).map((t) => `- id=${t.id} 「${t.title}」`).join('\n')}` : '【今日无未完成待办】',
     todoLines.length ? `【任务清单已有（查重 / editTodo 用）】\n${todoLines.join('\n')}` : '',
@@ -765,7 +789,7 @@ function draftLine(d: NavigatorDraft): string {
       return `- 记录活动「${d.text}」${pts ? `（${pts}）` : ''}`;
     }
     case 'todo':
-      return `- 待办「${d.title}」（${navAttrName(d.attribute)}+${d.points}${d.extraAttribute ? ` ${navAttrName(d.extraAttribute)}+${d.extraPoints}` : ''}${d.repeatDaily ? '·每日' : ''}）`;
+      return `- 待办「${d.title}」（${navAttrName(d.attribute)}+${d.points}${d.extraAttribute ? ` ${navAttrName(d.extraAttribute)}+${d.extraPoints}` : ''}${d.repeatDaily && !d.deadline ? '·每日' : ''}${d.deadline ? `·截止 ${deadlineLabelCN(d.deadline, toLocalDateKey(), d.deadlineTime)}` : ''}）`;
     case 'bigdeal':
       // 递刀产物（批5）：卡由客户端 chip 直出，不经分诊；此行仅供表演阶段知情
       return `- 大事「${d.title}」拆 ${d.steps.length} 步（${navAttrName(d.attribute)} 每步+${d.points}）`;
@@ -1040,7 +1064,17 @@ export async function generateAIGreeting(
      */
     const messages: AIMessage[] = [
       { role: 'system', content: `${personaOrNeutral(personaPrompt)}\n今天第一次见面，说一句自然的问候。像正常人刚见面：简短、贴合时段和对方状态，**不要刻意罗列数据**，不要问候语大礼包。只根据给定素材说话，对方没提过的经历不要脑补。若给了上次聊天的摘要或记忆，可自然接一句上次的话茬——按标注的日子说（几天前的事别说成昨天），别复读原文。可用空行分成最多 2 段。只输出问候本身。` },
-      { role: 'user', content: [buildDynamicContext(snap, []), ...extraContext].filter(Boolean).join('\n') },
+      {
+        role: 'user',
+        content: [
+          buildDynamicContext(snap, []),
+          // 今天截止的任务（第 28 批）：塔罗那句之后顺口提一句，带几点的说几点；按人格说，一句就好，不催不说教
+          snap.todayDeadlines.length
+            ? `【今天到期的任务】${snap.todayDeadlines.map((d) => `${d.time ? `${d.time} ` : ''}「${d.title}」`).join('、')}——说完塔罗那句之后顺带提一下（一句就好，按你自己的性格说，不催、不说教；它们在上面的未完成待办里，别重复列）。`
+            : '',
+          ...extraContext,
+        ].filter(Boolean).join('\n'),
+      },
     ];
     let text = '';
     for await (const delta of chatStream(cfg, messages, { temperature: 0.9, maxTokens: 600, signal, timeoutMs: 9000, purpose: 'greet' })) {

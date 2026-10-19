@@ -43,6 +43,8 @@ import { readAsDataUrl, downscaleDataUrl } from '@/utils/imageCrop';
 import { getVisionAIConfig } from '@/utils/aiClient';
 import { freshUnreadSummary, requestOpenSummary } from '@/utils/reportNotice';
 import { CameraIcon, MicIcon } from '@/components/settingsIcons';
+import { cardImagesOf, setCardImages, takeCardImages, useCardImageList } from '@/utils/navigatorCardImages';
+import type { PreparedImage } from '@/utils/activityImages';
 
 /** 当前人格的头像（剪影集/上传双轨；订阅 sessionId——切人格必换会话，借它触发重渲染）
  *
@@ -577,10 +579,11 @@ export const NavigatorWindow = () => {
     setFormDraft(m.draft);
     setFormKey((k) => k + 1);
   };
-  const onFormSubmit = (d: NavigatorDraft) => {
+  const onFormSubmit = (d: NavigatorDraft, images: PreparedImage[]) => {
     // userEdited 一并落下：卡片实录里会标出「用户已手改」，模型才知道内容被动过
-    if (editingCardId) nav.updateCard(editingCardId, { draft: d, userEdited: true });
-    else nav.pushCard(d);
+    // 图片（第 28 批）跟着卡走：确认时随记录存
+    if (editingCardId) { nav.updateCard(editingCardId, { draft: d, userEdited: true }); setCardImages(editingCardId, images); }
+    else { const id = nav.pushCard(d); setCardImages(id, images); }
     setFormDraft(null);
     setEditingCardId(null);
   };
@@ -588,7 +591,7 @@ export const NavigatorWindow = () => {
     if (!m.draft || busyCardId) return;
     setBusyCardId(m.id);
     try {
-      const receipt = await executeDraft(m.draft);
+      const receipt = await executeDraft(m.draft, { cardId: m.id });
       nav.updateCard(m.id, { cardStatus: 'done', receipt });
     } catch (e) {
       nav.pushCat(e instanceof Error ? `没记上：${e.message}` : '没记上，稍后再试一次。');
@@ -967,7 +970,7 @@ export const NavigatorWindow = () => {
                       )}
                       <MessageRow m={m} sk={sk} bright={bright} p5={isP5} p4={isP4} busy={busyCardId === m.id}
                         onConfirm={() => void confirmCard(m)} onEdit={() => editCard(m)}
-                        onCancel={() => nav.updateCard(m.id, { cardStatus: 'cancelled' })} />
+                        onCancel={() => { takeCardImages(m.id); nav.updateCard(m.id, { cardStatus: 'cancelled' }); }} />
                     </div>
                   );
                 })}
@@ -1192,6 +1195,7 @@ export const NavigatorWindow = () => {
         key={formKey}
         draft={formDraft}
         channel={isP5 ? 'p5' : isP4 ? 'p4' : 'p3'}
+        images={cardImagesOf(editingCardId)}
         onSubmit={onFormSubmit}
         onClose={() => { setFormDraft(null); setEditingCardId(null); }}
       />
@@ -1303,6 +1307,8 @@ const MessageRow = ({ m, sk, bright, p5 = false, p4 = false, busy, onConfirm, on
   // 角标频道：红 / 黄 / 蓝（其余中性也借蓝套配色）
   const markCh: MarkChannel = p5 ? 'p5' : p4 ? 'p4' : 'p3';
   const mark = bubbleMarkOf(m.text);
+  // 记录卡上挂着的图（第 28 批）：确认前显示缩略图，确认后随记录存走
+  const cardImgs = useCardImageList(m.role === 'card' ? m.id : null);
   if (m.role === 'summary') {
     // compact 产物：早前对话的折叠占位
     return (
@@ -1390,6 +1396,13 @@ const MessageRow = ({ m, sk, bright, p5 = false, p4 = false, busy, onConfirm, on
           <p key={i} className={`text-[15.4px] leading-relaxed ${i === 0 ? 'font-black' : 'font-bold opacity-75'}`}>{l}</p>
         ))}
       </div>
+      {cardImgs.length > 0 && m.cardStatus === 'pending' && (
+        <div className="mt-2 flex flex-wrap gap-2" data-card-images>
+          {cardImgs.map((im, i) => (
+            <img key={i} src={im.thumbDataUrl} alt={`附图 ${i + 1}`} className="h-14 w-14 rounded-lg object-cover" draggable={false} />
+          ))}
+        </div>
+      )}
       {m.cardStatus === 'pending' && (
         <div className="mt-3 flex flex-wrap gap-2">
           <button type="button" disabled={busy} onClick={onConfirm} className={sk.cardBtn}>
