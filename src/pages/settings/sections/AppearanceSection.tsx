@@ -1,4 +1,4 @@
-/** 外观与声音：主题色（+ 自定义色 / 音效方案 / 塔罗卡面）· 静音 / 音量 / 响应系统静音 · 夜间 · 背景音乐 · 旧版设置开关 */
+/** 外观与声音：主题色（+ 自定义色 / 音效方案 / 塔罗卡面）· 静音 / 音量 / 响应系统静音 · 夜间 · 背景音乐 · 「使用新版设置」开关 */
 import { useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { useShallow } from 'zustand/react/shallow';
@@ -7,6 +7,7 @@ import { triggerThemeSwitchFeedback } from '@/utils/feedback';
 import type { ThemeType } from '@/types';
 import { SoundVolumeRow } from '@/components/SoundVolumeRow';
 import { BgmSettings } from '@/components/BgmSettings';
+import { usesNewSettingsUi } from '@/utils/settingsUi';
 import { Card, Row, Divider, Toggle, Segmented, Input, useSettingsSkin, skinTokens } from '../kit';
 import { ThemeColorButton } from '../pickers';
 
@@ -127,8 +128,8 @@ export const AppearanceSection = () => {
       </Card>
 
       <Card index={4}>
-        <Row id="legacySettings" glyph="legacy" label="使用旧版设置" desc="切回竖排手风琴式的旧设置页；想换回来随时在那边关掉"
-          control={<Toggle checked={!!settings.legacySettings} onChange={(v) => updateSettings({ legacySettings: v })} aria-label="使用旧版设置" />} />
+        <Row id="newSettingsUi" glyph="legacy" label="使用新版设置" desc="关掉就回到竖排的旧设置页；想再换回来，在那边「主题」最下面打开"
+          control={<Toggle checked={usesNewSettingsUi(settings)} onChange={(v) => updateSettings({ newSettingsUi: v })} aria-label="使用新版设置" />} />
         <p className="mt-1 text-[11px] font-semibold" style={{ color: t.sub }}>两版设置改的是同一份数据，只是长相不同。</p>
       </Card>
     </>

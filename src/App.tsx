@@ -57,6 +57,7 @@ import { WishProposalDialog } from '@/components/wish/WishProposalDialog';
 // F6 黑猫对话窗（portal 到 body 的全屏 overlay；入口在 Sidebar / BottomNav 中央 ◈）
 const NavigatorWindow = lazy(() => import('@/components/navigator/NavigatorWindow').then(m => ({ default: m.NavigatorWindow })));
 import { primeCurrentTheme } from '@/utils/feedback';
+import { usesNewSettingsUi } from '@/utils/settingsUi';
 import { bootStage, bootDone, getBootInfo, ackBootFailures, collectBootDiagnostics } from '@/utils/bootGuard';
 import { initBgm, unlockBgm } from '@/utils/bgm';
 import { BackgroundAnimation } from '@/components/BackgroundAnimation';
@@ -768,7 +769,7 @@ function App() {
         return lazyPage(<Statistics />);
       case 'settings':
         // 第 30 批：新版宫格设置页；「使用旧版设置」开着才回到竖排手风琴
-        return lazyPage(settings.legacySettings ? <Settings /> : <SettingsHub />);
+        return lazyPage(usesNewSettingsUi(settings) ? <SettingsHub /> : <Settings />);
       case 'battle':
         return lazyPage(<BattleArena />);
       case 'astrology':

@@ -5,94 +5,16 @@
  * 测试通知、以及非 Android 平台的降级提示。所有写入走 updateSettings →
  * store.syncNotifications() 自动重排（见 utils/notifications.ts 的「快照 + 前台重排」策略）。
  */
-import { useEffect, useState } from 'react';
-import { v4 as uuidv4 } from 'uuid';
-import { useAppStore, DEFAULT_NOTIF_SLOTS } from '@/store';
-import { useShallow } from 'zustand/react/shallow';
 import { BellIcon } from '@/components/settingsIcons';
 import { Toggle } from '@/components/Toggle';
 import { useCalendarCapabilities } from '@/utils/nativeCalendar';
-import type { NotifContentType, NotifSlot } from '@/types';
-import {
-  notifPlatformSupported,
-  getNotifPermission,
-  requestNotifPermission,
-  sendTestNotification,
-  type NotifPermission,
-} from '@/utils/notifications';
-
-const CONTENT_META: { id: NotifContentType; icon: string; label: string; hint: string }[] = [
-  { id: 'tarot', icon: '🔮', label: '今日塔罗', hint: '今天还没抽塔罗时提醒' },
-  { id: 'todos', icon: '✅', label: '今日待办', hint: '仍有未完成的每日待办时提醒' },
-  { id: 'countercurrent', icon: '🌊', label: '逆流预警', hint: '有属性明日将逆流扣减时提醒' },
-  { id: 'summary', icon: '✨', label: '成长总结', hint: '新的周报 / 月报写好时提醒一次' },
-  { id: 'record', icon: '📝', label: '提醒记录', hint: '今天还没有任何记录时提醒' },
-  { id: 'together', icon: '🤝', label: '一起进步', hint: '约好的事今天还没完成时提醒；好友催你、发来邀请也会尽快告诉你' },
-  { id: 'quests', icon: '📜', label: '委托板', hint: '每周一委托刷新时提醒一次（委托板解锁后才会有）' },
-  { id: 'meeting', icon: '🗓️', label: '据点会议', hint: '周日提醒给这周打分、写下周目标（加入组织后才会有；默认不开）' },
-];
+import { CONTENT_META, useNotificationSettings } from '@/components/useNotificationSettings';
 
 export default function NotificationSettings() {
-  const { settings, updateSettings } = useAppStore(useShallow(s => ({ settings: s.settings, updateSettings: s.updateSettings })));
-  const supported = notifPlatformSupported();
-  const enabled = !!settings.notificationsEnabled;
+  // 状态与动作在 useNotificationSettings（第 30 批 b：新版设置页共用）
+  const { settings, updateSettings, supported, enabled, slots, perm, testSent, handleMasterToggle, updateSlot, toggleContent, addSlot, removeSlot, handleTest, requestPermission } = useNotificationSettings();
   // 加到日历（第 29 批）：原生且插件在才有这一块
   const calendarCaps = useCalendarCapabilities();
-  const slots = settings.notificationSlots ?? [];
-
-  const [perm, setPerm] = useState<NotifPermission>('prompt');
-  const [testSent, setTestSent] = useState(false);
-
-  useEffect(() => {
-    if (!supported) return;
-    getNotifPermission().then(setPerm).catch(() => {});
-  }, [supported, enabled]);
-
-  const setSlots = (next: NotifSlot[]) => updateSettings({ notificationSlots: next });
-  const updateSlot = (id: string, patch: Partial<NotifSlot>) =>
-    setSlots(slots.map(s => (s.id === id ? { ...s, ...patch } : s)));
-
-  const handleMasterToggle = async (on: boolean) => {
-    if (!on) {
-      updateSettings({ notificationsEnabled: false });
-      return;
-    }
-    if (supported) {
-      const p = await requestNotifPermission();
-      setPerm(p);
-      if (p !== 'granted') {
-        updateSettings({ notificationsEnabled: false }); // 未授权则不开启
-        return;
-      }
-    }
-    // 首次开启且尚无时段配置（现有用户的 settings 行没有该字段）→ 播种默认两槽。
-    // 区分 undefined（从未设置）与 []（用户主动清空，不重播）。
-    updateSettings(
-      settings.notificationSlots === undefined
-        ? { notificationsEnabled: true, notificationSlots: DEFAULT_NOTIF_SLOTS }
-        : { notificationsEnabled: true },
-    );
-  };
-
-  const toggleContent = (slot: NotifSlot, c: NotifContentType) => {
-    const contents = slot.contents.includes(c)
-      ? slot.contents.filter(x => x !== c)
-      : [...slot.contents, c];
-    updateSlot(slot.id, { contents });
-  };
-
-  const addSlot = () =>
-    setSlots([...slots, { id: uuidv4(), time: '12:00', enabled: true, label: '新的提醒', contents: ['tarot'] }]);
-
-  const removeSlot = (id: string) => setSlots(slots.filter(s => s.id !== id));
-
-  const handleTest = async () => {
-    const ok = await sendTestNotification();
-    if (ok) {
-      setTestSent(true);
-      setTimeout(() => setTestSent(false), 3000);
-    }
-  };
 
   return (
     <div className="space-y-5">
@@ -155,7 +77,7 @@ export default function NotificationSettings() {
           <div className="mt-3 rounded-lg bg-red-50 dark:bg-red-900/20 px-3 py-2 text-xs text-red-600 dark:text-red-400 flex items-center justify-between gap-2">
             <span>通知权限未授予，提醒不会送达。</span>
             <button
-              onClick={async () => setPerm(await requestNotifPermission())}
+              onClick={() => void requestPermission()}
               className="px-2 py-1 rounded bg-red-100 dark:bg-red-900/40 font-semibold whitespace-nowrap"
             >
               去授权

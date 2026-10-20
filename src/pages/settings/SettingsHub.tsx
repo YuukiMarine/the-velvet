@@ -1,14 +1,16 @@
 /**
  * 设置页（第 30 批）· 两级：总览宫格（8 块 + 搜索 + 账号入口）⇄ 分区子页。
- * 三频道皮在 kit.tsx；旧版竖排手风琴在 pages/Settings.tsx（settings.legacySettings 开着走它）。
+ * 三频道皮在 kit.tsx；旧版竖排手风琴在 pages/Settings.tsx。第 30 批 b 起新版按版本逐步开放：默认旧版，
+ * 用户打开「使用新版设置」（settings.newSettingsUi，见 utils/settingsUi）才走这里。
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '@/store';
 import { useBoldness } from '@/utils/boldness';
 import { resolveLevelDifficulty } from '@/utils/levelDifficulty';
-import { BUILTIN_NAVIGATOR_PRESETS } from '@/constants/navigatorPresets';
+import { resolveNavigatorPreset } from '@/constants/navigatorPresets';
+import { useNavigatorStore } from '@/store/navigator';
 import { P3RPage, P3R, slantClip } from '@/components/p3r/kit';
 import { P5RPage, P5R, P5_TITLE_FONT, P5Rough, P5Star } from '@/components/p5r/kit';
 import { P4Flower } from '@/ui/p4Kit';
@@ -19,7 +21,9 @@ import { DisplaySection } from './sections/DisplaySection';
 import { GrowthSection } from './sections/GrowthSection';
 import { PlaySection } from './sections/PlaySection';
 import { SummarySection } from './sections/SummarySection';
-import { AIServiceSection, AssistantSection, NotificationsSection } from './sections/wrapped';
+import { AIServiceSection } from './sections/wrapped';
+import { AssistantSection } from './sections/AssistantSection';
+import { NotificationsSection } from './sections/NotificationsSection';
 
 export const SECTIONS: Array<SectionMeta & { id: SettingsSectionId }> = [
   { id: 'appearance', title: '外观与声音', en: 'LOOK & SOUND', glyph: 'palette', desc: '主题色、夜间、音效与音乐' },
@@ -42,7 +46,7 @@ const SEARCH_INDEX: Array<{ sectionId: SettingsSectionId; rowId?: string; label:
   { sectionId: 'appearance', rowId: 'soundRespectSilent', label: '响应系统静音模式', keys: '静音 拨键 振动 系统' },
   { sectionId: 'appearance', rowId: 'darkMode', label: '夜间模式', keys: '夜间 暗色 深色 dark' },
   { sectionId: 'appearance', rowId: 'bgm', label: '背景音乐', keys: '音乐 bgm 导入 播放' },
-  { sectionId: 'appearance', rowId: 'legacySettings', label: '使用旧版设置', keys: '旧版 竖版 手风琴 设置页' },
+  { sectionId: 'appearance', rowId: 'newSettingsUi', label: '使用新版设置', keys: '新版 旧版 竖版 宫格 手风琴 设置页' },
   { sectionId: 'display', rowId: 'sidebarLayout', label: '左侧栏布局', keys: 'iPad 平板 侧栏 布局' },
   { sectionId: 'display', rowId: 'backgroundAnimation', label: '背景动画', keys: '极光 粒子 渐变波 脉冲 动画' },
   { sectionId: 'display', rowId: 'splashStyle', label: '开屏动画', keys: '开屏 启动 过场 splash' },
@@ -56,17 +60,24 @@ const SEARCH_INDEX: Array<{ sectionId: SettingsSectionId; rowId?: string; label:
   { sectionId: 'summary', rowId: 'summaryFamiliar', label: '沟通风格 · 熟悉的人', keys: '蓝蝶 青侍 典藏 双子 风格' },
   { sectionId: 'summary', rowId: 'summaryPresets', label: '总结预设', keys: '预设 prompt 自定义 风格' },
   { sectionId: 'summary', rowId: 'summaryAutoWrite', label: '自动撰写上一期总结', keys: '自动 总结 周 月' },
-  { sectionId: 'assistant', rowId: 'navigator', label: '助手 · 人格', keys: '人格 黑猫 助手 navigator' },
-  { sectionId: 'assistant', rowId: '拟真增强', label: '拟真增强', keys: '拟真 沉浸' },
-  { sectionId: 'assistant', rowId: '主动找你', label: '主动找你', keys: '主动 推送' },
-  { sectionId: 'assistant', rowId: '记忆按人格隔离', label: '记忆按人格隔离', keys: '记忆 隔离 人格' },
-  { sectionId: 'assistant', rowId: '让助手了解你的记录', label: '让助手了解你的记录', keys: '记录 近况 了解' },
-  { sectionId: 'assistant', rowId: '实验：原生工具调用', label: '实验：原生工具调用', keys: '工具 tools 实验' },
-  { sectionId: 'notifications', rowId: '每日提醒总开关', label: '每日提醒', keys: '提醒 通知 时段 每日' },
-  { sectionId: 'notifications', rowId: '让助手来写提醒文案', label: '让助手来写提醒文案', keys: '提醒 文案 助手' },
-  { sectionId: 'notifications', rowId: '助手会主动找你', label: '助手会主动找你', keys: '主动 推送 通知' },
-  { sectionId: 'notifications', rowId: 'AI 写完了提醒你', label: 'AI 写完了提醒你', keys: '写完 后台 提醒' },
-  { sectionId: 'notifications', rowId: '保存带截止日的任务后自动加到日历', label: '自动加到日历', keys: '日历 截止 任务 自动' },
+  { sectionId: 'assistant', rowId: 'navigatorPersonas', label: '助手 · 人格', keys: '人格 黑猫 助手 切换 navigator' },
+  { sectionId: 'assistant', rowId: 'navigatorPersonas', label: '新建人格', keys: '新建 自定义 人格 生成 头像 喜好 口吻' },
+  { sectionId: 'assistant', rowId: 'navigatorImmersive', label: '拟真增强', keys: '拟真 沉浸 打字 气泡' },
+  { sectionId: 'assistant', rowId: 'navigatorBriefing', label: '让助手了解你的记录', keys: '记录 近况 了解 简报' },
+  { sectionId: 'assistant', rowId: 'navigatorDaydream', label: '走神', keys: '走神 联想 旧事' },
+  { sectionId: 'assistant', rowId: 'wishAgentProposals', label: '主动提议更新愿望进度', keys: '愿望 进度 提议' },
+  { sectionId: 'assistant', rowId: 'navigatorNotebook', label: '记事本', keys: '记事本 记忆 画像' },
+  { sectionId: 'assistant', rowId: 'navigatorMemoryIsolated', label: '记忆按人格隔离', keys: '记忆 隔离 人格 共享' },
+  { sectionId: 'assistant', rowId: 'navigatorArchive', label: '整理旧对话', keys: '整理 归档 对话' },
+  { sectionId: 'assistant', rowId: 'navigatorPush', label: '主动找你', keys: '主动 推送 想念' },
+  { sectionId: 'assistant', rowId: 'assistantModel', label: '对话模型', keys: '模型 助手 深思熟虑' },
+  { sectionId: 'assistant', rowId: 'navigatorNativeTools', label: '实验：原生工具调用', keys: '工具 tools 实验' },
+  { sectionId: 'notifications', rowId: 'notificationsEnabled', label: '每日提醒', keys: '提醒 通知 每日 总开关 权限' },
+  { sectionId: 'notifications', rowId: 'notifSlots', label: '提醒时段', keys: '时段 时间 几点 内容 塔罗 待办 测试通知' },
+  { sectionId: 'notifications', rowId: 'notifAIVoice', label: '让助手来写提醒文案', keys: '提醒 文案 助手 口吻' },
+  { sectionId: 'notifications', rowId: 'navigatorPushNotif', label: '助手会主动找你', keys: '主动 推送 通知' },
+  { sectionId: 'notifications', rowId: 'aiJobDoneNotify', label: 'AI 写完了提醒你', keys: '写完 后台 提醒' },
+  { sectionId: 'notifications', rowId: 'todoAutoCalendar', label: '自动加到日历', keys: '日历 截止 任务 自动' },
   { sectionId: 'growth', rowId: 'countercurrentEnabled', label: '逆流', keys: '逆流 衰减 预警' },
   { sectionId: 'growth', rowId: 'attributeNames', label: '属性名称', keys: '属性 名字 知识 胆量 灵巧 温柔 魅力' },
   { sectionId: 'growth', rowId: 'aiPresetNames', label: 'AI 匹配成就 / 技能名称', keys: '成就 技能 名称 匹配' },
@@ -92,6 +103,7 @@ const SPLASH_LABEL: Record<string, string> = { velvet: '靛蓝色房间', p5: '�
 /** 宫格每块下面那一行「当前状态」 */
 const useSummaries = (): Record<SettingsSectionId, { text: string; status?: 'ok' | 'warn' | 'off' }> => {
   const { user, settings } = useAppStore(useShallow(s => ({ user: s.user, settings: s.settings })));
+  const presets = useNavigatorStore(s => s.presets);
   return useMemo(() => {
     const theme = THEME_LABEL[user?.theme ?? 'blue'] ?? '蓝';
     const sound = settings.soundMuted ? '静音' : `音效 ${settings.soundVolume ?? 80}%`;
@@ -100,8 +112,7 @@ const useSummaries = (): Record<SettingsSectionId, { text: string; status?: 'ok'
     const providerKey = settings.summaryApiProvider ?? 'deepseek';
     const provider = providerKey === 'custom' ? (settings.customProviderName?.trim() || '自定义') : (PROVIDER_LABEL[providerKey] ?? providerKey);
     const hasKey = !!settings.summaryApiKey?.trim();
-    const preset = BUILTIN_NAVIGATOR_PRESETS.find(p => p.id === (settings.navigatorPresetId ?? BUILTIN_NAVIGATOR_PRESETS[0]?.id));
-    const presetName = preset?.name ?? '自定义人格';
+    const presetName = resolveNavigatorPreset(settings.navigatorPresetId, presets).name;
     const slots = settings.notificationSlots?.length ?? 0;
     const notifOn = !!settings.notificationsEnabled;
     const difficulty = resolveLevelDifficulty(settings) === 'hard' ? '困难' : '简单';
@@ -111,12 +122,12 @@ const useSummaries = (): Record<SettingsSectionId, { text: string; status?: 'ok'
       display: { text: `背景动画 ${settings.backgroundImage ? '背景图' : anim ? `开 ${anim}` : '关'} · 开屏 ${SPLASH_LABEL[settings.splashStyle ?? 'velvet'] ?? '靛蓝色房间'}` },
       ai: { text: hasKey ? `${provider} · 已配置${settings.summaryModel ? ` · ${settings.summaryModel}` : ''}` : `${provider} · 还没填 Key`, status: hasKey ? 'ok' : 'off' },
       summary: { text: `${settings.summaryActivePresetId ? '已选风格' : '伊戈尔'} · 自动撰写${settings.summaryAutoWrite === false ? '关' : '开'}` },
-      assistant: { text: `${presetName} · ${settings.navigatorMemoryIsolated ? '记忆按人格' : '记忆共享'} · 主动找你${settings.navigatorPushEnabled ? '开' : '关'}` },
+      assistant: { text: `${presetName} · ${settings.navigatorMemoryIsolated ? '记忆按人格' : '记忆共享'} · 主动找你${settings.navigatorPushEnabled !== false ? '开' : '关'}` },
       notifications: { text: notifOn ? `每日 ${slots} 个时段 · 写完提醒${settings.aiJobDoneNotify === false ? '关' : '开'}` : '每日提醒关', status: notifOn ? 'ok' : 'off' },
       growth: { text: `${settings.levelThresholds.length} 级 · ${difficulty}档 · 逆流${settings.countercurrentEnabled ? '开' : '关'}` },
       play: { text: `记账${settings.ledgerEnabled !== false ? '开' : '关'} · 委托 AI 卡${settings.lifeQuestAiCard ? '开' : '关'} · 关键词 ${keywordTotal} 词` },
     };
-  }, [user?.theme, settings]);
+  }, [user?.theme, settings, presets]);
 };
 
 const AccountEntry = ({ onClick }: { onClick: () => void }) => {
@@ -182,6 +193,8 @@ export const SettingsHub = () => {
   const [query, setQuery] = useState('');
   const { flashId, flashRow } = useRowFlash();
   const summaries = useSummaries();
+  // 宫格上「助手」那块要显示自定义人格的名字：进设置就读一次名册（读过的话是空转）
+  useEffect(() => { void useNavigatorStore.getState().loadPresets(); }, []);
 
   const open = (id: SettingsSectionId, opts?: { aiJump?: boolean; row?: string }) => {
     setAiJump(!!opts?.aiJump);
@@ -242,7 +255,7 @@ export const SettingsHub = () => {
                     {body}
                     {active !== 'appearance' && (
                       <Card index={9}>
-                        <p className="text-[11px] font-semibold" style={{ color: skinTokens(skin).sub }}>想回旧版竖排设置：外观与声音 → 最下面「使用旧版设置」。</p>
+                        <p className="text-[11px] font-semibold" style={{ color: skinTokens(skin).sub }}>想回旧版竖排设置：外观与声音 → 最下面关掉「使用新版设置」。</p>
                       </Card>
                     )}
                   </motion.div>

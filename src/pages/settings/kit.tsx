@@ -39,7 +39,9 @@ export const skinTokens = (skin: SettingsSkin) => {
 export type GlyphName =
   | 'palette' | 'display' | 'key' | 'spark' | 'mask' | 'bell' | 'growth' | 'play'
   | 'moon' | 'speaker' | 'music' | 'image' | 'anim' | 'splash' | 'weather' | 'sidebar'
-  | 'wave' | 'coin' | 'tag' | 'bars' | 'quest' | 'swords' | 'clock' | 'search' | 'cloud' | 'legacy' | 'mute' | 'cards';
+  | 'wave' | 'coin' | 'tag' | 'bars' | 'quest' | 'swords' | 'clock' | 'search' | 'cloud' | 'legacy' | 'mute' | 'cards'
+  // 30b：助手 / 通知两页用到的
+  | 'check' | 'pen' | 'link' | 'calendar' | 'bubble' | 'notebook' | 'archive' | 'thought' | 'users' | 'doc' | 'wish' | 'flask' | 'chip' | 'trash' | 'plus' | 'send';
 
 const GLYPH_PATHS: Record<GlyphName, ReactNode> = {
   palette: <><path d="M12 3a9 9 0 1 0 0 18c1.5 0 2-.8 2-1.7 0-.9-.6-1.3-.6-2.1 0-1 .8-1.7 1.8-1.7H17a4 4 0 0 0 4-4c0-4.7-4-8.5-9-8.5Z" /><circle cx="7.5" cy="11.5" r="1.1" fill="currentColor" /><circle cx="10.5" cy="7.5" r="1.1" fill="currentColor" /><circle cx="15" cy="7.5" r="1.1" fill="currentColor" /></>,
@@ -70,6 +72,22 @@ const GLYPH_PATHS: Record<GlyphName, ReactNode> = {
   cloud: <path d="M7 18a4 4 0 0 1-.5-7.97A6 6 0 0 1 18 9a4.5 4.5 0 0 1-1 8.9H7Z" />,
   legacy: <><rect x="4" y="3" width="16" height="18" rx="2" /><path d="M8 8h8M8 12h8M8 16h5" /></>,
   cards: <><rect x="4" y="5" width="11" height="15" rx="1.5" transform="rotate(-8 9.5 12.5)" /><rect x="10" y="4" width="11" height="15" rx="1.5" transform="rotate(6 15.5 11.5)" /></>,
+  check: <path d="m4.5 12.5 4.5 4.5L19.5 6.5" />,
+  pen: <><path d="M4 20h4L19 9l-4-4L4 16v4Z" /><path d="m13.5 6.5 4 4" /></>,
+  link: <><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1" /><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1" /></>,
+  calendar: <><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M3 10h18M8 3v4M16 3v4" /><path d="M8 14h.01M12 14h.01M16 14h.01M8 17.5h.01M12 17.5h.01" /></>,
+  bubble: <><path d="M4 5h16v11H10l-6 4.5V5Z" /><path d="M8.5 10.5h.01M12 10.5h.01M15.5 10.5h.01" /></>,
+  notebook: <><path d="M6 3h12v18H6Z" /><path d="M9.5 3v18M13 8h2.5M13 12h2.5" /></>,
+  archive: <><rect x="3" y="4" width="18" height="5" rx="1" /><path d="M5 9v10h14V9M10 13h4" /></>,
+  thought: <><path d="M7.5 15.5a3.8 3.8 0 0 1-.6-7.55A5.3 5.3 0 0 1 17 7.4a3.8 3.8 0 0 1 .4 7.6H7.5Z" /><circle cx="7.5" cy="19" r="1.3" fill="currentColor" stroke="none" /><circle cx="4.5" cy="21.5" r=".9" fill="currentColor" stroke="none" /></>,
+  users: <><circle cx="8" cy="8.5" r="3" /><circle cx="16.5" cy="8.5" r="3" /><path d="M2.5 20c0-3 2.4-5.2 5.5-5.2s5.5 2.2 5.5 5.2M13.5 15.2c.9-.3 1.9-.4 3-.4 3.1 0 5 2.2 5 5.2" /></>,
+  doc: <><path d="M6 3h8l4 4v14H6Z" /><path d="M14 3v4h4M9 12h6M9 16h6" /></>,
+  wish: <path d="M12 3.2l2.6 5.5 6 .7-4.4 4.1 1.2 5.9L12 16.5l-5.4 2.9 1.2-5.9-4.4-4.1 6-.7Z" />,
+  flask: <><path d="M9 3h6M10 3v6.2L4.6 18.9A1.5 1.5 0 0 0 5.9 21h12.2a1.5 1.5 0 0 0 1.3-2.1L14 9.2V3" /><path d="M7.2 15h9.6" /></>,
+  chip: <><rect x="6" y="6" width="12" height="12" rx="2" /><path d="M9.5 2.5v3.5M14.5 2.5v3.5M9.5 18v3.5M14.5 18v3.5M2.5 9.5H6M2.5 14.5H6M18 9.5h3.5M18 14.5h3.5" /></>,
+  trash: <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" />,
+  plus: <path d="M12 5v14M5 12h14" />,
+  send: <><path d="M21 3 3 10.5l7 2.5 2.5 7L21 3Z" /><path d="m10 13 5-5" /></>,
 };
 
 export const Glyph = ({ name, size = 22, className, style }: { name: GlyphName; size?: number; className?: string; style?: CSSProperties }) => (
@@ -561,6 +579,99 @@ export const LinkValue = ({ children }: { children: ReactNode }) => {
   return <span className="text-[13px] font-black" style={{ color: skin === 'p4' ? t.ink : t.accent }}>{children} <span aria-hidden>›</span></span>;
 };
 
+// ── 多选小签（30b：提醒内容 / 语气关键词）─────────────────────────────────────
+export const Chip = ({ on, onClick, children, ariaLabel, title, glyph, seed = 0 }: {
+  on: boolean;
+  onClick: () => void;
+  children: ReactNode;
+  ariaLabel?: string;
+  title?: string;
+  glyph?: GlyphName;
+  /** P5 撕边形状的种子（同一排的签各不相同） */
+  seed?: number;
+}) => {
+  const skin = useSettingsSkin();
+  const t = skinTokens(skin);
+  const icon = glyph ? <Glyph name={glyph} size={14} /> : null;
+  if (skin === 'p5') {
+    return (
+      <motion.button type="button" whileTap={{ x: 1.5, y: 2 }} onClick={onClick} aria-pressed={on} aria-label={ariaLabel} title={title}
+        className="relative inline-flex items-center px-3 py-1.5 text-[12.5px] font-black" style={{ color: on ? P5R.white : P5R.ink, fontFamily: P5_TITLE_FONT }}>
+        <P5Rough seed={960 + seed * 7} jag={3.5} frame={2} face={on ? P5R.red : P5R.paper} shadow={on ? { x: 2, y: 2.5 } : { x: 1.5, y: 1.5 }} />
+        <span className="relative inline-flex items-center gap-1">{icon}{children}</span>
+      </motion.button>
+    );
+  }
+  if (skin === 'p3') {
+    // 未选：白面 + 青色斜框（放在淡蓝的时段卡上、白色的分组卡上都看得清）；选中：实心蓝
+    const clip = 'polygon(7px 0, 100% 0, calc(100% - 7px) 100%, 0 100%)';
+    return (
+      <motion.button type="button" whileTap={{ scale: 0.95 }} onClick={onClick} aria-pressed={on} aria-label={ariaLabel} title={title}
+        className="relative inline-flex items-center px-3.5 py-1.5 text-[12.5px] font-black transition-colors"
+        style={{ clipPath: clip, background: on ? P3R.blue : 'rgba(53,209,232,0.65)', color: on ? '#fff' : t.ink }}>
+        {!on && <span aria-hidden className="absolute inset-[1.5px]" style={{ clipPath: clip, background: 'var(--p3r-panel, #fff)' }} />}
+        <span className="relative inline-flex items-center gap-1">{icon}{children}</span>
+      </motion.button>
+    );
+  }
+  if (skin === 'p4') {
+    return (
+      <motion.button type="button" whileTap={{ scale: 0.94, rotate: -1.5 }} onClick={onClick} aria-pressed={on} aria-label={ariaLabel} title={title}
+        className="inline-flex items-center gap-1 px-3 py-1.5 text-[12.5px] font-black"
+        style={{ borderRadius: 999, background: on ? '#131313' : 'var(--ui-paper, #fff6d0)', color: on ? 'var(--ui-bg, #ffd900)' : 'var(--ui-ink, #131313)', boxShadow: '0 0 0 2px #131313' }}>
+        {icon}{children}
+      </motion.button>
+    );
+  }
+  return (
+    <motion.button type="button" whileTap={{ scale: 0.95 }} onClick={onClick} aria-pressed={on} aria-label={ariaLabel} title={title}
+      className={`inline-flex items-center gap-1 rounded-full border px-3 py-1.5 text-[12.5px] font-bold transition-colors ${on ? 'border-primary/40 bg-primary/10 text-primary' : 'border-gray-200 bg-gray-50 text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400'}`}>
+      {icon}{children}
+    </motion.button>
+  );
+};
+
+// ── 提示条（30b：网页版说明 / 权限没给）────────────────────────────────────────
+export const Note = ({ tone = 'info', children, action }: { tone?: 'info' | 'warn'; children: ReactNode; action?: ReactNode }) => {
+  const skin = useSettingsSkin();
+  const t = skinTokens(skin);
+  const warn = tone === 'warn';
+  const inner = (
+    <>
+      <span className="min-w-0 flex-1 text-[12px] font-bold leading-snug">{children}</span>
+      {action && <span className="shrink-0">{action}</span>}
+    </>
+  );
+  if (skin === 'p5') {
+    return (
+      <div className="relative flex items-center gap-3 px-3.5 py-2.5" style={{ color: P5R.white, fontFamily: P5_TITLE_FONT }}>
+        <P5Rough seed={warn ? 991 : 987} jag={4} frame={2} face={warn ? P5R.red : P5R.ink} frameColor={P5R.ink} shadow={{ x: 2, y: 3 }} />
+        <span className="relative flex w-full items-center gap-3">{inner}</span>
+      </div>
+    );
+  }
+  if (skin === 'p3') {
+    return (
+      <div className="relative flex items-center gap-3 py-2.5 pl-4 pr-3" style={{ clipPath: slantClip(8), background: warn ? 'rgba(240,65,127,0.12)' : P3R.cyanFaint, color: warn ? P3R.magenta : t.ink }}>
+        <span aria-hidden className="absolute inset-y-0 left-0 w-[5px]" style={{ background: warn ? P3R.magenta : P3R.blue }} />
+        {inner}
+      </div>
+    );
+  }
+  if (skin === 'p4') {
+    return (
+      <div className="flex items-center gap-3 px-3.5 py-2.5" style={{ borderRadius: 14, background: warn ? 'var(--p4-orange, #f9a11b)' : 'var(--ui-paper, #fff6d0)', color: warn ? '#131313' : 'var(--ui-ink, #131313)', boxShadow: '0 0 0 2px #131313' }}>
+        {inner}
+      </div>
+    );
+  }
+  return (
+    <div className={`flex items-center gap-3 rounded-xl border px-3.5 py-2.5 ${warn ? 'border-red-200 bg-red-50 text-red-600 dark:border-red-900/50 dark:bg-red-900/20 dark:text-red-300' : 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800/60 dark:bg-amber-900/20 dark:text-amber-300'}`}>
+      {inner}
+    </div>
+  );
+};
+
 // ── 分段选择 ─────────────────────────────────────────────────────────────────
 export const Segmented = <V extends string>({ value, options, onChange, ariaLabel, size = 'md' }: {
   value: V;
@@ -657,7 +768,7 @@ export const Btn = ({ children, tone = 'primary', onClick, disabled, className, 
   }
   if (skin === 'p4') {
     const bg = tone === 'primary' ? '#131313' : tone === 'danger' ? 'var(--p4-orange, #f9a11b)' : 'var(--ui-paper, #fff6d0)';
-    const fg = tone === 'primary' ? 'var(--ui-bg, #ffd900)' : '#131313';
+    const fg = tone === 'primary' ? 'var(--ui-bg, #ffd900)' : tone === 'danger' ? '#131313' : 'var(--ui-ink, #131313)';
     return (
       <motion.button type="button" whileTap={anim ? { scale: 0.95 } : undefined} onClick={onClick} disabled={disabled} aria-label={ariaLabel}
         className={`select-none rounded-full font-black disabled:cursor-not-allowed disabled:opacity-40 ${small ? 'px-3 py-1.5 text-[12px]' : 'px-5 py-2.5 text-[14px]'} ${className ?? ''}`}
@@ -684,8 +795,9 @@ export const inputClass = (skin: SettingsSkin, extra = '') => {
   return `${base} rounded-xl border border-gray-200 bg-white text-gray-800 focus:border-primary dark:border-gray-600 dark:bg-gray-800 dark:text-white ${extra}`;
 };
 export const inputStyle = (skin: SettingsSkin): CSSProperties | undefined => {
-  if (skin === 'p3') return { borderColor: 'rgba(53,209,232,0.55)', background: 'rgba(255,255,255,0.75)', color: P3R.ink, clipPath: 'polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%)' };
-  if (skin === 'p4') return { background: 'var(--ui-paper, #fff6d0)', color: 'var(--ui-ink, #131313)' };
+  if (skin === 'p3') return { borderColor: 'rgba(53,209,232,0.55)', background: P3R.panel, color: P3R.ink, clipPath: 'polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%)' };
+  // 黄：.p4-reskin 的毯式皮会把 border 清成透明、底色刷成奶油（和卡片同色），描边只能走 box-shadow
+  if (skin === 'p4') return { background: 'var(--ui-paper, #fff6d0)', color: 'var(--ui-ink, #131313)', boxShadow: '0 0 0 2px #131313' };
   return undefined;
 };
 

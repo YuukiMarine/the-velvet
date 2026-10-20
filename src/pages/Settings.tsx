@@ -22,6 +22,7 @@ import { AIServiceSettings } from '@/components/settings/AIServiceSettings';
 import { Toggle } from '@/components/Toggle';
 import NotificationSettings from '@/components/NotificationSettings';
 import { NavigatorSettings } from '@/components/navigator/NavigatorSettings';
+import { usesNewSettingsUi } from '@/utils/settingsUi';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { getLayoutModeVersion, setSidebarEnabled, sidebarEnabled, sidebarSettingVisible, subscribeLayoutMode } from '@/ui/layoutMode';
@@ -1533,16 +1534,16 @@ export const Settings = () => {
                     {/* ── 子板块：导入音乐（第 13 轮 B 组 2.8，常态折叠，主题分区最下方） ── */}
                     <BgmSettings p5={p5} />
 
-                    {/* 第 30 批：新版宫格设置页在这里换回去（开着 = 用旧版，也就是本页） */}
+                    {/* 第 30 批 b：新版宫格设置页按版本逐步开放——默认是本页（竖排），打开就换成宫格并记住 */}
                     <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
                       <div>
-                        <h4 className="font-medium text-gray-800 dark:text-white">使用旧版设置</h4>
-                        <p className="text-sm text-gray-600 dark:text-gray-400">关掉就换成新版的宫格设置页；两版改的是同一份数据</p>
+                        <h4 className="font-medium text-gray-800 dark:text-white">使用新版设置</h4>
+                        <p className="text-sm text-gray-600 dark:text-gray-400">打开就换成宫格式的新设置页（还在逐步开放）；两版改的是同一份数据，随时能换回来</p>
                       </div>
                       <Toggle
-                        checked={!!settings.legacySettings}
-                        onChange={(v) => updateSettings({ legacySettings: v })}
-                        aria-label="使用旧版设置"
+                        checked={usesNewSettingsUi(settings)}
+                        onChange={(v) => updateSettings({ newSettingsUi: v })}
+                        aria-label="使用新版设置"
                       />
                     </div>
                   </div>
