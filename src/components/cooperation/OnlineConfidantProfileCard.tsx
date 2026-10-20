@@ -22,6 +22,8 @@ import { useCloudSocialStore } from '@/store/cloudSocial';
 import { useCloudStore } from '@/store/cloud';
 import { useAppStore } from '@/store';
 import { severFriendship } from '@/services/friends';
+import { endPactsWith } from '@/services/pactSync';
+import { isPactLive } from '@/utils/pactLogic';
 import {
   hasPrayedToday,
   hasBeenPrayedByToday,
@@ -68,6 +70,14 @@ export function OnlineConfidantProfileCard({
   const battleState = useAppStore(s => s.battleState);
   // 一起进步：这位是不是在线同伴（同一天都完成才涨亲密度）
   const isConfidant = useAppStore(s => !!profile && s.confidants.some(c => c.source === 'online' && !c.archivedAt && c.linkedCloudUserId === profile.id));
+  // 本机这位的同伴卡（含归档）：「已缔结 COOP」下面那行告诉用户去哪儿找 Ta（第 32 批）
+  const localCardArchived = useAppStore(s => {
+    if (!profile) return null;
+    const c = s.confidants.find(x => x.source === 'online' && x.linkedCloudUserId === profile.id);
+    return c ? !!c.archivedAt : null;
+  });
+  // 和 Ta 还挂着的约定：解除好友时一并结束，确认框里先说一声
+  const hasLivePact = useCloudSocialStore(s => !!profile && s.pacts.some(p => isPactLive(p) && (p.fromId === profile.id || p.toId === profile.id)));
 
   // 当前与这位的 COOP bond（最多一条活跃）
   const relatedBond = useMemo(() => {
@@ -94,6 +104,13 @@ export function OnlineConfidantProfileCard({
     }
     return 'none';
   }, [relatedBond, cloudUser]);
+
+  // 冷却还剩多久（第 32 批）：以前写死「7 天后可重试」，第 6 天、第 7 天早上看还是「7 天后」，像是卡住了
+  const cooldownText = useMemo(() => {
+    const until = coopStatus === 'cooldown_rejected' ? relatedBond?.reRequestAfter
+      : coopStatus === 'cooldown_severed' ? relatedBond?.reLinkAfter : undefined;
+    return until ? formatCooldownLeft(until) : '';
+  }, [coopStatus, relatedBond]);
 
   const [severing, setSevering] = useState(false);
   const [severConfirm, setSeverConfirm] = useState(false);
@@ -147,6 +164,8 @@ export function OnlineConfidantProfileCard({
         respondedAt: updated.respondedAt,
         reLinkAfter: updated.reLinkAfter,
       });
+      // 解除好友后，和 Ta 还挂着的约定一并结束（第 32 批 · 用户反馈：好友删了，约定待办还在、面板又打不开）
+      if (profile) await endPactsWith(profile.id).catch(() => 0);
       setSeverConfirm(false);
       onClose();
     } catch (err) {
@@ -417,7 +436,7 @@ export function OnlineConfidantProfileCard({
                     <span className="text-base">✦</span>
                     <span>已缔结 COOP</span>
                   </div>
-                  <div className="text-[10px] opacity-80 mt-0.5">在同伴列表里找 Ta</div>
+                  <div className="text-[10px] opacity-80 mt-0.5">{localCardArchived === true ? '在「归档」里找 Ta' : localCardArchived === false ? '在同伴列表里找 Ta' : '同步后会出现在同伴里'}</div>
                 </button>
               ) : coopStatus === 'pending_mine' ? (
                 <button
@@ -463,7 +482,7 @@ export function OnlineConfidantProfileCard({
                     <span>冷却中</span>
                   </div>
                   <div className="text-[10px] opacity-70 mt-0.5">
-                    {coopStatus === 'cooldown_rejected' ? '3 天后可重试' : '7 天后可重试'}
+                    {cooldownText}
                   </div>
                 </button>
               ) : (
@@ -525,7 +544,7 @@ export function OnlineConfidantProfileCard({
               >
                 <p className="text-[11px] leading-relaxed" style={{ color: '#fecaca' }}>
                   确认要与 {name} 解除好友？<br />
-                  解除后 7 天内无法再次相互邀请。
+                  解除后 7 天内无法再次相互邀请。{hasLivePact && <><br />你们进行中的「一起进步」约定也会一起结束。</>}
                 </p>
                 {severError && (
                   <p className="text-[10px]" style={{ color: '#fca5a5' }}>{severError}</p>
@@ -644,4 +663,16 @@ function formatReset(next: Date): string {
   if (h > 0) return `${h} 小时后`;
   if (m > 0) return `${m} 分钟后`;
   return '马上';
+}
+
+/** 冷却还剩多久：一天以内写到几点（今天 / 明天 HH:mm 后），更久写「还要 N 天」 */
+function formatCooldownLeft(until: Date): string {
+  const ms = until.getTime() - Date.now();
+  if (!Number.isFinite(ms) || ms <= 0) return '马上就能再试';
+  const hm = `${String(until.getHours()).padStart(2, '0')}:${String(until.getMinutes()).padStart(2, '0')}`;
+  if (ms < 86400000) {
+    const sameDay = new Date().toDateString() === until.toDateString();
+    return `${sameDay ? '今天' : '明天'} ${hm} 后可重试`;
+  }
+  return `还要 ${Math.ceil(ms / 86400000)} 天 · ${until.getMonth() + 1}/${until.getDate()} ${hm} 后`;
 }

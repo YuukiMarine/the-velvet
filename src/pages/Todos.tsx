@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { useAppStore, toLocalDateKey } from '@/store';
 import { useShallow } from 'zustand/react/shallow';
 import { OrgOpTodoTag, PactTodoTag } from '@/components/cooperation/PactTag';
+import { PactPanelModal } from '@/components/cooperation/PactPanel';
 import { DeadlineTag } from '@/components/todo/DeadlineTag';
 import { WishBoard, useWishPane, wishSkinFor } from '@/components/wish/WishBoard';
 import { PaneSwapMark } from '@/components/wish/PaneSwapMark';
@@ -422,6 +423,11 @@ export const TodosView = () => {
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   // 归档也要二次确认（第 22 批 · 用户反馈）：长按菜单里「归档」挨着「编辑」，误点就把任务收走了
   const [pendingArchiveId, setPendingArchiveId] = useState<string | null>(null);
+  // 约定待办的「打开这个约定」：直接弹约定面板（第 32 批）。以前只是跳到羁绊页，要自己去找那位的卡——
+  // 同伴删了 / 好友解除了就找不到卡，约定既结束不了、待办也归档不了（用户反馈的死循环）
+  const [pactModal, setPactModal] = useState<{ partnerId: string; partnerName: string } | null>(null);
+  const pactModalIsConfidant = useAppStore(s => !!pactModal && s.confidants.some(c => c.source === 'online' && !c.archivedAt && c.linkedCloudUserId === pactModal.partnerId));
+  const pactModalIsFriend = useCloudSocialStore(s => !!pactModal && s.friendships.some(f => f.status === 'linked' && f.otherProfile?.id === pactModal.partnerId));
   const menuTodo = menuTodoId ? todos.find(t => t.id === menuTodoId) : undefined;
   // 同级上下移（第 31 批）：只在今天的清单里、同一层（BIG DEAL / 重要 / 普通）里挪；到头的那个方向不给
   const setTodoOrder = useAppStore(s => s.setTodoOrder);
@@ -499,6 +505,10 @@ export const TodosView = () => {
       useCloudSocialStore.getState().setHideoutOrgId(t.orgOp.orgId);
       goBondView('orgs');
       useCloudSocialStore.getState().setHideoutSection('ops');
+    } else if (t.pact) {
+      setPactModal({ partnerId: t.pact.partnerId, partnerName: t.pact.partnerName || '好友' });
+      // 冷启动还没拉过约定：顺手拉一次，面板拿到最新状态（结束了的会显示「已经结束」）
+      if (!useCloudSocialStore.getState().pactsLoaded) void import('@/services/social').then(m => m.loadSocial({ force: true })).catch(() => { /* 面板照样能开 */ });
     } else {
       useAppStore.getState().setCurrentPage('cooperation');
     }
@@ -1842,6 +1852,16 @@ export const TodosView = () => {
       {/* 抽签仪式 */}
       <FateDrawSheet open={fateOpen} onClose={() => setFateOpen(false)} />
       <QuestBoardSheet open={questOpen} onClose={() => setQuestOpen(false)} />
+      {pactModal && (
+        <PactPanelModal
+          open
+          onClose={() => setPactModal(null)}
+          partnerId={pactModal.partnerId}
+          partnerName={pactModal.partnerName}
+          isConfidant={pactModalIsConfidant}
+          canPropose={pactModalIsFriend}
+        />
+      )}
 
       {/* ── §4.6 长按上下文菜单：全页单实例，按 menuTodoId 寻址目标任务。
           关闭后 SheetModal 的 AnimatePresence 会用上一帧的子树播 exit，

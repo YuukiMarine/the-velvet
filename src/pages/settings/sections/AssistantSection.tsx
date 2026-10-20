@@ -63,7 +63,8 @@ const PersonaCard = ({ preset, active, index, onSelect, actions }: {
       </span>
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-1.5">
-          <span className="truncate text-[15px] font-black leading-tight" style={{ color: ink, fontFamily: skin === 'p5' ? P5_TITLE_FONT : skin === 'p4' ? 'var(--p4-display-font, serif)' : undefined, fontStyle: skin === 'p3' ? 'italic' : undefined }}>{preset.name}</span>
+          {/* 蓝频道斜体：truncate 会按字框把斜出去的笔画裁掉（「猫」「机」右边缺一角），右边留一点内边距给斜出去的那截 */}
+          <span className={`truncate text-[15px] font-black leading-tight ${skin === 'p3' ? 'pr-[0.22em]' : ''}`} style={{ color: ink, fontFamily: skin === 'p5' ? P5_TITLE_FONT : skin === 'p4' ? 'var(--p4-display-font, serif)' : undefined, fontStyle: skin === 'p3' ? 'italic' : undefined }}>{preset.name}</span>
           {tags}
         </span>
         <span className="mt-0.5 block truncate text-[11.5px] font-semibold" style={{ color: sub }}>{blurb}{blurb.length >= 40 ? '…' : ''}</span>

@@ -203,6 +203,22 @@ export async function syncPacts(notifications: NotificationEntry[]): Promise<voi
   // 委托板（第 31 批）：约定拉下来了再刷一次——冷启动那次刷新时约定还是空的，「和搭档一起完成一次」那张判不出来
   void useAppStore.getState().refreshQuests().catch(() => { /* 下次刷新再说 */ });
   const today = toLocalDateKey();
+  // 已经解除好友的人（好友关系明确是 severed）：还挂着的约定结束掉（第 32 批 · 用户反馈：删了好友 / 同伴，
+  // 约定待办还在、面板又打不开）。只认这一轮刚拉到的好友列表里明写 severed 的，拉取失败时这里根本不会跑
+  const severedPartners = new Set(
+    useCloudSocialStore.getState().friendships.filter(f => f.status === 'severed' && f.otherProfile).map(f => f.otherProfile!.id),
+  );
+  for (const p of listed) {
+    if (!isPactLive(p) || !severedPartners.has(partnerIdOf(p, me))) continue;
+    try {
+      const ended = await endPact(p.id);
+      const i = listed.indexOf(p);
+      if (i >= 0) listed[i] = ended;
+      upsert(ended);
+    } catch (err) {
+      console.warn('[velvet-pact] end pact with ex-friend failed', p.id, err);
+    }
+  }
   // 服务器上已经没有的约定（对方注销级联删除、结束超过 45 天没联网、换了账号）：本地待办归档，别一直挂着、天天提醒
   const ids = new Set(listed.map(p => p.id));
   for (const t of useAppStore.getState().todos) {
@@ -277,6 +293,27 @@ export async function nudgePartner(pactId: string): Promise<CoopPact> {
   const p = await nudgePact(pactId, toLocalDateKey());
   upsert(p);
   return p;
+}
+
+/**
+ * 和某个人之间还挂着的约定（进行中 / 等回应）全部结束：解除好友、删除在线同伴时调（第 32 批）。
+ * 尽力而为：一份失败不拦后面的；返回没结束掉的份数（离线时下次对账 / 任务长按「打开这个约定」还能再结束）。
+ */
+export async function endPactsWith(partnerId: string): Promise<number> {
+  const me = getUserId();
+  if (!me || !partnerId) return 0;
+  let pacts = useCloudSocialStore.getState().pacts;
+  if (!useCloudSocialStore.getState().pactsLoaded) pacts = (await listMyPacts()) ?? pacts;
+  let failed = 0;
+  for (const p of pacts.filter(x => isPactLive(x) && partnerIdOf(x, me) === partnerId)) {
+    try {
+      await endPactFromUi(p.id);
+    } catch (err) {
+      failed += 1;
+      console.warn('[velvet-pact] endPactsWith failed', p.id, err);
+    }
+  }
+  return failed;
 }
 
 export async function endPactFromUi(pactId: string): Promise<CoopPact> {

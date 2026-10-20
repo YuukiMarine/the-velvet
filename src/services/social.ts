@@ -27,6 +27,7 @@ import { getOnlineCardFace, clearOnlineCardFace } from './onlineCardFace';
 import { syncPacts } from './pactSync';
 import { primeOrgsFromCache, syncOrgs } from './orgSync';
 import { interpretLockedArcana, type ConfidantMatchResult } from '@/utils/confidantAI';
+import { TAROT_BY_ID } from '@/constants/tarot';
 import type { CoopBond, CoopShadow, Friendship, NotificationEntry } from '@/types';
 
 /** 每条 prayer_received 通知带来的 SP 奖励 */
@@ -272,6 +273,64 @@ const materializeCoopBonds = async (bonds: CoopBond[]): Promise<void> => {
       c => c.source === 'online' && c.linkedCloudUserId === other.id,
     );
     if (existing) {
+      // 重新缔结（第 32 批 · 用户反馈「解除后过了七天，缔结按钮一直灰着」）：解除 → 再缔结用的是同一条 bond，
+      // 本机那张卡要么被自动归档了、要么用户「知晓并恢复」过（bondSeverDismissed）。以前这里一律跳过：
+      // 两边的卡一直留在归档里、塔罗还是旧的，资料卡写着「已缔结 COOP · 在同伴列表里找 Ta」却哪儿也找不到。
+      // 现在：bond 的接受时间晚于这张卡的归档时间（= 归档之后又缔结了一次），或者卡带着「知晓并恢复」的标记，
+      // 就把卡放回来，塔罗按这次选的换。用户自己手动归档、bond 一直 linked 的（接受时间早于归档）不动。
+      const archivedAtMs = existing.archivedAt ? new Date(existing.archivedAt).getTime() : NaN;
+      const relinkedAfterArchive = !!existing.archivedAt && !!bond.respondedAt && bond.respondedAt.getTime() > archivedAtMs;
+      const relinkedAfterDismiss = !existing.archivedAt && !!existing.bondSeverDismissed;
+      if (relinkedAfterArchive || relinkedAfterDismiss) {
+        const targetArcana = view.myArcanaId;
+        const holder = appStore.confidants.find(c => !c.archivedAt && c.id !== existing.id && c.arcanaId === targetArcana);
+        if (holder) {
+          console.warn('[velvet-social] relink skipped (arcana taken locally):', { arcanaId: targetArcana, holderId: holder.id, wantedBy: other.id });
+          blockers.push({ bondId: bond.id, arcanaId: targetArcana, otherName: other.nickname || other.userId || '未命名客人' });
+          continue;
+        }
+        const orientation = view.myArcanaOrientation ?? existing.orientation;
+        const arcanaChanged = targetArcana !== existing.arcanaId || orientation !== existing.orientation;
+        let interpretation: string | undefined;
+        let advice: string | undefined;
+        if (arcanaChanged) {
+          interpretation = view.theirMessage ? `Ta 写给你：${view.theirMessage.slice(0, 140)}` : '契约重新缔结 —— 两张塔罗在暗处再次互相照亮。';
+          advice = '下一次见面，记得为 Ta 做一件此前没做过的小事。';
+          if (appStore.settings.coopUseAIInterpretation !== false) {
+            try {
+              const r = await interpretLockedArcana({
+                settings: appStore.settings,
+                name: other.nickname || other.userId || existing.name,
+                arcanaId: targetArcana,
+                orientation,
+                intimacy: existing.intimacy,
+                message: view.theirMessage || view.myMessage || '',
+              });
+              if (r.interpretation) interpretation = r.interpretation;
+              if (r.advice) advice = r.advice;
+            } catch (err) {
+              console.warn('[velvet-social] interpretLockedArcana (relink) failed, fallback to template', err);
+            }
+          }
+        }
+        try {
+          await appStore.relinkConfidant(existing.id, {
+            arcanaId: targetArcana,
+            orientation,
+            skillAttribute: view.mySkillAttribute,
+            interpretation,
+            advice,
+            linkedProfile: other,
+            name: other.nickname || other.userId || existing.name,
+            narrative: targetArcana !== existing.arcanaId
+              ? `重新缔结 COOP · 塔罗换成「${TAROT_BY_ID[targetArcana]?.name ?? targetArcana}」`
+              : '重新缔结 COOP · 两张塔罗再次互相照亮',
+          });
+        } catch (err) {
+          console.warn('[velvet-social] relink confidant failed', existing.id, err);
+        }
+        continue;
+      }
       // 紧急修复 #5 的回填：以前物化时把「我写给对方的话」当成了关系描述——认出来就清掉
       //（关系描述显示「（未填写）」，可在详情里补写；原来写的那段描述当时没有被保存下来，无从恢复）
       if (existing.description && view.myMessage && existing.description.trim() === view.myMessage.trim()) {

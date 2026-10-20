@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { User, Attribute, Activity, Achievement, Skill, Settings, ThemeType, AttributeId, AttributeNamesKey, DailyEvent, Todo, TodoCompletion, TodoStep, FateCandidate, BigDealClearPayload, PeriodSummary, SummaryPeriod, SummaryPromptPreset, WeeklyGoal, WeeklyGoalItem, Persona, Shadow, BattleState, TowerStratum, StratumNode, DailyDivination, LongReading, LongReadingFollowUp, FateGlimpse, Confidant, ConfidantEvent, ConfidantBuff, CounselSession, CounselMessage, CounselArchive, CallingCard, NotifSlot, LedgerEntry, Budget, SpendWorth, LedgerAsset, Wish, WishProgressPoint, WishProgressSource, WishProgressCutPayload, WishProposalPayload, ReturnPayload, ReturnTier, BackfillEntry, BattleArsenal, ChainKey, AffixKind, NavigatorPreset, NavigatorMemo, NavigatorSessionRow, RelicInstance, FinalBossFlaw, FinalePhase , MoonShadowState , SeasonStamp, Quest } from '@/types';
+import { User, Attribute, Activity, Achievement, Skill, Settings, ThemeType, AttributeId, AttributeNamesKey, DailyEvent, Todo, TodoCompletion, TodoStep, FateCandidate, BigDealClearPayload, PeriodSummary, SummaryPeriod, SummaryPromptPreset, WeeklyGoal, WeeklyGoalItem, Persona, Shadow, BattleState, TowerStratum, StratumNode, DailyDivination, LongReading, LongReadingFollowUp, FateGlimpse, Confidant, ConfidantEvent, ConfidantBuff, CounselSession, CounselMessage, CounselArchive, CallingCard, NotifSlot, LedgerEntry, Budget, SpendWorth, LedgerAsset, Wish, WishProgressPoint, WishProgressSource, WishProgressCutPayload, WishProposalPayload, ReturnPayload, ReturnTier, BackfillEntry, BattleArsenal, ChainKey, AffixKind, NavigatorPreset, NavigatorMemo, NavigatorSessionRow, RelicInstance, FinalBossFlaw, FinalePhase , MoonShadowState , SeasonStamp, Quest, TarotOrientation, CloudProfile } from '@/types';
 import { TAROT_BY_ID } from '@/constants/tarot';
 import { summarizeCounsel, type CounselContext, type CounselConfidantBrief, type CounselRecentEvent } from '@/utils/counselAI';
 import { db } from '@/db';
@@ -759,6 +759,14 @@ interface AppState {
   }) => Promise<{ leveledUp: boolean; newIntimacy: number }>;
   archiveConfidant: (id: string) => Promise<void>;
   unarchiveConfidant: (id: string) => Promise<void>;
+  /**
+   * 重新缔结 COOP（第 32 批）：解除后又缔结时，把本机那张卡（归档了的 / 知晓并恢复过的）放回来；
+   * 塔罗 / 正逆位 / 能力属性换了就跟着换（能力按现在的等级重算），亲密度和历史不动，记一条「重新缔结」
+   */
+  relinkConfidant: (id: string, opts: {
+    arcanaId?: string; orientation?: TarotOrientation; skillAttribute?: AttributeId;
+    interpretation?: string; advice?: string; linkedProfile?: CloudProfile; name?: string; narrative: string;
+  }) => Promise<void>;
   deleteConfidant: (id: string) => Promise<void>;
   useConfidantBattleItem: (id: string, kind: 'battle_heal' | 'battle_sp') => Promise<ConfidantBuff | null>;
   runConfidantDailyMaintenance: () => Promise<void>;
@@ -6729,6 +6737,38 @@ export const useAppStore = create<AppState>((set, get) => ({
     await get().loadConfidants();
   },
 
+  relinkConfidant: async (id, opts) => {
+    const cur = await db.confidants.get(id);
+    if (!cur) return;
+    const now = new Date();
+    const arcanaId = opts.arcanaId ?? cur.arcanaId;
+    const skillAttribute = opts.skillAttribute ?? cur.skillAttribute;
+    const abilityChanged = arcanaId !== cur.arcanaId || skillAttribute !== cur.skillAttribute;
+    await db.confidants.put({
+      ...cur,
+      archivedAt: undefined,
+      bondSeverDismissed: undefined,
+      arcanaId,
+      orientation: opts.orientation ?? cur.orientation,
+      skillAttribute,
+      ...(opts.interpretation ? { aiInterpretation: opts.interpretation } : {}),
+      ...(opts.advice ? { aiAdvice: opts.advice } : {}),
+      ...(abilityChanged ? { buffs: buffsForLevel(arcanaId, cur.intimacy, get().settings.attributeNames, skillAttribute) } : {}),
+      ...(opts.linkedProfile ? { linkedProfile: opts.linkedProfile } : {}),
+      ...(opts.name ? { name: opts.name } : {}),
+      lastInteractionAt: now,
+    });
+    await db.confidantEvents.add({
+      id: uuidv4(),
+      confidantId: id,
+      date: toLocalDateKey(now),
+      type: 'bound',
+      narrative: opts.narrative,
+      createdAt: now,
+    });
+    await get().loadConfidants();
+  },
+
   deleteConfidant: async (id) => {
     const current = await db.confidants.get(id);
     // 在线同伴：先 **await** 把 PB bond 标 severed，
@@ -6761,6 +6801,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     const evs = await db.confidantEvents.where('confidantId').equals(id).toArray();
     if (evs.length) await db.confidantEvents.bulkDelete(evs.map(e => e.id));
     await get().loadConfidants();
+    // 和 Ta 进行中 / 等回应的「一起进步」约定一并结束（第 32 批 · 用户反馈：删了同伴，约定还挂在任务里，
+    // 约定面板又只能从同伴 / 好友卡进，卡没了就再也结束不了）。失败不拦删除：任务长按「打开这个约定」也能结束
+    if (current && current.source === 'online' && current.linkedCloudUserId) {
+      try {
+        const { endPactsWith } = await import('@/services/pactSync');
+        await endPactsWith(current.linkedCloudUserId);
+      } catch (err) {
+        console.warn('[velvet-store] end pacts after deleting companion failed', err);
+      }
+    }
   },
 
   useConfidantBattleItem: async (id, kind) => {

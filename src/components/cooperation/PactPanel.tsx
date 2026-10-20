@@ -28,10 +28,12 @@ const md = (k: string) => { const d = new Date(`${k}T12:00:00`); return `${d.get
  * surface='night'：放在固定深紫底的好友资料卡里（不跟主题走），字色整体翻浅。
  * bare：不要外框和「TOGETHER 一起进步」小标题（放进选项卡 / 弹窗时，外面已经写着了）。
  */
-export function PactPanel({ partnerId, partnerName, isConfidant, surface = 'default', bare = false, proposeLabel = '发起一起进步' }: {
+export function PactPanel({ partnerId, partnerName, isConfidant, surface = 'default', bare = false, proposeLabel = '发起一起进步', canPropose = true }: {
   partnerId: string; partnerName: string; isConfidant: boolean; surface?: 'default' | 'night'; bare?: boolean;
   /** 「发起」按钮的字（名片的 TOGETHER 选项卡里叫「发起共同行动」） */
   proposeLabel?: string;
+  /** 没有约定时给不给「发起」：从任务长按打开、对方已经不是好友时不给（第 32 批） */
+  canPropose?: boolean;
 }) {
   const me = useCloudStore(s => s.cloudUser?.id);
   const pact = useCloudSocialStore(s => s.pacts.find(p => isPactLive(p) && (p.fromId === partnerId || p.toId === partnerId)));
@@ -64,6 +66,8 @@ export function PactPanel({ partnerId, partnerName, isConfidant, surface = 'defa
   let body: JSX.Element;
   if (!me) {
     body = <p className={`text-[11px] ${c.sub}`}>登录后可以和 {partnerName} 约一起进步。</p>;
+  } else if (!pact && !canPropose) {
+    body = <p className={`text-[11px] leading-relaxed ${c.sub} ${bare ? 'text-center' : ''}`}>和 {partnerName} 的这份约定已经结束了。</p>;
   } else if (!pact) {
     body = (
       <>
@@ -175,12 +179,14 @@ export function PactPanel({ partnerId, partnerName, isConfidant, surface = 'defa
 }
 
 /** 在线同伴详情页「一起进步」快捷入口点开的弹窗：内容就是这块面板 */
-export function PactPanelModal({ open, onClose, partnerId, partnerName, isConfidant }: {
+export function PactPanelModal({ open, onClose, partnerId, partnerName, isConfidant, canPropose = true }: {
   open: boolean; onClose: () => void; partnerId: string; partnerName: string; isConfidant: boolean;
+  /** 见 PactPanel：任务长按打开、对方已不是好友时不给「发起」 */
+  canPropose?: boolean;
 }) {
   return (
     <PactShell open={open} onClose={onClose} eyebrow="TOGETHER · 一起进步" title={`和 ${partnerName} 一起进步`}>
-      <PactPanel partnerId={partnerId} partnerName={partnerName} isConfidant={isConfidant} bare />
+      <PactPanel partnerId={partnerId} partnerName={partnerName} isConfidant={isConfidant} bare canPropose={canPropose} />
     </PactShell>
   );
 }

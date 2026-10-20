@@ -124,6 +124,8 @@ export function ConfidantDetailModal({
   const coopBonds = useCloudSocialStore(s => s.coopBonds);
   const coopShadows = useCloudSocialStore(s => s.coopShadows);
   const friendships = useCloudSocialStore(s => s.friendships);
+  // 删除在线同伴会一并结束和 Ta 还挂着的约定（第 32 批）：确认框里先说一声
+  const pacts = useCloudSocialStore(s => s.pacts);
   const cloudUser = useCloudStore(s => s.cloudUser);
 
   // 在线同伴 + 未登录云端 → 全部编辑类操作都禁用；仅允许查看
@@ -1233,6 +1235,10 @@ export function ConfidantDetailModal({
                   <li>这位同伴的档案、亲密度、能力解锁将一并被抹去</li>
                   <li>所有互动记录与星移痕迹也会被清空</li>
                   <li>Ta 所占用的塔罗大阿卡纳将被释放，可重新分配给新的同伴</li>
+                  {confidant.source === 'online' && confidant.linkedCloudUserId
+                    && pacts.some(p => (p.status === 'active' || p.status === 'pending') && (p.fromId === confidant.linkedCloudUserId || p.toId === confidant.linkedCloudUserId)) && (
+                    <li>你们进行中的「一起进步」约定也会一起结束，任务里的那条会收进归档</li>
+                  )}
                   <li>如果只是暂时不想看见 Ta，建议使用「暂时归档」</li>
                 </ul>
                 <div className="grid grid-cols-2 gap-2 pt-1">

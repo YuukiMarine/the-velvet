@@ -178,10 +178,9 @@ export const useCloudSocialStore = create<CloudSocialState>(set => ({
 
   setCoopBonds: coopBonds => set({ coopBonds }),
 
-  addCoopBond: b => set(state => {
-    if (state.coopBonds.some(x => x.id === b.id)) return state;
-    return { coopBonds: [b, ...state.coopBonds] };
-  }),
+  // 同一对只有一条 bond：解除后再发起是**同一条记录**改回 pending——以前已有就原样返回，
+  // 发起人的资料卡还停在旧的「解除」状态、又显示「邀请 COOP」（第 32 批）；现在按 id 换成新的
+  addCoopBond: b => set(state => ({ coopBonds: [b, ...state.coopBonds.filter(x => x.id !== b.id)] })),
 
   updateCoopBond: (id, patch) => set(state => ({
     coopBonds: state.coopBonds.map(b => (b.id === id ? { ...b, ...patch } : b)),
