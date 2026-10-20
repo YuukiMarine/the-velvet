@@ -11,6 +11,7 @@
  * / 逆流衰减弹窗 / 临期 Toast / 终端 24h 卡。数据逻辑与 Dashboard.tsx 同源，口径零改动。
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { compareTodos } from '@/utils/todoOrder';
 import type { MouseEvent as ReactMouseEvent, ReactNode } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ModalPortal } from '@/components/ModalPortal';
@@ -638,15 +639,10 @@ export const DashboardP5 = () => {
       }
     }
     return false;
-  })].sort((a, b) => {
-    // BIG DEAL 恒在最上（PRD_V2.6 §2.1）：它是"这段时间最重要的一件事"，
-    // 排在普通待办之后就等于每天都要滚一下才看得见，与它的分量不符
-    if (a.isBigDeal && !b.isBigDeal) return -1;
-    if (!a.isBigDeal && b.isBigDeal) return 1;
-    if (a.important && !b.important) return -1;
-    if (!a.important && b.important) return 1;
-    return 0;
-  });
+  })].sort(
+    // BIG DEAL 恒在最上（PRD_V2.6 §2.1），其次重要；同一层里按用户在任务页挪过的先后（第 31 批，与任务页共用）
+    compareTodos,
+  );
   // 「N/M」只统计**可勾选**的普通待办（理由见 Dashboard.tsx 同名处）
   const tickableTodos = todayTodos.filter((t) => !t.isBigDeal);
   const completedCount = tickableTodos.filter((t) => getTodayTodoProgress(t.id).isComplete).length;

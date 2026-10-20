@@ -31,7 +31,8 @@ import { ActionSheet } from '@/components/ActionSheet';
 import { useCalendarCapabilities, addTodoToCalendar, addTodoAlarm, maybeAutoCalendar } from '@/utils/nativeCalendar';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { SheetModal } from '@/components/SheetModal';
-import { ArchiveIcon, CalendarIcon, EditIcon, RestoreIcon, TrashIcon } from '@/components/icons';
+import { ArchiveIcon, CalendarIcon, EditIcon, MoveDownIcon, MoveUpIcon, RestoreIcon, TrashIcon } from '@/components/icons';
+import { canMoveInTier, compareTodos, reorderInTier } from '@/utils/todoOrder';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { P4CountPill, P4EmptyBloom, P4SectionTitle, P4Sparkle } from '@/ui/p4Kit';
 import { BigSlantTitle, GhostWords, P3EmptySlab, P3R, SlantButton } from '@/components/p3r/kit';
@@ -381,13 +382,8 @@ export const TodosView = () => {
     // 这一页是 BigDealHomeCard **唯一真正执行过**的渲染点（三个 Dashboard 那边
     // 曾被 filter 整个滤掉），但这里偏偏没有置顶——于是十来条日常里，大事就沉在
     // 中间，卡片式样跟普通行差不多，用户「反正就是没看到」的第二重原因。
-    return [...active].sort((a, b) => {
-      if (a.isBigDeal && !b.isBigDeal) return -1;
-      if (!a.isBigDeal && b.isBigDeal) return 1;
-      if (a.important && !b.important) return -1;
-      if (!a.important && b.important) return 1;
-      return 0;
-    });
+    // 同一层里按用户挪过的先后（第 31 批 · 长按「上移 / 下移」）；比较函数和三个首页共用
+    return [...active].sort(compareTodos);
   }, [todos, todayWeekday, todayDateKey]);
 
   /** 未到日期的任务：startDate 在未来，或 isActive 但今天不是指定的星期几 */
@@ -427,6 +423,15 @@ export const TodosView = () => {
   // 归档也要二次确认（第 22 批 · 用户反馈）：长按菜单里「归档」挨着「编辑」，误点就把任务收走了
   const [pendingArchiveId, setPendingArchiveId] = useState<string | null>(null);
   const menuTodo = menuTodoId ? todos.find(t => t.id === menuTodoId) : undefined;
+  // 同级上下移（第 31 批）：只在今天的清单里、同一层（BIG DEAL / 重要 / 普通）里挪；到头的那个方向不给
+  const setTodoOrder = useAppStore(s => s.setTodoOrder);
+  const moveItems = (id: string) => {
+    const out: Array<{ label: string; icon: JSX.Element; onClick: () => void }> = [];
+    if (!activeTodos.some(t => t.id === id)) return out;
+    if (canMoveInTier(activeTodos, id, -1)) out.push({ label: '上移', icon: <MoveUpIcon />, onClick: () => { const u = reorderInTier(activeTodos, id, -1); if (u) void setTodoOrder(u); } });
+    if (canMoveInTier(activeTodos, id, 1)) out.push({ label: '下移', icon: <MoveDownIcon />, onClick: () => { const u = reorderInTier(activeTodos, id, 1); if (u) void setTodoOrder(u); } });
+    return out;
+  };
   const pendingDeleteTodo = pendingDeleteId ? todos.find(t => t.id === pendingDeleteId) : undefined;
   const pendingArchiveTodo = pendingArchiveId ? todos.find(t => t.id === pendingArchiveId) : undefined;
 
@@ -1851,10 +1856,12 @@ export const TodosView = () => {
               // 约定 / 作战的待办：不能手动归档 / 删除，给一个去约定 / 作战那边的入口
               ? [
                   { label: '编辑（属性 / 分值）', icon: <EditIcon />, onClick: () => handleEdit(menuTodo.id) },
+                  ...moveItems(menuTodo.id),
                   { label: menuTodo.orgOp ? (menuTodo.orgOp.kind === 'big' ? '打开这场作战' : `打开这个${OP_KIND_LABEL.small}`) : '打开这个约定', icon: <ArchiveIcon />, onClick: () => openLinked(menuTodo) },
                 ]
               : [
                   { label: '编辑', icon: <EditIcon />, onClick: () => handleEdit(menuTodo.id) },
+                  ...moveItems(menuTodo.id),
                   // 加到日历 / 闹钟（第 29 批）：拉起系统日历的新建页 / 系统时钟；只有带截止日的任务才有，闹钟还要有时刻且只有安卓
                   ...(calendarCaps.calendar && menuTodo.deadline ? [{ label: '加到日历', icon: <CalendarIcon />, onClick: () => { void addTodoToCalendar(menuTodo); } }] : []),
                   ...(calendarCaps.alarm && menuTodo.deadline && menuTodo.deadlineTime ? [{ label: '加到闹钟', icon: <CalendarIcon />, onClick: () => { void addTodoAlarm(menuTodo); } }] : []),

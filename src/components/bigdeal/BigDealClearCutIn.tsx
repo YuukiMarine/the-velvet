@@ -6,7 +6,7 @@
  * 弹幕（读：种子+云端过审飘过；写：有投稿权时一键开 DanmakuCompose，先审后发）。
  * 四频道舞台与抽签同族（p5 剪报 / p4 演播厅 / p3 水面 / neutral 虚空）；bold 降级直出。
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import { useAppStore } from '@/store';
@@ -15,7 +15,7 @@ import { useBoldness } from '@/utils/boldness';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { triggerLevelFeedback } from '@/utils/feedback';
 import { TERMINAL_DANMAKU_SEEDS } from '@/constants/terminalDanmaku';
-import { listApprovedDanmaku, type DanmakuItem } from '@/services/danmaku';
+import { fillDanmaku, listApprovedDanmaku, type DanmakuItem } from '@/services/danmaku';
 import { DanmakuLayer } from '@/components/danmaku/DanmakuLayer';
 import { cloudEnabled } from '@/services/pocketbase';
 import { DanmakuCompose } from '@/components/danmaku/DanmakuCompose';
@@ -108,6 +108,8 @@ export const BigDealClearCutIn = () => {
   const sk = SKINS[channel === 'p5' || channel === 'p4' || channel === 'p3' ? channel : 'neutral'];
   const [composeOpen, setComposeOpen] = useState(false);
   const [approved, setApproved] = useState<DanmakuItem[]>([]);
+  // 弹幕给结算卡让道（第 31 批）：量这个块的上下沿
+  const contentRef = useRef<HTMLDivElement>(null);
 
   const open = !!bigDealClear;
   const tokens = settings.terminalDanmakuTokens ?? 0;
@@ -120,8 +122,9 @@ export const BigDealClearCutIn = () => {
     if (cloudEnabled) listApprovedDanmaku().then(setApproved).catch(() => {});
   }, [open]);
 
+  // 同屏 9 条、6 道（第 31 批；以前 3 条一人一道显得冷清）。池子不够 9 条就循环着用
   const danmaku = useMemo<DanmakuItem[]>(
-    () => [...TERMINAL_DANMAKU_SEEDS.map(text => ({ id: '', text })), ...approved].sort(() => Math.random() - 0.5).slice(0, 3),
+    () => fillDanmaku([...TERMINAL_DANMAKU_SEEDS.map(text => ({ id: '', text })), ...approved].sort(() => Math.random() - 0.5), 9),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [open, approved],
   );
@@ -143,9 +146,10 @@ export const BigDealClearCutIn = () => {
               <div aria-hidden className="pointer-events-none absolute inset-0" style={{ backgroundImage: sk.texture.backgroundImage, backgroundSize: sk.texture.backgroundSize, opacity: sk.texture.opacity }} />
             )}
             {/* 弹幕环境层（读：官方种子 + 云端已过审；云端条目可点击举报并隐藏） */}
-            <DanmakuLayer items={danmaku} lineClassName={sk.danmaku} bold={bold} />
+            <DanmakuLayer items={danmaku} lineClassName={sk.danmaku} bold={bold} lanes={[6, 14, 22, 72, 80, 88]} avoidRef={contentRef} durBase={15} durStep={2.2} />
 
-            <div className="w-full max-w-sm text-center">
+            {/* relative z-10：内容压在弹幕上面（矮屏上道会碰到标题，第 31 批） */}
+            <div ref={contentRef} className="relative z-10 w-full max-w-sm text-center">
               <motion.div
                 initial={bold ? { opacity: 0, y: -18 } : false}
                 animate={{ opacity: 1, y: 0 }}

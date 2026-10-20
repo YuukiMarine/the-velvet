@@ -10,6 +10,7 @@
  * 竞态用 pendingWrites 缓冲（hydrate 完成前产生的消息补写入库）。
  */
 import { create } from 'zustand';
+import { prefetchWeather, weatherConfigOf } from '@/utils/weather';
 import { v4 as uuidv4 } from 'uuid';
 import { db } from '@/db';
 import { useAppStore, toLocalDateKey } from '@/store';
@@ -971,6 +972,8 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
     userSend: (text, imageDataUrl) => {
       const phase = get().phase;
       get().pushUser(text, imageDataUrl);
+      // 第 31 批：说话时顺手把天气取上（缓存新鲜就不发）——助手开出来的记录卡点确认时，记录要附一份天气
+      prefetchWeather(weatherConfigOf(useAppStore.getState().settings));
       if (phase === 'thinking') {
         generation++;
         turnAbort?.abort();

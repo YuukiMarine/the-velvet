@@ -1,6 +1,6 @@
 import { motion, AnimatePresence } from 'motion/react';
 import { useFabDodge } from '@/ui/useFabDodge';
-import { weatherEmoji, type WeatherIcon } from '@/utils/weather';
+import { weatherEmoji, prefetchWeather, weatherConfigOf, type WeatherIcon } from '@/utils/weather';
 import { useState, useMemo, useRef, useEffect, lazy, Suspense } from 'react';
 import { useAppStore, toLocalDateKey } from '@/store';
 import { useShallow } from 'zustand/react/shallow';
@@ -130,12 +130,14 @@ const CAL_KEY = 'activities-calendar-open';
 
 interface CalendarViewProps {
   activities: ReturnType<typeof useAppStore.getState>['activities'];
+  /** 有截止日、还没归档的任务（第 31 批：月历上标出哪天有事要交） */
+  deadlines?: Array<{ id: string; title: string; deadline: string; deadlineTime?: string }>;
   /** 外部受控的选中日期 key（YYYY-MM-DD） */
   selectedDay: string | null;
   onDaySelect: (day: string | null) => void;
 }
 
-const CalendarView = ({ activities, selectedDay, onDaySelect }: CalendarViewProps) => {
+const CalendarView = ({ activities, deadlines = [], selectedDay, onDaySelect }: CalendarViewProps) => {
   const today = new Date();
   const [viewYear, setViewYear]   = useState(today.getFullYear());
   const [viewMonth, setViewMonth] = useState(today.getMonth()); // 0-based
@@ -210,6 +212,26 @@ const CalendarView = ({ activities, selectedDay, onDaySelect }: CalendarViewProp
     try { localStorage.setItem('cal-show-important', next ? '1' : '0'); } catch { /* ignore */ }
     return next;
   });
+  // 任务截止日（第 31 批）：日期格底下一条主题色短横，有时刻的那天数字右下带个小钟；默认开，记在本机
+  const [showDeadlines, setShowDeadlines] = useState<boolean>(() => {
+    try { return localStorage.getItem('cal-show-deadlines') !== '0'; } catch { return true; }
+  });
+  const toggleDeadlines = () => setShowDeadlines(prev => {
+    const next = !prev;
+    try { localStorage.setItem('cal-show-deadlines', next ? '1' : '0'); } catch { /* ignore */ }
+    return next;
+  });
+  const deadlinesByDay = useMemo(() => {
+    const m = new Map<string, Array<{ id: string; title: string; deadlineTime?: string }>>();
+    for (const t of deadlines) {
+      const list = m.get(t.deadline) ?? [];
+      list.push({ id: t.id, title: t.title, deadlineTime: t.deadlineTime });
+      m.set(t.deadline, list);
+    }
+    for (const list of m.values()) list.sort((a, b) => (a.deadlineTime ?? '99:99').localeCompare(b.deadlineTime ?? '99:99'));
+    return m;
+  }, [deadlines]);
+  const selectedDeadlines = selectedDay && showDeadlines ? (deadlinesByDay.get(selectedDay) ?? []) : [];
   const availableYears = useMemo(() => {
     const years = new Set(activities.map(a => new Date(a.date).getFullYear()));
     years.add(today.getFullYear());
@@ -333,6 +355,17 @@ const CalendarView = ({ activities, selectedDay, onDaySelect }: CalendarViewProp
                   aria-label="在日历上显示重要事件"
                 />
               </div>
+              <div className="px-5 pb-3 flex items-center justify-between">
+                <span className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1.5">
+                  <span className="inline-block h-[3px] w-3 rounded-full flex-shrink-0" style={{ background: primaryColor }} />
+                  显示任务截止日
+                </span>
+                <Toggle
+                  checked={showDeadlines}
+                  onChange={toggleDeadlines}
+                  aria-label="在日历上显示任务截止日"
+                />
+              </div>
             </motion.div>
           )}
         </AnimatePresence>
@@ -356,12 +389,14 @@ const CalendarView = ({ activities, selectedDay, onDaySelect }: CalendarViewProp
             const isToday = key === todayKey;
             const isSelected = key === selectedDay;
             const isImportant = importantSet.has(key);
+            const dueHere = showDeadlines ? (deadlinesByDay.get(key) ?? []) : [];
             const weekdayIdx = (firstDay + day - 1) % 7;
             const isWeekend = weekdayIdx === 0 || weekdayIdx === 6;
 
             return (
               <motion.button
                 key={key}
+                data-cal-day={key}
                 whileTap={{ scale: 0.82 }}
                 onClick={() => onDaySelect(selectedDay === key ? null : key)}
                 className={`relative flex flex-col items-center justify-center rounded-xl py-2 transition-all ${
@@ -375,6 +410,15 @@ const CalendarView = ({ activities, selectedDay, onDaySelect }: CalendarViewProp
                 {/* important event indicator — tiny amber dot top-right */}
                 {isImportant && showImportant && (
                   <span className="absolute top-1 right-1.5 w-1.5 h-1.5 rounded-full bg-amber-400 z-10" />
+                )}
+                {/* 任务截止日（第 31 批）：格子底边一条主题色短横；有时刻的再带个小钟 */}
+                {dueHere.length > 0 && (
+                  <>
+                    <span aria-hidden data-cal-deadline className="absolute bottom-0.5 left-1/2 h-[3px] w-4 -translate-x-1/2 rounded-full z-10" style={{ background: primaryColor }} />
+                    {dueHere.some(d => d.deadlineTime) && (
+                      <span aria-hidden className="absolute top-0.5 left-1 text-[8px] leading-none z-10">⏰</span>
+                    )}
+                  </>
                 )}
 
                 {/* date number */}
@@ -431,6 +475,29 @@ const CalendarView = ({ activities, selectedDay, onDaySelect }: CalendarViewProp
 
         {/* selected day activities */}
         <AnimatePresence>
+          {selectedDay && selectedDeadlines.length > 0 && (
+            <motion.div
+              key="due"
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className="overflow-hidden border-t border-gray-100 dark:border-gray-800"
+              data-cal-due-list
+            >
+              <div className="px-4 pt-3 pb-1 space-y-1.5">
+                <p className="text-[10px] font-bold tracking-widest uppercase text-gray-400 dark:text-gray-500">
+                  {selectedDay.replace(/-/g, '/')} 到期的任务
+                </p>
+                {selectedDeadlines.map(d => (
+                  <div key={d.id} className="flex items-center gap-2">
+                    <span className="inline-block h-[3px] w-3 rounded-full flex-shrink-0" style={{ background: primaryColor }} />
+                    <span className="text-xs font-semibold text-gray-800 dark:text-gray-200 flex-1 truncate">{d.title}</span>
+                    {d.deadlineTime && <span className="text-[10px] font-bold tabular-nums flex-shrink-0" style={{ color: primaryColor }}>{d.deadlineTime}</span>}
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+          )}
           {selectedDay && selectedActs.length > 0 && (
             <motion.div
               initial={{ height: 0, opacity: 0 }}
@@ -459,7 +526,7 @@ const CalendarView = ({ activities, selectedDay, onDaySelect }: CalendarViewProp
               </div>
             </motion.div>
           )}
-          {selectedDay && selectedActs.length === 0 && (
+          {selectedDay && selectedActs.length === 0 && selectedDeadlines.length === 0 && (
             <motion.div
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: 'auto', opacity: 1 }}
@@ -617,7 +684,12 @@ const dayLabelOf = (dayKey: string, date: Date): string => {
 export const ActivitiesView = () => {
   // FAB 让位（第 22 批）：和任务子页同一套，参见 ui/useFabDodge
   const fabDodge = useFabDodge();
-  const { activities, addActivity, settings, setModalBlocker, deleteActivity, deleteActivityRecordOnly } = useAppStore(useShallow(s => ({ activities: s.activities, addActivity: s.addActivity, settings: s.settings, setModalBlocker: s.setModalBlocker, deleteActivity: s.deleteActivity, deleteActivityRecordOnly: s.deleteActivityRecordOnly })));
+  const { activities, addActivity, settings, setModalBlocker, deleteActivity, deleteActivityRecordOnly, todos } = useAppStore(useShallow(s => ({ activities: s.activities, addActivity: s.addActivity, settings: s.settings, setModalBlocker: s.setModalBlocker, deleteActivity: s.deleteActivity, deleteActivityRecordOnly: s.deleteActivityRecordOnly, todos: s.todos })));
+  // 月历的截止日层（第 31 批）：有截止日、还在清单里的任务
+  const calendarDeadlines = useMemo(
+    () => todos.filter(t => !!t.deadline && t.isActive && !t.archivedAt).map(t => ({ id: t.id, title: t.title, deadline: t.deadline!, deadlineTime: t.deadlineTime })),
+    [todos],
+  );
   const isP4 = useUiChannel() === 'p4';
   // P5R：红主题 FAB 换八角红块（p5-menu 稿「+」形制）
   const p5 = useUiChannel() === 'p5';
@@ -642,6 +714,20 @@ export const ActivitiesView = () => {
 
   // ---- 输入状态 ----
   const [showInput, setShowInput] = useState(false);
+  // 天气角标（第 31 批）：保存记录那一刻要有一份 30 分钟内的天气。以前只有首页天空角标会取，记录页从不取——
+  // 冷启动先进首页再来记就有、从后台回来直接记就没有，体感「时有时无」。现在：进记录页、打开记录抽屉、回到前台都顺手取一次
+  // （缓存新鲜 / 没配天气 / 正在退避时什么也不做）
+  const weatherCfgKey = `${settings.weatherProvider ?? ''}|${settings.weatherApiHost ?? ''}|${settings.weatherCity?.lat ?? ''}|${settings.weatherCity?.lon ?? ''}|${settings.weatherApiKey ? 1 : 0}`;
+  useEffect(() => {
+    const warm = () => prefetchWeather(weatherConfigOf(useAppStore.getState().settings));
+    warm();
+    const onVis = () => { if (document.visibilityState === 'visible') warm(); };
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, [weatherCfgKey]);
+  useEffect(() => {
+    if (showInput) prefetchWeather(weatherConfigOf(useAppStore.getState().settings));
+  }, [showInput]);
   // P3R（蓝频道）：p3-modal-03 稿——字段/步进器经基座与通用件自动换装，此处只管按钮与节标
   const p3 = useUiChannel() === 'p3';
   const [description, setDescription] = useState('');
@@ -1184,6 +1270,7 @@ export const ActivitiesView = () => {
         {showCalendar && (
           <CalendarView
             activities={activities}
+            deadlines={calendarDeadlines}
             selectedDay={calendarSelectedDay}
             onDaySelect={setCalendarSelectedDay}
           />

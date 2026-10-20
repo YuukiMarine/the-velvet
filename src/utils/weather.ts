@@ -430,6 +430,22 @@ export function weatherBlockedError(cfg: WeatherConfig): WeatherError | null {
   return new WeatherError(block.kind, block.message);
 }
 
+/** 同一套配置正在取的那一次：几个地方同时要（首页角标 / 记录表单 / 助手）共用一个请求（第 31 批） */
+const inflight = new Map<string, Promise<WeatherNow>>();
+/** 一次取数最多等多久：20 秒（第 31 批） */
+const FETCH_TIMEOUT_MS = 20 * 1000;
+
+/** 调用方不等了（离开首页 / 关掉表单）：只让它这边不再等，请求本身照常跑完、结果进缓存 */
+function raceAbort<T>(p: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) return Promise.reject(new DOMException('aborted', 'AbortError'));
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(new DOMException('aborted', 'AbortError'));
+    signal.addEventListener('abort', onAbort, { once: true });
+    p.then((v) => { signal.removeEventListener('abort', onAbort); resolve(v); },
+      (e) => { signal.removeEventListener('abort', onAbort); reject(e); });
+  });
+}
+
 export async function fetchWeatherNow(
   cfg: WeatherConfig,
   opts: { force?: boolean; signal?: AbortSignal } = {},
@@ -442,21 +458,61 @@ export async function fetchWeatherNow(
     const blocked = weatherBlockedError(cfg);
     if (blocked) throw blocked;
   }
-  try {
-    const data = (cfg.provider ?? 'qweather') === 'openmeteo'
-      ? await fetchOpenMeteo(cfg, opts.signal)
-      : await fetchQWeather(cfg, opts.signal);
-    cache.set(key, { at: Date.now(), data });
-    if (block) saveBlock(null);
-    return data;
-  } catch (e) {
-    if (e instanceof WeatherError) {
-      // 配置类：直到改了设置（指纹变了）或手动测试，都不再自动发；一时的：15 分钟后再试
-      saveBlock({ sig: configSig(cfg), until: e.config ? Number.MAX_SAFE_INTEGER : Date.now() + TRANSIENT_BACKOFF_MS, kind: e.kind, message: e.message });
-    }
-    throw e;
+  // 第 31 批：以前调用方一离开就 abort 这唯一的请求（首页角标卸载时）——点得快就永远进不了缓存，记录也就没有天气角标；
+  // 和风那边 abort 落在读 body 时还会被当成「未知错误」进 15 分钟退避。现在请求不跟调用方的 signal 走，
+  // 同一套配置同时只发一个，取消只影响「这位还等不等」
+  let p = opts.force ? undefined : inflight.get(key);
+  if (!p) {
+    // 句柄先占位，finally 里按身份删（force 时可能同时有两个在飞，别把新的那个删了）
+    const holder: { run?: Promise<WeatherNow> } = {};
+    const run: Promise<WeatherNow> = (async () => {
+      // 不跟调用方走以后，得自己有个上限：网络卡死的那一次不能一直占着位置，让后面所有人都干等
+      const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      let timedOut = false;
+      const timer = ctl ? setTimeout(() => { timedOut = true; ctl.abort(); }, FETCH_TIMEOUT_MS) : null;
+      try {
+        const data = (cfg.provider ?? 'qweather') === 'openmeteo'
+          ? await fetchOpenMeteo(cfg, ctl?.signal)
+          : await fetchQWeather(cfg, ctl?.signal);
+        cache.set(key, { at: Date.now(), data });
+        if (block) saveBlock(null);
+        return data;
+      } catch (e) {
+        // 超时按「一时连不上」算（和断网同一口径），别让读到一半被掐断的 body 冒充成「返回格式不对」
+        const err = timedOut && !(e instanceof WeatherError && e.config)
+          ? new WeatherError('network', '取天气超时了：当前网络太慢，过一会儿再试。')
+          : e;
+        if (err instanceof WeatherError) {
+          // 配置类：直到改了设置（指纹变了）或手动测试，都不再自动发；一时的：15 分钟后再试
+          saveBlock({ sig: configSig(cfg), until: err.config ? Number.MAX_SAFE_INTEGER : Date.now() + TRANSIENT_BACKOFF_MS, kind: err.kind, message: err.message });
+        }
+        throw err;
+      } finally {
+        if (timer) clearTimeout(timer);
+        if (inflight.get(key) === holder.run) inflight.delete(key);
+      }
+    })();
+    holder.run = run;
+    inflight.set(key, run);
+    p = run;
   }
+  return opts.signal ? raceAbort(p, opts.signal) : p;
 }
+
+/**
+ * 记录表单打开 / 回到记录页 / 跟助手说话时顺手取一次（第 31 批）：缓存还新鲜、配置没配好、正在退避就什么都不做；
+ * 不等它、不报错——为的是保存记录那一刻缓存里有一份能用的天气（以前只有首页天空角标会取）。
+ */
+export function prefetchWeather(cfg: WeatherConfig): void {
+  if (!weatherReady(cfg)) return;
+  const hit = cache.get(cacheKey(cfg));
+  if (hit && Date.now() - hit.at < CACHE_MS) return;
+  if (weatherBlockedError(cfg)) return;
+  void fetchWeatherNow(cfg).catch(() => { /* 取不到就算了，下次再取 */ });
+}
+
+/** 记录附天气能接受多旧的读数：30 分钟（天气不会变得那么快；第 31 批，以前是 10 分钟） */
+export const RECORD_WEATHER_MAX_AGE_MS = 30 * 60 * 1000;
 
 /**
  * 只看缓存、不发请求：记录保存时附天气用——10 分钟内的才算，没有就返回 null，绝不为等天气拖慢保存（第 6 轮）。

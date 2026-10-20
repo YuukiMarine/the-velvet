@@ -223,6 +223,8 @@ export interface Todo {
    * 不发通知：任务卡 / 首页标 ⏰，助手问候时顺口提一句、聊天里记得几点。
    */
   deadlineTime?: string;
+  /** 同一层（BIG DEAL / 重要 / 普通）里的先后（第 31 批 · 长按菜单「上移 / 下移」）；没挪过的没有 */
+  sortOrder?: number;
   /** 收官记录的 activity id；存在 = 已收官 */
   clearedActivityId?: string;
   /**

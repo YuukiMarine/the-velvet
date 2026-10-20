@@ -234,7 +234,7 @@ import { DILIGENCE_MAX_CHARGES, GOLDEN_SP_MULT, BOSS_ATTACK_BY_LEVEL, HEROPROOF_
 import { generateDefeatLetter, type FinalBossFacts } from '@/utils/battleAI';
 import { normalizeAttributeLevelTitles } from '@/utils/attributeLevelTitles';
 import { levelForPoints, masteryOf, thresholdsOf } from '@/utils/levels';
-import { peekWeatherNow, weatherConfigOf } from '@/utils/weather';
+import { peekWeatherNow, RECORD_WEATHER_MAX_AGE_MS, weatherConfigOf } from '@/utils/weather';
 import { seasonMarkOf } from '@/utils/calendar';
 import { generateWeekQuests, previousWeekKey, questBoardUnlocked, questDone, questTitle, swapQuestFor, weekRangeOf, weekRangeOfKey, type QuestData } from '@/utils/questBoard';
 import { meetingReminder } from '@/utils/orgLogic';
@@ -452,6 +452,8 @@ interface AppState {
   /** 返回新任务 id（第 28 批：助手撤销要用） */
   addTodo: (todo: Omit<Todo, 'id' | 'createdAt'>) => Promise<string>;
   updateTodo: (id: string, updates: Partial<Todo>) => Promise<void>;
+  /** 同级排序（第 31 批）：一次写好一层的 sortOrder，只重读一次 */
+  setTodoOrder: (updates: Array<{ id: string; sortOrder: number }>) => Promise<void>;
   deleteTodo: (id: string) => Promise<void>;
   completeTodo: (todoId: string) => Promise<{ unlockHints: { achievements: number; skills: number } } | null>;
   /**
@@ -1302,7 +1304,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     // 记录天气（第 6 轮）：只给当天、当下记的用户记录附一份 10 分钟内的缓存天气；没缓存就不附，
     // 绝不为等天气拖慢保存。字段只存本机，上云时 stripForCloud 剥掉。
     const isTodayUserRecord = method === 'local' && !options?.category && toLocalDateKey(activityDate) === toLocalDateKey();
-    const weatherNow = isTodayUserRecord ? peekWeatherNow(weatherConfigOf(settings)) : null;
+    // 第 31 批：30 分钟内的读数都算（以前 10 分钟，加上只有首页会取，体感就是「有时有、有时没有」）
+    const weatherNow = isTodayUserRecord ? peekWeatherNow(weatherConfigOf(settings), RECORD_WEATHER_MAX_AGE_MS) : null;
 
     // 窥探命运 buff（v2.7，3 天）：当日**首次带加点的手动记录** → 加点最高的那项额外 +1。
     // 判定纯粹从数据推导（当日尚无带加点的手动记录），无需额外标记位；
@@ -3793,6 +3796,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     await db.todos.add(newTodo);
     await get().loadData();
     return newTodo.id;
+  },
+
+  setTodoOrder: async (updates) => {
+    if (!updates.length) return;
+    await db.transaction('rw', db.todos, async () => {
+      for (const u of updates) await db.todos.update(u.id, { sortOrder: u.sortOrder });
+    });
+    await get().loadData();
   },
 
   updateTodo: async (id, updates) => {

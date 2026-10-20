@@ -106,3 +106,15 @@ export const CalendarIcon = ({ className = 'w-3.5 h-3.5' }: IconProps) => (
     <path d="M3 10h18M8 3v4M16 3v4" />
   </svg>
 );
+
+/** 上移 / 下移（第 31 批 · 任务长按菜单） */
+export const MoveUpIcon = ({ className = 'w-3.5 h-3.5' }: IconProps) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden>
+    <path d="M12 19V5M6 11l6-6 6 6" />
+  </svg>
+);
+export const MoveDownIcon = ({ className = 'w-3.5 h-3.5' }: IconProps) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden>
+    <path d="M12 5v14M6 13l6 6 6-6" />
+  </svg>
+);

@@ -173,3 +173,11 @@ export const reportAndBlockDanmaku = async (danmakuId: string, reason = ''): Pro
   blockDanmakuLocally(danmakuId);
   await reportDanmaku(danmakuId, reason);
 };
+
+/** 凑够 n 条：池子不够就从头循环着用（第 31 批：同屏 9–10 条，官方种子 16 条通常够，云端被屏蔽多了时兜底） */
+export function fillDanmaku(pool: DanmakuItem[], n: number): DanmakuItem[] {
+  if (!pool.length) return [];
+  const out: DanmakuItem[] = [];
+  for (let i = 0; out.length < n; i++) out.push(pool[i % pool.length]);
+  return out;
+}

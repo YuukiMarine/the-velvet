@@ -7,7 +7,7 @@
  * p3=深海水面（藏青+青斜）/ neutral=靛蓝虚空。舞台自带暗色，明暗模式免疫。
  * 弹幕环境层 = 官方种子池 + 云端已过审（listApprovedDanmaku，离线静默回退）。
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import { useAppStore } from '@/store';
@@ -16,7 +16,7 @@ import { useBoldness } from '@/utils/boldness';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { triggerSuccessFeedback, triggerLevelFeedback } from '@/utils/feedback';
 import { TERMINAL_DANMAKU_SEEDS } from '@/constants/terminalDanmaku';
-import { listApprovedDanmaku, type DanmakuItem } from '@/services/danmaku';
+import { fillDanmaku, listApprovedDanmaku, type DanmakuItem } from '@/services/danmaku';
 import { DanmakuLayer } from '@/components/danmaku/DanmakuLayer';
 import { cloudEnabled } from '@/services/pocketbase';
 import { zClass } from '@/utils/zIndex';
@@ -193,6 +193,8 @@ export const FateDrawSheet = ({ open, onClose }: Props) => {
   const [picked, setPicked] = useState<FateCandidate | null>(null);
   const [busy, setBusy] = useState(false);
   const [approved, setApproved] = useState<DanmakuItem[]>([]);
+  // 弹幕给牌区让道（第 31 批）：量这个块的上下沿
+  const contentRef = useRef<HTMLDivElement>(null);
 
   // 环境弹幕 = 官方种子 + 云端已过审（打开时拉一次；离线/未建集合静默回退种子池）
   useEffect(() => {
@@ -213,8 +215,9 @@ export const FateDrawSheet = ({ open, onClose }: Props) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, sources, phase === 'gate']);
 
+  // 同屏 10 条、5 道（第 31 批 · 10-20 拍板；以前 2 条）。道都避开中间的牌区；池子不够就循环着用
   const danmaku = useMemo<DanmakuItem[]>(
-    () => [...TERMINAL_DANMAKU_SEEDS.map(text => ({ id: '', text })), ...approved].sort(() => Math.random() - 0.5).slice(0, 2),
+    () => fillDanmaku([...TERMINAL_DANMAKU_SEEDS.map(text => ({ id: '', text })), ...approved].sort(() => Math.random() - 0.5), 10),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [open, approved],
   );
@@ -295,9 +298,10 @@ export const FateDrawSheet = ({ open, onClose }: Props) => {
             <div aria-hidden className="pointer-events-none absolute inset-0" style={{ backgroundImage: sk.texture.backgroundImage, backgroundSize: sk.texture.backgroundSize, opacity: sk.texture.opacity }} />
           )}
           {/* 弹幕环境层（官方种子 + 云端已过审；云端条目可点击举报并隐藏） */}
-          <DanmakuLayer items={danmaku} lineClassName={sk.danmaku} bold={bold && phase !== 'reveal'} topBase={18} topStep={62} durBase={14} durStep={5} />
+          <DanmakuLayer items={danmaku} lineClassName={sk.danmaku} bold={bold && phase !== 'reveal'} lanes={[6, 14, 22, 78, 87]} avoidRef={contentRef} durBase={15} durStep={2.4} />
 
-          <div className="w-full max-w-sm" onMouseDown={(e) => e.stopPropagation()}>
+          {/* relative z-10：弹幕是绝对定位、画在普通流内容之上；矮屏上道会压到标题，内容得在弹幕上面（第 31 批） */}
+          <div ref={contentRef} className="relative z-10 w-full max-w-sm" onMouseDown={(e) => e.stopPropagation()}>
             <AnimatePresence mode="wait">
               {/* ── 闸门：三源开关 + 池数 + 抽 ── */}
               {phase === 'gate' && (
