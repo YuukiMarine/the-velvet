@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { AnimatePresence, motion } from 'motion/react';
 import { useShallow } from 'zustand/react/shallow';
@@ -22,7 +22,8 @@ import { lifeAttrMapSig, lifeAttrSigOf, resolveLifeAttrs } from '@/utils/lifeQue
 import { ensureLifeQuestAiCard, ensureLifeQuestAttrMap, lifeAttrMapStatus, readLifeQuestAiCard } from '@/utils/lifeQuestAI';
 import { aiConfigured } from '@/utils/aiClient';
 import { useUiChannel } from '@/ui/useUiChannel';
-import { P5R, P5_TITLE_FONT, P5Btn, P5Chip, P5Rough, roughSlant } from '@/components/p5r/kit';
+import { P5R, P5_TITLE_FONT, P5Btn, P5Chip, P5Rough, roughQuad, roughSlant } from '@/components/p5r/kit';
+import { useBoldness } from '@/utils/boldness';
 import type { AttributeId, Quest } from '@/types';
 
 /**
@@ -141,6 +142,39 @@ const QuestCard = ({ item, tone, names, onClaim, flash, onSwap }: {
   const { quest, progress, done, claimed } = item;
   const pct = Math.round((progress / Math.max(1, quest.target)) * 100);
   const p5 = tone.channel === 'p5';
+  const bold = useBoldness();
+  // 刚领到（第 32 批 · 用户：点了领取要有个反馈）：卡上盖一枚「+N SP · 已领取」的章，卡轻轻一弹；
+  // 以前只有一行小字往上飘一秒，按钮又立刻变成「✓ 已领取」、整张卡变淡，很容易没看见。章盖完卡才变淡
+  const justClaimed = flash !== null;
+  const stampStyle: CSSProperties = p5
+    ? { background: P5R.red, color: P5R.white, fontFamily: P5_TITLE_FONT, clipPath: roughQuad(60 + quest.slot, 5), filter: 'drop-shadow(3px 3px 0 #000)' }
+    : tone.channel === 'p3'
+      ? { background: '#1b57ff', color: '#fff', fontStyle: 'italic', clipPath: 'polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%)', filter: 'drop-shadow(0 6px 10px rgba(27,87,255,0.35))' }
+      : tone.channel === 'p4'
+        ? { background: '#131313', color: 'var(--ui-bg, #ffd900)', borderRadius: 14, boxShadow: '0 0 0 2px var(--p4-orange, #f9a11b), 0 4px 0 rgba(19,19,19,0.3)' }
+        : { background: 'var(--color-primary, #1b57ff)', color: '#fff', borderRadius: 12, boxShadow: '0 8px 18px rgba(0,0,0,0.18)' };
+  const stamp = (
+    <AnimatePresence>
+      {justClaimed && (
+        <motion.div key="stamp" className="pointer-events-none absolute inset-y-0 right-3 z-10 flex items-center" initial={false}>
+          <motion.div
+            role="status"
+            aria-live="polite"
+            data-quest-stamp
+            initial={bold ? { opacity: 0, scale: 1.9, rotate: -24 } : { opacity: 0 }}
+            animate={{ opacity: 1, scale: 1, rotate: -7 }}
+            exit={{ opacity: 0, scale: 0.92, transition: { duration: 0.25 } }}
+            transition={bold ? { type: 'spring', stiffness: 520, damping: 17 } : { duration: 0.15 }}
+            className="px-3.5 py-2 text-center"
+            style={stampStyle}
+          >
+            <span className="block text-[19px] font-black leading-none tabular-nums">{flash > 0 ? `+${flash} SP` : '收下了'}</span>
+            <span className="mt-1 block text-[10px] font-black leading-none tracking-[0.22em]">已领取</span>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
   const body = (
     <>
       <div className="flex items-start justify-between gap-3">
@@ -160,7 +194,8 @@ const QuestCard = ({ item, tone, names, onClaim, flash, onSwap }: {
         </div>
         <div className="shrink-0 text-right">
           {claimed ? (
-            <span className="inline-flex items-center gap-1 text-[12px] font-black" style={{ color: tone.accent }}>✓ 已领取</span>
+            // 章盖着的时候先不露（不然从章后面探出半行字），章收了再淡入
+            <span className="inline-flex items-center gap-1 text-[12px] font-black" style={{ color: tone.accent, opacity: justClaimed ? 0 : 1, transition: 'opacity 0.3s' }}>✓ 已领取</span>
           ) : done ? (
             p5 ? (
               <P5Btn tone="red" seed={40 + quest.slot} rot={-2} onClick={onClaim} bodyClassName="!px-4 !py-1.5 !text-[14px]">领取</P5Btn>
@@ -190,28 +225,16 @@ const QuestCard = ({ item, tone, names, onClaim, flash, onSwap }: {
         <motion.div className="h-full rounded-full" style={{ background: tone.accent }} initial={{ width: 0 }} animate={{ width: `${claimed ? 100 : pct}%` }} transition={{ duration: 0.5, ease: 'easeOut' }} />
       </div>
       )}
-      <AnimatePresence>
-        {flash !== null && (
-          <motion.span
-            key="flash"
-            initial={{ opacity: 0, y: 6, scale: 0.9 }}
-            animate={{ opacity: 1, y: -18, scale: 1.1 }}
-            exit={{ opacity: 0, y: -34 }}
-            transition={{ duration: 0.9, ease: 'easeOut' }}
-            className="pointer-events-none absolute right-4 top-2 text-[15px] font-black"
-            style={{ color: tone.accent }}
-          >
-            {flash > 0 ? `+${flash} SP` : '已收下'}
-          </motion.span>
-        )}
-      </AnimatePresence>
+      {stamp}
     </>
   );
-  if (p5) return <P5Card seed={20 + quest.slot * 7} rot={[-0.8, 0.6, -0.4][quest.slot % 3]} dim={claimed}>{body}</P5Card>;
+  const dim = claimed && !justClaimed;
+  const bump = { animate: justClaimed && bold ? { scale: [1, 1.03, 1] } : { scale: 1 }, transition: { duration: 0.45, ease: 'easeOut' as const } };
+  if (p5) return <motion.div {...bump}><P5Card seed={20 + quest.slot * 7} rot={[-0.8, 0.6, -0.4][quest.slot % 3]} dim={dim}>{body}</P5Card></motion.div>;
   return (
-    <div className="relative p-3.5" style={{ background: tone.card, borderRadius: tone.radius, color: tone.ink, opacity: claimed ? 0.72 : 1 }}>
+    <motion.div {...bump} className="relative p-3.5" style={{ background: tone.card, borderRadius: tone.radius, color: tone.ink, opacity: dim ? 0.72 : 1, transition: 'opacity 0.3s' }}>
       {body}
-    </div>
+    </motion.div>
   );
 };
 
@@ -554,7 +577,7 @@ export const QuestBoardSheet = ({ open, onClose }: { open: boolean; onClose: () 
     if (!res.ok) return;
     triggerSuccessFeedback();
     setFlash((f) => ({ ...f, [id]: res.sp }));
-    window.setTimeout(() => setFlash((f) => { const n = { ...f }; delete n[id]; return n; }), 1200);
+    window.setTimeout(() => setFlash((f) => { const n = { ...f }; delete n[id]; return n; }), 1700);
   };
 
   const allClaimed = board.items.length > 0 && board.items.every((i) => i.claimed);
