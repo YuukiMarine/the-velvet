@@ -22,6 +22,7 @@ import { useCloudSocialStore } from '@/store/cloudSocial';
 import { useCloudStore } from '@/store/cloud';
 import { useAppStore } from '@/store';
 import { severFriendship } from '@/services/friends';
+import { coopCooldownUntil, withdrawCoopProposal } from '@/services/coopBonds';
 import { endPactsWith } from '@/services/pactSync';
 import { isPactLive } from '@/utils/pactLogic';
 import {
@@ -94,23 +95,38 @@ export function OnlineConfidantProfileCard({
     if (relatedBond.status === 'pending') {
       return relatedBond.initiatorId === cloudUser?.id ? 'pending_mine' : 'pending_theirs';
     }
-    if (relatedBond.status === 'rejected') {
-      const until = relatedBond.reRequestAfter?.getTime() ?? 0;
-      return until > Date.now() ? 'cooldown_rejected' : 'none';
-    }
-    if (relatedBond.status === 'severed') {
-      const until = relatedBond.reLinkAfter?.getTime() ?? 0;
-      return until > Date.now() ? 'cooldown_severed' : 'none';
-    }
+    // 冷却按现在的天数重算（第 32 批：被拒 / 解除都改成 1 天，旧记录里写着的 3 天 / 7 天不再算数）
+    if (relatedBond.status === 'rejected') return coopCooldownUntil(relatedBond) ? 'cooldown_rejected' : 'none';
+    if (relatedBond.status === 'severed') return coopCooldownUntil(relatedBond) ? 'cooldown_severed' : 'none';
     return 'none';
   }, [relatedBond, cloudUser]);
 
   // 冷却还剩多久（第 32 批）：以前写死「7 天后可重试」，第 6 天、第 7 天早上看还是「7 天后」，像是卡住了
   const cooldownText = useMemo(() => {
-    const until = coopStatus === 'cooldown_rejected' ? relatedBond?.reRequestAfter
-      : coopStatus === 'cooldown_severed' ? relatedBond?.reLinkAfter : undefined;
+    const until = relatedBond && (coopStatus === 'cooldown_rejected' || coopStatus === 'cooldown_severed') ? coopCooldownUntil(relatedBond) : null;
     return until ? formatCooldownLeft(until) : '';
   }, [coopStatus, relatedBond]);
+
+  // 撤回自己发出的提议（第 32 批）：点「等 Ta 响应」先确认一下
+  const updateCoopBond = useCloudSocialStore(s => s.updateCoopBond);
+  const [withdrawConfirm, setWithdrawConfirm] = useState(false);
+  const [withdrawing, setWithdrawing] = useState(false);
+  const [withdrawError, setWithdrawError] = useState('');
+  useEffect(() => { setWithdrawConfirm(false); setWithdrawError(''); }, [isOpen, profile?.id, coopStatus]);
+  const handleWithdraw = async () => {
+    if (!relatedBond || withdrawing) return;
+    setWithdrawing(true);
+    setWithdrawError('');
+    try {
+      const updated = await withdrawCoopProposal(relatedBond.id);
+      updateCoopBond(relatedBond.id, updated);
+      setWithdrawConfirm(false);
+    } catch (err) {
+      setWithdrawError(err instanceof Error ? err.message : '撤回失败');
+    } finally {
+      setWithdrawing(false);
+    }
+  };
 
   const [severing, setSevering] = useState(false);
   const [severConfirm, setSeverConfirm] = useState(false);
@@ -438,10 +454,37 @@ export function OnlineConfidantProfileCard({
                   </div>
                   <div className="text-[10px] opacity-80 mt-0.5">{localCardArchived === true ? '在「归档」里找 Ta' : localCardArchived === false ? '在同伴列表里找 Ta' : '同步后会出现在同伴里'}</div>
                 </button>
+              ) : coopStatus === 'pending_mine' && withdrawConfirm ? (
+                <div
+                  className="flex flex-col justify-center gap-1.5 rounded-xl px-2 py-2"
+                  style={{ background: 'rgba(148,163,184,0.12)', border: '1px solid rgba(196,181,253,0.3)' }}
+                >
+                  <div className="text-center text-[11px] font-bold" style={{ color: '#f5e6ff' }}>撤回这次提议？</div>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <button
+                      onClick={() => setWithdrawConfirm(false)}
+                      disabled={withdrawing}
+                      className="rounded-md py-1 text-[11px] disabled:opacity-40"
+                      style={{ background: 'rgba(255,255,255,0.08)', color: '#c8c2e0' }}
+                    >
+                      不撤
+                    </button>
+                    <button
+                      onClick={() => void handleWithdraw()}
+                      disabled={withdrawing}
+                      className="rounded-md py-1 text-[11px] font-bold text-white disabled:opacity-40"
+                      style={{ background: 'linear-gradient(135deg, rgb(var(--color-bond-rgb)), rgba(79,70,229,0.9))' }}
+                    >
+                      {withdrawing ? '…' : '撤回'}
+                    </button>
+                  </div>
+                </div>
               ) : coopStatus === 'pending_mine' ? (
-                <button
-                  disabled
-                  className="py-3 rounded-xl text-sm font-bold text-gray-200 cursor-default"
+                <motion.button
+                  whileTap={{ scale: 0.97 }}
+                  onClick={() => setWithdrawConfirm(true)}
+                  aria-label="等 Ta 响应（点这里可以撤回提议）"
+                  className="py-3 rounded-xl text-sm font-bold text-gray-200"
                   style={{
                     background: 'linear-gradient(135deg, rgb(var(--color-bond-rgb) / 0.6), rgba(79,70,229,0.5))',
                   }}
@@ -450,8 +493,8 @@ export function OnlineConfidantProfileCard({
                     <span className="text-base animate-pulse">…</span>
                     <span>等 Ta 响应</span>
                   </div>
-                  <div className="text-[10px] opacity-75 mt-0.5">14 天内未响应过期</div>
-                </button>
+                  <div className="text-[10px] opacity-75 mt-0.5">点这里可以撤回</div>
+                </motion.button>
               ) : coopStatus === 'pending_theirs' ? (
                 <motion.button
                   whileTap={{ scale: 0.97 }}
@@ -504,6 +547,13 @@ export function OnlineConfidantProfileCard({
               )}
             </div>
 
+            {withdrawError && (
+              <p className="mt-2 text-[10px] text-center" style={{ color: '#fca5a5' }}>{withdrawError}</p>
+            )}
+            {coopStatus === 'pending_mine' && withdrawConfirm && (
+              <p className="mt-2 text-[10px] text-center leading-relaxed" style={{ color: '#8f86ad' }}>撤回后 Ta 那边的邀请就失效了；不算冷却，想好了随时能重新发起。</p>
+            )}
+
             {/* SP 归处提示 */}
             {!battleState && (
               <p className="mt-3 text-[10px] text-center leading-relaxed" style={{ color: '#6b6591' }}>
@@ -544,7 +594,7 @@ export function OnlineConfidantProfileCard({
               >
                 <p className="text-[11px] leading-relaxed" style={{ color: '#fecaca' }}>
                   确认要与 {name} 解除好友？<br />
-                  解除后 7 天内无法再次相互邀请。{hasLivePact && <><br />你们进行中的「一起进步」约定也会一起结束。</>}
+                  解除后 3 天内无法再次相互邀请。{hasLivePact && <><br />你们进行中的「一起进步」约定也会一起结束。</>}
                 </p>
                 {severError && (
                   <p className="text-[10px]" style={{ color: '#fca5a5' }}>{severError}</p>

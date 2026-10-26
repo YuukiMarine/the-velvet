@@ -5,19 +5,24 @@
  *   - user_a / user_b 按 PB record id 字典序归一化（较小者 = user_a）
  *   - 每个 (user_a, user_b) 对在 DB 里只有一条记录（unique index），
  *     status 在 pending / linked / rejected / severed / expired 之间迁移
- *   - 冷却："拒绝后 3 天" / "解除后 7 天" 分别写在 re_request_after / re_link_after 上
- *   - 过期：pending 状态满 21 天自动视为 expired（客户端兜底，后续也可以交给服务端定时处理）
+ *   - 冷却："拒绝后 1 天" / "解除后 3 天" 分别写在 re_request_after / re_link_after 上（第 32 批起；原 3 天 / 7 天，
+ *     判断时按 responded_at + 现在的天数重算、和写着的取早的，见 utils/cooldown）
+ *   - 过期：pending 状态满 14 天自动视为 expired（第 32 批起，原 21 天；客户端兜底，后续也可以交给服务端定时处理）
  */
 
 import type { RecordModel } from 'pocketbase';
 import { pb, getUserId } from './pocketbase';
 import { parseGoalSnapshot, parseProfileStatus } from '@/utils/profilePresence';
 import { pbQuote } from './pbFilter';
+import { effectiveCooldownUntil, waitText } from '@/utils/cooldown';
 import type { CloudProfile, Friendship, FriendshipStatus } from '@/types';
 
-const FRIEND_REQUEST_TTL_DAYS = 21;
-const REJECTED_COOLDOWN_DAYS = 3;
-const SEVERED_COOLDOWN_DAYS = 7;
+/** 申请多久没回应作废：14 天（第 32 批 · 10-26 拍板，原 21 天；新发的申请才按 14 天，已经发出的照旧） */
+export const FRIEND_REQUEST_TTL_DAYS = 14;
+/** 被拒后多久能再申请：1 天（原 3 天） */
+export const REJECTED_COOLDOWN_DAYS = 1;
+/** 解除后多久能再加：3 天（原 7 天） */
+export const SEVERED_COOLDOWN_DAYS = 3;
 
 // ── 归一化 / 转换工具 ──────────────────────────────────────────────
 
@@ -156,8 +161,9 @@ export interface SendFriendRequestInput {
  *  - 双方同一人 → 抛错
  *  - 已经 linked → 抛错
  *  - 已有 pending → 抛错（等对方响应，不允许重发）
- *  - rejected 且 re_request_after 未到 → 抛错（3 天冷却）
- *  - severed 且 re_link_after 未到 → 抛错（7 天冷却）
+ *  - rejected 且冷却未到 → 抛错（1 天冷却）
+ *  - severed 且冷却未到 → 抛错（3 天冷却）
+ *  冷却按 responded_at + 现在的天数重算（旧记录里写的 3 天 / 7 天不再算数）
  *  - 以上检查都过：update 回 pending / create 新记录
  */
 export const sendFriendRequest = async (input: SendFriendRequestInput): Promise<Friendship> => {
@@ -177,24 +183,14 @@ export const sendFriendRequest = async (input: SendFriendRequestInput): Promise<
     if (status === 'linked') throw new Error('已经是好友了');
     if (status === 'pending') throw new Error('已经发过申请，等对方响应吧');
 
-    // 检查冷却
+    // 检查冷却（按现在的天数重算，第 32 批）
     if (status === 'rejected') {
-      const reReqAfter = existing.re_request_after as string | undefined;
-      if (reReqAfter && new Date(reReqAfter).getTime() > now.getTime()) {
-        const daysLeft = Math.ceil(
-          (new Date(reReqAfter).getTime() - now.getTime()) / 86400000,
-        );
-        throw new Error(`对方拒绝过申请，请在 ${daysLeft} 天后再来`);
-      }
+      const until = effectiveCooldownUntil(existing.re_request_after as string | undefined, existing.responded_at as string | undefined, REJECTED_COOLDOWN_DAYS);
+      if (until && until.getTime() > now.getTime()) throw new Error(`对方拒绝过申请，请 ${waitText(until, now.getTime())}再来`);
     }
     if (status === 'severed') {
-      const reLinkAfter = existing.re_link_after as string | undefined;
-      if (reLinkAfter && new Date(reLinkAfter).getTime() > now.getTime()) {
-        const daysLeft = Math.ceil(
-          (new Date(reLinkAfter).getTime() - now.getTime()) / 86400000,
-        );
-        throw new Error(`此前已解除关系，请在 ${daysLeft} 天后再来`);
-      }
+      const until = effectiveCooldownUntil(existing.re_link_after as string | undefined, existing.responded_at as string | undefined, SEVERED_COOLDOWN_DAYS);
+      if (until && until.getTime() > now.getTime()) throw new Error(`此前已解除关系，请 ${waitText(until, now.getTime())}再来`);
     }
 
     // 冷却过了 / 过期了 / 之前被拒绝但现在可以再发 → 把记录复用，回到 pending
@@ -281,7 +277,7 @@ export const acceptFriendRequest = async (friendshipId: string): Promise<Friends
   return mapFriendship(updated, me);
 };
 
-/** 拒绝好友申请（触发 3 天冷却） */
+/** 拒绝好友申请（触发 1 天冷却） */
 export const rejectFriendRequest = async (friendshipId: string): Promise<Friendship> => {
   if (!pb || !pb.authStore.isValid) throw new Error('未登录');
   const me = getUserId();
@@ -312,7 +308,7 @@ export const rejectFriendRequest = async (friendshipId: string): Promise<Friends
   return mapFriendship(updated, me);
 };
 
-/** 解除已建立的好友关系（触发 7 天冷却） */
+/** 解除已建立的好友关系（触发 3 天冷却） */
 export const severFriendship = async (friendshipId: string): Promise<Friendship> => {
   if (!pb || !pb.authStore.isValid) throw new Error('未登录');
   const me = getUserId();
@@ -346,7 +342,7 @@ export const severFriendship = async (friendshipId: string): Promise<Friendship>
 // ── 过期检查（客户端兜底）──────────────────────────────────────
 
 /**
- * 把超过 21 天的 pending 关系标成 expired。
+ * 把过了有效期（发出时写的 expires_at：14 天，第 32 批以前发的是 21 天）的 pending 关系标成 expired。
  * 以本地登录者的视角执行（只能改自己相关的记录）。
  * 调用时机建议：每次 loadSocial 之后跑一次。
  */

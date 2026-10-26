@@ -1319,7 +1319,7 @@ function SeverCoopButton({
         >
           <p className="text-[11px] leading-relaxed text-rose-600 dark:text-rose-300">
             解除后，本端的同伴卡会自动归档；对方下次同步时，那边的卡也会归档。<br />
-            7 天内无法再次缔结 COOP。已积累的羁绊与历史会保留在归档里。
+            24 小时内无法再次缔结 COOP。已积累的羁绊与历史会保留在归档里，再缔结时会放回来。
           </p>
           {err && <p className="text-[10px] text-rose-500">{err}</p>}
           <div className="grid grid-cols-2 gap-2">

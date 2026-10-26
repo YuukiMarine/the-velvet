@@ -2246,9 +2246,9 @@ export interface ProfileGoalSnapshot {
 export type FriendshipStatus =
   | 'pending'   // 正在等待对方响应
   | 'linked'    // 已建立双向关系
-  | 'rejected'  // 被拒绝（3 天冷却）
-  | 'severed'   // 已解除（7 天冷却）
-  | 'expired';  // 申请 21 天未响应自动作废
+  | 'rejected'  // 被拒绝（1 天冷却；第 32 批起，原 3 天）
+  | 'severed'   // 已解除（3 天冷却；原 7 天）
+  | 'expired';  // 申请 14 天未响应自动作废（第 32 批起，原 21 天）
 
 /**
  * 未缔结在线好友的自裁卡面（专辑墙 friend 卡用，db v14）。
@@ -2270,10 +2270,10 @@ export interface Friendship {
   initiatorId: string;        // 发起方
   status: FriendshipStatus;
   message?: string;           // 申请留言（≤200 字）
-  expiresAt?: Date;           // pending 状态的过期时间（申请后 21 天）
+  expiresAt?: Date;           // pending 状态的过期时间（申请后 14 天；第 32 批以前发的是 21 天）
   respondedAt?: Date;         // linked / rejected / severed 的时间
-  reRequestAfter?: Date;      // rejected → 3 天后可再申请
-  reLinkAfter?: Date;         // severed → 7 天后可再建
+  reRequestAfter?: Date;      // rejected → 1 天后可再申请（第 32 批起；判断时按 respondedAt + 现在的天数重算，见 utils/cooldown）
+  reLinkAfter?: Date;         // severed → 3 天后可再建（同上）
   createdAt: Date;
   updatedAt: Date;
   /** 另一方的 profile 快照（按当前登录者反推出谁是"另一方"） */
@@ -2655,9 +2655,9 @@ export interface OrgRaidHit {
 // 生命周期：
 //   pending  → 已发出提议，等对方响应（14 天未响应过期）
 //   linked   → 双方各自确认，本地同伴卡已建立
-//   rejected → 对方拒绝（3 天冷却）
-//   severed  → 任一方主动解除（7 天冷却，旧同伴卡归档）
-//   expired  → 自动过期
+//   rejected → 对方拒绝（1 天冷却；第 32 批起，原 3 天）
+//   severed  → 任一方主动解除（1 天冷却，原 7 天；旧同伴卡归档，再缔结时放回来）
+//   expired  → 自动过期；或发起人撤回（第 32 批：撤回时写 respondedAt，自然过期不写）
 
 export type CoopBondStatus = 'pending' | 'linked' | 'rejected' | 'severed' | 'expired';
 

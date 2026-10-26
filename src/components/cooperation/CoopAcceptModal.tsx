@@ -3,7 +3,7 @@
  *
  * 场景：通知面板点击 coop_proposal 通知 → 打开本 modal。
  * 展示对方挑的塔罗 + 留言，用户为对方挑自己的那张塔罗 → "接受"。
- * 也可拒绝（3 天冷却）。
+ * 也可拒绝（1 天冷却；第 32 批起，原 3 天）。
  */
 
 import { AnimatePresence, motion } from 'motion/react';
@@ -376,7 +376,7 @@ export function CoopAcceptModal({ isOpen, onClose, bond }: Props) {
                 disabled={!!submitting}
                 className="py-2.5 rounded-xl text-xs font-semibold bg-rose-500/10 text-rose-500 border border-rose-500/30 disabled:opacity-40"
               >
-                {submitting === 'reject' ? '处理中…' : '拒绝（3 天冷却）'}
+                {submitting === 'reject' ? '处理中…' : '拒绝（1 天冷却）'}
               </button>
               <motion.button
                 whileTap={{ scale: valid && !submitting ? 0.97 : 1 }}
@@ -397,7 +397,7 @@ export function CoopAcceptModal({ isOpen, onClose, bond }: Props) {
                 disabled={!!submitting}
                 className="w-full py-2.5 rounded-xl text-xs font-semibold bg-rose-500/10 text-rose-500 border border-rose-500/30 disabled:opacity-40"
               >
-                {submitting === 'reject' ? '处理中…' : '拒绝这次提议（3 天冷却）'}
+                {submitting === 'reject' ? '处理中…' : '拒绝这次提议（1 天冷却）'}
               </button>
             </div>
           ) : !bondStillPending ? (

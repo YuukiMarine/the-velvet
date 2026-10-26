@@ -33,11 +33,25 @@
 import type { RecordModel } from 'pocketbase';
 import { pb, getUserId } from './pocketbase';
 import { parseGoalSnapshot, parseProfileStatus } from '@/utils/profilePresence';
+import { effectiveCooldownUntil, waitText } from '@/utils/cooldown';
 import type { AttributeId, CloudProfile, CoopBond, CoopBondStatus, TarotOrientation } from '@/types';
 
+/** 提议多久没回应算过期（不变；第 32 批改成发起人可以随时撤回） */
 export const COOP_PROPOSAL_TTL_DAYS = 14;
-export const COOP_REJECT_COOLDOWN_DAYS = 3;
-export const COOP_SEVER_COOLDOWN_DAYS = 7;
+/** 被拒后多久能再提：1 天（第 32 批 · 10-26 拍板，原 3 天） */
+export const COOP_REJECT_COOLDOWN_DAYS = 1;
+/** 解除后多久能再缔结：1 天（第 32 批 · 10-26 拍板，原 7 天；最常见的原因是想重选塔罗） */
+export const COOP_SEVER_COOLDOWN_DAYS = 1;
+
+/** 这条 bond 现在的冷却到期时间（按现在的天数重算，见 utils/cooldown）；不在冷却里返回 null */
+export const coopCooldownUntil = (bond: Pick<CoopBond, 'status' | 'reRequestAfter' | 'reLinkAfter' | 'respondedAt'>): Date | null => {
+  const until = bond.status === 'rejected'
+    ? effectiveCooldownUntil(bond.reRequestAfter, bond.respondedAt, COOP_REJECT_COOLDOWN_DAYS)
+    : bond.status === 'severed'
+      ? effectiveCooldownUntil(bond.reLinkAfter, bond.respondedAt, COOP_SEVER_COOLDOWN_DAYS)
+      : null;
+  return until && until.getTime() > Date.now() ? until : null;
+};
 
 // ── 转换 ─────────────────────────────────────────────────────────
 
@@ -194,19 +208,14 @@ export const proposeCoopBond = async (input: ProposeCoopBondInput): Promise<Coop
     const status = existing.status as CoopBondStatus;
     if (status === 'linked') throw new Error('你们已经建立了 COOP');
     if (status === 'pending') throw new Error('已发出提议，等对方响应吧');
+    // 冷却按现在的天数重算（第 32 批）：旧记录里写着的 7 天 / 3 天不再算数
     if (status === 'rejected') {
-      const reReqAfter = existing.re_request_after as string | undefined;
-      if (reReqAfter && new Date(reReqAfter).getTime() > now.getTime()) {
-        const daysLeft = Math.ceil((new Date(reReqAfter).getTime() - now.getTime()) / 86400000);
-        throw new Error(`对方拒绝过这次提议，请在 ${daysLeft} 天后再试`);
-      }
+      const until = effectiveCooldownUntil(existing.re_request_after as string | undefined, existing.responded_at as string | undefined, COOP_REJECT_COOLDOWN_DAYS);
+      if (until && until.getTime() > now.getTime()) throw new Error(`对方拒绝过这次提议，请 ${waitText(until, now.getTime())}再试`);
     }
     if (status === 'severed') {
-      const reLinkAfter = existing.re_link_after as string | undefined;
-      if (reLinkAfter && new Date(reLinkAfter).getTime() > now.getTime()) {
-        const daysLeft = Math.ceil((new Date(reLinkAfter).getTime() - now.getTime()) / 86400000);
-        throw new Error(`此前曾解除 COOP，请在 ${daysLeft} 天后再试`);
-      }
+      const until = effectiveCooldownUntil(existing.re_link_after as string | undefined, existing.responded_at as string | undefined, COOP_SEVER_COOLDOWN_DAYS);
+      if (until && until.getTime() > now.getTime()) throw new Error(`此前曾解除 COOP，请 ${waitText(until, now.getTime())}再试`);
     }
 
     const updated = await pb.collection('coop_bonds').update(existing.id, {
@@ -291,7 +300,7 @@ export const acceptCoopBond = async (input: AcceptCoopBondInput): Promise<CoopBo
 };
 
 /**
- * 拒绝 COOP 提议（3 天冷却）
+ * 拒绝 COOP 提议（1 天冷却，第 32 批起；原 3 天）
  *
  * 服务端二次校验：只有 status='pending' 才能被拒，避免 accept 后误操作让 bond 退回 rejected。
  */
@@ -318,7 +327,27 @@ export const rejectCoopBond = async (bondId: string): Promise<CoopBond> => {
   return mapBond(updated, me);
 };
 
-/** 解除已建立的 COOP（7 天冷却） */
+/**
+ * 撤回自己发出、对方还没回应的提议（第 32 批 · 10-26 拍板）：不算冷却，撤回后随时能重新发起（换塔罗、改留言）。
+ * 状态记成 expired（不新增状态值，PB 那边的选项不用改）；responded_at 记撤回的时间——
+ * 自然过期不写它，对方的通知靠这个分清「对方撤回了」和「过期了」。
+ */
+export const withdrawCoopProposal = async (bondId: string): Promise<CoopBond> => {
+  if (!pb || !pb.authStore.isValid) throw new Error('未登录');
+  const me = getUserId();
+  if (!me) throw new Error('用户信息缺失');
+  const record = await pb.collection('coop_bonds').getOne(bondId, { requestKey: null });
+  if (record.status !== 'pending') throw new Error('这份提议已经被回应或失效了');
+  if (record.initiator !== me) throw new Error('只能撤回自己发出的提议');
+  const updated = await pb.collection('coop_bonds').update(bondId, {
+    status: 'expired',
+    expires_at: null,
+    responded_at: new Date().toISOString(),
+  }, { expand: 'user_a,user_b,initiator' });
+  return mapBond(updated, me);
+};
+
+/** 解除已建立的 COOP（1 天冷却，第 32 批起；原 7 天） */
 export const severCoopBond = async (bondId: string): Promise<CoopBond> => {
   if (!pb || !pb.authStore.isValid) throw new Error('未登录');
   const me = getUserId();

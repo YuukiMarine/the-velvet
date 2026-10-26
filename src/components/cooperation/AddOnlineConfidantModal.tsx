@@ -248,7 +248,7 @@ export function AddOnlineConfidantModal({ isOpen, onClose }: Props) {
                 </p>
                 <p className="text-[11px] text-gray-500 dark:text-gray-400 leading-relaxed">
                   对方接受后，你们会在各自的同伴列表顶部出现。
-                  <br />21 天未响应，申请会自动作废。
+                  <br />14 天未响应，申请会自动作废。
                 </p>
                 <button
                   onClick={onClose}

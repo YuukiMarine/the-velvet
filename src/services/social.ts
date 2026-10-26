@@ -100,7 +100,7 @@ const loadSocialOnce = async (options: { force?: boolean }): Promise<void> => {
     store.setCoopShadows(coopShadows);
     store.markLoaded();
 
-    // 异步兜底（不阻塞主流程）：把超过 21 天的 pending 置 expired
+    // 异步兜底（不阻塞主流程）：把过了有效期（14 天，第 32 批以前发的是 21 天）的 pending 置 expired
     void expireOutdatedPending(friendships).catch(err => {
       console.warn('[velvet-social] expireOutdatedPending failed', err);
     });

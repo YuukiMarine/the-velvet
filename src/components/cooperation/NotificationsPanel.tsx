@@ -476,12 +476,14 @@ const SectionHeader = ({ label }: { label: string }) => (
  * 对 coop_proposal 通知，把对应 bond 的最新状态抓出来。
  * 其他类型返回 null。
  * null → 通知不是 coop_proposal 或找不到 bond；其他 → bond 当前 status。
+ * 'withdrawn'（第 32 批）：发起人撤回了——bond 记成 expired、带着撤回时间（自然过期不写 respondedAt）。
  */
-function resolveCoopBondStatus(n: NotificationEntry, bonds: CoopBond[]): CoopBond['status'] | null {
+function resolveCoopBondStatus(n: NotificationEntry, bonds: CoopBond[]): CoopBond['status'] | 'withdrawn' | null {
   if (n.type !== 'coop_proposal') return null;
   const bondId = n.payload?.coop_bond_id as string | undefined;
   if (!bondId) return null;
   const bond = bonds.find(b => b.id === bondId);
+  if (bond?.status === 'expired' && bond.respondedAt) return 'withdrawn';
   return bond?.status ?? null;
 }
 
@@ -505,7 +507,7 @@ function NotificationItem({
 }: {
   n: NotificationEntry;
   working: boolean;
-  coopBondStatus: CoopBond['status'] | null;
+  coopBondStatus: CoopBond['status'] | 'withdrawn' | null;
   selectionMode: boolean;
   isSelected: boolean;
   onLongPress: (n: NotificationEntry) => void;
@@ -675,6 +677,7 @@ function NotificationItem({
                 : coopBondStatus === 'rejected' ? '· 已拒绝这次提议。'
                 : coopBondStatus === 'severed' ? '· 此 COOP 已被解除。'
                 : coopBondStatus === 'expired' ? '· 提议已过期。'
+                : coopBondStatus === 'withdrawn' ? '· 对方撤回了这次提议。'
                 : '· 此提议已不可响应。'}
             </div>
           )}
@@ -804,7 +807,7 @@ function describePayload(n: NotificationEntry): string {
     return msg ? `想加你为好友：「${msg.slice(0, 60)}」` : '想加你为好友。';
   }
   if (n.type === 'friend_accepted') return '通过了好友申请，可以在同伴列表里看到对方了。';
-  if (n.type === 'friend_rejected') return '这次没接受；3 天后可再试。';
+  if (n.type === 'friend_rejected') return '这次没接受；1 天后可再试。';
   if (n.type === 'prayer_received') return n.read ? '送来了 2 点 SP（已入账）。' : '送来了 2 点 SP，待入账。';
   if (n.type === 'prayer_reciprocal') return '今天你们互相祈愿了 ——愿望之光反射回你。';
   if (n.type === 'coop_proposal') {
@@ -812,7 +815,7 @@ function describePayload(n: NotificationEntry): string {
     return msg ? `想与你缔结 COOP：「${msg.slice(0, 60)}」` : '想与你缔结 COOP 关系。';
   }
   if (n.type === 'coop_accepted') return '接受了你的 COOP 提议 —— 在同伴列表里看 Ta。';
-  if (n.type === 'coop_rejected') return '这次没接受你的 COOP 提议；3 天后可再试。';
+  if (n.type === 'coop_rejected') return '这次没接受你的 COOP 提议；1 天后可再试。';
   if (n.type === 'coop_severed') return '解除了 COOP 关系。';
   if (n.type === 'event_logged') return '在你们之间写了一笔。';
   if (n.type === 'coop_event_logged') {

@@ -254,7 +254,7 @@ export function CoopProposeModal({ isOpen, onClose, target }: Props) {
                 </p>
                 <p className="text-[11px] text-gray-500 dark:text-gray-400 leading-relaxed">
                   {targetName} 收到后会挑一张自己的塔罗。<br />
-                  接受后，你们的在线同伴卡会自动建立。14 天未响应会自动过期。
+                  接受后，你们的在线同伴卡会自动建立。14 天未响应会自动过期；没回应之前，在 Ta 的名片上随时能撤回。
                 </p>
               </div>
             )}
