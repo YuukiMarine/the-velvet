@@ -11,7 +11,7 @@
  * 动效全部经 useBoldness() 闸门（D0 直出终态）。
  */
 import { motion, AnimatePresence } from 'motion/react';
-import { createContext, useContext, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { useUiChannel } from '@/ui/useUiChannel';
 import { useBoldness } from '@/utils/boldness';
 import { P3R, slantClip, GhostWords, P3Highlight } from '@/components/p3r/kit';
@@ -41,7 +41,9 @@ export type GlyphName =
   | 'moon' | 'speaker' | 'music' | 'image' | 'anim' | 'splash' | 'weather' | 'sidebar'
   | 'wave' | 'coin' | 'tag' | 'bars' | 'quest' | 'swords' | 'clock' | 'search' | 'cloud' | 'legacy' | 'mute' | 'cards'
   // 30b：助手 / 通知两页用到的
-  | 'check' | 'pen' | 'link' | 'calendar' | 'bubble' | 'notebook' | 'archive' | 'thought' | 'users' | 'doc' | 'wish' | 'flask' | 'chip' | 'trash' | 'plus' | 'send';
+  | 'check' | 'pen' | 'link' | 'calendar' | 'bubble' | 'notebook' | 'archive' | 'thought' | 'users' | 'doc' | 'wish' | 'flask' | 'chip' | 'trash' | 'plus' | 'send'
+  // 第 33 批：记事本
+  | 'lock' | 'unlock' | 'dots' | 'pin' | 'refresh' | 'eye';
 
 const GLYPH_PATHS: Record<GlyphName, ReactNode> = {
   palette: <><path d="M12 3a9 9 0 1 0 0 18c1.5 0 2-.8 2-1.7 0-.9-.6-1.3-.6-2.1 0-1 .8-1.7 1.8-1.7H17a4 4 0 0 0 4-4c0-4.7-4-8.5-9-8.5Z" /><circle cx="7.5" cy="11.5" r="1.1" fill="currentColor" /><circle cx="10.5" cy="7.5" r="1.1" fill="currentColor" /><circle cx="15" cy="7.5" r="1.1" fill="currentColor" /></>,
@@ -88,6 +90,12 @@ const GLYPH_PATHS: Record<GlyphName, ReactNode> = {
   trash: <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" />,
   plus: <path d="M12 5v14M5 12h14" />,
   send: <><path d="M21 3 3 10.5l7 2.5 2.5 7L21 3Z" /><path d="m10 13 5-5" /></>,
+  lock: <><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V7.5a4 4 0 0 1 8 0V11" /></>,
+  unlock: <><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V7.5a4 4 0 0 1 7.6-1.8" /></>,
+  dots: <><circle cx="5.5" cy="12" r="1.5" fill="currentColor" stroke="none" /><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none" /><circle cx="18.5" cy="12" r="1.5" fill="currentColor" stroke="none" /></>,
+  pin: <><path d="M9 3.5h6l-1 5.5 3.5 3.5h-11L10 9 9 3.5Z" /><path d="M12 12.5V21" /></>,
+  refresh: <><path d="M20 12a8 8 0 1 1-2.3-5.65" /><path d="M20 4v4.6h-4.6" /></>,
+  eye: <><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z" /><circle cx="12" cy="12" r="2.8" /></>,
 };
 
 export const Glyph = ({ name, size = 22, className, style }: { name: GlyphName; size?: number; className?: string; style?: CSSProperties }) => (
@@ -125,6 +133,41 @@ export interface SectionMeta {
   glyph: GlyphName;
   desc: string;
 }
+
+/**
+ * 方块标题（第 33 批：标题放大到 20px、挪到图标右边）：一行放不下就按比例缩到放得下（窄屏上五个字的标题），最小 14px。
+ * 只量一次 + 跟着宽度变（转屏 / 拖窗口）；字宽和字号成正比，一次就算准。
+ */
+const TILE_TITLE_PX = 20;
+const FitTitle = ({ children, className, style }: { children: ReactNode; className?: string; style?: CSSProperties }) => {
+  const ref = useRef<HTMLSpanElement>(null);
+  const [px, setPx] = useState(TILE_TITLE_PX);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const fit = () => {
+      el.style.fontSize = `${TILE_TITLE_PX}px`;
+      const need = el.scrollWidth, room = el.clientWidth;
+      // 留 3% 余量：scrollWidth 取整、斜体最后一个字的出头都会多吃一点
+      const next = need > room + 0.5 && need > 0 ? Math.max(14, Math.floor((TILE_TITLE_PX * room / need) * 0.97 * 10) / 10) : TILE_TITLE_PX;
+      el.style.fontSize = `${next}px`;
+      setPx(next);
+    };
+    fit();
+    // 展示字体（思源黑体 Black 分片 / P5 标题字）晚到会改字宽：到了再量一次
+    let alive = true;
+    void document.fonts?.ready.then(() => { if (alive) fit(); });
+    if (typeof ResizeObserver === 'undefined') return () => { alive = false; };
+    const ro = new ResizeObserver(fit);
+    ro.observe(el.parentElement ?? el);
+    return () => { alive = false; ro.disconnect(); };
+  }, [children]);
+  return (
+    <span ref={ref} data-tile-title className={`block min-w-0 flex-1 overflow-hidden whitespace-nowrap leading-tight ${className ?? ''}`} style={{ ...style, fontSize: px }}>
+      {children}
+    </span>
+  );
+};
 
 export const HubTile = ({ section, summary, status, index, onOpen }: {
   section: SectionMeta;
@@ -165,17 +208,19 @@ export const HubTile = ({ section, summary, status, index, onOpen }: {
         className="relative block w-full overflow-hidden text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1b57ff]"
         style={{ clipPath: slantClip(13), background: t.panel, boxShadow: '0 8px 18px rgba(38,96,140,0.08)' }}
       >
-        {/* 青斜纹底（P3R 面板质感） */}
-        <span aria-hidden className="pointer-events-none absolute inset-0" style={{ background: 'repeating-linear-gradient(115deg, transparent 0 18px, rgba(53,209,232,0.07) 18px 21px)' }} />
-        <span className="relative flex flex-col gap-2.5 px-4 pb-3.5 pt-4">
-          <motion.span
-            layoutId={iconId}
-            className="flex h-11 w-11 items-center justify-center text-white"
-            style={{ background: P3R.blue, clipPath: slantClip(7) }}
-          >
-            <Glyph name={section.glyph} size={24} />
-          </motion.span>
-          <span className="block text-[17px] font-black italic leading-tight" style={{ color: t.ink }}>{section.title}</span>
+        {/* 青斜纹底（P3R 面板质感；夜间整层压到一成，见 index.css .p3-hub-stripes） */}
+        <span aria-hidden className="p3-hub-stripes pointer-events-none absolute inset-0" style={{ background: 'repeating-linear-gradient(115deg, transparent 0 18px, rgba(var(--p3r-cyan-rgb, 53, 209, 232), 0.07) 18px 21px)' }} />
+        <span className="relative flex flex-col gap-2.5 px-3.5 pb-3.5 pt-3.5">
+          <span className="flex items-center gap-2">
+            <motion.span
+              layoutId={iconId}
+              className="flex h-9 w-9 shrink-0 items-center justify-center text-white"
+              style={{ background: P3R.blue, clipPath: slantClip(6) }}
+            >
+              <Glyph name={section.glyph} size={20} />
+            </motion.span>
+            <FitTitle className="pr-1 font-black italic" style={{ color: t.ink }}>{section.title}</FitTitle>
+          </span>
           <span className="block min-h-[32px] text-[11.5px] font-semibold leading-snug" style={{ color: t.sub }}>{summary}</span>
           <span aria-hidden className="absolute bottom-3 right-3 flex gap-1">
             <span className="h-[9px] w-[12px]" style={{ background: P3R.cyan, clipPath: 'polygon(30% 0, 100% 0, 70% 100%, 0 100%)' }} />
@@ -204,15 +249,17 @@ export const HubTile = ({ section, summary, status, index, onOpen }: {
           <P4Scanlines opacity={0.35} line="#fff6d0" />
           <span className="absolute left-3 top-[5px] text-[9px] font-black uppercase tracking-[0.2em]" style={{ color: 'var(--ui-bg, #ffd900)', fontFamily: 'var(--p4-display-font, serif)' }}>{section.en}</span>
         </span>
-        <span className="relative flex flex-col gap-2 px-4 pb-3.5 pt-3">
-          <motion.span
-            layoutId={iconId}
-            className="flex h-11 w-11 items-center justify-center rounded-[13px]"
-            style={{ background: '#131313', color: 'var(--ui-bg, #ffd900)' }}
-          >
-            <Glyph name={section.glyph} size={24} />
-          </motion.span>
-          <span className="block text-[19px] font-black leading-tight" style={{ color: t.ink, fontFamily: 'var(--p4-display-font, serif)' }}>{section.title}</span>
+        <span className="relative flex flex-col gap-2 px-3.5 pb-3.5 pt-3">
+          <span className="flex items-center gap-2">
+            <motion.span
+              layoutId={iconId}
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px]"
+              style={{ background: '#131313', color: 'var(--ui-bg, #ffd900)' }}
+            >
+              <Glyph name={section.glyph} size={20} />
+            </motion.span>
+            <FitTitle className="font-black" style={{ color: t.ink, fontFamily: 'var(--p4-display-font, serif)' }}>{section.title}</FitTitle>
+          </span>
           <span className="block min-h-[32px] text-[11.5px] font-bold leading-snug" style={{ color: t.sub, opacity: 0.68 }}>{summary}</span>
         </span>
         <P4Flower size={16} color="var(--p4-orange, #f9a11b)" className="absolute bottom-3 right-3" />
@@ -233,15 +280,17 @@ export const HubTile = ({ section, summary, status, index, onOpen }: {
         style={{ rotate: index % 2 ? 0.8 : -0.8 }}
       >
         <P5Rough seed={400 + index * 7} jag={7} frame={3} face={P5R.paper} shadow={{ x: 4, y: 5 }} />
-        <span className="relative flex flex-col gap-2 px-4 pb-4 pt-4">
-          <motion.span
-            layoutId={iconId}
-            className="flex h-11 w-11 items-center justify-center"
-            style={{ background: P5R.red, color: P5R.white, clipPath: roughQuad(430 + index, 4), boxShadow: `2px 2px 0 ${P5R.ink}` }}
-          >
-            <Glyph name={section.glyph} size={24} />
-          </motion.span>
-          <span className="block text-[18px] font-black leading-tight" style={{ color: P5R.ink, fontFamily: P5_TITLE_FONT }}>{section.title}</span>
+        <span className="relative flex flex-col gap-2 px-3.5 pb-4 pt-4">
+          <span className="flex items-center gap-2">
+            <motion.span
+              layoutId={iconId}
+              className="flex h-9 w-9 shrink-0 items-center justify-center"
+              style={{ background: P5R.red, color: P5R.white, clipPath: roughQuad(430 + index, 4), boxShadow: `2px 2px 0 ${P5R.ink}` }}
+            >
+              <Glyph name={section.glyph} size={20} />
+            </motion.span>
+            <FitTitle className="font-black" style={{ color: P5R.ink, fontFamily: P5_TITLE_FONT }}>{section.title}</FitTitle>
+          </span>
           <span className="block min-h-[32px] text-[11.5px] font-bold leading-snug" style={{ color: P5R.grey }}>{summary}</span>
         </span>
         <P5Star size={13} fill={P5R.ink} rot={-12} className="absolute bottom-3 right-3" />
@@ -260,11 +309,13 @@ export const HubTile = ({ section, summary, status, index, onOpen }: {
       className="relative block w-full overflow-hidden rounded-[18px] bg-white text-left shadow-[0_10px_24px_rgba(27,87,255,0.08)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary dark:bg-gray-800"
     >
       <span aria-hidden className="pointer-events-none absolute -right-3 -top-3 h-14 w-14" style={{ background: 'rgba(53,209,232,0.18)', clipPath: 'polygon(40% 0, 100% 0, 100% 60%)' }} />
-      <span className="relative flex flex-col gap-2.5 px-4 pb-3.5 pt-4">
-        <motion.span layoutId={iconId} className="flex h-11 w-11 items-center justify-center rounded-[13px] bg-primary/10 text-primary">
-          <Glyph name={section.glyph} size={24} />
-        </motion.span>
-        <span className="block text-[16px] font-extrabold leading-tight text-gray-900 dark:text-white">{section.title}</span>
+      <span className="relative flex flex-col gap-2.5 px-3.5 pb-3.5 pt-3.5">
+        <span className="flex items-center gap-2">
+          <motion.span layoutId={iconId} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px] bg-primary/10 text-primary">
+            <Glyph name={section.glyph} size={20} />
+          </motion.span>
+          <FitTitle className="font-extrabold text-gray-900 dark:text-white">{section.title}</FitTitle>
+        </span>
         <span className="block min-h-[32px] text-[12px] leading-snug text-gray-500 dark:text-gray-400">{summary}</span>
       </span>
       {dot}

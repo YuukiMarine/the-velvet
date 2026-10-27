@@ -398,6 +398,20 @@ export const AssistantSection = () => {
         <Row id="navigatorNotebook" glyph="notebook" label="记事本" desc="它记住的关于你的事：长期画像 + 零散记忆，可改可删，只存本机"
           control={<Btn small onClick={() => setNotebookOpen(true)} ariaLabel="打开记事本">打开</Btn>} />
         <Divider />
+        <Row id="navigatorProfileAuto" glyph="pen" label="画像自动更新"
+          desc="开着：聊天收进记忆时，它会按对话更新记事本里的画像（长期目标、偏好与雷区…），锁住的块不动。关掉：画像只有你自己改，它只记零散的事"
+          control={<Toggle checked={settings.navigatorProfileAuto !== false} onChange={(v) => updateSettings({ navigatorProfileAuto: v })} aria-label="画像自动更新" />} />
+        {settings.navigatorProfileAuto !== false && (
+          <>
+            <Divider />
+            <Row id="navigatorProfileFromRecords" glyph="doc" label="画像参考我的记录"
+              desc={settings.navigatorBriefing === false
+                ? '「让助手了解你的记录」关着，这一项不生效'
+                : '每 5 天按你的愿望、倒计时、宣告卡、做成的大事、坚持的每日任务和本周目标，整理一次「长期目标」和「近况」；偏好与雷区只认你在聊天里亲口说的'}
+              control={<Toggle checked={settings.navigatorProfileFromRecords !== false} onChange={(v) => updateSettings({ navigatorProfileFromRecords: v })} aria-label="画像参考我的记录" />} />
+          </>
+        )}
+        <Divider />
         <Row id="navigatorMemoryIsolated" glyph="users" label="记忆按人格隔离"
           desc="关着：所有人格共用一本记事本。开着：各记各的，像换了个人；以前没标人格的算「共享」，谁都读得到。关掉不会丢东西"
           control={<Toggle checked={!!settings.navigatorMemoryIsolated} onChange={(v) => updateSettings({ navigatorMemoryIsolated: v })} aria-label="记忆按人格隔离" />} />

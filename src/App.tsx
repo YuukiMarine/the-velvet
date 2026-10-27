@@ -63,7 +63,7 @@ import { initBgm, unlockBgm } from '@/utils/bgm';
 import { BackgroundAnimation } from '@/components/BackgroundAnimation';
 import { PWAUpdateToast } from '@/components/PWAUpdateToast';
 import { AIJobsBanner } from '@/components/AIJobsBanner';
-import { initSystemBars, setBarStyle } from '@/utils/nativeBars';
+import { setBarStyle } from '@/utils/nativeBars';
 import { initNativeCalendar } from '@/utils/nativeCalendar';
 import { initKeepAlive } from '@/utils/nativeKeepAlive';
 import { initSystemAudio } from '@/utils/nativeAudio';
@@ -309,8 +309,7 @@ function App() {
         console.warn('[velvet] boot tail failed', e);
       }
       void useAppStore.getState().syncNotifications(); // F2a：启动后排程本地通知
-      // 第 29 批 · 原生桥：安卓沉浸式 inset / 日历闹钟能力 / AI 后台续命（网页版与旧包都静默）
-      void initSystemBars();
+      // 第 29 批 · 原生桥：日历闹钟能力 / AI 后台续命（网页版与旧包都静默）；安卓沉浸式 inset 挪到了 main.tsx 最前面（第 33 批）
       void initNativeCalendar();
       initKeepAlive();
       initSystemAudio();
@@ -923,7 +922,11 @@ function App() {
           // P4 黄频道：舞台平面直接铺 --ui-bg（p4-redraw 定稿），暗色也保持黄
           // 用户自定义了背景图时让位——这层不透明黄会把图整块盖没（"背景图片没反应"）
           // 舞台底走 --p4-stage（夜间=紫），fallback 到 --ui-bg（白天=黄，黄同时兼任强调色）
-          style={user?.theme === 'yellow' && !settings.backgroundImage ? { background: 'var(--p4-stage, var(--ui-bg, #ffd900))' } : undefined}
+          // 红频道：页面自己铺不透明的纯黑舞台（P5RPage），App 根也跟着黑——转场 / 安卓状态栏底下那条一旦露底，
+          // 露出来的不再是一块浅灰（第 33 批：切页时顶条先泛白再变黑）。开了背景图 / 背景动画时页面让位，这里不动
+          style={user?.theme === 'yellow' && !settings.backgroundImage
+            ? { background: 'var(--p4-stage, var(--ui-bg, #ffd900))' }
+            : user?.theme === 'red' && !bgImageOn && !bgAnimOn ? { background: '#000000' } : undefined}
         >
           {/* 背景图片（与擦除垫底层复刻的是同一个节点，见 bgImageLayer） */}
           {bgImageLayer}
@@ -987,6 +990,7 @@ function App() {
                   stageBg={
                     user?.theme === 'yellow' && !bgImageOn
                       ? 'var(--p4-stage, var(--ui-bg, #ffd900))'
+                      : user?.theme === 'red' && !bgImageOn && !bgAnimOn ? '#000000'
                       : settings.darkMode ? '#111827' : '#f9fafb'
                   }
                   // 擦除垫底层要把**所有全局背景层**都复刻一份，否则垫层期间它们被盖成
@@ -1106,6 +1110,8 @@ let swapScrollTop = 0;
 // 圆形擦除时长。v2.7.0.4 由 460 放缓到 540（用户口径「蒙版转场稍微慢一点点」）——
 // 与底部栏波纹的同幅放缓（HeavyTransition 的 0.45→0.53 系数）保持同步，两者是一套演出。
 const REVEAL_MS = 540;
+/** 擦除在途时旧页出栈 / 强制淡出的兜底：启动保险丝 500 + 擦除 540 + 收尾 40 + 余量（只兜「擦完的回调永远不来」） */
+const WIPE_PRUNE_FALLBACK_MS = 1150;
 /** 旧路由 id todos/activities 与 actions 同页，归一避免瞬间误 remount */
 const normPageKey = (id: string) => (id === 'todos' || id === 'activities' ? 'actions' : id);
 
@@ -1246,10 +1252,12 @@ const PageShell = ({ leaving, coveredByWipe, stageBg, stageDecor, onRevealed, ch
   const holdStatic = leaving && coveredByWipe;
   // 兜底：leaving 超过这个时长仍没被出栈（擦除没来 / prune 被连点冲掉），强制淡出。
   // 宁可少一次"垫底等擦除"的观感，也不能留一张不透明的旧页压在新页上。
+  // 时长与 PageSwitcher 的出栈兜底同一口径（擦除在途 1150ms）：以前是 260ms，圆还没扩到屏顶旧页就开始淡，
+  // 顶上那条（安卓沉浸式的状态栏底下，离圆心最远）先露出 App 舞台底色、擦到了才变回来——切页时顶条「刷新」一下（第 33 批）
   const [forceFade, setForceFade] = useState(false);
   useEffect(() => {
     if (!leaving) { setForceFade(false); return; }
-    const t = setTimeout(() => setForceFade(true), 260);
+    const t = setTimeout(() => setForceFade(true), WIPE_PRUNE_FALLBACK_MS);
     return () => clearTimeout(t);
   }, [leaving]);
   /**
@@ -1504,7 +1512,7 @@ const PageSwitcher = ({ current, stageBg, stageDecor, render }: {
     //「onRevealed 永远不来」的病态场景，擦除在途时放到 1150ms（500+460+40+余量）之外。
     if (pruneTimer.current) clearTimeout(pruneTimer.current);
     const wipeInFlight = bold && !!consumePendingCircleReveal();
-    pruneTimer.current = window.setTimeout(prune, wipeInFlight ? 1150 : PAGE_HOLD_MS);
+    pruneTimer.current = window.setTimeout(prune, wipeInFlight ? WIPE_PRUNE_FALLBACK_MS : PAGE_HOLD_MS);
     return () => {
       if (pruneTimer.current) clearTimeout(pruneTimer.current);
     };
@@ -1512,7 +1520,7 @@ const PageSwitcher = ({ current, stageBg, stageDecor, render }: {
   // 本轮切页是否登记过水波纹原点：只在 current 变化时取一次快照，
   // 不要让每张 shell 各问一遍（各问各的会拿到不同答案，正是叠页的来源之一）。
   // D0 下 PageShell 不放圆擦除（见其 origin 初始化），这里同口径按"无擦除"走，
-  // 否则旧页会垫底空等一个不会来的擦除（虽有 260ms forceFade 兜底，但何必）
+  // 否则旧页会垫底空等一个不会来的擦除（虽有 forceFade 兜底，但要等 1 秒多）
   const bold = useBoldness();
   const hasPendingWipe = bold && !!consumePendingCircleReveal();
   return (

@@ -425,7 +425,8 @@ export function ConfidantCreateModal({ isOpen, onClose, onCreated, onPickOnline 
                         : 'relative rounded-2xl px-3 py-3 text-left border-2 transition-all active:scale-95 hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed'}
                       style={p3 ? {
                         clipPath: 'polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%)',
-                        background: '#ddf1f9',
+                        // 浅青卡底走变量：夜间翻深（以前写死，夜间标题被翻成浅色 = 白底白字，第 33 批）
+                        background: 'var(--p3r-cyan-pale, #ddf1f9)',
                       } : {
                         background: 'linear-gradient(135deg, rgba(16,185,129,0.10), rgba(20,184,166,0.05))',
                         borderColor: 'rgba(16,185,129,0.4)',
@@ -446,7 +447,7 @@ export function ConfidantCreateModal({ isOpen, onClose, onCreated, onPickOnline 
                           COOP
                         </span>
                       </div>
-                      <div className={p3 ? 'mt-1.5 text-[10px] font-semibold leading-snug text-[#3d4a66]' : 'text-[10px] text-gray-500 dark:text-gray-400 mt-0.5 leading-snug'}>
+                      <div className={p3 ? 'mt-1.5 text-[10px] font-semibold leading-snug' : 'text-[10px] text-gray-500 dark:text-gray-400 mt-0.5 leading-snug'} style={p3 ? { color: 'var(--p3r-ink-soft, #3d4a66)' } : undefined}>
                         按 UserID 邀请<br />缔结双向羁绊
                       </div>
                       {p3 && <span aria-hidden className="absolute bottom-1 right-3.5 h-0 w-0 border-b-[10px] border-l-[14px] border-l-transparent" style={{ borderBottomColor: 'rgba(53,209,232,0.9)' }} />}

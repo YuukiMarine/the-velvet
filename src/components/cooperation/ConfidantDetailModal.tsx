@@ -768,7 +768,8 @@ export function ConfidantDetailModal({
                     className="relative flex-1 py-2.5 text-[14px] font-black transition-all"
                     style={{
                       clipPath: 'polygon(11px 0, 100% 0, calc(100% - 11px) 100%, 0 100%)',
-                      background: active ? 'var(--p3r-blue, #1b57ff)' : '#eef6fb',
+                      // 未选中：芯片底（夜间翻深靛 / 粉翻粉）——以前写死浅蓝，夜间字被翻成浅色，白底白字（第 33 批）
+                      background: active ? 'var(--p3r-blue, #1b57ff)' : 'var(--p3r-chip, #eef6fb)',
                       color: active ? '#fff' : 'var(--p3r-ink, #0a1230)',
                       marginLeft: i > 0 ? -6 : 0,
                       zIndex: active ? 2 : 1,

@@ -67,7 +67,8 @@ export const Stepper = ({
       ? 'w-9 h-8 text-white font-black text-lg flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed'
       : BTN_CLASS;
   const btnStyle = p3
-    ? { clipPath: 'polygon(7px 0, 100% 0, calc(100% - 7px) 100%, 0 100%)', background: '#c9e9f6' }
+    // 浅青斜块走变量（夜间翻深、粉翻粉；第 33 批：以前写死浅青，夜间 −/+ 是浅绿字压浅青底）
+    ? { clipPath: 'polygon(7px 0, 100% 0, calc(100% - 7px) 100%, 0 100%)', background: 'var(--p3r-cyan-pale, #c9e9f6)' }
     : undefined;
   // p5：减 = 黑块微左斜，加 = 红块微右斜（不规则四边形铁律）
   const p5DecStyle = { background: '#050505', clipPath: 'polygon(2.5px 1px, calc(100% - 1px) 2.5px, calc(100% - 2px) calc(100% - 1.5px), 1px calc(100% - 2.5px))', transform: 'rotate(-1.5deg)' };

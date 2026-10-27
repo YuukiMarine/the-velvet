@@ -9,7 +9,7 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         // ⚠️ 每次发布 release 必须把 versionCode 往上加（Google Play 要求严格递增），
         //    versionName 保持与 package.json 同步即可
-        versionCode 19
+        versionCode 20
         versionName "2.8.5"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {

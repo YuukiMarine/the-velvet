@@ -20,7 +20,7 @@ import com.getcapacitor.annotation.CapacitorPlugin;
  *
  * MainActivity 把状态栏 / 导航栏做成透明、WebView 铺到屏幕边，并在 WindowInsets 变化时调 publish：
  *   · top / bottom = 状态栏 / 导航栏的高度（CSS px，= dp）；键盘弹起时 bottom 给 0——键盘高度由 MainActivity
- *     做成 WebView 的底 padding（等效 adjustResize），网页不用管键盘；
+ *     做成 WebView 的底外边距（等效 adjustResize），网页不用管键盘；
  *   · navMode：Settings.Secure navigation_mode（0 三键 / 1 两键 / 2 手势；取不到 -1）。
  * 网页侧把它们写进 CSS 变量接到全站的安全区上；setStyle 按页面底色设系统栏图标明暗。
  */

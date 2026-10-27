@@ -660,6 +660,13 @@ export interface Settings {
    * 记录是用户的、记忆是关系的：它不受「记忆按人格隔离」影响。
    */
   navigatorBriefing?: boolean;
+  /** 画像自动更新（第 33 批）：默认开——聊天归档时按对话改画像（锁住的块不动）；关掉 = 只收零散记忆，画像只有你自己改 */
+  navigatorProfileAuto?: boolean;
+  /**
+   * 画像参考我的记录（第 33 批）：默认开——每 5 天按记录（愿望 / 倒计时 / 宣告卡 / 做成的大事 / 坚持的每日任务 / 本周目标）
+   * 整理一次「长期目标」和「近况」；偏好与雷区、相处守则只认聊天里亲口说的。「画像自动更新」或「让助手了解你的记录」关着时不生效
+   */
+  navigatorProfileFromRecords?: boolean;
   /** 走神（第 26 批 · 联想）：闲聊时偶尔顺口想起一条不那么相关的旧事 / 梗。off 不走神；sometimes（缺省）约三成轮次；often 约六成 */
   navigatorDaydream?: 'off' | 'sometimes' | 'often';
   /**
@@ -1173,6 +1180,8 @@ export interface NavigatorMessageRow {
   undone?: boolean;
   /** 执行成功的时刻（第 28 批）：回执旁的「撤销」按它算 10 分钟 */
   actionAt?: number;
+  /** 同一条回复里这一泡后面切掉的原文（第 33 批）：拼回历史按它接，不再一律换行 */
+  sep?: string;
   createdAt: number;
 }
 
@@ -1211,6 +1220,15 @@ export interface ProfileBlocks {
   rules?: string;
 }
 
+/** 画像一块的来历（第 33 批） */
+export interface ProfileBlockMeta {
+  by: 'ai' | 'user';
+  /** AI 改的：依据聊天还是记录 */
+  from?: 'chat' | 'records';
+  /** 哪天（YYYY-MM-DD；不是完整时刻，同步时不会被当成日期还原） */
+  day: string;
+}
+
 export interface NavigatorMemo {
   id: string;
   /** bit（第 26 批）= 「你们之间的说法」：黑话 / 梗 / 昵称 / 代号，不是关于用户的事实；跟人格走 */
@@ -1233,6 +1251,11 @@ export interface NavigatorMemo {
    * 没有 = 共享，谁都读得到。关掉隔离时这个字段保留（再开还能分），只是取用时不看它。
    */
   presetId?: string;
+  /**
+   * 归哪几位人格（第 33 批 · 多选）：两位及以上时写，presetId 同时写第一位——老版本 App 只认 presetId，只会当成那一位的，
+   * 不会漏给别人。全选 = 共享（两个字段都不写）。读取一律走 navigatorMemoryScope.memoOwners
+   */
+  presetIds?: string[];
   // ── 第 26 批 · 记忆质量 ──
   /** 线索词（归档器写的，2~6 个）：以后聊到什么时该想起这条——话题 / 物件 / 情绪 / 场景；召回和联想都靠它 */
   cues?: string[];
@@ -1251,6 +1274,12 @@ export interface NavigatorMemo {
   /** profile 行：分块画像与上一版（可撤回） */
   profileBlocks?: ProfileBlocks;
   profilePrev?: ProfileBlocks;
+  /** profile 行（第 33 批）：每块最后是谁、哪天、按什么改的——记事本每块右上角的小签 */
+  profileMeta?: Partial<Record<keyof ProfileBlocks, ProfileBlockMeta>>;
+  /** profile 行：锁住的块——AI 不再改，只有用户自己改 */
+  profileLocks?: Array<keyof ProfileBlocks>;
+  /** profile 行：上次「参考我的记录」整理画像的日子（YYYY-MM-DD；每 5 天一次） */
+  profileRecordsAt?: string;
   /**
    * 回访约定（第二批）：一件带日子的事（面试、考试、体检……）。那件事过后第一次见面问一次结果，
    * 只问一次。text 是中性事实（「10月3日（周六）有面试」），下面几个字段管什么时候问、问没问过。

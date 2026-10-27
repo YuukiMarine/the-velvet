@@ -268,8 +268,10 @@ const BubbleIn = ({ side, mark, markCh, children }: {
   const anim = useBoldness();
   return (
     <motion.div
-      // max-w 必须挂在这层：挂在内层时百分比参照的是“内容宽”，会把短气泡挤成一列字
-      className="relative min-w-0 max-w-[86%]"
+      // max-w 必须挂在这层：挂在内层时百分比参照的是“内容宽”，会把短气泡挤成一列字。
+      // AI 泡外面还有一层（挂「想起了…」小注），86% 挂在那层、这里只占满它——
+      // 86% 写在这层时参照的是外层按内容收缩出来的宽度，每泡只剩自己宽度的 86%，「10:00」被折成两行（第 33 批）
+      className={`relative min-w-0 ${side === 'cat' ? 'max-w-full' : 'max-w-[86%]'}`}
       style={{ transformOrigin: side === 'cat' ? '0% 100%' : '100% 100%' }}
       initial={anim ? { rotate: 60, opacity: 0 } : false}
       animate={{ rotate: 0, opacity: 1 }}
@@ -1406,7 +1408,7 @@ const MessageRow = ({ m, sk, bright, p5 = false, p4 = false, busy, onConfirm, on
             <CatFace className="h-[24px] w-[24px]" />
           </span>
         )}
-        <div className="min-w-0 max-w-full">
+        <div className="flex min-w-0 max-w-[86%] flex-col items-start">
           <BubbleIn side="cat" mark={mark} markCh={markCh}>
             {p5 ? (
               <P5Bubble side="cat">{m.text}</P5Bubble>

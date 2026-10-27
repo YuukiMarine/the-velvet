@@ -138,6 +138,35 @@ export const NavigatorSettings = () => {
         <h4 className="text-sm font-bold text-gray-800 dark:text-white tracking-wide">人格</h4>
       </div>
       <p className="-mt-2 text-sm text-gray-500 dark:text-gray-400">切换人格会开启（或恢复）它今天的对话。能力不变，变的只是性格和嘴。</p>
+      {/* ── 画像自动更新 / 参考我的记录（第 33 批）── */}
+      <div className="rounded-xl border border-gray-200 px-4 py-3 dark:border-gray-700" data-testid="profile-auto">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="text-sm font-semibold text-gray-700 dark:text-gray-200">画像自动更新</div>
+            <p className="mt-0.5 text-xs leading-relaxed text-gray-400 dark:text-gray-500">
+              开着：聊天收进记忆时，它会按对话更新记事本里的画像（长期目标、偏好与雷区…），锁住的块不动。关掉：画像只有你自己改，它只记零散的事。
+            </p>
+          </div>
+          <div className="mt-0.5 shrink-0">
+            <Toggle checked={settings.navigatorProfileAuto !== false} onChange={(v) => updateSettings({ navigatorProfileAuto: v })} aria-label="画像自动更新" />
+          </div>
+        </div>
+        {settings.navigatorProfileAuto !== false && (
+          <div className="mt-3 flex items-start justify-between gap-3 border-t border-gray-100 pt-3 dark:border-gray-700/60">
+            <div>
+              <div className="text-sm font-semibold text-gray-700 dark:text-gray-200">画像参考我的记录</div>
+              <p className="mt-0.5 text-xs leading-relaxed text-gray-400 dark:text-gray-500">
+                {settings.navigatorBriefing === false
+                  ? '「让助手了解你的记录」关着，这一项不生效。'
+                  : '每 5 天按你的愿望、倒计时、宣告卡、做成的大事、坚持的每日任务和本周目标，整理一次「长期目标」和「近况」；偏好与雷区只认你在聊天里亲口说的。'}
+              </p>
+            </div>
+            <div className="mt-0.5 shrink-0">
+              <Toggle checked={settings.navigatorProfileFromRecords !== false} onChange={(v) => updateSettings({ navigatorProfileFromRecords: v })} aria-label="画像参考我的记录" />
+            </div>
+          </div>
+        )}
+      </div>
       {/* ── 记忆按人格隔离（第 23 批）── */}
       <div className="flex items-start justify-between gap-3 rounded-xl border border-gray-200 px-4 py-3 dark:border-gray-700">
         <div>

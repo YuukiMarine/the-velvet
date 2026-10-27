@@ -26,6 +26,20 @@
           if (m) m.content = 'width=' + Math.round(w / s) + ', user-scalable=no, viewport-fit=cover';
         } catch (e) { document.documentElement.classList.add('layout-wide'); }
       })();
+      // 安卓沉浸式（第 33 批）：上一次的状态栏 / 导航栏高度，第一帧之前就套上——以前要等原生回话（启动尾巴之后），
+      // 头几秒页面顶在状态栏底下、几秒后整页下移。只有安卓原生壳写这个键（src/utils/nativeBars.ts，键名两处一致），原生的新值再覆盖
+      (function () {
+        try {
+          var raw = localStorage.getItem('velvet:androidInsets.v1');
+          if (!raw) return;
+          var ins = JSON.parse(raw), d = document.documentElement;
+          if (!(ins && ins.top > 0)) return;
+          d.style.setProperty('--android-inset-top', Math.round(ins.top) + 'px');
+          d.style.setProperty('--android-inset-bottom', Math.max(0, Math.round(ins.bottom || 0)) + 'px');
+          d.setAttribute('data-android-edge', '1');
+          d.setAttribute('data-nav-mode', String(ins.navMode == null ? -1 : ins.navMode));
+        } catch (e) {}
+      })();
     </script>
 
     <!-- SEO 基础标签 -->

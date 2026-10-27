@@ -1372,7 +1372,12 @@ html[data-ios-standalone="true"] {
   --p3r-skill-ready: rgba(62, 207, 142, 0.14);
   --p3r-chip-stripe: rgba(255, 255, 255, 0.07);
   --p3r-sheet-grad: linear-gradient(178deg, #0d1b36 0%, #0a1530 60%, #081226 100%);
+  /* 「立下约定」错开一档：夜间往暗错（白天罩白往亮错，夜间主色本就浅，再罩白白字就糊了；第 33 批） */
+  --p3r-pact-veil: rgba(8, 18, 38, 0.24);
 }
+
+/* 新版设置方块的青斜纹（第 33 批，用户：蓝夜间影响阅读、降到 10%）：深底上反差比白天大，夜间整层压到一成；粉夜间同一套皮一起 */
+:root.dark[data-ui-channel="p3"] .p3-hub-stripes { opacity: 0.1; }
 
 /* ── 蓝 · 旧工具类毯式翻色（表单/设置/战场/目标·倒计时/技能等未换壳页面）──
    同时压过 bg-white 与它的 dark:bg-gray-* 变体：中性灰在深蓝世界里发闷，统一进靛蓝阶。 */
@@ -1450,6 +1455,7 @@ html[data-ios-standalone="true"] {
   --p3nav-cat-bub: linear-gradient(315deg, #c084fc 13px, #3d1830 13px);
   --p3nav-slab: linear-gradient(180deg, rgba(192, 132, 252, 0.08) 0%, rgba(255, 95, 162, 0.18) 100%);
   --p3nav-water-filter: hue-rotate(255deg) brightness(0.36) saturate(0.7);
+  --p3r-pact-veil: rgba(26, 10, 20, 0.24);
 }
 /* 粉 · 夜间毯式：p3 夜间那套把中性灰翻成靛蓝，粉室里改翻梅紫。
    与 p3 版同特异度，靠源码顺序压过。

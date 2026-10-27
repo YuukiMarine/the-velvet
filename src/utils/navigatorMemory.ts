@@ -13,14 +13,14 @@
  */
 import { v4 as uuidv4 } from 'uuid';
 import { db } from '@/db';
-import { memoryIsolated, memoVisibleTo, memoOwner } from '@/utils/navigatorMemoryScope';
+import { memoryIsolated, memoVisibleTo, memoOwner, ownersKey } from '@/utils/navigatorMemoryScope';
 import { tokenize, queryChars } from '@/utils/navigatorIndex';
 import { useAppStore, toLocalDateKey } from '@/store';
 import { chatComplete, getAIConfig, type AIConfig, type AIMessage } from '@/utils/aiClient';
 import { BUILTIN_NAVIGATOR_PRESETS, resolveNavigatorPreset } from '@/constants/navigatorPresets';
 import { calendarTable, dayLabelCN, keyOfDate, relativeDayCN, shortMD } from '@/utils/navigatorClock';
 import { followUpCoveredByPromise, isPromise, mentionsTopic, promisePhase, savePromisesFromCompact } from '@/utils/navigatorPromise';
-import type { NavigatorMemo, NavigatorMessageRow, NavigatorPreset, ProfileBlocks } from '@/types';
+import type { NavigatorMemo, NavigatorMessageRow, NavigatorPreset, ProfileBlockMeta, ProfileBlocks } from '@/types';
 
 // ── token 估算（触发判断用，不求精确；中文≈0.6~0.9 token/字取保守 0.75） ──
 export function estTokens(text: string): number {
@@ -81,7 +81,7 @@ export const PROFILE_LABELS: Record<keyof ProfileBlocks, string> = { identity: '
 export const PROFILE_LIMITS: Record<keyof ProfileBlocks, number> = { identity: 120, goals: 120, preferences: 120, recent: 100, rules: 100 };
 
 // ── 记忆隔离（第 23 批）：判定在 navigatorMemoryScope；开了之后按人格分，没标人格的是共享 ──
-export { memoryIsolated, memoVisibleTo, memoOwner } from '@/utils/navigatorMemoryScope';
+export { memoryIsolated, memoVisibleTo, memoOwner, memoOwners, ownersKey, ownersPatch } from '@/utils/navigatorMemoryScope';
 
 const profileIdFor = (presetId: string | undefined): string => (memoryIsolated() && presetId ? `${PROFILE_ID}:${presetId}` : PROFILE_ID);
 
@@ -112,15 +112,50 @@ const blocksOfRow = (row: NavigatorMemo | undefined): ProfileBlocks => {
   return row.text ? { identity: row.text.slice(0, PROFILE_LIMITS.identity) } : {};
 };
 
+/** 这个人格实际读的那一行：隔离时先取自己的，自己的还空着就退回共享的那份 */
+async function readableProfileRow(presetId?: string): Promise<{ row: NavigatorMemo | undefined; own: boolean }> {
+  const id = profileIdFor(presetId);
+  const own = await db.navigatorMemos.get(id);
+  if (!blocksEmpty(blocksOfRow(own)) || id === PROFILE_ID) return { row: own, own: true };
+  return { row: await db.navigatorMemos.get(PROFILE_ID), own: false };
+}
+
 /** 画像的块：隔离时先取这个人格自己的，没有就退回共享的那份 */
 export async function getProfileBlocks(presetId?: string): Promise<ProfileBlocks> {
   try {
-    const own = await db.navigatorMemos.get(profileIdFor(presetId));
-    const ownBlocks = blocksOfRow(own);
-    if (!blocksEmpty(ownBlocks)) return ownBlocks;
-    if (profileIdFor(presetId) !== PROFILE_ID) return blocksOfRow(await db.navigatorMemos.get(PROFILE_ID));
-    return ownBlocks;
+    return blocksOfRow((await readableProfileRow(presetId)).row);
   } catch { return {}; }
+}
+
+/** 记事本要的一整套（第 33 批）：块 + 每块的来历 + 锁 + 能不能撤回 + 上次参考记录整理的日子；own = 这个人格自己有一份 */
+export interface ProfileState {
+  blocks: ProfileBlocks;
+  meta: Partial<Record<keyof ProfileBlocks, ProfileBlockMeta>>;
+  locks: Array<keyof ProfileBlocks>;
+  hasPrev: boolean;
+  recordsAt?: string;
+  own: boolean;
+}
+export async function getProfileState(presetId?: string): Promise<ProfileState> {
+  try {
+    const { row, own } = await readableProfileRow(presetId);
+    return {
+      blocks: blocksOfRow(row), meta: row?.profileMeta ?? {}, locks: row?.profileLocks ?? [],
+      hasPrev: !!row?.profilePrev && own, recordsAt: row?.profileRecordsAt, own,
+    };
+  } catch { return { blocks: {}, meta: {}, locks: [], hasPrev: false, own: true }; }
+}
+
+/** 这一笔是谁写的（不给 = 用户在记事本里手改） */
+export interface ProfileWriteSource {
+  by: 'ai' | 'user';
+  /** AI 改的：每块按什么改的（不在里面的按 from） */
+  from?: 'chat' | 'records';
+  fromByKey?: Partial<Record<keyof ProfileBlocks, 'chat' | 'records'>>;
+  /** 哪天（缺省今天） */
+  day?: string;
+  /** 顺手记下这次是「参考记录」整理的（每 5 天一次的那个钟） */
+  recordsAt?: string;
 }
 
 /** 注入用的整段文字 */
@@ -128,23 +163,72 @@ export async function getProfile(presetId?: string): Promise<string> {
   return flattenProfile(await getProfileBlocks(presetId));
 }
 
-/** 写画像的块（归档器增量 / 记事本手改）：留上一版，撤回时换回来 */
-export async function saveProfileBlocks(blocks: Partial<ProfileBlocks>, presetId?: string): Promise<void> {
+/**
+ * 写画像的块（归档器增量 / 记事本手改 / 参考记录整理）：留上一版，撤回时换回来；改到的块记下来历（第 33 批），
+ * 锁、来历、上次参考记录的日子原样留着。隔离时这个人格第一次有自己的一份：从共享那份接过来（来历 / 锁一起）
+ */
+export async function saveProfileBlocks(blocks: Partial<ProfileBlocks>, presetId?: string, src: ProfileWriteSource = { by: 'user' }): Promise<void> {
   const id = profileIdFor(presetId);
   const next = trimBlocks(blocks);
+  let base: NavigatorMemo | undefined;
   let prev: ProfileBlocks | undefined;
   try {
-    const cur = await db.navigatorMemos.get(id);
-    const curBlocks = blocksOfRow(cur);
-    prev = !blocksEmpty(curBlocks) && !blocksEqual(curBlocks, next) ? curBlocks : cur?.profilePrev;
+    const { row, own } = await readableProfileRow(presetId);
+    base = row;
+    const curBlocks = blocksOfRow(row);
+    prev = !blocksEmpty(curBlocks) && !blocksEqual(curBlocks, next) ? curBlocks : own ? row?.profilePrev : undefined;
   } catch { /* */ }
+  const curBlocks = blocksOfRow(base);
+  const day = src.day ?? toLocalDateKey();
+  const meta: Partial<Record<keyof ProfileBlocks, ProfileBlockMeta>> = { ...(base?.profileMeta ?? {}) };
+  for (const k of PROFILE_KEYS) {
+    if ((curBlocks[k] ?? '') === (next[k] ?? '')) continue;
+    if (!next[k]) { delete meta[k]; continue; }
+    const from = src.by === 'ai' ? (src.fromByKey?.[k] ?? src.from) : undefined;
+    meta[k] = { by: src.by, day, ...(from ? { from } : {}) };
+  }
+  const recordsAt = src.recordsAt ?? base?.profileRecordsAt;
   await db.navigatorMemos.put({
     id, source: 'profile', text: flattenProfile(next), importance: 5, pinned: true,
     status: blocksEmpty(next) ? 'archived' : 'active', createdAt: new Date(),
     profileBlocks: next, ...(prev && !blocksEmpty(prev) ? { profilePrev: prev } : {}),
+    ...(Object.keys(meta).length ? { profileMeta: meta } : {}),
+    ...(base?.profileLocks?.length ? { profileLocks: base.profileLocks } : {}),
+    ...(recordsAt ? { profileRecordsAt: recordsAt } : {}),
     ...(id !== PROFILE_ID ? { presetId } : {}),
   });
 }
+
+/** 锁住 / 解开一块（第 33 批）：锁了 AI 就不动它，只有用户改。这个人格还没有自己的一份时先从共享那份接过来 */
+export async function setProfileLock(key: keyof ProfileBlocks, locked: boolean, presetId?: string): Promise<void> {
+  const id = profileIdFor(presetId);
+  let row = await db.navigatorMemos.get(id);
+  if (!row || blocksEmpty(blocksOfRow(row))) {
+    const { row: base } = await readableProfileRow(presetId);
+    const blocks = blocksOfRow(base);
+    row = {
+      id, source: 'profile', text: flattenProfile(blocks), importance: 5, pinned: true, status: blocksEmpty(blocks) ? 'archived' : 'active', createdAt: new Date(),
+      profileBlocks: blocks, ...(base?.profileMeta ? { profileMeta: base.profileMeta } : {}), ...(base?.profileLocks?.length ? { profileLocks: base.profileLocks } : {}),
+      ...(base?.profileRecordsAt ? { profileRecordsAt: base.profileRecordsAt } : {}), ...(id !== PROFILE_ID ? { presetId } : {}),
+    };
+  }
+  const locks = new Set(row.profileLocks ?? []);
+  if (locked) locks.add(key); else locks.delete(key);
+  const list = PROFILE_KEYS.filter((k) => locks.has(k));
+  const { profileLocks: _old, ...rest } = row;
+  void _old;
+  await db.navigatorMemos.put(list.length ? { ...rest, profileLocks: list } : rest);
+}
+
+/** 只留没锁的块（AI 写画像之前过一遍） */
+export const withoutLocked = (blocks: Partial<ProfileBlocks>, locks: Array<keyof ProfileBlocks>): Partial<ProfileBlocks> => {
+  const out: Partial<ProfileBlocks> = {};
+  for (const k of PROFILE_KEYS) if (blocks[k] !== undefined && !locks.includes(k)) out[k] = blocks[k];
+  return out;
+};
+
+/** 画像自动更新开着没有（第 33 批，默认开） */
+export const profileAutoOn = (): boolean => useAppStore.getState().settings.navigatorProfileAuto !== false;
 
 /** 旧接口：整段文字 = 「身份」一块（老测试 / 记事本整段模式） */
 export async function saveProfile(text: string, presetId?: string): Promise<void> {
@@ -157,7 +241,14 @@ export async function undoProfile(presetId?: string): Promise<boolean> {
   const cur = await db.navigatorMemos.get(id);
   if (!cur?.profilePrev) return false;
   const prev = trimBlocks(cur.profilePrev);
-  await db.navigatorMemos.put({ ...cur, text: flattenProfile(prev), profileBlocks: prev, profilePrev: blocksOfRow(cur), status: blocksEmpty(prev) ? 'archived' : 'active' });
+  const curBlocks = blocksOfRow(cur);
+  // 撤回也是用户自己动的手：换回来的块标「你改的」
+  const meta: Partial<Record<keyof ProfileBlocks, ProfileBlockMeta>> = { ...(cur.profileMeta ?? {}) };
+  for (const k of PROFILE_KEYS) {
+    if ((curBlocks[k] ?? '') === (prev[k] ?? '')) continue;
+    if (prev[k]) meta[k] = { by: 'user', day: toLocalDateKey() }; else delete meta[k];
+  }
+  await db.navigatorMemos.put({ ...cur, text: flattenProfile(prev), profileBlocks: prev, profilePrev: curBlocks, status: blocksEmpty(prev) ? 'archived' : 'active', profileMeta: meta });
   return true;
 }
 
@@ -376,9 +467,11 @@ async function persistMemories(
 ): Promise<void> {
   // 画像：归档器只回有变化的块 → 合并进现有的（用户手改的版本会在下次 compact 时作为"现有画像"喂回，形成闭环）。
   // 短会话（第 13 轮降门槛后）只收记忆、不让它改画像（allowProfile=false）
-  if (result.profile && allowProfile) {
-    const cur = await getProfileBlocks(presetId);
-    await saveProfileBlocks({ ...cur, ...result.profile }, presetId).catch(() => {});
+  // 第 33 批：设置里「画像自动更新」关着就不动画像；锁住的块不动；改到的块记下「AI · 哪天 · 来自聊天」
+  if (result.profile && allowProfile && profileAutoOn()) {
+    const st = await getProfileState(presetId);
+    const patch = withoutLocked(result.profile, st.locks);
+    if (Object.keys(patch).length) await saveProfileBlocks({ ...st.blocks, ...patch }, presetId, { by: 'ai', from: 'chat', day: sessionDateKey }).catch(() => {});
   }
   // 回访约定：会话末补记漏掉的；话头若和约定撞了就不挂（约定那边会问，问两遍就破了「只问一次」）
   await savePromisesFromCompact(result.promises, sessionDateKey, Date.now(), presetId).catch(() => {});
@@ -851,7 +944,7 @@ export async function findDuplicateMemos(presetId?: string, threshold = 0.6): Pr
     for (let j = i + 1; j < memos.length; j++) {
       const a = memos[i], b = memos[j];
       if (used.has(a.id) || used.has(b.id)) continue;
-      if ((a.presetId ?? '') !== (b.presetId ?? '')) continue;
+      if (ownersKey(a) !== ownersKey(b)) continue;
       const na = normalizeMemoText(a.text), nb = normalizeMemoText(b.text);
       const contains = na.length >= 4 && nb.length >= 4 && (na.includes(nb) || nb.includes(na));
       const sim = contains ? 1 : jaccard(bigramSet(a.text), bigramSet(b.text));
@@ -896,7 +989,7 @@ export async function lazySweepMemos(): Promise<void> {
     const byKey = new Map<string, NavigatorMemo[]>();
     for (const m of memos) {
       if (m.source === 'profile' || m.source === 'bit' || isPromise(m)) continue;
-      const k = `${m.presetId ?? ''}|${normalizeMemoText(m.text)}`;
+      const k = `${ownersKey(m)}|${normalizeMemoText(m.text)}`;
       if (!byKey.has(k)) byKey.set(k, []);
       byKey.get(k)!.push(m);
     }

@@ -51,6 +51,11 @@ export interface TurnHistoryItem {
   text: string;
   /** 消息时间：隔 >5 分钟的消息会带 [HH:mm] 标注进上下文，给模型对话时距感 */
   createdAt?: number;
+  /**
+   * 同一条回复里，这一泡后面切掉的原文（句号 / 双破折号 / 换行；问号叹号留在泡里 = ''）。
+   * 拼回历史时按它接（第 33 批）；没有（老消息 / 不是流式切出来的）就近似
+   */
+  sep?: string;
 }
 
 // ── 人格缺席时的中性兜底（第 12 轮）──
@@ -220,18 +225,29 @@ const TIME_GAP_MS = 5 * 60 * 1000;
 export { stampOf };
 
 function historyToMessages(history: TurnHistoryItem[]): AIMessage[] {
-  const out: AIMessage[] = [];
+  const out: Array<AIMessage & { content: string }> = [];
   let prevTs: number | undefined;
+  let prevSep: string | undefined;
   for (const h of history) {
     const role = h.role === 'cat' ? 'assistant' : 'user';
     const needStamp = h.createdAt !== undefined && (prevTs === undefined || h.createdAt - prevTs > TIME_GAP_MS);
     const text = needStamp ? `${stampOf(h.createdAt!)} ${h.text}` : h.text;
     prevTs = h.createdAt ?? prevTs;
     const last = out[out.length - 1];
-    if (last && last.role === role) last.content += `\n${text}`;
-    else out.push({ role, content: text });
+    if (last && last.role === role) {
+      // 同一条回复切出来的几泡按原标点接回（第 33 批）：以前一律换行拼，模型以为自己断了行——会道歉，还会学着在句子中间换行
+      last.content = role === 'assistant' && !needStamp ? glueBubbles(last.content, prevSep, text) : `${last.content}\n${text}`;
+    } else out.push({ role, content: text });
+    prevSep = h.sep;
   }
   return out;
+}
+
+/** 两泡接回一段：有切泡记录按记录原样接；老消息没有 → 泡尾已有标点直接接、没有补句号，英文词之间补个空格 */
+export function glueBubbles(a: string, sep: string | undefined, b: string): string {
+  if (sep !== undefined) return a + sep + b;
+  const head = a + (/[。！？!?；;…~～）)」』”"、，,.:：]$/.test(a) ? '' : '。');
+  return /[A-Za-z0-9.,!?;:)'"]$/.test(head) && /^[A-Za-z0-9("']/.test(b) ? `${head} ${b}` : head + b;
 }
 
 // ── 解析 ──
@@ -306,7 +322,7 @@ function suffixArmEnd(buf: string, from: number, isFinal: boolean): number {
   return end;
 }
 
-type ParenScan = { kind: 'group'; end: number } | { kind: 'pending' } | { kind: 'open' };
+type ParenScan = { kind: 'group'; close: number; end: number } | { kind: 'pending' } | { kind: 'open' };
 
 /** 从左括号起找配对的右括号（可嵌套、中英混配）：配上了 → 整组（连同后面的手）；没配上 / 太长 / 跨行 → open；还没收到 → pending */
 function scanParenGroup(buf: string, start: number, isFinal: boolean): ParenScan {
@@ -317,83 +333,164 @@ function scanParenGroup(buf: string, start: number, isFinal: boolean): ParenScan
     if (PAREN_OPEN.includes(c)) depth++;
     else if (PAREN_CLOSE.includes(c) && --depth === 0) {
       const end = suffixArmEnd(buf, k + 1, isFinal);
-      return end < 0 ? { kind: 'pending' } : { kind: 'group', end };
+      return end < 0 ? { kind: 'pending' } : { kind: 'group', close: k, end };
     }
   }
   return isFinal ? { kind: 'open' } : { kind: 'pending' };
+}
+
+/** 断泡处记进 sep 的空白 */
+const SEP_WS = /[ \t\r\n\u3000]/;
+/** 文字括注里可以有的字：汉字、字母数字（含全角）、空格、普通标点、括号（嵌套括注） */
+const ASIDE_CHARS = /^[\u3400-\u4dbf\u4e00-\u9fffA-Za-z0-9Ａ-Ｚａ-ｚ０-９\s，。、；：？！,.;:?!'"“”‘’「」『』《》（）()·%％+\-#&@]*$/;
+
+/**
+ * 括号里是文字括注还是颜文字（第 33 批 · b2）：只有汉字 / 字母 / 数字 / 空格 / 普通标点，并且有汉字、或有字母、
+ * 或数字开头 = 文字括注（「（周三）」「（笑）」「(DeepSeek)」「(1)」）；带颜文字符号的、只有符号的都是颜文字。
+ * 字母颜文字单列：三个字母、首尾同字母（QAQ / TAT / OwO / QwQ）。
+ */
+function isTextAside(inner: string): boolean {
+  if (!ASIDE_CHARS.test(inner)) return false;
+  const t = inner.trim();
+  if (/^([A-Za-z])[A-Za-z]\1$/i.test(t)) return false;
+  return /[\u3400-\u4dbf\u4e00-\u9fffA-Za-zＡ-Ｚａ-ｚ]/.test(t) || /^[0-9０-９]/.test(t);
 }
 
 /**
  * 拟真切泡引擎（体验优化⑤，2026-07-04 二调；第 13 轮加括号组）：扫描流式 buffer，切出可即时发出的气泡。
  * 规则（用户定稿）：句号 → 删标点断泡；**逗号/顿号保留不断**；问号/感叹号/分号（中英）/省略号 →
  * 保留断泡；「——」双破折号 → 删除并断泡；换行亦断。
- * 括号（中英文，可混配）：左括号前断、整组独立成泡、右括号后断；**组内的标点一律不断**——颜文字
- * 「(；´Д｀)」「(。・ω・。)」「(・_・;)」和括注「（其实我也这么想。）」不再被拆碎；紧贴着的颜文字「手」
- * （ヽ(✿ﾟ▽ﾟ)ノ）跟着整组走。超过 PAREN_GROUP_MAX 字、没合上或跨行的括号按老规矩逐句断；
- * 落单的右括号（左半边在前一泡、中间被句号断开）不单独成泡。
+ * 括号（中英文，可混配），组内的标点一律不断（「（其实我也这么想。）」不被拆碎），超过 PAREN_GROUP_MAX 字、
+ * 没合上或跨行的括号按老规矩逐句断；落单的右括号（左半边在前一泡、中间被句号断开）不单独成泡。分两类（第 33 批 · b2）：
+ *   · 颜文字「(；´Д｀)」「(。・ω・。)」「(QAQ)」：左括号前断、整组独立成泡，紧贴着的「手」（ヽ(✿ﾟ▽ﾟ)ノ）跟着整组走；
+ *   · 文字括注「（周三）」「（笑）」「(1)」：句中的留在句里，前后都不断（以前「10月28日（周三）10:00」被切成三泡）；
+ *     句首的（动作描写「（甩了甩尾巴）别急。」）照旧单独一泡——先做个动作再说话。
+ * seps 与 bubbles 一一对应：断泡时删掉的原文（句号 / 双破折号 / 换行 / 英文句点；问号叹号省略号留在泡里 = ''），
+ * 拼回历史时按它接（第 33 批：以前一律换行拼，模型以为自己断了行）。
  * 返回 rest 保存跨 chunk 的半句（半个省略号/破折号/小数点歧义/还没合上的括号组），isFinal 时全量清空。
  */
-export function spliceImmersive(buffer: string, isFinal: boolean): { bubbles: string[]; rest: string } {
+export function spliceImmersive(buffer: string, isFinal: boolean): { bubbles: string[]; rest: string; seps: string[] } {
   const bubbles: string[] = [];
+  const seps: string[] = [];
   let cur = '';
-  const flush = () => { const t = stripStamp(cur.trim()); if (t) bubbles.push(t); cur = ''; };
+  const flush = (sep = '') => {
+    const body = cur.trimEnd();
+    const t = stripStamp(body.trim());
+    if (t) { bubbles.push(t); seps.push(cur.slice(body.length) + sep); }
+    else if (seps.length) seps[seps.length - 1] += cur + sep; // 「好的。↵」「(；´Д｀)。」：没有新泡，删掉的都记在前一泡后面
+    cur = '';
+  };
+  /**
+   * 断点后紧跟的空白和可删的标点（句号 / 换行 / 双破折号 / 英文句点 / 落单的右括号）也记进这一泡的 sep；
+   * 一直到 buffer 末尾、流还没完 → null：这一泡先不出，整段留到下一块再判（后面可能还有要记进来的，重扫是幂等的）
+   */
+  const sepEnd = (from: number): number | null => {
+    let k = from;
+    for (;;) {
+      const c = buffer[k];
+      if (c === undefined) return isFinal ? k : null;
+      if (SEP_WS.test(c) || c === '。' || c === '.' || PAREN_CLOSE.includes(c)) { k++; continue; }
+      if (c === '—' && buffer[k + 1] === '—') { k += 2; continue; }
+      if (c === '—' && k === buffer.length - 1 && !isFinal) return null;
+      return k;
+    }
+  };
   for (let i = 0; i < buffer.length; i++) {
     const ch = buffer[i];
     if (PAREN_OPEN.includes(ch)) {
+      const g = scanParenGroup(buffer, i, isFinal);
+      // 右括号还没到：连同前面没断的半句原样留到下一块再判（前半句里没有断点，重扫是幂等的）
+      if (g.kind === 'pending') return { bubbles, rest: cur + buffer.slice(i), seps };
       const armLen = prefixArmLength(cur);
+      if (g.kind === 'group' && armLen === 0 && !KAOMOJI_ARM.test(buffer[g.close + 1] ?? '') && isTextAside(buffer.slice(i + 1, g.close))) {
+        // 文字括注：句中的接在句里；句首的单独一泡
+        if (cur.trim()) { cur += buffer.slice(i, g.close + 1); i = g.close; continue; }
+        const k = sepEnd(g.close + 1);
+        if (k === null) return { bubbles, rest: cur + buffer.slice(i), seps };
+        cur += buffer.slice(i, g.close + 1);
+        flush(buffer.slice(g.close + 1, k));
+        i = k - 1;
+        continue;
+      }
+      if (g.kind === 'group') {
+        const k = sepEnd(g.end);
+        if (k === null) return { bubbles, rest: cur + buffer.slice(i), seps };
+        const arms = cur.slice(cur.length - armLen);
+        cur = cur.slice(0, cur.length - armLen);
+        flush();
+        cur = arms + buffer.slice(i, g.end);
+        flush(buffer.slice(g.end, k));
+        i = k - 1;
+        continue;
+      }
       const arms = cur.slice(cur.length - armLen);
       cur = cur.slice(0, cur.length - armLen);
       flush();
-      const g = scanParenGroup(buffer, i, isFinal);
-      // 右括号还没到：连同左边的手原样留到下一块再判（重扫是幂等的）
-      if (g.kind === 'pending') return { bubbles, rest: arms + buffer.slice(i) };
-      if (g.kind === 'group') { cur = arms + buffer.slice(i, g.end); flush(); i = g.end - 1; continue; }
       cur = arms + ch;
       continue;
     }
     if (PAREN_CLOSE.includes(ch)) {
-      if (cur.trim()) { cur += ch; flush(); }
+      if (cur.trim()) {
+        const k = sepEnd(i + 1);
+        if (k === null) return { bubbles, rest: cur + buffer.slice(i), seps };
+        cur += ch;
+        flush(buffer.slice(i + 1, k));
+        i = k - 1;
+      } else if (seps.length) seps[seps.length - 1] += ch;
       continue;
     }
-    if (ch === '。') { flush(); continue; }
-    if (ch === '—') {
+    // 删掉标点断泡（句号 / 双破折号 / 英文句点 / 换行）：删掉的连同后面的空白记进 sep
+    let cutLen = 0;
+    if (ch === '。' || ch === '\n') cutLen = 1;
+    else if (ch === '—') {
       // 双破折号「——」：删除并断泡；末位单个 — 非 final → 挂起等下一块拼对
-      if (buffer[i + 1] === '—') { flush(); i++; continue; }
-      if (i === buffer.length - 1 && !isFinal) return { bubbles, rest: cur + ch };
-      cur += ch; continue; // 孤立单破折号原样保留
-    }
-    if (ch === '.') {
+      if (buffer[i + 1] === '—') cutLen = 2;
+      else if (i === buffer.length - 1 && !isFinal) return { bubbles, rest: cur + ch, seps };
+      else { cur += ch; continue; } // 孤立单破折号原样保留
+    } else if (ch === '.') {
       // 保护小数/序号（前后都是数字不断）
       if (/\d/.test(buffer[i - 1] ?? '') && /\d/.test(buffer[i + 1] ?? '')) { cur += ch; continue; }
       // 句末的 '.' 若是 buffer 最后一位且非 final，可能是省略号/网址开头——留给下个 chunk
-      if (i === buffer.length - 1 && !isFinal) return { bubbles, rest: cur + ch };
+      if (i === buffer.length - 1 && !isFinal) return { bubbles, rest: cur + ch, seps };
       // 只有后面跟着空白/收尾符（或整段文本就此结束）才算句号；紧跟字母数字的是
       // Node.js / index.html / 网址一类的词内点，原样保留——此前无条件断句会把
       // 「config.json」切成「config」「json」两个半截泡（用户上报「词只说一半」来源之一）
       const nx = buffer[i + 1] ?? '';
       if (nx && !/[\s"'”』」）)\]】>》]/.test(nx)) { cur += ch; continue; }
-      flush(); continue;
+      cutLen = 1;
     }
-    if (ch === '？' || ch === '！' || ch === '?' || ch === '!' || ch === '；' || ch === ';') {
-      cur += ch; flush(); continue;
+    if (cutLen) {
+      const k = sepEnd(i + cutLen);
+      if (k === null) return { bubbles, rest: cur + buffer.slice(i), seps };
+      flush(buffer.slice(i, k));
+      i = k - 1;
+      continue;
     }
-    if (ch === '…') {
+    // 留着标点断泡（问号 / 叹号 / 分号 / 省略号）
+    let keepLen = 0;
+    if (ch === '？' || ch === '！' || ch === '?' || ch === '!' || ch === '；' || ch === ';') keepLen = 1;
+    else if (ch === '…') {
       // 半对省略号跨 chunk：末位单个 … 且非 final → 挂起等下一块
-      if (i === buffer.length - 1 && !isFinal) return { bubbles, rest: cur + ch };
-      cur += ch;
-      if (buffer[i + 1] === '…') { cur += '…'; i++; }
-      flush(); continue;
+      if (i === buffer.length - 1 && !isFinal) return { bubbles, rest: cur + ch, seps };
+      keepLen = buffer[i + 1] === '…' ? 2 : 1;
     }
-    if (ch === '\n') { flush(); continue; }
+    if (keepLen) {
+      const k = sepEnd(i + keepLen);
+      if (k === null) return { bubbles, rest: cur + buffer.slice(i), seps };
+      cur += buffer.slice(i, i + keepLen);
+      flush(buffer.slice(i + keepLen, k));
+      i = k - 1;
+      continue;
+    }
     cur += ch;
   }
-  if (isFinal) { flush(); return { bubbles, rest: '' }; }
-  return { bubbles, rest: cur };
+  if (isFinal) { flush(); return { bubbles, rest: '', seps }; }
+  return { bubbles, rest: cur, seps };
 }
 
 /** 流式钩子：每切出一泡回调一次；返回 false = 已被打断，停止生成 */
 export interface ImmersiveStreamHooks {
-  onSegment: (seg: string) => boolean;
+  onSegment: (seg: string, sep?: string) => boolean;
   /**
    * sentence = 拟真增强（按标点切泡，流到哪说到哪）；paragraph = 普通模式（按空行切段，段写完就出——第 24 批 · D3，
    * 以前普通模式是整段写完再切，首字要等全文）。缺省 sentence
@@ -450,11 +547,11 @@ export function splitSegments(reply: string): string[] {
  * 普通模式的流式切段（第 24 批 · D3）：按空行切，一段写完就出；最后一段等 isFinal。
  * 与 splitSegments 同一口径（去时间戳、去空），只是不设 6 段上限（流式没法提前合并）。
  */
-export function spliceParagraphs(buffer: string, isFinal: boolean): { bubbles: string[]; rest: string } {
+export function spliceParagraphs(buffer: string, isFinal: boolean): { bubbles: string[]; rest: string; seps: string[] } {
   const parts = buffer.split(/\n{2,}/);
   const rest = isFinal ? '' : (parts.pop() ?? '');
   const bubbles = parts.map((p) => stripStamp(p.trim())).filter(Boolean);
-  return { bubbles, rest };
+  return { bubbles, rest, seps: bubbles.map(() => '\n\n') };
 }
 
 /**
@@ -924,7 +1021,7 @@ export async function runNavigatorTurn(
     // 承诺守卫只在普通模式按段检查（拟真按句切，一句里看不出前后文；分诊先行定卡，嘴瓢概率本就极小）
     const guard = mode === 'paragraph' && drafts.length === 0;
     let droppedAny = false;
-    const emit = (b: string): boolean => {
+    const emit = (b: string, sep?: string): boolean => {
       let text = b;
       if (guard) {
         const g = dropFalseClaims(b);
@@ -936,7 +1033,7 @@ export async function runNavigatorTurn(
         if (!text) return true;
       }
       emitted.push(text);
-      return immersive.onSegment(text);
+      return immersive.onSegment(text, sep);
     };
     try {
       const streamOpts = {
@@ -956,10 +1053,10 @@ export async function runNavigatorTurn(
           continue;
         }
         buffer += delta;
-        const { bubbles, rest } = splice(buffer, false);
+        const { bubbles, rest, seps } = splice(buffer, false);
         buffer = rest;
-        for (const b of bubbles) {
-          if (!emit(b)) { interrupted = true; break; }
+        for (let k = 0; k < bubbles.length; k++) {
+          if (!emit(bubbles[k], seps[k])) { interrupted = true; break; }
         }
         if (interrupted) break;
       }
@@ -973,18 +1070,20 @@ export async function runNavigatorTurn(
         const parsed = extractJson(jsonBuf);
         const inner = parsed && typeof parsed.reply === 'string' ? parsed.reply.trim() : jsonBuf.trim();
         for (const b of splitSegments(inner)) {
-          if (!emit(b)) break;
+          if (!emit(b, '\n\n')) break;
         }
       } else {
-        let { bubbles } = splice(buffer, true);
+        const fin = splice(buffer, true);
+        let bubbles = fin.bubbles;
+        const seps = fin.seps;
         // finish_reason=length：流式没法像非流式那样加预算重来（前面的泡都上屏了），
         // 但末尾这段一定是被拦腰砍断的半句/半个词——宁可整段不吐，也别让它上屏。
         if (finishReason === 'length' && bubbles.length > 0) {
           if (import.meta.env.DEV) console.warn('[navigator] 流被 max_tokens 截断，丢弃残句:', bubbles[bubbles.length - 1]);
           bubbles = bubbles.slice(0, -1);
         }
-        for (const b of bubbles) {
-          if (!emit(b)) break;
+        for (let k = 0; k < bubbles.length; k++) {
+          if (!emit(bubbles[k], seps[k])) break;
         }
       }
       if (emitted.length === 0) {

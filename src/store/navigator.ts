@@ -29,6 +29,7 @@ import { buildDayRecall, hasRecallCue, RECALL_GAP_LINE } from '@/utils/navigator
 import { buildHappenings, coachStyleOf, happeningsBlock, happeningsSince } from '@/utils/navigatorHappenings';
 import { recordsBlock, searchRecords } from '@/utils/navigatorIndex';
 import { briefingBlock, FIRST_MEET_LINE, freshIntroLine } from '@/utils/navigatorBriefing';
+import { maybeRefreshProfileFromRecords } from '@/utils/navigatorProfileRefresh';
 import { attachDataUrlsToCard } from '@/utils/navigatorCardImages';
 import { careTemplateLine, scheduleCare, takeCareLine } from '@/utils/navigatorGravity';
 import {
@@ -82,6 +83,8 @@ export interface NavigatorMessage {
   undone?: boolean;
   /** 执行成功的时刻（第 28 批）：回执旁「撤销」按它算 10 分钟 */
   actionAt?: number;
+  /** 同一条回复里这一泡后面切掉的原文（句号 / 双破折号 / 换行；没删 = ''）：拼回历史按它接（第 33 批） */
+  sep?: string;
   createdAt: number;
   /** 归属会话：上拉加载的历史消息与今日会话共存于 messages，凭它区分（上下文只用今日的） */
   sessionId?: string;
@@ -147,7 +150,8 @@ interface NavigatorState {
   userSend: (text: string, imageDataUrl?: string) => void;
   /** 开窗问候：先 hydrate 当日会话，空会话才问候（跨天完整版走 AI + 超时落模板） */
   greet: () => void;
-  pushCat: (text: string) => void;
+  /** sep：流式切泡时这一泡后面切掉的原文（拼回历史用，见 NavigatorMessage.sep） */
+  pushCat: (text: string, sep?: string) => void;
   pushUser: (text: string, imageDataUrl?: string) => void;
   pushCard: (draft: NavigatorDraft) => string;
   updateCard: (id: string, patch: Partial<Pick<NavigatorMessage, 'draft' | 'cardStatus' | 'userEdited' | 'receipt' | 'undone' | 'actionAt'>>) => void;
@@ -271,6 +275,7 @@ const toRow = (m: NavigatorMessage, sessionId: string): NavigatorMessageRow => (
   recalled: m.recalled,
   undone: m.undone,
   actionAt: m.actionAt,
+  sep: m.sep,
   createdAt: m.createdAt,
 });
 
@@ -300,6 +305,7 @@ const fromRow = (r: NavigatorMessageRow): NavigatorMessage => ({
   recalled: r.recalled,
   undone: r.undone,
   actionAt: r.actionAt,
+  sep: r.sep,
   createdAt: r.createdAt,
   sessionId: r.sessionId,
 });
@@ -429,6 +435,7 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
           ? `${m.text ?? ''}${m.imageDesc ? `（图片：${m.imageDesc.slice(0, 160)}）` : m.text ? '' : '（发了一张图片）'}`
           : (m.text ?? ''),
         createdAt: m.createdAt,
+        sep: m.role === 'cat' ? m.sep : undefined,
       }))
       .filter((h) => h.text);
   };
@@ -738,21 +745,21 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
       const immersive = !!settingsNow.navigatorImmersive && !isD0();
 
       // 两种模式都走流式（第 24 批 · D3）：拟真按标点切泡、普通按空行切段；切出来的先入队，这里按节奏吐（吐泡与生成并行）
-      const queue: string[] = [];
+      const queue: Array<{ seg: string; sep?: string }> = [];
       let streamEnded = false;
       const turnPromise = runNavigatorTurn(
         historyForTurn(), turnBatch, mySwallowed, turnAbort.signal, cardsDigest(), persona, extra,
-        { mode: immersive ? 'sentence' : 'paragraph', onSegment: (seg) => { queue.push(seg); return gen === generation; } },
+        { mode: immersive ? 'sentence' : 'paragraph', onSegment: (seg, sep) => { queue.push({ seg, sep }); return gen === generation; } },
         turnExtras,
       ).finally(() => { streamEnded = true; });
       turnPromise.catch(() => { /* 下面 await 时再处理；这里只防「未处理的拒绝」 */ });
       let firstBubble = true;
       for (;;) {
-        if (gen !== generation) { swallowed = queue.splice(0); persistSwallowed(); return; }
+        if (gen !== generation) { swallowed = queue.splice(0).map((q) => q.seg); persistSwallowed(); return; }
         if (queue.length > 0) {
           if (get().phase !== 'replying') set({ phase: 'replying' });
-          const seg = queue.shift()!;
-          get().pushCat(seg);
+          const { seg, sep } = queue.shift()!;
+          get().pushCat(seg, sep);
           if (firstBubble) {
             firstBubble = false;
             // 「想起了两件事」（第 26 批）：这轮用到的记忆挂在回复第一泡上，界面上能点开看、改、删、别再提
@@ -763,16 +770,16 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
           }
           if (streamEnded && queue.length === 0) continue;
           // 拟真固定 1.2s 一泡；普通模式按下一段的长度模拟打字（D0 直出）。段间隙 = 天然插话点
-          const wait = immersive ? 1200 : segmentDelayMs(queue[0] ?? seg);
+          const wait = immersive ? 1200 : segmentDelayMs(queue[0]?.seg ?? seg);
           if (wait > 0) {
             const alive = await sleepUnlessStale(wait, gen);
-            if (!alive) { swallowed = queue.splice(0); persistSwallowed(); return; }
+            if (!alive) { swallowed = queue.splice(0).map((q) => q.seg); persistSwallowed(); return; }
           }
         } else if (streamEnded) {
           break;
         } else {
           const alive = await sleepUnlessStale(90, gen);
-          if (!alive) { swallowed = queue.splice(0); persistSwallowed(); return; }
+          if (!alive) { swallowed = queue.splice(0).map((q) => q.seg); persistSwallowed(); return; }
         }
       }
       const result = await turnPromise;
@@ -993,6 +1000,8 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
         // 主泵（昨日会话末 compact）与遗忘清扫：开窗惰性触发
         const finalizing = finalizeStaleSessions(get().activePreset().id);
         void lazySweepMemos();
+        // 画像参考我的记录（第 33 批）：每 5 天一次，排在归档后面（不和它抢 AI），不挡问候
+        { const pid = get().activePreset().id; void finalizing.then(() => maybeRefreshProfileFromRecords(pid)).catch(() => {}); }
         await hydrateSession();
         // 人格真缺失的那句说明（第 23 批）：挂好会话后说一次
         const notice = get().presetNotice;
@@ -1136,8 +1145,8 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
       })();
     },
 
-    pushCat: (text) => {
-      const m = msg({ role: 'cat', text, sessionId: get().sessionId ?? undefined });
+    pushCat: (text, sep) => {
+      const m = msg({ role: 'cat', text, ...(sep !== undefined ? { sep } : {}), sessionId: get().sessionId ?? undefined });
       set((s) => ({ messages: [...s.messages, m] }));
       persistMessage(m);
     },

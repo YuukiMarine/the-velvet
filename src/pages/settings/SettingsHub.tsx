@@ -67,6 +67,8 @@ const SEARCH_INDEX: Array<{ sectionId: SettingsSectionId; rowId?: string; label:
   { sectionId: 'assistant', rowId: 'navigatorDaydream', label: '走神', keys: '走神 联想 旧事' },
   { sectionId: 'assistant', rowId: 'wishAgentProposals', label: '主动提议更新愿望进度', keys: '愿望 进度 提议' },
   { sectionId: 'assistant', rowId: 'navigatorNotebook', label: '记事本', keys: '记事本 记忆 画像' },
+  { sectionId: 'assistant', rowId: 'navigatorProfileAuto', label: '画像自动更新', keys: '画像 自动 更新 长期目标 偏好' },
+  { sectionId: 'assistant', rowId: 'navigatorProfileFromRecords', label: '画像参考我的记录', keys: '画像 记录 愿望 倒计时 近况' },
   { sectionId: 'assistant', rowId: 'navigatorMemoryIsolated', label: '记忆按人格隔离', keys: '记忆 隔离 人格 共享' },
   { sectionId: 'assistant', rowId: 'navigatorArchive', label: '整理旧对话', keys: '整理 归档 对话' },
   { sectionId: 'assistant', rowId: 'navigatorPush', label: '主动找你', keys: '主动 推送 想念' },

@@ -208,7 +208,8 @@ export function PactQuickEntry({ partnerId, onOpen, p3 }: { partnerId: string; o
         ? 'relative flex h-[52px] w-full flex-col items-center justify-center text-white'
         : 'relative flex h-12 w-full flex-col items-center justify-center rounded-xl text-white shadow-lg'}
       style={p3
-        ? { clipPath: slantClip(14), background: `linear-gradient(0deg, rgba(255,255,255,0.2), rgba(255,255,255,0.2)), ${P3R.blue}`, boxShadow: '0 12px 28px rgba(27,87,255,0.22)' }
+        // 错开一档的那层罩：白天罩两成白（浅一档）；夜间主色已是浅绿 / 玫红，再罩白上面的白字就看不清，改罩一层暗（--p3r-pact-veil，第 33 批）
+        ? { clipPath: slantClip(14), background: `linear-gradient(0deg, var(--p3r-pact-veil, rgba(255,255,255,0.2)), var(--p3r-pact-veil, rgba(255,255,255,0.2))), ${P3R.blue}`, boxShadow: '0 12px 28px rgba(27,87,255,0.22)' }
         : { background: BOND_GRAD }}
     >
       <span className={p3 ? 'text-[15px] font-black leading-tight' : 'text-sm font-bold leading-tight'}>立下约定</span>

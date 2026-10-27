@@ -5,6 +5,7 @@ import './index.css'
 import { isNative } from '@/utils/native'
 import { bootBegin } from '@/utils/bootGuard'
 import { initLayoutMode } from '@/ui/layoutMode'
+import { initSystemBars } from '@/utils/nativeBars'
 
 // 启动看门狗（紧急修复 #1）：先于一切记这一次启动，判上一次有没有走完
 bootBegin(); // 分号必须有：下一句是 (() => {})() 形式的 IIFE，ASI 会把它接成 bootBegin()(...)
@@ -12,6 +13,8 @@ bootBegin(); // 分号必须有：下一句是 (() => {})() 形式的 IIFE，ASI
 document.getElementById('webview-notice')?.remove();
 // 宽屏布局 / 手机布局铺满（第 20 批 · iPad）：index.html 的内联脚本已经定过首帧，这里接手转屏 / 拖窗口 / 改设置
 initLayoutMode();
+// 安卓沉浸式的系统栏高度（第 33 批）：React 渲染之前就去要；首帧用的是 index.html 内联脚本套上的上次的值
+void initSystemBars();
 
 // ── 双指缩放闸（iOS：WKWebView / 主屏 PWA / Safari 标签页三处都拦） ─────────
 // 用户上报「双指向外拉伸整个页面会被放大」，模拟器实测复现：页面被放成碎片、

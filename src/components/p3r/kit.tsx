@@ -509,7 +509,8 @@ export const SlantButton = ({
 export const P3EmptySlab = ({ text = '暂无可追踪的信号', className }: { text?: string; className?: string }) => (
   <div
     className={`flex min-h-[168px] items-center justify-center px-6 ${className ?? ''}`}
-    style={{ clipPath: slantClip(26), background: 'rgba(199,231,244,0.72)' }}
+    // 浅青 wash 走变量（夜间翻深靛 / 粉翻粉；第 33 批：以前写死，夜间字翻浅后看不见）
+    style={{ clipPath: slantClip(26), background: 'rgba(var(--p3r-wash, 199, 231, 244), 0.72)' }}
   >
     <span className="text-[16px] font-black" style={{ color: P3R.ink }}>{text}</span>
   </div>

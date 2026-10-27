@@ -228,7 +228,8 @@ export const GoalSetupForm = ({
                   className="relative overflow-hidden transition-all"
                   style={{
                     clipPath: 'polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%)',
-                    background: isSelected ? 'rgba(207,234,246,0.55)' : 'rgba(255,255,255,0.85)',
+                    // 卡底走变量（第 33 批：以前写死浅色，夜间字翻浅 = 白底白字）
+                    background: isSelected ? 'rgba(var(--p3r-wash, 207, 234, 246), 0.55)' : 'var(--p3r-panel-glass, rgba(255,255,255,0.85))',
                     boxShadow: '0 8px 18px rgba(38,96,140,0.07)',
                   }}
                 >
@@ -242,7 +243,7 @@ export const GoalSetupForm = ({
                     <span
                       aria-hidden
                       className="flex h-11 w-11 shrink-0 items-center justify-center"
-                      style={{ clipPath: 'polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%)', background: isSelected ? 'var(--p3r-cyan, #35d1e8)' : '#dfe9f1' }}
+                      style={{ clipPath: 'polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%)', background: isSelected ? 'var(--p3r-cyan, #35d1e8)' : 'var(--p3r-chip, #dfe9f1)' }}
                     >
                       {isSelected && (
                         <svg viewBox="0 0 14 11" className="h-5 w-6" fill="none">
@@ -252,9 +253,9 @@ export const GoalSetupForm = ({
                     </span>
                     <span className="min-w-0 flex-1 pt-0.5">
                       <span className="block text-[17px] font-black leading-tight" style={{ color: 'var(--p3r-ink, #0a1230)' }}>{GOAL_TYPE_LABELS[type]}</span>
-                      <span className="mt-0.5 block text-[11px] font-semibold" style={{ color: '#8a97ad' }}>{GOAL_TYPE_DESCS[type]}</span>
+                      <span className="mt-0.5 block text-[11px] font-semibold" style={{ color: 'var(--p3r-grey, #8a97ad)' }}>{GOAL_TYPE_DESCS[type]}</span>
                     </span>
-                    {!isSelected && <span className="shrink-0 pt-1 text-xs font-bold" style={{ color: '#8a97ad' }}>点击添加</span>}
+                    {!isSelected && <span className="shrink-0 pt-1 text-xs font-bold" style={{ color: 'var(--p3r-grey, #8a97ad)' }}>点击添加</span>}
                   </button>
                   {/* 卡角小三角（洋红/青交替，稿） */}
                   <span aria-hidden className="absolute right-1 top-1 h-0 w-0 border-l-[14px] border-t-[11px] border-l-transparent" style={{ borderTopColor: ti % 2 ? 'var(--p3r-magenta, #f0417f)' : 'rgba(53,209,232,0.9)' }} />

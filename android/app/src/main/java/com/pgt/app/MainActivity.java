@@ -4,6 +4,7 @@ import android.graphics.Color;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.Window;
 import android.webkit.WebSettings;
 
@@ -47,7 +48,7 @@ public class MainActivity extends BridgeActivity {
     /**
      * 沉浸式（第 29 批 · PRD §24.19 C）：状态栏 / 导航栏透明，WebView 铺到屏幕边；
      * 系统栏的高度通过 SystemBars 插件推给网页（网页按 CSS 变量避让，底导下面那条按频道上色 = 三键导航也有实底）；
-     * 键盘弹起时把键盘高度做成 WebView 的底 padding（等效以前的 adjustResize，网页里的键盘逻辑不用改），
+     * 键盘弹起时把键盘高度做成 WebView 的底外边距（等效以前的 adjustResize，网页里的键盘逻辑不用改），
      * 同时推给网页的 bottom 给 0（键盘盖住了导航栏，再留导航栏那条就是空档）。
      */
     private void setupEdgeToEdge() {
@@ -67,7 +68,18 @@ public class MainActivity extends BridgeActivity {
                 Insets bars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
                 Insets ime = insets.getInsets(WindowInsetsCompat.Type.ime());
                 boolean imeVisible = insets.isVisible(WindowInsetsCompat.Type.ime()) && ime.bottom > 0;
-                v.setPadding(0, 0, 0, imeVisible ? ime.bottom : 0);
+                // 必须是外边距：WebView 的网页视口按 View 的整个宽高算、不认 padding，
+                // 第 29 批用 setPadding 时网页根本不知道键盘弹起来了，贴底的输入框（助手、记录抽屉）全被盖住（第 33 批）。
+                // 外边距让 WebView 真的变矮，innerHeight / visualViewport 跟着缩。父布局是 CoordinatorLayout，值不变不重设。
+                int imeBottom = imeVisible ? ime.bottom : 0;
+                ViewGroup.LayoutParams lp = v.getLayoutParams();
+                if (lp instanceof ViewGroup.MarginLayoutParams) {
+                    ViewGroup.MarginLayoutParams mlp = (ViewGroup.MarginLayoutParams) lp;
+                    if (mlp.bottomMargin != imeBottom) {
+                        mlp.bottomMargin = imeBottom;
+                        v.setLayoutParams(mlp);
+                    }
+                }
                 SystemBarsPlugin.publish(v, bars.top, imeVisible ? 0 : bars.bottom, imeVisible);
                 return WindowInsetsCompat.CONSUMED;
             }
