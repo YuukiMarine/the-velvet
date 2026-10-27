@@ -2,7 +2,7 @@
 import { useCallback, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useShallow } from 'zustand/react/shallow';
-import { useAppStore, toLocalDateKey } from '@/store';
+import { useAppStore, toLocalDateKey, settingsAfterPendingEdits } from '@/store';
 import { db } from '@/db';
 import { LEVEL_PRESETS } from '@/constants';
 import { resolveLevelDifficulty } from '@/utils/levelDifficulty';
@@ -55,7 +55,8 @@ export const GrowthSection = () => {
     setLevelTitleRefreshing(true);
     setLevelTitleMessage(null);
     try {
-      const titles = await generateAttributeLevelTitles(settings, settings.levelThresholds.length);
+      const fresh = await settingsAfterPendingEdits(); // 同「AI 匹配」：改完名字直接点也按新名字（第 34 批）
+      const titles = await generateAttributeLevelTitles(fresh, fresh.levelThresholds.length);
       setLevelTitleSuggestions(titles);
       setLevelTitleSelection(createLevelTitleSelection(true));
       setLevelTitleConfirmAttrIndex(levelTitleAttrIndex);
@@ -66,7 +67,7 @@ export const GrowthSection = () => {
     } finally {
       setLevelTitleRefreshing(false);
     }
-  }, [levelTitleAttrIndex, levelTitleRefreshing, settings]);
+  }, [levelTitleAttrIndex, levelTitleRefreshing]);
   const handleCloseLevelTitleModal = useCallback(() => {
     if (levelTitleRefreshing) return;
     setLevelTitleModalOpen(false);
@@ -111,7 +112,8 @@ export const GrowthSection = () => {
     setPresetNameRefreshing(true);
     setPresetNameMessage(null);
     try {
-      const result = await generatePresetNameMatches(settings);
+      // 改完名字直接点：先让还在输入的框上屏、等写完再读最新名字（第 34 批）
+      const result = await generatePresetNameMatches(await settingsAfterPendingEdits());
       const nextSelection = emptyPresetNameSelection();
       for (const id of Object.keys(result.achievements)) nextSelection.achievements[id] = true;
       for (const id of Object.keys(result.skills)) nextSelection.skills[id] = true;
@@ -125,7 +127,7 @@ export const GrowthSection = () => {
     } finally {
       setPresetNameRefreshing(false);
     }
-  }, [presetNameRefreshing, settings]);
+  }, [presetNameRefreshing]);
   const handleClosePresetNameModal = useCallback(() => {
     if (presetNameRefreshing) return;
     setPresetNameModalOpen(false);

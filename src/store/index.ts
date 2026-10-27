@@ -212,6 +212,7 @@ import {
   INITIAL_ATTRIBUTES,
   ACHIEVEMENTS,
   SKILLS,
+  DEFAULT_ATTRIBUTE_NAMES,
   DEFAULT_KEYWORD_RULES,
   DEFAULT_LEVEL_THRESHOLDS,
   HP_BONUS_PER_DEFEAT,
@@ -232,7 +233,7 @@ import { rollNodeLoot, rollAffixes, buildOathSkill, towerRelicBonus, MYTH_POOL, 
 import { currentRecordStreak, shouldGrantDiligence } from '@/battle/preparation';
 import { DILIGENCE_MAX_CHARGES, GOLDEN_SP_MULT, BOSS_ATTACK_BY_LEVEL, HEROPROOF_SP_CUT } from '@/battle/numbers';
 import { generateDefeatLetter, type FinalBossFacts } from '@/utils/battleAI';
-import { normalizeAttributeLevelTitles } from '@/utils/attributeLevelTitles';
+import { ATTRIBUTE_IDS, normalizeAttributeLevelTitles } from '@/utils/attributeLevelTitles';
 import { levelForPoints, masteryOf, thresholdsOf } from '@/utils/levels';
 import { peekWeatherNow, RECORD_WEATHER_MAX_AGE_MS, weatherConfigOf } from '@/utils/weather';
 import { seasonMarkOf } from '@/utils/calendar';
@@ -883,6 +884,89 @@ const DEFAULT_SETTINGS: Settings = {
 /** settings 写入串行锁：见 updateSettings 的注释（并发写会互相吞字段） */
 let settingsWriteLock: Promise<void> = Promise.resolve();
 
+const SYSTEM_ATTR_ACHIEVEMENT_IDS = new Set(ACHIEVEMENTS.filter(a => a.condition.type === 'attribute_level').map(a => a.id));
+const SYSTEM_SKILL_IDS = new Set(SKILLS.map(s => s.id));
+/** 系统说明里属性名后面那半句：成就「达到3级」、技能「积累额外提升 20%」、赐福「每次加点额外 +1」 */
+const ACH_NAME_TAIL = /^(.+?)(达到\d+级)$/;
+const SKILL_NAME_TAILS = [/^(.+?)(积累额外提升 ?\d+%)$/, /^(.+?)(每次加点额外 ?\+\d+)$/];
+
+/**
+ * 系统成就 / 技能说明和属性 displayName 里写着的属性名，跟着设置里的五维名走（第 34 批）。
+ * 以前只在建档（引导选名）和补种时按当时的名字写一次，设置里改名不动库：成就页、AI 匹配确认弹窗一直是建档时的名字。
+ * 只改「已知名字 + 系统句式」的说明：已知名字 = 默认名、旧 displayName（建档名）、这次改名前的名字；
+ * 用户自己改过的说明对不上就不碰。按字段 update、在一个事务里读写，解锁 / 加点同时写也不会被盖掉。
+ */
+async function syncAttributeNameText(names: Settings['attributeNames'], prevNames?: Settings['attributeNames']): Promise<void> {
+  try {
+    const nameOf = (id: AttributeId) => (names?.[id] ?? '').trim() || DEFAULT_ATTRIBUTE_NAMES[id];
+    const patch = await db.transaction('rw', db.achievements, db.skills, db.attributes, async () => {
+      const [achievements, skills, attributes] = await Promise.all([db.achievements.toArray(), db.skills.toArray(), db.attributes.toArray()]);
+      const known = new Map(ATTRIBUTE_IDS.map(id => [id, new Set([
+        DEFAULT_ATTRIBUTE_NAMES[id],
+        attributes.find(a => a.id === id)?.displayName ?? '',
+        (prevNames?.[id] ?? '').trim(),
+      ].filter(Boolean))]));
+      const renamed = (text: string, id: AttributeId | undefined, tails: RegExp[]) => {
+        if (!id || !known.has(id)) return null;
+        for (const tail of tails) {
+          const m = tail.exec(text);
+          if (!m) continue;
+          if (!known.get(id)!.has(m[1])) return null;
+          const next = nameOf(id) + m[2];
+          return next === text ? null : next;
+        }
+        return null;
+      };
+      const ach = new Map<string, string>();
+      for (const a of achievements) {
+        if (!SYSTEM_ATTR_ACHIEVEMENT_IDS.has(a.id) || a.condition?.type !== 'attribute_level') continue;
+        const next = renamed(a.description, a.condition.attribute as AttributeId | undefined, [ACH_NAME_TAIL]);
+        if (next) ach.set(a.id, next);
+      }
+      const sk = new Map<string, string>();
+      for (const s of skills) {
+        if (!SYSTEM_SKILL_IDS.has(s.id) && s.id !== `blessing_${s.requiredAttribute}`) continue;
+        const next = renamed(s.description, s.requiredAttribute, SKILL_NAME_TAILS);
+        if (next) sk.set(s.id, next);
+      }
+      const attr = new Map<string, string>();
+      for (const a of attributes) {
+        if (known.has(a.id as AttributeId) && a.displayName !== nameOf(a.id as AttributeId)) attr.set(a.id, nameOf(a.id as AttributeId));
+      }
+      for (const [id, description] of ach) await db.achievements.update(id, { description });
+      for (const [id, description] of sk) await db.skills.update(id, { description });
+      for (const [id, displayName] of attr) await db.attributes.update(id, { displayName });
+      return { ach, sk, attr };
+    });
+    if (!patch.ach.size && !patch.sk.size && !patch.attr.size) return;
+    useAppStore.setState(s => ({
+      achievements: patch.ach.size ? s.achievements.map(a => (patch.ach.has(a.id) ? { ...a, description: patch.ach.get(a.id)! } : a)) : s.achievements,
+      skills: patch.sk.size ? s.skills.map(x => (patch.sk.has(x.id) ? { ...x, description: patch.sk.get(x.id)! } : x)) : s.skills,
+      attributes: patch.attr.size ? s.attributes.map(a => (patch.attr.has(a.id) ? { ...a, displayName: patch.attr.get(a.id)! } : a)) : s.attributes,
+    }));
+  } catch (err) {
+    console.error('[属性名] 同步成就 / 技能说明失败', err);
+  }
+}
+
+/** 开机补一次（老档：设置里改过名、说明还停在建档时的名字）；排进写锁，和改名那次不会交错 */
+function queueAttributeNameTextSync(): Promise<void> {
+  settingsWriteLock = settingsWriteLock.then(() => syncAttributeNameText(useAppStore.getState().settings.attributeNames));
+  return settingsWriteLock;
+}
+
+/**
+ * 读「用户刚改完」的设置（第 34 批）。改完五维名直接点「AI 匹配成就 / 技能名称」，按钮回调里的 settings 是这次渲染的旧值：
+ * 名称框组词时不提交、失焦才提交，写库又是异步的，请求里就成了旧名字。先让还在输入的框失焦（组词这时上屏、提交），
+ * 等排队的写入（连同说明同步）落完，再从 store 读。
+ */
+export async function settingsAfterPendingEdits(): Promise<Settings> {
+  const el = typeof document === 'undefined' ? null : document.activeElement;
+  if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) el.blur();
+  await settingsWriteLock;
+  return useAppStore.getState().settings;
+}
+
 /**
  * settings 内容没变就沿用旧对象（第 4 轮，界面性能）：loadData 每次都从库里读出一份新对象，
  * 订阅 settings 的组件（几乎每一页）就全部白渲染一遍——而写库的操作十有八九没碰 settings。
@@ -1075,6 +1159,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       syncDarkClass(!!get().settings.darkMode);
 
       await get().loadData();
+      // 第 34 批：老档改过五维名、成就 / 技能说明还停在建档时的名字，开机补一次（不挡首页）
+      void queueAttributeNameTextSync();
       // F2a：历史成长总结一次性回填 viewedAt（=createdAt，视为已读），避免开启通知时旧总结被判「未读」刷屏。
       //      仅跑一次（flag 守卫）；此后新总结由保存 / 打开时各自标记已读。
       if (!get().settings.summaryViewedBackfillDone) {
@@ -1769,6 +1855,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
       await db.settings.put(updated);
       set({ settings: updated });
+      // 改了五维名：系统成就 / 技能说明、属性 displayName 一起换（第 34 批）。放在锁里，等锁的地方读到的说明和名字对得上
+      if (newSettings.attributeNames && JSON.stringify(newSettings.attributeNames) !== JSON.stringify(base.attributeNames)) {
+        await syncAttributeNameText(updated.attributeNames, base.attributeNames);
+      }
     }).catch((err: unknown) => { console.error('[settings] 写入失败', err); });
     await settingsWriteLock;
     const settings = get().settings;

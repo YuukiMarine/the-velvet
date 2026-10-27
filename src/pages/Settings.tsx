@@ -1,7 +1,7 @@
 import { motion, AnimatePresence } from 'motion/react';
 import { ModalPortal } from '@/components/ModalPortal';
 import { useEffect, useRef, useState, useCallback, useSyncExternalStore } from 'react';
-import { useAppStore, DEFAULT_SUMMARY_PROMPT_PRESETS, FAMILIAR_FACE_PRESETS, toLocalDateKey, applyCustomThemeColor } from '@/store';
+import { useAppStore, DEFAULT_SUMMARY_PROMPT_PRESETS, FAMILIAR_FACE_PRESETS, toLocalDateKey, applyCustomThemeColor, settingsAfterPendingEdits } from '@/store';
 import { useShallow } from 'zustand/react/shallow';
 import { triggerThemeSwitchFeedback, playSound } from '@/utils/feedback';
 import { ThemeType, AttributeId, SummaryPromptPreset, AttributeLevelTitles } from '@/types';
@@ -610,7 +610,8 @@ export const Settings = () => {
     setLevelTitleRefreshing(true);
     setLevelTitleMessage(null);
     try {
-      const titles = await generateAttributeLevelTitles(settings, settings.levelThresholds.length);
+      const fresh = await settingsAfterPendingEdits(); // 同「AI 匹配」：改完名字直接点也按新名字（第 34 批）
+      const titles = await generateAttributeLevelTitles(fresh, fresh.levelThresholds.length);
       setLevelTitleSuggestions(titles);
       setLevelTitleSelection(createLevelTitleSelection(true));
       setLevelTitleConfirmAttrIndex(levelTitleAttrIndex);
@@ -621,7 +622,7 @@ export const Settings = () => {
     } finally {
       setLevelTitleRefreshing(false);
     }
-  }, [levelTitleAttrIndex, levelTitleRefreshing, settings]);
+  }, [levelTitleAttrIndex, levelTitleRefreshing]);
 
   const handleToggleLevelTitleAttribute = useCallback((id: AttributeId) => {
     setLevelTitleSelection(prev => ({ ...prev, [id]: !prev[id] }));
@@ -675,7 +676,8 @@ export const Settings = () => {
     setPresetNameRefreshing(true);
     setPresetNameMessage(null);
     try {
-      const result = await generatePresetNameMatches(settings);
+      // 改完名字直接点：先让还在输入的框上屏、等写完再读最新名字（第 34 批）
+      const result = await generatePresetNameMatches(await settingsAfterPendingEdits());
       const nextSelection = emptyPresetNameSelection();
       for (const id of Object.keys(result.achievements)) nextSelection.achievements[id] = true;
       for (const id of Object.keys(result.skills)) nextSelection.skills[id] = true;
@@ -689,7 +691,7 @@ export const Settings = () => {
     } finally {
       setPresetNameRefreshing(false);
     }
-  }, [presetNameRefreshing, settings]);
+  }, [presetNameRefreshing]);
 
   const handleTogglePresetNameItem = useCallback((kind: keyof PresetNameSelection, id: string) => {
     setPresetNameSelection(prev => ({
