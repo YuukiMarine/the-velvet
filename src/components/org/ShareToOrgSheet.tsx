@@ -23,7 +23,8 @@ import type { Activity } from '@/types';
 
 const errText = (e: unknown, fallback: string) => (e instanceof Error && e.message ? e.message : fallback);
 
-export function ShareToOrgSheet({ activity, onClose }: { activity: Activity | null; onClose: () => void }) {
+/** initialOrgId：从据点页分享时预选正在看的那个组织（第 35 批）；不给就默认第一个 */
+export function ShareToOrgSheet({ activity, onClose, initialOrgId }: { activity: Activity | null; onClose: () => void; initialOrgId?: string | null }) {
   const tone = useOrgTone();
   const orgs = useCloudSocialStore(s => s.orgs);
   const attributeNames = useAppStore(s => s.settings.attributeNames);
@@ -37,7 +38,7 @@ export function ShareToOrgSheet({ activity, onClose }: { activity: Activity | nu
   // 每次打开从头来：默认第一个组织（自建的排前面）、默认那一句
   useEffect(() => {
     if (!activity) return;
-    setOrgId(orgs[0]?.org.id ?? null);
+    setOrgId((initialOrgId && orgs.some(v => v.org.id === initialOrgId) ? initialOrgId : orgs[0]?.org.id) ?? null);
     setText(defaultShareText(activity.description));
     setBusy(false);
     setError('');

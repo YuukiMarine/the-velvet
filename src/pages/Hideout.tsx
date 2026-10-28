@@ -8,7 +8,7 @@
  *   会议（7b）：周日全天到周一凌晨 4 点开；其余时间看这周大家的目标和上一次纪要。
  *   作战（第 8 轮）：进行中的作战进度板 + 发起 + 最近 30 天的历史；进作战区就算看过了（地标 / 组织入口红点熄灭）。
  */
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { Suspense, lazy, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useAppStore } from '@/store';
 import { useCloudStore } from '@/store/cloud';
@@ -24,6 +24,9 @@ import { RaidBanner, RaidSheet, useMinuteTick, useRaidNow } from '@/components/o
 import { OrgTitlesSheet } from '@/components/org/OrgTitlesSheet';
 import { MemberCardBack, MemberCardFront, MemberTile } from '@/components/org/MemberCard';
 import { BoardSection } from '@/components/org/BoardSection';
+import { RecentRecordPicker } from '@/components/org/RecentRecordPicker';
+// 分享到据点（第 35 批：公告板也有入口）：和记录页同一张编辑页，按需分包
+const ShareToOrgSheet = lazy(() => import('@/components/org/ShareToOrgSheet').then(m => ({ default: m.ShareToOrgSheet })));
 import { MeetingSection } from '@/components/org/MeetingSection';
 import { OpsSection } from '@/components/org/OpsSection';
 import { OrgSettingsSheet } from '@/components/org/OrgSettingsSheet';
@@ -39,7 +42,7 @@ import { markOpsSeen, refreshOps } from '@/services/orgOpsSync';
 import { opsUnread, orgLevelOfView } from '@/utils/orgOps';
 import { myRaidOptions, raidStrikeAvailable } from '@/utils/orgRaid';
 import { boardUnread, displayCodename, formatInviteCode, latestMinutes, meetingPending, meetingState, shownPersonas, tarotConflictLosers } from '@/utils/orgLogic';
-import type { OrgMember, OrgView } from '@/types';
+import type { Activity, OrgMember, OrgView } from '@/types';
 
 const SECTION_TITLE: Record<HideoutSection, { t: string; en: string }> = {
   roster: { t: '名册', en: 'MEMBERS' },
@@ -119,6 +122,10 @@ export function Hideout() {
   const [raidOpen, setRaidOpen] = useState(false);
   const [titlesOpen, setTitlesOpen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
+  // 公告板「＋ 分享记录」（第 35 批）：先选一条最近的记录，再进和长按同一张分享页；分享页按需分包，点过才挂
+  const [pickOpen, setPickOpen] = useState(false);
+  const [shareFor, setShareFor] = useState<Activity | null>(null);
+  const [shareMounted, setShareMounted] = useState(false);
   const blocked = useMemo(() => new Set(blockedList), [blockedList]);
 
   // 选着的组织不在了（退出 / 解散 / 被请离），或者还没选过 → 换成第一个（自建的排前面）
@@ -267,7 +274,7 @@ export function Hideout() {
             )}
           </div>
         ) : section === 'board' ? (
-          <BoardSection view={view} blocked={blocked} onFlash={setFlash} />
+          <BoardSection view={view} blocked={blocked} onFlash={setFlash} onShare={() => setPickOpen(true)} />
         ) : section === 'ops' ? (
           <OpsSection view={view} blocked={blocked} onFlash={setFlash} />
         ) : (
@@ -343,6 +350,12 @@ export function Hideout() {
             <RaidSheet view={view} open={raidOpen} onClose={() => setRaidOpen(false)} onFlash={setFlash} />
             <OrgTitlesSheet view={view} open={titlesOpen} onClose={() => setTitlesOpen(false)} onFlash={setFlash} />
             <ActionSheet isOpen={!!menuFor} onClose={() => setMenuFor(null)} title={menuFor ? displayCodename(menuFor) : undefined} actions={menuActions} />
+            <RecentRecordPicker open={pickOpen} onClose={() => setPickOpen(false)} onPick={(a) => { setPickOpen(false); setShareMounted(true); setShareFor(a); }} />
+            {shareMounted && (
+              <Suspense fallback={null}>
+                <ShareToOrgSheet activity={shareFor} initialOrgId={view.org.id} onClose={() => setShareFor(null)} />
+              </Suspense>
+            )}
           </>
         )}
         <OrgSettingsSheet

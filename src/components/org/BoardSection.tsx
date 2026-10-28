@@ -62,7 +62,8 @@ function dayLabel(d: Date, now = new Date()): string {
   return d.getFullYear() === now.getFullYear() ? md2 : `${d.getFullYear()}年${md2}`;
 }
 
-export function BoardSection({ view, blocked, onFlash }: { view: OrgView; blocked: Set<string>; onFlash: (s: string) => void }) {
+/** onShare：「＋ 分享记录」（第 35 批）——据点页挂选记录的面板和分享页，这里只放按钮 */
+export function BoardSection({ view, blocked, onFlash, onShare }: { view: OrgView; blocked: Set<string>; onFlash: (s: string) => void; onShare?: () => void }) {
   const tone = useOrgTone();
   const hidden = useCloudSocialStore(s => s.orgHiddenPosts);
   const setCurrentPage = useAppStore(s => s.setCurrentPage);
@@ -133,10 +134,13 @@ export function BoardSection({ view, blocked, onFlash }: { view: OrgView; blocke
   return (
     <div className="space-y-3">
       {(visible.length > 0 || raidCards.length > 0) && (
-        <div role="tablist" aria-label="公告板筛选" className="flex flex-wrap gap-1.5">
-          {FILTERS.map((f, i) => (
-            <FilterChip key={f.id} tone={tone} seed={i} label={f.label} count={counts[f.id]} on={filter === f.id} onClick={() => setFilter(f.id)} />
-          ))}
+        <div className="flex items-start justify-between gap-2">
+          <div role="tablist" aria-label="公告板筛选" className="flex min-w-0 flex-wrap gap-1.5">
+            {FILTERS.map((f, i) => (
+              <FilterChip key={f.id} tone={tone} seed={i} label={f.label} count={counts[f.id]} on={filter === f.id} onClick={() => setFilter(f.id)} />
+            ))}
+          </div>
+          {onShare && <OrgButton small onClick={onShare} ariaLabel="分享一条记录到公告板">＋ 分享记录</OrgButton>}
         </div>
       )}
       {showPinned && pinned?.minutes && <MinutesCard org={view.org} minutes={pinned.minutes} blocked={blocked} tone={tone} />}
@@ -172,8 +176,11 @@ export function BoardSection({ view, blocked, onFlash }: { view: OrgView; blocke
       {visible.length === 0 && raidCards.length === 0 && (
         <OrgPanel seed={43}>
           <div className="text-[15px] font-black" style={{ fontFamily: tone.titleFont }}>还没有动态</div>
-          <div className="mt-1 text-[12px] font-semibold leading-relaxed" style={{ color: tone.sub }}>在记录页长按一条记录，选「分享到据点」，就会出现在这里。分享出去的只有你写的那一句和加点，不带记录原文。</div>
-          <div className="mt-3"><OrgButton small onClick={() => setCurrentPage('activities')}>去记录页</OrgButton></div>
+          <div className="mt-1 text-[12px] font-semibold leading-relaxed" style={{ color: tone.sub }}>把一条记录分享到这里，大家就能给你贴标签打气。分享出去的只有你写的那一句和加点，不带记录原文。</div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {onShare && <OrgButton small onClick={onShare}>＋ 分享记录</OrgButton>}
+            <OrgButton small tone={onShare ? 'ghost' : 'primary'} onClick={() => setCurrentPage('activities')}>去记录页</OrgButton>
+          </div>
         </OrgPanel>
       )}
       {blockedCount > 0 && <div className="text-center text-[11px] font-bold" style={{ color: tone.stageSub }}>已屏蔽 {blockedCount} 条（据点设置里可以解除）</div>}
