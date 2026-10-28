@@ -14,7 +14,8 @@ import { P3R, slantClip, sheetTopClip } from '@/components/p3r/kit';
 import { renderMarkdown } from '@/utils/markdown';
 import { ThinkingCircle } from '@/components/astrology/ThinkingCircle';
 import { useThinkProgress } from '@/utils/thinkProgress';
-import { FAMILIAR_FACE_ICONS, SUMMARY_FOLLOWUP_LIMIT, SUMMARY_FOLLOWUP_MAX_TOKENS, followUpsOf, visibleSummaryText, parseSummaryResult, summaryKindOf, annualWindowYear, annualSummaryOf, yearRangeOf, getActiveSummaryPreset } from '@/utils/summaryAI';
+import { FAMILIAR_FACE_ICONS, NAVIGATOR_VOICE_ID, SUMMARY_FOLLOWUP_LIMIT, SUMMARY_FOLLOWUP_MAX_TOKENS, followUpsOf, isNavigatorVoice, visibleSummaryText, parseSummaryResult, summaryKindOf, annualWindowYear, annualSummaryOf, yearRangeOf, getActiveSummaryPreset } from '@/utils/summaryAI';
+import { useNavigatorStore } from '@/store/navigator';
 import { buildYearRecap } from '@/utils/yearRecap';
 import YearRecapStage, { type RecapLetterState } from '@/components/annual/YearRecapStage';
 import { freshUnreadSummary } from '@/utils/reportNotice';
@@ -472,6 +473,8 @@ interface StyleQuickSwitcherProps {
   activeId: string;
   onPick: (id: string) => void;
   customPresets: Array<{ id: string; name: string; isBuiltin?: boolean }>;
+  /** 当前助手人格的名字（第 35 批 i）：「助手 · 名字」那枚胶囊 */
+  navigatorName: string;
 }
 
 /**
@@ -479,7 +482,7 @@ interface StyleQuickSwitcherProps {
  *  - 上方 4 位"熟悉的人"只留 emoji（用户口径：去掉名字更有意思；按钮尺寸不变，方便按）
  *  - 下方其他内置 / 自定义风格的 chip 列表
  */
-function StyleQuickSwitcher({ activeId, onPick, customPresets }: StyleQuickSwitcherProps) {
+function StyleQuickSwitcher({ activeId, onPick, customPresets, navigatorName }: StyleQuickSwitcherProps) {
   const familiars = FAMILIAR_FACE_PRESETS.filter(p => FAMILIAR_FACE_ICONS[p.id]);
   const familiarIds = new Set(familiars.map(f => f.id));
   const otherPresets = [
@@ -523,12 +526,11 @@ function StyleQuickSwitcher({ activeId, onPick, customPresets }: StyleQuickSwitc
         )}
       </div>
 
-      {/* 其他内置 / 自定义风格 */}
-      {otherPresets.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {otherPresets.map(p => renderChip(p.id, p.name))}
-        </div>
-      )}
+      {/* 其他内置 / 自定义风格；最前面一枚是「用当前助手的口吻写」（第 35 批 i） */}
+      <div className="flex flex-wrap gap-1.5">
+        {renderChip(NAVIGATOR_VOICE_ID, `助手 · ${navigatorName}`, { name: `用当前助手「${navigatorName}」的口吻写` })}
+        {otherPresets.map(p => renderChip(p.id, p.name))}
+      </div>
     </div>
   );
 }
@@ -558,6 +560,8 @@ const StatsGrid = ({ items }: { items: Array<{ label: string; value: string }> }
 export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week', openSummaryId }: SummaryModalProps) {
   const { settings, summaries, saveSummary, deleteSummary, loadSummaries, updateSettings, markSummaryViewed } = useAppStore(useShallow(s => ({ settings: s.settings, summaries: s.summaries, saveSummary: s.saveSummary, deleteSummary: s.deleteSummary, loadSummaries: s.loadSummaries, updateSettings: s.updateSettings, markSummaryViewed: s.markSummaryViewed })));
   const job = useSummaryJobs(s => s.job);
+  // 当前助手人格的名字（第 35 批 i）：风格条那枚「助手 · 名字」
+  const navigatorName = useNavigatorStore(s => s.activePreset().name);
   const running = isSummaryJobRunning(job);
   // 第 27 批：弹层开着 = 人在看总结（顶部横幅不再提、写完不另发通知）
   useWatchAIJob('summary', isOpen);
@@ -642,7 +646,7 @@ export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week', 
   useEffect(() => {
     if (!wantStageRef.current || !job?.recap || job.period !== 'year') return;
     wantStageRef.current = false;
-    const preset = getActiveSummaryPreset(settings);
+    const preset = getActiveSummaryPreset(settings, navigatorName);
     setStage({ recap: job.recap, live: true, presetName: preset.name, presetId: preset.id });
     setStageOpen(true);
   }, [job?.recap, job?.period, settings]);
@@ -890,9 +894,12 @@ export default function SummaryModal({ isOpen, onClose, defaultPeriod = 'week', 
                       activeId={settings.summaryActivePresetId ?? 'igor'}
                       onPick={(id) => updateSettings({ summaryActivePresetId: id })}
                       customPresets={settings.summaryPromptPresets ?? DEFAULT_SUMMARY_PROMPT_PRESETS}
+                      navigatorName={navigatorName}
                     />
                     <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">
-                      点击切换；在设置「AI 总结」里可新增 / 编辑自定义风格
+                      {isNavigatorVoice(settings.summaryActivePresetId)
+                        ? `由你现在的助手「${navigatorName}」来写：它平时的口吻，但是一封信（可以有标题和表格）；信不会进它的聊天记录`
+                        : '点击切换；在设置「AI 总结」里可新增 / 编辑自定义风格'}
                       {settings.summaryDeliberate ? '。已开启深思熟虑档：更贴，但要多等一会儿' : ''}
                     </p>
                   </div>

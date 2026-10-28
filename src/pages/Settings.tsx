@@ -2,6 +2,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import { ModalPortal } from '@/components/ModalPortal';
 import { useEffect, useRef, useState, useCallback, useSyncExternalStore } from 'react';
 import { useAppStore, DEFAULT_SUMMARY_PROMPT_PRESETS, FAMILIAR_FACE_PRESETS, toLocalDateKey, applyCustomThemeColor, settingsAfterPendingEdits } from '@/store';
+import { useNavigatorStore } from '@/store/navigator';
+import { NAVIGATOR_VOICE_ID, isNavigatorVoice } from '@/utils/summaryAI';
 import { useShallow } from 'zustand/react/shallow';
 import { triggerThemeSwitchFeedback, playSound } from '@/utils/feedback';
 import { ThemeType, AttributeId, SummaryPromptPreset, AttributeLevelTitles } from '@/types';
@@ -540,6 +542,8 @@ export const Settings = () => {
   const achievements = useAppStore(s => s.achievements);
   const skills = useAppStore(s => s.skills);
   const setCurrentPage = useAppStore(s => s.setCurrentPage);
+  // 成长总结「用当前助手的口吻写」那一行要显示人格名（第 35 批 i）
+  const navigatorName = useNavigatorStore(s => s.activePreset().name);
   const [activeSection, setActiveSection] = useState<string | null>('theme');
   // 第 13 轮：从「AI 总结」里的路标跳到「AI 服务」时，顺手把连接卡展开（老教程都教「在 AI 总结里填 Key」）
   const [aiJump, setAiJump] = useState(false);
@@ -2288,6 +2292,28 @@ export const Settings = () => {
                               {familiarTaglines[activeFamiliar.id] ? ` · ${familiarTaglines[activeFamiliar.id]}` : ''}
                             </p>
                           )}
+                        </div>
+
+                        {/* 用当前助手的口吻写（第 35 批 i） */}
+                        <div
+                          role="button"
+                          tabIndex={0}
+                          data-setting-row="summaryNavigatorVoice"
+                          onClick={() => updateSettings({ summaryActivePresetId: NAVIGATOR_VOICE_ID })}
+                          onKeyDown={(e) => { if (e.key === 'Enter') updateSettings({ summaryActivePresetId: NAVIGATOR_VOICE_ID }); }}
+                          className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-all cursor-pointer ${
+                            isNavigatorVoice(activePresetId)
+                              ? 'border-primary/40 bg-primary/5 dark:bg-primary/10'
+                              : 'border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-700/40 hover:border-gray-200 dark:hover:border-gray-600'
+                          }`}
+                        >
+                          <div className={`w-3.5 h-3.5 rounded-full border-2 flex-shrink-0 transition-all ${
+                            isNavigatorVoice(activePresetId) ? 'bg-primary border-primary' : 'border-gray-300 dark:border-gray-500'
+                          }`} />
+                          <div className="flex-1 min-w-0">
+                            <span className="text-sm font-semibold text-gray-800 dark:text-white">助手 · {navigatorName}</span>
+                            <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-0.5">用你现在的助手人格来写：它平时的口吻，但是一封信；换了助手就换人写，信不会进它的聊天记录</p>
+                          </div>
                         </div>
 
                         {/* 内置 / 自定义预设列表 */}

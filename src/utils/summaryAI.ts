@@ -15,8 +15,9 @@
  */
 import { seasonMarkOf } from '@/utils/calendar';
 import { db } from '@/db';
-import type { Activity, Attribute, AttributeId, PeriodSummary, Settings, SummaryPeriod, SummaryPromptPreset } from '@/types';
+import type { Activity, Attribute, AttributeId, NavigatorPreset, PeriodSummary, Settings, SummaryPeriod, SummaryPromptPreset } from '@/types';
 import { TAROT_BY_ID } from '@/constants/tarot';
+import { personaWithExamples, resolveNavigatorPreset } from '@/constants/navigatorPresets';
 import { chatComplete, getAIConfig, getDeliberateAIConfig, type AIConfig } from '@/utils/aiClient';
 
 type Provider = NonNullable<Settings['summaryApiProvider']>;
@@ -112,6 +113,41 @@ ${TOPIC_TAIL}`,
     systemPrompt: '',
   },
 ];
+
+// ── 用当前助手的口吻写（第 35 批 i）──────────────────────────────────────
+// 风格条上多一枚「助手 · 人格名」：生成时把聊天用的人格设定 + 口吻示例接上一段「这是写信不是聊天」的桥接。
+// 走的还是成长总结自己的通道（summaryJobs），信不进助手的聊天记录、不进它的记忆；存档里 promptPresetId 记成 navigator:<人格 id>、名字记人格名。
+
+export const NAVIGATOR_VOICE_ID = 'navigator';
+export const isNavigatorVoice = (id: string | undefined): boolean => !!id && (id === NAVIGATOR_VOICE_ID || id.startsWith(`${NAVIGATOR_VOICE_ID}:`));
+
+/** 风格条 / 年度开场要显示的占位（名字由调用方传当前人格名；没传就叫「助手」） */
+export const navigatorVoicePlaceholder = (name = '助手'): SummaryPromptPreset => ({ id: NAVIGATOR_VOICE_ID, name, isBuiltin: true, systemPrompt: '' });
+
+const NAVIGATOR_VOICE_BRIDGE = `【这一次不是聊天】上面是你平时陪"客人"聊天时的人格；现在他请你以这个身份给他写这一期的成长信。
+- 口吻、自称、对他的称呼都照你平时的来；但这是一封写下来的信，不是聊天气泡：可以分段、起小标题、画一张表。
+- 不提卡片、待办确认、开卡这类聊天里的功能；你们平时聊过的内容这里拿不到，别假装记得简报里没写的事。
+- 这封信存在记录页的「成长总结」里，不会进入你们的聊天记录。`;
+
+/** 把聊天人格接成一份写信的角色预设（异步：自定义人格在 IndexedDB 表里） */
+export async function resolveNavigatorVoicePreset(settings: Settings): Promise<SummaryPromptPreset> {
+  let custom: NavigatorPreset[] = [];
+  try { custom = await db.navigatorPresets.toArray(); } catch { /* 按内置解析 */ }
+  const p = resolveNavigatorPreset(settings.navigatorPresetId, custom);
+  return {
+    id: `${NAVIGATOR_VOICE_ID}:${p.id}`,
+    name: p.name,
+    isBuiltin: true,
+    systemPrompt: `${personaWithExamples(p)}
+
+${NAVIGATOR_VOICE_BRIDGE}
+${TOPIC_LEAD}
+1. 这一期的样子（挑两三件最值得说的事，用你的眼光看它们）
+2. 看得出的变化（各方面的长进和没动的地方，用你自己的方式说）
+3. 下一期想看到的（具体的期待，用你的口吻收尾）
+${TOPIC_TAIL}`,
+  };
+}
 
 /** 四位熟悉的人的 emoji（按钮只留 emoji，名字进 aria-label / 提示行） */
 export const FAMILIAR_FACE_ICONS: Record<string, string> = {
@@ -586,9 +622,11 @@ export interface SummaryRequestData {
   deliberate: boolean;
 }
 
-export function getActiveSummaryPreset(settings: Settings): SummaryPromptPreset {
+export function getActiveSummaryPreset(settings: Settings, navigatorName?: string): SummaryPromptPreset {
   const presets = settings.summaryPromptPresets ?? DEFAULT_SUMMARY_PROMPT_PRESETS;
   const activeId = settings.summaryActivePresetId ?? 'igor';
+  // 「助手 · 人格名」（第 35 批 i）：同步拿不到自定义人格，这里只给占位；buildSummaryRequest 里再解析成真的
+  if (isNavigatorVoice(activeId)) return navigatorVoicePlaceholder(navigatorName);
   return (
     presets.find(p => p.id === activeId) ??
     FAMILIAR_FACE_PRESETS.find(p => p.id === activeId) ??
@@ -650,7 +688,8 @@ export async function buildSummaryRequest(params: {
   const { settings, attributes, period, startDate, endDate, signal } = params;
   const resolved = resolveSummaryConfig(settings);
   if (!resolved) throw new Error('请先在「设置 → AI 服务」中配置 API 密钥');
-  const preset = getActiveSummaryPreset(settings);
+  const picked = getActiveSummaryPreset(settings);
+  const preset = isNavigatorVoice(picked.id) ? await resolveNavigatorVoicePreset(settings) : picked;
   const brief = await buildSummaryBrief({ period, startDate, endDate, settings, attributes, presetId: preset.id });
 
   let material = '';

@@ -3,6 +3,8 @@ import { useState } from 'react';
 import { motion } from 'motion/react';
 import { useShallow } from 'zustand/react/shallow';
 import { useAppStore, DEFAULT_SUMMARY_PROMPT_PRESETS, FAMILIAR_FACE_PRESETS } from '@/store';
+import { useNavigatorStore } from '@/store/navigator';
+import { NAVIGATOR_VOICE_ID, isNavigatorVoice } from '@/utils/summaryAI';
 import type { SummaryPromptPreset } from '@/types';
 import { P3R } from '@/components/p3r/kit';
 import { P5R, P5Rough, P5Star } from '@/components/p5r/kit';
@@ -62,6 +64,9 @@ export const SummarySection = () => {
   const activePresetId = settings.summaryActivePresetId ?? 'igor';
   const activeFamiliar = FAMILIAR_FACE_PRESETS.find(p => p.id === activePresetId);
   const faceMeta = FACES.find(f => f.id === activePresetId);
+  // 用当前助手的口吻写（第 35 批 i）
+  const navigatorName = useNavigatorStore(s => s.activePreset().name);
+  const navigatorOn = isNavigatorVoice(activePresetId);
 
   const handleSavePreset = (preset: SummaryPromptPreset) => {
     const idx = effectivePresets.findIndex(p => p.id === preset.id);
@@ -87,7 +92,7 @@ export const SummarySection = () => {
           control={<span className="text-[13px] font-black" style={{ color: t.accent }} data-testid="summary-to-ai-service">前往 ›</span>} />
       </Card>
 
-      <Card title="沟通风格" meta={activeFamiliar ? activeFamiliar.name : '自定义'} index={1}>
+      <Card title="沟通风格" meta={activeFamiliar ? activeFamiliar.name : navigatorOn ? `助手 · ${navigatorName}` : '自定义'} index={1}>
         <div className="grid grid-cols-4 gap-2" data-setting-row="summaryFamiliar">
           {FACES.map((face, i) => (
             <FaceButton key={face.id} icon={face.icon} name={face.name} seed={760 + i * 5} active={activePresetId === face.id} onClick={() => updateSettings({ summaryActivePresetId: face.id })} />
@@ -98,6 +103,16 @@ export const SummarySection = () => {
             <span className="font-black" style={{ color: t.ink }}>{activeFamiliar.name}</span>{faceMeta ? ` · ${faceMeta.tagline}` : ''}
           </p>
         )}
+        <Divider />
+        <div role="button" tabIndex={0} data-setting-row="summaryNavigatorVoice" onClick={() => updateSettings({ summaryActivePresetId: NAVIGATOR_VOICE_ID })} onKeyDown={(e) => { if (e.key === 'Enter') updateSettings({ summaryActivePresetId: NAVIGATOR_VOICE_ID }); }}
+          className="flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 transition-colors"
+          style={{ boxShadow: navigatorOn ? `inset 0 0 0 2px ${t.accent}` : `inset 0 0 0 1px ${skin === 'p5' ? P5R.ink : 'rgba(107,122,153,0.25)'}`, background: navigatorOn ? (skin === 'p5' ? '#f4dcd4' : 'rgba(27,87,255,0.06)') : 'transparent' }}>
+          <span aria-hidden className="h-3.5 w-3.5 shrink-0 rounded-full border-2" style={{ borderColor: navigatorOn ? t.accent : t.sub, background: navigatorOn ? t.accent : 'transparent' }} />
+          <div className="min-w-0 flex-1">
+            <span className="text-[14px] font-black" style={{ color: t.ink }}>助手 · {navigatorName}</span>
+            <p className="mt-0.5 text-[11px] font-semibold" style={{ color: t.sub }}>用你现在的助手人格来写：它平时的口吻，但是一封信（可以有标题和表格）；换了助手就换人写，信不会进它的聊天记录</p>
+          </div>
+        </div>
         <Divider />
         <div className="flex items-center justify-between py-1" data-setting-row="summaryPresets">
           <span className="text-[13px] font-black" style={{ color: t.ink }}>内置 / 自定义</span>
