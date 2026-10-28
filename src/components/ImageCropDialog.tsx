@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { cropAndCompressSquare, readAsDataUrl } from '@/utils/imageCrop';
+import { cropAndCompressRect, cropAndCompressSquare, readAsDataUrl } from '@/utils/imageCrop';
 
 /**
  * 用户交互式头像裁切弹窗
@@ -159,47 +159,8 @@ export function ImageCropDialog({
         const out = await cropAndCompressSquare(raw, { size: OUT_LONG, maxBytes: MAX_BYTES });
         await onConfirm(out);
       } else {
-        // 矩形居中裁
-        const probe = new Image();
-        probe.src = raw;
-        if (!probe.complete) {
-          await new Promise<void>((resolve, reject) => {
-            probe.onload = () => resolve();
-            probe.onerror = () => reject(new Error('图片重载失败'));
-          });
-        }
-        const w = probe.naturalWidth;
-        const h = probe.naturalHeight;
-        // 目标源矩形：按 aspectRatio 居中取最大可取框
-        const targetRatio = aspectRatio; // w/h
-        let sw: number, sh: number;
-        if (w / h > targetRatio) {
-          // 原图偏宽 → 按高度为基准
-          sh = h;
-          sw = Math.round(h * targetRatio);
-        } else {
-          sw = w;
-          sh = Math.round(w / targetRatio);
-        }
-        const sx = Math.round((w - sw) / 2);
-        const sy = Math.round((h - sh) / 2);
-
-        const canvas = document.createElement('canvas');
-        canvas.width = OUT_W;
-        canvas.height = OUT_H;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) throw new Error('Canvas 不可用');
-        ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = 'high';
-        ctx.drawImage(probe, sx, sy, sw, sh, 0, 0, OUT_W, OUT_H);
-
-        let q = 0.92;
-        let out = canvas.toDataURL('image/jpeg', q);
-        while (bytesOf(out) > MAX_BYTES && q > 0.55 + 0.04) {
-          q = Math.max(0.55, q - 0.08);
-          out = canvas.toDataURL('image/jpeg', q);
-        }
-        await onConfirm(out);
+        // 矩形居中裁：与「好友换头像后自动重裁卡面」走同一个函数（第 35 批抽出到 imageCrop.ts）
+        await onConfirm(await cropAndCompressRect(raw, { aspectRatio, longEdge: OUT_LONG, maxBytes: MAX_BYTES }));
       }
     } catch (e) {
       setErr(e instanceof Error ? e.message : '处理失败');

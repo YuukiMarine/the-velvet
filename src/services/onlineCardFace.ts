@@ -11,6 +11,7 @@
  * cardFaceDataUrl（avatarAsCardFace=true），随后清掉这行，不留孤儿。
  */
 import { db } from '@/db';
+import type { OnlineCardFace } from '@/types';
 
 export const getAllOnlineCardFaces = async (): Promise<Record<string, string>> => {
   try {
@@ -29,8 +30,19 @@ export const getOnlineCardFace = async (userId: string): Promise<string | undefi
   }
 };
 
-export const setOnlineCardFace = async (userId: string, dataUrl: string): Promise<void> => {
-  await db.onlineCardFaces.put({ userId, dataUrl, updatedAt: new Date() });
+/** 整行（含来源头像指纹）：自动重裁和缔结交接用 */
+export const getOnlineCardFaceRow = async (userId: string): Promise<OnlineCardFace | undefined> => {
+  try {
+    return await db.onlineCardFaces.get(userId);
+  } catch {
+    return undefined;
+  }
+};
+
+/** sourceAvatarUrl = 裁的是对方哪张头像（第 35 批）；不给就沿用原行的（老行没有则留空） */
+export const setOnlineCardFace = async (userId: string, dataUrl: string, sourceAvatarUrl?: string): Promise<void> => {
+  const src = sourceAvatarUrl ?? (await getOnlineCardFaceRow(userId))?.sourceAvatarUrl;
+  await db.onlineCardFaces.put({ userId, dataUrl, updatedAt: new Date(), ...(src ? { sourceAvatarUrl: src } : {}) });
 };
 
 export const clearOnlineCardFace = async (userId: string): Promise<void> => {

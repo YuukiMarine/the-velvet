@@ -17,6 +17,69 @@ export interface CropAndCompressOptions {
   step?: number;
 }
 
+export interface CropRectOptions {
+  /** 目标宽高比（W / H）：1 = 正方形，0.625 = 1:1.6 塔罗卡面 */
+  aspectRatio: number;
+  /** 输出长边像素，默认 320（与 ImageCropDialog 同口径） */
+  longEdge?: number;
+  /** 字节上限（近似），默认 80 KB（与 ImageCropDialog 同口径） */
+  maxBytes?: number;
+}
+
+/**
+ * 任意比例图片 → 按 aspectRatio **居中**取最大可取框 → 缩到 longEdge → jpeg 循环降质到 ≤ maxBytes。
+ * 原来内联在 ImageCropDialog 的「自动居中」里；抽出来给「好友换了头像、本地卡面自动重裁」（第 35 批）复用。
+ * dataUrl 必须是同源 / data: 来源，否则 canvas 被污染、toDataURL 会抛。
+ */
+export async function cropAndCompressRect(dataUrl: string, opts: CropRectOptions): Promise<string> {
+  const { aspectRatio, longEdge = 320, maxBytes = 80_000 } = opts;
+  const probe = new Image();
+  probe.src = dataUrl;
+  if (!probe.complete || !probe.naturalWidth) {
+    await new Promise<void>((resolve, reject) => {
+      probe.onload = () => resolve();
+      probe.onerror = () => reject(new Error('图片解码失败'));
+    });
+  }
+  const w = probe.naturalWidth;
+  const h = probe.naturalHeight;
+  if (!w || !h) throw new Error('图片尺寸无效');
+  let sw: number, sh: number;
+  if (w / h > aspectRatio) { sh = h; sw = Math.round(h * aspectRatio); } // 原图偏宽 → 按高度为基准
+  else { sw = w; sh = Math.round(w / aspectRatio); }
+  const sx = Math.round((w - sw) / 2);
+  const sy = Math.round((h - sh) / 2);
+  const outW = aspectRatio >= 1 ? longEdge : Math.round(longEdge * aspectRatio);
+  const outH = aspectRatio >= 1 ? Math.round(longEdge / aspectRatio) : longEdge;
+  const canvas = document.createElement('canvas');
+  canvas.width = outW;
+  canvas.height = outH;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Canvas 不可用');
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(probe, sx, sy, sw, sh, 0, 0, outW, outH);
+  let q = 0.92;
+  let out = canvas.toDataURL('image/jpeg', q);
+  while (dataUrlBytes(out) > maxBytes && q > 0.55 + 0.04) {
+    q = Math.max(0.55, q - 0.08);
+    out = canvas.toDataURL('image/jpeg', q);
+  }
+  return out;
+}
+
+/**
+ * 远端图片 → 居中裁切后的 dataUrl。先 fetch 成 blob 再读成 dataUrl（<img src=远端URL> 画到 canvas 会污染、
+ * toDataURL 抛异常）；fetch 对 4xx/5xx 不 reject，这里自己查 res.ok。任何失败都抛，调用方决定留旧图还是放弃。
+ */
+export async function centerCropRemoteImage(url: string, opts: CropRectOptions): Promise<string> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const blob = await res.blob();
+  if (!blob.type.startsWith('image/') && blob.size < 64) throw new Error('不是图片');
+  return cropAndCompressRect(await readAsDataUrl(blob), opts);
+}
+
 /** File / Blob → dataURL */
 export function readAsDataUrl(file: File | Blob): Promise<string> {
   return new Promise((resolve, reject) => {

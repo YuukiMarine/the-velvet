@@ -80,6 +80,9 @@ interface CloudSocialState {
   setLastError: (e: string | null) => void;
   setMaterializeBlockers: (list: MaterializeBlocker[]) => void;
   setFriendships: (fs: Friendship[]) => void;
+  /** 自裁卡面表改了（好友换头像后后台重裁，第 35 批）：羁绊页据此重读 db.onlineCardFaces */
+  cardFacesVersion: number;
+  bumpCardFaces: () => void;
   setNotifications: (ns: NotificationEntry[]) => void;
   setTodayPrayers: (ps: Prayer[]) => void;
   addTodayPrayer: (p: Prayer) => void;
@@ -162,6 +165,8 @@ export const useCloudSocialStore = create<CloudSocialState>(set => ({
   setMaterializeBlockers: materializeBlockers => set({ materializeBlockers }),
 
   setFriendships: friendships => set({ friendships }),
+  cardFacesVersion: 0,
+  bumpCardFaces: () => set(state => ({ cardFacesVersion: state.cardFacesVersion + 1 })),
 
   setNotifications: notifications => set({
     notifications,

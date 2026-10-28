@@ -23,7 +23,8 @@ import {
 import { useCloudSocialStore } from '@/store/cloudSocial';
 import { useCloudStore } from '@/store/cloud';
 import { useAppStore } from '@/store';
-import { getOnlineCardFace, clearOnlineCardFace } from './onlineCardFace';
+import { getOnlineCardFaceRow, clearOnlineCardFace, setOnlineCardFace } from './onlineCardFace';
+import { centerCropRemoteImage } from '@/utils/imageCrop';
 import { syncPacts } from './pactSync';
 import { primeOrgsFromCache, syncOrgs } from './orgSync';
 import { interpretLockedArcana, type ConfidantMatchResult } from '@/utils/confidantAI';
@@ -110,6 +111,11 @@ const loadSocialOnce = async (options: { force?: boolean }): Promise<void> => {
       console.warn('[velvet-social] syncLinkedProfiles failed', err);
     });
 
+    // 未缔结好友换了头像 → 本地自裁卡面按新头像居中重裁（第 35 批；不阻塞主流程）
+    void refreshOnlineCardFaces(friendships).catch(err => {
+      console.warn('[velvet-social] refreshOnlineCardFaces failed', err);
+    });
+
     // COOP 契约过期兜底
     void expireOutdatedCoopPending(coopBonds).catch(err => {
       console.warn('[velvet-social] expireOutdatedCoopPending failed', err);
@@ -162,6 +168,51 @@ const loadSocialOnce = async (options: { force?: boolean }): Promise<void> => {
  * 阶段 0+1：好友列表里"未建 COOP 的 linked 好友"在 Cooperation 页另行渲染，
  * 不在这里物化成 Confidant —— 等到阶段 4（COOP）再做。
  */
+/** 卡面的塔罗比例（与 Cooperation / ConfidantDetailModal 的裁切框同口径） */
+const CARD_FACE_ASPECT = 1 / 1.6;
+
+/**
+ * 卡面自动重裁（第 35 批）：用户裁过对方的头像做卡面，之后对方换了头像，本地那张裁切图不会自己变——
+ * 以前只有再去「重新裁切」才看得到新头像。现在每轮拉取按头像 URL 指纹比对：
+ *   · 老行没记指纹 → 回填当前 URL、不重裁（用户 10-28 拍板：存量不动）；
+ *   · 指纹对得上 → 不动；
+ *   · 对不上且对方有新头像 → fetch 新头像、按卡面比例居中裁、替换；取不到（离线 / 跨域）就留着旧图，下轮再试；
+ *   · 对方把头像删了（URL 为空）→ 留旧图不动（没有「新头像」可换）。
+ * 返回 true = 真的换了图。
+ */
+async function recropIfAvatarChanged(
+  sourceUrl: string | undefined,
+  avatarUrl: string | undefined,
+  apply: (patch: { dataUrl?: string; sourceUrl: string }) => Promise<void>,
+): Promise<boolean> {
+  if (!avatarUrl) return false;
+  if (!sourceUrl) { await apply({ sourceUrl: avatarUrl }); return false; }
+  if (sourceUrl === avatarUrl) return false;
+  const dataUrl = await centerCropRemoteImage(avatarUrl, { aspectRatio: CARD_FACE_ASPECT });
+  await apply({ dataUrl, sourceUrl: avatarUrl });
+  return true;
+}
+
+const refreshOnlineCardFaces = async (friendships: Friendship[]): Promise<void> => {
+  let changed = false;
+  for (const f of friendships) {
+    if (f.status !== 'linked' || !f.otherProfile) continue;
+    const other = f.otherProfile;
+    const row = await getOnlineCardFaceRow(other.id);
+    if (!row) continue;
+    try {
+      const swapped = await recropIfAvatarChanged(row.sourceAvatarUrl, other.avatarUrl, async ({ dataUrl, sourceUrl }) => {
+        await setOnlineCardFace(other.id, dataUrl ?? row.dataUrl, sourceUrl);
+      });
+      if (swapped) changed = true;
+    } catch (err) {
+      // 取不到新头像：留旧图，指纹不更新，下一轮拉取再试
+      console.warn('[velvet-social] recrop friend face failed', other.id, err);
+    }
+  }
+  if (changed) useCloudSocialStore.getState().bumpCardFaces();
+};
+
 const syncLinkedProfiles = async (friendships: Friendship[]): Promise<void> => {
   const me = getUserId();
   if (!me) return;
@@ -176,6 +227,18 @@ const syncLinkedProfiles = async (friendships: Friendship[]): Promise<void> => {
       c => c.source === 'online' && c.linkedCloudUserId === other.id,
     );
     if (!existing) continue;
+
+    // 已缔结同伴的卡面（第 35 批）：裁过对方头像做卡面的，对方换头像后按新头像重裁。
+    // 本地上传过照片（customAvatarDataUrl）的卡面裁自那张照片，和对方头像无关，不碰
+    if (existing.cardFaceDataUrl && !existing.customAvatarDataUrl) {
+      try {
+        await recropIfAvatarChanged(existing.cardFaceSourceUrl, other.avatarUrl, async ({ dataUrl, sourceUrl }) => {
+          await appStore.updateConfidant(existing.id, { cardFaceSourceUrl: sourceUrl, ...(dataUrl ? { cardFaceDataUrl: dataUrl } : {}) });
+        });
+      } catch (err) {
+        console.warn('[velvet-social] recrop confidant face failed', existing.id, err);
+      }
+    }
 
     // 浅比较关键字段，相同就跳过，避免无谓写库 / re-render
     const snapshot = existing.linkedProfile;
@@ -429,10 +492,11 @@ const materializeCoopBonds = async (bonds: CoopBond[]): Promise<void> => {
       // 顺带把这位好友在「未缔结」阶段自己裁过的卡面搬过来——那张图是按云端 id 存的
       // （db.onlineCardFaces），缔结后本地有了 Confidant 行就该归它，否则用户裁过的图
       // 会在缔结那一刻凭空消失。搬完清掉原行，不留孤儿。
-      const carried = await getOnlineCardFace(other.id);
+      const carried = await getOnlineCardFaceRow(other.id);
       await appStore.updateConfidant(created.id, {
         linkedProfile: other,
-        ...(carried ? { cardFaceDataUrl: carried, avatarAsCardFace: true } : {}),
+        // 来源头像指纹一起搬（第 35 批）：缔结后对方换头像也能自动重裁
+        ...(carried ? { cardFaceDataUrl: carried.dataUrl, avatarAsCardFace: true, ...(carried.sourceAvatarUrl ? { cardFaceSourceUrl: carried.sourceAvatarUrl } : {}) } : {}),
       });
       if (carried) await clearOnlineCardFace(other.id);
     } catch (err) {

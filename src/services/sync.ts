@@ -601,9 +601,10 @@ function stripForCloud(key: string, rows: Row[], includeApiKey: boolean): Row[] 
   }
   if (key === 'confidants') {
     return rows.map(r => {
-      if (r && typeof r === 'object' && ('customAvatarDataUrl' in r || 'cardFaceDataUrl' in r)) {
-        const { customAvatarDataUrl: _omit, cardFaceDataUrl: _omit2, ...rest } = r;
-        void _omit; void _omit2;
+      if (r && typeof r === 'object' && ('customAvatarDataUrl' in r || 'cardFaceDataUrl' in r || 'cardFaceSourceUrl' in r)) {
+        // cardFaceSourceUrl 跟着卡面走（第 35 批）：它说的是**本机这张**卡面裁自哪张头像，上云会把另一台设备的对不上
+        const { customAvatarDataUrl: _omit, cardFaceDataUrl: _omit2, cardFaceSourceUrl: _omit3, ...rest } = r;
+        void _omit; void _omit2; void _omit3;
         return rest;
       }
       return r;
@@ -873,12 +874,14 @@ export async function localizeCloudRows(key: string, rows: Row[]): Promise<Row[]
     const local = await db.confidants.toArray();
     const avatarById = new Map(local.filter(c => typeof c.customAvatarDataUrl === 'string' && c.customAvatarDataUrl).map(c => [c.id, c.customAvatarDataUrl as string]));
     const faceById = new Map(local.filter(c => typeof c.cardFaceDataUrl === 'string' && c.cardFaceDataUrl).map(c => [c.id, c.cardFaceDataUrl as string]));
+    const faceSrcById = new Map(local.filter(c => typeof c.cardFaceSourceUrl === 'string' && c.cardFaceSourceUrl).map(c => [c.id, c.cardFaceSourceUrl as string]));
     toWrite = toWrite.map(r => {
       const id = r?.id as string | undefined;
       if (!r || !id) return r;
       let next = r;
       if (avatarById.has(id)) next = { ...next, customAvatarDataUrl: avatarById.get(id) };
       if (faceById.has(id)) next = { ...next, cardFaceDataUrl: faceById.get(id) };
+      if (faceSrcById.has(id)) next = { ...next, cardFaceSourceUrl: faceSrcById.get(id) };
       return next;
     });
   }

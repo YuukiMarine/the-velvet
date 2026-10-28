@@ -99,7 +99,7 @@ export function Cooperation() {
   /** 未缔结好友的自裁卡面（db.onlineCardFaces，按对方云端 id 索引；本地专属不上云） */
   const [friendFaces, setFriendFaces] = useState<Record<string, string>>({});
   /** 正在裁切卡面的好友 + 已 fetch 成 File 的原图 */
-  const [friendCrop, setFriendCrop] = useState<{ userId: string; name: string; file: File } | null>(null);
+  const [friendCrop, setFriendCrop] = useState<{ userId: string; name: string; file: File; sourceUrl?: string } | null>(null);
   const [coopAcceptBond, setCoopAcceptBond] = useState<CoopBond | null>(null);
   const menuAnchorRef = useRef<HTMLDivElement>(null);
 
@@ -326,12 +326,13 @@ export function Cooperation() {
 
   const showOnlineFriends = filter === 'all' || filter === 'online';
 
-  // 自裁卡面表：进页面读一次；裁完由 setFriendFaces 就地更新，不必重读
+  // 自裁卡面表：进页面读一次；裁完由 setFriendFaces 就地更新；后台因对方换头像而重裁过（第 35 批）就按版本号重读
+  const cardFacesVersion = useCloudSocialStore(s => s.cardFacesVersion);
   useEffect(() => {
     let cancelled = false;
     void getAllOnlineCardFaces().then(m => { if (!cancelled) setFriendFaces(m); });
     return () => { cancelled = true; };
-  }, []);
+  }, [cardFacesVersion]);
 
   /**
    * 未缔结好友 → 牌阵条目（用户口径：占位卡横在墙上方太奇怪，让它们进牌阵）。
@@ -366,7 +367,8 @@ export function Cooperation() {
    * toDataURL 抛异常；fetch 不因 4xx/5xx reject，必须自己查 res.ok。
    */
   const openFriendCrop = async (item: FriendWallItem) => {
-    const src = item.faceDataUrl || item.profile.avatarUrl;
+    // 源图优先用对方当前的头像（第 35 批修：以前先取旧裁切图，对方换了头像「重新裁切」裁的还是旧图）
+    const src = item.profile.avatarUrl || item.faceDataUrl;
     const name = item.profile.nickname || item.profile.userId || '未命名客人';
     if (!src) {
       setPrayerError({ id: item.profile.id, message: '还没取到 Ta 的头像，稍后再试' });
@@ -378,7 +380,7 @@ export function Cooperation() {
       const res = await fetch(src);
       if (!res.ok) throw new Error(String(res.status));
       const blob = await res.blob();
-      setFriendCrop({ userId: item.profile.id, name, file: new File([blob], 'friend-face', { type: blob.type || 'image/jpeg' }) });
+      setFriendCrop({ userId: item.profile.id, name, sourceUrl: item.profile.avatarUrl, file: new File([blob], 'friend-face', { type: blob.type || 'image/jpeg' }) });
     } catch {
       setPrayerError({ id: item.profile.id, message: '取不到原图，换个网络再试' });
       setTimeout(() => setPrayerError(null), 3000);
@@ -1015,9 +1017,10 @@ export function Cooperation() {
         onCancel={() => setFriendCrop(null)}
         onConfirm={async (dataUrl) => {
           const uid = friendCrop?.userId;
+          const sourceUrl = friendCrop?.sourceUrl;
           setFriendCrop(null);
           if (!uid) return;
-          await setOnlineCardFace(uid, dataUrl);
+          await setOnlineCardFace(uid, dataUrl, sourceUrl);
           setFriendFaces(prev => ({ ...prev, [uid]: dataUrl }));
         }}
       />

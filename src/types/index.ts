@@ -2096,6 +2096,11 @@ export interface Confidant {
    */
   cardFaceDataUrl?: string;
   /**
+   * 仅在线同伴：cardFaceDataUrl 是从对方哪张头像裁出来的（URL 即指纹，第 35 批）。拉取快照时对不上 = 对方换了头像
+   * → 自动按新头像居中重裁。和 cardFaceDataUrl 一样只留本机（sync.ts 剥掉 / 拉取时补回），两台设备各记各的。
+   */
+  cardFaceSourceUrl?: string;
+  /**
    * 仅在线同伴：是否在卡片上优先显示塔罗而非对方头像。
    * 默认 false（显示头像）；用户可在卡片长按菜单切换。
    */
@@ -2290,6 +2295,11 @@ export interface OnlineCardFace {
   userId: string;
   dataUrl: string;
   updatedAt: Date;
+  /**
+   * 这张卡面是从对方哪张头像裁出来的（PB 文件 URL；换头像文件名就变，URL 即指纹；第 35 批）。
+   * 拉取时对不上 = 对方换了头像 → 自动按新头像居中重裁。老行没有这个字段：第一次见到时回填当前 URL、不重裁。
+   */
+  sourceAvatarUrl?: string;
 }
 
 export interface Friendship {

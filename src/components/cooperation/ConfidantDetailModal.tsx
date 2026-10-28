@@ -411,7 +411,9 @@ export function ConfidantDetailModal({
 
   const handleCardFaceCropConfirm = async (dataUrl: string) => {
     setPendingCardFaceFile(null);
-    await updateConfidant(confidant.id, { cardFaceDataUrl: dataUrl, avatarAsCardFace: true });
+    // 在线同伴记下裁的是对方哪张头像（第 35 批）：对方换头像后自动按新头像重裁；离线同伴是本地上传，没有来源
+    const sourceUrl = confidant.source === 'online' && !confidant.customAvatarDataUrl ? confidant.linkedProfile?.avatarUrl : undefined;
+    await updateConfidant(confidant.id, { cardFaceDataUrl: dataUrl, avatarAsCardFace: true, ...(sourceUrl ? { cardFaceSourceUrl: sourceUrl } : {}) });
   };
 
   // portal 到 body（审计 §3.6）：树内 fixed 会被页面容器的 transform/clip 创建的
