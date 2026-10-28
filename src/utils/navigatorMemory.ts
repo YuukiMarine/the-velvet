@@ -18,7 +18,7 @@ import { tokenize, queryChars } from '@/utils/navigatorIndex';
 import { useAppStore, toLocalDateKey } from '@/store';
 import { chatComplete, getAIConfig, type AIConfig, type AIMessage } from '@/utils/aiClient';
 import { BUILTIN_NAVIGATOR_PRESETS, resolveNavigatorPreset } from '@/constants/navigatorPresets';
-import { calendarTable, dayLabelCN, keyOfDate, relativeDayCN, shortMD } from '@/utils/navigatorClock';
+import { calendarTable, dayLabelCN, daysBetween, keyOfDate, relativeDayCN, shortMD } from '@/utils/navigatorClock';
 import { followUpCoveredByPromise, isPromise, mentionsTopic, promisePhase, savePromisesFromCompact } from '@/utils/navigatorPromise';
 import type { NavigatorMemo, NavigatorMessageRow, NavigatorPreset, ProfileBlockMeta, ProfileBlocks } from '@/types';
 
@@ -68,6 +68,10 @@ interface CompactResult {
   followUp: string | null;
   /** 画像：只有变化的块（第 26 批起分块）；无变化为 null */
   profile: Partial<ProfileBlocks> | null;
+  /** 短对话里归档器标为「关键自我定义」而改的块（第 35 批 f）：短会话只认这几块 */
+  keyBlocks: Array<keyof ProfileBlocks>;
+  /** 归档器说过时的近况该清掉（输出了 "recent":""；只在近况确实超过 30 天没更新时生效） */
+  clearRecent: boolean;
   /** 带日子、过后要问结果的事（第二批回访约定：会话末补记漏掉的） */
   promises: unknown[];
   bits: CompactBit[];
@@ -79,6 +83,32 @@ const PROFILE_ID = 'navigator-user-profile';
 export const PROFILE_KEYS: Array<keyof ProfileBlocks> = ['identity', 'goals', 'preferences', 'recent', 'rules'];
 export const PROFILE_LABELS: Record<keyof ProfileBlocks, string> = { identity: '身份与处境', goals: '长期目标', preferences: '偏好与雷区', recent: '近况', rules: '相处守则' };
 export const PROFILE_LIMITS: Record<keyof ProfileBlocks, number> = { identity: 120, goals: 120, preferences: 120, recent: 100, rules: 100 };
+/** 近况超过这么多天没更新就算过时（第 35 批 f）：注入时标出来，整理时可按新材料重写、没有就清掉 */
+export const PROFILE_RECENT_STALE_DAYS = 30;
+/** 短会话也允许按「关键自我定义」改的几块（第 35 批 f；goals / recent 短会话不动） */
+export const PROFILE_KEY_BLOCKS: Array<keyof ProfileBlocks> = ['identity', 'preferences', 'rules'];
+
+/** 近况记了多少天了（没有来历 = 老数据，算不出来返回 null） */
+export function recentAgeDays(meta: Partial<Record<keyof ProfileBlocks, ProfileBlockMeta>>, todayKey: string = toLocalDateKey()): number | null {
+  const d = meta.recent?.day;
+  return d ? Math.max(0, daysBetween(d, todayKey)) : null;
+}
+export const isRecentStale = (meta: Partial<Record<keyof ProfileBlocks, ProfileBlockMeta>>, todayKey: string = toLocalDateKey()): boolean =>
+  (recentAgeDays(meta, todayKey) ?? 0) > PROFILE_RECENT_STALE_DAYS;
+
+/** 给整理器看的画像文本（第 35 批 f）：每块带来历（谁 / 哪天 / 据什么），过时的近况标出来 */
+export function profileTextForPrompt(blocks: ProfileBlocks, meta: Partial<Record<keyof ProfileBlocks, ProfileBlockMeta>>, todayKey: string = toLocalDateKey()): string {
+  const lines = PROFILE_KEYS.filter((k) => blocks[k]).map((k) => {
+    const m = meta[k];
+    const who = m ? (m.by === 'user' ? '用户手改' : `AI ${m.from === 'records' ? '据记录' : '据聊天'}整理`) : '';
+    const age = m?.day ? daysBetween(m.day, todayKey) : null;
+    const when = m?.day ? `${dayLabelCN(m.day, todayKey)}${age !== null && age > 0 ? `，${age} 天前` : ''}` : '';
+    const stale = k === 'recent' && isRecentStale(meta, todayKey) ? `已超过 ${PROFILE_RECENT_STALE_DAYS} 天没更新，可能过时` : '';
+    const parts = [[who, when].filter(Boolean).join(' '), stale].filter(Boolean);
+    return `${k}（${PROFILE_LABELS[k]}）${parts.length ? `（${parts.join('；')}）` : ''}：${blocks[k]}`;
+  });
+  return lines.join('\n') || '（暂无）';
+}
 
 // ── 记忆隔离（第 23 批）：判定在 navigatorMemoryScope；开了之后按人格分，没标人格的是共享 ──
 export { memoryIsolated, memoVisibleTo, memoOwner, memoOwners, ownersKey, ownersPatch } from '@/utils/navigatorMemoryScope';
@@ -97,12 +127,14 @@ const trimBlocks = (b: Partial<ProfileBlocks> | undefined | null): ProfileBlocks
 const blocksEmpty = (b: ProfileBlocks): boolean => PROFILE_KEYS.every((k) => !b[k]);
 const blocksEqual = (a: ProfileBlocks, b: ProfileBlocks): boolean => PROFILE_KEYS.every((k) => (a[k] ?? '') === (b[k] ?? ''));
 
-/** 注入用的一段：只有「身份」一块时原样给（老画像 / 手写的整段），多块时带标签 */
-export function flattenProfile(b: ProfileBlocks): string {
+/** 注入用的一段：只有「身份」一块时原样给（老画像 / 手写的整段），多块时带标签；recentAge 给了且过时 → 近况标「可能已过时」（第 35 批 f） */
+export function flattenProfile(b: ProfileBlocks, recentAge?: number | null): string {
   const present = PROFILE_KEYS.filter((k) => b[k]);
+  const label = (k: keyof ProfileBlocks): string =>
+    k === 'recent' && typeof recentAge === 'number' && recentAge > PROFILE_RECENT_STALE_DAYS ? `近况（${recentAge} 天前记的，可能已过时）` : PROFILE_LABELS[k];
   if (!present.length) return '';
   if (present.length === 1 && present[0] === 'identity') return b.identity!;
-  return present.map((k) => `${PROFILE_LABELS[k]}：${b[k]}`).join('；');
+  return present.map((k) => `${label(k)}：${b[k]}`).join('；');
 }
 
 /** 行 → 块：没分过块的老画像整段算「身份」 */
@@ -158,9 +190,10 @@ export interface ProfileWriteSource {
   recordsAt?: string;
 }
 
-/** 注入用的整段文字 */
+/** 注入用的整段文字（过时的近况带标注，第 35 批 f） */
 export async function getProfile(presetId?: string): Promise<string> {
-  return flattenProfile(await getProfileBlocks(presetId));
+  const st = await getProfileState(presetId);
+  return flattenProfile(st.blocks, recentAgeDays(st.meta));
 }
 
 /**
@@ -267,7 +300,7 @@ function extractJson(raw: string): Record<string, unknown> | null {
 
 const COMPACT_PROTOCOL = `你是对话归档器。把给定的「用户与陪伴 AI 的对话片段」压缩归档。
 只输出这一个 JSON 对象（不要代码块、不要其它文字）：
-{"summary":"","personaSummary":"","memories":[],"followUp":null,"profile":null,"promises":[],"bits":[]}
+{"summary":"","personaSummary":"","memories":[],"followUp":null,"profile":null,"keyBlocks":[],"promises":[],"bits":[]}
 - summary：中性第三人称摘要，≤120 字，保留具体事实（做了什么/提到什么/情绪如何）。
 - personaSummary：同样内容，改用陪伴 AI 的第一人称口吻复述，≤100 字。
 - memories：0~2 条值得长期记住的**关于用户的**原子事实（各 ≤40 字，中性陈述句），
@@ -286,6 +319,11 @@ const COMPACT_PROTOCOL = `你是对话归档器。把给定的「用户与陪伴
 - profile：【现有用户画像】分五块——identity 身份与处境 / goals 长期目标 / preferences 偏好与雷区 / recent 近况 / rules 相处守则（他希望你怎么对他）。
   拿它和本段对话对照，只输出**有变化的块**，每块写更新后的全文（identity / goals / preferences ≤120 字，recent / rules ≤100 字，中性第三人称，合并去重）：如 {"recent":"…"}；都没变化就 null。
   不要把短期琐事写进画像；rules 只在他明确表达过（「我说累的时候别催我」）时写，写成「他希望…」。
+  每块后面括号里写了它上次是谁、哪天、据什么改的：**用户手改**的块只在他这段亲口说的和它明显矛盾、或有了新进展时才改，别用你的措辞重写它；
+  标了「可能过时」的近况：这段对话里有新近况就重写，没有就输出 "recent":"" 把它清掉（只有这种情况才允许输出空串）。
+  输入里标了【短对话】的：goals / recent 不改；identity / preferences / rules 只在他亲口说出关于自己的**关键定义**时才改
+  （身份 / 处境变了、明确说出的喜好或雷区、希望被怎样对待），并把改的块名写进 keyBlocks（如 ["preferences"]）；没有就 profile 为 null。
+- keyBlocks：只在【短对话】里按上一条改了画像时填块名；平常为 []。
 - **日子写具体**：输入第一行写了这段对话发生在哪天。对话里「今天 / 明天 / 后天 / 周五 / 下周一 / 月底」
   这类说法，写进 summary、memories、followUp 时一律换成具体日子（如「10月3日（周五）」）——
   这些文字以后会在别的日子被读到，「明天」到那时就错了。实在定不下来的，写「10月1日提到的“下周”」。
@@ -334,6 +372,12 @@ const cleanCues = (raw: unknown): string[] | undefined => {
   return out.length ? out : undefined;
 };
 
+/** 归档时画像这头的附加信息（第 35 批 f）：每块的来历；short = 短会话（只认关键自我定义） */
+interface CompactProfileOpts {
+  meta?: Partial<Record<keyof ProfileBlocks, ProfileBlockMeta>>;
+  short?: boolean;
+}
+
 async function compactViaAI(
   cfg: AIConfig,
   lines: string[],
@@ -342,14 +386,16 @@ async function compactViaAI(
   /** 这段对话发生在哪天（YYYY-MM-DD）：模型据此把「明天 / 周五」换成具体日子 */
   dateKey: string,
   related: RelatedMemo[] = [],
+  profileOpts: CompactProfileOpts = {},
 ): Promise<CompactResult | null> {
   try {
     let raw: string;
-    const profileText = PROFILE_KEYS.filter((k) => oldProfile[k]).map((k) => `${k}（${PROFILE_LABELS[k]}）：${oldProfile[k]}`).join('\n') || '（暂无）';
+    const profileText = profileTextForPrompt(oldProfile, profileOpts.meta ?? {}, dateKey);
     const relatedText = related.length ? related.map((r) => `- ${r.ref}（${shortMD(r.dateKey)} 记）：${r.text}`).join('\n') : '（无）';
+    const shortLine = profileOpts.short ? '【短对话】这段很短：goals / recent 不改；identity / preferences / rules 只在他亲口说出关于自己的关键定义时改，并写进 keyBlocks。\n' : '';
     const messages: AIMessage[] = [
       { role: 'system', content: COMPACT_PROTOCOL },
-      { role: 'user', content: `这段对话发生在 ${dayLabelCN(dateKey)}（${dateKey}）。\n【日历】\n${calendarTable(dateKey, 21)}\n陪伴 AI 的名字：${personaName}\n【现有用户画像】\n${profileText}\n【已有的相关记忆】\n${relatedText}\n【对话片段】\n${lines.join('\n')}` },
+      { role: 'user', content: `这段对话发生在 ${dayLabelCN(dateKey)}（${dateKey}）。\n【日历】\n${calendarTable(dateKey, 21)}\n陪伴 AI 的名字：${personaName}\n${shortLine}【现有用户画像】\n${profileText}\n【已有的相关记忆】\n${relatedText}\n【对话片段】\n${lines.join('\n')}` },
     ];
     try {
       raw = await chatComplete(cfg, messages, { temperature: 0.3, maxTokens: 1100, jsonMode: true, purpose: 'compact' });
@@ -381,12 +427,17 @@ async function compactViaAI(
     if (!summary) return null;
     // 画像：对象（分块）或旧式整段字符串（当作 identity）
     let profile: Partial<ProfileBlocks> | null = null;
+    let clearRecent = false;
     if (parsed.profile && typeof parsed.profile === 'object') {
-      const pb = trimBlocks(parsed.profile as Partial<ProfileBlocks>);
+      const rawProfile = parsed.profile as Record<string, unknown>;
+      clearRecent = rawProfile.recent === '';
+      const pb = trimBlocks(rawProfile as Partial<ProfileBlocks>);
       profile = blocksEmpty(pb) ? null : pb;
     } else if (typeof parsed.profile === 'string' && parsed.profile.trim()) {
       profile = { identity: parsed.profile.trim().slice(0, 400) };
     }
+    const keyBlocks = (Array.isArray(parsed.keyBlocks) ? parsed.keyBlocks : [])
+      .filter((k): k is keyof ProfileBlocks => typeof k === 'string' && (PROFILE_KEYS as string[]).includes(k));
     const bits: CompactBit[] = [];
     for (const b of (Array.isArray(parsed.bits) ? parsed.bits : []).slice(0, 2)) {
       const r = (b && typeof b === 'object') ? b as Record<string, unknown> : {};
@@ -401,6 +452,8 @@ async function compactViaAI(
       memories,
       followUp: String(parsed.followUp ?? '').trim().slice(0, 40) || null,
       profile,
+      keyBlocks,
+      clearRecent,
       promises: Array.isArray(parsed.promises) ? parsed.promises : [],
       bits,
     };
@@ -468,9 +521,16 @@ async function persistMemories(
   // 画像：归档器只回有变化的块 → 合并进现有的（用户手改的版本会在下次 compact 时作为"现有画像"喂回，形成闭环）。
   // 短会话（第 13 轮降门槛后）只收记忆、不让它改画像（allowProfile=false）
   // 第 33 批：设置里「画像自动更新」关着就不动画像；锁住的块不动；改到的块记下「AI · 哪天 · 来自聊天」
-  if (result.profile && allowProfile && profileAutoOn()) {
+  // 第 35 批 f：短会话也能改——但只认归档器标为「关键自我定义」的 identity / preferences / rules；过时的近况（>30 天）它说清掉就清
+  if ((result.profile || result.clearRecent) && profileAutoOn()) {
     const st = await getProfileState(presetId);
-    const patch = withoutLocked(result.profile, st.locks);
+    let patch: Partial<ProfileBlocks> = { ...(result.profile ?? {}) };
+    if (!allowProfile) {
+      const keep = result.keyBlocks.filter((k) => PROFILE_KEY_BLOCKS.includes(k) && patch[k]);
+      patch = Object.fromEntries(keep.map((k) => [k, patch[k]])) as Partial<ProfileBlocks>;
+    }
+    if (result.clearRecent && allowProfile && st.blocks.recent && isRecentStale(st.meta)) patch.recent = '';
+    patch = withoutLocked(patch, st.locks);
     if (Object.keys(patch).length) await saveProfileBlocks({ ...st.blocks, ...patch }, presetId, { by: 'ai', from: 'chat', day: sessionDateKey }).catch(() => {});
   }
   // 回访约定：会话末补记漏掉的；话头若和约定撞了就不挂（约定那边会问，问两遍就破了「只问一次」）
@@ -599,12 +659,13 @@ async function finalizeStaleSessionsInner(activePresetId?: string): Promise<Last
         const personaName = await personaNameOf(session.presetId, custom);
         const lines = rowsToLines(rows).slice(-80);
         const related = await relatedMemosFor(lines, sessionPreset);
-        const result = await compactViaAI(cfg, lines, personaName, await getProfileBlocks(sessionPreset), session.dateKey, related);
+        const allowProfile = userMsgs.length >= PROFILE_MIN_USER_MSGS || userChars >= PROFILE_MIN_USER_CHARS;
+        const profileState = await getProfileState(sessionPreset);
+        const result = await compactViaAI(cfg, lines, personaName, profileState.blocks, session.dateKey, related, { meta: profileState.meta, short: !allowProfile });
         if (result) {
           summary = result.summary;
           personaSummary = result.personaSummary;
-          await persistMemories(result, session.dateKey,
-            userMsgs.length >= PROFILE_MIN_USER_MSGS || userChars >= PROFILE_MIN_USER_CHARS, sessionPreset, personaName, related, session.id);
+          await persistMemories(result, session.dateKey, allowProfile, sessionPreset, personaName, related, session.id);
         } else {
           summary = localSummary(rows);
         }
@@ -732,7 +793,8 @@ async function compactLiveInner(
   if (cfg && total <= HARD_CAP_TOKENS) {
     const lines = rowsToLines(squash).slice(-100);
     const related = await relatedMemosFor(lines, presetId);
-    const result = await compactViaAI(cfg, lines, personaName, await getProfileBlocks(presetId), toLocalDateKey(), related);
+    const profileState = await getProfileState(presetId);
+    const result = await compactViaAI(cfg, lines, personaName, profileState.blocks, toLocalDateKey(), related, { meta: profileState.meta });
     if (result) {
       await persistMemories(result, toLocalDateKey(), true, presetId, personaName, related, sessionId);
       summaryText = result.summary;

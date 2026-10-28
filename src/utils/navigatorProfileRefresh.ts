@@ -17,7 +17,7 @@ import { dayLabelCN, daysBetween } from '@/utils/navigatorClock';
 import { activeCountdowns, activeWishes, attrName, bigDealsCleared, habits, wishProgress } from '@/utils/navigatorRecords';
 import { briefingEnabled } from '@/utils/navigatorBriefing';
 import { isPromise } from '@/utils/navigatorPromise';
-import { getProfileState, memoryIsolated, memoVisibleTo, PROFILE_KEYS, PROFILE_LABELS, PROFILE_LIMITS, profileAutoOn, saveProfileBlocks, withoutLocked } from '@/utils/navigatorMemory';
+import { getProfileState, isRecentStale, memoryIsolated, memoVisibleTo, PROFILE_KEYS, PROFILE_LABELS, PROFILE_LIMITS, profileAutoOn, profileTextForPrompt, saveProfileBlocks, withoutLocked } from '@/utils/navigatorMemory';
 import type { ProfileBlocks, WeeklyGoalItem } from '@/types';
 
 /** 参考记录整理画像的间隔（天；用户 10-27 定） */
@@ -92,6 +92,8 @@ const REFRESH_PROTOCOL = `你是用户画像整理员。给你【现有用户画
   记录推不出他喜欢什么、讨厌什么、希望被怎样对待——identity、preferences、rules 不要根据记录改。
 - 【聊天里的材料】里他亲口说过的，几块都可以据此改；rules 只在他明确表达过时写，写成「他希望…」。
 - 【只能改这几块】之外的块一个字都不要输出。
+- 每块后面括号里写了它上次是谁、哪天、据什么改的：**用户手改**的块只在材料里他亲口说的和它明显矛盾、或有了新进展时才改，别用你的措辞重写它。
+- 标了「可能过时」的近况：材料里有新近况就重写；没有就输出 "recent":"" 把它清掉（只有这种情况才允许输出空串）。
 - 旧内容仍然对就保留，过时的改掉；一次性的琐事不进画像；不编材料里没有的事。`;
 
 export interface ProfileProposal {
@@ -115,7 +117,7 @@ export async function proposeProfileRefresh(presetId: string | undefined, opts: 
   if (!facts.length && !talk.length) return { next: st.blocks, changed: [], fromByKey: {} };
   const allowed = (opts.chat ? PROFILE_KEYS : RECORD_KEYS).filter((k) => !st.locks.includes(k));
   if (!allowed.length) return { next: st.blocks, changed: [], fromByKey: {} };
-  const profileText = PROFILE_KEYS.filter((k) => st.blocks[k]).map((k) => `${k}（${PROFILE_LABELS[k]}）：${st.blocks[k]}`).join('\n') || '（暂无）';
+  const profileText = profileTextForPrompt(st.blocks, st.meta, todayKey);
   const messages: AIMessage[] = [
     { role: 'system', content: REFRESH_PROTOCOL },
     {
@@ -154,7 +156,9 @@ export async function proposeProfileRefresh(presetId: string | undefined, opts: 
   const from = parsed.from && typeof parsed.from === 'object' ? parsed.from as Record<string, unknown> : {};
   for (const k of allowed) {
     const v = typeof prof[k] === 'string' ? (prof[k] as string).replace(/\s+/g, ' ').trim().slice(0, PROFILE_LIMITS[k]) : '';
-    if (!v || v === (st.blocks[k] ?? '')) continue;
+    // 过时的近况（>30 天）它说清掉（输出了空串）→ 清（第 35 批 f）；别的块空串一律当没改
+    if (!v && !(k === 'recent' && prof.recent === '' && st.blocks.recent && isRecentStale(st.meta, todayKey))) continue;
+    if (v === (st.blocks[k] ?? '')) continue;
     patch[k] = v;
     // 只给了记录这一路就是 records；两路都有按模型说的，没说的算聊天
     fromByKey[k] = !opts.chat ? 'records' : from[k] === 'records' ? 'records' : 'chat';

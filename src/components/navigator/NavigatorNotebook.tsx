@@ -15,7 +15,7 @@ import { db } from '@/db';
 import { SheetModal } from '@/components/SheetModal';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import {
-  findDuplicateMemos, getProfileState, listBits, memoOwners, mergeMemos, ownersPatch, PROFILE_KEYS, PROFILE_LABELS, PROFILE_LIMITS,
+  findDuplicateMemos, getProfileState, isRecentStale, listBits, memoOwners, mergeMemos, ownersPatch, PROFILE_KEYS, PROFILE_LABELS, PROFILE_LIMITS,
   saveProfileBlocks, setProfileLock, undoProfile, type MergeProposal,
 } from '@/utils/navigatorMemory';
 import { applyProfileProposal, proposeProfileRefresh, type ProfileProposal } from '@/utils/navigatorProfileRefresh';
@@ -67,10 +67,12 @@ const shortDay = (day: string): string => {
   const [y, m, d] = day.split('-');
   return y && y !== String(new Date().getFullYear()) ? `${y.slice(2)}-${m}-${d}` : `${m}-${d}`;
 };
-const metaTagText = (meta: ProfileBlockMeta | undefined): string => {
+const metaTagText = (meta: ProfileBlockMeta | undefined, stale = false): string => {
   if (!meta) return '';
-  if (meta.by === 'user') return `你改的 · ${shortDay(meta.day)}`;
-  return `AI · ${shortDay(meta.day)}${meta.from === 'records' ? ' · 来自记录' : meta.from === 'chat' ? ' · 来自聊天' : ''}`;
+  // 近况超过 30 天没更新（第 35 批 f）：标一句，它整理时会按新材料重写或清掉
+  const tail = stale ? ' · 可能过时' : '';
+  if (meta.by === 'user') return `你改的 · ${shortDay(meta.day)}${tail}`;
+  return `AI · ${shortDay(meta.day)}${meta.from === 'records' ? ' · 来自记录' : meta.from === 'chat' ? ' · 来自聊天' : ''}${tail}`;
 };
 
 // ── 皮肤小件（都在模块顶层：写在组件里每次渲染都是新组件，整列重挂） ──
@@ -466,9 +468,9 @@ export const NavigatorNotebook = ({ isOpen, onClose }: { isOpen: boolean; onClos
             <div className="space-y-2">
               {refresh.p.changed.map((key) => (
                 <div key={key} data-review-block={key}>
-                  <p className="text-[11px] font-black" style={{ color: k.sub }}>{PROFILE_LABELS[key]} · {refresh.p.fromByKey[key] === 'records' ? '按你的记录' : '按最近的聊天'}</p>
+                  <p className="text-[11px] font-black" style={{ color: k.sub }}>{PROFILE_LABELS[key]} · {!refresh.p.next[key] ? '超过 30 天没更新、材料里也没有新的' : refresh.p.fromByKey[key] === 'records' ? '按你的记录' : '按最近的聊天'}</p>
                   {profile[key] && <p className="text-[12px] leading-relaxed line-through" style={{ color: k.sub, opacity: 0.75 }}>{profile[key]}</p>}
-                  <p className="text-[12.5px] font-bold leading-relaxed" style={{ color: k.ink }}>{refresh.p.next[key]}</p>
+                  <p className="text-[12.5px] font-bold leading-relaxed" style={{ color: k.ink }}>{refresh.p.next[key] || '（过时了，清掉）'}</p>
                 </div>
               ))}
             </div>
@@ -482,7 +484,7 @@ export const NavigatorNotebook = ({ isOpen, onClose }: { isOpen: boolean; onClos
       <div className="space-y-2.5" data-profile-blocks>
         {PROFILE_KEYS.map((key, i) => {
           const locked = profileLocks.includes(key);
-          const tag = metaTagText(profileMeta[key]);
+          const tag = metaTagText(profileMeta[key], key === 'recent' && isRecentStale(profileMeta));
           return (
             <Panel key={key} skin={skin} seed={20 + i * 3}>
               <div className="mb-1.5 flex items-center gap-2" data-profile-block={key}>
