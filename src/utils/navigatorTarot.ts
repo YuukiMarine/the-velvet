@@ -46,7 +46,9 @@ const writeConclusion = (id: string, text: string): void => {
 export function localConclusion(content: string): string {
   const paras = content.replace(/```[\s\S]*?```/g, '').split(/\n\s*\n/).map((p) => p.replace(/^[#>*\-\s]+/, '').replace(/[*_`]/g, '').trim()).filter((p) => p.length >= 6);
   const last = paras[paras.length - 1] ?? '';
-  const first = last.split(/(?<=[。！？!?])/)[0]?.trim() ?? '';
+  // 取到第一个句末标点为止（不用 lookbehind：旧 iOS WebView 不认，整个模块都会挂）
+  const end = last.search(/[。！？!?]/);
+  const first = end >= 0 ? last.slice(0, end + 1).trim() : '';
   return (first || last).slice(0, CONCLUSION_MAX);
 }
 
@@ -106,7 +108,9 @@ export async function buildTarotFacts(settings: Settings, todayKey: string = toL
       .slice(0, 2);
   } catch { /* */ }
   const glimpses: FateGlimpse[] = useAppStore.getState().fateGlimpses.filter((g) => g.buffEnd >= todayKey && g.buffStart <= todayKey);
-  const sig = [todayKey, dailies.map((d) => `${d.date}:${d.cardId}`).join(','), readings.map((r) => r.id + (r.followUps?.length ?? 0)).join(','), glimpses.map((g) => g.id).join(',')].join('|');
+  // 签名里带上「结论压好了没」：第一次赶不上 3s 用的是本地那句，AI 的落进缓存后下一轮就换上
+  const concluded = readConclusions();
+  const sig = [todayKey, dailies.map((d) => `${d.date}:${d.cardId}`).join(','), readings.map((r) => `${r.id}:${r.followUps?.length ?? 0}:${concluded[r.id] ? 'c' : 'n'}`).join(','), glimpses.map((g) => g.id).join(',')].join('|');
   if (cache && cache.sig === sig) return cache.text;
 
   const lines: string[] = [];
