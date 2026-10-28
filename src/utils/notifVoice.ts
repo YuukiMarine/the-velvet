@@ -13,7 +13,7 @@ import type { NavigatorPreset, NotifContentType, Settings } from '@/types';
 import type { NotifText } from '@/utils/notifications';
 import { chatComplete, getAssistantAIConfig } from '@/utils/aiClient';
 import { db } from '@/db';
-import { resolveNavigatorPreset } from '@/constants/navigatorPresets';
+import { personaWithExamples, resolveNavigatorPreset } from '@/constants/navigatorPresets';
 
 const CACHE_KEY = 'velvet-notif-voice-v1';
 
@@ -79,7 +79,8 @@ export function refreshNotifVoiceIfNeeded(settings: Settings, onFresh: () => voi
       } catch { /* 表读取失败按内置处理 */ }
       const preset = resolveNavigatorPreset(settings.navigatorPresetId, custom);
       const raw = await chatComplete(cfg, [
-        { role: 'system', content: `${preset.personaPrompt}\n\n${TASK_PROMPT}` },
+        // 人格头与聊天回合同口径（第 35 批 · 串戏排查）
+        { role: 'system', content: `${personaWithExamples(preset)}\n\n${TASK_PROMPT}` },
         { role: 'user', content: '请写今天的 5 条提醒文案，按要求输出 JSON。' },
       ], { temperature: 0.8, maxTokens: 700, purpose: 'notifvoice' });
       const stripped = raw.replace(/```(?:json)?/gi, '').trim();

@@ -1186,8 +1186,9 @@ export async function generateAIGreeting(
         content: [
           buildDynamicContext(snap, []),
           // 今天截止的任务（第 28 批）：塔罗那句之后顺口提一句，带几点的说几点；按人格说，一句就好，不催不说教
+          // 以前写死「说完塔罗那句之后」：问候里未必有塔罗那句（配额用完 / 没抽），模型会为了对上这条硬提一句塔罗（第 35 批）
           snap.todayDeadlines.length
-            ? `【今天到期的任务】${snap.todayDeadlines.map((d) => `${d.time ? `${d.time} ` : ''}「${d.title}」`).join('、')}——说完塔罗那句之后顺带提一下（一句就好，按你自己的性格说，不催、不说教；它们在上面的未完成待办里，别重复列）。`
+            ? `【今天到期的任务】${snap.todayDeadlines.map((d) => `${d.time ? `${d.time} ` : ''}「${d.title}」`).join('、')}——问候里顺带提一下（一句就好，按你自己的性格说，不催、不说教；它们在上面的未完成待办里，别重复列）。`
             : '',
           ...extraContext,
         ].filter(Boolean).join('\n'),

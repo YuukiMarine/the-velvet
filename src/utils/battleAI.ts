@@ -1,4 +1,6 @@
-import { AttributeId, PersonaSkill, PersonaSourceId, Settings } from '@/types';
+import { AttributeId, NavigatorPreset, PersonaSkill, PersonaSourceId, Settings } from '@/types';
+import { db } from '@/db';
+import { personaWithExamples, resolveNavigatorPreset } from '@/constants/navigatorPresets';
 import { chatComplete, chatStream, getAIConfig, getDeliberateAIConfig, isRelayCapacityError, rateLimitWaitMs, type AIConfig } from '@/utils/aiClient';
 import type { MoonRevealData } from '@/battle/moonBoss';
 export type { MoonRevealData };
@@ -1416,22 +1418,34 @@ export interface DefeatFacts {
   hpLostToPoisonOrThorns?: boolean;
 }
 
+/** 无 Key / 失败时的模板信：中性口吻（第 35 批 · 串戏排查：以前是黑猫腔带「喵」，换了人格也照发） */
 export function defeatLetterFallback(f: DefeatFacts): string {
   return [
-    `喵。今晚 ${f.floor}F 的事我都看见了——${f.shadowName} 把你打下来的那一下，疼吧。`,
+    `今晚 ${f.floor}F 的事我都看见了——${f.shadowName} 把你打下来的那一下，疼吧。`,
     `但账要算清楚：你砍出了 ${f.damageDealt} 点伤害，最重的一击 ${f.maxSingleHit}，弱点戳中 ${f.weaknessHits} 次，还顺手清了 ${f.mobsDefeated} 只杂影。这些它都记得，塔也记得。`,
     `明晚把 HP 管好点，看到危险意图就防御，别嫌回合亏。它在【${f.stratumName}】等你，我也等你。`,
   ].join('\n');
 }
 
+/**
+ * 败因信由**当前助手人格**来写（第 35 批 · 串戏排查）：以前提示词写死「黑猫领航员 / 毒舌 / 可带一声喵」，
+ * 而这封信会以 cat 消息进当前人格的聊天历史——换了人格也是一封猫腔的信，模型读到会跟着学。
+ * 现在按设置里的人格解析（自定义人格在表里，读不到按内置），人格头与聊天回合同口径。
+ */
 export async function generateDefeatLetter(settings: Settings, f: DefeatFacts): Promise<string> {
   const cfg = getAIConfig(settings);
   if (!cfg) return defeatLetterFallback(f);
-  const prompt = `你是Persona系游戏里的黑猫领航员（毒舌但真心为主人好）。玩家今晚在"影时间高塔"败退了，给玩家写一封100-160字的败因复盘信。
+  let custom: NavigatorPreset[] = [];
+  try { custom = await db.navigatorPresets.toArray(); } catch { /* 表读不到按内置解析 */ }
+  const preset = resolveNavigatorPreset(settings.navigatorPresetId, custom);
+  const task = `对方今晚在"影时间高塔"败退了，以你自己的身份给他写一封 100-160 字的败因复盘信（站内信，第一人称，称对方"你"）。
 战斗事实：区层【${f.stratumName}】，倒在累计第${f.floor}层；对手是「${f.shadowName}」；本晚总伤害${f.damageDealt}、最大单击${f.maxSingleHit}、弱点命中${f.weaknessHits}次、讨伐杂影${f.mobsDefeated}只${f.hpLostToPoisonOrThorns ? '；有不少体力是被毒/反弹磨掉的' : ''}。
-【要求】黑猫口吻（第一人称"我"，称玩家"你"，可带一声"喵"）；先毒舌点破最可能的败因（贪刀不防御/无视意图/回复太晚/被磨血——从事实推断一条），再给一条明晚可执行的建议，最后一句是不许认输的鼓动。不用括号不用标题，直接输出信的正文。`;
+【要求】用你自己的口吻和性格；先点破最可能的败因（贪刀不防御/无视意图/回复太晚/被磨血——从事实推断一条），再给一条明晚可执行的建议，最后一句是不许认输的鼓动。不用标题、不写动作描写，直接输出信的正文。`;
   try {
-    const text = await callAIWithRetry(cfg, [{ role: 'user', content: prompt }], 0.85, 500);
+    const text = await callAIWithRetry(cfg, [
+      { role: 'system', content: personaWithExamples(preset) },
+      { role: 'user', content: task },
+    ], 0.85, 500);
     return text.trim() || defeatLetterFallback(f);
   } catch {
     return defeatLetterFallback(f);

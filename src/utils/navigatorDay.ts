@@ -15,6 +15,7 @@ import { moonPhaseOf } from '@/utils/moonPhase';
 import { seasonMarkOf, seasonOfDate, SEASON_META } from '@/utils/calendar';
 import { fetchWeatherNow, peekWeatherNow, weatherConfigOf, weatherReady, type WeatherNow } from '@/utils/weather';
 import { dayLabelCN, keyOfDate, weekdayCN } from '@/utils/navigatorClock';
+import { personaWithExamples } from '@/constants/navigatorPresets';
 import type { NavigatorPreset, PersonaTraits, Settings } from '@/types';
 
 // ── 人格的固定喜好 ──────────────────────────────────────────────
@@ -288,7 +289,8 @@ export function ensureOwnDay(preset: NavigatorPreset, settings: Settings, now: D
       if (cfg) {
         try {
           const raw = await chatComplete(cfg, [
-            { role: 'system', content: `${preset.personaPrompt}\n\n${OWN_DAY_TASK(facts, traits)}` },
+            // 人格头与聊天回合同口径（第 35 批 · 串戏排查）：带口吻示例，不再只给裸设定
+            { role: 'system', content: `${personaWithExamples(preset)}\n\n${OWN_DAY_TASK(facts, traits)}` },
             { role: 'user', content: '写今天的这一句。' },
           ], { temperature: 0.9, maxTokens: 160, instant: true, timeoutMs: 20000, purpose: 'ownday' });
           text = raw.trim().replace(/^["“「]|["”」]$/g, '').split('\n')[0].trim().slice(0, 48);
