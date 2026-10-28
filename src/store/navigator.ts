@@ -38,6 +38,10 @@ import {
 } from '@/utils/navigatorBond';
 import { buildOwnDayLine, ensureOwnDay, noteOwnDayMentioned } from '@/utils/navigatorDay';
 import {
+  AFTERTHOUGHT_MAX_MS, AFTERTHOUGHT_MIN_MS, afterthoughtChance, appendSessionRead, buildLocalFacts, casualSlotChance, noteRead, readConfig,
+  renderAfterthought, startRead, temperamentOf, type LocalTurnFacts, type ReadResult,
+} from '@/utils/navigatorRead';
+import {
   buildAskLine, buildCheerLine, buildUpcomingLine, listPromises, markCheered, noteAskResult, promiseContext, promisePhase,
   sniffPromises, type PromiseMemo,
 } from '@/utils/navigatorPromise';
@@ -195,7 +199,10 @@ let presetsLoading: Promise<void> | null = null;
  * 收口窗口里预跑的分诊（第 24 批 · D2）：用户发完一句，等 250ms 没再发就开始分诊；收口时批次没变就直接用。
  * key = 批次文本 + 卡片实录 + 历史长度——任何一样变了都作废重跑。带图的批次要先转述，不预跑。
  */
-let prefetch: { key: string; promise: Promise<TriageResult>; abort: AbortController } | null = null;
+let prefetch: { key: string; promise: Promise<TriageResult>; abort: AbortController; read: Promise<ReadResult | null>; facts: LocalTurnFacts } | null = null;
+/** 补一句（第 36 批）：回完过几十秒再发一条短的；用户一打字 / 关窗 / 新一轮就取消 */
+let afterthoughtTimer: ReturnType<typeof setTimeout> | null = null;
+const cancelAfterthought = () => { if (afterthoughtTimer) { clearTimeout(afterthoughtTimer); afterthoughtTimer = null; } };
 let prefetchTimer: ReturnType<typeof setTimeout> | null = null;
 const PREFETCH_DEBOUNCE_MS = 250;
 const clearPrefetch = () => {
@@ -520,9 +527,18 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
       if (prefetch && prefetch.key === key) return;
       prefetch?.abort.abort();
       const abort = new AbortController();
-      const promise = startTriage(historyForTurn(), batch, cardsDigest(), abort.signal, lastMemoRefs);
+      const history = historyForTurn();
+      const promise = startTriage(history, batch, cardsDigest(), abort.signal, lastMemoRefs);
       promise.catch(() => { /* 收口时现跑 */ });
-      prefetch = { key, promise, abort };
+      // 「读」（第 36 批）和分诊并行预跑：本地事实先算（会话行里上一轮想的要读一次库）
+      const presetNow = get().activePreset();
+      const sidNow = get().sessionId;
+      const factsP = buildLocalFacts(history, batch, Date.now(), sidNow);
+      const read = factsP.then((facts) => startRead(useAppStore.getState().settings, personaWithExamples(presetNow), history, batch, facts, abort.signal));
+      read.catch(() => { /* 回合里现跑 */ });
+      const entry = { key, promise, abort, read, facts: { gapMinutes: null, askStreak: 0, shortAck: false, openings: [], lastRead: null, mood: null } as LocalTurnFacts };
+      void factsP.then((facts) => { entry.facts = facts; });
+      prefetch = entry;
     }, PREFETCH_DEBOUNCE_MS);
   };
 
@@ -596,6 +612,25 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
       return;
     }
     get().pushCat(openerTemplate('missyou', preset.id, {}));
+  };
+
+  /** 补一句（第 36 批）：回完过 20–45 秒，还是空闲、他没在打字、最后一条还是自己的 → 把心里那句用人格的口吻补发出来 */
+  const scheduleAfterthought = (gen: number, preset: NavigatorPreset, anchor: string, unsaid: string) => {
+    cancelAfterthought();
+    const delay = AFTERTHOUGHT_MIN_MS + Math.random() * (AFTERTHOUGHT_MAX_MS - AFTERTHOUGHT_MIN_MS);
+    afterthoughtTimer = setTimeout(() => {
+      afterthoughtTimer = null;
+      void (async () => {
+        const stillFree = () => gen === generation && get().isOpen && get().phase === 'idle' && !inputActive && currentSessionMessages().slice(-1)[0]?.role === 'cat';
+        if (!stillFree()) return;
+        const cfg = readConfig(useAppStore.getState().settings);
+        if (!cfg) return;
+        const text = await renderAfterthought(cfg, personaWithExamples(preset), anchorLine(anchor), unsaid);
+        if (!text || !stillFree()) return;
+        get().pushCat(text);
+        noteTopicsMentioned(text);
+      })();
+    }, delay);
   };
 
   /** 收口 → thinking → replying → idle（gen 凭票，全程可被打断作废） */
@@ -722,17 +757,30 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
       const ask = pctx.ask;
       const oldStory = ask ? null : await pickOldStory(together);
       if (gen !== generation) return;
+      // 「起」每轮只放一条（第 36 批）：约定该问的 > 走神 > 旧事 > 近况，共用问题预算；「收着」档一半的轮次一条都不放。自己的一天另算（它只是背景）
+      const temperament = temperamentOf(settingsNow);
+      const slot: 'ask' | 'assoc' | 'oldStory' | 'happenings' | null = Math.random() >= casualSlotChance(temperament) ? null
+        : ask ? 'ask' : assoc?.line ? 'assoc' : oldStory ? 'oldStory' : happenings.length ? 'happenings' : null;
+      const slotLine = slot === 'ask' && ask ? buildAskLine(ask, todayKey)
+        : slot === 'assoc' ? (assoc?.line ?? '')
+          : slot === 'oldStory' && oldStory ? buildOldStoryLine(oldStory)
+            : slot === 'happenings' ? happeningsBlock(happenings) : '';
+      // 读的本地事实：预跑算好的拿来用，没有就现算
+      const readFacts = pre?.facts ?? await buildLocalFacts(historyForTurn(), batch, turnStartedAt, get().sessionId);
+      if (gen !== generation) return;
       const turnExtras: TurnExtras = {
-        casualContext: [ask ? buildAskLine(ask, todayKey) : '', happeningsBlock(happenings), assoc?.line ?? '', buildOwnDayLine(presetNow.id), oldStory ? buildOldStoryLine(oldStory) : ''],
+        casualContext: [slotLine, buildOwnDayLine(presetNow.id)],
         afterReply: (text, _stance, _energy, casualShown) => {
           noteOwnDayMentioned(text, presetNow.id);
-          if (oldStory) noteOldStoryMentioned(text, presetNow.id, oldStory);
-          if (casualShown) noteHappeningsMentioned(text, happenings);
+          if (oldStory && slot === 'oldStory') noteOldStoryMentioned(text, presetNow.id, oldStory);
+          if (casualShown && slot === 'happenings') noteHappeningsMentioned(text, happenings);
           void noteBitsUsed(text, bits.bits);
           // 交给它了才算一次机会：问了 → 问过了；没问 → 记一次，两次都没问就作废（关了就重排推送：那条不用推了）
-          if (ask && casualShown) void noteAskResult(ask, text).then((r) => { if (r !== 'deferred') void useAppStore.getState().syncNotifications(); });
+          if (ask && casualShown && slot === 'ask') void noteAskResult(ask, text).then((r) => { if (r !== 'deferred') void useAppStore.getState().syncNotifications(); });
         },
         pretriage: pre?.promise,
+        preread: pre?.read,
+        readFacts,
         presetId: presetNow.id,
         serious,
         coachLine,
@@ -795,6 +843,14 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
       const firstActivity = pushed.find((p) => p.kind === 'activity');
       if (sentImages.length && firstActivity) void attachDataUrlsToCard(firstActivity.id, sentImages);
       set({ phase: 'idle' });
+      // 「读」留档（第 36 批）：下一轮「我上一轮想的」+ 第二天的日记；闲聊且它心里还有一句没说 → 按性格的概率过几十秒补一句
+      const sidAfter = get().sessionId;
+      if (result.read && sidAfter) {
+        noteRead(sidAfter, result.read);
+        void appendSessionRead(sidAfter, result.read, Date.now());
+        const chatty = !result.heavy && (result.stance === 'chat' || result.stance === 'report') && result.energy !== 'low';
+        if (chatty && result.read.unsaid && Math.random() < afterthoughtChance(temperament)) scheduleAfterthought(gen, presetNow, anchor, result.read.unsaid);
+      }
       if (result.heavy) {
         // 沉下来的那一轮（第 25 批）：这轮的消息标 heavy（归档器不从中出话头）、明天轻轻问一句；不嗅探约定、不提议愿望
         const ids = new Set([...batchMsgIds, ...currentSessionMessages().filter((m) => m.role === 'cat' && m.createdAt >= turnStartedAt).map((m) => m.id)]);
@@ -865,7 +921,7 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
     hasOlder: true,
 
     open: () => set({ isOpen: true }),
-    close: () => set({ isOpen: false }),
+    close: () => { cancelAfterthought(); set({ isOpen: false }); },
 
     loadOlder: async () => {
       const { oldestLoadedDate, hasOlder } = get();
@@ -985,6 +1041,7 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
 
     userSend: (text, imageDataUrl) => {
       const phase = get().phase;
+      cancelAfterthought(); // 他开口了：心里那句不用补了
       get().pushUser(text, imageDataUrl);
       // 第 31 批：说话时顺手把天气取上（缓存新鲜就不发）——助手开出来的记录卡点确认时，记录要附一份天气
       prefetchWeather(weatherConfigOf(useAppStore.getState().settings));

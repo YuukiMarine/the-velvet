@@ -18,6 +18,7 @@ import { ModelPickerSheet } from '@/components/ai/ModelPickerSheet';
 import { finalizeStaleSessions } from '@/utils/navigatorMemory';
 import { mergedNavigatorPresets } from '@/constants/navigatorPresets';
 import { RECORDS_LEVELS, RECORDS_LEVEL_DESC, RECORDS_LEVEL_LABELS, recordsLevelOf, recordsLevelPatch } from '@/utils/navigatorBriefing';
+import { TEMPERAMENTS, TEMPERAMENT_DESC, TEMPERAMENT_LABELS, temperamentOf } from '@/utils/navigatorRead';
 import { TONE_WORDS, closedGenerator, usePersonaEditor } from './usePersonaEditor';
 import { Toggle } from '@/components/Toggle';
 import { PresetAvatar, PRESET_GLYPH_IDS } from './PresetAvatar';
@@ -31,6 +32,7 @@ import type { NavigatorPreset } from '@/types';
 export const NavigatorSettings = () => {
   const { settings, updateSettings } = useAppStore(useShallow(s => ({ settings: s.settings, updateSettings: s.updateSettings })));
   const recordsLevel = recordsLevelOf(settings);
+  const temperament = temperamentOf(settings);
   const nav = useNavigatorStore();
   const hasAI = !!getAIConfig(settings);
   const activeId = nav.activePreset().id;
@@ -184,6 +186,24 @@ export const NavigatorSettings = () => {
             onChange={(v) => updateSettings({ navigatorMemoryIsolated: v })}
             aria-label="记忆按人格隔离"
           />
+        </div>
+      </div>
+      {/* ── 性格（第 36 批 · LIVE MODE）：对用户只开这一个分档 ── */}
+      <div className="rounded-xl border border-gray-200 px-4 py-3 dark:border-gray-700" data-testid="temperament">
+        <div className="text-sm font-semibold text-gray-700 dark:text-gray-200">性格</div>
+        <p className="mt-0.5 text-xs leading-relaxed text-gray-400 dark:text-gray-500">
+          管它有多主动：回完过一会儿要不要再补一句、要不要起话头、心里的想法露多少。读空气不受它管。{TEMPERAMENT_LABELS[temperament]}：{TEMPERAMENT_DESC[temperament]}。
+        </p>
+        <div className="mt-2 flex gap-1.5" role="radiogroup" aria-label="性格">
+          {TEMPERAMENTS.map((v) => {
+            const on = temperament === v;
+            return (
+              <button key={v} type="button" role="radio" aria-checked={on} title={TEMPERAMENT_DESC[v]} onClick={() => updateSettings({ navigatorTemperament: v })}
+                className={`rounded-full px-3 py-1.5 text-xs font-bold transition ${on ? 'bg-primary text-white' : 'border border-gray-200 text-gray-600 dark:border-gray-700 dark:text-gray-300'}`}>
+                {TEMPERAMENT_LABELS[v]}
+              </button>
+            );
+          })}
         </div>
       </div>
       {/* ── 走神（第 26 批 · 联想）：闲聊时偶尔顺口想起一条不那么相关的旧事 ── */}

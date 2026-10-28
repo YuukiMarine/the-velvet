@@ -54,12 +54,15 @@ function unmentionedDueTodos(ledger: Ledger) {
   return s.getDueTodosToday().filter(t => !s.getTodayTodoProgress(t.id).isComplete && !mentioned.has(t.id));
 }
 
-/** 「这一轮」的回应姿态提示（分诊顺手判的；判不出来就不给） */
+/**
+ * 「这一轮」的回应姿态提示（分诊顺手判的；判不出来就不给）。
+ * 第 36 批起只说「他要什么」，不说「怎么说」（怎么说归人格）；去掉了「可以反问一句」——多处邀请它问，概率就被钉死了。
+ */
 export function stanceLine(stance: Stance | null, energy: Energy | null): string {
   if (!stance) return '';
   const base: Record<Stance, string> = {
-    vent: '对方在倾诉 / 抱怨：先接住他的情绪，说一两句懂他的话，别急着给建议，更别拐去任务。',
-    chat: '对方在闲聊：顺着他的话聊，可以调侃、可以反问一句，别把话题拽回任务。',
+    vent: '对方在倾诉 / 抱怨：他要的是被懂，不是办法。先把他说到的几件事都接住，别急着给建议、别拐去任务；想问就只问那一件卡住的，一个就够。',
+    chat: '对方在闲聊：顺着他的话聊，有看法可以说、可以调侃，别把话题拽回任务。',
     ask: '对方在问事 / 求助：正面回答，给具体办法；背景资料里有相关的就用上。',
     report: '对方在说他做了 / 要做的事：先回应这件事本身；开了卡就提醒他确认。',
     bye: '对方要走了 / 去忙了：简短道别，一两句就好，别再追加提醒。',

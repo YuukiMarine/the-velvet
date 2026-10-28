@@ -26,6 +26,7 @@ import { P4Flower } from '@/ui/p4Kit';
 import type { NavigatorPreset } from '@/types';
 import { Card, Row, Divider, Toggle, Segmented, Btn, Input, Textarea, Chip, Note, Glyph, LinkValue, useSettingsSkin, skinTokens, type GlyphName } from '../kit';
 import { RECORDS_LEVELS, RECORDS_LEVEL_DESC, RECORDS_LEVEL_LABELS, recordsLevelOf, recordsLevelPatch } from '@/utils/navigatorBriefing';
+import { TEMPERAMENTS, TEMPERAMENT_DESC, TEMPERAMENT_LABELS, temperamentOf } from '@/utils/navigatorRead';
 import { DayTrack } from '../dayTrack';
 import { useSettingsNav } from '../nav';
 
@@ -185,6 +186,7 @@ const FieldLabel = ({ children, extra }: { children: ReactNode; extra?: ReactNod
 export const AssistantSection = () => {
   const { settings, updateSettings } = useAppStore(useShallow(s => ({ settings: s.settings, updateSettings: s.updateSettings })));
   const recordsLevel = recordsLevelOf(settings);
+  const temperament = temperamentOf(settings);
   const presets = useNavigatorStore(s => s.presets);
   // 和 store.activePreset() 同一个解析（自定义人格缺失时回落黑猫），直接用订阅到的设置和名册算，换人格立刻跟上
   const activePreset = resolveNavigatorPreset(settings.navigatorPresetId, presets);
@@ -384,6 +386,13 @@ export const AssistantSection = () => {
           <Row id="navigatorBriefing" glyph="doc" label="让助手了解你的记录" desc={`${RECORDS_LEVEL_LABELS[recordsLevel]}：${RECORDS_LEVEL_DESC[recordsLevel]}`}>
             <Segmented ariaLabel="让助手了解你的记录" size="sm" value={recordsLevel} onChange={(v) => updateSettings(recordsLevelPatch(v))}
               options={RECORDS_LEVELS.map((v) => ({ value: v, label: RECORDS_LEVEL_LABELS[v], hint: RECORDS_LEVEL_DESC[v] }))} />
+          </Row>
+        </div>
+        <Divider />
+        <div data-testid="temperament">
+          <Row id="navigatorTemperament" glyph="bubble" label="性格" desc={`${TEMPERAMENT_LABELS[temperament]}：${TEMPERAMENT_DESC[temperament]}。读空气不受它管`}>
+            <Segmented ariaLabel="性格" size="sm" value={temperament} onChange={(v) => updateSettings({ navigatorTemperament: v })}
+              options={TEMPERAMENTS.map((v) => ({ value: v, label: TEMPERAMENT_LABELS[v], hint: TEMPERAMENT_DESC[v] }))} />
           </Row>
         </div>
         <Divider />

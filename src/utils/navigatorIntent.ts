@@ -30,6 +30,7 @@ import { parseQueries, QUERY_PROTOCOL, runQueries, type NavigatorQuery } from '@
 import { HEAVY_TURN_LINE, isHeavyText, proofsBlock, SAFETY_RULE, seriousLine } from '@/utils/navigatorGravity';
 import { buildTopicPermission, noteTopicsMentioned, stanceLine, type Energy, type Stance } from '@/utils/navigatorTopics';
 import { recordsLevelOf } from '@/utils/navigatorBriefing';
+import { buildLocalFacts, hintsBlock, readBlock, startRead, type LocalTurnFacts, type ReadResult } from '@/utils/navigatorRead';
 import type { AttributeId, LedgerExpenseType } from '@/types';
 
 export interface NavigatorTurnResult {
@@ -44,6 +45,11 @@ export interface NavigatorTurnResult {
   sniffHint: boolean | null;
   /** 这一轮沉下来了（第 25 批）：store 据此标记消息、安排第二天轻轻一问、跳过嗅探和愿望提议 */
   heavy: boolean;
+  /** 「读」（第 36 批）：这轮开口前心里过的那一遍；没读成 / 沉下来为 null。store 存进会话行、安排补一句 */
+  read: ReadResult | null;
+  /** 分诊判的姿态 / 精力（补一句只在闲聊、精力不低时） */
+  stance: Stance | null;
+  energy: Energy | null;
 }
 
 /** 历史消息的最小投影（store 侧转换后传入，避免循环依赖） */
@@ -145,12 +151,15 @@ const PERFORM_RULES = `
 - 直接输出你要对用户说的话（纯文本）。用空行分段，一段就是一个气泡；别用 markdown 标题 / 列表 / 代码块。
 - 【背景资料】是你知道的情况，不是要汇报的清单：只在对方问起、或和他此刻说的事直接相关时才用。
   想主动提点什么，只能从【主动话题】里挑，每轮最多一件，也可以一件都不提；【】是系统数据区标签，不要把标签名念出来。
-- 先接住再说事：照【这一轮】的提示回应。他倾诉就先接住情绪，别急着给建议；闲聊就顺着聊；要走就简短道别。
+- 先接住再说事：开口前先照【你刚才心里过的一遍】来——那是你自己的判断；【这一轮】和【提醒】是参考，不是命令。
+  他倾诉就先把他说到的几件事接住，别急着给建议；闲聊就顺着聊；要走就简短道别。
 - 说人话：不排比、不喊口号、不写警句；别每条回复都先对时间或时段做反应，也别报出几点几分，除非他问时间；
-  长短跟着他这一条走：他发一句，你回一两句；他写了一大段，你就认真回一段，把他说到的几件事都接住，别只挑一句敷衍。
-  段落别太长（一段一屏内），再多就分段。人格设定里明确写了话少或话多的，以人格设定为准。
+  长短跟着他这一条走，这是上限不是下限：他发一句，你回一两句；他写了一大段，你可以认真回一段，把他说到的几件事都接住，别只挑一句敷衍。
+  段落别太长（一段一屏内），再多就分段。人格设定里明确写了话少、话多或别的说法风格的，以人格设定为准。
+- 像人那样说话：有看法就说，可以不同意、可以说不知道；最后别再总结一遍（不用收尾句）；别每条都先肯定一句（「这确实不容易」「我理解」）；开头别和你前几条一样。
+- 问他问题是为了接住他，不是为了接话：一条回复最多问一个，而且只问他此刻正说着的这件事里卡住的那一点；从他上一句里抠个细节另起一支、「要不要聊聊 xxx」这类别问。
 - 【关于用户的记忆】是你们过往相处攒下的：像老朋友那样自然带出，不要背档案（"记得你说过…"胜过复读原文）；
-  带【可自然追问】的话头，合适时顺口问一句，不合适就跳过，同一话头绝不反复问。
+  带【可自然追问】的话头是可以起的话，不是必须问的：他正说着自己的事时就不要起，同一话头绝不反复问。
 - 【当前语气】是你此刻的状态基调，服从它。
 - 数值纪律：属性点数/等级只能引用给定数字；没给的数值说记不清或建议去对应页面看，禁止编造。
 - **等级不出口**：【属性面板】的 Lv 只供你判断深浅，正常说话里不要把等级/点数报出来。
@@ -524,6 +533,10 @@ export interface TurnExtras {
   coachLine?: string;
   /** 这一轮带着的记忆（第 26 批）：分诊的 forget 卡只认这里面的 id */
   memoRefs?: MemoRef[];
+  /** 收口窗口里预跑的「读」（第 36 批）：拿到就用；没有就在回合里和分诊并行现跑 */
+  preread?: Promise<ReadResult | null>;
+  /** 读用的本地事实（隔了多久 / 连问几轮 / 前几条开头 / 上一轮想的）；没给就现算 */
+  readFacts?: LocalTurnFacts;
 }
 
 /**
@@ -958,6 +971,9 @@ export async function runNavigatorTurn(
   // 【已确认生效】的同样要喂——此前以「属于历史」为由滤掉，结果同一件事在对话里
   // 被再次提起时，分诊根本不知道它已经记过，照常重开一张（用户上报「重复多提一句
   // 就重复生成卡片」的直接原因）。cardsDigest 本身截到最近 10 张，不会撑大上下文。
+  // 「读」（第 36 批）：和分诊并行——预跑的拿来用，没有就现跑；最多等 8s，等不到就不带、照旧回合
+  const readFacts = turnExtras.readFacts ?? await buildLocalFacts(history, userText, Date.now(), null);
+  const readP: Promise<ReadResult | null> = (turnExtras.preread ?? startRead(settings, personaPrompt, history, userText, readFacts, signal)).catch(() => null);
   let tri: TriageResult | null = null;
   if (turnExtras.pretriage) {
     // 收口窗口里预跑的那份（第 24 批 · D2）：拿到就用；失败 / 被取消就现跑一次
@@ -969,6 +985,10 @@ export async function runNavigatorTurn(
   const heavy = tri.gravity === 'heavy' || isHeavyText(userText);
   const drafts = heavy ? [] : tri.drafts;
   const { stance, energy, dated } = tri;
+  // 沉下来那一轮不读（安全口径优先）；读是依据不是围栏，没读成就什么都不贴
+  const read: ReadResult | null = heavy ? null : await Promise.race([readP, new Promise<null>((r) => setTimeout(() => r(null), 8000))]);
+  if (signal.aborted) throw new DOMException('aborted', 'AbortError');
+  const readLines = heavy ? [] : [read ? readBlock(read) : '', hintsBlock(readFacts, read)];
   // 「让助手了解你的记录」关着（第 35 批 f）：记录类查询不跑，只留 chats（那是聊天记忆，不是记录）
   const queries = recordsLevelOf(settings) === 'off' ? tri.queries.filter((q) => q.kind === 'chats') : tri.queries;
   const queryBlocks = heavy || !queries.length ? [] : await runQueries(queries, turnExtras.presetId ?? 'builtin-cat');
@@ -1003,7 +1023,7 @@ export async function runNavigatorTurn(
     ...historyToMessages(historyWindowTurns(history)),
     {
       role: 'system',
-      content: [...(turnExtras.leading ?? []), buildDynamicContext(snap, swallowed, cards), ...extraContext, ...casual, turnFacts, ...(turnExtras.trailing ?? [])]
+      content: [...(turnExtras.leading ?? []), buildDynamicContext(snap, swallowed, cards), ...extraContext, ...casual, turnFacts, ...readLines, ...(turnExtras.trailing ?? [])]
         .filter(Boolean).join('\n'),
     },
     { role: 'user', content: userText },
@@ -1098,7 +1118,7 @@ export async function runNavigatorTurn(
     if (import.meta.env.DEV) console.debug('[navigator] 流式输出:', emitted);
     noteTopicsMentioned(emitted.join('\n'));
     turnExtras.afterReply?.(emitted.join('\n'), stance, energy, casualShown && casual.length > 0);
-    return { segments: emitted, drafts, sniffHint: heavy ? false : dated, heavy };
+    return { segments: emitted, drafts, sniffHint: heavy ? false : dated, heavy, read, stance, energy };
   }
 
   let reply = (await chatComplete(cfg, messages, { temperature: 0.75, maxTokens: 1200, signal, purpose: 'perform' })).trim();
@@ -1123,7 +1143,7 @@ export async function runNavigatorTurn(
   if (!reply) reply = drafts.length ? '卡片给你，看一眼没问题就确认。' : '嗯。';
   noteTopicsMentioned(reply);
   turnExtras.afterReply?.(reply, stance, energy, casualShown && casual.length > 0);
-  return { segments: splitSegments(reply), drafts, sniffHint: heavy ? false : dated, heavy };
+  return { segments: splitSegments(reply), drafts, sniffHint: heavy ? false : dated, heavy, read, stance, energy };
 }
 
 /**

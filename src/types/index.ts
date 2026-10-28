@@ -668,6 +668,12 @@ export interface Settings {
    * 没设过按旧开关折算（navigatorBriefing=false → off，否则 mid）；改档时同步写旧开关，老版本和旧读点照旧。
    */
   navigatorRecordsLevel?: 'off' | 'mid' | 'high';
+  /**
+   * 性格（第 36 批 · LIVE MODE）：对用户只开这一个分档，调所有主动性与心思流露的概率。
+   *   reserved 收着：不补一句、起话头减半、心思多半放心里；natural 自然（缺省）；open 外放：常补一句、心思更外露。
+   * 读空气本身不受它管（不该能关）。
+   */
+  navigatorTemperament?: 'reserved' | 'natural' | 'open';
   /** 画像自动更新（第 33 批）：默认开——聊天归档时按对话改画像（锁住的块不动）；关掉 = 只收零散记忆，画像只有你自己改 */
   navigatorProfileAuto?: boolean;
   /**
@@ -1161,6 +1167,11 @@ export interface NavigatorSessionRow {
    * throughId = 覆盖到的最后一条消息。阈值泵把早些消息压成 summary 行时清掉（内容已在那行里）。
    */
   earlySummary?: { text: string; turns: number; throughId: string };
+  /**
+   * 「读」（第 36 批 · LIVE MODE）：每轮开口前它在心里过的那一遍，留最近 30 条——下一轮「我上一轮想的」、第二天的日记都从这里取。
+   * text 是一两句中性短句（他在说什么 / 要什么 / 我怎么想），不是回复。
+   */
+  reads?: Array<{ ts: number; text: string }>;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -1274,6 +1285,8 @@ export interface NavigatorMemo {
   muted?: boolean;
   /** 来源会话（归档时记下） */
   fromSessionId?: string;
+  /** bit 的类别（第 36 批）：phrase（缺省）= 说法 / 梗；style = 「他说话的习惯」（归档器攒的，注入时提醒它跟着对方的节奏） */
+  bitKind?: 'phrase' | 'style';
   /** bit：这个说法的意思 / 来历；复用次数与上次用到（久不用就淡出） */
   bitMeaning?: string;
   bitOrigin?: string;
