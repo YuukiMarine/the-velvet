@@ -90,7 +90,15 @@ const Panel = ({ skin, seed, children, className, style, dim }: { skin: Settings
     return <div className={`relative px-3.5 py-3 ${className ?? ''}`} style={{ opacity: op, background: 'var(--ui-paper, #fff6d0)', borderRadius: 16, boxShadow: '0 0 0 2px #131313, 0 4px 0 rgba(19,19,19,0.18)', ...style }}>{children}</div>;
   }
   if (skin === 'p3') {
-    return <div className={`relative px-4 py-3 ${className ?? ''}`} style={{ opacity: op, clipPath: slantClip(10), background: P3R.panel, boxShadow: '0 6px 16px rgba(7,40,120,.10)', ...style }}>{children}</div>;
+    // 斜切面放到独立背景层（同 p5 的做法）：以前 clipPath 挂在容器上，会把悬在卡片下方的「⋯」菜单一起裁掉——
+    // 记忆隔离开着时卡片里多一行人格选择器、够高才没露馅，关掉后「置顶」正好压在卡片下缘被切掉（第 35 批）
+    const { background, ...rest } = style ?? {};
+    return (
+      <div className={`relative px-4 py-3 ${className ?? ''}`} style={{ opacity: op, ...rest }}>
+        <span aria-hidden className="absolute inset-0" style={{ clipPath: slantClip(10), background: background ?? P3R.panel, boxShadow: '0 6px 16px rgba(7,40,120,.10)' }} />
+        <div className="relative">{children}</div>
+      </div>
+    );
   }
   return <div className={`relative rounded-2xl bg-white px-3.5 py-3 shadow-[0_8px_20px_rgba(27,87,255,0.07)] dark:bg-gray-800 ${className ?? ''}`} style={{ opacity: op, ...style }}>{children}</div>;
 };
@@ -549,7 +557,7 @@ export const NavigatorNotebook = ({ isOpen, onClose }: { isOpen: boolean; onClos
           </div>
           <MoreMenu skin={skin} open={menuFor === m.id} onToggle={() => setMenuFor((v) => (v === m.id ? null : m.id))}
             items={[
-              { label: m.pinned ? '取消置顶' : '置顶（不会忘）', onClick: () => void togglePin(m) },
+              { label: m.pinned ? '取消置顶' : '置顶', onClick: () => void togglePin(m) },
               { label: '改', onClick: () => setMemoEdit({ id: m.id, text: m.text }) },
               { label: '删', onClick: () => setDeleteId(m.id), danger: true },
             ]} />

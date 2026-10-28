@@ -634,7 +634,8 @@ export const NavigatorWindow = () => {
     if (!text && !shot) return;
     nav.userSend(text, shot ?? undefined); // 进仲裁器：收口/打断由它裁决
     // 递刀检测（TASKS_MERGE_PRD §4.4）：纯客户端关键词，不给分诊/表演加任何职责。
-    // 发送后命中的话，chip 留在场上等这轮倾诉说完
+    // 发送后命中的话，chip 留在场上等这轮倾诉说完；上一次按的「先不拆」到这里失效
+    setStuckDismissed(false);
     setSentStuck(text && detectStagnation(text) ? text : null);
     setInput('');
     setShot(null);
@@ -643,11 +644,12 @@ export const NavigatorWindow = () => {
 
   // ── 黑猫递刀：输入中实时命中 or 刚发送的消息命中 → 亮一枚本地 chip ──
   const [sentStuck, setSentStuck] = useState<string | null>(null);
-  const [stuckDismissed, setStuckDismissed] = useState<string | null>(null);
+  // 「先不拆」（第 35 批）：按下 ✕ 之后压到下一次发送为止。以前记的是关掉时那串文字，再打一个字文字就变了、chip 又回来
+  const [stuckDismissed, setStuckDismissed] = useState(false);
   const [stuckBusy, setStuckBusy] = useState(false);
   const liveStuck = detectStagnation(input) ? input.trim() : null;
   const stuckText = liveStuck ?? sentStuck;
-  const showStuck = !!stuckText && stuckText !== stuckDismissed;
+  const showStuck = !!stuckText && !stuckDismissed;
 
   const runStuckSplit = async () => {
     if (!stuckText || stuckBusy) return;
@@ -680,7 +682,7 @@ export const NavigatorWindow = () => {
         steps,
       });
       setSentStuck(null);
-      setStuckDismissed(stuckText);
+      setStuckDismissed(true);
     } finally {
       setStuckBusy(false);
     }
@@ -1025,7 +1027,7 @@ export const NavigatorWindow = () => {
                   <button
                     type="button"
                     aria-label="先不拆"
-                    onClick={() => { setStuckDismissed(stuckText); setSentStuck(null); }}
+                    onClick={() => { setStuckDismissed(true); setSentStuck(null); }}
                     className={`shrink-0 p-1.5 text-sm font-black ${bright ? 'text-[#8a97ad]' : 'text-white/40'}`}
                   >
                     ✕
@@ -1209,13 +1211,12 @@ export const NavigatorWindow = () => {
         )}
       </AnimatePresence>
 
-      {/* 迷你表单（新建 / 编辑确认卡共用）——频道皮：红=剪报 / 黄=综艺 / 其余=P3R 皮。
-          自定义主题没有独立表单皮，暂借 p3 结构；配色由 :root[data-theme="custom"]
-          覆写的 --p3r-* 变量拉回用户主色，不会在中性皮里突然蹦出一片蓝。 */}
+      {/* 迷你表单（新建 / 编辑确认卡共用）——频道皮：红=剪报 / 黄=综艺 / 蓝=P3R 亮皮 / 自定义=中性暗皮。
+          以前自定义主题被映射成 p3：亮皮永远亮着，夜间模式下「添加待办」表单一片白（第 35 批） */}
       <NavigatorActionForm
         key={formKey}
         draft={formDraft}
-        channel={isP5 ? 'p5' : isP4 ? 'p4' : 'p3'}
+        channel={channel}
         images={cardImagesOf(editingCardId)}
         onSubmit={onFormSubmit}
         onClose={() => { setFormDraft(null); setEditingCardId(null); }}

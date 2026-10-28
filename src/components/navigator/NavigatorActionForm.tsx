@@ -26,7 +26,8 @@ import { P5Collage } from '@/components/p5r/kit';
 import { prepareActivityImage, MAX_IMAGES_PER_ACTIVITY, type PreparedImage } from '@/utils/activityImages';
 
 /** 表单频道皮：p3=P3R 亮蓝斜面（原 bright）/ p4=黄综艺 / p5=红黑剪报。主题→频道映射在调用方。 */
-export type NavFormChannel = 'p3' | 'p4' | 'p5';
+/** 与 UIChannel 同口径：neutral（自定义主题）走下面各处的暗色分支——它们本来就写好了，只是以前没人传得进来 */
+export type NavFormChannel = 'p3' | 'p4' | 'p5' | 'neutral';
 
 interface Props {
   /** null = 关闭 */

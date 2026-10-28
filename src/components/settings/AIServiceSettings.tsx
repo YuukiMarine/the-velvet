@@ -50,8 +50,11 @@ export function AIServiceSettings({ openConnection = false }: {
   // 拉不到（网关不支持 / CORS）保持手填输入框兜底
   const [modelFetchStatus, setModelFetchStatus] = useState<'idle' | 'loading' | 'ok' | 'error'>('idle');
   const [modelFetchMessage, setModelFetchMessage] = useState<string>('');
-  // 连接卡折叠：有 Key 时默认收起（配好后日常只跟模型分档打交道），无 Key 展开引导配置
-  const [connOpen, setConnOpen] = useState(() => openConnection || !settings.summaryApiKey?.trim());
+  // 连接卡默认展开（第 35 批用户口径；以前有 Key 时收起）。外部「去配置」跳转进来时也确保展开
+  const [connOpen, setConnOpen] = useState(true);
+  useEffect(() => { if (openConnection) setConnOpen(true); }, [openConnection]);
+  // 最近 7 天用量默认收起（第 35 批）
+  const [usageOpen, setUsageOpen] = useState(false);
   // 模型选择面板（四档共用一个 Sheet，靠 mode 区分）
   const [modelPicker, setModelPicker] = useState<ModelPickerMode | null>(null);
   // 模型分档整卡收进「高级设置」（FS3.1 用户口径）：默认收起，只留一行摘要。
@@ -868,8 +871,22 @@ export function AIServiceSettings({ openConnection = false }: {
 
       {/* ── 最近用量（第 24 批 · D6）：次数 / token / 缓存命中 / 首字，按用途分 ── */}
       {usage.calls > 0 && (
-        <div className="rounded-2xl border border-gray-100 px-4 py-3 dark:border-gray-700/60" data-testid="ai-usage">
-          <div className="text-sm font-medium text-gray-800 dark:text-white">最近 7 天用量</div>
+        <div className="rounded-2xl border border-gray-100 dark:border-gray-700/60 overflow-hidden" data-testid="ai-usage">
+          <button
+            type="button"
+            onClick={() => setUsageOpen(v => !v)}
+            aria-expanded={usageOpen}
+            className="flex w-full items-center justify-between gap-2 px-4 py-3 text-left"
+          >
+            <span className="min-w-0">
+              <span className="block text-sm font-medium text-gray-800 dark:text-white">最近 7 天用量</span>
+              <span className="mt-0.5 block truncate text-[11px] text-gray-400 dark:text-gray-500">
+                {usage.calls} 次请求{usage.metered > 0 ? ` · 输入 ${fmtTok(usage.inTok)} · 输出 ${fmtTok(usage.outTok)}` : ''}
+              </span>
+            </span>
+            <span className="shrink-0 text-xs text-gray-400">{usageOpen ? '▲' : '▼'}</span>
+          </button>
+          {usageOpen && (<div className="px-4 pb-3">
           <div className="mt-0.5 text-[11px] leading-relaxed text-gray-400 dark:text-gray-500">
             {usage.calls} 次请求
             {usage.metered > 0 && (
@@ -893,6 +910,7 @@ export function AIServiceSettings({ openConnection = false }: {
               </div>
             ))}
           </div>
+          </div>)}
         </div>
       )}
 
