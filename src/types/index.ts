@@ -650,6 +650,8 @@ export interface Settings {
   // ── F6 万能记录 AI「黑猫」（Navigator） ──
   /** 最近一次「每日首开问候」的本地日期（YYYY-MM-DD）：跨天首开播完整问候，当日重开只简短招呼。 */
   navigatorLastGreetDate?: string;
+  /** 每个人格今天问候过没有（第 37 批）：人格 id → 问候的日子；配合 navigatorLastGreetDate 用（见 store/navigator 的 greetedToday） */
+  navigatorGreetDates?: Record<string, string>;
   /** 当前激活的人格 preset id（缺省 = 内置黑猫）。切人格 = 开新会话。 */
   navigatorPresetId?: string;
   /** 记忆按人格隔离（第 23 批）：开了之后记忆 / 约好的事 / 画像各人格各记各的，共享的那份大家都读；默认关 */

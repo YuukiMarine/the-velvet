@@ -62,7 +62,19 @@ import { buildTopicPermission, noteHappeningsMentioned, noteTopicsMentioned, unm
 import { buildWishContextLine, maybeProposeWishProgress } from '@/utils/navigatorWishProgress';
 import { describeImagesEach, joinImageDescriptions } from '@/utils/visionIntake';
 import { BUILTIN_NAVIGATOR_PRESETS, knownCustomPreset, markPresetMissing, personaWithExamples, resolveNavigatorPreset } from '@/constants/navigatorPresets';
-import type { NavigatorMessageRow, NavigatorPreset, NavigatorSessionRow } from '@/types';
+import type { NavigatorMessageRow, NavigatorPreset, NavigatorSessionRow, Settings } from '@/types';
+
+/**
+ * 这个人格今天问候过没有（第 37 批 · 串戏修补）：以前全人格共用 navigatorLastGreetDate，当天先和黑猫聊过、再切到别的人格，
+ * 那个人格只拿到一句模板短招呼（还是黑猫口吻），没有自己的问候、回访和沉下来第二天那句。
+ * 旧字段照旧写，当「今天有人格问候过」；navigatorGreetDates 细分到人格。老档没有这张表时按旧字段算，升级当天不会重复问候。
+ */
+const greetedToday = (settings: Settings, presetId: string, dateKey: string): boolean =>
+  settings.navigatorLastGreetDate === dateKey && (!settings.navigatorGreetDates || settings.navigatorGreetDates[presetId] === dateKey);
+const greetedPatch = (settings: Settings, presetId: string, dateKey: string): Partial<Settings> => ({
+  navigatorLastGreetDate: dateKey,
+  navigatorGreetDates: { ...(settings.navigatorLastGreetDate === dateKey ? settings.navigatorGreetDates ?? {} : {}), [presetId]: dateKey },
+});
 
 export type NavigatorCardStatus = 'pending' | 'done' | 'cancelled';
 export type NavigatorPhase = 'idle' | 'collecting' | 'thinking' | 'replying';
@@ -658,7 +670,7 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
       // 菜单层模板接话（连发只回这一次——仲裁器治愈 Batch1 的刷屏）
       await sleep(isD0() ? 0 : 500);
       if (gen !== generation) return;
-      get().pushCat(buildFallbackReply());
+      get().pushCat(buildFallbackReply(get().activePreset().id));
       set({ phase: 'idle' });
       return;
     }
@@ -1026,7 +1038,10 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
       { const p = get().activePreset(); void writeDiaries(p.id, useAppStore.getState().settings).then(() => maybeEvolve(p, useAppStore.getState().settings)).catch(() => {}); }
       if (get().messages.length === 0) {
         const preset = get().activePreset();
-        get().pushCat(preset.handoffLine ?? `（${preset.name} 上线了）`);
+        // 这个人格今天还没问候过：窗口开着就走一次完整问候（自己的口吻、回访、小状态）；关着就先空着，打开时 greet 会问候。
+        // 今天已经问候过（比如清过今天的对话）才推那句接管语（第 37 批）
+        if (!greetedToday(useAppStore.getState().settings, preset.id, toLocalDateKey())) { if (get().isOpen) get().greet(); }
+        else get().pushCat(preset.handoffLine ?? `（${preset.name} 上线了）`);
       }
     },
 
@@ -1104,7 +1119,7 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
         const app = useAppStore.getState();
         const preset = get().activePreset();
         // 从推送进来的那一次一定走完整问候（第一句就是推送要说的那件事），哪怕今天已经问候过
-        const firstToday = app.settings.navigatorLastGreetDate !== snap.dateKey || !!opener;
+        const firstToday = !greetedToday(app.settings, preset.id, snap.dateKey) || !!opener;
         // 第二批：今天的小状态（有 Key 一次 AI，没 Key 模板）先跑着；相处时长（纪念日在这里提）
         const ownDayP = ensureOwnDay(preset, app.settings);
         const together = await togetherFacts(preset.id);
@@ -1119,7 +1134,7 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
         // 「今日已问候」的标记改在**问候真正送达后**再写（下方各分支）：
         // 此前进门就写，AI 问候若被打断/崩溃（gen 作废 return），完整版问候当天就永远消失了。
         const markGreeted = (text?: string) => {
-          void useAppStore.getState().updateSettings({ navigatorLastGreetDate: snap.dateKey });
+          void useAppStore.getState().updateSettings(greetedPatch(useAppStore.getState().settings, preset.id, snap.dateKey));
           // 新总结只在问候里提一次（v2.7.0.6）；问候里提到的塔罗 / 待办也记账
           if (snap.unreadSummaryId) markReportGreeted(snap.unreadSummaryId);
           if (text) {
@@ -1142,7 +1157,7 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
         // 沉下来的第二天（第 25 批）：轻轻问一句——只在今天第一次问候时取走
         const careLine = firstToday ? takeCareLine(preset.id, snap.dateKey) : null;
         if (!firstToday || !getAIConfig(app.settings)) {
-          let text = firstToday ? buildDailyGreeting(snap) : buildShortGreeting(snap);
+          let text = firstToday ? buildDailyGreeting(snap, preset.id) : buildShortGreeting(snap, preset.id);
           // 推送开场：那件事放第一句（约定已经在这句里问了，下面不再重复）
           if (openerLine) text = [openerLine, text].join('\n');
           if (careLine) text = [careTemplateLine(), text].join('\n');
@@ -1223,14 +1238,14 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
           clearTimeout(timer);
           if (gen !== generation) return;
           if (!text && import.meta.env.DEV) console.warn('[navigator] AI 问候失败/超时，落模板');
-          const greeting = text ?? buildDailyGreeting(snap);
+          const greeting = text ?? buildDailyGreeting(snap, preset.id);
           splitSegments(greeting).forEach((seg) => get().pushCat(seg));
           markGreeted(greeting);
           set({ phase: 'idle' });
         } catch (e) {
           if (gen !== generation) return;
           if (import.meta.env.DEV) console.warn('[navigator] 问候流程异常，落模板', e);
-          const fallback = buildDailyGreeting(snap);
+          const fallback = buildDailyGreeting(snap, preset.id);
           get().pushCat(fallback);
           markGreeted(fallback);
           set({ phase: 'idle' });

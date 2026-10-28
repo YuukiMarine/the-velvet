@@ -10,7 +10,8 @@
  *   · 足迹：它替你做过的事（卡片确认过的操作，撤销过的标着）。
  * 皮肤用新版设置那套原语（四个频道各一套，夜间全走变量）。入口：设置 → 助手 + 对话窗头像菜单。所有内容只存本机。
  */
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { db } from '@/db';
 import { SheetModal } from '@/components/SheetModal';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -134,7 +135,8 @@ const TabBar = ({ skin, value, onChange, items }: { skin: SettingsSkin; value: T
             {it.n ? <span className="text-[9.5px] font-black">{it.n > 99 ? '99+' : it.n}</span> : null}
           </span>
         );
-        const base = 'relative min-w-0 flex-1 px-1 py-2 text-[12.5px] font-black';
+        // 宽度按字数分（第 37 批）：多了「日记」后六个页签等宽，390 宽时「约好的事 1」挤不下——蓝色数字被斜切裁掉、红色压到隔壁
+        const base = 'relative min-w-0 flex-auto px-1.5 py-2 text-[12.5px] font-black';
         const common = { type: 'button' as const, role: 'tab', 'aria-selected': on, 'data-notebook-tab': it.id, onClick: () => onChange(it.id) };
         if (skin === 'p5') {
           return (
@@ -235,23 +237,51 @@ const OwnerPicker = ({ skin, owners, personas, onChange }: { skin: SettingsSkin;
   );
 };
 
-/** 「⋯」菜单：点开在卡片右上角展开一小列；点外面收起 */
+/**
+ * 「⋯」菜单：浮在最上层（portal 到 body），按按钮的位置弹出，下面放不下就往上开（第 37 批）。
+ * 以前挂在卡片里往下展开：记忆隔离关掉时卡片变矮、最后一张卡离底近，菜单被卡片的斜切 / 撕纸或记事本底边裁掉，「删」点不到。
+ * 滚动 / 改尺寸时跟着按钮重新定位；点外面收起。
+ */
+const MENU_ITEM_PX = 34; // 每项 py-2 + 12.5px 字
 const MoreMenu = ({ skin, open, onToggle, items }: { skin: SettingsSkin; open: boolean; onToggle: () => void; items: Array<{ label: string; onClick: () => void; danger?: boolean }> }) => {
   const t = skinTokens(skin);
+  const anchorRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ top: number; right: number } | null>(null);
+  useLayoutEffect(() => {
+    if (!open) { setPos(null); return undefined; }
+    const place = () => {
+      const r = anchorRef.current?.getBoundingClientRect();
+      if (!r) return;
+      const h = items.length * MENU_ITEM_PX + 8;
+      const below = r.bottom + 4;
+      setPos({
+        top: below + h > window.innerHeight - 12 ? Math.max(12, r.top - 4 - h) : below,
+        right: Math.max(8, window.innerWidth - r.right),
+      });
+    };
+    place();
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
+    return () => { window.removeEventListener('resize', place); window.removeEventListener('scroll', place, true); };
+  }, [open, items.length]);
   return (
-    <div className="relative shrink-0">
+    <div ref={anchorRef} className="relative shrink-0">
       <IconBtn skin={skin} glyph="dots" label="更多操作" onClick={onToggle} />
-      {open && (
+      {open && pos && typeof document !== 'undefined' && createPortal(
         <>
-          <button type="button" aria-label="收起菜单" className="fixed inset-0 z-10 cursor-default" onClick={onToggle} />
-          <div role="menu" className={`absolute right-0 top-8 z-20 min-w-[7.5em] py-1 ${skin === 'p4' || skin === 'neutral' ? 'rounded-xl' : ''}`}
-            style={skin === 'p5'
-              ? { background: P5R.paper, boxShadow: `0 0 0 2px ${P5R.ink}, 3px 3px 0 ${P5R.red}` }
-              : skin === 'p4'
-                ? { background: 'var(--ui-paper, #fff6d0)', boxShadow: '0 0 0 2px #131313, 0 4px 0 rgba(19,19,19,0.2)' }
-                : skin === 'p3'
-                  ? { background: P3R.panel, boxShadow: '0 10px 24px rgba(7,40,120,.22)', clipPath: slantClip(6) }
-                  : { background: 'var(--ui-paper, #ffffff)', boxShadow: '0 10px 24px rgba(0,0,0,.16)' }}>
+          <button type="button" aria-label="收起菜单" className="fixed inset-0 z-[1000] cursor-default" onClick={onToggle} />
+          <div role="menu" className={`fixed z-[1001] min-w-[7.5em] py-1 ${skin === 'p4' || skin === 'neutral' ? 'rounded-xl' : ''}`}
+            style={{
+              top: pos.top,
+              right: pos.right,
+              ...(skin === 'p5'
+                ? { background: P5R.paper, boxShadow: `0 0 0 2px ${P5R.ink}, 3px 3px 0 ${P5R.red}` }
+                : skin === 'p4'
+                  ? { background: 'var(--ui-paper, #fff6d0)', boxShadow: '0 0 0 2px #131313, 0 4px 0 rgba(19,19,19,0.2)' }
+                  : skin === 'p3'
+                    ? { background: P3R.panel, boxShadow: '0 10px 24px rgba(7,40,120,.22)', clipPath: slantClip(6) }
+                    : { background: 'var(--ui-paper, #ffffff)', boxShadow: '0 10px 24px rgba(0,0,0,.16)' }),
+            }}>
             {items.map((it) => (
               <button key={it.label} type="button" role="menuitem" onClick={() => { onToggle(); it.onClick(); }}
                 className="block w-full px-3.5 py-2 text-left text-[12.5px] font-black"
@@ -260,7 +290,8 @@ const MoreMenu = ({ skin, open, onToggle, items }: { skin: SettingsSkin; open: b
               </button>
             ))}
           </div>
-        </>
+        </>,
+        document.body,
       )}
     </div>
   );

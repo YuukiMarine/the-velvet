@@ -1308,6 +1308,19 @@ html[data-ios-standalone="true"] {
 :root.dark[data-ui-channel="p4"] [class*="bg-[#fff6d0]"] :is([class*="text-[#131313]"]) { color: #f3ecff !important; }
 :root.dark[data-ui-channel="p4"] [class*="border-[#131313]"] { border-color: rgba(243,236,255,0.4) !important; }
 :root.dark[data-ui-channel="p4"] [class*="bg-[#131313]"] { background-color: #150b33 !important; }
+
+/* 助手记录表单（NavigatorActionForm，第 37 批）：底板 / 输入框 / 加点行以前写死浅色，字却跟着夜间变浅，蓝 / 粉 / 黄夜间成了浅底浅字。
+   组件里写 var(--navform-*, 白天原色)，这里只在夜间给值；粉主题夜间的 --p3r-panel / --p3r-field / --p3r-ph 会自己换成粉的那套。 */
+.navform-input::placeholder { color: var(--navform-ph, #8fb1dc); }
+:root.dark[data-ui-channel="p3"] {
+  --navform-panel: var(--p3r-panel);
+  --navform-field: var(--p3r-field);
+  --navform-ph: var(--p3r-ph);
+}
+:root.dark[data-ui-channel="p4"] {
+  /* 取舞台紫而不是纸面紫：输入框（bg-white 夜间翻成纸面紫）在底板上才看得出是个框 */
+  --navform-p4-panel: var(--p4-stage);
+}
 /* 夜间 · 蓝频道补漏：--color-primary 是 store 往 :root 内联写的（主题主色），
    内联普通声明干不过样式表 !important——借此在夜间把旧蓝体系（底导航高亮、
    text-primary/bg-primary 族）整体翻到浅绿强调。 */

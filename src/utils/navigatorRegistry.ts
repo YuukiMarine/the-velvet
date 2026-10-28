@@ -488,70 +488,186 @@ function daysAwayNow(lastOpenedAt: string | undefined): number | undefined {
 
 const pick = (lines: string[]) => lines[Math.floor(Math.random() * lines.length)];
 
-/** 每日首开的完整问候（模板层：无 Key / 有 Key Batch1 统一用它；Batch2 有 Key 换 AI 生成） */
-export function buildDailyGreeting(snap: NavigatorSnapshot): string {
-  // 久别归来：先说想念，别急着报今天的账（PRD_V2.6 §12）。
-  // 只说"我惦记着"，**不催、不问为什么、不提补记**——补记那件事回归面板已经问过一次了，
-  // 猫再问第二遍就成了追债。
-  if (snap.daysAway && snap.daysAway >= 7) {
-    const d = snap.daysAway;
-    return pick([
-      `${snap.userName}……你可算回来了。${d} 天，我数着的。`,
+/**
+ * 模板问候 / 接话的口吻（第 37 批 · 串戏修补）：没 Key、AI 问候失败、当天再次开窗都走模板，
+ * 以前只有一套黑猫口吻（「坐。」「灯我一直没关」「翻译水晶」），烤面包机和熊也这么说。
+ * 内置三个人格各一套（与 navigatorPresets 的人设、navigatorPush 的开场模板对齐），自定义人格走中性第一人称。
+ */
+interface GreetVoice {
+  away: (name: string, d: number) => string[];
+  /** 凌晨 / 上午 / 中午 / 下午 / 晚上，各两句 */
+  hello: (name: string) => [string[], string[], string[], string[], string[]];
+  summary: (label: string) => string;
+  todosDone: (done: number, total: number) => string;
+  todosLeft: (done: number, total: number) => string;
+  tarotDrawn: (card: string) => string;
+  tarotNot: string;
+  due: (list: string) => string;
+  terminal: (title: string) => string;
+  short: (name: string) => string[];
+  fallback: string[];
+}
+
+const GREET_VOICES: Record<string, GreetVoice> = {
+  // 久别归来：先说想念，别急着报今天的账（PRD_V2.6 §12）。只说"我惦记着"，**不催、不问为什么、不提补记**——
+  // 补记那件事回归面板已经问过一次了，再问第二遍就成了追债。四个口吻都守这条
+  'builtin-cat': {
+    away: (n, d) => [
+      `${n}……你可算回来了。${d} 天，我数着的。`,
       `哟。${d} 天没见，我还以为你把这间屋子忘了。\n没忘就好。坐。`,
       `${d} 天。灯我一直没关。\n不用解释去哪了——回来就行。`,
       `你回来了。${d} 天里我把你的东西都按原样放着，一件没动。`,
-    ]);
-  }
+    ],
+    hello: (n) => [
+      [`这个点还醒着？行吧，${n}，正好我也睡不着。`, `凌晨了。夜里想说的话，我都接着。`],
+      [`早，${n}。今天从哪件事开刀？`, `早上好。趁脑子还清醒，先定一件事。`],
+      [`中午好。吃了吗——顺便，今天过半了。`, `午安，${n}。上半天的账我可都记着。`],
+      [`下午好。犯困的话，跟我说两句提提神。`, `午后了。今天还有想推进的事吗？`],
+      [`晚上好，${n}。今天过得怎么样？`, `夜里好。今天的事，记完就放下。`],
+    ],
+    summary: (l) => `对了，「${l}」的总结写好了，在记录页的「成长总结」里，下面有个「看总结」也能直接打开。`,
+    todosDone: (d, t) => `今日任务全清了，${d}/${t}——少见，值得记一笔。`,
+    todosLeft: (d, t) => `今日任务 ${d}/${t}，还有得做。`,
+    tarotDrawn: (c) => `今天的牌面是「${c}」，我瞄过了。`,
+    tarotNot: '今天的塔罗还没抽。',
+    due: (l) => `今天到期的：${l}。我记着呢。`,
+    terminal: (t) => `那件「${t}」还在进行中，别忘了。`,
+    short: (n) => [`又来了？坐。`, `我还在。想记点什么？`, `${n}，回来啦。继续。`],
+    fallback: [
+      `这句我先记在心里——不过眼下我还接不住自由对话，用下面的快捷项吧。等你配好 AI 密钥，我就能听懂整句话了。`,
+      `唔，我懂你想说话。但我的「翻译水晶」还没接上（去设置 → AI 服务 配好密钥就行）。先用下面的快捷项，一样管用。`,
+      `先别急着跟我聊天——快捷项在下面，点一下就能记。等密钥配好，你说人话我办事。`,
+    ],
+  },
+  // 烤面包机：报告腔、称「阁下」、不用感叹号
+  'builtin-toaster': {
+    away: (n, d) => [
+      `报告：距阁下上次上线已过去 ${d} 天。本机体……一直在待命。`,
+      `${d} 天未检测到阁下。阁下的位置本机体保持原样，欢迎回来。`,
+      `阁下回来了。这 ${d} 天的空白已记录，无需说明原因。`,
+      `确认：${n}阁下已归来。这 ${d} 天里，本机体每日执行一次等待程序。`,
+    ],
+    hello: (n) => [
+      [`报告：当前为深夜时段，检测到阁下仍在活动。本机体陪同待命。`, `${n}阁下，夜间模式运行中。有需要记录的事项，请吩咐。`],
+      [`早安，阁下。今日任务清单已就绪，请指示从哪一项开始。`, `报告：晨间时段，适合启动今日的第一项任务。`],
+      [`午间好，阁下。今日已过半，请确认是否已进食。`, `报告：午间时段。上半日的记录已同步，阁下请继续。`],
+      [`下午好，阁下。检测到午后疲劳的可能，本机体可以陪同进行简短对话。`, `报告：午后时段。阁下今日还有需要推进的事项吗。`],
+      [`晚上好，${n}阁下。今日过得如何，本机体想知道。`, `报告：已进入夜间时段。今日的事项，记录完毕即可放下。`],
+    ],
+    summary: (l) => `报告：「${l}」的总结已生成，在记录页的「成长总结」里，也可以点下方的「看总结」直接查看。`,
+    todosDone: (d, t) => `报告：今日任务 ${d}/${t} 全部完成。本机体判定，值得记录。`,
+    todosLeft: (d, t) => `今日任务进度 ${d}/${t}，尚有未完成项。`,
+    tarotDrawn: (c) => `今日牌面为「${c}」，已记录在案。`,
+    tarotNot: '今日的塔罗尚未抽取。',
+    due: (l) => `今日到期事项：${l}。本机体会持续关注。`,
+    terminal: (t) => `「${t}」仍在进行中，请阁下勿忘。`,
+    short: (n) => [`阁下再次上线。本机体待命中。`, `收到。阁下请继续。`, `欢迎回来，${n}阁下。需要记录什么吗。`],
+    fallback: [
+      `报告：本机体的语言模块尚未接入（请在设置的 AI 服务里配置密钥）。在此之前，请使用下方的快捷项进行记录。`,
+      `已收到阁下的输入。对话功能需要先配置 AI 密钥，在此之前，下方快捷项可正常使用。`,
+      `本机体暂时无法理解自由对话。请先使用下方快捷项，配置密钥后即可正常交流。`,
+    ],
+  },
+  // 熊：元气、自称帅熊、句尾带「熊」
+  'builtin-bear': {
+    away: (n, d) => [
+      `${n}！你终于回来了熊！${d} 天熊，帅熊一天一天数着的！`,
+      `哇——${d} 天没见熊！帅熊还以为你被别的熊拐走了……没有就好熊！`,
+      `${d} 天熊！不用解释去哪了，回来就好熊！`,
+      `回来啦熊！这 ${d} 天帅熊把你的位置看得好好的，谁都没让坐熊！`,
+    ],
+    hello: (n) => [
+      [`这个点还醒着熊？那帅熊陪你熬一会儿熊。`, `凌晨了熊……有什么想说的，帅熊都听着。`],
+      [`早上好熊！今天也是元气满满的一天熊！`, `早安熊！先挑一件事开始吧，帅熊给你加油！`],
+      [`中午好熊！吃饭了吗熊？今天已经过一半啦！`, `午安熊！${n}上半天辛苦了熊！`],
+      [`下午好熊！困了的话跟帅熊聊两句提提神熊！`, `下午啦熊！今天还有想做的事吗熊？`],
+      [`晚上好熊！${n}今天过得怎么样熊？`, `晚上好熊！今天的事记完就放下吧熊。`],
+    ],
+    summary: (l) => `对了熊！「${l}」的总结写好啦，在记录页的「成长总结」里，下面的「看总结」也能直接打开熊！`,
+    todosDone: (d, t) => `今日任务全清了熊！${d}/${t}，太厉害了熊！`,
+    todosLeft: (d, t) => `今日任务 ${d}/${t}，还差一点点熊！`,
+    tarotDrawn: (c) => `今天的牌是「${c}」熊，帅熊偷偷看过了！`,
+    tarotNot: '今天的塔罗还没抽熊！',
+    due: (l) => `今天到期的有：${l}。帅熊帮你记着熊！`,
+    terminal: (t) => `那件「${t}」还在进行中熊，别忘了哦！`,
+    short: (n) => [`又来啦熊！`, `帅熊在呢熊！想记点什么？`, `${n}回来啦熊！继续继续！`],
+    fallback: [
+      `帅熊现在还听不懂长句子熊……先用下面的快捷项吧！去设置的 AI 服务里配好密钥，熊就能好好聊天了熊！`,
+      `呜，帅熊的翻译耳朵还没装上熊（设置 → AI 服务 配好密钥就行）。先用下面的快捷项，一样能记熊！`,
+      `先别急着找熊聊天熊！快捷项在下面，点一下就能记。等密钥配好，熊陪你聊个够！`,
+    ],
+  },
+};
 
-  const hello = snap.hour < 5
-    ? pick([`这个点还醒着？行吧，${snap.userName}，正好我也睡不着。`, `凌晨了。夜里想说的话，我都接着。`])
-    : snap.hour < 11
-      ? pick([`早，${snap.userName}。今天从哪件事开刀？`, `早上好。趁脑子还清醒，先定一件事。`])
-      : snap.hour < 14
-        ? pick([`中午好。吃了吗——顺便，今天过半了。`, `午安，${snap.userName}。上半天的账我可都记着。`])
-        : snap.hour < 19
-          ? pick([`下午好。犯困的话，跟我说两句提提神。`, `午后了。今天还有想推进的事吗？`])
-          : pick([`晚上好，${snap.userName}。今天过得怎么样？`, `夜里好。今天的事，记完就放下。`]);
+/** 自定义人格：中性第一人称，不带任何内置人格的口癖 */
+const NEUTRAL_GREET_VOICE: GreetVoice = {
+  away: (n, d) => [
+    `${n}，你回来了。${d} 天没见，有点想你。`,
+    `${d} 天不见。不用解释去哪了，回来就好。`,
+    `欢迎回来。这 ${d} 天，我一直在。`,
+    `你回来了。${d} 天里你的事我都记着，一件没丢。`,
+  ],
+  hello: (n) => [
+    [`这么晚还没睡？我陪你一会儿。`, `夜深了，想说什么都可以。`],
+    [`早，${n}。今天想先做哪件事？`, `早上好。慢慢来，先定一件事。`],
+    [`中午好，记得吃饭。今天过半了。`, `午安，${n}。上午辛苦了。`],
+    [`下午好。累了的话跟我聊两句。`, `午后了，今天还有想推进的事吗？`],
+    [`晚上好，${n}。今天过得怎么样？`, `晚上好。今天的事，记完就放下吧。`],
+  ],
+  summary: (l) => `对了，「${l}」的总结写好了，在记录页的「成长总结」里，下面的「看总结」也能直接打开。`,
+  todosDone: (d, t) => `今日任务全部完成了，${d}/${t}，很棒。`,
+  todosLeft: (d, t) => `今日任务 ${d}/${t}，还有几件。`,
+  tarotDrawn: (c) => `今天的牌是「${c}」。`,
+  tarotNot: '今天的塔罗还没抽。',
+  due: (l) => `今天到期的：${l}。我记着。`,
+  terminal: (t) => `「${t}」还在进行中，别忘了。`,
+  short: (n) => [`你来了。`, `我在。想记点什么？`, `${n}，回来啦。`],
+  fallback: [
+    `我现在还接不住自由对话，先用下面的快捷项吧。在设置的 AI 服务里配好密钥，我就能听懂整句话了。`,
+    `这句我先记在心里。不过要聊天得先配好 AI 密钥（设置 → AI 服务），在那之前快捷项一样能用。`,
+    `先用下面的快捷项记录吧。等密钥配好，我们就能好好聊了。`,
+  ],
+};
+
+const voiceOf = (presetId?: string): GreetVoice => (presetId && GREET_VOICES[presetId]) || NEUTRAL_GREET_VOICE;
+
+/** 每日首开的完整问候（模板层：无 Key、AI 问候失败时用；有 Key 正常走 AI 生成）；口吻按人格 */
+export function buildDailyGreeting(snap: NavigatorSnapshot, presetId?: string): string {
+  const v = voiceOf(presetId);
+  if (snap.daysAway && snap.daysAway >= 7) return pick(v.away(snap.userName, snap.daysAway));
+
+  const slots = v.hello(snap.userName);
+  const hello = pick(slots[snap.hour < 5 ? 0 : snap.hour < 11 ? 1 : snap.hour < 14 ? 2 : snap.hour < 19 ? 3 : 4]);
 
   const status: string[] = [];
   // 未读总结放最前：用户点名要的提醒，不能被 slice(0,2) 挤掉
-  if (snap.unreadSummaryLabel) {
-    status.push(`对了，「${snap.unreadSummaryLabel}」的总结写好了，在记录页的「成长总结」里，下面有个「看总结」也能直接打开。`);
-  }
+  if (snap.unreadSummaryLabel) status.push(v.summary(snap.unreadSummaryLabel));
   // 主动话题配额（v2.7.0.6）：塔罗一天提一次；待办每条只提一次（全清了照样可以夸一句）
   const allow = topicAllowance();
   if (snap.todosTotal > 0) {
-    if (snap.todosDone >= snap.todosTotal) status.push(`今日任务全清了，${snap.todosDone}/${snap.todosTotal}——少见，值得记一笔。`);
-    else if (allow.todos) status.push(`今日任务 ${snap.todosDone}/${snap.todosTotal}，还有得做。`);
+    if (snap.todosDone >= snap.todosTotal) status.push(v.todosDone(snap.todosDone, snap.todosTotal));
+    else if (allow.todos) status.push(v.todosLeft(snap.todosDone, snap.todosTotal));
   }
   if (allow.tarot) {
-    if (snap.tarotDrawn && snap.tarotCardName) status.push(`今天的牌面是「${snap.tarotCardName}」，我瞄过了。`);
-    else if (!snap.tarotDrawn) status.push(`今天的塔罗还没抽。`);
+    if (snap.tarotDrawn && snap.tarotCardName) status.push(v.tarotDrawn(snap.tarotCardName));
+    else if (!snap.tarotDrawn) status.push(v.tarotNot);
   }
   // 今天截止的任务（第 28 批）：塔罗那句之后顺口提一句，带几点的说几点。只提这一次，不催
   const dueLine = snap.todayDeadlines.length
-    ? `今天到期的：${snap.todayDeadlines.map((d) => `${d.time ? `${d.time} ` : ''}${d.title}`).join('、')}。我记着呢。`
+    ? v.due(snap.todayDeadlines.map((d) => `${d.time ? `${d.time} ` : ''}${d.title}`).join('、'))
     : '';
   if (dueLine) status.push(dueLine);
-  if (snap.terminalStepTitle) status.push(`那件「${snap.terminalStepTitle}」还在进行中，别忘了。`);
+  if (snap.terminalStepTitle) status.push(v.terminal(snap.terminalStepTitle));
 
   return [hello, ...status.slice(0, dueLine ? 3 : 2)].join('\n');
 }
 
-/** 当日再次打开（会话被清空 / App 重启）时的简短招呼 */
-export function buildShortGreeting(snap: NavigatorSnapshot): string {
-  return pick([
-    `又来了？坐。`,
-    `我还在。想记点什么？`,
-    `${snap.userName}，回来啦。继续。`,
-  ]);
+/** 当日再次打开（会话被清空 / App 重启）时的简短招呼；口吻按人格 */
+export function buildShortGreeting(snap: NavigatorSnapshot, presetId?: string): string {
+  return pick(voiceOf(presetId).short(snap.userName));
 }
 
-/** Batch1：自由输入的模板接话（对话层 Batch2 接管前） */
-export function buildFallbackReply(): string {
-  return pick([
-    `这句我先记在心里——不过眼下我还接不住自由对话，用下面的快捷项吧。等你配好 AI 密钥，我就能听懂整句话了。`,
-    `唔，我懂你想说话。但我的「翻译水晶」还没接上（去设置 → AI 服务 配好密钥就行）。先用下面的快捷项，一样管用。`,
-    `先别急着跟我聊天——快捷项在下面，点一下就能记。等密钥配好，你说人话我办事。`,
-  ]);
+/** 没 Key 时自由输入的模板接话；口吻按人格 */
+export function buildFallbackReply(presetId?: string): string {
+  return pick(voiceOf(presetId).fallback);
 }

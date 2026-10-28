@@ -137,11 +137,11 @@ export const NavigatorActionForm = ({ draft, channel, images, onSubmit, onClose 
 
   const ink = bright ? { color: P3R.ink } : undefined;
   const panelCls = bright
-    ? 'bg-[#f4fafd] shadow-[0_24px_60px_rgba(6,30,90,.4)]'
+    ? 'shadow-[0_24px_60px_rgba(6,30,90,.4)]'
     : p5
       ? 'border-[3px] border-[#050505] bg-[#f0e9df] text-[#131313] shadow-[10px_10px_0_rgba(0,0,0,0.5)]'
       : p4
-        ? 'border-[3px] border-[#131313] bg-[#fff7b0] text-[#131313] shadow-[0_8px_0_#ff9a00]'
+        ? 'border-[3px] border-[#131313] text-[#131313] shadow-[0_8px_0_#ff9a00]'
         : 'border border-white/10 bg-[#15181f] text-gray-100 shadow-2xl';
   const labelCls = bright
     ? 'mb-2 block text-[15px] font-black'
@@ -149,13 +149,13 @@ export const NavigatorActionForm = ({ draft, channel, images, onSubmit, onClose 
       ? 'mb-1.5 block text-[13px] font-black'
       : 'mb-1.5 block text-xs font-bold text-gray-400';
   const inputCls = bright
-    ? 'w-full bg-[#dbeff8] px-4 py-3 text-[16px] font-bold outline-none placeholder:text-[#8fb1dc]'
+    ? 'navform-input w-full px-4 py-3 text-[16px] font-bold outline-none'
     : p5
       ? 'w-full border-[3px] border-[#050505] bg-white px-3 py-2.5 text-[16px] font-bold text-[#131313] outline-none placeholder:text-[#131313]/30 focus:shadow-[3px_3px_0_#050505]'
       : p4
         ? 'w-full rounded-[12px] border-[3px] border-[#131313] bg-white px-3 py-2.5 text-[16px] font-bold text-[#131313] outline-none placeholder:text-[#131313]/30 focus:border-[#20bff2]'
         : 'w-full rounded-xl border border-white/15 bg-black/30 px-3 py-2.5 text-[16px] outline-none placeholder:text-gray-500 focus:border-primary';
-  const inputStyle = bright ? { ...ink, clipPath: slantClip(12) } : ink;
+  const inputStyle = bright ? { ...ink, clipPath: slantClip(12), background: 'var(--navform-field, #dbeff8)' } : ink;
   const chipCls = (active: boolean) => bright
     ? `px-3.5 py-1.5 text-xs font-black transition [clip-path:polygon(8px_0,100%_0,calc(100%_-_8px)_100%,0_100%)] ${active ? 'bg-[#1b57ff] text-white shadow-[0_6px_16px_rgba(27,87,255,.3)]' : 'bg-white shadow-[0_4px_12px_rgba(7,40,120,.10)]'}`
     : p5
@@ -233,7 +233,7 @@ export const NavigatorActionForm = ({ draft, channel, images, onSubmit, onClose 
             <div className="space-y-2">
               {ATTR_IDS.map((id, i) => bright ? (
                 // p3-modal-14 稿：浅青斜条行，逐级右移错位；青三角 ∓ 钮 + 大黑数字
-                <div key={id} className="flex items-center gap-2 py-1.5 pl-5 pr-3" style={{ background: '#dbeff8', clipPath: slantClip(12), marginLeft: i * 7, marginRight: (4 - i) * 3 }}>
+                <div key={id} className="flex items-center gap-2 py-1.5 pl-5 pr-3" style={{ background: 'var(--navform-field, #dbeff8)', clipPath: slantClip(12), marginLeft: i * 7, marginRight: (4 - i) * 3 }}>
                   <span className="w-14 truncate text-[16px] font-black" style={ink}>{navAttrName(id)}</span>
                   <span className="flex-1" />
                   <TriStepBtn dir="left" disabled={d.points[id] <= 0} label={`${navAttrName(id)} 减一`}
@@ -703,11 +703,15 @@ export const NavigatorActionForm = ({ draft, channel, images, onSubmit, onClose 
             exit={{ y: 12, opacity: 0 }}
             transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
             className={`relative w-full max-w-md overflow-hidden ${panelCls}`}
+            // 底板走 CSS 变量（第 37 批）：白天是原来的浅青 / 浅黄，夜间按频道翻成深色（index.css 的 --navform-*）——
+            // 以前写死浅色，字却跟着夜间变浅，蓝 / 粉 / 黄夜间成了浅底浅字
             style={bright
-              ? { clipPath: 'polygon(0 2%, 100% 0, 99% 100%, 0 98%)' }
+              ? { clipPath: 'polygon(0 2%, 100% 0, 99% 100%, 0 98%)', background: 'var(--navform-panel, #f4fafd)' }
               : p5
                 ? { clipPath: 'polygon(0 1.5%, 100% 0, 99.2% 100%, 0.8% 98.5%)' }
-                : { borderRadius: p4 ? '22px' : '1.25rem' }}
+                : p4
+                  ? { borderRadius: '22px', background: 'var(--navform-p4-panel, #fff7b0)' }
+                  : { borderRadius: '1.25rem' }}
             onMouseDown={(e) => e.stopPropagation()}
           >
             {/* LOG/TODO/NOTE 竖排幽灵字（整行横排词顺时针 90°，沿左缘）——三频道各自的水印色 */}
