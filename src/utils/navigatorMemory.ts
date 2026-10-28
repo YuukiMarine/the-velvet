@@ -75,6 +75,8 @@ interface CompactResult {
   /** 带日子、过后要问结果的事（第二批回访约定：会话末补记漏掉的） */
   promises: unknown[];
   bits: CompactBit[];
+  /** 「他说话的习惯」（第 36 批）：0~1 条，存成 bit 的 style 一类 */
+  styleNotes: string[];
 }
 
 // ── 用户画像（第 26 批起分五块：身份 / 目标 / 偏好与雷区 / 近况 / 相处守则；归档器只回有变化的块，留上一版可撤回） ──
@@ -300,7 +302,7 @@ function extractJson(raw: string): Record<string, unknown> | null {
 
 const COMPACT_PROTOCOL = `你是对话归档器。把给定的「用户与陪伴 AI 的对话片段」压缩归档。
 只输出这一个 JSON 对象（不要代码块、不要其它文字）：
-{"summary":"","personaSummary":"","memories":[],"followUp":null,"profile":null,"keyBlocks":[],"promises":[],"bits":[]}
+{"summary":"","personaSummary":"","memories":[],"followUp":null,"profile":null,"keyBlocks":[],"promises":[],"bits":[],"styleNotes":[]}
 - summary：中性第三人称摘要，≤120 字，保留具体事实（做了什么/提到什么/情绪如何）。
 - personaSummary：同样内容，改用陪伴 AI 的第一人称口吻复述，≤100 字。
 - memories：0~2 条值得长期记住的**关于用户的**原子事实（各 ≤40 字，中性陈述句），
@@ -331,7 +333,8 @@ const COMPACT_PROTOCOL = `你是对话归档器。把给定的「用户与陪伴
   每条 {"topic":"≤8 字","date":"YYYY-MM-DD","when":"morning|day|evening"}；日子按第一行的日期和【日历】查；没有就 []。
   **这类事只写在 promises 里，不要再写成 memories 或 followUp**——会有专门的回访去问，写两处就会被问两遍。
 - bits：0~2 条「你们之间的说法」：这段对话里新出现的、以后还能再用的昵称 / 代号 / 玩笑 / 反复出现的梗，包括用户自己造的词（「把拖延叫『充能』」）。
-  每条 {"phrase":"≤10 字","meaning":"≤30 字","origin":"≤20 字，从哪件事来的"}。这不是关于用户的事实，不要写进 memories；平常的词、只随口说了一次的话不算；没有就 []。`;
+  每条 {"phrase":"≤10 字","meaning":"≤30 字","origin":"≤20 字，从哪件事来的"}。这不是关于用户的事实，不要写进 memories；平常的词、只随口说了一次的话不算；没有就 []。
+- styleNotes：0~1 条「他说话的习惯」（≤24 字，如「爱用『哈哈哈』收尾，句子都很短」「喜欢用颜文字」「几乎不打标点」）：只记这段对话里明显、而且像是稳定习惯的；没有就 []。`;
 
 /** 【已有的相关记忆】里的一条（短 id → 真 id 的映射由调用方保管） */
 export interface RelatedMemo { ref: string; id: string; text: string; dateKey: string }
@@ -446,6 +449,8 @@ async function compactViaAI(
       const origin = String(r.origin ?? '').trim().slice(0, 24);
       bits.push({ phrase, meaning: String(r.meaning ?? '').trim().slice(0, 40), ...(origin ? { origin } : {}) });
     }
+    const styleNotes = (Array.isArray(parsed.styleNotes) ? parsed.styleNotes : [])
+      .map((x) => String(x ?? '').replace(/\s+/g, ' ').trim().slice(0, 30)).filter((x) => x.length >= 4).slice(0, 1);
     return {
       summary,
       personaSummary: String(parsed.personaSummary ?? '').trim().slice(0, 180) || summary,
@@ -456,6 +461,7 @@ async function compactViaAI(
       clearRecent,
       promises: Array.isArray(parsed.promises) ? parsed.promises : [],
       bits,
+      styleNotes,
     };
   } catch (e) {
     if (import.meta.env.DEV) console.warn('[navigator] compact 调用失败', e);
@@ -538,6 +544,8 @@ async function persistMemories(
   if (result.followUp && await followUpCoveredByPromise(result.followUp, presetId).catch(() => false)) result.followUp = null;
   // 「你们之间的说法」跟人格走（带口吻，不受隔离开关影响）
   if (result.bits.length && presetId) await saveBits(result.bits, presetId, sessionDateKey).catch(() => {});
+  // 「他说话的习惯」（第 36 批）：也跟人格走，最多留 3 条
+  if (result.styleNotes?.length && presetId) await saveStyleNotes(result.styleNotes, presetId, sessionDateKey).catch(() => {});
 
   const owner = memoOwner(presetId);
   // 记在那场对话的日子上（第二天开窗才归档时，以前记成了归档那天）；当天的会话照旧用此刻
@@ -953,28 +961,58 @@ export async function saveBits(bits: CompactBit[], presetId: string, dateKey: st
   return n;
 }
 
-/** 这个人格的说法（只看它自己的；includeArchived 给整理 / 记事本用） */
-export async function listBits(presetId: string, includeArchived = false): Promise<NavigatorMemo[]> {
+export type BitKind = NonNullable<NavigatorMemo['bitKind']>;
+/** 这个人格的说法（只看它自己的；includeArchived 给整理 / 记事本用；kind 缺省只取说法，style = 他说话的习惯，all = 都要） */
+export async function listBits(presetId: string, includeArchived = false, kind: BitKind | 'all' = 'phrase'): Promise<NavigatorMemo[]> {
   try {
     return (await db.navigatorMemos.where('source').equals('bit').toArray())
-      .filter((m) => m.presetId === presetId && (includeArchived || m.status === 'active'))
+      .filter((m) => m.presetId === presetId && (includeArchived || m.status === 'active') && (kind === 'all' || (m.bitKind ?? 'phrase') === kind))
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   } catch { return []; }
+}
+
+const STYLE_NOTES_MAX = 3;
+/** 「他说话的习惯」（第 36 批）：存成 bit 的 style 一类，同文不重复，超过 3 条把最老的归档 */
+export async function saveStyleNotes(notes: string[], presetId: string, dateKey: string): Promise<number> {
+  const existing = await listBits(presetId, true, 'style');
+  const seen = new Set(existing.map((b) => normalizeMemoText(b.text)));
+  let n = 0;
+  for (const note of notes) {
+    const key = normalizeMemoText(note);
+    if (!key || seen.has(key)) continue;
+    const created = /^\d{4}-\d{2}-\d{2}$/.test(dateKey) && dateKey < toLocalDateKey() ? new Date(`${dateKey}T21:00:00`) : new Date();
+    await db.navigatorMemos.put({ id: uuidv4(), source: 'bit', bitKind: 'style', text: note, importance: 2, status: 'active', createdAt: created, presetId, usedCount: 0 });
+    seen.add(key);
+    n++;
+  }
+  if (n) {
+    const active = (await listBits(presetId, false, 'style')).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    for (const old of active.slice(STYLE_NOTES_MAX)) await db.navigatorMemos.update(old.id, { status: 'archived', invalidAt: new Date() });
+  }
+  return n;
+}
+
+/** 注入行：他说话的习惯（跟着节奏，别模仿得刻意） */
+export async function styleLine(presetId: string): Promise<string> {
+  const notes = await listBits(presetId, false, 'style');
+  if (!notes.length) return '';
+  return `【他说话的习惯】${notes.map((b) => b.text).join('；')}（可以轻轻跟着他的节奏，别模仿得刻意、别点破）`;
 }
 
 /** 注入块：≤3 条，轮换（久没用的先），带用法规则 */
 export async function bitsBlock(presetId: string, rand: () => number = Math.random): Promise<{ block: string; bits: NavigatorMemo[] }> {
   const all = await listBits(presetId);
-  if (!all.length) return { block: '', bits: [] };
+  if (!all.length) return { block: await styleLine(presetId), bits: [] };
   const ranked = [...all].sort((a, b) => {
     const ta = a.lastUsedAt ? new Date(a.lastUsedAt).getTime() : 0;
     const tb = b.lastUsedAt ? new Date(b.lastUsedAt).getTime() : 0;
     return ta - tb || rand() - 0.5;
   }).slice(0, 3);
   const lines = ranked.map((b) => `- 「${b.text}」${b.bitMeaning ? ` = ${b.bitMeaning}` : ''}${b.bitOrigin ? `（${b.bitOrigin}）` : ''}`);
+  const style = await styleLine(presetId);
   return {
     bits: ranked,
-    block: `【你们之间的说法（可以自然地用；不解释来历；对方用了你就接；别每轮都用，一轮最多一个）】\n${lines.join('\n')}`,
+    block: [`【你们之间的说法（可以自然地用；不解释来历；对方用了你就接；别每轮都用，一轮最多一个）】\n${lines.join('\n')}`, style].filter(Boolean).join('\n'),
   };
 }
 

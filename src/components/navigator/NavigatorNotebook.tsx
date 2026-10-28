@@ -351,7 +351,7 @@ export const NavigatorNotebook = ({ isOpen, onClose }: { isOpen: boolean; onClos
     setMemos(rows.filter((m) => m.status === 'active' && m.source !== 'profile' && m.source !== 'bit' && !isPromise(m) && inScope(m)));
     setArchived(rows.filter((m) => m.status === 'archived' && !!m.invalidAt && m.source !== 'profile' && m.source !== 'bit' && !isPromise(m) && inScope(m)).slice(0, 30));
     const bitOwner = isolated && scope ? scope : nav.activePreset().id;
-    setBits(await listBits(bitOwner));
+    setBits(await listBits(bitOwner, false, 'all'));
     const all = (await listPromises()).filter(inScope);
     // 还在等着的在前（按日子）；关了的只留最近 5 条
     const open = all.filter((m) => (m.promiseState ?? 'waiting') === 'waiting');
@@ -676,7 +676,7 @@ export const NavigatorNotebook = ({ isOpen, onClose }: { isOpen: boolean; onClos
   // ── 说法 ──
   const bitsTab = (
     <div>
-      <Lead skin={skin}>你们之间的说法：昵称、代号、只有你们懂的梗。它会偶尔用；不想再听到的就删。</Lead>
+      <Lead skin={skin}>你们之间的说法：昵称、代号、只有你们懂的梗。它会偶尔用；不想再听到的就删。标着「习惯」的是它记下的你说话的样子，它会轻轻跟着你的节奏。</Lead>
       {bits.length === 0 ? <Empty skin={skin}>还没有——聊多了自然会有。</Empty> : (
         <div className="flex flex-wrap gap-2" data-bits-list>
           {bits.map((b, i) => (
@@ -690,7 +690,7 @@ export const NavigatorNotebook = ({ isOpen, onClose }: { isOpen: boolean; onClos
                     ? { background: P3R.panel, color: t.ink, clipPath: slantClip(7), boxShadow: '0 4px 12px rgba(7,40,120,.10)' }
                     : { background: 'rgba(107,122,153,0.12)', color: t.ink }}>
               {skin === 'p5' && <P5Rough seed={820 + i * 3} jag={3} frame={2} face={P5R.ink} shadow={{ x: 2, y: 2 }} shadowColor={P5R.red} />}
-              <span className="relative min-w-0 truncate">「{b.text}」{b.bitMeaning ? <span className="opacity-60">= {b.bitMeaning}</span> : null}</span>
+              <span className="relative min-w-0 truncate">{b.bitKind === 'style' ? <span className="opacity-60">习惯 · </span> : '「'}{b.text}{b.bitKind === 'style' ? '' : '」'}{b.bitMeaning ? <span className="opacity-60">= {b.bitMeaning}</span> : null}</span>
               <button type="button" onClick={() => void dropBit(b.id)} aria-label={`这个梗别提了：${b.text}`} className="relative ml-0.5 opacity-60 hover:opacity-100">×</button>
             </span>
           ))}
