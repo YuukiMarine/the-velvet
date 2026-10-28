@@ -17,6 +17,7 @@ import { getProviderConfig, DEFAULT_PROVIDER } from '@/utils/aiProviders';
 import { ModelPickerSheet } from '@/components/ai/ModelPickerSheet';
 import { finalizeStaleSessions } from '@/utils/navigatorMemory';
 import { mergedNavigatorPresets } from '@/constants/navigatorPresets';
+import { RECORDS_LEVELS, RECORDS_LEVEL_DESC, RECORDS_LEVEL_LABELS, recordsLevelOf, recordsLevelPatch } from '@/utils/navigatorBriefing';
 import { TONE_WORDS, closedGenerator, usePersonaEditor } from './usePersonaEditor';
 import { Toggle } from '@/components/Toggle';
 import { PresetAvatar, PRESET_GLYPH_IDS } from './PresetAvatar';
@@ -29,6 +30,7 @@ import type { NavigatorPreset } from '@/types';
 
 export const NavigatorSettings = () => {
   const { settings, updateSettings } = useAppStore(useShallow(s => ({ settings: s.settings, updateSettings: s.updateSettings })));
+  const recordsLevel = recordsLevelOf(settings);
   const nav = useNavigatorStore();
   const hasAI = !!getAIConfig(settings);
   const activeId = nav.activePreset().id;
@@ -156,7 +158,7 @@ export const NavigatorSettings = () => {
             <div>
               <div className="text-sm font-semibold text-gray-700 dark:text-gray-200">画像参考我的记录</div>
               <p className="mt-0.5 text-xs leading-relaxed text-gray-400 dark:text-gray-500">
-                {settings.navigatorBriefing === false
+                {recordsLevel === 'off'
                   ? '「让助手了解你的记录」关着，这一项不生效。'
                   : '每 5 天按你的愿望、倒计时、宣告卡、做成的大事、坚持的每日任务和本周目标，整理一次「长期目标」和「近况」；偏好与雷区只认你在聊天里亲口说的。'}
               </p>
@@ -206,21 +208,22 @@ export const NavigatorSettings = () => {
           })}
         </div>
       </div>
-      {/* ── 让助手了解你的记录（第 25 批 · 用户简报）── */}
-      <div className="flex items-start justify-between gap-3 rounded-xl border border-gray-200 px-4 py-3 dark:border-gray-700">
-        <div>
-          <div className="text-sm font-semibold text-gray-700 dark:text-gray-200">让助手了解你的记录</div>
-          <p className="mt-0.5 text-xs leading-relaxed text-gray-400 dark:text-gray-500">
-            开着：每个人格都知道你用了多久、练得最多的属性、坚持中的习惯、做成过的大事、愿望、倒计时、羁绊里的人和最近总结的数据，聊天时像朋友一样顺口提起（记录是你的，不受「记忆按人格隔离」影响）。
-            关掉：它只知道今天的状态和聊天里记下的事——想要纯净一点的角色陪伴、或让它按你定的世界观来，就关掉。
-          </p>
-        </div>
-        <div className="mt-0.5 shrink-0">
-          <Toggle
-            checked={settings.navigatorBriefing !== false}
-            onChange={(v) => updateSettings({ navigatorBriefing: v })}
-            aria-label="让助手了解你的记录"
-          />
+      {/* ── 让助手了解你的记录（第 25 批 · 用户简报；第 35 批 f 改三档）── */}
+      <div className="rounded-xl border border-gray-200 px-4 py-3 dark:border-gray-700" data-testid="records-level">
+        <div className="text-sm font-semibold text-gray-700 dark:text-gray-200">让助手了解你的记录</div>
+        <p className="mt-0.5 text-xs leading-relaxed text-gray-400 dark:text-gray-500">
+          记录是你的，不受「记忆按人格隔离」影响；「刚认识」的人格头 7 天看不到。{RECORDS_LEVEL_LABELS[recordsLevel]}：{RECORDS_LEVEL_DESC[recordsLevel]}。
+        </p>
+        <div className="mt-2 flex gap-1.5" role="radiogroup" aria-label="让助手了解你的记录">
+          {RECORDS_LEVELS.map((v) => {
+            const on = recordsLevel === v;
+            return (
+              <button key={v} type="button" role="radio" aria-checked={on} title={RECORDS_LEVEL_DESC[v]} onClick={() => updateSettings(recordsLevelPatch(v))}
+                className={`rounded-full px-3 py-1.5 text-xs font-bold transition ${on ? 'bg-primary text-white' : 'border border-gray-200 text-gray-600 dark:border-gray-700 dark:text-gray-300'}`}>
+                {RECORDS_LEVEL_LABELS[v]}
+              </button>
+            );
+          })}
         </div>
       </div>
       {/* ── 实验：原生工具调用（第 28 批 · PRD §24.10.4，默认关）── */}

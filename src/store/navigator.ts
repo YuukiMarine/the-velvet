@@ -28,7 +28,8 @@ import { anchorLine, anchorOf, ensurePersonaAnchor, ensurePersonaSerious, seriou
 import { buildDayRecall, hasRecallCue, RECALL_GAP_LINE } from '@/utils/navigatorDayRecall';
 import { buildHappenings, coachStyleOf, happeningsBlock, happeningsSince } from '@/utils/navigatorHappenings';
 import { recordsBlock, searchRecords } from '@/utils/navigatorIndex';
-import { briefingBlock, FIRST_MEET_LINE, freshIntroLine } from '@/utils/navigatorBriefing';
+import { briefingBlock, FIRST_MEET_LINE, freshIntroLine, recordsLevelOf } from '@/utils/navigatorBriefing';
+import { tarotBlock } from '@/utils/navigatorTarot';
 import { maybeRefreshProfileFromRecords } from '@/utils/navigatorProfileRefresh';
 import { attachDataUrlsToCard } from '@/utils/navigatorCardImages';
 import { careTemplateLine, scheduleCare, takeCareLine } from '@/utils/navigatorGravity';
@@ -675,7 +676,8 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
       const prevUser = historyForTurn().filter((h) => h.role === 'user').slice(-2).map((h) => h.text);
       const turnNo = assocTick(presetNow.id);
       void turnNo;
-      const [recall, profile, together, pctx, recentChats, dayRecall, anchor, sinceKey, serious, bits] = await Promise.all([
+      const recordsLevel = recordsLevelOf(settingsNow);
+      const [recall, profile, together, pctx, recentChats, dayRecall, anchor, sinceKey, serious, bits, tarot] = await Promise.all([
         recallMemories(batch, activeId, prevUser), // 记忆检索（纯本地，失败返回空不阻断）
         getProfile(activeId),
         togetherFacts(presetNow.id),
@@ -687,6 +689,8 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
         happeningsSince(presetNow.id, todayKey), // 近况流：上次聊完是哪天
         Promise.race([ensurePersonaSerious(presetNow, settingsNow), sleep(4000).then(() => seriousOf(presetNow))]), // 认真模式（沉下来时用）
         bitsBlock(presetNow.id), // 你们之间的说法（第 26 批）
+        // 塔罗块（第 35 批 f）：只有「让助手了解你的记录」高档才有；结论第一次要压一句，最多等 3s，超了这轮先不带
+        Promise.race([tarotBlock(presetNow, settingsNow, todayKey), sleep(3000).then(() => '')]),
       ]);
       // 走神位（第 26 批 · §24.11）：概率 + 冷却在模块里；姿态门控在 intent 层（闲话一律跟着 casualContext 走）
       const assoc = await pickAssociation(presetNow, settingsNow, [...prevUser, batch], new Set(recall.ids));
@@ -696,9 +700,10 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
       // 用户这句里用到了你们的说法 → 计一次
       void noteBitsUsed(batch, bits.bits);
       // 活用记录（第 25 批）：近况流（本地算，按话题配额去掉提过的）+ 和这句话有关的记录（本地索引）+ 用户简报（天级）
-      const happenings = unmentionedHappenings(buildHappenings(sinceKey, coach, todayKey)).slice(0, 5);
-      const recordHits = searchRecords(batch, 4);
-      const dayLevel = [briefingBlock(presetNow, settingsNow, todayKey), freshIntroLine(presetNow, settingsNow, todayKey), recentChats].filter(Boolean).join('\n');
+      // 「让助手了解你的记录」关着（第 35 批 f 三档的 off）：近况流、记录检索也一并不给——只剩今日状态和聊天记忆
+      const happenings = recordsLevel === 'off' ? [] : unmentionedHappenings(buildHappenings(sinceKey, coach, todayKey)).slice(0, 5);
+      const recordHits = recordsLevel === 'off' ? [] : searchRecords(batch, 4);
+      const dayLevel = [briefingBlock(presetNow, settingsNow, todayKey), freshIntroLine(presetNow, settingsNow, todayKey), tarot, recentChats].filter(Boolean).join('\n');
       const coachLine = coach === 'push'
         ? '【相处方式】督促型：ta 没做的事（断了的习惯、快到的截止、没动的任务）可以提，一天最多一次，说事实不说教、不翻旧账。'
         : '【相处方式】陪伴型：只提好事和快到的事；没做的、断了的不主动提，ta 说起再接。';
@@ -1095,6 +1100,8 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
           const recall = await recallMemories('', preset.id);
           const profile = await getProfile(preset.id);
           const briefing = briefingBlock(preset, app.settings, snap.dateKey);
+          // 塔罗块（第 35 批 f）：高档才有；最多等 3s
+          const tarot = await Promise.race([tarotBlock(preset, app.settings, snap.dateKey), sleep(3000).then(() => '')]);
           // 人设锚（第 35 批 · 串戏排查）：问候以前只带人格设定不带锚，和聊天回合不是一个口径
           const greetAnchor = await Promise.race([ensurePersonaAnchor(preset, app.settings), sleep(2500).then(() => anchorOf(preset))]);
           const extra = [
@@ -1106,6 +1113,7 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
             // 用户简报（第 25 批）：记录里的 ta；这个人格第一次见面时另加一句「别炫耀」
             briefing,
             freshIntroLine(preset, app.settings, snap.dateKey),
+            tarot,
             briefing && together.chatDays === 0 ? FIRST_MEET_LINE : '',
             // 标真实的日子（以前一律写「昨日」，上次聊天可能是五天前）
             last ? `【上次聊天（${relativeDayCN(last.dateKey, snap.dateKey)}，${dayLabelCN(last.dateKey, snap.dateKey)}）的摘要】${last.summary}` : '',

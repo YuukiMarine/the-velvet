@@ -63,7 +63,7 @@ const SEARCH_INDEX: Array<{ sectionId: SettingsSectionId; rowId?: string; label:
   { sectionId: 'assistant', rowId: 'navigatorPersonas', label: '助手 · 人格', keys: '人格 黑猫 助手 切换 navigator' },
   { sectionId: 'assistant', rowId: 'navigatorPersonas', label: '新建人格', keys: '新建 自定义 人格 生成 头像 喜好 口吻' },
   { sectionId: 'assistant', rowId: 'navigatorImmersive', label: '拟真增强', keys: '拟真 沉浸 打字 气泡' },
-  { sectionId: 'assistant', rowId: 'navigatorBriefing', label: '让助手了解你的记录', keys: '记录 近况 了解 简报' },
+  { sectionId: 'assistant', rowId: 'navigatorBriefing', label: '让助手了解你的记录', keys: '记录 近况 了解 简报 塔罗 档位 关 中 高' },
   { sectionId: 'assistant', rowId: 'navigatorDaydream', label: '走神', keys: '走神 联想 旧事' },
   { sectionId: 'assistant', rowId: 'wishAgentProposals', label: '主动提议更新愿望进度', keys: '愿望 进度 提议' },
   { sectionId: 'assistant', rowId: 'navigatorNotebook', label: '记事本', keys: '记事本 记忆 画像' },

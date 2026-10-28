@@ -14,6 +14,8 @@
 import { chatCompleteRaw, isAnthropic, type AIConfig, type AIMessage, type ToolDef } from '@/utils/aiClient';
 import { quirksFor, rememberQuirk } from '@/utils/aiQuirks';
 import { parseQueries, runQueries, MAX_QUERIES_PER_TURN } from '@/utils/navigatorQueries';
+import { recordsLevelOf } from '@/utils/navigatorBriefing';
+import { useAppStore } from '@/store';
 
 const ATTR_ENUM = ['knowledge', 'guts', 'dexterity', 'kindness', 'charm'];
 const pointsSchema = {
@@ -217,7 +219,11 @@ export async function triageViaTools(
       // 查了就回传结果，再来一轮（动作工具这轮若已经调了也算数，不重复）
       const qs = parseQueries(pendingQueries.map((p) => p.q));
       queries.push(...pendingQueries.map((p) => p.q));
-      const blocks = await runQueries(qs, presetId);
+      // 「让助手了解你的记录」关着（第 35 批 f）：记录类查询不跑（chats 是聊天记忆，照查），回传「没有数据」
+      const allowed = recordsLevelOf(useAppStore.getState().settings) === 'off' ? qs.map((q) => (q.kind === 'chats' ? q : null)) : qs;
+      const ran = await runQueries(allowed.filter((q): q is NonNullable<typeof q> => !!q), presetId);
+      const blocks: string[] = [];
+      for (const q of allowed) blocks.push(q ? (ran.shift() ?? '') : '（这一项没有开放给助手查看）');
       messages.push({ role: 'assistant', content: res.content || '', tool_calls: res.toolCalls.map((c) => ({ id: c.id, type: 'function', function: { name: c.name, arguments: c.args } })) });
       res.toolCalls.forEach((c, i) => {
         const pq = pendingQueries.findIndex((p) => p.id === c.id);

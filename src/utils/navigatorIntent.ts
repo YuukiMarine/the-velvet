@@ -29,6 +29,7 @@ import { estTokens } from '@/utils/navigatorMemory';
 import { parseQueries, QUERY_PROTOCOL, runQueries, type NavigatorQuery } from '@/utils/navigatorQueries';
 import { HEAVY_TURN_LINE, isHeavyText, proofsBlock, SAFETY_RULE, seriousLine } from '@/utils/navigatorGravity';
 import { buildTopicPermission, noteTopicsMentioned, stanceLine, type Energy, type Stance } from '@/utils/navigatorTopics';
+import { recordsLevelOf } from '@/utils/navigatorBriefing';
 import type { AttributeId, LedgerExpenseType } from '@/types';
 
 export interface NavigatorTurnResult {
@@ -968,7 +969,9 @@ export async function runNavigatorTurn(
   const heavy = tri.gravity === 'heavy' || isHeavyText(userText);
   const drafts = heavy ? [] : tri.drafts;
   const { stance, energy, dated } = tri;
-  const queryBlocks = heavy || !tri.queries.length ? [] : await runQueries(tri.queries, turnExtras.presetId ?? 'builtin-cat');
+  // 「让助手了解你的记录」关着（第 35 批 f）：记录类查询不跑，只留 chats（那是聊天记忆，不是记录）
+  const queries = recordsLevelOf(settings) === 'off' ? tri.queries.filter((q) => q.kind === 'chats') : tri.queries;
+  const queryBlocks = heavy || !queries.length ? [] : await runQueries(queries, turnExtras.presetId ?? 'builtin-cat');
   const proofs = heavy ? await proofsBlock() : '';
 
   // 阶段2：表演。判定结果作为事实注入——reply 与卡从机制上一致，无 JSON 无失守。

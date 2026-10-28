@@ -660,6 +660,14 @@ export interface Settings {
    * 记录是用户的、记忆是关系的：它不受「记忆按人格隔离」影响。
    */
   navigatorBriefing?: boolean;
+  /**
+   * 让助手了解你的记录——三档（第 35 批 f；上面的开关是它的旧形态）：
+   *   off  只知道今天的状态和聊天里记下的事；
+   *   mid  （缺省）简报 / 近况流 / 和这句话有关的记录 / 按需查询 / 画像参考记录；
+   *   high mid 的全部，再加近两周的塔罗与进行中的占卜（含一句结论）。
+   * 没设过按旧开关折算（navigatorBriefing=false → off，否则 mid）；改档时同步写旧开关，老版本和旧读点照旧。
+   */
+  navigatorRecordsLevel?: 'off' | 'mid' | 'high';
   /** 画像自动更新（第 33 批）：默认开——聊天归档时按对话改画像（锁住的块不动）；关掉 = 只收零散记忆，画像只有你自己改 */
   navigatorProfileAuto?: boolean;
   /**

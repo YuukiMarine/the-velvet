@@ -25,6 +25,7 @@ import { P5R, P5_TITLE_FONT, P5Rough, P5Star, roughQuad } from '@/components/p5r
 import { P4Flower } from '@/ui/p4Kit';
 import type { NavigatorPreset } from '@/types';
 import { Card, Row, Divider, Toggle, Segmented, Btn, Input, Textarea, Chip, Note, Glyph, LinkValue, useSettingsSkin, skinTokens, type GlyphName } from '../kit';
+import { RECORDS_LEVELS, RECORDS_LEVEL_DESC, RECORDS_LEVEL_LABELS, recordsLevelOf, recordsLevelPatch } from '@/utils/navigatorBriefing';
 import { DayTrack } from '../dayTrack';
 import { useSettingsNav } from '../nav';
 
@@ -183,6 +184,7 @@ const FieldLabel = ({ children, extra }: { children: ReactNode; extra?: ReactNod
 
 export const AssistantSection = () => {
   const { settings, updateSettings } = useAppStore(useShallow(s => ({ settings: s.settings, updateSettings: s.updateSettings })));
+  const recordsLevel = recordsLevelOf(settings);
   const presets = useNavigatorStore(s => s.presets);
   // 和 store.activePreset() 同一个解析（自定义人格缺失时回落黑猫），直接用订阅到的设置和名册算，换人格立刻跟上
   const activePreset = resolveNavigatorPreset(settings.navigatorPresetId, presets);
@@ -378,9 +380,12 @@ export const AssistantSection = () => {
         <Row id="navigatorImmersive" glyph="bubble" label="拟真增强" desc="回复像真人打字：一句句冒出来，括号里的颜文字不拆开；低性能模式下自动停用"
           control={<Toggle checked={!!settings.navigatorImmersive} onChange={(v) => updateSettings({ navigatorImmersive: v })} aria-label="拟真增强" />} />
         <Divider />
-        <Row id="navigatorBriefing" glyph="doc" label="让助手了解你的记录"
-          desc="开着：知道你用了多久、常练的属性、坚持的习惯、做成的大事、愿望和最近的总结，聊天时顺口提起。关掉：只知道今天的状态和聊天里记下的事"
-          control={<Toggle checked={settings.navigatorBriefing !== false} onChange={(v) => updateSettings({ navigatorBriefing: v })} aria-label="让助手了解你的记录" />} />
+        <div data-testid="records-level">
+          <Row id="navigatorBriefing" glyph="doc" label="让助手了解你的记录" desc={`${RECORDS_LEVEL_LABELS[recordsLevel]}：${RECORDS_LEVEL_DESC[recordsLevel]}`}>
+            <Segmented ariaLabel="让助手了解你的记录" size="sm" value={recordsLevel} onChange={(v) => updateSettings(recordsLevelPatch(v))}
+              options={RECORDS_LEVELS.map((v) => ({ value: v, label: RECORDS_LEVEL_LABELS[v], hint: RECORDS_LEVEL_DESC[v] }))} />
+          </Row>
+        </div>
         <Divider />
         <div data-testid="daydream">
           <Row id="navigatorDaydream" glyph="thought" label="走神" desc="闲聊时偶尔像真人那样想起一件旧事；你心情不好、在倾诉时不会，五轮内不重复">
@@ -405,7 +410,7 @@ export const AssistantSection = () => {
           <>
             <Divider />
             <Row id="navigatorProfileFromRecords" glyph="doc" label="画像参考我的记录"
-              desc={settings.navigatorBriefing === false
+              desc={recordsLevel === 'off'
                 ? '「让助手了解你的记录」关着，这一项不生效'
                 : '每 5 天按你的愿望、倒计时、宣告卡、做成的大事、坚持的每日任务和本周目标，整理一次「长期目标」和「近况」；偏好与雷区只认你在聊天里亲口说的'}
               control={<Toggle checked={settings.navigatorProfileFromRecords !== false} onChange={(v) => updateSettings({ navigatorProfileFromRecords: v })} aria-label="画像参考我的记录" />} />

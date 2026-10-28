@@ -2,8 +2,8 @@
  * navigatorBriefing — 用户简报（第 25 批 · PRD §24.10.3）：人格初始化 / 切换时「ta 是个什么样的人」的梗概，全部从记录算。
  *
  * 概念划分：**记录是用户的，记忆是关系的**。简报对所有人格可见、不受「记忆按人格隔离」影响，只受两个东西管：
- *   · 设置「让助手了解你的记录」（navigatorBriefing，默认开；关 = 只有今日状态 + 该人格自己的记忆——给想要纯净角色陪伴、
- *     或按自己定的世界观行动的用户）；
+ *   · 设置「让助手了解你的记录」（第 35 批 f 起三档 navigatorRecordsLevel：关 = 只有今日状态 + 该人格自己的记忆——给想要纯净角色陪伴、
+ *     或按自己定的世界观行动的用户；中 = 缺省，简报 / 近况流 / 记录检索 / 按需查询 / 画像参考记录；高 = 再加塔罗块，见 navigatorTarot）；
  *   · 每个人格的「认识你多久了」（knowSince：一直都在 = 全知接手；刚认识 = 头 7 天只看得到今日状态）。
  * 本地算、约 200 token、按天 + 数据签名缓存；放天级块里跟着人格一起吃前缀缓存。首次见面另有一句「别炫耀」。
  */
@@ -18,7 +18,28 @@ import type { NavigatorPreset, Settings } from '@/types';
 
 export const FRESH_DAYS = 7;
 
-export const briefingEnabled = (settings: Settings): boolean => settings.navigatorBriefing !== false;
+/** 「让助手了解你的记录」三档（第 35 批 f）：off 只有今日状态 + 聊天记忆；mid（缺省）= 现在这些；high 再加塔罗块 */
+export type RecordsLevel = 'off' | 'mid' | 'high';
+export const RECORDS_LEVELS: RecordsLevel[] = ['off', 'mid', 'high'];
+export const RECORDS_LEVEL_LABELS: Record<RecordsLevel, string> = { off: '关', mid: '中', high: '高' };
+/** 各档的一句说明（设置页两处共用） */
+export const RECORDS_LEVEL_DESC: Record<RecordsLevel, string> = {
+  off: '只知道今天的状态和聊天里记下的事——想要纯净一点的角色陪伴、或让它按你定的世界观来，就选这档',
+  mid: '知道你用了多久、常练的属性、坚持的习惯、做成的大事、愿望、最近发生的事；聊到相关的会想起对应的记录，问起能查',
+  high: '中档的全部，再加上最近两周抽的塔罗、进行中的占卜（含一句解读结论）和生效中的窥探命运',
+};
+
+/** 没设过档位的按旧开关折算：关 → off，否则 mid */
+export const recordsLevelOf = (settings: Pick<Settings, 'navigatorBriefing' | 'navigatorRecordsLevel'>): RecordsLevel =>
+  settings.navigatorRecordsLevel ?? (settings.navigatorBriefing === false ? 'off' : 'mid');
+
+/** 改档要写的那一笔：新字段 + 旧开关同步（老版本 / 旧读点照旧） */
+export const recordsLevelPatch = (level: RecordsLevel): Pick<Settings, 'navigatorBriefing' | 'navigatorRecordsLevel'> =>
+  ({ navigatorRecordsLevel: level, navigatorBriefing: level !== 'off' });
+
+export const briefingEnabled = (settings: Settings): boolean => recordsLevelOf(settings) !== 'off';
+/** 高档：塔罗块等本次新增的内容 */
+export const recordsHigh = (settings: Settings): boolean => recordsLevelOf(settings) === 'high';
 
 /** 「刚认识」的人格头 7 天不看简报 */
 export function briefingAllowedFor(preset: Pick<NavigatorPreset, 'knowSince' | 'createdAt' | 'isBuiltin'>, todayKey: string = toLocalDateKey()): boolean {
