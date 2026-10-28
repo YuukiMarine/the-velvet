@@ -953,6 +953,8 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
       pendingWrites = [];
       set({ sessionId: null, messages: [], phase: 'idle', earlySummary: null });
       await hydrateSession();
+      // 换进来的人格今天的小状态也要有（窗口开着切人格不会再走 greet）
+      void ensureOwnDay(get().activePreset(), useAppStore.getState().settings);
       if (get().messages.length === 0) {
         const preset = get().activePreset();
         get().pushCat(preset.handoffLine ?? `（${preset.name} 上线了）`);
@@ -1006,6 +1008,10 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
         // 人格真缺失的那句说明（第 23 批）：挂好会话后说一次
         const notice = get().presetNotice;
         if (notice) { set({ presetNotice: null }); get().pushCat(notice); }
+        // 今天的小状态（第 35 批修）：以前排在下面「今天已有消息就返回」之后——切人格会先推一句接管语、会话立刻非空，
+        // 自定义人格几乎永远生成不到，页头一直是兜底的「万能记录 · 有事直说」；内置人格当天第二次开窗也一样。
+        // 有缓存立刻返回、同一天同人格只跑一份，这里多调一次没有额外开销
+        void ensureOwnDay(get().activePreset(), useAppStore.getState().settings);
         // 「助手找你」（第二批 C）：从推送点进来时重排可能还没跑，先判一次送达，取开场
         processDeliveredPushes();
         if (get().messages.length > 0) {
@@ -1089,6 +1095,8 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
           const recall = await recallMemories('', preset.id);
           const profile = await getProfile(preset.id);
           const briefing = briefingBlock(preset, app.settings, snap.dateKey);
+          // 人设锚（第 35 批 · 串戏排查）：问候以前只带人格设定不带锚，和聊天回合不是一个口径
+          const greetAnchor = await Promise.race([ensurePersonaAnchor(preset, app.settings), sleep(2500).then(() => anchorOf(preset))]);
           const extra = [
             // 推送开场：第一句就说那件事（压过别的素材）
             opener ? openerInstruction(opener.kind, preset.name, { topic: openerPromise?.promiseTopic, label: openerMilestone?.label }) : '',
@@ -1122,6 +1130,7 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
                 + '这一轮**只说想念**：让他知道你惦记着、位置一直留着。\n'
                 + '禁止追问他去哪了/为什么不来，禁止催他补记录，禁止先报今天的任务与塔罗。'
               : '',
+            anchorLine(greetAnchor), // 锚一定在最后一行（与聊天回合同口径）
           ].filter(Boolean);
           // 总闸计时只覆盖 AI 调用本身（此前从素材准备就开始计时，预算被前置步骤吃掉）
           const ac = new AbortController();
