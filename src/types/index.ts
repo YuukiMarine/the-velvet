@@ -1155,7 +1155,7 @@ export interface NavigatorSessionRow {
   id: string;
   dateKey: string;
   presetId: string;
-  /** compact 双产物：中性摘要（检索/续接用）+ 人格口吻版（注入用；人格绑定随会话归档） */
+  /** compact 双产物：中性摘要（检索/续接用）+ 人格口吻版（第 36 批起弃用：注入改用日记，字段只为兼容旧行保留） */
   compactedSummary?: string;
   personaSummary?: string;
   /** 被打断没说出口的段落（吞话回捞，跨重启存活） */
@@ -1172,8 +1172,26 @@ export interface NavigatorSessionRow {
    * text 是一两句中性短句（他在说什么 / 要什么 / 我怎么想），不是回复。
    */
   reads?: Array<{ ts: number; text: string }>;
+  /**
+   * 日记（第 36 批 c · LIVE MODE）：这天用户开过口才有，第二天首开由助手以自己的口吻补写（300–400 字左右）；
+   * brief 是 60 字的中性缩略（4–14 天前的日子只带这一行），seed 是「明天想对他说的一句」（第二天心思的种子）。
+   * 用户在记事本里删掉后 diaryDeleted 标上，不再重写。随会话行上云（和摘要同口径）。
+   */
+  diary?: NavigatorDiary;
+  diaryDeleted?: boolean;
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface NavigatorDiary {
+  text: string;
+  brief: string;
+  seed?: string;
+  /** ISO 时刻 */
+  writtenAt: string;
+  source: 'ai' | 'local';
+  /** 那天很沉：只写了陪伴，没复述原话 */
+  heavy?: boolean;
 }
 
 /** 消息行：与内存态 NavigatorMessage 对齐；draft 序列化存 JSON */
@@ -1250,8 +1268,12 @@ export interface ProfileBlockMeta {
 
 export interface NavigatorMemo {
   id: string;
-  /** bit（第 26 批）= 「你们之间的说法」：黑话 / 梗 / 昵称 / 代号，不是关于用户的事实；跟人格走 */
-  source: 'chat' | 'observation' | 'manual' | 'image' | 'profile' | 'bit';
+  /**
+   * bit（第 26 批）= 「你们之间的说法」：黑话 / 梗 / 昵称 / 代号，不是关于用户的事实；跟人格走。
+   * impression / growth（第 36 批 · 自进化）= 人格读自己的日记整理出的「我对他的印象」（主观）/「我自己的变化」；跟人格走，
+   * 不进召回、不进画像、不进归档器的材料；记事本里能看、能删、不能改。
+   */
+  source: 'chat' | 'observation' | 'manual' | 'image' | 'profile' | 'bit' | 'impression' | 'growth';
   /** 中性事实文本（不带人格口吻——口吻在 prompt 组装时现场渲染）；bit 时 = 那个说法本身 */
   text: string;
   /** 情绪元数据（"用户提起时很沮丧"），可选 */
@@ -1287,6 +1309,8 @@ export interface NavigatorMemo {
   fromSessionId?: string;
   /** bit 的类别（第 36 批）：phrase（缺省）= 说法 / 梗；style = 「他说话的习惯」（归档器攒的，注入时提醒它跟着对方的节奏） */
   bitKind?: 'phrase' | 'style';
+  /** impression / growth：据哪几天的日记（「据 10月20日、10月22日的日记」） */
+  basis?: string;
   /** bit：这个说法的意思 / 来历；复用次数与上次用到（久不用就淡出） */
   bitMeaning?: string;
   bitOrigin?: string;

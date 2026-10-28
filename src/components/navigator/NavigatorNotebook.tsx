@@ -15,10 +15,12 @@ import { db } from '@/db';
 import { SheetModal } from '@/components/SheetModal';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import {
-  findDuplicateMemos, getProfileState, isRecentStale, listBits, memoOwners, mergeMemos, ownersPatch, PROFILE_KEYS, PROFILE_LABELS, PROFILE_LIMITS,
+  findDuplicateMemos, getProfileState, isMetaMemo, isRecentStale, listBits, memoOwners, mergeMemos, ownersPatch, PROFILE_KEYS, PROFILE_LABELS, PROFILE_LIMITS,
   saveProfileBlocks, setProfileLock, undoProfile, type MergeProposal,
 } from '@/utils/navigatorMemory';
 import { applyProfileProposal, proposeProfileRefresh, type ProfileProposal } from '@/utils/navigatorProfileRefresh';
+import { deleteDiary, listDiaries, type DiaryEntry } from '@/utils/navigatorDiary';
+import { dropEvolveMemo, listGrowth, listImpressions } from '@/utils/navigatorEvolve';
 import { briefingEnabled } from '@/utils/navigatorBriefing';
 import { getAIConfig } from '@/utils/aiClient';
 import { deletePromise, isPromise, listPromises, promisePhase, updatePromiseDate, type PromiseMemo } from '@/utils/navigatorPromise';
@@ -44,7 +46,7 @@ function promiseStatusLabel(m: PromiseMemo): string {
 }
 const WHEN_TEXT: Record<string, string> = { morning: '上午', day: '', evening: '晚上' };
 
-type Tab = 'profile' | 'memos' | 'promises' | 'bits' | 'trail';
+type Tab = 'profile' | 'memos' | 'promises' | 'bits' | 'diary' | 'trail';
 type MemoFilter = 'all' | 'pinned' | 'topic' | 'archived';
 
 const BLOCK_GLYPH: Record<keyof ProfileBlocks, GlyphName> = { identity: 'mask', goals: 'wish', preferences: 'tag', recent: 'clock', rules: 'bubble' };
@@ -306,6 +308,12 @@ export const NavigatorNotebook = ({ isOpen, onClose }: { isOpen: boolean; onClos
   useEffect(() => { if (isOpen) void listActions(50).then(setActions); }, [isOpen]);
   // 你们之间的说法（第 26 批 · §24.11）：跟人格走
   const [bits, setBits] = useState<NavigatorMemo[]>([]);
+  // 日记 / 印象 / 成长记录（第 36 批 c）：每人格一本，能看能删不能改
+  const [diaries, setDiaries] = useState<DiaryEntry[]>([]);
+  const [impressions, setImpressions] = useState<NavigatorMemo[]>([]);
+  const [growth, setGrowth] = useState<NavigatorMemo[]>([]);
+  const [diaryOpen, setDiaryOpen] = useState<string | null>(null);
+  const [deleteDiaryId, setDeleteDiaryId] = useState<string | null>(null);
   // 整理：近似重复的提议
   const [merges, setMerges] = useState<MergeProposal[] | null>(null);
   const [memoEdit, setMemoEdit] = useState<{ id: string; text: string } | null>(null);
@@ -348,10 +356,14 @@ export const NavigatorNotebook = ({ isOpen, onClose }: { isOpen: boolean; onClos
     setProfileHasPrev(st.hasPrev);
     setProfileDirty(false);
     const rows = await db.navigatorMemos.orderBy('createdAt').reverse().toArray();
-    setMemos(rows.filter((m) => m.status === 'active' && m.source !== 'profile' && m.source !== 'bit' && !isPromise(m) && inScope(m)));
-    setArchived(rows.filter((m) => m.status === 'archived' && !!m.invalidAt && m.source !== 'profile' && m.source !== 'bit' && !isPromise(m) && inScope(m)).slice(0, 30));
+    setMemos(rows.filter((m) => m.status === 'active' && !isMetaMemo(m) && !isPromise(m) && inScope(m)));
+    setArchived(rows.filter((m) => m.status === 'archived' && !!m.invalidAt && !isMetaMemo(m) && !isPromise(m) && inScope(m)).slice(0, 30));
     const bitOwner = isolated && scope ? scope : nav.activePreset().id;
     setBits(await listBits(bitOwner, false, 'all'));
+    const [ds, imps, gr] = await Promise.all([listDiaries(bitOwner), listImpressions(bitOwner), listGrowth(bitOwner)]);
+    setDiaries(ds);
+    setImpressions(imps);
+    setGrowth(gr);
     const all = (await listPromises()).filter(inScope);
     // 还在等着的在前（按日子）；关了的只留最近 5 条
     const open = all.filter((m) => (m.promiseState ?? 'waiting') === 'waiting');
@@ -410,6 +422,8 @@ export const NavigatorNotebook = ({ isOpen, onClose }: { isOpen: boolean; onClos
     await load();
   };
   const dropBit = async (id: string) => { await db.navigatorMemos.update(id, { status: 'archived', invalidAt: new Date() }); await load(); };
+  const dropEvolve = async (id: string) => { await dropEvolveMemo(id); await load(); };
+  const confirmDeleteDiary = async () => { if (!deleteDiaryId) return; await deleteDiary(deleteDiaryId); setDeleteDiaryId(null); await load(); };
   const restoreMemo = async (id: string) => { await db.navigatorMemos.update(id, { status: 'active', invalidAt: undefined, supersededBy: undefined, muted: false }); await load(); };
   /** 改一条记忆 / 约定归谁（第 33 批：多选；全选 = 共享） */
   const setOwners = async (id: string, ids: string[]) => {
@@ -699,6 +713,66 @@ export const NavigatorNotebook = ({ isOpen, onClose }: { isOpen: boolean; onClos
     </div>
   );
 
+  // ── 日记 / 印象 / 成长（第 36 批 c）──
+  const diaryTab = (
+    <div className="space-y-4">
+      <div>
+        <Lead skin={skin}>它每天写给自己看的日记：你开过口的日子，第二天它会补上。能看、能删，不能改。</Lead>
+        {diaries.length === 0 ? <Empty skin={skin}>还没有日记——今天聊过，明天它就会写。</Empty> : (
+          <div className="space-y-2" data-diary-list>
+            {diaries.map((d, i) => {
+              const open = diaryOpen === d.sessionId;
+              return (
+                <Panel key={d.sessionId} skin={skin} seed={900 + i * 3}>
+                  <div data-diary={d.dateKey}>
+                    <div className="flex items-start gap-2">
+                      <button type="button" onClick={() => setDiaryOpen(open ? null : d.sessionId)} aria-expanded={open} className="min-w-0 flex-1 text-left">
+                        <div className="text-[11px] font-black" style={{ color: k.sub }}>{dayLabelCN(d.dateKey, today)} · {relativeDayCN(d.dateKey, today)}{d.diary.heavy ? ' · 那天很沉' : ''}</div>
+                        <div className={`mt-0.5 text-[12.5px] font-bold leading-relaxed ${open ? 'whitespace-pre-wrap' : 'line-clamp-2'}`} style={{ color: k.ink }}>{open ? d.diary.text : d.diary.brief}</div>
+                        {open && d.diary.seed && <div className="mt-1.5 text-[11.5px] font-bold" style={{ color: k.sub }}>明天想说：{d.diary.seed}</div>}
+                      </button>
+                      <button type="button" onClick={() => setDeleteDiaryId(d.sessionId)} aria-label={`删掉 ${dayLabelCN(d.dateKey, today)} 的日记`} className="shrink-0 text-[11.5px] font-black opacity-70 hover:opacity-100" style={{ color: skin === 'p5' ? P5R.red : t.accent }}>删</button>
+                    </div>
+                  </div>
+                </Panel>
+              );
+            })}
+          </div>
+        )}
+      </div>
+      <div>
+        <Lead skin={skin}>它对你的印象：读自己的日记攒出来的主观看法，不是事实。不对的就删。</Lead>
+        {impressions.length === 0 ? <Empty skin={skin}>还没有——攒够几篇日记它会自己整理。</Empty> : (
+          <div className="space-y-2" data-impression-list>
+            {impressions.map((m, i) => (
+              <Panel key={m.id} skin={skin} seed={960 + i * 3}>
+                <div className="flex items-start gap-2 text-[12.5px] leading-relaxed" style={{ color: k.ink }}>
+                  <span className="min-w-0 flex-1 font-bold">{m.text}{m.basis && <span className="ml-1 text-[10.5px] font-bold" style={{ color: k.sub }}>{m.basis}</span>}</span>
+                  <button type="button" onClick={() => void dropEvolve(m.id)} aria-label={`删掉这条印象：${m.text}`} className="shrink-0 text-[11.5px] font-black opacity-70 hover:opacity-100" style={{ color: skin === 'p5' ? P5R.red : t.accent }}>删</button>
+                </div>
+              </Panel>
+            ))}
+          </div>
+        )}
+      </div>
+      <div>
+        <Lead skin={skin}>它自己的变化：这些天学会了怎么对你、改了什么做法。基础设定不会被它自己改。</Lead>
+        {growth.length === 0 ? <Empty skin={skin}>还没有。</Empty> : (
+          <div className="space-y-2" data-growth-list>
+            {growth.map((m, i) => (
+              <Panel key={m.id} skin={skin} seed={990 + i * 3}>
+                <div className="flex items-start gap-2 text-[12.5px] leading-relaxed" style={{ color: k.ink }}>
+                  <span className="min-w-0 flex-1 font-bold">{m.text}{m.basis && <span className="ml-1 text-[10.5px] font-bold" style={{ color: k.sub }}>{m.basis}</span>}</span>
+                  <button type="button" onClick={() => void dropEvolve(m.id)} aria-label={`删掉这条成长记录：${m.text}`} className="shrink-0 text-[11.5px] font-black opacity-70 hover:opacity-100" style={{ color: skin === 'p5' ? P5R.red : t.accent }}>删</button>
+                </div>
+              </Panel>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
   // ── 足迹 ──
   const trailTab = (
     <div>
@@ -754,10 +828,11 @@ export const NavigatorNotebook = ({ isOpen, onClose }: { isOpen: boolean; onClos
             { id: 'memos', label: '记忆', n: memos.length },
             { id: 'promises', label: '约好的事', n: openPromises },
             { id: 'bits', label: '说法', n: bits.length },
+            { id: 'diary', label: '日记', n: diaries.length },
             { id: 'trail', label: '足迹' },
           ]} />
           <div role="tabpanel" aria-label={tab}>
-            {tab === 'profile' ? profileTab : tab === 'memos' ? memosTab : tab === 'promises' ? promisesTab : tab === 'bits' ? bitsTab : trailTab}
+            {tab === 'profile' ? profileTab : tab === 'memos' ? memosTab : tab === 'promises' ? promisesTab : tab === 'bits' ? bitsTab : tab === 'diary' ? diaryTab : trailTab}
           </div>
         </div>
       </SheetModal>
@@ -780,6 +855,16 @@ export const NavigatorNotebook = ({ isOpen, onClose }: { isOpen: boolean; onClos
         cancelText="取消"
         onConfirm={() => void confirmDelete()}
         onCancel={() => setDeleteId(null)}
+      />
+      <ConfirmDialog
+        isOpen={!!deleteDiaryId}
+        tone="danger"
+        title="删掉这篇日记？"
+        description="删掉之后它不会再补写这一天。"
+        confirmText="删掉"
+        cancelText="取消"
+        onConfirm={() => void confirmDeleteDiary()}
+        onCancel={() => setDeleteDiaryId(null)}
       />
       <ConfirmDialog
         isOpen={!!deletePromiseId}

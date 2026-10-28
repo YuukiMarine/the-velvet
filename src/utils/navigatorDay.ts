@@ -18,6 +18,7 @@ import { seasonMarkOf, seasonOfDate, SEASON_META } from '@/utils/calendar';
 import { fetchWeatherNow, peekWeatherNow, weatherConfigOf, weatherReady, type WeatherNow } from '@/utils/weather';
 import { dayLabelCN, daysBetween, keyOfDate, weekdayCN } from '@/utils/navigatorClock';
 import { BUILTIN_NAVIGATOR_PRESETS, personaWithExamples } from '@/constants/navigatorPresets';
+import { innerFacts, innerFromParsed, innerLine, innerTask, innerTemplate, yesterdaySeed, type InnerFacts, type InnerState } from '@/utils/navigatorInner';
 import type { NavigatorPreset, PersonaTraits, Settings } from '@/types';
 
 // ── 人格的固定喜好 ──────────────────────────────────────────────
@@ -277,6 +278,8 @@ export interface OwnDay {
   source: 'ai' | 'template';
   /** 这一天写的是「今天做了什么」还是「签名」（第 35 批 h；老缓存没有 = doing） */
   kind?: OwnDayKind;
+  /** 今天对他的心思（第 36 批 c · navigatorInner）：和这一句同一次调用产出；老缓存没有 = 今天没算 */
+  inner?: InnerState;
 }
 
 const CACHE_KEY = 'velvet.navOwnDay.v1';
@@ -343,22 +346,36 @@ export function ensureOwnDay(preset: NavigatorPreset, settings: Settings, now: D
       const traits = await ensurePersonaTraits(preset, settings);
       const kind = ownDayKindFor(preset.id, facts.dateKey);
       const seeds = kind === 'signature' ? await signatureSeeds(preset.id, facts.dateKey) : [];
+      // 心思（第 36 批 c）：情景本地算，文字和这一句同一次调用写；算不出就当今天没心思
+      let inner: InnerFacts | null = null;
+      try { inner = await innerFacts(preset, settings, facts.dateKey); } catch { inner = null; }
       const cfg = getAIConfig(settings);
       let text = '';
+      let innerState: InnerState | undefined = inner ? innerTemplate(inner) : undefined;
       let source: OwnDay['source'] = 'template';
       if (cfg) {
         try {
+          const task = kind === 'signature' ? SIGNATURE_TASK(facts, traits, seeds) : OWN_DAY_TASK(facts, traits);
+          const innerPart = inner ? innerTask(inner) : '';
           const raw = await chatComplete(cfg, [
             // 人格头与聊天回合同口径（第 35 批 · 串戏排查）：带口吻示例，不再只给裸设定
-            { role: 'system', content: `${personaWithExamples(preset)}\n\n${kind === 'signature' ? SIGNATURE_TASK(facts, traits, seeds) : OWN_DAY_TASK(facts, traits)}` },
+            {
+              role: 'system',
+              content: `${personaWithExamples(preset)}\n\n${task}\n${innerPart}\n只输出这一个 JSON（不要代码块）：{"line":"${kind === 'signature' ? '今天的签名' : '今天的这一句'}","mood":${innerPart ? '"你今天对他的心思"' : 'null'},"want":${innerPart ? '"想对他说的一句或 null"' : 'null'}}`,
+            },
             { role: 'user', content: kind === 'signature' ? '写今天的签名。' : '写今天的这一句。' },
-          ], { temperature: 0.9, maxTokens: 160, instant: true, timeoutMs: 20000, purpose: 'ownday' });
-          text = raw.trim().replace(/^["“「]|["”」]$/g, '').replace(/^签名[:：]\s*/, '').split('\n')[0].trim().slice(0, kind === 'signature' ? 36 : 48);
+          ], { temperature: 0.9, maxTokens: 260, jsonMode: true, instant: true, timeoutMs: 20000, purpose: 'ownday' });
+          const t = raw.replace(/```(?:json)?/gi, '').trim();
+          const a = t.indexOf('{'), b = t.lastIndexOf('}');
+          const parsed = a >= 0 && b > a ? (JSON.parse(t.slice(a, b + 1)) as Record<string, unknown>) : null;
+          const line = String(parsed?.line ?? (parsed ? '' : t)).trim().replace(/^["“「]|["”」]$/g, '').replace(/^签名[:：]\s*/, '').split('\n')[0].trim();
+          text = line.slice(0, kind === 'signature' ? 36 : 48);
           if (text) source = 'ai';
+          if (inner && parsed) innerState = innerFromParsed(inner, parsed);
         } catch { /* 落模板 */ }
       }
       if (!text) text = kind === 'signature' ? signatureTemplate(preset, traits, facts) : ownDayTemplate(preset, traits, facts);
-      const day: OwnDay = { dateKey: facts.dateKey, presetId: preset.id, text, source, kind };
+      const day: OwnDay = { dateKey: facts.dateKey, presetId: preset.id, text, source, kind, ...(innerState ? { inner: innerState } : {}) };
       writeDay(day);
       return day;
     } catch {
@@ -408,6 +425,27 @@ export function noteOwnDayMentioned(text: string, presetId: string, now: Date = 
     localStorage.setItem(LEDGER_KEY, JSON.stringify(l));
   } catch { /* 记不下就可能多提一次 */ }
 }
+
+/** 今天的心思那一行（第 36 批 c）：放闲话位，倾诉 / 道别 / 精力低 / 沉下来时自动不放 */
+export function buildInnerLine(presetId: string, now: Date = new Date()): string {
+  const day = peekOwnDay(presetId, now);
+  return day ? innerLine(day.inner, presetId, day.dateKey) : '';
+}
+
+/**
+ * 认领日记的种子（第 36 批 c）：昨天的日记在今天首开才补写，小状态那次调用跑在它前面、拿不到「明天想说」；
+ * 日记写好以后把那句补进今天的心思（只在今天还没有想说的话时）
+ */
+export async function adoptDiarySeed(presetId: string, now: Date = new Date()): Promise<void> {
+  const day = peekOwnDay(presetId, now);
+  if (!day || !day.inner || day.inner.want) return;
+  const seed = await yesterdaySeed(presetId, day.dateKey);
+  if (!seed) return;
+  writeDay({ ...day, inner: { ...day.inner, want: seed, mood: day.inner.mood ?? '想着昨天的事', intensity: Math.max(1, day.inner.intensity) } });
+}
+
+/** 今天的心思（给回复后记账用） */
+export const peekInner = (presetId: string, now: Date = new Date()): InnerState | undefined => peekOwnDay(presetId, now)?.inner;
 
 /** 进上下文的那一行（今天提过了就换成「别主动再提」）；签名那天只当心情底色、不当话题（第 35 批 h） */
 export function buildOwnDayLine(presetId: string, now: Date = new Date()): string {

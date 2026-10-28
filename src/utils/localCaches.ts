@@ -11,6 +11,7 @@ const DATA_CACHE_KEYS = [
   'velvet.navTopics.v1', 'velvet.navPush.v1', 'velvet.navOwnDay.v1', 'velvet.navOwnDayMentioned.v1',
   'velvet.navCare.v1', 'velvet.navAssoc.v1', 'velvet.navBond.v1', 'velvet.navActivePreset.v1',
   'velvet.navMissingPresetNotice.v1', 'velvet.reportNotice.v1', 'velvet:aiDiag.v1',
+  'velvet.navInnerShown.v1', 'velvet.navEvolve.v1', 'velvet.navTarotConclusion.v1',
   // AI 任务的半成品 / 草稿
   'velvet:revealJob.stratum.v1', 'velvet:revealJob.final.v1', 'velvet:moonJob',
   'velvet.dailyDraw.pending.v1', 'velvet.longReading.pending.v1', 'velvet.followUp.pending.v1',

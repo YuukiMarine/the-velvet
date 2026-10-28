@@ -9,7 +9,7 @@
 import { db } from '@/db';
 import { BUILTIN_NAVIGATOR_PRESETS } from '@/constants/navigatorPresets';
 import { dayLabelCN, daysBetween, dateOfKey, keyOfDate, relativeDayCN, shiftKey } from '@/utils/navigatorClock';
-import { memoVisibleTo } from '@/utils/navigatorMemoryScope';
+import { isMetaMemo, memoVisibleTo } from '@/utils/navigatorMemoryScope';
 
 export interface DayRange {
   from: string;
@@ -160,7 +160,7 @@ export async function loadDayRecall(ranges: DayRange[], presetId: string, todayK
       .filter((s) => (s.presetId ?? cat) === presetId && s.dateKey < todayKey)
       .sort((a, b) => b.dateKey.localeCompare(a.dateKey));
     const memos = (await db.navigatorMemos.where('status').equals('active').toArray())
-      .filter((m) => m.source !== 'profile' && memoVisibleTo(m, presetId));
+      .filter((m) => !isMetaMemo(m) && memoVisibleTo(m, presetId));
     for (const r of ranges) {
       const head = `【ta 提到的日子：${r.label} = ${rangeLabel(r, todayKey)}】`;
       const chats = sessions.filter((s) => s.dateKey >= r.from && s.dateKey <= r.to).slice(0, 5);

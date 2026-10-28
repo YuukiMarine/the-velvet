@@ -75,9 +75,11 @@ export const sessionPairKey = (row: Row): string => `${String(row.dateKey ?? '')
 /** 同一天同一人格的两行会话：留 base（本机那行，消息挂在它的 id 上），缺的摘要从 other 补，开过口哪边算都算 */
 export function mergeSessionRows(base: Row, other: Row): Row {
   const out: Row = { ...base };
-  for (const f of ['compactedSummary', 'personaSummary'] as const) {
+  for (const f of ['compactedSummary', 'personaSummary', 'diary'] as const) {
     if (!out[f] && other[f]) out[f] = other[f];
   }
+  // 这边删过日记就别让云端那份又回来
+  if (base.diaryDeleted === true) { out.diaryDeleted = true; delete out.diary; }
   if (base.userSpoke === true || other.userSpoke === true) out.userSpoke = true;
   else if (out.userSpoke === undefined && other.userSpoke !== undefined) out.userSpoke = other.userSpoke;
   const bc = toTime(base.createdAt), oc = toTime(other.createdAt);

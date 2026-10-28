@@ -8,6 +8,13 @@ import type { NavigatorMemo } from '@/types';
 /** 「记忆按人格隔离」开着没有 */
 export const memoryIsolated = (): boolean => !!useAppStore.getState().settings.navigatorMemoryIsolated;
 
+/**
+ * 不是「关于用户的事实」的那几类行（第 36 批）：画像、说法、印象、成长记录——召回 / 联想 / 归档材料 / 记事本记忆列表都要跳过，
+ * 它们各有各的注入口。
+ */
+export const isMetaMemo = (m: Pick<NavigatorMemo, 'source'>): boolean =>
+  m.source === 'profile' || m.source === 'bit' || m.source === 'impression' || m.source === 'growth';
+
 /** 这条归谁（第 33 批：可以归好几位）；空 = 共享 */
 export const memoOwners = (m: Pick<NavigatorMemo, 'presetId' | 'presetIds'>): string[] =>
   m.presetIds?.length ? m.presetIds : m.presetId ? [m.presetId] : [];

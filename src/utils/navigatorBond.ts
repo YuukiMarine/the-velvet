@@ -11,6 +11,7 @@
  * 换人格就是重新认识（各算各的）。记账放 localStorage：节流状态，不上云、不进备份。
  */
 import { db } from '@/db';
+import { isMetaMemo } from '@/utils/navigatorMemoryScope';
 import { daysBetween, dayLabelCN, keyOfDate, shiftKey, shortMD } from '@/utils/navigatorClock';
 import type { NavigatorMemo, NavigatorSessionRow } from '@/types';
 
@@ -183,7 +184,7 @@ export async function pickOldStory(f: TogetherFacts, now: Date = new Date()): Pr
     }
     const cutoff = now.getTime() - 30 * 86400_000;
     const memos = (await db.navigatorMemos.where('status').equals('active').toArray())
-      .filter((m) => m.source !== 'profile' && m.source !== 'image' && m.importance >= 3 && !m.followUp && !m.dueDate
+      .filter((m) => !isMetaMemo(m) && m.source !== 'image' && m.importance >= 3 && !m.followUp && !m.dueDate
         && new Date(m.createdAt).getTime() < cutoff)
       .sort((a, b) => new Date(a.lastRecalledAt ?? a.createdAt).getTime() - new Date(b.lastRecalledAt ?? b.createdAt).getTime()
         || b.importance - a.importance);

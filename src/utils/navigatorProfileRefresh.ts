@@ -17,7 +17,7 @@ import { dayLabelCN, daysBetween } from '@/utils/navigatorClock';
 import { activeCountdowns, activeWishes, attrName, bigDealsCleared, habits, wishProgress } from '@/utils/navigatorRecords';
 import { briefingEnabled } from '@/utils/navigatorBriefing';
 import { isPromise } from '@/utils/navigatorPromise';
-import { getProfileState, isRecentStale, memoryIsolated, memoVisibleTo, PROFILE_KEYS, PROFILE_LABELS, PROFILE_LIMITS, profileAutoOn, profileTextForPrompt, saveProfileBlocks, withoutLocked } from '@/utils/navigatorMemory';
+import { getProfileState, isMetaMemo, isRecentStale, memoryIsolated, memoVisibleTo, PROFILE_KEYS, PROFILE_LABELS, PROFILE_LIMITS, profileAutoOn, profileTextForPrompt, saveProfileBlocks, withoutLocked } from '@/utils/navigatorMemory';
 import type { ProfileBlocks, WeeklyGoalItem } from '@/types';
 
 /** 参考记录整理画像的间隔（天；用户 10-27 定） */
@@ -75,7 +75,7 @@ async function chatMaterial(presetId: string | undefined, todayKey: string): Pro
       .slice(0, 6);
     for (const x of sessions) out.push(`- ${dayLabelCN(x.dateKey, todayKey)}聊的：${x.compactedSummary}`);
     const memos = (await db.navigatorMemos.where('status').equals('active').toArray())
-      .filter((m) => m.source !== 'profile' && m.source !== 'bit' && !isPromise(m) && memoVisibleTo(m, presetId))
+      .filter((m) => !isMetaMemo(m) && !isPromise(m) && memoVisibleTo(m, presetId))
       .sort((a, b) => (Number(!!b.pinned) - Number(!!a.pinned)) || b.importance - a.importance || new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
       .slice(0, 20);
     for (const m of memos) out.push(`- 记得：${m.text}`);

@@ -12,7 +12,7 @@
  */
 import { db } from '@/db';
 import { useAppStore, toLocalDateKey } from '@/store';
-import { memoVisibleTo } from '@/utils/navigatorMemoryScope';
+import { isMetaMemo, memoVisibleTo } from '@/utils/navigatorMemoryScope';
 import { tokenize, queryChars } from '@/utils/navigatorIndex';
 import { traitsOf } from '@/utils/navigatorDay';
 import { moonPhaseOf } from '@/utils/moonPhase';
@@ -99,7 +99,7 @@ export async function pickAssociation(
   let memos: NavigatorMemo[] = [];
   try {
     memos = (await db.navigatorMemos.where('status').equals('active').toArray())
-      .filter((m) => m.source !== 'profile' && m.source !== 'bit' && !m.muted && !excludeIds.has(m.id) && memoVisibleTo(m, preset.id))
+      .filter((m) => !isMetaMemo(m) && !m.muted && !excludeIds.has(m.id) && memoVisibleTo(m, preset.id))
       .filter((m) => !isPromise(m) || (m.promiseState ?? 'waiting') !== 'waiting');
   } catch { return null; }
   if (!memos.length) return null;

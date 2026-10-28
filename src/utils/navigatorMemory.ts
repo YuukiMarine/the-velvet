@@ -13,7 +13,7 @@
  */
 import { v4 as uuidv4 } from 'uuid';
 import { db } from '@/db';
-import { memoryIsolated, memoVisibleTo, memoOwner, ownersKey } from '@/utils/navigatorMemoryScope';
+import { isMetaMemo, memoryIsolated, memoVisibleTo, memoOwner, ownersKey } from '@/utils/navigatorMemoryScope';
 import { tokenize, queryChars } from '@/utils/navigatorIndex';
 import { useAppStore, toLocalDateKey } from '@/store';
 import { chatComplete, getAIConfig, type AIConfig, type AIMessage } from '@/utils/aiClient';
@@ -113,7 +113,7 @@ export function profileTextForPrompt(blocks: ProfileBlocks, meta: Partial<Record
 }
 
 // ── 记忆隔离（第 23 批）：判定在 navigatorMemoryScope；开了之后按人格分，没标人格的是共享 ──
-export { memoryIsolated, memoVisibleTo, memoOwner, memoOwners, ownersKey, ownersPatch } from '@/utils/navigatorMemoryScope';
+export { isMetaMemo, memoryIsolated, memoVisibleTo, memoOwner, memoOwners, ownersKey, ownersPatch } from '@/utils/navigatorMemoryScope';
 
 const profileIdFor = (presetId: string | undefined): string => (memoryIsolated() && presetId ? `${PROFILE_ID}:${presetId}` : PROFILE_ID);
 
@@ -343,7 +343,7 @@ export interface RelatedMemo { ref: string; id: string; text: string; dateKey: s
 export async function relatedMemosFor(lines: string[], presetId: string | undefined, limit = 8): Promise<RelatedMemo[]> {
   try {
     const memos = (await db.navigatorMemos.where('status').equals('active').toArray())
-      .filter((m) => m.source !== 'profile' && m.source !== 'bit' && memoVisibleTo(m, presetId));
+      .filter((m) => !isMetaMemo(m) && memoVisibleTo(m, presetId));
     if (!memos.length) return [];
     const userText = lines.filter((l) => l.startsWith('用户：') || l.startsWith('[沉] 用户：')).join(' ');
     const q = new Set(tokenize(userText));
@@ -555,7 +555,7 @@ async function persistMemories(
     : now;
   const refToId = new Map(related.map((r) => [r.ref, r.id]));
   let existing: NavigatorMemo[] = [];
-  try { existing = (await db.navigatorMemos.where('status').equals('active').toArray()).filter((m) => m.source !== 'profile' && m.source !== 'bit' && memoVisibleTo(m, presetId)); } catch { /* */ }
+  try { existing = (await db.navigatorMemos.where('status').equals('active').toArray()).filter((m) => !isMetaMemo(m) && memoVisibleTo(m, presetId)); } catch { /* */ }
   const seen = new Set(existing.map((m) => normalizeMemoText(m.text)));
   let followUp = result.followUp ?? undefined;
   let wrote = 0;
@@ -860,7 +860,7 @@ function relevance(q: Set<string>, qc: Set<string>, memo: NavigatorMemo, df: Map
 export async function recallMemories(queryText: string, presetId?: string, prevUser: string[] = []): Promise<RecallResult> {
   try {
     const all = (await db.navigatorMemos.where('status').equals('active').toArray())
-      .filter((m) => m.source !== 'profile' && m.source !== 'bit' && !m.muted) // 画像另行常驻注入，说法另有一块，别再提的不进
+      .filter((m) => !isMetaMemo(m) && !m.muted) // 画像另行常驻注入，说法另有一块，别再提的不进
       .filter((m) => memoVisibleTo(m, presetId)); // 记忆隔离（第 23 批）：只读共享的和自己的
     // 回访约定由 navigatorPromise 单独注入（什么时候问、只问一次）：还在等着的不进普通检索
     const promises = all.filter(isPromise);
@@ -1036,7 +1036,7 @@ export interface MergeProposal { keep: NavigatorMemo; drop: NavigatorMemo; simil
 /** 近似重复（二元组 Jaccard ≥ threshold，或一条包含另一条）：留早的那条（信息多的话留长的） */
 export async function findDuplicateMemos(presetId?: string, threshold = 0.6): Promise<MergeProposal[]> {
   const memos = (await db.navigatorMemos.where('status').equals('active').toArray())
-    .filter((m) => m.source !== 'profile' && m.source !== 'bit' && !isPromise(m) && (presetId === undefined || memoVisibleTo(m, presetId)))
+    .filter((m) => !isMetaMemo(m) && !isPromise(m) && (presetId === undefined || memoVisibleTo(m, presetId)))
     .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
   const out: MergeProposal[] = [];
   const used = new Set<string>();
@@ -1079,7 +1079,7 @@ export async function lazySweepMemos(): Promise<void> {
     const cutoff = Date.now() - 90 * 86400_000;
     const memos = await db.navigatorMemos.where('status').equals('active').toArray();
     const stale = memos.filter((m) =>
-      m.source !== 'bit' && m.source !== 'profile' &&
+      !isMetaMemo(m) &&
       !m.pinned &&
       m.importance <= 2 &&
       new Date(m.lastRecalledAt ?? m.createdAt).getTime() < cutoff,
@@ -1088,7 +1088,7 @@ export async function lazySweepMemos(): Promise<void> {
     // 一字不差的重复：留最早那条
     const byKey = new Map<string, NavigatorMemo[]>();
     for (const m of memos) {
-      if (m.source === 'profile' || m.source === 'bit' || isPromise(m)) continue;
+      if (isMetaMemo(m) || isPromise(m)) continue;
       const k = `${ownersKey(m)}|${normalizeMemoText(m.text)}`;
       if (!byKey.has(k)) byKey.set(k, []);
       byKey.get(k)!.push(m);

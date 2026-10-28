@@ -12,8 +12,9 @@ export const BACKUP_VERSION = 11;
  * swallowed（被打断没说出口的半句）和 earlySummary（今天早些时候的压缩，指着本机的消息 id）都是本机聊天的一部分，不带。
  */
 export function slimSessionRow(r: NavigatorSessionRow): NavigatorSessionRow {
-  const { swallowed: _sw, earlySummary: _es, ...rest } = r;
-  void _sw; void _es;
+  // reads（每轮心里过的那一遍，第 36 批）也是本机聊天的一部分：不上云；日记随行走（和摘要同口径）
+  const { swallowed: _sw, earlySummary: _es, reads: _rd, ...rest } = r;
+  void _sw; void _es; void _rd;
   return rest;
 }
 

@@ -36,7 +36,10 @@ import { careTemplateLine, scheduleCare, takeCareLine } from '@/utils/navigatorG
 import {
   buildOldStoryLine, buildTogetherLine, markMilestoneMentioned, noteOldStoryMentioned, pickOldStory, togetherFacts,
 } from '@/utils/navigatorBond';
-import { buildOwnDayLine, ensureOwnDay, noteOwnDayMentioned } from '@/utils/navigatorDay';
+import { adoptDiarySeed, buildInnerLine, buildOwnDayLine, ensureOwnDay, noteOwnDayMentioned, peekInner } from '@/utils/navigatorDay';
+import { noteInnerShown } from '@/utils/navigatorInner';
+import { diaryBlock, writeDiaries } from '@/utils/navigatorDiary';
+import { evolveBlock, maybeEvolve } from '@/utils/navigatorEvolve';
 import {
   AFTERTHOUGHT_MAX_MS, AFTERTHOUGHT_MIN_MS, afterthoughtChance, appendSessionRead, buildLocalFacts, casualSlotChance, noteRead, readConfig,
   renderAfterthought, startRead, temperamentOf, type LocalTurnFacts, type ReadResult,
@@ -52,7 +55,7 @@ import { MILESTONES } from '@/utils/navigatorBond';
 import { dayLabelCN, relativeDayCN } from '@/utils/navigatorClock';
 import {
   bitsBlock, buildWarmthLine, finalizeStaleSessions, getProfile, lazySweepMemos, localEarlySummary, maybeCompactLive, noteBitsUsed,
-  recallMemories, recentChatsBlock, rowsToLines, summarizeEarlyToday,
+  recallMemories, rowsToLines, summarizeEarlyToday,
 } from '@/utils/navigatorMemory';
 import { markReportGreeted } from '@/utils/reportNotice';
 import { buildTopicPermission, noteHappeningsMentioned, noteTopicsMentioned, unmentionedHappenings } from '@/utils/navigatorTopics';
@@ -712,12 +715,12 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
       const turnNo = assocTick(presetNow.id);
       void turnNo;
       const recordsLevel = recordsLevelOf(settingsNow);
-      const [recall, profile, together, pctx, recentChats, dayRecall, anchor, sinceKey, serious, bits, tarot] = await Promise.all([
+      const [recall, profile, together, pctx, diaries, dayRecall, anchor, sinceKey, serious, bits, tarot, evolve] = await Promise.all([
         recallMemories(batch, activeId, prevUser), // 记忆检索（纯本地，失败返回空不阻断）
         getProfile(activeId),
         togetherFacts(presetNow.id),
         promiseContext(Date.now(), presetNow.id),
-        recentChatsBlock(presetNow.id, todayKey), // 最近几次聊天的摘要（天级块，接在人格规范后吃缓存）
+        diaryBlock(presetNow.id, todayKey), // 你的日记（第 36 批 c：替掉「最近几次聊天的摘要」；近 3 天全文、4–14 天缩略；没日记的日子退回摘要行）
         buildDayRecall(batch, presetNow.id, todayKey), // 他说起「昨天 / 上周三」→ 那几天的摘要和记忆
         // 人设锚：自定义人格第一次用到要 AI 写一句（≤ 4s，超了这轮先用兜底）
         Promise.race([ensurePersonaAnchor(presetNow, settingsNow), sleep(4000).then(() => anchorOf(presetNow))]),
@@ -726,6 +729,7 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
         bitsBlock(presetNow.id), // 你们之间的说法（第 26 批）
         // 塔罗块（第 35 批 f）：只有「让助手了解你的记录」高档才有；结论第一次要压一句，最多等 3s，超了这轮先不带
         Promise.race([tarotBlock(presetNow, settingsNow, todayKey), sleep(3000).then(() => '')]),
+        evolveBlock(presetNow.id), // 印象 + 最近学到的（第 36 批 c · 自进化；天级）
       ]);
       // 走神位（第 26 批 · §24.11）：概率 + 冷却在模块里；姿态门控在 intent 层（闲话一律跟着 casualContext 走）
       const assoc = await pickAssociation(presetNow, settingsNow, [...prevUser, batch], new Set(recall.ids));
@@ -738,7 +742,7 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
       // 「让助手了解你的记录」关着（第 35 批 f 三档的 off）：近况流、记录检索也一并不给——只剩今日状态和聊天记忆
       const happenings = recordsLevel === 'off' ? [] : unmentionedHappenings(buildHappenings(sinceKey, coach, todayKey)).slice(0, 5);
       const recordHits = recordsLevel === 'off' ? [] : searchRecords(batch, 4);
-      const dayLevel = [briefingBlock(presetNow, settingsNow, todayKey), freshIntroLine(presetNow, settingsNow, todayKey), tarot, recentChats].filter(Boolean).join('\n');
+      const dayLevel = [briefingBlock(presetNow, settingsNow, todayKey), freshIntroLine(presetNow, settingsNow, todayKey), tarot, evolve, diaries].filter(Boolean).join('\n');
       const coachLine = coach === 'push'
         ? '【相处方式】督促型：ta 没做的事（断了的习惯、快到的截止、没动的任务）可以提，一天最多一次，说事实不说教、不翻旧账。'
         : '【相处方式】陪伴型：只提好事和快到的事；没做的、断了的不主动提，ta 说起再接。';
@@ -769,9 +773,11 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
       const readFacts = pre?.facts ?? await buildLocalFacts(historyForTurn(), batch, turnStartedAt, get().sessionId);
       if (gen !== generation) return;
       const turnExtras: TurnExtras = {
-        casualContext: [slotLine, buildOwnDayLine(presetNow.id)],
+        // 心思（第 36 批 c）也放闲话位：倾诉 / 道别 / 精力低 / 沉下来时和别的闲话一起收起
+        casualContext: [slotLine, buildOwnDayLine(presetNow.id), buildInnerLine(presetNow.id)],
         afterReply: (text, _stance, _energy, casualShown) => {
           noteOwnDayMentioned(text, presetNow.id);
+          if (casualShown) noteInnerShown(text, presetNow.id, peekInner(presetNow.id));
           if (oldStory && slot === 'oldStory') noteOldStoryMentioned(text, presetNow.id, oldStory);
           if (casualShown && slot === 'happenings') noteHappeningsMentioned(text, happenings);
           void noteBitsUsed(text, bits.bits);
@@ -1016,6 +1022,8 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
       await hydrateSession();
       // 换进来的人格今天的小状态也要有（窗口开着切人格不会再走 greet）
       void ensureOwnDay(get().activePreset(), useAppStore.getState().settings);
+      // 它的日记 / 印象也在这时补（第 36 批 c；后台）
+      { const p = get().activePreset(); void writeDiaries(p.id, useAppStore.getState().settings).then(() => maybeEvolve(p, useAppStore.getState().settings)).catch(() => {}); }
       if (get().messages.length === 0) {
         const preset = get().activePreset();
         get().pushCat(preset.handoffLine ?? `（${preset.name} 上线了）`);
@@ -1066,6 +1074,15 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
         void lazySweepMemos();
         // 画像参考我的记录（第 33 批）：每 5 天一次，排在归档后面（不和它抢 AI），不挡问候
         { const pid = get().activePreset().id; void finalizing.then(() => maybeRefreshProfileFromRecords(pid)).catch(() => {}); }
+        // 日记（第 36 批 c）：归档完了再补写昨天（和更早几天）的日记；攒够了就整理一次印象 / 成长记录。都在后台，不挡问候
+        {
+          const preset = get().activePreset();
+          void finalizing
+            .then(() => writeDiaries(preset.id, useAppStore.getState().settings))
+            .then((n) => (n > 0 ? adoptDiarySeed(preset.id) : undefined)) // 昨天日记里「明天想说」的那句补进今天的心思
+            .then(() => maybeEvolve(preset, useAppStore.getState().settings))
+            .catch(() => {});
+        }
         await hydrateSession();
         // 人格真缺失的那句说明（第 23 批）：挂好会话后说一次
         const notice = get().presetNotice;
@@ -1181,6 +1198,8 @@ export const useNavigatorStore = create<NavigatorState>((set, get) => {
             recall.lines.length ? `【关于用户的记忆】\n${recall.lines.join('\n')}` : '',
             buildWarmthLine(),
             away ? '' : buildOwnDayLine(preset.id),
+            // 今天的心思（第 36 批 c）：久别归来 / 昨天沉下来另有专门的那一句，这两种情况不再叠一层
+            away || careLine ? '' : buildInnerLine(preset.id),
             // 新写好的成长总结：问候顺带提一句（每份只提这一次；指向记录页，聊天框下面也有「看总结」）
             snap.unreadSummaryLabel
               ? `【新写好的成长总结】「${snap.unreadSummaryLabel}」的总结已经写好、对方还没看：问候里顺带提一句，它在记录页的「成长总结」里，聊天框下面的「看总结」也能直接打开。一句就好，别展开内容。`
