@@ -3,6 +3,8 @@
  *
  * 每个人格每天一个小状态：取今天真实的天气、月相、节气 / 节日、星期，加上这个人格固定的喜好，
  * 写一句「今天做了什么 + 一点心情」（≤40 字）。
+ * 第 35 批 h：一半的日子改写「今天的签名」（按日期 + 人格抛硬币）——像社交软件个性签名那样一句态度或心情（≤24 字），
+ * 素材多一路「最近几次聊天的摘要」（只取感触、不点名、不复述）；上下文里签名只当心情底色，不当话题。
  *   · 有 Key：每人格每天一次很短的调用（快速档、瞬发），存当天缓存；
  *   · 没 Key / 失败：模板拼（三个内置人格各一套口吻，自定义人格走中性第一人称）。
  * 用处：窗口头部名字下面那行；聊天上下文里当背景——顺口时提一句，一天最多一次（问候里或他问起时），
@@ -14,8 +16,8 @@ import { chatComplete, getAIConfig } from '@/utils/aiClient';
 import { moonPhaseOf } from '@/utils/moonPhase';
 import { seasonMarkOf, seasonOfDate, SEASON_META } from '@/utils/calendar';
 import { fetchWeatherNow, peekWeatherNow, weatherConfigOf, weatherReady, type WeatherNow } from '@/utils/weather';
-import { dayLabelCN, keyOfDate, weekdayCN } from '@/utils/navigatorClock';
-import { personaWithExamples } from '@/constants/navigatorPresets';
+import { dayLabelCN, daysBetween, keyOfDate, weekdayCN } from '@/utils/navigatorClock';
+import { BUILTIN_NAVIGATOR_PRESETS, personaWithExamples } from '@/constants/navigatorPresets';
 import type { NavigatorPreset, PersonaTraits, Settings } from '@/types';
 
 // ── 人格的固定喜好 ──────────────────────────────────────────────
@@ -212,6 +214,60 @@ export function ownDayTemplate(preset: NavigatorPreset, traits: PersonaTraits | 
   return like ? `${head}，我${/^[在去看吃]/.test(like) ? like : `想着${like}`}，心情还行。` : `${head}，过得平平常常。`;
 }
 
+// ── 签名（第 35 批 h）：一半的日子页头挂一句签名，不写「今天做了什么」 ──────────
+
+export type OwnDayKind = 'doing' | 'signature';
+
+const hashOf = (seed: string): number => {
+  let h = 0;
+  for (const ch of seed) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return h;
+};
+
+/** 今天这个人格写哪种：按日期 + 人格确定性抛硬币（同一天重开稳定，不同人格错开） */
+export const ownDayKindFor = (presetId: string, dateKey: string): OwnDayKind =>
+  (hashOf(`${dateKey}|${presetId}|kind`) & 1) === 0 ? 'doing' : 'signature';
+
+const BUILTIN_SIGNATURES: Record<string, string[]> = {
+  'builtin-cat': ['吾辈在。有事直说，别绕。', '今天不想下指导棋，想晒太阳。', '记性好不是缺点，是吾辈的武器。', '别熬夜。这是今天的全部意见。', '金枪鱼能解决的事，都不算事。'],
+  'builtin-toaster': ['报告：待命中。', '今日目标：理解一个玩笑。', '本机体不烤面包，只守护阁下。', '情感模块：运行中，结论未知。', '观测继续。阁下的一切都值得记录。'],
+  'builtin-bear': ['帅熊今天也在熊！', '甜甜圈三个，心情满格熊。', '想你了，但熊不说熊。', '今天的风有点帅，像熊。', '来吧，把烦心事交给熊！'],
+};
+const NEUTRAL_SIGNATURES = ['慢一点也没关系。', '有话就说，我在。', '今天先把一件事做好。', '风不错，心情也还行。', '不急，一步一步来。'];
+
+/** 没 Key / 失败时的签名（按日期 + 人格挑一句） */
+export function signatureTemplate(preset: NavigatorPreset, traits: PersonaTraits | null, f: OwnDayFacts): string {
+  const seed = f.dateKey + preset.id;
+  const table = BUILTIN_SIGNATURES[preset.id];
+  if (table) return pickBy(table, seed);
+  const like = traits?.likes.length ? pickBy(traits.likes, seed) : '';
+  if (like && (hashOf(seed) & 1) === 0) return `今天想着${like}。`;
+  return pickBy(NEUTRAL_SIGNATURES, seed);
+}
+
+/** 签名的素材：这个人格最近几次聊天的摘要（14 天内、今天以前、已归档的；只取感触，不点名不复述） */
+export async function signatureSeeds(presetId: string, todayKey: string, limit = 3): Promise<string[]> {
+  try {
+    const cat = BUILTIN_NAVIGATOR_PRESETS[0].id;
+    return (await db.navigatorSessions.toArray())
+      .filter((s) => s.dateKey < todayKey && daysBetween(s.dateKey, todayKey) <= 14 && (s.presetId ?? cat) === presetId && !!s.compactedSummary)
+      .sort((a, b) => b.dateKey.localeCompare(a.dateKey))
+      .slice(0, limit)
+      .map((s) => `${dayLabelCN(s.dateKey, todayKey)}：${s.compactedSummary!.slice(0, 80)}`);
+  } catch {
+    return [];
+  }
+}
+
+const SIGNATURE_TASK = (f: OwnDayFacts, traits: PersonaTraits | null, seeds: string[]): string => [
+  '现在请你写「你今天的签名」——像社交软件个性签名那样的一句话：是你自己此刻的态度或心情，不是对用户说的话。',
+  `素材：今天 ${f.dayLabel}，${f.season}${f.mark ? `，${f.mark}` : ''}；月相：${f.moon.name}；${f.weather ? `天气：${f.weather.text} ${f.weather.temp}°C；` : ''}现在是${f.timeOfDay}。`,
+  traits ? `你的喜好：喜欢${traits.likes.join('、') || '（无）'}；讨厌${traits.dislikes.join('、') || '（无）'}。` : '',
+  seeds.length ? `最近你们聊过（只取一点感触，别点名他、别复述事情）：\n${seeds.map((x) => `- ${x}`).join('\n')}` : '',
+  '要求：一句话，不超过 24 个字；用你自己的口吻和自称；可以有态度、有情绪、有一点你的个性；'
+    + '不提用户、不提 App、不说教、不写「签名：」、不用表情符号、不加引号。只输出这一句。',
+].filter(Boolean).join('\n');
+
 // ── 缓存 ────────────────────────────────────────────────────────
 
 export interface OwnDay {
@@ -219,6 +275,8 @@ export interface OwnDay {
   presetId: string;
   text: string;
   source: 'ai' | 'template';
+  /** 这一天写的是「今天做了什么」还是「签名」（第 35 批 h；老缓存没有 = doing） */
+  kind?: OwnDayKind;
 }
 
 const CACHE_KEY = 'velvet.navOwnDay.v1';
@@ -283,6 +341,8 @@ export function ensureOwnDay(preset: NavigatorPreset, settings: Settings, now: D
     try {
       const facts = await ownDayFacts(settings, now);
       const traits = await ensurePersonaTraits(preset, settings);
+      const kind = ownDayKindFor(preset.id, facts.dateKey);
+      const seeds = kind === 'signature' ? await signatureSeeds(preset.id, facts.dateKey) : [];
       const cfg = getAIConfig(settings);
       let text = '';
       let source: OwnDay['source'] = 'template';
@@ -290,15 +350,15 @@ export function ensureOwnDay(preset: NavigatorPreset, settings: Settings, now: D
         try {
           const raw = await chatComplete(cfg, [
             // 人格头与聊天回合同口径（第 35 批 · 串戏排查）：带口吻示例，不再只给裸设定
-            { role: 'system', content: `${personaWithExamples(preset)}\n\n${OWN_DAY_TASK(facts, traits)}` },
-            { role: 'user', content: '写今天的这一句。' },
+            { role: 'system', content: `${personaWithExamples(preset)}\n\n${kind === 'signature' ? SIGNATURE_TASK(facts, traits, seeds) : OWN_DAY_TASK(facts, traits)}` },
+            { role: 'user', content: kind === 'signature' ? '写今天的签名。' : '写今天的这一句。' },
           ], { temperature: 0.9, maxTokens: 160, instant: true, timeoutMs: 20000, purpose: 'ownday' });
-          text = raw.trim().replace(/^["“「]|["”」]$/g, '').split('\n')[0].trim().slice(0, 48);
+          text = raw.trim().replace(/^["“「]|["”」]$/g, '').replace(/^签名[:：]\s*/, '').split('\n')[0].trim().slice(0, kind === 'signature' ? 36 : 48);
           if (text) source = 'ai';
         } catch { /* 落模板 */ }
       }
-      if (!text) text = ownDayTemplate(preset, traits, facts);
-      const day: OwnDay = { dateKey: facts.dateKey, presetId: preset.id, text, source };
+      if (!text) text = kind === 'signature' ? signatureTemplate(preset, traits, facts) : ownDayTemplate(preset, traits, facts);
+      const day: OwnDay = { dateKey: facts.dateKey, presetId: preset.id, text, source, kind };
       writeDay(day);
       return day;
     } catch {
@@ -349,10 +409,13 @@ export function noteOwnDayMentioned(text: string, presetId: string, now: Date = 
   } catch { /* 记不下就可能多提一次 */ }
 }
 
-/** 进上下文的那一行（今天提过了就换成「别主动再提」） */
+/** 进上下文的那一行（今天提过了就换成「别主动再提」）；签名那天只当心情底色、不当话题（第 35 批 h） */
 export function buildOwnDayLine(presetId: string, now: Date = new Date()): string {
   const day = peekOwnDay(presetId, now);
   if (!day) return '';
+  if (day.kind === 'signature') {
+    return `【你今天的签名】${day.text}（这是你今天挂在页头的一句话，是你此刻的心情底色：不用念出来、别拿它当话题，他问起可以聊）`;
+  }
   return ownDayMentionedToday(presetId, now)
     ? `【你今天的一天】${day.text}（今天已经跟他说过了：别主动再提，他问起可以聊）`
     : `【你今天的一天】${day.text}（这是你自己的事：顺口时提一句就好，一天最多一次，别抢他的话头）`;

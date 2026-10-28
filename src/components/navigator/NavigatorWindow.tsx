@@ -440,6 +440,8 @@ export const NavigatorWindow = () => {
   const [notebookOpen, setNotebookOpen] = useState(false);
   // 第二批「自己的一天」：名字下面那行写它今天的小状态（没有就还是原来那句）；点一下展开整句
   const ownDay = useSyncExternalStore(subscribeOwnDay, () => peekOwnDay(preset.id)?.text ?? '');
+  // 这一天是「今天做了什么」还是「签名」（第 35 批 h）：只影响无障碍标签
+  const ownDayIsSignature = useSyncExternalStore(subscribeOwnDay, () => peekOwnDay(preset.id)?.kind === 'signature');
   const [ownDayOpen, setOwnDayOpen] = useState(false);
   const [avatarCropFile, setAvatarCropFile] = useState<File | null>(null);
   const avatarFileRef = useRef<HTMLInputElement | null>(null);
@@ -834,7 +836,7 @@ export const NavigatorWindow = () => {
                           type="button"
                           onClick={() => setOwnDayOpen((v) => !v)}
                           aria-expanded={ownDayOpen}
-                          aria-label={`${preset.name}今天：${ownDay}`}
+                          aria-label={`${preset.name}${ownDayIsSignature ? '今天的签名' : '今天'}：${ownDay}`}
                           className={`block w-full text-left leading-snug ${ownDayOpen ? 'whitespace-normal [overflow-wrap:anywhere]' : 'truncate'}`}
                           data-own-day
                         >
